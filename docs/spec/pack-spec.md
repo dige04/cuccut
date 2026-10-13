@@ -308,3 +308,23 @@ Errors carry `details.code`:
 | `PACK_STYLE_CHANGED` | `conflict` | `packs.setStyle` with an outdated `expectedHash` |
 | `OFFLINE_STRICT` | `conflict` | A network source in strict offline mode |
 | `PACK_NETWORK` | `conflict` | The network failed, GitHub's rate limit is used up, or a host answered with an error |
+
+### 8.1 Agent tools and the CLI
+
+| Tool | Surfaces | Risk | What it does |
+| --- | --- | --- | --- |
+| `packs_list` | agent, MCP, CLI | read | The installed packs, and `active { packId, reason, why }` for the session's project (the terminal: the project of its directory; MCP: none) |
+| `packs_read` | agent, MCP, CLI | read | Without `path`: the style guide and the reference files; with `path`: a text file of the pack (at most 256 KiB), or an image (a session gets a copy in `<cwd>/.ccut/style/<id>/`, the terminal the pack's own file, MCP no path) |
+| `packs_choose_style` | agent, CLI | edit | The project's choice, as `packs.choose`; a session outside a project is refused (`NO_PROJECT`) |
+
+Installing, removing, restoring and editing a guide have no tool; a person does them in the desktop app or with the CLI:
+
+```text
+cuccut packs inspect <source>            everything the pack carries, agent text in full; nothing installed
+cuccut packs install <source> [--replace]
+cuccut packs remove <id>                 prints the Undo command
+cuccut packs restore <trashId>
+cuccut packs style <id> [<file>|-]       print the guide, or save a file as the guide
+```
+
+A `<source>` naming an existing folder is passed as its absolute path. `cuccut packs list|read|choose-style` are the tools above.

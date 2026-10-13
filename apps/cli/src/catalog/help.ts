@@ -23,6 +23,7 @@ const NOUN_ORDER = [
   'projects',
   'artifacts',
   'skills',
+  'packs',
   'library',
 ];
 

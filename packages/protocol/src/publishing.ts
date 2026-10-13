@@ -399,6 +399,7 @@ export interface PublicationRow {
   timezone: string;
   priority: number;
   expiresAt: string | null;
+  /** The pinned export (`PinnedExport.id`) the entry's thumbnail shows; absent before one is pinned. */
   exportPosterId?: Id;
   destinations: PublicationRowDestination[];
 }

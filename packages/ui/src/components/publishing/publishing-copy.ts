@@ -308,7 +308,7 @@ const en = {
     recorded: 'Result recorded.',
     withdraw: 'Withdraw',
     withdrawn: 'Withdrawn. Send it again when ready.',
-    lockedRelease: 'This release is settled. Prepare a new release to publish the video again.',
+    lockedRelease: "Sent accounts keep this release's text and times. To publish the video again, prepare a new release.",
   },
   batch: {
     prepare: (n: number) => (n === 1 ? 'Prepare 1 publication' : `Prepare ${n} publications`),

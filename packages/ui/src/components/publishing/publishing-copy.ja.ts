@@ -290,7 +290,7 @@ export const ja: PublishingCopyMessages = {
     recorded: '結果を記録しました。',
     withdraw: '取り下げ',
     withdrawn: '取り下げました。準備ができたら、もう一度送信してください。',
-    lockedRelease: 'このリリースは確定済みです。動画を再度公開するには、新しいリリースを準備してください。',
+    lockedRelease: '送信済みのアカウントは、このリリースのテキストと時刻を保持します。動画を再度公開するには、新しいリリースを準備してください。',
   },
   batch: {
     prepare: (n: number) => (n === 1 ? '公開内容 1 件を準備' : `公開内容 ${n} 件を準備`),

@@ -105,7 +105,7 @@ export function CalendarEntry({
                     disabled={busy}
                     aria-label={PC.calendar.moveEntry(`${row.label} · ${name}`)}
                     title={blocked ?? undefined}
-                    className={cn(blocked && 'opacity-60')}
+                    className={cn('-my-1', blocked && 'opacity-60')}
                     onClick={() => onMove([d.id])}
                   >
                     <CalendarArrowUp aria-hidden />
@@ -136,9 +136,9 @@ export function CalendarEntry({
   );
 }
 
-/** The pinned export's first frame, or a Film icon (grid cells skip the frame: a month can hold many entries). */
+/** The pinned export's first frame, or a Film icon (no export pinned yet; grid cells skip the frame: a month can hold many entries). */
 function EntryThumbnail({ row, compact }: { row: PublicationRow; compact: boolean }) {
-  const handle = usePinnedExport(row.id, compact ? null : (row.exportPosterId ?? `r${row.revision}`));
+  const handle = usePinnedExport(row.id, compact ? null : (row.exportPosterId ?? null));
   return (
     <span className={cn('flex shrink-0 items-center justify-center overflow-hidden rounded-md bg-black/30', compact ? 'size-6' : 'size-8')}>
       {handle ? (

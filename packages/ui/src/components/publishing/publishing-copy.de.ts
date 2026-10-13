@@ -290,7 +290,7 @@ export const de: PublishingCopyMessages = {
     recorded: 'Ergebnis festgehalten.',
     withdraw: 'Zurückziehen',
     withdrawn: 'Zurückgezogen. Sende es erneut, wenn du bereit bist.',
-    lockedRelease: 'Diese Veröffentlichung ist abgeschlossen. Bereite eine neue Veröffentlichung vor, um das Video erneut zu veröffentlichen.',
+    lockedRelease: 'Bereits gesendete Konten behalten Text und Zeiten dieser Veröffentlichung. Um das Video erneut zu veröffentlichen, bereite eine neue Veröffentlichung vor.',
   },
   batch: {
     prepare: (n: number) => (n === 1 ? '1 Veröffentlichung vorbereiten' : `${n} Veröffentlichungen vorbereiten`),

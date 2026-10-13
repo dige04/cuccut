@@ -6,7 +6,9 @@ import { calendarTime, formatCivilDate, intlLocale, type Id, type PublicationRow
 import { Button } from '../../cc/ui/button';
 import { Checkbox } from '../../cc/ui/checkbox';
 import { untimedDestinations, type CalendarDrag, type CalendarEntry as Entry, type DueEntry } from '../../model/publishing-calendar.ts';
+import { networkLabel } from '../../model/publishing-labels.ts';
 import { CalendarEntry } from './calendar-entry.tsx';
+import { NetworkIcon } from './network-icon.tsx';
 import { PC } from './publishing-copy.ts';
 
 interface EntryActions {
@@ -171,13 +173,26 @@ export function CalendarAside({
           <p className="mb-3 text-xs leading-relaxed text-muted-foreground">{PC.calendar.dueByHandBody}</p>
           <ul className="space-y-2">
             {due.map(({ row, destination, account }) => (
-              <li key={destination.id}>
-                <Button type="button" size="sm" variant="outline" className="max-w-full" onClick={() => onOpen(row.id)}>
-                  <Hand aria-hidden />
-                  <span className="truncate">
-                    {account ? PC.calendar.dueToast(row.label, account.name) : row.label}
-                    {destination.at ? ` · ${calendarTime(destination.at, timezone)}` : ''}
-                  </span>
+              <li key={destination.id} className="flex items-center gap-3 rounded-2xl bg-foreground/[0.035] py-2 ps-3 pe-2">
+                <div className="min-w-0 flex-1 text-xs">
+                  <p className="font-medium break-words text-foreground">{row.label}</p>
+                  <p className="mt-0.5 flex min-w-0 items-center gap-1 text-muted-foreground">
+                    {account ? <NetworkIcon network={account.network} className="size-3.5" /> : null}
+                    <span className="min-w-0 break-words">
+                      {account ? `${account.name} · ${networkLabel(account.network)}` : null}
+                      {account && destination.at ? ' · ' : null}
+                      {destination.at ? <span className="tabular-nums">{calendarTime(destination.at, timezone)}</span> : null}
+                    </span>
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  aria-label={account ? PC.calendar.dueToast(row.label, account.name) : PC.calendar.openEntry(row.label)}
+                  onClick={() => onOpen(row.id)}
+                >
+                  {PC.calendar.open}
                 </Button>
               </li>
             ))}

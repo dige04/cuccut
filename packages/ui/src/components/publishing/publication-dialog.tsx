@@ -46,7 +46,7 @@ export function PublicationDialog({
       <DialogContent
         data-cc
         showCloseButton={false}
-        className="max-h-[92dvh] w-[min(70rem,calc(100%-2rem))] max-w-[calc(100%-2rem)] gap-5 overflow-y-auto sm:max-w-[70rem]"
+        className="max-h-[92dvh] w-[min(70rem,calc(100%-2rem))] max-w-[calc(100%-2rem)] gap-5 overflow-y-auto pb-0 sm:max-w-[70rem]"
       >
         {publicationId ? (
           <DialogBody
@@ -115,12 +115,12 @@ function DialogBody({
         </Button>
       ) : null}
       {load.kind === 'loading' ? (
-        <div role="status" aria-label={PC.form.loading} className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
+        <div role="status" aria-label={PC.form.loading} className="mb-6 grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
           <Skeleton className="h-72 rounded-3xl" />
           <Skeleton className="h-96 rounded-3xl" />
         </div>
       ) : load.kind === 'failed' ? (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="mb-6 text-sm text-destructive">
           {PC.form.loadFailed(load.message)}
         </p>
       ) : (

@@ -289,7 +289,7 @@ export const zhHant: PublishingCopyMessages = {
     recorded: '結果已記錄。',
     withdraw: '撤回',
     withdrawn: '已撤回。準備好後請重新發送。',
-    lockedRelease: '此發布已結算。請準備新的發布，以重新發布該影片。',
+    lockedRelease: '已傳送的帳號會保留此發布的文字和時間。若要重新發布該影片，請準備新的發布。',
   },
   batch: {
     prepare: (n: number) => (n === 1 ? '準備 1 個發布' : `準備 ${n} 個發布`),

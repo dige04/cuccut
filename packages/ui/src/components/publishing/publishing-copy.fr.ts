@@ -290,7 +290,7 @@ export const fr: PublishingCopyMessages = {
     recorded: 'Résultat enregistré.',
     withdraw: 'Retirer',
     withdrawn: 'Retirée. Renvoyez-la lorsque vous serez prêt.',
-    lockedRelease: 'Cette sortie est clôturée. Préparez une nouvelle sortie pour publier à nouveau la vidéo.',
+    lockedRelease: 'Les comptes déjà envoyés gardent le texte et les horaires de cette sortie. Pour publier à nouveau la vidéo, préparez une nouvelle sortie.',
   },
   batch: {
     prepare: (n: number) => (n === 1 ? 'Préparer 1 publication' : `Préparer ${n} publications`),

@@ -127,9 +127,12 @@ describe('pinning from an export job', () => {
 describe('pin on a publication', () => {
   it('pins a chosen export and keeps the approval with the export it named', async () => {
     let p = await prepared();
+    expect(fx.service.row(p).exportPosterId).toBeUndefined();
     const first = await fx.jobs.finishedExport('first');
     p = (await fx.service.pin(p.id, p.revision, { jobId: first.jobId }, HUMAN)).publication;
     expect(p.export?.sha256).toBe(first.sha256);
+    // The calendar row names the pinned export, so entries fetch a thumbnail only when there is one.
+    expect(fx.service.row(p).exportPosterId).toBe(p.exportId);
     expect(p.newerEdit).toBe(false);
     p = await fx.service.approve(p.id, p.revision, HUMAN);
     expect(p.approved).toBe(true);

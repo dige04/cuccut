@@ -153,8 +153,9 @@ export function PublishingSchedule({
           <ul className="space-y-3">
             {draft.slots.map((slot, index) => (
               <li key={index} className="space-y-1">
+                {/* Flex columns, not space-y: the select's hidden form input is its last child, and space-y would put a margin under the trigger. */}
                 <div className="flex flex-wrap items-end gap-3">
-                  <div className="min-w-40 flex-1 space-y-1.5 text-xs text-muted-foreground">
+                  <div className="flex min-w-40 flex-1 flex-col gap-1.5 text-xs text-muted-foreground">
                     <label htmlFor={`${id}-day-${index}`} className="block">
                       {PC.settings.weekday}
                     </label>
@@ -166,7 +167,7 @@ export function PublishingSchedule({
                       onChange={(value) => dispatch({ type: 'editSlot', index, patch: { weekday: Number(value) } })}
                     />
                   </div>
-                  <div className="space-y-1.5 text-xs text-muted-foreground">
+                  <div className="flex flex-col gap-1.5 text-xs text-muted-foreground">
                     <label htmlFor={`${id}-time-${index}`} className="block">
                       {PC.settings.time}
                     </label>

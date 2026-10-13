@@ -289,7 +289,7 @@ export const zhHans: PublishingCopyMessages = {
     recorded: '结果已记录。',
     withdraw: '撤回',
     withdrawn: '已撤回。准备好后请重新发送。',
-    lockedRelease: '此发布已结算。请准备新的发布，以重新发布该视频。',
+    lockedRelease: '已发送的账号会保留此发布的文字和时间。若要重新发布该视频，请准备新的发布。',
   },
   batch: {
     prepare: (n: number) => (n === 1 ? '准备 1 个发布' : `准备 ${n} 个发布`),

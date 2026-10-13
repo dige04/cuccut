@@ -290,7 +290,7 @@ export const ko: PublishingCopyMessages = {
     recorded: '결과를 기록했습니다.',
     withdraw: '철회',
     withdrawn: '철회되었습니다. 준비되면 다시 전송하세요.',
-    lockedRelease: '이 릴리스는 확정되었습니다. 동영상을 다시 게시하려면 새 릴리스를 준비하세요.',
+    lockedRelease: '이미 보낸 계정은 이 릴리스의 텍스트와 시간을 유지합니다. 동영상을 다시 게시하려면 새 릴리스를 준비하세요.',
   },
   batch: {
     prepare: (n: number) => (n === 1 ? '게시물 1개 준비' : `게시물 ${n}개 준비`),

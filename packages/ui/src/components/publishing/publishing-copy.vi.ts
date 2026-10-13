@@ -290,7 +290,7 @@ export const vi: PublishingCopyMessages = {
     recorded: 'Đã ghi lại kết quả.',
     withdraw: 'Rút lại',
     withdrawn: 'Đã rút lại. Hãy gửi lại khi sẵn sàng.',
-    lockedRelease: 'Phát hành này đã hoàn tất. Hãy chuẩn bị một phát hành mới để đăng lại video.',
+    lockedRelease: 'Các tài khoản đã gửi giữ nguyên nội dung và thời gian của phát hành này. Để đăng lại video, hãy chuẩn bị một phát hành mới.',
   },
   batch: {
     prepare: (n: number) => (n === 1 ? 'Chuẩn bị 1 bài đăng' : `Chuẩn bị ${n} bài đăng`),

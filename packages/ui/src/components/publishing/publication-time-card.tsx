@@ -33,6 +33,8 @@ export function PublicationTimeCard({ form }: { form: PublicationFormApi }) {
   const locale = intlLocale();
   const zone = isValidTimezone(draft.timezone) ? draft.timezone : null;
   const reserveWhy = reserveBlock({ ...form, busy: form.busy || reserving, slots: form.settings?.slots.length ?? 0 });
+  // The reason shown under the buttons; the default time field repeats it only when it is a different one.
+  const shownWhy = reserveWhy && !reserving ? reserveWhy : null;
 
   const reserve = async () => {
     form.setNotice(null);
@@ -71,7 +73,7 @@ export function PublicationTimeCard({ form }: { form: PublicationFormApi }) {
           value={draft.scheduledAt}
           timezone={draft.timezone}
           disabled={disabled}
-          disabledReason={editBlock ?? undefined}
+          disabledReason={editBlock && editBlock !== shownWhy ? editBlock : undefined}
           onChange={(scheduledAt) => form.dispatch({ type: 'edit', patch: { scheduledAt } })}
         />
       </div>
@@ -102,7 +104,7 @@ export function PublicationTimeCard({ form }: { form: PublicationFormApi }) {
           {reserving ? PC.form.reserving : PC.form.reserveSlot}
         </Button>
       </div>
-      {reserveWhy && !reserving ? <p className="text-xs text-muted-foreground">{reserveWhy}</p> : null}
+      {shownWhy ? <p className="text-xs text-muted-foreground">{shownWhy}</p> : null}
       <Disclosure summary={PC.form.priorityExpiry} variant="plain">
         <div className="grid gap-3 pt-2 sm:grid-cols-2">
           <div className="space-y-1 text-sm">

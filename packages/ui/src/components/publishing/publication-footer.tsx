@@ -21,9 +21,10 @@ import type { PublicationFormApi } from './publication-form.tsx';
 import { PC } from './publishing-copy.ts';
 
 /**
- * The dialog's sticky footer (design §2.4): Save / Discard (Discard offers Undo), "Check publication readiness", the review checkbox (bound to this
- * revision and pinned export), the one tinted action — "Schedule publication", "Send now" or "Send" — and "Approve for agent delivery". Whatever is
- * unavailable says why on the line below.
+ * The dialog's footer (design §2.4): a full-width bar on the dialog's bottom edge, sticky from `lg` (on a phone it would cover half the dialog).
+ * Save / Discard (Discard offers Undo), "Check publication readiness", the review checkbox (bound to this revision and pinned export), the one
+ * tinted action — "Schedule publication", "Send now" or "Send" — and "Approve for agent delivery". Whatever is unavailable says why on the line
+ * below.
  */
 export function PublicationFooter({
   form,
@@ -77,7 +78,7 @@ export function PublicationFooter({
   };
 
   return (
-    <div className="sticky -bottom-6 z-10 -mx-2 space-y-3 rounded-2xl border-t border-foreground/10 bg-popover p-4 shadow-(--glass-shadow) sm:mx-0">
+    <div className="z-10 -mx-6 space-y-3 border-t border-foreground/10 bg-popover px-6 py-4 lg:sticky lg:bottom-0">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" disabled={!form.dirty || form.busy || form.readOnly} onClick={() => void form.save()}>

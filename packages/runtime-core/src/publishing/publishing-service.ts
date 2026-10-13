@@ -264,6 +264,7 @@ export class PublishingService {
       timezone: p.timezone,
       priority: p.priority,
       expiresAt: p.expiresAt,
+      ...(p.exportId ? { exportPosterId: p.exportId } : {}),
       destinations: p.destinations.map((d) => ({ id: d.id, accountId: d.accountId, format: d.format, state: d.state, scheduledAt: d.scheduledAt, at: calendarInstant(p, d) })),
     };
   }

@@ -290,7 +290,7 @@ export const nl: PublishingCopyMessages = {
     recorded: 'Resultaat vastgelegd.',
     withdraw: 'Intrekken',
     withdrawn: 'Ingetrokken. Verzend hem opnieuw als je klaar bent.',
-    lockedRelease: 'Deze release is afgesloten. Bereid een nieuwe release voor om de video opnieuw te publiceren.',
+    lockedRelease: 'Verzonden accounts houden de tekst en tijden van deze release. Bereid een nieuwe release voor om de video opnieuw te publiceren.',
   },
   batch: {
     prepare: (n: number) => (n === 1 ? '1 publicatie voorbereiden' : `${n} publicaties voorbereiden`),

@@ -290,7 +290,7 @@ export const tr: PublishingCopyMessages = {
     recorded: 'Sonuç kaydedildi.',
     withdraw: 'Geri çek',
     withdrawn: 'Geri çekildi. Hazır olduğunuzda yeniden gönderin.',
-    lockedRelease: 'Bu yayın tamamlandı. Videoyu yeniden yayınlamak için yeni bir yayın hazırlayın.',
+    lockedRelease: 'Gönderilen hesaplar bu yayının metnini ve saatlerini korur. Videoyu yeniden yayınlamak için yeni bir yayın hazırlayın.',
   },
   batch: {
     prepare: (n: number) => (n === 1 ? '1 yayın hazırla' : `${n} yayın hazırla`),

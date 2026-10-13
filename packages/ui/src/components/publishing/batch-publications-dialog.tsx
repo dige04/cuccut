@@ -66,7 +66,7 @@ export function BatchPublicationsDialog({ source, onClose }: { source: BatchSour
       <DialogContent
         data-cc
         showCloseButton={false}
-        className="max-h-[92dvh] w-[min(70rem,calc(100%-2rem))] max-w-[calc(100%-2rem)] gap-5 overflow-y-auto sm:max-w-[70rem]"
+        className="max-h-[92dvh] w-[min(70rem,calc(100%-2rem))] max-w-[calc(100%-2rem)] gap-5 overflow-y-auto pb-0 sm:max-w-[70rem]"
       >
         {source ? <BatchBody source={source} guard={guard.current} refused={refused} onClose={onClose} /> : null}
       </DialogContent>
@@ -198,20 +198,20 @@ function BatchBody({ source, guard, refused, onClose }: { source: BatchSource; g
       ) : null}
 
       {load.kind === 'loading' ? (
-        <div role="status" aria-label={PC.batch.preparing} className="space-y-3">
+        <div role="status" aria-label={PC.batch.preparing} className="mb-6 space-y-3">
           <p className="text-sm text-muted-foreground">{PC.batch.preparing}</p>
           <Skeleton className="h-24 rounded-3xl" />
           <Skeleton className="h-80 rounded-3xl" />
         </div>
       ) : load.kind === 'failed' ? (
-        <div role="alert" className="flex flex-wrap items-center gap-3">
+        <div role="alert" className="mb-6 flex flex-wrap items-center gap-3">
           <p className="min-w-0 flex-1 text-sm text-destructive">{PC.batch.failed(load.message)}</p>
           <Button type="button" variant="outline" onClick={() => setAttempt((n) => n + 1)}>
             {PC.batch.retry}
           </Button>
         </div>
       ) : !ids.length || !current ? (
-        <p className="text-sm text-muted-foreground">{PC.batch.empty}</p>
+        <p className="mb-6 text-sm text-muted-foreground">{PC.batch.empty}</p>
       ) : (
         <>
           <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
@@ -280,7 +280,7 @@ function BatchBody({ source, guard, refused, onClose }: { source: BatchSource; g
             onReplace={(next) => setIds((list) => replaceId(list, current, next))}
           />
 
-          <div className="sticky -bottom-6 z-10 -mx-2 space-y-2 rounded-2xl border-t border-foreground/10 bg-popover p-4 shadow-(--glass-shadow) sm:mx-0">
+          <div className="z-10 -mx-6 space-y-2 border-t border-foreground/10 bg-popover px-6 py-4 lg:sticky lg:bottom-0">
             {notice ? (
               <div role={notice.tone === 'error' ? 'alert' : 'status'} className="space-y-1 text-sm">
                 <p className={cn('whitespace-pre-wrap', notice.tone === 'error' ? 'text-destructive' : 'text-foreground')}>{notice.text}</p>

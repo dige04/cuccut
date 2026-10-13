@@ -52,6 +52,8 @@ export function RuleForm({ initial, templates, lock, projectLevel = false, onSav
   const [error, setError] = useState<string | null>(null);
   const [notes, setNotes] = useState<string[]>([]);
   const [saved, setSaved] = useState(false);
+  // Once a new rule is stored, its level is fixed: saving again replaces it there instead of putting the same id in a second level.
+  const [stored, setStored] = useState(false);
   // A new rule's id is made on the first save and kept, so saving again (after notes, or a lost reply) replaces it instead of adding a second.
   const ruleId = useRef<string | null>(initial?.id ?? null);
   const errorRef = useRef<HTMLParagraphElement>(null);
@@ -79,6 +81,7 @@ export function RuleForm({ initial, templates, lock, projectLevel = false, onSav
     try {
       ruleId.current ??= newRuleId(draft.name);
       const result = await onSave(ruleInputOfDraft(draft, ruleId.current), level);
+      setStored(true);
       if (result.warnings.length) {
         setDraft(ruleDraft(result.rule));
         setNotes(result.warnings.map((w) => localizeText(w.message, w.messageRef)));
@@ -171,7 +174,7 @@ export function RuleForm({ initial, templates, lock, projectLevel = false, onSav
                   ))}
                 </select>
               </FieldBlock>
-              {projectLevel && isNew ? (
+              {projectLevel && isNew && !stored ? (
                 <FieldBlock id={field('level')} label={C().level}>
                   <select id={field('level')} className={SELECT_FIELD} value={level} onChange={(event) => setLevel(event.target.value as RuleLevel)}>
                     <option value="project">{C().levelProject}</option>

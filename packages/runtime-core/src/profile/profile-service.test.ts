@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { RpcError, type ProfileEvent, type Project, type TranscriptionGlossary } from '@cuccut/protocol';
 import { projectProfilePath } from '@cuccut/runtime-storage';
 import { LibraryStore } from '@cuccut/runtime-storage/library';
-import { ProfileService } from './profile-service.ts';
+import { PROFILE_LIMITS } from '@cuccut/protocol';
+import { ProfileService, ProfileTooLongError } from './profile-service.ts';
 import { profileMethods } from './profile-methods.ts';
 
 async function rejection(promise: Promise<unknown> | (() => unknown)): Promise<RpcError> {
@@ -139,6 +140,27 @@ describe('ProfileService', () => {
     expect(again.snapshot.interview.namesGlossaryId).toBe(snapshot.interview.namesGlossaryId);
     expect(again.snapshot.interview.usedAgent).toBe(false);
     expect((library.get({ library: 'glossaries', id: snapshot.interview.namesGlossaryId! }).content as TranscriptionGlossary).terms).toHaveLength(3);
+  });
+
+  it('a finished write merges only the answers it was given, so answers saved while it ran are kept', async () => {
+    await profile.saveAnswers({ who: 'streams', names: 'Deska' });
+    const given = { platforms: 'Shorts' };
+    profile.answersForWrite(given);
+    // Saved while the agent runs.
+    await profile.saveAnswers({ names: 'Deska, Pasho', record: 'webcam' });
+    const { snapshot } = await profile.completeWrite(given, { preferences: '- p', names: [], usedAgent: false });
+    expect(snapshot.interview.answers).toEqual({ who: 'streams', names: 'Deska, Pasho', record: 'webcam', platforms: 'Shorts' });
+  });
+
+  it('appending preferences reads the text inside the write, at both levels, and refuses text over the limit', async () => {
+    await profile.setPreferences({ own: '- first' });
+    expect(await profile.appendPreferences('  - second ')).toBe('- first\n- second');
+    expect(profile.snapshot().preferences.own).toBe('- first\n- second');
+    await profile.setProjectPreferences('prj_1', '- vertical');
+    expect(await profile.appendPreferences('- captions on', 'prj_1')).toBe('- vertical\n- captions on');
+    expect((await profile.project('prj_1')).preferences).toBe('- vertical\n- captions on');
+    await expect(profile.appendPreferences('x'.repeat(PROFILE_LIMITS.preferences))).rejects.toBeInstanceOf(ProfileTooLongError);
+    expect(profile.snapshot().preferences.own).toBe('- first\n- second');
   });
 
   it('preferences: own and the interview section are separate; removing the section keeps the own text', async () => {

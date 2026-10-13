@@ -13,7 +13,7 @@ import {
   type Project,
 } from '@cuccut/protocol';
 import { RcProfile } from '@cuccut/protocol/messages/runtime-core';
-import type { ProfileService } from '../profile/profile-service.ts';
+import { ProfileTooLongError, appendedPreferences, type ProfileService } from '../profile/profile-service.ts';
 import { PROFILE_BLOCK_NAMES } from '../profile/profile-brief.ts';
 import { ToolError, type ToolInfo, type ToolSet } from './tool-catalog.ts';
 import { approvalField, confirmSummary, type ToolPrincipal, type ToolScope } from './tool-scope.ts';
@@ -306,15 +306,11 @@ export class ProfileTools implements ToolSet {
     const { profile, scope } = this.#deps;
     const access = scope.authorize(principal, true);
     const project = args.level === 'project' ? this.#project(principal) : null;
-    const current = project ? (await profile.project(project.id)).preferences : profile.snapshot().preferences.own;
     const added = args.text.trim();
-    const text = args.mode === 'append' ? [current.trimEnd(), added].filter(Boolean).join('\n') : added;
-    if (text.length > PROFILE_LIMITS.preferences) {
-      throw new ToolError(
-        'PROFILE_TOO_LONG',
-        `The preferences would be ${text.length} characters, over the ${PROFILE_LIMITS.preferences} limit: shorten them, or replace the text with a tighter version`,
-      );
-    }
+    // Checked before asking, so the user is not asked to approve text that can't be saved; an append is checked again when it is written.
+    const current = args.mode === 'append' ? (project ? (await profile.project(project.id)).preferences : profile.snapshot().preferences.own) : '';
+    const text = args.mode === 'append' ? appendedPreferences(current, added) : added;
+    if (text.length > PROFILE_LIMITS.preferences) throw tooLongError(text.length);
     if (!project) profile.assertWritable();
     const where = project ? RcProfile.levelProject({ name: project.name }) : RcProfile.levelWorkspace();
     const summary =
@@ -322,7 +318,14 @@ export class ProfileTools implements ToolSet {
         ? RcProfile.toolPreferencesAppend({ where, text: clip(added) })
         : RcProfile.toolPreferencesReplace({ where, text: clip(added) || '—' });
     const approval = await scope.confirm(access, { tool: 'profile_preferences_set', ...confirmSummary(summary), risk: 'high' });
-    const saved = project ? (await profile.setProjectPreferences(project.id, text)).preferences : (await profile.setPreferences({ own: text })).preferences.own;
+    let saved: string;
+    try {
+      // An append is built from the text as it is when the approval comes back (the user may have saved meanwhile), in the same write.
+      if (args.mode === 'append') saved = await profile.appendPreferences(added, project?.id);
+      else saved = project ? (await profile.setProjectPreferences(project.id, text)).preferences : (await profile.setPreferences({ own: text })).preferences.own;
+    } catch (error) {
+      throw error instanceof ProfileTooLongError ? tooLongError(error.length) : error;
+    }
     return { level: args.level, text: saved, ...approvalField(approval), next: 'Saved. It applies from the next session; follow it from now on in this one too.' };
   }
 
@@ -399,6 +402,13 @@ export function profileProjectOf(projects: { conversationOf(id: Id): { projectId
 function agentRule(rule: ProfileRule) {
   const { note: _note, source: _source, ...shown } = rule;
   return shown;
+}
+
+function tooLongError(length: number): ToolError {
+  return new ToolError(
+    'PROFILE_TOO_LONG',
+    `The preferences would be ${length} characters, over the ${PROFILE_LIMITS.preferences} limit: shorten them, or replace the text with a tighter version`,
+  );
 }
 
 function clip(text: string): string {

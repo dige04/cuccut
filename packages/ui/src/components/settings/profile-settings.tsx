@@ -56,7 +56,9 @@ function AboutYou({ snapshot, lock }: { snapshot: ProfileSnapshot; lock: string 
   const dirty = Object.keys(changed).length > 0;
   const answered = answerCount(draft);
   const canWrite = canWriteAnswers(draft);
-  const disabled = !!lock || busy !== null;
+  // A write from the answers (started here, by the agent, the CLI or /welcome) holds the answers until it ends.
+  const disabled = !!lock || busy !== null || !!writing;
+  const disabledWhy = lock ?? (writing ? C().answers.busy : undefined);
 
   const fail = (message: string) => {
     setError(message);
@@ -79,7 +81,7 @@ function AboutYou({ snapshot, lock }: { snapshot: ProfileSnapshot; lock: string 
   };
 
   const rewrite = async () => {
-    if (!canWrite || disabled || writing) return;
+    if (!canWrite || disabled) return;
     setBusy('rewrite');
     setError(null);
     try {
@@ -96,7 +98,7 @@ function AboutYou({ snapshot, lock }: { snapshot: ProfileSnapshot; lock: string 
   // "Take the interview" opens /welcome; "Redo" first puts the interview back to pending (the answers stay, so it starts filled in).
   const done = interview.status === 'done';
   const openInterview = async () => {
-    if (disabled || writing) return;
+    if (disabled) return;
     if (done) {
       setBusy('interview');
       setError(null);
@@ -137,8 +139,8 @@ function AboutYou({ snapshot, lock }: { snapshot: ProfileSnapshot; lock: string 
                 type="button"
                 variant="secondary"
                 size="sm"
-                disabled={disabled || !!writing}
-                title={lock ?? (writing ? C().answers.busy : undefined)}
+                disabled={disabled}
+                title={disabledWhy}
                 onClick={() => void openInterview()}>
                 {busy === 'interview' ? <Loader2 aria-hidden className="motion-safe:animate-spin" /> : null}
                 {done ? C().interview.redo : C().interview.take}
@@ -171,7 +173,7 @@ function AboutYou({ snapshot, lock }: { snapshot: ProfileSnapshot; lock: string 
             })}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Button type="submit" variant="secondary" size="sm" disabled={!dirty || disabled}>
+            <Button type="submit" variant="secondary" size="sm" disabled={!dirty || disabled} title={dirty ? disabledWhy : undefined}>
               {busy === 'save' ? <Loader2 aria-hidden className="motion-safe:animate-spin" /> : null}
               {C().answers.save}
             </Button>
@@ -179,7 +181,7 @@ function AboutYou({ snapshot, lock }: { snapshot: ProfileSnapshot; lock: string 
               type="button"
               variant="secondary"
               size="sm"
-              disabled={!canWrite || disabled || !!writing}
+              disabled={!canWrite || disabled}
               aria-describedby={hint ? hintId : undefined}
               onClick={() => void rewrite()}>
               {busy === 'rewrite' || writing ? <Loader2 aria-hidden className="motion-safe:animate-spin" /> : <WandSparkles aria-hidden />}

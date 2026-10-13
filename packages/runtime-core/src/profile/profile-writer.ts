@@ -44,8 +44,9 @@ export interface WriterAgent {
 export interface ProfileWriteTarget {
   assertWritable(): void;
   answersForWrite(given?: InterviewAnswers): InterviewAnswers;
+  /** `given`: the answers the write was given (merged over the ones saved at completion, so answers saved while the agent ran are kept). */
   completeWrite(
-    answers: InterviewAnswers,
+    given: InterviewAnswers,
     outcome: { preferences: string; names: readonly InterviewName[]; usedAgent: boolean },
   ): Promise<{ namesAdded: string[] }>;
   setWriting(writing: ProfileWriteState | null): void;
@@ -115,7 +116,7 @@ export class ProfileWriter {
     const answers = this.#target.answersForWrite(given);
     const controller = new AbortController();
     this.#running = controller;
-    const running = this.#write(answers, controller.signal);
+    const running = this.#write(given, answers, controller.signal);
     this.#done = running.catch(() => {});
     try {
       return await running;
@@ -130,7 +131,7 @@ export class ProfileWriter {
     await this.#done;
   }
 
-  async #write(answers: InterviewAnswers, signal: AbortSignal): Promise<ProfileWriteResult> {
+  async #write(given: InterviewAnswers, answers: InterviewAnswers, signal: AbortSignal): Promise<ProfileWriteResult> {
     const writing: ProfileWriteState = { startedAt: new Date().toISOString(), lines: [] };
     this.#target.setWriting(writing);
     try {
@@ -140,7 +141,7 @@ export class ProfileWriter {
       const outcome = drafted.ok
         ? { preferences: drafted.preferences, names: drafted.names, usedAgent: true }
         : { preferences: answersAsTyped(answers), names: [], usedAgent: false };
-      const { namesAdded } = await this.#target.completeWrite(answers, outcome);
+      const { namesAdded } = await this.#target.completeWrite(given, outcome);
       return {
         preferences: outcome.preferences,
         names: namesAdded,

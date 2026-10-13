@@ -370,8 +370,15 @@ describe('登记类工具', () => {
     expect((await client.request('profile.get', {})).preferences.own).toBe('- Hooks under three seconds');
 
     const appended = tool(session, 'profile_preferences_set', { level: 'workspace', text: '- Captions always', mode: 'append' });
-    await client.request('approvals.respond', { approvalId: (await asked('profile_preferences_set')).approvalId, decision: 'allow' });
-    expect((await appended).body).toMatchObject({ level: 'workspace', text: '- Hooks under three seconds\n- Captions always', approval: { risk: 'high', decidedBy: 'user' } });
+    const appendAsked = await asked('profile_preferences_set');
+    // A save made while the approval is open is kept: the append is built from the text as it is when it is written.
+    await client.request('profile.setPreferences', { own: '- Hooks under three seconds\n- Music low' });
+    await client.request('approvals.respond', { approvalId: appendAsked.approvalId, decision: 'allow' });
+    expect((await appended).body).toMatchObject({
+      level: 'workspace',
+      text: '- Hooks under three seconds\n- Music low\n- Captions always',
+      approval: { risk: 'high', decidedBy: 'user' },
+    });
 
     const saved = tool(session, 'profile_rules_save', { level: 'project', rule: { name: 'Outro', when: 'the video ends', instruction: 'Add the subscribe card.' } });
     await client.request('approvals.respond', { approvalId: (await asked('profile_rules_save')).approvalId, decision: 'allow' });
@@ -401,7 +408,7 @@ describe('登记类工具', () => {
     const { url, token } = await openMcp();
     const viaService = await mcpCall(url, token, 'profile_show', {});
     expect(viaService.isError).toBe(false);
-    expect(viaService.body.preferences).toEqual({ general: '- Hooks under three seconds\n- Captions always', interviewSection: '', project: null });
+    expect(viaService.body.preferences).toEqual({ general: '- Hooks under three seconds\n- Music low\n- Captions always', interviewSection: '', project: null });
     expect((await mcpCall(url, token, 'profile_answer', { answers: { who: 'x' } })).isError).toBe(true);
     expect((await client.request('profile.get', {})).interview.answers).toEqual({ who: 'Coding tutorials' });
 

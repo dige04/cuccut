@@ -204,4 +204,24 @@ describe('project level', () => {
     refreshProjectProfile(session, 'p1');
     expect(calls).toHaveLength(3);
   });
+
+  it('a change announced while a fetch is in flight fetches again and drops the older answer', async () => {
+    const before: ProjectProfile = { projectId: 'p1', preferences: 'old', rules: [], readOnly: false };
+    const after: ProjectProfile = { ...before, preferences: 'new' };
+    const answers: ((profile: ProjectProfile) => void)[] = [];
+    const { session, calls } = fakeSession(() => new Promise<ProjectProfile>((resolve) => answers.push(resolve)));
+    const loaded = loadProjectProfile(session, 'p1');
+    await Promise.resolve();
+    expect(calls).toHaveLength(1);
+    // The agent saves while the first request is out: its answer may predate the change.
+    refreshProjectProfile(session, 'p1');
+    expect(calls).toHaveLength(1);
+    answers[0]!(before);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(calls).toHaveLength(2);
+    expect(useProfile.getState().projects.p1?.profile).toBeNull();
+    answers[1]!(after);
+    await loaded;
+    expect(useProfile.getState().projects.p1).toMatchObject({ status: 'ready', profile: after });
+  });
 });

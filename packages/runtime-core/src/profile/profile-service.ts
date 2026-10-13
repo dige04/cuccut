@@ -73,6 +73,23 @@ export interface ProfileWriteOutcome {
   usedAgent: boolean;
 }
 
+/** Preferences that would be longer than `PROFILE_LIMITS.preferences` (`appendPreferences`). */
+export class ProfileTooLongError extends Error {
+  readonly length: number;
+  readonly limit = PROFILE_LIMITS.preferences;
+
+  constructor(length: number) {
+    super(`The preferences would be ${length} characters, over the ${PROFILE_LIMITS.preferences} limit`);
+    this.name = 'ProfileTooLongError';
+    this.length = length;
+  }
+}
+
+/** `added` (trimmed) on the lines after `current`. */
+export function appendedPreferences(current: string, added: string): string {
+  return [current.trimEnd(), added.trim()].filter(Boolean).join('\n');
+}
+
 export class ProfileService {
   readonly topic: TopicLog<ProfileSnapshot, ProfileEvent>;
   readonly #store: ProfileStore;
@@ -116,13 +133,7 @@ export class ProfileService {
   /** Merges answers over the saved ones: a given question replaces its answer, a blank one clears it. The status does not change. */
   async saveAnswers(answers: InterviewAnswers): Promise<InterviewState> {
     const next = await this.#update((profile) => {
-      for (const id of INTERVIEW_QUESTIONS) {
-        const value = answers[id];
-        if (value === undefined) continue;
-        const clean = clipProfileText(value.trim(), PROFILE_LIMITS.answer);
-        if (clean) profile.interview.answers[id] = clean;
-        else delete profile.interview.answers[id];
-      }
+      mergeAnswers(profile.interview.answers, answers);
     });
     return interviewOf(next);
   }
@@ -158,13 +169,7 @@ export class ProfileService {
    */
   answersForWrite(given: InterviewAnswers = {}): InterviewAnswers {
     const answers: InterviewAnswers = { ...this.#store.get().interview.answers };
-    for (const id of INTERVIEW_QUESTIONS) {
-      const value = given[id];
-      if (value === undefined) continue;
-      const clean = clipProfileText(value.trim(), PROFILE_LIMITS.answer);
-      if (clean) answers[id] = clean;
-      else delete answers[id];
-    }
+    mergeAnswers(answers, given);
     const ordered: InterviewAnswers = {};
     for (const id of INTERVIEW_QUESTIONS) if (answers[id]) ordered[id] = answers[id];
     if (Object.keys(ordered).length === 0) throw new RpcError('invalid-request', RcProfile.noAnswers(), { code: 'PROFILE_NO_ANSWERS' });
@@ -172,10 +177,11 @@ export class ProfileService {
   }
 
   /**
-   * Applies a finished write from the answers, in one write: the answers it used are saved, the interview's section is replaced, the status becomes
-   * `done`, and the names are merged into the interview's glossary (created when there is none, or when the user removed it).
+   * Applies a finished write from the answers, in one write: the answers the write was given are merged over the ones saved now (answers saved while
+   * the agent ran are kept), the interview's section is replaced, the status becomes `done`, and the names are merged into the interview's glossary
+   * (created when there is none, or when the user removed it).
    */
-  async completeWrite(answers: InterviewAnswers, outcome: ProfileWriteOutcome): Promise<{ snapshot: ProfileSnapshot; namesAdded: string[] }> {
+  async completeWrite(given: InterviewAnswers, outcome: ProfileWriteOutcome): Promise<{ snapshot: ProfileSnapshot; namesAdded: string[] }> {
     this.assertWritable();
     const names = await syncInterviewNames(this.#options.library, {
       glossaryId: this.#store.get().interview.namesGlossaryId,
@@ -183,7 +189,7 @@ export class ProfileService {
       glossaryName: RcProfile.namesGlossaryName().text,
     });
     const next = await this.#update((profile) => {
-      profile.interview.answers = { ...answers };
+      mergeAnswers(profile.interview.answers, given);
       profile.preferences.interview = clipProfileText(outcome.preferences.trim(), PROFILE_LIMITS.preferences);
       profile.interview.status = 'done';
       profile.interview.writtenAt = new Date().toISOString();
@@ -228,6 +234,28 @@ export class ProfileService {
     return this.#updateProject(projectId, (draft) => {
       draft.preferences = text;
     });
+  }
+
+  /**
+   * Adds lines after the user's own text (the workspace level) or a project's text, read inside the same write, so a save made in between (say, while
+   * an approval was open) is kept. Returns the new text. Over `PROFILE_LIMITS.preferences`: `ProfileTooLongError`, and nothing is written.
+   */
+  async appendPreferences(added: string, projectId?: Id): Promise<string> {
+    const append = (current: string): string => {
+      const text = appendedPreferences(current, added);
+      if (text.length > PROFILE_LIMITS.preferences) throw new ProfileTooLongError(text.length);
+      return text;
+    };
+    if (projectId === undefined) {
+      const next = await this.#update((profile) => {
+        profile.preferences.own = append(profile.preferences.own);
+      });
+      return next.preferences.own;
+    }
+    const project = await this.#updateProject(projectId, (draft) => {
+      draft.preferences = append(draft.preferences);
+    });
+    return project.preferences;
   }
 
   // ---- Rules ----
@@ -388,6 +416,17 @@ export class ProfileService {
     const project = this.#options.projects().find((p) => p.id === projectId);
     if (!project) throw new RpcError('not-found', RcProfile.projectNotFound(), { code: 'PROFILE_PROJECT_NOT_FOUND', projectId });
     return project.path;
+  }
+}
+
+/** Merges `given` into `answers` in place: a given question replaces its answer (trimmed and clipped), a blank one clears it. */
+function mergeAnswers(answers: InterviewAnswers, given: InterviewAnswers): void {
+  for (const id of INTERVIEW_QUESTIONS) {
+    const value = given[id];
+    if (value === undefined) continue;
+    const clean = clipProfileText(value.trim(), PROFILE_LIMITS.answer);
+    if (clean) answers[id] = clean;
+    else delete answers[id];
   }
 }
 

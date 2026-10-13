@@ -211,6 +211,21 @@ describe('ProfileWriter', () => {
     expect(writingEvents().at(-1)).toBeNull();
   });
 
+  it('keeps answers saved while the agent runs (only the answers the write was given are put back)', async () => {
+    driver.script = async (turn) => {
+      await profile.saveAnswers({ names: 'Deska, Next.js, Pasho', record: 'Screen and webcam' });
+      await writeOutput(turn.cwd, GOOD);
+      turn.finish();
+    };
+    await profile.writeFromAnswers({ platforms: 'YouTube Shorts' });
+    expect(profile.snapshot().interview.answers).toEqual({
+      who: 'Tutorials for junior devs',
+      record: 'Screen and webcam',
+      platforms: 'YouTube Shorts',
+      names: 'Deska, Next.js, Pasho',
+    });
+  });
+
   it('starts the turn without an output file, so a run that writes nothing cannot pass', async () => {
     driver.script = (turn) => turn.finish();
     const result = await profile.writeFromAnswers();

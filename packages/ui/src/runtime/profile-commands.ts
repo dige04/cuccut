@@ -133,27 +133,51 @@ export async function reorderRules(session: Session, ids: string[], projectId?: 
 
 // ---- Project level ----
 
-const loading = new Map<Id, Promise<void>>();
+/** A fetch in flight for a project; `again`: the project changed after it was sent, so its answer may be old and it fetches once more. */
+interface ProjectLoad {
+  promise: Promise<void>;
+  again: boolean;
+}
 
-/** Fetches a project's own level once; a second call while one is in flight shares it. The last profile keeps showing while it loads. */
-export function loadProjectProfile(session: Session, projectId: Id): Promise<void> {
+const loading = new Map<Id, ProjectLoad>();
+
+/**
+ * Fetches a project's own level once; a second call while one is in flight shares it. With `fresh` (the project changed), a fetch in flight is
+ * followed by another one and its answer is dropped, since the Runtime may have read the file before the change. The last profile keeps showing
+ * while it loads.
+ */
+export function loadProjectProfile(session: Session, projectId: Id, options: { fresh?: boolean } = {}): Promise<void> {
   const pending = loading.get(projectId);
-  if (pending) return pending;
+  if (pending) {
+    if (options.fresh) pending.again = true;
+    return pending.promise;
+  }
   useProfile.getState().projectLoading(projectId);
-  const request = session.client
-    .request('profile.getProject', { projectId })
-    .then(
-      (profile) => useProfile.getState().projectLoaded(profile),
-      (error: Error) => useProfile.getState().projectFailed(projectId, error.message),
-    )
-    .finally(() => loading.delete(projectId));
-  loading.set(projectId, request);
-  return request;
+  const load: ProjectLoad = { promise: Promise.resolve(), again: false };
+  const run = async (): Promise<void> => {
+    for (;;) {
+      load.again = false;
+      let profile: ProjectProfile;
+      try {
+        profile = await session.client.request('profile.getProject', { projectId });
+      } catch (error) {
+        if (load.again) continue;
+        useProfile.getState().projectFailed(projectId, (error as Error).message);
+        return;
+      }
+      if (load.again) continue;
+      useProfile.getState().projectLoaded(profile);
+      return;
+    }
+  };
+  load.promise = run().finally(() => loading.delete(projectId));
+  loading.set(projectId, load);
+  return load.promise;
 }
 
 /** `profile.projectUpdated`: fetches the project again, but only one a screen has asked for. */
 export function refreshProjectProfile(session: Session, projectId: Id): void {
-  if (useProfile.getState().projects[projectId]) void loadProjectProfile(session, projectId);
+  if (useProfile.getState().projects[projectId]) void loadProjectProfile(session, projectId, { fresh: true });
 }
 
 /** For tests: clear in-flight requests. */

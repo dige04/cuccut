@@ -1,6 +1,7 @@
 import { forwardRef, useState, type ReactNode } from 'react';
 import { ToastQueue } from '@react-spectrum/s2';
 import { cn } from 'cn';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../cc/ui/select.tsx';
 import { Skeleton } from '../../cc/ui/skeleton.tsx';
 import { useRuntime } from '../../runtime/context.tsx';
 import { useConnection } from '../../state/connection-store.ts';
@@ -10,7 +11,7 @@ import { PROFILE_COPY } from './profile-copy.ts';
 
 /*
  * Pieces the profile screens share (Settings › You, Settings › Rules, the rule form): why a control is off, an error line, an empty card, the
- * loading skeleton, a recessed native select and the Undo toast. They sit under a `data-cc` root.
+ * loading skeleton, a select and the Undo toast. They sit under a `data-cc` root.
  */
 
 /**
@@ -73,9 +74,34 @@ export function ProfileSkeleton({ label, panels = 2 }: { label: string; panels?:
   );
 }
 
-/** The recessed field look of `Input`, for a native `<select>` (the platform list is keyboard- and screen-reader-complete). */
-export const SELECT_FIELD =
-  'h-9 w-full min-w-0 rounded-xl border border-border bg-black/15 px-2 text-base text-foreground shadow-(--field-shadow) transition-[border-color,box-shadow] duration-150 outline-none hover:border-white/25 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none md:text-sm [&>option]:bg-popover [&>option]:text-popover-foreground';
+/**
+ * A choice from a short list, on the shared `Select` primitive (AGENTCUT-DESIGN "No raw browser controls"): a recessed trigger and a glass list.
+ * The trigger is a native button, so `<Label htmlFor={id}>` names it and a disabled `<fieldset>` turns it off.
+ */
+export function ProfileSelect<T extends string>({ id, value, options, disabled, onChange }: {
+  id: string;
+  value: T;
+  options: readonly { value: T; label: string }[];
+  disabled?: boolean;
+  onChange(value: T): void;
+}) {
+  const label = (v: unknown) => options.find((o) => o.value === v)?.label ?? String(v ?? '');
+  return (
+    <Select<T> value={value} disabled={disabled} onValueChange={(next) => (next === null ? undefined : onChange(next))}>
+      <SelectTrigger id={id} className="w-full min-w-0 text-start">
+        <SelectValue className="min-w-0 truncate">{label}</SelectValue>
+      </SelectTrigger>
+      {/* The list is portalled out of the page: it carries its own data-cc for the scoped preflight. */}
+      <SelectContent data-cc="">
+        {options.map((option) => (
+          <SelectItem key={option.value} value={option.value}>
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
 
 /** A change that already happened, with Undo (CLAUDE.md rule 1: destructive actions act and offer Undo). A failed undo says so. */
 export function undoToast(text: string, undo: () => Promise<unknown>): void {

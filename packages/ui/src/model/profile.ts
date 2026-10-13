@@ -235,12 +235,12 @@ function orderOf(text: string): number | null | undefined {
 }
 
 /**
- * Why "Save rule" is off, or null when the draft can be saved: a name, a condition, and an instruction or a template. The Runtime checks the same
+ * Why "Save rule" is off, or null when the draft can be saved: a condition, a name, and an instruction or a template (asked in the order of the form). The Runtime checks the same
  * and more (`PROFILE_RULE_INVALID`); this only keeps the button honest.
  */
 export function ruleDraftErrors(draft: RuleDraft): string | null {
-  if (!draft.name.trim()) return RULES_COPY.form.needName;
   if (!draft.when.trim()) return RULES_COPY.form.needWhen;
+  if (!draft.name.trim()) return RULES_COPY.form.needName;
   if (!draft.instruction.trim() && !draft.templateId.trim()) return RULES_COPY.form.needAction;
   if (orderOf(draft.order) === null) return RULES_COPY.form.badOrder;
   return null;

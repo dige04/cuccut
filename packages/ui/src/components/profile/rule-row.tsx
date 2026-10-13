@@ -64,11 +64,12 @@ export function RuleRow({ rule, index, count, templates, lock, busy, onMove, onT
   const off = !!lock || busy;
   return (
     <li className={cn(PANEL, 'flex flex-col gap-3 px-5 py-3.5')}>
-      <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
+      {/* The move buttons keep their corner at any width; the text wraps beside them instead of pushing them onto a line of their own. */}
+      <div className="flex items-start gap-3">
         <span aria-hidden className="mt-0.5 w-5 shrink-0 text-end font-mono text-xs text-muted-foreground tabular-nums">
           {index + 1}
         </span>
-        <div className="min-w-0 flex-1 basis-60">
+        <div className="min-w-0 flex-1">
           <p className="m-0 flex flex-wrap items-center gap-2">
             <span className={cn('text-sm font-medium [overflow-wrap:anywhere]', rule.enabled ? 'text-foreground' : 'text-muted-foreground')}>{rule.name}</span>
             <Badge variant="secondary">{stageLabel(rule.stage)}</Badge>

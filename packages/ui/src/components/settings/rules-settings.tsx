@@ -56,7 +56,7 @@ export function RulesSettings({ title }: { title: string }) {
   }
 
   const create = (
-    <Button type="button" disabled={!!lock} title={lock ?? undefined} onClick={() => setEditing({ rule: null })}>
+    <Button type="button" size="sm" disabled={!!lock} title={lock ?? undefined} onClick={() => setEditing({ rule: null })}>
       <Plus aria-hidden />
       {C().create}
     </Button>

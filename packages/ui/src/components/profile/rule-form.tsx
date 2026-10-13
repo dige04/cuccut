@@ -19,7 +19,7 @@ import {
   type RuleTemplateOption,
 } from '../../model/profile.ts';
 import { PANEL } from '../settings/settings-ui.tsx';
-import { ErrorLine, LockNote, SELECT_FIELD, errorText } from './profile-parts.tsx';
+import { ErrorLine, LockNote, ProfileSelect, errorText } from './profile-parts.tsx';
 import { RuleEffectList } from './rule-row.tsx';
 import { RULES_COPY } from './rules-copy.ts';
 
@@ -98,6 +98,7 @@ export function RuleForm({ initial, templates, lock, projectLevel = false, onSav
   };
 
   const field = (name: string) => `${id}-${name}`;
+  const showLevel = projectLevel && isNew && !stored;
   const whyId = field('why');
 
   return (
@@ -160,26 +161,29 @@ export function RuleForm({ initial, templates, lock, projectLevel = false, onSav
                 onChange={(event) => change({ name: event.target.value })}
               />
             </FieldBlock>
-            <div className="grid gap-4 @xl:grid-cols-2">
+            {/* Side by side only when there are two: alone, the stage field is as wide as the fields around it. */}
+            <div className={cn('grid gap-4', showLevel && '@xl:grid-cols-2')}>
               <FieldBlock id={field('stage')} label={C().stage}>
-                <select
+                <ProfileSelect
                   id={field('stage')}
-                  className={SELECT_FIELD}
                   value={draft.stage}
-                  onChange={(event) => change({ stage: event.target.value as RuleDraft['stage'] })}>
-                  {RULE_STAGES.map((stage) => (
-                    <option key={stage} value={stage}>
-                      {stageLabel(stage)}
-                    </option>
-                  ))}
-                </select>
+                  disabled={busy || !!lock}
+                  options={RULE_STAGES.map((stage) => ({ value: stage, label: stageLabel(stage) }))}
+                  onChange={(stage) => change({ stage })}
+                />
               </FieldBlock>
-              {projectLevel && isNew && !stored ? (
+              {showLevel ? (
                 <FieldBlock id={field('level')} label={C().level}>
-                  <select id={field('level')} className={SELECT_FIELD} value={level} onChange={(event) => setLevel(event.target.value as RuleLevel)}>
-                    <option value="project">{C().levelProject}</option>
-                    <option value="workspace">{C().levelWorkspace}</option>
-                  </select>
+                  <ProfileSelect<RuleLevel>
+                    id={field('level')}
+                    value={level}
+                    disabled={busy || !!lock}
+                    options={[
+                      { value: 'project', label: C().levelProject },
+                      { value: 'workspace', label: C().levelWorkspace },
+                    ]}
+                    onChange={setLevel}
+                  />
                 </FieldBlock>
               ) : null}
             </div>
@@ -194,15 +198,17 @@ export function RuleForm({ initial, templates, lock, projectLevel = false, onSav
               />
             </FieldBlock>
             <FieldBlock id={field('template')} label={C().template}>
-              <select id={field('template')} className={SELECT_FIELD} value={draft.templateId} onChange={(event) => change({ templateId: event.target.value })}>
-                <option value="">{C().noTemplate}</option>
-                {installed ? null : <option value={draft.templateId}>{C().notInstalled(draft.templateId)}</option>}
-                {templates.map((template) => (
-                  <option key={template.id} value={template.id}>
-                    {template.title}
-                  </option>
-                ))}
-              </select>
+              <ProfileSelect
+                id={field('template')}
+                value={draft.templateId}
+                disabled={busy || !!lock}
+                options={[
+                  { value: '', label: C().noTemplate },
+                  ...(installed ? [] : [{ value: draft.templateId, label: C().notInstalled(draft.templateId) }]),
+                  ...templates.map((template) => ({ value: template.id, label: template.title })),
+                ]}
+                onChange={(templateId) => change({ templateId })}
+              />
             </FieldBlock>
             <Disclosure variant="plain" summary={C().more} summaryClassName="-ms-2" contentClassName="flex flex-col gap-4">
               <FieldBlock id={field('note')} label={C().note} help={C().noteHelp}>

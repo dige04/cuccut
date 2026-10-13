@@ -194,8 +194,9 @@ describe('rules', () => {
   it('says why a draft can’t be saved yet', () => {
     const empty = ruleDraft(null);
     expect(empty).toMatchObject({ id: null, stage: 'any', enabled: true, order: '' });
-    expect(ruleDraftErrors(empty)).toBe(RULES_COPY.form.needName);
-    expect(ruleDraftErrors({ ...empty, name: 'n' })).toBe(RULES_COPY.form.needWhen);
+    // In the order of the form: the condition comes first, then the name.
+    expect(ruleDraftErrors(empty)).toBe(RULES_COPY.form.needWhen);
+    expect(ruleDraftErrors({ ...empty, when: 'w' })).toBe(RULES_COPY.form.needName);
     expect(ruleDraftErrors({ ...empty, name: 'n', when: 'w' })).toBe(RULES_COPY.form.needAction);
     expect(ruleDraftErrors({ ...empty, name: 'n', when: 'w', templateId: 'launch-film' })).toBeNull();
     expect(ruleDraftErrors({ ...empty, name: 'n', when: 'w', instruction: 'i', order: '1.5' })).toBe(RULES_COPY.form.badOrder);

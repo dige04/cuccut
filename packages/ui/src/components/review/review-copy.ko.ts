@@ -26,6 +26,7 @@ export const ko: ReviewMessages = {
   },
   readFrom: (fromExport: boolean, answers: boolean) =>
     `프로젝트${fromExport ? '과 마지막 내보내기' : ''}${answers ? '과 답변에서 읽음' : '에서 읽음'}.`,
+  letStandCount: (n: number) => (n === 1 ? '1 finding is let stand with a reason.' : `${n} findings are let stand with a reason.`),
   staleProject: '검사한 이후 영상이 변경되었습니다.',
   staleExport: (revision: string) => `마지막 내보내기는 버전 ${revision}에서 만들어졌으며, 그 이후 영상이 변경되었습니다.`,
   staleAnswers: '답변은 마지막 변경 전에 작성되었습니다.',

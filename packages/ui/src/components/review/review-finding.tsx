@@ -18,7 +18,7 @@ import { REVIEW_COPY as C } from './review-copy.ts';
 
 const MARK: Record<ReviewSeverity, string> = {
   critical: 'text-destructive',
-  suggestion: 'text-amber-400',
+  suggestion: 'text-orange-400',
   nitpick: 'text-muted-foreground',
 };
 
@@ -134,7 +134,7 @@ export function ReviewFindingCard({
                 autoFocus
                 rows={2}
                 value={reason}
-                placeholder={form.kind === 'waive' ? C.reasonPlaceholder : label}
+                placeholder={form.kind === 'waive' ? C.reasonPlaceholder : undefined}
                 aria-describedby={reason.trim() ? undefined : hintId}
                 onChange={(event) => setReason(event.target.value)}
                 className="min-h-14 text-sm"

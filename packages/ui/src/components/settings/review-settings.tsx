@@ -227,17 +227,17 @@ function GatePanel({ web }: { web: boolean }) {
   );
 }
 
-/** Lint's warnings: amber, above the rows, one sentence each. They never stop a save; errors do, and arrive as the alert. */
+/** Lint's warnings: orange (the warning hue; amber reads as the accent), above the rows, one sentence each. They never stop a save; errors do, and arrive as the alert. */
 function LintList({ issues }: { issues: ReviewLintIssue[] }) {
   return (
-    <section aria-label={T.lintTitle} className="rounded-3xl bg-card px-5 py-3 ring-1 ring-amber-400/25">
+    <section aria-label={T.lintTitle} className="rounded-3xl bg-card px-5 py-3 ring-1 ring-orange-400/25">
       <h3 className="flex items-center gap-2 text-sm font-medium text-foreground">
-        <TriangleAlert aria-hidden className="size-4 shrink-0 text-amber-400" />
+        <TriangleAlert aria-hidden className="size-4 shrink-0 text-orange-400" />
         {T.lintTitle}
       </h3>
-      <ul className="mt-1.5 flex list-disc flex-col gap-1 pl-10 marker:text-amber-400">
+      <ul className="mt-1.5 flex list-disc flex-col gap-1 pl-10 marker:text-orange-400">
         {issues.map((issue, i) => (
-          <li key={`${issue.code}:${issue.id ?? ''}:${i}`} role="status" className="text-xs leading-relaxed text-amber-100/90">
+          <li key={`${issue.code}:${issue.id ?? ''}:${i}`} role="status" className="text-xs leading-relaxed text-foreground/85">
             {lintText(issue)}
           </li>
         ))}
@@ -271,7 +271,7 @@ function WorthSelect({
       onValueChange={(next) => {
         if (typeof next === 'string' && (SEVERITY_ORDER as readonly string[]).includes(next) && next !== value) onChange(next as ReviewSeverity);
       }}>
-      <SelectTrigger id={id} size={size} aria-label={label} className={size === 'sm' ? 'w-auto text-xs' : 'w-full'}>
+      <SelectTrigger id={id} size={size} aria-label={label} className={size === 'sm' ? 'w-32 text-xs' : 'w-full'}>
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
@@ -348,6 +348,9 @@ function ChecksPanel({
               )}
               {editable && !row.builtin ? (
                 <RemoveButton name={name} busy={busy === `remove:${row.check.id}`} disabled={busy !== null} onPress={() => onRemove(row.check)} />
+              ) : editable ? (
+                // A built-in row has nothing to remove: keep its severity in the same column as the rows above it.
+                <span aria-hidden className="size-8 shrink-0" />
               ) : null}
             </Row>
           );

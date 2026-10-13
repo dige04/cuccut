@@ -31,7 +31,7 @@ import { REVIEW_COPY as C } from './review-copy.ts';
 
 const VERDICT_ICON: Record<ReviewVerdict, ReactNode> = {
   passed: <CircleCheck aria-hidden className="mt-0.5 size-4 shrink-0 text-emerald-400" />,
-  'passed-with-findings': <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-amber-400" />,
+  'passed-with-findings': <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-orange-400" />,
   failed: <CircleX aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />,
   'not-reviewed': <CircleHelp aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />,
 };
@@ -283,9 +283,11 @@ function ReviewOutcome({
           {VERDICT_ICON[result.verdict]}
           <div className="flex min-w-0 flex-col gap-1">
             <p className="text-sm text-foreground">{VERDICT_TEXT(result.verdict)}</p>
+            {/* A verdict that holds with findings let stand says so: "it holds" alone would read as nothing was found. */}
+            {groups.waived.length ? <p className="text-xs text-foreground/85">{C.letStandCount(groups.waived.length)}</p> : null}
             <p className="text-xs text-muted-foreground">{C.readFrom(result.stages.includes('export'), result.stages.includes('rubric'))}</p>
             {notes.map((note) => (
-              <p key={note} className="text-xs text-amber-300">
+              <p key={note} className="text-xs text-orange-300">
                 {note}
               </p>
             ))}

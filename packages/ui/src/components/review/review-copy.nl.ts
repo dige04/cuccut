@@ -28,6 +28,7 @@ export const nl: ReviewMessages = {
   },
   readFrom: (fromExport: boolean, answers: boolean) =>
     `Gelezen uit het project${fromExport ? (answers ? ', de laatste export' : ' en de laatste export') : ''}${answers ? ' en de antwoorden' : ''}.`,
+  letStandCount: (n: number) => (n === 1 ? '1 finding is let stand with a reason.' : `${n} findings are let stand with a reason.`),
   staleProject: 'De video is veranderd sinds de controle.',
   staleExport: (revision: string) => `De laatste export is gemaakt van versie ${revision}; de video is daarna veranderd.`,
   staleAnswers: 'De antwoorden zijn gegeven vóór de laatste wijziging.',

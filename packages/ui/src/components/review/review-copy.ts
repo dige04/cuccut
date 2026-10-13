@@ -46,6 +46,7 @@ const en = {
   },
   readFrom: (fromExport: boolean, answers: boolean) =>
     `Read from the project${fromExport ? (answers ? ', the last export' : ' and the last export') : ''}${answers ? ' and the answers' : ''}.`,
+  letStandCount: (n: number) => (n === 1 ? '1 finding is let stand with a reason.' : `${n} findings are let stand with a reason.`),
   staleProject: 'The video has changed since it was checked.',
   staleExport: (revision: string) => `The last export was made from version ${revision}; the video has changed since.`,
   staleAnswers: 'The answers were given before the last change.',
@@ -67,7 +68,7 @@ const en = {
   lowered: (from: string, reason: string) => (reason ? `Lowered from ${from}: ${reason}` : `Lowered from ${from}`),
   letStand: 'Let it stand…',
   reasonLabel: 'Why this one is allowed',
-  reasonPlaceholder: 'Why this one is allowed',
+  reasonPlaceholder: 'For example: the client drops their logo into this box.',
   reasonNeeded: 'Write why before saving.',
   save: 'Save',
   cancel: 'Cancel',

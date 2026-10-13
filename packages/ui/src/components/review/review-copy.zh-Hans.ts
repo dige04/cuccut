@@ -28,6 +28,7 @@ export const zhHans: ReviewMessages = {
   },
   readFrom: (fromExport: boolean, answers: boolean) =>
     `读取自项目${fromExport ? (answers ? '、最近一次导出' : ' 和最近一次导出') : ''}${answers ? ' 以及回答' : ''}。`,
+  letStandCount: (n: number) => (n === 1 ? '1 finding is let stand with a reason.' : `${n} findings are let stand with a reason.`),
   staleProject: '自检查以来视频已有改动。',
   staleExport: (revision: string) => `最近一次导出基于版本 ${revision} 制作；此后视频已有改动。`,
   staleAnswers: '这些回答是在最近一次改动之前给出的。',

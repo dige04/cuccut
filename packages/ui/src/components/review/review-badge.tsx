@@ -14,7 +14,7 @@ import { REVIEW_COPY as C } from './review-copy.ts';
 
 const ICON: Record<BadgeKind, ReactNode> = {
   passed: <CircleCheck aria-hidden className="text-emerald-400" />,
-  findings: <CircleAlert aria-hidden className="text-amber-400" />,
+  findings: <CircleAlert aria-hidden className="text-orange-400" />,
   failed: <CircleX aria-hidden className="text-destructive" />,
   notReviewed: <CircleHelp aria-hidden className="text-muted-foreground" />,
 };

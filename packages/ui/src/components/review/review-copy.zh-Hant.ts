@@ -28,6 +28,7 @@ export const zhHant: ReviewMessages = {
   },
   readFrom: (fromExport: boolean, answers: boolean) =>
     `讀取自專案${fromExport ? (answers ? '、上次匯出' : '和上次匯出') : ''}${answers ? '與回答' : ''}。`,
+  letStandCount: (n: number) => (n === 1 ? '1 finding is let stand with a reason.' : `${n} findings are let stand with a reason.`),
   staleProject: '影片在檢查後已有變動。',
   staleExport: (revision: string) => `上次匯出是由版本 ${revision} 製作的；之後影片已有變動。`,
   staleAnswers: '回答是在最後一次變動之前給出的。',

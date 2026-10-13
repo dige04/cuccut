@@ -26,6 +26,7 @@ export const ja: ReviewMessages = {
   },
   readFrom: (fromExport: boolean, answers: boolean) =>
     `プロジェクト${fromExport ? '、前回の書き出し' : ''}${answers ? 'と回答から読み取り' : 'から読み取り'}。`,
+  letStandCount: (n: number) => (n === 1 ? '1 finding is let stand with a reason.' : `${n} findings are let stand with a reason.`),
   staleProject: 'チェック後に動画が変更されています。',
   staleExport: (revision: string) => `前回の書き出しはバージョン ${revision} から作成されました。それ以降に動画が変更されています。`,
   staleAnswers: '回答は最後の変更の前に行われました。',

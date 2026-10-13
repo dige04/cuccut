@@ -28,6 +28,7 @@ export const vi: ReviewMessages = {
   },
   readFrom: (fromExport: boolean, answers: boolean) =>
     `Đọc từ dự án${fromExport ? (answers ? ', bản xuất gần nhất' : ' và bản xuất gần nhất') : ''}${answers ? ' và các câu trả lời' : ''}.`,
+  letStandCount: (n: number) => `${n} điểm được chấp nhận giữ nguyên kèm lý do.`,
   staleProject: 'Video đã thay đổi kể từ lần kiểm gần nhất.',
   staleExport: (revision: string) => `Bản xuất gần nhất được tạo từ phiên bản ${revision}; video đã thay đổi từ đó.`,
   staleAnswers: 'Các câu trả lời được đưa ra trước thay đổi gần nhất.',
@@ -49,7 +50,7 @@ export const vi: ReviewMessages = {
   lowered: (from: string, reason: string) => (reason ? `Hạ từ ${from} xuống: ${reason}` : `Hạ từ ${from} xuống`),
   letStand: 'Chấp nhận giữ nguyên…',
   reasonLabel: 'Vì sao được phép giữ nguyên',
-  reasonPlaceholder: 'Vì sao được phép giữ nguyên',
+  reasonPlaceholder: 'Ví dụ: khách hàng sẽ tự chèn logo vào ô này.',
   reasonNeeded: 'Hãy ghi lý do trước khi lưu.',
   save: 'Lưu',
   cancel: 'Hủy',

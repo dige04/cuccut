@@ -27,12 +27,14 @@ export const ko: WorkspaceMessages = {
   preferencesSummary: (written, answers) =>
     written
       ? answers === 0
-        ? 'Preferences written'
-        : `Preferences written, ${answers === 1 ? '1 answer' : `${answers} answers`}`
-      : answers === 0
-        ? 'No preferences yet'
+        ? '환경설정 작성됨'
         : answers === 1
-          ? '1 answer'
-          : `${answers} answers`,
-  ruleCount: (n, off) => (n === 0 ? 'None yet' : `${n === 1 ? '1 rule' : `${n} rules`}${off ? `, ${off} off` : ''}`),
+          ? '환경설정 작성됨, 답변 1개'
+          : `환경설정 작성됨, 답변 ${answers}개`
+      : answers === 0
+        ? '아직 환경설정 없음'
+        : answers === 1
+          ? '답변 1개'
+          : `답변 ${answers}개`,
+  ruleCount: (n, off) => (n === 0 ? '아직 없음' : `${n === 1 ? '규칙 1개' : `규칙 ${n}개`}${off ? `, 꺼짐 ${off}개` : ''}`),
 };

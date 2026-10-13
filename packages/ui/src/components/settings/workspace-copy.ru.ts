@@ -29,12 +29,14 @@ export const ru: WorkspaceMessages = {
   preferencesSummary: (written, answers) =>
     written
       ? answers === 0
-        ? 'Preferences written'
-        : `Preferences written, ${answers === 1 ? '1 answer' : `${answers} answers`}`
-      : answers === 0
-        ? 'No preferences yet'
+        ? 'Настройки записаны'
         : answers === 1
-          ? '1 answer'
-          : `${answers} answers`,
-  ruleCount: (n, off) => (n === 0 ? 'None yet' : `${n === 1 ? '1 rule' : `${n} rules`}${off ? `, ${off} off` : ''}`),
+          ? 'Настройки записаны, 1 ответ'
+          : `Настройки записаны, ${answers} ответов`
+      : answers === 0
+        ? 'Настроек пока нет'
+        : answers === 1
+          ? '1 ответ'
+          : `${answers} ответов`,
+  ruleCount: (n, off) => (n === 0 ? 'Пока нет' : `${n === 1 ? '1 правило' : `${n} правил`}${off ? `, выключено: ${off}` : ''}`),
 };

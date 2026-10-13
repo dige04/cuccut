@@ -27,12 +27,14 @@ export const ptBR: WorkspaceMessages = {
   preferencesSummary: (written, answers) =>
     written
       ? answers === 0
-        ? 'Preferences written'
-        : `Preferences written, ${answers === 1 ? '1 answer' : `${answers} answers`}`
-      : answers === 0
-        ? 'No preferences yet'
+        ? 'Preferências escritas'
         : answers === 1
-          ? '1 answer'
-          : `${answers} answers`,
-  ruleCount: (n, off) => (n === 0 ? 'None yet' : `${n === 1 ? '1 rule' : `${n} rules`}${off ? `, ${off} off` : ''}`),
+          ? 'Preferências escritas, 1 resposta'
+          : `Preferências escritas, ${answers} respostas`
+      : answers === 0
+        ? 'Nenhuma preferência ainda'
+        : answers === 1
+          ? '1 resposta'
+          : `${answers} respostas`,
+  ruleCount: (n, off) => (n === 0 ? 'Nenhuma ainda' : `${n === 1 ? '1 regra' : `${n} regras`}${off ? `, ${off} desligadas` : ''}`),
 };

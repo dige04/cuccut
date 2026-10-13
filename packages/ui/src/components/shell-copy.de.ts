@@ -14,7 +14,7 @@ export const de: ShellMessages = {
     pin: "Anker",
     unpin: "Lösen",
     newSession: "Neue Sitzung",
-    newSessionInProject: "Neue Sitzung in diesem Projekt", rulesAndPreferences: 'Rules and preferences…',
+    newSessionInProject: "Neue Sitzung in diesem Projekt", rulesAndPreferences: 'Regeln und Einstellungen…',
     working: "Verarbeitung",
     loading: "Wird geladen",
     loadingEllipsis: "Wird geladen…",

@@ -1,84 +1,83 @@
 import type { ProfileMessages } from './profile-copy.ts';
 
-/** English for now: the translation stage fills this file. */
 export const es: ProfileMessages = {
-  help: `Usage:
+  help: `Uso:
   cuccut profile show [--project <id>]
-                                   What CucCut knows about you: the interview, your preferences, your rules
-                                   and the names to spell; with a project (--project, or the project of the
-                                   current folder), also that project's preferences and rules
+                                   Lo que CucCut sabe de ti: la entrevista, tus preferencias, tus reglas
+                                   y los nombres que hay que escribir bien; con un proyecto (--project, o el proyecto
+                                   de la carpeta actual), también las preferencias y reglas de ese proyecto
   cuccut profile answers set <question> <text>
-                                   Save one interview answer (who, record, platforms, annoys, names);
-                                   an empty text clears it
+                                   Guardar una respuesta de la entrevista (who, record, platforms, annoys, names);
+                                   un texto vacío la borra
   cuccut profile interview skip|reopen|write
-                                   Skip the interview, open it again, or write your preferences from the
-                                   answers with your default agent (without one, the answers are kept as typed)
+                                   Omitir la entrevista, volver a abrirla, o escribir tus preferencias a partir de las
+                                   respuestas con tu agente predeterminado (sin agente, las respuestas se conservan tal como se escribieron)
   cuccut profile preferences [--project <id>] --file <md>
-                                   Replace your own preferences, or the project's, with a Markdown file
-                                   (--file - reads standard input); the section the interview wrote stays
+                                   Reemplazar tus preferencias, o las del proyecto, con un archivo Markdown
+                                   (--file - lee la entrada estándar); la sección escrita por la entrevista se mantiene
   cuccut profile rules list [--project <id>]
-                                   Your rules (or the project's) in the order they are read
+                                   Tus reglas (o las del proyecto) en el orden en que se leen
   cuccut profile rules enable|disable|remove <rule-id> [--project <id>]
   cuccut profile rules move <rule-id> up|down|<position> [--project <id>]
-                                   Rules are read in order; when two disagree, the later one wins
-Agents read the profile when a session starts; sessions already open keep what they had.`,
+                                   Las reglas se leen en orden; cuando dos se contradicen, gana la posterior
+Los agentes leen el perfil al empezar una sesión; las sesiones ya abiertas conservan lo que tenían.`,
 
   // Arguments
-  badQuestion: (value: string, ids: string) => `Not an interview question: ${value} (use one of ${ids})`,
-  needFile: 'Give the preferences as a Markdown file: --file <md>, or --file - for standard input',
-  badMove: (value: string) => `Move a rule up, down or to a position (1 is first): ${value}`,
-  ruleMissing: (id: string) => `No rule ${id} at this level (see cuccut profile rules list)`,
-  projectMissing: (id: string) => `No project ${id} (see cuccut projects list)`,
-  stdinPrompt: 'Type or paste the preferences, then press Ctrl-D:',
+  badQuestion: (value: string, ids: string) => `No es una pregunta de la entrevista: ${value} (usa una de: ${ids})`,
+  needFile: 'Indica las preferencias como archivo Markdown: --file <md>, o --file - para la entrada estándar',
+  badMove: (value: string) => `Mueve una regla arriba, abajo o a una posición (1 es la primera): ${value}`,
+  ruleMissing: (id: string) => `No hay ninguna regla ${id} en este nivel (consulta cuccut profile rules list)`,
+  projectMissing: (id: string) => `No hay ningún proyecto ${id} (consulta cuccut projects list)`,
+  stdinPrompt: 'Escribe o pega las preferencias y luego pulsa Ctrl-D:',
 
   // show
-  questionWho: 'What do you make, and who is it for?',
-  questionRecord: 'What do you usually record?',
-  questionPlatforms: 'Where does it go, and how long should it be?',
-  questionAnnoys: 'What annoys you about your videos today?',
-  questionNames: 'Names that must be spelled right',
-  interviewLine: (status: string, answered: number, total: number) => `Interview: ${status}, ${answered} of ${total} answered`,
-  statusPending: 'not taken yet',
-  statusSkipped: 'skipped',
-  statusDone: 'done',
+  questionWho: '¿Qué creas y para quién es?',
+  questionRecord: '¿Qué grabas normalmente?',
+  questionPlatforms: '¿Dónde se publica y cuánto debe durar?',
+  questionAnnoys: '¿Qué te molesta de tus vídeos actuales?',
+  questionNames: 'Nombres que deben escribirse bien',
+  interviewLine: (status: string, answered: number, total: number) => `Entrevista: ${status}, ${answered} de ${total} respondidas`,
+  statusPending: 'aún no realizada',
+  statusSkipped: 'omitida',
+  statusDone: 'completada',
   answerLine: (question: string, answer: string) => `  ${question}: ${answer}`,
   unanswered: '—',
-  generalHeading: 'Your preferences',
-  interviewHeading: 'What the interview wrote',
-  projectHeading: (name: string) => `Preferences for ${name}`,
-  noText: '  (none)',
-  rulesHeading: 'Rules',
-  projectRulesHeading: (name: string) => `Rules for ${name}`,
-  noRules: '  No rules yet',
-  namesLine: (names: string) => `Names to spell: ${names}`,
-  readOnly: 'The profile was saved by a newer version of CucCut: it is shown, but changes are refused',
+  generalHeading: 'Tus preferencias',
+  interviewHeading: 'Lo que escribió la entrevista',
+  projectHeading: (name: string) => `Preferencias de ${name}`,
+  noText: '  (ninguna)',
+  rulesHeading: 'Reglas',
+  projectRulesHeading: (name: string) => `Reglas de ${name}`,
+  noRules: '  Todavía no hay reglas',
+  namesLine: (names: string) => `Nombres que hay que escribir bien: ${names}`,
+  readOnly: 'El perfil lo guardó una versión más reciente de CucCut: se muestra, pero no se aceptan cambios',
 
   // Rules
-  ruleLine: (position: number, name: string, stage: string, off: boolean, id: string) => `${position}. ${name} [${stage}]${off ? ' (off)' : ''}  ${id}`,
-  ruleWhen: (when: string) => `   When: ${when}`,
-  ruleDo: (instruction: string) => `   Do: ${instruction}`,
-  ruleTemplate: (id: string) => `   Template: ${id}`,
-  stageAny: 'choosing and editing',
-  stageClip: 'choosing clips',
-  stageEdit: 'editing',
-  ruleEnabled: (name: string) => `Turned on: ${name}`,
-  ruleDisabled: (name: string) => `Turned off: ${name}`,
-  ruleRemoved: (name: string, id: string) => `Removed ${name} (${id})`,
-  ruleMoved: (name: string, position: number, total: number) => `Moved ${name} to ${position} of ${total}`,
+  ruleLine: (position: number, name: string, stage: string, off: boolean, id: string) => `${position}. ${name} [${stage}]${off ? ' (desactivada)' : ''}  ${id}`,
+  ruleWhen: (when: string) => `   Cuando: ${when}`,
+  ruleDo: (instruction: string) => `   Hacer: ${instruction}`,
+  ruleTemplate: (id: string) => `   Plantilla: ${id}`,
+  stageAny: 'elegir y editar',
+  stageClip: 'elegir clips',
+  stageEdit: 'editar',
+  ruleEnabled: (name: string) => `Activada: ${name}`,
+  ruleDisabled: (name: string) => `Desactivada: ${name}`,
+  ruleRemoved: (name: string, id: string) => `Eliminada ${name} (${id})`,
+  ruleMoved: (name: string, position: number, total: number) => `Movida ${name} a la posición ${position} de ${total}`,
 
   // Writes
-  answerSaved: (question: string) => `Saved the answer to "${question}"`,
-  answerCleared: (question: string) => `Cleared the answer to "${question}"`,
-  interviewSkipped: 'Skipped the interview; the answers are kept',
-  interviewReopened: 'The interview is open again, with the previous answers',
-  writing: 'Writing your preferences from the answers. This takes a moment…',
-  writtenByAgent: 'Preferences written from your answers:',
-  keptAsTyped: (reason: string) => `Your answers were kept as typed (${reason}):`,
-  reasonNoAgent: 'no agent is installed and signed in',
-  reasonAgentFailed: "the agent's run did not finish",
-  reasonBadOutput: "the agent's output was not usable",
-  namesAdded: (names: string) => `Names added to the glossary: ${names}`,
-  preferencesSaved: (chars: number) => `Saved your preferences (${chars} characters)`,
-  projectPreferencesSaved: (name: string, chars: number) => `Saved the preferences for ${name} (${chars} characters)`,
-  takesEffect: 'Agents read this when a session starts; sessions already open keep what they had',
+  answerSaved: (question: string) => `Respuesta a «${question}» guardada`,
+  answerCleared: (question: string) => `Respuesta a «${question}» borrada`,
+  interviewSkipped: 'Entrevista omitida; las respuestas se conservan',
+  interviewReopened: 'La entrevista está abierta de nuevo, con las respuestas anteriores',
+  writing: 'Escribiendo tus preferencias a partir de las respuestas. Esto tarda un momento…',
+  writtenByAgent: 'Preferencias escritas a partir de tus respuestas:',
+  keptAsTyped: (reason: string) => `Tus respuestas se conservaron tal como las escribiste (${reason}):`,
+  reasonNoAgent: 'no hay ningún agente instalado e iniciado sesión',
+  reasonAgentFailed: 'la ejecución del agente no terminó',
+  reasonBadOutput: 'la salida del agente no se pudo usar',
+  namesAdded: (names: string) => `Nombres añadidos al glosario: ${names}`,
+  preferencesSaved: (chars: number) => `Preferencias guardadas (${chars} caracteres)`,
+  projectPreferencesSaved: (name: string, chars: number) => `Preferencias de ${name} guardadas (${chars} caracteres)`,
+  takesEffect: 'Los agentes leen esto al empezar una sesión; las sesiones ya abiertas conservan lo que tenían',
 };

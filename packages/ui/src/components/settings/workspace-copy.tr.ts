@@ -27,12 +27,14 @@ export const tr: WorkspaceMessages = {
   preferencesSummary: (written, answers) =>
     written
       ? answers === 0
-        ? 'Preferences written'
-        : `Preferences written, ${answers === 1 ? '1 answer' : `${answers} answers`}`
-      : answers === 0
-        ? 'No preferences yet'
+        ? 'Tercihler yazıldı'
         : answers === 1
-          ? '1 answer'
-          : `${answers} answers`,
-  ruleCount: (n, off) => (n === 0 ? 'None yet' : `${n === 1 ? '1 rule' : `${n} rules`}${off ? `, ${off} off` : ''}`),
+          ? 'Tercihler yazıldı, 1 yanıt'
+          : `Tercihler yazıldı, ${answers} yanıt`
+      : answers === 0
+        ? 'Henüz tercih yok'
+        : answers === 1
+          ? '1 yanıt'
+          : `${answers} yanıt`,
+  ruleCount: (n, off) => (n === 0 ? 'Henüz yok' : `${n === 1 ? '1 kural' : `${n} kural`}${off ? `, ${off} kapalı` : ''}`),
 };

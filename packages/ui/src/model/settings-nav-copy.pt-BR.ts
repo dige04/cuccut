@@ -16,8 +16,8 @@ export const ptBR: SettingsNavMessages = {
     cloud: "A geração de texto só tem modelos de nuvem. Agentes de código são configurados em “Agente”.",
   },
   section: {
-    you: 'You',
-    rules: 'Rules',
+    you: 'Você',
+    rules: 'Regras',
     general: "Geral",
     shortcuts: "Atalhos",
     fonts: "Fontes",

@@ -14,7 +14,7 @@ export const ptBR: ShellMessages = {
     pin: "Âncora",
     unpin: "Desafixar",
     newSession: "Nova sessão",
-    newSessionInProject: "Nova sessão neste projeto", rulesAndPreferences: 'Rules and preferences…',
+    newSessionInProject: "Nova sessão neste projeto", rulesAndPreferences: 'Regras e preferências…',
     working: "Em andamento",
     loading: "Carregando",
     loadingEllipsis: "Carregando…",

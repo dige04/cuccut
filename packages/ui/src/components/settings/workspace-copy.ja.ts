@@ -27,12 +27,14 @@ export const ja: WorkspaceMessages = {
   preferencesSummary: (written, answers) =>
     written
       ? answers === 0
-        ? 'Preferences written'
-        : `Preferences written, ${answers === 1 ? '1 answer' : `${answers} answers`}`
-      : answers === 0
-        ? 'No preferences yet'
+        ? '設定を書き込み済み'
         : answers === 1
-          ? '1 answer'
-          : `${answers} answers`,
-  ruleCount: (n, off) => (n === 0 ? 'None yet' : `${n === 1 ? '1 rule' : `${n} rules`}${off ? `, ${off} off` : ''}`),
+          ? '設定を書き込み済み、回答 1 件'
+          : `設定を書き込み済み、回答 ${answers} 件`
+      : answers === 0
+        ? '設定はまだありません'
+        : answers === 1
+          ? '回答 1 件'
+          : `回答 ${answers} 件`,
+  ruleCount: (n, off) => (n === 0 ? 'まだありません' : `${n === 1 ? 'ルール 1 件' : `ルール ${n} 件`}${off ? `、オフ ${off} 件` : ''}`),
 };

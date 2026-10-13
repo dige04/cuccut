@@ -16,8 +16,8 @@ export const ru: SettingsNavMessages = {
     cloud: "Для генерации текста доступны только облачные модели. Агенты для программирования настраиваются в разделе «Агент».",
   },
   section: {
-    you: 'You',
-    rules: 'Rules',
+    you: 'Вы',
+    rules: 'Правила',
     general: "Общие",
     shortcuts: "Сочетания клавиш",
     fonts: "Шрифты",

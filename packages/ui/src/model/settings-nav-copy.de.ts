@@ -16,8 +16,8 @@ export const de: SettingsNavMessages = {
     cloud: "Texterzeugung hat nur Cloud-Modelle. Coding-Agenten unter „Agent“ einrichten.",
   },
   section: {
-    you: 'You',
-    rules: 'Rules',
+    you: 'Du',
+    rules: 'Regeln',
     general: "Allgemein",
     shortcuts: "Tastenkürzel",
     fonts: "Schriften",

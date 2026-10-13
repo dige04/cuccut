@@ -14,7 +14,7 @@ export const tr: ShellMessages = {
     pin: "Sabitle",
     unpin: "Sabitlemeyi kaldır",
     newSession: "Yeni oturum",
-    newSessionInProject: "Bu projede yeni oturum", rulesAndPreferences: 'Rules and preferences…',
+    newSessionInProject: "Bu projede yeni oturum", rulesAndPreferences: 'Kurallar ve tercihler…',
     working: "İşleniyor",
     loading: "Yükleniyor",
     loadingEllipsis: "Yükleniyor…",

@@ -27,12 +27,14 @@ export const zhHant: WorkspaceMessages = {
   preferencesSummary: (written, answers) =>
     written
       ? answers === 0
-        ? 'Preferences written'
-        : `Preferences written, ${answers === 1 ? '1 answer' : `${answers} answers`}`
-      : answers === 0
-        ? 'No preferences yet'
+        ? '已撰寫偏好設定'
         : answers === 1
-          ? '1 answer'
-          : `${answers} answers`,
-  ruleCount: (n, off) => (n === 0 ? 'None yet' : `${n === 1 ? '1 rule' : `${n} rules`}${off ? `, ${off} off` : ''}`),
+          ? '已撰寫偏好設定，1 則回答'
+          : `已撰寫偏好設定，${answers} 則回答`
+      : answers === 0
+        ? '尚無偏好設定'
+        : answers === 1
+          ? '1 則回答'
+          : `${answers} 則回答`,
+  ruleCount: (n, off) => (n === 0 ? '尚無' : `${n === 1 ? '1 則規則' : `${n} 則規則`}${off ? `，${off} 則已關閉` : ''}`),
 };

@@ -15,7 +15,7 @@ export const ru: ShellMessages = {
     pin: "Привязка",
     unpin: "Открепить",
     newSession: "Новая сессия",
-    newSessionInProject: "Новая сессия в этом проекте", rulesAndPreferences: 'Rules and preferences…',
+    newSessionInProject: "Новая сессия в этом проекте", rulesAndPreferences: 'Правила и настройки…',
     working: "Выполняется",
     loading: "Загрузка",
     loadingEllipsis: "Загрузка…",

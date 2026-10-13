@@ -27,12 +27,14 @@ export const zhHans: WorkspaceMessages = {
   preferencesSummary: (written, answers) =>
     written
       ? answers === 0
-        ? 'Preferences written'
-        : `Preferences written, ${answers === 1 ? '1 answer' : `${answers} answers`}`
-      : answers === 0
-        ? 'No preferences yet'
+        ? '已撰写偏好'
         : answers === 1
-          ? '1 answer'
-          : `${answers} answers`,
-  ruleCount: (n, off) => (n === 0 ? 'None yet' : `${n === 1 ? '1 rule' : `${n} rules`}${off ? `, ${off} off` : ''}`),
+          ? '已撰写偏好，1 条回答'
+          : `已撰写偏好，${answers} 条回答`
+      : answers === 0
+        ? '尚无偏好'
+        : answers === 1
+          ? '1 条回答'
+          : `${answers} 条回答`,
+  ruleCount: (n, off) => (n === 0 ? '暂无' : `${n === 1 ? '1 条规则' : `${n} 条规则`}${off ? `，${off} 条已关闭` : ''}`),
 };

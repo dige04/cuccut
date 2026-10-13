@@ -27,12 +27,14 @@ export const nl: WorkspaceMessages = {
   preferencesSummary: (written, answers) =>
     written
       ? answers === 0
-        ? 'Preferences written'
-        : `Preferences written, ${answers === 1 ? '1 answer' : `${answers} answers`}`
-      : answers === 0
-        ? 'No preferences yet'
+        ? 'Voorkeuren geschreven'
         : answers === 1
-          ? '1 answer'
-          : `${answers} answers`,
-  ruleCount: (n, off) => (n === 0 ? 'None yet' : `${n === 1 ? '1 rule' : `${n} rules`}${off ? `, ${off} off` : ''}`),
+          ? 'Voorkeuren geschreven, 1 antwoord'
+          : `Voorkeuren geschreven, ${answers} antwoorden`
+      : answers === 0
+        ? 'Nog geen voorkeuren'
+        : answers === 1
+          ? '1 antwoord'
+          : `${answers} antwoorden`,
+  ruleCount: (n, off) => (n === 0 ? 'Nog geen' : `${n === 1 ? '1 regel' : `${n} regels`}${off ? `, ${off} uit` : ''}`),
 };

@@ -27,12 +27,14 @@ export const vi: WorkspaceMessages = {
   preferencesSummary: (written, answers) =>
     written
       ? answers === 0
-        ? 'Preferences written'
-        : `Preferences written, ${answers === 1 ? '1 answer' : `${answers} answers`}`
-      : answers === 0
-        ? 'No preferences yet'
+        ? 'Đã viết tùy chọn'
         : answers === 1
-          ? '1 answer'
-          : `${answers} answers`,
-  ruleCount: (n, off) => (n === 0 ? 'None yet' : `${n === 1 ? '1 rule' : `${n} rules`}${off ? `, ${off} off` : ''}`),
+          ? 'Đã viết tùy chọn, 1 câu trả lời'
+          : `Đã viết tùy chọn, ${answers} câu trả lời`
+      : answers === 0
+        ? 'Chưa có tùy chọn'
+        : answers === 1
+          ? '1 câu trả lời'
+          : `${answers} câu trả lời`,
+  ruleCount: (n, off) => (n === 0 ? 'Chưa có' : `${n === 1 ? '1 quy tắc' : `${n} quy tắc`}${off ? `, ${off} đang tắt` : ''}`),
 };

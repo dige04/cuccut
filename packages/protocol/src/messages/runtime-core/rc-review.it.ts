@@ -4,47 +4,57 @@ const s = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
 export const it: RcReviewMessages = {
   blocked: (p: { count: number }) =>
-    `This video doesn’t meet your standard yet: ${p.count} ${s(p.count, 'finding stops', 'findings stop')} this export`,
-  blockedRemedy: 'Fix what’s listed and export again, or open the review and let a finding stand with a reason.',
+    `Questo video non soddisfa ancora il tuo standard: ${p.count} ${s(p.count, 'rilievo blocca', 'rilievi bloccano')} questa esportazione`,
+  blockedRemedy: 'Correggi quanto elencato ed esporta di nuovo, oppure apri la revisione e lascia valido un rilievo con una motivazione.',
   findingLine: (p: { metric: string; value: string; limit: string; fix: string }) =>
-    `${p.metric} is ${p.value}, and the standard asks for ${p.limit}.${p.fix ? ` ${p.fix}` : ''}`,
-  limitAtLeast: (p: { min: number }) => `at least ${p.min}`,
-  limitAtMost: (p: { max: number }) => `at most ${p.max}`,
-  limitBetween: (p: { min: number; max: number }) => `between ${p.min} and ${p.max}`,
-  limitYes: 'yes',
+    `${p.metric} è ${p.value}, e lo standard chiede ${p.limit}.${p.fix ? ` ${p.fix}` : ''}`,
+  limitAtLeast: (p: { min: number }) => `almeno ${p.min}`,
+  limitAtMost: (p: { max: number }) => `al massimo ${p.max}`,
+  limitBetween: (p: { min: number; max: number }) => `tra ${p.min} e ${p.max}`,
+  limitYes: 'sì',
   limitNo: 'no',
-  limitAny: 'anything',
-  valueYes: 'yes',
+  limitAny: 'qualsiasi valore',
+  valueYes: 'sì',
   valueNo: 'no',
-  reasonRequired: 'Say why: letting a finding stand or lowering what it’s worth needs a reason',
-  reasonTooLong: (p: { limit: number }) => `Keep the reason under ${p.limit} characters`,
-  unknownFinding: (p: { id: string }) => `This video’s standard has no check or question called “${p.id}”`,
-  criteriaInvalid: 'The standard has problems to fix before it can be saved',
-  criteriaConflict: 'The standard was changed somewhere else; read it again and retry',
-  answersInvalid: 'The answers aren’t in the expected shape: one entry per question, with a verdict and evidence',
-  documentName: 'Review decisions',
-  waiveLabel: (p: { id: string }) => `Let “${p.id}” stand`,
-  unwaiveLabel: (p: { id: string }) => `Hold “${p.id}” to the standard again`,
-  severityLabel: (p: { id: string }) => `Change what “${p.id}” is worth`,
-  reasonBuiltin: 'You haven’t set a standard yet, so these are the built-in checks.',
-  reasonUser: 'Held to your standard (Settings › Review).',
-  notReached: 'The review didn’t reach this question.',
-  evidenceMissing: 'Answered “holds” with nothing to look at.',
-  evidenceInvalid: (p: { kind: string }) => {
+
+  /** Errors (error codes REVIEW_REASON_REQUIRED, REVIEW_UNKNOWN_FINDING, REVIEW_CRITERIA_INVALID, REVIEW_CRITERIA_CONFLICT). */
+  reasonRequired: 'Scrivi il motivo: lasciare valido un rilievo o abbassarne il peso richiede una motivazione',
+  reasonTooLong: (p: { limit: number }) => `Tieni il motivo sotto i ${p.limit} caratteri`,
+  unknownFinding: (p: { id: string }) => `Lo standard di questo video non ha alcun controllo o domanda chiamato “${p.id}”`,
+  criteriaInvalid: 'Lo standard ha problemi da risolvere prima di poter essere salvato',
+  criteriaConflict: 'Lo standard è stato modificato altrove; rileggilo e riprova',
+  answersInvalid: 'Le risposte non hanno la forma prevista: una voce per domanda, con un esito e una prova',
+
+  /** The per-video decisions document (kind review-plan) and the edits that write it. */
+  documentName: 'Decisioni di revisione',
+  waiveLabel: (p: { id: string }) => `Lascia valido “${p.id}”`,
+  unwaiveLabel: (p: { id: string }) => `Riporta “${p.id}” allo standard`,
+  severityLabel: (p: { id: string }) => `Cambia il peso di “${p.id}”`,
+
+  /** Why a video is held to this standard. */
+  reasonBuiltin: 'Non hai ancora definito uno standard, quindi valgono i controlli integrati.',
+  reasonUser: 'Verificato secondo il tuo standard (Impostazioni › Revisione).',
+
+  /** Notes on judged answers. `kind` is the evidence kind the question declares. */
+  notReached: 'La revisione non è arrivata a questa domanda.',
+  evidenceMissing: 'Risposto “rispettato” senza nulla da controllare.',
+  evidenceInvalid: (p: { kind: string }): string => {
     switch (p.kind) {
       case 'timestamp':
-        return 'Answered “holds”, but the evidence isn’t a time inside the video.';
+        return 'Risposto “rispettato”, ma la prova non è un momento all’interno del video.';
       case 'frame':
-        return 'Answered “holds”, but the evidence isn’t a frame taken from this video.';
+        return 'Risposto “rispettato”, ma la prova non è un fotogramma preso da questo video.';
       case 'field':
-        return 'Answered “holds”, but the evidence doesn’t name anything in this video.';
+        return 'Risposto “rispettato”, ma la prova non indica nulla di questo video.';
       case 'quote':
-        return 'Answered “holds”, but the quote isn’t in this video’s transcript or captions.';
+        return 'Risposto “rispettato”, ma la citazione non compare nella trascrizione o nei sottotitoli di questo video.';
       default:
-        return 'Answered “holds”, but the evidence can’t be checked.';
+        return 'Risposto “rispettato”, ma la prova non può essere verificata.';
     }
   },
-  builtinFixPlaceholders: 'Fill or remove the placeholder boxes before delivering.',
-  builtinFixBlank: 'Cover or close the gap where nothing is on screen.',
-  builtinFixTextEdge: 'Move or narrow the text so it stays inside the frame.',
+
+  /** What to do about the built-in checks (`REVIEW_BUILTIN_CHECKS`). */
+  builtinFixPlaceholders: 'Riempi o rimuovi i riquadri segnaposto prima di consegnare.',
+  builtinFixBlank: 'Copri o chiudi il vuoto dove non c’è nulla sullo schermo.',
+  builtinFixTextEdge: 'Sposta o restringi il testo perché resti dentro il fotogramma.',
 };

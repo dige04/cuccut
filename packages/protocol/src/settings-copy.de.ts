@@ -35,5 +35,5 @@ export const de: SettingDescriptionMessages = {
   'diagnostics.enabled': "Anonyme Nutzungsstatistiken und Leistungszusammenfassungen senden (keine Medien, Texte oder Pfade)",
   'offline.strict': "Strikter Offlinemodus: nichts an Onlinedienste senden",
   'review.gate':
-    'Hold finished videos to your review standard: an export for delivery stops on a critical finding until it is fixed or let stand with a reason. Previews are never stopped',
+    'Fertige Videos an deinem Prüfmaßstab messen: Ein Export zur Auslieferung stoppt bei einem kritischen Befund, bis er behoben oder mit Begründung bestehen gelassen wird. Vorschauen werden nie gestoppt',
 } satisfies Record<SettingKey, string>;

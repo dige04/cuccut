@@ -145,7 +145,7 @@ export const nl: RcAgentToolsMessages = {
   deriveParentUnplaced: 'Deze video staat niet in een project- of sessiemap, dus er kan geen afgeleide video naast worden gemaakt',
   shotsRangeEmpty: 'Het bereik is leeg na uitlijnen op frames',
   shotsRangeTooLong: (p) => `Het bereik is langer dan ${p.minutes} minuten; detecteer shots in kortere stukken`,
-  reviewWaive: (p) => `Let the finding “${p.id}” stand: ${p.reason}`,
-  reviewSeverity: (p) => `Change what “${p.id}” is worth: ${p.from} → ${p.to}`,
-  reviewCriteriaSet: 'Replace your review standard',
+  reviewWaive: (p) => `Bevinding “${p.id}” laten staan: ${p.reason}`,
+  reviewSeverity: (p) => `Belang van “${p.id}” wijzigen: ${p.from} → ${p.to}`,
+  reviewCriteriaSet: 'Je reviewnorm vervangen',
 };

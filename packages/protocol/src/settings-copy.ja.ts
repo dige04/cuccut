@@ -34,5 +34,5 @@ export const ja: SettingDescriptionMessages = {
   'diagnostics.enabled': '匿名の使用統計とパフォーマンスの概要を送信（メディア、テキスト、パスは含みません）',
   'offline.strict': '厳格なオフライン：オンラインサービスに何も送信しません',
   'review.gate':
-    'Hold finished videos to your review standard: an export for delivery stops on a critical finding until it is fixed or let stand with a reason. Previews are never stopped',
+    '完成した動画をレビュー基準で確認します。納品用の書き出しは、重大な指摘が修正されるか理由を添えて容認されるまで止まります。プレビューは止まりません',
 };

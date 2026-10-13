@@ -35,5 +35,5 @@ export const nl: SettingDescriptionMessages = {
   'diagnostics.enabled': "Anonieme gebruiksstatistieken en prestatiesamenvattingen verzenden (geen media, tekst of paden)",
   'offline.strict': "Strikte offlinemodus: niets naar onlinediensten sturen",
   'review.gate':
-    'Hold finished videos to your review standard: an export for delivery stops on a critical finding until it is fixed or let stand with a reason. Previews are never stopped',
+    'Afgewerkte video’s aan je reviewnorm houden: een export voor oplevering stopt bij een kritieke bevinding tot die is opgelost of met een reden laten staan is. Voorvertoningen worden nooit gestopt',
 } satisfies Record<SettingKey, string>;

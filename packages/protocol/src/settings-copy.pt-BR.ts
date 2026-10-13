@@ -23,5 +23,5 @@ export const ptBR: SettingDescriptionMessages = {
   'updates.autoCheck': 'Verificar atualizações do aplicativo automaticamente', 'updates.autoDownload': 'Baixar novas versões em segundo plano (sem instalar automaticamente)',
   'diagnostics.enabled': 'Enviar estatísticas anônimas de uso e resumos de desempenho (sem mídia, texto ou caminhos)', 'offline.strict': 'Estritamente off-line: não enviar nada a nenhum serviço online',
   'review.gate':
-    'Hold finished videos to your review standard: an export for delivery stops on a critical finding until it is fixed or let stand with a reason. Previews are never stopped',
+    'Mantenha os vídeos finalizados no seu padrão de revisão: uma exportação para entrega para em um achado crítico até que seja corrigido ou mantido com um motivo. As prévias nunca são bloqueadas',
 };

@@ -98,7 +98,7 @@ export const pl: RcAgentToolsMessages = {
   deriveParentUnplaced: 'To wideo nie znajduje się w folderze projektu ani sesji, więc nie można obok niego utworzyć wideo pochodnego',
   shotsRangeEmpty: 'Po wyrównaniu do klatek zakres jest pusty',
   shotsRangeTooLong: (p) => `Zakres jest dłuższy niż ${p.minutes} min; wykrywaj ujęcia w krótszych częściach`,
-  reviewWaive: (p) => `Let the finding “${p.id}” stand: ${p.reason}`,
-  reviewSeverity: (p) => `Change what “${p.id}” is worth: ${p.from} → ${p.to}`,
-  reviewCriteriaSet: 'Replace your review standard',
+  reviewWaive: (p) => `Pozostawienie uwagi „${p.id}”: ${p.reason}`,
+  reviewSeverity: (p) => `Zmiana wagi uwagi „${p.id}”: ${p.from} → ${p.to}`,
+  reviewCriteriaSet: 'Zastąp swój standard recenzji',
 };

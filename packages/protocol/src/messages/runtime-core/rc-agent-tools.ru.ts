@@ -98,7 +98,7 @@ export const ru: RcAgentToolsMessages = {
   deriveParentUnplaced: 'Это видео не находится в папке проекта или сеанса, поэтому рядом с ним нельзя создать производное видео',
   shotsRangeEmpty: 'После привязки к кадрам диапазон пуст',
   shotsRangeTooLong: (p) => `Диапазон длиннее ${p.minutes} мин; определяйте планы по более коротким частям`,
-  reviewWaive: (p) => `Let the finding “${p.id}” stand: ${p.reason}`,
-  reviewSeverity: (p) => `Change what “${p.id}” is worth: ${p.from} → ${p.to}`,
-  reviewCriteriaSet: 'Replace your review standard',
+  reviewWaive: (p) => `Оставить замечание «${p.id}» без изменений: ${p.reason}`,
+  reviewSeverity: (p) => `Изменить важность «${p.id}»: ${p.from} → ${p.to}`,
+  reviewCriteriaSet: 'Заменить ваш стандарт проверки',
 };

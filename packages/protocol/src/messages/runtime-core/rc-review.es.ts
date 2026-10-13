@@ -4,47 +4,57 @@ const s = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
 export const es: RcReviewMessages = {
   blocked: (p: { count: number }) =>
-    `This video doesn’t meet your standard yet: ${p.count} ${s(p.count, 'finding stops', 'findings stop')} this export`,
-  blockedRemedy: 'Fix what’s listed and export again, or open the review and let a finding stand with a reason.',
+    `Este vídeo aún no cumple tu estándar: ${p.count} ${s(p.count, 'hallazgo detiene', 'hallazgos detienen')} esta exportación`,
+  blockedRemedy: 'Corrige lo indicado y exporta de nuevo, o abre la revisión y deja en pie un hallazgo con un motivo.',
   findingLine: (p: { metric: string; value: string; limit: string; fix: string }) =>
-    `${p.metric} is ${p.value}, and the standard asks for ${p.limit}.${p.fix ? ` ${p.fix}` : ''}`,
-  limitAtLeast: (p: { min: number }) => `at least ${p.min}`,
-  limitAtMost: (p: { max: number }) => `at most ${p.max}`,
-  limitBetween: (p: { min: number; max: number }) => `between ${p.min} and ${p.max}`,
-  limitYes: 'yes',
+    `${p.metric} es ${p.value}, y el estándar pide ${p.limit}.${p.fix ? ` ${p.fix}` : ''}`,
+  limitAtLeast: (p: { min: number }) => `al menos ${p.min}`,
+  limitAtMost: (p: { max: number }) => `como máximo ${p.max}`,
+  limitBetween: (p: { min: number; max: number }) => `entre ${p.min} y ${p.max}`,
+  limitYes: 'sí',
   limitNo: 'no',
-  limitAny: 'anything',
-  valueYes: 'yes',
+  limitAny: 'cualquiera',
+  valueYes: 'sí',
   valueNo: 'no',
-  reasonRequired: 'Say why: letting a finding stand or lowering what it’s worth needs a reason',
-  reasonTooLong: (p: { limit: number }) => `Keep the reason under ${p.limit} characters`,
-  unknownFinding: (p: { id: string }) => `This video’s standard has no check or question called “${p.id}”`,
-  criteriaInvalid: 'The standard has problems to fix before it can be saved',
-  criteriaConflict: 'The standard was changed somewhere else; read it again and retry',
-  answersInvalid: 'The answers aren’t in the expected shape: one entry per question, with a verdict and evidence',
-  documentName: 'Review decisions',
-  waiveLabel: (p: { id: string }) => `Let “${p.id}” stand`,
-  unwaiveLabel: (p: { id: string }) => `Hold “${p.id}” to the standard again`,
-  severityLabel: (p: { id: string }) => `Change what “${p.id}” is worth`,
-  reasonBuiltin: 'You haven’t set a standard yet, so these are the built-in checks.',
-  reasonUser: 'Held to your standard (Settings › Review).',
-  notReached: 'The review didn’t reach this question.',
-  evidenceMissing: 'Answered “holds” with nothing to look at.',
-  evidenceInvalid: (p: { kind: string }) => {
+
+  /** Errors (error codes REVIEW_REASON_REQUIRED, REVIEW_UNKNOWN_FINDING, REVIEW_CRITERIA_INVALID, REVIEW_CRITERIA_CONFLICT). */
+  reasonRequired: 'Di por qué: dejar en pie un hallazgo o rebajar su importancia necesita un motivo',
+  reasonTooLong: (p: { limit: number }) => `Mantén el motivo por debajo de ${p.limit} caracteres`,
+  unknownFinding: (p: { id: string }) => `El estándar de este vídeo no tiene ninguna comprobación ni pregunta llamada “${p.id}”`,
+  criteriaInvalid: 'El estándar tiene problemas que corregir antes de poder guardarse',
+  criteriaConflict: 'El estándar se cambió en otro lugar; vuelve a leerlo e inténtalo de nuevo',
+  answersInvalid: 'Las respuestas no tienen el formato esperado: una entrada por pregunta, con un veredicto y una evidencia',
+
+  /** The per-video decisions document (kind review-plan) and the edits that write it. */
+  documentName: 'Decisiones de revisión',
+  waiveLabel: (p: { id: string }) => `Dejar en pie “${p.id}”`,
+  unwaiveLabel: (p: { id: string }) => `Volver a exigir “${p.id}” según el estándar`,
+  severityLabel: (p: { id: string }) => `Cambiar la importancia de “${p.id}”`,
+
+  /** Why a video is held to this standard. */
+  reasonBuiltin: 'Aún no has definido un estándar, así que estas son las comprobaciones integradas.',
+  reasonUser: 'Revisado según tu estándar (Ajustes › Revisión).',
+
+  /** Notes on judged answers. `kind` is the evidence kind the question declares. */
+  notReached: 'La revisión no llegó a esta pregunta.',
+  evidenceMissing: 'Respondido con “se cumple” sin nada que mirar.',
+  evidenceInvalid: (p: { kind: string }): string => {
     switch (p.kind) {
       case 'timestamp':
-        return 'Answered “holds”, but the evidence isn’t a time inside the video.';
+        return 'Respondido con “se cumple”, pero la evidencia no es un momento dentro del vídeo.';
       case 'frame':
-        return 'Answered “holds”, but the evidence isn’t a frame taken from this video.';
+        return 'Respondido con “se cumple”, pero la evidencia no es un fotograma tomado de este vídeo.';
       case 'field':
-        return 'Answered “holds”, but the evidence doesn’t name anything in this video.';
+        return 'Respondido con “se cumple”, pero la evidencia no nombra nada de este vídeo.';
       case 'quote':
-        return 'Answered “holds”, but the quote isn’t in this video’s transcript or captions.';
+        return 'Respondido con “se cumple”, pero la cita no aparece en la transcripción ni en los subtítulos de este vídeo.';
       default:
-        return 'Answered “holds”, but the evidence can’t be checked.';
+        return 'Respondido con “se cumple”, pero la evidencia no se puede comprobar.';
     }
   },
-  builtinFixPlaceholders: 'Fill or remove the placeholder boxes before delivering.',
-  builtinFixBlank: 'Cover or close the gap where nothing is on screen.',
-  builtinFixTextEdge: 'Move or narrow the text so it stays inside the frame.',
+
+  /** What to do about the built-in checks (`REVIEW_BUILTIN_CHECKS`). */
+  builtinFixPlaceholders: 'Rellena o quita los recuadros de marcador de posición antes de entregar.',
+  builtinFixBlank: 'Tapa o cierra el hueco donde no hay nada en pantalla.',
+  builtinFixTextEdge: 'Mueve o estrecha el texto para que quede dentro del encuadre.',
 };

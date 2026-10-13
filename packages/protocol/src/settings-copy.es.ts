@@ -19,5 +19,5 @@ export const es: SettingDescriptionMessages = {
  'runtime.idleExitMinutes': 'Minutos que un Runtime iniciado por la CLI permanece inactivo antes de terminar solo (1–1440): sin conexiones, tareas ni servicios externos abiertos. No afecta a la aplicación de escritorio ni a Runtimes iniciados manualmente',
  'updates.autoCheck': 'Comprobar actualizaciones de la aplicación automáticamente', 'updates.autoDownload': 'Descargar versiones nuevas en segundo plano (sin instalarlas automáticamente)', 'diagnostics.enabled': 'Enviar estadísticas anónimas de uso y resúmenes de rendimiento (sin medios, texto ni rutas)', 'offline.strict': 'Sin conexión estricto: no enviar nada a ningún servicio en línea',
   'review.gate':
-    'Hold finished videos to your review standard: an export for delivery stops on a critical finding until it is fixed or let stand with a reason. Previews are never stopped',
+    'Mantén los vídeos terminados al estándar de revisión: una exportación para entrega se detiene ante un hallazgo crítico hasta que se corrija o se deje en pie con un motivo. Las vistas previas nunca se detienen',
 };

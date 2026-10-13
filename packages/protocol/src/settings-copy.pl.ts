@@ -31,5 +31,5 @@ export const pl: SettingDescriptionMessages = {
   'diagnostics.enabled': "Wysyłaj anonimowe statystyki użycia i podsumowania wydajności (bez multimediów, tekstu i ścieżek)",
   'offline.strict': "Ścisły offline: nie wysyłaj nic do usług online",
   'review.gate':
-    'Hold finished videos to your review standard: an export for delivery stops on a critical finding until it is fixed or let stand with a reason. Previews are never stopped',
+    'Sprawdzaj gotowe filmy według twojego standardu recenzji: eksport do dostarczenia zatrzymuje się przy krytycznej uwadze, aż zostanie poprawiona lub pozostawiona z uzasadnieniem. Podglądy nigdy nie są zatrzymywane',
 };

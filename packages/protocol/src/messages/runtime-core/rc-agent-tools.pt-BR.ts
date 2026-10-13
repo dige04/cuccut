@@ -143,7 +143,7 @@ export const ptBR: RcAgentToolsMessages = {
   deriveParentUnplaced: 'Este vídeo não está em uma pasta de projeto ou de sessão, então não é possível criar um vídeo derivado ao lado dele',
   shotsRangeEmpty: 'O intervalo fica vazio ao alinhar aos quadros',
   shotsRangeTooLong: (p) => `O intervalo passa de ${p.minutes} minutos; detecte as tomadas em partes menores`,
-  reviewWaive: (p) => `Let the finding “${p.id}” stand: ${p.reason}`,
-  reviewSeverity: (p) => `Change what “${p.id}” is worth: ${p.from} → ${p.to}`,
-  reviewCriteriaSet: 'Replace your review standard',
+  reviewWaive: (p) => `Manter o achado “${p.id}”: ${p.reason}`,
+  reviewSeverity: (p) => `Alterar a importância de “${p.id}”: ${p.from} → ${p.to}`,
+  reviewCriteriaSet: 'Substituir seu padrão de revisão',
 };

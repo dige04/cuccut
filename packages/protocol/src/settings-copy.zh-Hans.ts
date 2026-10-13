@@ -31,5 +31,5 @@ export const zhHans: SettingDescriptionMessages = {
   'diagnostics.enabled': '发送匿名的使用统计与性能摘要（不含媒体、文本与路径）',
   'offline.strict': '严格离线：不向任何在线服务发送内容',
   'review.gate':
-    'Hold finished videos to your review standard: an export for delivery stops on a critical finding until it is fixed or let stand with a reason. Previews are never stopped',
+    '按你的审核标准检查成品视频：用于交付的导出会在出现严重发现项时停止，直到修复或附上理由保留它。预览从不会被阻止',
 };

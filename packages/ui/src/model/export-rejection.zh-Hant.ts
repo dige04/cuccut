@@ -29,7 +29,7 @@ export const zhHant: ExportRejectionMessages = {
     EXPORT_PUBLISH_FAILED: '無法將檔案儲存到匯出位置',
     EXPORT_PARTIALLY_PUBLISHED: '只儲存了部分檔案',
     RESOURCE_ADMISSION_UNSATISFIABLE: '這台電腦的資源不足以進行這次匯出',
-    REVIEW_BLOCKED: 'This video doesn’t meet your standard yet',
+    REVIEW_BLOCKED: '此影片尚未符合你的標準',
   },
   resources: {
     memory: '記憶體',
@@ -48,7 +48,7 @@ export const zhHant: ExportRejectionMessages = {
   space: (required: string, available: string) => `需要約 ${required}，只剩 ${available}`,
   notEnough: (resource: string) => `不足：${resource}`,
   resourceHint: '請匯出較短的範圍或選擇較低的解析度，然後再試一次。',
-  reviewHint: 'Fix what’s listed, or open the review and let a finding stand with a reason.',
+  reviewHint: '修正列出的項目，或開啟審核並附上理由保留某個發現項。',
   reviewItem: (said, fix) => (fix ? `${said}. ${fix}` : `${said}.`),
-  openReview: 'Open the review',
+  openReview: '開啟審核',
 };

@@ -4,47 +4,57 @@ const s = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
 export const fr: RcReviewMessages = {
   blocked: (p: { count: number }) =>
-    `This video doesn’t meet your standard yet: ${p.count} ${s(p.count, 'finding stops', 'findings stop')} this export`,
-  blockedRemedy: 'Fix what’s listed and export again, or open the review and let a finding stand with a reason.',
+    `Cette vidéo ne respecte pas encore ta norme : ${p.count} ${s(p.count, 'constatation bloque', 'constatations bloquent')} cet export`,
+  blockedRemedy: 'Corrige les points listés et exporte à nouveau, ou ouvre la revue et maintiens une constatation avec un motif.',
   findingLine: (p: { metric: string; value: string; limit: string; fix: string }) =>
-    `${p.metric} is ${p.value}, and the standard asks for ${p.limit}.${p.fix ? ` ${p.fix}` : ''}`,
-  limitAtLeast: (p: { min: number }) => `at least ${p.min}`,
-  limitAtMost: (p: { max: number }) => `at most ${p.max}`,
-  limitBetween: (p: { min: number; max: number }) => `between ${p.min} and ${p.max}`,
-  limitYes: 'yes',
-  limitNo: 'no',
-  limitAny: 'anything',
-  valueYes: 'yes',
-  valueNo: 'no',
-  reasonRequired: 'Say why: letting a finding stand or lowering what it’s worth needs a reason',
-  reasonTooLong: (p: { limit: number }) => `Keep the reason under ${p.limit} characters`,
-  unknownFinding: (p: { id: string }) => `This video’s standard has no check or question called “${p.id}”`,
-  criteriaInvalid: 'The standard has problems to fix before it can be saved',
-  criteriaConflict: 'The standard was changed somewhere else; read it again and retry',
-  answersInvalid: 'The answers aren’t in the expected shape: one entry per question, with a verdict and evidence',
-  documentName: 'Review decisions',
-  waiveLabel: (p: { id: string }) => `Let “${p.id}” stand`,
-  unwaiveLabel: (p: { id: string }) => `Hold “${p.id}” to the standard again`,
-  severityLabel: (p: { id: string }) => `Change what “${p.id}” is worth`,
-  reasonBuiltin: 'You haven’t set a standard yet, so these are the built-in checks.',
-  reasonUser: 'Held to your standard (Settings › Review).',
-  notReached: 'The review didn’t reach this question.',
-  evidenceMissing: 'Answered “holds” with nothing to look at.',
-  evidenceInvalid: (p: { kind: string }) => {
+    `${p.metric} est ${p.value}, et la norme demande ${p.limit}.${p.fix ? ` ${p.fix}` : ''}`,
+  limitAtLeast: (p: { min: number }) => `au moins ${p.min}`,
+  limitAtMost: (p: { max: number }) => `au plus ${p.max}`,
+  limitBetween: (p: { min: number; max: number }) => `entre ${p.min} et ${p.max}`,
+  limitYes: 'oui',
+  limitNo: 'non',
+  limitAny: 'peu importe',
+  valueYes: 'oui',
+  valueNo: 'non',
+
+  /** Errors (error codes REVIEW_REASON_REQUIRED, REVIEW_UNKNOWN_FINDING, REVIEW_CRITERIA_INVALID, REVIEW_CRITERIA_CONFLICT). */
+  reasonRequired: 'Indique le motif : maintenir une constatation ou en abaisser la gravité demande une raison',
+  reasonTooLong: (p: { limit: number }) => `Garde le motif sous ${p.limit} caractères`,
+  unknownFinding: (p: { id: string }) => `La norme de cette vidéo n’a aucun contrôle ni aucune question nommé « ${p.id} »`,
+  criteriaInvalid: 'La norme comporte des problèmes à corriger avant de pouvoir être enregistrée',
+  criteriaConflict: 'La norme a été modifiée ailleurs ; relis-la et réessaie',
+  answersInvalid: 'Les réponses n’ont pas le format attendu : une entrée par question, avec un verdict et une preuve',
+
+  /** The per-video decisions document (kind review-plan) and the edits that write it. */
+  documentName: 'Décisions de revue',
+  waiveLabel: (p: { id: string }) => `Maintenir « ${p.id} »`,
+  unwaiveLabel: (p: { id: string }) => `Soumettre de nouveau « ${p.id} » à la norme`,
+  severityLabel: (p: { id: string }) => `Modifier la gravité de « ${p.id} »`,
+
+  /** Why a video is held to this standard. */
+  reasonBuiltin: 'Tu n’as pas encore défini de norme, donc ce sont les contrôles intégrés qui s’appliquent.',
+  reasonUser: 'Contrôlé selon ta norme (Réglages › Revue).',
+
+  /** Notes on judged answers. `kind` is the evidence kind the question declares. */
+  notReached: 'La revue n’a pas atteint cette question.',
+  evidenceMissing: 'Répondu « respecté » sans rien à regarder.',
+  evidenceInvalid: (p: { kind: string }): string => {
     switch (p.kind) {
       case 'timestamp':
-        return 'Answered “holds”, but the evidence isn’t a time inside the video.';
+        return 'Répondu « respecté », mais la preuve n’est pas un moment dans la vidéo.';
       case 'frame':
-        return 'Answered “holds”, but the evidence isn’t a frame taken from this video.';
+        return 'Répondu « respecté », mais la preuve n’est pas une image tirée de cette vidéo.';
       case 'field':
-        return 'Answered “holds”, but the evidence doesn’t name anything in this video.';
+        return 'Répondu « respecté », mais la preuve ne désigne rien de cette vidéo.';
       case 'quote':
-        return 'Answered “holds”, but the quote isn’t in this video’s transcript or captions.';
+        return 'Répondu « respecté », mais la citation ne figure pas dans la transcription ni dans les sous-titres de cette vidéo.';
       default:
-        return 'Answered “holds”, but the evidence can’t be checked.';
+        return 'Répondu « respecté », mais la preuve ne peut pas être vérifiée.';
     }
   },
-  builtinFixPlaceholders: 'Fill or remove the placeholder boxes before delivering.',
-  builtinFixBlank: 'Cover or close the gap where nothing is on screen.',
-  builtinFixTextEdge: 'Move or narrow the text so it stays inside the frame.',
+
+  /** What to do about the built-in checks (`REVIEW_BUILTIN_CHECKS`). */
+  builtinFixPlaceholders: 'Remplis ou supprime les cadres de remplacement avant de livrer.',
+  builtinFixBlank: 'Couvre ou comble le vide là où rien n’apparaît à l’écran.',
+  builtinFixTextEdge: 'Déplace ou réduis le texte pour qu’il reste dans le cadre.',
 };

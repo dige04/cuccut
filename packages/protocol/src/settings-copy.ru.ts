@@ -31,5 +31,5 @@ export const ru: SettingDescriptionMessages = {
   'diagnostics.enabled': "Отправлять анонимную статистику использования и сводки производительности (без медиа, текста и путей)",
   'offline.strict': "Строго офлайн: ничего не отправлять онлайн-сервисам",
   'review.gate':
-    'Hold finished videos to your review standard: an export for delivery stops on a critical finding until it is fixed or let stand with a reason. Previews are never stopped',
+    'Проверять готовые видео по вашему стандарту проверки: экспорт для сдачи останавливается на критическом замечании, пока оно не исправлено или не оставлено с обоснованием. Превью никогда не останавливаются',
 };

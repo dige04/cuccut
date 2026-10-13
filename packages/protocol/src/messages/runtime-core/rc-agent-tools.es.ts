@@ -46,7 +46,7 @@ export const es: RcAgentToolsMessages = {
   deriveParentUnplaced: 'Este vídeo no está en una carpeta de proyecto o de sesión, así que no se puede crear un vídeo derivado a su lado',
   shotsRangeEmpty: 'El intervalo queda vacío al ajustarlo a fotogramas',
   shotsRangeTooLong: (p) => `El intervalo dura más de ${p.minutes} minutos; detecta los planos por partes más cortas`,
-  reviewWaive: (p) => `Let the finding “${p.id}” stand: ${p.reason}`,
-  reviewSeverity: (p) => `Change what “${p.id}” is worth: ${p.from} → ${p.to}`,
-  reviewCriteriaSet: 'Replace your review standard',
+  reviewWaive: (p) => `Dejar en pie el hallazgo “${p.id}”: ${p.reason}`,
+  reviewSeverity: (p) => `Cambiar la importancia de “${p.id}”: ${p.from} → ${p.to}`,
+  reviewCriteriaSet: 'Reemplazar tu estándar de revisión',
 };

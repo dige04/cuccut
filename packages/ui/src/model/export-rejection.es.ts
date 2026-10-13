@@ -13,7 +13,7 @@ export const es: ExportRejectionMessages = {
  EXPORT_RENDER_FAILED: 'No se pudo renderizar el vídeo', EXPORT_VALIDATION_FAILED: 'El archivo exportado no superó la validación',
  EXPORT_PUBLISH_FAILED: 'No se pudieron guardar los archivos en el destino de la exportación', EXPORT_PARTIALLY_PUBLISHED: 'Solo se guardaron algunos archivos',
  RESOURCE_ADMISSION_UNSATISFIABLE: 'Este ordenador no tiene recursos suficientes para esta exportación',
- REVIEW_BLOCKED: 'This video doesn’t meet your standard yet',
+ REVIEW_BLOCKED: 'Este vídeo aún no cumple tu estándar',
  },
  resources: { memory: 'Memoria', gpuMemory: 'Memoria de GPU', cpuThreads: 'Hilos de CPU', scratchDisk: 'Espacio de disco para archivos temporales' },
  problemSeparator: '; ', fileProblems: (file, problems) => `${file}: ${problems}`,
@@ -23,7 +23,7 @@ export const es: ExportRejectionMessages = {
  nothingHint: 'Elige otro intervalo o coloca algo en la línea de tiempo primero.',
  space: (required, available) => `Se necesitan unos ${required}; solo quedan ${available}`,
  notEnough: (resource) => `Insuficiente: ${resource}`, resourceHint: 'Exporta un intervalo más corto o elige una resolución menor y vuelve a intentarlo.',
-  reviewHint: 'Fix what’s listed, or open the review and let a finding stand with a reason.',
+  reviewHint: 'Corrige lo indicado o abre la revisión y deja en pie un hallazgo con un motivo.',
   reviewItem: (said, fix) => (fix ? `${said}. ${fix}` : `${said}.`),
-  openReview: 'Open the review',
+  openReview: 'Abrir la revisión',
 };

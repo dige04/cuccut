@@ -4,47 +4,57 @@ const s = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
 export const nl: RcReviewMessages = {
   blocked: (p: { count: number }) =>
-    `This video doesn’t meet your standard yet: ${p.count} ${s(p.count, 'finding stops', 'findings stop')} this export`,
-  blockedRemedy: 'Fix what’s listed and export again, or open the review and let a finding stand with a reason.',
+    `Deze video voldoet nog niet aan je norm: ${p.count} ${s(p.count, 'bevinding stopt', 'bevindingen stoppen')} deze export`,
+  blockedRemedy: 'Los op wat er staat en exporteer opnieuw, of open de review en laat een bevinding met reden staan.',
   findingLine: (p: { metric: string; value: string; limit: string; fix: string }) =>
-    `${p.metric} is ${p.value}, and the standard asks for ${p.limit}.${p.fix ? ` ${p.fix}` : ''}`,
-  limitAtLeast: (p: { min: number }) => `at least ${p.min}`,
-  limitAtMost: (p: { max: number }) => `at most ${p.max}`,
-  limitBetween: (p: { min: number; max: number }) => `between ${p.min} and ${p.max}`,
-  limitYes: 'yes',
-  limitNo: 'no',
-  limitAny: 'anything',
-  valueYes: 'yes',
-  valueNo: 'no',
-  reasonRequired: 'Say why: letting a finding stand or lowering what it’s worth needs a reason',
-  reasonTooLong: (p: { limit: number }) => `Keep the reason under ${p.limit} characters`,
-  unknownFinding: (p: { id: string }) => `This video’s standard has no check or question called “${p.id}”`,
-  criteriaInvalid: 'The standard has problems to fix before it can be saved',
-  criteriaConflict: 'The standard was changed somewhere else; read it again and retry',
-  answersInvalid: 'The answers aren’t in the expected shape: one entry per question, with a verdict and evidence',
-  documentName: 'Review decisions',
-  waiveLabel: (p: { id: string }) => `Let “${p.id}” stand`,
-  unwaiveLabel: (p: { id: string }) => `Hold “${p.id}” to the standard again`,
-  severityLabel: (p: { id: string }) => `Change what “${p.id}” is worth`,
-  reasonBuiltin: 'You haven’t set a standard yet, so these are the built-in checks.',
-  reasonUser: 'Held to your standard (Settings › Review).',
-  notReached: 'The review didn’t reach this question.',
-  evidenceMissing: 'Answered “holds” with nothing to look at.',
-  evidenceInvalid: (p: { kind: string }) => {
+    `${p.metric} is ${p.value}, en de norm vraagt ${p.limit}.${p.fix ? ` ${p.fix}` : ''}`,
+  limitAtLeast: (p: { min: number }) => `minstens ${p.min}`,
+  limitAtMost: (p: { max: number }) => `hooguit ${p.max}`,
+  limitBetween: (p: { min: number; max: number }) => `tussen ${p.min} en ${p.max}`,
+  limitYes: 'ja',
+  limitNo: 'nee',
+  limitAny: 'alles',
+  valueYes: 'ja',
+  valueNo: 'nee',
+
+  /** Errors (error codes REVIEW_REASON_REQUIRED, REVIEW_UNKNOWN_FINDING, REVIEW_CRITERIA_INVALID, REVIEW_CRITERIA_CONFLICT). */
+  reasonRequired: 'Zeg waarom: een bevinding laten staan of de waarde ervan verlagen heeft een reden nodig',
+  reasonTooLong: (p: { limit: number }) => `Houd de reden onder ${p.limit} tekens`,
+  unknownFinding: (p: { id: string }) => `De norm van deze video heeft geen controle of vraag die “${p.id}” heet`,
+  criteriaInvalid: 'De norm heeft problemen die opgelost moeten worden voordat hij kan worden opgeslagen',
+  criteriaConflict: 'De norm is elders gewijzigd; lees hem opnieuw en probeer het nog eens',
+  answersInvalid: 'De antwoorden hebben niet de verwachte vorm: één item per vraag, met een oordeel en bewijs',
+
+  /** The per-video decisions document (kind review-plan) and the edits that write it. */
+  documentName: 'Reviewbeslissingen',
+  waiveLabel: (p: { id: string }) => `“${p.id}” laten staan`,
+  unwaiveLabel: (p: { id: string }) => `“${p.id}” weer aan de norm houden`,
+  severityLabel: (p: { id: string }) => `Wat “${p.id}” waard is wijzigen`,
+
+  /** Why a video is held to this standard. */
+  reasonBuiltin: 'Je hebt nog geen norm ingesteld, dus dit zijn de ingebouwde controles.',
+  reasonUser: 'Gecontroleerd volgens jouw norm (Instellingen › Review).',
+
+  /** Notes on judged answers. `kind` is the evidence kind the question declares. */
+  notReached: 'De review is deze vraag niet toegekomen.',
+  evidenceMissing: 'Beantwoord met “voldoet” zonder iets om te bekijken.',
+  evidenceInvalid: (p: { kind: string }): string => {
     switch (p.kind) {
       case 'timestamp':
-        return 'Answered “holds”, but the evidence isn’t a time inside the video.';
+        return 'Beantwoord met “voldoet”, maar het bewijs is geen tijdstip in de video.';
       case 'frame':
-        return 'Answered “holds”, but the evidence isn’t a frame taken from this video.';
+        return 'Beantwoord met “voldoet”, maar het bewijs is geen frame uit deze video.';
       case 'field':
-        return 'Answered “holds”, but the evidence doesn’t name anything in this video.';
+        return 'Beantwoord met “voldoet”, maar het bewijs noemt niets in deze video.';
       case 'quote':
-        return 'Answered “holds”, but the quote isn’t in this video’s transcript or captions.';
+        return 'Beantwoord met “voldoet”, maar het citaat staat niet in het transcript of de ondertitels van deze video.';
       default:
-        return 'Answered “holds”, but the evidence can’t be checked.';
+        return 'Beantwoord met “voldoet”, maar het bewijs kan niet worden gecontroleerd.';
     }
   },
-  builtinFixPlaceholders: 'Fill or remove the placeholder boxes before delivering.',
-  builtinFixBlank: 'Cover or close the gap where nothing is on screen.',
-  builtinFixTextEdge: 'Move or narrow the text so it stays inside the frame.',
+
+  /** What to do about the built-in checks (`REVIEW_BUILTIN_CHECKS`). */
+  builtinFixPlaceholders: 'Vul de tijdelijke vakken in of verwijder ze voordat je oplevert.',
+  builtinFixBlank: 'Dek de lege plek af of vul die op waar niets in beeld is.',
+  builtinFixTextEdge: 'Verplaats of versmal de tekst zodat hij binnen het beeld blijft.',
 };

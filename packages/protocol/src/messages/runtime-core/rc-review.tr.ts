@@ -4,47 +4,57 @@ const s = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
 export const tr: RcReviewMessages = {
   blocked: (p: { count: number }) =>
-    `This video doesn’t meet your standard yet: ${p.count} ${s(p.count, 'finding stops', 'findings stop')} this export`,
-  blockedRemedy: 'Fix what’s listed and export again, or open the review and let a finding stand with a reason.',
+    `Bu video henüz ölçütünüze uymuyor: ${p.count} ${s(p.count, 'bulgu', 'bulgu')} bu dışa aktarmayı durduruyor`,
+  blockedRemedy: 'Listelenenleri düzeltin ve yeniden dışa aktarın ya da incelemeyi açıp bir bulguyu gerekçesiyle olduğu gibi bırakın.',
   findingLine: (p: { metric: string; value: string; limit: string; fix: string }) =>
-    `${p.metric} is ${p.value}, and the standard asks for ${p.limit}.${p.fix ? ` ${p.fix}` : ''}`,
-  limitAtLeast: (p: { min: number }) => `at least ${p.min}`,
-  limitAtMost: (p: { max: number }) => `at most ${p.max}`,
-  limitBetween: (p: { min: number; max: number }) => `between ${p.min} and ${p.max}`,
-  limitYes: 'yes',
-  limitNo: 'no',
-  limitAny: 'anything',
-  valueYes: 'yes',
-  valueNo: 'no',
-  reasonRequired: 'Say why: letting a finding stand or lowering what it’s worth needs a reason',
-  reasonTooLong: (p: { limit: number }) => `Keep the reason under ${p.limit} characters`,
-  unknownFinding: (p: { id: string }) => `This video’s standard has no check or question called “${p.id}”`,
-  criteriaInvalid: 'The standard has problems to fix before it can be saved',
-  criteriaConflict: 'The standard was changed somewhere else; read it again and retry',
-  answersInvalid: 'The answers aren’t in the expected shape: one entry per question, with a verdict and evidence',
-  documentName: 'Review decisions',
-  waiveLabel: (p: { id: string }) => `Let “${p.id}” stand`,
-  unwaiveLabel: (p: { id: string }) => `Hold “${p.id}” to the standard again`,
-  severityLabel: (p: { id: string }) => `Change what “${p.id}” is worth`,
-  reasonBuiltin: 'You haven’t set a standard yet, so these are the built-in checks.',
-  reasonUser: 'Held to your standard (Settings › Review).',
-  notReached: 'The review didn’t reach this question.',
-  evidenceMissing: 'Answered “holds” with nothing to look at.',
-  evidenceInvalid: (p: { kind: string }) => {
+    `${p.metric} ${p.value}, ölçüt ise ${p.limit} istiyor.${p.fix ? ` ${p.fix}` : ''}`,
+  limitAtLeast: (p: { min: number }) => `en az ${p.min}`,
+  limitAtMost: (p: { max: number }) => `en fazla ${p.max}`,
+  limitBetween: (p: { min: number; max: number }) => `${p.min} ile ${p.max} arası`,
+  limitYes: 'evet',
+  limitNo: 'hayır',
+  limitAny: 'fark etmez',
+  valueYes: 'evet',
+  valueNo: 'hayır',
+
+  /** Errors (error codes REVIEW_REASON_REQUIRED, REVIEW_UNKNOWN_FINDING, REVIEW_CRITERIA_INVALID, REVIEW_CRITERIA_CONFLICT). */
+  reasonRequired: 'Nedenini yazın: bir bulguyu olduğu gibi bırakmak ya da önemini düşürmek bir gerekçe ister',
+  reasonTooLong: (p: { limit: number }) => `Nedeni ${p.limit} karakterin altında tutun`,
+  unknownFinding: (p: { id: string }) => `Bu videonun ölçütünde “${p.id}” adlı bir kontrol ya da soru yok`,
+  criteriaInvalid: 'Ölçütte kaydedilmeden önce düzeltilmesi gereken sorunlar var',
+  criteriaConflict: 'Ölçüt başka bir yerde değiştirildi; yeniden okuyup tekrar deneyin',
+  answersInvalid: 'Yanıtlar beklenen biçimde değil: soru başına bir girdi, bir karar ve bir kanıt içermeli',
+
+  /** The per-video decisions document (kind review-plan) and the edits that write it. */
+  documentName: 'İnceleme kararları',
+  waiveLabel: (p: { id: string }) => `“${p.id}” olduğu gibi kalsın`,
+  unwaiveLabel: (p: { id: string }) => `“${p.id}” yeniden ölçüte göre incelensin`,
+  severityLabel: (p: { id: string }) => `“${p.id}” önemini değiştir`,
+
+  /** Why a video is held to this standard. */
+  reasonBuiltin: 'Henüz bir ölçüt belirlemediğiniz için yerleşik kontroller geçerli.',
+  reasonUser: 'Ölçütünüze göre incelendi (Ayarlar › İnceleme).',
+
+  /** Notes on judged answers. `kind` is the evidence kind the question declares. */
+  notReached: 'İnceleme bu soruya ulaşamadı.',
+  evidenceMissing: 'Bakılacak bir şey olmadan “uygun” diye yanıtlandı.',
+  evidenceInvalid: (p: { kind: string }): string => {
     switch (p.kind) {
       case 'timestamp':
-        return 'Answered “holds”, but the evidence isn’t a time inside the video.';
+        return '“Uygun” diye yanıtlandı, ama kanıt videoda bir an değil.';
       case 'frame':
-        return 'Answered “holds”, but the evidence isn’t a frame taken from this video.';
+        return '“Uygun” diye yanıtlandı, ama kanıt bu videodan alınmış bir kare değil.';
       case 'field':
-        return 'Answered “holds”, but the evidence doesn’t name anything in this video.';
+        return '“Uygun” diye yanıtlandı, ama kanıt bu videoda hiçbir şeyi adlandırmıyor.';
       case 'quote':
-        return 'Answered “holds”, but the quote isn’t in this video’s transcript or captions.';
+        return '“Uygun” diye yanıtlandı, ama alıntı bu videonun dökümünde ya da altyazısında yok.';
       default:
-        return 'Answered “holds”, but the evidence can’t be checked.';
+        return '“Uygun” diye yanıtlandı, ama kanıt kontrol edilemiyor.';
     }
   },
-  builtinFixPlaceholders: 'Fill or remove the placeholder boxes before delivering.',
-  builtinFixBlank: 'Cover or close the gap where nothing is on screen.',
-  builtinFixTextEdge: 'Move or narrow the text so it stays inside the frame.',
+
+  /** What to do about the built-in checks (`REVIEW_BUILTIN_CHECKS`). */
+  builtinFixPlaceholders: 'Teslim etmeden önce yer tutucu kutuları doldurun ya da kaldırın.',
+  builtinFixBlank: 'Ekranda hiçbir şeyin olmadığı boşluğu kapatın ya da doldurun.',
+  builtinFixTextEdge: 'Metni kadraj içinde kalacak şekilde taşıyın ya da daraltın.',
 };

@@ -29,7 +29,7 @@ export const de: ExportRejectionMessages = {
     EXPORT_PUBLISH_FAILED: "Dateien konnten nicht am Exportspeicherort gespeichert werden",
     EXPORT_PARTIALLY_PUBLISHED: "Nur einige Dateien gespeichert",
     RESOURCE_ADMISSION_UNSATISFIABLE: "Dieser Computer hat nicht genug Ressourcen für diesen Export",
-    REVIEW_BLOCKED: 'This video doesn’t meet your standard yet',
+    REVIEW_BLOCKED: 'Dieses Video erfüllt deinen Maßstab noch nicht',
   } as Record<string, string>,
   resources: {
     memory: "Arbeitsspeicher",
@@ -48,7 +48,7 @@ export const de: ExportRejectionMessages = {
   space: (required: string, available: string) => `Benötigt etwa ${required}; nur ${available} verfügbar`,
   notEnough: (resource: string) => `Nicht ausreichend: ${resource}`,
   resourceHint: "Kürzeren Bereich oder niedrigere Auflösung exportieren, dann erneut versuchen.",
-  reviewHint: 'Fix what’s listed, or open the review and let a finding stand with a reason.',
+  reviewHint: 'Behebe die aufgeführten Punkte oder öffne die Prüfung und lass einen Befund mit Begründung bestehen.',
   reviewItem: (said, fix) => (fix ? `${said}. ${fix}` : `${said}.`),
-  openReview: 'Open the review',
+  openReview: 'Prüfung öffnen',
 };

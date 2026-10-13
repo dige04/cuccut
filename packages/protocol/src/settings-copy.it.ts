@@ -23,5 +23,5 @@ export const it: SettingDescriptionMessages = {
   'updates.autoCheck': 'Verifica automaticamente gli aggiornamenti dell’app', 'updates.autoDownload': 'Scarica nuove versioni in background (senza installarle automaticamente)',
   'diagnostics.enabled': 'Invia statistiche d’utilizzo e riepiloghi delle prestazioni anonimi (senza media, testo o percorsi)', 'offline.strict': 'Rigorosamente offline: non inviare nulla a nessun servizio online',
   'review.gate':
-    'Hold finished videos to your review standard: an export for delivery stops on a critical finding until it is fixed or let stand with a reason. Previews are never stopped',
+    'Sottoponi i video finiti al tuo standard di revisione: un’esportazione per la consegna si blocca su un rilievo critico finché non viene risolto o lasciato valido con una motivazione. Le anteprime non vengono mai bloccate',
 };

@@ -35,5 +35,5 @@ export const fr: SettingDescriptionMessages = {
   'diagnostics.enabled': "Envoyer des statistiques anonymes et résumés de performance (sans média, texte ni chemin)",
   'offline.strict': "Hors ligne strict : ne rien envoyer à un service en ligne",
   'review.gate':
-    'Hold finished videos to your review standard: an export for delivery stops on a critical finding until it is fixed or let stand with a reason. Previews are never stopped',
+    'Soumettre les vidéos finies à ta norme de revue : un export pour livraison s’arrête sur une constatation critique tant qu’elle n’est pas corrigée ou maintenue avec un motif. Les aperçus ne sont jamais arrêtés',
 } satisfies Record<SettingKey, string>;

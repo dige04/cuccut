@@ -29,7 +29,7 @@ export const ko: ExportRejectionMessages = {
     EXPORT_PUBLISH_FAILED: '파일을 내보낼 위치에 저장하지 못했습니다',
     EXPORT_PARTIALLY_PUBLISHED: '일부 파일만 저장되었습니다',
     RESOURCE_ADMISSION_UNSATISFIABLE: '이 컴퓨터의 리소스로는 이번 내보내기를 할 수 없습니다',
-    REVIEW_BLOCKED: 'This video doesn’t meet your standard yet',
+    REVIEW_BLOCKED: '이 영상은 아직 기준을 충족하지 않습니다',
   },
   resources: {
     memory: '메모리',
@@ -48,7 +48,7 @@ export const ko: ExportRejectionMessages = {
   space: (required: string, available: string) => `약 ${required} 필요 · 남은 공간 ${available}`,
   notEnough: (resource: string) => `부족: ${resource}`,
   resourceHint: '더 짧은 범위를 내보내거나 더 낮은 해상도를 고른 뒤 다시 시도하세요.',
-  reviewHint: 'Fix what’s listed, or open the review and let a finding stand with a reason.',
+  reviewHint: '나열된 항목을 고치거나, 검토를 열어 이유와 함께 발견 사항을 유지하세요.',
   reviewItem: (said, fix) => (fix ? `${said}. ${fix}` : `${said}.`),
-  openReview: 'Open the review',
+  openReview: '검토 열기',
 };

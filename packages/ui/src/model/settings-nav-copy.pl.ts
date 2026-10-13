@@ -21,7 +21,7 @@ export const pl: SettingsNavMessages = {
     fonts: "Czcionki",
     agent: "Dostawcy agentów",
     skills: "Skills",
-    glossary: "Słownik", review: 'Review',
+    glossary: "Słownik", review: 'Recenzja',
     privacy: "Prywatność i uprawnienia",
     diagnostics: "Diagnostyka",
     about: "O programie",

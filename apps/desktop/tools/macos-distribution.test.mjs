@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { archiveLocalMac } from './macos-distribution.mjs';
+import { archiveLocalMac, createDmg } from './macos-distribution.mjs';
 
 test('local archives verify the extracted bundle and disk image and record checksums without notarization', async () => {
   const output = mkdtempSync(path.join(tmpdir(), 'cuccut-local-mac-test-'));
@@ -44,4 +44,19 @@ test('local archives reject a mismatched bundle before making an archive', async
       return JSON.stringify({ CFBundleIdentifier: 'another.app' });
     }), /bundle ID, version or build differs/);
   } finally { rmSync(output, { recursive: true, force: true }); }
+});
+
+test('disk image creation retries a busy resource and fails at once on other errors', () => {
+  let calls = 0;
+  const busyTwice = () => { if (++calls < 3) throw new Error('hdiutil (1): hdiutil: create failed - Resource busy'); return 'ok'; };
+  assert.equal(createDmg(['x.dmg'], busyTwice, { pauseMs: 1 }), 'ok');
+  assert.equal(calls, 3);
+  calls = 0;
+  const broken = () => { calls++; throw new Error('hdiutil (1): create failed - No space left on device'); };
+  assert.throws(() => createDmg(['x.dmg'], broken, { pauseMs: 1 }), /No space left/);
+  assert.equal(calls, 1);
+  calls = 0;
+  const alwaysBusy = () => { calls++; throw new Error('Resource busy'); };
+  assert.throws(() => createDmg(['x.dmg'], alwaysBusy, { attempts: 3, pauseMs: 1 }), /Resource busy/);
+  assert.equal(calls, 3);
 });

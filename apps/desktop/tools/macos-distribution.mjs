@@ -11,6 +11,19 @@ export function runMac(command, args) {
   return `${result.stdout}${result.stderr}`;
 }
 
+// `hdiutil create` sometimes fails with "Resource busy" while Spotlight or diskimages-helper still holds the
+// source folder; that error is transient, so retry it a few times with a short pause. Other errors fail at once.
+export function createDmg(args, run = runMac, { attempts = 5, pauseMs = 3000 } = {}) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return run('hdiutil', ['create', ...args]);
+    } catch (error) {
+      if (attempt >= attempts || !/Resource busy/i.test(String(error?.message))) throw error;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, pauseMs);
+    }
+  }
+}
+
 export function signingPreflight(sha1, profile, keychain) {
   if (!/^[A-F0-9]{40}$/.test(sha1 ?? '')) throw new Error('--sign-sha1 requires a full uppercase certificate SHA-1');
   const identities = runMac('security', ['find-identity', '-v', '-p', 'codesigning', ...(keychain ? [keychain] : [])]);
@@ -100,7 +113,7 @@ export async function distributeMac({ app, output, stem, version, build, appId, 
   runMac('ditto', [app, path.join(dmgRoot, 'CucCut.app')]);
   runMac('ln', ['-s', '/Applications', path.join(dmgRoot, 'Applications')]);
   const dmg = path.join(output, `${stem}.dmg`);
-  runMac('hdiutil', ['create', '-volname', `CucCut ${version}`, '-srcfolder', dmgRoot, '-ov', '-format', 'ULFO', dmg]);
+  createDmg(['-volname', `CucCut ${version}`, '-srcfolder', dmgRoot, '-ov', '-format', 'ULFO', dmg]);
   runMac('codesign', ['--sign', signingSha1, '--timestamp', ...(keychain ? ['--keychain', keychain] : []), dmg]);
   const dmgRaw = runMac('xcrun', ['notarytool', 'submit', dmg, '--keychain-profile', profile,
     ...(keychain ? ['--keychain', keychain] : []), '--wait', '--output-format', 'json']);
@@ -139,7 +152,7 @@ export async function archiveLocalMac({ app, output, stem, version, build, appId
   run('ditto', [verifiedApp, path.join(dmgRoot, 'CucCut.app')]);
   run('ln', ['-s', '/Applications', path.join(dmgRoot, 'Applications')]);
   const dmg = path.join(output, `${stem}.dmg`);
-  run('hdiutil', ['create', '-volname', `CucCut ${version}`, '-srcfolder', dmgRoot, '-format', 'ULFO', dmg]);
+  createDmg(['-volname', `CucCut ${version}`, '-srcfolder', dmgRoot, '-ov', '-format', 'ULFO', dmg], run);
   run('hdiutil', ['verify', dmg]);
   const portable = { format: 'zip', ...await facts(zip) };
   const installer = { format: 'dmg', ...await facts(dmg) };

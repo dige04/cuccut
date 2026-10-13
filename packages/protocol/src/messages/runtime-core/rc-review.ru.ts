@@ -30,6 +30,10 @@ export const ru: RcReviewMessages = {
   waiveLabel: (p: { id: string }) => `Оставить «${p.id}» без изменений`,
   unwaiveLabel: (p: { id: string }) => `Снова проверять «${p.id}» по стандарту`,
   severityLabel: (p: { id: string }) => `Изменить важность «${p.id}»`,
+  severityCritical: 'критично',
+  severitySuggestion: 'предложение',
+  severityNitpick: 'мелочь',
+  planProtected: 'Review decisions change only through the review: let a finding stand, hold it again or change what it’s worth there',
 
   /** Why a video is held to this standard. */
   reasonBuiltin: 'Вы ещё не задали стандарт, поэтому применяются встроенные проверки.',

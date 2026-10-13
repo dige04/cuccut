@@ -9,7 +9,7 @@ const context = {
   sourceRoot: root,
   durationSec: 75,
   ids: new Set(['item_1', 'track_main', 'doc_speech']),
-  texts: ['Hello there. Good  Morning, everyone', '字幕 第一行'],
+  texts: ['Hello there. Good  Morning, everyone', '字幕 第一行就在这里出现了', 'Xin chào, đây là video của tôi'],
   frames: new Set(['.cuccut-out/frames/v1/frame-4.0.jpg']),
 };
 
@@ -53,23 +53,31 @@ describe('evidence of the declared kind', () => {
     expect(checkEvidence('field', 'item_1', context)).toBe(true);
     expect(checkEvidence('field', 'the title (item_1)', context)).toBe(true);
     expect(checkEvidence('field', 'hook', context)).not.toBe(true);
+    // The video's own id is not in the set (snapshotIds leaves it out), so naming it points at nothing.
+    expect(checkEvidence('field', 'Looks fine, vid_abc', context)).not.toBe(true);
   });
 
   it('finds quotes with case and whitespace folded', () => {
     expect(foldText('“Good Morning”')).toBe('goodmorning');
     expect(checkEvidence('quote', '"good morning, Everyone"', context)).toBe(true);
-    expect(checkEvidence('quote', '第一行', context)).toBe(true);
+    expect(checkEvidence('quote', '第一行就在这里出现', context)).toBe(true);
+    expect(checkEvidence('quote', 'đây là video', context)).toBe(true);
     expect(checkEvidence('quote', 'good evening', context)).not.toBe(true);
     expect(checkEvidence('quote', 'g', context)).not.toBe(true);
+    // A common word or two is in every transcript: too short to point at one place.
+    expect(checkEvidence('quote', 'there', context)).not.toBe(true);
+    expect(checkEvidence('quote', 'là', context)).not.toBe(true);
+    expect(checkEvidence('quote', 'Good morning', context)).not.toBe(true);
+    expect(checkEvidence('quote', '第一行', context)).not.toBe(true);
   });
 
   it('collects ids and document text', () => {
     const snapshot = {
       id: 'v',
-      documents: { d1: {} },
+      documents: { d1: { id: 'd1', kind: 'speech' }, plan: { id: 'plan', kind: 'review-plan' } },
       sequences: { s: { id: 's', tracks: [{ id: 't' }], items: [{ id: 'i' }], markers: [{ id: 'm' }] } },
     } as unknown as VideoSnapshot;
-    expect([...snapshotIds(snapshot)].sort()).toEqual(['d1', 'i', 'm', 's', 't', 'v']);
+    expect([...snapshotIds(snapshot)].sort()).toEqual(['d1', 'i', 'm', 's', 't']);
     expect(documentText({ schema: 'cuccut.speech/1', words: [{ text: 'Hello' }, { text: 'there.' }] })).toBe('Hello there.');
     expect(documentText({ schema: 'cuccut.caption/1', cues: [{ text: 'One' }, { text: 'Two' }] })).toBe('One\nTwo');
     expect(documentText({ schema: 'cuccut.translation/2' })).toBe('');

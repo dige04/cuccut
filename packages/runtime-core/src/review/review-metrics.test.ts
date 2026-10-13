@@ -246,6 +246,15 @@ describe('export metrics', () => {
       'export.truePeakDb': -1.5,
     });
     const quiet = job({});
+    // Only whole-sequence deliverable exports count: a newer preview or range export describes a fragment.
+    const settings = (over: object) => ({ ...job({}).export!, settings: { kind: 'video', format: 'mp4', ...over } }) as JobRecord['export'];
+    const preview = job({ jobId: 'preview', endedAt: '2026-03-01T00:00:00Z', export: settings({ purpose: 'preview' }) });
+    const range = job({ jobId: 'range', endedAt: '2026-03-01T00:00:00Z', export: settings({ range: { start: 0, end: 5 } }) });
+    const ranges = job({ jobId: 'ranges', endedAt: '2026-03-01T00:00:00Z', export: settings({ ranges: [{ start: 0, end: 5 }] }) });
+    const deliverable = job({ jobId: 'deliverable', export: settings({ purpose: 'deliverable', ranges: [] }) });
+    expect(latestVideoExport([older, preview, range, ranges, newest], 'v1', 's1')?.jobId).toBe('j1');
+    expect(latestVideoExport([preview, range, ranges, deliverable], 'v1', 's1')?.jobId).toBe('deliverable');
+    expect(latestVideoExport([preview, range, ranges], 'v1', 's1')).toBeNull();
     delete quiet.result!.outputs![0]!.validation!.loudness;
     expect('export.loudnessLufs' in exportMetrics(quiet)).toBe(false);
   });

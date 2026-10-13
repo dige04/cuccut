@@ -109,7 +109,7 @@ export const REVIEW_PARAM_SCHEMAS = {
     .object({ standard: z.record(z.string(), z.unknown()), expectedRevision: z.number().int().min(0).optional() })
     .strict(),
   'review.check': z.object({ videoId, sequenceId: videoId.optional() }).strict(),
-  'review.run': z.object({ videoId, sequenceId: videoId.optional() }).strict(),
+  'review.run': z.object({ videoId, sequenceId: videoId.optional(), revision: revision.optional() }).strict(),
   'review.get': z.object({ videoId }).strict(),
   'review.waive': z.object({ ...decision, reason }).strict(),
   'review.unwaive': z.object(decision).strict(),

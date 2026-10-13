@@ -19,6 +19,8 @@ export const zhHans: ReviewMessages = {
   asking: '正在提问…',
   askingNote: '智能体正在视频的对话中回答问题。',
   openConversation: '打开对话',
+  askAgain: 'Ask again',
+  stopWaiting: 'Stop waiting',
   notChecked: '此视频尚未检查。',
   verdict: {
     passed: '它符合所有被问到的要求。',

@@ -254,12 +254,17 @@ export function projectMetrics(snapshot: VideoSnapshot, sequenceId: Id, bodies: 
   return bag;
 }
 
-/** The newest completed finished-video export of a sequence, or null. */
+/**
+ * The newest completed finished-video export of a whole sequence, or null. A preview, or an export of a range or of
+ * several ranges, describes a fragment, not the video that is delivered, so it is never read.
+ */
 export function latestVideoExport(jobs: readonly JobRecord[], videoId: Id, sequenceId: Id): JobRecord | null {
   let best: JobRecord | null = null;
   for (const job of jobs) {
     if (job.kind !== 'export' || job.state !== 'completed' || job.videoId !== videoId) continue;
-    if (job.export?.settings.kind !== 'video' || job.export.sequenceId !== sequenceId) continue;
+    const settings = job.export?.settings;
+    if (settings?.kind !== 'video' || job.export!.sequenceId !== sequenceId) continue;
+    if (settings.purpose === 'preview' || settings.range || settings.ranges?.length) continue;
     if (!job.result?.outputs?.length) continue;
     const at = job.endedAt ?? job.updatedAt;
     if (!best || at > (best.endedAt ?? best.updatedAt)) best = job;

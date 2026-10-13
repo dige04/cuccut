@@ -75,7 +75,7 @@ export interface ReviewDecisionOptions {
   expectedRevision?: string;
   commandId?: Id;
   /** The calling task's id and protections, for an agent's write (`videos.apply`). */
-  provenance?: ApplyProvenance;
+  provenance?: Omit<NonNullable<ApplyProvenance>, 'reviewPlan'>;
 }
 
 interface Opened {
@@ -162,9 +162,11 @@ export class ReviewService {
 
   /**
    * Holds the video to its standard and writes the result: the project tier, the export tier when a finished export
-   * of the sequence exists, and the existing answers re-evaluated against the current plan.
+   * of the sequence exists, and the existing answers re-evaluated against the current plan. `revision` is one the caller
+   * just made (an undo's receipt): the video mirror follows the engine's events, so the check waits for it to catch up.
    */
-  async run(videoId: Id, options: { sequenceId?: Id; export?: boolean } = {}): Promise<ReviewResult> {
+  async run(videoId: Id, options: { sequenceId?: Id; export?: boolean; revision?: string } = {}): Promise<ReviewResult> {
+    if (options.revision !== undefined) await this.#caughtUp(videoId, options.revision);
     const opened = this.#open(videoId, options.sequenceId);
     return this.#write(videoId, async () => {
       const previous = await this.#previous(opened);
@@ -458,7 +460,8 @@ export class ReviewService {
         labelRef: refOf(label),
       },
       principal,
-      options.provenance,
+      // The only writer of the decisions document: generic edits by agents and services are refused (`REVIEW_PLAN_PROTECTED`).
+      { ...options.provenance, reviewPlan: true },
     );
     const before = receipt.previousRevision;
     const after = await this.#reopen(videoId, receipt.videoRevision, opened.sequenceId);
@@ -472,11 +475,16 @@ export class ReviewService {
 
   /** The video once the mirror has caught up with `revision` (the write this service just made). */
   async #reopen(videoId: Id, revision: string, sequenceId: Id): Promise<Opened> {
+    await this.#caughtUp(videoId, revision);
+    return this.#open(videoId, sequenceId);
+  }
+
+  /** Waits (at most `MIRROR_WAIT_MS`) for the video mirror to reach `revision`. */
+  async #caughtUp(videoId: Id, revision: string): Promise<void> {
     const deadline = Date.now() + MIRROR_WAIT_MS;
     while (this.#videos.mirror(videoId)?.video.revision !== revision && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
-    return this.#open(videoId, sequenceId);
   }
 }
 

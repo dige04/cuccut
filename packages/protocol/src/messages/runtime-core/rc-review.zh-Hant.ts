@@ -30,6 +30,10 @@ export const zhHant: RcReviewMessages = {
   waiveLabel: (p: { id: string }) => `保留「${p.id}」`,
   unwaiveLabel: (p: { id: string }) => `重新依標準檢查「${p.id}」`,
   severityLabel: (p: { id: string }) => `變更「${p.id}」的重要程度`,
+  severityCritical: '關鍵',
+  severitySuggestion: '建議',
+  severityNitpick: '細節',
+  planProtected: 'Review decisions change only through the review: let a finding stand, hold it again or change what it’s worth there',
 
   /** Why a video is held to this standard. */
   reasonBuiltin: '你還沒有設定標準，因此套用的是內建檢查。',

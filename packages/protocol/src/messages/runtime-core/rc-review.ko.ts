@@ -30,6 +30,10 @@ export const ko: RcReviewMessages = {
   waiveLabel: (p: { id: string }) => `“${p.id}” 유지`,
   unwaiveLabel: (p: { id: string }) => `“${p.id}”을(를) 다시 기준에 맞춰 검토`,
   severityLabel: (p: { id: string }) => `“${p.id}”의 중요도 변경`,
+  severityCritical: '심각',
+  severitySuggestion: '제안',
+  severityNitpick: '사소함',
+  planProtected: 'Review decisions change only through the review: let a finding stand, hold it again or change what it’s worth there',
 
   /** Why a video is held to this standard. */
   reasonBuiltin: '아직 기준을 설정하지 않아 기본 제공 검사를 적용하고 있습니다.',

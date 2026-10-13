@@ -160,7 +160,7 @@ const DEFINITIONS: Record<ToolName, ToolInfo> = {
     description: [
       "Records answers to the standard's questions, each with evidence.",
       'Each answer points at evidence of the kind the question declares.',
-      'Look first (videos_frames, documents_read, a purpose: preview export), then answer every question: holds, fails or cannot-tell, with evidence to point at: timestamp (12.5s, 01:02 or 00:01:02, inside the video), frame (a file videos_frames wrote under .cuccut-out/frames/), field (an id in the video: item, track, document or marker) or quote (words found in a transcript or caption document).',
+      'Look first (videos_frames, documents_read, a purpose: preview export), then answer every question: holds, fails or cannot-tell, with evidence to point at: timestamp (12.5s, 01:02 or 00:01:02, inside the video), frame (a file videos_frames wrote under .cuccut-out/frames/), field (an id in the video: item, track, document or marker; not the video’s own id) or quote (at least three words, or eight characters in Chinese or Japanese, found in a transcript or caption document).',
       'holds with evidence that is empty or not of the declared kind is recorded as cannot-tell with a note; cannot-tell never counts as holding. The result comes back with the rubric as recorded.',
       'Writes only the result under .cuccut-out/reviews/; the video is not changed.',
     ].join('\n'),
@@ -325,7 +325,7 @@ export class ReviewTools implements ToolSet {
     const opened = await scope.open(args.video, access);
     const videoId = opened.ref.videoId;
     // Refused before asking the user: a call that cannot succeed is not put to them.
-    if (!args.reason.trim()) throw new RpcError('invalid-request', RcReview.reasonRequired(), { code: 'REVIEW_REASON_REQUIRED' });
+    checkReason(args.reason);
     await this.#item(videoId, args.id);
     const approval = await scope.confirm(access, {
       tool: 'review_waive',
@@ -361,13 +361,11 @@ export class ReviewTools implements ToolSet {
     const current = plan.severities[args.id] ?? item.severity;
     const target = args.severity ?? item.severity;
     const lowering = RANK[target] < RANK[current];
-    if (args.severity !== null && RANK[args.severity] < RANK[item.severity] && !args.reason?.trim()) {
-      throw new RpcError('invalid-request', RcReview.reasonRequired(), { code: 'REVIEW_REASON_REQUIRED' });
-    }
+    if (args.severity !== null && RANK[args.severity] < RANK[item.severity]) checkReason(args.reason);
     const approval = await scope.confirm(access, {
       tool: 'review_severity',
       video: args.video,
-      ...confirmSummary(RcAgentTools.reviewSeverity({ id: args.id, from: current, to: target })),
+      ...confirmSummary(RcAgentTools.reviewSeverity({ id: args.id, from: severityName(current), to: severityName(target) })),
       // Lowering what a finding is worth loosens the user's standard: asked every time. Raising it is an ordinary edit.
       risk: lowering ? 'high' : 'edit',
     });
@@ -507,6 +505,20 @@ function digestRubric(question: RubricResult) {
     ...(question.waived ? { waived: question.waived } : {}),
     ...(question.lowered ? { lowered: question.lowered } : {}),
   };
+}
+
+/** The checks `ReviewService` makes on a reason, made before the user is asked (the same codes). */
+function checkReason(reason: string | undefined): void {
+  const text = reason?.trim() ?? '';
+  if (!text) throw new RpcError('invalid-request', RcReview.reasonRequired(), { code: 'REVIEW_REASON_REQUIRED' });
+  if (text.length > REVIEW_LIMITS.reason) {
+    throw new RpcError('invalid-request', RcReview.reasonTooLong({ limit: REVIEW_LIMITS.reason }), { code: 'REVIEW_REASON_REQUIRED', limit: REVIEW_LIMITS.reason });
+  }
+}
+
+/** A severity as a word in the reader's language, for the confirmation prompt. */
+function severityName(severity: ReviewSeverity) {
+  return severity === 'critical' ? RcReview.severityCritical() : severity === 'suggestion' ? RcReview.severitySuggestion() : RcReview.severityNitpick();
 }
 
 /** Session calls carry the task in progress and the protections of its contract (§3.2), like every other edit. */

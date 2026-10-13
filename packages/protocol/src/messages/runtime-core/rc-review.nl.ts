@@ -30,6 +30,10 @@ export const nl: RcReviewMessages = {
   waiveLabel: (p: { id: string }) => `“${p.id}” laten staan`,
   unwaiveLabel: (p: { id: string }) => `“${p.id}” weer aan de norm houden`,
   severityLabel: (p: { id: string }) => `Wat “${p.id}” waard is wijzigen`,
+  severityCritical: 'kritiek',
+  severitySuggestion: 'suggestie',
+  severityNitpick: 'detail',
+  planProtected: 'Review decisions change only through the review: let a finding stand, hold it again or change what it’s worth there',
 
   /** Why a video is held to this standard. */
   reasonBuiltin: 'Je hebt nog geen norm ingesteld, dus dit zijn de ingebouwde controles.',

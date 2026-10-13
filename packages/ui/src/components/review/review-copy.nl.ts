@@ -19,6 +19,8 @@ export const nl: ReviewMessages = {
   asking: 'Vragen stellen…',
   askingNote: 'Een agent beantwoordt de vragen in het gesprek van de video.',
   openConversation: 'Het gesprek openen',
+  askAgain: 'Ask again',
+  stopWaiting: 'Stop waiting',
   notChecked: 'Deze video is nog niet gecontroleerd.',
   verdict: {
     passed: 'Voldoet aan alles wat erom gevraagd wordt.',

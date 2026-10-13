@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Dialog as DialogPrimitive } from '@base-ui/react/dialog';
 import type { Id } from '@cuccut/protocol';
 import { ShieldCheck, XIcon } from 'lucide-react';
@@ -24,9 +25,33 @@ export function closeReview(): void {
   useReviewDialog.setState({ videoId: null });
 }
 
+/** Dialogs mounted per video: the request to show a video's review lasts only while a dialog for that video is mounted. */
+const mounted = new Map<Id, number>();
+
+/**
+ * Keeps the request from outliving the editor of its video: when the last dialog for a video unmounts (the editor moved to
+ * another video, or closed), a request still naming it is dropped, so coming back to that video later does not pop the
+ * review open by itself. Checked a tick later, so a remount of the same video (or a request for the video the editor is
+ * about to show) keeps it.
+ */
+function useReleaseOnUnmount(videoId: Id): void {
+  useEffect(() => {
+    mounted.set(videoId, (mounted.get(videoId) ?? 0) + 1);
+    return () => {
+      const left = (mounted.get(videoId) ?? 1) - 1;
+      if (left > 0) mounted.set(videoId, left);
+      else mounted.delete(videoId);
+      setTimeout(() => {
+        if (!mounted.has(videoId) && useReviewDialog.getState().videoId === videoId) closeReview();
+      }, 0);
+    };
+  }, [videoId]);
+}
+
 /** Mounted beside the video settings dialog in the editor; `sequenceId` is the sequence the editor shows (the review's default is the root). */
 export function ReviewDialog({ videoId, sequenceId }: { videoId: Id; sequenceId: Id | null }) {
   const open = useReviewDialog((s) => s.videoId === videoId);
+  useReleaseOnUnmount(videoId);
   return (
     <Dialog open={open} onOpenChange={(next) => (next ? undefined : closeReview())}>
       <DialogContent

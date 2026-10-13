@@ -37,6 +37,8 @@ const en = {
   asking: 'Asking…',
   askingNote: 'An agent is answering the questions in the video’s conversation.',
   openConversation: 'Open the conversation',
+  askAgain: 'Ask again',
+  stopWaiting: 'Stop waiting',
   notChecked: 'This video hasn’t been checked yet.',
   verdict: {
     passed: 'It holds to everything it is asked.',

@@ -102,12 +102,13 @@ export function ReviewSettings() {
   const { view, loadError, reload } = useStandardView();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [warnings, setWarnings] = useState<ReviewLintIssue[] | null>(null);
   // The latest view, for an Undo pressed after later changes (it puts the item back into what is there now).
   const latest = useRef<ReviewCriteriaView | null>(null);
   latest.current = view;
 
-  const lint = warnings ?? view?.warnings ?? [];
+  // Always the view's lint: the re-read after a save brings the same issues, and a change made elsewhere (the agent,
+  // another window) re-reads it too, so the list never keeps issues that were fixed or misses new ones.
+  const lint = view?.warnings ?? [];
 
   /** Saves a whole standard against the revision it was made from; the topic and a re-read bring the page up to date. */
   const save = useCallback(
@@ -117,8 +118,7 @@ export function ReviewSettings() {
       setBusy(key);
       setError(null);
       try {
-        const saved = await runtime.setReviewCriteria(next(current.standard), current.revision);
-        setWarnings(saved.warnings);
+        await runtime.setReviewCriteria(next(current.standard), current.revision);
         await reload();
         return true;
       } catch (reason) {
@@ -227,15 +227,15 @@ function GatePanel({ web }: { web: boolean }) {
   );
 }
 
-/** Lint's warnings: orange (the warning hue; amber reads as the accent), above the rows, one sentence each. They never stop a save; errors do, and arrive as the alert. */
+/** Lint's warnings: the warning token (orange; amber would read as the accent), above the rows, one sentence each. They never stop a save; errors do, and arrive as the alert. */
 function LintList({ issues }: { issues: ReviewLintIssue[] }) {
   return (
-    <section aria-label={T.lintTitle} className="rounded-3xl bg-card px-5 py-3 ring-1 ring-orange-400/25">
+    <section aria-label={T.lintTitle} className="rounded-3xl bg-card px-5 py-3 ring-1 ring-warning/25">
       <h3 className="flex items-center gap-2 text-sm font-medium text-foreground">
-        <TriangleAlert aria-hidden className="size-4 shrink-0 text-orange-400" />
+        <TriangleAlert aria-hidden className="size-4 shrink-0 text-warning" />
         {T.lintTitle}
       </h3>
-      <ul className="mt-1.5 flex list-disc flex-col gap-1 pl-10 marker:text-orange-400">
+      <ul className="mt-1.5 flex list-disc flex-col gap-1 pl-10 marker:text-warning">
         {issues.map((issue, i) => (
           <li key={`${issue.code}:${issue.id ?? ''}:${i}`} role="status" className="text-xs leading-relaxed text-foreground/85">
             {lintText(issue)}

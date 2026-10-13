@@ -19,6 +19,8 @@ export const pl: ReviewMessages = {
   asking: 'Zadawanie pytań…',
   askingNote: 'Agent odpowiada na pytania w rozmowie o filmie.',
   openConversation: 'Otwórz rozmowę',
+  askAgain: 'Ask again',
+  stopWaiting: 'Stop waiting',
   notChecked: 'Ten film nie został jeszcze sprawdzony.',
   verdict: {
     passed: 'Spełnia wszystko, o co jest pytany.',

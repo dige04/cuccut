@@ -19,6 +19,8 @@ export const es: ReviewMessages = {
   asking: 'Preguntando…',
   askingNote: 'Un agente está respondiendo las preguntas en la conversación del vídeo.',
   openConversation: 'Abrir la conversación',
+  askAgain: 'Ask again',
+  stopWaiting: 'Stop waiting',
   notChecked: 'Este vídeo aún no se ha revisado.',
   verdict: {
     passed: 'Cumple con todo lo que se le pide.',

@@ -19,6 +19,8 @@ export const tr: ReviewMessages = {
   asking: 'Soruluyor…',
   askingNote: 'Bir ajan, videonun sohbetindeki soruları yanıtlıyor.',
   openConversation: 'Sohbeti aç',
+  askAgain: 'Ask again',
+  stopWaiting: 'Stop waiting',
   notChecked: 'Bu video henüz kontrol edilmedi.',
   verdict: {
     passed: 'İstenen her şeye uygun.',

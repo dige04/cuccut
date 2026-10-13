@@ -19,6 +19,8 @@ export const vi: ReviewMessages = {
   asking: 'Đang hỏi…',
   askingNote: 'Một agent đang trả lời các câu hỏi trong hội thoại của video.',
   openConversation: 'Mở hội thoại',
+  askAgain: 'Hỏi lại',
+  stopWaiting: 'Thôi chờ',
   notChecked: 'Video này chưa được kiểm.',
   verdict: {
     passed: 'Video đạt mọi yêu cầu được đặt ra.',

@@ -91,6 +91,8 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -134,6 +136,10 @@
   --accent: oklch(0.7 0.16 48);
   --accent-foreground: oklch(0.16 0 0);
   --destructive: oklch(0.63 0.23 27);
+  /* Status marks (a check that holds, a finding worth a look, a stale reading): icons and small text only, never a fill.
+     Warning is orange, away from the yellow accent so it never reads as the primary action. */
+  --success: oklch(0.77 0.17 163);
+  --warning: oklch(0.75 0.18 56);
   --border: oklch(0.32 0 0);
   --input: oklch(0.36 0 0);
   --ring: oklch(0.879 0.168 96 / 60%);

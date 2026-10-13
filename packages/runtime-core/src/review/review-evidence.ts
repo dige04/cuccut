@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { REVIEW_FRAMES_DIR, type ReviewEvidence, type ReviewQuestion, type RubricAnswer, type VideoSnapshot } from '@cuccut/protocol';
+import { REVIEW_FRAMES_DIR, REVIEW_PLAN_KIND, type ReviewEvidence, type ReviewQuestion, type RubricAnswer, type VideoSnapshot } from '@cuccut/protocol';
 import { RcReview } from '@cuccut/protocol/messages/runtime-core';
 
 /**
@@ -11,8 +11,8 @@ import { RcReview } from '@cuccut/protocol/messages/runtime-core';
  * |---|---|
  * | `timestamp` | `ss(.f)s`, `mm:ss` or `hh:mm:ss` (or a range of two), within `[0, duration]` |
  * | `frame` | a path under `.cuccut-out/frames/` of the video's source root that exists |
- * | `field` | names an item, track, document, marker or sequence id of the snapshot |
- * | `quote` | found, with case and whitespace folded, in a speech or caption document of the video |
+ * | `field` | names an item, track, document, marker or sequence id of the snapshot (not the video's own id) |
+ * | `quote` | at least three words (eight characters in scripts written without spaces), found with case and whitespace folded in a speech or caption document |
  */
 
 export interface EvidenceContext {
@@ -26,8 +26,11 @@ export interface EvidenceContext {
 
 /** Tolerance for a timestamp at the very end of the video. */
 const END_SLACK_SEC = 0.5;
-/** A quote shorter than this (after folding) points at nothing in particular. */
-const MIN_QUOTE = 2;
+/** A quote of fewer words than this points at nothing in particular ("the", "là" are in every transcript). */
+const MIN_QUOTE_WORDS = 3;
+/** The same for scripts written without spaces between words, counted in characters. */
+const MIN_QUOTE_CHARS = 8;
+const UNSPACED = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}\p{Script=Tibetan}]/u;
 
 /** `4.2s`, `4s`, `01:05`, `1:02:03.5` → seconds; null when it is none of these. */
 export function parseTimestamp(text: string): number | null {
@@ -75,6 +78,13 @@ export function foldText(text: string): string {
     .replace(/^["'“”‘’「」『』«»]+|["'“”‘’「」『』«»]+$/g, '');
 }
 
+/** Whether a quote is long enough to point at one place: three words, or eight characters of a script without spaces. */
+function quoteLongEnough(evidence: string): boolean {
+  const words = evidence.normalize('NFKC').split(/\s+/).filter((word) => /[\p{L}\p{N}]/u.test(word));
+  if (words.length >= MIN_QUOTE_WORDS) return true;
+  return [...evidence.normalize('NFKC')].filter((ch) => UNSPACED.test(ch)).length >= MIN_QUOTE_CHARS;
+}
+
 function fieldOk(evidence: string, ids: ReadonlySet<string>): boolean {
   if (ids.has(evidence)) return true;
   return evidence.split(/[^A-Za-z0-9_-]+/).some((token) => token && ids.has(token));
@@ -94,7 +104,7 @@ export function checkEvidence(kind: ReviewEvidence, evidence: string, context: E
       return fieldOk(evidence.trim(), context.ids) || invalid();
     case 'quote': {
       const needle = foldText(evidence);
-      return (needle.length >= MIN_QUOTE && context.texts.some((text) => foldText(text).includes(needle))) || invalid();
+      return (quoteLongEnough(evidence) && needle.length > 0 && context.texts.some((text) => foldText(text).includes(needle))) || invalid();
     }
     default:
       return invalid();
@@ -113,10 +123,13 @@ export function frameCandidates(questions: readonly ReviewQuestion[], answers: r
   return [...out];
 }
 
-/** Every id a `field` answer may name. */
+/**
+ * Every id a `field` answer may name: what is in the video. The video's own id is left out (the agent always has it, so
+ * it points at nothing), and so is the review's decisions document.
+ */
 export function snapshotIds(snapshot: VideoSnapshot): Set<string> {
-  const ids = new Set<string>([snapshot.id]);
-  for (const id of Object.keys(snapshot.documents)) ids.add(id);
+  const ids = new Set<string>();
+  for (const document of Object.values(snapshot.documents)) if (document.kind !== REVIEW_PLAN_KIND) ids.add(document.id);
   for (const sequence of Object.values(snapshot.sequences)) {
     ids.add(sequence.id);
     for (const track of sequence.tracks) ids.add(track.id);

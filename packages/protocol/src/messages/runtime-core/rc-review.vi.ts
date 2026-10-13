@@ -30,6 +30,10 @@ export const vi: RcReviewMessages = {
   waiveLabel: (p: { id: string }) => `Chấp nhận giữ nguyên “${p.id}”`,
   unwaiveLabel: (p: { id: string }) => `Kiểm lại “${p.id}” theo tiêu chuẩn`,
   severityLabel: (p: { id: string }) => `Đổi mức độ của “${p.id}”`,
+  severityCritical: 'nghiêm trọng',
+  severitySuggestion: 'gợi ý',
+  severityNitpick: 'lỗi nhỏ',
+  planProtected: 'Quyết định kiểm duyệt chỉ thay đổi qua phần kiểm duyệt: chấp nhận, giữ lại hoặc đổi mức độ của một phát hiện ở đó',
 
   /** Why a video is held to this standard. */
   reasonBuiltin: 'Bạn chưa đặt tiêu chuẩn, nên đây là các mục kiểm có sẵn.',

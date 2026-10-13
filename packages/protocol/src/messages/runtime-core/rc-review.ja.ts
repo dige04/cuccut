@@ -30,6 +30,10 @@ export const ja: RcReviewMessages = {
   waiveLabel: (p: { id: string }) => `「${p.id}」を容認する`,
   unwaiveLabel: (p: { id: string }) => `「${p.id}」を再び基準で確認する`,
   severityLabel: (p: { id: string }) => `「${p.id}」の重要度を変更する`,
+  severityCritical: '重大',
+  severitySuggestion: '提案',
+  severityNitpick: '細部',
+  planProtected: 'Review decisions change only through the review: let a finding stand, hold it again or change what it’s worth there',
 
   /** Why a video is held to this standard. */
   reasonBuiltin: 'まだ基準を設定していないため、組み込みのチェックを使用しています。',

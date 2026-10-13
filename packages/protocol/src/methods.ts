@@ -1114,9 +1114,10 @@ export interface RpcMethods {
   /**
    * Holds the video to its standard and writes the result (`<source>/.cuccut-out/reviews/<videoId>.json`, never a revision): the project
    * tier, the export tier when a finished-video export of the sequence exists, and the existing answers re-evaluated. The `review` topic
-   * sends `result`.
+   * sends `result`. `revision`: a revision the caller just made (the receipt of an undo); the check waits briefly for the Runtime's copy of
+   * the video to reach it, so it does not read the video as it was before.
    */
-  'review.run': { params: { videoId: Id; sequenceId?: Id }; result: { result: ReviewResult } };
+  'review.run': { params: { videoId: Id; sequenceId?: Id; revision?: Revision }; result: { result: ReviewResult } };
   /** The stored result, or null when the video has not been checked (or the file cannot be read). */
   'review.get': { params: { videoId: Id }; result: { result: ReviewResult | null } };
   /**

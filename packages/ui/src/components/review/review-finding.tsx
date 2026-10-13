@@ -18,7 +18,7 @@ import { REVIEW_COPY as C } from './review-copy.ts';
 
 const MARK: Record<ReviewSeverity, string> = {
   critical: 'text-destructive',
-  suggestion: 'text-orange-400',
+  suggestion: 'text-warning',
   nitpick: 'text-muted-foreground',
 };
 

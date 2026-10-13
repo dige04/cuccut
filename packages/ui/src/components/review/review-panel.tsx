@@ -30,8 +30,8 @@ import { REVIEW_COPY as C } from './review-copy.ts';
  */
 
 const VERDICT_ICON: Record<ReviewVerdict, ReactNode> = {
-  passed: <CircleCheck aria-hidden className="mt-0.5 size-4 shrink-0 text-emerald-400" />,
-  'passed-with-findings': <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-orange-400" />,
+  passed: <CircleCheck aria-hidden className="mt-0.5 size-4 shrink-0 text-success" />,
+  'passed-with-findings': <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />,
   failed: <CircleX aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />,
   'not-reviewed': <CircleHelp aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />,
 };
@@ -174,7 +174,8 @@ function offerUndo(runtime: RuntimeSession, videoId: Id, sequenceId: Id | undefi
     onAction: () =>
       void (async () => {
         const receipt = await runtime.videos.undo({ transaction: decided.receipt.transactionId });
-        if (receipt) await runtime.reviewRun(videoId, sequenceId);
+        // The Runtime's copy of the video follows the engine's events: the check waits for the undo's revision.
+        if (receipt) await runtime.reviewRun(videoId, sequenceId, receipt.videoRevision);
       })().catch((error: unknown) => ToastQueue.negative(C.failed(message(error)), { timeout: 5000 })),
   });
 }
@@ -228,10 +229,11 @@ function ReviewActions({
           {busy === 'run' ? <Loader2 aria-hidden className="motion-safe:animate-spin" /> : <ShieldCheck aria-hidden />}
           {C.check}
         </Button>
+        {/* Re-asking is a second click: while answers are awaited the button asks again, so a turn that ended without them never leaves it stuck. */}
         {questions ? (
-          <Button size="sm" variant="outline" disabled={busy !== null || askBlocked !== null || asking !== null} title={askBlocked ?? undefined} onClick={() => void ask()}>
-            {busy === 'ask' || asking ? <Loader2 aria-hidden className="motion-safe:animate-spin" /> : <CircleHelp aria-hidden />}
-            {asking ? C.asking : C.ask}
+          <Button size="sm" variant="outline" disabled={busy !== null || askBlocked !== null} title={askBlocked ?? undefined} onClick={() => void ask()}>
+            {busy === 'ask' ? <Loader2 aria-hidden className="motion-safe:animate-spin" /> : <CircleHelp aria-hidden />}
+            {busy === 'ask' ? C.asking : asking ? C.askAgain : C.ask}
           </Button>
         ) : null}
       </div>
@@ -240,10 +242,14 @@ function ReviewActions({
       ) : null}
       {asking ? (
         <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground" role="status">
+          <Loader2 aria-hidden className="size-3 motion-safe:animate-spin" />
           {C.askingNote}
           <Button variant="link" size="xs" className="h-auto px-0" onClick={() => showConversation(asking)}>
             <MessageSquare aria-hidden />
             {C.openConversation}
+          </Button>
+          <Button variant="link" size="xs" className="h-auto px-0" onClick={() => useReview.getState().setAsking(videoId, null)}>
+            {C.stopWaiting}
           </Button>
         </p>
       ) : null}
@@ -287,7 +293,7 @@ function ReviewOutcome({
             {groups.waived.length ? <p className="text-xs text-foreground/85">{C.letStandCount(groups.waived.length)}</p> : null}
             <p className="text-xs text-muted-foreground">{C.readFrom(result.stages.includes('export'), result.stages.includes('rubric'))}</p>
             {notes.map((note) => (
-              <p key={note} className="text-xs text-orange-300">
+              <p key={note} className="text-xs text-warning">
                 {note}
               </p>
             ))}
@@ -338,7 +344,7 @@ function ReviewOutcome({
           <ul className="flex flex-col gap-1">
             {groups.holds.map((f) => (
               <li key={f.id} className="flex items-start gap-2 text-xs text-muted-foreground">
-                <CircleCheck aria-hidden className="mt-0.5 size-3 shrink-0 text-emerald-400" />
+                <CircleCheck aria-hidden className="mt-0.5 size-3 shrink-0 text-success" />
                 <span>
                   {f.said} — {f.detail}
                 </span>

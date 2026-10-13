@@ -30,6 +30,10 @@ export const de: RcReviewMessages = {
   waiveLabel: (p: { id: string }) => `„${p.id}“ bestehen lassen`,
   unwaiveLabel: (p: { id: string }) => `„${p.id}“ wieder am Maßstab messen`,
   severityLabel: (p: { id: string }) => `Bedeutung von „${p.id}“ ändern`,
+  severityCritical: 'kritisch',
+  severitySuggestion: 'Vorschlag',
+  severityNitpick: 'Kleinigkeit',
+  planProtected: 'Review decisions change only through the review: let a finding stand, hold it again or change what it’s worth there',
 
   /** Why a video is held to this standard. */
   reasonBuiltin: 'Du hast noch keinen Maßstab festgelegt, daher gelten die eingebauten Prüfungen.',

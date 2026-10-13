@@ -19,6 +19,8 @@ export const ptBR: ReviewMessages = {
   asking: 'Perguntando…',
   askingNote: 'Um agente está respondendo às perguntas na conversa do vídeo.',
   openConversation: 'Abrir a conversa',
+  askAgain: 'Ask again',
+  stopWaiting: 'Stop waiting',
   notChecked: 'Este vídeo ainda não foi verificado.',
   verdict: {
     passed: 'Atende a tudo o que é pedido.',

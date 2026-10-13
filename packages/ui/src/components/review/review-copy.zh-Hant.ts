@@ -19,6 +19,8 @@ export const zhHant: ReviewMessages = {
   asking: '提問中…',
   askingNote: 'agent 正在影片的對話中回答問題。',
   openConversation: '開啟對話',
+  askAgain: 'Ask again',
+  stopWaiting: 'Stop waiting',
   notChecked: '這支影片尚未檢查。',
   verdict: {
     passed: '符合所有被要求的項目。',

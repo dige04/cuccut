@@ -17,6 +17,8 @@ export const ko: ReviewMessages = {
   asking: '질문하는 중…',
   askingNote: '에이전트가 영상 대화에서 질문에 답하고 있습니다.',
   openConversation: '대화 열기',
+  askAgain: 'Ask again',
+  stopWaiting: 'Stop waiting',
   notChecked: '이 영상은 아직 검사하지 않았습니다.',
   verdict: {
     passed: '요청된 모든 항목을 충족합니다.',

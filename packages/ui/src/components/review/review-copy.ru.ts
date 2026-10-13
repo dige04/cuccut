@@ -19,6 +19,8 @@ export const ru: ReviewMessages = {
   asking: 'Задаём вопросы…',
   askingNote: 'Агент отвечает на вопросы в переписке о видео.',
   openConversation: 'Открыть переписку',
+  askAgain: 'Ask again',
+  stopWaiting: 'Stop waiting',
   notChecked: 'Это видео ещё не проверялось.',
   verdict: {
     passed: 'Соответствует всему, что требуется.',

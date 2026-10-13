@@ -830,8 +830,9 @@ export class RuntimeSession {
   }
 
   /** Holds the video to its standard and writes the result (never a revision); the review store holds it. */
-  async reviewRun(videoId: Id, sequenceId?: Id): Promise<ReviewResult> {
-    const { result } = await this.client.request('review.run', { videoId, ...(sequenceId ? { sequenceId } : {}) });
+  /** `revision`: one this client just made (an undo's receipt), for the check to wait for. */
+  async reviewRun(videoId: Id, sequenceId?: Id, revision?: string): Promise<ReviewResult> {
+    const { result } = await this.client.request('review.run', { videoId, ...(sequenceId ? { sequenceId } : {}), ...(revision ? { revision } : {}) });
     useReview.getState().setFull(videoId, result);
     return result;
   }

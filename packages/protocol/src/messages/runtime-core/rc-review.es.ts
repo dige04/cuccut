@@ -30,6 +30,10 @@ export const es: RcReviewMessages = {
   waiveLabel: (p: { id: string }) => `Dejar en pie “${p.id}”`,
   unwaiveLabel: (p: { id: string }) => `Volver a exigir “${p.id}” según el estándar`,
   severityLabel: (p: { id: string }) => `Cambiar la importancia de “${p.id}”`,
+  severityCritical: 'crítico',
+  severitySuggestion: 'sugerencia',
+  severityNitpick: 'detalle menor',
+  planProtected: 'Review decisions change only through the review: let a finding stand, hold it again or change what it’s worth there',
 
   /** Why a video is held to this standard. */
   reasonBuiltin: 'Aún no has definido un estándar, así que estas son las comprobaciones integradas.',

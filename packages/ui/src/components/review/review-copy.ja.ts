@@ -17,6 +17,8 @@ export const ja: ReviewMessages = {
   asking: '質問中…',
   askingNote: 'エージェントが動画の会話で質問に回答しています。',
   openConversation: '会話を開く',
+  askAgain: 'Ask again',
+  stopWaiting: 'Stop waiting',
   notChecked: 'この動画はまだチェックされていません。',
   verdict: {
     passed: '求められている項目をすべて満たしています。',

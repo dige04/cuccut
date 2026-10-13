@@ -30,6 +30,10 @@ export const tr: RcReviewMessages = {
   waiveLabel: (p: { id: string }) => `“${p.id}” olduğu gibi kalsın`,
   unwaiveLabel: (p: { id: string }) => `“${p.id}” yeniden ölçüte göre incelensin`,
   severityLabel: (p: { id: string }) => `“${p.id}” önemini değiştir`,
+  severityCritical: 'kritik',
+  severitySuggestion: 'öneri',
+  severityNitpick: 'ayrıntı',
+  planProtected: 'Review decisions change only through the review: let a finding stand, hold it again or change what it’s worth there',
 
   /** Why a video is held to this standard. */
   reasonBuiltin: 'Henüz bir ölçüt belirlemediğiniz için yerleşik kontroller geçerli.',

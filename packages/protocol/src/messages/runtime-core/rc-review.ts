@@ -51,6 +51,12 @@ const en = {
   waiveLabel: (p: { id: string }) => `Let “${p.id}” stand`,
   unwaiveLabel: (p: { id: string }) => `Hold “${p.id}” to the standard again`,
   severityLabel: (p: { id: string }) => `Change what “${p.id}” is worth`,
+  /** Severity words, for prompts that name them (the agent's `review_severity` confirmation). */
+  severityCritical: 'critical',
+  severitySuggestion: 'suggestion',
+  severityNitpick: 'nitpick',
+  /** `REVIEW_PLAN_PROTECTED`: a generic edit (not the review) tried to write the decisions document. */
+  planProtected: 'Review decisions change only through the review: let a finding stand, hold it again or change what it’s worth there',
 
   /** Why a video is held to this standard. */
   reasonBuiltin: 'You haven’t set a standard yet, so these are the built-in checks.',

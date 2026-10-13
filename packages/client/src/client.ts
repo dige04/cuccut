@@ -10,6 +10,8 @@ import {
   type AgentsSnapshot,
   type LegacyImportEvent,
   type LegacyImportSnapshot,
+  type ProfileEvent,
+  type ProfileSnapshot,
   type AgentSetupSnapshot,
   type ClientKind,
   type ConversationEvent,
@@ -205,6 +207,11 @@ export class CucCutClient {
   /** The import prompt for legacy projects (architecture design §2.7). The snapshot is a prompt awaiting an answer, and it is replaced as a whole when it appears or disappears. Desktop UI only. */
   subscribeLegacyImport(handlers: TopicHandlers<LegacyImportSnapshot, LegacyImportEvent>): () => void {
     return this.subscribe('legacy-import', handlers);
+  }
+
+  /** The user's profile (interview, preferences, workspace rules): the snapshot is `profile.get`, and each change sends it whole again (`applyProfileEvent`). */
+  subscribeProfile(handlers: TopicHandlers<ProfileSnapshot, ProfileEvent>): () => void {
+    return this.subscribe('profile', handlers);
   }
 
   subscribeSpace(handlers: TopicHandlers<SpaceSnapshot, SpaceEvent>): () => void {

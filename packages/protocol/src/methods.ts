@@ -110,6 +110,15 @@ import type {
 import type { TemplateDetail, TemplateListResult, TemplateSendRef } from './template.ts';
 import type { SkillChangeResult, SkillDetail, SkillFileContent, SkillListResult, SkillRemoveResult, SkillSendRef } from './skill.ts';
 import type {
+  InterviewAnswers,
+  InterviewState,
+  ProfileRule,
+  ProfileRuleInput,
+  ProfileRulePutResult,
+  ProfileSnapshot,
+  ProjectProfile,
+} from './profile.ts';
+import type {
   SpaceContinueResult,
   SpaceListParams,
   SpaceListResult,
@@ -996,6 +1005,39 @@ export interface RpcMethods {
    * Remove a “Mine” or “Third party” skill: delete `<Runtime Home>/skills/<id>/` and its switch record. A built-in skill: `invalid-request` (`SKILL_BUILTIN_NOT_REMOVABLE`); built-in skills can only be turned off. Not available in Web sessions.
    */
   'skills.remove': { params: { id: string }; result: SkillRemoveResult };
+
+  /**
+   * The user's profile (docs/cuccut/m2-profile-rules.md §4): the workspace level, the same as the `profile` topic's snapshot. Every new native session reads it.
+   */
+  'profile.get': { params: Record<string, never>; result: ProfileSnapshot };
+  /** A project's own preferences and rules (`<project>/.ccut/profile.json`), read from disk on each call. No such project: `not-found` (`PROFILE_PROJECT_NOT_FOUND`). */
+  'profile.getProject': { params: { projectId: Id }; result: ProjectProfile };
+  /**
+   * Saves interview answers a step at a time, merged over the ones saved before: a given question replaces its answer, and a blank one clears it. Unknown question ids are rejected.
+   * Saving never changes the interview's status. A profile file from a newer version: `conflict` (`PROFILE_READ_ONLY`), as for every write below.
+   */
+  'profile.saveAnswers': { params: { answers: InterviewAnswers; commandId?: Id }; result: InterviewState };
+  /** Skips the interview (`skipped`). The answers stay, and the interview can be reopened. */
+  'profile.skipInterview': { params: Record<string, never>; result: InterviewState };
+  /** Opens the interview again (`pending`, and the home reminder back on), with the previous answers to edit. */
+  'profile.reopenInterview': { params: Record<string, never>; result: InterviewState };
+  /** "Not now" on the home reminder: hides it. The settings page and the agent still offer the interview. */
+  'profile.dismissReminder': { params: Record<string, never>; result: InterviewState };
+  /**
+   * Sets preference text. Without `projectId`: the workspace level, `own` (the user's words) and/or `interview` (the section the interview wrote); returns the snapshot.
+   * With `projectId`: only `own`, which is the project's text (`interview` gives `invalid-request`, `PROFILE_PROJECT_TEXT_ONLY`); returns the project's level.
+   * A project folder that is missing or not writable: `conflict` (`PROFILE_PROJECT_UNAVAILABLE`).
+   */
+  'profile.setPreferences': { params: { projectId?: Id; own?: string; interview?: string }; result: ProfileSnapshot | ProjectProfile };
+  /**
+   * Creates a rule (no `id`, or an id not used yet at that level) or replaces the one with that id. Incomplete: `invalid-request` (`PROFILE_RULE_INVALID`, with readable `problems`).
+   * A template that is not installed does not stop the save; it comes back in `warnings`.
+   */
+  'profile.putRule': { params: { rule: ProfileRuleInput; projectId?: Id }; result: ProfileRulePutResult };
+  /** Removes a rule and returns it, so that Undo can put it back as it was. No such rule: `not-found` (`PROFILE_RULE_NOT_FOUND`). */
+  'profile.removeRule': { params: { id: string; projectId?: Id }; result: { removed: ProfileRule } };
+  /** Puts a level's rules in the given order, renumbered 10, 20, 30…, in one write. `ids` must list each rule of the level once: otherwise `invalid-request` (`PROFILE_RULE_ORDER`). */
+  'profile.reorderRules': { params: { ids: string[]; projectId?: Id }; result: { rules: ProfileRule[] } };
 
   /**
    * Share this computer's model capabilities (node protocol spec §10): turns on the node service and generates a pairing code. If it is already on, listening is restarted with the new parameters.

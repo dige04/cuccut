@@ -82,6 +82,9 @@ export const WEB_DEFAULT_METHODS: readonly string[] = [
   'skills.get',
   'skills.readFile',
   'skills.setEnabled',
+  // The user's profile (docs/cuccut/m2-profile-rules.md §4): read only. Preferences and rules are changed in the desktop UI and the CLI, like settings.
+  'profile.get',
+  'profile.getProject',
 ];
 
 /** Methods still available under read-only configuration (listed one by one: methods added later are not exposed under read-only by default). */
@@ -135,6 +138,8 @@ export const WEB_READ_METHODS: readonly RpcMethod[] = [
   'skills.list',
   'skills.get',
   'skills.readFile',
+  'profile.get',
+  'profile.getProject',
 ];
 
 /** Subscribing to these topics requires the matching read method in the allowlist. Other topics (directories, sessions, tasks, Space, videos) are open with the session. */
@@ -151,6 +156,8 @@ export const WEB_TOPIC_METHODS: Readonly<Record<string, RpcMethod>> = {
   agents: 'agents.list',
   // The import prompts and import progress for legacy projects (§2.7) are only for the desktop UI. `legacyImport.*` is not in the default set, so topics cannot be subscribed to either.
   'legacy-import': 'legacyImport.get',
+  // The user's profile: the same view as `profile.get`.
+  profile: 'profile.get',
 };
 
 /** One item in the allowlist: a method name, or `<namespace>.*` (including deeper sub-namespaces). */

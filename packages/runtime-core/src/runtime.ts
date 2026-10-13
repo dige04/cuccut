@@ -112,6 +112,8 @@ import { TemplateCatalog, resolveBuiltinTemplatesDir } from './templates/templat
 import { SkillCatalog, resolveBuiltinSkillsDir } from './skills/skill-catalog.ts';
 import { SkillInstaller } from './skills/skill-installer.ts';
 import { skillIndexBlock } from './skills/skill-brief.ts';
+import { ProfileService } from './profile/profile-service.ts';
+import { joinBlocks } from './profile/profile-brief.ts';
 import { aiToolDefinition } from './ai-tools/ai-tool-wiring.ts';
 import { resolveBuiltinAgentSkillsDir } from './skills/agent-skill-renderer.ts';
 import { SkillTools } from './agent-tools/skill-tools.ts';
@@ -241,6 +243,8 @@ export interface RunningRuntime {
   externalTools: ExternalToolService;
   /** Fonts downloaded on demand (architecture design §9.1). */
   fonts: FontService;
+  /** The user's profile: interview, preferences and rules (docs/cuccut/m2-profile-rules.md). */
+  profile: ProfileService;
   log: Logger;
   close(): Promise<void>;
 }
@@ -284,6 +288,7 @@ const STOP_ORDER = [
   'videos',
   'setup',
   'harness',
+  'profile',
   'attachments',
   'gateway',
 ] as const;
@@ -634,9 +639,37 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       offlineStrict: () => settings.store.get('offline.strict'),
       ...(options.skillsGithub ? { github: options.skillsGithub } : {}),
     });
+    // The creation template catalog (template package spec §6): the directory is read again on every use.
+    const templates = new TemplateCatalog({
+      builtinDir: options.templatesDir === undefined ? resolveBuiltinTemplatesDir() : options.templatesDir,
+      userDir: path.join(home.root, 'templates'),
+    });
+    // The user's profile (docs/cuccut/m2-profile-rules.md): built before the grants, whose session callback reads it at each session start. Projects are
+    // looked up through the Harness, which opens later, so only when needed.
+    const profile = await ProfileService.open({
+      home,
+      library: library.store,
+      projects: () => requireHarness().listProjects(),
+      installedTemplates: async () => new Set((await templates.scan()).templates.map((t) => t.manifest.id)),
+      log,
+    });
+    stops.add('profile', () => profile.flush(), 'Saving the profile failed');
+    /** The project directory of a session's project; null for a session outside a project (or before the Harness is up). */
+    const projectPathOf = (conversationId: Id): string | null => {
+      const projectId = harnessRef?.conversationOf(conversationId)?.projectId;
+      return (projectId && harnessRef?.listProjects().find((p) => p.id === projectId)?.path) || null;
+    };
+    // Each native session starts with the index of enabled skills and the user's profile. A profile that can't be read leaves only its block out.
     const grants = new AgentGrants(
       (principal) => videos.connectionClosed(principal.connectionId),
-      async () => skillIndexBlock(await skills.enabled()),
+      async (conversationId) =>
+        joinBlocks([
+          skillIndexBlock(await skills.enabled()),
+          await profile.sessionBlock(projectPathOf(conversationId)).catch((error: unknown) => {
+            log.warn('Failed to read the profile for a session', { conversationId, error: String(error) });
+            return '';
+          }),
+        ]),
     );
     // Images in messages: uploaded through the same gateway port, and handed to the Driver on send (product design §3.2.4).
     const attachments = new AttachmentStore({
@@ -908,12 +941,10 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       services,
       runtime: info,
       externalTools,
-      templates: new TemplateCatalog({
-        builtinDir: options.templatesDir === undefined ? resolveBuiltinTemplatesDir() : options.templatesDir,
-        userDir: path.join(home.root, 'templates'),
-      }),
+      templates,
       skills,
       skillInstaller,
+      profile,
       fonts,
       // The code view (§8): the UI's `compositions.*` and the tools share the same service and host.
       compositions,
@@ -1021,6 +1052,7 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       services,
       externalTools,
       fonts,
+      profile,
       log,
       close,
     };

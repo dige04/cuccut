@@ -12,6 +12,8 @@ import {
   type JobsSnapshot,
   type ModelsEvent,
   type ModelsSnapshot,
+  type ProfileEvent,
+  type ProfileSnapshot,
   type SettingsEvent,
   type SettingsSnapshot,
   type ServicesEvent,
@@ -122,6 +124,21 @@ export function applySettingsEvent(state: SettingsSnapshot, event: SettingsEvent
   switch (event.type) {
     case 'settings.updated':
       return { ...state, settings: { ...state.settings, ...event.changed } };
+  }
+}
+
+/**
+ * The user's profile: `profile.updated` replaces the whole snapshot (the Runtime's, `writing` included); `profile.writing` replaces only the write progress.
+ * `profile.projectUpdated` does not touch the workspace snapshot: whoever shows that project refetches it.
+ */
+export function applyProfileEvent(state: ProfileSnapshot, event: ProfileEvent): ProfileSnapshot {
+  switch (event.type) {
+    case 'profile.updated':
+      return event.snapshot;
+    case 'profile.writing':
+      return { ...state, writing: event.writing };
+    case 'profile.projectUpdated':
+      return state;
   }
 }
 

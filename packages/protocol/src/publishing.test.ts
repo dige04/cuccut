@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   defaultPublishingFormat,
+  DESTINATION_OPTION_DEFAULTS,
   FORMAT_NETWORK,
   PUBLISHING_FORMATS,
   PUBLISHING_NETWORKS,
@@ -11,6 +12,7 @@ import {
 import {
   calendarArchiveSchema,
   destinationInputSchema,
+  destinationOptionsSchema,
   publicationCopySchema,
   publicationDestinationSchema,
   publicationSchema,
@@ -48,6 +50,10 @@ describe('publishing types', () => {
 });
 
 describe('publishing schemas', () => {
+  it('the option defaults of a new destination match the schema', () => {
+    expect(destinationOptionsSchema.parse({})).toEqual(DESTINATION_OPTION_DEFAULTS);
+  });
+
   it('fills defaults for a minimal publication and destination', () => {
     const p = publication();
     expect(p).toMatchObject({

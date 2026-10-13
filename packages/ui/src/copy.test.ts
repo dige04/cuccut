@@ -1,5 +1,6 @@
 import { setLocale } from '@cuccut/protocol';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { PC } from './components/publishing/publishing-copy.ts';
 import { S } from './components/shell-copy.ts';
 import { ST } from './components/start/start-copy.ts';
 import { TK } from './components/tasks/tasks-copy.ts';
@@ -40,6 +41,9 @@ describe('界面文案跟随界面语言', () => {
     expect(S.titleBar.openTabsCount(1)).toBe('1 open tab');
     expect(S.titleBar.openTabsCount(3)).toBe('3 open tabs');
     expect(S.titleBar.showTabs).toBe('Show tabs');
+    expect(PC.calendar.title).toBe('Publication calendar');
+    expect(PC.calendar.count(2)).toBe('2 publications on the calendar');
+    expect(PC.delivery.scheduledOn('TikTok')).toBe('Scheduled on TikTok');
   });
 
   it('换回简体中文后与原来的中文逐字一致', () => {

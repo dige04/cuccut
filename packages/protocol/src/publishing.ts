@@ -122,6 +122,20 @@ export interface DestinationOptions {
   tags: string[];
 }
 
+/** The options of a new destination (the defaults `destinationOptionsSchema` fills in). */
+export const DESTINATION_OPTION_DEFAULTS: Readonly<DestinationOptions> = Object.freeze({
+  useProviderDefaults: false,
+  privacy: 'public',
+  madeForKids: null,
+  synthetic: false,
+  branded: false,
+  ownBrand: false,
+  comments: true,
+  duet: false,
+  stitch: false,
+  tags: [],
+});
+
 /** A destination account: a channel or profile reached through one connection. */
 export interface PublishingAccount {
   id: Id;
@@ -367,6 +381,8 @@ export interface PublicationRowDestination {
   accountId: Id;
   format: PublishingFormat;
   state: DeliveryState;
+  /** The destination's own time (`null` uses the publication's default time); Undo of a calendar move restores it. */
+  scheduledAt: string | null;
   at: string | null;
 }
 

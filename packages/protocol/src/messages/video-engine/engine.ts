@@ -329,7 +329,7 @@ const en = {
   pauseSecondsPositive: 'minPause and compressTo must be positive numbers of seconds',
   compressToRange: 'compressTo must be less than minPause',
   maxGapRange: 'maxGap must be greater than minPause',
-  fillerLanguageInvalid: (p: P<'value'>) => `fillerLanguage must be auto, en or zh (got ${p.value})`,
+  fillerLanguageInvalid: (p: P<'value'>) => `fillerLanguage must be auto, en, zh or vi (got ${p.value})`,
   transcriptBodyUnreadable: (p: P<'error'>) => `The body of the transcript cannot be read: ${p.error}`,
   transcriptTimescalePositive: 'The timescale of the transcript must be positive',
   transcriptTimescaleTooLarge: 'The timescale of the transcript is too large for suggestions to be exact',

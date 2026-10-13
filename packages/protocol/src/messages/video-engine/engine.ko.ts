@@ -308,7 +308,7 @@ export const ko: EngineMessages = {
   pauseSecondsPositive: 'minPause와 compressTo는 양수의 초여야 합니다',
   compressToRange: 'compressTo는 minPause보다 작아야 합니다',
   maxGapRange: 'maxGap은 minPause보다 커야 합니다',
-  fillerLanguageInvalid: (p) => `fillerLanguage는 auto, en, zh 중 하나여야 합니다(받은 값: ${p.value})`,
+  fillerLanguageInvalid: (p) => `fillerLanguage는 auto, en, zh, vi 중 하나여야 합니다(받은 값: ${p.value})`,
   transcriptBodyUnreadable: (p) => `전사본 본문을 읽을 수 없습니다: ${p.error}`,
   transcriptTimescalePositive: '전사본의 timescale은 양수여야 합니다',
   transcriptTimescaleTooLarge: '전사본의 timescale이 너무 커서 제안을 정확하게 나타낼 수 없습니다',

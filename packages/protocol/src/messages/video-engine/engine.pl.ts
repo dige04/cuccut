@@ -308,7 +308,7 @@ export const pl: EngineMessages = {
   pauseSecondsPositive: "minPause i compressTo muszą być dodatnimi liczbami sekund",
   compressToRange: "compressTo musi być mniejsze niż minPause",
   maxGapRange: "maxGap musi być większe niż minPause",
-  fillerLanguageInvalid: (p) => `fillerLanguage musi być auto, en lub zh (otrzymano ${p.value})`,
+  fillerLanguageInvalid: (p) => `fillerLanguage musi być auto, en, zh lub vi (otrzymano ${p.value})`,
   transcriptBodyUnreadable: (p) => `Nie można odczytać treści transkrypcji: ${p.error}`,
   transcriptTimescalePositive: "Skala czasu transkrypcji musi być dodatnia",
   transcriptTimescaleTooLarge: "Skala czasu transkrypcji jest zbyt duża dla dokładnych sugestii",

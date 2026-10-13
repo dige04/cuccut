@@ -308,7 +308,7 @@ export const ru: EngineMessages = {
   pauseSecondsPositive: "minPause и compressTo должны быть положительным числом секунд",
   compressToRange: "compressTo должен быть меньше minPause",
   maxGapRange: "maxGap должен быть больше minPause",
-  fillerLanguageInvalid: (p) => `fillerLanguage должен быть auto, en или zh (получено ${p.value})`,
+  fillerLanguageInvalid: (p) => `fillerLanguage должен быть auto, en, zh или vi (получено ${p.value})`,
   transcriptBodyUnreadable: (p) => `Не удаётся прочитать тело расшифровки: ${p.error}`,
   transcriptTimescalePositive: "Шкала времени расшифровки должна быть положительной",
   transcriptTimescaleTooLarge: "Шкала времени расшифровки слишком велика для точных предложений",

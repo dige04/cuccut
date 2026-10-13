@@ -308,7 +308,7 @@ export const ja: EngineMessages = {
   pauseSecondsPositive: 'minPause と compressTo は正の秒数にしてください',
   compressToRange: 'compressTo は minPause より小さくしてください',
   maxGapRange: 'maxGap は minPause より大きくしてください',
-  fillerLanguageInvalid: (p) => `fillerLanguage は auto、en、zh のいずれかにしてください（受け取った値：${p.value}）`,
+  fillerLanguageInvalid: (p) => `fillerLanguage は auto、en、zh、vi のいずれかにしてください（受け取った値：${p.value}）`,
   transcriptBodyUnreadable: (p) => `文字起こしの本文を読み取れません：${p.error}`,
   transcriptTimescalePositive: '文字起こしの timescale は正の数である必要があります',
   transcriptTimescaleTooLarge: '文字起こしの timescale が大きすぎて、提案を正確に表せません',

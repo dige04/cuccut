@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use unicode_normalization::UnicodeNormalization;
 
 use crate::CutSet;
 
@@ -71,7 +72,7 @@ pub struct FillerOptions {
 impl Default for FillerOptions {
     fn default() -> Self {
         Self {
-            langs: vec!["en".to_owned(), "zh".to_owned()],
+            langs: vec!["en".to_owned(), "zh".to_owned(), "vi".to_owned()],
             custom: Vec::new(),
             include_soft: true,
         }
@@ -115,6 +116,29 @@ const ZH_SOFT: &[&[&str]] = &[
     &["其实"],
 ];
 
+// Vietnamese hesitation sounds as ASR writes them. Only pure hesitations are hard: "ừ" (yes) and "à" (a question
+// or recall particle) carry meaning mid-sentence, so they are soft and count only at a phrase boundary.
+const VI_HARD: &[&[&str]] = &[&["ờ"], &["ơ"], &["ừm"], &["ờm"], &["ưm"], &["ừ", "ừ"], &["ờ", "ờ"]];
+// Longer phrases first: the first match wins.
+const VI_SOFT: &[&[&str]] = &[
+    &["kiểu", "như", "là"],
+    &["đại", "loại", "là"],
+    &["thì", "kiểu", "là"],
+    &["kiểu", "như"],
+    &["kiểu", "là"],
+    &["đại", "loại"],
+    &["nói", "chung", "là"],
+    &["nói", "chung"],
+    &["thật", "ra", "thì"],
+    &["thật", "ra"],
+    &["thực", "ra"],
+    &["ừ", "thì"],
+    &["thì", "là"],
+    &["kiểu"],
+    &["à"],
+    &["ừ"],
+];
+
 /// 按语言取口癖短语（硬口癖 + 软口癖，与 [`detect_fillers`] 同一张表），每条短语是
 /// 若干已归一的词。`lang` 按主子标签比较（`en-US` → `en`）；没有这门语言的表时返回
 /// `None`，调用方据此不产出口癖类（`ccut cut script` 把这类段落归 `extra`）。
@@ -127,6 +151,7 @@ pub fn filler_phrases(lang: &str) -> Option<Vec<Vec<String>>> {
     let (hard, soft) = match primary.as_str() {
         "en" => (EN_HARD, EN_SOFT),
         "zh" => (ZH_HARD, ZH_SOFT),
+        "vi" => (VI_HARD, VI_SOFT),
         _ => return None,
     };
     Some(
@@ -137,8 +162,11 @@ pub fn filler_phrases(lang: &str) -> Option<Vec<Vec<String>>> {
     )
 }
 
+/// Lower-cased and NFC-composed (ASR may emit Vietnamese tone marks decomposed), punctuation trimmed.
 pub fn normalize_filler(text: &str) -> String {
-    text.to_lowercase()
+    text.nfc()
+        .collect::<String>()
+        .to_lowercase()
         .trim_matches(|ch: char| !ch.is_alphanumeric())
         .to_owned()
 }
@@ -278,6 +306,7 @@ pub fn detect_fillers(words: &[DetectWord], options: &FillerOptions) -> Vec<CutP
             let (hard, soft) = match lang.as_str() {
                 "en" => (EN_HARD, EN_SOFT),
                 "zh" => (ZH_HARD, ZH_SOFT),
+                "vi" => (VI_HARD, VI_SOFT),
                 _ => continue,
             };
             phrase = match_phrase(words, index, hard, false).or_else(|| {
@@ -433,6 +462,7 @@ mod tests {
                 .contains(&vec!["呃".to_owned()])
         );
         // 没有表的语言不给短语，调用方据此不产出口癖类。
+        assert!(filler_phrases("vi-VN").unwrap().contains(&vec!["ừm".to_owned()]));
         assert_eq!(filler_phrases("ja"), None);
         assert_eq!(filler_phrases(""), None);
     }
@@ -475,6 +505,48 @@ mod tests {
             },
         );
         assert_eq!(custom[0].word_ids, ["w0"]);
+    }
+
+    #[test]
+    fn vietnamese_hesitations_cut_and_particles_only_at_boundaries() {
+        let input = words(&[
+            ("Ờ,", 0.0, "s1"),
+            ("hôm", 1.0, "s1"),
+            ("nay", 2.0, "s1"),
+            ("ừm", 3.0, "s1"),
+            ("mình", 4.0, "s1"),
+            ("nói", 5.0, "s1"),
+            ("về", 6.0, "s1"),
+            ("kiểu", 7.0, "s1"),
+            ("dữ", 8.0, "s1"),
+            ("liệu,", 9.0, "s1"),
+            ("kiểu", 10.0, "s1"),
+            ("như", 11.0, "s1"),
+            ("là", 12.0, "s1"),
+            ("ừ", 13.0, "s1"),
+            ("đúng", 14.0, "s1"),
+            ("rồi", 15.0, "s1"),
+        ]);
+        let options = FillerOptions { langs: vec!["vi".to_owned()], ..FillerOptions::default() };
+        let found = detect_fillers(&input, &options);
+        let ids = found.iter().flat_map(|proposal| proposal.word_ids.clone()).collect::<Vec<_>>();
+        // Hesitations go wherever they are.
+        assert!(ids.contains(&"w0".to_owned()));
+        assert!(ids.contains(&"w3".to_owned()));
+        // "kiểu dữ liệu" (data type) mid-sentence is a word, not a filler.
+        assert!(!ids.contains(&"w7".to_owned()));
+        // After a comma the whole "kiểu như là" is one filler.
+        let phrase = found.iter().find(|proposal| proposal.word_ids[0] == "w10").unwrap();
+        assert_eq!(phrase.word_ids, ["w10", "w11", "w12"]);
+        // "ừ" answering mid-sentence stays.
+        assert!(!ids.contains(&"w13".to_owned()));
+    }
+
+    #[test]
+    fn decomposed_tone_marks_match_the_composed_tables() {
+        // "ừm" with the horn and grave accent as combining marks.
+        let decomposed = "u\u{031B}\u{0300}m";
+        assert_eq!(normalize_filler(decomposed), "ừm");
     }
 
     fn proposal(id: &str, kind: &str, t0: f64, t1: f64) -> CutProposal {

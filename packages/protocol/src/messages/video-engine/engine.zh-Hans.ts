@@ -308,7 +308,7 @@ export const zhHans: EngineMessages = {
   pauseSecondsPositive: 'minPause、compressTo 须为正的秒数',
   compressToRange: 'compressTo 必须小于 minPause',
   maxGapRange: 'maxGap 必须大于 minPause',
-  fillerLanguageInvalid: (p) => `fillerLanguage 须为 auto、en 或 zh（收到 ${p.value}）`,
+  fillerLanguageInvalid: (p) => `fillerLanguage 须为 auto、en、zh 或 vi（收到 ${p.value}）`,
   transcriptBodyUnreadable: (p) => `转写的正文读不出来：${p.error}`,
   transcriptTimescalePositive: '转写的 timescale 必须是正数',
   transcriptTimescaleTooLarge: '转写的 timescale 太大，建议不能精确表示',

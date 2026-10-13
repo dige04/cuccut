@@ -16,3 +16,4 @@ serde = { version = "1.0.229", features = ["derive"] }
 # （v2 在 workspace 级打开，这里随 crate 声明）。
 serde_json = { version = "1.0.151", features = ["float_roundtrip"] }
 unicode-general-category = "1.1"
+unicode-normalization = "0.1"

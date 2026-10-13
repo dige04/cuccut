@@ -308,7 +308,7 @@ export const zhHant: EngineMessages = {
   pauseSecondsPositive: 'minPause 與 compressTo 必須是正的秒數',
   compressToRange: 'compressTo 必須小於 minPause',
   maxGapRange: 'maxGap 必須大於 minPause',
-  fillerLanguageInvalid: (p) => `fillerLanguage 必須是 auto、en 或 zh（收到 ${p.value}）`,
+  fillerLanguageInvalid: (p) => `fillerLanguage 必須是 auto、en、zh 或 vi（收到 ${p.value}）`,
   transcriptBodyUnreadable: (p) => `無法讀取逐字稿的本文：${p.error}`,
   transcriptTimescalePositive: '逐字稿的 timescale 必須為正',
   transcriptTimescaleTooLarge: '逐字稿的 timescale 太大，無法精確表示建議',

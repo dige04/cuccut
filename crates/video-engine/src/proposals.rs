@@ -47,7 +47,7 @@ pub struct DetectInput {
     pub compress_to: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_gap: Option<String>,
-    /// `auto`（中英文）、`en` 或 `zh`。
+    /// `auto` (English, Chinese and Vietnamese), `en`, `zh` or `vi`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filler_language: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -155,13 +155,14 @@ fn options(input: &DetectInput) -> EngineResult<(Option<SilenceOptions>, Option<
         return Err(ErrorBody::invalid_operation(msg!("engine.maxGapRange", "maxGap must be greater than minPause")));
     }
     let langs = match input.filler_language.as_deref().unwrap_or("auto").to_ascii_lowercase().as_str() {
-        "auto" => vec!["en".to_owned(), "zh".to_owned()],
+        "auto" => vec!["en".to_owned(), "zh".to_owned(), "vi".to_owned()],
         "en" => vec!["en".to_owned()],
         "zh" => vec!["zh".to_owned()],
+        "vi" => vec!["vi".to_owned()],
         other => {
             return Err(ErrorBody::invalid_operation(msg!(
                 "engine.fillerLanguageInvalid",
-                "fillerLanguage must be auto, en or zh (got {value})",
+                "fillerLanguage must be auto, en, zh or vi (got {value})",
                 value = other
             )));
         }

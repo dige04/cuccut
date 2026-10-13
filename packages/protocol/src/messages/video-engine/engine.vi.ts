@@ -308,7 +308,7 @@ export const vi: EngineMessages = {
   pauseSecondsPositive: "minPause và compressTo phải là số giây dương",
   compressToRange: "compressTo phải nhỏ hơn minPause",
   maxGapRange: "maxGap phải lớn hơn minPause",
-  fillerLanguageInvalid: (p) => `fillerLanguage phải là auto, en hoặc zh (nhận ${p.value})`,
+  fillerLanguageInvalid: (p) => `fillerLanguage phải là auto, en, zh hoặc vi (nhận ${p.value})`,
   transcriptBodyUnreadable: (p) => `Không đọc được nội dung bản chép lời: ${p.error}`,
   transcriptTimescalePositive: "timescale bản chép lời phải dương",
   transcriptTimescaleTooLarge: "timescale bản chép lời quá lớn để gợi ý chính xác",

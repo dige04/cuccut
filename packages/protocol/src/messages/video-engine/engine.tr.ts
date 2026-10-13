@@ -308,7 +308,7 @@ export const tr: EngineMessages = {
   pauseSecondsPositive: "minPause ve compressTo pozitif saniye sayısı olmalı",
   compressToRange: "compressTo, minPause değerinden küçük olmalı",
   maxGapRange: "maxGap, minPause değerinden büyük olmalı",
-  fillerLanguageInvalid: (p) => `fillerLanguage auto, en veya zh olmalı (alınan ${p.value})`,
+  fillerLanguageInvalid: (p) => `fillerLanguage auto, en, zh veya vi olmalı (alınan ${p.value})`,
   transcriptBodyUnreadable: (p) => `Dökümün gövdesi okunamıyor: ${p.error}`,
   transcriptTimescalePositive: "Döküm timescale değeri pozitif olmalı",
   transcriptTimescaleTooLarge: "Döküm timescale değeri önerilerin kesin olması için çok büyük",

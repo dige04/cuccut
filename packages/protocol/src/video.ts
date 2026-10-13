@@ -929,7 +929,7 @@ export interface CutDetectOptions {
   /** 更长的间隔不算停顿，缺省 3 秒；须大于 `minPause`。 */
   maxGap?: string;
   /** 口癖表：`auto`（中英文，缺省）、`en` 或 `zh`。 */
-  fillerLanguage?: 'auto' | 'en' | 'zh';
+  fillerLanguage?: 'auto' | 'en' | 'zh' | 'vi';
   /** 另外当作口癖的词。 */
   customFillers?: string[];
   /** 章节之间的停顿也压缩，缺省 false。 */

@@ -308,7 +308,7 @@ export const ptBR: EngineMessages = {
   pauseSecondsPositive: "minPause e compressTo devem ser segundos positivos",
   compressToRange: "compressTo deve ser menor que minPause",
   maxGapRange: "maxGap deve ser maior que minPause",
-  fillerLanguageInvalid: (p) => `fillerLanguage deve ser auto, en ou zh (recebido ${p.value})`,
+  fillerLanguageInvalid: (p) => `fillerLanguage deve ser auto, en, zh ou vi (recebido ${p.value})`,
   transcriptBodyUnreadable: (p) => `O conteúdo da transcrição não pode ser lido: ${p.error}`,
   transcriptTimescalePositive: "O timescale da transcrição deve ser positivo",
   transcriptTimescaleTooLarge: "O timescale é grande demais para sugestões exatas",

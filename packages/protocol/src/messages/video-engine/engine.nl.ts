@@ -298,7 +298,7 @@ export const nl: EngineMessages = {
   pauseSecondsPositive: "minPause en compressTo moeten positieve aantallen seconden zijn",
   compressToRange: "compressTo moet kleiner zijn dan minPause",
   maxGapRange: "maxGap moet groter zijn dan minPause",
-  fillerLanguageInvalid: (p: P<'value'>) => `fillerLanguage moet auto, en of zh zijn (ontvangen: ${p.value})`,
+  fillerLanguageInvalid: (p: P<'value'>) => `fillerLanguage moet auto, en, zh of vi zijn (ontvangen: ${p.value})`,
   transcriptBodyUnreadable: (p: P<'error'>) => `De transcriptinhoud kan niet worden gelezen: ${p.error}`,
   transcriptTimescalePositive: "timescale van het transcript moet positief zijn",
   transcriptTimescaleTooLarge: "timescale van het transcript is te groot voor exacte suggesties",

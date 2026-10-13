@@ -11,7 +11,7 @@ help: `Cách dùng:
                                    monospace; hệ chữ: chinese, japanese, korean, latin…
   cuccut fonts download <family> [--weights 400,700] [--italic]
                                    Tải họ phông (mặc định thường và đậm); tiến độ gửi đến stderr, Ctrl-C
-                                   hủy. Chỉ gửi tên họ phông và độ đậm; mirror xem cài đặt
+                                   hủy. Chỉ gửi tên họ phông và độ đậm; để đổi máy chủ tải, xem cài đặt
                                    fonts.cssEndpoint và fonts.fileEndpoint; từ chối trong chế độ ngoại tuyến nghiêm ngặt
   cuccut fonts remove <family>     Xóa phông đã tải của họ này (từ chối nếu bản xuất chưa hoàn tất đang dùng)
   cuccut fonts clear               Xóa phông đã tải (giữ phông mà bản xuất chưa hoàn tất đang dùng)`,

@@ -4,7 +4,7 @@ export const vi: McpMessages = {
 previousClientUnknown: 'Không xác định được máy khách mà mục đã thay thế dùng nên chưa thu hồi máy khách: cuccut mcp status liệt kê máy khách hiện có; thu hồi máy khách không dùng bằng cuccut services mcp revoke <clientId>', defaultProjectRegistered: (name, path) => `CucCut chưa có dự án: đã đăng ký dự án mặc định “${name}” (${path}) để Agent bên ngoài tạo video`,
 help: `Cách dùng:
   cuccut mcp install --agent <claude-code|codex|cursor|gemini> [--level ask|auto] [--name <client name>] [--yes]
-                                   Kết nối Agent bên ngoài với dịch vụ MCP CucCut: khởi chạy dịch vụ (và đặt khởi chạy cùng Runtime),
+                                   Kết nối Agent bên ngoài với dịch vụ MCP CucCut: khởi chạy dịch vụ (và tự khởi chạy cùng Runtime),
                                    tạo máy khách và token mới cho Agent rồi ghi địa chỉ và token vào cấu hình MCP của Agent
                                    (tên mục cuccut); sau đó khởi động lại Agent
                                    Nếu CucCut chưa có dự án, đăng ký dự án CLI trong thư mục dự án mặc định cho Agent bên ngoài

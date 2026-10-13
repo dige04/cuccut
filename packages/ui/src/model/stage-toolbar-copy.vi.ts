@@ -37,7 +37,7 @@ export const vi: StageToolbarMessages = {
     'flip-horizontal': 'Lật ngang',
     'fit-canvas': 'Vừa khung vẽ',
     'fill-canvas': 'Lấp đầy khung vẽ',
-    opacity: 'Độ đục',
+    opacity: 'Độ mờ',
     'round-corners': 'Bán kính góc',
     filters: 'Bộ lọc',
     effects: 'Hiệu ứng',

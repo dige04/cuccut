@@ -9,7 +9,7 @@ help: `Cách dùng:
   cuccut models repair <bundleId> [--yes]
                                    Xác minh sha256 mỗi tệp và chỉ tải lại tệp thiếu hoặc hỏng
                                    (xác nhận giống như install)
-  cuccut models dir                Hiện thư mục mô hình cục bộ: vị trí, nguồn, dung lượng đã dùng và trống, số mô hình nhận dạng
+  cuccut models dir                Hiện thư mục mô hình cục bộ: vị trí, nguồn, dung lượng đã dùng và trống, số mô hình tìm thấy
   cuccut models dir --set <path> [--move|--switch]
                                    Đổi thư mục mô hình: --move chuyển mô hình hiện có (tác vụ nền, hoàn tác nếu thất bại);
                                    --switch chỉ đổi vị trí (giữ tệp cũ; chỉ dùng được mô hình đã có trong vị trí mới);

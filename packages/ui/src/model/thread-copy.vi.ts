@@ -18,7 +18,7 @@ export const vi: ThreadMessages = {
     video: (count: number) => `đã lưu ${count} chỉnh sửa video`,
     tool: 'đã gọi công cụ',
   },
-  summary: (phrases: readonly string[]) => phrases.join(', '),
+  summary: (phrases: readonly string[]) => { const text = phrases.join(', '); return text.charAt(0).toUpperCase() + text.slice(1); },
   thinking: 'Đang suy nghĩ',
   stepsFallback: 'Các bước',
 };

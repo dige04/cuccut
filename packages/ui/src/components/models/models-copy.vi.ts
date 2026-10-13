@@ -58,7 +58,7 @@ export const vi: ModelsMessages = {
     tryOpenFailed: (message) => `Không thể mở ảnh kết quả: ${message}`,
     tryWhere: "Như các ảnh được tạo khác, kết quả nằm trong Công cụ › Tạo hình ảnh, không được thêm vào video",
     tryDownload: "Tải ảnh xuống",
-    tryCopy: "Sao chép prompt",
+    tryCopy: "Sao chép câu lệnh",
     tryClose: "Đóng",
     tryStopWaiting: "Dừng chờ đợi",
     tryStart: "Bắt đầu tạo",
@@ -75,16 +75,16 @@ export const vi: ModelsMessages = {
     } satisfies Record<OnlineCapability, string>,
     lede: {
       transcribe: "Nhận âm thanh và trả về văn bản nhận dạng. Nhận dạng giọng nói có một mô hình mặc định duy nhất, dùng chung với trang mô hình cục bộ.",
-      synthesizeSpeech: "Nhận văn bản và trả về lời nói. Có thể dùng khi tạo giọng nói và lồng tiếng; kết nối mạng và tính phí, thường theo ký tự.",
+      synthesizeSpeech: "Nhận văn bản và trả về lời nói. Có thể dùng khi tạo giọng nói và lồng tiếng; chạy trực tuyến và tính phí, thường theo ký tự.",
       generateImage:
-        "Nhận câu lệnh và trả về ảnh. Có thể dùng khi tạo ảnh; kết nối mạng và tính phí theo ảnh. Codex CLI cũng có thể tạo ảnh: không cần khóa, dùng gói đăng ký Codex của bạn. Công tắc nằm ở thẻ đầu trong danh sách nhà cung cấp bên dưới.",
-      generateText: "Nhận chỉ dẫn văn bản và trả về văn bản được tạo. Dùng cho dịch phụ đề, lồng tiếng bản dịch và Công cụ › Tạo văn bản; kết nối mạng và tính phí theo token.",
+        "Nhận câu lệnh và trả về ảnh. Có thể dùng khi tạo ảnh; chạy trực tuyến và tính phí theo ảnh. Codex CLI cũng có thể tạo ảnh: không cần khóa, dùng gói đăng ký Codex của bạn. Công tắc nằm ở thẻ đầu trong danh sách nhà cung cấp bên dưới.",
+      generateText: "Nhận chỉ dẫn văn bản và trả về văn bản được tạo. Dùng cho dịch phụ đề, lồng tiếng bản dịch và Công cụ › Tạo văn bản; chạy trực tuyến và tính phí theo token.",
     } satisfies Record<OnlineCapability, string>,
     defaultLabel: {
       transcribe: "Mô hình giọng nói đám mây mặc định",
       synthesizeSpeech: "Mô hình tổng hợp giọng nói đám mây mặc định",
       generateImage: "Mô hình ảnh đám mây mặc định",
-      generateText: "Mẫu văn bản mặc định",
+      generateText: "Mô hình văn bản mặc định",
     } satisfies Record<OnlineCapability, string>,
     defaultDesc: {
       transcribe: "Dùng khi yêu cầu chép lời không nêu mô hình. Nhận dạng giọng nói chỉ có một mặc định: chọn mô hình đám mây tại đây sẽ thay lựa chọn ở trang cục bộ; “Dùng mô hình cục bộ” xóa mặc định đám mây và quay về tự chọn cục bộ.",
@@ -176,7 +176,7 @@ export const vi: ModelsMessages = {
     endpoint: (url) => `URL cơ sở · ${url}`,
     keep: "Đã lưu khóa. Để trống để giữ khóa và chỉ xác minh lại.",
     verifyNote: "Trước khi lưu, gửi yêu cầu chỉ đọc tới nhà cung cấp để xác minh khóa; nếu thất bại, khóa không được lưu. Khóa chỉ lưu trên máy tính này và không hiển thị lại.",
-    removeKey: "Xóa chìa khóa",
+    removeKey: "Xóa khóa",
     removeProvider: "Xóa nhà cung cấp",
     cancel: "Hủy",
     save: "Xác minh và lưu",
@@ -192,7 +192,7 @@ export const vi: ModelsMessages = {
   custom: {
     title: "Thêm nhà cung cấp tùy chỉnh",
     name: "Tên nhà cung cấp",
-    url: "Đế URL",
+    url: "URL cơ sở",
     urlPlaceholder: 'https://api.example.com/v1',
     model: "ID mô hình đầu tiên",
     kind: "Dùng",

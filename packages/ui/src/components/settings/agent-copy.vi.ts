@@ -225,7 +225,7 @@ export const vi: AgentMessages = {
   techNotInstalled: "· Chưa cài",
   techNoModels: "Không báo danh sách mô hình",
   /** 复制按钮与「已复制」提示里的那个名词。 */
-  pathLabel: "path",
+  pathLabel: "đường dẫn",
   diagnosticsLabel: "chẩn đoán",
   copyDiagnostics: "Sao chép chẩn đoán",
   locateTitle: "Đặt vị trí Agent thủ công",

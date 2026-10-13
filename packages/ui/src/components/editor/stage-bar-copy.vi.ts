@@ -18,7 +18,7 @@ export const vi: StageBarMessages = {
   safeArea: 'Vùng an toàn của nền tảng',
   safeAreaHint: 'Đánh dấu chỗ nút và chữ của nền tảng che hình',
   safeAreaPortraitOnly: 'Chỉ khung dọc mới bị nút của nền tảng che',
-  safeZones: { top: 'Thanh trạng thái', right: 'Thích · bình luận · chia sẻ', bottom: 'Tài khoản · chú thích · bình luận' },
+  safeZones: { top: 'Thanh trạng thái', right: 'Thích · bình luận · chia sẻ', bottom: 'Tài khoản · mô tả · bình luận' },
   showCaptions: 'Hiện phụ đề',
   hideCaptions: 'Ẩn phụ đề',
 };

@@ -54,7 +54,7 @@ export const vi: HelpGuidesMessages = {
       "steps": [
         [
           "Hiệu đính nguồn trước",
-          "Dịch xử lý văn bản đã chép lời từng câu nên sửa tên, thuật ngữ và lỗi nhận dạng rõ trước để giảm chỉnh sửa sau. Phụ đề dịch phải từ chép lời: tệp phụ đề nhập không có thời gian từng từ nên không dịch trực tiếp được."
+          "Bản dịch được làm lần lượt theo từng câu của văn bản đã chép lời, nên hãy sửa tên, thuật ngữ và lỗi nhận dạng rõ trước để giảm chỉnh sửa sau. Phụ đề cần dịch phải được chép lời: tệp phụ đề đã nhập không có thời gian theo từng từ nên không dịch trực tiếp được."
         ],
         [
           "Nhấp “+ Dịch sang…” trên thanh rãnh",
@@ -62,7 +62,7 @@ export const vi: HelpGuidesMessages = {
         ],
         [
           "Kiểm tra bản dịch và chỉnh bố cục song ngữ",
-          "Khi xong, bản dịch tự vào hình và thẻ kết quả cho hoàn tác bằng một lần nhấp. Trong “Danh sách”, chọn “Bản gốc + Bản dịch” để đối chiếu từng dòng; nhấp dòng dịch để viết lại. Chọn phụ đề, mục “Song ngữ” trong “Thuộc tính phụ đề” đặt dòng ở trên và khoảng cách hai dòng."
+          "Khi xong, bản dịch tự vào hình và thẻ kết quả cho phép hoàn tác chỉ bằng một lần nhấp. Trong “Danh sách”, chọn “Bản gốc + Bản dịch” để đối chiếu từng dòng; nhấp dòng dịch để viết lại. Khi chọn một phụ đề, mục “Song ngữ” trong “Thuộc tính phụ đề” đặt dòng nào ở trên và khoảng cách giữa hai dòng."
         ]
       ],
       "tip": "Muốn chỉ hiện bản dịch? Tắt “Hiện cả hai ngôn ngữ” trước khi bắt đầu hoặc nhấp “×” trên nguồn trong thanh rãnh để bỏ khỏi hình; nguồn không bị xóa. Sau khi sửa nguồn, bản dịch bị ảnh hưởng được đánh dấu “Lỗi thời”: viết lại sẽ bỏ dấu. Cũng có thể nhấp “Cập nhật bản dịch cũ” trên thông báo trong ứng dụng máy tính hoặc gõ /refresh trong phiên để Agent dịch lại những dòng này.",
@@ -80,7 +80,7 @@ export const vi: HelpGuidesMessages = {
         ],
         [
           "Chọn phạm vi và xác nhận cài đặt",
-          "Video và âm thanh có thể xuất toàn bộ video, theo chương, theo đoạn hoặc bắt đầu và kết thúc tùy chỉnh; phụ đề, bản chép lời và tệp dự án xuất toàn bộ chuỗi. Trên trang Video, xác nhận độ phân giải, kích thước tệp, có ghi phụ đề vào hình không và bật chuẩn hóa độ lớn nếu cần. Trang Phụ đề cho chọn hai rãnh để ghép thành tệp song ngữ."
+          "Video và âm thanh có thể xuất toàn bộ video, theo chương, theo đoạn hoặc bắt đầu và kết thúc tùy chỉnh; phụ đề, bản chép lời và tệp dự án xuất toàn bộ dòng thời gian. Trên trang Video, xác nhận độ phân giải, kích thước tệp, có ghi phụ đề vào hình không và bật chuẩn hóa độ lớn nếu cần. Trang Phụ đề cho chọn hai rãnh để ghép thành tệp song ngữ."
         ],
         [
           "Bắt đầu xuất và chờ xong",
@@ -97,7 +97,7 @@ export const vi: HelpGuidesMessages = {
       "steps": [
         [
           "Giữa: xem trước",
-          "Hiện hình ở đầu phát, với kích thước và tốc độ khung hình video phía trên. Điều khiển phát phía dưới cho phát, bước từng khung hình, hoàn tác, làm lại và tách tại đầu phát."
+          "Hiện hình ở đầu phát, với kích thước và tốc độ khung hình video phía trên. Thanh điều khiển bên dưới cho phép phát, chuyển từng khung hình, hoàn tác, làm lại và tách tại đầu phát."
         ],
         [
           "Dưới: dòng thời gian",
@@ -122,7 +122,7 @@ export const vi: HelpGuidesMessages = {
         ],
         [
           "Chỉnh vị trí và kiểu chữ",
-          "“Vị trí” đặt vị trí dọc, ngang và chiều rộng; “Kiểu chữ” đặt phông, cỡ, màu, căn chỉnh và bật nền, viền, phát sáng, bóng. Hình thay đổi khi kéo, chỉnh sửa lưu khi thả."
+          "“Vị trí” đặt vị trí dọc, ngang và chiều rộng; “Kiểu chữ” đặt phông, cỡ, màu, căn chỉnh và bật nền, viền, phát sáng, bóng. Hình thay đổi theo khi bạn kéo; thay đổi được lưu khi bạn thả chuột."
         ],
         [
           "Chỉnh thời gian",
@@ -182,11 +182,11 @@ export const vi: HelpGuidesMessages = {
       "steps": [
         [
           "Gõ / trong phiên",
-          "Gõ / ở đầu ô nhập phiên (hoặc chọn “Dùng công cụ” dưới “+”) để liệt kê công cụ cho video: Trau chuốt bản chép lời, Tạo chương, Nhận dạng người nói, Chép lời lại, Tìm phần có thể cắt, Dịch phụ đề, Cập nhật bản dịch cũ, Lồng tiếng bản dịch, Viết tóm tắt, Viết bài blog, Gợi ý tiêu đề, Viết mô tả, Tạo bìa và Xuất. Chọn một, thêm yêu cầu phía sau rồi gửi; Agent bắt đầu làm. Với video mở từ Space, phiên nằm góc dưới phải; công cụ này không có trên web."
+          "Gõ / ở đầu ô nhập phiên (hoặc chọn “Dùng công cụ” dưới “+”) để liệt kê công cụ cho video: Trau chuốt bản chép lời, Tạo chương, Nhận dạng người nói, Chép lời lại, Tìm phần có thể cắt, Dịch phụ đề, Cập nhật bản dịch cũ, Dịch lồng tiếng, Viết tóm tắt, Viết bài blog, Gợi ý tiêu đề, Viết mô tả, Tạo bìa và Xuất. Chọn một, thêm yêu cầu phía sau rồi gửi; Agent bắt đầu làm. Với video mở từ Space, phiên nằm góc dưới phải; công cụ này không có trên web."
         ],
         [
           "Hoặc mở thẻ Công cụ AI",
-          "Thẻ “Công cụ AI” ở thanh bên phải trình chỉnh sửa liệt kê công cụ theo nhóm: trau chuốt bản chép lời, tạo chương, nhận diện người nói, chép lời lại và tìm đoạn cần cắt, rồi viết tóm tắt, bài blog, tiêu đề, mô tả và ảnh bìa. “Tìm đoạn cần cắt” trên thanh gợi ý của chế độ cắt cũng mở cùng trang đó. Chọn một công cụ để mở trang của nó, rồi chọn phạm vi và tùy chọn. Ô lời nhắn bên dưới viết sẵn yêu cầu theo đó và gắn skill của công cụ; bạn có thể sửa. Ở dòng “Phiên”, chọn phiên mới hoặc phiên hiện tại rồi bấm “Giao cho Agent”. Dịch phụ đề nằm ở “+ Dịch sang…” trong bảng Phụ đề, dịch lồng tiếng nằm trong bảng Âm thanh và menu của rãnh lồng tiếng; với hai mục này bạn chọn mô hình ở trang cài đặt và bắt đầu ngay.",
+          "Thẻ “Công cụ AI” ở thanh bên phải trình chỉnh sửa liệt kê công cụ theo nhóm: trau chuốt bản chép lời, tạo chương, nhận dạng người nói, chép lời lại và tìm đoạn cần cắt, rồi viết tóm tắt, bài blog, tiêu đề, mô tả và ảnh bìa. “Tìm đoạn cần cắt” trên thanh gợi ý của chế độ cắt cũng mở cùng trang đó. Chọn một công cụ để mở trang của nó, rồi chọn phạm vi và tùy chọn. Ô lời nhắn bên dưới viết sẵn yêu cầu theo đó và gắn skill của công cụ; bạn có thể sửa. Ở dòng “Phiên”, chọn phiên mới hoặc phiên hiện tại rồi bấm “Giao cho Agent”. Dịch phụ đề nằm ở “+ Dịch sang…” trong bảng Phụ đề, dịch lồng tiếng nằm trong bảng Âm thanh và menu của rãnh lồng tiếng; với hai mục này bạn chọn mô hình ở trang cài đặt và bắt đầu ngay.",
         ],
         [
           "Kiểm tra kết quả",
@@ -211,7 +211,7 @@ export const vi: HelpGuidesMessages = {
         ],
         [
           "Xem quá trình và kiểm tra kết quả",
-          "Mỗi bước Agent thực hiện có thể mở rộng. Theo chế độ truy cập đã chọn, sẽ hỏi cho phép hoặc từ chối trước khi chạy lệnh hoặc chỉnh sửa; mỗi lần đổi video có thẻ thay đổi trong phiên, có thể hoàn tác trực tiếp."
+          "Mỗi bước Agent thực hiện có thể mở rộng. Theo chế độ truy cập đã chọn, sẽ hỏi cho phép hoặc từ chối trước khi chạy lệnh hoặc chỉnh sửa; mỗi lần đổi video, một thẻ thay đổi xuất hiện trong phiên và bạn có thể hoàn tác trực tiếp."
         ]
       ],
       "tip": "Agent chỉ dùng video trong thư mục phiên (thư mục dự án hoặc thư mục làm việc riêng). Khi gửi thông điệp, video như vậy đang mở trong trình chỉnh sửa được đính kèm cùng vùng chọn và đầu phát; có thể bỏ tham chiếu phía trên ô nhập.",
@@ -255,7 +255,7 @@ export const vi: HelpGuidesMessages = {
         ],
         [
           "Trở lại và thử lại",
-          "Sau khi khắc phục, trở lại thử lại: nhấp “Tạo phụ đề” trong bảng Phụ đề hoặc nhờ Agent gửi lại trong phiên. Khi không có dịch vụ khả dụng, Agent cho biết cần bật dịch vụ nào trước."
+          "Sau khi khắc phục, quay lại và thử lại: nhấp “Tạo phụ đề” trong bảng Phụ đề hoặc nhờ Agent gửi lại trong phiên. Khi không có dịch vụ khả dụng, Agent cho biết cần bật dịch vụ nào trước."
         ]
       ],
       "tip": "Chép lời, tổng hợp giọng nói và tạo hình ảnh đều cần dịch vụ mô hình. Có thể đọc trợ giúp ngoại tuyến nhưng dịch vụ đám mây cần kết nối mạng.",

@@ -53,7 +53,7 @@ export const vi: ModelCheckMessages = {
     pickRef: 'Chọn bản ghi khác…',
     useSample: 'Dùng bản ghi mẫu',
   },
-  caption: 'Kiểm tra xác nhận mô hình hoạt động; Sửa chỉ tải lại tệp hỏng. Khi xóa mô hình, giữ thành phần chung mô hình khác vẫn dùng.',
+  caption: 'Kiểm tra xác nhận mô hình hoạt động; Sửa chỉ tải lại tệp hỏng. Khi xóa mô hình, các thành phần dùng chung mà mô hình khác vẫn cần sẽ được giữ lại.',
   head: {
     running: 'Đang kiểm tra…',
     repairing: 'Đang sửa…',
@@ -77,7 +77,7 @@ export const vi: ModelCheckMessages = {
     RUNTIME_UNREACHABLE: { text: 'Dịch vụ nền CucCut không phản hồi', todo: 'Kiểm tra lại sau. Nếu vẫn xảy ra, khởi động lại CucCut.' },
     MODEL_IN_USE: { text: 'Tác vụ khác đang dùng mô hình này', todo: 'Chờ tác vụ hoàn tất hoặc hủy trong Tác vụ nền rồi kiểm tra lại.' },
     MODEL_UNAVAILABLE: { text: 'Hiện không dùng được mô hình này', todo: 'Sửa hoặc bật lại trước rồi kiểm tra lại.' },
-    RESOURCE_ADMISSION_UNSATISFIABLE: { text: 'Máy tính này không đủ bộ nhớ để chạy mô hình', todo: 'Chuyển mô hình nhỏ hơn.' },
+    RESOURCE_ADMISSION_UNSATISFIABLE: { text: 'Máy tính này không đủ bộ nhớ để chạy mô hình', todo: 'Chuyển sang mô hình nhỏ hơn.' },
     WEB_METHOD_NOT_ALLOWED: { text: 'Không thể kiểm tra mô hình cục bộ trong trình duyệt', todo: 'Kiểm tra trong ứng dụng máy tính.' },
     OFFLINE_STRICT: { text: 'Chế độ ngoại tuyến nghiêm ngặt bật', todo: 'Tắt chế độ ngoại tuyến nghiêm ngặt trong Cài đặt rồi kiểm tra lại.' },
   },

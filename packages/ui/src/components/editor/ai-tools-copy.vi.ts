@@ -12,19 +12,20 @@ export const vi: AiToolsMessages = {
   shortsFraming: 'Khung hình',
   shortsSubtitles: 'Phụ đề',
   shortsTracks: 'Các track',
-  shortsStyle: 'Kiểu',
+  shortsStyle: 'Kiểu phụ đề',
   shortsNoTranslation: 'Chỉ có bản gốc · video này chưa có bản dịch.',
   shortsSkipDone: 'Bỏ qua phần đã cắt',
   shortsSkipDoneOn: 'Không tìm lại trong các khoảng mà video ngắn trước đã dùng',
   shortsSkipDoneOff: 'Tìm khắp nơi; có thể trùng với các video đã cắt',
   shortsHint: 'Mở một phiên mới để tìm các đoạn và tạo video; video gốc và dòng thời gian giữ nguyên.',
   back: 'Trở lại',
-  // 设置态
+  // Settings state
   who: 'Dùng', whoAgent: 'Giao cho Agent', whoModel: 'Gọi mô hình trực tiếp', whoModelSub: 'Runtime chưa có quy trình này nên chỉ Agent thực hiện được', scope: 'Phạm vi', scopeAll: 'Toàn bộ video', scopeChapter: (index, label) => `Chương ${index} · ${label}`, scopeNoChapters: 'Dòng thời gian chưa có chương nên chỉ có toàn bộ video', cta: 'Giao cho Agent', queued: 'Agent bận · thông điệp xếp hàng và gửi khi lượt này kết thúc', noConversation: 'Video này không trong dự án hoặc phiên nên không giao cho Agent được.', createFailed: (message) => `Không tạo được phiên: ${message}`,
-  // 勾选项与自定义
+  // Checkboxes and custom
   prePolish: 'Trau chuốt trước (tự chia đoạn)', prePolishOn: 'Chương nhóm theo đoạn', prePolishOff: 'Bản chép lời chưa trau chuốt chỉ có 1 đoạn nên chương sẽ thô', framesLabel: 'Thêm ảnh minh họa từ khung hình chính', framesSub: 'Lấy hình từ video, chèn vào chỗ cần minh họa; mặc định không thêm', framesSubModel: 'Gọi trực tiếp mô hình không lấy được hình từ video; giao cho Agent mới thêm được', staleEdited: 'Câu đã sửa trong bản gốc', staleEditedSub: 'Bạn đổi từ trong bản chép lời nhưng bản dịch vẫn cũ', staleCut: 'Câu đã cắt khỏi bản gốc', staleCutSub: 'Đoạn cắt bỏ một phần câu; dịch lại từ bản gốc đã cắt', staleNone: 'Chọn ít nhất một', staleOnly: (language) => `Chỉ bản dịch ${language}`, retranscribeModel: 'Agent chọn mô hình giọng nói đã cài trên máy này; để chọn, nêu trong hướng dẫn dưới.', retranscribeSpeakers: 'Nhận dạng người nói sau chép lời',
-  // 写作与发布
-  platform: 'Nơi đăng', platformPlaceholder: 'Nền tảng đăng (tùy chọn); theo quy tắc nền tảng và nhắc bạn kiểm tra', titleCount: 'Phương án', titleCountNote: (min, max) => `${min}–${max}, mỗi phương án một góc nhìn`, coverCount: 'Số lượng', coverIdea: 'Điều duy nhất muốn nói', coverIdeaPlaceholder: 'Điều khiến người xem nhấp video (tùy chọn); để trống cho Agent tìm trong bản chép lời', coverRatio: 'Tỷ lệ khung hình', coverRatioProject: 'Giống khung vẽ video', coverText: 'Văn bản bìa',   // 还做不了的
+  // Writing and publishing
+  platform: 'Nơi đăng', platformPlaceholder: 'Nền tảng đăng (tùy chọn); theo quy tắc nền tảng và nhắc bạn kiểm tra', titleCount: 'Phương án', titleCountNote: (min, max) => `${min}–${max}, mỗi phương án một góc nhìn`, coverCount: 'Số lượng', coverIdea: 'Điều duy nhất muốn nói', coverIdeaPlaceholder: 'Điều khiến người xem nhấp video (tùy chọn); để trống cho Agent tìm trong bản chép lời', coverRatio: 'Tỷ lệ khung hình', coverRatioProject: 'Giống khung vẽ video', coverText: 'Văn bản bìa',
+  // Not yet possible
   soon: 'Sắp ra mắt', chaptersPolishFirst: 'Trau chuốt và chia đoạn trước rồi tạo chương',
 
   session: 'Phiên',
@@ -88,13 +89,13 @@ export const vi: AiToolsMessages = {
   ctaTitle: 'Gợi ý tiêu đề',
   ctaDesc: 'Viết mô tả',
   noTextModel: 'Hãy kết nối một mô hình văn bản trước',
-  staleDirectSetup: 'Dịch lại tại chỗ các câu được đánh dấu lỗi thời, các câu có bản gốc đã sửa và các câu chưa có bản dịch: cùng bản dịch đó có phiên bản mới, và phụ đề chỉ đổi những dòng này.',
+  staleDirectSetup: 'Dịch lại ngay tại chỗ các câu bị đánh dấu lỗi thời, các câu có bản gốc đã sửa và các câu chưa dịch. Bản dịch sẽ có phiên bản mới, còn phụ đề chỉ thay đổi các dòng này.',
   staleTranslation: 'Bản dịch',
   staleNoTranslation: 'Video này chưa có bản dịch. Hãy dịch trước trong bảng Phụ đề.',
   staleReading: 'Đang đọc bản dịch…',
   staleCounts: (parts) => `Cần dịch lại: ${parts}`,
   staleNothing: 'Bản dịch này không có câu nào lỗi thời hoặc chưa dịch',
-  staleCutNeedsAgent: 'Câu có bản gốc bị cắt phải dịch lại từ bản gốc sau khi cắt; chỉ Agent làm được.',
+  staleCutNeedsAgent: 'Câu bị cắt khỏi bản gốc cần dịch lại từ bản gốc đã cắt; chỉ Agent làm được.',
   staleNoPrompt: 'Dịch lại theo cách của công cụ dịch, dùng các bảng thuật ngữ của video; không gửi prompt, tệp đính kèm hay Skill. Muốn chỉ dẫn bằng lời của bạn, hãy giao cho Agent.',
   staleGateBody: 'Công cụ này gửi các câu cần dịch lại, kèm bản gốc, cho một mô hình văn bản.',
   ctaStale: (n) => (n ? `Dịch lại ${n} câu` : 'Dịch lại'),

@@ -15,14 +15,14 @@ export const viTranscript: TranscriptMessages = {
   hintCut: "Chọn chữ và nhấn ⌫ để cắt cả video, âm thanh và phụ đề. Từ cắt giữ gạch ngang, có thể khôi phục.",
 
   emptyTitle: "Chưa có bản chép lời",
-  emptyNoMedia: "Thêm video hoặc âm thanh trước. Chép lời xong, lời nói hiện tại đây.",
-  emptyNotPlaced: "Video hoặc âm thanh chưa trên dòng thời gian. Đặt lên và chép lời để hiện bản chép tại đây.",
-  emptyNotTranscribed: "Tư liệu trên dòng thời gian chưa chép lời. Chép trong bảng Phụ đề để hiện tại đây.",
+  emptyNoMedia: "Thêm video hoặc âm thanh trước. Chép lời xong, lời nói sẽ hiện ở đây.",
+  emptyNotPlaced: "Video hoặc âm thanh chưa có trên dòng thời gian. Hãy đặt lên đó rồi chép lời để bản chép lời hiện ở đây.",
+  emptyNotTranscribed: "Các tư liệu trên dòng thời gian chưa được chép lời. Hãy chép lời trong bảng Phụ đề để bản chép lời hiện ở đây.",
   gotoSubtitle: "Chép lời trong Phụ đề",
   addMedia: "Thêm nội dung",
   loading: "Đang tải bản chép lời…",
   noWords: "Bản chép lời không có từ để hiện.",
-  notSpeech: "Định dạng bản chép lời không nhận dạng được.",
+  notSpeech: "Không nhận dạng được định dạng bản chép lời.",
 
 
   stats: (count, cut) => cut ? `${count} từ · ${cut} đã cắt` : `${count} từ`,
@@ -30,7 +30,7 @@ export const viTranscript: TranscriptMessages = {
   cutWordTitle: "Cắt khỏi dòng thời gian",
   partialWordTitle: "Đoạn cắt nằm trong từ; chỉ phần còn lại trên dòng thời gian",
 
-  // 选区条
+  // Selection bar
   selected: (count, seconds) => seconds === null ? `Đã chọn ${count} từ` : `Đã chọn ${count} từ · ${secondsLabel(seconds)}`,
   cut: "Cắt",
   restore: "Khôi phục",
@@ -40,15 +40,15 @@ export const viTranscript: TranscriptMessages = {
   aiFind: "Tìm chỗ cắt",
   aiFindHint: "Hoặc để AI tìm từ đệm và khoảng ngắt trước",
 
-  // 结果
+  // Result
   cutDone: (seconds, ranges) => ranges > 1 ? `Đã cắt ${secondsLabel(seconds)} · ${ranges} phạm vi` : `Đã cắt ${secondsLabel(seconds)}`,
   cutNothing: "Từ chọn không còn trên dòng thời gian; không có gì cắt.",
   cutTooShort: "Vùng chọn ngắn hơn một khung hình, không cắt được.",
   restoreDone: (seconds) => `Đã khôi phục ${secondsLabel(seconds)}`,
   restoreNotRelaid: "Một số đoạn cắt không có mối nối tương ứng. Đã bỏ khỏi danh sách cắt nhưng chưa đặt lại nội dung.",
   restoreRefused: {
-    untracked: "Phạm vi này không bỏ bằng cắt (ví dụ kéo cạnh clip để cắt tỉa) nên không có đoạn cắt để khôi phục. Kéo cạnh clip trên dòng thời gian để đưa lại.",
-    partial: "Chỉ một phần phạm vi bỏ bằng cắt nên không đổi phạm vi được. Nhấp dải cắt để khôi phục phần đó trước.",
+    untracked: "Phạm vi này không bị cắt bỏ (ví dụ được cắt tỉa khi kéo cạnh clip) nên không có đoạn cắt nào để khôi phục. Hãy kéo cạnh clip trên dòng thời gian để đưa lại.",
+    partial: "Chỉ một phần của phạm vi này bị cắt bỏ nên không thể đổi phạm vi. Hãy nhấp vào dải cắt để khôi phục phần đó trước.",
   },
   textSaved: "Đã cập nhật chữ · giữ video và âm thanh",
   textDeleted: (count) => `Đã xóa chữ của ${count} từ · giữ video và âm thanh`,
@@ -57,29 +57,29 @@ export const viTranscript: TranscriptMessages = {
   gotoCaptions: "Mở Phụ đề",
   undo: "Hoàn tác",
 
-  // 时间线剪口
+  // Timeline cut markers
   seamLabel: (seconds) => `Đã cắt ${secondsLabel(seconds)} · nhấp khôi phục`,
   liveCopy: "Sao chép phần đã chép lời",
-  liveCopied: "Đã sao chép phần đã chép lời · vẫn đang chuyển âm",
+  liveCopied: "Đã sao chép phần đã chép lời · việc chép lời vẫn đang chạy",
   liveSpeaker: "Đang nhận dạng",
   liveWaiting: "Văn bản nhận dạng được sẽ lần lượt hiện ở đây. Một số dịch vụ chỉ trả về toàn bộ khi xong.",
-  liveNote: "Văn bản nhận dạng được hiện theo từng đoạn. Bạn có thể chỉnh sửa khi chuyển âm xong.",
+  liveNote: "Văn bản nhận dạng được hiện theo từng đoạn. Bạn có thể chỉnh sửa khi chép lời xong.",
   liveJump: "Về mới nhất",
   liveSaving: "Đang lưu bản chép lời",
 };
 
 export const viTranscriptTools: TranscriptToolsMessages = {
-  // 查找替换
+  // Find and replace
   findTip: "Tìm và thay · ⌘F",
   findLabel: "Tìm và thay",
   findPlaceholder: "Tìm trong bản chép lời",
 
-  lockTranslation: "Có thể tìm bản dịch nhưng không sửa tại đây; bảng Bản chép lời chỉ sửa nguồn",
+  lockTranslation: "Có thể tìm bản dịch nhưng không sửa tại đây; bảng Bản chép lời chỉ sửa bản gốc",
   lockLoading: "Bản chép lời mới đang tải; thay sau khi xong",
   replaceDone: (count) => `Đã thay ${count} kết quả · giữ video và âm thanh`,
   replaceNothing: "Không có kết quả cần đổi",
 
-  // 复制
+  // Copy
   copyMenu: "Sao chép bản chép lời",
   copyAllHead: (lang) => `Sao chép tất cả · ${lang}`,
   copyText: "Sao chép văn bản",
@@ -89,10 +89,10 @@ export const viTranscriptTools: TranscriptToolsMessages = {
   textOnly: "Chỉ văn bản",
   keepCut: "Gồm phần cắt",
   copyConfirm: "Sao chép",
-  copyTranslationOnly: "Đang chỉ xem bản dịch nên bản sao lấy từ bảng: không ghi phần đầu, phần đã cắt không có.",
+  copyTranslationOnly: "Đang chỉ hiện bản dịch nên nội dung được sao chép từ bảng: không kèm phần đầu, phần đã cắt sẽ bị bỏ qua.",
   copyScopeHead: (scope) => `Sao chép ${scope}`,
   copied: (scope, receipt) => `Đã sao chép ${scope} · ${receipt}`,
-  copyFailed: "Không sao chép được · trình duyệt từ chối truy cập bảng nhớ",
+  copyFailed: "Không sao chép được · trình duyệt không cho truy cập bộ nhớ tạm",
   copyEmpty: "Không có gì sao chép",
   scopeAll: "tất cả",
   scopePara: "đoạn này",
@@ -101,21 +101,21 @@ export const viTranscriptTools: TranscriptToolsMessages = {
   copySelection: "Sao chép",
   copySelectionTip: "Sao chép chữ chọn · ⌘C",
 
-  // 语言视图（设计稿 `langShort` 与「文稿语言」菜单）
+  // Language view (design `langShort` and the transcript language menu)
   langLabel: "Ngôn ngữ bản chép lời",
   langSource: "Bản gốc",
   langTranslation: "Bản dịch",
   langBoth: (source: string, translation: string) => `${source} + ${translation}`,
-  showBoth: "Hiện nguồn bên cạnh",
+  showBoth: "Hiện bản gốc bên cạnh",
   showBothNeedsTranslation: "Chọn bản dịch trước",
   showBothHint: "Cạnh nhau",
   noTranslation: "Chưa có bản dịch",
   noTranslationHint: "Dịch từ bảng Phụ đề bằng “+ Dịch sang…”",
-  translationNote: "Bản dịch chỉ theo phát từng đoạn; thời gian từ chỉ có trong nguồn nên tô từng từ sẽ không thật.",
-  translationOnly: "Không sửa hoặc cắt khi chỉ xem bản dịch; trở lại nguồn hoặc cạnh nhau để sửa.",
+  translationNote: "Bản dịch chỉ bám theo phát đến từng đoạn; thời gian từng từ chỉ có ở bản gốc, nên tô sáng từng từ sẽ không chính xác.",
+  translationOnly: "Khi chỉ xem bản dịch thì không thể sửa hoặc cắt; hãy chuyển về bản gốc hoặc xem cạnh nhau để sửa.",
   noParagraphTranslation: "Đoạn này không có bản dịch",
 
-  // 段落行（设计稿 `ParaRow`）
+  // Paragraph row (design `ParaRow`)
   paraMenu: "Đoạn này…",
   moveUp: "Chuyển chương trước",
   moveDown: "Chuyển chương sau",
@@ -131,30 +131,30 @@ export const viTranscriptTools: TranscriptToolsMessages = {
   cutPara: "Cắt đoạn này",
   cutParaHint: "Cắt cả video, âm thanh và phụ đề; có thể khôi phục",
 
-  // 章节头「这一章…」
+  // Chapter header ("This chapter…")
   chapterMenu: "Chương này…",
   renameChapter: "Đổi tên…",
   cutChapter: "Cắt chương này",
-  cutChapterHint: "Cắt cả video, âm thanh, phụ đề; chương sau chuyển sớm",
+  cutChapterHint: "Cắt cả video, âm thanh và phụ đề; các chương sau dồn lên",
   cutChapterRefused: {
     empty: "Chương không có thời lượng",
     whole: "Chương này là toàn video; cắt sẽ không còn gì",
-    'no-tracks': "Không rãnh nào dùng tư liệu chép lời nên không có gì cắt",
+    'no-tracks': "Không có rãnh nào trên dòng thời gian dùng tư liệu đã chép lời nên không có gì để cắt",
   },
   cutChapterDone: (title, seconds) => `Đã cắt “${title}” · ${secondsLabel(seconds)}`,
   removeMarker: "Xóa dấu chương",
-  removeMarkerHint: "Chỉ xóa dấu; giữ nội dung",
+  removeMarkerHint: "Chỉ xóa dấu chương; nội dung được giữ lại",
   find: "Tìm",
   badRegex: "Regex không hợp lệ",
   noResults: "Không có kết quả",
   previous: "Trước",
   next: "Tiếp theo",
-  closeFind: "Đóng tìm",
+  closeFind: "Đóng tìm kiếm",
   replaceWith: "Thay thế bằng",
   matchCase: "Phân biệt hoa thường",
   wholeWordShort: "Từ",
   wholeWord: "Khớp cả từ",
-  regex: "Biểu thức chính quy · văn bản thay thêm nguyên trạng",
+  regex: "Biểu thức chính quy · văn bản thay thế được chèn nguyên văn",
   replace: "Thay",
   replaceAll: "Thay tất cả",
   regexError: (error) => `Lỗi regex: ${error}`,

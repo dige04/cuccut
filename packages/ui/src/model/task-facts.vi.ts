@@ -10,7 +10,7 @@ export const vi: TaskFactsMessages = {
     language: 'Ngôn ngữ',
     phase: 'Giai đoạn',
     images: 'Hình ảnh',
-    took: 'Thời gian',
+    took: 'Thời gian đã chạy',
     cost: 'Chi phí',
   },
   imageCount: (count: number) => `${count} hình ảnh`,

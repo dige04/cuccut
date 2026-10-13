@@ -2,7 +2,7 @@ import type { SettingsMessages } from './settings-copy.ts';
 
 export const vi: SettingsMessages = {
 help: `Cách dùng:
-  cuccut settings                  Liệt kê mọi tùy chọn: khóa, giá trị hiện tại, có phải mặc định và mô tả một dòng
+  cuccut settings                  Liệt kê mọi tùy chọn: khóa, giá trị hiện tại, có đang là mặc định hay không, và mô tả một dòng
   cuccut settings get <key>        In giá trị hiện tại của cài đặt (JSON)
   cuccut settings set <key> <value>
                                    Đổi cài đặt; giá trị được phân tích thành JSON (true, 20,

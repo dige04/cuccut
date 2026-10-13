@@ -11,8 +11,8 @@ export const vi: FullscreenPlayerMessages = {
   keysTitle: 'Phím tắt',
   keysFooter: 'Nhấn Esc để đóng bảng này, nhấn lần nữa để thoát toàn màn hình.',
   keys: {
-    play: 'Phát / tạm dừng (giống nhấp một lần lên hình)',
-    exit: 'Thoát toàn màn hình (giống nhấp đúp lên hình)',
+    play: 'Phát / tạm dừng (giống nhấp một lần vào khung hình)',
+    exit: 'Thoát toàn màn hình (giống nhấp đúp vào khung hình)',
     back: 'Lùi / tiến 5 giây',
     back10: 'Lùi / tiến 10 giây',
     prevChapter: 'Chương trước / sau',
@@ -20,7 +20,7 @@ export const vi: FullscreenPlayerMessages = {
     mute: 'Tắt / bật tiếng',
     captions: 'Chuyển chế độ phụ đề',
     start: 'Nhảy tới đầu / cuối',
-    percent: 'Nhảy tới 0% – 90% video',
+    percent: 'Nhảy tới 0% – 90% của video',
     keys: 'Bảng này',
   },
 };

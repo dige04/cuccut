@@ -9,7 +9,7 @@ export const vi: LegacyImportMessages = {
   resetDefault: 'Dùng vị trí mặc định',
   change: 'Đổi…',
   pickTitle: 'Chọn nơi nhập',
-  destinationNote: 'Thư mục này xuất hiện trong Home như một dự án, mỗi dự án cũ trở thành một video trong đó.',
+  destinationNote: 'Thư mục này xuất hiện ở Trang chủ như một dự án, mỗi dự án cũ trở thành một video trong đó.',
   hint: 'Nếu bỏ qua, CucCut sẽ hỏi lại ở lần khởi động sau. Đánh dấu “Không nhắc lại” để không bao giờ nhập.',
   never: 'Không nhắc lại',
   skip: 'Bỏ qua',

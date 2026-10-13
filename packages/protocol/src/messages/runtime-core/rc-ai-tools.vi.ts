@@ -2,7 +2,7 @@ import type { RcAiToolsMessages } from './rc-ai-tools.ts';
 
 export const vi: RcAiToolsMessages = {
   label: "Công cụ AI (gọi mô hình trực tiếp)",
-  description: "Gửi lời nhắc kèm bản chép lời, chương và tệp đính kèm của video này thẳng tới một mô hình văn bản, không qua tác tử hay cuộc trò chuyện. Chỉnh sửa bản chép lời và chương được ghi vào video thành một thay đổi có thể hoàn tác; các công cụ khác trả về văn bản để đọc và sao chép.",
+  description: "Gửi lời nhắc kèm bản chép lời, chương và tệp đính kèm của video này thẳng tới một mô hình văn bản, không qua Agent hay cuộc trò chuyện. Chỉnh sửa bản chép lời và chương được ghi vào video thành một thay đổi có thể hoàn tác; các công cụ khác trả về văn bản để đọc và sao chép.",
   stepPrepare: "Thu thập ngữ cảnh",
   stepGenerate: "Gọi mô hình",
   stepApply: "Ghi vào video",

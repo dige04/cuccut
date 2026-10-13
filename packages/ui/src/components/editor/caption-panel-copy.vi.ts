@@ -75,7 +75,7 @@ export const vi: CaptionPanelMessages = {
   accent: "Nhấn",
   secondary: "Nhấn phụ",
   backgroundColor: "Màu nền",
-  shuffle: "Bản khác",
+  shuffle: "Xáo trộn",
   seed: (seed: number) => `Hạt giống ${seed}`,
   reveal: "Từng từ một",
   revealOn: "Các từ hiện ra lần lượt",
@@ -103,5 +103,5 @@ export const vi: CaptionPanelMessages = {
   solidNote: "Nền màu trơn chỉ che hình trong vùng phụ đề; tư liệu và âm thanh không đổi.",
   ending: "Kết thúc đoạn",
   endings: { hold: "Giữ nguyên", overviewIfRoom: "Thu xa nếu còn chỗ" },
-  perSegment: "Đổi bản cho từng đoạn, từ chính, ngắt đoạn và cố định dòng chưa có trong trình chỉnh sửa.",
+  perSegment: "Xáo trộn từng đoạn, từ chính, ngắt đoạn và ghim dòng chưa có trong trình chỉnh sửa.",
 };

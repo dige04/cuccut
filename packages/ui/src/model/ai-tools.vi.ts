@@ -65,7 +65,7 @@ export const vi: AiToolsMessages = {
       desc: "Xác định ai đang nói; gắn tên cho phụ đề và bản chép lời",
     },
     retranscribe: {
-      name: "Gỡ băng lại",
+      name: "Chép lời lại",
       desc: "Chạy lại âm thanh bằng mô hình khác; có thể chỉ chọn một chương hoặc đoạn",
       setup: ["Chạy lại bằng mô hình giọng nói khác và thay dữ liệu cấp từ trong phạm vi này.", "Giữ nguyên bản chép lời, phụ đề và bản dịch ngoài phạm vi."],
     },
@@ -171,7 +171,7 @@ export const vi: AiToolsMessages = {
     desc: 'Không thay đổi video: kết quả để bạn đọc và sao chép',
     cover: 'Không thay đổi video: chọn một để dùng',
   },
-  standMarkdown: (language) => (language ? `Viết bằng Markdown, bằng ${language}.` : 'Viết bằng Markdown, cùng ngôn ngữ với bản chép lời.'),
+  standMarkdown: (language) => (language ? `Viết theo định dạng Markdown, bằng ${language}.` : 'Viết theo định dạng Markdown, cùng ngôn ngữ với bản chép lời.'),
   standLanguage: (language) => (language ? `Viết bằng ${language}.` : 'Viết cùng ngôn ngữ với bản chép lời.'),
   standing: {
     summary: ['Nêu kết luận trước, rồi liệt kê các ý chính, mỗi ý kèm mã thời gian (mm:ss).', 'Độ dài vừa phải: ba đến năm đoạn.'],

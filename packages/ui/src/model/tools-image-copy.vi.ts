@@ -15,7 +15,7 @@ export const vi: ToolsImageMessages = {
   images: (n) => `${n} hình ảnh`,
   aspects: (n) => `${n} tỷ lệ khung hình`,
   providerSize: 'Kích thước do nhà cung cấp đặt',
-  takesSeed: 'Nhận seed',
+  takesSeed: 'Hỗ trợ seed',
   localChip: 'Tạo trên máy tính này · ngoại tuyến',
   cloudChip: (provider) => `Trực tuyến · ${provider} · tính phí theo mức sử dụng`,
   imageName: (n) => `Hình ảnh ${n}`,

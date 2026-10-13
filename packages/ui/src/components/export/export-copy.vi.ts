@@ -214,7 +214,7 @@ export const vi: ExportMessages = {
   xmemlNote: "Tệp dự án có video, hình ảnh, âm thanh trên dòng thời gian · clip tắt giữ tắt · tư liệu tham chiếu đường dẫn tuyệt đối trên máy này · chữ, đồ họa, phụ đề, chuyển cảnh, hiệu ứng không ghi được, từng mục liệt kê trong ghi chú",
   portableNote: "Gói di động bỏ đường dẫn cục bộ, khóa, giấy phép và bản ghi tác vụ · kèm cả tư liệu liên kết · mở sẽ tạo video mới",
   missingAssets: "Tư liệu không đọc được",
-  missingFail: "Dừng và báo",
+  missingFail: "Dừng và báo cho tôi",
   missingSkip: "Bỏ qua và đánh dấu thiếu trong danh sách",
   exportProject: "Xuất tệp dự án",
   exportPortable: "Xuất gói di động",

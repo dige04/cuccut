@@ -105,7 +105,7 @@ export const viDub: DubMessages = {
   grantBody: "Lồng tiếng gửi bản dịch để tổng hợp (và bản gốc ở chỗ thiếu bản dịch) cho nhà cung cấp. Cấp quyền chỉ cho video này để tiếp tục; không gửi gì nếu thiếu quyền.",
   grantAction: "Cấp quyền và bắt đầu",
   grantRetryAction: "Cấp quyền và thử lại",
-  grantDialogTitle: "Cấp ủy quyền chia sẻ dữ liệu",
+  grantDialogTitle: "Cấp quyền chia sẻ dữ liệu",
   grantDialogIntro: "Sau xác nhận, CucCut lưu quyền và tiếp tục lồng tiếng:",
   grantConfirm: "Cấp quyền và tiếp tục",
   grantCancel: "Không phải bây giờ",
@@ -127,7 +127,7 @@ export const viDub: DubMessages = {
   retryFree: "Thử lại tiếp tục từ bước dừng; dùng lại bước hoàn tất trước mà không gọi mô hình.",
   retryFrozen: "Giọng người nói được cố định khi bắt đầu: sửa giọng (nhân bản lại, thêm tuyên bố chủ giọng) giúp thử lại; đổi phân công cần lồng tiếng mới.",
   failedUnits: (n) => `${n} câu tổng hợp thất bại`,
-  stoppedAt: (synthesized, remaining) => `Dừng sau tổng hợp ${synthesized} câu; còn ${remaining}`,
+  stoppedAt: (synthesized, remaining) => `Dừng sau khi tổng hợp ${synthesized} câu; còn ${remaining} câu`,
   dismiss: "OK",
 
   // 收据
@@ -165,15 +165,15 @@ export const viTimelineDub: TimelineDubMessages = {
 
   rate: (rate, fast) => `${rate.toFixed(2).replace('.', ',')}×${fast ? ' · quá nhanh' : ''}`,
 
-  stretching: (rate: number, seconds: number) => `${rate.toFixed(2)}× · ${seconds.toFixed(2)} s`,
+  stretching: (rate: number, seconds: number) => `${rate.toFixed(2).replace('.', ',')}× · ${seconds.toFixed(2).replace('.', ',')} s`,
   tip: (parts) => [parts.text, parts.speaker, parts.rate, parts.muted ? 'Tắt tiếng' : '', parts.manual ? 'Đổi tốc độ thủ công' : '', parts.editable ? 'Kéo cạnh phải để đổi thời lượng · nhấp phải xem thêm' : ''].filter(Boolean).join(' · '),
   menuLabel: (title) => `Menu lồng tiếng cho “${title}”`,
   selection: (n) => `Đã chọn ${n} câu`,
   count: (n) => n > 1 ? `${n} câu này` : 'Câu này',
   listen: "Phát câu này",
-  listenHint: (timecode: string, seconds: number, rate: string) => `${timecode} · ${seconds.toFixed(1)} s${rate ? ` · ${rate}` : ''}`,
+  listenHint: (timecode: string, seconds: number, rate: string) => `${timecode} · ${seconds.toFixed(1).replace('.', ',')} s${rate ? ` · ${rate}` : ''}`,
   mute: (allMuted, n) => `${allMuted ? 'Bật tiếng' : 'Tắt tiếng'} ${n > 1 ? `${n} câu này` : 'câu này'}`,
-  muteHint: (allMuted) => allMuted ? 'Khôi phục lồng tiếng của câu này' : 'Câu này im lặng · cả trong bản xuất',
+  muteHint: (allMuted) => allMuted ? 'Khôi phục lồng tiếng của câu này' : 'Câu này im lặng · cả khi xuất',
   remove: (n) => n > 1 ? `Xóa ${n} câu này` : 'Xóa câu này',
   removeHint: "Gỡ khỏi rãnh lồng tiếng · có thể hoàn tác",
   removeGroup: "Gỡ nhóm lồng tiếng này",
@@ -237,7 +237,7 @@ export const viDubRegen: DubRegenMessages = {
   fitOverlong: (seconds) => seconds === null ? 'Chưa đặt: quá dài' : `Chưa đặt: dài quá ${seconds.toFixed(1).replace('.', ',')} giây`,
   fitLoading: "Đang tải bản dịch…",
   fitUnreadable: (message) => `Không đọc được bản dịch lồng tiếng (${message}); chỉ đọc lại từ bản dịch gốc`,
-  fitMissing: "Câu này không trong bản dịch; đọc từ kịch bản kế hoạch",
+  fitMissing: "Câu này không có trong bản dịch; đọc từ kịch bản kế hoạch",
   fitText: (index) => `Bản dịch câu ${index}`,
   fitCancel: "Hủy",
   fitSubmit: (n, changed) => changed ? `Sửa ${changed} và đọc lại ${n} câu` : `Đọc lại ${n} câu`,
@@ -254,6 +254,6 @@ export const viDubRegen: DubRegenMessages = {
   takeName: (k) => `Lần thu ${k}`,
   switched: (k) => `Đã chuyển lần thu ${k}`,
   regenThis: "Tạo lại câu này",
-  unreadableFormat: "Định dạng không nhận dạng",
+  unreadableFormat: "Không nhận dạng được định dạng",
   unreadableNoTranslation: "Kế hoạch không có bản dịch",
 };

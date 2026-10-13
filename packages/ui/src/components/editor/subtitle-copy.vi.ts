@@ -14,8 +14,8 @@ export const viSubtitle: SubtitleMessages = {
   pickTranscribe: "Chép lời rồi tạo",
   pickReuse: "Tạo từ bản chép lời có sẵn · không nhận dạng lại",
 
-  // 转录中（LiveHead）
-  liveTitle: "Đang chuyển âm",
+  // Transcribing (LiveHead)
+  liveTitle: "Đang chép lời",
   submitting: "Đang gửi yêu cầu chép lời",
   writing: "Đang tạo phụ đề",
   transcribed: (done,total) => total ? `Đã chép lời ${done} / ${total}` : `Đã chép lời ${done}`,
@@ -26,19 +26,19 @@ export const viSubtitle: SubtitleMessages = {
   liveNote: "Các phần nhận dạng được sẽ lần lượt hiện ra. Chép lời xong, phụ đề được tạo và bạn có thể hiệu đính từng dòng tại đây.",
   foreignNote: "Lần chép lời này không được bắt đầu từ bảng Phụ đề. Khi xong, nhấp “Tạo phụ đề” để dùng kết quả.",
   liveTip: (pct: number | null, at: string, remain: string | null) =>
-    [pct === null ? "Đang chuyển âm" : `Đang chuyển âm ${pct}%`, `đã chép đến ${at}`, ...(remain ? [`còn ${remain}`] : [])].join(' · '),
-  pendingLeft: (remain: string) => `Đang chuyển âm · còn ${remain}`,
-  cancelled: "Đã hủy phiên âm",
+    [pct === null ? "Đang chép lời" : `Đang chép lời ${pct}%`, `đã chép đến ${at}`, ...(remain ? [`còn ${remain}`] : [])].join(' · '),
+  pendingLeft: (remain: string) => `Đang chép lời · còn ${remain}`,
+  cancelled: "Đã hủy chép lời",
   cancelFailed: (message) => `Không thể hủy chép lời: ${message}`,
 
-  // 结果与问题
+  // Results and issues
   generated: (count,from,to) => `Đã tạo ${count} phụ đề · ${from} → ${to}`,
   created: (count) => `Đã tạo ${count} phụ đề`,
 
   createdShelved: (count) => `Đã tạo ${count} phụ đề · phụ đề gốc đang hiển thị nên lớp mới chưa được hiển thị; nhấp lớp trên dải để đưa lên màn hình`,
   notConfigured: (reason) => `Chưa thể chép lời · ${reason}`,
   submitFailed: "Không thể bắt đầu chép lời",
-  failed: "Phiên âm không thành công",
+  failed: "Chép lời không thành công",
   interrupted: "Chép lời bị gián đoạn",
   noSpeechTitle: "Không nhận dạng được lời nói",
   noSpeech: "Không nghe thấy ai nói trong tư liệu này.",
@@ -60,7 +60,7 @@ export const viSubtitle: SubtitleMessages = {
   unapplied: (message) => `${message ? `${message}. ` : ''}Kết quả nhận dạng vẫn còn; bạn có thể ghi lại vào video từ Tác vụ nền. Sau đó “Tạo phụ đề” sẽ dùng trực tiếp kết quả.`,
   decide: "Xử lý trong Tác vụ nền",
 
-  // 轨条与样式入口卡
+  // Track strip and style entry card
   onScreen: "Trên màn hình",
   defaultStyle: "Kiểu mặc định",
   styleEntry: (n) => n ? `Sửa kiểu · ${n} rãnh phụ đề trên màn hình` : 'Sửa kiểu',
@@ -88,9 +88,9 @@ export const viSubtitle: SubtitleMessages = {
   flipOff: "Chỉ đổi chỗ được khi bản gốc và bản dịch dùng chung kiểu và đều đang hiển thị; hiện chưa có cặp như vậy",
   flipped: (translationFirst) => `Đã đổi chỗ · ${translationFirst ? 'bản dịch trên, bản gốc dưới' : 'bản gốc trên, bản dịch dưới'}`,
 
-  // 列表
+  // List
   stats: (cues,sentences) => `${cues} phụ đề · ${sentences} câu`,
-  seam: "Merge up",
+  seam: "Gộp vào phụ đề trước",
   seamSpeaker: "Khác người nói · không thể gộp",
   undo: "Hoàn tác",
   panelTitle: "Phụ đề",
@@ -155,11 +155,11 @@ export const viNotConfigured: NotConfiguredMessages = {
 };
 
 export const viCaptionStyle: CaptionStyleMessages = {
-  // 画廊
+  // Gallery
   title: "Kiểu phụ đề",
   back: "Quay lại Phụ đề",
   open: "Đổi kiểu",
-  openTip: "Mở thư viện kiểu phụ đề; mỗi thẻ có một diện mạo khác nhau",
+  openTip: "Mở bộ sưu tập kiểu phụ đề; mỗi thẻ là một diện mạo khác nhau",
   scope: "Áp dụng cho",
   scopeAll: "Tất cả",
   hint: "Mỗi thẻ hiển thị phụ đề hiện có trên màn hình. Áp dụng chỉ đổi diện mạo, không thêm hoặc bớt dòng. Để thêm hoặc gỡ dòng, dùng dải phía trên hoặc tiêu đề rãnh phụ đề trên dòng thời gian.",
@@ -168,20 +168,20 @@ export const viCaptionStyle: CaptionStyleMessages = {
   applied: (name,lines) => `Đã áp dụng “${name}” · đổi kiểu ${lines}`,
   appliedOne: (line,name,others) => `Đã áp dụng “${name}” cho ${line}${others ? ` · ${others} giữ nguyên` : ''}`,
   loading: "Đang tải kiểu phụ đề…",
-  foreign: (schema) => `Kiểu phụ đề này là ${schema}; không thể áp dụng thư viện cho nó.`,
+  foreign: (schema) => `Kiểu phụ đề này là ${schema}; thư viện kiểu không áp dụng được cho nó.`,
   readOnly: "Hiện không thể thay đổi video này; chỉ có thể xem thẻ kiểu.",
 
-  // 属性页
+  // Properties page
   lineSwitch: "Dòng cần sửa",
   original: "Bản gốc",
   translation: "Bản dịch",
   lineOwn: (line,n) => `${line} có ${n} thiết lập riêng; phần còn lại theo kiểu dùng chung của hai dòng.`,
-  lineShared: (line) => `Thay đổi tại đây chỉ áp dụng cho ${line}; thiết lập không đổi theo kiểu dùng chung của hai dòng.`,
+  lineShared: (line) => `Thay đổi tại đây chỉ áp dụng cho ${line}; phần không đổi sẽ theo kiểu dùng chung của hai dòng.`,
   followShared: "Theo kiểu dùng chung",
   ratio: (root,bi,orig,source,size,k) => `Cỡ cơ sở ${root} × tỷ lệ song ngữ ${bi} ≈ ${orig} (cỡ hiệu dụng của “${source}”); dòng này ${size} = bản gốc × ${k}.`,
   ratioOwn: (size) => `Cỡ chữ dòng này được đặt riêng là ${size}, không theo tỷ lệ của bản gốc.`,
   originalOwn: (size) => `Cỡ chữ bản gốc được đặt riêng là ${size}; bản dịch không còn theo nó.`,
-  followRatio: "Theo tỷ lệ trở lại",
+  followRatio: "Theo lại tỷ lệ",
   originalChain: "Đổi cỡ chữ bản gốc thì bản dịch thay đổi theo tỷ lệ.",
   place: "Vị trí trên màn hình",
   places: [

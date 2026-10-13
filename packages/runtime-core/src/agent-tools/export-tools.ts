@@ -443,4 +443,6 @@ const EXPORT_NEXT: Record<string, string> = {
   EXPORT_INSUFFICIENT_SPACE: 'Not enough space on the disk of the export directory: tell the user the space needed (required), and let them free up space or choose another directory.',
   ASSET_CHANGED: 'A linked asset file has been modified: tell the user and ask them to confirm and relink it; do not work around it yourself.',
   EXPORT_KIND_UNSUPPORTED: 'This version can only export subtitles, transcript, audio, video, portable, project.',
+  REVIEW_BLOCKED:
+    "findings lists what the user's standard refuses: fix each (fix says how) and export again. If the user wants one to stand, call review_waive with their reason — it asks them. Do not lower severities or switch the gate off to get past it.",
 };

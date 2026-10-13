@@ -85,6 +85,17 @@ export const WEB_DEFAULT_METHODS: readonly string[] = [
   // The user's profile (docs/cuccut/m2-profile-rules.md §4): read only. Preferences and rules are changed in the desktop UI and the CLI, like settings.
   'profile.get',
   'profile.getProject',
+  // The review gate (docs/cuccut/m2-review-gate.md §4.5): reading the standard, checking and running reviews, and the per-video decisions
+  // (waivers and severities are ordinary edits of the video, like `edits.*`). Listed one by one: `review.criteria.set` (the user's standard,
+  // like settings) is not exposed, so the browser's Settings › Review is read-only ("Desktop only").
+  'review.catalogue',
+  'review.criteria.get',
+  'review.check',
+  'review.run',
+  'review.get',
+  'review.waive',
+  'review.unwaive',
+  'review.severity',
 ];
 
 /** Methods still available under read-only configuration (listed one by one: methods added later are not exposed under read-only by default). */
@@ -140,6 +151,10 @@ export const WEB_READ_METHODS: readonly RpcMethod[] = [
   'skills.readFile',
   'profile.get',
   'profile.getProject',
+  'review.catalogue',
+  'review.criteria.get',
+  'review.get',
+  'review.check',
 ];
 
 /** Subscribing to these topics requires the matching read method in the allowlist. Other topics (directories, sessions, tasks, Space, videos) are open with the session. */
@@ -158,6 +173,8 @@ export const WEB_TOPIC_METHODS: Readonly<Record<string, RpcMethod>> = {
   'legacy-import': 'legacyImport.get',
   // The user's profile: the same view as `profile.get`.
   profile: 'profile.get',
+  // The review gate (§4.5): the user's standard and the summaries of reviewed videos, the same data as `review.get`.
+  review: 'review.get',
 };
 
 /** One item in the allowlist: a method name, or `<namespace>.*` (including deeper sub-namespaces). */

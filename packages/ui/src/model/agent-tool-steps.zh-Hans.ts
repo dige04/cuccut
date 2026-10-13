@@ -41,6 +41,13 @@ export const zhHans: AgentToolStepsMessages = {
     importDesignAsset: '导入设计稿素材',
     checkDesignSystem: '检查设计系统',
     importDesignSystemAsset: '导入设计系统素材',
+    readReviewStandard: "阅读审核标准",
+    checkedVideo: "检查了视频",
+    answeredReview: "回答了审核问题",
+    letFindingStand: "保留了一个发现项",
+    holdFindingAgain: "已按标准重新审核一个发现项",
+    changedFindingWorth: "更改了一个发现项的重要程度",
+    changedReviewStandard: "更改了审核标准",
   },
   exportKind: {
     subtitles: '字幕',

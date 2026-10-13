@@ -22,4 +22,6 @@ export const it: SettingDescriptionMessages = {
   'runtime.idleExitMinutes': 'Minuti durante i quali un Runtime avviato dalla CLI resta inattivo prima di terminare autonomamente (1–1440): nessuna connessione, attività o servizio esterno aperto. L’app desktop e i Runtime avviati manualmente non sono interessati',
   'updates.autoCheck': 'Verifica automaticamente gli aggiornamenti dell’app', 'updates.autoDownload': 'Scarica nuove versioni in background (senza installarle automaticamente)',
   'diagnostics.enabled': 'Invia statistiche d’utilizzo e riepiloghi delle prestazioni anonimi (senza media, testo o percorsi)', 'offline.strict': 'Rigorosamente offline: non inviare nulla a nessun servizio online',
+  'review.gate':
+    'Sottoponi i video finiti al tuo standard di revisione: un’esportazione per la consegna si blocca su un rilievo critico finché non viene risolto o lasciato valido con una motivazione. Le anteprime non vengono mai bloccate',
 };

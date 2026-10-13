@@ -27,7 +27,14 @@ export function SubmitFoot({
 }) {
   return (
     <>
-      <RejectedAlert problem={submitter.problem} settings={submitter.rejected} videoId={env.videoId} busy={submitter.busy} onSubmit={(s, dir) => void submitter.submit(s, dir)} />
+      <RejectedAlert
+        problem={submitter.problem}
+        settings={submitter.rejected}
+        videoId={env.videoId}
+        busy={submitter.busy}
+        onSubmit={(s, dir) => void submitter.submit(s, dir)}
+        onLeave={onClose}
+      />
       {!env.ready ? <Note warn>{EXPORT_COPY.notOpen}</Note> : null}
       <Actions>
         <Button variant="secondary" fillStyle="outline" onPress={onClose}>

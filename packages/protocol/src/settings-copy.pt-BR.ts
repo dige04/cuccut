@@ -22,4 +22,6 @@ export const ptBR: SettingDescriptionMessages = {
   'runtime.idleExitMinutes': 'Minutos que um Runtime iniciado pela CLI permanece ocioso antes de sair sozinho (1–1440): sem conexões, tarefas ou serviços externos abertos. O aplicativo de desktop e Runtimes iniciados manualmente não são afetados',
   'updates.autoCheck': 'Verificar atualizações do aplicativo automaticamente', 'updates.autoDownload': 'Baixar novas versões em segundo plano (sem instalar automaticamente)',
   'diagnostics.enabled': 'Enviar estatísticas anônimas de uso e resumos de desempenho (sem mídia, texto ou caminhos)', 'offline.strict': 'Estritamente off-line: não enviar nada a nenhum serviço online',
+  'review.gate':
+    'Mantenha os vídeos finalizados no seu padrão de revisão: uma exportação para entrega para em um achado crítico até que seja corrigido ou mantido com um motivo. As prévias nunca são bloqueadas',
 };

@@ -138,6 +138,31 @@ export class VideoController {
     );
   }
 
+  /**
+   * An edit made through another method (a review decision: `review.waive`, `review.unwaive`, `review.severity`;
+   * docs/cuccut/m2-review-gate.md §2.1). When it is about the open video it goes into the same queue as edits, so it
+   * carries the latest version and lands after the edits sent before it; otherwise it is sent as is. Errors are thrown
+   * to the caller (the review dialog says them in place), not recorded as the editor's command error.
+   */
+  decide<T>(videoId: Id, send: (expectedRevision: string | undefined, commandId: Id) => Promise<T>): Promise<T> {
+    const commandId = newId('cmd');
+    const open = useVideo.getState().video;
+    if (open?.videoId !== videoId || open.status !== 'ready') return send(undefined, commandId);
+    useVideo.getState().update({ inFlight: open.inFlight + 1 });
+    const run = async (): Promise<T> => {
+      try {
+        const current = useVideo.getState().video;
+        return await send(current?.videoId === videoId ? current.state?.video.revision : undefined, commandId);
+      } finally {
+        const latest = useVideo.getState().video;
+        if (latest) useVideo.getState().update({ inFlight: Math.max(0, latest.inFlight - 1) });
+      }
+    };
+    const result = this.#queue.then(run, run);
+    this.#queue = result.catch(() => null);
+    return result;
+  }
+
   /** Every command already sent has a result (synchronously before sending, product design §3.2.4): a version read afterwards includes the changes the user just made. */
   settled(): Promise<void> {
     return this.#queue.then(

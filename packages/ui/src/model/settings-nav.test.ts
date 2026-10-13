@@ -12,7 +12,7 @@ describe('设置分组', () => {
   it('Agent 自成一组，在偏好设置之后、应用之前，含两个独立条目', () => {
     expect(SETTINGS_GROUPS.map((g) => g.id)).toEqual(['preferences', 'agents', 'app']);
     expect(SETTINGS_GROUPS.find((g) => g.id === 'agents')).toMatchObject({ label: 'Agent', keys: ['agent', 'skills'] });
-    expect(SETTINGS_GROUPS.find((g) => g.id === 'app')?.keys).toEqual(['glossary', 'privacy', 'diagnostics', 'about']);
+    expect(SETTINGS_GROUPS.find((g) => g.id === 'app')?.keys).toEqual(['glossary', 'review', 'privacy', 'diagnostics', 'about']);
   });
 
   it('the preferences group opens with the profile (You, Rules), then General, Shortcuts and Fonts', () => {
@@ -40,6 +40,13 @@ describe('设置分组', () => {
 
   it('skills 是独立分节', () => {
     expect(isSettingsSection('skills')).toBe(true);
+  });
+
+  it('review 在应用组里紧跟术语库（m2-review-gate §2.3）', () => {
+    expect(isSettingsSection('review')).toBe(true);
+    const app = SETTINGS_GROUPS.find((g) => g.id === 'app')!.keys;
+    expect(app.indexOf('review')).toBe(app.indexOf('glossary') + 1);
+    expect(SETTINGS_SECTION_INFO.find((s) => s.key === 'review')?.label).toBeTruthy();
   });
 });
 

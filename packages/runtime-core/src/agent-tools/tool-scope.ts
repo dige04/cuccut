@@ -206,6 +206,16 @@ export const TOOL_RISK: Readonly<Record<string, RiskLevel>> = {
   profile_preferences_set: 'high',
   profile_rules_save: 'high',
   profile_rules_remove: 'high',
+  // The review gate (docs/cuccut/m2-review-gate.md §5): reading and checking write only `.cuccut-out/reviews/` (usable in plan mode). Letting a
+  // finding stand, lowering what it is worth and rewriting the standard are the user's call: `high`, asked in every mode but full access and
+  // never "Always allow". Holding a finding again is an ordinary edit. `review_severity` gives its risk per call (lowering is `high`).
+  review_criteria: 'read',
+  review_run: 'read',
+  review_answer: 'read',
+  review_waive: 'high',
+  review_unwaive: 'edit',
+  review_severity: 'edit',
+  review_criteria_set: 'high',
 };
 
 export function toolRisk(request: ToolConfirmation): RiskLevel {

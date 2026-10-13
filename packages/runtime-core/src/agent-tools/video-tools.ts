@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 import {
+  REVIEW_PLAN_KIND,
   RpcError,
   newId,
   type DocumentContent,
@@ -39,12 +40,13 @@ import {
   sourceSentences,
   type CaptionSource,
 } from '@cuccut/jobs';
-import { RcAgentTools } from '@cuccut/protocol/messages/runtime-core';
+import { RcAgentTools, RcReview } from '@cuccut/protocol/messages/runtime-core';
 import type { MediaAnalysis } from '../media-analysis.ts';
 import type { FaceDetector } from '../face-detection.ts';
 import type { PackageImporter } from '../videos/package-import.ts';
 import type { VideoService } from '../videos/video-service.ts';
 import { deriveVideo, prepareDerive, type DeriveDeps } from '../videos/video-derive.ts';
+import { undoLoosensReview, writesReviewPlan } from '../review/review-plan-guard.ts';
 import { clockLabel } from './derive-plan.ts';
 import { EDIT_OPERATIONS, OPERATION_FAMILIES, OPERATION_TYPES, describeOperation } from './edit-ops.ts';
 import { ToolError, type ToolInfo, type ToolSet } from './tool-catalog.ts';
@@ -928,6 +930,8 @@ export class VideoTools implements ToolSet {
   async #apply(args: z.infer<(typeof schemas)['edits_apply']>, principal: ToolPrincipal) {
     if (args.dryRun) return this.#preflight(args, principal);
     const access = this.#scope.authorize(principal, true);
+    // Refused before asking the user: a call that cannot succeed is not put to them.
+    if (writesReviewPlan(args.operations, {})) throw reviewPlanProtected();
     const approval = await this.#scope.confirm(access, {
       tool: 'edits_apply',
       video: args.video,
@@ -1035,6 +1039,7 @@ export class VideoTools implements ToolSet {
     if (base.confine) await confineImports(operations, base.confine);
     // Translations written by agents: units whose alignment is null or missing get sentence-level alignment filled in by sentence (video format spec §5.3).
     const documents = (this.#videos.mirror(opened.ref.videoId)?.video ?? opened.snapshot.video).documents;
+    if (writesReviewPlan(operations, documents)) throw reviewPlanProtected();
     const readBody = async (documentId: Id, revision?: string) => (await this.#videos.document(opened.ref.videoId, documentId, revision)).body;
     const filledAlignments = await fillTranslationAlignments(operations, documents, readBody);
     // An existing translation was changed: caption layers generated from it get the cues of the changed sentences replaced in the same edit.
@@ -1181,6 +1186,7 @@ export class VideoTools implements ToolSet {
   /** `documents_put`: compiles to one `putDocument` (keeping the existing kind when replacing) and goes down the same path as `edits_apply`. */
   async #putDocument(args: z.infer<(typeof schemas)['documents_put']>, principal: ToolPrincipal) {
     const access = this.#scope.authorize(principal, true);
+    if (args.kind === REVIEW_PLAN_KIND) throw reviewPlanProtected();
     const approval = await this.#scope.confirm(access, {
       tool: 'documents_put',
       video: args.video,
@@ -1202,6 +1208,7 @@ export class VideoTools implements ToolSet {
           `This video has no document ${args.document}: use a documentId from the documents in videos_inspect; omit document to create one`,
         );
       }
+      if (record.kind === REVIEW_PLAN_KIND) throw reviewPlanProtected();
       if (args.kind !== undefined && args.kind !== record.kind) {
         throw new ToolError('INVALID_ARGUMENTS', `Document ${args.document} is ${record.kind} and cannot become ${args.kind}: create a new document for a different kind`);
       }
@@ -1634,14 +1641,17 @@ export class VideoTools implements ToolSet {
 
   async #undo(args: z.infer<(typeof schemas)['edits_undo']>, principal: ToolPrincipal) {
     const access = this.#scope.authorize(principal, true);
+    const opened = await this.#scope.open(args.video, access);
+    // Undoing a review decision can bring a waiver back or lower a finding: that is the user's call, asked like review_waive.
+    const loosens = await this.#undoLoosensReview(opened.ref.videoId, args.transactionId, principal);
     const approval = await this.#scope.confirm(access, {
       tool: 'edits_undo',
       video: args.video,
       ...confirmSummary(
         args.transactionId ? RcAgentTools.undoSummary({ transactionId: args.transactionId }) : RcAgentTools.undoLatestSummary(),
       ),
+      ...(loosens ? { risk: 'high' as const } : {}),
     });
-    const opened = await this.#scope.open(args.video, access);
     const result = await this.#videos.undo(
       {
         videoId: opened.ref.videoId,
@@ -1653,6 +1663,16 @@ export class VideoTools implements ToolSet {
       { protections: this.#scope.protections?.(access, opened.ref.videoId) ?? [] },
     );
     return { ...this.#receipt(opened, result, access), ...approvalField(approval) };
+  }
+
+  /** Whether this undo would loosen the review gate (`review-plan-guard.ts`). When the history cannot be read, the engine's own refusal follows. */
+  async #undoLoosensReview(videoId: Id, transactionId: Id | undefined, principal: ToolPrincipal): Promise<boolean> {
+    try {
+      if (transactionId === undefined) return undoLoosensReview(undefined, { undoState: await this.#videos.undoState(videoId, principal) });
+      return undoLoosensReview(transactionId, { history: (await this.#videos.history(videoId, 500)).entries });
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -2032,4 +2052,11 @@ function translationBasis(content: DocumentContent, sequenceId: Id): { translati
       })),
     },
   };
+}
+
+/** The review gate's decisions document is written only by the review tools (`review-plan-guard.ts`). */
+function reviewPlanProtected(): ToolError {
+  return new ToolError('REVIEW_PLAN_PROTECTED', RcReview.planProtected().text, {
+    next: 'Use review_waive, review_unwaive or review_severity, and only when the user asked: the review-plan document is not written with documents_put or edits_apply.',
+  });
 }

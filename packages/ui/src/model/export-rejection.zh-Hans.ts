@@ -29,6 +29,7 @@ export const zhHans: ExportRejectionMessages = {
     EXPORT_PUBLISH_FAILED: '文件没能保存到导出位置',
     EXPORT_PARTIALLY_PUBLISHED: '只保存了一部分文件',
     RESOURCE_ADMISSION_UNSATISFIABLE: '这台电脑的资源放不下这次导出',
+    REVIEW_BLOCKED: '此视频尚未达到你的标准',
   },
   resources: {
     memory: '内存',
@@ -47,4 +48,7 @@ export const zhHans: ExportRejectionMessages = {
   space: (required: string, available: string) => `需要约 ${required}，只剩 ${available}`,
   notEnough: (resource: string) => `不够：${resource}`,
   resourceHint: '导短一点的范围，或选低一点的分辨率再导。',
+  reviewHint: '修复列出的项目，或打开审核并附上理由保留某个发现项。',
+  reviewItem: (said, fix) => (fix ? `${said}. ${fix}` : `${said}.`),
+  openReview: '打开审核',
 };

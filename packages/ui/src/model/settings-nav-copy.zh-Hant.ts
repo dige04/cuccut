@@ -23,7 +23,7 @@ export const zhHant: SettingsNavMessages = {
     fonts: '字型',
     agent: 'Agent 供應商',
     skills: 'Skills',
-    glossary: '術語表',
+    glossary: '術語表', review: '審核',
     privacy: '隱私與權限',
     diagnostics: '診斷',
     about: '關於',

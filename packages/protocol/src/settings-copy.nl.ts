@@ -34,4 +34,6 @@ export const nl: SettingDescriptionMessages = {
   'updates.autoDownload': "Nieuwe versies op de achtergrond downloaden (zonder automatisch te installeren)",
   'diagnostics.enabled': "Anonieme gebruiksstatistieken en prestatiesamenvattingen verzenden (geen media, tekst of paden)",
   'offline.strict': "Strikte offlinemodus: niets naar onlinediensten sturen",
+  'review.gate':
+    'Afgewerkte video’s aan je reviewnorm houden: een export voor oplevering stopt bij een kritieke bevinding tot die is opgelost of met een reden laten staan is. Voorvertoningen worden nooit gestopt',
 } satisfies Record<SettingKey, string>;

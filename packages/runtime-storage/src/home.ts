@@ -23,6 +23,7 @@ import path from 'node:path';
  *   store/settings.json   preferences held by the Runtime: stores only values that differ from the defaults (architecture design §5.10)
  *   store/services.json   external service config: started with the Runtime, port, access policy, hashes of client tokens (architecture design §4.8) (0600)
  *   store/profile.json    the user's profile: interview answers and status, preferences (their own text and the interview's section kept apart), and workspace rules
+ *   store/review-criteria.json the user's review standard: measured checks and judged questions a finished video is held to (docs/cuccut/m2-review-gate.md)
  *   store/agent-probes.json Agent probe cache: each Driver's machine facts from its most recent probe, used first at startup (architecture design §3.11)
  *   staging/jobs/<id>/    Worker output for a task in progress, deleted when it ends
  *   staging/node-jobs/<id>/ remote tasks submitted by other machines: uploaded media and results, deleted with the task
@@ -89,6 +90,8 @@ export interface RuntimeHome {
   skillPrefsFile: string;
   /** The user's profile at the workspace level: the interview, preferences and rules (docs/cuccut/m2-profile-rules.md §3). A project's own level is in `<project>/.ccut/profile.json`. */
   profileFile: string;
+  /** The user's review standard (docs/cuccut/m2-review-gate.md §3.3). Missing means the built-in checks only. */
+  reviewCriteriaFile: string;
   /** Agent skills added and imported by the user, one subdirectory each (architecture design §3.8, §12.9). */
   skillsDir: string;
   /** Bytes of message attachments (images), in directories by attachment id. */
@@ -147,6 +150,7 @@ export function resolveRuntimeHome(
     agentProvidersFile: path.join(root, 'store', 'agent-providers.json'),
     skillPrefsFile: path.join(root, 'store', 'skill-prefs.json'),
     profileFile: path.join(root, 'store', 'profile.json'),
+    reviewCriteriaFile: path.join(root, 'store', 'review-criteria.json'),
     skillsDir: path.join(root, 'skills'),
     attachmentsDir: path.join(root, 'attachments'),
     stagingDir: path.join(root, 'staging'),

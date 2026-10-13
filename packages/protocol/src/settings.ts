@@ -95,6 +95,11 @@ export interface SettingValues {
   'updates.autoDownload': boolean;
   'diagnostics.enabled': boolean;
   'offline.strict': boolean;
+  /**
+   * Review gate before delivery (docs/cuccut/m2-review-gate.md): a deliverable finished-video export stops on an open critical finding of
+   * the user's standard until it is fixed or let stand with a reason. Off: nothing is stopped, and reviews still run. Previews are never stopped.
+   */
+  'review.gate': boolean;
 }
 
 export type SettingKey = keyof SettingValues;
@@ -123,6 +128,7 @@ export const SETTING_KEYS = [
   'updates.autoDownload',
   'diagnostics.enabled',
   'offline.strict',
+  'review.gate',
 ] as const satisfies readonly SettingKey[];
 
 export const SETTING_DEFAULTS: Readonly<SettingValues> = Object.freeze({
@@ -148,6 +154,7 @@ export const SETTING_DEFAULTS: Readonly<SettingValues> = Object.freeze({
   'updates.autoDownload': true,
   'diagnostics.enabled': false,
   'offline.strict': false,
+  'review.gate': true,
 });
 
 /** One-sentence description for people (used by the settings page and `cuccut settings`). Reading the property returns the text in the current language; the copy is in `settings-copy.ts`. */

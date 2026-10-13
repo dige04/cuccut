@@ -29,6 +29,7 @@ export const pl: ExportRejectionMessages = {
     EXPORT_PUBLISH_FAILED: "Nie udało się zapisać plików w lokalizacji eksportu",
     EXPORT_PARTIALLY_PUBLISHED: "Zapisano tylko część plików",
     RESOURCE_ADMISSION_UNSATISFIABLE: "Ten komputer ma za mało zasobów do eksportu",
+    REVIEW_BLOCKED: 'To wideo nie spełnia jeszcze twojego standardu',
   },
   resources: {
     memory: "Pamięć",
@@ -47,4 +48,7 @@ export const pl: ExportRejectionMessages = {
   space: (required: string, available: string) => `Wymaga około ${required}; pozostało tylko ${available}`,
   notEnough: (resource: string) => `Za mało: ${resource}`,
   resourceHint: "Eksportuj krótszy zakres lub wybierz niższą rozdzielczość i spróbuj ponownie.",
+  reviewHint: 'Popraw wymienione punkty albo otwórz recenzję i pozostaw uwagę z uzasadnieniem.',
+  reviewItem: (said, fix) => (fix ? `${said}. ${fix}` : `${said}.`),
+  openReview: 'Otwórz recenzję',
 };

@@ -29,6 +29,7 @@ export const ru: ExportRejectionMessages = {
     EXPORT_PUBLISH_FAILED: "Не удалось сохранить файлы в место экспорта",
     EXPORT_PARTIALLY_PUBLISHED: "Сохранена только часть файлов",
     RESOURCE_ADMISSION_UNSATISFIABLE: "На компьютере недостаточно ресурсов для экспорта",
+    REVIEW_BLOCKED: 'Это видео пока не соответствует вашему стандарту',
   },
   resources: {
     memory: "Память",
@@ -47,4 +48,7 @@ export const ru: ExportRejectionMessages = {
   space: (required: string, available: string) => `Требуется около ${required}; осталось только ${available}`,
   notEnough: (resource: string) => `Недостаточно: ${resource}`,
   resourceHint: "Экспортируйте более короткий диапазон или выберите меньшее разрешение и повторите попытку.",
+  reviewHint: 'Исправьте перечисленное или откройте проверку и оставьте замечание с обоснованием.',
+  reviewItem: (said, fix) => (fix ? `${said}. ${fix}` : `${said}.`),
+  openReview: 'Открыть проверку',
 };

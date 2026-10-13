@@ -151,6 +151,16 @@ import type { LegacyImportAnswer, LegacyImportRetry, LegacyImportSetSkipped, Leg
 import type { Seq } from './domain.ts';
 import type { PlaybackCodec } from './limits.ts';
 import type {
+  ReviewCheckOutcome,
+  ReviewCriteriaSetResult,
+  ReviewCriteriaView,
+  ReviewDecisionResult,
+  ReviewMetric,
+  ReviewResult,
+  ReviewSeverity,
+  ReviewStandard,
+} from './review.ts';
+import type {
   DocumentContent,
   EditOperation,
   HistoryEntry,
@@ -1129,6 +1139,56 @@ export interface RpcMethods {
   'services.web.listSessions': { params: Record<string, never>; result: { sessions: WebSession[] } };
   /** Revoke a browser session: its connection is disconnected immediately and its cookie becomes invalid. No such session: `not-found`. */
   'services.web.revokeSession': { params: { sessionId: string }; result: { sessions: WebSession[] } };
+
+  /**
+   * Review gate before delivery (docs/cuccut/m2-review-gate.md §4.5): the closed metric catalogue a standard may hold a video to.
+   * The `what` of each metric is English and agent-facing; the UI has its own copy per name.
+   */
+  'review.catalogue': { params: Record<string, never>; result: { metrics: ReviewMetric[] } };
+  /**
+   * The standard active for a video (the user's over the built-ins, with the video's `review-plan` decisions), or for any video when
+   * `videoId` is omitted; also the user's own standard, its revision and lint's warnings. A video not open: `not-found` (`VIDEO_NOT_OPEN`).
+   */
+  'review.criteria.get': { params: { videoId?: Id }; result: ReviewCriteriaView };
+  /**
+   * Replaces the user's standard. Structure and lint errors refuse it with `invalid-request` (`REVIEW_CRITERIA_INVALID`, `issues`); lint
+   * warnings come back with it. `expectedRevision` that is not the current one: `conflict` (`REVIEW_CRITERIA_CONFLICT`). The `review` topic
+   * sends `criteria`. Not on the Web service allowlist (the standard is the user's, like settings).
+   */
+  'review.criteria.set': { params: { standard: ReviewStandard; expectedRevision?: number }; result: ReviewCriteriaSetResult };
+  /**
+   * The project tier only, measured and not written (what the export gate and the export note read): `blocks` lists the open critical
+   * findings, null when there are none. `sequenceId` defaults to the root sequence.
+   */
+  'review.check': { params: { videoId: Id; sequenceId?: Id }; result: ReviewCheckOutcome };
+  /**
+   * Holds the video to its standard and writes the result (`<source>/.cuccut-out/reviews/<videoId>.json`, never a revision): the project
+   * tier, the export tier when a finished-video export of the sequence exists, and the existing answers re-evaluated. The `review` topic
+   * sends `result`. `revision`: a revision the caller just made (the receipt of an undo); the check waits briefly for the Runtime's copy of
+   * the video to reach it, so it does not read the video as it was before.
+   */
+  'review.run': { params: { videoId: Id; sequenceId?: Id; revision?: Revision }; result: { result: ReviewResult } };
+  /** The stored result, or null when the video has not been checked (or the file cannot be read). */
+  'review.get': { params: { videoId: Id }; result: { result: ReviewResult | null } };
+  /**
+   * Lets a finding stand on this video with a reason: one `putDocument` of the `review-plan` document (an ordinary, undoable edit), then the
+   * result is rewritten at the new revision. No reason: `invalid-request` (`REVIEW_REASON_REQUIRED`); an id the standard does not have:
+   * `not-found` (`REVIEW_UNKNOWN_FINDING`).
+   */
+  'review.waive': {
+    params: { videoId: Id; id: string; reason: string; expectedRevision?: Revision; commandId?: Id };
+    result: ReviewDecisionResult;
+  };
+  /** Holds a finding to the standard again (removes its waiver): an ordinary, undoable edit, as for `review.waive`. */
+  'review.unwaive': { params: { videoId: Id; id: string; expectedRevision?: Revision; commandId?: Id }; result: ReviewDecisionResult };
+  /**
+   * Changes what a finding is worth on this video; `null` gives it back the standard's severity. Lowering below the standard's severity needs
+   * `reason` (`REVIEW_REASON_REQUIRED`), which is carried into the result. An ordinary, undoable edit, as for `review.waive`.
+   */
+  'review.severity': {
+    params: { videoId: Id; id: string; severity: ReviewSeverity | null; reason?: string; expectedRevision?: Revision; commandId?: Id };
+    result: ReviewDecisionResult;
+  };
 
   /** Preferences held by the Runtime (architecture design §5.10). Without `keys`, all are returned. An unknown key: `invalid-request`. */
   'settings.get': { params: { keys?: SettingKey[] }; result: SettingsView };

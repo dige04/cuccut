@@ -41,6 +41,13 @@ export const zhHant: AgentToolStepsMessages = {
     importDesignAsset: '匯入設計稿素材',
     checkDesignSystem: '檢查設計系統',
     importDesignSystemAsset: '匯入設計系統素材',
+    readReviewStandard: "閱讀審核標準",
+    checkedVideo: "檢查了影片",
+    answeredReview: "回答了審核問題",
+    letFindingStand: "保留了一個發現項",
+    holdFindingAgain: "已依標準重新審核一個發現項",
+    changedFindingWorth: "變更了一個發現項的重要程度",
+    changedReviewStandard: "變更了審核標準",
   },
   exportKind: {
     subtitles: '字幕',

@@ -24,6 +24,7 @@ import {
 } from '../../model/export-settings.ts';
 import { EXPORT_COPY } from './export-copy.ts';
 import { ExportFontNote } from './export-fonts.tsx';
+import { ExportReviewNote } from './export-review.tsx';
 import { SubmitFoot } from './export-footer.tsx';
 import { ExportLoudness } from './export-loudness.tsx';
 import { FileRows, Lane, Lanes, Note, PlaceRow, Quick, QuickField, Sec, SumRow, Summary } from './export-parts.tsx';
@@ -93,6 +94,7 @@ export function ExportVideoTab({
 
   return (
     <>
+      <ExportReviewNote videoId={env.videoId} sequenceId={env.sequence.id} onLeave={onClose} />
       <ExportFontNote videoId={env.videoId} burnCaptions={form.burnCaptions} />
       <div className={cols}>
         <div className={left}>

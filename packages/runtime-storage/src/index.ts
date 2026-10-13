@@ -21,3 +21,4 @@ export * from './agent-providers.ts';
 export * from './skill-prefs.ts';
 export * from './profile-store.ts';
 export * from './project-profile-file.ts';
+export * from './review-criteria.ts';

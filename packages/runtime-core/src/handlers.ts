@@ -70,6 +70,8 @@ import type { ToolCatalog } from './agent-tools/tool-catalog.ts';
 import type { RuntimeActivity } from './runtime-activity.ts';
 import type { LegacyUpgrade } from './legacy-upgrade.ts';
 import { catalogMethods } from './agent-tools/catalog-methods.ts';
+import type { ReviewService } from './review/review-service.ts';
+import { reviewMethods } from './review/review-methods.ts';
 
 type MethodHandler<M extends RpcMethod> = (params: RpcParams<M>, principal: TrustedPrincipal) => RpcResult<M> | Promise<RpcResult<M>>;
 
@@ -136,6 +138,8 @@ export interface HandlerDeps {
   requestStop: (() => void) | null;
   /** Startup migration from old versions (§2.7): the import prompt for old-version projects (`legacyImport.*` and the `legacy-import` topic). */
   legacyUpgrade: LegacyUpgrade;
+  /** The review gate before delivery (docs/cuccut/m2-review-gate.md §4.5): `review.*` and the `review` topic. The same service as the review tools and the export gate. */
+  review: ReviewService;
 }
 
 /** Resolves a file target to its source directory and file (a path in a Space entry, a session working directory or a project directory). Checks inside the directory are done in the media channel (or the video service). */
@@ -211,6 +215,7 @@ export function createHandlers({
   activity,
   requestStop,
   legacyUpgrade,
+  review,
 }: HandlerDeps): RpcHandlers {
   const { catalog, jobs, services, pipelines } = models;
   const packages = new PackageImporter(videos);
@@ -433,6 +438,8 @@ export function createHandlers({
         media,
         () => exports,
       ),
+      // The review gate (docs/cuccut/m2-review-gate.md §4.5).
+      ...reviewMethods(review),
       'media.subtitles': async (p) => {
         const { root, file, scope } = locateMedia(p);
         const found = await findSubtitles(root, file);
@@ -649,6 +656,7 @@ export function createHandlers({
       if (topic === 'agent-setup') return setup.subscribe(afterSeq, listener) as TopicSubscription<unknown, unknown>;
       if (topic === 'legacy-import') return legacyUpgrade.topic.subscribe(afterSeq, listener) as TopicSubscription<unknown, unknown>;
       if (topic === 'profile') return profile.topic.subscribe(afterSeq, listener) as TopicSubscription<unknown, unknown>;
+      if (topic === 'review') return review.topic.log.subscribe(afterSeq, listener) as TopicSubscription<unknown, unknown>;
       const videoId = parseVideoTopic(topic);
       if (videoId) return videos.subscribe(videoId, afterSeq, listener);
       return harness.subscribe(topic, afterSeq, listener);

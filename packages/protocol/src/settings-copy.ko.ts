@@ -33,4 +33,6 @@ export const ko: SettingDescriptionMessages = {
   'updates.autoDownload': '새 버전을 백그라운드에서 다운로드(자동으로 설치하지 않음)',
   'diagnostics.enabled': '익명 사용 통계와 성능 요약 보내기(미디어, 텍스트, 경로는 포함하지 않음)',
   'offline.strict': '엄격한 오프라인: 어떤 온라인 서비스에도 아무것도 보내지 않습니다',
+  'review.gate':
+    '완성된 영상을 검토 기준에 따라 확인합니다. 납품용 내보내기는 심각한 발견 사항이 수정되거나 이유와 함께 유지되기 전까지 멈춥니다. 미리보기는 멈추지 않습니다',
 };

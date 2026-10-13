@@ -19,4 +19,7 @@ instructionsNotSet: 'Chưa đặt hướng dẫn phiên: thứ tự lắp ráp R
   deriveParentUnplaced: 'Video này không nằm trong thư mục dự án hoặc phiên nên không thể tạo video con bên cạnh',
   shotsRangeEmpty: 'Sau khi căn theo khung hình, khoảng này trống',
   shotsRangeTooLong: (p) => `Khoảng này dài hơn ${p.minutes} phút; hãy phát hiện cảnh quay theo từng đoạn ngắn hơn`,
+  reviewWaive: (p) => `Chấp nhận giữ nguyên phát hiện “${p.id}”: ${p.reason}`,
+  reviewSeverity: (p) => `Đổi mức độ của “${p.id}”: ${p.from} → ${p.to}`,
+  reviewCriteriaSet: 'Thay thế tiêu chuẩn kiểm duyệt của bạn',
 };

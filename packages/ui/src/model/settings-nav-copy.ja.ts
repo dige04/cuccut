@@ -23,7 +23,7 @@ export const ja: SettingsNavMessages = {
     fonts: 'フォント',
     agent: 'Agent プロバイダ',
     skills: 'Skills',
-    glossary: '用語集',
+    glossary: '用語集', review: 'レビュー',
     privacy: 'プライバシーと権限',
     diagnostics: '診断',
     about: '情報',

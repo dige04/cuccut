@@ -19,6 +19,7 @@ import { TEMPLATE_PARAM_SCHEMAS, templateSendRefSchema } from './template-schema
 import { SKILL_PARAM_SCHEMAS, skillSendListSchema, skillSendRefSchema } from './skill-schemas.ts';
 import { PROFILE_PARAM_SCHEMAS } from './profile-schemas.ts';
 import { FONT_PARAM_SCHEMAS } from './fonts-schemas.ts';
+import { REVIEW_PARAM_SCHEMAS } from './review-schemas.ts';
 import { COMPOSITION_PARAM_SCHEMAS } from './code-bundle-schemas.ts';
 import { TOOL_CATALOGUE_PARAM_SCHEMAS } from './tool-catalogue-schemas.ts';
 import { DRIVER_ID_PATTERN, isBuiltinDriverId } from './domain.ts';
@@ -45,6 +46,7 @@ const topic = z.union([
   z.literal('agents'),
   z.literal('legacy-import'),
   z.literal('profile'),
+  z.literal('review'),
   z.string().regex(/^conversation:[A-Za-z0-9_-]+$/),
   z.string().regex(/^video:[A-Za-z0-9_-]+$/),
 ]);
@@ -496,6 +498,7 @@ export const settingValueSchemas = {
   'updates.autoDownload': z.boolean(),
   'diagnostics.enabled': z.boolean(),
   'offline.strict': z.boolean(),
+  'review.gate': z.boolean(),
 } satisfies { [K in SettingKey]: z.ZodType<SettingValues[K]> };
 
 /** Base URL for model download sources: `http(s)://`, with no credentials, query parameters or fragment (credentials must not appear in a URL). */
@@ -878,6 +881,7 @@ export const methodParamSchemas = {
   'media.thumbnail': z.object({ ...assetTarget, at: z.number().finite().nonnegative().max(1_000_000) }).strict(),
   ...FONT_PARAM_SCHEMAS,
   ...COMPOSITION_PARAM_SCHEMAS,
+  ...REVIEW_PARAM_SCHEMAS,
   'videos.create': z
     .object({
       projectId: id.optional(),
@@ -1384,3 +1388,13 @@ export {
 export { skillSendListSchema, skillSendRefSchema } from './skill-schemas.ts';
 export { interviewAnswersSchema, profileRuleInputSchema } from './profile-schemas.ts';
 export { aiToolParamsSchema } from './ai-tool-schemas.ts';
+export {
+  reviewAnswersSchema,
+  reviewCheckSchema,
+  reviewPlanSchema,
+  reviewQuestionSchema,
+  reviewStandardSchema,
+  rubricAnswerSchema,
+  salvageReviewPlan,
+  salvageReviewStandard,
+} from './review-schemas.ts';

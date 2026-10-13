@@ -113,4 +113,7 @@ export const zhHans: RcAgentToolsMessages = {
   deriveParentUnplaced: '这个视频不在项目或会话的目录里，没法在它旁边建子视频',
   shotsRangeEmpty: '对齐到帧之后区间是空的',
   shotsRangeTooLong: (p) => `区间超过 ${p.minutes} 分钟，请分段检测镜头`,
+  reviewWaive: (p) => `让发现项“${p.id}”保持不变：${p.reason}`,
+  reviewSeverity: (p) => `调整“${p.id}”的重要程度：${p.from} → ${p.to}`,
+  reviewCriteriaSet: '替换你的审核标准',
 };

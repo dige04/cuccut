@@ -12,6 +12,8 @@ import {
   type LegacyImportSnapshot,
   type ProfileEvent,
   type ProfileSnapshot,
+  type ReviewTopicEvent,
+  type ReviewTopicSnapshot,
   type AgentSetupSnapshot,
   type ClientKind,
   type ConversationEvent,
@@ -212,6 +214,11 @@ export class CucCutClient {
   /** The user's profile (interview, preferences, workspace rules): the snapshot is `profile.get`, and each change sends it whole again (`applyProfileEvent`). */
   subscribeProfile(handlers: TopicHandlers<ProfileSnapshot, ProfileEvent>): () => void {
     return this.subscribe('profile', handlers);
+  }
+
+  /** The review gate (docs/cuccut/m2-review-gate.md §4.5): the user's standard and one summary per reviewed video; `criteria` and `result` events follow. */
+  subscribeReview(handlers: TopicHandlers<ReviewTopicSnapshot, ReviewTopicEvent>): () => void {
+    return this.subscribe('review', handlers);
   }
 
   subscribeSpace(handlers: TopicHandlers<SpaceSnapshot, SpaceEvent>): () => void {

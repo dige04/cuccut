@@ -31,9 +31,10 @@ import { TopicLog, type Logger, type TopicSubscription } from '@cuccut/harness';
 import { isDotLottie } from '@cuccut/runtime-storage/library';
 import type { TrustedPrincipal } from '../gateway.ts';
 import { TRASH_DIR, scanDirectory } from '../space-catalog.ts';
+import { writesReviewPlan } from '../review/review-plan-guard.ts';
 import { EngineHost } from './engine-host.ts';
 import { hostPath } from './host-path.ts';
-import { RcCommon, RcVideo } from '@cuccut/protocol/messages/runtime-core';
+import { RcCommon, RcReview, RcVideo } from '@cuccut/protocol/messages/runtime-core';
 
 /**
  * A session for an opened video (architecture design §2.3, §4.4). On the Runtime side it does only routing, mirroring and lifecycle; the semantics of the video all live in the engine.
@@ -410,9 +411,22 @@ export class VideoService {
   async apply(
     params: RpcParams<'edits.apply'>,
     principal: TrustedPrincipal,
-    provenance: { taskId?: Id; protections?: EngineProtection[] } = {},
+    provenance: { taskId?: Id; protections?: EngineProtection[]; reviewPlan?: true } = {},
   ): Promise<EditResult> {
-    return this.applyAs(params, actorOf(principal), provenance);
+    const { reviewPlan, ...rest } = provenance;
+    if (!reviewPlan && actorOf(principal).kind === 'agent') this.#guardReviewPlan(params);
+    return this.applyAs(params, actorOf(principal), rest);
+  }
+
+  /**
+   * The review gate's decisions document (kind `review-plan`, docs/cuccut/m2-review-gate.md §5) is written only by the
+   * review service, which passes `reviewPlan` (Runtime-internal, never from a request). An agent or an external service
+   * writing it through a generic edit would let a finding stand or lower it without the high-risk prompt, under any name.
+   */
+  #guardReviewPlan(params: RpcParams<'edits.apply'>): void {
+    if (writesReviewPlan(params.operations, this.mirror(params.videoId)?.video.documents ?? {})) {
+      throw new RpcError('forbidden', RcReview.planProtected(), { code: 'REVIEW_PLAN_PROTECTED' });
+    }
   }
 
   /**

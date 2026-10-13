@@ -30,4 +30,6 @@ export const zhHans: SettingDescriptionMessages = {
   'updates.autoDownload': '有新版本时在后台下载（不自动安装）',
   'diagnostics.enabled': '发送匿名的使用统计与性能摘要（不含媒体、文本与路径）',
   'offline.strict': '严格离线：不向任何在线服务发送内容',
+  'review.gate':
+    '按你的审核标准检查成品视频：用于交付的导出会在出现严重发现项时停止，直到修复或附上理由保留它。预览从不会被阻止',
 };

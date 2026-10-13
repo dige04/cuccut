@@ -42,6 +42,13 @@ export const ru: AgentToolStepsMessages = {
     importDesignAsset: "Импортировать материал для дизайна",
     checkDesignSystem: "Проверить дизайн-систему",
     importDesignSystemAsset: "Импортировать материал для дизайн-системы",
+    readReviewStandard: "Прочитан стандарт проверки",
+    checkedVideo: "Видео проверено",
+    answeredReview: "Ответы на вопросы проверки",
+    letFindingStand: "Замечание оставлено",
+    holdFindingAgain: "Замечание снова проверено по стандарту",
+    changedFindingWorth: "Изменена важность замечания",
+    changedReviewStandard: "Изменён стандарт проверки",
   },
   exportKind: {
     subtitles: "Субтитры",

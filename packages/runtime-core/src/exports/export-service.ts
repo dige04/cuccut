@@ -32,7 +32,7 @@ import {
   type RenderedTextOutput,
   type VideoSnapshot,
 } from '@cuccut/protocol';
-import { RcCommon, RcExport, RcPackage } from '@cuccut/protocol/messages/runtime-core';
+import { RcCommon, RcExport, RcPackage, RcReview } from '@cuccut/protocol/messages/runtime-core';
 import {
   TaskFailure,
   audioExportDemand,
@@ -101,6 +101,7 @@ import {
 import { renderXmeml } from './project-export.ts';
 import { FALLBACK_FONT_FAMILY } from '../fonts/bundled-fonts.ts';
 import { queryKey, type ExportFacePlan, type FontService } from '../fonts/font-service.ts';
+import type { ReviewService } from '../review/review-service.ts';
 
 /**
  * Export service (architecture design §9.11, §9.13): `exports.create` freezes and preflights before submission, and creates no task on failure; after passing, it saves the frozen snapshot as a JSON artifact and hands it to the JobManager for queuing. The task generates each output in staging and verifies it, and after the cancellation check, each output is published on its own (copied to the target directory, hard-linked to the final name, registered as an artifact). Partial failures are reported as they happened.
@@ -108,7 +109,7 @@ import { queryKey, type ExportFacePlan, type FontService } from '../fonts/font-s
  * Preflight errors go in `RpcError.details.code` (command and protocol spec §11.4): `EXPORT_KIND_UNSUPPORTED`, `EXPORT_RANGE_EMPTY`,
  * `EXPORT_SOURCE_NOT_FOUND`, `EXPORT_SOURCE_AMBIGUOUS`, `EXPORT_SOURCE_UNSUPPORTED`, `EXPORT_SOURCE_UNPLACED`,
  * `EXPORT_NOTHING_TO_EXPORT`, `EXPORT_DESTINATION_EXISTS`, `EXPORT_DESTINATION_UNWRITABLE`, `EXPORT_TOOL_MISSING`,
- * `ASSET_MISSING`, `ASSET_CHANGED`.
+ * `ASSET_MISSING`, `ASSET_CHANGED`, and `REVIEW_BLOCKED` (the review gate, with `findings`).
  */
 
 export interface ExportServiceOptions {
@@ -120,6 +121,11 @@ export interface ExportServiceOptions {
   exportWorker?: () => string | null;
   /** Fonts downloaded on demand (architecture design §9.1): when not given, only local fonts are used. */
   fonts?: FontService;
+  /**
+   * The review gate before delivery (docs/cuccut/m2-review-gate.md §4.3): asked before anything is frozen; a block refuses the export
+   * with `REVIEW_BLOCKED` and no task is created. When not given, nothing is gated.
+   */
+  review?: Pick<ReviewService, 'gate'>;
   log: Logger;
 }
 
@@ -198,6 +204,18 @@ export class ExportService {
     const ref = this.#videos.ref(request.videoId);
     const mirror = this.#videos.mirror(request.videoId);
     if (!ref || !mirror) throw new RpcError('not-found', RcExport.videoNotOpen(), { code: 'VIDEO_NOT_OPEN' });
+    // The review gate (docs/cuccut/m2-review-gate.md §4.3): a deliverable finished video with an open critical finding is refused before any
+    // snapshot or task exists. There is no bypass here: the ways out are a fix, a waiver or lowered severity with a reason, or `review.gate` off.
+    const block = await this.#options.review?.gate(request.videoId, settings);
+    if (block) {
+      throw new RpcError('conflict', RcReview.blocked({ count: block.findings.length }), {
+        code: 'REVIEW_BLOCKED',
+        videoId: block.videoId,
+        sequenceId: block.sequenceId,
+        findings: block.findings,
+        remedy: RcReview.blockedRemedy().text,
+      });
+    }
     const scoped = settings as TextSettings | AudioSettings | VideoSettings;
     const ranges = scoped.ranges ?? (scoped.range ? [scoped.range] : []);
     const destination = request.destination ?? {};

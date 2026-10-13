@@ -41,6 +41,13 @@ export const vi: AgentToolStepsMessages = {
     importDesignAsset: "Nhập tư liệu cho bản thiết kế",
     checkDesignSystem: "Kiểm tra hệ thống thiết kế",
     importDesignSystemAsset: "Nhập tư liệu cho hệ thống thiết kế",
+    readReviewStandard: "Đọc tiêu chuẩn kiểm duyệt",
+    checkedVideo: "Đã kiểm video",
+    answeredReview: "Đã trả lời câu hỏi kiểm duyệt",
+    letFindingStand: "Đã chấp nhận giữ nguyên một phát hiện",
+    holdFindingAgain: "Đã kiểm lại một phát hiện theo tiêu chuẩn",
+    changedFindingWorth: "Đã đổi mức độ của một phát hiện",
+    changedReviewStandard: "Đã đổi tiêu chuẩn kiểm duyệt",
   },
   exportKind: {
     subtitles: "Phụ đề",

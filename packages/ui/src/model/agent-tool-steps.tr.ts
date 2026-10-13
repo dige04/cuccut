@@ -41,6 +41,13 @@ export const tr: AgentToolStepsMessages = {
     importDesignAsset: "Tasarım varlığı içe aktar",
     checkDesignSystem: "Tasarım sistemini denetle",
     importDesignSystemAsset: "Tasarım sistemi varlığı içe aktar",
+    readReviewStandard: "İnceleme ölçütü okundu",
+    checkedVideo: "Video kontrol edildi",
+    answeredReview: "İnceleme soruları yanıtlandı",
+    letFindingStand: "Bir bulgu olduğu gibi bırakıldı",
+    holdFindingAgain: "Bir bulgu yeniden ölçüte göre incelendi",
+    changedFindingWorth: "Bir bulgunun önemi değiştirildi",
+    changedReviewStandard: "İnceleme ölçütü değiştirildi",
   },
   exportKind: {
     subtitles: "Altyazı",

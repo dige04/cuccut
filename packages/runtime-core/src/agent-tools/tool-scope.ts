@@ -197,6 +197,16 @@ export const TOOL_RISK: Readonly<Record<string, RiskLevel>> = {
   // Design systems (docs/design/canvas §10.5): as for designs. Checking only reads files; importing an asset writes to the design system directory's _blobs/.
   design_system_check: 'read',
   design_system_import_asset: 'edit',
+  // The review gate (docs/cuccut/m2-review-gate.md §5): reading and checking write only `.cuccut-out/reviews/` (usable in plan mode). Letting a
+  // finding stand, lowering what it is worth and rewriting the standard are the user's call: `high`, asked in every mode but full access and
+  // never "Always allow". Holding a finding again is an ordinary edit. `review_severity` gives its risk per call (lowering is `high`).
+  review_criteria: 'read',
+  review_run: 'read',
+  review_answer: 'read',
+  review_waive: 'high',
+  review_unwaive: 'edit',
+  review_severity: 'edit',
+  review_criteria_set: 'high',
 };
 
 export function toolRisk(request: ToolConfirmation): RiskLevel {

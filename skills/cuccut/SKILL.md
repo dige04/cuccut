@@ -48,6 +48,7 @@ Read the user's words with the default meanings below, then read the matching ca
 | Look at the rendered picture or caption placement, drag something in the editor, let me check it in the editor | Open the web editor straight to this video; text and timeline changes still go through commands | [web](references/catalog/web.md) | — |
 <!-- /surface -->
 | Export, render the finished video, give me an srt | Export subtitles, a transcript, audio or the finished video from the video | [export](references/catalog/export.md) | — |
+| Is it ready, check it before delivery, hold it to my standard | Check the video against the user's review standard, fix what is open, answer the questions with evidence; let a finding stand only when the user says so | [review](references/catalog/review.md) | — |
 | Create an empty video, put footage into it | Create a video, import the footage and place it on the timeline | [media](references/catalog/media.md) | — |
 | Package, portable package, open a .cuccut file | Export a portable package, or open a portable package as a new video | [export](references/catalog/export.md), [media](references/catalog/media.md) | — |
 | Make a finished video from a template, make a video from scratch | Once the brief is settled, write the style and storyboard plan, build each shot from footage, generated images or code-drawn visuals, then add narration, mix and export | [media](references/catalog/media.md), [voice](references/catalog/voice.md) | {{skill:video-production}} |
@@ -95,6 +96,7 @@ The tools are already connected; there is nothing to start. Before transcription
 | [voice](references/catalog/voice.md) | Dubbing and speech synthesis | Translated dubbing, voice-over, voices; writing "how to say it" separately from "what to say" |
 | [music](references/catalog/music.md) | Scoring and music generation | Where the music comes from, local music generation and style descriptions, looping or segmenting for long videos, the music track and ducking under voices, licensing |
 | [export](references/catalog/export.md) | Export | Subtitles, transcripts, audio, finished videos, portable packages, project files; picture and sound parameters; pre-delivery checks |
+| [review](references/catalog/review.md) | The review gate before delivery | The user's standard (measured checks, judged questions), checking a video against it, answering questions with evidence, letting a finding stand only when the user says so |
 | [models](references/catalog/models.md) | Model capabilities | Capability queries, installing and checking local model bundles, what to do when a capability is not configured or needs a grant |
 | [system](references/catalog/system.md) | Jobs, indexes and this machine | Viewing, cancelling and retrying jobs; Space search, projects, the user library, the skill index; the runtime environment and admin commands |
 <!-- surface: cli -->

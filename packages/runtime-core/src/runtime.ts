@@ -35,6 +35,7 @@ import {
   ProjectStore,
   SpaceArtifactStore,
   SpaceMarkStore,
+  ReviewCriteriaStore,
   acquireInstanceLock,
   readDiscovery,
   releaseInstanceLock,
@@ -80,6 +81,8 @@ import type { FontDownloadOptions } from './fonts/font-download.ts';
 import { sweepLeftovers } from './exports/leftover-files.ts';
 import { resolveExportWorkerCommand } from './exports/video-export.ts';
 import { ExportTools } from './agent-tools/export-tools.ts';
+import { ReviewTools } from './agent-tools/review-tools.ts';
+import { ReviewService } from './review/review-service.ts';
 import { SpaceTools } from './agent-tools/space-tools.ts';
 import { VideoDeleteTools } from './agent-tools/video-delete-tools.ts';
 import { VideoTrash } from './videos/video-trash.ts';
@@ -241,6 +244,8 @@ export interface RunningRuntime {
   externalTools: ExternalToolService;
   /** Fonts downloaded on demand (architecture design §9.1). */
   fonts: FontService;
+  /** The review gate before delivery (docs/cuccut/m2-review-gate.md): the standard, reviews, per-video decisions and the export gate. */
+  review: ReviewService;
   log: Logger;
   close(): Promise<void>;
 }
@@ -281,6 +286,8 @@ const STOP_ORDER = [
   'slides',
   'compositions',
   'analysis',
+  // Pending review results are written before the videos close (the result file lives beside the video's source).
+  'review',
   'videos',
   'setup',
   'harness',
@@ -605,6 +612,18 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       }),
       ...options.fonts,
     });
+    // The review gate before delivery (docs/cuccut/m2-review-gate.md §4.2): the user's standard (built-ins only while the file is missing), reviews and the
+    // per-video decisions. Built before exports, whose `create` asks its gate; the `review.*` handlers and the review tools share it.
+    const reviewCriteria = new ReviewCriteriaStore(home.reviewCriteriaFile, { log: log.child('review-criteria') });
+    await reviewCriteria.load();
+    const review = new ReviewService({
+      videos,
+      jobs: models.jobs,
+      store: reviewCriteria,
+      settings: () => ({ gate: settings.store.get('review.gate') }),
+      log: log.child('review'),
+    });
+    stops.add('review', () => review.flush(), 'Writing pending review results failed');
     // Export is the `export` job in the JobManager (architecture design §9.11). ffmpeg and ffprobe are the same as for media analysis.
     const exports = new ExportService({
       jobs: models.jobs,
@@ -614,6 +633,8 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       ffprobe: async () => ({ command: process.env.CUCCUT_FFPROBE || 'ffprobe', env: await toolEnv() }),
       // The render Worker for the finished output comes from the same cargo build as the engine host, and sits next to it.
       exportWorker: () => resolveExportWorkerCommand(options.engineHost !== undefined ? options.engineHost : resolveEngineHostCommand()),
+      // A deliverable finished-video export stops on an open critical finding (docs/cuccut/m2-review-gate.md §4.3).
+      review,
       log: log.child('exports'),
     });
     // If sharing is on, the node service starts listening here (the pairing code is not reissued). A port that is already taken does not stop the Runtime from starting.
@@ -723,6 +744,8 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
         new ModelTools({ models, scope: toolScope }),
         new JobTools({ jobs: models.jobs, pipelines: models.pipelines, scope: toolScope }),
         new ExportTools({ exports, scope: toolScope }),
+        // The review gate (docs/cuccut/m2-review-gate.md §5): the same service as `review.*` and the export gate.
+        new ReviewTools({ review, scope: toolScope }),
         new ModelInstallTools({ installs: models.installs, catalog: models.catalog, scope: toolScope }),
         new ProjectTools({ harness, videos, scope: toolScope }),
         new LibraryTools({ library, scope: toolScope }),
@@ -923,6 +946,7 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       activity,
       requestStop: options.requestStop ?? null,
       legacyUpgrade,
+      review,
     };
     // The web service (§4.8) uses the same handler functions, swapping in only its own media handle (a same-origin address, requiring a session). The allowlist is at its gateway entry.
     services.web.bind({
@@ -1021,6 +1045,7 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       services,
       externalTools,
       fonts,
+      review,
       log,
       close,
     };

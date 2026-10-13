@@ -34,4 +34,6 @@ export const fr: SettingDescriptionMessages = {
   'updates.autoDownload': "Télécharger les nouvelles versions en arrière-plan (sans installation automatique)",
   'diagnostics.enabled': "Envoyer des statistiques anonymes et résumés de performance (sans média, texte ni chemin)",
   'offline.strict': "Hors ligne strict : ne rien envoyer à un service en ligne",
+  'review.gate':
+    'Hold finished videos to your review standard: an export for delivery stops on a critical finding until it is fixed or let stand with a reason. Previews are never stopped',
 } satisfies Record<SettingKey, string>;

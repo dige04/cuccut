@@ -42,6 +42,13 @@ export const pl: AgentToolStepsMessages = {
     importDesignAsset: "Zaimportuj zasób do projektu",
     checkDesignSystem: "Sprawdź system projektowy",
     importDesignSystemAsset: "Zaimportuj zasób do systemu projektowego",
+    readReviewStandard: "Read the review standard",
+    checkedVideo: "Checked the video",
+    answeredReview: "Answered review questions",
+    letFindingStand: "Let a finding stand",
+    holdFindingAgain: "Held a finding to the standard again",
+    changedFindingWorth: "Changed what a finding is worth",
+    changedReviewStandard: "Changed the review standard",
   },
   exportKind: {
     subtitles: "Napisy",

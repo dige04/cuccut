@@ -41,6 +41,13 @@ export const vi: AgentToolStepsMessages = {
     importDesignAsset: "Nhập tư liệu cho bản thiết kế",
     checkDesignSystem: "Kiểm tra hệ thống thiết kế",
     importDesignSystemAsset: "Nhập tư liệu cho hệ thống thiết kế",
+    readReviewStandard: "Read the review standard",
+    checkedVideo: "Checked the video",
+    answeredReview: "Answered review questions",
+    letFindingStand: "Let a finding stand",
+    holdFindingAgain: "Held a finding to the standard again",
+    changedFindingWorth: "Changed what a finding is worth",
+    changedReviewStandard: "Changed the review standard",
   },
   exportKind: {
     subtitles: "Phụ đề",

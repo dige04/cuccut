@@ -41,6 +41,13 @@ export const ja: AgentToolStepsMessages = {
     importDesignAsset: 'デザイン素材を取り込む',
     checkDesignSystem: 'デザインシステムを検査',
     importDesignSystemAsset: 'デザインシステム素材を取り込む',
+    readReviewStandard: "Read the review standard",
+    checkedVideo: "Checked the video",
+    answeredReview: "Answered review questions",
+    letFindingStand: "Let a finding stand",
+    holdFindingAgain: "Held a finding to the standard again",
+    changedFindingWorth: "Changed what a finding is worth",
+    changedReviewStandard: "Changed the review standard",
   },
   exportKind: {
     subtitles: '字幕',

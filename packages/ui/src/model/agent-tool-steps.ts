@@ -56,6 +56,13 @@ const en = {
     importDesignAsset: 'Import design asset',
     checkDesignSystem: 'Check design system',
     importDesignSystemAsset: 'Import design system asset',
+    readReviewStandard: 'Read the review standard',
+    checkedVideo: 'Checked the video',
+    answeredReview: 'Answered review questions',
+    letFindingStand: 'Let a finding stand',
+    holdFindingAgain: 'Held a finding to the standard again',
+    changedFindingWorth: 'Changed what a finding is worth',
+    changedReviewStandard: 'Changed the review standard',
   },
   exportKind: {
     subtitles: 'Subtitles',
@@ -205,6 +212,14 @@ const CATALOG: Record<string, (a: Args) => CucCutStep> = {
   design_import_asset: (a) => ({ kind: 'design', label: M.label.importDesignAsset, summary: base(a.path) }),
   // Design systems (docs/design/canvas §10.5): the summary is the design system directory name; importing assets gives the file name and asset group.
   design_system_check: (a) => ({ kind: 'design-system', label: M.label.checkDesignSystem, summary: base(a.path) }),
+  // The review gate (docs/cuccut/m2-review-gate.md §5): grouped with acceptance checks; the summary is the video, the finding or the answer count.
+  review_criteria: (a) => ({ kind: 'contract', label: M.label.readReviewStandard, summary: str(a.video) ?? '' }),
+  review_run: (a) => ({ kind: 'contract', label: M.label.checkedVideo, summary: str(a.video) ?? '' }),
+  review_answer: (a) => ({ kind: 'contract', label: M.label.answeredReview, summary: Array.isArray(a.answers) ? M.count(a.answers.length) : '' }),
+  review_waive: (a) => ({ kind: 'contract', label: M.label.letFindingStand, summary: str(a.id) ?? '' }),
+  review_unwaive: (a) => ({ kind: 'contract', label: M.label.holdFindingAgain, summary: str(a.id) ?? '' }),
+  review_severity: (a) => ({ kind: 'contract', label: M.label.changedFindingWorth, summary: join(str(a.id), str(a.severity)) }),
+  review_criteria_set: () => ({ kind: 'contract', label: M.label.changedReviewStandard, summary: '' }),
   design_system_import_asset: (a) => ({
     kind: 'design-system',
     label: M.label.importDesignSystemAsset,

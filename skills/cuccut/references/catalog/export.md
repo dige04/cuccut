@@ -70,6 +70,7 @@ Export runs a preflight before submission; the following errors create no job:
 | `ASSET_MISSING`, `ASSET_CHANGED` | Assets are missing or changed: ask the user to put the original files back; do not swap assets on your own |
 | `EXPORT_TOOL_MISSING` | ffmpeg or an encoder is missing: pass `remedy` on to the user |
 | `EXPORT_UNSUPPORTED_CONTENT` | The finished video has content that cannot be rendered: tell the user the `items` and ask whether to use `skip` |
+| `REVIEW_BLOCKED` | The user's review standard refuses the finished video: fix each of `findings` as its `fix` says and export again; let one stand only when the user asks (see [review](review.md)) |
 
 ## Next steps
 
@@ -78,6 +79,7 @@ Export runs a preflight before submission; the following errors create no job:
 
 ## Acceptance (pre-delivery checks)
 
+- Run {{tool:review_run}} before a deliverable export; a critical finding stops it. See [review](review.md).
 - The files really exist, with paths taken from `outputs`.
 - Measured: duration, resolution, frame rate, file size and number of captions match the user's requirements (read the job result and the files' media facts).
 - Looked at: grabbing frames ({{tool:videos_frames}}) can only check the source picture on the timeline, without captions, text or overlaid elements; caption placement and whether faces are covered have to be checked in the finished video; if you cannot look yourself, ask the user to look, and state in the report that you did not.

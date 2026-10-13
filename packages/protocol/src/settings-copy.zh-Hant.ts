@@ -33,4 +33,6 @@ export const zhHant: SettingDescriptionMessages = {
   'updates.autoDownload': '在背景下載新版本（不會自動安裝）',
   'diagnostics.enabled': '傳送匿名的使用統計與效能摘要（不含媒體、文字或路徑）',
   'offline.strict': '嚴格離線：不傳送任何內容到任何線上服務',
+  'review.gate':
+    'Hold finished videos to your review standard: an export for delivery stops on a critical finding until it is fixed or let stand with a reason. Previews are never stopped',
 };

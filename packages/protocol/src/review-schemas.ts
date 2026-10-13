@@ -90,6 +90,32 @@ export const rubricAnswerSchema = z
 /** The `answers` of `review_answer`: at most one per question (a repeated id keeps the last). */
 export const reviewAnswersSchema = z.array(rubricAnswerSchema).min(1).max(REVIEW_LIMITS.questions * 2);
 
+const videoId = z.string().min(1).max(200);
+const revision = z.string().min(1).max(64);
+/** Finding ids are checked against the video's standard by the service (`REVIEW_UNKNOWN_FINDING`), so any bounded string passes here. */
+const findingId = z.string().min(1).max(200);
+const reason = z.string().max(HARD_TEXT);
+const decision = { videoId, id: findingId, expectedRevision: revision.optional(), commandId: z.string().min(1).max(200).optional() };
+
+/**
+ * Inbound validation for `review.*` (`methods.ts`), merged into the method table by `schemas.ts`. The standard of
+ * `review.criteria.set` is only required to be an object here: the service parses it (`reviewStandardSchema`) and lints
+ * it, so a bad standard is refused with `REVIEW_CRITERIA_INVALID` and its issues rather than a bare schema failure.
+ */
+export const REVIEW_PARAM_SCHEMAS = {
+  'review.catalogue': z.object({}).strict(),
+  'review.criteria.get': z.object({ videoId: videoId.optional() }).strict(),
+  'review.criteria.set': z
+    .object({ standard: z.record(z.string(), z.unknown()), expectedRevision: z.number().int().min(0).optional() })
+    .strict(),
+  'review.check': z.object({ videoId, sequenceId: videoId.optional() }).strict(),
+  'review.run': z.object({ videoId, sequenceId: videoId.optional() }).strict(),
+  'review.get': z.object({ videoId }).strict(),
+  'review.waive': z.object({ ...decision, reason }).strict(),
+  'review.unwaive': z.object(decision).strict(),
+  'review.severity': z.object({ ...decision, severity: severity.nullable(), reason: reason.optional() }).strict(),
+};
+
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /**

@@ -33,4 +33,6 @@ export const ja: SettingDescriptionMessages = {
   'updates.autoDownload': '新しいバージョンをバックグラウンドでダウンロード（自動ではインストールしません）',
   'diagnostics.enabled': '匿名の使用統計とパフォーマンスの概要を送信（メディア、テキスト、パスは含みません）',
   'offline.strict': '厳格なオフライン：オンラインサービスに何も送信しません',
+  'review.gate':
+    'Hold finished videos to your review standard: an export for delivery stops on a critical finding until it is fixed or let stand with a reason. Previews are never stopped',
 };

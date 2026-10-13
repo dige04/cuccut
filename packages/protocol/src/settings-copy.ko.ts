@@ -33,4 +33,6 @@ export const ko: SettingDescriptionMessages = {
   'updates.autoDownload': '새 버전을 백그라운드에서 다운로드(자동으로 설치하지 않음)',
   'diagnostics.enabled': '익명 사용 통계와 성능 요약 보내기(미디어, 텍스트, 경로는 포함하지 않음)',
   'offline.strict': '엄격한 오프라인: 어떤 온라인 서비스에도 아무것도 보내지 않습니다',
+  'review.gate':
+    'Hold finished videos to your review standard: an export for delivery stops on a critical finding until it is fixed or let stand with a reason. Previews are never stopped',
 };

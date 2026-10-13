@@ -48,6 +48,8 @@ const en = {
   'updates.autoDownload': 'Download new versions in the background (without installing them automatically)',
   'diagnostics.enabled': 'Send anonymous usage statistics and performance summaries (no media, text, or paths)',
   'offline.strict': "Strict offline: don't send anything to any online service",
+  'review.gate':
+    'Hold finished videos to your review standard: an export for delivery stops on a critical finding until it is fixed or let stand with a reason. Previews are never stopped',
 } satisfies Record<SettingKey, string>;
 
 export type SettingDescriptionMessages = typeof en;

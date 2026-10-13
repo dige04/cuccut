@@ -41,6 +41,13 @@ export const ko: AgentToolStepsMessages = {
     importDesignAsset: '디자인 소재 가져오기',
     checkDesignSystem: '디자인 시스템 검사',
     importDesignSystemAsset: '디자인 시스템 소재 가져오기',
+    readReviewStandard: "Read the review standard",
+    checkedVideo: "Checked the video",
+    answeredReview: "Answered review questions",
+    letFindingStand: "Let a finding stand",
+    holdFindingAgain: "Held a finding to the standard again",
+    changedFindingWorth: "Changed what a finding is worth",
+    changedReviewStandard: "Changed the review standard",
   },
   exportKind: {
     subtitles: '자막',

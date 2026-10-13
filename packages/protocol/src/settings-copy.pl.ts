@@ -30,4 +30,6 @@ export const pl: SettingDescriptionMessages = {
   'updates.autoDownload': "Pobieraj nowe wersje w tle (bez automatycznej instalacji)",
   'diagnostics.enabled': "Wysyłaj anonimowe statystyki użycia i podsumowania wydajności (bez multimediów, tekstu i ścieżek)",
   'offline.strict': "Ścisły offline: nie wysyłaj nic do usług online",
+  'review.gate':
+    'Hold finished videos to your review standard: an export for delivery stops on a critical finding until it is fixed or let stand with a reason. Previews are never stopped',
 };

@@ -151,3 +151,45 @@ describe('review summaries', () => {
     expect(reviewStaleness(result(), 'r2')).toEqual({ project: false, export: false, answers: false });
   });
 });
+
+describe('review protocol surface', () => {
+  it('validates the review.* params; a standard is only required to be an object (the service lints it by code)', async () => {
+    const { methodParamSchemas } = await import('./schemas.ts');
+    expect(methodParamSchemas['review.catalogue'].safeParse({}).success).toBe(true);
+    expect(methodParamSchemas['review.criteria.get'].safeParse({}).success).toBe(true);
+    expect(methodParamSchemas['review.criteria.get'].safeParse({ videoId: 'vid_1' }).success).toBe(true);
+    expect(methodParamSchemas['review.criteria.set'].safeParse({ standard: { checks: 'nope' } }).success).toBe(true);
+    expect(methodParamSchemas['review.criteria.set'].safeParse({ standard: [] }).success).toBe(false);
+    expect(methodParamSchemas['review.criteria.set'].safeParse({ standard: {}, expectedRevision: -1 }).success).toBe(false);
+    expect(methodParamSchemas['review.check'].safeParse({ videoId: 'vid_1', sequenceId: 'seq_1' }).success).toBe(true);
+    expect(methodParamSchemas['review.run'].safeParse({ videoId: 'vid_1', extra: 1 }).success).toBe(false);
+    expect(methodParamSchemas['review.waive'].safeParse({ videoId: 'vid_1', id: 'placeholders', reason: 'Client fills it' }).success).toBe(true);
+    expect(methodParamSchemas['review.waive'].safeParse({ videoId: 'vid_1', id: 'placeholders' }).success).toBe(false);
+    expect(methodParamSchemas['review.unwaive'].safeParse({ videoId: 'vid_1', id: 'placeholders', expectedRevision: '7' }).success).toBe(true);
+    expect(methodParamSchemas['review.severity'].safeParse({ videoId: 'vid_1', id: 'blank', severity: null }).success).toBe(true);
+    expect(methodParamSchemas['review.severity'].safeParse({ videoId: 'vid_1', id: 'blank', severity: 'fatal' }).success).toBe(false);
+    expect(methodParamSchemas.subscribe.safeParse({ topic: 'review' }).success).toBe(true);
+  });
+
+  it('holds finished videos to the standard by default, as a boolean setting', async () => {
+    const { settingValueSchemas } = await import('./schemas.ts');
+    const { SETTING_DEFAULTS, SETTING_KEYS } = await import('./settings.ts');
+    expect(SETTING_KEYS).toContain('review.gate');
+    expect(SETTING_DEFAULTS['review.gate']).toBe(true);
+    expect(settingValueSchemas['review.gate'].safeParse('yes').success).toBe(false);
+  });
+
+  it('opens reading, checking and decisions to the browser, but not rewriting the standard', async () => {
+    const { WEB_DEFAULT_METHODS, WEB_READ_METHODS, WEB_TOPIC_METHODS, webMethodAccess, webTopicAllowed } = await import('./web.ts');
+    const access = { readOnly: false, methods: null };
+    for (const method of ['review.catalogue', 'review.criteria.get', 'review.check', 'review.run', 'review.get', 'review.waive', 'review.unwaive', 'review.severity']) {
+      expect(webMethodAccess(method, access), method).toBe('allowed');
+    }
+    expect(WEB_DEFAULT_METHODS).not.toContain('review.criteria.set');
+    expect(webMethodAccess('review.criteria.set', access)).toBe('not-allowed');
+    expect(WEB_READ_METHODS).toEqual(expect.arrayContaining(['review.catalogue', 'review.criteria.get', 'review.get', 'review.check']));
+    expect(webMethodAccess('review.waive', { readOnly: true, methods: null })).toBe('read-only');
+    expect(WEB_TOPIC_METHODS.review).toBe('review.get');
+    expect(webTopicAllowed('review', access)).toBe(true);
+  });
+});

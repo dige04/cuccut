@@ -30,4 +30,6 @@ export const ru: SettingDescriptionMessages = {
   'updates.autoDownload': "Скачивать новые версии в фоне (без автоматической установки)",
   'diagnostics.enabled': "Отправлять анонимную статистику использования и сводки производительности (без медиа, текста и путей)",
   'offline.strict': "Строго офлайн: ничего не отправлять онлайн-сервисам",
+  'review.gate':
+    'Hold finished videos to your review standard: an export for delivery stops on a critical finding until it is fixed or let stand with a reason. Previews are never stopped',
 };

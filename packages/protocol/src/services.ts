@@ -101,6 +101,9 @@ export const MCP_SERVICE_TOOL_NAMES: readonly McpServiceTool[] = [
   { name: 'library_list', title: 'List the user library', effect: 'query' },
   { name: 'library_show', title: 'Show a user library entry', effect: 'query' },
   { name: 'download', title: 'Download from link', effect: 'job' },
+  { name: 'review_criteria', title: 'Read the review standard', effect: 'query' },
+  { name: 'review_run', title: 'Check the video', effect: 'mutation' },
+  { name: 'review_answer', title: 'Answer the review questions', effect: 'mutation' },
 ];
 /** Default port (loopback) of the model API service, next to the MCP service. */
 export const MODEL_API_DEFAULT_PORT = 47621;

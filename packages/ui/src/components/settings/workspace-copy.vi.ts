@@ -25,6 +25,6 @@ export const vi: WorkspaceMessages = {
   loadFailed: 'Không tải được',
   fontsSummary: 'Dành cho phụ đề và tiêu đề',
   packsBlurb:
-    'A way of making videos that travels: templates, skills, library items and a style guide in one folder. Import one from a folder, GitHub or a web address, or export yours to send.',
-  packCount: (n: number) => (n === 0 ? 'None installed' : n === 1 ? '1 pack' : `${n} packs`),
+    'Một cách làm video có thể mang đi: mẫu, kỹ năng, mục thư viện và hướng dẫn phong cách gom trong một thư mục. Nhập một gói từ thư mục, GitHub hoặc địa chỉ web, hoặc xuất gói của bạn để gửi.',
+  packCount: (n: number) => (n === 0 ? 'Chưa cài gói nào' : n === 1 ? '1 gói' : `${n} gói`),
 };

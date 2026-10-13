@@ -27,7 +27,7 @@ export const pl: EditorLayoutMessages = {
   nothingPicked: 'Nic nie wybrano. Właściwości klipu pojawią się tutaj, a codzienne narzędzia na pasku pod kadrem.',
   videoWhole: 'To, co dotyczy całego filmu — płótno, tło, format — znajdziesz w Ustawieniach filmu.',
   videoSettings: 'Ustawienia filmu',
-  styleGuide: 'Style guide…',
+  styleGuide: 'Przewodnik stylu…',
   videoMenu: 'Film',
   shortcuts: 'Skróty klawiszowe',
   more: 'Więcej działań',

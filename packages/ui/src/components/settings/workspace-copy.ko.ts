@@ -25,6 +25,6 @@ export const ko: WorkspaceMessages = {
   loadFailed: '불러오지 못함',
   fontsSummary: '자막과 제목용',
   packsBlurb:
-    'A way of making videos that travels: templates, skills, library items and a style guide in one folder. Import one from a folder, GitHub or a web address, or export yours to send.',
-  packCount: (n: number) => (n === 0 ? 'None installed' : n === 1 ? '1 pack' : `${n} packs`),
+    '영상을 만드는 방식을 옮겨 갈 수 있는 묶음입니다. 템플릿, 스킬, 라이브러리 항목, 스타일 가이드를 한 폴더에 담습니다. 폴더, GitHub, 웹 주소에서 가져오거나 내 팩을 내보내 보낼 수 있습니다.',
+  packCount: (n: number) => (n === 0 ? '설치된 팩 없음' : `팩 ${n}개`),
 };

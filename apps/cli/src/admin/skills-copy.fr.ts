@@ -20,7 +20,7 @@ export const fr: SkillsMessages = {
   takesEffectNextSession: "Prend effet à la prochaine nouvelle session d’Agent ; les sessions en cours ne sont pas affectées",
   removed: (id: string, path: string) => `Supprimé : ${id} (${path})`,
   localSource: (path: string, addedAt: string) => `dossier local ${path} (${addedAt})`,
-  packSource: (name, version, installedAt) => `From the pack ${name} v${version} (${installedAt})`, remoteSource: (url: string, ref: string, commit: string, importedAt: string) => `${url} (${ref}@${commit}, ${importedAt})`,
+  packSource: (name, version, installedAt) => `Depuis le pack ${name} v${version} (${installedAt})`, remoteSource: (url: string, ref: string, commit: string, importedAt: string) => `${url} (${ref}@${commit}, ${importedAt})`,
   changed: (verb: string, id: string, name: string, enabled: boolean, path: string, source: string | null) =>
     `${verb} ${id} (${name}, ${enabled ? "activé" : "désactivé"}) → ${path}${source ? `\nSource : ${source}` : ""}`,
   idFormat: (flag: string, value: string) => `${flag} nécessite un identifiant de Skill (minuscules séparées par des tirets, voir cuccut skills) : ${value}`,

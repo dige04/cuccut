@@ -20,7 +20,7 @@ export const it: SettingsNavMessages = {
     shortcuts: "Scorciatoie",
     fonts: "Font",
     agent: "Provider degli agenti",
-    skills: "Skill", packs: 'Packs',
+    skills: "Skill", packs: 'Pack',
     glossary: "Glossario",
     privacy: "Privacy e permessi",
     diagnostics: "Diagnostica",

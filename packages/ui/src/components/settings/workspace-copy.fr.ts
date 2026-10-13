@@ -25,6 +25,6 @@ export const fr: WorkspaceMessages = {
   loadFailed: 'Chargement impossible',
   fontsSummary: 'Pour les sous-titres et les titres',
   packsBlurb:
-    'A way of making videos that travels: templates, skills, library items and a style guide in one folder. Import one from a folder, GitHub or a web address, or export yours to send.',
-  packCount: (n: number) => (n === 0 ? 'None installed' : n === 1 ? '1 pack' : `${n} packs`),
+    'Une façon de réaliser des vidéos qui voyage : modèles, compétences, éléments de bibliothèque et guide de style réunis dans un dossier. Importez-en un depuis un dossier, GitHub ou une adresse web, ou exportez le vôtre pour l’envoyer.',
+  packCount: (n: number) => (n === 0 ? 'Aucun installé' : n === 1 ? '1 pack' : `${n} packs`),
 };

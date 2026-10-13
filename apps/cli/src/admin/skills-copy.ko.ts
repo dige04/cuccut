@@ -19,7 +19,7 @@ export const ko: SkillsMessages = {
   takesEffectNextSession: '다음에 새로 시작하는 Agent 세션부터 적용됩니다. 이미 진행 중인 세션은 영향을 받지 않습니다',
   removed: (id, path) => `${id} 항목을 삭제했습니다(${path})`,
   localSource: (path, addedAt) => `로컬 폴더 ${path}(${addedAt})`,
-  packSource: (name, version, installedAt) => `From the pack ${name} v${version} (${installedAt})`, remoteSource: (url, ref, commit, importedAt) => `${url}(${ref}@${commit}, ${importedAt})`,
+  packSource: (name, version, installedAt) => `${name} 팩 v${version}에서 (${installedAt})`, remoteSource: (url, ref, commit, importedAt) => `${url}(${ref}@${commit}, ${importedAt})`,
   changed: (verb, id, name, enabled, path, source) =>
     `${verb}: ${id}(${name}, ${enabled ? '켜짐' : '꺼짐'}) → ${path}${source ? `\n출처: ${source}` : ''}`,
   idFormat: (flag, value) => `${flag}에는 Skill id(소문자, 하이픈으로 구분, cuccut skills 참고)를 지정하세요: ${value}`,

@@ -1,104 +1,103 @@
 import type { PacksMessages } from './packs-copy.ts';
 
-/** English until this language is translated. */
 export const nl: PacksMessages = {
-  packsHelp: `Usage:
-  cuccut packs inspect <source>    Read a pack and show everything it carries, without installing it.
-                                   <source>: a folder, a GitHub address (owner/repo, a repository URL or
-                                   …/tree/<branch>/<folder>) or an https:// address that serves pack.json
-  cuccut packs install <source>    Read a pack and install its templates, skills, library items, style
-                                   guide and quick actions
-    --replace                      Replace your own templates and skills with the same ids (they go to
-                                   the trash); without it they are kept and skipped
-  cuccut packs remove <id>         Delete a pack: it and the templates and skills it brought go to the
-                                   trash for 24 hours; library items and what you changed stay
-  cuccut packs restore <trashId>   Undo a removal, within 24 hours
+  packsHelp: `Gebruik:
+  cuccut packs inspect <source>    Leest een pack en toont alles wat het bevat, zonder het te installeren.
+                                   <source>: een map, een GitHub-adres (owner/repo, een repository-URL of
+                                   …/tree/<branch>/<folder>) of een https://-adres dat pack.json serveert
+  cuccut packs install <source>    Leest een pack en installeert de sjablonen, vaardigheden, bibliotheekitems,
+                                   stijlgids en snelle acties
+    --replace                      Vervangt je eigen sjablonen en vaardigheden met dezelfde id's (ze gaan naar de
+                                   prullenbak); zonder dit worden ze behouden en overgeslagen
+  cuccut packs remove <id>         Verwijdert een pack: het en de sjablonen en vaardigheden die het meebracht gaan
+                                   24 uur naar de prullenbak; bibliotheekitems en wat je hebt gewijzigd blijven
+  cuccut packs restore <trashId>   Maakt een verwijdering ongedaan, binnen 24 uur
   cuccut packs style <id> [<file>|-]
-                                   Print the pack's style guide; with a file (or - for standard input),
-                                   save the file as the guide (an empty file removes it)
+                                   Print de stijlgids van het pack; met een bestand (of - voor standaardinvoer)
+                                   wordt het bestand als gids opgeslagen (een leeg bestand verwijdert hem)
   cuccut packs export <folder> --name <name>
-                                   Write a pack folder from your own templates, skills and library items,
-                                   with the files index, to send as it is, push to GitHub or serve from any
-                                   static host. The folder must be empty or an earlier export of the pack
-    --id <id>                      The pack's id (default: made from the name)
-    --version <version>            Default 1.0.0
+                                   Schrijft een packmap van je eigen sjablonen, vaardigheden en bibliotheekitems,
+                                   met de bestandsindex, om zoals hij is te versturen, naar GitHub te pushen of vanaf
+                                   elke statische host te serveren. De map moet leeg zijn of een eerdere export van het pack
+    --id <id>                      Het id van het pack (standaard: gemaakt van de naam)
+    --version <version>            Standaard 1.0.0
     --author <name>, --description <text>
-    --template <id>                A template of your own (repeatable)
-    --skill <id>                   A skill that isn't built in (repeatable)
+    --template <id>                Een eigen sjabloon (herhaalbaar)
+    --skill <id>                   Een vaardigheid die niet ingebouwd is (herhaalbaar)
     --library <glossaries|brand>:<entryId>
-                                   A library item (repeatable); voices stay
-    --quick-actions <packId>       The quick actions of an installed pack (repeatable)
-    --style-from <packId>          The style guide and reference files of an installed pack`,
+                                   Een bibliotheekitem (herhaalbaar); stemmen blijven hier
+    --quick-actions <packId>       De snelle acties van een geïnstalleerd pack (herhaalbaar)
+    --style-from <packId>          De stijlgids en referentiebestanden van een geïnstalleerd pack`,
 
   // Inspect
-  title: (name: string, id: string, version: string, author: string) => `${name} (${id}) v${version}${author ? `, by ${author}` : ''}`,
-  notInstalled: 'Not installed: read it first.',
+  title: (name: string, id: string, version: string, author: string) => `${name} (${id}) v${version}${author ? `, door ${author}` : ''}`,
+  notInstalled: 'Niet geïnstalleerd: lees het eerst.',
   installedVersion: (version: string) =>
-    `Version ${version} is installed. Installing again updates what the pack owns and keeps what you changed.`,
+    `Versie ${version} is geïnstalleerd. Opnieuw installeren werkt wat het pack beheert bij en behoudt je wijzigingen.`,
   contents: (templates: number, skills: number, library: number, style: boolean, quickActions: number) => {
     const parts = [
-      templates ? `${templates} ${templates === 1 ? 'template' : 'templates'}` : '',
-      skills ? `${skills} ${skills === 1 ? 'skill' : 'skills'}` : '',
-      library ? `${library} library ${library === 1 ? 'item' : 'items'}` : '',
-      style ? 'a style guide' : '',
-      quickActions ? `${quickActions} quick ${quickActions === 1 ? 'action' : 'actions'}` : '',
+      templates ? `${templates} ${templates === 1 ? 'sjabloon' : 'sjablonen'}` : '',
+      skills ? `${skills} ${skills === 1 ? 'vaardigheid' : 'vaardigheden'}` : '',
+      library ? `${library} ${library === 1 ? 'bibliotheekitem' : 'bibliotheekitems'}` : '',
+      style ? 'een stijlgids' : '',
+      quickActions ? `${quickActions} ${quickActions === 1 ? 'snelle actie' : 'snelle acties'}` : '',
     ].filter(Boolean);
-    return parts.length ? parts.join(' · ') : 'Nothing of its own';
+    return parts.length ? parts.join(' · ') : 'Niets eigens';
   },
-  sectionTemplates: 'Templates',
-  sectionSkills: 'Skills',
-  sectionLibrary: 'Library',
-  sectionStyle: 'Style guide: agents read this before choosing and editing',
-  sectionExamples: 'Reference files',
-  sectionQuick: 'Quick actions: messages sent to the agent with one click',
-  sectionReserved: 'Rules and review standard: kept with the pack; CucCut does not use them yet',
-  sectionWarnings: 'Warnings',
-  agentReads: 'Text an agent will follow. Read it.',
-  stateNew: 'new',
-  stateUpdate: 'updates the copy this pack installed',
-  stateChanged: 'you changed it since it was installed: kept unless --replace',
-  stateExists: 'you already have one with this id: yours is kept unless --replace',
-  stateBuiltin: 'a built-in one has this id, so this one is not installed',
-  skillFiles: (files: number) => `${files} ${files === 1 ? 'file' : 'files'}`,
-  duplicate: 'already in your library; not added again',
+  sectionTemplates: 'Sjablonen',
+  sectionSkills: 'Vaardigheden',
+  sectionLibrary: 'Bibliotheek',
+  sectionStyle: 'Stijlgids: agents lezen deze vóór het kiezen en bewerken',
+  sectionExamples: 'Referentiebestanden',
+  sectionQuick: 'Snelle acties: berichten die met één klik naar de agent worden gestuurd',
+  sectionReserved: 'Regels en beoordelingsstandaard: bewaard bij het pack; CucCut gebruikt ze nog niet',
+  sectionWarnings: 'Waarschuwingen',
+  agentReads: 'Tekst die een agent zal volgen. Lees hem.',
+  stateNew: 'nieuw',
+  stateUpdate: 'werkt de kopie bij die dit pack heeft geïnstalleerd',
+  stateChanged: 'je hebt hem sinds de installatie gewijzigd: behouden tenzij --replace',
+  stateExists: 'je hebt er al een met dit id: de jouwe blijft behouden tenzij --replace',
+  stateBuiltin: 'er is al een ingebouwde met dit id, dus deze wordt niet geïnstalleerd',
+  skillFiles: (files: number) => `${files} ${files === 1 ? 'bestand' : 'bestanden'}`,
+  duplicate: 'staat al in je bibliotheek; niet opnieuw toegevoegd',
   bytes: (bytes: number) => `${bytes} bytes`,
   missingSkill: (template: string, skill: string) =>
-    `${template} recommends the skill "${skill}", which is neither on this computer nor in the pack`,
-  scanHit: (file: string, line: number, why: string, text: string) => `${file}, line ${line}: ${why}${text ? ` ("${text}")` : ''}`,
+    `${template} beveelt de vaardigheid “${skill}” aan, die noch op deze computer noch in het pack staat`,
+  scanHit: (file: string, line: number, why: string, text: string) => `${file}, regel ${line}: ${why}${text ? ` („${text}”)` : ''}`,
   blocked: (file: string, line: number, why: string, text: string) =>
-    `This pack will not install: line ${line} of ${file} ${why}${text ? ` ("${text}")` : ''}`,
-  installHint: (source: string) => `Install it with: cuccut packs install ${source}`,
-  replaceHint: 'Add --replace to replace your own items that have the same ids.',
+    `Dit pack wordt niet geïnstalleerd: regel ${line} van ${file} ${why}${text ? ` („${text}”)` : ''}`,
+  installHint: (source: string) => `Installeer het met: cuccut packs install ${source}`,
+  replaceHint: 'Voeg --replace toe om je eigen items met dezelfde id’s te vervangen.',
 
   // Install, remove, restore
-  installed: (name: string, version: string, contents: string) => `Installed ${name} v${version}: ${contents}`,
+  installed: (name: string, version: string, contents: string) => `${name} v${version} geïnstalleerd: ${contents}`,
   skipped: (kind: 'template' | 'skill' | 'library', id: string, reason: 'builtin' | 'exists' | 'changed') =>
-    `Skipped the ${kind === 'template' ? 'template' : kind === 'skill' ? 'skill' : 'library item'} ${id}: ${
+    `${kind === 'template' ? 'Sjabloon' : kind === 'skill' ? 'Vaardigheid' : 'Bibliotheekitem'} ${id} overgeslagen: ${
       reason === 'builtin'
-        ? 'a built-in one has this id'
+        ? 'er is een ingebouwde met dit id'
         : reason === 'exists'
-          ? 'you have your own with this id (add --replace)'
-          : 'you changed it since it was installed (add --replace)'
+          ? 'je hebt een eigen item met dit id (voeg --replace toe)'
+          : 'je hebt het sinds de installatie gewijzigd (voeg --replace toe)'
     }`,
   removed: (name: string, templates: number, skills: number) =>
-    `Deleted ${name}: ${templates} ${templates === 1 ? 'template' : 'templates'} and ${skills} ${skills === 1 ? 'skill' : 'skills'} went with it. Library items stay.`,
-  kept: (count: number, ids: string) => `${count} you changed ${count === 1 ? 'stays' : 'stay'}: ${ids}`,
-  undo: (trashId: string) => `Undo within 24 hours: cuccut packs restore ${trashId}`,
-  restored: (name: string, version: string) => `Restored ${name} v${version}`,
+    `${name} verwijderd: ${templates} ${templates === 1 ? 'sjabloon' : 'sjablonen'} en ${skills} ${skills === 1 ? 'vaardigheid' : 'vaardigheden'} zijn meegegaan. Bibliotheekitems blijven.`,
+  kept: (count: number, ids: string) => `${count} ${count === 1 ? 'item dat je hebt gewijzigd blijft' : 'items die je hebt gewijzigd blijven'}: ${ids}`,
+  undo: (trashId: string) => `Ongedaan maken binnen 24 uur: cuccut packs restore ${trashId}`,
+  restored: (name: string, version: string) => `${name} v${version} teruggezet`,
 
   // Style guide
-  noStyle: (name: string, id: string) => `${name} has no style guide. Save one with cuccut packs style ${id} <file>`,
-  styleSaved: (name: string, chars: number, limit: number) => `Saved the style guide of ${name} (${chars} / ${limit} characters)`,
-  styleRemoved: (name: string) => `Removed the style guide of ${name}`,
-  takesEffect: 'Takes effect from the next new agent session.',
-  idFormat: (value: string) => `Not a pack id (lowercase letters, digits and single dashes): ${value}`,
+  noStyle: (name: string, id: string) => `${name} heeft geen stijlgids. Sla er een op met cuccut packs style ${id} <file>`,
+  styleSaved: (name: string, chars: number, limit: number) => `Stijlgids van ${name} opgeslagen (${chars} / ${limit} tekens)`,
+  styleRemoved: (name: string) => `Stijlgids van ${name} verwijderd`,
+  takesEffect: 'Geldt vanaf de volgende nieuwe agentsessie.',
+  idFormat: (value: string) => `Geen pack-id (kleine letters, cijfers en enkele streepjes): ${value}`,
 
   // Export
-  exportNeedsName: 'Give the pack a name with --name.',
-  exportNoId: (name: string) => `Can't make an id from "${name}"; give one with --id.`,
-  libraryFormat: (value: string) => `Not a library item (glossaries:<entryId> or brand:<entryId>): ${value}`,
+  exportNeedsName: 'Geef het pack een naam met --name.',
+  exportNoId: (name: string) => `Kan geen id maken van “${name}”; geef er een op met --id.`,
+  libraryFormat: (value: string) => `Geen bibliotheekitem (glossaries:<entryId> of brand:<entryId>): ${value}`,
   exported: (dir: string, files: number, bytes: number) =>
-    `Wrote ${dir}: ${files} ${files === 1 ? 'file' : 'files'}, ${bytes} bytes. Send the folder as it is, push it to GitHub, or serve it from any static host.`,
-  exportedCheck: (dir: string) => `Read it back with: cuccut packs inspect ${dir}`,
-  fileUnreadable: (file: string, reason: string) => `Can't read ${file}: ${reason}`,
+    `${dir} geschreven: ${files} ${files === 1 ? 'bestand' : 'bestanden'}, ${bytes} bytes. Stuur de map zoals die is, push hem naar GitHub of serveer hem vanaf elke statische host.`,
+  exportedCheck: (dir: string) => `Lees terug met: cuccut packs inspect ${dir}`,
+  fileUnreadable: (file: string, reason: string) => `Kan ${file} niet lezen: ${reason}`,
 };

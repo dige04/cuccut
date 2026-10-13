@@ -27,7 +27,7 @@ export const ko: EditorLayoutMessages = {
   nothingPicked: '선택한 항목이 없습니다. 클립의 속성은 여기에, 자주 쓰는 조작은 화면 아래 막대에 표시됩니다.',
   videoWhole: '동영상 전체 설정(캔버스, 배경, 형식)은 동영상 설정에 있습니다.',
   videoSettings: '동영상 설정',
-  styleGuide: 'Style guide…',
+  styleGuide: '스타일 가이드…',
   videoMenu: '동영상',
   shortcuts: '키보드 단축키',
   more: '추가 작업',

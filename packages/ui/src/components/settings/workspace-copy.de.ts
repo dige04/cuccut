@@ -25,6 +25,6 @@ export const de: WorkspaceMessages = {
   loadFailed: 'Konnte nicht geladen werden',
   fontsSummary: 'Für Untertitel und Titel',
   packsBlurb:
-    'A way of making videos that travels: templates, skills, library items and a style guide in one folder. Import one from a folder, GitHub or a web address, or export yours to send.',
-  packCount: (n: number) => (n === 0 ? 'None installed' : n === 1 ? '1 pack' : `${n} packs`),
+    'Eine Art, Videos zu machen, die sich weitergeben lässt: Vorlagen, Skills, Bibliothekseinträge und ein Stilleitfaden in einem Ordner. Importiere eins aus einem Ordner, von GitHub oder einer Webadresse, oder exportiere deins zum Versenden.',
+  packCount: (n: number) => (n === 0 ? 'Keins installiert' : n === 1 ? '1 Pack' : `${n} Packs`),
 };

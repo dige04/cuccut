@@ -19,7 +19,7 @@ export const zhHant: SkillsMessages = {
   takesEffectNextSession: '從下一個新的 Agent 對話開始生效；進行中的對話不受影響',
   removed: (id, path) => `已刪除 ${id}（${path}）`,
   localSource: (path, addedAt) => `本機資料夾 ${path}（${addedAt}）`,
-  packSource: (name, version, installedAt) => `From the pack ${name} v${version} (${installedAt})`, remoteSource: (url, ref, commit, importedAt) => `${url}（${ref}@${commit}，${importedAt}）`,
+  packSource: (name, version, installedAt) => `來自套件 ${name} v${version}（${installedAt}）`, remoteSource: (url, ref, commit, importedAt) => `${url}（${ref}@${commit}，${importedAt}）`,
   changed: (verb, id, name, enabled, path, source) =>
     `${verb} ${id}（${name}，${enabled ? '開啟' : '關閉'}）→ ${path}${source ? `\n來源：${source}` : ''}`,
   idFormat: (flag, value) => `${flag} 需要 Skill id（小寫，以連字號分隔，請見 cuccut skills）：${value}`,

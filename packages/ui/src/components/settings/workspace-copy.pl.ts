@@ -27,6 +27,6 @@ export const pl: WorkspaceMessages = {
   loadFailed: 'Nie udało się wczytać',
   fontsSummary: 'Do napisów i tytułów',
   packsBlurb:
-    'A way of making videos that travels: templates, skills, library items and a style guide in one folder. Import one from a folder, GitHub or a web address, or export yours to send.',
-  packCount: (n: number) => (n === 0 ? 'None installed' : n === 1 ? '1 pack' : `${n} packs`),
+    'Sposób tworzenia wideo, który można przenosić: szablony, umiejętności, elementy biblioteki i przewodnik stylu w jednym folderze. Zaimportuj pakiet z folderu, GitHub lub adresu internetowego albo wyeksportuj własny, aby go wysłać.',
+  packCount: (n: number) => (n === 0 ? 'Nic nie zainstalowano' : n === 1 ? '1 pakiet' : `${n} pakietów`),
 };

@@ -25,6 +25,6 @@ export const tr: WorkspaceMessages = {
   loadFailed: 'Yüklenemedi',
   fontsSummary: 'Altyazılar ve başlıklar için',
   packsBlurb:
-    'A way of making videos that travels: templates, skills, library items and a style guide in one folder. Import one from a folder, GitHub or a web address, or export yours to send.',
-  packCount: (n: number) => (n === 0 ? 'None installed' : n === 1 ? '1 pack' : `${n} packs`),
+    'Taşınabilir bir video yapma yöntemi: şablonlar, beceriler, kütüphane öğeleri ve bir stil rehberi tek bir klasörde. Bir klasörden, GitHub’dan ya da bir web adresinden içe aktarın, ya da kendinizinkini gönderilmek üzere dışa aktarın.',
+  packCount: (n: number) => (n === 0 ? 'Kurulu paket yok' : n === 1 ? '1 paket' : `${n} paket`),
 };

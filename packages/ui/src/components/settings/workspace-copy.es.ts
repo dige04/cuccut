@@ -25,6 +25,6 @@ export const es: WorkspaceMessages = {
   loadFailed: 'No se pudo cargar',
   fontsSummary: 'Para subtítulos y títulos',
   packsBlurb:
-    'A way of making videos that travels: templates, skills, library items and a style guide in one folder. Import one from a folder, GitHub or a web address, or export yours to send.',
-  packCount: (n: number) => (n === 0 ? 'None installed' : n === 1 ? '1 pack' : `${n} packs`),
+    'Una forma de hacer vídeos que viaja: plantillas, habilidades, elementos de biblioteca y una guía de estilo en una sola carpeta. Impórtala desde una carpeta, GitHub o una dirección web, o exporta la tuya para enviarla.',
+  packCount: (n: number) => (n === 0 ? 'Ninguno instalado' : n === 1 ? '1 pack' : `${n} packs`),
 };

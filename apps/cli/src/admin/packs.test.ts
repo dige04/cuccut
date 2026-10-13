@@ -142,7 +142,8 @@ describe('cuccut packs', () => {
     });
     const out = path.join(dir, 'exports', 'news-kit');
     const lines = exported.out.trimEnd().split('\n');
-    expect(lines[0]).toMatch(new RegExp(`^Wrote ${out.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}: \\d+ files`));
+    // The sentence is in the test locale (zh-Hans); the path it names is what this asserts.
+    expect(lines[0]).toContain(out);
     expect(lines[1]).toBe(M.exportedCheck(out));
     const manifest = JSON.parse(await fs.readFile(path.join(out, 'pack.json'), 'utf8')) as { id: string; quickActions: unknown[]; files: unknown[] };
     expect(manifest.id).toBe('news-kit');

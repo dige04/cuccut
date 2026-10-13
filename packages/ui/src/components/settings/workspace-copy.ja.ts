@@ -25,6 +25,6 @@ export const ja: WorkspaceMessages = {
   loadFailed: '読み込めませんでした',
   fontsSummary: '字幕とタイトル用',
   packsBlurb:
-    'A way of making videos that travels: templates, skills, library items and a style guide in one folder. Import one from a folder, GitHub or a web address, or export yours to send.',
-  packCount: (n: number) => (n === 0 ? 'None installed' : n === 1 ? '1 pack' : `${n} packs`),
+    '動画の作り方を持ち運べる仕組みです。テンプレート、スキル、ライブラリ項目、スタイルガイドを 1 つのフォルダーにまとめます。フォルダー、GitHub、Web アドレスから取り込むか、自分のパックを書き出して送れます。',
+  packCount: (n: number) => (n === 0 ? 'インストール済みなし' : n === 1 ? 'パック 1 件' : `パック ${n} 件`),
 };

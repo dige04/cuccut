@@ -27,7 +27,7 @@ export const de: EditorLayoutMessages = {
   nothingPicked: 'Nichts ausgewählt. Die Eigenschaften eines Clips erscheinen hier, die häufigen Aktionen in der Leiste unter dem Bild.',
   videoWhole: 'Was das ganze Video betrifft – Leinwand, Hintergrund, Format – steht in den Videoeinstellungen.',
   videoSettings: 'Videoeinstellungen',
-  styleGuide: 'Style guide…',
+  styleGuide: 'Stilleitfaden…',
   videoMenu: 'Video',
   shortcuts: 'Tastaturkürzel',
   more: 'Weitere Aktionen',

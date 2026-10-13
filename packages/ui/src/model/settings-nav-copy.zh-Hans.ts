@@ -20,7 +20,7 @@ export const zhHans: SettingsNavMessages = {
     shortcuts: '快捷键',
     fonts: '字体',
     agent: 'Agent 提供方',
-    skills: 'Skills', packs: 'Packs',
+    skills: 'Skills', packs: '包',
     glossary: '术语库',
     privacy: '隐私与权限',
     diagnostics: '诊断',

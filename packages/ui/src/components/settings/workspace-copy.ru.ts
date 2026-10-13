@@ -27,6 +27,6 @@ export const ru: WorkspaceMessages = {
   loadFailed: 'Не удалось загрузить',
   fontsSummary: 'Для субтитров и заголовков',
   packsBlurb:
-    'A way of making videos that travels: templates, skills, library items and a style guide in one folder. Import one from a folder, GitHub or a web address, or export yours to send.',
-  packCount: (n: number) => (n === 0 ? 'None installed' : n === 1 ? '1 pack' : `${n} packs`),
+    'Способ создания видео, который можно переносить: шаблоны, навыки, элементы библиотеки и гид по стилю в одной папке. Импортируйте пак из папки, GitHub или по веб-адресу либо экспортируйте свой, чтобы отправить.',
+  packCount: (n: number) => (n === 0 ? 'Не установлено' : n === 1 ? '1 пак' : n < 5 ? `${n} пака` : `${n} паков`),
 };

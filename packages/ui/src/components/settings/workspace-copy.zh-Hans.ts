@@ -25,6 +25,6 @@ export const zhHans: WorkspaceMessages = {
   loadFailed: '加载失败',
   fontsSummary: '用于字幕与标题',
   packsBlurb:
-    'A way of making videos that travels: templates, skills, library items and a style guide in one folder. Import one from a folder, GitHub or a web address, or export yours to send.',
-  packCount: (n: number) => (n === 0 ? 'None installed' : n === 1 ? '1 pack' : `${n} packs`),
+    '一种可以带走的视频制作方式：模板、技能、素材库条目和风格指南集中在一个文件夹中。可从文件夹、GitHub 或网址导入，也可导出你的包发送给他人。',
+  packCount: (n: number) => (n === 0 ? '尚未安装' : `${n} 个包`),
 };

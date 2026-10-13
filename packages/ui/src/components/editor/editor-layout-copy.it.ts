@@ -27,7 +27,7 @@ export const it: EditorLayoutMessages = {
   nothingPicked: 'Nessuna selezione. Le proprietà di una clip compaiono qui, i comandi di tutti i giorni nella barra sotto l’inquadratura.',
   videoWhole: 'Ciò che riguarda l’intero video — tela, sfondo, formato — si trova in Impostazioni video.',
   videoSettings: 'Impostazioni video',
-  styleGuide: 'Style guide…',
+  styleGuide: 'Guida di stile…',
   videoMenu: 'Video',
   shortcuts: 'Scorciatoie da tastiera',
   more: 'Altre azioni',

@@ -27,7 +27,7 @@ export const fr: EditorLayoutMessages = {
   nothingPicked: 'Rien n’est sélectionné. Les propriétés d’un clip s’affichent ici, et ses commandes courantes dans la barre sous l’image.',
   videoWhole: 'Ce qui concerne toute la vidéo — canevas, arrière-plan, format — se trouve dans Réglages de la vidéo.',
   videoSettings: 'Réglages de la vidéo',
-  styleGuide: 'Style guide…',
+  styleGuide: 'Guide de style…',
   videoMenu: 'Vidéo',
   shortcuts: 'Raccourcis clavier',
   more: 'Plus d’actions',

@@ -20,7 +20,7 @@ export const es: ServicesMcpMessages = {
  models_capabilities: 'Ver capacidades de modelos', models_list: 'Listar paquetes de modelos locales', transcribe: 'Transcribir', translate: 'Traducir', dub: 'Traducir y doblar',
  speak: 'Sintetizar voz', image: 'Generar imagen', jobs_inspect: 'Consultar tareas', jobs_wait: 'Esperar tarea', jobs_list: 'Listar tareas', jobs_cancel: 'Cancelar tarea',
  jobs_retry: 'Reintentar flujo fallido', export: 'Exportar', space_list: 'Listar elementos de la Biblioteca', space_search: 'Buscar transcripciones en varios vídeos',
- projects_list: 'Listar proyectos', skills_list: 'Listar skills', skills_read: 'Leer skill', packs_list: 'List packs', packs_read: 'Read a pack', library_list: 'Listar biblioteca', library_show: 'Ver elemento de biblioteca', download: 'Descargar desde enlace',
+ projects_list: 'Listar proyectos', skills_list: 'Listar skills', skills_read: 'Leer skill', packs_list: 'Listar packs', packs_read: 'Leer un pack', library_list: 'Listar biblioteca', library_show: 'Ver elemento de biblioteca', download: 'Descargar desde enlace',
  },
  gates: { answer: 'Responde directamente', auto: "Se ejecuta directamente", ask: 'Pregunta antes de llamar', hidden: 'No se ofrece con acceso de solo lectura' },
  toolsSummary: (exposed, total, ask, writes) => {

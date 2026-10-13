@@ -1,37 +1,32 @@
-# launch-golden：BCF 编译/解析 golden
+# launch-golden: BCF compile/parse golden
 
-CucCut 发布短片（`launch`）的 BCF 编写层源文件与参考产物。本目录是 golden
-测试的唯一输入，全新 checkout 上必然存在，测试一律硬读、不再跳过。
+BCF authoring-layer source files and reference artifacts for the CucCut release clip (`launch`). This directory is the only input for the golden tests. It always exists on a fresh checkout, and the tests always read it strictly and never skip.
 
-| 文件 | 作用 |
+| File | Role |
 | --- | --- |
-| `launch.ccut.tsx` | 编写层源文件（编译输入）。 |
-| `bcf.tsx` | `launch.ccut.tsx` 的相对导入目标，**冻结副本**。 |
-| `launch.ccut.json` | 参考产物（golden），`ccut compile` 必须与之深度相等。 |
+| `launch.ccut.tsx` | Authoring-layer source file (compile input). |
+| `bcf.tsx` | Relative import target of `launch.ccut.tsx`, a **frozen copy**. |
+| `launch.ccut.json` | Reference artifact (golden); `ccut compile` must be deep-equal to it. |
 
-## 来源
+## Source
 
-来自已归档的 `prototype/` 表面，归档基线提交 `a8c049a3`：
+From the archived `prototype/` surface, archive baseline commit `a8c049a3`:
 
 - `launch.ccut.tsx` ← `prototype/react-authoring/src/launch.ccut.tsx`
 - `bcf.tsx` ← `prototype/react-authoring/src/bcf.tsx`
-- `launch.ccut.json` ← `prototype/out/launch.ccut.json`（React/esbuild 工具链产物，
-  原先被 gitignore，本次提升为跟踪的 fixture）
+- `launch.ccut.json` ← `prototype/out/launch.ccut.json` (React/esbuild toolchain output,
+  previously gitignored; promoted to a tracked fixture in this change)
 
-取回原始表面：
+To retrieve the original surface:
 
 ```bash
 git show a8c049a3:prototype/react-authoring/src/launch.ccut.tsx
 git checkout a8c049a3 -- prototype/
 ```
 
-## 纪律
+## Discipline
 
-- `bcf.tsx` 是**冻结**副本，只为让历史 golden 可重现；它**不参与**
-  `core/runtime/dsl/bcf.tsx` 与动画模板 `preview/vendor/dsl.tsx` 的同步纪律，
-  不要为了跟上 DSL 演进去改它。当前 `core/runtime/dsl/bcf.tsx` 是它的严格超集。
-- `launch.ccut.json` 只在编译语义有意变化时更新，更新方式：
+- `bcf.tsx` is a **frozen** copy, kept only so the historical golden stays reproducible. It is **not part of** the sync discipline between `core/runtime/dsl/bcf.tsx` and the animation template `preview/vendor/dsl.tsx`. Do not modify it to keep up with DSL evolution. The current `core/runtime/dsl/bcf.tsx` is a strict superset of it.
+- `launch.ccut.json` is updated only when the compile semantics intentionally change, using:
   `ccut compile core/fixtures/launch-golden/launch.ccut.tsx -o core/fixtures/launch-golden/launch.ccut.json`
-- 原型的 `launch.mp4` 与关键帧 PNG **未入库**（体积原因，且原本就被 gitignore，
-  无法从 git 取回）。SSIM 对比只能在本机另行生成参考视频后按需开启，
-  见 `core/verify.sh` 第 4/5 步的 `CCUT_LAUNCH_REF_MP4` 开关。
+- The prototype's `launch.mp4` and keyframe PNGs are **not checked in** (for size reasons, and because they were already gitignored and cannot be retrieved from git). SSIM comparison can only be enabled on demand, after a reference video is generated separately on this machine; see the `CCUT_LAUNCH_REF_MP4` switch in steps 4/5 of `core/verify.sh`.

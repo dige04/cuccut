@@ -1,66 +1,66 @@
-# 多语言验收：2026-10-01
+# Multilingual Acceptance: 2026-10-01
 
-验收代码：`6f710387a`。固定数据来自 [2026-09-30 的 92 句基准](../lean-carrier-multilingual-2026-09-30/README.md)，其中真实项目抽样 36 句、合成 56 句。结论：**修复有效，仍未达到全部语言可直接交付字幕的标准。**
+Acceptance code: `6f710387a`. The fixed data comes from the [92-sentence benchmark of 2026-09-30](../lean-carrier-multilingual-2026-09-30/README.md), of which 36 sentences are real-project samples and 56 are synthetic. Conclusion: **the fix is effective, but it still does not meet the standard for all languages to ship subtitles directly.**
 
-## 结果
+## Results
 
-| 口径 | 译文接收 | 直接对齐 | 需重写切分 | 整句退化 | 缺译 |
+| Basis | Translation accepted | Directly aligned | Split needs rewriting | Whole-sentence degradation | Missing translation |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| 旧版首轮 | 51 | 38 | 4 | 9 | 41 |
-| 新版首轮，同一批旧响应 | 50 | 39 | 11 | 0 | 42 |
-| 旧版，一次修复后 | 87 | 74 | 4 | 9 | 5 |
-| 新版，同一批旧响应及旧修复 | 86 | 78 | 8 | 0 | 6 |
-| 新版，新 DeepSeek 首轮 | 92 | 79 | 13 | 0 | 0 |
-| 新版，新 DeepSeek 一次修复后 | 92 | 82 | 10 | 0 | 0 |
+| Old version, first round | 51 | 38 | 4 | 9 | 41 |
+| New version, first round, same batch of old responses | 50 | 39 | 11 | 0 | 42 |
+| Old version, after one repair | 87 | 74 | 4 | 9 | 5 |
+| New version, same batch of old responses and old repair | 86 | 78 | 8 | 0 | 6 |
+| New version, new DeepSeek first round | 92 | 79 | 13 | 0 | 0 |
+| New version, new DeepSeek after one repair | 92 | 82 | 10 | 0 | 0 |
 
-所有分母均为 92。旧响应少接收的 1 句是西班牙文 `es-06`：旧版把源文残片和引用标记当译文接收，新版正确拒绝。固定响应回放的对齐提升为 **4 句**；新模型测试相较历史基准提升为 **8 句**，包含提示词、输入分词及模型采样差异，不能全归因于算法。
+All denominators are 92. The one sentence that the old responses accepted less is Spanish `es-06`: the old version accepted a source-text fragment and a citation marker as the translation, while the new version correctly rejected it. The alignment gain on fixed response replay is **4 sentences**; the gain on the new model test compared with the historical benchmark is **8 sentences**, which includes differences in prompts, input tokenization and model sampling, so it cannot all be attributed to the algorithm.
 
-![逐语言对比](comparison.svg)
+![Per-language comparison](comparison.svg)
 
-| 源语言组 | 样本 | 旧修复后对齐 | 新修复后对齐 |
+| Source language group | Sample | Aligned after old repair | Aligned after new repair |
 | --- | ---: | ---: | ---: |
-| 韩文真实 | 12 | 12 | 12 |
-| 中文真实 | 12 | 7 | 12 |
-| 日文真实 | 12 | 12 | 12 |
-| 阿拉伯文 | 8 | 7 | 8 |
-| 德文 | 8 | 8 | 8 |
-| 英文→阿拉伯文 | 8 | 8 | 8 |
-| 西班牙文 | 8 | 8 | 8 |
-| 印地文 | 8 | 4 | 4 |
-| 泰文 | 8 | 0 | 2 |
-| 土耳其文 | 8 | 8 | 8 |
+| Korean (real) | 12 | 12 | 12 |
+| Chinese (real) | 12 | 7 | 12 |
+| Japanese (real) | 12 | 12 | 12 |
+| Arabic | 8 | 7 | 8 |
+| German | 8 | 8 | 8 |
+| English→Arabic | 8 | 8 | 8 |
+| Spanish | 8 | 8 | 8 |
+| Hindi | 8 | 4 | 4 |
+| Thai | 8 | 0 | 2 |
+| Turkish | 8 | 8 | 8 |
 
-## 未通过项与建议
+## Failed Items and Recommendations
 
-1. **语义错误仍会被判为 aligned。** `de-07` 原文要求“管理层批准第二版后，才向 Anna 发送文件”；新回答为“只有在安娜收到文件并且第二版的负责人同意后，才发送。”添加了“已收到”条件，且误解批准对象。旧版的同一句也有错误。建议在现有语言/格式校验之外，对带条件、否定、人物角色的句子增加内容核查；评测中把“对齐成功”和“关键事实正确”分别计分。不能以本轮 100% 接收率宣称翻译准确率 100%。
-2. **印地文 4 句仍无法定位。** `hi-03`、`hi-05`、`hi-06`、`hi-07` 一次补做后仍为 `anchor-unresolved`。响应包含 `लेकिन..नहीं..था` 等多段省略标记，以及源文不存在的端点组合。建议修复请求携带具体失败引用、失败原因与可选择的源词端点，并单独验证合法性；本轮补做按 grader 的 `render-fix` 接口生成，未覆盖完整生产编排的所有补做波次。
-3. **泰文→英文 6 句仍切分过粗。** 引用已能定位，但重新分词后缺少足够句内源词边界，一次补做仍原样返回整句。下一步应补可保留词 ID/时间映射的泰文分词或子词边界方案，再验证连续区间与字幕长度，而不是继续原样重问模型。
-4. **印地文 `hi-07` 仍有内容风险。** 样本要求“第二版”，新回答及补做均写“另一个版本”。这是本次内容复查发现的偏差，未做母语人工盲评或完整语义准确率统计。
+1. **Semantic errors are still judged as aligned.** The source of `de-07` requires that "the file is sent to Anna only after management approves the second version" (管理层批准第二版后，才向 Anna 发送文件). The new answer reads "Send only after Anna receives the file and the owner of the second version agrees" (只有在安娜收到文件并且第二版的负责人同意后，才发送。). It adds a "received" condition and misidentifies who approves. The old version's same sentence also had errors. Recommendation: in addition to the existing language and format validation, add content checks for sentences with conditions, negation or roles; in evaluation, score "alignment success" and "key facts correct" separately. The 100% acceptance rate in this round cannot be used to claim 100% translation accuracy.
+2. **Four Hindi sentences still cannot be located.** `hi-03`, `hi-05`, `hi-06` and `hi-07` remain `anchor-unresolved` after one additional repair. The responses contain multi-segment ellipsis markers such as `लेकिन..नहीं..था` (lit. "but..not..was") and endpoint combinations of source words that do not exist in the source. Recommendation: the repair request should carry the specific failed reference, the failure reason and optional source-word endpoints, and legality should be verified separately. The repair in this round was generated through the grader's `render-fix` interface and does not cover all repair waves of the full production orchestration.
+3. **Six Thai→English sentences are still split too coarsely.** The citations can now be located, but after re-tokenization there are not enough source-word boundaries within each sentence, and one repair still returns the whole sentence unchanged. The next step should be a Thai tokenization or subword boundary scheme that preserves word IDs and time mapping, then verification of contiguous intervals and subtitle length, rather than repeatedly asking the model the same question.
+4. **Hindi `hi-07` still carries a content risk.** The sample requires "第二版" (the second version); the new answer and the repair both write "another version" (另一个版本). This deviation was found in this content review. No native-speaker blind review or full semantic accuracy statistics were done.
 
-## 已确认的修复
+## Confirmed Fixes
 
-- 中文真实项目 12 句：从历史首轮 0 接收、补做后 7 对齐，变成本轮首轮 12 接收且 12 对齐。先前源文照抄/错误目标语问题在本批未重现。
-- `es-06` 旧错误回答被拒绝，新回答完整保留 Inés / Mateo 及“先出发、晚到十分钟”。
-- 1000 个双区间交叉探针：误放行 0；各语言仍有 15/100 个安全断点通过，未退化为全部拒绝。
-- 6 个 Unicode 分词往返探针全部保持原文；之前失败的泰文 `พื้นที่` 和韩文 `도쿄 여행` 已通过。
-- 韩/中/日真实项目本地读取及派生投影：73 / 84 / 189 句，3436 / 2461 / 6580 词；全部成功，读取前后文件 SHA-256 一致。这不是完整 346 句的新模型翻译测试。
+- Chinese real-project 12 sentences: from 0 accepted in the historical first round and 7 aligned after repair, to 12 accepted in this round's first round and 12 aligned. The earlier issues of copying the source text or producing the wrong target language did not recur in this batch.
+- `es-06`: the old wrong answer was rejected; the new answer fully preserves Inés / Mateo and "set off first, arrive ten minutes late" (先出发、晚到十分钟).
+- 1000 double-interval cross probes: 0 false passes; each language still has 15/100 safe breakpoints passing, so the check has not degraded to rejecting everything.
+- All 6 Unicode tokenization round-trip probes preserved the original text; the previously failing Thai `พื้นที่` and Korean `도쿄 여행` (Tokyo trip) now pass.
+- Local reading and derived projection of the Korean / Chinese / Japanese real projects: 73 / 84 / 189 sentences, 3436 / 2461 / 6580 words; all succeeded, and the file SHA-256 values were identical before and after reading. This is not a new model translation test of the full 346 sentences.
 
-## 构建与测试
+## Build and Test
 
-先 `cargo clean -p ccut-flow-core -p ccut-engine`，再构建 `lean_carrier_grade` 与 `provider_carrier_bench`。构建耗时 118 秒（不含等待其他任务释放锁），四个组件均 `fresh: false`。复制本轮可执行文件后测试；测试范围内 Rust 源码与构建前摘要一致。
+First run `cargo clean -p ccut-flow-core -p ccut-engine`, then build `lean_carrier_grade` and `provider_carrier_bench`. The build took 118 seconds (excluding waiting for other tasks to release the lock); all four components show `fresh: false`. Test after copying this round's executables; the Rust source within the test scope matches the digests taken before the build.
 
-`cargo test --locked -p ccut-flow-core`：913 单元测试 + 3 golden + 20 carrier = **936 通过，1 忽略，0 失败**。未编译或验证 App/Web UI，也未执行导出视频播放或完整 Runtime 翻译事务。
+`cargo test --locked -p ccut-flow-core`: 913 unit tests + 3 golden + 20 carrier = **936 passed, 1 ignored, 0 failed**. The App and Web UI were neither compiled nor verified, and exported video playback and a full Runtime translation transaction were not executed.
 
-新模型使用用户指定的 DeepSeek V4.1 Flash（配置 ID `deepseek-flash`），首轮 16 页、一次补做 5 页 / 13 句，21 次调用全部成功。只发送固定抽样集，未发送三个项目完整语料。模型采样仅一轮，不代表稳定通过率。
+The new model used the DeepSeek V4.1 Flash specified by the user (configuration ID `deepseek-flash`). The first round covered 16 pages; one repair round covered 5 pages / 13 sentences; all 21 calls succeeded. Only the fixed sample set was sent; the full corpora of the three projects were not sent. Model sampling was run only once and does not represent a stable pass rate.
 
-## 文件与复验
+## Files and Re-verification
 
-- `requests.json` / `fix-requests.json`：本轮精确请求；`responses/`：21 个模型原始响应。
-- `pages/`：本轮源载体及 manifest。真实样本保持原词和时间；合成样本以新版 `atomize` 重建词。
-- `live-summary.json`：新响应逐句评分；`replay-summary.json`：旧输入、旧响应的新版评分；`reatomized-summary.json`：重建合成分词后的旧响应评分。本次后两者总计相同。
-- `property-results.json`：交叉探针及 Unicode 往返；`real-project-check.json`：真实项目本地检查。
-- `build-proof.json` / `source-verification.json`：版本、源码摘要、构建新鲜度与测试产物摘要。
-- `replay.py`：回放本轮新响应并与已保存结果逐句核对，不调用模型。
+- `requests.json` / `fix-requests.json`: this round's exact requests; `responses/`: the 21 raw model responses.
+- `pages/`: this round's source carriers and manifest. Real samples keep their original words and timing; synthetic samples have their words rebuilt with the new `atomize`.
+- `live-summary.json`: per-sentence scores for the new responses; `replay-summary.json`: scores of the old inputs and old responses under the new version; `reatomized-summary.json`: scores of the old responses after the synthetic tokenization was rebuilt. The last two totals are identical in this round.
+- `property-results.json`: cross probes and Unicode round-trip; `real-project-check.json`: local checks of the real projects.
+- `build-proof.json` / `source-verification.json`: version, source digests, build freshness and test artifact digests.
+- `replay.py`: replays this round's new responses and compares them sentence by sentence with the saved results, without calling the model.
 
 ```bash
 cd core && cargo build --locked -p ccut-flow-core --example lean_carrier_grade
@@ -70,4 +70,4 @@ python3 scripts/bench/fixtures/lean-carrier-acceptance-2026-10-01/replay.py \
   --grader "$CCUT_BENCH_TARGET/debug/examples/lean_carrier_grade"
 ```
 
-该回放会先核对首轮结果，再以相同首轮选择生成修复页，避免版本变化后将旧修复行号映射到错误的句子。后续有意修改算法时，应审阅差异并另存新验收记录。
+The replay first checks the first-round results, then regenerates the fix pages using the same first-round selection. This avoids mapping old fix line numbers to the wrong sentences after the version changes. When the algorithm is intentionally changed later, review the differences and save the result as a new acceptance record.

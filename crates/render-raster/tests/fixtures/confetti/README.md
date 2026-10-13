@@ -1,46 +1,40 @@
-# `core/fixtures/confetti/` —— confetti 元素的 conformance 夹具
+# `core/fixtures/confetti/` — conformance fixtures for the confetti element
 
-[`docs/design/elements/ccut-confetti-element-design.md`](../../../docs/design/elements/ccut-confetti-element-design.md)
-§4（`confetti-v1` 闭式运动核）与 §9（测试策略）的产物。
+Output of §4 (the `confetti-v1` closed-form motion kernel) and §9 (test strategy) of [`docs/design/elements/ccut-confetti-element-design.md`](../../../docs/design/elements/ccut-confetti-element-design.md).
 
-一句话：**输入固定在 `cases.json`，每个阶段各自追加自己的 expected 文件。**
-当前钉的是 10 款配方在配方缺省参数、固定种子下的 DrawOp 指令流。
+In one sentence: **the input is fixed in `cases.json`, and each stage appends its own expected file.**
+The current pins are the DrawOp instruction streams of the 10 recipes, with the recipes' default parameters and a fixed seed.
 
-**这些文件不是手写的，也不要手改。**
+**These files are not hand-written, and must not be edited by hand.**
 
 ```bash
 cd core
-cargo test -p ccut-render --test confetti_draw                # 校验（含 up-to-date 门禁）
-cargo test -p ccut-render --test confetti_draw -- --ignored   # 确认过再重生成
+cargo test -p ccut-render --test confetti_draw                # verify (includes the up-to-date gate)
+cargo test -p ccut-render --test confetti_draw -- --ignored   # regenerate after confirming
 ```
 
-生成器就是 `crates/ccut-render/tests/confetti_draw.rs` 自己——生成端与消费端
-共用同一批函数，`the_confetti_fixtures_are_up_to_date` 因此是「当场重算再逐字节比」
-的真门禁。
+The generator is `crates/ccut-render/tests/confetti_draw.rs` itself. The generating side and the consuming side
+share the same set of functions, so `the_confetti_fixtures_are_up_to_date` is a real gate: it recomputes everything on the spot and then compares byte by byte.
 
-## 为什么与 `../progress/` 分开
+## Why this is separate from `../progress/`
 
-confetti **没有素材源**，也没有进度值：画面完全由 `(配方, 覆盖参数, seed,
-元素本地时刻)` 决定，粒子 `i` 的第 `c` 个随机量恒为
-`splitmix64_unit(seed, i·16 + c)`（真相在 `ccut_render::source::confetti::kernel`）。
-因此它的输入里没有 BCS1、没有进度序列，只有一列时刻。
+Confetti has **no material source** and no progress value. The frame is determined entirely by `(recipe, override parameters, seed,
+element-local time)`. The random value `c` of particle `i` is always
+`splitmix64_unit(seed, i·16 + c)` (the source of truth is `ccut_render::source::confetti::kernel`).
+Its input therefore contains no BCS1 and no progress sequence, only a single column of times.
 
-## 布局
+## Layout
 
-| 路径 | 内容 |
+| Path | Contents |
 | --- | --- |
-| `cases.json` | **输入**：六个元素本地时刻 + 画布 + 像素折算系数 + 种子 + 10 个样式 id |
-| `expected-draw.json` | **golden**：10 款 × 6 个时刻的 DrawOp 条数 / path 数 / 指纹 |
+| `cases.json` | **Input**: six element-local times + canvas + pixel scale factor + seed + 10 style ids |
+| `expected-draw.json` | **Golden**: for each of the 10 styles × 6 times, the DrawOp count / path count / fingerprint |
 
-## 时刻的挑法
+## How the times were chosen
 
-`0.0` 是第一波刚出生；`1.2` 是目录磁贴的静止帧（App v2 十格用的就是这一帧）；
-`12.0` 超过所有配方的 `lifeSec`，考的是连续发射与重复爆发的第 N 轮。每帧的
-指令流恒为 `ClipPath(元素盒) + FillPath × N + PopClip`，空帧 0 条；路径按形状
-去重，`paths ≤ 形状数 + 1`。
+`0.0` is the first wave just born; `1.2` is the resting frame of the catalogue tile (the one used by the App v2 ten-cell grid); `12.0` is beyond every recipe's `lifeSec`, and tests continuous emission and the Nth round of repeated bursts. The instruction stream of each frame is always `ClipPath(element box) + FillPath × N + PopClip`, and an empty frame has 0 instructions. Paths are deduplicated by shape, so `paths ≤ shape count + 1`.
 
-## 与原型对拍
+## Cross-checking against the prototype
 
-原型 `designs/cuccut/app/model-confetti.js` 是同一运动核的 JS 实现，同一份
-props + 同一个 t 恒得同一张粒子表；这里的指纹是 Rust 侧的 DrawOp 序列化，
-不能直接与原型比，对拍靠粒子表（位置 / 旋转 / 大小 / 透明度）逐项对照。
+The prototype `designs/cuccut/app/model-confetti.js` is a JS implementation of the same motion kernel. The same
+props and the same t always produce the same particle table. The fingerprints here are the Rust-side serialization of DrawOps, so they cannot be compared directly with the prototype. Cross-checking is done by comparing the particle table item by item (position / rotation / size / opacity).

@@ -1,35 +1,35 @@
-# Lean carrier 多语言基准（2026-09-30）
+# Lean carrier multilingual benchmark (2026-09-30)
 
-这份固定数据集用于回放 `lines/1` 翻译载体、源侧引用定位和字幕切分的结果。基线来自提交 `d59f06d23`，模型为 DeepSeek V4.1 Flash（`deepseek-flash`）。仓库只保存测试文本和结果；回放脚本不会调用模型或修改 `.ccut` 项目。
+This fixed dataset is used to replay the results of the `lines/1` translation carrier, source-side quote localization, and subtitle segmentation. The baseline comes from commit `d59f06d23`, with the model DeepSeek V4.1 Flash (`deepseek-flash`). The repository stores only test text and results; the replay script does not call the model or modify `.ccut` projects.
 
-## 范围
+## Scope
 
-| 来源 | 抽样 | 目标语 |
+| Source | Sample | Target language |
 | --- | ---: | --- |
-| `东京旅行行程推荐-10_taRWL9Ao`（韩文） | 12 / 73 句 | 简体中文 |
-| `8 个必装 Skill - 顶级 AI 生产力`（中文） | 12 / 84 句 | 英文 |
-| `东京观光：15 处推荐景点`（日文） | 12 / 189 句 | 简体中文 |
-| 阿拉伯文、德文、西班牙文、土耳其文、印地文、泰文合成源文 | 各 8 句 | 每种 6 句英文、2 句简体中文 |
-| 英文合成源文 | 8 句 | 阿拉伯文 |
+| `东京旅行行程推荐-10_taRWL9Ao` (Korean) | 12 / 73 sentences | Simplified Chinese |
+| `8 个必装 Skill - 顶级 AI 生产力` (Chinese) | 12 / 84 sentences | English |
+| `东京观光：15 处推荐景点` (Japanese) | 12 / 189 sentences | Simplified Chinese |
+| Arabic, German, Spanish, Turkish, Hindi, and Thai synthetic source texts | 8 sentences each | 6 sentences each to English, 2 to Simplified Chinese |
+| English synthetic source text | 8 sentences | Arabic |
 
-真实项目每个按句序均匀取 9 句，再补 3 个未选中的最长句。源文、词、词 ID 与时间来自当时的 `studio/data.json` 和 `transcript.json` 快照；完整媒体、全部项目语料及本机项目路径不在仓库中。合成文本由 Agent 编写，`reference_en` 是内容审查辅助，不是人工金标。日文项目当时已产生转录，本基准不依赖其历史译文。
+The real projects each take 9 sentences evenly sampled by sentence order, plus the 3 longest unselected sentences. The source texts, words, word IDs and timings come from the `studio/data.json` and `transcript.json` snapshots at that time; the full media, the full project corpus and local project paths are not in the repository. Synthetic texts were written by the Agent; `reference_en` is an aid for content review, not a human gold standard. The Japanese project already had transcription at the time; this benchmark does not depend on its historical translations.
 
-## 文件
+## Files
 
-- [`dataset.json`](dataset.json)：92 句的来源、源文、源词、实际或缺省时间信息与合成样本的风险标签。只有真实项目的句子有 `word_times`。
-- [`pages/`](pages/)：16 页实际评分的 HTML 源载体及逐句 manifest。页内句序、预算和词引用保持原样。
-- [`requests.json`](requests.json)、[`fix-requests.json`](fix-requests.json)：首轮和一次定向修复的模型请求文本。修复轮通过 `retry_reason` 强调目标语言；不要把首轮和修复后成绩混作一次调用的效果。
-- [`responses/`](responses/)：对应的 16 次首轮和 9 次修复的原始模型正文与耗时；文件名与页名一一对应。
-- [`baseline.json`](baseline.json)：按页、按句保存首轮与修复后的评分，另有逐语言汇总、总 token 用量、构建摘要和有限形状的交叉区间探针结果。
-- [`semantic-audit.json`](semantic-audit.json)：Agent 对 48 条合成源文的内容核查，46 条未发现核心事实错误、2 条明确有误；不代表母语人工盲评。
-- [`property-results.json`](property-results.json)：10 种源语言 × 100 种双区间组合的交叉判定探针。
-- [`comparison.svg`](comparison.svg)：逐语言译文接收与直接对齐图。
+- [`dataset.json`](dataset.json): source, source text, source words, actual or default timing information for the 92 sentences, and risk labels for synthetic samples. Only sentences from the real projects have `word_times`.
+- [`pages/`](pages/): the 16 HTML source carrier pages actually scored, with a per-sentence manifest. Sentence order, budgets and word references within the pages are kept as they are.
+- [`requests.json`](requests.json), [`fix-requests.json`](fix-requests.json): the model request texts for the first round and for one targeted fix round. The fix round emphasizes the target language via `retry_reason`; do not treat the first-round and post-fix scores as the effect of a single call.
+- [`responses/`](responses/): the raw model response bodies and timings for the 16 first-round calls and the 9 fix calls; file names correspond one-to-one with page names.
+- [`baseline.json`](baseline.json): first-round and post-fix scores by page and by sentence, plus per-language summaries, total token usage, a build summary, and the results of a limited-shape cross-interval probe.
+- [`semantic-audit.json`](semantic-audit.json): Agent content review of the 48 synthetic source texts; 46 showed no core factual errors, and 2 were clearly wrong. This is not a blind review by native speakers.
+- [`property-results.json`](property-results.json): cross-judgment probe of 10 source languages × 100 dual-interval combinations.
+- [`comparison.svg`](comparison.svg): per-language translation acceptance and direct alignment chart.
 
-本轮首轮 **51/92** 句译文被接收、**38/92** 句直接对齐；一次修复后是 **87/92** 和 **74/92**。`baseline.json` 的 `strictFirst` 是当时用相同响应关闭新增块内重切后得到的诊断值，首轮直接对齐为 36/92；标准回放脚本只验证生产逻辑的 `first` 与 `merged`。这些是载体和规划器结果，不是翻译准确率。合成集有两条内容错误，其中一条仍被判为 `aligned`。
+In this round, the first pass accepted **51/92** translated sentences and directly aligned **38/92**; after one fix pass the figures are **87/92** and **74/92**. `strictFirst` in `baseline.json` is a diagnostic value obtained at the time by using the same responses with re-splitting inside newly added blocks turned off; its first-pass direct alignment is 36/92. The standard replay script verifies only the `first` and `merged` values of the production logic. These are carrier and planner results, not translation accuracy. The synthetic set has two content errors, and one of them is still judged `aligned`.
 
-## 离线回放
+## Offline replay
 
-从仓库根目录运行：
+Run from the repository root:
 
 ```bash
 cd core && cargo build --locked -p ccut-flow-core --example lean_carrier_grade
@@ -40,6 +40,6 @@ python3 scripts/bench/replay_lean_carrier_multilingual.py \
   --grader "$CCUT_BENCH_TARGET/debug/examples/lean_carrier_grade"
 ```
 
-脚本逐页重算、合并修复结果，并核对全部 92 句的状态、译文、问题码和总计；成功时输出 `ok: 92 samples ...`。由于基线精确比较模型文本和规划器结果，有意更改协议或算法时，应审阅每条差异后再建立新基线。
+The script recomputes page by page, merges the fix results, and checks the status, translations, problem codes and totals of all 92 sentences; on success it prints `ok: 92 samples ...`. Because the baseline compares model text and planner results exactly, when you intentionally change the protocol or algorithm, review each difference before establishing a new baseline.
 
-首轮模型有不少源语言原样返回，修复轮让大多数恢复；中文→英文还有 5 句因回答格式不合法而缺译。泰文 8 句均只达到整句对应；本合成集使用 `atomize` 构造源原子，不能由此推断真实泰文项目的错误率。
+In the first pass, the model returned many source-language texts unchanged; the fix round restored most of them. Chinese→English also had 5 sentences left untranslated because the answer format was invalid. All 8 Thai sentences only reached sentence-level correspondence. This synthetic set uses `atomize` to construct source atoms, so the error rate on the real Thai project cannot be inferred from it.

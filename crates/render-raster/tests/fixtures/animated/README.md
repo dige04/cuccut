@@ -1,48 +1,35 @@
-# `core/fixtures/animated/` —— `AnimatedImage` 源的 conformance 夹具
+# `core/fixtures/animated/` — conformance fixtures for the `AnimatedImage` source
 
 [`docs/design/bcf/ccut-motion-render-upgrade-design.md`](../../../docs/design/bcf/ccut-motion-render-upgrade-design.md)
-§7 / §10 阶段 6 的产物：GIF / APNG / 动画 WebP 三种容器各一组极小素材，
-把「逐帧 duration、disposal、loop count、画布合成」四件事各钉在一个可观察的
-像素上。
+§7 / §10 stage 6 output: one set of tiny assets for each of the three containers GIF / APNG / animated WebP, each pinning four things — per-frame duration, disposal, loop count, and canvas compositing — to one observable pixel.
 
-**这些文件不是手写的，也不要手改。**
+**These files are not hand-written, and must not be edited by hand.**
 
 ```bash
 cd core
-cargo test -p ccut-render --test animated_source                  # 校验（含 up-to-date 门禁）
-cargo test -p ccut-render --test animated_source -- --ignored     # 确认过再重生成
+cargo test -p ccut-render --test animated_source                  # verify (includes the up-to-date gate)
+cargo test -p ccut-render --test animated_source -- --ignored     # regenerate, once the result has been confirmed
 ```
 
-生成器是 `crates/ccut-render/tests/fixture_gen/mod.rs`——不是 `gen.sh` 那样的
-ffmpeg 脚本：逐帧 disposal 与 loop count 需要精确控制，ffmpeg 给不了。生成器留在
-测试里还有个好处，`animated_fixtures_are_up_to_date` 因此是一条真门禁
-（当场重算再逐字节比），而不是「跑一次脚本然后祈祷」。
+The generator is `crates/ccut-render/tests/fixture_gen/mod.rs` — not an ffmpeg script like `gen.sh`: per-frame disposal and loop count need precise control, which ffmpeg cannot provide. Keeping the generator inside the tests has another benefit: `animated_fixtures_are_up_to_date` is therefore a real gate (it recomputes on the spot and then compares byte by byte), rather than "run a script once and hope".
 
-## 布局
+## Layout
 
-| 路径 | 内容 |
+| Path | Contents |
 | --- | --- |
-| `stripes.gif` | 8×8，4 帧整幅纯色，delay 100 / 200 / 300 / 400 ms，无限循环 |
-| `disposal.gif` | 8×8，3 帧，`Keep` → `Background` → `Keep`，**有限** loop count（2 遍） |
-| `pulse.png` | 8×8 APNG，3 帧，分数延时 1/25、1/10、3/50 秒 → 40 / 100 / 60 ms，`num_plays = 1` |
-| `wave.webp` | 8×8 动画 WebP，3 帧，delay 50 / 100 / 150 ms，无限循环 |
-| `<stem>/frame-<i>.png` | 该素材第 i 帧的**逐字节** golden（解码 + 画布合成之后的最终像素） |
-| `expected.json` | 元数据、时长表、内容指纹、逐帧摘要与一组采样点（含越界与负时刻） |
+| `stripes.gif` | 8×8, 4 frames of solid full-canvas colour, delays 100 / 200 / 300 / 400 ms, infinite loop |
+| `disposal.gif` | 8×8, 3 frames, `Keep` → `Background` → `Keep`, **finite** loop count (2 passes) |
+| `pulse.png` | 8×8 APNG, 3 frames, fractional delays 1/25, 1/10, 3/50 s → 40 / 100 / 60 ms, `num_plays = 1` |
+| `wave.webp` | 8×8 animated WebP, 3 frames, delays 50 / 100 / 150 ms, infinite loop |
+| `<stem>/frame-<i>.png` | **byte-for-byte** golden for frame i of that asset (final pixels after decoding and canvas compositing) |
+| `expected.json` | metadata, duration table, content fingerprint, per-frame digests, and a set of sample points (including out-of-range and negative times) |
 
-## 三件被钉住的语义
+## Three pinned semantics
 
-1. **逐帧 duration 表**：`frameStartsMs` 是 N+1 项的累积起点，末项是总时长。
-   落在一帧窗口内的**任何**时刻都量化到该帧起点——静止帧缓存与帧指纹靠这个命中。
-2. **disposal 只作用于该帧自己的帧矩形**，不是清空整幅画布。`disposal.gif`
-   的第 3 帧因此同时存在三种像素：本帧的蓝块、上一帧矩形被处置成的透明、
-   以及矩形之外由第 1 帧保留下来的红底。
-3. **loop count 是探测出来的元数据，不是渲染判据**。`disposal.gif` 的 `2x` 会
-   出现在 `ccut probe` 里，但画面循不循环由文档的 `animatedImage` 元素写不写
-   `loop` 决定（缺省沿用本字段）——一份文档的播放行为不该取决于某个容器字节。
+1. **Per-frame duration table**: `frameStartsMs` holds the cumulative start points, N+1 entries, where the last entry is the total duration. **Any** instant that falls within a frame's window is quantized to that frame's start — the still-frame cache and frame fingerprints rely on this to hit.
+2. **Disposal applies only to that frame's own frame rectangle**, not to the whole canvas. So frame 3 of `disposal.gif` contains three kinds of pixels at once: the blue block from this frame, the transparency that the previous frame's rectangle was disposed to, and the red background kept from frame 1 outside that rectangle.
+3. **Loop count is probed metadata, not a rendering criterion.** The `2x` of `disposal.gif` appears in `ccut probe`, but whether the picture loops is decided by whether the document's `animatedImage` element sets `loop` (it defaults to this field). A document's playback behaviour should not depend on a container byte.
 
-## 已知的容器怪癖
+## Known container quirks
 
-`wave.webp` 的 golden 颜色比生成器写进去的值**低 1**（`0x20` → 31、`0xff` → 254）。
-这是 `image` / `image-webp` 那对无损 WebP 编解码器往返出来的偏移，**发生在夹具
-生成端**，与渲染路径无关（GIF / APNG 两路的颜色逐字节精确）。golden 按实测值定，
-不为了好看去改数。
+The golden colours of `wave.webp` are **1 lower** than the values the generator wrote (`0x20` → 31, `0xff` → 254). This is the offset from the round trip through the `image` / `image-webp` pair of lossless WebP codecs. It **happens on the fixture generation side** and is unrelated to the rendering path (the GIF and APNG paths are byte-exact in colour). Goldens are set from the measured values; the numbers are not changed just to look nicer.

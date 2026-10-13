@@ -1,67 +1,67 @@
-# 多语言字幕润色与翻译用例
+# Multilingual Subtitle Polishing and Translation Cases
 
-25 个合成场景，每个有润色、翻译两项任务，共 **50 个任务**。覆盖英文、中文、日文、韩文、阿拉伯文、德文、西班牙文、土耳其文、印地文、泰文、法文、葡萄牙文；泰文 3 个场景，其余各 2 个。目标语包括英语、简体中文、日语、韩语、阿拉伯语、法语、德语、西班牙语。
+25 synthetic scenarios, each with two tasks (polishing and translation), for **50 tasks** in total. The scenarios cover English, Chinese, Japanese, Korean, Arabic, German, Spanish, Turkish, Hindi, Thai, French and Portuguese. There are 3 Thai scenarios; each of the others has 2. Target languages include English, Simplified Chinese, Japanese, Korean, Arabic, French, German and Spanish.
 
-与[多语言真实响应基准](../lean-carrier-multilingual-2026-09-30/README.md)配合使用：这里提供可重复的输入、参考输出和错误反例；不将 Agent 编写的参考称为母语人工金标，也不把固定答案回放称为新模型质量测试。
+Use this together with the [multilingual real-response benchmark](../lean-carrier-multilingual-2026-09-30/README.md). This directory provides repeatable inputs, reference outputs and erroneous counterexamples. It does not call the Agent-written references a native-speaker human gold standard, and it does not call replay of fixed answers a new model quality test.
 
-## 覆盖范围
+## Coverage
 
-| 场景 | 检查重点 |
+| Scenario | Check focus |
 | --- | --- |
-| 否定与改期 | “未取消，改到周四14:30”不能变成“已取消” |
-| 条件与人物角色 | 批准者、批准对象、文件收件人不得互换 |
-| 时间先后 | 先出发但晚到；晚十分钟不能变成早十分钟 |
-| 数量与单位 | 三张票、120卢比、不含晚餐；2,5公斤不能变成25公斤 |
-| 指代与所有权 | 借出者、借入者、书的所有人分别保留 |
-| 状态与代码 | P-08已确认不代表已发货 |
-| 韩文 | 保留空格及2박，不插成2 박 |
-| 泰文 | 无空格词流；หน้าต่าง必须理解为窗户，不能变成前面板；夹拉丁字母代码（F-07）的句子仍按泰文处理 |
-| Unicode | 阿拉伯文附加符、天城文组合符及danda、拉丁重音、撇号、引号 |
-| 保守润色 | 已正确的句子保持原样，不因为“润色”而换语言、改事实或改写风格 |
+| Negation and rescheduling | "未取消，改到周四14:30" (not cancelled, moved to Thursday 14:30) must not become "cancelled" |
+| Conditions and character roles | Approver, approval target and file recipient must not be swapped |
+| Temporal order | "Left first but arrived late": "ten minutes later" must not become "ten minutes earlier" |
+| Quantities and units | Three tickets, 120 rupees (卢比), excluding dinner; "2,5公斤" (2.5 kg) must not become 25 kg |
+| Reference and ownership | Lender, borrower and book owner are each kept distinct |
+| Status and codes | P-08 being confirmed does not mean it has shipped |
+| Korean | Keep the spacing and "2박"; do not insert a space to make it "2 박" |
+| Thai | Unspaced word stream. "หน้าต่าง" must be understood as "window", not "front panel". Sentences containing Latin-letter codes (F-07) are still treated as Thai |
+| Unicode | Arabic combining marks, Devanagari combining marks and danda, Latin accents, apostrophes, quotation marks |
+| Conservative polishing | Sentences that are already correct stay as they are. Polishing must not change the language, alter facts or rewrite the style |
 
-润色任务：10 例错字加句末标点修正、2 例只补句末标点、13 例正确文本保持不变。`allowedCorrection` 标注人为注入的错字，供评分参考，不发给模型。变动都较小，这批不覆盖长篇分页、多说话人和大段删改。
+Polishing tasks: 10 cases with typo fixes plus sentence-final punctuation fixes, 2 cases that only add sentence-final punctuation, and 13 cases of correct text that stays unchanged. `allowedCorrection` marks the artificially injected typos, for scoring reference. It is not sent to the model. All changes are small. This batch does not cover long pagination, multiple speakers or large deletions.
 
-## 数据字段
+## Data Fields
 
-[`cases.json`](cases.json) 是唯一用例来源：
+[`cases.json`](cases.json) is the only source of cases:
 
-- `source` / `sourceLang` / `targetLang`：正确源句及翻译方向。
-- `polish.input`：待润色文本；`polish.reference`：一种保守修正；`instruction`：本例任务要求。
-- `translation.reference`：一种可接受译文；`counterexample`：有意编写的错误译文；`requiredFacts`：人工审阅必须检查的关系与事实。
-- `syntheticDurationSeconds`：测试构造的16秒时间轴，不是实测阅读时间或真实媒体时长。
-- `provenance`：Agent 合成，尚无母语人工认证。
+- `source` / `sourceLang` / `targetLang`: the correct source sentence and the translation direction.
+- `polish.input`: the text to polish. `polish.reference`: one conservative correction. `instruction`: the task requirement for this case.
+- `translation.reference`: one acceptable translation. `counterexample`: a deliberately written wrong translation. `requiredFacts`: the relationships and facts that human review must check.
+- `syntheticDurationSeconds`: a 16-second timeline constructed for the test. It is not a measured reading time or a real media duration.
+- `provenance`: Agent-synthesized, with no native-speaker human certification yet.
 
-参考译文并非唯一正确答案。语义验收使用 `requiredFacts`，不要求候选输出与 reference 逐字相等。反例用于检验后续语义评分器，不代表当前生产校验器已能拒绝这些错误。
+Reference translations are not the only correct answers. Semantic acceptance uses `requiredFacts` and does not require the candidate output to equal the reference word for word. Counterexamples are for testing later semantic scorers. They do not mean the current production validator can already reject these errors.
 
-## 确定性自动回归
+## Deterministic Automated Regression
 
-新增 [`multilingual_subtitle_cases.rs`](../../../../core/crates/ccut-flow-core/tests/multilingual_subtitle_cases.rs) 直接读取本文件，调用生产路径：
+The new [`multilingual_subtitle_cases.rs`](../../../../core/crates/ccut-flow-core/tests/multilingual_subtitle_cases.rs) reads this file directly and calls the production path:
 
 ```bash
 cd core
 cargo test --locked -p ccut-flow-core --test multilingual_subtitle_cases
 ```
 
-三项数据驱动测试，遍历所有25例：
+There are three data-driven tests, which iterate over all 25 cases:
 
-1. **润色写回**：用固定 provider 答案调用 `run_polish_file_contract`，检查无降级、修正结果正确、词数和时间不变、未修改词的 ID 保持。修改了文本或标点的词允许按现行重绑定契约更换 ID。文本比较使用生产建稿规范化后的形式，不能由此推断原始空白逐字节保持。
-2. **翻译载体**：通过生产 `lines/1` 渲染和解析，确认参考译文被接收并保留文本；同一方向照抄源文时拒绝并进入重试。此测试没有断言流畅误译会被拒绝，也未验证字幕切分质量。
-3. **分片位置**：按生产口径给每例加阅读预算后渲染，泰文这类无空格文字的 `¦` 只落在词典分词也断开的地方，不切进词里。
+1. **Polish write-back**: calls `run_polish_file_contract` with fixed provider answers. It checks that there is no degradation, that the corrected results are correct, that the word count and timing are unchanged, and that the IDs of unmodified words are kept. Words whose text or punctuation was changed may get new IDs under the current rebinding contract. Text comparison uses the form normalized by production draft-building rules, so this test cannot be used to infer that the original whitespace is preserved byte for byte.
+2. **Translation carrier**: renders and parses through the production `lines/1`, and confirms that the reference translation is received and its text kept. When the output copies the source text in the same direction, it is rejected and goes to retry. This test does not assert that fluent mistranslations are rejected, and it does not verify subtitle segmentation quality.
+3. **Chunk positions**: after rendering each case with a reading budget under production rules, `¦` in unspaced text such as Thai falls only where the dictionary segmenter also breaks, and never cuts into a word.
 
-前两项采用固定答案；三项都不发网络请求、无模型费用，不修改任何真实项目。生产语义与提示词未改动，本地 Agent / Cloud 的协议保持现状；App、Web、原型及产品 skill 无需同步实现。
+The first two use fixed answers. All three make no network requests, incur no model cost and modify no real project. Production semantics and prompts are unchanged. The local Agent and Cloud protocols stay as they are. The App, Web, prototypes and product skills need no matching implementation.
 
-## 新模型采集准备
+## Preparing New Model Collection
 
 ```bash
 python3 scripts/bench/fixtures/subtitle-multilingual-cases/prepare.py \
   --out /private/tmp/subtitle-multilingual-new-run
 ```
 
-输出目录必须是新目录。脚本输出：
+The output directory must be a new directory. The script produces:
 
-- `tasks.jsonl`：48条独立任务，只含待处理文本、语言和指令，不包含参考答案、错误反例或审阅要点。
-- `review.csv`：单独的审阅表，带源文、参考、事实及反例；实际响应、语义结论和备注留空。
+- `tasks.jsonl`: 48 independent tasks. They contain only the text to process, the languages and the instruction. They contain no reference answers, counterexamples or review points.
+- `review.csv`: a separate review sheet with the source text, references, facts and counterexamples. The actual responses, semantic conclusions and notes are left blank.
 
-这份任务导出用于比较模型的文本润色/翻译能力，未包装成生产载体，不能冒充整个字幕流水线的端到端测试。后续可用用户指定的模型采集，将原始响应、模型 ID、版本、参数与耗时另存一次验收目录；本次未采集新模型响应。
+This task export is for comparing models' text polishing and translation ability. It is not packaged as a production carrier and cannot stand in for an end-to-end test of the whole subtitle pipeline. Later, responses can be collected from a model the user specifies. The raw responses, model ID, version, parameters and latency are then saved once to an acceptance directory. No new model responses were collected this time.
 
-建议语义判定填写 `pass` / `fail` / `needs-native-review`，同时说明具体事实。不能用关键字存在、BLEU 或“格式合法”单独给语义通过结论。
+For semantic judgments, fill in `pass` / `fail` / `needs-native-review`, and state the specific facts. Keyword presence, BLEU or "format is valid" alone must not be used to give a semantic pass.

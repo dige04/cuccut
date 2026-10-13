@@ -1,81 +1,81 @@
-# 多语言验收：915bfef13
+# Multilingual acceptance: 915bfef13
 
-结论：**印地文引用修复通过；泰文分词在带预算的输入中可完成对齐，但仍有内容错误；整体不能判为全部通过。**
+Conclusion: **The Hindi citation fix passes. Thai word segmentation can complete alignment on input with a reading budget, but content errors remain; overall, this cannot be judged as fully passing.**
 
-本轮以 `915bfef1308a070c0a720682b961744cf156ec4b` 开始构建；期间其他会话提交了 Web/wasm 改动，收尾 HEAD 为 `e3ec02730`。构建前后 `ccut-flow-core`、`ccut-engine`、`ccut-speech-core` 全部 Rust 源文件摘要一致。本轮不修改生产代码。
+This round started the build from `915bfef1308a070c0a720682b961744cf156ec4b`. In the meantime, other sessions committed Web/wasm changes, and the final HEAD is `e3ec02730`. Before and after the build, the Rust source file digests of `ccut-flow-core`, `ccut-engine` and `ccut-speech-core` were all identical. This round does not modify production code.
 
-## 与上轮对比
+## Comparison with the previous round
 
-使用[上轮验收](../lean-carrier-acceptance-2026-10-01/README.md)相同的 92 句（36 句真实项目抽样、56 句合成），模型配置 ID 为 `deepseek-flash`（用户指定的 DeepSeek V4.1 Flash）。
+Using the same 92 sentences as the [previous-round acceptance](../lean-carrier-acceptance-2026-10-01/README.md) (36 sentences sampled from real projects, 56 synthetic), with the model config ID `deepseek-flash` (DeepSeek V4.1 Flash, as specified by the user).
 
-| 口径 | 首轮接收 | 首轮对齐 | 一次补做后接收 | 一次补做后对齐 | 最终需重写 |
+| Basis | First-pass accepted | First-pass aligned | Accepted after one re-run | Aligned after one re-run | Needs rewrite in the end |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| 上轮新模型结果 | 92 | 79 | 92 | 82 | 10 |
-| 最新代码回放上轮响应，保留上轮输入 | 92 | 83 | 92 | **86** | 6 |
-| 最新代码回放上轮响应，合成文本按新版分词 | 92 | 83 | 92 | **86** | 6 |
-| 最新代码新调模型，合成文本按新版分词 | 91 | 77 | 92 | **80** | 12 |
+| Previous round's new-model results | 92 | 79 | 92 | 82 | 10 |
+| Latest code replaying previous-round responses, keeping previous-round inputs | 92 | 83 | 92 | **86** | 6 |
+| Latest code replaying previous-round responses, synthetic text segmented with the new version | 92 | 83 | 92 | **86** | 6 |
+| Latest code, new model call, synthetic text segmented with the new version | 91 | 77 | 92 | **80** | 12 |
 
-分母均为 92。固定响应控制了模型输出，确认代码提升 4 句，来自印地文。新调用只做一轮，不能把 82→80 当成确定性算法回归：德文→英文 6 句这次都只返回一个大块，补做也未拆开；印地文则从 4/8 提升到 8/8。三组真实项目本轮补做后全部 36/36 对齐，中文其中 1 句首轮格式失败、补做恢复。
+The denominator is 92 in every row. The fixed responses control the model output, and they confirm that the code change raises 4 sentences, all from Hindi. The new calls were run only once, so 82→80 should not be treated as a deterministic algorithmic regression. The 6 German→English sentences all came back as one large block this time, and the re-run did not split them. Hindi, by contrast, went from 4/8 to 8/8. After this round's re-run, all three real-project groups are 36/36 aligned. One Chinese sentence failed the format check on the first pass, and the re-run recovered it.
 
-![逐语言对比](comparison.svg)
+![Per-language comparison](comparison.svg)
 
-| 源语言组 | 样本 | 上轮对齐 | 新版固定响应回放 | 新版新响应 |
+| Source-language group | Sample | Previous-round aligned | New version, fixed-response replay | New version, new response |
 | --- | ---: | ---: | ---: | ---: |
-| 韩文真实 | 12 | 12 | 12 | 12 |
-| 中文真实 | 12 | 12 | 12 | 12 |
-| 日文真实 | 12 | 12 | 12 | 12 |
-| 阿拉伯文 | 8 | 8 | 8 | 8 |
-| 德文 | 8 | 8 | 8 | 2 |
-| 英文→阿拉伯文 | 8 | 8 | 8 | 8 |
-| 西班牙文 | 8 | 8 | 8 | 8 |
-| 印地文 | 8 | 4 | 8 | 8 |
-| 泰文 | 8 | 2 | 2 | 2 |
-| 土耳其文 | 8 | 8 | 8 | 8 |
+| Korean (real) | 12 | 12 | 12 | 12 |
+| Chinese (real) | 12 | 12 | 12 | 12 |
+| Japanese (real) | 12 | 12 | 12 | 12 |
+| Arabic | 8 | 8 | 8 | 8 |
+| German | 8 | 8 | 8 | 2 |
+| English→Arabic | 8 | 8 | 8 | 8 |
+| Spanish | 8 | 8 | 8 | 8 |
+| Hindi | 8 | 4 | 8 | 8 |
+| Thai | 8 | 2 | 2 | 2 |
+| Turkish | 8 | 8 | 8 | 8 |
 
-## 泰文带预算补测：结构通过，内容未通过
+## Thai with reading budget: structure passes, content does not
 
-原合成基准没有 `data-budget`，不会触发部分生产分块提示。本轮另取相同的 8 条泰文，注入模拟阅读预算，单列结果，不并入 92 句主表。
+The original synthetic benchmark had no `data-budget`, so it did not trigger some production chunking hints. This round took the same 8 Thai sentences, injected a simulated reading budget, and reports them separately rather than merging them into the main 92-sentence table.
 
-- 模拟时长 = 参考英译词数 / 2.7；预算按当前 `reading_budget_duration` 计算，英文 21 单位/秒、中文 9 单位/秒。它们是实验假设，不是真实媒体时间。
-- 首轮 **8/8 接收、8/8 aligned**；36 个块定位到 35 个。
-- `th-04` 有一处引用将 `เมื่อวาน` 写成 `เมื่อยาน`，仍有 `anchor-unresolved`，但规划器利用其余证据生成了对齐。不能把 8/8 aligned 写成所有引用正确。
-- **`th-02` 新发现确定的内容错误：** 原文 `ปิดหน้าต่าง` 是关窗，新译文是 `close the front panel`。最终仍为 `aligned`，并在 `front | panel` 之间产生了字幕分段。
-- 本次提示包含 `ต่ำกว่า5อง ¦ ศาให้ปิดหน้า ¦ ต่างก่อนเปิดเครื่อง`，将 `องศา`（度）及 `หน้าต่าง`（窗户）拆开。模型响应同样写出 `de|grees`、`front | panel`；最终整理合并了 degrees，但没有纠正 front panel。提示断点与错误相伴出现，单次采样不足以证明因果。
+- Simulated duration = reference English translation word count / 2.7. The budget is calculated from the current `reading_budget_duration`: English 21 units/second, Chinese 9 units/second. These are experimental assumptions, not real media timings.
+- First pass: **8/8 accepted, 8/8 aligned**. 36 chunks were located for 35.
+- `th-04` has one citation where `เมื่อวาน` (yesterday) is written as `เมื่อยาน`. It still has `anchor-unresolved`, but the planner used the remaining evidence to generate an alignment. 8/8 aligned must not be written up as meaning every citation is correct.
+- `th-02` **newly found a confirmed content error:** the source `ปิดหน้าต่าง` means "close the window", but the new translation is `close the front panel`. It still ends as `aligned`, and it produced a subtitle split between `front | panel`.
+- This prompt included `ต่ำกว่า5อง ¦ ศาให้ปิดหน้า ¦ ต่างก่อนเปิดเครื่อง`, which splits `องศา` (degrees) and `หน้าต่าง` (window). The model response likewise wrote `de|grees` and `front | panel`. The final cleanup merged degrees but did not correct front panel. The break hint appeared together with the error, but single sampling is not enough to prove causation.
 
-建议下一步优先验证：对低可信度的源词边界不强制下发 `¦`，用“保留完整源句、只要求目标文本分块”的对照臂重复采样；同时加入 `th-02` 的关键词和关系检查。应先确认断点提示不会诱发误译，再提高分块成功率。不要用增加重试次数代替这项验证。
+Suggested next steps, in priority order: first verify that the forced `¦` should not be emitted at low-confidence source word boundaries, and repeat sampling with a control arm that "keeps the full source sentence and only requires the target text to be chunked". Also add keyword and relation checks for `th-02`. First confirm that the break hint does not induce mistranslation, and only then raise the chunking success rate. Do not substitute more retries for this verification.
 
-## 原未通过项复查
+## Re-check of previously failing items
 
-- **印地文引用定位：通过。** 固定回放的 `hi-03`、`hi-05`、`hi-06`、`hi-07` 全部从 needs-rewrite 转为 aligned；新模型 8/8 对齐。
-- **泰文分词：有条件通过结构测试。** 新版 `atomize-words` 为 th-01/th-02 生成 16/19 个词单元；10 个分词与 glue 拼接探针均保持原文，含泰、老挝、高棉、缅甸文。保持文本不等于语言学分词准确，`หน้า/ต่าง` 等拆分仍需处理。
-- **德文 `de-07` 语义：未解决。** 新响应仍是“只有在第二版负责人同意后，才把文件发给安娜。”源文要求管理层批准第二版。新增 `translation-meaning-unverified` 只是如实报告语义未核对；相关测试通过，但没有自动修复该误译。
-- **印地文 `hi-07` 语义：不作确定错误计数。** 新响应仍写“另一个版本”；原词有“第二/另一个”读法，需要上下文或母语复核。更正上轮过强的错误归因，本轮只记录歧义。
-- **西班牙文 `es-06`：** 新响应保留 Inés / Mateo 和“先出发、晚到十分钟”的关系。
-- **交叉区间：** 10 种语言 × 100 种双区间组合，误放行 0；各组仍有 15 个安全断点通过。这个探针只覆盖指定双区间形状。
+- **Hindi citation localization: pass.** The fixed replay of `hi-03`, `hi-05`, `hi-06` and `hi-07` all moved from needs-rewrite to aligned. The new model is 8/8 aligned.
+- **Thai word segmentation: conditional pass on structural tests.** The new `atomize-words` produced 16/19 word units for th-01/th-02. All 10 segmentation and glue-concatenation probes kept the original text, including Thai, Lao, Khmer and Burmese. Keeping the text unchanged does not mean the segmentation is linguistically accurate, and splits such as `หน้า/ต่าง` still need handling.
+- **German `de-07` semantics: unresolved.** The new response still reads "Only after the second-version owner agrees will the file be sent to Anna." The source requires management approval of the second version. The newly added `translation-meaning-unverified` only honestly reports that the meaning was not checked. The related tests pass, but it does not automatically fix this mistranslation.
+- **Hindi `hi-07` semantics: not counted as a definite error.** The new response still says "another version". The source word can be read as "second" or "another", so it needs context or native-speaker review. Correcting the overly strong error attribution from the previous round, this round only records the ambiguity.
+- **Spanish `es-06`:** the new response keeps Inés / Mateo and the relationship "leave first, arrive ten minutes late."
+- **Cross-intervals:** across 10 languages × 100 dual-interval combinations, 0 false passes. Each group still has 15 safe breakpoints that pass. This probe covers only the specified dual-interval shapes.
 
-## 构建与测试
+## Build and tests
 
-清理 `ccut-flow-core` / `ccut-engine` 后重新构建两个 example，构建 20.43 秒。`ccut_flow_core`、`ccut_engine`、`lean_carrier_grade`、`provider_carrier_bench` 四个 artifact 均 `fresh: false`；复制新二进制后测试。保留一条既有 `unused_mut` 编译警告。
+After cleaning `ccut-flow-core` / `ccut-engine`, the two examples were rebuilt. The build took 20.43 seconds. The four artifacts `ccut_flow_core`, `ccut_engine`, `lean_carrier_grade` and `provider_carrier_bench` are all `fresh: false`. The tests were run after copying the new binaries. One existing `unused_mut` compiler warning is kept.
 
-| 测试 | 通过 | 忽略 | 失败 |
+| Test | Passed | Ignored | Failed |
 | --- | ---: | ---: | ---: |
-| ccut-flow-core（单元、golden、carrier） | 958 | 1 | 0 |
+| ccut-flow-core (unit, golden, carrier) | 958 | 1 | 0 |
 | ccut-speech-core | 46 | 0 | 0 |
-| ccut-engine（单元与架构检查） | 210 | 0 | 1 |
+| ccut-engine (unit and architecture checks) | 210 | 0 | 1 |
 
-失败项为 `provider_http_calls_are_built_in_exactly_one_place`：扫描命中 `ccut-audio-gen/src/http.rs:132` 和 `ccut-image-cloud/src/http.rs:238` 的 `auth_headers`。测试及两个命中文件与上轮验收代码相比无差异，本次提交前的开发日志也已记录该失败。它仍是当前红门，未修改或跳过。
+The failure is `provider_http_calls_are_built_in_exactly_one_place`. The scan hits `auth_headers` at `ccut-audio-gen/src/http.rs:132` and `ccut-image-cloud/src/http.rs:238`. Compared with the previous round's accepted code, the test and both hit files show no differences, and the development log from before this commit also recorded this failure. It remains a current red gate. It was neither modified nor skipped.
 
-引擎测试失败后，另外运行 flow-core / speech-core，确保它们实际执行完毕。未运行 App/Web/wasm 验收、全 workspace 测试、完整 Runtime 翻译事务或视频导出。测试数据没有经过母语人工盲评。
+After the engine test failure, flow-core and speech-core were also run to confirm they actually completed. App/Web/wasm acceptance, the full workspace tests, the complete Runtime translation transaction and video export were not run. The test data has not been blind-reviewed by native speakers.
 
-三个真实项目的本地只读投影检查共 **346 句**（韩 73、中 84、日 189），输出与上轮逐字节相同，源文件 SHA-256 前后一致。没有向模型发送完整项目语料。
+Local read-only projection checks of the three real projects cover **346 sentences** in total (Korean 73, Chinese 84, Japanese 189). The output is byte-for-byte identical to the previous round, and the source file SHA-256 is unchanged before and after. The full project corpus was not sent to the model.
 
-本轮模型调用 22 次：主集首轮 16 页、一次补做 4 页（15 句）、泰文模拟预算 2 页；全部成功。新模型结果只代表这次采样。
+This round made 22 model calls: the main set's first pass used 16 pages, one re-run used 4 pages (15 sentences), and the Thai simulated-budget run used 2 pages. All succeeded. The new model results represent only this sampling.
 
-## 保存与复验
+## Storage and re-verification
 
-`pages/`、`requests.json`、`fix-requests.json`、`budget-requests.json`、`responses/` 保存全部实际输入和模型回答；`first-grades/` 固定首轮选择，确保修复行号对应正确。三个 `*-summary.json` 保存固定输入回放、新分词回放、新模型评分；`budget-summary.json` 单列模拟预算结果。其余 JSON 保存构建、源码摘要、区间探针与真实项目检查。
+`pages/`, `requests.json`, `fix-requests.json`, `budget-requests.json` and `responses/` store all actual inputs and model answers. `first-grades/` fixes the first-pass selection so that the fix line numbers map correctly. The three `*-summary.json` files store the fixed-input replay, the new-segmentation replay and the new-model scoring. `budget-summary.json` reports the simulated budget results separately. The remaining JSON files store the build, source digests, interval probes and real-project checks.
 
-从仓库根运行（必须先构建最新 grader）：
+Run from the repository root (the latest grader must be built first):
 
 ```bash
 cd core && cargo build --locked -p ccut-flow-core --example lean_carrier_grade
@@ -85,4 +85,4 @@ python3 scripts/bench/fixtures/lean-carrier-acceptance-2026-10-01-915bfef13/repl
   --grader "$CCUT_BENCH_TARGET/debug/examples/lean_carrier_grade"
 ```
 
-脚本回放主集及泰文预算补测，不调用模型；先核对首轮，再核对合并结果。未来代码变化导致断言失败时应审阅差异，保留这份历史记录。
+The script replays the main set and the Thai budget re-test without calling the model. It checks the first pass first, then the merged results. If future code changes cause assertion failures, review the diff and keep this historical record.

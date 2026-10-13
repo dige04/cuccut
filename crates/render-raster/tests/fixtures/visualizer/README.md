@@ -1,134 +1,92 @@
-# `core/fixtures/visualizer/` —— visualizer 的 conformance 夹具
+# `core/fixtures/visualizer/` —— conformance fixtures for the visualizer
 
-[`docs/design/bcf/ccut-element-render-foundation-design.md`](../../../docs/design/bcf/ccut-element-render-foundation-design.md)
-的 ADR-E04（`VisualSource` 契约与注入协议）与 §8.7（conformance 标准）的产物。
+Artifacts of ADR-E04 (the `VisualSource` contract and injection protocol) and §8.7 (conformance standard) in
+[`docs/design/bcf/ccut-element-render-foundation-design.md`](../../../docs/design/bcf/ccut-element-render-foundation-design.md).
 
-一句话：**输入固定在 `cases.json`，每个阶段各自追加自己的 expected 文件。**
-P2 只钉「频谱怎么派生、怎么按时刻取帧」；CPU 绘制、wasm 预览复用同一份输入，
-各自比自己那份 golden。
+In short: **the input is fixed in `cases.json`, and each stage appends its own expected files.**
+P2 only pins down "how the spectrum is derived and how frames are fetched by time"; CPU drawing and the wasm preview reuse the same input, and each compares against its own golden.
 
-**这些文件不是手写的，也不要手改。**
+**These files are not hand-written, and must not be hand-edited.**
 
 ```bash
 cd core
-cargo test -p ccut-render --test visualizer_source                # 校验（含 up-to-date 门禁）
-cargo test -p ccut-render --test visualizer_source -- --ignored   # 确认过再重生成
+cargo test -p ccut-render --test visualizer_source                # verify (includes the up-to-date gate)
+cargo test -p ccut-render --test visualizer_source -- --ignored   # regenerate after review
 ```
 
-生成器就是 `crates/ccut-render/tests/visualizer_source.rs` 自己——生成端与消费端
-共用同一批函数，`visualizer_fixtures_are_up_to_date` 因此是「当场重算再逐字节比」
-的真门禁，而不是「跑一次脚本然后祈祷」。
+The generator is `crates/ccut-render/tests/visualizer_source.rs` itself: the generating and consuming sides share the same set of functions, so `visualizer_fixtures_are_up_to_date` is a real gate that "recomputes on the spot and then compares byte by byte", not "run a script once and hope".
 
-## 布局
+## Layout
 
-| 路径 | 内容 |
+| Path | Contents |
 | --- | --- |
-| `cases.json` | **输入**：两份固定 BCS1 × 四组元素参数 × 五个时刻 + 乱序序列 + 10 个样式 id |
-| `sweep-48k-mono.bcs1` | 程序生成的 3.0 s 合成频谱（180 帧 × 640 字节） |
-| `expected-track.json` | **P2 的 golden**：8 条 `VizTrack` 的整轨指纹 + 五个时刻的帧号与逐行摘要 |
-| `expected-draw.json` | **绘制 golden**：10 款样式 × 五个时刻 + 一帧静音的 DrawOp 指纹，外加折线类冻结的 `samples` 一列（生成器是 `tests/visualizer_draw.rs`） |
-| `../spectrum/tone-48k-mono-f32.bcs1` | P1 的真实 DSP golden（0.2 s），`cases.json` 引用，不复制 |
-| `../progress/` | progress 元素的同类夹具（它没有素材源，输入结构完全不同，见那边的 README） |
+| `cases.json` | **Input**: two fixed BCS1 files × four sets of element parameters × five instants + shuffled sequence + 10 style ids |
+| `sweep-48k-mono.bcs1` | Programmatically generated 3.0 s synthetic spectrum (180 frames × 640 bytes) |
+| `expected-track.json` | **P2 golden**: whole-track fingerprints of 8 `VizTrack`s + frame numbers and per-row digests at five instants |
+| `expected-draw.json` | **Draw golden**: DrawOp fingerprints for 10 styles × five instants + one silent frame, plus a frozen `samples` column for the line-type styles (generator is `tests/visualizer_draw.rs`) |
+| `../spectrum/tone-48k-mono-f32.bcs1` | P1's real DSP golden (0.2 s); referenced by `cases.json`, not copied |
+| `../progress/` | Counterpart fixtures for the progress element (it has no media source, so its input structure is entirely different; see the README there) |
 
-## 两份 BCS1 各管一件事
+## The two BCS1 files each cover one thing
 
-| 名字 | 时长 | 作用 |
+| Name | Duration | Purpose |
 | --- | --- | --- |
-| `tone` | 0.2 s | 真实 STFT 产物。时刻表里 0.5 / 1.0 / 2.5 **全部越界**，专门钉「末端之后冻结末帧」 |
-| `sweep` | 3.0 s | 纯整数算术合成，五个时刻全部落在轨内，覆盖满 0..255 的字节域 |
+| `tone` | 0.2 s | Real STFT output. Instants 0.5 / 1.0 / 2.5 in the timeline are **all out of range**; they exist specifically to pin "freeze the last frame after the end". |
+| `sweep` | 3.0 s | Synthesized with pure integer arithmetic; all five instants fall within the track, and it covers the full 0..255 byte range. |
 
-`sweep` **刻意不走 `dsp::analyze`**：那条路的字节取决于 rustfft 的三角函数，
-跨平台逐位一致没人承诺过。本目录钉的是「重映射 → 平滑 → 取整 → 查表」这条链路，
-用整数造出的 canonical 字节更适合当它的输入；真实 DSP 的字节 golden 由 P1 的
-`core/fixtures/spectrum/` 负责，这里把它当第二份输入一起跑。
+`sweep` **deliberately does not go through `dsp::analyze`**: that path's bytes depend on rustfft's trigonometric functions, and nobody has promised bit-for-bit identical results across platforms. This directory pins the chain "remap → smooth → round → table lookup"; canonical bytes built from integers are a better input for it. The byte golden for real DSP is handled by P1's `core/fixtures/spectrum/`; here it is run as a second input alongside.
 
-## `sweep` 的高频段是空的（读 `expected-draw.json` 时要知道）
+## The high-frequency band of `sweep` is empty (know this when reading `expected-draw.json`)
 
-`synth_spectrum` 的频域行 `decay = 200 − bin·200/96`：**bin ≥ 96 之后只剩抖动**，
-经 `default` 参数组（`minDb = −80` / `maxDb = 40`）重映射后就是 0。按频段均分的
-两款因此在这份输入上有几段是"静止"的：`pulse_rings` 的高频带停在静止半径、
-`ribbons` 靠后的丝带摆幅为零收成中线。它们**仍然各有一条指令**（`ops` 恒为
-5 / 3），静止形态是设计的一部分，不是绘制没接上；逐段几何由
-`source/visualizer/draw.rs` 的 `the_pulse_rings_expand_with_the_bands` /
-`the_ribbons_blend_from_main_to_secondary` 用一帧恒定频谱钉住。
+The frequency-domain row of `synth_spectrum` has `decay = 200 − bin·200/96`: **after bin ≥ 96 only jitter remains**, and after remapping with the `default` parameter group (`minDb = −80` / `maxDb = 40`) it becomes 0. As a result, the two styles that split bands evenly have some segments that are "static" on this input: the high band of `pulse_rings` stays at the rest radius, and the trailing ribbons of `ribbons` have zero swing and collapse to the centre line. They **still each have one instruction** (`ops` is always 5 / 3); the static form is part of the design, not a drawing that failed to connect. Per-segment geometry is pinned by `the_pulse_rings_expand_with_the_bands` / `the_ribbons_blend_from_main_to_secondary` in `source/visualizer/draw.rs`, using a single frame of constant spectrum.
 
-`dots` 是唯一 `ops` 随时刻变化的样式：点阵只画亮起的点与峰值点，
-`sweep` 开头几帧的频谱还没铺满全部列。
+`dots` is the only style whose `ops` change over time: the dot matrix only draws lit dots and peak dots, and in the first few frames of `sweep` the spectrum has not yet filled all columns.
 
-若要覆盖高 bin，应当往 `cases.json` 的 `params` **末尾追加**一组更宽的 dB 窗，
-而不是改 `sweep`（它是 P2 冻结的输入）。
+To cover high bins, append a wider dB window set to the **end** of `params` in `cases.json`, rather than changing `sweep` (it is the input frozen by P2).
 
-## 采样序列与乱序（三个执行器共用的编号）
+## Sample sequence and shuffling (numbering shared by the three executors)
 
-`cases.json` 的 `sequence` 把 (spectra × params × instants) 按书写顺序展开成
-`0 .. length-1`；`shuffle.order` 是它的一个置换，算法是 **splitmix64 +
-Fisher–Yates**（自 `len-1` 递减，`pick = next % (i+1)`，种子写在 `shuffle.seed`），
-与 motion 方案阶段 0 的手法逐字相同。
+The `sequence` in `cases.json` expands (spectra × params × instants) into `0 .. length-1` in the order written; `shuffle.order` is a permutation of it, using **splitmix64 + Fisher–Yates** (counting down from `len-1`, `pick = next % (i+1)`, seed written in `shuffle.seed`), identical word for word to the method in phase 0 of the motion plan.
 
-「乱序采样 == 顺序采样逐位一致」是 source conformance 的**必选项**，不是可选项：
-导出本来就是乱序的（`ccut render --t 7.5` 直接跳帧、全片导出按 stride 分给多个
-worker），源一旦持有增量时钟这条就绿不了。指数平滑天然递推，所以它被钉在 host
-preflight 的整轨派生里，`sample(t)` 只剩一次数组下标查找（ADR-E04 §6.2）。
+"Shuffled sampling == sequential sampling, bit for bit" is a **required** item of source conformance, not optional: export is already out of order (`ccut render --t 7.5` jumps straight to a frame, and full-film export splits by stride across multiple workers), so once the source holds an incremental clock this check can never go green. Exponential smoothing is naturally recursive, so it is pinned to the whole-track derivation in the host preflight, and `sample(t)` is reduced to a single array index lookup (ADR-E04 §6.2).
 
-## 取整规则
+## Rounding rule
 
 ```text
 idx = clamp(floor(t × analysisRate), 0, frameCount - 1)
 ```
 
-不插值、不四舍五入。**实现只有一份**：`ccut_waveform::bcs1::frame_index_at`，
-`Bcs1View::frame_index_at` 与 `VizTrack::frame_index_at` 都转发到它，
-`the_rounding_rule_matches_the_spectrum_format_layer` 逐时刻对拍两条路。
+No interpolation, no rounding up or down. **There is only one implementation**: `ccut_waveform::bcs1::frame_index_at`; `Bcs1View::frame_index_at` and `VizTrack::frame_index_at` both forward to it, and `the_rounding_rule_matches_the_spectrum_format_layer` cross-checks the two paths instant by instant.
 
-## 时域行与频域行的分工
+## Division of work between time-domain and frequency-domain rows
 
-频域行走完整的「重映射 → 平滑 → gain」；**时域行逐字节原样搬运**。依据是本方案
-一路对齐的 Web Audio 语义——`smoothingTimeConstant` 只作用于
-`getByteFrequencyData`，而 dB 窗对一条「静音 ≈ 128」的中心化波形没有意义。
-10 款里只有 `oscilloscope-v1`（`oscilloscope` / `ring_wave`）读时域行。
+The frequency-domain row goes through the full "remap → smooth → gain"; **the time-domain row is carried over byte for byte, unchanged**. The basis is the Web Audio semantics this plan aligns with throughout: `smoothingTimeConstant` applies only to `getByteFrequencyData`, and a dB window makes no sense for a centred waveform where "silence ≈ 128". Of the 10 styles, only `oscilloscope-v1` (`oscilloscope` / `ring_wave`) reads the time-domain row.
 
-## §8 的 GPU 接口约定（冻结保留，visualizer 当前不走）
+## §8 GPU interface conventions (frozen and retained; visualizer does not currently use them)
 
-自 2026-09 重设计起，visualizer 10 款全部是 **CPU 矢量配方**
-（`source/visualizer/recipes/`），没有 WGSL 实现；GPU pass 只跑 progress。
-`expected-track.json` 里没有任何 GPU 数据；但夹具的输入仍按 §8 的接口约定摆着，
-将来加 GPU 声波配方时直接拿来用：
+Since the redesign of 2026-09, all 10 visualizer styles are **CPU vector recipes** (`source/visualizer/recipes/`), with no WGSL implementation; the GPU pass runs only progress. `expected-track.json` contains no GPU data at all, but the fixture input is still laid out according to the §8 interface conventions, so it can be used directly when GPU waveform recipes are added later:
 
-- **§8.1 bind group**：`@group(0)` 变换、`@group(1)` 逐效果标量、
-  `@group(2) @binding(0)` 音频纹理 + `@binding(1)` sampler（linear / clamp-to-edge）。
-- **§8.2 `@group(1)` uniform 顺序冻结**（visualizer 8 项）：
-  `u_time`、`u_mainColor`、`u_secondaryColor`、`u_canvasRes`、`u_dstRes`、
-  `u_colourMultiplier`、`u_clip`、`u_textureSize`。`tests/shader_wgsl.rs` 仍对拍
-  prelude 与 `VisualizerUniforms`。
-- **§8.3 音频纹理**：`R8Unorm`、`w × 2`、**row 0 = 时域、row 1 = 频域、无 flip**。
-  代码侧的冻结点是
-  `ccut_render::source::visualizer::{AUDIO_TEXTURE_ROW_TIME, AUDIO_TEXTURE_ROW_FREQ}`；
-  CPU 配方读行走 `freq_row` / `time_row`，与纹理行同一份换算。
-- **§8.4 频率映射**：48 kHz 的 BCS1 直接对齐 Web Audio，`binWidth == "64"`
-  取最低 64 个 bin（0–3 kHz），`half` 覆盖 0–24 kHz（`VizFrame::freq_window`）。
-- **§8.7 判据**：strict 样式走平坦区 ≤ 2/255、过渡带 ≤ 20%、4× 降采样 SSIM ≥ 0.98
-  三条；visual 样式 SSIM ≥ 0.96；不过 conformance 自动回退 CPU 并在 preflight 的
-  `fallbacks[]` 报出。当前只有 progress 走这条门（`tests/gpu_conformance.rs`）。
+- **§8.1 bind group**: `@group(0)` transform, `@group(1)` per-effect scalars, `@group(2) @binding(0)` audio texture + `@binding(1)` sampler (linear / clamp-to-edge).
+- **§8.2 `@group(1)` uniform order frozen** (visualizer, 8 items):
+  `u_time`, `u_mainColor`, `u_secondaryColor`, `u_canvasRes`, `u_dstRes`, `u_colourMultiplier`, `u_clip`, `u_textureSize`. `tests/shader_wgsl.rs` still cross-checks the prelude against `VisualizerUniforms`.
+- **§8.3 Audio texture**: `R8Unorm`, `w × 2`, **row 0 = time domain, row 1 = frequency domain, no flip**.
+  The code-side freeze point is `ccut_render::source::visualizer::{AUDIO_TEXTURE_ROW_TIME, AUDIO_TEXTURE_ROW_FREQ}`;
+  CPU recipes read rows via `freq_row` / `time_row`, using the same conversion as the texture rows.
+- **§8.4 Frequency mapping**: 48 kHz BCS1 aligns directly with Web Audio; `binWidth == "64"` takes the lowest 64 bins (0–3 kHz), and `half` covers 0–24 kHz (`VizFrame::freq_window`).
+- **§8.7 Criteria**: strict styles must pass three checks: flat region ≤ 2/255, transition band ≤ 20%, 4× downsampled SSIM ≥ 0.98; visual styles need SSIM ≥ 0.96; a style that fails conformance automatically falls back to CPU and is reported in the preflight `fallbacks[]`. Currently only progress goes through this gate (`tests/gpu_conformance.rs`).
 
-## 各消费方怎么接
+## How each consumer hooks in
 
-| 消费方 | 文件 | 比什么 |
+| Consumer | File | Compared against |
 | --- | --- | --- |
-| CPU 绘制 | `expected-draw.json` | 10 款的 DrawOp 指纹，有声与静音每款 `ops > 0` |
-| wasm 预览 | 复用 `expected-draw.json` | wasm 里跑同一批输入，指令流必须逐字节相同 |
-| GPU 声波配方（未来） | `expected-gpu.json` | GPU 输出与 CPU 参照的 §8.7 判据；目前没有这类配方，文件不存在 |
+| CPU drawing | `expected-draw.json` | DrawOp fingerprints for the 10 styles; with sound and in silence, each style has `ops > 0` |
+| wasm preview | Reuses `expected-draw.json` | The same inputs run in wasm; the instruction stream must be byte-identical |
+| GPU waveform recipes (future) | `expected-gpu.json` | §8.7 criteria for GPU output vs. the CPU reference; there are no such recipes yet, so the file does not exist |
 
-### `expected-draw.json` 的两条口径
+### The two rules for `expected-draw.json`
 
-1. **静音仍有画面**。频域行全 0 时每款都画自己的"静止形态"：柱子留
-   `minHeight`、示波器留中线、点阵留底灯、环停在静止半径、丝带收成中线。
-   元素在片头 / 无声段不会从画布上消失，`every_style_is_live_in_the_golden`
-   逐款钉住。
-2. **`aspect: "square"` 取盒内内切正方形**。几何默认表给的是"画幅宽 30% ×
-   画幅高 30%"，在 16:9 上并不是像素正方；配方既然显式声明了 `square`，
-   绘制端就在内切正方形里画，于是圆形类样式（`ring_bars` / `ring_wave` /
-   `pulse_rings`）在任何盒子里都是正圆。三款的几何都收在正方形内，不需要
-   `ClipPath`。
+1. **Silence still has visuals.** When the frequency-domain row is all zeros, each style still draws its own "static form": bars stay at `minHeight`, the oscilloscope stays on the centre line, the dot matrix keeps its base lights, the rings stop at the rest radius, and the ribbons collapse to the centre line.
+   Elements do not disappear from the canvas during the opening / silent sections; `every_style_is_live_in_the_golden` pins this for each style.
+2. **`aspect: "square"` takes the inscribed square of the box.** The default geometry table gives "30% of frame width × 30% of frame height", which is not a square in pixels at 16:9. Since the recipe explicitly declares `square`, the drawing side draws within the inscribed square, so circular styles (`ring_bars` / `ring_wave` / `pulse_rings`) are perfect circles in any box. The geometry of all three styles is contained within the square, so no `ClipPath` is needed.
 
-新增 expected 文件时**不要动 `cases.json`**——输入一改，前面阶段的 golden 全部
-失去可比性。确实需要新输入就往 `spectra` / `params` 末尾追加，让既有编号不动。
+When adding expected files, **do not touch `cases.json`**: change the input and every golden from earlier stages loses comparability. If new input is truly needed, append to the end of `spectra` / `params` so that existing numbering stays unchanged.

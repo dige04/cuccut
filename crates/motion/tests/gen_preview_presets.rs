@@ -5,7 +5,7 @@
 //! How to run (`#[ignore]`; the routine `cargo test` does not write to disk):
 //!
 //! ```sh
-//! cargo test -p ccut-motion --test gen_preview_presets -- --ignored emit_preview_presets_json
+//! cargo test -p motion --test gen_preview_presets -- --ignored emit_preview_presets_json
 //! ```
 //!
 //! The routine gate is `preview_presets_json_is_up_to_date` in the same file: it renders into memory and compares byte for byte.
@@ -71,7 +71,7 @@ fn render() -> String {
 }
 
 #[test]
-#[ignore = "写盘：cargo test -p ccut-motion --test gen_preview_presets -- --ignored"]
+#[ignore = "写盘：cargo test -p motion --test gen_preview_presets -- --ignored"]
 fn emit_preview_presets_json() {
     let path = target_path();
     std::fs::write(&path, render()).unwrap_or_else(|e| panic!("{path:?}: {e}"));
@@ -88,7 +88,7 @@ fn preview_presets_json_is_up_to_date() {
         on_disk,
         render(),
         "vendor/presets.json 与 core/presets/builtin/motion 不同步；\
-         跑 `cargo test -p ccut-motion --test gen_preview_presets -- --ignored`"
+         跑 `cargo test -p motion --test gen_preview_presets -- --ignored`"
     );
 }
 

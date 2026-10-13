@@ -1,6 +1,6 @@
 //! Built-in presets and decimal numbers in documents must be read as correctly rounded doubles.
 //!
-//! serde_json's default fast path may misread a 17-significant-digit number by 1 ULP, so `core/Cargo.toml` enables `float_roundtrip` at the workspace level. Features are merged by the build graph: other crates in `cargo test --workspace` also pull it in, so whether the declaration was dropped cannot be seen there. The build graph of `cargo test -p ccut-motion` contains only this crate and `ccut-core`, so if the declaration is dropped, this test goes red here. The real wasm32 artifact is guarded by `apps/web/tests/unit/render/wasm-float-parse.test.ts`.
+//! serde_json's default fast path may misread a 17-significant-digit number by 1 ULP, so `core/Cargo.toml` enables `float_roundtrip` at the workspace level. Features are merged by the build graph: other crates in `cargo test --workspace` also pull it in, so whether the declaration was dropped cannot be seen there. The build graph of `cargo test -p motion` contains only this crate and `ccut-core`, so if the declaration is dropped, this test goes red here. The real wasm32 artifact is guarded by `apps/web/tests/unit/render/wasm-float-parse.test.ts`.
 
 use std::path::{Path, PathBuf};
 

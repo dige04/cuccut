@@ -44,3 +44,4 @@ export { PackStyle, packStyleReasonText, styleBlock, PACK_STYLE_STILLS_DIR, type
 export { inspectStagedPack, type PackInspection } from './packs/pack-inspect.ts';
 export { parsePackSource, readPackSource, checkStagedPack, type StagedPack } from './packs/pack-source.ts';
 export { PackExporter, type PackExportLibrary } from './packs/pack-export.ts';
+export { PackExamples, ffmpegStillMaker, type PackStillMaker } from './packs/pack-examples.ts';

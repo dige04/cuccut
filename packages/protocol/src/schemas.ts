@@ -878,6 +878,11 @@ export const methodParamSchemas = {
   'packs.choose': PACK_PARAM_SCHEMAS['packs.choose'],
   'packs.setStyle': PACK_PARAM_SCHEMAS['packs.setStyle'],
   'packs.export': PACK_PARAM_SCHEMAS['packs.export'],
+  'packs.openHandle': PACK_PARAM_SCHEMAS['packs.openHandle'],
+  'packs.addExample': PACK_PARAM_SCHEMAS['packs.addExample'],
+  'packs.updateExample': PACK_PARAM_SCHEMAS['packs.updateExample'],
+  'packs.removeExample': PACK_PARAM_SCHEMAS['packs.removeExample'],
+  'packs.restoreExample': PACK_PARAM_SCHEMAS['packs.restoreExample'],
   'media.resolve': mediaTarget,
   'media.playback': z
     .object({ url: z.string().min(1).max(8192), playable: z.array(z.enum(PLAYBACK_CODECS)).max(PLAYBACK_CODECS.length).optional() })

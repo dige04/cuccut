@@ -4,6 +4,12 @@ import { emptyPacks, usePacks } from '../state/packs-store.ts';
 import { emptySkills, useSkills } from '../state/skills-store.ts';
 import { emptyTemplateCatalog, useTemplateCatalog } from '../state/template-catalog-store.ts';
 import {
+  addPackExample,
+  forgetPackFile,
+  packFileUrl,
+  removePackExample,
+  restorePackExample,
+  updatePackExample,
   activePackStyle,
   choosePackStyle,
   clearPackPreview,
@@ -231,5 +237,56 @@ describe('export', () => {
     expect(usePacks.getState().notice).toEqual({ kind: 'exported', dir: '/Users/me/Packs/kit' });
     // Nothing installed changed, so the list is not fetched again.
     expect(usePacks.getState().packs.map((p) => p.id)).toEqual(['a']);
+  });
+});
+
+describe('reference files', () => {
+  const detail = (examples: number, trashId?: string) =>
+    ({
+      pack: summary('news-desk', { name: 'News desk', counts: { templates: 1, skills: 1, library: 0, examples, quickActions: 0 } }),
+      examples: [],
+      ...(trashId ? { trashId } : {}),
+    }) as unknown as PackDetail;
+
+  it('adds, saves, removes and restores through packs.*Example, trimming the fields and keeping the list’s count in step', async () => {
+    usePacks.getState().succeed(list(summary('news-desk', { name: 'News desk' })));
+    let count = 1;
+    const { session, calls } = fakeSession((method) => {
+      if (method === 'packs.addExample') return detail(++count);
+      if (method === 'packs.updateExample') return detail(count);
+      if (method === 'packs.removeExample') return detail(--count, 'trash_123456');
+      if (method === 'packs.restoreExample') return detail(++count);
+      throw new Error(method);
+    });
+    await addPackExample(session, 'news-desk', { path: ' /x/shot.png ', title: ' Shot ', note: '' });
+    expect(calls.at(-1)).toEqual({ method: 'packs.addExample', params: { id: 'news-desk', path: '/x/shot.png', title: 'Shot', note: '' } });
+    expect(usePacks.getState().packs[0]!.counts.examples).toBe(2);
+
+    await updatePackExample(session, 'news-desk', 'examples/shot.png', { title: 'Shot ', note: ' Wide.' });
+    expect(calls.at(-1)?.params).toEqual({ id: 'news-desk', file: 'examples/shot.png', title: 'Shot', note: 'Wide.' });
+
+    const removed = await removePackExample(session, 'news-desk', { file: 'examples/shot.png' });
+    expect(removed.trashId).toBe('trash_123456');
+    expect(usePacks.getState().packs[0]!.counts.examples).toBe(1);
+
+    await restorePackExample(session, 'news-desk', removed.trashId);
+    expect(calls.at(-1)).toEqual({ method: 'packs.restoreExample', params: { id: 'news-desk', trashId: 'trash_123456' } });
+    expect(usePacks.getState().packs[0]!.counts.examples).toBe(2);
+  });
+
+  it('keeps a read handle until it nearly expires, and forgets it when asked or when the file is removed', async () => {
+    let n = 0;
+    const { session, methods } = fakeSession((method) => {
+      if (method === 'packs.openHandle') return { url: `/media/h${++n}/x.png`, expiresAt: new Date(Date.now() + 3_600_000).toISOString() };
+      if (method === 'packs.removeExample') return detail(0, 'trash_123456');
+      throw new Error(method);
+    });
+    expect(await packFileUrl(session, 'news-desk', 'examples/x.png')).toBe('/media/h1/x.png');
+    expect(await packFileUrl(session, 'news-desk', 'examples/x.png')).toBe('/media/h1/x.png');
+    forgetPackFile('news-desk', 'examples/x.png');
+    expect(await packFileUrl(session, 'news-desk', 'examples/x.png')).toBe('/media/h2/x.png');
+    await removePackExample(session, 'news-desk', { file: 'examples/x.png' });
+    expect(await packFileUrl(session, 'news-desk', 'examples/x.png')).toBe('/media/h3/x.png');
+    expect(methods().filter((m) => m === 'packs.openHandle')).toHaveLength(3);
   });
 });

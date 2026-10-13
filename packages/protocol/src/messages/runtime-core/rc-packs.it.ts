@@ -87,4 +87,11 @@ export const it: RcPacksMessages = {
   exportBuiltinTemplate: (p: { id: string }) => `"${p.id}" is a built-in template; built-in templates are on every computer already`,
   exportBuiltinSkill: (p: { id: string }) => `"${p.id}" is a built-in skill; built-in skills are on every computer already`,
   exportTargetInHome: "That folder is inside CucCut's own templates, skills or packs folder. Choose a folder outside it",
+
+  // Reference files (pack-examples)
+  exampleNotFound: (p: { file: string; pack: string }) => `The pack "${p.pack}" has no reference file ${p.file}`,
+  exampleUnsupported: (p: { file: string; extensions: string }) => `${p.file} isn't an image or a video a pack can carry (${p.extensions})`,
+  exampleLimit: (p: { limit: number }) => `A pack holds at most ${p.limit} reference files; remove one first`,
+  exampleTooLarge: (p: { bytes: number; limit: number }) => `With this file the pack would hold ${p.bytes} bytes; a pack holds at most ${p.limit}`,
+  exampleNameTaken: (p: { file: string }) => `${p.file} was added again in the meantime, so the removed copy can't come back`,
 };

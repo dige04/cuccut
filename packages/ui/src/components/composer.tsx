@@ -244,6 +244,8 @@ export interface ComposerProps {
   designSystemAnnotations?: ComposerAnnotations | null;
   /** Above the input box: messages queued to be sent. */
   queue?: ReactNode;
+  /** Above the queue: offers made while the draft is empty, such as the installed packs' quick actions (pack design §2.6). */
+  offers?: ReactNode;
   /** Passed only for the new-session start page (prototype new-agent.jsx `AgentHero`); not passed inside a session, where the input area stays as it is. */
   start?: ComposerStart;
   /** Passed only for the prompt box on the AI tool parameters page (prototype tool-prompt.jsx); the body is held by the tool page and does not go into the session draft. */
@@ -830,6 +832,7 @@ export function Composer(props: ComposerProps) {
 
   return (
     <div ref={wrapRef} className={wrap({ isCompact: compact, isStart: !!start || !!tool })}>
+      {props.offers}
       {queue}
       <input
         ref={filePicker}

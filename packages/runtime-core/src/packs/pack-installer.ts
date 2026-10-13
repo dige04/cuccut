@@ -67,8 +67,11 @@ export interface PackInstallerOptions {
 /** `.trash/<id>/.trash.json`: what a trash folder holds. */
 interface TrashMeta {
   schemaVersion: 1;
-  /** `pack`: a removed pack (restorable); `replaced`: the user's items an install replaced; `install`: an install's scratch space. */
-  kind: 'pack' | 'replaced' | 'install';
+  /**
+   * `pack`: a removed pack (restorable); `replaced`: the user's items an install replaced; `install`: an install's scratch space; `example`: a reference file removed on the
+   * pack page (restored by `PackExamples`).
+   */
+  kind: 'pack' | 'replaced' | 'install' | 'example';
   trashedAt: string;
   packId: string;
   packName: string;
@@ -428,7 +431,7 @@ async function readTrashMeta(dir: string): Promise<TrashMeta | null> {
   try {
     const raw = JSON.parse(await fsp.readFile(path.join(dir, TRASH_META), 'utf8')) as Partial<TrashMeta>;
     if (raw.schemaVersion !== 1 || typeof raw.trashedAt !== 'string' || typeof raw.packId !== 'string' || !PACK_ID_PATTERN.test(raw.packId)) return null;
-    if (raw.kind !== 'pack' && raw.kind !== 'replaced' && raw.kind !== 'install') return null;
+    if (raw.kind !== 'pack' && raw.kind !== 'replaced' && raw.kind !== 'install' && raw.kind !== 'example') return null;
     const ids = (value: unknown) => (Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string' && !v.includes('/') && !v.startsWith('.')) : []);
     return {
       schemaVersion: 1,

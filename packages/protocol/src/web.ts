@@ -82,11 +82,14 @@ export const WEB_DEFAULT_METHODS: readonly string[] = [
   'skills.get',
   'skills.readFile',
   'skills.setEnabled',
-  // Packs (pack spec §8): the list, the pack page, the active style guide and a project's style choice, listed one by one. Inspect, install, remove, restore, export and
-  // editing the guide (`packs.inspect`, `packs.install`, `packs.remove`, `packs.restore`, `packs.export`, `packs.setStyle`) are not exposed: like adding a skill, they
-  // write to the Runtime Home or to an arbitrary folder, read from the network, and decide what text every later agent follows. They are done only in the desktop UI and CLI.
+  // Packs (pack spec §8): the list, the pack page (with handles for its reference stills and videos), the active style guide and a project's style choice, listed one by
+  // one. Inspect, install, remove, restore, export and editing the guide or its reference files (`packs.inspect`, `packs.install`, `packs.remove`, `packs.restore`,
+  // `packs.export`, `packs.setStyle`, `packs.addExample`, `packs.updateExample`, `packs.removeExample`, `packs.restoreExample`) are not exposed: like adding a skill, they
+  // write to the Runtime Home or to an arbitrary folder, read from the network or the disk, and decide what text every later agent follows. They are done only in the
+  // desktop UI and CLI.
   'packs.list',
   'packs.get',
+  'packs.openHandle',
   'packs.active',
   'packs.choose',
 ];
@@ -144,6 +147,7 @@ export const WEB_READ_METHODS: readonly RpcMethod[] = [
   'skills.readFile',
   'packs.list',
   'packs.get',
+  'packs.openHandle',
   'packs.active',
 ];
 

@@ -191,19 +191,7 @@ export class PackStyle {
     const target = path.join(pack.dir, ...file.split('/'));
     if (remove) await fsp.rm(target, { force: true });
     else await writeAtomic(target, text);
-    const style = remove ? '' : file;
-    const manifestFile = path.join(pack.dir, PACK_MANIFEST_FILE);
-    const raw = JSON.parse((await fsp.readFile(manifestFile, 'utf8')).replace(/^﻿/, '')) as Record<string, unknown>;
-    const { files: _index, ...rest } = raw;
-    const manifestText = `${JSON.stringify({ ...rest, style }, null, 2)}\n`;
-    await writeAtomic(manifestFile, manifestText);
-    const record: InstalledPackRecord = {
-      ...pack.record,
-      style: !remove,
-      manifestHash: sha256Text(manifestText),
-      updatedAt: (this.#o.now ? this.#o.now() : new Date()).toISOString(),
-    };
-    await writeAtomic(path.join(pack.dir, PACK_RECORD_FILE), `${JSON.stringify(record, null, 2)}\n`);
+    await rewriteInstalledPack(pack, { style: remove ? '' : file }, { style: !remove }, this.#o.now ? this.#o.now() : new Date());
     return registry.detail(id);
   }
 
@@ -335,8 +323,27 @@ function oneLine(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
 }
 
+/**
+ * Rewrites an installed pack after a change made on its page: `pack.json` with `manifest` merged in, and the record with `record` merged in, a new `manifestHash` and
+ * `updatedAt`. The `files` index of `pack.json` is dropped: the installed folder is no longer what was distributed. The manifest goes first; the record names its digest.
+ */
+export async function rewriteInstalledPack(
+  pack: InstalledPack,
+  manifest: Record<string, unknown>,
+  record: Partial<Pick<InstalledPackRecord, 'style' | 'examples'>>,
+  now: Date,
+): Promise<void> {
+  const manifestFile = path.join(pack.dir, PACK_MANIFEST_FILE);
+  const raw = JSON.parse((await fsp.readFile(manifestFile, 'utf8')).replace(/^\uFEFF/, '')) as Record<string, unknown>;
+  const { files: _index, ...rest } = raw;
+  const manifestText = `${JSON.stringify({ ...rest, ...manifest }, null, 2)}\n`;
+  await writeAtomic(manifestFile, manifestText);
+  const next: InstalledPackRecord = { ...pack.record, ...record, manifestHash: sha256Text(manifestText), updatedAt: now.toISOString() };
+  await writeAtomic(path.join(pack.dir, PACK_RECORD_FILE), `${JSON.stringify(next, null, 2)}\n`);
+}
+
 /** Writes a file through a temporary file beside it and a rename, so a reader never sees half of it. */
-async function writeAtomic(file: string, text: string): Promise<void> {
+export async function writeAtomic(file: string, text: string | Uint8Array): Promise<void> {
   // A dot file, so a temporary file left by a crash is never read as part of the pack.
   const temp = path.join(path.dirname(file), `.${path.basename(file)}.${process.pid}.${Date.now()}.tmp`);
   await fsp.mkdir(path.dirname(file), { recursive: true });

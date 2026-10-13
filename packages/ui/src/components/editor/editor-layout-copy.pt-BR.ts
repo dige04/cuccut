@@ -27,6 +27,7 @@ export const ptBR: EditorLayoutMessages = {
   nothingPicked: 'Nada selecionado. As propriedades de um clipe aparecem aqui, e os controles do dia a dia na barra abaixo do quadro.',
   videoWhole: 'O que vale para o vídeo inteiro — tela, fundo, formato — está em Configurações do vídeo.',
   videoSettings: 'Configurações do vídeo',
+  styleGuide: 'Style guide…',
   videoMenu: 'Vídeo',
   shortcuts: 'Atalhos de teclado',
   more: 'Mais ações',

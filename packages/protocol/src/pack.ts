@@ -128,6 +128,9 @@ export const PACK_ERROR_CODES = [
   'PACK_STYLE_CHANGED',
   'PACK_NETWORK',
   'OFFLINE_STRICT',
+  'PACK_EXAMPLE_NOT_FOUND',
+  'PACK_EXAMPLE_UNSUPPORTED',
+  'PACK_EXAMPLE_LIMIT',
 ] as const;
 export type PackErrorCode = (typeof PACK_ERROR_CODES)[number];
 
@@ -542,6 +545,11 @@ export interface PackRemoveResult extends PackListResult {
   kept: PackItemRef[];
   /** What went to the trash with the pack. */
   moved: { templates: number; skills: number };
+}
+
+/** `packs.removeExample`: the pack page after the removal, and the trash entry that `packs.restoreExample` brings back (kept 24 hours). */
+export interface PackExampleRemoveResult extends PackDetail {
+  trashId: string;
 }
 
 // ---- Style ----

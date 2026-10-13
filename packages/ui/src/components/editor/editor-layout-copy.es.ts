@@ -27,6 +27,7 @@ export const es: EditorLayoutMessages = {
   nothingPicked: 'No hay nada seleccionado. Las propiedades de un clip aparecen aquí y sus controles habituales, en la barra bajo el encuadre.',
   videoWhole: 'Lo que afecta a todo el vídeo — lienzo, fondo, formato — está en Ajustes del vídeo.',
   videoSettings: 'Ajustes del vídeo',
+  styleGuide: 'Style guide…',
   videoMenu: 'Vídeo',
   shortcuts: 'Atajos de teclado',
   more: 'Más acciones',

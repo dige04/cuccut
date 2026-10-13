@@ -2,6 +2,7 @@ import {
   expandQuickAction,
   isPackId,
   PACK_DEFAULT_VERSION,
+  PACK_EXAMPLE_EXTENSIONS,
   PACK_ID_PATTERN,
   PACK_LIMITS,
   PACK_RESERVED_IDS,
@@ -11,6 +12,8 @@ import {
   slugPackId,
   type LibraryEntrySummary,
   type PackActiveStyle,
+  type PackExample,
+  type PackExampleView,
   type PackExportParams,
   type PackFileHit,
   type PackItemState,
@@ -122,6 +125,26 @@ export function styleChoiceOf(key: StyleChoiceKey): string | null {
   return key === 'auto' ? null : key;
 }
 
+/**
+ * The Style guide choice as `packs.active` reports it: the chosen pack, `'none'`, `'auto'`, or `'missing'` when the project chose a pack that has since been deleted (it is
+ * then offered as its own option, so the choice shown is the one stored).
+ */
+export function styleChoiceFromActive(active: PackActiveStyle): StyleChoiceKey {
+  if (active.reason === 'chosen') return active.pack?.id ?? 'auto';
+  if (active.reason === 'chosen-none') return 'none';
+  if (active.reason === 'chosen-missing') return STYLE_CHOICE_MISSING;
+  return 'auto';
+}
+
+/** The key of the "a pack that is no longer installed" option (a pack id never has a colon). */
+export const STYLE_CHOICE_MISSING = ':missing';
+
+/** The Video menu's Style guide options: `styleChoiceOptions`, plus the deleted pack the project still names, when it does. */
+export function styleDialogOptions(packs: readonly PackSummary[], active: PackActiveStyle | null): { key: StyleChoiceKey; label: string }[] {
+  const options = styleChoiceOptions(packs);
+  return active?.reason === 'chosen-missing' ? [...options, { key: STYLE_CHOICE_MISSING, label: P.style.missingChoice }] : options;
+}
+
 /** One quick action offered above the composer, with the pack it belongs to. */
 export interface PackQuickActionItem extends PackQuickAction {
   key: string;
@@ -170,11 +193,12 @@ export function packErrorMessage(error: unknown, action: PackAction): string {
   const details = detailsOf(error);
   const raw = error instanceof Error ? error.message : String(error);
   const issues = Array.isArray(details.issues) ? details.issues.filter((i): i is string => typeof i === 'string') : [];
+  const onPage = action === 'saveStyle' || action === 'addExample' || action === 'saveExample';
   switch (packErrorCode(error)) {
     case 'PACK_NOT_FOUND':
       return E.notFound(str(details.packId) ?? '');
     case 'PACK_SOURCE_NOT_FOUND':
-      return E.sourceNotFound;
+      return action === 'addExample' ? E.exampleFileNotFound : E.sourceNotFound;
     case 'PACK_URL_INVALID':
       return E.urlInvalid;
     case 'PACK_INVALID':
@@ -186,19 +210,25 @@ export function packErrorMessage(error: unknown, action: PackAction): string {
     case 'PACK_UNSUPPORTED_FIELD':
       return E.unsupportedField(issues[0] ?? raw);
     case 'PACK_TOO_LARGE':
-      return E.tooLarge(PACK_LIMITS.files, fileSizeLabel(PACK_LIMITS.totalBytes));
+      return action === 'addExample' ? E.exampleTooLarge(fileSizeLabel(PACK_LIMITS.totalBytes)) : E.tooLarge(PACK_LIMITS.files, fileSizeLabel(PACK_LIMITS.totalBytes));
     case 'PACK_ID_RESERVED':
       return E.idReserved;
     case 'PACK_BLOCKED':
-      return blockedMessage(details) ?? raw;
+      return blockedMessage(details, onPage) ?? raw;
     case 'PACK_STYLE_TOO_LONG':
       return E.styleTooLong(num(details.length) ?? 0, num(details.limit) ?? PACK_LIMITS.styleChars);
     case 'PACK_PREVIEW_EXPIRED':
       return E.previewExpired;
     case 'PACK_RESTORE_CONFLICT':
-      return E.restoreConflict(str(details.id) ?? str(details.packId) ?? '');
+      return action === 'restoreExample' ? E.exampleNameTaken : E.restoreConflict(str(details.id) ?? str(details.packId) ?? '');
     case 'PACK_TRASH_EXPIRED':
-      return E.trashExpired;
+      return action === 'restoreExample' ? E.exampleTrashExpired : E.trashExpired;
+    case 'PACK_EXAMPLE_NOT_FOUND':
+      return E.exampleNotFound;
+    case 'PACK_EXAMPLE_UNSUPPORTED':
+      return E.exampleUnsupported(exampleExtensions().join(', '));
+    case 'PACK_EXAMPLE_LIMIT':
+      return E.exampleLimit(num(details.limit) ?? PACK_LIMITS.examples);
     case 'PACK_EXPORT_TARGET_NOT_EMPTY':
       return E.exportTargetNotEmpty;
     case 'PACK_STYLE_CHANGED':
@@ -231,17 +261,21 @@ const SCAN_REASONS: ReadonlySet<string> = new Set<PackScanReason>([
 ]);
 
 /** `PACK_BLOCKED` names the first flagged line: "line N tells the agent to … (“…”)", or the whole text for `too-long` (line 0). */
-function blockedMessage(details: Record<string, unknown>): string | null {
+function blockedMessage(details: Record<string, unknown>, save = false): string | null {
   const hits = Array.isArray(details.hits) ? details.hits : [];
   const first = (hits[0] ?? details) as Record<string, unknown>;
   const why = str(first.why);
   if (!why || !SCAN_REASONS.has(why)) return null;
-  return blockedSentence({ line: num(first.line) ?? 0, why: why as PackScanReason, text: str(first.text) ?? '' }, num(details.length) ?? 0);
+  return blockedSentence({ line: num(first.line) ?? 0, why: why as PackScanReason, text: str(first.text) ?? '' }, num(details.length) ?? 0, save);
 }
 
-/** "This pack will not install: line N tells the agent to … (“…”)." for one flagged line; `length` is the text's length, for `too-long`. */
-export function blockedSentence(hit: Pick<PackFileHit, 'line' | 'why' | 'text'>, length = 0): string {
+/**
+ * "This pack will not install: line N tells the agent to … (“…”)." for one flagged line; `length` is the text's length, for `too-long`. `save`: a change on the pack page
+ * ("This can't be saved: …").
+ */
+export function blockedSentence(hit: Pick<PackFileHit, 'line' | 'why' | 'text'>, length = 0, save = false): string {
   const why = packScanReasonText(hit.why, length).text;
+  if (save) return hit.line > 0 ? P.errors.blockedSave(hit.line, why, hit.text) : P.errors.blockedSaveWhole(why);
   return hit.line > 0 ? P.errors.blocked(hit.line, why, hit.text) : P.errors.blockedWhole(why);
 }
 
@@ -337,6 +371,51 @@ export function styleEditorState(text: string, saved: string): { count: string; 
     changed,
     reason: !changed ? P.style.unchanged : over ? P.style.tooLong(text.length, PACK_STYLE_MAX_CHARS) : null,
   };
+}
+
+// ---- Reference files ----
+
+/** The extensions a reference file may have (images, then videos), for the file picker and the refusal. */
+export function exampleExtensions(): string[] {
+  return [...PACK_EXAMPLE_EXTENSIONS.image, ...PACK_EXAMPLE_EXTENSIONS.video];
+}
+
+/** A reference file's name on the page: its title, else its file name. */
+export function exampleLabel(example: Pick<PackExample, 'title' | 'file'>): string {
+  return example.title || example.file.slice(example.file.lastIndexOf('/') + 1);
+}
+
+/** The file whose picture the page shows: an image itself, a video's still; null when there is none to show. */
+export function exampleStillPath(example: Pick<PackExampleView, 'kind' | 'file' | 'still' | 'hasStill'>): string | null {
+  if (!example.hasStill) return null;
+  return example.kind === 'image' ? example.file : (example.still ?? null);
+}
+
+/** Why a reference has no picture: a video whose still ffmpeg could not take. null when it has one. */
+export function exampleStillNote(example: Pick<PackExampleView, 'kind' | 'hasStill'>): string | null {
+  return example.kind === 'video' && !example.hasStill ? P.style.noStill : null;
+}
+
+/** Why a title or note can't be sent as it is (too long); null when it can. Surrounding spaces are trimmed on save. */
+function detailsProblem(title: string, note: string): string | null {
+  const t = title.trim();
+  const n = note.trim();
+  if (t.length > PACK_LIMITS.exampleTitle) return P.style.titleTooLong(t.length, PACK_LIMITS.exampleTitle);
+  if (n.length > PACK_LIMITS.exampleNote) return P.style.noteTooLong(n.length, PACK_LIMITS.exampleNote);
+  return null;
+}
+
+/** A reference's title and note while they are edited: whether Save has anything to do, and why it is off. */
+export function exampleEditState(example: Pick<PackExample, 'title' | 'note'>, title: string, note: string): { changed: boolean; reason: string | null } {
+  const changed = title.trim() !== example.title || note.trim() !== example.note;
+  return { changed, reason: !changed ? P.style.exampleUnchanged : detailsProblem(title, note) };
+}
+
+/** The add form: why "Add reference" is off (the pack is full, no file chosen, a field too long); null when it can be added. */
+export function exampleAddReason(draft: { path: string; title: string; note: string }, count: number): string | null {
+  if (count >= PACK_LIMITS.examples) return P.style.exampleLimit(PACK_LIMITS.examples);
+  if (!draft.path.trim()) return P.style.needFile;
+  return detailsProblem(draft.title, draft.note);
 }
 
 // ---- Export ----

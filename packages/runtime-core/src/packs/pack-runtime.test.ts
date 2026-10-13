@@ -177,6 +177,36 @@ describe('packs end to end', () => {
     expect(stale.details).toMatchObject({ code: 'PACK_STYLE_CHANGED' });
   });
 
+  it('reference files: add, open, update, remove with Undo, and the session block lists them', async () => {
+    await boot();
+    await client.request('packs.install', { source: SAMPLE_PACK_DIR, commandId: newId('cmd') });
+    const picked = path.join(dir, 'picked', 'Studio Shot.png');
+    await fs.mkdir(path.dirname(picked), { recursive: true });
+    await fs.copyFile(path.join(SAMPLE_PACK_DIR, 'examples', 'lower-third.png'), picked);
+
+    const added = await client.request('packs.addExample', { id: 'news-desk', path: picked, title: 'Studio', note: 'Warm key light.' });
+    expect(added.examples.map((e) => e.file)).toEqual(['examples/lower-third.png', 'examples/studio-shot.png']);
+    const handle = await client.request('packs.openHandle', { id: 'news-desk', path: 'examples/studio-shot.png' });
+    expect(handle).toMatchObject({ mimeType: 'image/png', fileName: 'studio-shot.png' });
+    expect((await rejection(client.request('packs.openHandle', { id: 'news-desk', path: 'STYLE.md' }))).details).toMatchObject({
+      code: 'PACK_EXAMPLE_NOT_FOUND',
+    });
+
+    const updated = await client.request('packs.updateExample', { id: 'news-desk', file: 'examples/studio-shot.png', note: 'Warm key light, dark set.' });
+    expect(updated.examples[1]).toMatchObject({ title: 'Studio', note: 'Warm key light, dark set.' });
+
+    const { project } = await client.request('projects.create', { name: 'Studio news' });
+    const { conversation } = await client.request('conversations.create', { projectId: project.id });
+    await client.request('conversations.send', { conversationId: conversation.id, text: 'Go', commandId: newId('cmd') });
+    const session = await until(() => driver.sessions[0]);
+    expect(session.options.developerInstructions ?? '').toContain('- .ccut/style/news-desk/studio-shot.png — Studio: Warm key light, dark set.');
+
+    const removed = await client.request('packs.removeExample', { id: 'news-desk', file: 'examples/lower-third.png' });
+    expect(removed.examples.map((e) => e.file)).toEqual(['examples/studio-shot.png']);
+    const restored = await client.request('packs.restoreExample', { id: 'news-desk', trashId: removed.trashId });
+    expect(restored.examples.map((e) => e.file)).toEqual(['examples/lower-third.png', 'examples/studio-shot.png']);
+  });
+
   it('install from a source in one call; installing again updates in place and reuses the library entries', async () => {
     await boot();
     const first = await client.request('packs.install', { source: SAMPLE_PACK_DIR, commandId: newId('cmd') });

@@ -114,6 +114,7 @@ import type {
   PackChangeResult,
   PackChooseResult,
   PackDetail,
+  PackExampleRemoveResult,
   PackExportParams,
   PackExportResult,
   PackListResult,
@@ -1144,17 +1145,25 @@ export interface PackRpcMethods {
   'packs.restore': { params: { trashId: string }; result: PackChangeResult };
   /** Save the style guide. Scanned like an installed one (`PACK_BLOCKED`, `PACK_STYLE_TOO_LONG`); `expectedHash` guards against a newer save (`PACK_STYLE_CHANGED`). */
   'packs.setStyle': { params: { id: string; text: string; expectedHash?: string }; result: PackDetail };
-  /** Add a reference image or video from a local file; a video gets a still when ffmpeg is there. */
+  /**
+   * Add a reference image or video from a local file, copied into the pack's `examples/`; a video gets a still when ffmpeg is there (without it, none). The title and note
+   * are scanned like the guide (`PACK_BLOCKED`). Refusals: `PACK_SOURCE_NOT_FOUND`, `PACK_EXAMPLE_UNSUPPORTED` (not an image or video), `PACK_EXAMPLE_LIMIT` (already 12),
+   * `PACK_TOO_LARGE` (the pack would pass its size limit).
+   */
   'packs.addExample': { params: { id: string; path: string; title?: string; note?: string }; result: PackDetail };
+  /** Change a reference file's title or note (scanned like the guide). Unknown file: `PACK_EXAMPLE_NOT_FOUND`. */
   'packs.updateExample': { params: { id: string; file: string; title?: string; note?: string }; result: PackDetail };
-  'packs.removeExample': { params: { id: string; file: string }; result: PackDetail };
+  /** Remove a reference file at once: it and its still go to the trash for 24 hours, and `trashId` is the Undo (`packs.restoreExample`). */
+  'packs.removeExample': { params: { id: string; file: string }; result: PackExampleRemoveResult };
+  /** Undo `packs.removeExample`: the file comes back where it was. Purged: `PACK_TRASH_EXPIRED`; its name taken meanwhile, or 12 already there: `PACK_RESTORE_CONFLICT`. */
+  'packs.restoreExample': { params: { id: string; trashId: string }; result: PackDetail };
   /** Write a pack folder from the user's own templates, skills, library items, quick actions and an installed pack's style guide, with the `files` index. */
   'packs.export': { params: PackExportParams; result: PackExportResult };
 }
 
 /**
  * The `packs.*` methods the Runtime handles: listing, the pack page, inspect, install, remove and restore, the active style guide, the project's choice, editing the guide
- * and export. Reference files join `RpcMethods` together with their handlers.
+ * and its reference files, and export.
  */
 export type PackRpcMethodsHandled = Pick<
   PackRpcMethods,
@@ -1168,6 +1177,11 @@ export type PackRpcMethodsHandled = Pick<
   | 'packs.choose'
   | 'packs.setStyle'
   | 'packs.export'
+  | 'packs.openHandle'
+  | 'packs.addExample'
+  | 'packs.updateExample'
+  | 'packs.removeExample'
+  | 'packs.restoreExample'
 >;
 
 /** The location of a file (or video directory): a Space entry, or a relative path in a session working directory or project directory. */

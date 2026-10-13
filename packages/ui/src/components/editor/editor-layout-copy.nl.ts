@@ -27,6 +27,7 @@ export const nl: EditorLayoutMessages = {
   nothingPicked: 'Niets gekozen. De eigenschappen van een clip verschijnen hier, de dagelijkse bediening in de balk onder het beeld.',
   videoWhole: 'Wat voor de hele video geldt – canvas, achtergrond, formaat – staat in Video-instellingen.',
   videoSettings: 'Video-instellingen',
+  styleGuide: 'Style guide…',
   videoMenu: 'Video',
   shortcuts: 'Sneltoetsen',
   more: 'Meer acties',

@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from 'react';
-import type { PackDetail, PackExampleView } from '@cuccut/protocol';
-import { Check, Film, Image as ImageIcon, LoaderCircle } from 'lucide-react';
+import type { PackDetail } from '@cuccut/protocol';
+import { Check, LoaderCircle } from 'lucide-react';
 import { cn } from 'cn';
 import { Button } from '../../../cc/ui/button.tsx';
 import { Textarea } from '../../../cc/ui/textarea.tsx';
@@ -9,6 +9,7 @@ import { useRuntime } from '../../../runtime/context.tsx';
 import { setPackStyle } from '../../../runtime/pack-commands.ts';
 import { PACKS_COPY } from '../packs-copy.ts';
 import { PanelHeading } from '../settings-ui.tsx';
+import { PackExamples } from './pack-examples.tsx';
 import { ErrorLine } from './packs-ui.tsx';
 
 const S = () => PACKS_COPY.style;
@@ -20,7 +21,8 @@ const S = () => PACKS_COPY.style;
  * as `cuccut packs style`, with the digest the page read, so a guide saved elsewhere meanwhile is not overwritten. A
  * refused save names the flagged line. In a browser the guide is shown read-only and the field says why.
  *
- * Reference videos are listed here; adding, editing and removing them is the reference-file editor's job.
+ * The reference videos follow the guide (`PackExamples`): each with its still, title and note, added, edited and
+ * removed (with Undo) here.
  */
 export function StyleEditor({ detail, web, onSaved }: { detail: PackDetail; web: boolean; onSaved(detail: PackDetail): void }) {
   const runtime = useRuntime();
@@ -101,35 +103,7 @@ export function StyleEditor({ detail, web, onSaved }: { detail: PackDetail; web:
         </p>
         <ErrorLine>{error}</ErrorLine>
       </div>
-      <References examples={detail.examples} />
+      <PackExamples detail={detail} web={web} onChange={onSaved} />
     </section>
-  );
-}
-
-/** The reference files: what a finished video in this style looks like, and what to take from it. */
-function References({ examples }: { examples: PackExampleView[] }) {
-  return (
-    <div className="flex flex-col gap-2">
-      <h4 className="m-0 text-sm font-medium text-foreground">{S().references}</h4>
-      {examples.length ? (
-        <ul className="m-0 flex list-none flex-col gap-2 p-0">
-          {examples.map((example) => {
-            const Icon = example.kind === 'video' ? Film : ImageIcon;
-            return (
-              <li key={example.file} className="flex items-start gap-3 rounded-2xl bg-foreground/[0.04] px-3 py-2.5">
-                <Icon aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                <div className="flex min-w-0 flex-col gap-0.5">
-                  <span className="text-sm text-foreground [overflow-wrap:anywhere]">{example.title || example.file}</span>
-                  {example.note ? <span className="text-xs text-muted-foreground [overflow-wrap:anywhere]">{example.note}</span> : null}
-                  <span className="font-mono text-[0.7rem] text-muted-foreground/80 [overflow-wrap:anywhere]">{example.file}</span>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      ) : (
-        <p className="m-0 text-sm text-muted-foreground">{S().noReferences}</p>
-      )}
-    </div>
   );
 }

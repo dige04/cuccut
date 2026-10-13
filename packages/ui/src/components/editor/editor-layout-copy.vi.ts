@@ -27,6 +27,7 @@ export const vi: EditorLayoutMessages = {
   nothingPicked: 'Chưa chọn gì. Thuộc tính của clip sẽ hiện ở đây, còn các thao tác thường dùng nằm trên thanh dưới khung hình.',
   videoWhole: 'Những gì thuộc về cả video — khung hình, nền, định dạng — nằm trong Cài đặt video.',
   videoSettings: 'Cài đặt video',
+  styleGuide: 'Style guide…',
   videoMenu: 'Video',
   shortcuts: 'Phím tắt',
   more: 'Thao tác khác',

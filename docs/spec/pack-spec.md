@@ -290,13 +290,35 @@ Editing the guide (`packs.setStyle`) is scanned like an installed guide (`PACK_B
 (`PACK_STYLE_CHANGED`). Empty text removes the guide; a pack without one gets `STYLE.md`, named in its `pack.json`, and the
 installed `pack.json` loses its `files` index, since the folder no longer matches what was distributed.
 
+### 7.1 Reference files
+
+The pack page edits an installed pack's reference images and videos (`packs.addExample`, `packs.updateExample`,
+`packs.removeExample`, `packs.restoreExample`). Each change rewrites the installed `pack.json` (without its `files` index) and the
+record, as editing the guide does, and runs one at a time with installs and removals, so export and the session block see it.
+
+- **Add** copies a local file into `examples/` under a clean name (lowercase letters, digits, dots and dashes; `-2`, `-3`… when
+  the name is taken, never replacing a file). The kind comes from the extension (§3.2); anything else is
+  `PACK_EXAMPLE_UNSUPPORTED`. A pack holds at most 12 (`PACK_EXAMPLE_LIMIT`), and the installed folder at most 200 MiB with the
+  file (`PACK_TOO_LARGE`). A missing file is `PACK_SOURCE_NOT_FOUND`.
+- **A video's still** is one frame about a second in (the first frame for a shorter video), at most 1280 pixels wide, written as
+  `examples/<file>.jpg` by the ffmpeg CucCut finds (`CUCCUT_FFMPEG`, else the login shell's `PATH`). Without ffmpeg, or when it
+  can't read the video, the reference is added without a still; the pack page says so, and the session block lists it by title
+  and note.
+- **Titles and notes** are scanned like the guide (§5): a flagged line refuses the change with `PACK_BLOCKED`
+  (`file: pack.json#examples[n].title` or `.note`).
+- **Remove** acts at once: the file and its still move to `<home>/packs/.trash/<trashId>/` (purged after 24 hours with the rest of
+  the trash), and the result carries `trashId`. **Restore** puts them back at their old place in the list; a purged entry is
+  `PACK_TRASH_EXPIRED`, a name taken in the meantime `PACK_RESTORE_CONFLICT`.
+- **`packs.openHandle`** issues a short-lived read handle for a reference file or its still, and for nothing else in the pack
+  (`PACK_EXAMPLE_NOT_FOUND`); the browser client may use it to show the stills.
+
 ## 8. Methods and errors
 
 | Method | Web |
 | --- | --- |
 | `packs.list`, `packs.get`, `packs.openHandle`, `packs.active` | read |
 | `packs.choose` | default |
-| `packs.inspect`, `packs.install`, `packs.remove`, `packs.restore`, `packs.setStyle`, `packs.addExample`, `packs.updateExample`, `packs.removeExample`, `packs.export` | no |
+| `packs.inspect`, `packs.install`, `packs.remove`, `packs.restore`, `packs.setStyle`, `packs.addExample`, `packs.updateExample`, `packs.removeExample`, `packs.restoreExample`, `packs.export` | no |
 
 Parameters and results are in `PackRpcMethods` (`methods.ts`) and `PACK_PARAM_SCHEMAS` (`pack-schemas.ts`).
 
@@ -316,12 +338,15 @@ Errors carry `details.code`:
 | `PACK_BLOCKED` | `invalid-request` | A blocking scan hit (§5), with `{ file, line, why }` |
 | `PACK_STYLE_TOO_LONG` | `invalid-request` | A style guide over 4000 characters |
 | `PACK_PREVIEW_EXPIRED` | `conflict` | A preview token older than 30 minutes |
-| `PACK_RESTORE_CONFLICT` | `conflict` | Restore finds the id taken |
-| `PACK_TRASH_EXPIRED` | `conflict` | Restore after the trash was purged |
+| `PACK_RESTORE_CONFLICT` | `conflict` | Restore finds the id (or a reference file's name) taken |
+| `PACK_TRASH_EXPIRED` | `conflict` | Restore (of a pack or a reference file) after the trash was purged |
 | `PACK_EXPORT_TARGET_NOT_EMPTY` | `conflict` | Export into a folder with other files |
 | `PACK_STYLE_CHANGED` | `conflict` | `packs.setStyle` with an outdated `expectedHash` |
 | `OFFLINE_STRICT` | `conflict` | A network source in strict offline mode |
 | `PACK_NETWORK` | `conflict` | The network failed, GitHub's rate limit is used up, or a host answered with an error |
+| `PACK_EXAMPLE_NOT_FOUND` | `not-found` | The pack has no reference file (or still) at that path (§7.1) |
+| `PACK_EXAMPLE_UNSUPPORTED` | `invalid-request` | A reference file that is not an image or a video by its extension |
+| `PACK_EXAMPLE_LIMIT` | `invalid-request` | Adding (or restoring) a reference to a pack that already has 12 |
 
 ### 8.1 Agent tools and the CLI
 

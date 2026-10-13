@@ -478,6 +478,11 @@ describe('Web 服务', () => {
       code: 'not-found',
       details: { code: 'PACK_NOT_FOUND' },
     });
+    // Handles for the reference files are open too (the pack page shows their stills).
+    expect(details(await page.request('packs.openHandle', { id: 'news-desk', path: 'examples/lower-third.png' }).catch((e: unknown) => e))).toMatchObject({
+      code: 'not-found',
+      details: { code: 'PACK_NOT_FOUND' },
+    });
     // The active style guide and a project's choice are open too (the Video menu's Style guide).
     expect(details(await page.request('packs.active', { projectId: 'prj_none' }).catch((e: unknown) => e))).toMatchObject({
       code: 'not-found',
@@ -536,6 +541,10 @@ describe('Web 服务', () => {
       ['packs.remove', { id: 'news-desk' }],
       ['packs.restore', { trashId: 'abcdefgh12345678' }],
       ['packs.setStyle', { id: 'news-desk', text: 'Calm.' }],
+      ['packs.addExample', { id: 'news-desk', path: '/tmp/x.png' }],
+      ['packs.updateExample', { id: 'news-desk', file: 'examples/x.png', title: 'X' }],
+      ['packs.removeExample', { id: 'news-desk', file: 'examples/x.png' }],
+      ['packs.restoreExample', { id: 'news-desk', trashId: 'abcdefgh12345678' }],
       ['packs.export', { dir: '/tmp/x-pack', manifest: { id: 'x-pack', name: 'X' }, templates: [], skills: [], library: [], quickActions: [] }],
     ];
     let forbidden = 0;

@@ -59,6 +59,7 @@ import { skillMethods } from './skills/skill-methods.ts';
 import type { SkillCatalog } from './skills/skill-catalog.ts';
 import type { SkillInstaller } from './skills/skill-installer.ts';
 import { packMethods } from './packs/pack-methods.ts';
+import type { PackExamples } from './packs/pack-examples.ts';
 import type { PackExporter } from './packs/pack-export.ts';
 import type { PackInstaller } from './packs/pack-installer.ts';
 import type { PackRegistry } from './packs/pack-registry.ts';
@@ -123,8 +124,8 @@ export interface HandlerDeps {
   /** Agent skill directory and install action (§3.8, §12.9). */
   skills: SkillCatalog;
   skillInstaller: SkillInstaller;
-  /** Installed packs, their install actions, the active style guide with each project's choice, and export (pack spec §6–§8). */
-  packs: { registry: PackRegistry; installer: PackInstaller; style: PackStyle; exporter: PackExporter };
+  /** Installed packs, their install actions, the active style guide with each project's choice, reference files, and export (pack spec §6–§8). */
+  packs: { registry: PackRegistry; installer: PackInstaller; style: PackStyle; exporter: PackExporter; examples: PackExamples };
   /** Fonts downloaded on demand (§9.1). */
   fonts: FontService;
   /** Import and preview of code compositions (§8, `compositions.*`). A service shared with the tools. */
@@ -556,7 +557,7 @@ export function createHandlers({
       ...externalToolMethods(() => externalTools),
       ...templateMethods({ templates, media, harness, skills, slideAnnotationsOf, designAnnotationsOf, designSystemAnnotationsOf }),
       ...skillMethods({ skills, installer: skillInstaller }),
-      ...packMethods(packs),
+      ...packMethods({ ...packs, media }),
       ...catalogMethods(toolCatalog, agentSkillsDir === undefined ? {} : { agentSkillsDir: () => agentSkillsDir }),
       ...toolCatalogueMethods({
         space,

@@ -238,6 +238,7 @@ export const PACK_PARAM_SCHEMAS = {
     })
     .strict(),
   'packs.removeExample': z.object({ id: packId, file: packPath }).strict(),
+  'packs.restoreExample': z.object({ id: packId, trashId: token }).strict(),
   'packs.export': z
     .object({
       dir: absolutePath,

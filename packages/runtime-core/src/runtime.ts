@@ -116,6 +116,7 @@ import { PackRegistry } from './packs/pack-registry.ts';
 import { PackPreviews } from './packs/pack-previews.ts';
 import { PackInstaller, type PackLibrary } from './packs/pack-installer.ts';
 import { PackStyle } from './packs/pack-style.ts';
+import { ffmpegStillMaker, PackExamples } from './packs/pack-examples.ts';
 import { PackExporter } from './packs/pack-export.ts';
 import { skillIndexBlock } from './skills/skill-brief.ts';
 import { aiToolDefinition } from './ai-tools/ai-tool-wiring.ts';
@@ -709,6 +710,13 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       },
       exclusive: (run) => packInstaller.exclusive(run),
     });
+    // Reference files on the pack page (pack spec §7.3): a video's still is taken with the ffmpeg found through the login shell's PATH (or CUCCUT_FFMPEG); without one
+    // the reference is added without a still.
+    const packExamples = new PackExamples({
+      registry: packRegistry,
+      still: ffmpegStillMaker(async () => process.env.CUCCUT_FFMPEG || (await findOnPath('ffmpeg', (await toolEnv()).PATH ?? ''))),
+      exclusive: (run) => packInstaller.exclusive(run),
+    });
     // At the start of each native session, the guidance gets the index of enabled skills, then the active pack's style guide (pack spec §7). A guide that can't be read
     // is left out rather than holding up the session.
     const grants = new AgentGrants(
@@ -996,7 +1004,7 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       templates,
       skills,
       skillInstaller,
-      packs: { registry: packRegistry, installer: packInstaller, style: packStyle, exporter: packExporter },
+      packs: { registry: packRegistry, installer: packInstaller, style: packStyle, exporter: packExporter, examples: packExamples },
       fonts,
       // The code view (§8): the UI's `compositions.*` and the tools share the same service and host.
       compositions,

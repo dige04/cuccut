@@ -56,7 +56,7 @@ export const zhHant: ServicesMcpMessages = {
     skills_read: '讀取 Skill',
     library_list: '列出資料庫',
     library_show: '查看資料庫項目',
-    download: '從連結下載',
+    download: '從連結下載', publications_list: 'List publications', publications_inspect: 'View publication', publications_prepare: 'Prepare publications', publications_update: 'Edit publication', publications_reschedule: 'Move publication', publications_slots: 'Plan publishing times', publications_reserve: 'Reserve publishing times', publications_propose_copy: 'Suggest publication text',
   },
   gates: {
     answer: '直接回應',

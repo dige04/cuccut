@@ -323,6 +323,15 @@ export class PublishingService {
 
   /** Calendar rows of civil days `from`..`to` in the workspace timezone; filters apply before pagination. */
   calendar(q: PublishingCalendarParams): PublishingCalendarResult {
+    const rows = this.calendarRows(q);
+    const offset = q.offset ?? 0;
+    const limit = Math.min(q.limit ?? PUBLISHING_CALENDAR_MAX_LIMIT, PUBLISHING_CALENDAR_MAX_LIMIT);
+    const page = rows.slice(offset, offset + limit);
+    return { publications: page, total: rows.length, nextOffset: offset + page.length < rows.length ? offset + page.length : null };
+  }
+
+  /** Every calendar row matching the query, before pagination (the agent tools filter by video visibility first, then paginate). */
+  calendarRows(q: Omit<PublishingCalendarParams, 'offset' | 'limit'>): PublicationRow[] {
     if (!isCivilDate(q.from) || !isCivilDate(q.to) || q.to < q.from || civilDaySpan(q.from, q.to) > PUBLISHING_CALENDAR_MAX_DAYS) {
       throw invalid(RP.calendarRange(), 'CALENDAR_RANGE');
     }
@@ -347,10 +356,7 @@ export class PublishingService {
       .sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.id.localeCompare(b.id)))
       .map((p) => this.row(p))
       .filter((row) => !statuses || statuses.has(row.status));
-    const offset = q.offset ?? 0;
-    const limit = Math.min(q.limit ?? PUBLISHING_CALENDAR_MAX_LIMIT, PUBLISHING_CALENDAR_MAX_LIMIT);
-    const page = rows.slice(offset, offset + limit);
-    return { publications: page, total: rows.length, nextOffset: offset + page.length < rows.length ? offset + page.length : null };
+    return rows;
   }
 
   /** Finished MP4 exports of a video that can be pinned. */

@@ -204,6 +204,24 @@ export class ServiceScope implements ToolScope<ServiceAccess> {
     return opened;
   }
 
+  /** The videoId of an in-scope video, without opening it (publishing tools). */
+  async videoIdOf(video: string, access: ServiceAccess): Promise<Id> {
+    return (await this.#locate(video, access)).videoId;
+  }
+
+  /** Which of `videoIds` are in scope: in the access policy and in a registered project (one read-only scan of the projects). */
+  async visibleVideoIds(access: ServiceAccess, videoIds: readonly Id[]): Promise<Set<Id>> {
+    const wanted = new Set(videoIds.filter((videoId) => inPolicy(videoId, access.policy)));
+    const visible = new Set<Id>();
+    if (!wanted.size) return visible;
+    for (const project of (await this.#projects()).values()) {
+      const found = await this.#scanProject(project).catch(() => null);
+      for (const video of found?.videos ?? []) if (wanted.has(video.videoId)) visible.add(video.videoId);
+      if (visible.size === wanted.size) break;
+    }
+    return visible;
+  }
+
   /** `importAsset.path` is relative to the project directory containing the video, and must be a file inside that project directory (§12.8). */
   importBase(_access: ServiceAccess, opened: VideoOpenResult): { cwd: string; confine: string | null } {
     const project = this.#deps.harness.listProjects().find((p) => p.id === opened.ref.source.projectId);

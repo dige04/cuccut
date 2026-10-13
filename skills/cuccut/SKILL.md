@@ -189,7 +189,16 @@ These pages are copies of the built-in skills as shipped with this skill; `cuccu
    When nothing else tells you the language, use the user's UI language from `<cuccut-editor-context>`.
 <!-- /surface -->
 
-## 6. Delivery
+## 6. Publishing
+
+The publishing calendar plans releases of finished videos: one publication is one release of one video to several accounts, each with its own text, format and time. Read it with {{tool:publications_list}} and {{tool:publications_inspect}}; prepare releases with {{tool:publications_prepare}}, write their text with {{tool:publications_update}} (or leave a suggestion for the owner with {{tool:publications_propose_copy}}), and plan times with {{tool:publications_slots}} and {{tool:publications_reserve}}.
+
+- **Only send a publication the owner authorized.** Sending ({{tool:publications_send}}) is refused with `AUTHORIZATION_REQUIRED` until the owner authorizes that exact revision in CucCut, and any later change voids it. Do not try to work around it; ask the owner.
+- **Never claim it is published.** A reserved time is local, and a by-hand post waits for the owner to post it in the network's app and record what happened. Report the delivery state the tools give, not what you expect.
+- **Unknown results need the owner** to record what happened before any retry. Recording results, accounts, connections and the schedule are the owner's, in CucCut: tell them what to do there.
+- Every write names the `revision` you read; on `PUBLICATION_CONFLICT`, read the publication again and decide from the new state.
+
+## 7. Delivery
 
 When done, report four things:
 

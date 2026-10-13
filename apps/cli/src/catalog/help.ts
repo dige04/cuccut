@@ -24,6 +24,7 @@ const NOUN_ORDER = [
   'artifacts',
   'skills',
   'library',
+  'publications',
 ];
 
 /** Line limit for the one-screen help (§5.7). */
@@ -54,7 +55,7 @@ export function renderMainHelp(tools: readonly CatalogTool[], admin: readonly Ad
   out.push(M.helpObjects);
   const nouns = ordered([...tree.nouns.keys()], NOUN_ORDER);
   const nounWidth = Math.max(...nouns.map((name) => name.length)) + 3;
-  for (const noun of nouns) out.push(`  ${noun.padEnd(nounWidth)}${[...tree.nouns.get(noun)!.keys()].join(' · ')}`);
+  for (const noun of nouns) out.push(`  ${noun.padEnd(nounWidth)}${fitVerbs([...tree.nouns.get(noun)!.keys()], WIDTH - nounWidth - 2)}`);
 
   out.push(M.helpAdmin);
   const adminWords = admin.map((entry) => (entry.verbs?.length ? `${entry.name} ${shortVerbs(entry.verbs)}` : entry.name));
@@ -67,6 +68,19 @@ export function renderMainHelp(tools: readonly CatalogTool[], admin: readonly Ad
   out.push(`  ${'runtime ensure|status|stop · version'}`);
   out.push(`  ${M.helpGlobalFlags}`, `  ${M.helpJobFlags}`);
   return out.join('\n');
+}
+
+/** A noun group's verbs on one line: as many as fit in `width`, then an ellipsis (`help <noun>` lists them all). */
+function fitVerbs(verbs: readonly string[], width: number): string {
+  const all = verbs.join(' · ');
+  if (displayWidth(all) <= width) return all;
+  let line = '';
+  for (const verb of verbs) {
+    const next = line ? `${line} · ${verb}` : verb;
+    if (displayWidth(`${next} · …`) > width) break;
+    line = next;
+  }
+  return `${line} · …`;
 }
 
 /** `models configure|accounts|…`: lists at most four, the rest with an ellipsis. */

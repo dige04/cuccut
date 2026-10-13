@@ -35,8 +35,9 @@ export const MCP_DEFAULT_PORT = 47620;
  * Interface version of the MCP service: tool names and parameters are an external contract; breaking changes bump this version (`serverInfo.version` and `cuccut.interfaceVersion`).
  * `2`: the exposed list is now derived from the tool catalog's `surfaces`; `exports_create` → `export`, `link_import_start` → `download`,
  * `models_synthesize_speech` → `speak`, `models_generate_image` → `image`, `skill_read` → `skills_read`, and `videos_create` adds `project`.
+ * `3`: the publishing tools (`publications_*`, design m2-publishing §5).
  */
-export const MCP_INTERFACE_VERSION = '2';
+export const MCP_INTERFACE_VERSION = '3';
 
 /**
  * Effect of a tool catalog entry (architecture design §3.5): `query` is read-only; `mutation` changes state (it goes on the undo stack or writes files); `job` returns a `jobId` immediately and the result comes later;
@@ -101,6 +102,15 @@ export const MCP_SERVICE_TOOL_NAMES: readonly McpServiceTool[] = [
   { name: 'library_list', title: 'List the user library', effect: 'query' },
   { name: 'library_show', title: 'Show a user library entry', effect: 'query' },
   { name: 'download', title: 'Download from link', effect: 'job' },
+  // Publishing (design m2-publishing §5): read, prepare, edit and plan; pinning, approving, sending and archiving stay off MCP.
+  { name: 'publications_list', title: 'List publications', effect: 'query' },
+  { name: 'publications_inspect', title: 'Inspect publication', effect: 'query' },
+  { name: 'publications_prepare', title: 'Prepare publications', effect: 'mutation' },
+  { name: 'publications_update', title: 'Update publication', effect: 'mutation' },
+  { name: 'publications_reschedule', title: 'Reschedule publication', effect: 'mutation' },
+  { name: 'publications_slots', title: 'Plan publishing times', effect: 'query' },
+  { name: 'publications_reserve', title: 'Reserve publishing times', effect: 'mutation' },
+  { name: 'publications_propose_copy', title: 'Propose publication text', effect: 'mutation' },
 ];
 /** Default port (loopback) of the model API service, next to the MCP service. */
 export const MODEL_API_DEFAULT_PORT = 47621;

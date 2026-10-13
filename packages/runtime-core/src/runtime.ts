@@ -76,6 +76,7 @@ import { ModelInstallTools } from './agent-tools/model-install-tools.ts';
 import { ExportService } from './exports/export-service.ts';
 import { PublishingService } from './publishing/publishing-service.ts';
 import { runtimePublishingVideos } from './publishing/publishing-videos.ts';
+import { PublishingTools } from './agent-tools/publishing-tools.ts';
 import { FontService } from './fonts/font-service.ts';
 import type { FontCatalogue } from './fonts/font-catalogue.ts';
 import type { FontDownloadOptions } from './fonts/font-download.ts';
@@ -772,6 +773,8 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
         new DesignTools({ scope: toolScope, design: slides }),
         // Design systems in a session (docs/design/canvas §10.5): structure validation and material import. Storage comes from the same editor service.
         new DesignSystemTools({ scope: toolScope, designSystem: slides }),
+        // Publishing (design m2-publishing §5): the same service as the UI's `publishing.*` methods; visibility follows the scope's videos.
+        new PublishingTools({ publishing, scope: toolScope }),
       ];
     };
     // The session's tool bridge and the gateway's `catalog.call` (terminal) share the same tool instances. `ScopeRouter` routes by the subject's kind to the session's scope or the terminal's scope (the user themselves, with relative paths resolved against cwd). Each of the two surfaces is a view of this tool set (`surface`).

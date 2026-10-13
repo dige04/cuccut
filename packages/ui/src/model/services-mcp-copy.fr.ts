@@ -57,7 +57,7 @@ export const fr: ServicesMcpMessages = {
     skills_read: "Lire le Skill",
     library_list: "Lister la bibliothèque",
     library_show: "Voir l’élément de bibliothèque",
-    download: "Télécharger depuis un lien",
+    download: "Télécharger depuis un lien", publications_list: 'List publications', publications_inspect: 'View publication', publications_prepare: 'Prepare publications', publications_update: 'Edit publication', publications_reschedule: 'Move publication', publications_slots: 'Plan publishing times', publications_reserve: 'Reserve publishing times', publications_propose_copy: 'Suggest publication text',
   },
   gates: {
     answer: "Répond directement",

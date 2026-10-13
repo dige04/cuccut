@@ -193,6 +193,30 @@ export class LocalScope implements ToolScope<LocalAccess> {
     }
   }
 
+  /** The videoId of a video named by directory (absolute or relative to cwd), videoId or Space entry id, without opening it. */
+  async videoIdOf(video: string, access: LocalAccess): Promise<Id> {
+    const ref = this.#deps.videos.ref(video);
+    if (ref) return ref.videoId;
+    const asDir = await realDirectoryOrNull(path.resolve(access.principal.cwd, video));
+    const dir = asDir ?? (await this.#dirOfVideoId(video, access.principal));
+    if (dir) {
+      const seen = this.#deps.videos.openRefs().find((item) => item.path === dir) ?? (await this.#deps.videos.peek(dir).catch(() => null));
+      if (seen) return seen.videoId;
+      throw videoNotFound(video);
+    }
+    const entry = this.#deps
+      .space()
+      .videos()
+      .find((v) => v.entryId === video);
+    if (entry?.videoId) return entry.videoId;
+    throw videoNotFound(video);
+  }
+
+  /** The user themselves: every video is visible. */
+  async visibleVideoIds(_access: LocalAccess, videoIds: readonly Id[]): Promise<Set<Id>> {
+    return new Set(videoIds);
+  }
+
   /** `importAsset.path` is relative to cwd; absolute paths are accepted, with no directory restriction. */
   importBase(access: LocalAccess): { cwd: string; confine: string | null } {
     return { cwd: access.principal.cwd, confine: null };

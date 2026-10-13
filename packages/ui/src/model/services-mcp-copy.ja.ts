@@ -56,7 +56,7 @@ export const ja: ServicesMcpMessages = {
     skills_read: 'Skill を読み取る',
     library_list: 'ライブラリを一覧表示',
     library_show: 'ライブラリの項目を表示',
-    download: 'リンクからダウンロード',
+    download: 'リンクからダウンロード', publications_list: 'List publications', publications_inspect: 'View publication', publications_prepare: 'Prepare publications', publications_update: 'Edit publication', publications_reschedule: 'Move publication', publications_slots: 'Plan publishing times', publications_reserve: 'Reserve publishing times', publications_propose_copy: 'Suggest publication text',
   },
   gates: {
     answer: 'そのまま応答',

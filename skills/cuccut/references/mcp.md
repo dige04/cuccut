@@ -59,6 +59,14 @@ Tool name mapping (generated from the catalog):
 | `models_list` | `cuccut models list` | query |
 | `music` | `cuccut music` | job |
 | `projects_list` | `cuccut projects list` | query |
+| `publications_inspect` | `cuccut publications inspect` | query |
+| `publications_list` | `cuccut publications list` | query |
+| `publications_prepare` | `cuccut publications prepare` | mutation |
+| `publications_propose_copy` | `cuccut publications propose-copy` | mutation |
+| `publications_reschedule` | `cuccut publications reschedule` | mutation |
+| `publications_reserve` | `cuccut publications reserve` | mutation |
+| `publications_slots` | `cuccut publications slots` | query |
+| `publications_update` | `cuccut publications update` | mutation |
 | `skills_list` | `cuccut skills list` | query |
 | `skills_read` | `cuccut skills read` | query |
 | `space_list` | `cuccut space list` | query |
@@ -74,7 +82,7 @@ Tool name mapping (generated from the catalog):
 | `videos_list` | `cuccut videos list` | query |
 | `videos_shots` | `cuccut videos shots` | query |
 
-Only in the CLI, not on MCP: `cuccut artifacts save`, `cuccut models install`, `cuccut models test`, `cuccut projects create`, `cuccut transcode`, `cuccut videos delete`, `cuccut videos import-package`.
+Only in the CLI, not on MCP: `cuccut artifacts save`, `cuccut models install`, `cuccut models test`, `cuccut projects create`, `cuccut publications approve`, `cuccut publications archive`, `cuccut publications export-calendar`, `cuccut publications import-calendar`, `cuccut publications pin`, `cuccut publications send`, `cuccut publications withdraw`, `cuccut transcode`, `cuccut videos delete`, `cuccut videos import-package`.
 <!-- /generated -->
 
 ## 3. Waiting for jobs: loop on `jobs_wait`

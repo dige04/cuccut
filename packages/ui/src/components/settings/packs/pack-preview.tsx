@@ -96,7 +96,19 @@ export function PackPreviewPanels({ preview }: { preview: PackPreviewData }) {
                   </>
                 }
                 notes={[previewStateNote('template', t.state), ...t.missingSkills.map((skill) => I().missingSkill(skill))]}>
-                <AgentText label={`${t.title}: ${I().agentReads}`}>{t.prompt}</AgentText>
+                {t.prompts.length > 1 ? (
+                  // An agent follows the prompt for the UI language, so every language's prompt is shown in full.
+                  t.prompts.map((p) => (
+                    <div key={p.file} className="flex flex-col gap-1">
+                      <p className="m-0 font-mono text-xs text-muted-foreground">
+                        {p.file} · {p.language}
+                      </p>
+                      <AgentText label={`${t.title} (${p.language}): ${I().agentReads}`}>{p.text}</AgentText>
+                    </div>
+                  ))
+                ) : (
+                  <AgentText label={`${t.title}: ${I().agentReads}`}>{t.prompts[0]?.text ?? t.prompt}</AgentText>
+                )}
               </Item>
             ))}
           </ul>

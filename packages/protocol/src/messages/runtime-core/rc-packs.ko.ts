@@ -16,6 +16,7 @@ export const ko: RcPacksMessages = {
   styleTooLong: (p: { length: number; limit: number }) => `스타일 가이드가 ${p.length}자입니다. 최대 ${p.limit}자까지 담을 수 있습니다`,
   previewExpired: '이 미리 보기는 30분이 넘었습니다. 다시 읽으세요',
   restoreConflict: (p: { id: string }) => `“${p.id}”이(가) 그 사이에 다시 설치되어 삭제된 사본을 되돌릴 수 없습니다`,
+  restoreReplacedConflict: (p: { id: string }) => `"${p.id}" changed after the install, so your earlier copy can't come back over it`,
   trashExpired: '삭제된 팩은 더 이상 보관되지 않아 되돌릴 수 없습니다',
   exportTargetNotEmpty: '그 폴더에는 다른 파일이 있습니다. 빈 폴더를 선택하세요',
   styleChanged: '열어 둔 뒤 스타일 가이드가 바뀌었습니다. 다시 열고 변경 사항을 다시 적용하세요',

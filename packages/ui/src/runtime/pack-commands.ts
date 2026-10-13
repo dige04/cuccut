@@ -77,7 +77,8 @@ export function clearPackPreview(): void {
 
 /**
  * Install exactly what a preview read (its token). `replace`: the user's own items with a clashing id go to the trash
- * first. On success the preview is forgotten and the list says "Installed X." once.
+ * first; the result's `replaced.trashId` given to `restorePack` puts them back. On success the preview is forgotten and
+ * the list says "Installed X." once.
  */
 export async function installPack(session: Session, preview: Pick<PackPreview, 'token'>, replace = false): Promise<PackChangeResult> {
   const result = await changed(session, session.client.request('packs.install', { token: preview.token, replace, commandId: newId('cmd') }));
@@ -94,7 +95,7 @@ export async function removePack(session: Session, id: string): Promise<PackRemo
   return result;
 }
 
-/** Undo a removal. */
+/** Undo a removal, or an install that replaced the user's own items (`PackChangeResult.replaced.trashId`). */
 export function restorePack(session: Session, trashId: string): Promise<PackChangeResult> {
   return changed(session, session.client.request('packs.restore', { trashId }));
 }

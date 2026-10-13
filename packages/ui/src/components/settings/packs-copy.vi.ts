@@ -71,6 +71,8 @@ export const vi: PacksMessages = {
     installing: 'Đang cài…',
     replace: 'Cài và thay thế của tôi',
     replaceHint: 'Các mẫu và kỹ năng của riêng bạn có cùng id sẽ được chuyển vào thùng rác trước.',
+    replacedToast: (name: string, n: number) => `Đã cài ${name}. ${n} mẫu hoặc kỹ năng của bạn đã được chuyển vào thùng rác.`,
+    replacedRestored: 'Bản của bạn đã trở lại, bản của gói đã bị gỡ.',
     cancel: 'Hủy',
   },
   libraryKind: {
@@ -206,7 +208,7 @@ export const vi: PacksMessages = {
     webExamples: 'Video tham chiếu được thêm và thay đổi trong ứng dụng desktop.',
     dialogTitle: 'Hướng dẫn phong cách',
     dialogLede: 'Hướng dẫn phong cách của gói nào để agent làm theo cho các video trong dự án này.',
-    dialogLedeNoProject: 'Which pack’s style guide agents follow for this video.',
+    dialogLedeNoProject: 'Hướng dẫn phong cách của gói nào để agent làm theo cho video này.',
     choiceLabel: 'Hướng dẫn phong cách',
     checking: 'Đang kiểm tra hướng dẫn nào được áp dụng…',
     noProject: 'Video này không nằm trong dự án, nên phong cách được quyết định riêng.',

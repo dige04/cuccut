@@ -82,6 +82,7 @@ export const ko: PacksMessages = {
     `${name}을(를) 삭제했습니다: 템플릿 ${templates}개와 스킬 ${skills}개도 함께 삭제됐습니다. 라이브러리 항목은 남습니다.`,
   kept: (count: number, ids: string) => `내가 바꾼 항목 ${count}개는 남습니다: ${ids}`,
   undo: (trashId: string) => `24시간 안에 되돌리기: cuccut packs restore ${trashId}`,
+  replacedUndo: (ids: string, trashId: string) => `Replaced your own ${ids}. Undo within 24 hours: cuccut packs restore ${trashId}`,
   restored: (name: string, version: string) => `${name} v${version}을(를) 되돌렸습니다`,
 
   // Style guide

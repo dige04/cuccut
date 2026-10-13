@@ -71,6 +71,9 @@ export const tr: PacksMessages = {
     installing: 'Kuruluyor…',
     replace: 'Kur ve benimkileri değiştir',
     replaceHint: 'Aynı kimliklere sahip kendi şablon ve becerileriniz önce çöp kutusuna gider.',
+    replacedToast: (name: string, n: number) =>
+      `Installed ${name}. ${n === 1 ? '1 template or skill of yours' : `${n} templates and skills of yours`} went to the trash.`,
+    replacedRestored: 'Yours are back, and the pack’s copies are gone.',
     cancel: 'İptal',
   },
   libraryKind: {

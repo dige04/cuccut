@@ -284,6 +284,14 @@ describe('the Style guide dialog', () => {
       { key: STYLE_CHOICE_MISSING, label: 'A pack that is no longer installed' },
     ]);
   });
+
+  it('a chosen pack without a guide (emptied since, or chosen by an agent) is still offered, so the select shows the choice in effect', () => {
+    const active = { pack: { id: 'plain', name: 'Plain' }, reason: 'chosen' as const };
+    const options = styleDialogOptions(packs, active);
+    expect(options.map((o) => o.key)).toEqual(['auto', 'none', 'news-desk', 'plain']);
+    expect(options.map((o) => o.key)).toContain(styleChoiceFromActive(active));
+    expect(styleDialogOptions(packs, { pack: { id: 'news-desk', name: 'News desk' }, reason: 'chosen' }).map((o) => o.key)).toEqual(['auto', 'none', 'news-desk']);
+  });
 });
 
 describe('views under /settings/packs', () => {

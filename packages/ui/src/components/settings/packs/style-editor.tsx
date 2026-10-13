@@ -45,7 +45,7 @@ export function StyleEditor({ detail, web, onSaved }: { detail: PackDetail; web:
     setError(null);
     setNotice('');
     try {
-      const next = await setPackStyle(runtime, detail.pack.id, text, detail.style?.hash ?? undefined);
+      const next = await setPackStyle(runtime, detail.pack.id, text, detail.styleHash);
       setNotice(next.style ? S().saved : S().removed);
       onSaved(next);
     } catch (reason) {

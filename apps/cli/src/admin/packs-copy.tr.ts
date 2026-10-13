@@ -84,6 +84,7 @@ export const tr: PacksMessages = {
     `${name} silindi: ${templates} şablon ve ${skills} beceri onunla birlikte gitti. Kütüphane öğeleri kalır.`,
   kept: (count: number, ids: string) => `${count} değiştirdiğiniz öğe kalır: ${ids}`,
   undo: (trashId: string) => `24 saat içinde geri alın: cuccut packs restore ${trashId}`,
+  replacedUndo: (ids: string, trashId: string) => `Replaced your own ${ids}. Undo within 24 hours: cuccut packs restore ${trashId}`,
   restored: (name: string, version: string) => `${name} v${version} geri getirildi`,
 
   // Style guide

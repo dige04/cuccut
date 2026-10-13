@@ -16,6 +16,7 @@ export const pl: RcPacksMessages = {
   styleTooLong: (p: { length: number; limit: number }) => `Przewodnik stylu ma ${p.length} znaków; może mieć najwyżej ${p.limit}`,
   previewExpired: 'Ten podgląd ma ponad 30 minut. Odczytaj go ponownie',
   restoreConflict: (p: { id: string }) => `„${p.id}” został w międzyczasie zainstalowany ponownie, więc usunięta kopia nie może wrócić`,
+  restoreReplacedConflict: (p: { id: string }) => `"${p.id}" changed after the install, so your earlier copy can't come back over it`,
   trashExpired: 'Usunięty pakiet nie jest już przechowywany, więc nie może wrócić',
   exportTargetNotEmpty: 'W tym folderze są inne pliki. Wybierz pusty folder',
   styleChanged: 'Przewodnik stylu zmienił się od chwili jego otwarcia. Otwórz go ponownie i powtórz zmianę',

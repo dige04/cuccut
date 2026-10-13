@@ -41,14 +41,17 @@ describe('设置分组', () => {
 });
 
 describe('pages inside a section', () => {
-  it('only packs has pages: import, export or a pack id', () => {
+  it('packs has pages (import, export or a pack id); skills opens a skill by id', () => {
     expect(settingsSub('packs', 'import')).toBe('import');
     expect(settingsSub('packs', 'export')).toBe('export');
     expect(settingsSub('packs', 'news-desk')).toBe('news-desk');
     expect(settingsSub('packs', 'News_Desk')).toBeUndefined();
     expect(settingsSub('packs', 'a'.repeat(65))).toBeUndefined();
     expect(settingsSub('packs', undefined)).toBeUndefined();
-    expect(settingsSub('skills', 'news-desk')).toBeUndefined();
+    expect(settingsSub('skills', 'news-desk')).toBe('news-desk');
+    expect(settingsSub('skills', 'tiêu-đề')).toBe('tiêu-đề');
+    expect(settingsSub('skills', 'Not an id')).toBeUndefined();
+    expect(settingsSub('general', 'news-desk')).toBeUndefined();
   });
 });
 

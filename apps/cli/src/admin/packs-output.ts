@@ -76,7 +76,10 @@ export function formatPreview(preview: PackPreview, source: string): string[] {
     lines.push('', `${M.sectionTemplates}:`);
     for (const template of preview.templates) {
       lines.push(`- ${template.id}: ${template.title} (${template.kind}, ${template.category}) — ${stateText(template.state)}`);
-      lines.push(`  ${M.agentReads}`, ...quoted(template.prompt));
+      // Every language's prompt in full: an agent follows the one for the UI language.
+      for (const prompt of template.prompts) {
+        lines.push(template.prompts.length > 1 ? `  ${M.agentReads} (${prompt.file}, ${prompt.language})` : `  ${M.agentReads}`, ...quoted(prompt.text));
+      }
     }
   }
   if (preview.skills.length) {
@@ -131,7 +134,11 @@ function blockedLine(hit: PackFileHit, styleLength: number): string {
 
 /** `cuccut packs install` / `restore`: the receipt, and each item that was skipped. */
 export function formatInstalled(result: PackChangeResult): string[] {
-  return [M.installed(result.pack.name, result.pack.version, packContents(result.pack)), ...result.skipped.map((s) => M.skipped(s.kind, s.id, s.reason))];
+  const lines = [M.installed(result.pack.name, result.pack.version, packContents(result.pack)), ...result.skipped.map((s) => M.skipped(s.kind, s.id, s.reason))];
+  // `--replace` moved the user's own items to the trash: say which, and how to get them back.
+  const replaced = result.replaced;
+  if (replaced) lines.push(M.replacedUndo([...replaced.templates, ...replaced.skills].join(', '), replaced.trashId));
+  return lines;
 }
 
 /** `cuccut packs remove`: what went, what stayed, and the Undo command. */

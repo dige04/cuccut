@@ -71,6 +71,9 @@ export const fr: PacksMessages = {
     installing: 'Installation…',
     replace: 'Installer et remplacer les miens',
     replaceHint: 'Vos propres modèles et compétences portant les mêmes identifiants iront d’abord à la corbeille.',
+    replacedToast: (name: string, n: number) =>
+      `Installed ${name}. ${n === 1 ? '1 template or skill of yours' : `${n} templates and skills of yours`} went to the trash.`,
+    replacedRestored: 'Yours are back, and the pack’s copies are gone.',
     cancel: 'Annuler',
   },
   libraryKind: {

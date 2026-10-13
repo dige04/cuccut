@@ -16,6 +16,7 @@ export const ptBR: RcPacksMessages = {
   styleTooLong: (p: { length: number; limit: number }) => `O guia de estilo tem ${p.length} caracteres; ele comporta no máximo ${p.limit}`,
   previewExpired: 'Esta prévia tem mais de 30 minutos. Leia-a novamente',
   restoreConflict: (p: { id: string }) => `"${p.id}" foi instalado novamente nesse meio-tempo, então a cópia excluída não pode voltar`,
+  restoreReplacedConflict: (p: { id: string }) => `"${p.id}" changed after the install, so your earlier copy can't come back over it`,
   trashExpired: 'O pacote excluído não é mais mantido, então não pode voltar',
   exportTargetNotEmpty: 'Essa pasta tem outros arquivos. Escolha uma pasta vazia',
   styleChanged: 'O guia de estilo foi alterado desde que você o abriu. Abra-o novamente e refaça a sua alteração',

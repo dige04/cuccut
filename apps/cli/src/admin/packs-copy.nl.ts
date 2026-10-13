@@ -83,6 +83,7 @@ export const nl: PacksMessages = {
     `${name} verwijderd: ${templates} ${templates === 1 ? 'sjabloon' : 'sjablonen'} en ${skills} ${skills === 1 ? 'vaardigheid' : 'vaardigheden'} zijn meegegaan. Bibliotheekitems blijven.`,
   kept: (count: number, ids: string) => `${count} ${count === 1 ? 'item dat je hebt gewijzigd blijft' : 'items die je hebt gewijzigd blijven'}: ${ids}`,
   undo: (trashId: string) => `Ongedaan maken binnen 24 uur: cuccut packs restore ${trashId}`,
+  replacedUndo: (ids: string, trashId: string) => `Replaced your own ${ids}. Undo within 24 hours: cuccut packs restore ${trashId}`,
   restored: (name: string, version: string) => `${name} v${version} teruggezet`,
 
   // Style guide

@@ -25,6 +25,7 @@ import { blockedError, inspectStagedPack, type InspectedDir, type PackInspection
 import type { PackPreviewEntry, PackPreviews } from './pack-previews.ts';
 import { packDirHash, type PackLibraryView, type PackRegistry } from './pack-registry.ts';
 import { checkStagedPack, readPackSource, type PackSourceOptions } from './pack-source.ts';
+import { writeAtomic } from './pack-style.ts';
 
 /**
  * Install, remove and restore (pack spec §6). Only the desktop UI and the CLI reach it (`packs.inspect`, `install`, `remove` and `restore` are not on the Web allowlist).
@@ -33,13 +34,14 @@ import { checkStagedPack, readPackSource, type PackSourceOptions } from './pack-
  * 1. The staged folder is checked again (`checkStagedPack`) and inspected again, so states are those of now; blocking scan hits refuse it (`PACK_BLOCKED`).
  * 2. Library files are imported through the library (an entry an installed pack already created from the same bytes is reused).
  * 3. Template and skill directories are renamed into `<home>/templates` and `<home>/skills`: built-in ids are skipped; the user's own items and items changed since the last
- *    install are skipped unless `replace`, which moves them to the trash first; items this pack wrote and nobody changed are updated. Items an earlier version wrote that
- *    this version dropped go, when unchanged.
+ *    install are skipped unless `replace`, which moves them to `.trash/replaced-<attempt>/` first (the result names it; `restore` with that id puts them back and drops
+ *    the pack's copies); items this pack wrote and nobody changed are updated. Items an earlier version wrote that this version dropped go, when unchanged.
  * 4. The pack folder (`pack.json`, the style guide, reference files, reserved files, and the record `.cuccut-pack.json`) is written last.
  * Any failure undoes the moves of this attempt and deletes the library entries it created; the preview stays installable.
  *
  * Remove moves the pack folder and its unchanged templates and skills to `.trash/<trashId>/` (kept 24 hours for `restore`); changed items, library entries, project choices
- * and skill toggles stay. Mutations run one at a time; a retry with the same `commandId` returns the first result.
+ * and skill toggles stay. A changed skill that stays becomes the user's own: its source record (`kind: 'pack'`) goes to the trash with the pack and comes back on restore.
+ * Mutations run one at a time; a retry with the same `commandId` returns the first result.
  */
 
 /** The library as the installer uses it. */
@@ -77,6 +79,10 @@ interface TrashMeta {
   packName: string;
   templates: string[];
   skills: string[];
+  /** `replaced`: the pack's own records for items it had installed before (changed since), put back into its record on restore. */
+  previous: { templates: PackInstalledDir[]; skills: PackInstalledDir[] };
+  /** `pack`: changed skills that stayed; their source records are under `kept-sources/<id>.json`. */
+  keptSkills: string[];
 }
 
 const TRASH_META = '.trash.json';
@@ -187,7 +193,17 @@ export class PackInstaller {
     const attempt = crypto.randomBytes(9).toString('base64url');
     const scratch = path.join(this.trashDir, `install-${attempt}`);
     const replacedDir = path.join(this.trashDir, `replaced-${attempt}`);
-    const meta = (kind: TrashMeta['kind']): TrashMeta => ({ schemaVersion: 1, kind, trashedAt: now, packId: manifest.id, packName: manifest.name, templates: [], skills: [] });
+    const meta = (kind: TrashMeta['kind']): TrashMeta => ({
+      schemaVersion: 1,
+      kind,
+      trashedAt: now,
+      packId: manifest.id,
+      packName: manifest.name,
+      templates: [],
+      skills: [],
+      previous: { templates: [], skills: [] },
+      keptSkills: [],
+    });
     await writeTrashMeta(scratch, meta('install'));
     const undo: Undo[] = [];
     const created: { library: LibraryName; id: string }[] = [];
@@ -210,6 +226,7 @@ export class PackInstaller {
       const place = async (kind: 'template' | 'skill', items: InspectedDir[], before: readonly PackInstalledDir[], root: string) => {
         const out: PackInstalledDir[] = [];
         const listed = kind === 'template' ? replaced.templates : replaced.skills;
+        const listedPrevious = kind === 'template' ? replaced.previous.templates : replaced.previous.skills;
         for (const item of items) {
           if (item.state === 'builtin') {
             skipped.push({ kind, id: item.id, reason: 'builtin' });
@@ -228,6 +245,8 @@ export class PackInstaller {
           } else if (item.state === 'exists' || item.state === 'changed') {
             await this.#move(item.target, path.join(replacedDir, `${kind}s`, item.id), undo);
             listed.push(item.id);
+            const prior = before.find((b) => b.id === item.id);
+            if (prior) listedPrevious.push(prior);
             await writeTrashMeta(replacedDir, replaced);
           }
           await this.#move(item.source, item.target, undo);
@@ -290,7 +309,13 @@ export class PackInstaller {
     await fsp.rm(scratch, { recursive: true, force: true }).catch(() => {});
     const list = await registry.list();
     const pack = list.packs.find((p) => p.id === manifest.id) ?? registry.summaryOf(await registry.require(manifest.id));
-    return { ...list, pack, skipped };
+    const anyReplaced = replaced.templates.length > 0 || replaced.skills.length > 0;
+    return {
+      ...list,
+      pack,
+      skipped,
+      replaced: anyReplaced ? { trashId: path.basename(replacedDir), templates: [...replaced.templates], skills: [...replaced.skills] } : null,
+    };
   }
 
   // ---- Remove and restore ----
@@ -311,6 +336,8 @@ export class PackInstaller {
       packName: record.name,
       templates: [],
       skills: [],
+      previous: { templates: [], skills: [] },
+      keptSkills: [],
     };
     const undo: Undo[] = [];
     try {
@@ -320,7 +347,15 @@ export class PackInstaller {
         ['skill', states.skills, registry.skillsDir],
       ] as const) {
         for (const item of items) {
-          if (item.state === 'changed') kept.push({ kind, id: item.id });
+          if (item.state === 'changed') {
+            kept.push({ kind, id: item.id });
+            // A changed skill that stays is the user's now: its record of the pack goes with the pack, so it no longer says "From the pack X".
+            const sourceFile = path.join(root, item.id, SKILL_SOURCE_FILE);
+            if (kind === 'skill' && (await readSkillSourceKind(sourceFile)) === 'pack') {
+              await this.#move(sourceFile, path.join(trash, 'kept-sources', `${item.id}.json`), undo);
+              meta.keptSkills.push(item.id);
+            }
+          }
           if (item.state !== 'present') continue;
           await this.#move(path.join(root, item.id), path.join(trash, `${kind}s`, item.id), undo);
           (kind === 'template' ? meta.templates : meta.skills).push(item.id);
@@ -348,11 +383,13 @@ export class PackInstaller {
     if (!TRASH_ID.test(trashId)) throw expired();
     const trash = path.join(this.trashDir, trashId);
     const meta = await readTrashMeta(trash);
-    if (!meta || meta.kind !== 'pack' || !(await exists(path.join(trash, 'pack')))) throw expired();
+    if (!meta || (meta.kind !== 'pack' && meta.kind !== 'replaced')) throw expired();
+    if (meta.kind === 'pack' && !(await exists(path.join(trash, 'pack')))) throw expired();
     if (this.#now().getTime() - Date.parse(meta.trashedAt) >= (this.#o.trashTtlMs ?? PACK_TRASH_TTL_MS)) {
       await fsp.rm(trash, { recursive: true, force: true }).catch(() => {});
       throw expired();
     }
+    if (meta.kind === 'replaced') return this.#restoreReplaced(trashId, trash, meta);
     const moves: [string, string, PackItemKind | 'pack', string][] = [
       [path.join(trash, 'pack'), registry.packDir(meta.packId), 'pack', meta.packId],
       ...meta.templates.map((id): [string, string, PackItemKind, string] => [path.join(trash, 'templates', id), path.join(registry.templatesDir, id), 'template', id]),
@@ -366,6 +403,12 @@ export class PackInstaller {
     const undo: Undo[] = [];
     try {
       for (const [from, to] of moves) await this.#move(from, to, undo);
+      // Changed skills that stayed take their record of the pack back, unless someone gave them another one meanwhile.
+      for (const id of meta.keptSkills) {
+        const from = path.join(trash, 'kept-sources', `${id}.json`);
+        const dir = path.join(registry.skillsDir, id);
+        if ((await exists(from)) && (await exists(dir)) && !(await exists(path.join(dir, SKILL_SOURCE_FILE)))) await this.#move(from, path.join(dir, SKILL_SOURCE_FILE), undo);
+      }
     } catch (error) {
       for (const step of undo.reverse()) await step().catch(() => {});
       throw error;
@@ -373,7 +416,71 @@ export class PackInstaller {
     await fsp.rm(trash, { recursive: true, force: true }).catch(() => {});
     const list = await registry.list();
     const pack = list.packs.find((p) => p.id === meta.packId) ?? registry.summaryOf(await registry.require(meta.packId));
-    return { ...list, pack, skipped: [] };
+    return { ...list, pack, skipped: [], replaced: null };
+  }
+
+  /**
+   * Undo of "Install and replace mine": the user's templates and skills come back from the trash, the pack's copies of them go (each must still be as the pack wrote it,
+   * otherwise `PACK_RESTORE_CONFLICT`), and the pack's record drops them, so the pack stands as if it had been installed without `replace`.
+   */
+  async #restoreReplaced(trashId: string, trash: string, meta: TrashMeta): Promise<PackChangeResult> {
+    const { registry } = this.#o;
+    const installed = await registry.get(meta.packId);
+    const scratch = path.join(this.trashDir, `install-${crypto.randomBytes(9).toString('base64url')}`);
+    const plan: { kind: PackItemKind; id: string; from: string; target: string; packCopy: boolean }[] = [];
+    for (const [kind, ids, root, owned] of [
+      ['template', meta.templates, registry.templatesDir, installed?.record.installed.templates ?? []],
+      ['skill', meta.skills, registry.skillsDir, installed?.record.installed.skills ?? []],
+    ] as const) {
+      for (const id of ids) {
+        const from = path.join(trash, `${kind}s`, id);
+        if (!(await exists(from))) continue;
+        const target = path.join(root, id);
+        let packCopy = false;
+        if (await exists(target)) {
+          const entry = owned.find((o) => o.id === id);
+          const hash = await packDirHash(target).catch(() => null);
+          if (!entry || hash !== entry.dirHash) {
+            throw new RpcError('conflict', RcPacks.restoreReplacedConflict({ id }), { code: 'PACK_RESTORE_CONFLICT', trashId, packId: meta.packId, kind, id });
+          }
+          packCopy = true;
+        }
+        plan.push({ kind, id, from, target, packCopy });
+      }
+    }
+    const undo: Undo[] = [];
+    try {
+      await writeTrashMeta(scratch, { ...meta, kind: 'install', templates: [], skills: [] });
+      for (const item of plan) {
+        if (item.packCopy) await this.#move(item.target, path.join(scratch, `${item.kind}s`, item.id), undo);
+        await this.#move(item.from, item.target, undo);
+      }
+      if (installed) {
+        const back = (kind: 'templates' | 'skills', list: readonly PackInstalledDir[]) => {
+          const restored = new Set(plan.filter((p) => `${p.kind}s` === kind).map((p) => p.id));
+          return [...list.filter((d) => !restored.has(d.id)), ...meta.previous[kind].filter((d) => restored.has(d.id))];
+        };
+        const record: InstalledPackRecord = {
+          ...installed.record,
+          installed: {
+            ...installed.record.installed,
+            templates: back('templates', installed.record.installed.templates),
+            skills: back('skills', installed.record.installed.skills),
+          },
+        };
+        await writeAtomic(path.join(installed.dir, PACK_RECORD_FILE), `${JSON.stringify(record, null, 2)}\n`);
+      }
+    } catch (error) {
+      for (const step of undo.reverse()) await step().catch(() => {});
+      await fsp.rm(scratch, { recursive: true, force: true }).catch(() => {});
+      throw error;
+    }
+    await fsp.rm(scratch, { recursive: true, force: true }).catch(() => {});
+    await fsp.rm(trash, { recursive: true, force: true }).catch(() => {});
+    const list = await registry.list();
+    const pack = list.packs.find((p) => p.id === meta.packId) ?? (installed ? registry.summaryOf(installed) : null);
+    if (!pack) throw new RpcError('not-found', RcPacks.packNotFound({ id: meta.packId }), { code: 'PACK_NOT_FOUND', id: meta.packId });
+    return { ...list, pack, skipped: [], replaced: null };
   }
 
   // ---- Shared ----
@@ -433,6 +540,13 @@ async function readTrashMeta(dir: string): Promise<TrashMeta | null> {
     if (raw.schemaVersion !== 1 || typeof raw.trashedAt !== 'string' || typeof raw.packId !== 'string' || !PACK_ID_PATTERN.test(raw.packId)) return null;
     if (raw.kind !== 'pack' && raw.kind !== 'replaced' && raw.kind !== 'install' && raw.kind !== 'example') return null;
     const ids = (value: unknown) => (Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string' && !v.includes('/') && !v.startsWith('.')) : []);
+    const dirs = (value: unknown): PackInstalledDir[] =>
+      Array.isArray(value)
+        ? value.filter(
+            (v): v is PackInstalledDir =>
+              !!v && typeof v === 'object' && ids([(v as PackInstalledDir).id]).length === 1 && typeof (v as PackInstalledDir).dirHash === 'string',
+          ).map((v) => ({ id: v.id, dirHash: v.dirHash }))
+        : [];
     return {
       schemaVersion: 1,
       kind: raw.kind,
@@ -441,7 +555,19 @@ async function readTrashMeta(dir: string): Promise<TrashMeta | null> {
       packName: typeof raw.packName === 'string' ? raw.packName : raw.packId,
       templates: ids(raw.templates),
       skills: ids(raw.skills),
+      previous: { templates: dirs(raw.previous?.templates), skills: dirs(raw.previous?.skills) },
+      keptSkills: ids(raw.keptSkills),
     };
+  } catch {
+    return null;
+  }
+}
+
+/** The `kind` of a skill's source record, or null when there is none or it can't be read. */
+async function readSkillSourceKind(file: string): Promise<string | null> {
+  try {
+    const raw = JSON.parse(await fsp.readFile(file, 'utf8')) as { kind?: unknown };
+    return typeof raw.kind === 'string' ? raw.kind : null;
   } catch {
     return null;
   }

@@ -22,7 +22,9 @@ describe('回复里的设置链接', () => {
     expect(settingsLink('/settings/packs/news-desk')?.trail.endsWith(' › news-desk')).toBe(true);
     expect(settingsLink('/settings/packs/-bad')).toBeNull();
     expect(settingsLink('/settings/packs/news-desk/extra')).toBeNull();
-    expect(settingsLink('/settings/skills/news-desk')).toBeNull();
+    // A skill's details have a link of their own too (the pack page uses it).
+    expect(settingsLink('/settings/skills/news-desk')?.route).toEqual({ tab: 'settings', section: 'skills', sub: 'news-desk' });
+    expect(settingsLink('/settings/skills/Not_an_id')).toBeNull();
   });
 
   it.each(['/settings', '/settings/model', '/settings/models', '/settings/models/asr/voices',

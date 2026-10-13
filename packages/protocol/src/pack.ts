@@ -424,6 +424,8 @@ export interface PackDetail {
   pack: PackSummary;
   /** The style guide's text, and its digest for `expectedHash`. null: the pack has none. */
   style: { text: string; hash: string } | null;
+  /** The digest to pass as `expectedHash` when saving the guide: the guide's, or the empty text's when there is none, so the first save is guarded too. */
+  styleHash: string;
   examples: PackExampleView[];
   quickActions: PackQuickAction[];
   items: { templates: PackItemView[]; skills: PackItemView[]; library: PackItemView[] };
@@ -450,8 +452,13 @@ export interface PackPreviewTemplate {
   title: string;
   kind: TemplateKind;
   category: TemplateCategory;
-  /** The full `prompt.md`: text an agent will follow. */
+  /** The full prompt in the Runtime's language (`prompt.md` or a translation's): text an agent will follow. */
   prompt: string;
+  /**
+   * Every prompt the template carries, in full: `prompt.md` (in the template's own `language`) first, then each translation's `locales/<language>.md`. An agent
+   * follows the one for the UI language, so the person reads them all before installing.
+   */
+  prompts: { file: string; language: string; text: string }[];
   state: PackPreviewItemState;
   /** Skills the template recommends that are neither on this computer nor in the pack. */
   missingSkills: string[];
@@ -535,6 +542,11 @@ export interface PackChangeResult extends PackListResult {
   pack: PackSummary;
   /** Items not written: built-in clashes always, the user's own and changed ones unless `replace`. */
   skipped: (PackItemRef & { reason: 'builtin' | 'exists' | 'changed' })[];
+  /**
+   * The user's own templates and skills an install with `replace` moved to the trash, with the id to pass to `packs.restore` (Undo: puts them back and drops the pack's
+   * copies). null when nothing was replaced, and after a restore.
+   */
+  replaced: { trashId: string; templates: string[]; skills: string[] } | null;
 }
 
 export interface PackRemoveResult extends PackListResult {

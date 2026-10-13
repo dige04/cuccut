@@ -83,6 +83,7 @@ export const vi: PacksMessages = {
     `Đã xóa ${name}: ${templates} mẫu và ${skills} kỹ năng đi kèm. Mục thư viện vẫn được giữ lại.`,
   kept: (count: number, ids: string) => `${count} mục bạn đã sửa được giữ lại: ${ids}`,
   undo: (trashId: string) => `Hoàn tác trong vòng 24 giờ: cuccut packs restore ${trashId}`,
+  replacedUndo: (ids: string, trashId: string) => `Đã thay bản của bạn: ${ids}. Hoàn tác trong vòng 24 giờ: cuccut packs restore ${trashId}`,
   restored: (name: string, version: string) => `Đã khôi phục ${name} v${version}`,
 
   // Style guide

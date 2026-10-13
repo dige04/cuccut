@@ -33,8 +33,8 @@ import type { PackOwnerLookup } from '../templates/template-catalog.ts';
  *
  * - A folder whose record or manifest can't be read becomes a diagnostic of `packs.list`, never a failure.
  * - Item states (`present`, `changed`, `deleted`) compare each installed template and skill directory with the digest recorded at install (`packDirHash`).
- * - `owners()` answers which pack a template or skill came from: the pack that wrote it, else a pack whose manifest names it (its style still applies when the user kept their
- *   own copy).
+ * - `owners()` answers which pack a template or skill came from: only the pack that wrote it. A user's own item whose id a pack also names (kept on install) stays
+ *   the user's: it is not labelled as the pack's and does not bring the pack's style guide.
  */
 
 /** The library as the registry sees it: whether an entry a pack created is still there, and its name. */
@@ -198,21 +198,18 @@ export class PackRegistry {
   }
 
   /**
-   * A lookup over one scan: the pack a template or skill id came from. The pack that installed it wins; otherwise a pack whose manifest names it (the user kept their own
-   * copy, and the pack's style still applies to it).
+   * A lookup over one scan: the pack that installed a template or skill id. An id the pack only names (the user kept their own copy) has no owner: the item is the
+   * user's, so it is neither labelled as the pack's nor marked with its id for the style resolver (`TemplateSummary.pack`).
    */
   async owners(): Promise<PackOwnerLookup> {
     const { packs } = await this.scan();
     const installed = new Map<string, PackRef>();
-    const provided = new Map<string, PackRef>();
     for (const { record } of packs) {
       const ref = { id: record.id, name: record.name };
       for (const t of record.installed.templates) if (!installed.has(`template:${t.id}`)) installed.set(`template:${t.id}`, ref);
       for (const s of record.installed.skills) if (!installed.has(`skill:${s.id}`)) installed.set(`skill:${s.id}`, ref);
-      for (const id of record.provides.templates) if (!provided.has(`template:${id}`)) provided.set(`template:${id}`, ref);
-      for (const id of record.provides.skills) if (!provided.has(`skill:${id}`)) provided.set(`skill:${id}`, ref);
     }
-    return (kind, id) => installed.get(`${kind}:${id}`) ?? provided.get(`${kind}:${id}`) ?? null;
+    return (kind, id) => installed.get(`${kind}:${id}`) ?? null;
   }
 
   async ownerOf(kind: 'template' | 'skill', id: string): Promise<PackRef | null> {
@@ -255,6 +252,7 @@ export class PackRegistry {
     return {
       pack: this.summaryOf(pack),
       style: style === null ? null : { text: style, hash: sha256Text(style) },
+      styleHash: sha256Text(style ?? ''),
       examples,
       quickActions: record.quickActions,
       items: await this.itemStates(record),

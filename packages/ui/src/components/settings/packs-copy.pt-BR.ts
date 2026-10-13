@@ -71,6 +71,9 @@ export const ptBR: PacksMessages = {
     installing: 'Instalando…',
     replace: 'Instalar e substituir os meus',
     replaceHint: 'Seus próprios modelos e habilidades com os mesmos ids vão primeiro para a lixeira.',
+    replacedToast: (name: string, n: number) =>
+      `Installed ${name}. ${n === 1 ? '1 template or skill of yours' : `${n} templates and skills of yours`} went to the trash.`,
+    replacedRestored: 'Yours are back, and the pack’s copies are gone.',
     cancel: 'Cancelar',
   },
   libraryKind: {

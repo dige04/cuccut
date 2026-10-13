@@ -161,6 +161,32 @@ describe('install', () => {
     expect(trash[0]).toMatch(/^replaced-/);
     const moved = path.join(world.packsDir, '.trash', trash[0]!, 'templates', 'tpl-a', 'template.json');
     expect(JSON.parse(await fs.readFile(moved, 'utf8')).title).toBe('Mine');
+    expect(replaced.replaced).toEqual({ trashId: trash[0], templates: ['tpl-a'], skills: [] });
+    expect((await readRecord(world, 'clash')).installed.templates.map((t) => t.id)).toEqual(['tpl-a']);
+
+    // Undo: the user's template comes back, the pack's copy goes, and the pack stands as if installed without replace.
+    const undone = await world.installer.restore(replaced.replaced!.trashId);
+    expect(undone).toMatchObject({ pack: { id: 'clash' }, skipped: [], replaced: null });
+    expect(JSON.parse(await fs.readFile(path.join(mine, 'template.json'), 'utf8')).title).toBe('Mine');
+    expect((await readRecord(world, 'clash')).installed.templates).toEqual([]);
+    expect((await readRecord(world, 'clash')).installed.skills.map((s) => s.id)).toEqual(['skill-a']);
+    expect(await fs.readdir(path.join(world.packsDir, '.trash'))).toEqual([]);
+    expect((await rejection(world.installer.restore(replaced.replaced!.trashId))).details).toMatchObject({ code: 'PACK_TRASH_EXPIRED' });
+  });
+
+  it('undoing a replace refuses when the pack’s copy changed since, and moves nothing', async () => {
+    const mine = await world.writeTemplate(world.templatesDir, 'tpl-a', { title: 'Mine' });
+    const source = await writePack(root, 'clash', { templates: { 'tpl-a': null } });
+    const { replaced } = await world.installer.install({ source, replace: true });
+    await fs.appendFile(path.join(mine, 'prompt.md'), 'Edited after the install.\n');
+    const error = await rejection(world.installer.restore(replaced!.trashId));
+    expect(error.details).toMatchObject({ code: 'PACK_RESTORE_CONFLICT', kind: 'template', id: 'tpl-a' });
+    expect(await fs.readFile(path.join(mine, 'prompt.md'), 'utf8')).toContain('Edited after the install.');
+    expect(await exists(path.join(world.packsDir, '.trash', replaced!.trashId, 'templates', 'tpl-a'))).toBe(true);
+  });
+
+  it('an install without clashes replaces nothing', async () => {
+    expect((await world.installer.install({ source: SAMPLE_PACK_DIR, replace: true })).replaced).toBeNull();
   });
 
   it('installing again updates what the pack owns, keeps what the user changed, and drops what the new version left out', async () => {
@@ -243,6 +269,19 @@ describe('remove and restore', () => {
     expect((await rejection(world.installer.restore(gone.trashId))).details).toMatchObject({ code: 'PACK_TRASH_EXPIRED' });
   });
 
+  it('a changed skill that stays on remove becomes the user’s own; restore gives it back to the pack', async () => {
+    await world.installer.install({ source: SAMPLE_PACK_DIR });
+    await fs.appendFile(path.join(world.skillsDir, 'news-desk-headlines', 'SKILL.md'), 'Mine now.\n');
+    const removed = await world.installer.remove('news-desk');
+    expect(removed.kept).toEqual([{ kind: 'skill', id: 'news-desk-headlines' }]);
+    expect(await exists(path.join(world.skillsDir, 'news-desk-headlines', SKILL_SOURCE_FILE))).toBe(false);
+    expect((await world.skills.list()).skills.find((s) => s.id === 'news-desk-headlines')).toMatchObject({ origin: 'personal' });
+
+    await world.installer.restore(removed.trashId);
+    expect((await world.skills.list()).skills.find((s) => s.id === 'news-desk-headlines')).toMatchObject({ origin: 'pack' });
+    expect((await world.registry.detail('news-desk')).items.skills).toEqual([{ kind: 'skill', id: 'news-desk-headlines', state: 'changed' }]);
+  });
+
   it('restore refuses when the id was taken in the meantime', async () => {
     await world.installer.install({ source: SAMPLE_PACK_DIR });
     const { trashId } = await world.installer.remove('news-desk');
@@ -312,12 +351,14 @@ describe('registry', () => {
     expect(await world.registry.get('broken')).toBeNull();
   });
 
-  it('owners: the pack that wrote an item, else the pack that names it', async () => {
+  it('owners: only the pack that wrote an item; the user’s own copy of an id the pack names stays theirs', async () => {
     await world.writeTemplate(world.templatesDir, 'news-desk-daily', { title: 'Mine' });
     await world.installer.install({ source: SAMPLE_PACK_DIR });
     const owner = await world.registry.owners();
-    // The user's own copy was kept, but the pack names it, so its style still applies.
-    expect(owner('template', 'news-desk-daily')).toEqual({ id: 'news-desk', name: 'News desk' });
+    // The user's own copy was kept: it is not labelled as the pack's and does not bring its style.
+    expect(owner('template', 'news-desk-daily')).toBeNull();
+    const summary = (await world.templates.list()).templates.find((t) => t.manifest.id === 'news-desk-daily');
+    expect(summary?.pack).toBeNull();
     expect(owner('skill', 'news-desk-headlines')).toEqual({ id: 'news-desk', name: 'News desk' });
     expect(owner('template', 'other')).toBeNull();
   });

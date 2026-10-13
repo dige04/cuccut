@@ -1,4 +1,4 @@
-import { isPackId, live, PACK_RESERVED_IDS } from '@cuccut/protocol';
+import { isPackId, live, PACK_RESERVED_IDS, SKILL_ID_PATTERN, SKILL_LIMITS } from '@cuccut/protocol';
 import { M } from './settings-nav-copy.ts';
 
 /**
@@ -95,12 +95,15 @@ export function modelPageFor(category: ModelCategory, page?: ModelPage | null, l
 }
 
 /**
- * The page inside a section, for the sections that have pages (`/settings/packs/<sub>`, pack design §2.1): Packs takes
- * `import`, `export` or a pack id. Anything else, and every other section, has none (undefined).
+ * The page inside a section, for the sections that have pages (`/settings/<section>/<sub>`, pack design §2.1): Packs takes
+ * `import`, `export` or a pack id; Skills takes a skill id, whose details it opens (the pack page links there). Anything
+ * else, and every other section, has none (undefined).
  */
 export function settingsSub(section: SettingsSection, sub: string | undefined): string | undefined {
-  if (section !== 'packs' || !sub) return undefined;
-  return (PACK_RESERVED_IDS as readonly string[]).includes(sub) || isPackId(sub) ? sub : undefined;
+  if (!sub) return undefined;
+  if (section === 'packs') return (PACK_RESERVED_IDS as readonly string[]).includes(sub) || isPackId(sub) ? sub : undefined;
+  if (section === 'skills') return sub.length <= SKILL_LIMITS.id && SKILL_ID_PATTERN.test(sub) ? sub : undefined;
+  return undefined;
 }
 
 export function isSettingsSection(value: string | undefined): value is SettingsSection {

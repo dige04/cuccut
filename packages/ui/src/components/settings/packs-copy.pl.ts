@@ -71,6 +71,9 @@ export const pl: PacksMessages = {
     installing: 'Instalowanie…',
     replace: 'Zainstaluj i zastąp moje',
     replaceHint: 'Twoje własne szablony i umiejętności o tych samych id trafią najpierw do kosza.',
+    replacedToast: (name: string, n: number) =>
+      `Installed ${name}. ${n === 1 ? '1 template or skill of yours' : `${n} templates and skills of yours`} went to the trash.`,
+    replacedRestored: 'Yours are back, and the pack’s copies are gone.',
     cancel: 'Anuluj',
   },
   libraryKind: {

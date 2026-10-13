@@ -71,6 +71,9 @@ export const ko: PacksMessages = {
     installing: '설치 중…',
     replace: '설치하고 내 항목 교체',
     replaceHint: '같은 ID를 가진 내 템플릿과 스킬은 먼저 휴지통으로 이동합니다.',
+    replacedToast: (name: string, n: number) =>
+      `Installed ${name}. ${n === 1 ? '1 template or skill of yours' : `${n} templates and skills of yours`} went to the trash.`,
+    replacedRestored: 'Yours are back, and the pack’s copies are gone.',
     cancel: '취소',
   },
   libraryKind: {

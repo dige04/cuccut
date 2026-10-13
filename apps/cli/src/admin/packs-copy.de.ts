@@ -84,6 +84,7 @@ export const de: PacksMessages = {
     `${name} gelöscht: ${templates} ${templates === 1 ? 'Vorlage' : 'Vorlagen'} und ${skills} ${skills === 1 ? 'Skill' : 'Skills'} wurden mit entfernt. Bibliothekseinträge bleiben.`,
   kept: (count: number, ids: string) => `${count} ${count === 1 ? 'von dir geändertes bleibt' : 'von dir geänderte bleiben'}: ${ids}`,
   undo: (trashId: string) => `Rückgängig innerhalb von 24 Stunden: cuccut packs restore ${trashId}`,
+  replacedUndo: (ids: string, trashId: string) => `Replaced your own ${ids}. Undo within 24 hours: cuccut packs restore ${trashId}`,
   restored: (name: string, version: string) => `${name} v${version} wiederhergestellt`,
 
   // Style guide

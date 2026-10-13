@@ -107,7 +107,7 @@ describe('the pack list', () => {
 describe('inspect and install', () => {
   it('inspect keeps the preview and ends the last notice; install takes its token, writes the list back, says so once and reloads templates and skills', async () => {
     usePacks.getState().setNotice({ kind: 'exported', dir: '/x' });
-    const installed: PackChangeResult = { pack: summary('news-desk', { name: 'News desk' }), skipped: [], ...list(summary('news-desk', { name: 'News desk' })) };
+    const installed: PackChangeResult = { pack: summary('news-desk', { name: 'News desk' }), skipped: [], replaced: null, ...list(summary('news-desk', { name: 'News desk' })) };
     const { session, calls, methods } = fakeSession((method) => {
       if (method === 'packs.inspect') return preview;
       if (method === 'packs.install') return installed;
@@ -163,7 +163,7 @@ describe('remove and restore', () => {
     usePacks.getState().succeed(list(summary('a'), summary('b')));
     usePacks.getState().setNotice({ kind: 'installed', name: 'a' });
     const removed: PackRemoveResult = { removed: { id: 'a', name: 'a' }, trashId: 'trash_1', kept: [], moved: { templates: 1, skills: 1 }, ...list(summary('b')) };
-    const restored: PackChangeResult = { pack: summary('a'), skipped: [], ...list(summary('a'), summary('b')) };
+    const restored: PackChangeResult = { pack: summary('a'), skipped: [], replaced: null, ...list(summary('a'), summary('b')) };
     const { session, calls, methods } = fakeSession((method) => {
       if (method === 'packs.remove') return removed;
       if (method === 'packs.restore') return restored;

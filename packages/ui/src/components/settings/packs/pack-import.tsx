@@ -1,10 +1,11 @@
 import { useEffect, useId, useState } from 'react';
+import { ToastQueue } from '@react-spectrum/s2';
 import { Download, FolderOpen, LoaderCircle } from 'lucide-react';
 import { Button } from '../../../cc/ui/button.tsx';
 import { Input } from '../../../cc/ui/input.tsx';
 import { packErrorMessage, previewBlockedReason } from '../../../model/packs.ts';
 import { useRuntime } from '../../../runtime/context.tsx';
-import { clearPackPreview, inspectPack, installPack } from '../../../runtime/pack-commands.ts';
+import { clearPackPreview, inspectPack, installPack, restorePack } from '../../../runtime/pack-commands.ts';
 import { useConnection } from '../../../state/connection-store.ts';
 import { usePacks } from '../../../state/packs-store.ts';
 import { useShell } from '../../../state/shell-store.ts';
@@ -22,7 +23,8 @@ const I = () => PACKS_COPY.import;
  * minutes says to read it again.
  *
  * One tinted action at a time: "Read it" until there is a preview, then "Install". "Install and replace mine" shows
- * only when an item clashes with one of the person's own. Leaving the page forgets the preview. Reading and installing
+ * only when an item clashes with one of the person's own; what it moves to the trash comes back with the toast's Undo.
+ * Leaving the page forgets the preview. Reading and installing
  * write to the Runtime Home, so a browser shows where it is done instead.
  */
 export function PackImport() {
@@ -79,8 +81,23 @@ export function PackImport() {
     setInstalling(replace ? 'replace' : 'install');
     setInstallError(null);
     try {
-      await installPack(runtime, preview, replace);
+      const result = await installPack(runtime, preview, replace);
       go(packsRoute());
+      // "Install and replace mine" moved the person's own items to the trash: say so, and offer them back.
+      const replaced = result.replaced;
+      if (replaced) {
+        ToastQueue.neutral(I().replacedToast(result.pack.name, replaced.templates.length + replaced.skills.length), {
+          timeout: 8000,
+          actionLabel: PACKS_COPY.pack.undo,
+          shouldCloseOnAction: true,
+          onAction: () => {
+            restorePack(runtime, replaced.trashId).then(
+              () => ToastQueue.positive(I().replacedRestored, { timeout: 4000 }),
+              (reason: unknown) => ToastQueue.negative(packErrorMessage(reason, 'restore'), { timeout: 8000 }),
+            );
+          },
+        });
+      }
     } catch (error) {
       setInstallError(packErrorMessage(error, 'install'));
     } finally {

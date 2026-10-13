@@ -68,6 +68,9 @@ export const zhHans: PacksMessages = {
     installing: '正在安装…',
     replace: '安装并替换我的版本',
     replaceHint: '你自己的同 ID 模板和技能会先移到回收站。',
+    replacedToast: (name: string, n: number) =>
+      `Installed ${name}. ${n === 1 ? '1 template or skill of yours' : `${n} templates and skills of yours`} went to the trash.`,
+    replacedRestored: 'Yours are back, and the pack’s copies are gone.',
     cancel: '取消',
   },
   libraryKind: {

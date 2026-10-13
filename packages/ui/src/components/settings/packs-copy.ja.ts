@@ -71,6 +71,9 @@ export const ja: PacksMessages = {
     installing: 'インストールしています…',
     replace: 'インストールして自分のものを置き換える',
     replaceHint: '同じ ID を持つ自分のテンプレートとスキルは、先にゴミ箱へ移動されます。',
+    replacedToast: (name: string, n: number) =>
+      `Installed ${name}. ${n === 1 ? '1 template or skill of yours' : `${n} templates and skills of yours`} went to the trash.`,
+    replacedRestored: 'Yours are back, and the pack’s copies are gone.',
     cancel: 'キャンセル',
   },
   libraryKind: {

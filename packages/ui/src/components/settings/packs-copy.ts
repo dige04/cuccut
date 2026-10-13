@@ -98,6 +98,10 @@ const en = {
     installing: 'Installing…',
     replace: 'Install and replace mine',
     replaceHint: 'Your own templates and skills with the same ids go to the trash first.',
+    /** Toast after "Install and replace mine" moved the person's own items to the trash, with Undo. */
+    replacedToast: (name: string, n: number) =>
+      `Installed ${name}. ${n === 1 ? '1 template or skill of yours' : `${n} templates and skills of yours`} went to the trash.`,
+    replacedRestored: 'Yours are back, and the pack’s copies are gone.',
     cancel: 'Cancel',
   },
   /** Library item kinds, in the preview and the export page. */

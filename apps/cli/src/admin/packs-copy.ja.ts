@@ -83,6 +83,7 @@ export const ja: PacksMessages = {
     `${name} を削除しました。テンプレート ${templates} 件とスキル ${skills} 件も削除されました。ライブラリ項目は残ります。`,
   kept: (count: number, ids: string) => `変更した項目 ${count} 件は残ります: ${ids}`,
   undo: (trashId: string) => `24 時間以内に取り消せます: cuccut packs restore ${trashId}`,
+  replacedUndo: (ids: string, trashId: string) => `Replaced your own ${ids}. Undo within 24 hours: cuccut packs restore ${trashId}`,
   restored: (name: string, version: string) => `${name} v${version} を元に戻しました`,
 
   // Style guide

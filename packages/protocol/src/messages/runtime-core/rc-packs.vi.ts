@@ -18,6 +18,7 @@ export const vi: RcPacksMessages = {
   styleTooLong: (p: { length: number; limit: number }) => `Hướng dẫn phong cách dài ${p.length} ký tự; nó chứa tối đa ${p.limit}`,
   previewExpired: 'Bản xem trước này đã hơn 30 phút tuổi. Hãy đọc lại',
   restoreConflict: (p: { id: string }) => `"${p.id}" đã được cài lại trong lúc đó, nên bản đã xóa không thể trở lại`,
+  restoreReplacedConflict: (p: { id: string }) => `"${p.id}" đã thay đổi sau khi cài, nên bản trước của bạn không thể quay lại đè lên nó`,
   trashExpired: 'Gói đã xóa không còn được giữ lại nên không thể trở lại',
   exportTargetNotEmpty: 'Thư mục đó có tệp khác. Hãy chọn một thư mục trống',
   styleChanged: 'Hướng dẫn phong cách đã thay đổi kể từ khi bạn mở nó. Hãy mở lại và làm lại thay đổi của bạn',

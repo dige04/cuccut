@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { SkillSummary } from '@cuccut/protocol';
 import {
   ActionButton,
@@ -35,6 +35,7 @@ import {
 import { useRuntime } from '../../runtime/context.tsx';
 import { addSkillFromFolder, importSkillFromGithub, removeSkill, setSkillEnabled } from '../../runtime/skill-commands.ts';
 import { useConnection } from '../../state/connection-store.ts';
+import { useShell } from '../../state/shell-store.ts';
 import { useSkillsLoader } from '../use-skills.ts';
 import { SKILLS_COPY, SKILL_DETAIL_COPY } from './agent-copy.ts';
 import { GithubImportDialog, SkillDetailDialog } from './agent-skill-detail.tsx';
@@ -132,6 +133,16 @@ export function AgentSkills() {
   const [query, setQuery] = useState('');
   const [tab, setTab] = useState<SkillTab>('all');
   const [openId, setOpenId] = useState<string | null>(null);
+  // `/settings/skills/<id>` (the pack page's skill links) opens that skill's details.
+  const linked = useShell((s) => (s.route.tab === 'settings' && s.route.section === 'skills' ? (s.route.sub ?? null) : null));
+  useEffect(() => {
+    if (linked) setOpenId(linked);
+  }, [linked]);
+  const closeDetail = () => {
+    setOpenId(null);
+    const { route, replace } = useShell.getState();
+    if (route.tab === 'settings' && route.section === 'skills' && route.sub) replace({ tab: 'settings', section: 'skills' });
+  };
   const [importing, setImporting] = useState(false);
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<SkillSummary | null>(null);
@@ -171,7 +182,7 @@ export function AgentSkills() {
   const remove = async (skill: SkillSummary) => {
     try {
       await removeSkill(runtime, skill.id);
-      setOpenId(null);
+      closeDetail();
       ToastQueue.neutral(SKILLS_COPY.removed(skill.name), { timeout: 4000 });
     } catch (error) {
       ToastQueue.negative(skillErrorMessage(error, 'remove'), { timeout: 6000 });
@@ -309,7 +320,7 @@ export function AgentSkills() {
         web={web}
         onToggle={(on) => open && toggle(open, on)}
         onRemove={() => open && setRemoving(open)}
-        onClose={() => setOpenId(null)}
+        onClose={closeDetail}
       />
       <GithubImportDialog
         open={importing}

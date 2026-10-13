@@ -71,6 +71,9 @@ export const nl: PacksMessages = {
     installing: 'Bezig met installeren…',
     replace: 'Installeren en de mijne vervangen',
     replaceHint: 'Je eigen sjablonen en vaardigheden met dezelfde id’s gaan eerst naar de prullenbak.',
+    replacedToast: (name: string, n: number) =>
+      `Installed ${name}. ${n === 1 ? '1 template or skill of yours' : `${n} templates and skills of yours`} went to the trash.`,
+    replacedRestored: 'Yours are back, and the pack’s copies are gone.',
     cancel: 'Annuleren',
   },
   libraryKind: {

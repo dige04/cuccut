@@ -83,6 +83,7 @@ export const ru: PacksMessages = {
     `Удалён ${name}: вместе с ним ушли ${templates} ${templates === 1 ? 'шаблон' : templates < 5 ? 'шаблона' : 'шаблонов'} и ${skills} ${skills === 1 ? 'навык' : skills < 5 ? 'навыка' : 'навыков'}. Элементы библиотеки остались.`,
   kept: (count: number, ids: string) => `${count} ${count === 1 ? 'изменённый вами элемент остаётся' : 'изменённых вами элемента остаются'}: ${ids}`,
   undo: (trashId: string) => `Отмена в течение 24 часов: cuccut packs restore ${trashId}`,
+  replacedUndo: (ids: string, trashId: string) => `Replaced your own ${ids}. Undo within 24 hours: cuccut packs restore ${trashId}`,
   restored: (name: string, version: string) => `Восстановлен ${name} v${version}`,
 
   // Style guide

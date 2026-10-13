@@ -84,6 +84,7 @@ export const fr: PacksMessages = {
     `${name} supprimé : ${templates} ${templates === 1 ? 'modèle' : 'modèles'} et ${skills} ${skills === 1 ? 'compétence' : 'compétences'} ont disparu avec lui. Les éléments de bibliothèque restent.`,
   kept: (count: number, ids: string) => `${count} ${count === 1 ? 'élément modifié reste' : 'éléments modifiés restent'} : ${ids}`,
   undo: (trashId: string) => `Annuler dans les 24 heures : cuccut packs restore ${trashId}`,
+  replacedUndo: (ids: string, trashId: string) => `Replaced your own ${ids}. Undo within 24 hours: cuccut packs restore ${trashId}`,
   restored: (name: string, version: string) => `${name} v${version} rétabli`,
 
   // Style guide

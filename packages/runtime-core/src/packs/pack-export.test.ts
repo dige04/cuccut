@@ -158,6 +158,22 @@ describe('export', () => {
     expect((await readManifest(out)).id).toBe('other-kit');
   });
 
+  it('refuses an earlier export that holds files it did not write, and deletes none of them', async () => {
+    await world.exporter.export(params());
+    await fs.mkdir(path.join(out, 'docs'), { recursive: true });
+    await fs.writeFile(path.join(out, 'docs', 'notes.md'), 'mine');
+    const busy = await rejection(world.exporter.export(params({ templates: ['news-desk-daily'] })));
+    expect(busy.details).toMatchObject({ code: 'PACK_EXPORT_TARGET_NOT_EMPTY' });
+    expect(await fs.readFile(path.join(out, 'docs', 'notes.md'), 'utf8')).toBe('mine');
+    expect(await exists(path.join(out, 'templates', 'my-promo'))).toBe(true);
+
+    // A file of its own inside a directory the export wrote counts too.
+    await fs.rm(path.join(out, 'docs'), { recursive: true });
+    await fs.writeFile(path.join(out, 'templates', 'my-promo', 'draft.txt'), 'mine');
+    expect((await rejection(world.exporter.export(params()))).details).toMatchObject({ code: 'PACK_EXPORT_TARGET_NOT_EMPTY' });
+    expect(await fs.readFile(path.join(out, 'templates', 'my-promo', 'draft.txt'), 'utf8')).toBe('mine');
+  });
+
   it('refuses built-in and unknown items and a folder inside CucCut’s own; nothing is written', async () => {
     expect((await rejection(world.exporter.export(params({ templates: ['builtin-one'] })))).details).toMatchObject({ code: 'PACK_INVALID' });
     expect((await rejection(world.exporter.export(params({ templates: ['nope'] })))).details).toMatchObject({ code: 'TEMPLATE_NOT_FOUND' });

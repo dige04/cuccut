@@ -7,6 +7,7 @@ import { Button } from '../../cc/ui/button.tsx';
 import { LANDING_COPY } from '../landing/landing-copy.ts';
 import { LandingSection } from '../landing/landing-section.tsx';
 import { TemplateCover, TemplateKindBadge } from './template-cover.tsx';
+import { useShell } from '../../state/shell-store.ts';
 import { TemplateLibrary } from './template-library.tsx';
 
 /**
@@ -77,6 +78,16 @@ export function HomeTemplateShelf({
   onExample(template: HomeTemplate): void;
 }) {
   const [library, setLibrary] = useState(false);
+  // `/home?template=<id>` (the pack page's template links) opens "All templates" on that template.
+  const focus = useShell((s) => (s.route.tab === 'home' && s.route.template ? s.route.template : null));
+  const close = () => {
+    setLibrary(false);
+    const { route, replace } = useShell.getState();
+    if (route.tab === 'home' && route.template) {
+      const { template: _template, ...rest } = route;
+      replace(rest);
+    }
+  };
   const cards = templateShelf(catalog, shelf);
   return (
     <LandingSection
@@ -98,11 +109,12 @@ export function HomeTemplateShelf({
         </div>
       ) : null}
       <TemplateLibrary
-        open={library}
+        open={library || focus !== null}
         picked={scene}
-        onClose={() => setLibrary(false)}
+        focus={focus}
+        onClose={close}
         onUse={(t) => {
-          setLibrary(false);
+          close();
           if (isExample(t)) onExample(t);
           else onScene(t);
         }}

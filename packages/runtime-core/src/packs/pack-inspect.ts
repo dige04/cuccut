@@ -129,13 +129,15 @@ export async function inspectStagedPack(staged: StagedPack, deps: PackInspectDep
     const localized = localizeTemplate(loaded);
     const missingSkills = (loaded.manifest.skills ?? []).filter((skill) => !knownSkills.has(skill));
     for (const skill of missingSkills) warnings.push({ kind: 'missing-skill', template: id, skill });
-    for (const [file, prompt] of templatePrompts(loaded)) warn(`${PACK_DIRS.templates}/${id}/${file}`, scanPackText(prompt));
+    const prompts = templatePrompts(loaded);
+    for (const p of prompts) warn(`${PACK_DIRS.templates}/${id}/${p.file}`, scanPackText(p.text));
     previewTemplates.push({
       id,
       title: localized.manifest.title,
       kind: loaded.manifest.kind,
       category: loaded.manifest.category,
       prompt: localized.prompt,
+      prompts,
       state,
       missingSkills,
     });
@@ -267,9 +269,12 @@ export function blockedError(packId: string, blocked: readonly PackFileHit[], st
   );
 }
 
-/** Every prompt of a template (`prompt.md` and each translation's), by template-relative path. */
-function templatePrompts(template: LoadedTemplate): [string, string][] {
-  return [[TEMPLATE_PROMPT_FILE, template.prompt], ...[...template.translations].map(([locale, entry]): [string, string] => [templateTranslationFiles(locale).prompt, entry.prompt])];
+/** Every prompt of a template (`prompt.md` and each translation's), with its template-relative path and language. */
+function templatePrompts(template: LoadedTemplate): { file: string; language: string; text: string }[] {
+  return [
+    { file: TEMPLATE_PROMPT_FILE, language: template.manifest.language, text: template.prompt },
+    ...[...template.translations].map(([locale, entry]) => ({ file: templateTranslationFiles(locale).prompt, language: locale, text: entry.prompt })),
+  ];
 }
 
 /** A skill folder in a pack must keep the id the manifest gives it and stay within the skill limits (adding it by hand would check the same). */

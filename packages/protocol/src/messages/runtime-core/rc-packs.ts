@@ -32,6 +32,7 @@ const en = {
   styleTooLong: (p: { length: number; limit: number }) => `The style guide is ${p.length} characters long; it holds at most ${p.limit}`,
   previewExpired: 'This preview is more than 30 minutes old. Read it again',
   restoreConflict: (p: { id: string }) => `"${p.id}" was installed again in the meantime, so the deleted copy can't come back`,
+  restoreReplacedConflict: (p: { id: string }) => `"${p.id}" changed after the install, so your earlier copy can't come back over it`,
   trashExpired: 'The deleted pack is no longer kept, so it can\'t come back',
   exportTargetNotEmpty: 'That folder has other files in it. Choose an empty folder',
   styleChanged: 'The style guide changed since you opened it. Open it again and redo your change',

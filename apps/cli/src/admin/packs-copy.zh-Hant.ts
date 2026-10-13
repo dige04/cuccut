@@ -79,6 +79,7 @@ export const zhHant: PacksMessages = {
     `已刪除 ${name}：隨之移除了 ${templates} 個範本和 ${skills} 項技能。素材庫項目保留。`,
   kept: (count: number, ids: string) => `${count} 個你修改過的項目被保留：${ids}`,
   undo: (trashId: string) => `24 小時內可復原：cuccut packs restore ${trashId}`,
+  replacedUndo: (ids: string, trashId: string) => `Replaced your own ${ids}. Undo within 24 hours: cuccut packs restore ${trashId}`,
   restored: (name: string, version: string) => `已恢復 ${name} v${version}`,
 
   // Style guide

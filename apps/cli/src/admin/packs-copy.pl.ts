@@ -84,6 +84,7 @@ export const pl: PacksMessages = {
     `Usunięto ${name}: razem z nim odeszło ${templates === 1 ? '1 szablon' : `${templates} szablonów`} i ${skills === 1 ? '1 umiejętność' : `${skills} umiejętności`}. Elementy biblioteki zostają.`,
   kept: (count: number, ids: string) => `${count === 1 ? '1 zmieniony przez Ciebie element zostaje' : `${count} zmienionych przez Ciebie elementów zostaje`}: ${ids}`,
   undo: (trashId: string) => `Cofnij w ciągu 24 godzin: cuccut packs restore ${trashId}`,
+  replacedUndo: (ids: string, trashId: string) => `Replaced your own ${ids}. Undo within 24 hours: cuccut packs restore ${trashId}`,
   restored: (name: string, version: string) => `Przywrócono ${name} v${version}`,
 
   // Style guide

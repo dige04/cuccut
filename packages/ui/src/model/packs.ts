@@ -139,10 +139,16 @@ export function styleChoiceFromActive(active: PackActiveStyle): StyleChoiceKey {
 /** The key of the "a pack that is no longer installed" option (a pack id never has a colon). */
 export const STYLE_CHOICE_MISSING = ':missing';
 
-/** The Video menu's Style guide options: `styleChoiceOptions`, plus the deleted pack the project still names, when it does. */
+/**
+ * The Video menu's Style guide options: `styleChoiceOptions`, plus the choice the project has stored when it is not among them: a deleted pack, or a chosen pack whose
+ * guide has since been emptied (`packs.choose` takes any installed pack), so the choice shown is always the one in effect.
+ */
 export function styleDialogOptions(packs: readonly PackSummary[], active: PackActiveStyle | null): { key: StyleChoiceKey; label: string }[] {
   const options = styleChoiceOptions(packs);
-  return active?.reason === 'chosen-missing' ? [...options, { key: STYLE_CHOICE_MISSING, label: P.style.missingChoice }] : options;
+  if (active?.reason === 'chosen-missing') return [...options, { key: STYLE_CHOICE_MISSING, label: P.style.missingChoice }];
+  const chosen = active?.reason === 'chosen' ? active.pack : null;
+  if (chosen && !options.some((o) => o.key === chosen.id)) return [...options, { key: chosen.id, label: chosen.name }];
+  return options;
 }
 
 /** One quick action offered above the composer, with the pack it belongs to. */

@@ -16,6 +16,7 @@ export const tr: RcPacksMessages = {
   styleTooLong: (p: { length: number; limit: number }) => `Stil rehberi ${p.length} karakter uzunluğunda; en fazla ${p.limit} karakter tutabilir`,
   previewExpired: 'Bu önizleme 30 dakikadan eski. Yeniden okuyun',
   restoreConflict: (p: { id: string }) => `“${p.id}” bu arada yeniden kuruldu, bu yüzden silinen kopya geri gelemez`,
+  restoreReplacedConflict: (p: { id: string }) => `"${p.id}" changed after the install, so your earlier copy can't come back over it`,
   trashExpired: 'Silinen paket artık saklanmıyor, bu yüzden geri gelemez',
   exportTargetNotEmpty: 'Bu klasörde başka dosyalar var. Boş bir klasör seçin',
   styleChanged: 'Stil rehberi, açtığınızdan beri değişti. Yeniden açın ve değişikliğinizi tekrar yapın',

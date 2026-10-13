@@ -274,8 +274,14 @@ describe('setStyle', () => {
     await world.installer.install({ source: await writePack(path.join(root, 'sources'), 'plain', { manifest: { name: 'Plain' }, index: true }) });
     const p = project('prj_1');
     expect((await style.active({ projectId: p.id })).reason).toBe('no-guide');
-    // A pack without a guide has the hash of the empty text.
-    const saved = await style.setStyle({ id: 'plain', text: 'Calm.', expectedHash: sha256Text('') });
+    // A pack without a guide has the hash of the empty text, and packs.get gives it, so the first save is guarded too.
+    const before = await world.registry.detail('plain');
+    expect(before.style).toBeNull();
+    expect(before.styleHash).toBe(sha256Text(''));
+    const saved = await style.setStyle({ id: 'plain', text: 'Calm.', expectedHash: before.styleHash });
+    expect(saved.styleHash).toBe(sha256Text('Calm.'));
+    // A second window that read the pack before the save can't overwrite it.
+    expect((await rejection(style.setStyle({ id: 'plain', text: 'Other.', expectedHash: before.styleHash }))).details).toMatchObject({ code: 'PACK_STYLE_CHANGED' });
     expect(saved.style?.text).toBe('Calm.');
     expect(saved.pack.hasStyle).toBe(true);
     const manifest = JSON.parse(await fs.readFile(path.join(world.packsDir, 'plain', PACK_MANIFEST_FILE), 'utf8')) as Record<string, unknown>;

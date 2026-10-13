@@ -16,6 +16,7 @@ export const it: RcPacksMessages = {
   styleTooLong: (p: { length: number; limit: number }) => `La guida di stile è lunga ${p.length} caratteri; ne contiene al massimo ${p.limit}`,
   previewExpired: 'Questa anteprima ha più di 30 minuti. Leggila di nuovo',
   restoreConflict: (p: { id: string }) => `“${p.id}” è stato reinstallato nel frattempo, quindi la copia eliminata non può tornare`,
+  restoreReplacedConflict: (p: { id: string }) => `"${p.id}" changed after the install, so your earlier copy can't come back over it`,
   trashExpired: 'Il pack eliminato non viene più conservato, quindi non può tornare',
   exportTargetNotEmpty: 'Quella cartella contiene altri file. Scegline una vuota',
   styleChanged: 'La guida di stile è cambiata da quando l’hai aperta. Riaprila e ripeti la modifica',

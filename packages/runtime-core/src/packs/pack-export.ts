@@ -12,6 +12,7 @@ import {
   PACK_SCHEMA_VERSION,
   PACK_STYLE_FILE,
   RpcError,
+  packFileRole,
   slugPackId,
   type LibraryName,
   type PackExample,
@@ -35,8 +36,9 @@ import { checkStagedPack } from './pack-source.ts';
  * - Templates are the user's own (`<home>/templates`), never built-in ones; skills are any but built-in ones. Their directories are copied without dot files (a skill's
  *   `.cuccut-skill.json` stays behind).
  * - Library entries are written as the library's own exchange files (`library.export`), so `library.import` takes them back; voices never travel.
- * - The target must be empty (dot files and root README / LICENSE files do not count) or an earlier export of the same id, whose pack files are replaced; a `.git` folder
- *   and the documentation files stay, so an export can be pushed again.
+ * - The target must be empty (dot files and root README / LICENSE files do not count) or an earlier export of the same id that holds nothing but what its `pack.json`
+ *   names; those files are replaced. A `.git` folder and the documentation files stay, so an export can be pushed again; anything else in it (a `docs/` folder, notes)
+ *   makes the export refuse, so nothing the export did not write is ever deleted.
  * - Everything is written into a dot folder inside the target first and checked the way a read checks a pack (`checkStagedPack`, index required); only then does it
  *   replace what was there. A failure leaves the target as it was.
  */
@@ -207,25 +209,48 @@ export class PackExporter {
     if (!stat.isDirectory()) throw notEmpty();
     const entries = (await fsp.readdir(dir)).filter((name) => !name.startsWith('.') && !PACK_DOC_FILE_PATTERN.test(name));
     if (!entries.length) return;
-    if (await isEarlierExport(dir, id)) return;
+    const earlier = await earlierExport(dir, id);
+    if (earlier && (await onlyOwnedFiles(dir, entries, earlier))) return;
     throw notEmpty();
   }
 }
 
-/** Whether a folder holds a pack with this id (its `pack.json` parses). */
-async function isEarlierExport(dir: string, id: string): Promise<boolean> {
+/** The manifest of an earlier export of this id in the folder (its `pack.json` parses and names this id), or null. */
+async function earlierExport(dir: string, id: string): Promise<PackManifest | null> {
   try {
     const raw = JSON.parse((await fsp.readFile(path.join(dir, PACK_MANIFEST_FILE), 'utf8')).replace(/^﻿/, '')) as unknown;
     const parsed = parsePackManifest(raw);
-    return parsed.ok && parsed.manifest.id === id;
+    return parsed.ok && parsed.manifest.id === id ? parsed.manifest : null;
   } catch {
-    return false;
+    return null;
   }
 }
 
 /**
- * Moves the staged pack into `dir`: what was there (but dot entries and root documentation files) goes aside first and comes back if a move fails; it is deleted once
- * the new files are in place.
+ * Whether every file under the given top-level entries is one the earlier export wrote: `pack.json` and the files its `files` index lists (an export always writes one;
+ * a hand-written manifest without it falls back to what the manifest names). Dot entries inside them (`.DS_Store`) do not count; a link or any other kind of entry
+ * does, so the folder is refused.
+ */
+async function onlyOwnedFiles(dir: string, entries: readonly string[], manifest: PackManifest): Promise<boolean> {
+  const indexed = manifest.files ? new Set([PACK_MANIFEST_FILE, ...manifest.files.map((f) => f.path)]) : null;
+  const owned = (rel: string) => (indexed ? indexed.has(rel) : (packFileRole(manifest, rel) ?? 'doc') !== 'doc');
+  const walk = async (abs: string, rel: string): Promise<boolean> => {
+    const stat = await fsp.lstat(abs);
+    if (stat.isFile()) return owned(rel);
+    if (!stat.isDirectory()) return false;
+    for (const name of await fsp.readdir(abs)) {
+      if (name.startsWith('.')) continue;
+      if (!(await walk(path.join(abs, name), `${rel}/${name}`))) return false;
+    }
+    return true;
+  };
+  for (const name of entries) if (!(await walk(path.join(dir, name), name))) return false;
+  return true;
+}
+
+/**
+ * Moves the staged pack into `dir`: what was there (but dot entries and root documentation files; `#checkTarget` has made sure it is only what the earlier export wrote)
+ * goes aside first and comes back if a move fails; it is deleted once the new files are in place.
  */
 async function replaceContents(dir: string, staging: string): Promise<void> {
   const backup = path.join(dir, `${STAGING_PREFIX}old-${crypto.randomBytes(9).toString('base64url')}`);

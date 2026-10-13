@@ -205,8 +205,8 @@ interface ItemGroup {
 }
 
 /**
- * What the pack brought and how each item is now: capsules that open where the item lives (templates on Home, skills
- * in Settings › Skills, glossaries in Settings › Glossary). An item changed since install says so; one deleted since is
+ * What the pack brought and how each item is now: capsules that open where the item lives (a template's details in
+ * Home's "All templates", a skill's details in Settings › Skills, glossaries in Settings › Glossary). An item changed since install says so; one deleted since is
  * struck through.
  */
 function Brought({ detail }: { detail: PackDetail }) {
@@ -220,7 +220,7 @@ function Brought({ detail }: { detail: PackDetail }) {
       items: detail.items.templates.map((item) => ({
         item,
         name: item.name ?? templates.find((t) => t.id === item.id)?.title ?? item.id,
-        route: { tab: 'home', conversationId: null, projectId: null } satisfies Route,
+        route: { tab: 'home', conversationId: null, projectId: null, template: item.id } satisfies Route,
       })),
     },
     {
@@ -230,7 +230,7 @@ function Brought({ detail }: { detail: PackDetail }) {
       items: detail.items.skills.map((item) => ({
         item,
         name: item.name ?? skills.find((s) => s.id === item.id)?.name ?? item.id,
-        route: { tab: 'settings', section: 'skills' } satisfies Route,
+        route: { tab: 'settings', section: 'skills', sub: item.id } satisfies Route,
       })),
     },
     {

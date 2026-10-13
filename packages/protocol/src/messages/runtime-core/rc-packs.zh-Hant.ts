@@ -16,6 +16,7 @@ export const zhHant: RcPacksMessages = {
   styleTooLong: (p: { length: number; limit: number }) => `風格指南長 ${p.length} 個字元，最多只能有 ${p.limit} 個`,
   previewExpired: '此預覽已超過 30 分鐘。請重新讀取',
   restoreConflict: (p: { id: string }) => `「${p.id}」在此期間已被重新安裝，因此已刪除的副本無法恢復`,
+  restoreReplacedConflict: (p: { id: string }) => `"${p.id}" changed after the install, so your earlier copy can't come back over it`,
   trashExpired: '已刪除的套件不再保留，因此無法恢復',
   exportTargetNotEmpty: '該資料夾中有其他檔案。請選擇一個空資料夾',
   styleChanged: '自你開啟後，風格指南已被修改。請重新開啟並重做你的變更',

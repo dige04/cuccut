@@ -1141,7 +1141,7 @@ export interface PackRpcMethods {
   };
   /** Remove a pack at once: it and the unchanged templates and skills it installed go to the trash for 24 hours. Library entries and project choices stay. */
   'packs.remove': { params: { id: string }; result: PackRemoveResult };
-  /** Undo a removal. An id taken in the meantime: `PACK_RESTORE_CONFLICT`; purged: `PACK_TRASH_EXPIRED`. */
+  /** Undo a removal, or an install with `replace` (`PackChangeResult.replaced.trashId`). An id taken in the meantime: `PACK_RESTORE_CONFLICT`; purged: `PACK_TRASH_EXPIRED`. */
   'packs.restore': { params: { trashId: string }; result: PackChangeResult };
   /** Save the style guide. Scanned like an installed one (`PACK_BLOCKED`, `PACK_STYLE_TOO_LONG`); `expectedHash` guards against a newer save (`PACK_STYLE_CHANGED`). */
   'packs.setStyle': { params: { id: string; text: string; expectedHash?: string }; result: PackDetail };

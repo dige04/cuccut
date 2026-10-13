@@ -29,7 +29,7 @@ const en = {
                                    the trash); without it they are kept and skipped
   cuccut packs remove <id>         Delete a pack: it and the templates and skills it brought go to the
                                    trash for 24 hours; library items and what you changed stay
-  cuccut packs restore <trashId>   Undo a removal, within 24 hours
+  cuccut packs restore <trashId>   Undo a removal or a --replace, within 24 hours
   cuccut packs style <id> [<file>|-]
                                    Print the pack's style guide; with a file (or - for standard input),
                                    save the file as the guide (an empty file removes it)
@@ -101,6 +101,7 @@ const en = {
     `Deleted ${name}: ${templates} ${templates === 1 ? 'template' : 'templates'} and ${skills} ${skills === 1 ? 'skill' : 'skills'} went with it. Library items stay.`,
   kept: (count: number, ids: string) => `${count} you changed ${count === 1 ? 'stays' : 'stay'}: ${ids}`,
   undo: (trashId: string) => `Undo within 24 hours: cuccut packs restore ${trashId}`,
+  replacedUndo: (ids: string, trashId: string) => `Replaced your own ${ids}. Undo within 24 hours: cuccut packs restore ${trashId}`,
   restored: (name: string, version: string) => `Restored ${name} v${version}`,
 
   // Style guide

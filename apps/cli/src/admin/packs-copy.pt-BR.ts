@@ -83,6 +83,7 @@ export const ptBR: PacksMessages = {
     `${name} excluído: ${templates} ${templates === 1 ? 'modelo' : 'modelos'} e ${skills} ${skills === 1 ? 'habilidade' : 'habilidades'} foram junto. Os itens da biblioteca ficam.`,
   kept: (count: number, ids: string) => `${count} ${count === 1 ? 'que você alterou fica' : 'que você alterou ficam'}: ${ids}`,
   undo: (trashId: string) => `Desfazer em até 24 horas: cuccut packs restore ${trashId}`,
+  replacedUndo: (ids: string, trashId: string) => `Replaced your own ${ids}. Undo within 24 hours: cuccut packs restore ${trashId}`,
   restored: (name: string, version: string) => `${name} v${version} restaurado`,
 
   // Style guide

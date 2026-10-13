@@ -71,6 +71,9 @@ export const ru: PacksMessages = {
     installing: 'Установка…',
     replace: 'Установить и заменить мои',
     replaceHint: 'Ваши шаблоны и навыки с теми же id сначала переместятся в корзину.',
+    replacedToast: (name: string, n: number) =>
+      `Installed ${name}. ${n === 1 ? '1 template or skill of yours' : `${n} templates and skills of yours`} went to the trash.`,
+    replacedRestored: 'Yours are back, and the pack’s copies are gone.',
     cancel: 'Отмена',
   },
   libraryKind: {

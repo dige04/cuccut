@@ -194,6 +194,8 @@ Rules:
 
 - A template or skill id that a **built-in** item has is never installed (built-in wins, template spec §6).
 - An id the **user's own** item has is kept unless the install says `replace`, which moves the user's directory to the trash first.
+  The result names what was replaced and a `trashId` (`replaced`); `packs.restore` with it puts the user's items back, removes
+  the pack's copies (each must still be as the pack wrote it, otherwise `PACK_RESTORE_CONFLICT`) and drops them from the record.
 - Items this pack installed before and nobody changed are updated; items changed since (their digest differs) are kept unless
   `replace`.
 - Library files go through the library's import; an entry whose content an earlier install of the pack already created is reused.
@@ -230,7 +232,8 @@ digest differs is "changed since"; a missing one is "deleted since". A record th
 ### 6.3 Remove and restore
 
 Remove acts at once: the pack folder and the unchanged templates and skills it installed move to `.trash/<trashId>/`; changed
-items, library entries and project choices stay. Restore (Undo) moves them back; an id taken in the meantime is
+items, library entries and project choices stay. A changed skill that stays becomes the user's own: its `.cuccut-skill.json`
+(`kind: 'pack'`) goes to the trash with the pack. Restore (Undo) moves them back; an id taken in the meantime is
 `PACK_RESTORE_CONFLICT`, a purged trash `PACK_TRASH_EXPIRED`.
 
 ### 6.4 Export
@@ -242,7 +245,8 @@ voices never travel), the chosen quick actions, and an installed pack's style gu
 `pack.json` gets the `files` index, so the folder can be served from a static host as it is.
 
 The target folder must be empty (dot entries and root documentation files do not count) or an earlier export of the same id
-(`PACK_EXPORT_TARGET_NOT_EMPTY` otherwise). The pack is written into a dot folder inside the target first and checked the way
+that holds nothing but `pack.json` and the files its `files` index lists (`PACK_EXPORT_TARGET_NOT_EMPTY` otherwise, so a file
+the export did not write is never deleted). The pack is written into a dot folder inside the target first and checked the way
 a read checks it (§3.3, with the index required); only then does it replace the earlier export's files. A `.git` folder and
 root README / LICENSE files stay, so an exported repository can be pushed again. A folder inside CucCut's own templates,
 skills or packs folder is refused.

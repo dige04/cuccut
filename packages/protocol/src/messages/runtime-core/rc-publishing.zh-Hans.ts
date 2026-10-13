@@ -21,8 +21,6 @@ export const zhHans: RcPublishingMessages = {
   nothingToSend: '此发布的所有账号都已发送。如需再次发送，请准备新的发布。',
   slotTaken: (p: { account: string }) =>
     `此时间与 ${p.account} 的另一条发布冲突。请选择其他时间，或在发布设置中允许更短的发布间隔。`,
-  slotsHaveDestinationTimes:
-    '其中一些发布为某个账号设置了专属时间。请先清除这些时间，再预留共享时间。',
   calendarRange: '请选择不超过 93 天的日历范围，且开始时间早于结束时间。',
   archiveInFlight: '归档此发布前，请撤回待处理的投递或记录其结果。',
   // Delivery.
@@ -45,6 +43,8 @@ export const zhHans: RcPublishingMessages = {
   renderFailed: '此发布的导出未能完成。请重新渲染并固定。',
   renderCancelled: '此发布的导出已取消。准备好后请重新渲染并固定。',
   videoNotFound: '这台电脑上找不到此视频。请打开其项目后重试。',
+  sequenceNotFound: "This video has no such sequence. Leave the sequence out to publish the video's main sequence.",
+  sequenceOneVideo: 'Choose a sequence only when preparing one video.',
   // Settings, connections and accounts.
   accountNotFound: '此账号已不存在。请重新加载发布设置后再试。',
   connectionNotFound: '此连接已不存在。请重新加载发布设置后再试。',
@@ -58,6 +58,7 @@ export const zhHans: RcPublishingMessages = {
   linkCanonical: '其他账号已关联到此账号。请改为将另一渠道关联到此账号。',
   // Copy proposals.
   proposalReason: '基于视频、转录文本和您的写作指南生成的草稿。应用前请先检查。',
+  proposalUnreadable: "The text model's answer couldn't be read. Try Propose text again, or write the text yourself.",
   /** The name the publishing service opens a video under (shown as the video's opener). */
   principalName: 'CucCut 发布',
   // Calendar transfer and cleanup.

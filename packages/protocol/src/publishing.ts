@@ -281,6 +281,14 @@ export interface PublicationProposal {
   at: string;
 }
 
+/** A "Propose text" request that finished without a usable answer. */
+export interface PublicationProposalError {
+  jobId: Id | null;
+  error: string;
+  errorRef: MessageRef | null;
+  at: string;
+}
+
 export interface Publication {
   id: Id;
   videoId: Id;
@@ -303,6 +311,8 @@ export interface Publication {
   approval: PublicationApproval | null;
   authorization: PublicationAuthorization | null;
   proposal: PublicationProposal | null;
+  /** The last "Propose text" request whose answer could not be used (cleared by the next proposal). Like `proposal`, it does not raise the revision. */
+  proposalError: PublicationProposalError | null;
   /** A "Render and pin" export in progress or the reason it failed; null when none was asked for. Cleared when an export is pinned. */
   pinJob: PublicationPinJob | null;
   destinations: PublicationDestination[];
@@ -401,6 +411,8 @@ export interface PublicationRow {
   expiresAt: string | null;
   /** The pinned export (`PinnedExport.id`) the entry's thumbnail shows; absent before one is pinned. */
   exportPosterId?: Id;
+  /** When the latest proposal (or proposal failure) was stored; such a write keeps the revision, so an open dialog refetches on this. */
+  proposalAt?: string;
   destinations: PublicationRowDestination[];
 }
 
@@ -652,11 +664,22 @@ export interface PublishingReconcileParams {
   note: string;
 }
 
-/** What `publishing.cleanup` removed. */
+/** What `publishing.cleanup` removed (or, with `dryRun`, would remove). */
 export interface PublishingCleanupResult {
   /** Archived publications older than the retention setting, deleted for good. */
   publications: number;
   /** Pinned export files no publication uses any more. */
   files: number;
   bytes: number;
+}
+
+/**
+ * What removing a connection or an account changed besides the accounts themselves, so Undo can put it back: the removed accounts' places in the
+ * default accounts and the links of other accounts that pointed at them.
+ */
+export interface PublishingRemovedRefs {
+  /** The default accounts as they were before the removal (empty when none of the removed accounts was a default). */
+  defaultAccountIds: Id[];
+  /** Other accounts that were linked to a removed account, with the account they pointed at. */
+  links: Array<{ accountId: Id; equivalentTo: Id }>;
 }

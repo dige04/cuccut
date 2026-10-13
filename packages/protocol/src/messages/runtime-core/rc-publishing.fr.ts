@@ -21,8 +21,6 @@ export const fr: RcPublishingMessages = {
   nothingToSend: 'Tous les comptes de cette publication ont déjà été envoyés. Préparez une nouvelle sortie pour l’envoyer à nouveau.',
   slotTaken: (p: { account: string }) =>
     `Cette heure entre en conflit avec une autre publication pour ${p.account}. Choisissez une autre heure, ou autorisez un intervalle plus court entre les publications dans les paramètres de publication.`,
-  slotsHaveDestinationTimes:
-    'Certaines de ces publications ont leur propre heure pour un compte. Effacez ces heures avant de réserver des heures communes.',
   calendarRange: 'Choisissez une plage de calendrier d’au plus 93 jours, le début étant antérieur à la fin.',
   archiveInFlight: 'Retirez les envois en attente ou notez leur résultat avant d’archiver cette publication.',
   // Delivery.
@@ -45,6 +43,8 @@ export const fr: RcPublishingMessages = {
   renderFailed: 'L’export de cette publication ne s’est pas terminé. Générez-le et épinglez-le à nouveau.',
   renderCancelled: 'L’export de cette publication a été annulé. Générez-le et épinglez-le à nouveau quand vous êtes prêt.',
   videoNotFound: 'Cette vidéo ne se trouve pas sur cet ordinateur. Ouvrez son projet, puis réessayez.',
+  sequenceNotFound: "This video has no such sequence. Leave the sequence out to publish the video's main sequence.",
+  sequenceOneVideo: 'Choose a sequence only when preparing one video.',
   // Settings, connections and accounts.
   accountNotFound: 'Ce compte n’existe plus. Rechargez les paramètres de publication et réessayez.',
   connectionNotFound: 'Cette connexion n’existe plus. Rechargez les paramètres de publication et réessayez.',
@@ -58,6 +58,7 @@ export const fr: RcPublishingMessages = {
   linkCanonical: 'D’autres comptes sont liés à celui-ci. Liez plutôt l’autre voie à ce compte.',
   // Copy proposals.
   proposalReason: 'Brouillon basé sur la vidéo, sa transcription et vos consignes de rédaction. Vérifiez-le avant de l’appliquer.',
+  proposalUnreadable: "The text model's answer couldn't be read. Try Propose text again, or write the text yourself.",
   /** The name the publishing service opens a video under (shown as the video's opener). */
   principalName: 'Publication CucCut',
   // Calendar transfer and cleanup.

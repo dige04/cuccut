@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { PUBLISHING_SETTINGS_DEFAULTS, RpcError } from '@cuccut/protocol';
 import { PC } from '../components/publishing/publishing-copy.ts';
-import { detail, publication, row } from '../model/publishing-test-fixtures.ts';
+import { account, connection, detail, publication, row, settings } from '../model/publishing-test-fixtures.ts';
 import { usePublishing } from '../state/publishing-store.ts';
 import {
   approveExport,
@@ -10,6 +10,7 @@ import {
   reschedulePublication,
   resetPublishingCommands,
   restoreAccount,
+  restoredDefaults,
   rowOf,
   updatePublication,
   usePublishingBusy,
@@ -104,30 +105,53 @@ describe('publishing commands', () => {
     expect(usePublishingBusy.getState().busy).toEqual({});
   });
 
-  it('account Undo saves the removed account again under its ID, then links it back', async () => {
+  it('account Undo saves the removed account again under its ID, links it back, and restores links to it and the default accounts', async () => {
     const removed = { id: 'acc_2', connectionId: 'conn_1', remoteId: '@b', network: 'youtube' as const, name: 'B', disabled: false, needsReconnect: false, equivalentTo: 'acc_1' };
-    const { session, calls } = fakeSession((method) => (method === 'publishing.accounts.remove' ? { account: removed } : { account: removed }));
-    const account = await removeAccount(session, 'acc_2');
-    await restoreAccount(session, account);
-    expect(calls.map((c) => [c.method, c.params])).toEqual([
+    const refs = { defaultAccountIds: ['acc_2', 'acc_1'], links: [{ accountId: 'acc_3', equivalentTo: 'acc_2' }] };
+    // The mirror after the removal: acc_2 is gone from the accounts and the defaults.
+    usePublishing.getState().replace({
+      settings: settings({ defaultAccountIds: ['acc_1'], revision: 4 }),
+      connections: [connection()],
+      accounts: [account({ id: 'acc_1' }), account({ id: 'acc_3' })],
+      publications: [],
+      degraded: null,
+    });
+    const { session, calls } = fakeSession((method, params) =>
+      method === 'publishing.accounts.remove' ? { account: removed, refs } : method === 'publishing.settings.save' ? params.settings : { account: removed },
+    );
+    const result = await removeAccount(session, 'acc_2');
+    await restoreAccount(session, result);
+    expect(calls.map((c) => [c.method, c.method === 'publishing.settings.save' ? (c.params.settings as { defaultAccountIds: string[] }).defaultAccountIds : c.params])).toEqual([
       ['publishing.accounts.remove', { accountId: 'acc_2' }],
       ['publishing.accounts.save', { id: 'acc_2', connectionId: 'conn_1', network: 'youtube', name: 'B', remoteId: '@b', disabled: false }],
       ['publishing.accounts.link', { accountId: 'acc_2', equivalentTo: 'acc_1' }],
+      ['publishing.accounts.link', { accountId: 'acc_3', equivalentTo: 'acc_2' }],
+      ['publishing.settings.save', ['acc_2', 'acc_1']],
     ]);
+    expect((calls.at(-1)!.params.settings as { revision: number }).revision).toBe(4);
+  });
+
+  it('restored default accounts keep the earlier order, accounts added since, and drop ones that no longer exist', () => {
+    expect(restoredDefaults(['a', 'b', 'c'], ['a', 'd'], ['a', 'b', 'd'])).toEqual(['a', 'b', 'd']);
   });
 
   it('rowOf builds the calendar row as the Runtime does', () => {
     const p = detail({
       scheduledAt: '2026-10-20T18:00:00.000Z',
       status: 'approved',
+      exportId: 'sha256:abc',
+      proposal: { revision: 0, copy: { title: 't', description: '', hashtags: [] }, reason: 'r', jobId: null, at: '2026-10-13T11:00:00.000Z' },
       destinations: [
         { ...publication().destinations[0]!, id: 'own', scheduledAt: '2026-10-21T08:00:00.000Z' },
         { ...publication().destinations[0]!, id: 'default', accountId: 'acc_tt', format: 'tiktok-video' },
       ],
     });
+    // The pinned export keeps the entry's thumbnail after a write from this window (the mirror replaces the topic's row at the same revision).
     expect(rowOf(p)).toMatchObject({
       id: 'pub_1',
       status: 'approved',
+      exportPosterId: 'sha256:abc',
+      proposalAt: '2026-10-13T11:00:00.000Z',
       destinations: [
         { id: 'own', scheduledAt: '2026-10-21T08:00:00.000Z', at: '2026-10-21T08:00:00.000Z' },
         { id: 'default', scheduledAt: null, at: '2026-10-20T18:00:00.000Z' },

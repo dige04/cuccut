@@ -2,13 +2,15 @@
 
 import { useEffect, useId, useState } from 'react';
 import { Archive, ArrowUpRight, Cable, CalendarClock, Loader2, Settings2 } from 'lucide-react';
-import { formatRef, type PublishingSettings as Settings } from '@cuccut/protocol';
+import { formatRef, type PublishingCleanupResult, type PublishingSettings as Settings } from '@cuccut/protocol';
 import { RouteLink } from '../../cc/components/page-chrome.tsx';
 import { Button, buttonVariants } from '../../cc/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../../cc/ui/dialog';
 import { Input } from '../../cc/ui/input';
 import { Skeleton } from '../../cc/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../cc/ui/tabs';
 import { retentionSettings, settingsTabOf, type PublishingSettingsTab } from '../../model/publishing-settings.ts';
+import { formatBytes } from '../../model/space.ts';
 import { useRuntime } from '../../runtime/context.tsx';
 import { cleanupPublishing, publishingError, savePublishingSettings } from '../../runtime/publishing-commands.ts';
 import { usePublishing } from '../../state/publishing-store.ts';
@@ -110,6 +112,9 @@ function PublishingAdvanced({ settings, owner, readOnly }: { settings: Settings;
   const [base, setBase] = useState(settings.archivedRetentionDays);
   const [saving, setSaving] = useState(false);
   const [cleaning, setCleaning] = useState(false);
+  const [checking, setChecking] = useState(false);
+  // What a cleanup would remove, shown for confirmation: it deletes for good, so it names what goes first (no Undo).
+  const [pending, setPending] = useState<PublishingCleanupResult | null>(null);
   const [notice, setNotice] = useState<{ tone: 'status' | 'error'; text: string } | null>(null);
   const dirty = days.trim() !== String(base);
 
@@ -122,7 +127,7 @@ function PublishingAdvanced({ settings, owner, readOnly }: { settings: Settings;
 
   const next = retentionSettings(days, settings);
   const saveWhy = readOnly ? PC.form.readOnly : saving ? PC.form.busy : !dirty ? PC.settings.noChanges : !next ? PC.settings.daysInvalid : null;
-  const cleanWhy = !owner ? PC.settings.ownerOnly : readOnly ? PC.form.readOnly : null;
+  const cleanWhy = !owner ? PC.settings.ownerOnly : readOnly ? PC.form.readOnly : checking ? PC.settings.cleanupChecking : null;
 
   const save = async () => {
     if (!next) return;
@@ -139,13 +144,28 @@ function PublishingAdvanced({ settings, owner, readOnly }: { settings: Settings;
       setSaving(false);
     }
   };
+  const check = async () => {
+    setChecking(true);
+    setNotice(null);
+    try {
+      const preview = await cleanupPublishing(runtime, { dryRun: true });
+      if (preview.publications || preview.files || preview.bytes) setPending(preview);
+      else setNotice({ tone: 'status', text: PC.settings.cleanupNothing });
+    } catch (e) {
+      setNotice({ tone: 'error', text: publishingError(e).message });
+    } finally {
+      setChecking(false);
+    }
+  };
   const cleanup = async () => {
     setCleaning(true);
     setNotice(null);
     try {
       const result = await cleanupPublishing(runtime);
+      setPending(null);
       setNotice({ tone: 'status', text: PC.settings.cleaned(result.publications, result.files) });
     } catch (e) {
+      setPending(null);
       setNotice({ tone: 'error', text: publishingError(e).message });
     } finally {
       setCleaning(false);
@@ -179,9 +199,9 @@ function PublishingAdvanced({ settings, owner, readOnly }: { settings: Settings;
           </Button>
         </SettingsRow>
         <SettingsRow label={PC.settings.cleanup} desc={PC.settings.cleanupHint(settings.archivedRetentionDays)} note={cleanWhy ?? undefined}>
-          <Button type="button" variant="outline" disabled={!!cleanWhy || cleaning} onClick={() => void cleanup()}>
-            {cleaning ? <Loader2 aria-hidden className="motion-safe:animate-spin" /> : null}
-            {cleaning ? PC.settings.cleaning : PC.settings.cleanup}
+          <Button type="button" variant="outline" disabled={!!cleanWhy || cleaning} onClick={() => void check()}>
+            {checking ? <Loader2 aria-hidden className="motion-safe:animate-spin" /> : null}
+            {checking ? PC.settings.cleanupChecking : PC.settings.cleanup}
           </Button>
         </SettingsRow>
       </RowList>
@@ -190,6 +210,30 @@ function PublishingAdvanced({ settings, owner, readOnly }: { settings: Settings;
           {notice.text}
         </p>
       ) : null}
+      <Dialog
+        open={!!pending}
+        onOpenChange={(open) => {
+          if (!open && !cleaning) setPending(null);
+        }}
+      >
+        <DialogContent data-cc showCloseButton={!cleaning} className="gap-4 sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{PC.settings.cleanupConfirmTitle}</DialogTitle>
+            <DialogDescription>
+              {pending ? PC.settings.cleanupConfirm(pending.publications, pending.files, formatBytes(pending.bytes)) : null}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={cleaning} onClick={() => setPending(null)}>
+              {PC.settings.cancel}
+            </Button>
+            <Button type="button" variant="destructive" disabled={cleaning} onClick={() => void cleanup()}>
+              {cleaning ? <Loader2 aria-hidden className="motion-safe:animate-spin" /> : null}
+              {cleaning ? PC.settings.cleaning : PC.settings.cleanupSubmit}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Panel>
   );
 }

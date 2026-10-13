@@ -37,6 +37,7 @@ export function portableCalendarPublication(p: Publication): Publication {
     approval: null,
     authorization: null,
     proposal: null,
+    proposalError: null,
     pinJob: null,
     destinations: p.destinations.map((d) => ({ ...structuredClone(d), payload: null, payloadHash: null, evidence: [] })),
   };

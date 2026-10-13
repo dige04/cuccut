@@ -2,7 +2,7 @@
 
 import { useId, useState } from 'react';
 import { Loader2, Sparkles } from 'lucide-react';
-import { composeCaption, type Id } from '@cuccut/protocol';
+import { composeCaption, localizeText, type Id } from '@cuccut/protocol';
 import { Button } from '../../cc/ui/button';
 import { Input } from '../../cc/ui/input';
 import { Textarea } from '../../cc/ui/textarea';
@@ -26,7 +26,12 @@ export function PublicationText({ form }: { form: PublicationFormApi }) {
   const [dismissed, setDismissed] = useState<string | null>(null);
   const job = useJobs((s) => (jobId ? (s.jobs.find((j) => j.jobId === jobId) ?? null) : null));
   const proposing = !!jobId && (!job || isJobLive(job));
-  const jobError = job && !isJobLive(job) && job.state !== 'completed' ? (jobErrorText(job.error) ?? job.state) : null;
+  // A finished job whose answer could not be used is recorded on the publication (newer than any proposal); a job that failed carries its own error.
+  const unreadable =
+    saved.proposalError && (!saved.proposal || saved.proposalError.at > saved.proposal.at) && saved.proposalError.at !== dismissed
+      ? localizeText(saved.proposalError.error, saved.proposalError.errorRef)
+      : null;
+  const jobError = proposing ? null : job && job.state !== 'completed' ? (jobErrorText(job.error) ?? job.state) : unreadable;
   const editBlock = form.locked ? PC.form.locked : form.readOnly ? PC.form.readOnly : null;
   const block = proposeBlock(form) ?? (proposing ? PC.form.proposing : null);
   const proposal = saved.proposal && saved.proposal.at !== dismissed ? saved.proposal : null;

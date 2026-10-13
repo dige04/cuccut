@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { silentLogger } from '@cuccut/harness';
 import type { PublicationDetail } from '@cuccut/protocol';
-import { PublishingExports } from './publishing-exports.ts';
+import { PIN_CLEANUP_GRACE_MS, PublishingExports } from './publishing-exports.ts';
 import { PublishingService } from './publishing-service.ts';
 import { HUMAN, codeOf, publishingFixture, type PublishingFixture } from './testing/fake-publishing.ts';
 
@@ -112,11 +112,17 @@ describe('pinning from an export job', () => {
     ]);
   });
 
-  it('cleanup removes pinned files that are not kept, and leftover temporary files', async () => {
+  it('cleanup removes pinned files that are not kept, and leftover temporary files, once they are past the grace period', async () => {
     const a = await files.pinJob((await fx.jobs.finishedExport('keep me')).jobId, EXPECT);
     const b = await files.pinJob((await fx.jobs.finishedExport('drop me')).jobId, EXPECT);
     await fs.writeFile(path.join(files.dir, 'x.mp4.1.2.tmp'), 'partial');
     await fs.writeFile(path.join(files.dir, 'notes.txt'), 'not ours');
+    // Just placed: a pin may not have saved its record yet, and a temporary file may still be written.
+    fx.clock.at = Date.now();
+    expect(await files.cleanup(new Set([a.sha256]))).toEqual({ files: 0, bytes: 0 });
+    fx.clock.at = Date.now() + PIN_CLEANUP_GRACE_MS + 1000;
+    expect(await files.cleanup(new Set([a.sha256]), { dryRun: true })).toEqual({ files: 1, bytes: 'drop me'.length + 'partial'.length });
+    expect((await fs.readdir(files.dir)).length).toBe(4);
     const result = await files.cleanup(new Set([a.sha256]));
     expect(result).toEqual({ files: 1, bytes: 'drop me'.length + 'partial'.length });
     expect((await fs.readdir(files.dir)).sort()).toEqual([`${a.sha256}.mp4`, 'notes.txt']);

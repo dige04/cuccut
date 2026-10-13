@@ -196,6 +196,7 @@ export const publicationSchema = z.object({
     .object({ revision: z.number().int().nonnegative(), copy: publicationCopySchema, reason: z.string(), jobId: id.nullable(), at: instant })
     .nullable()
     .default(null),
+  proposalError: z.object({ jobId: id.nullable(), error: z.string(), errorRef: messageRef.nullable(), at: instant }).nullable().default(null),
   pinJob: z.object({ jobId: id, at: instant, error: z.string().nullable(), errorRef: messageRef.nullable() }).nullable().default(null),
   destinations: z.array(publicationDestinationSchema).max(50).default([]),
   revision: z.number().int().nonnegative(),
@@ -381,7 +382,7 @@ export const PUBLISHING_PARAM_SCHEMAS = {
     .strict(),
   'publishing.archive': atRevision,
   'publishing.unarchive': atRevision,
-  'publishing.cleanup': z.object({}).strict(),
+  'publishing.cleanup': z.object({ dryRun: z.boolean().optional() }).strict(),
   'publishing.copy.propose': z.object({ publicationId: id, instruction: z.string().trim().max(2000).optional() }).strict(),
   'publishing.copy.apply': z.object({ publicationId: id, revision, copy: publicationCopySchema }).strict(),
   'publishing.openHandle': publicationRef,

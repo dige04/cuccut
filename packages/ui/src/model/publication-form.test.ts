@@ -103,6 +103,16 @@ describe('publication draft', () => {
     expect(reloaded).toMatchObject({ conflict: null, draft: { label: 'Renamed elsewhere' } });
   });
 
+  it('a proposal arriving at the same revision keeps a dirty draft, with no conflict', () => {
+    const proposal = { revision: 1, copy: { title: 'Proposed', description: '', hashtags: [] }, reason: 'r', jobId: 'job_1', at: '2026-10-13T11:00:00.000Z' };
+    const dirty = run(loaded(), { type: 'edit', patch: { label: 'Mine' } });
+    const s = run(dirty, { type: 'annotated', publication: detail({ revision: 1, proposal }) });
+    expect(s).toMatchObject({ conflict: null, draft: { label: 'Mine' }, saved: { revision: 1, proposal: { copy: { title: 'Proposed' } } } });
+    expect(isDirty(s)).toBe(true);
+    // A newer revision is a change from elsewhere.
+    expect(run(dirty, { type: 'annotated', publication: detail({ revision: 2, proposal }) }).conflict?.revision).toBe(2);
+  });
+
   it('the review checkbox holds only for the revision and pinned export it was ticked for', () => {
     let s = run(loaded({ exportId: 'sha256:a' }), { type: 'review', checked: true });
     expect(isReviewed(s)).toBe(true);

@@ -69,7 +69,7 @@ import type { RuntimeActivity } from './runtime-activity.ts';
 import type { LegacyUpgrade } from './legacy-upgrade.ts';
 import { catalogMethods } from './agent-tools/catalog-methods.ts';
 import type { PublishingService } from './publishing/publishing-service.ts';
-import { publishingMethods } from './publishing/publishing-methods.ts';
+import { publishingActor, publishingMethods } from './publishing/publishing-methods.ts';
 
 type MethodHandler<M extends RpcMethod> = (params: RpcParams<M>, principal: TrustedPrincipal) => RpcResult<M> | Promise<RpcResult<M>>;
 
@@ -445,8 +445,12 @@ export function createHandlers({
         return videos.create(p, root, scope, principal);
       },
       // Derive child videos (§3.5). Same service as the videos_derive tool.
-      'videos.derive': async (p, principal) =>
-        (await deriveVideo({ videos, findDerived: spaceDerivedFinder(space) }, p, principal)).result,
+      'videos.derive': async (p, principal) => {
+        const { result } = await deriveVideo({ videos, findDerived: spaceDerivedFinder(space) }, p, principal);
+        // "Start new clips ready to publish" (design m2-publishing §2.5): runs in the background and never fails the derivation.
+        if (!result.reused) void publishing.prepareGenerated([result.video.videoId], publishingActor(principal));
+        return result;
+      },
       // Shot cuts (§3.5). Same implementation as the videos_shots tool.
       'videos.shots': (p) => videoShots({ analysis, videos }, p),
       // Portable package (video format spec §8). Built as a new video in the source directory. Not offered to agents or external services, since they have no entry point for this method.

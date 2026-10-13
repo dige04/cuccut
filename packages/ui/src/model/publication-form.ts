@@ -86,6 +86,11 @@ export type FormAction =
   | { type: 'saved'; publication: PublicationDetail }
   /** A newer version arrived from elsewhere (topic, another window, an agent): taken as is when the draft is clean, else a conflict. */
   | { type: 'external'; publication: PublicationDetail }
+  /**
+   * The same revision with new annotations (a text proposal or its failure, stored without raising the revision): taken into the saved version and
+   * the draft is kept, dirty or not. A newer revision is handled as `external`.
+   */
+  | { type: 'annotated'; publication: PublicationDetail }
   | { type: 'edit'; patch: Partial<Omit<PublicationDraft, 'destinations' | 'text'>> & { text?: Partial<DraftText> } }
   | { type: 'toggleAccount'; account: PublishingAccount; on: boolean }
   | {
@@ -248,6 +253,11 @@ export function formReducer(state: FormState, action: FormAction): FormState {
       if (state.saved && action.publication.revision <= state.saved.revision) return state;
       if (!isDirty(state)) return formReducer(state, { type: 'load', publication: action.publication });
       return { ...state, conflict: action.publication };
+    }
+    case 'annotated': {
+      if (!state.saved || action.publication.revision < state.saved.revision) return state;
+      if (action.publication.revision > state.saved.revision) return formReducer(state, { type: 'external', publication: action.publication });
+      return { ...state, saved: { ...state.saved, proposal: action.publication.proposal, proposalError: action.publication.proposalError } };
     }
     case 'conflict':
       return { ...state, conflict: action.current };

@@ -76,6 +76,9 @@ function videoOutput(job: JobRecord): (GeneratedOutput & { media: Extract<Genera
 
 const SHA256_ID = /^sha256:([0-9a-f]{64})$/;
 
+/** Pinned and temporary files younger than this are never removed by a cleanup (a pin in progress has not saved its record yet). */
+export const PIN_CLEANUP_GRACE_MS = 15 * 60_000;
+
 export class PublishingExports {
   readonly #options: PublishingExportsOptions;
   readonly #log: Logger;
@@ -174,7 +177,12 @@ export class PublishingExports {
   async #place(sha256: string, output: GeneratedOutput): Promise<number> {
     await fs.mkdir(this.dir, { recursive: true });
     const target = this.file({ sha256 });
-    if ((await hashFile(target)) === sha256) return (await fs.stat(target)).size;
+    if ((await hashFile(target)) === sha256) {
+      // Mark it as just placed, so a cleanup running before the publication names it leaves it alone (see `cleanup`).
+      const now = this.#now();
+      await fs.utimes(target, now, now).catch(() => {});
+      return (await fs.stat(target)).size;
+    }
     await removeFile(target);
     const library = await this.#options.artifacts.locate(output.artifactId).catch(() => null);
     const sources = [library, output.path ?? null].filter((file): file is string => !!file);
@@ -229,9 +237,14 @@ export class PublishingExports {
     }
   }
 
-  /** Removes pinned files (and leftover temporary files) whose hash is not in `keep`. */
-  async cleanup(keep: ReadonlySet<string>): Promise<{ files: number; bytes: number }> {
+  /**
+   * Removes pinned files (and leftover temporary files) whose hash is not in `keep`. A file placed less than {@link PIN_CLEANUP_GRACE_MS} ago is
+   * kept: a pin puts its file in place before the publication record names it, and a temporary file may still be being written. With `dryRun`,
+   * nothing is removed and the result says what would be.
+   */
+  async cleanup(keep: ReadonlySet<string>, options: { dryRun?: boolean } = {}): Promise<{ files: number; bytes: number }> {
     const names = await fs.readdir(this.dir).catch(() => [] as string[]);
+    const young = this.#now().getTime() - PIN_CLEANUP_GRACE_MS;
     let files = 0;
     let bytes = 0;
     for (const name of names) {
@@ -239,10 +252,16 @@ export class PublishingExports {
       if (sha && keep.has(sha)) continue;
       if (!sha && !name.endsWith('.tmp')) continue;
       const file = path.join(this.dir, name);
-      const size = await fs.stat(file).then(
-        (s) => s.size,
-        () => 0,
-      );
+      const stat = await fs.stat(file).catch(() => null);
+      if (!stat) continue;
+      // ctime moves when the file is linked, made read-only or renamed into place; mtime when an existing copy is pinned again.
+      if (Math.max(stat.mtimeMs, stat.ctimeMs) > young) continue;
+      const size = stat.size;
+      if (options.dryRun) {
+        if (sha) files++;
+        bytes += size;
+        continue;
+      }
       if (await removeFile(file)) {
         if (sha) files++;
         bytes += size;

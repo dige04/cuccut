@@ -197,12 +197,12 @@ export class FakeVideos implements PublishingVideos {
   released = 0;
 
   add(facts: Partial<PublishingVideoFacts> & { videoId: Id; transcript?: string | null }): void {
-    this.videos.set(facts.videoId, { name: 'Launch clip', projectId: 'proj_1', rootSequenceId: 'seq_1', revision: 'rev_current', ...facts });
+    this.videos.set(facts.videoId, { name: 'Launch clip', projectId: 'proj_1', rootSequenceId: 'seq_1', sequenceIds: ['seq_1'], revision: 'rev_current', ...facts });
   }
 
   async facts(videoId: Id): Promise<PublishingVideoFacts | null> {
     const v = this.videos.get(videoId);
-    return v ? { videoId, name: v.name, projectId: v.projectId, rootSequenceId: v.rootSequenceId, revision: v.revision } : null;
+    return v ? { videoId, name: v.name, projectId: v.projectId, rootSequenceId: v.rootSequenceId, sequenceIds: [...v.sequenceIds], revision: v.revision } : null;
   }
 
   available(videoId: Id): boolean {

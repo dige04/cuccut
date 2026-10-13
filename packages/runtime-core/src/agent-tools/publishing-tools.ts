@@ -97,7 +97,7 @@ const schemas = {
       .max(PUBLICATION_STATUSES.length)
       .optional()
       .describe(`Optional. Only these statuses: ${STATUSES_TEXT}`),
-    unscheduled: z.boolean().optional().describe('Optional. Also list publications with an account that has no time yet; default true'),
+    unscheduled: z.boolean().optional().describe('Optional. Also list publications with an account that can still be scheduled and has no time yet; default true'),
     offset: z.number().int().nonnegative().max(1_000_000).optional().describe('Optional. Skip this many rows (nextOffset of the previous page)'),
     limit: z.number().int().positive().max(PUBLISHING_CALENDAR_MAX_LIMIT).optional().describe('Optional. Rows per page, default 50, at most 200'),
   }),
@@ -108,7 +108,7 @@ const schemas = {
       .min(1)
       .max(PUBLISHING_PREPARE_MAX)
       .describe('Videos to publish: paths or videoIds from videos_list (one publication each, at most 50)'),
-    sequence: z.string().min(1).max(200).optional().describe('Optional. The sequence to publish; default each video\'s main sequence'),
+    sequence: z.string().min(1).max(200).optional().describe('Optional, with a single video only. The sequence of that video to publish; default the video\'s main sequence'),
     accounts: z
       .array(z.string().min(1).max(200))
       .max(50)
@@ -305,7 +305,7 @@ const DEFINITIONS: Record<ToolName, ToolInfo> = {
     title: 'Reserve publishing times',
     description: [
       'Reserves the next free weekly slots as the publications\' default times.',
-      'The same plan as publications_slots, written in one change; account-specific times must be cleared first. A reservation is local: nothing is scheduled on a network.',
+      'The same plan as publications_slots, written in one change; the planned publications\' account-specific times are cleared. A reservation is local: nothing is scheduled on a network.',
     ].join('\n'),
     effect: 'mutation',
     examples: [{ title: 'Reserve one', args: { publications: ['pub_0123456789abcdef'], revisions: { pub_0123456789abcdef: 3 } } }],
@@ -432,7 +432,8 @@ const NEXT: Record<string, string> = {
   PUBLICATION_ARCHIVED: 'Restore it first with publications_update and archived: false.',
   SLOT_TAKEN: 'Choose a time further from the other post on that account, or plan one with publications_slots.',
   AFTER_EXPIRY: 'Choose a time before expiresAt, or change expiresAt.',
-  DESTINATION_TIMES: 'Clear the accounts\' own times (scheduledAt: null in publications_reschedule) before reserving shared times.',
+  SEQUENCE_NOT_FOUND: 'Leave sequence out to publish the video\'s main sequence, or use a sequenceId of that video from videos_inspect.',
+  SEQUENCE_ONE_VIDEO: 'Give sequence only with a single video; prepare other videos in their own call.',
   EXPORT_REQUIRED: 'Pin an export first with publications_pin.',
   EXPORT_CHANGED: 'The pinned file changed on disk: pin a verified export again with publications_pin, then it needs a new approval.',
   EXPORT_STALE: 'That export is of an older revision: call publications_pin without job to render the current revision and pin it.',

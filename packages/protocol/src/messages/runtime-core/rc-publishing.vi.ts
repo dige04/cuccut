@@ -21,7 +21,6 @@ export const vi: RcPublishingMessages = {
   nothingToSend: 'Mọi tài khoản của bài đăng này đã được gửi. Hãy chuẩn bị một phát hành mới để gửi lại.',
   slotTaken: (p: { account: string }) =>
     `Thời điểm này xung đột với một bài đăng khác của ${p.account}. Hãy chọn thời điểm khác, hoặc đặt khoảng cách giữa các bài ngắn hơn trong Cài đặt đăng bài.`,
-  slotsHaveDestinationTimes: 'Một số bài đăng này có giờ riêng cho một tài khoản. Hãy xóa các giờ đó trước khi giữ chỗ giờ chung.',
   calendarRange: 'Hãy chọn khoảng lịch tối đa 93 ngày, với ngày bắt đầu trước ngày kết thúc.',
   archiveInFlight: 'Hãy rút lại các lần gửi đang chờ hoặc ghi nhận kết quả của chúng trước khi lưu trữ bài đăng này.',
   // Delivery.
@@ -44,6 +43,8 @@ export const vi: RcPublishingMessages = {
   renderFailed: 'Bản xuất của bài đăng này chưa hoàn tất. Hãy kết xuất và ghim lại.',
   renderCancelled: 'Bản xuất của bài đăng này đã bị hủy. Hãy kết xuất và ghim lại khi bạn sẵn sàng.',
   videoNotFound: 'Video này không có trên máy tính này. Hãy mở dự án của nó rồi thử lại.',
+  sequenceNotFound: 'Video này không có chuỗi đó. Bỏ trống chuỗi để đăng chuỗi chính của video.',
+  sequenceOneVideo: 'Chỉ chọn chuỗi khi chuẩn bị một video.',
   // Settings, connections and accounts.
   accountNotFound: 'Tài khoản này không còn tồn tại. Hãy tải lại Cài đặt đăng bài rồi thử lại.',
   connectionNotFound: 'Kết nối này không còn tồn tại. Hãy tải lại Cài đặt đăng bài rồi thử lại.',
@@ -57,6 +58,7 @@ export const vi: RcPublishingMessages = {
   linkCanonical: 'Các tài khoản khác đang liên kết với tài khoản này. Hãy liên kết tuyến kia với tài khoản này thay thế.',
   // Copy proposals.
   proposalReason: 'Bản nháp dựa trên video, bản chép lời và hướng dẫn viết của bạn. Hãy xem lại trước khi áp dụng.',
+  proposalUnreadable: 'Không đọc được câu trả lời của mô hình văn bản. Hãy thử Đề xuất văn bản lần nữa hoặc tự viết.',
   /** The name the publishing service opens a video under (shown as the video's opener). */
   principalName: 'Đăng bài CucCut',
   // Calendar transfer and cleanup.

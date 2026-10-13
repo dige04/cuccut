@@ -4,6 +4,7 @@ import {
   accountFieldsBlock,
   accountInUse,
   accountRowLabel,
+  confirmAccountParams,
   connectionInUse,
   hasScheduleErrors,
   linkBlock,
@@ -143,6 +144,13 @@ describe('accounts and connections', () => {
     expect(accountRowLabel(account({ id: 'a', name: 'Studio', disabled: true, needsReconnect: true }))).toBe(
       `${PC.settings.accountRow('Studio', PC.network.youtube)} ${PC.settings.needsReconnect} ${PC.settings.disabled}`,
     );
+  });
+
+  it('"Confirm account" saves an imported account again with its current name and handle, leaving its other settings alone', () => {
+    const imported = account({ id: 'a', name: 'Studio', remoteId: '@studio', disabled: true, needsReconnect: true });
+    const params = confirmAccountParams(imported);
+    expect(params).toEqual({ id: 'a', connectionId: imported.connectionId, network: 'youtube', name: 'Studio', remoteId: '@studio' });
+    expect(params).not.toHaveProperty('disabled');
   });
 
   it('links only to canonical accounts on the same network, and keeps a canonical account fixed', () => {

@@ -5,6 +5,7 @@ import {
   YOUTUBE_TITLE_LIMIT,
   RpcError,
   parseHashtags,
+  refOf,
   type GenerateTextRequest,
   type Id,
   type JobRecord,
@@ -20,7 +21,11 @@ import type { PublishingActor, PublishingService } from './publishing-service.ts
  * Copy proposals (design `docs/cuccut/m2-publishing.md` §2.1 flow 3, §4.1): "Propose text" asks the text model for a title, description and hashtags
  * grounded in the video (its name, a transcript excerpt when there is one), the owner's writing guidance and their instruction. The request is an
  * ordinary `generateText` job (so outbound grants and budgets apply); when it finishes, its JSON answer is checked and stored on the publication as a
- * proposal. A proposal is never applied by itself: the owner (or an agent, through `apply`) chooses what to use.
+ * proposal. A proposal is never applied by itself: the owner (or an agent, through `apply`) chooses what to use. The one exception is a clip prepared
+ * automatically (`autoPrepare`), whose proposal is applied when nobody wrote text in the meantime.
+ *
+ * A proposal (and an answer that could not be read, `proposalError`) is stored as an annotation: it does not raise the publication's revision, so an
+ * owner typing in the open dialog keeps a draft that still saves, and an authorization for the current revision stays valid.
  */
 
 export interface PublishingTextJobs {
@@ -96,8 +101,11 @@ export class PublishingCopy {
     this.#log = options.log;
   }
 
-  /** Submits a text-model job for a proposal; the proposal is stored on the publication when the job finishes. */
-  async propose(publicationId: Id, instruction: string | undefined, actor: PublishingActor): Promise<{ jobId: Id }> {
+  /**
+   * Submits a text-model job for a proposal; the proposal is stored on the publication when the job finishes. With `apply`, it is also applied then,
+   * unless the shared text changed after the request.
+   */
+  async propose(publicationId: Id, instruction: string | undefined, actor: PublishingActor, options: { apply?: boolean } = {}): Promise<{ jobId: Id }> {
     const p = this.#service.publication(publicationId);
     const settings = this.#service.store.settings();
     const accounts = this.#service.store.accounts();
@@ -124,37 +132,61 @@ export class PublishingCopy {
       actor.submitter,
     );
     const revision = p.revision;
+    const apply = options.apply ? { actor, copy: p.copy } : null;
     this.#service.jobs.watch(jobId, (job) => {
-      void this.#finished(publicationId, revision, jobId, job).catch((error: unknown) =>
+      void this.#finished(publicationId, revision, jobId, job, apply).catch((error: unknown) =>
         this.#log.warn('Storing a copy proposal failed', { publicationId, jobId, error: String(error) }),
       );
     });
     return { jobId };
   }
 
-  async #finished(publicationId: Id, revision: number, jobId: Id, job: JobRecord | null): Promise<void> {
-    if (!job || job.state !== 'completed' || !job.result) return;
-    const buffer = await this.#jobs.artifacts.read(job.result.artifactId);
-    const parsed = buffer ? parseProposal(buffer.toString('utf8')) : null;
-    if (!parsed) {
-      this.#log.warn('A copy proposal answer could not be read', { publicationId, jobId });
+  async #finished(
+    publicationId: Id,
+    revision: number,
+    jobId: Id,
+    job: JobRecord | null,
+    apply: { actor: PublishingActor; copy: PublicationCopy } | null,
+  ): Promise<void> {
+    // A failed or cancelled job carries its own error, which the dialog shows from the job.
+    if (!job || job.state !== 'completed') {
+      if (apply) this.#log.info('No text was proposed for a prepared clip', { publicationId, jobId, state: job?.state ?? null });
       return;
     }
+    const buffer = job.result ? await this.#jobs.artifacts.read(job.result.artifactId) : null;
+    const parsed = buffer ? parseProposal(buffer.toString('utf8')) : null;
+    if (!parsed) this.#log.warn('A copy proposal answer could not be read', { publicationId, jobId });
     await this.#service.store.transact((tx) => {
       const saved = this.#service.store.publication(publicationId);
       if (!saved || saved.archived) return;
-      const draft = tx.publication(publicationId);
-      draft.proposal = { revision, copy: parsed.copy, reason: parsed.reason ?? RP.proposalReason().text, jobId, at: tx.now.toISOString() };
+      const draft = tx.annotate(publicationId);
+      const at = tx.now.toISOString();
+      if (parsed) {
+        draft.proposal = { revision, copy: parsed.copy, reason: parsed.reason ?? RP.proposalReason().text, jobId, at };
+        draft.proposalError = null;
+      } else {
+        const message = RP.proposalUnreadable();
+        draft.proposalError = { jobId, error: message.text, errorRef: refOf(message), at };
+      }
     });
+    if (!parsed || !apply) return;
+    const current = this.#service.store.publication(publicationId);
+    // Someone wrote text after the request: the proposal waits for them instead.
+    if (!current || current.archived || JSON.stringify(current.copy) !== JSON.stringify(apply.copy)) return;
+    await this.apply(publicationId, current.revision, parsed.copy, apply.actor).catch((error: unknown) =>
+      this.#log.warn('Applying the proposed text of a prepared clip failed', { publicationId, jobId, error: String(error) }),
+    );
   }
 
-  /** Stores a proposal written elsewhere (an agent's `publications_propose_copy`). Not applied. */
+  /** Stores a proposal written elsewhere (an agent's `publications_propose_copy`). Not applied, and the revision stays as it is. */
   async store(publicationId: Id, revision: number, copy: PublicationCopy, reason: string, _actor: PublishingActor): Promise<PublicationDetail> {
-    const saved = await this.#service.store.change(publicationId, revision, (p, tx) => {
+    await this.#service.store.transact((tx) => {
+      const p = tx.annotate(publicationId, revision);
       if (p.archived) throw new RpcError('conflict', RP.publicationArchived(), { code: 'PUBLICATION_ARCHIVED' });
       p.proposal = { revision, copy, reason: reason.trim() || RP.proposalReason().text, jobId: null, at: tx.now.toISOString() };
+      p.proposalError = null;
     });
-    return this.#service.detail(saved);
+    return this.#service.get(publicationId);
   }
 
   /** Applies text (usually from the proposal) as the shared text and clears the proposal. */

@@ -21,7 +21,6 @@ export const ko: RcPublishingMessages = {
   nothingToSend: '이 게시물의 모든 계정에 이미 전송되었습니다. 다시 보내려면 새 릴리스를 준비하세요.',
   slotTaken: (p: { account: string }) =>
     `이 시간은 ${p.account}의 다른 게시물과 충돌합니다. 다른 시간을 선택하거나 게시 설정에서 게시물 사이 간격을 줄이세요.`,
-  slotsHaveDestinationTimes: '이 게시물 중 일부는 계정별 개별 시간이 있습니다. 공통 시간을 예약하기 전에 그 시간을 지우세요.',
   calendarRange: '캘린더 범위는 최대 93일이어야 하며, 시작일이 종료일보다 앞이어야 합니다.',
   archiveInFlight: '이 게시물을 보관하기 전에 대기 중인 전송을 철회하거나 결과를 기록하세요.',
   // Delivery.
@@ -44,6 +43,8 @@ export const ko: RcPublishingMessages = {
   renderFailed: '이 게시물의 내보내기가 완료되지 않았습니다. 다시 렌더링하고 고정하세요.',
   renderCancelled: '이 게시물의 내보내기가 취소되었습니다. 준비되면 다시 렌더링하고 고정하세요.',
   videoNotFound: '이 동영상은 이 컴퓨터에 없습니다. 프로젝트를 연 다음 다시 시도하세요.',
+  sequenceNotFound: "This video has no such sequence. Leave the sequence out to publish the video's main sequence.",
+  sequenceOneVideo: 'Choose a sequence only when preparing one video.',
   // Settings, connections and accounts.
   accountNotFound: '이 계정은 더 이상 존재하지 않습니다. 게시 설정을 다시 불러온 후 다시 시도하세요.',
   connectionNotFound: '이 연결은 더 이상 존재하지 않습니다. 게시 설정을 다시 불러온 후 다시 시도하세요.',
@@ -57,6 +58,7 @@ export const ko: RcPublishingMessages = {
   linkCanonical: '다른 계정이 이 계정에 연결되어 있습니다. 대신 다른 경로를 이 계정에 연결하세요.',
   // Copy proposals.
   proposalReason: '동영상, 대본 및 작성 가이드를 바탕으로 한 초안입니다. 적용하기 전에 검토하세요.',
+  proposalUnreadable: "The text model's answer couldn't be read. Try Propose text again, or write the text yourself.",
   /** The name the publishing service opens a video under (shown as the video's opener). */
   principalName: 'CucCut 게시',
   // Calendar transfer and cleanup.

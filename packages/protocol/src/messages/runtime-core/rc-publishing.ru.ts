@@ -21,8 +21,6 @@ export const ru: RcPublishingMessages = {
   nothingToSend: 'Все аккаунты этой публикации уже отправлены. Чтобы отправить её снова, подготовьте новый релиз.',
   slotTaken: (p: { account: string }) =>
     `Это время конфликтует с другой публикацией для ${p.account}. Выберите другое время или в настройках публикации допустите меньший интервал между постами.`,
-  slotsHaveDestinationTimes:
-    'У некоторых из этих публикаций есть собственное время для аккаунта. Очистите эти значения, прежде чем резервировать общее время.',
   calendarRange: 'Выберите диапазон календаря не более 93 дней, при этом начало должно быть раньше конца.',
   archiveInFlight: 'Перед архивированием этой публикации отзовите ожидающие отправки или зафиксируйте их результаты.',
   // Delivery.
@@ -45,6 +43,8 @@ export const ru: RcPublishingMessages = {
   renderFailed: 'Экспорт для этой публикации не завершился. Отрендерите и закрепите его заново.',
   renderCancelled: 'Экспорт для этой публикации отменён. Отрендерите и закрепите его заново, когда будете готовы.',
   videoNotFound: 'Этого видео нет на этом компьютере. Откройте его проект и попробуйте снова.',
+  sequenceNotFound: "This video has no such sequence. Leave the sequence out to publish the video's main sequence.",
+  sequenceOneVideo: 'Choose a sequence only when preparing one video.',
   // Settings, connections and accounts.
   accountNotFound: 'Этого аккаунта больше нет. Перезагрузите настройки публикации и попробуйте снова.',
   connectionNotFound: 'Этого подключения больше нет. Перезагрузите настройки публикации и попробуйте снова.',
@@ -58,6 +58,7 @@ export const ru: RcPublishingMessages = {
   linkCanonical: 'С этим аккаунтом связаны другие аккаунты. Вместо этого свяжите другой маршрут с этим аккаунтом.',
   // Copy proposals.
   proposalReason: 'Черновик на основе видео, его транскрипции и ваших рекомендаций по тексту. Проверьте его перед применением.',
+  proposalUnreadable: "The text model's answer couldn't be read. Try Propose text again, or write the text yourself.",
   /** The name the publishing service opens a video under (shown as the video's opener). */
   principalName: 'Публикация CucCut',
   // Calendar transfer and cleanup.

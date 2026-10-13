@@ -17,7 +17,7 @@ import {
   type PublicationDraft,
 } from '../../model/publication-form.ts';
 import { useRuntime } from '../../runtime/context.tsx';
-import { getPublication, publishingError, updatePublication, usePublishingBusy } from '../../runtime/publishing-commands.ts';
+import { getPublication, proposalAt, publishingError, updatePublication, usePublishingBusy } from '../../runtime/publishing-commands.ts';
 import { usePublishing } from '../../state/publishing-store.ts';
 import { useShell } from '../../state/shell-store.ts';
 import { NetworkIcon } from './network-icon.tsx';
@@ -84,6 +84,7 @@ export function usePublicationForm(publicationId: Id, openPublication: (id: Id) 
   const [tab, setTab] = useState('shared');
   const busy = usePublishingBusy((s) => !!s.busy[publicationId]);
   const rowRevision = usePublishing((s) => s.publications.find((p) => p.id === publicationId)?.revision ?? null);
+  const rowProposalAt = usePublishing((s) => s.publications.find((p) => p.id === publicationId)?.proposalAt ?? null);
   const accounts = usePublishing((s) => s.accounts);
   const connections = usePublishing((s) => s.connections);
   const settings = usePublishing((s) => s.settings);
@@ -114,6 +115,20 @@ export function usePublicationForm(publicationId: Id, openPublication: (id: Id) 
       live = false;
     };
   }, [runtime, publicationId, rowRevision, savedRevision]);
+
+  // A proposal (or its failure) is stored without raising the revision: fetch it when the row says one arrived, and keep the draft.
+  const savedProposalAt = state.saved ? proposalAt(state.saved) : null;
+  useEffect(() => {
+    if (savedRevision === null || rowProposalAt === null || rowProposalAt === savedProposalAt) return;
+    let live = true;
+    getPublication(runtime, publicationId).then(
+      (p) => live && dispatch({ type: 'annotated', publication: p }),
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [runtime, publicationId, rowProposalAt, savedProposalAt, savedRevision]);
 
   if (!state.saved || !state.draft) return loadError ? { kind: 'failed', message: loadError } : { kind: 'loading' };
 

@@ -152,6 +152,7 @@ import type {
   PublishingCalendarParams,
   PublishingCalendarResult,
   PublishingCleanupResult,
+  PublishingRemovedRefs,
   PublishingConnection,
   PublishingNetwork,
   PublishingPinSource,
@@ -1013,7 +1014,7 @@ export interface RpcMethods {
   'publishing.archive': { params: { publicationId: Id; revision: number }; result: PublicationDetail };
   'publishing.unarchive': { params: { publicationId: Id; revision: number }; result: PublicationDetail };
   /** Deletes archived publications past the retention setting and the pinned export files nothing uses (desktop app only). */
-  'publishing.cleanup': { params: Record<string, never>; result: PublishingCleanupResult };
+  'publishing.cleanup': { params: { dryRun?: boolean }; result: PublishingCleanupResult };
   /** Asks the text model for title, description and hashtags; the proposal is stored on the publication when the job finishes. */
   'publishing.copy.propose': { params: { publicationId: Id; instruction?: string }; result: { jobId: Id } };
   /** Applies text (usually a proposal) and clears the proposal. */
@@ -1025,13 +1026,13 @@ export interface RpcMethods {
   /** Removes a connection and its accounts; the result carries them so the UI can offer Undo (saving them again with their IDs). */
   'publishing.connections.remove': {
     params: { connectionId: Id };
-    result: { connection: PublishingConnection; accounts: PublishingAccount[] };
+    result: { connection: PublishingConnection; accounts: PublishingAccount[]; refs: PublishingRemovedRefs };
   };
   'publishing.accounts.save': {
     params: { id?: Id; connectionId: Id; network: PublishingNetwork; name: string; remoteId: string; disabled?: boolean };
     result: { account: PublishingAccount };
   };
-  'publishing.accounts.remove': { params: { accountId: Id }; result: { account: PublishingAccount } };
+  'publishing.accounts.remove': { params: { accountId: Id }; result: { account: PublishingAccount; refs: PublishingRemovedRefs } };
   'publishing.accounts.link': { params: { accountId: Id; equivalentTo: Id | null }; result: { account: PublishingAccount } };
   'publishing.transfer.export': { params: Record<string, never>; result: { archive: CalendarArchive; fileName: string } };
   'publishing.transfer.preview': { params: { archive: unknown }; result: CalendarImportPreview };

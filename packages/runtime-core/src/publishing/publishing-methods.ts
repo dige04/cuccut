@@ -46,7 +46,7 @@ export function publishingMethods({ publishing, media }: PublishingMethodDeps): 
     'publishing.reconcile': (p, principal) => publishing.reconcile(p, actor(principal)),
     'publishing.archive': (p, principal) => publishing.archive(p.publicationId, p.revision, actor(principal)),
     'publishing.unarchive': (p, principal) => publishing.unarchive(p.publicationId, p.revision, actor(principal)),
-    'publishing.cleanup': (_p, principal) => publishing.cleanup(actor(principal)),
+    'publishing.cleanup': (p, principal) => publishing.cleanup(actor(principal), p.dryRun ? { dryRun: true } : {}),
     'publishing.copy.propose': (p, principal) => publishing.copy.propose(p.publicationId, p.instruction, actor(principal)),
     'publishing.copy.apply': (p, principal) => publishing.copy.apply(p.publicationId, p.revision, p.copy, actor(principal)),
     'publishing.openHandle': async (p) => {
@@ -57,7 +57,7 @@ export function publishingMethods({ publishing, media }: PublishingMethodDeps): 
     'publishing.connections.save': async (p, principal) => ({ connection: await publishing.saveConnection(p, actor(principal)) }),
     'publishing.connections.remove': (p, principal) => publishing.removeConnection(p.connectionId, actor(principal)),
     'publishing.accounts.save': async (p, principal) => ({ account: await publishing.saveAccount(p, actor(principal)) }),
-    'publishing.accounts.remove': async (p, principal) => ({ account: await publishing.removeAccount(p.accountId, actor(principal)) }),
+    'publishing.accounts.remove': (p, principal) => publishing.removeAccount(p.accountId, actor(principal)),
     'publishing.accounts.link': async (p, principal) => ({ account: await publishing.linkAccount(p.accountId, p.equivalentTo, actor(principal)) }),
     'publishing.transfer.export': (_p, principal) => publishing.transfer.export(actor(principal)),
     'publishing.transfer.preview': (p, principal) => publishing.transfer.preview(p.archive, actor(principal)),

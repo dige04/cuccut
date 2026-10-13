@@ -29,6 +29,7 @@ import {
   todayInZone,
   unsettledDeliveryIssues,
   validatePublication,
+  waitsForTime,
   refOf,
   type CalendarPlacement,
   type MessageRef,
@@ -55,6 +56,7 @@ import {
   type PublishingPinSource,
   type PublishingPrepareParams,
   type PublishingProvider,
+  type PublishingRemovedRefs,
   type PublishingReconcileParams,
   type PublishingSettings,
   type PublishingSlotsParams,
@@ -166,7 +168,8 @@ export class PublishingService {
   readonly #log: Logger;
   readonly #now: () => Date;
   readonly #dueIntervalMs: number;
-  readonly #dueSent = new Set<string>();
+  /** Reminders already emitted: payload key → the event's `at`. */
+  readonly #dueSent = new Map<string, string>();
   #dueTimer: ReturnType<typeof setInterval> | null = null;
   #unsubscribe: () => void;
   #closed = false;
@@ -265,6 +268,7 @@ export class PublishingService {
       priority: p.priority,
       expiresAt: p.expiresAt,
       ...(p.exportId ? { exportPosterId: p.exportId } : {}),
+      ...(proposalAt(p) ? { proposalAt: proposalAt(p)! } : {}),
       destinations: p.destinations.map((d) => ({ id: d.id, accountId: d.accountId, format: d.format, state: d.state, scheduledAt: d.scheduledAt, at: calendarInstant(p, d) })),
     };
   }
@@ -346,9 +350,9 @@ export class PublishingService {
       .filter((p) => q.projectId === undefined || p.projectId === q.projectId)
       .filter((p) => !accounts || p.destinations.some((d) => accounts.has(d.accountId)))
       .filter((p) => {
-        const times = p.destinations.map((d) => calendarInstant(p, d));
-        if (unscheduled && (times.length === 0 || times.some((at) => !at))) return true;
-        return times.some((at) => {
+        if (unscheduled && waitsForTime(this.row(p))) return true;
+        return p.destinations.some((d) => {
+          const at = calendarInstant(p, d);
           if (!at) return false;
           const day = dayInZone(at, timezone);
           return day >= q.from && day <= q.to;
@@ -378,11 +382,14 @@ export class PublishingService {
   /** One publication per video: the latest one that is not archived (unless `repeat`), else a new one seeded from the video and the default accounts. */
   async prepare(params: PublishingPrepareParams, _actor: PublishingActor): Promise<PublicationDetail[]> {
     const videoIds = [...new Set(params.videoIds)];
+    // A sequence belongs to one video: naming one is allowed only for a single video, and it must be one of that video's sequences.
+    if (params.sequenceId !== undefined && videoIds.length !== 1) throw invalid(RP.sequenceOneVideo(), 'SEQUENCE_ONE_VIDEO');
     const facts: Array<PublishingVideoFacts & { sequenceId: Id }> = [];
     for (const videoId of videoIds) {
       const found = await this.videos.facts(videoId);
       const sequenceId = params.sequenceId ?? found?.rootSequenceId ?? null;
       if (!found || !sequenceId) throw notFound(RP.videoNotFound(), 'VIDEO_NOT_FOUND');
+      if (params.sequenceId !== undefined && !found.sequenceIds.includes(params.sequenceId)) throw notFound(RP.sequenceNotFound(), 'SEQUENCE_NOT_FOUND');
       facts.push({ ...found, sequenceId });
     }
     const accounts = this.store.accounts();
@@ -437,7 +444,10 @@ export class PublishingService {
       }
       for (const [key, value] of Object.entries(patch)) if (value !== undefined) (p as unknown as Record<string, unknown>)[key] = value;
       if (destinations) p.destinations = this.#destinations(p, destinations, accounts, tx);
-      if (options.clearProposal) p.proposal = null;
+      if (options.clearProposal) {
+        p.proposal = null;
+        p.proposalError = null;
+      }
       for (const d of p.destinations) if (isEditableDelivery(d.state)) clearPayload(tx, p, d);
       this.#checkReservations(p);
     });
@@ -493,7 +503,8 @@ export class PublishingService {
 
   /**
    * Plans free weekly slots (agentcut `slots`). Publications that already have a default time keep it; the others get the earliest free slot. With
-   * `reserve`, the planned times are written in one change, each as the publication's default time (destination times are cleared).
+   * `reserve`, the planned times are written in one change, each as the publication's default time, and the accounts' own times of those
+   * publications are cleared (design §7: a publication moved on the calendar, or with one timed and one untimed account, can still be reserved).
    */
   async slots(params: PublishingSlotsParams, _actor: PublishingActor): Promise<PublishingSlotsResult> {
     const ids = [...new Set(params.publicationIds)];
@@ -506,9 +517,15 @@ export class PublishingService {
         this.#assertActive(p);
         if (p.destinations.some((d) => !isEditableDelivery(d.state))) throw conflict(RP.publicationLocked(), 'PUBLICATION_LOCKED');
       }
-      if (publications.some((p) => p.destinations.some((d) => d.scheduledAt))) throw conflict(RP.slotsHaveDestinationTimes(), 'DESTINATION_TIMES');
       const accounts = this.store.accounts();
-      const occupancy = this.store.read((doc) => publicationOccupancy(doc.publications, doc.accounts));
+      // The publications being planned give up their accounts' own times, so those times do not block their own slots.
+      const replanned = new Set(publications.filter((p) => !p.scheduledAt).map((p) => p.id));
+      const occupancy = this.store.read((doc) =>
+        publicationOccupancy(
+          doc.publications.filter((p) => !replanned.has(p.id)),
+          doc.accounts,
+        ),
+      );
       const preserved = publications.filter((p) => p.scheduledAt).map((p) => ({ publicationId: p.id, at: p.scheduledAt! }));
       const result = planSlots(
         publications
@@ -542,6 +559,7 @@ export class PublishingService {
         p.scheduledAt = at;
         p.timezone = settings.timezone;
         for (const d of p.destinations) {
+          if (!isEditableDelivery(d.state)) continue;
           d.scheduledAt = null;
           clearPayload(tx, p, d);
         }
@@ -551,6 +569,50 @@ export class PublishingService {
       return planned;
     });
     return { ...result, publications: result.placements.map((item) => this.detail(this.#publication(item.publicationId))) };
+  }
+
+  /**
+   * "Start new clips ready to publish" (Settings → Publishing → Schedule, agentcut `prepareGenerated`): when `autoPrepare` is on, each newly generated
+   * clip gets a publication for the default accounts, a text proposal that is applied when it arrives (unless someone wrote text first), and the next
+   * free weekly slot. Failures are logged: generating the clip never fails because of publishing.
+   */
+  async prepareGenerated(videoIds: Id[], actor: PublishingActor): Promise<void> {
+    try {
+      await this.#prepareGenerated(videoIds, actor);
+    } catch (error) {
+      this.#log.warn('Preparing generated clips for publishing failed', { error: String(error) });
+    }
+  }
+
+  async #prepareGenerated(videoIds: Id[], actor: PublishingActor): Promise<void> {
+    if (this.#closed || !videoIds.length || !this.store.settings().autoPrepare) return;
+    const prepared: Id[] = [];
+    for (const videoId of [...new Set(videoIds)]) {
+      try {
+        const [p] = await this.prepare({ videoIds: [videoId], origin: 'shorts' }, actor);
+        if (!p) continue;
+        prepared.push(p.id);
+        // An existing publication of this clip keeps its text.
+        if (p.revision !== 0) continue;
+        await this.copy.propose(p.id, undefined, actor, { apply: true });
+      } catch (error) {
+        this.#log.warn('Preparing a publication for a generated clip failed', { videoId, error: String(error) });
+      }
+    }
+    if (!prepared.length || !this.store.settings().slots.length) return;
+    const candidates = prepared
+      .map((id) => this.store.publication(id))
+      .filter((p): p is Publication => !!p && !p.archived && !p.scheduledAt && p.destinations.length > 0 && p.destinations.every((d) => d.state === 'not_sent'));
+    if (!candidates.length) return;
+    try {
+      const result = await this.slots(
+        { publicationIds: candidates.map((p) => p.id), reserve: true, revisions: Object.fromEntries(candidates.map((p) => [p.id, p.revision])) },
+        actor,
+      );
+      for (const missing of result.unavailable) this.#log.info('No free slot for a generated clip', { ...missing });
+    } catch (error) {
+      this.#log.warn('Reserving times for generated clips failed', { error: String(error) });
+    }
   }
 
   // ---- Pinned exports and approval ----
@@ -736,6 +798,8 @@ export class PublishingService {
       d.error = null;
       d.errorRef = null;
     });
+    // Forget its reminder, so sending the same payload again reminds the owner again.
+    this.dueTick();
     return this.detail(saved);
   }
 
@@ -776,6 +840,7 @@ export class PublishingService {
         d.confirmedAt = null;
       }
     });
+    this.dueTick();
     return this.detail(saved);
   }
 
@@ -804,9 +869,17 @@ export class PublishingService {
    * Deletes archived publications older than the retention setting, drops pinned export records nothing uses any more, and removes their files
    * (desktop app only).
    */
-  async cleanup(actor: PublishingActor): Promise<PublishingCleanupResult> {
+  async cleanup(actor: PublishingActor, options: { dryRun?: boolean } = {}): Promise<PublishingCleanupResult> {
     if (actor.kind !== 'human') throw forbidden(actor.kind === 'web' ? RP.desktopOnly() : RP.ownerOnly(), 'OWNER_REQUIRED');
     const cutoff = this.#now().getTime() - this.store.settings().archivedRetentionDays * DAY_MS;
+    if (options.dryRun) {
+      // What a cleanup would remove now, so the owner can confirm it by name before anything is deleted.
+      const expired = this.store.publications().filter((p) => p.archived && p.archivedAt && Date.parse(p.archivedAt) < cutoff);
+      const gone = new Set(expired.map((p) => p.id));
+      const keep = keptExports(this.store.publications().filter((p) => !gone.has(p.id)), this.store.exports());
+      const files = await this.files.cleanup(keep, { dryRun: true });
+      return { publications: expired.length, files: files.files, bytes: files.bytes };
+    }
     const { removed, keep } = await this.store.transact((tx) => {
       const remaining: Publication[] = [];
       let count = 0;
@@ -816,13 +889,13 @@ export class PublishingService {
           count++;
         } else remaining.push(p);
       }
-      const used = new Set(remaining.flatMap((p) => [p.exportId, ...p.destinations.map((d) => d.payload?.exportId ?? null)]).filter((e): e is Id => !!e));
+      const used = usedExports(remaining);
       const exports = this.store.exports();
       if (exports.some((e) => !used.has(e.id))) {
         const list = tx.exports();
         list.splice(0, list.length, ...exports.filter((e) => used.has(e.id)));
       }
-      return { removed: count, keep: new Set(exports.filter((e) => used.has(e.id)).map((e) => e.sha256)) };
+      return { removed: count, keep: keptExports(remaining, exports) };
     });
     const files = await this.files.cleanup(keep);
     return { publications: removed, files: files.files, bytes: files.bytes };
@@ -866,7 +939,10 @@ export class PublishingService {
   }
 
   /** Removes a connection and its accounts. Refused while one of its accounts has a delivery that is not settled. */
-  async removeConnection(connectionId: Id, actor: PublishingActor): Promise<{ connection: PublishingConnection; accounts: PublishingAccount[] }> {
+  async removeConnection(
+    connectionId: Id,
+    actor: PublishingActor,
+  ): Promise<{ connection: PublishingConnection; accounts: PublishingAccount[]; refs: PublishingRemovedRefs }> {
     this.#assertOwner(actor);
     return this.store.transact((tx) => {
       const list = tx.connections();
@@ -876,8 +952,8 @@ export class PublishingService {
       const removed = accounts.filter((a) => a.connectionId === connectionId);
       for (const account of removed) this.#assertAccountFree(account);
       list.splice(list.indexOf(connection), 1);
-      this.#dropAccounts(tx, removed.map((a) => a.id));
-      return { connection, accounts: removed };
+      const refs = this.#dropAccounts(tx, removed.map((a) => a.id));
+      return { connection, accounts: removed, refs };
     });
   }
 
@@ -913,14 +989,15 @@ export class PublishingService {
     });
   }
 
-  async removeAccount(accountId: Id, actor: PublishingActor): Promise<PublishingAccount> {
+  /** Removes an account. The result names what else changed (default accounts, links of other accounts) so Undo can put it back. */
+  async removeAccount(accountId: Id, actor: PublishingActor): Promise<{ account: PublishingAccount; refs: PublishingRemovedRefs }> {
     this.#assertOwner(actor);
     return this.store.transact((tx) => {
       const account = tx.accounts().find((a) => a.id === accountId);
       if (!account) throw notFound(RP.accountNotFound(), 'ACCOUNT_NOT_FOUND');
       this.#assertAccountFree(account);
-      this.#dropAccounts(tx, [accountId]);
-      return account;
+      const refs = this.#dropAccounts(tx, [accountId]);
+      return { account, refs };
     });
   }
 
@@ -953,23 +1030,32 @@ export class PublishingService {
     if (busy) throw conflict(RP.accountInUse({ name: account.name }), 'ACCOUNT_IN_USE');
   }
 
-  /** Removes accounts, unlinks routes linked to them and drops them from the default accounts. */
-  #dropAccounts(tx: PublishingTransaction, ids: Id[]): void {
-    if (!ids.length) return;
+  /** Removes accounts, unlinks routes linked to them and drops them from the default accounts. Returns what it changed besides the accounts. */
+  #dropAccounts(tx: PublishingTransaction, ids: Id[]): PublishingRemovedRefs {
+    const refs: PublishingRemovedRefs = { defaultAccountIds: [], links: [] };
+    if (!ids.length) return refs;
     const accounts = tx.accounts();
     for (let i = accounts.length - 1; i >= 0; i--) if (ids.includes(accounts[i]!.id)) accounts.splice(i, 1);
-    for (const a of accounts) if (a.equivalentTo && ids.includes(a.equivalentTo)) a.equivalentTo = null;
+    for (const a of accounts) {
+      if (a.equivalentTo && ids.includes(a.equivalentTo)) {
+        refs.links.push({ accountId: a.id, equivalentTo: a.equivalentTo });
+        a.equivalentTo = null;
+      }
+    }
     if (this.store.settings().defaultAccountIds.some((id) => ids.includes(id))) {
       const settings = tx.settings();
+      refs.defaultAccountIds = [...settings.defaultAccountIds];
       settings.defaultAccountIds = settings.defaultAccountIds.filter((id) => !ids.includes(id));
     }
+    return refs;
   }
 
   // ---- Due by-hand deliveries ----
 
   /**
-   * Emits `due` once per destination and publication revision for by-hand destinations waiting for the owner whose time arrived (or that were sent
-   * with no time).
+   * Emits `due` once per frozen payload for by-hand destinations waiting for the owner whose time arrived (or that were sent with no time). Other
+   * changes of the same publication (another account's result, a withdrawal) do not repeat it; sending again freezes a new payload and does. A
+   * destination sent with no time keeps the moment it was first found due as its `at`, so the reminder is the same event every time.
    */
   dueTick(): void {
     if (this.#closed) return;
@@ -981,16 +1067,17 @@ export class PublishingService {
         if (p.archived) continue;
         for (const d of p.destinations) {
           if (d.state !== 'queued' || this.#provider(d.accountId) !== 'manual') continue;
-          const key = `${p.id}:${d.id}@${p.revision}`;
+          const key = `${p.id}:${d.id}:${d.payloadHash ?? ''}`;
           live.add(key);
           const at = d.payload?.scheduledAt ?? intendedTime(p, d);
           if (this.#dueSent.has(key) || (at && Date.parse(at) > now)) continue;
-          this.#dueSent.add(key);
-          due.push({ type: 'due', publicationId: p.id, destinationId: d.id, at: at ?? new Date(now).toISOString() });
+          const stamped = at ?? new Date(now).toISOString();
+          this.#dueSent.set(key, stamped);
+          due.push({ type: 'due', publicationId: p.id, destinationId: d.id, at: stamped });
         }
       }
     });
-    for (const key of this.#dueSent) if (!live.has(key)) this.#dueSent.delete(key);
+    for (const key of this.#dueSent.keys()) if (!live.has(key)) this.#dueSent.delete(key);
     for (const event of due) this.topic.publish(event);
   }
 
@@ -1028,6 +1115,23 @@ export class PublishingService {
       this.topic.publish({ type: 'connections.updated', connections: this.store.connections(), accounts: this.store.accounts() });
     }
   }
+}
+
+/** When the latest proposal or proposal failure was stored (such writes keep the revision), or null. */
+function proposalAt(p: Publication): string | null {
+  const times = [p.proposal?.at, p.proposalError?.at].filter((at): at is string => !!at).sort();
+  return times.at(-1) ?? null;
+}
+
+/** Pinned exports used by these publications (the pinned one and every frozen payload's). */
+function usedExports(publications: Publication[]): Set<Id> {
+  return new Set(publications.flatMap((p) => [p.exportId, ...p.destinations.map((d) => d.payload?.exportId ?? null)]).filter((e): e is Id => !!e));
+}
+
+/** The sha256 of the pinned export files these publications still use. */
+function keptExports(publications: Publication[], exports: PinnedExport[]): Set<string> {
+  const used = usedExports(publications);
+  return new Set(exports.filter((e) => used.has(e.id)).map((e) => e.sha256));
 }
 
 function localized(message: Localized): { error: string; errorRef: MessageRef } {

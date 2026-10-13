@@ -21,7 +21,6 @@ export const ja: RcPublishingMessages = {
   nothingToSend: 'この公開内容のすべてのアカウントは送信済みです。もう一度送信するには、新しいリリースを準備してください。',
   slotTaken: (p: { account: string }) =>
     `この時刻は、${p.account} の別の公開内容と競合しています。別の時刻を選ぶか、公開設定で投稿間の間隔を短くしてください。`,
-  slotsHaveDestinationTimes: 'これらの公開内容の一部には、アカウントごとの個別の時刻があります。共通の時刻を予約する前に、それらの時刻を解除してください。',
   calendarRange: 'カレンダーの範囲は最大 93 日までとし、開始日を終了日より前にしてください。',
   archiveInFlight: 'この公開内容をアーカイブする前に、待機中の配信を取り下げるか、その結果を記録してください。',
   // Delivery.
@@ -44,6 +43,8 @@ export const ja: RcPublishingMessages = {
   renderFailed: 'この公開内容の書き出しが完了しませんでした。もう一度レンダリングして固定してください。',
   renderCancelled: 'この公開内容の書き出しはキャンセルされました。準備ができたら、もう一度レンダリングして固定してください。',
   videoNotFound: 'この動画はこのコンピューターにありません。プロジェクトを開いてから、もう一度お試しください。',
+  sequenceNotFound: "This video has no such sequence. Leave the sequence out to publish the video's main sequence.",
+  sequenceOneVideo: 'Choose a sequence only when preparing one video.',
   // Settings, connections and accounts.
   accountNotFound: 'このアカウントはもう存在しません。公開設定を再読み込みして、もう一度お試しください。',
   connectionNotFound: 'この接続はもう存在しません。公開設定を再読み込みして、もう一度お試しください。',
@@ -57,6 +58,7 @@ export const ja: RcPublishingMessages = {
   linkCanonical: 'ほかのアカウントがこのアカウントにリンクされています。代わりに、もう一方の経路をこのアカウントにリンクしてください。',
   // Copy proposals.
   proposalReason: '動画、その文字起こし、あなたの文章ガイドラインに基づく下書きです。適用する前に確認してください。',
+  proposalUnreadable: "The text model's answer couldn't be read. Try Propose text again, or write the text yourself.",
   /** The name the publishing service opens a video under (shown as the video's opener). */
   principalName: 'CucCut の公開',
   // Calendar transfer and cleanup.

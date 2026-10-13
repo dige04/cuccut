@@ -117,6 +117,8 @@ export class PublishingTransaction {
   readonly now: Date;
   /** Publications changed in this transaction, by ID. */
   readonly drafts = new Map<Id, Publication>();
+  /** Drafts obtained only through {@link annotate}: saved without raising their revision. */
+  readonly quiet = new Set<Id>();
   readonly inserted: Publication[] = [];
   readonly removed = new Set<Id>();
   settingsDraft: PublishingSettings | null = null;
@@ -133,6 +135,23 @@ export class PublishingTransaction {
 
   /** A publication to change. With `expectedRevision`, a publication saved at another revision refuses the transaction (`PUBLICATION_CONFLICT`). */
   publication(id: Id, expectedRevision?: number): Publication {
+    this.quiet.delete(id);
+    return this.#draft(id, expectedRevision);
+  }
+
+  /**
+   * A publication to annotate without changing it: notes kept beside the release (a text proposal and its failure), which an owner's open draft and
+   * an authorization for the current revision must survive. Saved without raising the revision or `updatedAt`, unless the same transaction also
+   * changes it through {@link publication}. Only annotation fields may be changed on it.
+   */
+  annotate(id: Id, expectedRevision?: number): Publication {
+    const known = this.drafts.has(id) || this.inserted.some((p) => p.id === id);
+    const draft = this.#draft(id, expectedRevision);
+    if (!known) this.quiet.add(id);
+    return draft;
+  }
+
+  #draft(id: Id, expectedRevision?: number): Publication {
     const draft = this.drafts.get(id) ?? this.inserted.find((p) => p.id === id);
     if (draft) return draft;
     if (this.removed.has(id)) throw notFound();
@@ -163,6 +182,7 @@ export class PublishingTransaction {
     }
     if (!this.#doc.publications.some((p) => p.id === id)) throw notFound();
     this.drafts.delete(id);
+    this.quiet.delete(id);
     this.removed.add(id);
   }
 
@@ -382,8 +402,10 @@ export class PublishingStore {
     };
     const changed: Publication[] = [];
     for (const draft of tx.drafts.values()) {
-      draft.revision += 1;
-      draft.updatedAt = at;
+      if (!tx.quiet.has(draft.id)) {
+        draft.revision += 1;
+        draft.updatedAt = at;
+      }
       changed.push(parse(publicationSchema, draft));
     }
     const inserted = tx.inserted.map((p) => parse(publicationSchema, p));

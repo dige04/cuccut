@@ -75,18 +75,37 @@ describe('copy proposals', () => {
     const saved = fx.service.get(p.id);
     expect(saved.proposal).toMatchObject({ revision: p.revision, jobId, reason: 'From the transcript.', copy: { title: 'Launch day' } });
     expect(saved.copy.title).toBe(p.copy.title);
+    // Stored beside the release: the revision stays, so an open draft still saves and an authorization stays valid.
+    expect(saved.revision).toBe(p.revision);
+    expect(fx.service.row(saved).proposalAt).toBe(saved.proposal!.at);
   });
 
-  it('ignores an answer it cannot read and a job that did not finish', async () => {
+  it('records an answer it cannot read, so the dialog can say so; a job that did not finish keeps its own error', async () => {
     const p = await prepared();
     const first = await fx.service.copy.propose(p.id, undefined, HUMAN);
     fx.jobs.answer(first.jobId, 'Sure! Here is a title: ...');
     const second = await fx.service.copy.propose(p.id, undefined, HUMAN);
     fx.jobs.set(second.jobId, { state: 'failed' });
     await until(() => fx.service.jobs.pending === 0);
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(fx.service.publication(p.id).proposal).toBeNull();
-    expect(fx.service.publication(p.id).revision).toBe(p.revision);
+    await until(() => fx.service.publication(p.id).proposalError !== null);
+    const saved = fx.service.publication(p.id);
+    expect(saved.proposal).toBeNull();
+    expect(saved.proposalError).toMatchObject({ jobId: first.jobId, errorRef: { key: expect.stringContaining('proposalUnreadable') } });
+    expect(saved.revision).toBe(p.revision);
+    // The next proposal clears the failure.
+    const third = await fx.service.copy.propose(p.id, undefined, HUMAN);
+    fx.jobs.answer(third.jobId, ANSWER);
+    await until(() => fx.service.publication(p.id).proposal !== null);
+    expect(fx.service.publication(p.id).proposalError).toBeNull();
+  });
+
+  it('a stored proposal keeps an owner authorization valid', async () => {
+    const p = await prepared();
+    await fx.service.store.transact((tx) => void (tx.publication(p.id).authorization = { revision: p.revision + 1, at: '2026-10-13T10:00:00.000Z' }));
+    const authorized = fx.service.get(p.id);
+    const proposed = await fx.service.copy.store(p.id, authorized.revision, { title: 'Agent title', description: '', hashtags: [] }, 'r', AGENT);
+    expect(proposed.revision).toBe(authorized.revision);
+    expect(proposed.authorization).toEqual(authorized.authorization);
   });
 
   it('apply sets the shared text and clears the proposal', async () => {

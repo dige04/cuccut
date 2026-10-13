@@ -42,6 +42,14 @@ async function ready(accountIds: Id[] = ['acc_ig']): Promise<PublicationDetail> 
   return fx.service.approve(p.id, p.revision, HUMAN);
 }
 
+async function until(check: () => boolean, ms = 3000): Promise<void> {
+  const end = Date.now() + ms;
+  while (!check()) {
+    if (Date.now() > end) throw new Error('timed out');
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
 function events(): PublishingEvent[] {
   const seen: PublishingEvent[] = [];
   fx.service.topic.subscribe(undefined, ({ event }) => seen.push(event));
@@ -67,6 +75,15 @@ describe('prepare', () => {
     expect(p!.destinations.map((d) => d.accountId)).toEqual(['acc_yt', 'acc_ig']);
     expect(await codeOf(fx.service.prepare({ videoIds: ['video_x'] }, HUMAN))).toBe('VIDEO_NOT_FOUND');
     expect(await codeOf(fx.service.prepare({ videoIds: ['video_1'], accountIds: ['acc_x'] }, HUMAN))).toBe('ACCOUNT_NOT_FOUND');
+  });
+
+  it('a named sequence must belong to the one video given', async () => {
+    fx.videos.add({ videoId: 'video_2', rootSequenceId: 'seq_main', sequenceIds: ['seq_main', 'seq_cut'] });
+    expect(await codeOf(fx.service.prepare({ videoIds: ['video_2'], sequenceId: 'seq_1' }, HUMAN))).toBe('SEQUENCE_NOT_FOUND');
+    expect(await codeOf(fx.service.prepare({ videoIds: ['video_1', 'video_2'], sequenceId: 'seq_cut' }, HUMAN))).toBe('SEQUENCE_ONE_VIDEO');
+    const [p] = await fx.service.prepare({ videoIds: ['video_2'], sequenceId: 'seq_cut' }, HUMAN);
+    expect(p!.sequenceId).toBe('seq_cut');
+    expect(fx.service.store.publications()).toHaveLength(1);
   });
 });
 
@@ -168,10 +185,17 @@ describe('slots', () => {
     expect(new Set(plan.placements.map((item) => item.publicationId))).toEqual(new Set([a.id, b.id]));
   });
 
-  it('refuses publications whose destinations have their own times', async () => {
-    const p = await prepare();
-    await fx.service.reschedule(p.id, p.revision, [{ destinationId: p.destinations[0]!.id, at: '2026-10-15T09:00:00.000Z' }], HUMAN);
-    expect(await codeOf(fx.service.slots({ publicationIds: [p.id] }, HUMAN))).toBe('DESTINATION_TIMES');
+  it('reserving writes the default time and clears the accounts\' own times in one change', async () => {
+    let p = await prepare(['acc_yt', 'acc_ig']);
+    // Moved on the calendar once: one account has its own time (on the first free slot), the other has none, so it waits in Unscheduled.
+    p = await fx.service.reschedule(p.id, p.revision, [{ destinationId: p.destinations[0]!.id, at: '2026-10-13T18:00:00.000Z' }], HUMAN);
+    const plan = await fx.service.slots({ publicationIds: [p.id] }, HUMAN);
+    // Its own account time does not block its own slot: those times are given up when it is reserved.
+    expect(plan.placements).toEqual([{ publicationId: p.id, at: '2026-10-13T18:00:00.000Z' }]);
+    const reserved = await fx.service.slots({ publicationIds: [p.id], reserve: true, revisions: { [p.id]: p.revision } }, HUMAN);
+    const saved = reserved.publications[0]!;
+    expect(saved).toMatchObject({ scheduledAt: '2026-10-13T18:00:00.000Z', revision: p.revision + 1 });
+    expect(saved.destinations.map((d) => d.scheduledAt)).toEqual([null, null]);
   });
 
   it('leaves publications that already have a time unchanged', async () => {
@@ -239,6 +263,29 @@ describe('approve, authorize and send', () => {
     fx.service.dueTick();
     expect(seen.filter((e) => e.type === 'due')).toHaveLength(1);
     expect(await codeOf(fx.service.send(p.id, p.revision, HUMAN))).toBe('NOTHING_TO_SEND');
+  });
+
+  it('a reminder is not repeated when another account of the same publication changes', async () => {
+    let p = await ready(['acc_yt', 'acc_ig']);
+    const seen = events();
+    p = await fx.service.send(p.id, p.revision, HUMAN);
+    const [yt, ig] = p.destinations;
+    expect(seen.filter((e) => e.type === 'due')).toHaveLength(2);
+    fx.clock.advance(HOUR);
+    // Recording the other account's result raises the revision; the account still waiting keeps its one reminder, with the same time.
+    p = await fx.service.reconcile(
+      { publicationId: p.id, revision: p.revision, destinationId: ig!.id, state: 'published', remoteUrl: null, at: null, note: 'Seen live in the app' },
+      HUMAN,
+    );
+    fx.service.dueTick();
+    const due = seen.filter((e) => e.type === 'due');
+    expect(due).toHaveLength(2);
+    expect(due.find((e) => e.destinationId === yt!.id)).toMatchObject({ at: '2026-10-13T10:00:00.000Z' });
+    // Sending again after a withdrawal freezes a new payload: a new reminder.
+    p = await fx.service.withdraw(p.id, p.revision, yt!.id, HUMAN);
+    p = await fx.service.approve(p.id, p.revision, HUMAN);
+    await fx.service.send(p.id, p.revision, HUMAN);
+    expect(seen.filter((e) => e.type === 'due')).toHaveLength(3);
   });
 
   it('a scheduled by-hand delivery is due when its time arrives', async () => {
@@ -361,7 +408,8 @@ describe('archive and cleanup', () => {
     expect(await codeOf(fx.service.update({ publicationId: other.id, revision: archived.revision, patch: { label: 'x' } }, HUMAN))).toBe(
       'PUBLICATION_ARCHIVED',
     );
-    expect(fx.service.calendar({ from: '2026-10-01', to: '2026-10-31' }).publications.map((row) => row.id)).toEqual([p.id]);
+    // Neither is listed: one is archived, the other was sent by hand with no time (it waits for the owner, not for a time).
+    expect(fx.service.calendar({ from: '2026-10-01', to: '2026-10-31' }).publications.map((row) => row.id)).toEqual([]);
     const back = await fx.service.unarchive(other.id, archived.revision, HUMAN);
     expect(back.archived).toBe(false);
   });
@@ -373,6 +421,10 @@ describe('archive and cleanup', () => {
     expect(await codeOf(fx.service.cleanup(AGENT))).toBe('OWNER_REQUIRED');
     expect(await fx.service.cleanup(HUMAN)).toEqual({ publications: 0, files: 0, bytes: 0 });
     fx.clock.advance(91 * 24 * HOUR);
+    // The owner confirms what will go: a dry run names it and removes nothing.
+    expect(await fx.service.cleanup(HUMAN, { dryRun: true })).toMatchObject({ publications: 1, files: 1 });
+    expect(fx.service.store.publications()).toHaveLength(1);
+    await fs.stat(file);
     const result = await fx.service.cleanup(HUMAN);
     expect(result).toMatchObject({ publications: 1, files: 1 });
     expect(fx.service.store.publications()).toEqual([]);
@@ -397,6 +449,34 @@ describe('calendar', () => {
     expect([page.total, page.nextOffset, page.publications.length]).toEqual([3, 2, 2]);
     expect(await codeOf(() => fx.service.calendar({ from: '2026-10-01', to: '2027-03-01' }))).toBe('CALENDAR_RANGE');
     expect(await codeOf(() => fx.service.calendar({ from: '2026-10-05', to: '2026-10-01' }))).toBe('CALENDAR_RANGE');
+  });
+
+  it('Unscheduled lists only publications with an account that can still get a time', async () => {
+    const p = await ready(['acc_yt']);
+    const unscheduled = () => fx.service.calendar({ from: '2026-12-01', to: '2026-12-31' }).publications.map((r) => r.id);
+    expect(unscheduled()).toEqual([p.id]);
+    // Sent by hand with no time: waiting for the owner, not for a time.
+    await fx.service.send(p.id, p.revision, HUMAN);
+    expect(unscheduled()).toEqual([]);
+  });
+});
+
+describe('clips prepared automatically', () => {
+  it('does nothing while "Prepare text and reserve times for generated clips" is off', async () => {
+    await fx.service.prepareGenerated(['video_1'], AGENT);
+    expect(fx.service.store.publications()).toEqual([]);
+  });
+
+  it('prepares a publication, applies the proposed text and reserves the next free slot', async () => {
+    const slots = [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, time: '18:00' }));
+    await fx.service.saveSettings({ ...fx.service.store.settings(), slots, autoPrepare: true, defaultAccountIds: ['acc_ig'] }, HUMAN);
+    await fx.service.prepareGenerated(['video_1', 'video_missing'], AGENT);
+    const [p] = fx.service.store.publications();
+    expect(p).toMatchObject({ origin: 'shorts', scheduledAt: '2026-10-13T18:00:00.000Z' });
+    const job = fx.jobs.textRequests.at(-1)!;
+    fx.jobs.answer(job.jobId, JSON.stringify({ title: 'Hook', description: 'Body', hashtags: ['tips'], reason: 'From the transcript' }));
+    await until(() => fx.service.store.publication(p!.id)!.copy.title === 'Hook');
+    expect(fx.service.store.publication(p!.id)).toMatchObject({ copy: { title: 'Hook', description: 'Body', hashtags: ['tips'] }, proposal: null });
   });
 });
 
@@ -438,8 +518,16 @@ describe('settings, connections and accounts', () => {
     expect(await codeOf(fx.service.removeConnection('conn_1', HUMAN))).toBe('ACCOUNT_IN_USE');
 
     const removed = await fx.service.removeAccount('acc_yt', HUMAN);
-    expect(removed.id).toBe('acc_yt');
+    expect(removed.account.id).toBe('acc_yt');
     expect(fx.service.store.accounts().find((a) => a.id === second.id)!.equivalentTo).toBeNull();
+    // Undo needs the links that went with it.
+    expect(removed.refs).toEqual({ defaultAccountIds: [], links: [{ accountId: second.id, equivalentTo: 'acc_yt' }] });
+  });
+
+  it('saving an imported account confirms it', async () => {
+    await fx.service.store.transact((tx) => void (tx.accounts().find((a) => a.id === 'acc_yt')!.needsReconnect = true));
+    const confirmed = await fx.service.saveAccount({ id: 'acc_yt', connectionId: 'conn_1', network: 'youtube', name: 'Main channel', remoteId: '@main' }, HUMAN);
+    expect(confirmed.needsReconnect).toBe(false);
   });
 
   it('removing a connection removes its accounts and the default accounts that named them', async () => {
@@ -448,6 +536,7 @@ describe('settings, connections and accounts', () => {
     expect(result.accounts.map((a) => a.id).sort()).toEqual(['acc_ig', 'acc_yt']);
     expect(fx.service.store.accounts()).toEqual([]);
     expect(fx.service.store.settings().defaultAccountIds).toEqual([]);
+    expect(result.refs).toEqual({ defaultAccountIds: ['acc_yt'], links: [] });
     // Undo: saving the removed records again restores them.
     await fx.service.saveConnection({ id: 'conn_1', provider: 'manual', name: 'By hand' }, HUMAN);
     expect(fx.service.store.connections().map((c) => c.id)).toEqual(['conn_1']);

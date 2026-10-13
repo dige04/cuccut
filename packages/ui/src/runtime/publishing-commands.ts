@@ -26,6 +26,7 @@ import {
   type PublishingPrepareParams,
   type PublishingProvider,
   type PublishingReconcileParams,
+  type PublishingRemovedRefs,
   type PublishingSettings,
   type PublishingSlotsParams,
   type PublishingSlotsResult,
@@ -143,6 +144,8 @@ export function rowOf(p: PublicationDetail): PublicationRow {
     timezone: p.timezone,
     priority: p.priority,
     expiresAt: p.expiresAt,
+    ...(p.exportId ? { exportPosterId: p.exportId } : {}),
+    ...(proposalAt(p) ? { proposalAt: proposalAt(p)! } : {}),
     destinations: p.destinations.map((d) => ({
       id: d.id,
       accountId: d.accountId,
@@ -152,6 +155,11 @@ export function rowOf(p: PublicationDetail): PublicationRow {
       at: calendarInstant(p, d),
     })),
   };
+}
+
+/** When the latest proposal or proposal failure was stored (as the Runtime's row names it), or null. */
+export function proposalAt(p: Pick<Publication, 'proposal' | 'proposalError'>): string | null {
+  return [p.proposal?.at, p.proposalError?.at].filter((at): at is string => !!at).sort().at(-1) ?? null;
 }
 
 /** Writes a saved publication into the calendar mirror (stale revisions are ignored by the store). */
@@ -342,13 +350,27 @@ export function saveConnection(session: Session, params: { id?: Id; provider: Pu
   return call(async () => (await session.client.request('publishing.connections.save', params)).connection);
 }
 
-/** Removes a connection and its accounts; the result carries them for Undo ({@link restoreConnection}). */
-export function removeConnection(session: Session, connectionId: Id): Promise<{ connection: PublishingConnection; accounts: PublishingAccount[] }> {
+export interface RemovedConnection {
+  connection: PublishingConnection;
+  accounts: PublishingAccount[];
+  refs: PublishingRemovedRefs;
+}
+
+export interface RemovedAccount {
+  account: PublishingAccount;
+  refs: PublishingRemovedRefs;
+}
+
+/** Removes a connection and its accounts; the result carries them, and what else changed, for Undo ({@link restoreConnection}). */
+export function removeConnection(session: Session, connectionId: Id): Promise<RemovedConnection> {
   return call(() => session.client.request('publishing.connections.remove', { connectionId }));
 }
 
-/** Undo of {@link removeConnection}: saves the connection and its accounts again under their IDs. */
-export function restoreConnection(session: Session, removed: { connection: PublishingConnection; accounts: PublishingAccount[] }): Promise<void> {
+/**
+ * Undo of {@link removeConnection}: saves the connection and its accounts again under their IDs, then puts back their links, the links of other
+ * accounts that pointed at them and their places in the default accounts.
+ */
+export function restoreConnection(session: Session, removed: RemovedConnection): Promise<void> {
   return call(async () => {
     const { connection, accounts } = removed;
     await session.client.request('publishing.connections.save', { id: connection.id, provider: connection.provider, name: connection.name });
@@ -358,7 +380,36 @@ export function restoreConnection(session: Session, removed: { connection: Publi
     for (const account of accounts) {
       if (account.equivalentTo) await session.client.request('publishing.accounts.link', { accountId: account.id, equivalentTo: account.equivalentTo });
     }
+    await restoreRefs(session, removed.refs, accounts.map((a) => a.id));
   });
+}
+
+/** Puts back what removing accounts changed besides them (`restored`): other accounts' links to them, and the default accounts. */
+async function restoreRefs(session: Session, refs: PublishingRemovedRefs, restored: Id[]): Promise<void> {
+  for (const link of refs.links) {
+    await session.client.request('publishing.accounts.link', link);
+  }
+  if (!refs.defaultAccountIds.length) return;
+  // The settings as the mirror has them now (the save names their revision; a change in between refuses it, and Undo says so).
+  const settings = usePublishing.getState().settings;
+  if (!settings) return;
+  // The mirror may not have the restored accounts yet: they exist again all the same.
+  const existing = [...usePublishing.getState().accounts.map((a) => a.id), ...restored];
+  const defaultAccountIds = restoredDefaults(refs.defaultAccountIds, settings.defaultAccountIds, existing);
+  if (defaultAccountIds.join() === settings.defaultAccountIds.join()) return;
+  const saved = await session.client.request('publishing.settings.save', { settings: { ...settings, defaultAccountIds } });
+  const store = usePublishing.getState();
+  if (store.ready) store.apply({ type: 'settings.updated', settings: saved });
+}
+
+/**
+ * The default accounts after an Undo: the order from before the removal, keeping accounts added since (at the end) and leaving out accounts that no
+ * longer exist.
+ */
+export function restoredDefaults(before: readonly Id[], current: readonly Id[], existing: readonly Id[]): Id[] {
+  const known = new Set(existing);
+  const merged = [...before, ...current.filter((id) => !before.includes(id))];
+  return [...new Set(merged)].filter((id) => known.has(id));
 }
 
 function accountParams(account: PublishingAccount) {
@@ -379,17 +430,19 @@ export function saveAccount(
   return call(async () => (await session.client.request('publishing.accounts.save', params)).account);
 }
 
-/** Removes an account; the result is the removed account for Undo ({@link restoreAccount}). */
-export function removeAccount(session: Session, accountId: Id): Promise<PublishingAccount> {
-  return call(async () => (await session.client.request('publishing.accounts.remove', { accountId })).account);
+/** Removes an account; the result is the removed account, and what else changed, for Undo ({@link restoreAccount}). */
+export function removeAccount(session: Session, accountId: Id): Promise<RemovedAccount> {
+  return call(() => session.client.request('publishing.accounts.remove', { accountId }));
 }
 
-/** Undo of {@link removeAccount}. */
-export function restoreAccount(session: Session, account: PublishingAccount): Promise<PublishingAccount> {
+/** Undo of {@link removeAccount}: the account, its link, other accounts' links to it and its place in the default accounts. */
+export function restoreAccount(session: Session, removed: RemovedAccount): Promise<PublishingAccount> {
   return call(async () => {
-    const saved = (await session.client.request('publishing.accounts.save', accountParams(account))).account;
-    if (!account.equivalentTo) return saved;
-    return (await session.client.request('publishing.accounts.link', { accountId: account.id, equivalentTo: account.equivalentTo })).account;
+    const { account } = removed;
+    let saved = (await session.client.request('publishing.accounts.save', accountParams(account))).account;
+    if (account.equivalentTo) saved = (await session.client.request('publishing.accounts.link', { accountId: account.id, equivalentTo: account.equivalentTo })).account;
+    await restoreRefs(session, removed.refs, [account.id]);
+    return saved;
   });
 }
 
@@ -398,8 +451,9 @@ export function linkAccount(session: Session, accountId: Id, equivalentTo: Id | 
   return call(async () => (await session.client.request('publishing.accounts.link', { accountId, equivalentTo })).account);
 }
 
-/** Deletes archived publications past retention and unused pinned export files (desktop app only). */
-export function cleanupPublishing(session: Session): Promise<PublishingCleanupResult> {
+/** Deletes archived publications past retention and unused pinned export files (desktop app only). With `dryRun`, only says what it would remove. */
+export function cleanupPublishing(session: Session, options: { dryRun?: boolean } = {}): Promise<PublishingCleanupResult> {
+  if (options.dryRun) return call(() => session.client.request('publishing.cleanup', { dryRun: true }));
   return single('cleanup', 'cleanup', '', () => session.client.request('publishing.cleanup', {}));
 }
 

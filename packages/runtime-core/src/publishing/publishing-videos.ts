@@ -16,6 +16,8 @@ export interface PublishingVideoFacts {
   projectId: Id | null;
   /** The main sequence, when known. */
   rootSequenceId: Id | null;
+  /** Every sequence of the video (a publication may name one of them). */
+  sequenceIds: Id[];
   revision: string | null;
 }
 
@@ -65,6 +67,7 @@ export function runtimePublishingVideos({ videos, space }: RuntimePublishingVide
           name: ref.name,
           projectId: ref.source.projectId,
           rootSequenceId: mirror.video.rootSequenceId,
+          sequenceIds: Object.keys(mirror.video.sequences),
           revision: mirror.video.revision,
         };
       }
@@ -75,6 +78,7 @@ export function runtimePublishingVideos({ videos, space }: RuntimePublishingVide
         name: content.result.name,
         projectId: content.projectId,
         rootSequenceId: content.result.snapshot.rootSequenceId ?? null,
+        sequenceIds: Object.keys(content.result.snapshot.sequences ?? {}),
         revision: content.result.revision,
       };
     },

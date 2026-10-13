@@ -1,4 +1,4 @@
-import type { DeliveryState, Publication, PublicationCopy, PublicationDestination, PublicationStatus } from '../publishing.ts';
+import { isEditableDelivery, type DeliveryState, type Publication, type PublicationCopy, type PublicationDestination, type PublicationStatus } from '../publishing.ts';
 
 /**
  * Text, time and status resolution for publications (port of agentcut `lib/resolve.ts` and `calendarInstant`). Pure and browser-safe.
@@ -56,6 +56,16 @@ export function calendarInstant(
   destination: Pick<PublicationDestination, 'scheduledAt' | 'publishedAt' | 'confirmedAt'>,
 ): string | null {
   return destination.publishedAt ?? destination.confirmedAt ?? intendedTime(publication, destination);
+}
+
+/**
+ * Whether a calendar entry waits for a time (the Unscheduled inbox): it has no destination yet, or a destination that can still be scheduled
+ * (`not_sent` / `failed`) has no calendar instant. A by-hand destination sent with no time and cancelled or recorded ones do not wait for one, so
+ * "Find publishing times" is never offered for a publication it would refuse.
+ */
+export function waitsForTime(entry: { destinations: ReadonlyArray<{ state: DeliveryState; at: string | null }> }): boolean {
+  if (!entry.destinations.length) return true;
+  return entry.destinations.some((d) => isEditableDelivery(d.state) && !d.at);
 }
 
 /**

@@ -115,7 +115,8 @@ export function exportControls(p: PublicationDetail, ctx: ControlContext): Expor
 
 /** The proposal was written for an older version than the saved one (storing it is one change, so the version right after it is still current). */
 export function proposalStale(p: Pick<Publication, 'proposal' | 'revision'>): boolean {
-  return !!p.proposal && p.revision > p.proposal.revision + 1;
+  // A proposal is stored without raising the revision: any later change makes it one for an earlier version.
+  return !!p.proposal && p.revision > p.proposal.revision;
 }
 
 export type ProposalPart = 'title' | 'description' | 'hashtags' | 'all';

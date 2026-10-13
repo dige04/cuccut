@@ -21,8 +21,6 @@ export const tr: RcPublishingMessages = {
   nothingToSend: 'Bu yayındaki tüm hesaplara zaten gönderildi. Yeniden göndermek için yeni bir yayın hazırlayın.',
   slotTaken: (p: { account: string }) =>
     `Bu saat, ${p.account} için başka bir yayınla çakışıyor. Başka bir saat seçin ya da Yayınlama ayarlarında gönderiler arasında daha az süreye izin verin.`,
-  slotsHaveDestinationTimes:
-    'Bu yayınlardan bazılarının bir hesap için kendi saati var. Ortak saatleri ayırmadan önce bu saatleri temizleyin.',
   calendarRange: 'En fazla 93 günlük bir takvim aralığı seçin ve başlangıç, bitişten önce olmalıdır.',
   archiveInFlight: 'Bu yayını arşivlemeden önce bekleyen teslimatları geri çekin ya da sonuçlarını kaydedin.',
   // Delivery.
@@ -45,6 +43,8 @@ export const tr: RcPublishingMessages = {
   renderFailed: 'Bu yayının dışa aktarması tamamlanamadı. Yeniden işleyip sabitleyin.',
   renderCancelled: 'Bu yayının dışa aktarması iptal edildi. Hazır olduğunuzda yeniden işleyip sabitleyin.',
   videoNotFound: 'Bu video bu bilgisayarda değil. Projesini açıp tekrar deneyin.',
+  sequenceNotFound: "This video has no such sequence. Leave the sequence out to publish the video's main sequence.",
+  sequenceOneVideo: 'Choose a sequence only when preparing one video.',
   // Settings, connections and accounts.
   accountNotFound: 'Bu hesap artık mevcut değil. Yayınlama ayarlarını yeniden yükleyip tekrar deneyin.',
   connectionNotFound: 'Bu bağlantı artık mevcut değil. Yayınlama ayarlarını yeniden yükleyip tekrar deneyin.',
@@ -58,6 +58,7 @@ export const tr: RcPublishingMessages = {
   linkCanonical: 'Diğer hesaplar buna bağlı. Bunun yerine diğer rotayı bu hesaba bağlayın.',
   // Copy proposals.
   proposalReason: 'Video, dökümü ve yazım yönergelerinize dayalı taslak. Uygulamadan önce gözden geçirin.',
+  proposalUnreadable: "The text model's answer couldn't be read. Try Propose text again, or write the text yourself.",
   /** The name the publishing service opens a video under (shown as the video's opener). */
   principalName: 'CucCut yayınlama',
   // Calendar transfer and cleanup.

@@ -737,6 +737,8 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
           packages,
           // The Space directory is built later, so it is fetched at derivation time.
           findDerived: (parentVideoId, key) => spaceDerivedFinder(space)(parentVideoId, key),
+          // "Start new clips ready to publish" (design m2-publishing §2.5): a newly cut clip may get a publication, text and a time.
+          onDerived: (videoId, by) => void publishing.prepareGenerated([videoId], { kind: 'agent', ...by }),
         }),
         new ModelTools({ models, scope: toolScope }),
         new JobTools({ jobs: models.jobs, pipelines: models.pipelines, scope: toolScope }),

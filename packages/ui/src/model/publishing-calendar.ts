@@ -186,9 +186,13 @@ export function calendarModel(input: CalendarModelInput): CalendarModel {
   };
 }
 
-/** Rows with a shown destination that has no time, or with no destination at all (the Unscheduled inbox). */
+/**
+ * The Unscheduled inbox: rows with no destination at all, or with a shown destination that can still be scheduled (`not_sent` / `failed`) and has no
+ * time. A by-hand post sent with no time waits for the owner, not for a time, and recorded or cancelled ones are done: "Find publishing times" would
+ * refuse them (as the Runtime's calendar does, `waitsForTime`).
+ */
 export function unscheduledRows(rows: readonly PublicationRow[], accountId: Id | '' = ''): PublicationRow[] {
-  return rows.filter((row) => !row.archived && (!row.destinations.length || shownDestinations(row, accountId).some((d) => !d.at)));
+  return rows.filter((row) => !row.archived && (!row.destinations.length || untimedDestinations(row, accountId).length > 0));
 }
 
 /** By-hand destinations waiting for the owner whose time arrived (or that have none), oldest first. */
@@ -365,9 +369,9 @@ export function entriesOn(rows: readonly PublicationRow[], day: string, timezone
   return entries.sort((a, b) => Date.parse(a.destinations[0]!.at!) - Date.parse(b.destinations[0]!.at!));
 }
 
-/** The destinations of an Unscheduled entry: the shown ones without a time. */
+/** The destinations of an Unscheduled entry: the shown ones that can still be scheduled and have no time. */
 export function untimedDestinations(row: PublicationRow, accountId: Id | ''): PublicationRowDestination[] {
-  return shownDestinations(row, accountId).filter((d) => !d.at);
+  return shownDestinations(row, accountId).filter((d) => !d.at && isEditableDelivery(d.state));
 }
 
 /** Where the calendar is scoped: every project, one project, a project not on this computer, or not known yet (the directory is loading). */

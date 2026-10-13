@@ -56,8 +56,8 @@ describe('video column controls', () => {
 describe('text proposals', () => {
   it('is current right after it was stored, stale after a later change', () => {
     const proposal = { revision: 3, copy: { title: 'T', description: 'D', hashtags: ['x'] }, reason: 'r', jobId: null, at: '2026-10-13T10:00:00.000Z' };
-    expect(proposalStale({ proposal, revision: 4 })).toBe(false);
-    expect(proposalStale({ proposal, revision: 5 })).toBe(true);
+    expect(proposalStale({ proposal, revision: 3 })).toBe(false);
+    expect(proposalStale({ proposal, revision: 4 })).toBe(true);
     expect(proposalStale({ proposal: null, revision: 9 })).toBe(false);
   });
 

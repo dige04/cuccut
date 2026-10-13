@@ -206,6 +206,14 @@ export function accountWithRoute(account: PublishingAccount, connections: readon
 }
 
 /** "name · Network", with "· reconnect needed" and "· disabled" when they apply. */
+/**
+ * "Confirm account" for an account that needs a check (imported from a calendar file): saving it again with its current name and handle marks it
+ * connected (the Runtime clears `needsReconnect` on save). Its other settings stay as they are.
+ */
+export function confirmAccountParams(account: PublishingAccount): Pick<PublishingAccount, 'id' | 'connectionId' | 'network' | 'name' | 'remoteId'> {
+  return { id: account.id, connectionId: account.connectionId, network: account.network, name: account.name, remoteId: account.remoteId };
+}
+
 export function accountRowLabel(account: PublishingAccount): string {
   return [
     PC.settings.accountRow(account.name, networkLabel(account.network)),

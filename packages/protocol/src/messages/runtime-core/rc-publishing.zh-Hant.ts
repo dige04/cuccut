@@ -21,8 +21,6 @@ export const zhHant: RcPublishingMessages = {
   nothingToSend: '此發布的所有帳號都已傳送。如要再次傳送，請準備新的發布。',
   slotTaken: (p: { account: string }) =>
     `此時間與 ${p.account} 的另一則發布衝突。請選擇其他時間，或在發布設定中允許較短的發布間隔。`,
-  slotsHaveDestinationTimes:
-    '其中一些發布為某個帳號設定了專屬時間。請先清除這些時間，再保留共用時間。',
   calendarRange: '請選擇不超過 93 天的行事曆範圍，且開始時間早於結束時間。',
   archiveInFlight: '封存此發布前，請撤回待處理的投遞或記錄其結果。',
   // Delivery.
@@ -45,6 +43,8 @@ export const zhHant: RcPublishingMessages = {
   renderFailed: '此發布的匯出未能完成。請重新算繪並釘選。',
   renderCancelled: '此發布的匯出已取消。準備好後請重新算繪並釘選。',
   videoNotFound: '這台電腦上找不到此影片。請開啟其專案後重試。',
+  sequenceNotFound: "This video has no such sequence. Leave the sequence out to publish the video's main sequence.",
+  sequenceOneVideo: 'Choose a sequence only when preparing one video.',
   // Settings, connections and accounts.
   accountNotFound: '此帳號已不存在。請重新載入發布設定後再試。',
   connectionNotFound: '此連線已不存在。請重新載入發布設定後再試。',
@@ -58,6 +58,7 @@ export const zhHant: RcPublishingMessages = {
   linkCanonical: '其他帳號已關聯到此帳號。請改為將另一管道關聯到此帳號。',
   // Copy proposals.
   proposalReason: '根據影片、逐字稿和您的寫作指南產生的草稿。套用前請先檢查。',
+  proposalUnreadable: "The text model's answer couldn't be read. Try Propose text again, or write the text yourself.",
   /** The name the publishing service opens a video under (shown as the video's opener). */
   principalName: 'CucCut 發布',
   // Calendar transfer and cleanup.

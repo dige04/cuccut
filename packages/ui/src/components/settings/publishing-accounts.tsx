@@ -2,7 +2,7 @@
 
 import { useId, useState } from 'react';
 import { ToastQueue } from '@react-spectrum/s2';
-import { Cable, Hand, Plus } from 'lucide-react';
+import { BadgeCheck, Cable, Hand, Plus } from 'lucide-react';
 import {
   formatRef,
   PUBLISHING_NETWORKS,
@@ -21,6 +21,7 @@ import {
   accountFieldsBlock,
   accountInUse,
   accountRowLabel,
+  confirmAccountParams,
   connectionInUse,
   linkBlock,
   linkOptions,
@@ -244,12 +245,17 @@ function AccountItem({ account, context }: { account: PublishingAccount; context
   const remove = () =>
     run(async () => {
       const removed = await removeAccount(runtime, account.id);
-      ToastQueue.neutral(PC.settings.removedAccount(removed.name), {
+      ToastQueue.neutral(PC.settings.removedAccount(removed.account.name), {
         timeout: 8000,
         actionLabel: PC.settings.undo,
         shouldCloseOnAction: true,
         onAction: () => void restoreAccount(runtime, removed).catch(fail),
       });
+    });
+  const confirm = () =>
+    run(async () => {
+      const saved = await saveAccount(runtime, confirmAccountParams(account));
+      ToastQueue.positive(PC.settings.accountConfirmed(saved.name), { timeout: 5000 });
     });
   const toggle = () =>
     run(() =>
@@ -270,6 +276,12 @@ function AccountItem({ account, context }: { account: PublishingAccount; context
           {accountRowLabel(account)}
           <span className="block truncate text-xs text-muted-foreground select-text">{account.remoteId}</span>
         </span>
+        {account.needsReconnect ? (
+          <Button type="button" size="sm" variant="outline" disabled={!!owner} title={owner ?? undefined} onClick={() => void confirm()}>
+            <BadgeCheck aria-hidden />
+            {PC.settings.confirmAccount}
+          </Button>
+        ) : null}
         <Button type="button" size="sm" variant="outline" disabled={!!owner} title={owner ?? undefined} onClick={() => void toggle()}>
           {account.disabled ? PC.settings.enable : PC.settings.disable}
         </Button>
@@ -277,6 +289,7 @@ function AccountItem({ account, context }: { account: PublishingAccount; context
           {PC.settings.removeAccount}
         </Button>
       </div>
+      {account.needsReconnect ? <p className="m-0 text-xs text-muted-foreground">{PC.settings.confirmAccountHint}</p> : null}
       {removeWhy && removeWhy !== owner ? <p className="m-0 text-xs text-muted-foreground">{removeWhy}</p> : null}
       <Disclosure variant="plain" summary={PC.settings.linkRoute}>
         <div className="space-y-1.5 pt-1 text-xs">

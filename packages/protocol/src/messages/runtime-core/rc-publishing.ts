@@ -36,8 +36,6 @@ const en = {
   nothingToSend: 'Every account of this publication was already sent. Prepare a new release to send it again.',
   slotTaken: (p: { account: string }) =>
     `This time conflicts with another publication for ${p.account}. Choose another time, or allow less time between posts in Publishing settings.`,
-  slotsHaveDestinationTimes:
-    'Some of these publications have their own time for an account. Clear those times before reserving shared times.',
   calendarRange: 'Choose a calendar range of at most 93 days, with the start before the end.',
   archiveInFlight: 'Withdraw deliveries that are waiting, or record their result, before archiving this publication.',
   // Delivery.
@@ -60,6 +58,8 @@ const en = {
   renderFailed: "The export for this publication didn't finish. Render and pin it again.",
   renderCancelled: 'The export for this publication was cancelled. Render and pin it again when you are ready.',
   videoNotFound: "This video isn't on this computer. Open its project, then try again.",
+  sequenceNotFound: "This video has no such sequence. Leave the sequence out to publish the video's main sequence.",
+  sequenceOneVideo: 'Choose a sequence only when preparing one video.',
   // Settings, connections and accounts.
   accountNotFound: 'This account no longer exists. Reload Publishing settings and try again.',
   connectionNotFound: 'This connection no longer exists. Reload Publishing settings and try again.',
@@ -73,6 +73,7 @@ const en = {
   linkCanonical: 'Other accounts are linked to this one. Link the other route to this account instead.',
   // Copy proposals.
   proposalReason: 'Draft based on the video, its transcript and your writing guidance. Review it before applying.',
+  proposalUnreadable: "The text model's answer couldn't be read. Try Propose text again, or write the text yourself.",
   /** The name the publishing service opens a video under (shown as the video's opener). */
   principalName: 'CucCut publishing',
   // Calendar transfer and cleanup.

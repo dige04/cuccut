@@ -104,10 +104,18 @@ describe('calendar grid', () => {
     const failed = row({ id: 'f', status: 'attention', destinations: [at('f_d', '2026-10-16T16:00:00.000Z', { state: 'failed' })] });
     const due = row({ id: 'due', status: 'pending', destinations: [at('due_d', '2026-10-14T15:00:00.000Z', { state: 'queued' })] });
     const later = row({ id: 'later', status: 'pending', destinations: [at('later_d', '2026-10-14T17:00:00.000Z', { state: 'queued' })] });
-    const m = calendarModel(input([unscheduled, failed, due, later]));
-    expect(m.unscheduled.map((r) => r.id)).toEqual(['u']);
-    expect(m.attention.map((r) => r.id)).toEqual(['f']);
-    expect(m.due.map((d) => [d.row.id, d.destination.id, d.account?.name])).toEqual([['due', 'due_d', 'Main channel']]);
+    // Sent by hand with no time, or cancelled with no time: not waiting for a time, so never offered to "Find publishing times".
+    const sentNow = row({ id: 'now', status: 'pending', destinations: [at('now_d', null, { state: 'queued' })] });
+    const cancelled = row({ id: 'c', status: 'cancelled', destinations: [at('c_d', null, { state: 'cancelled' })] });
+    const failedUntimed = row({ id: 'fu', status: 'attention', destinations: [at('fu_d', null, { state: 'failed' })] });
+    const m = calendarModel(input([unscheduled, failed, due, later, sentNow, cancelled, failedUntimed]));
+    expect(m.unscheduled.map((r) => r.id)).toEqual(['u', 'fu']);
+    expect(m.attention.map((r) => r.id)).toEqual(['f', 'fu']);
+    // The one sent with no time waits in "Post by hand" instead.
+    expect(m.due.map((d) => [d.row.id, d.destination.id, d.account?.name])).toEqual([
+      ['now', 'now_d', 'Main channel'],
+      ['due', 'due_d', 'Main channel'],
+    ]);
   });
 
   it('reveals a day by moving the anchor only when the period does not show it', () => {

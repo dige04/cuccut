@@ -181,6 +181,24 @@ describe('PublishingStore', () => {
       expect(rpcCode(missing)).toBe('PUBLICATION_NOT_FOUND');
     });
 
+    it('an annotation keeps the revision and updatedAt, unless the same transaction also changes the publication', async () => {
+      const store = await open();
+      await store.transact((tx) => tx.insertPublication(publication('a')));
+      const commits: PublishingCommit[] = [];
+      store.onCommit((commit) => commits.push(commit));
+      now = new Date('2026-10-13T13:00:00Z');
+      await store.transact((tx) => void (tx.annotate('a', 0).proposalError = { jobId: null, error: 'x', errorRef: null, at: now.toISOString() }));
+      expect(store.publication('a')).toMatchObject({ revision: 0, updatedAt: T0, proposalError: { error: 'x' } });
+      expect(commits.at(-1)?.publications[0]).toMatchObject({ id: 'a', revision: 0 });
+      await store.transact((tx) => {
+        tx.annotate('a').proposalError = null;
+        tx.publication('a').label = 'Renamed';
+      });
+      expect(store.publication('a')).toMatchObject({ revision: 1, label: 'Renamed', proposalError: null });
+      const stale = await store.transact((tx) => tx.annotate('a', 0)).catch((e: unknown) => e);
+      expect(rpcCode(stale)).toBe('PUBLICATION_CONFLICT');
+    });
+
     it('settings have their own revision', async () => {
       const store = await open();
       const saved = await store.change('settings', 0, (s) => void (s.slots = [{ weekday: 1, time: '18:00' }]));

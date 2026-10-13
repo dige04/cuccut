@@ -76,6 +76,51 @@ export function isRequiredQuestion(id: InterviewQuestionId): boolean {
   return REQUIRED_INTERVIEW_QUESTIONS.includes(id);
 }
 
+// ---- Where the interview is offered ----
+
+/** Home shows the one-line reminder: nothing told yet, the reminder not dismissed, and the interview not done. */
+export function showsReminder(snapshot: Pick<ProfileSnapshot, 'hasPreferences' | 'interview'> | null): boolean {
+  return !!snapshot && !snapshot.hasPreferences && snapshot.interview.reminder && snapshot.interview.status !== 'done';
+}
+
+/** A conversation shows the interview card: the interview is pending and there are no preferences yet. */
+export function showsInterviewCard(snapshot: Pick<ProfileSnapshot, 'hasPreferences' | 'interview'> | null): boolean {
+  return !!snapshot && !snapshot.hasPreferences && snapshot.interview.status === 'pending';
+}
+
+/** One step of the full-screen interview: which question, where it sits, and whether "Continue" is held back (the required one, unanswered). */
+export interface WelcomeStep {
+  question: InterviewQuestionId;
+  /** 0-based. */
+  index: number;
+  total: number;
+  last: boolean;
+  required: boolean;
+  blocked: boolean;
+}
+
+/** The step at `index` (clamped to the questions) with the answers as typed so far. */
+export function welcomeStep(answers: InterviewAnswers, index: number): WelcomeStep {
+  const total = INTERVIEW_QUESTIONS.length;
+  const at = Math.min(Math.max(0, Math.trunc(index)), total - 1);
+  const question = INTERVIEW_QUESTIONS[at]!;
+  const required = isRequiredQuestion(question);
+  return { question, index: at, total, last: at === total - 1, required, blocked: required && !answers[question]?.trim() };
+}
+
+/** What the in-chat card shows: the next question to ask, or (none left) how many were answered and the way to write them, or "no rush". */
+export type InterviewCardView =
+  | { kind: 'ask'; question: InterviewQuestionId }
+  | { kind: 'finish'; answered: number; canWrite: boolean }
+  | { kind: 'noRush' };
+
+export function interviewCardView(answers: InterviewAnswers, passed: readonly InterviewQuestionId[]): InterviewCardView {
+  const question = nextQuestion({ answers }, passed);
+  if (question) return { kind: 'ask', question };
+  const answered = answerCount(answers);
+  return answered ? { kind: 'finish', answered, canWrite: canWriteAnswers(answers) } : { kind: 'noRush' };
+}
+
 // ---- Rail ----
 
 /** What Settings › You and Settings › Rules hold, written under their names in the rail; null before the `profile` snapshot arrives. */

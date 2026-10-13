@@ -7,6 +7,7 @@ import {
   canWriteAnswers,
   changedAnswers,
   hasWriterAgent,
+  interviewCardView,
   interviewLine,
   isRequiredQuestion,
   moveRule,
@@ -19,7 +20,10 @@ import {
   ruleEffects,
   ruleInputOf,
   ruleInputOfDraft,
+  showsInterviewCard,
+  showsReminder,
   stageLabel,
+  welcomeStep,
 } from './profile.ts';
 
 afterEach(() => {
@@ -93,6 +97,48 @@ describe('interview', () => {
     expect(hasWriterAgent([{ enabled: true, state: 'ready', verified: false }])).toBe(false);
     expect(hasWriterAgent([{ enabled: false, state: 'ready', verified: true }])).toBe(false);
     expect(hasWriterAgent([{ enabled: true, state: 'ready', verified: true }])).toBe(true);
+  });
+});
+
+describe('where the interview is offered', () => {
+  const interview = (patch: Partial<ProfileSnapshot['interview']>) => ({ ...snapshot().interview, ...patch });
+
+  it('shows the home reminder until something is told, the line is dismissed, or the interview is done', () => {
+    expect(showsReminder(null)).toBe(false);
+    expect(showsReminder(snapshot())).toBe(true);
+    expect(showsReminder(snapshot({ interview: interview({ status: 'skipped' }) }))).toBe(true);
+    expect(showsReminder(snapshot({ hasPreferences: true }))).toBe(false);
+    expect(showsReminder(snapshot({ interview: interview({ reminder: false }) }))).toBe(false);
+    expect(showsReminder(snapshot({ interview: interview({ status: 'done' }) }))).toBe(false);
+  });
+
+  it('shows the chat card only while pending with no preferences', () => {
+    expect(showsInterviewCard(null)).toBe(false);
+    expect(showsInterviewCard(snapshot())).toBe(true);
+    // A dismissed reminder only silences home; the agent and the card still ask.
+    expect(showsInterviewCard(snapshot({ interview: interview({ reminder: false }) }))).toBe(true);
+    expect(showsInterviewCard(snapshot({ interview: interview({ status: 'skipped' }) }))).toBe(false);
+    expect(showsInterviewCard(snapshot({ hasPreferences: true }))).toBe(false);
+  });
+
+  it('steps through the five questions; only the first holds back Continue', () => {
+    expect(welcomeStep({}, 0)).toEqual({ question: 'who', index: 0, total: 5, last: false, required: true, blocked: true });
+    expect(welcomeStep({ who: '  ' }, 0).blocked).toBe(true);
+    expect(welcomeStep({ who: 'streams' }, 0).blocked).toBe(false);
+    expect(welcomeStep({}, 1)).toMatchObject({ question: 'record', required: false, blocked: false, last: false });
+    expect(welcomeStep({}, 4)).toMatchObject({ question: 'names', last: true });
+    // Out of range clamps instead of losing the page.
+    expect(welcomeStep({}, 9).question).toBe('names');
+    expect(welcomeStep({}, -1).question).toBe('who');
+  });
+
+  it('the chat card asks, then offers to write what was answered, or says there is no rush', () => {
+    expect(interviewCardView({}, [])).toEqual({ kind: 'ask', question: 'who' });
+    expect(interviewCardView({ who: 'streams' }, ['record'])).toEqual({ kind: 'ask', question: 'platforms' });
+    const all = ['who', 'record', 'platforms', 'annoys', 'names'] as const;
+    expect(interviewCardView({ who: 'streams', names: 'Deska' }, all)).toEqual({ kind: 'finish', answered: 2, canWrite: true });
+    expect(interviewCardView({ record: 'webcam' }, all)).toEqual({ kind: 'finish', answered: 1, canWrite: false });
+    expect(interviewCardView({}, all)).toEqual({ kind: 'noRush' });
   });
 });
 

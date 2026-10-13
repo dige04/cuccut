@@ -14,7 +14,7 @@ export const ja: ShellMessages = {
     pin: 'ピン留め',
     unpin: 'ピン留めを外す',
     newSession: '新しいセッション',
-    newSessionInProject: 'このプロジェクトで新しいセッション',
+    newSessionInProject: 'このプロジェクトで新しいセッション', rulesAndPreferences: 'Rules and preferences…',
     working: '処理中',
     loading: '読み込み中',
     loadingEllipsis: '読み込み中…',

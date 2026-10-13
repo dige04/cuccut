@@ -1,4 +1,4 @@
-import { forwardRef, type ReactNode } from 'react';
+import { forwardRef, useState, type ReactNode } from 'react';
 import { ToastQueue } from '@react-spectrum/s2';
 import { cn } from 'cn';
 import { Skeleton } from '../../cc/ui/skeleton.tsx';
@@ -91,4 +91,18 @@ export function undoToast(text: string, undo: () => Promise<unknown>): void {
 /** The message of a failed command. */
 export function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Text being edited over a saved value that can change under it (the topic sends every save, also the agent's): while the field is untouched it
+ * follows the saved value; once typed in, it keeps what was typed until it is saved or discarded.
+ */
+export function useDraft<T>(saved: T, same: (a: T, b: T) => boolean): [T, (next: T) => void] {
+  const [draft, setDraft] = useState(saved);
+  const [base, setBase] = useState(saved);
+  if (!same(base, saved)) {
+    setBase(saved);
+    if (same(draft, base)) setDraft(saved);
+  }
+  return [draft, setDraft];
 }

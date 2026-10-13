@@ -8,11 +8,12 @@ import { Label } from '../../cc/ui/label.tsx';
 import { Textarea } from '../../cc/ui/textarea.tsx';
 import { answerCount, canWriteAnswers, changedAnswers, hasWriterAgent, interviewLine, isRequiredQuestion } from '../../model/profile.ts';
 import { useRuntime } from '../../runtime/context.tsx';
-import { removeInterviewSection, saveAnswers, setPreferences, writeFromAnswers } from '../../runtime/profile-commands.ts';
+import { removeInterviewSection, reopenInterview, saveAnswers, setPreferences, writeFromAnswers } from '../../runtime/profile-commands.ts';
 import { useConnection } from '../../state/connection-store.ts';
 import { useProfile } from '../../state/profile-store.ts';
+import { WELCOME, useShell } from '../../state/shell-store.ts';
 import { PROFILE_COPY } from '../profile/profile-copy.ts';
-import { ErrorLine, LockNote, ProfileSkeleton, errorText, undoToast, useProfileLock } from '../profile/profile-parts.tsx';
+import { ErrorLine, LockNote, ProfileSkeleton, errorText, undoToast, useDraft, useProfileLock } from '../profile/profile-parts.tsx';
 import { Panel, PanelHeading } from './settings-ui.tsx';
 
 const C = () => PROFILE_COPY;
@@ -36,20 +37,6 @@ export function ProfileSettings() {
   );
 }
 
-/**
- * Text being edited over a saved value that can change under it (the topic sends every save, also the agent's): while the field is untouched it
- * follows the saved value; once typed in, it keeps what was typed until it is saved or discarded.
- */
-function useDraft<T>(saved: T, same: (a: T, b: T) => boolean): [T, (next: T) => void] {
-  const [draft, setDraft] = useState(saved);
-  const [base, setBase] = useState(saved);
-  if (!same(base, saved)) {
-    setBase(saved);
-    if (same(draft, base)) setDraft(saved);
-  }
-  return [draft, setDraft];
-}
-
 const sameAnswers = (a: InterviewAnswers, b: InterviewAnswers) => Object.keys(changedAnswers(a, b)).length === 0;
 const sameText = (a: string, b: string) => a === b;
 
@@ -59,7 +46,7 @@ function AboutYou({ snapshot, lock }: { snapshot: ProfileSnapshot; lock: string 
   const id = useId();
   const { interview, preferences } = snapshot;
   const [draft, setDraft] = useDraft(interview.answers, sameAnswers);
-  const [busy, setBusy] = useState<'save' | 'rewrite' | null>(null);
+  const [busy, setBusy] = useState<'save' | 'rewrite' | 'interview' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const errorRef = useRef<HTMLParagraphElement>(null);
   const writing = useProfile((s) => s.writing);
@@ -106,6 +93,25 @@ function AboutYou({ snapshot, lock }: { snapshot: ProfileSnapshot; lock: string 
     }
   };
 
+  // "Take the interview" opens /welcome; "Redo" first puts the interview back to pending (the answers stay, so it starts filled in).
+  const done = interview.status === 'done';
+  const openInterview = async () => {
+    if (disabled || writing) return;
+    if (done) {
+      setBusy('interview');
+      setError(null);
+      try {
+        await reopenInterview(runtime);
+      } catch (err) {
+        fail(C().interview.redoFailed(errorText(err)));
+        return;
+      } finally {
+        setBusy(null);
+      }
+    }
+    useShell.getState().go(WELCOME);
+  };
+
   // Why "Rewrite my preferences" is off, or what it will do: one hint, the most pressing first.
   const lastLine = writing?.lines.at(-1);
   // Locked, the reason already sits above the fields, so the hint only counts.
@@ -126,6 +132,18 @@ function AboutYou({ snapshot, lock }: { snapshot: ProfileSnapshot; lock: string 
             title={C().about.title}
             icon={<MessageSquareText />}
             hint={interviewLine(interview.status, !!preferences.interview)}
+            action={
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={disabled || !!writing}
+                title={lock ?? (writing ? C().answers.busy : undefined)}
+                onClick={() => void openInterview()}>
+                {busy === 'interview' ? <Loader2 aria-hidden className="motion-safe:animate-spin" /> : null}
+                {done ? C().interview.redo : C().interview.take}
+              </Button>
+            }
           />
           <LockNote>{lock}</LockNote>
           <div className="grid gap-4 @xl:grid-cols-2">

@@ -11,6 +11,7 @@ import { M as GENERAL } from './general-settings-copy.ts';
 import { GLOSSARY_COPY } from './glossary-copy.ts';
 import { RESOURCE_COPY } from './resource-capacity-copy.ts';
 import { W } from './workspace-copy.ts';
+import { S } from '../shell-copy.ts';
 import { PROFILE_COPY } from '../profile/profile-copy.ts';
 import { RULES_COPY } from '../profile/rules-copy.ts';
 
@@ -79,12 +80,30 @@ describe('profile copy', () => {
     expect(W.ruleCount(0, 0)).toBe('None yet');
     expect(W.ruleCount(2, 1)).toBe('2 rules, 1 off');
     expect(W.preferencesSummary(true, 1)).toBe('Preferences written, 1 answer');
+    expect(PROFILE_COPY.welcome.step(2, 5)).toBe('Question 2 of 5');
+    expect(PROFILE_COPY.welcome.namesAdded('Deska, Claude')).toBe('Names added to the glossary: Deska, Claude.');
+    expect(PROFILE_COPY.chat.answered(3, 5)).toBe('3 of 5 answered.');
+    expect(PROFILE_COPY.reminder.link).toBe('Tell it, in two minutes');
+    expect(PROFILE_COPY.project.subtitle('Launch')).toBe('For the project “Launch”');
+    expect(S.common.rulesAndPreferences).toBe('Rules and preferences…');
   });
 
   it('has every key in every locale (the type checks the shape; this checks nothing is empty)', () => {
     for (const locale of ['zh-Hans', 'vi', 'ja'] as const) {
       setLocale(locale);
-      for (const text of [PROFILE_COPY.blurb, PROFILE_COPY.own.save, PROFILE_COPY.common.undo, RULES_COPY.form.save, RULES_COPY.empty.title]) {
+      for (const text of [
+        PROFILE_COPY.blurb,
+        PROFILE_COPY.own.save,
+        PROFILE_COPY.common.undo,
+        PROFILE_COPY.welcome.saveAndStart,
+        PROFILE_COPY.reminder.text,
+        PROFILE_COPY.chat.lead,
+        PROFILE_COPY.project.note,
+        PROFILE_COPY.badge.everyProject,
+        S.common.rulesAndPreferences,
+        RULES_COPY.form.save,
+        RULES_COPY.empty.title,
+      ]) {
         expect(text.length).toBeGreaterThan(0);
       }
     }

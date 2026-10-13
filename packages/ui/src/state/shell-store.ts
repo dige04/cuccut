@@ -53,7 +53,8 @@ export type { SettingsSection } from '../model/settings-nav.ts';
 export { SETTINGS_SECTIONS } from '../model/settings-nav.ts';
 
 /** Top-level entry (App rail, product design §2.1, revised by user). */
-export type Tab = 'home' | 'space' | 'tasks' | 'models' | 'services' | 'tools' | 'settings';
+/** `welcome` is the full-screen interview (docs/cuccut/m2-profile-rules.md §2.3): its own route, with no rail entry of its own (it belongs to Home). */
+export type Tab = 'home' | 'space' | 'tasks' | 'models' | 'services' | 'tools' | 'settings' | 'welcome';
 
 /**
  * Home's `pane`: the current tab of the conversation's right-side panel (video, files, project files, web page); the other tabs of the same conversation are recorded in `workspaces`.
@@ -67,7 +68,8 @@ export type Route =
   | { tab: 'models'; category: ModelCategory; page?: ModelPage }
   | { tab: 'tasks'; taskId?: Id }
   | { tab: 'services'; service?: string }
-  | { tab: 'tools'; tool?: ToolId };
+  | { tab: 'tools'; tool?: ToolId }
+  | { tab: 'welcome' };
 
 export type ColorScheme = 'system' | 'light' | 'dark';
 
@@ -80,6 +82,8 @@ const HISTORY_MAX = 50;
 export const NEW_DRAFT = 'new';
 
 export const HOME: Route = { tab: 'home', conversationId: null, projectId: null };
+/** The full-screen interview (`/welcome`). */
+export const WELCOME: Route = { tab: 'welcome' };
 
 /**
  * UI state that belongs only to this machine and this window: routing and back/forward, the last place each entry was left, the sidebar, drafts, and preferences.
@@ -242,11 +246,11 @@ export const useShell = create<ShellStore>()(
             route,
             back: [...s.back, s.route].slice(-HISTORY_MAX),
             forward: [],
-            lastRoute: { ...s.lastRoute, [railTabOf(route)]: route },
+            lastRoute: remember(s.lastRoute, route),
             ...arrive(s, route),
           };
         }),
-      replace: (route) => set((s) => ({ route, lastRoute: { ...s.lastRoute, [railTabOf(route)]: route }, ...arrive(s, route) })),
+      replace: (route) => set((s) => ({ route, lastRoute: remember(s.lastRoute, route), ...arrive(s, route) })),
       goBack: () =>
         set((s) => {
           const previous = s.back.at(-1);
@@ -255,7 +259,7 @@ export const useShell = create<ShellStore>()(
             route: previous,
             back: s.back.slice(0, -1),
             forward: [s.route, ...s.forward],
-            lastRoute: { ...s.lastRoute, [railTabOf(previous)]: previous },
+            lastRoute: remember(s.lastRoute, previous),
             ...arrive(s, previous),
           };
         }),
@@ -267,7 +271,7 @@ export const useShell = create<ShellStore>()(
             route: next,
             back: [...s.back, s.route],
             forward: s.forward.slice(1),
-            lastRoute: { ...s.lastRoute, [railTabOf(next)]: next },
+            lastRoute: remember(s.lastRoute, next),
             ...arrive(s, next),
           };
         }),
@@ -618,9 +622,20 @@ function cleanQueues(value: unknown): Record<Id, QueuedMessage[]> {
   );
 }
 
-/** `models` is an internal content route of Settings, kept for compatibility with existing callers; it does not correspond to a separate Rail entry. */
-export function railTabOf(route: Route): Exclude<Tab, 'models'> {
-  return route.tab === 'models' ? 'settings' : route.tab;
+/**
+ * `models` is an internal content route of Settings, kept for compatibility with existing callers; it does not correspond to a separate Rail entry.
+ * `welcome` (the full-screen interview) belongs to Home.
+ */
+export function railTabOf(route: Route): Exclude<Tab, 'models' | 'welcome'> {
+  if (route.tab === 'models') return 'settings';
+  if (route.tab === 'welcome') return 'home';
+  return route.tab;
+}
+
+/** The last place of each rail entry, for `goTab`. The interview is a detour, not a place to come back to: Home keeps where it was. */
+function remember(lastRoute: Partial<Record<Tab, Route>>, route: Route): Partial<Record<Tab, Route>> {
+  if (route.tab === 'welcome') return lastRoute;
+  return { ...lastRoute, [railTabOf(route)]: route };
 }
 
 export function defaultRoute(tab: Tab): Route {
@@ -628,6 +643,7 @@ export function defaultRoute(tab: Tab): Route {
   if (tab === 'space') return { tab, category: 'all', projectId: null };
   if (tab === 'settings') return { tab, section: 'general' };
   if (tab === 'models') return { tab, category: 'asr' };
+  if (tab === 'welcome') return WELCOME;
   return { tab };
 }
 
@@ -663,14 +679,14 @@ function sameRoute(a: Route, b: Route): boolean {
  * Settings (including model configuration) has its own sectioned navigation and no page sidebar.
  */
 export function hasSidebar(route: Route): boolean {
-  return route.tab !== 'settings' && route.tab !== 'models';
+  return route.tab !== 'settings' && route.tab !== 'models' && route.tab !== 'welcome';
 }
 
 /**
  * In-app links: `/home`, `/c/<conversation>`, `/p/<project>` (starts a new conversation in this project); the Home side panel tabs go in the query string
  * (`?video=` / `?file=` take a JSON FileTarget, `?files=1`, `?web=<id>&url=<address>`);
  * `/space/<category>[/<project>][?video=]`, `/settings/<section>`, `/settings/models/<category>[/<page>]`, `/tasks[/<task>]`,
- * `/services[/<service>]`, `/tools[/<tool>]`.
+ * `/services[/<service>]`, `/tools[/<tool>]`, `/welcome`.
  */
 export function hrefFor(route: Route): string {
   switch (route.tab) {
@@ -697,6 +713,8 @@ export function hrefFor(route: Route): string {
       return route.service ? `/services/${encodeURIComponent(route.service)}` : '/services';
     case 'tools':
       return route.tool ? `/tools/${route.tool}` : '/tools';
+    case 'welcome':
+      return '/welcome';
   }
 }
 
@@ -747,6 +765,7 @@ export function parseHref(href: string): Route {
     return isModelPage(b) ? { tab: 'models', category, page: b } : { tab: 'models', category };
   }
   if (head === 'tasks') return a ? { tab: 'tasks', taskId: decodeURIComponent(a) } : { tab: 'tasks' };
+  if (head === 'welcome') return WELCOME;
   // Old links for remote compute are on the services page.
   if (head === 'tools' && a === 'remote') return { tab: 'services', service: 'remote' };
   if (head === 'services') return a ? { tab: 'services', service: decodeURIComponent(a) } : { tab: 'services' };

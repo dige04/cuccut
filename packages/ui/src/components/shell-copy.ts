@@ -35,7 +35,7 @@ const en = {
     pin: 'Pin',
     unpin: 'Unpin',
     newSession: 'New session',
-    newSessionInProject: 'New session in this project',
+    newSessionInProject: 'New session in this project', rulesAndPreferences: 'Rules and preferences…',
     working: 'Working',
     loading: 'Loading',
     loadingEllipsis: 'Loading…',

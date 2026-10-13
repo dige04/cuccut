@@ -23,7 +23,7 @@ describe('license and third-party notice distribution', () => {
       expect(readFileSync(resolve(output, 'LICENSE'))).toEqual(readFileSync(resolve(root, 'LICENSE')));
       const license = readFileSync(resolve(output, 'crates/model-runtime/licenses/speech-swift.txt'), 'utf8');
       const notices = readFileSync(resolve(output, 'THIRD_PARTY_NOTICES.md'), 'utf8');
-      const licenseLink = notices.match(/\[上游 LICENSE 的原文副本\]\(([^)]+)\)/)?.[1];
+      const licenseLink = notices.match(/\[verbatim copy of the upstream LICENSE\]\(([^)]+)\)/)?.[1];
       expect(licenseLink).toBeDefined();
       expect(readFileSync(resolve(output, licenseLink!), 'utf8')).toBe(license);
       expect(license).toContain('Copyright 2025 Ivan Digital');

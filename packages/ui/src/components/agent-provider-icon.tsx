@@ -14,8 +14,8 @@ import pi from './vendor-icons/pi.svg';
 import xai from './vendor-icons/xai.svg';
 
 /*
- * Agent icons (product design §3.2.3; prototype vendor-icon.jsx `VendorIcon`): the SVGs in `vendor-icons/` are byte-for-byte identical
- * to those in the prototype's designs/cuccut/assets/vendors (lobe-icons, MIT; attribution is in THIRD_PARTY_NOTICES.md at the repo root; the prototype's icon-sync.test.js checks that the two copies match).
+ * Agent icons (product design §3.2.3): the SVGs in `vendor-icons/` are lobe-icons files copied verbatim (MIT; attribution is in
+ * THIRD_PARTY_NOTICES.md at the repo root).
  * Wrapped with createIcon and drawn on a 20 grid; when placed in the icon slot of ActionButton and MenuItem it is positioned like the S2 workflow icons and shows at 16px in the compact level (app.css);
  * single-colour icons are filled with currentColor as a mask (they fade along with the row when it is disabled), colour icons are drawn as they are, and user-added Agents are drawn with the first letter of their name.
  */

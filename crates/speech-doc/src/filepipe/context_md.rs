@@ -1550,7 +1550,7 @@ mod tests {
 
     #[test]
     fn control_characters_are_stripped() {
-        let rendered = render_source_context(&sample_source()).replace("CucCut", "Bao\u{202E}Cut");
+        let rendered = render_source_context(&sample_source()).replace("CucCut", "Cuc\u{202E}Cut");
         let parsed = parse_source_context(None, &rendered);
         let context = parsed.context.unwrap();
         assert_eq!(context.terms[0].source, "CucCut");
@@ -1652,7 +1652,7 @@ mod tests {
     /// Mis-sized columns, unknown Category, and illegal Lock or Origin: all fixed in code, no page rejection.
     #[test]
     fn model_mode_repairs_row_shape_and_illegal_values() {
-        let rows = "| CucCut | brand | bao cut | 备注 | 也许 | 模型自封 |\n\
+        let rows = "| CucCut | brand | cook cut | 备注 | 也许 | 模型自封 |\n\
                     | KV cache | tech |\n\
                     | ResNeXt | tech | res next | 前半 | 后半 | 再来 | no | analyzed |\n\
                     | 只有一列 |\n";
@@ -1715,7 +1715,7 @@ mod tests {
     fn model_mode_relaxes_header_and_frontmatter() {
         let text = "## Canonical Terms\n| source | CATEGORY | variants | note | lock | origin |\n\
                     |---|---|---|---|---|---|\n\
-                    | CucCut | product | bao cut | | no | analyzed |\n";
+                    | CucCut | product | cook cut | | no | analyzed |\n";
         let parsed = parse_model_source_context(None, text);
         assert!(
             !parsed.diagnostics.has_problems(),
@@ -1790,7 +1790,7 @@ mod tests {
                     # Bilingual Glossary\n| Source | Target | Note | Lock | Origin |\n\
                     |---|---|---|---|---|\n\
                     | CucCut |  | | yes | user |\n\
-                    | CucCut | 宝剪 | 补上的备注 | yes | user |\n";
+                    | CucCut | 酷剪 | 补上的备注 | yes | user |\n";
         let parsed = parse_model_target_context(None, text);
         assert!(
             !parsed.diagnostics.has_problems(),
@@ -1799,7 +1799,7 @@ mod tests {
         );
         let context = parsed.context.expect("model mode accepts the glossary");
         assert_eq!(context.glossary.len(), 1);
-        assert_eq!(context.glossary[0].target, "宝剪");
+        assert_eq!(context.glossary[0].target, "酷剪");
         assert_eq!(context.glossary[0].note, "补上的备注");
         assert!(!context.glossary[0].locked);
         assert_eq!(context.glossary[0].origin, TermOrigin::Analyzed);

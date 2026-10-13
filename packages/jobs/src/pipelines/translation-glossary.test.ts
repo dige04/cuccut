@@ -99,7 +99,7 @@ describe('术语的出现与每批的上限', () => {
 
 describe('glossaryRef 与术语表改了之后的过期', () => {
   const snapshot = {
-    inline: [{ source: 'CucCut', target: '宝剪' }],
+    inline: [{ source: 'CucCut', target: '酷剪' }],
     entries: [
       {
         library: 'glossaries' as const,
@@ -123,7 +123,7 @@ describe('glossaryRef 与术语表改了之后的过期', () => {
     expect(ref.entries).toEqual([{ library: 'glossaries', id: 'glo_a', version: 2, contentHash: 'sha256:a2', name: '产品词' }]);
     expect(ref.inline).toMatchObject({ count: 1, contentHash: expect.stringMatching(/^sha256:/) });
     expect(ref.terms).toEqual([
-      { entryId: null, source: 'CucCut', target: '宝剪' },
+      { entryId: null, source: 'CucCut', target: '酷剪' },
       { entryId: 'glo_a', source: 'timeline', target: '时间线' },
       { entryId: 'glo_a', source: 'clip', target: '片段' },
     ]);

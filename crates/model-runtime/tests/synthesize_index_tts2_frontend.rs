@@ -126,7 +126,7 @@ fn runtime_config_fallback_is_index_tts2_v2() {
 
 #[test]
 fn normalizer_and_front_end_features_are_pure() {
-    assert!(!TextNormalizer::normalize("宝剪是一个本地视频工作流工具").is_empty());
+    assert!(!TextNormalizer::normalize("酷剪是一个本地视频工作流工具").is_empty());
     let (features, frames) = dsp::seamless_input_features(&[0.0f32; 100]);
     assert_eq!(frames, 0);
     assert!(features.is_empty());

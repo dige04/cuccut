@@ -1,46 +1,46 @@
-# 第三方声明
+# Third-Party Notices
 
-BaoCut 的原创材料采用 [BaoCut Community License 1.0](LICENSE)。下列第三方代码与资源保留各自原始许可；本项目许可不改变这些组件已经授予的权利。
+CucCut's original material is licensed under the terms in [LICENSE](LICENSE). The third-party code and resources below keep their original licenses; this project's license does not change the rights those components already grant.
 
-BaoCut 的部分代码与资源移植、改写或复制自下列开源项目。代码文件开头的注释写明了来源文件与改动；复制的资源文件列在各节里。
+Parts of CucCut's code and resources are ported, adapted or copied from the open-source projects listed below. The comments at the top of code files state the source file and the changes; copied resource files are listed in each section.
 
-## 文件预览
+## File Preview
 
-- PDF.js（Mozilla，`pdfjs-dist`，Apache-2.0）：PDF Worker、渲染器、CMap、标准字体与图片解码器；字体、CMap 和解码器保留各自的许可。
-- file-type（MIT）及其依赖：文件内容前缀识别，不依赖文件扩展名。
-- DOMPurify（Cure53，Apache-2.0 OR MPL-2.0）：静态 HTML 预览的内容清理。
+- PDF.js (Mozilla, `pdfjs-dist`, Apache-2.0): PDF worker, renderer, CMaps, standard fonts and image decoders; fonts, CMaps and decoders keep their own licenses.
+- file-type (MIT) and its dependencies: identifies file type from the content prefix, not from the file extension.
+- DOMPurify (Cure53, Apache-2.0 OR MPL-2.0): content sanitizing for static HTML previews.
 
-构建从安装包原文收集这些声明，随 Electron 与 Web 输出到 `assets/file-preview-licenses.txt`（`tools/pdf-licenses.ts`）。
+The build collects these notices from the original text in the installed packages and emits them to `assets/file-preview-licenses.txt` for both Electron and Web output (`tools/pdf-licenses.ts`).
 
-## 幻灯片编辑器
+## Slide Editor
 
-编辑器页面与 `slides_check` 用的编译器（`apps/slides-editor`）打进了 React、Base UI、Floating UI、TanStack Virtual、class-variance-authority（Apache-2.0）、clsx、tailwind-merge、JSZip（MIT/GPL-3.0 双许可，取 MIT）及其内联的 pako（MIT 与 Zlib）等 npm 包。构建按实际打进的模块从安装包原文收集许可，输出到 `third-party-licenses.txt`（页面）与 `node/third-party-licenses.txt`（编译器），随应用的 `slides-editor/` 资源分发（`apps/slides-editor/licenses.mjs`）。
+The editor page and the compiler used by `slides_check` (`apps/slides-editor`) bundle npm packages including React, Base UI, Floating UI, TanStack Virtual, class-variance-authority (Apache-2.0), clsx, tailwind-merge, JSZip (dual-licensed MIT/GPL-3.0; MIT is chosen) and the pako it inlines (MIT and Zlib). The build collects licenses from the original text of the modules actually bundled and writes them to `third-party-licenses.txt` (page) and `node/third-party-licenses.txt` (compiler), distributed with the app's `slides-editor/` resources (`apps/slides-editor/licenses.mjs`).
 
-- PptxGenJS 3.12.0（Brent Ely，MIT）：构建时按 `packages/slides-runtime/patches/pptxgenjs-3.12.0.json` 加了 25 处扩展（渐变、平铺填充、图片圆角、占位符继承、自定义主题与母版等），不改安装包。
-- mediabunny 1.27.3（Vanilagy and contributors，MPL-2.0）：`packages/slides-runtime/src/media/video-worker.ts` 以字符串原样内嵌它的编译产物，作为重新编码超大视频的 Worker；各段保留原有的 MPL 许可头。完整源码见 https://github.com/Vanilagy/mediabunny，许可全文在 `packages/slides-runtime/licenses/MPL-2.0.txt`，也写进上面两份许可文件。
+- PptxGenJS 3.12.0 (Brent Ely, MIT): at build time, 25 extensions are applied per `packages/slides-runtime/patches/pptxgenjs-3.12.0.json` (gradients, tiled fills, rounded image corners, placeholder inheritance, custom themes and masters, etc.); the installed package itself is not modified.
+- mediabunny 1.27.3 (Vanilagy and contributors, MPL-2.0): `packages/slides-runtime/src/media/video-worker.ts` embeds its compiled output verbatim as a string, serving as the Worker that re-encodes oversized videos; each section keeps its original MPL license header. Full source at https://github.com/Vanilagy/mediabunny; the full license text is at `packages/slides-runtime/licenses/MPL-2.0.txt` and is also included in the two license files above.
 
-## 设计稿编辑器
+## Design Editor
 
-编辑器页面（`apps/design-editor`）打进了 React 19、Base UI、Floating UI、TanStack Virtual、class-variance-authority（Apache-2.0）、clsx、tailwind-merge、reselect、usehooks-ts 等 npm 包。构建按实际打进的模块与内嵌文件从安装包原文收集许可，输出到 `third-party-licenses.txt`，随应用的 `design-editor/` 资源分发（`apps/design-editor/licenses.mjs`）。
+The editor page (`apps/design-editor`) bundles npm packages including React 19, Base UI, Floating UI, TanStack Virtual, class-variance-authority (Apache-2.0), clsx, tailwind-merge, reselect and usehooks-ts. The build collects licenses from the original text of the modules actually bundled and the embedded files, writes them to `third-party-licenses.txt`, and distributes them with the app's `design-editor/` resources (`apps/design-editor/licenses.mjs`).
 
-- React 18.3.1 与 ReactDOM 18.3.1（Meta，MIT）：画板运行时 `artifact-type/dc-runtime.js` 打进了它们，与编辑器界面的 React 19 分开；两者的 `umd/*.production.min.js` 原样内嵌在页面里，导出画板时与 `support.js` 一起写进导出文件（`vendor/react.js`、`vendor/react-dom.js`）。
-- Babel standalone 7.29.0（MIT）：npm 包里的 `babel.min.js` 原样随编辑器分发为 `artifact-type/babel.min.js`，画板 x-import 了 JSX 时才加载，在浏览器里编译 JSX；整份设计稿的 HTML 导出只在用到时内嵌一份。
-- dom-to-svg 0.12.2（MIT）及其依赖 postcss、postcss-value-parser、gradient-parser、nanoid、picocolors：注入画板、把画板截成 SVG 的脚本。
-- happy-dom 20.9.0（MIT）、jQuery 4.0.0（MIT）及其依赖 entities（BSD-2-Clause）、whatwg-mimetype：快速编辑的 Worker `artifact-type/fast-edit-worker.js`。
+- React 18.3.1 and ReactDOM 18.3.1 (Meta, MIT): the artboard runtime `artifact-type/dc-runtime.js` bundles them, separate from the editor UI's React 19; their `umd/*.production.min.js` are embedded verbatim in the page and, when an artboard is exported, are written into the export file together with `support.js` (`vendor/react.js`, `vendor/react-dom.js`).
+- Babel standalone 7.29.0 (MIT): the `babel.min.js` from the npm package is distributed with the editor verbatim as `artifact-type/babel.min.js`; it loads only when an artboard x-imports JSX and compiles JSX in the browser. In the HTML export of a whole design it is embedded once, and only when needed.
+- dom-to-svg 0.12.2 (MIT) and its dependencies postcss, postcss-value-parser, gradient-parser, nanoid and picocolors: scripts that are injected into artboards and capture them as SVG.
+- happy-dom 20.9.0 (MIT), jQuery 4.0.0 (MIT) and its dependencies entities (BSD-2-Clause) and whatwg-mimetype: the fast-edit Worker `artifact-type/fast-edit-worker.js`.
 
-## 设计系统编辑器
+## Design System Editor
 
-编辑器页面（`apps/design-system-editor`）打进了 React 19、Base UI、Floating UI、TanStack Virtual、class-variance-authority（Apache-2.0）、clsx、tailwind-merge、reselect、use-sync-external-store 等 npm 包。构建按实际打进的模块与随页面提供的文件从安装包原文收集许可，输出到 `third-party-licenses.txt`，随应用的 `design-system-editor/` 资源分发（`apps/design-system-editor/licenses.mjs`）。
+The editor page (`apps/design-system-editor`) bundles npm packages including React 19, Base UI, Floating UI, TanStack Virtual, class-variance-authority (Apache-2.0), clsx, tailwind-merge, reselect and use-sync-external-store. The build collects licenses from the original text of the modules actually bundled and the files served with the page, writes them to `third-party-licenses.txt`, and distributes them with the app's `design-system-editor/` resources (`apps/design-system-editor/licenses.mjs`).
 
-- React 18.3.1 与 ReactDOM 18.3.1（Meta，MIT）：两者的 `umd/*.production.min.js` 原样放在页面的 `artifact-type/vendor/` 下，组件预览按需加载，与编辑器界面的 React 19 分开。
+- React 18.3.1 and ReactDOM 18.3.1 (Meta, MIT): their `umd/*.production.min.js` are placed verbatim under the page's `artifact-type/vendor/`; component previews load them on demand, separate from the editor UI's React 19.
 
 ## Paseo
 
-- 来源：Paseo（https://github.com/getpaseo/paseo）
+- Source: Paseo (https://github.com/getpaseo/paseo)
 - Copyright (c) 2025-present Mohamed Boudra
-- 许可：Apache License, Version 2.0（全文见下）
+- License: Apache License, Version 2.0 (full text below)
 
-移植或改写了其中部分机制的 BaoCut 文件（相对原作有修改，修改内容见各文件开头的注释）：
+CucCut files that port or rewrite part of its mechanisms (modified from the original; the changes are described in the comments at the top of each file):
 
 - `packages/agent-drivers/src/acp/acp-connection.ts`
 - `packages/agent-drivers/src/acp/acp-driver.ts`
@@ -277,130 +277,105 @@ BaoCut 的部分代码与资源移植、改写或复制自下列开源项目。�
 
 ## speech-swift
 
-- 来源：[speech-swift](https://github.com/soniqo/speech-swift)（soniqo；原始版权声明为 `Copyright 2025 Ivan Digital`）
-- 许可：Apache License, Version 2.0；[上游 LICENSE 的原文副本](crates/model-runtime/licenses/speech-swift.txt)保留完整条款、版权与免责声明。
+- Source: [speech-swift](https://github.com/soniqo/speech-swift) (soniqo; the original copyright notice is `Copyright 2025 Ivan Digital`)
+- License: Apache License, Version 2.0; the [verbatim copy of the upstream LICENSE](crates/model-runtime/licenses/speech-swift.txt) retains the full terms, copyright and disclaimer.
 
-BaoCut 的 Qwen3-ASR、Whisper、强制对齐、Silero VAD、Qwen3-TTS、VoxCPM2、OmniVoice、IndexTTS2，以及 HTDemucs 人声分离的部分实现参考或改写自该项目（部分先移植到 BaoCut v2，再移入当前项目）。相关 Swift 实现已改写为 Rust，并适配 BaoCut 的 MLX / candle 张量后端、按清单读取的模型包、错误与任务接口；推理与前后处理另按模型官方实现校正。每个相关实现文件开头保留版权、来源文件与修改声明，原有模型上游的来源说明同时保留。ASR 文件注明参考关系：算法以 Rust 实现，MLX 与 candle 后端有本项目自己的适配；Whisper 仍保留其 BaoCut 早先 Swift 实现的来源说明。
+Parts of CucCut's Qwen3-ASR, Whisper, forced alignment, Silero VAD, Qwen3-TTS, VoxCPM2, OmniVoice, IndexTTS2 and HTDemucs source-separation implementations are referenced from or adapted from this project (some were first ported to an earlier version (v2), then moved into the current project). The related Swift implementations have been rewritten in Rust and adapted to CucCut's MLX / candle tensor backends, manifest-driven model packages, and error and task interfaces; inference and pre/post-processing were further aligned with each model's official implementation. Each related implementation file keeps, at its top, the copyright, source-file and modification notices, and the source notes of the original model upstreams are retained as well. ASR files state the reference relationship: the algorithm is implemented in Rust, and the MLX and candle backends carry this project's own adaptations; Whisper still retains the source note of an earlier Swift implementation.
 
-下列文件包含参考或改写部分；表格区分两种关系，不表示整份文件均来自 speech-swift，也不包含仅使用相同模型或框架的代码。模型权重、词典和音色录音的许可独立于本项目的代码许可，仍按各自来源声明。
+The files below contain referenced or adapted parts; the table distinguishes two kinds of relationship. It does not mean that a whole file comes from speech-swift, nor does it cover code that merely uses the same models or frameworks. Licenses for model weights, lexicons and voice recordings are independent of this project's code license and remain under their own source notices.
 
-| BaoCut 文件（相对仓库根） | speech-swift 来源文件（相对上游根） | 使用方式 |
+| CucCut file (relative to repo root) | speech-swift source file (relative to upstream root) | How it is used |
 | --- | --- | --- |
-| `crates/model-runtime/src/backend/candle/aligner.rs` | `Sources/Qwen3ASR/ForcedAligner.swift` | 参考实现，Rust 重写 |
-| `crates/model-runtime/src/backend/candle/audio_encoder.rs` | `Sources/Qwen3ASR/AudioEncoder.swift` | 参考实现，Rust 重写 |
-| `crates/model-runtime/src/backend/candle/layers.rs` | `Sources/Qwen3ASR/QuantizedTextDecoder.swift` | 参考实现，Rust 重写 |
-| `crates/model-runtime/src/backend/candle/qwen3.rs` | `Sources/Qwen3ASR/Qwen3ASR.swift` | 参考实现，Rust 重写 |
-| `crates/model-runtime/src/backend/candle/silero.rs` | `Sources/SpeechVAD/SileroModel.swift / Sources/SpeechVAD/SileroVAD.swift / Sources/SpeechVAD/SileroWeightLoading.swift` | 参考实现，Rust 重写 |
-| `crates/model-runtime/src/backend/candle/text_decoder.rs` | `Sources/Qwen3ASR/QuantizedTextDecoder.swift` | 参考实现，Rust 重写 |
-| `crates/model-runtime/src/backend/candle/weights.rs` | `Sources/Qwen3ASR/WeightLoading.swift` | 参考实现，Rust 重写 |
-| `crates/model-runtime/src/backend/coreml/whisper.rs` | `Sources/WhisperASR/WhisperCoreMLRuntime.swift` | 参考实现，Rust 重写 |
-| `crates/model-runtime/src/backend/mlx/aligner.rs` | `Sources/Qwen3ASR/ForcedAligner.swift` | 参考实现，Rust 重写 |
-| `crates/model-runtime/src/backend/mlx/qwen3/audio_encoder.rs` | `Sources/Qwen3ASR/AudioEncoder.swift` | 参考实现，Rust 重写 |
-| `crates/model-runtime/src/backend/mlx/qwen3/layers.rs` | `Sources/Qwen3ASR/QuantizedTextDecoder.swift` | 参考实现，Rust 重写 |
-| `crates/model-runtime/src/backend/mlx/qwen3/model.rs` | `Sources/Qwen3ASR/Qwen3ASR.swift` | 参考实现，Rust 重写 |
-| `crates/model-runtime/src/backend/mlx/qwen3/text_decoder.rs` | `Sources/Qwen3ASR/QuantizedTextDecoder.swift` | 参考实现，Rust 重写 |
-| `crates/model-runtime/src/backend/mlx/qwen3/weights.rs` | `Sources/Qwen3ASR/WeightLoading.swift` | 参考实现，Rust 重写 |
-| `crates/model-runtime/src/backend/mlx/silero.rs` | `Sources/SpeechVAD/SileroModel.swift / Sources/SpeechVAD/SileroVAD.swift / Sources/SpeechVAD/SileroWeightLoading.swift` | 参考实现，Rust 重写 |
-| `crates/model-runtime/src/separate/config.rs` | `Sources/SourceSeparation/HTDemucs/HTDemucsConfig.swift` | 移植改写 |
-| `crates/model-runtime/src/separate/htdemucs/layers.rs` | `Sources/SourceSeparation/HTDemucs/HTDemucsLayers.swift` | 移植改写 |
-| `crates/model-runtime/src/separate/htdemucs/model.rs` | `Sources/SourceSeparation/HTDemucs/HTDemucs.swift` | 移植改写 |
-| `crates/model-runtime/src/separate/htdemucs/separator.rs` | `Sources/SourceSeparation/HTDemucs/HTDemucsSeparator.swift` | 移植改写 |
-| `crates/model-runtime/src/separate/htdemucs/transformer.rs` | `Sources/SourceSeparation/HTDemucs/HTDemucsTransformer.swift` | 移植改写 |
-| `crates/model-runtime/src/separate/segment.rs` | `Sources/SourceSeparation/HTDemucs/HTDemucsSeparator.swift` | 移植改写 |
-| `crates/model-runtime/src/separate/stft.rs` | `Sources/SourceSeparation/HTDemucs/HTDemucsSpec.swift` | 移植改写 |
-| `crates/model-runtime/src/speech/align_common.rs` | `Sources/Qwen3ASR/ForcedAligner.swift` | 参考实现，Rust 重写 |
-| `crates/model-runtime/src/speech/decoding.rs` | `Sources/Qwen3ASR/Qwen3ASR.swift` | 参考实现，Rust 重写 |
-| `crates/model-runtime/src/speech/mel.rs` | `Sources/Qwen3ASR/AudioPreprocessing.swift` | 参考实现，Rust 重写 |
-| `crates/model-runtime/src/speech/qwen3_asr.rs` | `Sources/Qwen3ASR/Configuration.swift` | 参考实现，Rust 重写 |
-| `crates/model-runtime/src/speech/text_prep.rs` | `Sources/Qwen3ASR/TextPreprocessing.swift` | 参考实现，Rust 重写 |
-| `crates/model-runtime/src/speech/timestamp.rs` | `Sources/Qwen3ASR/TimestampCorrection.swift` | 参考实现，Rust 重写 |
-| `crates/model-runtime/src/speech/tokenizer.rs` | `Sources/AudioCommon/Tokenizer.swift` | 参考实现，Rust 重写 |
-| `crates/model-runtime/src/speech/whisper_decoding.rs` | `Sources/WhisperASR/WhisperGenerationConfig.swift / Sources/WhisperASR/WhisperByteLevelTokenizer.swift` | 参考实现，Rust 重写 |
-| `crates/model-runtime/src/synthesize/index_tts2/config.rs` | `Sources/IndexTTS2TTS/IndexTTS2RuntimeConfig.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/index_tts2/dsp.rs` | `Sources/SpeechRestoration/SeamlessM4TFrontEnd.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/index_tts2/mlx/bigvgan.rs` | `Sources/IndexTTS2TTS/IndexTTS2BigVGAN.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/index_tts2/mlx/campplus.rs` | `Sources/ChatterboxTTS/CAMPPlus.swift / Sources/IndexTTS2TTS/IndexTTS2CAMPPlusAdapter.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/index_tts2/mlx/engine_impl.rs` | `Sources/IndexTTS2TTS/IndexTTS2NativeRuntime.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/index_tts2/mlx/gpt.rs` | `Sources/IndexTTS2TTS/IndexTTS2SemanticGPT.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/index_tts2/mlx/layers.rs` | `Sources/IndexTTS2TTS/IndexTTS2SemanticGPT.swift / Sources/IndexTTS2TTS/IndexTTS2BigVGAN.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/index_tts2/mlx/s2mel.rs` | `Sources/IndexTTS2TTS/IndexTTS2S2Mel.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/index_tts2/mlx/semantic_codec.rs` | `Sources/IndexTTS2TTS/IndexTTS2SemanticCodec.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/index_tts2/mlx/w2v_bert.rs` | `Sources/IndexTTS2TTS/IndexTTS2Wav2Vec2Bert.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/index_tts2/mlx/weights.rs` | `Sources/MLXCommon/WeightLoading.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/index_tts2/normalizer.rs` | `Sources/IndexTTS2TTS/IndexTTS2TextNormalizer.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/index_tts2/sampling.rs` | `Sources/IndexTTS2TTS/IndexTTS2SemanticGPT.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/index_tts2/segmenter.rs` | `Sources/IndexTTS2TTS/IndexTTS2TextSegmenter.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/index_tts2/sentencepiece.rs` | `Sources/AudioCommon/SentencePieceModel.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/index_tts2/tokenizer.rs` | `Sources/IndexTTS2TTS/IndexTTS2Tokenizer.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/omnivoice/backbone.rs` | `Sources/OmniVoiceTTS/OmniVoiceBackbone.swift / Sources/OmniVoiceTTS/OmniVoiceDiffusion.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/omnivoice/codec.rs` | `Sources/OmniVoiceTTS/OmniVoiceCodec.swift / Sources/OmniVoiceTTS/OmniVoiceCodecEncoder.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/omnivoice/config.rs` | `Sources/OmniVoiceTTS/Configuration.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/omnivoice/engine.rs` | `Sources/OmniVoiceTTS/OmniVoiceModel.swift / Sources/OmniVoiceTTS/OmniVoiceTTSModel.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/qwen3_tts/code_predictor.rs` | `Sources/Qwen3TTS/CodePredictor.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/qwen3_tts/codec_decoder.rs` | `Sources/Qwen3TTS/SpeechTokenizerDecoder.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/qwen3_tts/codec_encoder.rs` | `Sources/Qwen3TTS/SpeechTokenizerEncoder.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/qwen3_tts/config.rs` | `Sources/Qwen3TTS/Configuration.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/qwen3_tts/engine.rs` | `Sources/Qwen3TTS/Qwen3TTS.swift / Sources/Qwen3TTS/Qwen3TTS+ICL.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/qwen3_tts/layers.rs` | `Sources/Qwen3TTS/Talker.swift / Sources/Qwen3TTS/CodePredictor.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/qwen3_tts/mel.rs` | `Sources/Qwen3TTS/SpeakerEncoder.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/qwen3_tts/prompt.rs` | `Sources/Qwen3TTS/Qwen3TTS.swift / Sources/Qwen3TTS/Qwen3TTS+ICL.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/qwen3_tts/sampling.rs` | `Sources/Qwen3TTS/Sampling.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/qwen3_tts/speaker_encoder.rs` | `Sources/Qwen3TTS/SpeakerEncoder.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/qwen3_tts/talker.rs` | `Sources/Qwen3TTS/Talker.swift / Sources/Qwen3TTS/CodePredictor.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/qwen3_tts/tokens.rs` | `Sources/Qwen3TTS/Configuration.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/qwen3_tts/weights.rs` | `Sources/Qwen3TTS/TTSWeightLoading.swift / Sources/Qwen3TTS/TTSWeightLoading+Encoder.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/voxcpm2/audio_vae.rs` | `Sources/VoxCPM2TTS/AudioVAE.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/voxcpm2/config.rs` | `Sources/VoxCPM2TTS/Configuration.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/voxcpm2/engine.rs` | `Sources/VoxCPM2TTS/VoxCPM2TTS.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/voxcpm2/minicpm.rs` | `Sources/VoxCPM2TTS/MiniCPM4.swift / Sources/VoxCPM2TTS/VoxCPM2TTS.swift` | 移植改写 |
-| `crates/model-runtime/src/synthesize/voxcpm2/tokenizer.rs` | `Sources/VoxCPM2TTS/VoxCPM2TTS.swift` | 移植改写 |
+| `crates/model-runtime/src/backend/candle/aligner.rs` | `Sources/Qwen3ASR/ForcedAligner.swift` | Reference implementation, rewritten in Rust |
+| `crates/model-runtime/src/backend/candle/audio_encoder.rs` | `Sources/Qwen3ASR/AudioEncoder.swift` | Reference implementation, rewritten in Rust |
+| `crates/model-runtime/src/backend/candle/layers.rs` | `Sources/Qwen3ASR/QuantizedTextDecoder.swift` | Reference implementation, rewritten in Rust |
+| `crates/model-runtime/src/backend/candle/qwen3.rs` | `Sources/Qwen3ASR/Qwen3ASR.swift` | Reference implementation, rewritten in Rust |
+| `crates/model-runtime/src/backend/candle/silero.rs` | `Sources/SpeechVAD/SileroModel.swift / Sources/SpeechVAD/SileroVAD.swift / Sources/SpeechVAD/SileroWeightLoading.swift` | Reference implementation, rewritten in Rust |
+| `crates/model-runtime/src/backend/candle/text_decoder.rs` | `Sources/Qwen3ASR/QuantizedTextDecoder.swift` | Reference implementation, rewritten in Rust |
+| `crates/model-runtime/src/backend/candle/weights.rs` | `Sources/Qwen3ASR/WeightLoading.swift` | Reference implementation, rewritten in Rust |
+| `crates/model-runtime/src/backend/coreml/whisper.rs` | `Sources/WhisperASR/WhisperCoreMLRuntime.swift` | Reference implementation, rewritten in Rust |
+| `crates/model-runtime/src/backend/mlx/aligner.rs` | `Sources/Qwen3ASR/ForcedAligner.swift` | Reference implementation, rewritten in Rust |
+| `crates/model-runtime/src/backend/mlx/qwen3/audio_encoder.rs` | `Sources/Qwen3ASR/AudioEncoder.swift` | Reference implementation, rewritten in Rust |
+| `crates/model-runtime/src/backend/mlx/qwen3/layers.rs` | `Sources/Qwen3ASR/QuantizedTextDecoder.swift` | Reference implementation, rewritten in Rust |
+| `crates/model-runtime/src/backend/mlx/qwen3/model.rs` | `Sources/Qwen3ASR/Qwen3ASR.swift` | Reference implementation, rewritten in Rust |
+| `crates/model-runtime/src/backend/mlx/qwen3/text_decoder.rs` | `Sources/Qwen3ASR/QuantizedTextDecoder.swift` | Reference implementation, rewritten in Rust |
+| `crates/model-runtime/src/backend/mlx/qwen3/weights.rs` | `Sources/Qwen3ASR/WeightLoading.swift` | Reference implementation, rewritten in Rust |
+| `crates/model-runtime/src/backend/mlx/silero.rs` | `Sources/SpeechVAD/SileroModel.swift / Sources/SpeechVAD/SileroVAD.swift / Sources/SpeechVAD/SileroWeightLoading.swift` | Reference implementation, rewritten in Rust |
+| `crates/model-runtime/src/separate/config.rs` | `Sources/SourceSeparation/HTDemucs/HTDemucsConfig.swift` | Ported and adapted |
+| `crates/model-runtime/src/separate/htdemucs/layers.rs` | `Sources/SourceSeparation/HTDemucs/HTDemucsLayers.swift` | Ported and adapted |
+| `crates/model-runtime/src/separate/htdemucs/model.rs` | `Sources/SourceSeparation/HTDemucs/HTDemucs.swift` | Ported and adapted |
+| `crates/model-runtime/src/separate/htdemucs/separator.rs` | `Sources/SourceSeparation/HTDemucs/HTDemucsSeparator.swift` | Ported and adapted |
+| `crates/model-runtime/src/separate/htdemucs/transformer.rs` | `Sources/SourceSeparation/HTDemucs/HTDemucsTransformer.swift` | Ported and adapted |
+| `crates/model-runtime/src/separate/segment.rs` | `Sources/SourceSeparation/HTDemucs/HTDemucsSeparator.swift` | Ported and adapted |
+| `crates/model-runtime/src/separate/stft.rs` | `Sources/SourceSeparation/HTDemucs/HTDemucsSpec.swift` | Ported and adapted |
+| `crates/model-runtime/src/speech/align_common.rs` | `Sources/Qwen3ASR/ForcedAligner.swift` | Reference implementation, rewritten in Rust |
+| `crates/model-runtime/src/speech/decoding.rs` | `Sources/Qwen3ASR/Qwen3ASR.swift` | Reference implementation, rewritten in Rust |
+| `crates/model-runtime/src/speech/mel.rs` | `Sources/Qwen3ASR/AudioPreprocessing.swift` | Reference implementation, rewritten in Rust |
+| `crates/model-runtime/src/speech/qwen3_asr.rs` | `Sources/Qwen3ASR/Configuration.swift` | Reference implementation, rewritten in Rust |
+| `crates/model-runtime/src/speech/text_prep.rs` | `Sources/Qwen3ASR/TextPreprocessing.swift` | Reference implementation, rewritten in Rust |
+| `crates/model-runtime/src/speech/timestamp.rs` | `Sources/Qwen3ASR/TimestampCorrection.swift` | Reference implementation, rewritten in Rust |
+| `crates/model-runtime/src/speech/tokenizer.rs` | `Sources/AudioCommon/Tokenizer.swift` | Reference implementation, rewritten in Rust |
+| `crates/model-runtime/src/speech/whisper_decoding.rs` | `Sources/WhisperASR/WhisperGenerationConfig.swift / Sources/WhisperASR/WhisperByteLevelTokenizer.swift` | Reference implementation, rewritten in Rust |
+| `crates/model-runtime/src/synthesize/index_tts2/config.rs` | `Sources/IndexTTS2TTS/IndexTTS2RuntimeConfig.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/index_tts2/dsp.rs` | `Sources/SpeechRestoration/SeamlessM4TFrontEnd.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/index_tts2/mlx/bigvgan.rs` | `Sources/IndexTTS2TTS/IndexTTS2BigVGAN.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/index_tts2/mlx/campplus.rs` | `Sources/ChatterboxTTS/CAMPPlus.swift / Sources/IndexTTS2TTS/IndexTTS2CAMPPlusAdapter.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/index_tts2/mlx/engine_impl.rs` | `Sources/IndexTTS2TTS/IndexTTS2NativeRuntime.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/index_tts2/mlx/gpt.rs` | `Sources/IndexTTS2TTS/IndexTTS2SemanticGPT.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/index_tts2/mlx/layers.rs` | `Sources/IndexTTS2TTS/IndexTTS2SemanticGPT.swift / Sources/IndexTTS2TTS/IndexTTS2BigVGAN.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/index_tts2/mlx/s2mel.rs` | `Sources/IndexTTS2TTS/IndexTTS2S2Mel.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/index_tts2/mlx/semantic_codec.rs` | `Sources/IndexTTS2TTS/IndexTTS2SemanticCodec.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/index_tts2/mlx/w2v_bert.rs` | `Sources/IndexTTS2TTS/IndexTTS2Wav2Vec2Bert.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/index_tts2/mlx/weights.rs` | `Sources/MLXCommon/WeightLoading.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/index_tts2/normalizer.rs` | `Sources/IndexTTS2TTS/IndexTTS2TextNormalizer.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/index_tts2/sampling.rs` | `Sources/IndexTTS2TTS/IndexTTS2SemanticGPT.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/index_tts2/segmenter.rs` | `Sources/IndexTTS2TTS/IndexTTS2TextSegmenter.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/index_tts2/sentencepiece.rs` | `Sources/AudioCommon/SentencePieceModel.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/index_tts2/tokenizer.rs` | `Sources/IndexTTS2TTS/IndexTTS2Tokenizer.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/omnivoice/backbone.rs` | `Sources/OmniVoiceTTS/OmniVoiceBackbone.swift / Sources/OmniVoiceTTS/OmniVoiceDiffusion.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/omnivoice/codec.rs` | `Sources/OmniVoiceTTS/OmniVoiceCodec.swift / Sources/OmniVoiceTTS/OmniVoiceCodecEncoder.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/omnivoice/config.rs` | `Sources/OmniVoiceTTS/Configuration.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/omnivoice/engine.rs` | `Sources/OmniVoiceTTS/OmniVoiceModel.swift / Sources/OmniVoiceTTS/OmniVoiceTTSModel.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/qwen3_tts/code_predictor.rs` | `Sources/Qwen3TTS/CodePredictor.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/qwen3_tts/codec_decoder.rs` | `Sources/Qwen3TTS/SpeechTokenizerDecoder.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/qwen3_tts/codec_encoder.rs` | `Sources/Qwen3TTS/SpeechTokenizerEncoder.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/qwen3_tts/config.rs` | `Sources/Qwen3TTS/Configuration.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/qwen3_tts/engine.rs` | `Sources/Qwen3TTS/Qwen3TTS.swift / Sources/Qwen3TTS/Qwen3TTS+ICL.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/qwen3_tts/layers.rs` | `Sources/Qwen3TTS/Talker.swift / Sources/Qwen3TTS/CodePredictor.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/qwen3_tts/mel.rs` | `Sources/Qwen3TTS/SpeakerEncoder.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/qwen3_tts/prompt.rs` | `Sources/Qwen3TTS/Qwen3TTS.swift / Sources/Qwen3TTS/Qwen3TTS+ICL.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/qwen3_tts/sampling.rs` | `Sources/Qwen3TTS/Sampling.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/qwen3_tts/speaker_encoder.rs` | `Sources/Qwen3TTS/SpeakerEncoder.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/qwen3_tts/talker.rs` | `Sources/Qwen3TTS/Talker.swift / Sources/Qwen3TTS/CodePredictor.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/qwen3_tts/tokens.rs` | `Sources/Qwen3TTS/Configuration.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/qwen3_tts/weights.rs` | `Sources/Qwen3TTS/TTSWeightLoading.swift / Sources/Qwen3TTS/TTSWeightLoading+Encoder.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/voxcpm2/audio_vae.rs` | `Sources/VoxCPM2TTS/AudioVAE.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/voxcpm2/config.rs` | `Sources/VoxCPM2TTS/Configuration.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/voxcpm2/engine.rs` | `Sources/VoxCPM2TTS/VoxCPM2TTS.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/voxcpm2/minicpm.rs` | `Sources/VoxCPM2TTS/MiniCPM4.swift / Sources/VoxCPM2TTS/VoxCPM2TTS.swift` | Ported and adapted |
+| `crates/model-runtime/src/synthesize/voxcpm2/tokenizer.rs` | `Sources/VoxCPM2TTS/VoxCPM2TTS.swift` | Ported and adapted |
 
-TTS 与人声分离模块的 `mod.rs` 另汇总来源与修改范围。上游许可副本与来源路径按 speech-swift `1f54e56cf137078ed681a03e0955e777f7314610` 核对；该版本号用于定位声明来源，不表示当前实现与该版本完全相同。
+The `mod.rs` files of the TTS and source-separation modules also summarize the source and scope of modifications. The upstream license copy and source paths were checked against speech-swift `1f54e56cf137078ed681a03e0955e777f7314610`; this version identifier is used to locate the source of the notices and does not mean the current implementation is identical to that version.
 
-本声明和上游许可副本随桌面与 Web 构建分发；桌面安装包在 `resources/THIRD_PARTY_NOTICES.md` 与 `resources/crates/model-runtime/licenses/speech-swift.txt` 保留可直接读取的副本。
+This notice and the upstream license copy are distributed with the desktop and Web builds; the desktop installer keeps directly readable copies at `resources/THIRD_PARTY_NOTICES.md` and `resources/crates/model-runtime/licenses/speech-swift.txt`.
 
 ## lobe-icons
 
-- 来源：lobe-icons（https://github.com/lobehub/lobe-icons）
+- Source: lobe-icons (https://github.com/lobehub/lobe-icons)
 - Copyright (c) 2023 LobeHub
-- 许可：MIT License（全文见下）
+- License: MIT License (full text below)
 
-原样复制的服务商图标（未修改内容，只按服务商 id 改了文件名；每个文件里的 `<title>` 与 `style="flex:none;line-height:1"` 是它的原样标记）：
-
-- `designs/baocut/assets/vendors/anthropic.svg`
-- `designs/baocut/assets/vendors/codex.svg`（原名 `codex-color.svg`）
-- `designs/baocut/assets/vendors/cursor.svg`
-- `designs/baocut/assets/vendors/deepseek.svg`（原名 `deepseek-color.svg`）
-- `designs/baocut/assets/vendors/elevenlabs.svg`
-- `designs/baocut/assets/vendors/githubcopilot.svg`
-- `designs/baocut/assets/vendors/google.svg`（原名 `gemini-color.svg`）
-- `designs/baocut/assets/vendors/groq.svg`
-- `designs/baocut/assets/vendors/minimax.svg`（原名 `minimax-color.svg`）
-- `designs/baocut/assets/vendors/mistral.svg`（原名 `mistral-color.svg`）
-- `designs/baocut/assets/vendors/moonshot.svg`（原名 `kimi.svg`）
-- `designs/baocut/assets/vendors/openai.svg`
-- `designs/baocut/assets/vendors/opencode.svg`
-- `designs/baocut/assets/vendors/openrouter.svg`
-- `designs/baocut/assets/vendors/pi.svg`
-- `designs/baocut/assets/vendors/qwen.svg`（原名 `qwen-color.svg`）
-- `designs/baocut/assets/vendors/siliconflow.svg`（原名 `siliconcloud-color.svg`）
-- `designs/baocut/assets/vendors/volcengine.svg`（原名 `volcengine-color.svg`）
-- `designs/baocut/assets/vendors/xai.svg`
-- `designs/baocut/assets/vendors/zhipu.svg`（原名 `zhipu-color.svg`）
-
-`packages/ui/src/components/vendor-icons/` 下是上面其中 9 个文件的逐字节副本（应用里 Agent 选择器的图标；`designs/baocut/app/icon-sync.test.js` 核对两份一致）：
+Provider icons copied verbatim into `packages/ui/src/components/vendor-icons/` (the icons in the app's agent picker; content unmodified, only the file names were changed to the provider id; the `<title>` and `style="flex:none;line-height:1"` in each file are its original markup):
 
 - `packages/ui/src/components/vendor-icons/anthropic.svg`
-- `packages/ui/src/components/vendor-icons/codex.svg`
+- `packages/ui/src/components/vendor-icons/codex.svg` (originally named `codex-color.svg`)
 - `packages/ui/src/components/vendor-icons/cursor.svg`
 - `packages/ui/src/components/vendor-icons/githubcopilot.svg`
-- `packages/ui/src/components/vendor-icons/google.svg`
-- `packages/ui/src/components/vendor-icons/moonshot.svg`
+- `packages/ui/src/components/vendor-icons/google.svg` (originally named `gemini-color.svg`)
+- `packages/ui/src/components/vendor-icons/moonshot.svg` (originally named `kimi.svg`)
 - `packages/ui/src/components/vendor-icons/opencode.svg`
 - `packages/ui/src/components/vendor-icons/pi.svg`
 - `packages/ui/src/components/vendor-icons/xai.svg`
-
-这些图标中的名称与标志是各自所有者的商标，只用于标明 BaoCut 连接的是哪家服务，不表示所有者认可或赞助 BaoCut。
 
 ### MIT License
 
@@ -428,25 +403,23 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## Spectrum 2 图标
+## Spectrum 2 Icons
 
-- 来源：Adobe React Spectrum（https://github.com/adobe/react-spectrum），`@react-spectrum/s2` 的 workflow 图标
-- 许可：Apache License, Version 2.0（全文见上文「Paseo」一节）
+- Source: Adobe React Spectrum (https://github.com/adobe/react-spectrum), the workflow icons of `@react-spectrum/s2`
+- License: Apache License, Version 2.0 (full text in the Paseo section above)
 
-外壳图标 `designs/baocut/assets/shell/*.svg`（`packages/ui/src/components/shell-icons/` 是逐字节相同的一份）里：`summary.svg` 是 S2 `ListBulleted` 的路径，未改；`sidebar.svg`、`sidebar-hidden.svg`、`tabs.svg`、`hide-tabs.svg` 用 S2 展开面板图标（expand right）的方框与面板条，`sidebar.svg` 把面板条加宽到 4，`hide-tabs.svg` 加一条中线；`full.svg`、`exit-full.svg`、`tabs-plus.svg` 是 BaoCut 按 S2 画法自绘。逐个来源见原型同目录的 `provenance.json`。
-
-这组外壳图标的选型（侧栏开关、标签页、完整视图、会话摘要）与完整视图两角的比例（臂长、跨度、两角间距）参考了 OpenAI Codex 桌面应用 26.930.61225 的外壳图标；图形按 S2 画法重画，没有复制它的路径数据。OpenAI 与 Codex 是其所有者的商标，参考不表示所有者认可或赞助 BaoCut。
+CucCut uses the workflow icons of `@react-spectrum/s2` as published, unmodified.
 
 ## HyperFrames
 
-- 来源：HyperFrames（https://github.com/hyperframes/hyperframes）
-- 许可：Apache License, Version 2.0（全文见上文「Paseo」一节）
+- Source: HyperFrames (https://github.com/hyperframes/hyperframes)
+- License: Apache License, Version 2.0 (full text in the Paseo section above)
 
-BaoCut 实现了 HyperFrames 公开的作者合同（合同标识 `hyperframes/1`）：根元素的 `data-*` 属性（`data-composition-id`、`data-width`、`data-height`、`data-fps`、`data-duration`）与 `window.__timelines[id].seek`，用来验证、取帧和烘焙按这个合同写的代码包（[代码包规范 §4.7](docs/spec/code-bundle-spec.md#47-hyperframes)）。BaoCut 没有移植、改写或复制 HyperFrames 的代码或资源，也不随应用分发它；本节只说明这个合同的出处。
+CucCut implements the public author contract of HyperFrames (contract identifier `hyperframes/1`): the `data-*` attributes of the root element (`data-composition-id`, `data-width`, `data-height`, `data-fps`, `data-duration`) and `window.__timelines[id].seek`, used to validate, capture frames from, and bake code bundles written to this contract ([code bundle spec §4.7](docs/spec/code-bundle-spec.md#47-hyperframes)). CucCut has not ported, adapted or copied HyperFrames code or resources, and does not distribute them with the app; this section only states the source of this contract.
 
 ## smol-toml
 
-历史版本配置的 TOML 解析使用 smol-toml（Squirrel Chat，BSD-3-Clause）。随 Runtime 构建分发，原始许可如下：
+TOML parsing of configuration from earlier versions uses smol-toml (Squirrel Chat, BSD-3-Clause). It is distributed with the Runtime build; the original license follows:
 
 ```text
 Copyright (c) Squirrel Chat et al., All rights reserved.
@@ -477,7 +450,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ## keyring
 
-Windows Credential Manager 的读写使用 keyring（keyring Developers），本分发选择 MIT 许可：
+Reading and writing Windows Credential Manager uses keyring (keyring Developers); this distribution elects the MIT license:
 
 ```text
 Copyright (c) 2016 keyring Developers
@@ -507,16 +480,16 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-## YuNet 人脸检测模型
+## YuNet face detection model
 
-`packages/models/assets/face-detection/yunet-2023mar.onnx` 是 OpenCV Zoo 的 YuNet 模型（`face_detection_yunet_2023mar.onnx`，内容未改动，只改了文件名），随应用分发，`videos_frames` 用它标出每帧的人脸框。来源（固定到提交）、SHA-256 与许可原文见同目录的 `COPYING.txt`。
+`packages/models/assets/face-detection/yunet-2023mar.onnx` is the YuNet model from OpenCV Zoo (`face_detection_yunet_2023mar.onnx`; content unchanged, only the file name was changed), distributed with the app; `videos_frames` uses it to mark face boxes in each frame. The source (pinned to a commit), SHA-256 and the original license text are in `COPYING.txt` in the same directory.
 
-- 来源：https://github.com/opencv/opencv_zoo/tree/f12e12798e8314f7c074a6656816c048dcc95b7a/models/face_detection_yunet
-- 许可：MIT License，Copyright (c) 2020 Shiqi Yu
+- Source: https://github.com/opencv/opencv_zoo/tree/f12e12798e8314f7c074a6656816c048dcc95b7a/models/face_detection_yunet
+- License: MIT License, Copyright (c) 2020 Shiqi Yu
 
 ## tract
 
-人脸检测进程 `face-detect`（`crates/face-detect`）用 tract（Sonos，`tract-onnx` 及其依赖的 `tract-*` crate）做纯 Rust 的 ONNX 推理，编进随应用分发的原生程序。tract 以 MIT OR Apache-2.0 双许可发布，本分发选择 MIT 许可：
+The face detection process `face-detect` (`crates/face-detect`) uses tract (Sonos, `tract-onnx` and its dependent `tract-*` crates) for pure-Rust ONNX inference, compiled into the native program distributed with the app. tract is released under MIT OR Apache-2.0; this distribution elects the MIT license:
 
 ```text
 Permission is hereby granted, free of charge, to any

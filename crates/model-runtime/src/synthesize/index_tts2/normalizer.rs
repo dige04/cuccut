@@ -495,8 +495,8 @@ mod tests {
     #[test]
     fn text_without_digits_is_untouched() {
         assert_eq!(
-            TextNormalizer::normalize("宝剪是一个本地视频工作流工具"),
-            "宝剪是一个本地视频工作流工具"
+            TextNormalizer::normalize("酷剪是一个本地视频工作流工具"),
+            "酷剪是一个本地视频工作流工具"
         );
         assert_eq!(TextNormalizer::normalize("Hello, world."), "Hello, world.");
     }

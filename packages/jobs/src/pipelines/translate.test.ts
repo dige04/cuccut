@@ -1197,7 +1197,7 @@ describe.skipIf(!command || !wasm)('翻译流程用库里的术语表', () => {
       return null;
     };
 
-    const record = await translate({ glossaries: [{ id: product.id }], glossary: [{ source: 'CucCut', target: '宝剪' }] });
+    const record = await translate({ glossaries: [{ id: product.id }], glossary: [{ source: 'CucCut', target: '酷剪' }] });
     expect(record.state, JSON.stringify(record.error)).toBe('completed');
     // When the same call supplies a library glossary, it takes precedence over the one enabled in the video; the terms go into the Speech Worker's system message.
     const system = systemPrompts().join('\n');

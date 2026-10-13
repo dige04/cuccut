@@ -243,11 +243,11 @@ describe('字幕文件的翻译流程', () => {
 
   it('VTT 到 VTT：标识、cue settings 与 NOTE 原样；术语表进提示词', async () => {
     const input = await write('talk.vtt', VTT);
-    const record = await translate({ input, glossary: [{ source: 'CucCut', target: '宝剪' }], sourceLanguage: 'en' });
+    const record = await translate({ input, glossary: [{ source: 'CucCut', target: '酷剪' }], sourceLanguage: 'en' });
     expect(record.state).toBe('completed');
     const out = await fs.readFile(path.join(saved, 'talk.zh-CN.vtt'), 'utf8');
     expect(out).toContain('NOTE kept\n\na\n00:01.000 --> 00:02.000 line:0\n译：Good morning');
-    expect(text.runs[0]!.parameters.messages[0]!.content).toContain('- CucCut → 宝剪');
+    expect(text.runs[0]!.parameters.messages[0]!.content).toContain('- CucCut → 酷剪');
     expect(record.pipeline!.summary).toMatchObject({ sourceLanguage: 'en', glossary: { terms: 1 } });
   });
 

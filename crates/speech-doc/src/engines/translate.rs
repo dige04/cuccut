@@ -2387,7 +2387,7 @@ mod tests {
         assert!(term_present("Air is a model", "Air"));
         assert!(!term_present("Airport is nearby", "Air"));
         assert!(term_present("We compile C++ today", "C++"));
-        assert!(term_present("使用宝剪辑处理字幕", "宝剪辑"));
+        assert!(term_present("使用酷剪辑处理字幕", "酷剪辑"));
     }
 
     #[test]

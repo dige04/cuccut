@@ -252,7 +252,7 @@ fn qwen3_tts_customvoice_speaks_with_a_model_speaker() {
         "aufklarer/Qwen3-TTS-12Hz-0.6B-CustomVoice-MLX-bf16",
     );
     let request = Request {
-        text: "你好，欢迎使用宝剪。今天我们来试一下本地语音合成。",
+        text: "你好，欢迎使用酷剪。今天我们来试一下本地语音合成。",
         language: Some("zh-CN"),
         voice: preset("Vivian"),
         input: None,
@@ -335,7 +335,7 @@ fn omnivoice_follows_a_vocabulary_description() {
 fn voxcpm2_speaks_with_a_builtin_voice() {
     let mut worker = loaded_worker("voxcpm2@mlx-int8", "voxcpm2", "aufklarer/VoxCPM2-MLX-int8");
     let request = Request {
-        text: "你好，这是宝剪的内置音色，用 VoxCPM2 在本机合成。",
+        text: "你好，这是酷剪的内置音色，用 VoxCPM2 在本机合成。",
         language: Some("zh-CN"),
         voice: preset("zh-female"),
         input: None,
@@ -351,7 +351,7 @@ fn voxcpm2_speaks_with_a_builtin_voice() {
 fn index_tts25_speaks_with_a_builtin_voice_and_keeps_readings() {
     let mut worker = loaded_worker("index-tts2.5@mlx-fp16", "indextts2.5", "mlx-community/IndexTTS-2.5-fp16");
     let request = Request {
-        text: "你好，这是宝剪的内置音色。他在银<行|hang2>上班。",
+        text: "你好，这是酷剪的内置音色。他在银<行|hang2>上班。",
         language: Some("zh-CN"),
         voice: preset("zh-female"),
         input: None,
@@ -368,7 +368,7 @@ fn index_tts25_speaks_with_a_builtin_voice_and_keeps_readings() {
 fn gpt_sovits_speaks_with_a_builtin_voice_and_reports_dropped_readings() {
     let mut worker = loaded_worker("gpt-sovits-v2@mlx-fp16", "gpt-sovits", "PJMixers-Dev/lj1995_GPT-SoVITS-safetensors");
     let request = Request {
-        text: "你好，这是宝剪的内置音色。他在银<行|hang2>上班。",
+        text: "你好，这是酷剪的内置音色。他在银<行|hang2>上班。",
         language: Some("zh-CN"),
         voice: preset("zh-female"),
         input: None,
@@ -508,7 +508,7 @@ fn candle_qwen3_tts_customvoice_speaks_with_a_model_speaker() {
         return;
     };
     let request = Request {
-        text: "你好，欢迎使用宝剪。今天我们来试一下本地语音合成。",
+        text: "你好，欢迎使用酷剪。今天我们来试一下本地语音合成。",
         language: Some("zh-CN"),
         voice: preset("Vivian"),
         input: None,

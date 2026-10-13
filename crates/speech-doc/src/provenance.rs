@@ -212,7 +212,7 @@ mod tests {
 
     #[test]
     fn term_change_marks_only_hit_sentences_stale() {
-        let before = brief_with(vec![entry("CucCut", "宝剪")], "a doc", "plain");
+        let before = brief_with(vec![entry("CucCut", "酷剪")], "a doc", "plain");
         let digest_before = ContextDigest::from_brief(Some(&before));
         let mut records = TranslationProvenance::default();
         records.insert("s-1", digest_before.record_for("CucCut ships today"));
@@ -235,7 +235,7 @@ mod tests {
 
     #[test]
     fn unchanged_terms_are_clean() {
-        let brief = brief_with(vec![entry("CucCut", "宝剪")], "a doc", "plain");
+        let brief = brief_with(vec![entry("CucCut", "酷剪")], "a doc", "plain");
         let digest = ContextDigest::from_brief(Some(&brief));
         let mut records = TranslationProvenance::default();
         records.insert("s-1", digest.record_for("CucCut ships today"));
@@ -245,7 +245,7 @@ mod tests {
 
     #[test]
     fn missing_record_is_unknown_not_stale() {
-        let brief = brief_with(vec![entry("CucCut", "宝剪")], "a doc", "plain");
+        let brief = brief_with(vec![entry("CucCut", "酷剪")], "a doc", "plain");
         let digest = ContextDigest::from_brief(Some(&brief));
         let scan = scan_provenance(
             &TranslationProvenance::default(),
@@ -258,12 +258,12 @@ mod tests {
 
     #[test]
     fn summary_change_is_advisory_only() {
-        let before = brief_with(vec![entry("CucCut", "宝剪")], "a doc", "plain");
+        let before = brief_with(vec![entry("CucCut", "酷剪")], "a doc", "plain");
         let digest_before = ContextDigest::from_brief(Some(&before));
         let mut records = TranslationProvenance::default();
         records.insert("s-1", digest_before.record_for("CucCut ships today"));
 
-        let after = brief_with(vec![entry("CucCut", "宝剪")], "a different doc", "plain");
+        let after = brief_with(vec![entry("CucCut", "酷剪")], "a different doc", "plain");
         let digest_after = ContextDigest::from_brief(Some(&after));
         let scan = scan_provenance(&records, &digest_after, [("s-1", "CucCut ships today")]);
         assert!(scan.stale.is_empty());
@@ -273,7 +273,7 @@ mod tests {
     #[test]
     fn missing_brief_never_marks_anything_stale() {
         // Runs such as `--no-brief` have no basis to compare against. If compared against an empty terminology set, s-1 would be judged "terms gone" and the whole document re-translated. This must stay silent here.
-        let brief = brief_with(vec![entry("CucCut", "宝剪")], "a doc", "plain");
+        let brief = brief_with(vec![entry("CucCut", "酷剪")], "a doc", "plain");
         let digest = ContextDigest::from_brief(Some(&brief));
         let mut records = TranslationProvenance::default();
         records.insert("s-1", digest.record_for("CucCut ships today"));
@@ -287,7 +287,7 @@ mod tests {
     #[test]
     fn empty_glossary_is_a_real_basis() {
         // Contrast with "no brief": a user deleting all terms is a **real** change in basis, and the affected sentences should be judged stale.
-        let before = brief_with(vec![entry("CucCut", "宝剪")], "a doc", "plain");
+        let before = brief_with(vec![entry("CucCut", "酷剪")], "a doc", "plain");
         let digest_before = ContextDigest::from_brief(Some(&before));
         let mut records = TranslationProvenance::default();
         records.insert("s-1", digest_before.record_for("CucCut ships today"));
@@ -301,7 +301,7 @@ mod tests {
 
     #[test]
     fn round_trips_through_json() {
-        let brief = brief_with(vec![entry("CucCut", "宝剪")], "a doc", "plain");
+        let brief = brief_with(vec![entry("CucCut", "酷剪")], "a doc", "plain");
         let digest = ContextDigest::from_brief(Some(&brief));
         let mut records = TranslationProvenance::default();
         records.insert("s-g1.0", digest.record_for("CucCut ships today"));

@@ -318,7 +318,7 @@ Two or three sentences describing the subject matter, register, speaker roles, a
 # Canonical Terms
 | Source | Category | Variants | Note | Lock | Origin |
 |---|---|---|---|---|---|
-| CucCut | product | bao cut, BaoKut | keep the English casing | no | analyzed |
+| CucCut | product | cook cut, CukKut | keep the English casing | no | analyzed |
 
 Rules:
 - Reproduce the frontmatter keys exactly as shown and leave `fingerprint` empty; the app stamps it.
@@ -1248,7 +1248,7 @@ mod tests {
 
     fn doc() -> TranscriptDoc {
         build_doc(
-            &[RowIn::new(0.0, 5.0, "we use bao cut every day")],
+            &[RowIn::new(0.0, 5.0, "we use cook cut every day")],
             DocMedia {
                 id: None,
                 path: None,
@@ -1268,7 +1268,7 @@ mod tests {
 
     // ── file-v1（M4）────────────────────────────────────────────────────
 
-    const CONTEXT_ANSWER: &str = "---\nformat: \"context-doc/1\"\nfingerprint: \"\"\n---\n# Summary\nA demo about CucCut.\n\n# Canonical Terms\n| Source | Category | Variants | Note | Lock | Origin |\n|---|---|---|---|---|---|\n| CucCut | product | bao cut, BaoKut | 产品名 | no | analyzed |\n";
+    const CONTEXT_ANSWER: &str = "---\nformat: \"context-doc/1\"\nfingerprint: \"\"\n---\n# Summary\nA demo about CucCut.\n\n# Canonical Terms\n| Source | Category | Variants | Note | Lock | Origin |\n|---|---|---|---|---|---|\n| CucCut | product | cook cut, CukKut | 产品名 | no | analyzed |\n";
 
     #[test]
     fn file_contract_analysis_filters_variants_and_stamps_fingerprint() {
@@ -1288,8 +1288,8 @@ mod tests {
         assert_eq!(llm.calls[0].0, "analysis");
         assert_eq!(attempts, vec![("p001".to_owned(), true)]);
         assert_eq!(context.terms.len(), 1);
-        // Anti-hallucination check: a BaoKut that does not literally appear is filtered out.
-        assert_eq!(context.terms[0].variants, vec!["bao cut".to_owned()]);
+        // Anti-hallucination check: a CukKut that does not literally appear is filtered out.
+        assert_eq!(context.terms[0].variants, vec!["cook cut".to_owned()]);
         assert_eq!(context.terms[0].category, TermCategory::Product);
         assert_eq!(context.fingerprint, fingerprint(&doc.words));
     }
@@ -1308,7 +1308,7 @@ mod tests {
             terms: vec![CanonicalTerm {
                 source: "CucCut".to_owned(),
                 category: TermCategory::Product,
-                variants: vec!["bao cut".to_owned()],
+                variants: vec!["cook cut".to_owned()],
                 note: "用户钉死".to_owned(),
                 locked: true,
                 origin: TermOrigin::User,
@@ -1354,7 +1354,7 @@ mod tests {
 
     /// 9600 words → two analysis pages (ANALYSIS=8000 + 10% slack / ANALYSIS_MIN_LAST=500).
     fn two_page_doc() -> TranscriptDoc {
-        let text = "yan lecun says bao cut ".repeat(40);
+        let text = "yan lecun says cook cut ".repeat(40);
         let rows = (0..48)
             .map(|i| RowIn::new(i as f64 * 10.0, i as f64 * 10.0 + 9.0, text.trim()))
             .collect::<Vec<_>>();
@@ -1377,7 +1377,7 @@ mod tests {
         )
     }
 
-    const PAGE_ONE_ANSWER: &str = "---\nformat: \"context-doc/1\"\nfingerprint: \"\"\n---\n# Summary\nPart one summary.\n\n# Canonical Terms\n| Source | Category | Variants | Note | Lock | Origin |\n|---|---|---|---|---|---|\n| CucCut | product | bao cut | short | no | analyzed |\n| Yann LeCun | person | yan lecun | | no | analyzed |\n";
+    const PAGE_ONE_ANSWER: &str = "---\nformat: \"context-doc/1\"\nfingerprint: \"\"\n---\n# Summary\nPart one summary.\n\n# Canonical Terms\n| Source | Category | Variants | Note | Lock | Origin |\n|---|---|---|---|---|---|\n| CucCut | product | cook cut | short | no | analyzed |\n| Yann LeCun | person | yan lecun | | no | analyzed |\n";
     const PAGE_TWO_ANSWER: &str = "---\nformat: \"context-doc/1\"\nfingerprint: \"\"\n---\n# Summary\nPart two summary is the longer one.\n\n# Canonical Terms\n| Source | Category | Variants | Note | Lock | Origin |\n|---|---|---|---|---|---|\n| cuccut | product | | a much longer note | no | analyzed |\n| Yann-LeCun | tech | | | no | analyzed |\n";
     const SUMMARY_ANSWER: &str = "---\nformat: \"context-doc/1\"\nfingerprint: \"\"\n---\n# Summary\nMerged summary.\n\n# Canonical Terms\n| Source | Category | Variants | Note | Lock | Origin |\n|---|---|---|---|---|---|\n";
 
@@ -1422,7 +1422,7 @@ mod tests {
         let cuccut = &context.terms[0];
         assert_eq!(cuccut.source, "CucCut");
         assert_eq!(cuccut.note, "a much longer note");
-        assert_eq!(cuccut.variants, vec!["bao cut".to_owned()]);
+        assert_eq!(cuccut.variants, vec!["cook cut".to_owned()]);
         let lecun = &context.terms[1];
         assert_eq!(lecun.source, "Yann LeCun");
         assert_eq!(lecun.category, TermCategory::Person);
@@ -1587,7 +1587,7 @@ mod tests {
     #[test]
     fn file_contract_analysis_accepts_duplicate_and_bulky_tables_in_one_call() {
         // Single page but long input: the hard size ceiling is computed as 8× the input, so short fixtures are not eaten by the floor.
-        let text = "we use bao cut every day ".repeat(20);
+        let text = "we use cook cut every day ".repeat(20);
         let rows = (0..20)
             .map(|i| RowIn::new(i as f64 * 10.0, i as f64 * 10.0 + 9.0, text.trim()))
             .collect::<Vec<_>>();
@@ -1620,8 +1620,8 @@ mod tests {
                 "---\nformat: \"context-doc/1\"\nfingerprint: \"\"\n---\n# Summary\n摘要。\n\n\
                  # Canonical Terms\n| Source | Category | Variants | Note | Lock | Origin |\n\
                  |---|---|---|---|---|---|\n\
-                 | CucCut | product | bao cut | | no | analyzed |\n\
-                 | cuccut | brand | bao cut | 重复行 | no | analyzed |\n{bulky}"
+                 | CucCut | product | cook cut | | no | analyzed |\n\
+                 | cuccut | brand | cook cut | 重复行 | no | analyzed |\n{bulky}"
             )
             .into_boxed_str(),
         );
@@ -1692,7 +1692,7 @@ mod tests {
                 CanonicalTerm {
                     source: "CucCut".to_owned(),
                     category: TermCategory::Product,
-                    variants: vec!["bao cut".to_owned()],
+                    variants: vec!["cook cut".to_owned()],
                     note: String::new(),
                     locked: true,
                     origin: TermOrigin::User,
@@ -1717,14 +1717,14 @@ mod tests {
             target_lang: "zh-Hans".to_owned(),
             glossary: vec![BilingualTerm {
                 source: "CucCut".to_owned(),
-                target: "宝剪".to_owned(),
+                target: "酷剪".to_owned(),
                 note: String::new(),
                 locked: true,
                 origin: TermOrigin::User,
             }],
             ..TargetContext::default()
         };
-        let answer = "---\nformat: \"context-doc/1\"\ntargetLang: \"zh-Hans\"\nfingerprint: \"\"\n---\n# Translated Summary\n关于宝剪的演示。\n\n# Bilingual Glossary\n| Source | Target | Note | Lock | Origin |\n|---|---|---|---|---|\n| CucCut | 包裁 | | yes | user |\n| every day | 每天 | | no | analyzed |\n\n# Translation Style\n口语化。\n\n# Difficulties\n- 产品名不译\n";
+        let answer = "---\nformat: \"context-doc/1\"\ntargetLang: \"zh-Hans\"\nfingerprint: \"\"\n---\n# Translated Summary\n关于酷剪的演示。\n\n# Bilingual Glossary\n| Source | Target | Note | Lock | Origin |\n|---|---|---|---|---|\n| CucCut | 包裁 | | yes | user |\n| every day | 每天 | | no | analyzed |\n\n# Translation Style\n口语化。\n\n# Difficulties\n- 产品名不译\n";
         let mut llm = FakeLlm::ok([answer]);
         let options = TranslationBriefOptions {
             source_lang: "en",
@@ -1751,7 +1751,7 @@ mod tests {
             .find(|term| term.source == "CucCut")
             .expect("locked row");
         // User-locked translations are kept verbatim. Model rewrites (wrapping) are discarded.
-        assert_eq!(locked.target, "宝剪");
+        assert_eq!(locked.target, "酷剪");
         assert_eq!(locked.origin, TermOrigin::User);
         assert!(locked.locked);
         let generated = context
@@ -1771,7 +1771,7 @@ mod tests {
     #[test]
     fn file_contract_translation_brief_rejects_slash_alternatives() {
         let doc = doc();
-        let answer = "---\nformat: \"context-doc/1\"\ntargetLang: \"zh-Hans\"\nfingerprint: \"\"\n---\n# Translated Summary\ns\n\n# Bilingual Glossary\n| Source | Target | Note | Lock | Origin |\n|---|---|---|---|---|\n| CucCut | 宝剪/包裁 | | no | analyzed |\n\n# Translation Style\n\n# Difficulties\n";
+        let answer = "---\nformat: \"context-doc/1\"\ntargetLang: \"zh-Hans\"\nfingerprint: \"\"\n---\n# Translated Summary\ns\n\n# Bilingual Glossary\n| Source | Target | Note | Lock | Origin |\n|---|---|---|---|---|\n| CucCut | 酷剪/包裁 | | no | analyzed |\n\n# Translation Style\n\n# Difficulties\n";
         let mut llm = FakeLlm::ok([answer, answer, answer]);
         let options = TranslationBriefOptions {
             source_lang: "en",
@@ -1813,7 +1813,7 @@ mod tests {
             glossary: vec![
                 BilingualTerm {
                     source: "CucCut".to_owned(),
-                    target: "宝剪".to_owned(),
+                    target: "酷剪".to_owned(),
                     note: "产品".to_owned(),
                     locked: true,
                     origin: TermOrigin::User,
@@ -1860,7 +1860,7 @@ mod tests {
             glossary: vec![
                 GlossaryEntry {
                     source: "CucCut".to_owned(),
-                    target: "宝剪".to_owned(),
+                    target: "酷剪".to_owned(),
                     note: None,
                     locked: true,
                 },
@@ -1885,7 +1885,7 @@ mod tests {
     fn merge_bilingual_terms_respects_user_lock_priority() {
         let existing = vec![BilingualTerm {
             source: "CucCut".to_owned(),
-            target: "宝剪".to_owned(),
+            target: "酷剪".to_owned(),
             note: String::new(),
             locked: true,
             origin: TermOrigin::User,
@@ -1908,7 +1908,7 @@ mod tests {
         ];
         let merged = merge_bilingual_terms(&existing, &regenerated);
         assert_eq!(merged.len(), 2);
-        assert_eq!(merged[0].target, "宝剪");
+        assert_eq!(merged[0].target, "酷剪");
         assert_eq!(merged[1].target, "演示");
     }
 
@@ -1916,7 +1916,7 @@ mod tests {
     fn agent_lint_mirrors_engine_rejection() {
         assert!(lint_agent_answer_context_source("", CONTEXT_ANSWER).is_empty());
         assert!(!lint_agent_answer_context_source("", "garbage").is_empty());
-        let slashed = "---\nformat: \"context-doc/1\"\ntargetLang: \"zh-Hans\"\nfingerprint: \"\"\n---\n# Translated Summary\ns\n\n# Bilingual Glossary\n| Source | Target | Note | Lock | Origin |\n|---|---|---|---|---|\n| CucCut | 宝剪/包裁 | | no | analyzed |\n\n# Translation Style\n\n# Difficulties\n";
+        let slashed = "---\nformat: \"context-doc/1\"\ntargetLang: \"zh-Hans\"\nfingerprint: \"\"\n---\n# Translated Summary\ns\n\n# Bilingual Glossary\n| Source | Target | Note | Lock | Origin |\n|---|---|---|---|---|\n| CucCut | 酷剪/包裁 | | no | analyzed |\n\n# Translation Style\n\n# Difficulties\n";
         let problems = lint_agent_answer_context_target("", slashed);
         assert!(
             problems.iter().any(|line| line.contains("slash")),
@@ -1925,7 +1925,7 @@ mod tests {
         // A slash inside a source word (half- or full-width) is kept verbatim and is not treated as an alternative. A full-width slash that the target invents is also rejected.
         let verbatim = "---\nformat: \"context-doc/1\"\ntargetLang: \"zh-Hans\"\nfingerprint: \"\"\n---\n# Translated Summary\ns\n\n# Bilingual Glossary\n| Source | Target | Note | Lock | Origin |\n|---|---|---|---|---|\n| /compact | /compact | | no | analyzed |\n| AI／人工智能 | AI／人工智能 | | no | analyzed |\n\n# Translation Style\n\n# Difficulties\n";
         assert!(lint_agent_answer_context_target("", verbatim).is_empty());
-        let fullwidth = "---\nformat: \"context-doc/1\"\ntargetLang: \"zh-Hans\"\nfingerprint: \"\"\n---\n# Translated Summary\ns\n\n# Bilingual Glossary\n| Source | Target | Note | Lock | Origin |\n|---|---|---|---|---|\n| CucCut | 宝剪辑／包剪 | | no | analyzed |\n\n# Translation Style\n\n# Difficulties\n";
+        let fullwidth = "---\nformat: \"context-doc/1\"\ntargetLang: \"zh-Hans\"\nfingerprint: \"\"\n---\n# Translated Summary\ns\n\n# Bilingual Glossary\n| Source | Target | Note | Lock | Origin |\n|---|---|---|---|---|\n| CucCut | 酷剪辑／包剪 | | no | analyzed |\n\n# Translation Style\n\n# Difficulties\n";
         assert!(!lint_agent_answer_context_target("", fullwidth).is_empty());
     }
 
@@ -2002,7 +2002,7 @@ mod tests {
             style_guide: "user-edited style".to_owned(),
             glossary: vec![GlossaryEntry {
                 source: "CucCut".to_owned(),
-                target: "宝剪辑".to_owned(),
+                target: "酷剪辑".to_owned(),
                 locked: true,
                 ..Default::default()
             }],
@@ -2011,7 +2011,7 @@ mod tests {
         assert!(brief.matches_inputs(&doc, Some(&analysis), Some("Keep CucCut")));
 
         // Editable body fields are deliberately outside the cache key.
-        brief.glossary[0].target = "宝剪".to_owned();
+        brief.glossary[0].target = "酷剪".to_owned();
         brief.summary = "another user summary".to_owned();
         assert!(brief.matches_inputs(&doc, Some(&analysis), Some("Keep CucCut")));
 
@@ -2097,7 +2097,7 @@ mod tests {
         let brief = DocumentBrief {
             glossary: vec![
                 GlossaryEntry {
-                    target: "宝剪辑".to_owned(),
+                    target: "酷剪辑".to_owned(),
                     ..Default::default()
                 },
                 GlossaryEntry {
@@ -2107,6 +2107,6 @@ mod tests {
             ],
             ..Default::default()
         };
-        assert_eq!(brief.protected_targets_for_fit("zh-Hans", 8), ["宝剪辑"]);
+        assert_eq!(brief.protected_targets_for_fit("zh-Hans", 8), ["酷剪辑"]);
     }
 }

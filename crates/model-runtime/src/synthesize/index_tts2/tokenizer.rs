@@ -356,7 +356,7 @@ mod tests {
             ("E", -5.0, 1),
             ("L", -5.0, 1),
             ("O", -5.0, 1),
-            ("宝", -4.0, 1),
+            ("酷", -4.0, 1),
             ("剪", -4.0, 1),
             (",", -1.0, 1),
             (".", -1.0, 1),
@@ -378,10 +378,10 @@ mod tests {
     #[test]
     fn cjk_characters_get_word_boundaries_and_punctuation_is_rewritten() {
         let t = tokenizer();
-        let tokens = t.tokenize("宝剪。").unwrap();
+        let tokens = t.tokenize("酷剪。").unwrap();
         let pieces: Vec<&str> = tokens.iter().map(|t| t.piece.as_str()).collect();
-        assert_eq!(pieces, vec!["▁", "宝", "▁", "剪", "▁."]);
-        assert_eq!(t.decode(&tokens.iter().map(|t| t.id).collect::<Vec<_>>()), "宝剪.");
+        assert_eq!(pieces, vec!["▁", "酷", "▁", "剪", "▁."]);
+        assert_eq!(t.decode(&tokens.iter().map(|t| t.id).collect::<Vec<_>>()), "酷剪.");
     }
 
     #[test]

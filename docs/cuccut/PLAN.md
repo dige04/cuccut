@@ -12,9 +12,9 @@ a workspace settings shell.
 | # | Milestone | Status |
 |---|---|---|
 | M0 | Foundation: theme pipeline (palette remap, dark only, Figtree, S2 shim), Tailwind + agentcut-style primitives in `packages/ui/src/cc`, product identity (`@cuccut/*` packages, `CUCCUT_*` env, `~/.cuccut`, `com.cuccut.app`), QC screenshot tool | done |
-| M1 | Shell and screens in agentcut's layout: page chrome (glass nav bar, back headers, ambient background), home landing, session/editor layout, settings shell, library/tasks/tools pages, S2 control styling, chat thread | in progress |
+| M1 | Shell and screens in agentcut's layout: page chrome (glass nav bar, back headers, ambient background), home landing, session/editor layout, settings shell, library/tasks/tools pages, S2 control styling, chat thread | done (follow-ups: one yellow primary per view, "Space" → "Library" in remaining copy, recent-row actions) |
 | M2 | Modules: profile + onboarding interview + rules in agent instructions, clip a long video (scored candidates), packs, review gate before delivery, publishing calendar | planned |
-| M3 | Vietnamese: filler words and pauses for `vi`, copy QA | planned |
+| M3 | Vietnamese: filler words and pauses for `vi` (done), agent-facing text in English (done), copy QA, remaining Chinese code comments | in progress |
 | M4 | QC: typecheck, tests, packaged app (`npm run package:mac -- --local`) installed and exercised in a clean macOS VM (tart on the SSD) | planned |
 
 ## Decisions

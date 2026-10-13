@@ -71,7 +71,7 @@ process.stdout.write(JSON.stringify(editOrigins(ir.visualClips[0].tree)));
         .ok()?;
     assert!(
         output.status.success(),
-        "预览壳 resolve.js 跑不起来：{}",
+        "preview shell resolve.js failed to run: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     Some(serde_json::from_slice(&output.stdout).expect("editOrigins output is not JSON"))
@@ -89,7 +89,7 @@ fn the_preview_shell_mirrors_the_rust_origin_table() {
             .unwrap()
             .iter()
             .find(|e| e["resolved"] == resolved)
-            .unwrap_or_else(|| panic!("反查表里没有 {resolved}：{rust:#}"))
+            .unwrap_or_else(|| panic!("no reverse-lookup entry for {resolved}: {rust:#}"))
             .clone()
     };
     assert_eq!(row("title")["origin"], json!({"authored": "title"}));
@@ -109,7 +109,7 @@ fn the_preview_shell_mirrors_the_rust_origin_table() {
     );
 
     let Some(js) = js_origins(&doc) else {
-        eprintln!("跳过镜像对拍：环境里没有 node");
+        eprintln!("skipping mirror comparison: node is not available in this environment");
         return;
     };
     assert_eq!(js, rust, "预览壳 resolve.js 与 ccut-core 的反查表漂移了");

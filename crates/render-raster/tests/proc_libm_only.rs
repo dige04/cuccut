@@ -36,7 +36,7 @@ fn proc_sources_call_transcendental_functions_through_libm_only() {
         .filter(|path| path.extension().is_some_and(|ext| ext == "rs"))
         .collect();
     files.sort();
-    assert!(files.len() >= 5, "扫描目标还对吗？{files:?}");
+    assert!(files.len() >= 5, "is the scan target still correct? {files:?}");
     let mut libm_calls = 0;
     let mut hits = Vec::new();
     for path in &files {
@@ -54,6 +54,6 @@ fn proc_sources_call_transcendental_functions_through_libm_only() {
     assert!(libm_calls > 0);
     assert!(
         hits.is_empty(),
-        "proc 源调了 std 的数学函数（文件, 行号, 函数名）{hits:?}；改调 libm（`x.sin()` → `libm::sin(x)`）"
+        "proc source calls std math functions (file, line, name) {hits:?}; call libm instead (`x.sin()` → `libm::sin(x)`)"
     );
 }

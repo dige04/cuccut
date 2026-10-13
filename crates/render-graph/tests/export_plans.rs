@@ -153,7 +153,7 @@ fn audio_plan_clips_to_the_range_and_rejects_empty_ranges() {
     assert_eq!(pieces, [(0.0, 0.5, 11.5), (0.5, 1.0, 4.0)]);
 
     for empty in [(seconds(2), seconds(2)), (seconds(9), seconds(10)), (seconds(3), seconds(1))] {
-        let error = plan_audio(VideoView::from(&video), "seq_main", Some(empty)).expect_err("空范围");
+        let error = plan_audio(VideoView::from(&video), "seq_main", Some(empty)).expect_err("empty range");
         assert_eq!(error.code, "EXPORT_RANGE_EMPTY");
     }
 }
@@ -190,7 +190,7 @@ fn assert_matches_frame_plan_with_speech(video: &VideoSnapshot, plan: &AudioPlan
         assert_eq!(
             covering.len(),
             voices.len(),
-            "t = {}：区间计划 {:?}，逐帧计划 {:?}",
+            "t = {}: interval plan {:?}, per-frame plan {:?}",
             t.to_f64(),
             covering.iter().map(|s| &s.item_id).collect::<Vec<_>>(),
             voices.iter().map(|v| &v.item_id).collect::<Vec<_>>()
@@ -199,11 +199,11 @@ fn assert_matches_frame_plan_with_speech(video: &VideoSnapshot, plan: &AudioPlan
             let segment = covering
                 .iter()
                 .find(|s| s.item_id == voice.item_id && s.source == voice.source)
-                .unwrap_or_else(|| panic!("t = {}：{} 不在区间计划里", t.to_f64(), voice.item_id));
+                .unwrap_or_else(|| panic!("t = {}: {} is not in the interval plan", t.to_f64(), voice.item_id));
             let source = segment.source_start + (rel - segment.start) * segment.source_rate;
             assert!(
                 (source - voice.source_seconds).abs() < 1e-6,
-                "t = {}：{} 源时刻 {source} ≠ {}",
+                "t = {}: {} source time {source} ≠ {}",
                 t.to_f64(),
                 voice.item_id,
                 voice.source_seconds
@@ -212,7 +212,7 @@ fn assert_matches_frame_plan_with_speech(video: &VideoSnapshot, plan: &AudioPlan
             let gain = segment.gain_db_at(rel);
             assert!(
                 (amplitude(gain) - amplitude(voice.gain_db)).abs() < 1e-6,
-                "t = {}：{} 增益 {gain} dB ≠ {} dB",
+                "t = {}: {} gain {gain} dB ≠ {} dB",
                 t.to_f64(),
                 voice.item_id,
                 voice.gain_db
@@ -704,7 +704,7 @@ fn sequence_clock_and_missing_scope_are_explicit() {
         &[],
         None,
     )
-    .expect_err("没有作用实例");
+    .expect_err("no effective instance");
     assert_eq!(error.code, "EXPORT_SOURCE_UNPLACED");
     let other = json!({ "schema": "cuccut.translation/1" });
     let error = plan_text(
@@ -715,6 +715,6 @@ fn sequence_clock_and_missing_scope_are_explicit() {
         &[],
         None,
     )
-    .expect_err("译文");
+    .expect_err("translation");
     assert_eq!(error.code, "EXPORT_SOURCE_UNSUPPORTED");
 }

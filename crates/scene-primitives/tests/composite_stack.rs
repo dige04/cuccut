@@ -155,9 +155,9 @@ fn legacy_enter_and_exit_on_one_prop_each_own_their_window() {
     }
     let at = |t: f64| sample_channels(&node.channels, t).scalar("opacity", 1.0);
     assert_eq!(at(0.0), 0.0, "淡入从 0 开始");
-    assert!(at(0.5) > 0.0 && at(0.5) < 1.0, "淡入进行中：{}", at(0.5));
+    assert!(at(0.5) > 0.0 && at(0.5) < 1.0, "fade-in in progress: {}", at(0.5));
     assert_eq!(at(2.0), 1.0, "两段之间保持淡入的末值");
-    assert!(at(3.5) > 0.0 && at(3.5) < 1.0, "淡出进行中：{}", at(3.5));
+    assert!(at(3.5) > 0.0 && at(3.5) < 1.0, "fade-out in progress: {}", at(3.5));
     assert_eq!(at(4.0), 0.0, "淡出到 0");
     assert!(
         !sample_channels(&node.channels, 0.5).has_composition(),
@@ -190,7 +190,7 @@ fn sequential_keyframe_tracks_on_one_prop_play_one_after_another() {
     }));
     let node = card(&ir);
     let at = |t: f64| sample_channels(&node.channels, t).scalar("rotation", 0.0);
-    assert_eq!(at(0.25), 50.0, "第一段进行中，不被第二段回填的首值盖掉");
+    assert_eq!(at(0.25), 50.0, "first segment in progress; not overridden by the second segment's backfilled first value");
     assert_eq!(at(0.75), 100.0, "两段之间保持第一段的末值");
     assert_eq!(at(1.25), 150.0);
     assert_eq!(at(2.0), 0.0);

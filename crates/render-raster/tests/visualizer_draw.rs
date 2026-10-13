@@ -162,7 +162,7 @@ fn write_visualizer_draw_fixture() {
 fn the_draw_golden_is_up_to_date() {
     let path = fixture_dir().join("expected-draw.json");
     let actual = std::fs::read(&path)
-        .unwrap_or_else(|e| panic!("expected-draw.json 缺失（跑 --ignored）：{e}"));
+        .unwrap_or_else(|e| panic!("expected-draw.json is missing (run with --ignored): {e}"));
     assert_eq!(
         actual,
         pretty(&expected_json()),
@@ -179,11 +179,11 @@ fn every_style_is_live_in_the_golden() {
         let id = style["style"].as_str().unwrap();
         for sample in style["instants"].as_array().unwrap() {
             let ops = sample["ops"].as_u64().unwrap();
-            assert!(ops > 0, "{id} @ t={} 必须画出东西", sample["t"]);
+            assert!(ops > 0, "{id} @ t={} must draw something", sample["t"]);
         }
         assert!(
             style["silence"]["ops"].as_u64().unwrap() > 0,
-            "{id} 静音时也必须画出东西"
+            "{id} must also draw something in silence"
         );
     }
 }
@@ -204,7 +204,7 @@ fn the_polyline_density_is_frozen_by_the_manifest() {
         let id = style["style"].as_str().unwrap();
         let algorithm = style["algorithm"].as_str().unwrap();
         if !POLYLINE_ALGORITHMS.contains(&algorithm) {
-            assert!(style["samples"].is_null(), "{id} 不该有采样密度");
+            assert!(style["samples"].is_null(), "{id} should not have a sampling density");
             continue;
         }
         seen += 1;
@@ -236,14 +236,14 @@ fn the_polyline_density_is_frozen_by_the_manifest() {
         for path in &frame.paths {
             assert!(
                 allowed.contains(&path.0.len()),
-                "{id} 的 path 段数 {} 不在 {allowed:?} 里",
+                "{id} path segment count {} is not in {allowed:?}",
                 path.0.len()
             );
         }
     }
     assert_eq!(
         seen, 4,
-        "折线类恰好四款：oscilloscope、ring_wave、spectrum_area、ribbons"
+        "exactly four polyline styles: oscilloscope, ring_wave, spectrum_area, ribbons"
     );
 }
 

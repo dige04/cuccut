@@ -78,10 +78,10 @@ fn resolve(path: &str) -> Option<Ir> {
 }
 
 fn assert_round_trip(label: &str, channels: &[Channel]) {
-    assert!(!channels.is_empty(), "{label}: 语料为空");
+    assert!(!channels.is_empty(), "{label}: corpus is empty");
     let corpus: Vec<ChannelIr> = channels.iter().map(to_ir).collect();
     let program = to_program(&corpus);
-    assert_eq!(to_channels(&program), corpus, "{label}: 往返不无损");
+    assert_eq!(to_channels(&program), corpus, "{label}: round trip is not lossless");
     // The strongly typed view of numeric channels must match the source numbers
     for channel in &corpus {
         for frame in &channel.frames {
@@ -167,8 +167,8 @@ fn the_whole_spec_section_nine_vocabulary_resolves() {
                 .map(|channel| channel.prop.clone())
                 .collect()
         };
-        assert_eq!(props("a"), *out_props, "{preset} 的 out 通道");
-        assert_eq!(props("b"), *in_props, "{preset} 的 in 通道");
+        assert_eq!(props("a"), *out_props, "{preset} out channels");
+        assert_eq!(props("b"), *in_props, "{preset} in channels");
         // Overlapping windows expand symmetrically, independent of the vocabulary.
         let a = ir.visual_clips.iter().find(|c| c.id == "a").unwrap();
         let b = ir.visual_clips.iter().find(|c| c.id == "b").unwrap();

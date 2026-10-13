@@ -474,7 +474,7 @@ fn a_v3_envelope_refuses_v4_opcodes() {
     let error = drawop::decode(&encoded).unwrap_err().to_string();
     assert!(
         error.contains("bcop-"),
-        "v3 信封里出现 v4 原语必须报错，实际 {error}"
+        "a v4 primitive in a v3 envelope must be rejected, got {error}"
     );
 }
 
@@ -491,7 +491,7 @@ fn an_unknown_matte_mode_is_refused() {
     let error = drawop::decode(&drawop::encode(&frame))
         .unwrap_err()
         .to_string();
-    assert!(error.contains("bcop-matte-mode-unknown"), "实际 {error}");
+    assert!(error.contains("bcop-matte-mode-unknown"), "got {error}");
 }
 
 // ── v5: bitmap side table and DrawBitmap (color glyphs of BCF text) ──────────────────
@@ -550,7 +550,7 @@ fn bitmap_pixels_are_part_of_the_fingerprint() {
     assert_ne!(
         drawop::fingerprint(&v5_frame()),
         drawop::fingerprint(&darker),
-        "同尺寸、不同像素的位图必须换指纹，否则静止帧缓存会复用错画面"
+        "a bitmap of the same size but different pixels must change the fingerprint, otherwise the still-frame cache would reuse the wrong picture"
     );
 }
 
@@ -590,7 +590,7 @@ fn a_v4_envelope_refuses_the_bitmap_opcode() {
     let bitmaps_at = encoded.len() - (4 + 1 + 4 + 4 + 24) - 4;
     encoded.drain(bitmaps_at..bitmaps_at + 4);
     let error = drawop::decode(&encoded).unwrap_err().to_string();
-    assert!(error.contains("bcop-op-unknown"), "实际 {error}");
+    assert!(error.contains("bcop-op-unknown"), "got {error}");
 }
 
 #[test]
@@ -604,7 +604,7 @@ fn truncated_or_empty_bitmaps_are_refused() {
     let error = drawop::decode(&encoded[..encoded.len() - 14])
         .unwrap_err()
         .to_string();
-    assert!(error.contains("bcop-truncated"), "实际 {error}");
+    assert!(error.contains("bcop-truncated"), "got {error}");
 
     let empty = FrameOps {
         bitmaps: vec![BitmapData {
@@ -617,5 +617,5 @@ fn truncated_or_empty_bitmaps_are_refused() {
     let error = drawop::decode(&drawop::encode(&empty))
         .unwrap_err()
         .to_string();
-    assert!(error.contains("bcop-bitmap-size-invalid"), "实际 {error}");
+    assert!(error.contains("bcop-bitmap-size-invalid"), "got {error}");
 }

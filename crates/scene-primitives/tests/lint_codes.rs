@@ -37,7 +37,7 @@ fn message(doc: &Value, rule: &str) -> String {
     lint(doc)
         .into_iter()
         .find(|d| d.rule == rule)
-        .unwrap_or_else(|| panic!("没有 {rule}；实际：{:?}", codes(doc)))
+        .unwrap_or_else(|| panic!("no {rule}; actual: {:?}", codes(doc)))
         .message
 }
 
@@ -504,7 +504,7 @@ fn every_declared_rule_appears_in_the_spec_section_sixteen_table() {
     }
     assert!(
         missing.is_empty(),
-        "这些码不在 docs/design/bcf/cuccut-format-spec/16.md 的表里：{missing:?}"
+        "these codes are not in the table in docs/design/bcf/cuccut-format-spec/16.md: {missing:?}"
     );
 }
 
@@ -519,7 +519,7 @@ fn spec_path() -> PathBuf {
 fn the_rule_table_has_no_duplicates() {
     let mut seen: Vec<&str> = Vec::new();
     for (rule, _) in LINT_RULES {
-        assert!(!seen.contains(rule), "{rule} 重复");
+        assert!(!seen.contains(rule), "{rule} is duplicated");
         seen.push(rule);
     }
 }
@@ -651,7 +651,7 @@ fn program_paths_escaping_the_document_directory_are_flagged_where_they_are() {
     assert!(escaped.iter().all(|(s, _, _)| *s == Severity::Error));
     let (_, _, src) = &escaped[3];
     for needle in ["\"../film/X.tsx\"", "the document's directory", "project root", "next to the module"] {
-        assert!(src.contains(needle), "消息缺 {needle}：{src}");
+        assert!(src.contains(needle), "message is missing {needle}: {src}");
     }
     assert!(escaped[0].2.contains("files[1]"), "{:?}", escaped[0]);
     assert!(escaped[1].2.contains("imports.a/b"), "{:?}", escaped[1]);
@@ -687,12 +687,12 @@ fn scene_count_limit_is_four_hundred() {
     };
     for n in [80, 400] {
         let found = scene_schema(n);
-        assert!(found.is_empty(), "{n} 场不该报场景数：{found:?}");
+        assert!(found.is_empty(), "{n} scenes should not report a scene count: {found:?}");
         let errors: Vec<_> = lint(&doc_with_scenes(n))
             .into_iter()
             .filter(|d| d.severity == Severity::Error)
             .collect();
-        assert!(errors.is_empty(), "{n} 场：{errors:?}");
+        assert!(errors.is_empty(), "{n} scenes: {errors:?}");
     }
     let over = scene_schema(401);
     assert_eq!(over.len(), 1, "{over:?}");
@@ -723,7 +723,7 @@ fn clip_root_style_xy_warns_because_the_root_is_laid_out_at_the_origin() {
     assert_eq!(*severity, Severity::Warn);
     assert_eq!(pointer, "/tracks/0/clips/0/element/style/x");
     for needle in ["\"c\"", "x=160", "y=460", "canvas origin", "Box"] {
-        assert!(message.contains(needle), "缺 {needle}：{message}");
+        assert!(message.contains(needle), "missing {needle}: {message}");
     }
     let only_y = with_root(json!({"fontSize": 40, "y": "25%"}));
     assert_eq!(only_y.len(), 1, "{only_y:?}");

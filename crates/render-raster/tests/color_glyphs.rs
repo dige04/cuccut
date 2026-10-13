@@ -102,18 +102,18 @@ fn a_colr_glyph_records_a_bitmap_and_rasterizes_in_colour() {
     let frame = record(doc("A", probe_style(json!({}))), &mut engine, 0.5);
 
     let bitmaps = draw_bitmaps(&frame);
-    assert_eq!(bitmaps.len(), 1, "探针 A 是彩色字形：一条 DrawBitmap");
+    assert_eq!(bitmaps.len(), 1, "probe A is a colour glyph: one DrawBitmap");
     assert_eq!(fill_paths(&frame), 0, "彩色字形不应再画它的单色回退轮廓");
     assert_eq!(frame.bitmaps.len(), 1);
     assert_eq!(drawop::required_version(&frame), 5);
     let (_, opacity, tf) = bitmaps[0];
     assert_eq!(opacity, 1.0);
-    assert_eq!((tf[0], tf[3]), (1.0, 1.0), "未缩放的文字：位图 1:1 上屏");
+    assert_eq!((tf[0], tf[3]), (1.0, 1.0), "unscaled text: the bitmap is shown 1:1");
 
     let (red, blue, white) = count_colours(&rasterize(&frame));
     assert!(
         red > 40 && blue > 40,
-        "应画出红菱形与蓝三角：red={red} blue={blue}"
+        "should draw a red diamond and a blue triangle: red={red} blue={blue}"
     );
     assert_eq!(white, 0, "位图不吃文字颜色（#ffffff）");
 }
@@ -156,19 +156,19 @@ fn scaled_text_rasterizes_the_glyph_at_a_matching_size() {
     assert_eq!(s1, 1.0);
     assert!(
         (s2 - 1.0).abs() < 1e-5,
-        "2× 文字的位图应 1:1 上屏，实际 {s2}"
+        "2× text's bitmap should be shown 1:1, got {s2}"
     );
     assert!(
         w2 >= w1 * 2 - 2 && w2 <= w1 * 2 + 2,
-        "2× 文字的位图应约为 2× 宽：w1={w1} w2={w2}"
+        "2× text's bitmap should be about 2× as wide: w1={w1} w2={w2}"
     );
     assert!(
         (s_small - 0.6).abs() < 1e-5,
-        "0.3× 落在 ½ 档：0.3 / 0.5 = 0.6，实际 {s_small}"
+        "0.3× falls in the ½ tier: 0.3 / 0.5 = 0.6, got {s_small}"
     );
     assert!(
         w_small < w1,
-        "缩小的文字不应拿全尺寸位图：{w_small} vs {w1}"
+        "shrunk text should not use the full-size bitmap: {w_small} vs {w1}"
     );
 }
 
@@ -230,7 +230,7 @@ fn part_motion_reveals_colour_glyphs_part_by_part() {
         .collect();
     assert!(
         counts.windows(2).all(|w| w[0] <= w[1]),
-        "彩色字形应随时间逐个出现：{counts:?}"
+        "colour glyphs should appear one by one over time: {counts:?}"
     );
     assert_eq!(*counts.last().unwrap(), 3, "{counts:?}");
     assert!(counts[0] < 3, "{counts:?}");
@@ -244,14 +244,14 @@ fn system_colour_emoji_render_in_bcf_text() {
         .into_iter()
         .find(|family| engine.has_family(family))
     else {
-        eprintln!("跳过：本机没有安装彩色 emoji 字体");
+        eprintln!("skipped: no colour emoji font is installed on this machine");
         return;
     };
     let style = json!({"x": 40, "y": 40, "fontSize": 96, "color": "#ffffff"});
     let frame = record(doc("📎", style), &mut engine, 0.5);
     assert!(
         !draw_bitmaps(&frame).is_empty(),
-        "📎 应走彩色位图通道（回退字体 {family}）"
+        "📎 should go through the colour bitmap path (fallback font {family})"
     );
     let pm = rasterize(&frame);
     let chromatic = pm
@@ -263,5 +263,5 @@ fn system_colour_emoji_render_in_bcf_text() {
             px[3] > 128 && max - min > 40
         })
         .count();
-    assert!(chromatic > 100, "📎 应画出彩色像素，实际 {chromatic} 个");
+    assert!(chromatic > 100, "📎 should draw colour pixels, got {chromatic}");
 }

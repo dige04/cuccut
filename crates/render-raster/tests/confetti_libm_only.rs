@@ -16,9 +16,9 @@ const TRANSCENDENTAL: &[&str] = &[
     "powf", "hypot", "cbrt", "gamma", "ln_gamma",
 ];
 
-const HINT: &str = "改调 libm：同名的直接换（`x.sin()` → `libm::sin(x)`），`ln` → `log`，\
-                    `ln_1p` → `log1p`，`exp_m1` → `expm1`，`sin_cos` → `sin` + `cos`，\
-                    `powf` → `pow`，底数为 2 的写 `exp2`";
+const HINT: &str = "Call libm instead: same-named functions are swapped directly (`x.sin()` → `libm::sin(x)`), `ln` → `log`, \
+                    `ln_1p` → `log1p`, `exp_m1` → `expm1`, `sin_cos` → `sin` + `cos`, \
+                    `powf` → `pow`, for base 2 write `exp2`";
 
 /// A std transcendental function called on a line: a method call `x.sin(`, or a path `f64::sin` (called or passed as a function value).
 fn std_calls(line: &str) -> Vec<&'static str> {
@@ -44,7 +44,7 @@ fn scan(file: &str) -> (Vec<(usize, &'static str)>, usize) {
         .join("src/source/confetti")
         .join(file);
     let text =
-        fs::read_to_string(&path).unwrap_or_else(|err| panic!("读 {}：{err}", path.display()));
+        fs::read_to_string(&path).unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
     let mut hits = Vec::new();
     let mut libm_calls = 0;
     for (index, line) in text.lines().enumerate() {
@@ -65,12 +65,12 @@ fn confetti_sampling_calls_transcendental_functions_through_libm_only() {
         let (hits, libm_calls) = scan(file);
         assert!(
             libm_calls > 0,
-            "confetti/{file} 里一处 libm 调用都没有，扫描目标还对吗？"
+            "confetti/{file} has no libm calls at all; is the scan target still correct?"
         );
         assert!(
             hits.is_empty(),
-            "confetti/{file} 调了 std 的超越函数（行号, 函数名）{hits:?}，\
-             `confettiSample` 在 native 与 wasm32 末位会不同。{HINT}"
+            "confetti/{file} calls std transcendental functions (line, name) {hits:?}, \
+             `confettiSample` differs in the last digit between native and wasm32. {HINT}"
         );
     }
 }
@@ -82,7 +82,7 @@ fn the_only_std_transcendental_in_confetti_draw_is_the_render_layer_rotation() {
     assert_eq!(
         names,
         ["sin_cos"],
-        "confetti/draw.rs 的 std 超越函数（行号, 函数名）{hits:?}：取样路径\
-         （`confetti_particles` 与它调的帮手）一律{HINT}；合成层新添的一处要在这里登记"
+        "std transcendental functions in confetti/draw.rs (line, name) {hits:?}: the sampling path\
+         (`confetti_particles` and the helpers it calls) must avoid them. {HINT}; a new one added in the compositing layer must be registered here"
     );
 }

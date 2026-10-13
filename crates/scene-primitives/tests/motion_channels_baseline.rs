@@ -50,7 +50,7 @@ fn assert_golden(name: &str, actual: &Value) {
     }
     let expected = std::fs::read_to_string(&path).unwrap_or_else(|error| {
         panic!(
-            "读取 {} 失败：{error}；用 CCUT_UPDATE_GOLDEN=1 重生成",
+            "failed to read {}: {error}; regenerate with CCUT_UPDATE_GOLDEN=1",
             path.display()
         )
     });
@@ -66,13 +66,13 @@ fn assert_golden(name: &str, actual: &Value) {
         .unwrap_or_else(|| {
             (
                 expected.lines().count().min(text.lines().count()) + 1,
-                format!("<{} 行>", expected.lines().count()),
-                format!("<{} 行>", text.lines().count()),
+                format!("<{} lines>", expected.lines().count()),
+                format!("<{} lines>", text.lines().count()),
             )
         });
     panic!(
-        "{} 与当前实现不一致（第 {line} 行）：\n  golden: {want}\n  实得:   {got}\n\
-         这是语义变更，必须先确认再用 CCUT_UPDATE_GOLDEN=1 重生成。",
+        "{} differs from the current implementation (line {line}):\n  golden: {want}\n  actual: {got}\n\
+         This is a semantic change; confirm it first, then regenerate with CCUT_UPDATE_GOLDEN=1.",
         path.display()
     );
 }
@@ -347,7 +347,7 @@ fn sample_frames_is_order_independent() {
         for (index, (a, b)) in sorted.iter().zip(out.iter()).enumerate() {
             assert!(
                 value_bitwise_eq(a, b),
-                "{} 在 t={} 上顺序/乱序采样不一致：{a} vs {b}",
+                "{} sampling differs between in-order and out-of-order at t={}: {a} vs {b}",
                 channel.prop,
                 times[index]
             );

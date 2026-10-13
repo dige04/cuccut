@@ -57,7 +57,7 @@ fn build(element: Value) -> Harness {
         .filter(|d| d.severity == scene_primitives::lint::Severity::Error)
         .map(|d| format!("{} {} {}", d.rule, d.pointer, d.message))
         .collect();
-    assert!(errors.is_empty(), "文档应当零 lint 错误：{errors:?}");
+    assert!(errors.is_empty(), "document should have zero lint errors: {errors:?}");
 
     let assets = Arc::new(load_assets(&doc, &fixture_dir()).expect("load_assets"));
     let mut resolver = scene_primitives::Resolver::new(doc, None).unwrap();
@@ -86,7 +86,7 @@ impl Harness {
                 _ => None,
             })
             .collect();
-        assert_eq!(hits.len(), 1, "t={t} 应恰有一个 DrawMedia");
+        assert_eq!(hits.len(), 1, "t={t} should have exactly one DrawMedia");
         hits[0]
     }
 
@@ -199,7 +199,7 @@ fn a_finite_loop_count_stops_after_its_plays() {
     let mut h = run(with(element(json!({}))));
     assert_eq!(h.media_ms(0.35), 0, "0.35s 折回第二遍的第 0 帧");
     assert_eq!(h.media_ms(0.45), 100, "第二遍的第 1 帧");
-    assert_eq!(h.media_ms(0.6), 200, "两遍放完，冻结末帧");
+    assert_eq!(h.media_ms(0.6), 200, "both passes finished, freeze the last frame");
     assert_eq!(h.media_ms(3.9), 200);
     // An explicit loop: true overrides the asset's declaration
     let mut h = run(with(element(json!({ "loop": true }))));
@@ -306,7 +306,7 @@ fn the_element_and_asset_kinds_must_agree() {
         .collect();
     assert!(
         codes.iter().any(|c| c == "asset-kind-mismatch"),
-        "应报 asset-kind-mismatch，实际 {codes:?}"
+        "should report asset-kind-mismatch, got {codes:?}"
     );
 }
 
@@ -322,6 +322,6 @@ fn an_animated_image_refuses_audio_fields() {
     assert_eq!(
         messages.len(),
         2,
-        "withAudio 与 volume 各报一条：{messages:?}"
+        "withAudio and volume each report one: {messages:?}"
     );
 }

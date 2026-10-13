@@ -761,7 +761,7 @@ mod tests {
         ] {
             assert!(
                 matches!(parse_flow(&bad, &ctx()), Err(MotionError::FlowInvalid(_))),
-                "{bad} 应当是硬错误"
+                "{bad} should be a hard error"
             );
         }
     }

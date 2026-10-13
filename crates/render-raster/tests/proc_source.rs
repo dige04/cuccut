@@ -75,14 +75,14 @@ fn rain_moves_with_time_is_repeatable_and_stays_in_its_box() {
     let d = doc(rain(3));
     let (a0, f0) = render(&d, 0.5);
     let (a1, f1) = render(&d, 0.8);
-    assert_ne!(f0, f1, "雨在动，帧指纹必须跟着变");
+    assert_ne!(f0, f1, "the rain moves, so the frame fingerprint must change");
     assert_ne!(a0, a1);
     // Out of order: jump first to 0.8, then back to 0.5; byte-identical
     let (again, f_again) = render(&d, 0.5);
     assert_eq!((a0.clone(), f0.clone()), (again, f_again));
 
     let inside = lit(&a0, (40, 20, 240, 140));
-    assert!(inside > 150, "盒内应有雨丝：{inside}");
+    assert!(inside > 150, "the box should contain rain streaks: {inside}");
     // Not a single bright pixel outside the box (ClipPath trims the out-of-bounds heads and tails of the rain streaks)
     assert_eq!(lit(&a0, (0, 0, W, 18)), 0);
     assert_eq!(lit(&a0, (242, 0, W, H)), 0);
@@ -106,7 +106,7 @@ fn splash_is_one_shot() {
     assert_eq!(f_before, f_after, "溅落前后都是空画面");
     assert_ne!(f_before, f_during);
     let n = lit(&during, (0, 0, W, H));
-    assert!(n > 20, "溅落中应有水珠：{n}");
+    assert!(n > 20, "droplets should be visible during the splash: {n}");
     // Water drops fly upward: there are bright pixels above the landing line (y = 144)
     assert!(lit(&during, (0, 0, W, 140)) > 0);
 }

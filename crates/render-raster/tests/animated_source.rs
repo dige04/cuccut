@@ -26,9 +26,9 @@ fn fixture_dir() -> PathBuf {
 
 fn load(name: &str) -> AnimatedImage {
     let path = fixture_dir().join(name);
-    let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("读取 {}：{e}", path.display()));
+    let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     AnimatedImage::decode(name, &bytes, &PrepareCtx::default())
-        .unwrap_or_else(|e| panic!("解码 {name}：{e:#}"))
+        .unwrap_or_else(|e| panic!("decode {name}: {e:#}"))
 }
 
 fn frame_digest(pixmap: &tiny_skia::Pixmap) -> String {
@@ -70,10 +70,10 @@ fn animated_fixtures_are_up_to_date() {
     let dir = fixture_dir();
     for (name, bytes) in fixture_gen::fixtures() {
         let on_disk = std::fs::read(dir.join(&name))
-            .unwrap_or_else(|e| panic!("{name} 缺失（跑 --ignored write_animated_fixtures）：{e}"));
+            .unwrap_or_else(|e| panic!("{name} is missing (run with --ignored write_animated_fixtures): {e}"));
         assert_eq!(
             on_disk, bytes,
-            "{name} 与生成器不一致：改了 fixture_gen 就要重新写盘"
+            "{name} does not match the generator: after changing fixture_gen, rewrite the file on disk"
         );
     }
     assert_eq!(
@@ -185,7 +185,7 @@ fn the_frames_are_actually_different() {
         let mut sorted = digests.clone();
         sorted.sort();
         sorted.dedup();
-        assert_eq!(sorted.len(), digests.len(), "{name} 有两帧完全相同");
+        assert_eq!(sorted.len(), digests.len(), "{name} has two identical frames");
     }
 }
 
@@ -264,7 +264,7 @@ fn shuffled_sampling_equals_sorted_sampling() {
             let f = src.sample(MediaTime::from_millis(points[i])).unwrap();
             shuffled[i] = (f.index, frame_digest(&f.pixmap));
         }
-        assert_eq!(sorted, shuffled, "{name} 的乱序采样与顺序采样不一致");
+        assert_eq!(sorted, shuffled, "{name} shuffled sampling does not match in-order sampling");
 
         // Also walk in reverse order
         let mut reversed = vec![(usize::MAX, String::new()); points.len()];
@@ -272,7 +272,7 @@ fn shuffled_sampling_equals_sorted_sampling() {
             let f = src.sample(MediaTime::from_millis(points[i])).unwrap();
             reversed[i] = (f.index, frame_digest(&f.pixmap));
         }
-        assert_eq!(sorted, reversed, "{name} 的逆序采样与顺序采样不一致");
+        assert_eq!(sorted, reversed, "{name} reverse-order sampling does not match in-order sampling");
     }
 }
 
@@ -351,7 +351,7 @@ fn every_instant_inside_a_frame_quantises_to_the_same_start() {
         let (from, to) = (meta.frame_starts_ms[i], meta.frame_starts_ms[i + 1]);
         for ms in from..to {
             let f = src.sample(MediaTime::from_millis(ms)).unwrap();
-            assert_eq!(f.index, i, "{ms}ms 应落在第 {i} 帧");
+            assert_eq!(f.index, i, "{ms}ms should fall in frame {i}");
             assert_eq!(f.start.millis(), from);
             assert_eq!(frame_index(&meta.frame_starts_ms, ms), i);
         }
@@ -364,14 +364,14 @@ fn every_instant_inside_a_frame_quantises_to_the_same_start() {
 fn static_containers_are_refused_with_a_pointer_to_type_image() {
     let png = fixture_gen::static_png();
     let err = AnimatedImage::decode("logo.png", &png, &PrepareCtx::default())
-        .expect_err("静态 PNG 不该被当动图收下");
+        .expect_err("a static PNG must not be accepted as an animated image");
     assert!(
         format!("{err:#}").contains("type: \"image\""),
-        "错误要指路到 type: image，实际：{err:#}"
+        "the error should point to type: image, got: {err:#}"
     );
 
     let jpegish = b"\xff\xd8\xff\xe0 not a container";
-    let err = AnimatedImage::decode("x.jpg", jpegish, &PrepareCtx::default()).expect_err("非容器");
+    let err = AnimatedImage::decode("x.jpg", jpegish, &PrepareCtx::default()).expect_err("not a container");
     assert!(format!("{err:#}").contains("GIF / APNG / WebP"));
 }
 
@@ -386,7 +386,7 @@ fn the_decode_budget_is_enforced() {
         max_frames: 2,
         ..PrepareCtx::default()
     };
-    let err = AnimatedImage::decode("t.gif", &bytes, &tight).expect_err("帧数超限");
+    let err = AnimatedImage::decode("t.gif", &bytes, &tight).expect_err("frame count over the limit");
     assert_eq!(
         err.downcast_ref::<AnimatedImageBudgetExceeded>(),
         Some(&AnimatedImageBudgetExceeded::Frames {
@@ -399,7 +399,7 @@ fn the_decode_budget_is_enforced() {
         max_bytes: 64,
         ..PrepareCtx::default()
     };
-    let err = AnimatedImage::decode("t.gif", &bytes, &thin).expect_err("字节超限");
+    let err = AnimatedImage::decode("t.gif", &bytes, &thin).expect_err("byte size over the limit");
     assert_eq!(
         err.downcast_ref::<AnimatedImageBudgetExceeded>(),
         Some(&AnimatedImageBudgetExceeded::Bytes {
@@ -417,7 +417,7 @@ fn a_zero_length_animation_is_refused() {
         gif::Repeat::Infinite,
     );
     let err = AnimatedImage::decode("t.gif", &bytes, &PrepareCtx::default())
-        .expect_err("总时长 0 不该收下");
+        .expect_err("total duration of 0 must not be accepted");
     assert!(format!("{err:#}").contains("total duration is 0"));
 }
 
@@ -430,9 +430,9 @@ fn the_golden_frames_match_the_decoder() {
         for i in 0..src.frame_count() {
             let path = fixture_dir().join(stem).join(format!("frame-{i}.png"));
             let want = std::fs::read(&path)
-                .unwrap_or_else(|e| panic!("读取 golden {}：{e}", path.display()));
+                .unwrap_or_else(|e| panic!("read golden {}: {e}", path.display()));
             let got = src.frame(i).unwrap().encode_png().unwrap();
-            assert_eq!(want, got, "{name} 第 {i} 帧与 golden 不一致");
+            assert_eq!(want, got, "{name} frame {i} does not match golden");
         }
     }
 }

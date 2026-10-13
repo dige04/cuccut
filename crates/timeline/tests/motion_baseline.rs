@@ -94,8 +94,8 @@ fn assert_golden(name: &str, actual: &Value) {
         .unwrap_or_else(|| {
             (
                 expected.lines().count().min(text.lines().count()) + 1,
-                format!("<{} 行>", expected.lines().count()),
-                format!("<{} 行>", text.lines().count()),
+                format!("<{} lines>", expected.lines().count()),
+                format!("<{} lines>", text.lines().count()),
             )
         });
     panic!(

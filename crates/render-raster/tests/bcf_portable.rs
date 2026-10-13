@@ -11,7 +11,7 @@ struct NoMedia;
 
 impl FrameMedia for NoMedia {
     fn frame(&mut self, id: &str, _: i64) -> Result<Arc<Pixmap>> {
-        bail!("不应请求媒体 {id}")
+        bail!("media {id} should not be requested")
     }
 }
 
@@ -220,7 +220,7 @@ fn portable_session_matches_the_existing_export_entry() {
         let shared = portable.render_cpu(time, &mut NoMedia).unwrap();
         assert!(
             existing.data() == shared.data(),
-            "时间 {time} 的旧导出与共享会话不同"
+            "the legacy export at time {time} differs from the shared session"
         );
     }
 }

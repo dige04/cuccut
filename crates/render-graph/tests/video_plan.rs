@@ -129,7 +129,7 @@ fn whole_sequence_lists_unsupported_transitions_and_caption_documents() {
     // Disabled instances and instances on hidden tracks do not appear. Captions, text, shapes, generators and code packages are all included.
     assert!(!ids.contains(&"item_disabled") && !ids.contains(&"item_hidden"));
     for id in ["item_title", "item_badge", "item_meter", "item_bundle", "item_caption", "item_note"] {
-        assert!(ids.contains(&id), "{id} 在概览里");
+        assert!(ids.contains(&id), "{id} is in the overview");
     }
     let spin = plan.transitions.iter().find(|t| t.id == "tr_talk_out").expect("exit transition");
     assert_eq!(spin.unsupported.as_deref(), Some("unknown-kind"));
@@ -139,6 +139,6 @@ fn whole_sequence_lists_unsupported_transitions_and_caption_documents() {
 #[test]
 fn empty_range_is_rejected() {
     let video = fixture();
-    let error = plan_video(VideoView::from(&video), "seq_main", Some((seconds(500, 1), seconds(600, 1)))).expect_err("范围在序列之外");
+    let error = plan_video(VideoView::from(&video), "seq_main", Some((seconds(500, 1), seconds(600, 1)))).expect_err("range is outside the sequence");
     assert_eq!(error.code, "EXPORT_RANGE_EMPTY");
 }

@@ -16,9 +16,9 @@ const TRANSCENDENTAL: &[&str] = &[
     "powf", "hypot", "cbrt", "gamma", "ln_gamma",
 ];
 
-const HINT: &str = "改调 libm：同名的直接换（`x.sin()` → `libm::sin(x)`），`ln` → `log`，\
-                    `ln_1p` → `log1p`，`exp_m1` → `expm1`，`sin_cos` → `sin` + `cos`，\
-                    `powf` → `pow`，底数为 2 的写 `exp2`";
+const HINT: &str = "switch to libm: for same-named functions, replace directly (`x.sin()` → `libm::sin(x)`), `ln` → `log`, \
+                    `ln_1p` → `log1p`, `exp_m1` → `expm1`, `sin_cos` → `sin` + `cos`, \
+                    `powf` → `pow`; for base 2, write `exp2`";
 
 /// A std transcendental function called on a line: a method call `x.sin(`, or the path `f64::sin` (called, or passed as a function value).
 fn std_calls(line: &str) -> Vec<&'static str> {
@@ -84,12 +84,12 @@ fn motion_sampling_calls_transcendental_functions_through_libm_only() {
     }
     assert!(
         files.len() > 20 && libm_calls >= 10,
-        "只扫到 {} 个文件、{libm_calls} 处 libm 调用，目录找错了？",
+        "only scanned {} files and {libm_calls} libm calls; wrong directory?",
         files.len()
     );
     assert!(
         hits.is_empty(),
-        "取样核调了 std 的超越函数，native 与 wasm32 末位会不同。{HINT}：\n{}",
+        "the sampling kernel calls std transcendental functions, so the last digits differ between native and wasm32. {HINT}:\n{}",
         hits.join("\n")
     );
 }

@@ -141,14 +141,14 @@ fn every_part_owns_at_least_one_glyph_across_scripts() {
         let mut hit = vec![false; map.len()];
         for glyph in &shaped.glyphs {
             let part = map.part_of(glyph.cluster.start).unwrap_or_else(|| {
-                panic!("{text}: 字形 cluster {:?} 落在 map 之外", glyph.cluster)
+                panic!("{text}: glyph cluster {:?} falls outside the map", glyph.cluster)
             });
             hit[part] = true;
         }
         // A ligature (ffi) can make one glyph cover multiple graphemes, but after attributing by `cluster.start`, every **word** part still has a glyph; a grapheme-level empty part is a known trade-off.
         assert!(
             hit.iter().all(|seen| *seen),
-            "{text} / {split}: 有 part 没有任何字形（hit={hit:?}）"
+            "{text} / {split}: a part has no glyph at all (hit={hit:?})"
         );
     }
 }
@@ -165,7 +165,7 @@ fn typewriter_reveals_parts_one_by_one() {
         .collect();
     assert!(
         counts.windows(2).all(|w| w[0] <= w[1]),
-        "字形数应随时间单调不减：{counts:?}"
+        "glyph count must not decrease over time: {counts:?}"
     );
     assert!(counts[0] < *counts.last().unwrap(), "{counts:?}");
 

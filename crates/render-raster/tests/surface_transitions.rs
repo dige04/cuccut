@@ -97,7 +97,7 @@ fn a_surface_transition_grows_a_transition_pass() {
     assert_eq!(
         frame.kinds,
         ["draw", "draw", "draw", "transition", "composite"],
-        "计划形状：背景层 + 两侧 + 转场 + 合成"
+        "planned shape: background layer + sides + transition + composite"
     );
 }
 
@@ -145,8 +145,8 @@ fn the_window_endpoints_are_the_two_shots() {
     let end = render(doc(circle_crop()), T0 + DUR / 2.0);
     for x in (0..W).step_by(7) {
         for y in (0..H).step_by(11) {
-            assert_eq!(px(&start.data, x, y), RED, "起点 ({x},{y})");
-            assert_eq!(px(&end.data, x, y), BLUE, "终点 ({x},{y})");
+            assert_eq!(px(&start.data, x, y), RED, "start ({x},{y})");
+            assert_eq!(px(&end.data, x, y), BLUE, "end ({x},{y})");
         }
     }
 }
@@ -343,8 +343,8 @@ fn shatter_and_glitch_keep_the_endpoints_and_are_seekable() {
         let end = render(doc(spec.clone()), T0 + dur / 2.0);
         for x in (0..W).step_by(9) {
             for y in (0..H).step_by(13) {
-                assert_eq!(px(&start.data, x, y), RED, "{name} 起点 ({x},{y})");
-                assert_eq!(px(&end.data, x, y), BLUE, "{name} 终点 ({x},{y})");
+                assert_eq!(px(&start.data, x, y), RED, "{name} start ({x},{y})");
+                assert_eq!(px(&end.data, x, y), BLUE, "{name} end ({x},{y})");
             }
         }
         let mid = render(doc(spec.clone()), T0 + 0.05);
@@ -354,14 +354,14 @@ fn shatter_and_glitch_keep_the_endpoints_and_are_seekable() {
             .chunks_exact(4)
             .map(|c| [c[0], c[1], c[2], c[3]])
             .collect();
-        assert!(colors.contains(&BLUE), "{name} 中段应露出入场画面");
-        assert!(colors.contains(&RED), "{name} 中段应还有离场画面");
+        assert!(colors.contains(&BLUE), "{name} mid-section should reveal the incoming frame");
+        assert!(colors.contains(&RED), "{name} mid-section should still show the outgoing frame");
         // Seek back backwards: byte-identical to the first time.
         let _ = render(doc(spec.clone()), T0 + dur / 2.0 - 0.01);
         assert_eq!(
             render(doc(spec), T0 + 0.05).data,
             mid.data,
-            "{name} 可 seek"
+            "{name} can seek"
         );
     }
 }

@@ -85,12 +85,12 @@ fn thirty_plus_distinct_variants_from_at_most_twelve_families() {
     }
     assert!(
         signatures.len() >= 30,
-        "只得到 {} 个互不相同的变体",
+        "only got {} distinct variants",
         signatures.len()
     );
     assert!(
         families().len() <= CANONICAL_FAMILY_BUDGET,
-        "{:?} 超出家族预算",
+        "{:?} exceeds the family budget",
         families()
     );
 }
@@ -149,12 +149,12 @@ fn every_manifest_expands_with_its_defaults() {
     for id in manifest_ids() {
         let out = expand(id, None, &Map::new(), &ExpandCtx::with_dur(0.5))
             .unwrap_or_else(|error| panic!("{id}: {error}"));
-        assert!(!out.tracks.is_empty(), "{id} 展开出空程序");
+        assert!(!out.tracks.is_empty(), "{id} expanded to an empty program");
         for track in &out.tracks {
             assert!(track.frames.len() >= 2, "{id}/{}", track.prop);
             assert!(
                 track.frames.windows(2).all(|w| w[0].t <= w[1].t),
-                "{id}/{}: 帧时间非单调",
+                "{id}/{}: frame times are not monotonic",
                 track.prop
             );
         }
@@ -202,7 +202,7 @@ fn every_family_has_a_doc_string_and_at_most_one_owner_per_alias() {
     for id in manifest_ids() {
         let entry = manifest(id).unwrap();
         for alias in &entry.aliases {
-            assert!(seen.insert(alias.as_str()), "alias {alias} 重复声明");
+            assert!(seen.insert(alias.as_str()), "alias {alias} is declared more than once");
         }
     }
     for family in families() {

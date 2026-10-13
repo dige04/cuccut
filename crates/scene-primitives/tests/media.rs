@@ -100,7 +100,7 @@ fn media_nodes_and_audio_clip() {
     assert_eq!(a.volume.len(), 2);
     assert!((a.volume[0].t - 3.5).abs() < 1e-9 && (a.volume[1].t - 4.5).abs() < 1e-9);
     let v = sample_frames(&a.volume, 4.0).as_f64().unwrap();
-    assert!((v - 0.6).abs() < 1e-9, "easeInOutSine 中点 = 0.6，实得 {v}");
+    assert!((v - 0.6).abs() < 1e-9, "easeInOutSine midpoint = 0.6, actual {v}");
 }
 
 #[test]
@@ -171,7 +171,7 @@ fn lint_video_field_rules() {
     for field in ["playbackRate", "segment", "fit", "loop", "volume"] {
         assert!(
             schema_ptrs.iter().any(|p| p.ends_with(field)),
-            "缺 {field} 诊断：{schema_ptrs:?}"
+            "missing {field} diagnostic: {schema_ptrs:?}"
         );
     }
 }

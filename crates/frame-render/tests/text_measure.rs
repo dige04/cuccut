@@ -35,11 +35,11 @@ fn a_box_as_wide_as_measured_keeps_the_text_on_one_line() {
         assert!(measured.width > 20.0 && measured.width < f64::from(W), "{text}：{measured:?}");
         let w = measured.width / f64::from(W) * 100.0;
         // The box width is the measured width: it draws the same as a much wider box (centred, one line).
-        assert_eq!(titled(text, w), titled(text, 100.0), "{text} 按量出来的框宽画成了两行");
+        assert_eq!(titled(text, w), titled(text, 100.0), "{text} wrapped onto two lines at its measured box width");
         // Narrower, it wraps to two lines and draws taller. That shows the check above compares wrapping, not a coincidence.
         let (_, top, _, bottom) = painted_bounds(&titled(text, w * 0.55)).unwrap();
         let (_, one_top, _, one_bottom) = painted_bounds(&titled(text, w)).unwrap();
-        assert!(bottom - top > one_bottom - one_top, "{text}：窄框应当折行");
+        assert!(bottom - top > one_bottom - one_top, "{text}: a narrow box should wrap");
     }
 }
 

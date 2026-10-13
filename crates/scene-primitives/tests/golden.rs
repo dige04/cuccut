@@ -86,7 +86,7 @@ fn golden_channels_and_sampling() {
     let x_mid = sample_frames(&x_ch.frames, 8.1).as_f64().unwrap();
     assert!(
         (x_mid - 30.0).abs() < 1e-9,
-        "easeInOutCubic(0.5)=0.5 → 60→30，实得 {x_mid}"
+        "easeInOutCubic(0.5)=0.5 → 60→30, actual {x_mid}"
     );
 
     // emphasis pop @growth.70% = 13.6，dur 0.6，scale 1 → 1.14 → 1
@@ -135,7 +135,7 @@ fn golden_channels_and_sampling() {
     let fade_in = &problem.wrap_channels[0];
     assert_eq!(fade_in.prop, "opacity");
     let a = sample_frames(&fade_in.frames, 3.0).as_f64().unwrap();
-    assert!((a - 0.5).abs() < 1e-9, "剪辑点处 crossfade 半程，实得 {a}");
+    assert!((a - 0.5).abs() < 1e-9, "crossfade halfway at the cut point, actual {a}");
     let slide_out = &problem.wrap_channels[1];
     assert_eq!(slide_out.prop, "x");
     assert_eq!(
@@ -199,7 +199,7 @@ fn golden_lint_clean() {
         .collect();
     assert!(
         errors.is_empty(),
-        "golden 文档不应有 lint error：{errors:#?}"
+        "golden document should have no lint errors: {errors:#?}"
     );
 }
 

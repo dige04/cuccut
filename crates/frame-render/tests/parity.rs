@@ -1158,7 +1158,7 @@ fn parity_fixture_is_current() {
         }
         let digest = scene["shots"][0]["sha256"].as_str().unwrap().to_string();
         if let Some(other) = seen.insert(digest, scene["name"].clone()) {
-            panic!("{} 与 {} 画出了同一帧", scene["name"], other);
+            panic!("{} and {} rendered the same frame", scene["name"], other);
         }
     }
     let text = serde_json::to_string_pretty(&fixture).unwrap() + "\n";
@@ -1176,7 +1176,7 @@ fn parity_fixture_is_current() {
     {
         assert_eq!(
             now, before,
-            "场景 {} 与夹具不同：画法改了就 CUCCUT_UPDATE_PARITY=1 重写",
+            "scene {} differs from the fixture; if the rendering changed, rewrite it with CUCCUT_UPDATE_PARITY=1",
             now["name"]
         );
     }

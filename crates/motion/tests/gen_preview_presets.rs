@@ -71,7 +71,7 @@ fn render() -> String {
 }
 
 #[test]
-#[ignore = "写盘：cargo test -p motion --test gen_preview_presets -- --ignored"]
+#[ignore = "writes to disk: cargo test -p motion --test gen_preview_presets -- --ignored"]
 fn emit_preview_presets_json() {
     let path = target_path();
     std::fs::write(&path, render()).unwrap_or_else(|e| panic!("{path:?}: {e}"));
@@ -79,7 +79,7 @@ fn emit_preview_presets_json() {
 }
 
 #[test]
-#[ignore = "对拍 v2 的预览壳生成物 core/runtime/preview/vendor/presets.json：v3 没有这份文件，待预览 WASM 批次决定去留"]
+#[ignore = "cross-checks the v2 preview-shell output core/runtime/preview/vendor/presets.json: v3 has no such file; whether to keep it awaits the preview WASM batch"]
 fn preview_presets_json_is_up_to_date() {
     let path = target_path();
     let on_disk = std::fs::read_to_string(&path)
@@ -95,7 +95,7 @@ fn preview_presets_json_is_up_to_date() {
 /// The preview expander only accepts `tracks` / `compose`; for an `ops` body it gives an explicit hint instead of rendering wrongly.
 /// This test guarantees that which recipes are available in the preview is **enumerable**, rather than left to chance.
 #[test]
-#[ignore = "读 v2 的预览壳生成物 core/runtime/preview/vendor/presets.json：v3 没有这份文件，待预览 WASM 批次决定去留"]
+#[ignore = "reads the v2 preview-shell output core/runtime/preview/vendor/presets.json: v3 has no such file; whether to keep it awaits the preview WASM batch"]
 fn the_generated_registry_declares_which_recipes_the_preview_can_expand() {
     let text = std::fs::read_to_string(target_path()).expect("presets.json");
     let registry: Value = serde_json::from_str(&text).expect("json");

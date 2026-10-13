@@ -45,8 +45,8 @@ fn the_transition_directory_is_partitioned() {
             stem.starts_with("bcf.")
                 || stem.starts_with("caption.")
                 || stem.starts_with("transition."),
-            "{stem}.json 不属于任何一张注册表：bcf.*（motion 配方）/ \
-             caption.*（字幕入场姿态）/ transition.*（surface 效果）"
+            "{stem}.json does not belong to any registry: bcf.* (motion recipe) / \
+             caption.* (caption entry pose) / transition.* (surface effect)"
         );
     }
 }
@@ -61,7 +61,7 @@ fn every_effect_manifest_on_disk_is_registered() {
             .collect();
         assert_eq!(
             disk, registered,
-            "{namespace}: core/presets/builtin/{namespace} 与 effect/registry.rs 的清单不一致"
+            "{namespace}: core/presets/builtin/{namespace} does not match the list in effect/registry.rs"
         );
     }
 }
@@ -76,7 +76,7 @@ fn all_effect_manifests_parse_and_declare_srgb_u8() {
         assert_eq!(
             manifest.color.space,
             ColorSpace::SrgbPremultiplied,
-            "{} 的 colorSpace",
+            "colorSpace of {}",
             manifest.qualified()
         );
         assert_eq!(manifest.color.precision, Precision::U8);

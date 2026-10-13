@@ -201,13 +201,13 @@ fn row_digest(row: &[u8]) -> String {
 fn load_spectrum(relative: &str) -> Vec<u8> {
     if let Some(name) = relative.strip_prefix("../spectrum/") {
         let path = spectrum_dir().join(name);
-        return std::fs::read(&path).unwrap_or_else(|e| panic!("读取 {}：{e}", path.display()));
+        return std::fs::read(&path).unwrap_or_else(|e| panic!("reading {}: {e}", path.display()));
     }
     if relative == "sweep-48k-mono.bcs1" {
         // The generator and the consumer share the same function, so the gate is "recompute on the spot, then compare byte for byte".
         return synth_spectrum(SWEEP_FRAMES);
     }
-    panic!("cases.json 里出现了未知频谱 {relative}");
+    panic!("cases.json contains unknown spectrum {relative}");
 }
 
 fn tracks() -> Vec<(String, String, VizTrack)> {
@@ -216,7 +216,7 @@ fn tracks() -> Vec<(String, String, VizTrack)> {
         let bytes = load_spectrum(path);
         for (param_name, params) in param_sets() {
             let track = VizTrack::derive(&bytes, params)
-                .unwrap_or_else(|e| panic!("{spectrum_name}/{param_name} 派生失败：{e:#}"));
+                .unwrap_or_else(|e| panic!("{spectrum_name}/{param_name} derivation failed: {e:#}"));
             out.push((spectrum_name.to_owned(), param_name.to_owned(), track));
         }
     }
@@ -292,9 +292,9 @@ fn visualizer_fixtures_are_up_to_date() {
     ] {
         let path = dir.join(name);
         let actual = std::fs::read(&path).unwrap_or_else(|e| {
-            panic!("{name} 缺失（跑 --ignored write_visualizer_fixtures）：{e}")
+            panic!("{name} is missing (run --ignored write_visualizer_fixtures): {e}")
         });
-        assert_eq!(actual, expected, "{name} 与生成器不一致");
+        assert_eq!(actual, expected, "{name} does not match the generator");
     }
 }
 
@@ -419,7 +419,7 @@ fn the_smoothing_recursion_matches_the_reference_advance() {
             assert_eq!(
                 track.frame(index).unwrap().freq.as_ref(),
                 expected.as_slice(),
-                "{name} 的第 {index} 帧频域行"
+                "{name} frequency row of frame {index}"
             );
         }
     }
@@ -466,7 +466,7 @@ fn the_time_row_is_carried_through_verbatim() {
             assert_eq!(
                 track.frame(index).unwrap().time.as_ref(),
                 view.time_row(index).unwrap(),
-                "{name} 的第 {index} 帧时域行"
+                "{name} time-domain row of frame {index}"
             );
         }
     }
@@ -491,7 +491,7 @@ fn the_fingerprint_covers_the_spectrum_and_the_params() {
         assert_ne!(
             base.fingerprint(),
             VizTrack::derive(&bytes, params).unwrap().fingerprint(),
-            "参数组 {name} 必须换指纹"
+            "parameter set {name} must change the fingerprint"
         );
     }
     // Changing one payload byte → changes the BCS1 content_hash → changes the track fingerprint.

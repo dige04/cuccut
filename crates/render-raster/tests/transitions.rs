@@ -92,9 +92,9 @@ fn every_motion_transition_starts_at_from_and_ends_at_to() {
             continue;
         }
         let (start, _) = render(preset, T0 - DUR / 2.0);
-        assert!(uniform(&start, RED), "{preset}: 窗口起点应当只有离场画面");
+        assert!(uniform(&start, RED), "{preset}: window start should contain only the outgoing frame");
         let (end, _) = render(preset, T0 + DUR / 2.0);
-        assert!(uniform(&end, BLUE), "{preset}: 窗口终点应当只有入场画面");
+        assert!(uniform(&end, BLUE), "{preset}: window end should contain only the incoming frame");
     }
 }
 
@@ -117,8 +117,8 @@ fn every_motion_transition_actually_moves_at_the_midpoint() {
             continue;
         }
         let (mid, _) = render(preset, T0);
-        assert!(!uniform(&mid, RED), "{preset}: 中点仍是纯离场画面");
-        assert!(!uniform(&mid, BLUE), "{preset}: 中点已经是纯入场画面");
+        assert!(!uniform(&mid, RED), "{preset}: midpoint is still pure outgoing frame");
+        assert!(!uniform(&mid, BLUE), "{preset}: midpoint is already pure incoming frame");
     }
 }
 
@@ -163,11 +163,11 @@ fn whip_pan_moves_the_two_shots_in_opposite_directions() {
     let right = px(&mid, W - 4, H / 2);
     assert!(
         right[2] > right[0],
-        "右缘应当是入场画面（偏蓝），实为 {right:?}"
+        "right edge should be the incoming frame (bluish), but was {right:?}"
     );
     let left = px(&mid, 4, H / 2);
     assert!(
         left[0] > left[2],
-        "左缘应当是离场画面（偏红），实为 {left:?}"
+        "left edge should be the outgoing frame (reddish), but was {left:?}"
     );
 }

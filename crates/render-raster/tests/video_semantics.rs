@@ -58,7 +58,7 @@ fn draw_media(
             _ => None,
         })
         .collect();
-    assert_eq!(media.len(), 1, "t={t} 应恰有一个 DrawMedia");
+    assert_eq!(media.len(), 1, "t={t} should have exactly one DrawMedia");
     media[0]
 }
 

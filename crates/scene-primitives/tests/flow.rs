@@ -242,7 +242,7 @@ fn use_stagger_delay_wraps_the_whole_flow() {
         let channel = &wrapper.channels[0];
         assert!(
             (channel.frames[0].t - 0.2 * index as f64).abs() < 1e-9,
-            "实例 {index} 的 flow 起点是 {}",
+            "flow start of instance {index} is {}",
             channel.frames[0].t
         );
     }

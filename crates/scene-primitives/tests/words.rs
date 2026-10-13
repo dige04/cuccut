@@ -70,7 +70,7 @@ fn audio_ref_word_anchor_maps_to_doc_time() {
     assert!((v - expected).abs() < 1e-9, "{v}");
     assert!(
         ((v * 30.0) - (v * 30.0).round()).abs() < 1e-9,
-        "未对齐帧网格: {v}"
+        "not aligned to the frame grid: {v}"
     );
 }
 

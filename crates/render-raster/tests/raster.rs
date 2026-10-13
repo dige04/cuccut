@@ -499,8 +499,8 @@ fn a_linear_gradient_paint_sweeps_between_its_stops() {
     let pm = render_raster::raster::rasterize(&frame, 16, 16, &mut empty_media()).unwrap();
     let left = pixel(&pm, 1, 8);
     let right = pixel(&pm, 14, 8);
-    assert!(left[0] > 200 && left[2] < 60, "左端应当偏红：{left:?}");
-    assert!(right[2] > 200 && right[0] < 60, "右端应当偏蓝：{right:?}");
+    assert!(left[0] > 200 && left[2] < 60, "left edge should lean red: {left:?}");
+    assert!(right[2] > 200 && right[0] < 60, "right edge should lean blue: {right:?}");
 }
 
 #[test]
@@ -729,7 +729,7 @@ fn draw_bitmap_places_premultiplied_pixels_with_opacity_and_clip() {
     assert!((126..=129).contains(&half[3]), "opacity 0.5：{half:?}");
     assert!(
         (99..=101).contains(&half[0]),
-        "预乘红按 opacity 减半：{half:?}"
+        "premultiplied red halved by opacity: {half:?}"
     );
     assert_eq!(pixel(&pm, 12, 2), [200, 40, 0, 255], "缩放后的内部像素");
     assert_eq!(pixel(&pm, 15, 2), [0, 0, 0, 0], "裁剪框外不画");
@@ -800,7 +800,7 @@ fn static_prefix_is_rasterized_once_per_key_and_size() {
         "未命中=从头重放"
     );
     let hit = draw(&frame(blue, true), 6);
-    assert_eq!(pixel(&hit, 0, 0), [255, 0, 0, 255], "同键命中：前缀取缓存");
+    assert_eq!(pixel(&hit, 0, 0), [255, 0, 0, 255], "same key hit: prefix taken from cache");
     assert_eq!(pixel(&hit, 2, 2), [0, 255, 0, 255], "前缀之后照常画");
     assert_eq!(hit.data(), first.data());
     // Size is part of the key; frames without the hint do not consult the cache.

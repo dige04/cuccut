@@ -88,18 +88,18 @@ fn morph_walks_the_shape_sequence_piecewise() {
         json!([{"t": 0, "v": 0}, {"t": 2, "v": 1}, {"t": 4, "v": 2}]),
     )));
     let at0 = stage.pixels(0.0);
-    assert_eq!(px(&at0, 50, 50), BLUE, "v=0：原形状");
+    assert_eq!(px(&at0, 50, 50), BLUE, "v=0: original shape");
     assert_eq!(px(&at0, 190, 50), WHITE);
 
     let half = stage.pixels(1.0);
-    assert_eq!(px(&half, 120, 50), BLUE, "v=0.5：方块走到正中");
+    assert_eq!(px(&half, 120, 50), BLUE, "v=0.5: square reaches the centre");
     assert_eq!(px(&half, 50, 50), WHITE);
 
     let at1 = stage.pixels(2.0);
-    assert_eq!(px(&at1, 190, 50), BLUE, "v=1：第一个目标");
+    assert_eq!(px(&at1, 190, 50), BLUE, "v=1: first target");
 
     let late = stage.pixels(3.999);
-    assert_eq!(px(&late, 190, 135), BLUE, "v→2：第二个目标");
+    assert_eq!(px(&late, 190, 135), BLUE, "v→2: second target");
     assert_eq!(px(&late, 190, 50), WHITE);
 }
 
@@ -117,7 +117,7 @@ fn without_the_channel_a_morph_to_path_records_identically() {
     assert_eq!(
         Stage::new(doc(plain)).bytes(1.0),
         Stage::new(doc(with_targets)).bytes(1.0),
-        "只声明 morphTo、不写通道：逐字节等于普通 path"
+        "declaring morphTo without the channel records byte-for-byte the same as a plain path"
     );
 }
 

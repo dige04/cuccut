@@ -162,7 +162,7 @@ fn a_text_track_sizes_the_auto_box_by_its_widest_string() {
         let frame = ir.visual_clips[0].tree.frame;
         assert!(
             (frame.w - long.width).abs() < 0.01,
-            "{style}: 盒宽 {} vs {}",
+            "{style}: box width {} vs {}",
             frame.w,
             long.width
         );
@@ -171,15 +171,15 @@ fn a_text_track_sizes_the_auto_box_by_its_widest_string() {
         let at_long = min_x(renderer.record(&ir, &mut engine, 1.2));
         assert!(
             at_long >= left - 1.0,
-            "{style}: 长串起笔 {at_long} < 盒左 {left}"
+            "{style}: long string starts at {at_long} < box left {left}"
         );
         let at_short = min_x(renderer.record(&ir, &mut engine, 0.5));
         if style.get("textAlign").is_some() {
-            assert!((at_short - at_long).abs() < 1.0, "{style}: 靠左时同一起笔");
+            assert!((at_short - at_long).abs() < 1.0, "{style}: same start position when left-aligned");
         } else {
             assert!(
                 at_short > at_long + 1.0,
-                "{style}: 旧单行路径短串在宽盒里居中"
+                "{style}: old single-line path centers the short string in the wide box"
             );
         }
     }

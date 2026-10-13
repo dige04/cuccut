@@ -76,7 +76,7 @@ fn text_count_format_is_a_closed_schema() {
         (json!("0,0"), "must be an object"),
     ] {
         let error = match counter(format.clone()) {
-            Ok(_) => panic!("{format} 应当被拒"),
+            Ok(_) => panic!("{format} should have been rejected"),
             Err(error) => error.to_string(),
         };
         assert!(error.contains(needle), "{format}: {error}");

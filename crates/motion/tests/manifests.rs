@@ -57,7 +57,7 @@ fn every_manifest_file_on_disk_is_registered() {
             .collect();
         assert_eq!(
             disk, registered,
-            "{domain}: core/presets/builtin/{domain} 与 preset_registry.rs 的清单不一致"
+            "{domain}: core/presets/builtin/{domain} does not match the manifest in preset_registry.rs"
         );
     }
 }
@@ -68,7 +68,7 @@ fn the_effect_domain_directories_exist() {
     for domain in ["filter", "composite"] {
         assert!(
             presets_dir(domain).is_dir(),
-            "缺 core/presets/builtin/{domain}"
+            "missing core/presets/builtin/{domain}"
         );
     }
 }
@@ -241,7 +241,7 @@ fn the_caption_transition_recipes_match_the_historical_constants() {
     ];
     assert_eq!(caption_transitions().len(), expected.len());
     for (legacy, id, bezier) in expected {
-        let recipe = caption_transition(legacy).unwrap_or_else(|| panic!("缺 {legacy}"));
+        let recipe = caption_transition(legacy).unwrap_or_else(|| panic!("missing {legacy}"));
         assert_eq!(recipe.id, *id);
         assert_eq!(recipe.version, 1);
         assert_eq!(recipe.determinism, "strict");
@@ -319,8 +319,8 @@ fn the_caption_solver_is_not_interchangeable_with_the_default_one() {
         }
         worst = worst.max((a - b).abs());
     }
-    assert!(differs, "两条求解器如果逐位相同，配方就不必声明 solver 了");
-    assert!(worst > 1e-7, "实测最大差 {worst}");
+    assert!(differs, "if the two solvers agree bit for bit, the recipe need not declare solver");
+    assert!(worst > 1e-7, "measured maximum difference {worst}");
     // The endpoints still agree; what differs is the iterative precision in between.
     for (x1, y1, x2, y2) in [(0.42, 0.0, 0.58, 1.0), (0.25, 0.46, 0.45, 0.94)] {
         assert_eq!(
@@ -356,7 +356,7 @@ fn every_sticker_template_is_a_stack_of_coloured_outlines() {
         for layer in &body.layers {
             assert!(
                 layer.fill.is_some() || layer.stroke.is_some(),
-                "{id}: 每层至少要有一个颜色"
+                "{id}: each layer needs at least one color"
             );
             for color in [layer.fill.as_deref(), layer.stroke.as_deref()]
                 .into_iter()
@@ -367,11 +367,11 @@ fn every_sticker_template_is_a_stack_of_coloured_outlines() {
             }
             assert!(
                 layer.stroke_width > 0.0 && layer.stroke_width <= 1.0,
-                "{id}: strokeWidth 是元素盒短边的比例"
+                "{id}: strokeWidth is a ratio of the element box's short edge"
             );
             assert!(
                 matches!(layer.segments.first(), Some(PathSegment::Move(_))),
-                "{id}: 轮廓必须以 move 开头"
+                "{id}: outline must start with move"
             );
             // Geometry is written within the unit square (0..1): anything out of range would be drawn outside the element box.
             for point in layer.segments.iter().flat_map(|segment| match segment {
@@ -382,7 +382,7 @@ fn every_sticker_template_is_a_stack_of_coloured_outlines() {
             }) {
                 assert!(
                     (0.0..=1.0).contains(&point[0]) && (0.0..=1.0).contains(&point[1]),
-                    "{id}: 点 {point:?} 越出单位正方"
+                    "{id}: point {point:?} lies outside the unit square"
                 );
             }
         }
@@ -422,19 +422,19 @@ fn every_sticker_layer_is_well_formed() {
             // The first segment of each layer must be `move` (validated at parse time), so consumers need not defend against it.
             assert!(
                 matches!(layer.segments.first(), Some(PathSegment::Move(_))),
-                "{} 的某一层没有以 move 开头",
+                "a layer of {} does not start with move",
                 recipe.id
             );
             // At least one color (validated at parse time), otherwise the layer draws nothing.
             assert!(
                 layer.fill.is_some() || layer.stroke.is_some(),
-                "{} 的某一层既没有 fill 也没有 stroke",
+                "a layer of {} has neither fill nor stroke",
                 recipe.id
             );
             // Self-check of the convention: stroke width is a ratio, not pixels.
             assert!(
                 layer.stroke_width > 0.0 && layer.stroke_width <= 1.0,
-                "{} 的 strokeWidth 不像比例：{}",
+                "strokeWidth of {} does not look like a ratio: {}",
                 recipe.id,
                 layer.stroke_width
             );

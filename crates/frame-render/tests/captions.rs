@@ -351,9 +351,9 @@ fn boxed_caption_alignment_hugs_the_box_edges() {
     let (left, center, right) = (frame("left"), frame("center"), frame("right"));
     let (lp, cp, rp) = (span(&left, plate), span(&center, plate), span(&right, plate));
     let (lt, ct, rt) = (span(&left, greenish), span(&center, greenish), span(&right, greenish));
-    assert!(lp.0.abs_diff(20) <= 1, "左对齐的底板贴框的左边：{lp:?}");
-    assert!(rp.1.abs_diff(139) <= 1, "右对齐的底板贴框的右边：{rp:?}");
-    assert!((f64::from(cp.0 + cp.1) / 2.0 - 80.0).abs() <= 1.5, "居中照旧：{cp:?}");
+    assert!(lp.0.abs_diff(20) <= 1, "left edge of the plate in left alignment, flush with the frame: {lp:?}");
+    assert!(rp.1.abs_diff(139) <= 1, "right edge of the plate in right alignment, flush with the frame: {rp:?}");
+    assert!((f64::from(cp.0 + cp.1) / 2.0 - 80.0).abs() <= 1.5, "centred as before: {cp:?}");
     // The same sentence in three alignments differs only by translation (anti-aliasing differences within one pixel).
     assert!((lp.1 - lp.0).abs_diff(cp.1 - cp.0) <= 1, "{lp:?} {cp:?}");
     assert!((rp.1 - rp.0).abs_diff(cp.1 - cp.0) <= 1, "{rp:?} {cp:?}");
@@ -582,14 +582,14 @@ fn spaceless_chinese_lines_advance_per_character_from_the_transcript() {
     assert!(yellow_first > 10 && yellow_last > 10, "{yellow_first} {yellow_last}");
     assert!(
         white_first > yellow_first * 2,
-        "其余三个字还是白的：白 {white_first}，黄 {yellow_first}"
+        "the other three characters are still white: white {white_first}, yellow {yellow_first}"
     );
-    assert!(x_last - x_first > 30.0, "变色的字从左跑到右：{x_first} → {x_last}");
+    assert!(x_last - x_first > 30.0, "the recoloured characters run from left to right: {x_first} → {x_last}");
     // Without a transcript to draw from (the document header has no sourceDocumentId), the whole line is one 'word' and changes color together.
     let whole = draw_at(None, 0.25);
     let (yellow_whole, ..) = centroid(&whole, karaoke_yellow);
     let (white_whole, ..) = centroid(&whole, whiteish);
-    assert!(yellow_whole > white_whole * 4, "整行一起变色：黄 {yellow_whole}，白 {white_whole}");
+    assert!(yellow_whole > white_whole * 4, "the whole line recolours together: yellow {yellow_whole}, white {white_whole}");
 }
 
 #[test]
@@ -625,7 +625,7 @@ fn cut_and_hidden_words_leave_the_caption_line() {
     ];
     let three = width(cut, &[], 1.0);
     let char_width = four / 4.0;
-    assert!((four - three - char_width).abs() < char_width * 0.4, "少了一个字：{four} → {three}");
+    assert!((four - three - char_width).abs() < char_width * 0.4, "one character missing: {four} → {three}");
     // Hidden words are not drawn either.
     let hidden = width(whole(), &["w2"], 0.25);
     assert!((hidden - three).abs() < 2.0, "{hidden} ≠ {three}");
@@ -687,15 +687,15 @@ fn designed_caption_emphasis_lands_on_transcript_words() {
     let hero = |id: &str| json!({ id: { "anchorText": "", "role": "hero", "color": "#FF00AA" } });
     // Emphasis is keyed by the transcript word ID: “的” (the particle “de”) is drawn in the emphasis color.
     let (single, x_single, ..) = draw(Some("sp"), hero("w2"));
-    assert!(single > 5, "强调的字画成强调色：{single}");
+    assert!(single > 5, "the emphasised character is drawn in the emphasis colour: {single}");
     // Emphasis written on the multi-character word “split into `w3` and `w3~1`” lands on every split character: the right edge reaches the right side of “了”, and the left edge is on the left of “了” (“说” is in the emphasis color too).
     let (split, x_split, left, right) = draw(Some("sp"), hero("w3"));
     let (last, _, last_left, last_right) = draw(Some("sp"), hero("w3~1"));
     assert!(split > 5 && last > 5, "{split} {last}");
-    assert!(x_single < x_split, "「的」在「说了」左边：{x_single} {x_split}");
+    assert!(x_single < x_split, "“的” is left of “说了”: {x_single} {x_split}");
     assert!(
         right + 1 >= last_right && left + 4 < last_left,
-        "「说了」两个字都是强调色：{left}–{right}，「了」{last_left}–{last_right}"
+        "both characters of “说了” are in the emphasis colour: {left}–{right}, “了” {last_left}–{last_right}"
     );
     // Without a transcript to draw from, words are derived by splitting on whitespace. Without this ID, emphasis does not land.
     let (none, ..) = draw(None, hero("w2"));
@@ -729,7 +729,7 @@ fn cue_styles_follow_the_document_cue_id_in_every_member() {
         let frame = render_with(&mut shared, &video, seconds, &mut Media::default());
         let (red, ..) = centroid(&frame, reddish);
         let (white, ..) = centroid(&frame, whiteish);
-        assert!(red > 10 && white < red / 4, "{seconds} 秒：红 {red}，白 {white}");
+        assert!(red > 10 && white < red / 4, "at {seconds} s: red {red}, white {white}");
     }
 }
 
@@ -777,8 +777,8 @@ fn bottom_template_strips_lift_captions_without_drawing_the_template_twice() {
     let plain = draw(json!({}), true);
     let lifted = draw(clear(true), true);
     let off = draw(clear(false), true);
-    assert!(bottom(&plain) >= strip_top, "没有模板时字幕底边在 86% 附近：{}", bottom(&plain));
-    assert!(bottom(&lifted) < strip_top, "底部横条把字幕抬到条的上沿之上：{}", bottom(&lifted));
+    assert!(bottom(&plain) >= strip_top, "without a template the caption bottom edge sits near 86%: {}", bottom(&plain));
+    assert!(bottom(&lifted) < strip_top, "the bottom bar lifts the caption above the bar's top edge: {}", bottom(&lifted));
     assert_eq!(off, plain, "关掉 subsAvoid 不抬");
     // The caption's appearance is unchanged: the white text has about the same pixel count.
     let (white_plain, ..) = centroid(&plain, whiteish);
@@ -817,8 +817,8 @@ fn caption_font_notes_stand_on_every_frame() {
         renderer.clear_reports();
         render_with(&mut renderer, &video, seconds, &mut Media::default());
         let notes: Vec<&str> = renderer.warnings().iter().map(|w| w.detail.as_str()).collect();
-        assert_eq!(notes, vec![note], "{seconds} 秒");
-        assert_eq!(renderer.missing_fonts(), vec!["Nowhere Sans".to_string()], "{seconds} 秒");
+        assert_eq!(notes, vec![note], "{seconds} s");
+        assert_eq!(renderer.missing_fonts(), vec!["Nowhere Sans".to_string()], "{seconds} s");
     }
 }
 

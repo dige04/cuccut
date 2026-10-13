@@ -86,7 +86,7 @@ fn text_is_drawn_with_its_opacity() {
     let frame = render(&video, 0.5, &mut Media::default());
     assert!(painted(&frame) > 100, "文字要画出来");
     let brightest = frame.chunks_exact(4).map(|p| p[0]).max().unwrap();
-    assert!((120..=136).contains(&brightest), "半透明的白字最亮 ≈ 128，实际 {brightest}");
+    assert!((120..=136).contains(&brightest), "the semi-transparent white text peaks at ≈ 128, actual {brightest}");
 }
 
 /// A red picture-in-picture image (16×9) placed in the middle of the canvas, 50% wide: box 80×45, top-left corner at (40, 22.5).
@@ -254,13 +254,13 @@ fn stroke_and_shadow_offsets_follow_the_canvas_not_the_rotation() {
             for channel in [r, g, b] {
                 assert!(
                     (i32::from(channel) - i32::from(coverage)).abs() <= 2,
-                    "({x}, {y}) 处 {channel} ≠ 覆盖度 {coverage}"
+                    "at ({x}, {y}) {channel} ≠ coverage {coverage}"
                 );
             }
             solid_shadow += usize::from(coverage == 255);
         }
     }
-    assert!(solid_shadow > 100, "只露出投影的像素太少：{solid_shadow}");
+    assert!(solid_shadow > 100, "too few pixels show only the shadow: {solid_shadow}");
     // The stroke follows the outline after rotation: for a box rotated 90°, the left edge is at x = 57.5 and green hugs it. The unrotated left edge (x = 38) is black.
     let frame = render(
         &red_pip(json!({ "place": { "w": 50, "rot": 90 }, "fx": { "stroke": { "width": 20, "color": "#00FF00" } } })),
@@ -378,8 +378,8 @@ fn text_styles_reach_the_pixels() {
     let frame = render(&video, 0.5, &mut Media::default());
     let reds = frame.chunks_exact(4).filter(|p| p[0] > 200 && p[1] < 60 && p[2] < 60).count();
     let blues = frame.chunks_exact(4).filter(|p| p[2] > 200 && p[0] < 60).count();
-    assert!(reds > 20, "红字 {reds}");
-    assert!(blues > 20, "蓝底板 {blues}");
+    assert!(reds > 20, "red text {reds}");
+    assert!(blues > 20, "blue backing plate {blues}");
 }
 
 /// A generated-type instance (`body` is the kind and fields), drawn at `seconds`.
@@ -645,7 +645,7 @@ fn lottie_fill_overrides_recolour_flat_fills() {
     // In the fixture, the pure orange (#FF4000) fill is swapped to magenta. The same asset's instance without recoloring is unchanged (variants are saved separately in a recolor table).
     let mut renderer = renderer(false, frame_render::Documents::default());
     let recoloured = render_with(&mut renderer, &lottie_with(json!({ "#FF4000": "#FF00FF" })), 0.3, &mut media);
-    assert!(magenta(&recoloured) > 20, "换色之后要有品红，实际 {}", magenta(&recoloured));
+    assert!(magenta(&recoloured) > 20, "after recolouring there should be magenta, actual {}", magenta(&recoloured));
     assert_eq!(render_with(&mut renderer, &lottie_with(json!({})), 0.3, &mut media), plain);
 }
 
@@ -716,11 +716,11 @@ fn dotlottie_archives_draw_with_images_from_the_archive_and_svg_images() {
         (xs.len(), xs.iter().min().copied(), xs.iter().max().copied())
     };
     let (top, bottom) = reds(&start);
-    assert!(top.is_some_and(|y| y.abs_diff(10) <= 1), "包里的 PNG 画在 (10,10) 起：{top:?}");
-    assert!(bottom.is_some_and(|y| y.abs_diff(41) <= 1), "放大 4 倍（32 像素）：{bottom:?}");
+    assert!(top.is_some_and(|y| y.abs_diff(10) <= 1), "the PNG in the package starts at (10,10): {top:?}");
+    assert!(bottom.is_some_and(|y| y.abs_diff(41) <= 1), "scaled 4× (32 pixels): {bottom:?}");
     // The 6×6 green circle, declared as 24×24, is drawn starting at composition (80, 30): on the output it spans x 100–124, with an area of about π·12² ≈ 452.
     let (area, left, right) = greens(&start);
-    assert!((380..520).contains(&area), "SVG 按声明的 24×24 光栅：{area}");
+    assert!((380..520).contains(&area), "SVG rasterised at its declared 24×24: {area}");
     assert!(
         left.is_some_and(|x| x.abs_diff(100) <= 1) && right.is_some_and(|x| x.abs_diff(123) <= 1),
         "{left:?}–{right:?}"
@@ -1091,7 +1091,7 @@ fn text_in_a_missing_family_is_reported_on_every_frame_until_its_font_arrives() 
     let loaded = render_with(&mut renderer, &video, 0.5, &mut Media::default());
     assert!(renderer.missing_fonts().is_empty(), "{:?}", renderer.missing_fonts());
     assert!(renderer.warnings().is_empty(), "{:?}", renderer.warnings());
-    assert_ne!(loaded, fallback, "换了字体，字形不同");
+    assert_ne!(loaded, fallback, "the font changed, so the glyphs differ");
     let mut full = common::renderer(false, frame_render::Documents::default());
     assert_eq!(loaded, render_with(&mut full, &video, 0.5, &mut Media::default()));
 }

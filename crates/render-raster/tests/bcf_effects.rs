@@ -85,10 +85,10 @@ fn blend_mode_and_clip_path_stay_in_one_draw_pass() {
         let planner = FramePlanner::cpu(&ir).unwrap();
         assert!(
             planner.topology().is_empty(),
-            "{extra}: 单 surface 语义不该产生离屏拓扑"
+            "{extra}: a single-surface scene should not produce off-screen topology"
         );
         let plan = planner.plan(&renderer, &ir, &mut engine, 1.0);
-        assert!(plan.is_folded(), "{extra}: 应当折叠成单 Draw pass");
+        assert!(plan.is_folded(), "{extra}: should fold into a single Draw pass");
     }
 }
 
@@ -152,7 +152,7 @@ fn blend_mode_changes_the_composited_pixels() {
     for channel in 0..3 {
         assert!(
             px(&screen, 50, 50)[channel] >= px(&normal, 50, 50)[channel],
-            "screen 不该让通道 {channel} 变暗"
+            "screen must not darken channel {channel}"
         );
     }
 }
@@ -166,7 +166,7 @@ fn an_effect_stack_grows_filter_and_composite_passes() {
     }))));
     let (data, passes, filters) = render(ir, 1.0);
     assert_eq!(filters, 1, "一条效果 ⇒ 一个 Filter pass");
-    assert!(passes >= 3, "至少 Draw + Filter + Composite，实得 {passes}");
+    assert!(passes >= 3, "expected at least Draw + Filter + Composite, got {passes}");
     let [r, g, b, _] = px(&data, 50, 50);
     assert_eq!(r, g, "灰度后三通道必须相等");
     assert_eq!(g, b);
@@ -235,7 +235,7 @@ fn the_blur_channel_adds_to_an_explicit_filter_blur() {
     };
     // Short edge 160: 0.02 + 8/160 = 0.07 ⇒ 11.2 px (round-to-int is done at execution time).
     let radius = uniforms.scalar("radius").unwrap();
-    assert!((radius - 0.07).abs() < 1e-9, "实得 {radius}");
+    assert!((radius - 0.07).abs() < 1e-9, "got {radius}");
 }
 
 // ── Structural constraints (preflight rejects rather than drawing incorrectly) ─────────
@@ -490,10 +490,10 @@ fn radial_blur_strength_animates_through_the_effect_channel() {
     let edge = px(&zoomed, 98, 50);
     assert!(
         edge[0] < px(&still, 98, 50)[0],
-        "朝中心的边缘应被拖淡：{edge:?}"
+        "the edge facing the center should be faded: {edge:?}"
     );
     let corner = px(&zoomed, 2, 2);
-    assert!(corner[0] >= 250, "远端角落应保持实心：{corner:?}");
+    assert!(corner[0] >= 250, "the far corner should stay solid: {corner:?}");
     // Replayable: two renders at the same moment are byte-for-byte identical.
     let doc = blurred(json!({"keyframes": [
         {"prop": "effects[0].strength", "frames": [{"t": 0, "v": 0.3}, {"t": 1, "v": 0.3}]}
@@ -566,7 +566,7 @@ fn part_blur_softens_each_word_on_its_own_schedule() {
     assert_ne!(mid, reference);
     assert!(
         soft_pixels(&mid) > soft_pixels(&reference) * 2,
-        "模糊中的词应当把边缘摊开：{} vs {}",
+        "blurred words should spread their edges: {} vs {}",
         soft_pixels(&mid),
         soft_pixels(&reference)
     );

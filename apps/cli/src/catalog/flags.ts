@@ -431,6 +431,9 @@ async function coerce(schema: Schema, raw: string, flag: string, reader: Reader,
       if (raw === 'true') return true;
       if (raw === 'false') return false;
       throw invalid(M.badBoolean(flag, raw));
+    case 'null':
+      if (raw === 'null') return null;
+      throw invalid(M.badValue(flag, raw));
     case 'object':
       return objectValue(schema, raw, flag, reader);
     case 'array':

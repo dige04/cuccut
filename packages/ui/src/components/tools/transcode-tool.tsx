@@ -43,8 +43,8 @@ import { blockOf, useToolStatus } from './use-tool-status.ts';
 import { usePreset, useRerun } from './video-tool-parts.tsx';
 
 /*
- * Design mockup tool-video.jsx `VideoToolShell`, tool-video-compress.jsx, tool-video-merge.jsx and tool-video-extract.jsx: compress, merge and extract audio share one page; a switch at the top switches the route, and each keeps its tool ID and draft; files and settings on the left, “处理记录” (processing records) on the right.
- * Submission goes through the Runtime's fixed `transcode` flow (`pipelines.start`): read input → encode → verify output → publish to the save location (“更改…” (change…) only changes it this once).
+ * Design mockup tool-video.jsx `VideoToolShell`, tool-video-compress.jsx, tool-video-merge.jsx and tool-video-extract.jsx: compress, merge and extract audio share one page; a switch at the top switches the route, and each keeps its tool ID and draft; files and settings on the left, “processing records” on the right.
+ * Submission goes through the Runtime's fixed `transcode` flow (`pipelines.start`): read input → encode → verify output → publish to the save location (“change…” only changes it this once).
  * Options in the mockup that the Runtime cannot do (frame rate, hardware encoding, removing the audio track, targeting a file size, forcing stream copy or re-encoding when merging) are not drawn; the differences are described in the commit message.
  */
 
@@ -162,14 +162,14 @@ function TranscodeTool({ action }: { action: TranscodeAction }) {
   const [tried, setTried] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [advanced, setAdvanced] = useState(false);
-  // The picker opened by “从 Space 添加…” (Add from Space…); entries brought from the Space viewer are added to the list directly.
+  // The picker opened by “Add from Space…”; entries brought from the Space viewer are added to the list directly.
   const [fromSpace, setFromSpace] = useState(false);
   const nameOf = useInputName();
   usePreset(meta.tool, (entryId) => {
     patch({ inputs: addEntryInput(draft.inputs, entryId) });
     setFromSpace(true);
   });
-  // “再做一次 / 重试” (Do again / Retry) from the Space viewer or background job details: fill in with this job's files and settings.
+  // “Do again / Retry” from the Space viewer or background job details: fill in with this job's files and settings.
   useRerun(meta.tool, (job) => {
     const next = againTranscodeDraft(job, merge ? BLANK_MERGE : extract ? BLANK_EXTRACT : BLANK_COMPRESS);
     if (!next) return;
@@ -288,7 +288,7 @@ function TranscodeTool({ action }: { action: TranscodeAction }) {
 
 type Patch = (patch: Partial<TranscodeDraft>) => void;
 
-/** By quality or by bitrate (the mockup's “按体积” (by size) needs the source duration, which the UI cannot read, so bitrate is used instead). */
+/** By quality or by bitrate (the mockup's “by size” needs the source duration, which the UI cannot read, so bitrate is used instead). */
 function RateSwitch({ draft, patch }: { draft: TranscodeDraft; patch: Patch }) {
   return (
     <SegmentedControl aria-label={TRANSCODE_COPY.rateTitle} selectedKey={draft.rate} onSelectionChange={(key) => patch({ rate: key as TranscodeRate })}>
@@ -334,7 +334,7 @@ function RateBody({ draft, patch }: { draft: TranscodeDraft; patch: Patch }) {
   );
 }
 
-/** The few rows shown when “更多设置” (more settings) is expanded: resolution, codec, audio; when merging, quality is here too (it only takes effect when re-encoding is needed). */
+/** The few rows shown when “more settings” is expanded: resolution, codec, audio; when merging, quality is here too (it only takes effect when re-encoding is needed). */
 function MoreRows({ draft, patch, withRate }: { draft: TranscodeDraft; patch: Patch; withRate: boolean }) {
   return (
     <>

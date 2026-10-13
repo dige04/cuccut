@@ -43,7 +43,7 @@ export type PairingView =
   | { kind: 'none'; text: string };
 
 /**
- * Contents of the pairing code block: when there is a code, shows the code and a countdown; when too many wrong attempts have been made, shows the time the lock lifts; when the code has been used, has expired (judged locally by `expiresAt`, without waiting for the next poll), or there is no code after a Runtime restart, gives one sentence on why, and the button becomes “生成配对码”（Generate pairing code).
+ * Contents of the pairing code block: when there is a code, shows the code and a countdown; when too many wrong attempts have been made, shows the time the lock lifts; when the code has been used, has expired (judged locally by `expiresAt`, without waiting for the next poll), or there is no code after a Runtime restart, gives one sentence on why, and the button becomes “Generate pairing code”.
  */
 export function pairingView(pairing: ShareStatus['pairing'], now: number): PairingView {
   if (pairing && 'lockedUntil' in pairing && Date.parse(pairing.lockedUntil) > now) {

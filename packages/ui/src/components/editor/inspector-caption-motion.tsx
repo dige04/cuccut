@@ -21,9 +21,9 @@ import { Note, PRow, Sec, SecHead, Seg, ValueRow } from './inspector-controls.ts
 const NONE = '';
 
 /**
- * Caption properties page “动效” (motion) (prototype panel-submotion.jsx; caption style model design §5 / §9): for the entry, exit and loop phases, pick one for each. Once selected, its unit, duration and strength can be adjusted. Each cell is a thumbnail with only this motion applied to this line (the current word is unchanged).
+ * Caption properties page “motion” (prototype panel-submotion.jsx; caption style model design §5 / §9): for the entry, exit and loop phases, pick one for each. Once selected, its unit, duration and strength can be adjusted. Each cell is a thumbnail with only this motion applied to this line (the current word is unchanged).
  *
- * The trigger is decided by the motion itself. The “念到时” (on reading) ones, such as drop-in, float-in and page-turn, belong to the continuous track of the per-word animation catalog, and the core draws them word by word as they are read. The rest are `textMotion`, which trigger on appearance. The Studio style has no other place to record a trigger, so here it is only shown and cannot be changed. The translation has no per-word timing, so the “念到时” (on reading) ones are not offered.
+ * The trigger is decided by the motion itself. The “on reading” ones, such as drop-in, float-in and page-turn, belong to the continuous track of the per-word animation catalog, and the core draws them word by word as they are read. The rest are `textMotion`, which trigger on appearance. The Studio style has no other place to record a trigger, so here it is only shown and cannot be changed. The translation has no per-word timing, so the “on reading” ones are not offered.
  */
 export function CaptionMotionSection(props: WordSectionProps) {
   const { root, kind, paired, isDisabled, onLive, onCommit } = props;
@@ -114,7 +114,7 @@ export function CaptionMotionSection(props: WordSectionProps) {
                 <Seg
                   label={P.trigger}
                   value="enter"
-                  // “念到时” (on reading) is offered only for the source-language line. Studio's textMotion only recognizes on-appearance, so this cell is locked.
+                  // “on reading” is offered only for the source-language line. Studio's textMotion only recognizes on-appearance, so this cell is locked.
                   options={[
                     { key: 'enter', label: P.triggers.enter },
                     ...(source ? [{ key: 'spoken', label: P.triggers.spoken }] : []),

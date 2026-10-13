@@ -358,7 +358,7 @@ fn codec_load_keeps_unknown_keys_for_the_leftover_check() {
     f.fill("quantizer.quantizers.2.codebook.embed", &[16, 4], 0.0);
     let mut weights = f.into_weights();
     Codec::load(&mut weights, &codec_config()).unwrap();
-    // The 3rd quantizer is not in the config: it must not be silently dropped; the engine reports “未使用的权重” (unused weights) because of it.
+    // The 3rd quantizer is not in the config: it must not be silently dropped; the engine reports “unused weights” because of it.
     assert_eq!(weights.keys(), vec!["quantizer.quantizers.2.codebook.embed"]);
 }
 

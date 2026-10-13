@@ -46,7 +46,7 @@ export interface CaptionChip {
   /** Sorted by start time; the first one is the edit target when selected. */
   itemIds: Id[];
   kind: 'original' | 'translation';
-  /** Label on the chip: the source text is written “原文” (source), and a translation is written as its language name, in that language's own spelling. */
+  /** Label on the chip: the source text is written “source”, and a translation is written as its language name, in that language's own spelling. */
   label: string;
   /** Full name used in hints (the document name). */
   name: string;
@@ -135,7 +135,7 @@ export function onScreen(chips: readonly CaptionChip[]): CaptionChip[] {
 const toggle = (sequence: Sequence, chip: CaptionChip, enabled: boolean): EditOperation[] =>
   chip.itemIds.map((itemId) => ({ type: 'updateItem', sequenceId: sequence.id, itemId, enabled }));
 
-/** Removing: refused when this is the only one left on screen (hiding all captions is “隐藏字幕” (hide captions), handled elsewhere, not here). */
+/** Removing: refused when this is the only one left on screen (hiding all captions is “hide captions”, handled elsewhere, not here). */
 export function dropOperations(sequence: Sequence, chips: readonly CaptionChip[], chip: CaptionChip): { refused: 'last' } | { operations: EditOperation[] } {
   if (onScreen(chips).filter((other) => other.key !== chip.key).length === 0) return { refused: 'last' };
   return { operations: toggle(sequence, chip, false) };
@@ -148,8 +148,8 @@ export function putBackOperations(sequence: Sequence, chips: readonly CaptionChi
 }
 
 /**
- * The style document that “倒转 ⇅” (invert) acts on: when the source and translation are stacked in the same style on screen (the preview groups and stacks lines by style document), invert changes that style's
- * `order` (translation on top / source on top, the same field as “双语次序” (bilingual order) on the properties page). Returns null when there is no such group.
+ * The style document that “invert” acts on: when the source and translation are stacked in the same style on screen (the preview groups and stacks lines by style document), invert changes that style's
+ * `order` (translation on top / source on top, the same field as “bilingual order” on the properties page). Returns null when there is no such group.
  */
 export function flipTarget(chips: readonly CaptionChip[]): Id | null {
   const byStyle = new Map<Id, Set<CaptionChip['kind']>>();

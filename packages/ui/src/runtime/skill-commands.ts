@@ -48,17 +48,17 @@ export function setSkillEnabled(session: Session, id: string, enabled: boolean):
   return apply(session.client.request('skills.setEnabled', { id, enabled }));
 }
 
-/** Add from a local folder (copied into the Runtime's skill directory, filed under “我的” (Mine), on by default). */
+/** Add from a local folder (copied into the Runtime's skill directory, filed under “Mine”, on by default). */
 export function addSkillFromFolder(session: Session, path: string): Promise<SkillChangeResult> {
   return apply(session.client.request('skills.add', { path, commandId: newId('cmd') }));
 }
 
-/** Import from GitHub (only downloads the files in that directory, does not run them; filed under “第三方” (Third-party), off by default). */
+/** Import from GitHub (only downloads the files in that directory, does not run them; filed under “Third-party”, off by default). */
 export function importSkillFromGithub(session: Session, url: string): Promise<SkillChangeResult> {
   return apply(session.client.request('skills.importGithub', { url: url.trim(), commandId: newId('cmd') }));
 }
 
-/** Remove a skill under “我的” (Mine) or “第三方” (Third-party): deletes its folder in the Runtime skill directory; this cannot be undone. */
+/** Remove a skill under “Mine” or “Third-party”: deletes its folder in the Runtime skill directory; this cannot be undone. */
 export function removeSkill(session: Session, id: string): Promise<SkillRemoveResult> {
   return apply(session.client.request('skills.remove', { id }));
 }

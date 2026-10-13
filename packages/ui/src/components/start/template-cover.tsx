@@ -6,7 +6,7 @@ import { useTemplateFileUrl } from './use-templates.ts';
 
 // A uniform 16:10 cell: portrait and square images leave empty space on both sides, so a row of cards lines up. The geometry is in app.css (.cc-tpl-cover).
 const box = style({ backgroundColor: 'gray-100' });
-// The small badge for a work example: same geometry as the “已选” (selected) mark on the card.
+// The small badge for a work example: same geometry as the “selected” mark on the card.
 const kindBadge = style({
   display: 'flex',
   alignItems: 'center',
@@ -89,7 +89,7 @@ export function TemplateCover({
   );
 }
 
-/** The “示例” (Example) badge on work examples (scene templates are not marked): used next to the card title and on the line below the input box (prototype `HomeTemplateKind`). */
+/** The “Example” badge on work examples (scene templates are not marked): used next to the card title and on the line below the input box (prototype `HomeTemplateKind`). */
 export function TemplateKindBadge({ template }: { template: Pick<HomeTemplate, 'kind'> }) {
   return isExample(template) ? <span className={kindBadge}>{HOME_COPY.exampleBadge}</span> : null;
 }

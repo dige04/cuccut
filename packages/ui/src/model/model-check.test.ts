@@ -23,7 +23,7 @@ import { startCheck } from '../components/models/start-check.ts';
 import { useModelCheck } from '../state/model-check-store.ts';
 import { useModels } from '../state/models-store.ts';
 
-/** Local model “检查” (check): wording, status line, and the trial panel's reminder and failures (each case from design model-local-check.test.js, with real code and tasks substituted). */
+/** Local model “check”: wording, status line, and the trial panel's reminder and failures (each case from design model-local-check.test.js, with real code and tasks substituted). */
 
 const TTS = 'qwen3-tts-0.6b-base@mlx-8bit';
 const ASR = 'qwen3-asr-0.6b@mlx-4bit';

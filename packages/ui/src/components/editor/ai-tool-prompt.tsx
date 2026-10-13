@@ -39,7 +39,7 @@ const boxTitle = style({ flexGrow: 1, font: 'detail', fontWeight: 'bold', color:
 const notice = style({ display: 'flex', alignItems: 'start', gap: '[6px]', marginTop: 8, font: 'ui-xs', color: 'gray-700', lineHeight: '[1.5]' });
 const noticeIcon = iconStyle({ size: 'S' });
 
-/** Everything needed when this video is handed to an Agent: which conversation it goes to, and which Agent · model · effort and access mode (shared by the 「用」 (Use) and 「会话」 (Conversation) rows of the parameters page and by the prompt box). */
+/** Everything needed when this video is handed to an Agent: which conversation it goes to, and which Agent · model · effort and access mode (shared by the “Use” and “Conversation” rows of the parameters page and by the prompt box). */
 export interface ToolHandoff {
   ref: VideoRef | null;
   /** The guidance shown when no Agent is available (the 「用」 row and the card at the top of the list page). */
@@ -61,7 +61,7 @@ export interface ToolHandoff {
 }
 
 /**
- * The state of 「交给智能体」 (Hand to agent) on the parameters page (product design §5.10): 「会话」 (Conversation) defaults to a new conversation; when this video has conversations that have already spoken, an extra option 「接着」 (Continue) appears, stating how many messages there are;
+ * The state of “Hand to agent” on the parameters page (product design §5.10): “Conversation” defaults to a new conversation; when this video has conversations that have already spoken, an extra option “Continue” appears, stating how many messages there are;
  * for a new conversation, the Agent and access mode are this page's own choices (like the floating conversation's draft, but not persisted); when continuing one conversation, that conversation's settings apply, and changing them changes that conversation directly.
  */
 export function useToolHandoff(): ToolHandoff {
@@ -72,7 +72,7 @@ export function useToolHandoff(): ToolHandoff {
   const checking = useConnection((s) => s.checking);
   const guide = gateGuide(homeGate(drivers, checking));
   const conversations = useDirectory((s) => s.conversations);
-  // 「当前」 (Current): the conversation on the left of Home, or the one most recently started by this video's floating conversation in Space.
+  // “Current”: the conversation on the left of Home, or the one most recently started by this video's floating conversation in Space.
   const current = useShell((s) => {
     if (s.route.tab === 'home') return s.route.conversationId;
     const shown = routeVideo(s.route);
@@ -135,7 +135,7 @@ export function useToolHandoff(): ToolHandoff {
 }
 
 /**
- * The 「用」 (Use) row on the parameters page: hand to the Agent (showing 「家 · 模型」 (Agent family · model), the same as the chip on the prompt box's bottom bar), or call a model directly (showing which text model).
+ * The “Use” row on the parameters page: hand to the Agent (showing “Agent family · model”, the same as the chip on the prompt box's bottom bar), or call a model directly (showing which text model).
  * For a tool that cannot call a model directly, that item is greyed out with the reason below; when handing to an Agent with no usable Agent, a way to fix it is given.
  */
 export function AgentUseRow({
@@ -172,7 +172,7 @@ export function AgentUseRow({
   );
 }
 
-/** The 「会话」 (Conversation) row: a new conversation (default) or continue this video's current conversation; each option has a sentence below it stating its cost. */
+/** The “Conversation” row: a new conversation (default) or continue this video's current conversation; each option has a sentence below it stating its cost. */
 export function SessionRow({ handoff }: { handoff: ToolHandoff }) {
   if (!handoff.session) return null;
   return (
@@ -211,10 +211,10 @@ export interface DirectPrompt {
 }
 
 /**
- * The prompt box and main button on the parameters page (prototype tool-prompt.jsx, product design §5.10 paragraphs 3 and 4): pre-filled with a template (if it has not been edited, it follows the range and checkbox options; once edited, 「恢复默认」 (Restore default) appears), with this tool's built-in skill attached by default (marked 「这个工具的做法」 (this tool's method); if removed, a line under the box explains and offers to add it back),
- * 「+ › 使用 Skill」 (+ › Use Skill) attaches others (appended after, not duplicated if already attached; re-adding the built-in one is also appended, like prototype `addSkill`), and each can be removed individually;
- * the bottom bar holds the access mode and 「家 · 模型」 (Agent family · model) (the same as the 「用」 row). Pressing it hands off according to the 「会话」 (Conversation) row; attached skills are sent together in order (`conversations.send`'s `skills`), and `onDone` returns to the list. Tools given `onHandedOff` (finding cut points, refreshing stale translations) do not switch to the conversation; they draw their progress in place.
- * When 「用」 (Use) is set to call a model directly (`direct`): the bottom bar becomes the text-model picker; under the box, two lines say that the attached skills are used as the system prompt and what context is sent to the model; the main button states this tool's action,
+ * The prompt box and main button on the parameters page (prototype tool-prompt.jsx, product design §5.10 paragraphs 3 and 4): pre-filled with a template (if it has not been edited, it follows the range and checkbox options; once edited, “Restore default” appears), with this tool's built-in skill attached by default (marked “this tool's method”; if removed, a line under the box explains and offers to add it back),
+ * “+ › Use Skill” attaches others (appended after, not duplicated if already attached; re-adding the built-in one is also appended, like prototype `addSkill`), and each can be removed individually;
+ * the bottom bar holds the access mode and “Agent family · model” (the same as the 「用」 row). Pressing it hands off according to the “Conversation” row; attached skills are sent together in order (`conversations.send`'s `skills`), and `onDone` returns to the list. Tools given `onHandedOff` (finding cut points, refreshing stale translations) do not switch to the conversation; they draw their progress in place.
+ * When “Use” is set to call a model directly (`direct`): the bottom bar becomes the text-model picker; under the box, two lines say that the attached skills are used as the system prompt and what context is sent to the model; the main button states this tool's action,
  * and pressing it has the tool page submit the `ai-tool` flow, staying in place to show progress and results.
  */
 export function AiToolPrompt({
@@ -240,19 +240,19 @@ export function AiToolPrompt({
   onHandedOff?(handoff: Handoff): void;
   /** The message was really sent (not just put into the input box): cut into a short video, record this round, and switch to the result page when it finishes. Called before `onDone` / `onHandedOff`. */
   onSent?(handoff: Handoff): void;
-  /** When 「用」 (Use) is set to call a model directly: the bottom bar becomes the text-model picker, and under the box two more lines appear (the skills as system prompt, and what is sent to the model); pressing it goes through the `ai-tool` flow. */
+  /** When “Use” is set to call a model directly: the bottom bar becomes the text-model picker, and under the box two more lines appear (the skills as system prompt, and what is sent to the model); pressing it goes through the `ai-tool` flow. */
   direct?: DirectPrompt | null;
-  /** Does not follow the 「会话」 (Conversation) row; always sent to a fixed place (for cutting a short video: always start a new one; if the video does not belong to a project, send it to the conversation it sits in). */
+  /** Does not follow the “Conversation” row; always sent to a fixed place (for cutting a short video: always start a new one; if the video does not belong to a project, send it to the conversation it sits in). */
   target?: 'new' | { id: Id };
-  /** The destination line under the main button; when not given, it follows the 「会话」 (Conversation) row. */
+  /** The destination line under the main button; when not given, it follows the “Conversation” row. */
   hint?: string;
 }) {
   const runtime = useRuntime();
   const draftKey = toolDraftKey(videoId, tool);
-  // An edited prompt is not kept in component state: the run state, result and receipt pages replace this box, and so does going back to the list; it must survive 「完成」 (Done) or coming back (ai-tool-run.ts).
+  // An edited prompt is not kept in component state: the run state, result and receipt pages replace this box, and so does going back to the list; it must survive “Done” or coming back (ai-tool-run.ts).
   const edited = useAiToolPrompts((s) => s.prompts[draftKey]);
   const builtin = TOOL_SKILL[tool] ?? null;
-  // Same for attached skills: built-in skills that were removed, and skills attached later, must survive 「完成」 (Done) or coming back; if nothing was saved, it is this tool's default built-in skill.
+  // Same for attached skills: built-in skills that were removed, and skills attached later, must survive “Done” or coming back; if nothing was saved, it is this tool's default built-in skill.
   const defaultSkills = useMemo(() => (builtin ? [builtin] : []), [builtin]);
   const skillIds = useAiToolSkills((s) => s.skills[draftKey]) ?? defaultSkills;
   const attachSkill = (id: string) => attachAiToolSkill(draftKey, id, defaultSkills);

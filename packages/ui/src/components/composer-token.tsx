@@ -37,7 +37,7 @@ export function ComposerToken({
   label: string;
   /** Full description shown on hover (for example, the full path of an asset). */
   title?: string;
-  /** A faint one-line description after the name (on the AI tools page, “这个工具的做法” (how this tool works)). */
+  /** A faint one-line description after the name (on the AI tools page, “how this tool works”). */
   note?: string;
   removeLabel: string;
   onRemove(): void;

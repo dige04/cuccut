@@ -2,8 +2,8 @@
  * Built-in guides for the help center (prototype designs/cuccut/app/model-help.js).
  * Source: cuccut-app apps/shared/help/content.json (the zh-CN guides and search rules), modified:
  * each article was rewritten to match the features this app has now; articles describing features that are not here were removed (voice-over, voice-over FAQ, standalone tools),
- * and “视频” (video) is written as “视频” per the glossary. The list of changes is in H-a's report.
- * The translation, export and tool-page articles are to be restored once their features are connected, written to match the implementation (the subtitle panel's “生成字幕” (Generate subtitles) and “＋ 翻译成…” (+ Translate to…), the video bar's “导出” (Export), the tool page in the editor); things in the design mockup that the implementation does not have yet (bilingual style cards, Jianying and other project files, time and size estimates, quick fixes, smart crop) are not written.
+ * and “video” is written as “视频” per the glossary. The list of changes is in H-a's report.
+ * The translation, export and tool-page articles are to be restored once their features are connected, written to match the implementation (the subtitle panel's “Generate subtitles” and “+ Translate to…”, the video bar's “Export”, the tool page in the editor); things in the design mockup that the implementation does not have yet (bilingual style cards, Jianying and other project files, time and size estimates, quick fixes, smart crop) are not written.
  *
  * Text written into the body covers only the entry points and copy that currently exist in the UI; steps done through the Agent (transcription in the session, putting the transcription result on the timeline, the Agent's organizing and writing for the tool page,
  * and the explanation when no service is available) are based on the description of the Agent tools (runtime-core agent-tools), and whether the Agent actually does this has not been tested (unverified).
@@ -65,7 +65,7 @@ export interface HelpGuide {
 
 type GuideId = 'import' | 'subtitle' | 'translate' | 'export' | 'workspace' | 'style' | 'elements' | 'reframe' | 'aitools' | 'agent' | 'missing' | 'model';
 
-/** Text of one article; when `cta` is not given, it is “回到视频” (Back to video). */
+/** Text of one article; when `cta` is not given, it is “Back to video”. */
 type GuideText = Pick<HelpGuide, 'title' | 'short' | 'summary' | 'keywords' | 'steps' | 'tip'> & { cta?: string };
 
 const en = {
@@ -373,7 +373,7 @@ export const HELP_GUIDES: readonly HelpGuide[] = GUIDES.map(([id, icon, group, m
   },
 }));
 
-/** The two articles listed under “你可能还想了解” (You might also want to know) on the quick-start page (prototype help-center.jsx). */
+/** The two articles listed under “You might also want to know” on the quick-start page (prototype help-center.jsx). */
 export const HELP_MORE: readonly string[] = ['workspace', 'agent'];
 
 /** The quick-start articles, in catalogue order. */
@@ -401,15 +401,15 @@ export type HelpTarget = 'new' | 'space' | 'agent' | 'models' | 'subtitle' | 'cl
 export interface HelpCta {
   label: string;
   target: HelpTarget;
-  /** This article is meant to be done in a video, but no video is open now: the button changes to “选择一个视频” (Choose a video). */
+  /** This article is meant to be done in a video, but no video is open now: the button changes to “Choose a video”. */
   needsVideo: boolean;
 }
 
 /**
  * Buttons at the bottom of an article (prototype help-center.jsx's `cta` and `navigate`). Only destinations that can actually be reached here are used:
  * - `new` opens the home page (prototype help-center.jsx `newProject({entry: 'media'})`, with no target); `agent` goes to Settings › Agent provider; `models` goes to the models page.
- * - Actions done in a video (subtitles, styles, back to video): when no video is open, the button changes to “选择一个视频” (Choose a video) and goes to Space.
- * - `style`: subtitle properties exist only after a subtitle segment is selected on the timeline; help cannot open it, so the button changes to “回到视频” (Back to video).
+ * - Actions done in a video (subtitles, styles, back to video): when no video is open, the button changes to “Choose a video” and goes to Space.
+ * - `style`: subtitle properties exist only after a subtitle segment is selected on the timeline; help cannot open it, so the button changes to “Back to video”.
  */
 export function helpCta(guide: HelpGuide, inVideo: boolean): HelpCta {
   const plain = (target: HelpTarget, label = guide.cta): HelpCta => ({ label, target, needsVideo: false });

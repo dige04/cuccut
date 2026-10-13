@@ -17,7 +17,7 @@ import { vi } from './tools-copy.vi.ts';
 
 /**
  * Copy for the tool pages (taken verbatim from design files page-tools.jsx, tool-transcribe.jsx, tool-tts.jsx, tool-image.jsx, image-gen.jsx and tool-llm.jsx;
- * the demo lines in the design files, such as “交互原型：…” (Interactive prototype: …) and “交互演示播放的是示例音频” (The interactive demo plays a sample audio), are not carried over). Like models-copy.ts for the models page, it is kept in a separate file
+ * the demo lines in the design files, such as “Interactive prototype: …” and “The interactive demo plays a sample audio”, are not carried over). Like models-copy.ts for the models page, it is kept in a separate file
  * and not crowded into copy.ts.
  *
  * The English is written here (the source of the keys and types); the translations are in `tools-copy.<language>.ts`. Each group is still given as the named export it was before (`GALLERY_COPY` etc.),
@@ -46,7 +46,7 @@ const en = {
     back: 'Back to all tools',
   },
 
-  /** “在 Space 中查看” (View in Space) in the record column header: goes to this kind in the Space. */
+  /** “View in Space” in the record column header: goes to this kind in the Space. */
   save: {
     view: 'View in the Library',
   },
@@ -118,7 +118,7 @@ const en = {
     /** Accessible name of the progress bar for an item in progress: which item and which step it has reached. */
     progressLabel: (title: string, phase: string) => `“${title}” ${phase}`,
     play: (title: string) => `Play “${title}”`,
-    /** For an item with an unknown result: “要你决定” (Needs your decision) follows the failure reason. */
+    /** For an item with an unknown result: “Needs your decision” follows the failure reason. */
     unsettled: (failure: string) =>
       `${failure}. The outcome of this one is unknown: decide whether to try again or give up. It can’t be deleted until then.`,
   },
@@ -217,9 +217,9 @@ const en = {
     unavailable: (provider: string) => `${provider} isn't available right now`,
     goConnect: 'Connect',
     switchTo: (name: string) => `Switch to ${name}`,
-    /** The download button on a gate card includes the size (“下载 {size}” (Download {size}) in design files tool-tts.jsx and image-gen.jsx). */
+    /** The download button on a gate card includes the size (“Download {size}” in design files tool-tts.jsx and image-gen.jsx). */
     downloadSize: (size: string) => `Download ${size}`,
-    /** When the selected local speech model is not installed, switch to one that is installed (design file tool-tts.jsx “换用已装的 X” (Switch to installed X)). */
+    /** When the selected local speech model is not installed, switch to one that is installed (design file tool-tts.jsx “Switch to installed X”). */
     switchToInstalled: (name: string) => `Switch to installed ${name}`,
     /** Download-card note for the speech synthesis page (design file panel-tts.jsx `TtsModelGate`); `Paused` adds one more sentence about resuming. */
     ttsDownloadBody: 'Downloading doesn’t use the task queue; once installed, this page’s main button works.',
@@ -279,7 +279,7 @@ const en = {
     alt: (name: string, prompt: string) => `${name}: ${prompt}`,
   },
 
-  /** Text generation (taken verbatim from design file tool-llm.jsx `LlmToolPage kind='text'`; demo phrasing such as “交互原型：…” (Interactive prototype: …) and “示例 · 已保存到 Space” (Example · saved to Space) is not carried over). */
+  /** Text generation (taken verbatim from design file tool-llm.jsx `LlmToolPage kind='text'`; demo phrasing such as “Interactive prototype: …” and “Example · saved to Space” is not carried over). */
   text: {
     title: 'Text generation',
     submit: 'Generate text',
@@ -324,7 +324,7 @@ const en = {
   transcribe: {
     title: 'Transcribe',
     submit: 'Start transcribing',
-    /** The second half of the design sentence is 「完成后自动保存在 Space。」 (Saved automatically in Space when done). This version cannot transcribe files directly yet, so it does not state things it cannot do. */
+    /** The second half of the design sentence is “Saved automatically in Space when done”. This version cannot transcribe files directly yet, so it does not state things it cannot do. */
     lede: 'Turn video or audio into an editable transcript and subtitles.',
     drop: 'Drop video or audio here',
     pick: 'Choose file',
@@ -342,7 +342,7 @@ const en = {
     manageCloud: 'Manage API connections',
     side: 'Transcription history',
     empty: 'No transcripts yet',
-    /** The design says 「选一份素材开始，完成后可以继续创建视频。」 (Choose a material to start; when complete, you can go on to create a video). This version can neither submit nor create a video, so the plain truth is written instead. */
+    /** The design says “Choose a material to start; when complete, you can go on to create a video”. This version can neither submit nor create a video, so the plain truth is written instead. */
     emptyBody: 'Once files can be transcribed directly, results will be listed here.',
   },
 
@@ -451,7 +451,7 @@ const en = {
 
   // ---- Video tools (product design §2.7; design files page-tools.jsx, tool-video-picker.jsx, tool-run-view.jsx, 2026-10-03) ----
 
-  /** Catalog page: grouped into three by the object processed (speech and subtitles, text and images, video files); each card has one more row, “结果” (Results). */
+  /** Catalog page: grouped into three by the object processed (speech and subtitles, text and images, video files); each card has one more row, “Results”. */
   toolsHome: {
     lede: 'Do one specific thing directly, without a session or an Agent connection. Results are saved to the default save location and appear as Library items, ready for another tool, a new video, or handing off to Agent.',
     foot: 'Library items can go straight into a tool too: open an item in the Library and choose “Process with a tool…”.',
@@ -487,7 +487,7 @@ const en = {
     noneBody: 'A new video needs a project, and there isn’t one yet. Create one on Home first, then come back.',
   },
 
-  /** On-the-spot authorization card (§2.7, “授权在当场完成” (authorization is completed on the spot)). The Runtime records the authorization, which can be viewed and revoked in Settings › Privacy. */
+  /** On-the-spot authorization card (§2.7, “authorization is completed on the spot”). The Runtime records the authorization, which can be viewed and revoked in Settings › Privacy. */
   grant: {
     label: 'Confirm before sending to an online service',
     title: 'This sends data to an online service',
@@ -554,7 +554,7 @@ const en = {
     notInRuntime: 'This version of Runtime doesn’t include this tool, so it can’t be used yet',
   },
 
-  /** Tools › Transcribe (design file tool-transcribe.jsx). The sentences in the old `TRANSCRIBE_COPY` that said 「还不能直接转录」 (cannot transcribe directly yet) are no longer used. */
+  /** Tools › Transcribe (design file tool-transcribe.jsx). The sentences in the old `TRANSCRIBE_COPY` that said “cannot transcribe directly yet” are no longer used. */
   transcribeTool: {
     lede: 'Turn video or audio into a transcript and subtitles. By default you get one transcript and one subtitle file in the save location; you can also create a new video, or write into an existing video in the Library.',
     targetTitle: 'Result',
@@ -589,7 +589,7 @@ const en = {
     needSpeakers: 'Download “Speaker diarization” first, or turn off “Identify speakers”',
     submit: 'Start transcribing',
     submitLink: 'Download and transcribe',
-    /** The “自动” (Auto) item in the language dropdown. */
+    /** The “Auto” item in the language dropdown. */
     autoDetect: 'Auto-detect',
   },
 
@@ -647,7 +647,7 @@ const en = {
     sourceNote: 'Supports single video pages and direct media links. Download progress and results stay in Background tasks.',
     submit: 'Start download',
     submitTranscribe: 'Download and transcribe',
-    /** “网站登录” (Website sign-in): which browsers' cookies to read. */
+    /** “Website sign-in”: which browsers' cookies to read. */
     cookies: 'Website sign-in',
     detecting: 'Detecting…',
     redetect: 'Detect browsers again',

@@ -216,7 +216,7 @@ export interface ComposerProps {
   /** Scope of @ candidates: the project the session is in, or its own working directory. */
   mentionScope: MentionScope;
   /**   /**
-   * Send. Images have already finished uploading; `skills` are the ones picked from “+ › 使用 Skill” (Use Skill), in the order they were attached (empty when none).
+   * Send. Images have already finished uploading; `skills` are the ones picked from “Use Skill”, in the order they were attached (empty when none).
    * Returns false if it was not sent, and keeps the draft (including the picked skills).
    */
   onSend(text: string, attachments: AttachmentRef[], skills: SkillSendRef[]): Promise<boolean>;
@@ -229,18 +229,18 @@ export interface ComposerProps {
   /** Reference tag above the input box (product design §3.2.3): the editor state handed to the agent along with this message. Can be removed. */
   reference?: { label: string; description: string; onRemove(): void } | null;
   /**   /**
-   * Above the input box: items attached from Space with “在会话中继续” (continue in session) that have not been sent yet (architecture design §5.7); they are handed to the agent with the next message.
+   * Above the input box: items attached from Space with “continue in session” that have not been sent yet (architecture design §5.7); they are handed to the agent with the next message.
    * The Runtime can only remove them all together (`conversations.update` with `pendingReferences: null`), so there is only one remove button.
    */
   spaceReferences?: { items: { id: string; label: string; description: string }[]; onClear(): void } | null;
   /**   /**
-   * Above the input box: slide annotations added to the conversation from the slides tab that have not been sent yet (docs/design/slides §8.2), “幻灯片标注 · N 条” (slide annotations · N items).
+   * Above the input box: slide annotations added to the conversation from the slides tab that have not been sent yet (docs/design/slides §8.2), “slide annotations · N items”.
    * When there are annotations, it can be sent even with an empty body (`onSend` receives an empty body, and the caller adds a sentence).
    */
   slideAnnotations?: ComposerAnnotations | null;
-  /** Above the input box: design annotations added to the conversation from the design tab that have not been sent yet (docs/design/canvas §8.2), “设计稿标注 · N 条” (design annotations · N items); otherwise the same as `slideAnnotations`. */
+  /** Above the input box: design annotations added to the conversation from the design tab that have not been sent yet (docs/design/canvas §8.2), “design annotations · N items”; otherwise the same as `slideAnnotations`. */
   designAnnotations?: ComposerAnnotations | null;
-  /** Above the input box: design system annotations added to the conversation from the design system tab that have not been sent yet (docs/design/canvas §10.6), “设计系统标注 · N 条” (design system annotations · N items); otherwise the same as `slideAnnotations`. */
+  /** Above the input box: design system annotations added to the conversation from the design system tab that have not been sent yet (docs/design/canvas §10.6), “design system annotations · N items”; otherwise the same as `slideAnnotations`. */
   designSystemAnnotations?: ComposerAnnotations | null;
   /** Above the input box: messages queued to be sent. */
   queue?: ReactNode;
@@ -256,7 +256,7 @@ export interface ComposerProps {
 }
 
 /**
- * Prompt box on the AI tool parameters page (product design §5.10, paragraphs 3 and 4 of the parameters page): the same input box. The body is the prompt held by the tool page (it is the template until edited, and it changes with the scope and checked options); there is no `/` (already inside a tool page), while `@` and attachments work as before; “+ › 使用 Skill” (Use Skill) attaches to the tool page's skill list.
+ * Prompt box on the AI tool parameters page (product design §5.10, paragraphs 3 and 4 of the parameters page): the same input box. The body is the prompt held by the tool page (it is the template until edited, and it changes with the scope and checked options); there is no `/` (already inside a tool page), while `@` and attachments work as before; “Use Skill” attaches to the tool page's skill list.
  * There is no send button in the toolbar: the main button sits below the box, full width, with its action named, and one more line below it explains where pressing it leads. Enter inserts a newline and does not send.
  */
 export interface ComposerTool {
@@ -266,7 +266,7 @@ export interface ComposerTool {
   onText(text: string): void;
   /** Above the body: the attached skills (drawn by the tool page itself, marking which one is this tool's approach). */
   tokens: ReactNode;
-  /** One picked from “+ › 使用 Skill” (Use Skill): appended after the attached ones; skills already attached are not repeated. */
+  /** One picked from “Use Skill”: appended after the attached ones; skills already attached are not repeated. */
   onSkill(id: string): void;
   /** The note line between the box and the main button (the line shown when no skill is attached). */
   notice?: ReactNode;
@@ -275,7 +275,7 @@ export interface ComposerTool {
  * not passed when handing off to an Agent.
  */
   picker?: ReactNode;
-  /** The line after the note and before the main button, written according to the attachments already in the box (`count` in total, of which `images` are images) (when calling the model directly, “发给模型的” (sent to the model)). */
+  /** The line after the note and before the main button, written according to the attachments already in the box (`count` in total, of which `images` are images) (when calling the model directly, “sent to the model”). */
   context?(attachments: { count: number; images: number }): ReactNode;
   /** The main button's label and the line below it explaining where it leads. */
   cta: string;
@@ -298,10 +298,10 @@ export interface ComposerStart {
   onPaths(paths: readonly string[]): void;
   /**   /**
    * Fill-in items (template package spec §5.5): each increment returns focus to the input box and selects the next placeholder token after the cursor (searching from the start when it reaches the end).
-   * The start page increments it when “填下一处” (fill next) is clicked after a prompt with placeholders is inserted; 0 = not yet requested.
+   * The start page increments it when “fill next” is clicked after a prompt with placeholders is inserted; 0 = not yet requested.
    */
   selectSlot?: number;
-  /** “+ › 最近的视频” (recent videos): pick one, and this session targets that existing video. This item does not appear when there are no videos to list. */
+  /** “recent videos”: pick one, and this session targets that existing video. This item does not appear when there are no videos to list. */
   recent: { items: readonly { id: string; label: string; description: string }[]; onPick(id: string): void };
 }
 
@@ -325,16 +325,16 @@ export function Composer(props: ComposerProps) {
   const setDraft = (key: string, text: string) => (tool ? tool.onText(text) : setShellDraft(key, text));
   const connected = useConnection((s) => s.state.status === 'connected');
   const drivers = useConnection((s) => s.drivers);
-  // When no probe result is found for this Agent, always show “正在检测” (detecting): usually it is in `checking` (the first probe has not finished);
+  // When no probe result is found for this Agent, always show “detecting”: usually it is in `checking` (the first probe has not finished);
   // in rare cases it is in neither the results nor `checking` (this version of the Runtime does not register it), and it is also treated as detecting, with no separate state.
-  // When there is a result but it is unusable (including an old “没登录” (not signed in) from the disk cache), it stays blocked as before; the background refresh after the Runtime starts will push a correction.
+  // When there is a result but it is unusable (including an old “not signed in” from the disk cache), it stays blocked as before; the background refresh after the Runtime starts will push a correction.
   const driver = drivers?.find((d) => d.id === driverId) ?? null;
   const entries = useSpace((s) => s.entries);
   const videoMentions = useVideoMentions(mentionScope);
   const images = useDraftImageList(draftKey);
   const files = useDraftFileList(draftKey);
   const [picking, setPicking] = useState(false);
-  // The ones picked from “+ › 使用 Skill” (Use Skill) (stored by draft key, in attached order, without duplicates), and the skill list (fetched on attach and on reconnect).
+  // The ones picked from “Use Skill” (stored by draft key, in attached order, without duplicates), and the skill list (fetched on attach and on reconnect).
   const skillIds = useDraftSkillIds(draftKey);
   const skills = useSkillsLoader();
   const skillName = (id: string) => skills.skills.find((s) => s.id === id)?.name ?? id;
@@ -700,8 +700,8 @@ export function Composer(props: ComposerProps) {
   const showPickers = !start || start.ready;
   const accessPicker = <AccessPicker value={accessMode} compact={compact} onChange={changeAccessMode} />;
 
-  // “+ › 使用 Skill ▸” (Use Skill) (prototype composer-insert-menu.jsx): all skills, enabled ones first; at the end, “管理 Skills…” (Manage Skills…) goes to settings.
-  // When not yet fetched, failed to fetch, or there are none at all, there is only one line of explanation and “管理 Skills…” (Manage Skills…).
+  // “Use Skill” (prototype composer-insert-menu.jsx): all skills, enabled ones first; at the end, “Manage Skills…” goes to settings.
+  // When not yet fetched, failed to fetch, or there are none at all, there is only one line of explanation and “Manage Skills…”.
   const skillItems = skillMenuItems(skills.skills);
   const skillNote = !skills.loaded ? (skills.status === 'failed' ? SKILL_COPY.loadFailed : SKILL_COPY.loading) : SKILL_COPY.none;
   const skillMenu = (

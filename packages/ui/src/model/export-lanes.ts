@@ -44,9 +44,9 @@ const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es,
 export interface ExportLane {
   trackId: Id;
   kind: Track['kind'];
-  /** Named the same as the timeline row headers: “画面” (Picture), “音频 2” (Audio 2), “字幕 · 英文” (Subtitles · English). */
+  /** Named the same as the timeline row headers: “Picture”, “Audio 2”, “Subtitles · English”. */
   label: string;
-  /** A short description: “3 个片段” (3 clips), “2 段声音” (2 sound segments), “访谈转写” (interview transcript). */
+  /** A short description: “3 clips”, “2 sound segments”, “interview transcript”. */
   sub: string;
   /** Picture: whether visual and subtitle tracks are drawn in this export; null for audio tracks. */
   picture: boolean | null;

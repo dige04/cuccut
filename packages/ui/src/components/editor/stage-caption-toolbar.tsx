@@ -32,7 +32,7 @@ import { useCaptionStyle } from './use-caption-style.ts';
  * Floating toolbar for captions (the `subtitle` entry in prototype stage-toolbar.jsx): when a caption on the picture is selected, it floats above the caption box.
  * It edits the caption style document, written the same way as the caption properties page (see inspector-caption.tsx). While dragging it is only overlaid on the preview; on release a new version is written, and captions that share the same style change together.
  *
- * Which line is changed: if one line is selected, that line is changed (in bilingual mode, written into its override). If both bilingual lines are selected, both change together (written to the root style). The two “原文 | 译文”(source | translation) buttons at the front of the bar switch which line is being edited. They are the same switch as the row at the top of the properties page (which item is selected).
+ * Which line is changed: if one line is selected, that line is changed (in bilingual mode, written into its override). If both bilingual lines are selected, both change together (written to the root style). The two “source | translation” buttons at the front of the bar switch which line is being edited. They are the same switch as the row at the top of the properties page (which item is selected).
  */
 
 const scope = style({ display: 'flex', alignItems: 'center', gap: '[2px]' });

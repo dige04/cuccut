@@ -269,7 +269,7 @@ pub fn target_cps_chars(text: &str, lang: &str) -> usize {
     }
 }
 
-/// Width basis of a single piece as a display line: trailing punctuation of the segment (including closing quotes, brackets, and whitespace) is not counted. The contract says "whitespace and the trailing punctuation of a segment are free". The delivery projection exempts only ordinary commas and full stops, while a trailing colon such as "他说：" (he said:) is still counted as 1 by [`target_cps_chars`]. That would let the flash-frame threshold pass a 2-character piece as 3. Punctuation inside the piece is counted as usual, because after merging it becomes a visible burden within the line.
+/// Width basis of a single piece as a display line: trailing punctuation of the segment (including closing quotes, brackets, and whitespace) is not counted. The contract says "whitespace and the trailing punctuation of a segment are free". The delivery projection exempts only ordinary commas and full stops, while a trailing colon such as “he said:” is still counted as 1 by [`target_cps_chars`]. That would let the flash-frame threshold pass a 2-character piece as 3. Punctuation inside the piece is counted as usual, because after merging it becomes a visible burden within the line.
 pub fn piece_display_units(text: &str, lang: &str) -> usize {
     let trimmed = text.trim_end_matches(|ch: char| {
         ch.is_whitespace() || crate::atomize::is_punctuation_or_symbol(ch)
@@ -281,7 +281,7 @@ pub fn piece_display_units(text: &str, lang: &str) -> usize {
 ///
 /// `reordered` lets the worker reorder the clauses of a translated sentence to remove cross-ordering, but it only permits adjusting order and the necessary connectives and particles. A large drift in reading units means it quietly compressed or padded content, and it is rejected as a rewrite.
 ///
-/// The tolerance is the larger of "±25% and ±4 units", but it **must not exceed half of the original sentence**. The absolute floor of 4 units is headroom reserved for connectives and particles. In a short sentence it would be bigger than the sentence itself. Sentences under 8 units would never trigger under the old formula, so “你好，世界” (4 units) compressed to “好” would also pass, and the guardrail would be a dead letter for short sentences. The cap affects only sentences under 8 units. The criterion for long sentences is unchanged word for word.
+/// The tolerance is the larger of "±25% and ±4 units“4 units” compressed to “好” would also pass, and the guardrail would be a dead letter for short sentences. The cap affects only sentences under 8 units. The criterion for long sentences is unchanged word for word.
 ///
 /// This is the **single implementation**. Provider acceptance in the align engine, the agent's submit-time lint, and the file-contract table parser all share it. It used to be three character-for-character copies of the arithmetic, which design §2 explicitly asked to merge.
 pub fn reordered_rewrite_exceeds(old_units: usize, new_units: usize) -> bool {
@@ -573,7 +573,7 @@ fn split_independent_impl(
             let right = join_atoms(&atoms[j..]);
             let issues = lint_pieces(&[left.as_str(), right.as_str()], lang, params);
             objective_seam[j] = issues.iter().any(is_objective_blocking);
-            // CJK intra-word boundaries rank at the same level as objective defects. The deterministic splitter works on character atoms and has no dictionary. So "同时还可 ‖ 以将…" (a cut inside a word) is reported by none of the `lint_pieces` rules, because the trailing character “可” is not in the weak-tail table. Yet it is harder to read than any weak tail. Without this term, the DP would cut into the word on purpose, to avoid the weak-tail penalty of "…将". The p850 live case s-g79.0, "可|以", came from exactly this, and `oversize_hard_cut` was never called.
+            // CJK intra-word boundaries rank at the same level as objective defects. The deterministic splitter works on character atoms and has no dictionary. So “a cut inside a word” is reported by none of the `lint_pieces` rules, because the trailing character “可” is not in the weak-tail table. Yet it is harder to read than any weak tail. Without this term, the DP would cut into the word on purpose, to avoid the weak-tail penalty of "…将". The p850 live case s-g79.0, "可|以", came from exactly this, and `oversize_hard_cut` was never called.
             // Use an additive penalty, not a hard exclusion. In a pure CJK long sentence every seam is an intra-word boundary, and a hard exclusion would leave the whole sentence without a solution.
             cjk_midword_boundary(left.trim_end(), right.trim_start())
                 // Use the full Blocking set, not only the objective level. Flash fragments are likewise not a deliverable line, and the over-fit penalty must not push a piece into a 2-unit head piece such as `vLLM | 还提供了…`.
@@ -1243,7 +1243,7 @@ mod tests {
     use crate::doc::{BreakOverride, DocEngine, DocMedia, Speaker, TransPiece, Word};
     use crate::sentence::derive_sentences;
 
-    /// The absolute floor of the rewrite-magnitude guardrail (±4 units) must not exceed half of the original sentence. Otherwise sentences under 8 units never trigger, so “你好，世界” (4 units) compressed to “好” (1 unit) would also pass. The submit-time lint and provider acceptance would then have zero recall on short sentences. The criterion for long sentences is unchanged word for word.
+    /// The absolute floor of the rewrite-magnitude guardrail (±4 units) must not exceed half of the original sentence. Otherwise sentences under 8 units never trigger, so “4 units” compressed to “1 unit” would also pass. The submit-time lint and provider acceptance would then have zero recall on short sentences. The criterion for long sentences is unchanged word for word.
     #[test]
     fn rewrite_guard_scales_down_for_short_sentences() {
         // Short sentence: the floor is capped at half of the original sentence.
@@ -1271,7 +1271,7 @@ mod tests {
         assert_eq!(target_cps_chars("KV cache rocks", "en"), 12);
     }
 
-    /// Piece-level display width: trailing punctuation of the piece (including colons and closing quotes) is free. In-piece punctuation counts as usual. Previously "他说:" (he said:) was counted as 3 by the flash-frame threshold, while the contract basis is 2.
+    /// Piece-level display width: trailing punctuation of the piece (including colons and closing quotes) is free. In-piece punctuation counts as usual. Previously “he said:” was counted as 3 by the flash-frame threshold, while the contract basis is 2.
     #[test]
     fn piece_display_units_free_trailing_punctuation() {
         assert_eq!(target_cps_chars("他说:", "zh"), 3);

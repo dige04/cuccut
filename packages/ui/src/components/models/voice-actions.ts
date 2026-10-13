@@ -59,7 +59,7 @@ export type DeleteOutcome =
 
 /**
  * Delete a voice: first delete each of its clones on each Provider, and only delete the entry once all are deleted. If a remote one cannot be deleted, stop and do not delete the entry.
- * `localOnly`: the user explicitly chose “只删本机记录”(Delete only the local record) — the clone record is cleared only locally (clones in the other party's account are kept), and then the entry is deleted.
+ * `localOnly`: the user explicitly chose “Delete only the local record” — the clone record is cleared only locally (clones in the other party's account are kept), and then the entry is deleted.
  */
 export async function deleteVoice(session: Session, voice: LibraryEntrySummary, localOnly = false): Promise<DeleteOutcome> {
   const clones: { providerId: string; remote: VoiceCloneRemoveResult['remote'] }[] = [];

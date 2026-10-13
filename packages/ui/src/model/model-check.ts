@@ -20,7 +20,7 @@ import { installProgressView } from './models-install.ts';
 import { isBundleInstalled } from './models-local.ts';
 
 /**
- * Local model “检查” (check) (design model-local-check.js; architecture design §6.3): whether a model can be used normally is stated only in one status on its row.
+ * Local model “check” (design model-local-check.js; architecture design §6.3): whether a model can be used normally is stated only in one status on its row.
  * All status comes from the Runtime: `modelTest` / `modelInstall` tasks (`jobs` topic) and the `selfTest` recorded on the model package (`models` topic);
  * locally, only two things the Runtime does not know are recorded: a rejected submission (the check could not start) and the repair task this row started (which must trigger an automatic re-check when it finishes).
  */
@@ -241,8 +241,8 @@ export type CheckRoute = 'test' | 'enable-then-test' | null;
 const USABLE: readonly ModelBundleStatus['state'][] = ['installed', 'loading', 'ready', 'busy', 'unloading'];
 
 /**
- * Whether this kind of model package has a check: “说话人区分” (speaker diarization) (`capability: 'diarize'`) runs no tasks itself and loads no Worker, so `models.test` rejects it with `unsupported`,
- * and neither the row nor the ⋯ menu offers “检查” (check) (design settings-local.jsx, the model package row).
+ * Whether this kind of model package has a check: “speaker diarization” (`capability: 'diarize'`) runs no tasks itself and loads no Worker, so `models.test` rejects it with `unsupported`,
+ * and neither the row nor the ⋯ menu offers “check” (design settings-local.jsx, the model package row).
  */
 export function hasCheck(bundle: Pick<ModelBundleStatus, 'capability'>): boolean {
   return bundle.capability !== 'diarize';
@@ -328,7 +328,7 @@ function problemActions(p: CheckProblem, can: CheckAbilities): CheckAction[] {
   return actions;
 }
 
-/** “技术详情” (technical details): code, model and time, the Runtime's own message and technical specifics. Copying also uses it. */
+/** “technical details”: code, model and time, the Runtime's own message and technical specifics. Copying also uses it. */
 export function checkDetailLines(state: CheckState, bundleId: string, now = Date.now()): string[] {
   if (state.phase !== 'failed') return [];
   const p = state.problem;
@@ -367,7 +367,7 @@ export function tryNotice(state: CheckState, can: CheckAbilities, subject: TrySu
 }
 
 /**
- * A trial succeeded after that check (`okAt` is the time that successful run ended), so the reminder is withdrawn: saying “现在试听多半也会失败” (listening now will most likely fail too) would contradict the result in front of the user.
+ * A trial succeeded after that check (`okAt` is the time that successful run ended), so the reminder is withdrawn: saying “listening now will most likely fail too” would contradict the result in front of the user.
  * The check result on the row stays as it is; only a re-check replaces it. If a later check fails again, the reminder appears as usual.
  */
 export function noticeAfterTry(notice: TryNoteView | null, okAt: string | null | undefined): TryNoteView | null {

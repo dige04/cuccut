@@ -1,4 +1,4 @@
-//! The directory layout from before the rename to “视频” (video) (`movie.db`, `movie.lock`, `cuccut.movie`) is upgraded in place once, when it is opened.
+//! The directory layout from before the rename to “video” (`movie.db`, `movie.lock`, `cuccut.movie`) is upgraded in place once, when it is opened.
 
 #![allow(clippy::result_large_err)]
 

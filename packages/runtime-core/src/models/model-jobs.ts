@@ -173,7 +173,7 @@ export interface ModelJobsOptions {
     bundles?: readonly BundleDefinition[];
   };
   /**
-   * Save location (§7.9 “保存位置” (save location)): results of flows without a video (file transcoding, subtitle file translation, transcription of a file only) are written here when no `outDir` is given;
+   * Save location (§7.9 “save location”): results of flows without a video (file transcoding, subtitle file translation, transcription of a file only) are written here when no `outDir` is given;
    * it is read once at submission and frozen. When not given (in unit tests only), it is written next to the source file.
    */
   saveDirectory?: () => string;
@@ -393,7 +393,7 @@ export async function openModelJobs(options: ModelJobsOptions): Promise<ModelJob
         TRANSCRIBE_DATA_KINDS,
         (plan) => [{ capability: 'transcribe', providerId: plan.providerId, modelId: plan.modelId, dataKinds: TRANSCRIBE_DATA_KINDS }],
       ),
-      // Speaker identification: the local “说话人区分” (speaker diarization) model bundle re-diarizes speakers for an existing transcript; the result is a proposal (applied via `edits.applySpeakers`). No data is sent out,
+      // Speaker identification: the local “speaker diarization” model bundle re-diarizes speakers for an existing transcript; the result is a proposal (applied via `edits.applySpeakers`). No data is sent out,
       // and no authorization is needed.
       speakersPipeline({
         videos: dubVideos(videos, guard),

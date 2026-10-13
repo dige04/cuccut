@@ -67,7 +67,7 @@ describe('直接调模型时的系统提示词（AI 工具）', () => {
     expect(two.skills).toEqual(['titles-and-description', 'video-summary']);
     expect(two.text.match(/<skill id=/g)).toHaveLength(2);
     expect(two.text.indexOf('<skill id="titles-and-description"')).toBeLessThan(two.text.indexOf('<skill id="video-summary"'));
-    // writing-baseline.md has the same content in both skills: the second time, only write “同上” (same as above).
+    // writing-baseline.md has the same content in both skills: the second time, only write “same as above”.
     expect(two.references).toBe(2);
     expect(two.text.match(/BASELINE RULES/g)).toHaveLength(1);
     expect(two.text).toContain('<file path="references/writing-baseline.md" same-as="titles-and-description/references/writing-baseline.md" />');

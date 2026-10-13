@@ -42,7 +42,7 @@ export interface ChapterSpan {
   index: number;
   /** The raw name on the marker (may be blank). */
   label: string;
-  /** For display: the raw name trimmed; an empty name shows “第 N 章” (chapter N). */
+  /** For display: the raw name trimmed; an empty name shows “chapter N”. */
   title: string;
   startFrame: number;
   endFrame: number;
@@ -137,7 +137,7 @@ export function startBounds(chapters: readonly ChapterSpan[], index: number, tot
   return { min, max: Math.max(min, max) };
 }
 
-/** Name pre-filled when adding a chapter: it is called “第 N 章” (chapter N) for whatever chapter position it lands in. */
+/** Name pre-filled when adding a chapter: it is called “chapter N” for whatever chapter position it lands in. */
 export function defaultChapterTitle(chapters: readonly ChapterSpan[], frame: number): string {
   return M.chapterN(chapters.filter((c) => c.startFrame < frame).length + 1);
 }
@@ -263,7 +263,7 @@ export function chapterRows(chapters: readonly ChapterSpan[], paragraphs: readon
   return rows;
 }
 
-// ---- Per-chapter and per-segment operations in the transcript (design draft model-chapters.js `movePlan`; the ↑ ↓ on paragraph rows in panels.jsx and “这一章…” (this chapter…) on chapter headers) ----
+// ---- Per-chapter and per-segment operations in the transcript (design draft model-chapters.js `movePlan`; the ↑ ↓ on paragraph rows in panels.jsx and “this chapter…” on chapter headers) ----
 
 /** How a segment moves to an adjacent chapter: which chapter's start moves, to which frame, and how many segments move along with it. */
 export interface ParagraphMove {

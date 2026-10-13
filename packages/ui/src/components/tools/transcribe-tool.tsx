@@ -46,11 +46,11 @@ import { defaultProject, useToolStart, useVideoTools, type TranscribeDraft } fro
 import { DuplicateAlert, firstWhy, lede, SubmitBar, usePreset, useRefreshWhenReady } from './video-tool-parts.tsx';
 
 /*
- * Tools › Transcribe (design mockup tool-transcribe.jsx `TranscribeToolPage`, tools.css `.tool-transcribe__input`; product design §2.7 table 2, “转录” (Transcribe)):
- * start from a local file, a Space item (a media entry or an editable video), or a link. For files, media entries and links, no video is created by default: the transcript (TXT) and subtitles (SRT) are saved to the save location (files only, `transcribe`, `TranscribeFileParams`). If “新建视频并放进项目” (create a new video and put it in the project) is chosen instead, a new video is created (the source stays where it is and is only linked), with the transcript and an editable subtitle layer. Choosing an editable video writes into it. When the video already has a transcript, a destination is offered (product design §5.11): by default a new video is created, or “取代这部视频的文稿” (replace this video's transcript): the new transcript replaces the old one; choosing it shows an impact card; if the transcript was edited, the Runtime refuses and the page offers “仍要取代” (replace anyway).
- * “重试转录…” (Retry transcription…) (Space, §4.4) brings a failed job: it pre-fills the speech model, language and speaker identification from that job, and explains why it failed last time. The execution method is read from `tools.list`.
+ * Tools › Transcribe (design mockup tool-transcribe.jsx `TranscribeToolPage`, tools.css `.tool-transcribe__input`; product design §2.7 table 2, “Transcribe”):
+ * start from a local file, a Space item (a media entry or an editable video), or a link. For files, media entries and links, no video is created by default: the transcript (TXT) and subtitles (SRT) are saved to the save location (files only, `transcribe`, `TranscribeFileParams`). If “create a new video and put it in the project” is chosen instead, a new video is created (the source stays where it is and is only linked), with the transcript and an editable subtitle layer. Choosing an editable video writes into it. When the video already has a transcript, a destination is offered (product design §5.11): by default a new video is created, or “replace this video's transcript”: the new transcript replaces the old one; choosing it shows an impact card; if the transcript was edited, the Runtime refuses and the page offers “replace anyway”.
+ * “Retry transcription…” (Space, §4.4) brings a failed job: it pre-fills the speech model, language and speaker identification from that job, and explains why it failed last time. The execution method is read from `tools.list`.
  *
- * Link sources are run by the “从链接导入” (import from link) flow (`link-import` with `transcribe: true`; its availability is checked there too). That path cannot yet choose the speech model or language, does not create a subtitle layer, and has no save location for this run (it downloads to the save location in settings); the page says so.
+ * Link sources are run by the “import from link” flow (`link-import` with `transcribe: true`; its availability is checked there too). That path cannot yet choose the speech model or language, does not create a subtitle layer, and has no save location for this run (it downloads to the save location in settings); the page says so.
  */
 
 const dropZone = style({ width: 'full', minHeight: 200 });
@@ -110,7 +110,7 @@ export function TranscribeTool() {
   const create = !intoVideo && draft.target === 'create';
   const url = draft.url.trim();
   const urlOk = urlValid(url);
-  // “识别说话人” (identify speakers) is always set explicitly to true or false (mockup `speakers: sp.on`), so the Runtime does not guess from the model; it is not accepted when transcribing files only.
+  // “identify speakers” is always set explicitly to true or false (mockup `speakers: sp.on`), so the Runtime does not guess from the model; it is not accepted when transcribing files only.
   // Destination (§5.11): only offered when the video already has a transcript; if a choice was made on this video, use it, otherwise default to a new video.
   const retarget = intoVideo && row.video ? retargetOptions(row.video) : null;
   const ownDest = retarget && draft.dest?.entryId === row?.entryId ? draft.dest : null;
@@ -296,7 +296,7 @@ export function TranscribeTool() {
 
 // ---- Re-transcribe ----
 
-/** The impact card shown when “取代” (replace) is chosen (design mockup `ReplaceImpact`): one line per translation, one sentence for the rule, one line of dubbing per language; can be undone. */
+/** The impact card shown when “replace” is chosen (design mockup `ReplaceImpact`): one line per translation, one sentence for the rule, one line of dubbing per language; can be undone. */
 function ReplaceImpactCard({ video }: { video: Pick<PickerRow, 'documents'> }) {
   const im = replaceImpact(video);
   const row = (key: string, label: string, text: string) => (
@@ -318,7 +318,7 @@ function ReplaceImpactCard({ video }: { video: Pick<PickerRow, 'documents'> }) {
   );
 }
 
-/** The failure from “重试转录…” (retry transcription…) (design mockup `RetryAlert`): the reason, the previous model, and how long ago it happened. */
+/** The failure from “retry transcription…” (design mockup `RetryAlert`): the reason, the previous model, and how long ago it happened. */
 function RetryAlert({ job }: { job: JobRecord }) {
   const p = retryParamsOf(job);
   const view = useModels((s) => s.capabilities);

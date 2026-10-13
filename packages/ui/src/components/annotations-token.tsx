@@ -80,8 +80,8 @@ const COPY = { slides: SLIDES, design: DESIGN, 'design-system': DESIGN_SYSTEM } 
 /**
  * Reference tag for annotations (slides docs/design/slides §8.2 steps 5 and 6, design docs/design/canvas §8.2, design system §10.6;
  * ported from the prototype's home-slides-notes.jsx `SlideNotesToken`, home-design-notes.jsx `DesignNotesToken`,
- * and home-design-system-notes.jsx `DesignSystemNotesToken`). Above the composer and in sent messages it reads “幻灯片标注 · N 条” (slide annotations · N items),
- * “设计稿标注 · N 条” (design annotations · N items), or “设计系统标注 · N 条” (design system annotations · N items). Opening it lists each item: its position and comment; clicking one opens (or switches to) that document and jumps to that position.
+ * and home-design-system-notes.jsx `DesignSystemNotesToken`). Above the composer and in sent messages it reads “slide annotations · N items”,
+ * “design annotations · N items”, or “design system annotations · N items”. Opening it lists each item: its position and comment; clicking one opens (or switches to) that document and jumps to that position.
  * When `onRemove` is given it is a draft, and items can be removed one by one or all at once; without it, it is a sent message and is read-only.
  */
 export function AnnotationsToken({

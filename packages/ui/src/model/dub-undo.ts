@@ -1,7 +1,7 @@
 import type { DocumentRecord, EditOperation, Id, Sequence } from '@cuccut/protocol';
 
 /**
- * “撤销这组配音” (undo this dub group) on the translated-dub receipt. The Runtime applies a dub group in one transaction: the imported synthesized audio, the new dub track, instances with `groupId`, the dub plan document, `mute` for the original-sentence instances, and `duck` for a ducking rule. So the preferred step is to undo that whole transaction (`videos.undo`), which removes the track and the document together. If the video has changed since and the undo is refused (`UNDO_CONFLICT`), it falls back to what can still be done: delete this group's instances (including the separated background), restore the instances this dub muted, and remove the ducking triggered by the dub track. The protocol has no operation to delete a track or a document, so the (empty) dub track and the dub plan document are left behind.
+ * “undo this dub group” on the translated-dub receipt. The Runtime applies a dub group in one transaction: the imported synthesized audio, the new dub track, instances with `groupId`, the dub plan document, `mute` for the original-sentence instances, and `duck` for a ducking rule. So the preferred step is to undo that whole transaction (`videos.undo`), which removes the track and the document together. If the video has changed since and the undo is refused (`UNDO_CONFLICT`), it falls back to what can still be done: delete this group's instances (including the separated background), restore the instances this dub muted, and remove the ducking triggered by the dub track. The protocol has no operation to delete a track or a document, so the (empty) dub track and the dub plan document are left behind.
  */
 
 export const DUB_EXTENSION = 'cuccut.dub';

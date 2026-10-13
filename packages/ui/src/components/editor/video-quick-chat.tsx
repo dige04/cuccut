@@ -74,7 +74,7 @@ const panel = style({
 });
 const head = style({ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, paddingStart: 16, paddingEnd: 8, paddingTop: 8 });
 const title = style({ flexGrow: 1, minWidth: 0, font: 'title-sm', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
-// The input box has 12px of padding on the left and right, and 4px of space above it, between it and the title. Below, it sits right against the toolbar, keeping only the input's own small space (product design §5.1 “输入区底栏” (composer footer bar)).
+// The input box has 12px of padding on the left and right, and 4px of space above it, between it and the title. Below, it sits right against the toolbar, keeping only the input's own small space (product design §5.1 “composer footer bar”).
 const body = style({ paddingTop: 4, marginBottom: -8 });
 const gate = style({ paddingX: 16, paddingBottom: 12 });
 
@@ -86,7 +86,7 @@ function draftKeyOf(videoKey: string | null): string {
 /**
  * The floating session in the bottom-right of a video opened in Space (product design §2.2, §5.1). By default it expands into an input box for a new session and does not steal focus from the editor. Once minimized, it shrinks to an icon (remembered locally), and a dot on the icon hints that the most recently started session here is working, awaiting approval, or completed and unread. The input box is the same as the Home start page's (`Composer`): access mode on the left, Agent · model · reasoning effort on the right. The meaning of the choices is also the same: they are recorded per this video's draft, passed to the new session on send, and the chosen access mode is remembered as the default.
  *
- * Sending switches to that session on Home. Its first message is this prompt, and the editor's current state travels with it. In the session, a video card for this video appears, and clicking “Open editor” comes back (`video-cards.ts` `openingVideo`). No empty session is created before sending. Each send creates a new session, and returning to Space still starts from an empty input box. The session belongs to the video's project. If the video is not in a project (it sits in the working directory of a session with no project), the new session also has no project and shares that session's working directory (`folderOf`, architecture design §3.10), and it is shown under “最近” (Recent).
+ * Sending switches to that session on Home. Its first message is this prompt, and the editor's current state travels with it. In the session, a video card for this video appears, and clicking “Open editor” comes back (`video-cards.ts` `openingVideo`). No empty session is created before sending. Each send creates a new session, and returning to Space still starts from an empty input box. The session belongs to the video's project. If the video is not in a project (it sits in the working directory of a session with no project), the new session also has no project and shares that session's working directory (`folderOf`, architecture design §3.10), and it is shown under “Recent”.
  */
 export function VideoQuickChat() {
   const runtime = useRuntime();
@@ -104,7 +104,7 @@ export function VideoQuickChat() {
   const started = useShell((s) => (key ? (s.videoChats[key] ?? null) : null));
   const watched = useConversationMeta(started);
   const prefMin = useShell((s) => s.videoChatMin);
-  // While the tools page (`aitools`) is open, the expanded card covers the “交给 Agent” (Hand off to Agent) at the bottom of the page. During this time it shows as minimized, but the preference stored locally is not changed. When the user clicks the icon to open it, it expands this time (`peek`). When the tools page closes, it resets to the preferred state. Opening and minimizing on the tools page touch only `peek`, never the preference.
+  // While the tools page (`aitools`) is open, the expanded card covers the “Hand off to Agent” at the bottom of the page. During this time it shows as minimized, but the preference stored locally is not changed. When the user clicks the icon to open it, it expands this time (`peek`). When the tools page closes, it resets to the preferred state. Opening and minimizing on the tools page touch only `peek`, never the preference.
   // The web host has no AI tools tab: a remembered `aitools` falls back to the transcript there, and does not count as open.
   const web = runtime.host.platform === 'web';
   const toolsOpen = useEditor((s) => hostPanelTab(s.panelTab, web) === 'aitools');
@@ -117,7 +117,7 @@ export function VideoQuickChat() {
   const draftMode = useShell((s) => s.draftAccessModes[draftKey]);
   const defaultMode = useSetting('agent.defaultAccessMode');
   const choice = useShell((s) => s.draftAgents[draftKey]);
-  // If the Agent chosen on the draft still shows “正在检测” (Detecting) on the first probe, do not fall back to the default one. On send, the draft's choice is still used.
+  // If the Agent chosen on the draft still shows “Detecting” on the first probe, do not fall back to the default one. On send, the draft's choice is still used.
   const driver =
     choice?.driverId && checking.includes(choice.driverId)
       ? null

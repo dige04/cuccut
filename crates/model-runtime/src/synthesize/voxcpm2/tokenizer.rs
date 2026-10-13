@@ -190,9 +190,9 @@ mod tests {
         assert_eq!(t.encode("abc"), vec![6, 4]);
         // An x that is neither in the vocabulary nor has a byte piece becomes <unk>, and the following ab can still merge with c.
         assert_eq!(t.encode("xabc"), vec![1, 0, 13]);
-        // “你好” (“hello”) merged into one piece is split back into two characters per the official rule.
+        // “hello” merged into one piece is split back into two characters per the official rule.
         assert_eq!(t.encode("你好"), vec![1, 7, 8]);
-        // The character “一” (one), which is not in the vocabulary, falls back to its UTF-8 bytes.
+        // The character “one”, which is not in the vocabulary, falls back to its UTF-8 bytes.
         assert_eq!(t.encode("\u{4E00}"), vec![1, 10, 11, 12]);
         assert!(t.encode("").is_empty());
     }

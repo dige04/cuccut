@@ -48,9 +48,9 @@ const chip = style({ flexShrink: 0, marginEnd: 4 });
 const finished = (state: AgentRunState) => state.kind === 'done' || state.kind === 'failed' || state.kind === 'stopped';
 
 /**
- * The progress card left on the tool page once finding cut points and refreshing stale translations have been handed to the Agent (prototype panel-aitools-cut.jsx `AgentRun`, product design §5.10 「交给智能体」 (hand to agent)):
- * who it was handed to and how far it has got in the conversation (`agentRunState` reads that conversation's timeline); while waiting for approval, a button leads straight to the conversation. 「打开会话」 (Open conversation) brings the conversation into view,
- * 「重新设置」 (Set up again) goes back to the parameters page (the conversation keeps running). Results are written into the video as usual — cut suggestions go into the script and timeline, retranslated sentences go into subtitles; here only progress is shown, and 「完成」 (Done) returns to the parameters page when it ends.
+ * The progress card left on the tool page once finding cut points and refreshing stale translations have been handed to the Agent (prototype panel-aitools-cut.jsx `AgentRun`, product design §5.10 “hand to agent”):
+ * who it was handed to and how far it has got in the conversation (`agentRunState` reads that conversation's timeline); while waiting for approval, a button leads straight to the conversation. “Open conversation” brings the conversation into view,
+ * “Set up again” goes back to the parameters page (the conversation keeps running). Results are written into the video as usual — cut suggestions go into the script and timeline, retranslated sentences go into subtitles; here only progress is shown, and “Done” returns to the parameters page when it ends.
  */
 export function AiToolAgentRun({ videoId, tool, run, onBack }: { videoId: Id; tool: AgentToolId; run: AiToolAgentRun; onBack(): void }) {
   const runtime = useRuntime();

@@ -281,7 +281,7 @@ pub struct TemplateDoc {
     #[serde(default = "default_hue")]
     pub hue: String,
     /// Catalog group key (written only for the built-in catalog: `chapters` / `info` / `vertical` / `douyin` / `xhs` /
-    /// `youtube` / `bili` / `watermark`). Unknown or missing values are filed under 「信息条」 (info bar); brand library entries are always filed under the brand library group.
+    /// `youtube` / `bili` / `watermark`). Unknown or missing values are filed under “info bar”; brand library entries are always filed under the brand library group.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group: Option<String>,
     #[serde(default)]
@@ -1013,7 +1013,7 @@ mod tests {
         assert_eq!(back, doc);
         assert!(back.is_watermark());
         assert!(back.is_imported_watermark());
-        // The group key is not checked for membership: an unknown group is still valid and is filed under 「信息条」 (info bar) by the catalog.
+        // The group key is not checked for membership: an unknown group is still valid and is filed under “info bar” by the catalog.
         doc.group = Some("somewhere".into());
         assert!(validate(&doc).is_ok());
         // Hue added for the platform edition.

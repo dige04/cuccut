@@ -65,7 +65,7 @@ export function DuplicateAlert({ title, body }: { title: string; body: string })
   );
 }
 
-/** Text-model block (translate subtitles, translate first then dub): the unified “模型” (model) row, with online-service models; unusable ones are listed with the reason, and a “去设置” (go to settings) link is given. */
+/** Text-model block (translate subtitles, translate first then dub): the unified “model” row, with online-service models; unusable ones are listed with the reason, and a “go to settings” link is given. */
 export function TextModelField({
   options,
   option,
@@ -91,7 +91,7 @@ export function TextModelField({
   );
 }
 
-/** Space entries brought by “接着做” (continue) or “用工具处理…” (process with tool…): pre-selected when entering this tool (each page decides how to fill it); cleared once used. */
+/** Space entries brought by “continue” or “process with tool…”: pre-selected when entering this tool (each page decides how to fill it); cleared once used. */
 export function usePreset(tool: ToolId, apply: (entryId: Id, preset: ToolPreset) => void): void {
   const preset = useVideoTools((s) => s.preset);
   const setPreset = useVideoTools((s) => s.setPreset);
@@ -105,7 +105,7 @@ export function usePreset(tool: ToolId, apply: (entryId: Id, preset: ToolPreset)
 }
 
 /**
- * A task brought by “再做一次 / 重试” (do again / retry): once the job appears in the `jobs` topic, it fills the form once and is then cleared (same as `usePreset`).
+ * A task brought by “do again / retry”: once the job appears in the `jobs` topic, it fills the form once and is then cleared (same as `usePreset`).
  */
 export function useRerun(tool: ToolId, apply: (job: JobRecord) => void): void {
   const rerun = useVideoTools((s) => s.rerun);
@@ -119,7 +119,7 @@ export function useRerun(tool: ToolId, apply: (job: JobRecord) => void): void {
   }, [rerun, job, setRerun, tool]);
 }
 
-/** Going to a tool page via “再做一次 / 重试” (do again / retry): direct jobs and file transcodes fill the form with their parameters; video tools open this run. */
+/** Going to a tool page via “do again / retry”: direct jobs and file transcodes fill the form with their parameters; video tools open this run. */
 export function goRerun(rerun: Rerun, jobId: Id): void {
   const tools = useVideoTools.getState();
   if (rerun.mode === 'view' && isVideoTool(rerun.tool)) tools.setView(rerun.tool, jobId);

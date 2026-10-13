@@ -144,16 +144,16 @@ const missIcon = iconStyle({ size: 'S', color: 'notice' });
 type Confirm = { kind: 'remove' | 'discard'; bundle: ModelBundleStatus };
 /** The open download / complete / repair dialog; `note` is the sentence swapped in when a model is completed by borrowing from the shared components row. */
 type Install = { bundle: ModelBundleStatus; mode: InstallMode; note?: string };
-/** In the browser: the check status and trial hints do not offer “修复”(Repair) or “重新检查”(Re-check). */
+/** In the browser: the check status and trial hints do not offer “Repair” or “Re-check”. */
 const NO_CHECK: CheckAbilities = { repair: false, recheck: false };
 
 /**
- * Models › Local models (design mock settings-local.jsx:200-308): the model packages in the `models` topic are grouped as “installed / downloadable” (models whose weights are present but which lack shared components also appear under “installed”, with “补齐”(Complete) on the row). The default model is at the top, and below it is the collapsed “shared components” section (components used by two or more models; a missing one is completed by borrowing from a model that uses it).
+ * Models › Local models (design mock settings-local.jsx:200-308): the model packages in the `models` topic are grouped as “installed / downloadable” (models whose weights are present but which lack shared components also appear under “installed”, with “Complete” on the row). The default model is at the top, and below it is the collapsed “shared components” section (components used by two or more models; a missing one is completed by borrowing from a model that uses it).
  * Downloads and repairs show the plan and ask for confirmation first (install-dialog.tsx); progress, check conclusions and model package state are all read from the `models` / `jobs` topics. This code does not poll and does not change state locally. Speech recognition, speech synthesis, image generation and source separation currently have local model packages; the other classes show an empty state.
- * The default model for source separation has an “自动选择”(Auto select) option, the same as speech recognition (the separation step of dubbing uses it); rows show “检查”(Check) on the row, as with speech recognition.
- * The default models for speech synthesis (design mock settings-tts.jsx) and image generation do not have “自动选择”(Auto select); after each synthesis row is installed, it has “试听”(Trial listen) (tts-quick-test.tsx).
- * The image generation “试画”(trial draw) is not done yet (design mock model-local-check.js `TRY.image`), so its row shows “检查”(Check) on the row, as speech recognition does.
- * “检查”(Check) and “试听”(Trial listen) are two different things (design mock model-local-check.js): trial listen is the main action on the row, and check is in ⋯ next to “修复…”(Repair…); speech recognition, which has no trial, has a separate quiet “检查”(Check) on the row. Whether a model is usable is only stated in the one status line on the row (model-check-line.tsx).
+ * The default model for source separation has an “Auto select” option, the same as speech recognition (the separation step of dubbing uses it); rows show “Check” on the row, as with speech recognition.
+ * The default models for speech synthesis (design mock settings-tts.jsx) and image generation do not have “Auto select”; after each synthesis row is installed, it has “Trial listen” (tts-quick-test.tsx).
+ * The image generation “trial draw” is not done yet (design mock model-local-check.js `TRY.image`), so its row shows “Check” on the row, as speech recognition does.
+ * “Check” and “Trial listen” are two different things (design mock model-local-check.js): trial listen is the main action on the row, and check is in ⋯ next to “Repair…”; speech recognition, which has no trial, has a separate quiet “Check” on the row. Whether a model is usable is only stated in the one status line on the row (model-check-line.tsx).
  * In the browser, only viewing and trial are available (product design §7.6): the Web allowlist does not include install management (`models.install`, `repair`, `cancelInstall`, `remove`, `test`, `enable`) or `models.setDefault`, so these buttons and the default model selector are greyed out and one sentence giving the reason is shown at the top of the page; listen and trial draw still work.
  */
 export function LocalModels({ category }: { category: ModelCategory }) {
@@ -401,14 +401,14 @@ function canCloneModel(model: SpeechModelInfo | undefined): boolean {
   return !!model && canClone(model);
 }
 
-/** Size in the component breakdown: when installed, shows how much it takes; when missing, shows how much must be downloaded (design mock “缺 · 大小”(Missing · Size)); not shown if unknown. */
+/** Size in the component breakdown: when installed, shows how much it takes; when missing, shows how much must be downloaded (design mock “Missing · Size”); not shown if unknown. */
 function componentSize(c: ModelComponentStatus): string | null {
   const bytes = c.state === 'installed' ? c.bytes : (c.estimatedBytes ?? null);
   return bytes !== null ? fmtSize(bytes) : null;
 }
 
 /**
- * One row of the shared components section (design mock settings-local.jsx `SharedCard`): whether it is installed, its name, what it does and who uses it. On the right: the installed size, the progress of the borrowed model used to complete it, and either “下载 {大小}”(Download {size}) (= complete using the model chosen by `sharedAction`, through the same confirmation dialog) or “装模型时一起下载”(Downloaded together with the model install). A component is not installed on its own.
+ * One row of the shared components section (design mock settings-local.jsx `SharedCard`): whether it is installed, its name, what it does and who uses it. On the right: the installed size, the progress of the borrowed model used to complete it, and either “Download {size}” (= complete using the model chosen by `sharedAction`, through the same confirmation dialog) or “Downloaded together with the model install”. A component is not installed on its own.
  */
 function SharedRow({
   component: c,
@@ -466,13 +466,13 @@ function SharedRow({
   );
 }
 
-/** Anchor for the trial panel: when a trial clone from “我的声音”(My Voices) or a “克隆新音色…”(Clone new voice…) returns, scroll to this row. */
+/** Anchor for the trial panel: when a trial clone from “My Voices” or a “Clone new voice…” returns, scroll to this row. */
 function quickAnchor(bundleId: string): string {
   return `tts-quick-${bundleId}`;
 }
 
 /**
- * Claims a voice brought over from “我的声音”(My Voices): “试听克隆”(Trial clone) (`focus`) and “克隆新音色…”(Clone new voice…) returning after saving (`handoff.voiceId`) both expand the trial of that row, select this voice, scroll to it, and then clear it. If the models are not listed yet, nothing happens until the `models` topic delivers them.
+ * Claims a voice brought over from “My Voices”: “Trial clone” (`focus`) and “Clone new voice…” returning after saving (`handoff.voiceId`) both expand the trial of that row, select this voice, scroll to it, and then clear it. If the models are not listed yet, nothing happens until the `models` topic delivers them.
  */
 function useClaimAudition(enabled: boolean, speech: ReadonlyMap<string, SpeechModelInfo>) {
   const focus = useVoiceHandoff((s) => s.focus);
@@ -503,7 +503,7 @@ function useClaimAudition(enabled: boolean, speech: ReadonlyMap<string, SpeechMo
 }
 
 /**
- * One model package row: name and tags, facts, and the actions on the right. Below it: progress, check status, the reason the last download failed, and the component breakdown. The speech synthesis row has an extra sentence of description, what it can do, size and license; once installed it has “试听”(Trial listen).
+ * One model package row: name and tags, facts, and the actions on the right. Below it: progress, check status, the reason the last download failed, and the component breakdown. The speech synthesis row has an extra sentence of description, what it can do, size and license; once installed it has “Trial listen”.
  */
 function BundleRow({
   bundle,
@@ -528,7 +528,7 @@ function BundleRow({
   bundles: readonly ModelBundleStatus[];
   jobs: readonly JobRecord[];
   isDefault: boolean;
-  /** The model package's own files are on disk (`hasOwnFiles`): weights are present, so a row missing components gets “补齐”(Complete), not “下载”(Download). */
+  /** The model package's own files are on disk (`hasOwnFiles`): weights are present, so a row missing components gets “Complete”, not “Download”. */
   ownFiles: boolean;
   kind: LocalDefaultCapability;
   /** Speech synthesis row: the models listed locally (may be none when not installed properly) and the names of installed cloned models; null for speech recognition rows. */
@@ -623,10 +623,10 @@ function BundleRow({
       </TooltipTrigger>,
     );
   }
-  // Download and complete buttons show how much is still to download (design mock settings-local.jsx “补齐 {大小}”(Complete {size})); when a component's size is unknown, only the action is shown.
+  // Download and complete buttons show how much is still to download (design mock settings-local.jsx “Complete {size}”); when a component's size is unknown, only the action is shown.
   const need = needBytes(bundle);
   const needSize = need !== null && need > 0 ? fmtSize(need) : null;
-  // Own files on disk but still missing components (installed without the optional aligner or speaker model, or weights present but shared components missing): “补齐”(Complete) downloads only the missing pieces and “下载”(Download) is not offered (design mock settings-local.jsx `half`).
+  // Own files on disk but still missing components (installed without the optional aligner or speaker model, or weights present but shared components missing): “Complete” downloads only the missing pieces and “Download” is not offered (design mock settings-local.jsx `half`).
   if (actions.complete) {
     buttons.push(
       <Button key="complete" variant="secondary" size="S" isDisabled={web} onPress={() => onInstall('complete')}>
@@ -710,7 +710,7 @@ function BundleRow({
   const weights = bundle.license ?? model?.local?.license ?? music?.local?.license ?? null;
   const license = kind !== 'transcribe' ? weights : null;
   const restricted = license && !license.commercialUse ? license : null;
-  // The “许可”(License) line in details: every type lists the weights' license, plus any components whose license differs or that require attribution (design mock settings-local.jsx `lics`).
+  // The “License” line in details: every type lists the weights' license, plus any components whose license differs or that require attribution (design mock settings-local.jsx `lics`).
   const licenses = licenseLines(bundle, weights);
   const engine = model ? familyDesc(model) : null;
 

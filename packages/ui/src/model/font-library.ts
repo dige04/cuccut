@@ -123,14 +123,14 @@ export type FontLibraryMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * How downloadable fonts are presented in the UI (product design §5.9 “字体” (Fonts), §7.6; architecture design §9.1; prototype model-font-library.js).
+ * How downloadable fonts are presented in the UI (product design §5.9 “Fonts”, §7.6; architecture design §9.1; prototype model-font-library.js).
  *
  * The font picker, the font bar at the top of the editor, the export panel and Settings › Fonts all read the same state: one `FontFamilyStatus` per family (`fonts.catalogue`),
  * with the byte progress of the running `fontDownload` task in the `jobs` topic overlaid (`modelId` is the family name). This file only does the computing: merging tables, sorting, filtering,
  * sectioning, what goes at the end of each row, how progress is read out, whether the mirror address is valid, and what is said when opening a video and when exporting. State transitions happen in state/font-library-store.ts.
  *
  * Differences from the prototype (real data decides):
- * - The font catalogue carries no file sizes: the download button hint does not say “约 X” (about X), and sizes appear in the details only after download. Whether “取消下载” (Cancel download) is offered on selection is decided by the text (CJK fonts are several MB per weight, Latin fonts are one or two hundred KB).
+ * - The font catalogue carries no file sizes: the download button hint does not say “about X”, and sizes appear in the details only after download. Whether “Cancel download” is offered on selection is decided by the text (CJK fonts are several MB per weight, Latin fonts are one or two hundred KB).
  * - The fallback font is the render kernel's fallback family (`fonts.usage`'s `fallback`, the Source Han Sans bundled with the kernel), not illustrated by category.
  * - Samples draw only the family name (`fonts.sample` carries only the characters in the family name), and do not fill in characters like “永和九年” from the body text.
  */
@@ -168,7 +168,7 @@ export const FONT_SCRIPTS: readonly { key: FontScript; label: string }[] = (
  */
 export const KERNEL_FALLBACK = 'Noto Sans SC';
 
-/** “系统字体” (System font): the value used when text has no font set (the render kernel uses its default font); not in the font catalogue. */
+/** “System font”: the value used when text has no font set (the render kernel uses its default font); not in the font catalogue. */
 export const SYSTEM_FONT = 'system';
 
 /** Privacy note (details page, original prototype text). */
@@ -194,7 +194,7 @@ export interface FontRow extends FontFamilyStatus {
   waiting: boolean;
 }
 
-/** What a downloading row reads right now: rows queued behind the limit read “等待中” (Waiting); started rows read the progress, and when no bytes have arrived yet and the total size is unknown they read “下载中” (Downloading). */
+/** What a downloading row reads right now: rows queued behind the limit read “Waiting”; started rows read the progress, and when no bytes have arrived yet and the total size is unknown they read “Downloading”. */
 export function downloadingLabel(f: Pick<FontRow, 'progress' | 'waiting'>): string {
   if (f.waiting) return M.waiting;
   return progressText(f.progress) || FONT_STATE_LABEL.downloading;
@@ -212,7 +212,7 @@ export function fmtBytes(n: number): string {
 export function progressText(p: FontProgress | null): string {
   if (!p) return '';
   if (p.total) return `${Math.min(100, Math.floor((p.done / p.total) * 100))}%`;
-  // No bytes received and total size unknown: do not read “0 B” (the row end and the font bar read “下载中” (Downloading), see downloadingLabel).
+  // No bytes received and total size unknown: do not read “0 B” (the row end and the font bar read “Downloading”, see downloadingLabel).
   return p.done > 0 ? fmtBytes(p.done) : '';
 }
 
@@ -234,7 +234,7 @@ export function liveFontJobs(jobs: readonly JobRecord[]): Map<string, JobRecord>
  * Overlays the running tasks: a running task means downloading (progress uses the task's byte progress, which is newer than the list snapshot); when the Runtime says it is downloading (a download inside an export task,
  * not a `fontDownload` task), the byte count from the state is used.
  *
- * “等待中” (Waiting) is only given to tasks truly queued behind the concurrent-download limit (the Runtime downloads two at a time, and queued task records carry `wait`). A task just submitted that starts right away
+ * “Waiting” is only given to tasks truly queued behind the concurrent-download limit (the Runtime downloads two at a time, and queued task records carry `wait`). A task just submitted that starts right away
  * first emits a `queued` without `wait`, then `running`: that moment reads as downloading and does not flash “等待中”.
  */
 export function liveRow(status: FontFamilyStatus, job: JobRecord | undefined): FontRow {
@@ -296,8 +296,8 @@ export interface FontSection<T> {
 }
 
 /**
- * Sections of the font picker: “这个视频里用到” (Used in this video), “最近用过” (Recently used), then all fonts (different ways of taking the same table, not de-duplicated). When there is a search term or filter, these merge into one
- * “搜索结果” (Search results) section. The prototype's “品牌字体” (Brand fonts) section is absent: brand library fonts cannot yet be picked in the font picker (library-brand.ts).
+ * Sections of the font picker: “Used in this video”, “Recently used”, then all fonts (different ways of taking the same table, not de-duplicated). When there is a search term or filter, these merge into one
+ * “Search results” section. The prototype's “Brand fonts” section is absent: brand library fonts cannot yet be picked in the font picker (library-brand.ts).
  */
 export function fontSections<T extends FontFamilyStatus>(
   rows: readonly T[],
@@ -317,7 +317,7 @@ export function fontSections<T extends FontFamilyStatus>(
   return out;
 }
 
-/** The N in the list header “全部字体 · 可下载 N 个” (All fonts · N downloadable): families in the font catalogue (catalogue fonts bundled with the kernel or already installed on this machine also count). */
+/** The N in the list header “All fonts · N downloadable”: families in the font catalogue (catalogue fonts bundled with the kernel or already installed on this machine also count). */
 export const catalogueCount = (rows: readonly FontFamilyStatus[]) => rows.filter((f) => f.category !== null).length;
 
 export type RowEnd =
@@ -354,7 +354,7 @@ export function rowEnd(f: FontRow): RowEnd {
 export const isLargeFont = (f: Pick<FontFamilyStatus, 'scripts'>) => f.scripts.some((s) => s === 'chinese' || s === 'japanese' || s === 'korean');
 
 /**
- * Hint shown when selecting a family that has not been downloaded yet: it takes effect immediately, showing the fallback font first, then switches automatically once the download finishes. Large (CJK) families get “取消下载” (Cancel download),
+ * Hint shown when selecting a family that has not been downloaded yet: it takes effect immediately, showing the fallback font first, then switches automatically once the download finishes. Large (CJK) families get “Cancel download”,
  * small ones arrive within a second or two, and the hint disappears by itself.
  */
 export function pickToast(f: Pick<FontFamilyStatus, 'family' | 'scripts'>, fallback = KERNEL_FALLBACK): { text: string; cancellable: boolean } {
@@ -459,9 +459,9 @@ export function clearConfirmBody(rows: readonly DownloadedRow[], totalBytes: num
 export interface FontBatch {
   videoId: string;
   families: string[];
-  /** Auto-download is on (the Runtime starts this batch) or off (waits for the user to click “下载” (Download)). */
+  /** Auto-download is on (the Runtime starts this batch) or off (waits for the user to click “Download”). */
   mode: 'auto' | 'off';
-  /** Families the user skipped with “跳过这个” (Skip this) (cancellation is recorded as `CANCELLED`, and the bar reads “已跳过” (Skipped)). */
+  /** Families the user skipped with “Skip this” (cancellation is recorded as `CANCELLED`, and the bar reads “Skipped”). */
   skipped: string[];
   dismissed: boolean;
 }
@@ -505,10 +505,10 @@ function reasonOf(outcome: Outcome, f: FontRow | undefined): string {
 
 /**
  * What the font bar shows (null shows nothing). The Runtime downloads in parallel (two at a time), but the bar reads them one by one as in the prototype: which one of how many, which one is downloading now and its progress.
- * - In progress: “正在下载这个视频用到的字体 · 1/3 · 族名 42%” (Downloading the fonts used in this video · 1/3 · family name 42%); the current one can be skipped or all can be cancelled;
- * - All arrived: a single “已就绪” (Ready) line that collapses by itself after 3 seconds;
- * - Some not obtained: “2 个字体没取到，正在用回退字体显示” (2 fonts not obtained, showing with the fallback font); expanding shows family → fallback font · reason, and each can be retried;
- * - Auto-download off: “这个视频用到 2 个没下载的字体，正在用回退字体显示” (This video uses 2 fonts not yet downloaded, showing with the fallback font); they can be downloaded at once, or the user can go to Settings.
+ * - In progress: “Downloading the fonts used in this video · 1/3 · family name 42%”; the current one can be skipped or all can be cancelled;
+ * - All arrived: a single “Ready” line that collapses by itself after 3 seconds;
+ * - Some not obtained: “2 fonts not obtained, showing with the fallback font”; expanding shows family → fallback font · reason, and each can be retried;
+ * - Auto-download off: “This video uses 2 fonts not yet downloaded, showing with the fallback font”; they can be downloaded at once, or the user can go to Settings.
  */
 export function fontBar(batch: FontBatch | null, byName: ReadonlyMap<string, FontRow>, fallbackOf: (family: string) => string): FontBar | null {
   if (!batch || batch.dismissed || batch.families.length === 0) return null;
@@ -627,7 +627,7 @@ export function exportOtherWarnings(warnings: readonly JobWarning[]): JobWarning
   });
 }
 
-/** While downloading fonts in the export preparation phase: “下载字体 · Ma Shan Zheng 42%” (Downloading fonts · Ma Shan Zheng 42%) (the percentage is the byte progress of all fonts the export task is waiting for). */
+/** While downloading fonts in the export preparation phase: “Downloading fonts · Ma Shan Zheng 42%” (the percentage is the byte progress of all fonts the export task is waiting for). */
 export function exportFontPhase(job: Pick<JobRecord, 'phase' | 'progress' | 'state'>, downloading: readonly Pick<FontFamilyStatus, 'family'>[]): string | null {
   if (job.state !== 'running' || job.phase !== 'downloading') return null;
   const p = job.progress?.unit === 'bytes' ? job.progress : null;
@@ -644,7 +644,7 @@ export function pushRecent(recent: readonly string[], family: string, limit = 8)
 
 // ---- Full table of the font picker ----
 
-/** The name shown in the font picker: the family name itself, except for “系统字体” (System font). */
+/** The name shown in the font picker: the family name itself, except for “System font”. */
 export const fontLabel = (family: string) => (family === SYSTEM_FONT ? M.systemFont : family);
 
 function placeholderStatus(family: string, state: FontFamilyState): FontFamilyStatus {
@@ -666,8 +666,8 @@ function placeholderStatus(family: string, state: FontFamilyState): FontFamilySt
 }
 
 /**
- * The full table of the font picker: in the order the Runtime gives, with “系统字体” (System font) first (the text's original default, kept as an option); when the current value is not in the table (it is in neither the font catalogue nor on this machine),
- * it is appended as the last row, marked “没有这个字体” (Font not available), so the current value stays visible in the font picker.
+ * The full table of the font picker: in the order the Runtime gives, with “System font” first (the text's original default, kept as an option); when the current value is not in the table (it is in neither the font catalogue nor on this machine),
+ * it is appended as the last row, marked “Font not available”, so the current value stays visible in the font picker.
  */
 export function pickerRows(statuses: Readonly<Record<string, FontFamilyStatus>>, order: readonly string[], current: string): FontFamilyStatus[] {
   const rows: FontFamilyStatus[] = [placeholderStatus(SYSTEM_FONT, 'built-in')];

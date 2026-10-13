@@ -21,7 +21,7 @@ pub struct TextNormalizer;
 const PIECE_PLACEHOLDER: char = '\u{E002}';
 
 impl TextNormalizer {
-    /// Pinyin pieces produced by zhuyin rendering (`XING2`, wrapped by `PIECE_OPEN`…`PIECE_CLOSE`) are first swapped for placeholder characters and, after normalization, restored as pieces with spaces on both sides (same as upstream `_protect_pinyin`). This keeps the tone digit from being read as “二” (two), and keeps the piece from fusing with adjacent Latin letters into one word. Only pieces wrapped by this sentinel pair are protected; `A4` and `AI2.0` in the body text are still normalized as before.
+    /// Pinyin pieces produced by zhuyin rendering (`XING2`, wrapped by `PIECE_OPEN`…`PIECE_CLOSE`) are first swapped for placeholder characters and, after normalization, restored as pieces with spaces on both sides (same as upstream `_protect_pinyin`). This keeps the tone digit from being read as “two”, and keeps the piece from fusing with adjacent Latin letters into one word. Only pieces wrapped by this sentinel pair are protected; `A4` and `AI2.0` in the body text are still normalized as before.
     pub fn normalize(text: &str) -> String {
         if !text.contains(PIECE_OPEN) && !text.contains(PIECE_CLOSE) {
             return Self::normalize_plain(text);
@@ -135,7 +135,7 @@ fn zh_digits(digits: &str) -> String {
         .collect()
 }
 
-/// Standard cardinal reading with 万 / 亿 sections; a run of zero sections is read as a single “零” (zero).
+/// Standard cardinal reading with 万 / 亿 sections; a run of zero sections is read as a single “zero”.
 fn zh_cardinal(digit_string: &str) -> String {
     let all: Vec<usize> = digit_string.chars().filter_map(|c| c.to_digit(10).map(|d| d as usize)).collect();
     let first = all.iter().position(|d| *d != 0);

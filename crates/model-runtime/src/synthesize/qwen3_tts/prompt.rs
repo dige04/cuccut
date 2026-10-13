@@ -324,7 +324,7 @@ mod tests {
     #[test]
     fn token_caps() {
         assert_eq!(max_token_cap(5, 4096), 125);
-        // "工具是它的双手，能搜索、点击、下单；" ("Tools are its hands: it can search, click and place orders;"), about 12 tokens: the old 75-frame cap cut it off at 6 s.
+        // “Tools are its hands: it can search, click and place orders;”, about 12 tokens: the old 75-frame cap cut it off at 6 s.
         assert_eq!(max_token_cap(12, 4096), 125);
         assert_eq!(max_token_cap(100, 4096), 800);
         assert_eq!(max_token_cap(1000, 500), 500);

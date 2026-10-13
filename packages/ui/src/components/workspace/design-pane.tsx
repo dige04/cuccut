@@ -15,7 +15,7 @@ const ERROR_TEXT: Record<DesignAnnotationError, () => string> = {
   'too-many': () => DESIGN.tooMany(DESIGN_ANNOTATION_LIMITS.perMessage),
 };
 
-/** The items for the design tab: `design.open`, “N 个画板” (N artboards), the design annotation draft, and export (docs/design/canvas §8). */
+/** The items for the design tab: `design.open`, “N artboards”, the design annotation draft, and export (docs/design/canvas §8). */
 const DESIGN_PANE: EditorPaneKind = {
   kind: 'design',
   icon: <Shapes styles={headIcon} />,

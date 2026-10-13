@@ -25,7 +25,7 @@ const en = {
   catTitle: 'Title',
   catLower: 'Lower third',
   catOther: 'Other',
-  /** Placeholder text created by “添加文本框” (“Add text box”). */
+  /** Placeholder text created by “Add text box”. */
   blankText: 'Type your text',
 };
 export type TextPresetsMessages = typeof en;
@@ -66,7 +66,7 @@ export const TEXT_CATEGORIES = [
 ] as const;
 export type TextCategory = (typeof TEXT_CATEGORIES)[number]['key'];
 
-/** In the “全部” (“All”) tier, each section shows only its first few cells; more go to “查看全部” (“View all”). */
+/** In the “All” tier, each section shows only its first few cells; more go to “View all”. */
 export const PEEK = 6;
 
 export function presetsOf(category: Exclude<TextCategory, 'all'>): TextPreset[] {
@@ -79,7 +79,7 @@ export function presetsOf(category: Exclude<TextCategory, 'all'>): TextPreset[] 
  */
 export type MeasureText = (text: string, style: Record<string, unknown>, wrapWidth: number | null) => { width: number; height: number };
 
-/** “添加文本框” (“Add text box”): white-on-black title style (legacy `TEXT_TITLE`), 10 seconds at the playhead, placed slightly above the frame's vertical center. */
+/** “Add text box”: white-on-black title style (legacy `TEXT_TITLE`), 10 seconds at the playhead, placed slightly above the frame's vertical center. */
 export const BLANK_TEXT_SECONDS = 10;
 export const BLANK_TEXT = {
   get text() {
@@ -136,7 +136,7 @@ export function preferredLayer(preset: TextPreset): number {
   );
 }
 
-/** The layer created by “添加文本框” (“Add text box”). */
+/** The layer created by “Add text box”. */
 export function blankTextLayer(canvas: { width: number; height: number }, measure: MeasureText): VisualLayer {
   const size = measure(BLANK_TEXT.text, BLANK_TEXT.style, null);
   const place = placeBox({ x: 50, y: 40, w: (size.width / canvas.width) * 100 });

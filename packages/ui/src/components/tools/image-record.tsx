@@ -56,7 +56,7 @@ const errorTitle = style({ margin: 0, font: 'ui-sm', fontWeight: 'bold', color: 
 const progress = style({ width: 'full' });
 const caption = style({ display: 'flex', flexDirection: 'column', minWidth: 0 });
 
-/** “再试一次” (Try again): an interrupted run is re-run in place, and the rest is resubmitted with the frozen parameters unchanged (see `useRecordRetry`); a run from the editor carries back its `videoId` and is still filed under that video. */
+/** “Try again”: an interrupted run is re-run in place, and the rest is resubmitted with the frozen parameters unchanged (see `useRecordRetry`); a run from the editor carries back its `videoId` and is still filed under that video. */
 function useImageRetry(job: JobRecord, videoId?: Id) {
   const runtime = useRuntime();
   return useRecordRetry(

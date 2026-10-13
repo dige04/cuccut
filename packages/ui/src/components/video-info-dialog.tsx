@@ -23,11 +23,11 @@ import { entryPath } from '../model/space.ts';
 import { copyText, elideMiddle, entryFacts, HERO_NAME_MAX, heroLine, sections, type InfoRow, type VideoInfoFacts } from '../model/video-info.ts';
 
 /**
- * The video details dialog (design mockup project-info.jsx): a hero, read-only section rows, editable items, and a footer with “复制全部” (copy all) and “完成” (done). Row assembly is in model/video-info.ts; this file only draws and commits the name. The ⓘ in the editor top bar (editor/video-info.tsx) and Space's “视频详情…” (video details…) share it.
+ * The video details dialog (design mockup project-info.jsx): a hero, read-only section rows, editable items, and a footer with “copy all” and “done”. Row assembly is in model/video-info.ts; this file only draws and commits the name. The ⓘ in the editor top bar (editor/video-info.tsx) and Space's “video details…” share it.
  *
- * Only the name can be changed (the editor path, `renameVideo`): it is committed once on blur, Enter, or “完成” (done), not on every keystroke; an empty or unchanged name is restored. Closing with Esc discards an uncommitted draft. Description and notes have nowhere to be stored, so they are greyed out with the reason.
- * The “位置” (location) and “源文件” (source file) rows have “在文件夹中显示” (show in folder) at the end (the row's `reveal`), which hands off to the host's file manager; the Web host cannot do this, so it is not drawn. The original description scrolls within a height limit.
- * “重新关联媒体” (relink media) is not included here: that belongs to the case where media is missing.
+ * Only the name can be changed (the editor path, `renameVideo`): it is committed once on blur, Enter, or “done”, not on every keystroke; an empty or unchanged name is restored. Closing with Esc discards an uncommitted draft. Description and notes have nowhere to be stored, so they are greyed out with the reason.
+ * The “location” and “source file” rows have “show in folder” at the end (the row's `reveal`), which hands off to the host's file manager; the Web host cannot do this, so it is not drawn. The original description scrolls within a height limit.
+ * “relink media” is not included here: that belongs to the case where media is missing.
  */
 export const VIDEO_INFO_COPY = live(() => S.videoInfo);
 const C = VIDEO_INFO_COPY;
@@ -202,7 +202,7 @@ export function VideoInfoDialog({ facts, extras = [], onRename, renameNote = nul
   );
 }
 
-/** The Space path: only entry records; rows without them are omitted. The name is not changed here (Space's “重命名” (rename) changes the display name). */
+/** The Space path: only entry records; rows without them are omitted. The name is not changed here (Space's “rename” changes the display name). */
 export function SpaceVideoInfo({ entry, dirs, onClose }: { entry: SpaceEntry; dirs: Parameters<typeof entryPath>[1]; onClose(): void }) {
   return <VideoInfoDialog facts={entryFacts(entry, entry.name, entryPath(entry, dirs))} renameNote={C.renameInEditor} onClose={onClose} />;
 }

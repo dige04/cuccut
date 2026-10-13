@@ -113,7 +113,7 @@ const spacer = style({ flexGrow: 1 });
 const skippedList = style({ margin: 0, paddingStart: 16, maxHeight: 96, overflowY: 'auto', font: 'ui-sm', color: 'gray-700' });
 const skippedPath = style({ color: 'gray-600', overflowWrap: 'anywhere' });
 
-// Right column: the content scrolls on its own; the “使用” (Use) button stays fixed at the bottom of the column.
+// Right column: the content scrolls on its own; the “Use” button stays fixed at the bottom of the column.
 const fixed = style({ flexShrink: 0 });
 const controls = style({ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 });
 const track = style({ flexGrow: 1, height: 4, borderRadius: 'full', backgroundColor: 'gray-200', overflow: 'hidden' });
@@ -145,7 +145,7 @@ const prompt = style({
   lineHeight: '[1.6]',
   whiteSpace: 'pre-wrap',
 });
-// “需要你补充” (Needs your input): a placeholder marker plus one sentence of explanation (spec §5.5).
+// “Needs your input”: a placeholder marker plus one sentence of explanation (spec §5.5).
 const fieldList = style({ display: 'flex', flexDirection: 'column', gap: '[6px]', margin: 0, padding: 0, listStyleType: 'none' });
 const fieldItem = style({ display: 'flex', alignItems: 'baseline', gap: 8, font: 'ui-sm', lineHeight: '[1.5]' });
 const fieldHint = style({ minWidth: 0, color: 'gray-700' });
@@ -178,7 +178,7 @@ const asset = style({
 });
 const actions = style({ display: 'flex', justifyContent: 'end', flexShrink: 0 });
 
-/** Preview “播放” (Play): switches to the next scene every so often; turning it off stays on the current scene. */
+/** Preview “Play”: switches to the next scene every so often; turning it off stays on the current scene. */
 function useSlides(on: boolean): number {
   const [index, setIndex] = useState(0);
   useEffect(() => {
@@ -189,7 +189,7 @@ function useSlides(on: boolean): number {
   return index;
 }
 
-/** A card in the left column: click it and the right column switches to its preview and prompt. Work examples show “示例” (Example) next to the title. */
+/** A card in the left column: click it and the right column switches to its preview and prompt. Work examples show “Example” next to the title. */
 function Card({ template, current, picked, onOpen }: { template: HomeTemplate; current: boolean; picked: boolean; onOpen(): void }) {
   return (
     <button
@@ -311,8 +311,8 @@ function PromptBody({ template }: { template: HomeTemplate }) {
 
 /**
  * Right column: the template being viewed. The preview plays automatically, and below it are the description, aspect ratio and duration, the prompt, the assets, and Use.
- * Scene templates add a note “先确认简报” (confirm the brief first), plus “需要你补充” (Needs your input) and “可以这样说” (you can say this). For work examples, the button puts the prompt into the input box.
- * When the manifest sets `skills`, an extra line “做法：…” (approach: …) is shown. Once the skill has been loaded, its display name is shown; otherwise its identifier is shown.
+ * Scene templates add a note “confirm the brief first”, plus “Needs your input” and “you can say this”. For work examples, the button puts the prompt into the input box.
+ * When the manifest sets `skills`, an extra line “approach: …” is shown. Once the skill has been loaded, its display name is shown; otherwise its identifier is shown.
  */
 function Detail({ template, picked, onUse }: { template: HomeTemplate; picked: boolean; onUse(template: HomeTemplate): void }) {
   const example = isExample(template);
@@ -525,7 +525,7 @@ function Library({ picked, onUse }: { picked: string | null; onUse(template: Hom
 }
 
 /**
- * The “全部模板” (All templates) dialog (product design §3.2.1; prototype home-templates.jsx `HomeTemplateLibrary`).
+ * The “All templates” dialog (product design §3.2.1; prototype home-templates.jsx `HomeTemplateLibrary`).
  * Closing and reopening starts again from the first page (the Library's state is unmounted along with its content).
  */
 export function TemplateLibrary({

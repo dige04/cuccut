@@ -56,7 +56,7 @@ export function baseName(path: string): string {
   return parts[parts.length - 1] || path;
 }
 
-/** Local speech recognition models: model packs under the `local` provider. Unavailable ones (not installed properly, or disabled) are listed too, marked 「未安装」 (not installed). */
+/** Local speech recognition models: model packs under the `local` provider. Unavailable ones (not installed properly, or disabled) are listed too, marked “not installed”. */
 function localOptions(view: ModelCapabilitiesView): TranscribeOption[] {
   return view.transcribe.providers
     .filter((p) => p.kind === 'local' || p.providerId === LOCAL_PROVIDER)
@@ -82,12 +82,12 @@ function localOptions(view: ModelCapabilitiesView): TranscribeOption[] {
     );
 }
 
-/** Models for this transcription method: for local, the model packs on this machine; for cloud, every model from the online provider (ones not connected are listed too, marked 「未连接」 (not connected)). */
+/** Models for this transcription method: for local, the model packs on this machine; for cloud, every model from the online provider (ones not connected are listed too, marked “not connected”). */
 export function transcribeOptions(view: ModelCapabilitiesView, mode: TranscribeMode): TranscribeOption[] {
   return mode === 'local' ? localOptions(view) : cloudModelOptions(view, 'transcribe', true);
 }
 
-/** An item in the picker: cloud items carry the provider name; unusable items carry 「未连接 / 未安装」 (not connected / not installed) (wording as in the design mockup). */
+/** An item in the picker: cloud items carry the provider name; unusable items carry “not connected / not installed” (wording as in the design mockup). */
 export function transcribeOptionLabel(option: TranscribeOption, mode: TranscribeMode): string {
   const name = mode === 'cloud' ? `${option.provider} · ${option.label}` : option.label;
   if (option.usable) return name;

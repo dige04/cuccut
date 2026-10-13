@@ -84,7 +84,7 @@ export function StartPage({ projectId: routeProjectId, layout = 'column', quietS
   const remembered = lastProject && pickable.some((p) => p.id === lastProject) ? lastProject : null;
   const projectId = routeProjectId ?? videoProjectId ?? remembered;
   const project = useProject(projectId);
-  // The target language last filled in for “转录并翻译” (Transcribe and translate): quick start reuses it; when there is none, that sentence waits for the field to be filled.
+  // The target language last filled in for “Transcribe and translate”: quick start reuses it; when there is none, that sentence waits for the field to be filled.
   const lastTarget = useHomeMemory((s) => s.target);
   const go = useShell((s) => s.go);
   const draftKey = startDraftKey(routeProjectId);
@@ -96,7 +96,7 @@ export function StartPage({ projectId: routeProjectId, layout = 'column', quietS
   const choice = useShell((s) => s.draftAgents[draftKey]);
   const drivers = useConnection((s) => s.drivers);
   const checking = useConnection((s) => s.checking);
-  // If the Agent picked on the draft is still being detected for the first time, show “正在检测” (Detecting) and do not fall back to the default one (sending still uses the draft's choice).
+  // If the Agent picked on the draft is still being detected for the first time, show “Detecting” and do not fall back to the default one (sending still uses the draft's choice).
   const driver =
     choice?.driverId && checking.includes(choice.driverId)
       ? null
@@ -113,11 +113,11 @@ export function StartPage({ projectId: routeProjectId, layout = 'column', quietS
   const catalog = useTemplateCatalogLoader();
   const template = templateOf(catalog.templates, brief.template);
   const shelf = useHomeTemplates((s) => s.recent);
-  // Skills picked via “+ › 使用 Skill” (+ › Use Skill): markers and templates share one line (the list is taken from the input box).
+  // Skills picked via “+ › Use Skill”: markers and templates share one line (the list is taken from the input box).
   const skillIds = useDraftSkillIds(draftKey);
   const skillCatalog = useSkills((s) => s.skills);
   const pickedSkills = skillIds.map((id) => ({ id, name: skillCatalog.find((k) => k.id === id)?.name ?? id }));
-  // “+ › 最近的视频” (+ › Recent videos): among the videos that can still be picked, those with the most recent activity.
+  // “+ › Recent videos”: among the videos that can still be picked, those with the most recent activity.
   const spaceEntries = useSpace((s) => s.entries);
   const recent = recentVideos(
     spaceEntries,
@@ -231,7 +231,7 @@ export function StartPage({ projectId: routeProjectId, layout = 'column', quietS
     if (route.tab === 'home') shell.carryWorkspace(workspaceKey(route.conversationId, route.projectId), workspaceKey(null, id));
   };
 
-  // The project picked in the tray (null = no project) is remembered, so the next visit to the start page still uses it; when arriving with a project from elsewhere (e.g. the sidebar's “在这里新建会话” (Create session here)), it is not remembered.
+  // The project picked in the tray (null = no project) is remembered, so the next visit to the start page still uses it; when arriving with a project from elsewhere (e.g. the sidebar's “Create session here”), it is not remembered.
   const switchProject = (id: Id | null) => {
     useHomeMemory.getState().setProject(id);
     if (id === routeProjectId) return;
@@ -241,7 +241,7 @@ export function StartPage({ projectId: routeProjectId, layout = 'column', quietS
     go({ tab: 'home', conversationId: null, projectId: id, ...(pane ? { pane } : {}) });
   };
 
-  // “+ › 最近的视频” (+ › Recent videos; prototype page-new.jsx `pickRecent`): the start page switches to that video's project and opens it in the feature area, so the session is created in that project,
+  // “+ › Recent videos; prototype page-new.jsx `pickRecent`”: the start page switches to that video's project and opens it in the feature area, so the session is created in that project,
   // and a reference tag for this video appears above the input box so the agent can read and write it. This applies only to a single video: an already-attached video or audio material gives way, and one undo is offered.
   const pickRecent = (entryId: string) => {
     const entry = useSpace.getState().entries.find((e) => e.id === entryId);
@@ -281,7 +281,7 @@ export function StartPage({ projectId: routeProjectId, layout = 'column', quietS
     skills: SkillSendRef[],
     from: { materials: readonly string[]; scene?: TemplateSendRef; composer: boolean },
   ): Promise<boolean> => {
-    // The target language filled in for “转录并翻译” (Transcribe and translate) is remembered, so the next time this quick start is clicked it is reused directly (if the sentence is not recognized, nothing is remembered).
+    // The target language filled in for “Transcribe and translate” is remembered, so the next time this quick start is clicked it is reused directly (if the sentence is not recognized, nothing is remembered).
     const target = from.composer ? starterTarget(raw) : null;
     if (target) useHomeMemory.getState().setTarget(target);
     const text = homeBrief(raw, { images: attachments.length, materials: [...from.materials] });
@@ -416,7 +416,7 @@ export function StartPage({ projectId: routeProjectId, layout = 'column', quietS
                   onSend={(raw, attachments, skills) => {
                     // Materials are written into this message when it is sent (the brief of prototype `AgentHero`); unfilled fields are written as “[label]” (spec §5.5, homeBrief). Attached scene templates and picked skills pass only their identifiers;
                     // the brief guidance, template body and SKILL.md are assembled for the agent by the Runtime (template pack spec §5.2, product design §6.9),
-                    // and the message in the session additionally carries the markers “模板：标题” (Template: title) and “Skill：名称” (Skill: name).
+                    // and the message in the session additionally carries the markers “Template: title” and “Skill: name”.
                     const scene = brief.template
                       ? { id: brief.template, ...(template ? { version: template.version, language: template.language } : {}) }
                       : undefined;

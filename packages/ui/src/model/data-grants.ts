@@ -62,7 +62,7 @@ export type DataGrantsMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * The “数据外发授权” (data export grants) in Settings → Privacy (architecture design §12.5): reads each grant in the `grants` topic and states who it went to, which data, what scope,
+ * The “data export grants” in Settings → Privacy (architecture design §12.5): reads each grant in the `grants` topic and states who it went to, which data, what scope,
  * the budget and usage; after revocation, the data and costs already handed over are stated as they are and cannot be erased. The design draft has no such section, so the styling follows the settings page's groups and rows.
  */
 
@@ -79,7 +79,7 @@ export function listedGrants(grants: readonly Grant[], includeEnded: boolean): G
     .sort((a, b) => Number(b.state === 'active') - Number(a.state === 'active') || Date.parse(b.createdAt) - Date.parse(a.createdAt));
 }
 
-/** Number of ended grants (expired, revoked, used up): the count next to “显示已结束的” (show ended). */
+/** Number of ended grants (expired, revoked, used up): the count next to “show ended”. */
 export function endedCount(grants: readonly Grant[]): number {
   return grants.filter((g) => g.state !== 'active').length;
 }
@@ -115,7 +115,7 @@ function day(iso: string): string {
 
 /**
  * Description line: scope, budget, count, usage, source and expiry, joined in that order with “·”.
- * `videoName` is the name of the video in the scope (null when it cannot be found in Space; then “一个视频” (a video) is written).
+ * `videoName` is the name of the video in the scope (null when it cannot be found in Space; then “a video” is written).
  */
 export function grantFacts(grant: Grant, videoName: string | null): string {
   const facts: string[] = [];
@@ -131,7 +131,7 @@ export function grantFacts(grant: Grant, videoName: string | null): string {
   return facts.join(' · ');
 }
 
-/** Usage: “已用 3 次（0.42 USD）” (used 3 times, 0.42 USD) or “还没用过” (not used yet); reserved amounts and amounts of unknown value are written the same way. */
+/** Usage: “used 3 times, 0.42 USD” or “not used yet”; reserved amounts and amounts of unknown value are written the same way. */
 export function usageLine(grant: Pick<Grant, 'usage' | 'budgetCap'>): string {
   const u = grant.usage;
   const currency = grant.budgetCap?.currency ?? '';

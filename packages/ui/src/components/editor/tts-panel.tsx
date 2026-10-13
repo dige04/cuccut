@@ -51,7 +51,7 @@ import { useMediaGen, useMediaGenStore, type AudioSubpage } from './media-gen-st
 import { PanelHead } from './panel-head.tsx';
 
 /*
- * Cloud sub-page of the Audio tab, “生成语音 / 克隆声音” (Generate speech / Clone voice) (design panel-tts.jsx `TtsPanel`, cloud part): one form with two entry points. “克隆声音” (Clone voice) first selects one of my voices that has been cloned with this provider. Synthesis goes through `models.synthesizeSpeech` with `videoId`: when it finishes, the Runtime files the result into this video's asset library. Placing it on the timeline is a separate step. The local engine, phonetic annotation, emotion, and “按句放到时间轴” (place per sentence on the timeline) have no contract in this version and are not drawn.
+ * Cloud sub-page of the Audio tab, “Generate speech / Clone voice” (design panel-tts.jsx `TtsPanel`, cloud part): one form with two entry points. “Clone voice” first selects one of my voices that has been cloned with this provider. Synthesis goes through `models.synthesizeSpeech` with `videoId`: when it finishes, the Runtime files the result into this video's asset library. Placing it on the timeline is a separate step. The local engine, phonetic annotation, emotion, and “place per sentence on the timeline” have no contract in this version and are not drawn.
  */
 
 const body = style({ flexGrow: 1, minHeight: 0, overflowY: 'auto', paddingX: 12, paddingTop: 4, paddingBottom: 16 });
@@ -116,7 +116,7 @@ export function TtsPanel({ videoId, page, sequence, assets }: { videoId: Id; pag
   const option = findOption(options, initialModelKey(options, draft.model, view?.synthesizeSpeech.effective ?? null));
   const setDraft = (next: Partial<TtsDraft>) => patchTts(videoId, next);
 
-  // Entering “克隆声音” (Clone voice) first selects one of my voices that has been cloned with this provider (chosen once, after my voices and models are read; after that, the user changes it).
+  // Entering “Clone voice” first selects one of my voices that has been cloned with this provider (chosen once, after my voices and models are read; after that, the user changes it).
   const picked = useRef(false);
   useEffect(() => {
     if (!clone || picked.current || !myVoices || !view) return;
@@ -382,7 +382,7 @@ function RunView({ title, job, all, view }: { title: string; job: JobRecord | nu
   );
 }
 
-/** Done (design `aplbar` + asset card + playback bar): already filed into the asset library; “加到时间线” (Add to timeline) sits at the playhead. */
+/** Done (design `aplbar` + asset card + playback bar): already filed into the asset library; “Add to timeline” sits at the playhead. */
 function DoneView({
   job,
   view,

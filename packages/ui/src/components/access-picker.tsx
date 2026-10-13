@@ -11,7 +11,7 @@ import { style } from '@react-spectrum/s2/style' with { type: 'macro' };
 import { S } from './shell-copy.ts';
 import { ACCESS_MODE_HINT, ACCESS_MODE_LABEL } from '../copy.ts';
 
-/** Icons for the four levels (prototype data.js `agent.modes`: lock / edit / sparkle / unlock); the prototype did not draw “先给方案” (plan first), so it uses visibility. */
+/** Icons for the four levels (prototype data.js `agent.modes`: lock / edit / sparkle / unlock); the prototype did not draw “plan first”, so it uses visibility. */
 export const MODE_ICON: Record<AgentMode, ComponentType> = {
   plan: Visibility,
   ask: Lock,
@@ -29,7 +29,7 @@ const label = style({ display: 'inline-flex', alignItems: 'center', gap: 8, whit
  * Access modes (architecture design §3.12, prototype agent-thread.jsx `AccessPicker`): all four levels are always selectable, and switching levels shows no confirmation dialog.
  * When collapsed it shows the icon plus the level name; when the input area is narrow (`compact`, product design §3.2.3) only the icon and arrow remain, and the level name stays in the accessibility label and tooltip.
  * Each menu row is an icon, the level name and one sentence of description, with a check on the current level.
- * “先给方案” (plan first) is listed only while it is the current level, and does not appear once you switch away (the prototype has only four levels).
+ * “plan first” is listed only while it is the current level, and does not appear once you switch away (the prototype has only four levels).
  */
 export function AccessPicker({ value, compact, onChange }: { value: AgentMode; compact?: boolean; onChange(mode: AgentMode): void }) {
   const Icon = MODE_ICON[value];

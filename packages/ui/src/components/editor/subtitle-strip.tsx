@@ -142,7 +142,7 @@ const ghost = style({
   outlineWidth: 2,
   '--iconPrimary': { type: 'fill', value: 'currentColor' },
 });
-/** “倒转 ⇅” (swap; prototype .stlink). */
+/** “swap; prototype .stlink”. */
 const link = style({
   flexShrink: 0,
   padding: 0,
@@ -193,7 +193,7 @@ function SoftDisabled({ className, tip, children }: { className: string; tip: st
 
 /**
  * The block at the top of the subtitle tab's main page (prototype panel-substrip.jsx `SubStyleEntry` + `SubTrackStrip`; for the rules on removing / putting back, see subtrack.jsx):
- * the style entry card and the track strip for “画面上” (on the picture). The track strip is the only “编辑哪一份字幕” (which subtitle to edit) picker on this page.
+ * the style entry card and the track strip for “on the picture”. The track strip is the only “which subtitle to edit” picker on this page.
  */
 export function SubtitleStrip({
   sequence,
@@ -211,11 +211,11 @@ export function SubtitleStrip({
   /** The current edit target (the chip's key). */
   selected: string | null;
   onSelect(key: string): void;
-  /** “＋ 翻译成…” (add translation): pushes the translation settings page; when not provided, the button is still visible but does nothing when pressed. */
+  /** “add translation”: pushes the translation settings page; when not provided, the button is still visible but does nothing when pressed. */
   onTranslate?: () => void;
   /** The language being translated: language name, percentage (null when the Runtime reports no total), and the step in progress. */
   running?: { label: string; percent: number | null; step: string } | null;
-  /** The strip under the gallery page header: only the track strip, without the entry card or “更换样式” (change style). */
+  /** The strip under the gallery page header: only the track strip, without the entry card or “change style”. */
   noCard?: boolean;
 }) {
   const { apply, undo } = useEditorActions();

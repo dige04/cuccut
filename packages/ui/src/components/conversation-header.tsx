@@ -229,7 +229,7 @@ function VideoSubmenu({ conversation }: { conversation: Conversation }) {
   );
 }
 
-/** Play a video file or audio from the source directory in the feature area (product design §3.3 「用户手动打开」 (opened manually by the user)): opens as a file tab. */
+/** Play a video file or audio from the source directory in the feature area (product design §3.3 “opened manually by the user”): opens as a file tab. */
 function MediaSubmenu({ conversation }: { conversation: Conversation }) {
   const ready = useSpace((s) => s.ready);
   const play = usePlayInPane();

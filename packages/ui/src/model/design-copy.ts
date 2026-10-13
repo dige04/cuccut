@@ -22,7 +22,7 @@ const list = (labels: readonly string[]) => new Intl.ListFormat(intlLocale('en')
  * Key names align with the `SLIDES` of slides (the editor tab `EditorPane` shares one set).
  */
 const en = {
-  /** Artboard count: the “时长或尺寸” (duration or size) column in the tab header, thread card and Space. */
+  /** Artboard count: the “duration or size” column in the tab header, thread card and Space. */
   boards: (n: number) => (n === 1 ? '1 artboard' : `${n} artboards`),
   paneLabel: (name: string) => `Design “${name}”`,
   /** Screen-reader name of the editor iframe. */

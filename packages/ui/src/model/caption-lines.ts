@@ -1,7 +1,7 @@
 import { STUDIO_STYLE, asObject, isObject, mergedLineStyle, num, type Json, type LineKind } from '../render/text-style.ts';
 
 /**
- * The 「原文 | 译文」 (Original | Translation) split in the caption properties page (prototype panel-subprops.jsx per-track properties, model-substyle.js ratio chain): original and translation share one Studio caption style
+ * The “Original | Translation” split in the caption properties page (prototype panel-subprops.jsx per-track properties, model-substyle.js ratio chain): original and translation share one Studio caption style
  * (the preview stacks the two lines as a group according to the style document), and their differences are written in the `origStyle` / `transStyle` overrides. The rendering kernel
  * (`merged_line_style` in `crates/subtitle-render`) and `mergedLineStyle` in render/text-style.ts, which measures the box here, both layer the overrides over the root style,
  * and a null in an override counts as unset.
@@ -55,7 +55,7 @@ export function lineView(root: Json, kind: LineKind, compact: boolean): Json {
 }
 
 /**
- * The root object that results after a 「文字样式」 (Text style) edit (a root-object patch given by `TextStyleEditor`) is applied to the style.
+ * The root object that results after a “Text style” edit (a root-object patch given by `TextStyleEditor`) is applied to the style.
  * - `own` (when the original or translation is selected in bilingual mode): written into that line's overrides. If no font size was set separately, it falls back along the ratio chain: changing the original's root size (÷ bilingual compression; the translation scales with it),
  *   and changing `transScale` for the translation.
  * - Not `own` (this style governs only one kind of line): written to the root style, and the same-named keys are removed from that line's overrides (otherwise the change would be invisible); the font size is likewise converted back to the root size.

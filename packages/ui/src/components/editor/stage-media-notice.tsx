@@ -38,7 +38,7 @@ const action = style({ marginTop: 4, pointerEvents: 'auto' });
 
 /**
  * The persistent card in the middle of the picture when main media cannot be played (design draft stage.jsx `StageMediaNotice`). It does not go away during playback: captions and elements are still drawn around it.
- * On desktop there is one extra “重新关联…”(relink…) (the design draft puts it in the ⋯ menu in Space; here it is moved onto the card, see model/stage-media.ts).
+ * On desktop there is one extra “relink…” (the design draft puts it in the ⋯ menu in Space; here it is moved onto the card, see model/stage-media.ts).
  */
 export function StageMediaNotice({ media, frame }: { media: StageMedia; frame: { left: number; top: number; width: number; height: number } }) {
   const n = media.notice;

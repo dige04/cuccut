@@ -7,7 +7,7 @@ import { SpacePicker } from './tool-video-picker.tsx';
 import { TRANSCODE_COPY } from './tools-copy.ts';
 
 /*
- * Space inputs for compress, merge and extract audio (architecture design §7.9, “Space 条目作输入” (Space entries as inputs)): list items are recorded as `space:<entryId>`; here they get names, and the “从 Space 添加…” (Add from Space…) picker is drawn: choosing one appends it to the end of the list.
+ * Space inputs for compress, merge and extract audio (architecture design §7.9, “Space entries as inputs”): list items are recorded as `space:<entryId>`; here they get names, and the “Add from Space…” picker is drawn: choosing one appends it to the end of the list.
  */
 
 export interface InputName {
@@ -15,7 +15,7 @@ export interface InputName {
   sub: string;
 }
 
-/** Name and second line of a list item: for local files, the file name and full path; for Space entries, the entry name and “Space · 种类” (Space · kind). */
+/** Name and second line of a list item: for local files, the file name and full path; for Space entries, the entry name and “Space · kind”. */
 export function useInputName(): (input: string) => InputName {
   const entries = useSpace((s) => s.entries);
   return (input) => {

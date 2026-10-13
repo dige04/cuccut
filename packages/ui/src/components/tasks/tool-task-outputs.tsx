@@ -12,7 +12,7 @@ import { ENTRY_TOOL_COPY } from '../tools/tools-copy.ts';
 import { goRerun } from '../tools/video-tool-parts.tsx';
 
 /*
- * Results of tool tasks in the background task details, and “重试 / 再做一次” (Retry / Run again) (product design §2.7 “进度与失败” (Progress and failure); design draft page-tasks-outputs.jsx): direct tasks and file-to-file flows list their outputs and save locations, with the same actions as the tool result page. When a direct task fails, the reason is written above “重试” (Retry), and “重试” returns to the tool page with its parameters already filled in (direct tasks have no way to retry in place).
+ * Results of tool tasks in the background task details, and “Retry / Run again” (product design §2.7 “Progress and failure”; design draft page-tasks-outputs.jsx): direct tasks and file-to-file flows list their outputs and save locations, with the same actions as the tool result page. When a direct task fails, the reason is written above “Retry”, and “重试” returns to the tool page with its parameters already filled in (direct tasks have no way to retry in place).
  */
 
 const box = style({ display: 'flex', flexDirection: 'column', gap: 8 });
@@ -21,7 +21,7 @@ const errorIcon = style({ display: 'flex', flexShrink: 0, marginTop: 2, color: '
 const hint = style({ font: 'ui-sm', color: 'gray-600' });
 const actions = style({ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 });
 
-/** “重试 / 再做一次” (Retry / Run again): on failure the reason is written above; configuration problems are sent elsewhere. */
+/** “Retry / Run again”: on failure the reason is written above; configuration problems are sent elsewhere. */
 export function ToolTaskRerun({ job, rerun, error, remedy }: { job: JobRecord; rerun: Rerun; error: string | null; remedy: Remedy | null }) {
   const go = useShell((s) => s.go);
   return (

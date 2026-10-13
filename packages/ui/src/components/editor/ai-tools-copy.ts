@@ -46,7 +46,7 @@ const en = {
   staleNone: 'Check at least one',
   staleOnly: (language: string) => `Only the ${language} translation`,
   retranscribeModel: 'The Agent picks a speech model from those installed on this computer; to choose one, say so in the instructions below.',
-  /** The sentence added to the message sent to the Agent when 「识别说话人」 (Identify speakers) is on under re-transcribe's 「更多选项」 (More options) and speaker diarization is meant to do it (design draft panel-aitools.jsx). */
+  /** The sentence added to the message sent to the Agent when “Identify speakers” is on under re-transcribe's “More options” and speaker diarization is meant to do it (design draft panel-aitools.jsx). */
   retranscribeSpeakers: 'Identify speakers after transcribing',
 
   // Writing and publishing
@@ -123,7 +123,7 @@ const en = {
   stateChapters: (count: number) => (count === 1 ? '1 chapter' : `${count} chapters`),
 
   // Calling a model directly (product design §5.10 「直接调模型」, prototype tool-prompt.jsx, model-ai-prompt.js `contextPack` / `contextLine` / `hint`)
-  /** The reason, for each tool that cannot call a model directly and can only be handed to the Agent, shown on the 「用」 (Use) row. */
+  /** The reason, for each tool that cannot call a model directly and can only be handed to the Agent, shown on the “Use” row. */
   whyRetranscribe: 'Needs a speech model, and the Runtime’s transcription adds a whole new transcript instead of replacing a range, so only the Agent can do it',
   whyCleanup: 'Finding cuts means weighing each spot in context, so only the Agent can do it',
   whyCover: 'A cover means generating and composing images, so only the Agent can do it',

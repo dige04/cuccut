@@ -24,7 +24,7 @@ export function useEntryTools(entry: SpaceEntry | null): EntryTools | null {
   if (!entry) return null;
   const toolId = job ? toolOfTask(job) : toolOfOrigin(entry.origin);
   const tool = toolId ? toolById(toolId) : null;
-  // Items in the trash that are still being generated do not get “再做一次” (do again); a failed placeholder gets “重试” (retry) based on its job.
+  // Items in the trash that are still being generated do not get “do again”; a failed placeholder gets “retry” based on its job.
   const rerun = job && !entry.user.trashedAt ? rerunOf(job) : null;
   return {
     tools: toolsForEntry(entry).map((t) => ({ id: t.id, name: t.name })),

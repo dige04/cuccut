@@ -255,7 +255,7 @@ export function SoundSection({ item, sequence, edit, canChange }: ItemPageProps<
 }
 
 /**
- * Time: start and end (type decimal seconds or “分:秒” (min:sec); they snap to the nearest frame at the edit frame rate, and a button beside each sets it to the playhead). Below are the duration, timecode, source in-point and track.
+ * Time: start and end (type decimal seconds or “min:sec”; they snap to the nearest frame at the edit frame rate, and a button beside each sets it to the playhead). Below are the duration, timecode, source in-point and track.
  */
 export function TimeSection({ item, sequence, assets, edit, canChange }: ItemPageProps) {
   const fps = sequence.fps;

@@ -91,7 +91,7 @@ export function TranslateTool() {
   const doc = sourceDocument(row, draft.documentId);
   const { languages, lang, has } = useTargets(row, doc, video, draft.lang);
   const text = useTextModel(draft.model);
-  // Results from subtitle files are written to the save location; “更改…” (change…) only changes it this once (no such line when writing into a video).
+  // Results from subtitle files are written to the save location; “change…” only changes it this once (no such line when writing into a video).
   const [saveOverride, setSaveOverride] = useState<string | null>(null);
   const model = text.option?.usable ? { provider: text.option.providerId, model: text.option.modelId } : {};
 

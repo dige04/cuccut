@@ -9,14 +9,14 @@ import { PAGE_COPY } from './tools-copy.ts';
 
 /*
  * Layout shared by the tool workbenches (design file tools.css `.ttsw*`): sections of the form on the left, and a sticky record column on the right that stacks vertically when narrow;
- * at the top of a subpage, “← 工具” (← Tools); on the right of the title, the status line, ⌘↵ and the primary button (the design puts these in a sticky nav bar, here they go in the page header).
+ * at the top of a subpage, “← Tools”; on the right of the title, the status line, ⌘↵ and the primary button (the design puts these in a sticky nav bar, here they go in the page header).
  */
 
 const back = style({ alignSelf: 'start' });
 const actions = style({ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12, minWidth: 0, flexShrink: 1 });
 const chipRow = style({ display: 'flex', flexWrap: 'wrap', gap: 8 });
 
-/** Tool subpage: back to the overview, the title, a group of controls on the right of the header, and under the title a tag for “走谁的服务” (which service it runs on). */
+/** Tool subpage: back to the overview, the title, a group of controls on the right of the header, and under the title a tag for “which service it runs on”. */
 export function ToolPage({ title, bar, chip, children }: { title: string; bar?: ReactNode; chip?: ReactNode; children: ReactNode }) {
   const go = useShell((s) => s.go);
   return (
@@ -180,7 +180,7 @@ const sideHead = style({ display: 'flex', alignItems: 'center', gap: 8, minHeigh
 const sideTitle = style({ flexGrow: 1, margin: 0, font: 'title-sm', color: 'gray-900' });
 const sideFoot = style({ padding: 4, font: 'ui-xs', color: 'gray-600', margin: 0 });
 
-/** Right column title: “生成记录” (Generation records) plus “N 条进行中” (N in progress) or “N 条” (N items), optionally with one more button. */
+/** Right column title: “Generation records” plus “N in progress” or “N items”, optionally with one more button. */
 export function SideHead({ title, live, count, extra }: { title: string; live: string | null; count: string; extra?: ReactNode }) {
   return (
     <div className={sideHead}>
@@ -204,7 +204,7 @@ export function SideFoot({ children }: { children: ReactNode }) {
 
 const gateActions = style({ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 8 });
 
-/** Gate card (design file `.aicard--warn`: “先连接 X” (Connect X first), “先下载 X” (Download X first)): a one-line title, a short paragraph, and a row of buttons. */
+/** Gate card (design file `.aicard--warn`: “Connect X first”, “Download X first”): a one-line title, a short paragraph, and a row of buttons. */
 export function Gate({ title, body, actions: buttons }: { title: string; body: ReactNode; actions?: ReactNode }) {
   return (
     <InlineAlert variant="notice">

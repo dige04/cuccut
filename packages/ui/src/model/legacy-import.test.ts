@@ -4,7 +4,7 @@ import { displayDirectory, legacyImportDecision } from './legacy-import.ts';
 describe('legacy import prompt', () => {
   it('imports, skips for this launch, or records never', () => {
     expect(legacyImportDecision('import', false)).toBe('import');
-    // Ticked “不再提醒” (don't remind again), then clicked “导入” (import): import as usual.
+    // Ticked “don't remind again”, then clicked “import”: import as usual.
     expect(legacyImportDecision('import', true)).toBe('import');
     // Skipping sends no request: ask again on next launch.
     expect(legacyImportDecision('skip', false)).toBeNull();

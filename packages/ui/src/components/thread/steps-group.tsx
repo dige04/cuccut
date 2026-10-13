@@ -105,8 +105,8 @@ const TOOL_ICON: Record<CucCutStepKind, ReactNode> = {
 };
 
 /**
- * A group of execution steps (product design §3.2.2): between two blocks of text there is only a single grey summary line plus an arrow (e.g. “读取了 2 个文件、运行了命令” (read 2 files, ran commands)), with no icon. A failure is also shown in grey, with “N 项失败” (N failed) added. Clicking it opens a bordered box: one step per row, and one change receipt per row (§6.5 change card, with undo and restore in the row), with divider lines between rows; each row inside the box can again be expanded to show its input, output and errors.
- * While the session is running and a step in this group is running, the summary line switches to that step: the category's pixel loader graphic, the category name with a shimmer sweep, and the elapsed time, and it is collapsed by default. When several steps run at once, it reads “等 N 项” (N items in progress). After expanding, the row in the box uses a static icon: in a session, only the summary line and the turn footer move.
+ * A group of execution steps (product design §3.2.2): between two blocks of text there is only a single grey summary line plus an arrow (e.g. “read 2 files, ran commands”), with no icon. A failure is also shown in grey, with “N failed” added. Clicking it opens a bordered box: one step per row, and one change receipt per row (§6.5 change card, with undo and restore in the row), with divider lines between rows; each row inside the box can again be expanded to show its input, output and errors.
+ * While the session is running and a step in this group is running, the summary line switches to that step: the category's pixel loader graphic, the category name with a shimmer sweep, and the elapsed time, and it is collapsed by default. When several steps run at once, it reads “N items in progress”. After expanding, the row in the box uses a static icon: in a session, only the summary line and the turn footer move.
  */
 export const StepsGroup = memo(function StepsGroup({
   items,
@@ -163,7 +163,7 @@ function lastStepText(items: StepsBlock['items'], cwd?: string | null): string |
   return [step.label, step.summary].filter(Boolean).join(' ');
 }
 
-/** The summary line while running: the category name of that step and the elapsed time (it ticks every second on its own, so the group does not re-render with it). When several steps run at once, no time is shown; it reads “等 N 项” (N items in progress). */
+/** The summary line while running: the category name of that step and the elapsed time (it ticks every second on its own, so the group does not re-render with it). When several steps run at once, no time is shown; it reads “N items in progress”. */
 function LiveHead({ item, count, cwd }: { item: ToolCall | Reasoning; count: number; cwd?: string | null }) {
   const now = useNow(1000);
   const label = item.kind === 'tool-call' ? toolStep(item, cwd).label : T.steps.thinking;

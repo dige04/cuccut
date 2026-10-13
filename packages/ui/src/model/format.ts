@@ -31,7 +31,7 @@ const en = {
 export type FormatMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
-/** Durations: “8 秒” (8 seconds), “1 分 5 秒” (1 min 5 sec), “1 小时 2 分” (1 hr 2 min) (English: “8 sec”, “1 min 5 sec”, “1 hr 2 min”). */
+/** Durations: “8 seconds”, “1 min 5 sec”, “1 hr 2 min” (English: “8 sec”, “1 min 5 sec”, “1 hr 2 min”). */
 export function formatDuration(ms: number): string {
   const total = Math.max(0, Math.round(ms / 1000));
   const h = Math.floor(total / 3600);
@@ -42,7 +42,7 @@ export function formatDuration(ms: number): string {
   return M.seconds(s);
 }
 
-/** Relative times: “刚刚” (just now), “5 分钟前” (5 minutes ago), “3 小时前” (3 hours ago), “昨天” (yesterday), “9月30日” (September 30). */
+/** Relative times: “just now”, “5 minutes ago”, “3 hours ago”, “yesterday”, “September 30”. */
 export function agoLabel(iso: string, now = Date.now()): string {
   const t = Date.parse(iso);
   const diff = Math.max(0, now - t);

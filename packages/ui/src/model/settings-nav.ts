@@ -2,7 +2,7 @@ import { live } from '@cuccut/protocol';
 import { M } from './settings-nav-copy.ts';
 
 /**
- * Settings section table (product design §2.1, §7.6): model configuration is merged into Settings and grouped into four sections: “偏好设置 / Agent / 模型 / 应用”（Preferences / Agent / Models / App). Models keep their own type and content routing; the URLs all live under /settings/models.
+ * Settings section table (product design §2.1, §7.6): model configuration is merged into Settings and grouped into four sections: “Preferences / Agent / Models / App”. Models keep their own type and content routing; the URLs all live under /settings/models.
  */
 
 export const SETTINGS_SECTIONS = ['general', 'shortcuts', 'fonts', 'agent', 'skills', 'glossary', 'privacy', 'diagnostics', 'about'] as const;

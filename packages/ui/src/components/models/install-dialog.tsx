@@ -49,8 +49,8 @@ type Phase =
 
 /**
  * Confirmation for download / complete / repair (the two steps of architecture design §6.3): when opened, only the plan is fetched (nothing downloaded). It shows how much will be downloaded, how much will resume, how much disk space is left, and where it comes from. On confirm, `confirmBytes` is passed back unchanged. If the size has changed, a new plan replaces the old one and the question is asked again, without closing the dialog. If disk space is clearly insufficient, confirmation is not allowed.
- * Models not licensed for commercial use (design mock panel-tts-local.jsx `withModelLicense`) state the license before download, and the confirm button reads “我知道了，下载”(I understand, download). Complete and repair do not ask again (weights are already present, design mock settings-local.jsx). Complete downloads only the missing components, and first says that what is installed is left alone.
- * Repair (design mock settings-local.jsx, repair confirmation) states that after repair it will automatically check again; when all files are intact, it shows “重新检查”(Re-check).
+ * Models not licensed for commercial use (design mock panel-tts-local.jsx `withModelLicense`) state the license before download, and the confirm button reads “I understand, download”. Complete and repair do not ask again (weights are already present, design mock settings-local.jsx). Complete downloads only the missing components, and first says that what is installed is left alone.
+ * Repair (design mock settings-local.jsx, repair confirmation) states that after repair it will automatically check again; when all files are intact, it shows “Re-check”.
  * State is kept in the outer layer of the Dialog: S2's Dialog renders its children once in each of several slots.
  */
 export function InstallDialog({
@@ -68,15 +68,15 @@ export function InstallDialog({
   /** Name used in the title and prompts; defaults to the model package ID. */
   name?: string;
   license?: ModelLicense | null;
-  /** The sentence “用它做出的东西也只能……”(things made with it may only be…) used when the model is not licensed for commercial use; defaults to the speech synthesis wording. */
+  /** The sentence “things made with it may only be…” used when the model is not licensed for commercial use; defaults to the speech synthesis wording. */
   licenseUse?: string;
   mode: InstallMode;
   /** Replaces the default sentence when completing (when a model is completed by borrowing a shared component from the shared components row, state that only what is missing gets downloaded). */
   note?: string;
   onClose: () => void;
-  /** A task was submitted (for repair, the row records it and checks again automatically when it finishes; when given, the “开始下载”(Start download) prompt is not shown again). */
+  /** A task was submitted (for repair, the row records it and checks again automatically when it finishes; when given, the “Start download” prompt is not shown again). */
   onStarted?: (jobId: string) => void;
-  /** For repair when the files are all intact: shows “重新检查”(Re-check). */
+  /** For repair when the files are all intact: shows “Re-check”. */
   onRecheck?: () => void;
 }) {
   const runtime = useRuntime();

@@ -6,7 +6,7 @@
  *   self     documents/self-publish.ts (saving is allowed only when there is a publish method)
  *   assets   media/assets.ts (upload returns /_blob/<id>)
  *   comments customAnchors in comments/capability.ts (annotations: the runtime computes the anchor, the host opens the composer)
- *   chat     resolvePromptSuggestion in host/agent-session.ts (“让智能体修好这页” (have the agent fix this page): the prompt is put into the session's input box)
+ *   chat     resolvePromptSuggestion in host/agent-session.ts (“have the agent fix this page”: the prompt is put into the session's input box)
  *   commentLabels words in comments/labels.ts (words for annotation position labels, following CucCut's UI language; added by CucCut, not an original host capability)
  * Does not provide db (file mode does not read it), room (single user), hot (reloads on external changes) or downloads.
  */

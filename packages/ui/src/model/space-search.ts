@@ -128,7 +128,7 @@ export function searchRequest(query: string, projectId: Id | 'none' | null, filt
   };
 }
 
-/** The Runtime finds speakers by “name contains”; the dropdown picks one exact name, and “宝玉” (a name) should not bring up “宝玉的嘉宾” (Baoyu's guest). */
+/** The Runtime finds speakers by “name contains”; the dropdown picks one exact name, and “a name” should not bring up “Baoyu's guest”. */
 export function exactSpeaker(hits: readonly SpaceSearchHit[], speaker: string | null): SpaceSearchHit[] {
   return speaker ? hits.filter((hit) => hit.speaker === speaker) : [...hits];
 }

@@ -8,8 +8,8 @@ import { useShell } from '../state/shell-store.ts';
 import { S } from './shell-copy.ts';
 
 /**
- * The shared voice picker (design mockup voice-picker.jsx `VoicePicker`): used by both the tool page's “生成语音” (generate speech) and the editor's “音频 › 生成语音 / 克隆声音” (audio › generate speech / clone voice).
- * Grouping and greyed-out reasons are in model/voice-picker.ts; this file only draws. “克隆新音色…” (clone new voice…) goes to 模型 › 语音合成 › 我的声音 (Models › Speech synthesis › My voices), where cloning is created; this version has no return hand-off, so the voice is picked after it is created. The manual voice-ID input and the line under the control are placed by the caller in its own layout.
+ * The shared voice picker (design mockup voice-picker.jsx `VoicePicker`): used by both the tool page's “generate speech” and the editor's “audio › generate speech / clone voice”.
+ * Grouping and greyed-out reasons are in model/voice-picker.ts; this file only draws. “clone new voice…” goes to 模型 › 语音合成 › 我的声音 (Models › Speech synthesis › My voices), where cloning is created; this version has no return hand-off, so the voice is picked after it is created. The manual voice-ID input and the line under the control are placed by the caller in its own layout.
  */
 export function VoicePicker({
   label,

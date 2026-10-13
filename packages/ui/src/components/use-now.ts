@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-/** Repaints at intervals, for “多久前” (time ago) and timers. */
+/** Repaints at intervals, for “time ago” and timers. */
 export function useNow(intervalMs: number, enabled = true): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {

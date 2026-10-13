@@ -12,7 +12,7 @@ const line = style({
 });
 
 /**
- * The line shown in the editor when the Agent cannot be used (the 「用」 (Use) row on the tool page, the floating conversation at the bottom-right): one sentence of reason plus a link to deal with it.
+ * The line shown in the editor when the Agent cannot be used (the “Use” row on the tool page, the floating conversation at the bottom-right): one sentence of reason plus a link to deal with it.
  * The start page uses the full guide card (start/gate-card.tsx); an orange card in a narrow panel is too heavy and clashes with the settings items around it.
  */
 export function AgentGateLine({ guide }: { guide: GateGuide }) {

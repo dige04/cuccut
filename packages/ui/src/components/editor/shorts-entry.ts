@@ -3,7 +3,7 @@ import { create } from 'zustand';
 import { hostPanelTab, useEditor, type PanelTab } from '../../state/editor-store.ts';
 import { useTranscriptMode } from './transcript-mode.ts';
 
-/** Where the right column was when “去文稿调整”(adjust in script) or “调起止”(adjust start and end) was started (product design §5.10). In the script, the banner is replaced by a cell that returns there. */
+/** Where the right column was when “adjust in script” or “adjust start and end” was started (product design §5.10). In the script, the banner is replaced by a cell that returns there. */
 export interface CutOrigin {
   videoId: Id;
   tab: PanelTab;

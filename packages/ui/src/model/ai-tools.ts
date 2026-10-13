@@ -673,7 +673,7 @@ function clampShortsCount(n: ShortsCount): ShortsCount {
   return Math.max(SHORTS_COUNT.min, Math.min(SHORTS_COUNT.max, Math.round(n)));
 }
 
-/** The explanation line under “切成什么样 (what the cut looks like)” (prototype model-shorts-cut.js `autoHint`): when one item is Auto, it says how that item is decided; null when no item is Auto. */
+/** The explanation line under “prototype model-shorts-cut.js `autoHint`”: when one item is Auto, it says how that item is decided; null when no item is Auto. */
 export function shortsAutoHint(s: Pick<ShortsSettings, 'count' | 'length'>): string | null {
   const count = clampShortsCount(s.count) === 'auto';
   const length = s.length === 'auto';

@@ -32,9 +32,9 @@ export interface PlanLine {
 export interface InstallPlanView {
   /** Already complete; nothing to download. */
   upToDate: boolean;
-  /** “要下载 1.2 GB” (need to download 1.2 GB); when some file sizes are unknown, “约 1.2 GB（有文件大小未知，按登记的估计）” (about 1.2 GB (some file sizes unknown, using the registered estimate)). */
+  /** “need to download 1.2 GB”; when some file sizes are unknown, “约 1.2 GB（有文件大小未知，按登记的估计）” (about 1.2 GB (some file sizes unknown, using the registered estimate)). */
   size: string;
-  /** The amount on the button: “1.2 GB” or “约 1.2 GB” (about 1.2 GB). */
+  /** The amount on the button: “1.2 GB” or “about 1.2 GB”. */
   amount: string;
   /** The part left over from last time and reused this time; null when there is none. */
   resumed: string | null;
@@ -74,7 +74,7 @@ export function installPlanView(plan: ModelInstallPlan): InstallPlanView {
 
 export interface InstallProgressView {
   state: ModelInstallProgress['state'];
-  /** “正在下载 120 MB / 1.2 GB” (downloading 120 MB / 1.2 GB), “已暂停 · 留着 300 MB” (paused · 300 MB kept) */
+  /** “downloading 120 MB / 1.2 GB”, “paused · 300 MB kept” */
   label: string;
   /** 0–100; null when the total byte count is unknown, or when queued or verifying (the progress bar shows as indeterminate). */
   percent: number | null;
@@ -103,7 +103,7 @@ export function installProgressView(install: ModelInstallProgress): InstallProgr
   }
 }
 
-// ---- Download in place (design tool-tts.jsx, image-gen.jsx, panel-aitools.jsx, panel-dub-setup.jsx “下载 {size}” (download {size})) ----
+// ---- Download in place (design tool-tts.jsx, image-gen.jsx, panel-aitools.jsx, panel-dub-setup.jsx “download {size}”) ----
 
 /** Whether this model package can be downloaded in place: not yet installed, and this computer can run it. Packages that are already installed, or that cannot run (`unsupported`, `worker-missing`), do not count. */
 export function canDownload(bundle: Pick<ModelBundleStatus, 'state' | 'reason' | 'components'>): boolean {
@@ -304,7 +304,7 @@ export interface BundleActions {
 
 /**
  * What a model package row can do (design settings-local.jsx). `ownFiles`: whether the model package's own files are on disk (models-local.ts `hasOwnFiles`; it needs the whole category's
- * shared components to be computed; by default, it counts as not installed). Items on disk with components still missing (`half`) get “补齐” (fill in) rather than “下载” (download), and can still be repaired and deleted.
+ * shared components to be computed; by default, it counts as not installed). Items on disk with components still missing (`half`) get “fill in” rather than “download”, and can still be repaired and deleted.
  */
 export function bundleActions(bundle: ModelBundleStatus, ownFiles = isBundleInstalled(bundle)): BundleActions {
   const installing = !!bundle.install && bundle.install.state !== 'paused';

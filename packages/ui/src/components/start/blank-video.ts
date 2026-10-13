@@ -12,7 +12,7 @@ const BLANK_SIZE: Record<BlankRatio, { width: number; height: number }> = { ...R
 
 /**
  * Create a new blank video (prototype page-new.jsx `createBlank`): not a prompt, and it does not go through the Agent. Creates an empty video at the chosen aspect ratio and opens it directly in the feature area.
- * The start page's “新建空白视频” and Space's “新建空白视频” (New blank video) share this. If no project is chosen, a project is created first and the video is put in it (same as the original fixed flow).
+ * The start page's “新建空白视频” and Space's “New blank video” share this. If no project is chosen, a project is created first and the video is put in it (same as the original fixed flow).
  */
 export async function createBlankVideo(
   runtime: Pick<RuntimeSession, 'createProject' | 'createFlowVideo'>,

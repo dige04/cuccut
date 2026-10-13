@@ -462,7 +462,7 @@ describe('状态机', () => {
       expect(reduce(start, { type: 'check' })).toEqual({ k: 'checking' });
     }
     expect(reduce({ ...available, bg: true }, { type: 'download' })).toEqual({ k: 'downloading', info, pct: 0 });
-    // The user started a download while a silent check was in flight: a late result must not reset the download back to “有新版本” (update available).
+    // The user started a download while a silent check was in flight: a late result must not reset the download back to “update available”.
     const downloading = reduce({ ...available, bg: true }, { type: 'download' });
     expect(reduce(downloading, { type: 'found', info: info2 })).toBe(downloading);
     expect(reduce(downloading, { type: 'none' })).toBe(downloading);
@@ -485,7 +485,7 @@ describe('状态机', () => {
     expect(reduce(bg58, { type: 'found', info }), '已下载的 58 被撤、更新源退回 57：以更新源为准').toEqual({ k: 'available', info });
     expect(reduce(bg, { type: 'none' }), '更新源里没有更新的了：不装已撤回的版本').toEqual({ k: 'upToDate' });
     expect(reduce(bg, { type: 'fail', failure: 'check' }), '网络抖动不丢下载好的更新').toEqual(ready);
-    // If “重启并更新” (restart and update) is clicked while a check is in flight, install as usual. The flag is not carried into the installing state, and any late result afterwards is discarded.
+    // If “restart and update” is clicked while a check is in flight, install as usual. The flag is not carried into the installing state, and any late result afterwards is discarded.
     const installing = reduce(bg, { type: 'install' });
     expect(installing).toEqual({ k: 'installing', info });
     expect(reduce(installing, { type: 'none' })).toBe(installing);

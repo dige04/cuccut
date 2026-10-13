@@ -1,5 +1,5 @@
 /**
- * State machine for “跟到底” (follow to bottom) in the session thread. Does not depend on the DOM.
+ * State machine for “follow to bottom” in the session thread. Does not depend on the DOM.
  *
  * - Detach: currently following, scrollTop is smaller than last time, and there is recent evidence of user input upward (wheel, keyboard, dragging the scrollbar, touch).
  *   When scrollTop gets smaller without any input evidence (a block above collapses, the window gets shorter, or the content shrinks and the browser clamps it), following is kept.
@@ -11,7 +11,7 @@
 export const UPWARD_INTENT_WINDOW_MS = 100;
 /** Distance from the bottom required to re-follow, allowing for sub-pixel error. */
 export const REFOLLOW_PX = 1;
-/** “接近底部” (near the bottom): used only for display decisions; it plays no part in detaching or re-following. */
+/** “near the bottom”: used only for display decisions; it plays no part in detaching or re-following. */
 export const NEAR_BOTTOM_PX = 64;
 
 export interface FollowState {
@@ -78,7 +78,7 @@ export function isNearBottom(distanceFromBottom: number): boolean {
 }
 
 /**
- * Keys that scroll the area upward: ArrowUp, PageUp, Home (including Cmd/Ctrl combinations, “到顶” (go to top)), and Shift+Space.
+ * Keys that scroll the area upward: ArrowUp, PageUp, Home (including Cmd/Ctrl combinations, “go to top”), and Shift+Space.
  * Whether the focus is inside an editable element is decided by the caller.
  */
 export function isUpwardKey(event: { key: string; shiftKey: boolean }): boolean {

@@ -173,7 +173,7 @@ export class RuntimeSession {
    * `context`: the editor's state at the time (open video, version, selection, playhead), handed to the agent with the message.
    * `attachments`: images already uploaded (the ids returned by `uploadAttachment`).
    * `template`: the attached scene template (template pack spec §5.2); the Runtime uses it to build the agent's briefing guidance and template body; `text` remains the user's own words.
-   * `skills`: skills picked from the input box's “+ › 使用 Skill” (+ › Use Skill) menu (product design §6.9), in the order attached; the Runtime attaches each one's `SKILL.md` body for the agent,
+   * `skills`: skills picked from the input box's “+ › Use Skill” menu (product design §6.9), in the order attached; the Runtime attaches each one's `SKILL.md` body for the agent,
    * with a marker added to the message. Omitted when empty.
    * `slideAnnotations`: annotations added to the conversation from the slide tags (docs/design/slides §8.2, §9); the Runtime builds them into paragraphs for the agent, per deck. Omitted when empty.
    * `designAnnotations`: annotations added to the conversation from the design-canvas tags (docs/design/canvas §8.2, §9); same as above, built into paragraphs per design. Omitted when empty.
@@ -344,7 +344,7 @@ export class RuntimeSession {
   }
 
   /**
-   * Exclusively create a new text file in the project directory (the session working directory when there is no project); a duplicate name automatically gets a number suffix (the “新建网页” (New web page) on the new-tab start page).
+   * Exclusively create a new text file in the project directory (the session working directory when there is no project); a duplicate name automatically gets a number suffix (the “New web page” on the new-tab start page).
    * Returns the new file's location (handed to the file tab) and its entry.
    */
   async createProjectFile(
@@ -526,7 +526,7 @@ export class RuntimeSession {
     await this.client.request('nodes.remove', { nodeId });
   }
 
-  // ---- Transcription (subtitle panel “生成字幕” (Generate subtitles)) ----
+  // ---- Transcription (subtitle panel “Generate subtitles”) ----
 
   /**
    * Transcribe an asset; returns a task ID; progress and results arrive through the `jobs` topic, and when it completes the Runtime writes the `speech` document into the video.
@@ -542,7 +542,7 @@ export class RuntimeSession {
     return this.client.request('documents.read', revision === undefined ? { videoId, documentId } : { videoId, documentId, revision });
   }
 
-  // ---- Translation (subtitle panel “翻译成…” (Translate to…)) ----
+  // ---- Translation (subtitle panel “Translate to…”) ----
 
   /**
    * Start the translation pipeline; returns the parent task ID; progress and results arrive through the `jobs` topic, and when it completes the Runtime writes the `translation` document into the video.
@@ -631,7 +631,7 @@ export class RuntimeSession {
   }
 
   /**
-   * Create a new video using a file as the asset (prototype page-space.jsx “从文件新建视频” (New video from file); architecture design §5.7 “以它为素材新建视频” (Create a video using it as the asset)):
+   * Create a new video using a file as the asset (prototype page-space.jsx “New video from file”; architecture design §5.7 “Create a video using it as the asset”):
    * create an empty video, then import this file in one transaction and place it on the main sequence (the same operation as dragging a file into the editor from the computer). Returns the location used to open it.
    * A failure to create is thrown as usual; if the video was created but the import is rejected, nothing is thrown, and `importError` carries the reason (the video is empty; the caller tells the user honestly).
    */
@@ -797,7 +797,7 @@ export class RuntimeSession {
     return jobId;
   }
 
-  /** The body of subtitles or a script, without writing a file (the preview and “复制文本” (Copy text) on the script page of the export panel): byte-for-byte identical to the file exported with the same settings; if the pre-check fails, it throws the same rejection. */
+  /** The body of subtitles or a script, without writing a file (the preview and “Copy text” on the script page of the export panel): byte-for-byte identical to the file exported with the same settings; if the pre-check fails, it throws the same rejection. */
   async renderTextExport(
     request: import('@cuccut/protocol').ExportRenderTextRequest,
   ): Promise<import('@cuccut/protocol').ExportRenderTextResult> {
@@ -925,7 +925,7 @@ export class RuntimeSession {
   // ---- Home page fixed pipelines and import from a link (design files page-new.jsx, import-flow.jsx; the start and retry flows use startPipeline / retryPipeline / detectExternalTool above) ----
 
   /**
-   * The user clicked “同意并安装 / 更新” (Agree and install / update): records the consent (`via: 'app'`) and submits the install task (`kind: 'toolInstall'`; progress through the `jobs` topic).
+   * The user clicked “Agree and install / update”: records the consent (`via: 'app'`) and submits the install task (`kind: 'toolInstall'`; progress through the `jobs` topic).
    * This can only be triggered by that one user action; if the manifest is incomplete or the app is strictly offline, the Runtime rejects it with `conflict`.
    */
   async installExternalTool(name: string): Promise<import('@cuccut/protocol').ExternalToolInstallResult> {

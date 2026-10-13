@@ -12,15 +12,15 @@ import { FRAME_COPY } from './tools-copy.ts';
 
 /*
  * The rows of the common tool page skeleton (product design §2.7; design file tool-frame.jsx `ToolModelRow`): input → model → options → save location → start.
- * The “模型” (Model) row lists the local and cloud models configured for this capability; when none is usable, this row offers “去设置” (Go to settings), and the reason is written next to the primary button (`modelReason`), without blocking the whole page.
- * The “保存位置” (Save location) row (`ToolSaveDirRow`) shows where this result will be saved; “更改…” (Change…) changes it for this time only. Runs that write into an existing video, and the web service (which does not provide a save location), do not have this row.
+ * The “Model” row lists the local and cloud models configured for this capability; when none is usable, this row offers “Go to settings”, and the reason is written next to the primary button (`modelReason`), without blocking the whole page.
+ * The “Save location” row (`ToolSaveDirRow`) shows where this result will be saved; “Change…” changes it for this time only. Runs that write into an existing video, and the web service (which does not provide a save location), do not have this row.
  */
 
 const warnLine = style({ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, minWidth: 0 });
 const warnText = style({ flexGrow: 1, flexBasis: 0, minWidth: 160, font: 'ui-sm', color: 'orange-900', margin: 0 });
 const emptyText = style({ flexGrow: 1, flexBasis: 0, minWidth: 160, font: 'ui-sm', color: 'gray-700', margin: 0 });
 
-/** A notice line plus “去设置” (Go to settings). */
+/** A notice line plus “Go to settings”. */
 function SettingsLine({ text, warn, onSettings }: { text: string; warn: boolean; onSettings: () => void }) {
   return (
     <div className={warnLine}>
@@ -33,7 +33,7 @@ function SettingsLine({ text, warn, onSettings }: { text: string; warn: boolean;
 }
 
 /**
- * The “模型” (Model) row. `noun` is what this kind of model is called (also the Picker's accessible name); `manage` is the sentence at the top right that links to the models page. When `localGate` is true, the page itself shows the reminder that a local model is not installed
+ * The “Model” row. `noun` is what this kind of model is called (also the Picker's accessible name); `manage` is the sentence at the top right that links to the models page. When `localGate` is true, the page itself shows the reminder that a local model is not installed
  * (image generation has an in-place download card), so it is not repeated here. `children` are placed under the Picker (reasoning effort, download card, ...).
  */
 export function ModelRow<M>({
@@ -61,7 +61,7 @@ export function ModelRow<M>({
   factsOf: (option: ToolModelOption<M>) => string;
   disableUnusable?: boolean;
   localGate?: boolean;
-  /** Whether this capability has a local model (the empty-state line uses this to decide whether to say “安装一个本机模型” (Install a local model)). */
+  /** Whether this capability has a local model (the empty-state line uses this to decide whether to say “Install a local model”). */
   local?: boolean;
   children?: ReactNode;
 }) {
@@ -86,8 +86,8 @@ const saveText = style({ flexGrow: 1, flexBasis: 0, minWidth: 160, font: 'ui-sm'
 const savePath = style({ font: 'code-xs', color: 'gray-900' });
 
 /**
- * The save location row (design file tool-frame.jsx `ToolSaveDirRow`): “保存到 …” (Save to …), whether it is the default from settings, “更改…” (Change…) (the system folder picker,
- * which changes it for this time only, without writing back to settings), and “改回默认” (Reset to default). `saveDirectory` is the save location given by `tools.list`; when it is null (the web service does not provide one), nothing is drawn.
+ * The save location row (design file tool-frame.jsx `ToolSaveDirRow`): “Save to …”, whether it is the default from settings, “Change…” (the system folder picker,
+ * which changes it for this time only, without writing back to settings), and “Reset to default”. `saveDirectory` is the save location given by `tools.list`; when it is null (the web service does not provide one), nothing is drawn.
  */
 export function SaveDirRow({
   saveDirectory,

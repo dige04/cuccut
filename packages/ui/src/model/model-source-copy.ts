@@ -19,7 +19,7 @@ import { vi } from './model-source-copy.vi.ts';
  * they are not part of the copy and are not translated.
  */
 const en = {
-  /** Row name on the local models page; the general page uses its own “模型下载来源” (model download source). */
+  /** Row name on the local models page; the general page uses its own “model download source”. */
   label: 'Download source',
   /** Collapsible section at the bottom of the local models page. */
   fold: 'Download and storage',

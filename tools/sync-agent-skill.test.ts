@@ -213,7 +213,7 @@ describe('说明书的同步', () => {
     );
     expect(conventions).toContain('| `CAPABILITY_NOT_CONFIGURED` | 2 |');
     expect(conventions).toContain('| `INVALID_ARGUMENTS` `UNKNOWN_TOOL` | 4 |');
-    // Lines with exit code 1 are split by next step: lines in the same sentence are merged into one line. Where no separate next step is written, the line uses the sentence with “其他错误码” (other error codes).
+    // Lines with exit code 1 are split by next step: lines in the same sentence are merged into one line. Where no separate next step is written, the line uses the sentence with “other error codes”.
     expect(conventions).toContain("| `RUNTIME_NOT_OWNED` `RUNTIME_IN_USE` | 1 | The Runtime is not this CLI's to stop");
     expect(conventions).toContain('| `AGENT_SKILL_NOT_FOUND` `AGENT_SKILL_INVALID` | 1 | The agent guide cannot be installed');
     expect(conventions).toMatch(/\| `SOME_FAILURE` \| 1 \| Failed or cancelled\./);

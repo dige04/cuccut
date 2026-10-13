@@ -7,10 +7,10 @@ import type { TranscriptParagraph, TranscriptWord } from './transcript-cut.ts';
 
 /**
  * The cell in the banner entry:
- * - `adjust`: the right column is not on the script (or is collapsed); “去文稿调整”（Adjust in script) — switch to the script, open cut editing, scroll to the cut seam in front of the clip, and record the origin.
- * - `backResult`: jumped into the script from the AI tools tab, this branch has a result page, and this surface has an AI tool; “回到结果页”（Back to result page).
- * - `back`: jumped into the script from another panel; “回到<那个面板>”（Back to <that panel>), where `railLabel` is that panel's name on the toolbar.
- * - `result`: landed directly on the script (or switched panels after jumping over); has a result page and an AI tool; “看结果页”（View result page).
+ * - `adjust`: the right column is not on the script (or is collapsed); “Adjust in script” — switch to the script, open cut editing, scroll to the cut seam in front of the clip, and record the origin.
+ * - `backResult`: jumped into the script from the AI tools tab, this branch has a result page, and this surface has an AI tool; “Back to result page”.
+ * - `back`: jumped into the script from another panel; “Back to <that panel>”, where `railLabel` is that panel's name on the toolbar.
+ * - `result`: landed directly on the script (or switched panels after jumping over); has a result page and an AI tool; “View result page”.
  * - `null`: none of these; nothing is shown.
  */
 export type CutEntryKind = 'adjust' | 'back' | 'backResult' | 'result';
@@ -24,7 +24,7 @@ export interface CutEntryAction<T extends string> {
 }
 
 /**
- * `tab` is the panel currently in the right column (pass null when it is collapsed); `origin` is the origin recorded by “去文稿调整” / “调起止”（adjust in/out) (cleared when another path switches panels or videos); `hasResult` means this branch has a result page; `ai` means this surface has AI tools; `railLabel` is the origin's name on the toolbar.
+ * `tab` is the panel currently in the right column (pass null when it is collapsed); `origin` is the origin recorded by “去文稿调整” / “adjust in/out” (cleared when another path switches panels or videos); `hasResult` means this branch has a result page; `ai` means this surface has AI tools; `railLabel` is the origin's name on the toolbar.
  */
 export function cutEntryAction<T extends string>(
   tab: T | null,
@@ -42,7 +42,7 @@ export function cutEntryAction<T extends string>(
 }
 
 /**
- * Which panel the right column lands on when a video opens, and whether the script's cut editing opens: when a handoff carries a panel (clicking a card on the result page, or the banner's return-to-original carries the AI tools tab), follow it. When none is carried — Space, a video card in the session, a “切出的短视频”（cut-out short video) from its parent video, or a direct open — a child video lands on the script and opens cut editing (words outside the clip shown struck through); another video with content lands on the script, and an empty one lands on the video. While `hasItems` is not yet known (the snapshot has not arrived), nothing is changed.
+ * Which panel the right column lands on when a video opens, and whether the script's cut editing opens: when a handoff carries a panel (clicking a card on the result page, or the banner's return-to-original carries the AI tools tab), follow it. When none is carried — Space, a video card in the session, a “cut-out short video” from its parent video, or a direct open — a child video lands on the script and opens cut editing (words outside the clip shown struck through); another video with content lands on the script, and an empty one lands on the video. While `hasItems` is not yet known (the snapshot has not arrived), nothing is changed.
  */
 export function landingPanel<T extends string>(options: {
   handoff: T | null | undefined;
@@ -59,7 +59,7 @@ export function landingPanel<T extends string>(options: {
 export type EntryAnchor = { fold: 'before' } | { paragraph: number };
 
 /**
- * Where “去文稿调整” / “调起止”（adjust in/out) scrolls to: if words in front of the clip are collapsed, it lands on that cut seam (ones already spread out are still there); if there is no seam (few sentences before the clip), it lands on the paragraph holding the clip's first kept word. `words` are the script's words, and `paragraphs` are the paragraphs drawn after removing collapsed words. null when the whole branch has been cut away (no folding).
+ * Where “去文稿调整” / “adjust in/out” scrolls to: if words in front of the clip are collapsed, it lands on that cut seam (ones already spread out are still there); if there is no seam (few sentences before the clip), it lands on the paragraph holding the clip's first kept word. `words` are the script's words, and `paragraphs` are the paragraphs drawn after removing collapsed words. null when the whole branch has been cut away (no folding).
  */
 export function entryAnchor(
   plan: FoldPlan | null,

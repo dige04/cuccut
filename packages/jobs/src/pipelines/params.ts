@@ -56,7 +56,7 @@ export class ParamReader {
 }
 
 /**
- * Parameter `key` is invalid: 「参数 key 问题」(“parameter key problem”). `problem` takes a catalog entry (a predicate such as `JobsParams.mustBeBoolean()`: the Chinese starts with 「应为…」, the English is `must be …`). The reference travels with the error. When an older caller passes a string, it is concatenated as it is. For a whole sentence that cannot be expressed as “parameter key problem”, call `new RpcError('invalid-request', J.x({ ... }))` directly.
+ * Parameter `key` is invalid: “parameter key problem”. `problem` takes a catalog entry (a predicate such as `JobsParams.mustBeBoolean()`: the Chinese starts with 「应为…」, the English is `must be …`). The reference travels with the error. When an older caller passes a string, it is concatenated as it is. For a whole sentence that cannot be expressed as “parameter key problem”, call `new RpcError('invalid-request', J.x({ ... }))` directly.
  */
 export function invalid(key: string, problem: string | Localized): RpcError {
   return new RpcError('invalid-request', JobsParams.invalidParam({ key, problem }));

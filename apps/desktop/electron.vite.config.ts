@@ -18,7 +18,7 @@ const bundleWorkspace = { exclude: ['@cuccut/runtime', '@cuccut/runtime-storage'
 const STATEFUL = /\/packages\/ui\/src\/(state|runtime)\//;
 
 /**
- * During development, editing a state module (or a module it depends on, such as the protocol package) triggers a full page reload. Hot replacement would give these modules a fresh, empty copy of their state, while the Runtime session that is still connected keeps writing to the old copy, and the UI would stay stuck in a loading state such as “正在整理” (preparing).
+ * During development, editing a state module (or a module it depends on, such as the protocol package) triggers a full page reload. Hot replacement would give these modules a fresh, empty copy of their state, while the Runtime session that is still connected keeps writing to the old copy, and the UI would stay stuck in a loading state such as “preparing”.
  */
 export function reloadOnStateChange(): Plugin {
   const reachesState = (node: EnvironmentModuleNode, seen: Set<EnvironmentModuleNode>): boolean => {

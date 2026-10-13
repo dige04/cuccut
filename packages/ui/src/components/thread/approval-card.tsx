@@ -46,7 +46,7 @@ const decidedBody = style({ display: 'flex', flexDirection: 'column', gap: 8 });
 const sectionHead = style({ display: 'flex', alignItems: 'center', justifyContent: 'space-between', font: 'ui-xs', color: 'gray-600' });
 
 /**
- * The answer clicked in this window: used until the `decision` arrives on the timeline (and for earlier records that lack this field). After the decision, that line reads “之后 <规则> 不再问” (no more asking about <rule> from now on) (see `approvalDecidedLabel`).
+ * The answer clicked in this window: used until the `decision` arrives on the timeline (and for earlier records that lack this field). After the decision, that line reads “no more asking about <rule> from now on” (see `approvalDecidedLabel`).
  */
 const chosenHere = new Map<string, ApprovalDecision>();
 

@@ -28,7 +28,7 @@ export interface TaskRow {
   /** Source: an agent task, a Job, or the round that imported the old project at this startup. */
   origin: 'task' | 'job' | 'legacy-import';
   kind: TaskKind;
-  /** The kind as shown: usually `kindLabel(kind)`; a generic `pipeline` kind from a link import is shown as “从链接导入” (“Import from link”). */
+  /** The kind as shown: usually `kindLabel(kind)`; a generic `pipeline` kind from a link import is shown as “Import from link”. */
   kindText: string;
   title: string;
   /** The “where” in the subtitle: for an agent task it is project › session; for a Job it is model · where it runs. */
@@ -50,7 +50,7 @@ export interface TaskRow {
   pct: number | null;
   /** Progress bar on the card: a number is determinate progress, `indet` spins, and null draws nothing. */
   progress: number | 'indet' | null;
-  /** Source chip: work submitted by an agent through a tool shows “Agent”; other connections show “命令行” (“Command line”). */
+  /** Source chip: work submitted by an agent through a tool shows “Agent”; other connections show “Command line”. */
   chip: 'agent' | 'cli' | null;
   action: TaskAction | null;
   conversationId: Id | null;
@@ -59,7 +59,7 @@ export interface TaskRow {
   error: string | null;
 }
 
-/** The video open in the editor: a transcription's title shows its name and asset name, and the pill's “这个视频” (“This video”) is judged by it too. */
+/** The video open in the editor: a transcription's title shows its name and asset name, and the pill's “This video” is judged by it too. */
 export interface OpenVideoFacts {
   videoId: Id;
   name: string;
@@ -119,7 +119,7 @@ const TRANSCRIBE_PIPELINE = 'transcribe';
 
 /**
  * Parent task of the transcription pipeline (`transcribe` from `pipelines.start`: the editor's generate-subtitles and re-transcribe, and transcription from agents and the command line). It hands recognition to a
- * `transcribe` Job, and in the task table it shows “转录” (“Transcription”) just as that transcription does, not the generic “流程” (“Pipeline”).
+ * `transcribe` Job, and in the task table it shows “Transcription” just as that transcription does, not the generic “Pipeline”.
  */
 function isTranscribePipeline(job: Pick<JobRecord, 'kind' | 'pipeline'>): boolean {
   return job.kind === 'pipeline' && job.pipeline?.name === TRANSCRIBE_PIPELINE;
@@ -145,20 +145,20 @@ function jobTitle(job: JobRecord, video: OpenVideoFacts | null): string {
     const asset = assetId ? video.assets[assetId]?.name : undefined;
     return [kindLabel('transcribe'), video.name, asset].filter(Boolean).join(' · ');
   }
-  // Import from link: “从链接导入 · 标题” (“Import from link · title”); while the title has not yet been resolved, the site name is written.
+  // Import from link: “Import from link · title”; while the title has not yet been resolved, the site name is written.
   if (isLinkImport(job)) return linkTitle(job);
-  // Agent translating on its own: “翻译 · 访谈 · 英语” (“Translate · Interview · English”); the video name is only known while it is open.
+  // Agent translating on its own: “Translate · Interview · English”; the video name is only known while it is open.
   if (job.kind === 'agentTranslate') {
     return [kindLabel(job.kind), video?.name, job.translation ? langName(job.translation.targetLanguage) : null].filter(Boolean).join(' · ');
   }
-  // Export: “导出视频 · MP4 · 访谈” (“Export video · MP4 · Interview”); the kind and format come from the frozen settings; the video name is only known while it is open.
+  // Export: “Export video · MP4 · Interview”; the kind and format come from the frozen settings; the video name is only known while it is open.
   if (job.kind === 'export' && job.export) return [exportTitle(job.export.settings), video?.name].filter(Boolean).join(' · ');
   return kindLabel(job.kind);
 }
 
 /**
  * For these kinds of Job, `providerId` is not a model provider but the name of a tool or source (yt-dlp, google-fonts), and `modelId` is the tool version or font family;
- * they all run on this machine, and must not fall under “云端” (“Cloud”) through `runsOnLabel`.
+ * they all run on this machine, and must not fall under “Cloud” through `runsOnLabel`.
  */
 function localToolWhere(job: JobRecord): string | null {
   if (isLinkImport(job) || job.kind === 'toolInstall' || job.kind === 'toolUpdate') {
@@ -170,7 +170,7 @@ function localToolWhere(job: JobRecord): string | null {
 
 /** // Where: for an export, the directory it is written to (this machine); for other Jobs, model · where it runs. */
 function jobWhere(job: JobRecord): string {
-  // Agent translating on its own: `modelId` is the Driver, and “本机 · Codex” (“This machine · Codex”) already says it all.
+  // Agent translating on its own: `modelId` is the Driver, and “This machine · Codex” already says it all.
   if (job.kind === 'agentTranslate') return runsOnLabel(job.providerId);
   if (job.kind === 'export' && job.export) return [shortenPath(job.export.destination.dir), runsOnLabel(job.providerId)].join(' · ');
   return localToolWhere(job) ?? [job.modelId, runsOnLabel(job.providerId)].filter(Boolean).join(' · ');
@@ -303,7 +303,7 @@ export function agentRow(task: TaskSummary, ctx: TaskContext): TaskRow {
 
 /**
  * The transcription that a running fixed pipeline is waiting for: both the import-from-link and the transcription pipeline submit the transcription using their own jobId as the submitter (`video-create.ts`
- * `transcribeInVideo`, and the “转写” (“Transcribe”) step of the transcription pipeline).
+ * `transcribeInVideo`, and the “Transcribe” step of the transcription pipeline).
  */
 function livePipelineTranscribe(parent: JobRecord, jobs: readonly JobRecord[]): JobRecord | null {
   return (

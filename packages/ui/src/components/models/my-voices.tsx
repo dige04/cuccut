@@ -113,7 +113,7 @@ type Confirm =
 
 /**
  * Models › Speech synthesis › My voices (design mock settings-voices.jsx:480-541): voices in the user's library (`library` topic via voices-store). Create from an audio file, import and export voice packages, edit, delete, trial-listen to reference recordings, and create / delete clones on cloud engines that support cloning.
- * Recording in the app and “从视频里分人取一段”(Take a segment by speaker from a video) are not connected yet: their entries are greyed out, with the reason written beside them.
+ * Recording in the app and “Take a segment by speaker from a video” are not connected yet: their entries are greyed out, with the reason written beside them.
  * In the browser there is no data for this page: the Web allowlist does not include `library.*`, and the `library` topic cannot be subscribed to, so it does not show “loading” and says directly that there is nothing in the browser.
  */
 export function MyVoices() {
@@ -348,7 +348,7 @@ export function MyVoices() {
   );
 }
 
-/** The return bar (design mock settings-voices.jsx `HandoffBar`): when coming from the trial's “克隆新音色…”(Clone new voice…), it says where it came from; after one is saved, it returns and uses that one. */
+/** The return bar (design mock settings-voices.jsx `HandoffBar`): when coming from the trial's “Clone new voice…”, it says where it came from; after one is saved, it returns and uses that one. */
 function HandoffBar() {
   const handoff = useVoiceHandoff((s) => s.handoff);
   const setHandoff = useVoiceHandoff((s) => s.setHandoff);
@@ -562,7 +562,7 @@ function VoiceRow({
 
 /**
  * The full entry for each voice (language, transcript and recording size are not in the summary): keyed by `id@version`, re-read only when the version changes.
- * The list and tags do not wait for it; until it is read, that row shows “正在读取…”(Reading…).
+ * The list and tags do not wait for it; until it is read, that row shows “Reading…”.
  */
 function useVoiceEntries(runtime: RuntimeSession, voices: readonly LibraryEntrySummary[]): (voice: LibraryEntrySummary) => VoiceEntry | null {
   const [entries, setEntries] = useState<Record<string, VoiceEntry>>({});

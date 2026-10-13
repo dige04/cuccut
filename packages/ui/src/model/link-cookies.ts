@@ -41,11 +41,11 @@ export type LinkCookiesMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * The “网站登录” (website login) option for downloading videos (product design §2.7 “下载视频”, architecture design §7.9 Cookies and §12.9 “本机浏览器”; design draft model-tool-cookies.js).
+ * The “website login” option for downloading videos (product design §2.7 “下载视频”, architecture design §7.9 Cookies and §12.9 “本机浏览器”; design draft model-tool-cookies.js).
  *
  * - Lists only the browsers for which the Runtime detected a cookie store (`externalTools.cookieBrowsers`), most recently used first.
  * - Ticked browsers are tried one by one in the listed order (not the order in which they were clicked): when a cookie cannot be read, or the site still asks for login, the next one is tried; it stops at the first that works.
- * - “所有浏览器” (all browsers) is not a value: ticking it selects all detected browsers, and what is submitted is still the browser list; when only some are ticked it shows the partial state. Ticking none means an anonymous download.
+ * - “all browsers” is not a value: ticking it selects all detected browsers, and what is submitted is still the browser list; when only some are ticked it shows the partial state. Ticking none means an anonymous download.
  * - System authorization prompts follow the platform of the host the Runtime runs on (the `platform` carried in the detection result), not the platform this interface runs on.
  */
 
@@ -80,14 +80,14 @@ export function orderedBrowsers(checked: readonly LinkCookieBrowser[], detected:
   return detected.map((b) => b.id).filter((id) => set.has(id));
 }
 
-/** “所有浏览器” (all browsers): when every detected browser is ticked it is select-all; when some are ticked it is partial. */
+/** “all browsers”: when every detected browser is ticked it is select-all; when some are ticked it is partial. */
 export function allBrowsersState(checked: readonly LinkCookieBrowser[], detected: Detected): { selected: boolean; indeterminate: boolean } {
   const n = orderedBrowsers(checked, detected).length;
   const total = detected.length;
   return { selected: total > 0 && n === total, indeterminate: n > 0 && n < total };
 }
 
-/** Clicking “所有浏览器” (all browsers): when all are selected it clears; when none or partially selected it selects all. */
+/** Clicking “all browsers”: when all are selected it clears; when none or partially selected it selects all. */
 export function toggleAllBrowsers(checked: readonly LinkCookieBrowser[], detected: Detected): LinkCookieBrowser[] {
   return allBrowsersState(checked, detected).selected ? [] : detected.map((b) => b.id);
 }

@@ -4,7 +4,7 @@ import { trackRows } from './editor.ts';
 import { decimalSeconds } from './property-values.ts';
 
 /**
- * Pure logic for the property panel's “压低原声” (lower original). This is the ducking in video format spec §3.9; the commands are `setDucking` / `removeDucking`.
+ * Pure logic for the property panel's “lower original”. This is the ducking in video format spec §3.9; the commands are `setDucking` / `removeDucking`.
  *
  * Ducking is a rule on the sequence. During the time the trigger group (a track or clip, or someone speaking) makes sound, the target group is lowered by `depth` dB. From a lowered clip, the property panel looks for the first rule in which the target group includes it, either by naming it directly or by naming the track it sits on. A newly created rule names only this clip, and its trigger group is another track with sound. When turned off, rules that name only this clip are deleted directly. Rules that also lower other clips are only disabled (turning it off disables them too, and the page says so).
  */
@@ -48,7 +48,7 @@ export function isOwnRule(rule: DuckingRule, item: SequenceItem): boolean {
   return !rule.target.trackIds?.length && rule.target.itemIds?.length === 1 && rule.target.itemIds[0] === item.id;
 }
 
-/** The options for “压在” (ducked under): other tracks with sounding clips (a clip's own track cannot both trigger and be lowered). */
+/** The options for “ducked under”: other tracks with sounding clips (a clip's own track cannot both trigger and be lowered). */
 export function triggerOptions(sequence: Sequence, item: SequenceItem): { key: Id; label: string }[] {
   const sounding = new Set(sequence.items.filter((other) => other.trackId !== item.trackId && sounds(other)).map((other) => other.trackId));
   return trackRows(sequence)

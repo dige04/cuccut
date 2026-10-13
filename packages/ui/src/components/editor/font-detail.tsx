@@ -10,7 +10,7 @@ import { cancelFamily, downloadFamily, removeFamily, requestSample, useFontLibra
 import { FONT_COPY as FC } from './font-copy.ts';
 
 /**
- * Font details (prototype panel-font-picker.jsx's FontDetail): status, source, category and sample text, weights, size and license. Depending on the status it offers download, cancel download, retry, and delete the downloaded files, and finally “用这个字体” (use this font).
+ * Font details (prototype panel-font-picker.jsx's FontDetail): status, source, category and sample text, weights, size and license. Depending on the status it offers download, cancel download, retry, and delete the downloaded files, and finally “use this font”.
  */
 
 const wrap = style({ paddingY: 4 });
@@ -34,7 +34,7 @@ const actions = style({ display: 'flex', flexWrap: 'wrap', justifyContent: 'end'
 export const toastError = (error: unknown) => ToastQueue.negative(fontError(error).message, { timeout: 5000 });
 
 /**
- * `inline`: expands in place in the properties bar (on the same screen as the editor's “导出” (Export)), and “用这个字体” (use this font) becomes a neutral button. In a popover, it is the only primary button on that layer.
+ * `inline`: expands in place in the properties bar (on the same screen as the editor's “Export”), and “use this font” becomes a neutral button. In a popover, it is the only primary button on that layer.
  */
 export function FontDetail({ row: f, onBack, onPick, inline = false }: { row: FontRow; onBack(): void; onPick(): void; inline?: boolean }) {
   const { client } = useRuntime();

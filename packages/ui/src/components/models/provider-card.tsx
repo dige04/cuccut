@@ -137,9 +137,9 @@ function headText(
 }
 
 /**
- * A provider card (design mock settings-cloud.jsx:299-341): the header has the name and one sentence of description, a “已连接”(Connected) tag, and “管理密钥 / 连接”(Manage key / Connect). When connected and this tier has models, it can be expanded to list the models, the verdict, the default tag and “测试”(Test). Custom providers have an extra “添加模型”(Add model) line below; a custom provider with no models in this tier expands straight away once connected (its description says “在下面添加”(Add below)).
- * The card header of text generation and speech synthesis tiers has an extra “刷新”(Refresh) button (model / voice list); it is greyed out when not connected. While any provider is refreshing, the refresh and key buttons of every provider wait.
- * In the browser only “测试”(Test) remains: refresh, keys and “添加模型”(Add model) need methods outside the Web allowlist, so they are greyed out.
+ * A provider card (design mock settings-cloud.jsx:299-341): the header has the name and one sentence of description, a “Connected” tag, and “Manage key / Connect”. When connected and this tier has models, it can be expanded to list the models, the verdict, the default tag and “Test”. Custom providers have an extra “Add model” line below; a custom provider with no models in this tier expands straight away once connected (its description says “Add below”).
+ * The card header of text generation and speech synthesis tiers has an extra “Refresh” button (model / voice list); it is greyed out when not connected. While any provider is refreshing, the refresh and key buttons of every provider wait.
+ * In the browser only “Test” remains: refresh, keys and “Add model” need methods outside the Web allowlist, so they are greyed out.
  */
 export function ProviderCard({
   card: provider,

@@ -13,7 +13,7 @@ import { ColorField, Note, PRow, Sec, SecHead, ValueRow } from './inspector-cont
 import { INSPECTOR_COPY as IC } from './inspector-copy.ts';
 
 /**
- * Parameters for progress bars and waveforms (design panel-element-style.jsx's color and style sections, and panel-element-edit.jsx's style catalog). The number and names of the color rows follow the style (the two rainbow-border styles have no rows at all). The “样式” (style) row opens a catalog with the same thumbnails as the elements page. Hover previews first, and a click commits. When the style changes, the primary and secondary colors (the waveform also has a dB window) are replaced with that style's defaults.
+ * Parameters for progress bars and waveforms (design panel-element-style.jsx's color and style sections, and panel-element-edit.jsx's style catalog). The number and names of the color rows follow the style (the two rainbow-border styles have no rows at all). The “style” row opens a catalog with the same thumbnails as the elements page. Hover previews first, and a click commits. When the style changes, the primary and secondary colors (the waveform also has a dB window) are replaced with that style's defaults.
  */
 
 export interface VisualParamProps {
@@ -249,7 +249,7 @@ function ColorRows({ kind, main, secondary, values, isDisabled, live, commit }: 
   );
 }
 
-/** Style section: the current style's thumbnail and name, plus “N 种 · 点开选” (N styles · click to choose). Clicking it opens the catalog. */
+/** Style section: the current style's thumbnail and name, plus “N styles · click to choose”. Clicking it opens the catalog. */
 function StylePicker({ catalog, current, isDisabled, canvas, live, commit }: VisualParamProps & { catalog: Catalog; current: string }) {
   const [open, setOpen] = useState(false);
   const kinds = catalog === 'wave' ? WAVE_KINDS : PROGRESS_KINDS;

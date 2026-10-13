@@ -19,12 +19,12 @@ export function useTaskAction(): (action: TaskAction) => void {
   );
 }
 
-/** The label on the button in the list and on the pill: for an agent task “停止” (Stop), for a Job “取消” (Cancel). */
+/** The label on the button in the list and on the pill: for an agent task “Stop”, for a Job “Cancel”. */
 export function actionLabel(action: TaskAction): string {
   return action.type === 'stop' ? TASK_VIEW_COPY.stop : TASK_VIEW_COPY.cancel;
 }
 
-/** The large button on the detail page (prototype page-tasks.jsx “取消任务 / 取消导出” (Cancel task / Cancel export)). */
+/** The large button on the detail page (prototype page-tasks.jsx “Cancel task / Cancel export”). */
 export function actionTitle(action: TaskAction, kind: TaskKind): string {
   if (action.type === 'stop') return TASK_VIEW_COPY.stopTask;
   return kind === 'export' ? TASK_VIEW_COPY.cancelExport : TASK_VIEW_COPY.cancelTask;

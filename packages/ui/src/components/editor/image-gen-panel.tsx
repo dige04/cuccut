@@ -63,12 +63,12 @@ import { useMediaGen, useMediaGenStore } from './media-gen-store.ts';
 import { EDITOR_COPY as E } from './editor-copy.ts';
 
 /*
- * The “AI 生成” (AI generation) section of the image tab (design panel-image-gen.jsx `ImageGenPane`): the form from the tool page, slightly compressed, with one extra aspect-ratio option “跟视频画布” (follow video canvas). Below it are this video's three most recent batches of results. Generation goes through `models.generateImage` with `videoId`. When it finishes, the Runtime itself puts the result into this video's asset library (so the design's “收进素材库” (put into asset library) step becomes a state), and “放到画布” (put on canvas) places it at the playhead. The reference-image option is not in this version's interface, so it is greyed out with the reason written.
+ * The “AI generation” section of the image tab (design panel-image-gen.jsx `ImageGenPane`): the form from the tool page, slightly compressed, with one extra aspect-ratio option “follow video canvas”. Below it are this video's three most recent batches of results. Generation goes through `models.generateImage` with `videoId`. When it finishes, the Runtime itself puts the result into this video's asset library (so the design's “put into asset library” step becomes a state), and “put on canvas” places it at the playhead. The reference-image option is not in this version's interface, so it is greyed out with the reason written.
  */
 
 const FIT = '__fit';
 
-/** The tab panel inside the image page's “AI 生成” (AI generation) section: fills the panel and scrolls on its own. */
+/** The tab panel inside the image page's “AI generation” section: fills the panel and scrolls on its own. */
 const body = style({ boxSizing: 'border-box', height: 'full', overflowY: 'auto', paddingX: 12, paddingTop: 4, paddingBottom: 16 });
 const secHead = style({ display: 'flex', alignItems: 'center', gap: 8, marginTop: 16, marginBottom: 8 });
 const secTitle = style({ flexGrow: 1, margin: 0, font: 'detail', fontWeight: 'bold', color: 'gray-700' });
@@ -198,7 +198,7 @@ export function ImageGenPane({ videoId, sequence, assets }: { videoId: Id; seque
       .finally(() => setSubmitting(false));
   };
 
-  // “再来一版” (another version): carries back that batch's prompt and settings (the aspect ratio follows that batch, not the canvas), with the seed left empty.
+  // “another version”: carries back that batch's prompt and settings (the aspect ratio follows that batch, not the canvas), with the seed left empty.
   const again = (job: JobRecord) => {
     const next = againDraft(job);
     if (!next) return;
@@ -339,7 +339,7 @@ function SubHead({ title, aside }: { title: string; aside?: ReactNode }) {
   );
 }
 
-/** Aspect ratio (“跟视频画布” (follow video canvas) first), count, advanced (seed; local models also have steps). */
+/** Aspect ratio (“follow video canvas” first), count, advanced (seed; local models also have steps). */
 function ImageOptions({
   videoId,
   draft,

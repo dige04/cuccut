@@ -95,7 +95,7 @@ function TaskDetailBody({ row, job, task, backButton }: { row: TaskRow; job?: Jo
   const failed = job ? job.state === 'failed' : task?.status === 'failed';
   // Video tool runs (transcription, subtitle translation, dubbing translation): steps, the explanation for a stop, and retries all live in ToolRunPanel; no separate failure message is written here.
   const toolRun = job ? toolRunOf(job) : null;
-  // Direct tool-page tasks and file transcoding: the failure reason is written above “重试” (Retry), and “重试 / 再做一次” (Retry / Run again) returns to the tool page with its parameters already filled in (product design §2.7).
+  // Direct tool-page tasks and file transcoding: the failure reason is written above “Retry”, and “Retry / Run again” returns to the tool page with its parameters already filled in (product design §2.7).
   const rerun = job ? rerunOf(job) : null;
   const refill = rerun?.mode === 'refill' ? rerun : null;
   const actionHint =

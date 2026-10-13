@@ -15,7 +15,7 @@ export interface TextRange {
 }
 
 const RE_ESCAPE = /[.*+?^${}()|[\]\\]/g;
-/** Word boundaries use a Unicode property class: `\b` only recognizes ASCII, so “全词” (“whole word”) matching for Chinese would treat every gap between characters as a boundary. */
+/** Word boundaries use a Unicode property class: `\b` only recognizes ASCII, so “whole word” matching for Chinese would treat every gap between characters as a boundary. */
 const NOT_WORD = '[^\\p{L}\\p{N}]';
 
 /** Compiled once: `{re}` or `{error}` (a wrong regex must be reported, not silently match nothing). When the query is empty, neither is set. */

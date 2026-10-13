@@ -361,7 +361,7 @@ export function useVirtualRows({
     },
     [elements, getObserver],
   );
-  // The scroll container may appear after this hook (the panel first draws “正在读取…” (Loading…)): check after every commit, and re-attach if it changed.
+  // The scroll container may appear after this hook (the panel first draws “Loading…”): check after every commit, and re-attach if it changed.
   const attached = useRef<{ el: HTMLElement; detach(): void } | null>(null);
   useLayoutEffect(
     () => () => {

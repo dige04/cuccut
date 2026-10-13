@@ -51,7 +51,7 @@ import { RECORD_COPY, TRANSCODE_COPY } from './tools-copy.ts';
 import { copyText, useCancelJob, useRecordRetry } from './use-tool-records.ts';
 
 /*
- * Design mockup tool-video.jsx `JobCard`: a running job shows progress and a cancel button; a finished job lists its output file (spec, size before and after, “在文件夹中显示” (show in folder)), and says in one line whether the merge used stream copy or re-encoding, and why; a failed job gives the reason, the fix, and the raw ffmpeg output; a cancelled job can be queued again.
+ * Design mockup tool-video.jsx `JobCard`: a running job shows progress and a cancel button; a finished job lists its output file (spec, size before and after, “show in folder”), and says in one line whether the merge used stream copy or re-encoding, and why; a failed job gives the reason, the fix, and the raw ffmpeg output; a cancelled job can be queued again.
  * Local ffmpeg is not billed, and a cancelled job still keeps a card, as in the mockup.
  */
 
@@ -99,14 +99,14 @@ const raw = style({
 });
 
 const ACTION_ICON = { compress: <Filmstrip />, merge: <Layers />, 'extract-audio': <AudioWave /> } as const;
-/** The tool and draft this record belongs to (“带回左边再来一版” (bring back to the left and make another version)). */
+/** The tool and draft this record belongs to (“bring back to the left and make another version”). */
 const ACTION_TOOL = { compress: 'compress-video', merge: 'merge-video', 'extract-audio': 'extract-audio' } as const;
 
 function ActionIcon({ job }: { job: JobRecord }) {
   return <span className={recordIcon} aria-hidden>{ACTION_ICON[transcodeAction(job)]}</span>;
 }
 
-/** Submits a new job with the frozen parameters (“再试一次” (retry) for failed jobs, “重新排队” (re-queue) for cancelled ones). */
+/** Submits a new job with the frozen parameters (“retry” for failed jobs, “re-queue” for cancelled ones). */
 function useTranscodeRetry(job: JobRecord, copy: { submitted: string }) {
   const runtime = useRuntime();
   return useRecordRetry(

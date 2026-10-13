@@ -49,7 +49,7 @@ export interface HomeTemplate {
   title: string;
   summary: string;
   description: string;
-  /** “可以这样说” (You can say something like): the placeholders in `brief` are replaced with each item's example (the label is used when there is no example); empty string when there is no brief. */
+  /** “You can say something like”: the placeholders in `brief` are replaced with each item's example (the label is used when there is no example); empty string when there is no brief. */
   sample: string;
   /** The text filled into the input box when a scene template is chosen, with `{{label}}` placeholders (spec §5.5); example works have none, so it is an empty string. */
   brief: string;
@@ -74,7 +74,7 @@ export interface HomeTemplate {
   assets: readonly TemplateAsset[];
 }
 
-/** How many items fit on one page of “全部模板” (All templates). */
+/** How many items fit on one page of “All templates”. */
 export const TEMPLATES_PER_PAGE = 9;
 /** Maximum number of cards in the start page template grid (four columns, two rows). */
 export const SHELF_MAX = 8;
@@ -221,25 +221,25 @@ export function pageOf<T>(
   return { items: list.slice((p - 1) * per, p * per), page: p, pages, total: list.length };
 }
 
-/** Aspect ratio and duration, a short line: “9:16 · 约 30 秒” (9:16 · about 30 seconds), “16:9 · 时长自动” (16:9 · duration automatic), “画幅与时长自动” (aspect ratio and duration automatic). */
+/** Aspect ratio and duration, a short line: “9:16 · about 30 seconds”, “16:9 · duration automatic”, “aspect ratio and duration automatic”. */
 export function templateSpec(t: Pick<HomeTemplate, 'ratio' | 'length'>): string {
   const length = lengthLabel(t.length);
   if (!t.ratio && !length) return TEMPLATE_SPEC_COPY.allAuto;
   return [t.ratio ?? TEMPLATE_SPEC_COPY.ratioAuto, length ?? TEMPLATE_SPEC_COPY.lengthAuto].join(' · ');
 }
 
-/** The row in the details: scene templates show “默认” (default); for example works that give no explanation, the Agent is left to explain. */
+/** The row in the details: scene templates show “default”; for example works that give no explanation, the Agent is left to explain. */
 export function templateSpecLine(t: Pick<HomeTemplate, 'kind' | 'ratio' | 'length'>): string {
   if (!isExample(t)) return TEMPLATE_SPEC_COPY.sceneDefault(templateSpec(t));
   return t.ratio || t.length ? templateSpec(t) : TEMPLATE_SPEC_COPY.exampleAuto;
 }
 
-/** The small line on the card: “9:16 · 约 30 秒 · 内置” (9:16 · about 30 seconds · built-in), “画幅与时长自动 · 我的” (aspect ratio and duration automatic · mine). */
+/** The small line on the card: “9:16 · about 30 seconds · built-in”, “aspect ratio and duration automatic · mine”. */
 export function templateMeta(t: HomeTemplate): string {
   return [templateSpec(t), TEMPLATE_SOURCE_LABEL[t.source]].join(' · ');
 }
 
-/** Source shown in the details: “内置 · 场景模板 · 营销推广” (built-in · scene template · marketing), “我的 · 作者 · 作品示例 · 动效设计” (mine · author · example work · motion design). Built-in ones do not list an author (they are all CucCut). */
+/** Source shown in the details: “built-in · scene template · marketing”, “mine · author · example work · motion design”. Built-in ones do not list an author (they are all CucCut). */
 export function templateByline(t: HomeTemplate): string {
   return [TEMPLATE_SOURCE_LABEL[t.source], t.source === 'builtin' ? null : t.author, TEMPLATE_KIND_LABEL[t.kind], categoryLabel(t.category)]
     .filter(Boolean)
@@ -256,7 +256,7 @@ export function templateAssets(t: Pick<HomeTemplate, 'assets'>): { kind: Templat
 }
 
 /**
- * Details “需要你补充” (What you need to add) (spec §5.5; prototype `slotFields`): lists the unfilled slots in the order they first appear in the brief, with the description of the same-named item from the list attached;
+ * Details “What you need to add” (spec §5.5; prototype `slotFields`): lists the unfilled slots in the order they first appear in the brief, with the description of the same-named item from the list attached;
  * labels not described in the list are listed by name only. Unfilled slots of example works are in the prompt body, so the details do not list them (returns empty).
  */
 export function templateSlotFields(t: Pick<HomeTemplate, 'kind' | 'brief' | 'fields'>): TemplateField[] {

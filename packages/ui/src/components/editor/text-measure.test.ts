@@ -42,7 +42,7 @@ describe('新建文字时量框', () => {
     loading.resolve(kernel);
     const layer = await made;
     expect(build).toHaveBeenCalledTimes(1);
-    // “输入文字” (enter text, four characters) → 400 px wide, which is 400/1920 of a 1920-wide canvas.
+    // “enter text, four characters” → 400 px wide, which is 400/1920 of a 1920-wide canvas.
     expect(layer.place?.w).toBeCloseTo((400 / 1920) * 100, 1);
   });
 

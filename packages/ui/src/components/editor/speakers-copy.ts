@@ -16,7 +16,7 @@ import { vi } from './speakers-copy.vi.ts';
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** Copy for the AI tool “识别说话人”(identify speakers) (prototypes panel-aitools-flows.jsx `SpeakerFlow` and tool-setup.jsx `ToolSetup`). Translations are in `speakers-copy.zh-Hans.ts`. */
+/** Copy for the AI tool “identify speakers” (prototypes panel-aitools-flows.jsx `SpeakerFlow` and tool-setup.jsx `ToolSetup`). Translations are in `speakers-copy.zh-Hans.ts`. */
 const en = {
   title: 'Identify speakers',
   back: 'Back',

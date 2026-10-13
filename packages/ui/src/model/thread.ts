@@ -8,7 +8,7 @@ type Item<K extends TimelineItem['kind']> = Extract<TimelineItem, { kind: K }>;
 
 /**
  * A group of consecutive execution steps (reasoning, tool calls, and receipts for video edits), folded by default into a one-line summary (product design §3.2.2).
- * `undone`: the transaction ids of those edits in this session that were later undone (receipts use this to show “已撤销” (“Undone”)).
+ * `undone`: the transaction ids of those edits in this session that were later undone (receipts use this to show “Undone”).
  */
 export interface StepsBlock {
   type: 'steps';
@@ -23,7 +23,7 @@ export type ThreadBlock =
   | StepsBlock
   | { type: 'approval'; id: Id; item: Item<'approval'> }
   | { type: 'notice'; id: Id; item: Item<'notice'> }
-  /** Status line of a task: placed at the end of the task, it reads “已工作 X” (“Worked for X”) or gives the reason it stopped or failed. */
+  /** Status line of a task: placed at the end of the task, it reads “Worked for X” or gives the reason it stopped or failed. */
   | { type: 'task'; id: Id; item: Item<'task'> };
 
 /**
@@ -111,7 +111,7 @@ export function toolTitle(item: Item<'tool-call'>): string {
   return typeof label === 'string' && label ? M.toolTitle(action, label) : action;
 }
 
-/** Category of a step row (product design §3.2.2): the protocol's tool kinds have no “读取” (“Read”), so reads and searches are derived from `(tool, title)`. */
+/** Category of a step row (product design §3.2.2): the protocol's tool kinds have no “Read”, so reads and searches are derived from `(tool, title)`. */
 export type StepKind = 'command' | 'read' | 'edit' | 'search' | 'other';
 
 export const STEP_LABELS: Record<StepKind, string> = live(() => M.steps);
@@ -149,7 +149,7 @@ function editPaths(item: Item<'tool-call'>): string[] {
 
 /**
  * The category, fixed category name and secondary summary of one tool call (the command itself, relative path, query terms). CucCut's own tools show their own category name and argument summary
- * (agent-tool-steps.ts); `tool` is their category key (the icon is taken from it), and the group header summary still counts them as “调用了工具” (“Called a tool”).
+ * (agent-tool-steps.ts); `tool` is their category key (the icon is taken from it), and the group header summary still counts them as “Called a tool”.
  */
 export function toolStep(
   item: Item<'tool-call'>,
@@ -192,7 +192,7 @@ function stepPaths(item: Item<'tool-call'>, kind: StepKind, cwd?: string | null)
 
 /**
  * One-sentence summary of a group of steps: grouped in order of each kind's first appearance; reads and edits are counted by deduplicated path,
- * and video edits are counted by receipt (“读取了 2 个文件、运行了命令” (“Read 2 files, ran a command”)). When there is only thinking, it reads “思考” (“Thinking”).
+ * and video edits are counted by receipt (“Read 2 files, ran a command”). When there is only thinking, it reads “Thinking”.
  *
  * Only receipts are counted: tools that submit video edits put a receipt in the call (apart from `edits_apply`, transcription and translation also submit them),
  * and one successful `edits_apply` is both a tool call and a receipt, so counting by calls would double-count, while failed calls submit nothing.
@@ -274,11 +274,11 @@ export function approvalSummary(
 
 /**
  * What is written when a decided approval collapses into one line (the `label` of the prototype `PermissionMsg`). For approvals auto-allowed by a rule or access mode, the prototype's
- * `autoAllowLabel` line is written; for “总是允许” (“Always allow”) clicked by the user, “之后 <规则> 不再问” (“Stop asking about <rule> from now on”) is written.
+ * `autoAllowLabel` line is written; for “Always allow” clicked by the user, “Stop asking about <rule> from now on” is written.
  *
  * The answer the user clicked is taken from the timeline's `decision`; earlier records do not have it, so it falls back to `chosen` (the answer clicked in this window),
- * and if neither exists, “已允许” (“Allowed”) is written.
- * The prototype also distinguishes two auto-allow kinds, “编辑” (“Edit”) and “应答环” (“Reply loop”); `decidedBy: 'auto'` cannot tell which tier let it through, so “访问模式” (“Access mode”) is always written.
+ * and if neither exists, “Allowed” is written.
+ * The prototype also distinguishes two auto-allow kinds, “Edit” and “Reply loop”; `decidedBy: 'auto'` cannot tell which tier let it through, so “Access mode” is always written.
  */
 export function approvalDecidedLabel(item: Item<'approval'>, chosen: ApprovalDecision | undefined): string {
   const rule = item.request.rule ?? null;
@@ -307,13 +307,13 @@ export type ChangeUndoState =
   | { state: 'undone'; restore: Id | null };
 
 /**
- * Whether a change card is “已撤销” (“Undone”) or still in effect, and whether it can be “恢复” (“Restored”).
+ * Whether a change card is “Undone” or still in effect, and whether it can be “Restored”.
  *
  * - When the editor has this video open, there is history (`history`): starting from this entry, follow `undoneBy`; being undone an odd number of times means undone,
  *   and the last entry on the chain (an undo at an odd level) is the one to undo when restoring.
  * - With no history (the video is not open), or when the history does not yet include the action just taken in this window: use the action in this window, and failing that, the undo recorded in the session (`undoneInThread`).
- * - Restore is offered only when that entry is exactly the top of the current connection's “重做” (“Redo”) stack (`redo`, from edits.undoState). An undo is a compensating transaction:
- *   when it is not the top of the stack (you have edited this video since, or the undo was done by the Agent), it cannot reliably be judged that undoing it puts this step back, so “恢复” (“Restore”) is not drawn.
+ * - Restore is offered only when that entry is exactly the top of the current connection's “Redo” stack (`redo`, from edits.undoState). An undo is a compensating transaction:
+ *   when it is not the top of the stack (you have edited this video since, or the undo was done by the Agent), it cannot reliably be judged that undoing it puts this step back, so “Restore” is not drawn.
  */
 export function changeUndoState(input: {
   transactionId: Id;

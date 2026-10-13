@@ -113,12 +113,12 @@ export function ImageTool() {
   const submitFailed = useSubmitFailed('generateImage', IMAGE_COPY.submitFailed);
   const [sample, setSample] = useState(0);
   const { saveDirectory } = useToolStatus();
-  // The directory picked with “更改…” (Change…) lives only on this page (it is not written back to settings).
+  // The directory picked with “Change…” lives only on this page (it is not written back to settings).
   const [saveOverride, setSaveOverride] = useState<string | null>(null);
 
   const options = useMemo(() => (view ? imageModelOptions(view) : []), [view]);
   const option = findOption(options, initialModelKey(options, draft.model, view?.generateImage.effective ?? null, imageFallback));
-  // When the local model is not installed, `imageStatus` says “先下载” (Download first), consistent with the in-place download card.
+  // When the local model is not installed, `imageStatus` says “Download first”, consistent with the in-place download card.
   const reason = view && !option?.local ? modelReason(options, option, FRAME_COPY.imageNoun) : null;
   const status = reason ? { text: reason, bad: true } : imageStatus(draft, option, tried);
   const toSettings = () => go({ tab: 'models', category: 'image', page: option?.local ? 'local' : 'cloud' });

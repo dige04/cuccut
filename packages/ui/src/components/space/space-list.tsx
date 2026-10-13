@@ -81,7 +81,7 @@ import { SPACE_COPY as COPY } from './space-copy.ts';
  * The list area of Space (product design §4.3–§4.4; prototype space-list.jsx): the grid is CardView, the list is TableView (name, type, source,
  * duration or size, status, recent activity). Both are virtualized, with height given by the outer frame. This part only renders; actions are handed to the page.
  * Cards and the name column both show thumbnails first (§4.3), so the list row height uses the spacious density.
- * In “全部” (All) and “视频” (Videos), one video takes only one row (model/space.ts `groupEntries`): its exported and generated files are gathered under the card's “N 个文件” and
+ * In “All” and “Videos”, one video takes only one row (model/space.ts `groupEntries`): its exported and generated files are gathered under the card's “N 个文件” and
  * the line below the name. When the video has no status of its own, the status speaks for whichever of its files most needs to be seen.
  */
 
@@ -232,7 +232,7 @@ const nameCell = style({ display: 'flex', alignItems: 'center', gap: 8, minWidth
 const nameText = style({ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
 const nameBody = style({ display: 'flex', flexDirection: 'column', minWidth: 0 });
 const nameSub = style({ font: 'ui-xs', color: 'gray-600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
-/** Card footer: status on the left, “N 个文件” (N files) pushed to the right (prototype sp-files). */
+/** Card footer: status on the left, “N files” pushed to the right (prototype sp-files). */
 const filesButton = style({ marginStart: 'auto' });
 const visuallyHidden = style({
   position: 'absolute',
@@ -245,7 +245,7 @@ const visuallyHidden = style({
 const favMark = style({ display: 'flex', color: 'yellow-800', flexShrink: 0 });
 
 /**
- * Preview block (prototype ItemPreview): the picture fills the block; documents and subtitles are body-text summaries on paper; items without a picture show a type icon, and missing files add “找不到文件” (File not found).
+ * Preview block (prototype ItemPreview): the picture fills the block; documents and subtitles are body-text summaries on paper; items without a picture show a type icon, and missing files add “File not found”.
  * `small` is the tier in the list's name column: the name sits right beside it, so the whole block is hidden from screen readers; documents keep only the paper and type icon; for missing files, only the gray background shows, and the text is announced via aria-label.
  */
 export function EntryThumb({ entry, small, contain = false }: { entry: SpaceEntry; small?: boolean; contain?: boolean }) {
@@ -318,7 +318,7 @@ function EntryStatus({ entry, now, quiet }: { entry: SpaceRow; now: number; quie
   );
 }
 
-/** “N 个文件” (N files) on a card: clicking opens this video's viewer, with the files listed one by one inside (prototype FilesButton). */
+/** “N files” on a card: clicking opens this video's viewer, with the files listed one by one inside (prototype FilesButton). */
 function FilesButton({ row, onAction }: { row: SpaceRow; onAction: (action: EntryAction, entry: SpaceEntry) => void }) {
   const n = row.files?.length ?? 0;
   if (!n) return null;
@@ -330,7 +330,7 @@ function FilesButton({ row, onAction }: { row: SpaceRow; onAction: (action: Entr
   );
 }
 
-/** “N 支短视频” (N shorts) on a parent video card (product design §5.10): click to filter by source to show them. */
+/** “N shorts” on a parent video card (product design §5.10): click to filter by source to show them. */
 function ShortsButton({ row, count, onAction }: { row: SpaceRow; count: number; onAction: (action: EntryAction, entry: SpaceEntry) => void }) {
   if (!count) return null;
   return (
@@ -342,12 +342,12 @@ function ShortsButton({ row, count, onAction }: { row: SpaceRow; count: number; 
 }
 
 /**
- * The item ⋯ menu (prototype itemMenu, shared by cards and rows): for a video, “打开视频” (Open video), “查看信息” (View info, the viewer), and
- * “视频详情…” (Video details…, the details dialog from the prototype project card menu, the same dialog as the ⓘ in the editor top bar); for others, “查看” (View); in the trash, restore and delete permanently;
+ * The item ⋯ menu (prototype itemMenu, shared by cards and rows): for a video, “Open video”, “View info, the viewer”, and
+ * “Video details…, the details dialog from the prototype project card menu, the same dialog as the ⓘ in the editor top bar”; for others, “View”; in the trash, restore and delete permanently;
  * a failed generation placeholder can only be cleared. Items that cannot be done are greyed out (the reason is written in the viewer).
  */
 /**
- * “转录… / 重新转录… / 重试转录…” (Transcribe… / Re-transcribe… / Retry transcription…) for video items (product design §4.4, prototype space-list.jsx `transcribeItem`): opens the transcription tool page with this video preselected.
+ * “Transcribe… / Re-transcribe… / Retry transcription…” for video items (product design §4.4, prototype space-list.jsx `transcribeItem`): opens the transcription tool page with this video preselected.
  * Retry comes first (before Open video); the other two follow View info.
  */
 function transcribeItem(action: SpaceTranscribeAction) {
@@ -674,7 +674,7 @@ export function SpaceTable(props: ListProps) {
   const { act, dependencies } = useListDeps(props, sourceOf);
   const cell = (entry: SpaceRow, column: ColumnId): ReactNode => {
     if (column === 'name') {
-      // Video with files: below the name, the line reads “N 个文件 · 成片 2 · 字幕 1” (N files · finished cut 2 · subtitles 1); when a search matches only through a file, it shows which file was found
+      // Video with files: below the name, the line reads “N files · finished cut 2 · subtitles 1”; when a search matches only through a file, it shows which file was found
       const n = entry.files?.length ?? 0;
       const kids = shortsOf(shorts, entry);
       const sub =

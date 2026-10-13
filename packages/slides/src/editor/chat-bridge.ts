@@ -1,7 +1,7 @@
 /**
  * Bridge that hands prompts to the agent session (docs/design/slides §4, §8.3). The runtime's `chat.suggestPrompt` runs in the iframe, while the session's input box is in the parent window.
  *
- * The runtime calls `suggestPrompt(prompt)` at places such as “让智能体修好这页” (“have the agent fix this page”). Here it is converted to `editor:suggest-prompt` and sent to the parent window; the parent puts the prompt into this session's input box and replies with `editor:suggest-prompt-result`. If it was not put in (the tab does not belong to the session) or the parent does not reply, this rejects, and the runtime copies the prompt to the clipboard instead.
+ * The runtime calls `suggestPrompt(prompt)` at places such as “have the agent fix this page”. Here it is converted to `editor:suggest-prompt` and sent to the parent window; the parent puts the prompt into this session's input box and replies with `editor:suggest-prompt-result`. If it was not put in (the tab does not belong to the session) or the parent does not reply, this rejects, and the runtime copies the prompt to the clipboard instead.
  */
 import type { ParentLink } from './comments-bridge.ts';
 import type { HostChatCapability } from './slides-host.ts';

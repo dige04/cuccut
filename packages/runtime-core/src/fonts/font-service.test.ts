@@ -355,7 +355,7 @@ describe('按需下载的字体（FontService）', () => {
       return (await fonts.catalogueList({ families: [family] })).families[0]!;
     };
 
-    // Cancels the download task (picker, skip in the font bar): the font picker records “已取消” (cancelled); the next scan or preview that needs it downloads again.
+    // Cancels the download task (picker, skip in the font bar): the font picker records “cancelled”; the next scan or preview that needs it downloads again.
     const cancelled = (await fonts.download({ family: 'Slow Font' }, submitter)).jobId!;
     for (let i = 0; i < 100 && !((await fonts.catalogueList({ families: ['Slow Font'] })).families[0]!.job?.doneBytes ?? 0); i++) {
       await new Promise((r) => setTimeout(r, 20));
@@ -383,7 +383,7 @@ describe('按需下载的字体（FontService）', () => {
     expect(missing).toEqual([{ ...face('Slow Font Two'), reason: 'downloading', jobId: expect.stringMatching(/^job_/) }]);
     expect(await jobs.settled(missing[0]!.jobId!)).toBe('completed');
 
-    // A real failure: no automatic retry for ten minutes; answers “下载失败” (download failed) and does not submit a new task.
+    // A real failure: no automatic retry for ten minutes; answers “download failed” and does not submit a new task.
     const failed = (await resolve([face('Broken Font')])).missing[0]!.jobId!;
     expect(await jobs.settled(failed)).toBe('failed');
     const count = jobs.list().length;
@@ -414,7 +414,7 @@ describe('按需下载的字体（FontService）', () => {
         expect(records[1]).toEqual({ state: 'running', wait: null });
         expect(records.some((r) => r.wait !== null)).toBe(false);
       }
-      // Must wait: the first entry already carries wait (the UI shows “等待中” (waiting) at first glance), and becomes running only after one of the preceding ones finishes.
+      // Must wait: the first entry already carries wait (the UI shows “waiting” at first glance), and becomes running only after one of the preceding ones finishes.
       expect(c![0]).toEqual({ state: 'queued', wait: 'concurrency' });
       const running = c!.findIndex((r) => r.state === 'running');
       expect(running).toBeGreaterThan(0);
@@ -464,7 +464,7 @@ describe('按需下载的字体（FontService）', () => {
     await jobs.settled((await fonts.download({ family: 'Lobster' }, submitter)).jobId!);
     await jobs.settled((await fonts.download({ family: 'Noto Serif JP', faces: [{ weight: 400, italic: false }] }, submitter)).jobId!);
     const [lobster] = (await fonts.resolve([face('Lobster')], { download: false, submitter })).faces;
-    // A “导出” (export) still running pins Lobster's file.
+    // A “export” still running pins Lobster's file.
     let finish!: () => void;
     const gate = new Promise<void>((r) => (finish = r));
     const { jobId } = jobs.submitTask(
@@ -579,7 +579,7 @@ describe('按需下载的字体（FontService）', () => {
     });
     await expect(fonts.sample({ family: 'Garbage Font' })).rejects.toMatchObject({ details: { code: 'FONT_DOWNLOAD_INTEGRITY' } });
     await expect(fonts.sample({ family: 'Broken Font' })).rejects.toMatchObject({ details: { code: 'FONT_DOWNLOAD_SOURCE' } });
-    // Samples are not downloaded fonts: they are not in the index and do not count as “已下载” (downloaded).
+    // Samples are not downloaded fonts: they are not in the index and do not count as “downloaded”.
     expect((await fonts.downloaded()).faces).toEqual([]);
     expect(await fs.readdir(path.join(dir, 'fonts', 'samples'))).toHaveLength(2);
   });
@@ -625,7 +625,7 @@ describe('按需下载的字体（FontService）', () => {
     await jobs.settled(lobster.status.job!.jobId);
     await jobs.settled(opened.families.find((f) => f.family === 'Broken Font')!.status.job!.jobId);
 
-    // On reopen: downloaded fonts need no fallback; a recent failure is not retried automatically (within ten minutes), and the status is “下载失败” (download failed) with its reason.
+    // On reopen: downloaded fonts need no fallback; a recent failure is not retried automatically (within ten minutes), and the status is “download failed” with its reason.
     server.requests.length = 0;
     const again = await fonts.usage(census, { download: true, submitter });
     expect(again.started).toEqual([]);

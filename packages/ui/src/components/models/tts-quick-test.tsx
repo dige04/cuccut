@@ -103,13 +103,13 @@ export interface TtsQuickTestProps {
   bundleId: string;
   name: string;
   model: SpeechModelInfo;
-  /** Installed cloneable model names (on a preset model, says where to try “我的声音”(My Voices)). */
+  /** Installed cloneable model names (on a preset model, says where to try “My Voices”). */
   cloneNames: readonly string[];
   /** Reminder at the top of the panel when the last check did not pass (model/model-check.ts `tryNotice`). */
   notice?: TryNoteView | null;
-  /** Check can be run on the row: when “模型出错了”(Model errored) appears, offer “检查模型”(Check model). */
+  /** Check can be run on the row: when “Model errored” appears, offer “Check model”. */
   canCheck?: boolean;
-  /** The reminder and the failure's “修复… / 重新检查 / 检查模型”(Repair… / Re-check / Check model) are handed back to the row. */
+  /** The reminder and the failure's “Repair… / Re-check / Check model” are handed back to the row. */
   onCheck?: (k: 'repair' | 'recheck' | 'check') => void;
 }
 
@@ -119,7 +119,7 @@ function freshDraft(model: SpeechModelInfo): QuickDraft {
 }
 
 /**
- * The “试听”(Trial listen) on a local model row (design mock settings-tts.jsx `TtsQuickTest`): pick a voice, a tone and a sentence to read, and submit one real `models.synthesizeSpeech` (`provider: 'local'`, `model` is the model package ID). Progress and results are read from the `jobs` topic, and the result can be played and downloaded.
+ * The “Trial listen” on a local model row (design mock settings-tts.jsx `TtsQuickTest`): pick a voice, a tone and a sentence to read, and submit one real `models.synthesizeSpeech` (`provider: 'local'`, `model` is the model package ID). Progress and results are read from the `jobs` topic, and the result can be played and downloaded.
  * The selection and the latest result are kept per model (state/tts-quick-store.ts), so they remain after collapsing and expanding again.
  * The panel keeps its own failures (form not filled in properly, submit rejected, task failed), using the check wording (what is wrong + what to do + buttons), and shows no toast.
  * If the model's last check did not pass, the panel opens by saying so (design mock model-local-check.js `tryNotice` / `tryFailure`); it stops saying so once a trial listen has succeeded after that check.

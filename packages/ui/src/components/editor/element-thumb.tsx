@@ -56,7 +56,7 @@ export function ConfettiThumb({ styleKey, playing = false }: { styleKey: string;
 }
 
 /**
- * Thumbnail for a brand-library sticker (elements page “我的贴纸” (My stickers)): an image is shown directly from its file; a Lottie stops on the middle frame of its animation (the start is often still empty), and when `playing` it loops from that frame. If it cannot be read, the cell is left blank.
+ * Thumbnail for a brand-library sticker (elements page “My stickers”): an image is shown directly from its file; a Lottie stops on the middle frame of its animation (the start is often still empty), and when `playing` it loops from that frame. If it cannot be read, the cell is left blank.
  */
 export function BrandStickerThumb({
   summary,

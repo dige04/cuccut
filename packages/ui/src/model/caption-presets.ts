@@ -200,7 +200,7 @@ export function presetStyle(preset: CaptionPreset, kind: LineKind = 'original'):
 }
 
 /**
- * The current word of the 「经典」 (Classic) card (colour change #18E1D6): the default preset (`DEFAULT_CAPTION_STYLE`, spec §5.6) carries it, so new captions that don't apply a card still match the Classic card that is highlighted in the gallery. The pipeline (`packages/jobs/src/pipelines/caption-layer.ts`)
+ * The current word of the “Classic” card (colour change #18E1D6): the default preset (`DEFAULT_CAPTION_STYLE`, spec §5.6) carries it, so new captions that don't apply a card still match the Classic card that is highlighted in the gallery. The pipeline (`packages/jobs/src/pipelines/caption-layer.ts`)
  * and the kernel (`video_model::caption_style::default_studio_style`) each keep a copy of the same literal; change all three together.
  */
 export const CLASSIC_WORD_ANIMATION: Json = presetStyle(CAPTION_PRESETS.find((p) => p.id === 'classic')!).wordAnimation as Json;
@@ -271,7 +271,7 @@ function appliedKind(root: Json, kind: LineKind): LineKind {
 }
 
 /**
- * Whether this card is the source card for these lines: judged by the recorded `stylePreset.id` (it still counts if other dimensions were changed; a 「已修改」 (Modified) label is shown beside it);
+ * Whether this card is the source card for these lines: judged by the recorded `stylePreset.id` (it still counts if other dimensions were changed; a “Modified” label is shown beside it);
  * an old style with no recorded source card is matched key by key against its paint.
  */
 export function presetOn(root: Json, preset: CaptionPreset, kinds: readonly LineKind[]): boolean {
@@ -284,7 +284,7 @@ export function presetOn(root: Json, preset: CaptionPreset, kinds: readonly Line
 }
 
 /**
- * The source card is lit, but these lines no longer match what it compiles to (prototype 「已修改 · 还原」 (Modified · Revert)). Only lines that record this card are checked; old styles with no recorded source card
+ * The source card is lit, but these lines no longer match what it compiles to (prototype “Modified · Revert”). Only lines that record this card are checked; old styles with no recorded source card
  * (such as the default style) are recognised by their paint, and they never had word-level keys written, so they do not count as modified.
  */
 export function presetModified(root: Json, preset: CaptionPreset, kinds: readonly LineKind[]): boolean {
@@ -302,7 +302,7 @@ export function currentPreset(root: Json, kinds: readonly LineKind[]): CaptionPr
 }
 
 /**
- * In the properties page, changing the word-level dimensions 「当前词」 (Current word), 「动效」 (Motion) or 「倒鸭子」 (Upside-down duck): the style for this line, after layering its overrides, is parsed into a body, changed, and compiled again according to this line's role,
+ * In the properties page, changing the word-level dimensions “Current word”, “Motion” or “Upside-down duck”: the style for this line, after layering its overrides, is parsed into a body, changed, and compiled again according to this line's role,
  * and only the word-level keys (`WORD_KEYS`) are written back; no paint or placement keys change. Where it is written:
  * - Original: if this card was applied only to the original (the source card is recorded in `origStyle`), it is written into `origStyle`; otherwise it is written to the root style;
  * - Translation: when stacked with the original as a bilingual pair, it is written into `transStyle` (the root style is shared by both lines); when only the translation is present, it is written to the root style.
@@ -377,7 +377,7 @@ export const THUMB_SAMPLE = { main: 'Words are truth', sub: '词是真相' } as 
 export const THUMB_BACKDROP = ['#CFD2D6', '#A8ACB3'] as const;
 
 /**
- * The style and lines used for thumbnails: paint copied over, placement changed to 「居中、占满宽、固定字号」 (centred, full width, fixed font size). The prototype thumbnails are drawn at a fixed font size (`SubThumb` fz 13),
+ * The style and lines used for thumbnails: paint copied over, placement changed to “centred, full width, fixed font size”. The prototype thumbnails are drawn at a fixed font size (`SubThumb` fz 13),
  * not following the on-screen font size and position; bilingual ratio, order and spacing are kept, so the relative sizes of the two lines match the screen.
  * `px` is the pixel size of the larger line on the thumbnail (a size set separately in an override does not count; the ratio chain applies).
  * Placement in line overrides is also removed: a line dragged separately on screen (`x`, `y`, `verticalAlign` in `origStyle` / `transStyle`) is still stacked back into the two-line stack in the thumbnail.

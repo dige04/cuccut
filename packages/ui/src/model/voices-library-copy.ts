@@ -14,7 +14,7 @@ import { pl } from './voices-library-copy.pl.ts';
 import { tr } from './voices-library-copy.tr.ts';
 import { vi } from './voices-library-copy.vi.ts';
 
-/** Copy for 「我的声音」(My voices; Models › Speech synthesis) (translations are in `voices-library-copy.<language>.ts`). “编辑” (Edit) and 「云端模型」(Cloud models) refer to a button and a page name elsewhere. */
+/** Copy for “My voices; Models › Speech synthesis” (translations are in `voices-library-copy.<language>.ts`). “Edit” and “Cloud models” refer to a button and a page name elsewhere. */
 const en = {
   /** The statement written into `consent.statement` when “I declare” is ticked. It is also the text on the checkbox. */
   consentStatement: 'This is my own voice, or I have the speaker’s permission',

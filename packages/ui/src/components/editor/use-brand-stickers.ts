@@ -9,12 +9,12 @@ import { useLibrary } from '../../state/library-store.ts';
 export interface BrandSticker {
   summary: LibraryEntrySummary;
   entry: LibraryEntry;
-  /** Goes to the “动态贴纸” (Animated stickers) page (Lottie); otherwise goes to the “贴纸” (Stickers) page. */
+  /** Goes to the “Animated stickers” page (Lottie); otherwise goes to the “Stickers” page. */
   dynamic: boolean;
 }
 
 /**
- * Stickers in the brand library (the element page's “我的贴纸” (My stickers)): the summary has no file type, so images and Lottie cannot be told apart. Each one is read individually (cached per version). An entry that cannot be read is not shown. Before `ready`, do not say “还没有” (none yet): the library snapshot or entries are still on the way. Order matches the brand page (by name).
+ * Stickers in the brand library (the element page's “My stickers”): the summary has no file type, so images and Lottie cannot be told apart. Each one is read individually (cached per version). An entry that cannot be read is not shown. Before `ready`, do not say “none yet”: the library snapshot or entries are still on the way. Order matches the brand page (by name).
  */
 export function useBrandStickers(): { ready: boolean; stickers: BrandSticker[] } {
   const runtime = useRuntime();

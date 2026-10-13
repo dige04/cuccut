@@ -65,7 +65,7 @@ function say(message: string): void {
 /** The previous notice with Undo: S2 notices with actions do not disappear on their own (leaving time for screen readers); when a new one appears, the old one is dismissed so they do not pile up. */
 let closeUndoToast: (() => void) | null = null;
 
-/** Notice with “撤销” (Undo): undoes this transaction, not the top of the stack (other things may have happened in the meantime). */
+/** Notice with “Undo”: undoes this transaction, not the top of the stack (other things may have happened in the meantime). */
 function undoToast(actions: EditorActions, message: string, receipt: TransactionReceipt): void {
   closeUndoToast?.();
   const close = ToastQueue.positive(message, {
@@ -141,7 +141,7 @@ async function removeItems(actions: EditorActions, ctx: Live, itemIds: readonly 
 }
 
 /**
- * ⇧Delete and the context menu's “从所有轨道删除这一段” (delete this span from all tracks): the time covered by the selected clips (subtitle instances excepted) is removed from every track, content and chapters after it move forward,
+ * ⇧Delete and the context menu's “delete this span from all tracks”: the time covered by the selected clips (subtitle instances excepted) is removed from every track, content and chapters after it move forward,
  * and the total length shrinks, the same as box-selecting all tracks and deleting. One transaction, with an undo notice. If a locked track or clip sits after it, nothing is done, and the notice says to unlock first.
  */
 export async function removeSelectionSpan(actions: EditorActions): Promise<void> {
@@ -157,7 +157,7 @@ export async function removeSelectionSpan(actions: EditorActions): Promise<void>
   undoToast(actions, RIPPLE.removed((plan.frames * ctx.sequence.fps.den) / ctx.sequence.fps.num), receipt);
 }
 
-/** Whether any selected clip can be “从所有轨道删除” (delete from all tracks) (whether that context-menu item is greyed out): none when only subtitles are selected. */
+/** Whether any selected clip can be “delete from all tracks” (whether that context-menu item is greyed out): none when only subtitles are selected. */
 export function canRemoveSelectionSpan(sequence: Sequence): boolean {
   return selectionSpans(sequence, useEditor.getState().selection).length > 0;
 }
@@ -323,7 +323,7 @@ export function dropNudge(): boolean {
 // ---- Canvas floating toolbar and multi-select page ----
 // The toolbar only acts on the one item inside the selection box: the selection may still include the main video (if ⇧-clicked), so act by clip ID, not by selection.
 
-/** The toolbar's “复制一份” (duplicate): duplicates these items as they are, along the same path as ⌘D (one transaction, the new copies selected, with an undo notice). */
+/** The toolbar's “duplicate”: duplicates these items as they are, along the same path as ⌘D (one transaction, the new copies selected, with an undo notice). */
 export async function duplicateItems(actions: EditorActions, itemIds: readonly Id[]): Promise<void> {
   const ctx = live();
   if (!ctx?.editable) return;
@@ -333,7 +333,7 @@ export async function duplicateItems(actions: EditorActions, itemIds: readonly I
 }
 
 /**
- * “层级” (layer order) on the canvas (toolbar menu and F / B / ⌘↑ / ⌘↓): changing layer is one change, undone with ⌘Z. The stacking order is the track order from top to bottom; the engine splits tracks or moves whole tracks as needed
+ * “layer order” on the canvas (toolbar menu and F / B / ⌘↑ / ⌘↓): changing layer is one change, undone with ⌘Z. The stacking order is the track order from top to bottom; the engine splits tracks or moves whole tracks as needed
  * (command protocol spec §4.2 `arrangeItem`); if already at the front / back, nothing happens (that menu item is greyed out).
  */
 export function arrangeItem(actions: EditorActions, itemId: Id, direction: ArrangeDirection): void {
@@ -344,7 +344,7 @@ export function arrangeItem(actions: EditorActions, itemId: Id, direction: Arran
 }
 
 /**
- * Shortcuts for “层级” (layer order): handled when the selection is exactly one item on the canvas (returns true); in other cases (nothing selected, several selected, or the selection is audio or subtitles) the key is passed on to its original binding
+ * Shortcuts for “layer order”: handled when the selection is exactly one item on the canvas (returns true); in other cases (nothing selected, several selected, or the selection is audio or subtitles) the key is passed on to its original binding
  * (F is fullscreen playback). If something is selected but cannot be changed (video is read-only), it still counts as handled, and does not go fullscreen.
  */
 export function arrangeSelection(actions: EditorActions, direction: ArrangeDirection): boolean {
@@ -358,7 +358,7 @@ export function arrangeSelection(actions: EditorActions, direction: ArrangeDirec
   return true;
 }
 
-/** The toolbar's “删除” (delete): deletes these items (the gaps they leave are closed up, as with Delete), removes them from the selection, with an undo notice. */
+/** The toolbar's “delete”: deletes these items (the gaps they leave are closed up, as with Delete), removes them from the selection, with an undo notice. */
 export async function deleteItems(actions: EditorActions, itemIds: readonly Id[]): Promise<void> {
   const ctx = live();
   if (!ctx?.editable || !itemIds.length) return;
@@ -409,7 +409,7 @@ export async function deleteDubBlocks(actions: EditorActions, itemIds: readonly 
 }
 
 /**
- * Removes a whole dub group: the reverse operation used when “撤销这组配音” (undo this dub group) on the translation dub receipt cannot undo it (model/dub-undo.ts). In one transaction it deletes this group's instances
+ * Removes a whole dub group: the reverse operation used when “undo this dub group” on the translation dub receipt cannot undo it (model/dub-undo.ts). In one transaction it deletes this group's instances
  * (including the separated background sound), restores the original sound that was muted by this, and removes the ducking triggered by the dub track. Which instances were muted is recorded in the dub plan body, and
  * `readPlan` retrieves it; if it cannot be retrieved, the rest proceeds and the notice says the original sound was not restored. Empty dub tracks and the dub plan document are left in place (the protocol has no operations to delete tracks or documents).
  */
@@ -439,7 +439,7 @@ export async function deleteDubGroup(actions: EditorActions, groupId: string, re
 let stopAudition: (() => void) | null = null;
 
 /**
- * Preview a segment (“听这一句” (listen to this line)): the playhead jumps to the start, starts playing if it was not playing, and stops at the end. If the user pauses midway or jumps out of this segment, stop watching.
+ * Preview a segment (“listen to this line”): the playhead jumps to the start, starts playing if it was not playing, and stops at the end. If the user pauses midway or jumps out of this segment, stop watching.
  * Playhead updates come from the preview engine and may lag a beat: wait until it is seen to land inside this segment before watching for the end.
  */
 export function auditionRange(actions: EditorActions, start: number, end: number): void {

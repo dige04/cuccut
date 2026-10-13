@@ -36,7 +36,7 @@ import {
  * Electron wiring for app auto-update (architecture design §2.6): detects the environment this run is in, hands the real network / command / Finder / quit to the service,
  * and exposes it to the preload script over IPC (`window.cuccut.updates`). Status and reminders are pushed to all windows.
  *
- * Development builds (not packaged) always get “开发构建不检查更新” (development builds do not check for updates), unless `CUCCUT_UPDATE_APPCAST` is set; even when it is set, a development build never swaps the bundle automatically
+ * Development builds (not packaged) always get “development builds do not check for updates”, unless `CUCCUT_UPDATE_APPCAST` is set; even when it is set, a development build never swaps the bundle automatically
  * (the one running is Electron.app in node_modules), and at install time it only shows the installer in Finder and opens the download page.
  */
 
@@ -227,7 +227,7 @@ export function installAppUpdates(): AppUpdateService {
   const mac = { exec, runningBundle, writable, cacheDir, pid: process.pid, launchScript };
   // i18n-ignore: diagnostic log, printed only to the main process's terminal, not to the UI
   const log = (message: string) => console.log(`[cuccut] 应用更新：${message}`);
-  // The Windows installer is launched only after the app finishes its normal quit (`before-quit` stops the Runtime, and “重启并更新” (restart and update) or install on quit records it): `will-quit` comes after that.
+  // The Windows installer is launched only after the app finishes its normal quit (`before-quit` stops the Runtime, and “restart and update” or install on quit records it): `will-quit` comes after that.
   const installerOnQuit = createPendingLaunch(spawnDetached, log);
   app.on('will-quit', () => {
     // i18n-ignore: diagnostic log, printed only to the main process's terminal, not to the UI

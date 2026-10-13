@@ -27,7 +27,7 @@ import { toastError } from './font-detail.tsx';
 import { FONT_COPY as FC } from './font-copy.ts';
 
 /**
- * Font bar shown when a video opens (product design §5.9 “字体” (Fonts); prototype font-downloads.jsx's FontOpenStrip): a strip above the stage, and the only place in the whole video that talks about font downloads. The Runtime checks which families are used (`fonts.usage`) and starts downloads according to the auto-download setting; families that failed within the last ten minutes are not retried automatically. This bar shows: downloads in progress (which one, the family name and progress, with skip-this and cancel-all), all downloaded (collapses itself after 3 seconds), failed (view: family → fallback font · reason, with retry), and auto-download off (download / settings). While downloading, the picture is drawn in the fallback font and switches once the font arrives (the preview itself needs the font).
+ * Font bar shown when a video opens (product design §5.9 “Fonts”; prototype font-downloads.jsx's FontOpenStrip): a strip above the stage, and the only place in the whole video that talks about font downloads. The Runtime checks which families are used (`fonts.usage`) and starts downloads according to the auto-download setting; families that failed within the last ten minutes are not retried automatically. This bar shows: downloads in progress (which one, the family name and progress, with skip-this and cancel-all), all downloaded (collapses itself after 3 seconds), failed (view: family → fallback font · reason, with retry), and auto-download off (download / settings). While downloading, the picture is drawn in the fallback font and switches once the font arrives (the preview itself needs the font).
  */
 
 const strip = style({

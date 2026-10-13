@@ -78,10 +78,10 @@ export async function sendOrQueue(
   }
 }
 
-/** One request to hand to the Agent (product design §5.10 「交给智能体」 (hand to Agent)). */
+/** One request to hand to the Agent (product design §5.10 “hand to Agent”). */
 export interface HandoffRequest extends OutgoingMessage {
   video: VideoRef | null;
-  /** The 「会话」 (Conversation) row's choice: start a new one, or continue this one. */
+  /** The “Conversation” row's choice: start a new one, or continue this one. */
   session: 'new' | { id: Id };
   /** New conversation: carries only the access mode and Agent · model · effort chosen on this page; the rest is given by the Runtime according to preference (same as the floating conversation). */
   create?: { accessMode?: AgentMode; driverId?: DriverId; model?: string | null; effort?: string | null };
@@ -112,7 +112,7 @@ export function showConversation(conversationId: Id): void {
 }
 
 /**
- * Hand off to the Agent (prototype tool-prompt.jsx `onStart` → `sendToAgent`): the parameters page is the confirmation. According to the 「会话」 (Conversation) row, either start a new conversation (default) or continue the one this video currently has,
+ * Hand off to the Agent (prototype tool-prompt.jsx `onStart` → `sendToAgent`): the parameters page is the confirmation. According to the “Conversation” row, either start a new conversation (default) or continue the one this video currently has,
  * and **send** the message in the prompt box directly, with its attachments and attached skills; if the conversation being continued is busy, the message is queued. That conversation is brought into view (`showConversation`);
  * `stay` does not switch to it, and only records it as this video's floating conversation in Space (prototype store.jsx `land`'s `stay`).
  * Returns null: nothing was sent and the prompt box is left as it is. If the conversation was created but the message was not sent, the message, attachments and skills are placed in that conversation's input box, which also counts as handed off.

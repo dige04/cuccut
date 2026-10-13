@@ -102,10 +102,10 @@ describe('字体库', () => {
       waiting: ['downloading', true, { kind: 'progress', label: '等待中', value: null }],
       statusOnly: ['downloading', false, { kind: 'progress', label: '下载中', value: null }],
     });
-    // The details status line does not repeat “下载中” (downloading); “等待中” (waiting) is still read out.
+    // The details status line does not repeat “downloading”; “waiting” is still read out.
     expect(detailRows(states.started)[0]).toEqual(['状态', '下载中']);
     expect(detailRows(states.waiting)[0]).toEqual(['状态', '下载中 · 等待中']);
-    // Font bar: the one that is starting right now reads “下载中” (downloading); queued ones read “等待中” (waiting).
+    // Font bar: the one that is starting right now reads “downloading”; queued ones read “waiting”.
     const batch: FontBatch = { videoId: 'v1', families: ['Lobster'], mode: 'auto', skipped: [], dismissed: false };
     const bar = (r: FontRow) => fontBar(batch, byName([r]), () => 'Noto Sans SC');
     expect(bar(states.submitted)).toMatchObject({ kind: 'running', progress: '下载中', value: null });

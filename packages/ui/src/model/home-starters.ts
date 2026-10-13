@@ -6,7 +6,7 @@ import { fillSlot, filledSlot, slotLabels } from './prompt-slots.ts';
  * Clicking one only puts a prompt sentence into the input box; it does not send or expand a form. Once that sentence is in the input box it is the user's own words and can be edited; material is still added via “+” or drag and drop,
  * and a video link can also be pasted (a page address the download tool can fetch).
  *
- * “转录并翻译” (Transcribe and translate) has no default target language: if one was entered last time it is reused (state/home-memory-store.ts); if not, an unfilled slot is left (template pack spec §5.5),
+ * “Transcribe and translate” has no default target language: if one was entered last time it is reused (state/home-memory-store.ts); if not, an unfilled slot is left (template pack spec §5.5),
  * and it can still be sent without filling it in: the Agent receives `[目标语言]` (target language) and asks first.
  */
 
@@ -27,7 +27,7 @@ export interface HomeStarter {
 export const STARTER_KEYS: readonly StarterKey[] = ['sub', 'trans', 'clean', 'a2v'];
 const STARTER_TONE: Record<StarterKey, StarterTone> = { sub: 'blue', trans: 'green', clean: 'orange', a2v: 'magenta' };
 
-/** `target`: the target language entered last time for “转录并翻译” (the user's own words); when there is none, the sentence keeps an unfilled slot. */
+/** `target`: the target language entered last time for “the user's own words”; when there is none, the sentence keeps an unfilled slot. */
 export function homeStarters(target: string | null = null): HomeStarter[] {
   return STARTER_KEYS.map((key) => starterOf(key, target));
 }

@@ -44,7 +44,7 @@ const prepTitle = style({ font: 'title-sm', color: 'white' });
 /** The title does not jump in width as the percentage changes (the style macro has no `font-variant-numeric`). */
 const tabular = { fontVariantNumeric: 'tabular-nums' } as const;
 const bar = style({ width: 240, maxWidth: 'full' });
-/** Looks the same as the “主媒体放不出来”(main media cannot be played) card (stage-media-notice.tsx), with one extra row for a button. */
+/** Looks the same as the “main media cannot be played” card (stage-media-notice.tsx), with one extra row for a button. */
 const card = style({
   display: 'flex',
   flexDirection: 'column',
@@ -64,14 +64,14 @@ const title = style({ display: 'flex', alignItems: 'center', gap: 8, font: 'titl
 const step = style({ color: 'transparent-white-900' });
 const action = style({ marginTop: 4 });
 
-/** Pointer down, click, double-click and right-click no longer bubble up (this stops stage and editor selection and deselection). The “重试”(retry) button on the card is handled before this and remains clickable as usual. */
+/** Pointer down, click, double-click and right-click no longer bubble up (this stops stage and editor selection and deselection). The “retry” button on the card is handled before this and remains clickable as usual. */
 const swallow = (event: SyntheticEvent) => event.stopPropagation();
 const block = { onPointerDown: swallow, onMouseDown: swallow, onClick: swallow, onDoubleClick: swallow, onContextMenu: swallow };
 
 /**
  * Preview loading and stuck state (product design §5.1, design draft stage-load.jsx). Until the picture appears (the render kernel is still loading, or the media for this moment is not ready yet), it is an opaque dark panel that does not show the black frames of waiting for media; the spinner appears only after `SPINNER_DELAY_MS`.
- * When media must be converted before it can play (the Runtime is preparing a compatible copy), it switches to “正在准备预览 · N%”(preparing preview · N%) with a progress bar, naming which media is being converted.
- * When stuck (the preview engine's stuck diagnostic reports it and the page is visible), a card appears in the middle of the picture, saying which step it is stuck on and how many seconds it has waited, with a “重试”(retry) button.
+ * When media must be converted before it can play (the Runtime is preparing a compatible copy), it switches to “preparing preview · N%” with a progress bar, naming which media is being converted.
+ * When stuck (the preview engine's stuck diagnostic reports it and the page is visible), a card appears in the middle of the picture, saying which step it is stuck on and how many seconds it has waited, with a “retry” button.
  * `suppressed`: when main media cannot be played there is already a dedicated card, so no second card is stacked, and the wait no longer covers the picture.
  */
 export function StageLoadNotice({
@@ -140,7 +140,7 @@ function PreparingPanel({ preparation, frame }: { preparation: MediaPreparation;
 function StallCard({ stall, frame, onRetry }: { stall: StallReport; frame: { left: number; top: number; width: number; height: number }; onRetry(): void }) {
   const video = useVideo((s) => s.video?.state?.video ?? null);
   const [now, setNow] = useState(() => performance.now());
-  // “已经等了 N 秒”(waited N seconds) updates every second.
+  // “waited N seconds” updates every second.
   useEffect(() => {
     const timer = setInterval(() => setNow(performance.now()), 1000);
     return () => clearInterval(timer);

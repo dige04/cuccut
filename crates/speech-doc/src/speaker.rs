@@ -561,7 +561,7 @@ mod tests {
         )
     }
 
-    /// Fixture = the original MOSS 7-hour interview rows ("呃" (filler) at 719s, a whole-line "嗯" (filler) at 154s). A project built with the snapping strategy, after row attribution restoration, matches word-for-word the result built with the row-authority strategy.
+    /// Fixture = the original MOSS 7-hour interview rows (“filler” at 719s, a whole-line “filler” at 154s). A project built with the snapping strategy, after row attribution restoration, matches word-for-word the result built with the row-authority strategy.
     #[test]
     fn realign_restores_snapped_fillers_and_absorbed_backchannels() {
         let mut answer = cjk_row(719.41, 724.99, "呃很多啊打DOTA啊什么的", "S02");
@@ -606,7 +606,7 @@ mod tests {
             cjk_row(3.0, 6.0, "呃我们开始今天的话题吧好不好呀", "S02"),
         ];
         let mut doc = built(&rows, crate::build::SpeakerBoundaryPolicy::RowAuthoritative);
-        // Simulates legacy snapping plus a polish rebinding. "呃我" (filler + "我", "I") was moved to S01, and the "我" was rebound to a new id. It has no row number, so its attribution can only be inferred from the agreeing expectations of the neighboring row words "呃" (filler) and "们" (plural suffix).
+        // Simulates legacy snapping plus a polish rebinding. "呃我" (filler + "我", "I") was moved to S01, and the "我" was rebound to a new id. It has no row number, so its attribution can only be inferred from the agreeing expectations of the neighboring row words “filler” and “plural suffix”.
         let filler = doc.words.iter().position(|word| word.text == "呃").unwrap();
         doc.words[filler].sp = "s1".to_owned();
         doc.words[filler + 1].sp = "s1".to_owned();

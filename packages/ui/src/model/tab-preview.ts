@@ -19,7 +19,7 @@ export function tabPreviewPosition(tab: { left: number; bottom: number }, viewpo
 }
 
 /**
- * Subtitle of the thumbnail card: web pages show the address (blank pages show “新标签页” (“New Tab”)), files and videos show the path inside the project, session tabs show “会话” (“Session”);
+ * Subtitle of the thumbnail card: web pages show the address (blank pages show “New Tab”), files and videos show the path inside the project, session tabs show “Session”;
  * when no path is found, the title is used. The caller supplies the text in the current language.
  */
 export function tabPreviewSubtitle(

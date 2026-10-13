@@ -105,7 +105,7 @@ export const CONFETTI_STILL = 4.5;
 export const CONFETTI_LOOP = 4;
 
 /**
- * Confetti cell: a layer of particles filling the cell; the same seed (11) always gives the same picture. After the cell is scaled by short side / 540, the particles shrink to one or two pixels, so “大小” (size) is pushed to its maximum to make the style recognizable. This only affects how the cell is drawn; what lands on the picture is still the recipe as is.
+ * Confetti cell: a layer of particles filling the cell; the same seed (11) always gives the same picture. After the cell is scaled by short side / 540, the particles shrink to one or two pixels, so “size” is pushed to its maximum to make the style recognizable. This only affects how the cell is drawn; what lands on the picture is still the recipe as is.
  */
 export function confettiThumb(planner: RenderPlanner, styleKey: string, seconds: number, width: number, height: number): ThumbPicture {
   const props = { ...confettiDefaults(styleKey, 11), size: CONFETTI_RANGES.size[1] };
@@ -351,7 +351,7 @@ export function captionSample(planner: RenderPlanner, root: Json, kinds: readonl
   const period = words ? (words + 1) * CAPTION_BEAT : 0;
   const duration = period || 10;
   const still = words ? (Math.min(1, words - 1) + SAMPLE_ON) * CAPTION_BEAT : duration / 2;
-  // When measuring width, no animation: per-word animation and textMotion are both removed (`wordAnimation` overrides the old key `anim`, and both are set to “无” (none)); the per-word background block stays, since it takes up width.
+  // When measuring width, no animation: per-word animation and textMotion are both removed (`wordAnimation` overrides the old key `anim`, and both are set to “none”); the per-word background block stays, since it takes up width.
   const { textMotion: _motion, ...still0 } = scene.root;
   const plain = { ...still0, anim: { name: 'None' }, wordAnimation: wordAnimationPayload('none') };
   const wide = renderThumb(planner, { ...captionScene(plain, scene.lines, { width: width * 4, height }, duration), seconds: still }, width * 4, height);

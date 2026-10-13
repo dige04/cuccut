@@ -36,7 +36,7 @@ import { copyText, useArtifactUrl, useCancelJob, useDownloadArtifact, useRecordR
 const audio = style({ width: 'full', height: 36 });
 const progress = style({ width: 'full' });
 
-/** “再试一次 / 重新排队” (Try again / Requeue): an interrupted run is re-run in place, and the rest is resubmitted with the frozen parameters unchanged (see `useRecordRetry`). */
+/** “Try again / Requeue”: an interrupted run is re-run in place, and the rest is resubmitted with the frozen parameters unchanged (see `useRecordRetry`). */
 function useMusicRetry(job: JobRecord) {
   const runtime = useRuntime();
   return useRecordRetry(
@@ -168,7 +168,7 @@ export function MusicRecord({
   );
 }
 
-/** Items that have been resubmitted no longer get the button and show “已重新提交” (Resubmitted); a spinner shows while in flight. */
+/** Items that have been resubmitted no longer get the button and show “Resubmitted”; a spinner shows while in flight. */
 function RetryButton({ label, again }: { label: string; again: ReturnType<typeof useMusicRetry> }) {
   if (again.done) return <span className={detail}>{RECORD_COPY.retried}</span>;
   return (

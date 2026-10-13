@@ -3,7 +3,7 @@
 //! - [`speaker_proposal`]: transcript body + translations in each language + the speaker-embedding cluster each word projects to (`cuccut.speakers/v1` from the Model Worker) →
 //!   a proposal: which words change speaker, each speaker's sentence count and preview clips, and how many translation entries will be re-split at the new boundaries. Clusters are matched one-to-one with existing speakers by overlap duration, reusing them
 //!   (keeping their ID and name, so the voice bindings in the library and the dubbing speaker bindings stay intact); unmatched clusters get a new `spk-<n>`, named
-//!   “说话人 n” (Speaker n). The rules are ported unchanged from the older version's `speakers reidentify`; words with no speaker (the reserved `""`) do not take part in reuse.
+//!   “Speaker n”. The rules are ported unchanged from the older version's `speakers reidentify`; words with no speaker (the reserved `""`) do not take part in reuse.
 //! - [`apply_speakers`]: transcript body + translations + the proposal's speaker-change table + the speaker table (names the user edited on the confirmation page) → the body and the changed translations to write back.
 //!   Applying is done by `apply_speaker_proposal` in the subtitle and translation core: when new speaker boundaries split a sentence, existing translations are re-split at natural break points in the target language,
 //!   without re-translating.
@@ -205,7 +205,7 @@ fn map_clusters(doc: &TranscriptDoc, labels: &[Option<String>]) -> (BTreeMap<Str
         if !seen.insert(cluster.as_str()) || cluster_to_speaker.contains_key(cluster) {
             continue;
         }
-        // Neither the ID nor the name may collide with existing ones (speakers imported from an old project may be named “说话人 1” (Speaker 1) with an ID that is not `spk-1`).
+        // Neither the ID nor the name may collide with existing ones (speakers imported from an old project may be named “Speaker 1” with an ID that is not `spk-1`).
         while doc.speakers.contains_key(&format!("spk-{next_number}")) || names.contains(&format!("说话人 {next_number}")) {
             next_number += 1;
         }

@@ -918,7 +918,7 @@ impl Element {
     }
 }
 
-/// Element kinds. **Closed enum + version gate**: unknown kinds raise an error at parse time, and no open enum is used (ADR-E02). Silently rendering an unknown kind as empty would make "我加的形状不见了" ("the shape I added is gone") the norm.
+/// Element kinds. **Closed enum + version gate**: unknown kinds raise an error at parse time, and no open enum is used (ADR-E02). Silently rendering an unknown kind as empty would make “the shape I added is gone” the norm.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ElementKind {

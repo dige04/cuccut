@@ -21,7 +21,7 @@ import { transcribeOptions } from './tools-transcribe.ts';
 import { M } from './transcribe-setup-copy.ts';
 
 /**
- * Transcription settings for the subtitle panel's 「生成字幕」 (Generate subtitles) (prototype glossary-tool.jsx `AsrHintBlock`, and the speech model and language in tool-transcribe.jsx):
+ * Transcription settings for the subtitle panel's “Generate subtitles” (prototype glossary-tool.jsx `AsrHintBlock`, and the speech model and language in tool-transcribe.jsx):
  * language (automatic or specified), speech model, and recognition hints (the transcription glossaries enabled for the video, plus the custom prompt; whether they can be used is decided by this model's `acceptsHint`).
  *
  * The defaults equal setting nothing: when no model is picked, `provider` / `model` are not sent (the Runtime picks by the user's default, then the factory default; if neither exists, it still rejects with
@@ -149,7 +149,7 @@ export interface HintBudget {
 
 /**
  * How long the prompt plus the glossary is once composed (copied from the Runtime's `composeTranscribeHint`: canonical spellings de-duplicated and kept in glossary order; the first term follows the prompt after a line break,
- * and later ones are separated by 、; anything over the limit is dropped). The UI uses it to show 「送给模型的是什么」 (what is sent to the model); the Runtime does the actual composing.
+ * and later ones are separated by 、; anything over the limit is dropped). The UI uses it to show “what is sent to the model”; the Runtime does the actual composing.
  */
 export function hintBudget(prompt: string, glossaries: readonly Pick<TranscriptionGlossary, 'terms'>[], max = TRANSCRIBE_HINT_MAX): HintBudget {
   const seen = new Set<string>();
@@ -194,7 +194,7 @@ export interface TranscribeGlossaryRow {
 }
 
 /**
- * Rows of the 「术语表」 (Glossary) section: all transcription glossaries in the library are listed (checked = enabled for this video). Glossaries that are enabled but cannot be used this time (no longer in the library, or translation glossaries)
+ * Rows of the “Glossary” section: all transcription glossaries in the library are listed (checked = enabled for this video). Glossaries that are enabled but cannot be used this time (no longer in the library, or translation glossaries)
  * are also listed, checked, with the reason written; the Runtime skips them in the same way when it merges the glossaries enabled for the video. Enabled ones come first, in the order they were enabled (earlier ones get priority in the hint),
  * and non-enabled ones keep their order in the library. The Runtime does not pick glossaries by language; here only the applicable languages are written out.
  */

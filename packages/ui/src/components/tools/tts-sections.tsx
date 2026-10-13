@@ -21,7 +21,7 @@ import { VoicePicker } from '../voice-picker.tsx';
 import { detail, detailGrow, Indent, Row, Section, SectionLink } from './tool-parts.tsx';
 import { TTS_COPY } from './tools-copy.ts';
 
-/* The “声音” (voice) and “语言与细节” (language and details) sections of the generate-speech page (split out of tts-tool.tsx). */
+/* The “voice” and “language and details” sections of the generate-speech page (split out of tts-tool.tsx). */
 
 const grow = style({ flexGrow: 1, minWidth: 0 });
 const voicePicker = style({ width: 240 });

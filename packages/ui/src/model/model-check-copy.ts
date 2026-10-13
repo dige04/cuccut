@@ -15,12 +15,12 @@ import { tr } from './model-check-copy.tr.ts';
 import { vi } from './model-check-copy.vi.ts';
 
 /**
- * Wording for failed local-model “检查” (check) and trial (listen) runs (design model-local-check.js): check code → one sentence on what is wrong + what to do.
- * Code and technical details go only into “技术详情” (technical details); the body text contains no code. Whether a fix will help is not decided here; it is decided by `modelCheckRepair` in `@cuccut/protocol`.
+ * Wording for failed local-model “check” and trial (listen) runs (design model-local-check.js): check code → one sentence on what is wrong + what to do.
+ * Code and technical details go only into “technical details”; the body text contains no code. Whether a fix will help is not decided here; it is decided by `modelCheckRepair` in `@cuccut/protocol`.
  * The English is the source of the keys and types; translations are in `model-check-copy.<locale>.ts`; the current language must be read at call time.
  */
 
-/** Kinds of capability: recognition and separation (no trial), synthesis (listen), image and music generation (listen). What “不对” (wrong) looks like is described separately for each. */
+/** Kinds of capability: recognition and separation (no trial), synthesis (listen), image and music generation (listen). What “wrong” looks like is described separately for each. */
 export type CheckSubject = 'transcribe' | 'synthesize' | 'image' | 'separate' | 'music';
 
 export interface CheckSentence {
@@ -29,7 +29,7 @@ export interface CheckSentence {
 }
 
 /**
- * What a trial refers to: speech synthesis is “试听” (listen), image generation is “试画” (try drawing) (design model-local-check.js `TRY`, `tryFailure`).
+ * What a trial refers to: speech synthesis is “listen”, image generation is “try drawing” (design model-local-check.js `TRY`, `tryFailure`).
  * Each language writes out the whole sentence; verbs and nouns are not assembled at the call site.
  */
 export interface TrySubject {
@@ -39,9 +39,9 @@ export interface TrySubject {
   modelError: CheckSentence;
   /** Other failure: the Runtime's own message. */
   other: (message: string) => CheckSentence;
-  /** Could not start: the Runtime's own message; there is no “怎么办” (what to do) (`todo` is empty). */
+  /** Could not start: the Runtime's own message; there is no “what to do” (`todo` is empty). */
   notStarted: (message: string) => CheckSentence;
-  /** Second sentence of the reminder at the top of the trial panel: the “怎么办” (what to do) from the last check, followed by “现在试听多半也会失败” (listening now will most likely fail too). */
+  /** Second sentence of the reminder at the top of the trial panel: the “what to do” from the last check, followed by “listening now will most likely fail too”. */
   noticeTodo: (todo: string) => string;
 }
 
@@ -100,7 +100,7 @@ const en = {
     failed: 'Check failed:',
     notStarted: "Check couldn't start:",
   },
-  /** The full stop used when “哪里不对” (what is wrong) is followed by “怎么办” (what to do). */
+  /** The full stop used when “what is wrong” is followed by “what to do”. */
   sentence: (text: string) => `${text}.`,
   phase: {
     queued: 'Queued',
@@ -209,7 +209,7 @@ export const checkCaption = (): string => M.caption;
 
 export const CHECK_HEAD: ModelCheckMessages['head'] = live(() => M.head);
 
-/** The full stop used when “哪里不对” (what is wrong) is followed by “怎么办” (what to do). */
+/** The full stop used when “what is wrong” is followed by “what to do”. */
 export const sentence = (text: string): string => M.sentence(text);
 
 export const CHECK_PHASE: ModelCheckMessages['phase'] = live(() => M.phase);

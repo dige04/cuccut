@@ -43,7 +43,7 @@ export function useEditorReference(scope: ContextScope): {
 }
 
 /**
- * The data for the “这个视频” (this video) group in the @ completion (design mockup model-agent.js `mentionItems`): the main sequence chapters of the open video the session can attach (the same check as the reference chip), and the speakers who appear in the transcripts on the timeline (names de-duplicated). The transcript text is fetched through the video's document cache, which the transcript panel shares.
+ * The data for the “this video” group in the @ completion (design mockup model-agent.js `mentionItems`): the main sequence chapters of the open video the session can attach (the same check as the reference chip), and the speakers who appear in the transcripts on the timeline (names de-duplicated). The transcript text is fetched through the video's document cache, which the transcript panel shares.
  * null when nothing is open or in scope.
  */
 export function useVideoMentions(scope: ContextScope): VideoMentions | null {

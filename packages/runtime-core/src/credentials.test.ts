@@ -141,7 +141,7 @@ describe('凭据存储（经 Runtime）', () => {
     expect(JSON.parse(await fs.readFile(side.home.nodesFile, 'utf8')).nodes[0]).not.toHaveProperty('token');
     expect(await side.runtime.initiator.store.token('node_old')).toBe(NODE_TOKEN);
 
-    // Migrated keys keep working: the view reports “已设置” (set), and validation uses that key.
+    // Migrated keys keep working: the view reports “set”, and validation uses that key.
     expect(openaiView(side.models())).toMatchObject({ available: true, config: { credential: 'set' } });
     await side.client.request('models.configure', { providerId: 'openai', verify: true });
     expect(openai.requests.at(-1)?.headers.authorization).toBe(`Bearer ${OPENAI_KEY}`);

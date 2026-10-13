@@ -4,7 +4,7 @@
  */
 export function keyLabel(keys: string, mac: boolean): string {
   if (mac) return keys;
-  // A modifier written on its own, as in “⇧ 走 5%” (⇧ moves 5%) or “⌥ 以中心对称” (⌥ mirrors about the center), is followed by a space, not by “+”.
+  // A modifier written on its own, as in “⇧ moves 5%” or “⌥ mirrors about the center”, is followed by a space, not by “+”.
   return keys
     .replace(/⇧(?= )/g, 'Shift')
     .replace(/⌘(?= )/g, 'Ctrl')

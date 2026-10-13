@@ -93,9 +93,9 @@ const foot = style({ margin: 0, paddingX: 4, font: 'ui-xs', color: 'gray-600', l
 const tabular = { fontVariantNumeric: 'tabular-nums' } as const;
 
 /**
- * The “切出的短视频”(shorts cut from this video) group at the top of the parent video's panel (prototype shorts-source.jsx `ShortsMadeGroup`, product design §5.10): child videos cut from this video that have not been moved to the trash are grouped together and can be collapsed. Newly created ones are at the top; by default `MADE_SHOWN` rows are shown and the rest are collapsed. “还有 N 支”(N more) expands the group, and “收起”(collapse) collapses it again. Each row shows its name, its range on the original and its duration; clicking a row opens that one in the same editor.
+ * The “shorts cut from this video” group at the top of the parent video's panel (prototype shorts-source.jsx `ShortsMadeGroup`, product design §5.10): child videos cut from this video that have not been moved to the trash are grouped together and can be collapsed. Newly created ones are at the top; by default `MADE_SHOWN` rows are shown and the rest are collapsed. “N more” expands the group, and “collapse” collapses it again. Each row shows its name, its range on the original and its duration; clicking a row opens that one in the same editor.
  * Child videos are looked up by their derived source in Space (`derivedFrom`); the parent video does not record them itself. This is an ordinary editing action, shared by desktop and web.
- * “再切几支”(cut a few more), which leads into the cut-into-shorts flow, is only on desktop, where the AI Tools tab exists.
+ * “cut a few more”, which leads into the cut-into-shorts flow, is only on desktop, where the AI Tools tab exists.
  */
 export function ShortsMadeGroup({ videoId }: { videoId: Id }) {
   const runtime = useRuntime();

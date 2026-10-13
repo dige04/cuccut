@@ -2799,7 +2799,7 @@ mod caption_sequence_tests {
             .map(|block| block.words.len())
             .sum();
         assert_eq!(words, 13 + 8 + 1 + 4);
-        // “哦” (an interjection) was merged into the following sentence, so it does not flash on its own
+        // “an interjection” was merged into the following sentence, so it does not flash on its own
         assert!(
             plan.sequences
                 .iter()

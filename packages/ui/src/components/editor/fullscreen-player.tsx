@@ -150,7 +150,7 @@ export function FullscreenPlayer({
   const rate = useEditor((s) => s.rate);
   const setRate = useEditor((s) => s.setRate);
 
-  // Caption level: if the level chosen before is still available, use it; otherwise take the default according to the captions actually on screen. If captions are hidden on the stage, start from “关闭” (Off).
+  // Caption level: if the level chosen before is still available, use it; otherwise take the default according to the captions actually on screen. If captions are hidden on the stage, start from “Off”.
   const [picked, setPicked] = useState<CaptionMode | null>(() => (useEditor.getState().captionsHidden ? 'off' : null));
   const { hasSource, hasTranslation } = useMemo(() => captionAvailability(sequence, documents), [sequence, documents]);
   const mode = effectiveCaptionMode(picked, hasSource, hasTranslation);
@@ -183,7 +183,7 @@ export function FullscreenPlayer({
   // Move focus into the fullscreen subtree. If it stayed outside, Tab would land on editor controls that are not visible.
   useEffect(() => rootRef.current?.focus({ preventScroll: true }), []);
 
-  // Esc goes to the player: this only works when the lock is held in fullscreen. The key table says “按 Esc 关掉这张表” (press Esc to close this table) only when the lock is held.
+  // Esc goes to the player: this only works when the lock is held in fullscreen. The key table says “press Esc to close this table” only when the lock is held.
   const [escOwned, setEscOwned] = useState(false);
   useEffect(() => {
     const keyboard = (navigator as Navigator & { keyboard?: KeyboardLock }).keyboard;
@@ -561,7 +561,7 @@ function SeekBubble({
   );
 }
 
-/** Small line under the caption-level options: which language the original and the translation are in. The project may have several translation languages, and writing only “译文” (translation) would require switching to find out which one it is. */
+/** Small line under the caption-level options: which language the original and the translation are in. The project may have several translation languages, and writing only “translation” would require switching to find out which one it is. */
 function captionLanguages(sequence: Sequence, documents: Record<Id, DocumentRecord>): { original: string | null; translation: string | null } {
   const names = { original: new Set<string>(), translation: new Set<string>() };
   for (const chip of captionChips(sequence, documents)) {

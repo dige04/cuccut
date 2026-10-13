@@ -17,12 +17,12 @@ import { textHash, type TranslationBody } from './translation-doc.ts';
 import { dubMark, type DubBlock } from './timeline-dub.ts';
 
 /**
- * Sentence-level redubbing (design draft model-dub.js “块级管理” (block-level management) and “版” (takes); timeline-dub.jsx row headers and block menu): the multiple versions of each sentence's dub, which sentences are being redubbed, which sentences need regenerating, and the operations to send when switching versions or switching audio source. It does not touch React.
+ * Sentence-level redubbing (design draft model-dub.js “block-level management” and “takes”; timeline-dub.jsx row headers and block menu): the multiple versions of each sentence's dub, which sentences are being redubbed, which sentences need regenerating, and the operations to send when switching versions or switching audio source. It does not touch React.
  *
  * Where the data comes from:
  * - The dub plan unit's `extensions['cuccut.dub']`: `take` (the current version), `seed`, and `takes[]` (`DubPlanTake`). For an old plan with no versions, the version already placed is filled in as version 1 in the view. The plan itself is not changed. This is the same convention the Runtime uses when it backfills on redub.
  * - The frozen `pipeline.params.regroup` (`FrozenDubRegroup`) of the running dub flow: which sentences of which group are being redubbed.
- * - The plan unit's `status`: a sentence that is `failed` (voice unavailable) or `needs-fit` (does not fit) and is not on the timeline counts as “没合成” (not synthesized).
+ * - The plan unit's `status`: a sentence that is `failed` (voice unavailable) or `needs-fit` (does not fit) and is not on the timeline counts as “not synthesized”.
  */
 
 type Json = Record<string, unknown>;
@@ -206,7 +206,7 @@ export function queuedSet(key: string): ReadonlySet<string> {
 }
 
 /**
- * Overlays “在重配” (being redubbed) and the current version on the timeline's dub blocks. The blocks themselves are computed in model/timeline-dub.ts. These two come from the task and the plan's versions.
+ * Overlays “being redubbed” and the current version on the timeline's dub blocks. The blocks themselves are computed in model/timeline-dub.ts. These two come from the task and the plan's versions.
  * Unchanged blocks are returned as they are, without creating new objects.
  */
 export function withRegen(blocks: ReadonlyMap<Id, DubBlock>, plans: ReadonlyMap<string, unknown>, queued: ReadonlySet<string>): ReadonlyMap<Id, DubBlock> {
@@ -490,7 +490,7 @@ export function sourceOf(sequence: Sequence, group: SourceGroup): DubSource {
   return orig && dub ? 'both' : 'none';
 }
 
-/** Whether “听配音” (listen to dub) can be done. For a `keep` group the original segments were not recorded, so listen-to-dub and listen-to-both are the same thing. */
+/** Whether “listen to dub” can be done. For a `keep` group the original segments were not recorded, so listen-to-dub and listen-to-both are the same thing. */
 export function canListenDub(group: SourceGroup): boolean {
   return group.policy === 'mute' || group.policy === 'duck';
 }
@@ -565,7 +565,7 @@ export function switchSourceOperations(
 // ---- Change the translation and redub ----
 
 /**
- * Change the translation of several sentences (step one of “改译文并重配” (change translation and redub)). Synthesis reads the translation's `naturalText`, so that is what changes. For a unit whose subtitles show a rewrite, the rewrite is not touched and the subtitles stay as they are. The changed unit is marked `reviewed`, and its `textHash` is updated. Unchanged or empty text is not changed. Returns null when nothing changed.
+ * Change the translation of several sentences (step one of “change translation and redub”). Synthesis reads the translation's `naturalText`, so that is what changes. For a unit whose subtitles show a rewrite, the rewrite is not touched and the subtitles stay as they are. The changed unit is marked `reviewed`, and its `textHash` is updated. Unchanged or empty text is not changed. Returns null when nothing changed.
  */
 export async function retextTranslation(body: TranslationBody, texts: ReadonlyMap<Id, string>): Promise<{ body: TranslationBody; changed: Id[] } | null> {
   const changed: Id[] = [];

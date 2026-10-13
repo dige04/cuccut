@@ -4,7 +4,7 @@
  *
  * Exempt:
  * - translation files `*.<语言>.ts` (for example `foo-copy.zh-Hans.ts`), tests (`*.test.*`), and the `testing/` directory;
- * - lines where `i18n-ignore` appears on the same line or the line above, with the reason stated (for example “语言的自称” (the language's self-name), “给模型的提示词” (prompt text for the model), “解析中文标点” (parsing Chinese punctuation));
+ * - lines where `i18n-ignore` appears on the same line or the line above, with the reason stated (for example “the language's self-name”, “prompt text for the model”, “parsing Chinese punctuation”);
  * - lines between `i18n-ignore-start` and `i18n-ignore-end`;
  * - the whole file, if `i18n-ignore-file` appears in its first 20 lines.
  *

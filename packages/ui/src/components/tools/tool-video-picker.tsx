@@ -89,8 +89,8 @@ export function useSpaceRows(tool: ToolId, data: Candidates | null): SpaceRow[] 
 }
 
 /**
- * The second line of a row: for a video it is “项目名 · N 分钟” (project name · N min); the duration comes from the media info of the Space entry, which the candidates do not have. For other entries it is “种类 · 大小 · 时长或尺寸 · 项目 · 状态” (kind · size · duration or dimensions · project · status).
- * Durations are written as m:ss (a few-second audio clip is not written as “1 分钟” (1 min)).
+ * The second line of a row: for a video it is “project name · N min”; the duration comes from the media info of the Space entry, which the candidates do not have. For other entries it is “kind · size · duration or dimensions · project · status”.
+ * Durations are written as m:ss (a few-second audio clip is not written as “1 min”).
  */
 function useRowDetails(): (r: SpaceRow) => string {
   const projects = useDirectory((s) => s.projects);

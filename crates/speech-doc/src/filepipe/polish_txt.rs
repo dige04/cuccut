@@ -151,7 +151,7 @@ pub struct PolishParsed {
 ///
 /// **The paging unit switches with speaker information**:
 ///
-/// - **With speakers** (at least two distinct `sp` appear in the word stream): the unit is a **sequence of turns**. A page is a union of consecutive whole turns; the page boundary is a turn start within the +15% overflow cap whose word cost is closest to the page target (ties go to the later one). Short turns group naturally; only long turns that individually exceed the budget are split internally, and in that case **sentence boundaries take priority** (sentence-final punctuation, see [`sentence_end`]). Only when the window has no sentence boundary does it fall back to the generic scoring below. Page seams therefore fall only on turn boundaries or on sentence boundaries inside long turns, and never split the middle of someone's speech. When the turn boundary closest to the page target still cannot reach the window's lower bound (the next turn alone exceeds the budget), no page is opened for a single "嗯" (um): instead the split is made at a sentence boundary inside the long turn, so this page = the short turns + the head of the long turn. Only if the long turn has no breakpoints at all does it fall back to that shorter whole-turn page.
+/// - **With speakers** (at least two distinct `sp` appear in the word stream): the unit is a **sequence of turns**. A page is a union of consecutive whole turns; the page boundary is a turn start within the +15% overflow cap whose word cost is closest to the page target (ties go to the later one). Short turns group naturally; only long turns that individually exceed the budget are split internally, and in that case **sentence boundaries take priority** (sentence-final punctuation, see [`sentence_end`]). Only when the window has no sentence boundary does it fall back to the generic scoring below. Page seams therefore fall only on turn boundaries or on sentence boundaries inside long turns, and never split the middle of someone's speech. When the turn boundary closest to the page target still cannot reach the window's lower bound (the next turn alone exceeds the budget), no page is opened for a single “um”: instead the split is made at a sentence boundary inside the long turn, so this page = the short turns + the head of the long turn. Only if the long turn has no breakpoints at all does it fall back to that shorter whole-turn page.
 /// - **Without speakers** (a single `sp` throughout): the unit is the word stream plus breakpoint scoring. Core words accumulate from 20% before the page target, and breakpoints are scored jointly as "word position + rank×(page target/20)" ([`breakpoint_rank`] is worth only about 5% of the page target in advance per rank step; ties go to the later one). But as inside long turns, **sentence boundaries take priority**: if the window contains any sentence-final punctuation, the highest-scoring sentence boundary is taken; only without one does it fall back to pause breakpoints.
 ///
 /// When neither path finds a breakpoint in the window, it first takes the **first** sentence boundary in the +15% overflow zone, then the first breakpoint with rank ≥1; only if that also fails does it hard-cut and set `hard_cut_*`. Context is taken from complete sentences in the adjacent pages' core regions, at most `context_sentences` sentences or `context_words` words, and at least 1 sentence.
@@ -207,7 +207,7 @@ pub fn plan_polish_pages(words: &[Word], budget: &PolishBudget) -> Vec<PolishPag
             })
             .flatten();
         // The turn boundary closest to the page target still cannot reach the window's lower bound ⇒ the next turn alone exceeds the budget (a long monologue).
-        // Rather than opening a page for a single "嗯" (um), split at a sentence boundary inside the long turn,
+        // Rather than opening a page for a single “um”, split at a sentence boundary inside the long turn,
         // so that this page = the short turns + the head of the long turn.
         let mut cut = turn_cut
             .filter(|boundary| prefix_cost[*boundary].saturating_sub(prefix_cost[start]) >= floor);
@@ -2421,7 +2421,7 @@ mod tests {
         );
     }
 
-    /// A "嗯" (um) followed by a long monologue: no page is opened for this short turn; the page boundary instead falls at a sentence boundary inside the long turn (this page = the short turn + the head of the long turn).
+    /// A “um” followed by a long monologue: no page is opened for this short turn; the page boundary instead falls at a sentence boundary inside the long turn (this page = the short turn + the head of the long turn).
     #[test]
     fn turn_paging_does_not_waste_a_page_on_a_one_word_interjection() {
         let mut entries: Vec<(String, String)> = vec![("s1".to_owned(), "yeah".to_owned())];

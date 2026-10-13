@@ -919,7 +919,7 @@ fn inserted_media_items_keep_exact_source_ranges_and_mix_settings() {
     );
 }
 
-/// Audio-video linked group (spec §3.7 “声音” (sound)): the audio instance in the group is a separate copy of the composition's sound, and the composition's own sound must be off. Insertion, turning sound on, and putting audio into the group are all checked; audio outside the group is unaffected.
+/// Audio-video linked group (spec §3.7 “sound”): the audio instance in the group is a separate copy of the composition's sound, and the composition's own sound must be off. Insertion, turning sound on, and putting audio into the group are all checked; audio outside the group is unaffected.
 #[test]
 fn a_composition_linked_with_audio_items_keeps_its_own_sound_off() {
     if !has_ffprobe() {

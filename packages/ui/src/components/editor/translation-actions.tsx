@@ -60,7 +60,7 @@ const fresh = style({ color: 'green-1000' });
 
 /**
  * Which text model direct re-translation uses: the same default as the translation settings page (the text-generation default; if that cannot be used, the first usable one; translation needs structured output).
- * When capabilities have not been read yet, or no model is usable, `ref` is null: the Runtime uses its default, or rejects with “没有配置” (not configured), and the issue card gives the place to go.
+ * When capabilities have not been read yet, or no model is usable, `ref` is null: the Runtime uses its default, or rejects with “not configured”, and the issue card gives the place to go.
  */
 export function useRetranslateModel(): { ref: { providerId: string; modelId: string } | null; name: string | null } {
   const view = useModels((s) => s.capabilities);

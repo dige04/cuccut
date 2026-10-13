@@ -133,7 +133,7 @@ export function ConfettiParams({ values, isDisabled, live: liveRaw, commit: comm
         {IC.cfStyle}
       </SecHead>
       <div className={styleRow}>
-        {/* The currently selected cell can also open the catalog; the catalog is attached to “更换款式” (change style). */}
+        {/* The currently selected cell can also open the catalog; the catalog is attached to “change style”. */}
         <RACButton className={currentTile} isDisabled={isDisabled} aria-label={IC.cfStyleTile(recipe.name)} onPress={() => setOpen(true)}>
           {({ isHovered }) => (
             <span className={darkFace({ isHovered })}>

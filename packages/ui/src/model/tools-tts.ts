@@ -22,19 +22,19 @@ import { VOICE_CLONE_PROVIDERS } from './voices-library.ts';
 
 export type SpeechOption = ToolModelOption<SpeechModelInfo>;
 
-/** The sentence used when no text is written (design mockup tool-tts.jsx `EMPTY_TEXT`): it is not spoken before 「生成语音」 (Generate speech) is pressed. */
+/** The sentence used when no text is written (design mockup tool-tts.jsx `EMPTY_TEXT`): it is not spoken before “Generate speech” is pressed. */
 export function emptyText(): string {
   return M.emptyText;
 }
 
-/** 「填一段示例」 (Fill in a sample): the sample sentence from the design mockup's intro, chosen by the language to be spoken, and not changed by the UI language. */
+/** “Fill in a sample”: the sample sentence from the design mockup's intro, chosen by the language to be spoken, and not changed by the UI language. */
 export const TTS_SAMPLES = {
   // i18n-ignore: Chinese sample sentence, spoken by models that can speak Chinese; chosen by the language being spoken
   zh: '欢迎使用 CucCut！转录、翻译、配音，全都在你自己的电脑上完成。',
   en: 'Welcome to CucCut! Transcribe, translate and voice over, all on your own machine.',
 } as const;
 
-/** Ready-made delivery styles (design mockup model-tools.js `VIBES`): clicking one fills this sentence into 「风格」 (Style). */
+/** Ready-made delivery styles (design mockup model-tools.js `VIBES`): clicking one fills this sentence into “Style”. */
 function vibe<K extends keyof typeof M.vibes>(key: K) {
   return {
     key,
@@ -50,7 +50,7 @@ export const VIBES = [vibe('radio'), vibe('launch'), vibe('bedtime'), vibe('news
 
 /**
  * How a voice is chosen: the model's default voice, one of the preset voices it lists, a voice ID typed in by hand from the provider account (when the model accepts `custom`),
- * or one of 「我的声音」 (My voices) (`library:<entry ID>`: the Runtime synthesizes with its valid clone on the selected Provider).
+ * or one of “My voices” (`library:<entry ID>`: the Runtime synthesizes with its valid clone on the selected Provider).
  */
 export type VoiceKey = 'default' | 'custom' | `preset:${string}` | `library:${string}`;
 
@@ -109,7 +109,7 @@ export function estimateDuration(text: string): number {
   return Number((cjk / 4.2 + latinWords / 2.6 + pauses * 0.18).toFixed(1));
 }
 
-/** Character count line (design mockup model-tools.js `textStats`): 「128 / 4096 字 · 3 段 · 约 12.4 秒」 (128 / 4096 characters · 3 segments · about 12.4 seconds). */
+/** Character count line (design mockup model-tools.js `textStats`): “128 / 4096 characters · 3 segments · about 12.4 seconds”. */
 export function textStats(text: string, max: number): string {
   const t = text.trim();
   if (!t) return M.statsEmpty(max);
@@ -132,7 +132,7 @@ export function pickVibe(draft: TtsDraft, key: string, info: SpeechModelInfo | n
   return draft.text.trim() ? { instructions: vibe.style } : { instructions: vibe.style, text: sampleText(draft, info) };
 }
 
-/** 「换一句」 (Another one): randomly picks a delivery style card different from the current one (`rnd` makes unit-test injection easy). */
+/** “Another one”: randomly picks a delivery style card different from the current one (`rnd` makes unit-test injection easy). */
 export function rollVibe(draft: TtsDraft, info: SpeechModelInfo | null, rnd: () => number = Math.random): Partial<TtsDraft> {
   const others = VIBES.filter((v) => v.style !== draft.instructions);
   const vibe = others[Math.floor(rnd() * others.length)] ?? VIBES[0];
@@ -175,7 +175,7 @@ export function libraryIdOf(key: string): string | null {
 }
 
 /**
- * Whether a voice from 「我的声音」 (My voices) can be used with this model: null if it can, otherwise one sentence giving the reason. The Runtime uses only this provider's valid clone, and it requires a declaration of consent from the person themselves; otherwise it rejects with `VOICE_CLONE_REQUIRED` / `VOICE_CONSENT_REQUIRED`. Clones are created in 模型 › 语音合成 › 我的声音 (Models › Speech synthesis › My voices).
+ * Whether a voice from “My voices” can be used with this model: null if it can, otherwise one sentence giving the reason. The Runtime uses only this provider's valid clone, and it requires a declaration of consent from the person themselves; otherwise it rejects with `VOICE_CLONE_REQUIRED` / `VOICE_CONSENT_REQUIRED`. Clones are created in 模型 › 语音合成 › 我的声音 (Models › Speech synthesis › My voices).
  */
 export function libraryVoiceBlock(
   voice: Pick<LibraryEntrySummary, 'consentDeclared' | 'clones'>,
@@ -191,7 +191,7 @@ export function libraryVoiceBlock(
 }
 
 /**
- * Whether the voice in the draft still holds for this model; when it does not, it falls back to the default (or to the first item if there is no default). A voice from 「我的声音」 (My voices) is kept as is:
+ * Whether the voice in the draft still holds for this model; when it does not, it falls back to the default (or to the first item if there is no default). A voice from “My voices” is kept as is:
  * if it has been deleted or cannot be used with this provider, `ttsProblems` says so, and it is not silently swapped for another voice.
  */
 export function voiceKeyFor(draft: Pick<TtsDraft, 'voice'>, info: SpeechModelInfo): VoiceKey {
@@ -210,7 +210,7 @@ export function voiceToSend(draft: Pick<TtsDraft, 'voice' | 'customVoice'>, info
   return undefined;
 }
 
-/** Short name of the voice, used in status lines and record cards. A voice from My Voices uses its name (before it has been read, 「我的声音」 (My voice); if deleted, 「已删除的音色」 (deleted voice)). */
+/** Short name of the voice, used in status lines and record cards. A voice from My Voices uses its name (before it has been read, “My voice”; if deleted, “deleted voice”). */
 export function voiceLabel(draft: Pick<TtsDraft, 'voice' | 'customVoice'>, info: SpeechModelInfo, voices: MyVoices = null): string {
   const key = voiceKeyFor(draft, info);
   if (key === 'custom') return draft.customVoice.trim() || M.customVoice;
@@ -281,7 +281,7 @@ export function ttsProblems(draft: TtsDraft, option: SpeechOption | null, voices
 }
 
 /**
- * Speak a document or subtitles from the Space (`material`, architecture design §7.9 「Space 条目作输入」 (Space entries as input)): the Runtime reads the entry's text as `text` (timecodes removed from subtitles).
+ * Speak a document or subtitles from the Space (`material`, architecture design §7.9 “Space entries as input”): the Runtime reads the entry's text as `text` (timecodes removed from subtitles).
  * When it exceeds the model's character limit, it is rejected at submit and not truncated. `name` is for display only.
  */
 export interface TtsMaterial {
@@ -349,7 +349,7 @@ export function audioOutput(job: Pick<JobRecord, 'result'>): GeneratedOutput | n
 }
 
 /**
- * The metadata line of the record card (design mockup model-tools.js `recordMeta`): 「00:07 · 24 kHz · OpenAI · gpt-4o-mini-tts · alloy · 中文 · 24 字」 (00:07 · 24 kHz · OpenAI · gpt-4o-mini-tts · alloy · Chinese · 24 characters).
+ * The metadata line of the record card (design mockup model-tools.js `recordMeta`): “00:07 · 24 kHz · OpenAI · gpt-4o-mini-tts · alloy · Chinese · 24 characters”.
  * Duration and sample rate are facts about the finished output, so they are not written until it has been generated.
  */
 export function speechMeta(job: JobRecord, provider: string): string {
@@ -396,7 +396,7 @@ function libraryVoiceOf(job: Pick<JobRecord, 'library'>): string | null {
   return job.library?.entries.find((e) => e.library === 'voices')?.id ?? null;
 }
 
-/** 「带回左边再改一版」 (Bring back to the left and revise): text and settings return to the form; the voice is matched back to My Voices, or matched back to a preset or hand-typed voice from this model's list. */
+/** “Bring back to the left and revise”: text and settings return to the form; the voice is matched back to My Voices, or matched back to a preset or hand-typed voice from this model's list. */
 export function draftFromJob(job: JobRecord, info: SpeechModelInfo | null): Partial<TtsDraft> | null {
   const g = job.generation?.capability === 'synthesizeSpeech' ? job.generation : null;
   if (!g) return null;
@@ -417,7 +417,7 @@ export function draftFromJob(job: JobRecord, info: SpeechModelInfo | null): Part
 }
 
 /**
- * 「再试一次 / 重新排队」 (Try again / re-queue): submits again with the frozen parameters unchanged (same provider, model and voice). When a voice from My Voices is used, `library:<id>` is still given,
+ * “Try again / re-queue”: submits again with the frozen parameters unchanged (same provider, model and voice). When a voice from My Voices is used, `library:<id>` is still given,
  * and the Runtime verifies the clone again (if it has expired, it is rejected as is); the old clone ID is not used to get around this.
  */
 export function speechRetry(job: JobRecord): Omit<SynthesizeSpeechRequest, 'commandId'> | null {
@@ -454,7 +454,7 @@ export function speechModelLine(info: SpeechModelInfo): string {
     .join(' · ');
 }
 
-/** The tag in the page header (design mockup model-cloud-tts.js `headerChip`): which service it goes through. Billing differs by provider, so it only says 「按用量计费」 (billed by usage). */
+/** The tag in the page header (design mockup model-cloud-tts.js `headerChip`): which service it goes through. Billing differs by provider, so it only says “billed by usage”. */
 export function headerChip(option: Pick<SpeechOption, 'provider'> | null): string | null {
   return option ? M.headerChip(option.provider) : null;
 }

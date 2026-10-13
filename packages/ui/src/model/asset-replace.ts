@@ -38,14 +38,14 @@ import { vi } from './asset-replace.vi.ts';
  * (same track, same start; layout, crop, effects, volume, name, role and extensions copied as-is, only the asset and time mapping change), so one undo step reverts everything.
  *
  * Timing rules:
- * - The new asset starts at 0 s (the design spec's second revision dropped the start time). When 「按原素材时间对齐」 (Align to the original asset's time) is ticked and the range originally used still fits in the new asset, the source time stays the same
+ * - The new asset starts at 0 s (the design spec's second revision dropped the start time). When “Align to the original asset's time” is ticked and the range originally used still fits in the new asset, the source time stays the same
  *   (the design spec's `aligned`: another version of the same content).
  * - The clip length does not change; if the new asset is not long enough, the clip gets shorter with it. Later clips on the same track move forward by the same amount (ripple); other tracks stay put.
- *   (The design spec's 「片段长度跟着新素材走」 (Clip length follows the new asset) only takes the shorter half: at the asset-library layer every clip that uses the asset is replaced at once, and making them longer would stretch every split piece to the full new asset.)
+ *   (The design spec's “Clip length follows the new asset” only takes the shorter half: at the asset-library layer every clip that uses the asset is replaced at once, and making them longer would stretch every split piece to the full new asset.)
  * - The duration of the new asset is unknown (a local file is only probed after import), so the clip keeps its original duration for now (design spec `keep`); if the new file is too short, the engine rejects the whole transaction.
  * - Locked clips (or clips on a locked track) and the pre-rendered stand-ins of compositions stay as they are; the ripple on the same track stops at the next locked clip.
  *
- * The 「替换视频 / 替换图片」 (Replace video / Replace image) buttons on the canvas toolbar replace only the selected segment (`itemId`): same rules, except that other clips using this asset are left alone.
+ * The “Replace video / Replace image” buttons on the canvas toolbar replace only the selected segment (`itemId`): same rules, except that other clips using this asset are left alone.
  *
  * The protocol has no operation for “swapping the asset on an instance”. An instance that is deleted and written back gets a new ID: transitions attached to it are removed by the engine, subtitles projected from it and ducking rules triggered by or targeting it no longer match. The plan counts these items, and the replace dialog states them plainly.
  */

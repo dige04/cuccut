@@ -50,7 +50,7 @@ const LINES = [
 ] as const;
 type Anchor = (typeof S.anchors)[number]['key'];
 
-/** “更换样式” (change style) at the top of the page (prototype panel-subprops.jsx's .mact). */
+/** “change style” at the top of the page (prototype panel-subprops.jsx's .mact). */
 const actions = style({ display: 'flex', flexWrap: 'wrap', gap: '[6px]', paddingTop: 4 });
 /** A line of explanation plus a revert button (prototype .subscope__s). */
 const noteRow = style({ display: 'flex', alignItems: 'center', gap: 8, minHeight: 24 });
@@ -61,7 +61,7 @@ const fixed = (value: number, digits: number) => String(+value.toFixed(digits));
 /**
  * Caption properties: edits the caption style document (`caption-style`), so all captions using the same style change together. When a caption has no style document yet, the first edit creates one, so that the captions in the sequence that have no style yet and can be edited all use it. Locked instances and those on locked tracks are skipped; the engine would reject them. Values during a drag are overlaid on the preview (see DraftDocuments in video-editor), and the new version is written to the document on release.
  *
- * Original and translation share this style to form two bilingual lines (the preview groups by style document). So when bilingual, the top shows “原文 | 译文” (original | translation): text styles are written to that line's `origStyle` / `transStyle` overrides, while position, bilingual order and display timing are root styles shared by both lines (see model/caption-lines.ts).
+ * Original and translation share this style to form two bilingual lines (the preview groups by style document). So when bilingual, the top shows “original | translation”: text styles are written to that line's `origStyle` / `transStyle` overrides, while position, bilingual order and display timing are root styles shared by both lines (see model/caption-lines.ts).
  */
 export function CaptionPage(props: ItemPageProps<CaptionItem> & { documents: Record<Id, DocumentRecord> }) {
   const { item, sequence, documents, canChange } = props;

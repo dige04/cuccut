@@ -74,7 +74,7 @@ pub fn resolve_ref(v: &Value, ctx: &Ctx) -> Value {
                     }
                 }
             }
-            // String template: "共 {value} 人" (“{value} people in total”)
+            // String template: “{value} people in total”
             let mut out = s.to_string();
             for (k, pv) in props {
                 let needle = format!("{{{k}}}");

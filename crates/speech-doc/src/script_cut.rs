@@ -495,7 +495,7 @@ fn filler_cover(keys: &[String], phrases: &[Vec<String>]) -> Vec<bool> {
     covered
 }
 
-/// Whether the segment's tokens (with fillers removed) can be assembled from consecutive substrings of the kept segment adjacent on the `take` side. Either the whole segment is one substring, or it is cut in order into several pieces, each piece at least [`REPEAT_MIN_PIECE_TOKENS`] tokens long and each itself a substring (the same sentence started several times, e.g. “第一步读时间轴。第一步。” ("Step one: read the timeline. Step one.")). Pieces separated by words not found in the kept segment (apology or correction words) do not count; such spans are classed as `extra`.
+/// Whether the segment's tokens (with fillers removed) can be assembled from consecutive substrings of the kept segment adjacent on the `take` side. Either the whole segment is one substring, or it is cut in order into several pieces, each piece at least [`REPEAT_MIN_PIECE_TOKENS`] tokens long and each itself a substring (the same sentence started several times, e.g. “Step one: read the timeline. Step one.”). Pieces separated by words not found in the kept segment (apology or correction words) do not count; such spans are classed as `extra`.
 fn is_repeat(
     needle: &[u32],
     rec: &[u32],

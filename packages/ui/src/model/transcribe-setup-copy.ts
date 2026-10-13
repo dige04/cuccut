@@ -14,7 +14,7 @@ import { pl } from './transcribe-setup-copy.pl.ts';
 import { tr } from './transcribe-setup-copy.tr.ts';
 import { vi } from './transcribe-setup-copy.vi.ts';
 
-/** Copy for the 「生成字幕」 (Generate subtitles) transcription settings (model/transcribe-setup.ts; translations are in `transcribe-setup-copy.<language>.ts`). */
+/** Copy for the “Generate subtitles” transcription settings (model/transcribe-setup.ts; translations are in `transcribe-setup-copy.<language>.ts`). */
 const en = {
   notConnected: 'Not connected',
   unavailable: 'Unavailable',

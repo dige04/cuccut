@@ -5,8 +5,8 @@ import { BUNDLE_ID, NSIS_UNINSTALLER, installerScript, mountPath, teamIdentifier
 import type { InstallOutcome, Prepared, StagedApp } from './app-update-service.ts';
 
 /*
- * Platform swap (architecture design §2.6). On macOS it has two steps. After downloading (or finding the download in the cache), first `prepareMac`: it extracts the ZIP (or copies it out of the DMG) into `unpack-<build>` in the cache directory, and checks the new bundle's identifier, version, signature, Team ID and notarization. Only if these pass is it counted as “已下载” (downloaded). At install time
- * (“重启并更新” (restart and update), or install on quit), `installMac` only checks that the staged new bundle is still there and that its identity and version have not changed, then writes the swap script and launches it detached from the app.
+ * Platform swap (architecture design §2.6). On macOS it has two steps. After downloading (or finding the download in the cache), first `prepareMac`: it extracts the ZIP (or copies it out of the DMG) into `unpack-<build>` in the cache directory, and checks the new bundle's identifier, version, signature, Team ID and notarization. Only if these pass is it counted as “downloaded”. At install time
+ * (“restart and update”, or install on quit), `installMac` only checks that the staged new bundle is still there and that its identity and version have not changed, then writes the swap script and launches it detached from the app.
  * On Windows, the NSIS installer is started silently when the app exits. On this machine the swap cannot be done automatically (the build is not an official package, the directory containing `.app` is not writable, the running app has no Team ID, or it is the Windows zip version). In those cases nothing is staged, and at install time `fallback` is returned: the service shows the installer in Finder and opens the download page.
  * External commands run through the injected `exec`; unit tests supply fake output; the generated script is never run here.
  */
@@ -154,7 +154,7 @@ async function validate(exec: Exec, app: string, info: AppUpdateInfo, team: stri
 }
 
 /**
- * macOS verification and staging (after download, before entering “已下载” (downloaded)): when this machine can swap the bundle itself, it extracts the installer and verifies the new bundle; if it passes, it returns the staged `.app` and the directory it is in. When the machine cannot swap by itself, it returns `none` (install is then manual). On failure, the extracted directory is deleted. If `signal` stops, running commands are ended.
+ * macOS verification and staging (after download, before entering “downloaded”): when this machine can swap the bundle itself, it extracts the installer and verifies the new bundle; if it passes, it returns the staged `.app` and the directory it is in. When the machine cannot swap by itself, it returns `none` (install is then manual). On failure, the extracted directory is deleted. If `signal` stops, running commands are ended.
  */
 export async function prepareMac(info: AppUpdateInfo, archive: string, deps: MacInstallDeps, signal?: AbortSignal): Promise<Prepared> {
   const target = deps.runningBundle;
@@ -182,14 +182,14 @@ async function stagedIntact(exec: Exec, staged: StagedApp, info: AppUpdateInfo):
 }
 
 export interface InstallOptions {
-  /** The new bundle staged by `prepareMac`. When it is missing (for example, the staged copy was deleted), “重启并更新” (restart and update) extracts and verifies it from scratch, and install on quit does not install. */
+  /** The new bundle staged by `prepareMac`. When it is missing (for example, the staged copy was deleted), “restart and update” extracts and verifies it from scratch, and install on quit does not install. */
   staged: StagedApp | null;
-  /** Whether to reopen the app after the swap: “重启并更新” (restart and update) reopens it; install on quit does not. */
+  /** Whether to reopen the app after the swap: “restart and update” reopens it; install on quit does not. */
   relaunch: boolean;
 }
 
 /**
- * macOS swap: after the staged new bundle has been checked (or extracted and verified from scratch for “重启并更新” (restart and update)), the swap script is written and launched; the app then quits normally, and the script waits for the process to exit before swapping. Install on quit uses only the staged new bundle: if it is missing or fails the check, it returns failure and the app quits as usual, without extracting and verifying on the way out.
+ * macOS swap: after the staged new bundle has been checked (or extracted and verified from scratch for “restart and update”), the swap script is written and launched; the app then quits normally, and the script waits for the process to exit before swapping. Install on quit uses only the staged new bundle: if it is missing or fails the check, it returns failure and the app quits as usual, without extracting and verifying on the way out.
  */
 export async function installMac(
   info: AppUpdateInfo,
@@ -234,7 +234,7 @@ export async function installMac(
 
 /**
  * Arguments for electron-builder's NSIS installer: `/S` for silent; `--updated` makes it handle the run as an update (it keeps the shortcuts, and waits a little for the app to quit on its own before
- * ending the processes still running in the install directory); `--force-run` reopens the app with `--updated` after installing (“重启并更新” (restart and update)).
+ * ending the processes still running in the install directory); `--force-run` reopens the app with `--updated` after installing (“restart and update”).
  */
 export const NSIS_UPDATE_ARGS: readonly string[] = ['/S', '--updated', '--force-run'];
 
@@ -259,7 +259,7 @@ export interface WindowsInstallDeps {
 /**
  * Windows: the installer is not launched here; instead it is recorded, and launched at `will-quit`, after the app has finished its normal quit (where `before-quit` stops the Runtime over IPC).
  * An installer run with `--updated` waits only about 1.3 seconds for the app before ending all processes still running in the install directory (the Runtime is also `CucCut.exe`, and the Worker is in
- * `resources\bin`). Launching it earlier would cut off the Runtime's shutdown. After “重启并更新” (restart and update) returns `launched`, the service makes the app quit, and it reopens after installing;
+ * `resources\bin`). Launching it earlier would cut off the Runtime's shutdown. After “restart and update” returns `launched`, the service makes the app quit, and it reopens after installing;
  * for install on quit (`relaunch` is false), the app is already quitting, so it is not reopened after installing.
  */
 export async function installWindows(archive: string, deps: WindowsInstallDeps, relaunch = true): Promise<InstallOutcome> {

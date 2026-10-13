@@ -121,7 +121,7 @@ fn a_new_speaker_boundary_splits_the_sentence_and_its_translation_without_retran
             .collect::<Vec<_>>(),
         [
             (json!("a"), json!("说话人 1"), json!(false)),
-            // The name “说话人 1” (Speaker 1) is already taken: both the ID and the name move on to the next free value.
+            // The name “Speaker 1” is already taken: both the ID and the name move on to the next free value.
             (json!("spk-2"), json!("说话人 2"), json!(true)),
         ]
     );

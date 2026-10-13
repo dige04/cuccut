@@ -30,7 +30,7 @@ const row = style({
   cursor: { default: 'default', isPlaced: 'pointer' },
 });
 const rowHead = style({ display: 'flex', alignItems: 'center', gap: 8, height: 20, marginBottom: 2 });
-/** Speakers are only known once transcription finishes. On the paragraph still growing, show “识别中” (identifying) in faded grey. */
+/** Speakers are only known once transcription finishes. On the paragraph still growing, show “identifying” in faded grey. */
 const unknown = style({ font: 'ui-xs', fontWeight: 'bold', color: 'gray-500' });
 const time = style({ font: 'ui-xs', color: 'gray-500' });
 const text = style({

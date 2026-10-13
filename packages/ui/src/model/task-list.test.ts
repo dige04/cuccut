@@ -337,7 +337,7 @@ describe('taskRows / taskGroups', () => {
     });
     // While the transcription is queued, this row is also queued.
     expect(taskRows([], [parent, { ...asr, state: 'queued', progress: null }], ctx)[0]).toMatchObject({ id: 'retx', queued: true, label: '排队中' });
-    // Transcription is done and the pipeline is still writing back: it still shows “转录” (“Transcription”) with its title, not “流程” (“Pipeline”).
+    // Transcription is done and the pipeline is still writing back: it still shows “Transcription” with its title, not “Pipeline”.
     const writing = taskRows([], [{ ...parent, phase: 'applying', progress: { done: 3, total: 4, unit: 'steps' } }, { ...asr, state: 'completed' }], ctx);
     expect(writing.find((r) => r.id === 'retx')).toMatchObject({ kind: 'transcribe', kindText: '转录', title: '转录 · 主视频 · interview.mp4' });
     // When the editor does not have this video open, only the kind is shown.

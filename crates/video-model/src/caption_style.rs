@@ -19,9 +19,9 @@ pub fn is_boxed_style_schema(schema: &str) -> bool {
         .is_some_and(|v| !v.is_empty() && v.bytes().all(|b| b.is_ascii_digit()))
 }
 
-/// Default preset (video format spec §5.6 “默认预设” (default preset)): captions with no style document are drawn with it, and the Studio style seeded into a newly created caption layer is it too.
+/// Default preset (video format spec §5.6 “default preset”): captions with no style document are drawn with it, and the Studio style seeded into a newly created caption layer is it too.
 ///
-/// The finish is the seed “经典” (classic) for new projects (prototype `model-defaultsub.js`, the editor's `CLASSIC` in `caption-presets.ts`, identical field by field):
+/// The finish is the seed “classic” for new projects (prototype `model-defaultsub.js`, the editor's `CLASSIC` in `caption-presets.ts`, identical field by field):
 /// white text, weight 700, black outline (`textOutline.width` is a percentage of the font size and scales with it) and a shadow, legible even on light pictures; the backing plate is off.
 /// `punct: true`: ordinary commas and periods are replaced with spaces; transcripts and exported caption files keep the original text. Not language-specific.
 /// The editor (`DEFAULT_CAPTION_STYLE` in `packages/ui/src/model/property-values.ts`) and the pipeline (`caption-layer.ts` in `packages/jobs`) each keep a copy of the same body; change all three together when editing.

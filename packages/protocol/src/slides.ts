@@ -38,7 +38,7 @@ export interface SlideAnnotation {
   anchor: string;
   /** The slide id; filled in when it can be resolved from the description given by the runtime. */
   slideId?: string;
-  /** A human-readable location, e.g. “第 3 页 › 标题 ‘…’” (page 3 › title ‘…’). */
+  /** A human-readable location, e.g. “page 3 › title ‘…’”. */
   label: string;
   /** The location description the runtime generates for the model: page number, slide id, element path and original text. */
   detail?: string;

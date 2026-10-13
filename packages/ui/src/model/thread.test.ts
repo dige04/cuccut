@@ -351,7 +351,7 @@ describe('审批卡', () => {
   it('决定过的一行：用户点的、总是允许、规则、访问模式、拒绝、停止', () => {
     expect(approvalDecidedLabel(approval(), 'accept')).toBe('已允许');
     expect(approvalDecidedLabel(approval(), 'accept-always')).toBe('已允许 · 之后 npm test 不再问');
-    // The timeline records the chosen answer, which is still recognized after reloading; earlier records do not have it, so it falls back to “已允许” (“Allowed”).
+    // The timeline records the chosen answer, which is still recognized after reloading; earlier records do not have it, so it falls back to “Allowed”.
     expect(approvalDecidedLabel(approval({ decision: 'accept-always' }), undefined)).toBe('已允许 · 之后 npm test 不再问');
     expect(approvalDecidedLabel(approval({ decision: 'accept' }), undefined)).toBe('已允许');
     expect(approvalDecidedLabel(approval(), undefined)).toBe('已允许');

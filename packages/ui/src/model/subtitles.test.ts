@@ -80,7 +80,7 @@ describe('字幕解析', () => {
     const text = '1\n00:00:01,000 --> 00:00:02,000\n你好\n';
     expect(decodeSubtitleText(new TextEncoder().encode(text))).toBe(text);
     expect(decodeSubtitleText(new Uint8Array([0xef, 0xbb, 0xbf, ...new TextEncoder().encode('你好')]))).toBe('你好');
-    // GBK encoding of “你好” (“hello”).
+    // GBK encoding of “hello”.
     expect(decodeSubtitleText(new Uint8Array([0xc4, 0xe3, 0xba, 0xc3]))).toBe('你好');
     expect(decodeSubtitleText(new Uint8Array([0xff, 0xfe, 0x60, 0x4f, 0x7d, 0x59]))).toBe('你好');
   });

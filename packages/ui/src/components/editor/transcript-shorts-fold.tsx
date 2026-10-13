@@ -21,7 +21,7 @@ export function foldText(fold: ShortsFold): string {
 }
 
 /**
- * The folded-out part of a sub-video transcript (prototype panel-transcript-cut.jsx `ShortsFoldSeam`, product design §5.10): “前面 / 后面 X 已剪掉” (X sentences before / after have been cut). “Expand N sentences” reveals one batch close to the clip at a time, and an expanded part can be “collapsed.” There is no button to restore the whole run at once: click each sentence to put it back.
+ * The folded-out part of a sub-video transcript (prototype panel-transcript-cut.jsx `ShortsFoldSeam`, product design §5.10): “X sentences before / after have been cut”. “Expand N sentences” reveals one batch close to the clip at a time, and an expanded part can be “collapsed.” There is no button to restore the whole run at once: click each sentence to put it back.
  */
 export function ShortsFoldSeam({ fold, onMore, onCollapse }: { fold: ShortsFold; onMore(): void; onCollapse(): void }) {
   const text = foldText(fold);

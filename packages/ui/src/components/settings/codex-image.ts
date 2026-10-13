@@ -58,7 +58,7 @@ function sentence(text: string): string {
   return /[。！？.!?]$/.test(trimmed) ? trimmed : `${trimmed}${CODEX_IMAGE_COPY.period}`;
 }
 
-/** The reason it cannot generate. The design mockup pattern is “原因 · 画图至少要 Codex X 并登录” (reason · image generation needs at least Codex X and a login). The minimum version appears only in the provider’s detail, and when the version is not enough, the whole sentence comes from it. */
+/** The reason it cannot generate. The design mockup pattern is “reason · image generation needs at least Codex X and a login”. The minimum version appears only in the provider’s detail, and when the version is not enough, the whole sentence comes from it. */
 function codexImageWhy(reason: NonNullable<ProviderCapabilityView['unavailableReason']>, detail: string | undefined): string {
   switch (reason) {
     case 'outdated':

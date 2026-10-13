@@ -2,7 +2,7 @@ import { DEFAULT_MODELS_ENDPOINT, isModelScopeEndpoint, MODELSCOPE_ENDPOINT } fr
 import { M } from './model-source-copy.ts';
 
 /**
- * Download source for local models (architecture design §6.3 “来源” (source), §5.10 `models.downloadEndpoint`; design model-local-models.js `SOURCES` /
+ * Download source for local models (architecture design §6.3 “source”, §5.10 `models.downloadEndpoint`; design model-local-models.js `SOURCES` /
  * `sourceOf`, settings-local.jsx `SourceRow`). Settings › Local models › Download and storage, shared with Settings › General › Download source and offline.
  *
  * The three options write the same setting: Hugging Face stores null (the default source), ModelScope stores its base URL, and custom stores the mirror base URL entered. A stored value is matched back to its option by host,
@@ -82,7 +82,7 @@ export function customEndpoint(text: string): string | null {
 }
 
 /**
- * The supplementary note on the whole line below the picker, in order: the ModelScope fallback and check; where downloads actually come from now when “自定义” (custom) is picked but not yet saved; the environment variable takes precedence.
+ * The supplementary note on the whole line below the picker, in order: the ModelScope fallback and check; where downloads actually come from now when “custom” is picked but not yet saved; the environment variable takes precedence.
  * `picked` is the item on the picker (it may be the unsaved “自定义”), and `saved` is the stored base URL.
  */
 export function sourceNotes(picked: ModelSourceId, saved: string | null | undefined): string[] {

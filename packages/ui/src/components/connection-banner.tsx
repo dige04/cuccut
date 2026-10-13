@@ -23,7 +23,7 @@ const negativeIcon = iconStyle({ size: 'S', color: 'negative' });
 const title = style({ fontWeight: 'bold', flexShrink: 0 });
 const detail = style({ color: 'neutral-subdued', minWidth: 0, flexGrow: 1 });
 
-/** When disconnected from the Runtime, say so plainly; no submitting before 「已连接」 (Connected) (product design §2.4). */
+/** When disconnected from the Runtime, say so plainly; no submitting before “Connected” (product design §2.4). */
 export function ConnectionBanner() {
   const state = useConnection((s) => s.state);
   if (state.status === 'connected' || (state.status === 'connecting' && state.attempt === 0)) return null;

@@ -276,7 +276,7 @@ describe('记录', () => {
     expect(inputSizes(bare)).toBeNull();
     expect(transcodeResults(bare)[0]!.size).toBe('21.8 MB');
     expect(humanBytes(512 * 1024)).toBe('512 KB');
-    // Smaller by less than 1%: do not write 「小 0%」 (smaller by 0%).
+    // Smaller by less than 1%: do not write “smaller by 0%”.
     expect(transcodeResults(finished(68.3 * 1024 * 1024))[0]!.size).toBe('68.4 MB → 68.3 MB（几乎没变）');
     expect(transcodeResults(finished(70 * 1024 * 1024))[0]!.size).toBe('68.4 MB → 70.0 MB（没有变小）');
   });
@@ -348,7 +348,7 @@ describe('记录', () => {
 
   it('带回左边：冻结的参数回到表单，CRF 取最接近的一档；重试照原参数', () => {
     expect(againTranscodeDraft(compress, BLANK_COMPRESS)).toEqual({ ...BLANK_COMPRESS, inputs: ['/v/holiday.mov'], maxHeight: 720, quality: 'balanced' });
-    // For h264, 23 is farther from 「均衡」 (balanced, 26) than 「高画质」 (high quality, 22) is: pick high quality.
+    // For h264, 23 is farther from “balanced, 26” than “high quality, 22” is: pick high quality.
     expect(againTranscodeDraft(merge, BLANK_MERGE)?.quality).toBe('high');
     const byRate = transcodeJob({ inputs: ['/a.mp4'], action: 'compress', codec: 'hevc', videoBitrateKbps: 2500, audioBitrateKbps: 96, outDir: '/out' });
     expect(againTranscodeDraft(byRate, BLANK_COMPRESS)).toMatchObject({ codec: 'hevc', rate: 'bitrate', videoKbps: 2500, audioKbps: 96, outDir: '/out' });

@@ -127,7 +127,7 @@ export interface EditorAnnotationCopy {
   noConversation: string;
 }
 
-/** What a tab needs from the open result: the editor address, whether this machine has an editor, the title, and counts such as “N 页” (N pages) and “N 个画板” (N artboards). */
+/** What a tab needs from the open result: the editor address, whether this machine has an editor, the title, and counts such as “N pages” and “N artboards”. */
 export interface EditorOpened {
   url: string;
   editorAvailable: boolean;
@@ -181,7 +181,7 @@ export interface EditorPaneKind {
   /** Annotation; a tab without this item cannot be annotated. */
   annotations?: EditorAnnotations;
   /**
-   * Whole-document export (design mockup docs/design/canvas §8.3): asks the Runtime through its own frame protocol which formats it can export; the header shows an “导出” (export) menu. Files the editor hands over (`editor:save-file`) are also saved only by this kind of tab. A tab without this item replies `failed`.
+   * Whole-document export (design mockup docs/design/canvas §8.3): asks the Runtime through its own frame protocol which formats it can export; the header shows an “export” menu. Files the editor hands over (`editor:save-file`) are also saved only by this kind of tab. A tab without this item replies `failed`.
    */
   exports?: EditorExportCopy;
 }
@@ -227,13 +227,13 @@ export function editorUrl(address: string, locale: Locale, params?: Readonly<Rec
 }
 
 /**
- * The editor tab in the feature pane (slides docs/design/slides §8.1, design docs/design/canvas §8.1): the header is an icon, a title and a count; then the “标注” (annotations) switch, “在 Space 中显示” (show in Space), and “在文件夹中显示” (show in folder). The content is the editor's iframe, with its address from `slides.open` / `design.open`.
+ * The editor tab in the feature pane (slides docs/design/slides §8.1, design docs/design/canvas §8.1): the header is an icon, a title and a count; then the “annotations” switch, “show in Space”, and “show in folder”. The content is the editor's iframe, with its address from `slides.open` / `design.open`.
  * The grant in the address lives only in the Runtime's memory, so it is reopened on every mount, and on every connection (`connectionId` changes, including reconnects where no disconnect signal was received). It is also reopened on each connection: after a Runtime restart the address changes and the iframe reloads; without a restart it is the same address and does not reload.
  * When this machine has no built editor, the tab says it is unavailable and does not load the address. The address carries the UI language at open time (`?lang=`), which the editor uses for annotation position labels.
  * The design-system tab (docs/design/canvas §10) also uses this; its address additionally carries `?path=`, and its annotations (§10.6) carry one extra `section`.
  *
- * Annotations (§8.2) exchange messages with the editor through postMessage (`@cuccut/slides/editor-messages`, the same set for both editors): clicking an element or drawing a box in the editor opens a note box at that position here; “添加到对话” (add to conversation) puts it into this session's draft; the draft items that belong to this document are handed back to the editor to draw number markers.
- * The prompt for “让智能体修好” (let the agent fix it) from the editor is put into this session's input box via `editor:suggest-prompt`.
+ * Annotations (§8.2) exchange messages with the editor through postMessage (`@cuccut/slides/editor-messages`, the same set for both editors): clicking an element or drawing a box in the editor opens a note box at that position here; “add to conversation” puts it into this session's draft; the draft items that belong to this document are handed back to the editor to draw number markers.
+ * The prompt for “let the agent fix it” from the editor is put into this session's input box via `editor:suggest-prompt`.
  * Before a message is sent, `registerEditorFlush` makes the editor save; clicking an item in a sent message jumps to that position via `useEditorReveal`.
  */
 export function EditorPane({ spec, target, conversationId, active }: { spec: EditorPaneKind; target: FileTarget; conversationId: Id | null; active: boolean }) {
@@ -357,7 +357,7 @@ export function EditorPane({ spec, target, conversationId, active }: { spec: Edi
         // The editor reloads itself; nothing to do here.
         return;
       case 'editor:suggest-prompt': {
-        // “让智能体修好” (let the agent fix it) and similar (§4): the prompt is put into this session's input box, appended after the existing text, for the user to send.
+        // “let the agent fix it” and similar (§4): the prompt is put into this session's input box, appended after the existing text, for the user to send.
         // When the tab does not belong to a session, returns false; the editor then copies the prompt to the clipboard instead.
         if (conversationId) {
           const shell = useShell.getState();
@@ -584,7 +584,7 @@ export function EditorPane({ spec, target, conversationId, active }: { spec: Edi
 
 /**
  * The note box (§8.2 step 3, ported from the prototype's home-slides.jsx `SlideNoteForm` and home-design.jsx `DesignNoteForm`):
- * the position is shown above, with one input box, “取消” (cancel) and “添加到对话” (add to conversation); ⌘/Ctrl+Enter adds.
+ * the position is shown above, with one input box, “cancel” and “add to conversation”; ⌘/Ctrl+Enter adds.
  */
 function NoteForm({
   copy,

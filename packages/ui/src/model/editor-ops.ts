@@ -106,7 +106,7 @@ function unlockedTracks(sequence: Sequence, kind: PlaceableKind): Track[] {
 }
 
 /**
- * “添加到时间线” (add to timeline): placed at the playhead. In the prototype (editor-elements.jsx `addElement`), what is added from the panel is a layer at the playhead.
+ * “add to timeline”: placed at the playhead. In the prototype (editor-elements.jsx `addElement`), what is added from the panel is a layer at the playhead.
  * - Images and videos must be on top to be seen. Only an empty track above the topmost visual track that has content during this span is used. If there is none, a new track is created at the top (`addItem` cannot reference a track created in the same transaction, so it is written with `insertItems`, using the engine `addItem` default fields).
  * - Audio goes onto the first audio track that is empty there. If all of them are taken, it is appended to the end of the first audio track.
  * - When a track is specified (dragged onto a row), only that track is considered. If it is empty, the asset goes at the drop point. Otherwise it is appended to its end.
@@ -350,7 +350,7 @@ export function assetUsages(sequence: Sequence | null, assetId: Id): AssetUsage[
 }
 
 /**
- * The file for “在文件夹中显示” (show in folder). A linked asset is its registered original file (the relative path is appended after the video directory). Assets imported into the video directory are managed by CucCut. The Runtime does not give their location on disk (same wording as library-brand), so this returns null.
+ * The file for “show in folder”. A linked asset is its registered original file (the relative path is appended after the video directory). Assets imported into the video directory are managed by CucCut. The Runtime does not give their location on disk (same wording as library-brand), so this returns null.
  */
 export function assetFilePath(asset: AssetRecord, videoDir: string | null): string | null {
   const storage = asset.revisions[asset.currentRevision]?.storage;
@@ -381,7 +381,7 @@ export interface DubFileRow {
   /** The instance on the timeline. Clicking a row selects it and jumps there. null when it is not on the timeline. */
   itemId: Id | null;
   name: string;
-  /** This sentence's translation. The separated tracks say “分离出来的背景声” (separated background) or “分离出来的人声” (separated vocals). */
+  /** This sentence's translation. The separated tracks say “separated background” or “separated vocals”. */
   text: string;
   status: 'failed' | 'needs-fit' | 'stale' | 'draft' | null;
   muted: boolean;
@@ -392,16 +392,16 @@ export interface DubFileRow {
 export interface DubGroupCard {
   groupId: string;
   language: string | null;
-  /** Small tag on the row header: the language sub-tag (EN, JA). When the language is unknown, write “配音” (dub). */
+  /** Small tag on the row header: the language sub-tag (EN, JA). When the language is unknown, write “dub”. */
   badge: string;
-  /** “配音 · English” (Dub · English). */
+  /** “Dub · English”. */
   title: string;
   /** Group header subtitle: `63 个文件 · 62 句 · 3 句没合成 · 模型` (sample text, kept as is). */
   line: string;
   /** On the timeline / track off / not on the timeline (the instances were all deleted, but the asset is still in the library). */
   state: 'on' | 'off' | 'gone';
   files: DubFileRow[];
-  /** The dub track (“移除这组配音” (remove this dub group) removes the ducking triggered by it). */
+  /** The dub track (“remove this dub group” removes the ducking triggered by it). */
   trackId: Id | null;
   /** This group's instances on the timeline (including the separated background). */
   itemIds: Id[];

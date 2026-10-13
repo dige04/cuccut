@@ -54,7 +54,7 @@ import { useToolStatus } from './use-tool-status.ts';
 import { usePreset, useRerun } from './video-tool-parts.tsx';
 
 /*
- * Design mockup tool-tts.jsx `TtsToolPage` (672-785): text, model (local and cloud, the unified “模型” (model) row of product design §2.7), voice (voice / style / rate), language and details; generation records on the right. The text to speak can be typed directly, or chosen from a document or subtitle in Space (`material`; the Runtime reads out the text; architecture design §7.9, “Space 条目作输入”); entries brought from the Space viewer are pre-selected.
+ * Design mockup tool-tts.jsx `TtsToolPage` (672-785): text, model (local and cloud, the unified “model” row of product design §2.7), voice (voice / style / rate), language and details; generation records on the right. The text to speak can be typed directly, or chosen from a document or subtitle in Space (`material`; the Runtime reads out the text; architecture design §7.9, “Space 条目作输入”); entries brought from the Space viewer are pre-selected.
  */
 
 const textFoot = style({ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 });
@@ -76,7 +76,7 @@ export function TtsTool() {
   const [submitting, setSubmitting] = useState(false);
   const submitFailed = useSubmitFailed('synthesizeSpeech', TTS_COPY.submitFailed);
   const { saveDirectory } = useToolStatus();
-  // The directory chosen with “更改…” (change…) lives only on this page (not written back to settings).
+  // The directory chosen with “change…” lives only on this page (not written back to settings).
   const [saveOverride, setSaveOverride] = useState<string | null>(null);
   // Source of the text: typed directly, or a document or subtitle in Space. Lives only on this page (the draft stores the typed text).
   const [source, setSource] = useState<'text' | 'space'>('text');
@@ -98,7 +98,7 @@ export function TtsTool() {
       ? { text: FORM_COPY.needEntry, bad: tried }
       : ttsStatus(draft, option, tried, myVoices, material);
   const toSettings = () => go({ tab: 'models', category: 'tts', page: option?.local ? 'local' : 'cloud' });
-  // The chosen local model is not installed yet: a download card appears below the model row (design mockup `TtsModelGate`); when an installed local model exists, “换用已装的 X” (use installed X instead) is also offered.
+  // The chosen local model is not installed yet: a download card appears below the model row (design mockup `TtsModelGate`); when an installed local model exists, “use installed X instead” is also offered.
   const gateBundle = downloadableBundle(bundles, option);
   const installed = gateBundle ? installedAlternative(options, option) : null;
 

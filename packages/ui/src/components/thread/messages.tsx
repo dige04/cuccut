@@ -58,7 +58,7 @@ const notice = style({
 const noticeIcon = style({ flexShrink: 0, marginTop: 2 });
 
 /**
- * Read-only handles for sent images, remembered by “会话:附件” (session:attachment) (the attachment locator for `media.resolve`); a new one is requested when less than a minute remains before expiry.
+ * Read-only handles for sent images, remembered by “session:attachment” (the attachment locator for `media.resolve`); a new one is requested when less than a minute remains before expiry.
  * When the thread is redrawn or the user switches sessions back and forth, there is no need to request them every time.
  */
 const attachmentHandles = new Map<string, MediaHandle>();

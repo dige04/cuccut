@@ -56,14 +56,14 @@ const en = {
     emptyBody:
       'The models folder on this computer only holds model packages for speech recognition, speech synthesis, image generation and source separation. Local models for this category aren’t supported yet.',
   },
-  /** Image generation local page (design mock model-local-models.js `DEFAULT_DESC.image`): no factory default, and the menu has no “自动选择”(Auto select). */
+  /** Image generation local page (design mock model-local-models.js `DEFAULT_DESC.image`): no factory default, and the menu has no “Auto select”. */
   imageLocal: {
     defaultDesc: 'Preselected for new image tasks. Without a default you pick a model each time; a manual choice always wins.',
     cloudDefault: (name: string) =>
       `The default is a cloud model (${name}); change it in Settings › Cloud models. Choosing a local model switches to it.`,
     noInstalled: 'No image generation model is installed yet. Download one below first.',
     licenseUse: 'Images made with it may only be used in non-commercial content; for videos you plan to use commercially, pick another image model.',
-    /** The “试画”(Trial draw) on the row and its dialog (design mock image-gen.jsx `ImageProbeDialog`, local branch). */
+    /** The “Trial draw” on the row and its dialog (design mock image-gen.jsx `ImageProbeDialog`, local branch). */
     tryButton: 'Try it',
     tryTitle: (name: string) => `Try ${name}`,
     tryPromptTitle: 'Test prompt · one 512 × 512 image',
@@ -173,7 +173,7 @@ const en = {
       `Not connected · ${first}${total > 1 ? ` and ${count(total - 1, 'more model', 'more models')}` : ''} · connect to test and set a default`,
     headCount: (total: number) => count(total, 'model', 'models'),
     headDefault: (id: string) => ` · Default: ${id}`,
-    /** The card header's “刷新”(Refresh) (design mock settings-cloud.jsx:318-321, :149-176, :214). */
+    /** The card header's “Refresh” (design mock settings-cloud.jsx:318-321, :149-176, :214). */
     refresh: { models: 'Refresh models', voices: 'Refresh voice catalog' } satisfies Record<RefreshKind, string>,
     refreshNeedsKey: (label: string) => `${label} (connect a key first)`,
     refreshing: { models: 'Refreshing models…', voices: 'Refreshing voice catalog…' } satisfies Record<RefreshKind, string>,

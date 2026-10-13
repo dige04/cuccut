@@ -339,7 +339,7 @@ pub fn source_boundary_issue(words: &[&str], boundary: usize) -> Option<String> 
         "each", "every", "some", "any", "no", "new", "other", "same", "first", "last", "next",
         "own", "more", "less", "many", "much", "few", "several",
     ];
-    // `thought that | proposition` style reporting bridges are often compressed in the target language into “参与者认为，| 命题” (the participant thinks, | proposition). This is a high-quality bilingual boundary. Do not tag the complementizer that as a determiner. Other `that | noun/clause` cases keep the risk warning.
+    // `thought that | proposition` style reporting bridges are often compressed in the target language into “the participant thinks, | proposition”. This is a high-quality bilingual boundary. Do not tag the complementizer that as a determiner. Other `that | noun/clause` cases keep the risk warning.
     const REPORTING_VERBS: &[&str] = &[
         "argue", "argued", "believe", "believed", "claim", "claimed", "find", "found", "know",
         "knew", "say", "said", "show", "showed", "think", "thought",

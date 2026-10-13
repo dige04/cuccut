@@ -25,12 +25,12 @@ import { ST } from './start-copy.ts';
 import { jobErrorText } from '../../model/localized-text.ts';
 
 /**
- * Follow-up after a link import (this used to be the execution of the home page's fixed flow too; the home page's fixed flow has now been retired, and only the task detail's “用下载的文件新建视频” (Create video from downloaded file) starts a run, via `adoptDownload`):
+ * Follow-up after a link import (this used to be the execution of the home page's fixed flow too; the home page's fixed flow has now been retired, and only the task detail's “Create video from downloaded file” starts a run, via `adoptDownload`):
  * creates the video, enters the editor, and (optionally) submits transcription (the subtitle panel's transcribe-run). Translation starts automatically after transcription completes
  * (the subtitle panel's translate-run). The link import creates the video from the downloaded file after the `link-import` flow finishes.
  *
  * State lives in a module-level store: after starting, the page may switch away (a link import goes to the task detail), and execution must not break because of that. It applies only to this run:
- * after an app restart, a completed download appears in the task detail as “用下载的文件新建视频” (Create video from downloaded file); transcription and translation tasks continue in the background task list as usual.
+ * after an app restart, a completed download appears in the task detail as “Create video from downloaded file”; transcription and translation tasks continue in the background task list as usual.
  */
 
 export interface FlowOptions {
@@ -171,7 +171,7 @@ function blankRun(key: string, input: StartInput, projectId: Id, name: string, l
   };
 }
 
-/** Create the video (adding a background and a waveform if needed), open it, then submit transcription. `link` is the media name and source of the file downloaded by the link import (the video details' “来源信息” (Source info)). */
+/** Create the video (adding a background and a waveform if needed), open it, then submit transcription. `link` is the media name and source of the file downloaded by the link import (the video details' “Source info”). */
 async function createAndGo(
   key: string,
   path: string | null,
@@ -255,7 +255,7 @@ async function createAndGo(
 
 /**
  * Whether to open the video directly after the download completes: it opens if the user is still on this import's task detail or on the start page. If they are elsewhere (editing something else, viewing another page), it does not interrupt,
- * and the notice offers “打开视频” (Open video).
+ * and the notice offers “Open video”.
  */
 function shouldOpen(run: FlowRun): boolean {
   const { route } = useShell.getState();
@@ -317,7 +317,7 @@ function settle(jobs: readonly JobRecord[]): void {
       } else if (problem) {
         const why = ST.flow.reason([problem.title, problem.message].filter(Boolean));
         patch(run.key, { stage: 'failed', failedAt: 'translate', error: why });
-        // When the editor has another video open, translate-run has already suggested “在对照列表里放到画面上” (Show it on screen in the comparison list).
+        // When the editor has another video open, translate-run has already suggested “Show it on screen in the comparison list”.
         const told = problem.kind === 'pending' && useVideo.getState().video?.videoId !== run.videoId;
         if (!told) deps?.toast('negative', ST.flow.translateNotPlaced(run.name || ST.flow.video, why), open);
       } else {
@@ -330,7 +330,7 @@ function settle(jobs: readonly JobRecord[]): void {
 
 /**
  * Start translation (the subtitle panel's `startTranslate`): the `translate` flow requires the video to be open in the Runtime. If the user has closed it (the editor switched to another video), it is rejected,
- * and the notice offers “打开视频并翻译” (Open video and translate). Reasons such as no text model being configured stay on the subtitle panel's issue card.
+ * and the notice offers “Open video and translate”. Reasons such as no text model being configured stay on the subtitle panel's issue card.
  */
 async function translate(key: string, documentId: Id): Promise<void> {
   const bound = deps;
@@ -398,7 +398,7 @@ function waitForVideo(videoId: Id, ms = 10_000): Promise<boolean> {
 
 /**
  * After an app restart (or an import started elsewhere): the download has completed and this run has no follow-up. Create a video from the downloaded file and open it, without automatic transcription
- * (after entering the editor, click “生成字幕” (Generate subtitles) in the subtitle panel). The project the download directory belongs to comes from the frozen parameters; if there is no project, the video cannot be created.
+ * (after entering the editor, click “Generate subtitles” in the subtitle panel). The project the download directory belongs to comes from the frozen parameters; if there is no project, the video cannot be created.
  */
 export async function adoptDownload(job: JobRecord): Promise<{ ok: true } | { ok: false; error: string }> {
   const bound = deps;

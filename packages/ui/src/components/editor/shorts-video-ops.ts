@@ -17,8 +17,8 @@ import { EXPORT_COPY } from '../export/export-copy.ts';
 import { mediaCandidates } from './transcribe-run.ts';
 
 /**
- * Operations on child videos that are not open in the editor, for the result page and the “切出的短视频”(shorts cut from this video) group in the parent video: reading each one's derived source, its current duration and opening sentence, renaming, and
- * exporting them one by one (“全部导出…”(export all…)). Each one opens the video in the background and closes it again when done
+ * Operations on child videos that are not open in the editor, for the result page and the “shorts cut from this video” group in the parent video: reading each one's derived source, its current duration and opening sentence, renaming, and
+ * exporting them one by one (“export all…”). Each one opens the video in the background and closes it again when done
  * (same as `undoInBackground` in components/thread/change-undo.ts). If the editor is holding that video at the moment, it is not closed on its behalf.
  *
  * Unverified: if, while the background open is in progress, the editor happens to start opening the same video, this close may reach the Runtime first. The editor will then receive `video.closed` and reopen the video itself,
@@ -41,7 +41,7 @@ async function withVideo<T>(runtime: RuntimeSession, target: FileTarget, run: (v
 
 const open = (runtime: RuntimeSession, target: FileTarget) => runtime.client.request('videos.open', target);
 
-/** On the child video card, the “起止 · 时长”(range · duration) and “开头”(opening): the range in the derived source, its current duration after editing (seconds), and the opening sentence. */
+/** On the child video card, the “range · duration” and “opening”: the range in the derived source, its current duration after editing (seconds), and the opening sentence. */
 export interface ShortFacts {
   derivation: ShortsDerivation | null;
   seconds: number | null;
@@ -125,7 +125,7 @@ function liveOpening(runtime: RuntimeSession, videoId: Id, video: VideoSnapshot)
 
 /**
  * A child video's derived source, current duration and opening sentence: when the editor has it open, the editor's snapshot is read; otherwise it is read once in the background (`peekShort`).
- * Shared by the result page cards and the “切出的短视频”(shorts cut from this video) group in the parent video.
+ * Shared by the result page cards and the “shorts cut from this video” group in the parent video.
  */
 export function useShortFacts(entry: SpaceEntry, withOpening = true): ShortFacts {
   const runtime = useRuntime();
@@ -175,7 +175,7 @@ export interface ShortsExportOutcome {
 }
 
 /**
- * “全部导出…”(export all…): starts one final export for each child video (`exports.create`, default settings: MP4, standard quality, follow canvas, burn in captions).
+ * “export all…”: starts one final export for each child video (`exports.create`, default settings: MP4, standard quality, follow canvas, burn in captions).
  * Each is its own export task, with progress shown in the task list (the clip that is open is also shown on the export button in the video bar). On desktop, a save folder is chosen first (a file is chosen instead when there is only one clip).
  * On the web, the Runtime's default location is used. A clip the editor is holding, and any clip that cannot be opened in the background or is rejected by the pre-check, is skipped, and the reason is recorded in the result.
  * The Runtime freezes a snapshot before creating a task, and the task no longer reads the open video, so a clip opened in the background is closed as soon as its task has been created.

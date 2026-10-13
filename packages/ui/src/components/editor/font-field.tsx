@@ -10,7 +10,7 @@ import { PRow } from './inspector-controls.tsx';
 import { FONT_COPY as FC } from './font-copy.ts';
 
 /**
- * Font box (product design §5.9 “字体” (Fonts); prototype panel-font-picker.jsx): the text styles of the properties page (text, timer-type elements, captions) and the font cell of the stage toolbar share it. On desktop it is one table, combining built-in, local, downloaded and on-demand families (font-library-list.tsx). On the properties page it expands below the font row (the prototype's `inline`); in the toolbar it is a popover. The Web entry's browser session has no `fonts.*`, so it keeps the original few fixed fonts.
+ * Font box (product design §5.9 “Fonts”; prototype panel-font-picker.jsx): the text styles of the properties page (text, timer-type elements, captions) and the font cell of the stage toolbar share it. On desktop it is one table, combining built-in, local, downloaded and on-demand families (font-library-list.tsx). On the properties page it expands below the font row (the prototype's `inline`); in the toolbar it is a popover. The Web entry's browser session has no `fonts.*`, so it keeps the original few fixed fonts.
  */
 
 /** Fixed fonts for the Web entry: the few the renderer recognizes (aliases in text-style.ts), plus common Chinese system fonts. Current values that are not recognized are listed too. */
@@ -96,7 +96,7 @@ interface FontFieldProps {
   onChange(family: string): void;
 }
 
-/** The “字体” (Font) row on the properties page: click to expand a table below it; selecting an entry collapses it. */
+/** The “Font” row on the properties page: click to expand a table below it; selecting an entry collapses it. */
 export function FontField({ value, isDisabled = false, onChange }: FontFieldProps) {
   const web = useRuntime().host.platform === 'web';
   const font = currentFont(value);

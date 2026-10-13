@@ -251,7 +251,7 @@ describe('分组与每行能做什么', () => {
     const paused = { ...half, install: { jobId: null, state: 'paused' as const, receivedBytes: 5, totalBytes: 10 } };
     expect(bundleActions(paused)).toMatchObject({ complete: false, resume: true });
     expect(bundleActions({ ...half, state: 'error', reason: 'worker-missing' }).complete).toBe(false);
-    // A required component is missing: not installed properly, so it goes through “下载” (download), not “补齐” (fill in)
+    // A required component is missing: not installed properly, so it goes through “download”, not “fill in”
     const partial = bundle(QWEN, { state: 'not-installed', reason: 'incomplete', components: [component('w', { state: 'missing' }), aligner] });
     expect(bundleActions(partial)).toMatchObject({ complete: false, install: true });
   });
@@ -317,7 +317,7 @@ describe('就地下载（工具页、转录设置、配音的「下载 {大小}�
 
   it('下载的样子：大小先用下载任务的总量、再按缺的组件算；在下写百分比，停在一半是暂停', () => {
     expect(downloadView(missing(QWEN))).toEqual({ state: 'idle', size: fmtSize(1.2 * GB), percent: null });
-    // Weights present, only shared components missing: writes only the missing item (the same figure as “补齐 {大小}” (fill in {size}) on the settings page), not an estimate for the whole model.
+    // Weights present, only shared components missing: writes only the missing item (the same figure as “fill in {size}” on the settings page), not an estimate for the whole model.
     const vad = component('silero/vad', { component: 'vad', state: 'missing', bytes: null, estimatedBytes: 30 * MB });
     const half = missing(QWEN, { components: [component('w', { estimatedBytes: 1.2 * GB }), vad], estimatedBytes: 1.2 * GB + 30 * MB });
     expect(downloadView(half).size).toBe(fmtSize(30 * MB));
@@ -348,7 +348,7 @@ describe('就地下载（工具页、转录设置、配音的「下载 {大小}�
     // The shared component was installed by another model: its own weights are not present, so it is still a download (license must be asked).
     const borrowed = missing('b@mlx', { components: [component('b', { state: 'missing' }), vad('installed')] });
     expect(inlineInstallMode(borrowed, [borrowed, { ...half, components: [component('a'), vad('installed')] }])).toBe('install');
-    // Download stopped halfway with the weights already landed: continuing is also a fill-in (the settings page's “继续下载” (continue download) likewise goes by fill-in).
+    // Download stopped halfway with the weights already landed: continuing is also a fill-in (the settings page's “continue download” likewise goes by fill-in).
     const paused = { ...half, install: { jobId: null, state: 'paused' as const, receivedBytes: 5, totalBytes: 10 } };
     expect(inlineInstallMode(paused, [paused, fresh])).toBe('complete');
   });

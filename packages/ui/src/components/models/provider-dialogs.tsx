@@ -51,8 +51,8 @@ function message(err: unknown): string {
 }
 
 /**
- * Key dialog: “验证并保存”(Verify and save) = enable and verify (if it fails, the Runtime rejects it and nothing is saved, and the reason is written here); after saving it hands off to `onSaved`, which also refreshes the models.
- * The built-in “移除密钥”(Remove key) clears the key and disables; a custom “删除服务商”(Delete provider) asks for confirmation first, then deletes together with its declared models.
+ * Key dialog: “Verify and save” = enable and verify (if it fails, the Runtime rejects it and nothing is saved, and the reason is written here); after saving it hands off to `onSaved`, which also refreshes the models.
+ * The built-in “Remove key” clears the key and disables; a custom “Delete provider” asks for confirmation first, then deletes together with its declared models.
  */
 export function KeyDialog({ card, onClose, onSaved }: { card: CloudProviderCard; onClose: () => void; onSaved?: () => void }) {
   const runtime = useRuntime();

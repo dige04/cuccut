@@ -102,7 +102,7 @@ export function glossaryFits(glossary: Pick<TranslationGlossary, 'sourceLanguage
 }
 
 /**
- * Glossary entries that appear in the source text (case-insensitive); for the same source term only the first entry is taken. The settings page uses this to say “本篇命中几条” (how many entries hit this piece); what is actually handed to the model is picked again by the Runtime
+ * Glossary entries that appear in the source text (case-insensitive); for the same source term only the first entry is taken. The settings page uses this to say “how many entries hit this piece”; what is actually handed to the model is picked again by the Runtime
  * from each batch's source text.
  */
 export function glossaryHits(terms: TranslationGlossary['terms'], text: string): GlossaryEntry[] {

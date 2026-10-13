@@ -21,7 +21,7 @@ import { detail } from './tool-parts.tsx';
 import { TRANSCRIBE_TOOL_COPY } from './tools-copy.ts';
 
 /*
- * “更多选项” (More options) below the speech model: identify speakers (design file tool-transcribe.jsx `AsrMoreOptions`, tools.css `.asrmore`). Shared by the transcription tool page and
+ * “More options” below the speech model: identify speakers (design file tool-transcribe.jsx `AsrMoreOptions`, tools.css `.asrmore`). Shared by the transcription tool page and
  * re-transcription. Collapsed by default; the title shows the current state, and while collapsed it still shows why the job cannot start. If it is switched on but speaker diarization is not installed, a download is offered in place (through the same install dialog as the model page),
  * and it stays on once the download finishes.
  */
@@ -52,7 +52,7 @@ export interface SpeakerState {
   mode: 'install' | 'complete';
 }
 
-/** The current state of “识别说话人” (Identify speakers) for this speech model: `pick` is the value the user set by hand (null if never set). */
+/** The current state of “Identify speakers” for this speech model: `pick` is the value the user set by hand (null if never set). */
 export function useSpeakerState(info: TranscribeModelInfo | null | undefined, pick: boolean | null): SpeakerState {
   const bundles = useModels((s) => s.bundles);
   const id = speakerPackId(info);

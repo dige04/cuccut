@@ -122,7 +122,7 @@ export function serviceBusy(state: ServiceState): boolean {
   return state === 'starting' || state === 'stopping';
 }
 
-/** Status word: remote compute says “共享”（sharing); the others say “运行”（running). */
+/** Status word: remote compute says “sharing”; the others say “running”. */
 export function serviceStateLabel(id: ServiceId, state: ServiceState): string {
   if (state === 'unavailable') return SERVICE_STATE_COPY.unavailable;
   return (id === 'remote' ? SERVICE_STATE_COPY.share : SERVICE_STATE_COPY.service)[state];
@@ -132,7 +132,7 @@ export interface ServiceLight {
   id: ServiceId;
   tone: ServiceTone;
   busy: boolean;
-  /** Sidebar row hint and screen-reader text: “远端算力 · 正在共享”（Remote compute · sharing） */
+  /** Sidebar row hint and screen-reader text: “Remote compute · sharing” */
   label: string;
 }
 
@@ -151,7 +151,7 @@ export interface ServicesSummary {
   tone: 'error' | 'on' | 'off';
 }
 
-/** Small line beside the overview title: if something has errored, say so first; otherwise say how many are running; if all are off, say “全部未启动”（all not started). Services not offered are not counted. */
+/** Small line beside the overview title: if something has errored, say so first; otherwise say how many are running; if all are off, say “all not started”. Services not offered are not counted. */
 export function servicesSummary(states: ServiceStates): ServicesSummary {
   const all = SERVICE_IDS.map((id) => states[id]);
   const errors = all.filter((s) => s === 'error').length;
@@ -176,7 +176,7 @@ export type ServiceQuickAction =
   | { kind: 'unavailable'; label: string };
 
 /**
- * Quick button at the end of a service row: when on, offers stop; when off, offers start; when errored, offers “重新…”（restart…); while starting or stopping, a spinning disabled button; services that are not offered get no button, and the row's sub-line says why.
+ * Quick button at the end of a service row: when on, offers stop; when off, offers start; when errored, offers “restart…”; while starting or stopping, a spinning disabled button; services that are not offered get no button, and the row's sub-line says why.
  */
 export function serviceQuickAction(id: ServiceId, state: ServiceState): ServiceQuickAction {
   const copy = SERVICE_COPY[id];
@@ -245,7 +245,7 @@ export function isPortError(status: Pick<ServiceStatus, 'errorRef'>): boolean {
 
 // ---- Browser ----
 
-/** Recognizes which browser it is from the User-Agent at login (the web service session list); says “浏览器”（browser) when it cannot tell. */
+/** Recognizes which browser it is from the User-Agent at login (the web service session list); says “browser” when it cannot tell. */
 export function browserLabel(userAgent: string | null): string {
   if (!userAgent) return M.browser;
   const ua = userAgent;
@@ -265,7 +265,7 @@ export function browserLabel(userAgent: string | null): string {
   return os ? `${name} · ${os}` : name;
 }
 
-/** Sub-line of a browser session: “2 个连接 · 3 分钟前活跃 · 21:40 过期”（2 connections · active 3 minutes ago · expires 21:40). Sessions are valid for 12 hours from login. */
+/** Sub-line of a browser session: “2 connections · active 3 minutes ago · expires 21:40”. Sessions are valid for 12 hours from login. */
 export function webSessionMeta(session: Pick<WebSession, 'connections' | 'lastUsedAt' | 'expiresAt'>, now: number): string {
   const at = new Date(session.expiresAt);
   const expires = Number.isNaN(at.getTime()) ? null : `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;

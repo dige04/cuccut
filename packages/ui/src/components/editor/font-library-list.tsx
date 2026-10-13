@@ -58,7 +58,7 @@ import { FONT_COPY as FC } from './font-copy.ts';
 import { intlLocale } from '@cuccut/protocol';
 
 /**
- * One table in the font picker (prototype panel-font-picker.jsx's LibraryPicker): search, category and text filters, and segments “这个视频里用到” (used in this video) → “最近用过” (recently used) → “全部字体” (all fonts). When searching or filtering, these combine into “搜索结果” (search results). Each row shows its status at that moment. About two thousand rows use fixed-height virtual scrolling and only draw what is in view; a sample is fetched 120ms after it scrolls into view. While open, the row order does not change (a just-downloaded family does not jump out from under the cursor). The prototype's “品牌字体” (brand fonts) section and “导入字体…” (import font…) are absent: brand-library fonts cannot yet be picked in the font box, and the real app has no path for importing local font files.
+ * One table in the font picker (prototype panel-font-picker.jsx's LibraryPicker): search, category and text filters, and segments “used in this video” → “recently used” → “all fonts”. When searching or filtering, these combine into “search results”. Each row shows its status at that moment. About two thousand rows use fixed-height virtual scrolling and only draw what is in view; a sample is fetched 120ms after it scrolls into view. While open, the row order does not change (a just-downloaded family does not jump out from under the cursor). The prototype's “brand fonts” section and “import font…” are absent: brand-library fonts cannot yet be picked in the font box, and the real app has no path for importing local font files.
  */
 
 type Client = ReturnType<typeof useRuntime>['client'];

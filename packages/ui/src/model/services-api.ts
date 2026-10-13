@@ -79,7 +79,7 @@ export function routableModelCount(view: ModelCapabilitiesView, capability: Onli
   return n;
 }
 
-/** One sentence per capability: “3 个模型可用”（3 models available), or why not (none available, or the available ones have routing switched off). */
+/** One sentence per capability: “3 models available”, or why not (none available, or the available ones have routing switched off). */
 export function capabilityLine(view: ModelCapabilitiesView, capability: OnlineCapability, routing: ModelApiRouting): string {
   const n = routableModelCount(view, capability, routing);
   if (n) return M.modelsAvailable(n);
@@ -122,7 +122,7 @@ export interface AliasTargetOption {
   note: string | null;
 }
 
-/** Target options when adding an alias: one “默认模型”（default model) item per provider, followed by each of its models. Lists only the providers under this capability. */
+/** Target options when adding an alias: one “default model” item per provider, followed by each of its models. Lists only the providers under this capability. */
 export function aliasTargets(view: ModelCapabilitiesView, capability: OnlineCapability, routing: ModelApiRouting): AliasTargetOption[] {
   const out: AliasTargetOption[] = [];
   for (const p of providers(view, capability)) {

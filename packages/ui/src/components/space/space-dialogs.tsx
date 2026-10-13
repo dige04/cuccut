@@ -26,7 +26,7 @@ const items = style({ margin: 0, paddingStart: 20, display: 'flex', flexDirectio
 const refKind = style({ fontWeight: 'bold' });
 const hint = style({ font: 'ui-sm', color: 'gray-600', margin: 0 });
 
-/** Maximum number of generated or exported items listed at once; the rest are written as “等” (etc.). */
+/** Maximum number of generated or exported items listed at once; the rest are written as “etc.”. */
 const RELATED_SHOWN = 8;
 
 export type SourceVideoResult = Extract<SpaceOpenForEditResult, { mode: 'source-video' }>;

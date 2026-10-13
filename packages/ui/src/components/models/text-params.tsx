@@ -19,7 +19,7 @@ import { TEXT_PARAMS_COPY } from './models-copy.ts';
 const concurrencyField = style({ width: 112 });
 
 /**
- * The two text generation parameter rows (design mock settings-cloud.jsx:262-269): the “推理强度”(Reasoning effort) segment and “并发请求数”(Concurrent requests).
+ * The two text generation parameter rows (design mock settings-cloud.jsx:262-269): the “Reasoning effort” segment and “Concurrent requests”.
  * Stored in the Runtime's capability parameters (`models.setCapabilityParameters`, architecture design §6.8); the new value comes back through the `models` topic.
  * Between submitting to the topic and receiving it back, the value just chosen is shown; on failure it reverts and the reason is written. In the browser these are greyed out (the Web allowlist does not include `models.setCapabilityParameters`).
  */

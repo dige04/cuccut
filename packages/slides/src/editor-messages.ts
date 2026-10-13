@@ -45,7 +45,7 @@ export type EditorToHostMessage =
   | { type: 'editor:flushed'; requestId: string; saved: boolean }
   /** The deck was changed by something other than the editor, so the editor must reload it. */
   | { type: 'editor:external-change'; paths: string[] }
-  /** The runtime asks the parent window to put a prompt into this session's input box, such as “让智能体修好这页” (“have the agent fix this page”); the parent replies with `editor:suggest-prompt-result`. */
+  /** The runtime asks the parent window to put a prompt into this session's input box, such as “have the agent fix this page”; the parent replies with `editor:suggest-prompt-result`. */
   | { type: 'editor:suggest-prompt'; requestId: string; prompt: string }
   /** The design canvas editor exported a file and asks the parent window to save it (on web it goes to the browser download; on desktop it opens a save dialog); the parent replies with `editor:save-file-result`. */
   | { type: 'editor:save-file'; requestId: string; filename: string; data: ArrayBuffer | Blob };

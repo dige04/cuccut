@@ -215,7 +215,7 @@ export function ThinBox({ pose, view }: { pose: Pose; view: View }) {
 
 const GROUP_CORNERS: Handle[] = ['nw', 'ne', 'sw', 'se'];
 
-/** Unified multi-select box (prototype MultiBox): a dashed outer frame. Drag it as a whole; the corners scale the whole group proportionally; no rotate knob. A corner badge below reads “已选 N 个”(N selected). */
+/** Unified multi-select box (prototype MultiBox): a dashed outer frame. Drag it as a whole; the corners scale the whole group proportionally; no rotate knob. A corner badge below reads “N selected”. */
 export function GroupBox({
   bounds,
   view,

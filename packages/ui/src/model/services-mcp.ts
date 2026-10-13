@@ -55,7 +55,7 @@ export function scopeVideos(entries: readonly SpaceEntry[]): ScopeVideo[] {
   return out.sort((a, b) => a.name.localeCompare(b.name, intlLocale()));
 }
 
-/** The one-line description of scope (prototype `mcpScope`): “所有视频（N）”（all videos), “「标题」”（one video, by title), “其中 N 个视频”（N videos included). */
+/** The one-line description of scope (prototype `mcpScope`): “all videos”, “「标题」”（one video, by title), “N videos included”. */
 export function mcpScope(videos: ServicePolicy['videos'], total: number, nameOf: (id: Id) => string | undefined): string {
   if (videos === 'all') return M.scopeAll(total);
   const ids = videos.ids;
@@ -142,7 +142,7 @@ export function toolGate(tool: McpTool, level: ServiceLevel): McpToolGate {
 
 export const GATE_LABEL: Readonly<Record<McpToolGate, string>> = live(() => M.gates);
 
-/** One sentence beside the tool section heading (prototype `summary`): “提供 N / N 个工具 · M 个调用前询问”（offering N of N tools · M ask before calling). */
+/** One sentence beside the tool section heading (prototype `summary`): “offering N of N tools · M ask before calling”. */
 export function toolsSummary(level: ServiceLevel): string {
   const exposed = MCP_TOOLS.filter((t) => toolGate(t, level) !== 'hidden');
   const ask = exposed.filter((t) => toolGate(t, level) === 'ask').length;

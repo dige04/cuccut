@@ -15,12 +15,12 @@ import { useWaitingCount } from './use-waiting-count.ts';
 /*
  * Host for app updates (design settings-update.jsx `AppUpdateProvider`): mounted on the shell root, so the main process's status is still received and toasts still appear after leaving the settings page.
  * It puts the snapshots pushed from the main process into `useAppUpdate`, pushes the `updates.autoCheck` / `updates.autoDownload` held by the Runtime to the main process,
- * opens and closes the update window and the stop barrier, and when “等任务结束后安装” (install after tasks finish) is selected, counts the tasks and installs once the count reaches zero. When the host has no `updates` surface (the web), it does nothing.
+ * opens and closes the update window and the stop barrier, and when “install after tasks finish” is selected, counts the tasks and installs once the count reaches zero. When the host has no `updates` surface (the web), it does nothing.
  */
 
 const TOAST_TIMEOUT = 10_000;
 
-/** Toast “查看” (view): opens the update window if it can in this state; if it cannot (the state has already changed), goes to 设置 › 关于 (Settings › About). */
+/** Toast “view”: opens the update window if it can in this state; if it cannot (the state has already changed), goes to 设置 › 关于 (Settings › About). */
 function openUpdate(): void {
   const state = useAppUpdate.getState().snapshot?.state;
   if (state && sideButton(state).visible) useAppUpdate.getState().openWindow();
@@ -85,7 +85,7 @@ export function AppUpdateHost() {
     if (windowOpen && !viewable) closeWindow();
   }, [windowOpen, viewable, closeWindow]);
 
-  // “等任务结束后安装” (install after tasks finish): while the package is still there, wait; when the task count reaches zero, install. If the package is gone (canceled, errored, or rechecked), stop waiting.
+  // “install after tasks finish”: while the package is still there, wait; when the task count reaches zero, install. If the package is gone (canceled, errored, or rechecked), stop waiting.
   const stateKind = snapshot?.state.k ?? null;
   useEffect(() => {
     if (waitingFor === null) return;

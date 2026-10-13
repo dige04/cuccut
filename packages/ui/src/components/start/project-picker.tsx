@@ -43,12 +43,12 @@ const path = style({ font: 'ui-sm', color: 'gray-600', overflow: 'hidden', textO
 // When narrow, truncate the path first and keep the project name as complete as possible; even a very long name takes only half the width.
 const picker = style({ flexShrink: 0, maxWidth: '[50%]' });
 
-/** Key of the “不用项目” (No project) item in the menu (project keys are project IDs). */
+/** Key of the “No project” item in the menu (project keys are project IDs). */
 const NONE = 'none';
 
 /**
- * The project tray along the bottom edge of the start page's input box (product design §2.3, §3.2.1; prototype new-agent.jsx `HomeProjectPicker`): “这台电脑” (This computer), the project menu, and the project path.
- * A session does not have to belong to any project, so the first menu item is “不用项目” (No project), followed by the projects (sorted by recent activity) and “新建项目…” (New project…). When “不用项目” is selected, the path line explains where the video will be saved.
+ * The project tray along the bottom edge of the start page's input box (product design §2.3, §3.2.1; prototype new-agent.jsx `HomeProjectPicker`): “This computer”, the project menu, and the project path.
+ * A session does not have to belong to any project, so the first menu item is “No project”, followed by the projects (sorted by recent activity) and “New project…”. When “不用项目” is selected, the path line explains where the video will be saved.
  * The start page remembers which item was chosen on this computer (state/home-memory-store.ts). `noneDisabled`: the editor has a video from some project open, so a new session can only be created in that project (the session must be able to edit this video).
  */
 export function ProjectPicker({

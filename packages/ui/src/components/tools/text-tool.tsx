@@ -50,7 +50,7 @@ import { usePreset, useRerun } from './video-tool-parts.tsx';
 
 /*
  * Design file tool-llm.jsx `LlmToolPage kind='text'` (44-104): one text-model call, with no Agent session and no tool calls.
- * On the left, following the common skeleton (product design §2.7): description, generation requirements (“填入示例” (Fill in example), character count / 16,000), and model (“管理文本模型” (Manage text models) goes to the models page); on the right, “生成记录” (Generation records) and “在 Space 中查看” (View in Space).
+ * On the left, following the common skeleton (product design §2.7): description, generation requirements (“Fill in example”, character count / 16,000), and model (“Manage text models” goes to the models page); on the right, “Generation records” and “View in Space”.
  * Submission goes through `models.generateText`; the records are jobs of this kind in the `jobs` topic; the result is listed by the Runtime as one document in the Space (architecture design §5.7).
  * A document or subtitle from the Space (`material`, architecture design §7.9) can be attached; an entry brought from the Space viewer is attached in advance.
  */
@@ -72,7 +72,7 @@ export function TextTool() {
   const [submitting, setSubmitting] = useState(false);
   const submitFailed = useSubmitFailed('generateText', TEXT_COPY.submitFailed);
   const { saveDirectory } = useToolStatus();
-  // The directory picked with “更改…” (Change…) lives only on this page (it is not written back to settings).
+  // The directory picked with “Change…” lives only on this page (it is not written back to settings).
   const [saveOverride, setSaveOverride] = useState<string | null>(null);
   // The attached Space entry: `attach` opens the picker, and `entryId` is the one selected. It lives only on this page.
   const [attach, setAttach] = useState(false);

@@ -171,7 +171,7 @@ export function safeUrl(input: string): string | null {
   }
 }
 
-/** The name of a web tab: the hostname. When there is no address yet, it is 「新标签页」(New tab page). */
+/** The name of a web tab: the hostname. When there is no address yet, it is “New tab page”. */
 export function webTitle(url: string): string {
   try {
     return new URL(url).hostname || M.newTab;

@@ -6,7 +6,7 @@ import { S } from '../shell-copy.ts';
 import { AI_TOOLS_COPY as C } from './ai-tools-copy.ts';
 
 /**
- * Pure logic for the tool page's 「用 › 直接调模型」 (Use › Call model directly) (product design §5.10; prototype model-ai-prompt.js `contextPack` / `contextLine` / `hint`):
+ * Pure logic for the tool page's “Use › Call model directly” (product design §5.10; prototype model-ai-prompt.js `contextPack` / `contextLine` / `hint`):
  * which tools can call a model directly, the reason written for those that cannot, the context line sent to the model, the label on the main button and the line under it saying where the result goes.
  * Running goes through the Runtime's `ai-tool` flow (`AI_TOOL_PIPELINE`); this only assembles the parameters. Refreshing stale translations goes through the in-place refresh of the `translate` flow (`directRefresh`).
  */
@@ -18,13 +18,13 @@ export function directTool(tool: AgentToolId): AiToolKind | null {
 
 /**
  * When refreshing stale translations by calling the model directly, `ai-tool` is not used: the `translate` flow refreshes one translation in place (`translationId`, without naming sentences; the Runtime picks the stale ones,
- * those whose source was edited, and those with no translation yet), the same as 「用模型 API 重译」 (retranslate with the model API) on the subtitle panel's AI button (product design §5.10 「逐句与过期译文」 (sentence by sentence and stale translations)).
+ * those whose source was edited, and those with no translation yet), the same as “retranslate with the model API” on the subtitle panel's AI button (product design §5.10 “sentence by sentence and stale translations”).
  */
 export function directRefresh(tool: AgentToolId): boolean {
   return tool === 'stale';
 }
 
-/** The reason line when 「直接调模型」 (Call model directly) is greyed out; null when a model can be called directly. */
+/** The reason line when “Call model directly” is greyed out; null when a model can be called directly. */
 export function directBlocked(tool: AgentToolId): string | null {
   if (directTool(tool) || directRefresh(tool)) return null;
   switch (tool) {
@@ -91,12 +91,12 @@ export function contextItems(c: DirectContext): string[] {
   if (c.paragraphs > 0) items.push(C.contextTranscript(c.paragraphs, c.scope));
   if (c.tool !== 'polish' && c.paragraphs > 0 && c.chapters > 0) items.push(C.contextChapters(c.chapters));
   if (c.attachments > 0) items.push(C.contextAttachments(c.attachments));
-  // List items are joined the way the product lists them (Chinese 「A、B」, with the enumeration comma 、), not with the conjunction 「和」 (and) used in sentences.
+  // List items are joined the way the product lists them (Chinese 「A、B」, with the enumeration comma 、), not with the conjunction “and” used in sentences.
   if (c.skills.length) items.push(C.contextSkills(S.list(c.skills)));
   return items;
 }
 
-/** The line 「发给模型的：提示词 + …」 (what is sent to the model: prompt + …); with nothing attached, only the prompt (prototype `contextLine`). */
+/** The line “what is sent to the model: prompt + …”; with nothing attached, only the prompt (prototype `contextLine`). */
 export function contextLine(items: readonly string[]): string {
   return items.length ? C.contextLine(items.join(' · ')) : C.contextNone;
 }
@@ -161,7 +161,7 @@ export function pickTranslation(
   return byId(o.picked) ?? byId(o.presetId) ?? byLanguage ?? translations[0] ?? null;
 }
 
-/** How many sentences to retranslate (counted the same way as the 「过期」 (stale) and 「未翻译」 (untranslated) counts in the subtitle panel's stats bar): what the Runtime picks when it does not name any. */
+/** How many sentences to retranslate (counted the same way as the “stale” and “untranslated” counts in the subtitle panel's stats bar): what the Runtime picks when it does not name any. */
 export function refreshCounts(rows: readonly PairRow[]): { todo: number; stale: number; untranslated: number } {
   const stale = rows.filter((r) => isStale(r.state)).length;
   const todo = rows.filter(needsTranslation).length;

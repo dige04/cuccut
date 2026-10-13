@@ -10,7 +10,7 @@ import {
   usedCookieText,
 } from './link-cookies.ts';
 
-/** The “网站登录” (website login) option for downloading videos (product design §2.7): the tick order, the select-all and partial state of “所有浏览器” (all browsers), and the wording of the descriptions and results. */
+/** The “website login” option for downloading videos (product design §2.7): the tick order, the select-all and partial state of “all browsers”, and the wording of the descriptions and results. */
 
 const detected: CookieBrowserInfo[] = [
   { id: 'chrome', label: 'Chrome', lastUsedAt: '2026-10-06T09:42:00Z' },

@@ -40,9 +40,9 @@ import { TK } from './tasks-copy.ts';
 
 /*
  * Task detail for a link import (design draft import-panel.jsx `ImportTask`, import-flow.css): large title with one sentence of explanation, three steps (download the video · confirm the media and create the video · generate subtitles), the media card, current status and progress, the failure message and remedies (the download-tool card is handled in place), the action row, and the download location and tools.
- * The last two steps are partly driven by the flow executor (flow-runner.ts): it only knows about them during this run. After an app restart, the option “用下载的文件新建视频” (create video from the downloaded file) is offered instead.
+ * The last two steps are partly driven by the flow executor (flow-runner.ts): it only knows about them during this run. After an app restart, the option “create video from the downloaded file” is offered instead.
  *
- * Differences from the design draft: there is no “删除记录” (delete record), because the Runtime has no interface for deleting tasks; there is no full takeover for the blocked Homebrew state and no install options (the Runtime has only one kind of install: a separate copy that CucCut manages itself); download speed is not shown (subtasks only report byte counts).
+ * Differences from the design draft: there is no “delete record”, because the Runtime has no interface for deleting tasks; there is no full takeover for the blocked Homebrew state and no install options (the Runtime has only one kind of install: a separate copy that CucCut manages itself); download speed is not shown (subtasks only report byte counts).
  */
 
 const steps = style({ display: 'flex', gap: 16, listStyleType: 'none', margin: 0, padding: 0 });
@@ -146,7 +146,7 @@ const STAGE_LABEL = live((): Record<StageState, string> => TK.link.stage);
 
 const ACTION_LABEL = live((): Record<LinkAction, string> => TK.link.action);
 
-/** To change the link and import again: go to “工具 › 从链接导入” (Tools › Import from link), where the link is already filled in (the start page no longer has a link entry point). */
+/** To change the link and import again: go to “Tools › Import from link”, where the link is already filled in (the start page no longer has a link entry point). */
 function openLinkTool(url: string): void {
   const tools = useVideoTools.getState();
   tools.patch('link-import', { url });

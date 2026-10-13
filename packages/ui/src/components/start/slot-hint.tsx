@@ -15,7 +15,7 @@ const row = style({
 const text = style({ minWidth: 0, font: 'ui-sm', color: 'gray-700', lineHeight: '[1.5]' });
 
 /**
- * Fill-in hint (template pack spec §5.5; prototype new-agent.jsx `SlotHint`): when the input box still contains placeholders, a line below the box says how many are left and which ones. Sending works without filling them in. “填下一处” (Fill next) returns focus to the input box and selects the next placeholder (same as Tab). When nothing is left to fill in, only an empty status region is kept, so screen readers are not interrupted when the last one is filled, and the message is announced as usual the next time it appears.
+ * Fill-in hint (template pack spec §5.5; prototype new-agent.jsx `SlotHint`): when the input box still contains placeholders, a line below the box says how many are left and which ones. Sending works without filling them in. “Fill next” returns focus to the input box and selects the next placeholder (same as Tab). When nothing is left to fill in, only an empty status region is kept, so screen readers are not interrupted when the last one is filled, and the message is announced as usual the next time it appears.
  */
 export function SlotHint({ labels, onNext }: { labels: readonly string[]; onNext(): void }) {
   return (

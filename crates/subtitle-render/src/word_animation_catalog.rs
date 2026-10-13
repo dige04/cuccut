@@ -18,7 +18,7 @@ const fn entry(catalog_id: &'static str, kernel: &'static str) -> WordAnimationE
     WordAnimationEntry { catalog_id, kernel }
 }
 
-/// 19 cells, same order as [`crate::word_motion::WORD_ANIM_TRACKS`]: 17 cells unchanged, plus the kernel's own two cells, “弹跳” (bounce) and “涂色” (colour fill).
+/// 19 cells, same order as [`crate::word_motion::WORD_ANIM_TRACKS`]: 17 cells unchanged, plus the kernel's own two cells, “bounce” and “colour fill”.
 pub const WORD_ANIMATIONS: [WordAnimationEntry; 19] = [
     entry("none", "None"),
     entry("boxHighlight", "Highlight"),

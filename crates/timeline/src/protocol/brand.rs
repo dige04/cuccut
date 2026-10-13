@@ -39,7 +39,7 @@ pub struct Watermark {
     pub placement: Placement,
     #[serde(default = "default_opacity")]
     pub opacity: f64,
-    /// The UI's 「设为默认」 (set as default) flag. The CLI does not implicitly pick a preset based on it: `--from-brand` always requires an explicit id.
+    /// The UI's “set as default” flag. The CLI does not implicitly pick a preset based on it: `--from-brand` always requires an explicit id.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub default: bool,
 }

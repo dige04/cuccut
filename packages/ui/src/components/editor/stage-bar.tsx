@@ -285,7 +285,7 @@ export function RatioPicker({
   );
 }
 
-/** Custom aspect ratio (prototype “自定义…”(custom…)): two numbers. The short side stays the same and the resulting size is written below first; apply is blocked when the long side exceeds the engine's limit. */
+/** Custom aspect ratio (prototype “custom…”): two numbers. The short side stays the same and the resulting size is written below first; apply is blocked when the long side exceeds the engine's limit. */
 function CustomRatioDialog({
   canvas,
   onApply,

@@ -15,7 +15,7 @@ import { tr } from './shorts-copy.tr.ts';
 import { vi } from './shorts-copy.vi.ts';
 
 /**
- * Copy for the shorts cut from a video after “剪成短视频”(cut into shorts) (product design §5.10; prototypes panel-aitools-shorts-result.jsx, shorts-source.jsx, panel-transcript-cut.jsx):
+ * Copy for the shorts cut from a video after “cut into shorts” (product design §5.10; prototypes panel-aitools-shorts-result.jsx, shorts-source.jsx, panel-transcript-cut.jsx):
  * the result page, the banner at the top of child videos, and the cut seams outside clips in the script. Translations are in `shorts-copy.<语言>.ts`.
  */
 const en = {
@@ -36,7 +36,7 @@ const en = {
   span: (from: string, to: string, length: string) => `${from} – ${to} · ${length}`,
   hookLabel: 'Opens with',
   reasonLabel: 'Why this one',
-  /** The “取景”(framing) line on the card (prototype `frameText`): when framing is split by shot, it says how many shots there are and which segment to drag on the canvas to adjust. */
+  /** The “framing” line on the card (prototype `frameText`): when framing is split by shot, it says how many shots there are and which segment to drag on the canvas to adjust. */
   framingLabel: 'Framing',
   framingShots: (n: number) => `Framed per shot (${n} shots) · Open it and drag a part on the canvas to change`,
   rename: 'Click to rename',
@@ -63,7 +63,7 @@ const en = {
   bannerMissing: 'Short · the source video is no longer in the library',
   bannerBack: 'Back to original',
 
-  // Adjusting the cut's start and end from the script: the banner cell, the “正在看”(currently viewing) card on the result page, and the script's hint
+  // Adjusting the cut's start and end from the script: the banner cell, the “currently viewing” card on the result page, and the script's hint
   cutAdjust: 'Adjust in transcript',
   cutAdjustTip: 'Bring back text outside the clip in the transcript, or cut a few more sentences',
   cutTrim: 'Trim',
@@ -85,7 +85,7 @@ const en = {
   collapse: 'Collapse',
   outsideWord: 'Outside the clip · click to bring it back into this short',
 
-  // The “切出的短视频”(shorts cut from this video) group in the parent video's panel
+  // The “shorts cut from this video” group in the parent video's panel
   madeTitle: 'Shorts cut from this video',
   madeCount: (n: number) => (n === 1 ? '1 short' : `${n} shorts`),
   madeFoot: 'Each short is a separate video that uses the same original footage. Click one to open it and keep editing there.',

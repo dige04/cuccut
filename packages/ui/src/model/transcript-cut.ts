@@ -30,11 +30,11 @@ import {
  *
  * - The transcript lists words in the order of the transcription document (clip order), one entry per word. Whether a word was cut is derived from the timeline (a word that `projectSpeech` cannot map onto the sequence has been cut),
  *   and no separate cut list is stored. When the same clip is used twice on the timeline, one word has two placements: locating jumps to the first, and cutting cuts both.
- * - 「剪辑音画」 (Cut audio and video): the selected words are turned into intervals on the clip clock and compiled into one `addCuts` (video format spec §6.7). The engine records the cuts in the clip's cut set,
+ * - “Cut audio and video”: the selected words are turned into intervals on the clip clock and compiled into one `addCuts` (video format spec §6.7). The engine records the cuts in the clip's cut set,
  *   ripple-deletes on the track where the instance playing this clip sits, and other instances move according to their own `followPolicy` (§3.16).
- * - 「恢复」 (Restore) is a new transaction, not an undo: it finds the cut covering the selected words (or the seam on the timeline) and compiles `restoreCut`, putting the whole cut back.
+ * - “Restore” is a new transaction, not an undo: it finds the cut covering the selected words (or the seam on the timeline) and compiles `restoreCut`, putting the whole cut back.
  *   Anything not cut by a cut (trimmed by dragging a clip edge, or cut before the cut set existed) is rejected as is.
- * - 「改原文」 (Edit source text): changes the transcript text by word ID (written back to the speech document, creating a new version) without touching the timeline. Deleting only marks the word `hidden`, and every reader skips hidden words.
+ * - “Edit source text”: changes the transcript text by word ID (written back to the speech document, creating a new version) without touching the timeline. Deleting only marks the word `hidden`, and every reader skips hidden words.
  */
 
 type Json = Record<string, unknown>;
@@ -58,7 +58,7 @@ export interface TranscriptWord extends SpeechWord {
 }
 
 /**
- * How much of a word must fall within an instance for it to count as 「全在」 (fully present): cuts are rounded to frames, so being a little off at the word edge does not count as cut. Conversely, what is left on the timeline below `1 - KEPT_SHARE`
+ * How much of a word must fall within an instance for it to count as “fully present”: cuts are rounded to frames, so being a little off at the word edge does not count as cut. Conversely, what is left on the timeline below `1 - KEPT_SHARE`
  * (a sliver left after cut rounding) counts as fully cut, and that sliver is no longer treated as a placement.
  */
 const KEPT_SHARE = 0.9;
@@ -182,7 +182,7 @@ export function wordAt(index: PlacementIndex, seconds: number): number | null {
 // ---- Playback follow: words already read ----
 
 /**
- * The end (in seconds) of the earliest placement of the word on the sequence; cut words (with no placement) have none. The playhead passing it counts as 「已读」 (read). This is order in sequence time,
+ * The end (in seconds) of the earliest placement of the word on the sequence; cut words (with no placement) have none. The playhead passing it counts as “read”. This is order in sequence time,
  * not clip order: when the same clip is used twice, having played through the first placement counts as read.
  */
 export function playedEnd(word: TranscriptWord): number | undefined {

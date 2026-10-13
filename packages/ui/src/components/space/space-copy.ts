@@ -29,7 +29,7 @@ const en = {
   // Lists and menus
   openVideo: 'Open video',
   viewInfo: 'View info',
-  /** Videos with files attached (product design §4.3): menu item, the “N 个文件” (N files) on cards, a line under the list name, the file list in the viewer, and back to video. */
+  /** Videos with files attached (product design §4.3): menu item, the “N files” on cards, a line under the list name, the file list in the viewer, and back to video. */
   viewInfoFiles: 'View info and files',
   filesButton: (n: number) => count(n, 'file', 'files'),
   /** `summary` is the per-type breakdown (“Export 2 · Subtitles 1”). */
@@ -243,7 +243,7 @@ const en = {
   preparingBody: 'The first time, project folders need to be scanned. This takes a moment.',
   /** Description of the new-menu item: when filtered to a project, state which project it will be created in. */
   createIn: (project: string, hint: string) => `In "${project}" · ${hint}`,
-  /** Screen-reader name for submenus such as “新建空视频” (New blank video): `label` is the menu item's name. */
+  /** Screen-reader name for submenus such as “New blank video”: `label` is the menu item's name. */
   whichProjectFor: (label: string) => `${label}: which project`,
   entryActions: (name: string) => `Actions for "${name}"`,
   entriesLabel: 'Library items',
@@ -256,15 +256,15 @@ const en = {
   relatedMore: (n: number) => `…${n} in total`,
   /** One-sentence import result (`text` comes from `importSummary` in model/space-actions.ts), followed by the project name. */
   importSummaryIn: (text: string, project: string) => `${text} (${project})`,
-  /** Viewer “最近活动” (recent activity): the relative time is followed by the exact time in brackets. */
+  /** Viewer “recent activity”: the relative time is followed by the exact time in brackets. */
   activityAt: (ago: string, at: string) => `${ago} (${at})`,
   /** Put the reason for an item's status before the explanation: `reason` is one sentence with no closing punctuation. */
   withReason: (reason: string, body: string) => `${reason}. ${body}`,
   /** Derived count on the parent video card / row (cut into shorts). */
   shortsCount: (n: number) => (n === 1 ? '1 short' : `${n} shorts`),
-  /** Screen-reader name for “N 支短视频” (N shorts) on cards and rows: filters to the shorts cut from this video's source. */
+  /** Screen-reader name for “N shorts” on cards and rows: filters to the shorts cut from this video's source. */
   shortsView: 'See shorts cut from this',
-  /** The “切出的短视频” (shorts cut from it) section in the parent video's viewer (product design §4.5): the title, the action in the top-right that switches the filter to “全部” (All), and the hint shown when only the first few are displayed. */
+  /** The “shorts cut from it” section in the parent video's viewer (product design §4.5): the title, the action in the top-right that switches the filter to “All”, and the hint shown when only the first few are displayed. */
   shortsTitle: 'Shorts cut from this video',
   shortsInList: 'Show in list',
   shortsMore: (n: number) => (n === 1 ? '1 more short. Show them all in the list.' : `${n} more shorts. Show them all in the list.`),

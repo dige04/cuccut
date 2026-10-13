@@ -24,7 +24,7 @@ const en = {
   removeSpanHint: 'Later content moves up · total gets shorter',
   /** When only subtitles are selected: subtitles fill the whole track, so their range is not taken. */
   removeSpanCaptions: 'Subtitles span the whole video · Select a clip',
-  /** The gap was closed after deleting; `deleted` is the sentence “已删除 N 个片段” (N clips deleted). */
+  /** The gap was closed after deleting; `deleted` is the sentence “N clips deleted”. */
   closed: (deleted: string, seconds: number) => `${deleted} · Closed the ${secondsLabel(seconds)} gap`,
   /** Deleted, but the gap is followed by a locked track or clip, so it was not closed. */
   gapKept: (deleted: string) => `${deleted} · Gap kept: a track or clip after it is locked`,

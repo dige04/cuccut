@@ -9,7 +9,7 @@ import { openShortsResult } from './ai-tools-nav.ts';
 import { latestShortsRun, markShortsRunLanded, useShortsRuns } from './shorts-runs.ts';
 
 /**
- * When a “剪成短视频”(cut into shorts) run finishes, flip to the result page (product design §5.10). If the parent video that started the round is open and that round has not been flipped yet, watch that session. When the task ends
+ * When a “cut into shorts” run finishes, flip to the result page (product design §5.10). If the parent video that started the round is open and that round has not been flipped yet, watch that session. When the task ends
  * (completed, failed or stopped) and child videos were cut, the right panel switches to the result page of the AI Tools tab. Whether or not it flipped, record it (`landed`), so opening this video later does not flip again by itself.
  * If a video was just created in the session and no shorts have arrived in Space yet, wait a moment first, so an empty list does not count as already flipped.
  * The web host has no AI Tools tab: when `enabled` is false, do nothing.

@@ -235,7 +235,7 @@ fn describe(audio: &ReferenceAudio) -> String {
     }
 }
 
-/// SeamlessM4T front-end features `[1, frames, 160]`; if there is less than one frame, reports “参考太短” (reference too short).
+/// SeamlessM4T front-end features `[1, frames, 160]`; if there is less than one frame, reports “reference too short”.
 fn semantic_front_end_features(audio_16k: &[f32], source: &ReferenceAudio) -> Result<Array> {
     if audio_16k.len() < SEAMLESS_FRAME_LENGTH {
         bail!(

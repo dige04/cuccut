@@ -146,7 +146,7 @@ export function useDubLive(videoId: Id | null): DubLive | null {
 /** Running-state header: language, percentage, progress bar, sentence count and steps, per-sentence subtasks, step ladder, cancel. */
 export function DubRunHead({ live }: { live: DubLive }) {
   const { run, job, progress } = live;
-  // When a retry has just been submitted and the mirror still holds the already-ended record, draw it as “提交中” (submitting).
+  // When a retry has just been submitted and the mirror still holds the already-ended record, draw it as “submitting”.
   const stale = !!run && !!job && !isJobLive(job);
   const submitting = run?.status === 'submitting' || !job || stale;
   const queued = !submitting && !!progress?.queued;
@@ -206,7 +206,7 @@ export function DubRunHead({ live }: { live: DubLive }) {
 }
 
 /**
- * First dub (or retry) rejected by authorization: explains what would be sent out and to whom. “发放授权并开始” (grant authorization and start) first opens a confirmation dialog stating what is sent, to whom, limited to which video, and for what purpose. Only after “发放并继续” (grant and continue) is pressed does it send `grants.create`, then resubmit with the same parameters.
+ * First dub (or retry) rejected by authorization: explains what would be sent out and to whom. “grant authorization and start” first opens a confirmation dialog stating what is sent, to whom, limited to which video, and for what purpose. Only after “grant and continue” is pressed does it send `grants.create`, then resubmit with the same parameters.
  */
 export function DubAskCard({ videoId, ask, videoName, flush = false }: { videoId: Id; ask: DubAsk; videoName: string | null; flush?: boolean }) {
   const labels = useProviderLabels();
@@ -285,7 +285,7 @@ function VoiceFailureList({ rows, names, library }: { rows: VoiceFailure[]; name
   );
 }
 
-/** Dubbing did not succeed: the reason, per-sentence facts, and where to go for a fix. If it can be retried, offer “重试” (retry) and state whether it will be billed again. */
+/** Dubbing did not succeed: the reason, per-sentence facts, and where to go for a fix. If it can be retried, offer “retry” and state whether it will be billed again. */
 export function DubProblemAlert({
   videoId,
   problem,
@@ -350,7 +350,7 @@ export function DubProblemAlert({
 }
 
 /**
- * Receipt: honestly lists the summary (how many sentences were placed, where each sentence went, the voice each speaker used, sentences whose voice was unavailable, synthesis calls, translations, separation and original audio, warnings), and offers “撤销这组配音” (undo this dub group). Where that entry cannot be undone, or only a partial undo is done, state what was left behind.
+ * Receipt: honestly lists the summary (how many sentences were placed, where each sentence went, the voice each speaker used, sentences whose voice was unavailable, synthesis calls, translations, separation and original audio, warnings), and offers “undo this dub group”. Where that entry cannot be undone, or only a partial undo is done, state what was left behind.
  */
 export function DubReceiptCard({
   videoId,

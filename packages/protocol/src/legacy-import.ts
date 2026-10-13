@@ -2,8 +2,8 @@
  * Import prompt for legacy projects (architecture design §2.7). Settings, service configuration, cloud credentials and remote nodes are still migrated automatically at startup, as before. Projects wait for the user's answer: when the Runtime finds legacy (v1 / v2) projects that are not yet imported and no decision has been recorded, it raises a prompt on the `legacy-import` topic, and the desktop UI asks once.
  *
  * - Answering `import` with a directory: this directory becomes the imported project, and each legacy project is one video inside it. Once recorded, it is not asked again.
- * - Answering `never` (“跳过” (Skip) with “不再提醒” (Don't remind me again) ticked): recorded. Nothing is imported later and no more prompts appear.
- * - “跳过” (Skip) sends no request: the prompt stays in the Runtime, the UI does not show it again this time, and it is asked again at the next startup.
+ * - Answering `never` (“Skip” with “Don't remind me again” ticked): recorded. Nothing is imported later and no more prompts appear.
+ * - “Skip” sends no request: the prompt stays in the Runtime, the UI does not show it again this time, and it is asked again at the next startup.
  *
  * Importing after an `import` answer is one run (`LegacyImportRun`). For the same topic, it reports the step each project has reached and the reason an import failed. A project that was not imported can be retried (`legacyImport.retry`) or skipped (`legacyImport.setSkipped`, which records the skip so it is not imported automatically again, and which can be undone). Projects that were neither imported nor skipped are retried automatically at the next startup.
  *
@@ -25,7 +25,7 @@ export interface LegacyImportPrompt {
   promptId: string;
   /** Most recently edited first. */
   projects: LegacyProjectSummary[];
-  /** Default import directory (absolute path): the `CucCut` folder inside the system's “文稿 / 文档” (Documents) folder. */
+  /** Default import directory (absolute path): the `CucCut` folder inside the system's “Documents” folder. */
   defaultDirectory: string;
 }
 

@@ -81,7 +81,7 @@ export interface TranslateParams {
   documentId?: Id;
   /** Target language (BCP 47). */
   targetLanguage: string;
-  /** Style hint, for example “口语、简洁” (spoken, concise). */
+  /** Style hint, for example “spoken, concise”. */
   style?: string;
   /** Glossary: the list passed in at call time. */
   glossary?: GlossaryEntry[];
@@ -221,7 +221,7 @@ export interface TranscribeParams {
    * Where the result goes when the video already has a transcript for this asset (called `target` in tools and the CLI). `new-video` (default) creates a new video in the same project as the original video (or the conversation's source directory), links the same asset, and writes the transcript into the new video. `replace` switches the transcript (§6.6): one transaction writes a new version of the existing document and carries over translations, captions and dubs. If the video has no transcript for this asset, both write directly into it (`target: 'first'` in the summary). Only for the `{ videoId }` and `{ entryId }` targets.
    */
   destination?: TranscribeDestination;
-  /** Name of the new video for `new-video`; when omitted, “<原名> · 重新转录” (“<original name> · re-transcribed”). */
+  /** Name of the new video for `new-video`; when omitted, “<original name> · re-transcribed”. */
   name?: string;
   /** For `replace`, how translations are carried over per language: `carry` (default) carries them over per video format spec §5.3; `discard` does not (translations stay on the old version, the dub plan is unchanged). */
   translations?: 'carry' | 'discard';
@@ -655,7 +655,7 @@ export interface SpeakerClip {
   text: string;
 }
 
-/** One speaker in the proposal, as it will look after applying. Existing speakers keep their ID and name; new ones are `spk-<n>`, “说话人 n” (Speaker n). */
+/** One speaker in the proposal, as it will look after applying. Existing speakers keep their ID and name; new ones are `spk-<n>`, “Speaker n”. */
 export interface ProposedSpeaker {
   id: Id;
   name: string;

@@ -289,7 +289,7 @@ export const DEFAULT_BITRATE = 192;
 export interface DubGroup {
   groupId: string;
   language: string | null;
-  /** “English 配音” (English dub). */
+  /** “English dub”. */
   label: string;
   items: number;
 }
@@ -307,7 +307,7 @@ export function dubGroups(sequence: Sequence): DubGroup[] {
   return [...groups.values()];
 }
 
-/** Quick choices (design draft `presets`): final mix / original sound only / one option per dub group. “只要音乐” (music only) has no matching sound source in the Runtime, so it is greyed out. */
+/** Quick choices (design draft `presets`): final mix / original sound only / one option per dub group. “music only” has no matching sound source in the Runtime, so it is greyed out. */
 export type AudioSourceKey = 'mix' | 'original' | `dub:${string}`;
 
 export interface AudioSourceChoice {
@@ -378,7 +378,7 @@ export const SUBTITLE_FORMATS: readonly { key: SubtitleExportFormat; label: stri
 /** A row in “which tracks to export” (导哪几条): one subtitle document (the same document on several tracks counts as one row). */
 export interface SubtitleLane {
   documentId: Id;
-  /** “原文” (original text) or a language name (named the same as on the subtitle track bar). */
+  /** “original text” or a language name (named the same as on the subtitle track bar). */
   label: string;
   /** Document name. */
   name: string;

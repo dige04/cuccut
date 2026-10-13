@@ -122,7 +122,7 @@ pub fn colors_in_order(doc: &Value) -> Vec<String> {
 
 /// Swatch table: the top [`MAX_SWATCHES`] groups by occurrence count; ties are ordered by first appearance.
 ///
-/// `tag` is always empty. On the SVG side the subtitle is the name of the tag carrying the color (`path` / `rect`); a Lottie color is carried by a shape item, which has no name meaningful to the user, so the card header is just “第 N 组” (group N).
+/// `tag` is always empty. On the SVG side the subtitle is the name of the tag carrying the color (`path` / `rect`); a Lottie color is carried by a shape item, which has no name meaningful to the user, so the card header is just “group N”.
 pub fn fills_of_doc(doc: &Value) -> Vec<FillCard> {
     let order = colors_in_order(doc);
     let mut cards: Vec<FillCard> = Vec::new();
@@ -142,7 +142,7 @@ pub fn fills_of_doc(doc: &Value) -> Vec<FillCard> {
     cards
 }
 
-/// The swatch table for one Lottie JSON text. If it cannot be parsed, the table is empty. **An empty table means 「不出颜色段」 (no color section is shown).**
+/// The swatch table for one Lottie JSON text. If it cannot be parsed, the table is empty. **An empty table means “no color section is shown”.**
 pub fn fills_of(json: &str) -> Vec<FillCard> {
     serde_json::from_str::<Value>(json)
         .map(|doc| fills_of_doc(&doc))

@@ -240,7 +240,7 @@ export function cardHint(run: LegacyImportRun | null): string {
   return drive?.volume ? LR.hintOffline(drive.volume.name) : LR.hintOther;
 }
 
-/** Card subline: while running, “已导入 d/t · 导入到 …” (imported d/t · importing to …); when done, “已导入 d · 待处理 p · 已跳过 s · 导入到 …” (imported d · pending p · skipped s · importing to …). */
+/** Card subline: while running, “imported d/t · importing to …”; when done, “imported d · pending p · skipped s · importing to …”. */
 export function runSub(run: LegacyImportRun, platform: string): string {
   const c = runCounts(run);
   const dest = LR.subDest(displayDirectory(run.directory, platform));
@@ -263,7 +263,7 @@ export function runPhase(run: LegacyImportRun): { phase: string; detail: string 
 }
 
 /**
- * The row shared by the task page and the sidebar. While running it belongs to “in progress”; when done it goes to history, and if items were left not imported it reads “N 个待处理” (N pending) in the warning color.
+ * The row shared by the task page and the sidebar. While running it belongs to “in progress”; when done it goes to history, and if items were left not imported it reads “N pending” in the warning color.
  * It cannot be cancelled (the Runtime's import cannot be stopped midway), and it does not go into the task capsule in the video top bar (it does not belong to any video).
  */
 export function legacyTaskRow(run: LegacyImportRun, platform: string): TaskRow {

@@ -113,7 +113,7 @@ export interface RefreshRun {
   translationId: Id;
   /** null until submit succeeds. */
   jobId: Id | null;
-  /** The number of sentences to re-translate (the stats bar says “正在重译 N 句” (Re-translating N sentences)). */
+  /** The number of sentences to re-translate (the stats bar says “Re-translating N sentences”). */
   count: number;
 }
 

@@ -7,11 +7,11 @@ import { ENTRY_TOOL_COPY as COPY } from '../tools/tools-copy.ts';
 import type { EntryTools } from '../tools/use-entry-tools.ts';
 
 /*
- * The tool-related parts of the Space viewer (product design §4.5, §2.7 “页面” (Page); design draft space-viewer.jsx): the facts state which tool made it and where it lives;
- * the bottom bar has “用工具处理…” (Process with tool…), with the item already selected when the tool page opens, and “再做一次” (Do again), which goes back to the tool page with the parameters filled in and reopens the video tool's run.
+ * The tool-related parts of the Space viewer (product design §4.5, §2.7 “Page”; design draft space-viewer.jsx): the facts state which tool made it and where it lives;
+ * the bottom bar has “Process with tool…”, with the item already selected when the tool page opens, and “Do again”, which goes back to the tool page with the parameters filled in and reopens the video tool's run.
  */
 
-/** The “工具” (Tool) and “位置” (Location) rows in the facts table; `term` / `value` use the viewer's own styles. */
+/** The “Tool” and “Location” rows in the facts table; `term` / `value` use the viewer's own styles. */
 export function ToolFacts({ tools, term, value }: { tools: EntryTools | null; term: string; value: string }) {
   if (!tools) return null;
   const { origin, location } = tools;
@@ -36,7 +36,7 @@ export function ToolFacts({ tools, term, value }: { tools: EntryTools | null; te
   );
 }
 
-/** The bottom bar's “用工具处理…” (Process with tool…) and “再做一次 / 重试” (Do again / Retry). Pressing one closes the viewer first, then goes to the tool page. */
+/** The bottom bar's “Process with tool…” and “Do again / Retry”. Pressing one closes the viewer first, then goes to the tool page. */
 export function ToolActions({ entry, tools, onClose }: { entry: SpaceEntry; tools: EntryTools | null; onClose: () => void }) {
   if (!tools) return null;
   const rerun = tools.origin?.rerun ?? null;

@@ -469,7 +469,7 @@ function longest(values) {
   return `${values.length} 次里 ${hit.length} 次 ${spread(hit, ' ms')}`;
 }
 
-/** Rows correspond one-to-one with the M12 baseline table in acceptance spec §4. Each cell is the range across this tier's fresh loads; when the large and small tiers match, write “同左” (same as left). */
+/** Rows correspond one-to-one with the M12 baseline table in acceptance spec §4. Each cell is the range across this tier's fresh loads; when the large and small tiers match, write “same as left”. */
 function table(tiers) {
   const runsOf = (tier) => tier.runs.filter((r) => !r.error);
   const all = (fn) => tiers.flatMap((t) => runsOf(t).map(fn));

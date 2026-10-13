@@ -20,7 +20,7 @@ type SequencePreset = 'standard' | 'light';
 type PaletteId = 'classic' | 'neon' | 'paper' | 'ice' | 'custom';
 
 /**
- * Copy for the caption style gallery card badges and the three sections of the properties page: “Current word”, “Motion” and “倒鸭子 (daoyazi)” (prototypes panel-subactive.jsx, panel-submotion.jsx, panel-daoyazi.jsx; caption style model design §9). Translations are in `caption-panel-copy.zh-Hans.ts` and the others.
+ * Copy for the caption style gallery card badges and the three sections of the properties page: “Current word”, “Motion” and “prototypes panel-subactive.jsx, panel-submotion.jsx, panel-daoyazi.jsx; caption style model design §9”. Translations are in `caption-panel-copy.zh-Hans.ts` and the others.
  */
 const en = {
   // Gallery
@@ -98,7 +98,7 @@ const en = {
     loop: 'The subtitle stays still while on screen.',
   } as Record<MotionStage, string>,
 
-  // "倒鸭子" (sample text)
+  // “sample text”
   sequencePreset: 'Preset',
   sequencePresets: { standard: 'Standard', light: 'Light' } as Record<SequencePreset, string>,
   energy: 'Energy',

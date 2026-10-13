@@ -1710,7 +1710,7 @@ fn is_cjk_character(character: char) -> bool {
             | 0x3400..=0x4DBF
             | 0x4E00..=0x9FFF
             | 0xF900..=0xFAFF
-            // Vertical-writing punctuation, CJK compatibility punctuation, and full-width and half-width forms. The full-width colon (U+FF1A), the full-width comma and the full-width brackets appear everywhere in Chinese body text. They used to fall outside this table. A sentence such as "生活里：瞬时变化率" (in daily life: instantaneous rate of change) was split into three segments. The colon in the middle was typeset in a Latin family, so its weight, glyph width and side spacing did not match the Han characters on either side.
+            // Vertical-writing punctuation, CJK compatibility punctuation, and full-width and half-width forms. The full-width colon (U+FF1A), the full-width comma and the full-width brackets appear everywhere in Chinese body text. They used to fall outside this table. A sentence such as “in daily life: instantaneous rate of change” was split into three segments. The colon in the middle was typeset in a Latin family, so its weight, glyph width and side spacing did not match the Han characters on either side.
             | 0xFE10..=0xFE1F
             | 0xFE30..=0xFE4F
             | 0xFF01..=0xFF60
@@ -1955,7 +1955,7 @@ mod tests {
 
     /// When the fallback family **itself** lacks a character, the missing character must still land on one fixed font. Changing the weight must not change the font.
     ///
-    /// This was the last piece of the user's original symptom. Previously only one fallback family was resolved. Characters that family could not produce were handed back to cosmic-text, which looked them up per glyph, and its answer followed the weight. Measured: the “𠮷” in “名字里有个𠮷字” (Source Han Sans does not have it) fell to PingFang SC at weight 400 and to YuKyokasho Yoko at weight 700. The same sentence changed font just by changing the weight.
+    /// This was the last piece of the user's original symptom. Previously only one fallback family was resolved. Characters that family could not produce were handed back to cosmic-text, which looked them up per glyph, and its answer followed the weight. Measured: the “𠮷” in “Source Han Sans does not have it” fell to PingFang SC at weight 400 and to YuKyokasho Yoko at weight 700. The same sentence changed font just by changing the weight.
     #[test]
     #[cfg(feature = "media")]
     fn a_glyph_the_fallback_lacks_picks_one_font_at_every_weight() {

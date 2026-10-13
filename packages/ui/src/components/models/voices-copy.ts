@@ -15,7 +15,7 @@ import { tr } from './voices-copy.tr.ts';
 import { vi } from './voices-copy.vi.ts';
 
 /**
- * Text for Models › Speech synthesis › My voices (design mock settings-voices.jsx). The page title and intro are in `VOICES_COPY` in models-copy.ts; this file has the list, dialogs and hints. Recording and “从视频里分人取一段”(Take a segment by speaker from a video) are not connected yet; the greyed-out reasons are written as one honest sentence.
+ * Text for Models › Speech synthesis › My voices (design mock settings-voices.jsx). The page title and intro are in `VOICES_COPY` in models-copy.ts; this file has the list, dialogs and hints. Recording and “Take a segment by speaker from a video” are not connected yet; the greyed-out reasons are written as one honest sentence.
  * English is the source of keys and types; translations are in `voices-copy.<语言>.ts`.
  */
 const en = {

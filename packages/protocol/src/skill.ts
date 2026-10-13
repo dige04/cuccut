@@ -3,7 +3,7 @@
  * (`name` and `description` in the YAML front matter, optional `version`, followed by the body), and there may be reference files beside it.
  *
  * - Switch on (`enabled`): at session start the Agent gets its name and description, and when relevant it uses `skills_read` itself to fetch the body;
- * - Switch off: it is used only when the user picks it under 「+ › 使用 Skill」("+ › Use Skill") in the input box (`conversations.send`'s `skill`).
+ * - Switch off: it is used only when the user picks it under “+ › Use Skill” in the input box (`conversations.send`'s `skill`).
  *
  * This file holds the types, limits and dependency-free id rules, and it ships with the main entry into the UI; inbound validation is in `skill-schemas.ts`.
  */

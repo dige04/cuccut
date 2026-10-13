@@ -8,10 +8,10 @@ import { jobErrorText } from '../../model/localized-text.ts';
 
 /**
  * Tools page › Identify speakers (prototype panel-aitools-flows.jsx `SpeakerFlow`, architecture design §6.6): submits `pipelines.start` (`speakers`) and follows the parent task through the `jobs` topic. When it completes, the parent task's `pipeline.summary` is the proposal (not yet written into the video), which goes to the confirm page. After names are changed on the confirm page,
- * “应用”(apply) goes through `edits.applySpeakers` (one edit transaction). On the receipt, undo and redo both act on whole transactions (undoing that undo is the redo).
+ * “apply” goes through `edits.applySpeakers` (one edit transaction). On the receipt, undo and redo both act on whole transactions (undoing that undo is the redo).
  *
  * State lives in a module-level store (same as translate-run.ts). The Tools page may be closed or switched to another panel, and identification must not drop because of that; the confirm page also remains.
- * If the “说话人区分”(speaker diarization) model pack is not installed, the settings page opens the download first. After the download task completes, identification starts automatically here (`awaitInstall`).
+ * If the “speaker diarization” model pack is not installed, the settings page opens the download first. After the download task completes, identification starts automatically here (`awaitInstall`).
  */
 
 export type SpeakersRunStatus = 'submitting' | 'running';
@@ -132,7 +132,7 @@ export function dismissSpeakersProblem(videoId: Id): void {
   useSpeakersRun.setState((s) => ({ problems: without(s.problems, videoId) }));
 }
 
-/** “完成”(done) on the receipt and “放弃”(discard) on the confirm page return to the settings state. */
+/** “done” on the receipt and “discard” on the confirm page return to the settings state. */
 export function closeSpeakers(videoId: Id): void {
   useSpeakersRun.setState((s) => ({ proposals: without(s.proposals, videoId), receipts: without(s.receipts, videoId) }));
 }
@@ -260,7 +260,7 @@ export function renameSpeaker(videoId: Id, speakerId: Id, name: string): void {
 }
 
 /**
- * Apply (`edits.applySpeakers`). On failure (most likely the script or translation was changed after identification), the proposal is dropped and a reason is left, and the settings page offers “再跑一次”(run again).
+ * Apply (`edits.applySpeakers`). On failure (most likely the script or translation was changed after identification), the proposal is dropped and a reason is left, and the settings page offers “run again”.
  * The editor also shows the engine's or Runtime's original message as usual.
  */
 export async function applySpeakers(videoId: Id): Promise<boolean> {
@@ -299,7 +299,7 @@ export async function applySpeakers(videoId: Id): Promise<boolean> {
   return true;
 }
 
-/** “撤销”(undo) on the receipt: undoes the apply (or redo) transaction. */
+/** “undo” on the receipt: undoes the apply (or redo) transaction. */
 export async function undoSpeakers(videoId: Id): Promise<void> {
   const bound = deps;
   const receipt = useSpeakersRun.getState().receipts[videoId];
@@ -314,7 +314,7 @@ export async function undoSpeakers(videoId: Id): Promise<void> {
   patch('receipts', videoId, { busy: false, undone: true, undoTransactionId: result.transactionId });
 }
 
-/** “重做”(redo) on the receipt: undoes that undo. */
+/** “redo” on the receipt: undoes that undo. */
 export async function redoSpeakers(videoId: Id): Promise<void> {
   const bound = deps;
   const receipt = useSpeakersRun.getState().receipts[videoId];

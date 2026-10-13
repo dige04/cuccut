@@ -376,7 +376,7 @@ function useEditorKeys(
       if (mod && !event.altKey) {
         if (event.shiftKey) return;
         if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
-          // ⌘↑ / ⌘↓: move the selected canvas element forward or backward one layer (the two rows of “层级” (Layer order) in the canvas toolbar).
+          // ⌘↑ / ⌘↓: move the selected canvas element forward or backward one layer (the two rows of “Layer order” in the canvas toolbar).
           if (arrangeSelection(actions, event.key === 'ArrowUp' ? 'forward' : 'backward')) handled();
           return;
         }
@@ -464,7 +464,7 @@ function useEditorKeys(
         return;
       }
       if (!event.altKey && !event.shiftKey && letter === 'f') {
-        // With one canvas item selected, F is “移到最前” (Bring to front). With nothing selected, it enters fullscreen playback, which must be requested within this key press (browsers honor only user gestures).
+        // With one canvas item selected, F is “Bring to front”. With nothing selected, it enters fullscreen playback, which must be requested within this key press (browsers honor only user gestures).
         // Exit is handled by the fullscreen player (same key).
         handled();
         if (arrangeSelection(actions, 'front')) return;

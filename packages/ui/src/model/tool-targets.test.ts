@@ -22,7 +22,7 @@ import {
   translationOptions,
 } from './tool-targets.ts';
 
-/* Idea from the design draft model-tool-targets.test.js: selectable items first, disabled items give a reason, labels and the "does not overwrite" hint, and the “第 N 份” (copy N) numbering for translations. */
+/* Idea from the design draft model-tool-targets.test.js: selectable items first, disabled items give a reason, labels and the "does not overwrite“copy N” numbering for translations. */
 
 function doc(patch: Partial<ToolCandidateDocument> = {}): ToolCandidateDocument {
   return {

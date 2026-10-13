@@ -35,7 +35,7 @@ export type MediaGenerationMessages = typeof en;
 
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
-/** Name given to a generated speech asset when imported: “语音：” (“Voice:”) followed by the start of the text (truncated to 24 characters, same as the Runtime default name). */
+/** Name given to a generated speech asset when imported: “Voice:” followed by the start of the text (truncated to 24 characters, same as the Runtime default name). */
 export function speechAssetName(text: string): string {
   const flat = text.replace(/\s+/g, ' ').trim();
   const chars = Array.from(flat);
@@ -47,7 +47,7 @@ export function editorSpeechRequest(draft: TtsDraft, option: SpeechOption, video
   return { ...request, videoId, name: speechAssetName(request.text) };
 }
 
-/** Image-generation draft in the editor: adds a “跟视频画布” (follow video canvas) option (design `fit`). */
+/** Image-generation draft in the editor: adds a “follow video canvas” option (design `fit`). */
 export interface EditorImageDraft extends ImageDraft {
   /** Aspect ratio follows the video canvas: when this option is chosen, `size` is not used and the closest preset to the canvas is picked. */
   fit: boolean;
@@ -62,12 +62,12 @@ export function canvasAspect(canvas: { width: number; height: number }, options:
   return best;
 }
 
-/** The “跟视频画布” (follow video canvas) preset; null when there are no selectable aspect ratios. */
+/** The “follow video canvas” preset; null when there are no selectable aspect ratios. */
 export function fittedAspect(info: Pick<ImageModelInfo, 'aspectRatios' | 'sizes'>, canvas: { width: number; height: number }): AspectOption | null {
   return canvasAspect(canvas, aspectOptions(info));
 }
 
-/** The draft as actually submitted: when “跟视频画布” (follow video canvas) is chosen, the aspect ratio is replaced by the canvas preset. */
+/** The draft as actually submitted: when “follow video canvas” is chosen, the aspect ratio is replaced by the canvas preset. */
 export function effectiveImageDraft(draft: EditorImageDraft, info: ImageModelInfo, canvas: { width: number; height: number }): ImageDraft {
   const fitted = draft.fit ? fittedAspect(info, canvas) : null;
   return fitted ? { ...draft, size: fitted.key } : draft;
@@ -82,7 +82,7 @@ export function editorImageRequest(
   return { ...imageRequest(effectiveImageDraft(draft, option.info, canvas), option), videoId };
 }
 
-/** Retries must also return to this video: the tool page's “照冻结参数再提交” (resubmit with frozen parameters) does not carry `videoId`, so it is added here. */
+/** Retries must also return to this video: the tool page's “resubmit with frozen parameters” does not carry `videoId`, so it is added here. */
 export function withVideo<R extends object>(request: R | null, videoId: Id): (R & { videoId: Id }) | null {
   return request ? { ...request, videoId } : null;
 }

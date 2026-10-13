@@ -81,7 +81,7 @@ const AUTH_NEEDLES = [
 ];
 const RATE_NEEDLES = ['rate limit', 'rate_limit', 'ratelimit', 'usage limit', 'too many requests', 'quota', 'insufficient_quota'];
 
-/** Classification based only on the raw text. The model group is checked first, so that in 「不支持用 ChatGPT 账号使用这个模型」 (“This model is not supported with a ChatGPT account”) the “account” is not read as a login problem. */
+/** Classification based only on the raw text. The model group is checked first, so that in “This model is not supported with a ChatGPT account” the “account” is not read as a login problem. */
 export function classifyCodexErrorText(text: string): AgentErrorCode | null {
   const t = text.toLowerCase();
   if (MODEL_NEEDLES.some((n) => t.includes(n))) return 'AGENT_MODEL_UNAVAILABLE';

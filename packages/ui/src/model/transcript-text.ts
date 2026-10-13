@@ -270,7 +270,7 @@ export function copyReceipt(paras: readonly Pick<CopyParagraph, 'text' | 'transl
   return lengthReceipt(paras.length, cjk, words);
 }
 
-/** “N 段 · M 字” (N paragraphs · M characters): reports characters when Han characters outnumber Latin words, otherwise words (the export panel's length uses the character and word counts computed by the Runtime). */
+/** “N paragraphs · M characters”: reports characters when Han characters outnumber Latin words, otherwise words (the export panel's length uses the character and word counts computed by the Runtime). */
 export function lengthReceipt(paragraphs: number, cjkCharacters: number, words: number): string {
   return M.receipt(paragraphs, cjkCharacters >= words ? M.characters(cjkCharacters) : M.words(words));
 }

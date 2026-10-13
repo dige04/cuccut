@@ -2,7 +2,7 @@ import type { CaptionItem, DocumentRecord, Id, Sequence, Track } from '@cuccut/p
 import { captionKind } from './caption-tracks.ts';
 
 /**
- * Language tags for timeline row heads (prototype model-timeline.js `langTag` / `headTags`, 2026-10-08). A row head is only 144px wide, and full names such as 「字幕 · 简体中文」 (Subtitles · Simplified Chinese) are longer in other UI languages and do not fit, so subtitle and dub rows use short tags such as ZH, EN, PT-BR, which keep the same width in every UI language.
+ * Language tags for timeline row heads (prototype model-timeline.js `langTag` / `headTags`, 2026-10-08). A row head is only 144px wide, and full names such as “Subtitles · Simplified Chinese” are longer in other UI languages and do not fit, so subtitle and dub rows use short tags such as ZH, EN, PT-BR, which keep the same width in every UI language.
  * Source and translation are told apart by the row-head icon, and the full name and source / translation go in the hover tooltip. Rows without a language keep writing the full name as before.
  */
 

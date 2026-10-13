@@ -30,8 +30,8 @@ import { RECORD_COPY, TEXT_COPY } from './tools-copy.ts';
 import { copyText, useCancelJob, useDownloadArtifact, useRecordRetry } from './use-tool-records.ts';
 
 /*
- * Record card from design file tool-llm.jsx (`.ttsrec`, 85-90): while running, “等待模型返回…” (Waiting for the model to respond…) can be cancelled; when done, it shows the result name, model, a full-text preview
- * (tools.css `.tool-llm__result`: max height 320, scrollable, line breaks preserved, 12px) and “复制 / 下载” (Copy / Download); a failed one gives the reason.
+ * Record card from design file tool-llm.jsx (`.ttsrec`, 85-90): while running, “Waiting for the model to respond…” can be cancelled; when done, it shows the result name, model, a full-text preview
+ * (tools.css `.tool-llm__result`: max height 320, scrollable, line breaks preserved, 12px) and “Copy / Download”; a failed one gives the reason.
  * Cancelled items are not listed (one that may already have been billed is kept, to be accurate; see `listedRecords` in tools-records.ts).
  */
 
@@ -56,7 +56,7 @@ const errorTitle = style({ margin: 0, font: 'ui-sm', fontWeight: 'bold', color: 
 const warn = style({ margin: 0, font: 'ui-xs', color: 'orange-1000', overflowWrap: 'anywhere' });
 const note = style({ margin: 0, font: 'ui-xs', color: 'gray-600', overflowWrap: 'anywhere' });
 
-/** “再试一次” (Try again): an interrupted run is re-run in place, and the rest is resubmitted with the frozen parameters unchanged (see `useRecordRetry`). */
+/** “Try again”: an interrupted run is re-run in place, and the rest is resubmitted with the frozen parameters unchanged (see `useRecordRetry`). */
 function useTextRetry(job: JobRecord) {
   const runtime = useRuntime();
   return useRecordRetry(

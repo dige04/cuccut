@@ -574,7 +574,7 @@ export class FontService {
   }
 
   /**
-   * Faces whose automatic download failed within the last ten minutes are not automatically downloaded again. Cancellation (cancelling a download, cancelling an export, or deletion) is not a failure: the picker still records “已取消” (cancelled), but it does not block the next automatic download.
+   * Faces whose automatic download failed within the last ten minutes are not automatically downloaded again. Cancellation (cancelling a download, cancelling an export, or deletion) is not a failure: the picker still records “cancelled”, but it does not block the next automatic download.
    */
   #recentFailure(key: string): Failure | null {
     const failure = this.#failures.get(key);

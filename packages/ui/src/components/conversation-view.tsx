@@ -44,7 +44,7 @@ const centered = style({
 
 /**
  * `autoFocus`: on mount, put the caret in the input box; the floating conversation that opens by default at the editor's bottom-right does not steal focus.
- * `quietSend`: a tab is open beside it (in the video editor, 「导出」 (Export) is the only yellow primary button on that screen), so the send button uses a neutral color.
+ * `quietSend`: a tab is open beside it (in the video editor, “Export” is the only yellow primary button on that screen), so the send button uses a neutral color.
  */
 export function ConversationView({
   conversationId,
@@ -71,7 +71,7 @@ export function ConversationView({
   const [sendingNow, setSendingNow] = useState<Id | null>(null);
 
   useEffect(() => runtime.watchConversation(conversationId), [runtime, conversationId]);
-  // If you are viewing a conversation when it completes, count it as read: clear 「已完成未读」 (completed, unread).
+  // If you are viewing a conversation when it completes, count it as read: clear “completed, unread”.
   const unread = meta?.unread ?? false;
   useEffect(() => {
     if (unread) void runtime.markRead(conversationId).catch(() => {});

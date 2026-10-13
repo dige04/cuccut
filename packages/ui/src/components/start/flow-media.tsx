@@ -8,9 +8,9 @@ import { ST } from './start-copy.ts';
 
 /*
  * The video link tier (design draft new-media.jsx link tier): after a link is pasted, a link card appears (it writes only what the address itself reveals; the real title is resolved when downloading),
- * with a persistent “下载到…” (Download to…) row and the download tool card. Shared by Tools › Import from link and the link source for transcription.
+ * with a persistent “Download to…” row and the download tool card. Shared by Tools › Import from link and the link source for transcription.
  *
- * Differences from the design draft: there is no “用哪台电脑下载” (which computer to download on), because the Runtime's downloads run only locally.
+ * Differences from the design draft: there is no “which computer to download on”, because the Runtime's downloads run only locally.
  */
 
 const mediaCard = style({
@@ -56,14 +56,14 @@ export interface LinkSourceProps {
   url: string;
   onUrl(url: string): void;
   downloader: DownloaderView;
-  /** Position of the “下载到 …” (Download to …) row. */
+  /** Position of the “Download to …” row. */
   downloadDir: string;
   onChangeDir(): void;
-  /** The description below “下载到” (Download to). */
+  /** The description below “Download to”. */
   note: string;
 }
 
-/** Link tier: address, link card, “下载到 …” (Download to …) and the download tool card. */
+/** Link tier: address, link card, “Download to …” and the download tool card. */
 export function LinkSource({ url, onUrl, downloader, downloadDir, onChangeDir, note }: LinkSourceProps) {
   const trimmed = url.trim();
   const ok = urlValid(trimmed);

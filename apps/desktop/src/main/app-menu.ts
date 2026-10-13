@@ -2,7 +2,7 @@ import type { MenuItemConstructorOptions } from 'electron';
 import { M } from './main-copy.ts';
 
 /**
- * Template for the app menu: the same groups as Electron's default menu (app, File, Edit, View, Window), except that the labels are taken in the current UI language, while shortcuts and behaviour are still set by each item's role. The default menu's “帮助” (Help) holds only links to Electron's own website, which are not included here.
+ * Template for the app menu: the same groups as Electron's default menu (app, File, Edit, View, Window), except that the labels are taken in the current UI language, while shortcuts and behaviour are still set by each item's role. The default menu's “Help” holds only links to Electron's own website, which are not included here.
  * It does not depend on the Electron runtime, so it is easy to test; when the UI language changes, the main process regenerates it and sets it (index.ts).
  */
 export function appMenuTemplate(platform: NodeJS.Platform, appName: string): MenuItemConstructorOptions[] {
@@ -72,7 +72,7 @@ export function appMenuTemplate(platform: NodeJS.Platform, appName: string): Men
     ],
   };
 
-  // role 'window': macOS treats it as the “窗口” (Window) menu and lists the open windows at the end.
+  // role 'window': macOS treats it as the “Window” menu and lists the open windows at the end.
   const windowMenu: MenuItemConstructorOptions = {
     label: M.windowMenu,
     ...(mac ? { role: 'window' as const } : {}),

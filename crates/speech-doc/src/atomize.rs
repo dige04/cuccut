@@ -903,7 +903,7 @@ pub fn clause_end_char(token: &str) -> Option<char> {
 
 /// Whether the `cut`-th atom boundary **in the original text** is actually backed by whitespace.
 ///
-/// [`atomize`] drops whitespace, and [`join_word_texts`] then inserts a rendering space at CJK/Latin junctions. So at the atom level, “担心AI会抢走…” (worried AI will take away…) looks like “你的 GPU 在…” (your GPU is…) in having a word-space seam. But the former cuts between a verb and its object clause. Wherever seam quality is graded (the DP objective function, the free-seam judgement), the original whitespace must be used, not the spaces produced by concatenation.
+/// [`atomize`] drops whitespace, and [`join_word_texts`] then inserts a rendering space at CJK/Latin junctions. So at the atom level, “worried AI will take away…” looks like “your GPU is…” in having a word-space seam. But the former cuts between a verb and its object clause. Wherever seam quality is graded (the DP objective function, the free-seam judgement), the original whitespace must be used, not the spaces produced by concatenation.
 pub fn seam_backed_by_whitespace(text: &str, atoms: &[String], cut: usize) -> bool {
     if cut == 0 || cut >= atoms.len() {
         return false;
@@ -963,7 +963,7 @@ mod tests {
             .iter()
             .position(|atom| atom == "AI")
             .expect("AI atom present");
-        // After joining it reads “担心 AI” (worried AI), but the original has no space, so it is not a seam.
+        // After joining it reads “worried AI”, but the original has no space, so it is not a seam.
         assert!(!seam_backed_by_whitespace(text, &atoms, cut));
 
         let spaced = "你的 GPU 在显存读取之间会有空闲算力——";

@@ -43,7 +43,7 @@ const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es,
  * When a scene template (model/home-templates.ts) is sent, it goes to the Runtime as the `template` of `conversations.send`; the template's default aspect ratio and duration, the prompt body and the brief guidance are assembled by the Runtime (template pack spec §5.2), so they are not written into this text, and they do not replace what the user wants to say.
  */
 
-/** Duration on template cards: “约 1 分钟” (about 1 minute), “约 1 分钟 30 秒” (about 1 minute 30 seconds), “约 45 秒” (about 45 seconds); null when not given (or not a positive number). */
+/** Duration on template cards: “about 1 minute”, “about 1 minute 30 seconds”, “about 45 seconds”; null when not given (or not a positive number). */
 export function lengthLabel(seconds: number | null | undefined): string | null {
   if (typeof seconds !== 'number' || !Number.isInteger(seconds) || seconds <= 0) return null;
   const minutes = Math.floor(seconds / 60);
@@ -96,7 +96,7 @@ export type HomeGate =
 
 /**
  * When `drivers` is null (the list has not been fetched yet), no conclusion is drawn; if one is already ready, that counts as usable. When none is ready but some driver is still in its first detection (`checking`),
- * no conclusion is drawn either: it may be the one that works, so the “装 Agent” (Install an Agent) guidance card does not flash first.
+ * no conclusion is drawn either: it may be the one that works, so the “Install an Agent” guidance card does not flash first.
  */
 export function homeGate(
   drivers: readonly Pick<DriverInfo, 'id' | 'name' | 'state'>[] | null,

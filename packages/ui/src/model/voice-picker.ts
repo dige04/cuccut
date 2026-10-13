@@ -26,7 +26,7 @@ import { tr } from './voice-picker.tr.ts';
 import { vi } from './voice-picker.vi.ts';
 import { VOICE_CLONE_PROVIDERS } from './voices-library.ts';
 
-/** Copy for the voice picker (translations are in `voice-picker.<language>.ts`). 「我的声音」(My voices) is the name of that page in settings. */
+/** Copy for the voice picker (translations are in `voice-picker.<language>.ts`). “My voices” is the name of that page in settings. */
 const en = {
   clonedOn: (provider: string) => `Cloned on ${provider} · synthesized with this clone`,
   defaultVoice: 'Default voice',

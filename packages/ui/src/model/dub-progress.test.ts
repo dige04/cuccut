@@ -109,7 +109,7 @@ describe('翻译配音的进度', () => {
       sentence('s3', 'completed'),
       sentence('old', 'failed', 0),
     ]);
-    // Nine steps minus “分离” (separate), which has no executor: total weight 95, done 38, synthesis halfway at 25.
+    // Nine steps minus “separate”, which has no executor: total weight 95, done 38, synthesis halfway at 25.
     expect(progress.percent).toBe(Math.floor(((38 + 25) / 95) * 100));
     expect(progress.step).toEqual({ name: 'synthesize', label: 'synthesize' });
     expect(progress.units).toEqual({ step: 'synthesize', done: 5, total: 10 });

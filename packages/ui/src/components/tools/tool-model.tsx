@@ -7,7 +7,7 @@ import { Gate } from './tool-parts.tsx';
 import { GATE_COPY } from './tools-copy.ts';
 
 /*
- * The “模型” (Model) section of a tool page (design file tool-tts.jsx `ModelLine`, image-gen.jsx `ModelLine` and `EngineGate`):
+ * The “Model” section of a tool page (design file tool-tts.jsx `ModelLine`, image-gen.jsx `ModelLine` and `EngineGate`):
  * a model Picker grouped by provider, whether it is connected, and what this model can do; when the selected one cannot be used, a gate card is shown below.
  */
 
@@ -57,7 +57,7 @@ function itemText<M>(o: ToolModelOption<M>): { label: string; description: strin
   return { label: o.modelId, description: o.why || o.label !== o.modelId ? (o.why ?? o.label) : null };
 }
 
-/** The model row: Picker (grouped by provider; providers not connected are marked “未连接” (Not connected); local models form their own group), status, and one line on capability. */
+/** The model row: Picker (grouped by provider; providers not connected are marked “Not connected”; local models form their own group), status, and one line on capability. */
 export function ModelLine<M>({
   label,
   options,
@@ -120,8 +120,8 @@ export function ModelLine<M>({
 }
 
 /**
- * Gate card when the selected model cannot be used (the cloud branch of design file image-gen.jsx `EngineGate`): if it is not connected, it says “先连接 X” (Connect X first) and offers “去连接” (Connect);
- * if another usable one exists, it offers “换用可用的 …” (Switch to an available …). Gate cards for local models (download, platform not available) are in local-model-gate.tsx.
+ * Gate card when the selected model cannot be used (the cloud branch of design file image-gen.jsx `EngineGate`): if it is not connected, it says “Connect X first” and offers “Connect”;
+ * if another usable one exists, it offers “Switch to an available …”. Gate cards for local models (download, platform not available) are in local-model-gate.tsx.
  * The gate's buttons stay neutral: the form's own submit is the view's one yellow.
  */
 export function ModelGate<M>({

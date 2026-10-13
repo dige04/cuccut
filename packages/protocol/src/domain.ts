@@ -633,7 +633,7 @@ export interface DriverProbe {
    */
   verified: boolean;
   /**
-   * This provider has run a complete session on a real machine in CucCut. A shared implementation of the same protocol (ACP) counts as `verified` once one provider passes on a real machine. The other presets and user-added agents can open sessions, but `tested` is false and the UI shows “未在 CucCut 实测” (not yet tested in CucCut). Like `verified`, it is a fact about this version of the driver.
+   * This provider has run a complete session on a real machine in CucCut. A shared implementation of the same protocol (ACP) counts as `verified` once one provider passes on a real machine. The other presets and user-added agents can open sessions, but `tested` is false and the UI shows “not yet tested in CucCut”. Like `verified`, it is a fact about this version of the driver.
    */
   tested: boolean;
   capabilities: {

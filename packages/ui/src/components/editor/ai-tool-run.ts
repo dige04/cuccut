@@ -7,11 +7,11 @@ import { isJobLive, useJobs } from '../../state/jobs-store.ts';
 import { AI_TOOLS_COPY as C } from './ai-tools-copy.ts';
 
 /**
- * The run of 「用 › 直接调模型」 (Use › Call model directly) on the tool page (product design §5.10): submits `pipelines.start('ai-tool')`, follows the parent task through the `jobs` topic; when complete, the parent task's `pipeline.summary` (`AiToolSummary`) is either the transaction written into the video (polishing, chapters; undoable with one click on the receipt), or the body the model wrote
+ * The run of “Use › Call model directly” on the tool page (product design §5.10): submits `pipelines.start('ai-tool')`, follows the parent task through the `jobs` topic; when complete, the parent task's `pipeline.summary` (`AiToolSummary`) is either the transaction written into the video (polishing, chapters; undoable with one click on the receipt), or the body the model wrote
  * (summaries, blog posts, titles, descriptions; only for people to read and copy).
  *
  * State is kept in a module-level store (like speakers-run.ts): the tool page may be closed or moved to another panel, and the task must not disconnect because of it; the result is still there.
- * The key is 「视频 · 工具」 (video · tool): different tools on the same video can run at once, but the same tool runs only once at a time.
+ * The key is “video · tool”: different tools on the same video can run at once, but the same tool runs only once at a time.
  */
 
 export const runKey = (videoId: Id, tool: AiToolKind): string => `${videoId}:${tool}`;
@@ -67,7 +67,7 @@ interface AiToolRunState {
   results: Record<string, AiToolResult>;
   receipts: Record<string, AiToolReceipt>;
   problems: Record<string, AiToolProblem>;
-  /** A task whose receipt was undone (`jobId`): after the receipt is closed, the list still shows 「已撤销」 (Undone) rather than 「上次」 (Last time). */
+  /** A task whose receipt was undone (`jobId`): after the receipt is closed, the list still shows “Undone” rather than “Last time”. */
   undoneJobs: Record<Id, true>;
 }
 
@@ -77,7 +77,7 @@ export const useAiToolRun = create<AiToolRunState>()(() => ({ ...EMPTY }));
 
 /**
  * Text typed into the tool page's prompt box, keyed by `toolDraftKey` (video · tool). While running, or showing a result or a receipt, this page is replaced by that state and the prompt box is unmounted;
- * going back to the list does the same. The text lives here, so it survives 「完成」 (Done), switching 「用」 (Use), or re-entering from the list. No entry means it is unedited (the box follows the template);
+ * going back to the list does the same. The text lives here, so it survives “Done”, switching “Use”, or re-entering from the list. No entry means it is unedited (the box follows the template);
  * clearing it to empty still counts as an edit and does not snap back to the template.
  */
 export const useAiToolPrompts = create<{ prompts: Record<string, string> }>()(() => ({ prompts: {} }));
@@ -87,14 +87,14 @@ export function setAiToolPrompt(key: string, text: string, template: string): vo
   useAiToolPrompts.setState((s) => ({ prompts: text === template ? without(s.prompts, key) : { ...s.prompts, [key]: text } }));
 }
 
-/** 「恢复默认」 (Restore default): back to the template. */
+/** “Restore default”: back to the template. */
 export function restoreAiToolPrompt(key: string): void {
   useAiToolPrompts.setState((s) => ({ prompts: without(s.prompts, key) }));
 }
 
 /**
  * Skills attached to the tool page's prompt box, keyed like `useAiToolPrompts`, in attachment order with no duplicates. Same reason as above: when the box is unmounted and remounted, skills that were removed (built-ins) cannot return by themselves,
- * and skills attached with 「+ › 使用 Skill」 (+ › Use Skill) must not be lost. No entry means the default set (`defaults`: this tool's built-in skill).
+ * and skills attached with “+ › Use Skill” must not be lost. No entry means the default set (`defaults`: this tool's built-in skill).
  */
 export const useAiToolSkills = create<{ skills: Record<string, string[]> }>()(() => ({ skills: {} }));
 
@@ -164,12 +164,12 @@ function endRun(key: string, problem?: AiToolProblem): void {
   }));
 }
 
-/** The 「知道了」 (Got it) on the question card. */
+/** The “Got it” on the question card. */
 export function dismissAiToolProblem(key: string): void {
   useAiToolRun.setState((s) => ({ problems: without(s.problems, key) }));
 }
 
-/** 「完成」 (Done) on the result and receipt: back to the settings state. */
+/** “Done” on the result and receipt: back to the settings state. */
 export function closeAiToolResult(key: string): void {
   useAiToolRun.setState((s) => ({ results: without(s.results, key), receipts: without(s.receipts, key) }));
 }
@@ -290,7 +290,7 @@ function finish(key: string, run: AiToolRun, job: JobRecord): void {
   useAiToolRun.setState((s) => ({ runs: without(s.runs, key), results: { ...s.results, [key]: result } }));
 }
 
-/** 「撤销」 (Undo) on the receipt: undo the transaction written into the video. */
+/** “Undo” on the receipt: undo the transaction written into the video. */
 export async function undoAiTool(key: string): Promise<void> {
   const bound = deps;
   const receipt = useAiToolRun.getState().receipts[key];

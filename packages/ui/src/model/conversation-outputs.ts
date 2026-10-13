@@ -14,7 +14,7 @@ import { conversationJobVideos, isVideoAt, openingVideo, videoOutput } from './v
 import { isPreviewExport } from './export-job.ts';
 
 /**
- * One item in the session header's “产物” (outputs) (product design §3.2, revised by the user): a video this session created, changed, or worked on, a finished slide deck, a design draft and a design system,
+ * One item in the session header's “outputs” (product design §3.2, revised by the user): a video this session created, changed, or worked on, a finished slide deck, a design draft and a design system,
  * or a file in its working directory.
  */
 export interface ConversationOutput {
@@ -225,7 +225,7 @@ export function outputsByMessage(items: readonly TimelineItem[], outputs: readon
 }
 
 /**
- * Whether the video's source directory still exists (prototype `SessionMoviePreview`'s “找不到源文件” (source file not found)). A video counts as not found only when Space has finished scanning, the scan of this source was not truncated or unreadable,
+ * Whether the video's source directory still exists (prototype `SessionMoviePreview`'s “source file not found”). A video counts as not found only when Space has finished scanning, the scan of this source was not truncated or unreadable,
  * and there is no entry for this video; no conclusion is drawn while scanning is still running or incomplete. A false report happens when the directory is nested deeper than the scan depth (6 levels).
  */
 export function outputSourceMissing(

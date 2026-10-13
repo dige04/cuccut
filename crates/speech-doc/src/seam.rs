@@ -49,13 +49,13 @@ const DANGLING_CJK: &[char] = &[
     '和', '与', '或', '及', '跟', '而', '并', '且', '把', '被', '让', '使', '将', '比', '向', '往',
     '从', '当', '由', '给', '于',
 ];
-/// Two-character dangling predicates: the complement is a required part, so the piece breaks when it ends there (G3 baseline measured two cases of 「类似 | 于…」 ("similar to | …") being committed to the database). Single-character tables do not cover them, since 似 and 当 are not function words.
+/// Two-character dangling predicates: the complement is a required part, so the piece breaks when it ends there (G3 baseline measured two cases of “similar to | …” being committed to the database). Single-character tables do not cover them, since 似 and 当 are not function words.
 const DANGLING_CJK_BIGRAMS: &[&str] = &["类似", "相当"];
 /// At a display seam the last character is still a dangerous function word, but as a **complete sentence end** it already forms a common noun or predicate.
 const COMPLETE_CJK_SENTENCE_TAILS: &[&str] = &["方向", "对比", "总和", "跟不跟"];
 /// A 「的」 at the end of a piece is treated as dangling (the 「…的 | 名词」 attributive and its head are split apart; two cases were committed in the p850 benchmark draft). Two-character nouns and pronouns that end in 「的」 are complete words and are not counted as dangling.
 const DE_TAIL_COMPLETE_BIGRAMS: &[&str] = &["目的", "标的", "有的", "别的", "似的"];
-/// A unit or measure word after a number: if it starts a piece and the preceding piece ends in a number, the quantity phrase has been cut (「1000 | 美元」 ("1000 | US dollars") was measured in the p850 benchmark draft). The single-character table includes only those that are almost unambiguous after a number.
+/// A unit or measure word after a number: if it starts a piece and the preceding piece ends in a number, the quantity phrase has been cut (“1000 | US dollars” was measured in the p850 benchmark draft). The single-character table includes only those that are almost unambiguous after a number.
 const NUMBER_UNIT_PREFIXES: &[&str] = &[
     "美元", "欧元", "英镑", "日元", "港元", "万亿", "分钟", "小时", "公里", "公斤", "元", "块",
     "万", "亿", "年", "月", "日", "号", "岁", "人", "名", "位", "个", "次", "倍", "点", "天", "周",
@@ -66,7 +66,7 @@ const LEADING_DANGLING_CJK: &[char] = &[
     '的', '地', '得', '了', '着', '过', '时', '者', '们', '之', '吗', '呢', '吧', '啊', '呀', '嘛',
     '哦',
 ];
-/// Chinese quantity and category phrases at the end of a piece that still await their head noun. Only high-confidence predicate endings are collected here, to avoid flagging elliptical structures such as 「我只要一个 | 另一个不要」 ("I only want one | the other I don't want") in general. This is blocked only by [`incomplete_nominal_split`], and only when the right piece has body text and the left piece has no punctuation.
+/// Chinese quantity and category phrases at the end of a piece that still await their head noun. Only high-confidence predicate endings are collected here, to avoid flagging elliptical structures such as “I only want one | the other I don't want” in general. This is blocked only by [`incomplete_nominal_split`], and only when the right piece has body text and the left piece has no punctuation.
 const INCOMPLETE_CJK_NOMINAL_TAILS: &[&str] = &[
     "有一个",
     "有一种",
@@ -105,7 +105,7 @@ const LEADING_COORDINATOR_WORDS: &[&str] = &[
 ];
 /// Weak endings: a bare trailing piece (not closed by punctuation) that lands on a form that cannot grammatically pause there. All 14 hard dangling cases in the R2 benchmark fell into these types: structural particles and locative suffixes, adverbs, auxiliary verbs, measure words, and transitive light verbs missing their object (see audit §4.2.1).
 ///
-/// Blocking covers only the forms that almost never legally end a clause without punctuation. Context-dependent light verbs (知道 "know", 占用 "occupy", 生成 "generate" …) stay in [`WEAK_TAIL_ADVISORY_WORDS`], so that complete predicates such as 「我不知道」 ("I don't know") and 「来看看」 ("come take a look") are not misjudged as flaws, which would force an extra rework round.
+/// Blocking covers only the forms that almost never legally end a clause without punctuation. Context-dependent light verbs (知道 "know", 占用 "occupy", 生成 "generate“I don't know” and “come take a look” are not misjudged as flaws, which would force an extra rework round.
 const WEAK_TAIL_BLOCKING_WORDS: &[&str] = &[
     // Adverbs
     "如何",
@@ -147,14 +147,14 @@ const WEAK_TAIL_ADVISORY_WORDS: &[&str] = &[
 const WEAK_TAIL_DE_COMPLETE_BIGRAMS: &[&str] = &["心得", "所得", "值得", "难得", "舍得"];
 
 // ---------------------------------------------------------------------------
-// Morphology-class weak endings (open class). `WEAK_TAIL_BLOCKING_WORDS` is a closed word list, but Chinese dangling endings form an open class: in R3 benchmark measurements, after entries such as `采用了` ("adopted") and `同时` ("at the same time") were hit, the defect merely **shifted** to adjacent forms that were not listed (see audit §2, "defect displacement"). The groups below judge by **form**. The word list keeps only the exemption side for "word traps" (strings that look like fragments but are real words), using the same mechanism as the existing 「以上」 ("above") and 「心得」 ("takeaways").
+// Morphology-class weak endings (open class). `WEAK_TAIL_BLOCKING_WORDS` is a closed word list, but Chinese dangling endings form an open class: in R3 benchmark measurements, after entries such as `采用了` ("adopted") and `同时` ("at the same time") were hit, the defect merely **shifted** to adjacent forms that were not listed (see audit §2, "defect displacement"). The groups below judge by **form**. The word list keeps only the exemption side for "word traps“above” and “takeaways”.
 // ---------------------------------------------------------------------------
 
 /// Disposal and pivotal frame words: `把/将/让/使/叫 + NP` must be followed by a predicate.
 const FRAME_DISPOSAL_CJK: &[char] = &['把', '将', '让', '使', '叫'];
 /// Lookback window for frame words (in characters). Beyond the window, the frame is considered already closed earlier.
 const FRAME_LOOKBACK: usize = 10;
-/// Exemptions for disposal and pivotal constructions: two-character words that contain a frame character but do not use it as a frame word, such as the adverb 「即将」 ("about to"), the time noun 「将来」 ("future"), and the conjunction 「即使」 ("even if"). The matching position may be before or after the frame character.
+/// Exemptions for disposal and pivotal constructions: two-character words that contain a frame character but do not use it as a frame word, such as the adverb “about to”, the time noun “future”, and the conjunction “even if”. The matching position may be before or after the frame character.
 const FRAME_COMPLETE_BIGRAMS: &[&str] = &[
     "即将", "行将", "将来", "将要", "将会", "将近", "假使", "即使", "纵使", "致使", "促使", "迫使",
     "大把", "把握", "把手", "叫做", "名叫", "号叫",
@@ -165,7 +165,7 @@ const PREDICATE_TAIL_CJK: &[char] = &[
     '来', '去', '上',
 ];
 
-/// Transitive verb + directional or resultative complement: ending on the complement means the object is missing (「浪费掉 ‖ 60%」 ("waste away | 60%"), 「观察到 ‖ 50%」 ("observed to | 50%")).
+/// Transitive verb + directional or resultative complement: ending on the complement means the object is missing (“waste away | 60%”, “observed to | 50%”).
 const VERB_COMPLEMENT_TAILS: &[char] = &['到', '掉', '出', '成'];
 /// Exemptions for a complement missing its object: two-character words that end in a complement character but are self-sufficient verbs or nouns on their own.
 const VERB_COMPLEMENT_COMPLETE_BIGRAMS: &[&str] = &[
@@ -178,7 +178,7 @@ const VERB_COMPLEMENT_COMPLETE_BIGRAMS: &[&str] = &[
     "完成", "形成", "达成", "组成", "构成", "集成", "合成", "赞成", "现成", "既成",
 ];
 
-/// Locative suffix: a locative frame `在/从/对/往/向 … X`, or a locative frame formed by a "quantity/Latin + locative" pattern, is not closed. 「上」 ("on") is judged separately below, following the existing 「在…上」 lookback rule.
+/// Locative suffix: a locative frame `在/从/对/往/向 … X`, or a locative frame formed by a "quantity/Latin + locative“on” is judged separately below, following the existing 「在…上」 lookback rule.
 const LOCATIVE_SUFFIX_CJK: &[char] = &['里', '中', '下', '内', '间'];
 /// Explicit introducing words of a locative frame.
 const LOCATIVE_FRAME_CJK: &[char] = &['在', '从', '对', '往', '向'];
@@ -204,7 +204,7 @@ const LEADING_LOCATIVE_WORDS: &[&str] = &[
 
 /// Light-verb frame: `来/去 + monosyllabic reduplicated verb` (聊聊 "chat", 看看 "take a look", 说说 "talk") missing its object.
 const LIGHT_VERB_FRAME_CJK: &[char] = &['来', '去'];
-/// The copula 「是」 ("is") at the end of a piece: the predicate nominal must be in the next piece. The criterion was reverse-derived from a bad seam measured in the speed-limiting mechanism (`所以，如果你的最大序列长度是 ‖ 2048 个 token，`).
+/// The copula “is” at the end of a piece: the predicate nominal must be in the next piece. The criterion was reverse-derived from a bad seam measured in the speed-limiting mechanism (`所以，如果你的最大序列长度是 ‖ 2048 个 token，`).
 const COPULA_COMPLETE_BIGRAMS: &[&str] = &["求是", "自是"];
 pub(crate) const CUT_BEFORE_CJK: &[&str] = &[
     "但是", "所以", "因为", "然后", "而且", "不过", "如果", "虽然", "那么", "或者", "并且", "同时",
@@ -500,7 +500,7 @@ fn is_elliptical_infinitive_end(text: &str) -> bool {
             .is_some_and(|before| LICENSORS.contains(&before.as_str()))
 }
 
-/// Whether a two-character ending that ends in 「的」 is self-sufficient. 「有的」 ("some") is a pronoun only when it stands **alone** (有的人 "some people", 有的是 "some are"). When other meaningful characters come before it, it is an attributive plus 的, as in 「现有的」 / 「所有的」 / 「已有的」 ("existing" / "all" / "already existing"), which still awaits its head noun. (Measured bad seam in the speed-limit case: `从你现有的 ‖ GPU 中获得…`.)
+/// Whether a two-character ending that ends in 「的」 is self-sufficient. “some” is a pronoun only when it stands **alone** (有的人 "some people", 有的是 "some are"). When other meaningful characters come before it, it is an attributive plus 的, as in 「现有的」 / 「所有的」 / 「已有的」 ("existing" / "all" / "already existing"), which still awaits its head noun. (Measured bad seam in the speed-limit case: `从你现有的 ‖ GPU 中获得…`.)
 fn de_tail_complete(trimmed: &str, tail: &str) -> bool {
     if !DE_TAIL_COMPLETE_BIGRAMS.contains(&tail) {
         return false;
@@ -515,7 +515,7 @@ fn de_tail_complete(trimmed: &str, tail: &str) -> bool {
         .is_some_and(|ch| is_ideograph(ch))
 }
 
-/// Whether the piece starts with a clinging particle or a coordinating conjunction. The preposition 「于」 almost always belongs to the predicate of the preceding piece (类似于 "similar to", 取决于 "depends on", 属于 "belongs to" …). The only common legal piece start is the conjunction 「于是」 ("so").
+/// Whether the piece starts with a clinging particle or a coordinating conjunction. The preposition 「于」 almost always belongs to the predicate of the preceding piece (类似于 "similar to", 取决于 "depends on", 属于 "belongs to“so”.
 pub fn starts_dangling(text: &str) -> bool {
     let trimmed = text.trim();
     if trimmed.starts_with('于') && !trimmed.starts_with("于是") {
@@ -551,7 +551,7 @@ pub fn ends_weak_tail(text: &str) -> Option<(SeamLintKind, &'static str)> {
         .into_iter()
         .rev()
         .collect();
-    // The locative frame 「在…上」 ("at … on"): the whole prepositional phrase is still waiting for its predicate (R2 「这里的输出质量在数学上 | 与单独运行大模型完全相同。」). It triggers only when 在 appears in the same piece. This avoids self-sufficient words such as 以上 ("above"), 晚上 ("evening"), 网上 ("online") and 线上 ("online") without needing a whitelist.
+    // The locative frame “at … on”: the whole prepositional phrase is still waiting for its predicate (R2 「这里的输出质量在数学上 | 与单独运行大模型完全相同。」). It triggers only when 在 appears in the same piece. This avoids self-sufficient words such as 以上 ("above"), 晚上 ("evening"), 网上 ("online") and 线上 ("online") without needing a whitelist.
     if last == '上' && tail2 != "以上" && stripped.chars().rev().take(12).any(|ch| ch == '在') {
         return Some((SeamLintKind::Blocking, "在…上"));
     }
@@ -592,7 +592,7 @@ fn morphological_weak_tail(stripped: &str) -> Option<&'static str> {
         }
     }
 
-    // 3 · Locative frame not closed. 「上」 reuses the existing lookback for 「在…上」. 里/中/下/内/间 are additionally triggered by a "quantity/Latin + locative" pattern (R3 「也就是这 35% 里 ‖ 用于 KV…」 ("that is, within these 35% | used for KV…")).
+    // 3 · Locative frame not closed. 「上」 reuses the existing lookback for 「在…上」. 里/中/下/内/间 are additionally triggered by a "quantity/Latin + locative“that is, within these 35% | used for KV…”).
     if LOCATIVE_SUFFIX_CJK.contains(&last)
         && chars.len() >= 2
         && !LOCATIVE_COMPLETE_BIGRAMS.contains(&bigram.as_str())
@@ -705,7 +705,7 @@ pub fn free_seam(text: &str, lang: &str, params: &TransParams) -> Option<(String
         if left.trim().is_empty() || right.trim().is_empty() {
             continue;
         }
-        // The seam must be backed by punctuation or whitespace in the source, with the same basis as the DP seam grading. A rendered space at a CJK/Latin junction is not a seam: a cut such as 「担心 | AI 会抢走…」 ("worried | AI will take away…"), made between a verb and its object clause, is not one. Otherwise a "free seam exists" check would treat a clearly worse cut as a requirement to enforce.
+        // The seam must be backed by punctuation or whitespace in the source, with the same basis as the DP seam grading. A rendered space at a CJK/Latin junction is not a seam: a cut such as “worried | AI will take away…”, made between a verb and its object clause, is not one. Otherwise a "free seam exists" check would treat a clearly worse cut as a requirement to enforce.
         if !sentence_end(&left)
             && clause_end_char(&left).is_none()
             && !seam_backed_by_whitespace(text, &atoms, cut)
@@ -753,7 +753,7 @@ fn number_unit_split(left: &str, right: &str) -> bool {
         .any(|unit| right.starts_with(unit))
 }
 
-/// An incomplete noun phrase spanning pieces, such as 「我们有一个 | 想改变的系统」 ("we have one | a system we want to change"). A quantity word may be legitimately omitted, so only the high-confidence predicate endings in the table above are blocked, and the next piece must have actual lexical content.
+/// An incomplete noun phrase spanning pieces, such as “we have one | a system we want to change”. A quantity word may be legitimately omitted, so only the high-confidence predicate endings in the table above are blocked, and the next piece must have actual lexical content.
 fn incomplete_nominal_split(left: &str, right: &str) -> bool {
     let left = left.trim_end();
     if left.is_empty() || ends_clause_punct(left) {
@@ -800,7 +800,7 @@ fn leading_locative_split(left: &str, right: &str) -> bool {
 
 /// "A 和 B ‖ head": the seam falls after the second coordinated item, splitting the coordinated noun phrase from its head.
 ///
-/// Precision gates, all required. 和 also serves as a preposition (「很高兴和大家聊聊 ‖ 如何…」 ("glad to chat with everyone | how…")). Misjudging it would block legal seams and turn a dangling tail into an over-line piece, so the criterion is kept narrow. The left piece must not end with punctuation. The second coordinated item must be **short and nominal**: a single Latin or digit token, or no more than 3 Han characters that do not contain a reduplicated verb. A preposition 和 followed by "NP + predicate" does not fit this window because of its length. The right piece must start with a Han character and must not be a clause introduced by a personal-pronoun subject, an adversative or continuative conjunction, or an interrogative word.
+/// Precision gates, all required. 和 also serves as a preposition (“glad to chat with everyone | how…”). Misjudging it would block legal seams and turn a dangling tail into an over-line piece, so the criterion is kept narrow. The left piece must not end with punctuation. The second coordinated item must be **short and nominal**: a single Latin or digit token, or no more than 3 Han characters that do not contain a reduplicated verb. A preposition 和 followed by "NP + predicate" does not fit this window because of its length. The right piece must start with a Han character and must not be a clause introduced by a personal-pronoun subject, an adversative or continuative conjunction, or an interrogative word.
 fn coordinated_head_split(left: &str, right: &str) -> bool {
     /// The maximum number of Han characters in the second coordinated item.
     const MAX_SECOND_ITEM_CHARS: usize = 3;
@@ -1047,7 +1047,7 @@ pub fn lint_pieces(pieces: &[&str], lang: &str, params: &TransParams) -> Vec<Sea
                 ),
             });
         }
-        // The mirror image of coordination: `LEADING_COORDINATOR_CJK` only forbids cutting **before** 和/及/与. Cutting **after the second coordinated item** equally splits the coordinated noun phrase from its head (R3 「…存了那些 Key 和 Value ‖ 矩阵，…」 ("…stored those Key and Value | matrix, …")).
+        // The mirror image of coordination: `LEADING_COORDINATOR_CJK` only forbids cutting **before** 和/及/与. Cutting **after the second coordinated item** equally splits the coordinated noun phrase from its head (R3 “…stored those Key and Value | matrix, …”).
         if index > 0 && coordinated_head_split(pieces[index - 1], text) {
             issues.push(SeamLintIssue {
                 piece_index: index - 1,
@@ -1646,7 +1646,7 @@ mod tests {
         assert!(ends_dangling("matters—the"));
         assert!(starts_dangling("了吗"));
         assert!(starts_dangling("的时候"));
-        // “的确” ("indeed") superficially starts with “的”. Whether it is a violation also depends on whether the preceding piece ends with punctuation. The single-side function still returns true.
+        // “indeed” superficially starts with “的”. Whether it is a violation also depends on whether the preceding piece ends with punctuation. The single-side function still returns true.
         assert!(starts_dangling("的确"));
         assert!(ends_clause_punct("开心。"));
         assert!(ends_sentence_final("完成。"));
@@ -1827,7 +1827,7 @@ mod tests {
 
     #[test]
     fn de_tail_is_dangling_except_complete_nouns() {
-        // A dangling attributive 「的」 (p850 benchmark draft: two cases of 「…的 | 名词」 ("…of | noun") were committed).
+        // A dangling attributive 「的」 (p850 benchmark draft: two cases of “…of | noun” were committed).
         assert!(ends_dangling("这是我们生成的"));
         assert!(!ends_dangling("这是我们生成的。"));
         // A complete word ending in 「的」 is not dangling.
@@ -1882,7 +1882,7 @@ mod tests {
         );
     }
 
-    /// Two hard-dangling fixed points from the R2 benchmark that survived two rounds of repair: `s-g41.0#0` (the particle 「得」) and `s-g89.0#0` (「在数学上」 ("in mathematics") cut in half).
+    /// Two hard-dangling fixed points from the R2 benchmark that survived two rounds of repair: `s-g41.0#0` (the particle 「得」) and `s-g89.0#0` (“in mathematics” cut in half).
     #[test]
     fn lint_blocks_weak_tail_regressions_from_run2() {
         let params = TransParams::for_lang("zh");
@@ -1963,7 +1963,7 @@ mod tests {
                     && issue.message.contains("coordinator")
                     && is_objective_blocking(issue)
             });
-            // 「及其」 ("and its") is a piece start that forms a word, so it must not be blocked.
+            // “and its” is a piece start that forms a word, so it must not be blocked.
             let expected = !pieces[1].starts_with("及其");
             assert_eq!(blocked, expected, "{pieces:?} -> {issues:?}");
         }
@@ -2194,7 +2194,7 @@ mod tests {
             && i.kind == SeamLintKind::Blocking),);
     }
 
-    /// 「或」 ("or") is a coordinating conjunction like 和/及/与. A bare cut before it breaks the coordinated structure. When the preceding piece ends with punctuation, it is a legal clause start. 「或许」 ("perhaps") as a word is exempt.
+    /// “or” is a coordinating conjunction like 和/及/与. A bare cut before it breaks the coordinated structure. When the preceding piece ends with punctuation, it is a legal clause start. “perhaps” as a word is exempt.
     #[test]
     fn lint_blocks_bare_cut_before_huo_coordinator() {
         let params = TransParams::for_lang("zh");
@@ -2223,7 +2223,7 @@ mod tests {
         );
     }
 
-    /// Pre-split suggestions follow the same criterion as the lint: they must not recommend a bare cut before 「或者」 ("or"). Previously CUT_BEFORE candidates were not gated by coordination, so the advisory recommended exactly the cut that the lint rejects.
+    /// Pre-split suggestions follow the same criterion as the lint: they must not recommend a bare cut before “or”. Previously CUT_BEFORE candidates were not gated by coordination, so the advisory recommended exactly the cut that the lint rejects.
     #[test]
     fn preferred_split_never_bare_cuts_before_huo() {
         let params = TransParams::for_lang("zh");
@@ -2241,7 +2241,7 @@ mod tests {
         assert!(split.right.starts_with("或者"), "{split:?}");
     }
 
-    /// The flash-frame threshold is measured on the per-piece display basis, where end punctuation is free. 「他说了:」 ("he said:") displays as 3 units. It was previously counted as 4 and missed.
+    /// The flash-frame threshold is measured on the per-piece display basis, where end punctuation is free. “he said:” displays as 3 units. It was previously counted as 4 and missed.
     #[test]
     fn flash_threshold_uses_display_units() {
         let params = TransParams::for_lang("zh");

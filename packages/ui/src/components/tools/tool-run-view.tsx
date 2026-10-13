@@ -132,7 +132,7 @@ const grantItem = style({ display: 'flex', flexDirection: 'column', gap: 2 });
 const grantActions = style({ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 });
 
 /**
- * On-the-spot authorization (§2.7, “授权在当场完成” (authorization is completed on the spot)): the pending approval items the Runtime gives when it refuses to start — what will be sent, to whom, and the estimated cost. “同意并继续” (Agree and continue)
+ * On-the-spot authorization (§2.7, “authorization is completed on the spot”): the pending approval items the Runtime gives when it refuses to start — what will be sent, to whom, and the estimated cost. “Agree and continue”
  * grants authorization item by item, then resubmits with the same submission. `hint`: where to go if the user does not want to send.
  */
 export function GrantCard({
@@ -206,7 +206,7 @@ export function ProjectPicker({ value, onChange }: { value: Id | null; onChange:
 
 // ---- Run page ----
 
-/** Entries in the Space that refer to this video (used by “打开编辑” (Open in editor) and “接着做” (Continue)). */
+/** Entries in the Space that refer to this video (used by “Open in editor” and “Continue”). */
 export function entryOfVideo(entries: readonly SpaceEntry[], videoId: Id | null): SpaceEntry | null {
   if (!videoId) return null;
   return entries.find((e) => e.kind === 'video' && e.ref && 'videoId' in e.ref && e.ref.videoId === videoId && !e.user.trashedAt) ?? null;
@@ -243,14 +243,14 @@ const line = style({ display: 'flex', alignItems: 'start', gap: 8, overflowWrap:
 const lineIcon = style({ display: 'flex', flexShrink: 0, marginTop: 2, color: 'green-1000', '--iconPrimary': { type: 'fill', value: 'currentColor' } });
 const buttons = style({ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 });
 
-/** The view of one run: when transcription uses “说话人区分” (speaker diarization) to tell speakers apart, “识别说话人” (Identify speakers) is listed as a separate step (model/transcribe-speakers.ts `diarizeStepOf`). */
+/** The view of one run: when transcription uses “speaker diarization” to tell speakers apart, “Identify speakers” is listed as a separate step (model/transcribe-speakers.ts `diarizeStepOf`). */
 export function useRunView(job: JobRecord): RunView | null {
   const jobs = useJobs((s) => s.jobs);
   const view = useModels((s) => s.capabilities);
   return runView(job, jobs, { diarizeStep: diarizeStepOf(job, jobs, view) });
 }
 
-/** Run and result page: progress, steps, and on failure a retry from that step; after completion, “打开编辑” (Open in editor) and the tools that can continue the work. */
+/** Run and result page: progress, steps, and on failure a retry from that step; after completion, “Open in editor” and the tools that can continue the work. */
 export function ToolRunView({ job, tool, onBack }: { job: JobRecord; tool: VideoToolId; onBack: () => void }) {
   const go = useShell((s) => s.go);
   const outputs = useJobOutputs([job.jobId]);
@@ -353,8 +353,8 @@ function editorHolds(target: FileTarget, videoId: Id): boolean {
 }
 
 /**
- * After swapping in a transcript (product design §5.11, the action on the transcription result in design file tool-specs.jsx): “刷新过期译文” (Refresh outdated translation) opens the video and the tool page in the editor;
- * “撤销” (Undo) reverts that swap as one transaction (when the editor has this video open, it goes through the editor; otherwise it opens the video in the background, undoes, and closes it again, as in the change card).
+ * After swapping in a transcript (product design §5.11, the action on the transcription result in design file tool-specs.jsx): “Refresh outdated translation” opens the video and the tool page in the editor;
+ * “Undo” reverts that swap as one transaction (when the editor has this video open, it goes through the editor; otherwise it opens the video in the background, undoes, and closes it again, as in the change card).
  */
 function SwitchActions({ job, entry }: { job: JobRecord; entry: SpaceEntry | null }) {
   const runtime = useRuntime();

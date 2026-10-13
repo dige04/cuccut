@@ -52,7 +52,7 @@ export interface DirBlocker {
   text: string;
   /** Ordinary tasks using local models (excluding downloads and checks). */
   jobIds: Id[];
-  /** When there are ordinary tasks, shows “查看任务” (view tasks). */
+  /** When there are ordinary tasks, shows “view tasks”. */
   hasTasks: boolean;
 }
 
@@ -118,7 +118,7 @@ export function changePlan(inspection: ModelsDirInspection): ChangePlan {
   };
 }
 
-/** The option selected in the confirmation dialog: when it does not fit, “移过去” (move over) cannot be chosen and falls back to “只切换位置” (switch location only); when no choice is needed it is switch. */
+/** The option selected in the confirmation dialog: when it does not fit, “move over” cannot be chosen and falls back to “switch location only”; when no choice is needed it is switch. */
 export function pickedMode(plan: ChangePlan, chosen: ModelsDirMode): ModelsDirMode {
   if (plan.kind !== 'choose') return 'switch';
   return plan.move.disabled ? 'switch' : chosen;

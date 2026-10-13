@@ -47,12 +47,12 @@ export async function chooseCloudDefault(session: Session, capability: ModelServ
   await session.setModelDefault(capability, ref?.providerId ?? null, ref?.modelId);
 }
 
-/** The “推理强度”(Reasoning effort) segment for text generation selected an item (“自动”(Auto) = clear it and leave it to the model's own default). The new value is sent back through the `models` topic. */
+/** The “Reasoning effort” segment for text generation selected an item (“Auto” = clear it and leave it to the model's own default). The new value is sent back through the `models` topic. */
 export async function setTextEffort(session: Session, key: string): Promise<void> {
   await session.setCapabilityParameters(effortRequest(key));
 }
 
-/** The text generation “并发请求数”(Concurrent requests) changed; not submitted when the value is not a number. */
+/** The text generation “Concurrent requests” changed; not submitted when the value is not a number. */
 export async function setTextConcurrency(session: Session, value: number): Promise<boolean> {
   const request = concurrencyRequest(value);
   if (!request) return false;
@@ -73,17 +73,17 @@ export async function chooseLocalDefault(
   await session.setModelDefault(VIEW_CAPABILITY[kind], choice.providerId, choice.modelId);
 }
 
-/** The key dialog's “保存”(Save): enable and verify; if verification fails, the Runtime rejects it and nothing is saved. */
+/** The key dialog's “Save”: enable and verify; if verification fails, the Runtime rejects it and nothing is saved. */
 export async function saveProviderKey(session: Session, providerId: string, key: string): Promise<void> {
   await session.configureModelProvider(connectRequest(providerId, key));
 }
 
-/** The card header's “刷新”(Refresh): fetches the model and voice lists from the provider. If they cannot be fetched (`ok: false`), it is not counted as a failure; the reason is recorded in its config and sent back by the `models` topic. */
+/** The card header's “Refresh”: fetches the model and voice lists from the provider. If they cannot be fetched (`ok: false`), it is not counted as a failure; the reason is recorded in its config and sent back by the `models` topic. */
 export async function refreshProvider(session: Session, providerId: string): Promise<void> {
   await session.refreshModelProvider(providerId);
 }
 
-/** Built-in “移除密钥”(Remove key) = clear and disable; custom “删除服务商”(Delete provider) = delete together with its declared models. */
+/** Built-in “Remove key” = clear and disable; custom “Delete provider” = delete together with its declared models. */
 export async function disconnectProvider(session: Session, providerId: string): Promise<void> {
   if (isCustomProvider(providerId)) await session.removeModelProvider(providerId);
   else await session.configureModelProvider(disconnectRequest(providerId));

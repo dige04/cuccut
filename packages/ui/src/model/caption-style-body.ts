@@ -244,7 +244,7 @@ export const LAYOUT_KEYS: readonly string[] = ['fontSize', 'verticalAlign', 'y',
 
 const MAPPED_KEYS: readonly string[] = [...PAINT_KEYS, ...WORD_KEYS, ...LAYOUT_KEYS];
 
-/** Keys that record the preset source on the root (used only for the selected state and 「还原」 (Revert); the renderer does not read them). */
+/** Keys that record the preset source on the root (used only for the selected state and “Revert”; the renderer does not read them). */
 export const PRESET_KEY = 'stylePreset';
 
 /* ---------- Small arithmetic ---------- */
@@ -412,7 +412,7 @@ function parseLayout(root: Json): Layout {
 
 /* ---------- Current word + motion ---------- */
 
-/** Translation / tracks without word-level timing: the current word is always none; an entrance triggered 「念到」 (when spoken) becomes on-appearance (the kernel catalogue entries have no when-spoken trigger, so they are dropped). */
+/** Translation / tracks without word-level timing: the current word is always none; an entrance triggered “when spoken” becomes on-appearance (the kernel catalogue entries have no when-spoken trigger, so they are dropped). */
 export function forRole(body: Pick<CaptionStyleBody, 'activeWord' | 'motion'>, ctx: CompileContext): { activeWord: ActiveWord; motion: Motion | null } {
   const timed = ctx.role === 'source' && ctx.hasWordTiming;
   if (timed) return { activeWord: normalizeActive(body.activeWord), motion: hasMotion(body.motion) ? body.motion : null };

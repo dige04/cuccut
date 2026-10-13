@@ -636,7 +636,7 @@ mod tests {
         }
     }
 
-    /// Regression lock (screenshot of a two-person interview, 2026-08): the sentence range starts with an interjection from the other party, "呃" (s1), that the model deleted, while the body is all s2. Punctuated characters ("啊，" "的，" "吗？") are new tokens, and they must inherit the LCS neighbour's s2 rather than the s1 of `span[0]`. Otherwise s1/s2 alternate character by character in the UI.
+    /// Regression lock (screenshot of a two-person interview, 2026-08): the sentence range starts with an interjection from the other party, “s1”, that the model deleted, while the body is all s2. Punctuated characters ("啊，" "的，" "吗？") are new tokens, and they must inherit the LCS neighbour's s2 rather than the s1 of `span[0]`. Otherwise s1/s2 alternate character by character in the UI.
     #[test]
     fn new_tokens_inherit_the_neighbouring_speaker_not_the_span_head() {
         let old = vec![

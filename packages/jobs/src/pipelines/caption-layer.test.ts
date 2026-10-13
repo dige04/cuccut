@@ -21,7 +21,7 @@ import {
 import { PipelineStepError } from './pipeline.ts';
 
 /**
- * For a translation with no Worker caption cues (written by the agent itself), build the caption layer: `translationCues` splits cues the same way as the editor's function of the same name (expected values follow `packages/ui/src/model/translation-cues.test.ts`), and the transaction computed by `planCaptionLayer` is the same as the editor's “放到画面上” (put on screen). An existing caption layer does not stop a new one from being built (§7.9 “no overwrite”).
+ * For a translation with no Worker caption cues (written by the agent itself), build the caption layer: `translationCues` splits cues the same way as the editor's function of the same name (expected values follow `packages/ui/src/model/translation-cues.test.ts`), and the transaction computed by `planCaptionLayer` is the same as the editor's “put on screen”. An existing caption layer does not stop a new one from being built (§7.9 “no overwrite”).
  */
 
 const base = { enabled: true, locked: false, paintOrder: 0, followPolicy: { kind: 'sequence-fixed' as const } };

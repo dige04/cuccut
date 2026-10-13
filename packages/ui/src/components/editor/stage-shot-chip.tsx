@@ -10,7 +10,7 @@ import { useEditorActions } from './editor-context.tsx';
 import type { FrameRect } from './stage-objects.tsx';
 
 /**
- * The chip for framing by shot segment (prototype stage-objects.jsx `ShotChip`, product design §5.10 “改一支短视频”(edit a short)). When one segment is selected, it hangs just outside the bottom-left corner of the picture, reading “这一段 · 第 X–Y 秒”(this segment · seconds X–Y), in seconds on the child video's timeline, which makes clear that dragging only changes this segment. The secondary action “套到整支”(apply to whole clip) writes this segment's current crop to every segment of the same asset, as one transaction, which can be undone from the notice.
+ * The chip for framing by shot segment (prototype stage-objects.jsx `ShotChip`, product design §5.10 “edit a short”). When one segment is selected, it hangs just outside the bottom-left corner of the picture, reading “this segment · seconds X–Y”, in seconds on the child video's timeline, which makes clear that dragging only changes this segment. The secondary action “apply to whole clip” writes this segment's current crop to every segment of the same asset, as one transaction, which can be undone from the notice.
  * It sits outside the picture, because the video toolbar is above the picture and placing the chip inside would cover the subject being framed.
  * It carries `data-stage-editor`, so stage point selection and marquee selection do not take pointer input on it.
  */

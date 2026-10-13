@@ -586,7 +586,7 @@ mod tests {
     }
 
     /// This gate only looks at writing script, copying and placeholders, not meaning: a fluent but mistranslated sentence still passes.
-    /// The acceptance fixtures `de-07` (the condition was changed and the approving party was misread) and `hi-07` (“第二版” (second edition) rendered as “另一个版本” (another version)) produce no issues at all; meaning has to be checked by other mechanisms.
+    /// The acceptance fixtures `de-07` (the condition was changed and the approving party was misread) and `hi-07` (“second edition” rendered as “another version”) produce no issues at all; meaning has to be checked by other mechanisms.
     #[test]
     fn a_fluent_mistranslation_passes_the_script_gate() {
         assert!(

@@ -528,7 +528,7 @@ async function feed58(extra: Record<string, unknown> = {}): Promise<void> {
   await writeFeed(manifestText({ url: pathToFileURL(next).href }, { version: '2.4.0', build: 58, ...extra }));
 }
 
-/** Manual check and download until “已下载” (downloaded). */
+/** Manual check and download until “downloaded”. */
 async function toReady(h: Harness): Promise<void> {
   await h.service.check('manual');
   h.service.download();
@@ -801,7 +801,7 @@ describe('节拍器', () => {
     expect(feed.count()).toBe(1);
     h.advance(CHECK_INTERVAL_S * 1000);
     await vi.waitFor(() => expect(feed.count()).toBe(2));
-    // An automatic check while an update is available is silent: it does not enter “正在检查” (checking).
+    // An automatic check while an update is available is silent: it does not enter “checking”.
     expect(h.states.some((s, i) => i > 0 && s.state.k === 'checking' && h.states[i - 1]?.state.k === 'available')).toBe(false);
   });
 

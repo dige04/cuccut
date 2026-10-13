@@ -63,7 +63,7 @@ describe('生成字幕的转录设置', () => {
     expect(picked.explicit).toBe(false);
     expect(picked.option?.key).toBe('local/qwen3-asr-0.6b@mlx-4bit');
     expect(transcribeRequestOptions(DEFAULT_TRANSCRIBE_SETUP, picked)).toEqual({});
-    // Same when there is no default: the Runtime still rejects it as 「没配置」 (not configured) and gives a next step.
+    // Same when there is no default: the Runtime still rejects it as “not configured” and gives a next step.
     expect(transcribeRequestOptions(DEFAULT_TRANSCRIBE_SETUP, pickModel(options, null, null))).toEqual({});
   });
 

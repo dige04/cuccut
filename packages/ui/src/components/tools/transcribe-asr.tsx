@@ -14,7 +14,7 @@ import { GALLERY_COPY, TRANSCRIBE_TOOL_COPY } from './tools-copy.ts';
 
 /*
  * The speech-model block of the transcription page (design mockup tool-transcribe.jsx `AsrFields`): local or online, model, transcription language, a status line, and a link to the models page;
- * the remembered choice is kept in tools-store (kept across sessions). “识别说话人” (identify speakers) only appears when writing into a video (transcribing a file only does not accept `diarize`).
+ * the remembered choice is kept in tools-store (kept across sessions). “identify speakers” only appears when writing into a video (transcribing a file only does not accept `diarize`).
  */
 
 const field = style({ width: 'full' });

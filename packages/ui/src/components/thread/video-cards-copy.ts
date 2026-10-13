@@ -15,7 +15,7 @@ import { tr } from './video-cards-copy.tr.ts';
 import { vi } from './video-cards-copy.vi.ts';
 
 /**
- * The collapsed “之前的 N 项” (“N earlier items”) on the video card (product design §3.2.2; prototype agent-cards.jsx `MovieJobRows`). The English is the source of the keys and types;
+ * The collapsed “N earlier items” on the video card (product design §3.2.2; prototype agent-cards.jsx `MovieJobRows`). The English is the source of the keys and types;
  * the translations are in `video-cards-copy.<language>.ts`. The rest of the card's text is still in `VIDEO_CARD_COPY` in `copy.ts`.
  */
 const en = {

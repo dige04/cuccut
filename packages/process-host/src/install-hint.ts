@@ -11,7 +11,7 @@ import { ProcessHostTools as T } from '@cuccut/protocol/messages/process-host';
 
 export const FFMPEG_DOWNLOAD_URL = 'https://ffmpeg.org/download.html';
 
-/** A hint for installing ffmpeg on this platform (excluding the words “安装 ffmpeg” (install ffmpeg) themselves), e.g. “例如 brew install ffmpeg” (for example: brew install ffmpeg). */
+/** A hint for installing ffmpeg on this platform (excluding the words “install ffmpeg” themselves), e.g. “for example: brew install ffmpeg”. */
 export function ffmpegInstallHint(platform: string = process.platform): string {
   return installHintMessage(platform).text;
 }

@@ -147,10 +147,10 @@ export function dubProgress(parent: JobRecord, jobs: readonly JobRecord[]): DubP
 
 /**
  * Whether a retry spends money again on work already done. `pipelines.retry` continues from the step where it stopped and reuses the outputs of earlier completed steps.
- * - Stopped at “翻译” (translation): this whole step reruns. Batches already translated call the online text model again (`charges`; local and node runs are not billed, so null).
- * - Stopped at “逐句合成” (sentence synthesis): sentences already synthesized are reused. Only the failed and not-yet-synthesized ones are synthesized (`partial`).
+ * - Stopped at “translation”: this whole step reruns. Batches already translated call the online text model again (`charges`; local and node runs are not billed, so null).
+ * - Stopped at “sentence synthesis”: sentences already synthesized are reused. Only the failed and not-yet-synthesized ones are synthesized (`partial`).
  * - Stopped after synthesis (align, apply): the model is not called again (`free`).
- * - Stopped between translation and synthesis: the translation is reused and synthesis has not started, so there is no “再” (again) cost (`free`). Stopped before translation: null.
+ * - Stopped between translation and synthesis: the translation is reused and synthesis has not started, so there is no “again” cost (`free`). Stopped before translation: null.
  */
 export function dubRetryNote(job: JobRecord): 'charges' | 'partial' | 'free' | null {
   const stoppedAt = dubStoppedAt(job);

@@ -50,7 +50,7 @@ export interface PickerRow {
   reason: string | null;
 }
 
-/** Display name of a language tag (`en` → English); "未知语言" (unknown language) when there is none. */
+/** Display name of a language tag (`en` → English); “unknown language” when there is none. */
 export function langLabel(tag: string | null | undefined): string {
   return tag ? langName(tag) : M.unknownLanguage;
 }

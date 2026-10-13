@@ -4,7 +4,7 @@
  *
  * Files, assets and external changes go over same-origin HTTP (the runtime's slide routes, deck-routes.ts), not through the parent window;
  * annotations need the CucCut UI, so they are handed to the parent window via postMessage (comments-bridge.ts).
- * Comment threads, collaboration and agent sessions are left empty, so the runtime takes its own fallback path for “没有这项能力” (no such capability).
+ * Comment threads, collaboration and agent sessions are left empty, so the runtime takes its own fallback path for “no such capability”.
  */
 import { DECK_ROUTES, isPublishError, isWriteEntry, type PublishBatch, type PublishError, type PublishResult, type UploadOptions, type UploadResult, type WirePublishRequest } from '../file-protocol.ts';
 import { bytesOf, toBase64 } from './bytes.ts';

@@ -1,7 +1,7 @@
 //! Words of caption sentences (video format spec §3.8, §5.7): a caption document's sentence uses `words` (`{first, last}` or `{wordIds}`) to point to words in the transcript document (the `sourceDocumentId` in the caption document header).
 //! The kernel receives these words from the effective word stream; word-by-word animation, word-by-word highlighting and designed-caption emphasis (by word ID) all advance by them:
 //!
-//! - Hidden words are not given; cut words (those that project to no point on the timeline) are not given either. When words are removed from a sentence this way, the sentence's text is reassembled from the remaining words (`speech_doc::atomize::join_word_texts`, recognizing the “贴前” (attach-to-previous) flag on words), and a sentence with no words left is not drawn.
+//! - Hidden words are not given; cut words (those that project to no point on the timeline) are not given either. When words are removed from a sentence this way, the sentence's text is reassembled from the remaining words (`speech_doc::atomize::join_word_texts`, recognizing the “attach-to-previous” flag on words), and a sentence with no words left is not drawn.
 //! - Words get their times from the document clock: when the caption is on the source media clock, a word's own source time; when on the sequence clock, the place where the word projects onto the sequence and overlaps this sentence.
 //! - Multi-character CJK words are split character by character using the same rule as the transcript's on-disk form (`speech_doc::build::atomize_timed_word`, sub-ID `<word>~<k>`).
 //! - When a sentence has no `words` (captions generated earlier), it takes the words whose times fall in this sentence for timing, and its text is unchanged.

@@ -688,7 +688,7 @@ fn designed_caption_emphasis_lands_on_transcript_words() {
     // Emphasis is keyed by the transcript word ID: “的” (the particle “de”) is drawn in the emphasis color.
     let (single, x_single, ..) = draw(Some("sp"), hero("w2"));
     assert!(single > 5, "强调的字画成强调色：{single}");
-    // Emphasis written on the multi-character word “说了” (split into `w3` and `w3~1`) lands on every split character: the right edge reaches the right side of “了”, and the left edge is on the left of “了” (“说” is in the emphasis color too).
+    // Emphasis written on the multi-character word “split into `w3` and `w3~1`” lands on every split character: the right edge reaches the right side of “了”, and the left edge is on the left of “了” (“说” is in the emphasis color too).
     let (split, x_split, left, right) = draw(Some("sp"), hero("w3"));
     let (last, _, last_left, last_right) = draw(Some("sp"), hero("w3~1"));
     assert!(split > 5 && last > 5, "{split} {last}");

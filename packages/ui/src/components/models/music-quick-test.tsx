@@ -82,7 +82,7 @@ export interface MusicQuickTestProps {
 }
 
 /**
- * The “试听”(Trial listen) on a music generation row (design mock settings-music.jsx `MusicQuickTest`): only style and form are picked, fixed at 10 seconds, with fewer steps and no arrangement. Submitting sends one real `models.generateMusic` (`provider: 'local'`, `model` is the model package ID). What is tested is whether “this model plus its engine” can produce sound, not a piece of work. Progress and results are read from the `jobs` topic. The selection and the latest result are kept per model (state/music-quick-store.ts).
+ * The “Trial listen” on a music generation row (design mock settings-music.jsx `MusicQuickTest`): only style and form are picked, fixed at 10 seconds, with fewer steps and no arrangement. Submitting sends one real `models.generateMusic` (`provider: 'local'`, `model` is the model package ID). What is tested is whether “this model plus its engine” can produce sound, not a piece of work. Progress and results are read from the `jobs` topic. The selection and the latest result are kept per model (state/music-quick-store.ts).
  * Failures and the “last check did not pass” reminder use the check wording (`TRY_SUBJECT_MUSIC`), and no toast is shown.
  */
 export function MusicQuickTest({ bundleId, name, model, notice = null, canCheck = false, onCheck }: MusicQuickTestProps) {

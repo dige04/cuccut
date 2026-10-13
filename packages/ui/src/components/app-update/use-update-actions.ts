@@ -10,7 +10,7 @@ import { U, type UpdateStep } from './update-copy.ts';
 
 /*
  * Update actions (design settings-update.jsx `act`): the About page, the update window opened from the rail button, and toasts all use the same set. Checking, downloading, canceling and installing are all done by the main process;
- * here they are only forwarded to the host's `updates` surface; “重启并更新” (restart and update) goes through the stop barrier first (architecture design §2.6).
+ * here they are only forwarded to the host's `updates` surface; “restart and update” goes through the stop barrier first (architecture design §2.6).
  */
 
 const failed = (step: UpdateStep) => (error: unknown) =>
@@ -29,7 +29,7 @@ export function installNow(runtime: RuntimeSession): void {
   void updates.install().catch(failed('install'));
 }
 
-/** “现在停止并安装” (stop now and install): first stop the running Agent tasks and cancel the Jobs, and install once both have responded; tasks that cannot be stopped do not block the install (the Runtime still stops them when it exits). */
+/** “stop now and install”: first stop the running Agent tasks and cancel the Jobs, and install once both have responded; tasks that cannot be stopped do not block the install (the Runtime still stops them when it exits). */
 export async function stopAllAndInstall(runtime: RuntimeSession): Promise<void> {
   const tasks = liveBarrierTasks();
   await Promise.allSettled(
@@ -42,7 +42,7 @@ export async function stopAllAndInstall(runtime: RuntimeSession): Promise<void> 
 }
 
 /**
- * “重启并更新” (restart and update): if background tasks are running, it opens the stop barrier; if not, it installs directly.
+ * “restart and update”: if background tasks are running, it opens the stop barrier; if not, it installs directly.
  *
  * The update window (a base-ui modal) and the barrier (a Spectrum alert, react-aria focus scope) are two modal systems
  * that must not stack: base-ui would read a click in the alert as an outside click and both would fight over focus.

@@ -62,7 +62,7 @@ const DESIGN_SYSTEM_PANE: EditorPaneKind = {
 };
 
 /**
- * The design-system tab in the feature pane (docs/design/canvas §10): the design-system editor's iframe with annotations (§10.6). The header has the title, the “标注” (annotations) switch, and “在 Space 中显示” (show in Space).
+ * The design-system tab in the feature pane (docs/design/canvas §10): the design-system editor's iframe with annotations (§10.6). The header has the title, the “annotations” switch, and “show in Space”.
  * The generic parts of the tab (opening, message exchange, saving before sending, jumping, note box) are in `EditorPane`.
  */
 export function DesignSystemPane({ target, conversationId, active }: { target: FileTarget; conversationId: Id | null; active: boolean }) {

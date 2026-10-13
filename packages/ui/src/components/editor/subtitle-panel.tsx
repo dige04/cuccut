@@ -208,7 +208,7 @@ const muted = style({ font: 'ui-sm', color: 'gray-600', paddingY: 24, textAlign:
  * margins between them (the virtual list lays rows out by border-box height); the gap between cards is this layer's 8px top padding, and the first card is also 8px from the top.
  */
 const cueSlot = style({ position: 'relative', paddingTop: 8 });
-/** “并入上一条” (merge into previous) (prototype ui.css .sbseam): straddles the card's top edge and only appears on hover (.cc-cue-seam in editor.css); it takes no layout space. */
+/** “merge into previous” (prototype ui.css .sbseam): straddles the card's top edge and only appears on hover (.cc-cue-seam in editor.css); it takes no layout space. */
 // The card's top edge is 8px below the top of this layer: the button is 20px tall with its top at -2px, so it straddles the line exactly (the focus ring also reaches 4px into the row above, overlapping it).
 const seamRow = style({
   position: 'absolute',
@@ -259,14 +259,14 @@ function captionItemsOf(sequence: Sequence): CaptionItem[] {
     .sort((a, b) => (order.get(a.trackId) ?? 0) - (order.get(b.trackId) ?? 0) || a.span.fromFrame - b.span.fromFrame);
 }
 
-/** Notice when transcription finishes: successful ones have an “撤销” (Undo). */
+/** Notice when transcription finishes: successful ones have an “Undo”. */
 const transcribeToast: TranscribeDeps['toast'] = (kind, message, undo) =>
   ToastQueue[kind](message, undo ? { timeout: 5000, actionLabel: C.undo, onAction: undo, shouldCloseOnAction: true } : { timeout: 5000 });
 
 /**
  * Subtitle panel (prototype §13.2, panel-subtitle.jsx): one subtitle document is one list of cues; editing text, splitting, merging, and find-and-replace are each written as a new version of that document,
- * one action per undo entry. At the top are the style entry card and the track strip for “画面上” (on the picture); the track strip is the only way to pick which subtitle to proofread. When there are no subtitles yet,
- * “生成字幕” (transcribes the clips on the timeline and cuts them into subtitles) or importing a subtitle file (SRT, WebVTT, ASS); while transcribing, the task's stage and progress are shown.
+ * one action per undo entry. At the top are the style entry card and the track strip for “on the picture”; the track strip is the only way to pick which subtitle to proofread. When there are no subtitles yet,
+ * “transcribes the clips on the timeline and cuts them into subtitles” or importing a subtitle file (SRT, WebVTT, ASS); while transcribing, the task's stage and progress are shown.
  */
 export function SubtitlePanel({
   sequence,
@@ -619,7 +619,7 @@ function CueEditor({ record, sequence, items }: { record: DocumentRecord; sequen
   /** Reading speed per cue is computed once: the status bar's over-speed count and the cps on the cards share it. */
   const speeds = useMemo(() => cachedSpeeds(cues, language), [cues, language]);
   const fast = useMemo(() => [...speeds.values()].filter((speed) => speed.level === 'warn' || speed.level === 'bad').length, [speeds]);
-  // Card actions: the cards are memoized, so they call the latest handlers through this stable ref; during playback only the two cards entering or leaving “正在播” (playing) are redrawn.
+  // Card actions: the cards are memoized, so they call the latest handlers through this stable ref; during playback only the two cards entering or leaving “playing” are redrawn.
   const actions = useRef<CueActions>(null!);
   const current = matches.length ? matches[Math.min(matchIndex, matches.length - 1)]! : null;
   useEffect(() => setMatchIndex(0), [query, options]);
@@ -670,7 +670,7 @@ function CueEditor({ record, sequence, items }: { record: DocumentRecord; sequen
   if (body === undefined) return <div className={muted}>{C.readingCues}</div>;
   if (!cues) return <div className={muted}>{C.unsupportedDoc}</div>;
 
-  /** Write a new version: on success the notice has an “撤销” (Undo); on failure, drop the local copy. */
+  /** Write a new version: on success the notice has an “Undo”; on failure, drop the local copy. */
   const write = async (next: Json, label: Localized, done: string) => {
     if (!editable) return;
     setLocal({ base: loaded, body: next });
@@ -718,7 +718,7 @@ function CueEditor({ record, sequence, items }: { record: DocumentRecord; sequen
     void write(result.body, EditLabel.mergeSubtitles(), direction < 0 ? C.mergedUp : C.mergedDown);
     return true;
   };
-  /** “并入上一条” (merge into previous) on a seam: no editing, merges directly. */
+  /** “merge into previous” on a seam: no editing, merges directly. */
   const mergeUp = (cue: ListCue) => {
     const result = mergeCue(source, cue.id, null, -1);
     if ('refused' in result) {
@@ -996,7 +996,7 @@ const CueCard = memo(function CueCard({
   measure: (element: HTMLElement | null) => void;
   /** Total number of cues (the list item's aria-setsize). */
   count: number;
-  /** “并入上一条” (merge into previous) on the top edge: `'merge'` when merging is possible, `'speaker'` when the speakers differ (shows the reason and cannot be clicked), null when it is not shown. */
+  /** “merge into previous” on the top edge: `'merge'` when merging is possible, `'speaker'` when the speakers differ (shows the reason and cannot be clicked), null when it is not shown. */
   seam: 'merge' | 'speaker' | null;
   cue: ListCue;
   index: number;

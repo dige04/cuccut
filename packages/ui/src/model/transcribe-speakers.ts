@@ -15,7 +15,7 @@ import { pl } from './transcribe-speakers.pl.ts';
 import { tr } from './transcribe-speakers.tr.ts';
 import { vi } from './transcribe-speakers.vi.ts';
 
-/** Copy for the 「识别说话人」 (Identify speakers) toggle (translations are in `transcribe-speakers.<language>.ts`). */
+/** Copy for the “Identify speakers” toggle (translations are in `transcribe-speakers.<language>.ts`). */
 const en = {
   packFallback: 'Speaker diarization',
   builtinNote: (model: string) => `${model} tells speakers apart on its own, during transcription`,
@@ -34,10 +34,10 @@ export type TranscribeSpeakersMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /*
- * Under the speech model, 「更多选项 › 识别说话人」 (More options › Identify speakers) (product design §2.7, design mockup model-tool-runs.js `speakerSwitch` / `speakerCopy`,
+ * Under the speech model, “More options › Identify speakers” (product design §2.7, design mockup model-tool-runs.js `speakerSwitch` / `speakerCopy`,
  * tool-transcribe.jsx `AsrMoreOptions`). Shared by the transcription tool page and re-transcription.
  * - The model separates speakers itself (`speakers: 'native'`, MOSS Transcribe): on, locked;
- * - Speakers are separated after transcription with the 「说话人区分」 (speaker diarization) model pack (the description has `diarizationPack`, e.g. Qwen3-ASR, Whisper): can be toggled; when the pack is installed it defaults to on, and when it is not installed it defaults to off,
+ * - Speakers are separated after transcription with the “speaker diarization” model pack (the description has `diarizationPack`, e.g. Qwen3-ASR, Whisper): can be toggled; when the pack is installed it defaults to on, and when it is not installed it defaults to off,
  *   and turning it on without the pack installed requires downloading it first;
  * - No separation (online services, and models without a registered model pack): off, locked.
  * A value the user has set by hand (`pick`) is kept across models; when never set, the defaults above apply.
@@ -51,9 +51,9 @@ export interface SpeakerSwitch {
   on: boolean;
   /** Cannot be toggled (the model separates speakers itself, or does not separate them). */
   locked: boolean;
-  /** On, but 「说话人区分」 (speaker diarization) is not installed: download it first, otherwise it cannot start. */
+  /** On, but “speaker diarization” is not installed: download it first, otherwise it cannot start. */
   missing: boolean;
-  /** After transcription, 「识别说话人」 (Identify speakers) is listed as a separate step (not listed separately when the model separates speakers itself). */
+  /** After transcription, “Identify speakers” is listed as a separate step (not listed separately when the model separates speakers itself). */
   step: boolean;
 }
 

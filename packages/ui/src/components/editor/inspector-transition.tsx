@@ -27,7 +27,7 @@ const tile = style({ width: 'full' });
 const grow = style({ flexGrow: 1, minWidth: 0 });
 
 /**
- * Transition (video format spec §3.9): “进入” (in) is the edge at the start of the clip, and “离开” (out) is the edge at its end. Choosing one applies it immediately (`setTransition`, undoable). Choosing “无” (none) removes it. A neighbor on the same track that is directly adjacent, end to start, can blend with it in time (transitions on both sides). Otherwise the other side is transparent, exposing the track underneath.
+ * Transition (video format spec §3.9): “in” is the edge at the start of the clip, and “out” is the edge at its end. Choosing one applies it immediately (`setTransition`, undoable). Choosing “none” removes it. A neighbor on the same track that is directly adjacent, end to start, can blend with it in time (transitions on both sides). Otherwise the other side is transparent, exposing the track underneath.
  */
 export function TransitionSection({ item, sequence, edit, canChange }: ItemPageProps<Exclude<SequenceItem, { type: 'audio' | 'caption' }>>) {
   const [slot, setSlot] = useState<TransitionSlot>('in');

@@ -1621,7 +1621,7 @@ const LEGACY_DEFAULT_SEQUENCE_NAME = '主序列';
 
 /**
  * The sequence's name for display (video format spec §3.2). The engine's default name is shown in the reader's language, and names the user chose are shown as they are. Videos created before `nameRef` existed
- * stored the Chinese default name "主序列" (main sequence) with no reference. That is also treated as a default name.
+ * stored the Chinese default name “main sequence” with no reference. That is also treated as a default name.
  */
 export function sequenceDisplayName(sequence: Pick<Sequence, 'name' | 'nameRef'>): string {
   const ref = sequence.nameRef ?? (sequence.name === LEGACY_DEFAULT_SEQUENCE_NAME ? { key: 'engine.mainSequence' } : undefined);

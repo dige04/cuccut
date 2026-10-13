@@ -10,7 +10,7 @@ import { jobWaitText, remedyText } from './localized-text.ts';
  * Compress video and merge video (design mockup tool-video.jsx, tool-video-merge.jsx, model-video.js): both pages submit the Runtime's fixed `transcode` pipeline (`pipelines.start`, parent job `kind: 'pipeline'`, four steps: read input → encode → verify output → publish), file to file,
  * run by ffmpeg on this computer, with no upload. This file holds the pure functions for the form, request, record and result; the components only draw.
  *
- * Not possible in the design mockup: compressing to a target size (the UI cannot read the source duration), a frame-rate cap, hardware encoding, removing the audio track, the compatibility banner before submit (the UI has no way to probe an arbitrary file), and choosing 「快速 / 重新编码」 (fast / re-encode) when merging (the Runtime decides itself, and stream-copies only when the parameters match). None of these are drawn; see the notes where they occur.
+ * Not possible in the design mockup: compressing to a target size (the UI cannot read the source duration), a frame-rate cap, hardware encoding, removing the audio track, the compatibility banner before submit (the UI has no way to probe an arbitrary file), and choosing “fast / re-encode” when merging (the Runtime decides itself, and stream-copies only when the parameters match). None of these are drawn; see the notes where they occur.
  */
 
 export const TRANSCODE_PIPELINE = 'transcode';
@@ -19,7 +19,7 @@ export type TranscodeAction = TranscodeParams['action'];
 export type TranscodeCodec = NonNullable<TranscodeParams['codec']>;
 /** Quality preset (design mockup `QUALITIES`): mapped to constant-quality CRF. */
 export type TranscodeQuality = 'smaller' | 'balanced' | 'high';
-/** Target size: by quality (CRF), or by a given video bitrate. The mockup's 「按体积」 (by size) needs the source duration, which the UI cannot read, so it uses a bitrate instead. */
+/** Target size: by quality (CRF), or by a given video bitrate. The mockup's “by size” needs the source duration, which the UI cannot read, so it uses a bitrate instead. */
 export type TranscodeRate = 'quality' | 'bitrate';
 
 /** Form draft for the tool page. File paths are kept only for this run (see tools-store); everything else is remembered with the draft. */
@@ -266,7 +266,7 @@ export function transcodeProblems(draft: TranscodeDraft, action: TranscodeAction
 }
 
 /**
- * Form → `transcode` parameters: give either CRF or the video bitrate, not both; audio extraction gets no video settings. `dir` is the save location for this run (chosen with 「更改…」 (Change…), or given by `tools.list`); when neither is present, `outDir` is not sent, and the Runtime writes to its own save location.
+ * Form → `transcode` parameters: give either CRF or the video bitrate, not both; audio extraction gets no video settings. `dir` is the save location for this run (chosen with “Change…”, or given by `tools.list`); when neither is present, `outDir` is not sent, and the Runtime writes to its own save location.
  */
 export function transcodeRequest(draft: TranscodeDraft, action: TranscodeAction, dir?: string): TranscodeStartParams {
   const outDir = (dir ?? draft.outDir)?.trim();
@@ -294,7 +294,7 @@ export function rejectionText(error: unknown): string {
   return message;
 }
 
-/** One-line summary of the settings: 「原始 · H.264 · 均衡 · 音频 128 kbps」 (original · H.264 · balanced · audio 128 kbps). */
+/** One-line summary of the settings: “original · H.264 · balanced · audio 128 kbps”. */
 export function settingsLine(draft: TranscodeDraft): string {
   const cap = HEIGHT_CAPS.find((h) => h.height === draft.maxHeight);
   const height = cap?.key === 'original' ? M.heightOriginalLong : (cap?.name ?? `${draft.maxHeight}p`);
@@ -361,7 +361,7 @@ export function transcodeAction(job: Pick<JobRecord, 'pipeline'>): TranscodeActi
   return transcodeParams(job)?.action ?? 'compress';
 }
 
-/** Record card title: the output file name once done; before that, the input (「a.mp4」 「a.mp4 等 3 个文件」 ("a.mp4 etc., 3 files") 「a.mp4 + 2 段」 (a.mp4 + 2 segments)). */
+/** Record card title: the output file name once done; before that, the input (「a.mp4」 “a.mp4 etc., 3 files” “a.mp4 + 2 segments”). */
 export function transcodeTitle(job: Pick<JobRecord, 'pipeline' | 'result'>): string {
   const outputs = transcodeOutputs(job);
   if (outputs.length === 1) return fileName(outputs[0]!.path!);
@@ -381,7 +381,7 @@ function qualityName(crf: number, codec: TranscodeCodec): string {
 
 /**
  * The settings line under the record card title (design mockup `jobMeta`): 「压缩 · ≤720p · H.264 · 均衡（CRF 26）」 (compress · ≤720p · H.264 · balanced (CRF 26)), 「合并 3 段 · H.264 · 高画质（CRF 22）」 (merge 3 segments · H.264 · high quality (CRF 22)).
- * When a merge has been decided as stream copy, resolution, codec and quality do not apply, and only 「合并 3 段 · 流复制」 (merge 3 segments · stream copy) is written.
+ * When a merge has been decided as stream copy, resolution, codec and quality do not apply, and only “merge 3 segments · stream copy” is written.
  */
 export function transcodeMeta(job: Pick<JobRecord, 'pipeline'>): string {
   const params = transcodeParams(job);
@@ -410,8 +410,8 @@ export interface TranscodeProgress {
 }
 
 /**
- * The running line (design mockup `progressLine`): while encoding, it reads the sub-job's progress in seconds, 「编码中 0:12 / 0:42 · 28%」 (encoding 0:12 / 0:42 · 28%); for other steps, it writes the step name and its number
- * 「读取输入 · 第 1/4 步」 (reading input · step 1/4). The parent job's progress only counts the steps completed and does not fake a percentage.
+ * The running line (design mockup `progressLine`): while encoding, it reads the sub-job's progress in seconds, “encoding 0:12 / 0:42 · 28%”; for other steps, it writes the step name and its number
+ * “reading input · step 1/4”. The parent job's progress only counts the steps completed and does not fake a percentage.
  */
 export function transcodeProgress(job: Pick<JobRecord, 'pipeline' | 'phase' | 'progress'>, all: readonly JobRecord[]): TranscodeProgress {
   const steps = job.pipeline?.steps ?? [];
@@ -474,7 +474,7 @@ export interface TranscodeResultRow {
   name: string;
   /** 「1920×1080 · 0:42 · H.264 / AAC」 */
   meta: string;
-  /** 「68.4 MB → 21.8 MB（小 68%）」 (68.4 MB → 21.8 MB, 68% smaller); when the source size cannot be read, only the output size is written. */
+  /** “68.4 MB → 21.8 MB, 68% smaller”; when the source size cannot be read, only the output size is written. */
   size: string;
 }
 
@@ -546,14 +546,14 @@ function shellQuote(arg: string): string {
   return /^[\w@%+=:,./-]+$/.test(arg) ? arg : `'${arg.replace(/'/g, `'\\''`)}'`;
 }
 
-/** 「复制这条 ffmpeg 命令」 (Copy this ffmpeg command): the command summary the Runtime recorded (paths reduced to file names); one command per line when there are several. */
+/** “Copy this ffmpeg command”: the command summary the Runtime recorded (paths reduced to file names); one command per line when there are several. */
 export function commandText(job: Pick<JobRecord, 'pipeline'>): string | null {
   const commands = transcodeSummary(job)?.executor.commands;
   if (!commands?.length) return null;
   return commands.map((args) => ['ffmpeg', ...args].map(shellQuote).join(' ')).join('\n');
 }
 
-/** Status word: while running, write 「处理中」 (processing), not 「生成中」 (generating); the rest is the same as other tools. */
+/** Status word: while running, write “processing”, not “generating”; the rest is the same as other tools. */
 export function transcodeStateWord(job: Pick<JobRecord, 'state' | 'endedAt'>): string | null {
   if (jobLive(job)) return job.state === 'queued' ? M.stateQueued : M.stateProcessing;
   return null;
@@ -598,7 +598,7 @@ function nearestQuality(crf: number, codec: TranscodeCodec): TranscodeQuality {
   return best;
 }
 
-/** 「带回左边再来一版」 (Bring back to the left and try again): frozen parameters → form. When the CRF is not a preset, the closest preset is used. */
+/** “Bring back to the left and try again”: frozen parameters → form. When the CRF is not a preset, the closest preset is used. */
 export function againTranscodeDraft(job: Pick<JobRecord, 'pipeline'>, blank: TranscodeDraft): TranscodeDraft | null {
   const params = transcodeParams(job);
   if (!params) return null;

@@ -1,6 +1,6 @@
 /**
  * Family names of the fonts shipped with the render kernel (`BUNDLED_FONT_FILES` in `crates/frame-render`; the files are in `crates/render-raster/assets/fonts`).
- * When typesetting, these families always use the kernel's own copy (never a locally installed or downloaded one), so the font picker marks them “随内核” (bundled with the kernel) and does not download them.
+ * When typesetting, these families always use the kernel's own copy (never a locally installed or downloaded one), so the font picker marks them “bundled with the kernel” and does not download them.
  * The test that checks these family names against the files is in `bundled-fonts.test.ts`.
  */
 export const BUNDLED_FONT_FAMILIES: readonly string[] = [

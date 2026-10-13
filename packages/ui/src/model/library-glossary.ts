@@ -50,7 +50,7 @@ const en = {
   merged: (n: number) => `${terms(n)} already in the glossary`,
   overflow: (n: number, limit: number) => `${terms(n)} not added: a glossary can hold up to ${limit} terms`,
   fileName: 'Glossary',
-  /** The separator between several misheard forms in one cell (`splitMisheard` recognizes these). Do not use a list format with “和 / and” (“and”), so that no extra word is read back. */
+  /** The separator between several misheard forms in one cell (`splitMisheard` recognizes these). Do not use a list format with “and”, so that no extra word is read back. */
   misheardSeparator: ', ',
 };
 export type LibraryGlossaryMessages = typeof en;

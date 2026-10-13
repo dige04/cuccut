@@ -12,7 +12,7 @@ import { ST } from './start-copy.ts';
 import { jobErrorText } from '../../model/localized-text.ts';
 
 /**
- * The “更新” (Update) section in the download tool card (product design §2.7; design draft tool-link.jsx `UpdateSection`): based on the detected install method, it shows one line of command,
+ * The “Update” section in the download tool card (product design §2.7; design draft tool-link.jsx `UpdateSection`): based on the detected install method, it shows one line of command,
  * with Run (triangle) and Copy on the right. What you see is the command that will run; pressing Run runs it with no further confirmation; while it runs, the triangle becomes Stop and the output shows below the command.
  * When the install method cannot be determined, common commands for the Runtime's host platform are listed (four for Windows, three for other systems); where admin rights are needed, the command the Runtime wrote is given
  * (with `sudo` on macOS and Linux). These can only be copied. Status and actions are passed in from the card.

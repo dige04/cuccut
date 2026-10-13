@@ -7,7 +7,7 @@ import { ToolPage } from './tool-parts.tsx';
 import { PLANNED_COPY } from './tools-copy.ts';
 
 /**
- * A tool with no backend yet (subtitle translation): when deep-linked to, it honestly says “即将推出” (Coming soon) and why, and does not draw an operable form
+ * A tool with no backend yet (subtitle translation): when deep-linked to, it honestly says “Coming soon” and why, and does not draw an operable form
  * (the form in design file tool-llm.jsx waits until the capability is connected).
  */
 export function PlannedTool({ tool, reason }: { tool: ToolInfo; reason: string }) {

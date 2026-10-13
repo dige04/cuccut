@@ -20,7 +20,7 @@ import { CODEX_CARD_COPY, CLOUD_COPY, MODELS_PAGE_COPY } from './models-copy.ts'
 import { PANEL } from '../settings/settings-ui.tsx';
 
 /**
- * Two places on the models page use “用 Codex 画图”(Draw with Codex): the first card in the cloud provider list of the image generation page (design mock settings-cloud.jsx:278-298), and “Codex CLI · 画图”(Codex CLI · Draw) in the default model menu. The toggle, whether it can be opened, and the reason why all reuse the pure functions and commands of the 设置 › Agent (Settings › Agent) row (A2-e), rather than a separate copy. The page also probes once on entry (probes again after Codex is re-detected, upgraded or logged in).
+ * Two places on the models page use “Draw with Codex”: the first card in the cloud provider list of the image generation page (design mock settings-cloud.jsx:278-298), and “Codex CLI · Draw” in the default model menu. The toggle, whether it can be opened, and the reason why all reuse the pure functions and commands of the 设置 › Agent (Settings › Agent) row (A2-e), rather than a separate copy. The page also probes once on entry (probes again after Codex is re-detected, upgraded or logged in).
  */
 export function useCodexImage(active: boolean): { connected: boolean; state: CodexImageRowState | null; registered: boolean } {
   const runtime = useRuntime();
@@ -70,7 +70,7 @@ const body = style({ marginTop: 2, marginBottom: 0, font: 'ui-xs', color: 'gray-
 const controls = style({ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 });
 
 /**
- * The first card in the cloud provider list of the image generation page: when it can be turned on, it shows a toggle; when it cannot (not installed, not logged in, too old), it shows “去设置 › Agent”(Go to Settings › Agent). Turning the toggle off does not clear the default value.
+ * The first card in the cloud provider list of the image generation page: when it can be turned on, it shows a toggle; when it cannot (not installed, not logged in, too old), it shows “Go to Settings › Agent”. Turning the toggle off does not clear the default value.
  * In the browser the toggle is greyed out (`models.configure` is not on the Web allowlist); the note in the page header already gives the reason.
  */
 export function CodexImageCard({ codex, isDefault }: { codex: ReturnType<typeof useCodexImage>; isDefault: boolean }) {

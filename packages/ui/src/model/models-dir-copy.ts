@@ -88,7 +88,7 @@ const en = {
   appliedMoving: (where: string) => `Started moving models to ${where}`,
   appliedKept: (where: string) => `Models folder changed to ${where} · Files at the old location are kept`,
   applied: (where: string) => `Models folder changed to ${where}`,
-  /** Move progress; `to` is the shortened target directory, and `amount` is “已移 / 总量” (moved / total). */
+  /** Move progress; `to` is the shortened target directory, and `amount` is “moved / total”. */
   moveWaiting: (to: string | null) => `Waiting to start moving${to ? ` to ${to}` : ''}…`,
   moveValidating: (amount: string | null) => `Verifying the copied files${amount ? ` (${amount})` : ''}…`,
   movePublishing: 'Finishing the move…',

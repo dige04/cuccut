@@ -259,7 +259,7 @@ export function DirectRunView({ run }: { run: AiToolRun }) {
 
 // ---- Result ----
 
-/** Tools that only give a result: body verbatim, copy, 「完成」 (Done) (back to the settings state; the prompt box is still there). */
+/** Tools that only give a result: body verbatim, copy, “Done” (back to the settings state; the prompt box is still there). */
 export function DirectResultView({ runKey: key, result, model }: { runKey: string; result: AiToolResult; model: string }) {
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -304,7 +304,7 @@ export function DirectResultView({ runKey: key, result, model }: { runKey: strin
   );
 }
 
-/** Tools that write into the video: how many places changed, one-click undo, 「完成」 (Done). */
+/** Tools that write into the video: how many places changed, one-click undo, “Done”. */
 export function DirectReceiptView({ runKey: key, receipt }: { runKey: string; receipt: AiToolReceipt }) {
   const changes = receipt.summary.applied?.changes ?? 0;
   const text = !changes ? C.appliedNothing : receipt.tool === 'chapters' ? C.appliedChapters(changes) : C.appliedPolish(changes);

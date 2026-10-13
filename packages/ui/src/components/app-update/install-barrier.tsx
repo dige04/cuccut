@@ -9,9 +9,9 @@ import { useTasks } from '../../state/tasks-store.ts';
 import { stopAllAndInstall } from './use-update-actions.ts';
 
 /*
- * Stop barrier before install (architecture design §2.6; confirmation in the design's settings-update.jsx `restart`): when “重启并更新” (restart and update) is clicked while background tasks are still running,
- * it asks first — “现在停止并安装” (stop now and install) stops the Agent tasks and cancels the Jobs, then hands off to the main process to install; “等任务结束后安装” (install after tasks finish) records the wait and installs automatically once all tasks have finished;
- * “稍后” (later) does nothing. Tasks that may still run or keep billing on the remote after being stopped are listed in the body.
+ * Stop barrier before install (architecture design §2.6; confirmation in the design's settings-update.jsx `restart`): when “restart and update” is clicked while background tasks are still running,
+ * it asks first — “stop now and install” stops the Agent tasks and cancels the Jobs, then hands off to the main process to install; “install after tasks finish” records the wait and installs automatically once all tasks have finished;
+ * “later” does nothing. Tasks that may still run or keep billing on the remote after being stopped are listed in the body.
  */
 
 const para = style({ marginBottom: 0, marginTop: { default: 0, ':nth-child(n+2)': 12 } });

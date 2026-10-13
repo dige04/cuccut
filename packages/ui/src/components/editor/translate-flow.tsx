@@ -141,7 +141,7 @@ export function useVideoSelection(runtime: RuntimeSession, videoId: Id, document
 }
 
 /**
- * Translation settings page (prototype panel-aitools-flows.jsx `TranslateFlow`): target language, source, text model, style hints, glossary entries enabled for the video, and bilingual display. “Translate to X” submits `pipelines.start`. It is a page of its own: it is entered from the subtitle track bar's “＋ 翻译成…” (Add: translate to…), and the tools page's “Translate subtitles” also leads here.
+ * Translation settings page (prototype panel-aitools-flows.jsx `TranslateFlow`): target language, source, text model, style hints, glossary entries enabled for the video, and bilingual display. “Translate to X” submits `pipelines.start`. It is a page of its own: it is entered from the subtitle track bar's “Add: translate to…”, and the tools page's “Translate subtitles” also leads here.
  * If no text model is configured, it explains that in place and gives a route to “Models › Text generation”. The start button is not greyed out.
  */
 export function TranslateFlow({

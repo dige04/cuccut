@@ -152,7 +152,7 @@ export function useAddTextBox(sequence: Sequence): () => void {
 }
 
 /**
- * Text panel (prototype §13.5, 51 presets): “添加文本框” (add text box) adds four categories of presets; “全部” (all) shows only the first few cells of each category.
+ * Text panel (prototype §13.5, 51 presets): “add text box” adds four categories of presets; “all” shows only the first few cells of each category.
  * Clicking a cell creates this group of text at the playhead (multi-layer text appears staggered) and selects the first text item. The box is measured by the render kernel: if the kernel has not loaded yet or is reloading, wait for it,
  * then create using the sequence as it is at that point (the sequence may have changed while waiting); if the kernel fails to load, show a notice and create nothing.
  */

@@ -105,7 +105,7 @@ describe('工具的可用性', () => {
       available: false,
       problems: [{ code: 'TOOL_CONSENT_REQUIRED', tool: 'yt-dlp' }],
     });
-    // Transcription does not need a download tool (links go through “从链接导入” (import from link)).
+    // Transcription does not need a download tool (links go through “import from link”).
     expect(byId(statuses, 'transcribe')).toMatchObject({ available: true, limitations: [] });
     // External tools used only for certain inputs: available, with the limitation stated.
     const optional = { ...structuredClone(TOOL_CATALOGUE[0]!), id: 'optional-tool', optionalExternalTools: ['yt-dlp'] };

@@ -14,7 +14,7 @@ const stack = style({ display: 'flex', flexDirection: 'column', gap: 8 });
 
 /**
  * Turn footer (product design §3.2.2): a turn runs from one user message until the next; the footer hangs below the last row of that turn.
- * The status comes from task events, not from what the model said (architecture design §11.3). While in progress, “正在工作 · 0:42” (Working · 0:42) ticks every second, and only the timer widget re-renders itself. While waiting for approval, “等你允许 · 0:42” (Waiting for your approval · 0:42). When done, “已工作 1:03” (Worked 1:03); on hover it switches to the end time. On the right is a copy of this turn's reply body (Markdown source, excluding tools and thinking).
+ * The status comes from task events, not from what the model said (architecture design §11.3). While in progress, “Working · 0:42” ticks every second, and only the timer widget re-renders itself. While waiting for approval, “Waiting for your approval · 0:42”. When done, “Worked 1:03”; on hover it switches to the end time. On the right is a copy of this turn's reply body (Markdown source, excluding tools and thinking).
  * `recover`: this is the last task in the session, it failed, and the session is idle, so the recovery area is attached below.
  */
 export const TaskFooter = memo(function TaskFooter({

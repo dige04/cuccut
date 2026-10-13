@@ -12,7 +12,7 @@ import { ELEMENTS_COPY as EL } from './elements-copy.ts';
 export interface InsertRequest {
   span: FrameSpan;
   layers: readonly VisualLayer[];
-  /** Name used in undo records and hints (“贴纸 · 心形” (Sticker · Heart)). */
+  /** Name used in undo records and hints (“Sticker · Heart”). */
   label: string;
   /** What the newly created track is called. */
   trackName?: string;
@@ -21,7 +21,7 @@ export interface InsertRequest {
 }
 
 /**
- * “Click to create” from the Elements and Text panels (prototype §14): create at the playhead, select it, and switch to the property page. The hint includes start and end, plus “撤销” (Undo).
+ * “Click to create” from the Elements and Text panels (prototype §14): create at the playhead, select it, and switch to the property page. The hint includes start and end, plus “Undo”.
  * The receipt can arrive before the video event, so the ID to select is taken from the receipt; then tracks and documents are filtered by the new video.
  */
 export function useInsertVisual(): (sequence: Sequence, request: InsertRequest) => Promise<void> {

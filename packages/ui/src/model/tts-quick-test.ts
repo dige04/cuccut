@@ -460,7 +460,7 @@ export function voiceLabel(model: SpeechModelInfo, pick: QuickPick, mine: readon
 }
 
 /**
- * Result line: “Vivian · 热情洋溢 · 中文 · 用时 1.6 秒 · 音频 3.9 秒” (Vivian · enthusiastic · Chinese · took 1.6 s · audio 3.9 s). When the line is not an introduction, the kind is written; a self-written line is written as “自定义文本” (custom text).
+ * Result line: “Vivian · enthusiastic · Chinese · took 1.6 s · audio 3.9 s”. When the line is not an introduction, the kind is written; a self-written line is written as “custom text”.
  * Time taken and audio duration both come from the task's real numbers; when absent, they are not written.
  */
 export function quickSummary(

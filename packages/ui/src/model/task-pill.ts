@@ -5,9 +5,9 @@ import type { TaskRow } from './task-list.ts';
 
 /**
  * Task pill and hover card (prototype model-task-pill.js). One invariant: **the “+N” on the pill and the rows in the card come from the same table**.
- * The pill shows the head entry, and “+N” is the count of the rest; the card draws the whole table, up to CARD_MAX rows, with the remainder as one line, “还有 N 个” (“N more”).
+ * The pill shows the head entry, and “+N” is the count of the rest; the card draws the whole table, up to CARD_MAX rows, with the remainder as one line, “N more”.
  *
- * The prototype's “这个项目” (“this project”) is here the video open in the editor (`videoId`): a Job records its video, while an agent task belongs to a session and has no video,
+ * The prototype's “this project” is here the video open in the editor (`videoId`): a Job records its video, while an agent task belongs to a session and has no video,
  * so with `mineOnly` agent tasks do not go into the pill (they are in the adjacent session).
  */
 
@@ -84,7 +84,7 @@ export interface PillCardRow {
 
 /** One row of the card. */
 export function pillRow(row: TaskRow, videoId: Id | null | undefined, now: number): PillCardRow {
-  // Under one minute (same threshold as “刚刚” (“just now”) in `agoLabel`) is written as “刚开始” (“just started”), without relying on comparing displayed text.
+  // Under one minute (same threshold as “just now” in `agoLabel`) is written as “just started”, without relying on comparing displayed text.
   const justStarted = Math.max(0, now - Date.parse(row.startedAt)) < 60_000;
   const when = justStarted ? TASK_PILL_COPY.justStarted : TASK_PILL_COPY.startedAt(agoLabel(row.startedAt, now));
   return {

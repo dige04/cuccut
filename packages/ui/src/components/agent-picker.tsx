@@ -120,7 +120,7 @@ export function AgentPicker({ drivers, driverId, model, effort, lockedTo, compac
           </Header>
           {rows.map((row) => {
             const driver = list.find((d) => d.id === row.id)!;
-            // Prototype: each row starts with the Agent's icon, with a check to the right of the current one's name; unusable rows end with a “下载 / 警示 / 设置” (download / warning / settings) icon depending on the reason (usable rows end with S2's built-in submenu arrow).
+            // Prototype: each row starts with the Agent's icon, with a check to the right of the current one's name; unusable rows end with a “download / warning / settings” icon depending on the reason (usable rows end with S2's built-in submenu arrow).
             const item = (id: string) => (
               <MenuItem key={id} id={id} textValue={row.name}>
                 <AgentProviderIcon driver={driver} />
@@ -166,7 +166,7 @@ export function AgentPicker({ drivers, driverId, model, effort, lockedTo, compac
   );
 }
 
-/** Second level: the first item is labelled “模型” (Model), meaning the Agent's default model, followed by its model list; below that are the reasoning effort options for this model (omitted if there are none). */
+/** Second level: the first item is labelled “Model”, meaning the Agent's default model, followed by its model list; below that are the reasoning effort options for this model (omitted if there are none). */
 function ModelMenu({
   driver,
   model,

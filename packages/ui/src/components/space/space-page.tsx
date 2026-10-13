@@ -248,7 +248,7 @@ function SpaceMain({ category, projectId, from }: { category: SpaceCategory; pro
   const [infoId, setInfoId] = useState<Id | null>(null);
   const [dialog, setDialog] = useState<SpaceDialogState | null>(null);
   const [rebuilding, setRebuilding] = useState(false);
-  // From tool results or the task detail's “在 Space 中查看” (View in Space): once the item arrives, open its viewer.
+  // From tool results or the task detail's “View in Space”: once the item arrives, open its viewer.
   const focus = useSpaceFocus((s) => s.focus);
   useEffect(() => {
     const id = takeSpaceFocus((id) => entries.some((e) => e.id === id));
@@ -262,7 +262,7 @@ function SpaceMain({ category, projectId, from }: { category: SpaceCategory; pro
     () => viewEntries(entries, { category, projectId, search: query, sort, status, from }),
     [entries, category, projectId, query, sort, status, from],
   );
-  // “N 支短视频” (N shorts) on a parent video card / row.
+  // “N shorts” on a parent video card / row.
   const shorts = useMemo(() => {
     const counts = new Map<Id, number>();
     for (const entry of entries) {
@@ -297,7 +297,7 @@ function SpaceMain({ category, projectId, from }: { category: SpaceCategory; pro
   const viewingConversation = viewingConversationId ? conversations.find((c) => c.id === viewingConversationId) : undefined;
   const filtered = query.trim() !== '' || projectId !== null || status !== 'any' || !!from;
   const fromName = from ? (videoNames.get(from) ?? untitled()) : null;
-  // Content hits are searched only within videos and “全部” (All) (architecture design §5.11: the content index is built only on videos).
+  // Content hits are searched only within videos and “All” (architecture design §5.11: the content index is built only on videos).
   const searchContent = query.trim() !== '' && (category === 'all' || category === 'video');
 
   const sourceOf = (entry: SpaceEntry) => sourceLabel(entry, dirs, untitled(), videoNames);
@@ -311,7 +311,7 @@ function SpaceMain({ category, projectId, from }: { category: SpaceCategory; pro
 
   const setTrashed = (entry: SpaceEntry, trashed: boolean) => runtime.updateSpaceEntry(entry.id, { trashed });
 
-  // A notice with “撤销” (Undo) does not disappear on its own (Spectrum toasts with actions do not time out); when the item is restored from the trash, close it so no stale undo is left behind.
+  // A notice with “Undo” does not disappear on its own (Spectrum toasts with actions do not time out); when the item is restored from the trash, close it so no stale undo is left behind.
   const undoToasts = useRef(new Map<Id, () => void>());
   const closeUndo = (id: Id) => {
     undoToasts.current.get(id)?.();
@@ -393,7 +393,7 @@ function SpaceMain({ category, projectId, from }: { category: SpaceCategory; pro
   };
 
   /**
-   * Second-pass editing (product design §4.6; architecture design §5.7 “从成片回到视频” (back from the finished cut to the video)): where to go is answered by `space.openForEdit`.
+   * Second-pass editing (product design §4.6; architecture design §5.7 “back from the finished cut to the video”): where to go is answered by `space.openForEdit`.
    * Back to the source video: if the source has changed, explain the differences first; create a video from it: create a new blank video, then import this file and place it on the main sequence.
    */
   const edit = async (entry: SpaceEntry) => {
@@ -452,7 +452,7 @@ function SpaceMain({ category, projectId, from }: { category: SpaceCategory; pro
     if (entry.kind !== 'video' || entry.user.trashedAt || entry.status === 'generating' || entry.status === 'failed') return null;
     return spaceTranscribeAction(transcribeState(videoIdOf(entry), jobs), transcribed(entry.id), entry.status === 'missing');
   };
-  /** Open the transcription tool page with this video preselected; “重试转录…” (Retry transcription…) carries the failed run (prefilled parameters, and explains the reason). */
+  /** Open the transcription tool page with this video preselected; “Retry transcription…” carries the failed run (prefilled parameters, and explains the reason). */
   const openTranscribe = (entry: SpaceEntry) => {
     const failedJob = transcribeAction(entry) === 'retry' ? failedTranscribeJob(videoIdOf(entry), jobs) : null;
     const tools = useVideoTools.getState();
@@ -926,7 +926,7 @@ function NewMenu({ projectId, onImport }: { projectId: Id | null; onImport: () =
   };
   const choices = projects.filter((p) => !p.archived).sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
 
-  /** When no project is filtered, “新建空视频”, “从文件新建视频” and “从便携包新建视频” (New blank video, New video from file, New video from portable package) each get a project-selection submenu. */
+  /** When no project is filtered, “新建空视频”, “从文件新建视频” and “New blank video, New video from file, New video from portable package” each get a project-selection submenu. */
   const projectMenu = (id: 'blank' | 'file' | 'package', Icon: ComponentType, label: string, hint: string, run: (projectId: Id) => unknown) =>
     owner ? (
       <MenuItem id={id} textValue={label}>

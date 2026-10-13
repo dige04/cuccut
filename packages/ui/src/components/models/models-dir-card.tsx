@@ -242,7 +242,7 @@ type Phase =
   { kind: 'checking' } | { kind: 'ready'; inspection: ModelsDirInspection; plan: ChangePlan } | { kind: 'failed'; message: string };
 
 /**
- * Change confirmation box: first inspects the chosen folder read-only (`models.inspectDir`), and says how many models are already in it and how much disk space is available. When the current directory has models, it offers a choice between “移过去”(Move it there) and “只切换位置”(Only switch location). If the Runtime rejects it, the reason stays in the box. A `target` of null means restoring the default location.
+ * Change confirmation box: first inspects the chosen folder read-only (`models.inspectDir`), and says how many models are already in it and how much disk space is available. When the current directory has models, it offers a choice between “Move it there” and “Only switch location”. If the Runtime rejects it, the reason stays in the box. A `target` of null means restoring the default location.
  */
 function ChangeDialog({
   target,

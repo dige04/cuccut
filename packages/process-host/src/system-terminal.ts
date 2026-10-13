@@ -14,7 +14,7 @@ import { ProcessHostTools as T } from '@cuccut/protocol/messages/process-host';
  * - Windows: `cmd.exe /c start "" cmd.exe /k <command>`. (Unverified: no real Windows environment test.)
  * - Linux: tries `x-terminal-emulator -e`, `gnome-terminal --`, `konsole -e`, `xterm -e` in turn, and returns `unsupported` if none of them is on PATH. (Unverified: no real Linux desktop test.)
  *
- * The command is a fixed string the caller takes from the Agent's probe result, not something given by a user or a web page; it still accepts only a single line, and the hint line (“CucCut：运行 <命令>” (CucCut: run <command>)) is escaped with shell single quotes.
+ * The command is a fixed string the caller takes from the Agent's probe result, not something given by a user or a web page; it still accepts only a single line, and the hint line (“CucCut: run <command>”) is escaped with shell single quotes.
  */
 
 export type TerminalStatus = 'opened' | 'unsupported';

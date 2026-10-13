@@ -317,9 +317,9 @@ export class GrantService implements JobAdmission {
   }
 
   /**
-   * Issues grants after approval is given (§12.5). Returns the grant this call must cite: the “只这一次” (this time only) grant, or the newly issued persistent grant.
+   * Issues grants after approval is given (§12.5). Returns the grant this call must cite: the “this time only” grant, or the newly issued persistent grant.
    * - If `choice` is not given, or `persist: false`: a grant covering only this call (amount unknown). If `taskId` is given, it belongs only to that task.
-   * - `persist: true`: a persistent grant (by default covering only this video). If an amount cap is given but this model cannot estimate amounts, the persistent grant is still issued, and this call uses a separate “只这一次” (this time only) grant (amount unknown), so that this call is not rejected with `BUDGET_UNVERIFIABLE`.
+   * - `persist: true`: a persistent grant (by default covering only this video). If an amount cap is given but this model cannot estimate amounts, the persistent grant is still issued, and this call uses a separate “this time only” grant (amount unknown), so that this call is not rejected with `BUDGET_UNVERIFIABLE`.
    */
   issueForApproval(
     item: GrantRequestItem,
@@ -386,7 +386,7 @@ export class GrantService implements JobAdmission {
   }
 
   /**
-   * If submission is rejected after issuing (parameter check, model unavailable, or quota taken by concurrent calls): the call did not happen, so the unused “只这一次” (this time only) grants issued for it are revoked, so an unusable one is not left in the list. Persistent grants are untouched, since the user chose to issue them.
+   * If submission is rejected after issuing (parameter check, model unavailable, or quota taken by concurrent calls): the call did not happen, so the unused “this time only” grants issued for it are revoked, so an unusable one is not left in the list. Persistent grants are untouched, since the user chose to issue them.
    */
   discardUnused(grantId: Id): void {
     const grant = this.store.get(grantId);
@@ -395,7 +395,7 @@ export class GrantService implements JobAdmission {
     this.store.revoke(grantId);
   }
 
-  /** Submitted with a just-issued grant: when submission is rejected, the unused “只这一次” (this time only) grant is revoked (`discardUnused`), and the error is rethrown as is. */
+  /** Submitted with a just-issued grant: when submission is rejected, the unused “this time only” grant is revoked (`discardUnused`), and the error is rethrown as is. */
   async submitWith<T>(hint: { grantId?: Id } | undefined, submit: () => Promise<T>): Promise<T> {
     try {
       return await submit();

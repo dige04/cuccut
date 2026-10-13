@@ -28,7 +28,7 @@ import { tr } from './task-facts.tr.ts';
 import { vi } from './task-facts.vi.ts';
 import { remedyHintText } from './localized-text.ts';
 
-/** Row names of the “详情” (Details) table, and the row for the image generation request (translations are in `task-facts.<语言>.ts`). */
+/** Row names of the “Details” table, and the row for the image generation request (translations are in `task-facts.<语言>.ts`). */
 const en = {
   fact: {
     kind: 'Type',
@@ -48,7 +48,7 @@ export type TaskFactsMessages = typeof en;
 const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
 
 /**
- * Task detail facts (prototype model-task-facts.js): the “详情” (Details) table, the remedy destinations for the error card, and the output rows.
+ * Task detail facts (prototype model-task-facts.js): the “Details” table, the remedy destinations for the error card, and the output rows.
  * Only rows with real data are produced; a missing value is not filled with a placeholder. Items that have no backend in the prototype (cost, call records, row count, frames and speed, estimated time remaining) are not produced.
  */
 
@@ -79,13 +79,13 @@ export function secs(ms: number): string {
 }
 
 /**
- * Status cell of the “详情” (Details) table (prototype `statusLabel`): a running task shows “进行中” (“In progress”), with the stage and percentage shown in the progress bar and in the “阶段” (Stage) cell;
+ * Status cell of the “Details” table (prototype `statusLabel`): a running task shows “In progress”, with the stage and percentage shown in the progress bar and in the “Stage” cell;
  * tasks waiting for approval, stopping, or already ended are shown as their chip shows them.
  */
 function factStatus(row: TaskRow): string {
   if (row.queued) return TASK_VIEW_COPY.queued;
   if (row.waiting) return row.label;
-  // Running tasks that can be stopped or cancelled; a task that is stopping has no action to take, so it shows “正在停止” (“Stopping”) as its chip does.
+  // Running tasks that can be stopped or cancelled; a task that is stopping has no action to take, so it shows “Stopping” as its chip does.
   if (row.live && row.action) return TASK_VIEW_COPY.running;
   return row.label;
 }
@@ -104,7 +104,7 @@ function submitterLabel(job: JobRecord): string {
 }
 
 /**
- * “详情” (Details) row `[label, value]` (prototype `details`): type, initiator, status, started at, running on, language, stage, image, duration.
+ * “Details” row `[label, value]` (prototype `details`): type, initiator, status, started at, running on, language, stage, image, duration.
  * Duration: for ended tasks it is computed from the end time; for running tasks it is computed live from `now`; for tasks still queued it is not written.
  */
 export function taskFacts(row: TaskRow, source: { job?: JobRecord; task?: TaskSummary }, now: number): FactRow[] {
@@ -245,7 +245,7 @@ export interface OutputRow {
   mediaType: string | null;
   /** The imported video becomes a media asset. */
   imported: boolean;
-  /** Files written to disk (exports): the full path, used by “在文件夹中显示” (“Show in folder”); outputs that exist only in the artifact library have none. */
+  /** Files written to disk (exports): the full path, used by “Show in folder”; outputs that exist only in the artifact library have none. */
   path: string | null;
 }
 

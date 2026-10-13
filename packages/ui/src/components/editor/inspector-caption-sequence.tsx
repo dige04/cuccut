@@ -51,7 +51,7 @@ const samePalette = (a: SequencePalette, b: SequencePalette) =>
 const pct = (value: number) => Math.round(value * 100);
 
 /**
- * Caption properties page “倒鸭子” (reverse) (prototype panel-daoyazi.jsx; caption style model design §6 / §9): when `layout.mode === 'sequence'`, it replaces the “当前词” (current word) and “动效” (motion) sections. The options for the whole track (presets, dynamics, color scheme, “换一版” (another version), camera and layout) are stored in `wordAnimation.caption`. Only camera keys the user has changed are written; explicitly written keys override the preset.
+ * Caption properties page “reverse” (prototype panel-daoyazi.jsx; caption style model design §6 / §9): when `layout.mode === 'sequence'`, it replaces the “current word” and “motion” sections. The options for the whole track (presets, dynamics, color scheme, “another version”, camera and layout) are stored in `wordAnimation.caption`. Only camera keys the user has changed are written; explicitly written keys override the preset.
  *
  * TODO (per-segment operations): rerolling only the current animation segment (`seqSeeds`), hero words, segment breaks and fixed lines need to be recorded per paragraph instance. Studio style has no place for them yet, so they are not shown for now.
  */

@@ -540,7 +540,7 @@ fn paired_prompt_instructions(
 fn internal_clause_seam(text: &str, lang: &str) -> Option<String> {
     let chars: Vec<char> = text.chars().collect();
     for (index, ch) in chars.iter().enumerate() {
-        // The enumeration comma (、) usually joins an inseparable parallel structure (“说服、取胜” (persuade, win)). It must not be treated as safely re-splittable evidence merely to balance numbers. The dash (——) is a legitimate clause seam: in G1 verification, "完全属于你——这意味着…" ("entirely yours — this means…") passed the fit round in one go only because the dash was recognised as a seam.
+        // The enumeration comma (、) usually joins an inseparable parallel structure (“persuade, win”). It must not be treated as safely re-splittable evidence merely to balance numbers. The dash (——) is a legitimate clause seam: in G1 verification, “entirely yours — this means…” passed the fit round in one go only because the dash was recognised as a seam.
         if !matches!(ch, '，' | '；' | '：' | '—' | ',' | ';' | ':') {
             continue;
         }
@@ -4157,7 +4157,7 @@ fn contains_cjk_clause_predicate(text: &str) -> bool {
     contains_parallel_action(text) || PREDICATE_MARKERS.iter().any(|marker| text.contains(marker))
 }
 
-/// The paired-density guard is more conservative than general fit splitting. The left side of a Chinese comma must carry a high-confidence predicate, to avoid mistaking an adverbial fronted fragment such as「实际操作中，| 因为…」("in actual operation, | because…") for a complete clause. Colons, semicolons and dashes remain self-sufficient, strong semantic seams.
+/// The paired-density guard is more conservative than general fit splitting. The left side of a Chinese comma must carry a high-confidence predicate, to avoid mistaking an adverbial fronted fragment such as“in actual operation, | because…” for a complete clause. Colons, semicolons and dashes remain self-sufficient, strong semantic seams.
 fn paired_clause_seam(text: &str, lang: &str) -> Option<String> {
     let chars: Vec<char> = text.chars().collect();
     for (index, ch) in chars.iter().enumerate() {
@@ -6177,7 +6177,7 @@ fn validate_target_texts_with_allowed_list_seams(
     }
     let text_refs: Vec<&str> = texts.iter().map(String::as_str).collect();
     let lint = lint_pieces(&text_refs, lang, params);
-    // Dangling tails and clinging heads are objective defects (“拆分给 |” ("split off to |"), “类似 | 于…” ("similar to | …")). The G3 baseline measured that weak workers reliably produce them and that they get stored, so they are upgraded to a send-back, with the concrete piece text in the problems. Flashing fragments, aim-band and balance remain hints only, because trade-offs in length often have no objective unique solution.
+    // Dangling tails and clinging heads are objective defects (“split off to |”, “similar to | …”). The G3 baseline measured that weak workers reliably produce them and that they get stored, so they are upgraded to a send-back, with the concrete piece text in the problems. Flashing fragments, aim-band and balance remain hints only, because trade-offs in length often have no objective unique solution.
     let allowed_balanced_list = |issue: &&crate::seam::SeamLintIssue| {
         issue.class == SeamLintClass::ListSeparator
             && allowed_list_seams.contains(&issue.piece_index)
@@ -8112,7 +8112,7 @@ mod tests {
         );
     }
 
-    /// E2: a fallback hard cut must snap to a punctuation seam within the window, rather than cutting at equal widths. The old implementation cut bare at per=13, producing "…需要展示，接着" ("…needs to show, then") + "是第二…" ("is the second…").
+    /// E2: a fallback hard cut must snap to a punctuation seam within the window, rather than cutting at equal widths. The old implementation cut bare at per=13, producing “…needs to show, then” + “is the second…”.
     #[test]
     fn oversize_hard_cut_snaps_to_a_punctuation_seam() {
         let params = TransParams::for_lang("zh");
@@ -8196,7 +8196,7 @@ mod tests {
         }
     }
 
-    /// E1(a): in the worker's two-piece answer the tail piece exceeds hard, and the engine's own deterministic re-split cuts "可以" ("can") in the middle, colliding with an objective seam defect. The engine must not record this failure against the worker: the re-split is discarded and the original answer is kept whole (KeepWhole). But keeping the whole piece still exceeds hard, meaning the worker's piece was over the limit to begin with. Following "accept first, then targeted supplement", it is not stored on the first round. It goes into salvage, and only this one sentence, with targeted instructions, is sent back to the repair round. When the repair budget runs out, salvage is used as-is (the result is no worse than direct acceptance). If the worker self-reports unsplittable, that is taken as the contract being fulfilled and it is accepted directly.
+    /// E1(a): in the worker's two-piece answer the tail piece exceeds hard, and the engine's own deterministic re-split cuts “can” in the middle, colliding with an objective seam defect. The engine must not record this failure against the worker: the re-split is discarded and the original answer is kept whole (KeepWhole). But keeping the whole piece still exceeds hard, meaning the worker's piece was over the limit to begin with. Following "accept first, then targeted supplement", it is not stored on the first round. It goes into salvage, and only this one sentence, with targeted instructions, is sent back to the repair round. When the repair budget runs out, salvage is used as-is (the result is no worse than direct acceptance). If the worker self-reports unsplittable, that is taken as the contract being fulfilled and it is accepted directly.
     #[test]
     fn engine_keeps_worker_segmentation_when_its_own_recut_breaks_acceptance() {
         let params = TransParams::for_lang("zh");
@@ -8255,7 +8255,7 @@ mod tests {
             "boundary must stay at the natural comma seam: {:?}",
             result.texts
         );
-        // "可以" ("can") must fall wholly within the same piece and must never be cut apart.
+        // “can” must fall wholly within the same piece and must never be cut apart.
         assert!(
             result.texts.iter().any(|text| text.contains("可以")),
             "{:?}",
@@ -9837,7 +9837,7 @@ mod tests {
 
     #[test]
     fn seam_lint_rejects_bound_head_and_bigram_tail() {
-        // "类似 | 于…" ("similar to | …") matches in both directions: the bigram tail of the front piece plus the clinging head of the back piece.
+        // “similar to | …” matches in both directions: the bigram tail of the front piece plus the clinging head of the back piece.
         let pieces = vec![
             PieceJson {
                 from: 0,
@@ -9860,7 +9860,7 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(error, LlmError::Malformed(_)), "{error:?}");
-        // "于是" ("so, therefore") at the start is a legal conjunction and must not be falsely flagged.
+        // “so, therefore” at the start is a legal conjunction and must not be falsely flagged.
         let ok = vec![
             PieceJson {
                 from: 0,
@@ -9886,7 +9886,7 @@ mod tests {
 
     #[test]
     fn balance_lint_does_not_split_parallel_items_at_list_separator() {
-        // 7/16: the widest piece only has enumeration-comma parallel items that can be cut. “说服、取胜” ("persuade, win") is a complete parallel structure, and `说服、|取胜` must not be manufactured just to balance numbers.
+        // 7/16: the widest piece only has enumeration-comma parallel items that can be cut. “persuade, win” is a complete parallel structure, and `说服、|取胜` must not be manufactured just to balance numbers.
         let translation = "我们常常被教导，要带着说服、取胜的心态去对话，真的。";
         let pieces = vec![
             PieceJson {
@@ -10834,7 +10834,7 @@ mod tests {
 
     #[test]
     fn file_contract_illegal_seam_is_judged_by_the_shared_acceptance_core() {
-        // The other half of `problem_blocks_acceptance`: at the carrier level, a bad seam is a **quality code** and is not rejected at parse time. The verdict belongs to the single shared acceptance core `accept_answers`, which gives the rejection reason for the dangling conjunction 「和」("and"). The carrier level does not re-judge it.
+        // The other half of `problem_blocks_acceptance`: at the carrier level, a bad seam is a **quality code** and is not rejected at parse time. The verdict belongs to the single shared acceptance core `accept_answers`, which gives the rejection reason for the dangling conjunction “and”. The carrier level does not re-judge it.
         fn dangling_doc() -> TranscriptDoc {
             let mut doc = two_sentence_doc();
             doc.trans.entry("zh".to_owned()).or_default().insert(

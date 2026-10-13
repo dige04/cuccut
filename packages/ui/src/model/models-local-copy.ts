@@ -47,7 +47,7 @@ const en = {
     music: 'Music',
     diarize: 'Speaker diarization',
   } as Record<ModelBundleStatus['capability'], string>,
-  /** The item in the default menu “不设默认，用出厂默认” (no default, use factory default). */
+  /** The item in the default menu “no default, use factory default”. */
   auto: 'Automatic',
   /** The stored default points to a model package that is not installed. */
   notInstalled: (name: string) => `${name} (not installed)`,

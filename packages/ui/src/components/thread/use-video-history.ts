@@ -8,7 +8,7 @@ const LIMIT = 200;
 
 /**
  * The edit history of the video open in the editor (`videos.history`), shared by all change cards in the thread. It is fetched once per
- * “视频@版本” (video@version) and fetched again when the version changes; until the new fetch completes, the previous result is used. `videos.history` requires the video to be open in the Runtime, so this is only available while the editor has this video open.
+ * “video@version” and fetched again when the version changes; until the new fetch completes, the previous result is used. `videos.history` requires the video to be open in the Runtime, so this is only available while the editor has this video open.
  */
 let current: { videoId: Id; key: string; entries: HistoryEntry[] } | null = null;
 let loading: string | null = null;

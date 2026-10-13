@@ -120,7 +120,7 @@ const externalBody = style({ marginTop: 4, marginBottom: 0, font: 'ui-sm', color
 
 /**
  * Settings › Skills (product design §6.9; prototype settings-agent-skills.jsx `AgentSkillsManager`, simplified to the scope the backend supports):
- * an intro line → toolbar (search, filter by source, add) → two-column cards → skipped folders (shown only when there are some) → a short section at the bottom, “给终端里的 Agent 装 CucCut 的 skill” (install the CucCut skill for terminal agents).
+ * an intro line → toolbar (search, filter by source, add) → two-column cards → skipped folders (shown only when there are some) → a short section at the bottom, “install the CucCut skill for terminal agents”.
  * Clicking a card opens its details (agent-skill-detail.tsx); the toggle is in the card’s top-right corner. In the browser you can only view and toggle; add and remove are not shown.
  * The list, toggles and changes all go through runtime/skill-commands.ts, and results are written back to state/skills-store.
  */

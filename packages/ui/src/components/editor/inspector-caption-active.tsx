@@ -18,7 +18,7 @@ import { StyleCells } from './caption-style-cells.tsx';
 import { INSPECTOR_COPY as IC } from './inspector-copy.ts';
 import { ColorField, Note, PRow, Sec, SecHead, Seg, ValueRow } from './inspector-controls.tsx';
 
-/** Input shared by the three sections “当前词” (current word), “动效” (motion) and “倒鸭子” (reverse): how the style that this line overlays is read, and to whom the root style goes after editing (while dragging or on release). */
+/** Input shared by the three sections “current word”, “motion” and “reverse”: how the style that this line overlays is read, and to whom the root style goes after editing (while dragging or on release). */
 export interface WordSectionProps {
   root: Json;
   kind: LineKind;
@@ -35,7 +35,7 @@ export function useWordEdit({ root, kind, paired }: Pick<WordSectionProps, 'root
   return { body, edit };
 }
 
-/** When the properties page is asked to scroll to this section (the caption toolbar's “动画” (animation)), it scrolls there and then clears the request. */
+/** When the properties page is asked to scroll to this section (the caption toolbar's “animation”), it scrolls there and then clears the request. */
 export function useSectionFocus() {
   const ref = useRef<HTMLDivElement>(null);
   const focus = useCaptionSection((s) => s.focus);
@@ -48,7 +48,7 @@ export function useSectionFocus() {
 }
 
 /**
- * Caption properties page “当前词” (current word) (prototype panel-subactive.jsx; caption style model design §4 / §9): what the word being read looks like, and how words already read or not yet reached are handled. Each cell is a thumbnail of this line with that mode applied. Only word-level keys are changed; no appearance keys are touched. The translation has no per-word timing, so this section only shows an explanation.
+ * Caption properties page “current word” (prototype panel-subactive.jsx; caption style model design §4 / §9): what the word being read looks like, and how words already read or not yet reached are handled. Each cell is a thumbnail of this line with that mode applied. Only word-level keys are changed; no appearance keys are touched. The translation has no per-word timing, so this section only shows an explanation.
  */
 export function CaptionActiveSection(props: WordSectionProps) {
   const { root, kind, isDisabled, onLive, onCommit } = props;
@@ -142,7 +142,7 @@ export function CaptionActiveSection(props: WordSectionProps) {
           <Seg
             label={P.spoken}
             value={a.spoken}
-            // The color sweep is itself a dye (§5), so no “染色” (dye color) option is offered.
+            // The color sweep is itself a dye (§5), so no “dye color” option is offered.
             options={SPOKEN_MODES.filter((m) => !(sweep && m === 'tint')).map((m) => ({ key: m, label: P.spokenModes[m] }))}
             isDisabled={isDisabled}
             onChange={(spoken) => commit({ spoken })}

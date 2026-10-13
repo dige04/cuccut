@@ -87,7 +87,7 @@ export function Thread({
   const entries = useSpace((s) => s.entries);
   const projectId = meta?.projectId ?? null;
   const cwd = meta?.cwd;
-  // Files below each reply come from the same source as the session header's “产物” (Artifacts) (conversation-outputs.ts); each is grouped by task under the last reply of that task, without truncation.
+  // Files below each reply come from the same source as the session header's “Artifacts” (conversation-outputs.ts); each is grouped by task under the last reply of that task, without truncation.
   // Videos are not here: there is one video card per video per session, placed after the latest turn that holds the last reference or a still-running task (video-cards.ts).
   const outputs = useMemo(
     () =>
@@ -105,7 +105,7 @@ export function Thread({
   const showColumn = blocks.length > 0 || running;
   const { scrollerRef, columnRef } = useFollowBottom(conversationId, blocks, showColumn);
 
-  // The “当前” (current) content block: while a step group is running, its summary line switches to the step that is running.
+  // The “current” content block: while a step group is running, its summary line switches to the step that is running.
   const lastContent = blocks.findLast((block) => block.type !== 'task');
   const turnList = useMemo(() => turns(blocks), [blocks]);
   // The recovery area for a failure is attached only to the last task, and it appears only when the session is idle: if something else has run since, the old failure no longer offers a way forward.

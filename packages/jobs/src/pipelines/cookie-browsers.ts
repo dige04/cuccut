@@ -4,7 +4,7 @@ import path from 'node:path';
 import type { CookieBrowserInfo, LinkCookieBrowser } from '@cuccut/protocol';
 
 /**
- * Which browsers on this machine have a cookie store (`externalTools.cookieBrowsers`, architecture design §7.9). The “网站登录” (website login) option for video downloads lists only these, so the user cannot pick a browser that is not installed.
+ * Which browsers on this machine have a cookie store (`externalTools.cookieBrowsers`, architecture design §7.9). The “website login” option for video downloads lists only these, so the user cannot pick a browser that is not installed.
  *
  * - Locations follow yt-dlp's lookup rules for `--cookies-from-browser`: for Chromium-based browsers it is `[<Profile>/][Network/]Cookies` under the data directory; for Firefox it is `[<Profile>/|Profiles/<Profile>/]cookies.sqlite` under the config root; Safari (macOS only) is the fixed file `Cookies.binarycookies`. Browsers whose store cannot be found are not listed, because yt-dlp cannot find them either.
  * - Only checks whether the files exist and their modification times (`stat`, and listing the direct children of the data directory). Does not open or read cookies, and does not run the download tool.

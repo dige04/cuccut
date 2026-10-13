@@ -54,7 +54,7 @@ export function useSubmitFailed(kind: JobKind, text: (message: string) => string
 }
 
 /**
- * “再试一次 / 重新排队” (retry / re-queue) for unfinished records. If the job was interrupted and the Runtime allows an in-place rerun, it goes through `jobs.reconcile` retry (the same job is queued again, not a new one); otherwise a new job is submitted with the frozen parameters (`resubmit` returns null when the parameters are incomplete and it cannot be submitted). `pending` while in progress; after a successful resubmit the record is marked `done` and the button is no longer shown, so repeated or later clicks never charge twice. Results of unknown state are not handled here; reconcile them in the job details.
+ * “retry / re-queue” for unfinished records. If the job was interrupted and the Runtime allows an in-place rerun, it goes through `jobs.reconcile` retry (the same job is queued again, not a new one); otherwise a new job is submitted with the frozen parameters (`resubmit` returns null when the parameters are incomplete and it cannot be submitted). `pending` while in progress; after a successful resubmit the record is marked `done` and the button is no longer shown, so repeated or later clicks never charge twice. Results of unknown state are not handled here; reconcile them in the job details.
  */
 export function useRecordRetry(
   job: JobRecord,

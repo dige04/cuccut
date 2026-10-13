@@ -38,8 +38,8 @@ import {
  * app-update-ipc.ts. Electron is not imported here: the outside world (network, clock, timers, Finder, quit) is injected as dependencies, and unit tests use temporary directories,
  * file:// manifests and a fake network.
  *
- * After a download, it first passes the verification stage (platform verification and staging; on macOS this is where the bundle is unpacked and its signature verified). Only after it passes does it count as “已下载” (downloaded). While “已下载” (downloaded), automatic checks still run,
- * and a newer build discards the old download. It never restarts the user on its own: “重启并更新” (restart and update) starts only after the UI has passed the stop barrier and `install` has been called. Once the swap program has started,
+ * After a download, it first passes the verification stage (platform verification and staging; on macOS this is where the bundle is unpacked and its signature verified). Only after it passes does it count as “downloaded”. While “downloaded”, automatic checks still run,
+ * and a newer build discards the old download. It never restarts the user on its own: “restart and update” starts only after the UI has passed the stop barrier and `install` has been called. Once the swap program has started,
  * the app quits normally (`before-quit` stops the Runtime, following the normal stop in §2.4). When the user quits the app themselves, after the Runtime has stopped,
  * `installOnQuit` hands the staged new package to the swap program, and it is not reopened after the swap.
  */
@@ -206,7 +206,7 @@ export interface StagedApp {
   dir: string;
 }
 
-/** Verification and staging after download, before “已下载” (downloaded): staged, not staged (Windows, or a machine that cannot swap by itself), or failed. */
+/** Verification and staging after download, before “downloaded”: staged, not staged (Windows, or a machine that cannot swap by itself), or failed. */
 export type Prepared =
   | { type: 'staged'; staged: StagedApp }
   | { type: 'none' }
@@ -233,7 +233,7 @@ export interface AppUpdateDeps {
   /** Verification and staging after the download (or after finding it in the cache) and the digest check (on macOS, unpacks and verifies the signature). Ends when `signal` stops. */
   prepare(info: AppUpdateInfo, archive: string, signal: AbortSignal): Promise<Prepared>;
   /**
-   * Platform swap. `staged` is the staged new package (when absent: Windows proceeds as usual; on macOS, “重启并更新” (restart and update) unpacks and verifies from the start, while install-on-quit does not install).
+   * Platform swap. `staged` is the staged new package (when absent: Windows proceeds as usual; on macOS, “restart and update” unpacks and verifies from the start, while install-on-quit does not install).
    * `relaunch` says whether to reopen the app after the swap (install-on-quit does not reopen).
    */
   installPackage(info: AppUpdateInfo, archive: string, options: { staged: StagedApp | null; relaunch: boolean }): Promise<InstallOutcome>;
@@ -261,10 +261,10 @@ export interface AppUpdateService {
   check(origin: Origin): Promise<void>;
   download(): void;
   cancel(): void;
-  /** “重启并更新” (restart and update): reopens the app after the swap. */
+  /** “restart and update”: reopens the app after the swap. */
   install(): Promise<void>;
   /**
-   * Install on quit: called after the app has quit normally and the Runtime has stopped. Only when “已下载” (downloaded) (including a silent check in flight) and this machine can swap by itself does it hand the staged new package to the swap program,
+   * Install on quit: called after the app has quit normally and the Runtime has stopped. Only when “downloaded” (including a silent check in flight) and this machine can swap by itself does it hand the staged new package to the swap program,
    * without reopening after the swap. In any other case it does nothing. It is time-limited and never throws.
    */
   installOnQuit(): Promise<void>;
@@ -286,13 +286,13 @@ export function createAppUpdateService(deps: AppUpdateDeps): AppUpdateService {
   /** The download in flight (including the verification stage). The generation is incremented on cancel or when a new download round starts, so a late result that no longer matches is dropped. */
   let generation = 0;
   let active: { generation: number; controller: AbortController; origin: Origin } | null = null;
-  /** Result of the verification stage for the version in “已下载” (downloaded): which build, which file, and the staged new package (null if no staging is needed). */
+  /** Result of the verification stage for the version in “downloaded”: which build, which file, and the staged new package (null if no staging is needed). */
   let prepared: { build: number; path: string; staged: StagedApp | null } | null = null;
   /** Only one verification stage runs at a time. After a cancel, the stopped run finishes first, and only then does the next one start unpacking (both use the same `unpack-<build>`). */
   let stagingLock: Promise<void> = Promise.resolve();
   /** Install on quit happens only once. */
   let quitInstallStarted = false;
-  /** Builds that have already triggered the “已下载” (downloaded) reminder in this run (each build is reminded only once). */
+  /** Builds that have already triggered the “downloaded” reminder in this run (each build is reminded only once). */
   let toastedBuild: number | null = null;
   let stopTimer: (() => void) | null = null;
   let disposed = false;
@@ -324,7 +324,7 @@ export function createAppUpdateService(deps: AppUpdateDeps): AppUpdateService {
     notify({ kind: 'ready', info });
   };
 
-  /** The staged new package for the version in “已下载” (downloaded). */
+  /** The staged new package for the version in “downloaded”. */
   const preparedFor = (info: AppUpdateInfo, archive: string) =>
     prepared?.build === info.build && prepared.path === archive ? prepared : null;
 
@@ -377,7 +377,7 @@ export function createAppUpdateService(deps: AppUpdateDeps): AppUpdateService {
   async function check(origin: Origin): Promise<void> {
     if (disposed || state.k === 'unsupported' || checkInFlight) return;
     if (origin === 'auto' && !mayAutoCheck(state)) return;
-    // When an automatic check moves from “出错（带着版本）” (error, with version) to “正在检查” (checking), the version is lost, so record it first for the staged-rollout comparison.
+    // When an automatic check moves from “error, with version” to “checking”, the version is lost, so record it first for the staged-rollout comparison.
     const prior = state;
     dispatch({ type: 'check', auto: origin === 'auto' });
     if (!checkPending(state)) return;
@@ -465,7 +465,7 @@ export function createAppUpdateService(deps: AppUpdateDeps): AppUpdateService {
     })();
   }
 
-  /** Verification stage (runs under `stagingLock`): on staging, enters “已下载” (downloaded); on failure, discards the installer and reports it; on cancel, wraps up. */
+  /** Verification stage (runs under `stagingLock`): on staging, enters “downloaded”; on failure, discards the installer and reports it; on cancel, wraps up. */
   async function verifyAndStage(origin: Origin, info: AppUpdateInfo, archive: string, mine: number, signal: AbortSignal): Promise<void> {
     let outcome: Prepared;
     try {
@@ -518,7 +518,7 @@ export function createAppUpdateService(deps: AppUpdateDeps): AppUpdateService {
     } catch (error) {
       outcome = { type: 'failed', failure: 'install', detail: errorText(error) };
     }
-    // Same rule as at download time: a package that fails verification is deleted (the error text says “已经删掉” (already deleted)).
+    // Same rule as at download time: a package that fails verification is deleted (the error text says “already deleted”).
     if (outcome.type === 'failed' && outcome.failure === 'verify') await discardDownload(archive, info.build);
     // The state may have been changed elsewhere during installation (TS cannot see that dispatch changed it, so it is read through `current()`).
     if (disposed || current().k !== 'installing') return;
@@ -538,7 +538,7 @@ export function createAppUpdateService(deps: AppUpdateDeps): AppUpdateService {
   }
 
   async function installOnQuit(): Promise<void> {
-    // “重启并更新” (restart and update) is already installing when quitting, so it is not installed again here.
+    // “restart and update” is already installing when quitting, so it is not installed again here.
     if (disposed || quitInstallStarted || state.k !== 'ready') return;
     quitInstallStarted = true;
     const { info, path: archive } = state;

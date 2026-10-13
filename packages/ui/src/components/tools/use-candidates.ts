@@ -9,7 +9,7 @@ import { useJobs } from '../../state/jobs-store.ts';
 import { useSpace } from '../../state/space-store.ts';
 
 /*
- * Candidate videos for the video tools (product design §2.7, “选已有的，不要求先打开” (pick existing ones, no need to open first)): reads `tools.candidates` (the Space catalog and content index, without opening videos); shared between pages and re-read when the Space catalog changes and a job finishes. Filtering, sorting and the greyed-out reasons are in model/tool-targets.ts.
+ * Candidate videos for the video tools (product design §2.7, “pick existing ones, no need to open first”): reads `tools.candidates` (the Space catalog and content index, without opening videos); shared between pages and re-read when the Space catalog changes and a job finishes. Filtering, sorting and the greyed-out reasons are in model/tool-targets.ts.
  */
 
 export const PAGE = 100;
@@ -65,7 +65,7 @@ export interface Candidates {
 
 /**
  * Candidates for one video tool: read on mount; when the Space catalog changes, or a job finishes (a transcript may have been added), re-read after a short wait.
- * “正在转录 / 在队列里 / 上次失败” (transcribing / queued / last failed) are derived from `jobs`.
+ * “transcribing / queued / last failed” are derived from `jobs`.
  */
 export function useCandidates(tool: VideoToolId): Candidates {
   const session = useRuntime();
@@ -112,7 +112,7 @@ export function useCandidates(tool: VideoToolId): Candidates {
 }
 
 /**
- * “转录… / 重新转录…” (transcribe… / re-transcribe…) in the Space video entry menu (product design §4.4): whether this video has a transcript. Reads candidates with the transcript rule (shared with the transcription tool page, `docs:transcribe`), and re-reads when the Space catalog changes and a job finishes. Returns null when it cannot be read: not yet read, no index built, or the list is incomplete and the entry is not in it.
+ * “transcribe… / re-transcribe…” in the Space video entry menu (product design §4.4): whether this video has a transcript. Reads candidates with the transcript rule (shared with the transcription tool page, `docs:transcribe`), and re-reads when the Space catalog changes and a job finishes. Returns null when it cannot be read: not yet read, no index built, or the list is incomplete and the entry is not in it.
  */
 export function useTranscribedEntries(): (entryId: Id) => boolean | null {
   const session = useRuntime();

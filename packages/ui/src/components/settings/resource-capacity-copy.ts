@@ -22,7 +22,7 @@ const en = {
   disconnected: 'Not connected to Runtime',
   loadFailed: "Couldn't read resource status",
   loading: 'Reading resource status…',
-  /** Accessible name of the input: “内存上限（GB）” (memory limit, in GB). */
+  /** Accessible name of the input: “memory limit, in GB”. */
   limitOf: (label: string, unit: string) => `${label} limit (${unit})`,
   unit: { memoryGB: 'GB', gpuMemoryGB: 'GB', cpuThreads: 'threads' },
   notSettable: "Can't be set by hand",

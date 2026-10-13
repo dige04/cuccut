@@ -12,7 +12,7 @@ pub struct MatchWord {
     pub t0: f64,
     pub t1: f64,
     pub text: String,
-    /// The 「贴前」 (attach-to-previous) marker for transcript words: no space is written between it and the previous word, regardless of the characters on either side.
+    /// The “attach-to-previous” marker for transcript words: no space is written between it and the previous word, regardless of the characters on either side.
     pub glue: bool,
 }
 

@@ -86,7 +86,7 @@ const separateRepo: SyntheticRepo = {
   revision: separateDef.components.separator!.revision,
   files: { 'htdemucs_ft_config.json': Buffer.from('{"synthetic":"sep"}'), 'htdemucs_ft.safetensors': syntheticBytes(50_000, 15) },
 };
-/** The “说话人区分” (speaker diarization) model bundle (the one Qwen3-ASR uses on this machine): Pyannote segmentation and WeSpeaker, two components, with no separate check. */
+/** The “speaker diarization” model bundle (the one Qwen3-ASR uses on this machine): Pyannote segmentation and WeSpeaker, two components, with no separate check. */
 const diarizationDef = BUNDLES.find((b) => b.bundleId === def.diarization)!;
 const diarizationRepos: SyntheticRepo[] = [
   {
@@ -498,7 +498,7 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
         code: 'MODEL_OUTPUT_WRONG',
       });
 
-      // Deleting the default synthesis model bundle: speech synthesis has no factory default, so the default pointing to it is cleared too (“未设置” (not set)), and capabilities.updated is emitted.
+      // Deleting the default synthesis model bundle: speech synthesis has no factory default, so the default pointing to it is cleared too (“not set”), and capabilities.updated is emitted.
       await side.client.request('models.setDefault', { capability: 'synthesizeSpeech', providerId: 'local', modelId: SPEECH_BUNDLE });
       expect((await side.client.request('models.capabilities', {})).capabilities.synthesizeSpeech.default).toEqual({
         providerId: 'local',

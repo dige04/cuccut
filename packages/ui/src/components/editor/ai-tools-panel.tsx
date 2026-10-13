@@ -36,7 +36,7 @@ const translateToast: TranslateDeps['toast'] = (kind, message, undo) =>
   );
 
 /**
- * AI tools tab (prototype panel-aitools.jsx `AiToolsPanel`, product design §5.10): with no tool page open, it shows the list page (`AiToolsList`); clicking a row, or an entry from another panel carrying a range (`openAiTool`), opens that tool page, and 「返回」 (Back) returns to the list.
+ * AI tools tab (prototype panel-aitools.jsx `AiToolsPanel`, product design §5.10): with no tool page open, it shows the list page (`AiToolsList`); clicking a row, or an entry from another panel carrying a range (`openAiTool`), opens that tool page, and “Back” returns to the list.
  * Translate subtitles is hosted by the translation settings page (after submitting, it switches to the subtitle page to see progress and receipts); translate and dub is hosted by the dubbing page (after starting, it stays in place to see progress and receipts); identify speakers is hosted by its four-state page (settings, running, confirmation and receipt all in place, `SpeakerFlow`); cut into a short video is hosted by its own parameters page (`ShortsToolPage`) and result page (`ShortsResultPage`); everything else goes to the Agent (`AiAgentToolPage`).
  * The web host does not have this tab (see `hostPanelTab` in editor-store).
  */
@@ -82,7 +82,7 @@ export function AiToolsPanel({ sequence, documents }: { sequence: Sequence; docu
   if (tool.id === 'speakers') return <SpeakerFlow videoId={videoId} sequence={sequence} documents={documents} onBack={back} />;
   if (tool.tier === 'soon') return <AiToolSoon tool={tool} onBack={back} />;
   if (tool.tier === 'tool') return <AiToolsList videoId={videoId} sequence={sequence} documents={documents} />;
-  // Cut into a short video: only handed to the Agent, always starts a new conversation, with its own parameters page (no 「用」 (Use) and 「会话」 (Conversation) rows). If it was handed off before (or the one open is a cut-out clip), entering shows the result page first; the 「返回」 (Back) on the result page leads to the parameters page (prototype panel-aitools-shorts.jsx `ShortsCutPanel`).
+  // Cut into a short video: only handed to the Agent, always starts a new conversation, with its own parameters page (no “Use” and “Conversation” rows). If it was handed off before (or the one open is a cut-out clip), entering shows the result page first; the “Back” on the result page leads to the parameters page (prototype panel-aitools-shorts.jsx `ShortsCutPanel`).
   if (tool.id === 'shortscut') {
     const host = page.host ?? derivation?.parentVideoId ?? videoId;
     if (page.phase === 'result' || (page.phase !== 'setup' && (hasRun || !!derivation)))

@@ -225,7 +225,7 @@ export class ModelInstallService {
     const refuse = (jobIds: Id[]) => {
       throw new RpcError('conflict', RcModels.bundleInUse(), { code: 'MODEL_IN_USE', bundleId, jobIds });
     };
-    // Components of the “说话人区分” (speaker diarization) bundle are loaded by the Workers of the recognition bundles that use it: those Workers must also be idle and unloaded first.
+    // Components of the “speaker diarization” bundle are loaded by the Workers of the recognition bundles that use it: those Workers must also be idle and unloaded first.
     const holders = [bundleId, ...this.#catalog.diarizationUsers(bundleId)];
     const inUse = () => this.#jobs.list().filter((j) => holders.includes(j.bundleId ?? '') && !isTerminal(j.state));
     if (inUse().length > 0) refuse(inUse().map((j) => j.jobId));
@@ -728,7 +728,7 @@ export class ModelInstallService {
   }
 
   /**
-   * After installing, completing or repairing, Workers that are already loaded still have the old components: this model bundle's own (the optional components just added and the bad files replaced were not read), and the recognition bundles that use this “说话人区分” (speaker diarization) bundle (which lack its components). Idle ones are unloaded first, and the next task loads them with the new components. Running tasks are not interrupted (they finish with the components they started with; those missing “说话人区分” report `diarization-unavailable`), and once idle they unload on timeout as usual.
+   * After installing, completing or repairing, Workers that are already loaded still have the old components: this model bundle's own (the optional components just added and the bad files replaced were not read), and the recognition bundles that use this “speaker diarization” bundle (which lack its components). Idle ones are unloaded first, and the next task loads them with the new components. Running tasks are not interrupted (they finish with the components they started with; those missing “说话人区分” report `diarization-unavailable`), and once idle they unload on timeout as usual.
    */
   #reloadAfterInstall(bundleId: string): void {
     for (const id of [bundleId, ...this.#catalog.diarizationUsers(bundleId)]) {

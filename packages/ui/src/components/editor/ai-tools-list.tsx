@@ -205,10 +205,10 @@ function useRowStates(videoId: Id, sequence: Sequence, documents: Record<Id, Doc
   const staleSentences = useStaleSentences(documents, STALE_LISTED);
   const speakersRunning = useSpeakersRun((s) => !!s.runs[videoId] || !!s.installs[videoId]);
   const speakersPending = useSpeakersRun((s) => !!s.proposals[videoId]);
-  // Direct model tasks (key 「视频 · 工具」 (video · tool)): submitted from here and not yet given a task ID; results not yet looked at; undone.
+  // Direct model tasks (key “video · tool”): submitted from here and not yet given a task ID; results not yet looked at; undone.
   const prefix = `${videoId}:`;
   const submitting = useAiToolRun(useShallow((s) => Object.values(s.runs).filter((r) => r.videoId === videoId).map((r) => r.tool)));
-  // An undone receipt does not count as unseen: that row says 「已撤销」 (Undone).
+  // An undone receipt does not count as unseen: that row says “Undone”.
   const unread = useAiToolRun(
     useShallow((s) =>
       [...Object.keys(s.results), ...Object.entries(s.receipts).filter(([, r]) => !r.undone).map(([k]) => k)]
@@ -304,7 +304,7 @@ function SetupCard({ guide }: { guide: GateGuide }) {
 }
 
 /**
- * Generate a soundtrack (prototype panel-aitools.jsx `openSoundtrack`): not done in this tab. Instead, this video is carried to Tools › Generate music, with the duration pre-filled from the video (rounded up to the nearest 5 seconds and clamped to the range; if the video is longer than a single generation's limit, the limit is pre-filled and the result loops to fill the whole video; product design §2.7 「生成配乐」 (generate soundtrack)).
+ * Generate a soundtrack (prototype panel-aitools.jsx `openSoundtrack`): not done in this tab. Instead, this video is carried to Tools › Generate music, with the duration pre-filled from the video (rounded up to the nearest 5 seconds and clamped to the range; if the video is longer than a single generation's limit, the limit is pre-filled and the result loops to fill the whole video; product design §2.7 “generate soundtrack”).
  * On submit it carries `videoId`; once done, the Runtime imports that audio into this video's assets, and the editor then lays it down on a music track (soundtrack-bed.tsx).
  */
 function openSoundtrack(videoId: Id, sequence: Sequence): void {
@@ -321,8 +321,8 @@ function openSoundtrack(videoId: Id, sequence: Sequence): void {
 }
 
 /**
- * The list page of the AI tools tab (prototype panel-aitools-list.jsx, product design §5.10 「分批」 (in batches)): a card at the top to hand off to the Agent; when there is no script, an explanation card is added and tool rows are greyed out (generating a soundtrack does not use the script, so it stays clickable).
- * Below, the first batch of tools grouped by category, plus the short-video cut in the 「画面」 (Visuals) group and generate-soundtrack in the 「声音」 (Sound) group, each row with one sentence of description and its status on this video; the footnote says which tools are still in their own panels.
+ * The list page of the AI tools tab (prototype panel-aitools-list.jsx, product design §5.10 “in batches”): a card at the top to hand off to the Agent; when there is no script, an explanation card is added and tool rows are greyed out (generating a soundtrack does not use the script, so it stays clickable).
+ * Below, the first batch of tools grouped by category, plus the short-video cut in the “Visuals” group and generate-soundtrack in the “Sound” group, each row with one sentence of description and its status on this video; the footnote says which tools are still in their own panels.
  */
 export function AiToolsList({ videoId, sequence, documents }: { videoId: Id; sequence: Sequence; documents: Record<Id, DocumentRecord> }) {
   const drivers = useConnection((s) => s.drivers);

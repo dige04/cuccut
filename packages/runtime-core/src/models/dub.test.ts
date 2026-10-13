@@ -540,7 +540,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
       terms: [{ source: '剪辑' }, { source: '第三句' }],
     });
 
-    // Editing the translation in “剪辑” (clip): only sentence 2 becomes stale.
+    // Editing the translation in “clip”: only sentence 2 becomes stale.
     await side.client.request('library.put', {
       library: 'glossaries',
       id: glossary.id,

@@ -12,7 +12,7 @@ export function startDraftKey(projectId: Id | null): string {
 }
 
 /**
- * Arrived at the start page from elsewhere with a preset (prototype `app.newProject(preset)`: Space's “从文件新建视频” (Create video from file), the help center, and “改用本地文件” (Use local file instead) after an import failure):
+ * Arrived at the start page from elsewhere with a preset (prototype `app.newProject(preset)`: Space's “Create video from file”, the help center, and “Use local file instead” after an import failure):
  * lands on the start page of project `projectId`. `prompt`: if the input box is empty, fill in this sentence (existing text is left alone); `materials`: attached as local materials handed to the Agent.
  * If the editor is open, it stays open (the feature area's tab follows to that start page).
  */

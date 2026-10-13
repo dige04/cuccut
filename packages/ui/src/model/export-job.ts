@@ -148,7 +148,7 @@ export function latestLiveExport(jobs: readonly JobRecord[], videoId: Id): JobRe
   return videoExports(jobs, videoId).find(jobLive) ?? null;
 }
 
-/** Top-bar button text: when not exporting it is “导出” (Export); while exporting, “导出中 · 31%” (Exporting · 31%); with no total, “导出中…” (Exporting…); when queued, “导出排队中” (Export queued). */
+/** Top-bar button text: when not exporting it is “Export”; while exporting, “Exporting · 31%”; with no total, “Exporting…”; when queued, “Export queued”. */
 export function exportButtonLabel(job: JobRecord | null): string {
   if (!job) return M.export;
   if (job.state === 'queued') return M.queued;
@@ -175,7 +175,7 @@ export function exportView(job: JobRecord): ExportView {
 const FORMAT_LABEL: Record<string, string> = live(() => M.formats);
 const formatLabel = (format: string) => FORMAT_LABEL[format] ?? format.toUpperCase();
 
-/** “导出视频 · MP4” (Export video · MP4), “导出字幕 · SRT” (Export subtitles · SRT), “导出便携包” (Export portable package). */
+/** “Export video · MP4”, “Export subtitles · SRT”, “Export portable package”. */
 export function exportTitle(settings: ExportSettings): string {
   switch (settings.kind) {
     case 'video':
@@ -225,12 +225,12 @@ export function exportProgressLine(job: Pick<JobRecord, 'progress' | 'state'>): 
   }
 }
 
-/** Estimated time remaining: “剩余 1:23” (1:23 left), or “剩余 1:02:03” (1:02:03 left) when over an hour. null when it cannot be computed. */
+/** Estimated time remaining: “1:23 left”, or “1:02:03 left” when over an hour. null when it cannot be computed. */
 export function exportTimeLeft(speed: ExportSpeed | null): string | null {
   return speed ? M.timeLeft(formatClock(Math.ceil(speed.secondsLeft))) : null;
 }
 
-/** Speed and estimated time remaining: “58 fps”, “剩余 1:23” (1:23 left); when the progress unit is not frames, only the remaining time is shown. Empty when it cannot be computed. */
+/** Speed and estimated time remaining: “58 fps”, “1:23 left”; when the progress unit is not frames, only the remaining time is shown. Empty when it cannot be computed. */
 export function exportSpeedParts(speed: ExportSpeed | null): string[] {
   if (!speed) return [];
   const parts: string[] = [];
@@ -250,7 +250,7 @@ export interface ExportOutputFact {
   key: string;
   name: string;
   path: string | null;
-  /** “1920×1080 · 3:26 · 84 MB”, “312 条 · 18 KB” (312 entries · 18 KB). */
+  /** “1920×1080 · 3:26 · 84 MB”, “312 entries · 18 KB”. */
   meta: string;
 }
 
@@ -283,12 +283,12 @@ export function exportOutputs(job: Pick<JobRecord, 'result'>): ExportOutputFact[
   }));
 }
 
-/** The directory the export is in (“在文件夹中显示” (Show in folder) opens the directory when there is no file). */
+/** The directory the export is in (“Show in folder” opens the directory when there is no file). */
 export function exportDir(job: Pick<JobRecord, 'export'>): string | null {
   return job.export?.destination.dir ?? null;
 }
 
-/** The one-line completed state: “访谈.mp4 · 84 MB”; for several files, “3 个文件 · 共 120 MB” (3 files · 120 MB total). */
+/** The one-line completed state: “访谈.mp4 · 84 MB”; for several files, “3 files · 120 MB total”. */
 export function exportDoneLine(job: Pick<JobRecord, 'result'>): string {
   const outputs = job.result?.outputs ?? [];
   if (!outputs.length) return '';

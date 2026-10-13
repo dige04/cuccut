@@ -10,8 +10,8 @@ import { jobErrorText, remedyText } from './localized-text.ts';
  * This is pure logic here: it recognizes flow tasks, reads frozen parameters and result summaries, the three-step progress, the failure wording and remedies, and the states of the download tool card.
  *
  * Differences from the design draft:
- * - An import started from the home page carries no `videoId`: the flow only parses, downloads, verifies and puts the file into the download directory. Creating the video and transcription are done by the home page's flow runner after the flow completes (components/start/flow-runner.ts), so half of the states of the “确认媒体并建视频” (confirm media and create video) and “生成字幕” (generate captions) steps come from there. That side carries the `linkProvenance` source when it imports the media, so the video details still show “source info”.
- * - The download tool is local only (there is no “which computer to download on”). For sites that need login, browsers are ticked in “网站登录” (website login) under downloading videos (model/link-cookies.ts), and the Runtime uses their cookies in the ticked order.
+ * - An import started from the home page carries no `videoId`: the flow only parses, downloads, verifies and puts the file into the download directory. Creating the video and transcription are done by the home page's flow runner after the flow completes (components/start/flow-runner.ts), so half of the states of the “confirm media and create video” and “generate captions” steps come from there. That side carries the `linkProvenance` source when it imports the media, so the video details still show “source info”.
+ * - The download tool is local only (there is no “which computer to download on”). For sites that need login, browsers are ticked in “website login” under downloading videos (model/link-cookies.ts), and the Runtime uses their cookies in the ticked order.
  * - Failure records cannot be deleted: the Runtime has no interface to delete tasks, so the records stay in the background tasks.
  */
 
@@ -109,7 +109,7 @@ export function linkProvenance(job: Pick<JobRecord, 'jobId' | 'pipeline'>): { or
   };
 }
 
-/** The title in the task list: “从链接导入 · 标题” (Import from link · title); when the title is not known yet, the host name is written. */
+/** The title in the task list: “Import from link · title”; when the title is not known yet, the host name is written. */
 export function linkTitle(job: Pick<JobRecord, 'pipeline'>): string {
   const meta = linkMeta(job);
   const name = meta.title ?? (linkFrozen(job).host || null);
@@ -123,7 +123,7 @@ export function linkKindLabel(): string {
 
 /**
  * Stage of the parent task → one sentence (`phase` is reported by the steps of the flow). The caption-layer step also reports `applying`, the same name as importing the video;
- * it is described as “生成字幕” (generate captions) according to the step that is actually running.
+ * it is described as “generate captions” according to the step that is actually running.
  */
 export function linkPhaseText(job: Pick<JobRecord, 'phase' | 'pipeline'>): string {
   if (job.pipeline?.steps.find((s) => s.status === 'running')?.name === 'captions') return M.stageSubs;
@@ -328,7 +328,7 @@ function usedFacts(status: ExternalToolStatus): string[] {
 
 /**
  * The download tool card before the link section starts (design draft `DownloaderSettings` and `issues.missing/outdated`). It only reads the result of `externalTools.detect`;
- * installing and consenting both happen only when the user clicks (`externalTools.install` with `consent: true` also records the consent). The copy on the system is updated with its original install method (product design §2.7): the command and output are in the card's “更新” (Update) section, and while updating the card is `updating`.
+ * installing and consenting both happen only when the user clicks (`externalTools.install` with `consent: true` also records the consent). The copy on the system is updated with its original install method (product design §2.7): the command and output are in the card's “Update” section, and while updating the card is `updating`.
  */
 export function toolCard(probed: ExternalToolStatus | null | undefined, opts: { checking: boolean; installing: boolean; updating?: boolean }): ToolCard {
   const status = probed && localizeToolStatus(probed);

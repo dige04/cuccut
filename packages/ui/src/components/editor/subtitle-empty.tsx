@@ -29,9 +29,9 @@ const settings = style({ alignSelf: 'stretch', marginTop: 16, textAlign: 'start'
 const settingsNote = style({ margin: 0, marginTop: 4, font: 'ui-xs', color: 'gray-600' });
 
 /**
- * Subtitle empty state (prototype panel-subtitle.jsx lines 316–324): when there is media, the primary button is “生成字幕” (Generate subtitles); when there is none, “添加媒体” (Add media). Importing a subtitle file is always available.
+ * Subtitle empty state (prototype panel-subtitle.jsx lines 316–324): when there is media, the primary button is “Generate subtitles”; when there is none, “Add media”. Importing a subtitle file is always available.
  * The clips to transcribe are only those placed on the timeline: with one clip it is used directly, with several a menu picks one. If the clip has already been transcribed, that transcript is used directly and nothing is recognized again.
- * When there is a clip to transcribe, a collapsed “转录设置” (transcription settings: language, speech model, recognition prompt) hangs below the button; leaving it untouched means the defaults.
+ * When there is a clip to transcribe, a collapsed “transcription settings: language, speech model, recognition prompt” hangs below the button; leaving it untouched means the defaults.
  */
 export function SubtitleEmpty({
   videoId,

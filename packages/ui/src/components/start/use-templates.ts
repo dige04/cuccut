@@ -7,7 +7,7 @@ import { useTemplateCatalog, type TemplateCatalogStore } from '../../state/templ
 
 /**
  * Template catalog: fetched once on mount, when `refresh` changes (the dialog opens), and when the connection is re-established. Nothing is sent while disconnected; it waits until connected and then fetches.
- * Returns a mirror of the catalog and a “重试” (retry) function.
+ * Returns a mirror of the catalog and a “retry” function.
  */
 export function useTemplateCatalogLoader(refresh: unknown = null): TemplateCatalogStore & { retry(): void } {
   const runtime = useRuntime();
@@ -22,7 +22,7 @@ export function useTemplateCatalogLoader(refresh: unknown = null): TemplateCatal
 
 export type PromptState = { state: 'loading' } | { state: 'ready'; text: string } | { state: 'failed'; message: string };
 
-/** The prompt for one template (`templates.get`): cached by “id@版本:语言” (id@version:language); when switching templates, loading is shown first. */
+/** The prompt for one template (`templates.get`): cached by “id@version:language”; when switching templates, loading is shown first. */
 export function useTemplatePrompt(template: Pick<HomeTemplate, 'id' | 'version' | 'language'> | null): PromptState & { retry(): void } {
   const runtime = useRuntime();
   const connected = useConnection((s) => s.state.status === 'connected');

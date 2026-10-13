@@ -36,7 +36,7 @@ export async function undoInBackground(deps: BackgroundUndoDeps, target: FileTar
   }
 }
 
-/** The engine's `UNDO_UNAVAILABLE` (“这次修改已经撤销过” (this change has already been undone)) carries the undo that did it (`details.undoneBy`). */
+/** The engine's `UNDO_UNAVAILABLE` (“this change has already been undone”) carries the undo that did it (`details.undoneBy`). */
 export function alreadyUndoneBy(error: unknown): Id | null {
   if (!(error instanceof RpcError) || !isEngineErrorBody(error.details)) return null;
   const body = error.details;

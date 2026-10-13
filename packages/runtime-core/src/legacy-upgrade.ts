@@ -98,7 +98,7 @@ const MISSING_SHOWN = 5;
 const key = (value: string) => createHash('sha256').update(value).digest('hex').slice(0, 16);
 
 /**
- * Default directory for the import prompt: a `CucCut` folder under the system “文稿 / 文档” (Documents) folder. The desktop app supplies the host's known folder through `CUCCUT_DOCUMENTS_DIR`. Windows may redirect it (for example to OneDrive), so the path is not built by hand from `%USERPROFILE%\Documents`. Without it, the `Documents` folder under the home directory is used.
+ * Default directory for the import prompt: a `CucCut` folder under the system “Documents” folder. The desktop app supplies the host's known folder through `CUCCUT_DOCUMENTS_DIR`. Windows may redirect it (for example to OneDrive), so the path is not built by hand from `%USERPROFILE%\Documents`. Without it, the `Documents` folder under the home directory is used.
  */
 export function defaultLegacyImportDirectory(env: NodeJS.ProcessEnv = process.env, userHome = os.homedir()): string {
   return path.join(env.CUCCUT_DOCUMENTS_DIR || path.join(userHome, 'Documents'), 'CucCut');

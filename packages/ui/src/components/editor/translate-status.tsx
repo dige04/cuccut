@@ -205,7 +205,7 @@ function AgentRunHead({ live, job, sentences, documents }: { live: TranslateLive
 
 const VARIANT = { 'not-configured': 'notice', failed: 'negative', empty: 'informative', pending: 'informative', decide: 'notice' } as const;
 
-/** Translation failed: the reason, and where to go to fix it. Where a retry is possible, offer “重试” (Retry) and state clearly whether it will be billed again. */
+/** Translation failed: the reason, and where to go to fix it. Where a retry is possible, offer “Retry” and state clearly whether it will be billed again. */
 export function TranslateProblemAlert({ videoId, problem }: { videoId: Id; problem: TranslateProblem }) {
   const go = useShell((s) => s.go);
   const busy = useTranslateRun((s) => !!s.runs[videoId]);
@@ -237,7 +237,7 @@ export function TranslateProblemAlert({ videoId, problem }: { videoId: Id; probl
   );
 }
 
-/** Receipt (prototype `DoneView`): after the translation is put on screen, leave an “撤销” (Undo) exit. After undoing, honestly state that the original text was not changed and the translation remains. */
+/** Receipt (prototype `DoneView`): after the translation is put on screen, leave an “Undo” exit. After undoing, honestly state that the original text was not changed and the translation remains. */
 export function TranslateReceiptCard({ videoId, receipt }: { videoId: Id; receipt: TranslateReceipt }) {
   return (
     <div className={alertBox}>

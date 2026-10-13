@@ -68,13 +68,13 @@ import { usePreset, useRerun } from './video-tool-parts.tsx';
 /*
  * Design file tool-music.jsx `MusicToolPage`: form → style (an English description, chips can be filled) → lyrics (when sung) → duration (target and maximum) → plan → model and seed → save location,
  * with the generation records on the right. Only local models are used (music generation has no cloud provider). The fields have the same names as the Runtime's GenerateMusicRequest (model/tools-music.ts).
- * When entered from the editor's AI tool “生成配乐” (Generate soundtrack) (`ToolPreset.soundtrack`), the duration is pre-filled from that video (if it is longer than the model's single-run maximum, the maximum is pre-filled and the banner states that it will loop to fill),
+ * When entered from the editor's AI tool “Generate soundtrack” (`ToolPreset.soundtrack`), the duration is pre-filled from that video (if it is longer than the model's single-run maximum, the maximum is pre-filled and the banner states that it will loop to fill),
  * and the submission carries `videoId`. When done, the Runtime imports it into that video's assets, and the editor then lays the music track down (editor/soundtrack-bed.tsx).
  */
 
 const chips = style({ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, minWidth: 0 });
 const slider = style({ flexGrow: 1, minWidth: 160 });
-/** The slider's built-in readout is localized, e.g. 「30 秒 / 30 sec」. The maximum does not snap to the 5-second step; it follows the target plus “多两成” (20% more), e.g. 36, and must display that value exactly. */
+/** The slider's built-in readout is localized, e.g. 「30 秒 / 30 sec」. The maximum does not snap to the 5-second step; it follows the target plus “20% more”, e.g. 36, and must display that value exactly. */
 const SECONDS: Intl.NumberFormatOptions = { style: 'unit', unit: 'second', unitDisplay: 'short' };
 const seedField = style({ width: 140 });
 const card = style({
@@ -110,7 +110,7 @@ export function MusicTool() {
   const submitFailed = useSubmitFailed('generateMusic', COPY.submitFailed);
   const { saveDirectory } = useToolStatus();
   const [saveOverride, setSaveOverride] = useState<string | null>(null);
-  // The video brought in by “生成配乐” (Generate soundtrack); it lives only on this page and is cleared after one submission.
+  // The video brought in by “Generate soundtrack”; it lives only on this page and is cleared after one submission.
   const [soundtrack, setSoundtrack] = useState<Soundtrack | null>(null);
 
   const options = useMemo(() => (view ? musicModelOptions(view) : []), [view]);

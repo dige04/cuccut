@@ -69,7 +69,7 @@ const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es,
 export type LineLengthKey = 'short' | 'medium' | 'long';
 
 /**
- * The design mockup's three levels “短 / 中 / 长” (short / medium / long). “中” (medium) is the contract's default; “短” (short) and “长” (long) each differ by 4 CJK characters and 10 other characters (the mockup gives no numbers; they are set here).
+ * The design mockup's three levels “short / medium / long”. “medium” is the contract's default; “short” and “long” each differ by 4 CJK characters and 10 other characters (the mockup gives no numbers; they are set here).
  * All are within the contract's range (cjk 4–60, other 10–120).
  */
 export const LINE_LENGTH_PRESETS: readonly { key: LineLengthKey; label: string; value: CaptionLineLength }[] = [
@@ -84,7 +84,7 @@ export function lineLengthKey(value: CaptionLineLength | null): LineLengthKey | 
   return LINE_LENGTH_PRESETS.find((p) => p.value.cjk === value.cjk && p.value.other === value.other)?.key ?? null;
 }
 
-/** One line describing the stored line length: “中日韩文字每行 16 字 · 其他文字每行 42 个字符” (16 CJK characters per line · 42 other characters per line). */
+/** One line describing the stored line length: “16 CJK characters per line · 42 other characters per line”. */
 export function lineLengthText(value: CaptionLineLength): string {
   return M.lineLength(value.cjk, value.other);
 }
@@ -122,14 +122,14 @@ export function endpointProblem(text: string): string | null {
 // ---- Default save location (`downloads.directory`, key name unchanged) ----
 
 /**
- * Settings › General › Default save location (product design §2.7, last paragraph of the “页面” (Pages) section; architecture design §5.10 and §7.9 “保存位置” (Save location); design mockup page-settings.jsx `SaveDirRow`):
- * results of tools without a video, downloaded videos and files handed over by the Agent are all saved here; when unset, it is the system Downloads folder of the computer running the Runtime. The tool page's “更改…” (Change…) changes only that one time.
+ * Settings › General › Default save location (product design §2.7, last paragraph of the “Pages” section; architecture design §5.10 and §7.9 “Save location”; design mockup page-settings.jsx `SaveDirRow`):
+ * results of tools without a video, downloaded videos and files handed over by the Agent are all saved here; when unset, it is the system Downloads folder of the computer running the Runtime. The tool page's “Change…” changes only that one time.
  */
 export const SAVE_DIR_ROW: GeneralSettingsModelMessages['saveDir'] = live(() => M.saveDir);
 
 // ---- Auto-update (`updates.autoCheck`, `updates.autoDownload`) ----
 
-/** The design mockup has a single row “自动检查并下载更新” (Automatically check and download updates); the contract has two keys, and the feature counts as on only when both are on. Defaults apply when the snapshot has not arrived. */
+/** The design mockup has a single row “Automatically check and download updates”; the contract has two keys, and the feature counts as on only when both are on. Defaults apply when the snapshot has not arrived. */
 export function autoUpdateOn(check: boolean | null, download: boolean | null): boolean {
   return (check ?? SETTING_DEFAULTS['updates.autoCheck']) && (download ?? SETTING_DEFAULTS['updates.autoDownload']);
 }
@@ -157,8 +157,8 @@ export interface DownloaderLine {
 }
 
 /**
- * How the yt-dlp row is written (the design mockup `DownloaderSettings` status chip and “yt-dlp · 版本 · 来源” (yt-dlp · version · source)). When it is missing from the registry (null), it is written as not installed.
- * The mockup's install, update and “安装范围” (install scope) are not implemented here: CucCut downloads it only after the Agent imports from a link and you agree (link-import-tools.ts).
+ * How the yt-dlp row is written (the design mockup `DownloaderSettings` status chip and “yt-dlp · version · source”). When it is missing from the registry (null), it is written as not installed.
+ * The mockup's install, update and “install scope” are not implemented here: CucCut downloads it only after the Agent imports from a link and you agree (link-import-tools.ts).
  */
 export function downloaderLine(probed: ExternalToolStatus | null): DownloaderLine {
   const status = probed && localizeToolStatus(probed);

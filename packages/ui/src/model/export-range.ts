@@ -78,7 +78,7 @@ export const MIN_CUSTOM_SECONDS = 0.5;
 /** A segment that can be checked: a chapter, or a video instance. */
 export interface RangePiece {
   id: Id;
-  /** The name in the list: the chapter name, or “片段 N” (Clip N). */
+  /** The name in the list: the chapter name, or “Clip N”. */
   label: string;
   /** The clip's asset name (second line of the list); chapters have none. */
   name: string | null;
@@ -103,7 +103,7 @@ export interface RangePlan {
   empty: boolean;
   /** Total seconds. */
   seconds: number;
-  /** A line in the summary: “整片 3:26” (whole film 3:26), “第 2 章 · 0:45” (chapter 2 · 0:45), “3 段 · 共 1:10” (3 segments · 1:10 total), “0:45.0–1:18.0”. */
+  /** A line in the summary: “whole film 3:26”, “chapter 2 · 0:45”, “3 segments · 1:10 total”, “0:45.0–1:18.0”. */
   label: string;
 }
 
@@ -124,7 +124,7 @@ export function chapterPieces(sequence: Sequence): RangePiece[] {
   return out;
 }
 
-/** Video clips on the timeline: enabled video instances whose track is not hidden; sorted by start; the name is “片段 N” (Clip N) plus the asset name. */
+/** Video clips on the timeline: enabled video instances whose track is not hidden; sorted by start; the name is “Clip N” plus the asset name. */
 export function clipPieces(sequence: Sequence, assets: Record<Id, AssetRecord>, documents: Record<Id, DocumentRecord>): RangePiece[] {
   const hidden = new Set(sequence.tracks.filter((t) => !t.visible).map((t) => t.id));
   return sequence.items

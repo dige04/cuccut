@@ -113,7 +113,7 @@ const speakerKey = (name: string) => `speaker:${name}`;
  * Content hits (architecture design §5.11): when the search box has text, also search the videos' content index (transcript, subtitles, translation, chapters) and list the results above the item list.
  * Wait 300ms after typing stops before searching; only the last result is used. Clicking one opens that video; a hit at sequence time moves the playhead to that spot.
  *
- * Results are grouped by video (design draft page-projects.jsx HitGroup): the group header opens the video without moving the playhead; each group first shows ten, and “再显示 N 条” (Show N more) adds ten more.
+ * Results are grouped by video (design draft page-projects.jsx HitGroup): the group header opens the video without moving the playhead; each group first shows ten, and “Show N more” adds ten more.
  * They can be filtered by document kind and speaker (contract `kinds`, `speaker`): the speaker options come from hits this term found; the Runtime matches “name contains”,
  * and here the whole string is matched again. The design draft has no control for these two filters, so the look follows the existing filter Picker on the Space page.
  */

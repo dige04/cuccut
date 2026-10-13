@@ -3,7 +3,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 /**
- * One submission of “剪成短视频”(cut into shorts) (product design §5.10, “结果页”(result page)): which session it was sent to, which task (none yet if it is still queued), when it was submitted, and which video it was started from.
+ * One submission of “cut into shorts” (product design §5.10, “result page”): which session it was sent to, which task (none yet if it is still queued), when it was submitted, and which video it was started from.
  * The result page uses it to recognize the child videos cut in this round (`model/shorts-result.ts` `shortsBatch`). `landed` records whether the AI Tools tab has already been flipped to the result page after the run finished,
  * so it is not flipped again every time the parent video is opened.
  */
@@ -13,7 +13,7 @@ export interface ShortsRun {
   taskId: Id | null;
   handedAt: string;
   landed: boolean;
-  /** The clip last opened on the result page (while the parent video is open, the “第 k/N”(k of N) indicator at the top stays on it). */
+  /** The clip last opened on the result page (while the parent video is open, the “k of N” indicator at the top stays on it). */
   focus: Id | null;
 }
 
@@ -53,7 +53,7 @@ export function restoredShortsRuns(persisted: unknown): Record<Id, ShortsRun> {
   return runs;
 }
 
-/** Records a newly submitted run. If the same session is submitted again, it overwrites (“再切几支”(cut a few more) may send back to the same session). */
+/** Records a newly submitted run. If the same session is submitted again, it overwrites (“cut a few more” may send back to the same session). */
 export function recordShortsRun(run: Omit<ShortsRun, 'landed' | 'focus'>): void {
   useShortsRuns.setState((s) => {
     const next: Record<Id, ShortsRun> = { ...s.runs, [run.conversationId]: { ...run, landed: false, focus: null } };

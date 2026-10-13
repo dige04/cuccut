@@ -514,7 +514,7 @@ pub fn mapped_item_words(item: &mut Value, mapped: &timeline::MappedEvent) {
     if let Some(object) = item.as_object_mut() {
         if !projected.is_empty() {
             let text = speech_doc::atomize::join_word_texts(
-                // The word-level flag “贴前” (place in front) is carried over with the projection (sparse, default false).
+                // The word-level flag “place in front” is carried over with the projection (sparse, default false).
                 projected.iter().filter_map(|word| {
                     let glue = word.get("glue").and_then(Value::as_bool).unwrap_or(false);
                     Some((word.get("text").and_then(Value::as_str)?, glue))

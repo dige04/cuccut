@@ -274,7 +274,7 @@ export function compareVersions(left: string, right: string): number {
 
 /**
  * The OS version required by the new release is higher than this machine's. Only compared on macOS (Windows minimum versions are kernel numbers, which the installer checks itself).
- * If the manifest does not state it, or the local version cannot be read, nothing is blocked. Returns the required version; the UI shows “需要 macOS X” (Requires macOS X).
+ * If the manifest does not state it, or the local version cannot be read, nothing is blocked. Returns the required version; the UI shows “Requires macOS X”.
  */
 export function systemRequirementUnmet(info: Pick<AppUpdateInfo, 'minimumSystemVersion'>, currentSystem: string | null, macos: boolean): string | null {
   if (!macos) return null;
@@ -429,7 +429,7 @@ export function mayAutoCheck(st: AppUpdateState): boolean {
 }
 
 /**
- * A check is waiting for its result: a manual check in `checking`, or a silent check with `bg` on “有新版本” (update available) or “已下载” (downloaded). In any other state (for example, the user started a download or clicked restart in the meantime),
+ * A check is waiting for its result: a manual check in `checking`, or a silent check with `bg` on “update available” or “downloaded”. In any other state (for example, the user started a download or clicked restart in the meantime),
  * a late check result is discarded, so that a failed check cannot turn an in-flight download into an error state.
  */
 export function checkPending(st: AppUpdateState): boolean {
@@ -437,17 +437,17 @@ export function checkPending(st: AppUpdateState): boolean {
 }
 
 /**
- * State transitions. An automatic check is silent while in “有新版本” (update available) or “已下载” (downloaded): it sets `bg`, and the displayed state does not change. A failed silent check keeps the original state, so one network hiccup
+ * State transitions. An automatic check is silent while in “update available” or “downloaded”: it sets `bg`, and the displayed state does not change. A failed silent check keeps the original state, so one network hiccup
  * does not discard an update already found or downloaded. A manual check still enters `checking` as before.
  *
- * Silent check while “已下载” (downloaded) (2026-10-05): same build → stays downloaded. A newer build, but this machine's OS is too old → stays downloaded (the version in hand is already verified and installable, and it is newer than the running one).
- * Another build (newer, or older than the downloaded one but still newer than the running one, i.e. the downloaded release was withdrawn) → the old download is discarded and replaced with “有新版本” (update available).
+ * Silent check while “downloaded” (2026-10-05): same build → stays downloaded. A newer build, but this machine's OS is too old → stays downloaded (the version in hand is already verified and installable, and it is newer than the running one).
+ * Another build (newer, or older than the downloaded one but still newer than the running one, i.e. the downloaded release was withdrawn) → the old download is discarded and replaced with “update available”.
  * Nothing newer than the running one → already up to date; the withdrawn release is not installed (the service then deletes the downloaded package).
  *
  * When this rollout round did not include this machine (`none` with `heldBack`), a silent check whose starting point already holds a version newer than the running one keeps the original state and only clears `bg`.
- * Other starting points go to “已是最新” (up to date) as usual.
+ * Other starting points go to “up to date” as usual.
  *
- * One addition beyond the design doc: when `found` carries the intact cached copy of the same build, it goes straight to the verification stage after the download reaches 100%, and reaches “已下载” (downloaded) only once verification and staging are complete.
+ * One addition beyond the design doc: when `found` carries the intact cached copy of the same build, it goes straight to the verification stage after the download reaches 100%, and reaches “downloaded” only once verification and staging are complete.
  */
 export function reduce(st: AppUpdateState, ev: UpdateEvent): AppUpdateState {
   if (st.k === 'unsupported') return st;
@@ -491,7 +491,7 @@ export function reduce(st: AppUpdateState, ev: UpdateEvent): AppUpdateState {
   }
 }
 
-/** Verification stage after the download reaches 100% and before “已下载” (downloaded) (the UI shows “正在校验” (verifying)). */
+/** Verification stage after the download reaches 100% and before “downloaded” (the UI shows “verifying”). */
 export function verifying(st: AppUpdateState): boolean {
   return st.k === 'downloading' && st.pct >= 100;
 }
@@ -509,7 +509,7 @@ export interface CheckReport {
   cached: string | null;
   /** Whether this machine can swap the package without manual action by the user. */
   canAutoInstall: boolean;
-  /** The new version requires a macOS version that this machine does not meet: it stays at “有新版本” (update available), with no download and no reminder. */
+  /** The new version requires a macOS version that this machine does not meet: it stays at “update available”, with no download and no reminder. */
   systemUnmet: string | null;
 }
 
@@ -517,7 +517,7 @@ export type Followup = 'none' | 'verify' | 'download' | 'toastAvailable';
 
 /**
  * What follows once the check result has landed (`next` is the state after landing) (design doc `afterCheck`): if the cache already holds this version and it has entered the verification stage, verify it
- * (an automatic check reminds “已下载” (downloaded) when verification completes). When an automatic check lands on a downloadable “有新版本” (update available), if automatic download is on and automatic swapping is possible, download in the background; otherwise remind “可以更新了” (you can update now).
+ * (an automatic check reminds “downloaded” when verification completes). When an automatic check lands on a downloadable “update available”, if automatic download is on and automatic swapping is possible, download in the background; otherwise remind “you can update now”.
  * Staying downloaded, an unmet OS version, and manual checks do not follow up.
  */
 export function followup(origin: Origin, autoDownload: boolean, report: CheckReport, next: AppUpdateState): Followup {
@@ -582,7 +582,7 @@ export interface InstallerPlan {
   unpacked: string | null;
   /** The script itself; deleted after it runs. */
   script: string;
-  /** Whether to open the app after the swap (or after a rollback). On for “重启并更新” (restart and update); off for install-on-quit, since the user is quitting. */
+  /** Whether to open the app after the swap (or after a rollback). On for “restart and update”; off for install-on-quit, since the user is quitting. */
   relaunch: boolean;
 }
 

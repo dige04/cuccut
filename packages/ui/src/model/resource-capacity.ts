@@ -23,7 +23,7 @@ function amount(dimension: ResourceDimension, value: number | null): string {
 export interface CapacityRow {
   dimension: ResourceDimension;
   label: string;
-  /** “16 GB”, “10 线程”（10 threads）, “未知”（unknown）. */
+  /** “16 GB”, “10 threads”, “unknown”. */
   total: string;
   /** Source · allocated · still available to background work; with unified memory, the GPU row's note says it is also counted in memory. */
   desc: string;
@@ -52,7 +52,7 @@ export function capacityRows(snapshot: ResourcesSnapshot): CapacityRow[] {
   });
 }
 
-/** The amount one job takes: “内存 2.0 GB、CPU 4 线程”（memory 2.0 GB, CPU 4 threads); “不占本机资源”（uses no local resources) when it takes nothing. */
+/** The amount one job takes: “memory 2.0 GB, CPU 4 threads”; “uses no local resources” when it takes nothing. */
 export function demandLine(demand: ResourceDemand): string {
   const parts = (['memory', 'gpuMemory', 'cpuThreads', 'scratchDisk'] as const)
     .filter((d) => demand[d])

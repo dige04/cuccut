@@ -134,7 +134,7 @@ export function PRow({ label: text, children }: { label?: ReactNode; children: R
   );
 }
 
-/** Grey small-print description (for example “预览暂不体现” (the preview does not show this yet)). */
+/** Grey small-print description (for example “the preview does not show this yet”). */
 export function Note({ children }: { children: ReactNode }) {
   return <p className={note}>{children}</p>;
 }

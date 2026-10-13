@@ -3,12 +3,12 @@ import { deriveCues, projectableItems, projectSpeech, readSpeechWords, type Spee
 import { jobLive } from './task-list.ts';
 
 /*
- * The live script during transcription (prototype round 220, model-transcript.js `liveSlice` / `liveTrackSlice`; architecture design §6.6 “实时文稿” (live script)).
+ * The live script during transcription (prototype round 220, model-transcript.js `liveSlice` / `liveTrackSlice`; architecture design §6.6 “live script”).
  *
  * Live paragraphs are a projection of the task event stream, not project content: they are read-only, not in the undo stack, and have no cue ID. The three states follow the prototype:
  *   · settled: paragraphs already received — drawn as usual;
  *   · inflight: when the prototype's `at` falls in the middle of a cue, only a prefix is shown. Real data has no half-text, so there is no prefix; only a cursor is attached at the end of the last paragraph;
- *   · pending: `at` through the end of the material, not yet transcribed — the timeline draws a “转录中” (transcribing) pending band.
+ *   · pending: `at` through the end of the material, not yet transcribed — the timeline draws a “transcribing” pending band.
  * `at` = max(end of the last paragraph, seconds converted from progress): for `seconds` progress, `done` is already seconds; `segments` (clips cut by VAD) are converted only as a lower bound, as
  * `done / total × duration`. Services that do not return results as a stream (online, nodes, whole-clip models) have no paragraphs before the end either: only the pending band and the skeleton are shown, and no fake data is made.
  */
@@ -102,7 +102,7 @@ export function liveRowShown(facts: { running: boolean; segments: number; captio
 
 /**
  * Whether the script panel switches to the read-only live state (prototype panels.jsx: it switches while a transcription is running, and likewise for a re-transcription). After the transcription finishes, it waits for the transcript document to land in the video before switching back,
- * so “还没有文稿” (no script yet) does not flash in between.
+ * so “no script yet” does not flash in between.
  */
 export function liveTranscriptShown(facts: { running: boolean; segments: number; documentLanded: boolean }): boolean {
   if (facts.running) return true;
@@ -209,7 +209,7 @@ export interface TranscriptRowSource {
 }
 
 /**
- * The read-only “文稿” (script) row on the timeline (prototype model-timeline.js `rows` `transcript`; product design §5.7): a video that has been transcribed but has no caption track at all
+ * The read-only “script” row on the timeline (prototype model-timeline.js `rows` `transcript`; product design §5.7): a video that has been transcribed but has no caption track at all
  * (captions were not built during transcription, e.g. import from a link does not build them by default; or every caption track was deleted). The script still sits in the caption row's place, so you can see where speech happens.
  * One row per transcribed material used on the timeline (its latest transcript), in order of first appearance on the timeline; materials already showing the temporary transcription line are not drawn twice.
  * It is not a track: it has no toggle, is not exported, and cannot be selected.

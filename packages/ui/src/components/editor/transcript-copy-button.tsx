@@ -303,7 +303,7 @@ export function TranscriptCopyButton({ input }: { input: TranscriptCopyInput }) 
             {fresh && preview.problem ? (
               <p className={note}>{preview.problem}</p>
             ) : (
-              // A scrollable region must be reachable by keyboard (tabIndex); screen readers announce it as “预览” (Preview).
+              // A scrollable region must be reachable by keyboard (tabIndex); screen readers announce it as “Preview”.
               <pre className={previewText({ isStale: !fresh })} tabIndex={0} aria-label={EXPORT_COPY.preview} aria-busy={!fresh}>
                 {shown ? shown.text || T.copyEmpty : EXPORT_COPY.previewLoading}
               </pre>

@@ -134,7 +134,7 @@ export function notesAll(info: AppUpdateInfo | null, lang: string): string[] {
     .filter(Boolean);
 }
 
-/** Relative time for 「上次检查：…」 (“Last checked: …”). */
+/** Relative time for “Last checked: …”. */
 export function relTime(thenSec: number, nowSec: number): string {
   const d = Math.max(0, Math.floor(nowSec - thenSec));
   if (d < 60) return M.justNow;
@@ -239,7 +239,7 @@ function waitingText(running: number): string {
   return running > 0 ? M.waitingRunning(running) : M.waitingDone;
 }
 
-/** Which step 「重试」 (Retry) redoes in the error state: download, verify and install failures that carry version info are re-downloaded; a check failure with none is re-checked. */
+/** Which step “Retry” redoes in the error state: download, verify and install failures that carry version info are re-downloaded; a check failure with none is re-checked. */
 export function retryAction(st: AppUpdateState): 'download' | 'check' {
   return st.k === 'error' && st.info ? 'download' : 'check';
 }
@@ -253,7 +253,7 @@ export type SideButton =
 const HIDDEN: SideButton = { visible: false };
 
 /**
- * The accent square button above 「设置」 (Settings) on the rail: shown only when there is something to do — a new version is available (OS version is sufficient), downloading, downloaded, or an error that carries version info;
+ * The accent square button above “Settings” on the rail: shown only when there is something to do — a new version is available (OS version is sufficient), downloading, downloaded, or an error that carries version info;
  * it is hidden when the OS version is too old, when the check failed, and in all other states (design spec `sideButton`).
  */
 export function sideButton(st: AppUpdateState): SideButton {
@@ -290,8 +290,8 @@ export interface DialogView {
 /**
  * Update window (480 wide): every state in which the sidebar button should not show returns null — the view takes null to mean “the window closes automatically” (design spec `dialog`).
  * `current` is the running version; `waiting` is the same as `view`. When downloaded, one extra `note` is added (it will also be installed on quit); it is not written while waiting on background tasks —
- * read next to the footer line 「都结束后自动安装」 (Install automatically once everything finishes), it would sound like two different claims. For the verification step after the download reaches 100%,
- * the footer's left side shows 「正在校验…」 (Verifying…).
+ * read next to the footer line “Install automatically once everything finishes”, it would sound like two different claims. For the verification step after the download reaches 100%,
+ * the footer's left side shows “Verifying…”.
  */
 export function dialog(
   st: AppUpdateState,
@@ -331,7 +331,7 @@ export function readyToast(info: AppUpdateInfo): { text: string; action: string 
   return { text: M.readyToast(info.version), action: M.restartAndUpdate };
 }
 
-/** With automatic download off, the automatic check found a new version. 「查看」 (View) opens the update window. */
+/** With automatic download off, the automatic check found a new version. “View” opens the update window. */
 export function availableToast(info: AppUpdateInfo): { text: string; action: string } {
   return { text: M.availableToast(info.version), action: M.view };
 }
@@ -387,8 +387,8 @@ export interface RestartAsk {
 }
 
 /**
- * When 「重启并更新」 (Restart and update) is clicked, ask first if background tasks are running (the title and body come from design spec `restartAsk`), letting the user choose 「等任务结束后安装」 (Install after tasks finish) or
- * 「现在停止并安装」 (Stop now and install), and list the tasks that may still run or bill remotely after stopping. Returns null when no task is running, and the install proceeds directly.
+ * When “Restart and update” is clicked, ask first if background tasks are running (the title and body come from design spec `restartAsk`), letting the user choose “Install after tasks finish” or
+ * “Stop now and install”, and list the tasks that may still run or bill remotely after stopping. Returns null when no task is running, and the install proceeds directly.
  */
 export function restartAsk(tasks: readonly BarrierTask[]): RestartAsk | null {
   const n = tasks.length;
@@ -411,7 +411,7 @@ export const AUTO_ROW: AppUpdateMessages['autoRow'] = live(() => M.autoRow);
 
 /**
  * Which keys are written when the switch is flipped (same meaning as `app_auto_update` in the App): when on, both are enabled; when off, only automatic download is turned off — checks still run on schedule,
- * and when a new version is found it reminds the user 「可以更新了」 (Ready to update), without downloading in the background.
+ * and when a new version is found it reminds the user “Ready to update”, without downloading in the background.
  */
 export function autoUpdatePatch(on: boolean): { 'updates.autoCheck'?: boolean; 'updates.autoDownload': boolean } {
   return on ? { 'updates.autoCheck': true, 'updates.autoDownload': true } : { 'updates.autoDownload': false };

@@ -22,7 +22,7 @@ import { ProjectPicker } from './tool-run-view.tsx';
 import { useVideoTools } from './use-video-tools.ts';
 
 /*
- * Output row (product design §2.7 “结果与下一步” (Results and next steps), design file tool-frame.jsx `ToolOutputRow` / `ToolOutputs`): one row for each entry a run published to the Space —
+ * Output row (product design §2.7 “Results and next steps”, design file tool-frame.jsx `ToolOutputRow` / `ToolOutputs`): one row for each entry a run published to the Space —
  * name, kind, size or duration, and folder; View in Space, Show in folder (not on the web, since the browser cannot open local folders),
  * Hand to Agent (`space.continueInConversation` carries the reference and pre-fills a sentence that can be edited, without sending it automatically), and which tool to use next.
  * Shared by the result page, the job details and the generation records. For what to do next, see model/tool-outputs.ts.
@@ -105,7 +105,7 @@ const nextRow = style({ display: 'flex', alignItems: 'center', flexWrap: 'wrap',
 const nextLabel = style({ font: 'ui-xs', color: 'gray-700' });
 const pickBox = style({ display: 'flex', flexDirection: 'column', gap: 8, width: 'full' });
 
-/** “以此新建视频” (Create video from this): for audio, image and video files, after picking a project they become the assets of a new video directly; for documents and subtitles, the reason it is not possible is stated. */
+/** “Create video from this”: for audio, image and video files, after picking a project they become the assets of a new video directly; for documents and subtitles, the reason it is not possible is stated. */
 function NewMovieFrom({ entry, label }: { entry: SpaceEntry; label: string }) {
   const actions = useOutputActions();
   const [open, setOpen] = useState(false);

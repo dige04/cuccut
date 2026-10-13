@@ -11,7 +11,7 @@ import { useUpdateActions } from './use-update-actions.ts';
 
 /*
  * Update window (design settings-update.jsx `UpdateWindow`, settings-update.css `.upddlg`): modal, 480 wide. The header is the title,
- * “CucCut 2.3.0 · Build 57” and close; the body is one line on the current version (when already downloaded, it also says it will install on quit), “更新内容” (what's new) and all release notes (scrollable); the footer changes with the state. ×, Esc, clicking the backdrop and “稍后” (later) only close the window; “重启并更新” (restart and update) uses the same action as the About page and toast.
+ * “CucCut 2.3.0 · Build 57” and close; the body is one line on the current version (when already downloaded, it also says it will install on quit), “what's new” and all release notes (scrollable); the footer changes with the state. ×, Esc, clicking the backdrop and “later” only close the window; “restart and update” uses the same action as the About page and toast.
  *
  * The surface is agentcut's dialog (cc/ui/dialog.tsx): 20px corners, near-black translucent material, a fine lit
  * edge, a blurred dim backdrop; the footer sits on a darker strip under a fine line.

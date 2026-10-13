@@ -243,7 +243,7 @@ pub const SHORT_INTERJECTION_MAX_CHARS: usize = 10;
 /// Default duration limit for a 「short interjection」 paragraph (seconds).
 pub const SHORT_INTERJECTION_MAX_SECONDS: f64 = 3.0;
 
-/// Short-interjection paragraph: a paragraph between two paragraphs of the **same speaker**, whose own speaker is different, whose text is no more than `max_chars` characters, and whose duration is no more than `max_seconds` seconds (acknowledgements such as 「嗯。」 ("mm."), 「哦。」 ("oh."), 「对。」 ("right.")). Returns their indices in `paras`, in ascending order.
+/// Short-interjection paragraph: a paragraph between two paragraphs of the **same speaker**, whose own speaker is different, whose text is no more than `max_chars` characters, and whose duration is no more than `max_seconds` seconds (acknowledgements such as “mm.”, “oh.”, “right.”). Returns their indices in `paras`, in ascending order.
 ///
 /// This is an **observation measure** only and does not change derivation. The §18.5 Para still groups by (chapter × consecutive same speaker), so every speaker change starts a new paragraph. In a measured multi-person interview, 1284 of 1965 paragraphs were such interjections (369 × 「嗯。」, median 8 characters and 0.95 s). The polish envelope reports this count so the UI can choose to fold or inline them. The derivation logic of the four platform implementations is not changed (decision of 2026-08).
 pub fn short_interjection_paragraphs(

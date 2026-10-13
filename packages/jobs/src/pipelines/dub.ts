@@ -1782,7 +1782,7 @@ export async function dubOperations(input: {
     const item = sequence.items.find((i) => i.id === id)!;
     return item.type === 'audio' ? !item.mix.muted : item.type === 'video' ? item.embeddedAudio.enabled : false;
   };
-  // Separated (`keep` does not separate): for instances where the original sentence is, that are still audible, and that use the same asset the separation was made from, swap the instance for two separate tracks. The instance is muted, and a background segment is placed at the same position and source range (the “背景声” (background sound) track, at the original volume). For `duck`, a vocals segment is also placed (the “人声” (vocals) track), which is ducked. For `mute`, the vocals are muted too and are not placed.
+  // Separated (`keep` does not separate): for instances where the original sentence is, that are still audible, and that use the same asset the separation was made from, swap the instance for two separate tracks. The instance is muted, and a background segment is placed at the same position and source range (the “background sound” track, at the original volume). For `duck`, a vocals segment is also placed (the “vocals” track), which is ducked. For `mute`, the vocals are muted too and are not placed.
   //
   const stemmed =
     separated && params.originalAudio !== 'keep' ? dialogue.filter((id) => sounding(id) && stemSource(sequence, id, separated)) : [];

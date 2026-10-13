@@ -1473,14 +1473,14 @@ export function Timeline({
     };
   })();
   /**
-   * Track header. Subtitle rows show a language tag (a translation icon replaces it for translated rows); the full name and original / translation go in the hover description. For a dub row where the whole track holds just one dub group, the language tag is shown and the full name “配音 · 语言” (Dub · language) goes in the hover description. The sentence count, the yellow dot, and the trailing ⋯ are in DubTrackHeader.
+   * Track header. Subtitle rows show a language tag (a translation icon replaces it for translated rows); the full name and original / translation go in the hover description. For a dub row where the whole track holds just one dub group, the language tag is shown and the full name “Dub · language” goes in the hover description. The sentence count, the yellow dot, and the trailing ⋯ are in DubTrackHeader.
    */
   const trackHeader = (track: Track, label: string) => {
     const group =
       track.kind === "audio" ? dubTrackGroup(sequence, track.id) : null;
     const tag = heads.tags.get(track.id);
     if (!group) {
-      // Dub stems split off a dub: the headers read “背景声 · 语言” (Background · language) and “人声 · 语言” (Vocals · language), same as dub rows.
+      // Dub stems split off a dub: the headers read “Background · language” and “Vocals · language”, same as dub rows.
       const stem =
         track.kind === "audio" ? stemTrackOf(sequence, track.id) : null;
       const name = stem?.language

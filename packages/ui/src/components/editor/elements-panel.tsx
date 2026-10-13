@@ -20,7 +20,7 @@ import { useBrandStickers, type BrandSticker } from './use-brand-stickers.ts';
 import { useInsertVisual } from './use-insert-visual.ts';
 import { ELEMENTS_COPY as EL } from './elements-copy.ts';
 
-/** Each section on the catalog page shows a fixed number of cells; the rest are reached through “查看全部” (view all). */
+/** Each section on the catalog page shows a fixed number of cells; the rest are reached through “view all”. */
 const PEEK = 4;
 
 type Section = ElementSection['key'];
@@ -75,7 +75,7 @@ const VIZ_CHIPS: { key: VizSub; label: string }[] = [
 ];
 
 /**
- * Secondary categories for stickers (design `stickerChips`): “我的贴纸” (My stickers) is always the first cell after “全部” (All). Later in the design come third-party static packs (featured, emoji, ⋯), which need bundled assets that are not here. The ten built-in templates take one cell of their own.
+ * Secondary categories for stickers (design `stickerChips`): “My stickers” is always the first cell after “All”. Later in the design come third-party static packs (featured, emoji, ⋯), which need bundled assets that are not here. The ten built-in templates take one cell of their own.
  */
 type StickerSub = 'all' | 'brand' | 'builtin';
 const STICKER_CHIPS: { key: StickerSub; label: string }[] = [
@@ -198,11 +198,11 @@ const packTitle = style({ flexShrink: 0, font: 'ui-sm', fontWeight: 'bold', colo
 const packNote = style({ minWidth: 0, font: 'ui-xs', color: 'gray-600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
 const packAction = style({ flexShrink: 0, marginStart: 'auto' });
 const empty = style({ font: 'ui-sm', color: 'gray-600', textAlign: 'center', paddingY: 24 });
-/** Signpost shown when “我的贴纸” (My stickers) is empty (design `Empty`): it says where things come from, rather than showing a blank space. */
+/** Signpost shown when “My stickers” is empty (design `Empty`): it says where things come from, rather than showing a blank space. */
 const emptyBox = style({ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, paddingY: 16, paddingX: 8, textAlign: 'center' });
 const emptyTitle = style({ font: 'ui-sm', fontWeight: 'bold', color: 'gray-900' });
 const emptyText = style({ font: 'ui-xs', color: 'gray-600' });
-/** The line under “我的贴纸” (My stickers) (design .signpost). */
+/** The line under “My stickers” (design .signpost). */
 const signpost = style({ marginTop: 8, font: 'ui-xs', color: 'gray-600' });
 const hint = style({
   marginTop: 16,
@@ -226,7 +226,7 @@ const headNote = style({
 const byKey = (keys: readonly string[]) => keys.map((key) => ELEMENT_TILES.find((t) => t.key === key)).filter((t): t is ElementTile => !!t);
 
 /**
- * Elements panel (prototype §14): the catalog page shows a few cells each for the stickers, shapes and visualizers sections. “查看全部” (view all), or a secondary category under a section header, drills into that section. Clicking a cell creates a new clip at the playhead and selects it.
+ * Elements panel (prototype §14): the catalog page shows a few cells each for the stickers, shapes and visualizers sections. “view all”, or a secondary category under a section header, drills into that section. Clicking a cell creates a new clip at the playhead and selects it.
  */
 export function ElementsPanel({ sequence }: { sequence: Sequence }) {
   const [tab, setTab] = useState<Section | 'all'>('all');
@@ -261,7 +261,7 @@ export function ElementsPanel({ sequence }: { sequence: Sequence }) {
     const layer = item.layer(sequence.canvas);
     void insert(sequence, { span, layers: [layer], label: layer.name ?? item.label, trackName: EL.elementsTrack });
   };
-  // When returning to the catalog, reset the secondary category to “全部” (All). The catalog samples take turns from each category, so staying on the last cell would no longer match.
+  // When returning to the catalog, reset the secondary category to “All”. The catalog samples take turns from each category, so staying on the last cell would no longer match.
   const back = () => {
     setTab('all');
     setViz('all');
@@ -371,7 +371,7 @@ function ViewAll({ onPress, children = EL.viewAll }: { onPress(): void; children
   );
 }
 
-/** The row of secondary categories under a catalog section header (design `SubChips`): the highlight stays on “全部” (All); clicking another cell drills into that section with it selected. */
+/** The row of secondary categories under a catalog section header (design `SubChips`): the highlight stays on “All”; clicking another cell drills into that section with it selected. */
 function SubChips<K extends string>({ label, items, onPick }: { label: string; items: readonly { key: K; label: string }[]; onPick(key: K): void }) {
   return (
     <div className={subChips}>
@@ -412,7 +412,7 @@ interface TileProps {
 }
 
 /**
- * Visualizer sub-page (design `VizSection`): under “全部” (All) there are two small sections, progress bars and waveforms, each showing its first few cells and each with a “查看全部” (view all) that switches to it. “进度” (Progress) shows the progress grid, with the two timer cells in between; “声波” (Waveform) shows 10 styles. When searching, each section shows all of its matches.
+ * Visualizer sub-page (design `VizSection`): under “All” there are two small sections, progress bars and waveforms, each showing its first few cells and each with a “view all” that switches to it. “Progress” shows the progress grid, with the two timer cells in between; “Waveform” shows 10 styles. When searching, each section shows all of its matches.
  */
 function Visualizers({
   items,
@@ -445,7 +445,7 @@ function Visualizers({
   );
 }
 
-/** What the “我的贴纸” (My stickers) group needs: the brand-library stickers that match on this page, whether they have been read, the search term, and how clicking a cell places it. */
+/** What the “My stickers” group needs: the brand-library stickers that match on this page, whether they have been read, the search term, and how clicking a cell places it. */
 interface BrandProps {
   stickers: BrandSticker[];
   ready: boolean;
@@ -453,11 +453,11 @@ interface BrandProps {
   onAdd(sticker: BrandSticker): void;
 }
 
-/** Whether the “我的贴纸” (My stickers) group is shown. Under “全部” (All), if the search has no match here it is hidden (the matches are elsewhere); when viewing “我的贴纸” (My stickers) alone it is always shown, so it can say nothing was found. */
+/** Whether the “My stickers” group is shown. Under “All”, if the search has no match here it is hidden (the matches are elsewhere); when viewing “My stickers” alone it is always shown, so it can say nothing was found. */
 const showMine = (sub: string, brand: BrandProps) => sub !== 'builtin' && sub !== 'confetti' && (sub === 'brand' || !brand.query || brand.stickers.length > 0);
 
 /**
- * Sticker sub-page (design `StickerSection`): “我的贴纸” (My stickers) first (the user's own items come before the bundled catalog), then the ten built-in templates.
+ * Sticker sub-page (design `StickerSection`): “My stickers” first (the user's own items come before the bundled catalog), then the ten built-in templates.
  */
 function Stickers({ sub, items, brand, ...tiles }: TileProps & { sub: StickerSub; items: ElementTile[]; brand: BrandProps }) {
   const withMine = showMine(sub, brand);
@@ -475,7 +475,7 @@ function Stickers({ sub, items, brand, ...tiles }: TileProps & { sub: StickerSub
 }
 
 /**
- * Animated-sticker sub-page (design `AnimPackSection`): first the Lotties from the brand library (“我的贴纸” (My stickers)), then ten confetti styles (algorithmic particles, not animated images).
+ * Animated-sticker sub-page (design `AnimPackSection`): first the Lotties from the brand library (“My stickers”), then ten confetti styles (algorithmic particles, not animated images).
  */
 function Dynamic({ sub, items, brand, ...tiles }: TileProps & { sub: DynSub; items: ElementTile[]; brand: BrandProps }) {
   const withMine = showMine(sub, brand);
@@ -498,7 +498,7 @@ function Dynamic({ sub, items, brand, ...tiles }: TileProps & { sub: DynSub; ite
 }
 
 /**
- * “我的贴纸” (My stickers) (design `BrandStickerGrid`): stickers uploaded to the brand library. The stickers and animated-stickers pages each show their own (images or Lottie, no duplicates). Clicking a cell copies it into the video and places it at the playhead, the same route as the brand page's “放进视频” (put into video). When empty, a signpost says where things come from and where to upload them.
+ * “My stickers” (design `BrandStickerGrid`): stickers uploaded to the brand library. The stickers and animated-stickers pages each show their own (images or Lottie, no duplicates). Clicking a cell copies it into the video and places it at the playhead, the same route as the brand page's “put into video”. When empty, a signpost says where things come from and where to upload them.
  */
 function BrandStickerGrid({ anim, brand, editable, first }: { anim: boolean; brand: BrandProps; editable: boolean; first?: boolean }) {
   const { stickers, ready, query, onAdd } = brand;

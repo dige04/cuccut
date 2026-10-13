@@ -3,7 +3,7 @@ import { markdownAbsolutePath } from './markdown-file-link.ts';
 import { entryPath } from './space.ts';
 
 /**
- * Relative-path images in Markdown articles in the file viewer (architecture design §12 “文件查看器” (file viewer)). They are resolved to the same kind of media location based on the article's directory, then `media.resolve` gets a restricted handle. The Runtime checks permissions.
+ * Relative-path images in Markdown articles in the file viewer (architecture design §12 “file viewer”). They are resolved to the same kind of media location based on the article's directory, then `media.resolve` gets a restricted handle. The Runtime checks permissions.
  *
  * - Only relative paths are handled (`a.png`, `./img/a.png`, `../a.png`). Paths with a scheme (`http:`, `data:`, `file:`), protocol-relative paths and absolute paths return null, and the caller handles them as before. An article's reference never reads an arbitrary local file.
  * - If the article is a path in a session or project, it resolves against the same source, next to adjacent paths. If the article is a Space item, it resolves against the item's source directory. Deliverables outside that directory first look for an entry registered in the same directory, and desktop falls back to the local path (`{ localPath }`). If the article is a local file, it resolves to the local path in the same directory. Assets and attachments have no directory.

@@ -271,7 +271,7 @@ export function formatTimecode(seconds: number, fps: Rate): string {
   return `${two(h)}:${two(m)}:${two(s)}:${two(Math.min(Math.max(ff, 0), perSecond - 1))}`;
 }
 
-/** Seconds shown to the millisecond: “10.010 秒” (10.010 seconds). Display only; submissions use the exact value. */
+/** Seconds shown to the millisecond: “10.010 seconds”. Display only; submissions use the exact value. */
 export function formatSeconds(seconds: number): string {
   return M.seconds(seconds.toFixed(3));
 }

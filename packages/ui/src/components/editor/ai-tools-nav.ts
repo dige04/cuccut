@@ -11,14 +11,14 @@ export interface AiToolPreset {
   language?: string | null;
   /** Refresh stale translations: which translation it comes from (the subtitle panel's translation list); when calling the model directly, it refreshes that one by default. */
   translationId?: Id | null;
-  /** Short video's 「再切几支」 (cut a few more clips): the parameters page's checkbox 「已经切过的不再找」 (do not look for ones already cut). */
+  /** Short video's “cut a few more clips”: the parameters page's checkbox “do not look for ones already cut”. */
   skipDone?: boolean;
 }
 
 export interface AiToolPage {
   tool: AiToolId;
   preset: AiToolPreset | null;
-  /** Navigate to the short-video result page (product design §5.10 「结果页」 (result page)); when not given, it goes to the parameters page. */
+  /** Navigate to the short-video result page (product design §5.10 “result page”); when not given, it goes to the parameters page. */
   phase?: 'setup' | 'result';
   /** Which parent video the result page belongs to: when a child video is open, the parent video's round of results is also shown. */
   host?: Id;
@@ -26,7 +26,7 @@ export interface AiToolPage {
 
 /**
  * The tool page open on the AI tools tab, kept per video (not persisted); when none is open, the tab shows the list page (product design §5.10).
- * Clicking a row on the list page, or an entry from another panel carrying a range (prototype `ctx.requestAi`), opens it; the tool page's 「返回」 (Back) returns to the list.
+ * Clicking a row on the list page, or an entry from another panel carrying a range (prototype `ctx.requestAi`), opens it; the tool page's “Back” returns to the list.
  */
 export const useAiToolsNav = create<{ pages: Record<Id, AiToolPage> }>(() => ({ pages: {} }));
 
@@ -77,8 +77,8 @@ export interface AiToolAgentRun extends StoredAgentRun {
 }
 
 /**
- * After finding cut points and refreshing stale translations are handed to the Agent, that one handoff is recorded per 「视频 · 工具」 (video · tool) (`toolDraftKey`): if present, the tool page draws the progress card in place
- * (prototype panel-aitools.jsx `phase === 'agent'`), and it is still there when re-entering from the list. 「重新设置」 (Set up again) and 「完成」 (Done) clear it, and the conversation is not affected.
+ * After finding cut points and refreshing stale translations are handed to the Agent, that one handoff is recorded per “video · tool” (`toolDraftKey`): if present, the tool page draws the progress card in place
+ * (prototype panel-aitools.jsx `phase === 'agent'`), and it is still there when re-entering from the list. “Set up again” and “Done” clear it, and the conversation is not affected.
  * It is recorded on this machine: records read back after a restart are marked `restored`; once the directory is read, they are matched to that conversation (`adoptRestoredRuns`), so ones whose task is still running are reconnected and ones that finished are dropped.
  */
 export const useAiToolAgentRuns = create<{ runs: Record<string, AiToolAgentRun> }>()(

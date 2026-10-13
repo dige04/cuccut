@@ -123,7 +123,7 @@ export function startDesktopApp(): void {
 
   ipcMain.handle('cuccut:connection', () => connection());
 
-  // Choose a directory: by default it opens the project directory; when the UI supplies a title (for example, choosing a save location), that title is used, and the button reads “选择” (Choose). The title comes from the renderer, and only short strings are accepted.
+  // Choose a directory: by default it opens the project directory; when the UI supplies a title (for example, choosing a save location), that title is used, and the button reads “Choose”. The title comes from the renderer, and only short strings are accepted.
   ipcMain.handle('cuccut:pick-directory', async (event, request?: { title?: unknown }) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     const title = typeof request?.title === 'string' && request.title.trim() ? request.title.trim().slice(0, 200) : null;
@@ -293,7 +293,7 @@ export function startDesktopApp(): void {
     event.preventDefault();
     void supervisor.stop().finally(async () => {
       // Install on quit (architecture design §2.6): after the Runtime stops, the downloaded and staged update is handed to the swap program, and the app is not reopened after the swap. It is time-limited and does not throw;
-      // an exit caused by “重启并更新” (restart and update) is already installing, so nothing is done here. Afterwards, any downloads and verifications still running are stopped.
+      // an exit caused by “restart and update” is already installing, so nothing is done here. Afterwards, any downloads and verifications still running are stopped.
       await updates?.installOnQuit();
       updates?.dispose();
       app.quit();

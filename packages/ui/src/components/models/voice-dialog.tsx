@@ -55,7 +55,7 @@ export function VoiceDialog({
 }: {
   mode: VoiceDialogMode;
   onClose: () => void;
-  /** After creating and saving: the side that takes it back (the return from “克隆新音色…”(Clone new voice…)) needs to know which voice it is. */
+  /** After creating and saving: the side that takes it back (the return from “Clone new voice…”) needs to know which voice it is. */
   onCreated?: (voiceId: string) => void;
 }) {
   const runtime = useRuntime();

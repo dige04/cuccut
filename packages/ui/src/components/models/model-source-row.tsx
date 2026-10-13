@@ -20,8 +20,8 @@ import { useSaveSettings, useSettingsReady } from '../settings/save-settings.ts'
 import { Card } from './model-parts.tsx';
 
 /*
- * Download source for local models (architecture design §6.3 “来源”(Source); design mock settings-local.jsx `SourceRow`, `ModelDisclosure`): Hugging Face / ModelScope / custom, writes `models.downloadEndpoint`. The “下载与存储”(Download and storage) section at the bottom of the local models page and 设置 › 通用 › 下载来源与离线(Settings › General › Download source and offline) share this row.
- * Choosing “自定义”(Custom) first shows the base URL box; the change only takes effect after filling it in and saving. In the browser it is read-only: the Web allowlist does not include `settings.set`, and local models cannot be downloaded there.
+ * Download source for local models (architecture design §6.3 “Source”; design mock settings-local.jsx `SourceRow`, `ModelDisclosure`): Hugging Face / ModelScope / custom, writes `models.downloadEndpoint`. The “Download and storage” section at the bottom of the local models page and 设置 › 通用 › 下载来源与离线(Settings › General › Download source and offline) share this row.
+ * Choosing “Custom” first shows the base URL box; the change only takes effect after filling it in and saving. In the browser it is read-only: the Web allowlist does not include `settings.set`, and local models cannot be downloaded there.
  * The design mock locks the picker when an environment variable is set; the Runtime does not tell the UI whether an environment variable is set, so this only mentions it in the description.
  */
 
@@ -48,14 +48,14 @@ const field = style({ flexGrow: 1, minWidth: 220, maxWidth: 360 });
 const fold = style({ marginTop: 24 });
 const foldSummary = style({ marginStart: 8, font: 'ui-sm', fontWeight: 'normal', color: 'gray-600' });
 
-/** Download source row: the row name and a description of the selected source on the left, the picker on the right; below, the full-width supplementary note and (if “自定义”(Custom) is selected) the base URL box. */
+/** Download source row: the row name and a description of the selected source on the left, the picker on the right; below, the full-width supplementary note and (if “Custom” is selected) the base URL box. */
 export function ModelSourceRow({ label = M.label, compact = false }: { label?: string; compact?: boolean }) {
   const web = useRuntime().host.platform === 'web';
   const ready = useSettingsReady();
   const save = useSaveSettings();
   const saved = useSetting('models.downloadEndpoint') ?? null;
   const savedId = sourceOf(saved);
-  const [custom, setCustom] = useState(false); // “自定义”(Custom) selected, not saved yet
+  const [custom, setCustom] = useState(false); // “Custom” selected, not saved yet
   const [draft, setDraft] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const off = web || !ready || busy;
@@ -140,7 +140,7 @@ export function ModelSourceRow({ label = M.label, compact = false }: { label?: s
   );
 }
 
-/** The collapsible “下载与存储”(Download and storage) section at the bottom of the local models page: the title shows where downloads currently come from; expanding it shows the download source row. */
+/** The collapsible “Download and storage” section at the bottom of the local models page: the title shows where downloads currently come from; expanding it shows the download source row. */
 export function ModelSourceFold() {
   const saved = useSetting('models.downloadEndpoint');
   const ready = useSettingsReady();

@@ -22,7 +22,7 @@ export function oneDecimal(n: number): string {
 /** Copy for the speech generation workspace (translations are in `tools-tts-copy.<language>.ts`). */
 const en = {
   emptyText: 'Write the text to read first',
-  /** Delivery style card: `name` is the name on the card; `style` fills 「风格」 (Style), and is also sent to the model unchanged as the style instruction. */
+  /** Delivery style card: `name` is the name on the card; `style` fills “Style”, and is also sent to the model unchanged as the style instruction. */
   vibes: {
     radio: { name: 'Late-night radio', style: 'Like late-night radio: a little slower, voice kept low' },
     launch: { name: 'Product launch', style: 'A product launch: warmer and more energetic, stressing the key points' },

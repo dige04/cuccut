@@ -81,7 +81,7 @@ const dub = {
   separateHint: 'The voice-over replaces only the speech; music and ambient sound stay',
   separateMissing: 'No separation model is available on this computer; even if turned on, separation is skipped and the original audio is processed as a whole.',
   installSeparate: 'Install separation model…',
-  /** The gate card and primary button when separation is on but the separation model is not installed yet (design panel-dub-setup.jsx: “还要下载 X · 大小” (still need to download X · size) and “下载模型并配成…” (download the model and set up…)). */
+  /** The gate card and primary button when separation is on but the separation model is not installed yet (design panel-dub-setup.jsx: “still need to download X · size” and “download the model and set up…”). */
   separateDownload: (name: string) => `${name} needs to be downloaded`,
   separateDownloadBody: 'The button below downloads it first and starts the voice-over once it’s installed. Downloading doesn’t use the task queue.',
   separateWaiting: (name: string, pct: number | null) =>

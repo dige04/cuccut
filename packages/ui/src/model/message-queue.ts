@@ -1,9 +1,9 @@
 /*
- * Queue while busy: a message sent while a task is running on the session is queued and sent in order after the task ends; it can also be “立即发送” (send now) to insert it into the current turn.
+ * Queue while busy: a message sent while a task is running on the session is queued and sent in order after the task ends; it can also be “send now” to insert it into the current turn.
  *
  * The approach of “remove from the queue first, and put it back at the head if sending fails” is ported from paseo (Apache-2.0, Copyright (c) 2025-present Mohamed Boudra)
  * packages/app/src/composer/actions.ts (`sendQueuedComposerMessageNow`, `editQueuedComposerMessage`), modified:
- * “立即发送” (send now) first goes through `conversations.steer`, and its result decides whether to remove the message, keep it in the queue, or switch to `conversations.send`; the queue is stored per session in shell-store.
+ * “send now” first goes through `conversations.steer`, and its result decides whether to remove the message, keep it in the queue, or switch to `conversations.send`; the queue is stored per session in shell-store.
  */
 import { sendSkillRefs, type AttachmentRef, type EditorContext, type Id, type SkillSendRef, type SlideAnnotation, type DesignAnnotation, type DesignSystemAnnotation } from '@cuccut/protocol';
 
@@ -146,7 +146,7 @@ export type QueueSendResult =
   | { status: 'failed'; error: string };
 
 /**
- * “立即发送” (send now): first remove the message from the queue (so the same message is not sent again by the automatic send when the task ends), then try to insert it into the current turn.
+ * “send now”: first remove the message from the queue (so the same message is not sent again by the automatic send when the task ends), then try to insert it into the current turn.
  * `steered` is removed here; `unsupported` is put back at the head of the queue to wait for the task to end; `no-active-turn` means the task has just ended, so it is sent directly.
  */
 export async function sendQueuedNow(queue: QueueAccess, transport: QueueTransport, id: Id): Promise<QueueSendResult> {
@@ -168,7 +168,7 @@ export async function sendQueuedNow(queue: QueueAccess, transport: QueueTranspor
   }
 }
 
-/** Sends the head of the queue after a task ends. On failure it is put back at the head and not retried: wait for the next task to end, or for the user to press “立即发送” (send now). */
+/** Sends the head of the queue after a task ends. On failure it is put back at the head and not retried: wait for the next task to end, or for the user to press “send now”. */
 export async function sendQueueHead(queue: QueueAccess, transport: Pick<QueueTransport, 'send'>): Promise<QueueSendResult> {
   const item = queue.read()[0];
   if (!item) return { status: 'missing' };

@@ -16,17 +16,17 @@ import { GATE_COPY } from './tools-copy.ts';
 
 /*
  * The gate shown when the selected local model cannot be used yet (the local branch of design file image-gen.jsx `EngineGate`, and panel-tts.jsx `TtsModelGate`): if it is not downloaded, it offers
- * “下载 {大小}” (Download {size}), which goes through the same install dialog as the settings page and shows the size and license first; if the weights are already present and only the shared components are missing, it completes the install instead, downloads only what is missing, and does not ask for the license again.
- * While downloading, it shows a progress bar; if this platform or build cannot run the model, it offers only “换用可用的云端模型” (Switch to an available cloud model).
- * Every state also offers “管理本地模型…” (Manage local models…).
+ * “Download {size}”, which goes through the same install dialog as the settings page and shows the size and license first; if the weights are already present and only the shared components are missing, it completes the install instead, downloads only what is missing, and does not ask for the license again.
+ * While downloading, it shows a progress bar; if this platform or build cannot run the model, it offers only “Switch to an available cloud model”.
+ * Every state also offers “Manage local models…”.
  */
 
 const progress = style({ display: 'flex', alignItems: 'center', gap: 8, font: 'ui-sm', color: 'gray-800' });
 const progressBar = style({ width: 120 });
 
 /**
- * In-place download card for a local model pack: the title is “先下载 X · 大小” (Download X first · size). When not downloading, it offers a download (or resume, if it stopped halfway); while downloading, it shows progress. `extra` is an extra button the caller can add
- * (such as switching to another model), and `category` decides which section of settings “管理本地模型…” (Manage local models…) opens. The caller stops rendering it once the model is installed.
+ * In-place download card for a local model pack: the title is “Download X first · size”. When not downloading, it offers a download (or resume, if it stopped halfway); while downloading, it shows progress. `extra` is an extra button the caller can add
+ * (such as switching to another model), and `category` decides which section of settings “Manage local models…” opens. The caller stops rendering it once the model is installed.
  */
 export function LocalDownloadGate({
   bundle,

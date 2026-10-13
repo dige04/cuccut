@@ -1,4 +1,4 @@
-// Original licenses for the third-party code bundled into the design editor (THIRD_PARTY_NOTICES.md, section “设计稿编辑器” (design editor)).
+// Original licenses for the third-party code bundled into the design editor (THIRD_PARTY_NOTICES.md, section “design editor”).
 // npm packages are collected from the modules the build actually bundles, not listed by hand: the page built by Vite, the canvas runtime / injected script / Worker built by esbuild in build.mjs,
 // and the React 18 UMD files copied in as they are (build.mjs also records their package directories).
 

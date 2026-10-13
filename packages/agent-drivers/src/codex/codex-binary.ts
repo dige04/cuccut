@@ -72,7 +72,7 @@ async function readCodexVersion(command: string, env: NodeJS.ProcessEnv): Promis
 
 /**
  * Raw `codex login status` output (“Logged in using ChatGPT”, “Logged in using an API key - sk-…”) → account description shown in the settings page and the input area footnote.
- * The raw text may contain a masked key, which is not passed on outside; unrecognized text is written as 「Codex 账号」 (Codex account).
+ * The raw text may contain a masked key, which is not passed on outside; unrecognized text is written as “Codex account”.
  */
 export function codexAccount(status: string): DriverText {
   const method = /Logged in using (.+)/i.exec(status)?.[1]?.trim().toLowerCase() ?? '';

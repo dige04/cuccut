@@ -38,8 +38,8 @@ import { RECORD_COPY, TRANSCODE_COPY } from './tools-copy.ts';
 import { TranscodeRecord } from './transcode-record.tsx';
 
 /*
- * Components shared by compress video and merge video (the shared layer of design file tool-video.jsx: drop zone, clip rows, ffmpeg card, and the right-column “任务队列” (job queue)).
- * Three ways to pick files: drag them in (on desktop, the path comes from `pathForFile`), “选择视频…” (Choose video…, `cuccut:pick-media`), or paste the full path —
+ * Components shared by compress video and merge video (the shared layer of design file tool-video.jsx: drop zone, clip rows, ffmpeg card, and the right-column “job queue”).
+ * Three ways to pick files: drag them in (on desktop, the path comes from `pathForFile`), “Choose video…, `cuccut:pick-media`”, or paste the full path —
  * the last one also works in the browser preview, where no native dialog is available.
  */
 
@@ -76,7 +76,7 @@ export function useFfmpeg(enabled: boolean): { state: FfmpegState; recheck: () =
   return { state, recheck };
 }
 
-/** Gate card when ffmpeg is unusable (design file `FfmpegCard`'s “要先装” (has to be installed first)); the Runtime does not install or upgrade it on the user's behalf, so the fix it gives is written as is. */
+/** Gate card when ffmpeg is unusable (design file `FfmpegCard`'s “has to be installed first”); the Runtime does not install or upgrade it on the user's behalf, so the fix it gives is written as is. */
 export function FfmpegGate({ state, recheck }: { state: FfmpegState; recheck: () => void }) {
   if (state.status !== 'done' || state.line.ready) return null;
   return (
@@ -113,7 +113,7 @@ const pathRow = style({ display: 'flex', alignItems: 'end', gap: 8, minWidth: 0 
 const pathField = style({ flexGrow: 1, minWidth: 0 });
 
 /**
- * Drop zone and “选择视频…” (Choose video…), with a paste-path line below. When empty, it is a large drop zone (design file `.vdrop`); once a file is present it collapses to one line, and files can still be dragged in.
+ * Drop zone and “Choose video…”, with a paste-path line below. When empty, it is a large drop zone (design file `.vdrop`); once a file is present it collapses to one line, and files can still be dragged in.
  */
 export function FilePicker({
   inputs,
@@ -346,8 +346,8 @@ export function InputList({
 // ---- Right column ----
 
 /**
- * Right column “处理记录” (processing records): compress and merge records are listed together (design file `JobList`). Cancelled items keep one “重新排队” (Requeue) entry, as in the design
- * (it runs locally and is not billed); both failed and finished items are listed. “带回左边再来一版” (Bring back to the left to make another version) is handled by the record card itself, which brings back the matching page depending on whether it was a compress or merge.
+ * Right column “processing records”: compress and merge records are listed together (design file `JobList`). Cancelled items keep one “Requeue” entry, as in the design
+ * (it runs locally and is not billed); both failed and finished items are listed. “Bring back to the left to make another version” is handled by the record card itself, which brings back the matching page depending on whether it was a compress or merge.
  */
 export function TranscodeSide() {
   const records = useTranscodeRecords();

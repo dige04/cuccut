@@ -267,7 +267,7 @@ export interface VoiceChoice {
 }
 
 /**
- * Voice dropdown: the model default (`defaultLabel`; in a binding it is written as “不绑定” (unbound)), the model's built-in voices, library voices (saying clearly whether each works with this provider), and a hand-typed voice ID (when `custom` is true and the model accepts typed IDs). A library voice used as the parameter voice needs a valid clone, or the start is rejected at launch, so it cannot be chosen then. A binding can be set first and cloned later. Sentences that cannot use it this time are reported one by one.
+ * Voice dropdown: the model default (`defaultLabel`; in a binding it is written as “unbound”), the model's built-in voices, library voices (saying clearly whether each works with this provider), and a hand-typed voice ID (when `custom` is true and the model accepts typed IDs). A library voice used as the parameter voice needs a valid clone, or the start is rejected at launch, so it cannot be chosen then. A binding can be set first and cloned later. Sentences that cannot use it this time are reported one by one.
  */
 export function voiceChoices(options: {
   info: SpeechModelInfo | null;
@@ -334,7 +334,7 @@ export interface SpeakerRow {
 }
 
 /**
- * In the setup page's “声音” (voice) section, one row per speaker. The voice in effect follows the Runtime's priority: the binding in the video → the parameter `voice` → the model default.
+ * In the setup page's “voice” section, one row per speaker. The voice in effect follows the Runtime's priority: the binding in the video → the parameter `voice` → the model default.
  * A binding for another provider is not used by the Runtime (`providerId` does not match). Here it also falls back and says so.
  */
 export function speakerRows(options: {
@@ -420,7 +420,7 @@ export interface GrantRefusal {
 const GRANT_CODES = new Set(['GRANT_REQUIRED', 'GRANT_REVOKED']);
 
 /**
- * Reads a rejection from `pipelines.start` / `pipelines.retry`. For `GRANT_REQUIRED` or `GRANT_REVOKED`, when the remedy is “发放授权” (grant access), it gives the message to send. Other rejections (budget, missing config, …) give null. The recipient, data kind and video come from the top-level details (the command is not parsed).
+ * Reads a rejection from `pipelines.start` / `pipelines.retry`. For `GRANT_REQUIRED` or `GRANT_REVOKED`, when the remedy is “grant access”, it gives the message to send. Other rejections (budget, missing config, …) give null. The recipient, data kind and video come from the top-level details (the command is not parsed).
  */
 export function grantRefusal(error: unknown): GrantRefusal | null {
   const details = error instanceof RpcError ? error.details : (error as { details?: unknown } | null)?.details;

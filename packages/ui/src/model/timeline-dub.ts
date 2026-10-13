@@ -19,7 +19,7 @@ import { speechSentences } from './translation-doc.ts';
  * When the plan or transcript has not been fetched, it degrades: blocks are still drawn, the hue uses the first tier, and the text uses the clip name.
  */
 
-/** A speaking rate faster than this is marked “过快” (“Too fast”) (design mockup model-tts.js `MAX_RATE`: comfort ceiling). */
+/** A speaking rate faster than this is marked “Too fast” (design mockup model-tts.js `MAX_RATE`: comfort ceiling). */
 export const DUB_FAST_RATE = 1.35;
 /** The rate range accepted by the contract's `setSpeed`. */
 export const DUB_SPEED_MIN = 0.1;
@@ -85,7 +85,7 @@ export function dubGroups(sequence: Sequence): DubGroup[] {
   }));
 }
 
-/** A track holding only this dub group: its row header reads “配音 · 语言” (“Dubbing · language”). Empty tracks, or tracks mixed with other instances or other groups, do not count. */
+/** A track holding only this dub group: its row header reads “Dubbing · language”. Empty tracks, or tracks mixed with other instances or other groups, do not count. */
 export function dubTrackGroup(sequence: Sequence, trackId: Id): DubGroup | null {
   const items = sequence.items.filter((item) => item.trackId === trackId);
   if (items.length === 0) return null;
@@ -106,7 +106,7 @@ export function dubStemOf(item: SequenceItem): { stem: DubStem; groupId: string 
 }
 
 /**
- * A track holding only one kind of split track separated from one dub group (the “背景声” (“Background sound”) row of design mockup model-timeline.js): which kind, which group, and the group's language.
+ * A track holding only one kind of split track separated from one dub group (the “Background sound” row of design mockup model-timeline.js): which kind, which group, and the group's language.
  * Empty tracks, or tracks mixed with other split tracks or other groups, do not count.
  */
 export function stemTrackOf(sequence: Sequence, trackId: Id): { stem: DubStem; groupId: string; language: string | null } | null {
@@ -345,7 +345,7 @@ export function selectedBlocks(selection: readonly Id[], blocks: ReadonlyMap<Id,
   });
 }
 
-/** Whether this dub group has a separated background sound (“移除这组配音” (“Remove this dub group”) removes it along with the group). */
+/** Whether this dub group has a separated background sound (“Remove this dub group” removes it along with the group). */
 export function hasBackground(sequence: Sequence, groupId: string): boolean {
   return sequence.items.some((item) => {
     const own = item.extensions?.[DUB_EXTENSION];
@@ -368,7 +368,7 @@ export function anyLocked(sequence: Sequence, itemIds: readonly Id[]): boolean {
   return sequence.items.some((item) => wanted.has(item.id) && (item.locked || lockedTracks.has(item.trackId)));
 }
 
-/** Whether any part of this dub group (together with its separated background) is locked: “移除这组配音” (“Remove this dub group”) is one transaction, so if any item is locked the whole transaction is rejected. */
+/** Whether any part of this dub group (together with its separated background) is locked: “Remove this dub group” is one transaction, so if any item is locked the whole transaction is rejected. */
 export function groupLocked(sequence: Sequence, groupId: string): boolean {
   const ids = sequence.items
     .filter((item) => {

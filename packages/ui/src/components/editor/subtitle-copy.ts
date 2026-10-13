@@ -187,7 +187,7 @@ type Choice<K extends string> = { readonly key: K; readonly label: string };
 type Place = Choice<'top' | 'middle' | 'bottom'> & { readonly y: number; readonly valign: 'top' | 'center' | 'bottom' };
 type Plate = Choice<'wrap' | 'block'> & { readonly note: string };
 
-/** “原文 | 译文” (source | translation) in the subtitle style gallery and properties page (prototype panel-substyle.jsx `SubGallery` / `GalleryCard`, and the position, case, background shape and ratio chain from panel-subprops.jsx). */
+/** “source | translation” in the subtitle style gallery and properties page (prototype panel-substyle.jsx `SubGallery` / `GalleryCard`, and the position, case, background shape and ratio chain from panel-subprops.jsx). */
 const captionStyle = {
   // Gallery
   title: 'Subtitle styles',

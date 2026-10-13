@@ -102,7 +102,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-/** The “详情” (Details) table (prototype `details`): lists only rows that have a value, with a label column 88 wide. */
+/** The “Details” table (prototype `details`): lists only rows that have a value, with a label column 88 wide. */
 export function TaskFacts({ rows: items }: { rows: FactRow[] }) {
   return (
     <Section title={TASK_VIEW_COPY.factsSection}>

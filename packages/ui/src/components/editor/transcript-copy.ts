@@ -30,7 +30,7 @@ const words = (n: number) => `${n} word${n === 1 ? '' : 's'}`;
 
 /**
  * Copy for the transcript panel and the timeline cut markers. Prototypes: panels.jsx `TranscriptPanel`, panel-transcript-cut.jsx (CutBar, CutFloat, CutMenu).
- * The mode names follow the table in product design §5.7: “改原文” (edit source text) and “剪辑音画” (cut audio and picture). English is here; the translations are in `transcript-copy.zh-Hans.ts`.
+ * The mode names follow the table in product design §5.7: “edit source text” and “cut audio and picture”. English is here; the translations are in `transcript-copy.zh-Hans.ts`.
  */
 const en = {
   title: 'Transcript',

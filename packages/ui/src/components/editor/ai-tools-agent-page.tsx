@@ -112,7 +112,7 @@ export function Option({
   );
 }
 
-/** The explanation card at the top of the tool page: name, description, and whether it changes the video (product design §5.10 「参数页」 (parameters page), paragraph 1). */
+/** The explanation card at the top of the tool page: name, description, and whether it changes the video (product design §5.10 “parameters page”, paragraph 1). */
 export function ToolCard({ name, lines, effect: what }: { name: string; lines: readonly string[]; effect: string }) {
   return (
     <div className={card}>
@@ -129,9 +129,9 @@ export function ToolCard({ name, lines, effect: what }: { name: string; lines: r
 }
 
 /**
- * The tool page for handing off to an Agent (prototype panel-aitools.jsx `DocFlow`, panel-aitools-write.jsx, and the settings states of panel-aitools-cover.jsx; product design §5.10 「参数页」 (parameters page)):
- * the explanation card (name, description, whether it changes the video), setting rows (「用」 (Use), range, conversation, plus the tool's own checkboxes and numbers), the prompt box (pre-filled template, with this tool's skill attached),
- * the main button, and a destination line. Language, style, length and point of view are written in the prompt, no longer dropdowns. Pressing it sends and returns the tool page to the list; finding cut points and refreshing stale translations stay in place (`agentStaysOnPage`), and this page turns into a progress card (`AiToolAgentRun`); 「重新设置」 (Set up again) or 「完成」 (Done) after it finishes returns here.
+ * The tool page for handing off to an Agent (prototype panel-aitools.jsx `DocFlow`, panel-aitools-write.jsx, and the settings states of panel-aitools-cover.jsx; product design §5.10 “parameters page”):
+ * the explanation card (name, description, whether it changes the video), setting rows (“Use”, range, conversation, plus the tool's own checkboxes and numbers), the prompt box (pre-filled template, with this tool's skill attached),
+ * the main button, and a destination line. Language, style, length and point of view are written in the prompt, no longer dropdowns. Pressing it sends and returns the tool page to the list; finding cut points and refreshing stale translations stay in place (`agentStaysOnPage`), and this page turns into a progress card (`AiToolAgentRun`); “Set up again” or “Done” after it finishes returns here.
  */
 export function AiAgentToolPage({
   videoId,
@@ -158,7 +158,7 @@ export function AiAgentToolPage({
   const scopeIndex = chapters.findIndex((c) => c.id === scopeKey);
   const scope = scopeIndex >= 0 ? C.scopeChapter(scopeIndex + 1, chapters[scopeIndex]!.label) : null;
 
-  // 「用」 (Use): remembered per tool, whether to hand off to the Agent or call a model directly (tools that cannot call a model directly always go to the Agent). When refreshing stale translations by calling the model directly,
+  // “Use”: remembered per tool, whether to hand off to the Agent or call a model directly (tools that cannot call a model directly always go to the Agent). When refreshing stale translations by calling the model directly,
   // `ai-tool` is not used; the in-place refresh of the translation flow is used instead (`viaRefresh`).
   const kind = directTool(tool);
   const savedRunner = useAiToolRunner((s) => s.runners[tool]);
@@ -187,7 +187,7 @@ export function AiAgentToolPage({
   const [stale, setStale] = useState({ edited: true, cut: true });
 
   const [platform, setPlatform] = useState('');
-  // Blog's 「添加关键帧插图」 (Add keyframe illustrations) option: off by default. The picture is only available to the Agent, so when calling the model directly it is greyed out and not included in the template.
+  // Blog's “Add keyframe illustrations” option: off by default. The picture is only available to the Agent, so when calling the model directly it is greyed out and not included in the template.
   const [frames, setFrames] = useState(false);
   const framesOn = tool === 'blog' && frames && !viaModel;
   const [count, setCount] = useState<number>(tool === 'cover' ? COVER_COUNT.initial : TITLE_COUNT.initial);
@@ -196,8 +196,8 @@ export function AiAgentToolPage({
   const [coverText, setCoverText] = useState<CoverText>('phrase');
   const projectRatio = canvasRatio(sequence.canvas.width, sequence.canvas.height);
 
-  // Re-transcribe's 「更多选项 › 识别说话人」 (More options › Identify speakers) (design draft panel-aitools.jsx): describes it using the default speech model in effect; it only changes the prompt,
-  // and does not block 「交给 Agent」 (Hand to Agent) even when 「说话人区分」 (speaker diarization) is not installed.
+  // Re-transcribe's “More options › Identify speakers” (design draft panel-aitools.jsx): describes it using the default speech model in effect; it only changes the prompt,
+  // and does not block “Hand to Agent” even when “speaker diarization” is not installed.
   const asrView = useModels((s) => s.capabilities);
   const asrRef = tool === 'retranscribe' ? (asrView?.transcribe.effective ?? null) : null;
   const asrInfo = asrView && asrRef ? transcribeModelInfo(asrView, asrRef) : null;
@@ -294,8 +294,8 @@ export function AiAgentToolPage({
     );
   }
 
-  // Calling the model directly is running, or has produced a result or receipt: this page turns into that state (same as the four-state page for identifying speakers). The 「返回」 (Back) and 「完成」 (Done) on the result and receipt pages both return to the parameters page
-  // (settings and prompt still there); 「返回」 (Back) on the parameters page goes back to the list. While running there is no parameters page to return to, so 「返回」 (Back) goes to the list and the task keeps running in the background.
+  // Calling the model directly is running, or has produced a result or receipt: this page turns into that state (same as the four-state page for identifying speakers). The “Back” and “Done” on the result and receipt pages both return to the parameters page
+  // (settings and prompt still there); “Back” on the parameters page goes back to the list. While running there is no parameters page to return to, so “Back” goes to the list and the task keeps running in the background.
   if (kind && (run || result || receipt)) {
     return (
       <>

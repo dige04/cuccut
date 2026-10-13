@@ -26,7 +26,7 @@ import { copyText, useArtifactUrl, useCancelJob, useDownloadArtifact, useRecordR
 const audio = style({ width: 'full', height: 36 });
 const progress = style({ width: 'full' });
 
-/** “再试一次 / 重新排队” (retry / re-queue): an interrupted item reruns in place; others are resubmitted with the frozen parameters unchanged (see `useRecordRetry`). */
+/** “retry / re-queue”: an interrupted item reruns in place; others are resubmitted with the frozen parameters unchanged (see `useRecordRetry`). */
 function useSpeechRetry(job: JobRecord) {
   const runtime = useRuntime();
   return useRecordRetry(
@@ -156,7 +156,7 @@ export function TtsRecord({
   );
 }
 
-/** Items that were resubmitted no longer show the button and read “已重新提交” (resubmitted); a spinner shows while in progress. */
+/** Items that were resubmitted no longer show the button and read “resubmitted”; a spinner shows while in progress. */
 function RetryButton({ label, again }: { label: string; again: ReturnType<typeof useSpeechRetry> }) {
   if (again.done) return <span className={detail}>{RECORD_COPY.retried}</span>;
   return (

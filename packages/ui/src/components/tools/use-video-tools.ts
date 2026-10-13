@@ -26,7 +26,7 @@ import { useSubmitFailed } from './use-tool-records.ts';
 import { RUN_COPY } from './tools-copy.ts';
 
 /**
- * Local state of the video tool pages (not persisted): which run each tool is viewing, the name recorded when this computer submitted it (the summary has only IDs), the video carried over by “接着做” (continue), and each page's half-filled form (kept when leaving and coming back). The speech model for transcription is stored in tools-store (persisted).
+ * Local state of the video tool pages (not persisted): which run each tool is viewing, the name recorded when this computer submitted it (the summary has only IDs), the video carried over by “continue”, and each page's half-filled form (kept when leaving and coming back). The speech model for transcription is stored in tools-store (persisted).
  */
 
 /** Sources: local file, Space (a media entry or an editable video), link. */
@@ -44,7 +44,7 @@ export interface TranscribeDraft {
   target: 'none' | 'create';
   /** When the video already has a transcript: the chosen destination and the new video's name (product design: re-transcribe); only valid for the video `entryId`; switching to another video returns it to the default. */
   dest: { entryId: Id; destination: TranscribeDestination; name: string } | null;
-  /** The failed job from “重试转录…” (retry transcription…): while this video is still selected, shows why it failed last time. */
+  /** The failed job from “retry transcription…”: while this video is still selected, shows why it failed last time. */
   retry: { entryId: Id; jobId: Id } | null;
 }
 
@@ -75,7 +75,7 @@ export interface DubDraft {
 
 export interface LinkDraft {
   url: string;
-  /** Browsers ticked for “网站登录” (website login); on submit they are sorted by detected order, which is the order tried; none ticked means anonymous download. */
+  /** Browsers ticked for “website login”; on submit they are sorted by detected order, which is the order tried; none ticked means anonymous download. */
   cookieBrowsers: LinkCookieBrowser[];
   target: ToolTargetKey;
   entryId: Id | null;
@@ -95,7 +95,7 @@ export interface ToolPreset {
   entryId: Id;
   retryJobId?: Id;
   /*
-   * Editor AI tool “生成配乐” (generate score): which video to score, its duration in seconds, and the target duration pre-filled from it (clamped to the model's range; when the video is longer than a single run's limit, the limit is used, and after it is made it loops to fill the whole video; the tool page decides from `videoSec` and the selected model's limit whether the banner says it loops).
+   * Editor AI tool “generate score”: which video to score, its duration in seconds, and the target duration pre-filled from it (clamped to the model's range; when the video is longer than a single run's limit, the limit is used, and after it is made it loops to fill the whole video; the tool page decides from `videoSec` and the selected model's limit whether the banner says it loops).
    */
   soundtrack?: { videoId: Id; videoName: string; videoSec: number; targetDurationSec: number };
 }
@@ -104,9 +104,9 @@ interface VideoToolsState extends Drafts {
   /** The run each tool is viewing (parent job ID); null is the form. */
   views: Partial<Record<VideoToolId, Id | null>>;
   meta: Record<Id, RunMeta>;
-  /** The Space entry pre-selected when moving to the next tool via “接着做” (continue) or “用工具处理…” (process with tool…); `retryJobId` is the failed job from “重试转录…” (retry transcription…). */
+  /** The Space entry pre-selected when moving to the next tool via “continue” or “process with tool…”; `retryJobId` is the failed job from “retry transcription…”. */
   preset: ToolPreset | null;
-  /** “再做一次 / 重试” (do again / retry) from the Space viewer or background job details: when entering the tool page, fills the form with this job's parameters. */
+  /** “do again / retry” from the Space viewer or background job details: when entering the tool page, fills the form with this job's parameters. */
   rerun: { tool: ToolId; jobId: Id } | null;
   /** The project the new video was last put into. */
   lastProject: Id | null;

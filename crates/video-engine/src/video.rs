@@ -28,7 +28,7 @@ use crate::task_guard::TaskProtection;
 
 pub const DB_FILE: &str = "video.db";
 pub const LOCK_FILE: &str = "video.lock";
-/// Directory layout before the rename to “视频” (video): `movie.db`, `movie.lock`, format identifier `cuccut.movie`. Upgraded in place once when opened.
+/// Directory layout before the rename to “video”: `movie.db`, `movie.lock`, format identifier `cuccut.movie`. Upgraded in place once when opened.
 const LEGACY_DB_FILE: &str = "movie.db";
 const LEGACY_LOCK_FILE: &str = "movie.lock";
 

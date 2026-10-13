@@ -195,9 +195,9 @@ const hueOf = (index: number) => String(index % HUES) as '0';
 const speakersToast: SpeakersDeps['toast'] = (kind, message) => ToastQueue[kind](message, { timeout: 5000 });
 
 /**
- * Tools page › Identify speakers (prototype panel-aitools-flows.jsx `SpeakerFlow`): settings → run → confirm → receipt. Identification runs locally in the “说话人区分”(speaker diarization) model pack (the Runtime's `speakers` flow, without re-transcribing).
- * The result goes to the confirm page first: preview clips and rename speakers. Only “应用”(apply) writes it into the video (a single undoable transaction).
- * “用”(use) can also be set to hand off to the Agent (sends an intent sentence to this video's session). CucCut in the browser does not have this page (the Tools page does not appear on the web host), but the guard is still kept here.
+ * Tools page › Identify speakers (prototype panel-aitools-flows.jsx `SpeakerFlow`): settings → run → confirm → receipt. Identification runs locally in the “speaker diarization” model pack (the Runtime's `speakers` flow, without re-transcribing).
+ * The result goes to the confirm page first: preview clips and rename speakers. Only “apply” writes it into the video (a single undoable transaction).
+ * “use” can also be set to hand off to the Agent (sends an intent sentence to this video's session). CucCut in the browser does not have this page (the Tools page does not appear on the web host), but the guard is still kept here.
  */
 export function SpeakerFlow({
   videoId,
@@ -243,7 +243,7 @@ export function SpeakerFlow({
     );
   }
 
-  // “返回”(back) on the receipt page, like “完成”(done), returns to the settings page (the prompt is still there). “返回” on the settings page is what goes back to the list.
+  // “back” on the receipt page, like “done”, returns to the settings page (the prompt is still there). “返回” on the settings page is what goes back to the list.
   const showsReceipt = !run && !proposal && !!receipt;
   return (
     <>
@@ -714,7 +714,7 @@ function DoneView({
   const speech = documents[summary.source.documentId];
   const stale = useMemo(() => (speech ? staleCaptions(sequence, documents, speech) : []), [sequence, documents, speech]);
   const running = useSpeakersRun((s) => !!s.runs[videoId]);
-  // “完成”(done) returns to the settings page, not the list.
+  // “done” returns to the settings page, not the list.
   const finish = () => closeSpeakers(videoId);
   return (
     <div className={`${body} cc-scroll`}>

@@ -14,7 +14,7 @@ const headingFirst = style({ display: 'flex', alignItems: 'start', gap: 12, marg
 const headingText = style({ flexGrow: 1, minWidth: 0 });
 const headingTitle = style({ margin: 0, font: 'title-sm', color: 'gray-900' });
 const headingDesc = style({ marginTop: 4, marginBottom: 0, font: 'ui-sm', color: 'gray-600' });
-/** Buttons on the right must not squeeze the description onto two lines (in a narrow window, “添加自建服务商”(Add custom provider) wraps). */
+/** Buttons on the right must not squeeze the description onto two lines (in a narrow window, “Add custom provider” wraps). */
 const headingAction = style({ flexShrink: 0, whiteSpace: 'nowrap' });
 
 /** Section title with one sentence of description; a button may sit on the right. */

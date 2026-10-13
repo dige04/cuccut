@@ -15,13 +15,13 @@ import { tr } from './tts-local-copy.tr.ts';
 import { vi } from './tts-local-copy.vi.ts';
 
 /**
- * Text for the local model page of Settings › Models › Speech synthesis and for “试听”(Trial listen) (design mocks settings-local.jsx, settings-tts.jsx, panel-tts-local.jsx).
+ * Text for the local model page of Settings › Models › Speech synthesis and for “Trial listen” (design mocks settings-local.jsx, settings-tts.jsx, panel-tts-local.jsx).
  * Text shared by the local pages is in `LOCAL_COPY` in models-copy.ts; install management is in local-models-copy.ts.
  * English is the source of keys and types; translations are in `tts-local-copy.<语言>.ts`.
  */
 const en = {
   ttsLocal: {
-    // Default model (speech synthesis has no factory default; the menu has no “自动选择”(Auto select))
+    // Default model (speech synthesis has no factory default; the menu has no “Auto select”)
     unset: 'Not set',
     defaultDesc: 'Preselected for new synthesis tasks. Without a default you pick a model each time; a manual choice always wins.',
     cloudDefault: (name: string) =>
@@ -88,7 +88,7 @@ const en = {
     audioFailed: (message: string) => `Couldn't load the audio: ${message}`,
     downloadFailed: (message: string) => `Couldn't download: ${message}`,
     fileName: (name: string) => `${name.replace(/[^\w.-]+/g, '-')}-preview.wav`,
-    // The “我的声音”(My Voices) side: `name` is the name of the local model that started the clone
+    // The “My Voices” side: `name` is the name of the local model that started the clone
     handoffFrom: (name: string) => `From the “${name}” preview · record one or take it from a video; you’ll go back once it’s saved`,
     handoffSaved: (name: string) => `Saved · go back to the “${name}” preview, where this voice will be selected`,
     handoffBack: 'Go back and use it',

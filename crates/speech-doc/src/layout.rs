@@ -150,7 +150,7 @@ fn seam_grade(word: &Word, next: &Word, params: &CueParams) -> f64 {
     } else if next.t0 - word.t1 >= params.pause_sec {
         SEAM_PAUSE
     } else if next.glue || cjk_midword_boundary(&word.text, &next.text) {
-        // A seam marked “贴前” (attach-to-previous) has no space and sits in the same tier as the character seams between ideographs.
+        // A seam marked “attach-to-previous” has no space and sits in the same tier as the character seams between ideographs.
         SEAM_CJK_MIDWORD
     } else {
         SEAM_WORD

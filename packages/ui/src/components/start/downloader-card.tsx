@@ -26,7 +26,7 @@ interface DownloaderState {
   checking: boolean;
   /** Checked once (success or failure). */
   checked: boolean;
-  /** The user just pressed install and the task event has not arrived yet: show “正在准备” (Preparing) first. */
+  /** The user just pressed install and the task event has not arrived yet: show “Preparing” first. */
   installing: boolean;
   installJobId: Id | null;
   /** Detection itself failed (e.g. the Runtime is not connected). */
@@ -35,7 +35,7 @@ interface DownloaderState {
   busy: boolean;
   /** Submitting an update (Run was pressed, the Runtime has not replied yet). */
   updateBusy: boolean;
-  /** The update in this card (started by the user pressing Run, or an in-progress one found during detection); null after “关闭” (Close). */
+  /** The update in this card (started by the user pressing Run, or an in-progress one found during detection); null after “Close”. */
   update: DownloaderUpdateRun | null;
 }
 
@@ -280,8 +280,8 @@ const BADGE: Record<ToolCardState, 'positive' | 'informative' | 'notice' | 'nega
 };
 
 /**
- * The download tool card (video download tool · yt-dlp): a one-sentence status, facts such as source and license, the primary button (“同意并安装” (Agree and install) / “同意并更新” (Agree and update) / “同意使用” (Agree to use)),
- * re-detect, and choose location. While installing, it shows the install task's progress. The copy on the system has an “更新” (Update) section at the bottom (command, run and copy, output).
+ * The download tool card (video download tool · yt-dlp): a one-sentence status, facts such as source and license, the primary button (“Agree and install” / “Agree and update” / “Agree to use”),
+ * re-detect, and choose location. While installing, it shows the install task's progress. The copy on the system has an “Update” section at the bottom (command, run and copy, output).
  */
 export function DownloaderCard({ view }: { view: DownloaderView }) {
   const runtime = useRuntime();

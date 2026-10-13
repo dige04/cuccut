@@ -119,8 +119,8 @@ export interface ViewerActions {
  * The Space viewer (product design §4.5–§4.6; prototype space-viewer.jsx): preview, facts (source, files, duration or size, status, recent activity, source session,
  * generation method, tool and location, version), with honest notices when files are missing, failed, or the source has changed. Actions are: continue in session · view source session · show in folder · second-pass edit ·
  * favorite · rename · process with tool… · do again (for tool-made items); the trash holds restore and delete permanently, and a failed placeholder holds clear and view task. Buttons that cannot be used are greyed out, with the reason written below.
- * In “全部” (All) and “视频” (Videos), a video takes only one row (§4.3): the files it exported or generated are listed in this video's viewer, and clicking one swaps to that file; in a file's viewer, “查看视频” (View video) swaps back.
- * The shorts cut from a video are each a video of their own; the parent video's viewer lists them before the files, and clicking one swaps to that short's viewer; in a short's viewer, “查看来源视频” (View source video) swaps back to the parent.
+ * In “All” and “Videos”, a video takes only one row (§4.3): the files it exported or generated are listed in this video's viewer, and clicking one swaps to that file; in a file's viewer, “View video” swaps back.
+ * The shorts cut from a video are each a video of their own; the parent video's viewer lists them before the files, and clicking one swaps to that short's viewer; in a short's viewer, “View source video” swaps back to the parent.
  * Items are passed in from the outer layer: S2's Dialog renders children in several slots, so no state is kept here.
  */
 export function SpaceViewer({
@@ -435,7 +435,7 @@ function ViewerBody({
 
 /**
  * The shorts cut from this video (prototype MovieShorts, product design §4.5): one row per short, showing its range on the original and its duration; clicking one swaps to that short's viewer.
- * At most `MADE_SHOWN` are shown; “在列表中查看” (View in list) filters Space to all the shorts cut from this video (§4.3).
+ * At most `MADE_SHOWN` are shown; “View in list” filters Space to all the shorts cut from this video (§4.3).
  */
 function VideoShorts({ shorts, onSwitch, onList }: { shorts: readonly SpaceEntry[]; onSwitch: (entryId: Id) => void; onList: (() => void) | null }) {
   const shown = shorts.slice(0, MADE_SHOWN);

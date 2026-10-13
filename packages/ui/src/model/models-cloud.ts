@@ -87,7 +87,7 @@ const en = {
   } as Record<OnlineCapability, string>,
   /** The custom provider has not declared a model for this tier. */
   noModels: 'No models declared',
-  /** An unavailable item in the default menu: “不可用” (unavailable) is written after the name (`unavailable` is supplied by the caller). */
+  /** An unavailable item in the default menu: “unavailable” is written after the name (`unavailable` is supplied by the caller). */
   unavailableItem: (label: string, unavailable: string) => `${label} (${unavailable})`,
 };
 
@@ -107,8 +107,8 @@ export function isAgentProvider(providerId: string): boolean {
 }
 
 /**
- * “已连接” (connected): built-in ones must be enabled and have a key; custom ones must be enabled and have an address (a key is optional; local or intranet services often do not need one).
- * Different from “可用” (available): a custom one may be connected, but if this tier has no declared model, the tier is still unavailable.
+ * “connected”: built-in ones must be enabled and have a key; custom ones must be enabled and have an address (a key is optional; local or intranet services often do not need one).
+ * Different from “available”: a custom one may be connected, but if this tier has no declared model, the tier is still unavailable.
  */
 export function providerConnected(providerId: string, config: ProviderConfigView | null): boolean {
   if (!config?.enabled) return false;
@@ -125,14 +125,14 @@ export interface CloudProviderCard {
   endpoint: string | null;
   /** Models under this tier; empty for a custom provider that has not declared this tier. */
   models: ModelInfoBase[];
-  /** The capabilities this provider offers in each tier (the key dialog says “这把密钥给哪几类用” (which categories this key is used for)). For custom providers, only tiers with declared models count. */
+  /** The capabilities this provider offers in each tier (the key dialog says “which categories this key is used for”). For custom providers, only tiers with declared models count. */
   capabilities: OnlineCapability[];
   /** Whether this tier is usable right now, and why. */
   available: boolean;
   unavailableReason?: ProviderUnavailableReason;
   /** The reason it cannot be used, already generated in the UI's current language (the Runtime's `detail` / `detailRef`). */
   detail?: string;
-  /** Result of the latest “刷新” (refresh) (`models.refreshProvider`); absent if never refreshed. */
+  /** Result of the latest “refresh” (`models.refreshProvider`); absent if never refreshed. */
   refreshed?: ProviderRefreshStatus;
 }
 
@@ -189,11 +189,11 @@ export function cloudProviders(view: ModelCapabilitiesView, capability: OnlineCa
 
 // ---- Refresh model and voice catalogs ----
 
-/** What “刷新” (refresh) refreshes: the text generation tier refreshes the model list; the speech synthesis tier refreshes the voice catalog. */
+/** What “refresh” refreshes: the text generation tier refreshes the model list; the speech synthesis tier refreshes the voice catalog. */
 export type RefreshKind = 'models' | 'voices';
 
 /**
- * Whether the “刷新” (refresh) button appears on the card header (design settings-cloud.jsx:318-321): the text generation tier refreshes models; the speech synthesis tier refreshes the voice catalog,
+ * Whether the “refresh” button appears on the card header (design settings-cloud.jsx:318-321): the text generation tier refreshes models; the speech synthesis tier refreshes the voice catalog,
  * and OpenAI's voices are a fixed set, so it is not shown; speech recognition and image tiers have none. It is also shown when not connected (greyed out), so people know refreshing will be possible once connected.
  * One `models.refreshProvider` call fetches models and voices together; here we only decide what the button is called and how the description line is written.
  */
@@ -402,7 +402,7 @@ export function customDraftReady(draft: CustomProviderDraft): boolean {
 
 /**
  * Add custom provider: only the name, address and first model are registered; it is not enabled — it is enabled only after connecting (entering a key or leaving it empty, and verifying),
- * consistent with the design's “添加后连接密钥并测试模型” (after adding, connect the key and test the model).
+ * consistent with the design's “after adding, connect the key and test the model”.
  */
 export function customProviderRequest(view: ModelCapabilitiesView, draft: CustomProviderDraft): ConfigureProviderRequest {
   return {
@@ -421,7 +421,7 @@ export function connectRequest(providerId: string, key: string): ConfigureProvid
   return { providerId, enabled: true, verify: true, ...(credential ? { credential } : {}) };
 }
 
-/** Built-in provider “移除密钥” (remove key): clears the key and disables the provider. Defaults that point to it are kept by the Runtime and reported as unavailable. */
+/** Built-in provider “remove key”: clears the key and disables the provider. Defaults that point to it are kept by the Runtime and reported as unavailable. */
 export function disconnectRequest(providerId: string): ConfigureProviderRequest {
   return { providerId, enabled: false, credential: null };
 }
@@ -449,7 +449,7 @@ export interface DefaultOption {
 
 export interface DefaultSection {
   key: string;
-  /** Group heading (provider name); the group “每次选择” (choose each time) has none. */
+  /** Group heading (provider name); the group “choose each time” has none. */
   title?: string;
   items: DefaultOption[];
 }
@@ -464,7 +464,7 @@ export interface CodexDefaultState {
 export interface CloudDefaultPicker {
   selectedKey: string;
   sections: DefaultSection[];
-  /** There are no cloud models to choose from (only “每次选择” (choose each time) is left). */
+  /** There are no cloud models to choose from (only “choose each time” is left). */
   empty: boolean;
 }
 
@@ -481,11 +481,11 @@ function refLabel(view: ModelCapabilitiesView, capability: OnlineCapability, ref
 }
 
 /**
- * Default model menu on the cloud page: the first item is “不设默认” (no default), then one group per usable online provider; the image tier adds one more item, “Codex CLI · 画图” (Codex CLI · draw images), when Codex can draw or it is already the default.
- * When the provider that the current default points to is unavailable, it is still listed, checked, and marked “不可用” (unavailable) — the Runtime keeps it, and it is not cleared for the user here.
+ * Default model menu on the cloud page: the first item is “no default”, then one group per usable online provider; the image tier adds one more item, “Codex CLI · draw images”, when Codex can draw or it is already the default.
+ * When the provider that the current default points to is unavailable, it is still listed, checked, and marked “unavailable” — the Runtime keeps it, and it is not cleared for the user here.
  *
- * Each capability has only one default, shared by the local page and the cloud page. When the speech recognition default is a model on this machine or a node, the cloud page checks “用本地模型” (use local model), and choosing it does not change the default.
- * Other capabilities have no factory default: when the default is a model on this machine or a node, it is listed as its own item and checked (noting it was set on the local models page); only “每次选择” (choose each time) actually clears the default.
+ * Each capability has only one default, shared by the local page and the cloud page. When the speech recognition default is a model on this machine or a node, the cloud page checks “use local model”, and choosing it does not change the default.
+ * Other capabilities have no factory default: when the default is a model on this machine or a node, it is listed as its own item and checked (noting it was set on the local models page); only “choose each time” actually clears the default.
  */
 export function cloudDefaultPicker(
   view: ModelCapabilitiesView,

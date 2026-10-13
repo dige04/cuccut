@@ -137,7 +137,7 @@ pub fn atomize_timed_word(
 /// The two strategies correspond to two sources of evidence, not to a “loose/strict” pair:
 ///
 /// - [`SnapToPauses`](Self::SnapToPauses): the labels come from interval projections separate from the text (the traditional form of voice-ink `DocBuilder`, and intervals such as pyannote's “who is speaking when”). The boundary is only the maximum temporal overlap, so it often falls in the middle of a word. Two passes of snapping are used: short islands sandwiched between one speaker's words are merged back, and each switch point moves to the best pause or sentence end within ±1s.
-/// - [`RowAuthoritative`](Self::RowAuthoritative): the label is the **text attribution verdict** that the joint ASR+diarization model (MOSS) gives while generating the text. Row boundaries are only timestamps with some slop. In this case snapping only does harm. In a measured 7h two-person interview, Pass 2 moved the 「呃」 ("er") that opens an answer and the 「一个经历对」 ("a pair of experiences") that closes an answer over to the other speaker. Pass 1, in MOSS chunks with no punctuation, merged 142 real acknowledgements (「嗯」「哦是吗」「当然」, "mm", "oh really?", "of course") wholesale into the other person's sentence, because with no punctuation the preceding word is never sentence-final. With row-level attribution authoritative, no word moves. Time overlaps are left to [`word_timing_repair`], which clamps the timings.
+/// - [`RowAuthoritative`](Self::RowAuthoritative): the label is the **text attribution verdict** that the joint ASR+diarization model (MOSS) gives while generating the text. Row boundaries are only timestamps with some slop. In this case snapping only does harm. In a measured 7h two-person interview, Pass 2 moved the “er” that opens an answer and the “a pair of experiences” that closes an answer over to the other speaker. Pass 1, in MOSS chunks with no punctuation, merged 142 real acknowledgements (「嗯」「哦是吗」「当然」, "mm", "oh really?", "of course") wholesale into the other person's sentence, because with no punctuation the preceding word is never sentence-final. With row-level attribution authoritative, no word moves. Time overlaps are left to [`word_timing_repair`], which clamps the timings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SpeakerBoundaryPolicy {
     #[default]
@@ -703,7 +703,7 @@ mod tests {
         row
     }
 
-    /// Fixture from the raw MOSS 7h two-person interview rows (`asr-rows.json`, 719–725s). The question 「当时打什么游戏」 ("what game were you playing back then") and the answer 「呃很多啊…」 ("er, lots of them…") are only 0.19s apart, but there is a 0.48s pause after 「呃」. The interval-projection strategy would snap the cut to that pause and give the 「呃」 that opens the answer to the questioner. The row-authoritative strategy moves no word at all.
+    /// Fixture from the raw MOSS 7h two-person interview rows (`asr-rows.json`, 719–725s). The question “what game were you playing back then” and the answer “er, lots of them…” are only 0.19s apart, but there is a 0.48s pause after 「呃」. The interval-projection strategy would snap the cut to that pause and give the 「呃」 that opens the answer to the questioner. The row-authoritative strategy moves no word at all.
     #[test]
     fn row_authoritative_policy_keeps_the_answer_opening_filler_with_the_answerer() {
         let question = cjk_row(718.14, 719.22, "当时打什么游戏", "S01");
@@ -746,7 +746,7 @@ mod tests {
         );
     }
 
-    /// Same fixture at 154s: in an unpunctuated MOSS chunk, an S01 「嗯」 (0.31s, with gaps of 0.13s and 0.01s on either side) sits in the middle of a long S02 sentence. Pass 1's “preceding word is not sentence-final” always holds in an unpunctuated chunk, so it would merge this real acknowledgement wholesale into S02. The row-authoritative strategy keeps it.
+    /// Same fixture at 154s: in an unpunctuated MOSS chunk, an S01 “0.31s, with gaps of 0.13s and 0.01s on either side” sits in the middle of a long S02 sentence. Pass 1's “preceding word is not sentence-final” always holds in an unpunctuated chunk, so it would merge this real acknowledgement wholesale into S02. The row-authoritative strategy keeps it.
     #[test]
     fn row_authoritative_policy_keeps_backchannel_rows_in_unpunctuated_chunks() {
         let rows = vec![

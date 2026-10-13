@@ -30,7 +30,7 @@ const card = style({
 const accent = style({ position: 'absolute', top: 0, bottom: 0, insetStart: 0, width: '[3px]', backgroundColor: 'gray-300' });
 const head = style({ display: 'flex', alignItems: 'center', gap: '[6px]', marginBottom: '[5px]', minHeight: 20 });
 const number = style({ fontSize: '[10px]', color: 'gray-500', minWidth: 16 });
-/** Speaker labels only exist once transcription finishes: on the longer item, write “识别中” (Recognizing), greyed out (prototype `.sbsp--unk`). */
+/** Speaker labels only exist once transcription finishes: on the longer item, write “Recognizing”, greyed out (prototype `.sbsp--unk`). */
 const unknown = style({ font: 'ui-xs', fontWeight: 'bold', color: 'gray-500' });
 const time = style({ font: 'ui-xs', color: 'gray-500' });
 const text = style({
@@ -53,7 +53,7 @@ const caret = style({
 /**
  * Subtitle panel while transcribing (prototype panel-subtitle.jsx, round 220): on the first transcription, before there is any subtitle to proofread, the running header (progress, steps, cancel) is followed by the recognized segments in arrival
  * order, one read-only card per segment (index, time, text), and clicking one jumps there. Text cannot be edited and nothing enters undo, because these are not yet a subtitle document; the transcription flow switches to subtitles only at its last step.
- * Only segments that land on the timeline are listed (subtitles are only generated for the part on the timeline), and the time is where the segment first appears on the timeline. When nothing is listed yet, a skeleton is drawn; by default it follows the newest at the bottom, and if the user scrolls up it stops and a “回到最新” (Back to latest) button floats up. `jobId` is the transcription Job that runs recognition; it is null while still submitting.
+ * Only segments that land on the timeline are listed (subtitles are only generated for the part on the timeline), and the time is where the segment first appears on the timeline. When nothing is listed yet, a skeleton is drawn; by default it follows the newest at the bottom, and if the user scrolls up it stops and a “Back to latest” button floats up. `jobId` is the transcription Job that runs recognition; it is null while still submitting.
  */
 export function SubtitleLive({ jobId, sequence }: { jobId: Id | null; sequence: Sequence }) {
   const { seek } = useEditorActions();

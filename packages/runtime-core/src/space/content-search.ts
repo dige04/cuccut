@@ -6,8 +6,8 @@ import type { CandidateFilter, SegmentRow } from './content-store.ts';
  * while hits and snippets are still determined here by the rules below:
  *
  * - Text is first normalized with NFKC and lowercased, so full-width and half-width forms and letter case are not distinguished.
- * - The query is split by whitespace into several terms; a segment is a hit only when all terms appear in it. Chinese is not word-segmented: matching is by character substring, so “剪辑” (edit) finds “视频剪辑” (video editing),
- *   at the cost of having no word boundaries (“剪” (cut) also matches “剪刀” (scissors)). Terms of three or more characters go through FTS's MATCH; shorter ones fall back to substring filtering (scanning segment by segment).
+ * - The query is split by whitespace into several terms; a segment is a hit only when all terms appear in it. Chinese is not word-segmented: matching is by character substring, so “edit” finds “video editing”,
+ *   at the cost of having no word boundaries (“cut” also matches “scissors”). Terms of three or more characters go through FTS's MATCH; shorter ones fall back to substring filtering (scanning segment by segment).
  * - There is no relevance ranking: results follow the video order the caller gives (most recent activity first), and within one video, time order.
  */
 

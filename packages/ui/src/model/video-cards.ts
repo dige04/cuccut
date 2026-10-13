@@ -304,12 +304,12 @@ export type VideoStatusKey = 'transcribing' | 'queued' | 'translating' | 'transc
 
 export interface VideoStatus {
   key: VideoStatusKey;
-  /** “转录中 · 45%” (transcribing · 45%), “排队中” (queued), “翻译中 · 30%” (translating · 30%), “已转录” (transcribed), “失败” (failed). */
+  /** “transcribing · 45%”, “queued”, “translating · 30%”, “transcribed”, “failed”. */
   text: string;
 }
 
 /**
- * The status word in the video card header (prototype `badge`): when this video's transcription is running or queued, that takes precedence. When no transcription is running but a translation is (the translation pipeline, whichever way it was started, or the agent translating itself), it is “翻译中” (translating); with only one such job, which is the translation pipeline and has steps, the percentage is included. Otherwise, if a transcription result exists (a completed transcription wrote a transcript, or the editor has the video open and its document has `speech`), it is “已转录” (transcribed). If a transcription has failed, it is “失败” (failed). When nothing is known, null (nothing is shown).
+ * The status word in the video card header (prototype `badge`): when this video's transcription is running or queued, that takes precedence. When no transcription is running but a translation is (the translation pipeline, whichever way it was started, or the agent translating itself), it is “translating”; with only one such job, which is the translation pipeline and has steps, the percentage is included. Otherwise, if a transcription result exists (a completed transcription wrote a transcript, or the editor has the video open and its document has `speech`), it is “transcribed”. If a transcription has failed, it is “failed”. When nothing is known, null (nothing is shown).
  * Do not infer “not transcribed” from the absence of a record: the Job mirror holds only the tasks this Runtime remembers, and the video's document cannot be read when the video is not open.
  */
 export function videoStatus(videoId: Id, jobs: readonly JobRecord[], transcribedInEditor: boolean): VideoStatus | null {
@@ -349,7 +349,7 @@ export interface JobRowView {
   tail: string | null;
   /** Progress bar: 0–100. While running with no total, null (a thin indeterminate bar). Not drawn when not running. */
   pct: number | null;
-  /** While running: “识别中 · 已识别 1:02 / 3:26” (recognizing · recognized 1:02 / 3:26). While queued, it says what the activity is waiting for. */
+  /** While running: “recognizing · recognized 1:02 / 3:26”. While queued, it says what the activity is waiting for. */
   line: string | null;
   /** The model and parameters used for transcription and re-transcription (a read-only line, assembled by `asrLine`). null for other activities or when the model is unknown. */
   asr: AsrFacts | null;
@@ -387,7 +387,7 @@ function rowKind(job: JobRecord): JobRowView['kind'] {
   return 'other';
 }
 
-/** The same video already had a completed transcription before: this one is called “重新转录” (re-transcription). */
+/** The same video already had a completed transcription before: this one is called “re-transcription”. */
 function isRetranscribe(job: JobRecord, jobs: readonly JobRecord[]): boolean {
   return jobs.some(
     (j) =>
@@ -416,7 +416,7 @@ function rowName(job: JobRecord, kind: JobRowView['kind'], jobs: readonly JobRec
   }
 }
 
-/** Transcription progress counts: by seconds, “已识别 1:02 / 3:26” (recognized 1:02 / 3:26); by segments, “已识别 12 / 40 段” (recognized 12 / 40 segments). */
+/** Transcription progress counts: by seconds, “recognized 1:02 / 3:26”; by segments, “recognized 12 / 40 segments”. */
 function transcribeCount(job: JobRecord): string | null {
   const p = job.progress;
   if (!p) return null;
@@ -453,7 +453,7 @@ function progressOf(job: JobRecord, kind: JobRowView['kind'], jobs: readonly Job
   }
 }
 
-/** “已下载 30 MB / 92 MB” (downloaded 30 MB / 92 MB). When `downloadProgress` has a total, only the two numbers are given (`pct` is not null). With no total, `text` is already the full sentence. */
+/** “downloaded 30 MB / 92 MB”. When `downloadProgress` has a total, only the two numbers are given (`pct` is not null). With no total, `text` is already the full sentence. */
 const downloaded = (d: { pct: number | null; text: string }) => (d.pct === null ? d.text : VIDEO_CARD_COPY.downloaded(d.text));
 
 const warningText = (w: JobRecord['warnings'][number]) => VIDEO_CARD_COPY.warning[w.code] ?? localizeText(w.detail, w.detailRef) ?? w.code;

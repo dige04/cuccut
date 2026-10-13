@@ -1,4 +1,4 @@
-// Original licenses for the third-party code bundled into the design system editor (THIRD_PARTY_NOTICES.md, section “设计系统编辑器” (design system editor)).
+// Original licenses for the third-party code bundled into the design system editor (THIRD_PARTY_NOTICES.md, section “design system editor”).
 // npm packages are collected from the modules the build actually bundles, not listed by hand: the page built by Vite, and the React 18 UMD files copied in as they are (vite.config.ts also records their package directories).
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';

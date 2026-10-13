@@ -38,7 +38,7 @@ import './video-cards.css';
 /**
  * One-line job rows under the video card, and the download card (product design §3.2.2, §6.5; prototype agent-cards.jsx `JobRow` / `DownloadCard`, agent-cards.css).
  * Rules that the style macros cannot express, such as per-edge borders and tabular figures, live in video-cards.css. Color variables are set on the card root,
- * because the “产物” (Outputs) popover in the session header renders through a portal and cannot read the variables on the thread column.
+ * because the “Outputs” popover in the session header renders through a portal and cannot read the variables on the thread column.
  */
 export const cardVars = style({
   '--cc-vc-text': { type: 'color', value: 'gray-900' },
@@ -54,7 +54,7 @@ export const cardVars = style({
   '--cc-vc-ic-bg': { type: 'backgroundColor', value: 'blue-100' },
   '--cc-vc-ic-err-bg': { type: 'backgroundColor', value: 'red-100' },
   '--cc-vc-ic-idle-bg': { type: 'backgroundColor', value: 'gray-75' },
-  // The “之前的 N 项” (“N earlier items”) row (follows the --cc-at-faint / row-hover / focus of the thread step row in thread.tsx).
+  // The “N earlier items” row (follows the --cc-at-faint / row-hover / focus of the thread step row in thread.tsx).
   '--cc-vc-chev': { type: 'color', value: 'gray-500' },
   '--cc-vc-hover': { type: 'backgroundColor', value: 'gray-75' },
   '--cc-vc-focus': { type: 'outlineColor', value: 'focus-ring' },
@@ -124,7 +124,7 @@ export function useJobsForPlacement(): readonly JobRecord[] {
 
 const progress = style({ width: 'full' });
 
-/** The text of the transcription line (`asrLine`): the model name comes from the capability view and model pack, and “自动检测” (Auto-detect) and “识别说话人” (Identify speakers) use the same wording as the transcription tool page. */
+/** The text of the transcription line (`asrLine`): the model name comes from the capability view and model pack, and “Auto-detect” and “Identify speakers” use the same wording as the transcription tool page. */
 function useAsrText(): (row: JobRowView) => string | null {
   const view = useModels((s) => s.capabilities);
   const bundles = useModels((s) => s.bundles);
@@ -158,8 +158,8 @@ function useRowActions() {
 }
 
 /**
- * The jobs under the video card that belong to this video in this session (the same set as in the thread and in the “产物” (Outputs) popover). Nothing is drawn when there are no rows. Only running jobs are expanded; if all have ended, only the last one is expanded.
- * The rest are folded into one “之前的 N 项” (“N earlier items”) row (`foldRows`, product design §3.2.2; prototype agent-cards.jsx `MovieJobRows`), collapsed by default.
+ * The jobs under the video card that belong to this video in this session (the same set as in the thread and in the “Outputs” popover). Nothing is drawn when there are no rows. Only running jobs are expanded; if all have ended, only the last one is expanded.
+ * The rest are folded into one “N earlier items” row (`foldRows`, product design §3.2.2; prototype agent-cards.jsx `MovieJobRows`), collapsed by default.
  * When expanded, it shows compact history rows, newest first. Open/close state belongs to this card alone and is not kept in the store; the look follows the thread step rows (steps-group.tsx).
  */
 export function VideoJobRows({ jobIds }: { jobIds: readonly Id[] }) {
@@ -208,7 +208,7 @@ export function VideoJobRows({ jobIds }: { jobIds: readonly Id[] }) {
 }
 
 /**
- * One job per line. `compact` is the history row shown after expanding “之前的 N 项” (“N earlier items”): it keeps only the first line, the exported file name and its button, and the failure reason with its remedy / retry,
+ * One job per line. `compact` is the history row shown after expanding “N earlier items”: it keeps only the first line, the exported file name and its button, and the failure reason with its remedy / retry,
  * and omits progress, result facts, the transcription model, reminders, file size and notes (expanded history is only for finding an exported file and where a failure stopped).
  * `asr`: the model and parameters used for transcription and re-transcription, read-only (product design §3.2.2).
  */

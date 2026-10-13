@@ -1611,7 +1611,7 @@ mod tests {
         );
     }
 
-    /// Scoring of the split hint: Korean counts as “one character per word” only in a script that is syllable-by-syllable before 0.5 (where the segment carries the 「贴前」 (attach-front) marker). Korean that forms words by 어절 is scored like other space-delimited scripts.
+    /// Scoring of the split hint: Korean counts as “one character per word” only in a script that is syllable-by-syllable before 0.5 (where the segment carries the “attach-front” marker). Korean that forms words by 어절 is scored like other space-delimited scripts.
     #[test]
     fn korean_piece_boundaries_score_per_character_only_for_legacy_words() {
         let words: Vec<String> = "저는 어제 서울에서 친구를 만났고, 오늘은 집에서 쉬고 있습니다"

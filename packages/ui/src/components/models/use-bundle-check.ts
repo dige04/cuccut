@@ -24,7 +24,7 @@ export interface BundleCheck {
 }
 
 /**
- * The “检查”(Check) for one model package row (model/model-check.ts): status is computed from the `jobs` / `models` topics; a rejected submit and a repair started from this row are recorded in state/model-check-store.ts. After a repair task completes, a check runs once more automatically; if it fails, is cancelled or is interrupted, no check runs, and the reason stays written on the row.
+ * The “Check” for one model package row (model/model-check.ts): status is computed from the `jobs` / `models` topics; a rejected submit and a repair started from this row are recorded in state/model-check-store.ts. After a repair task completes, a check runs once more automatically; if it fails, is cancelled or is interrupted, no check runs, and the reason stays written on the row.
  * `ownFiles`: the model package's own files are on disk (the same-named parameter of `bundleActions`); a model with weights present but missing components can also be repaired.
  */
 export function useBundleCheck(

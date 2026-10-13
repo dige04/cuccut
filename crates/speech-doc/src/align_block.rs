@@ -2409,7 +2409,7 @@ mod tests {
 
     #[test]
     fn relative_clause_noun_phrase_is_one_block_while_the_rest_still_splits() {
-        // (b) Only “the plan we discussed yesterday” ↔ “我们昨天讨论的计划” (the plan we discussed yesterday) cross over.
+        // (b) Only “the plan we discussed yesterday” ↔ “the plan we discussed yesterday” cross over.
         let src = words(&[
             "We",
             "should",
@@ -3172,7 +3172,7 @@ mod tests {
         assert!(comma.seam_cost < after_code.seam_cost);
     }
 
-    /// Real case (IBM “AI 安全三难困境” (AI safety trilemma), s-g40.34): source line of 19 words / 5.8 s / 78 units; translation 20 units (over fit, exactly at hard). The block boundary already falls after “是，”, but the paired source seam `… two of is | we could …` ends with a copula and is judged illegal by its prefix lemma. The flat over-fit penalty (1.5) is always lighter than this bad source seam (BLOCKING + 0.8), so the DP would rather keep a whole line pinned at hard. check then reports `align-paired-density`, requiring a cut at the same seam, while rerunning align would produce the same blocks. So the over-fit cost must grow with width enough to outweigh a bad source seam, so that this cut is adopted here.
+    /// Real case (IBM “AI safety trilemma”, s-g40.34): source line of 19 words / 5.8 s / 78 units; translation 20 units (over fit, exactly at hard). The block boundary already falls after “是，”, but the paired source seam `… two of is | we could …` ends with a copula and is judged illegal by its prefix lemma. The flat over-fit penalty (1.5) is always lighter than this bad source seam (BLOCKING + 0.8), so the DP would rather keep a whole line pinned at hard. check then reports `align-paired-density`, requiring a cut at the same seam, while rerunning align would produce the same blocks. So the over-fit cost must grow with width enough to outweigh a bad source seam, so that this cut is adopted here.
     fn dense_source_fixture() -> (Vec<AnchorWord>, &'static str, Vec<AlignBlock>) {
         let raw: [(&str, f64, f64); 19] = [
             ("And", 407.65, 408.2),

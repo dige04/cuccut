@@ -14,7 +14,7 @@ import { TtsTool } from './tools/tts-tool.tsx';
 
 /**
  * Tools (product design §2.1, §2.7; design file page-tools.jsx): without a tool specified, it shows the overview; each tool has its own workbench page (compress, merge and extract audio share one page,
- * switched from the top of the page). A tool that has no backend yet says “即将推出” (Coming soon) and the reason when deep-linked to.
+ * switched from the top of the page). A tool that has no backend yet says “Coming soon” and the reason when deep-linked to.
  */
 export function ToolsPage({ tool }: { tool?: ToolId }) {
   const info = toolById(tool);

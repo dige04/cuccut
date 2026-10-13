@@ -48,7 +48,7 @@ const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es,
 export const PASTE_STEP = 2;
 /** Limits on the copy's center (frame percentages, prototype LIMITS): the offset cannot push it out of the frame. */
 export const PASTE_LIMITS = { x: [3, 97], y: [4, 96] } as const;
-/** The suffix for copy names; copying a copy does not stack it into “· 副本 · 副本” (· copy · copy). */
+/** The suffix for copy names; copying a copy does not stack it into “· copy · copy”. */
 export let COPY_SUFFIX: string = M.copySuffix;
 onLocaleChange(() => {
   COPY_SUFFIX = M.copySuffix;
@@ -98,7 +98,7 @@ export function pastePlace(item: VisualItem, canvas: { width: number; height: nu
   return { ...item.place, ...(nx !== cx ? { x: nx } : {}), ...(ny !== cy ? { y: ny } : {}) };
 }
 
-/** The copy's name: strips any existing “· 副本” (· copy) and then adds it once. */
+/** The copy's name: strips any existing “· copy” and then adds it once. */
 export function copyName(name: string): string {
   return `${name.endsWith(COPY_SUFFIX) ? name.slice(0, -COPY_SUFFIX.length) : name}${COPY_SUFFIX}`;
 }
@@ -117,7 +117,7 @@ export interface PasteOptions {
   playheadFrame: number;
   /** Which paste this is in the session (duplicates included), which determines how far the copies are staggered on screen. */
   generation: number;
-  /** The name shown for a segment that has no name of its own (material name, generator name, …); the copy appends “· 副本” (· copy) to it. */
+  /** The name shown for a segment that has no name of its own (material name, generator name, …); the copy appends “· copy” to it. */
   labelOf(item: SequenceItem): string;
 }
 

@@ -315,7 +315,7 @@ const KEYS: Partial<Record<ToolId, string>> = { copy: `${MOD_KEY}D`, delete: '�
 function MenuTool({ tool, submenu }: { tool: Tool; submenu?: ReactElement }) {
   const Icon = TOOL_ICON[tool.id];
   const item = (
-    // DialogTrigger also gives the menu a “选中即收起” (collapse on select) state: drill-down items must stay in the popover and switch pages, so they must not collapse it.
+    // DialogTrigger also gives the menu a “collapse on select” state: drill-down items must stay in the popover and switch pages, so they must not collapse it.
     <MenuItem id={tool.id} textValue={tool.label} shouldCloseOnSelect={tool.action.kind !== 'sub'}>
       {Icon ? <Icon /> : null}
       <Text slot="label">{tool.label}</Text>
@@ -339,12 +339,12 @@ function MenuTool({ tool, submenu }: { tool: Tool; submenu?: ReactElement }) {
   );
 }
 
-/** Icons and shortcuts for the four “层级” (layer order) rows (prototype OrderSub: bring to front F, bring forward ⌘↑, send backward ⌘↓, send to back B). */
+/** Icons and shortcuts for the four “layer order” rows (prototype OrderSub: bring to front F, bring forward ⌘↑, send backward ⌘↓, send to back B). */
 const ARRANGE_ICON: Record<ArrangeDirection, ComponentType> = { front: SortUp, forward: ChevronUp, backward: ChevronDown, back: SortDown };
 const ARRANGE_KEY: Record<ArrangeDirection, string> = { front: 'F', forward: `${MOD_KEY}↑`, backward: `${MOD_KEY}↓`, back: 'B' };
 
 /**
- * The “层级” (layer order) flyout menu: two rows for moving forward, a divider, then two rows for moving backward. A direction that can't move is greyed out (the item is alone on its track, or already at the top / bottom of the stack of pictures and captions);
+ * The “layer order” flyout menu: two rows for moving forward, a divider, then two rows for moving backward. A direction that can't move is greyed out (the item is alone on its track, or already at the top / bottom of the stack of pictures and captions);
  * clicking a row commits one change and collapses the whole popover.
  */
 function ArrangeSub({ props, actions, onDone }: { props: ToolProps; actions: EditorActions; onDone(): void }) {

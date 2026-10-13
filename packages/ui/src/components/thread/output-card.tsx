@@ -64,7 +64,7 @@ const outputIcon = style({
 const outputBody = style({ display: 'flex', flexDirection: 'column', gap: 4, flexGrow: 1, minWidth: 0 });
 const outputName = style({ fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
 /**
- * A video is a vertical video card (product design §3.2.2, §6.5; prototype apprail.css `.chat-output--movie` :142-155, home-session.jsx `SessionArtifactCard`): a 16:9 picture on top. If it can play, clicking plays it in place in the card; if not, it opens on the right. Below are the name, status word and duration, with an “打开编辑器” (Open in editor) button beside them.
+ * A video is a vertical video card (product design §3.2.2, §6.5; prototype apprail.css `.chat-output--movie` :142-155, home-session.jsx `SessionArtifactCard`): a 16:9 picture on top. If it can play, clicking plays it in place in the card; if not, it opens on the right. Below are the name, status word and duration, with an “Open in editor” button beside them.
  * Below that, one row for a task still running.
  */
 const videoCard = style({
@@ -85,7 +85,7 @@ const videoCard = style({
   color: 'gray-900',
 });
 /**
- * The picture area of the video: shows the real frame when there is one; when none can be obtained, shows “暂无缩略图” (No thumbnail); when the source folder is gone, shows “找不到源文件” (Source file not found). The duration is in the bottom-right corner.
+ * The picture area of the video: shows the real frame when there is one; when none can be obtained, shows “No thumbnail”; when the source folder is gone, shows “Source file not found”. The duration is in the bottom-right corner.
  * For a video that can play in the card, a play button appears in the centre when the pointer moves over it or it gets keyboard focus (`cc-vcard-play`, video-cards.css).
  */
 const videoPreview = style({
@@ -165,7 +165,7 @@ function usePoster(output: ConversationOutput): string | null {
   return frame ? media.thumbnail(frame.asset, frame.at) : null;
 }
 
-/** When the editor has this video open and the document already has a transcript (`speech`), the video card's “已转录” (Transcribed) does not have to wait for the Job record. */
+/** When the editor has this video open and the document already has a transcript (`speech`), the video card's “Transcribed” does not have to wait for the Job record. */
 function useTranscribedInEditor(output: ConversationOutput): boolean {
   const target = output.video;
   return useVideo(
@@ -178,7 +178,7 @@ function useTranscribedInEditor(output: ConversationOutput): boolean {
 }
 
 /**
- * One artifact (prototype home-session.jsx `SessionArtifactCard`): shared by the “产物” (Artifacts) popover in the session header, the video card in the thread, and the files under each reply.
+ * One artifact (prototype home-session.jsx `SessionArtifactCard`): shared by the “Artifacts” popover in the session header, the video card in the thread, and the files under each reply.
  * A video opens in the editor on the right; video files and audio play in the feature area; other files are shown in the folder. `onOpen` is called before opening (the popover uses it to close itself).
  * `jobIds`: the tasks listed under the video card (in the thread and in the popover, these are all the tasks for this whole session on this video).
  */
@@ -242,7 +242,7 @@ export function OutputCard({
   const activate = () => {
     onOpen?.();
     const shell = useShell.getState();
-    // Prototype home-session.jsx `SessionArtifactCard`: non-video artifacts all open in a single-file tab in the feature area; there, video and audio use the player and the rest use the viewer. Anything that can't be previewed is stated plainly, with “在文件夹中显示” (Show in folder) offered.
+    // Prototype home-session.jsx `SessionArtifactCard`: non-video artifacts all open in a single-file tab in the feature area; there, video and audio use the player and the rest use the viewer. Anything that can't be previewed is stated plainly, with “Show in folder” offered.
     //
     if (output.video) shell.openVideo(output.video);
     // Slides are previewed, edited and annotated in the slides tab in the feature area (docs/design/slides §8.1).
@@ -256,12 +256,12 @@ export function OutputCard({
 
   if (isVideo) {
     const showPoster = poster !== null && !missing;
-    // Not yet known where to open it (a video newly created by a flow that the Space has not scanned yet): the picture and “打开编辑器” (Open in editor) are greyed out for now.
+    // Not yet known where to open it (a video newly created by a flow that the Space has not scanned yet): the picture and “Open in editor” are greyed out for now.
     const canOpen = output.video !== null;
     // Playing in place in the card (product design §3.2.2): requires a real frame, the video to be in the Space, and the source file to exist; what plays is the video's original footage, not an edited version.
     const canPlay = showPoster && output.entry !== null;
     return (
-      // The play button and “暂无缩略图” (No thumbnail) in the picture area are picture content, so they keep their own size (product design §2.1)
+      // The play button and “No thumbnail” in the picture area are picture content, so they keep their own size (product design §2.1)
       <div className={`${videoCard} ${cardVars}`} data-cc-icons="own">
         {inline ? (
           <div className="cc-vcard-player">

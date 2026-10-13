@@ -1379,4 +1379,12 @@ export {
   type TemplateTranslationResult,
 } from './template-schemas.ts';
 export { skillSendListSchema, skillSendRefSchema } from './skill-schemas.ts';
+// `packs.*` join `methodParamSchemas` together with their handlers (pack design step 8); until then the gateway answers them `unknown-method`.
+export {
+  PACK_PARAM_SCHEMAS,
+  packManifestSchema,
+  parsePackManifest,
+  type PackManifestProblem,
+  type PackManifestResult,
+} from './pack-schemas.ts';
 export { aiToolParamsSchema } from './ai-tool-schemas.ts';

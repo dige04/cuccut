@@ -1,0 +1,10 @@
+{
+  "format": "cuccut.library-item",
+  "version": 1,
+  "library": "brand",
+  "content": {
+    "name": "News desk red",
+    "kind": "color",
+    "value": "#C8102E"
+  }
+}

@@ -19,6 +19,7 @@ export * from './rc-space.ts';
 export * from './rc-video.ts';
 export * from './rc-grants.ts';
 export * from './rc-skills.ts';
+export * from './rc-packs.ts';
 export * from './rc-templates.ts';
 export * from './rc-slides.ts';
 export * from './rc-design.ts';

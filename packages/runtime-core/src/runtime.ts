@@ -910,7 +910,7 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       externalTools,
       templates: new TemplateCatalog({
         builtinDir: options.templatesDir === undefined ? resolveBuiltinTemplatesDir() : options.templatesDir,
-        userDir: path.join(home.root, 'templates'),
+        userDir: home.templatesDir,
       }),
       skills,
       skillInstaller,

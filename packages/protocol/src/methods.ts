@@ -110,6 +110,17 @@ import type {
 import type { TemplateDetail, TemplateListResult, TemplateSendRef } from './template.ts';
 import type { SkillChangeResult, SkillDetail, SkillFileContent, SkillListResult, SkillRemoveResult, SkillSendRef } from './skill.ts';
 import type {
+  PackActiveStyle,
+  PackChangeResult,
+  PackChooseResult,
+  PackDetail,
+  PackExportParams,
+  PackExportResult,
+  PackListResult,
+  PackPreview,
+  PackRemoveResult,
+} from './pack.ts';
+import type {
   SpaceContinueResult,
   SpaceListParams,
   SpaceListResult,
@@ -1093,6 +1104,52 @@ export interface RpcMethods {
     result: { mode: 'snapshot'; seq: Seq; snapshot: unknown } | { mode: 'replay'; seq: Seq; events: SequencedEvent<unknown>[] };
   };
   unsubscribe: { params: { topic: Topic }; result: { ok: true } };
+}
+
+/**
+ * Packs (pack spec docs/spec/pack-spec.md §8). Installed packs live in `<home>/packs/<id>/`; what they brought lives in `<home>/templates`, `<home>/skills` and the library.
+ * Results that change the list return the full list, as skills do; there is no topic.
+ *
+ * Install, remove, restore, inspect, export and style editing write to the Runtime Home from arbitrary folders or the network, so like `skills.add` they are not on the Web
+ * allowlist. `RpcMethods` takes these entries in once their handlers are wired (pack design step 8).
+ */
+export interface PackRpcMethods {
+  /** Installed packs; folders whose record can't be read become diagnostics. */
+  'packs.list': { params: Record<string, never>; result: PackListResult };
+  /** The pack page: summary, style guide text and digest, reference files, quick actions, item states, reserved texts. Unknown id: `not-found` (`PACK_NOT_FOUND`). */
+  'packs.get': { params: { id: string }; result: PackDetail };
+  /** A short-lived read handle for a reference file or its still (`examples[].file` / `still`); any other path: `not-found`. */
+  'packs.openHandle': { params: { id: string; path: string }; result: MediaHandle };
+  /** The style guide a conversation (or a project) uses now, and why (pack spec §7). */
+  'packs.active': { params: { conversationId: Id } | { projectId: Id }; result: PackActiveStyle };
+  /** A project's style choice: a pack id, `'none'`, or null (decide on its own). The Video menu's Style guide and `packs_choose_style` both call it. */
+  'packs.choose': { params: { projectId: Id; pack: string | 'none' | null }; result: PackChooseResult };
+  /**
+   * Read a pack from a folder, a GitHub address or an `https://` address into a preview, without installing anything. The preview's `token` installs exactly what was read,
+   * for 30 minutes. Refusals: `PACK_URL_INVALID`, `PACK_SOURCE_NOT_FOUND`, `PACK_INVALID`, `PACK_FOREIGN_FORMAT`, `PACK_UNSUPPORTED_SCHEMA`, `PACK_UNSUPPORTED_FIELD`,
+   * `PACK_ID_RESERVED`, `PACK_TOO_LARGE`, `PACK_NETWORK`, `OFFLINE_STRICT`.
+   */
+  'packs.inspect': { params: { source: string; commandId?: Id }; result: PackPreview };
+  /**
+   * Install a previewed pack (`token`), or read and install in one call (`source`, for the CLI). `replace`: the user's own items with a clashing id go to the trash first.
+   * A blocked pack: `PACK_BLOCKED`; an old token: `PACK_PREVIEW_EXPIRED`. A retry with the same `commandId` returns the first result.
+   */
+  'packs.install': {
+    params: ({ token: string } | { source: string }) & { replace?: boolean; commandId?: Id };
+    result: PackChangeResult;
+  };
+  /** Remove a pack at once: it and the unchanged templates and skills it installed go to the trash for 24 hours. Library entries and project choices stay. */
+  'packs.remove': { params: { id: string }; result: PackRemoveResult };
+  /** Undo a removal. An id taken in the meantime: `PACK_RESTORE_CONFLICT`; purged: `PACK_TRASH_EXPIRED`. */
+  'packs.restore': { params: { trashId: string }; result: PackChangeResult };
+  /** Save the style guide. Scanned like an installed one (`PACK_BLOCKED`, `PACK_STYLE_TOO_LONG`); `expectedHash` guards against a newer save (`PACK_STYLE_CHANGED`). */
+  'packs.setStyle': { params: { id: string; text: string; expectedHash?: string }; result: PackDetail };
+  /** Add a reference image or video from a local file; a video gets a still when ffmpeg is there. */
+  'packs.addExample': { params: { id: string; path: string; title?: string; note?: string }; result: PackDetail };
+  'packs.updateExample': { params: { id: string; file: string; title?: string; note?: string }; result: PackDetail };
+  'packs.removeExample': { params: { id: string; file: string }; result: PackDetail };
+  /** Write a pack folder from the user's own templates, skills, library items, quick actions and an installed pack's style guide, with the `files` index. */
+  'packs.export': { params: PackExportParams; result: PackExportResult };
 }
 
 /** The location of a file (or video directory): a Space entry, or a relative path in a session working directory or project directory. */

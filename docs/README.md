@@ -16,6 +16,7 @@ CucCut 是一个源码可用（source-available）的 AI 视频智能体：用�
 | [`spec/model-worker-protocol-spec.md`](spec/model-worker-protocol-spec.md) | **Model Worker 协议规范**：Runtime 与本地推理进程的 stdio 消息、模型包描述、staging 目录与 `cuccut.asr-result/v1` 输出合同 |
 | [`spec/node-protocol-spec.md`](spec/node-protocol-spec.md) | **节点协议规范**：局域网能力共享的 HTTP 端点、配对与令牌、任务与事件流、清理规则，以及本机网关的 `nodes` 方法 |
 | [`spec/template-spec.md`](spec/template-spec.md) | **模板包规范**：Home 创作模板的目录布局、清单字段与分类、封面与预览、素材、路径与语言约束、场景模板的简报引导 |
+| [`spec/pack-spec.md`](spec/pack-spec.md) | **Pack specification**: the pack folder and `pack.json`, limits, sources (folder, GitHub, https), the text scan, install rules and the active style guide |
 | [`acceptance/acceptance-spec.md`](acceptance/acceptance-spec.md) | **验收与测试**：测试策略、发布门槛、性能目标、验收矩阵 |
 | [`acceptance/agent-surface-e2e.md`](acceptance/agent-surface-e2e.md) | **Agent 面端到端验收记录**：2026-10-06 用 Claude Code 经 skill 与 MCP 走「链接 → 转录 → 自译 → 双语字幕 → 导出」的结论、证据位置、修复与发现 |
 | [`design/subtitle/`](design/subtitle/README.md) | **字幕与翻译设计（移植自 v2）**：转录后处理、翻译载体、字幕对齐与切分、字幕导出的设计记录；实现在 `crates/speech-doc`，文中的数据模型名指 v2，与 v3 的对应见架构设计 §14 |

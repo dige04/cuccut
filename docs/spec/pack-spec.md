@@ -233,6 +233,20 @@ Remove acts at once: the pack folder and the unchanged templates and skills it i
 items, library entries and project choices stay. Restore (Undo) moves them back; an id taken in the meantime is
 `PACK_RESTORE_CONFLICT`, a purged trash `PACK_TRASH_EXPIRED`.
 
+### 6.4 Export
+
+`packs.export` writes a pack folder anyone can read back: the user's own templates (built-in ones are on every computer
+already), skills that aren't built in (their `.cuccut-skill.json` stays behind), library entries as the library's own exchange
+files under `library/` (glossaries as Markdown, colours and caption styles as `cuccut.library-item` JSON, media as the file;
+voices never travel), the chosen quick actions, and an installed pack's style guide (as `STYLE.md`) with its reference files.
+`pack.json` gets the `files` index, so the folder can be served from a static host as it is.
+
+The target folder must be empty (dot entries and root documentation files do not count) or an earlier export of the same id
+(`PACK_EXPORT_TARGET_NOT_EMPTY` otherwise). The pack is written into a dot folder inside the target first and checked the way
+a read checks it (§3.3, with the index required); only then does it replace the earlier export's files. A `.git` folder and
+root README / LICENSE files stay, so an exported repository can be pushed again. A folder inside CucCut's own templates,
+skills or packs folder is refused.
+
 ## 7. The active style guide
 
 A conversation's style guide is resolved in this order, each result with a reason:
@@ -317,7 +331,7 @@ Errors carry `details.code`:
 | `packs_read` | agent, MCP, CLI | read | Without `path`: the style guide and the reference files; with `path`: a text file of the pack (at most 256 KiB), or an image (a session gets a copy in `<cwd>/.ccut/style/<id>/`, the terminal the pack's own file, MCP no path) |
 | `packs_choose_style` | agent, CLI | edit | The project's choice, as `packs.choose`; a session outside a project is refused (`NO_PROJECT`) |
 
-Installing, removing, restoring and editing a guide have no tool; a person does them in the desktop app or with the CLI:
+Installing, removing, restoring, exporting and editing a guide have no tool; a person does them in the desktop app or with the CLI:
 
 ```text
 cuccut packs inspect <source>            everything the pack carries, agent text in full; nothing installed
@@ -325,6 +339,9 @@ cuccut packs install <source> [--replace]
 cuccut packs remove <id>                 prints the Undo command
 cuccut packs restore <trashId>
 cuccut packs style <id> [<file>|-]       print the guide, or save a file as the guide
+cuccut packs export <folder> --name <name> [--id] [--version] [--author] [--description]
+       [--template <id>]… [--skill <id>]… [--library <glossaries|brand>:<entryId>]…
+       [--quick-actions <packId>]… [--style-from <packId>]
 ```
 
 A `<source>` naming an existing folder is passed as its absolute path. `cuccut packs list|read|choose-style` are the tools above.

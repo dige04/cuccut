@@ -15,7 +15,7 @@ import { tr } from './packs-copy.tr.ts';
 import { vi } from './packs-copy.vi.ts';
 
 /**
- * Copy for the admin bucket `cuccut packs …` (pack spec §8): inspect, install, remove, restore and the style guide. English is the source of the keys and types;
+ * Copy for the admin bucket `cuccut packs …` (pack spec §8): inspect, install, remove, restore, the style guide and export. English is the source of the keys and types;
  * translations are in `packs-copy.<lang>.ts`.
  */
 const en = {
@@ -32,7 +32,20 @@ const en = {
   cuccut packs restore <trashId>   Undo a removal, within 24 hours
   cuccut packs style <id> [<file>|-]
                                    Print the pack's style guide; with a file (or - for standard input),
-                                   save the file as the guide (an empty file removes it)`,
+                                   save the file as the guide (an empty file removes it)
+  cuccut packs export <folder> --name <name>
+                                   Write a pack folder from your own templates, skills and library items,
+                                   with the files index, to send as it is, push to GitHub or serve from any
+                                   static host. The folder must be empty or an earlier export of the pack
+    --id <id>                      The pack's id (default: made from the name)
+    --version <version>            Default 1.0.0
+    --author <name>, --description <text>
+    --template <id>                A template of your own (repeatable)
+    --skill <id>                   A skill that isn't built in (repeatable)
+    --library <glossaries|brand>:<entryId>
+                                   A library item (repeatable); voices stay
+    --quick-actions <packId>       The quick actions of an installed pack (repeatable)
+    --style-from <packId>          The style guide and reference files of an installed pack`,
 
   // Inspect
   title: (name: string, id: string, version: string, author: string) => `${name} (${id}) v${version}${author ? `, by ${author}` : ''}`,
@@ -96,6 +109,14 @@ const en = {
   styleRemoved: (name: string) => `Removed the style guide of ${name}`,
   takesEffect: 'Takes effect from the next new agent session.',
   idFormat: (value: string) => `Not a pack id (lowercase letters, digits and single dashes): ${value}`,
+
+  // Export
+  exportNeedsName: 'Give the pack a name with --name.',
+  exportNoId: (name: string) => `Can't make an id from "${name}"; give one with --id.`,
+  libraryFormat: (value: string) => `Not a library item (glossaries:<entryId> or brand:<entryId>): ${value}`,
+  exported: (dir: string, files: number, bytes: number) =>
+    `Wrote ${dir}: ${files} ${files === 1 ? 'file' : 'files'}, ${bytes} bytes. Send the folder as it is, push it to GitHub, or serve it from any static host.`,
+  exportedCheck: (dir: string) => `Read it back with: cuccut packs inspect ${dir}`,
   fileUnreadable: (file: string, reason: string) => `Can't read ${file}: ${reason}`,
 };
 

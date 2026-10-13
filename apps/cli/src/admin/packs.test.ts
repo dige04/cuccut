@@ -121,4 +121,37 @@ describe('cuccut packs', () => {
     expect(restored.out).toBe(`${M.restored('News desk', '1.0.0')}\n`);
     expect((await client.request('templates.list', {})).templates.map((t) => t.manifest.id)).toEqual(['news-desk-daily']);
   });
+
+  it('export writes a pack folder that inspect reads back; export flags belong to export alone', async () => {
+    await expect(run(['remove', 'news-desk'], { values: { name: 'X' } })).rejects.toMatchObject({ code: 'INVALID_ARGUMENTS' });
+    await expect(run(['export', 'kit'])).rejects.toMatchObject({ code: 'INVALID_ARGUMENTS', message: M.exportNeedsName });
+    await expect(run(['export', 'kit'], { values: { name: 'Kit', library: ['voices:x'] } })).rejects.toMatchObject({ code: 'INVALID_ARGUMENTS' });
+
+    const { entries } = await client.request('library.list', {});
+    const exported = await run(['export', 'exports/news-kit'], {
+      cwd: dir,
+      values: {
+        name: 'News kit',
+        version: '2.0.0',
+        template: ['news-desk-daily'],
+        skill: ['news-desk-headlines'],
+        library: entries.map((e) => `${e.library}:${e.id}`),
+        'quick-actions': ['news-desk'],
+        'style-from': 'news-desk',
+      },
+    });
+    const out = path.join(dir, 'exports', 'news-kit');
+    const lines = exported.out.trimEnd().split('\n');
+    expect(lines[0]).toMatch(new RegExp(`^Wrote ${out.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}: \\d+ files`));
+    expect(lines[1]).toBe(M.exportedCheck(out));
+    const manifest = JSON.parse(await fs.readFile(path.join(out, 'pack.json'), 'utf8')) as { id: string; quickActions: unknown[]; files: unknown[] };
+    expect(manifest.id).toBe('news-kit');
+    expect(manifest.quickActions).toHaveLength(3);
+    expect(manifest.files.length).toBeGreaterThan(5);
+
+    const inspected = await run(['inspect', out]);
+    expect(inspected.out).toContain(`${M.title('News kit', 'news-kit', '2.0.0', '')}\n${M.notInstalled}\n`);
+    // The earlier test removed the pack's guide, so only its reference file travels.
+    expect(inspected.out).toContain(M.contents(1, 1, 2, false, 3));
+  });
 });

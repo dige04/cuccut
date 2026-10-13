@@ -536,6 +536,7 @@ describe('Web 服务', () => {
       ['packs.remove', { id: 'news-desk' }],
       ['packs.restore', { trashId: 'abcdefgh12345678' }],
       ['packs.setStyle', { id: 'news-desk', text: 'Calm.' }],
+      ['packs.export', { dir: '/tmp/x-pack', manifest: { id: 'x-pack', name: 'X' }, templates: [], skills: [], library: [], quickActions: [] }],
     ];
     let forbidden = 0;
     for (const [method, params] of refused) {

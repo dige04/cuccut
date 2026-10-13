@@ -2,11 +2,12 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PACK_MANIFEST_FILE, type LibraryName, type PackFileEntry } from '@cuccut/protocol';
+import { PACK_MANIFEST_FILE, RpcError, type LibraryName, type PackFileEntry } from '@cuccut/protocol';
 import { SkillPrefsStore } from '@cuccut/runtime-storage';
 import { readLibraryImport } from '@cuccut/runtime-storage/library';
 import { SkillCatalog } from '../../skills/skill-catalog.ts';
 import { TemplateCatalog } from '../../templates/template-catalog.ts';
+import { PackExporter, type PackExportLibrary } from '../pack-export.ts';
 import { PackInstaller, type PackInstallStep, type PackLibrary } from '../pack-installer.ts';
 import { PackPreviews } from '../pack-previews.ts';
 import { PackRegistry } from '../pack-registry.ts';
@@ -158,16 +159,20 @@ export async function readFolder(dir: string): Promise<Record<string, Uint8Array
 
 // ---- A pack world: catalogs, registry, previews and installer over a temporary home ----
 
-/** An in-memory library: imports read the file with the library's own reader (so voices and unknown files fail as they would), entries get `lib_<n>` ids. */
-export class FakePackLibrary implements PackLibrary {
-  readonly entries = new Map<string, { library: LibraryName; id: string; name: string; file: string }>();
+/**
+ * An in-memory library: imports read the file with the library's own reader (so voices and unknown files fail as they would), entries get `lib_<n>` ids. Export writes
+ * the imported file back as it was.
+ */
+export class FakePackLibrary implements PackLibrary, PackExportLibrary {
+  readonly entries = new Map<string, { library: LibraryName; id: string; name: string; file: string; bytes: Uint8Array }>();
   readonly imports: string[] = [];
   #next = 0;
 
   async import(file: string): Promise<{ library: LibraryName; id: string }> {
     const candidate = await readLibraryImport(file);
     const id = `lib_${++this.#next}`;
-    this.entries.set(`${candidate.library}:${id}`, { library: candidate.library, id, name: candidate.content.name, file });
+    const bytes = await fs.readFile(file);
+    this.entries.set(`${candidate.library}:${id}`, { library: candidate.library, id, name: candidate.content.name, file, bytes });
     this.imports.push(file);
     return { library: candidate.library, id };
   }
@@ -179,6 +184,18 @@ export class FakePackLibrary implements PackLibrary {
   entry(library: LibraryName, id: string): { name: string } | null {
     const found = this.entries.get(`${library}:${id}`);
     return found ? { name: found.name } : null;
+  }
+
+  exportInfo(library: Exclude<LibraryName, 'voices'>, id: string): { name: string; extension: string } {
+    const found = this.entries.get(`${library}:${id}`);
+    if (!found) throw new RpcError('not-found', 'no such entry');
+    return { name: found.name, extension: path.extname(found.file).slice(1).toLowerCase() };
+  }
+
+  async exportTo(library: Exclude<LibraryName, 'voices'>, id: string, target: string): Promise<void> {
+    const found = this.entries.get(`${library}:${id}`);
+    if (!found) throw new RpcError('not-found', 'no such entry');
+    await fs.writeFile(target, found.bytes, { flag: 'wx' });
   }
 }
 
@@ -215,6 +232,7 @@ export async function packWorld(root: string, options: PackWorldOptions = {}) {
     ...(options.now ? { now: options.now } : {}),
     ...(options.onStep ? { onStep: options.onStep } : {}),
   });
+  const exporter = new PackExporter({ registry, templates, skills, library, exclusive: (run) => installer.exclusive(run) });
   /** Writes a template directory (default files) into a folder. */
   const writeTemplate = async (dir: string, id: string, extra: Record<string, unknown> = {}) => {
     for (const [rel, body] of Object.entries(templateFiles(id, extra))) {
@@ -244,6 +262,7 @@ export async function packWorld(root: string, options: PackWorldOptions = {}) {
     templates,
     previews,
     installer,
+    exporter,
     writeTemplate,
     writeSkillDir,
   };

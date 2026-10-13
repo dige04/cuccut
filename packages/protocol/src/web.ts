@@ -82,9 +82,9 @@ export const WEB_DEFAULT_METHODS: readonly string[] = [
   'skills.get',
   'skills.readFile',
   'skills.setEnabled',
-  // Packs (pack spec §8): the list, the pack page, the active style guide and a project's style choice, listed one by one. Inspect, install, remove, restore and editing
-  // the guide (`packs.inspect`, `packs.install`, `packs.remove`, `packs.restore`, `packs.setStyle`) are not exposed: like adding a skill, they write to the Runtime Home
-  // from an arbitrary folder or the network, and decide what text every later agent follows. They are done only in the desktop UI and CLI.
+  // Packs (pack spec §8): the list, the pack page, the active style guide and a project's style choice, listed one by one. Inspect, install, remove, restore, export and
+  // editing the guide (`packs.inspect`, `packs.install`, `packs.remove`, `packs.restore`, `packs.export`, `packs.setStyle`) are not exposed: like adding a skill, they
+  // write to the Runtime Home or to an arbitrary folder, read from the network, and decide what text every later agent follows. They are done only in the desktop UI and CLI.
   'packs.list',
   'packs.get',
   'packs.active',

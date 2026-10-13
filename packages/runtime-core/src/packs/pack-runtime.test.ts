@@ -7,7 +7,7 @@ import { RpcError, newId } from '@cuccut/protocol';
 import { resolveRuntimeHome, type RuntimeHome } from '@cuccut/runtime-storage';
 import { startRuntime, type RunningRuntime } from '../runtime.ts';
 import { ToolDriver, until } from '../agent-tools/testing/fake-agent.ts';
-import { SAMPLE_PACK_DIR } from './testing/pack-fixtures.ts';
+import { SAMPLE_PACK_DIR, fakePackHost, readFolder } from './testing/pack-fixtures.ts';
 
 /**
  * Packs end to end (pack spec §5, §8): inspect, install, remove and restore through the real RPC gateway, and the catalogs (templates, skills, library) seeing the pack's
@@ -32,9 +32,9 @@ describe('packs end to end', () => {
   let runtime: RunningRuntime;
   let client: CucCutClient;
 
-  async function boot(): Promise<void> {
+  async function boot(packsSource?: { fetch: typeof fetch }): Promise<void> {
     driver = new ToolDriver();
-    runtime = await startRuntime({ home, drivers: () => [driver], watchSpace: false, skillsDir: builtin, templatesDir: null });
+    runtime = await startRuntime({ home, drivers: () => [driver], watchSpace: false, skillsDir: builtin, templatesDir: null, ...(packsSource ? { packsSource } : {}) });
     const { endpoint, token } = runtime.discovery;
     client = new CucCutClient({
       resolve: async () => ({ endpoint, token }),
@@ -190,6 +190,50 @@ describe('packs end to end', () => {
 
     const invalid = await rejection(client.request('packs.inspect', { source: path.join(dir, 'missing') }));
     expect(invalid.details).toMatchObject({ code: 'PACK_SOURCE_NOT_FOUND' });
+  });
+
+  it('export → inspect → install into a second home, from the folder and from a static host', async () => {
+    await boot();
+    await client.request('packs.install', { source: SAMPLE_PACK_DIR, commandId: newId('cmd') });
+    const { entries } = await client.request('library.list', {});
+    const out = path.join(dir, 'exports', 'news-kit');
+    const exported = await client.request('packs.export', {
+      dir: out,
+      manifest: { id: 'news-kit', name: 'News kit', version: '2.0.0', author: 'Me' },
+      templates: ['news-desk-daily'],
+      skills: ['news-desk-headlines'],
+      library: entries.filter((e) => e.library !== 'voices').map((e) => ({ library: e.library as 'glossaries' | 'brand', id: e.id })),
+      quickActions: [{ label: 'Tighten', text: 'Tighten {selection}.' }],
+      stylePack: 'news-desk',
+    });
+    expect(exported.dir).toBe(out);
+    expect(exported.files).toBeGreaterThan(5);
+    // The folder now holds this export: another pack's export into it is refused.
+    const busy = await rejection(
+      client.request('packs.export', { dir: out, manifest: { id: 'other', name: 'Other' }, templates: [], skills: [], library: [], quickActions: [] }),
+    );
+    expect(busy).toMatchObject({ code: 'conflict', details: { code: 'PACK_EXPORT_TARGET_NOT_EMPTY' } });
+    client.close();
+    await runtime.close();
+
+    // A second home reads the folder, and the same folder served from a static host (which needs the files index).
+    home = resolveRuntimeHome({ CUCCUT_HOME: path.join(dir, 'home-2') });
+    const host = fakePackHost('https://packs.example.test/news-kit/', await readFolder(out));
+    await boot({ fetch: host.fetch });
+    const fromHost = await client.request('packs.inspect', { source: 'https://packs.example.test/news-kit/' });
+    expect(fromHost.manifest).toMatchObject({ id: 'news-kit', name: 'News kit', version: '2.0.0' });
+    expect(fromHost.blocked).toEqual([]);
+    expect(fromHost.library.map((l) => [l.library, l.duplicate]).sort()).toEqual([
+      ['brand', false],
+      ['glossaries', false],
+    ]);
+    const preview = await client.request('packs.inspect', { source: out });
+    const installed = await client.request('packs.install', { token: preview.token });
+    expect(installed.skipped).toEqual([]);
+    expect(installed.pack).toMatchObject({ id: 'news-kit', hasStyle: true, counts: { templates: 1, skills: 1, library: 2, examples: 1, quickActions: 1 } });
+    expect((await client.request('templates.list', {})).templates.map((t) => [t.manifest.id, t.pack?.id])).toEqual([['news-desk-daily', 'news-kit']]);
+    expect((await client.request('library.list', {})).entries.map((e) => e.name).sort()).toEqual(['News desk red', 'News desk terms']);
+    expect((await client.request('packs.get', { id: 'news-kit' })).style?.text).toBe(await fs.readFile(path.join(SAMPLE_PACK_DIR, 'STYLE.md'), 'utf8'));
   });
 
   it('a restart forgets previews and keeps installed packs', async () => {

@@ -24,6 +24,13 @@ export function parsePackId(value: string): string {
   return id;
 }
 
+/** `--library <glossaries|brand>:<entryId>`: voices never travel in a pack. */
+export function parseLibraryItem(value: string): { library: 'glossaries' | 'brand'; id: string } {
+  const match = /^(glossaries|brand):(\S+)$/.exec(value.trim());
+  if (!match) throw new Error(M.libraryFormat(value));
+  return { library: match[1] as 'glossaries' | 'brand', id: match[2]! };
+}
+
 /** The contents line of an installed pack ("1 template · 2 skills · …"). */
 export function packContents(pack: Pick<PackSummary, 'counts' | 'hasStyle'>): string {
   return M.contents(pack.counts.templates, pack.counts.skills, pack.counts.library, pack.hasStyle, pack.counts.quickActions);

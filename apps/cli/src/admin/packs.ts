@@ -1,11 +1,11 @@
 import fs from 'node:fs/promises';
-import { newId, PACK_STYLE_MAX_CHARS } from '@cuccut/protocol';
+import { newId, PACK_STYLE_MAX_CHARS, slugPackId, type PackExportParams, type PackQuickAction } from '@cuccut/protocol';
 import { defineNoun, readStdin } from './context.ts';
 import { M } from './packs-copy.ts';
-import { formatInstalled, formatPreview, formatRemoved, parsePackId } from './packs-output.ts';
+import { formatInstalled, formatPreview, formatRemoved, parseLibraryItem, parsePackId } from './packs-output.ts';
 
 /**
- * Admin bucket `cuccut packs inspect|install|remove|restore|style` (pack spec §8): installing decides what text every later agent follows, so like adding a skill it is
+ * Admin bucket `cuccut packs inspect|install|remove|restore|style|export` (pack spec §8): installing decides what text every later agent follows, so like adding a skill it is
  * done by a person, in the desktop app or here. Listing, reading and the project's style choice are on the agent surface (`packs list|read|choose-style`).
  *
  * A `<source>` that names an existing folder is passed as its absolute path; anything else (a GitHub or `https://` address) goes to the Runtime as typed.
@@ -13,15 +13,64 @@ import { formatInstalled, formatPreview, formatRemoved, parsePackId } from './pa
 export const packs = defineNoun({
   name: 'packs',
   partial: true,
-  verbs: ['inspect', 'install', 'remove', 'restore', 'style'],
+  verbs: ['inspect', 'install', 'remove', 'restore', 'style', 'export'],
   get usage() {
     return M.packsHelp;
   },
-  options: { replace: { type: 'boolean' } },
+  options: {
+    replace: { type: 'boolean' },
+    // export
+    name: { type: 'string' },
+    id: { type: 'string' },
+    version: { type: 'string' },
+    author: { type: 'string' },
+    description: { type: 'string' },
+    template: { type: 'string', multiple: true },
+    skill: { type: 'string', multiple: true },
+    library: { type: 'string', multiple: true },
+    'quick-actions': { type: 'string', multiple: true },
+    'style-from': { type: 'string' },
+  },
   async run(ctx) {
     const [sub, arg, ...extra] = ctx.args;
     const replace = ctx.values.replace === true;
     if (!arg || (replace && sub !== 'install')) throw ctx.usageError();
+    const exportFlags = EXPORT_FLAGS.some((flag) => ctx.values[flag] !== undefined);
+    if (exportFlags && sub !== 'export') throw ctx.usageError();
+    if (sub === 'export') {
+      if (extra.length > 0) throw ctx.usageError();
+      const v = ctx.values;
+      const name = v.name?.trim();
+      if (!name) throw ctx.usageError(M.exportNeedsName);
+      const id = ctx.parse(() => {
+        if (v.id !== undefined) return parsePackId(v.id);
+        const slug = slugPackId(name);
+        if (!slug) throw new Error(M.exportNoId(name));
+        return slug;
+      });
+      const library = ctx.parse(() => (v.library ?? []).map(parseLibraryItem));
+      const quickFrom = ctx.parse(() => (v['quick-actions'] ?? []).map(parsePackId));
+      const stylePack = v['style-from'] !== undefined ? ctx.parse(() => parsePackId(v['style-from']!)) : undefined;
+      const quickActions: PackQuickAction[] = [];
+      for (const pack of quickFrom) quickActions.push(...(await ctx.client.request('packs.get', { id: pack })).quickActions);
+      const params: PackExportParams = {
+        dir: ctx.resolve(arg),
+        manifest: {
+          id,
+          name,
+          ...(v.version !== undefined ? { version: v.version } : {}),
+          ...(v.author !== undefined ? { author: v.author } : {}),
+          ...(v.description !== undefined ? { description: v.description } : {}),
+        },
+        templates: v.template ?? [],
+        skills: v.skill ?? [],
+        library,
+        quickActions,
+        ...(stylePack ? { stylePack } : {}),
+      };
+      const result = await ctx.client.request('packs.export', params);
+      return ctx.done(result, [M.exported(result.dir, result.files, result.bytes), M.exportedCheck(result.dir)]);
+    }
     if (sub === 'style') {
       if (extra.length > 1) throw ctx.usageError();
       const id = ctx.parse(() => parsePackId(arg));
@@ -56,6 +105,8 @@ export const packs = defineNoun({
     return ctx.done(result, [M.restored(result.pack.name, result.pack.version)]);
   },
 });
+
+const EXPORT_FLAGS = ['name', 'id', 'version', 'author', 'description', 'template', 'skill', 'library', 'quick-actions', 'style-from'] as const;
 
 /** A folder that exists is passed as its absolute path; anything else as typed (the Runtime classifies it). */
 async function sourceOf(typed: string, resolved: string): Promise<string> {

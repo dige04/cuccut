@@ -82,4 +82,9 @@ export const es: RcPacksMessages = {
   chooseStyleSummary: (p: { pack: string }) => `Use the style guide of the pack "${p.pack}" in this project`,
   chooseStyleNone: 'Use no style guide in this project',
   chooseStyleAuto: 'Let CucCut decide which style guide this project uses',
+
+  // Export (pack-export)
+  exportBuiltinTemplate: (p: { id: string }) => `"${p.id}" is a built-in template; built-in templates are on every computer already`,
+  exportBuiltinSkill: (p: { id: string }) => `"${p.id}" is a built-in skill; built-in skills are on every computer already`,
+  exportTargetInHome: "That folder is inside CucCut's own templates, skills or packs folder. Choose a folder outside it",
 };

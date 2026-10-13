@@ -56,7 +56,7 @@ fn ff(args: &[&str]) -> bool {
 /// Fixture directory; returns `None` if ffmpeg is not present (the caller skips).
 fn video_fixtures() -> Option<PathBuf> {
     if !have("ffmpeg") {
-        eprintln!("跳过：PATH 中没有 ffmpeg");
+        eprintln!("skipping: no ffmpeg in PATH");
         return None;
     }
     let dir = std::env::temp_dir().join("ccut-media-probe-fixtures");
@@ -155,13 +155,13 @@ fn video_fixtures() -> Option<PathBuf> {
 #[test]
 fn wav_fixture_reports_audio_only() {
     let path = fixtures().join("speech/test-sample.wav");
-    let probed = probe(&path).expect("WAV 夹具必须能纯 Rust 探测");
+    let probed = probe(&path).expect("the WAV fixture must be probeable in pure Rust");
     assert_eq!(probed.kind, MediaKind::Audio);
     assert!(probed.video.is_none());
-    let audio = probed.audio.as_ref().expect("WAV 必须有音轨");
+    let audio = probed.audio.as_ref().expect("WAV must have an audio track");
     assert_eq!(audio.sample_rate, Some(16_000));
     assert_eq!(audio.channels, Some(1));
-    let duration = probed.positive_duration().expect("WAV 必须有时长");
+    let duration = probed.positive_duration().expect("WAV must have a duration");
     assert!(duration > 0.5, "{duration}");
 }
 
@@ -178,9 +178,9 @@ fn png_reports_image_kind_and_dimensions() {
     let directory = tempfile::tempdir().expect("tempdir");
     let path = directory.path().join("card.png");
     let buffer = image::RgbaImage::from_pixel(48, 17, image::Rgba([9, 9, 9, 255]));
-    buffer.save(&path).expect("写 PNG 夹具");
+    buffer.save(&path).expect("write PNG fixture");
 
-    let probed = probe(&path).expect("PNG 必须能纯 Rust 探测");
+    let probed = probe(&path).expect("PNG must be probeable in pure Rust");
     assert_eq!(probed.kind, MediaKind::Image);
     assert_eq!(probed.dimensions(), Some((48, 17)));
     assert_eq!(probed.duration_seconds, None);
@@ -190,19 +190,19 @@ fn png_reports_image_kind_and_dimensions() {
 #[test]
 fn mp4_reports_video_geometry_audio_and_fps() {
     let Some(dir) = video_fixtures() else { return };
-    let probed = probe(&dir.join("clip.mp4")).expect("MP4 必须能纯 Rust 探测");
+    let probed = probe(&dir.join("clip.mp4")).expect("MP4 must be probeable in pure Rust");
     assert_eq!(probed.kind, MediaKind::Video);
     assert_eq!(probed.dimensions(), Some((640, 360)));
     assert!(probed.has_audio());
-    let fps = probed.fps().expect("MP4 必须能问出帧率");
+    let fps = probed.fps().expect("MP4 must report its frame rate");
     assert!((fps - 30.0).abs() < 0.01, "{fps}");
-    let duration = probed.positive_duration().expect("MP4 必须有时长");
+    let duration = probed.positive_duration().expect("MP4 must have a duration");
     assert!((duration - 2.0).abs() < 0.1, "{duration}");
     let video = probed.video.as_ref().expect("video");
     assert_eq!(video.codec.as_deref(), Some("h264"));
     assert!(!video.alpha);
 
-    let silent = probe(&dir.join("silent.mp4")).expect("无音轨 MP4");
+    let silent = probe(&dir.join("silent.mp4")).expect("MP4 without an audio track");
     assert!(!silent.has_audio());
     assert_eq!(silent.dimensions(), Some((320, 240)));
 }
@@ -212,19 +212,19 @@ fn rotated_mp4_keeps_encoded_dimensions_and_adds_display_dimensions() {
     let Some(dir) = video_fixtures() else { return };
     let rotated = dir.join("rotated-display-matrix.mp4");
     if !rotated.exists() {
-        eprintln!("跳过：这台机器的 ffmpeg 不支持 -display_rotation 夹具");
+        eprintln!("skipping: this machine's ffmpeg does not support the -display_rotation fixture");
         return;
     }
-    let probed = probe(&rotated).expect("旋转 MP4 必须能纯 Rust 探测");
+    let probed = probe(&rotated).expect("rotated MP4 must be probeable in pure Rust");
     assert_eq!(
         probed.dimensions(),
         Some((320, 240)),
-        "naturalW/H 仍是不含旋转的编码尺寸"
+        "naturalW/H is still the coded size without rotation"
     );
     assert_eq!(
         probed.display_dimensions(),
         Some((240, 320)),
-        "display 尺寸应按 90° 旋转摆正"
+        "display size should be rotated upright by 90°"
     );
 }
 
@@ -233,21 +233,21 @@ fn webm_alpha_mode_is_visible_without_ffprobe() {
     let Some(dir) = video_fixtures() else { return };
     let alpha = dir.join("alpha.webm");
     if !alpha.exists() {
-        eprintln!("跳过：这台机器的 ffmpeg 生成不了 libvpx-vp9 的 yuva420p WebM");
+        eprintln!("skipping: this machine's ffmpeg cannot produce a libvpx-vp9 yuva420p WebM");
         return;
     }
-    let probed = probe(&alpha).expect("WebM 必须能纯 Rust 探测");
+    let probed = probe(&alpha).expect("WebM must be probeable in pure Rust");
     assert_eq!(probed.kind, MediaKind::Video);
     assert_eq!(probed.dimensions(), Some((160, 120)));
     let video = probed.video.as_ref().expect("video");
     assert_eq!(video.codec.as_deref(), Some("vp9"));
-    assert!(video.alpha, "带 alpha 的 WebM 必须被认出来");
-    let fps = probed.fps().expect("WebM 必须能问出帧率");
+    assert!(video.alpha, "WebM with alpha must be detected");
+    let fps = probed.fps().expect("WebM must report its frame rate");
     assert!((fps - 24.0).abs() < 0.01, "{fps}");
 
     let opaque = dir.join("opaque.webm");
     if opaque.exists() {
-        let probed = probe(&opaque).expect("不透明 WebM");
+        let probed = probe(&opaque).expect("opaque WebM");
         assert!(!probed.video.expect("video").alpha);
     }
 }
@@ -256,7 +256,7 @@ fn webm_alpha_mode_is_visible_without_ffprobe() {
 #[test]
 fn native_matches_ffprobe() {
     if !have("ffprobe") {
-        eprintln!("跳过：PATH 中没有 ffprobe");
+        eprintln!("skipping: no ffprobe in PATH");
         return;
     }
     let ffprobe = Path::new("ffprobe");
@@ -289,21 +289,21 @@ fn native_matches_ffprobe() {
             reference.has_audio(),
             "{label} hasAudio"
         );
-        assert_eq!(native.dimensions(), reference.dimensions(), "{label} 尺寸");
+        assert_eq!(native.dimensions(), reference.dimensions(), "{label} dimensions");
         assert_eq!(
             native.display_dimensions(),
             reference.display_dimensions(),
-            "{label} display 尺寸"
+            "{label} display dimensions"
         );
 
         match (native.duration_seconds, reference.duration_seconds) {
-            (Some(a), Some(b)) => assert!((a - b).abs() <= 0.05, "{label} 时长 {a} != {b}"),
-            (a, b) => assert_eq!(a, b, "{label} 时长可用性"),
+            (Some(a), Some(b)) => assert!((a - b).abs() <= 0.05, "{label} duration {a} != {b}"),
+            (a, b) => assert_eq!(a, b, "{label} duration availability"),
         }
         match (native.fps(), reference.fps()) {
             (Some(a), Some(b)) => assert!((a - b).abs() <= 0.01, "{label} fps {a} != {b}"),
             (None, None) => {}
-            (a, b) => panic!("{label} fps 可用性 {a:?} != {b:?}"),
+            (a, b) => panic!("{label} fps availability {a:?} != {b:?}"),
         }
         assert_eq!(
             native.video.as_ref().map(|video| video.alpha),
@@ -316,7 +316,7 @@ fn native_matches_ffprobe() {
                 .video
                 .as_ref()
                 .and_then(|video| video.codec.clone()),
-            "{label} 视频 codec"
+            "{label} video codec"
         );
     }
 }
@@ -326,7 +326,7 @@ fn native_matches_ffprobe() {
 fn unsupported_container_falls_back_to_ffprobe() {
     let Some(dir) = video_fixtures() else { return };
     if !have("ffprobe") {
-        eprintln!("跳过：PATH 中没有 ffprobe");
+        eprintln!("skipping: no ffprobe in PATH");
         return;
     }
     let avi = dir.join("clip.avi");
@@ -338,15 +338,15 @@ fn unsupported_container_falls_back_to_ffprobe() {
             "testsrc=size=320x240:rate=25:duration=1",
             "-c:v",
             "mpeg4",
-            avi.to_str().expect("路径"),
+            avi.to_str().expect("path"),
         ])
     {
-        eprintln!("跳过：这台机器的 ffmpeg 生成不了 AVI 夹具");
+        eprintln!("skipping: this machine's ffmpeg cannot produce the AVI fixture");
         return;
     }
-    assert!(probe(&avi).is_err(), "AVI 不在纯 Rust 覆盖范围内");
+    assert!(probe(&avi).is_err(), "AVI is outside pure Rust coverage");
     let (probed, backend) =
-        probe_with_fallback(&avi, Some(Path::new("ffprobe"))).expect("ffprobe 兜底");
+        probe_with_fallback(&avi, Some(Path::new("ffprobe"))).expect("ffprobe fallback");
     assert_eq!(backend, ProbeBackend::Ffprobe);
     assert_eq!(probed.kind, MediaKind::Video);
     assert_eq!(probed.dimensions(), Some((320, 240)));

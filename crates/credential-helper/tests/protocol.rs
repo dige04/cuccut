@@ -16,7 +16,7 @@ struct Memory {
 impl Memory {
     fn check(&self) -> Result<(), HelperError> {
         match self.fail {
-            Some(code) => Err(HelperError::new(code, "模拟的失败")),
+            Some(code) => Err(HelperError::new(code, "simulated failure")),
             None => Ok(()),
         }
     }
@@ -29,7 +29,7 @@ impl SecretBackend for Memory {
             .borrow()
             .get(key)
             .cloned()
-            .ok_or_else(|| HelperError::new(ErrorCode::NotFound, "没有这个条目"))
+            .ok_or_else(|| HelperError::new(ErrorCode::NotFound, "no such entry"))
     }
     fn set(&self, key: &str, secret: &str) -> Result<(), HelperError> {
         self.check()?;
@@ -42,7 +42,7 @@ impl SecretBackend for Memory {
             .borrow_mut()
             .remove(key)
             .map(|_| ())
-            .ok_or_else(|| HelperError::new(ErrorCode::NotFound, "没有这个条目"))
+            .ok_or_else(|| HelperError::new(ErrorCode::NotFound, "no such entry"))
     }
     fn legacy_get(&self, provider: &str) -> Result<String, HelperError> {
         self.get(&format!("legacy:{provider}"))
@@ -57,7 +57,7 @@ impl SecretBackend for Memory {
 }
 
 fn call(backend: &Memory, request: Value) -> Value {
-    serde_json::from_str(&handle_line(&request.to_string(), backend)).expect("响应是一行 JSON")
+    serde_json::from_str(&handle_line(&request.to_string(), backend)).expect("response is one line of JSON")
 }
 
 #[test]
@@ -107,7 +107,7 @@ fn backend_errors_use_the_closed_set() {
         let response = call(&memory, json!({ "op": "set", "key": "node:n1", "secret": "tok-secret" }));
         assert_eq!(response["ok"], false);
         assert_eq!(response["error"], wire);
-        assert!(!response.to_string().contains("tok-secret"), "错误响应不带密钥");
+        assert!(!response.to_string().contains("tok-secret"), "error response must not carry the secret");
     }
 }
 
@@ -144,7 +144,7 @@ fn malformed_requests_are_internal_and_never_echo_the_secret() {
 ///   cargo test -p credential-helper --test protocol -- --ignored real_keychain_round_trip
 /// ```
 #[test]
-#[ignore = "访问真实的登录钥匙串；手动运行"]
+#[ignore = "touches the real login keychain; run manually"]
 fn real_keychain_round_trip() {
     use credential_helper::keychain::SystemKeychain;
     let key = format!("test:credential-helper:{}", std::process::id());

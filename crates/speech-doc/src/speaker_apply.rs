@@ -101,7 +101,7 @@ pub fn apply_speaker_proposal(
         let speaker = proposed_speakers
             .get(&id)
             .or_else(|| old_doc.speakers.get(&id))
-            .ok_or_else(|| anyhow::anyhow!("说话人提案引用未知 id：{id}"))?;
+            .ok_or_else(|| anyhow::anyhow!("speaker proposal references unknown id: {id}"))?;
         installed.insert(id, speaker.clone());
     }
     doc.speakers = installed;

@@ -21,7 +21,7 @@ pub mod text;
 pub const REFERENCE_SECONDS_WITH_TEXT: [f32; 2] = [3.0, 10.0];
 
 /// Error message after the caller returns `false` from the progress callback.
-pub const ABORT_MESSAGE: &str = "GPT-SoVITS 合成已被调用方取消";
+pub const ABORT_MESSAGE: &str = "GPT-SoVITS synthesis was cancelled by the caller";
 
 #[cfg(any(
     feature = "backend-candle",

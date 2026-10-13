@@ -217,7 +217,7 @@ impl TimelineProjection {
                 .ok_or_else(|| TimelineError::MissingSource(clip.src_id.clone()))?;
             if clip.out > source.duration() + EPSILON {
                 return Err(TimelineError::Invalid(format!(
-                    "clip {} 超过 source {} 时长",
+                    "clip {} exceeds the duration of source {}",
                     clip.id, clip.src_id
                 )));
             }
@@ -422,7 +422,7 @@ pub fn add_clip(
 ) -> Result<usize, TimelineError> {
     if before.is_some() && after.is_some() {
         return Err(TimelineError::Invalid(
-            "before 与 after 不能同时指定".to_owned(),
+            "before and after cannot be specified together".to_owned(),
         ));
     }
     materialize_implicit_clip(document, source_durations)?;
@@ -438,7 +438,7 @@ pub fn add_clip(
         || view_out > source.view_duration()
         || view_out <= view_in
     {
-        return Err(TimelineError::Invalid(format!("clip {id} 的视图区间非法")));
+        return Err(TimelineError::Invalid(format!("clip {id} has an invalid view range")));
     }
     let in_time = source.source_time(view_in, SeamBias::Following);
     let out = source.source_time(view_out, SeamBias::Preceding);
@@ -447,14 +447,14 @@ pub fn add_clip(
             .clips
             .iter()
             .position(|clip| clip.id == target)
-            .ok_or_else(|| TimelineError::Invalid(format!("clip 不存在：{target}")))?
+            .ok_or_else(|| TimelineError::Invalid(format!("clip does not exist: {target}")))?
     } else if let Some(target) = after {
         document
             .clips
             .iter()
             .position(|clip| clip.id == target)
             .map(|index| index + 1)
-            .ok_or_else(|| TimelineError::Invalid(format!("clip 不存在：{target}")))?
+            .ok_or_else(|| TimelineError::Invalid(format!("clip does not exist: {target}")))?
     } else {
         document.clips.len()
     };
@@ -490,7 +490,7 @@ pub fn split_clip(
             timeline_time > clip.timeline_start + EPSILON
                 && timeline_time < clip.timeline_end - EPSILON
         })
-        .ok_or_else(|| TimelineError::Invalid("split 点不在 clip 内部".to_owned()))?;
+        .ok_or_else(|| TimelineError::Invalid("split point is not inside the clip".to_owned()))?;
     let index = document
         .clips
         .iter()
@@ -498,10 +498,10 @@ pub fn split_clip(
         .expect("projection clip comes from document");
     let (_, left_out) = projection
         .timeline_to_source(timeline_time, SeamBias::Preceding)
-        .ok_or_else(|| TimelineError::Invalid("split 点无法映射到 source".to_owned()))?;
+        .ok_or_else(|| TimelineError::Invalid("split point cannot be mapped to the source".to_owned()))?;
     let (_, right_in) = projection
         .timeline_to_source(timeline_time, SeamBias::Following)
-        .ok_or_else(|| TimelineError::Invalid("split 点无法映射到 source".to_owned()))?;
+        .ok_or_else(|| TimelineError::Invalid("split point cannot be mapped to the source".to_owned()))?;
     let left_id = document.clips[index].id.clone();
     let mut right = document.clips[index].clone();
     document.clips[index].out = left_out;
@@ -525,7 +525,7 @@ pub fn trim_clip(
         .clips
         .iter()
         .position(|clip| clip.id == clip_id)
-        .ok_or_else(|| TimelineError::Invalid(format!("clip 不存在：{clip_id}")))?;
+        .ok_or_else(|| TimelineError::Invalid(format!("clip does not exist: {clip_id}")))?;
     let source = projection
         .source(&document.clips[index].src_id)
         .expect("validated clip source");
@@ -537,7 +537,7 @@ pub fn trim_clip(
         .unwrap_or(document.clips[index].out);
     if in_time >= out {
         return Err(TimelineError::Invalid(format!(
-            "clip {clip_id} trim 后为空"
+            "clip {clip_id} is empty after trim"
         )));
     }
     document.clips[index].in_time = in_time;
@@ -554,7 +554,7 @@ pub fn set_clip_rate(
 ) -> Result<(), TimelineError> {
     if !rate.is_finite() || rate <= 0.0 {
         return Err(TimelineError::Invalid(
-            "clip rate 必须是有限正数".to_owned(),
+            "clip rate must be a finite positive number".to_owned(),
         ));
     }
     materialize_implicit_clip(document, source_durations)?;
@@ -562,7 +562,7 @@ pub fn set_clip_rate(
         .clips
         .iter_mut()
         .find(|clip| clip.id == clip_id)
-        .ok_or_else(|| TimelineError::Invalid(format!("clip 不存在：{clip_id}")))?;
+        .ok_or_else(|| TimelineError::Invalid(format!("clip does not exist: {clip_id}")))?;
     clip.rate = rate;
     TimelineProjection::build(document, source_durations)?;
     Ok(())
@@ -579,28 +579,28 @@ pub fn move_clip(
         usize::from(before.is_some()) + usize::from(after.is_some()) + usize::from(to.is_some());
     if selector_count != 1 {
         return Err(TimelineError::Invalid(
-            "move 须且只能指定 before、after 或 to".to_owned(),
+            "move must specify exactly one of before, after or to".to_owned(),
         ));
     }
     let from = document
         .clips
         .iter()
         .position(|clip| clip.id == clip_id)
-        .ok_or_else(|| TimelineError::Invalid(format!("clip 不存在：{clip_id}")))?;
+        .ok_or_else(|| TimelineError::Invalid(format!("clip does not exist: {clip_id}")))?;
     let clip = document.clips.remove(from);
     let insertion = if let Some(target) = before {
         document
             .clips
             .iter()
             .position(|clip| clip.id == target)
-            .ok_or_else(|| TimelineError::Invalid(format!("clip 不存在：{target}")))?
+            .ok_or_else(|| TimelineError::Invalid(format!("clip does not exist: {target}")))?
     } else if let Some(target) = after {
         document
             .clips
             .iter()
             .position(|clip| clip.id == target)
             .map(|index| index + 1)
-            .ok_or_else(|| TimelineError::Invalid(format!("clip 不存在：{target}")))?
+            .ok_or_else(|| TimelineError::Invalid(format!("clip does not exist: {target}")))?
     } else {
         to.expect("selector count checked")
             .min(document.clips.len())
@@ -616,12 +616,12 @@ pub fn remove_clips(
 ) -> Result<Vec<String>, TimelineError> {
     if document.clips.is_empty() {
         return Err(TimelineError::Invalid(
-            "隐式主 clip 不能直接删除；先执行 clip split/add 物化时间轴".to_owned(),
+            "the implicit main clip cannot be deleted directly; run clip split/add to materialize the timeline first".to_owned(),
         ));
     }
     for clip_id in clip_ids {
         if !document.clips.iter().any(|clip| &clip.id == clip_id) {
-            return Err(TimelineError::Invalid(format!("clip 不存在：{clip_id}")));
+            return Err(TimelineError::Invalid(format!("clip does not exist: {clip_id}")));
         }
     }
     let retained = document
@@ -631,7 +631,7 @@ pub fn remove_clips(
         .count();
     if retained == 0 {
         return Err(TimelineError::Invalid(
-            "不能删除最后一个 clip（空 clips 表示隐式主 clip）".to_owned(),
+            "cannot delete the last clip (an empty clips list means the implicit main clip)".to_owned(),
         ));
     }
     let removed = document

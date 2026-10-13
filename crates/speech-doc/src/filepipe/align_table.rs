@@ -365,7 +365,7 @@ pub fn parse_align_table(
     if has_residual_fence(&normalized.text) {
         diagnostics.push_problem(Problem::document(
             ProblemCode::DocumentWrapped,
-            "输出仍残留代码块围栏或夹带解释，无法零成本剥离",
+            "the output still contains code-fence residue or extra commentary that cannot be stripped at no cost",
         ));
     }
 
@@ -398,7 +398,7 @@ pub fn parse_align_table(
         if sid.is_empty() {
             diagnostics.push_warning(Warning::document(
                 WarningCode::ContentIgnored,
-                "忽略 data-sid 为空的分组",
+                "ignored a group with an empty data-sid",
             ));
             continue;
         }
@@ -407,7 +407,7 @@ pub fn parse_align_table(
                 diagnostics.push_problem(Problem::sentence(
                     ProblemCode::DuplicateId,
                     sid.clone(),
-                    "同一 id 出现多次，只采用首次出现的分组",
+                    "the same id appears more than once; only the first group is used",
                 ));
             }
             continue;
@@ -418,7 +418,7 @@ pub fn parse_align_table(
             diagnostics.push_problem(Problem::sentence(
                 ProblemCode::UnknownId,
                 sid.clone(),
-                "协议外的 id，已忽略",
+                "id outside the protocol, ignored",
             ));
             continue;
         };
@@ -608,7 +608,7 @@ fn parse_group(
         diagnostics.push_warning(Warning::sentence(
             WarningCode::ContentIgnored,
             sid,
-            "data-reordered 与 data-crossing 互斥，已忽略 data-crossing",
+            "data-reordered and data-crossing are mutually exclusive; data-crossing ignored",
         ));
     }
 
@@ -618,7 +618,7 @@ fn parse_group(
         diagnostics.push_problem(Problem::sentence(
             ProblemCode::EmptyTranslation,
             sid,
-            "分组内没有可用的行片",
+            "the group has no usable row pieces",
         ));
     } else {
         check_rows(&rows, sentence, input, reordered, diagnostics);
@@ -657,7 +657,7 @@ fn check_rows(
         diagnostics.push_problem(Problem::sentence(
             ProblemCode::EmptyTranslation,
             sid,
-            format!("第 {} 片译文为空", empty.join("、")),
+            format!("translation of piece {} is empty", empty.join(", ")),
         ));
     }
 
@@ -667,7 +667,7 @@ fn check_rows(
         diagnostics.push_problem(Problem::sentence(
             ProblemCode::SourceDrift,
             sid,
-            "源文段拼接与整句源文不一致：源文列只能切分，不能改写",
+            "the concatenated source segments do not match the whole source sentence: the source column may only be split, not rewritten",
         ));
     }
 
@@ -941,12 +941,12 @@ fn check_rowspan(element: &Element, sid: &str, rows: usize, diagnostics: &mut Di
         Ok(value) => diagnostics.push_warning(Warning::sentence(
             WarningCode::RowspanMismatch,
             sid,
-            format!("rowspan={value} 与实际 {rows} 行不符"),
+            format!("rowspan={value} does not match the actual {rows} rows"),
         )),
         Err(_) => diagnostics.push_warning(Warning::sentence(
             WarningCode::RowspanMismatch,
             sid,
-            format!("rowspan=\"{raw}\" 不可解析"),
+            format!("rowspan=\"{raw}\" cannot be parsed"),
         )),
     }
 }
@@ -966,7 +966,7 @@ fn bool_attr(element: &Element, name: &str, sid: &str, diagnostics: &mut Diagnos
     diagnostics.push_warning(Warning::sentence(
         WarningCode::ContentIgnored,
         sid,
-        format!("{name}=\"{value}\" 不是布尔值，按 false 处理"),
+        format!("{name}=\"{value}\" is not a boolean; treated as false"),
     ));
     false
 }
@@ -1002,14 +1002,14 @@ fn extract_rows(
         if data.len() < 2 {
             diagnostics.push_warning(Warning::document(
                 WarningCode::ContentIgnored,
-                format!("忽略列数不足的行：{}", row.text()),
+                format!("ignored a row with too few columns: {}", row.text()),
             ));
             continue;
         }
         if data.len() > 2 {
             diagnostics.push_warning(Warning::document(
                 WarningCode::ContentIgnored,
-                format!("行内多余的列已忽略：{}", row.text()),
+                format!("extra columns in the row were ignored: {}", row.text()),
             ));
         }
         rows.push(AlignParsedRow {
@@ -1051,7 +1051,7 @@ fn report_missing(input: &AlignTableInput, seen: &BTreeSet<String>, diagnostics:
         diagnostics.push_problem(Problem::document(
             ProblemCode::DocumentTruncated,
             format!(
-                "自 {} 起共 {} 句整体缺失，疑似输出被截断",
+                "starting at {}, {} sentences are entirely missing; the output may have been truncated",
                 input.sentences[first_missing].id,
                 missing.len()
             ),
@@ -1062,7 +1062,7 @@ fn report_missing(input: &AlignTableInput, seen: &BTreeSet<String>, diagnostics:
         diagnostics.push_problem(Problem::sentence(
             ProblemCode::MissingId,
             id,
-            "期望的 id 未出现在输出中",
+            "the expected id does not appear in the output",
         ));
     }
 }
@@ -1105,7 +1105,7 @@ fn check_context(input: &AlignTableInput, contexts: &[&Element], diagnostics: &m
         if rows.is_empty() {
             diagnostics.push_warning(Warning::document(
                 WarningCode::ContentIgnored,
-                "忽略无法解析的只读上下文分组",
+                "ignored an unparseable read-only context group",
             ));
             continue;
         }
@@ -1127,7 +1127,7 @@ fn check_context(input: &AlignTableInput, contexts: &[&Element], diagnostics: &m
         {
             diagnostics.push_problem(Problem::document(
                 ProblemCode::SourceDrift,
-                "只读上下文行被修改",
+                "a read-only context row was modified",
             ));
         }
     }

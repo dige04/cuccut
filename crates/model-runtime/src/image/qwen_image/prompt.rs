@@ -45,7 +45,7 @@ mod tests {
 
     /// Requires real weights: `mlx-community/Qwen-Image-2.1-MLX-4bit` under `CUCCUT_TEST_MODELS_DIR`.
     #[test]
-    #[ignore = "需要 CUCCUT_TEST_MODELS_DIR 下的 mlx-community/Qwen-Image-2.1-MLX-4bit"]
+    #[ignore = "needs mlx-community/Qwen-Image-2.1-MLX-4bit under CUCCUT_TEST_MODELS_DIR"]
     fn template_tokens_are_single_ids_and_the_system_prefix_is_dropped() {
         let root = std::env::var("CUCCUT_TEST_MODELS_DIR").expect("CUCCUT_TEST_MODELS_DIR");
         let path = Path::new(&root).join("mlx-community/Qwen-Image-2.1-MLX-4bit/processor/tokenizer.json");

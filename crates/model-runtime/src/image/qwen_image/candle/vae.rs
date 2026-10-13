@@ -31,7 +31,7 @@ fn conv_nhwc(x: &Tensor, w: &Tensor, pad: usize, stride: usize) -> Result<Tensor
     let (_, _, _, input) = x.dims4()?;
     let (_, _, _, kernel_input) = w.dims4()?;
     if input != kernel_input {
-        bail!("VAE 卷积输入通道数不匹配");
+        bail!("VAE convolution input channel count does not match");
     }
     let w = w.permute((0, 3, 1, 2))?.contiguous()?;
     let nchw = x.permute((0, 3, 1, 2))?.contiguous()?;
@@ -72,15 +72,15 @@ impl Decoder {
             || config.z_dim != Z_DIM
             || !config.mlx_format
         {
-            bail!("vae/config.json 与 Qwen-Image-2.1 MLX 解码器不符");
+            bail!("vae/config.json does not match the Qwen-Image-2.1 MLX decoder");
         }
         if config.latents_mean.len() != Z_DIM || config.latents_std.len() != Z_DIM {
-            bail!("VAE latents_mean/std 长度必须为 {Z_DIM}");
+            bail!("VAE latents_mean/std length must be {Z_DIM}");
         }
         let weights = ShardedWeights::open(files)?;
         let shape = weights.metadata("post_quant_conv.weight")?.0;
         if shape.as_slice() != [Z_DIM, 1, 1, Z_DIM].as_slice() {
-            bail!("VAE 权重需要 MLX NHWC 卷积布局，实际 {shape:?}");
+            bail!("VAE weights need the MLX NHWC convolution layout, found {shape:?}");
         }
         Ok(Self {
             weights,
@@ -144,7 +144,7 @@ impl Decoder {
         let (_, h, w, input) = x.dims4()?;
         let repeat = out * ft * 4 / input;
         if repeat == 0 {
-            bail!("VAE DupUp3D 通道比例无效");
+            bail!("VAE DupUp3D channel ratio is invalid");
         }
         let mut indices = Vec::with_capacity(out * 4);
         for b1 in 0..2 {
@@ -190,7 +190,7 @@ impl Decoder {
     pub fn decode(&self, latents: &Tensor, cancel: &dyn Fn() -> bool) -> Result<Tensor> {
         let (_, gh, gw, channels) = latents.dims4()?;
         if channels != Z_DIM {
-            bail!("VAE latent 通道数必须为 {Z_DIM}");
+            bail!("VAE latent channel count must be {Z_DIM}");
         }
         let z = latents
             .to_dtype(DType::F32)?
@@ -209,7 +209,7 @@ impl Decoder {
         let x = self.upblock(1, &x, cancel)?;
         let (_, h, width, _) = x.dims4()?;
         if h != gh * 4 || width != gw * 4 {
-            bail!("VAE 前段尺寸不符");
+            bail!("VAE front-stage size does not match");
         }
         let per_row = 16 * width * 288;
         let rows = (BAND_ELEMS / per_row.max(1)).saturating_sub(2 * HALO).max(HALO);
@@ -235,13 +235,13 @@ impl Decoder {
                 .iter()
                 .any(|value| !value.is_finite())
             {
-                bail!("VAE 解码出现非有限像素值");
+                bail!("VAE decode produced non-finite pixel values");
             }
             strips.push(y.clamp(-1.0, 1.0)?);
         }
         let out = Tensor::cat(&strips.iter().collect::<Vec<_>>(), 1)?;
         if out.dim(1)? != gh * 16 || out.dim(2)? != gw * 16 || out.dim(3)? != 4 {
-            bail!("VAE 解码尺寸与请求不符");
+            bail!("VAE decoded size does not match the request");
         }
         Ok(out)
     }

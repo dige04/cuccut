@@ -269,8 +269,8 @@ pub fn parse_property(path: &str, value: &Value) -> Result<Animated> {
         && !expr.trim().is_empty()
     {
         bail!(
-            "lottie-unsupported-feature: {path} 带表达式（\"x\"）；\
-             表达式需要运行期 JS 求值器，与 BCF 的确定性承诺冲突（首版不支持）"
+            "lottie-unsupported-feature: {path} has an expression (\"x\"); \
+             expressions need a runtime JS evaluator, which conflicts with BCF's determinism guarantee (not supported in the first version)"
         );
     }
     let k = map.get("k").unwrap_or(&Value::Null);
@@ -286,7 +286,7 @@ pub fn parse_property(path: &str, value: &Value) -> Result<Animated> {
     if !keyframed {
         return Ok(Animated::Static(numbers(k)));
     }
-    let items = k.as_array().expect("keyframed 已保证 k 是数组");
+    let items = k.as_array().expect("keyframed guarantees k is an array");
     let mut frames = Vec::with_capacity(items.len());
     for item in items {
         let Some(obj) = item.as_object() else {
@@ -376,8 +376,8 @@ mod tests {
         )
         .unwrap();
         let mid = p.point(5.0);
-        assert!((mid[0] - 50.0).abs() < 1e-9, "x 仍然线性：{mid:?}");
-        assert!(mid[1] > 30.0, "y 应当被空间切线拱起来：{mid:?}");
+        assert!((mid[0] - 50.0).abs() < 1e-9, "x is still linear: {mid:?}");
+        assert!(mid[1] > 30.0, "y should be arched by the spatial tangent: {mid:?}");
     }
 
     #[test]
@@ -387,7 +387,7 @@ mod tests {
         let mut prev = -1.0;
         for i in 0..=100 {
             let y = bezier_ease(0.6, 0.0, 0.4, 1.0, f64::from(i) / 100.0);
-            assert!(y >= prev - 1e-12, "缓动必须单调：{i} → {y}");
+            assert!(y >= prev - 1e-12, "easing must be monotonic: {i} → {y}");
             prev = y;
         }
         // Ease in-out: the midpoint is still 0.5, with both sides squeezed/stretched
@@ -410,10 +410,10 @@ mod tests {
             ]}),
         ] {
             let p = parse_property("t", &property).unwrap();
-            assert!(!p.is_static(), "缺 / 假的 `a` 标志不得把关键帧降成常量");
+            assert!(!p.is_static(), "a missing or false `a` flag must not reduce keyframes to a constant");
             assert!(
                 (p.scalar(5.0) - 50.0).abs() < 1e-9,
-                "实际 {}",
+                "actual {}",
                 p.scalar(5.0)
             );
             assert_eq!(p.scalar(10.0), 100.0);
@@ -437,14 +437,14 @@ mod tests {
             ]}),
         )
         .unwrap();
-        assert_eq!(p.scalar(-30.0), 0.0, "起点之前取首值");
-        assert!(p.scalar(0.0) > 0.0 && p.scalar(0.0) < 2.135, "段内插值");
+        assert_eq!(p.scalar(-30.0), 0.0, "before the start, take the first value");
+        assert!(p.scalar(0.0) > 0.0 && p.scalar(0.0) < 2.135, "interpolation within the segment");
         assert!(
             (p.scalar(39.0) - 2.135).abs() < 1e-9,
-            "实际 {}",
+            "actual {}",
             p.scalar(39.0)
         );
-        assert!((p.scalar(999.0) - 2.135).abs() < 1e-9, "末端之后冻结在终值");
+        assert!((p.scalar(999.0) - 2.135).abs() < 1e-9, "after the end, freeze at the final value");
     }
 
     #[test]
@@ -488,7 +488,7 @@ mod tests {
         assert_eq!(
             forward,
             backward.into_iter().rev().collect::<Vec<_>>(),
-            "乱序采样必须逐位等于顺序采样"
+            "out-of-order sampling must match in-order sampling bit for bit"
         );
     }
 }

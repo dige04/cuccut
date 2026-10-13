@@ -113,7 +113,7 @@ impl Hubert {
 
     /// 16 kHz mono waveform → `last_hidden_state` `[1, T, 768]` (about 50 Hz).
     pub fn forward(&self, samples: &[f32]) -> Result<Array> {
-        ensure!(samples.len() >= 400, "HuBERT 输入太短（{} 个样本）", samples.len());
+        ensure!(samples.len() >= 400, "HuBERT input is too short ({} samples)", samples.len());
         let mut x = Array::from_slice(samples, &[1, samples.len() as i32, 1]);
         for (i, conv) in self.convs.iter().enumerate() {
             x = conv.forward_nlc(&x)?;

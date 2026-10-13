@@ -235,7 +235,7 @@ mod tests {
             assert_eq!(
                 rgba.rgba.len(),
                 320 * 180 * 4,
-                "t={time}：RGBA 缓冲区长度必须是 width * height * 4"
+                "t={time}: RGBA buffer length must be width * height * 4"
             );
 
             let decoded = Pixmap::decode_png(&png.png).unwrap();
@@ -244,18 +244,18 @@ mod tests {
             assert_eq!(
                 decoded.data(),
                 rgba.rgba.as_slice(),
-                "t={time}：PNG 解码后的像素与 render_rgba_frame 不同，\
-                 说明两个入口没走同一条渲染路径"
+                "t={time}: PNG-decoded pixels differ from render_rgba_frame, \
+                 so the two entry points did not take the same render path"
             );
 
-            assert_eq!(png.subtitle_key, rgba.subtitle_key, "t={time}：字幕内容键");
+            assert_eq!(png.subtitle_key, rgba.subtitle_key, "t={time}: subtitle content key");
             assert_eq!(
                 png.draw_op_fingerprint, rgba.draw_op_fingerprint,
-                "t={time}：DrawOp 指纹"
+                "t={time}: DrawOp fingerprint"
             );
             assert_eq!(
                 png.next_change, rgba.next_change,
-                "t={time}：下一次变化时刻"
+                "t={time}: next change time"
             );
         }
     }
@@ -280,7 +280,7 @@ mod tests {
         ] {
             assert!(
                 plan.text.has_family(family),
-                "Mac 内置字体 {family:?} 不应在 MP4 导出中回退"
+                "built-in Mac font {family:?} must not fall back in MP4 export"
             );
         }
         let archivo = plan.text.shape("CucCut", "Archivo Black", 36.0, 400);
@@ -288,7 +288,7 @@ mod tests {
         assert_ne!(
             archivo.glyphs.first().map(|glyph| glyph.cache_key.font_id),
             fallback.glyphs.first().map(|glyph| glyph.cache_key.font_id),
-            "Archivo Black 应使用自己的字形，而不是 Noto fallback"
+            "Archivo Black should use its own glyphs, not the Noto fallback"
         );
         assert_eq!(
             font_name(&json!({"fontFamily": "Source Sans 3"})),
@@ -363,9 +363,9 @@ mod tests {
             Vec::new(),
         )
         .err()
-        .expect("空字体列表必须拒绝")
+        .expect("an empty font list must be rejected")
         .to_string();
-        assert!(error.contains("fallback 字体"), "{error}");
+        assert!(error.contains("fallback font"), "{error}");
     }
 
     #[test]
@@ -533,13 +533,13 @@ mod tests {
             let visible = &pixels[row * stride..row * stride + 8 * 4];
             assert!(
                 visible.chunks_exact(4).all(|pixel| pixel == [0, 0, 0, 255]),
-                "第 {row} 行不是不透明黑：{visible:?}"
+                "row {row} is not opaque black: {visible:?}"
             );
             assert!(
                 pixels[row * stride + 8 * 4..(row + 1) * stride]
                     .iter()
                     .all(|byte| *byte == 0x5a),
-                "第 {row} 行的 stride 填充被写坏了"
+                "row {row}'s stride padding was overwritten"
             );
         }
     }
@@ -559,7 +559,7 @@ mod tests {
         apply_main_transform_bgra(&mut pixels, 8 * 4, 8, 4, Some(&main)).unwrap();
         assert!(
             pixels.chunks_exact(4).all(|pixel| pixel[2] > 200),
-            "模糊底被当成黑底短路掉了"
+            "the blur backing was short-circuited as a black backing"
         );
     }
 
@@ -798,7 +798,7 @@ mod tests {
         let second = plan.subtitle_layout(2.0).unwrap();
         assert!(
             second.anchor.1 < first.anchor.1 - 50.0,
-            "q2 的逐条 y=20 应把整组抬高：{:?} vs {:?}",
+            "q2's per-item y=20 should lift the whole group: {:?} vs {:?}",
             second.anchor,
             first.anchor
         );
@@ -998,7 +998,7 @@ mod tests {
         assert!(shadow.effect_on);
         assert!(
             (shadow.effect_blur - 30.0).abs() < 1e-9,
-            "0.5 × 60 = 30（旧口径会被夹到 10），实际 {}",
+            "0.5 × 60 = 30 (the old basis would be clamped to 10), got {}",
             shadow.effect_blur
         );
 
@@ -1006,7 +1006,7 @@ mod tests {
         let glow = resolve_line_style(&style, LineKind::Original, 1920, 1080, false);
         assert!(
             (glow.effect_blur - 54.0).abs() < 1e-9,
-            "100/100 × 60 × 0.9 = 54，实际 {}",
+            "100/100 × 60 × 0.9 = 54, got {}",
             glow.effect_blur
         );
     }
@@ -1423,17 +1423,17 @@ mod tests {
         assert_eq!(placed(None), vec![(500.0, 827.0), (500.0, 873.0)]);
 
         // Plate = the glyph range expanded outward by one `platePadV`. The source line's glyph top sits exactly `platePadV` below the plate top.
-        let span = stacked_span(&placed(None), &lines).expect("堆栈里有两行");
+        let span = stacked_span(&placed(None), &lines).expect("the stack has two lines");
         assert_eq!((span.0 - 12.0, span.1 + 12.0), (815.0, 905.0));
         assert_eq!(placed(None)[0].1 - (span.0 - 12.0), 12.0);
 
         let top = placed(Some(VerticalAlign::Top));
         assert_eq!(top, vec![(500.0, 872.0), (500.0, 918.0)]);
-        assert_eq!(stacked_span(&top, &lines).expect("两行").0 - 12.0, anchor.1);
+        assert_eq!(stacked_span(&top, &lines).expect("two lines").0 - 12.0, anchor.1);
         let bottom = placed(Some(VerticalAlign::Bottom));
         assert_eq!(bottom, vec![(500.0, 782.0), (500.0, 828.0)]);
         assert_eq!(
-            stacked_span(&bottom, &lines).expect("两行").1 + 12.0,
+            stacked_span(&bottom, &lines).expect("two lines").1 + 12.0,
             anchor.1
         );
     }
@@ -1584,7 +1584,7 @@ mod tests {
             assert_eq!(
                 parse_vertical_align(Some(&value)),
                 expected,
-                "verticalAlign = {value} 的判定不符合白名单"
+                "verticalAlign = {value} is not accepted by the allowlist"
             );
         }
         assert_eq!(parse_vertical_align(None), None);
@@ -1697,7 +1697,7 @@ mod tests {
             assert_eq!(
                 burned_rgba(&document),
                 baseline,
-                "半截的行级位置 {partial} 不得移动烧录字幕"
+                "a half-done line position {partial} must not move the burned-in subtitle"
             );
         }
 
@@ -1715,7 +1715,7 @@ mod tests {
     fn a_wrapped_burned_line_grows_away_from_the_seam() {
         let rows = |document: &Value| {
             alpha_bbox(&burned_rgba(document), 640, 360)
-                .expect("字幕帧必须有非零像素")
+                .expect("subtitle frame must have non-zero pixels")
                 .rows
         };
         for (order, original_on_top) in [(json!("trans"), false), (json!("orig"), true)] {
@@ -1728,20 +1728,20 @@ mod tests {
             if original_on_top {
                 assert_eq!(
                     pinned.end, pushed.end,
-                    "order={order} 时原文折行把下面的译文行推走了：{pinned:?} → {pushed:?}"
+                    "with order={order}, source wrapping pushed the translation line below away: {pinned:?} → {pushed:?}"
                 );
                 assert!(
                     pushed.start < pinned.start,
-                    "order={order} 时原文没有向上长：{pinned:?} → {pushed:?}"
+                    "with order={order}, the source did not grow upward: {pinned:?} → {pushed:?}"
                 );
             } else {
                 assert_eq!(
                     pinned.start, pushed.start,
-                    "order={order} 时原文折行把上面的译文行推走了：{pinned:?} → {pushed:?}"
+                    "with order={order}, source wrapping pushed the translation line above away: {pinned:?} → {pushed:?}"
                 );
                 assert!(
                     pushed.end > pinned.end,
-                    "order={order} 时原文没有向下长：{pinned:?} → {pushed:?}"
+                    "with order={order}, the source did not grow downward: {pinned:?} → {pushed:?}"
                 );
             }
         }
@@ -1754,13 +1754,13 @@ mod tests {
         let rows = |document: &Value| {
             let rgba = burned_rgba(document);
             alpha_bbox(&rgba, 640, 360)
-                .expect("字幕帧必须有非零像素")
+                .expect("subtitle frame must have non-zero pixels")
                 .rows
         };
 
         // Neither overridden: the whole group still sits near the y=86% anchor.
         let stacked = rows(&base);
-        assert!(stacked.start > 240, "锚点堆栈不应上移：{stacked:?}");
+        assert!(stacked.start > 240, "the anchor stack must not move up: {stacked:?}");
 
         // Both overridden: one line in the top quarter and one in the bottom quarter, with nothing in between.
         let mut both = base.clone();
@@ -1769,21 +1769,21 @@ mod tests {
         let both_rows = rows(&both);
         assert!(
             both_rows.start < 90,
-            "被覆盖的原文行没有上移：{both_rows:?}"
+            "the covered source line did not move up: {both_rows:?}"
         );
-        assert!(both_rows.end > 280, "被覆盖的译文行没有下移：{both_rows:?}");
+        assert!(both_rows.end > 280, "the covered translation line did not move down: {both_rows:?}");
 
         // Only the original line overridden: the translation line's stack holds only itself, so it must match the landing point of single-line mode exactly.
         let mut only_original = base.clone();
         only_original["style"]["origStyle"] = json!({"x": 25, "y": 15});
         let mixed = burned_rgba(&only_original);
-        let lifted = alpha_bbox(&mixed, 640, 360).expect("字幕帧必须有非零像素");
-        assert!(lifted.rows.start < 90, "原文行没有脱离堆栈：{lifted:?}");
+        let lifted = alpha_bbox(&mixed, 640, 360).expect("subtitle frame must have non-zero pixels");
+        assert!(lifted.rows.start < 90, "the source line did not leave the stack: {lifted:?}");
 
         let mut translation_only = base.clone();
         translation_only["style"]["mode"] = json!("trans");
         let solo = burned_rgba(&translation_only);
-        let solo_box = alpha_bbox(&solo, 640, 360).expect("字幕帧必须有非零像素");
+        let solo_box = alpha_bbox(&solo, 640, 360).expect("subtitle frame must have non-zero pixels");
         // The translation line's pixels are byte-identical to single-line mode. Compare only the rows that contain the translation.
         let band = |rgba: &[u8], rows: std::ops::Range<usize>| {
             rgba[rows.start * 640 * 4..rows.end * 640 * 4].to_vec()
@@ -1791,7 +1791,7 @@ mod tests {
         assert_eq!(
             band(&mixed, solo_box.rows.clone()),
             band(&solo, solo_box.rows.clone()),
-            "未被覆盖的译文行必须塌回单行锚点"
+            "uncovered translation lines must collapse back to a single-line anchor"
         );
     }
 
@@ -1808,16 +1808,16 @@ mod tests {
         // The display window starts at 0.9 (cue 1.0 minus leadIn 0.1); magic-pop@50 lasts 0.1s.
         let opening = plan.render_rgba(0.9).unwrap();
         let settled = plan.render_rgba(1.5).unwrap();
-        let opening_box = alpha_bbox(&opening, 640, 360).expect("转场首帧必须有非零像素");
-        let settled_box = alpha_bbox(&settled, 640, 360).expect("落定帧必须有非零像素");
+        let opening_box = alpha_bbox(&opening, 640, 360).expect("the first transition frame must have non-zero pixels");
+        let settled_box = alpha_bbox(&settled, 640, 360).expect("the settled frame must have non-zero pixels");
 
         assert!(
             opening_box.rows.start > settled_box.rows.start + 20,
-            "浮动行在转场里必须被支点拉向锚点：{opening_box:?} vs {settled_box:?}"
+            "floating lines must be pulled toward the anchor by the pivot during the transition: {opening_box:?} vs {settled_box:?}"
         );
         assert!(
             opening_box.cols.start > settled_box.cols.start,
-            "浮动行的横向也必须跟随整组缩放：{opening_box:?} vs {settled_box:?}"
+            "the horizontal extent of floating lines must also scale with the group: {opening_box:?} vs {settled_box:?}"
         );
     }
 
@@ -1906,7 +1906,7 @@ mod tests {
         let sample = overlay
             .chunks_exact(4)
             .position(|pixel| pixel[3] > 240)
-            .expect("difference recipe 应产生近乎不透明的字形像素");
+            .expect("difference recipe should produce nearly opaque glyph pixels");
         let source = &overlay[sample * 4..sample * 4 + 4];
         let mut expected = [32_u8, 64, 96, 255];
         composite_caption_pixel_bgra(&mut expected, source, CaptionCompositeMode::Difference);
@@ -1943,7 +1943,7 @@ mod tests {
             let sample = caption
                 .chunks_exact(4)
                 .position(|pixel| pixel[3] > 240)
-                .expect("字幕应有近乎不透明的像素");
+                .expect("subtitles should have nearly opaque pixels");
 
             let mut covered = source.clone();
             covered["timeline"] = full_canvas_element.clone();
@@ -1961,7 +1961,7 @@ mod tests {
             assert_eq!(
                 &backdrop[sample * 4..sample * 4 + 4],
                 &[0, 0, 255, 255],
-                "元素应盖满画面"
+                "the element should cover the frame"
             );
 
             let mut plan = OverlayRenderPlan::compile(&covered, 320, 180, 3.0, 30.0, None).unwrap();
@@ -2137,7 +2137,7 @@ mod tests {
         assert_eq!(plan.subtitle_scene_static_fallback(), None);
 
         let premultiplied = plan.render_subtitle_frame(0.54).unwrap();
-        let bounds = premultiplied.bounds.clone().expect("字幕这一刻必须有像素");
+        let bounds = premultiplied.bounds.clone().expect("the subtitle must have pixels at this moment");
         let layer = plan.render_subtitle_raster_layer(0.54).unwrap();
         assert_eq!(layer.key, premultiplied.key);
         assert_eq!(layer.composite, CaptionCompositeMode::Normal);
@@ -2170,7 +2170,7 @@ mod tests {
                 }
             }
         }
-        assert!(lifted > 0, "没有一个半透明像素被解乘，解预乘没生效");
+        assert!(lifted > 0, "no semi-transparent pixel was un-premultiplied; un-premultiply had no effect");
 
         // Asking the same question at the same moment must yield byte-identical results (the host uses the key to decide whether it can keep the previous frame bitmap).
         let again = plan.render_subtitle_raster_layer(0.54).unwrap();
@@ -2182,11 +2182,11 @@ mod tests {
         let late_word = plan.render_subtitle_raster_layer(2.0).unwrap();
         assert_ne!(
             mid_word.key, late_word.key,
-            "同一个词内键没变，宿主会把整段动画冻在第一帧"
+            "the key is unchanged within the same word, so the host would freeze the whole animation on its first frame"
         );
         assert_ne!(
             mid_word.rgba, late_word.rgba,
-            "同一个词内像素没变，逐词动画根本没在动"
+            "pixels are unchanged within the same word, so the per-word animation is not moving at all"
         );
 
         // At a transparent moment, deliver an empty layer rather than a whole transparent buffer (the host uses this to drop the layer entirely).
@@ -2414,12 +2414,12 @@ mod tests {
         assert_ne!(
             designed.render_rgba(0.8).unwrap(),
             plain.render_rgba(0.8).unwrap(),
-            "Designed Caption 不能只在面板里有选中态"
+            "Designed Caption must not show a selected state only in the panel"
         );
         assert_ne!(
             designed.render_png(0.80).unwrap().subtitle_key,
             designed.render_png(0.84).unwrap().subtitle_key,
-            "attack 期间必须按帧失效，speed/intensity 才会进入画面"
+            "during attack the frame must be invalidated per frame, so speed/intensity actually reach the picture"
         );
     }
 
@@ -2517,10 +2517,10 @@ mod tests {
                 OverlayRenderPlan::compile(&styled, 640, 360, 3.0, 30.0, None).unwrap();
             let first = first.render_rgba(0.8).unwrap();
             let second = second.render_rgba(0.8).unwrap();
-            assert_eq!(first, second, "{} 必须 seek-safe", descriptor.id);
+            assert_eq!(first, second, "{} must be seek-safe", descriptor.id);
             assert!(
                 first.chunks_exact(4).any(|pixel| pixel[3] != 0),
-                "{} 不得渲染为空帧",
+                "{} must not render an empty frame",
                 descriptor.id
             );
         }
@@ -2549,21 +2549,21 @@ mod tests {
         let compile = || OverlayRenderPlan::compile(&styled, 640, 360, 3.0, 30.0, None).unwrap();
         let mut plan = compile();
         assert!(plan.caption_sequence_active());
-        let sequence = plan.ensure_caption_sequence().expect("序列计划");
+        let sequence = plan.ensure_caption_sequence().expect("sequence plan");
         assert!(!sequence.sequences.is_empty(), "{:?}", sequence.diagnostics);
         assert_eq!(sequence.seed, 137);
         assert!(
             plan.active_layouts(0.8).is_empty(),
-            "接管后原文行不再走 cue 级排版"
+            "after takeover, source lines no longer go through cue-level layout"
         );
 
         let frame = plan.render_subtitle_frame(0.8).unwrap();
         assert!(frame.key.starts_with("dz"), "{}", frame.key);
         assert!(
             frame.rgba.chunks_exact(4).any(|pixel| pixel[3] != 0),
-            "序列层不得是空帧"
+            "the sequence layer must not be an empty frame"
         );
-        let bounds = frame.bounds.clone().expect("落笔包围盒");
+        let bounds = frame.bounds.clone().expect("stroke bounding box");
         let [vx, vy, vw, vh] = sequence.viewport;
         assert!(
             bounds.cols.start as f64 >= vx.floor() && bounds.cols.end as f64 <= (vx + vw).ceil()
@@ -2577,10 +2577,10 @@ mod tests {
         assert_eq!(
             *plan.render_subtitle_frame(0.8).unwrap().rgba,
             *frame.rgba,
-            "缓存命中同帧"
+            "cache hit on the same frame"
         );
 
-        let scene = plan.subtitle_scene_frame(0.8).expect("序列层走 GPU scene");
+        let scene = plan.subtitle_scene_frame(0.8).expect("sequence layer goes through the GPU scene");
         let runs: Vec<_> = scene
             .scene
             .nodes
@@ -2590,11 +2590,11 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert!(!runs.is_empty(), "scene 必须带序列层 glyph run");
+        assert!(!runs.is_empty(), "the scene must carry sequence-layer glyph runs");
         assert!(
             runs.iter()
                 .all(|run| run.uniforms.iter().all(|uniform| uniform.clip.is_some())),
-            "序列层每个 uniform 都裁在字幕区域"
+            "every uniform of the sequence layer is clipped to the subtitle area"
         );
         assert!(scene.key.starts_with("dz"), "{}", scene.key);
         assert!(scene.scene.next_change.is_some_and(|next| next > 0.8));
@@ -2917,7 +2917,7 @@ mod tests {
                 .iter()
                 .find_map(|chunk| chunk.word),
             Some(0),
-            "editorialBlock 先排 ordinary band"
+            "editorialBlock lays out the ordinary band first"
         );
         let hero = editorial.lines[1]
             .chunks
@@ -3347,7 +3347,7 @@ mod tests {
             cold.composite_bgra(&mut cold_frame, 320 * 4, time).unwrap();
             assert_eq!(
                 warm_frame, cold_frame,
-                "帧 {frame_index} 的缓存复用结果与冷渲染不一致"
+                "cache-reuse result for frame {frame_index} differs from a cold render"
             );
         }
     }
@@ -3401,7 +3401,7 @@ mod tests {
                         assert_eq!(
                             &data[offset..offset + 4],
                             &[0, 0, 0, 0],
-                            "半径 {radius} 角点 ({corner_x},{corner_y}) 的包围盒外仍有非零像素 ({x},{y})"
+                            "radius {radius}: corner ({corner_x},{corner_y}) still has non-zero pixels outside the bounding box at ({x},{y})"
                         );
                     }
                 }
@@ -3423,7 +3423,7 @@ mod tests {
             cold.composite_bgra(&mut cold_frame, 320 * 4, time).unwrap();
             assert_eq!(
                 warm_frame, cold_frame,
-                "帧 {frame_index} 的缓存复用结果与冷渲染不一致"
+                "cache-reuse result for frame {frame_index} differs from a cold render"
             );
         }
     }
@@ -3525,14 +3525,14 @@ mod tests {
         for mode in ["translated", "bilingual"] {
             assert!(
                 compile(OverlayIncludes::ALL, mode).is_err(),
-                "{mode} 缺译文必须报错"
+                "{mode} with a missing translation must report an error"
             );
             let mut plan = compile(no_subtitles, mode).unwrap();
             let mut frame = vec![24_u8; 320 * 180 * 4];
             plan.composite_bgra(&mut frame, 320 * 4, 1.5).unwrap();
             assert!(
                 frame.iter().all(|&byte| byte == 24),
-                "{mode} 关掉烧录后不得画出任何字幕"
+                "{mode} must draw no subtitles once burn-in is turned off"
             );
         }
         // Control group: with burn-in retained, the same document still draws the original text.
@@ -3568,10 +3568,10 @@ mod tests {
             None,
         )
         .err()
-        .expect("缺译文必须在时间轴投影前失败");
+        .expect("a missing translation must fail before timeline projection");
         assert_eq!(
             format!("{error:#}"),
-            "当前 Studio 投影没有译文，无法导出译文或双语视频"
+            "the current Studio projection has no translation; cannot export translated or bilingual video"
         );
     }
 
@@ -3615,14 +3615,14 @@ mod tests {
         // A missing translation sentence: the translation track has no such sentence, so the picture should show nothing. The original must never be substituted in.
         assert!(
             translated.active_layouts(3.0).is_empty(),
-            "缺译句在译文模式下不排任何行"
+            "a sentence missing its translation lays out no lines in translation mode"
         );
         // Pixel-by-pixel confirmation that "nothing" also includes the subtitle background box: not a single byte of the whole frame may change.
         let mut frame = vec![24_u8; 640 * 360 * 4];
         translated.composite_bgra(&mut frame, 640 * 4, 3.0).unwrap();
         assert!(
             frame.iter().all(|&byte| byte == 24),
-            "缺译句期间不画文字，也不画背景框"
+            "no text and no background box is drawn while a sentence is missing its translation"
         );
 
         // Bilingual mode semantics are unchanged: the original line appears as usual, only the missing translation line is absent, and no extra translation line appears using the original as a stand-in.
@@ -3699,7 +3699,7 @@ mod tests {
                 ..OverlayIncludes::ALL
             },
         ] {
-            assert_ne!(base, key(includes), "{includes:?} 必须换一套缓存键");
+            assert_ne!(base, key(includes), "{includes:?} must produce a different cache key");
         }
         assert_eq!(base, key(OverlayIncludes::default()));
     }
@@ -3730,7 +3730,7 @@ mod tests {
         assert_eq!(
             pending["style"]["fontColor"],
             json!("#FF0000"),
-            "基线前提：未提交的样式改动本来会进入导出"
+            "baseline premise: uncommitted style changes would otherwise reach the export"
         );
 
         let mut override_style = project_style.clone();
@@ -3751,7 +3751,7 @@ mod tests {
         );
         assert_eq!(
             document["style"], override_style,
-            "覆盖是整体替换，不是与项目样式合并"
+            "the override replaces the whole style, it is not merged with the project style"
         );
 
         let mut expected = data.clone();
@@ -3759,17 +3759,17 @@ mod tests {
         assert_eq!(
             burned_rgba(&document),
             burned_rgba(&expected),
-            "烧录必须与「项目样式本来就是这份 blob」逐像素一致"
+            "burn-in must be pixel-identical to the case where the project style already is this blob"
         );
         assert_ne!(
             burned_rgba(&document),
             burned_rgba(&pending),
-            "未提交的样式改动不得参与预设导出"
+            "uncommitted style changes must not take part in the preset export"
         );
         assert_ne!(
             burned_rgba(&document),
             burned_rgba(&data),
-            "项目自身样式也不得盖过覆盖 blob"
+            "the project's own style must also not override the override blob"
         );
 
         assert_eq!(
@@ -3782,7 +3782,7 @@ mod tests {
         );
         assert!(
             !project.join("studio/style.json").exists(),
-            "导出期覆盖绝不写回项目状态"
+            "an export-time override must never be written back to project state"
         );
     }
 
@@ -3792,20 +3792,20 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let missing = temp.path().join("nope.json");
         let error = format!("{:#}", load_subtitle_style_override(&missing).unwrap_err());
-        assert!(error.contains("读取 --sub-style"), "{error}");
+        assert!(error.contains("read --sub-style"), "{error}");
 
         let broken = temp.path().join("broken.json");
         fs::write(&broken, b"{ \"fontSize\": ").unwrap();
         let error = format!("{:#}", load_subtitle_style_override(&broken).unwrap_err());
-        assert!(error.contains("解析 --sub-style"), "{error}");
+        assert!(error.contains("parse --sub-style"), "{error}");
 
         for raw in ["[]", "\"classic\"", "null", "42"] {
             let path = temp.path().join("not-object.json");
             fs::write(&path, raw).unwrap();
             let error = format!("{:#}", load_subtitle_style_override(&path).unwrap_err());
             assert!(
-                error.contains("顶层必须是 JSON 对象"),
-                "{raw} 必须被拒绝：{error}"
+                error.contains("must have a top-level JSON object"),
+                "{raw} must be rejected: {error}"
             );
         }
     }
@@ -3896,7 +3896,7 @@ mod tests {
                 .unwrap();
             assert_eq!(plan.elements.len(), 1);
             let scene = plan.compositor_scene_frame(0.2).unwrap();
-            assert!(!scene.nodes.is_empty(), "GPU 预览必须保留视频节点");
+            assert!(!scene.nodes.is_empty(), "GPU preview must keep the video node");
             plan.render_rgba_frame(0.2).unwrap().rgba
         };
         let expected = render();
@@ -3907,11 +3907,11 @@ mod tests {
         );
         for contents in ["", " \t\r\n"] {
             fs::write(project.path().join("timeline.json"), contents).unwrap();
-            assert_eq!(render(), expected, "空时间轴应与未创建时间轴同像素");
+            assert_eq!(render(), expected, "an empty timeline should render the same pixels as no timeline");
             assert_eq!(
                 fs::read_to_string(project.path().join("timeline.json")).unwrap(),
                 contents,
-                "预览只读，不修写用户项目"
+                "preview is read-only and must not modify the user's project"
             );
         }
         fs::write(project.path().join("timeline.json"), "{\"ccutTimeline\":").unwrap();
@@ -3919,7 +3919,7 @@ mod tests {
         assert!(
             plan.load_timeline_elements(project.path(), &source)
                 .is_err(),
-            "非空损坏 JSON 不得吞错后当成缺省时间轴"
+            "a non-empty corrupt JSON must not swallow the error and be treated as a default timeline"
         );
     }
 
@@ -3971,7 +3971,7 @@ mod tests {
             let magenta = r > 200 && g < 60 && b > 200;
             assert_eq!(
                 magenta, !video_on_top,
-                "video_on_top={video_on_top}: 中心像素 {:?}",
+                "video_on_top={video_on_top}: centre pixel {:?}",
                 [r, g, b]
             );
 
@@ -3982,7 +3982,7 @@ mod tests {
                     Some(element_draw::SceneNode::Texture(_))
                 ),
                 video_on_top,
-                "GPU 场景的最上层节点：{:?}",
+                "top-most node of the GPU scene: {:?}",
                 scene.nodes.last().map(std::mem::discriminant)
             );
         }
@@ -4068,7 +4068,7 @@ mod tests {
                 .load_timeline_elements(project.path(), &source)
                 .unwrap_err()
                 .to_string()
-                .contains("source 媒体不存在")
+                .contains("source media does not exist")
         );
 
         let mut preview = OverlayRenderPlan::compile(&source, 320, 180, 3.0, 30.0, None).unwrap();
@@ -4091,7 +4091,7 @@ mod tests {
             preview
                 .warnings()
                 .iter()
-                .any(|warning| warning.contains("missing") && warning.contains("已跳过"))
+                .any(|warning| warning.contains("missing") && warning.contains("skipped"))
         );
         assert!(
             preview
@@ -4100,7 +4100,7 @@ mod tests {
                 .rgba
                 .chunks_exact(4)
                 .any(|pixel| pixel[3] > 0),
-            "坏图片不能把同一张 overlay 上的文字一起清空"
+            "a broken image must not also clear the text on the same overlay"
         );
     }
 
@@ -4153,17 +4153,17 @@ mod tests {
         let document = document("none", "none");
         let mut plain = OverlayRenderPlan::compile(&document, 640, 360, 3.0, 30.0, None).unwrap();
         let before = plain.render_rgba(1.0).unwrap();
-        assert_eq!(alpha_rows(&before, 640, 4), 0, "没套模板时顶栏必须全透明");
+        assert_eq!(alpha_rows(&before, 640, 4), 0, "the top bar must be fully transparent without a template");
 
         let mut plan = OverlayRenderPlan::compile(&document, 640, 360, 3.0, 30.0, None).unwrap();
         // Top 48px ⇒ 13.33% of a 360-high canvas
         plan.set_template_scene(Some(chrome_scene(0.0, 48.0 / 3.6)));
         let after = plan.render_rgba(1.0).unwrap();
-        assert!(alpha_rows(&after, 640, 4) > 0, "顶栏应当被模板层填满");
+        assert!(alpha_rows(&after, 640, 4) > 0, "the top bar should be filled by the template layer");
         // A top template does not trigger subtitle avoidance: line 200 has a subtitle, and the two renders must be byte-identical
         let row = |rgba: &[u8]| rgba[200 * 640 * 4..201 * 640 * 4].to_vec();
-        assert_eq!(row(&before), row(&after), "模板带之外不该被涂到");
-        assert_ne!(before, after, "带模板的这一帧不该与没套时逐字节相同");
+        assert_eq!(row(&before), row(&after), "nothing outside the template band should be painted");
+        assert_ne!(before, after, "this frame with a template must not be byte-identical to one without");
     }
 
     /// The browser's template-layer output: cropped to the template band's sub-rectangle, with alpha consistent with that band in the full overlay.
@@ -4180,7 +4180,7 @@ mod tests {
         assert_eq!((layer.x, layer.y, layer.width), (0, 0, 640));
         assert!(
             (1..=49).contains(&layer.height),
-            "只含顶部 48px 的带：{}",
+            "band containing only the top 48px: {}",
             layer.height
         );
         assert_eq!(layer.rgba.len(), (layer.width * layer.height * 4) as usize);
@@ -4189,11 +4189,11 @@ mod tests {
         assert_eq!(
             alpha_rows(&layer.rgba, layer.width, 4),
             alpha_rows(&overlay, 640, 4),
-            "子矩形的 alpha 与整幅 overlay 同一行一致"
+            "the sub-rectangle's alpha matches the same row of the full overlay"
         );
         let again = plan.render_template_raster_layer(1.0).unwrap().unwrap();
-        assert_eq!(again.key, layer.key, "同一帧同一个键");
-        assert!(layer.next_change.is_some(), "模板层逐帧给下一次变化");
+        assert_eq!(again.key, layer.key, "same frame, same key");
+        assert!(layer.next_change.is_some(), "the template layer must give the next change frame by frame");
     }
 
     /// The wasm host's template input: the chapter table is filtered by the stated criteria, the logo keys are taken from the document, and the pixels passed in are premultiplied.
@@ -4237,7 +4237,7 @@ mod tests {
         assert_eq!(with_logo.logos["media/logo.png"].data(), &[128, 0, 0, 128]);
         assert_ne!(
             with_logo.fingerprint, scene.fingerprint,
-            "台标像素进场景指纹"
+            "logo pixels enter the scene fingerprint"
         );
         assert!(TemplateSource::from_json("{", "[]", "").is_err());
     }
@@ -4258,11 +4258,11 @@ mod tests {
         let thick_id = thick.render_overlay_frame(1.0).unwrap().draw_op_fingerprint;
         let later_id = thick.render_overlay_frame(2.0).unwrap().draw_op_fingerprint;
 
-        assert_ne!(bare, thin_id, "套了模板，整幅身份必须变");
-        assert_ne!(thin_id, thick_id, "模板画得不一样，整幅身份必须跟着变");
+        assert_ne!(bare, thin_id, "applying a template must change the whole-frame identity");
+        assert_ne!(thin_id, thick_id, "a different template drawing must change the whole-frame identity");
         assert_ne!(
             thick_id, later_id,
-            "章节条的进度色条随时间推进，帧身份必须逐帧变"
+            "the chapter bar's progress colour advances over time, so frame identity must change frame by frame"
         );
     }
 
@@ -4274,13 +4274,13 @@ mod tests {
         // A top bar of 6.67% ⇒ 24px on a 360-high canvas
         plan.set_template_scene(Some(chrome_scene(0.0, 24.0 / 3.6)));
         let rgba = plan.render_rgba(1.0).unwrap();
-        assert!(alpha_rows(&rgba, 640, 20) > 0, "第 20 行应当仍在顶栏内");
-        assert_eq!(alpha_rows(&rgba, 640, 30), 0, "第 30 行应当已在顶栏之下");
+        assert!(alpha_rows(&rgba, 640, 20) > 0, "row 20 should still be inside the top bar");
+        assert_eq!(alpha_rows(&rgba, 640, 30), 0, "row 30 should already be below the top bar");
         // The whole row is filled: if the horizontal percentage were dropped, only the left half would remain.
         let row = &rgba[4 * 640 * 4..5 * 640 * 4];
         assert!(
             row.chunks_exact(4).all(|pixel| pixel[3] > 0),
-            "顶栏必须横贯整幅，不是只画了左半边"
+            "the top bar must span the whole frame, not just the left half"
         );
     }
 
@@ -4295,7 +4295,7 @@ mod tests {
         let plain_size = plain.original_style.font_size;
         assert!(
             (plain_anchor.1 - 360.0 * 0.86).abs() < 1e-6,
-            "默认锚线在 86%"
+            "the default anchor line is at 86%"
         );
 
         // A bottom chapter bar at y=80% with height 20% ⇒ subs_bottom = 22 ⇒ the anchor line is at most 78%
@@ -4308,7 +4308,7 @@ mod tests {
         );
         assert_eq!(
             lifted.original_style.font_size, plain_size,
-            "避让只管摆位，字号不能被动"
+            "avoidance only affects placement; font size must not change"
         );
 
         // A top template does not trigger avoidance
@@ -4338,7 +4338,7 @@ mod tests {
             .element_drawop_fingerprint(1.0)
             .unwrap_err()
             .to_string();
-        assert!(error.contains("模板层"), "{error}");
+        assert!(error.contains("template layer"), "{error}");
     }
 
     /// The seventeen built-in templates (Simplified Chinese word list): one frame each in two aspect ratios, plus three font states, with pixel sha256 cross-checked against golden.
@@ -4390,7 +4390,7 @@ mod tests {
                 .unwrap();
                 assert!(
                     pixmap.data().iter().any(|byte| *byte > 0),
-                    "{}/{label} 画空了",
+                    "{}/{label} was drawn empty",
                     doc.id
                 );
                 hashes.insert(format!("{}/{label}", doc.id), sha256_hex(pixmap.data()));
@@ -4446,7 +4446,7 @@ mod tests {
         // Missing-family fallback = follow the subtitle font, byte-identical to not declaring a font at all
         assert_eq!(
             hashes["font/missing"], hashes["font/mono"],
-            "缺族必须回退到 fallback_family"
+            "a missing family must fall back to fallback_family"
         );
 
         let distinct: std::collections::BTreeSet<_> = hashes.values().collect();
@@ -4461,12 +4461,12 @@ mod tests {
             std::fs::write(&golden, format!("{actual}\n")).unwrap();
         }
         let expected = std::fs::read_to_string(&golden).unwrap_or_else(|e| {
-            panic!("读 {}: {e}（CCUT_UPDATE_GOLDEN=1 生成）", golden.display())
+            panic!("read {}: {e} (generate with CCUT_UPDATE_GOLDEN=1)", golden.display())
         });
         assert_eq!(
             expected.trim_end(),
             actual,
-            "模板层 golden 漂移（确认是有意变更后 CCUT_UPDATE_GOLDEN=1 重写）"
+            "template layer golden drift (if the change is intended, rewrite with CCUT_UPDATE_GOLDEN=1)"
         );
     }
 
@@ -4541,11 +4541,11 @@ mod tests {
             logo_doc((10.0, 10.0, 40.0, 20.0), false, 0.0),
             false,
         ));
-        assert!((12..=13).contains(&floor), "0 夹到 0.05 → {floor}");
+        assert!((12..=13).contains(&floor), "0 clamped to 0.05 → {floor}");
         let mut off = logo_doc((10.0, 10.0, 40.0, 20.0), false, 0.5);
         off.layers[0].on = false;
         let dim = max_alpha(&render_logo_doc(off, true));
-        assert!((89..=90).contains(&dim), "关掉的层编辑态 0.35 → {dim}");
+        assert!((89..=90).contains(&dim), "edit state of the hidden layer at 0.35 → {dim}");
     }
 
     /// Logo layer `align` (2026-09-15): the badge background still fills the box, and the text sits left, centred or right within the badge's padding. For an image logo, after it is fitted proportionally into the box, the horizontal slack is likewise split by the alignment.
@@ -4569,8 +4569,8 @@ mod tests {
                 .map(|(i, _)| i % width)
                 .collect();
             (
-                *xs.iter().min().expect("有墨迹"),
-                *xs.iter().max().expect("有墨迹"),
+                *xs.iter().min().expect("expected ink"),
+                *xs.iter().max().expect("expected ink"),
             )
         }
         // Box = frame (32,18)–(160,54); font size 6% × 180 = 10.8px; badge padding 0.6em ≈ 6.5px
@@ -4590,18 +4590,18 @@ mod tests {
             assert_eq!(
                 span(pixmap, |_, alpha| alpha == 255),
                 (32, 159),
-                "底色铺满盒子"
+                "background fills the box"
             );
         }
         let (l, c, r) = (white(&left), white(&center), white(&right));
-        assert!((38..=42).contains(&l.0), "靠左：字从内边距起 {l:?}");
-        assert!((150..=154).contains(&r.1), "靠右：字收在内边距前 {r:?}");
+        assert!((38..=42).contains(&l.0), "left-aligned: text starts at the inner padding {l:?}");
+        assert!((150..=154).contains(&r.1), "right-aligned: text ends before the inner padding {r:?}");
         let mid = (c.0 + c.1) as f64 / 2.0;
-        assert!((mid - 96.0).abs() <= 2.0, "居中 {c:?}");
+        assert!((mid - 96.0).abs() <= 2.0, "centered {c:?}");
         assert!(l.0 < c.0 && c.0 < r.0, "{l:?} {c:?} {r:?}");
         assert!(
             (l.1 - l.0).abs_diff(r.1 - r.0) <= 1,
-            "只平移不变形 {l:?} {r:?}"
+            "only translated, not distorted {l:?} {r:?}"
         );
 
         let mut image = Pixmap::new(10, 10).unwrap();
@@ -4685,7 +4685,7 @@ mod tests {
                 .filter(|(_, px)| px.red() > 128)
                 .map(|(i, _)| i % width)
                 .min()
-                .expect("有墨迹")
+                .expect("expected ink")
         };
         let cases = [(6.0, true), (9.0, false), (14.0, false)];
         let starts = |pad: Option<f64>| -> Vec<usize> {
@@ -4699,12 +4699,12 @@ mod tests {
         let fixed = starts(Some(5.0));
         assert!(
             fixed.iter().all(|x| (41..=44).contains(x)),
-            "起笔在盒子左缘 + 9px：{fixed:?}"
+            "stroke starts at the box's left edge + 9px: {fixed:?}"
         );
-        assert!(spread(&fixed) <= 2, "三层同一条起笔线：{fixed:?}");
+        assert!(spread(&fixed) <= 2, "three layers share one stroke start line: {fixed:?}");
         // Not set: 6.5 / 8.1 / 12.6px, so the three starting lines are offset
         let legacy = starts(None);
-        assert!(spread(&legacy) >= 5, "按字号推的内边距对不齐：{legacy:?}");
+        assert!(spread(&legacy) >= 5, "padding derived from font size is misaligned: {legacy:?}");
         // 0 means flush against the box's left edge
         let flush = starts(Some(0.0));
         assert!(flush.iter().all(|x| (32..=35).contains(x)), "{flush:?}");
@@ -4724,13 +4724,13 @@ mod tests {
                 .filter(|&(x, y)| pixmap.pixel(x, y).is_some_and(|px| px.alpha() > 0))
                 .count()
         };
-        assert_eq!(outside(&flat), 0, "不平铺的层不越出盒子");
-        assert!(outside(&tiled) > 0, "平铺斜放放大后应越出盒子");
+        assert_eq!(outside(&flat), 0, "non-tiled layers do not extend past the box");
+        assert!(outside(&tiled) > 0, "tiled and rotated then scaled up should extend past the box");
         for (x, y) in [(0, 0), (319, 0), (0, 179), (319, 179)] {
             assert_eq!(
                 tiled.pixel(x, y).unwrap().alpha(),
                 0,
-                "({x},{y}) 在旋转盒外"
+                "({x},{y}) is outside the rotated box"
             );
         }
     }
@@ -4809,15 +4809,15 @@ mod tests {
             element_draw::SceneNode::Vectors(_)
         ));
         let element_draw::SceneNode::ShaderQuad { transform, .. } = &scene.nodes[1] else {
-            panic!("progress 必须保持 z 序并作为 ShaderQuad 输出")
+            panic!("progress must keep z order and output as ShaderQuad")
         };
         assert!(
             transform.transform[1].abs() > 0.01,
-            "旋转不得在场景组装时丢失"
+            "rotation must not be lost during scene assembly"
         );
         assert!(
             transform.transform[4].abs() > 0.01,
-            "旋转不得退化成轴对齐盒"
+            "rotation must not degrade into an axis-aligned box"
         );
 
         let canonical =
@@ -4842,7 +4842,7 @@ mod tests {
             subtitle_scene_fingerprint(&plan.definition_key, &first.key)
         );
         let element_draw::SceneNode::Glyphs(first_run) = &first.scene.nodes[0] else {
-            panic!("普通字幕必须成为 glyph run")
+            panic!("a plain subtitle must become a glyph run")
         };
         assert!(!first_run.glyphs.is_empty());
         assert!(first_run.glyphs.iter().all(|glyph| matches!(
@@ -4853,12 +4853,12 @@ mod tests {
 
         let second = plan.subtitle_scene_frame(1.0).unwrap();
         let element_draw::SceneNode::Glyphs(second_run) = &second.scene.nodes[0] else {
-            panic!("稳定帧仍必须是 glyph run")
+            panic!("a stable frame must still be a glyph run")
         };
         assert_eq!(first.key, second.key);
         assert!(
             Arc::ptr_eq(&first_run.glyphs, &second_run.glyphs),
-            "稳定 cue 必须复用整份字形几何"
+            "a stable cue must reuse the whole glyph geometry"
         );
         assert_eq!(first_run.uniforms, second_run.uniforms);
 
@@ -4869,7 +4869,7 @@ mod tests {
         let recolored = recolored.subtitle_scene_frame(1.0).unwrap();
         assert_ne!(
             first.scene.fingerprint, recolored.scene.fingerprint,
-            "subtitle key 相同时，计划定义仍必须参与 retained scene 身份"
+            "with the same subtitle key, the plan definition must still take part in retained scene identity"
         );
     }
 
@@ -4897,13 +4897,13 @@ mod tests {
 
         let frame = plan.subtitle_scene_frame(1.0).unwrap();
         let [element_draw::SceneNode::Glyphs(run)] = frame.scene.nodes.as_slice() else {
-            panic!("COLR 字幕必须留在原有 glyph run 顺序中")
+            panic!("COLR subtitles must stay in the existing glyph run order")
         };
         let [glyph] = run.glyphs.as_ref() else {
-            panic!("单字探针必须只产生一枚 glyph")
+            panic!("a single-character probe must produce exactly one glyph")
         };
         let element_draw::GlyphPixels::Color(rgba) = &glyph.mask.pixels else {
-            panic!("COLR 字幕必须携带预乘 RGBA atlas 像素")
+            panic!("COLR subtitles must carry premultiplied RGBA atlas pixels")
         };
         assert_eq!(
             rgba.len(),
@@ -4912,7 +4912,7 @@ mod tests {
         assert!(rgba.chunks_exact(4).any(|pixel| pixel[3] > 0));
         assert_eq!(
             run.uniforms[glyph.uniform_index as usize].color_opacity, 1.0,
-            "彩色字形不能误吃 fontColor 自身的 alpha"
+            "colour glyphs must not consume the alpha of fontColor itself"
         );
     }
 
@@ -4926,7 +4926,7 @@ mod tests {
         let frame = plan.subtitle_scene_frame(1.0).unwrap();
         assert_eq!(frame.scene.nodes.len(), 2);
         let element_draw::SceneNode::Vectors(plate) = &frame.scene.nodes[0] else {
-            panic!("字幕底板必须先进入 vector pass")
+            panic!("the subtitle plate must enter the vector pass first")
         };
         let [
             DrawOp::FillRect {
@@ -4938,7 +4938,7 @@ mod tests {
             },
         ] = plate.ops.as_slice()
         else {
-            panic!("单行字幕底板必须是一条 FillRect")
+            panic!("a single-line subtitle plate must be one FillRect")
         };
         assert!(*w > 0.0 && *h > 0.0 && *radius >= 0.0);
         assert!((color[3] - 0.701_960_8).abs() < 1e-6, "{color:?}");
@@ -4967,7 +4967,7 @@ mod tests {
             },
         ] = frame.scene.nodes.as_slice()
         else {
-            panic!("普通下划线必须在正文 glyph 后进入 vector pass")
+            panic!("a plain underline must enter the vector pass after the body glyph")
         };
         assert_eq!(*pose, element_draw::ScenePose::IDENTITY);
         assert!(motion.is_none());
@@ -4994,10 +4994,10 @@ mod tests {
         let first = plan.subtitle_scene_frame(0.8).unwrap();
         let second = plan.subtitle_scene_frame(1.5).unwrap();
         let element_draw::SceneNode::Glyphs(first_run) = &first.scene.nodes[0] else {
-            panic!("Color 动画必须走 glyph run")
+            panic!("Color animation must use a glyph run")
         };
         let element_draw::SceneNode::Glyphs(second_run) = &second.scene.nodes[0] else {
-            panic!("Color 动画切词后仍必须走 glyph run")
+            panic!("Color animation must still use a glyph run after splitting words")
         };
         assert!(Arc::ptr_eq(&first_run.glyphs, &second_run.glyphs));
         assert_ne!(first_run.uniforms, second_run.uniforms);
@@ -5012,7 +5012,7 @@ mod tests {
         let mut reveal = OverlayRenderPlan::compile(&source, 320, 180, 3.0, 30.0, None).unwrap();
         let reveal = reveal.subtitle_scene_frame(0.8).unwrap();
         let element_draw::SceneNode::Glyphs(reveal) = &reveal.scene.nodes[0] else {
-            panic!("Reveal 动画必须走 glyph run")
+            panic!("Reveal animation must use a glyph run")
         };
         assert!(
             reveal
@@ -5025,7 +5025,7 @@ mod tests {
         let mut bounce = OverlayRenderPlan::compile(&source, 320, 180, 3.0, 30.0, None).unwrap();
         let bounce = bounce.subtitle_scene_frame(0.8).unwrap();
         let element_draw::SceneNode::Glyphs(bounce) = &bounce.scene.nodes[0] else {
-            panic!("Bounce 动画必须走 glyph run")
+            panic!("Bounce animation must use a glyph run")
         };
         assert!(
             bounce
@@ -5047,7 +5047,7 @@ mod tests {
         assert!((first.scene.next_change.unwrap() - 0.1).abs() < 1e-9);
         assert!((first.scene.active_until.unwrap() - 0.1).abs() < 1e-9);
         let element_draw::SceneNode::Glyphs(first_run) = &first.scene.nodes[0] else {
-            panic!("无底板字幕必须直接产出 glyph motion")
+            panic!("a subtitle without a plate must produce glyph motion directly")
         };
         let motion = first_run.motion.as_ref().expect("magic-pop motion");
         assert!((motion.start - 0.0).abs() < 1e-9);
@@ -5058,7 +5058,7 @@ mod tests {
         let sampled = motion.sample(frame_time);
         let second = plan.subtitle_scene_frame(frame_time).unwrap();
         let element_draw::SceneNode::Glyphs(second_run) = &second.scene.nodes[0] else {
-            panic!("下一项目帧仍必须是 glyph motion")
+            panic!("the next project frame must still be glyph motion")
         };
         for (sampled, reference) in sampled.transform.into_iter().zip(second_run.pose.transform) {
             assert!(
@@ -5073,7 +5073,7 @@ mod tests {
         let cpu_frame = cpu.render_png(0.01).unwrap();
         assert!(
             (cpu_frame.next_change.unwrap() - 1.0 / 60.0).abs() < 1e-9,
-            "CPU reference 仍保持历史帧桶调度"
+            "CPU reference still keeps historical frame-bucket scheduling"
         );
     }
 
@@ -5085,10 +5085,10 @@ mod tests {
         let first = plan.subtitle_scene_frame(0.01).unwrap();
         let [element_draw::SceneNode::BlurredGroup(first_group)] = first.scene.nodes.as_slice()
         else {
-            panic!("magic-fade 必须在完整字幕场景之外套一层 blur group")
+            panic!("magic-fade must wrap the full subtitle scene in one blur group")
         };
         assert!(first_group.radius > 0.0);
-        assert_eq!(first_group.nodes.len(), 3, "底板、描边、正文必须一起模糊");
+        assert_eq!(first_group.nodes.len(), 3, "plate, outline and body must blur together");
         let motion = first_group.motion.as_ref().expect("fade blur motion");
         assert!(motion.from.blur > 0.0);
         assert_eq!(motion.to.blur, 0.0);
@@ -5098,14 +5098,14 @@ mod tests {
         let second = plan.subtitle_scene_frame(frame_time).unwrap();
         let [element_draw::SceneNode::BlurredGroup(second_group)] = second.scene.nodes.as_slice()
         else {
-            panic!("fade 项目帧仍必须是同一 blur group")
+            panic!("the fade project frame must still be the same blur group")
         };
         assert!((motion.sample(frame_time).blur - second_group.radius).abs() < 2e-5);
         let element_draw::SceneNode::Glyphs(first_fill) = &first_group.nodes[2] else {
-            panic!("blur group 内第三层必须是正文 glyph")
+            panic!("the third layer inside the blur group must be the body glyph")
         };
         let element_draw::SceneNode::Glyphs(second_fill) = &second_group.nodes[2] else {
-            panic!("下一项目帧仍必须保留正文 glyph")
+            panic!("the next project frame must still keep the body glyph")
         };
         assert!(Arc::ptr_eq(&first_fill.glyphs, &second_fill.glyphs));
     }
@@ -5122,7 +5122,7 @@ mod tests {
             element_draw::SceneNode::Glyphs(fill),
         ] = first.scene.nodes.as_slice()
         else {
-            panic!("无底板描边字幕必须按 outline → fill 发两条 glyph pass")
+            panic!("an outlined subtitle without a plate must emit two glyph passes, outline then fill")
         };
         assert_eq!(outline.glyphs.len(), fill.glyphs.len());
         assert!(outline.glyphs.iter().zip(fill.glyphs.iter()).all(
@@ -5149,7 +5149,7 @@ mod tests {
             element_draw::SceneNode::Glyphs(second_fill),
         ] = second.scene.nodes.as_slice()
         else {
-            panic!("稳态描边字幕仍必须保留两条 glyph pass")
+            panic!("a steady-state outlined subtitle must still keep two glyph passes")
         };
         assert!(Arc::ptr_eq(&outline.glyphs, &second_outline.glyphs));
         assert!(Arc::ptr_eq(&fill.glyphs, &second_fill.glyphs));
@@ -5174,7 +5174,7 @@ mod tests {
             element_draw::SceneNode::Glyphs(fill),
         ] = first.scene.nodes.as_slice()
         else {
-            panic!("glow 必须先按 outline + fill 合成一次 effect，再画清晰正文")
+            panic!("glow must first composite one effect from outline + fill, then draw the sharp body")
         };
         assert_eq!(effect.layers.len(), 2);
         assert_eq!(
@@ -5192,7 +5192,7 @@ mod tests {
 
         let second = plan.subtitle_scene_frame(1.5).unwrap();
         let element_draw::SceneNode::BlurredGlyphs(second_effect) = &second.scene.nodes[0] else {
-            panic!("稳态 glow 仍必须是 GPU effect node")
+            panic!("steady-state glow must still be a GPU effect node")
         };
         assert!(Arc::ptr_eq(
             &effect.layers[0].glyphs,
@@ -5225,7 +5225,7 @@ mod tests {
             element_draw::SceneNode::Glyphs(fill),
         ] = frame.scene.nodes.as_slice()
         else {
-            panic!("drop shadow 必须先于清晰正文进入 effect node")
+            panic!("drop shadow must enter the effect node before the sharp body")
         };
         assert_eq!(effect.layers.len(), 1);
         let shadow = &effect.layers[0];
@@ -5251,10 +5251,10 @@ mod tests {
         let first = plan.subtitle_scene_frame(0.8).unwrap();
         let second = plan.subtitle_scene_frame(1.5).unwrap();
         let element_draw::SceneNode::BlurredGlyphs(first_effect) = &first.scene.nodes[0] else {
-            panic!("Reveal glow 必须进入 effect node")
+            panic!("Reveal glow must enter the effect node")
         };
         let element_draw::SceneNode::BlurredGlyphs(second_effect) = &second.scene.nodes[0] else {
-            panic!("Reveal 切词后仍必须进入 effect node")
+            panic!("Reveal glow must still enter the effect node after splitting words")
         };
         assert!(Arc::ptr_eq(
             &first_effect.layers[0].glyphs,
@@ -5311,18 +5311,18 @@ mod tests {
             ]
         ));
         let element_draw::SceneNode::Glyphs(fill) = first.nodes.last().unwrap() else {
-            panic!("文字正文必须是最后一条清晰 glyph pass")
+            panic!("the text body must be the last sharp glyph pass")
         };
         assert!(!fill.glyphs.is_empty());
         assert_eq!(fill.pose.opacity, 0.8);
         assert!(
             fill.pose.transform[1].abs() > 0.01,
-            "rotation 必须进容器 pose"
+            "rotation must go into the container pose"
         );
 
         let second = plan.text_element_scene_frame(1.0).unwrap();
         let element_draw::SceneNode::Glyphs(second_fill) = second.nodes.last().unwrap() else {
-            panic!("稳定帧仍必须是 glyph pass")
+            panic!("a stable frame must still be a glyph pass")
         };
         assert_eq!(fill.glyphs[0].mask.key, second_fill.glyphs[0].mask.key);
         assert!(
@@ -5330,7 +5330,7 @@ mod tests {
                 fill.glyphs[0].mask.pixels.data(),
                 second_fill.glyphs[0].mask.pixels.data()
             ),
-            "同一 text element 必须命中 TextEngine 的 swash mask 缓存"
+            "the same text element must hit the TextEngine swash mask cache"
         );
     }
 
@@ -5361,7 +5361,7 @@ mod tests {
             .unwrap();
             let element = plan.elements[0].clone();
             let pixmap = plan.render_text_element(&element, 1.0).unwrap();
-            alpha_bbox(pixmap.data(), 320, 180).expect("底板应有像素")
+            alpha_bbox(pixmap.data(), 320, 180).expect("the plate should have pixels")
         };
         let hugged = render(json!({"x": 50, "y": 50}));
         let filled = render(json!({"x": 50, "y": 50, "w": 90}));
@@ -5369,11 +5369,11 @@ mod tests {
         let filled_w = filled.cols.end - filled.cols.start;
         assert!(
             hugged_w < 320 * 60 / 100,
-            "没有 place.w 时底板必须贴着两个字：{hugged_w}px"
+            "without place.w the plate must hug the two characters: {hugged_w}px"
         );
         assert!(
             filled_w > hugged_w + 100,
-            "给了 place.w=90 才撑满换行宽：hugged={hugged_w}px filled={filled_w}px"
+            "with place.w=90 the plate fills the wrap width: hugged={hugged_w}px filled={filled_w}px"
         );
     }
 
@@ -5406,27 +5406,27 @@ mod tests {
         let time = 0.067;
         let scene = plan.text_element_scene_frame(time).unwrap();
         let [element_draw::SceneNode::BlurredGroup(group)] = scene.nodes.as_slice() else {
-            panic!("wipe 必须把文字全部 pass 保留在一个 reveal group")
+            panic!("wipe must keep all text passes in one reveal group")
         };
-        let reveal = group.reveal.expect("wipe group 必须携带 reveal uniform");
+        let reveal = group.reveal.expect("wipe group must carry a reveal uniform");
         assert!((0.0..1.0).contains(&reveal));
         assert_eq!(group.radius, 0.0);
-        assert!(group.nodes.len() >= 3, "底板、描边与正文必须一起被 wipe");
+        assert!(group.nodes.len() >= 3, "plate, outline and body must be wiped together");
 
         let element = plan.elements[0].clone();
         let partial = plan.render_text_element(&element, time).unwrap();
-        let partial_bounds = alpha_bbox(partial.data(), 320, 180).expect("wipe 中段应有像素");
+        let partial_bounds = alpha_bbox(partial.data(), 320, 180).expect("wipe midpoint should have pixels");
         let boundary = (f64::from(reveal) * 320.0).ceil() as usize;
         assert!(
             partial_bounds.cols.end <= boundary,
-            "CPU reference 必须在同一 reveal 边界裁掉整层：{:?} > {boundary}",
+            "CPU reference must clip the whole layer at the same reveal boundary: {:?} > {boundary}",
             partial_bounds.cols
         );
         let full = plan.render_text_element(&element, 1.0).unwrap();
-        let full_bounds = alpha_bbox(full.data(), 320, 180).expect("wipe 完成后应有像素");
+        let full_bounds = alpha_bbox(full.data(), 320, 180).expect("pixels should exist after the wipe completes");
         assert!(
             full_bounds.cols.end > partial_bounds.cols.end,
-            "wipe 完成后应恢复文字右侧：partial={:?}, full={:?}, reveal={reveal}",
+            "the text's right side should be restored after the wipe completes: partial={:?}, full={:?}, reveal={reveal}",
             partial_bounds.cols,
             full_bounds.cols
         );
@@ -5463,7 +5463,7 @@ mod tests {
             },
         ] = scene.nodes.as_slice()
         else {
-            panic!("普通文字下划线必须在正文 glyph 后进入 vector pass")
+            panic!("a plain text underline must enter the vector pass after the body glyph")
         };
         assert!(!underlines.ops.is_empty());
 
@@ -5492,15 +5492,15 @@ mod tests {
                 element_draw::SceneNode::AnimatedVectors {
                     frame: underline, ..
                 } => assert_eq!(underline.ops.len(), 1),
-                _ => panic!("逐词移动文字必须保持 chunk glyph → underline 的 CPU z 序"),
+                _ => panic!("per-word moving text must keep the CPU z order of chunk glyph then underline"),
             }
         }
-        let first = runs.first().expect("至少有一个字形 chunk");
+        let first = runs.first().expect("at least one glyph chunk");
         assert!(
             runs.iter()
                 .skip(1)
                 .any(|run| run.uniforms != first.uniforms),
-            "每个 part 必须保留独立级联姿态"
+            "each part must keep its own cascade pose"
         );
     }
 
@@ -5531,14 +5531,14 @@ mod tests {
 
             let scene = plan.text_element_scene_frame(1.0).unwrap();
             let [element_draw::SceneNode::Glyphs(glyphs)] = scene.nodes.as_slice() else {
-                panic!("无装饰文字必须只产生一条 glyph pass")
+                panic!("undecorated text must produce only one glyph pass")
             };
             let retained_x = glyphs.glyphs[0].transform[4];
 
             let element = plan.elements[0].clone();
             let pixmap = plan.render_text_element(&element, 1.0).unwrap();
             let cpu_x = alpha_bbox(pixmap.data(), 320, 180)
-                .expect("文字元素必须有非零像素")
+                .expect("text element must have non-zero pixels")
                 .cols
                 .start;
             (retained_x, cpu_x)
@@ -5572,7 +5572,7 @@ mod tests {
         let wrap = 320.0 * 0.8;
         let studio = layouts(None, "left");
         assert_eq!(studio[0].text_align, LineTextAlign::Left);
-        assert!(studio[0].width < wrap, "这一句比折行宽度短：{}", studio[0].width);
+        assert!(studio[0].width < wrap, "this line is shorter than the wrap width: {}", studio[0].width);
         assert_eq!(studio[0].align_width, studio[0].width);
         assert_eq!(layouts(Some(false), "left")[0].align_width, studio[0].width);
         let boxed = layouts(Some(true), "right");
@@ -5605,10 +5605,10 @@ mod tests {
         let second_frame = plan.text_element_scene_frame(0.35).unwrap();
         assert_eq!(first_frame.next_change, Some(1.0 / 30.0));
         let [element_draw::SceneNode::Glyphs(first)] = first_frame.nodes.as_slice() else {
-            panic!("纯文字级联必须只产出一条 glyph pass")
+            panic!("plain text cascade must produce only one glyph pass")
         };
         let [element_draw::SceneNode::Glyphs(second)] = second_frame.nodes.as_slice() else {
-            panic!("级联后续帧仍必须只产出一条 glyph pass")
+            panic!("the following cascade frame must still produce only one glyph pass")
         };
         assert_eq!(first.glyphs[0].mask.key, second.glyphs[0].mask.key);
         assert_ne!(first.uniforms, second.uniforms);
@@ -5712,7 +5712,7 @@ mod tests {
         };
         let plate_of = |scene: &element_draw::SceneFrame| {
             let element_draw::SceneNode::AnimatedVectors { frame, .. } = &scene.nodes[1] else {
-                panic!("药丸底必须仍是 chunk 之间那一层 AnimatedVectors")
+                panic!("the pill base must still be the AnimatedVectors layer between chunks")
             };
             let [
                 DrawOp::FillRect {
@@ -5726,7 +5726,7 @@ mod tests {
                 },
             ] = frame.ops.as_slice()
             else {
-                panic!("药丸底只落一笔 FillRect")
+                panic!("the pill base should be a single FillRect")
             };
             (*x, *y, *w, *h, *radius, color[3])
         };
@@ -5762,7 +5762,7 @@ mod tests {
                 "boxEasing": "sinInOut",
             },
         }}));
-        let track = animation.box_track.clone().expect("药丸高亮必须解析出块轨");
+        let track = animation.box_track.clone().expect("pill highlight must resolve a block track");
         assert!(track.is_animated());
         for (phase, scale, alpha) in [
             (0.0, 0.9, 0.75),
@@ -5838,10 +5838,10 @@ mod tests {
         let first = plan.subtitle_scene_frame(0.51).unwrap();
         let second = plan.subtitle_scene_frame(0.55).unwrap();
         let [element_draw::SceneNode::Glyphs(first_run)] = first.scene.nodes.as_slice() else {
-            panic!("kinetic slam 必须由单层 retained glyph scene 表达")
+            panic!("kinetic slam must be expressed by a single retained glyph scene layer")
         };
         let [element_draw::SceneNode::Glyphs(second_run)] = second.scene.nodes.as_slice() else {
-            panic!("同一可见词的后续采样仍必须是 glyph scene")
+            panic!("later samples of the same visible word must still be a glyph scene")
         };
         assert!(Arc::ptr_eq(&first_run.glyphs, &second_run.glyphs));
         assert_ne!(first_run.uniforms, second_run.uniforms);
@@ -5854,17 +5854,17 @@ mod tests {
         let next = first
             .scene
             .next_change
-            .expect("recipe 动画须报告下一 fps 样本");
+            .expect("recipe animation must report the next fps sample");
         assert!(next > 0.51 && next <= 0.51 + 1.0 / 30.0 + 1e-9, "{next}");
 
         let next_word = plan.subtitle_scene_frame(1.31).unwrap();
         let [element_draw::SceneNode::Glyphs(next_word_run)] = next_word.scene.nodes.as_slice()
         else {
-            panic!("下一可见词仍必须是 glyph scene")
+            panic!("the next visible word must still be a glyph scene")
         };
         assert!(
             !Arc::ptr_eq(&first_run.glyphs, &next_word_run.glyphs),
-            "fullScreenWord 在同一 cue 内换词时必须换 geometry，不能复用上一词"
+            "fullScreenWord must change geometry when the word changes within the same cue, not reuse the previous word"
         );
     }
 
@@ -5881,10 +5881,10 @@ mod tests {
         let first = plan.subtitle_scene_frame(0.58).unwrap();
         let second = plan.subtitle_scene_frame(0.62).unwrap();
         let [element_draw::SceneNode::Glyphs(first_run)] = first.scene.nodes.as_slice() else {
-            panic!("clip wipe 必须由单层 retained glyph scene 表达")
+            panic!("clip wipe must be expressed by a single retained glyph scene layer")
         };
         let [element_draw::SceneNode::Glyphs(second_run)] = second.scene.nodes.as_slice() else {
-            panic!("clip wipe 后续采样仍必须是 glyph scene")
+            panic!("later clip wipe samples must still be a glyph scene")
         };
         assert!(Arc::ptr_eq(&first_run.glyphs, &second_run.glyphs));
         let first_clips = first_run
@@ -5903,7 +5903,7 @@ mod tests {
         let next = first
             .scene
             .next_change
-            .expect("clip recipe 须报告下一 fps 样本");
+            .expect("clip recipe must report the next fps sample");
         assert!(next > 0.58 && next <= 0.58 + 1.0 / 30.0 + 1e-9, "{next}");
     }
 
@@ -5920,10 +5920,10 @@ mod tests {
         let first = plan.subtitle_scene_frame(0.58).unwrap();
         let second = plan.subtitle_scene_frame(0.62).unwrap();
         let [element_draw::SceneNode::Glyphs(first_run)] = first.scene.nodes.as_slice() else {
-            panic!("gradient fill 必须由单层 retained glyph scene 表达")
+            panic!("gradient fill must be expressed by a single retained glyph scene layer")
         };
         let [element_draw::SceneNode::Glyphs(second_run)] = second.scene.nodes.as_slice() else {
-            panic!("gradient fill 后续采样仍必须是 glyph scene")
+            panic!("later gradient fill samples must still be a glyph scene")
         };
         assert!(Arc::ptr_eq(&first_run.glyphs, &second_run.glyphs));
         assert!(first_run.uniforms.iter().any(|uniform| matches!(
@@ -5945,7 +5945,7 @@ mod tests {
         let next = first
             .scene
             .next_change
-            .expect("gradient recipe 须报告下一 fps 样本");
+            .expect("gradient recipe must report the next fps sample");
         assert!(next > 0.58 && next <= 0.58 + 1.0 / 30.0 + 1e-9, "{next}");
     }
 
@@ -5975,7 +5975,7 @@ mod tests {
                     element_draw::SceneNode::RoundedRect(node) => Some(node),
                     _ => None,
                 })
-                .unwrap_or_else(|| panic!("{style_id} 必须产生程序化圆角底板"));
+                .unwrap_or_else(|| panic!("{style_id} must produce a procedural rounded plate"));
             let second_plate = second
                 .scene
                 .nodes
@@ -5984,7 +5984,7 @@ mod tests {
                     element_draw::SceneNode::RoundedRect(node) => Some(node),
                     _ => None,
                 })
-                .unwrap_or_else(|| panic!("{style_id} 后续采样仍必须保留圆角底板"));
+                .unwrap_or_else(|| panic!("{style_id} later samples must still keep the rounded plate"));
             assert_ne!(first_plate.rect, second_plate.rect, "{style_id}");
             assert!(first_plate.rect[2] > 0.0 && first_plate.rect[3] > 0.0);
             assert!(first_plate.radius > 0.0 && first_plate.color[3] > 0.0);
@@ -6002,7 +6002,7 @@ mod tests {
                     element_draw::SceneNode::Glyphs(run) => Some(run),
                     _ => None,
                 })
-                .expect("plate 后必须保留 glyph run");
+                .expect("glyph run must be kept after the plate");
             let second_run = second
                 .scene
                 .nodes
@@ -6011,15 +6011,15 @@ mod tests {
                     element_draw::SceneNode::Glyphs(run) => Some(run),
                     _ => None,
                 })
-                .expect("plate 后续帧必须保留 glyph run");
+                .expect("later frames after the plate must keep the glyph run");
             assert!(
                 Arc::ptr_eq(&first_run.glyphs, &second_run.glyphs),
-                "{style_id} 的底板动画不得重建 glyph geometry"
+                "{style_id} plate animation must not rebuild glyph geometry"
             );
             let next = first
                 .scene
                 .next_change
-                .expect("plate recipe 须报告下一 fps 样本");
+                .expect("plate recipe must report the next fps sample");
             assert!(
                 next > first_time && next <= first_time + 1.0 / 30.0 + 1e-9,
                 "{next}"
@@ -6055,12 +6055,12 @@ mod tests {
         }
         let first_runs = glyph_runs(&first);
         let second_runs = glyph_runs(&second);
-        assert_eq!(first_runs.len(), 6, "两词应各有两层 duplicate + 一层正文");
+        assert_eq!(first_runs.len(), 6, "each of the two words should have two duplicate layers and one body layer");
         assert_eq!(second_runs.len(), first_runs.len());
         let active_duplicate = first_runs
             .chunks_exact(3)
             .find(|word| word[0].uniforms[0].color[3] > 0.0)
-            .expect("hero 词必须产生可见 duplicate");
+            .expect("the hero word must produce a visible duplicate");
         assert_ne!(
             active_duplicate[0].uniforms[0],
             active_duplicate[1].uniforms[0]
@@ -6077,7 +6077,7 @@ mod tests {
                 .iter()
                 .zip(&second_runs)
                 .any(|(first, second)| first.uniforms != second.uniforms),
-            "attack 区间只能改变 duplicate/main uniforms"
+            "the attack interval may only change duplicate/main uniforms"
         );
         assert!(first.scene.nodes.iter().all(|node| !matches!(
             node,
@@ -6088,7 +6088,7 @@ mod tests {
         let next = first
             .scene
             .next_change
-            .expect("duplicate recipe 须报告下一 fps 样本");
+            .expect("duplicate recipe must report the next fps sample");
         assert!(next > 0.8 && next <= 0.8 + 1.0 / 30.0 + 1e-9, "{next}");
     }
 
@@ -6107,12 +6107,12 @@ mod tests {
         assert_eq!(
             caption_recipe_glyph_duplicate_layer_count(&plan.original_animation),
             1,
-            "descriptor 的视觉分层声明必须保留"
+            "the descriptor's visual layering declaration must be kept"
         );
         assert_eq!(
             caption_recipe_echo_duplicate_layer_count(&plan.original_animation),
             0,
-            "只有 colorMix 的 editorial 配方不能产生透明 echo pass"
+            "an editorial recipe with only colorMix must not produce a transparent echo pass"
         );
 
         let first = plan.subtitle_scene_frame(0.58).unwrap();
@@ -6130,7 +6130,7 @@ mod tests {
         }
         let first_runs = runs(&first);
         let second_runs = runs(&second);
-        assert_eq!(first_runs.len(), 1, "editorial 只应提交一条正文 glyph run");
+        assert_eq!(first_runs.len(), 1, "editorial should submit only one body glyph run");
         assert_eq!(second_runs.len(), 1);
         assert_eq!(first_runs[0].uniforms.len(), 2);
         assert!(
@@ -6138,7 +6138,7 @@ mod tests {
                 .uniforms
                 .iter()
                 .any(|uniform| uniform.color[2] < 0.5),
-            "hero 词的 colorMix 必须进入正文颜色 uniform"
+            "the hero word's colorMix must feed the body colour uniform"
         );
         assert!(Arc::ptr_eq(&first_runs[0].glyphs, &second_runs[0].glyphs));
         assert_ne!(first_runs[0].uniforms, second_runs[0].uniforms);
@@ -6151,7 +6151,7 @@ mod tests {
         let next = first
             .scene
             .next_change
-            .expect("editorial enter 须报告下一 fps 样本");
+            .expect("editorial enter must report the next fps sample");
         assert!(next > 0.58 && next <= 0.58 + 1.0 / 30.0 + 1e-9, "{next}");
     }
 
@@ -6185,7 +6185,7 @@ mod tests {
         assert_eq!(
             first_runs.len(),
             4,
-            "两词须保持 emoji→正文 的逐词层序，未活动词也保留透明 emoji run"
+            "the two words must keep the per-word emoji-then-body layer order, and inactive words keep a transparent emoji run"
         );
         assert_eq!(second_runs.len(), first_runs.len());
         assert!(first_runs[0].uniforms[0].color_opacity > 0.0);
@@ -6204,7 +6204,7 @@ mod tests {
         let next = first
             .scene
             .next_change
-            .expect("emoji pop 须报告下一 fps 样本");
+            .expect("emoji pop must report the next fps sample");
         assert!(next > 0.58 && next <= 0.58 + 1.0 / 30.0 + 1e-9, "{next}");
     }
 
@@ -6233,12 +6233,12 @@ mod tests {
         assert_eq!(
             runs.len(),
             3,
-            "editorial 两行正文须在用户 emoji 的逐词槽位前后切段"
+            "the two editorial body lines must split before and after the user emoji's per-word slot"
         );
         assert!(runs.iter().all(|run| !run.glyphs.is_empty()));
         assert!(
             runs[1].uniforms[0].color_opacity > 0.0,
-            "用户 emoji 覆盖必须在无 emojiPop channel 的已支持配方中真正可见"
+            "user emoji overrides must be truly visible in supported recipes without an emojiPop channel"
         );
     }
 
@@ -6258,7 +6258,7 @@ mod tests {
         for time in samples {
             let frame = plan.subtitle_scene_frame(time).unwrap();
             let [element_draw::SceneNode::Glyphs(run)] = frame.scene.nodes.as_slice() else {
-                panic!("matrix decode 必须只提交局部 glyph geometry，不能生成整幅位图")
+                panic!("matrix decode must submit only local glyph geometry, not a full-frame bitmap")
             };
             sampled.push((time, Arc::clone(&run.glyphs), frame.scene.next_change));
         }
@@ -6267,12 +6267,12 @@ mod tests {
             .skip(1)
             .find(|(_, geometry, _)| !Arc::ptr_eq(&sampled[0].1, geometry))
             .cloned()
-            .expect("scramble phase 变化必须切换替字 glyph geometry");
+            .expect("a scramble phase change must switch to the replacement glyph geometry");
         assert!(
             next_change.is_some_and(|next| {
                 next > changed_time && next <= changed_time + 1.0 / 30.0 + 1e-9
             }),
-            "替字动画必须继续在项目 fps 网格报告下一采样点: {next_change:?}"
+            "scramble animation must keep reporting the next sample point on the project fps grid: {next_change:?}"
         );
 
         let same_phase_time = changed_time + 0.001;
@@ -6282,7 +6282,7 @@ mod tests {
         };
         assert!(
             Arc::ptr_eq(&changed_geometry, &repeated.glyphs),
-            "不同采样时刻落在相同 scramble phase 时必须命中有界 Arc geometry cache"
+            "different sample times in the same scramble phase must hit the bounded Arc geometry cache"
         );
     }
 
@@ -6323,11 +6323,11 @@ mod tests {
         }
         let [element_draw::SceneNode::BlurredGroup(first_group)] = first.scene.nodes.as_slice()
         else {
-            panic!("glitch 必须先合成透明层，再整体 Screen")
+            panic!("glitch must first composite a transparent layer, then Screen the whole group")
         };
         let [element_draw::SceneNode::BlurredGroup(second_group)] = second.scene.nodes.as_slice()
         else {
-            panic!("glitch 后续帧仍须保持 Screen group")
+            panic!("later glitch frames must still keep the Screen group")
         };
         assert_eq!(
             first_group.composite,
@@ -6339,9 +6339,9 @@ mod tests {
         );
         let (first_rects, first_runs) = parts(&first_group.nodes);
         let (second_rects, second_runs) = parts(&second_group.nodes);
-        assert!(!first_rects.is_empty(), "scanline 必须由程序化 rect 表达");
+        assert!(!first_rects.is_empty(), "scanline must be expressed by procedural rects");
         assert_eq!(first_rects.len(), second_rects.len());
-        assert_eq!(first_runs.len(), 6, "两词各保留 red/cyan/main 三条 run");
+        assert_eq!(first_runs.len(), 6, "each of the two words keeps three runs: red/cyan/main");
         assert_eq!(first_runs.len(), second_runs.len());
         assert!(first_rects.iter().all(|rect| rect.radius == 0.0));
         assert!(first_runs.iter().all(|run| {
@@ -6370,7 +6370,7 @@ mod tests {
             node,
             element_draw::SceneNode::Vectors(_) | element_draw::SceneNode::AnimatedVectors { .. }
         )));
-        let next = first.scene.next_change.expect("glitch 须报告下一 fps 样本");
+        let next = first.scene.next_change.expect("glitch must report the next fps sample");
         assert!(next > 0.80 && next <= 0.80 + 1.0 / 30.0 + 1e-9, "{next}");
     }
 
@@ -6414,21 +6414,21 @@ mod tests {
         let [element_draw::SceneNode::BlurredGroup(transparent_group)] =
             transparent.scene.nodes.as_slice()
         else {
-            panic!("particle 透明首帧也必须保留 Screen group")
+            panic!("the transparent first particle frame must also keep the Screen group")
         };
         let transparent_rects = rects(&transparent_group.nodes);
         assert_eq!(transparent_rects.len(), 12);
         assert!(
             transparent_rects.iter().all(|rect| rect.color[3] == 0.0),
-            "burst 尚未开始时固定粒子槽必须只置透明"
+            "before the burst starts, the fixed particle slots must be transparent only"
         );
         let [element_draw::SceneNode::BlurredGroup(first_group)] = first.scene.nodes.as_slice()
         else {
-            panic!("particle 必须先合成透明层，再整体 Screen")
+            panic!("particle must first composite a transparent layer, then Screen the whole group")
         };
         let [element_draw::SceneNode::BlurredGroup(second_group)] = second.scene.nodes.as_slice()
         else {
-            panic!("particle 后续帧仍须保持 Screen group")
+            panic!("later particle frames must still keep the Screen group")
         };
         assert_eq!(
             first_group.composite,
@@ -6440,7 +6440,7 @@ mod tests {
         );
         let first_rects = rects(&first_group.nodes);
         let second_rects = rects(&second_group.nodes);
-        assert_eq!(first_rects.len(), 12, "只为 hero 词保留固定粒子槽");
+        assert_eq!(first_rects.len(), 12, "fixed particle slots are kept only for the hero word");
         assert_eq!(second_rects.len(), first_rects.len());
         assert!(
             first_rects.iter().all(|rect| {
@@ -6469,7 +6469,7 @@ mod tests {
         let next = first
             .scene
             .next_change
-            .expect("particle 须报告下一 fps 样本");
+            .expect("particle must report the next fps sample");
         assert!(next > 0.70 && next <= 0.70 + 1.0 / 30.0 + 1e-9, "{next}");
     }
 
@@ -6590,13 +6590,13 @@ mod tests {
         assert_eq!(
             plan.subtitle_scene_frame(1.0).unwrap_err(),
             SubtitleSceneFallback::CompositeMode,
-            "需要读取真实 backdrop 的 composite 不能绕过能力门"
+            "a composite that reads the real backdrop must not bypass the capability gate"
         );
         assert_eq!(plan.subtitle_scene_static_fallback_with_backdrop(), None);
         let target_scene = plan.subtitle_scene_frame_with_backdrop(1.0).unwrap();
         let [element_draw::SceneNode::BlurredGroup(group)] = target_scene.scene.nodes.as_slice()
         else {
-            panic!("backdrop-aware 字幕 scene 应把 target composite 保留在顶层 group")
+            panic!("a backdrop-aware subtitle scene should keep the target composite in the top-level group")
         };
         assert_eq!(
             group.composite,
@@ -6605,7 +6605,7 @@ mod tests {
         plan.compositor_scene_support().unwrap();
         let scene = plan.compositor_scene_frame(1.0).unwrap();
         let [element_draw::SceneNode::BlurredGroup(group)] = scene.nodes.as_slice() else {
-            panic!("离线 scene 应把 target-sampling 字幕收成顶层 group")
+            panic!("an offline scene should collapse target-sampling subtitles into a top-level group")
         };
         assert_eq!(
             group.composite,
@@ -6634,10 +6634,10 @@ mod tests {
         let first = plan.subtitle_scene_frame(0.58).unwrap();
         let second = plan.subtitle_scene_frame(0.62).unwrap();
         let [element_draw::SceneNode::Glyphs(first_run)] = first.scene.nodes.as_slice() else {
-            panic!("texture fill 必须由单层 retained glyph scene 表达")
+            panic!("texture fill must be expressed by a single retained glyph scene layer")
         };
         let [element_draw::SceneNode::Glyphs(second_run)] = second.scene.nodes.as_slice() else {
-            panic!("texture fill 后续采样仍必须是 glyph scene")
+            panic!("later texture fill samples must still be a glyph scene")
         };
         assert!(Arc::ptr_eq(&first_run.glyphs, &second_run.glyphs));
         assert!(
@@ -6661,7 +6661,7 @@ mod tests {
         let next = first
             .scene
             .next_change
-            .expect("texture recipe 须报告下一 fps 样本");
+            .expect("texture recipe must report the next fps sample");
         assert!(next > 0.58 && next <= 0.58 + 1.0 / 30.0 + 1e-9, "{next}");
     }
 
@@ -6681,11 +6681,11 @@ mod tests {
         let later = plan.subtitle_scene_frame(0.62).unwrap();
         let [element_draw::SceneNode::BlurredGroup(first_group)] = first.scene.nodes.as_slice()
         else {
-            panic!("Screen 字幕必须使用组级 composite")
+            panic!("Screen subtitles must use a group-level composite")
         };
         let [element_draw::SceneNode::BlurredGroup(later_group)] = later.scene.nodes.as_slice()
         else {
-            panic!("Screen 字幕后续帧必须保持组级 composite")
+            panic!("later Screen subtitle frames must keep the group-level composite")
         };
         assert_eq!(
             first_group.composite,
@@ -6725,7 +6725,7 @@ mod tests {
         assert_eq!(
             with_vector_plate.subtitle_scene_frame(0.58).unwrap_err(),
             SubtitleSceneFallback::CompositeMode,
-            "Screen 只在整张字幕层均可由 retained scene 精确表达时准入"
+            "Screen is admitted only when the whole subtitle layer can be expressed exactly by a retained scene"
         );
         source["style"]["background"] = json!(false);
 
@@ -6735,7 +6735,7 @@ mod tests {
         assert_eq!(
             exclusion.subtitle_scene_frame(0.58).unwrap_err(),
             SubtitleSceneFallback::CompositeMode,
-            "exclusion 仍需采样真实 target，不能伪装成固定混合"
+            "exclusion still needs to sample the real target and must not pose as a fixed blend"
         );
     }
 
@@ -6816,11 +6816,11 @@ mod tests {
         let (right_r, right_g, _) = sample(240, 90);
         assert!(
             left_r > left_g,
-            "没带覆盖表的贴纸必须保持原色（偏橙），实测 {left_r},{left_g}"
+            "a sticker without an override table must keep its original colour (orange-ish), measured {left_r},{left_g}"
         );
         assert!(
             right_g > right_r,
-            "带 fillOverrides 的贴纸必须换成绿色，实测 {right_r},{right_g}"
+            "a sticker with fillOverrides must turn green, measured {right_r},{right_g}"
         );
 
         // The GPU compositing path fetches frames through another route (`compositor_media_nodes`), and it must get the same recoloured image, otherwise preview and export would diverge on recolouring.
@@ -6834,7 +6834,7 @@ mod tests {
             .unwrap();
         assert!(
             center.green() > center.red(),
-            "GPU 纹理也必须是换色后的绿，实测 {},{}",
+            "the GPU texture must also be the recoloured green, measured {},{}",
             center.red(),
             center.green()
         );
@@ -6896,23 +6896,23 @@ mod tests {
         let (right_r, right_g, right_b, right_a) = sample(240, 160);
         assert!(
             left_a > 200,
-            "Lottie 贴纸中心必须有像素，实测 alpha {left_a}"
+            "the Lottie sticker centre must have pixels, measured alpha {left_a}"
         );
         assert!(
             left_b > left_g && left_b > left_r,
-            "没带覆盖表的 Lottie 必须保持原色（偏蓝），实测 {left_r},{left_g},{left_b}"
+            "a Lottie without an override table must keep its original colour (bluish), measured {left_r},{left_g},{left_b}"
         );
         assert!(
             right_a > 200,
-            "换色 Lottie 贴纸中心必须有像素，实测 alpha {right_a}"
+            "the recoloured Lottie sticker centre must have pixels, measured alpha {right_a}"
         );
         assert!(
             right_g > right_b && right_g > right_r,
-            "带 fillOverrides 的 Lottie 必须换成绿色，实测 {right_r},{right_g},{right_b}"
+            "a Lottie with fillOverrides must turn green, measured {right_r},{right_g},{right_b}"
         );
         // Outside the circle (the corners of the frame) must be transparent. This shows it was rasterised at the material's native 200×200 size and was not stretched into a square.
         let (_, _, _, corner_a) = sample(16, 16);
-        assert_eq!(corner_a, 0, "Lottie 贴纸的圆外区域必须透明");
+        assert_eq!(corner_a, 0, "the area outside the circle of the Lottie sticker must be transparent");
 
         plan.compositor_scene_support().unwrap();
         plan.compositor_scene_frame(3.5).unwrap();
@@ -6926,7 +6926,7 @@ mod tests {
         assert_eq!((texture.width(), texture.height()), (128, 128));
         assert!(
             center.green() > center.blue(),
-            "GPU 纹理也必须是换色后的绿，实测 {},{},{}",
+            "the GPU texture must also be the recoloured green, measured {},{},{}",
             center.red(),
             center.green(),
             center.blue()
@@ -6978,7 +6978,7 @@ mod tests {
         ] = scene.nodes.as_slice()
         else {
             panic!(
-                "image 与 asset sticker 必须保持两条独立 TextureNode：{:?}",
+                "image and asset sticker must stay two separate TextureNodes: {:?}",
                 scene.nodes
             )
         };
@@ -6990,7 +6990,7 @@ mod tests {
         assert_eq!(node.background, element_draw::TextureBackground::Blur);
         assert_eq!(sticker.texture, "timeline-media:sticker-1");
         assert_eq!(sticker.media_ms, -1);
-        assert_ne!(node.texture, sticker.texture, "同源元素不得争用纹理槽");
+        assert_ne!(node.texture, sticker.texture, "elements from the same source must not compete for a texture slot");
         let pixels = plan
             .compositor_texture_frame(&node.texture, node.media_ms)
             .unwrap();
@@ -7099,8 +7099,8 @@ mod tests {
                 scene_node_shapes(&full.nodes),
                 "t={time}"
             );
-            assert_ne!(full.fingerprint, 0, "t={time}：Full 必须真算出身份");
-            assert_eq!(skipped.fingerprint, 0, "t={time}：Skip 的身份必须归零");
+            assert_ne!(full.fingerprint, 0, "t={time}: Full must really compute identity");
+            assert_eq!(skipped.fingerprint, 0, "t={time}: Skip identity must be zero");
         }
     }
 
@@ -7156,14 +7156,14 @@ mod tests {
             );
             assert_ne!(
                 structural.fingerprint, 0,
-                "t={time}：Structural 必须真算出身份"
+                "t={time}: Structural must really compute identity"
             );
             let again = plan
                 .compositor_scene_frame_with(time, SceneIdentity::Structural)
                 .unwrap();
             assert_eq!(
                 again.fingerprint, structural.fingerprint,
-                "t={time}：同一时刻身份必须稳定"
+                "t={time}: identity at the same instant must be stable"
             );
             structural_at.push(structural.fingerprint);
         }
@@ -7177,7 +7177,7 @@ mod tests {
             .unwrap();
         assert_ne!(
             moved.fingerprint, structural_at[0],
-            "元素几何变了，结构身份必须跟着变"
+            "element geometry changed, so structural identity must change with it"
         );
     }
 
@@ -7213,11 +7213,11 @@ mod tests {
 
         let animated = plan.compositor_scene_frame(0.1).unwrap();
         let [element_draw::SceneNode::BlurredGroup(group)] = animated.nodes.as_slice() else {
-            panic!("blurIn 的活动窗口必须冻结成整元素 BlurredGroup")
+            panic!("blurIn's active window must freeze into a whole-element BlurredGroup")
         };
         assert!(group.radius > 0.0);
         let [element_draw::SceneNode::Texture(node)] = group.nodes.as_slice() else {
-            panic!("动画组必须保留外部纹理子节点")
+            panic!("the animation group must keep the external texture child node")
         };
         assert_eq!(node.texture, "timeline-media:animated-image");
         assert_eq!(node.reveal, 1.0);
@@ -7226,7 +7226,7 @@ mod tests {
 
         let settled = plan.compositor_scene_frame(1.0).unwrap();
         let [element_draw::SceneNode::Texture(node)] = settled.nodes.as_slice() else {
-            panic!("blurIn 结束后不应保留空的中间 pass")
+            panic!("no empty intermediate pass should remain after blurIn ends")
         };
         assert_eq!(node.reveal, 1.0);
         assert_ne!(animated.fingerprint, settled.fingerprint);
@@ -7272,7 +7272,7 @@ mod tests {
             .iter()
             .map(|node| match node {
                 element_draw::SceneNode::Texture(node) => node,
-                other => panic!("tile 只能展开为 TextureNode：{other:?}"),
+                other => panic!("tile can only expand into a TextureNode: {other:?}"),
             })
             .collect::<Vec<_>>();
         assert!(
@@ -7310,7 +7310,7 @@ mod tests {
         plan.compositor_scene_support().unwrap();
         let scene = plan.compositor_scene_frame(1.0).unwrap();
         let Some(element_draw::SceneNode::Texture(node)) = scene.nodes.last() else {
-            panic!("template chrome 必须成为最末一条 TextureNode")
+            panic!("template chrome must become the last TextureNode")
         };
         assert_eq!(node.texture, format!("template-chrome:{fingerprint:016x}"));
         assert_eq!(node.rect, [0.0, 0.0, 320.0, 180.0]);
@@ -7467,7 +7467,7 @@ mod tests {
 
         let early = plan.compositor_scene_frame(0.5).unwrap();
         let [element_draw::SceneNode::Texture(node)] = early.nodes.as_slice() else {
-            panic!("白板件应成为唯一一条 TextureNode：{:?}", early.nodes.len())
+            panic!("the whiteboard piece should become the only TextureNode: {:?}", early.nodes.len())
         };
         assert_eq!(node.texture, "whiteboard:wb");
         assert_eq!(node.rect, [32.0, 26.0, 256.0, 128.0]);
@@ -7480,29 +7480,29 @@ mod tests {
         assert_eq!(
             ccut_subtitle_render_count_reddish(pixels.data()),
             0,
-            "前段只有墨线"
+            "the early part only has ink strokes"
         );
         assert_eq!(
             early.next_change,
             Some(16.0 / 30.0),
-            "画时内逐帧揭示，下一帧就要重采样"
+            "revealed frame by frame during drawing, so the next frame must resample"
         );
 
         let held = plan.compositor_scene_frame(3.0).unwrap();
         let [element_draw::SceneNode::Texture(node)] = held.nodes.as_slice() else {
-            panic!("hold 段仍是一条 TextureNode")
+            panic!("the hold segment must still be one TextureNode")
         };
-        assert_eq!(held.next_change, Some(4.0), "draw 后应直接复用到元素末尾");
+        assert_eq!(held.next_change, Some(4.0), "after draw it should be reused directly to the end of the element");
         let pixels = plan
             .compositor_texture_frame(&node.texture, node.media_ms)
             .unwrap();
         assert!(
             ccut_subtitle_render_count_reddish(pixels.data()) > 1000,
-            "hold 段红块完整"
+            "the red block is complete in the hold segment"
         );
         assert_ne!(
             early.fingerprint, held.fingerprint,
-            "不同采样钟的场景指纹不同"
+            "scene fingerprints differ for different sampling clocks"
         );
         let structural = plan
             .compositor_scene_frame_with(3.0, SceneIdentity::Structural)
@@ -7526,12 +7526,12 @@ mod tests {
 
         let early = plan.compositor_scene_frame(0.5).unwrap();
         let [element_draw::SceneNode::Texture(node)] = early.nodes.as_slice() else {
-            panic!("白板件应成为唯一一条 TextureNode")
+            panic!("the whiteboard piece should become the only TextureNode")
         };
         assert_eq!(
             (node.source_width, node.source_height),
             (128, 64),
-            "纹理按元素盒的像素出，不按源图的 240×120"
+            "the texture is produced at the element box's pixel size, not the source image's 240×120"
         );
         let pixels = plan
             .compositor_texture_frame(&node.texture, node.media_ms)
@@ -7540,20 +7540,20 @@ mod tests {
         assert_eq!(
             ccut_subtitle_render_count_reddish(pixels.data()),
             0,
-            "缩过之后前段照旧只有墨线"
+            "after scaling down, the early part still only has ink strokes"
         );
 
         // The reveal progresses as usual: after `draw`, the red block must appear in full (scaled by area, roughly 1/3.5).
         let held = plan.compositor_scene_frame(3.0).unwrap();
         let [element_draw::SceneNode::Texture(node)] = held.nodes.as_slice() else {
-            panic!("hold 段仍是一条 TextureNode")
+            panic!("the hold segment must still be one TextureNode")
         };
         let pixels = plan
             .compositor_texture_frame(&node.texture, node.media_ms)
             .unwrap();
         assert!(
             ccut_subtitle_render_count_reddish(pixels.data()) > 250,
-            "hold 段红块完整，实测 {}",
+            "the red block is complete in the hold segment, measured {}",
             ccut_subtitle_render_count_reddish(pixels.data())
         );
     }
@@ -7577,14 +7577,14 @@ mod tests {
         let red_early = ccut_subtitle_render_count_reddish(&early.rgba);
         let red_mid = ccut_subtitle_render_count_reddish(&mid.rgba);
         let red_held = ccut_subtitle_render_count_reddish(&held.rgba);
-        assert_eq!(red_start, 0, "t=0 什么都还没画");
-        assert_eq!(red_early, 0, "墨先于色：draw 的前段只画黑线，红块还没开始");
+        assert_eq!(red_start, 0, "nothing is drawn yet at t=0");
+        assert_eq!(red_early, 0, "ink before colour: the early part of draw only paints black lines, the red block has not started");
         assert!(
             red_mid > 0 && red_mid < red_held,
-            "中段红块画了一部分：{red_mid} / {red_held}"
+            "the red block is partly drawn in the middle: {red_mid} / {red_held}"
         );
-        assert!(red_held > 1000, "hold 段红块完整：{red_held}");
-        assert_ne!(start.rgba, early.rgba, "前段应已经出现墨线");
+        assert!(red_held > 1000, "the red block is complete in the hold segment: {red_held}");
+        assert_ne!(start.rgba, early.rgba, "ink strokes should already appear in the early part");
 
         // The hold section is pixel-identical to the same-source image piece: the whiteboard does not change geometry, mask or compositing.
         let mut as_image = source.clone();
@@ -7609,7 +7609,7 @@ mod tests {
         assert_eq!(shuffled.render_rgba_frame(1.7).unwrap().rgba, mid.rgba);
         assert_eq!(shuffled.render_rgba_frame(0.5).unwrap().rgba, early.rgba);
         assert_eq!(shuffled.render_rgba_frame(0.0).unwrap().rgba, start.rgba);
-        assert_eq!(plan.whiteboard_cache.len(), 1, "同一源同一参数只分析一次");
+        assert_eq!(plan.whiteboard_cache.len(), 1, "the same source with the same parameters is analysed only once");
     }
 
     /// `beats` changes the reveal order. Pin the red block to 0 seconds and the ink line to a later time, and red should appear first in the front section.
@@ -7632,7 +7632,7 @@ mod tests {
         let early = plan.render_rgba_frame(0.5).unwrap();
         assert!(
             ccut_subtitle_render_count_reddish(&early.rgba) > 0,
-            "beats 把红块排到第一拍，前段就应看见红"
+            "beats put the red block on the first beat, so red should be visible in the early part"
         );
     }
 
@@ -7667,10 +7667,10 @@ mod tests {
             "neon-streamers",
         )));
         let swapped = plan.render_rgba_frame(1.0).unwrap();
-        assert_eq!(plan.elements.len(), elements_before, "就地补丁不新增元素");
+        assert_eq!(plan.elements.len(), elements_before, "an in-place patch adds no elements");
         assert_ne!(
             swapped.draw_op_fingerprint, base.draw_op_fingerprint,
-            "换款要真的改到 draw ops，否则宿主的同指纹去重会把预览帧吞掉"
+            "a style change must really change the draw ops, otherwise the host's same-fingerprint dedupe would swallow the preview frame"
         );
 
         // Switching twice in a row: the second style must start from the **original recipe**, not from the first style.
@@ -7686,7 +7686,7 @@ mod tests {
         assert_eq!(plan.elements.len(), elements_before);
         assert_eq!(
             restored.draw_op_fingerprint, base.draw_op_fingerprint,
-            "撤回要回到原配方——计划里存着原值，不必重编译"
+            "undo must return to the original recipe; the plan stores the original value, so no recompile is needed"
         );
         assert_eq!(restored.rgba, base.rgba);
     }
@@ -7709,16 +7709,16 @@ mod tests {
         ghost.window = (0.0, 6.0);
         plan.set_confetti_peek(Some(ghost));
         let with_ghost = plan.render_rgba_frame(1.0).unwrap();
-        assert_eq!(plan.elements.len(), elements_before + 1, "幽灵件补在末尾");
+        assert_eq!(plan.elements.len(), elements_before + 1, "the ghost piece is appended at the end");
         assert_eq!(
             plan.elements.last().map(|e| e.id.as_str()),
             Some("__confetti_peek__")
         );
-        assert_ne!(with_ghost.rgba, base.rgba, "幽灵件必须真的画出来");
+        assert_ne!(with_ghost.rgba, base.rgba, "the ghost piece must really be drawn");
 
         plan.set_confetti_peek(None);
         let cleared = plan.render_rgba_frame(1.0).unwrap();
-        assert_eq!(plan.elements.len(), elements_before, "撤回整件摘掉");
+        assert_eq!(plan.elements.len(), elements_before, "undo removes the whole piece");
         assert_eq!(cleared.rgba, base.rgba);
     }
 
@@ -7742,12 +7742,12 @@ mod tests {
         assert_ne!(
             plan.compositor_scene_frame(1.0).unwrap().fingerprint,
             at_start,
-            "GPU 合成路径没认本地钟：舞台上看不到试穿"
+            "the GPU composite path does not recognise the local clock: the try-on is not visible on stage"
         );
         assert_ne!(
             plan.render_rgba_frame(1.0).unwrap().draw_op_fingerprint,
             cpu_at_start,
-            "CPU overlay 路径也得认本地钟"
+            "the CPU overlay path must also recognise the local clock"
         );
 
         // Undoing the local clock returns to the playhead; both paths must return to their original state.
@@ -7780,10 +7780,10 @@ mod tests {
         // Advance the local clock by 1 second: the clock being honoured is what produces particles. If it were not honoured, the ghost would stay stuck at the window start.
         plan.set_element_sample_time(Some(("__confetti_peek__".to_owned(), 2.0)));
         let running = plan.compositor_scene_frame(1.0).unwrap().fingerprint;
-        assert_ne!(running, bare, "幽灵件没进 GPU 合成场景：舞台上什么都没有");
+        assert_ne!(running, bare, "the ghost piece is not in the GPU composite scene: nothing on stage");
         assert_ne!(
             running, at_local_zero,
-            "幽灵件停在局部 0 秒：一颗粒子都没发射出来"
+            "the ghost piece is stuck at local 0 seconds: not a single particle has been emitted"
         );
 
         // Undoing the try-on must leave not a single pixel behind.
@@ -7814,7 +7814,7 @@ mod tests {
         let repeat = plan.compositor_scene_frame(1.0).unwrap().fingerprint;
         assert_eq!(
             base, repeat,
-            "同一份计划的同一时刻必须稳定复现身份，去重守卫才成立"
+            "the same plan at the same instant must reproduce the same identity, or the dedupe guard does not hold"
         );
 
         // This is how `apply_element_preview` in `apps/cuccut` does it: it writes only Place.
@@ -7841,12 +7841,12 @@ mod tests {
                 .elements
                 .iter_mut()
                 .find(|element| element.id == "title")
-                .expect("投影后的文本元素");
+                .expect("text element after projection");
             patch(&mut element.place);
             let after = moved.compositor_scene_frame(1.0).unwrap().fingerprint;
             assert_ne!(
                 base, after,
-                "内存改 place.{field} 后 SceneFrame 身份必须变化"
+                "changing place.{field} in memory must change the SceneFrame identity"
             );
         }
     }
@@ -8090,10 +8090,10 @@ mod tests {
         .unwrap();
         let rows = contract["trackSet"]["resolve"]
             .as_array()
-            .expect("夹具缺 trackSet.resolve");
+            .expect("fixture is missing trackSet.resolve");
         assert!(!rows.is_empty());
         for row in rows {
-            let case = row["description"].as_str().unwrap_or("<无描述>");
+            let case = row["description"].as_str().unwrap_or("<no description>");
             let tracks = resolve_track_set(&row["style"]);
             assert_eq!(tracks_json(&tracks), row["expected"]["tracks"], "{case}");
             assert_eq!(
@@ -8151,15 +8151,15 @@ mod tests {
         let edited = preview_document_from_shared(project, shared).unwrap();
         assert_eq!(
             edited["cues"][0]["text"], "Edited",
-            "共享路径必须叠上 edits"
+            "the shared path must apply edits on top"
         );
-        assert_eq!(keep["cues"][0]["text"], "Hello", "缓存里的那份不能被改写");
+        assert_eq!(keep["cues"][0]["text"], "Hello", "the cached copy must not be rewritten");
 
         let unique = std::sync::Arc::new(base);
         let edited = preview_document_from_shared(project, unique).unwrap();
         assert_eq!(
             edited["cues"][0]["text"], "Edited",
-            "独占路径同样叠上 edits"
+            "the exclusive path also applies edits on top"
         );
     }
 
@@ -8175,22 +8175,22 @@ mod tests {
         });
         apply_live_cues(&mut document, &[(0.0, 1.5, "第一句"), (1.5, 3.0, "第二句")]);
         let cues = document["cues"].as_array().unwrap();
-        assert_eq!(cues.len(), 2, "cue 流换成实时段");
+        assert_eq!(cues.len(), 2, "the cue stream is replaced with live segments");
         assert_eq!(cues[0]["text"], "第一句");
         assert_eq!(cues[0]["start"], 0.0);
         assert_eq!(cues[1]["end"], 3.0);
-        assert_ne!(cues[0]["id"], cues[1]["id"], "id 必须互不相同");
+        assert_ne!(cues[0]["id"], cues[1]["id"], "ids must be distinct");
         assert!(
             document["sentences"].as_array().unwrap().is_empty(),
-            "实时段没有句子轴，旧稿的词 id 不能留下来"
+            "live segments have no sentence axis, so the old draft's word ids must not survive"
         );
         assert!(
             document["transCues"].as_array().unwrap().is_empty(),
-            "实时段没有译文轴"
+            "live segments have no translation axis"
         );
         assert!(
             document["timeline"].is_object(),
-            "timeline 不能被动——主视频作为元素住在里面"
+            "the timeline must not be passive: the main video lives in it as an element"
         );
     }
 
@@ -8253,11 +8253,11 @@ mod tests {
         assert_eq!(
             plan.subtitle_scene_frame(1.0).err(),
             Some(SubtitleSceneFallback::WordAnimation),
-            "动效 cue 活动的帧仍要让 Web 回退字幕层"
+            "frames where a motion cue is active must still let the Web fall back to the subtitle layer"
         );
         let plain = plan
             .subtitle_scene_frame(3.0)
-            .expect("撤掉动效的 cue 必须照常进 glyph scene");
+            .expect("a cue with its motion removed must still enter the glyph scene");
         assert!(!plain.scene.nodes.is_empty());
 
         let mut slots = Vec::new();
@@ -8266,17 +8266,17 @@ mod tests {
                 .compositor_scene_frame_with(time, SceneIdentity::Structural)
                 .unwrap();
             let [element_draw::SceneNode::Texture(node)] = scene.nodes.as_slice() else {
-                panic!("动效帧的字幕层必须是一张纹理节点：{:?}", scene.nodes.len())
+                panic!("the subtitle layer of a motion frame must be one texture node: {:?}", scene.nodes.len())
             };
             assert!(node.texture.starts_with("subtitle-motion:"));
             assert_eq!(node.transform, [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
             assert_eq!(
                 (node.rect[2] as u32, node.rect[3] as u32),
                 (node.source_width, node.source_height),
-                "纹理必须 1:1 落在整数矩形上"
+                "the texture must land 1:1 on an integer rectangle"
             );
             assert!(node.rect.iter().all(|value| value.fract() == 0.0));
-            let next = scene.next_change.expect("动效帧必须声明下一帧边界");
+            let next = scene.next_change.expect("a motion frame must declare the next frame boundary");
             assert!(next > time && next <= time + 1.0 / 30.0 + 1e-9, "{next}");
             let texture = plan
                 .compositor_texture_frame(&node.texture, node.media_ms)
@@ -8285,18 +8285,18 @@ mod tests {
             assert_eq!(
                 texture.data(),
                 crop_rgba(&reference.rgba, 320, node.rect).as_slice(),
-                "纹理必须逐字节等于 CPU 字幕层的子矩形"
+                "the texture must be byte-identical to the sub-rectangle of the CPU subtitle layer"
             );
             let [x, y, w, h] = node.rect.map(|value| value as usize);
             for (index, pixel) in reference.rgba.chunks_exact(4).enumerate() {
                 let (px, py) = (index % 320, index / 320);
                 if px < x || px >= x + w || py < y || py >= y + h {
-                    assert_eq!(pixel[3], 0, "纹理窗外不得有字幕像素 ({px},{py})");
+                    assert_eq!(pixel[3], 0, "there must be no subtitle pixels outside the texture window ({px},{py})");
                 }
             }
             slots.push(node.texture.clone());
         }
-        assert_eq!(slots[0], slots[1], "字幕动效纹理槽必须跨帧稳定");
+        assert_eq!(slots[0], slots[1], "subtitle motion texture slots must be stable across frames");
 
         let plain_scene = plan
             .compositor_scene_frame_with(3.0, SceneIdentity::Structural)
@@ -8307,7 +8307,7 @@ mod tests {
                 .nodes
                 .iter()
                 .all(|node| !matches!(node, element_draw::SceneNode::Texture(_))),
-            "没有动效 cue 活动的帧走 glyph scene"
+            "frames with no active motion cue use the glyph scene"
         );
     }
 
@@ -8348,7 +8348,7 @@ mod tests {
                 .compositor_scene_frame_with(time, SceneIdentity::Structural)
                 .unwrap();
             let [element_draw::SceneNode::Texture(node)] = scene.nodes.as_slice() else {
-                panic!("文字动效元素必须是一张纹理节点")
+                panic!("the text motion element must be one texture node")
             };
             let texture = plan
                 .compositor_texture_frame(&node.texture, node.media_ms)
@@ -8359,15 +8359,15 @@ mod tests {
         };
         let (moving_a, next_a, _) = frame(0.1);
         let (moving_b, _, _) = frame(0.3);
-        assert_ne!(moving_a, moving_b, "入场中逐帧是不同的身份");
+        assert_ne!(moving_a, moving_b, "during entrance, each frame has a different identity");
         assert!(next_a.is_some_and(|next| next <= 0.1 + 1.0 / 30.0 + 1e-9));
         let (still_a, next_still_a, pixels_a) = frame(1.0);
         let (still_b, next_still_b, pixels_b) = frame(2.0);
-        assert_eq!(still_a, still_b, "静止段整段同一个 Structural 身份");
-        assert_eq!(pixels_a, pixels_b, "同一身份必须真是同一张图");
+        assert_eq!(still_a, still_b, "the still segment has one Structural identity throughout");
+        assert_eq!(pixels_a, pixels_b, "the same identity must really be the same image");
         for next in [next_still_a, next_still_b] {
-            let next = next.expect("静止段仍要给出元素 end");
-            assert!((next - 3.0).abs() < 1e-9, "静止段直接跳到 end：{next}");
+            let next = next.expect("the still segment must still give the element end");
+            assert!((next - 3.0).abs() < 1e-9, "the still segment jumps straight to end: {next}");
         }
     }
 
@@ -8382,16 +8382,16 @@ mod tests {
                 .compositor_scene_frame_with(time, SceneIdentity::Full)
                 .unwrap();
             let [element_draw::SceneNode::Texture(node)] = scene.nodes.as_slice() else {
-                panic!("文字动效元素必须是一张纹理节点")
+                panic!("the text motion element must be one texture node")
             };
             assert_eq!(node.texture, "text-motion:title");
-            let next = scene.next_change.expect("文字动效元素必须给出下一个边界");
+            let next = scene.next_change.expect("the text motion element must give the next boundary");
             if time < 0.6 {
                 assert!(next > time && next <= time + 1.0 / 30.0 + 1e-9, "{next}");
             } else {
                 assert!(
                     (next - 3.0).abs() < 1e-9,
-                    "落定后没有退场，直接跳到 end：{next}"
+                    "no exit after settling, jumps straight to end: {next}"
                 );
             }
             let texture = plan
@@ -8405,6 +8405,6 @@ mod tests {
             );
             pixels.push(reference.data().to_vec());
         }
-        assert_ne!(pixels[0], pixels[1], "入场中与落定后必须是两张图");
+        assert_ne!(pixels[0], pixels[1], "during entrance and after settling there must be two images");
     }
 }

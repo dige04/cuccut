@@ -24,10 +24,10 @@ pub struct Bcw1Info {
 /// Peak sequence → BCW1 bytes.
 pub fn encode(peaks: &[f32]) -> Result<Vec<u8>> {
     if peaks.is_empty() {
-        bail!("媒体没有音频轨");
+        bail!("media has no audio track");
     }
     let Ok(bin_count) = u32::try_from(peaks.len()) else {
-        bail!("波形 bin 数超过 BCW1 上限");
+        bail!("waveform bin count exceeds the BCW1 limit");
     };
     let mut sorted = peaks.to_vec();
     sorted.sort_by(f32::total_cmp);
@@ -48,18 +48,18 @@ pub fn encode(peaks: &[f32]) -> Result<Vec<u8>> {
 /// BCW1 bytes → header view. The payload length must match `binCount`.
 pub fn parse(bytes: &[u8]) -> Result<Bcw1Info> {
     if bytes.len() < HEADER_LEN || &bytes[..4] != FORMAT.as_bytes() {
-        bail!("波形不是 BCW1 格式");
+        bail!("waveform is not in BCW1 format");
     }
     let bins_per_second = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
     let bin_count = u32::from_le_bytes(bytes[8..12].try_into().unwrap());
     if bins_per_second == 0 {
-        bail!("BCW1 binsPerSecond 必须大于 0");
+        bail!("BCW1 binsPerSecond must be greater than 0");
     }
     if bin_count == 0 {
-        bail!("BCW1 binCount 必须大于 0");
+        bail!("BCW1 binCount must be greater than 0");
     }
     if usize::try_from(bin_count).ok() != Some(bytes.len() - HEADER_LEN) {
-        bail!("BCW1 binCount 与 payload 长度不一致");
+        bail!("BCW1 binCount does not match payload length");
     }
     Ok(Bcw1Info {
         bins_per_second,

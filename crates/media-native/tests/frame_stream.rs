@@ -20,13 +20,13 @@ use common::{
 
 /// Drains the whole stream and returns every frame.
 fn drain(media: &std::path::Path, from: f64, fps: f64) -> Vec<media_native::RgbaFrame> {
-    let mut stream = open_frame_stream(media, from, fps).expect("原生顺序帧流");
+    let mut stream = open_frame_stream(media, from, fps).expect("native sequential frame stream");
     assert_eq!((stream.width(), stream.height()), (WIDTH, HEIGHT));
     let mut frames = Vec::new();
     // Upper-bound guard: the fixture is only 3 seconds long, so no fps should produce this many frames.
-    while let Some(frame) = stream.next_frame().expect("解码") {
+    while let Some(frame) = stream.next_frame().expect("decode") {
         frames.push(frame);
-        assert!(frames.len() < 10_000, "帧流没有结束（EOF 语义坏了）");
+        assert!(frames.len() < 10_000, "frame stream did not end (EOF semantics broken)");
     }
     frames
 }
@@ -46,7 +46,7 @@ fn the_output_frame_count_follows_the_composition_frame_rate() {
         assert_eq!(
             frames.len(),
             (total * fps) as usize,
-            "{fps}fps 下 {total} 秒素材应有 {} 帧",
+            "at {fps}fps, {total} s of material should yield {} frames",
             (total * fps) as usize
         );
         // The frame count is aligned with ffmpeg `-r` **within the tail tolerance**. At the tail, ffmpeg emits one or two extra frames according to its own CFR padding rules (measured 47 frames at 15 fps and 180 frames at 60 fps), whereas here the stream stops strictly at the right end of the last frame's presentation interval. Downstream, `ccut-render`'s `VideoReader` **freezes the last frame** on EOF, and those one or two extra frames are byte-identical to the frozen picture, so the difference is not observable. Hard-coding the exact numbers would instead turn ffmpeg version differences into fragility in this repo's tests.
@@ -55,7 +55,7 @@ fn the_output_frame_count_follows_the_composition_frame_rate() {
         };
         assert!(
             reference.len().abs_diff(frames.len()) <= 2,
-            "{fps}fps 下原生 {} 帧与 ffmpeg {} 帧相差超过片尾容差",
+            "at {fps}fps, native {} frames and ffmpeg {} frames differ by more than the end-of-clip tolerance",
             frames.len(),
             reference.len()
         );
@@ -79,7 +79,7 @@ fn resampled_frames_keep_their_segment_colour() {
             assert_eq!(
                 dominant(&frames[index]),
                 expected,
-                "{fps}fps 的第 {index} 帧应落在 {expected} 段"
+                "at {fps}fps, frame {index} should fall in the {expected} segment"
             );
         }
     }
@@ -101,12 +101,12 @@ fn the_stream_starts_on_the_frame_that_covers_the_requested_time() {
         assert_eq!(
             dominant(&frames[0]),
             expected,
-            "from={from} 的首帧应是 {expected}"
+            "the first frame for from={from} should be {expected}"
         );
         assert_eq!(
             frames.len(),
             (remaining_segments * SOURCE_FPS) as usize,
-            "from={from} 之后还剩 {remaining_segments} 秒"
+            "{remaining_segments} s remain after from={from}"
         );
     }
 }
@@ -122,8 +122,8 @@ fn frames_do_not_bleed_across_a_segment_boundary() {
     };
     let frames = drain(&media, 0.0, SOURCE_FPS);
     let boundary = (SEGMENT * SOURCE_FPS) as usize;
-    assert_eq!(dominant(&frames[boundary - 1]), "red", "红段最后一帧");
-    assert_eq!(dominant(&frames[boundary]), "green", "绿段第一帧");
+    assert_eq!(dominant(&frames[boundary - 1]), "red", "last frame of the red segment");
+    assert_eq!(dominant(&frames[boundary]), "green", "first frame of the green segment");
 }
 
 /// Cross-backend comparison: SSIM between the native frame and the ffmpeg frame at the same output frame number.
@@ -142,7 +142,7 @@ fn native_frames_match_the_ffmpeg_fallback_within_the_cross_backend_tolerance() 
     let Some(reference) = ffmpeg_frame_stream(&media, 0.0, SOURCE_FPS) else {
         return;
     };
-    assert_eq!(frames.len(), reference.len(), "两条路径的帧数必须一致");
+    assert_eq!(frames.len(), reference.len(), "both paths must produce the same number of frames");
     // Take the middle frame of each segment, plus one frame before and after each boundary.
     let probes = [
         15_usize,
@@ -156,11 +156,11 @@ fn native_frames_match_the_ffmpeg_fallback_within_the_cross_backend_tolerance() 
     ];
     for index in probes {
         let measured = imgcmp::compare(&to_pixmap(&frames[index]), &to_pixmap(&reference[index]))
-            .expect("尺寸一致");
+            .expect("sizes match");
         assert!(
             measured.ssim_downsampled >= SSIM_FLOOR,
-            "第 {index} 帧跨后端 SSIM（4× 降采样）{:.4} 低于 {SSIM_FLOOR}\
-             （后端 {} ↔ ffmpeg，全分辨率 ssim={:.4}，逐通道最大偏差 {}，平坦区最大偏差 {}）",
+            "frame {index} cross-backend SSIM (4× downsampled) {:.4} is below {SSIM_FLOOR} \
+             (backend {} vs ffmpeg, full-resolution ssim={:.4}, per-channel max deviation {}, flat-region max deviation {})",
             measured.ssim_downsampled,
             media_native::backend(),
             measured.ssim,
@@ -168,7 +168,7 @@ fn native_frames_match_the_ffmpeg_fallback_within_the_cross_backend_tolerance() 
             measured.flat_max_deviation,
         );
         println!(
-            "帧 {index} ssim={:.4} ssim_downsampled={:.4} max={} flat={} edge={:.3}%",
+            "frame {index} ssim={:.4} ssim_downsampled={:.4} max={} flat={} edge={:.3}%",
             measured.ssim,
             measured.ssim_downsampled,
             measured.max_deviation,

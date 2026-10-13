@@ -395,19 +395,19 @@ mod tests {
 
     fn assert_digest(got: &[f32], want: &serde_json::Value, what: &str) {
         let ints: Vec<i64> = got.iter().map(|&x| (x * 32_768.0).round() as i64).collect();
-        assert_eq!(ints.len() as u64, want["len"].as_u64().unwrap(), "{what} 长度");
+        assert_eq!(ints.len() as u64, want["len"].as_u64().unwrap(), "{what} length");
         let sum: i64 = ints.iter().sum();
         let wsum: i128 = ints.iter().enumerate().map(|(i, &v)| (i as i128 + 1) * i128::from(v)).sum();
-        assert_eq!(sum, want["sum"].as_i64().unwrap(), "{what} 和");
-        assert_eq!(wsum.to_string(), want["wsum"].to_string(), "{what} 加权和");
+        assert_eq!(sum, want["sum"].as_i64().unwrap(), "{what} sum");
+        assert_eq!(wsum.to_string(), want["wsum"].to_string(), "{what} weighted sum");
         let head: Vec<i64> = want["head"].as_array().unwrap().iter().map(|v| v.as_i64().unwrap()).collect();
         let tail: Vec<i64> = want["tail"].as_array().unwrap().iter().map(|v| v.as_i64().unwrap()).collect();
-        assert_eq!(&ints[..head.len()], head.as_slice(), "{what} 开头");
-        assert_eq!(&ints[ints.len() - tail.len()..], tail.as_slice(), "{what} 结尾");
+        assert_eq!(&ints[..head.len()], head.as_slice(), "{what} head");
+        assert_eq!(&ints[ints.len() - tail.len()..], tail.as_slice(), "{what} tail");
     }
 
     fn assert_close(got: &[f32], want: &[f32], tol: f32, what: &str) {
-        assert_eq!(got.len(), want.len(), "{what} 长度");
+        assert_eq!(got.len(), want.len(), "{what} length");
         for (i, (g, w)) in got.iter().zip(want).enumerate() {
             assert!((g - w).abs() <= tol, "{what}[{i}]: {g} != {w}");
         }

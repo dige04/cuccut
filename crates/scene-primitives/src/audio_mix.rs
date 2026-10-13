@@ -73,26 +73,26 @@ impl DocAudio {
         };
         let obj = v
             .as_object()
-            .ok_or_else(|| anyhow!("schema: audio 必须是对象"))?;
+            .ok_or_else(|| anyhow!("schema: audio must be an object"))?;
         for key in obj.keys() {
             if !["buses", "duck", "master"].contains(&key.as_str()) {
-                bail!("schema: audio.{key} 不认识（buses / duck / master）");
+                bail!("schema: audio.{key} is not recognized (buses / duck / master)");
             }
         }
         let num = |v: &Value, path: &str| -> Result<f64> {
             v.as_f64()
                 .filter(|x| x.is_finite())
-                .ok_or_else(|| anyhow!("schema: {path} 必须是有限数"))
+                .ok_or_else(|| anyhow!("schema: {path} must be a finite number"))
         };
         let mut out = DocAudio::default();
         if let Some(buses) = v.get_("buses").filter(|b| !b.is_null()) {
             let buses = buses
                 .as_object()
-                .ok_or_else(|| anyhow!("schema: audio.buses 必须是对象"))?;
+                .ok_or_else(|| anyhow!("schema: audio.buses must be an object"))?;
             for (name, spec) in buses {
                 let g = spec
                     .get_("gainDb")
-                    .ok_or_else(|| anyhow!("schema: audio.buses.{name}.gainDb 缺失"))?;
+                    .ok_or_else(|| anyhow!("schema: audio.buses.{name}.gainDb is missing"))?;
                 out.buses
                     .insert(name.clone(), num(g, &format!("audio.buses.{name}.gainDb"))?);
             }
@@ -100,13 +100,13 @@ impl DocAudio {
         if let Some(duck) = v.get_("duck").filter(|d| !d.is_null()) {
             let duck = duck
                 .as_array()
-                .ok_or_else(|| anyhow!("schema: audio.duck 必须是数组"))?;
+                .ok_or_else(|| anyhow!("schema: audio.duck must be an array"))?;
             for (k, d) in duck.iter().enumerate() {
                 let path = format!("audio.duck[{k}]");
                 let from = d
                     .gstr("from")
                     .filter(|s| !s.is_empty())
-                    .ok_or_else(|| anyhow!("schema: {path}.from 必须是总线名"))?
+                    .ok_or_else(|| anyhow!("schema: {path}.from must be a bus name"))?
                     .to_string();
                 let to: Vec<String> = match d.get_("to") {
                     Some(Value::String(s)) => vec![s.clone()],
@@ -115,17 +115,17 @@ impl DocAudio {
                         .map(|x| {
                             x.as_str()
                                 .map(str::to_owned)
-                                .ok_or_else(|| anyhow!("schema: {path}.to 必须是总线名数组"))
+                                .ok_or_else(|| anyhow!("schema: {path}.to must be an array of bus names"))
                         })
                         .collect::<Result<_>>()?,
-                    _ => bail!("schema: {path}.to 必须是总线名数组"),
+                    _ => bail!("schema: {path}.to must be an array of bus names"),
                 };
                 if to.is_empty() || to.contains(&from) {
-                    bail!("schema: {path}.to 不能为空、也不能含 from 总线");
+                    bail!("schema: {path}.to must not be empty or contain the from bus");
                 }
                 let depth_db = num(
                     d.get_("depthDb")
-                        .ok_or_else(|| anyhow!("schema: {path}.depthDb 缺失"))?,
+                        .ok_or_else(|| anyhow!("schema: {path}.depthDb is missing"))?,
                     &format!("{path}.depthDb"),
                 )?;
                 let time = |key: &str, default: f64| -> Result<f64> {
@@ -134,7 +134,7 @@ impl DocAudio {
                         Some(x) => {
                             let t = num(x, &format!("{path}.{key}"))?;
                             if t <= 0.0 {
-                                bail!("schema: {path}.{key} 必须 > 0");
+                                bail!("schema: {path}.{key} must be > 0");
                             }
                             Ok(t)
                         }
@@ -151,7 +151,7 @@ impl DocAudio {
         }
         if let Some(m) = v.get_("master").filter(|m| !m.is_null()) {
             if !m.is_object() {
-                bail!("schema: audio.master 必须是对象");
+                bail!("schema: audio.master must be an object");
             }
             let lufs = match m.get_("lufs") {
                 None | Some(Value::Null) => MASTER_LUFS,
@@ -162,7 +162,7 @@ impl DocAudio {
                 Some(x) => num(x, "audio.master.truePeak")?,
             };
             if !(-70.0..=0.0).contains(&lufs) || !(-20.0..=0.0).contains(&true_peak) {
-                bail!("schema: audio.master 越界（lufs −70..0，truePeak −20..0）");
+                bail!("schema: audio.master is out of range (lufs −70..0, truePeak −20..0)");
             }
             out.master = Some(MasterTarget { lufs, true_peak });
         }

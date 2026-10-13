@@ -377,11 +377,11 @@ impl S2Mel {
         cfg_rate: f32,
         temperature: f32,
     ) -> Result<Array> {
-        ensure!(steps > 0, "S2Mel 步数必须大于 0");
+        ensure!(steps > 0, "S2Mel steps must be greater than 0");
         let batch = condition.dim(0);
         let total_frames = condition.dim(1);
         let prompt_frames = prompt_mel.dim(2);
-        ensure!(prompt_frames <= total_frames, "提示梅尔帧数超过总帧数");
+        ensure!(prompt_frames <= total_frames, "prompt mel frame count exceeds the total frame count");
 
         let key = random::key(0)?;
         let mut x = random::normal::<f32>(&[batch, self.n_mels, total_frames], None, None, &key)?;

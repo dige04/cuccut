@@ -82,15 +82,15 @@ impl LlmConfig {
 impl OmniVoiceConfig {
     /// Reads the `config.json` listed in the manifest.
     pub fn load(path: &Path) -> Result<Self> {
-        let text = std::fs::read_to_string(path).with_context(|| format!("无法读取 OmniVoice 配置 {}", path.display()))?;
-        Self::parse(&text).with_context(|| format!("解析 OmniVoice 配置 {} 失败", path.display()))
+        let text = std::fs::read_to_string(path).with_context(|| format!("failed to read OmniVoice config {}", path.display()))?;
+        Self::parse(&text).with_context(|| format!("failed to parse OmniVoice config {}", path.display()))
     }
 
     pub fn parse(text: &str) -> Result<Self> {
         let config: Self = serde_json::from_str(text)?;
         ensure!(
             config.audio_mask_id < config.audio_vocab_size,
-            "OmniVoice audio_mask_id {} 超出音频词表 {}",
+            "OmniVoice audio_mask_id {} exceeds the audio vocabulary {}",
             config.audio_mask_id,
             config.audio_vocab_size
         );
@@ -168,8 +168,8 @@ fn default_feat_norm() -> String {
 impl CodecConfig {
     /// Reads the `audio_tokenizer/config.json` listed in the manifest.
     pub fn load(path: &Path) -> Result<Self> {
-        let text = std::fs::read_to_string(path).with_context(|| format!("无法读取 OmniVoice 音频分词器配置 {}", path.display()))?;
-        Self::parse(&text).with_context(|| format!("解析 OmniVoice 音频分词器配置 {} 失败", path.display()))
+        let text = std::fs::read_to_string(path).with_context(|| format!("failed to read OmniVoice audio tokenizer config {}", path.display()))?;
+        Self::parse(&text).with_context(|| format!("failed to parse OmniVoice audio tokenizer config {}", path.display()))
     }
 
     pub fn parse(text: &str) -> Result<Self> {
@@ -177,29 +177,29 @@ impl CodecConfig {
         let semantic = &config.semantic_model_config;
         ensure!(
             semantic.feat_extract_norm == "group" && !semantic.do_stable_layer_norm,
-            "OmniVoice 音频分词器只支持 HuBERT group-norm / post-norm 结构"
+            "OmniVoice audio tokenizer only supports HuBERT group-norm / post-norm layouts"
         );
         ensure!(
             semantic.conv_dim.len() == semantic.conv_kernel.len() && semantic.conv_kernel.len() == semantic.conv_stride.len(),
-            "OmniVoice HuBERT 卷积层配置长度不一致"
+            "OmniVoice HuBERT convolution config lengths are inconsistent"
         );
         ensure!(
             config.strides.len() == config.channel_ratios.len() && config.channel_ratios.iter().all(|r| *r == 1.0),
-            "OmniVoice 语义编码器只支持 channel_ratios 全为 1"
+            "OmniVoice semantic encoder only supports channel_ratios that are all 1"
         );
         let hop = config.hop_length();
-        ensure!(hop > 0 && hop % 2 == 0, "OmniVoice 声学 hop_length 必须是正偶数，收到 {hop}");
+        ensure!(hop > 0 && hop % 2 == 0, "OmniVoice acoustic hop_length must be a positive even number, got {hop}");
         ensure!(
             config.acoustic_model_config.hop_length.is_none_or(|h| h == hop),
-            "OmniVoice 声学 hop_length 与 downsampling_ratios 之积 {hop} 不符"
+            "OmniVoice acoustic hop_length {hop} does not match the product of downsampling_ratios"
         );
         ensure!(
             config.acoustic_model_config.upsampling_ratios.iter().product::<usize>() == hop,
-            "OmniVoice 声学 upsampling_ratios 之积与 hop_length {hop} 不符"
+            "OmniVoice acoustic upsampling_ratios product does not match hop_length {hop}"
         );
         ensure!(
             config.num_quantizers() > 0,
-            "OmniVoice 音频分词器的 target_bandwidths 不足一个量化器"
+            "OmniVoice audio tokenizer target_bandwidths has fewer than one quantizer"
         );
         Ok(config)
     }

@@ -220,7 +220,7 @@ impl SegmentationNetwork {
         let classifier = Linear::load(&mut store, "classifier")?;
         let unused = store.remaining();
         if !unused.is_empty() {
-            bail!("Pyannote 存在未使用权重：{}", unused.join("、"));
+            bail!("Pyannote has unused weights: {}", unused.join(", "));
         }
         Ok(Self {
             device,
@@ -241,7 +241,7 @@ impl SegmentationNetwork {
         }
         let logits = self.classifier.forward(&hidden)?;
         if logits.dims() != [batch_size, FRAMES_PER_WINDOW, CLASS_COUNT] {
-            bail!("Pyannote 输出形状异常：{:?}", logits.dims());
+            bail!("Pyannote output shape is abnormal: {:?}", logits.dims());
         }
         let values = logits.flatten_all()?.to_vec1::<f32>()?;
         Ok(values.chunks_exact(FRAMES_PER_WINDOW * CLASS_COUNT).map(<[f32]>::to_vec).collect())

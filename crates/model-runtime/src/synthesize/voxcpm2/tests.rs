@@ -16,7 +16,7 @@ pub(crate) fn mlx_lock() -> std::sync::MutexGuard<'static, ()> {
     let guard = crate::synthesize::tensor::host::TEST_LOCK
         .lock()
         .unwrap_or_else(|poison| poison.into_inner());
-    crate::synthesize::tensor::host::ensure_device().expect("Metal 设备");
+    crate::synthesize::tensor::host::ensure_device().expect("Metal device");
     guard
 }
 

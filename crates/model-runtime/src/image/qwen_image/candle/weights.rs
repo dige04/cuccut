@@ -30,18 +30,18 @@ impl ShardedWeights {
         let mut paths = files.iter().map(|path| path.to_path_buf()).collect::<Vec<_>>();
         paths.sort();
         if paths.is_empty() {
-            bail!("没有 safetensors 权重");
+            bail!("no safetensors weights");
         }
         let mut shards = Vec::with_capacity(paths.len());
         let mut index = HashMap::new();
         for path in paths {
-            let file = File::open(&path).with_context(|| format!("打开 {}", path.display()))?;
+            let file = File::open(&path).with_context(|| format!("open {}", path.display()))?;
             // SAFETY: the mapping is read-only; the file stays open while the mapping is made, and CucCut's code does not modify the model weights.
-            let data = unsafe { MmapOptions::new().map(&file) }.with_context(|| format!("映射 {}", path.display()))?;
-            let tensors = SafeTensors::deserialize(&data).with_context(|| format!("解析 {}", path.display()))?;
+            let data = unsafe { MmapOptions::new().map(&file) }.with_context(|| format!("map {}", path.display()))?;
+            let tensors = SafeTensors::deserialize(&data).with_context(|| format!("parse {}", path.display()))?;
             for key in tensors.names() {
                 if index.insert(key.to_owned(), shards.len()).is_some() {
-                    bail!("重复权重键：{key}");
+                    bail!("duplicate weight key: {key}");
                 }
             }
             drop(tensors);
@@ -56,8 +56,8 @@ impl ShardedWeights {
 
     fn shard(&self, key: &str) -> Result<&Shard> {
         self.shards
-            .get(*self.index.get(key).ok_or_else(|| anyhow!("缺少权重：{key}"))?)
-            .context("权重分片索引越界")
+            .get(*self.index.get(key).ok_or_else(|| anyhow!("missing weight: {key}"))?)
+            .context("weight shard index out of range")
     }
 
     /// Looks only at shapes and types; allocates no device tensors.
@@ -70,11 +70,11 @@ impl ShardedWeights {
 
     pub fn load(&self, key: &str, device: &Device) -> Result<Tensor> {
         let shard = self.shard(key)?;
-        let tensors = SafeTensors::deserialize(&shard.data).with_context(|| format!("解析 {}", shard.path.display()))?;
+        let tensors = SafeTensors::deserialize(&shard.data).with_context(|| format!("parse {}", shard.path.display()))?;
         tensors
             .tensor(key)?
             .load(device)
-            .with_context(|| format!("读取权重 {key} ({})", shard.path.display()))
+            .with_context(|| format!("read weight {key} ({})", shard.path.display()))
     }
 
     /// MLX affine-quantized matrices are packed u32 values plus per-group scales and biases. Only this one matrix is dequantized in host memory, and the result is then moved to the device with `dtype`. The temporary allocations are freed when it returns.
@@ -89,15 +89,15 @@ impl ShardedWeights {
         let (rows, columns) = weight.dims2()?;
         let (scale_rows, groups) = scales.dims2()?;
         if groups == 0 || rows != scale_rows || !input.is_multiple_of(groups) {
-            bail!("{prefix} 的量化分组形状与输入维 {input} 不符");
+            bail!("{prefix}: quantization group shape does not match input dimension {input}");
         }
-        let packed_bits = columns.checked_mul(32).context("量化维度溢出")?;
+        let packed_bits = columns.checked_mul(32).context("quantized dimension overflow")?;
         if !packed_bits.is_multiple_of(input) {
-            bail!("{prefix} 的打包列数与输入维 {input} 不符");
+            bail!("{prefix}: packed column count does not match input dimension {input}");
         }
         let bits = packed_bits / input;
         if !matches!(bits, 4 | 8) {
-            bail!("{prefix} 的量化位宽 {bits} 不受支持");
+            bail!("{prefix}: quantization bit width {bits} is not supported");
         }
         let group = input / groups;
         let dense = dequantize_affine(&weight, &scales, &biases, group, bits)?;
@@ -109,26 +109,26 @@ impl ShardedWeights {
         let weight = self.load(&format!("{prefix}.weight"), &Device::Cpu)?;
         let rows = weight.dim(0)?;
         if ids.iter().any(|&id| id as usize >= rows) {
-            bail!("{prefix} 的 token ID 越过词表大小 {rows}");
+            bail!("{prefix}: token ID exceeds vocabulary size {rows}");
         }
         let indices = Tensor::from_slice(ids, ids.len(), &Device::Cpu)?;
         let selected = weight.index_select(&indices, 0)?;
         drop(weight);
         if !self.contains(&format!("{prefix}.scales")) {
             if selected.dim(1)? != width {
-                bail!("{prefix} 的词向量维度不符");
+                bail!("{prefix}: embedding dimension does not match");
             }
             return Ok(selected.to_dtype(dtype)?.to_device(device)?);
         }
         let scales = self.load(&format!("{prefix}.scales"), &Device::Cpu)?.index_select(&indices, 0)?;
         let biases = self.load(&format!("{prefix}.biases"), &Device::Cpu)?.index_select(&indices, 0)?;
-        let packed_bits = selected.dim(1)?.checked_mul(32).context("词嵌入维度溢出")?;
+        let packed_bits = selected.dim(1)?.checked_mul(32).context("embedding dimension overflow")?;
         if !packed_bits.is_multiple_of(width) {
-            bail!("{prefix} 的打包词向量维度不符");
+            bail!("{prefix}: packed embedding dimension does not match");
         }
         let bits = packed_bits / width;
         if !matches!(bits, 4 | 8) || scales.dim(1)? == 0 || !width.is_multiple_of(scales.dim(1)?) {
-            bail!("{prefix} 的词嵌入量化配置不受支持");
+            bail!("{prefix}: embedding quantization config is not supported");
         }
         let dense = dequantize_affine(&selected, &scales, &biases, width / scales.dim(1)?, bits)?;
         Ok(dense.to_dtype(dtype)?.to_device(device)?)
@@ -251,7 +251,7 @@ mod tests {
             write_tensor(&dir.path().join(name), "same.weight", "F32", &[1], &1.0_f32.to_le_bytes());
         }
         let error = open(dir.path(), &["a.safetensors", "b.safetensors"]).err().unwrap();
-        assert!(error.to_string().contains("重复权重键"), "{error}");
+        assert!(error.to_string().contains("duplicate weight key"), "{error}");
         assert!(ShardedWeights::open(&[]).is_err());
     }
 }

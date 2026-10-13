@@ -73,7 +73,7 @@ pub(crate) fn decode_mono_48k(path: &Path) -> Result<Vec<f32>> {
 }
 
 fn open_format(path: &Path) -> Result<Box<dyn FormatReader>> {
-    let file = std::fs::File::open(path).with_context(|| format!("打开媒体 {}", path.display()))?;
+    let file = std::fs::File::open(path).with_context(|| format!("failed to open media {}", path.display()))?;
     let stream = MediaSourceStream::new(Box::new(file), MediaSourceStreamOptions::default());
     let mut hint = Hint::new();
     if let Some(extension) = path.extension().and_then(|value| value.to_str()) {
@@ -86,7 +86,7 @@ fn open_format(path: &Path) -> Result<Box<dyn FormatReader>> {
             FormatOptions::default(),
             MetadataOptions::default(),
         )
-        .with_context(|| format!("Rust 解复用失败：{}", path.display()))
+        .with_context(|| format!("Rust demux failed: {}", path.display()))
 }
 
 /// The packet count lets regression tests bound work independently of machine speed.
@@ -110,7 +110,7 @@ fn decode_window_channels(
     let mut format = open_format(path)?;
     let track = format
         .first_track_known_codec(TrackType::Audio)
-        .context("Rust 解复用器没有找到音频轨")?;
+        .context("the Rust demuxer found no audio track")?;
     let track_id = track.id;
     // MP4 / M4A encoder priming frames: Symphonia does not apply `elst`, so they are dropped here.
     let edit = media_probe::audio_edit_start(path, track_id);
@@ -118,7 +118,7 @@ fn decode_window_channels(
         .codec_params
         .as_ref()
         .and_then(|params| params.audio())
-        .context("Rust 解复用器没有给出音频编解码参数")?
+        .context("the Rust demuxer gave no audio codec parameters")?
         .clone();
     // Only indexed ISO-BMFF AAC tracks with one timestamp tick per decoded sample
     // have the exact clock needed here. Other formats keep the sequential path.
@@ -163,7 +163,7 @@ fn decode_window_channels(
     }
     let mut decoder = symphonia::default::get_codecs()
         .make_audio_decoder(&codec_params, &AudioDecoderOptions::default())
-        .context("Rust 音频解码器不可用")?;
+        .context("the Rust audio decoder is unavailable")?;
 
     // When decoding to end of file (`duration` infinite), nothing is reserved in advance.
     let reserve = if duration.is_finite() {
@@ -188,9 +188,9 @@ fn decode_window_channels(
                 break;
             }
             Err(SymphoniaError::ResetRequired) => {
-                bail!("Rust 解码器要求重置，暂不支持动态音轨参数")
+                bail!("the Rust decoder requires a reset; dynamic audio track parameters are not supported yet")
             }
-            Err(error) => return Err(error).context("Rust 读取音频 packet 失败"),
+            Err(error) => return Err(error).context("Rust failed to read audio packet"),
         };
         if packet.track_id != track_id {
             continue;
@@ -204,7 +204,7 @@ fn decode_window_channels(
             {
                 break;
             }
-            Err(error) => return Err(error).context("Rust 音频解码失败"),
+            Err(error) => return Err(error).context("Rust audio decode failed"),
         };
         let spec = decoded.spec();
         let channels = spec.channels().count();
@@ -212,14 +212,14 @@ fn decode_window_channels(
             continue;
         }
         if channels > CHANNELS {
-            bail!("Rust 解码路径不做 {channels} 声道下混（交给 ffmpeg 的 -ac 2）");
+            bail!("the Rust decode path does not downmix {channels} channels (leave it to ffmpeg's -ac 2)");
         }
         let state = match state.as_mut() {
             Some(state) if state.sample_rate != spec.rate() => {
-                bail!("Rust 解码路径不支持解码期间采样率变化")
+                bail!("the Rust decode path does not support a sample rate change during decoding")
             }
             Some(state) if state.channels != channels => {
-                bail!("Rust 解码路径不支持解码期间声道数变化")
+                bail!("the Rust decode path does not support a channel count change during decoding")
             }
             Some(state) => state,
             None => state.insert(StreamState::new(
@@ -255,7 +255,7 @@ fn decode_window_channels(
             break;
         }
     }
-    let mut state = state.context("媒体没有可解码的音频帧")?;
+    let mut state = state.context("media has no decodable audio frames")?;
     state.resampler.flush(&mut out);
     Ok((out, decoded_packets, state.channels))
 }
@@ -279,7 +279,7 @@ impl StreamState {
         priming: u64,
     ) -> Result<Self> {
         if sample_rate == 0 {
-            bail!("Rust 解码器报告了 0 采样率");
+            bail!("the Rust decoder reported a sample rate of 0");
         }
         let rate = f64::from(sample_rate);
         let first_frame = priming + (start.max(0.0) * rate).round() as u64;
@@ -504,11 +504,11 @@ mod tests {
     fn mp4_edit_list_priming_is_dropped_like_ffmpeg() {
         let fixture = native_export_fixture();
         let samples = decode_stereo_48k(&fixture, 0.0, 10.0).unwrap();
-        assert_eq!(samples.len() / CHANNELS, 48_128, "帧数应与 ffmpeg 解码一致");
+        assert_eq!(samples.len() / CHANNELS, 48_128, "frame count should match the ffmpeg decode");
         let head = samples[..960 * CHANNELS]
             .iter()
             .fold(0.0f32, |peak, value| peak.max(value.abs()));
-        assert!(head > 0.05, "头 20 ms 峰值 {head}：前置帧没丢掉");
+        assert!(head > 0.05, "head 20 ms peak {head}: leading frames were not dropped");
         // The window start is likewise measured from presentation time 0: at 48 kHz pass-through, it is equal sample by sample.
         let window = decode_stereo_48k(&fixture, 0.5, 0.1).unwrap();
         assert_eq!(window, samples[24_000 * CHANNELS..28_800 * CHANNELS]);
@@ -527,7 +527,7 @@ mod tests {
                 .arg(&path)
                 .status();
             if !encoded.is_ok_and(|status| status.success()) {
-                eprintln!("跳过：这台机器没有能编 AAC 的 ffmpeg");
+                eprintln!("skipped: this machine has no ffmpeg that can encode AAC");
                 return;
             }
             // Non-packet-aligned boundaries, including the final padded packet
@@ -637,7 +637,7 @@ mod tests {
             .arg(&m4a)
             .status();
         if !encoded.is_ok_and(|status| status.success()) {
-            eprintln!("跳过：这台机器没有能编 AAC 的 ffmpeg");
+            eprintln!("skipped: this machine has no ffmpeg that can encode AAC");
             return;
         }
         let native = decode_stereo_48k(&m4a, 0.0, 1.0).unwrap();
@@ -665,7 +665,7 @@ mod tests {
             .map(|lag| (lag, correlation(lag)))
             .max_by(|a, b| a.1.total_cmp(&b.1))
             .unwrap();
-        assert_eq!(best, 0, "纯 Rust 路径相对 ffmpeg 晚 {best} 帧（48 kHz）");
+        assert_eq!(best, 0, "the pure Rust path is {best} frames behind ffmpeg (48 kHz)");
     }
 
     /// Target sample rate pass-through: no sample is touched, and no delay is introduced.
@@ -694,18 +694,18 @@ mod tests {
         let expected = frames * SAMPLE_RATE as usize / source_rate as usize;
         assert!(
             produced.abs_diff(expected) <= 1,
-            "输出 {produced} 帧，期望约 {expected} 帧"
+            "output {produced} frames, expected about {expected} frames"
         );
         // Each end has half a window of zero-padded transition band, so take the middle to verify the level.
         let middle = produced / 2 * CHANNELS;
         assert!(
             (out[middle] - 0.5).abs() < 1e-3,
-            "左声道电平 {}",
+            "left channel level {}",
             out[middle]
         );
         assert!(
             (out[middle + 1] + 0.5).abs() < 1e-3,
-            "右声道电平 {}",
+            "right channel level {}",
             out[middle + 1]
         );
     }
@@ -722,10 +722,10 @@ mod tests {
         }
         resampler.flush(&mut out);
         let produced = out.len() / CHANNELS;
-        assert!(produced.abs_diff(frames / 2) <= 1, "输出 {produced} 帧");
+        assert!(produced.abs_diff(frames / 2) <= 1, "output {produced} frames");
         let middle = produced / 2 * CHANNELS;
-        assert!((out[middle] - 1.0).abs() < 1e-3, "左声道 {}", out[middle]);
-        assert!(out[middle + 1].abs() < 1e-3, "右声道应保持静音");
+        assert!((out[middle] - 1.0).abs() < 1e-3, "left channel {}", out[middle]);
+        assert!(out[middle + 1].abs() < 1e-3, "right channel should stay silent");
     }
 
     /// Sine fidelity: a 1 kHz sine at 44.1k resampled to 48k has an RMS matching the theoretical value (high frequencies are not clipped away, and the whole signal is not attenuated).
@@ -752,7 +752,7 @@ mod tests {
             .sqrt();
         assert!(
             (rms - std::f64::consts::FRAC_1_SQRT_2).abs() < 0.02,
-            "重采样后的 RMS {rms:.4} 偏离正弦理论值 0.7071"
+            "RMS {rms:.4} after resampling deviates from the sine theory value 0.7071"
         );
     }
 }

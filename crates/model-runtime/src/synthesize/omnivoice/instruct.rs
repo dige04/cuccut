@@ -193,14 +193,14 @@ pub fn resolve_instruct(instruct: Option<&str>, use_zh: bool) -> Result<Option<S
         let lines: Vec<String> = unknown
             .iter()
             .map(|(raw, n, sug)| match sug {
-                Some(s) => format!("  '{raw}' → '{n}'（不支持；是不是想写 '{s}'？）"),
-                None => format!("  '{raw}' → '{n}'（不支持）"),
+                Some(s) => format!("  '{raw}' → '{n}' (unsupported; did you mean '{s}'?)"),
+                None => format!("  '{raw}' → '{n}' (unsupported)"),
             })
             .collect();
         bail!(
-            "instruct 里有不支持的词条：{instruct}\n{}\n\n可用英文词条：{}\n可用中文词条：{}\n\n\
-             提示：一条 instruct 只用英文或只用中文；英文用逗号加空格分隔（如 'male, indian accent'），\
-             中文用全角逗号分隔（如 '男，河南话'）。",
+            "instruct contains unsupported terms: {instruct}\n{}\n\nAvailable English terms: {}\nAvailable Chinese terms: {}\n\n\
+             Tip: use either English or Chinese terms in one instruct; separate English terms with a comma and space (e.g. 'male, indian accent'), \
+             separate Chinese terms with a full-width comma (e.g. '男，河南话').",
             lines.join("\n"),
             valid_english().join(", "),
             valid_chinese().join("，"),
@@ -210,7 +210,7 @@ pub fn resolve_instruct(instruct: Option<&str>, use_zh: bool) -> Result<Option<S
     let has_dialect = normalised.iter().any(|n| n.ends_with('话'));
     let has_accent = normalised.iter().any(|n| n.contains(" accent"));
     if has_dialect && has_accent {
-        bail!("一条 instruct 里不能同时写中文方言和英文口音：方言用于中文语音，口音用于英文语音。");
+        bail!("one instruct cannot combine Chinese dialects and English accents: dialects apply to Chinese speech, accents to English speech.");
     }
     let use_zh = if has_dialect {
         true
@@ -231,12 +231,12 @@ pub fn resolve_instruct(instruct: Option<&str>, use_zh: bool) -> Result<Option<S
     for category in exclusive_categories() {
         let hits: Vec<&String> = normalised.iter().filter(|n| category.contains(&n.as_str())).collect();
         if hits.len() > 1 {
-            conflicts.push(hits.iter().map(|h| format!("'{h}'")).collect::<Vec<_>>().join(" 与 "));
+            conflicts.push(hits.iter().map(|h| format!("'{h}'")).collect::<Vec<_>>().join(" and "));
         }
     }
     if !conflicts.is_empty() {
         bail!(
-            "instruct 同一类别里写了多个词条：{}。性别、年龄、音高、风格、口音、方言每类最多一个。",
+            "instruct has several terms in the same category: {}. Each of gender, age, pitch, style, accent and dialect allows at most one.",
             conflicts.join("；")
         );
     }
@@ -370,9 +370,9 @@ mod tests {
     #[test]
     fn rejects_unknown_items_with_difflib_suggestions() {
         let err = resolve_instruct(Some("femal, low pich, robot"), false).unwrap_err().to_string();
-        assert!(err.contains("'femal' → 'femal'（不支持；是不是想写 'female'？）"), "{err}");
-        assert!(err.contains("'low pich' → 'low pich'（不支持；是不是想写 'low pitch'？）"), "{err}");
-        assert!(err.contains("'robot' → 'robot'（不支持）"), "{err}");
+        assert!(err.contains("'femal' → 'femal' (unsupported; did you mean 'female'?)"), "{err}");
+        assert!(err.contains("'low pich' → 'low pich' (unsupported; did you mean 'low pitch'?)"), "{err}");
+        assert!(err.contains("'robot' → 'robot' (unsupported)"), "{err}");
         assert!(err.contains("american accent, australian accent"), "{err}");
         assert!(err.contains("东北话，中年"), "{err}");
     }
@@ -392,9 +392,9 @@ mod tests {
     #[test]
     fn rejects_dialect_with_accent_and_same_category_conflicts() {
         let err = resolve_instruct(Some("四川话, british accent"), true).unwrap_err().to_string();
-        assert!(err.contains("不能同时写中文方言和英文口音"), "{err}");
+        assert!(err.contains("cannot combine Chinese dialects and English accents"), "{err}");
         let err = resolve_instruct(Some("male, 女, child, elderly"), false).unwrap_err().to_string();
-        assert!(err.contains("'male' 与 'female'"), "{err}");
-        assert!(err.contains("'child' 与 'elderly'"), "{err}");
+        assert!(err.contains("'male' and 'female'"), "{err}");
+        assert!(err.contains("'child' and 'elderly'"), "{err}");
     }
 }

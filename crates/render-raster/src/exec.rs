@@ -239,7 +239,7 @@ mod tests {
         assert_eq!(
             find_executable_in("ffmpeg", Some(inert.as_os_str()), Some(&path)),
             None,
-            "显式指定的不可用时不悄悄换成 PATH 里的 {}",
+            "when an explicitly specified binary is unavailable, do not silently substitute the one on PATH: {}",
             on_path.display()
         );
         #[cfg(not(unix))]

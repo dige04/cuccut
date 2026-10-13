@@ -30,7 +30,7 @@ fn new_video(dir: &Path) -> Video {
         width: 1920,
         height: 1080,
     };
-    Video::create(dir, &options, &ffprobe()).expect("新建视频")
+    Video::create(dir, &options, &ffprobe()).expect("create the video")
 }
 
 fn apply(video: &mut Video, command_id: &str, operations: Vec<Value>) -> Result<video_engine::Committed, ErrorBody> {
@@ -251,7 +251,7 @@ fn join_refuses_what_a_split_could_not_have_produced() {
     ];
     for (n, op) in cases.into_iter().enumerate() {
         let err = apply(&mut video, &format!("cmd_bad_{n}"), vec![op]).unwrap_err();
-        assert_eq!(err.code, "INVALID_OPERATION", "第 {n} 个");
+        assert_eq!(err.code, "INVALID_OPERATION", "case {n}");
     }
     let err = apply(
         &mut video,
@@ -293,7 +293,7 @@ fn join_refuses_what_a_split_could_not_have_produced() {
 fn has_ffprobe() -> bool {
     let ok = Command::new(ffprobe()).arg("-version").output().is_ok_and(|o| o.status.success());
     if !ok {
-        eprintln!("跳过：没有可用的 ffprobe");
+        eprintln!("skipping: no usable ffprobe");
     }
     ok
 }
@@ -353,7 +353,7 @@ fn audio_envelopes_split_and_join_like_keyframes() {
     let id = inserted.receipt.created_ids[0].clone();
     let envelope = |video: &Video, id: &str| -> Vec<(f64, f64)> {
         let TimelineItem::Audio(a) = &video.state().items[id].value else {
-            panic!("应是音频")
+            panic!("expected audio")
         };
         a.mix
             .envelope

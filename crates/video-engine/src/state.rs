@@ -115,7 +115,7 @@ pub struct EntityChange {
 }
 
 fn to_value<T: Serialize>(value: &T) -> Value {
-    serde_json::to_value(value).expect("实体总能序列化")
+    serde_json::to_value(value).expect("entities can always be serialized")
 }
 
 fn from_value<T: for<'de> Deserialize<'de>>(kind: EntityKind, id: &str, value: Value) -> EngineResult<T> {
@@ -362,7 +362,7 @@ impl VideoState {
                 if old.map(|r| &r.body) == new.map(|r| &r.body) && old.map(|r| &r.parent) == new.map(|r| &r.parent) {
                     return None;
                 }
-                let row = new.or(old).expect("至少一边存在");
+                let row = new.or(old).expect("at least one side exists");
                 Some(EntityChange {
                     id: id.clone(),
                     kind: row.kind,
@@ -519,7 +519,7 @@ pub fn item_range(item: &TimelineItem, fps: editor_semantics::Rate) -> EngineRes
             Ok((start, end))
         }
         other => {
-            let span = other.span().expect("音频之外的实例都在帧网格上");
+            let span = other.span().expect("items other than audio are on the frame grid");
             let start = frame_time(span.from_frame as i128, fps).ok_or_else(err)?;
             let end = frame_time(span.end_frame() as i128, fps).ok_or_else(err)?;
             Ok((start, end))

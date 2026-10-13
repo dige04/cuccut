@@ -175,7 +175,7 @@ pub fn default_for(language: Option<&str>, text: &str) -> &'static BuiltinVoice 
         .iter()
         .find(|voice| voice.lang == code && voice.female)
         .or_else(|| BUILTIN_VOICES.iter().find(|voice| voice.lang == code))
-        .unwrap_or_else(|| find(FALLBACK).expect("内置音色表里有 zh-female"))
+        .unwrap_or_else(|| find(FALLBACK).expect("built-in voice table has zh-female"))
 }
 
 /// `zh-Hans` / `zh_CN` / `ZH` → `zh`; unrecognized input is returned lowercased as-is.
@@ -209,7 +209,7 @@ pub fn builtin_for(request: &TtsRequest, engine: &str) -> Result<Option<&'static
         VoiceSpec::Clone { .. } => Ok(None),
         VoiceSpec::Preset { speaker } => {
             let Some(voice) = find(speaker) else {
-                bail!("{engine} 没有内置音色「{speaker}」；可选：{}", ids().join(", "));
+                bail!("{engine} has no built-in voice '{speaker}'; available: {}", ids().join(", "));
             };
             Ok(Some(voice))
         }
@@ -262,7 +262,7 @@ pub fn wav(voice: &BuiltinVoice) -> &'static [u8] {
     WAVS.iter()
         .find(|(id, _)| *id == voice.id)
         .map(|(_, bytes)| *bytes)
-        .expect("每只内置音色都有随包录音")
+        .expect("every built-in voice has a bundled recording")
 }
 
 /// Where the reference audio comes from: a file provided by the caller, or the bundled recording of a built-in voice.
@@ -277,9 +277,9 @@ impl ReferenceAudio {
     /// then resampled to the target sample rate using band-limited interpolation.
     pub fn samples(&self, sample_rate: u32) -> Result<Vec<f32>> {
         match self {
-            Self::File(path) => crate::audio::decode_mono(path, sample_rate).with_context(|| format!("解码参考音频 {}", path.display())),
+            Self::File(path) => crate::audio::decode_mono(path, sample_rate).with_context(|| format!("failed to decode reference audio {}", path.display())),
             Self::Builtin(id) => {
-                let voice = find(id).with_context(|| format!("没有内置音色 {id}"))?;
+                let voice = find(id).with_context(|| format!("no built-in voice {id}"))?;
                 let (samples, rate) = decode_wav_pcm16(wav(voice))?;
                 Ok(resample(&samples, rate, sample_rate))
             }
@@ -305,7 +305,7 @@ pub fn reference_for(request: &TtsRequest, engine: &str) -> Result<Reference> {
         reference_text,
     } = &request.voice
     {
-        ensure!(reference_audio.is_file(), "{engine} 参考音频不存在：{}", reference_audio.display());
+        ensure!(reference_audio.is_file(), "{engine} reference audio does not exist: {}", reference_audio.display());
         return Ok(Reference {
             audio: ReferenceAudio::File(reference_audio.clone()),
             text: reference_text.clone().filter(|text| !text.trim().is_empty()),
@@ -313,7 +313,7 @@ pub fn reference_for(request: &TtsRequest, engine: &str) -> Result<Reference> {
         });
     }
     let Some(voice) = builtin_for(request, engine)? else {
-        bail!("{engine} 没有可用的内置音色");
+        bail!("{engine} has no usable built-in voice");
     };
     Ok(builtin(voice))
 }
@@ -335,13 +335,13 @@ mod tests {
     fn ids_are_unique_and_cover_four_languages_both_genders() {
         let mut seen = std::collections::BTreeSet::new();
         for voice in BUILTIN_VOICES {
-            assert!(seen.insert(voice.id), "重复 id {}", voice.id);
+            assert!(seen.insert(voice.id), "duplicate id {}", voice.id);
         }
         for lang in ["zh", "en", "ja", "es"] {
             let pair = for_language(lang);
-            assert_eq!(pair.len(), 2, "{lang} 不是一男一女");
-            assert!(pair.iter().any(|voice| voice.female), "{lang} 缺女声");
-            assert!(pair.iter().any(|voice| !voice.female), "{lang} 缺男声");
+            assert_eq!(pair.len(), 2, "{lang} is not one male and one female");
+            assert!(pair.iter().any(|voice| voice.female), "{lang} lacks a female voice");
+            assert!(pair.iter().any(|voice| !voice.female), "{lang} lacks a male voice");
         }
     }
 
@@ -413,10 +413,10 @@ mod tests {
     fn every_voice_has_its_own_description() {
         let mut seen = std::collections::BTreeSet::new();
         for voice in BUILTIN_VOICES {
-            assert!(seen.insert(voice.describe), "{} 的描述与别人重了", voice.id);
-            assert!(voice.describe.is_ascii(), "{} 的描述要用英文", voice.id);
+            assert!(seen.insert(voice.describe), "{} has the same description as another voice", voice.id);
+            assert!(voice.describe.is_ascii(), "{} description must be in English", voice.id);
             let gender = if voice.female { "female" } else { "male" };
-            assert!(voice.describe.contains(gender), "{} 的描述没说清男女", voice.id);
+            assert!(voice.describe.contains(gender), "{} description does not state the gender", voice.id);
         }
     }
 
@@ -424,7 +424,7 @@ mod tests {
     fn every_voice_has_its_recording_and_no_recording_is_orphaned() {
         assert_eq!(WAVS.len(), BUILTIN_VOICES.len());
         for (voice, (id, _)) in BUILTIN_VOICES.iter().zip(WAVS) {
-            assert_eq!(voice.id, *id, "录音表次序与音色表不一致");
+            assert_eq!(voice.id, *id, "recording table order does not match the voice table");
         }
     }
 
@@ -436,12 +436,12 @@ mod tests {
             let seconds = samples.len() as f32 / rate as f32;
             assert!(
                 (seconds - voice.seconds).abs() < 0.05,
-                "{} 表里写 {} 秒，实际 {seconds:.2} 秒",
+                "{} table says {} seconds, actual {seconds:.2} seconds",
                 voice.id,
                 voice.seconds
             );
-            assert!(samples.iter().any(|s| s.abs() > 0.1), "{} 是静音", voice.id);
-            assert!(!voice.text.trim().is_empty(), "{} 没有参考文本", voice.id);
+            assert!(samples.iter().any(|s| s.abs() > 0.1), "{} is silent", voice.id);
+            assert!(!voice.text.trim().is_empty(), "{} has no reference text", voice.id);
         }
     }
 
@@ -466,7 +466,7 @@ mod tests {
             speaker: "nobody".to_owned(),
         };
         let error = reference_for(&request, "IndexTTS2").unwrap_err().to_string();
-        assert!(error.contains("没有内置音色"), "{error}");
+        assert!(error.contains("no built-in voice"), "{error}");
         assert!(error.contains("zh-female"), "{error}");
     }
 

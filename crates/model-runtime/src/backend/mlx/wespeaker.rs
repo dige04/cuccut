@@ -117,12 +117,12 @@ impl WeSpeakerNetwork {
         // x: [B, F'=10, T'=T/8, C=256] (NHWC), corresponding to Python's [B, 256, 10, T'].
         let shape = x.shape().to_vec();
         if shape.len() != 4 || shape[1] != POOLED_FREQUENCY as i32 {
-            bail!("WeSpeaker 主干输出形状异常：{shape:?}");
+            bail!("WeSpeaker backbone output shape is abnormal: {shape:?}");
         }
         let batch = shape[0];
         let time = shape[2];
         if time < 1 {
-            bail!("WeSpeaker 池化前时间轴为空");
+            bail!("WeSpeaker time axis is empty before pooling");
         }
         // The flatten order must be C·F (Python reshape [B,256,10,T'] → [B,2560,T']).
         x = x.transpose_axes(&[0, 2, 3, 1])?.reshape(&[batch, time, -1])?;
@@ -164,7 +164,7 @@ impl WeSpeakerEmbedder {
         if !weights.is_empty() {
             let mut unused = weights.keys().cloned().collect::<Vec<_>>();
             unused.sort();
-            bail!("WeSpeaker 存在未使用权重：{}", unused.join("、"));
+            bail!("WeSpeaker has unused weights: {}", unused.join(", "));
         }
         Ok(Self {
             fbank: WeSpeakerFbank::new(),
@@ -183,17 +183,17 @@ impl WeSpeakerEmbedder {
     /// Anything shorter than 0.5 s is an error: statistics pooling is meaningless at that length, so callers should filter first.
     pub fn embed(&mut self, samples: &[f32]) -> Result<Vec<f32>> {
         if samples.len() < MINIMUM_SAMPLES {
-            bail!("WeSpeaker 需要至少 {MINIMUM_SAMPLES} 个样本（0.5 秒），实际 {}", samples.len());
+            bail!("WeSpeaker needs at least {MINIMUM_SAMPLES} samples (0.5 s), found {}", samples.len());
         }
         let _cache_guard = MemoryCacheGuard::new();
         let features = self.fbank.extract(samples)?;
-        let frames = i32::try_from(features.time_frames).context("fbank 帧数超出 i32")?;
+        let frames = i32::try_from(features.time_frames).context("fbank frame count exceeds i32")?;
         let mel = Array::from_slice(&features.data, &[1, frames, N_MELS as i32, 1]);
         let embedding = self.network.forward(&mel)?;
         embedding.eval()?;
         let values = embedding.as_slice::<f32>().to_vec();
         if values.len() != EMBEDDING_DIM {
-            bail!("WeSpeaker 嵌入维度异常：{}", values.len());
+            bail!("WeSpeaker embedding dimension is abnormal: {}", values.len());
         }
         Ok(values)
     }
@@ -238,12 +238,12 @@ fn take_conv2d(
 }
 
 fn take_weight(weights: &mut HashMap<String, Array>, key: &str) -> Result<Array> {
-    weights.remove(key).with_context(|| format!("缺少 WeSpeaker 权重：{key}"))
+    weights.remove(key).with_context(|| format!("missing WeSpeaker weight: {key}"))
 }
 
 fn expect_shape(key: &str, array: &Array, expected: &[i32]) -> Result<()> {
     if array.shape() != expected {
-        bail!("WeSpeaker 权重 {key} 形状为 {:?}，期望 {expected:?}", array.shape());
+        bail!("WeSpeaker weight {key} has shape {:?}, expected {expected:?}", array.shape());
     }
     Ok(())
 }

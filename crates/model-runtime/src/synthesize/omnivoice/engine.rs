@@ -35,7 +35,7 @@ use anyhow::{Context, Result, bail, ensure};
 
 pub const ENGINE_NAME: &str = "OmniVoice";
 pub const SAMPLE_RATE: u32 = 24_000;
-const ABORT_MESSAGE: &str = "合成已取消";
+const ABORT_MESSAGE: &str = "synthesis cancelled";
 /// The rest of the official `OmniVoiceGenerationConfig` defaults.
 const T_SHIFT: f32 = 0.1;
 const LAYER_PENALTY: f32 = 5.0;
@@ -96,19 +96,19 @@ impl OmniVoice {
         let cache_guard = ModelMemoryCacheGuard;
         stage("weights")?;
         let mut weights =
-            Weights::load(&[weights_path], false).with_context(|| format!("加载 {ENGINE_NAME} 权重 {}", weights_path.display()))?;
+            Weights::load(&[weights_path], false).with_context(|| format!("failed to load {ENGINE_NAME} weights {}", weights_path.display()))?;
         let backbone = Backbone::load(&mut weights, &config)?;
         let leftover = weights.keys();
-        ensure!(leftover.is_empty(), "{ENGINE_NAME} 有未使用的权重：{}", leftover.join(", "));
+        ensure!(leftover.is_empty(), "{ENGINE_NAME} has unused weights: {}", leftover.join(", "));
         drop(weights);
         stage("audio_tokenizer")?;
         let mut codec_weights = Weights::load(&[codec_weights_path], false)
-            .with_context(|| format!("加载 {ENGINE_NAME} 音频分词器 {}", codec_weights_path.display()))?;
+            .with_context(|| format!("failed to load {ENGINE_NAME} audio tokenizer {}", codec_weights_path.display()))?;
         let codec = Codec::load(&mut codec_weights, &codec_config)?;
         let leftover = codec_weights.keys();
         ensure!(
             leftover.is_empty(),
-            "{ENGINE_NAME} 音频分词器有未使用的权重：{}",
+            "{ENGINE_NAME} audio tokenizer has unused weights: {}",
             leftover.join(", ")
         );
         drop(codec_weights);
@@ -121,12 +121,12 @@ impl OmniVoice {
     pub(crate) fn assemble(tokenizer: Tokenizer, backbone: Backbone, codec: Codec) -> Result<Self> {
         ensure!(
             codec.sample_rate == SAMPLE_RATE,
-            "{ENGINE_NAME} 音频分词器采样率是 {}，预期 {SAMPLE_RATE}",
+            "{ENGINE_NAME} audio tokenizer sample rate is {}, expected {SAMPLE_RATE}",
             codec.sample_rate
         );
         ensure!(
             codec.num_codebooks() == backbone.codebooks,
-            "{ENGINE_NAME} 分词器 {} 个码本与主干 {} 个不符",
+            "{ENGINE_NAME} tokenizer has {} codebooks but the backbone has {}",
             codec.num_codebooks(),
             backbone.codebooks
         );
@@ -139,7 +139,7 @@ impl OmniVoice {
             "<|text_start|>",
             "<|text_end|>",
         ] {
-            ensure!(tokenizer.added_id(token).is_some(), "{ENGINE_NAME} 分词表缺少特殊 token {token}");
+            ensure!(tokenizer.added_id(token).is_some(), "{ENGINE_NAME} tokenizer is missing special token {token}");
         }
         Ok(Self {
             tokenizer,
@@ -165,12 +165,12 @@ impl OmniVoice {
             wav = audio::trim_long_audio(&wav, SAMPLE_RATE);
         }
         wav = audio::remove_silence(&wav, SAMPLE_RATE, 200, 100, 200);
-        ensure!(!wav.is_empty(), "{ENGINE_NAME} 参考音频去掉静音后为空");
+        ensure!(!wav.is_empty(), "{ENGINE_NAME} reference audio is empty after removing silence");
         let hop = self.codec.hop();
         let frames = wav.len() / hop;
         ensure!(
             frames > 0,
-            "{ENGINE_NAME} 参考音频太短（去静音后不足 {:.2} 秒）",
+            "{ENGINE_NAME} reference audio is too short (under {:.2} seconds after removing silence)",
             hop as f64 / f64::from(SAMPLE_RATE)
         );
         wav.truncate(frames * hop);
@@ -184,7 +184,7 @@ impl OmniVoice {
     }
 
     fn prompt_from_reference(&self, audio: &ReferenceAudio, text: Option<&str>) -> Result<VoicePrompt> {
-        let samples = audio.samples(SAMPLE_RATE).with_context(|| format!("{ENGINE_NAME} 参考音频"))?;
+        let samples = audio.samples(SAMPLE_RATE).with_context(|| format!("{ENGINE_NAME} reference audio"))?;
         self.prompt_from_samples(&samples, text)
     }
 
@@ -410,10 +410,10 @@ pub(crate) fn sampling_for(request: &TtsRequest) -> Result<Sampling> {
     let cfg = request.sampling.cfg.unwrap_or(DEFAULT_CFG);
     let steps = request.sampling.steps.unwrap_or(DEFAULT_STEPS);
     // Official `guidance_scale = 0` means no guidance (the unconditional branch is skipped), which is a valid value.
-    ensure!(cfg.is_finite() && cfg >= 0.0, "{ENGINE_NAME} cfg 必须是非负数，收到 {cfg}");
-    ensure!(steps > 0, "{ENGINE_NAME} steps 必须大于 0");
+    ensure!(cfg.is_finite() && cfg >= 0.0, "{ENGINE_NAME} cfg must be non-negative, got {cfg}");
+    ensure!(steps > 0, "{ENGINE_NAME} steps must be greater than 0");
     let max_tokens = request.sampling.max_tokens.unwrap_or((MAX_TARGET_SECONDS * 25.0) as usize);
-    ensure!(max_tokens > 0, "{ENGINE_NAME} max_tokens 必须大于 0");
+    ensure!(max_tokens > 0, "{ENGINE_NAME} max_tokens must be greater than 0");
     Ok(Sampling { cfg, steps, max_tokens })
 }
 
@@ -422,12 +422,12 @@ fn duration_and_speed(request: &TtsRequest) -> Result<(Option<f64>, f64)> {
     if let Some(seconds) = request.target_duration_seconds {
         ensure!(
             seconds.is_finite() && seconds > 0.0 && seconds <= MAX_TARGET_SECONDS,
-            "{ENGINE_NAME} 目标时长须在 0–{MAX_TARGET_SECONDS} 秒之间，收到 {seconds}"
+            "{ENGINE_NAME} target duration must be between 0 and {MAX_TARGET_SECONDS} seconds, got {seconds}"
         );
         return Ok((Some(seconds), 1.0));
     }
     let speed = f64::from(request.speed.unwrap_or(1.0));
-    ensure!(speed.is_finite() && speed > 0.0, "{ENGINE_NAME} 语速必须是正数，收到 {speed}");
+    ensure!(speed.is_finite() && speed > 0.0, "{ENGINE_NAME} speaking rate must be positive, got {speed}");
     Ok((None, speed))
 }
 
@@ -447,12 +447,12 @@ impl TtsEngine for OmniVoice {
 
     fn synthesize(&mut self, request: &TtsRequest, progress: ProgressSink<'_>) -> Result<TtsAudio> {
         let text = request.text.trim();
-        ensure!(!text.is_empty(), "合成文本为空");
+        ensure!(!text.is_empty(), "text to synthesize is empty");
         let chunks: Vec<String> = crate::synthesize::text::chunk(text, crate::synthesize::text::DEFAULT_MAX_UNITS)
             .into_iter()
             .filter(|c| !c.trim().is_empty())
             .collect();
-        ensure!(!chunks.is_empty(), "合成文本切块后为空");
+        ensure!(!chunks.is_empty(), "text to synthesize is empty after chunking");
         let sampling = sampling_for(request)?;
         let (duration, speed) = duration_and_speed(request)?;
         let instruct = resolve_instruct(request.instruct.as_deref(), contains_zh(text))?;

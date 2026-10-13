@@ -93,7 +93,7 @@ pub fn apply_filter_in_place(
     let manifest = lookup(&effect.id, effect.version).map_err(|error| anyhow!("{error}"))?;
     if manifest.inputs != 1 {
         bail!(
-            "effect-input-mismatch: {} 需要 {} 个输入，Filter pass 只提供 1 个",
+            "effect-input-mismatch: {} needs {} inputs, but the filter pass provides only 1",
             manifest.qualified(),
             manifest.inputs
         );
@@ -326,7 +326,7 @@ pub fn apply_filter_in_place(
             }
         }
         other => bail!(
-            "effect-capability-unsupported: 内核 {other}（{}）没有 CPU reference 实现",
+            "effect-capability-unsupported: kernel {other} ({}) has no CPU reference implementation",
             manifest.qualified()
         ),
     }
@@ -349,13 +349,13 @@ pub fn apply_transition(
     let manifest = lookup(&effect.id, effect.version).map_err(|error| anyhow!("{error}"))?;
     if manifest.domain != motion::effect::EffectDomain::Transition || manifest.inputs != 2 {
         bail!(
-            "effect-input-mismatch: {} 不是双画面转场",
+            "effect-input-mismatch: {} is not a two-frame transition",
             manifest.qualified()
         );
     }
     if from.width() != to.width() || from.height() != to.height() {
         bail!(
-            "effect-capability-unsupported: {} 的两张输入尺寸不同（{}×{} vs {}×{}），             manifest 声明 resizeMode: {}",
+            "effect-capability-unsupported: the two inputs of {} differ in size ({}×{} vs {}×{}), but the manifest declares resizeMode: {}",
             manifest.qualified(),
             from.width(),
             from.height(),
@@ -367,7 +367,7 @@ pub fn apply_transition(
     let progress = f64::from(progress);
     if !(0.0..=1.0).contains(&progress) {
         bail!(
-            "preset-param-invalid: {} 的 progress = {progress} 不在闭区间 [0, 1]",
+            "preset-param-invalid: progress = {progress} of {} is outside the closed interval [0, 1]",
             manifest.qualified()
         );
     }
@@ -388,12 +388,12 @@ pub fn apply_transition(
     let direction = || -> Result<Direction> {
         let text = uniforms.text("direction").unwrap_or("left");
         Direction::parse(text)
-            .ok_or_else(|| anyhow!("preset-param-invalid: 未知 direction \"{text}\""))
+            .ok_or_else(|| anyhow!("preset-param-invalid: unknown direction \"{text}\""))
     };
 
     let (width, height) = (from.width(), from.height());
     let mut out = Pixmap::new(width, height)
-        .ok_or_else(|| anyhow!("transition 输出尺寸非法：{width}×{height}"))?;
+        .ok_or_else(|| anyhow!("transition output size is invalid: {width}×{height}"))?;
     match manifest.kernel.as_str() {
         "crossfade-lerp-premul-u8" => {
             transitions::crossfade::crossfade(from.data(), to.data(), out.data_mut(), progress);
@@ -491,7 +491,7 @@ pub fn apply_transition(
             );
         }
         other => bail!(
-            "effect-capability-unsupported: 内核 {other}（{}）没有 CPU reference 实现",
+            "effect-capability-unsupported: kernel {other} ({}) has no CPU reference implementation",
             manifest.qualified()
         ),
     }
@@ -512,7 +512,7 @@ pub fn apply_image_mask(
     let channel = match manifest.kernel.as_str() {
         "alpha-mask-from-pixmap" => MaskChannel::Alpha,
         "luma-mask-from-pixmap" => MaskChannel::Luminance,
-        other => bail!("effect-capability-unsupported: 内核 {other} 不是图像遮罩"),
+        other => bail!("effect-capability-unsupported: kernel {other} is not an image mask"),
     };
     let mut out = input.clone();
     // The mask is read-only. `out` and `mask` are two different Pixmaps, so the borrows do not conflict. There is no reason to copy the whole mask just to get past the borrow checker.

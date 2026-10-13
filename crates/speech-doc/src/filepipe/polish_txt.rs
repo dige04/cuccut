@@ -486,7 +486,7 @@ fn lint_page(input: &str, output: &str) -> PolishLint {
     if introduced_controls > 0 {
         diagnostics.push_problem(Problem::document(
             ProblemCode::SourceDrift,
-            "答案引入了非法控制字符（疑似 UTF-8 乱码）",
+            "the answer introduced illegal control characters (possibly UTF-8 mojibake)",
         ));
     }
     let normalized = normalize_llm_output(output);
@@ -512,7 +512,7 @@ fn lint_page(input: &str, output: &str) -> PolishLint {
     let Some((regions, recoveries)) = recovered else {
         diagnostics.push_problem(Problem::document(
             ProblemCode::DocumentTruncated,
-            "两条编辑栅栏都缺失且无法从只读栅栏推断核心区边界",
+            "both edit fences are missing and the core-region boundary cannot be inferred from the read-only fences",
         ));
         return PolishLint {
             diagnostics,
@@ -534,12 +534,12 @@ fn lint_page(input: &str, output: &str) -> PolishLint {
     if stray_outside {
         diagnostics.push_problem(Problem::document(
             ProblemCode::DocumentWrapped,
-            "栅栏之外存在正文以外的内容",
+            "there is non-body content outside the fences",
         ));
         diagnostics.push_warning(Warning {
             code: WarningCode::ContentIgnored,
             scope: ProblemScope::Document,
-            detail: "已忽略栅栏之外的内容".to_owned(),
+            detail: "ignored content outside the fences".to_owned(),
         });
     }
 
@@ -551,12 +551,12 @@ fn lint_page(input: &str, output: &str) -> PolishLint {
             (
                 expected_before.clone().unwrap_or_default(),
                 region_signature(&lines[regions.before.clone()]),
-                "只读上文区（CONTEXT-BEFORE）",
+                "read-only context-before zone (CONTEXT-BEFORE)",
             ),
             (
                 region_signature(&input_lines[in_end + 1..in_after]),
                 region_signature(&lines[regions.after.clone()]),
-                "只读下文区（CONTEXT-AFTER）",
+                "read-only context-after zone (CONTEXT-AFTER)",
             ),
         ];
         for (expected, actual, zone) in zones {
@@ -565,9 +565,9 @@ fn lint_page(input: &str, output: &str) -> PolishLint {
             }
             let score = crate::atomize::similarity(&expected, &actual);
             let detail = if score < READONLY_DRIFT_MIN_SIMILARITY {
-                format!("{zone}被改写或截断，已忽略（只读区从不写回真相）")
+                format!("{zone} was rewritten or truncated; ignored (read-only zones are never written back as truth)")
             } else {
-                format!("{zone}存在表面级改写，已忽略")
+                format!("{zone} has surface-level rewrites; ignored")
             };
             diagnostics.push_warning(Warning {
                 code: WarningCode::ContentIgnored,
@@ -582,34 +582,34 @@ fn lint_page(input: &str, output: &str) -> PolishLint {
         diagnostics.push_warning(Warning {
             code: WarningCode::BlankLinesCollapsed,
             scope: ProblemScope::Document,
-            detail: "连续空行已折叠为单个段落边界".to_owned(),
+            detail: "consecutive blank lines were collapsed into a single paragraph boundary".to_owned(),
         });
     }
     if notes.marker_residue {
         diagnostics.push_warning(Warning {
             code: WarningCode::MarkerResidue,
             scope: ProblemScope::Document,
-            detail: "核心区残留 ⏸/⏹ 软标记，已剥除".to_owned(),
+            detail: "stripped leftover ⏸/⏹ soft markers from the core region".to_owned(),
         });
     }
     if notes.structural_ignored {
         diagnostics.push_warning(Warning {
             code: WarningCode::ContentIgnored,
             scope: ProblemScope::Document,
-            detail: "核心区内的结构标记行已忽略".to_owned(),
+            detail: "ignored structural marker lines inside the core region".to_owned(),
         });
     }
     if notes.punctuation_normalized {
         diagnostics.push_warning(Warning {
             code: WarningCode::PunctuationNormalized,
             scope: ProblemScope::Document,
-            detail: "核心区里互相冲突的相邻标点已代码归一（保留表达该边界的那一个）".to_owned(),
+            detail: "conflicting adjacent punctuation in the core region was normalized in code (kept the one that expresses the boundary)".to_owned(),
         });
     }
     if notes.code_fence {
         diagnostics.push_problem(Problem::document(
             ProblemCode::DocumentWrapped,
-            "核心区内残留代码块包裹",
+            "a code-block wrapper remains inside the core region",
         ));
     }
     let input_core_empty = input_anchors
@@ -622,7 +622,7 @@ fn lint_page(input: &str, output: &str) -> PolishLint {
     if paragraphs.is_empty() && !input_core_empty {
         diagnostics.push_problem(Problem::document(
             ProblemCode::DocumentTruncated,
-            "核心区为空",
+            "the core region is empty",
         ));
     }
     // Surface-level blemishes do **not** reject the page (retry strategy redesign §2.2): conflicting punctuation is already normalized in code in [`flush_block`]; glued Latin strings and dangling false sentence endings only record [`WarningCode::SurfaceArtifact`], and once the engine maps them into sentences it sends them to the sentence-level follow-up queue of `polish-retry`. The old implementation filed these three under `document-oversize`, so one sentence's surface blemish rejected the whole page and re-rolled all sentences (measured: a considerable share of polish retries).
@@ -780,7 +780,7 @@ fn apply_forced_boundaries(
                 scope: ProblemScope::Paragraph {
                     index: result.len(),
                 },
-                detail: format!("按 ⏹ 说话人切换强制段落边界（页 {}）", plan.id),
+                detail: format!("forced paragraph boundary at ⏹ speaker change (page {})", plan.id),
             });
             result.push(left);
             rest = right;
@@ -1189,7 +1189,7 @@ fn push_blocks(
                 scope: ProblemScope::Page {
                     id: page.to_owned(),
                 },
-                detail: format!("正文行以 `{SENTINEL_PREFIX}` 开头，已在行首补空格中和"),
+                detail: format!("body line starts with `{SENTINEL_PREFIX}`; neutralized by prefixing a space"),
             });
             lines.push(format!(" {block}"));
         } else {
@@ -2265,7 +2265,7 @@ mod tests {
             overflow_ratio: 0.15,
         };
         let plans = plan_polish_pages(&words, &budget);
-        assert_eq!(plans[0].core.end, 50, "应在句末切页，而不是靠后的句中停顿");
+        assert_eq!(plans[0].core.end, 50, "should cut the page at the sentence end, not at a later mid-sentence pause");
         assert!(!plans[0].hard_cut_end);
         // Move the sentence end out of the window and overflow zone: only pauses are left, so it falls back to a pause breakpoint.
         for w in words.iter_mut() {
@@ -2295,7 +2295,7 @@ mod tests {
         let plans = plan_polish_pages(words, budget);
         let turns = speaker_turns(words);
         let starts: Vec<usize> = turns.iter().map(|turn| turn.start).collect();
-        assert!(plans.len() > 1, "用例应当分出多页");
+        assert!(plans.len() > 1, "the case should split into multiple pages");
         assert_eq!(plans.first().unwrap().core.start, 0);
         assert_eq!(plans.last().unwrap().core.end, words.len());
         for pair in plans.windows(2) {
@@ -2309,16 +2309,16 @@ mod tests {
             let turn = turns
                 .iter()
                 .find(|turn| turn.contains(&cut))
-                .expect("页界必须落在某个轮次内");
+                .expect("a page boundary must fall inside some turn");
             assert!(
                 turn.len() > budget.core_words,
-                "页缝劈开了未超预算的轮次（cut {cut}, turn {turn:?}）"
+                "a page seam split a turn that is within budget (cut {cut}, turn {turn:?})"
             );
             assert!(
                 sentence_end(&words[cut - 1].text),
-                "长轮次内的页缝没有落在句界（cut {cut}）"
+                "a page seam inside a long turn does not fall on a sentence boundary (cut {cut})"
             );
-            assert!(!plan.hard_cut_end, "句界页缝不应记为硬切");
+            assert!(!plan.hard_cut_end, "a sentence-boundary page seam must not be recorded as a hard cut");
         }
         plans
     }
@@ -2391,15 +2391,15 @@ mod tests {
         let cuts: Vec<usize> = plans.iter().map(|plan| plan.core.end).collect();
         assert!(
             !cuts.contains(&3),
-            "3 词的短轮次够不到窗口下界，不该独占一页: {cuts:?}"
+            "a 3-word short turn does not reach the window's lower bound and should not take a page alone: {cuts:?}"
         );
-        assert!(cuts.contains(&15), "长轮次首页应当断在句界 15: {cuts:?}");
-        assert!(!cuts.contains(&17), "停顿不得抢走长轮次内的句界: {cuts:?}");
+        assert!(cuts.contains(&15), "the first page of a long turn should break at sentence boundary 15: {cuts:?}");
+        assert!(!cuts.contains(&17), "a pause must not take over a sentence boundary inside a long turn: {cuts:?}");
         assert!(
             cuts.iter()
                 .filter(|cut| (4..63).contains(*cut))
                 .all(|cut| words[cut - 1].text.ends_with('.')),
-            "长轮次内的页界必须是句界: {cuts:?}"
+            "page boundaries inside a long turn must be sentence boundaries: {cuts:?}"
         );
 
         // Control group: the same word stream with speaker information stripped takes the word-stream path. From 2026-08 both paths likewise use sentence-boundary priority, so a pause (rank 2) no longer steals sentence boundary 15 within the window.
@@ -2417,7 +2417,7 @@ mod tests {
             .collect();
         assert!(
             !flat_cuts.contains(&17) && flat_cuts.contains(&15),
-            "无说话人路径同样句界优先，不该在句中停顿处切页: {flat_cuts:?}"
+            "the no-speaker path also prefers sentence boundaries and should not cut pages at mid-sentence pauses: {flat_cuts:?}"
         );
     }
 
@@ -2493,11 +2493,11 @@ mod tests {
             .collect();
         assert!(
             cuts.iter().any(|cut| starts.contains(cut)),
-            "应当有落在轮次边界的页界: {cuts:?}"
+            "there should be page boundaries on turn boundaries: {cuts:?}"
         );
         assert!(
             cuts.iter().any(|cut| !starts.contains(cut)),
-            "长轮次应当被内部切开: {cuts:?}"
+            "long turns should be cut internally: {cuts:?}"
         );
     }
 
@@ -2721,7 +2721,7 @@ mod tests {
                 .diagnostics
                 .problems
                 .iter()
-                .any(|problem| problem.detail.contains("UTF-8 乱码"))
+                .any(|problem| problem.detail.contains("UTF-8 mojibake"))
         );
     }
 
@@ -2831,7 +2831,7 @@ mod tests {
         let plans = plan_polish_pages(&words, &budget);
         let plan = plans.last().unwrap();
         let rendered = render_polish_page(&words, plan);
-        assert!(rendered.text.contains("RL don,"), "前置：只读上文含错词");
+        assert!(rendered.text.contains("RL don,"), "precondition: the read-only context contains the typo");
         let tampered = rendered.text.replacen("RL don,", "RL'd on,", 1).replacen(
             "the the models",
             "the models",
@@ -2841,7 +2841,7 @@ mod tests {
         let parsed = parse(&words, plan, &tampered);
         assert!(
             !parsed.diagnostics.has_code(ProblemCode::SourceDrift),
-            "表面级只读区改写不应拒页：{:?}",
+            "a surface-level read-only zone rewrite must not reject the page: {:?}",
             parsed.diagnostics.problems
         );
         assert!(
@@ -2849,11 +2849,11 @@ mod tests {
                 .diagnostics
                 .warnings
                 .iter()
-                .any(|w| w.code == WarningCode::ContentIgnored && w.detail.contains("只读上文区")),
+                .any(|w| w.code == WarningCode::ContentIgnored && w.detail.contains("read-only context-before zone")),
             "应记 ContentIgnored 警告：{:?}",
             parsed.diagnostics.warnings
         );
-        assert!(!parsed.paragraphs.is_empty(), "核心区照常解析");
+        assert!(!parsed.paragraphs.is_empty(), "the core region is still parsed as usual");
     }
 
     /// §2.2: a truncated read-only region (a whole sentence disappeared) likewise only records a warning. The read-only region is never written back to truth, and the truncation does not affect this page's body. The old implementation rejected the page here and re-rolled all sentences.
@@ -2918,9 +2918,9 @@ mod tests {
             parsed.diagnostics
         );
         assert!(parsed.diagnostics.warnings.iter().any(|warning| {
-            warning.code == WarningCode::ContentIgnored && warning.detail.contains("被改写或截断")
+            warning.code == WarningCode::ContentIgnored && warning.detail.contains("was rewritten or truncated")
         }));
-        assert!(!parsed.paragraphs.is_empty(), "核心区照常解析");
+        assert!(!parsed.paragraphs.is_empty(), "the core region is still parsed as usual");
     }
 
     #[test]
@@ -3121,7 +3121,7 @@ mod tests {
                 cursor = plan.core.end;
                 assert_round_trip(&words, plan);
             }
-            assert_eq!(cursor, words.len(), "case {case} 未覆盖全部词");
+            assert_eq!(cursor, words.len(), "case {case} does not cover all words");
         }
     }
 
@@ -3317,7 +3317,7 @@ mod tests {
             parsed.diagnostics.problems[0].scope,
             ProblemScope::Paragraph { index: 1 }
         );
-        let first = parsed.paragraphs[0].as_ref().expect("拉丁块应接受");
+        let first = parsed.paragraphs[0].as_ref().expect("the Latin block should be accepted");
         assert_eq!(first.len(), 2);
         assert_eq!(first[0].len(), half);
         assert_eq!(first[0][0], 0);
@@ -3410,7 +3410,7 @@ mod tests {
         let payload = render_punct_repair_page(&punct_items());
         assert!(payload.contains("<<<SENTENCE-BEGIN id=s01 min-sentences=3>>>"));
         assert!(payload.contains("<<<SENTENCE-END id=s01>>>"));
-        assert!(payload.contains("\n <<<so we start"), "哨兵行首需中和");
+        assert!(payload.contains("\n <<<so we start"), "a sentinel at line start must be neutralized");
         let answer = "<<<SENTENCE-BEGIN id=s02>>>\nSo we start with the data.\nThen we train the model, and then we evaluate it on the held-out set.\n<<<SENTENCE-END id=s02>>>\n\n<<<SENTENCE-BEGIN id=s01>>>\n我们先看第一个问题。这个模型在训练的时候没有见过这样的数据，所以它的表现会差一些。然后我们再看第二个问题。\n<<<SENTENCE-END id=s01>>>\n";
         let parsed = parse_punct_repair_page(&payload, answer);
         assert!(

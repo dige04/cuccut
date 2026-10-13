@@ -131,8 +131,8 @@ pub fn compose(
         if views.contains_key(&key) {
             continue;
         }
-        let bytes = sources.get(&key).ok_or_else(|| format!("没有素材 {key} 的频谱"))?;
-        let view = bcs1::parse(bytes).map_err(|e| format!("素材 {key} 的频谱读不懂：{e:#}"))?;
+        let bytes = sources.get(&key).ok_or_else(|| format!("no spectrum for asset {key}"))?;
+        let view = bcs1::parse(bytes).map_err(|e| format!("cannot read the spectrum of asset {key}: {e:#}"))?;
         views.insert(key, view);
     }
     let rate = f64::from(ANALYSIS_RATE);
@@ -248,10 +248,10 @@ pub fn analyze_file(path: &std::path::Path, ffmpeg: &std::path::Path) -> anyhow:
                 .args(["-vn", "-f", "f32le", "-ac", "1", "-ar", "48000", "-"])
                 .stdin(std::process::Stdio::null())
                 .output()
-                .with_context(|| format!("启动 ffmpeg 解码 {}", path.display()))?;
+                .with_context(|| format!("failed to start ffmpeg decode of {}", path.display()))?;
             if !output.status.success() {
                 anyhow::bail!(
-                    "ffmpeg 解码 {} 失败：{}",
+                    "ffmpeg decode of {} failed: {}",
                     path.display(),
                     String::from_utf8_lossy(&output.stderr).trim()
                 );
@@ -264,5 +264,5 @@ pub fn analyze_file(path: &std::path::Path, ffmpeg: &std::path::Path) -> anyhow:
             (pcm, SpectrumBackend::Ffmpeg)
         }
     };
-    waveform::dsp::analyze(&pcm, backend).with_context(|| format!("算 {} 的频谱", path.display()))
+    waveform::dsp::analyze(&pcm, backend).with_context(|| format!("computing the spectrum of {}", path.display()))
 }

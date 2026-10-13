@@ -656,13 +656,13 @@ impl NormalizedOutput {
         if self.wrapper_stripped {
             warnings.push(Warning::document(
                 WarningCode::WrapperStripped,
-                "剥离了单层代码块包裹",
+                "Stripped a single code-fence wrapper",
             ));
         }
         if self.control_stripped {
             warnings.push(Warning::document(
                 WarningCode::ControlStripped,
-                "剥离了非法控制或不可见字符",
+                "Stripped illegal control or invisible characters",
             ));
         }
         warnings
@@ -730,7 +730,7 @@ pub fn guard_output_size(input: &str, output: &str) -> Option<Problem> {
     if actual > limit {
         return Some(Problem::document(
             ProblemCode::DocumentOversize,
-            format!("输出 {actual} 字符超过上限 {limit} 字符"),
+            format!("Output of {actual} characters exceeds the limit of {limit} characters"),
         ));
     }
     None
@@ -753,10 +753,10 @@ mod tests {
 
     #[test]
     fn problem_message_includes_scope() {
-        let problem = Problem::sentence(ProblemCode::EmptyTranslation, "s-g1.0", "译文为空");
+        let problem = Problem::sentence(ProblemCode::EmptyTranslation, "s-g1.0", "translation is empty");
         assert_eq!(
             problem.message(),
-            "[empty-translation] sentence s-g1.0: 译文为空"
+            "[empty-translation] sentence s-g1.0: translation is empty"
         );
     }
 

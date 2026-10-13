@@ -24,7 +24,7 @@ pub fn envelope_points(item: &TimelineItem) -> Option<&[EnvelopePoint]> {
 /// Converts the volume envelope into v2 `volume` keyframes: `at` is seconds local to the instance, and `percent` is written as `"N%"`. Rejects a point count over the limit, negative times, and any point where `at` and `percent` are not exactly one of them (the engine uses this to validate on write).
 pub fn envelope_keyframes(points: &[EnvelopePoint]) -> Result<Vec<Keyframe>, String> {
     if points.len() > MAX_ENVELOPE_POINTS {
-        return Err(format!("音量包络最多 {MAX_ENVELOPE_POINTS} 个点"));
+        return Err(format!("a volume envelope allows at most {MAX_ENVELOPE_POINTS} points"));
     }
     let mut frames = Vec::with_capacity(points.len());
     for point in points {
@@ -32,12 +32,12 @@ pub fn envelope_keyframes(points: &[EnvelopePoint]) -> Result<Vec<Keyframe>, Str
             (Some(at), None) => {
                 let s = seconds(at);
                 if s < 0.0 {
-                    return Err("音量包络的时刻不能为负".into());
+                    return Err("volume envelope times must not be negative".into());
                 }
                 KeyTime::Seconds(s)
             }
             (None, Some(percent)) => KeyTime::Percent(format!("{percent}%")),
-            _ => return Err("音量包络的每个点须在 at 与 percent 中给且只给一个".into()),
+            _ => return Err("each volume envelope point must specify exactly one of at and percent".into()),
         };
         frames.push(Keyframe {
             t,

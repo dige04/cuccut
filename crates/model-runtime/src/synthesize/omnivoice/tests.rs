@@ -22,7 +22,7 @@ pub(crate) fn mlx_lock() -> std::sync::MutexGuard<'static, ()> {
     let guard = crate::synthesize::tensor::host::TEST_LOCK
         .lock()
         .unwrap_or_else(|poison| poison.into_inner());
-    crate::synthesize::tensor::host::ensure_device().expect("Metal 设备");
+    crate::synthesize::tensor::host::ensure_device().expect("Metal device");
     guard
 }
 
@@ -453,7 +453,7 @@ fn generate_can_be_cancelled_between_steps() {
     let err = model
         .generate("ab", 4, None, None, None, sampling(4, 100), &mut Rng::new(1), &mut |s| s < 2)
         .unwrap_err();
-    assert!(err.to_string().contains("合成已取消"), "{err}");
+    assert!(err.to_string().contains("synthesis cancelled"), "{err}");
 }
 
 #[test]
@@ -474,7 +474,7 @@ fn prefix_marks_reference_with_denoise_and_wraps_text() {
          <|text_start|>a. b<|text_end|>"
     );
     let ids = model.prefix_ids("b", None, false, None, Some("male"));
-    assert_eq!(ids[0], 257, "无参考时不带 <|denoise|>");
+    assert_eq!(ids[0], 257, "no <|denoise|> without a reference");
 }
 
 fn collect_progress(events: &mut Vec<String>) -> impl FnMut(TtsProgress) -> bool + '_ {
@@ -571,7 +571,7 @@ fn engine_voice_design_is_deterministic_under_a_seed() {
 
     // Cancellation, unknown instruct, and unrecognized built-in voices all report errors (v2 tested unresolved voice profiles here; in v3 voice profiles are resolved into reference audio inside the Runtime, so the engine only sees `Clone`; instead, test the unknown preset voice that `reference_for` likewise rejects).
     let err = model.synthesize(&request, &mut |_| false).unwrap_err();
-    assert!(err.to_string().contains("合成已取消"), "{err}");
+    assert!(err.to_string().contains("synthesis cancelled"), "{err}");
     request.instruct = Some("robot".into());
     assert!(model.synthesize(&request, &mut |_| true).is_err());
     request.instruct = None;

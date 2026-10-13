@@ -451,7 +451,7 @@ mod tests {
                 segments.extend(decoder.push(slice));
             }
             segments.extend(decoder.finish());
-            assert_eq!(segments, expected, "分批长度 {step}");
+            assert_eq!(segments, expected, "chunk length {step}");
         }
     }
 

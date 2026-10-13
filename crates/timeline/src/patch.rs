@@ -90,29 +90,29 @@ pub fn apply_patch(
     patch: &Value,
 ) -> Result<(TimelineDocument, PatchSummary), TimelineError> {
     let Some(patch) = patch.as_object() else {
-        return Err(invalid("patchTimeline 必须是对象"));
+        return Err(invalid("patchTimeline must be an object"));
     };
     for key in patch.keys() {
         if !matches!(
             key.as_str(),
             "kind" | "sources" | "clips" | "tracks" | "main" | "template"
         ) {
-            return Err(invalid(format!("patchTimeline 不认识的键：{key}")));
+            return Err(invalid(format!("patchTimeline has an unknown key: {key}")));
         }
     }
     let mut root = serde_json::to_value(document)
-        .map_err(|error| invalid(format!("序列化 timeline 失败：{error}")))?;
+        .map_err(|error| invalid(format!("failed to serialize timeline: {error}")))?;
     let mut summary = PatchSummary::default();
 
     if let Some(sources) = patch.get("sources") {
         let sources = sources
             .as_object()
-            .ok_or_else(|| invalid("patchTimeline.sources 必须是对象"))?;
+            .ok_or_else(|| invalid("patchTimeline.sources must be an object"))?;
         let table = ensure_object(&mut root, "sources");
         for (id, value) in sources {
             if value.is_null() {
                 if id == "main" {
-                    return Err(invalid("patchTimeline 不能删除 main source"));
+                    return Err(invalid("patchTimeline cannot delete the main source"));
                 }
                 if table.remove(id).is_some() {
                     summary.sources_removed += 1;
@@ -122,7 +122,7 @@ pub fn apply_patch(
                 summary.sources_put += 1;
             } else {
                 return Err(invalid(format!(
-                    "patchTimeline.sources.{id} 须为对象或 null"
+                    "patchTimeline.sources.{id} must be an object or null"
                 )));
             }
         }
@@ -139,10 +139,10 @@ pub fn apply_patch(
     if let Some(tracks) = patch.get("tracks") {
         let tracks = tracks
             .as_object()
-            .ok_or_else(|| invalid("patchTimeline.tracks 必须是对象"))?;
+            .ok_or_else(|| invalid("patchTimeline.tracks must be an object"))?;
         for key in tracks.keys() {
             if !matches!(key.as_str(), "update" | "splices") {
-                return Err(invalid(format!("patchTimeline.tracks 不认识的键：{key}")));
+                return Err(invalid(format!("patchTimeline.tracks has an unknown key: {key}")));
             }
         }
         let array = ensure_array(&mut root, "tracks");
@@ -154,15 +154,15 @@ pub fn apply_patch(
         if let Some(update) = tracks.get("update") {
             let update = update
                 .as_object()
-                .ok_or_else(|| invalid("patchTimeline.tracks.update 必须是对象"))?;
+                .ok_or_else(|| invalid("patchTimeline.tracks.update must be an object"))?;
             for (track_id, fields) in update {
                 let fields = fields.as_object().ok_or_else(|| {
-                    invalid(format!("patchTimeline.tracks.update.{track_id} 必须是对象"))
+                    invalid(format!("patchTimeline.tracks.update.{track_id} must be an object"))
                 })?;
                 let track = array
                     .iter_mut()
                     .find(|track| track["id"].as_str() == Some(track_id))
-                    .ok_or_else(|| invalid(format!("patchTimeline：track 不存在：{track_id}")))?;
+                    .ok_or_else(|| invalid(format!("patchTimeline: track does not exist: {track_id}")))?;
                 let mut touched = false;
                 for (key, value) in fields {
                     if key == "elements" {
@@ -178,7 +178,7 @@ pub fn apply_patch(
                         continue;
                     }
                     if key == "id" {
-                        return Err(invalid("patchTimeline 不能改写 track id"));
+                        return Err(invalid("patchTimeline cannot rewrite the track id"));
                     }
                     merge_field(track, key, value);
                     touched = true;
@@ -197,7 +197,7 @@ pub fn apply_patch(
         } else if main.is_object() {
             root_object.insert("main".to_owned(), main.clone());
         } else {
-            return Err(invalid("patchTimeline.main 须为对象或 null"));
+            return Err(invalid("patchTimeline.main must be an object or null"));
         }
         summary.main_changed = true;
     }
@@ -209,13 +209,13 @@ pub fn apply_patch(
         } else if template.is_object() {
             root_object.insert("template".to_owned(), template.clone());
         } else {
-            return Err(invalid("patchTimeline.template 须为对象或 null"));
+            return Err(invalid("patchTimeline.template must be an object or null"));
         }
         summary.template_changed = true;
     }
 
     let patched: TimelineDocument = serde_json::from_value(root)
-        .map_err(|error| invalid(format!("补丁后的 timeline 无效：{error}")))?;
+        .map_err(|error| invalid(format!("timeline is invalid after the patch: {error}")))?;
     Ok((patched, summary))
 }
 
@@ -257,10 +257,10 @@ fn patch_array(
 ) -> Result<(usize, usize, usize), TimelineError> {
     let patch = patch
         .as_object()
-        .ok_or_else(|| invalid(format!("patchTimeline.{path} 必须是对象")))?;
+        .ok_or_else(|| invalid(format!("patchTimeline.{path} must be an object")))?;
     for key in patch.keys() {
         if !matches!(key.as_str(), "update" | "splices") {
-            return Err(invalid(format!("patchTimeline.{path} 不认识的键：{key}")));
+            return Err(invalid(format!("patchTimeline.{path} has an unknown key: {key}")));
         }
     }
     let mut inserted = 0;
@@ -274,18 +274,18 @@ fn patch_array(
     if let Some(update) = patch.get("update") {
         let update = update
             .as_object()
-            .ok_or_else(|| invalid(format!("patchTimeline.{path}.update 必须是对象")))?;
+            .ok_or_else(|| invalid(format!("patchTimeline.{path}.update must be an object")))?;
         for (id, fields) in update {
             let fields = fields
                 .as_object()
-                .ok_or_else(|| invalid(format!("patchTimeline.{path}.update.{id} 必须是对象")))?;
+                .ok_or_else(|| invalid(format!("patchTimeline.{path}.update.{id} must be an object")))?;
             let item = array
                 .iter_mut()
                 .find(|item| item["id"].as_str() == Some(id))
-                .ok_or_else(|| invalid(format!("patchTimeline：{path} 里不存在 {id}")))?;
+                .ok_or_else(|| invalid(format!("patchTimeline: {path} has no {id}")))?;
             for (key, value) in fields {
                 if key == "id" {
-                    return Err(invalid(format!("patchTimeline 不能改写 {path} 的 id")));
+                    return Err(invalid(format!("patchTimeline cannot rewrite the id in {path}")));
                 }
                 merge_field(item, key, value);
             }
@@ -304,21 +304,21 @@ fn apply_splices(
 ) -> Result<(usize, usize), TimelineError> {
     let splices = splices
         .as_array()
-        .ok_or_else(|| invalid(format!("patchTimeline.{path}.splices 必须是数组")))?;
+        .ok_or_else(|| invalid(format!("patchTimeline.{path}.splices must be an array")))?;
     let mut inserted = 0;
     let mut removed = 0;
     for splice in splices {
         let splice = splice
             .as_object()
-            .ok_or_else(|| invalid(format!("patchTimeline.{path}.splices[] 必须是对象")))?;
+            .ok_or_else(|| invalid(format!("patchTimeline.{path}.splices[] must be an object")))?;
         let items = splice
             .get(items_key)
             .and_then(Value::as_array)
-            .ok_or_else(|| invalid(format!("patchTimeline.{path}.splices[] 缺 {items_key}[]")))?;
+            .ok_or_else(|| invalid(format!("patchTimeline.{path}.splices[] is missing {items_key}[]")))?;
         for item in items {
             if !item.get("id").is_some_and(Value::is_string) {
                 return Err(invalid(format!(
-                    "patchTimeline.{path}.splices[].{items_key}[] 每项须带 id"
+                    "each item in patchTimeline.{path}.splices[].{items_key}[] must have an id"
                 )));
             }
         }
@@ -333,12 +333,12 @@ fn apply_splices(
         ) {
             (Some(first), Some(last)) => {
                 let start = position(first)
-                    .ok_or_else(|| invalid(format!("patchTimeline：{path} 里不存在 {first}")))?;
+                    .ok_or_else(|| invalid(format!("patchTimeline: {path} has no {first}")))?;
                 let end = position(last)
-                    .ok_or_else(|| invalid(format!("patchTimeline：{path} 里不存在 {last}")))?;
+                    .ok_or_else(|| invalid(format!("patchTimeline: {path} has no {last}")))?;
                 if end < start {
                     return Err(invalid(format!(
-                        "patchTimeline：{path} splice 区间反了（{first}..{last}）"
+                        "patchTimeline: {path} splice range is reversed ({first}..{last})"
                     )));
                 }
                 removed += end - start + 1;
@@ -350,12 +350,12 @@ fn apply_splices(
                     None | Some(Value::Null) => 0,
                     Some(Value::String(after)) => {
                         position(after).ok_or_else(|| {
-                            invalid(format!("patchTimeline：{path} 里不存在 {after}"))
+                            invalid(format!("patchTimeline: {path} has no {after}"))
                         })? + 1
                     }
                     Some(_) => {
                         return Err(invalid(format!(
-                            "patchTimeline.{path}.splices[].after 须为 id 或 null"
+                            "patchTimeline.{path}.splices[].after must be an id or null"
                         )));
                     }
                 };
@@ -364,7 +364,7 @@ fn apply_splices(
             }
             _ => {
                 return Err(invalid(format!(
-                    "patchTimeline.{path}.splices[] 须同时给 first/last，或只给 after"
+                    "patchTimeline.{path}.splices[] must give both first/last, or only after"
                 )));
             }
         }

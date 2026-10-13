@@ -45,25 +45,25 @@ pub fn migrate_doc(
     let from = from.unwrap_or(declared);
     let to = to.unwrap_or(BCF_CURRENT);
     if !is_supported(from) {
-        bail!("bcf-version-unsupported: 源版本 \"{from}\" 不在 {BCF_VERSIONS:?}");
+        bail!("bcf-version-unsupported: source version \"{from}\" is not in {BCF_VERSIONS:?}");
     }
     if !is_supported(to) {
-        bail!("bcf-version-unsupported: 目标版本 \"{to}\" 不在 {BCF_VERSIONS:?}");
+        bail!("bcf-version-unsupported: target version \"{to}\" is not in {BCF_VERSIONS:?}");
     }
     if from != declared {
         bail!(
-            "bcf-version-unsupported: --from \"{from}\" 与文档声明的 \"{declared}\" 不符；\
-             迁移不猜版本"
+            "bcf-version-unsupported: --from \"{from}\" does not match the document's declared \"{declared}\"; \
+             migration does not guess the version"
         );
     }
     if from == to {
         return Ok((doc.clone(), Vec::new()));
     }
     if from != "0.1" || to != "0.2" {
-        bail!("bcf-version-unsupported: 本实现只提供 0.1 → 0.2 的迁移路径");
+        bail!("bcf-version-unsupported: this implementation only provides the 0.1 → 0.2 migration path");
     }
     let Some(object) = doc.as_object() else {
-        bail!("schema: 文档根必须是对象");
+        bail!("schema: document root must be an object");
     };
 
     let mut out = object.clone();
@@ -73,7 +73,7 @@ pub fn migrate_doc(
         rule: "bcf-version-missing",
         severity: Severity::Info,
         pointer: "/ccut".to_owned(),
-        message: format!("ccut 版本写为 \"{to}\"（原声明 \"{declared}\"）"),
+        message: format!("ccut version set to \"{to}\" (was declared as \"{declared}\")"),
     });
     if !out.contains_key("motionVersion") {
         out.insert("motionVersion".to_owned(), Value::from(MOTION_VERSION));
@@ -81,7 +81,7 @@ pub fn migrate_doc(
             rule: "bcf-version-missing",
             severity: Severity::Info,
             pointer: "/motionVersion".to_owned(),
-            message: format!("补 motionVersion = {MOTION_VERSION}（ADR-M13）"),
+            message: format!("add motionVersion = {MOTION_VERSION} (ADR-M13)"),
         });
     }
 
@@ -103,7 +103,7 @@ fn backfill_preset_versions(value: &mut Value, ptr: &str, out: &mut Vec<Diagnost
                     severity: Severity::Info,
                     pointer: format!("{ptr}/presetVersion"),
                     message: format!(
-                        "补 presetVersion = {version}（配方 {}）",
+                        "add presetVersion = {version} (recipe {})",
                         map.get("preset").and_then(Value::as_str).unwrap_or("")
                     ),
                 });

@@ -445,7 +445,7 @@ fn handle_frames(state: &VideoState, item: &TimelineItem, fps: Rate, head: bool)
     let TimeMap::Linear { rate, .. } = map else {
         return Ok(None);
     };
-    let span = item.span().expect("画面片段都在帧网格上");
+    let span = item.span().expect("visual clips are all on the frame grid");
     let overflow = || ErrorBody::time(editor_semantics::TimeError::Overflow { field: "handles".into() });
     let start = frame_time(span.from_frame as i128, fps).ok_or_else(overflow)?;
     let end = frame_time(span.end_frame() as i128, fps).ok_or_else(overflow)?;

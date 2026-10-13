@@ -8,12 +8,12 @@ use flate2::read::ZlibDecoder;
 
 pub(crate) fn inflate(bytes: &[u8]) -> Vec<u8> {
     let mut out = Vec::new();
-    ZlibDecoder::new(bytes).read_to_end(&mut out).expect("GPT-SoVITS 内嵌数据解压失败");
+    ZlibDecoder::new(bytes).read_to_end(&mut out).expect("GPT-SoVITS embedded data failed to decompress");
     out
 }
 
 pub(crate) fn inflate_text(bytes: &[u8]) -> String {
-    String::from_utf8(inflate(bytes)).expect("GPT-SoVITS 内嵌数据不是 UTF-8")
+    String::from_utf8(inflate(bytes)).expect("GPT-SoVITS embedded data is not UTF-8")
 }
 
 /// Code point range covered by the single-character table (the CJK basic block entries that have readings in the pypinyin data).
@@ -49,7 +49,7 @@ pub static PINYIN: LazyLock<PinyinTables> = LazyLock::new(|| {
         .map(|line| match line.split_once('\t') {
             Some((phrase, ids)) => (
                 phrase.to_owned(),
-                Some(ids.split(' ').map(|id| id.parse().expect("音节 id")).collect()),
+                Some(ids.split(' ').map(|id| id.parse().expect("syllable id")).collect()),
             ),
             None => (line.to_owned(), None),
         })
@@ -225,7 +225,7 @@ pub static EN_TAGGER: LazyLock<EnTagger> = LazyLock::new(|| {
     let classes = (0..nclasses)
         .map(|_| {
             let len = cur.varint() as usize;
-            String::from_utf8(cur.bytes(len).to_vec()).expect("tagger 类别")
+            String::from_utf8(cur.bytes(len).to_vec()).expect("tagger category")
         })
         .collect();
     let nwords = cur.varint() as usize;
@@ -245,7 +245,7 @@ pub static EN_TAGGER: LazyLock<EnTagger> = LazyLock::new(|| {
         }
     }
     feat_start.push(pairs.len() as u32);
-    assert_eq!(cur.pos, raw.len(), "en_tagger.bin 尾部多余字节");
+    assert_eq!(cur.pos, raw.len(), "en_tagger.bin has trailing bytes");
     EnTagger {
         classes,
         words,
@@ -285,7 +285,7 @@ pub static WORDSEGMENT: LazyLock<WordFreq> = LazyLock::new(|| {
     };
     let (unigrams, unigram_counts) = table();
     let (bigrams, bigram_counts) = table();
-    assert_eq!(cur.pos, raw.len(), "wordsegment.bin 尾部多余字节");
+    assert_eq!(cur.pos, raw.len(), "wordsegment.bin has trailing bytes");
     WordFreq {
         unigrams,
         unigram_counts,
@@ -339,6 +339,6 @@ pub static G2P_GRU: LazyLock<G2pGru> = LazyLock::new(|| {
         fc_w: take(74 * h),
         fc_b: take(74),
     };
-    assert_eq!(pos, raw.len(), "g2p_gru.f32 尺寸不符");
+    assert_eq!(pos, raw.len(), "g2p_gru.f32 size mismatch");
     gru
 });

@@ -201,9 +201,9 @@ fn pcm_format_description() -> Result<CFRetained<CMFormatDescription>> {
         )
     };
     if status != 0 {
-        bail!("创建 PCM 音频格式描述失败：{status}");
+        bail!("failed to create PCM audio format description: {status}");
     }
-    let pointer = NonNull::new(description.cast_mut()).context("CoreMedia 返回了空音频格式描述")?;
+    let pointer = NonNull::new(description.cast_mut()).context("CoreMedia returned an empty audio format description")?;
     Ok(unsafe { CFRetained::from_raw(pointer) })
 }
 
@@ -230,16 +230,16 @@ fn pcm_sample_buffer(
         )
     };
     if status != 0 {
-        bail!("创建音频块缓冲失败：{status}");
+        bail!("failed to create audio block buffer: {status}");
     }
     let block = unsafe {
-        CFRetained::from_raw(NonNull::new(block).context("CoreMedia 返回了空音频块缓冲")?)
+        CFRetained::from_raw(NonNull::new(block).context("CoreMedia returned an empty audio block buffer")?)
     };
     let source = NonNull::new(chunk.samples.as_ptr().cast::<std::ffi::c_void>().cast_mut())
-        .context("空 PCM 分块")?;
+        .context("empty PCM chunk")?;
     let status = unsafe { CMBlockBuffer::replace_data_bytes(source, &block, 0, length) };
     if status != 0 {
-        bail!("拷贝音频样本字节失败：{status}");
+        bail!("failed to copy audio sample bytes: {status}");
     }
     let mut sample: *mut CMSampleBuffer = std::ptr::null_mut();
     let status = unsafe {
@@ -254,9 +254,9 @@ fn pcm_sample_buffer(
         )
     };
     if status != 0 {
-        bail!("创建音频样本缓冲失败：{status}");
+        bail!("failed to create audio sample buffer: {status}");
     }
-    let pointer = NonNull::new(sample).context("CoreMedia 返回了空音频样本缓冲")?;
+    let pointer = NonNull::new(sample).context("CoreMedia returned an empty audio sample buffer")?;
     Ok(unsafe { CFRetained::from_raw(pointer) })
 }
 
@@ -310,7 +310,7 @@ fn open_inner(out: &Path, setup: WriterSetup) -> Result<AvWriter> {
         Ok(()) => {}
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => {
-            return Err(error).with_context(|| format!("清理旧输出 {}", out.display()));
+            return Err(error).with_context(|| format!("failed to clean up old output {}", out.display()));
         }
     }
     let exact_fps = f64::from(fps_num) / f64::from(fps_den);
@@ -319,7 +319,7 @@ fn open_inner(out: &Path, setup: WriterSetup) -> Result<AvWriter> {
     let temporary = tempfile::Builder::new()
         .prefix("ccut-mp4-writer-")
         .tempdir()
-        .context("创建 AVFoundation 临时目录")?;
+        .context("failed to create AVFoundation temporary directory")?;
     let url = NSURL::fileURLWithPath(&ns_path(out));
     let writer = unsafe {
         AVAssetWriter::assetWriterWithURL_fileType_error(
@@ -327,7 +327,7 @@ fn open_inner(out: &Path, setup: WriterSetup) -> Result<AvWriter> {
             AVFileTypeMPEG4.expect("AVFileTypeMPEG4"),
         )
     }
-    .map_err(|error| anyhow!("unsupported: 创建 AVAssetWriter 失败（{error}）"))?;
+    .map_err(|error| anyhow!("unsupported: failed to create AVAssetWriter ({error})"))?;
     unsafe {
         let temporary_url = NSURL::fileURLWithPath(&ns_path(temporary.path()));
         writer.setDirectoryForTemporaryFiles(Some(&temporary_url));
@@ -352,7 +352,7 @@ fn open_inner(out: &Path, setup: WriterSetup) -> Result<AvWriter> {
         unsafe { video_input.setMediaTimeScale(scale) };
     }
     if !unsafe { writer.canAddInput(&video_input) } {
-        bail!("unsupported: 本机没有可用的 H.264 编码器");
+        bail!("unsupported: no usable H.264 encoder on this machine");
     }
     unsafe { writer.addInput(&video_input) };
     let adaptor = unsafe {
@@ -376,19 +376,19 @@ fn open_inner(out: &Path, setup: WriterSetup) -> Result<AvWriter> {
     });
     if let Some(input) = &audio_input {
         if !unsafe { writer.canAddInput(input) } {
-            bail!("unsupported: 本机没有可用的 AAC 编码器");
+            bail!("unsupported: no usable AAC encoder on this machine");
         }
         unsafe { writer.addInput(input) };
     }
 
     if !unsafe { writer.startWriting() } {
         bail!(
-            "unsupported: AVFoundation 无法启动 MP4 写入（{:?}）",
+            "unsupported: AVFoundation could not start MP4 writing ({:?})",
             unsafe { writer.error() }
         );
     }
     unsafe { writer.startSessionAtSourceTime(CMTime::new(0, 1)) };
-    let pool = unsafe { adaptor.pixelBufferPool() }.context("AVFoundation 未创建像素缓冲池")?;
+    let pool = unsafe { adaptor.pixelBufferPool() }.context("AVFoundation did not create a pixel buffer pool")?;
 
     let audio = match (audio, audio_input) {
         (Some(source), Some(input)) => Some(AudioTrack {
@@ -427,7 +427,7 @@ impl AvWriter {
 
     fn check_failed(&self) -> Result<()> {
         if unsafe { self.writer.status() } == AVAssetWriterStatus::Failed {
-            bail!("AVFoundation 编码失败：{:?}", unsafe {
+            bail!("AVFoundation encoding failed: {:?}", unsafe {
                 self.writer.error()
             });
         }
@@ -461,7 +461,7 @@ impl AvWriter {
             };
             let sample = pcm_sample_buffer(&audio.format, &chunk)?;
             if !unsafe { audio.input.appendSampleBuffer(&sample) } {
-                bail!("AVFoundation 写入 AAC 音频失败：{:?}", unsafe {
+                bail!("AVFoundation failed to write AAC audio: {:?}", unsafe {
                     self.writer.error()
                 });
             }
@@ -473,7 +473,7 @@ impl AvWriter {
         let expected = self.width as usize * self.height as usize * 4;
         if rgba.len() != expected {
             bail!(
-                "MP4 帧字节数与几何不符：{}x{} 需要 {expected} 字节，实得 {}",
+                "MP4 frame byte count does not match its geometry: {}x{} needs {expected} bytes, got {}",
                 self.width,
                 self.height,
                 rgba.len()
@@ -496,7 +496,7 @@ impl AvWriter {
             self.adaptor
                 .appendPixelBuffer_withPresentationTime(&buffer, timestamp)
         } {
-            bail!("AVFoundation 写入视频帧失败：{:?}", unsafe {
+            bail!("AVFoundation failed to write video frame: {:?}", unsafe {
                 self.writer.error()
             });
         }
@@ -537,9 +537,9 @@ impl AvWriter {
             let _ = finished_tx.send(());
         });
         unsafe { self.writer.finishWritingWithCompletionHandler(&completion) };
-        finished_rx.recv().context("等待 AVFoundation 完成 MP4")?;
+        finished_rx.recv().context("waiting for AVFoundation to finish MP4")?;
         if unsafe { self.writer.status() } != AVAssetWriterStatus::Completed {
-            bail!("AVFoundation 完成 MP4 失败：{:?}", unsafe {
+            bail!("AVFoundation failed to finish MP4: {:?}", unsafe {
                 self.writer.error()
             });
         }
@@ -572,9 +572,9 @@ fn new_pixel_buffer(pool: &CVPixelBufferPool) -> Result<CFRetained<CVPixelBuffer
     let status =
         unsafe { CVPixelBufferPool::create_pixel_buffer(None, pool, NonNull::from(&mut pointer)) };
     if status != 0 {
-        bail!("AVFoundation 无法分配 BGRA 输出帧：{status}");
+        bail!("AVFoundation could not allocate BGRA output frame: {status}");
     }
-    let pointer = NonNull::new(pointer).context("AVFoundation 返回空 BGRA 输出帧")?;
+    let pointer = NonNull::new(pointer).context("AVFoundation returned an empty BGRA output frame")?;
     Ok(unsafe { CFRetained::from_raw(pointer) })
 }
 
@@ -584,7 +584,7 @@ fn new_pixel_buffer(pool: &CVPixelBufferPool) -> Result<CFRetained<CVPixelBuffer
 unsafe fn fill_bgra(buffer: &CVPixelBuffer, rgba: &[u8], width: u32, height: u32) -> Result<()> {
     let flags = CVPixelBufferLockFlags(0);
     if unsafe { CVPixelBufferLockBaseAddress(buffer, flags) } != 0 {
-        bail!("锁定输出 CVPixelBuffer 失败");
+        bail!("failed to lock output CVPixelBuffer");
     }
     let outcome = (|| -> Result<()> {
         let buffer_width = CVPixelBufferGetWidth(buffer);
@@ -597,7 +597,7 @@ unsafe fn fill_bgra(buffer: &CVPixelBuffer, rgba: &[u8], width: u32, height: u32
             || stride < buffer_width * 4
         {
             bail!(
-                "AVFoundation 交出的像素缓冲与请求不符：{buffer_width}x{buffer_height}（请求 {width}x{height}）"
+                "AVFoundation's pixel buffer does not match the request: {buffer_width}x{buffer_height} (requested {width}x{height})"
             );
         }
         for y in 0..buffer_height {
@@ -619,7 +619,7 @@ unsafe fn fill_bgra(buffer: &CVPixelBuffer, rgba: &[u8], width: u32, height: u32
     let unlocked = unsafe { CVPixelBufferUnlockBaseAddress(buffer, flags) };
     outcome?;
     if unlocked != 0 {
-        bail!("解锁输出 CVPixelBuffer 失败");
+        bail!("failed to unlock output CVPixelBuffer");
     }
     Ok(())
 }

@@ -1029,7 +1029,7 @@ fn gifs_that_cannot_animate_draw_their_first_frame() {
     // Frame count over the limit: drawn from the first frame, with a hint.
     let (gif, note) = frame_render::load_gif("big", &tiny_gif(frame_render::GIF_BUDGET.max_frames + 1, 1)).unwrap();
     assert!(matches!(gif, frame_render::Gif::Still(_)));
-    assert!(note.unwrap().contains("只画第一帧"));
+    assert!(note.unwrap().contains("drawing only the first frame"));
     assert!(matches!(
         frame_render::load_gif("small", &tiny_gif(3, 1)).unwrap(),
         (frame_render::Gif::Animated(_), None)
@@ -1042,7 +1042,7 @@ fn gifs_that_cannot_animate_draw_their_first_frame() {
     let mut renderer = renderer(false, frame_render::Documents::default());
     let pixels = render_with(&mut renderer, &gif_sticker("loop"), 0.5, &mut media);
     near(px(&pixels, 80, 45), RED, 2);
-    assert!(renderer.warnings().iter().any(|w| w.detail.starts_with("st：GIF 太大")));
+    assert!(renderer.warnings().iter().any(|w| w.detail.starts_with("st: GIF is too large")));
 }
 
 #[test]

@@ -72,7 +72,7 @@ fn fixtures() -> Option<&'static Fixtures> {
                 audio.to_str()?,
             ]);
             if !(video_ok && audio_ok) {
-                eprintln!("跳过：没有可用的 ffmpeg 生成测试素材");
+                eprintln!("skipping: no usable ffmpeg to generate test media");
                 return None;
             }
             Some(Fixtures {
@@ -105,7 +105,7 @@ fn new_video(dir: &Path) -> Video {
         width: 1920,
         height: 1080,
     };
-    Video::create(dir, &options, &ffprobe()).expect("新建视频")
+    Video::create(dir, &options, &ffprobe()).expect("create the video")
 }
 
 fn tx(video: &Video, command_id: &str, operations: Vec<Value>) -> VideoTransaction {
@@ -144,12 +144,12 @@ fn item_ids(video: &Video) -> Vec<String> {
 }
 
 fn span_of(video: &Video, id: &str) -> (i64, i64) {
-    let span = video.state().items[id].value.span().expect("音频没有帧区间");
+    let span = video.state().items[id].value.span().expect("audio has no frame range");
     (span.from_frame, span.duration_frames)
 }
 
 fn err_code(result: Result<impl std::fmt::Debug, ErrorBody>) -> String {
-    result.expect_err("应当失败").code
+    result.expect_err("should fail").code
 }
 
 /// Imports a video and places `count` instances in turn on V1 (each 60 frames long).
@@ -158,7 +158,7 @@ fn import_video(video: &mut Video, fixtures: &Fixtures, count: usize) -> Vec<Str
     for _ in 0..count {
         ops.push(json!({ "type": "addItem", "sequenceId": seq(video), "asset": { "ref": "clip" }, "alignment": "nearest-frame" }));
     }
-    let committed = video.apply(&tx(video, "cmd_import", ops)).expect("导入并添加");
+    let committed = video.apply(&tx(video, "cmd_import", ops)).expect("import and add");
     assert!(committed.event.is_some());
     item_ids(video)
 }
@@ -504,7 +504,7 @@ fn c03_second_writer_is_rejected_and_read_only_cannot_write() {
     let video = new_video(dir.path());
 
     let second = Video::open(dir.path(), OpenMode::Write, &ffprobe());
-    let err = second.err().expect("第二个写入者被拒绝");
+    let err = second.err().expect("the second writer was rejected");
     assert_eq!(err.code, "VIDEO_LOCKED");
     assert_eq!(err.details["holder"]["pid"], json!(std::process::id()));
 
@@ -515,7 +515,7 @@ fn c03_second_writer_is_rejected_and_read_only_cannot_write() {
 
     // After release, the write lock can be taken again, and the owner generation is incremented.
     drop(video);
-    Video::open(dir.path(), OpenMode::Write, &ffprobe()).expect("锁已释放");
+    Video::open(dir.path(), OpenMode::Write, &ffprobe()).expect("the lock was released");
 }
 
 /// The video is closed while another thread is spawning child processes, and the write lock can be taken again right away: the lock file descriptors copied when the child processes started do not hold the lock.
@@ -551,7 +551,7 @@ fn closing_releases_the_lock_while_other_threads_spawn_children() {
     for spawner in spawners {
         spawner.join().unwrap();
     }
-    assert!(failure.is_none(), "关掉之后重新打开被拒：{failure:?}");
+    assert!(failure.is_none(), "reopening after closing was rejected: {failure:?}");
 }
 
 #[test]
@@ -568,7 +568,7 @@ fn stale_owner_cannot_commit_after_the_lock_moves() {
     }
     let rename = tx(&first, "cmd_stale", vec![json!({ "type": "renameVideo", "name": "旧主人" })]);
     assert_eq!(err_code(first.apply(&rename)), "PROJECT_WRITER_UNAVAILABLE");
-    assert_eq!(first.revision(), "0", "失败的提交不改变工作态");
+    assert_eq!(first.revision(), "0", "a failed commit does not change the working state");
 }
 
 #[test]
@@ -584,7 +584,7 @@ fn t06_a03_retry_returns_the_same_receipt_without_duplicating() {
     let first = video.apply(&request).unwrap();
     let again = video.apply(&request).unwrap();
     assert_eq!(again.receipt, first.receipt);
-    assert!(again.event.is_none(), "重放不产生新事件");
+    assert!(again.event.is_none(), "replay produces no new event");
     assert_eq!(item_ids(&video).len(), 1);
     assert_eq!(video.state().assets.len(), 1);
     assert_eq!(video.revision(), "1");
@@ -636,7 +636,7 @@ fn t07_stale_revision_is_an_explicit_conflict() {
             vec![json!({ "type": "renameVideo", "name": "用户的标题" })],
         ))
         .unwrap();
-    let err = video.apply(&stale).expect_err("旧版本上的修改被拒绝");
+    let err = video.apply(&stale).expect_err("a change on an old version is rejected");
     assert_eq!(err.code, "PROJECT_REVISION_CONFLICT");
     assert_eq!(video.state().name, "用户的标题");
 }
@@ -649,7 +649,7 @@ fn failed_operation_leaves_the_video_untouched() {
         json!({ "type": "renameVideo", "name": "不应生效" }),
         json!({ "type": "deleteItems", "sequenceId": seq(&video), "itemIds": ["item_missing"] }),
     ];
-    let err = video.apply(&tx(&video, "cmd_atomic", ops)).expect_err("第二个操作失败");
+    let err = video.apply(&tx(&video, "cmd_atomic", ops)).expect_err("the second operation fails");
     assert_eq!(err.code, "ENTITY_NOT_FOUND");
     assert_eq!(err.details["operationIndex"], json!(1));
     assert_eq!(video.state().name, "测试视频");
@@ -702,7 +702,7 @@ fn t05_editing_one_instance_preserves_the_others() {
     let mut video = new_video(dir.path());
     let ids = import_video(&mut video, fixtures, 3);
     assert_eq!(ids.len(), 3);
-    assert_eq!(video.state().assets.len(), 1, "三个实例共用一份素材");
+    assert_eq!(video.state().assets.len(), 1, "three items share one asset");
     assert_eq!(
         (span_of(&video, &ids[0]), span_of(&video, &ids[1]), span_of(&video, &ids[2])),
         ((0, 60), (60, 60), (120, 60))
@@ -846,7 +846,7 @@ fn source_in_seconds(video: &Video, id: &str) -> f64 {
 /// The start and length (in seconds) of an audio instance.
 fn audio_range(video: &Video, id: &str) -> (f64, f64) {
     let TimelineItem::Audio(audio) = &video.state().items[id].value else {
-        panic!("不是音频")
+        panic!("not audio")
     };
     let offset = audio.subframe_offset.to_ratio("t").unwrap().to_f64();
     (
@@ -1036,7 +1036,7 @@ fn locked_tracks_refuse_edits() {
         ))
         .unwrap();
     let del = vec![json!({ "type": "deleteItems", "sequenceId": seq(&video), "itemIds": [ids[0]] })];
-    let err = video.apply(&tx(&video, "cmd_del", del)).expect_err("锁定的轨道");
+    let err = video.apply(&tx(&video, "cmd_del", del)).expect_err("locked track");
     assert_eq!(err.code, "TARGET_LOCKED");
     assert_eq!(err.entity_ids, vec![v1]);
 }
@@ -1051,10 +1051,10 @@ fn audio_keeps_subframe_precision() {
         json!({ "type": "addItem", "sequenceId": seq(&video), "asset": { "ref": "tone" }, "at": { "unit": "seconds", "value": "1.01" }, "alignment": "nearest-frame" }),
     ];
     let committed = video.apply(&tx(&video, "cmd_audio", ops)).unwrap();
-    assert!(committed.receipt.time_resolution.is_empty(), "音频不量化");
+    assert!(committed.receipt.time_resolution.is_empty(), "audio is not quantized");
     let id = &item_ids(&video)[0];
     let TimelineItem::Audio(a) = &video.state().items[id].value else {
-        panic!("应是音频")
+        panic!("expected audio")
     };
     assert_eq!(a.from_frame, 30);
     assert_eq!((a.subframe_offset.ticks.as_str(), a.subframe_offset.timescale), ("1", 100));
@@ -1099,7 +1099,7 @@ fn reimporting_the_same_bytes_reuses_the_asset() {
     assert_eq!(
         std::fs::read_dir(dir.path().join("blobs/.staging")).unwrap().count(),
         0,
-        "staging 清空"
+        "staging is emptied"
     );
 }
 
@@ -1135,8 +1135,8 @@ fn t08_undo_does_not_erase_later_additions_and_redo_works() {
     };
     let undone = video.undo(&undo).unwrap();
     assert_eq!(undone.receipt.undo_of.as_deref(), Some(moved.receipt.transaction_id.as_str()));
-    assert_eq!(span_of(&video, &ids[0]).0, 0, "回到原位");
-    assert!(video.state().items.contains_key(&added), "智能体的片段还在");
+    assert_eq!(span_of(&video, &ids[0]).0, 0, "back in place");
+    assert!(video.state().items.contains_key(&added), "the agent's clip is still there");
     assert_eq!(
         err_code(video.undo(&UndoRequest {
             command_id: "cmd_undo_twice".into(),
@@ -1184,7 +1184,7 @@ fn undo_conflicts_when_the_target_changed_afterwards() {
             expected_revision: None,
             actor: user(),
         })
-        .expect_err("之后又被移动过");
+        .expect_err("moved again afterwards");
     assert_eq!(err.code, "UNDO_CONFLICT");
     assert_eq!(err.entity_ids, vec![ids[0].clone()]);
     assert_eq!(span_of(&video, &ids[0]).0, 90);
@@ -1217,7 +1217,7 @@ fn undoing_an_import_is_refused_while_a_later_item_uses_the_asset() {
             expected_revision: None,
             actor: user(),
         })
-        .expect_err("片段还在用这个素材");
+        .expect_err("the clip still uses this asset");
     assert_eq!(err.code, "UNDO_CONFLICT");
 }
 
@@ -1246,7 +1246,7 @@ fn read_only_open_works_after_the_writer_closed() {
     let reader = Video::open(dir.path(), OpenMode::ReadOnly, &ffprobe()).unwrap();
     assert_eq!(reader.snapshot(), snapshot);
     // A read-only open does not take the write lock.
-    Video::open(dir.path(), OpenMode::Write, &ffprobe()).expect("写锁可用");
+    Video::open(dir.path(), OpenMode::Write, &ffprobe()).expect("the write lock is available");
 }
 
 #[test]
@@ -1284,7 +1284,7 @@ fn undo_stack_follows_the_actor_and_clears_redo_after_a_new_edit() {
     step(&mut video, "u1", UndoTarget::Undo).unwrap();
     step(&mut video, "u2", UndoTarget::Undo).unwrap();
     assert_eq!(video.state().name, "一");
-    assert_eq!(video.state().tracks.len(), 3, "智能体的轨道保留");
+    assert_eq!(video.state().tracks.len(), 3, "the agent's tracks are kept");
     step(&mut video, "r1", UndoTarget::Redo).unwrap();
     assert_eq!(video.state().name, "二");
     step(&mut video, "r2", UndoTarget::Redo).unwrap();
@@ -1333,7 +1333,7 @@ fn undo_that_would_overlap_a_later_item_is_an_undo_conflict() {
             expected_revision: None,
             actor: user(),
         })
-        .expect_err("恢复的位置被占用");
+        .expect_err("the restored position is occupied");
     assert_eq!(err.code, "UNDO_CONFLICT");
     assert!(err.entity_ids.contains(&added));
 }
@@ -1352,7 +1352,7 @@ fn speed_changes_keep_the_source_range_and_refuse_to_push_neighbours() {
     video.apply(&tx(&video, "cmd_fast", vec![speed(&ids[0], 2, 1)])).unwrap();
     assert_eq!(span_of(&video, &ids[0]), (0, 30));
     let TimelineItem::Video(v) = &video.state().items[&ids[0]].value else {
-        panic!("应是视频")
+        panic!("expected video")
     };
     assert_eq!(
         v.time_map,
@@ -1390,7 +1390,7 @@ fn speed_changes_keep_the_source_range_and_refuse_to_push_neighbours() {
         .clone();
     video.apply(&tx(&video, "cmd_audio_fast", vec![speed(&audio, 2, 1)])).unwrap();
     let TimelineItem::Audio(a) = &video.state().items[&audio].value else {
-        panic!("应是音频")
+        panic!("expected audio")
     };
     assert_eq!((a.play_duration.ticks.as_str(), a.play_duration.timescale), ("3", 4));
 }
@@ -1409,7 +1409,7 @@ fn audio_mix_and_picture_fit_follow_the_item_kind() {
     let committed = video.apply(&tx(&video, "cmd_mix", ops)).unwrap();
     assert_eq!(committed.receipt.label, "Adjust audio and more (2 changes)");
     let TimelineItem::Video(v) = &video.state().items[&id].value else {
-        panic!("应是视频")
+        panic!("expected video")
     };
     let fade_in = v.embedded_audio.fade_in.as_ref().map(|t| (t.ticks.as_str(), t.timescale));
     assert_eq!(
@@ -1446,7 +1446,7 @@ fn audio_mix_and_picture_fit_follow_the_item_kind() {
     ];
     video.apply(&tx(&video, "cmd_reset", ops)).unwrap();
     let TimelineItem::Video(v) = &video.state().items[&id].value else {
-        panic!("应是视频")
+        panic!("expected video")
     };
     assert_eq!(
         (v.media.bg, v.embedded_audio.enabled, v.embedded_audio.fade_in.is_none()),

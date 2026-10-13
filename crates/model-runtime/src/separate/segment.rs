@@ -72,11 +72,11 @@ impl OverlapAdd {
     /// Accumulates one window's output (each channel's length must equal `window.len`).
     pub fn add(&mut self, window: Window, chunk: &[Vec<f32>]) -> Result<()> {
         if chunk.len() != self.out.len() {
-            bail!("窗口输出通道数 {} 与累加器 {} 不符", chunk.len(), self.out.len());
+            bail!("window output channel count {} does not match accumulator {}", chunk.len(), self.out.len());
         }
         if window.len > self.segment_len || window.offset + window.len > self.sum_w.len() {
             bail!(
-                "窗口 [{}, +{}) 超出范围（窗长 {}，总长 {}）",
+                "window [{}, +{}) is out of range (window length {}, total length {})",
                 window.offset,
                 window.len,
                 self.segment_len,
@@ -85,7 +85,7 @@ impl OverlapAdd {
         }
         for (dst, src) in self.out.iter_mut().zip(chunk) {
             if src.len() != window.len {
-                bail!("窗口输出长度 {} 与窗口 {} 不符", src.len(), window.len);
+                bail!("window output length {} does not match window {}", src.len(), window.len);
             }
             for (i, v) in src.iter().enumerate() {
                 dst[window.offset + i] += v * self.weight[i];

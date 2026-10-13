@@ -49,7 +49,7 @@ impl Output {
 
 /// Reply for a crash while handling a request.
 pub fn panic_response(id: Value, method: &str) -> Value {
-    eprintln!("engine-host: 处理 {method} 时崩溃");
+    eprintln!("engine-host: crashed while handling {method}");
     let error = ErrorBody::new(
         "ENGINE_PANIC",
         msg!(
@@ -76,7 +76,7 @@ fn main() {
         let request: Value = match serde_json::from_str(&line) {
             Ok(v) => v,
             Err(e) => {
-                eprintln!("engine-host: 无法解析请求：{e}");
+                eprintln!("engine-host: cannot parse request: {e}");
                 continue;
             }
         };

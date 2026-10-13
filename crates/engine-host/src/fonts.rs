@@ -50,10 +50,10 @@ impl FontWorker {
                         out.write_line(&answer(id, &method, params, &mut state));
                     }
                 })
-                .expect("起字体线程");
+                .expect("start the font thread");
             (sender, handle)
         });
-        sender.send((id, method.to_string(), params)).expect("字体线程只在 finish 之后退出");
+        sender.send((id, method.to_string(), params)).expect("the font thread exits only after finish");
     }
 
     /// Stops accepting requests: waits until all accepted ones have been answered.
@@ -90,7 +90,7 @@ impl FontState {
         if self.cache.as_ref().is_none_or(|(at, _)| at != dir) {
             self.cache = Some((dir.to_path_buf(), FontLibrary::from_dirs(&[dir.to_path_buf()])));
         }
-        &self.cache.as_ref().expect("刚扫好").1
+        &self.cache.as_ref().expect("just scanned").1
     }
 
     /// Rescans font directories that have changed since the last scan; returns true if a rescan happened.
@@ -472,7 +472,7 @@ mod tests {
     fn the_font_thread_answers_every_request_in_whole_lines() {
         let captured = Captured::default();
         let mut worker = FontWorker::new(Output::new(Box::new(captured.clone())));
-        assert!(worker.queue.is_none(), "没有字体请求时不起线程");
+        assert!(worker.queue.is_none(), "no thread is started without font requests");
         worker.submit(
             json!(7),
             "fonts.resolve",

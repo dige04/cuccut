@@ -28,13 +28,13 @@ impl Worker {
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
-            .expect("起得来 speech-worker");
+            .expect("speech-worker can start");
         let stdout = child.stdout.take().unwrap();
         let (tx, rx) = channel();
         std::thread::spawn(move || {
             for line in BufReader::new(stdout).lines() {
                 let Ok(line) = line else { break };
-                let value: Value = serde_json::from_str(&line).unwrap_or_else(|_| panic!("stdout 不是 JSON 行：{line}"));
+                let value: Value = serde_json::from_str(&line).unwrap_or_else(|_| panic!("stdout is not a JSON line: {line}"));
                 if tx.send(value).is_err() {
                     break;
                 }
@@ -51,7 +51,7 @@ impl Worker {
     fn send(&mut self, method: &str, params: Value) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
-        let stdin = self.stdin.as_mut().expect("stdin 还开着");
+        let stdin = self.stdin.as_mut().expect("stdin is still open");
         writeln!(stdin, "{}", json!({ "id": id, "method": method, "params": params })).unwrap();
         stdin.flush().unwrap();
         id
@@ -60,8 +60,8 @@ impl Worker {
     fn recv(&self) -> Value {
         match self.lines.recv_timeout(TIMEOUT) {
             Ok(value) => value,
-            Err(RecvTimeoutError::Timeout) => panic!("Worker 没有回应"),
-            Err(RecvTimeoutError::Disconnected) => panic!("Worker 的 stdout 关了"),
+            Err(RecvTimeoutError::Timeout) => panic!("Worker did not respond"),
+            Err(RecvTimeoutError::Disconnected) => panic!("Worker stdout closed"),
         }
     }
 
@@ -74,7 +74,7 @@ impl Worker {
             }
             if message.get("id").is_some() {
                 // Acknowledgement for llm.reply / cancel.
-                assert!(message.get("result").is_some(), "回执应当成功：{message}");
+                assert!(message.get("result").is_some(), "the receipt should succeed: {message}");
                 continue;
             }
             let name = message["event"].as_str().unwrap_or_default().to_owned();
@@ -117,7 +117,7 @@ impl Worker {
             std::thread::sleep(Duration::from_millis(50));
         }
         let _ = self.child.kill();
-        panic!("Worker 没有自己退出");
+        panic!("Worker did not exit on its own");
     }
 }
 
@@ -185,7 +185,7 @@ fn split_tags(html: &str, name: &str) -> Vec<Tag> {
     while let Some(start) = rest.find(&open_pat) {
         let after = &rest[start..];
         let open_end = after.find('>').unwrap();
-        let close = after.find(&close_pat).unwrap_or_else(|| panic!("没有 {close_pat}：{after}"));
+        let close = after.find(&close_pat).unwrap_or_else(|| panic!("no {close_pat}: {after}"));
         out.push(Tag {
             open: after[..open_end].to_owned(),
             inner: after[open_end + 1..close].to_owned(),
@@ -310,7 +310,7 @@ fn hello_names_the_protocol() {
     assert_eq!(reply["result"]["protocol"], "speech-worker/1");
     assert_eq!(reply["result"]["methods"], json!(["translate"]));
     drop(worker.stdin.take());
-    assert!(worker.wait_exit().success(), "stdin 关闭后正常退出");
+    assert!(worker.wait_exit().success(), "exits normally after stdin closes");
 }
 
 #[test]
@@ -387,7 +387,7 @@ fn a_terminal_error_stops_and_a_restart_does_not_redo_finished_pages() {
     let reply = worker.translate(&job, &mut events, &mut |params, _| {
         if params["kind"] == "translate" {
             if pages_answered == 1 {
-                return Answer::Error(json!({ "code": "BUDGET_EXCEEDED", "message": "任务预算用完了", "class": "terminal" }));
+                return Answer::Error(json!({ "code": "BUDGET_EXCEEDED", "message": "task budget is used up", "class": "terminal" }));
             }
             pages_answered += 1;
             translated_first.extend(requested_sentences(params));
@@ -399,7 +399,7 @@ fn a_terminal_error_stops_and_a_restart_does_not_redo_finished_pages() {
     let done = reply["error"]["details"]["translatedSentences"].as_u64().unwrap() as usize;
     assert!(done > 0 && done == translated_first.len(), "{reply}");
     assert!(job.staging.join("checkpoint.json").exists());
-    assert!(!job.staging.join("translation.json").exists(), "没有半份译文");
+    assert!(!job.staging.join("translation.json").exists(), "no half-finished translation");
     // Terminal failures are not retried: the second page was sent only once.
     let second_page_requests = events_named(&events, "llm.request")
         .iter()
@@ -422,7 +422,7 @@ fn a_terminal_error_stops_and_a_restart_does_not_redo_finished_pages() {
     assert_eq!(resumed[0]["params"]["translatedSentences"], done);
     assert!(!translated_second.is_empty());
     for id in &translated_second {
-        assert!(!translated_first.contains(id), "已完成的句子 {id} 又送翻了");
+        assert!(!translated_first.contains(id), "already-finished sentence {id} was sent for translation again");
     }
     // The brief was settled the first time, so resumed runs make no further request for it.
     assert!(
@@ -467,28 +467,28 @@ fn a_refresh_retranslates_only_the_named_sentence_onto_the_existing_translation(
         Answer::Text(fake_answer(params).replace("好的", "新的").replace("第", "新"))
     });
     assert!(reply.get("error").is_none(), "{reply}");
-    assert_eq!(requested, vec![target.to_owned()], "只送翻点名的那一句");
+    assert_eq!(requested, vec![target.to_owned()], "only the named sentence is sent for translation");
     assert!(
         events_named(&events, "llm.request")
             .iter()
             .all(|request| request["params"]["kind"] != "translate-brief"),
-        "刷新不做简报"
+        "a refresh does not make a brief"
     );
 
     let body = read(&second.staging.join("translation.json"));
-    assert_eq!(body["sourceBasis"]["speechRef"]["revision"], "rev-2", "sourceBasis 换成这次的原文");
-    assert_eq!(body["glossaryRef"], base["glossaryRef"], "glossaryRef 沿用底稿的");
+    assert_eq!(body["sourceBasis"]["speechRef"]["revision"], "rev-2", "sourceBasis is replaced with this run's source text");
+    assert_eq!(body["glossaryRef"], base["glossaryRef"], "glossaryRef is kept from the base draft");
     let units = body["units"].as_array().unwrap();
     let base_units = base["units"].as_array().unwrap();
     assert_eq!(units.len(), base_units.len());
     for (unit, prior) in units.iter().zip(base_units) {
-        assert_eq!(unit["id"], prior["id"], "单元 ID 与顺序照旧");
+        assert_eq!(unit["id"], prior["id"], "unit IDs and order are unchanged");
         if unit["sourceSentenceId"] == target {
             assert!(unit["naturalText"].as_str().unwrap().contains('新'), "{unit}");
-            assert_ne!(unit["sourceFingerprint"], prior["sourceFingerprint"], "指纹换成改过的这一句");
+            assert_ne!(unit["sourceFingerprint"], prior["sourceFingerprint"], "the fingerprint is replaced with the edited sentence's");
             assert_eq!(unit["status"], "draft");
         } else {
-            assert_eq!(unit, prior, "别的单元逐字不变");
+            assert_eq!(unit, prior, "other units are unchanged word for word");
         }
     }
     let report = read(&second.staging.join("report.json"));
@@ -530,13 +530,13 @@ fn a_refresh_translates_a_sentence_that_has_no_unit_yet() {
         .unwrap()
         .iter()
         .find(|unit| unit["sourceSentenceId"] == target)
-        .unwrap_or_else(|| panic!("新句子要有单元：{body}"));
+        .unwrap_or_else(|| panic!("new sentences need units: {body}"));
     assert!(!fresh["naturalText"].as_str().unwrap().trim().is_empty(), "{fresh}");
     assert!(fresh["sourceFingerprint"].as_str().unwrap().starts_with("5:w-2-1:"), "{fresh}");
     let cues = read(&second.staging.join("cues.json"));
     assert!(
         cues["cues"].as_array().unwrap().iter().any(|cue| cue["unitId"] == fresh["id"]),
-        "新单元有字幕条"
+        "the new unit has a subtitle cue"
     );
 }
 
@@ -556,7 +556,7 @@ fn long_sentences_come_back_as_aligned_rows() {
     let list = cues["cues"].as_array().unwrap();
     assert!(
         list.len() > body.units.len(),
-        "长句切成多行：{} 条字幕，{} 个单元",
+        "long sentences split into lines: {} cues, {} units",
         list.len(),
         body.units.len()
     );
@@ -633,7 +633,7 @@ fn closing_stdin_mid_request_exits_the_process() {
         }
         Answer::Text(fake_answer(params))
     });
-    assert!(worker.wait_exit().success(), "父进程放手后自己退出");
+    assert!(worker.wait_exit().success(), "exits on its own after the parent lets go");
     let checkpoint = read(&job.staging.join("checkpoint.json"));
     assert!(!checkpoint["custom"]["trans"].as_object().unwrap().is_empty());
 }

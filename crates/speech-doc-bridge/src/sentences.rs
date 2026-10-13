@@ -67,7 +67,7 @@ pub fn source_sentences(body: &SpeechBody) -> Result<SourceSentences, BridgeErro
         .iter()
         .map(|sentence| {
             let first = &body.words[sentence.word_indices[0]];
-            let last = &body.words[*sentence.word_indices.last().expect("句子至少有一个词")];
+            let last = &body.words[*sentence.word_indices.last().expect("sentence has at least one word")];
             let speaker = doc.words[sentence.word_indices[0]].sp.clone();
             SourceSentence {
                 id: sentence.id.clone(),

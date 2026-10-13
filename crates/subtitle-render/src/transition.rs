@@ -160,10 +160,10 @@ pub enum SubtitleSceneFallback {
 impl std::fmt::Display for SubtitleSceneFallback {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let reason = match self {
-            Self::CompositeMode => "blend mode 尚未进入 glyph pass",
-            Self::WordAnimation => "逐词配方尚未 uniform 化",
-            Self::InvalidMask => "swash 无法提供有效的 glyph atlas 图像",
-            Self::SceneLimit => "scene 节点或 glyph run uniform 数量超出上限",
+            Self::CompositeMode => "blend mode has not reached the glyph pass yet",
+            Self::WordAnimation => "per-word recipe is not yet uniform-based",
+            Self::InvalidMask => "swash cannot provide a valid glyph atlas image",
+            Self::SceneLimit => "scene node or glyph run uniform count exceeds the limit",
         };
         formatter.write_str(reason)
     }
@@ -378,7 +378,7 @@ impl InjectedMediaStore {
 #[cfg(not(feature = "host"))]
 impl FrameMedia for InjectedMediaStore {
     fn frame(&mut self, id: &str, _media_ms: i64) -> Result<Arc<Pixmap>> {
-        bail!("wasm-safe 字幕计划没有注入媒体资源：{id}")
+        bail!("the wasm-safe subtitle plan has no injected media resource: {id}")
     }
 }
 
@@ -675,10 +675,10 @@ pub fn source_path(
         .sources
         .get(source_id)
         .and_then(|source| source.path.as_deref())
-        .with_context(|| format!("source {source_id} 缺少 path"))?;
+        .with_context(|| format!("source {source_id} is missing path"))?;
     let path = crate::paths::resolve(project, raw);
     if !path.is_file() {
-        bail!("source 媒体不存在：{}", path.display());
+        bail!("source media does not exist: {}", path.display());
     }
     Ok(path)
 }

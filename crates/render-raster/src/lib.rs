@@ -9,24 +9,24 @@
 // Only one thing really needs guarding: **keep the ffmpeg subprocess / host SVG decoding out of the browser build**. The BCF document layout, recording and frame planning are shared implementations with no I/O, so they are available to WASM as well.
 #[cfg(all(target_arch = "wasm32", feature = "media"))]
 compile_error!(
-    "wasm32 目标不得打开 ccut-render 的 `media`（ffmpeg 子进程 / host resvg）：\
-     用 `--no-default-features --features wasm-safe`"
+    "the wasm32 target must not enable ccut-render's `media` feature (ffmpeg subprocess / host resvg): \
+     use `--no-default-features --features wasm-safe`"
 );
 #[cfg(all(target_arch = "wasm32", feature = "gpu"))]
 compile_error!(
-    "wasm32 目标不得打开 ccut-render 的 native `gpu`；R3 浏览器产物请用 \
-     `gpu-webgpu` / `gpu-webgl`（两者合开即 `gpu-web`）"
+    "the wasm32 target must not enable ccut-render's native `gpu`; for R3 browser builds use \
+     `gpu-webgpu` / `gpu-webgl` (enabling both is `gpu-web`)"
 );
 
 // v3: the dependencies of `program` and GPU are not declared (see the header of Cargo.toml), so the features are only placeholders. When they are enabled, give a readable reason here rather than a string of “crate not found” errors.
 #[cfg(feature = "program")]
 compile_error!(
-    "render-raster 的 `program` 不可用：它要的 ccut-compile（BCF 编译，oxc + rquickjs）\
-     不移植（架构设计 §13.6），v3 的代码画面走代码包（§8）"
+    "render-raster's `program` is unavailable: it needs ccut-compile (BCF compilation via oxc + rquickjs), \
+     which is not ported (architecture design §13.6); in v3, code-driven visuals go through code bundles (§8)"
 );
 #[cfg(any(feature = "gpu-runtime", feature = "wgsl-validate"))]
 compile_error!(
-    "render-raster 的 GPU feature 尚不可用：wgpu / naga / pollster 待 GPU 合成那一批引入"
+    "the render-raster GPU feature is not available yet: wgpu / naga / pollster arrive with the GPU compositing batch"
 );
 
 #[cfg(feature = "media")]

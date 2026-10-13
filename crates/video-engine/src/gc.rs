@@ -138,7 +138,7 @@ fn sweep(video_dir: &Path, path: &Path, removed: &mut Vec<RemovedEntry>, report_
             removed.push(RemovedEntry { path: shown, bytes });
         }
         Err(error) => {
-            eprintln!("video-engine: GC 删不掉 {}：{error}", path.display());
+            eprintln!("video-engine: GC cannot delete {}: {error}", path.display());
             failed.push(GcFailure {
                 path: shown,
                 error: error.to_string(),
@@ -157,7 +157,7 @@ pub fn gc_blob_dir(video_dir: &Path, referenced: &HashSet<String>, staging_grace
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return report,
         Err(error) => {
-            eprintln!("video-engine: GC 读不了 {}：{error}", blobs.display());
+            eprintln!("video-engine: GC cannot read {}: {error}", blobs.display());
             report.failed.push(GcFailure {
                 path: "blobs".into(),
                 error: error.to_string(),
@@ -229,14 +229,14 @@ mod tests {
         assert_eq!(out, HashSet::from([A.to_string()]));
         let mut out = HashSet::new();
         collect_hashes(&format!("sha256:{}", A.to_uppercase()), &mut out);
-        assert!(out.is_empty(), "大写的不是引擎写的摘要");
+        assert!(out.is_empty(), "an uppercase name is not a digest written by the engine");
     }
 
     #[test]
     fn blob_names_are_recognised() {
         assert_eq!(blob_hash(&format!("{A}.png"), false), Some(A));
         assert_eq!(blob_hash(A, true), Some(A));
-        assert_eq!(blob_hash(A, false), None, "没有扩展名的文件不是 blob");
+        assert_eq!(blob_hash(A, false), None, "a file with no extension is not a blob");
         assert_eq!(blob_hash(&format!("{A}.png"), true), None);
         assert_eq!(blob_hash("notes.txt", false), None);
         assert_eq!(blob_hash(&format!("{A}.tar.gz"), false), None);

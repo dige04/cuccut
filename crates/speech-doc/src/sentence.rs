@@ -346,9 +346,9 @@ mod tests {
             w("g2.14", 4.68, 5.00, "goal.", "s1"),
         ]);
         let cues = derive_cues(&doc, &CueParams::default());
-        assert_eq!(cues.len(), 3, "展示层仍应按两个中停顿拆成三个 Cue");
+        assert_eq!(cues.len(), 3, "the display layer should still split into three Cues at the two mid-sentence pauses");
         let sentences = derive_sentences(&doc, &cues);
-        assert_eq!(sentences.len(), 1, "翻译层必须保留完整语义句");
+        assert_eq!(sentences.len(), 1, "the translation layer must keep the full semantic sentence");
         assert_eq!(
             sentences[0].source_text,
             "An agent is an LLM with tools running in a loop to accomplish a goal."
@@ -374,7 +374,7 @@ mod tests {
         doc.para_breaks.insert("g1.2".to_owned(), true);
         let cues = derive_cues(&doc, &CueParams::default());
         let sentences = derive_sentences(&doc, &cues);
-        assert_eq!(sentences.len(), 2, "段落钉必须封句");
+        assert_eq!(sentences.len(), 2, "a paragraph pin must close the sentence");
         assert_eq!(sentences[1].id, "s-g1.2");
 
         doc.para_breaks.clear();
@@ -394,7 +394,7 @@ mod tests {
             },
         ];
         let cues = derive_cues(&doc, &CueParams::default());
-        assert_eq!(derive_sentences(&doc, &cues).len(), 2, "章节边界必须封句");
+        assert_eq!(derive_sentences(&doc, &cues).len(), 2, "a chapter boundary must close the sentence");
     }
 
     #[test]

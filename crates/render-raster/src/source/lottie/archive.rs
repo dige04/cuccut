@@ -51,14 +51,14 @@ fn u16_at(bytes: &[u8], at: usize) -> Result<u16> {
     bytes
         .get(at..at + 2)
         .map(|b| u16::from_le_bytes([b[0], b[1]]))
-        .ok_or_else(|| anyhow!("zip 截断了（偏移 {at}）"))
+        .ok_or_else(|| anyhow!("zip is truncated (offset {at})"))
 }
 
 fn u32_at(bytes: &[u8], at: usize) -> Result<u32> {
     bytes
         .get(at..at + 4)
         .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
-        .ok_or_else(|| anyhow!("zip 截断了（偏移 {at}）"))
+        .ok_or_else(|| anyhow!("zip is truncated (offset {at})"))
 }
 
 /// Normalizes names in the archive to `a/b/c`: strips a leading `./`. Unsafe names raise an error.
@@ -69,13 +69,13 @@ fn normalise(name: &str) -> Result<String> {
         || name.starts_with('/')
         || name.contains(':')
     {
-        bail!("zip 里有不安全的名字 {name:?}");
+        bail!("zip contains an unsafe name {name:?}");
     }
     let mut parts = Vec::new();
     for part in name.split('/') {
         match part {
             "" | "." => {}
-            ".." => bail!("zip 里有不安全的名字 {name:?}"),
+            ".." => bail!("zip contains an unsafe name {name:?}"),
             other => parts.push(other),
         }
     }
@@ -86,7 +86,7 @@ impl<'a> Archive<'a> {
     /// Reads the end record and the central directory. Validates structure and limits only, and does not decompress.
     pub fn open(bytes: &'a [u8]) -> Result<Archive<'a>> {
         if bytes.len() < EOCD_LEN {
-            bail!("不是 zip：太短");
+            bail!("not a zip: too short");
         }
         // The end record lies between the last 22 bytes and 22 + 65535 (comment) from the end. Search from back to front.
         let last = bytes.len() - EOCD_LEN;
@@ -94,34 +94,34 @@ impl<'a> Archive<'a> {
         let eocd = (first..=last)
             .rev()
             .find(|&at| u32_at(bytes, at).ok() == Some(EOCD_SIGNATURE))
-            .ok_or_else(|| anyhow!("不是 zip：找不到中央目录的结尾记录"))?;
+            .ok_or_else(|| anyhow!("not a zip: end of central directory record not found"))?;
         if eocd >= 20 && u32_at(bytes, eocd - 20)? == ZIP64_LOCATOR_SIGNATURE {
-            bail!("不支持 ZIP64 的 zip");
+            bail!("ZIP64 zips are not supported");
         }
         let (disk, cd_disk) = (u16_at(bytes, eocd + 4)?, u16_at(bytes, eocd + 6)?);
         let (on_disk, count) = (u16_at(bytes, eocd + 8)?, u16_at(bytes, eocd + 10)?);
         let (cd_size, cd_offset) = (u32_at(bytes, eocd + 12)?, u32_at(bytes, eocd + 16)?);
         if count == u16::MAX || cd_size == u32::MAX || cd_offset == u32::MAX {
-            bail!("不支持 ZIP64 的 zip");
+            bail!("ZIP64 zips are not supported");
         }
         if disk != 0 || cd_disk != 0 || on_disk != count {
-            bail!("不支持分卷的 zip");
+            bail!("split zips are not supported");
         }
         if usize::from(count) > MAX_ENTRIES {
-            bail!("zip 里的项太多（{count}，至多 {MAX_ENTRIES}）");
+            bail!("zip has too many entries ({count}, at most {MAX_ENTRIES})");
         }
         let cd_start = cd_offset as usize;
         let cd_end = cd_start
             .checked_add(cd_size as usize)
             .filter(|&end| end <= eocd)
-            .ok_or_else(|| anyhow!("zip 的中央目录越界"))?;
+            .ok_or_else(|| anyhow!("zip central directory is out of bounds"))?;
 
         let mut entries = BTreeMap::new();
         let mut total = 0u64;
         let mut at = cd_start;
         for _ in 0..count {
             if at + 46 > cd_end || u32_at(bytes, at)? != CENTRAL_SIGNATURE {
-                bail!("zip 的中央目录坏了（偏移 {at}）");
+                bail!("zip central directory is corrupt (offset {at})");
             }
             let flags = u16_at(bytes, at + 8)?;
             let method = u16_at(bytes, at + 10)?;
@@ -135,33 +135,33 @@ impl<'a> Archive<'a> {
             let name_end = at + 46 + name_len;
             let next = name_end + extra_len + comment_len;
             if next > cd_end {
-                bail!("zip 的中央目录坏了（偏移 {at}）");
+                bail!("zip central directory is corrupt (offset {at})");
             }
             let raw_name = std::str::from_utf8(&bytes[at + 46..name_end])
-                .map_err(|_| anyhow!("zip 里有不是 UTF-8 的名字"))?;
+                .map_err(|_| anyhow!("zip contains a name that is not UTF-8"))?;
             at = next;
             if flags & 1 != 0 {
-                bail!("不支持加密的 zip（{raw_name}）");
+                bail!("encrypted zips are not supported ({raw_name})");
             }
             if compressed == u32::MAX || size == u32::MAX || local_offset == u32::MAX {
-                bail!("不支持 ZIP64 的 zip");
+                bail!("ZIP64 zips are not supported");
             }
             let name = normalise(raw_name)?;
             if raw_name.ends_with('/') {
                 continue; // Directory
             }
             if !matches!(method, 0 | 8) {
-                bail!("zip 里的 {name} 用了不支持的压缩方式 {method}（只认存储与 deflate）");
+                bail!("{name} in the zip uses unsupported compression method {method} (only stored and deflate are accepted)");
             }
             if method == 0 && compressed != size {
-                bail!("zip 里的 {name} 是存储的，压缩前后的大小却不同");
+                bail!("{name} in the zip is stored, but its compressed and uncompressed sizes differ");
             }
             if u64::from(size) > MAX_ENTRY_BYTES {
-                bail!("zip 里的 {name} 解压后太大（{size} 字节，至多 {MAX_ENTRY_BYTES}）");
+                bail!("{name} in the zip is too large once decompressed ({size} bytes, at most {MAX_ENTRY_BYTES})");
             }
             total += u64::from(size);
             if total > MAX_TOTAL_BYTES {
-                bail!("zip 解压后加起来太大（至多 {MAX_TOTAL_BYTES} 字节）");
+                bail!("zip is too large once decompressed in total (at most {MAX_TOTAL_BYTES} bytes)");
             }
             let entry = Entry {
                 method,
@@ -171,7 +171,7 @@ impl<'a> Archive<'a> {
                 local_offset: u64::from(local_offset),
             };
             if entries.insert(name.clone(), entry).is_some() {
-                bail!("zip 里有重名的项 {name}");
+                bail!("zip contains duplicate entry {name}");
             }
         }
         Ok(Archive { bytes, entries })
@@ -190,9 +190,9 @@ impl<'a> Archive<'a> {
         let Some(entry) = self.entries.get(&name) else {
             return Ok(None);
         };
-        let at = usize::try_from(entry.local_offset).map_err(|_| anyhow!("zip 的 {name} 越界"))?;
+        let at = usize::try_from(entry.local_offset).map_err(|_| anyhow!("zip entry {name} is out of bounds"))?;
         if u32_at(self.bytes, at)? != LOCAL_SIGNATURE {
-            bail!("zip 的 {name} 本地头坏了");
+            bail!("zip entry {name} has a corrupt local header");
         }
         let name_len = usize::from(u16_at(self.bytes, at + 26)?);
         let extra_len = usize::from(u16_at(self.bytes, at + 28)?);
@@ -200,18 +200,18 @@ impl<'a> Archive<'a> {
         let end = start
             .checked_add(entry.compressed as usize)
             .filter(|&end| end <= self.bytes.len())
-            .ok_or_else(|| anyhow!("zip 的 {name} 越界"))?;
+            .ok_or_else(|| anyhow!("zip entry {name} is out of bounds"))?;
         let data = &self.bytes[start..end];
         let out = match entry.method {
             0 => data.to_vec(),
             _ => miniz_oxide::inflate::decompress_to_vec_with_limit(data, entry.size as usize)
-                .map_err(|e| anyhow!("zip 的 {name} 解压失败：{:?}", e.status))?,
+                .map_err(|e| anyhow!("failed to decompress zip entry {name}: {:?}", e.status))?,
         };
         if out.len() as u64 != entry.size {
-            bail!("zip 的 {name} 解压后的大小与声明的不同");
+            bail!("the decompressed size of zip entry {name} differs from the declared size");
         }
         if crc32(&out) != entry.crc {
-            bail!("zip 的 {name} 校验和不对");
+            bail!("zip entry {name} has a bad checksum");
         }
         Ok(Some(out))
     }
@@ -248,8 +248,8 @@ impl<'a> Archive<'a> {
                     && name.ends_with(".json")
             })
             .map(str::to_owned)
-            .ok_or_else(|| anyhow!("`.lottie` 包里没有动画（animations/*.json 或 a/*.json）"))?;
-        let bytes = self.read(&first)?.expect("名字来自目录");
+            .ok_or_else(|| anyhow!("the `.lottie` package has no animation (animations/*.json or a/*.json)"))?;
+        let bytes = self.read(&first)?.expect("name comes from the directory");
         Ok((first, bytes))
     }
 
@@ -379,7 +379,7 @@ pub(crate) mod tests {
             let error = Archive::open(&zip(&[(name, b"x", false)]))
                 .unwrap_err()
                 .to_string();
-            assert!(error.contains("不安全"), "{name}: {error}");
+            assert!(error.contains("unsafe"), "{name}: {error}");
         }
         assert!(Archive::open(b"PK\x03\x04rest").is_err());
         // Content altered: CRC mismatch.
@@ -392,7 +392,7 @@ pub(crate) mod tests {
                 .read("a.txt")
                 .unwrap_err()
                 .to_string()
-                .contains("校验和")
+                .contains("checksum")
         );
         // The size declared in the central directory is smaller than the actual size. Truncated to the declared size, so the sizes do not match.
         let mut bytes = zip(&[("b.txt", &b"x".repeat(1000), true)]);

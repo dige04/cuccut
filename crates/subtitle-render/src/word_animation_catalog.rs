@@ -204,7 +204,7 @@ mod tests {
             assert_eq!(
                 payload["active"].get("boxScale").is_some(),
                 entry.catalog_id == "boxHighlight",
-                "{} 的块时间轨写错了格",
+                "{} has the wrong block timeline entries",
                 entry.catalog_id
             );
         }
@@ -222,7 +222,7 @@ mod tests {
             json!([[0.0, 0.75], [0.7, 1.0], [1.0, 1.0]])
         );
         assert_eq!(pill["active"]["boxEasing"], json!("sinInOut"));
-        let track = crate::word_box_track(&pill["active"]).expect("内核必须认得这三个键");
+        let track = crate::word_box_track(&pill["active"]).expect("the kernel must recognize these three keys");
         assert!(track.is_animated());
         assert_eq!(track.scale_at(0.0), Some(0.9));
         assert_eq!(track.opacity_at(0.0), Some(0.75));

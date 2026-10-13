@@ -435,7 +435,7 @@ fn lerp_contour(a: &Contour, b: &Contour, t: f64) -> Contour {
 fn obj<'a>(value: &'a Value, path: &str) -> Result<&'a serde_json::Map<String, Value>> {
     value
         .as_object()
-        .ok_or_else(|| anyhow::anyhow!("lottie-parse: {path} 不是对象"))
+        .ok_or_else(|| anyhow::anyhow!("lottie-parse: {path} is not an object"))
 }
 
 fn num(map: &serde_json::Map<String, Value>, key: &str) -> Option<f64> {
@@ -471,16 +471,16 @@ const EXPRESSION_CONTROL_TYPES: [i64; 8] = [0, 1, 2, 3, 4, 5, 6, 7];
 pub fn parse(src: &str, doc: &Value, diagnostics: &mut Diagnostics) -> Result<Animation> {
     let root = obj(doc, src)?;
     if flag(root, "ddd") {
-        unsupported!("{src}：3D 合成（ddd = 1）；首版只做 2D");
+        unsupported!("{src}: 3D composition (ddd = 1); the first version only supports 2D");
     }
     let fr = num(root, "fr").unwrap_or(0.0);
     if !(fr.is_finite() && fr > 0.0) {
-        bail!("lottie-parse: {src} 缺少可用的帧率 fr（实际 {fr}）");
+        bail!("lottie-parse: {src} is missing a usable frame rate fr (got {fr})");
     }
     let ip = num(root, "ip").unwrap_or(0.0);
     let op = num(root, "op").unwrap_or(ip);
     if !(op > ip) {
-        bail!("lottie-parse: {src} 的时间区间非法（ip = {ip}, op = {op}）");
+        bail!("lottie-parse: {src} has an invalid time range (ip = {ip}, op = {op})");
     }
 
     let mut precomps = BTreeMap::new();
@@ -496,7 +496,7 @@ pub fn parse(src: &str, doc: &Value, diagnostics: &mut Diagnostics) -> Result<An
         let path = format!("{src}.assets[{idx}]");
         let map = obj(asset, &path)?;
         let Some(id) = text(map, "id") else {
-            bail!("lottie-parse: {path} 缺少 id");
+            bail!("lottie-parse: {path} is missing id");
         };
         if let Some(layers) = map.get("layers").and_then(Value::as_array) {
             let mut parsed = Vec::with_capacity(layers.len());
@@ -580,17 +580,17 @@ fn parse_layer(path: &str, value: &Value, diagnostics: &mut Diagnostics) -> Resu
     let ty = map.get("ty").and_then(Value::as_i64).unwrap_or(-1);
     let name = text(map, "nm").unwrap_or_default();
     if flag(map, "ddd") {
-        unsupported!("{path}（\"{name}\"）：3D 图层（ddd = 1）；首版只做 2D");
+        unsupported!("{path} (\"{name}\"): 3D layer (ddd = 1); the first version only supports 2D");
     }
     if flag(map, "ao") {
-        unsupported!("{path}（\"{name}\"）：自动定向（ao = 1）；首版不支持");
+        unsupported!("{path} (\"{name}\"): auto-orient (ao = 1) is not supported in the first version");
     }
     check_effects(path, &name, map, diagnostics)?;
 
     let kind = match ty {
         0 => LayerKind::Precomp {
             ref_id: text(map, "refId")
-                .ok_or_else(|| anyhow::anyhow!("lottie-parse: {path} 是预合成图层但缺少 refId"))?,
+                .ok_or_else(|| anyhow::anyhow!("lottie-parse: {path} is a precomp layer but is missing refId"))?,
             width: num(map, "w").unwrap_or(0.0),
             height: num(map, "h").unwrap_or(0.0),
         },
@@ -601,7 +601,7 @@ fn parse_layer(path: &str, value: &Value, diagnostics: &mut Diagnostics) -> Resu
         },
         2 => LayerKind::Image {
             ref_id: text(map, "refId")
-                .ok_or_else(|| anyhow::anyhow!("lottie-parse: {path} 是图片图层但缺少 refId"))?,
+                .ok_or_else(|| anyhow::anyhow!("lottie-parse: {path} is an image layer but is missing refId"))?,
         },
         3 => LayerKind::Null,
         4 => {
@@ -620,8 +620,8 @@ fn parse_layer(path: &str, value: &Value, diagnostics: &mut Diagnostics) -> Resu
             }
             LayerKind::Shape(items)
         }
-        5 => unsupported!("{path}（\"{name}\"）：文字图层（ty = 5）；首版不做文本排版与字形回退"),
-        other => unsupported!("{path}（\"{name}\"）：未知图层类型 ty = {other}"),
+        5 => unsupported!("{path} (\"{name}\"): text layer (ty = 5); the first version does not do text layout or glyph fallback"),
+        other => unsupported!("{path} (\"{name}\"): unknown layer type ty = {other}"),
     };
 
     let ks = map
@@ -667,7 +667,7 @@ fn parse_layer(path: &str, value: &Value, diagnostics: &mut Diagnostics) -> Resu
         Some(2) => Some(MatteMode::AlphaInverted),
         Some(3) => Some(MatteMode::Luma),
         Some(4) => Some(MatteMode::LumaInverted),
-        Some(other) => unsupported!("{path}（\"{name}\"）：未知轨道遮罩类型 tt = {other}"),
+        Some(other) => unsupported!("{path} (\"{name}\"): unknown track matte type tt = {other}"),
     };
 
     Ok(Layer {
@@ -715,18 +715,18 @@ fn check_effects(
         match ty {
             Some(code) if EXPRESSION_CONTROL_TYPES.contains(&code) => {
                 diagnostics.warn(format!(
-                    "图层 \"{name}\" 的效果组「{label}」是表达式控制器（ef ty = {code}）；\
-                     文档里没有表达式，它是死数据——已忽略，画面不受影响"
+                    "layer \"{name}\"'s effect group \"{label}\" is an expression controller (ef ty = {code}); \
+                     the document contains no expressions, so it is dead data — ignored, the picture is unaffected"
                 ));
             }
             None => {
                 diagnostics.warn(format!(
-                    "图层 \"{name}\" 的效果条目「{label}」没有 ty 字段；已忽略"
+                    "layer \"{name}\"'s effect entry \"{label}\" has no ty field; ignored"
                 ));
             }
             Some(code) => unsupported!(
-                "{path}（\"{name}\"）：光栅效果「{label}」（ef ty = {code}）；\
-                 首版只做形状/渐变/遮罩，光栅效果请改用 BCF 的 effects[] 或 lottie-thorvg 逃生口"
+                "{path} (\"{name}\"): raster effect \"{label}\" (ef ty = {code}); \
+                 the first version only handles shapes, gradients and masks; for raster effects use BCF's effects[] or the lottie-thorvg escape hatch"
             ),
         }
     }
@@ -750,7 +750,7 @@ fn parse_blend(path: &str, map: &serde_json::Map<String, Value>) -> Result<Blend
         10 => BlendMode::Difference,
         11 => BlendMode::Exclusion,
         16 => BlendMode::Plus,
-        other => unsupported!("{path}：混合模式 bm = {other} 不在 BCF 的封闭枚举里（§6.6 九种）"),
+        other => unsupported!("{path}: blend mode bm = {other} is not in BCF's closed enumeration (§6.6, nine modes)"),
     })
 }
 
@@ -761,13 +761,13 @@ fn parse_mask(path: &str, value: &Value, layer: &str) -> Result<Option<Mask>> {
         "n" => return Ok(None),
         "a" => {}
         other => unsupported!(
-            "{path}（图层 \"{layer}\"）：遮罩模式 \"{other}\"；首版只做 add（\"a\"）与 none（\"n\"）"
+            "{path} (layer \"{layer}\"): mask mode \"{other}\"; the first version only supports add (\"a\") and none (\"n\")"
         ),
     }
     // Feathering needs a blur pass; the first-release masks are pure geometric compositing
     let feather = value::parse_property_or(&format!("{path}.x"), map.get("x"), &[0.0])?;
     if !feather.is_static() || feather.scalar(0.0) != 0.0 {
-        unsupported!("{path}（图层 \"{layer}\"）：遮罩羽化（x ≠ 0）；首版不支持");
+        unsupported!("{path} (layer \"{layer}\"): mask feather (x ≠ 0) is not supported in the first version");
     }
     let Some(pt) = map.get("pt") else {
         return Ok(None);
@@ -782,12 +782,12 @@ fn parse_mask(path: &str, value: &Value, layer: &str) -> Result<Option<Mask>> {
 /// `ks` of `sh` / `pt` of masks: the value is `{i, o, v, c}`, not an array.
 pub fn parse_shape_property(path: &str, value: &Value) -> Result<AnimatedShape> {
     let Some(map) = value.as_object() else {
-        bail!("lottie-parse: {path} 的形状属性不是对象");
+        bail!("lottie-parse: {path} shape property is not an object");
     };
     if let Some(Value::String(expr)) = map.get("x")
         && !expr.trim().is_empty()
     {
-        unsupported!("{path} 带表达式（\"x\"）；与 BCF 的确定性承诺冲突");
+        unsupported!("{path} has an expression (\"x\"); this conflicts with BCF's determinism guarantee");
     }
     // Same rule as `value::parse_property`: **judged by structure, not by the `a` flag**.
     // The constant form of a shape property is an `{i, o, v, c}` object, and the keyframe form is an array — so the criterion is more direct:
@@ -873,7 +873,7 @@ fn parse_contour(path: &str, value: &Value) -> Result<Contour> {
     let mut i = points("i");
     let mut o = points("o");
     if (!i.is_empty() && i.len() != v.len()) || (!o.is_empty() && o.len() != v.len()) {
-        bail!("lottie-parse: {path} 的顶点与切线数量不一致");
+        bail!("lottie-parse: {path} vertex and tangent counts do not match");
     }
     i.resize(v.len(), [0.0, 0.0]);
     o.resize(v.len(), [0.0, 0.0]);
@@ -979,12 +979,12 @@ fn parse_shape(path: &str, value: &Value) -> Result<Option<ShapeItem>> {
         "mm" => match map.get("mm").and_then(Value::as_i64).unwrap_or(1) {
             1 => ShapeItem::MergeAppend,
             other => unsupported!(
-                "{path}（\"{name}\"）：布尔合并路径（mm = {other}）；\
-                 首版只做纯拼接 mm = 1，布尔运算需要一套路径求交/求差引擎"
+                "{path} (\"{name}\"): boolean merge path (mm = {other}); \
+                 the first version only does plain concatenation (mm = 1); boolean operations need a path intersection/difference engine"
             ),
         },
-        "rp" => unsupported!("{path}（\"{name}\"）：重复器（rp）；首版不支持"),
-        other => unsupported!("{path}（\"{name}\"）：未知形状条目 ty = \"{other}\""),
+        "rp" => unsupported!("{path} (\"{name}\"): repeater (rp) is not supported in the first version"),
+        other => unsupported!("{path} (\"{name}\"): unknown shape item ty = \"{other}\""),
     };
     Ok(Some(item))
 }
@@ -1069,7 +1069,7 @@ fn parse_hex_color(text: &str) -> [f64; 3] {
 /// Data URIs without `;base64` (common with `data:image/svg+xml;utf8,<svg…>`) are decoded as URL percent-encoding.
 fn decode_data_uri(path: &str, uri: &str) -> Result<Vec<u8>> {
     let Some((header, payload)) = uri.split_once(',') else {
-        bail!("lottie-parse: {path} 声明为内嵌资源（e = 1），但 p 不是 data URI");
+        bail!("lottie-parse: {path} is declared as an embedded asset (e = 1), but p is not a data URI");
     };
     if !header
         .split(';')
@@ -1088,7 +1088,7 @@ fn decode_data_uri(path: &str, uri: &str) -> Result<Vec<u8>> {
             b'+' => 62,
             b'/' => 63,
             b'=' | b'\n' | b'\r' | b' ' | b'\t' => continue,
-            other => bail!("lottie-parse: {path} 的 base64 里有非法字符 0x{other:02x}"),
+            other => bail!("lottie-parse: {path} base64 contains an illegal character 0x{other:02x}"),
         };
         acc = (acc << 6) | sextet;
         bits += 6;
@@ -1111,7 +1111,7 @@ fn percent_decode(path: &str, payload: &str) -> Result<Vec<u8>> {
                 .get(at + 1..at + 3)
                 .and_then(|hex| u8::from_str_radix(hex, 16).ok())
                 .ok_or_else(|| {
-                    anyhow::anyhow!("lottie-parse: {path} 的 data URI 里有坏的百分号编码")
+                    anyhow::anyhow!("lottie-parse: {path} data URI contains a malformed percent-encoding")
                 })?;
             out.push(byte);
             at += 3;
@@ -1169,7 +1169,7 @@ mod tests {
         assert!(diagnostics.is_empty());
         assert_eq!(animation.layers.len(), 1);
         let m = animation.layers[0].transform.matrix(0.0);
-        assert_eq!(m, Affine::IDENTITY, "缺省变换必须是单位阵");
+        assert_eq!(m, Affine::IDENTITY, "the default transform must be the identity matrix");
         assert_eq!(animation.layers[0].transform.alpha(0.0), 1.0);
     }
 
@@ -1178,15 +1178,15 @@ mod tests {
         for (doc, needle) in [
             (
                 minimal(json!([{"ty": 5, "ip": 0, "op": 30, "ks": {}}])),
-                "文字图层",
+                "text layer",
             ),
             (
                 minimal(json!([shape_layer(json!([{"ty": "mm", "mm": 2}]))])),
-                "布尔合并路径",
+                "boolean merge path",
             ),
             (
                 minimal(json!([shape_layer(json!([{"ty": "rp"}]))])),
-                "重复器",
+                "repeater",
             ),
             (
                 minimal(json!([{"ty": 4, "ddd": 1, "ip": 0, "op": 30, "ks": {}}])),
@@ -1194,29 +1194,29 @@ mod tests {
             ),
             (
                 minimal(json!([{"ty": 4, "ao": 1, "ip": 0, "op": 30, "ks": {}}])),
-                "自动定向",
+                "auto-orient",
             ),
             (
                 minimal(
                     json!([{"ty": 4, "ip": 0, "op": 30, "ks": {"o": {"a": 0, "k": 100, "x": "t"}}}]),
                 ),
-                "表达式",
+                "expression",
             ),
             (
                 minimal(json!([{"ty": 4, "ip": 0, "op": 30, "ks": {},
                     "ef": [{"ty": 29, "nm": "Gaussian Blur"}]}])),
-                "光栅效果",
+                "raster effect",
             ),
             (
                 minimal(json!([{"ty": 4, "ip": 0, "op": 30, "ks": {},
                     "masksProperties": [{"mode": "s", "pt": {"a": 0, "k": {}}}]}])),
-                "遮罩模式",
+                "mask mode",
             ),
         ] {
             let error = parse_err(&doc);
             assert!(
                 error.contains("lottie-unsupported-feature") && error.contains(needle),
-                "期望 {needle} 的 fail-fast，实际：{error}"
+                "expected a fail-fast for {needle}, got: {error}"
             );
         }
     }
@@ -1230,7 +1230,7 @@ mod tests {
         }])));
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].rule, super::super::LOTTIE_RULE);
-        assert!(diagnostics[0].message.contains("表达式控制器"));
+        assert!(diagnostics[0].message.contains("expression controller"));
     }
 
     #[test]
@@ -1249,7 +1249,7 @@ mod tests {
         let doc = minimal(json!([{"ty": 4, "ip": 0, "op": 30, "ks": {}, "bm": {"a": 0, "k": 5}}]));
         assert_eq!(parse_ok(&doc).0.layers[0].blend, BlendMode::Lighten);
         let doc = minimal(json!([{"ty": 4, "ip": 0, "op": 30, "ks": {}, "bm": 9}]));
-        assert!(parse_err(&doc).contains("混合模式"));
+        assert!(parse_err(&doc).contains("blend mode"));
     }
 
     #[test]
@@ -1318,7 +1318,7 @@ mod tests {
         assert_eq!(
             legacy.value(99.0).v[0][0],
             8.0,
-            "末端冻结在 8，而不是空轮廓"
+            "the end freezes at 8, not an empty outline"
         );
     }
 

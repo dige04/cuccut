@@ -1476,10 +1476,10 @@ mod tests {
     fn the_shape_catalogue_is_a_third_recipe_shape_not_a_manifest() {
         // Data does not go into the `manifests` vector, so the three phase-2 guards are unaffected.
         for id in ids(Domain::TimelineShape) {
-            assert!(manifest(id).is_none(), "{id} 不该出现在通用 manifest 里");
+            assert!(manifest(id).is_none(), "{id} should not appear in the generic manifest");
             assert!(!manifest_ids().contains(&id), "{id}");
-            assert_eq!(canonical_id(id), id, "{id} 不该有 alias");
-            assert!(family_of(id).is_none(), "{id} 不该占 family 预算");
+            assert_eq!(canonical_id(id), id, "{id} should not have an alias");
+            assert!(family_of(id).is_none(), "{id} should not take up the family budget");
         }
         // Panel order = fixed grid order; `line` and the line-segment `arrow` take the arrow slot.
         // **Not** filename sorting, nor the order of writing in the list.
@@ -1490,7 +1490,7 @@ mod tests {
                 "squig2", "line", "arrow", "tick", "tick2", "chevron", "chevron2", "cross2",
                 "cross", "love2", "love", "diamond", "star", "sharp", "star2", "sharp2"
             ],
-            "目录顺序来自 order 字段，不是文件名排序"
+            "directory order comes from the order field, not from file-name sorting"
         );
     }
 
@@ -1505,13 +1505,13 @@ mod tests {
             "love2", "diamond", "star", "star2", "sharp", "sharp2",
         ];
         for name in BASE_SHAPE_NAMES {
-            let recipe = timeline_shape(name).unwrap_or_else(|| panic!("缺形状 {name}"));
-            assert!(recipe.available, "{name} 应可选");
+            let recipe = timeline_shape(name).unwrap_or_else(|| panic!("missing shape {name}"));
+            assert!(recipe.available, "{name} should be selectable");
             assert_eq!(recipe.qualified_id(), format!("shape.{name}"));
         }
         assert!(
             timeline_shape("line").is_some(),
-            "CucCut 自有的 line 不该被删"
+            "CucCut's own line must not be removed"
         );
         assert_eq!(timeline_shapes().len(), BASE_SHAPE_NAMES.len() + 1);
 
@@ -1520,7 +1520,7 @@ mod tests {
             .iter()
             .filter(|recipe| matches!(recipe.shape().unwrap().path, ShapePath::Outline { .. }))
             .count();
-        assert_eq!(outlines, 20, "20 份 outline = 21 份 path 形状 − 块状 arrow");
+        assert_eq!(outlines, 20, "20 outline shapes = 21 path shapes minus the block arrow");
     }
 
     #[test]
@@ -1597,7 +1597,7 @@ mod tests {
             }
             assert!(
                 parse_catalogue(CatalogueKind::Shape, file, &doc, 0).is_err(),
-                "{mutate} 应在解析期报 manifest-invalid"
+                "{mutate} should fail with manifest-invalid at parse time"
             );
         }
     }
@@ -1650,10 +1650,10 @@ mod tests {
             Domain::TimelineConfetti,
         ] {
             for id in ids(domain) {
-                assert!(manifest(id).is_none(), "{id} 不该出现在通用 manifest 里");
+                assert!(manifest(id).is_none(), "{id} should not appear in the generic manifest");
                 assert!(!manifest_ids().contains(&id), "{id}");
-                assert_eq!(canonical_id(id), id, "{id} 不该有 alias");
-                assert!(family_of(id).is_none(), "{id} 不该占 family 预算");
+                assert_eq!(canonical_id(id), id, "{id} should not have an alias");
+                assert!(family_of(id).is_none(), "{id} should not take up the family budget");
                 assert!(!families().contains(&id), "{id}");
             }
         }
@@ -1922,7 +1922,7 @@ mod tests {
             assert_eq!(body.aspect, *aspect, "{id}");
             assert!(
                 body.shader.is_none(),
-                "{id}: 声波配方全部是 CPU 矢量，没有 WGSL"
+                "{id}: all sound-wave recipes are CPU vectors and have no WGSL"
             );
         }
         // Only the two styles that read time-domain rows use the narrow dB window, and only they are `half` and have no dB control.
@@ -2109,7 +2109,7 @@ mod tests {
                 .unwrap()
                 .object("spin")
                 .is_none(),
-            "非 spin 变体写 null，读出来必须是 None"
+            "a non-spin variant writes null, so reading it back must give None"
         );
     }
 
@@ -2202,52 +2202,52 @@ mod tests {
         assert!(parse_catalogue(CatalogueKind::Visualizer, "bars", &good, 0).is_ok());
 
         let mutations: &[(&str, fn(&mut Value))] = &[
-            ("未知算法名", |doc| {
+            ("unknown algorithm name", |doc| {
                 doc["recipe"]["algorithm"] = serde_json::json!("bars-v1")
             }),
-            ("串门算法名", |doc| {
+            ("algorithm name from another family", |doc| {
                 doc["recipe"]["algorithm"] = serde_json::json!("snake-v1")
             }),
-            ("缺必填参数", |doc| {
+            ("missing required parameter", |doc| {
                 doc["recipe"]["params"]
                     .as_object_mut()
                     .unwrap()
                     .remove("gap");
             }),
-            ("barCount 非正整数", |doc| {
+            ("barCount not a positive integer", |doc| {
                 doc["recipe"]["params"]["barCount"] = serde_json::json!(0)
             }),
-            ("minHeight 越界", |doc| {
+            ("minHeight out of range", |doc| {
                 doc["recipe"]["params"]["minHeight"] = serde_json::json!(1.5)
             }),
-            ("gap 越界", |doc| {
+            ("gap out of range", |doc| {
                 doc["recipe"]["params"]["gap"] = serde_json::json!(-0.1)
             }),
-            ("easing 不在封闭集合", |doc| {
+            ("easing not in the closed set", |doc| {
                 doc["recipe"]["params"]["easing"] = serde_json::json!("easeInBounce")
             }),
-            ("align 不在封闭集合", |doc| {
+            ("align not in the closed set", |doc| {
                 doc["recipe"]["params"]["align"] = serde_json::json!("top")
             }),
-            ("colorLabels 与 numColors 不匹配", |doc| {
+            ("colorLabels mismatched with numColors", |doc| {
                 doc["colorLabels"] = serde_json::json!([])
             }),
-            ("numColors 越界", |doc| {
+            ("numColors out of range", |doc| {
                 doc["numColors"] = serde_json::json!(3)
             }),
-            ("坏颜色", |doc| {
+            ("bad color", |doc| {
                 doc["defaultMainColor"] = serde_json::json!("purple")
             }),
-            ("dB 窗反了", |doc| {
+            ("dB window reversed", |doc| {
                 doc["defaultMinDb"] = serde_json::json!(40.0)
             }),
-            ("binWidth 未知", |doc| {
+            ("unknown binWidth", |doc| {
                 doc["binWidth"] = serde_json::json!("128")
             }),
-            ("determinism 未知", |doc| {
+            ("unknown determinism", |doc| {
                 doc["determinism"] = serde_json::json!("eventual")
             }),
-            ("声波配方不接受 shader", |doc| {
+            ("sound-wave recipe does not accept shader", |doc| {
                 doc["shader"] = serde_json::json!("bars.wgsl")
             }),
         ];
@@ -2259,7 +2259,7 @@ mod tests {
                     parse_catalogue(CatalogueKind::Visualizer, "bars", &doc, 0),
                     Err(MotionError::ManifestInvalid(_))
                 ),
-                "{label} 应在解析期报 manifest-invalid"
+                "{label} should fail with manifest-invalid at parse time"
             );
         }
     }
@@ -2311,7 +2311,7 @@ mod tests {
         let families = families();
         assert!(
             families.len() <= CANONICAL_FAMILY_BUDGET,
-            "{families:?} 超出 {CANONICAL_FAMILY_BUDGET} 个 canonical family 预算（设计 §5.4.3）"
+            "{families:?} exceeds the budget of {CANONICAL_FAMILY_BUDGET} canonical families (design §5.4.3)"
         );
         assert_eq!(
             families,
@@ -2338,7 +2338,7 @@ mod tests {
         let families = part_families();
         assert!(
             families.len() <= PART_FAMILY_BUDGET,
-            "{families:?} 超出 {PART_FAMILY_BUDGET} 个 part family 预算（规范 §7.9）"
+            "{families:?} exceeds the budget of {PART_FAMILY_BUDGET} part families (spec §7.9)"
         );
         assert_eq!(
             families,
@@ -2415,7 +2415,7 @@ mod tests {
             assert_eq!(
                 entry.exposed_to,
                 vec![Surface::Bcf],
-                "{id}: 新 family 只对 BCF 开放（ADR-M09 / 设计 §10 阶段 2）"
+                "{id}: new families are only open to BCF (ADR-M09 / design §10 phase 2)"
             );
             assert_eq!(entry.determinism, Determinism::Strict, "{id}");
             assert_eq!(entry.version, 1, "{id}");

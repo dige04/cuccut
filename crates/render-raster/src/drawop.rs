@@ -600,7 +600,7 @@ impl<'a> Reader<'a> {
             .ok_or_else(|| anyhow::anyhow!("bcop-truncated"))?;
         if end > self.bytes.len() {
             bail!(
-                "bcop-truncated: 需要 {n} 字节，剩余 {}",
+                "bcop-truncated: needs {n} bytes, {} remaining",
                 self.bytes.len() - self.at
             );
         }
@@ -688,7 +688,7 @@ pub fn decode(bytes: &[u8]) -> Result<(u32, FrameOps)> {
     let version = r.u32()?;
     if !(MIN_DECODABLE_VERSION..=MAX_VERSION).contains(&version) {
         bail!(
-            "bcop-version-unsupported: {version}（可读 {MIN_DECODABLE_VERSION}..={MAX_VERSION}）"
+            "bcop-version-unsupported: {version} (readable {MIN_DECODABLE_VERSION}..={MAX_VERSION})"
         );
     }
     let string_count = r.u32()? as usize;
@@ -822,12 +822,12 @@ pub fn decode(bytes: &[u8]) -> Result<(u32, FrameOps)> {
                 opacity: r.f32()?,
                 tf: r.mat()?,
             },
-            other => bail!("bcop-op-unknown: {other}（版本 {version}）"),
+            other => bail!("bcop-op-unknown: {other} (version {version})"),
         });
     }
     if r.at != bytes.len() {
         bail!(
-            "bcop-trailing-bytes: 解析后剩余 {} 字节",
+            "bcop-trailing-bytes: {} bytes left after parsing",
             bytes.len() - r.at
         );
     }

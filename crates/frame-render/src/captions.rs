@@ -191,7 +191,7 @@ pub fn boxed_as_studio(body: &Value, size: (u32, u32)) -> KernelStyle {
         Some(Value::String(id)) if subtitle_render::word_animation_catalog::word_animation_entry(id).is_some() => {
             root["anim"] = subtitle_render::word_animation_catalog::word_animation_payload(id);
         }
-        Some(other) => notes.push(format!("字幕动画预设 {other} 认不出，按不动画画")),
+        Some(other) => notes.push(format!("caption animation preset {other} is not recognized; drawing without animation")),
     }
     if let Some(family) = style.get("fontFamily").filter(|v| v.is_string()) {
         root["fontFamily"] = family.clone();
@@ -442,7 +442,7 @@ impl CaptionPlan {
         };
         let (width, height) = (self.plan.width, self.plan.height);
         if frame.rgba.len() != width as usize * height as usize * 4 {
-            anyhow::bail!("字幕层的尺寸不对");
+            anyhow::bail!("caption layer has the wrong size");
         }
         let blend = match frame.composite {
             CaptionCompositeMode::Normal => BlendMode::SourceOver,
@@ -608,7 +608,7 @@ mod tests {
         assert_eq!(root["punct"], false);
         assert_eq!(root["anim"]["name"], "None");
         assert!((opacity - 0.8).abs() < 1e-6);
-        assert!(notes.is_empty(), "左右对齐照画，不再报提示：{notes:?}");
+        assert!(notes.is_empty(), "justified alignment is drawn as-is and no longer reports a hint: {notes:?}");
         assert_eq!(root["textAlign"], "left");
         assert_eq!(root[subtitle_render::ALIGN_WITHIN_WRAP_KEY], true);
     }

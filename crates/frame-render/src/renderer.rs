@@ -51,13 +51,13 @@ impl RenderError {
     }
 
     fn render(error: anyhow::Error) -> RenderError {
-        RenderError::new("EXPORT_RENDER_FAILED", format!("画面渲染失败：{error:#}"))
+        RenderError::new("EXPORT_RENDER_FAILED", format!("frame render failed: {error:#}"))
     }
 }
 
 impl std::fmt::Display for RenderError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}：{}", self.code, self.message)
+        write!(f, "{}: {}", self.code, self.message)
     }
 }
 
@@ -164,9 +164,9 @@ impl FrameRenderer {
     /// [`Self::new`], with font bytes shared with the caller (the preview keeps one copy of the fonts, and rebuilding the renderer does not copy them again).
     pub fn with_shared_fonts(options: RenderOptions, documents: Documents, fonts: Vec<Arc<Vec<u8>>>) -> Result<FrameRenderer, RenderError> {
         let frame = Pixmap::new(options.width, options.height)
-            .ok_or_else(|| RenderError::new("INVALID_PARAMS", format!("输出尺寸 {}×{} 不可用", options.width, options.height)))?;
+            .ok_or_else(|| RenderError::new("INVALID_PARAMS", format!("output size {}×{} is unavailable", options.width, options.height)))?;
         if fonts.is_empty() || fonts.iter().any(|bytes| bytes.is_empty()) {
-            return Err(RenderError::new("INVALID_PARAMS", "渲染至少要一份回退字体"));
+            return Err(RenderError::new("INVALID_PARAMS", "rendering needs at least one fallback font"));
         }
         Ok(FrameRenderer {
             options,
@@ -254,7 +254,7 @@ impl FrameRenderer {
         self.spare_engine(engine);
         for family in arrived {
             self.missing_fonts.remove(&family);
-            let note = format!("：{}", missing_font_note(&family));
+            let note = format!(": {}", missing_font_note(&family));
             self.warnings.retain(|w| !(w.code == RENDER_NOTE && w.detail.ends_with(&note)));
         }
     }
@@ -280,7 +280,7 @@ impl FrameRenderer {
         }
         let families: Vec<String> = families.iter().cloned().collect();
         for family in families {
-            self.warn(RENDER_NOTE, format!("{item_id}：{}", missing_font_note(&family)));
+            self.warn(RENDER_NOTE, format!("{item_id}: {}", missing_font_note(&family)));
             self.missing_fonts.insert(family);
         }
     }
@@ -311,7 +311,7 @@ impl FrameRenderer {
             return Ok(());
         }
         self.frame =
-            Pixmap::new(width, height).ok_or_else(|| RenderError::new("INVALID_PARAMS", format!("输出尺寸 {width}×{height} 不可用")))?;
+            Pixmap::new(width, height).ok_or_else(|| RenderError::new("INVALID_PARAMS", format!("output size {width}×{height} is unavailable")))?;
         self.options.width = width;
         self.options.height = height;
         if let Some(plan) = self.elements.take() {
@@ -375,7 +375,7 @@ impl FrameRenderer {
         let sequence = video
             .sequences
             .get(&plan.sequence_id)
-            .ok_or_else(|| RenderError::new("INVALID_PARAMS", format!("序列 {} 不在了", plan.sequence_id)))?;
+            .ok_or_else(|| RenderError::new("INVALID_PARAMS", format!("sequence {} is gone", plan.sequence_id)))?;
         self.caption_hits.clear();
         self.frame.fill(if self.transparent { Color::TRANSPARENT } else { Color::BLACK });
         // Keep black when the background color cannot be read.
@@ -442,7 +442,7 @@ impl FrameRenderer {
                 (TransitionRole::Incoming, Some(other)) => (Some(other), &own),
                 (_, None) => (None, &own),
             };
-            let mut out = Pixmap::new(self.options.width, self.options.height).expect("尺寸在构造时检查过");
+            let mut out = Pixmap::new(self.options.width, self.options.height).expect("size was checked at construction");
             compose(&tr.kind, &tr.params, a.map(|l| &l.pixmap), Some(&b.pixmap), b.geom, e, &mut out);
             over(&mut self.frame, &out);
         }
@@ -471,7 +471,7 @@ impl FrameRenderer {
                 return Ok(None);
             };
             self.element_plan(context)?;
-            let plan = self.elements.as_mut().expect("刚编好");
+            let plan = self.elements.as_mut().expect("just compiled");
             let pixmap = self
                 .templates
                 .raster(
@@ -537,7 +537,7 @@ impl FrameRenderer {
                     },
                 };
                 let mut source = cropped(picture, crop_of(item))
-                    .ok_or_else(|| RenderError::new("EXPORT_RENDER_FAILED", format!("实例 {} 的源画面尺寸不可用", layer.item_id)))?;
+                    .ok_or_else(|| RenderError::new("EXPORT_RENDER_FAILED", format!("source frame size of item {} is unavailable", layer.item_id)))?;
                 if let Some(fx) = &fx {
                     apply_to_source(fx, &mut source, short_edge);
                 }
@@ -597,15 +597,15 @@ impl FrameRenderer {
         let notes = std::mem::take(&mut plan.warnings);
         let missing = plan.text.take_missing_families();
         for note in notes {
-            self.warn(RENDER_NOTE, format!("{}：{note}", layer.item_id));
+            self.warn(RENDER_NOTE, format!("{}: {note}", layer.item_id));
         }
         self.note_missing_fonts(&layer.item_id, missing);
         let rendered = rendered?;
         let mut pixmap = Pixmap::from_vec(
             rendered.rgba,
-            IntSize::from_wh(size.0, size.1).ok_or_else(|| RenderError::new("INVALID_PARAMS", "输出尺寸不可用"))?,
+            IntSize::from_wh(size.0, size.1).ok_or_else(|| RenderError::new("INVALID_PARAMS", "output size is unavailable"))?,
         )
-        .ok_or_else(|| RenderError::new("EXPORT_RENDER_FAILED", "内核画出的层尺寸不对"))?;
+        .ok_or_else(|| RenderError::new("EXPORT_RENDER_FAILED", "the layer the kernel drew has the wrong size"))?;
         if let Some(fx) = &fx {
             if !has_source {
                 apply_to_source(fx, &mut pixmap, short_edge);
@@ -647,7 +647,7 @@ impl FrameRenderer {
             plan.set_consume_injected_sources(true);
             self.elements = Some(plan);
         }
-        Ok(self.elements.as_mut().expect("刚编好"))
+        Ok(self.elements.as_mut().expect("just compiled"))
     }
 
     /// The source for a Lottie sticker (cached by asset version and color-replacement table; embedded images attached and recolored, see [`crate::load_lottie`]). When it cannot be read or decoded, it reports an error or skips, depending on the option (`asset`).
@@ -660,7 +660,7 @@ impl FrameRenderer {
     ) -> Result<Option<Arc<Lottie>>, RenderError> {
         let asset: Option<VersionRef> = parameters.get("asset").cloned().and_then(|v| serde_json::from_value(v).ok());
         let Some(asset) = asset else {
-            self.refuse_or_skip(vec![asset_item(layer, "lottie-asset-missing", "Lottie 贴纸没有素材".into())])?;
+            self.refuse_or_skip(vec![asset_item(layer, "lottie-asset-missing", "Lottie sticker has no asset".into())])?;
             return Ok(None);
         };
         let mut key = format!("{}@{}", asset.id, asset.revision);
@@ -675,13 +675,13 @@ impl FrameRenderer {
                 Some(Ok(lottie)) => Some(lottie),
                 Some(Err((reason, why))) => {
                     self.lotties.insert(key.clone(), None);
-                    self.refuse_or_skip(vec![asset_item(layer, reason, format!("Lottie 素材读不出来：{why}"))])?;
+                    self.refuse_or_skip(vec![asset_item(layer, reason, format!("Lottie asset cannot be read: {why}"))])?;
                     return Ok(None);
                 }
                 None => None,
             };
             if entry.is_none() {
-                self.refuse_or_skip(vec![asset_item(layer, "lottie-asset-missing", "Lottie 素材读不到".into())])?;
+                self.refuse_or_skip(vec![asset_item(layer, "lottie-asset-missing", "Lottie asset is not readable".into())])?;
                 return Ok(None);
             }
             self.lotties.insert(key.clone(), entry);
@@ -696,7 +696,7 @@ impl FrameRenderer {
         overrides: Option<&BTreeMap<String, String>>,
         media: &mut dyn LayerMedia,
     ) -> Result<Option<Arc<Pixmap>>, RenderError> {
-        let asset = layer.asset.as_ref().expect("调用方查过是 SVG 素材");
+        let asset = layer.asset.as_ref().expect("the caller checked this is an SVG asset");
         let overrides = overrides.filter(|o| !o.is_empty());
         let mut key = format!("{}@{}", asset.id, asset.revision);
         if let Some(overrides) = overrides {
@@ -707,7 +707,7 @@ impl FrameRenderer {
                 self.refuse_or_skip(vec![asset_item(
                     layer,
                     "asset-undecodable",
-                    format!("SVG 图片 {} 读不到", asset.id),
+                    format!("SVG image {} is not readable", asset.id),
                 )])?;
                 return Ok(None);
             };
@@ -722,7 +722,7 @@ impl FrameRenderer {
             if recolour_failed {
                 self.warn(
                     RENDER_NOTE,
-                    format!("{}：SVG 贴纸不是 UTF-8 文本，换不了色，按原色画", layer.item_id),
+                    format!("{}: SVG sticker is not UTF-8 text, so its color cannot be changed; drawing in the original colors", layer.item_id),
                 );
             }
             let long_edge = self.options.width.max(self.options.height);
@@ -732,7 +732,7 @@ impl FrameRenderer {
                 }
                 Err(error) => {
                     self.svgs.insert(key.clone(), None);
-                    self.refuse_or_skip(vec![asset_item(layer, "asset-undecodable", format!("SVG 图片解不开：{error:#}"))])?;
+                    self.refuse_or_skip(vec![asset_item(layer, "asset-undecodable", format!("SVG image failed to decode: {error:#}"))])?;
                     return Ok(None);
                 }
             }
@@ -743,7 +743,7 @@ impl FrameRenderer {
                 self.refuse_or_skip(vec![asset_item(
                     layer,
                     "asset-undecodable",
-                    format!("SVG 图片 {} 解不开", asset.id),
+                    format!("SVG image {} failed to decode", asset.id),
                 )])?;
                 Ok(None)
             }
@@ -752,27 +752,27 @@ impl FrameRenderer {
 
     /// GIF image: asset bytes decoded into an animation ([`crate::load_gif`]), cached by asset version. When it cannot be read or even its first frame cannot be decoded, it reports an error or skips, depending on the option (`asset-undecodable`); when over the limit and only the first frame is drawn, a notice is given.
     fn gif(&mut self, layer: &VisualLayer, media: &mut dyn LayerMedia) -> Result<Option<Arc<crate::Gif>>, RenderError> {
-        let asset = layer.asset.as_ref().expect("调用方查过是 GIF 素材");
+        let asset = layer.asset.as_ref().expect("the caller checked this is a GIF asset");
         let key = format!("{}@{}", asset.id, asset.revision);
         if !self.gifs.contains_key(&key) {
             let Some(bytes) = media.asset_bytes(asset) else {
                 self.refuse_or_skip(vec![asset_item(
                     layer,
                     "asset-undecodable",
-                    format!("GIF 图片 {} 读不到", asset.id),
+                    format!("GIF image {} is not readable", asset.id),
                 )])?;
                 return Ok(None);
             };
             match crate::load_gif(&asset.id, &bytes) {
                 Ok((gif, note)) => {
                     if let Some(note) = note {
-                        self.warn(RENDER_NOTE, format!("{}：{note}", layer.item_id));
+                        self.warn(RENDER_NOTE, format!("{}: {note}", layer.item_id));
                     }
                     self.gifs.insert(key.clone(), Some(Arc::new(gif)));
                 }
                 Err(error) => {
                     self.gifs.insert(key.clone(), None);
-                    self.refuse_or_skip(vec![asset_item(layer, "asset-undecodable", format!("GIF 图片解不开：{error:#}"))])?;
+                    self.refuse_or_skip(vec![asset_item(layer, "asset-undecodable", format!("GIF image failed to decode: {error:#}"))])?;
                     return Ok(None);
                 }
             }
@@ -783,7 +783,7 @@ impl FrameRenderer {
                 self.refuse_or_skip(vec![asset_item(
                     layer,
                     "asset-undecodable",
-                    format!("GIF 图片 {} 解不开", asset.id),
+                    format!("GIF image {} failed to decode", asset.id),
                 )])?;
                 Ok(None)
             }
@@ -853,7 +853,7 @@ impl FrameRenderer {
                 match spectrum::compose(&segments, &route, element.start, element.end, &sources) {
                     Ok(bytes) => derive(&bytes),
                     Err(message) => {
-                        self.warn(RENDER_NOTE, format!("{}：{message}", element.id));
+                        self.warn(RENDER_NOTE, format!("{}: {message}", element.id));
                         None
                     }
                 }
@@ -871,7 +871,7 @@ impl FrameRenderer {
                 let spans = match self.speakers.as_deref() {
                     None => {
                         notes.push(format!(
-                            "{}：视频里没有转写，听不出说话人 {speaker} 什么时候说话，声波按无声画",
+                            "{}: the video has no transcript, so the speaker {speaker}'s speaking times are unknown; the audio visualizer is drawn as silent",
                             element.id
                         ));
                         None
@@ -880,7 +880,7 @@ impl FrameRenderer {
                         Some(intervals) => Some(spectrum::speaking_spans(intervals)),
                         None => {
                             notes.push(format!(
-                                "{}：转写里没有说话人 {speaker} 在这条序列上说的话，声波按无声画",
+                                "{}: the transcript has no speech by speaker {speaker} on this sequence; the audio visualizer is drawn as silent",
                                 element.id
                             ));
                             None
@@ -1037,7 +1037,7 @@ impl FrameRenderer {
             let compiled = CaptionPlan::compile(&style, &members, size, fps, engine, self.fonts.len()).map_err(RenderError::render)?;
             self.captions.insert(key.clone(), compiled);
         }
-        let captions = self.captions.get_mut(&key).expect("刚编好");
+        let captions = self.captions.get_mut(&key).expect("just compiled");
         captions.avoid_template(sequence.header.template.as_ref());
         // A group takes its times from the first layer's clock: when there is no acting instance on the source media clock, this moment is not drawn.
         let at = if captions.sequence_clock {
@@ -1074,13 +1074,13 @@ impl FrameRenderer {
         // Caption notices are persistent: the kernel reports them only once at compile time, and the preview must still report them after clearing reports each frame (consistent with export).
         let (notes, missing) = captions.notes();
         for note in notes {
-            self.warn(RENDER_NOTE, format!("{}：{note}", first.item_id));
+            self.warn(RENDER_NOTE, format!("{}: {note}", first.item_id));
         }
         self.note_missing_fonts(&first.item_id, missing);
         if let Some(layer) = rendered {
             let opacity = first.opacity.clamp(0.0, 1.0) as f32 * style_opacity;
             let pixmap = PixmapRef::from_bytes(&layer.rgba, layer.width, layer.height)
-                .ok_or_else(|| RenderError::render(anyhow::anyhow!("字幕层的尺寸不对")))?;
+                .ok_or_else(|| RenderError::render(anyhow::anyhow!("caption layer has the wrong size")))?;
             // Caption layers are mostly transparent: they are composited only within the glyph bounding rectangle the kernel gives (byte-for-byte identical to compositing the full image), without copying or rescanning.
             if render_raster::plan::composite_bounded_rect(&mut self.frame, pixmap, layer.rect, opacity, layer.blend).is_none() {
                 self.frame.draw_pixmap(
@@ -1144,7 +1144,7 @@ impl FrameRenderer {
         if !self.options.skip_unsupported {
             return Err(RenderError {
                 code: "EXPORT_UNSUPPORTED_CONTENT".into(),
-                message: items.iter().map(|i| i.message.clone()).collect::<Vec<_>>().join("；"),
+                message: items.iter().map(|i| i.message.clone()).collect::<Vec<_>>().join("; "),
                 items,
             });
         }
@@ -1365,5 +1365,5 @@ fn fill(target: &mut Pixmap, color: Color) {
 
 /// Missing-font notice (the same sentence the caption kernel reports at compile time).
 pub fn missing_font_note(family: &str) -> String {
-    format!("字体 {family:?} 在当前字体库中不可用，将使用 Noto Sans SC fallback")
+    format!("font {family:?} is not available in the current font library; falling back to Noto Sans SC")
 }

@@ -34,30 +34,30 @@ pub fn resolve_word_span(
         || pad_pre < 0.0
         || pad_post < 0.0
     {
-        return Err(TimelineError::Invalid("WordSpan 参数非法".to_owned()));
+        return Err(TimelineError::Invalid("WordSpan parameters are invalid".to_owned()));
     }
     let first_index = words
         .iter()
         .position(|word| word.id == first_id)
-        .ok_or_else(|| TimelineError::Invalid(format!("word 不存在：{first_id}")))?;
+        .ok_or_else(|| TimelineError::Invalid(format!("word does not exist: {first_id}")))?;
     let last_index = words
         .iter()
         .position(|word| word.id == last_id)
-        .ok_or_else(|| TimelineError::Invalid(format!("word 不存在：{last_id}")))?;
+        .ok_or_else(|| TimelineError::Invalid(format!("word does not exist: {last_id}")))?;
     if first_index > last_index {
         return Err(TimelineError::Invalid(
-            "WordSpan 首词位于末词之后".to_owned(),
+            "WordSpan first word is after the last word".to_owned(),
         ));
     }
     let first = &words[first_index];
     let last = &words[last_index];
     if !first.t0.is_finite() || !last.t1.is_finite() || first.t0 < 0.0 || last.t1 > media_duration {
-        return Err(TimelineError::Invalid("word 时间超出媒体范围".to_owned()));
+        return Err(TimelineError::Invalid("word time is outside the media range".to_owned()));
     }
     let source_start = word_span_start(words, first_index, fps, pad_pre);
     let source_end = word_span_end(words, last_index, media_duration, fps, pad_post);
     if source_end <= source_start {
-        return Err(TimelineError::Invalid("WordSpan 对齐后为空".to_owned()));
+        return Err(TimelineError::Invalid("WordSpan is empty after alignment".to_owned()));
     }
     Ok(WordSpan {
         source_start,

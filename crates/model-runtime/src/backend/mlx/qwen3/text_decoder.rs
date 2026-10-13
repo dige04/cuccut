@@ -88,17 +88,17 @@ impl KvCache {
         let value_update = values.squeeze_axes(&[0])?;
         self.keys
             .as_mut()
-            .expect("KV cache keys 已初始化")
+            .expect("KV cache keys are initialized")
             .try_index_mut((0, .., previous..required, ..), &key_update)?;
         self.values
             .as_mut()
-            .expect("KV cache values 已初始化")
+            .expect("KV cache values are initialized")
             .try_index_mut((0, .., previous..required, ..), &value_update)?;
         Ok((
-            self.keys.as_ref().expect("KV cache keys 已初始化").index((.., .., ..required, ..)),
+            self.keys.as_ref().expect("KV cache keys are initialized").index((.., .., ..required, ..)),
             self.values
                 .as_ref()
-                .expect("KV cache values 已初始化")
+                .expect("KV cache values are initialized")
                 .index((.., .., ..required, ..)),
         ))
     }
@@ -444,7 +444,7 @@ impl TextDecoder {
                 None => weighted,
             });
         }
-        fused.expect("TextDecoder 至少一层").multiply(layer_scale).map_err(Into::into)
+        fused.expect("TextDecoder needs at least one layer").multiply(layer_scale).map_err(Into::into)
     }
 
     pub fn embed(&self, ids: &Array) -> Result<Array> {
@@ -584,7 +584,7 @@ mod tests {
             .item::<f32>();
         assert!(
             deviation < tolerance,
-            "causal 模式与掩码数组在 heads={heads} sequence={sequence} cache={cache_length} dtype={dtype:?} 下偏差 {deviation}"
+            "causal mode and mask array deviate by {deviation} at heads={heads} sequence={sequence} cache={cache_length} dtype={dtype:?}"
         );
     }
 

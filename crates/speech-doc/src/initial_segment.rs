@@ -300,7 +300,7 @@ mod tests {
         let doc = build(&rows);
         let plan = derive_initial_segment_plan(&doc, &rows, RowSegmentation::Model);
         assert!(plan.boundaries.len() <= 2, "{plan:?}");
-        assert!(!plan.boundaries.is_empty(), "20 秒目标应选普通模型接缝兜底");
+        assert!(!plan.boundaries.is_empty(), "a 20-second target should fall back to a normal-model seam");
     }
 
     #[test]

@@ -400,7 +400,7 @@ pub fn prepare_import(
         "",
         msg!("engine.importUnreadable", "Cannot read the file to import: {error}", error = e.to_string()),
     ))?;
-    let original_name = source.file_name().and_then(|n| n.to_str()).unwrap_or("素材").to_string();
+    let original_name = source.file_name().and_then(|n| n.to_str()).unwrap_or("media").to_string();
     let mode = mode.unwrap_or(if meta.is_dir() { StorageMode::Managed } else { StorageMode::Linked });
     if relative && mode == StorageMode::Managed {
         return Err(ErrorBody::invalid_operation(msg!(

@@ -254,7 +254,7 @@ pub fn parse_align_edges(
     if has_residual_fence(&normalized.text) {
         diagnostics.push_problem(Problem::document(
             ProblemCode::DocumentWrapped,
-            "输出仍残留代码块围栏或夹带解释，无法零成本剥离",
+            "the output still contains code-fence residue or extra commentary that cannot be stripped at no cost",
         ));
     }
 
@@ -287,7 +287,7 @@ pub fn parse_align_edges(
         if sid.is_empty() {
             diagnostics.push_warning(Warning::document(
                 WarningCode::ContentIgnored,
-                "忽略 data-sid 为空的分组",
+                "ignored a group with an empty data-sid",
             ));
             continue;
         }
@@ -296,7 +296,7 @@ pub fn parse_align_edges(
                 diagnostics.push_problem(Problem::sentence(
                     ProblemCode::DuplicateId,
                     sid.clone(),
-                    "同一 id 出现多次，只采用首次出现的分组",
+                    "the same id appears more than once; only the first group is used",
                 ));
             }
             continue;
@@ -306,7 +306,7 @@ pub fn parse_align_edges(
             diagnostics.push_problem(Problem::sentence(
                 ProblemCode::UnknownId,
                 sid.clone(),
-                "协议外的 id，已忽略",
+                "id outside the protocol, ignored",
             ));
             continue;
         };
@@ -470,10 +470,10 @@ pub fn parse_ordinals(raw: &str, word_count: usize) -> Result<Vec<usize>, String
             }
         };
         if low > high {
-            return Err(format!("区间 `{token}` 起点大于终点"));
+            return Err(format!("range `{token}` starts after it ends"));
         }
         if high > word_count {
-            return Err(format!("序号 `{token}` 超出源词数 {word_count}"));
+            return Err(format!("ordinal `{token}` exceeds the source word count {word_count}"));
         }
         for value in low..=high {
             if !ordinals.contains(&(value - 1)) {
@@ -488,9 +488,9 @@ fn parse_ordinal(token: &str) -> Result<usize, String> {
     let value: usize = token
         .trim()
         .parse()
-        .map_err(|_| format!("序号 `{token}` 不可解析"))?;
+        .map_err(|_| format!("ordinal `{token}` cannot be parsed"))?;
     if value == 0 {
-        return Err("序号从 1 起".to_owned());
+        return Err("ordinals start at 1".to_owned());
     }
     Ok(value)
 }
@@ -589,7 +589,7 @@ fn parse_group(
         diagnostics.push_problem(Problem::sentence(
             ProblemCode::EmptyTranslation,
             sid,
-            "分组内没有 tgt 单元格",
+            "the group has no tgt cell",
         ));
         return AlignEdgesGroup {
             id: sentence.id.clone(),
@@ -602,7 +602,7 @@ fn parse_group(
         diagnostics.push_warning(Warning::sentence(
             WarningCode::ContentIgnored,
             sid,
-            "tgt 单元格没有 <span data-src> 标注，按无对齐边处理",
+            "the tgt cell has no <span data-src> annotations; treated as having no alignment edges",
         ));
         return AlignEdgesGroup {
             id: sentence.id.clone(),
@@ -619,7 +619,7 @@ fn parse_group(
             diagnostics.push_warning(Warning::sentence(
                 WarningCode::ContentIgnored,
                 sid,
-                format!("第 {} 块文本为空，已忽略", index + 1),
+                format!("chunk {} has empty text, ignored", index + 1),
             ));
             continue;
         }
@@ -629,7 +629,7 @@ fn parse_group(
                 Ok(ordinals) => ordinals,
                 Err(detail) => {
                     ordinal_errors
-                        .push(format!("第 {} 块 data-src=\"{raw}\"：{detail}", index + 1));
+                        .push(format!("chunk {} data-src=\"{raw}\": {detail}", index + 1));
                     Vec::new()
                 }
             },
@@ -637,7 +637,7 @@ fn parse_group(
         for &ordinal in &ordinals {
             if !used.insert(ordinal) {
                 ordinal_errors.push(format!(
-                    "第 {} 块重复引用源词 {}（每个序号至多归属一块）",
+                    "chunk {} references source word {} again (each ordinal belongs to at most one chunk)",
                     index + 1,
                     ordinal + 1
                 ));
@@ -662,7 +662,7 @@ fn parse_group(
         diagnostics.push_problem(Problem::sentence(
             ProblemCode::AlignEdgeText,
             sid,
-            "span 文本拼接与译文不一致：只能包裹译文，不能改写、增删或重排任何字符",
+            "the concatenated span text does not match the translation: spans may only wrap the translation and must not rewrite, add, remove or reorder any character",
         ));
     }
     AlignEdgesGroup {
@@ -684,7 +684,7 @@ fn check_rewrite(
         diagnostics.push_problem(Problem::sentence(
             ProblemCode::EmptyTranslation,
             sid,
-            "改写后的译文为空",
+            "the rewritten translation is empty",
         ));
         return;
     }
@@ -696,7 +696,7 @@ fn check_rewrite(
             ProblemCode::AlignContentDrift,
             sid,
             format!(
-                "改写幅度过大（{old_units} → {new_units} 阅读单位）：只调小句顺序与必要的连接词/助词/标点，不得增删或压缩内容"
+                "the rewrite is too large ({old_units} → {new_units} reading units): only clause order and necessary connectives, particles or punctuation may change; do not add, remove or compress content"
             ),
         ));
     }
@@ -710,7 +710,7 @@ fn check_rewrite(
         diagnostics.push_problem(Problem::sentence(
             ProblemCode::AlignContentDrift,
             sid,
-            format!("改写丢失了数字/URL/原样 Latin 锚点：{}", dropped.join("、")),
+            format!("the rewrite lost numeric/URL/verbatim Latin anchors: {}", dropped.join(", ")),
         ));
     }
 }
@@ -772,7 +772,7 @@ fn report_missing(input: &AlignEdgesInput, seen: &BTreeSet<String>, diagnostics:
         diagnostics.push_problem(Problem::document(
             ProblemCode::DocumentTruncated,
             format!(
-                "自 {} 起共 {} 句整体缺失，疑似输出被截断",
+                "starting at {}, {} sentences are entirely missing; the output may have been truncated",
                 input.sentences[first_missing].id,
                 missing.len()
             ),
@@ -783,7 +783,7 @@ fn report_missing(input: &AlignEdgesInput, seen: &BTreeSet<String>, diagnostics:
         diagnostics.push_problem(Problem::sentence(
             ProblemCode::MissingId,
             id,
-            "期望的 id 未出现在输出中",
+            "the expected id does not appear in the output",
         ));
     }
 }
@@ -873,7 +873,7 @@ mod tests {
                 .all(|edge| !edge.hard && edge.weight == CHUNK_EDGE_WEIGHT)
         );
         assert_eq!(edges[0].src, 3);
-        assert_eq!(edges[0].tgt, 0..5, "首块到「了」为止（标点不计）");
+        assert_eq!(edges[0].tgt, 0..5, "the first chunk runs up to 「了」 (punctuation not counted)");
         assert_eq!(edges[4].src, 0);
         assert_eq!(edges[4].tgt, 6..10);
     }
@@ -952,8 +952,8 @@ mod tests {
             .find(|problem| problem.code == ProblemCode::AlignEdgeOrdinal)
             .unwrap()
             .detail;
-        assert!(detail.contains("超出源词数 3"), "{detail}");
-        assert!(detail.contains("重复引用源词 2"), "{detail}");
+        assert!(detail.contains("exceeds the source word count 3"), "{detail}");
+        assert!(detail.contains("references source word 2 again"), "{detail}");
         // A problematic sentence does not stop another sentence from being parsed normally.
         assert_eq!(parsed.groups.len(), 2);
     }

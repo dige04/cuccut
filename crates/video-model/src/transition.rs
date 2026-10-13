@@ -77,7 +77,7 @@ impl TransitionKind {
                 map.insert("color".into(), Value::String(color.clone()));
             }
             TransitionKind::Push { direction } => {
-                map.insert("direction".into(), serde_json::to_value(direction).expect("枚举总能序列化"));
+                map.insert("direction".into(), serde_json::to_value(direction).expect("enums always serialize"));
             }
             TransitionKind::Unsupported { params, .. } => return params.clone(),
             _ => {}

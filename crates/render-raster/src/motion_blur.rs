@@ -18,7 +18,7 @@ pub const SHUTTER: f64 = 0.5;
 /// `1..=16`; out-of-range values raise an error (the caller surfaces it as `invalid_arg`).
 pub fn validate(samples: u32) -> Result<()> {
     if !(1..=MAX_SAMPLES).contains(&samples) {
-        bail!("--motion-blur 须在 1..={MAX_SAMPLES}（1 = 关闭），实得 {samples}");
+        bail!("--motion-blur must be in 1..={MAX_SAMPLES} (1 = off), got {samples}");
     }
     Ok(())
 }
@@ -116,9 +116,9 @@ pub fn render_frame(
         acc.add(pixmap.data(), weight);
     }
     let size = tiny_skia::IntSize::from_wh(renderer.width, renderer.height)
-        .ok_or_else(|| anyhow::anyhow!("帧尺寸为 0"))?;
+        .ok_or_else(|| anyhow::anyhow!("frame size is 0"))?;
     let pixmap = tiny_skia::Pixmap::from_vec(acc.finish(), size)
-        .ok_or_else(|| anyhow::anyhow!("运动模糊累加尺寸不符"))?;
+        .ok_or_else(|| anyhow::anyhow!("motion blur accumulation size mismatch"))?;
     Ok((pixmap, composite_fingerprint(samples, &fps)))
 }
 

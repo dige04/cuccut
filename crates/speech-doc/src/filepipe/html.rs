@@ -187,7 +187,7 @@ impl HtmlTree {
             warnings.push(Warning::document(
                 WarningCode::NodeDropped,
                 format!(
-                    "丢弃不安全节点：{}",
+                    "Dropped unsafe nodes: {}",
                     self.dropped_tags
                         .iter()
                         .cloned()
@@ -200,7 +200,7 @@ impl HtmlTree {
             warnings.push(Warning::document(
                 WarningCode::AttributeDropped,
                 format!(
-                    "丢弃非白名单属性：{}",
+                    "Dropped attributes not on the allowlist: {}",
                     self.dropped_attrs
                         .iter()
                         .cloned()

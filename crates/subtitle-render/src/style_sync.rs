@@ -925,7 +925,7 @@ mod tests {
         style.as_object_mut().expect("object").remove("mode");
         style[CONTEXTS_KEY]["bi"]
             .as_object_mut()
-            .expect("bi 上下文")
+            .expect("bi context")
             .remove("mode");
         style["fontSize"] = json!(20.0);
         reconcile(&mut style, &changed(&["fontSize"]), None);
@@ -1025,10 +1025,10 @@ mod tests {
         .unwrap();
         let rows = contract["trackSet"]["canonicalize"]
             .as_array()
-            .expect("夹具缺 trackSet.canonicalize");
+            .expect("fixture is missing trackSet.canonicalize");
         assert!(!rows.is_empty());
         for row in rows {
-            let case = row["description"].as_str().unwrap_or("<无描述>");
+            let case = row["description"].as_str().unwrap_or("<no description>");
             let intent = match row["intent"].as_str().expect("intent") {
                 "authored" => TrackSetIntent::Authored,
                 other => {

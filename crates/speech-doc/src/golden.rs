@@ -109,26 +109,26 @@ impl GoldenCase {
     /// `minBlocks` does not exceed the number of annotated blocks.
     pub fn validate(&self) -> Result<()> {
         if self.id.is_empty() || self.sentence_id.is_empty() {
-            bail!("golden 用例缺少 id / sentenceId");
+            bail!("golden case is missing id / sentenceId");
         }
         if self.source_words.is_empty() {
-            bail!("{}: sourceWords 为空", self.id);
+            bail!("{}: sourceWords is empty", self.id);
         }
         if self.tags.is_empty() {
-            bail!("{}: tags 为空", self.id);
+            bail!("{}: tags is empty", self.id);
         }
         for tag in &self.tags {
             if !GOLDEN_TAGS.contains(&tag.as_str()) {
-                bail!("{}: 未知 tag {tag}", self.id);
+                bail!("{}: unknown tag {tag}", self.id);
             }
         }
         let beads = self.beads();
         if !beads_contiguous(&beads, self.source_words.len(), self.target_chars()) {
-            bail!("{}: beads 不是两侧连续全覆盖的单调划分", self.id);
+            bail!("{}: beads is not a monotonic partition with contiguous full coverage on both sides", self.id);
         }
         if self.expected.min_blocks == 0 || self.expected.min_blocks > beads.len() {
             bail!(
-                "{}: expected.minBlocks={} 超出标注块数 {}",
+                "{}: expected.minBlocks={} exceeds the number of annotated blocks {}",
                 self.id,
                 self.expected.min_blocks,
                 beads.len()
@@ -136,14 +136,14 @@ impl GoldenCase {
         }
         for anchor in &self.hard_anchors {
             let Some(bead) = beads.iter().find(|bead| bead.src.contains(&anchor.src)) else {
-                bail!("{}: 硬锚源词 {} 越界", self.id, anchor.src);
+                bail!("{}: hard-anchor source word {} is out of range", self.id, anchor.src);
             };
             if anchor.tgt[0] >= anchor.tgt[1]
                 || anchor.tgt[0] < bead.tgt.start
                 || anchor.tgt[1] > bead.tgt.end
             {
                 bail!(
-                    "{}: 硬锚源词 {} 的目标区间不在其 bead 内",
+                    "{}: the target range of hard-anchor source word {} is not inside its bead",
                     self.id,
                     anchor.src
                 );
@@ -181,18 +181,18 @@ impl GoldenFile {
     /// Checks the schema, the language, uniqueness of case ids, and runs [`GoldenCase::validate`] on each case.
     pub fn validate(&self) -> Result<()> {
         if self.schema != GOLDEN_SCHEMA {
-            bail!("未知 golden schema {}", self.schema);
+            bail!("unknown golden schema {}", self.schema);
         }
         if self.project.is_empty() || self.lang.is_empty() {
-            bail!("golden 文件缺少 project / lang");
+            bail!("golden file is missing project / lang");
         }
         if self.cases.is_empty() {
-            bail!("{}/{}: cases 为空", self.project, self.lang);
+            bail!("{}/{}: cases is empty", self.project, self.lang);
         }
         let mut seen = std::collections::BTreeSet::new();
         for case in &self.cases {
             if !seen.insert(case.id.as_str()) {
-                bail!("{}/{}: 重复用例 id {}", self.project, self.lang, case.id);
+                bail!("{}/{}: duplicate case id {}", self.project, self.lang, case.id);
             }
             case.validate()?;
         }
@@ -201,7 +201,7 @@ impl GoldenFile {
                 continue;
             };
             if reference == case.id || !seen.contains(reference) {
-                bail!("{}: hardNegativeOf {reference} 不在同一文件内", case.id);
+                bail!("{}: hardNegativeOf {reference} is not in the same file", case.id);
             }
         }
         Ok(())
@@ -247,21 +247,21 @@ mod tests {
             r#"{ "src": [0, 6], "tgt": [0, 10] }"#,
         );
         let error = GoldenFile::from_str(&broken).expect_err("must reject");
-        assert!(error.to_string().contains("连续全覆盖"), "{error}");
+        assert!(error.to_string().contains("contiguous full coverage"), "{error}");
     }
 
     #[test]
     fn rejects_unknown_tag() {
         let broken = SAMPLE.replace(r#""causal-inversion""#, r#""nonsense""#);
         let error = GoldenFile::from_str(&broken).expect_err("must reject");
-        assert!(error.to_string().contains("未知 tag"), "{error}");
+        assert!(error.to_string().contains("unknown tag"), "{error}");
     }
 
     #[test]
     fn rejects_unknown_schema() {
         let broken = SAMPLE.replace("ccut-align-golden/1", "ccut-align-golden/9");
         let error = GoldenFile::from_str(&broken).expect_err("must reject");
-        assert!(error.to_string().contains("未知 golden schema"), "{error}");
+        assert!(error.to_string().contains("unknown golden schema"), "{error}");
     }
 
     #[test]

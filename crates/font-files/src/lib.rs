@@ -269,12 +269,12 @@ pub struct FaceLayout {
 pub const MAX_TABLES: usize = 512;
 
 fn invalid(message: &str) -> std::io::Error {
-    std::io::Error::new(std::io::ErrorKind::InvalidData, format!("字体文件不对：{message}"))
+    std::io::Error::new(std::io::ErrorKind::InvalidData, format!("invalid font file: {message}"))
 }
 
 fn read_at<R: Read + Seek>(reader: &mut R, file_len: u64, at: u64, len: usize) -> std::io::Result<Vec<u8>> {
     if at.checked_add(len as u64).is_none_or(|end| end > file_len) {
-        return Err(invalid("读到了文件末尾之外"));
+        return Err(invalid("read past the end of the file"));
     }
     reader.seek(SeekFrom::Start(at))?;
     let mut bytes = vec![0; len];
@@ -302,23 +302,23 @@ impl FaceLayout {
         let offset = if &head[0..4] == b"ttcf" {
             let count = be32(&head, 8);
             if index >= count {
-                return Err(invalid("集合里没有这个 face"));
+                return Err(invalid("the collection has no such face"));
             }
             let entry = read_at(reader, file_len, 12 + u64::from(index) * 4, 4)?;
             u64::from(be32(&entry, 0))
         } else if index == 0 {
             0
         } else {
-            return Err(invalid("不是字体集合，只有第 0 个 face"));
+            return Err(invalid("not a font collection; only face 0 exists"));
         };
         let directory = read_at(reader, file_len, offset, 12)?;
         let version = be32(&directory, 0);
         if !is_sfnt(version) {
-            return Err(invalid("不认识的字体格式"));
+            return Err(invalid("unrecognized font format"));
         }
         let count = usize::from(be16(&directory, 4));
         if count == 0 || count > MAX_TABLES {
-            return Err(invalid("表目录的项数不对"));
+            return Err(invalid("wrong number of entries in the table directory"));
         }
         let records = read_at(reader, file_len, offset + 12, count * 16)?;
         let mut header = Vec::with_capacity(12 + count * 16);
@@ -336,16 +336,16 @@ impl FaceLayout {
             let from = u64::from(be32(record, 8));
             let len = be32(record, 12);
             if from.checked_add(u64::from(len)).is_none_or(|end| end > file_len) {
-                return Err(invalid("表在文件之外"));
+                return Err(invalid("table lies outside the file"));
             }
-            let to = u32::try_from(at).map_err(|_| invalid("抽出来的字体太大"))?;
+            let to = u32::try_from(at).map_err(|_| invalid("extracted font is too large"))?;
             header.extend_from_slice(&record[0..8]);
             header.extend_from_slice(&to.to_be_bytes());
             header.extend_from_slice(&len.to_be_bytes());
             tables.push(TableCopy { from, len, to });
             at += u64::from(len).next_multiple_of(4);
         }
-        let size = u32::try_from(at).map_err(|_| invalid("抽出来的字体太大"))?;
+        let size = u32::try_from(at).map_err(|_| invalid("extracted font is too large"))?;
         Ok(FaceLayout { header, tables, size })
     }
 
@@ -375,7 +375,7 @@ pub struct FaceSummary {
 pub fn inspect_file(path: &Path, max_bytes: u64) -> std::io::Result<Vec<FaceSummary>> {
     let len = file_len(path)?;
     if len > max_bytes {
-        return Err(invalid(&format!("文件有 {len} 字节，超过上限 {max_bytes}")));
+        return Err(invalid(&format!("file is {len} bytes, over the {max_bytes} byte limit")));
     }
     let bytes = std::fs::read(path)?;
     let mut db = fontdb::Database::new();
@@ -391,7 +391,7 @@ pub fn inspect_file(path: &Path, max_bytes: u64) -> std::io::Result<Vec<FaceSumm
         });
     }
     if faces.is_empty() {
-        return Err(invalid("读不出任何字体"));
+        return Err(invalid("no readable font in file"));
     }
     faces.sort_by_key(|face| face.index);
     Ok(faces)

@@ -117,13 +117,13 @@ fn build() -> Result<EffectRegistry, String> {
         // The file name must equal the id: a rename turns it red, with no extra index needed.
         if manifest.id != *file && !(*file == "blend" && manifest.id == "composite.blend") {
             return Err(format!(
-                "manifest-invalid: {file}.json 声明的 id 是 {}",
+                "manifest-invalid: {file}.json declares id {}",
                 manifest.id
             ));
         }
         let key = (manifest.id.clone(), manifest.version);
         if by_id.insert(key, manifest).is_some() {
-            return Err(format!("manifest-invalid: {file} 重复注册"));
+            return Err(format!("manifest-invalid: {file} is registered twice"));
         }
     }
     Ok(EffectRegistry { by_id })
@@ -133,7 +133,7 @@ fn build() -> Result<EffectRegistry, String> {
 pub fn builtin_registry() -> &'static EffectRegistry {
     match REGISTRY.get_or_init(build) {
         Ok(registry) => registry,
-        Err(error) => panic!("内置 effect manifest 非法：{error}"),
+        Err(error) => panic!("built-in effect manifest is invalid: {error}"),
     }
 }
 

@@ -101,10 +101,10 @@ const STAGE_KEYS: &[&str] = &["asr", "asrLayout", "polish", "segment", "chapters
 pub fn apply_patch(doc: &mut TranscriptDoc, patch: &Value) -> Result<PatchSummary> {
     let object = patch
         .as_object()
-        .ok_or_else(|| anyhow!("patchTranscript 必须是对象"))?;
+        .ok_or_else(|| anyhow!("patchTranscript must be an object"))?;
     for key in object.keys() {
         if !matches!(key.as_str(), "kind" | "words" | "set") {
-            bail!("patchTranscript 不认识的字段：{key}");
+            bail!("patchTranscript has an unknown field: {key}");
         }
     }
     let mut candidate = doc.clone();
@@ -116,7 +116,7 @@ pub fn apply_patch(doc: &mut TranscriptDoc, patch: &Value) -> Result<PatchSummar
         apply_set(&mut candidate, set, &mut summary)?;
     }
     if summary.is_empty() {
-        bail!("patchTranscript 为空：words 与 set 都没有改动");
+        bail!("patchTranscript is empty: neither words nor set changed anything");
     }
     *doc = candidate;
     Ok(summary)
@@ -125,16 +125,16 @@ pub fn apply_patch(doc: &mut TranscriptDoc, patch: &Value) -> Result<PatchSummar
 fn apply_words(doc: &mut TranscriptDoc, words: &Value, summary: &mut PatchSummary) -> Result<()> {
     let object = words
         .as_object()
-        .ok_or_else(|| anyhow!("patchTranscript.words 必须是对象"))?;
+        .ok_or_else(|| anyhow!("patchTranscript.words must be an object"))?;
     for key in object.keys() {
         if !WORD_KEYS.contains(&key.as_str()) {
-            bail!("patchTranscript.words 不认识的字段：{key}");
+            bail!("patchTranscript.words has an unknown field: {key}");
         }
     }
     if let Some(splices) = object.get("splices") {
         let splices = splices
             .as_array()
-            .ok_or_else(|| anyhow!("words.splices 必须是数组"))?;
+            .ok_or_else(|| anyhow!("words.splices must be an array"))?;
         for (index, splice) in splices.iter().enumerate() {
             apply_splice(doc, splice, summary)
                 .map_err(|error| anyhow!("words.splices[{index}]：{error}"))?;
@@ -143,7 +143,7 @@ fn apply_words(doc: &mut TranscriptDoc, words: &Value, summary: &mut PatchSummar
     if let Some(update) = object.get("update") {
         let update = update
             .as_object()
-            .ok_or_else(|| anyhow!("words.update 必须是对象"))?;
+            .ok_or_else(|| anyhow!("words.update must be an object"))?;
         apply_word_updates(doc, update, summary)?;
     }
     Ok(())
@@ -173,19 +173,19 @@ where
 
 fn apply_splice(doc: &mut TranscriptDoc, splice: &Value, summary: &mut PatchSummary) -> Result<()> {
     let body: SpliceBody = serde_json::from_value(splice.clone())
-        .map_err(|error| anyhow!("splice 形状无效：{error}"))?;
+        .map_err(|error| anyhow!("splice has an invalid shape: {error}"))?;
     let index_of = |doc: &TranscriptDoc, id: &str| -> Result<usize> {
         doc.words
             .iter()
             .position(|word| word.id == id)
-            .ok_or_else(|| anyhow!("词 {id} 不存在"))
+            .ok_or_else(|| anyhow!("word {id} does not exist"))
     };
     match (body.first, body.last, body.after) {
         (Some(first), Some(last), None) => {
             let start = index_of(doc, &first)?;
             let end = index_of(doc, &last)?;
             if end < start {
-                bail!("first {first} 在 last {last} 之后");
+                bail!("first {first} comes after last {last}");
             }
             let removed = end - start + 1;
             let inserted = body.words.len();
@@ -195,7 +195,7 @@ fn apply_splice(doc: &mut TranscriptDoc, splice: &Value, summary: &mut PatchSumm
         }
         (None, None, Some(after)) => {
             if body.words.is_empty() {
-                bail!("插入 splice 的 words 不能为空");
+                bail!("words of an insert splice must not be empty");
             }
             let at = match after {
                 Some(id) => index_of(doc, &id)? + 1,
@@ -204,7 +204,7 @@ fn apply_splice(doc: &mut TranscriptDoc, splice: &Value, summary: &mut PatchSumm
             summary.inserted_words += body.words.len();
             doc.words.splice(at..at, body.words);
         }
-        _ => bail!("splice 必须是 {{first,last,words}} 或 {{after,words}} 之一"),
+        _ => bail!("splice must be either {{first,last,words}} or {{after,words}}"),
     }
     summary.splices += 1;
     Ok(())
@@ -242,15 +242,15 @@ fn apply_word_updates(
     for (id, fields) in update {
         let position = *index
             .get(id.as_str())
-            .ok_or_else(|| anyhow!("words.update：词 {id} 不存在"))?;
+            .ok_or_else(|| anyhow!("words.update: word {id} does not exist"))?;
         let fields: WordUpdate = serde_json::from_value(fields.clone())
-            .map_err(|error| anyhow!("words.update[{id}] 形状无效：{error}"))?;
+            .map_err(|error| anyhow!("words.update[{id}] has an invalid shape: {error}"))?;
         if fields.t0.is_none()
             && fields.t1.is_none()
             && fields.text.is_none()
             && fields.sp.is_none()
         {
-            bail!("words.update[{id}] 没有任何字段");
+            bail!("words.update[{id}] has no fields");
         }
         targets.push((position, fields));
     }
@@ -276,41 +276,41 @@ fn apply_word_updates(
 fn apply_set(doc: &mut TranscriptDoc, set: &Value, summary: &mut PatchSummary) -> Result<()> {
     let object = set
         .as_object()
-        .ok_or_else(|| anyhow!("patchTranscript.set 必须是对象"))?;
+        .ok_or_else(|| anyhow!("patchTranscript.set must be an object"))?;
     for (key, value) in object {
         match key.as_str() {
             "speakers" => patch_map(&mut doc.speakers, value, "speakers", |value| {
                 serde_json::from_value::<Speaker>(value.clone())
-                    .map_err(|error| anyhow!("speaker 形状无效：{error}"))
+                    .map_err(|error| anyhow!("speaker has an invalid shape: {error}"))
             })?,
             "chapters" => {
                 doc.chapters = serde_json::from_value::<Vec<Chapter>>(value.clone())
-                    .map_err(|error| anyhow!("set.chapters 必须是章节数组：{error}"))?;
+                    .map_err(|error| anyhow!("set.chapters must be an array of chapters: {error}"))?;
             }
             "breaks" => patch_map(&mut doc.breaks, value, "breaks", |value| {
                 serde_json::from_value::<BreakOverride>(value.clone())
-                    .map_err(|_| anyhow!("breaks 值必须是 break 或 nobreak"))
+                    .map_err(|_| anyhow!("breaks value must be break or nobreak"))
             })?,
             "autoBreaks" => patch_nested(&mut doc.auto_breaks, value, "autoBreaks", |value| {
                 serde_json::from_value::<BreakOverride>(value.clone())
-                    .map_err(|_| anyhow!("autoBreaks 值必须是 break 或 nobreak"))
+                    .map_err(|_| anyhow!("autoBreaks value must be break or nobreak"))
             })?,
             "layoutProfile" => {
                 doc.layout_profile = match value {
                     Value::Null => None,
                     Value::String(id) if !id.trim().is_empty() => Some(id.clone()),
-                    _ => bail!("set.layoutProfile 必须是非空字符串或 null"),
+                    _ => bail!("set.layoutProfile must be a non-empty string or null"),
                 };
             }
             "paraBreaks" => patch_map(&mut doc.para_breaks, value, "paraBreaks", |value| {
                 value
                     .as_bool()
-                    .ok_or_else(|| anyhow!("paraBreaks 值必须是布尔"))
+                    .ok_or_else(|| anyhow!("paraBreaks value must be a boolean"))
             })?,
             "hidden" => patch_map(&mut doc.hidden, value, "hidden", |value| {
                 value
                     .as_bool()
-                    .ok_or_else(|| anyhow!("hidden 值必须是布尔"))
+                    .ok_or_else(|| anyhow!("hidden value must be a boolean"))
             })?,
             "stages" => {
                 // set is applied last in order, so words are already in their final state; `true` stamps its content fingerprint.
@@ -321,26 +321,26 @@ fn apply_set(doc: &mut TranscriptDoc, set: &Value, summary: &mut PatchSummary) -
                 value
                     .as_str()
                     .map(str::to_owned)
-                    .ok_or_else(|| anyhow!("trans 值必须是字符串"))
+                    .ok_or_else(|| anyhow!("trans value must be a string"))
             })?,
             "transAlign" => patch_nested(&mut doc.trans_align, value, "transAlign", |value| {
                 serde_json::from_value::<TransAlign>(value.clone())
-                    .map_err(|error| anyhow!("transAlign 形状无效：{error}"))
+                    .map_err(|error| anyhow!("transAlign has an invalid shape: {error}"))
             })?,
             "transSrc" => patch_nested(&mut doc.trans_src, value, "transSrc", |value| {
                 value
                     .as_str()
                     .map(str::to_owned)
-                    .ok_or_else(|| anyhow!("transSrc 值必须是字符串"))
+                    .ok_or_else(|| anyhow!("transSrc value must be a string"))
             })?,
             "transDisplay" => {
                 patch_nested(&mut doc.trans_display, value, "transDisplay", |value| {
                     serde_json::from_value::<TransDisplay>(value.clone())
-                        .map_err(|error| anyhow!("transDisplay 形状无效：{error}"))
+                        .map_err(|error| anyhow!("transDisplay has an invalid shape: {error}"))
                 })?
             }
             other => bail!(
-                "patchTranscript.set 不认识的表：{other}（可用：{}）",
+                "patchTranscript.set has an unknown table: {other} (available: {})",
                 SET_KEYS.join(", ")
             ),
         }
@@ -360,12 +360,12 @@ fn patch_map<T>(
 ) -> Result<()> {
     let object = patch
         .as_object()
-        .ok_or_else(|| anyhow!("set.{name} 必须是对象"))?;
+        .ok_or_else(|| anyhow!("set.{name} must be an object"))?;
     for (key, value) in object {
         if value.is_null() {
             table.remove(key);
         } else {
-            let parsed = parse(value).map_err(|error| anyhow!("set.{name}[{key}]：{error}"))?;
+            let parsed = parse(value).map_err(|error| anyhow!("set.{name}[{key}]: {error}"))?;
             table.insert(key.clone(), parsed);
         }
     }
@@ -381,7 +381,7 @@ fn patch_nested<T>(
 ) -> Result<()> {
     let object = patch
         .as_object()
-        .ok_or_else(|| anyhow!("set.{name} 必须是对象"))?;
+        .ok_or_else(|| anyhow!("set.{name} must be an object"))?;
     for (lang, value) in object {
         if value.is_null() {
             table.remove(lang);
@@ -389,14 +389,14 @@ fn patch_nested<T>(
         }
         let entries = value
             .as_object()
-            .ok_or_else(|| anyhow!("set.{name}[{lang}] 必须是对象或 null"))?;
+            .ok_or_else(|| anyhow!("set.{name}[{lang}] must be an object or null"))?;
         let inner = table.entry(lang.clone()).or_default();
         for (id, entry) in entries {
             if entry.is_null() {
                 inner.remove(id);
             } else {
                 let parsed =
-                    parse(entry).map_err(|error| anyhow!("set.{name}[{lang}][{id}]：{error}"))?;
+                    parse(entry).map_err(|error| anyhow!("set.{name}[{lang}][{id}]: {error}"))?;
                 inner.insert(id.clone(), parsed);
             }
         }
@@ -411,7 +411,7 @@ fn patch_nested<T>(
 fn patch_stages(stages: &mut Stages, patch: &Value, current: &str) -> Result<()> {
     let object = patch
         .as_object()
-        .ok_or_else(|| anyhow!("set.stages 必须是对象"))?;
+        .ok_or_else(|| anyhow!("set.stages must be an object"))?;
     for (key, value) in object {
         let slot = match key.as_str() {
             "asr" => &mut stages.asr,
@@ -420,7 +420,7 @@ fn patch_stages(stages: &mut Stages, patch: &Value, current: &str) -> Result<()>
             "segment" => &mut stages.segment,
             "chapters" => &mut stages.chapters,
             other => bail!(
-                "set.stages 不认识的阶段：{other}（可用：{}）",
+                "set.stages has an unknown stage: {other} (available: {})",
                 STAGE_KEYS.join(", ")
             ),
         };
@@ -428,7 +428,7 @@ fn patch_stages(stages: &mut Stages, patch: &Value, current: &str) -> Result<()>
             Value::Null => None,
             Value::String(text) => Some(text.clone()),
             Value::Bool(true) => Some(current.to_owned()),
-            _ => bail!("set.stages[{key}] 必须是字符串、null 或 true"),
+            _ => bail!("set.stages[{key}] must be a string, null or true"),
         };
     }
     Ok(())

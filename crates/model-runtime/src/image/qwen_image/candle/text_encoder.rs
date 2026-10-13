@@ -53,7 +53,7 @@ fn attention(
     let proj = |name: &str, output: usize| -> Result<Tensor> {
         let y = projection(weights, &format!("{prefix}.{name}"), x, HIDDEN, device, dtype)?;
         if y.dim(2)? != output {
-            bail!("{prefix}.{name} 输出维度不符");
+            bail!("{prefix}.{name} output dimension does not match");
         }
         Ok(y)
     };
@@ -84,13 +84,13 @@ pub fn encode(
     let ids = prompter.t2i_ids(prompt);
     let drop_idx = prompter.drop_idx();
     if ids.len() <= drop_idx || ids.len() > MAX_TOKENS {
-        bail!("文本编码器 token 数 {} 超出支持范围", ids.len());
+        bail!("text encoder token count {} is outside the supported range", ids.len());
     }
     let weights = ShardedWeights::open(files)?;
     let prefix = PREFIXES
         .into_iter()
         .find(|prefix| weights.contains(&format!("{prefix}.embed_tokens.weight")))
-        .context("找不到 Qwen3-VL 词嵌入权重")?;
+        .context("Qwen3-VL word embedding weights not found")?;
     let mut hidden = weights
         .embedding_rows(&format!("{prefix}.embed_tokens"), &ids, HIDDEN, device, dtype)?
         .unsqueeze(0)?;

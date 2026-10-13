@@ -95,7 +95,7 @@ impl T2s {
         let audio_embedding = w.take_f32("model.ar_audio_embedding.word_embeddings.weight")?;
         ensure!(
             text_embedding.dim(0) as usize == PHONE_VOCAB && audio_embedding.dim(0) as usize == EOS + 1,
-            "T2S 权重词表不是 v2（音素 {}、语义 {}）",
+            "T2S weight vocabulary is not v2 (phonemes {}, semantics {})",
             text_embedding.dim(0),
             audio_embedding.dim(0)
         );
@@ -130,10 +130,10 @@ impl T2s {
         progress: &mut dyn FnMut(usize) -> bool,
     ) -> Result<Vec<u32>> {
         let x_len = phones.len();
-        ensure!(x_len > 0, "T2S 输入音素为空");
+        ensure!(x_len > 0, "T2S input phonemes are empty");
         ensure!(
             bert.len() == x_len * BERT_DIM,
-            "BERT 特征长度 {} 与音素数 {x_len} 不匹配",
+            "BERT feature length {} does not match the phoneme count {x_len}",
             bert.len()
         );
         let ids = Array::from_slice(phones, &[x_len as i32]);

@@ -219,7 +219,7 @@ fn log_claim(dir: &Path, claim: &ProjectClaim) {
     } = claim
     {
         eprintln!(
-            "engine-host: {} 属于另一个项目，视频 {previous_video_id} 换成 {video_id}",
+            "engine-host: {} belongs to another project; video {previous_video_id} is replaced by {video_id}",
             dir.display()
         );
     }
@@ -314,7 +314,7 @@ impl Host {
                     // The same videoId appears in two directories (after a move, or copies that do not belong to a project and cannot be told apart):
                     // keep the one opened first, and the newly opened one releases its lock.
                     eprintln!(
-                        "engine-host: {} 与已打开的 {} 是同一个视频 {}，保留已打开的",
+                        "engine-host: {} and the open {} are the same video {}; keeping the open one",
                         dir.display(),
                         existing.dir().display(),
                         existing.id()
@@ -332,7 +332,7 @@ impl Host {
                 }
                 let (video_id, claim) = claim_project_dir(&dir, &p.project_id)?;
                 log_claim(&dir, &claim);
-                let mut result = serde_json::to_value(&claim).expect("能序列化");
+                let mut result = serde_json::to_value(&claim).expect("can serialize");
                 result["videoId"] = json!(video_id);
                 Ok(result)
             }
@@ -347,7 +347,7 @@ impl Host {
                 };
                 if !report.removed.is_empty() || !report.staging_removed.is_empty() || !report.failed.is_empty() {
                     eprintln!(
-                        "engine-host: {} 的 GC 删掉 {} 个 blob、{} 个 staging 残留，释放 {} 字节，{} 个删不掉",
+                        "engine-host: GC for {} removed {} blobs and {} staging leftovers, freed {} bytes; {} could not be removed",
                         dir.display(),
                         report.removed.len(),
                         report.staging_removed.len(),
@@ -355,7 +355,7 @@ impl Host {
                         report.failed.len()
                     );
                 }
-                Ok(serde_json::to_value(report).expect("能序列化"))
+                Ok(serde_json::to_value(report).expect("can serialize"))
             }
             "videos.inspect" => {
                 let p: PathParams = params(value)?;
@@ -384,7 +384,7 @@ impl Host {
                     Some(video) => video.resolve_asset(&p.asset_id, p.revision.as_deref())?,
                     None => Video::open(&dir, OpenMode::ReadOnly, &self.ffprobe)?.resolve_asset(&p.asset_id, p.revision.as_deref())?,
                 };
-                Ok(serde_json::to_value(resolved).expect("能序列化"))
+                Ok(serde_json::to_value(resolved).expect("can serialize"))
             }
             "videos.close" => {
                 let p: VideoParams = params(value)?;
@@ -494,7 +494,7 @@ impl Host {
             "edits.undoState" => {
                 let p: ActorParams = params(value)?;
                 let state = self.video(&p.video_id)?.undo_state(&p.actor)?;
-                Ok(serde_json::to_value(state).expect("能序列化"))
+                Ok(serde_json::to_value(state).expect("can serialize"))
             }
             "events.after" => {
                 let p: AfterParams = params(value)?;
@@ -523,12 +523,12 @@ impl Host {
                 let p: BlobParams = params(value)?;
                 let video = self.video(&p.video_id)?;
                 let resolved = video.resolve_asset(&p.asset_id, p.revision.as_deref())?;
-                Ok(serde_json::to_value(resolved).expect("能序列化"))
+                Ok(serde_json::to_value(resolved).expect("can serialize"))
             }
             "documents.read" => {
                 let p: DocumentParams = params(value)?;
                 let content = self.video(&p.video_id)?.document(&p.document_id, p.revision.as_deref())?;
-                Ok(serde_json::to_value(content).expect("能序列化"))
+                Ok(serde_json::to_value(content).expect("can serialize"))
             }
             "exports.package" => {
                 let p: VideoParams = params(value)?;
@@ -608,7 +608,7 @@ mod tests {
         assert_eq!(serde_json::to_value(&events[0].label_ref).unwrap(), label_ref);
         let replay = host.handle("edits.apply", params.clone(), &mut |e| events.push(e.clone())).unwrap();
         assert_eq!(replay["replayed"], json!(true));
-        assert_eq!(events.len(), 1, "重放不发事件");
+        assert_eq!(events.len(), 1, "replay sends no events");
         // The same command with a different reference is a different payload.
         let mut other = params;
         other["labelRef"] = json!({ "key": "editLabel.other" });
@@ -698,7 +698,7 @@ mod tests {
         other.handle("videos.gcBlobs", json!({ "path": dir }), &mut |_| {}).unwrap();
         assert!(!second.exists());
         host.handle("videos.open", json!({ "path": dir }), &mut |_| {})
-            .expect("GC 放下了锁");
+            .expect("GC released the lock");
         assert!(
             host.handle("videos.gcBlobs", json!({ "path": dir, "extra": 1 }), &mut |_| {})
                 .is_err()
@@ -716,7 +716,7 @@ mod tests {
         assert_eq!(err.code, "VIDEO_LOCKED");
         host.handle("videos.close", json!({ "videoId": created["videoId"] }), &mut |_| {})
             .unwrap();
-        other.handle("videos.open", json!({ "path": dir }), &mut |_| {}).expect("锁已释放");
+        other.handle("videos.open", json!({ "path": dir }), &mut |_| {}).expect("the lock was released");
 
         assert_eq!(
             host.handle("videos.open", json!({ "path": "relative" }), &mut |_| {})
@@ -767,7 +767,7 @@ mod tests {
         assert_eq!(content["videoId"], json!(video_id));
         assert_eq!(content["revision"], json!("1"));
         let documents = content["documents"].as_array().unwrap();
-        assert_eq!(documents.len(), 1, "只带文字类文档");
+        assert_eq!(documents.len(), 1, "only text documents are included");
         assert_eq!(documents[0]["kind"], json!("speech"));
         assert_eq!(documents[0]["body"]["words"][0]["text"], json!("你好"));
         assert!(documents[0].get("plan").is_some());
@@ -911,7 +911,7 @@ mod tests {
         let speech = documents
             .iter()
             .find(|d| d["documentId"] == json!(speech_id))
-            .expect("转写一起冻结");
+            .expect("transcript is frozen together");
         assert_eq!(speech["kind"], json!("speech"));
         assert_eq!(speech["body"]["words"][0]["id"], json!("w1"));
         assert_eq!(documents.iter().filter(|d| d["kind"] == json!("translation")).count(), 0);
@@ -1166,7 +1166,7 @@ mod tests {
         assert_eq!(error.code, "TASK_STOPPED");
         assert_eq!(error.retryability, Retryability::Never);
         assert_eq!(error.details["stoppedGeneration"], json!("1"));
-        assert!(events.is_empty(), "被拒的提交不发事件");
+        assert!(events.is_empty(), "rejected commit sends no events");
         // No receipt, no transaction.
         let receipt = host
             .handle(
@@ -1217,7 +1217,7 @@ mod tests {
         assert_eq!(error.code, "TASK_PROTECTED");
         assert_eq!(error.entity_ids, vec![video_id.clone()]);
         assert_eq!(error.details["protections"][0]["protectionId"], json!("prot_1"));
-        assert!(events.is_empty(), "被拒的提交不发事件");
+        assert!(events.is_empty(), "rejected commit sends no events");
 
         // Jobs and flows under a task apply results with system identity: carrying a taskId, they are protected in the same way.
         let error = host
@@ -1227,7 +1227,7 @@ mod tests {
             .unwrap_err();
         assert_eq!(error.code, "TASK_PROTECTED");
         assert_eq!(error.details["protections"][0]["protectionId"], json!("prot_1"));
-        assert!(events.is_empty(), "被拒的提交不发事件");
+        assert!(events.is_empty(), "rejected commit sends no events");
 
         // The user's changes (including the user deciding to apply a task's results), and agent and system writes outside any task, are not restricted by task protection.
         host.handle("edits.apply", with(user, "cmd_user", "0", true), &mut |_| {}).unwrap();
@@ -1322,7 +1322,7 @@ mod tests {
             .output()
             .is_ok_and(|o| o.status.success());
         if !ok {
-            eprintln!("跳过：没有可用的 ffprobe");
+            eprintln!("skipping: no usable ffprobe");
         }
         ok
     }
@@ -1560,7 +1560,7 @@ mod tests {
             .filter(|i| i["type"] == "audio")
             .map(|i| (i["fromFrame"].clone(), i["playDuration"].clone()))
             .collect();
-        assert_eq!(voices.len(), 2, "旁白在剪口处拆成两段：{after:?}");
+        assert_eq!(voices.len(), 2, "narration split into two segments at the cut: {after:?}");
         let shape = after.iter().find(|i| i["id"] == shape_id.as_str()).unwrap();
         assert_eq!(shape["span"], json!({ "fromFrame": 60, "durationFrames": 30 }));
         // One transaction pushes one event, carrying the newly created cut-point set document and the moved instances.
@@ -1595,7 +1595,7 @@ mod tests {
         assert_eq!(restored["receipt"]["label"], "Restore cut");
         assert_eq!(restored["receipt"]["impact"]["newDurationFrames"], 120);
         let back = items(&mut host);
-        assert_eq!(back.iter().filter(|i| i["type"] == "audio").count(), 1, "放回之后接回一段");
+        assert_eq!(back.iter().filter(|i| i["type"] == "audio").count(), 1, "after putting it back, one segment is rejoined");
         let shape = back.iter().find(|i| i["id"] == shape_id.as_str()).unwrap();
         assert_eq!(shape["span"], json!({ "fromFrame": 90, "durationFrames": 30 }));
         assert_eq!(events.len(), 1);

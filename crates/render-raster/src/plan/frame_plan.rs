@@ -290,7 +290,7 @@ impl FramePlan {
         use crate::renderer::FrameLayer;
         if let [FrameLayer::Ops(_)] = layers.as_slice() {
             let Some(FrameLayer::Ops(ops)) = layers.into_iter().next() else {
-                unreachable!("上一行已经判定为单层普通指令流");
+                unreachable!("the previous line already classified this as a single plain op stream");
             };
             return FramePlan::single_draw(width, height, ops, capability);
         }
@@ -334,7 +334,7 @@ impl FramePlan {
         for pair in self.surfaces.windows(2) {
             if pair[0].id >= pair[1].id {
                 bail!(
-                    "frameplan-surface-order: surface id 必须升序且唯一（{:?} 之后是 {:?}）",
+                    "frameplan-surface-order: surface ids must be strictly ascending and unique ({:?} is followed by {:?})",
                     pair[0].id,
                     pair[1].id
                 );
@@ -364,26 +364,26 @@ impl FramePlan {
             let output = pass.output();
             if self.surface(output).is_none() {
                 bail!(
-                    "frameplan-pass-output-unknown: pass {index} ({}) 写入未声明的 {output:?}",
+                    "frameplan-pass-output-unknown: pass {index} ({}) writes undeclared {output:?}",
                     pass.kind()
                 );
             }
             for input in pass.inputs() {
                 if self.surface(input).is_none() {
                     bail!(
-                        "frameplan-pass-input-unknown: pass {index} ({}) 读取未声明的 {input:?}",
+                        "frameplan-pass-input-unknown: pass {index} ({}) reads undeclared {input:?}",
                         pass.kind()
                     );
                 }
                 if input == output {
                     bail!(
-                        "frameplan-pass-self-read: pass {index} ({}) 的输入与输出同为 {input:?}",
+                        "frameplan-pass-self-read: pass {index} ({}) has the same {input:?} as both input and output",
                         pass.kind()
                     );
                 }
                 if !written.contains(&input) {
                     bail!(
-                        "frameplan-pass-order: pass {index} ({}) 读取尚未写入的 {input:?}",
+                        "frameplan-pass-order: pass {index} ({}) reads {input:?} before it is written",
                         pass.kind()
                     );
                 }
@@ -451,13 +451,13 @@ impl FramePlan {
             let mut bytes = Vec::with_capacity(256);
             put_u64(
                 &mut bytes,
-                *table.get(&output.0).expect("validate 已保证 output 存在"),
+                *table.get(&output.0).expect("validate guarantees output exists"),
             );
             encode_pass_body(pass, &mut bytes);
             for input in pass.inputs() {
                 put_u64(
                     &mut bytes,
-                    *table.get(&input.0).expect("validate 已保证 input 存在"),
+                    *table.get(&input.0).expect("validate guarantees input exists"),
                 );
             }
             table.insert(output.0, drawop::fnv1a64(&bytes));

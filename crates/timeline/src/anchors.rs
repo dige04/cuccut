@@ -45,13 +45,13 @@ impl AnchorError {
 impl Display for AnchorError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Invalid(anchor) => write!(formatter, "词锚点非法：{anchor}"),
+            Self::Invalid(anchor) => write!(formatter, "invalid word anchor: {anchor}"),
             Self::WordMissing { source_id, word_id } => {
-                write!(formatter, "source {source_id} 中不存在 word {word_id}")
+                write!(formatter, "word {word_id} does not exist in source {source_id}")
             }
-            Self::WordCut(anchor) => write!(formatter, "词锚点指向已剪词：{anchor}"),
-            Self::Unmapped(anchor) => write!(formatter, "词锚点未编排到时间轴：{anchor}"),
-            Self::Ambiguous(anchor) => write!(formatter, "词锚点在时间轴上有多个放置：{anchor}"),
+            Self::WordCut(anchor) => write!(formatter, "word anchor points to a cut word: {anchor}"),
+            Self::Unmapped(anchor) => write!(formatter, "word anchor is not placed on the timeline: {anchor}"),
+            Self::Ambiguous(anchor) => write!(formatter, "word anchor has multiple placements on the timeline: {anchor}"),
         }
     }
 }

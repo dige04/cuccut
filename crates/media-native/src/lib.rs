@@ -91,7 +91,7 @@ impl RgbaFrame {
         let expected = width as usize * height as usize * 4;
         if width == 0 || height == 0 || data.len() != expected {
             anyhow::bail!(
-                "RGBA 帧尺寸与字节数不符：{width}x{height} 需要 {expected} 字节，实得 {}",
+                "RGBA frame size does not match its byte count: {width}x{height} needs {expected} bytes, got {}",
                 data.len()
             );
         }
@@ -152,12 +152,12 @@ pub const fn backend() -> &'static str {
 /// The size depends only on `(source display size, target_width)`, not on `t`. So every cell of a file's filmstrip has the same size, and the mosaic needs no further alignment.
 pub fn extract_frame_rgba(path: &Path, time_seconds: f64, target_width: u32) -> Result<RgbaFrame> {
     if target_width == 0 {
-        anyhow::bail!("target_width 必须 > 0");
+        anyhow::bail!("target_width must be > 0");
     }
     let time = if time_seconds.is_finite() {
         time_seconds.max(0.0)
     } else {
-        anyhow::bail!("time_seconds 必须是有限值，实得 {time_seconds}");
+        anyhow::bail!("time_seconds must be finite, got {time_seconds}");
     };
     #[cfg(target_os = "macos")]
     {
@@ -170,7 +170,7 @@ pub fn extract_frame_rgba(path: &Path, time_seconds: f64, target_width: u32) -> 
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = (path, time, target_width);
-        anyhow::bail!("unsupported: 当前平台没有原生单帧抽取后端（请安装 ffmpeg 走兜底路径）")
+        anyhow::bail!("unsupported: no native single-frame extraction backend on this platform (install ffmpeg to use the fallback path)")
     }
 }
 

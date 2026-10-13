@@ -416,8 +416,8 @@ mod tests {
         // Pure “maximum overlap” would always assign them to the smaller cluster number s0, while continuity hands the later words to s1.
         let ranges = vec![speaker_range(0.0, 2.1, 0), speaker_range(1.2, 3.0, 1)];
         let projected = project_speaker_clusters(&spans, &ranges);
-        assert_eq!(projected[4], Some(0), "并发区靠前的词跟随前文 {projected:?}");
-        assert_eq!(projected[6], Some(1), "并发区靠后的词跟随后文 {projected:?}");
+        assert_eq!(projected[4], Some(0), "words early in the overlap follow the preceding context {projected:?}");
+        assert_eq!(projected[6], Some(1), "words late in the overlap follow the following context {projected:?}");
         assert_eq!(
             projected,
             vec![

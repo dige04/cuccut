@@ -26,8 +26,8 @@ fn data_files_match_the_readme_digests() {
         let row = readme
             .lines()
             .find(|line| line.starts_with(&format!("| `{name}` |")))
-            .unwrap_or_else(|| panic!("README 没有 {name} 一行"));
-        assert!(row.contains(&digest), "{name} 的 SHA-256 与 README 不符：{digest}");
+            .unwrap_or_else(|| panic!("README has no {name} row"));
+        assert!(row.contains(&digest), "{name} SHA-256 does not match README: {digest}");
     }
 }
 
@@ -43,7 +43,7 @@ fn tone3_spelling_matches_every_heteronym_default() {
             assert!(!is_context_heteronym(c), "{c}");
             continue;
         }
-        let id = pinyin::default_syllable(c).unwrap_or_else(|| panic!("{c} 没有默认读音"));
+        let id = pinyin::default_syllable(c).unwrap_or_else(|| panic!("{c} has no default reading"));
         assert_eq!(pinyin::tone3(id), entry.default, "{c}");
         checked += 1;
     }
@@ -58,7 +58,7 @@ fn tone3_spelling_matches_every_heteronym_default() {
 fn the_context_list_is_heteronyms_without_grammar_words() {
     assert!(CONTEXT.len() >= 200 && CONTEXT.len() <= 500, "{}", CONTEXT.len());
     for c in CONTEXT.iter() {
-        assert!(HETERONYMS.contains_key(c), "{c} 不是多音字");
+        assert!(HETERONYMS.contains_key(c), "{c} is not a heteronym");
     }
     for c in "的了着不一地得".chars() {
         assert!(!is_context_heteronym(c), "{c}");
@@ -125,13 +125,13 @@ fn candidates_stay_a_small_share_of_ordinary_text() {
     let candidates = a.candidates.len();
     assert!(
         candidates * 100 <= han * 5,
-        "候选 {candidates} / 汉字 {han}：{:?}",
+        "candidates {candidates} / Han characters {han}: {:?}",
         a.candidates.iter().map(|c| a.slice(c.start, c.end)).collect::<Vec<_>>()
     );
     let phrases = a.readings.iter().filter(|r| r.origin == Origin::Phrase).count();
     assert!(
         phrases * 100 <= han * 3,
-        "词组注记 {phrases} / 汉字 {han}：{:?}",
+        "phrase annotations {phrases} / Han characters {han}: {:?}",
         a.readings
             .iter()
             .map(|r| (a.slice(r.start, r.end), r.reading.as_str()))
@@ -143,7 +143,7 @@ fn candidates_stay_a_small_share_of_ordinary_text() {
 fn auto_annotation_does_not_touch_ordinary_text_on_qwen3() {
     let a = annotate(ARTICLE, AnnotateOptions::default());
     let rendered = render(ReadingsSupport::Homophone, &a, None);
-    assert_eq!(rendered.text, a.surface, "词组注记在 Qwen3 上一个字都不换");
+    assert_eq!(rendered.text, a.surface, "phrase annotations change no characters on Qwen3");
     assert!(rendered.dropped.is_empty());
 }
 
@@ -278,7 +278,7 @@ fn every_engine_declares_how_it_renders_readings() {
         let (_, documented) = DOC_TABLE
             .iter()
             .find(|(k, _)| *k == kind)
-            .unwrap_or_else(|| panic!("{} 不在 DOC_TABLE 里", kind.as_str()));
+            .unwrap_or_else(|| panic!("{} is not in DOC_TABLE", kind.as_str()));
         let support = kind.readings_support();
         assert_eq!(support, *documented, "{}", kind.as_str());
         let rendered = render(support, &sample, Some(&vocab));
@@ -286,7 +286,7 @@ fn every_engine_declares_how_it_renders_readings() {
         assert_eq!(
             support == ReadingsSupport::Unsupported,
             all_dropped,
-            "{}：只有 Unsupported 才等于缺省实现（表面文字 + 全部 dropped）",
+            "{}: only Unsupported matches the default implementation (surface text + all dropped)",
             kind.as_str()
         );
         assert_eq!(
@@ -355,7 +355,7 @@ fn the_wrapper_renders_per_engine_and_reports_what_was_dropped() {
 
     let (sent, audio) = run(TtsEngineKind::IndexTts25, text);
     assert_eq!(sent, text);
-    assert_eq!(audio.readings_dropped.len(), 1, "只有畸形注记");
+    assert_eq!(audio.readings_dropped.len(), 1, "only malformed annotations");
 
     let (sent, audio) = run(TtsEngineKind::GptSovits, text);
     assert_eq!(sent, "他在这一行做事，剪了头发，去银行");

@@ -94,7 +94,7 @@ impl Qwen3Tts {
         // Create the guard first: if any later loading step fails, the guard on unwind also waits for the GPU and clears any cache already allocated.
         let cache_guard = ModelMemoryCacheGuard;
 
-        let config_text = std::fs::read_to_string(config_path).with_context(|| format!("读取 {}", config_path.display()))?;
+        let config_text = std::fs::read_to_string(config_path).with_context(|| format!("failed to read {}", config_path.display()))?;
         let config = Qwen3TtsConfig::parse(&config_text)?;
         let tokenizer = Qwen3Tokenizer::load(vocabulary, model.path("merges.txt"), model.path("tokenizer_config.json"))?;
 
@@ -143,7 +143,7 @@ impl Qwen3Tts {
             let mut encoder_weights = codec_weights.split_prefix("encoder.");
             self.codec_encoder = Some(CodecEncoder::load(&mut encoder_weights)?);
         }
-        Ok(self.codec_encoder.as_ref().expect("刚加载"))
+        Ok(self.codec_encoder.as_ref().expect("just loaded"))
     }
 
     // ---- Embedding helpers ----
@@ -327,7 +327,7 @@ impl Qwen3Tts {
                 index: chunk_index,
                 generated: first_codebook.len(),
             }) {
-                bail!("合成已取消");
+                bail!("synthesis cancelled");
             }
             let text_embed = if trailing_idx < trailing_len {
                 let embed = prefill.trailing.index((.., trailing_idx..trailing_idx + 1, ..));
@@ -361,7 +361,7 @@ impl Qwen3Tts {
         let frames = first_codebook.len();
         if frames >= safe_max_tokens && !hit_eos {
             eprintln!(
-                "[qwen3-tts] 达到安全上限 {safe_max_tokens} 个 token（约 {:.1}s），输出可能被截断",
+                "[qwen3-tts] reached the safety limit of {safe_max_tokens} tokens (about {:.1}s); output may be truncated",
                 frames as f64 / 12.5
             );
         }
@@ -395,9 +395,9 @@ impl Qwen3Tts {
 
     /// Decodes reference audio to 24 kHz mono.
     fn load_reference_audio(path: &Path) -> Result<Vec<f32>> {
-        let samples = crate::audio::decode_mono(path, REFERENCE_DECODE_RATE).with_context(|| format!("解码参考音频 {}", path.display()))?;
+        let samples = crate::audio::decode_mono(path, REFERENCE_DECODE_RATE).with_context(|| format!("failed to decode reference audio {}", path.display()))?;
         if samples.is_empty() {
-            bail!("参考音频 {} 没有可用采样", path.display());
+            bail!("reference audio {} has no usable samples", path.display());
         }
         Ok(resample(&samples, REFERENCE_DECODE_RATE, SAMPLE_RATE))
     }
@@ -405,11 +405,11 @@ impl Qwen3Tts {
     /// Reference audio → x-vector `[1, 1024]`.
     fn speaker_embedding(&self, audio_24k: &[f32]) -> Result<Array> {
         let Some(encoder) = &self.speaker_encoder else {
-            bail!("当前模型没有 speaker_encoder，无法克隆音色（需要 Qwen3-TTS Base 变体）");
+            bail!("the current model has no speaker_encoder; cannot clone a voice (needs the Qwen3-TTS Base variant)");
         };
         let mel = mel::compute(audio_24k);
         if mel.frames == 0 {
-            bail!("参考音频太短，无法提取说话人特征");
+            bail!("reference audio is too short to extract speaker features");
         }
         let mels = Array::from_slice(&mel.data, &[1, mel.frames as i32, mel::N_MELS as i32]);
         let embed = encoder.forward(&mels)?;
@@ -484,7 +484,7 @@ impl Qwen3Tts {
         let elapsed = started.elapsed().as_secs_f64();
         let audio_seconds = samples.len() as f64 / SAMPLE_RATE as f64;
         eprintln!(
-            "[qwen3-tts] 块 {chunk_index}: {} 字符 → {:.2}s 音频，用时 {elapsed:.2}s（RTF {:.2}）",
+            "[qwen3-tts] chunk {chunk_index}: {} characters → {:.2}s of audio, took {elapsed:.2}s (RTF {:.2})",
             text.chars().count(),
             audio_seconds,
             if audio_seconds > 0.0 { elapsed / audio_seconds } else { 0.0 }
@@ -502,7 +502,7 @@ impl Qwen3Tts {
         // VoiceDesign only produces speech from one description sentence: `--instruct` is that sentence; when it is not given, a built-in voice acts on it as that sentence's **description** (`voices::style_for`); when a built-in voice is named and `--instruct` is given, both sentences are used.
         if self.config.variant == ModelVariant::VoiceDesign {
             let described = match &request.voice {
-                VoiceSpec::Clone { .. } => bail!("Qwen3-TTS VoiceDesign 不接受参考音频，声音只由一句描述（--instruct）决定"),
+                VoiceSpec::Clone { .. } => bail!("Qwen3-TTS VoiceDesign does not accept reference audio; the voice is set only by a description (--instruct)"),
                 VoiceSpec::Default if request.instruct.as_deref().is_some_and(|text| !text.trim().is_empty()) => request.clone(),
                 _ => {
                     let style = crate::synthesize::voices::style_for(request, "Qwen3-TTS VoiceDesign")?;
@@ -519,16 +519,16 @@ impl Qwen3Tts {
         let voice = if self.config.speaker.is_none() && self.speaker_encoder.is_some() {
             match &request.voice {
                 VoiceSpec::Clone { .. } => None,
-                _ => Some(crate::synthesize::voices::builtin_for(request, "Qwen3-TTS Base")?.expect("非 Clone")),
+                _ => Some(crate::synthesize::voices::builtin_for(request, "Qwen3-TTS Base")?.expect("not Clone")),
             }
         } else {
             None
         };
         if let Some(voice) = voice {
             if !progress(TtsProgress::Loading {
-                stage: format!("内置音色 {}", voice.id),
+                stage: format!("built-in voice {}", voice.id),
             }) {
-                bail!("合成已取消");
+                bail!("synthesis cancelled");
             }
             // Bundled recordings are decoded in memory and resampled to 24 kHz, not written to disk.
             let audio = crate::synthesize::voices::builtin(voice).audio.samples(SAMPLE_RATE)?;
@@ -536,7 +536,7 @@ impl Qwen3Tts {
             return Ok(VoicePlan::Prompt {
                 speaker_token: None,
                 language: language_id(&language_name).unwrap_or_else(|| {
-                    eprintln!("[qwen3-tts] 未知语言 {language_name:?}，回退英语");
+                    eprintln!("[qwen3-tts] unknown language {language_name:?}, falling back to English");
                     super::tokens::LANGUAGE_ENGLISH
                 }),
                 instruct: None,
@@ -551,14 +551,14 @@ impl Qwen3Tts {
             } => {
                 if self.speaker_encoder.is_none() {
                     bail!(
-                        "当前模型（{}）不支持音色克隆，请使用 Qwen3-TTS Base 变体，或改用预置说话人 / 声音描述",
+                        "the current model ({}) does not support voice cloning; use the Qwen3-TTS Base variant, or switch to a preset speaker or voice description",
                         self.config.variant.label()
                     );
                 }
                 if !progress(TtsProgress::Loading {
-                    stage: "解码参考音频".into(),
+                    stage: "decode reference audio".into(),
                 }) {
-                    bail!("合成已取消");
+                    bail!("synthesis cancelled");
                 }
                 let audio = Self::load_reference_audio(reference_audio)?;
                 let speaker_embedding = self.speaker_embedding(&audio)?;
@@ -566,9 +566,9 @@ impl Qwen3Tts {
                 match reference_text.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
                     Some(reference_text) => {
                         if !progress(TtsProgress::Loading {
-                            stage: "编码参考音频".into(),
+                            stage: "encode reference audio".into(),
                         }) {
-                            bail!("合成已取消");
+                            bail!("synthesis cancelled");
                         }
                         let ref_codes = self.ensure_codec_encoder()?.encode(&audio)?;
                         // ICL includes a language token only when the caller explicitly specifies a language (otherwise it is "auto").
@@ -583,7 +583,7 @@ impl Qwen3Tts {
                     None => Ok(VoicePlan::Prompt {
                         speaker_token: None,
                         language: language.unwrap_or_else(|| {
-                            eprintln!("[qwen3-tts] 未知语言 {language_name:?}，回退英语");
+                            eprintln!("[qwen3-tts] unknown language {language_name:?}, falling back to English");
                             super::tokens::LANGUAGE_ENGLISH
                         }),
                         instruct: None,
@@ -612,7 +612,7 @@ impl Qwen3Tts {
         let language = match language_id(&resolved.language) {
             Some(id) => id,
             None => {
-                eprintln!("[qwen3-tts] 未知语言 {:?}，回退英语", resolved.language);
+                eprintln!("[qwen3-tts] unknown language {:?}, falling back to English", resolved.language);
                 super::tokens::LANGUAGE_ENGLISH
             }
         };
@@ -669,11 +669,11 @@ impl TtsEngine for Qwen3Tts {
     fn synthesize(&mut self, request: &TtsRequest, mut progress: ProgressSink<'_>) -> Result<TtsAudio> {
         let text = request.text.trim();
         if text.is_empty() {
-            bail!("合成文本为空");
+            bail!("text to synthesize is empty");
         }
         let chunks = crate::synthesize::text::chunk_with_breaks(text, crate::synthesize::text::DEFAULT_MAX_UNITS);
         if chunks.is_empty() {
-            bail!("合成文本切块后为空");
+            bail!("text to synthesize is empty after chunking");
         }
         let sampling = SamplingConfig::from_options(&request.sampling);
         let mut rng = Rng::from_optional_seed(request.sampling.seed);
@@ -684,13 +684,13 @@ impl TtsEngine for Qwen3Tts {
         let mut stitcher = Stitcher::new(SAMPLE_RATE, count);
         for (index, chunk) in chunks.iter().enumerate() {
             if !progress(TtsProgress::ChunkStarted { index, count }) {
-                bail!("合成已取消");
+                bail!("synthesis cancelled");
             }
             let chunk_samples = self.synthesize_chunk(&chunk.text, &plan, &sampling, &mut rng, index, &mut progress)?;
             stitcher.push(&chunk_samples, chunk.after);
             let seconds = stitcher.seconds();
             if !progress(TtsProgress::ChunkFinished { index, seconds }) {
-                bail!("合成已取消");
+                bail!("synthesis cancelled");
             }
         }
         Ok(TtsAudio {

@@ -21,7 +21,7 @@ fn read_json(path: &Path) -> Value {
 
 fn media_of(doc: &TranscriptDoc) -> MediaFacts {
     let ticks = seconds_to_ticks(doc.media.duration, FRESH_TIMESCALE).unwrap();
-    assert!(ticks.exact, "样例的时长是整微秒");
+    assert!(ticks.exact, "the sample duration is a whole number of microseconds");
     MediaFacts {
         asset_id: doc.media.id.clone(),
         path: doc.media.path.clone(),
@@ -144,7 +144,7 @@ fn every_v2_field_survives_within_the_declared_rounding() {
     assert_eq!(
         speech["words"][0]["timingQuality"],
         json!("estimated"),
-        "alignedWords 为假的引擎写的词"
+        "words written by an engine with alignedWords false"
     );
     assert_eq!(speech["stages"]["aligned"]["lowConfidence"], json!(["g1.2"]));
     assert_eq!(
@@ -175,13 +175,13 @@ fn every_v2_field_survives_within_the_declared_rounding() {
     assert_eq!(
         second.alignment.as_ref().unwrap().source_word_ids,
         ["g2.0", "g2.1", "g2.2"],
-        "没有词锚时取源句的可见词"
+        "without word anchors, take the visible words of the source sentence"
     );
     let ja = written.translations.iter().find(|t| t.language == "ja").unwrap();
     assert_eq!(
         ja.units[0].alignment.as_ref().unwrap().source_word_ids,
         ["g1.0", "g1.1"],
-        "隐藏的词不进句子"
+        "hidden words are not part of the sentence"
     );
 
     // Go through v3 → v2 → v3 again (with base): the supplemented fields come back unchanged.
@@ -246,10 +246,10 @@ fn transcribe_and_translate_bodies_survive_v2_and_back() {
         translations: std::slice::from_ref(&translation),
     })
     .unwrap();
-    assert!(!doc.engine.aligned_words, "有 estimated / missing 的词");
+    assert!(!doc.engine.aligned_words, "has estimated / missing words");
     assert_eq!(doc.engine.name, "local");
-    assert_eq!(doc.words[1].text, " there.", "词的文本原样，含前导空格");
-    assert_eq!(doc.words[5].sp, "", "没有说话人的词归到保留的说话人");
+    assert_eq!(doc.words[1].text, " there.", "word text is kept as is, including the leading space");
+    assert_eq!(doc.words[5].sp, "", "words without a speaker go to the reserved speaker");
     assert_eq!(doc.trans["zh-Hans"]["s-w-000003"], "你还好吗？");
     assert!(doc.trans_src["zh-Hans"]["s-w-000001"].starts_with("sha256:"));
 
@@ -316,9 +316,9 @@ fn edits_made_in_v2_are_written_back_onto_the_base() {
         json!({ "id": "w-new", "start": 4_000_000, "end": 4_100_000, "text": "Bye.", "speaker": "s2" })
     );
     assert!(body["words"][2].get("hidden").is_none());
-    assert_eq!(body["sentences"], Value::Null, "词或隐藏变了：存下来的句子清成 null");
+    assert_eq!(body["sentences"], Value::Null, "words or hidden flags changed: the stored sentences are cleared to null");
     assert_eq!(body["userBreaks"], json!({ "g1.3": "break" }));
-    assert_eq!(body["legacy"], file["body"]["legacy"], "不认识的字段原样带回");
+    assert_eq!(body["legacy"], file["body"]["legacy"], "unknown fields are carried back unchanged");
     assert_eq!(body["speakers"][1]["hue"], Value::Null);
     assert_eq!(written.report.rounded_times, 1);
 
@@ -356,14 +356,14 @@ fn inconsistent_inputs_are_rejected() {
     let translation: TranslationBody = serde_json::from_value(read_json(&fixtures().join("v3-asr-translation.json"))).unwrap();
     let mut legacy = translation.clone();
     legacy.schema = "cuccut.translation/1".into();
-    assert!(to(&speech, &[legacy]).is_err(), "旧项目导入的 /1 译文不能换算");
+    assert!(to(&speech, &[legacy]).is_err(), "a /1 translation imported from an old project cannot be converted");
     assert!(
         to(&speech, &[translation.clone(), translation.clone()]).is_err(),
-        "同一语言两份译文"
+        "two translations in the same language"
     );
     let mut duplicated = translation.clone();
     duplicated.units.push(duplicated.units[0].clone());
-    assert!(to(&speech, &[duplicated]).is_err(), "同一句两个单元");
+    assert!(to(&speech, &[duplicated]).is_err(), "two units for the same sentence");
 
     // A new language without a sourceBasis cannot be written.
     let mut doc = to(&speech, &[]).unwrap();

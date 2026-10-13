@@ -211,7 +211,7 @@ pub struct DocumentBody {
 }
 
 fn json<T: serde::Serialize>(value: &T) -> String {
-    serde_json::to_string(value).expect("能序列化")
+    serde_json::to_string(value).expect("can serialize")
 }
 
 impl Store {

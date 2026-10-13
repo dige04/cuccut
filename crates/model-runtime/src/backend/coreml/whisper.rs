@@ -395,11 +395,11 @@ fn load_model(path: &Path, units: MLComputeUnits) -> Result<Retained<MLModel>> {
     }
     let path_text = path
         .to_str()
-        .with_context(|| format!("CoreML 路径不是 UTF-8：{}", path.display()))?;
+        .with_context(|| format!("CoreML path is not UTF-8: {}", path.display()))?;
     let ns_path = NSString::from_str(path_text);
     let url = NSURL::fileURLWithPath(&ns_path);
     unsafe { MLModel::modelWithContentsOfURL_configuration_error(&url, &configuration) }
-        .map_err(|error| anyhow!("加载 CoreML 模型 {} 失败：{error:?}", path.display()))
+        .map_err(|error| anyhow!("failed to load CoreML model {}: {error:?}", path.display()))
 }
 
 fn model_dimension(model: &MLModel, input: bool, feature_name: &str, axis: usize) -> Option<usize> {
@@ -431,15 +431,15 @@ fn predict(model: &MLModel, inputs: &[(&str, &MLMultiArray)]) -> Result<Retained
     let key_refs = keys.iter().map(|key| key.as_ref() as &NSString).collect::<Vec<_>>();
     let dictionary = NSDictionary::<NSString, AnyObject>::from_retained_objects(&key_refs, &values);
     let provider = unsafe { MLDictionaryFeatureProvider::initWithDictionary_error(MLDictionaryFeatureProvider::alloc(), &dictionary) }
-        .map_err(|error| anyhow!("构造 CoreML 输入失败：{error:?}"))?;
+        .map_err(|error| anyhow!("failed to build CoreML input: {error:?}"))?;
     let protocol: &ProtocolObject<dyn MLFeatureProvider> = ProtocolObject::from_ref::<MLDictionaryFeatureProvider>(&provider);
-    unsafe { model.predictionFromFeatures_error(protocol) }.map_err(|error| anyhow!("CoreML 推理失败：{error:?}"))
+    unsafe { model.predictionFromFeatures_error(protocol) }.map_err(|error| anyhow!("CoreML prediction failed: {error:?}"))
 }
 
 fn output_array(provider: &ProtocolObject<dyn MLFeatureProvider>, name: &str) -> Result<Retained<MLMultiArray>> {
     let name = NSString::from_str(name);
-    let value = unsafe { provider.featureValueForName(&name) }.with_context(|| format!("CoreML 输出缺少 {name}"))?;
-    unsafe { value.multiArrayValue() }.with_context(|| format!("CoreML 输出 {name} 不是 MLMultiArray"))
+    let value = unsafe { provider.featureValueForName(&name) }.with_context(|| format!("CoreML output is missing {name}"))?;
+    unsafe { value.multiArrayValue() }.with_context(|| format!("CoreML output {name} is not an MLMultiArray"))
 }
 
 fn make_array(shape: &[usize], data_type: MLMultiArrayDataType) -> Result<Retained<MLMultiArray>> {
@@ -449,7 +449,7 @@ fn make_array(shape: &[usize], data_type: MLMultiArrayDataType) -> Result<Retain
         .collect::<Vec<_>>();
     let ns_shape = NSArray::from_retained_slice(&numbers);
     unsafe { MLMultiArray::initWithShape_dataType_error(MLMultiArray::alloc(), &ns_shape, data_type) }
-        .map_err(|error| anyhow!("创建 CoreML 张量 {shape:?} 失败：{error:?}"))
+        .map_err(|error| anyhow!("failed to create CoreML tensor {shape:?}: {error:?}"))
 }
 
 fn scalar_i32(value: i32) -> Result<Retained<MLMultiArray>> {

@@ -258,12 +258,12 @@ mod tests {
         // The pause is measured in 10 ms windows, so it cannot differ by a whole window.
         assert!(
             (gap(0) - SENTENCE_PAUSE_SECONDS).abs() <= WINDOW_SECONDS + 1e-9,
-            "句末停顿 {}",
+            "sentence-end pause {}",
             gap(0)
         );
         assert!(
             (gap(1) - PARAGRAPH_PAUSE_SECONDS).abs() <= WINDOW_SECONDS + 1e-9,
-            "段落停顿 {}",
+            "paragraph pause {}",
             gap(1)
         );
 
@@ -283,7 +283,7 @@ mod tests {
             + samples(0.25);
         assert!(
             out.len().abs_diff(expected) <= 2 * window(RATE),
-            "总长 {} 预期 {expected}",
+            "total length {} expected {expected}",
             out.len()
         );
         // Progress is the cumulative stitched duration: monotonically increasing, and the last value equals the total length.
@@ -340,7 +340,7 @@ mod tests {
             (fake_chunk(0.1, 0.5, 0.3, 0.4), ChunkBreak::Sentence),
             (spiky, ChunkBreak::Paragraph),
         ]);
-        assert!((peak(&out) - PEAK_CEILING).abs() < 1e-5, "峰值 {}", peak(&out));
+        assert!((peak(&out) - PEAK_CEILING).abs() < 1e-5, "peak {}", peak(&out));
         // A chunk already above −1 dBFS is not amplified further (Base's codec output often goes above full scale; the whole output is reduced by PeakLimited).
         assert_eq!(alignment_gain(0.5, 0.2, 1.2), 1.0);
         assert!((alignment_gain(0.1, 0.4, 1.2) - 0.25f32.max(10f32.powf(-0.3))).abs() < 1e-6);

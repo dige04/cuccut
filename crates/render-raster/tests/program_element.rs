@@ -365,13 +365,13 @@ fn warnings_after_the_first_frame_are_reported_after_rendering() {
     assert!(
         messages
             .iter()
-            .any(|m| m.contains("textShadow") && m.contains("第 7 帧起")),
+            .any(|m| m.contains("textShadow") && m.contains("from program frame 7")),
         "{messages:?}"
     );
     assert!(
         messages
             .iter()
-            .any(|m| m.contains("U+10FFFD") && m.contains("第 7 帧起")),
+            .any(|m| m.contains("U+10FFFD") && m.contains("from program frame 7")),
         "{messages:?}"
     );
 }
@@ -398,7 +398,7 @@ fn module_state_that_changes_across_evaluations_is_reported() {
     let stateful = load_assets(&probes_doc("Stateful"), &fixture_dir()).expect("load_assets");
     let messages = degraded_messages(&stateful);
     assert_eq!(messages.len(), 1, "{messages:?}");
-    assert!(messages[0].contains("模块顶层"), "{messages:?}");
+    assert!(messages[0].contains("module top level"), "{messages:?}");
 
     let pure = load_assets(&probes_doc("Pure"), &fixture_dir()).expect("load_assets");
     assert!(

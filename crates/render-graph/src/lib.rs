@@ -222,16 +222,16 @@ impl PlanError {
 
 impl PlanError {
     fn overflow(field: &str) -> PlanError {
-        PlanError::new("TIME_ARITHMETIC_OVERFLOW", format!("{field} 超出范围"))
+        PlanError::new("TIME_ARITHMETIC_OVERFLOW", format!("{field} is out of range"))
     }
 }
 
 impl From<TimeError> for PlanError {
     fn from(error: TimeError) -> PlanError {
         let message = match &error {
-            TimeError::Invalid { field, reason } => format!("{field}：{reason}"),
-            TimeError::Overflow { field } => format!("{field} 超出范围"),
-            TimeError::NotOnFrameGrid { .. } => "时刻不在帧边界上".to_string(),
+            TimeError::Invalid { field, reason } => format!("{field}: {reason}"),
+            TimeError::Overflow { field } => format!("{field} is out of range"),
+            TimeError::NotOnFrameGrid { .. } => "time is not on a frame boundary".to_string(),
         };
         PlanError::new(error.code(), message)
     }
@@ -285,7 +285,7 @@ pub fn plan_interactive_with_speech(
     speech: Option<&[(f64, f64)]>,
 ) -> Result<FramePlan, PlanError> {
     if !seconds.is_finite() {
-        return Err(PlanError::new("INVALID_TIME", "时刻必须是有限的数"));
+        return Err(PlanError::new("INVALID_TIME", "time must be a finite number"));
     }
     let micros = libm::round(seconds.max(0.0) * 1_000_000.0);
     let t = Ratio::new(micros as i128, 1_000_000).ok_or_else(|| PlanError::overflow("t"))?;
@@ -298,7 +298,7 @@ pub fn plan_interactive_with_speech(
         Some(boundary)
             if boundary
                 .checked_sub(t)
-                .is_some_and(|gap| gap <= Ratio::new(1, 1_000_000).expect("常量")) =>
+                .is_some_and(|gap| gap <= Ratio::new(1, 1_000_000).expect("constant")) =>
         {
             boundary
         }
@@ -320,12 +320,12 @@ pub fn plan_frame_with_speech(
     speech: Option<&[(f64, f64)]>,
 ) -> Result<FramePlan, PlanError> {
     if t.is_negative() {
-        return Err(PlanError::new("INVALID_TIME", "时刻不能为负"));
+        return Err(PlanError::new("INVALID_TIME", "time must not be negative"));
     }
     let sequence = video
         .sequences
         .get(sequence_id)
-        .ok_or_else(|| PlanError::new("SEQUENCE_NOT_FOUND", format!("没有序列 {sequence_id}")))?;
+        .ok_or_else(|| PlanError::new("SEQUENCE_NOT_FOUND", format!("no sequence {sequence_id}")))?;
     let header = &sequence.header;
     let fps = checked_fps(sequence)?;
     let frame = frames_at(t, fps).ok_or_else(|| PlanError::overflow("t"))?.floor();
@@ -453,7 +453,7 @@ pub fn plan_frame_with_speech(
             | TimelineItem::Placeholder(_)
             | TimelineItem::Confetti(_)
             | TimelineItem::Whiteboard(_) => {
-                let span = item.span().expect("视觉实例都在帧网格上");
+                let span = item.span().expect("visual items are on the frame grid");
                 if !covers(span, frame) || !rules.visible(track) {
                     continue;
                 }

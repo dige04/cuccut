@@ -31,7 +31,7 @@ fn new_video(dir: &Path) -> Video {
         width: 1920,
         height: 1080,
     };
-    Video::create(dir, &options, &ffprobe()).expect("新建视频")
+    Video::create(dir, &options, &ffprobe()).expect("create the video")
 }
 
 fn apply(video: &mut Video, command_id: &str, operations: Vec<Value>) -> Result<video_engine::Committed, ErrorBody> {
@@ -92,7 +92,7 @@ fn import_bundle(video: &mut Video, root: &Path, name: &str, frames: i64, schema
 fn composition(video: &Video, id: &str) -> CompositionItem {
     match &video.state().items[id].value {
         TimelineItem::Composition(c) => c.clone(),
-        other => panic!("不是合成：{other:?}"),
+        other => panic!("not a composition: {other:?}"),
     }
 }
 
@@ -156,7 +156,7 @@ fn replace_keeps_the_clip_and_swaps_only_the_source() {
     assert_eq!(
         (after.span.from_frame, after.span.duration_frames),
         (60, 60),
-        "起点不变，变短就裁掉"
+        "start unchanged; shortening trims the end"
     );
     assert!(matches!(&after.time_map, TimeMap::Linear { source_in, rate } if source_in.ticks == "0" && rate.num == rate.den));
     // Everything else is unchanged: ID, track, name, geometry and opacity, effects, parameters, enable and lock, follow, and lineage.
@@ -286,7 +286,7 @@ fn only_composition_clips_and_bundle_assets_are_accepted() {
     ];
     for (n, op) in cases.into_iter().enumerate() {
         let err = apply(&mut video, &format!("cmd_bad_{n}"), vec![op]).unwrap_err();
-        assert_eq!(err.code, "INVALID_OPERATION", "第 {n} 个：{}", err.message);
+        assert_eq!(err.code, "INVALID_OPERATION", "case {n}: {}", err.message);
     }
     // The version does not exist.
     let err = apply(
@@ -380,7 +380,7 @@ fn prerender_clip(dir: &Path) -> Option<PathBuf> {
         .output()
         .is_ok_and(|o| o.status.success());
     if !ok {
-        eprintln!("跳过：没有可用的 ffmpeg 生成测试素材");
+        eprintln!("skipping: no usable ffmpeg to generate test media");
         return None;
     }
     Some(path)

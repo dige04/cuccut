@@ -142,7 +142,7 @@ pub fn ffmpeg_frame_stream(media: &Path, from: f64, fps: f64) -> Option<Vec<Rgba
         output
             .stdout
             .chunks_exact(stride)
-            .map(|bytes| RgbaFrame::new(WIDTH, HEIGHT, bytes.to_vec()).expect("整帧"))
+            .map(|bytes| RgbaFrame::new(WIDTH, HEIGHT, bytes.to_vec()).expect("whole frame"))
             .collect(),
     )
 }
@@ -171,6 +171,6 @@ pub fn dominant(frame: &RgbaFrame) -> &'static str {
 
 /// `RgbaFrame` (straight alpha; video frames are always opaque) → `tiny_skia::Pixmap` (premultiplied). When alpha is always 255, the two conventions are byte-identical, so the bytes can be copied directly without actually running premultiplication.
 pub fn to_pixmap(frame: &RgbaFrame) -> tiny_skia::Pixmap {
-    let size = tiny_skia::IntSize::from_wh(frame.width, frame.height).expect("非零尺寸");
-    tiny_skia::Pixmap::from_vec(frame.data.clone(), size).expect("RGBA 字节数与尺寸相符")
+    let size = tiny_skia::IntSize::from_wh(frame.width, frame.height).expect("non-zero size");
+    tiny_skia::Pixmap::from_vec(frame.data.clone(), size).expect("RGBA byte count matches the size")
 }

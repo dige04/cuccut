@@ -114,8 +114,8 @@ pub struct LayerPlan {
 
 impl HtDemucsConfig {
     pub fn load(path: &Path) -> Result<Self> {
-        let text = std::fs::read_to_string(path).with_context(|| format!("无法读取 HTDemucs 配置 {}", path.display()))?;
-        let config: Self = serde_json::from_str(&text).with_context(|| format!("HTDemucs 配置格式错误 {}", path.display()))?;
+        let text = std::fs::read_to_string(path).with_context(|| format!("cannot read HTDemucs config {}", path.display()))?;
+        let config: Self = serde_json::from_str(&text).with_context(|| format!("invalid HTDemucs config format {}", path.display()))?;
         config.validate()?;
         Ok(config)
     }
@@ -160,14 +160,14 @@ impl HtDemucsConfig {
     pub fn validate(&self) -> Result<()> {
         let a = &self.arch;
         if self.sources.is_empty() {
-            bail!("HTDemucs 配置没有 sources");
+            bail!("HTDemucs config has no sources");
         }
         if self.num_models == 0 {
-            bail!("HTDemucs 配置 num_models 为 0");
+            bail!("HTDemucs config num_models is 0");
         }
         if self.num_models != self.sources.len() {
             bail!(
-                "只支持对角 bag（子模型数 {} 必须等于 stem 数 {}）",
+                "only diagonal bags are supported (sub-model count {} must equal stem count {})",
                 self.num_models,
                 self.sources.len()
             );
@@ -175,45 +175,45 @@ impl HtDemucsConfig {
         if let Some(weights) = &self.weights {
             for (i, row) in weights.iter().enumerate() {
                 if row.len() != self.sources.len() {
-                    bail!("bag 权重第 {i} 行长度 {} 与 stem 数不符", row.len());
+                    bail!("bag weight row {i} has length {} which does not match the stem count", row.len());
                 }
                 for (j, &w) in row.iter().enumerate() {
                     let expected = if i == j { 1.0 } else { 0.0 };
                     if (w - expected).abs() > 1e-6 {
-                        bail!("只支持对角 bag 权重：weights[{i}][{j}] = {w}");
+                        bail!("only diagonal bag weights are supported: weights[{i}][{j}] = {w}");
                     }
                 }
             }
         }
         if !a.cac {
-            bail!("只支持 cac=true 的 HTDemucs");
+            bail!("only HTDemucs with cac=true is supported");
         }
         if a.nfft == 0 || !a.nfft.is_multiple_of(4) {
-            bail!("nfft 必须是 4 的倍数：{}", a.nfft);
+            bail!("nfft must be a multiple of 4: {}", a.nfft);
         }
         if a.norm_starts < a.depth {
             bail!(
-                "只支持 norm_starts >= depth（HEnc/HDec 无 GroupNorm）：norm_starts {} depth {}",
+                "only norm_starts >= depth is supported (HEnc/HDec have no GroupNorm): norm_starts {} depth {}",
                 a.norm_starts,
                 a.depth
             );
         }
         if a.t_layers > 0 {
             if a.t_emb != "sin" {
-                bail!("只支持 t_emb=sin：{}", a.t_emb);
+                bail!("only t_emb=sin is supported: {}", a.t_emb);
             }
             if !(a.t_norm_first && a.t_norm_out && a.t_norm_in && a.t_layer_scale && a.t_gelu) {
-                bail!("只支持 norm_first / norm_out / norm_in / layer_scale / gelu 全开的 transformer");
+                bail!("only transformers with norm_first / norm_out / norm_in / layer_scale / gelu all enabled are supported");
             }
             if a.t_cross_first {
-                bail!("只支持 t_cross_first=false");
+                bail!("only t_cross_first=false is supported");
             }
             if a.t_heads == 0 || !self.transformer_dim().is_multiple_of(a.t_heads) {
-                bail!("transformer 维度 {} 不能被头数 {} 整除", self.transformer_dim(), a.t_heads);
+                bail!("transformer dimension {} is not divisible by head count {}", self.transformer_dim(), a.t_heads);
             }
         }
         if self.training_length() == 0 {
-            bail!("segment × samplerate 为 0");
+            bail!("segment × samplerate is 0");
         }
         // When planning the layers, check that the frequency axis does not collapse to 1 (otherwise empty/inject merge layers would be needed, which this port does not cover).
         self.layer_plan()?;
@@ -233,7 +233,7 @@ impl HtDemucsConfig {
         for index in 0..a.depth {
             if freqs <= 1 || freqs <= a.kernel_size {
                 bail!(
-                    "第 {index} 层频率 bin 数 {freqs} <= kernel_size {}，需要 empty/inject 合并层，本移植未覆盖",
+                    "layer {index} has {freqs} frequency bins <= kernel_size {}, which needs empty/inject merge layers; this port does not cover them",
                     a.kernel_size
                 );
             }

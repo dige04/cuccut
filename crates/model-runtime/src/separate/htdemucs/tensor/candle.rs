@@ -114,19 +114,19 @@ fn shape(dims: &[i32], len: usize) -> Result<Vec<usize>> {
     for &dim in dims {
         if dim == -1 {
             if infer.replace(result.len()).is_some() {
-                bail!("多个待推断维度")
+                bail!("more than one dimension to infer")
             }
             result.push(1);
         } else if dim >= 0 {
             known *= dim as usize;
             result.push(dim as usize);
         } else {
-            bail!("负维度 {dim}")
+            bail!("negative dimension {dim}")
         }
     }
     if let Some(index) = infer {
         if known == 0 || !len.is_multiple_of(known) {
-            bail!("无法推断张量形状")
+            bail!("cannot infer tensor shape")
         }
         result[index] = len / known;
     }
@@ -154,7 +154,7 @@ impl Array {
             DType::F32 => Dtype::Float32,
             DType::F16 => Dtype::Float16,
             DType::BF16 => Dtype::Bfloat16,
-            dtype => panic!("HTDemucs 权重不支持 {dtype:?}"),
+            dtype => panic!("HTDemucs weights do not support {dtype:?}"),
         }
     }
 
@@ -310,7 +310,7 @@ pub mod ops {
         let len = x.0.dim(a)?;
         let part = len / count as usize;
         if part * count as usize != len {
-            bail!("split 维度不能整除")
+            bail!("split dimension is not divisible")
         }
         Ok((0..count as usize)
             .map(|i| x.0.narrow(a, i * part, part).map(Array))
@@ -321,7 +321,7 @@ pub mod ops {
         let mut out = x.0.clone();
         for (axis, &(before, after)) in widths.iter().enumerate() {
             if before < 0 || after < 0 {
-                bail!("负 padding")
+                bail!("negative padding")
             }
             if before != 0 || after != 0 {
                 out = out.pad_with_zeros(axis, before as usize, after as usize)?;
@@ -402,7 +402,7 @@ pub mod ops {
         groups: i32,
     ) -> Result<Array> {
         if padding != (0, 0) || dilation != (1, 1) || output_padding != (0, 0) || groups != 1 {
-            bail!("HTDemucs 转置卷积只支持无 padding/dilation/groups")
+            bail!("HTDemucs transposed convolution only supports no padding, dilation or groups")
         }
         let (x, w) = pair(x, w)?;
         let mut x = x.permute((0, 3, 1, 2))?.contiguous()?;

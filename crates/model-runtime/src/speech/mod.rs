@@ -105,7 +105,7 @@ pub struct SegmentingCancelled;
 
 impl std::fmt::Display for SegmentingCancelled {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("转录已取消")
+        formatter.write_str("transcription cancelled")
     }
 }
 

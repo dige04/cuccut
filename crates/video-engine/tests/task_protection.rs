@@ -31,7 +31,7 @@ fn new_video(dir: &Path) -> Video {
         width: 1920,
         height: 1080,
     };
-    Video::create(dir, &options, &ffprobe()).expect("新建视频")
+    Video::create(dir, &options, &ffprobe()).expect("create the video")
 }
 
 fn layout() -> Value {
@@ -39,7 +39,7 @@ fn layout() -> Value {
 }
 
 fn protections(value: Value) -> Vec<TaskProtection> {
-    serde_json::from_value(value).expect("保护范围")
+    serde_json::from_value(value).expect("protection scope")
 }
 
 fn apply_as(video: &mut Video, kind: ActorKind, command_id: &str, ops: Vec<Value>, guard: &[TaskProtection]) -> Result<(), ErrorBody> {
@@ -156,7 +156,7 @@ fn a_whole_video_protection_rejects_any_agent_change_and_writes_nothing() {
     assert_eq!(error.code, "TASK_PROTECTED");
     assert_eq!(error.entity_ids, vec![title.clone()]);
     assert_eq!(protected_ids(&error), vec!["prot_v"]);
-    assert_eq!(video.revision(), before, "被拒的事务不写入");
+    assert_eq!(video.revision(), before, "a rejected transaction writes nothing");
     assert!(video.find_receipt("cmd_a").unwrap().is_none());
 }
 
@@ -182,7 +182,7 @@ fn entity_protection_only_covers_that_entity() {
         vec![json!({ "type": "setStyle", "itemId": shape, "opacity": 0.5 })],
         &guard,
     )
-    .expect("别的实体照常修改");
+    .expect("other entities are still modified");
     // Deleting a protected entity also counts as touching it.
     let error = apply_as(
         &mut video,
@@ -209,7 +209,7 @@ fn property_protection_compares_only_the_named_paths() {
         vec![json!({ "type": "setStyle", "itemId": title, "opacity": 0.5 })],
         &guard,
     )
-    .expect("没点名的属性可以改");
+    .expect("unnamed attributes can still be changed");
     let error = apply_as(
         &mut video,
         ActorKind::Agent,
@@ -255,7 +255,7 @@ fn interval_protection_covers_items_overlapping_before_or_after_and_honours_trac
         vec![json!({ "type": "setStyle", "itemId": shape, "opacity": 0.5 })],
         &guard,
     )
-    .expect("区间之外的实例照常修改");
+    .expect("items outside the range are still modified");
     apply_as(
         &mut video,
         ActorKind::Agent,
@@ -263,7 +263,7 @@ fn interval_protection_covers_items_overlapping_before_or_after_and_honours_trac
         vec![json!({ "type": "setText", "itemId": overlay, "text": "新角标" })],
         &guard,
     )
-    .expect("别的轨道不受这项保护");
+    .expect("other tracks are not covered by this protection");
     // Entering a range after a change also counts as touching: the shape was originally at frames 60–90, and moving it to frame 110 on V2 enters the protected range of frames 100–130.
     let later = protections(json!([{
         "protectionId": "prot_later",
@@ -304,5 +304,5 @@ fn undo_by_an_agent_is_checked_too() {
     };
     let error = video.undo_guarded(&request, &guard).unwrap_err();
     assert_eq!(error.code, "TASK_PROTECTED");
-    video.undo_guarded(&request, &[]).expect("没有保护时照常撤销");
+    video.undo_guarded(&request, &[]).expect("undo without protection still works");
 }

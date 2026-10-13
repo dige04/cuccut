@@ -173,7 +173,7 @@ fn optional_color(map: &Map<String, Value>, key: &str, what: &str) -> Result<Opt
         None | Some(Value::Null) => Ok(None),
         Some(value) => match Rgba::parse_value(Some(value)) {
             Some(color) => Ok(Some(color)),
-            None => bail!("schema: {what}.{key} 不是合法颜色：{value}"),
+            None => bail!("schema: {what}.{key} is not a valid color: {value}"),
         },
     }
 }
@@ -183,7 +183,7 @@ fn finite(map: &Map<String, Value>, key: &str, what: &str) -> Result<Option<f64>
         None | Some(Value::Null) => Ok(None),
         Some(value) => match value.as_f64().filter(|v| v.is_finite()) {
             Some(v) => Ok(Some(v)),
-            None => bail!("schema: {what}.{key} 必须是有限数值，实得 {value}"),
+            None => bail!("schema: {what}.{key} must be a finite number, got {value}"),
         },
     }
 }
@@ -199,7 +199,7 @@ fn seed_of(map: &Map<String, Value>, what: &str) -> Result<u64> {
                 Some(v) if v.is_finite() && v >= 0.0 && v.fract() == 0.0 && v <= 9.007e15 => {
                     Ok(v as u64)
                 }
-                _ => bail!("schema: {what}.seed 必须是非负整数（≤ 2^53），实得 {value}"),
+                _ => bail!("schema: {what}.seed must be a non-negative integer (≤ 2^53), got {value}"),
             }
         }
     }
@@ -208,7 +208,7 @@ fn seed_of(map: &Map<String, Value>, what: &str) -> Result<u64> {
 fn closed_keys(map: &Map<String, Value>, allowed: &[&str], what: &str) -> Result<()> {
     for key in map.keys() {
         if !allowed.contains(&key.as_str()) {
-            bail!("schema: {what} 没有键 \"{key}\"（封闭键集 {allowed:?}）");
+            bail!("schema: {what} has no key \"{key}\" (closed key set {allowed:?})");
         }
     }
     Ok(())
@@ -218,13 +218,13 @@ impl Density {
     fn parse(value: &Value) -> Result<Density> {
         if let Some(v) = value.as_f64() {
             if !v.is_finite() {
-                bail!("schema: texture.density 必须是有限数值");
+                bail!("schema: texture.density must be a finite number");
             }
             return Ok(Density::Flat(v.clamp(0.0, 1.0)));
         }
         let Some(map) = value.as_object() else {
             bail!(
-                "schema: texture.density 必须是数值或 {{kind: flat|radial|linear}}，实得 {value}"
+                "schema: texture.density must be a number or {{kind: flat|radial|linear}}, got {value}"
             );
         };
         let kind = map.get("kind").and_then(Value::as_str).unwrap_or("flat");
@@ -254,7 +254,7 @@ impl Density {
                     to: get("to", 0.7)?,
                 }
             }
-            other => bail!("schema: texture.density.kind \"{other}\" 不在 flat|radial|linear"),
+            other => bail!("schema: texture.density.kind \"{other}\" is not one of flat|radial|linear"),
         })
     }
 }
@@ -266,7 +266,7 @@ impl PathTexture {
             return Ok(None);
         }
         let Some(map) = value.as_object() else {
-            bail!("schema: texture 必须是对象（§6.2.1），实得 {value}");
+            bail!("schema: texture must be an object (§6.2.1), got {value}");
         };
         closed_keys(map, TEXTURE_KEYS, "texture")?;
         let finish = match map.get("finish") {
@@ -274,7 +274,7 @@ impl PathTexture {
             Some(value) => match value.as_str().and_then(Finish::parse) {
                 Some(finish) => finish,
                 None => bail!(
-                    "schema: texture.finish {value} 不在封闭枚举 {:?}",
+                    "schema: texture.finish {value} is not in the closed set {:?}",
                     Finish::ALL
                 ),
             },
@@ -288,14 +288,14 @@ impl PathTexture {
             },
             Some(value) => match Rgba::parse_value(Some(value)) {
                 Some(color) => color,
-                None => bail!("schema: texture.color 不是合法颜色：{value}"),
+                None => bail!("schema: texture.color is not a valid color: {value}"),
             },
         };
         let grain_color = match map.get("grainColor") {
             None | Some(Value::Null) => None,
             Some(value) => match Rgba::parse_value(Some(value)) {
                 Some(color) => Some(color),
-                None => bail!("schema: texture.grainColor 不是合法颜色：{value}"),
+                None => bail!("schema: texture.grainColor is not a valid color: {value}"),
             },
         };
         // Default value for each finish. Changing this table = changing the algorithm version.
@@ -312,7 +312,7 @@ impl PathTexture {
         };
         let grain = num("grain", 0.0)?;
         if grain < 0.0 {
-            bail!("schema: texture.grain 不能为负");
+            bail!("schema: texture.grain must not be negative");
         }
         Ok(Some(PathTexture {
             finish,
@@ -374,27 +374,27 @@ impl StrokeBrush {
     pub fn parse(value: &Value) -> Result<Self> {
         let map = value
             .as_object()
-            .ok_or_else(|| anyhow::anyhow!("schema: brush 须为对象"))?;
+            .ok_or_else(|| anyhow::anyhow!("schema: brush must be an object"))?;
         closed_keys(map, &["kind", "seed", "roughness", "dry", "load"], "brush")?;
         let kind = match map.get("kind").and_then(Value::as_str) {
             Some("clean") => BrushKind::Clean,
             Some("pencil") => BrushKind::Pencil,
             Some("ink") => BrushKind::Ink,
             Some("paint") => BrushKind::Paint,
-            _ => bail!("schema: brush.kind 须为 clean|pencil|ink|paint"),
+            _ => bail!("schema: brush.kind must be clean|pencil|ink|paint"),
         };
         if kind != BrushKind::Paint && (map.contains_key("dry") || map.contains_key("load")) {
-            bail!("schema: brush.dry / brush.load 只对 kind: \"paint\" 生效");
+            bail!("schema: brush.dry / brush.load only apply to kind: \"paint\"");
         }
         // For paint, roughness is a perceptual multiplier (1 = default). The others are double-line offsets in path units.
         let default = if kind == BrushKind::Paint { 1.0 } else { 0.7 };
         let roughness = finite(map, "roughness", "brush")?.unwrap_or(default);
         if !(0.0..=10.0).contains(&roughness) {
-            bail!("schema: brush.roughness 须在 0..10");
+            bail!("schema: brush.roughness must be in 0..10");
         }
         let dry = finite(map, "dry", "brush")?.unwrap_or(0.35);
         if !(0.0..=1.0).contains(&dry) {
-            bail!("schema: brush.dry 须在 0..1");
+            bail!("schema: brush.dry must be in 0..1");
         }
         Ok(Self {
             kind,
@@ -425,14 +425,14 @@ impl PathFollow {
     pub fn parse(value: &Value) -> Result<Self> {
         let map = value
             .as_object()
-            .ok_or_else(|| anyhow::anyhow!("schema: follow 须为对象"))?;
+            .ok_or_else(|| anyhow::anyhow!("schema: follow must be an object"))?;
         closed_keys(map, &["source", "position", "rotate", "offset"], "follow")?;
         let source = map
             .get("source")
             .and_then(Value::as_str)
             .and_then(|s| s.strip_prefix('#'))
             .filter(|s| !s.is_empty())
-            .ok_or_else(|| anyhow::anyhow!("schema: follow.source 须为 #pathId"))?
+            .ok_or_else(|| anyhow::anyhow!("schema: follow.source must be #pathId"))?
             .to_owned();
         let position = match map.get("position") {
             None => FollowPosition::End,
@@ -443,7 +443,7 @@ impl PathFollow {
                     v.as_f64()
                         .filter(|v| v.is_finite() && (0.0..=1.0).contains(v))
                         .ok_or_else(|| {
-                            anyhow::anyhow!("schema: follow.position 须为 start|end|0..1")
+                            anyhow::anyhow!("schema: follow.position must be start|end|0..1")
                         })?,
                 ),
             },
@@ -452,7 +452,7 @@ impl PathFollow {
             None => false,
             Some(v) => v
                 .as_bool()
-                .ok_or_else(|| anyhow::anyhow!("schema: follow.rotate 须为布尔"))?,
+                .ok_or_else(|| anyhow::anyhow!("schema: follow.rotate must be a boolean"))?,
         };
         let offset = match map.get("offset") {
             None => [0.0; 2],
@@ -460,12 +460,12 @@ impl PathFollow {
                 let a = v
                     .as_array()
                     .filter(|a| a.len() == 2)
-                    .ok_or_else(|| anyhow::anyhow!("schema: follow.offset 须为 [x,y]"))?;
+                    .ok_or_else(|| anyhow::anyhow!("schema: follow.offset must be [x,y]"))?;
                 let number = |index: usize| {
                     a[index]
                         .as_f64()
                         .filter(|n| n.is_finite())
-                        .ok_or_else(|| anyhow::anyhow!("schema: follow.offset 须为有限数值"))
+                        .ok_or_else(|| anyhow::anyhow!("schema: follow.offset must be finite numbers"))
                 };
                 [number(0)?, number(1)?]
             }
@@ -487,12 +487,12 @@ impl PathWobble {
             return Ok(None);
         }
         let Some(map) = value.as_object() else {
-            bail!("schema: wobble 必须是对象（§6.2.1），实得 {value}");
+            bail!("schema: wobble must be an object (§6.2.1), got {value}");
         };
         closed_keys(map, WOBBLE_KEYS, "wobble")?;
         let every = finite(map, "every", "wobble")?.unwrap_or(0.0);
         if every < 0.0 || every.fract() != 0.0 {
-            bail!("schema: wobble.every 必须是非负整数（绘制帧数）");
+            bail!("schema: wobble.every must be a non-negative integer (number of drawn frames)");
         }
         Ok(Some(PathWobble {
             amp: finite(map, "amp", "wobble")?.unwrap_or(1.8).max(0.0),
@@ -562,17 +562,17 @@ pub fn parse_dash(value: &Value) -> Result<Vec<f64>> {
         return Ok(Vec::new());
     }
     let Some(items) = value.as_array() else {
-        bail!("schema: dash 必须是数值数组，实得 {value}");
+        bail!("schema: dash must be an array of numbers, got {value}");
     };
     let mut out = Vec::with_capacity(items.len());
     for item in items {
         match item.as_f64().filter(|v| v.is_finite() && *v >= 0.0) {
             Some(v) => out.push(v),
-            None => bail!("schema: dash 的每一项必须是非负有限数值，实得 {item}"),
+            None => bail!("schema: each dash item must be a finite non-negative number, got {item}"),
         }
     }
     if out.len() > 16 {
-        bail!("schema: dash 最多 16 项");
+        bail!("schema: dash allows at most 16 items");
     }
     if out.iter().sum::<f64>() <= 0.0 {
         return Ok(Vec::new());
@@ -611,13 +611,13 @@ impl Cadence {
                         Ok(Cadence::Fps(fps))
                     }
                     _ => bail!(
-                        "schema: cadence.fps 必须在 [{}, {}] 内",
+                        "schema: cadence.fps must be within [{}, {}]",
                         CADENCE_FPS_RANGE.0,
                         CADENCE_FPS_RANGE.1
                     ),
                 }
             }
-            other => bail!("schema: cadence 必须是 {{ fps }} 或 \"none\"，实得 {other}"),
+            other => bail!("schema: cadence must be {{ fps }} or \"none\", got {other}"),
         }
     }
 

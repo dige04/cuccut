@@ -350,7 +350,7 @@ fn inflate_text(bytes: &[u8]) -> String {
     let mut out = String::new();
     flate2::read::ZlibDecoder::new(bytes)
         .read_to_string(&mut out)
-        .expect("注音内嵌数据解压失败");
+        .expect("embedded reading data failed to decompress");
     out
 }
 

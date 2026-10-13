@@ -8,7 +8,7 @@ use std::path::Path;
 /// Writes f32 mono PCM as a 16-bit PCM WAV. Samples outside [-1, 1] are clipped.
 pub fn write_wav_pcm16(path: &Path, samples: &[f32], sample_rate: u32) -> Result<()> {
     let bytes = encode_wav_pcm16(samples, sample_rate);
-    let mut file = std::fs::File::create(path).with_context(|| format!("无法创建 WAV：{}", path.display()))?;
+    let mut file = std::fs::File::create(path).with_context(|| format!("cannot create WAV: {}", path.display()))?;
     file.write_all(&bytes)?;
     file.flush()?;
     Ok(())
@@ -22,7 +22,7 @@ pub fn encode_wav_pcm16(samples: &[f32], sample_rate: u32) -> Vec<u8> {
 /// Writes a multichannel 16-bit PCM WAV from per-channel planes (interleaved on disk). If channel lengths differ, they are truncated to the shortest.
 pub fn write_wav_pcm16_channels<S: AsRef<[f32]>>(path: &Path, channels: &[S], sample_rate: u32) -> Result<()> {
     let bytes = encode_wav_pcm16_channels(channels, sample_rate);
-    let mut file = std::fs::File::create(path).with_context(|| format!("无法创建 WAV：{}", path.display()))?;
+    let mut file = std::fs::File::create(path).with_context(|| format!("cannot create WAV: {}", path.display()))?;
     file.write_all(&bytes)?;
     file.flush()?;
     Ok(())
@@ -61,7 +61,7 @@ pub fn encode_wav_pcm16_channels<S: AsRef<[f32]>>(channels: &[S], sample_rate: u
 /// Reads a 16-bit PCM mono WAV written by this crate (for tests and self-checks; for arbitrary media use
 /// [`crate::audio::decode_mono`]).
 pub fn read_wav_pcm16(path: &Path) -> Result<(Vec<f32>, u32)> {
-    let bytes = std::fs::read(path).with_context(|| format!("无法读取 WAV：{}", path.display()))?;
+    let bytes = std::fs::read(path).with_context(|| format!("cannot read WAV: {}", path.display()))?;
     decode_wav_pcm16(&bytes)
 }
 
@@ -70,13 +70,13 @@ pub fn read_wav_pcm16(path: &Path) -> Result<(Vec<f32>, u32)> {
 pub fn probe_wav_pcm16(path: &Path) -> Result<(u64, u32)> {
     use std::io::Read;
 
-    let mut file = std::fs::File::open(path).with_context(|| format!("无法读取 WAV：{}", path.display()))?;
+    let mut file = std::fs::File::open(path).with_context(|| format!("cannot read WAV: {}", path.display()))?;
     let file_len = file.metadata()?.len();
     let mut head = vec![0u8; 4096.min(file_len.max(44)) as usize];
     let read = file.read(&mut head)?;
     head.truncate(read);
     if head.len() < 44 || &head[0..4] != b"RIFF" || &head[8..12] != b"WAVE" {
-        bail!("不是 RIFF/WAVE 文件");
+        bail!("not a RIFF/WAVE file");
     }
     let mut cursor = 12usize;
     let mut sample_rate = 0u32;
@@ -91,14 +91,14 @@ pub fn probe_wav_pcm16(path: &Path) -> Result<(u64, u32)> {
                 let body_end = (body_start + size as usize).min(head.len());
                 let body = &head[body_start..body_end];
                 if body.len() < 16 {
-                    bail!("fmt 块过短");
+                    bail!("fmt chunk is too short");
                 }
                 let format = u16::from_le_bytes([body[0], body[1]]);
                 channels = u16::from_le_bytes([body[2], body[3]]);
                 sample_rate = u32::from_le_bytes(body[4..8].try_into()?);
                 let bits = u16::from_le_bytes([body[14], body[15]]);
                 if format != 1 || bits != 16 {
-                    bail!("只支持 16-bit PCM WAV（format {format}，bits {bits}）");
+                    bail!("only 16-bit PCM WAV is supported (format {format}, bits {bits})");
                 }
             }
             b"data" => {
@@ -111,9 +111,9 @@ pub fn probe_wav_pcm16(path: &Path) -> Result<(u64, u32)> {
         }
         cursor = body_start + size as usize + (size & 1) as usize;
     }
-    let data_bytes = data_bytes.context("WAV 缺少 data 块")?;
+    let data_bytes = data_bytes.context("WAV is missing the data chunk")?;
     if channels == 0 || sample_rate == 0 {
-        bail!("WAV 缺少 fmt 块");
+        bail!("WAV is missing the fmt chunk");
     }
     Ok((data_bytes / (2 * u64::from(channels)), sample_rate))
 }
@@ -133,14 +133,14 @@ pub fn decode_wav_pcm16(bytes: &[u8]) -> Result<(Vec<f32>, u32)> {
 
 /// Reads and returns per-channel planes (no downmix).
 pub fn read_wav_pcm16_channels(path: &Path) -> Result<(Vec<Vec<f32>>, u32)> {
-    let bytes = std::fs::read(path).with_context(|| format!("无法读取 WAV：{}", path.display()))?;
+    let bytes = std::fs::read(path).with_context(|| format!("cannot read WAV: {}", path.display()))?;
     decode_wav_pcm16_channels(&bytes)
 }
 
 /// In-memory version of [`read_wav_pcm16_channels`].
 pub fn decode_wav_pcm16_channels(bytes: &[u8]) -> Result<(Vec<Vec<f32>>, u32)> {
     if bytes.len() < 44 || &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
-        bail!("不是 RIFF/WAVE 文件");
+        bail!("not a RIFF/WAVE file");
     }
     let mut cursor = 12;
     let mut sample_rate = 0u32;
@@ -155,14 +155,14 @@ pub fn decode_wav_pcm16_channels(bytes: &[u8]) -> Result<(Vec<Vec<f32>>, u32)> {
         match id {
             b"fmt " => {
                 if body.len() < 16 {
-                    bail!("fmt 块过短");
+                    bail!("fmt chunk is too short");
                 }
                 let format = u16::from_le_bytes([body[0], body[1]]);
                 channels = u16::from_le_bytes([body[2], body[3]]);
                 sample_rate = u32::from_le_bytes(body[4..8].try_into()?);
                 let bits = u16::from_le_bytes([body[14], body[15]]);
                 if format != 1 || bits != 16 {
-                    bail!("只支持 16-bit PCM WAV（format {format}，bits {bits}）");
+                    bail!("only 16-bit PCM WAV is supported (format {format}, bits {bits})");
                 }
             }
             b"data" => data = Some(body),
@@ -170,9 +170,9 @@ pub fn decode_wav_pcm16_channels(bytes: &[u8]) -> Result<(Vec<Vec<f32>>, u32)> {
         }
         cursor = body_start + size + (size & 1);
     }
-    let data = data.context("WAV 缺少 data 块")?;
+    let data = data.context("WAV is missing the data chunk")?;
     if channels == 0 || sample_rate == 0 {
-        bail!("WAV 缺少 fmt 块");
+        bail!("WAV is missing the fmt chunk");
     }
     let frames = data.len() / (2 * channels as usize);
     let mut planes = vec![Vec::with_capacity(frames); channels as usize];
@@ -188,11 +188,11 @@ pub fn decode_wav_pcm16_channels(bytes: &[u8]) -> Result<(Vec<Vec<f32>>, u32)> {
 
 /// Header only: channel count.
 pub fn probe_wav_channels(path: &Path) -> Result<u16> {
-    let bytes = std::fs::read(path).with_context(|| format!("无法读取 WAV：{}", path.display()))?;
+    let bytes = std::fs::read(path).with_context(|| format!("cannot read WAV: {}", path.display()))?;
     let head = &bytes[..bytes.len().min(4096)];
     let mut cursor = 12usize;
     if head.len() < 44 || &head[0..4] != b"RIFF" || &head[8..12] != b"WAVE" {
-        bail!("不是 RIFF/WAVE 文件");
+        bail!("not a RIFF/WAVE file");
     }
     while cursor + 8 <= head.len() {
         let size = u32::from_le_bytes(head[cursor + 4..cursor + 8].try_into()?) as usize;
@@ -201,7 +201,7 @@ pub fn probe_wav_channels(path: &Path) -> Result<u16> {
         }
         cursor += 8 + size + (size & 1);
     }
-    bail!("WAV 缺少 fmt 块")
+    bail!("WAV is missing the fmt chunk")
 }
 
 #[cfg(test)]

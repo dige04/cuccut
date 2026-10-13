@@ -79,14 +79,14 @@ impl GptSovits {
         };
 
         stage("hubert")?;
-        let hubert = Hubert::load(WeightMap::load_file(hubert_path)?).with_context(|| format!("加载 {ENGINE_NAME} chinese-hubert-base"))?;
+        let hubert = Hubert::load(WeightMap::load_file(hubert_path)?).with_context(|| format!("failed to load {ENGINE_NAME} chinese-hubert-base"))?;
         stage("bert")?;
         let bert = Bert::load(WeightMap::load_file(bert_path)?, tokenizer_path)
-            .with_context(|| format!("加载 {ENGINE_NAME} chinese-roberta-wwm-ext-large"))?;
+            .with_context(|| format!("failed to load {ENGINE_NAME} chinese-roberta-wwm-ext-large"))?;
         stage("t2s")?;
-        let t2s = T2s::load(WeightMap::load_file(t2s_path)?).with_context(|| format!("加载 {ENGINE_NAME} T2S"))?;
+        let t2s = T2s::load(WeightMap::load_file(t2s_path)?).with_context(|| format!("failed to load {ENGINE_NAME} T2S"))?;
         stage("sovits")?;
-        let sovits = Sovits::load(WeightMap::load_file(sovits_path)?).with_context(|| format!("加载 {ENGINE_NAME} SoVITS"))?;
+        let sovits = Sovits::load(WeightMap::load_file(sovits_path)?).with_context(|| format!("failed to load {ENGINE_NAME} SoVITS"))?;
         clear_memory_cache()?;
 
         Ok(Self {
@@ -110,11 +110,11 @@ impl GptSovits {
             phones.extend_from_slice(&piece.phones);
             ensure!(
                 bert.len() == phones.len() * FEATURE_DIM,
-                "{ENGINE_NAME} 文本前端的 word2ph 与音素数不一致：{}",
+                "{ENGINE_NAME} text frontend word2ph does not match the phoneme count: {}",
                 piece.norm_text
             );
         }
-        ensure!(!phones.is_empty(), "{ENGINE_NAME} 文本没有可发音的内容：{text}");
+        ensure!(!phones.is_empty(), "{ENGINE_NAME} text has no pronounceable content: {text}");
         Ok((phones, bert))
     }
 
@@ -129,7 +129,7 @@ impl GptSovits {
         let mut wav16k = decode_reference(reference_audio, SSL_SAMPLE_RATE)?;
         ensure!(
             (MIN_REFERENCE_SAMPLES..=MAX_REFERENCE_SAMPLES).contains(&wav16k.len()),
-            "{ENGINE_NAME} 参考音频需 3~10 秒，当前 {:.1} 秒：{}",
+            "{ENGINE_NAME} reference audio must be 3–10 seconds, currently {:.1} seconds: {}",
             wav16k.len() as f64 / f64::from(SSL_SAMPLE_RATE),
             describe(reference_audio)
         );
@@ -140,7 +140,7 @@ impl GptSovits {
         let prompt_text = text::with_terminal_punctuation(reference_text, language);
         let (phones, bert) = self
             .phones_and_bert(&prompt_text, language)
-            .with_context(|| format!("{ENGINE_NAME} 参考文本前端"))?;
+            .with_context(|| format!("{ENGINE_NAME} reference text frontend"))?;
         Ok(Prompt { semantic, phones, bert })
     }
 }
@@ -150,13 +150,13 @@ impl GptSovits {
 fn decode_reference(audio: &ReferenceAudio, sample_rate: u32) -> Result<Vec<f32>> {
     audio
         .samples(sample_rate)
-        .with_context(|| format!("解码 {ENGINE_NAME} 参考音频 {}", describe(audio)))
+        .with_context(|| format!("failed to decode {ENGINE_NAME} reference audio {}", describe(audio)))
 }
 
 fn describe(audio: &ReferenceAudio) -> String {
     match audio {
         ReferenceAudio::File(path) => path.display().to_string(),
-        ReferenceAudio::Builtin(id) => format!("内置音色 {id}"),
+        ReferenceAudio::Builtin(id) => format!("built-in voice {id}"),
     }
 }
 
@@ -199,10 +199,10 @@ impl TtsEngine for GptSovits {
         let (reference_audio, reference_text) = reference(request)?;
         let params = SamplingParams::from_options(&request.sampling, ENGINE_NAME)?;
         let max_steps = request.sampling.max_tokens.unwrap_or(MAX_STEPS);
-        ensure!(max_steps > 0, "{ENGINE_NAME} max_tokens 必须大于 0");
+        ensure!(max_steps > 0, "{ENGINE_NAME} max_tokens must be greater than 0");
         let language = text::Language::resolve(request.language.as_deref(), &request.text)?;
         let sentences = text::split_sentences(&request.text, language)?;
-        ensure!(!sentences.is_empty(), "{ENGINE_NAME} 要合成的文本为空");
+        ensure!(!sentences.is_empty(), "{ENGINE_NAME} text to synthesize is empty");
 
         let prompt = self.prompt(&reference_audio, reference_text.as_deref())?;
         let refer = reference_spectrogram(&reference_audio)?;
@@ -216,7 +216,7 @@ impl TtsEngine for GptSovits {
             }
             let (phones, bert) = self
                 .phones_and_bert(sentence, language)
-                .with_context(|| format!("{ENGINE_NAME} 文本前端"))?;
+                .with_context(|| format!("{ENGINE_NAME} text frontend"))?;
             let mut all_phones = prompt.phones.clone();
             all_phones.extend_from_slice(&phones);
             let mut all_bert = prompt.bert.clone();
@@ -315,7 +315,7 @@ mod tests {
         if let Some(out) = std::env::var_os("CUCCUT_TEST_OUTPUT_DIR") {
             let path = PathBuf::from(out).join("gpt-sovits-reconstruct.wav");
             crate::synthesize::wav::write_wav_pcm16(&path, &audio, SAMPLE_RATE).unwrap();
-            println!("重建 → {}", path.display());
+            println!("reconstructed → {}", path.display());
         }
 
         let bert = vec![0.0f32; phones.len() * FEATURE_DIM];

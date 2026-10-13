@@ -63,7 +63,7 @@ impl PreparedBcf {
     /// Does not implicitly quantize or clamp the final frame; playback control and export each use their own explicitly specified sample times.
     pub fn plan(&mut self, time: f64) -> Result<FramePlan> {
         if !time.is_finite() || time < 0.0 {
-            bail!("bcf-time-invalid: 采样时刻必须是非负有限秒数");
+            bail!("bcf-time-invalid: sample time must be a non-negative, finite number of seconds");
         }
         Ok(self.compiled.plan(&mut self.text, time))
     }
@@ -90,7 +90,7 @@ impl PreparedBcf {
         width: u32,
     ) -> Result<tiny_skia::Pixmap> {
         if self.compiled.planner.capabilities() != &CapabilityProfile::cpu_reference() {
-            bail!("frameplan-capability-mismatch: CPU 执行需要按 CPU 能力准备会话");
+            bail!("frameplan-capability-mismatch: CPU execution needs a session prepared with CPU capabilities");
         }
         self.compiled.check_width(width)?;
         let mut plan = self.plan(time)?;
@@ -129,7 +129,7 @@ impl Compiled {
             surface.width = (surface.width as f32 * scale).round().max(1.0) as u32;
             surface.height = (surface.height as f32 * scale).round().max(1.0) as u32;
             if surface.width > max_surface || surface.height > max_surface {
-                bail!("bcf-preview-size-invalid: surface 边长超出上限");
+                bail!("bcf-preview-size-invalid: surface edge length exceeds the limit");
             }
         }
         for pass in &mut plan.passes {
@@ -198,7 +198,7 @@ impl BcfFrameWorker {
     /// The frame plan for `time` and its surface fingerprint table (the whole-frame fingerprint is in the table's `plan.output` slot, and is also given separately as the tuple's second item).
     pub fn plan(&mut self, time: f64) -> Result<(FramePlan, u64, BTreeMap<u32, u64>)> {
         if !time.is_finite() || time < 0.0 {
-            bail!("bcf-time-invalid: 采样时刻必须是非负有限秒数");
+            bail!("bcf-time-invalid: sample time must be a non-negative, finite number of seconds");
         }
         let plan = self.compiled.plan(&mut self.text, time);
         let (frame, fingerprints) = plan.frame_fingerprints()?;
@@ -213,7 +213,7 @@ impl BcfFrameWorker {
         width: u32,
     ) -> Result<(FramePlan, u64, BTreeMap<u32, u64>)> {
         if !time.is_finite() || time < 0.0 {
-            bail!("bcf-time-invalid: 采样时刻必须是非负有限秒数");
+            bail!("bcf-time-invalid: sample time must be a non-negative, finite number of seconds");
         }
         self.compiled.check_width(width)?;
         let mut plan = self.compiled.plan(&mut self.text, time);

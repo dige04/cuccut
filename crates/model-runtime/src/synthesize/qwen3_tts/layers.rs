@@ -41,7 +41,7 @@ impl Linear {
         let bias = weights.take_optional(&format!("{prefix}.bias"));
         if let Some(scales) = weights.take_optional(&format!("{prefix}.scales")) {
             if bits == 0 {
-                bail!("权重 {prefix} 带 scales 但配置未声明量化位数");
+                bail!("weight {prefix} has scales but the config does not declare quantization bits");
             }
             let biases = weights.take(&format!("{prefix}.biases"))?;
             #[cfg(not(all(feature = "backend-mlx", target_os = "macos", target_arch = "aarch64")))]
@@ -60,7 +60,7 @@ impl Linear {
             });
         }
         if weight.dtype() == Dtype::Uint32 {
-            bail!("权重 {prefix} 是 U32 但缺少 scales");
+            bail!("weight {prefix} is U32 but has no scales");
         }
         Ok(Self::Float { weight, bias })
     }
@@ -122,7 +122,7 @@ impl LayerNorm {
         let weight = weights.take_optional(&format!("{prefix}.weight"));
         let bias = weights.take_optional(&format!("{prefix}.bias"));
         if weight.is_none() && bias.is_none() {
-            bail!("缺少 LayerNorm 权重：{prefix}");
+            bail!("missing LayerNorm weight: {prefix}");
         }
         Ok(Self { weight, bias, eps })
     }

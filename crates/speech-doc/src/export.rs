@@ -55,7 +55,7 @@ impl SubtitleWindow {
             Ok(Self { start, end })
         } else {
             Err(format!(
-                "--range 导出窗口非法：换算后是 {start}..{end}，须有限且 0 <= 起 < 止"
+                "--range export window is invalid: it converts to {start}..{end}, which must be finite with 0 <= start < end"
             ))
         }
     }
@@ -484,7 +484,7 @@ pub fn render_subtitle_events(
         // The header is composed by the caller: by default it comes from the project style (v2 `studio_export::ass_style_sheet`); `--no-style` falls back to the fixed header from the VoiceInk era. Event projection is still shared by all three formats.
         SubtitleFlavor::Ass => options.ass.header.clone(),
         SubtitleFlavor::JsonWords => {
-            unreachable!("json-words 带逐词时间，由 render_json_words 渲染")
+            unreachable!("json-words carries per-word timing and is rendered by render_json_words")
         }
     };
     for (index, (start, end, sp, body)) in events.iter().enumerate() {
@@ -533,7 +533,7 @@ pub fn render_subtitle_events(
                     ass_dialogue_text(body, options.ass.translation_style.as_deref())
                 ));
             }
-            SubtitleFlavor::JsonWords => unreachable!("已在函数开头分流"),
+            SubtitleFlavor::JsonWords => unreachable!("already dispatched at the top of the function"),
         }
     }
     output
@@ -844,7 +844,7 @@ mod tests {
             ..AssStyleSheet::legacy()
         };
         let translation_style = ass.translation_style.clone();
-        assert!(translation_style.is_some(), "双语头必须带译文样式");
+        assert!(translation_style.is_some(), "the bilingual header must carry a translation style");
         let rendered = render_subtitle_events(
             &doc,
             &events,

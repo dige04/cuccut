@@ -36,32 +36,32 @@ pub fn project_media_path(root: &Path, source_id: &str) -> Result<PathBuf> {
         let manifest_path = root.join("project.json");
         let manifest: Value = serde_json::from_slice(
             &std::fs::read(&manifest_path)
-                .with_context(|| format!("项目缺少 {}", manifest_path.display()))?,
+                .with_context(|| format!("project is missing {}", manifest_path.display()))?,
         )
-        .with_context(|| format!("解析 {}", manifest_path.display()))?;
+        .with_context(|| format!("parse {}", manifest_path.display()))?;
         manifest
             .pointer("/media/path")
             .and_then(Value::as_str)
             .filter(|path| !path.is_empty())
-            .context("project.json 缺少 media.path")?
+            .context("project.json is missing media.path")?
             .to_owned()
     } else {
         let timeline_path = root.join("timeline.json");
         let timeline: timeline::TimelineDocument = serde_json::from_slice(
             &std::fs::read(&timeline_path)
-                .with_context(|| format!("项目缺少 {}", timeline_path.display()))?,
+                .with_context(|| format!("project is missing {}", timeline_path.display()))?,
         )
-        .with_context(|| format!("解析 {}", timeline_path.display()))?;
+        .with_context(|| format!("parse {}", timeline_path.display()))?;
         timeline
             .sources
             .get(source_id)
             .and_then(|source| source.path.clone())
             .filter(|path| !path.is_empty())
-            .with_context(|| format!("source 不存在或没有媒体路径：{source_id}"))?
+            .with_context(|| format!("source does not exist or has no media path: {source_id}"))?
     };
     let path = resolve(root, &raw);
     if !path.is_file() {
-        bail!("source {source_id} 的媒体文件不存在：{}", path.display());
+        bail!("media file for source {source_id} does not exist: {}", path.display());
     }
     Ok(path)
 }
@@ -69,12 +69,12 @@ pub fn project_media_path(root: &Path, source_id: &str) -> Result<PathBuf> {
 /// Fast media fingerprint made from path, size and mtime. Avoids computing a content hash for GB-scale media.
 pub fn media_fingerprint(path: &Path) -> Result<String> {
     let metadata =
-        std::fs::metadata(path).with_context(|| format!("读取媒体元数据 {}", path.display()))?;
+        std::fs::metadata(path).with_context(|| format!("read media metadata {}", path.display()))?;
     let modified = metadata
         .modified()
-        .with_context(|| format!("读取媒体修改时间 {}", path.display()))?
+        .with_context(|| format!("read media modification time {}", path.display()))?
         .duration_since(std::time::UNIX_EPOCH)
-        .with_context(|| format!("媒体修改时间早于 Unix epoch：{}", path.display()))?
+        .with_context(|| format!("media modification time is before the Unix epoch: {}", path.display()))?
         .as_secs();
     let lossy = path.to_string_lossy();
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;

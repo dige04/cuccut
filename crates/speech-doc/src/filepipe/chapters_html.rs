@@ -435,13 +435,13 @@ pub fn parse_chapters_output_with_limit(
     if ignored_anchors > 0 {
         parsed.diagnostics.push_warning(Warning::document(
             WarningCode::ContentIgnored,
-            format!("忽略了 {ignored_anchors} 个多余锚（每章只取标题后的首个锚）"),
+            format!("ignored {ignored_anchors} extra anchors (each chapter keeps only the first anchor after its heading)"),
         ));
     }
     if stray_anchors > 0 {
         parsed.diagnostics.push_warning(Warning::document(
             WarningCode::ContentIgnored,
-            format!("忽略了 {stray_anchors} 个没有标题的锚"),
+            format!("ignored {stray_anchors} anchors without a heading"),
         ));
     }
 
@@ -461,7 +461,7 @@ pub fn parse_chapters_output_with_limit(
                 parsed.diagnostics.push_warning(Warning::sentence(
                     WarningCode::AnchorTextMismatch,
                     raw_id.clone(),
-                    "锚上的开头片段与该段实际开头不符，以 id 为准",
+                    "the opening snippet on the anchor does not match the actual start of the passage; the id takes precedence",
                 ));
             }
             (raw_id.clone(), false)
@@ -475,7 +475,7 @@ pub fn parse_chapters_output_with_limit(
                     parsed.diagnostics.push_warning(Warning::sentence(
                         WarningCode::AnchorRepaired,
                         anchor.id.clone(),
-                        format!("模型写的锚 id `{raw_id}` 不存在，已按开头片段修复"),
+                        format!("anchor id `{raw_id}` written by the model does not exist; repaired from the opening snippet"),
                     ));
                     (anchor.id.clone(), true)
                 }
@@ -505,7 +505,7 @@ pub fn parse_chapters_output_with_limit(
             parsed.diagnostics.push_warning(Warning::sentence(
                 WarningCode::ContentIgnored,
                 anchor_id.clone(),
-                format!("同一锚出现多次，保留第 {} 行的标题", previous + 1),
+                format!("the same anchor appears more than once; kept the heading on line {}", previous + 1),
             ));
             continue;
         }
@@ -737,7 +737,7 @@ mod tests {
                 .filter(|w| w.code == WarningCode::ContentIgnored)
                 .count(),
             3,
-            "幽灵锚、空标题、以及多余的 p 各记一条：{:?}",
+            "ghost anchors, empty headings and extra p elements are each recorded once: {:?}",
             parsed.diagnostics.warnings
         );
         assert!(
@@ -776,7 +776,7 @@ mod tests {
                 .has_problems()
         );
         let over = parse_chapters_output_with_limit(&anchors, raw, Some(2));
-        assert_eq!(over.rows.len(), 3, "行全部保留供降级采用");
+        assert_eq!(over.rows.len(), 3, "all rows are kept for downgrade adoption");
         assert!(over.diagnostics.has_code(ProblemCode::ChapterOverflow));
         assert_eq!(max_rows_for_aim(81), 97);
         assert_eq!(max_rows_for_aim(3), 5);

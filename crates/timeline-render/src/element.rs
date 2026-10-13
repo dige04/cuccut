@@ -231,7 +231,7 @@ pub fn push_shape_element(
     let Some(recipe) = motion::preset_registry::timeline_shape(&props.shape) else {
         // No such id in the registry means the document references a nonexistent shape. That is the timing of `preset-unknown` (§5.3), not `manifest-invalid`, which means the recipe file itself is invalid.
         warn(format!(
-            "元素 {} 引用了未登记的形状 {}（preset-unknown），已跳过渲染",
+            "element {} references unregistered shape {} (preset-unknown); skipped rendering",
             element.id, props.shape
         ));
         return;
@@ -244,7 +244,7 @@ pub fn push_shape_element(
     let short_edge = stage.short_edge();
     if push_shape_ops(builder, recipe, props, bbox, tf, opacity, short_edge) == 0 {
         warn(format!(
-            "元素 {} 的形状 {} 既没有 fill 也没有 stroke，画不出任何东西",
+            "element {} shape {} has neither fill nor stroke, so nothing can be drawn",
             element.id, props.shape
         ));
     }
@@ -270,7 +270,7 @@ pub fn push_sticker_element(
     }
     let Some(template_id) = props.template_id.as_deref() else {
         warn(format!(
-            "元素 {} 的 sticker.source=template 但没有 templateId，已跳过渲染",
+            "element {} has sticker.source=template but no templateId; skipped rendering",
             element.id
         ));
         return true;
@@ -278,7 +278,7 @@ pub fn push_sticker_element(
     let Some(recipe) = motion::preset_registry::timeline_sticker(template_id) else {
         // Same timing and same code as shape / visualizer: the document references a template that is not in the registry.
         warn(format!(
-            "元素 {} 引用了未登记的贴纸模板 {template_id}（preset-unknown），已跳过渲染",
+            "element {} references unregistered sticker template {template_id} (preset-unknown); skipped rendering",
             element.id
         ));
         return true;
@@ -347,7 +347,7 @@ fn resolve_visualizer(
     };
     let Some(recipe) = motion::preset_registry::timeline_visualizer(&props.style) else {
         warn(format!(
-            "元素 {} 引用了未登记的波形样式 {}（preset-unknown），已跳过渲染",
+            "element {} references unregistered waveform style {} (preset-unknown); skipped rendering",
             element.id, props.style
         ));
         return ResolvedElement::Skip;
@@ -358,13 +358,13 @@ fn resolve_visualizer(
     }
     let Some(track) = track else {
         // A missing spectrum during preflight is a hard error (the host's `load_visualizer_tracks`). Reaching this point can only mean "a plan that did not go through preflight", as with `compile_with` in unit tests.
-        warn(format!("元素 {} 没有注入频谱轨，已画占位块", element.id));
+        warn(format!("element {} has no injected spectrum track; drew a placeholder block", element.id));
         return ResolvedElement::Placeholder;
     };
     let frame = match source_time {
         Some(source_time) => {
             let Some(frame) = render_raster::source::VizSource::sample(track, source_time) else {
-                warn(format!("元素 {} 的频谱轨是空的，已画占位块", element.id));
+                warn(format!("element {} has an empty spectrum track; drew a placeholder block", element.id));
                 return ResolvedElement::Placeholder;
             };
             frame.clone()
@@ -373,7 +373,7 @@ fn resolve_visualizer(
     };
     let body = recipe
         .visualizer()
-        .expect("visualizer 目录里只有 visualizer 配方");
+        .expect("the visualizer catalog only contains the visualizer recipe");
     let params = render_raster::source::VisualizerParams {
         main_color: resolved_color(
             props.main_color.as_deref(),
@@ -410,7 +410,7 @@ fn resolve_progress(
     };
     let Some(recipe) = motion::preset_registry::timeline_progress(&props.style) else {
         warn(format!(
-            "元素 {} 引用了未登记的进度样式 {}（preset-unknown），已跳过渲染",
+            "element {} references unregistered progress style {} (preset-unknown); skipped rendering",
             element.id, props.style
         ));
         return ResolvedElement::Skip;
@@ -421,7 +421,7 @@ fn resolve_progress(
     }
     let body = recipe
         .progress()
-        .expect("progress 目录里只有 progress 配方");
+        .expect("the progress catalog only contains the progress recipe");
     let params = render_raster::source::ProgressParams {
         main_color: resolved_color(
             props.main_color.as_deref(),
@@ -459,7 +459,7 @@ fn resolve_confetti(
     };
     let Some(recipe) = motion::preset_registry::timeline_confetti(&props.style) else {
         warn(format!(
-            "元素 {} 引用了未登记的彩纸样式 {}（preset-unknown），已跳过渲染",
+            "element {} references unregistered confetti style {} (preset-unknown); skipped rendering",
             element.id, props.style
         ));
         return ResolvedElement::Skip;
@@ -470,7 +470,7 @@ fn resolve_confetti(
     }
     let body = recipe
         .confetti()
-        .expect("confetti 目录里只有 confetti 配方");
+        .expect("the confetti catalog only contains the confetti recipe");
     // Color and shape tables: if the user wrote one, it replaces the whole table; otherwise the recipe's is used. `validate` has already guaranteed non-empty. Here a single bad value is only skipped (a color that does not parse is not drawn, an unknown shape is not drawn).
     let color_names: &[String] = match &props.colors {
         Some(colors) if !colors.is_empty() => colors,
@@ -709,7 +709,7 @@ pub fn push_element_placeholder(
         },
     };
     warn(format!(
-        "元素 {} 的 {} 样式 {style} 没有可用的频谱数据，已画占位块",
+        "element {} {} style {style} has no usable spectrum data; drew a placeholder block",
         element.id,
         element.kind.as_str()
     ));
@@ -823,7 +823,7 @@ impl EvaluatedSceneElement {
                 | DrawOp::PopMatte { .. } => op.clone(),
                 DrawOp::FillPath { path, color, tf } => DrawOp::FillPath {
                     path: *path_ids.get(*path as usize).ok_or_else(|| {
-                        anyhow::anyhow!("scene reference FillPath 引用未知 path {path}")
+                        anyhow::anyhow!("scene reference FillPath references unknown path {path}")
                     })?,
                     color: *color,
                     tf: *tf,
@@ -835,7 +835,7 @@ impl EvaluatedSceneElement {
                     tf,
                 } => DrawOp::StrokePath {
                     path: *path_ids.get(*path as usize).ok_or_else(|| {
-                        anyhow::anyhow!("scene reference StrokePath 引用未知 path {path}")
+                        anyhow::anyhow!("scene reference StrokePath references unknown path {path}")
                     })?,
                     color: *color,
                     width: *width,
@@ -848,7 +848,7 @@ impl EvaluatedSceneElement {
                     tf,
                 } => DrawOp::DrawMedia {
                     asset: *string_ids.get(*asset as usize).ok_or_else(|| {
-                        anyhow::anyhow!("scene reference DrawMedia 引用未知 asset {asset}")
+                        anyhow::anyhow!("scene reference DrawMedia references unknown asset {asset}")
                     })?,
                     media_ms: *media_ms,
                     src: *src,
@@ -856,7 +856,7 @@ impl EvaluatedSceneElement {
                 },
                 DrawOp::ClipPath { path, tf } => DrawOp::ClipPath {
                     path: *path_ids.get(*path as usize).ok_or_else(|| {
-                        anyhow::anyhow!("scene reference ClipPath 引用未知 path {path}")
+                        anyhow::anyhow!("scene reference ClipPath references unknown path {path}")
                     })?,
                     tf: *tf,
                 },
@@ -867,10 +867,10 @@ impl EvaluatedSceneElement {
                     tf,
                 } => DrawOp::FillPathPaint {
                     path: *path_ids.get(*path as usize).ok_or_else(|| {
-                        anyhow::anyhow!("scene reference FillPathPaint 引用未知 path {path}")
+                        anyhow::anyhow!("scene reference FillPathPaint references unknown path {path}")
                     })?,
                     paint: *paint_ids.get(*paint as usize).ok_or_else(|| {
-                        anyhow::anyhow!("scene reference FillPathPaint 引用未知 paint {paint}")
+                        anyhow::anyhow!("scene reference FillPathPaint references unknown paint {paint}")
                     })?,
                     even_odd: *even_odd,
                     tf: *tf,
@@ -885,10 +885,10 @@ impl EvaluatedSceneElement {
                     tf,
                 } => DrawOp::StrokePathPaint {
                     path: *path_ids.get(*path as usize).ok_or_else(|| {
-                        anyhow::anyhow!("scene reference StrokePathPaint 引用未知 path {path}")
+                        anyhow::anyhow!("scene reference StrokePathPaint references unknown path {path}")
                     })?,
                     paint: *paint_ids.get(*paint as usize).ok_or_else(|| {
-                        anyhow::anyhow!("scene reference StrokePathPaint 引用未知 paint {paint}")
+                        anyhow::anyhow!("scene reference StrokePathPaint references unknown paint {paint}")
                     })?,
                     width: *width,
                     cap: *cap,
@@ -902,7 +902,7 @@ impl EvaluatedSceneElement {
                     tf,
                 } => DrawOp::DrawBitmap {
                     bitmap: *bitmap_ids.get(*bitmap as usize).ok_or_else(|| {
-                        anyhow::anyhow!("scene reference DrawBitmap 引用未知 bitmap {bitmap}")
+                        anyhow::anyhow!("scene reference DrawBitmap references unknown bitmap {bitmap}")
                     })?,
                     opacity: *opacity,
                     tf: *tf,
@@ -1122,12 +1122,12 @@ mod tests {
         assert_ne!(
             (square_box.w, square_box.h),
             (bar_box.w, bar_box.h),
-            "square 与 free 两档必须落在几何默认表的不同一行"
+            "the square and free tiers must land on different rows of the geometry defaults table"
         );
         // The `square` tier is taller and vertically centered. The `free` tier is a horizontal bar anchored to the bottom.
         assert!(
             square_box.h > bar_box.h && square_box.y < bar_box.y,
-            "square 档应更高且不贴底：{square_box:?} / {bar_box:?}"
+            "square tier should be taller and not touch the bottom: {square_box:?} / {bar_box:?}"
         );
     }
 
@@ -1156,10 +1156,10 @@ mod tests {
             Some(1.0),
             &mut |message| warnings.push(message),
         );
-        assert_eq!(builder.frame.ops.len(), 1, "占位块是一条 FillRect");
+        assert_eq!(builder.frame.ops.len(), 1, "the placeholder block is one FillRect");
         assert_eq!(warnings.len(), 2);
-        assert!(warnings[0].contains("没有注入频谱轨"));
-        assert!(warnings[1].contains("没有可用的频谱数据"));
+        assert!(warnings[0].contains("has no injected spectrum track"));
+        assert!(warnings[1].contains("has no usable spectrum data"));
     }
 
     /// On silent frames, each style draws its **resting form** (the oscilloscope centerline, the ribbon centerline, the `minHeight` baseline of the spectrum area), not an empty picture. Non-silent frames on the same track must still render normally. The element does not vanish from the canvas during intros or silent passages, and the resting form is not mistaken for "recipe not implemented" and used to kill the App's overlay thread.
@@ -1209,7 +1209,7 @@ mod tests {
                 Some(0.0),
                 &mut |_| {},
             ));
-            assert!(!silent.frame.ops.is_empty(), "{style}: 静音也要画静止形态");
+            assert!(!silent.frame.ops.is_empty(), "{style}: silent input must still draw the static form");
 
             let mut loud = FrameBuilder::default();
             assert!(push_element(
@@ -1538,7 +1538,7 @@ mod tests {
             Some(1.0),
             &mut |message| warnings.push(message),
         );
-        assert!(claimed, "template 源的 sticker 必须由本 crate 认领");
+        assert!(claimed, "the template-sourced sticker must be claimed by this crate");
         (builder, warnings)
     }
 
@@ -1592,7 +1592,7 @@ mod tests {
             assert!(warnings.is_empty(), "{}: {warnings:?}", recipe.id);
             let encoded = render_raster::drawop::encode(&frame);
             for (other, bytes) in &seen {
-                assert_ne!(*bytes, encoded, "{} 与 {other} 的指令流相同", recipe.id);
+                assert_ne!(*bytes, encoded, "{} and {other} have identical instruction streams", recipe.id);
             }
             seen.push((recipe.id.clone(), encoded));
         }

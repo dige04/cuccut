@@ -161,7 +161,7 @@ fn rasterize_draws_loaded_images_and_rejects_unknown_references() {
     let err = render_raster::raster::rasterize(&unknown_string, 2, 2, &mut empty_media())
         .unwrap_err()
         .to_string();
-    assert!(err.contains("未知 string"));
+    assert!(err.contains("unknown string"));
 }
 
 #[test]
@@ -178,7 +178,7 @@ fn rasterize_reports_unbalanced_layers() {
         render_raster::raster::rasterize(&pop, 2, 2, &mut empty_media())
             .unwrap_err()
             .to_string()
-            .contains("无匹配")
+            .contains("no matching PushMatte")
     );
 
     let push = FrameOps {
@@ -196,7 +196,7 @@ fn rasterize_reports_unbalanced_layers() {
         render_raster::raster::rasterize(&push, 2, 2, &mut empty_media())
             .unwrap_err()
             .to_string()
-            .contains("层栈非空")
+            .contains("layer stack is not empty")
     );
 }
 
@@ -329,7 +329,7 @@ fn clip_stack_must_be_balanced_and_may_not_cross_a_layer_boundary() {
         render_raster::raster::rasterize(&orphan_pop, 4, 4, &mut empty_media())
             .unwrap_err()
             .to_string()
-            .contains("PopClip 无匹配")
+            .contains("PopClip has no matching")
     );
 
     let unbalanced = FrameOps {
@@ -347,7 +347,7 @@ fn clip_stack_must_be_balanced_and_may_not_cross_a_layer_boundary() {
         render_raster::raster::rasterize(&unbalanced, 4, 4, &mut empty_media())
             .unwrap_err()
             .to_string()
-            .contains("裁剪栈非空")
+            .contains("clip stack is not empty")
     );
 
     // Push a layer outside, pop inside
@@ -374,7 +374,7 @@ fn clip_stack_must_be_balanced_and_may_not_cross_a_layer_boundary() {
         render_raster::raster::rasterize(&pop_inside_layer, 4, 4, &mut empty_media())
             .unwrap_err()
             .to_string()
-            .contains("跨越")
+            .contains("crossed")
     );
 
     // Push a layer inside, pop outside
@@ -401,7 +401,7 @@ fn clip_stack_must_be_balanced_and_may_not_cross_a_layer_boundary() {
         render_raster::raster::rasterize(&pop_outside_layer, 4, 4, &mut empty_media())
             .unwrap_err()
             .to_string()
-            .contains("不得跨越层边界")
+            .contains("must not cross layer boundaries")
     );
 }
 
@@ -748,7 +748,7 @@ fn draw_bitmap_refuses_unknown_or_malformed_bitmaps() {
     let error = render_raster::raster::rasterize(&unknown, 4, 4, &mut empty_media())
         .unwrap_err()
         .to_string();
-    assert!(error.contains("未知 bitmap"), "实际 {error}");
+    assert!(error.contains("unknown bitmap"), "got {error}");
 
     let short = FrameOps {
         bitmaps: vec![BitmapData {
@@ -766,7 +766,7 @@ fn draw_bitmap_refuses_unknown_or_malformed_bitmaps() {
     let error = render_raster::raster::rasterize(&short, 4, 4, &mut empty_media())
         .unwrap_err()
         .to_string();
-    assert!(error.contains("尺寸与字节不符"), "实际 {error}");
+    assert!(error.contains("size does not match its bytes"), "got {error}");
 }
 
 /// `static_prefix` is a raster cache hint: when the same key appears a second time, the cached prefix picture is copied directly, and the instructions in the prefix are not executed again. Two frames with the same key but different content expose the hit (the recorder guarantees same key ⇒ same content; here it is deliberately violated only to observe the cache), and confirm that instructions after the prefix still execute as usual and that frames without the hint are unaffected. The key is a value unique to this file, so other tests will not evict it.

@@ -388,27 +388,27 @@ fn is_full_opacity(v: &f64) -> bool {
 pub fn validate(doc: &TemplateDoc) -> Result<(), String> {
     check_id("template", &doc.id)?;
     if doc.name.trim().is_empty() {
-        return Err(format!("template {} 缺少 name", doc.id));
+        return Err(format!("template {} is missing name", doc.id));
     }
     if !HUES.contains(&doc.hue.as_str()) {
         return Err(format!(
-            "template {} 的 hue 不在集合里：{}",
+            "template {} hue is not in the allowed set: {}",
             doc.id, doc.hue
         ));
     }
     if let Some(font) = &doc.font {
         if font.trim().is_empty() {
-            return Err(format!("template {} 的 font 不能为空串", doc.id));
+            return Err(format!("template {} font cannot be an empty string", doc.id));
         }
     }
     if let Some(ratio) = &doc.ratio {
-        check_ratio(ratio).map_err(|error| format!("template {} 的 ratio {error}", doc.id))?;
+        check_ratio(ratio).map_err(|error| format!("template {} ratio {error}", doc.id))?;
     }
     let mut seen = std::collections::BTreeSet::new();
     for layer in &doc.layers {
         check_id("template layer", &layer.id)?;
         if !seen.insert(layer.id.as_str()) {
-            return Err(format!("template {} 的层 id 重复：{}", doc.id, layer.id));
+            return Err(format!("template {} has duplicate layer id: {}", doc.id, layer.id));
         }
         check_box(&layer.id, &layer.rect)?;
         check_layer_kind(&layer.id, &layer.kind)?;
@@ -488,13 +488,13 @@ pub fn ratio_equivalent(left: Option<&str>, right: Option<&str>) -> bool {
 pub fn check_ratio(text: &str) -> Result<(), String> {
     let text = text.trim();
     if text.is_empty() {
-        return Err("不能为空串（不改画幅请省略该字段）".to_owned());
+        return Err("cannot be an empty string (omit this field to keep the aspect ratio)".to_owned());
     }
     if ratio_is_original(text) {
         return Ok(());
     }
     let Some((width, height)) = text.split_once(':') else {
-        return Err(format!("使用 original 或 W:H：{text}"));
+        return Err(format!("use original or W:H: {text}"));
     };
     for part in [width, height] {
         let ok = part
@@ -503,7 +503,7 @@ pub fn check_ratio(text: &str) -> Result<(), String> {
             .map(|v| v.is_finite() && v > 0.0)
             .unwrap_or(false);
         if !ok {
-            return Err(format!("W:H 两边都要是正数：{text}"));
+            return Err(format!("both sides of W:H must be positive numbers: {text}"));
         }
     }
     Ok(())
@@ -523,7 +523,7 @@ fn check_box(layer_id: &str, rect: &LayerBox) -> Result<(), String> {
         || rect.y + rect.h > 100.0 + EPS
     {
         return Err(format!(
-            "template layer {layer_id} 的 box 越界或小于最小尺寸：x={} y={} w={} h={}",
+            "template layer {layer_id} box is out of bounds or below the minimum size: x={} y={} w={} h={}",
             rect.x, rect.y, rect.w, rect.h
         ));
     }
@@ -533,7 +533,7 @@ fn check_box(layer_id: &str, rect: &LayerBox) -> Result<(), String> {
 fn positive(layer_id: &str, field: &str, v: f64) -> Result<(), String> {
     if !(v.is_finite() && v > 0.0) {
         return Err(format!(
-            "template layer {layer_id} 的 {field} 必须为正数：{v}"
+            "template layer {layer_id} {field} must be a positive number: {v}"
         ));
     }
     Ok(())
@@ -542,7 +542,7 @@ fn positive(layer_id: &str, field: &str, v: f64) -> Result<(), String> {
 fn non_negative_pad(layer_id: &str, pad: Option<f64>) -> Result<(), String> {
     match pad {
         Some(v) if !(v.is_finite() && v >= 0.0) => Err(format!(
-            "template layer {layer_id} 的 pad 必须是非负数：{v}"
+            "template layer {layer_id} pad must be a non-negative number: {v}"
         )),
         _ => Ok(()),
     }
@@ -582,7 +582,7 @@ fn check_layer_kind(layer_id: &str, kind: &LayerKind) -> Result<(), String> {
         } => {
             if !opacity.is_finite() {
                 return Err(format!(
-                    "template layer {layer_id} 的 opacity 必须是有限数：{opacity}"
+                    "template layer {layer_id} opacity must be a finite number: {opacity}"
                 ));
             }
             match src {
@@ -613,7 +613,7 @@ fn check_layer_kind(layer_id: &str, kind: &LayerKind) -> Result<(), String> {
             non_negative_pad(layer_id, *pad)?;
             if !(100..=900).contains(weight) {
                 return Err(format!(
-                    "template layer {layer_id} 的 weight 必须在 100..=900：{weight}"
+                    "template layer {layer_id} weight must be in 100..=900: {weight}"
                 ));
             }
             Ok(())
@@ -631,7 +631,7 @@ fn check_relative_file(layer_id: &str, file: &str) -> Result<(), String> {
             .any(|seg| seg == ".." || seg.is_empty());
     if bad {
         return Err(format!(
-            "template layer {layer_id} 的 file 必须是项目相对路径：{file}"
+            "template layer {layer_id} file must be a project-relative path: {file}"
         ));
     }
     Ok(())
@@ -639,7 +639,7 @@ fn check_relative_file(layer_id: &str, file: &str) -> Result<(), String> {
 
 fn check_id(kind: &str, id: &str) -> Result<(), String> {
     if id.is_empty() || id.chars().any(char::is_whitespace) {
-        Err(format!("{kind} id 非法：{id}"))
+        Err(format!("{kind} id is invalid: {id}"))
     } else {
         Ok(())
     }
@@ -648,7 +648,7 @@ fn check_id(kind: &str, id: &str) -> Result<(), String> {
 fn check_color(owner: &str, field: &str, color: &str) -> Result<(), String> {
     let hex = color.strip_prefix('#').unwrap_or("");
     if !matches!(hex.len(), 6 | 8) || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
-        return Err(format!("{owner} 的 {field} 不是 #RRGGBB[AA]：{color}"));
+        return Err(format!("{owner} {field} is not #RRGGBB[AA]: {color}"));
     }
     Ok(())
 }
@@ -846,10 +846,10 @@ mod tests {
         let mut doc = sample();
         assert!(ratio_lock(&doc).is_none());
         doc.lock_ratio = true;
-        assert!(ratio_lock(&doc).is_none(), "没有 ratio 的锁无效");
+        assert!(ratio_lock(&doc).is_none(), "a lock without ratio is invalid");
         assert!(validate(&doc).is_ok());
         doc.ratio = Some("16:9".into());
-        let lock = ratio_lock(&doc).expect("锁生效");
+        let lock = ratio_lock(&doc).expect("lock applies");
         assert_eq!(lock.ratio, "16:9");
         assert_eq!(lock.name, "示例");
         assert!(!lock.is_original());
@@ -880,8 +880,8 @@ mod tests {
     fn logo_tile_and_opacity_round_trip_and_clamp() {
         let mut doc = sample();
         let text = serde_json::to_string(&doc).unwrap();
-        assert!(!text.contains("tile"), "缺省不平铺不落盘");
-        assert!(!text.contains("opacity"), "缺省不透明不落盘");
+        assert!(!text.contains("tile"), "default tile is not written to disk");
+        assert!(!text.contains("opacity"), "default opacity is not written to disk");
         assert_eq!(doc.layers[2].kind.opacity(), 1.0);
         assert!(!doc.layers[2].kind.tiled());
         if let LayerKind::Logo { tile, opacity, .. } = &mut doc.layers[2].kind {
@@ -927,8 +927,8 @@ mod tests {
     fn logo_align_defaults_to_center_and_round_trips() {
         let mut doc = sample();
         let value = serde_json::to_value(&doc).unwrap();
-        assert!(value["layers"][2].get("align").is_none(), "台标居中不落盘");
-        assert_eq!(value["layers"][3]["align"], "center", "文字层照旧落盘");
+        assert!(value["layers"][2].get("align").is_none(), "centered logo is not written to disk");
+        assert_eq!(value["layers"][3]["align"], "center", "text layer is still written to disk");
         for (align, wire) in [(TextAlign::Left, "left"), (TextAlign::Right, "right")] {
             if let LayerKind::Logo { align: slot, .. } = &mut doc.layers[2].kind {
                 *slot = align;
@@ -966,14 +966,14 @@ mod tests {
     fn pad_is_optional_non_negative_and_round_trips() {
         let mut doc = sample();
         let text = serde_json::to_string(&doc).unwrap();
-        assert!(!text.contains("\"pad\""), "缺省内边距不落盘");
+        assert!(!text.contains("\"pad\""), "default padding is not written to disk");
         for (i, v) in [(2, 1.2), (3, 0.0)] {
             match &mut doc.layers[i].kind {
                 LayerKind::Logo { pad, .. } | LayerKind::Text { pad, .. } => *pad = Some(v),
                 other => panic!("unexpected {other:?}"),
             }
         }
-        assert!(validate(&doc).is_ok(), "0 是合法内边距");
+        assert!(validate(&doc).is_ok(), "0 is valid padding");
         let value = serde_json::to_value(&doc).unwrap();
         assert_eq!(value["layers"][2]["pad"], 1.2);
         assert_eq!(value["layers"][3]["pad"], 0.0);
@@ -998,7 +998,7 @@ mod tests {
         let mut doc = sample();
         let text = serde_json::to_string(&doc).unwrap();
         for key in ["group", "tag", "imported"] {
-            assert!(!text.contains(&format!("\"{key}\"")), "{key} 缺省不落盘");
+            assert!(!text.contains(&format!("\"{key}\"")), "{key} default is not written to disk");
         }
         assert!(!doc.is_watermark());
         assert!(!doc.is_imported_watermark());

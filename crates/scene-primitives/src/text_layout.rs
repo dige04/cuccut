@@ -82,25 +82,25 @@ pub fn parse_runs(value: &Value) -> anyhow::Result<(String, Vec<Run>)> {
     use anyhow::{anyhow, bail};
     let rows = value
         .as_array()
-        .ok_or_else(|| anyhow!("schema: text.runs 必须是数组"))?;
+        .ok_or_else(|| anyhow!("schema: text.runs must be an array"))?;
     let mut text = String::new();
     let mut runs = Vec::new();
     for row in rows {
         let row = row
             .as_object()
-            .ok_or_else(|| anyhow!("schema: text.runs 项必须是对象"))?;
+            .ok_or_else(|| anyhow!("schema: text.runs items must be objects"))?;
         if row.keys().any(|k| k != "text" && k != "style") {
-            bail!("schema: text.runs 只接受 text/style");
+            bail!("schema: text.runs only accepts text/style");
         }
         let content = row
             .get("text")
             .and_then(Value::as_str)
-            .ok_or_else(|| anyhow!("schema: run.text 必须是字符串"))?;
+            .ok_or_else(|| anyhow!("schema: run.text must be a string"))?;
         let style = match row.get("style").filter(|v| !v.is_null()) {
             Some(value) => value
                 .as_object()
                 .cloned()
-                .ok_or_else(|| anyhow!("schema: run.style 必须是对象"))?,
+                .ok_or_else(|| anyhow!("schema: run.style must be an object"))?,
             None => Map::new(),
         };
         for (key, value) in &style {
@@ -114,7 +114,7 @@ pub fn parse_runs(value: &Value) -> anyhow::Result<(String, Vec<Run>)> {
             ]
             .contains(&key.as_str())
             {
-                bail!("schema: run.style 不支持 {key}");
+                bail!("schema: run.style does not support {key}");
             }
             if value.is_null() {
                 continue;
@@ -131,7 +131,7 @@ pub fn parse_runs(value: &Value) -> anyhow::Result<(String, Vec<Run>)> {
                 _ => false,
             };
             if !valid {
-                bail!("schema: run.style.{key} 的值无效");
+                bail!("schema: run.style.{key} has an invalid value");
             }
         }
         let start = text.len();
@@ -148,7 +148,7 @@ pub fn parse_runs(value: &Value) -> anyhow::Result<(String, Vec<Run>)> {
         boundaries.binary_search(&run.bytes.start).is_err()
             || boundaries.binary_search(&run.bytes.end).is_err()
     }) {
-        bail!("schema: runs 边界不能拆开 grapheme（组合字符或 emoji）");
+        bail!("schema: run boundaries must not split a grapheme (combining mark or emoji)");
     }
     Ok((text, runs))
 }

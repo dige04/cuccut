@@ -220,7 +220,7 @@ pub struct DxgiFrameServer {
 /// Opens local media and waits for metadata. If there is a video track, sets up the frame server's shared GPU surface pool.
 pub fn open_dxgi_frame_server(path: &Path) -> Result<DxgiFrameServer> {
     if !path.is_file() {
-        bail!("媒体文件不存在：{}", path.display());
+        bail!("media file does not exist: {}", path.display());
     }
     let runtime = Runtime::start()?;
     unsafe { open_inner(runtime, path) }
@@ -228,22 +228,22 @@ pub fn open_dxgi_frame_server(path: &Path) -> Result<DxgiFrameServer> {
 
 unsafe fn open_inner(runtime: Runtime, path: &Path) -> Result<DxgiFrameServer> {
     let (device, immediate_context) = unsafe { create_d3d11_device()? };
-    let multithread: ID3D10Multithread = device.cast().context("D3D11 设备不支持多线程保护")?;
+    let multithread: ID3D10Multithread = device.cast().context("D3D11 device does not support multithread protection")?;
     let _was_protected = unsafe { multithread.SetMultithreadProtected(true) };
 
     let context: ID3D11DeviceContext4 = immediate_context
         .cast()
-        .context("D3D11 设备不支持共享 fence（需要 Windows 10）")?;
+        .context("D3D11 device does not support shared fences (requires Windows 10)")?;
     let fence = Arc::new(unsafe { create_shared_fence(&device)? });
     let adapter_luid = unsafe { adapter_luid(&device)? };
 
     let mut reset_token = 0_u32;
     let mut manager = None;
     unsafe { MFCreateDXGIDeviceManager(&mut reset_token, &mut manager) }
-        .map_err(|error| media_feature_error("创建 DXGI Device Manager", error))?;
-    let manager = manager.context("Media Foundation 返回空 DXGI Device Manager")?;
+        .map_err(|error| media_feature_error("create DXGI Device Manager", error))?;
+    let manager = manager.context("Media Foundation returned an empty DXGI Device Manager")?;
     unsafe { manager.ResetDevice(&device, reset_token) }
-        .map_err(|error| media_feature_error("绑定 D3D11 解码设备", error))?;
+        .map_err(|error| media_feature_error("bind the D3D11 decoding device", error))?;
 
     let notify_state = Arc::new(NotifyState::default());
     let callback: IMFMediaEngineNotify = MediaEngineNotify {
@@ -253,8 +253,8 @@ unsafe fn open_inner(runtime: Runtime, path: &Path) -> Result<DxgiFrameServer> {
     let attributes = unsafe {
         let mut attributes = None;
         MFCreateAttributes(&mut attributes, 3)
-            .map_err(|error| media_feature_error("创建 Media Engine 属性", error))?;
-        let attributes = attributes.context("Media Foundation 返回空属性对象")?;
+            .map_err(|error| media_feature_error("create Media Engine attributes", error))?;
+        let attributes = attributes.context("Media Foundation returned an empty attributes object")?;
         attributes.SetUnknown(&MF_MEDIA_ENGINE_CALLBACK, &callback)?;
         attributes.SetUnknown(&MF_MEDIA_ENGINE_DXGI_MANAGER, &manager)?;
         attributes.SetUINT32(
@@ -265,9 +265,9 @@ unsafe fn open_inner(runtime: Runtime, path: &Path) -> Result<DxgiFrameServer> {
     };
     let factory: IMFMediaEngineClassFactory =
         unsafe { CoCreateInstance(&CLSID_MFMediaEngineClassFactory, None, CLSCTX_INPROC_SERVER) }
-            .map_err(|error| media_feature_error("创建 Media Engine 工厂", error))?;
+            .map_err(|error| media_feature_error("create Media Engine factory", error))?;
     let engine = unsafe { factory.CreateInstance(0, &attributes) }
-        .map_err(|error| media_feature_error("创建 Media Engine frame-server", error))?;
+        .map_err(|error| media_feature_error("create Media Engine frame-server", error))?;
     let configured = (|| -> Result<_> {
         let wide = wide_path(path);
         let byte_stream = unsafe {
@@ -278,30 +278,30 @@ unsafe fn open_inner(runtime: Runtime, path: &Path) -> Result<DxgiFrameServer> {
                 PCWSTR(wide.as_ptr()),
             )
         }
-        .map_err(|error| media_feature_error("打开播放媒体", error))?;
-        let engine_ex: IMFMediaEngineEx = engine.cast().context("Media Engine 缺少扩展接口")?;
+        .map_err(|error| media_feature_error("open playback media", error))?;
+        let engine_ex: IMFMediaEngineEx = engine.cast().context("Media Engine lacks the extended interface")?;
         // `wide_path` is already normalized to a verbatim prefix and ends with NUL. BSTR carries its own length, which excludes the NUL.
         // Keep the UTF-16 as is, to avoid round-tripping the Windows path through lossy UTF-8.
         let source_url = BSTR::from_wide(&wide[..wide.len() - 1]);
         unsafe { engine_ex.SetSourceFromByteStream(&byte_stream, &source_url) }
-            .map_err(|error| media_feature_error("设置播放媒体", error))?;
+            .map_err(|error| media_feature_error("set playback media", error))?;
         wait_for_metadata(&notify_state, path)?;
 
         let has_video = unsafe { engine.HasVideo().as_bool() };
         let has_audio = unsafe { engine.HasAudio().as_bool() };
         if !has_video && !has_audio {
-            bail!("unsupported: 源媒体没有音频或视频轨");
+            bail!("unsupported: source media has no audio or video track");
         }
         let (width, height, surfaces) = if has_video {
             let mut width = 0_u32;
             let mut height = 0_u32;
             unsafe { engine.GetNativeVideoSize(Some(&mut width), Some(&mut height)) }
-                .context("读取视频尺寸失败")?;
+                .context("failed to read video size")?;
             if width == 0 || height == 0 {
-                bail!("unsupported: 源媒体没有有效的视频轨");
+                bail!("unsupported: source media has no valid video track");
             }
             if width > i32::MAX as u32 || height > i32::MAX as u32 {
-                bail!("unsupported: 视频尺寸超出 DXGI RECT 范围：{width}x{height}");
+                bail!("unsupported: video size exceeds the DXGI RECT range: {width}x{height}");
             }
             let surfaces = (0..SURFACE_POOL_SIZE)
                 .map(|_| unsafe { create_shared_surface(&device, width, height).map(Arc::new) })
@@ -406,34 +406,34 @@ impl DxgiFrameServer {
     }
 
     pub fn play(&self) -> Result<()> {
-        unsafe { self.engine.Play() }.context("Media Engine 开始播放失败")
+        unsafe { self.engine.Play() }.context("Media Engine failed to start playback")
     }
 
     pub fn pause(&self) -> Result<()> {
-        unsafe { self.engine.Pause() }.context("Media Engine 暂停失败")
+        unsafe { self.engine.Pause() }.context("Media Engine failed to pause")
     }
 
     pub fn seek(&self, seconds: f64) -> Result<()> {
         if !seconds.is_finite() {
-            bail!("播放时间必须是有限值，实得 {seconds}");
+            bail!("playback time must be finite, got {seconds}");
         }
-        unsafe { self.engine.SetCurrentTime(seconds.max(0.0)) }.context("Media Engine 定位失败")
+        unsafe { self.engine.SetCurrentTime(seconds.max(0.0)) }.context("Media Engine failed to seek")
     }
 
     pub fn set_volume(&self, volume: f32) -> Result<()> {
         if !volume.is_finite() {
-            bail!("音量必须是有限值，实得 {volume}");
+            bail!("volume must be finite, got {volume}");
         }
         unsafe { self.engine.SetVolume(f64::from(volume.clamp(0.0, 1.0))) }
-            .context("Media Engine 设置音量失败")
+            .context("Media Engine failed to set volume")
     }
 
     pub fn set_playback_rate(&self, rate: f32) -> Result<()> {
         if !rate.is_finite() || rate <= 0.0 {
-            bail!("播放速率必须是有限正数，实得 {rate}");
+            bail!("playback rate must be a positive finite number, got {rate}");
         }
         unsafe { self.engine.SetPlaybackRate(f64::from(rate)) }
-            .context("Media Engine 设置播放速率失败")
+            .context("Media Engine failed to set playback rate")
     }
 
     /// Takes one frame whose GPU write has completed.
@@ -466,12 +466,12 @@ impl DxgiFrameServer {
             self.engine
                 .TransferVideoFrame(&surface.texture, None, &destination, None)
         }
-        .context("Media Engine 把视频帧写入共享纹理失败")?;
+        .context("Media Engine failed to write the video frame to the shared texture")?;
 
         let ready_fence_value = self.next_fence_value;
         self.next_fence_value = self.next_fence_value.wrapping_add(1).max(1);
         unsafe { self.context.Signal(&self.fence.fence, ready_fence_value) }
-            .context("发布 D3D11 共享 fence 失败")?;
+            .context("failed to signal the D3D11 shared fence")?;
 
         Ok(Some(DxgiVideoFrame {
             surface,
@@ -495,7 +495,7 @@ impl DxgiFrameServer {
         }
         status
             .ok()
-            .map_err(|error| media_feature_error("查询 Media Engine 视频帧", error))?;
+            .map_err(|error| media_feature_error("query Media Engine video frame", error))?;
         Ok(Some(timestamp_hns))
     }
 
@@ -517,7 +517,7 @@ impl DxgiFrameServer {
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         if let Some((media_error, status)) = inner.error {
-            bail!("Media Engine 播放失败（mediaError={media_error}, status=0x{status:08x}）");
+            bail!("Media Engine playback failed (mediaError={media_error}, status=0x{status:08x})");
         }
         Ok(())
     }
@@ -551,7 +551,7 @@ mod tests {
             server.playback_state()?;
             assert!(
                 started.elapsed() < Duration::from_secs(5),
-                "纯音频播放时钟未启动"
+                "audio-only playback clock did not start"
             );
             std::thread::sleep(Duration::from_millis(20));
         }
@@ -560,7 +560,7 @@ mod tests {
         std::thread::sleep(Duration::from_millis(100));
         assert!(
             server.current_time_seconds() - paused_at < 0.05,
-            "纯音频暂停后时钟仍在运行"
+            "audio-only clock still running after pause"
         );
 
         server.seek(server.duration_seconds() - 0.15)?;
@@ -569,7 +569,7 @@ mod tests {
         while server.playback_state()? != DxgiPlaybackState::Ended {
             assert!(
                 started.elapsed() < Duration::from_secs(5),
-                "纯音频未进入结束状态"
+                "audio-only playback did not reach the ended state"
             );
             std::thread::sleep(Duration::from_millis(20));
         }
@@ -589,12 +589,12 @@ fn wait_for_metadata(state: &NotifyState, path: &Path) -> Result<()> {
         }
         if let Some((media_error, status)) = inner.error {
             bail!(
-                "Media Engine 无法加载 {}（mediaError={media_error}, status=0x{status:08x}）",
+                "Media Engine cannot load {} (mediaError={media_error}, status=0x{status:08x})",
                 path.display()
             );
         }
         let Some(remaining) = METADATA_TIMEOUT.checked_sub(started.elapsed()) else {
-            bail!("Media Engine 等待元数据超时：{}", path.display());
+            bail!("Media Engine timed out waiting for metadata: {}", path.display());
         };
         let waited = state
             .changed
@@ -602,7 +602,7 @@ fn wait_for_metadata(state: &NotifyState, path: &Path) -> Result<()> {
             .unwrap_or_else(|error| error.into_inner());
         inner = waited.0;
         if waited.1.timed_out() && !inner.metadata_loaded {
-            bail!("Media Engine 等待元数据超时：{}", path.display());
+            bail!("Media Engine timed out waiting for metadata: {}", path.display());
         }
     }
 }
@@ -630,16 +630,16 @@ unsafe fn create_d3d11_device() -> Result<(ID3D11Device, ID3D11DeviceContext)> {
         } {
             Ok(()) => {
                 return Ok((
-                    device.context("D3D11 返回空设备")?,
-                    context.context("D3D11 返回空 immediate context")?,
+                    device.context("D3D11 returned no device")?,
+                    context.context("D3D11 returned no immediate context")?,
                 ));
             }
             Err(error) => last_error = Some(error),
         }
     }
     Err(anyhow!(
-        "创建支持视频与 BGRA 的 D3D11 设备失败：{}",
-        last_error.context("没有 D3D11 driver 可尝试")?
+        "failed to create a D3D11 device supporting video and BGRA: {}",
+        last_error.context("no D3D11 driver to try")?
     ))
 }
 
@@ -665,9 +665,9 @@ unsafe fn create_shared_surface(
     };
     let mut texture = None;
     unsafe { device.CreateTexture2D(&description, None, Some(&mut texture)) }
-        .context("创建 Media Engine 共享 BGRA 纹理失败")?;
-    let texture = texture.context("D3D11 返回空 BGRA 纹理")?;
-    let resource: IDXGIResource1 = texture.cast().context("BGRA 纹理缺少 IDXGIResource1")?;
+        .context("failed to create Media Engine shared BGRA texture")?;
+    let texture = texture.context("D3D11 returned no BGRA texture")?;
+    let resource: IDXGIResource1 = texture.cast().context("BGRA texture lacks IDXGIResource1")?;
     let handle = unsafe {
         resource.CreateSharedHandle(
             None,
@@ -675,20 +675,20 @@ unsafe fn create_shared_surface(
             PCWSTR::null(),
         )
     }
-    .context("导出 BGRA 纹理 NT handle 失败")?;
+    .context("failed to export BGRA texture NT handle")?;
     Ok(SharedSurface {
         id: next_shared_object_id(),
         texture,
-        handle: unsafe { own_handle(handle.0, "BGRA 纹理")? },
+        handle: unsafe { own_handle(handle.0, "BGRA texture")? },
         width,
         height,
     })
 }
 
 unsafe fn adapter_luid(device: &ID3D11Device) -> Result<DxgiAdapterLuid> {
-    let dxgi_device: IDXGIDevice = device.cast().context("D3D11 设备缺少 IDXGIDevice")?;
-    let adapter = unsafe { dxgi_device.GetAdapter() }.context("读取 D3D11 adapter 失败")?;
-    let description = unsafe { adapter.GetDesc() }.context("读取 DXGI adapter LUID 失败")?;
+    let dxgi_device: IDXGIDevice = device.cast().context("D3D11 device lacks IDXGIDevice")?;
+    let adapter = unsafe { dxgi_device.GetAdapter() }.context("failed to read D3D11 adapter")?;
+    let description = unsafe { adapter.GetDesc() }.context("failed to read DXGI adapter LUID")?;
     Ok(DxgiAdapterLuid {
         low_part: description.AdapterLuid.LowPart,
         high_part: description.AdapterLuid.HighPart,
@@ -698,13 +698,13 @@ unsafe fn adapter_luid(device: &ID3D11Device) -> Result<DxgiAdapterLuid> {
 unsafe fn create_shared_fence(device: &ID3D11Device) -> Result<SharedFence> {
     let device: ID3D11Device5 = device
         .cast()
-        .context("D3D11 设备不支持共享 fence（需要 Windows 10）")?;
+        .context("D3D11 device does not support shared fences (requires Windows 10)")?;
     let mut fence = None;
     unsafe { device.CreateFence(0, D3D11_FENCE_FLAG_SHARED, &mut fence) }
-        .context("创建 D3D11 shared fence 失败")?;
-    let fence: ID3D11Fence = fence.context("D3D11 返回空 shared fence")?;
+        .context("failed to create D3D11 shared fence")?;
+    let fence: ID3D11Fence = fence.context("D3D11 returned no shared fence")?;
     let handle = unsafe { fence.CreateSharedHandle(None, GENERIC_ALL.0, PCWSTR::null()) }
-        .context("导出 D3D11 fence NT handle 失败")?;
+        .context("failed to export D3D11 fence NT handle")?;
     Ok(SharedFence {
         id: next_shared_object_id(),
         fence,
@@ -714,7 +714,7 @@ unsafe fn create_shared_fence(device: &ID3D11Device) -> Result<SharedFence> {
 
 unsafe fn own_handle(raw: RawHandle, label: &str) -> Result<OwnedHandle> {
     if raw.is_null() || raw as isize == -1 {
-        bail!("{label}返回了无效 NT handle");
+        bail!("{label} returned an invalid NT handle");
     }
     Ok(unsafe { OwnedHandle::from_raw_handle(raw) })
 }

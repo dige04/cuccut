@@ -218,7 +218,7 @@ pub fn translation_quality_issues(
     if placeholder(trimmed) {
         issues.push(TranslationQualityIssue {
             code: TranslationQualityCode::Placeholder,
-            detail: "译文是占位文本".to_owned(),
+            detail: "the translation is placeholder text".to_owned(),
         });
     }
     let normalized_source = normalize_chars(source);
@@ -237,24 +237,24 @@ pub fn translation_quality_issues(
     {
         issues.push(TranslationQualityIssue {
             code: TranslationQualityCode::SourceCopy,
-            detail: "译文与源文完全相同".to_owned(),
+            detail: "the translation is identical to the source".to_owned(),
         });
     } else if let Some(run) = untranslated_run(&normalized_source, target_lang, &normalized_target)
     {
         issues.push(TranslationQualityIssue {
             code: TranslationQualityCode::SourceCopy,
-            detail: format!("译文含原样照抄的源文片段「{run}」"),
+            detail: format!("the translation contains a source fragment copied verbatim: 「{run}」"),
         });
     } else if copied_fragment(source, trimmed) {
         issues.push(TranslationQualityIssue {
             code: TranslationQualityCode::SourceCopy,
-            detail: "译文整句是源文里原样照抄的一段".to_owned(),
+            detail: "the whole translation is a passage copied verbatim from the source".to_owned(),
         });
     }
     if target_script_mismatch(target_lang, trimmed) {
         issues.push(TranslationQualityIssue {
             code: TranslationQualityCode::TargetLanguageMismatch,
-            detail: format!("期望 {target_lang}，但输出由不匹配的文字脚本主导"),
+            detail: format!("expected {target_lang}, but the output is dominated by a mismatched writing script"),
         });
     }
     let source_units = normalize_chars(source).chars().count();
@@ -262,7 +262,7 @@ pub fn translation_quality_issues(
     if source_units >= 80 && target_units <= 2 {
         issues.push(TranslationQualityIssue {
             code: TranslationQualityCode::TooShort,
-            detail: format!("源文有 {source_units} 个内容单位，译文只有 {target_units} 个"),
+            detail: format!("the source has {source_units} content units, but the translation has only {target_units}"),
         });
     }
     issues

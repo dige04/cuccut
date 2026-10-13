@@ -1155,7 +1155,7 @@ mod tests {
         assert_eq!(count_visible(&f0), 200 * 120);
         assert!(
             f0.data().chunks_exact(4).all(|p| p == [250, 250, 250, 255]),
-            "t=0 应整幅纸色"
+            "t=0 should be the full paper color"
         );
         let f1 = whiteboard_frame(&a, &src, 1.0, WhiteboardHand::None, None);
         assert_eq!(f1.data(), src.data());
@@ -1225,7 +1225,7 @@ mod tests {
         assert_eq!(px(&f0, 5, 5), [255, 255, 255, 255]);
         assert!(
             f0.data().chunks_exact(4).all(|p| p[0] >= 250),
-            "t=0 不应有浅灰轮廓"
+            "t=0 should have no light gray outline"
         );
         let f1 = whiteboard_frame(&a, &src, 1.0, WhiteboardHand::None, None);
         assert_eq!(f1.data(), src.data());

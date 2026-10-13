@@ -104,16 +104,16 @@ pub struct MossConfig {
 
 impl MossConfig {
     pub fn load(path: &Path) -> Result<Self> {
-        let raw: Value = serde_json::from_slice(&fs::read(path).with_context(|| format!("读取 {}", path.display()))?)
-            .context("解析 MOSS config.json")?;
+        let raw: Value = serde_json::from_slice(&fs::read(path).with_context(|| format!("read {}", path.display()))?)
+            .context("parse MOSS config.json")?;
         let text = raw
             .get("text_config")
             .and_then(Value::as_object)
-            .context("MOSS config 缺少 text_config")?;
+            .context("MOSS config is missing text_config")?;
         let audio = raw
             .get("audio_config")
             .and_then(Value::as_object)
-            .context("MOSS config 缺少 audio_config")?;
+            .context("MOSS config is missing audio_config")?;
         let audio_model_size = usize_field(audio, "d_model", 1_024);
         let audio_merge_size = usize_value(raw.get("audio_merge_size")).unwrap_or(4);
         let config = Self {
@@ -141,7 +141,7 @@ impl MossConfig {
             || config.text_heads == 0
             || config.text_kv_heads == 0
         {
-            bail!("不支持的 MOSS 配置：{config:?}");
+            bail!("unsupported MOSS config: {config:?}");
         }
         Ok(config)
     }
@@ -170,7 +170,7 @@ impl MossProcessorConfig {
     pub fn load(processor_path: Option<&Path>) -> Result<Self> {
         let mut config = Self::default();
         if let Some(processor_path) = processor_path {
-            let processor: Value = serde_json::from_slice(&fs::read(processor_path)?).context("解析 MOSS processor_config.json")?;
+            let processor: Value = serde_json::from_slice(&fs::read(processor_path)?).context("parse MOSS processor_config.json")?;
             config.audio_tokens_per_second = processor
                 .get("audio_tokens_per_second")
                 .and_then(Value::as_f64)
@@ -450,12 +450,12 @@ where
                 .min(piece_duration);
             let reason = match generation.stop_reason {
                 GenerationStopReason::Repetition => {
-                    format!("生成 {} token 后因重复循环停止", generation.token_count)
+                    format!("stopped after generating {} tokens because of a repetition loop", generation.token_count)
                 }
-                _ => format!("用满了 {} token 上限仍没写到结尾", plan.max_tokens),
+                _ => format!("reached the {} token limit without reaching the end", plan.max_tokens),
             };
             result.warnings.push(format!(
-                "{INCOMPLETE_WARNING_PREFIX}MOSS 在 {}–{} 这段{}，已保留识别出的部分，{} 之后可能缺字；可以换 Qwen3-ASR 或 Whisper 重新转录",
+                "{INCOMPLETE_WARNING_PREFIX}In the segment {}–{}, MOSS {}; the recognized part is kept, but text after {} may be missing. Try Qwen3-ASR or Whisper to transcribe again.",
                 clock(piece.offset_seconds),
                 clock(piece.offset_seconds + piece_duration),
                 reason,
@@ -673,9 +673,9 @@ mod tests {
         );
         assert!(
             progress.windows(2).all(|pair| pair[1].0 > pair[0].0),
-            "覆盖秒数必须全局严格递增：{progress:?}"
+            "covered seconds must strictly increase globally: {progress:?}"
         );
-        assert!(progress.iter().all(|(_, total)| *total == 2_400.0), "总时长必须始终是整片时长");
+        assert!(progress.iter().all(|(_, total)| *total == 2_400.0), "total duration must always be the full clip duration");
         assert_eq!(
             progress.iter().map(|(covered, _)| *covered).collect::<Vec<_>>(),
             vec![20.0, 40.0, 1_800.0, 1_815.0, 2_400.0]
@@ -883,8 +883,8 @@ mod tests {
             assert_eq!(result.rows[0].text, "real");
             assert!(!result.text.contains("[Music]"));
             assert_eq!(result.warnings.len(), 1);
-            assert!(result.warnings[0].contains("生成 144 token 后因重复循环停止"));
-            assert!(result.warnings[0].contains("0:00:10 之后可能缺字"));
+            assert!(result.warnings[0].contains("stopped after generating 144 tokens because of a repetition loop"));
+            assert!(result.warnings[0].contains("text after 0:00:10 may be missing"));
         }
     }
 
@@ -958,7 +958,7 @@ mod tests {
         let warning = &result.warnings[0];
         assert!(warning.starts_with("moss-incomplete: "), "{warning}");
         assert!(warning.contains("2:08:20–2:10:00"), "{warning}");
-        assert!(warning.contains("2:08:34 之后"), "{warning}");
+        assert!(warning.contains("text after 2:08:34"), "{warning}");
     }
 
     #[test]
@@ -978,7 +978,7 @@ mod tests {
                 on_segment: None,
                 should_cancel: Some(&mut cancel),
             },
-            |_, _| unreachable!("取消后不应再生成"),
+            |_, _| unreachable!("should not generate after cancellation"),
         )
         .unwrap_err();
         assert!(error.downcast_ref::<SegmentingCancelled>().is_some());

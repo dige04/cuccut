@@ -788,7 +788,7 @@ mod tests {
                 "Modern workflows changed.".to_owned(),
             ]
         );
-        assert!(doc.breaks.is_empty(), "优化器不得写 breaks");
+        assert!(doc.breaks.is_empty(), "the optimizer must not write breaks");
         assert_eq!(auto_table(&doc).get("g1.4"), Some(&BreakOverride::Break));
     }
 
@@ -992,7 +992,7 @@ mod tests {
         assert_eq!(texts[0], "and how AI");
         assert!(
             !texts.iter().any(|text| text.ends_with(" to")),
-            "nobreak 被越过：{texts:?}"
+            "a nobreak was crossed: {texts:?}"
         );
         assert!(texts.iter().all(|text| visual_width(text) <= 42));
         // The automatic table does not repeat keys the user has already pinned.

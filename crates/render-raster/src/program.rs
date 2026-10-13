@@ -174,11 +174,11 @@ impl ProgramSource {
 
     fn diagnostic(&self, warning: &str, frame: Option<u32>) -> PreflightDiagnostic {
         let at = frame
-            .map(|frame| format!("（程序第 {frame} 帧起）"))
+            .map(|frame| format!(" (from program frame {frame})"))
             .unwrap_or_default();
         PreflightDiagnostic {
             rule: "program-degraded",
-            message: format!("asset \"{}\"：{}{at}", self.id, describe_warning(warning)),
+            message: format!("asset \"{}\": {}{at}", self.id, describe_warning(warning)),
         }
     }
 
@@ -241,7 +241,7 @@ impl ProgramSource {
         options.font_resolver.select_font = font_selector(unmatched.clone());
         let tree = usvg::Tree::from_str(svg, &options).map_err(|e| {
             anyhow!(
-                "program-render-failed: asset \"{}\" 第 {frame} 帧的 SVG 解析失败：{e}",
+                "program-render-failed: asset \"{}\" SVG parse failed at frame {frame}: {e}",
                 self.id
             )
         })?;
@@ -250,10 +250,10 @@ impl ProgramSource {
         if let Some(first) = escaped.first() {
             let more = match escaped.len() {
                 1 => String::new(),
-                n => format!("（另有 {} 处：{}）", n - 1, escaped[1..].join("、")),
+                n => format!(" (and {} more: {})", n - 1, escaped[1..].join(", ")),
             };
             bail!(
-                "{PATH_ESCAPE}: asset \"{}\" 第 {frame} 帧：{}{more}",
+                "{PATH_ESCAPE}: asset \"{}\" at frame {frame}: {}{more}",
                 self.id,
                 escape_message("asset()", first)
             );
@@ -261,16 +261,16 @@ impl ProgramSource {
         let missing = std::mem::take(&mut *missing.lock().unwrap_or_else(|e| e.into_inner()));
         if !missing.is_empty() {
             bail!(
-                "program-file-missing: asset \"{}\" 第 {frame} 帧引用了 files 之外的文件：{}\
-                 （asset() 只能取 files 声明过的文件，路径相对文档目录）",
+                "program-file-missing: asset \"{}\" at frame {frame} references a file outside files: {}\
+                 (asset() can only read files declared in files; paths are relative to the document directory)",
                 self.id,
-                missing.join("、")
+                missing.join(", ")
             );
         }
         let (width, height) = target.unwrap_or((self.width, self.height));
         let (width, height) = (width.max(1), height.max(1));
         let mut pixmap = Pixmap::new(width, height)
-            .ok_or_else(|| anyhow!("program-render-failed: 目标尺寸 {width}×{height} 无效"))?;
+            .ok_or_else(|| anyhow!("program-render-failed: target size {width}×{height} is invalid"))?;
         let size = tree.size();
         let transform = tiny_skia::Transform::from_scale(
             width as f32 / size.width().max(1.0),
@@ -281,7 +281,7 @@ impl ProgramSource {
         }));
         if painted.is_err() {
             bail!(
-                "program-render-failed: asset \"{}\" 第 {frame} 帧光栅化时 resvg 崩溃",
+                "program-render-failed: resvg crashed while rasterizing asset \"{}\" at frame {frame}",
                 self.id
             );
         }
@@ -393,9 +393,9 @@ pub fn tag_asset(id: &str, error: anyhow::Error) -> anyhow::Error {
         Some((code, rest))
             if code.starts_with("program-") && !code.contains(char::is_whitespace) =>
         {
-            anyhow!("{code}: {tag}：{rest}")
+            anyhow!("{code}: {tag}: {rest}")
         }
-        _ => anyhow!("{tag}：{text}"),
+        _ => anyhow!("{tag}: {text}"),
     }
 }
 
@@ -437,7 +437,7 @@ fn asset_resolver(
             };
             if kind.is_none() {
                 if let Ok(mut missing) = missing.lock() {
-                    missing.push(format!("{name}（不是 PNG / JPEG / GIF / WebP / SVG）"));
+                    missing.push(format!("{name} (not PNG / JPEG / GIF / WebP / SVG)"));
                 }
             }
             kind
@@ -466,30 +466,30 @@ fn sniff(bytes: &[u8]) -> Option<&'static str> {
 fn describe_warning(warning: &str) -> String {
     let (kind, detail) = warning.split_once(':').unwrap_or((warning, ""));
     match kind {
-        "css-unsupported" => format!("CSS 属性 {detail} 画不出来，已忽略"),
-        "css-transform-unsupported" => format!("CSS transform 的 {detail}() 画不出来，已忽略"),
-        "css-filter-unsupported" => format!("CSS filter 的 {detail}() 画不出来，已忽略"),
-        "css-clip-path-unsupported" => format!("clip-path「{detail}」画不出来，已忽略"),
-        "css-mask-unsupported" => "CSS mask 画不出来，已忽略".to_owned(),
-        "css-background-unsupported" => format!("background「{detail}」画不出来，已忽略"),
-        "svg-tag-unknown" => format!("<{detail}> 不是认识的 SVG 标签，按原样输出"),
+        "css-unsupported" => format!("CSS property {detail} cannot be drawn; ignored"),
+        "css-transform-unsupported" => format!("CSS transform {detail}() cannot be drawn; ignored"),
+        "css-filter-unsupported" => format!("CSS filter {detail}() cannot be drawn; ignored"),
+        "css-clip-path-unsupported" => format!("clip-path \"{detail}\" cannot be drawn; ignored"),
+        "css-mask-unsupported" => "CSS mask cannot be drawn; ignored".to_owned(),
+        "css-background-unsupported" => format!("background \"{detail}\" cannot be drawn; ignored"),
+        "svg-tag-unknown" => format!("<{detail}> is not a recognized SVG tag; output as-is"),
         "css-blend-unsupported" => format!(
-            "mix-blend-mode「{detail}」画不出来，这一层按 normal 叠（光栅器只认 ccut spec program 的 \
-             cssBlendModes）；加色发光改用 screen，或把这层拆成单独的 program 元素、在元素上写 style.blendMode: \"plus\""
+            "mix-blend-mode \"{detail}\" cannot be drawn; this layer is composited as normal (the rasterizer only accepts the ccut spec program \
+             cssBlendModes); for additive glow use screen, or split the layer into its own program element and set style.blendMode: \"plus\" on it"
         ),
-        "font-missing" => format!("measureText 找不到字体「{detail}」，文字宽度按估算排版"),
+        "font-missing" => format!("measureText cannot find font \"{detail}\"; text width is estimated"),
         "css-backdrop-unsupported" => {
-            format!("backdrop-filter「{detail}」画不出来（只支持 div 上的滤镜函数），已忽略")
+            format!("backdrop-filter \"{detail}\" cannot be drawn (only filter functions on div are supported); ignored")
         }
         "font-family-missing" => format!(
-            "字族「{detail}」在登记的字体里找不到，这段文字改用缺省无衬线字体画；字族名写字体文件里的族名\
-             （name 表 ID 1，Google Fonts 的 static 包常带「24pt」这类后缀），并把字体登记成 font 资产"
+            "font family \"{detail}\" is not among the registered fonts; this text is drawn with the default sans-serif font instead; use the family name stored in the font file \
+             (name table ID 1; Google Fonts static packs often carry suffixes such as \"24pt\"), and register the font as a font asset"
         ),
-        "module-state" => "同一帧求值两次画出的不一样：模块顶层有跨帧的可变状态（比如组件里改写顶层的 let），\
-             单帧渲染和整片（多线程各画一段）会不一致；顶层只放只读常量，随时间变化的量从 useFrame() 算"
+        "module-state" => "evaluating the same frame twice draws different results: the module top level holds mutable state that carries across frames (for example a top-level let rewritten by a component), \
+             so single-frame rendering and full-sequence rendering (drawn in parallel segments) disagree; keep only read-only constants at the top level and compute time-varying values in useFrame()"
             .to_owned(),
         "glyph-missing" => format!(
-            "字符「{detail}」（U+{:04X}）在登记的字体里都没有字形，画成了空框；把带这个字符的字体登记成 font 资产",
+            "character \"{detail}\" (U+{:04X}) has no glyph in any registered font and is drawn as an empty box; register a font asset that contains this character",
             detail.chars().next().map_or(0, u32::from)
         ),
         _ => warning.to_owned(),
@@ -656,7 +656,7 @@ mod tests {
             "blendMode",
             "cssBlendModes",
         ] {
-            assert!(text.contains(needle), "缺 {needle}：{text}");
+            assert!(text.contains(needle), "missing {needle}: {text}");
         }
     }
 
@@ -683,7 +683,7 @@ mod tests {
             assert_eq!(blended(mode), mode != "normal", "{mode}");
         }
         for mode in ["plus-lighter", "plus-darker", "Screen"] {
-            assert!(!blended(mode), "{mode} 应当被 usvg 丢掉");
+            assert!(!blended(mode), "{mode} should be dropped by usvg");
         }
     }
 
@@ -699,7 +699,7 @@ mod tests {
         db.load_font_data(data.clone());
         let family = db.faces().next().unwrap().families[0].0.clone();
         let metrics = font_metrics(Arc::new(db));
-        let (ascent, descent) = metrics(&family, 100.0, 400, false).expect("选得到字");
+        let (ascent, descent) = metrics(&family, 100.0, 400, false).expect("a font was found");
         assert!((ascent - asc * 100.0 / upem).abs() < 1e-9, "{ascent}");
         assert!((descent + desc * 100.0 / upem).abs() < 1e-9, "{descent}");
         assert!(ascent > 50.0 && descent > 5.0, "{ascent} {descent}");

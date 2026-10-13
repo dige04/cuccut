@@ -51,7 +51,7 @@ pub use speech_doc_bridge::sentences::{SENTENCE_DERIVATION, edit_view_hash};
 /// Runs one translation. `Ok` is the result of the `translate` request.
 pub fn run(input_path: &Path, staging: &Path, control: Rc<RefCell<Control>>) -> Result<Value, Failure> {
     let input = TranslateInput::load(input_path)?;
-    std::fs::create_dir_all(staging).map_err(|error| Failure::new("STAGING_WRITE_FAILED", format!("建不了 staging：{error}")))?;
+    std::fs::create_dir_all(staging).map_err(|error| Failure::new("STAGING_WRITE_FAILED", format!("cannot create staging: {error}")))?;
     let lang = input.target_language.clone();
     let media = MediaFacts {
         asset_id: input.media.asset_id.clone(),
@@ -67,17 +67,17 @@ pub fn run(input_path: &Path, staging: &Path, control: Rc<RefCell<Control>>) -> 
         speech: &input.speech,
         translations: base,
     })
-    .map_err(|error| Failure::new("INPUT_UNREADABLE", format!("转写读不进字幕与翻译核心：{error}")))?;
+    .map_err(|error| Failure::new("INPUT_UNREADABLE", format!("the transcript cannot be read into the subtitle and translation core: {error}")))?;
     if primary_subtag(&lang) == primary_subtag(&doc.lang) {
         return Err(Failure::new(
             "INVALID_PARAMS",
-            format!("源语言 {} 与目标语言 {lang} 相同，没有发出翻译请求", doc.lang),
+            format!("source language {} is the same as target language {lang}; no translation request was sent", doc.lang),
         ));
     }
     let cues = derive_cues(&doc, &cue_params_for_doc(&doc));
     let sentences = derive_sentences(&doc, &cues);
     if sentences.is_empty() {
-        return Err(Failure::new("INPUT_UNREADABLE", "转写里没有可翻译的句子"));
+        return Err(Failure::new("INPUT_UNREADABLE", "the transcript has no sentences to translate"));
     }
     let total = sentences.len();
     // Sentences for an in-place refresh; `None` means a whole new translation.
@@ -85,7 +85,7 @@ pub fn run(input_path: &Path, staging: &Path, control: Rc<RefCell<Control>>) -> 
     if let Some(targets) = &targets
         && let Some(unknown) = targets.iter().find(|id| !sentences.iter().any(|sentence| &sentence.id == *id))
     {
-        return Err(Failure::new("INPUT_UNREADABLE", format!("要重译的句子 {unknown} 不在转写里")));
+        return Err(Failure::new("INPUT_UNREADABLE", format!("sentence {unknown} to retranslate is not in the transcript")));
     }
     // Progress denominator: during a refresh it is the number of sentences to re-translate. Per-page progress only makes sense for a whole new translation.
     let goal = targets.as_ref().map_or(total, BTreeSet::len);
@@ -138,7 +138,7 @@ pub fn run(input_path: &Path, staging: &Path, control: Rc<RefCell<Control>>) -> 
                 Err(error @ (LlmError::Terminal(_) | LlmError::Cancelled)) => return Err(stopped(error, &llm, &control, &checkpoint)),
                 Err(error) => {
                     report.brief = "degraded";
-                    report.advisories.push(format!("译向简报没有生成，按没有简报翻译：{error}"));
+                    report.advisories.push(format!("the target-direction brief was not generated; translating without a brief: {error}"));
                     from_seed(&seed)
                 }
             }
@@ -220,7 +220,7 @@ pub fn run(input_path: &Path, staging: &Path, control: Rc<RefCell<Control>>) -> 
             return Err(Failure::with_details(
                 "MODEL_OUTPUT_INVALID",
                 format!(
-                    "{} 句送翻之后没有拿到合格的译文；已完成的页保留在检查点里，重试只补这些句子",
+                    "{} sentences were sent for translation but no valid translation came back; completed pages stay in the checkpoint, and a retry only redoes these sentences",
                     outcome.missing_sentences.len()
                 ),
                 json!({ "missingSentences": outcome.missing_sentences, "translatedSentences": checkpoint.trans.len() }),
@@ -270,7 +270,7 @@ pub fn run(input_path: &Path, staging: &Path, control: Rc<RefCell<Control>>) -> 
         });
         report
             .advisories
-            .extend(outcome.violations.iter().map(|violation| format!("对齐：{violation}")));
+            .extend(outcome.violations.iter().map(|violation| format!("alignment: {violation}")));
         checkpoint.phase = Phase::Aligned;
         checkpoint.capture(&doc, &lang, true);
         checkpoints.save(&checkpoint, total)?;
@@ -312,7 +312,7 @@ pub fn run(input_path: &Path, staging: &Path, control: Rc<RefCell<Control>>) -> 
             });
             report
                 .advisories
-                .extend(outcome.violations.iter().map(|violation| format!("黏结收尾：{violation}")));
+                .extend(outcome.violations.iter().map(|violation| format!("row-sticking tail: {violation}")));
         }
         checkpoint.phase = Phase::Finished;
         checkpoint.capture(&doc, &lang, true);
@@ -339,12 +339,12 @@ pub fn run(input_path: &Path, staging: &Path, control: Rc<RefCell<Control>>) -> 
             source_basis: Some(&basis),
         },
     )
-    .map_err(|error| Failure::new("MODEL_OUTPUT_INVALID", format!("译文写不回 v3 的格式：{error}")))?;
+    .map_err(|error| Failure::new("MODEL_OUTPUT_INVALID", format!("the translation cannot be written back in v3 format: {error}")))?;
     let mut body: TranslationBody = written
         .translations
         .into_iter()
         .find(|body| body.language == lang)
-        .ok_or_else(|| Failure::new("MODEL_OUTPUT_INVALID", "没有得到目标语言的译文"))?;
+        .ok_or_else(|| Failure::new("MODEL_OUTPUT_INVALID", "no translation in the target language was returned"))?;
     // The base draft keeps its own sourceBasis (the bridge's rule); what is written here is the source text read this time. glossaryRef records the terms in effect when the whole translation was translated, and refreshing a few sentences does not change it.
     body.source_basis = basis;
     if input.translation.is_none() {
@@ -356,7 +356,7 @@ pub fn run(input_path: &Path, staging: &Path, control: Rc<RefCell<Control>>) -> 
     let stream = derive_trans_cues(&doc, &sentences, &lang);
     let target_cues = project_cues(&stream, &body, timescale, duration)?;
 
-    write_json(staging, TRANSLATION_FILE, &serde_json::to_value(&body).expect("译文正文可以序列化"))?;
+    write_json(staging, TRANSLATION_FILE, &serde_json::to_value(&body).expect("translation body can be serialized"))?;
     write_json(
         staging,
         CUES_FILE,
@@ -421,9 +421,9 @@ fn stopped(error: LlmError, llm: &StdioLlm, control: &Rc<RefCell<Control>>, chec
     match error {
         LlmError::Cancelled => {
             let message = if control.borrow().closed() {
-                "stdin 已关闭，停在这里"
+                "stdin is closed; stopping here"
             } else {
-                "已取消"
+                "cancelled"
             };
             Failure::with_details("CANCELLED", message, details)
         }
@@ -443,7 +443,7 @@ fn stopped(error: LlmError, llm: &StdioLlm, control: &Rc<RefCell<Control>>, chec
 fn checkpoint_key(doc: &TranscriptDoc, input: &TranslateInput, instructions: Option<&str>) -> String {
     let mut settings = vec![format!("instructions={}", instructions.unwrap_or_default())];
     if let (Some(base), Some(sentences)) = (&input.translation, &input.sentences) {
-        settings.push(format!("base={}", serde_json::to_string(base).expect("译文正文可以序列化")));
+        settings.push(format!("base={}", serde_json::to_string(base).expect("translation body can be serialized")));
         settings.push(format!("sentences={}", sentences.join("\u{1f}")));
     }
     for term in &input.glossary {
@@ -509,9 +509,9 @@ fn bilingual_anchors(brief: &DocumentBrief) -> Vec<BilingualAnchor> {
 
 fn media_seconds(input: &TranslateInput) -> Result<f64, String> {
     let duration = &input.media.duration;
-    let ticks: f64 = duration.ticks.parse::<i64>().map_err(|_| "素材时长的 ticks 不是整数".to_owned())? as f64;
+    let ticks: f64 = duration.ticks.parse::<i64>().map_err(|_| "the media duration ticks is not an integer".to_owned())? as f64;
     if duration.timescale <= 0 {
-        return Err("素材时长的 timescale 应为正数".into());
+        return Err("the media duration timescale must be positive".into());
     }
     Ok(ticks / duration.timescale as f64)
 }
@@ -527,7 +527,7 @@ fn project_cues(stream: &[TransCue], body: &TranslationBody, timescale: i64, dur
     let to_ticks = |seconds: f64| {
         seconds_to_ticks(seconds.clamp(0.0, duration.max(0.0)), timescale)
             .map(|rounded| rounded.ticks)
-            .map_err(|error| Failure::new("MODEL_OUTPUT_INVALID", format!("字幕时间换不成刻度：{error}")))
+            .map_err(|error| Failure::new("MODEL_OUTPUT_INVALID", format!("cannot convert subtitle time to ticks: {error}")))
     };
     let mut ordered: Vec<&TransCue> = stream.iter().collect();
     ordered.sort_by(|a, b| a.start.total_cmp(&b.start).then(a.end.total_cmp(&b.end)));
@@ -559,8 +559,8 @@ fn project_cues(stream: &[TransCue], body: &TranslationBody, timescale: i64, dur
 fn write_json(staging: &Path, name: &str, value: &Value) -> Result<(), Failure> {
     let path = staging.join(name);
     let tmp = path.with_extension("json.tmp");
-    let bytes = serde_json::to_vec(value).expect("JSON 可以序列化");
+    let bytes = serde_json::to_vec(value).expect("JSON can be serialized");
     std::fs::write(&tmp, bytes)
         .and_then(|()| std::fs::rename(&tmp, &path))
-        .map_err(|error| Failure::new("STAGING_WRITE_FAILED", format!("{name} 写不进 staging：{error}")))
+        .map_err(|error| Failure::new("STAGING_WRITE_FAILED", format!("cannot write {name} to staging: {error}")))
 }

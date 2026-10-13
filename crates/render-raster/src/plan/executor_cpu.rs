@@ -52,12 +52,12 @@ pub trait PassExecutor {
         inputs: &[(Arc<Pixmap>, f64)],
     ) -> Result<Pixmap> {
         let mut out = Pixmap::new(surface.width, surface.height)
-            .ok_or_else(|| anyhow!("surface 尺寸无效"))?;
+            .ok_or_else(|| anyhow!("surface size is invalid"))?;
         if inputs
             .iter()
             .any(|(p, _)| p.width() != surface.width || p.height() != surface.height)
         {
-            bail!("effect-input-mismatch: accumulate 尺寸不同");
+            bail!("effect-input-mismatch: accumulate size differs");
         }
         let total: f64 = inputs.iter().map(|(_, w)| *w).sum();
         if !total.is_finite()
@@ -87,7 +87,7 @@ pub trait PassExecutor {
         tf: &crate::drawop::Mat6,
     ) -> Result<Pixmap> {
         let mut out = Pixmap::new(surface.width, surface.height)
-            .ok_or_else(|| anyhow!("surface 尺寸无效"))?;
+            .ok_or_else(|| anyhow!("surface size is invalid"))?;
         out.draw_pixmap(
             0,
             0,
@@ -109,7 +109,7 @@ pub trait PassExecutor {
         mode: crate::drawop::MatteMode,
     ) -> Result<Pixmap> {
         if input.width() != mask.width() || input.height() != mask.height() {
-            bail!("effect-input-mismatch: mask 尺寸与 input 不同");
+            bail!("effect-input-mismatch: mask size differs from input");
         }
         let mut out = input.clone();
         crate::raster::apply_matte(&mut out, mask, mode);
@@ -128,7 +128,7 @@ pub trait PassExecutor {
             || base.width() != mask.width()
             || base.height() != mask.height()
         {
-            bail!("effect-input-mismatch: backdrop 尺寸不一致");
+            bail!("effect-input-mismatch: backdrop size mismatch");
         }
         let mut out = base.clone();
         let opacity = opacity.clamp(0.0, 1.0);
@@ -184,15 +184,15 @@ impl PassExecutor for CpuExecutor {
         if let Some(clear) = surface.clear {
             // The clear color takes effect before DrawOps; a `Clear` instruction overrides it, so the two do not conflict.
             let mut base = Pixmap::new(surface.width, surface.height)
-                .ok_or_else(|| anyhow!("surface {:?} 尺寸非法", surface.id))?;
-            base.fill(
+                .ok_or_else(|| anyhow!("surface {:?} has an invalid size", surface.id))?;
+    base.fill(
                 tiny_skia::Color::from_rgba(
                     clear[0].clamp(0.0, 1.0),
                     clear[1].clamp(0.0, 1.0),
                     clear[2].clamp(0.0, 1.0),
                     clear[3].clamp(0.0, 1.0),
                 )
-                .ok_or_else(|| anyhow!("surface {:?} 清屏色非法", surface.id))?,
+                .ok_or_else(|| anyhow!("surface {:?} has an invalid clear color", surface.id))?,
             );
             base.draw_pixmap(
                 0,
@@ -240,11 +240,11 @@ impl PassExecutor for CpuExecutor {
         inputs: &[(CompositeInput, Arc<Pixmap>, Option<Arc<Pixmap>>)],
     ) -> Result<Pixmap> {
         if inputs.iter().any(|(input, _, _)| input.mask.is_some()) {
-            bail!("effect-capability-unsupported: composite mask 需要 mask.* 效果（阶段 4B）");
+            bail!("effect-capability-unsupported: composite mask needs mask.* effects (stage 4B)");
         }
         let mut out = Pixmap::new(surface.width, surface.height)
-            .ok_or_else(|| anyhow!("surface {:?} 尺寸非法", surface.id))?;
-        let mut blank = true;
+            .ok_or_else(|| anyhow!("surface {:?} has an invalid size", surface.id))?;
+let mut blank = true;
         for (input, pixmap, _) in inputs {
             if composite_layer(&mut out, pixmap, input.opacity, input.blend, blank) {
                 blank = false;
@@ -484,7 +484,7 @@ fn execute<E: PassExecutor, M: FrameMedia>(
         .any(|surface| surface.lifetime == super::SurfaceLifetime::External);
     if has_external && cache.is_some() {
         bail!(
-            "frameplan-external-uncacheable: 外部输入 surface 的内容不在计划里，不能进 surface 缓存"
+            "frameplan-external-uncacheable: the contents of an external input surface are not in the plan, so they cannot enter the surface cache"
         );
     }
     for surface in &plan.surfaces {
@@ -492,14 +492,14 @@ fn execute<E: PassExecutor, M: FrameMedia>(
             && !external.contains_key(&surface.id.0)
         {
             bail!(
-                "frameplan-external-missing: 计划声明 {:?} 由调用方供图，但没有提供",
+                "frameplan-external-missing: the plan declares {:?} as supplied by the caller, but none was provided",
                 surface.id
             );
         }
     }
     if plan.capability != executor.profile().fingerprint() {
         bail!(
-            "frameplan-capability-mismatch: 计划按 {:016x} 编译，执行器是 {:016x}",
+            "frameplan-capability-mismatch: plan was compiled for {:016x}, but the executor is {:016x}",
             plan.capability,
             executor.profile().fingerprint()
         );
@@ -511,7 +511,7 @@ fn execute<E: PassExecutor, M: FrameMedia>(
     // Folded shape: exactly the same path as record + rasterize.
     if plan.is_folded() {
         let RenderPass::Draw { ops, .. } = &plan.passes[0] else {
-            unreachable!("is_folded 已判定为 Draw");
+            unreachable!("is_folded already classified it as Draw");
         };
         return executor.draw(output_surface, ops, media);
     }
@@ -528,7 +528,7 @@ fn execute<E: PassExecutor, M: FrameMedia>(
     let take = |live: &BTreeMap<u32, Arc<Pixmap>>, id: SurfaceId| -> Result<Arc<Pixmap>> {
         live.get(&id.0)
             .cloned()
-            .ok_or_else(|| anyhow!("frameplan-surface-missing: {id:?} 尚未产出"))
+            .ok_or_else(|| anyhow!("frameplan-surface-missing: {id:?} has not been produced yet"))
     };
 
     let mut uses = BTreeMap::<u32, usize>::new();
@@ -768,7 +768,7 @@ mod tests {
                                 );
                                 assert!(
                                     expected.data() == public.data(),
-                                    "公开入口 {width}x{height} {blend:?} opacity {opacity}"
+                                    "public entry {width}x{height} {blend:?} opacity {opacity}"
                                 );
                             }
                         }

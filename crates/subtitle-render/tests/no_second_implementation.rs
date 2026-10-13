@@ -23,7 +23,7 @@ const ALLOWED: &[(&str, &str, &str)] = &[
     (
         "timeline/src/effects.rs",
         "const REFERENCE_SHORT_EDGE",
-        "参考短边的唯一定义处；本 crate 与 timeline-render / render-raster 都从这里取。",
+        "the single definition site of the reference short edge; this crate, timeline-render and render-raster all read it from here.",
     ),
     // v2 also had `fn media_fingerprint` in `ccut-serve/src/endpoints/media.rs` (a one-line forwarding host shell). `ccut-serve` is not ported (architecture design §13.6), so the entry is removed with it. Otherwise the self-check below would report it as stale.
 ];
@@ -34,7 +34,7 @@ fn repo_root() -> PathBuf {
     while !dir.join(".git").exists() {
         dir = dir
             .parent()
-            .expect("从 crate 目录向上找不到仓库根（.git）")
+            .expect("could not find the repository root (.git) by walking up from the crate directory")
             .to_path_buf();
     }
     dir
@@ -85,7 +85,7 @@ fn scan(needles: &[&str], guidance: &str) {
     }
     assert!(
         files.len() > 200,
-        "扫描只找到 {} 个 .rs 文件，路径大概错了：{SCANNED:?}",
+        "scan only found {} .rs files, the path is probably wrong: {SCANNED:?}",
         files.len()
     );
 
@@ -119,7 +119,7 @@ fn scan(needles: &[&str], guidance: &str) {
 
     assert!(
         hits.is_empty(),
-        "字幕内核出现了第二份实现（主方案 D2）：\n{}\n\n{guidance}",
+        "a second implementation of the subtitle kernel appeared (main plan D2):\n{}\n\n{guidance}",
         hits.join("\n")
     );
 }
@@ -136,8 +136,8 @@ fn no_host_defines_its_own_overlay_render_plan() {
             "fn render_overlay_png",
             "fn compile_overlay_plan",
         ],
-        "宿主要 overlay 帧就调 `subtitle_render::OverlayRenderPlan`；\
-         缺什么接口就在内核里加，不要在宿主侧另起一份。",
+        "a host that needs overlay frames calls `subtitle_render::OverlayRenderPlan`; \
+         add whatever interface is missing to the kernel, do not start a second copy on the host side.",
     );
 }
 
@@ -154,8 +154,8 @@ fn no_host_reimplements_the_subtitle_style_projection() {
             "enum LineKind {",
             "struct LineStyle",
         ],
-        "样式投影是 Mac / Web / CLI 三端字号与颜色的唯一真相（见 \
-         `subtitle_render::resolve_line_style` 的文档）：另写一份 = 三端分叉。",
+        "the style projection is the single source of truth for font size and colour across Mac / Web / CLI \
+         (see the docs of `subtitle_render::resolve_line_style`): writing another copy = three-way fork.",
     );
 }
 
@@ -168,8 +168,8 @@ fn no_host_redeclares_the_shared_layout_ratios() {
             "const DEFAULT_BILINGUAL_ORIG_SCALE",
             "const DEFAULT_TRANSLATION_RATIO",
         ],
-        "参考短边住在 `timeline::REFERENCE_SHORT_EDGE`，双语字号比例住在 \
-         `subtitle_render`；复制字面量的那一端会在下次调参时独自跑偏。",
+        "the reference short edge lives in `timeline::REFERENCE_SHORT_EDGE`, and the bilingual font-size ratio lives in \
+         `subtitle_render`; the side that copies the literal will drift on its own at the next tuning.",
     );
 }
 
@@ -184,8 +184,8 @@ fn no_host_reconstructs_the_spectrum_cache_path() {
             "fn spectrum_cache_path",
             "fn media_fingerprint",
         ],
-        "频谱缓存路径走 `subtitle_render::paths::spectrum_cache_path`；\
-         CLI 的 `services::spectrum::cache_path` 已经是转发别名。",
+        "the spectrum cache path goes through `subtitle_render::paths::spectrum_cache_path`; \
+         the CLI's `services::spectrum::cache_path` is already a forwarding alias.",
     );
 }
 
@@ -196,7 +196,7 @@ fn no_host_reconstructs_the_spectrum_cache_path() {
 /// The list follows the code. The `stylepane` / `tile_beat` families were moved down into `ccut-editor-core` in P2 batch four (`e8d2ee26`) and batch twelve (`bdce1fd6`), and the App-side files of the same names were deleted. So this checks both the **new home** and the half still in the App. A file on the list that is missing panics directly. That is exactly the alarm this gate is meant to raise: the next move must come back and update this list, rather than the scan silently finding nothing.
 // v3: the named files were in v2's `ccut-editor-core` and `apps/cuccut`. v3 does not yet have a Rust implementation of the style gallery.
 #[test]
-#[ignore = "点名 v2 的 ccut-editor-core 与 apps/cuccut 的样式画廊源文件：待 ccut-editor-core 移植"]
+#[ignore = "names the v2 ccut-editor-core and the apps/cuccut style gallery source files: waiting for the ccut-editor-core port"]
 fn subtitle_style_gallery_has_no_prototype_render_math() {
     let root = repo_root();
     // The files named here are the data-fetching surface of the App-side style gallery: the card catalog, the hover-to-preview overlay, and the mini-sample beat. `adapters/stylepane.rs` used to be here too, but `e8d2ee26` deleted it when it moved the stylepane cluster down into `ccut-editor-core`. Core's copy is covered by the full scan of A–D above, so it is no longer named by this entry.
@@ -213,7 +213,7 @@ fn subtitle_style_gallery_has_no_prototype_render_math() {
     );
     assert!(
         files.len() > 4,
-        "样式画廊名单只剩 {} 个文件：apps/cuccut/src/app/editor/stylepane 大概搬家了",
+        "the style gallery list has only {} files left: apps/cuccut/src/app/editor/stylepane has probably moved",
         files.len()
     );
 
@@ -230,9 +230,9 @@ fn subtitle_style_gallery_has_no_prototype_render_math() {
         // When a named file is renamed or moved, this must fail loudly and say **which one and what to do**. The original `expect("style gallery source is readable")` left only a bare `NotFound`. After `adapters/stylepane.rs` was deleted, this gate stayed red for a long time and nobody could tell why.
         let text = fs::read_to_string(&file).unwrap_or_else(|err| {
             panic!(
-                "读不到点名的样式画廊源文件 {}：{err}\n\
-                 它被改名或搬走了就在本测试的 `files` 列表里同步——删掉这一行等于\
-                 悄悄放弃这一份的覆盖，要删就在提交信息里写清去向。",
+                "cannot read the named style gallery source file {}: {err}\n\
+                 If it was renamed or moved, update it in this test's `files` list. Deleting the line silently \
+                 gives up coverage of that file; if you must delete it, state where it went in the commit message.",
                 file.strip_prefix(&root).unwrap_or(&file).display()
             )
         });
@@ -255,8 +255,8 @@ fn subtitle_style_gallery_has_no_prototype_render_math() {
     }
     assert!(
         hits.is_empty(),
-        "App 字幕样式画廊复制了原型渲染数学：\n{}\n\n把样式 blob 交给 \
-         subtitle_render，让 tile/stage/export 继续共享同一份排版。",
+        "The App subtitle style gallery copies the prototype rendering maths:\n{}\n\nHand the style blob to \
+         subtitle_render so tile/stage/export keep sharing one layout.",
         hits.join("\n")
     );
 }
@@ -294,12 +294,12 @@ fn the_allowlist_has_no_stale_entries() {
             })
         });
         if !live {
-            stale.push(format!("{path} 的 `{needle}`（{reason}）"));
+            stale.push(format!("{path}: `{needle}` ({reason})"));
         }
     }
     assert!(
         stale.is_empty(),
-        "ALLOWED 里这些条目已经不再命中（文件没了，或那一行已删/已改名），\n         请删掉条目：\n{}",
+        "these ALLOWED entries no longer match (the file is gone, or that line was deleted or renamed),\n         please remove the entries:\n{}",
         stale.join("\n")
     );
 }

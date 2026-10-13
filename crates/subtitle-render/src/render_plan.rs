@@ -237,7 +237,7 @@ pub fn sentence_translation_coverage(document: &Value) -> (usize, usize) {
 fn burn_in_mode(document: &Value, mode_override: Option<&str>) -> Result<Option<StudioMode>> {
     match mode_override {
         Some(value) => Ok(Some(
-            StudioMode::parse(value).ok_or_else(|| anyhow!("未知字幕显示模式：{value}"))?,
+            StudioMode::parse(value).ok_or_else(|| anyhow!("unknown subtitle display mode: {value}"))?,
         )),
         None => Ok(effective_mode(
             document.get("style").unwrap_or(&Value::Null),
@@ -426,23 +426,23 @@ fn external_media_view<'a>(
 #[cfg(feature = "host")]
 pub fn read_project_spectrum(project: &Path, source_id: &str, element_id: &str) -> Result<Vec<u8>> {
     let hint = format!(
-        "先运行 `ccut spectrum {} --src {source_id}` 生成频谱缓存",
+        "run `ccut spectrum {} --src {source_id}` first to generate the spectrum cache",
         project.display()
     );
     let media = crate::paths::project_media_path(project, source_id)
-        .with_context(|| format!("元素 {element_id} 的音频源 {source_id} 找不到媒体；{hint}"))?;
+        .with_context(|| format!("element {element_id}: audio source {source_id} has no media file; {hint}"))?;
     let path = crate::paths::spectrum_cache_path(project, &media)
-        .with_context(|| format!("元素 {element_id} 的频谱缓存路径无法确定；{hint}"))?;
+        .with_context(|| format!("element {element_id}: cannot determine the spectrum cache path; {hint}"))?;
     let bytes = fs::read(&path).map_err(|error| {
         anyhow!(
-            "元素 {element_id} 需要音频源 {source_id} 的 BCS1 频谱，但 {} 不可读（{error}）；{hint}",
+            "element {element_id} needs the BCS1 spectrum of audio source {source_id}, but {} is unreadable ({error}); {hint}",
             path.display()
         )
     })?;
     // Validate once up front: a bad cache should be explained at preflight, naming which element and which source.
     waveform::bcs1::parse(&bytes).with_context(|| {
         format!(
-            "元素 {element_id} 的频谱缓存 {} 无效；{hint}",
+            "element {element_id}: spectrum cache {} is invalid; {hint}",
             path.display()
         )
     })?;
@@ -529,7 +529,7 @@ impl TemplateLayer {
             text,
             false,
         )
-        .context("渲染模板层")
+        .context("render template layer")
     }
 }
 
@@ -661,30 +661,30 @@ fn load_timeline_lottie_source(
     use render_raster::source::{Lottie, PrepareCtx, VisualSource};
     let label = path.to_string_lossy();
     let mut lottie = Lottie::parse(source_id, &label, bytes)
-        .with_context(|| format!("lottie source {source_id} 解析失败"))?;
+        .with_context(|| format!("lottie source {source_id} failed to parse"))?;
     let lottie_dir = path.parent().map(Path::to_path_buf).unwrap_or_default();
     let mut loaded = Vec::new();
     for requirement in lottie.image_requirements().to_vec() {
         let (bytes, label) = match (&requirement.embedded, &requirement.path) {
-            (Some(inline), _) => (inline.clone(), format!("<内嵌 {}>", requirement.id)),
+            (Some(inline), _) => (inline.clone(), format!("<embedded {}>", requirement.id)),
             (None, Some(relative)) => {
                 let child = lottie_dir.join(relative);
                 let bytes = fs::read(&child).with_context(|| {
                     format!(
-                        "lottie source {source_id}：读子资源 {} 失败",
+                        "lottie source {source_id}: failed to read child asset {}",
                         child.display()
                     )
                 })?;
                 (bytes, child.display().to_string())
             }
             (None, None) => bail!(
-                "lottie source {source_id}：子资源 \"{}\" 既不是内嵌也没有路径",
+                "lottie source {source_id}: child asset \"{}\" is neither embedded nor has a path",
                 requirement.id
             ),
         };
         let pixmap = requirement
             .decode(&bytes)
-            .with_context(|| format!("lottie source {source_id}：子资源 {label} 解码失败"))?;
+            .with_context(|| format!("lottie source {source_id}: failed to decode child asset {label}"))?;
         let pixmap = Arc::new(pixmap);
         assets
             .images
@@ -698,10 +698,10 @@ fn load_timeline_lottie_source(
     let budget = PrepareCtx::default();
     lottie
         .prepare(&budget)
-        .with_context(|| format!("lottie source {source_id} 预备失败"))?;
+        .with_context(|| format!("lottie source {source_id} failed to prepare"))?;
     lottie
         .probe()
-        .with_context(|| format!("lottie source {source_id} 探测失败"))?;
+        .with_context(|| format!("lottie source {source_id} failed to probe"))?;
     assets
         .source_diagnostics
         .extend(lottie.diagnostics().iter().cloned());
@@ -750,7 +750,7 @@ fn load_timeline_image_source(
                         Ok(())
                     }
                     Err(image_error) => bail!(
-                        "解码 image source {}：动图解码：{animated_error:#}；静态解码：{image_error:#}",
+                        "failed to decode image source {}: animated decode: {animated_error:#}; static decode: {image_error:#}",
                         path.display()
                     ),
                 };
@@ -758,7 +758,7 @@ fn load_timeline_image_source(
         }
     }
     let pixmap = decode_image(&path.to_string_lossy(), bytes)
-        .with_context(|| format!("解码 image source {}", path.display()))?;
+        .with_context(|| format!("decode image source {}", path.display()))?;
     assets.images.insert(source_id.to_owned(), Arc::new(pixmap));
     Ok(())
 }
@@ -896,7 +896,7 @@ impl OverlayRenderPlan {
             && matches!(mode, StudioMode::Translated | StudioMode::Bilingual)
             && !document_has_translation(&document)
         {
-            bail!("当前 Studio 投影没有译文，无法导出译文或双语视频");
+            bail!("the current Studio projection has no translation; cannot export translated or bilingual video");
         }
         let document = overlay_document_with_live_timeline_owned(project, document.into_owned())?;
         let mut plan = Self::compile_with_fonts(
@@ -1005,11 +1005,11 @@ impl OverlayRenderPlan {
         fonts: Vec<Vec<u8>>,
     ) -> Result<Self> {
         if fonts.is_empty() {
-            bail!("compile_with_injected_fonts 至少需要一份 fallback 字体");
+            bail!("compile_with_injected_fonts needs at least one fallback font");
         }
         for (index, font) in fonts.iter().enumerate() {
             if font.is_empty() {
-                bail!("compile_with_injected_fonts 的第 {index} 份字体是空字节");
+                bail!("fallback font #{index} passed to compile_with_injected_fonts is empty");
             }
         }
         Self::compile_with_font_engine(
@@ -1091,7 +1091,7 @@ impl OverlayRenderPlan {
         let has_translation = !translation_inputs.is_empty();
         if includes.subtitles {
             if matches!(mode, StudioMode::Translated | StudioMode::Bilingual) && !has_translation {
-                bail!("当前 Studio 投影没有译文，无法导出译文或双语视频");
+                bail!("the current Studio projection has no translation; cannot export translated or bilingual video");
             }
         }
         // Only after the translation precondition has been verified is the full original text materialized into TimedItems. The failure path should not allocate every Word/String for an 110k-word long project. This is also the low-peak guarantee of compile_with (which does not go through the project timeline projection).
@@ -1109,7 +1109,7 @@ impl OverlayRenderPlan {
             Vec::new()
         };
         if includes.subtitles && mode == StudioMode::Bilingual && cues.is_empty() {
-            bail!("当前 Studio 投影没有原文字幕，无法导出双语视频");
+            bail!("the current Studio projection has no source subtitles; cannot export bilingual video");
         }
         // In translation mode, sentences missing a translation contribute no input: that stretch of the picture is left blank (not even the subtitle background box is drawn). The original text is never used in place of the translation. The number of missing sentences is recorded by `sentence_translation_coverage` into the export envelope's `missingTranslations`, and a `partial-translation` warning is emitted. Leaving it blank is a “visible missing translation” only when paired with the envelope. Otherwise a few sentences would just quietly disappear.
         let translations = timed_inputs(&translation_inputs, &style);
@@ -1222,7 +1222,7 @@ impl OverlayRenderPlan {
             .into_iter()
             .filter(|family| !text.has_family(family))
             .map(|family| {
-                format!("字体 {family:?} 在当前字体库中不可用，将使用 Noto Sans SC fallback")
+                format!("font {family:?} is not available in the current font library; falling back to Noto Sans SC")
             })
             .collect();
         // `--no-*` does not change the document, but it decides which elements are drawn, so it must form its own segment of the cache key. The quality preset does not take part: it changes only the bitrate, not any pixel.
@@ -1519,7 +1519,7 @@ impl OverlayRenderPlan {
             {
                 let Some(start) = raw.get("start").and_then(Value::as_f64) else {
                     self.warnings.push(format!(
-                        "元素 {} 的 start 词锚无法解析，已跳过渲染",
+                        "element {}: start word anchor cannot be resolved; rendering skipped",
                         raw.get("id").and_then(Value::as_str).unwrap_or("<unknown>")
                     ));
                     continue;
@@ -1547,7 +1547,7 @@ impl OverlayRenderPlan {
                 }
                 let element: Element = serde_json::from_value(normalized).with_context(|| {
                     format!(
-                        "解析 timeline element {}",
+                        "parse timeline element {}",
                         raw.get("id").and_then(Value::as_str).unwrap_or("<unknown>")
                     )
                 })?;
@@ -1629,14 +1629,14 @@ impl OverlayRenderPlan {
                 TimelineDocument::default()
             } else {
                 serde_json::from_str::<TimelineDocument>(&contents)
-                    .with_context(|| format!("解析 {}", timeline_path.display()))?
+                    .with_context(|| format!("parse {}", timeline_path.display()))?
             }
         } else {
             TimelineDocument::default()
         };
         timeline
             .validate()
-            .map_err(|error| anyhow!("timeline.json 无效：{error}"))?;
+            .map_err(|error| anyhow!("timeline.json is invalid: {error}"))?;
         self.main = document
             .pointer("/timeline/main")
             .filter(|value| value.is_object())
@@ -1673,7 +1673,7 @@ impl OverlayRenderPlan {
             if let Some(previous) = required_sources.insert(source_id.clone(), decoder)
                 && previous != decoder
             {
-                bail!("source {source_id} 被 image/video 两种元素 kind 同时引用，无法确定解码器");
+                bail!("source {source_id} is referenced by both image and video element kinds; cannot determine the decoder");
             }
         }
 
@@ -1715,12 +1715,12 @@ impl OverlayRenderPlan {
                 match decoder {
                     TimelineSourceDecoder::Image => {
                         let bytes = fs::read(&path)
-                            .with_context(|| format!("读取 image source {}", path.display()))?;
+                            .with_context(|| format!("read image source {}", path.display()))?;
                         load_timeline_image_source(&mut assets, &source_id, &path, &bytes)?;
                     }
                     TimelineSourceDecoder::Lottie => {
                         let bytes = fs::read(&path)
-                            .with_context(|| format!("读取 lottie source {}", path.display()))?;
+                            .with_context(|| format!("read lottie source {}", path.display()))?;
                         load_timeline_lottie_source(&mut assets, &source_id, &path, &bytes, None)?;
                     }
                     TimelineSourceDecoder::Video => {
@@ -1749,7 +1749,7 @@ impl OverlayRenderPlan {
                 }
                 failed_sources.insert(source_id.clone());
                 self.warn_once(format!(
-                    "预览已跳过媒体 source {source_id} 及其元素：{error:#}"
+                    "preview skipped media source {source_id} and its elements: {error:#}"
                 ));
             }
         }
@@ -1814,7 +1814,7 @@ impl OverlayRenderPlan {
                     continue;
                 }
                 let load = fs::read(&path)
-                    .with_context(|| format!("读取 {}", path.display()))
+                    .with_context(|| format!("read {}", path.display()))
                     .and_then(|bytes| {
                         load_timeline_lottie_source(
                             assets,
@@ -1826,7 +1826,7 @@ impl OverlayRenderPlan {
                     });
                 if let Err(error) = load {
                     self.warn_once(format!(
-                        "贴纸 source {source_id} 换色失败，按原色渲染：{error:#}"
+                        "sticker source {source_id} recolor failed; rendering in original colors: {error:#}"
                     ));
                 }
                 continue;
@@ -1845,7 +1845,7 @@ impl OverlayRenderPlan {
                 Ok(svg) => svg,
                 Err(error) => {
                     self.warn_once(format!(
-                        "贴纸 source {source_id} 换色失败，按原色渲染：读取 {}：{error}",
+                        "sticker source {source_id} recolor failed; rendering in original colors: read {}: {error}",
                         path.display()
                     ));
                     continue;
@@ -1855,7 +1855,7 @@ impl OverlayRenderPlan {
             match load_timeline_image_source(assets, &variant, &path, recolored.as_bytes()) {
                 Ok(()) => {}
                 Err(error) => self.warn_once(format!(
-                    "贴纸 source {source_id} 换色后无法光栅，按原色渲染：{error:#}"
+                    "sticker source {source_id} could not be rasterized after recoloring; rendering in original colors: {error:#}"
                 )),
             }
         }
@@ -1885,7 +1885,7 @@ impl OverlayRenderPlan {
         // The lookup table for sample times (see the field docs of `viz_projection`). It is built only when there really is a visualizer element. A project with no such element should not read a single extra byte.
         self.viz_projection = Some(
             crate::host::project_timeline_projection(project)
-                .context("visualizer 的采样时刻需要时间轴投影")?,
+                .context("visualizer sampling time needs a timeline projection")?,
         );
         // Elements with the same `(source, parameters)` share one track. The VizTrack for a 3-minute audio track is over ten MB, and two waveforms with the same parameters have no reason to each store their own copy.
         let mut derived: HashMap<String, Arc<render_raster::source::VizTrack>> = HashMap::new();
@@ -1915,7 +1915,7 @@ impl OverlayRenderPlan {
             };
             let track = Arc::new(
                 render_raster::source::VizTrack::derive(&bytes, params).with_context(|| {
-                    format!("元素 {element_id} 的频谱轨派生失败（音频源 {source_id}）")
+                    format!("failed to derive spectrum track for element {element_id} (audio source {source_id})")
                 })?,
             );
             derived.insert(key, track.clone());
@@ -2965,7 +2965,7 @@ impl OverlayRenderPlan {
                     let (part_opacity, part_dx, part_dy) = chunk_part_delta(layout, chunk);
                     let visual = word_visuals
                         .next()
-                        .expect("scene word visual 必须与 layout chunk 一一对应");
+                        .expect("scene word visual must correspond one-to-one with layout chunks");
                     let stable_emoji = (layout.kind == LineKind::Original)
                         .then(|| {
                             let design = look.animation.caption.as_ref()?;
@@ -3622,7 +3622,7 @@ impl OverlayRenderPlan {
             .iter()
             .find(|element| element.id == element_id && element.kind == ElementKind::Text)
             .cloned()
-            .with_context(|| format!("text element {element_id} 不存在"))?;
+            .with_context(|| format!("text element {element_id} does not exist"))?;
         let time = time.clamp(0.0, self.duration.max(0.0));
         let active = time >= element.start && time < element.end;
         let nodes = if active {
@@ -4245,7 +4245,7 @@ impl OverlayRenderPlan {
         }
         let (width, height) = (self.width as usize, self.height as usize);
         let mut pixmap = Pixmap::new(self.width, self.height)
-            .ok_or_else(|| anyhow!("无法创建字幕透明层 {}x{}", self.width, self.height))?;
+            .ok_or_else(|| anyhow!("could not create subtitle transparent layer {}x{}", self.width, self.height))?;
         let mut drawn = self.draw_caption_sequence(&mut pixmap, &plan, &frame)?;
         if let Some(bounds) = &classic.bounds {
             composite_premultiplied_rgba(pixmap.data_mut(), &classic.rgba, width, bounds);
@@ -4367,7 +4367,7 @@ impl OverlayRenderPlan {
         let animation = Arc::clone(&self.look_for_layouts(&layouts).animation);
         let (width, height) = (self.width as usize, self.height as usize);
         let mut pixmap = Pixmap::new(self.width, self.height)
-            .ok_or_else(|| anyhow!("无法创建字幕透明层 {}x{}", self.width, self.height))?;
+            .ok_or_else(|| anyhow!("could not create subtitle transparent layer {}x{}", self.width, self.height))?;
         // The union of everything drawn in this frame. When computing the bounding box, scan only inside it, which saves searching the whole 8.3 MB.
         let mut drawn = DrawBounds::default();
         let stack = self.stack_layout(&layouts, canvas_scale);
@@ -4431,7 +4431,7 @@ impl OverlayRenderPlan {
             let mut effect = match self.effect_scratch.take() {
                 Some(scratch) => scratch,
                 None => Pixmap::new(self.width, self.height).ok_or_else(|| {
-                    anyhow!("无法创建字幕效果透明层 {}x{}", self.width, self.height)
+                    anyhow!("could not create subtitle effect layer {}x{}", self.width, self.height)
                 })?,
             };
             let effect_drawn = draw_line_effect(
@@ -4585,7 +4585,7 @@ impl OverlayRenderPlan {
             guide_below: false,
         };
         let mut pixmap = Pixmap::new(self.width, self.height)
-            .ok_or_else(|| anyhow!("无法创建 text element 透明层"))?;
+            .ok_or_else(|| anyhow!("could not create text element layer"))?;
         let base_x = f64::from(self.width) * element.place.x.unwrap_or(50.0) / 100.0;
         let base_y = f64::from(self.height) * element.place.y.unwrap_or(50.0) / 100.0;
         let short = f64::from(self.width.min(self.height));
@@ -4648,7 +4648,7 @@ impl OverlayRenderPlan {
             }
             if layout.style.effect_on {
                 let mut effect = Pixmap::new(self.width, self.height)
-                    .ok_or_else(|| anyhow!("无法创建 text element 效果层"))?;
+                    .ok_or_else(|| anyhow!("could not create text element effect layer"))?;
                 draw_line_effect(
                     &mut effect,
                     &mut self.text,
@@ -5095,9 +5095,9 @@ impl OverlayRenderPlan {
         // The order in the CPU reference is source effects → reveal. Effects change the whiteboard's ink/color classification, so they cannot be moved to a GPU texture pass after the reveal just to save one processing step.
         let mut filtered = Pixmap::from_vec(
             source.data().to_vec(),
-            IntSize::from_wh(source.width(), source.height()).context("白板源尺寸非法")?,
+            IntSize::from_wh(source.width(), source.height()).context("invalid whiteboard source size")?,
         )
-        .context("白板源 RGBA 尺寸非法")?;
+        .context("invalid whiteboard source RGBA size")?;
         apply_media_effects(
             &mut filtered,
             element.fx.as_ref(),
@@ -5115,8 +5115,8 @@ impl OverlayRenderPlan {
         let Some(source_id) = element.src_id.as_deref() else {
             if element.kind == ElementKind::Sticker {
                 self.warn_once(format!(
-                    "元素 {} 的 sticker source=asset 缺少 srcId：资产贴纸必须注册进 \
-                     timeline sources（模板贴纸请改用 source=template + templateId）",
+                    "element {}: sticker with source=asset is missing srcId; asset stickers \
+                     must be registered in timeline sources (use source=template + templateId for template stickers)",
                     element.id
                 ));
             }
@@ -5191,9 +5191,9 @@ impl OverlayRenderPlan {
                 Ok(owned) => owned,
                 Err(shared) => Pixmap::from_vec(
                     shared.data().to_vec(),
-                    IntSize::from_wh(shared.width(), shared.height()).context("媒体元素尺寸非法")?,
+                    IntSize::from_wh(shared.width(), shared.height()).context("invalid media element size")?,
                 )
-                .context("媒体元素 RGBA 尺寸非法")?,
+                .context("invalid media element RGBA size")?,
             };
             apply_media_effects(
                 &mut filtered,
@@ -5230,7 +5230,7 @@ impl OverlayRenderPlan {
             filtered
         } else {
             let mut local = Pixmap::new(local_width, local_height)
-                .ok_or_else(|| anyhow!("无法创建媒体元素局部画布"))?;
+                .ok_or_else(|| anyhow!("could not create media element local canvas"))?;
             if let Some(bg) = backdrop {
                 match bg {
                     Background::Black => local.fill(tiny_skia::Color::BLACK),
@@ -5291,7 +5291,7 @@ impl OverlayRenderPlan {
         if opacity <= 0.001 {
             return Ok(Some(
                 Pixmap::new(self.width, self.height)
-                    .ok_or_else(|| anyhow!("无法创建媒体元素合成层"))?,
+                    .ok_or_else(|| anyhow!("could not create media element composite layer"))?,
             ));
         }
         // Mirroring is geometry (ADR-E01). It enters only the affine's `post_scale`, and does not take part in the box size or in the tile dot-grid conversion. Absent = (1, 1), so old documents are byte-identical.
@@ -5304,7 +5304,7 @@ impl OverlayRenderPlan {
         let mut field;
         if let Some(tile) = element.tile.as_ref().filter(|tile| tile.on) {
             field = Pixmap::new(self.width, self.height)
-                .ok_or_else(|| anyhow!("无法创建媒体元素合成层"))?;
+                .ok_or_else(|| anyhow!("could not create media element composite layer"))?;
             let rotation =
                 tile.angle.unwrap_or(-30.0) + element.place.rot.unwrap_or(0.0) + pose.rotation;
             let points =
@@ -5356,7 +5356,7 @@ impl OverlayRenderPlan {
                 field = local;
             } else {
                 field = Pixmap::new(self.width, self.height)
-                    .ok_or_else(|| anyhow!("无法创建媒体元素合成层"))?;
+                    .ok_or_else(|| anyhow!("could not create media element composite layer"))?;
                 field.draw_pixmap(
                     0,
                     0,
@@ -5434,12 +5434,12 @@ impl OverlayRenderPlan {
     /// Text, image, video, asset sticker, and template chrome still need host raster or media textures. Until R2/R4 integrate them, the whole frame explicitly errors, so the App falls back silently to the existing CPU overlay.
     pub fn element_scene_frame(&mut self, time: f64) -> Result<element_draw::SceneFrame> {
         if self.chrome.is_some() {
-            bail!("compositor-scene-unsupported: 模板层尚未进入 R1 GPU 场景");
+            bail!("compositor-scene-unsupported: template layer is not yet in the R1 GPU scene");
         }
         let blocked = self.host_rasterized_elements();
         if !blocked.is_empty() {
             bail!(
-                "compositor-scene-unsupported: 这些元素仍需要 host 光栅化：{}",
+                "compositor-scene-unsupported: these elements still need host rasterization: {}",
                 blocked.join(", ")
             );
         }
@@ -5614,7 +5614,7 @@ impl OverlayRenderPlan {
                 }
                 #[cfg(not(feature = "host"))]
                 bail!(
-                    "compositor-scene-unsupported: 元素 {} 需要 host 光栅化白板",
+                    "compositor-scene-unsupported: element {} needs host rasterization of the whiteboard",
                     element.id
                 );
             }
@@ -5631,7 +5631,7 @@ impl OverlayRenderPlan {
                 }
                 #[cfg(not(feature = "host"))]
                 bail!(
-                    "compositor-scene-unsupported: 元素 {} 需要 host 外部纹理",
+                    "compositor-scene-unsupported: element {} needs a host external texture",
                     element.id
                 );
             }
@@ -5804,7 +5804,7 @@ impl OverlayRenderPlan {
         };
         let (x, y, w, h) = motion_texture_window(bounds, width, height);
         let mut pixmap =
-            Pixmap::new(w as u32, h as u32).ok_or_else(|| anyhow!("无法创建光栅纹理 {w}x{h}"))?;
+            Pixmap::new(w as u32, h as u32).ok_or_else(|| anyhow!("could not create raster texture {w}x{h}"))?;
         let data = pixmap.data_mut();
         for row in 0..h {
             let source = ((y + row) * width + x) * 4;
@@ -5852,7 +5852,7 @@ impl OverlayRenderPlan {
     ) -> Result<Option<u64>> {
         let source_id = element.src_id.as_deref().with_context(|| {
             format!(
-                "compositor-scene-unsupported: 白板元素 {} 缺少 srcId",
+                "compositor-scene-unsupported: whiteboard element {} is missing srcId",
                 element.id
             )
         })?;
@@ -5906,7 +5906,7 @@ impl OverlayRenderPlan {
         self.drain_element_warnings(warnings);
         let scene_nodes = scene_nodes.ok_or_else(|| {
             anyhow!(
-                "compositor-scene-unsupported: 白板元素 {} 无法进入外部纹理 scene{}",
+                "compositor-scene-unsupported: whiteboard element {} cannot enter external texture scene{}",
                 element.id,
                 if detail.is_empty() {
                     String::new()
@@ -5949,7 +5949,7 @@ impl OverlayRenderPlan {
     ) -> Result<(Vec<element_draw::SceneNode>, Option<u64>)> {
         let source_id = element.src_id.as_deref().with_context(|| {
             format!(
-                "compositor-scene-unsupported: 元素 {} 的外部纹理缺少 srcId",
+                "compositor-scene-unsupported: external texture of element {} is missing srcId",
                 element.id
             )
         })?;
@@ -6003,7 +6003,7 @@ impl OverlayRenderPlan {
         self.drain_element_warnings(warnings);
         let nodes = nodes.ok_or_else(|| {
             anyhow!(
-                "compositor-scene-unsupported: 元素 {} 无法进入外部纹理 scene{}",
+                "compositor-scene-unsupported: element {} cannot enter external texture scene{}",
                 element.id,
                 if detail.is_empty() {
                     String::new()
@@ -6266,9 +6266,9 @@ impl OverlayRenderPlan {
                 self.dynamic_asset_name("subtitle", "layer", subtitle.rgba.as_slice(), slot);
             let subtitle_pixmap = Pixmap::from_vec(
                 (*subtitle.rgba).clone(),
-                IntSize::from_wh(self.width, self.height).context("subtitle layer 尺寸非法")?,
+                IntSize::from_wh(self.width, self.height).context("invalid subtitle layer size")?,
             )
-            .context("subtitle layer RGBA 尺寸非法")?;
+            .context("invalid subtitle layer RGBA size")?;
             self.media
                 .dynamic
                 .insert(subtitle_asset_name.clone(), Arc::new(subtitle_pixmap));
@@ -6348,15 +6348,15 @@ impl OverlayRenderPlan {
         // The template layer is a Pixmap rasterized by the host. wasm does not have this host result. So when there is decoration, it actively errors rather than giving a number that cannot be compared across engines.
         if self.chrome.is_some() {
             bail!(
-                "element_drawop_fingerprint 只在纯矢量元素的 timeline 上与导出指纹可比；\
-                 本项目套用了模板层（host 光栅化）"
+                "element_drawop_fingerprint is only comparable to the export fingerprint for timelines \
+                 with purely vector elements; this project applies a template layer (host rasterization)"
             );
         }
         let blocked = self.host_rasterized_elements();
         if !blocked.is_empty() {
             let ids = blocked.join(", ");
             bail!(
-                "element_drawop_fingerprint 只在纯矢量元素的 timeline 上与导出指纹可比；这些元素需要 host 光栅化：{ids}"
+                "element_drawop_fingerprint is only comparable to the export fingerprint for timelines with purely vector elements; these elements need host rasterization: {ids}"
             );
         }
         let (frame_ops, _) = self.build_overlay_ops(time, None, OverlayParts::ALL)?;
@@ -6385,13 +6385,13 @@ impl OverlayRenderPlan {
 
     pub fn render_png(&mut self, time: f64) -> Result<OverlayFrame> {
         let frame = self.render_overlay_frame(time)?;
-        let size = IntSize::from_wh(self.width, self.height).context("overlay 尺寸必须大于零")?;
-        let pixmap = Pixmap::from_vec(frame.rgba, size).context("overlay RGBA 缓冲区尺寸无效")?;
+        let size = IntSize::from_wh(self.width, self.height).context("overlay size must be greater than zero")?;
+        let pixmap = Pixmap::from_vec(frame.rgba, size).context("overlay RGBA buffer size is invalid")?;
         Ok(OverlayFrame {
             // Going through `render_overlay_frame` guarantees there is a subtitle layer. `unwrap_or_default` is only there to close the type, and is not a reachable branch.
             subtitle_key: frame.subtitle_key.unwrap_or_default(),
             draw_op_fingerprint: frame.draw_op_fingerprint,
-            png: pixmap.encode_png().context("编码字幕 overlay PNG")?,
+            png: pixmap.encode_png().context("encode subtitle overlay PNG")?,
             next_change: frame.next_change,
         })
     }
@@ -6521,7 +6521,7 @@ impl OverlayRenderPlan {
         let width = self.width as usize;
         let height = self.height as usize;
         if pixels.len() < stride.saturating_mul(height) || stride < width * 4 {
-            bail!("原生媒体后端提供了无效的 BGRA 帧缓冲区");
+            bail!("the native media backend provided an invalid BGRA frame buffer");
         }
         apply_main_transform_bgra(pixels, stride, self.width, self.height, self.main.as_ref())?;
         self.ensure_composited(time)?;
@@ -6564,7 +6564,7 @@ impl OverlayRenderPlan {
         let width = self.width as usize;
         let height = self.height as usize;
         if pixels.len() < stride.saturating_mul(height) || stride < width * 4 {
-            bail!("原生媒体后端提供了无效的 BGRA 帧缓冲区");
+            bail!("the native media backend provided an invalid BGRA frame buffer");
         }
         apply_main_transform_bgra(pixels, stride, self.width, self.height, self.main.as_ref())
     }
@@ -6609,7 +6609,7 @@ pub fn composite_normal_rgba_bgra(
         || stride < row_bytes
         || overlay.len() != row_bytes.saturating_mul(height)
     {
-        bail!("GPU overlay 或 BGRA 视频帧缓冲区尺寸无效");
+        bail!("GPU overlay or BGRA video frame buffer size is invalid");
     }
     for row in 0..height {
         let source = &overlay[row * row_bytes..(row + 1) * row_bytes];
@@ -6999,7 +6999,7 @@ fn texture_scene_node_fingerprint(node: &element_draw::SceneNode, pixel_hash: u6
             }
             render_raster::drawop::fnv1a64(&bytes)
         }
-        _ => unreachable!("外部媒体场景只允许 TextureNode / BlurredGroup"),
+        _ => unreachable!("external media scene only allows TextureNode / BlurredGroup"),
     }
 }
 
@@ -8568,7 +8568,7 @@ impl OverlayRenderPlan {
         let palette = self.caption_sequence_palette();
         let [vx, vy, vw, vh] = plan.viewport;
         let viewport = tiny_skia::Rect::from_xywh(vx as f32, vy as f32, vw as f32, vh as f32)
-            .ok_or_else(|| anyhow!("倒鸭子字幕区域退化：{:?}", plan.viewport))?;
+            .ok_or_else(|| anyhow!("Daoyazi subtitle region is degenerate: {:?}", plan.viewport))?;
         let Some(state) = self.sequence.as_mut() else {
             return Ok(drawn);
         };
@@ -8579,7 +8579,7 @@ impl OverlayRenderPlan {
             Some(mask) => mask,
             None => {
                 let mut mask = PixmapMask::new(pixmap.width(), pixmap.height())
-                    .ok_or_else(|| anyhow!("无法创建倒鸭子区域 mask"))?;
+                    .ok_or_else(|| anyhow!("could not create Daoyazi region mask"))?;
                 mask.fill_path(
                     &PathBuilder::from_rect(viewport),
                     FillRule::Winding,

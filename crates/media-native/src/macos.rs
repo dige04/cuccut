@@ -61,7 +61,7 @@ pub(crate) fn extract_frame_rgba(
     target_width: u32,
 ) -> Result<RgbaFrame> {
     if !path.is_file() {
-        bail!("媒体文件不存在：{}", path.display());
+        bail!("media file does not exist: {}", path.display());
     }
     // AVFoundation uses autorelease heavily. Each frame fetch gets its own pool, so temporary objects do not pile up until the thread exits, even when a filmstrip fetches dozens of cells in a row.
     objc2::rc::autoreleasepool(|_| unsafe { extract_inner(path, time_seconds, target_width) })
@@ -87,14 +87,14 @@ unsafe fn extract_inner(path: &Path, time_seconds: f64, target_width: u32) -> Re
         unsafe { generator.copyCGImageAtTime_actualTime_error(requested, std::ptr::null_mut()) }
             .map_err(|error| {
                 anyhow!(
-                    "AVFoundation 取帧失败（t={time_seconds:.3}s，{}）：{error}",
+                    "AVFoundation failed to fetch frame (t={time_seconds:.3}s, {}): {error}",
                     path.display()
                 )
             })?;
     let source_width = CGImage::width(Some(&image));
     let source_height = CGImage::height(Some(&image));
     if source_width == 0 || source_height == 0 {
-        bail!("AVFoundation 返回了空帧（t={time_seconds:.3}s）");
+        bail!("AVFoundation returned an empty frame (t={time_seconds:.3}s)");
     }
     let height = scale::scaled_height(source_width as u32, source_height as u32, target_width);
     draw_into_rgba(&image, target_width, height)
@@ -107,7 +107,7 @@ fn draw_into_rgba(image: &CGImage, width: u32, height: u32) -> Result<RgbaFrame>
     let (pixel_width, pixel_height) = (width as usize, height as usize);
     let stride = pixel_width * 4;
     let mut data = vec![0_u8; stride * pixel_height];
-    let color_space = CGColorSpace::new_device_rgb().context("创建 sRGB 设备色彩空间失败")?;
+    let color_space = CGColorSpace::new_device_rgb().context("failed to create sRGB device color space")?;
     // RGBA8: alpha is in the last position, 32-bit big-endian (that is, byte order R,G,B,A). Video frames are opaque, so premultiplication does not change the result. Below, alpha is still uniformly forced to 255.
     let bitmap_info = CGImageAlphaInfo::PremultipliedLast.0 | CGImageByteOrderInfo::Order32Big.0;
     let context = unsafe {
@@ -121,7 +121,7 @@ fn draw_into_rgba(image: &CGImage, width: u32, height: u32) -> Result<RgbaFrame>
             bitmap_info,
         )
     }
-    .context("创建 RGBA 位图上下文失败")?;
+    .context("failed to create RGBA bitmap context")?;
     CGContext::set_interpolation_quality(Some(&context), CGInterpolationQuality::High);
     CGContext::draw_image(
         Some(&context),
@@ -162,7 +162,7 @@ pub(crate) fn open_frame_source(
     size: Option<(u32, u32)>,
 ) -> Result<Box<dyn FrameSource>> {
     if !path.is_file() {
-        bail!("媒体文件不存在：{}", path.display());
+        bail!("media file does not exist: {}", path.display());
     }
     objc2::rc::autoreleasepool(|_| unsafe { open_inner(path, from_seconds, size) })
 }
@@ -174,11 +174,11 @@ unsafe fn open_inner(
 ) -> Result<Box<dyn FrameSource>> {
     let url = NSURL::fileURLWithPath(&NSString::from_str(&path.to_string_lossy()));
     let asset = unsafe { AVURLAsset::URLAssetWithURL_options(&url, None) };
-    let media_type = unsafe { AVMediaTypeVideo }.context("AVMediaTypeVideo 未链接")?;
+    let media_type = unsafe { AVMediaTypeVideo }.context("AVMediaTypeVideo is not linked")?;
     let tracks = unsafe { asset.tracksWithMediaType(media_type) };
     let track = tracks
         .firstObject()
-        .context("unsupported: 源媒体没有视频轨")?;
+        .context("unsupported: source media has no video track")?;
 
     let natural = unsafe { track.naturalSize() };
     let rotation = rotation_quadrant(unsafe { track.preferredTransform() })?;
@@ -194,7 +194,7 @@ unsafe fn open_inner(
         natural.height.round().max(0.0) as u32,
     );
     if coded_width == 0 || coded_height == 0 {
-        bail!("unsupported: 源媒体没有有效的视频尺寸");
+        bail!("unsupported: source media has no valid video size");
     }
     let (width, height) = match size {
         Some(size) => size,
@@ -275,7 +275,7 @@ unsafe fn start_reader(
     delivery: Option<(u32, u32)>,
 ) -> Result<(Retained<AVAssetReader>, Retained<AVAssetReaderTrackOutput>)> {
     let reader = unsafe { AVAssetReader::assetReaderWithAsset_error(asset) }
-        .map_err(|error| anyhow!("unsupported: 建立 AVAssetReader 失败（{error}）"))?;
+        .map_err(|error| anyhow!("unsupported: failed to create AVAssetReader ({error})"))?;
     let settings = unsafe { reader_pixel_settings(delivery) };
     let output = unsafe {
         AVAssetReaderTrackOutput::assetReaderTrackOutputWithTrack_outputSettings(
@@ -286,7 +286,7 @@ unsafe fn start_reader(
     // The pixels are copied into our own `Vec` before the next `copyNextSampleBuffer`, so AVFoundation does not need to make another copy.
     unsafe { output.setAlwaysCopiesSampleData(false) };
     if !unsafe { reader.canAddOutput(&output) } {
-        bail!("unsupported: AVAssetReader 不接受该视频轨的 32BGRA 输出（交付尺寸 {delivery:?}）");
+        bail!("unsupported: AVAssetReader does not accept 32BGRA output for this video track (delivery size {delivery:?})");
     }
     unsafe { reader.addOutput(&output) };
     if from_seconds > 0.0 {
@@ -301,8 +301,8 @@ unsafe fn start_reader(
     if !unsafe { reader.startReading() } {
         let detail = unsafe { reader.error() }
             .map(|error| error.to_string())
-            .unwrap_or_else(|| "未知错误".to_owned());
-        bail!("unsupported: AVAssetReader 无法读取该片源（{detail}）");
+            .unwrap_or_else(|| "unknown error".to_owned());
+        bail!("unsupported: AVAssetReader cannot read this source ({detail})");
     }
     Ok((reader, output))
 }
@@ -334,7 +334,7 @@ fn rotation_quadrant(transform: CGAffineTransform) -> Result<u16> {
         && (b + c).abs() < TOLERANCE
         && (a * a + b * b - 1.0).abs() < TOLERANCE;
     if !pure_rotation {
-        bail!("unsupported: 视频轨的 preferredTransform 不是纯 90 度倍数旋转");
+        bail!("unsupported: the video track's preferredTransform is not a pure rotation in multiples of 90 degrees");
     }
     let degrees = b.atan2(a).to_degrees();
     let quadrant = (degrees / 90.0).round().rem_euclid(4.0) as u16 * 90;
@@ -343,7 +343,7 @@ fn rotation_quadrant(transform: CGAffineTransform) -> Result<u16> {
         .min((degrees + 360.0 - f64::from(quadrant)).abs())
         > 1.0
     {
-        bail!("unsupported: 视频轨的旋转角 {degrees:.2}° 不是 90 度的整数倍");
+        bail!("unsupported: the video track's rotation angle {degrees:.2}° is not a multiple of 90 degrees");
     }
     Ok(quadrant)
 }
@@ -449,13 +449,13 @@ impl KeyframeDecoder {
                 )
             };
             let session = NonNull::new(raw).filter(|_| status == 0).with_context(|| {
-                format!("unsupported: 建立 VTDecompressionSession 失败（OSStatus {status}）")
+                format!("unsupported: failed to create VTDecompressionSession (OSStatus {status})")
             })?;
             self.session = Some((unsafe { CFRetained::from_raw(session) }, unsafe {
                 CFRetained::retain(NonNull::from(format))
             }));
         }
-        Ok(&self.session.as_ref().expect("刚放进去").0)
+        Ok(&self.session.as_ref().expect("just inserted").0)
     }
 }
 
@@ -537,15 +537,15 @@ impl AssetReaderFrames {
                 .generator
                 .createSampleBufferForRequest_error(&request)
         }
-        .map_err(|error| anyhow!("unsupported: 抓取关键帧样本失败（{error}）"))?;
+        .map_err(|error| anyhow!("unsupported: failed to fetch keyframe sample ({error})"))?;
         if !unsafe { sample.data_is_ready() } {
             let status = unsafe { sample.make_data_ready() };
             if status != 0 {
-                bail!("unsupported: 关键帧样本数据加载失败（OSStatus {status}）");
+                bail!("unsupported: failed to load keyframe sample data (OSStatus {status})");
             }
         }
         let format = unsafe { sample.format_description() }
-            .context("unsupported: 关键帧样本没有格式描述")?;
+            .context("unsupported: keyframe sample has no format description")?;
         let session = unsafe { decoder.session_for(&format)? };
         // Synchronous decoding (no async flag): the callback finishes before `DecodeFrame` returns, so the frame is in the slot.
         let slot: Arc<Mutex<Option<Result<RgbaFrame>>>> = Arc::new(Mutex::new(None));
@@ -558,9 +558,9 @@ impl AssetReaderFrames {
                   _: CMTime,
                   _: CMTime| {
                 let decoded = if status != 0 {
-                    Err(anyhow!("VideoToolbox 解关键帧失败（OSStatus {status}）"))
+                    Err(anyhow!("VideoToolbox failed to decode keyframe (OSStatus {status})"))
                 } else if image.is_null() {
-                    Err(anyhow!("VideoToolbox 没有交出像素"))
+                    Err(anyhow!("VideoToolbox returned no pixels"))
                 } else {
                     unsafe { pixel_buffer_to_rgba(&*image, rotation) }
                 };
@@ -579,18 +579,18 @@ impl AssetReaderFrames {
             )
         };
         if status != 0 {
-            bail!("unsupported: VTDecompressionSessionDecodeFrame 失败（OSStatus {status}）");
+            bail!("unsupported: VTDecompressionSessionDecodeFrame failed (OSStatus {status})");
         }
         // The decoder may deliver frames asynchronously. Wait until it has called back for all in-flight frames before checking the slot.
         unsafe { session.wait_for_asynchronous_frames() };
         let frame = slot
             .lock()
-            .map_err(|_| anyhow!("关键帧槽被毒化"))?
+            .map_err(|_| anyhow!("keyframe slot was poisoned"))?
             .take()
-            .context("VideoToolbox 没有回调")??;
+            .context("VideoToolbox returned no callback")??;
         if (frame.width, frame.height) != (self.width, self.height) {
             bail!(
-                "unsupported: 关键帧解码尺寸 {}x{} 与顺序流 {}x{} 不一致",
+                "unsupported: keyframe decode size {}x{} does not match the sequential stream {}x{}",
                 frame.width,
                 frame.height,
                 self.width,
@@ -690,8 +690,8 @@ impl FrameSource for AssetReaderFrames {
                     if unsafe { self.reader.status() } != AVAssetReaderStatus::Completed {
                         let detail = unsafe { self.reader.error() }
                             .map(|error| error.to_string())
-                            .unwrap_or_else(|| "未知错误".to_owned());
-                        bail!("AVAssetReader 解码中断（{detail}）");
+                            .unwrap_or_else(|| "unknown error".to_owned());
+                        bail!("AVAssetReader decoding was interrupted ({detail})");
                     }
                     return Ok(None);
                 }
@@ -735,8 +735,8 @@ impl FrameSource for AssetReaderFrames {
                     if unsafe { self.reader.status() } != AVAssetReaderStatus::Completed {
                         let detail = unsafe { self.reader.error() }
                             .map(|error| error.to_string())
-                            .unwrap_or_else(|| "未知错误".to_owned());
-                        bail!("AVAssetReader 解码中断（{detail}）");
+                            .unwrap_or_else(|| "unknown error".to_owned());
+                        bail!("AVAssetReader decoding was interrupted ({detail})");
                     }
                     return Ok(None);
                 }
@@ -754,14 +754,14 @@ unsafe fn pixel_buffer_to_rgba(
 ) -> Result<RgbaFrame> {
     let flags = CVPixelBufferLockFlags::ReadOnly;
     if unsafe { CVPixelBufferLockBaseAddress(buffer, flags) } != 0 {
-        bail!("锁定 CVPixelBuffer 失败");
+        bail!("failed to lock CVPixelBuffer");
     }
     let width = CVPixelBufferGetWidth(buffer);
     let height = CVPixelBufferGetHeight(buffer);
     let stride = CVPixelBufferGetBytesPerRow(buffer);
     let base = CVPixelBufferGetBaseAddress(buffer);
     let outcome = if base.is_null() || width == 0 || height == 0 || stride < width * 4 {
-        Err(anyhow!("AVFoundation 返回了不完整的 32BGRA 视频帧"))
+        Err(anyhow!("AVFoundation returned an incomplete 32BGRA video frame"))
     } else {
         let mut data = vec![0_u8; width * height * 4];
         for y in 0..height {
@@ -776,7 +776,7 @@ unsafe fn pixel_buffer_to_rgba(
     let unlocked = unsafe { CVPixelBufferUnlockBaseAddress(buffer, flags) };
     let frame = outcome?;
     if unlocked != 0 {
-        bail!("解锁 CVPixelBuffer 失败");
+        bail!("failed to unlock CVPixelBuffer");
     }
     Ok(scale::rotate_rgba(&frame, rotation))
 }
@@ -788,14 +788,14 @@ unsafe fn pixel_buffer_into_rgba(
 ) -> Result<(u32, u32)> {
     let flags = CVPixelBufferLockFlags::ReadOnly;
     if unsafe { CVPixelBufferLockBaseAddress(buffer, flags) } != 0 {
-        bail!("锁定 CVPixelBuffer 失败");
+        bail!("failed to lock CVPixelBuffer");
     }
     let width = CVPixelBufferGetWidth(buffer);
     let height = CVPixelBufferGetHeight(buffer);
     let stride = CVPixelBufferGetBytesPerRow(buffer);
     let base = CVPixelBufferGetBaseAddress(buffer);
     let outcome = if base.is_null() || width == 0 || height == 0 || stride < width * 4 {
-        Err(anyhow!("AVFoundation 返回了不完整的 32BGRA 视频帧"))
+        Err(anyhow!("AVFoundation returned an incomplete 32BGRA video frame"))
     } else {
         let row = width * 4;
         data.resize(row * height, 0);
@@ -810,7 +810,7 @@ unsafe fn pixel_buffer_into_rgba(
     let unlocked = unsafe { CVPixelBufferUnlockBaseAddress(buffer, flags) };
     let size = outcome?;
     if unlocked != 0 {
-        bail!("解锁 CVPixelBuffer 失败");
+        bail!("failed to unlock CVPixelBuffer");
     }
     Ok(size)
 }

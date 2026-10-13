@@ -69,13 +69,13 @@ impl ImageRequirement {
     /// bitmaps are decoded at their native size. Failure to decode is a `lottie-asset-missing` error. All read paths (embedded, archive, disk) share this one.
     pub fn decode(&self, bytes: &[u8]) -> Result<Pixmap> {
         let missing =
-            |what: String| anyhow!("lottie-asset-missing: 图片子资源 \"{}\" {what}", self.id);
+            |what: String| anyhow!("lottie-asset-missing: image sub-asset \"{}\" {what}", self.id);
         if looks_like_svg(bytes) {
             return decode_svg(bytes, self.width, self.height)
-                .map_err(|e| missing(format!("是 SVG，{e}")));
+                .map_err(|e| missing(format!("is SVG, {e}")));
         }
         let image = image::load_from_memory(bytes)
-            .map_err(|e| missing(format!("解不开：{e}")))?
+            .map_err(|e| missing(format!("failed to decode: {e}")))?
             .to_rgba8();
         let (w, h) = (image.width(), image.height());
         let mut raw = image.into_raw();
@@ -85,7 +85,7 @@ impl ImageRequirement {
         }
         tiny_skia::IntSize::from_wh(w, h)
             .and_then(|size| Pixmap::from_vec(raw, size))
-            .ok_or_else(|| missing("是零尺寸".into()))
+            .ok_or_else(|| missing("has zero size".into()))
     }
 }
 
@@ -108,14 +108,14 @@ fn decode_svg(bytes: &[u8], width: u32, height: u32) -> Result<Pixmap> {
     let size = tree.size();
     let (sw, sh) = (size.width(), size.height());
     if sw <= 0.0 || sh <= 0.0 {
-        bail!("尺寸为零");
+        bail!("size is zero");
     }
     let (w, h) = if width > 0 && height > 0 {
         (width, height)
     } else {
         (sw.ceil() as u32, sh.ceil() as u32)
     };
-    let mut pixmap = Pixmap::new(w.max(1), h.max(1)).ok_or_else(|| anyhow!("尺寸为零"))?;
+    let mut pixmap = Pixmap::new(w.max(1), h.max(1)).ok_or_else(|| anyhow!("size is zero"))?;
     let transform = tiny_skia::Transform::from_scale(w.max(1) as f32 / sw, h.max(1) as f32 / sh);
     resvg::render(&tree, transform, &mut pixmap.as_mut());
     Ok(pixmap)
@@ -123,7 +123,7 @@ fn decode_svg(bytes: &[u8], width: u32, height: u32) -> Result<Pixmap> {
 
 #[cfg(not(feature = "svg"))]
 fn decode_svg(_bytes: &[u8], _width: u32, _height: u32) -> Result<Pixmap> {
-    bail!("这份构建不带 SVG 光栅（render-raster 的 `svg` feature）")
+    bail!("this build has no SVG rasterizer (render-raster's `svg` feature)")
 }
 
 pub struct Lottie {
@@ -154,8 +154,8 @@ impl Lottie {
     pub fn parse(owner: &str, src: &str, bytes: &[u8]) -> Result<Lottie> {
         let zip = if archive::looks_like_zip(bytes) {
             let opened = archive::Archive::open(bytes)
-                .map_err(|e| anyhow!("{src}：`.lottie` 压缩包读不开（{e}）"))?;
-            let (name, json) = opened.animation().map_err(|e| anyhow!("{src}：{e}"))?;
+                .map_err(|e| anyhow!("{src}: failed to read the `.lottie` archive ({e})"))?;
+            let (name, json) = opened.animation().map_err(|e| anyhow!("{src}: {e}"))?;
             Some((opened, name, json))
         } else {
             None
@@ -166,11 +166,11 @@ impl Lottie {
         };
         let src = label.as_str();
         let value: serde_json::Value =
-            serde_json::from_slice(json).map_err(|e| anyhow!("{src}：不是合法 JSON（{e}）"))?;
+            serde_json::from_slice(json).map_err(|e| anyhow!("{src}: not valid JSON ({e})"))?;
         let mut diagnostics = Diagnostics::default();
         let doc = schema::parse(src, &value, &mut diagnostics)?;
         if doc.width <= 0.0 || doc.height <= 0.0 {
-            bail!("{src}：合成尺寸非法 {}×{}", doc.width, doc.height);
+            bail!("{src}: composition size is invalid {}×{}", doc.width, doc.height);
         }
 
         let mut requirements = Vec::new();
@@ -182,7 +182,7 @@ impl Lottie {
                 (Some(inline), _, _) => Some(inline.clone()),
                 (None, Some(path), Some((opened, _, _))) => opened
                     .resolve(path)
-                    .map_err(|e| anyhow!("{src}：图片子资源 \"{}\"：{e}", asset.id))?,
+                    .map_err(|e| anyhow!("{src}: image sub-asset \"{}\": {e}", asset.id))?,
                 _ => None,
             };
             let side = |v: f64| {
@@ -239,9 +239,9 @@ impl Lottie {
         for requirement in &self.requirements {
             let Some(bytes) = &requirement.embedded else {
                 bail!(
-                    "lottie-asset-missing: 图片子资源 \"{}\"（{}）不是内嵌的",
+                    "lottie-asset-missing: image sub-asset \"{}\" ({}) is not embedded",
                     requirement.id,
-                    requirement.path.as_deref().unwrap_or("<无路径>")
+                    requirement.path.as_deref().unwrap_or("<no path>")
                 );
             };
             let pixmap = requirement.decode(bytes)?;
@@ -521,7 +521,7 @@ impl crate::raster::FrameMedia for OwnImages<'_> {
         self.0
             .get(id)
             .cloned()
-            .ok_or_else(|| anyhow!("Lottie 子资源 \"{id}\" 未加载"))
+            .ok_or_else(|| anyhow!("Lottie sub-asset \"{id}\" is not loaded"))
     }
 }
 
@@ -539,9 +539,9 @@ impl VisualSource for Lottie {
         for requirement in &self.requirements {
             if !self.images.contains_key(&requirement.asset_name) {
                 bail!(
-                    "lottie-asset-missing: 图片子资源 \"{}\"（{}）没有被加载",
+                    "lottie-asset-missing: image sub-asset \"{}\" ({}) was not loaded",
                     requirement.id,
-                    requirement.path.as_deref().unwrap_or("<内嵌>")
+                    requirement.path.as_deref().unwrap_or("<inline>")
                 );
             }
         }
@@ -598,7 +598,7 @@ mod tests {
         assert_eq!(meta.kind, SourceKind::Lottie);
         assert_eq!((meta.width, meta.height), (64, 48));
         assert_eq!(meta.frame_count(), 50);
-        assert_eq!(meta.total_ms(), 2000, "50 帧 @25fps = 2s");
+        assert_eq!(meta.total_ms(), 2000, "50 frames @25fps = 2s");
         assert_eq!(meta.loops, SourceLoop::Infinite);
     }
 
@@ -686,7 +686,7 @@ mod tests {
         assert_eq!(lottie.probe().unwrap().width, 8);
         assert!(
             lottie.image_requirements()[0].embedded.is_some(),
-            "包里的图片补成内嵌字节"
+            "fill in the archive's images as inline bytes"
         );
         assert_eq!(lottie.attach_embedded_images().unwrap(), 1);
         assert_eq!(centre(&lottie), [255, 0, 0, 255]);
@@ -702,14 +702,14 @@ mod tests {
             Lottie::parse("l", "l.lottie", b"PK\x03\x04rest")
                 .unwrap_err()
                 .to_string()
-                .contains("压缩包读不开")
+                .contains("failed to read the `.lottie` archive")
         );
         let empty = archive::tests::zip(&[("images/img_0.png", b"x", false)]);
         assert!(
             Lottie::parse("l", "l.lottie", &empty)
                 .unwrap_err()
                 .to_string()
-                .contains("没有动画")
+                .contains("no animation")
         );
     }
 
@@ -725,8 +725,8 @@ mod tests {
         lottie.attach_embedded_images().unwrap();
         assert_eq!(centre(&lottie), [0, 255, 0, 255]);
         let frame = lottie.sample(MediaTime::from_millis(0)).unwrap().pixmap;
-        assert_eq!(frame.pixel(3, 3).unwrap().alpha(), 255, "铺满 4×4");
-        assert_eq!(frame.pixel(5, 5).unwrap().alpha(), 0, "框外是空的");
+        assert_eq!(frame.pixel(3, 3).unwrap().alpha(), 255, "fills 4×4");
+        assert_eq!(frame.pixel(5, 5).unwrap().alpha(), 0, "outside the frame is empty");
 
         // The same applies to SVG files in the archive.
         let json = serde_json::to_vec(&image_doc(
@@ -775,12 +775,12 @@ mod tests {
             pixmap.clone(),
         )]);
         let with_a = lottie.fingerprint();
-        assert_ne!(bare, with_a, "子资源必须进内容指纹");
+        assert_ne!(bare, with_a, "sub-assets must be part of the content fingerprint");
         assert!(lottie.prepare(&PrepareCtx::default()).is_ok());
 
         let mut other = Lottie::parse("hero", "hero.json", &bytes).unwrap();
         other.attach_images(vec![("lottie:hero/img_0".into(), b"two".to_vec(), pixmap)]);
-        assert_ne!(with_a, other.fingerprint(), "换一张子资源就换指纹");
+        assert_ne!(with_a, other.fingerprint(), "swapping one sub-asset changes the fingerprint");
     }
 
     #[test]
@@ -826,7 +826,7 @@ mod tests {
         assert_eq!(
             forward,
             shuffled.into_iter().rev().collect::<Vec<_>>(),
-            "乱序采样必须逐字节等于顺序采样"
+            "out-of-order sampling must match in-order sampling byte for byte"
         );
         // Two times within the same frame window get the same picture
         let a = lottie.sample(MediaTime::from_millis(200)).unwrap();

@@ -286,7 +286,7 @@ fn lint_program_paths(out: &mut Vec<Diagnostic>, id: &str, ptr: &str, entry: &Va
             PATH_ESCAPE,
             Severity::Error,
             pointer,
-            format!("program 资产 \"{id}\"：{}", escape_message(&subject, path))
+            format!("program asset \"{id}\": {}", escape_message(&subject, path))
         );
     };
     if let Some(src) = entry.gstr("src")
@@ -384,7 +384,7 @@ pub fn lint_with_options(
             Severity::Warn,
             "/ccut".to_string(),
             format!(
-                "缺少顶层 ccut 版本键，按 \"{}\" 读取；`ccut migrate` 可就地补齐（§4）",
+                "top-level ccut version key is missing; read as \"{}\". `ccut migrate` can fill it in place (§4)",
                 crate::migrate::BCF_FALLBACK
             )
         );
@@ -395,7 +395,7 @@ pub fn lint_with_options(
             Severity::Error,
             "/ccut".to_string(),
             format!(
-                "文档声明的 ccut 版本 \"{version}\" 不在本实现支持的 {:?}；不得静默降级读取（§4）",
+                "document declares ccut version \"{version}\", which this implementation does not support ({:?}); it must not be read with a silent downgrade (§4)",
                 crate::migrate::BCF_VERSIONS
             )
         );
@@ -412,7 +412,7 @@ pub fn lint_with_options(
             "schema",
             Severity::Error,
             "/meta".into(),
-            "缺少 meta".into()
+            "missing meta".into()
         ),
         Some(m) => {
             for k in ["id", "width", "height"] {
@@ -422,7 +422,7 @@ pub fn lint_with_options(
                         "schema",
                         Severity::Error,
                         format!("/meta/{k}"),
-                        format!("meta.{k} 必填")
+                        format!("meta.{k} is required")
                     );
                 }
             }
@@ -434,7 +434,7 @@ pub fn lint_with_options(
             "schema",
             Severity::Error,
             "/scenes".into(),
-            "缺少 scenes".into()
+            "missing scenes".into()
         ),
         Some(ss) => {
             if ss.is_empty() || ss.len() > MAX_SCENES {
@@ -443,7 +443,7 @@ pub fn lint_with_options(
                     "schema",
                     Severity::Error,
                     "/scenes".into(),
-                    format!("场景数 {} 超出 1..{MAX_SCENES}", ss.len())
+                    format!("scene count {} is outside 1..{MAX_SCENES}", ss.len())
                 );
             }
             let mut seen = HashSet::new();
@@ -455,7 +455,7 @@ pub fn lint_with_options(
                         "schema",
                         Severity::Error,
                         format!("{ptr}/id"),
-                        "场景缺少 id".into()
+                        "scene is missing id".into()
                     ),
                     Some(id) => {
                         if !seen.insert(id.to_string()) {
@@ -464,7 +464,7 @@ pub fn lint_with_options(
                                 "schema",
                                 Severity::Error,
                                 format!("{ptr}/id"),
-                                format!("场景 id \"{id}\" 重复")
+                                format!("scene id \"{id}\" is duplicated")
                             );
                         }
                         // `doc` is the @doc reserved anchor (§3.3) and cannot be used as a user scene id
@@ -474,7 +474,7 @@ pub fn lint_with_options(
                                 "scene-id-reserved",
                                 Severity::Error,
                                 format!("{ptr}/id"),
-                                "场景 id \"doc\" 是保留锚点（@doc），请改名".into()
+                                "scene id \"doc\" is a reserved anchor (@doc); rename it".into()
                             );
                         }
                     }
@@ -485,7 +485,7 @@ pub fn lint_with_options(
                         "schema",
                         Severity::Error,
                         format!("{ptr}/dur"),
-                        "场景缺少 dur".into()
+                        "scene is missing dur".into()
                     ),
                     Some(v) => {
                         if let Some(d) = v.as_f64() {
@@ -496,7 +496,7 @@ pub fn lint_with_options(
                                     "schema",
                                     Severity::Error,
                                     format!("{ptr}/dur"),
-                                    format!("场景 dur {d} 须为正数")
+                                    format!("scene dur {d} must be positive")
                                 );
                             } else if d > 300.0 {
                                 diag!(
@@ -505,7 +505,7 @@ pub fn lint_with_options(
                                     Severity::Warn,
                                     format!("{ptr}/dur"),
                                     format!(
-                                        "场景 dur {d} 超过 300s 建议上限（长场景建议拆分；隐式宿主投影的单场景除外）"
+                                        "scene dur {d} exceeds the suggested 300s limit (split long scenes; single scenes from an implicit host projection are exempt)"
                                     )
                                 );
                             }
@@ -516,7 +516,7 @@ pub fn lint_with_options(
                                 "schema",
                                 Severity::Error,
                                 format!("{ptr}/dur"),
-                                format!("场景 dur {v} 须为正数或 \"$vars.x\" 数字变量引用")
+                                format!("scene dur {v} must be a positive number or a numeric variable reference \"$vars.x\"")
                             );
                         }
                     }
@@ -527,7 +527,7 @@ pub fn lint_with_options(
                         "scene-desc-missing",
                         Severity::Error,
                         format!("{ptr}/desc"),
-                        "场景 desc 必填（叙事锚点，规范 §5.1）".into()
+                        "scene desc is required (narrative anchor, spec §5.1)".into()
                     );
                 }
             }
@@ -550,7 +550,7 @@ pub fn lint_with_options(
                 "schema",
                 Severity::Error,
                 format!("{ptr}/id"),
-                "变量缺少 id".into()
+                "variable is missing id".into()
             );
             continue;
         };
@@ -561,7 +561,7 @@ pub fn lint_with_options(
                 "schema",
                 Severity::Error,
                 format!("{ptr}/type"),
-                format!("变量 \"{id}\" type \"{ty}\" 不在 {}", VAR_TYPES.join("|"))
+                format!("variable \"{id}\" type \"{ty}\" is not one of {}", VAR_TYPES.join("|"))
             );
         } else {
             var_types.insert(id.to_string(), ty.to_string());
@@ -576,7 +576,7 @@ pub fn lint_with_options(
                 "schema",
                 Severity::Error,
                 format!("{ptr}/options"),
-                format!("enum 变量 \"{id}\" 缺少 options")
+                format!("enum variable \"{id}\" is missing options")
             );
         }
         if ty == "asset" {
@@ -588,7 +588,7 @@ pub fn lint_with_options(
                         "asset-media-outside-project",
                         Severity::Error,
                         format!("{ptr}/default"),
-                        format!("asset 变量 \"{id}\" 的 {{media}} 形态需要 Project 容器（§17）")
+                        format!("asset variable \"{id}\": the {{media}} form requires a Project container (§17)")
                     );
                 } else if !obj.is_some_and(|o| o.get("src").and_then(Value::as_str).is_some()) {
                     diag!(
@@ -596,7 +596,7 @@ pub fn lint_with_options(
                         "schema",
                         Severity::Error,
                         format!("{ptr}/default"),
-                        format!("asset 变量 \"{id}\" 的默认值须为 {{src, hash?}} 对象")
+                        format!("asset variable \"{id}\" default must be a {{src, hash?}} object")
                     );
                 }
             }
@@ -618,7 +618,7 @@ pub fn lint_with_options(
                     Severity::Error,
                     format!("{ptr}/type"),
                     format!(
-                        "asset type \"{}\" 不在 image|animatedImage|lottie|program|video|audio|font",
+                        "asset type \"{}\" is not one of image|animatedImage|lottie|program|video|audio|font",
                         entry.gstr("type").unwrap_or("")
                     )
                 ),
@@ -632,7 +632,7 @@ pub fn lint_with_options(
                     "asset-media-outside-project",
                     Severity::Error,
                     format!("{ptr}/media"),
-                    format!("asset \"{id}\" 的 media 引用需要 Project 容器（§17）")
+                    format!("asset \"{id}\": a media reference requires a Project container (§17)")
                 );
             }
             match (has_src, has_var) {
@@ -641,14 +641,14 @@ pub fn lint_with_options(
                     "schema",
                     Severity::Error,
                     format!("{ptr}/src"),
-                    format!("asset \"{id}\" 须有 src / media / var 之一")
+                    format!("asset \"{id}\" must have one of src / media / var")
                 ),
                 (true, true) => diag!(
                     out,
                     "schema",
                     Severity::Error,
                     format!("{ptr}/var"),
-                    format!("asset \"{id}\" 的 src 与 var 互斥（三选一）")
+                    format!("asset \"{id}\": src and var are mutually exclusive (pick one)")
                 ),
                 _ => {}
             }
@@ -660,14 +660,14 @@ pub fn lint_with_options(
                         "schema",
                         Severity::Error,
                         format!("{ptr}/var"),
-                        format!("asset \"{id}\" 委托的变量 \"{var_name}\" 未声明")
+                        format!("asset \"{id}\" delegates to undeclared variable \"{var_name}\"")
                     ),
                     Some(t) if t != "asset" => diag!(
                         out,
                         "schema",
                         Severity::Error,
                         format!("{ptr}/var"),
-                        format!("asset \"{id}\" 委托的变量 \"{var_name}\" type 是 {t}，须为 asset")
+                        format!("asset \"{id}\" delegates to variable \"{var_name}\" whose type is {t}; it must be asset")
                     ),
                     _ => {}
                 }
@@ -679,7 +679,7 @@ pub fn lint_with_options(
                         "program-invalid",
                         Severity::Error,
                         format!("{ptr}/var"),
-                        format!("program 资产 \"{id}\" 不接受 var 委托（§6.5.3）")
+                        format!("program asset \"{id}\" does not accept var delegation (§6.5.3)")
                     );
                 } else {
                     if let Err(error) = assets::ProgramReq::parse(id, entry) {
@@ -705,7 +705,7 @@ pub fn lint_with_options(
                         "asset-hash-format",
                         Severity::Error,
                         format!("{ptr}/hash"),
-                        "hash 须为 \"sha256-\" + 64 位十六进制".into()
+                        "hash must be \"sha256-\" followed by 64 hex digits".into()
                     );
                 }
             }
@@ -728,7 +728,7 @@ pub fn lint_with_options(
                 "schema",
                 Severity::Error,
                 format!("/tracks/{ti}/kind"),
-                format!("未知 track kind \"{kind}\"")
+                format!("unknown track kind \"{kind}\"")
             );
         }
         if kind == "camera" {
@@ -754,7 +754,7 @@ pub fn lint_with_options(
                             Severity::Info,
                             format!("{ptr}/{key}"),
                             format!(
-                                "clip \"{}\" 的 {key} 是裸绝对秒，reflow 时不跟随",
+                                "clip \"{}\" {key} is a bare absolute time in seconds and does not follow reflow",
                                 c.gstr("id").unwrap_or("?")
                             )
                         );
@@ -807,7 +807,7 @@ pub fn lint_with_options(
             Severity::Error,
             "/tracks".into(),
             format!(
-                "camera 轨 {camera_tracks} 条 / captions 轨 {caption_tracks} 条（各至多 1 条）"
+                "{camera_tracks} camera track(s) / {caption_tracks} captions track(s) (at most 1 of each)"
             )
         );
     }
@@ -831,7 +831,7 @@ pub fn lint_with_options(
                             Severity::Error,
                             format!("{ptr}/prop"),
                             format!(
-                                "\"{prop}\" 不在可动画属性 allowlist{}（§6.4）",
+                                "\"{prop}\" is not in the animatable property allowlist{} (§6.4)",
                                 motion::value::not_animatable_hint(prop)
                             )
                         );
@@ -851,7 +851,7 @@ pub fn lint_with_options(
                                 "schema",
                                 Severity::Error,
                                 format!("{ptr}/frames/{fi}/ease"),
-                                format!("未知 ease \"{e}\"（封闭枚举）")
+                                format!("unknown ease \"{e}\" (closed set)")
                             );
                         }
                     }
@@ -887,7 +887,7 @@ pub fn lint_with_options(
                             "component-cycle",
                             Severity::Error,
                             format!("/components/{start}"),
-                            format!("组件 \"{start}\" 递归实例化（经 \"{cur}\"）")
+                            format!("component \"{start}\" instantiates itself recursively (via \"{cur}\")")
                         );
                         stack.clear();
                         break;
@@ -955,7 +955,7 @@ pub fn lint_with_options(
                                         Severity::Error,
                                         format!("/tracks/{ti}"),
                                         format!(
-                                            "clip \"{id}\" 窗口 [{s}, {e}] 超出全片时长 {}",
+                                            "clip \"{id}\" window [{s}, {e}] exceeds the film duration {}",
                                             ir.total
                                         )
                                     );
@@ -972,7 +972,7 @@ pub fn lint_with_options(
                                     Severity::Error,
                                     format!("/tracks/{ti}"),
                                     format!(
-                                        "clip \"{}\" [{:.2},{:.2}] 与 \"{}\" [{:.2},{:.2}] 时间重叠",
+                                        "clip \"{}\" [{:.2},{:.2}] overlaps \"{}\" [{:.2},{:.2}] in time",
                                         w[0].0, w[0].1, w[0].2, w[1].0, w[1].1, w[1].2
                                     )
                                 );
@@ -1065,7 +1065,7 @@ fn lint_replace_overlap(node: &RNode, ptr: &str, out: &mut Vec<Diagnostic>) {
                 Severity::Warn,
                 format!("{ptr}/animate"),
                 format!(
-                    "元素 \"{}\" 的属性 \"{}\" 有两条 replace 轨在 [{t0:.3}, {t1:.3}] 重叠，order {late} 覆盖 order {early}（§7.7）",
+                    "element \"{}\" property \"{}\" has two replace tracks overlapping in [{t0:.3}, {t1:.3}]; order {late} overrides order {early} (§7.7)",
                     node.id, a.prop
                 )
             );
@@ -1196,7 +1196,7 @@ fn lint_preset_refs_known(doc: &Value, out: &mut Vec<Diagnostic>) -> HashSet<Str
             Severity::Error,
             ptr.clone(),
             format!(
-                "preset-unknown: \"{id}\" 不是项目级 presets、内置 motion.* family 或 bcf.* 配方（§7.4 / 附录 B）"
+                "preset-unknown: \"{id}\" is not a project-level preset, a built-in motion.* family or a bcf.* recipe (§7.4 / Appendix B)"
             )
         );
         reported.insert(id.clone());
@@ -1206,16 +1206,16 @@ fn lint_preset_refs_known(doc: &Value, out: &mut Vec<Diagnostic>) -> HashSet<Str
             continue;
         }
         let hint = if project_level(id) {
-            "；项目级 presets 只能用在 enter / exit / emphasis，flow / parts 的 op: \"preset\" 只认内置 motion.* family 与 bcf.* 配方"
+            "; project-level presets are only allowed in enter / exit / emphasis, and op: \"preset\" in flow / parts only accepts built-in motion.* families and bcf.* recipes"
         } else {
-            "（§7.5 / 附录 B）"
+            "(§7.5 / Appendix B)"
         };
         diag!(
             out,
             "preset-unknown",
             Severity::Error,
             ptr.clone(),
-            format!("preset-unknown: \"{id}\" 不是内置 preset{hint}")
+            format!("preset-unknown: \"{id}\" is not a built-in preset{hint}")
         );
         reported.insert(id.clone());
     }
@@ -1267,7 +1267,7 @@ fn lint_preset_vocabulary(doc: &Value, out: &mut Vec<Diagnostic>) {
                 Severity::Info,
                 ptr.clone(),
                 format!(
-                    "\"{id}\" 是旧名 alias，建议写成 canonical family：{{\"preset\": \"{canonical}\", \"params\": {{…}}}}（§7.4 / 附录 B）"
+                    "\"{id}\" is an old alias; write the canonical family instead: {{\"preset\": \"{canonical}\", \"params\": {{…}}}} (§7.4 / Appendix B)"
                 )
             );
         }
@@ -1284,7 +1284,7 @@ fn lint_preset_vocabulary(doc: &Value, out: &mut Vec<Diagnostic>) {
             Severity::Warn,
             "/tracks".to_string(),
             format!(
-                "全片用了 {} 种入场/强调词汇（{}），超过建议的 {PRESET_SPRAWL_THRESHOLD} 种，片子会显得碎（§7.4）",
+                "the film uses {} entrance/emphasis presets ({}), above the suggested {PRESET_SPRAWL_THRESHOLD}, which makes it feel fragmented (§7.4)",
                 names.len(),
                 names.join("、")
             )
@@ -1336,7 +1336,7 @@ fn lint_video_overrun_window(
                         vc.id, node.ntype, node.id
                     ),
                     format!(
-                        "媒体需求至 {need:.2}s 超出可用范围 {limit:.2}s，超出部分冻结末帧（loop: true 可循环）"
+                        "media need reaches {need:.2}s, beyond the available {limit:.2}s; the excess freezes the last frame (loop: true can loop it)"
                     )
                 );
             }
@@ -1383,7 +1383,7 @@ fn lint_media_src(
             "schema",
             Severity::Error,
             ptr.to_string(),
-            "src 必填".into()
+            "src is required".into()
         );
         return;
     };
@@ -1393,7 +1393,7 @@ fn lint_media_src(
             "asset-src-literal",
             Severity::Error,
             ptr.to_string(),
-            format!("src \"{s}\" 不接受裸路径/URL，必须是 $assets.* 引用（§11.2）")
+            format!("src \"{s}\" does not accept a bare path or URL; it must be a $assets.* reference (§11.2)")
         ),
         Some(id) => match asset_kinds.get(id) {
             None => diag!(
@@ -1401,14 +1401,14 @@ fn lint_media_src(
                 "asset-unknown",
                 Severity::Error,
                 ptr.to_string(),
-                format!("引用的资源 \"{id}\" 未在 assets 表声明")
+                format!("referenced asset \"{id}\" is not declared in the assets table")
             ),
             Some(k) if *k != want => diag!(
                 out,
                 "asset-kind-mismatch",
                 Severity::Error,
                 ptr.to_string(),
-                format!("资源 \"{id}\" 是 {k}，此处需要 {want}")
+                format!("asset \"{id}\" is {k}, but {want} is needed here")
             ),
             _ => {}
         },
@@ -1434,7 +1434,7 @@ pub(crate) fn lint_node_type(
             rule,
             Severity::Error,
             format!("{ptr}/type"),
-            format!("未知节点类型 \"{t}\"")
+            format!("unknown node type \"{t}\"")
         );
     }
 }
@@ -1455,9 +1455,9 @@ pub(crate) fn lint_style_keys(
                     Severity::Error,
                     format!("{ptr}/style/{k}"),
                     format!(
-                        "样式属性 \"{k}\" 不在封闭子集{}（§6.3）",
+                        "style property \"{k}\" is not in the closed subset{} (§6.3)",
                         if k == "backgroundColor" {
-                            "；style 里背景色写 background，backgroundColor 只是动画通道名"
+                            "; in style, write the background color as background; backgroundColor is only an animation channel name"
                         } else {
                             ""
                         }
@@ -1490,7 +1490,7 @@ fn lint_effect_channel(
             rule,
             Severity::Error,
             ptr,
-            format!("\"{prop}\" 指向不存在的 effects[{index}]（§6.6）")
+            format!("\"{prop}\" points to a non-existent effects[{index}] (§6.6)")
         );
         return;
     };
@@ -1512,7 +1512,7 @@ fn lint_effect_channel(
             Severity::Error,
             ptr,
             format!(
-                "\"{prop}\"：{} 的参数 {param} 不是数值，不能做关键帧动画（§6.6）",
+                "\"{prop}\": {} parameter {param} is not a number and cannot be keyframed (§6.6)",
                 manifest.qualified()
             )
         ),
@@ -1522,7 +1522,7 @@ fn lint_effect_channel(
             Severity::Error,
             ptr,
             format!(
-                "\"{prop}\"：{} 没有参数 {param}；{}（§6.6）",
+                "\"{prop}\": {} has no parameter {param}; {} (§6.6)",
                 manifest.qualified(),
                 manifest.params_hint()
             )
@@ -1577,7 +1577,7 @@ pub(crate) fn lint_animate(el: &Value, ptr: &str, rule: &'static str, out: &mut 
                         Severity::Error,
                         format!("{ptr}/animate/keyframes/{ki}/prop"),
                         format!(
-                            "\"{prop}\" 不在可动画属性 allowlist{}（§6.4）",
+                            "\"{prop}\" is not in the animatable property allowlist{} (§6.4)",
                             motion::value::not_animatable_hint(prop)
                         )
                     );
@@ -1604,7 +1604,7 @@ pub(crate) fn lint_animate(el: &Value, ptr: &str, rule: &'static str, out: &mut 
                             rule,
                             Severity::Error,
                             format!("{ptr}/animate/keyframes/{ki}/frames/{fi}/ease"),
-                            format!("未知 ease \"{e}\"（封闭枚举）")
+                            format!("unknown ease \"{e}\" (closed set)")
                         );
                     }
                 }
@@ -1637,7 +1637,7 @@ pub(crate) fn lint_animate(el: &Value, ptr: &str, rule: &'static str, out: &mut 
                             Severity::Error,
                             format!("{ptr}/animate/keyframes/{ki}/frames/{fi}/v"),
                             format!(
-                                "属性 \"{prop}\" 不接受相对长度；只有 {:?} 可以（§7.8）",
+                                "property \"{prop}\" does not accept relative lengths; only {:?} do (§7.8)",
                                 motion::RELATIVE_LENGTH_PROPS
                             )
                         );
@@ -1731,7 +1731,7 @@ pub(crate) fn lint_style_values(
             rule,
             Severity::Error,
             format!("{ptr}/style/fontStyle"),
-            format!("style.fontStyle {font_style} 必须是 normal | italic（§6.3）")
+            format!("style.fontStyle {font_style} must be normal | italic (§6.3)")
         );
     }
     if let Some(mask) = style.get("mask").filter(|v| !v.is_null())
@@ -1772,7 +1772,7 @@ pub(crate) fn lint_effects(
                 rule,
                 Severity::Error,
                 format!("{ptr}/style/blendMode"),
-                format!("blendMode {mode} 不在封闭枚举 {:?}（§6.6）", blend_modes())
+                format!("blendMode {mode} is not in the closed set {:?} (§6.6)", blend_modes())
             );
         }
     }
@@ -1813,7 +1813,7 @@ pub(crate) fn lint_effects(
                 rule,
                 Severity::Error,
                 format!("{ptr}/{field}"),
-                "effects 必须是数组（§6.6）".to_string()
+                "effects must be an array (§6.6)".to_string()
             );
             continue;
         };
@@ -1825,7 +1825,7 @@ pub(crate) fn lint_effects(
                     rule,
                     Severity::Error,
                     eptr,
-                    "effects[] 条目缺少 preset（§6.6）".to_string()
+                    "effects[] entry is missing preset (§6.6)".to_string()
                 );
                 continue;
             };
@@ -1838,7 +1838,7 @@ pub(crate) fn lint_effects(
                             rule,
                             Severity::Error,
                             format!("{eptr}/presetVersion"),
-                            "presetVersion 必须是整数".to_string()
+                            "presetVersion must be an integer".to_string()
                         );
                         continue;
                     }
@@ -1861,7 +1861,7 @@ pub(crate) fn lint_effects(
                     Severity::Error,
                     format!("{eptr}/preset"),
                     format!(
-                        "{} 需要 {} 个输入，元素效果栈只提供 1 个（§6.6）；用另一元素作遮罩请写 style.mask: {{ source: \"#id\", mode }}（§6.3）",
+                        "{} needs {} inputs, but the element effect stack provides only 1 (§6.6); to mask with another element, write style.mask: {{ source: \"#id\", mode }} (§6.3)",
                         manifest.qualified(),
                         manifest.inputs
                     )
@@ -1877,7 +1877,7 @@ pub(crate) fn lint_effects(
                         Severity::Info,
                         eptr.clone(),
                         format!(
-                            "{} 的确定性等级是 {}，成片不承诺逐位一致（§14.6）",
+                            "{} has determinism level {}, so the export does not promise bit-identical output (§14.6)",
                             manifest.qualified(),
                             manifest.determinism.as_str()
                         )
@@ -1937,7 +1937,7 @@ fn lint_experimental_fields(el: &Value, ptr: &str, out: &mut Vec<Diagnostic>) {
                 "experimental-field",
                 Severity::Info,
                 format!("{ptr}{field}"),
-                format!("{label} 在 ccut 0.1 里是实验字段，升 \"0.2\" 后转正式（ADR-M13）")
+                format!("{label} is an experimental field in ccut 0.1; it becomes stable in \"0.2\" (ADR-M13)")
             );
         }
     }
@@ -1949,7 +1949,7 @@ fn lint_experimental_fields(el: &Value, ptr: &str, out: &mut Vec<Diagnostic>) {
                 "experimental-field",
                 Severity::Info,
                 format!("{ptr}/animate"),
-                "结构化曲线对象（§7.6 的 cubicBezier / steps / spring）在 ccut 0.1 里是实验形态"
+                "structured curve objects (cubicBezier / steps / spring in §7.6) are an experimental form in ccut 0.1"
                     .to_string()
             );
         }
@@ -1983,7 +1983,7 @@ fn lint_executable_content(value: &Value, ptr: &str, out: &mut Vec<Diagnostic>) 
                         Severity::Error,
                         format!("{ptr}/{key}"),
                         format!(
-                            "字段 \"{key}\" 是可执行内容；BCF 是纯数据格式，效果只能引用具名配方（§14.6）"
+                            "field \"{key}\" is executable content; BCF is a pure data format, so effects may only reference named recipes (§14.6)"
                         )
                     );
                 }
@@ -2014,7 +2014,7 @@ fn lint_flow_structure(el: &Value, ptr: &str, out: &mut Vec<Diagnostic>) {
                 "motion-legacy-and-flow",
                 Severity::Error,
                 format!("{ptr}/animate/flow"),
-                format!("同一元素不得同时声明 animate.flow 与 {legacy:?}（§7.5）")
+                format!("an element must not declare both animate.flow and {legacy:?} (§7.5)")
             );
         }
         if animate.get_("parts").is_some_and(|v| !v.is_null()) && el.gstr("type") != Some("text") {
@@ -2023,7 +2023,7 @@ fn lint_flow_structure(el: &Value, ptr: &str, out: &mut Vec<Diagnostic>) {
                 "schema",
                 Severity::Error,
                 format!("{ptr}/animate/parts"),
-                "animate.parts 只能用在 text 节点上（§7.9）".to_string()
+                "animate.parts can only be used on text nodes (§7.9)".to_string()
             );
         }
     }
@@ -2078,8 +2078,8 @@ fn lint_clip_root_xy(clip: &Value, root: &Value, root_ptr: &str, out: &mut Vec<D
         Severity::Warn,
         format!("{root_ptr}/style/{first}"),
         format!(
-            "clip \"{}\" 的根元素写了 style.{written}，但 clip 根节点固定从画布原点布局，x/y 不生效；\
-             要定位就把它包进全画幅的 Box（style 宽高 = 画布）作为子节点，再在子节点上写 x/y",
+            "clip \"{}\" root element sets style.{written}, but the clip root is always laid out from the canvas origin, so x/y have no effect; \
+             to position it, wrap it in a full-frame Box (style width/height = canvas) as a child, then set x/y on that child",
             clip.gstr("id").unwrap_or("?")
         )
     );
@@ -2108,7 +2108,7 @@ fn walk_element_ids(
                     Severity::Error,
                     format!("{ptr}/id"),
                     format!(
-                        "元素 id \"{id}\" 在同一棵元素树里重复（首次出现 {first}）；元素路径会指向两个节点"
+                        "element id \"{id}\" is duplicated in the same element tree (first seen at {first}); element paths would point to two nodes"
                     )
                 );
             } else {
@@ -2123,7 +2123,7 @@ fn walk_element_ids(
                 Severity::Warn,
                 ptr.to_string(),
                 format!(
-                    "{} 元素没有稳定 id，舞台编辑只能按下标寻址（重排即失配）",
+                    "{} element has no stable id, so stage editing can only address it by index (reordering breaks the match)",
                     el.gstr("type").unwrap_or("?")
                 )
             );
@@ -2184,7 +2184,7 @@ fn lint_element(
                     "schema",
                     Severity::Error,
                     format!("{ptr}/{key}"),
-                    format!("{t} 没有音轨，不接受 {key}（§6.5.1 – §6.5.3）")
+                    format!("{t} has no audio track and does not accept {key} (§6.5.1 – §6.5.3)")
                 );
             }
         }
@@ -2219,7 +2219,7 @@ fn lint_element(
                     "path-outside-svg",
                     Severity::Warn,
                     format!("{ptr}/children/{i}"),
-                    "path 只在 svg 的直接子节点位置生效（§6.2.1）；这里的 path 不会被画出来"
+                    "path only takes effect as a direct child of svg (§6.2.1); this path will not be drawn"
                         .to_string()
                 );
             }
@@ -2241,7 +2241,7 @@ fn lint_element(
                     Severity::Warn,
                     format!("{ptr}/children/{i}"),
                     format!(
-                        "svg 的子节点只能是 path（§6.2）；这里的 {ct} 不会被画出来——把它和 svg 并列放进同一个 group"
+                        "svg children must be path (§6.2); this {ct} will not be drawn; place it next to svg inside the same group"
                     )
                 );
             }
@@ -2289,7 +2289,7 @@ fn lint_layout_align(el: &Value, ptr: &str, out: &mut Vec<Diagnostic>) {
         Severity::Warn,
         format!("{ptr}/style/{first}"),
         format!(
-            "{} 只在 layout: \"row\" / \"column\" / \"grid\" 下生效（§6.3）；这个节点是缺省的绝对布局，没写 x / y 的子节点照旧落在左上角。要让子节点在盒里居中，加 layout: \"column\"（或用 DSL 的 <Column>）",
+            "{} only takes effect under layout: \"row\" / \"column\" / \"grid\" (§6.3); this node uses the default absolute layout, so children without x / y still sit at the top left. To center children in the box, add layout: \"column\" (or use <Column> in the DSL)",
             keys.join(" / ")
         )
     );
@@ -2324,7 +2324,7 @@ fn lint_text_content(
             Severity::Warn,
             format!("{ptr}/style/textAlign"),
             format!(
-                "没写 style.textWrap 的 text 走旧单行排版（§6.2.2），textAlign {align} 不生效，整行照旧居中在元素盒里；要靠左 / 靠右请加 textWrap: \"none\"（单行不折行）或 \"word\"（配 width 自动折行）"
+                "text without style.textWrap uses the legacy single-line layout (§6.2.2), so textAlign {align} has no effect and the line stays centered in the element box; for left or right alignment, add textWrap: \"none\" (single line, no wrapping) or \"word\" (wraps automatically with width)"
             )
         );
     }
@@ -2337,7 +2337,7 @@ fn lint_text_content(
             "text-newline",
             Severity::Warn,
             format!("{ptr}/text"),
-            "text 只排一行（§6.2），\\n 不会换行；多行请显式写 style.textWrap（§6.2.2），或每行一个 text 放进 layout: \"column\" 的 box（DSL 的 <Column>）".to_string()
+            "text lays out a single line (§6.2), and \\n does not break the line; for multiple lines, set style.textWrap explicitly (§6.2.2), or put one text per line in a layout: \"column\" box (<Column> in the DSL)".to_string()
         );
     }
     let strict_fonts = asset_kinds
@@ -2355,7 +2355,7 @@ fn lint_text_content(
                 Severity::Warn,
                 format!("{ptr}/text"),
                 format!(
-                    "「{c}」看起来是彩色 emoji：文档声明了 font 资产，渲染处于 strict 字体模式（§11.2），系统 emoji 字体不参与回退，这个字会缺字（§6.2）。把彩色 emoji 字体（sbix / CBDT / COLR）也声明成 font 资产，或改用 image 素材；已经声明了可忽略。本条按码位猜测，可能误报"
+                    "\"{c}\" looks like a color emoji: the document declares font assets, so rendering is in strict font mode (§11.2), where system emoji fonts do not fall back and this glyph will be missing (§6.2). Declare the color emoji font (sbix / CBDT / COLR) as a font asset too, or use an image asset instead; ignore this if already declared. This check guesses by code point and may be a false positive"
                 )
             );
             return;
@@ -2394,7 +2394,7 @@ fn lint_path(el: &Value, ptr: &str, out: &mut Vec<Diagnostic>) {
             Severity::Error,
             format!("{ptr}/d"),
             format!(
-                "path.d 含不支持的命令 {}（支持 M L H V C S Q T A Z 及其小写相对形式）",
+                "path.d contains unsupported command {} (supported: M L H V C S Q T A Z and their lowercase relative forms)",
                 list.join(" ")
             )
         );
@@ -2411,7 +2411,7 @@ fn lint_path(el: &Value, ptr: &str, out: &mut Vec<Diagnostic>) {
             "path-morph-no-target",
             Severity::Warn,
             format!("{ptr}/animate/keyframes"),
-            "pathMorph 通道需要同一 path 上的 morphTo 目标形状，否则形状不会变".to_string()
+            "the pathMorph channel needs morphTo target shapes on the same path, otherwise the shape will not change".to_string()
         );
     }
 }
@@ -2431,7 +2431,7 @@ fn lint_cadence(doc: &Value, ir: &crate::resolve::Ir, out: &mut Vec<Diagnostic>)
                 Severity::Warn,
                 format!("/clips/{}/start", vc.id),
                 format!(
-                    "clip \"{}\" 在 {:.4}s 切入，不落在 {fps}fps 的绘制格上；这一刀会切在一张画的中间（最近的格点：{:.4}s）",
+                    "clip \"{}\" cuts in at {:.4}s, which is not on the {fps}fps drawing grid; the cut lands in the middle of a drawing (nearest grid point: {:.4}s)",
                     vc.id,
                     vc.start,
                     cells.round() / fps
@@ -2447,7 +2447,7 @@ fn lint_cadence(doc: &Value, ir: &crate::resolve::Ir, out: &mut Vec<Diagnostic>)
                 Severity::Info,
                 "/meta/fps".to_string(),
                 format!(
-                    "输出 {}fps 不是绘制频率 {fps}fps 的整数倍：每张画的停留帧数会长短交替。手绘片推荐 24fps 输出",
+                    "output {}fps is not an integer multiple of the drawing rate {fps}fps, so each drawing's hold length will alternate. Hand-drawn films should output 24fps",
                     ir.fps
                 )
             );
@@ -2488,7 +2488,7 @@ fn lint_cadence(doc: &Value, ir: &crate::resolve::Ir, out: &mut Vec<Diagnostic>)
                         Severity::Warn,
                         format!("/tracks/{ti}/clips/{ci}/{key}"),
                         format!(
-                            "处在 cadence 采样域里的 clip 用了 {preset}：逐帧混合会把停格的画面抹成连续渐变。改用硬切、一帧纸色闪白、transition.circleCrop 或 transition.inkBlot"
+                            "a clip in the cadence sampling domain uses {preset}: per-frame blending smears held frames into a continuous fade. Use a hard cut, a one-frame paper-color flash, transition.circleCrop or transition.inkBlot instead"
                         )
                     );
                 }
@@ -2634,14 +2634,14 @@ fn lint_narration_idle(doc: &Value, ir: &crate::resolve::Ir, out: &mut Vec<Diagn
             .map(|(id, s, _)| (id.as_str(), *s))
             .unwrap_or(("?", 0.0));
         let mut message = format!(
-            "旁白 \"{clip}\" 播到场景 \"{scene}\" 的 {:.2}–{:.2}s（全片 {g0:.2}–{g1:.2}s）时，画面 {:.1}s 没有任何变化（>{NARRATION_IDLE_GAP}s）：照这段旁白的词时间（@cuccut/dsl 的 narration().cue）在空档里安排笔画或动作",
+            "while narration \"{clip}\" plays in scene \"{scene}\" at {:.2}–{:.2}s (film {g0:.2}–{g1:.2}s), the picture does not change for {:.1}s (>{NARRATION_IDLE_GAP}s); schedule strokes or actions in the gap using this narration's word timing (narration().cue in @cuccut/dsl)",
             g0 - base,
             g1 - base,
             g1 - g0
         );
         if n + 1 == NARRATION_IDLE_MAX_REPORTS && total > NARRATION_IDLE_MAX_REPORTS {
             message.push_str(&format!(
-                "；全片共 {total} 处这样的空档，只列前 {NARRATION_IDLE_MAX_REPORTS} 处"
+                "; the film has {total} such gaps in total, listing the first {NARRATION_IDLE_MAX_REPORTS}"
             ));
         }
         diag!(
@@ -2739,7 +2739,7 @@ fn lint_sketch(doc: &Value, ir: &crate::resolve::Ir, out: &mut Vec<Diagnostic>) 
                 Severity::Warn,
                 ptr.clone(),
                 format!(
-                    "clip \"{}\" 同时用了 {} 种纹理 finish（{}）；一个镜头只用一种上色手法",
+                    "clip \"{}\" uses {} texture finishes at once ({}); a shot should use one coloring technique",
                     vc.id,
                     seen.finishes.len(),
                     seen.finishes.join(" / ")
@@ -2753,7 +2753,7 @@ fn lint_sketch(doc: &Value, ir: &crate::resolve::Ir, out: &mut Vec<Diagnostic>) 
                 Severity::Warn,
                 ptr.clone(),
                 format!(
-                    "clip \"{}\" 的节点 \"{node}\" 用了 #{r:02x}{g:02x}{b:02x}，它不在 theme 的任何一套配色里；颜色从 look 取",
+                    "clip \"{}\" node \"{node}\" uses #{r:02x}{g:02x}{b:02x}, which is not in any theme palette; take colors from the look",
                     vc.id
                 )
             );
@@ -2766,7 +2766,7 @@ fn lint_sketch(doc: &Value, ir: &crate::resolve::Ir, out: &mut Vec<Diagnostic>) 
                 Severity::Warn,
                 ptr,
                 format!(
-                    "clip \"{}\" 里有文字节点 \"{first}\"（共 {} 个）；手绘片只在收尾场景落字，其余靠画面讲",
+                    "clip \"{}\" has text node \"{first}\" ({} in total); hand-drawn films only put text in closing scenes and let the picture carry the rest",
                     vc.id,
                     seen.texts.len()
                 )
@@ -2786,7 +2786,7 @@ fn lint_clip_path_shape(el: &Value, ptr: &str, out: &mut Vec<Diagnostic>) {
             "clip-path-evenodd",
             Severity::Warn,
             format!("{ptr}/style/clipPath/fillRule"),
-            "clipPath 的 path 形状按 nonzero 裁剪；evenodd 的镂空不会生效，改用方向相反的子路径"
+            "a clipPath path shape clips with nonzero; evenodd holes will not take effect, so use subpaths with opposite winding instead"
                 .to_string()
         );
     }
@@ -2802,7 +2802,7 @@ fn lint_video_fields(el: &Value, ptr: &str, out: &mut Vec<Diagnostic>) {
                 "schema",
                 Severity::Error,
                 format!("{ptr}/playbackRate"),
-                format!("playbackRate {r} 须为正数")
+                format!("playbackRate {r} must be positive")
             ),
         }
     }
@@ -2819,7 +2819,7 @@ fn lint_video_fields(el: &Value, ptr: &str, out: &mut Vec<Diagnostic>) {
                 "schema",
                 Severity::Error,
                 format!("{ptr}/segment"),
-                format!("segment {seg} 须为 [start, end] 且 0 ≤ start < end")
+                format!("segment {seg} must be [start, end] with 0 ≤ start < end")
             );
         }
     }
@@ -2830,7 +2830,7 @@ fn lint_video_fields(el: &Value, ptr: &str, out: &mut Vec<Diagnostic>) {
                 "schema",
                 Severity::Error,
                 format!("{ptr}/fit"),
-                format!("fit \"{f}\" 不在 cover|contain|fill")
+                format!("fit \"{f}\" is not one of cover|contain|fill")
             );
         }
     }
@@ -2842,7 +2842,7 @@ fn lint_video_fields(el: &Value, ptr: &str, out: &mut Vec<Diagnostic>) {
                     "schema",
                     Severity::Error,
                     format!("{ptr}/{key}"),
-                    format!("{key} {v} 须为布尔")
+                    format!("{key} {v} must be a boolean")
                 );
             }
         }
@@ -2855,7 +2855,7 @@ fn lint_video_fields(el: &Value, ptr: &str, out: &mut Vec<Diagnostic>) {
                 "schema",
                 Severity::Error,
                 format!("{ptr}/volume"),
-                format!("volume {v} 须在 [0, 1]")
+                format!("volume {v} must be in [0, 1]")
             ),
         }
     }
@@ -2887,7 +2887,7 @@ fn lint_captions(clip: &Value, ptr: &str, out: &mut Vec<Diagnostic>) {
                         "caption-lane-unknown",
                         Severity::Error,
                         format!("{iptr}/lines/{lane_id}"),
-                        format!("字幕项引用未声明的 lane \"{lane_id}\"")
+                        format!("caption item references undeclared lane \"{lane_id}\"")
                     );
                 }
                 if let Some(words) = line.get_("words").and_then(Value::as_array) {
@@ -2905,7 +2905,7 @@ fn lint_captions(clip: &Value, ptr: &str, out: &mut Vec<Diagnostic>) {
                             "caption-words-mismatch",
                             Severity::Error,
                             format!("{iptr}/lines/{lane_id}/words"),
-                            format!("words 依序拼接 \"{joined}\" 与 text \"{text}\" 不一致")
+                            format!("words joined in order \"{joined}\" do not match text \"{text}\"")
                         );
                     }
                     let mut prev = f64::NEG_INFINITY;
@@ -2917,7 +2917,7 @@ fn lint_captions(clip: &Value, ptr: &str, out: &mut Vec<Diagnostic>) {
                                 "caption-words-mismatch",
                                 Severity::Error,
                                 format!("{iptr}/lines/{lane_id}/words"),
-                                "词时间戳未严格递增".into()
+                                "word timestamps are not strictly increasing".into()
                             );
                             break;
                         }

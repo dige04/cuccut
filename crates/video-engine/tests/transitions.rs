@@ -29,7 +29,7 @@ fn new_video(dir: &Path) -> Video {
         width: 1920,
         height: 1080,
     };
-    Video::create(dir, &options, &ffprobe()).expect("新建视频")
+    Video::create(dir, &options, &ffprobe()).expect("create the video")
 }
 
 fn apply(video: &mut Video, command_id: &str, operations: Vec<Value>) -> Result<Committed, ErrorBody> {
@@ -111,7 +111,7 @@ fn transitions(video: &Video) -> Vec<video_engine::model::Transition> {
 }
 
 fn code(result: Result<Committed, ErrorBody>) -> String {
-    result.expect_err("应当失败").code
+    result.expect_err("should fail").code
 }
 
 #[test]
@@ -128,7 +128,7 @@ fn set_transition_creates_updates_in_place_and_undoes() {
         (tr.duration_frames, tr.placement, &tr.kind),
         (30, TransitionPlacement::Center, &TransitionKind::Dissolve)
     );
-    assert_eq!(committed.receipt.time_resolution.len(), 1, "时长量化一次");
+    assert_eq!(committed.receipt.time_resolution.len(), 1, "duration is quantized once");
 
     // Setting the same pair of instances again replaces it in place; the ID is unchanged.
     let op = json!({ "type": "setTransition", "sequenceId": s, "leftItemId": a, "rightItemId": b, "kind": "push",
@@ -245,9 +245,9 @@ fn invalid_transitions_are_rejected() {
     ];
     for (n, (op, expected)) in cases.into_iter().enumerate() {
         let got = code(apply(&mut video, &format!("cmd_bad_{n}"), vec![op]));
-        assert_eq!(got, expected, "第 {n} 个");
+        assert_eq!(got, expected, "case {n}");
     }
-    assert_eq!(video.revision(), before, "失败的操作不改视频");
+    assert_eq!(video.revision(), before, "failed operations do not change the video");
 
     // The entrance and exit transition windows of b cannot overlap: b is only 60 frames.
     apply(&mut video, "cmd_in", vec![dissolve(&s, Some(&a), Some(&b), 60)]).unwrap();
@@ -494,7 +494,7 @@ fn undo_that_would_break_a_later_transition_is_a_conflict() {
     )
     .unwrap();
     apply(&mut video, "cmd_tr", vec![dissolve(&s, Some(&a), Some(&c), 10)]).unwrap();
-    let err = undo(&mut video, "cmd_undo", &moved).expect_err("撤销冲突");
+    let err = undo(&mut video, "cmd_undo", &moved).expect_err("undo conflict");
     assert_eq!(err.code, "UNDO_CONFLICT");
     assert_eq!(err.entity_ids, vec![transitions(&video)[0].id.clone()]);
 }
@@ -534,7 +534,7 @@ fn clip() -> Option<(tempfile::TempDir, PathBuf)> {
         .output()
         .is_ok_and(|o| o.status.success());
     if !ok {
-        eprintln!("跳过：没有可用的 ffmpeg 生成测试素材");
+        eprintln!("skipping: no usable ffmpeg to generate test media");
         return None;
     }
     Some((dir, path))
@@ -564,7 +564,7 @@ fn handles_must_cover_the_window() {
     let (a, b) = (ids[0].clone(), ids[1].clone());
 
     // Both segments use up their material: a centered transition needs 5 frames past the end of a, and there are none.
-    let err = apply(&mut video, "cmd_center", vec![dissolve(&s, Some(&a), Some(&b), 10)]).expect_err("handles 不够");
+    let err = apply(&mut video, "cmd_center", vec![dissolve(&s, Some(&a), Some(&b), 10)]).expect_err("not enough handles");
     assert_eq!(err.code, "TRANSITION_HANDLES_INSUFFICIENT");
     assert_eq!(err.details["itemId"], json!(a));
     assert_eq!(
@@ -592,7 +592,7 @@ fn handles_must_cover_the_window() {
         op
     };
     apply(&mut video, "cmd_ok", vec![start_at_cut(10)]).unwrap();
-    let err = apply(&mut video, "cmd_long", vec![start_at_cut(11)]).expect_err("差一帧");
+    let err = apply(&mut video, "cmd_long", vec![start_at_cut(11)]).expect_err("one frame short");
     assert_eq!(
         (err.code.as_str(), err.details["availableFrames"].as_i64()),
         ("TRANSITION_HANDLES_INSUFFICIENT", Some(10))

@@ -225,7 +225,7 @@ impl<'a> Lowering<'a> {
             LayerKind::Image { ref_id } => {
                 let Some(name) = self.images.get(ref_id) else {
                     bail!(
-                        "lottie-asset-missing: 图层 \"{}\" 引用的图片资源 \"{ref_id}\" 没有被加载",
+                        "lottie-asset-missing: layer \"{}\" references image asset \"{ref_id}\", which was not loaded",
                         layer.name
                     );
                 };
@@ -256,12 +256,12 @@ impl<'a> Lowering<'a> {
             } => {
                 if self.depth >= MAX_PRECOMP_DEPTH {
                     bail!(
-                        "lottie-precomp-depth: 预合成嵌套超过 {MAX_PRECOMP_DEPTH} 层（\"{ref_id}\"，可能是循环引用）"
+                        "lottie-precomp-depth: precomp nesting exceeds {MAX_PRECOMP_DEPTH} levels (\"{ref_id}\", possibly a circular reference)"
                     );
                 }
                 let Some(layers) = self.doc.precomps.get(ref_id) else {
                     bail!(
-                        "lottie-asset-missing: 图层 \"{}\" 引用的预合成 \"{ref_id}\" 不在 assets 里",
+                        "lottie-asset-missing: layer \"{}\" references precomp \"{ref_id}\", which is not in assets",
                         layer.name
                     );
                 };
@@ -926,10 +926,10 @@ mod tests {
         };
         assert_eq!(strokes(&full), 1);
         assert_eq!(strokes(&half), 1);
-        assert_eq!(strokes(&none), 0, "trim 到 0% 时同组的描边不再发出");
+        assert_eq!(strokes(&none), 0, "at 0% trim, the same-group stroke is no longer emitted");
         assert_ne!(
             full.paths, half.paths,
-            "50% 的 trim 必须真的改了同组描边的路径"
+            "50% trim must actually change the path of the same-group stroke"
         );
     }
 
@@ -963,8 +963,8 @@ mod tests {
         };
         assert_eq!(strokes(&full), 1);
         assert_eq!(strokes(&half), 1);
-        assert_eq!(strokes(&none), 0, "trim 到 0% 时子组的描边不再发出");
-        assert_ne!(full.paths, half.paths, "50% 的 trim 必须真的改了描边路径");
+        assert_eq!(strokes(&none), 0, "at 0% trim, the child-group stroke is no longer emitted");
+        assert_ne!(full.paths, half.paths, "50% trim must actually change the stroke path");
     }
 
     #[test]
@@ -989,7 +989,7 @@ mod tests {
     fn a_layer_outside_its_time_range_emits_nothing() {
         let mut doc = base(json!([square_shape(solid_fill())]));
         doc["layers"][0]["ip"] = json!(5);
-        assert_eq!(lower(doc.clone(), 0.0).ops.len(), 2, "只剩 clip/popclip");
+        assert_eq!(lower(doc.clone(), 0.0).ops.len(), 2, "only clip/popclip remain");
         assert_eq!(lower(doc, 6.0).ops.len(), 3);
     }
 
@@ -1061,7 +1061,7 @@ mod tests {
                 .filter(|op| matches!(op, DrawOp::ClipPath { .. }))
                 .count(),
             2,
-            "画幅裁剪 + 遮罩裁剪"
+            "frame clip + mask clip"
         );
         assert!(!frame.ops.iter().any(|op| matches!(op, DrawOp::PushMatte)));
     }
@@ -1097,7 +1097,7 @@ mod tests {
                 .filter(|op| matches!(op, DrawOp::ClipPath { .. }))
                 .count(),
             2,
-            "根画幅 + 预合成画幅"
+            "root frame + precomp frame"
         );
         assert!(
             frame
@@ -1122,7 +1122,7 @@ mod tests {
                 assert_eq!(stops[0].color, [1.0, 0.0, 0.0, 1.0]);
                 assert_eq!(stops[1].color, [0.0, 0.0, 1.0, 1.0]);
             }
-            other => panic!("期望线性渐变，实际 {other:?}"),
+            other => panic!("expected a linear gradient, got {other:?}"),
         }
     }
 
@@ -1134,9 +1134,9 @@ mod tests {
             "g": {"p": 2, "k": {"a": 0, "k": [0, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0.5, 0, 1, 1]}}});
         let frame = lower(base(json!([square_shape(gradient)])), 0.0);
         let PaintData::Linear { stops, .. } = &frame.paints[0] else {
-            panic!("期望线性渐变");
+            panic!("expected a linear gradient");
         };
-        assert_eq!(stops.len(), 3, "两个颜色标 + 中间那个透明标");
+        assert_eq!(stops.len(), 3, "two color stops + the transparent stop in between");
         assert!((stops[1].offset - 0.5).abs() < 1e-6);
         assert_eq!(stops[1].color[3], 0.0);
     }

@@ -213,7 +213,7 @@ mod tests {
 
         fn separate(&mut self, mix: &StereoAudio, progress: ProgressSink<'_>) -> anyhow::Result<SeparatedStems> {
             if self.fail {
-                bail!("权重坏了：/secret/path/htdemucs_ft.safetensors");
+                bail!("weights are corrupt: /secret/path/htdemucs_ft.safetensors");
             }
             let mix = StereoAudio {
                 left: resample(&mix.left, mix.sample_rate, 44_100),
@@ -222,7 +222,7 @@ mod tests {
             };
             let total = self.windows * 4;
             if !progress(SeparationProgress::Window { done: 0, total }) {
-                bail!("已取消");
+                bail!("cancelled");
             }
             for done in 1..=total {
                 if let Some((after, flag)) = self.cancel_after
@@ -231,7 +231,7 @@ mod tests {
                     flag.store(true, Ordering::SeqCst);
                 }
                 if !progress(SeparationProgress::Window { done, total }) {
-                    bail!("已取消");
+                    bail!("cancelled");
                 }
             }
             let scale = |audio: &StereoAudio, k: f32| StereoAudio {

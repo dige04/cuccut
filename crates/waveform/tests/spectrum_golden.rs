@@ -21,8 +21,8 @@ fn updating() -> bool {
 
 /// 48 kHz mono 32-bit float WAV → f32 PCM. Only accepts the one layout the fixture uses.
 fn decode_float32_wav(bytes: &[u8]) -> Vec<f32> {
-    assert_eq!(&bytes[..4], b"RIFF", "夹具不是 RIFF");
-    assert_eq!(&bytes[8..12], b"WAVE", "夹具不是 WAVE");
+    assert_eq!(&bytes[..4], b"RIFF", "fixture is not RIFF");
+    assert_eq!(&bytes[8..12], b"WAVE", "fixture is not WAVE");
     let mut offset = 12;
     let mut format = None;
     while offset + 8 <= bytes.len() {
@@ -38,12 +38,12 @@ fn decode_float32_wav(bytes: &[u8]) -> Vec<f32> {
                 assert_eq!(
                     (tag, channels, rate, bits),
                     (3, 1, 48_000, 32),
-                    "夹具布局变了"
+                    "fixture layout changed"
                 );
                 format = Some(());
             }
             b"data" => {
-                assert!(format.is_some(), "data 出现在 fmt 之前");
+                assert!(format.is_some(), "data appears before fmt");
                 return body
                     .chunks_exact(4)
                     .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
@@ -53,14 +53,14 @@ fn decode_float32_wav(bytes: &[u8]) -> Vec<f32> {
         }
         offset += 8 + size + (size & 1);
     }
-    panic!("夹具没有 data chunk");
+    panic!("fixture has no data chunk");
 }
 
 #[test]
 fn the_fixture_tone_matches_the_bcs1_golden_byte_for_byte() {
     let wav = std::fs::read(fixtures().join("tone-48k-mono-f32.wav")).unwrap();
     let pcm = decode_float32_wav(&wav);
-    assert_eq!(pcm.len(), 9600, "夹具应为 0.2 秒 @ 48 kHz");
+    assert_eq!(pcm.len(), 9600, "fixture should be 0.2 s @ 48 kHz");
 
     let produced = dsp::analyze(&pcm, SpectrumBackend::Symphonia).unwrap();
     let golden_path = fixtures().join("tone-48k-mono-f32.bcs1");
@@ -69,19 +69,19 @@ fn the_fixture_tone_matches_the_bcs1_golden_byte_for_byte() {
     }
     let golden = std::fs::read(&golden_path).unwrap_or_else(|error| {
         panic!(
-            "读取 {} 失败：{error}；用 CCUT_UPDATE_GOLDEN=1 重生成",
+            "failed to read {}: {error}; regenerate with CCUT_UPDATE_GOLDEN=1",
             golden_path.display()
         )
     });
     assert_eq!(
         produced.len(),
         golden.len(),
-        "BCS1 长度变了：DSP 参数或帧数语义被改动，确认后用 CCUT_UPDATE_GOLDEN=1 重生成"
+        "BCS1 length changed: DSP parameters or frame-count semantics were modified; if intended, regenerate with CCUT_UPDATE_GOLDEN=1"
     );
     if let Some(offset) = produced.iter().zip(&golden).position(|(a, b)| a != b) {
         panic!(
-            "BCS1 第 {offset} 字节不一致（{} != {}）：这是像素级语义变更，\
-             确认后才用 CCUT_UPDATE_GOLDEN=1 重生成",
+            "BCS1 byte {offset} differs ({} != {}): this is a pixel-level semantic change; \
+             regenerate with CCUT_UPDATE_GOLDEN=1 only after confirming it is intended",
             produced[offset], golden[offset]
         );
     }

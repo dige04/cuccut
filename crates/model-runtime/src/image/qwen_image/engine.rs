@@ -99,7 +99,7 @@ fn mem(tag: &str) {
     let (fp, fp_max) = footprint();
     let gb = |v: u64| v as f64 / 1e9;
     eprintln!(
-        "[mem] {tag}: active {:.2} GB, cache {:.2} GB, 阶段峰值 {:.2} GB｜footprint {:.2} GB，进程最大 {:.2} GB",
+        "[mem] {tag}: active {:.2} GB, cache {:.2} GB, stage peak {:.2} GB | footprint {:.2} GB, process max {:.2} GB",
         gb(active as u64),
         gb(cache as u64),
         gb(peak as u64),
@@ -111,7 +111,7 @@ fn mem(tag: &str) {
 /// `[1,H,W,4]`, range [-1,1] VAE output → 8-bit RGBA.
 fn to_rgba(x: &Array) -> Result<RawImage> {
     if x.ndim() != 4 || x.dim(3) != 4 {
-        return Err(anyhow!("VAE 输出形状不是 [1,H,W,4]：{:?}", x.shape()));
+        return Err(anyhow!("VAE output shape is not [1,H,W,4]: {:?}", x.shape()));
     }
     let (h, w) = (x.dim(1) as u32, x.dim(2) as u32);
     let y = x
@@ -197,7 +197,7 @@ impl QwenImage {
         };
         ensure_metal_device()?;
         let corrupt = |what: &str, e: anyhow::Error| {
-            ErrorBody::new(codes::MODEL_NOT_INSTALLED, format!("{what} 读不出来：{e:#}"))
+            ErrorBody::new(codes::MODEL_NOT_INSTALLED, format!("{what} could not be read: {e:#}"))
                 .with_details(serde_json::json!({ "component": "image", "reason": "unreadable" }))
         };
         let prompter = Prompter::load(&tokenizer).map_err(|e| corrupt("processor/tokenizer.json", e))?;
@@ -219,7 +219,7 @@ impl QwenImage {
         let p = Precision::probe()?;
         let d = p.pick();
         trace!(
-            "[dit] 精度探测 {:.2}s：4-bit 矩阵乘 f16 {:.1} ms、bf16 {:.1} ms → {d:?}",
+            "[dit] precision probe {:.2}s: 4-bit matmul f16 {:.1} ms, bf16 {:.1} ms → {d:?}",
             t.elapsed().as_secs_f64(),
             p.f16_ms,
             p.bf16_ms
@@ -245,7 +245,7 @@ impl QwenImage {
         let cond = text_encoder::encode_streaming(&self.files.text_encoder, &ids, self.prompter.drop_idx())?;
         clear_memory_cache()?;
         trace!(
-            "[text] {} tokens（丢弃系统前缀 {}）→ {:?}，{:.1}s",
+            "[text] {} tokens (dropped system prefix {}) → {:?}, {:.1}s",
             ids.len(),
             self.prompter.drop_idx(),
             cond.shape(),
@@ -264,7 +264,7 @@ impl QwenImage {
         let latents = match self.denoise(&cond, &sigmas, prec, request, progress, cancel) {
             // f16 has only a 5-bit exponent. If it overflows, rerun from scratch in bf16, which matches the reference pipeline (same seed).
             Err(e) if e.downcast_ref::<Overflow>().is_some() => {
-                trace!("[dit] {e}，改用 bf16 重跑");
+                trace!("[dit] {e}, rerunning in bf16");
                 clear_memory_cache()?;
                 let prec = Precision {
                     compute: Dtype::Bfloat16,
@@ -293,18 +293,18 @@ impl QwenImage {
         let image = match decode(vae_dtype) {
             // f16 has only a 5-bit exponent. If it overflows upward, re-decode in bf16, which has the same exponent range as f32.
             Err(e) if vae_dtype == Dtype::Float16 => {
-                trace!("[vae] {e:#}，改用 bf16 重解");
+                trace!("[vae] {e:#}, decoding again in bf16");
                 clear_memory_cache()?;
                 decode(Dtype::Bfloat16)?
             }
             r => r?,
         };
-        trace!("[vae] 解码 {:.1}s", t2.elapsed().as_secs_f64());
+        trace!("[vae] decode {:.1}s", t2.elapsed().as_secs_f64());
         mem("vae done");
         drop(lat);
         drop(guard);
         trace!(
-            "{w}x{h} {steps} steps seed {}（总计 {:.1}s）",
+            "{w}x{h} {steps} steps seed {} (total {:.1}s)",
             request.seed,
             total.elapsed().as_secs_f64()
         );
@@ -324,10 +324,10 @@ impl QwenImage {
         let t1 = Instant::now();
         let dit = Dit::load(&self.files.transformer, prec)?;
         trace!(
-            "[dit] 加载 {:.1}s（{:?}{}）",
+            "[dit] load {:.1}s ({:?}{})",
             t1.elapsed().as_secs_f64(),
             prec.compute,
-            if prec.dequant { "，整层解量化" } else { "" }
+            if prec.dequant { ", whole layers dequantized" } else { "" }
         );
         mem("dit loaded");
         let mut cache = dit.prepare_text(cond, gh, gw)?;
@@ -371,12 +371,12 @@ impl ImageEngine for QwenImage {
     fn generate(&mut self, request: &ImageRequest, progress: &mut dyn FnMut(ImageProgress), cancel: &dyn Fn() -> bool) -> Result<RawImage> {
         super::check_size(request.width, request.height)?;
         if request.steps == 0 {
-            return Err(ErrorBody::invalid_params("steps 至少 1").into());
+            return Err(ErrorBody::invalid_params("steps must be at least 1").into());
         }
         let image = self.run(request, progress, cancel)?;
         if (image.width, image.height) != (request.width, request.height) {
             return Err(anyhow!(
-                "解码尺寸 {}x{} 与请求 {}x{} 不符",
+                "decoded size {}x{} does not match requested {}x{}",
                 image.width,
                 image.height,
                 request.width,
@@ -443,7 +443,7 @@ mod tests {
         .verify("image")
         .unwrap();
         let error = match QwenImage::load(&files) {
-            Ok(_) => panic!("不该加载成功"),
+            Ok(_) => panic!("should not load successfully"),
             Err(error) => error.downcast_ref::<ErrorBody>().expect("ErrorBody").clone(),
         };
         assert_eq!(error.code, codes::MODEL_NOT_INSTALLED);
@@ -482,7 +482,7 @@ mod tests {
     ///   engine_releases_memory_and_restores_the_cache_limit --test-threads=1 --nocapture
     /// ```
     #[test]
-    #[ignore = "需要 CUCCUT_TEST_MODELS_DIR 下装好的 Qwen-Image-2.1 与 Metal"]
+    #[ignore = "needs Qwen-Image-2.1 installed under CUCCUT_TEST_MODELS_DIR, and Metal"]
     fn engine_releases_memory_and_restores_the_cache_limit() {
         let _lock = lock();
         let root = std::env::var("CUCCUT_TEST_MODELS_DIR").expect("CUCCUT_TEST_MODELS_DIR");
@@ -512,9 +512,9 @@ mod tests {
         drop(engine);
         let (active, cache, peak) = memory_snapshot();
         let (_, footprint_max) = footprint();
-        eprintln!("析构后 MLX active {active} B、cache {cache} B、峰值 {peak} B；进程 footprint 最大 {footprint_max} B");
-        assert!(active < UNLOADED_ACTIVE_MAX, "析构后活跃内存 {active} B");
-        assert_eq!(cache, 0, "析构后缓存应已清空");
-        assert_eq!(memory::set_cache_limit(before), 77 << 20, "缓存上限没还原");
+        eprintln!("after drop: MLX active {active} B, cache {cache} B, peak {peak} B; process footprint max {footprint_max} B");
+        assert!(active < UNLOADED_ACTIVE_MAX, "active memory after drop {active} B");
+        assert_eq!(cache, 0, "cache should be empty after drop");
+        assert_eq!(memory::set_cache_limit(before), 77 << 20, "cache limit was not restored");
     }
 }

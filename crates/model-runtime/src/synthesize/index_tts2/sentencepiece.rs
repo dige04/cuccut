@@ -67,8 +67,8 @@ pub struct SentencePieceModel {
 
 impl SentencePieceModel {
     pub fn load(path: &Path) -> Result<Self> {
-        let data = std::fs::read(path).with_context(|| format!("无法读取 SentencePiece 模型 {}", path.display()))?;
-        Self::parse(&data).with_context(|| format!("解析 SentencePiece 模型 {} 失败", path.display()))
+        let data = std::fs::read(path).with_context(|| format!("failed to read SentencePiece model {}", path.display()))?;
+        Self::parse(&data).with_context(|| format!("failed to parse SentencePiece model {}", path.display()))
     }
 
     pub fn parse(data: &[u8]) -> Result<Self> {
@@ -120,7 +120,7 @@ impl SentencePieceModel {
             offset = end;
         }
         if pieces.is_empty() {
-            bail!("SentencePiece 模型没有任何 piece");
+            bail!("SentencePiece model has no pieces");
         }
         Ok(Self { pieces })
     }

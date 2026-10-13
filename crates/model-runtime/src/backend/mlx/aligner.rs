@@ -55,7 +55,7 @@ impl ForcedAligner {
         let classify_weight = store.take("lm_head.weight")?;
         let classify_bias = store.take_optional("lm_head.bias");
         let tokenizer = Qwen3Tokenizer::load(vocabulary, files.path("merges.txt"), files.path("tokenizer_config.json"))
-            .context("无法加载对齐器 tokenizer")?;
+            .context("cannot load aligner tokenizer")?;
         let _unused_checkpoint_metadata = store.remaining();
         Ok(Self {
             audio_encoder,

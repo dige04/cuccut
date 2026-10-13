@@ -118,7 +118,7 @@ pub fn check_layer_with(
                 effect_id: Some(effect.id.clone()),
                 transition_id: None,
                 kind: Some(effect.kind.clone()),
-                message: format!("效果「{}」画不出来", effect.kind),
+                message: format!("effect \"{}\" cannot be drawn", effect.kind),
                 reason: format!("effect-{reason}"),
             });
         }
@@ -146,7 +146,7 @@ pub fn check_transition(layer: &VisualLayer) -> Option<UnsupportedItem> {
         effect_id: None,
         transition_id: Some(transition.id.clone()),
         kind: Some(transition.kind.clone()),
-        message: format!("转场「{}」画不出来，按硬切画", transition.kind),
+        message: format!("transition \"{}\" cannot be drawn; drawing a hard cut instead", transition.kind),
         reason,
     })
 }
@@ -160,7 +160,7 @@ fn catalogue_problem(layer: &VisualLayer) -> Option<(Option<String>, &'static st
             let found = id
                 .as_deref()
                 .is_some_and(|id| motion::preset_registry::timeline_shape(id).is_some());
-            (id, found, "形状")
+            (id, found, "shape")
         }
         Some(LayerContent::Generator { generator, parameters, .. }) => {
             let lookup: fn(&str) -> bool = match generator.as_str() {
@@ -173,10 +173,10 @@ fn catalogue_problem(layer: &VisualLayer) -> Option<(Option<String>, &'static st
             let key = if generator == "cuccut.sticker" { "templateId" } else { "style" };
             let id = text(parameters, key);
             let what = match generator.as_str() {
-                "cuccut.sticker" => "贴纸模板",
-                "cuccut.audio-visualizer" => "声波样式",
-                "cuccut.progress" => "进度条样式",
-                _ => "彩纸样式",
+                "cuccut.sticker" => "sticker template",
+                "cuccut.audio-visualizer" => "audio visualizer style",
+                "cuccut.progress" => "progress style",
+                _ => "confetti style",
             };
             let found = id.as_deref().is_some_and(lookup);
             (id, found, what)
@@ -186,10 +186,10 @@ fn catalogue_problem(layer: &VisualLayer) -> Option<(Option<String>, &'static st
     match (found, id) {
         (true, _) => None,
         (false, Some(id)) => {
-            let message = format!("{what}「{id}」不在随渲染内核发布的目录里");
+            let message = format!("{what} \"{id}\" is not in the catalog shipped with the render kernel");
             Some((Some(id), "preset-unknown", message))
         }
-        (false, None) => Some((None, "preset-missing", format!("没有指定{what}"))),
+        (false, None) => Some((None, "preset-missing", format!("no {what} specified"))),
     }
 }
 
@@ -212,7 +212,7 @@ fn check_content(
                     layer,
                     Some(generator.clone()),
                     "generator-not-implemented",
-                    format!("「{generator}」画不出来"),
+                    format!("\"{generator}\" cannot be drawn"),
                 ));
             }
             if generator == "cuccut.template" {
@@ -242,19 +242,19 @@ fn check_content(
             }),
         ) => caption(document_id, style_document_id.as_deref())
             .map(|(kind, reason, message)| UnsupportedItem::layer(layer, kind, reason, message)),
-        _ => Some(UnsupportedItem::layer(layer, None, "unknown-layer", "不认识这种层")),
+        _ => Some(UnsupportedItem::layer(layer, None, "unknown-layer", "unrecognized layer type")),
     }
 }
 
 /// Human-readable description of the frame plan's unsupported reason or of the reason marked unsupported here.
 fn unsupported_message(reason: &str) -> &'static str {
     match reason {
-        "bundle-without-prerender" => "没有预渲染替身的代码包合成画不出来（先生成预渲染替身）",
-        "sticker-asset-not-supported" => "这种素材的贴纸画不出来（贴纸素材要是图片、视频或 Lottie）",
-        "placeholder-asset-not-supported" => "占位框填的素材画不出来（要是图片或视频）",
-        "template-missing" => "模板层在序列的模板里找不到",
-        "template-logo-image-not-supported" => "模板的图片台标画不出来（只画文字台标）",
-        _ => "这一层画不出来",
+        "bundle-without-prerender" => "a code-bundle composition without a prerender stand-in cannot be drawn (generate the prerender stand-in first)",
+        "sticker-asset-not-supported" => "a sticker of this asset type cannot be drawn (sticker assets must be images, videos or Lottie)",
+        "placeholder-asset-not-supported" => "the asset filling the placeholder cannot be drawn (it must be an image or video)",
+        "template-missing" => "the template layer is not found in the sequence's templates",
+        "template-logo-image-not-supported" => "the template's image logo cannot be drawn (only text logos are drawn)",
+        _ => "this layer cannot be drawn",
     }
 }
 
@@ -265,17 +265,17 @@ pub type CaptionProblem = (Option<String>, &'static str, String);
 /// A style that is not recognized is not silently replaced with the default style: preview skips this group of captions and reports it, and export is refused with an explanation.
 pub fn caption_problem(documents: &Documents, document_id: &str, style_document_id: Option<&str>) -> Option<CaptionProblem> {
     let Some(document) = documents.get(document_id) else {
-        return Some((None, "caption-document-missing", format!("字幕文档 {document_id} 不在了")));
+        return Some((None, "caption-document-missing", format!("caption document {document_id} is gone")));
     };
     if read_captions(&document.body).is_none() {
         let found = schema(&document.body);
-        let message = format!("字幕文档 {} 认不出", found.clone().unwrap_or_else(|| "（没有 schema）".into()));
+        let message = format!("caption document {} is not recognized", found.clone().unwrap_or_else(|| "(no schema)".into()));
         return Some((found, "caption-unknown-document", message));
     }
     let style_document = match style_document_id {
         Some(id) => match documents.get(id) {
             Some(style) => Some(style),
-            None => return Some((None, "caption-style-missing", format!("字幕样式文档 {id} 不在了"))),
+            None => return Some((None, "caption-style-missing", format!("caption style document {id} is gone"))),
         },
         None => None,
     };
@@ -283,8 +283,8 @@ pub fn caption_problem(documents: &Documents, document_id: &str, style_document_
         Ok(_) => None,
         Err(found) => {
             let message = format!(
-                "字幕样式 {} 认不出（导出不替换样式）",
-                found.clone().unwrap_or_else(|| "（没有 schema）".into())
+                "caption style {} is not recognized (export does not replace the style)",
+                found.clone().unwrap_or_else(|| "(no schema)".into())
             );
             Some((found, "caption-unknown-style", message))
         }

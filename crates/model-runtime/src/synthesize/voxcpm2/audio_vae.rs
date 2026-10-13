@@ -195,7 +195,7 @@ impl AudioVae {
                 .take_optional(&format!("{p}.conv_t.bias"))
                 .map(|b| b.as_dtype(Dtype::Float32))
                 .transpose()?;
-            ensure!(weight.dim(1) == 2 * stride, "AudioVAE 解码块 {i} 转置卷积核应为 2×stride");
+            ensure!(weight.dim(1) == 2 * stride, "AudioVAE decoder block {i} transposed-conv kernel should be 2×stride");
             dec_blocks.push(DecoderBlock {
                 sr_scale,
                 sr_bias,

@@ -410,7 +410,7 @@ mod tests {
         swept_arc_subpath(&mut dot, center, 0.4, 0.1, 0.0, 0.0);
         let mut disc = Vec::new();
         ring_subpath(&mut disc, polar(center, 0.4, 0.0), 0.1, 0.0);
-        assert_eq!(dot, disc, "零跨度只剩一个端点圆盘");
+        assert_eq!(dot, disc, "a zero span leaves only one endpoint disc");
 
         let mut forward = Vec::new();
         swept_arc_subpath(&mut forward, center, 0.4, 0.1, 0.0, 1.0);

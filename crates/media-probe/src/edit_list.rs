@@ -176,7 +176,7 @@ fn next_box<R: Read + Seek>(reader: &mut R, pos: u64, end: u64) -> io::Result<Op
         size => (8, u64::from(size)),
     };
     if size < header_len || pos.saturating_add(size) > end {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "box 尺寸越界"));
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "box size out of range"));
     }
     Ok(Some(BoxHeader {
         kind,

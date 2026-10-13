@@ -16,7 +16,7 @@ pub enum MaskChannel {
 pub fn image_mask(data: &mut [u8], mask: &[u8], channel: MaskChannel, invert: bool) -> Result<()> {
     if data.len() != mask.len() {
         bail!(
-            "effect-input-mismatch: mask 缓冲 {} 字节，输入 {} 字节",
+            "effect-input-mismatch: mask buffer is {} bytes, input is {} bytes",
             mask.len(),
             data.len()
         );

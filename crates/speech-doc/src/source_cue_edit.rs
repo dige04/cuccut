@@ -32,9 +32,9 @@ pub enum DeleteOriginalCueError {
 impl fmt::Display for DeleteOriginalCueError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidCueId => formatter.write_str("Cue id 必须是 q-…"),
-            Self::CueMissing => formatter.write_str("原文 Cue 已不存在"),
-            Self::Conflict => formatter.write_str("原文 Cue 正文基线已变化"),
+            Self::InvalidCueId => formatter.write_str("Cue id must start with q-…"),
+            Self::CueMissing => formatter.write_str("The source Cue no longer exists"),
+            Self::Conflict => formatter.write_str("The source Cue text baseline has changed"),
             Self::InvalidDocument(message) => formatter.write_str(message),
         }
     }
@@ -70,7 +70,7 @@ pub fn delete_original_cue(
     let pruned_overrides = next.prune_orphan_overrides();
     next.validate().map_err(|error| {
         DeleteOriginalCueError::InvalidDocument(format!(
-            "删除原文 Cue 后的 transcript 无效：{error:#}"
+            "Transcript is invalid after deleting the source Cue: {error:#}"
         ))
     })?;
     *doc = next;

@@ -61,7 +61,7 @@ impl Dict {
 static DICT: LazyLock<Dict> = LazyLock::new(|| {
     let text = inflate_text(include_bytes!("data/jieba_dict.txt.z"));
     let mut lines = text.lines();
-    let total: u64 = lines.next().and_then(|line| line.parse().ok()).expect("jieba 词典缺少 total");
+    let total: u64 = lines.next().and_then(|line| line.parse().ok()).expect("jieba dictionary is missing total");
     let mut words = String::with_capacity(text.len());
     let mut entries = Vec::new();
     let mut tags: Vec<String> = Vec::new();
@@ -69,7 +69,7 @@ static DICT: LazyLock<Dict> = LazyLock::new(|| {
     for line in lines.filter(|line| !line.is_empty()) {
         let mut fields = line.split('\t');
         let (Some(word), Some(freq), Some(tag)) = (fields.next(), fields.next(), fields.next()) else {
-            panic!("jieba 词典行格式错误：{line}");
+            panic!("jieba dictionary line has the wrong format: {line}");
         };
         let tag = match tag_ids.get(tag) {
             Some(&id) => id,
@@ -83,7 +83,7 @@ static DICT: LazyLock<Dict> = LazyLock::new(|| {
         entries.push(Entry {
             start: words.len() as u32,
             len: word.len() as u32,
-            freq: freq.parse().expect("jieba 词频"),
+            freq: freq.parse().expect("jieba frequency"),
             tag,
         });
         words.push_str(word);
@@ -105,7 +105,7 @@ struct Reader<'a> {
 
 impl Reader<'_> {
     fn take<const N: usize>(&mut self) -> [u8; N] {
-        let out = self.bytes[self.pos..self.pos + N].try_into().expect("jieba HMM 表截断");
+        let out = self.bytes[self.pos..self.pos + N].try_into().expect("jieba HMM table is truncated");
         self.pos += N;
         out
     }
@@ -198,7 +198,7 @@ fn route(text: &str, offsets: &[usize], calc: Calc) -> Vec<usize> {
                 current = Some((score, x));
             }
         }
-        best[idx] = current.expect("DAG 至少含自身");
+        best[idx] = current.expect("DAG contains at least itself");
     }
     best[..n].iter().map(|&(_, end)| end).collect()
 }
@@ -457,7 +457,7 @@ static POSSEG: LazyLock<PosSeg> = LazyLock::new(|| {
         .map(|_| {
             let pos = reader.u8() as char;
             let len = reader.u8() as usize;
-            let tag = String::from_utf8(reader.bytes[reader.pos..reader.pos + len].to_vec()).expect("posseg 词性");
+            let tag = String::from_utf8(reader.bytes[reader.pos..reader.pos + len].to_vec()).expect("posseg tag");
             reader.pos += len;
             (pos, tag)
         })
@@ -480,7 +480,7 @@ static POSSEG: LazyLock<PosSeg> = LazyLock::new(|| {
     let chars = reader.u32() as usize;
     let char_states = (0..chars)
         .map(|_| {
-            let ch = char::from_u32(reader.u16() as u32).expect("posseg 字符");
+            let ch = char::from_u32(reader.u16() as u32).expect("posseg character");
             let count = reader.u8() as usize;
             (ch, (0..count).map(|_| reader.u8() as usize).collect())
         })
@@ -547,7 +547,7 @@ fn posseg_viterbi(model: &PosSeg, obs: &[char]) -> Vec<usize> {
             Some(s) if probs[last][s] > probs[last][y] || (probs[last][s] == probs[last][y] && s > y) => Some(s),
             _ => Some(y),
         })
-        .expect("viterbi 末列非空");
+        .expect("viterbi last column is non-empty");
     let mut path = vec![0; obs.len()];
     for t in (0..obs.len()).rev() {
         path[t] = state;

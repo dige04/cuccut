@@ -1048,14 +1048,14 @@ pub fn project_media(project: &Path) -> Result<PathBuf> {
     let manifest_path = project.join("project.json");
     let manifest: Value = serde_json::from_slice(
         &fs::read(&manifest_path)
-            .with_context(|| format!("项目缺少 {}", manifest_path.display()))?,
+            .with_context(|| format!("project is missing {}", manifest_path.display()))?,
     )
-    .with_context(|| format!("解析 {}", manifest_path.display()))?;
+    .with_context(|| format!("parse {}", manifest_path.display()))?;
     let raw = manifest
         .pointer("/media/path")
         .and_then(Value::as_str)
         .filter(|path| !path.is_empty())
-        .context("project.json 缺少 media.path")?;
+        .context("project.json is missing media.path")?;
     let path = PathBuf::from(raw);
     let path = if path.is_absolute() {
         path
@@ -1063,7 +1063,7 @@ pub fn project_media(project: &Path) -> Result<PathBuf> {
         project.join(path)
     };
     if !path.is_file() {
-        bail!("项目媒体不存在：{}", path.display());
+        bail!("project media does not exist: {}", path.display());
     }
     Ok(path)
 }
@@ -1077,11 +1077,11 @@ pub fn load_preview_document(project: &Path) -> Result<Value> {
     let data_path = project.join("studio/data.json");
     let data: Value = serde_json::from_slice(&fs::read(&data_path).with_context(|| {
         format!(
-            "项目缺少 {}；先运行 `ccut studio sync`",
+            "project is missing {}; run `ccut studio sync` first",
             data_path.display()
         )
     })?)
-    .with_context(|| format!("解析 {}", data_path.display()))?;
+    .with_context(|| format!("parse {}", data_path.display()))?;
     apply_pending_edits(project, data)
 }
 
@@ -1133,9 +1133,9 @@ pub fn apply_pending_edits(project: &Path, mut data: Value) -> Result<Value> {
     let edits_path = project.join("studio/edits.json");
     let overlay: Value = match fs::read(&edits_path) {
         Ok(bytes) => serde_json::from_slice(&bytes)
-            .with_context(|| format!("解析 {}", edits_path.display()))?,
+            .with_context(|| format!("parse {}", edits_path.display()))?,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(data),
-        Err(error) => return Err(error).with_context(|| format!("读取 {}", edits_path.display())),
+        Err(error) => return Err(error).with_context(|| format!("read {}", edits_path.display())),
     };
     apply_preview_overlays(&mut data, &overlay);
     Ok(data)
@@ -1160,12 +1160,12 @@ pub fn preview_document_from_shared(
 #[cfg(feature = "host")]
 pub fn load_subtitle_style_override(path: &Path) -> Result<Value> {
     let bytes = fs::read(path)
-        .with_context(|| format!("读取 --sub-style 字幕样式文件 {}", path.display()))?;
+        .with_context(|| format!("read --sub-style subtitle style file {}", path.display()))?;
     let style: Value = serde_json::from_slice(&bytes)
-        .with_context(|| format!("解析 --sub-style 字幕样式文件 {}", path.display()))?;
+        .with_context(|| format!("parse --sub-style subtitle style file {}", path.display()))?;
     if !style.is_object() {
         bail!(
-            "--sub-style 字幕样式文件 {} 顶层必须是 JSON 对象（与 studio/style.json 同构）",
+            "--sub-style subtitle style file {} must have a top-level JSON object (same shape as studio/style.json)",
             path.display()
         );
     }

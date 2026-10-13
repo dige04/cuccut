@@ -1708,7 +1708,7 @@ pub(crate) fn move_item(
                 fps,
             };
             let q = quantize_exact(target, requested, &grid, alignment, "at")?;
-            other.span_mut().expect("音频之外的实例都在帧网格上").from_frame = q.frame;
+            other.span_mut().expect("items other than audio are on the frame grid").from_frame = q.frame;
             ctx.time_resolution.push(q.receipt);
         }
     }
@@ -1823,7 +1823,7 @@ pub(crate) fn trim_item(
         }
         // Other visual instances and subtitles: only the range changes.
         other => {
-            let span = other.span_mut().expect("除音频外的实例都在帧网格上");
+            let span = other.span_mut().expect("items other than audio are on the frame grid");
             let q = editor_semantics::quantize_input(at, &grid, alignment, "at")?;
             let (new_from, new_end) = match edge {
                 Edge::Start => (q.frame, span.end_frame()),
@@ -2079,7 +2079,7 @@ pub(crate) fn split_item(
         }
         (l, r) => {
             // Instances on the frame grid: the split point is quantized once. For those with a timeMap, the right segment's sourceIn is evaluated exactly at the split moment using the old mapping, not rebuilt from formatted seconds (§2.7).
-            let span = l.span().expect("音频之外的实例都在帧网格上");
+            let span = l.span().expect("items other than audio are on the frame grid");
             let q = editor_semantics::quantize_input(at, &grid, alignment, "at")?;
             let split = q.frame - span.from_frame;
             if split <= 0 || split >= span.duration_frames {
@@ -2102,11 +2102,11 @@ pub(crate) fn split_item(
                     };
                 }
             }
-            *r.span_mut().expect("同一类型") = FrameSpan {
+            *r.span_mut().expect("same type") = FrameSpan {
                 from_frame: q.frame,
                 duration_frames: span.duration_frames - split,
             };
-            l.span_mut().expect("同一类型").duration_frames = split;
+            l.span_mut().expect("same type").duration_frames = split;
             ctx.time_resolution.push(q.receipt);
         }
     }
@@ -2249,8 +2249,8 @@ pub(crate) fn join_items(state: &mut VideoState, sequence_id: Option<&str>, item
     let late_duration = seconds_between(late_range.0, late_range.1);
     let joined = crate::item_keyframes::join_items(state, &early_id, early_duration, &late_id, late_duration, fps)?;
     let attributes = |item: &TimelineItem| -> serde_json::Map<String, Value> {
-        let mut value = serde_json::to_value(item).expect("能序列化");
-        let object = value.as_object_mut().expect("实例是对象");
+        let mut value = serde_json::to_value(item).expect("can serialize");
+        let object = value.as_object_mut().expect("item is an object");
         for key in JOIN_OWN_KEYS {
             object.remove(key);
         }
@@ -2296,8 +2296,8 @@ pub(crate) fn join_items(state: &mut VideoState, sequence_id: Option<&str>, item
             m.play_duration = MediaTime::from_ratio(total, "playDuration")?;
         }
         (m, e) => {
-            let (early_span, late_span) = (e.span().expect("同一种类"), late.span().expect("同一种类"));
-            *m.span_mut().expect("同一种类") = FrameSpan {
+            let (early_span, late_span) = (e.span().expect("same kind"), late.span().expect("same kind"));
+            *m.span_mut().expect("same kind") = FrameSpan {
                 from_frame: early_span.from_frame,
                 duration_frames: early_span.duration_frames + late_span.duration_frames,
             };
@@ -2500,7 +2500,7 @@ pub(crate) fn shift_earlier(state: &mut VideoState, item_id: &str, length: Ratio
             audio.from_frame = from_frame;
             audio.subframe_offset = offset;
         }
-        other => other.span_mut().expect("音频之外的实例都在帧网格上").from_frame -= frames,
+        other => other.span_mut().expect("items other than audio are on the frame grid").from_frame -= frames,
     }
     Ok(())
 }
@@ -2700,7 +2700,7 @@ fn arrange_item(state: &mut VideoState, sequence_id: Option<&str>, item_id: &str
             }
         };
         let new_track = create_track(state, &sequence_id, kind, None, order)?;
-        state.items.get_mut(item_id).expect("刚检查过").value.base_mut().track_id = new_track;
+        state.items.get_mut(item_id).expect("just checked").value.base_mut().track_id = new_track;
         return Ok(());
     }
     // It has a track to itself: the whole track moves within the same stack (visual and subtitle share one stack), and the other tracks yield in turn.
@@ -2764,9 +2764,9 @@ fn move_track(
     let stack = tracks_in_stack(state, &sequence_id, stacking_group(kind));
     let orders: Vec<i64> = stack.iter().map(|(_, order)| *order).collect();
     let mut ordered: Vec<Id> = stack.into_iter().map(|(id, _)| id).collect();
-    let index = ordered.iter().position(|id| id == track_id).expect("刚检查过");
+    let index = ordered.iter().position(|id| id == track_id).expect("just checked");
     let moved = ordered.remove(index);
-    let anchor_at = ordered.iter().position(|id| id == target).expect("刚检查过");
+    let anchor_at = ordered.iter().position(|id| id == target).expect("just checked");
     let at = match position {
         TrackPosition::Above => anchor_at + 1,
         TrackPosition::Below => anchor_at,
@@ -2910,7 +2910,7 @@ fn checked_item<'s>(state: &'s VideoState, sequence_id: Option<&str>, item_id: &
 
 pub(crate) fn editable_item<'s>(state: &'s mut VideoState, sequence_id: Option<&str>, item_id: &str) -> EngineResult<&'s mut TimelineItem> {
     checked_item(state, sequence_id, item_id)?;
-    Ok(&mut state.items.get_mut(item_id).expect("刚检查过").value)
+    Ok(&mut state.items.get_mut(item_id).expect("just checked").value)
 }
 
 pub(crate) fn not_applicable(item_id: &str, why: Text) -> ErrorBody {
@@ -2921,7 +2921,7 @@ pub(crate) fn not_applicable(item_id: &str, why: Text) -> ErrorBody {
 fn parse_props<T: serde::de::DeserializeOwned + Serialize>(item_id: &str, props: &Value) -> EngineResult<T> {
     let parsed: T = serde_json::from_value(props.clone())
         .map_err(|e| ErrorBody::invalid_operation(msg!("engine.propsInvalid", "props is invalid: {error}", error = e.to_string())).entities([item_id]))?;
-    let back = serde_json::to_value(&parsed).expect("能序列化");
+    let back = serde_json::to_value(&parsed).expect("can serialize");
     if let Some(field) = dropped_field(props, &back, "props") {
         return Err(ErrorBody::invalid_operation(msg!("engine.propsUnknownField", "props has an unknown field {field}", field)).entities([item_id]));
     }
@@ -2966,7 +2966,7 @@ fn set_keyframes(
         ));
     }
     let seq_id = placed.sequence_id.clone();
-    let header = &mut state.sequences.get_mut(&seq_id).expect("实例所在的序列").header;
+    let header = &mut state.sequences.get_mut(&seq_id).expect("the sequence that contains the item").header;
     let existing = header
         .animation_bindings
         .iter()
@@ -3037,7 +3037,7 @@ fn update_item(state: &mut VideoState, sequence_id: Option<&str>, item_id: &str,
         Some(n) => Some(Some(clean_name(n, kinds::item())?)),
         None => None,
     };
-    let base = state.items.get_mut(item_id).expect("刚找到").value.base_mut();
+    let base = state.items.get_mut(item_id).expect("just found").value.base_mut();
     if let Some(n) = name {
         base.name = n;
     }
@@ -3183,7 +3183,7 @@ fn set_audio_mix(
     let (start, end) = item_range(&placed.value, fps)?;
     let length = end.checked_sub(start).ok_or_else(overflow)?;
 
-    let item = &mut state.items.get_mut(item_id).expect("刚检查过").value;
+    let item = &mut state.items.get_mut(item_id).expect("just checked").value;
     let (gain, fades) = match item {
         TimelineItem::Audio(audio) => {
             if let Some(m) = muted {
@@ -3231,7 +3231,7 @@ fn set_audio_mix(
 fn set_speed(state: &mut VideoState, sequence_id: Option<&str>, item_id: &str, rate: Rate) -> EngineResult<()> {
     rate.validate("rate")?;
     let speed = rate.ratio();
-    let (min, max) = (Ratio::new(1, 10).expect("常数"), Ratio::from_int(10).expect("常数"));
+    let (min, max) = (Ratio::new(1, 10).expect("constant"), Ratio::from_int(10).expect("constant"));
     if speed < min || speed > max {
         return Err(ErrorBody::invalid_operation(msg!("engine.speedRange", "The rate must be between 0.1× and 10×")).entities([item_id]));
     }
@@ -3266,11 +3266,11 @@ fn set_speed(state: &mut VideoState, sequence_id: Option<&str>, item_id: &str, r
             a.play_duration = MediaTime::from_ratio(new_length, "playDuration")?;
             new_length
         }
-        _ => unreachable!("上面只放过视频与音频"),
+        _ => unreachable!("only video and audio were placed above"),
     };
     let map = TimeMap::Linear { source_in, rate };
     check_time_map(state, item_id, &map, new_length, item.asset_ref())?;
-    *item.time_map_mut().expect("上面取到过") = map;
+    *item.time_map_mut().expect("fetched above") = map;
     state.items.insert(
         item_id.to_string(),
         Placed {
@@ -3316,7 +3316,7 @@ fn update_sequence(
         next.canvas.width = c.width;
         next.canvas.height = c.height;
     }
-    state.sequences.get_mut(sequence_id).expect("刚找到").header = next;
+    state.sequences.get_mut(sequence_id).expect("just found").header = next;
     Ok(())
 }
 
@@ -3521,7 +3521,7 @@ fn insert_items(state: &mut VideoState, sequence_id: &str, items: &[Value], ctx:
                 number = n + 1,
                 error = e.to_string()
             )))?;
-        if let Some(field) = dropped_field(&body, &serde_json::to_value(&item).expect("能序列化"), "") {
+        if let Some(field) = dropped_field(&body, &serde_json::to_value(&item).expect("can serialize"), "") {
             return Err(fail(msg!(
                 "engine.itemUnknownField",
                 "Clip {number} has an unknown field {field}",

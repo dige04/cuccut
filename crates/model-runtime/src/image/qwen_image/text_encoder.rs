@@ -27,7 +27,7 @@ fn layout(map: &HashMap<String, Array>) -> Result<(&'static str, TextDecoderConf
     let prefix = PREFIXES
         .into_iter()
         .find(|p| map.contains_key(&format!("{p}.embed_tokens.weight")))
-        .context("文本编码器里找不到 embed_tokens")?;
+        .context("embed_tokens not found in text encoder")?;
     let mut c = TextDecoderConfig {
         hidden_size: 4096,
         layers: 36,
@@ -42,13 +42,13 @@ fn layout(map: &HashMap<String, Array>) -> Result<(&'static str, TextDecoderConf
         qk_norm: true,
     };
     let q = format!("{prefix}.layers.0.self_attn.q_proj");
-    let w = map.get(&format!("{q}.weight")).with_context(|| format!("缺少 {q}.weight"))?;
+    let w = map.get(&format!("{q}.weight")).with_context(|| format!("missing {q}.weight"))?;
     if let Some(s) = map.get(&format!("{q}.scales")) {
         let input = c.hidden_size as i32;
         let (groups, packed) = (s.dim(1), w.dim(1) * 32);
         if groups == 0 || input % groups != 0 || packed % input != 0 {
             bail!(
-                "{q} 的量化形状对不上 hidden {input}（权重 {:?}，scales {:?}）",
+                "{q}: quantized shape does not match hidden size {input} (weight {:?}, scales {:?})",
                 w.shape(),
                 s.shape()
             );
@@ -62,13 +62,13 @@ fn layout(map: &HashMap<String, Array>) -> Result<(&'static str, TextDecoderConf
 /// One-shot encoding for generation: weights are opened lazily and read layer by layer in a streaming fashion (while computing layer i, layer i+1 is read ahead), and dropped after use;
 /// only the embedding and two adjacent layers stay resident. Returns a bf16 condition of `[1, L - drop_idx, 4096]`.
 pub fn encode_streaming(files: &[PathBuf], ids: &[u32], drop_idx: usize) -> Result<Array> {
-    let raw = weights::lazy(files, is_lm_key).context("打开文本编码器权重")?;
+    let raw = weights::lazy(files, is_lm_key).context("open text encoder weights")?;
     let (prefix, config) = layout(&raw)?;
     let mut store = WeightStore::from_arrays(raw)?;
     let decoder = TextDecoder::load_with_prefix(&mut store, config, prefix)?;
     let left = store.remaining();
     if !left.is_empty() {
-        bail!("文本编码器有未使用的权重：{:?}", &left[..left.len().min(3)]);
+        bail!("text encoder has unused weights: {:?}", &left[..left.len().min(3)]);
     }
     let hidden = decoder.into_hidden_prenorm(&id_array(ids))?;
     let out = hidden.index((.., drop_idx as i32.., ..));

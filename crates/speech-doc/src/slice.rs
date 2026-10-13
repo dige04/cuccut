@@ -214,7 +214,7 @@ mod tests {
         let ids: Vec<&str> = cut.words.iter().map(|word| word.id.as_str()).collect();
         // w0 midpoint 9.4 is outside. w1 midpoint 10.6 is inside. w4 midpoint 29.7 is inside. w5 midpoint 30.6 is outside.
         assert_eq!(ids, ["w1", "w2", "w3", "w4"]);
-        assert_eq!(cut.words[0].t0, 10.2, "词时间不重基");
+        assert_eq!(cut.words[0].t0, 10.2, "word times are not rebased");
         assert_eq!(cut.media, doc.media);
         assert_eq!(cut.speakers.keys().collect::<Vec<_>>(), ["s1"]);
         assert_eq!(
@@ -245,7 +245,7 @@ mod tests {
         let mut doc = source();
         doc.stages.chapters = Some(fingerprint(&doc.words));
         let kept = slice_range(&doc, 10.0, 30.0);
-        assert_eq!(kept.chapters.len(), 2, "缺省行为不变：章节裁进来");
+        assert_eq!(kept.chapters.len(), 2, "default behaviour unchanged: chapters are cut in");
         assert_eq!(kept.stages.chapters, Some(fingerprint(&kept.words)));
         let cut = slice_range_with(
             &doc,
@@ -257,7 +257,7 @@ mod tests {
         );
         assert!(cut.chapters.is_empty());
         assert_eq!(cut.stages.chapters, None);
-        assert_eq!(cut.words, kept.words, "只少章节，词与译文和缺省切法一致");
+        assert_eq!(cut.words, kept.words, "only chapters differ; words and translations match the default cut");
         assert_eq!(cut.trans, kept.trans);
         assert_eq!(cut.stages.asr, kept.stages.asr);
         cut.validate().unwrap();

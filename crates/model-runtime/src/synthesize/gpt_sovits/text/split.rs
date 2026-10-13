@@ -130,7 +130,7 @@ pub fn pre_seg_text(text: &str, english: bool) -> Result<Vec<String>> {
     let texts: Vec<&str> = text.split('\n').collect();
     // filter_text
     if texts.iter().all(|t| matches!(*t, " " | "\n" | "")) {
-        bail!("请输入有效文本");
+        bail!("please enter valid text");
     }
     let texts = texts.into_iter().filter(|t| !matches!(*t, " " | "")).map(str::to_owned).collect();
 

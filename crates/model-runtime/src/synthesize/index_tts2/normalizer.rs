@@ -392,7 +392,7 @@ struct Pattern(Regex);
 impl Pattern {
     fn new(pattern: &str) -> Self {
         // The patterns are all static literals; a mistake in one is a programming error.
-        Self(Regex::new(pattern).expect("静态正则应能编译"))
+        Self(Regex::new(pattern).expect("static regex should compile"))
     }
 
     /// Replaces each match with `transform(groups)`, where `groups[0]` is the whole match.

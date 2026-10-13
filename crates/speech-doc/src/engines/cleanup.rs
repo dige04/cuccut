@@ -24,7 +24,7 @@ impl CleanupStrength {
             "standard" => Ok(Self::Standard),
             "tight" => Ok(Self::Tight),
             other => Err(format!(
-                "未知 cleanup strength {other}（可用：conservative|standard|tight）"
+                "Unknown cleanup strength {other} (available: conservative|standard|tight)"
             )),
         }
     }

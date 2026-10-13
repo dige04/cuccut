@@ -173,16 +173,16 @@ mod tests {
             assert_eq!(
                 path.0.first().map(|s| s.verb),
                 Some(0),
-                "{shape:?} 以 Move 开头"
+                "{shape:?} starts with Move"
             );
             assert_eq!(
                 path.0.last().map(|s| s.verb),
                 Some(4),
-                "{shape:?} 以 Close 收尾"
+                "{shape:?} ends with Close"
             );
             for seg in &path.0 {
                 for v in seg.pts {
-                    assert!(v.abs() <= 1.0, "{shape:?} 单位路径越界 {v}");
+                    assert!(v.abs() <= 1.0, "{shape:?} unit path is out of bounds: {v}");
                 }
             }
         }

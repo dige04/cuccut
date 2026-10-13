@@ -725,7 +725,7 @@ mod tests {
                 ("s1".to_owned(), "当时打什么游戏呃".to_owned()),
                 ("s2".to_owned(), "很多啊打DOTA啊什么的".to_owned()),
             ],
-            "区间投影策略把答句开头的语气词吸附给了提问者（回归锁：既有行为）"
+            "the range-projection strategy snapped the answer's opening interjection to the questioner (regression lock: existing behaviour)"
         );
 
         let authoritative = build_doc_with_policy(
@@ -761,7 +761,7 @@ mod tests {
         let snapped = build_doc(&rows, media.clone(), "zh", engine(), None);
         assert!(
             snapped.words.iter().all(|word| word.sp == "s1"),
-            "回归锁：区间投影策略吸收无标点块里的应答岛（既有行为）"
+            "regression lock: the range-projection strategy absorbs a backchannel island inside an unpunctuated block (existing behaviour)"
         );
 
         let authoritative = build_doc_with_policy(

@@ -382,12 +382,12 @@ mod tests {
         fn synthesize(&mut self, request: &TtsRequest, progress: ProgressSink<'_>) -> Result<TtsAudio, anyhow::Error> {
             self.seen = Some(request.clone());
             if self.fail {
-                bail!("权重坏了：/secret/path/model.safetensors");
+                bail!("weights are corrupt: /secret/path/model.safetensors");
             }
             let mut samples = Vec::new();
             for index in 0..self.chunks {
                 if !progress(TtsProgress::ChunkStarted { index, count: self.chunks }) {
-                    bail!("合成已取消");
+                    bail!("synthesis cancelled");
                 }
                 for generated in 1..=3 {
                     if let Some((at, flag)) = self.cancel_at
@@ -396,7 +396,7 @@ mod tests {
                         flag.store(true, Ordering::SeqCst);
                     }
                     if !progress(TtsProgress::Tokens { index, generated }) {
-                        bail!("合成已取消");
+                        bail!("synthesis cancelled");
                     }
                 }
                 samples.extend((0..2_400).map(|i| (i as f32 * 440.0 * std::f32::consts::TAU / 24_000.0).sin() * 0.5));
@@ -404,7 +404,7 @@ mod tests {
                     index,
                     seconds: samples.len() as f64 / 24_000.0,
                 }) {
-                    bail!("合成已取消");
+                    bail!("synthesis cancelled");
                 }
             }
             Ok(TtsAudio {

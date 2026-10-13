@@ -2002,7 +2002,7 @@ mod tests {
         let found = doc.layers.iter().find(|l| l.id == layer);
         match found.map(|l| &l.kind) {
             Some(LayerKind::Text { text, .. } | LayerKind::Logo { text, .. }) => text.clone(),
-            other => panic!("{} 的 {layer} 不是文字 / 台标层：{other:?}", doc.id),
+            other => panic!("{} layer {layer} is not a text or logo layer: {other:?}", doc.id),
         }
     }
 
@@ -2020,7 +2020,7 @@ mod tests {
                     "{lang:?} {}",
                     d.id
                 );
-                let group = d.group.as_deref().expect("内置都带 group");
+                let group = d.group.as_deref().expect("built-in templates all have a group");
                 assert!(GROUPS.contains(&group) && group != GROUP_BRAND, "{}", d.id);
                 assert_eq!(d.imported, None);
                 assert!(d.subs_avoid && d.from.is_none() && d.font.is_none());
@@ -2151,21 +2151,21 @@ mod tests {
                 *size,
                 *weight,
             ),
-            other => panic!("{} 不是文字层：{other:?}", layer.id),
+            other => panic!("{} is not a text layer: {other:?}", layer.id),
         };
         let (t_text, t_color, t_bg, t_align, t_size, t_weight) = text_style(title);
         let (c_text, c_color, c_bg, c_align, c_size, c_weight) = text_style(chapter);
         assert_eq!((t_text.as_str(), c_text.as_str()), ("{title}", "{chapter}"));
-        assert!(t_size > c_size && t_weight > c_weight, "标题比章节名大、粗");
-        assert_ne!(t_color, c_color, "章节名降一档颜色");
-        assert_eq!(title.rect.y + title.rect.h, chapter.rect.y, "两行上下相接");
+        assert!(t_size > c_size && t_weight > c_weight, "title is larger and bolder than the chapter name");
+        assert_ne!(t_color, c_color, "chapter name uses a one-step-lower color");
+        assert_eq!(title.rect.y + title.rect.h, chapter.rect.y, "the two rows touch vertically");
         assert_eq!(
             (title.rect.x, title.rect.w, &t_bg),
             (chapter.rect.x, chapter.rect.w, &c_bg),
-            "同宽同底"
+            "same width and background"
         );
-        assert_eq!(t_bg.as_deref(), Some("#0000008C"), "深色半透明底");
-        assert!(chapter.rect.y + chapter.rect.h < 34.0, "标题卡在上三分之一");
+        assert_eq!(t_bg.as_deref(), Some("#0000008C"), "dark translucent background");
+        assert!(chapter.rect.y + chapter.rect.h < 34.0, "title card sits in the top third");
         assert_eq!((t_align, c_align), (TextAlign::Left, TextAlign::Left));
         assert!(
             v.layers.iter().all(|l| !matches!(
@@ -2173,7 +2173,7 @@ mod tests {
                 LayerKind::Text { bg: Some(bg), .. } | LayerKind::Logo { bg: Some(bg), .. }
                     if bg.eq_ignore_ascii_case(YELLOW)
             )),
-            "不再有整块亮黄"
+            "no full-block bright yellow remains"
         );
         assert!(matches!(
             logo.kind,
@@ -2186,9 +2186,9 @@ mod tests {
         // a default derived from font size would offset the three start lines. The counter sits to the right, and its right edge is symmetric with the logo text.
         let pad_of = |layer: &TemplateLayer| match &layer.kind {
             LayerKind::Logo { pad, .. } | LayerKind::Text { pad, .. } => {
-                pad.unwrap_or_else(|| panic!("{} 要写死内边距", layer.id))
+                pad.unwrap_or_else(|| panic!("{} must have a fixed padding", layer.id))
             }
-            other => panic!("{} 不是文字 / 台标层：{other:?}", layer.id),
+            other => panic!("{} is not a text or logo layer: {other:?}", layer.id),
         };
         let starts: Vec<(f64, f64)> = [logo, title, chapter]
             .iter()
@@ -2196,12 +2196,12 @@ mod tests {
             .collect();
         assert!(
             starts.windows(2).all(|w| w[0] == w[1]),
-            "台标字、标题、章节名左缘对齐：{starts:?}"
+            "logo text, title and chapter name share a left edge: {starts:?}"
         );
         let counter = find("l-n");
         assert_eq!(pad_of(counter), pad_of(logo));
         assert_eq!(100.0 - (counter.rect.x + counter.rect.w), logo.rect.x);
-        assert_eq!(subs_bottom(&v, 7.0), 7.0, "没有整宽低带，字幕不用避让");
+        assert_eq!(subs_bottom(&v, 7.0), 7.0, "no full-width bottom band, so subtitles need no offset");
         for lang in TemplateLang::ALL {
             let aligned: Vec<String> = builtins_in(lang)
                 .iter()
@@ -2306,20 +2306,20 @@ mod tests {
         assert!(tiled.kind.opacity() < 0.3);
         assert_eq!(tiled.rect, LayerBox::new(0.0, 0.0, 100.0, 100.0));
         let LayerKind::Logo { src, text, .. } = &tiled.kind else {
-            panic!("台标层")
+            panic!("logo layer")
         };
         assert!(src.is_text());
         assert_eq!(text, "@kelang.studio");
         let image = &list[2].layers[0];
         assert!(!image.kind.tiled() && image.rect.x > 70.0 && image.rect.y > 80.0);
         let LayerKind::Logo { src, .. } = &image.kind else {
-            panic!("台标层")
+            panic!("logo layer")
         };
         assert_eq!(src, &LogoSrc::brand("bm2"));
         let LayerKind::Logo { src, text, .. } = &list[3].layers[0].kind else {
-            panic!("台标层")
+            panic!("logo layer")
         };
-        assert!(src.is_text(), "对不上品牌库 Logo 退成文字");
+        assert!(src.is_text(), "an unmatched brand library logo falls back to text");
         assert_eq!(text, "missing.png");
         // Idempotent: importing again does not create a second copy, and does not overwrite the existing one.
         let mut edited = list.clone();
@@ -2412,10 +2412,10 @@ mod tests {
         let list = builtins();
         let groups = group_templates(list.iter(), |d| group_key(d, false));
         let keys: Vec<&str> = groups.iter().map(|g| g.key).collect();
-        assert_eq!(keys, GROUPS[..8], "内置目录没有品牌库组");
+        assert_eq!(keys, GROUPS[..8], "built-in catalog has no brand library group");
         let counts: Vec<usize> = groups.iter().map(|g| g.items.len()).collect();
         assert_eq!(counts, [3, 3, 1, 2, 2, 2, 1, 3]);
-        assert_eq!(groups[3].items[0].id, "tpl-dy-title", "节内保持目录顺序");
+        assert_eq!(groups[3].items[0].id, "tpl-dy-title", "items keep catalog order within a group");
 
         // Anything in the brand kit always goes to the brand kit; a missing or unrecognised group goes to info bar.
         let mut saved = builtin("tpl-wm-tiled").unwrap();
@@ -2460,26 +2460,26 @@ mod tests {
     fn validation_rejects_bad_docs() {
         let mut d = builtin("tpl-chapter-bar").unwrap();
         d.layers[1].id = "l-ch".into();
-        assert!(validate(&d).is_err(), "重复层 id");
+        assert!(validate(&d).is_err(), "duplicate layer id");
         let mut d = builtin("tpl-chapter-bar").unwrap();
         d.layers[0].rect.h = 0.2;
-        assert!(validate(&d).is_err(), "小于最小高度");
+        assert!(validate(&d).is_err(), "below minimum height");
         let mut d = builtin("tpl-chapter-bar").unwrap();
         d.layers[0].rect.y = 95.0;
-        assert!(validate(&d).is_err(), "越界");
+        assert!(validate(&d).is_err(), "out of bounds");
         let mut d = builtin("tpl-chapter-bar").unwrap();
         if let LayerKind::Chapters { accent, .. } = &mut d.layers[0].kind {
             *accent = "rgba(0,0,0,0.5)".into();
         }
-        assert!(validate(&d).is_err(), "非 hex 颜色");
+        assert!(validate(&d).is_err(), "non-hex color");
         let mut d = builtin("tpl-chapter-bar").unwrap();
         d.hue = "chartreuse".into();
-        assert!(validate(&d).is_err(), "未知 hue");
+        assert!(validate(&d).is_err(), "unknown hue");
         let mut d = builtin("tpl-chapter-bar").unwrap();
         if let LayerKind::Logo { src, .. } = &mut d.layers[1].kind {
             *src = LogoSrc::file("../secret.png");
         }
-        assert!(validate(&d).is_err(), "越出项目的文件路径");
+        assert!(validate(&d).is_err(), "file path escapes the project");
         if let LayerKind::Logo { src, .. } = &mut d.layers[1].kind {
             *src = LogoSrc::file("assets/template/logo.png");
         }
@@ -2627,14 +2627,14 @@ mod tests {
         assert_eq!(subs_bottom(&bar, 0.0), 11.0);
         assert_eq!(subs_bottom(&bar, 15.0), 15.0);
         let line = builtin("tpl-progress-line").unwrap();
-        assert_eq!(subs_bottom(&line, 3.0), 3.0, "顶部进度线不抬字幕");
+        assert_eq!(subs_bottom(&line, 3.0), 3.0, "top progress line does not lift subtitles");
         let talk = builtin("tpl-talk-top").unwrap();
         assert_eq!(subs_bottom(&talk, 0.0), 4.0);
         assert_eq!(subs_bottom(&builtin("tpl-yt-chapters").unwrap(), 0.0), 10.0);
         assert_eq!(subs_bottom(&builtin("tpl-bili-part").unwrap(), 0.0), 9.0);
         assert_eq!(subs_bottom(&builtin("tpl-podcast").unwrap(), 0.0), 7.0);
         let dy = builtin("tpl-dy-list").unwrap();
-        assert_eq!(subs_bottom(&dy, 0.0), 0.0, "上半屏的知识点条不抬字幕");
+        assert_eq!(subs_bottom(&dy, 0.0), 0.0, "upper-half knowledge bar does not lift subtitles");
         let mut off = bar.clone();
         off.layers[0].on = false;
         assert_eq!(subs_bottom(&off, 0.0), 0.0);

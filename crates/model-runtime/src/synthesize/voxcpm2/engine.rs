@@ -39,7 +39,7 @@ use anyhow::{Context, Result, bail, ensure};
 
 pub const ENGINE_NAME: &str = "VoxCPM2";
 pub const SAMPLE_RATE: u32 = 48_000;
-const ABORT_MESSAGE: &str = "合成已取消";
+const ABORT_MESSAGE: &str = "synthesis cancelled";
 /// Token marking the end of the text (`audio_start`), and the start and end tokens of the reference audio.
 const AUDIO_START: i32 = 101;
 const REF_START: i32 = 103;
@@ -139,10 +139,10 @@ impl VoxCpm2 {
         let cache_guard = ModelMemoryCacheGuard;
         stage("weights")?;
         let mut weights =
-            Weights::load(&[weights_path], false).with_context(|| format!("加载 {ENGINE_NAME} 权重 {}", weights_path.display()))?;
+            Weights::load(&[weights_path], false).with_context(|| format!("failed to load {ENGINE_NAME} weights {}", weights_path.display()))?;
         let model = Self::from_weights(config, tokenizer, &mut weights, &mut stage)?;
         let leftover = weights.keys();
-        ensure!(leftover.is_empty(), "{ENGINE_NAME} 有未使用的权重：{}", leftover.join(", "));
+        ensure!(leftover.is_empty(), "{ENGINE_NAME} has unused weights: {}", leftover.join(", "));
         drop(weights);
         // The load-time guard is dropped here: it waits for the GPU and clears the cache (v2 calls `clear_memory_cache` here); the model's own guard handles unloading.
         drop(cache_guard);
@@ -196,7 +196,7 @@ impl VoxCpm2 {
         let feat_encoder = LocEnc::load(weights, &enc_dims, local_rope.clone(), quant)?;
         let dit_cfg = &config.dit_config.block;
         let dit_head = dit_cfg.kv_channels.unwrap_or(dit_cfg.hidden_dim / dit_cfg.num_heads);
-        ensure!(!config.dit_config.mean_mode, "{ENGINE_NAME} 不支持 mean_mode 的 checkpoint");
+        ensure!(!config.dit_config.mean_mode, "{ENGINE_NAME} does not support checkpoints with mean_mode");
         let dit_dims = dims(
             dit_cfg.hidden_dim,
             dit_cfg.num_heads,
@@ -221,12 +221,12 @@ impl VoxCpm2 {
         let leftover = vae_weights.keys();
         ensure!(
             leftover.is_empty(),
-            "{ENGINE_NAME} AudioVAE 有未使用的权重：{}",
+            "{ENGINE_NAME} AudioVAE has unused weights: {}",
             leftover.join(", ")
         );
         ensure!(
             vae.out_sample_rate == SAMPLE_RATE,
-            "{ENGINE_NAME} AudioVAE 输出采样率是 {}，预期 {SAMPLE_RATE}",
+            "{ENGINE_NAME} AudioVAE outputs sample rate {}, expected {SAMPLE_RATE}",
             vae.out_sample_rate
         );
         let scale_emb = if lm.use_mup { lm.scale_emb } else { 1.0 };
@@ -257,7 +257,7 @@ impl VoxCpm2 {
 
     /// The reference waveform (at `vae.sample_rate`) is zero-padded to an integer multiple of `patch × hop` and then encoded into `[N, patch, latent]`.
     pub(crate) fn encode_audio(&self, samples: &[f32], pad_left: bool) -> Result<Array> {
-        ensure!(!samples.is_empty(), "{ENGINE_NAME} 参考音频为空");
+        ensure!(!samples.is_empty(), "{ENGINE_NAME} reference audio is empty");
         let unit = self.patch() * self.vae.hop;
         let pad = (unit - samples.len() % unit) % unit;
         let mut padded = Vec::with_capacity(samples.len() + pad);
@@ -495,7 +495,7 @@ impl VoxCpm2 {
     ) -> Result<VoicePlan> {
         let samples = reference_audio
             .samples(self.vae.sample_rate)
-            .with_context(|| format!("{ENGINE_NAME} 参考音频"))?;
+            .with_context(|| format!("{ENGINE_NAME} reference audio"))?;
         let reference = self.encode_audio(&samples, false)?;
         match reference_text {
             Some(text) if continuation => Ok(VoicePlan::Continuation {
@@ -516,10 +516,10 @@ fn normalize_text(text: &str) -> String {
 pub(crate) fn sampling_for(request: &TtsRequest) -> Result<Sampling> {
     let cfg = request.sampling.cfg.unwrap_or(DEFAULT_CFG);
     let steps = request.sampling.steps.unwrap_or(DEFAULT_STEPS);
-    ensure!(cfg.is_finite() && cfg > 0.0, "{ENGINE_NAME} cfg 必须是正数，收到 {cfg}");
-    ensure!(steps > 0, "{ENGINE_NAME} steps 必须大于 0");
+    ensure!(cfg.is_finite() && cfg > 0.0, "{ENGINE_NAME} cfg must be a positive number, got {cfg}");
+    ensure!(steps > 0, "{ENGINE_NAME} steps must be greater than 0");
     let max_patches = request.sampling.max_tokens.unwrap_or(DEFAULT_MAX_PATCHES);
-    ensure!(max_patches > 0, "{ENGINE_NAME} max_tokens 必须大于 0");
+    ensure!(max_patches > 0, "{ENGINE_NAME} max_tokens must be greater than 0");
     Ok(Sampling { cfg, steps, max_patches })
 }
 
@@ -539,9 +539,9 @@ impl TtsEngine for VoxCpm2 {
 
     fn synthesize(&mut self, request: &TtsRequest, progress: ProgressSink<'_>) -> Result<TtsAudio> {
         let text = request.text.trim();
-        ensure!(!text.is_empty(), "合成文本为空");
+        ensure!(!text.is_empty(), "text to synthesize is empty");
         let chunks = crate::synthesize::text::chunk_with_breaks(text, crate::synthesize::text::DEFAULT_MAX_UNITS);
-        ensure!(!chunks.is_empty(), "合成文本切块后为空");
+        ensure!(!chunks.is_empty(), "text to synthesize is empty after chunking");
         let sampling = sampling_for(request)?;
         let instruct = request.instruct.as_deref().map(str::trim).filter(|s| !s.is_empty());
         let reference = crate::synthesize::voices::reference_for(request, ENGINE_NAME)?;
@@ -667,7 +667,7 @@ mod tests {
         assert_eq!(a.len(), patches * per_patch);
         assert!(a.iter().all(|s| s.is_finite()));
         let (b, _) = run(None, 7);
-        assert_eq!(a, b, "同一种子两次生成应逐样本相同");
+        assert_eq!(a, b, "two generations with the same seed should match sample by sample");
 
         let wave: Vec<f32> = (0..60).map(|i| (i as f32 * 0.2).sin() * 0.5).collect();
         let plan = VoicePlan::Continuation {

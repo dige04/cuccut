@@ -33,7 +33,9 @@ impl TranslationTone {
         match value {
             "formal" => Ok(Self::Formal),
             "casual" => Ok(Self::Casual),
-            other => Err(format!("未知翻译语气 {other}（可用：formal|casual）")),
+            other => Err(format!(
+                "Unknown translation tone {other} (available: formal|casual)"
+            )),
         }
     }
 
@@ -1526,7 +1528,7 @@ mod tests {
             let wanted = format!("Term{index:04}");
             assert!(
                 merged.iter().any(|term| term.source == wanted),
-                "{wanted} 出现两次却被截断"
+                "{wanted} appears twice but was truncated"
             );
         }
         // The output order is still the first-occurrence order (monotonically increasing Term sequence number).
@@ -1640,7 +1642,11 @@ mod tests {
             },
         )
         .expect("duplicate rows and a 400-row table are repaired, not retried");
-        assert_eq!(llm.calls.len(), 1, "首轮即接受，不再烧三次重试");
+        assert_eq!(
+            llm.calls.len(),
+            1,
+            "accepted on the first round, no three retries"
+        );
         assert_eq!(rejected, 0);
         assert_eq!(outcome.pages_failed, 0);
         // The single-page cap is cut to 150 rows; duplicates of the first row are merged.

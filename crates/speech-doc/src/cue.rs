@@ -554,7 +554,7 @@ mod tests {
         let doc = doc_from_rows(&[row_a, row_b, row_c, row_d, row_e]);
         let cues = derive_cues(&doc, &CueParams::default());
         let paras = derive_paras(&doc, &cues);
-        assert_eq!(paras.len(), 5, "派生不变：说话人一切换必然另起段");
+        assert_eq!(paras.len(), 5, "derivation unchanged: every speaker change must start a new paragraph");
         let found = short_interjection_paragraphs(
             &doc,
             &cues,
@@ -565,7 +565,7 @@ mod tests {
         assert_eq!(
             found,
             vec![1],
-            "「嗯。」计入；长回答不计；末段「好的。」没有右邻不计"
+            "「嗯。」 counts; long answers do not; a final 「好的。」 with no right neighbour does not"
         );
         // Duration limit: the same 「嗯。」 stretched to 5 seconds no longer counts as an interjection.
         let mut row_slow = RowIn::new(4.0, 9.0, "嗯。");

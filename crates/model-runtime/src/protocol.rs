@@ -83,7 +83,7 @@ impl std::error::Error for ErrorBody {}
 
 /// Parses `params` into `T`; a wrong shape is `INVALID_PARAMS`.
 pub fn parse_params<T: DeserializeOwned>(params: Value) -> Result<T, ErrorBody> {
-    serde_json::from_value(params).map_err(|e| ErrorBody::invalid_params(format!("参数不合法：{e}")))
+    serde_json::from_value(params).map_err(|e| ErrorBody::invalid_params(format!("invalid parameters: {e}")))
 }
 
 /// A push message: `{ "event", "params" }`.

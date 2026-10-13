@@ -16,7 +16,7 @@ fn tools() -> Option<Tools> {
     if ok(&ffmpeg) && ok(&ffprobe) {
         Some(Tools { ffmpeg, ffprobe })
     } else {
-        eprintln!("没有 ffmpeg / ffprobe，跳过");
+        eprintln!("no ffmpeg / ffprobe, skipping");
         None
     }
 }
@@ -70,7 +70,7 @@ fn decoder_walks_forward_and_restarts_on_backward_jumps() {
     let Some(tools) = tools() else { return };
     let dir = tempfile::tempdir().unwrap();
     let path = red_then_blue(&tools, dir.path());
-    let info = probe_picture(&tools, &path).unwrap().expect("有画面");
+    let info = probe_picture(&tools, &path).unwrap().expect("expected a picture");
     assert_eq!((info.width, info.height, info.alpha), (64, 36, false));
     let mut decoder = VideoDecoder::new(&tools, &path, 0.0, 32, 18);
     assert!(is_red(center(decoder.frame_at(0.0).unwrap())));
@@ -235,7 +235,7 @@ fn encoder_muxes_frames_and_padded_audio_to_equal_length() {
     assert_eq!(video["pix_fmt"], "yuv420p");
     assert_eq!(video["color_space"], "bt709");
     let audio_duration: f64 = audio["duration"].as_str().unwrap().parse().unwrap();
-    assert!((audio_duration - 1.0).abs() < 0.05, "声音补到画面的长度：{audio_duration}");
+    assert!((audio_duration - 1.0).abs() < 0.05, "audio is padded to the picture length: {audio_duration}");
 
     // Delete the output when abandoning.
     let aborted = dir.path().join("aborted.mp4");
@@ -285,7 +285,7 @@ fn queued_encoder_writes_every_frame_and_reports_a_dead_encoder() {
         frame[..4].copy_from_slice(&[i * 20, 0, 0, 255]);
         queued.submit(frame).unwrap();
     }
-    assert!(queued.submit(vec![0; 4]).is_err(), "尺寸不对的帧不收");
+    assert!(queued.submit(vec![0; 4]).is_err(), "frames of the wrong size are rejected");
     queued.finish().unwrap();
     assert_eq!(count_frames(&out), "12");
 
@@ -302,7 +302,7 @@ fn queued_encoder_writes_every_frame_and_reports_a_dead_encoder() {
     let mut queued = QueuedEncoder::new(Encoder::start(&tools, &settings, &broken).unwrap(), 2, [0; 4]);
     let error = (0..1000)
         .find_map(|_| queued.buffer().and_then(|frame| queued.submit(frame)).err())
-        .expect("编码器失败要报出来");
+        .expect("encoder failure must be reported");
     assert_eq!(error.code, "EXPORT_ENCODE_FAILED");
     queued.abort();
 }
@@ -316,7 +316,7 @@ fn a_failing_native_source_falls_back_to_ffmpeg_from_the_same_time() {
     let dir = tempfile::tempdir().unwrap();
     let path = red_then_blue(&tools, dir.path());
     let open: FeedOpener = Arc::new(|_: &Path, _: f64, _: u32, _: u32| -> Result<Box<dyn FrameFeed>, String> {
-        Err("unsupported: 测试里的原生解码".into())
+        Err("unsupported: native decode in test".into())
     });
     let native = NativeDecode {
         backend: "test-native",
@@ -382,7 +382,7 @@ fn queued_encoder_opens_its_sink_on_the_writer_thread_and_reports_open_failures(
         let mut frame = queued.buffer().unwrap();
         assert_eq!(frame.len(), 16);
         if i == 0 {
-            assert_eq!(frame[..4], [9, 9, 9, 255], "缓冲铺好了底色");
+            assert_eq!(frame[..4], [9, 9, 9, 255], "buffers were filled with the background colour");
         }
         frame[0] = i;
         queued.submit(frame).unwrap();
@@ -404,8 +404,8 @@ fn queued_encoder_opens_its_sink_on_the_writer_thread_and_reports_open_failures(
     }
 
     // Cannot open: the error is returned as is, and the caller may use a different output.
-    let error = QueuedEncoder::spawn(16, 2, [0; 4], || Err(MediaError::new("EXPORT_ENCODE_FAILED", "原生写入器打不开")))
+    let error = QueuedEncoder::spawn(16, 2, [0; 4], || Err(MediaError::new("EXPORT_ENCODE_FAILED", "native writer cannot be opened")))
         .err()
-        .expect("打开失败要报出来");
-    assert!(error.message.contains("原生写入器打不开"));
+        .expect("open failure must be reported");
+    assert!(error.message.contains("native writer cannot be opened"));
 }

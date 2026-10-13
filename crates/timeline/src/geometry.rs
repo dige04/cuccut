@@ -585,9 +585,9 @@ mod tests {
         };
         for frame in [(1920.0, 1080.0), (1080.0, 1920.0), (1080.0, 1080.0)] {
             let (x, y, w, h) = static_box(ElementKind::Visualizer, &geometry, None, frame);
-            assert_eq!(w, h, "{frame:?} 不是正方");
+            assert_eq!(w, h, "{frame:?} is not square");
             // Default side length of the square variant = 30% of the short edge.
-            assert_eq!(w, frame.0.min(frame.1) * 0.30, "{frame:?} 边长");
+            assert_eq!(w, frame.0.min(frame.1) * 0.30, "{frame:?} side length");
             assert_eq!(x, frame.0 / 2.0 - w / 2.0);
             assert_eq!(y, frame.1 / 2.0 - h / 2.0);
         }

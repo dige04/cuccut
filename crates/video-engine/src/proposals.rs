@@ -334,7 +334,7 @@ fn write(
     existing: Option<&str>,
     body: &EditorialProposalBody,
 ) -> EngineResult<()> {
-    let body = serde_json::to_value(body).expect("剪辑提案可以序列化");
+    let body = serde_json::to_value(body).expect("edit proposal can be serialized");
     let target = AssetTarget::Id {
         asset_id: asset_id.to_string(),
     };
@@ -344,7 +344,7 @@ fn write(
             document_id: existing,
             reference: None,
             kind: EDITORIAL_PROPOSAL_KIND,
-            name: existing.is_none().then_some("剪辑建议"),
+            name: existing.is_none().then_some("Edit suggestions"),
             language: None,
             source_asset: Some(&target),
             source_document: None,
@@ -392,7 +392,7 @@ pub(crate) fn accept_cut_suggestions(
                 .entities([proposal_id.to_string()]),
         );
     }
-    let mut body: EditorialProposalBody = serde_json::from_value(value).expect("刚核对过形状");
+    let mut body: EditorialProposalBody = serde_json::from_value(value).expect("just checked the shape");
     let current = state.documents.get(&body.speech_ref.id).map(|d| d.current_revision.as_str());
     if current != Some(body.speech_ref.revision.as_str()) {
         return Err(
@@ -415,7 +415,7 @@ pub(crate) fn accept_cut_suggestions(
             .iter()
             .find(|s| &s.id == id)
             .ok_or_else(|| ErrorBody::not_found(kinds::suggestion(), id))?;
-        let (t0, t1) = s.range(body.timescale).expect("刚核对过刻度");
+        let (t0, t1) = s.range(body.timescale).expect("just checked the timescale");
         ranges.push(CutRange {
             t0,
             t1,

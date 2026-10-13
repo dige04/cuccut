@@ -213,10 +213,10 @@ mod tests {
     #[test]
     fn the_dot_count_matches_the_reference_loop() {
         let degree = (-1.0f64).to_radians();
-        assert_eq!(dot_count(0.0, degree, 360), 1, "进度 0 也留一颗");
+        assert_eq!(dot_count(0.0, degree, 360), 1, "progress 0 still keeps one dot");
         assert_eq!(dot_count(1.0 / 360.0, degree, 360), 2);
         assert_eq!(dot_count(0.5, degree, 360), 181);
-        assert_eq!(dot_count(1.0, degree, 360), 360, "上限压住 361");
+        assert_eq!(dot_count(1.0, degree, 360), 360, "the cap holds 361 down");
         // Within half a degree, rounding gives the same turn count (`roundf` is `floor(x + 0.5)`).
         assert_eq!(dot_count(0.4 / 360.0, degree, 360), 1);
         assert_eq!(dot_count(0.6 / 360.0, degree, 360), 2);

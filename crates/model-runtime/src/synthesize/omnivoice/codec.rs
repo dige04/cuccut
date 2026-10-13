@@ -230,7 +230,7 @@ impl DacDecoder {
                 .as_dtype(Dtype::Float32)?;
             ensure!(
                 weight.dim(1) == 2 * stride as i32,
-                "OmniVoice 解码块 {i} 的转置卷积核长 {} 不是 2×stride",
+                "OmniVoice decoder block {i} transposed-conv kernel length {} is not 2×stride",
                 weight.dim(1)
             );
             blocks.push(DacDecoderBlock {
@@ -317,7 +317,7 @@ impl Hubert {
             )?;
             ensure!(
                 conv.kernel() == kernel as i32,
-                "OmniVoice HuBERT 第 {i} 层卷积核长 {} 与配置 {kernel} 不符",
+                "OmniVoice HuBERT layer {i} kernel length {} does not match config {kernel}",
                 conv.kernel()
             );
             convs.push(conv);
@@ -332,7 +332,7 @@ impl Hubert {
         let kernel = c.num_conv_pos_embeddings as i32;
         ensure!(
             weight.dim(1) == kernel,
-            "OmniVoice HuBERT 位置卷积核长 {} 与配置 {kernel} 不符",
+            "OmniVoice HuBERT positional-conv kernel length {} does not match config {kernel}",
             weight.dim(1)
         );
         let pos_conv = Conv {
@@ -570,7 +570,7 @@ impl Codec {
     pub fn encode(&self, wave: &[f32]) -> Result<Vec<i32>> {
         ensure!(
             !wave.is_empty() && wave.len().is_multiple_of(self.hop),
-            "OmniVoice 编码输入长度 {} 不是 {} 的正整数倍",
+            "OmniVoice encoder input length {} is not a positive multiple of {}",
             wave.len(),
             self.hop
         );
@@ -601,7 +601,7 @@ impl Codec {
             .forward(&Array::from_slice(&acoustic_input, &[1, acoustic_input.len() as i32, 1]))?;
         ensure!(
             acoustic.dim(1) == frames,
-            "OmniVoice 声学帧数 {} 与语义帧数 {frames} 不一致",
+            "OmniVoice acoustic frame count {} does not match semantic frame count {frames}",
             acoustic.dim(1)
         );
         let embeddings = self
@@ -630,7 +630,7 @@ impl Codec {
         let n = self.quantizers.len();
         ensure!(
             frames > 0 && codes.len() == n * frames,
-            "OmniVoice 解码输入形状不对：{} 个 token、{frames} 帧",
+            "OmniVoice decoder input has the wrong shape: {} tokens, {frames} frames",
             codes.len()
         );
         let mut quantized: Option<Array> = None;
@@ -642,7 +642,7 @@ impl Codec {
                 None => part,
             });
         }
-        let quantized = quantized.expect("至少一个量化器").reshape(&[1, frames as i32, -1])?;
+        let quantized = quantized.expect("at least one quantizer").reshape(&[1, frames as i32, -1])?;
         let audio = self.acoustic_decoder.forward(&self.fc2.forward(&quantized)?)?;
         crate::synthesize::tensor::transforms::eval([&audio])?;
         Ok(audio.as_dtype(Dtype::Float32)?.as_slice::<f32>().to_vec())

@@ -61,11 +61,11 @@ impl EmotionControl {
     pub fn from_sliders(sliders: [f32; 8], alpha: f32) -> Result<Self> {
         for value in sliders {
             if !value.is_finite() || !(0.0..=1.0).contains(&value) {
-                bail!("IndexTTS 情感向量每一维须是 0–1 之间的有限值，收到 {value}");
+                bail!("each IndexTTS emotion vector value must be a finite number between 0 and 1, got {value}");
             }
         }
         if !alpha.is_finite() {
-            bail!("IndexTTS 情感权重须是有限值，收到 {alpha}");
+            bail!("IndexTTS emotion weight must be finite, got {alpha}");
         }
         let vector = scale_emo_vec(normalize_emo_vec(sliders.map(decimal)), decimal(alpha));
         Ok(Self {
@@ -75,7 +75,7 @@ impl EmotionControl {
 
     pub fn from_slice(values: &[f32], alpha: f32) -> Result<Self> {
         if values.len() != 8 {
-            bail!("IndexTTS 情感向量必须恰好 8 个值，收到 {}", values.len());
+            bail!("IndexTTS emotion vector must have exactly 8 values, got {}", values.len());
         }
         let mut sliders = [0f32; 8];
         sliders.copy_from_slice(values);
@@ -102,17 +102,17 @@ pub fn explicit_emotion_vector(
 ) -> Result<(Vec<f32>, f32)> {
     let total: usize = bucket_counts.iter().sum();
     if style.len() != style_dim {
-        bail!("风格向量维度 {} 与期望 {style_dim} 不符", style.len());
+        bail!("style vector dimension {} does not match expected {style_dim}", style.len());
     }
     if speaker_rows.len() < total * style_dim || emotion_rows.len() < total * emotion_dim {
         bail!(
-            "情感矩阵行数不足：需要 {total} 行，feat1 {} 值 / feat2 {} 值",
+            "emotion matrix has too few rows: need {total}, feat1 {} values / feat2 {} values",
             speaker_rows.len(),
             emotion_rows.len()
         );
     }
     if bucket_counts.len() != 8 {
-        bail!("emo_num 必须有 8 个桶，收到 {}", bucket_counts.len());
+        bail!("emo_num must have 8 buckets, got {}", bucket_counts.len());
     }
     let weights = control.vector;
     let weight_sum = control.weight_sum();

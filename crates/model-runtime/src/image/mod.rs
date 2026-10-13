@@ -50,7 +50,7 @@ pub struct Cancelled;
 
 impl std::fmt::Display for Cancelled {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("已取消")
+        f.write_str("cancelled")
     }
 }
 
@@ -152,7 +152,7 @@ mod tests {
         .verify("image")
         .unwrap();
         let error = match load(&files) {
-            Ok(_) => panic!("不该加载成功"),
+            Ok(_) => panic!("should not load successfully"),
             Err(error) => error.downcast_ref::<ErrorBody>().expect("ErrorBody").clone(),
         };
         assert_eq!(error.code, codes::MODEL_UNSUPPORTED);

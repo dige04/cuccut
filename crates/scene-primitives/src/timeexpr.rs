@@ -49,7 +49,7 @@ pub fn parse(s: &str) -> Result<TimeExpr> {
         .filter(|(_, c)| *c == '@' || *c == '#')
         .map_or_else(|| (0, '\0'), |(i, c)| (i, c));
     if sigil == '\0' {
-        bail!("非法 TimeExpr: \"{s}\"");
+        bail!("invalid TimeExpr: \"{s}\"");
     }
 
     // ident: [A-Za-z_][A-Za-z0-9_-]*
@@ -69,7 +69,7 @@ pub fn parse(s: &str) -> Result<TimeExpr> {
         max_id = i + c.len_utf8();
     }
     if max_id == 0 {
-        bail!("非法 TimeExpr: \"{s}\"（缺少标识符）");
+        bail!("invalid TimeExpr: \"{s}\" (missing identifier)");
     }
     let mut candidates: Vec<usize> = (1..=max_id)
         .filter(|&i| rest.is_char_boundary(i) && !rest[..i].ends_with('-'))
@@ -86,7 +86,7 @@ pub fn parse(s: &str) -> Result<TimeExpr> {
             });
         }
     }
-    bail!("非法 TimeExpr: \"{s}\"")
+    bail!("invalid TimeExpr: \"{s}\"")
 }
 
 /// `~refId:wordId[:start|:end][±offset]` (Appendix A word-anchor).
@@ -107,11 +107,11 @@ fn parse_word_anchor(rest: &str, whole: &str) -> Result<TimeExpr> {
         id_end = i + c.len_utf8();
     }
     if id_end == 0 {
-        bail!("非法 TimeExpr: \"{whole}\"（词锚点缺少媒体/clip 标识符）");
+        bail!("invalid TimeExpr: \"{whole}\" (word anchor is missing a media or clip identifier)");
     }
     let ref_id = &rest[..id_end];
     let Some(after_ref) = rest[id_end..].strip_prefix(':') else {
-        bail!("非法 TimeExpr: \"{whole}\"（词锚点须为 ~refId:wordId 形态）");
+        bail!("invalid TimeExpr: \"{whole}\" (word anchor must have the form ~refId:wordId)");
     };
     // wordId: [A-Za-z0-9][A-Za-z0-9._-]* (greedy; '-' belongs to the word id and is not split off as a negative offset)
     let mut w_end = 0;
@@ -127,7 +127,7 @@ fn parse_word_anchor(rest: &str, whole: &str) -> Result<TimeExpr> {
         w_end = i + c.len_utf8();
     }
     if w_end == 0 {
-        bail!("非法 TimeExpr: \"{whole}\"（词锚点缺少词 id）");
+        bail!("invalid TimeExpr: \"{whole}\" (word anchor is missing a word id)");
     }
     let word_id = &after_ref[..w_end];
     let mut tail = &after_ref[w_end..];
@@ -150,17 +150,17 @@ fn parse_word_anchor(rest: &str, whole: &str) -> Result<TimeExpr> {
             (1.0, n)
         } else if let Some(n) = t.strip_prefix('-') {
             if !explicit_mark {
-                bail!("非法 TimeExpr: \"{whole}\"（负偏移须跟在显式 :start/:end 之后）");
+                bail!("invalid TimeExpr: \"{whole}\" (a negative offset must follow an explicit :start or :end)");
             }
             (-1.0, n)
         } else {
-            bail!("非法 TimeExpr: \"{whole}\"");
+            bail!("invalid TimeExpr: \"{whole}\"");
         };
         offset = sign
             * num
                 .trim_start()
                 .parse::<f64>()
-                .map_err(|_| anyhow::anyhow!("非法 TimeExpr: \"{whole}\"（偏移不是数字）"))?;
+                .map_err(|_| anyhow::anyhow!("invalid TimeExpr: \"{whole}\" (offset is not a number)"))?;
     }
     Ok(TimeExpr::Word {
         ref_id: ref_id.to_string(),

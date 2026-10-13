@@ -105,11 +105,11 @@ pub fn preflight(ir: &Ir, caps: &CapabilityProfile) -> Result<PreflightReport> {
     let width = ir.w.round().max(0.0) as u64;
     let height = ir.h.round().max(0.0) as u64;
     if width == 0 || height == 0 {
-        bail!("preflight: 画布尺寸非法 {width}x{height}");
+        bail!("preflight: canvas size is invalid {width}x{height}");
     }
     if width > u64::from(caps.max_surface) || height > u64::from(caps.max_surface) {
         bail!(
-            "effect-capability-unsupported: 画布 {width}x{height} 超出后端 {} 的 surface 上限 {}",
+            "effect-capability-unsupported: canvas {width}x{height} exceeds backend {}'s surface limit {}",
             caps.backend,
             caps.max_surface
         );
@@ -119,7 +119,7 @@ pub fn preflight(ir: &Ir, caps: &CapabilityProfile) -> Result<PreflightReport> {
             && (canvas.width > caps.max_surface as f64 || canvas.height > caps.max_surface as f64)
         {
             bail!(
-                "effect-capability-unsupported: 子合成 {} 超出 surface 上限 {}",
+                "effect-capability-unsupported: sub-composition {} exceeds the surface limit {}",
                 node.id,
                 caps.max_surface
             );
@@ -164,19 +164,19 @@ pub fn preflight_transitions(
                     .collect();
                 if !missing.is_empty() {
                     (
-                        format!("后端 {} 缺能力 {missing:?}", caps.backend),
-                        manifest.determinism,
+                        format!("backend {} lacks capabilities {missing:?}", caps.backend),
+    manifest.determinism,
                     )
                 } else if !crate::effects::kernel_is_implemented(&manifest.kernel) {
                     (
-                        format!("内核 {} 没有 CPU reference 实现", manifest.kernel),
-                        manifest.determinism,
+                        format!("kernel {} has no CPU reference implementation", manifest.kernel),
+    manifest.determinism,
                     )
                 } else if manifest.determinism > caps.determinism_floor {
                     (
                         format!(
-                            "确定性等级 {} 低于本次导出的下限 {}",
-                            manifest.determinism.as_str(),
+                            "determinism level {} is below this export's minimum {}",
+    manifest.determinism.as_str(),
                             caps.determinism_floor.as_str()
                         ),
                         manifest.determinism,
@@ -198,7 +198,7 @@ pub fn preflight_transitions(
         report.diagnostics.push(PreflightDiagnostic {
             rule: "transition-fallback-applied",
             message: format!(
-                "剪辑点 {} → {} 的 {} 已降级为 Motion Transition \"{}\"（{reason}，§9）",
+                "cut point {} → {}: the {} was downgraded to Motion Transition \"{}\" ({reason}, §9)",
                 entry.from_clip,
                 entry.to_clip,
                 entry.effect.qualified(),
@@ -230,7 +230,7 @@ fn resolve_one(
 ) -> Result<()> {
     if depth > 4 {
         bail!(
-            "effect-capability-unsupported: {} 的 fallback 链过深（疑似成环）",
+            "effect-capability-unsupported: the fallback chain of {} is too deep (possible cycle)",
             effect.qualified()
         );
     }
@@ -252,7 +252,7 @@ fn resolve_one(
             report.diagnostics.push(PreflightDiagnostic {
                 rule: "effect-determinism-visual",
                 message: format!(
-                    "{} 的确定性等级是 {}，成片不承诺逐位一致（§14.6）",
+                    "{} has determinism level {}; the export does not promise bit-exact output (§14.6)",
                     manifest.qualified(),
                     manifest.determinism.as_str()
                 ),
@@ -261,12 +261,12 @@ fn resolve_one(
         return Ok(());
     }
     let reason = if !missing.is_empty() {
-        format!("后端 {} 缺能力 {missing:?}", caps.backend)
+        format!("backend {} lacks capabilities {missing:?}", caps.backend)
     } else if unimplemented {
-        format!("内核 {} 没有 CPU reference 实现", manifest.kernel)
+        format!("kernel {} has no CPU reference implementation", manifest.kernel)
     } else {
         format!(
-            "确定性等级 {} 低于本次导出的下限 {}",
+            "determinism level {} is below this export's minimum {}",
             manifest.determinism.as_str(),
             caps.determinism_floor.as_str()
         )
@@ -280,7 +280,7 @@ fn resolve_one(
             determinism: manifest.determinism,
         });
         bail!(
-            "effect-capability-unsupported: {} 无法在当前后端执行（{reason}），manifest 也没有 fallback（§6.6）",
+            "effect-capability-unsupported: {} cannot run on the current backend ({reason}), and the manifest has no fallback (§6.6)",
             manifest.qualified()
         );
     };
@@ -294,7 +294,7 @@ fn resolve_one(
     report.diagnostics.push(PreflightDiagnostic {
         rule: "effect-fallback-applied",
         message: format!(
-            "{} 已按 manifest 降级为 {}（{reason}，§14.6）",
+            "{} was downgraded to {} per the manifest ({reason}, §14.6)",
             manifest.qualified(),
             fallback.qualified()
         ),

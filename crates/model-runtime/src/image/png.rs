@@ -7,10 +7,10 @@ use super::RawImage;
 /// Encodes to PNG bytes. A mismatch between the pixel count and width × height is an error.
 pub fn encode_rgba(image: &RawImage) -> Result<Vec<u8>> {
     let expected = image.width as usize * image.height as usize * 4;
-    ensure!(image.width > 0 && image.height > 0, "图片宽高为 0");
+    ensure!(image.width > 0 && image.height > 0, "image width and height must be greater than 0");
     ensure!(
         image.pixels.len() == expected,
-        "RGBA 像素数 {} 与 {}x{} 不符",
+        "RGBA pixel count {} does not match {}x{}",
         image.pixels.len(),
         image.width,
         image.height

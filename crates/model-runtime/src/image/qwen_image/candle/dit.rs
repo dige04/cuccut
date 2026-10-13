@@ -61,7 +61,7 @@ fn modulate(x: &Tensor, scale: &Tensor) -> Result<Tensor> {
 fn apply_rope(x: &Tensor, cos: &Tensor, sin: &Tensor) -> Result<Tensor> {
     let (batch, seq, heads, width) = x.dims4()?;
     if batch != 1 || heads != HEADS || width != HEAD_DIM {
-        bail!("DiT RoPE 输入形状不符");
+        bail!("DiT RoPE input shape does not match");
     }
     let dtype = x.dtype();
     let pairs = x.to_dtype(DType::F32)?.reshape((1, seq, heads, width / 2, 2))?;
@@ -121,7 +121,7 @@ impl Dit {
         for i in 0..LAYERS {
             let key = format!("transformer_blocks.{i}.attn.to_q.weight");
             if !weights.contains(&key) {
-                bail!("DiT 缺少第 {i} 层权重：{key}");
+                bail!("DiT is missing block {i} weight: {key}");
             }
         }
         Ok(Self {
@@ -137,7 +137,7 @@ impl Dit {
             .iter()
             .find(|name| self.weights.contains(&format!("{name}.weight")))
             .map(|name| (*name).to_owned())
-            .ok_or_else(|| anyhow!("DiT 缺少权重：{}", names.join(" / ")))
+            .ok_or_else(|| anyhow!("DiT is missing weights: {}", names.join(" / ")))
     }
 
     fn proj(&self, prefix: &str, x: &Tensor, input: usize) -> Result<Tensor> {
@@ -264,7 +264,7 @@ impl Dit {
     ) -> Result<Tensor> {
         let n = gh * gw;
         if latents.dim(1)? != n {
-            bail!("DiT latent token 数不符");
+            bail!("DiT latent token count does not match");
         }
         let (all_cos, all_sin) = rope::dit_rope_tables(cache.text_len, gh, gw);
         let (cos, sin) = self.tables(&all_cos, &all_sin, cache.text_len, cache.text_len + n)?;

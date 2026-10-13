@@ -102,22 +102,22 @@ struct Frames {
 
 pub fn analyze(pcm: &[f32], sample_rate: u32, options: &BeatOptions) -> Result<BeatAnalysis> {
     if sample_rate < 8000 {
-        bail!("采样率 {sample_rate} Hz 太低，无法分析节拍");
+        bail!("sample rate {sample_rate} Hz is too low to analyze beats");
     }
     if options.beats_per_bar == 0 || options.min_bpm <= 0.0 || options.max_bpm <= options.min_bpm {
-        bail!("节拍参数无效：每小节拍数须 ≥ 1，BPM 下限须 > 0 且小于上限");
+        bail!("invalid beat options: beats per bar must be at least 1, and the BPM minimum must be above 0 and below the maximum");
     }
     let duration = pcm.len() as f64 / f64::from(sample_rate);
     let frames = frames(pcm, sample_rate);
     let n = frames.flux.len();
     let onset = normalized(&frames.flux);
     if n < 4 || onset.iter().all(|value| *value == 0.0) {
-        bail!("音频里没有可用的起音（静音或太短），无法分析节拍");
+        bail!("the audio has no usable onsets (silent or too short), so beats cannot be analyzed");
     }
     let (lag, confidence) = tempo_lag(&onset, frames.fps, options);
     let beat_frames = track_beats(&onset, lag);
     if beat_frames.len() < 2 {
-        bail!("没能追踪到稳定的节拍");
+        bail!("could not track a stable beat");
     }
     let beats: Vec<f64> = beat_frames
         .iter()
@@ -901,7 +901,7 @@ mod tests {
         }];
         let split = split_sections(&bars, &whole, &[6, 1, 11, 7], 25.0);
         let spans: Vec<(usize, usize)> = split.iter().map(|s| (s.first_bar, s.end_bar)).collect();
-        assert_eq!(spans, vec![(0, 6), (6, 12)], "1、11 离两端太近，7 贴着 6");
+        assert_eq!(spans, vec![(0, 6), (6, 12)], "1 and 11 are too close to the ends, 7 sits right next to 6");
         assert_eq!((split[0].start, split[0].end), (0.0, 12.5));
         assert_eq!((split[1].start, split[1].end), (12.5, 25.0));
         assert!((split[0].energy - 0.2).abs() < 1e-9 && (split[1].energy - 0.8).abs() < 1e-9);

@@ -41,14 +41,14 @@ impl FlatYaml {
                     stack.pop();
                 }
                 if stack.is_empty() {
-                    bail!("config.yaml 第 {} 行的列表项没有所属的键：{raw}", line_no + 1);
+                    bail!("config.yaml line {} has a list item with no parent key: {raw}", line_no + 1);
                 }
                 let path = stack.iter().map(|(_, key)| key.as_str()).collect::<Vec<_>>().join(".");
                 lists.entry(path).or_default().push(content[1..].trim().to_string());
                 continue;
             }
             let Some(colon) = content.find(':') else {
-                bail!("config.yaml 第 {} 行不是 key: value 形式：{raw}", line_no + 1);
+                bail!("config.yaml line {} is not in key: value form: {raw}", line_no + 1);
             };
             while stack.last().is_some_and(|(depth, _)| *depth >= indent) {
                 stack.pop();
@@ -83,7 +83,7 @@ impl FlatYaml {
             Some(raw) => Ok(Some(
                 unquote(raw)
                     .parse::<i64>()
-                    .with_context(|| format!("config.yaml `{path}` 不是整数：{raw}"))?,
+                    .with_context(|| format!("config.yaml `{path}` is not an integer: {raw}"))?,
             )),
             None => Ok(None),
         }
@@ -101,7 +101,7 @@ impl FlatYaml {
                     }
                     out.push(
                         item.parse::<i64>()
-                            .with_context(|| format!("config.yaml `{path}` 含非整数：{raw}"))?,
+                            .with_context(|| format!("config.yaml `{path}` contains a non-integer: {raw}"))?,
                     );
                 }
                 Ok(Some(out))
@@ -238,7 +238,7 @@ impl RuntimeConfig {
         let usize_or = |path: &str, fallback: usize| -> Result<usize> {
             Ok(match yaml.int(path)? {
                 Some(value) if value >= 0 => value as usize,
-                Some(value) => bail!("config.yaml `{path}` 不能为负数：{value}"),
+                Some(value) => bail!("config.yaml `{path}` cannot be negative: {value}"),
                 None => fallback,
             })
         };
@@ -281,7 +281,7 @@ impl RuntimeConfig {
         let emo_num = match yaml.int_array("emo_num")? {
             Some(values) => values
                 .into_iter()
-                .map(|value| usize::try_from(value).map_err(|_| anyhow::anyhow!("emo_num 含负数：{value}")))
+                .map(|value| usize::try_from(value).map_err(|_| anyhow::anyhow!("emo_num contains a negative value: {value}")))
                 .collect::<Result<Vec<_>>>()?,
             None => base.emo_num.clone(),
         };
@@ -303,8 +303,8 @@ impl RuntimeConfig {
         let Some(path) = path else {
             return Ok(Self::fallback());
         };
-        let text = std::fs::read_to_string(path).with_context(|| format!("无法读取 {}", path.display()))?;
-        Self::parse(&text).with_context(|| format!("解析 {} 失败", path.display()))
+        let text = std::fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?;
+        Self::parse(&text).with_context(|| format!("failed to parse {}", path.display()))
     }
 
     /// Output sample rate = the S2Mel / BigVGAN sample rate.

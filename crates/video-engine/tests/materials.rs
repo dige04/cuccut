@@ -19,7 +19,7 @@ fn ffprobe() -> PathBuf {
 fn has_ffprobe() -> bool {
     let ok = Command::new(ffprobe()).arg("-version").output().is_ok_and(|o| o.status.success());
     if !ok {
-        eprintln!("跳过：没有可用的 ffprobe");
+        eprintln!("skipping: no usable ffprobe");
     }
     ok
 }
@@ -59,7 +59,7 @@ fn new_video(dir: &Path) -> Video {
         width: 1920,
         height: 1080,
     };
-    Video::create(dir, &options, &ffprobe()).expect("新建视频")
+    Video::create(dir, &options, &ffprobe()).expect("create the video")
 }
 
 fn tx(video: &Video, command_id: &str, operations: Vec<Value>) -> VideoTransaction {
@@ -122,7 +122,7 @@ fn a_linked_asset_stays_where_it_is_and_can_be_collected_later() {
     let asset = video.state().assets[&asset_id].clone();
     let revision = &asset.revisions[&asset.current_revision];
     let AssetStorage::Linked { locator, frozen } = &revision.storage else {
-        panic!("应是链接素材")
+        panic!("expected a linked material")
     };
     // The file is inside the project directory (without a project marker, that is the parent of the video directory): record the path relative to the video directory.
     assert_eq!(locator.path, "../外部/logo.svg");
@@ -131,7 +131,7 @@ fn a_linked_asset_stays_where_it_is_and_can_be_collected_later() {
     assert_eq!(
         fs::read_dir(dir.join("blobs")).unwrap().count(),
         1,
-        "blobs 里只有 .staging：没有复制"
+        "blobs holds only .staging: nothing was copied"
     );
 
     let resolved = video.resolve_asset(&asset_id, None).unwrap();
@@ -167,7 +167,7 @@ fn a_linked_asset_stays_where_it_is_and_can_be_collected_later() {
     let resolved = video.resolve_asset(&asset_id, None).unwrap();
     assert!(resolved.path.starts_with(dir.join("blobs")) && resolved.storage == "managed");
     fs::remove_file(&source).unwrap();
-    assert!(video.resolve_asset(&asset_id, None).is_ok(), "原文件删掉也不影响");
+    assert!(video.resolve_asset(&asset_id, None).is_ok(), "deleting the original file does not matter");
 
     // Undo collect: back to the link; the original file is gone, so report the missing file as it is.
     video
@@ -214,10 +214,10 @@ fn a_file_is_linked_by_default_and_copied_only_when_asked() {
     let logo_id = linked.receipt.refs["logo"].clone();
     let asset = &video.state().assets[&logo_id];
     let AssetStorage::Linked { locator, frozen } = &asset.revisions[&asset.current_revision].storage else {
-        panic!("默认应是链接素材")
+        panic!("default should be a linked material")
     };
     assert_eq!((locator.path.as_str(), *frozen), ("../logo.svg", false));
-    assert!(collected_blobs(&dir).is_empty(), "默认导入不复制 bytes");
+    assert!(collected_blobs(&dir).is_empty(), "default import does not copy bytes");
     assert_eq!(video.resolve_asset(&logo_id, None).unwrap().storage, "linked");
 
     // Explicit managed: copied into blobs/; deleting the original file afterwards does not affect it.
@@ -305,7 +305,7 @@ fn a_video_opens_even_when_a_linked_asset_is_missing() {
 
     // The linked file is gone: the video still opens, the snapshot is unchanged; this material is marked as missing, other materials are unaffected, and the video can still be edited.
     fs::remove_file(&away).unwrap();
-    let mut video = Video::open(&dir, OpenMode::Write, &ffprobe()).expect("缺了链接素材也能打开");
+    let mut video = Video::open(&dir, OpenMode::Write, &ffprobe()).expect("opens even when a linked material is missing");
     assert_eq!(video.snapshot(), before);
     let missing = video.resolve_asset(&away_id, None).unwrap_err();
     assert_eq!(
@@ -357,7 +357,7 @@ fn relinking_requires_the_same_bytes() {
     )
     .unwrap();
     assert_eq!(video.resolve_asset(&asset_id, None).unwrap().path, moved);
-    assert_eq!(video.state().assets[&asset_id].current_revision, "1", "换位置不是新版本");
+    assert_eq!(video.state().assets[&asset_id].current_revision, "1", "moving the location is not a new version");
 }
 
 #[test]
@@ -384,7 +384,7 @@ fn a_path_relative_to_the_video_survives_moving_the_project() {
     let asset_id = only_asset(&video);
     let asset = &video.state().assets[&asset_id];
     let AssetStorage::Linked { locator, .. } = &asset.revisions[&asset.current_revision].storage else {
-        panic!("默认应是链接素材")
+        panic!("default should be a linked material")
     };
     assert_eq!(locator.path, "../media/data.json");
     drop(video);
@@ -409,7 +409,7 @@ fn linked_path(video: &Video, asset_id: &str) -> String {
     let asset = &video.state().assets[asset_id];
     match &asset.revisions[&asset.current_revision].storage {
         AssetStorage::Linked { locator, .. } => locator.path.clone(),
-        AssetStorage::Managed => panic!("应是链接素材"),
+        AssetStorage::Managed => panic!("expected a linked material"),
     }
 }
 
@@ -437,7 +437,7 @@ fn files_in_the_project_are_linked_relative_and_survive_moving_the_whole_project
     .unwrap();
     let (a, b) = (committed.receipt.refs["a"].clone(), committed.receipt.refs["b"].clone());
     assert_eq!(linked_path(&video, &a), "../../素材/a.json");
-    assert_eq!(linked_path(&video, &b), outside.to_string_lossy(), "项目外的文件记绝对路径");
+    assert_eq!(linked_path(&video, &b), outside.to_string_lossy(), "files outside the project are recorded as absolute paths");
     drop(video);
 
     // The whole project directory is moved and renamed: links inside the project still resolve; absolute paths outside the project are unaffected.
@@ -488,7 +488,7 @@ fn a_relative_locator_that_leaves_the_project_is_refused() {
     fs::create_dir_all(&away).unwrap();
     fs::rename(project.join("sub").join("片子"), away.join("片子")).unwrap();
     fs::write(root.path().join("别处/x/a.json"), r#"{"v":"a"}"#).unwrap();
-    let mut video = Video::open(&away.join("片子"), OpenMode::Write, &ffprobe()).expect("照常打开");
+    let mut video = Video::open(&away.join("片子"), OpenMode::Write, &ffprobe()).expect("opens as usual");
     let refused = video.resolve_asset(&asset_id, None).unwrap_err();
     assert_eq!(
         (refused.code.as_str(), &refused.details["reason"]),
@@ -556,11 +556,11 @@ fn relinking_normalizes_the_locator_like_importing() {
     assert_eq!(linked_path(&video, &asset_id), "../media/d.json");
     let asset = &video.state().assets[&asset_id];
     let AssetStorage::Linked { locator, .. } = &asset.revisions[&asset.current_revision].storage else {
-        panic!("应是链接素材")
+        panic!("expected a linked material")
     };
     assert!(locator.modified_at.is_some());
     assert_eq!(video.resolve_asset(&asset_id, None).unwrap().path, inside);
-    assert_eq!(asset.current_revision, "1", "换位置不是新版本");
+    assert_eq!(asset.current_revision, "1", "moving the location is not a new version");
 }
 
 #[test]
@@ -587,7 +587,7 @@ fn a_directory_becomes_a_bundle_asset_used_by_a_composition_item() {
     let asset = &video.state().assets[&asset_id];
     let revision = asset.revisions[&asset.current_revision].clone();
     assert_eq!(asset.kind, AssetKind::Bundle);
-    assert_eq!(revision.tree.as_ref().unwrap().file_count, 2, "只收 include 里的文件，跳过隐藏文件");
+    assert_eq!(revision.tree.as_ref().unwrap().file_count, 2, "only files in include are collected; hidden files are skipped");
     assert_eq!(revision.bundle, Some(manifest));
     assert_eq!(revision.byte_length, 13 + 6);
 
@@ -647,7 +647,7 @@ fn documents_are_versioned_and_their_bodies_stay_out_of_the_snapshot() {
     )
     .unwrap();
     assert_eq!(created.receipt.created_ids.len(), 2);
-    assert_eq!(created.receipt.refs.len(), 1, "回执带回 ref 对应的 ID");
+    assert_eq!(created.receipt.refs.len(), 1, "the receipt returns the ID for each ref");
     let snapshot = serde_json::to_value(video.snapshot()).unwrap();
     let speech_id = created.receipt.refs["speech"].clone();
     assert_eq!(video.state().documents[&speech_id].kind, "speech");
@@ -655,7 +655,7 @@ fn documents_are_versioned_and_their_bodies_stay_out_of_the_snapshot() {
         snapshot["documents"][&speech_id]["revisions"]["1"]["summary"],
         json!({ "wordCount": 1 })
     );
-    assert!(!snapshot.to_string().contains("你好"), "正文不进快照");
+    assert!(!snapshot.to_string().contains("你好"), "the body is not in the snapshot");
     let translation = video.state().documents.values().find(|d| d.kind == "translation").unwrap();
     assert_eq!(translation.source_document_id.as_deref(), Some(speech_id.as_str()));
     assert_eq!(video.document(&speech_id, None).unwrap().body, body);
@@ -880,7 +880,7 @@ fn inserted_media_items_keep_exact_source_ranges_and_mix_settings() {
     let ok = json!({ "type": "insertItems", "sequenceId": s, "items": [audio(30, "500", "1200")] });
     apply(&mut video, "cmd_audio", vec![ok]).unwrap();
     let TimelineItem::Audio(item) = &video.state().items.values().next().unwrap().value else {
-        panic!("应是音频")
+        panic!("expected audio")
     };
     assert_eq!(
         (item.mix.volume, item.mix.envelope.len(), item.mix.fade_in.is_some()),
@@ -1125,7 +1125,7 @@ fn imported_assets_and_new_tracks_are_referenced_by_audio_items_and_ducking_in_o
     .unwrap();
     let refs = &committed.receipt.refs;
     let TimelineItem::Audio(item) = &video.state().items.values().next().unwrap().value else {
-        panic!("应是音频")
+        panic!("expected audio")
     };
     assert_eq!(item.base.track_id, refs["dub"]);
     assert_eq!(item.asset_ref.id, refs["u1"]);

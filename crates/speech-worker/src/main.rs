@@ -49,7 +49,7 @@ impl Failure {
 
 fn main() -> ExitCode {
     if std::env::args().len() > 1 {
-        eprintln!("用法：speech-worker（stdin / stdout 上的 JSON 行，见命令协议规范 §4.5）");
+        eprintln!("usage: speech-worker (JSON lines on stdin / stdout; see the command protocol spec §4.5)");
         return ExitCode::from(2);
     }
     let control = Rc::new(RefCell::new(Control::new(protocol::spawn_reader())));
@@ -57,7 +57,7 @@ fn main() -> ExitCode {
         let message = control.borrow_mut().next();
         match message {
             Inbound::Closed => return ExitCode::SUCCESS,
-            Inbound::Malformed { line } => eprintln!("speech-worker: 读不懂的一行输入（{} 字节）", line.len()),
+            Inbound::Malformed { line } => eprintln!("speech-worker: cannot parse an input line ({} bytes)", line.len()),
             Inbound::Request { id, method, params } => match method.as_str() {
                 "hello" => respond(&id, hello()),
                 // Cancel while idle: there is no task to stop.
@@ -79,8 +79,8 @@ fn main() -> ExitCode {
                         return ExitCode::SUCCESS;
                     }
                 }
-                "llm.reply" => respond_error(&id, "UNEXPECTED_REPLY", "没有在等模型调用的应答", Value::Null),
-                other => respond_error(&id, "METHOD_NOT_FOUND", &format!("没有方法 {other}"), Value::Null),
+                "llm.reply" => respond_error(&id, "UNEXPECTED_REPLY", "not waiting for a model call reply", Value::Null),
+                other => respond_error(&id, "METHOD_NOT_FOUND", &format!("no such method {other}"), Value::Null),
             },
         }
     }
@@ -93,7 +93,7 @@ fn job_paths(params: &Value) -> Result<(PathBuf, PathBuf), Failure> {
             .and_then(Value::as_str)
             .filter(|value| !value.is_empty())
             .map(PathBuf::from)
-            .ok_or_else(|| Failure::new("INVALID_PARAMS", format!("translate 缺少 {key}")))
+            .ok_or_else(|| Failure::new("INVALID_PARAMS", format!("translate is missing {key}")))
     };
     Ok((path("input")?, path("staging")?))
 }

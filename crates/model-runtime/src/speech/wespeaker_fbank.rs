@@ -139,7 +139,7 @@ impl WeSpeakerFbank {
             padded_frame[N_FFT..].fill(0.0);
             self.fft
                 .process_with_scratch(&mut padded_frame, &mut spectrum, &mut scratch)
-                .context("执行 WeSpeaker 512 点 real FFT")?;
+                .context("run WeSpeaker 512-point real FFT")?;
 
             // 6. Projection onto the triangular filter bank.
             let output_row = &mut mel[frame * N_MELS..(frame + 1) * N_MELS];
@@ -302,7 +302,7 @@ mod tests {
         // After CMN, the mean of each mel bin along the time axis must be 0.
         for bin in 0..80 {
             let mean = (0..features.time_frames).map(|frame| features.data[frame * 80 + bin]).sum::<f32>() / features.time_frames as f32;
-            assert!(mean.abs() < 1e-4, "bin {bin} 的 CMN 残余均值 {mean}");
+            assert!(mean.abs() < 1e-4, "CMN residual mean for bin {bin}: {mean}");
         }
 
         // NumPy independent reference implementation (pre-emphasis 0.97 / Hamming / HTK mel fmin=20 / ln / CMN).

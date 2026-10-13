@@ -90,8 +90,8 @@ fn rgba_to_nv12(rgba: &[u8], width: usize, height: usize, nv12: &mut [u8]) {
 unsafe fn attributes(capacity: u32) -> Result<IMFAttributes> {
     let mut value = None;
     unsafe { MFCreateAttributes(&mut value, capacity) }
-        .map_err(|error| media_feature_error("创建 Media Foundation 属性", error))?;
-    value.context("Media Foundation 返回空属性对象")
+        .map_err(|error| media_feature_error("create Media Foundation attributes", error))?;
+    value.context("Media Foundation returned an empty attributes object")
 }
 
 unsafe fn video_type(
@@ -161,7 +161,7 @@ unsafe fn sample_from_bytes(pixels: &[u8], time: i64, duration: i64) -> Result<I
     let length: u32 = pixels
         .len()
         .try_into()
-        .context("单帧超过 4 GiB，Media Foundation 缓冲装不下")?;
+        .context("single frame exceeds 4 GiB, which the Media Foundation buffer cannot hold")?;
     let buffer = unsafe { MFCreateMemoryBuffer(length)? };
     let mut pointer = std::ptr::null_mut();
     unsafe { buffer.Lock(&mut pointer, None, None)? };
@@ -281,7 +281,7 @@ unsafe fn open_inner(runtime: Runtime, out: &Path, setup: WriterSetup) -> Result
     let faststart = faststart_finalize_works(out);
     if !faststart {
         eprintln!(
-            "warning: 本机 Media Foundation 不支持 moov 前置（faststart），已回退为标准 MP4 布局"
+            "warning: this machine's Media Foundation does not support moov-before-mdat (faststart); fell back to the standard MP4 layout"
         );
     }
     let writer_attrs = unsafe { attributes(2)? };
@@ -297,7 +297,7 @@ unsafe fn open_inner(runtime: Runtime, out: &Path, setup: WriterSetup) -> Result
             &writer_attrs,
         )
     }
-    .map_err(|error| media_feature_error("创建 MP4 Sink Writer", error))?;
+    .map_err(|error| media_feature_error("create MP4 Sink Writer", error))?;
 
     let encoded_video =
         unsafe { video_type(&MFVideoFormat_H264, width, height, fps_num, fps_den)? };
@@ -319,7 +319,7 @@ unsafe fn open_inner(runtime: Runtime, out: &Path, setup: WriterSetup) -> Result
     }
     let video_stream = unsafe { writer.AddStream(&encoded_video) }.map_err(|error| {
         media_feature_error(
-            "unsupported: 创建 H.264 输出流（系统可能缺少视频编码器）",
+            "unsupported: failed to create H.264 output stream (the system may lack a video encoder)",
             error,
         )
     })?;
@@ -344,17 +344,17 @@ unsafe fn open_inner(runtime: Runtime, out: &Path, setup: WriterSetup) -> Result
         let input_video =
             unsafe { video_type(&MFVideoFormat_RGB32, width, height, fps_num, fps_den)? };
         unsafe { writer.SetInputMediaType(video_stream, &input_video, None::<&IMFAttributes>) }
-            .map_err(|error| media_feature_error("unsupported: 配置 RGB32→H.264 编码器", error))?;
+            .map_err(|error| media_feature_error("unsupported: configure the RGB32-to-H.264 encoder", error))?;
     }
 
     let audio = match audio {
         Some(source) => {
             let encoded_audio = unsafe { aac_type(audio_bitrate)? };
             let stream = unsafe { writer.AddStream(&encoded_audio) }
-                .map_err(|error| media_feature_error("unsupported: 创建 AAC-LC 输出流", error))?;
+                .map_err(|error| media_feature_error("unsupported: create AAC-LC output stream", error))?;
             let pcm = unsafe { pcm_type()? };
             unsafe { writer.SetInputMediaType(stream, &pcm, None::<&IMFAttributes>) }
-                .map_err(|error| media_feature_error("unsupported: 配置 PCM→AAC 编码器", error))?;
+                .map_err(|error| media_feature_error("unsupported: configure the PCM-to-AAC encoder", error))?;
             Some(AudioTrack {
                 stream,
                 source,
@@ -364,7 +364,7 @@ unsafe fn open_inner(runtime: Runtime, out: &Path, setup: WriterSetup) -> Result
         None => None,
     };
     unsafe { writer.BeginWriting() }
-        .map_err(|error| media_feature_error("unsupported: 启动 MP4 写入", error))?;
+        .map_err(|error| media_feature_error("unsupported: start MP4 writing", error))?;
 
     Ok(SinkWriter {
         writer,
@@ -405,7 +405,7 @@ impl SinkWriter {
             };
             let sample = unsafe { pcm_sample(&chunk)? };
             unsafe { self.writer.WriteSample(audio.stream, &sample) }
-                .map_err(|error| anyhow!("Media Foundation 写入 AAC 音频失败：{error}"))?;
+                .map_err(|error| anyhow!("Media Foundation failed to write AAC audio: {error}"))?;
         }
         Ok(())
     }
@@ -429,7 +429,7 @@ impl Mp4Sink for SinkWriter {
         let expected = self.width * self.height * 4;
         if rgba.len() != expected {
             bail!(
-                "MP4 帧字节数与几何不符：{}x{} 需要 {expected} 字节，实得 {}",
+                "MP4 frame byte count does not match its geometry: {}x{} needs {expected} bytes, got {}",
                 self.width,
                 self.height,
                 rgba.len()
@@ -460,7 +460,7 @@ impl Mp4Sink for SinkWriter {
         let time = self.frames as i64 * duration;
         let sample = unsafe { sample_from_bytes(&self.staging, time, duration)? };
         unsafe { self.writer.WriteSample(self.video_stream, &sample) }
-            .map_err(|error| anyhow!("Media Foundation 写入视频帧失败：{error}"))?;
+            .map_err(|error| anyhow!("Media Foundation failed to write video frame: {error}"))?;
         self.frames += 1;
         Ok(())
     }
@@ -472,7 +472,7 @@ impl Mp4Sink for SinkWriter {
         // Dropped midway (render error or cancel) without calling `Finalize`: when the sink is released it leaves a half-written file with no
         // moov. The caller was rendering to a temporary file anyway, so it can simply be deleted.
         unsafe { self.writer.Finalize() }
-            .map_err(|error| anyhow!("Media Foundation 完成 MP4 失败：{error}"))?;
+            .map_err(|error| anyhow!("Media Foundation failed to finish MP4: {error}"))?;
         Ok(())
     }
 }

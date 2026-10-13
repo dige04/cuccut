@@ -127,10 +127,10 @@ impl Params<'_> {
         let n = raw
             .as_f64()
             .filter(|n| n.is_finite())
-            .ok_or_else(|| anyhow!("schema: proc.{}.{key} 须为有限数值", self.kind))?;
+            .ok_or_else(|| anyhow!("schema: proc.{}.{key} must be a finite number", self.kind))?;
         if !(min..=max).contains(&n) {
             bail!(
-                "schema: proc.{}.{key} 须在 {min}..{max}，实得 {n}",
+                "schema: proc.{}.{key} must be within {min}..{max}, got {n}",
                 self.kind
             );
         }
@@ -142,16 +142,16 @@ impl Params<'_> {
             None => default,
             Some(v) => v
                 .as_str()
-                .ok_or_else(|| anyhow!("schema: proc.{}.{key} 须为颜色字符串", self.kind))?,
+                .ok_or_else(|| anyhow!("schema: proc.{}.{key} must be a color string", self.kind))?,
         };
         Rgba::parse(raw)
-            .ok_or_else(|| anyhow!("schema: proc.{}.{key} 不是可解析的颜色：{raw}", self.kind))
+            .ok_or_else(|| anyhow!("schema: proc.{}.{key} is not a parsable color: {raw}", self.kind))
     }
 
     fn closed(&self, keys: &[&str]) -> Result<()> {
         if let Some(key) = self.map.keys().find(|key| !keys.contains(&key.as_str())) {
             bail!(
-                "schema: proc.{} 没有参数 {key}；可用 {keys:?}（§6.12）",
+                "schema: proc.{} has no parameter {key}; available: {keys:?} (§6.12)",
                 self.kind
             );
         }
@@ -164,31 +164,31 @@ impl ProcSource {
     pub fn parse(node: &Value) -> Result<Self> {
         let object = node
             .as_object()
-            .ok_or_else(|| anyhow!("schema: proc 节点须为对象"))?;
+            .ok_or_else(|| anyhow!("schema: proc node must be an object"))?;
         if let Some(key) = object.keys().find(|key| !NODE_KEYS.contains(&key.as_str())) {
-            bail!("schema: proc 节点含未知字段 {key}；参数写在 params 里（§6.12）");
+            bail!("schema: proc node has unknown field {key}; put parameters in params (§6.12)");
         }
         let name = object
             .get("proc")
             .and_then(Value::as_str)
-            .ok_or_else(|| anyhow!("schema: proc 节点缺少 proc（{PROC_KINDS:?}）"))?;
+            .ok_or_else(|| anyhow!("schema: proc node is missing proc ({PROC_KINDS:?})"))?;
         let kind: &'static str = PROC_KINDS
             .iter()
             .copied()
             .find(|k| *k == name)
-            .ok_or_else(|| anyhow!("schema: proc \"{name}\" 不在封闭枚举 {PROC_KINDS:?}"))?;
+            .ok_or_else(|| anyhow!("schema: proc \"{name}\" is not in the closed set {PROC_KINDS:?}"))?;
         let seed = match object.get("seed") {
             None => 0,
             Some(v) => v
                 .as_u64()
                 .filter(|n| *n <= u64::from(u32::MAX))
-                .ok_or_else(|| anyhow!("schema: proc.seed 须为 0..4294967295 的整数"))?,
+                .ok_or_else(|| anyhow!("schema: proc.seed must be an integer in 0..4294967295"))?,
         };
         let empty = Map::new();
         let map = match object.get("params") {
             None | Some(Value::Null) => &empty,
             Some(Value::Object(map)) => map,
-            Some(other) => bail!("schema: proc.params 须为对象，实得 {other}"),
+            Some(other) => bail!("schema: proc.params must be an object, got {other}"),
         };
         let p = Params { kind, map };
         let parsed = match kind {
@@ -212,7 +212,7 @@ impl ProcSource {
                 ])?;
                 let count = p.number("count", 24.0, 1.0, 400.0)?;
                 if count.fract() != 0.0 {
-                    bail!("schema: proc.splash.count 须为整数");
+                    bail!("schema: proc.splash.count must be an integer");
                 }
                 ProcKind::Splash(Splash {
                     at: p.number("at", 0.0, 0.0, 86_400.0)?,
@@ -254,7 +254,7 @@ impl ProcSource {
                             color: mp.color("color", "#f4f1e6")?,
                         })
                     }
-                    Some(other) => bail!("schema: proc.sky.moon 须为对象，实得 {other}"),
+                    Some(other) => bail!("schema: proc.sky.moon must be an object, got {other}"),
                 };
                 ProcKind::Sky(Sky {
                     stars: p.number("stars", 0.5, 0.0, 1.0)?,
@@ -268,7 +268,7 @@ impl ProcSource {
                     moon,
                 })
             }
-            _ => unreachable!("PROC_KINDS 已穷举"),
+            _ => unreachable!("PROC_KINDS is exhaustive"),
         };
         let mut source = Map::new();
         for key in ["proc", "seed", "params"] {

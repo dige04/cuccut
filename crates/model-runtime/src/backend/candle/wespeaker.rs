@@ -156,11 +156,11 @@ impl WeSpeakerNetwork {
         // x: [B, C=256, F'=10, T'=T/8], exactly matching the Python tensor layout.
         let shape = x.dims().to_vec();
         if shape.len() != 4 || shape[2] != POOLED_FREQUENCY {
-            bail!("WeSpeaker 主干输出形状异常：{shape:?}");
+            bail!("WeSpeaker backbone output shape is abnormal: {shape:?}");
         }
         let (batch, time) = (shape[0], shape[3]);
         if time < 1 {
-            bail!("WeSpeaker 池化前时间轴为空");
+            bail!("WeSpeaker time axis is empty before pooling");
         }
         // The flatten order must be C·F (Python reshape [B,256,10,T'] → [B,2560,T']),
         // then switch to time-major [B, T', 2560] so statistics pooling can run along the time axis.
@@ -198,7 +198,7 @@ impl WeSpeakerEmbedder {
         let network = WeSpeakerNetwork::load(&mut store)?;
         let unused = store.remaining();
         if !unused.is_empty() {
-            bail!("WeSpeaker 存在未使用权重：{}", unused.join("、"));
+            bail!("WeSpeaker has unused weights: {}", unused.join(", "));
         }
         Ok(Self {
             fbank: WeSpeakerFbank::new(),
@@ -217,14 +217,14 @@ impl WeSpeakerEmbedder {
     /// Anything shorter than 0.5 seconds is an immediate error: statistics pooling is meaningless at that length, so the caller should filter first.
     pub fn embed(&mut self, samples: &[f32]) -> Result<Vec<f32>> {
         if samples.len() < MINIMUM_SAMPLES {
-            bail!("WeSpeaker 需要至少 {MINIMUM_SAMPLES} 个样本（0.5 秒），实际 {}", samples.len());
+            bail!("WeSpeaker needs at least {MINIMUM_SAMPLES} samples (0.5 s), found {}", samples.len());
         }
         let features = self.fbank.extract(samples)?;
         let mel = Tensor::from_slice(&features.data, (1, features.time_frames, N_MELS), &self.device)?;
         let embedding = self.network.forward(&mel)?;
         let values = embedding.flatten_all()?.to_vec1::<f32>()?;
         if values.len() != EMBEDDING_DIM {
-            bail!("WeSpeaker 嵌入维度异常：{}", values.len());
+            bail!("WeSpeaker embedding dimension is abnormal: {}", values.len());
         }
         Ok(values)
     }
@@ -238,7 +238,7 @@ impl SpeakerEmbedding for WeSpeakerEmbedder {
 
 fn expect_shape(key: &str, tensor: &Tensor, expected: &[usize]) -> Result<()> {
     if tensor.dims() != expected {
-        bail!("WeSpeaker 权重 {key} 形状为 {:?}，期望 {expected:?}", tensor.dims());
+        bail!("WeSpeaker weight {key} has shape {:?}, expected {expected:?}", tensor.dims());
     }
     Ok(())
 }

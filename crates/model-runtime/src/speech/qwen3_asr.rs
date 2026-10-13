@@ -141,12 +141,12 @@ pub fn aligner_quantization_bits(quantize_config: Option<&Path>) -> anyhow::Resu
     let Some(path) = quantize_config else {
         return Ok(ALIGNER_DEFAULT_BITS);
     };
-    let config: Value = serde_json::from_slice(&std::fs::read(path).context("读取对齐器 quantize_config.json")?)
-        .context("对齐器 quantize_config.json 不是 JSON")?;
+    let config: Value = serde_json::from_slice(&std::fs::read(path).context("read aligner quantize_config.json")?)
+        .context("aligner quantize_config.json is not valid JSON")?;
     match config.pointer("/quantization/bits").and_then(Value::as_i64) {
         None => Ok(ALIGNER_DEFAULT_BITS),
         Some(bits @ (4 | 5 | 8)) => Ok(bits as i32),
-        Some(other) => anyhow::bail!("对齐器的量化位数 {other} 不受支持"),
+        Some(other) => anyhow::bail!("aligner quantization bit width {other} is not supported"),
     }
 }
 

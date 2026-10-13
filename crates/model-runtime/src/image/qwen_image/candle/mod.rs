@@ -62,7 +62,7 @@ fn seeded_noise(seed: u64, count: usize) -> Vec<f32> {
 fn to_rgba(image: &Tensor) -> Result<RawImage> {
     let (batch, height, width, channels) = image.dims4()?;
     if batch != 1 || channels != 4 {
-        bail!("VAE 输出需要 [1,H,W,4] RGBA 布局");
+        bail!("VAE output must use the [1,H,W,4] RGBA layout");
     }
     let pixels = image
         .to_dtype(DType::F32)?
@@ -71,7 +71,7 @@ fn to_rgba(image: &Tensor) -> Result<RawImage> {
         .into_iter()
         .map(|value| {
             if !value.is_finite() {
-                bail!("VAE 输出包含非有限像素值");
+                bail!("VAE output contains non-finite pixel values");
             }
             Ok(((value + 1.0) * 127.5).clamp(0.0, 255.0).round() as u8)
         })
@@ -97,16 +97,16 @@ fn verify_model_config(model_index: &Value, transformer: &Value, text: &Value) -
         ("mlx_format", json!(true)),
     ];
     if model_index["_class_name"] != "QwenImage21Pipeline" {
-        bail!("需要 QwenImage21Pipeline 模型包");
+        bail!("a QwenImage21Pipeline model package is required");
     }
     for (key, value) in expected {
         if transformer[key] != value {
-            bail!("transformer/config.json 的 {key} 与 Qwen-Image-2.1 MLX 权重不符");
+            bail!("transformer/config.json {key} does not match the Qwen-Image-2.1 MLX weights");
         }
     }
     let quant = &transformer["quantization"];
     if quant["bits"] != 4 || quant["group_size"] != 64 || quant["mode"] != "affine" {
-        bail!("需要 MLX affine 4-bit transformer 权重");
+        bail!("MLX affine 4-bit transformer weights are required");
     }
     let text_config = &text["text_config"];
     let text_expected = [
@@ -120,12 +120,12 @@ fn verify_model_config(model_index: &Value, transformer: &Value, text: &Value) -
     ];
     for (key, value) in text_expected {
         if text_config[key] != value {
-            bail!("text_encoder/config.json 的 {key} 与 Qwen3-VL 文本模型不符");
+            bail!("text_encoder/config.json {key} does not match the Qwen3-VL text model");
         }
     }
     let text_quant = &text["quantization"];
     if text["mlx_format"] != true || text_quant["bits"] != 4 || text_quant["group_size"] != 64 || text_quant["mode"] != "affine" {
-        bail!("需要 MLX affine 4-bit Qwen3-VL 文本权重");
+        bail!("MLX affine 4-bit Qwen3-VL text weights are required");
     }
     Ok(())
 }
@@ -154,7 +154,7 @@ impl QwenImage {
             vae_config: files.require("vae/config.json")?.to_path_buf(),
         };
         let unreadable = |what: &str, e: anyhow::Error| {
-            ErrorBody::new(codes::MODEL_NOT_INSTALLED, format!("{what} 读不出来：{e:#}"))
+            ErrorBody::new(codes::MODEL_NOT_INSTALLED, format!("{what} could not be read: {e:#}"))
                 .with_details(json!({ "component": "image", "reason": "unreadable" }))
         };
         let mut values = Vec::with_capacity(configs.len());
@@ -213,7 +213,7 @@ impl QwenImage {
         let sigmas = self.scheduler.sigmas(steps, gh * gw);
         let noise = seeded_noise(request.seed, gh * gw * vae::Z_DIM);
         let mut latent = Tensor::from_vec(noise, (1, gh * gw, vae::Z_DIM), &self.device)?;
-        trace!("[dit] 准备 {:.1}s（{compute:?}）", t1.elapsed().as_secs_f64());
+        trace!("[dit] prepare {:.1}s ({compute:?})", t1.elapsed().as_secs_f64());
         progress(ImageProgress::Denoising {
             done: 0,
             total: request.steps,
@@ -245,10 +245,10 @@ impl QwenImage {
         let decoder = vae::Decoder::load(&refs(&self.files.vae), &self.files.vae_config, &self.device, compute)?;
         let image = decoder.decode(&latent.reshape((1, gh, gw, vae::Z_DIM))?, cancel)?;
         let image = to_rgba(&image)?;
-        trace!("[vae] 解码 {:.1}s", t2.elapsed().as_secs_f64());
+        trace!("[vae] decode {:.1}s", t2.elapsed().as_secs_f64());
         mem("vae done");
         trace!(
-            "{}x{} {steps} steps seed {}（总计 {:.1}s）",
+            "{}x{} {steps} steps seed {} (total {:.1}s)",
             request.width,
             request.height,
             request.seed,
@@ -274,7 +274,7 @@ impl ImageEngine for QwenImage {
     fn generate(&mut self, request: &ImageRequest, progress: &mut dyn FnMut(ImageProgress), cancel: &dyn Fn() -> bool) -> Result<RawImage> {
         super::check_size(request.width, request.height)?;
         if request.steps == 0 {
-            return Err(ErrorBody::invalid_params("steps 至少 1").into());
+            return Err(ErrorBody::invalid_params("steps must be at least 1").into());
         }
         let image = self.run(request, progress, cancel).map_err(|error| {
             if error.is::<Cancelled>() {
@@ -285,7 +285,7 @@ impl ImageEngine for QwenImage {
         })?;
         if (image.width, image.height) != (request.width, request.height) {
             return Err(anyhow!(
-                "解码尺寸 {}x{} 与请求 {}x{} 不符",
+                "decoded size {}x{} does not match requested {}x{}",
                 image.width,
                 image.height,
                 request.width,
@@ -304,7 +304,7 @@ fn mem(tag: &str) {
     let gb = |v: Option<u64>| v.map_or_else(|| "?".to_owned(), |v| format!("{:.2} GB", v as f64 / 1e9));
     let (footprint, footprint_max) = footprint();
     eprintln!(
-        "[mem] {tag}: 常驻峰值 {}｜footprint {}，进程最大 {}",
+        "[mem] {tag}: resident peak {} | footprint {}, process max {}",
         gb(peak_resident_bytes()),
         gb(footprint),
         gb(footprint_max)
@@ -399,7 +399,7 @@ mod tests {
 
     fn load_error(files: &VerifiedFiles) -> ErrorBody {
         match QwenImage::load(files, Device::Cpu) {
-            Ok(_) => panic!("不该加载成功"),
+            Ok(_) => panic!("should not load successfully"),
             Err(error) => error.downcast_ref::<ErrorBody>().expect("ErrorBody").clone(),
         }
     }
@@ -503,7 +503,7 @@ mod tests {
     ///   --features backend-candle --lib -- --ignored candle_engine_generates --test-threads=1 --nocapture
     /// ```
     #[test]
-    #[ignore = "需要 CUCCUT_TEST_MODELS_DIR 下装好的 Qwen-Image-2.1"]
+    #[ignore = "needs Qwen-Image-2.1 installed under CUCCUT_TEST_MODELS_DIR"]
     fn candle_engine_generates_and_reproduces_a_seed() {
         let root = std::env::var("CUCCUT_TEST_MODELS_DIR").expect("CUCCUT_TEST_MODELS_DIR");
         let files = installed(Path::new(&root));
@@ -522,12 +522,12 @@ mod tests {
         let mut phases = Vec::new();
         let started = Instant::now();
         let image = engine.generate(&request, &mut |p| phases.push(p), &|| false).unwrap();
-        eprintln!("{edge}² {steps} 步：{:.1}s", started.elapsed().as_secs_f64());
+        eprintln!("{edge}² {steps} steps: {:.1}s", started.elapsed().as_secs_f64());
         assert_eq!((image.width, image.height), (edge, edge));
         assert_eq!(image.pixels.len(), (edge * edge * 4) as usize);
         assert!(
             image.pixels.chunks_exact(4).any(|px| px[..3] != image.pixels[..3]),
-            "不该是一种颜色"
+            "image should not be a single color"
         );
         assert_eq!(phases.first(), Some(&ImageProgress::EncodingPrompt));
         assert_eq!(phases.last(), Some(&ImageProgress::Decoding));
@@ -539,7 +539,7 @@ mod tests {
         }
         if env("CUCCUT_TEST_IMAGE_REPEAT", 1) != 0 {
             let again = engine.generate(&request, &mut |_| {}, &|| false).unwrap();
-            assert_eq!(again.pixels, image.pixels, "同一 seed、同一设备应出同一张图");
+            assert_eq!(again.pixels, image.pixels, "same seed on the same device should produce the same image");
         }
     }
 }

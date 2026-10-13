@@ -418,7 +418,7 @@ fn a_zero_length_animation_is_refused() {
     );
     let err = AnimatedImage::decode("t.gif", &bytes, &PrepareCtx::default())
         .expect_err("总时长 0 不该收下");
-    assert!(format!("{err:#}").contains("总时长为 0"));
+    assert!(format!("{err:#}").contains("total duration is 0"));
 }
 
 /// The golden frame PNGs are byte-for-byte identical to the current decode output.

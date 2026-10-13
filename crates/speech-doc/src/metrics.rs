@@ -1308,7 +1308,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "全量 102 例含大文档，debug 下耗时数分钟；--release -- --ignored 运行"]
+    #[ignore = "full set of 102 cases including large documents; takes minutes in debug, run with --release -- --ignored"]
     fn suber_matches_reference_implementation_fixture_full() {
         check_suber_fixture(None);
     }
@@ -1360,7 +1360,7 @@ mod tests {
                 "{name}: wrapper score"
             );
         }
-        assert!(checked >= 20, "fixture 子集过小：{checked}");
+        assert!(checked >= 20, "fixture subset is too small: {checked}");
     }
 
     // ----- Alignment structure metrics -----

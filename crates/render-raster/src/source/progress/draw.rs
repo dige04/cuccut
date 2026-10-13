@@ -113,7 +113,7 @@ mod tests {
         let mut builder = FrameBuilder::default();
         progress_frame(
             &mut builder,
-            timeline_progress(id).expect("样式已登记"),
+            timeline_progress(id).expect("style is registered"),
             &params(),
             progress,
             time,
@@ -127,11 +127,11 @@ mod tests {
     #[test]
     fn every_catalogue_style_draws_something() {
         let styles = motion::preset_registry::timeline_progresses();
-        assert_eq!(styles.len(), 14, "14 种 progress 全部登记在目录里");
+        assert_eq!(styles.len(), 14, "all 14 progress styles are registered in the catalog");
         for recipe in styles {
             let mut builder = FrameBuilder::default();
             let pushed = progress_frame(&mut builder, recipe, &params(), 0.5, 0.0, BOX, TF);
-            assert!(pushed > 0, "{} 必须画出东西", recipe.id);
+            assert!(pushed > 0, "{} must draw something", recipe.id);
             assert_eq!(pushed, builder.frame.ops.len(), "{}", recipe.id);
         }
     }
@@ -152,7 +152,7 @@ mod tests {
             "donut",
             "snake",
         ] {
-            assert_eq!(print(id, 0.0), print(id, 1.7), "{id} 不该读时钟");
+            assert_eq!(print(id, 0.0), print(id, 1.7), "{id} should not read the clock");
         }
         for id in [
             "snake_spin",
@@ -163,7 +163,7 @@ mod tests {
             "snake_rainbow",
             "snake_spin_rainbow",
         ] {
-            assert_ne!(print(id, 0.0), print(id, 1.7), "{id} 必须读时钟");
+            assert_ne!(print(id, 0.0), print(id, 1.7), "{id} must read the clock");
         }
     }
 
@@ -173,10 +173,10 @@ mod tests {
         for id in ["normal", "rounded", "border", "circle", "donut"] {
             let empty = draw(id, 0.0);
             let full = draw(id, 1.0);
-            assert!(!empty.frame.ops.is_empty(), "{id} 的底色总要画");
+            assert!(!empty.frame.ops.is_empty(), "{id} always draws its base color");
             assert!(
                 full.frame.ops.len() >= empty.frame.ops.len(),
-                "{id}: 满进度不该比空进度画得少"
+                "{id}: full progress should not draw less than empty progress"
             );
         }
         // `normal` with empty progress is just the base-color bar.
@@ -218,7 +218,7 @@ mod tests {
             let DrawOp::FillPath { color: fill, .. } = builder.frame.ops[1] else {
                 unreachable!()
             };
-            assert_eq!(track, params().secondary_color, "底环用 trackColor");
+            assert_eq!(track, params().secondary_color, "the base ring uses trackColor");
             assert_eq!(fill, params().main_color);
         }
         // The progress ring grows with progress: the number of path segments never decreases, since each extra sector adds a few more Béziers.

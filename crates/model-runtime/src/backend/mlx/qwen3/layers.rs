@@ -91,7 +91,7 @@ impl Projection {
         if store.contains(&format!("{prefix}.scales")) {
             // Pre-quantized weights must declare their bit width in the config (`quantization.bits`); if it is undeclared, unpacking as 16-bit produces garbage.
             if !matches!(bits, 4 | 8) {
-                bail!("权重 {prefix} 带 scales 但配置未声明 4 或 8 位量化（bits = {bits}）");
+                bail!("weight {prefix} has scales but the config does not declare 4- or 8-bit quantization (bits = {bits})");
             }
             Ok(Self::Quantized(QuantizedDense::load(store, prefix, group_size, bits)?))
         } else if matches!(bits, 4 | 8) {

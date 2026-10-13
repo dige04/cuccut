@@ -2725,7 +2725,7 @@ mod tests {
         .expect("page rejections are no longer a command failure");
         assert!(doc.trans.get("zh-Hans").is_none_or(BTreeMap::is_empty));
         assert_eq!(llm.requests.len(), 5);
-        assert_eq!(llm.requests[2].len(), 2, "第三轮是两个半页");
+        assert_eq!(llm.requests[2].len(), 2, "round three is two half-pages");
     }
 
     /// After narrowing, when a half-page can be translated, that half is committed as usual. Only the half-pages that still fail go into the make-up wave.
@@ -2836,18 +2836,18 @@ mod tests {
             diagnostics.push_problem(Problem::sentence(
                 ProblemCode::FrozenModified,
                 id,
-                "冻结句被改动，绝不覆盖已有译文",
+                "frozen sentence was modified; the existing translation must not be overwritten",
             ));
         }
         diagnostics.push_problem(Problem::sentence(
             ProblemCode::MissingId,
             "s-g4.0",
-            "缺少句子 s-g4.0",
+            "missing sentence s-g4.0",
         ));
 
         assert_eq!(
             summarize_problems(&diagnostics),
-            "frozen-modified: 冻结句被改动，绝不覆盖已有译文 (repeated 3 times); missing-id: 缺少句子 s-g4.0"
+            "frozen-modified: frozen sentence was modified; the existing translation must not be overwritten (repeated 3 times); missing-id: missing sentence s-g4.0"
         );
     }
 
@@ -2886,7 +2886,7 @@ mod tests {
             &mut |_| {},
         )
         .expect("a modified frozen sentence no longer rejects the page");
-        assert_eq!(llm.requests.len(), 1, "不再有整页重试");
+        assert_eq!(llm.requests.len(), 1, "no more whole-page retries");
         assert_eq!(doc.trans["zh-Hans"]["s-g2.0"], "既有译文。");
         assert_eq!(doc.trans["zh-Hans"]["s-g1.0"], "一。");
     }
@@ -3085,7 +3085,11 @@ mod tests {
         let outcome =
             run_translate(&mut doc, &mut llm, &options, &mut |_| {}, &mut |_| {}).unwrap();
 
-        assert_eq!(llm.calls.len(), 2, "整页缺行必须重发一次");
+        assert_eq!(
+            llm.calls.len(),
+            2,
+            "a whole page with missing lines must be resent once"
+        );
         assert_eq!(outcome.rows_page_retries, 1);
         // On resend, retry_reason names "last time there were no rows at all".
         assert!(
@@ -3120,10 +3124,13 @@ mod tests {
         let outcome =
             run_translate(&mut doc, &mut llm, &options, &mut |_| {}, &mut |_| {}).unwrap();
 
-        assert_eq!(llm.calls.len(), 2, "最多重发一次");
+        assert_eq!(llm.calls.len(), 2, "at most one resend");
         assert_eq!(outcome.rows_page_retries, 1);
         assert_eq!(doc.trans["zh"]["s-g0.0"], "第二次的译文内容。");
-        assert!(outcome.alignment_drafts.is_empty(), "没有行 ⇒ 没有草稿");
+        assert!(
+            outcome.alignment_drafts.is_empty(),
+            "no lines means no drafts"
+        );
     }
 
     /// When the whole page came back as a copy of the source (not translated into the target language), the make-up wave's request must say what went wrong last time and what the target language is. Resending verbatim would only get the same copy again.
@@ -3203,7 +3210,11 @@ mod tests {
         let outcome =
             run_translate(&mut doc, &mut llm, &options, &mut |_| {}, &mut |_| {}).unwrap();
 
-        assert_eq!(llm.calls.len(), 1, "没到门槛就不该重发");
+        assert_eq!(
+            llm.calls.len(),
+            1,
+            "below the threshold there should be no resend"
+        );
         assert_eq!(outcome.rows_page_retries, 0);
         assert_eq!(outcome.alignment_drafts.len(), 10);
     }

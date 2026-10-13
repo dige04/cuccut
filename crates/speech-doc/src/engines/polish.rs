@@ -1164,7 +1164,7 @@ fn validate_polish_file_page(
         problems.push(Problem::page(
             ProblemCode::DocumentTruncated,
             &plan.id,
-            "核心区没有可用句子",
+            "No usable sentences in the core region",
         ));
         return None;
     }
@@ -1194,7 +1194,7 @@ fn validate_polish_file_page(
         problems.push(Problem::page(
             ProblemCode::DocumentTruncated,
             &plan.id,
-            "核心区没有可用句子",
+            "No usable sentences in the core region",
         ));
         return None;
     }
@@ -1588,7 +1588,11 @@ fn split_polish_pages(
             }
         };
         let slots = split_groups.entry(*page).or_default();
-        debug_assert_eq!(slots.len(), *slot, "半页必须按序落位");
+        debug_assert_eq!(
+            slots.len(),
+            *slot,
+            "half-page results must be placed in order"
+        );
         slots.push(groups);
     }
     Ok(())
@@ -3957,7 +3961,7 @@ mod tests {
         assert_eq!(
             llm.calls.len(),
             3,
-            "两页各一次 + 页缝判定一份载荷，没有重试"
+            "two pages once each + the seam judgment is one payload, no retry"
         );
         assert_eq!(llm.calls[2].0, "seam-repair");
         assert!(!codes.contains(&ProblemCode::SourceDrift), "{codes:?}");
@@ -3980,7 +3984,7 @@ mod tests {
         }
         assert!(
             doc.stages.segment.is_none(),
-            "fixture 必须未分段，否则断言落空"
+            "fixture must be unsegmented, otherwise the assertion falls through"
         );
         // The model merged the two sides of ⏹ into one sentence inside a paragraph and changed the text (the non-verbatim path).
         let mut llm = PolishFileLlm::new(vec![rewrite_core(|_| {
@@ -3996,12 +4000,16 @@ mod tests {
             &mut |_| {},
         )
         .unwrap();
-        assert_eq!(outcome.paragraphs.len(), 2, "⏹ 必须切出两个段落");
+        assert_eq!(
+            outcome.paragraphs.len(),
+            2,
+            "⏹ must split into two paragraphs"
+        );
         assert_eq!(outcome.sentences.len(), 2);
         assert!(outcome.sentences[1].text.starts_with("echo"));
         assert_eq!(
             outcome.forced_boundary_snapped, 0,
-            "应走精确切分而不是吸附退化"
+            "must take the exact split, not the snap fallback"
         );
         assert_eq!(doc.para_breaks.len(), 1);
         doc.validate().unwrap();
@@ -4024,7 +4032,7 @@ mod tests {
         let mut llm = PolishFileLlm::new(vec![Box::new(|input: &str| {
             assert!(
                 input.contains("delta ⏹S2"),
-                "payload 缺少带标签软标记: {input}"
+                "payload lacks the labeled soft marker: {input}"
             );
             // The model copied labeled soft markers into the editable region.
             Ok(answer_with_core(
@@ -4045,17 +4053,21 @@ mod tests {
         let text = join_word_texts(doc.words.iter());
         assert!(
             !text.contains('⏹') && !text.contains("S2"),
-            "软标记或标签泄漏进词流: {text}"
+            "soft marker or label leaked into the word stream: {text}"
         );
         assert!(
             outcome
                 .sentences
                 .iter()
                 .all(|sentence| !sentence.text.contains("S2")),
-            "标签泄漏进句记录: {:?}",
+            "label leaked into the sentence records: {:?}",
             outcome.sentences
         );
-        assert_eq!(outcome.paragraphs.len(), 2, "⏹ 仍切出两个段落");
+        assert_eq!(
+            outcome.paragraphs.len(),
+            2,
+            "⏹ still splits into two paragraphs"
+        );
         doc.validate().unwrap();
     }
 
@@ -4228,18 +4240,18 @@ mod tests {
         assert_eq!(
             page_ids[..2],
             ["p001".to_owned(), "p001".to_owned()],
-            "先整页两次"
+            "whole page twice first"
         );
         assert!(
             page_ids[2..].iter().all(|id| id.starts_with("p001-h")),
-            "之后只重试半页：{page_ids:?}"
+            "afterwards only the half-page is retried: {page_ids:?}"
         );
         assert_eq!(outcome.split_retry_pages, (page_ids.len() - 2) as u32);
         assert_eq!(outcome.fallback_pages, outcome.split_retry_pages);
         // Consistent with the json-v0 accounting: the sentences of a fallen-back half-page are likewise counted in fallback_sentences.
         assert!(outcome.fallback_sentences > 0);
         assert!(outcome.sentences.iter().all(|s| s.fallback));
-        assert_eq!(doc.words, before, "兜底保留原词");
+        assert_eq!(doc.words, before, "fallback keeps the original words");
         assert!(doc.stages.polish.is_some());
         doc.validate().unwrap();
     }
@@ -4270,10 +4282,13 @@ mod tests {
         )
         .unwrap();
         assert_eq!(outcome.split_retry_pages, 2);
-        assert_eq!(outcome.fallback_pages, 1, "只有失败的那半页兜底");
+        assert_eq!(
+            outcome.fallback_pages, 1,
+            "only the failed half-page falls back"
+        );
         assert!(
             outcome.sentences.iter().any(|s| !s.fallback),
-            "救回来的那一半不是降级句"
+            "the recovered half is not a degraded sentence"
         );
         doc.validate().unwrap();
     }
@@ -4568,7 +4583,7 @@ mod tests {
         assert_eq!(
             llm.kinds(),
             vec!["polish", "punct-repair", "punct-repair", "punct-repair"],
-            "主页一轮即过，超长句跑满定向补标点轮数"
+            "main page passes in one round, over-long sentences run all targeted punctuation rounds"
         );
         assert_eq!(attempts.len(), 4);
         assert!(attempts[0].2 && attempts[0].3.is_empty(), "{attempts:?}");
@@ -4804,7 +4819,10 @@ mod tests {
         assert_eq!(outcome.punct_split_sentences, 1);
         assert_eq!(outcome.oversized_sentences, 0);
         assert_eq!(outcome.fallback_pages, 0);
-        assert_eq!(outcome.degenerate_paragraphs, 0, "切开后的句子可被补分段");
+        assert_eq!(
+            outcome.degenerate_paragraphs, 0,
+            "split sentences can get paragraph breaks"
+        );
         // Sentences are cut first at long pauses, then by the semantic sentence cap. Every piece except the original sentence end closes with a full stop, and no piece exceeds the CJK single-sentence or paragraph hard cap.
         assert!(outcome.sentences.len() >= 6, "{:?}", outcome.sentences);
         let last = outcome.sentences.len() - 1;
@@ -5096,7 +5114,11 @@ mod tests {
         )
         .unwrap();
         assert!(outcome.fallback_pages >= 1);
-        assert_eq!(outcome.paragraphs.len(), 2, "兜底路径同样欠 ⏹ 的账");
+        assert_eq!(
+            outcome.paragraphs.len(),
+            2,
+            "the fallback path also breaks the ⏹ count"
+        );
         assert!(outcome.sentences[1].text.starts_with("echo"));
         assert_eq!(doc.para_breaks.len(), 1);
         assert!(doc.para_breaks.contains_key(&doc.words[4].id));
@@ -5177,7 +5199,7 @@ mod tests {
                 "segment-repair",
                 "segment-repair"
             ],
-            "主页一轮即过，退化段落跑满定向补分段轮数"
+            "main page passes in one round, degenerate paragraphs run all targeted re-segmentation rounds"
         );
         // The main page is accepted on the first round with no problems; the paragraph-splitting repair is rejected by ParagraphOversize in every round.
         assert_eq!(attempts.len(), 4);
@@ -5206,13 +5228,19 @@ mod tests {
                 call.2
             );
         }
-        assert_eq!(outcome.fallback_pages, 0, "润色文本被接受，不是原文兜底");
+        assert_eq!(
+            outcome.fallback_pages, 0,
+            "polished text was accepted, not the source fallback"
+        );
         assert_eq!(outcome.repaired_paragraphs, 0);
         assert_eq!(outcome.fallback_paragraphs, 1);
         assert_eq!(outcome.degenerate_paragraphs, 0);
         assert_eq!(doc.words, before);
         assert!(doc.stages.polish.is_some());
-        assert!(doc.stages.segment.is_some(), "确定性收口后照常盖戳");
+        assert!(
+            doc.stages.segment.is_some(),
+            "the deterministic close-out still stamps the stage"
+        );
         // 500 words closed at a 300 cap: 300 + 200 ⇒ one pin, landing at word 300 (the start of sentence 31).
         assert_eq!(doc.para_breaks.len(), 1, "{:?}", doc.para_breaks);
         assert!(doc.para_breaks.contains_key(&doc.words[300].id));
@@ -5344,7 +5372,10 @@ mod tests {
         assert_eq!(round1_pages.len(), 2, "{attempts:?}");
         for (_, round, accepted, codes) in &round1_pages {
             assert_eq!(*round, 1);
-            assert!(*accepted, "同载荷其余块接受，不因一块区间非法整页拒收");
+            assert!(
+                *accepted,
+                "other blocks in the same payload are accepted; one block's invalid range does not reject the page"
+            );
             assert_eq!(codes, &vec![ProblemCode::RangeInvalid]);
         }
         assert!(
@@ -5354,7 +5385,7 @@ mod tests {
         );
         assert!(
             !attempts.iter().any(|(id, ..)| id.starts_with("sr3-")),
-            "两轮即收敛：{attempts:?}"
+            "converges in two rounds: {attempts:?}"
         );
         // Round two carries only the per-block targeted feedback for the blocks whose ranges were invalid in round one.
         let round2_reasons: Vec<&str> = llm
@@ -5379,7 +5410,7 @@ mod tests {
             !round2_reasons
                 .iter()
                 .any(|reason| reason.contains("上一轮拆分后仍有")),
-            "已通过的块不进第二轮：{round2_reasons:?}"
+            "already accepted blocks do not enter round two: {round2_reasons:?}"
         );
         // The round-one request carries no retry_reason.
         assert!(
@@ -5473,7 +5504,11 @@ mod tests {
             &mut |_| {},
         )
         .unwrap();
-        assert_eq!(llm.calls.len(), 1, "重润路径一轮放行，不跑定向补分段");
+        assert_eq!(
+            llm.calls.len(),
+            1,
+            "the re-polish path passes in one round, no targeted re-segmentation"
+        );
         assert_eq!(outcome.repaired_paragraphs, 0);
         assert_eq!(outcome.degenerate_paragraphs, 0);
         assert_eq!(outcome.fallback_pages, 0);
@@ -5800,7 +5835,7 @@ mod tests {
         assert_eq!(
             llm.kinds(),
             vec!["polish", "polish", "segment-repair"],
-            "硬切页缝不进 seam-repair"
+            "hard-cut page seams do not enter seam-repair"
         );
         assert_eq!(outcome.hard_cut_seams_merged, 1);
         assert_eq!(

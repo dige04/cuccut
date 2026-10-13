@@ -183,7 +183,7 @@ pub fn encode(header: &Bcs1Header, payload: &[u8]) -> Result<Vec<u8>> {
         .unwrap_or(usize::MAX);
     if payload.len() != expected {
         bail!(
-            "BCS1 payload 长度 {} 与 frameCount {} 不一致（应为 {expected}）",
+            "BCS1 payload length {} does not match frameCount {} (expected {expected})",
             payload.len(),
             header.frame_count
         );
@@ -197,17 +197,17 @@ pub fn encode(header: &Bcs1Header, payload: &[u8]) -> Result<Vec<u8>> {
 /// BCS1 bytes → read-only view. Frozen parameters are validated one by one; reserved bits must be 0.
 pub fn parse(bytes: &[u8]) -> Result<Bcs1View<'_>> {
     if bytes.len() < HEADER_LEN || &bytes[..4] != MAGIC {
-        bail!("频谱不是 BCS1 格式");
+        bail!("spectrum is not in BCS1 format");
     }
     let u16_at = |offset: usize| u16::from_le_bytes(bytes[offset..offset + 2].try_into().unwrap());
     let u32_at = |offset: usize| u32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap());
     let version = u16_at(4);
     if version != VERSION {
-        bail!("BCS1 version {version} 不受支持（当前 {VERSION}）");
+        bail!("BCS1 version {version} is not supported (current {VERSION})");
     }
     let flags = u16_at(6);
     if flags & !FLAG_BACKEND_FFMPEG != 0 {
-        bail!("BCS1 flags 的保留位必须为 0（读到 {flags:#06x}）");
+        bail!("BCS1 flags reserved bits must be 0 (got {flags:#06x})");
     }
     let backend = if flags & FLAG_BACKEND_FFMPEG == 0 {
         SpectrumBackend::Symphonia
@@ -223,12 +223,12 @@ pub fn parse(bytes: &[u8]) -> Result<Bcs1View<'_>> {
     ] {
         let actual = u32_at(offset);
         if actual != expected {
-            bail!("BCS1 {name} 必须是 {expected}（读到 {actual}）");
+            bail!("BCS1 {name} must be {expected} (got {actual})");
         }
     }
     let frame_count = u32_at(28);
     if frame_count == 0 {
-        bail!("BCS1 frameCount 必须大于 0");
+        bail!("BCS1 frameCount must be greater than 0");
     }
     let content_hash = u64::from_le_bytes(bytes[32..40].try_into().unwrap());
     let payload = &bytes[HEADER_LEN..];
@@ -237,7 +237,7 @@ pub fn parse(bytes: &[u8]) -> Result<Bcs1View<'_>> {
         .unwrap_or(usize::MAX);
     if payload.len() != expected {
         bail!(
-            "BCS1 frameCount {frame_count} 与 payload 长度 {} 不一致（应为 {expected}）",
+            "BCS1 frameCount {frame_count} does not match payload length {} (expected {expected})",
             payload.len()
         );
     }
@@ -353,7 +353,7 @@ mod tests {
         for offset in [8usize, 12, 16, 20, 24] {
             let mut tampered = good.clone();
             tampered[offset..offset + 4].copy_from_slice(&9u32.to_le_bytes());
-            assert!(parse(&tampered).is_err(), "offset {offset} 未被拒绝");
+            assert!(parse(&tampered).is_err(), "offset {offset} was not rejected");
         }
 
         let mut zero_frames = good.clone();

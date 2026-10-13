@@ -115,7 +115,7 @@ pub fn raster(
     editing_dim: bool,
 ) -> Result<Pixmap> {
     let mut pixmap =
-        Pixmap::new(params.width.max(1), params.height.max(1)).context("为模板层分配画布失败")?;
+        Pixmap::new(params.width.max(1), params.height.max(1)).context("failed to allocate canvas for template layer")?;
     let family = resolve_family(&scene.doc, params.fallback_family, text);
     let fw = f64::from(params.width);
     let fh = f64::from(params.height);
@@ -153,7 +153,7 @@ pub fn raster(
         if layer.kind.tiled() {
             // Tiling, enlarging and tilting diagonally routinely spills out of the box, and only the frame crops it. So the offscreen buffer is frame-sized.
             let mut local =
-                Pixmap::new(pixmap.width(), pixmap.height()).context("为模板图层分配缓冲失败")?;
+                Pixmap::new(pixmap.width(), pixmap.height()).context("failed to allocate buffer for template layer")?;
             paint_tile(&mut local, &rect, &layer.kind, &ctx, text);
             pixmap.draw_pixmap(
                 0,
@@ -171,7 +171,7 @@ pub fn raster(
         }
         // Each layer is first drawn into its own offscreen box and then composited back. `overflow: hidden` and the whole-layer opacity are both realised in this step.
         let mut local = Pixmap::new(rect.w.ceil() as u32, rect.h.ceil() as u32)
-            .context("为模板图层分配缓冲失败")?;
+            .context("failed to allocate buffer for template layer")?;
         paint_layer(&mut local, &layer.kind, &ctx, text);
         pixmap.draw_pixmap(
             0,
@@ -728,8 +728,8 @@ pub struct TemplateSource {
 impl TemplateSource {
     /// `doc` is the `template` of `timeline.json`. `chapters` are `[{id, title, start, end}]` on the output clock; a chapter missing its time or with zero length is dropped directly, consistent with the chapter projection's convention.
     pub fn from_json(doc: &str, chapters: &str, title: &str) -> Result<Self> {
-        let doc: TemplateDoc = serde_json::from_str(doc).context("解析模板文档")?;
-        let list: serde_json::Value = serde_json::from_str(chapters).context("解析章节表")?;
+        let doc: TemplateDoc = serde_json::from_str(doc).context("parse template document")?;
+        let list: serde_json::Value = serde_json::from_str(chapters).context("parse chapter table")?;
         let text = |item: &serde_json::Value, key: &str| {
             item.get(key)
                 .and_then(serde_json::Value::as_str)
@@ -786,9 +786,9 @@ impl TemplateSource {
         height: u32,
         rgba: Vec<u8>,
     ) -> Result<()> {
-        let size = tiny_skia::IntSize::from_wh(width, height).context("台标尺寸必须大于零")?;
+        let size = tiny_skia::IntSize::from_wh(width, height).context("logo size must be greater than zero")?;
         if rgba.len() != width as usize * height as usize * 4 {
-            anyhow::bail!("台标 {key}: RGBA 长度与 {width}×{height} 不符");
+            anyhow::bail!("logo {key}: RGBA length does not match {width}×{height}");
         }
         let mut rgba = rgba;
         for pixel in rgba.chunks_exact_mut(4) {
@@ -799,7 +799,7 @@ impl TemplateSource {
                 }
             }
         }
-        let pixmap = Pixmap::from_vec(rgba, size).context("台标 RGBA 缓冲区无效")?;
+        let pixmap = Pixmap::from_vec(rgba, size).context("logo RGBA buffer is invalid")?;
         self.logos.insert(key.to_owned(), pixmap);
         Ok(())
     }

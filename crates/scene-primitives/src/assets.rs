@@ -96,7 +96,7 @@ impl ProgramReq {
             match entry.get_(key).and_then(Value::as_u64) {
                 Some(v) if v >= 1 && v <= u64::from(PROGRAM_MAX_SIDE) => Ok(v as u32),
                 _ => bail!(
-                    "program-invalid: asset \"{id}\" 的 {key} 须为 1..={PROGRAM_MAX_SIDE} 的整数"
+                    "program-invalid: asset \"{id}\" {key} must be an integer in 1..={PROGRAM_MAX_SIDE}"
                 ),
             }
         };
@@ -104,18 +104,18 @@ impl ProgramReq {
         let height = side("height")?;
         let fps = match entry.gf64("fps") {
             Some(v) if v > 0.0 && v <= PROGRAM_MAX_FPS => v,
-            _ => bail!("program-invalid: asset \"{id}\" 的 fps 须为 (0, {PROGRAM_MAX_FPS}] 的数值"),
+            _ => bail!("program-invalid: asset \"{id}\" fps must be a number in (0, {PROGRAM_MAX_FPS}]"),
         };
         let frames = match entry.get_("frames").and_then(Value::as_u64) {
             Some(v) if v >= 1 && v <= u64::from(PROGRAM_MAX_FRAMES) => v as u32,
             _ => bail!(
-                "program-invalid: asset \"{id}\" 的 frames 须为 1..={PROGRAM_MAX_FRAMES} 的整数"
+                "program-invalid: asset \"{id}\" frames must be an integer in 1..={PROGRAM_MAX_FRAMES}"
             ),
         };
         let export = match entry.get_("export") {
             None => "default".to_string(),
             Some(Value::String(name)) if !name.is_empty() => name.clone(),
-            Some(_) => bail!("program-invalid: asset \"{id}\" 的 export 须为非空字符串"),
+            Some(_) => bail!("program-invalid: asset \"{id}\" export must be a non-empty string"),
         };
         let mut imports = std::collections::BTreeMap::new();
         match entry.get_("imports") {
@@ -123,12 +123,12 @@ impl ProgramReq {
             Some(Value::Object(map)) => {
                 for (name, target) in map {
                     let Some(target) = target.as_str().filter(|t| !t.is_empty()) else {
-                        bail!("program-invalid: asset \"{id}\" 的 imports.{name} 须为模块路径");
+                        bail!("program-invalid: asset \"{id}\" imports.{name} must be a module path");
                     };
                     imports.insert(name.clone(), target.to_string());
                 }
             }
-            Some(_) => bail!("program-invalid: asset \"{id}\" 的 imports 须为对象"),
+            Some(_) => bail!("program-invalid: asset \"{id}\" imports must be an object"),
         }
         let files = match entry.get_("files") {
             None => Vec::new(),
@@ -140,17 +140,17 @@ impl ProgramReq {
                         .map(String::from)
                         .ok_or_else(|| {
                             anyhow::anyhow!(
-                                "program-invalid: asset \"{id}\" 的 files 须为路径字符串数组"
+                                "program-invalid: asset \"{id}\" files must be an array of path strings"
                             )
                         })
                 })
                 .collect::<Result<_>>()?,
-            Some(_) => bail!("program-invalid: asset \"{id}\" 的 files 须为路径字符串数组"),
+            Some(_) => bail!("program-invalid: asset \"{id}\" files must be an array of path strings"),
         };
         let props = match entry.get_("props") {
             None => Value::Object(Map::new()),
             Some(v @ Value::Object(_)) => v.clone(),
-            Some(_) => bail!("program-invalid: asset \"{id}\" 的 props 须为对象"),
+            Some(_) => bail!("program-invalid: asset \"{id}\" props must be an object"),
         };
         Ok(ProgramReq {
             export,
@@ -189,15 +189,15 @@ pub fn host_requirements_with_vars(
         for (id, entry) in assets {
             let entry = materialize_asset_entry(id, entry, &vars)?;
             let Some(ty) = entry.gstr("type") else {
-                bail!("asset \"{id}\" 缺少 type");
+                bail!("asset \"{id}\" is missing type");
             };
             let Some(kind) = AssetKind::parse(ty) else {
                 bail!(
-                    "asset \"{id}\" 未知 type \"{ty}\"（image|animatedImage|lottie|program|video|audio|font）"
+                    "asset \"{id}\" has unknown type \"{ty}\" (image|animatedImage|lottie|program|video|audio|font)"
                 );
             };
             let Some(src) = entry.gstr("src") else {
-                bail!("asset \"{id}\" 缺少 src");
+                bail!("asset \"{id}\" is missing src");
             };
             let program = match kind {
                 AssetKind::Program => Some(ProgramReq::parse(id, &entry)?),
@@ -208,7 +208,7 @@ pub fn host_requirements_with_vars(
                 Some(v) => match v.as_str() {
                     Some("eager") => false,
                     Some("bounded") if kind == AssetKind::Image => true,
-                    _ => bail!("asset {id}: cache 须为 eager，或 image 的 bounded"),
+                    _ => bail!("asset {id}: cache must be eager, or bounded for image"),
                 },
             };
             out.push(AssetReq {
@@ -257,21 +257,21 @@ pub fn materialize_asset_entry(
         return Ok(entry.clone());
     };
     if entry.get_("src").is_some() {
-        bail!("asset \"{id}\" 的 src 与 var 互斥（三选一，§11.2）");
+        bail!("asset \"{id}\" src and var are mutually exclusive (pick one, §11.2)");
     }
     let Some(val) = vars.get(var_name) else {
-        bail!("asset \"{id}\" 委托的变量 \"{var_name}\" 不存在");
+        bail!("asset \"{id}\" delegates to variable \"{var_name}\", which does not exist");
     };
     let Some(obj) = val.as_object() else {
-        bail!("asset \"{id}\" 变量 \"{var_name}\" 的值须为 {{src, hash?}} 对象");
+        bail!("asset \"{id}\" variable \"{var_name}\" must be a {{src, hash?}} object");
     };
     if obj.contains_key("media") {
         bail!(
-            "asset-media-outside-project: asset \"{id}\" 变量值的 {{media}} 形态需要 Project 容器"
+            "asset-media-outside-project: asset \"{id}\" variable value in the {{media}} form requires a Project container"
         );
     }
     let Some(src) = obj.get("src").and_then(Value::as_str) else {
-        bail!("asset \"{id}\" 变量 \"{var_name}\" 的值缺少 src");
+        bail!("asset \"{id}\" variable \"{var_name}\" value is missing src");
     };
     let mut out = Map::new();
     if let Some(t) = entry.get_("type") {

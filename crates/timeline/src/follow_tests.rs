@@ -171,7 +171,7 @@ fn cutting_a_detached_document_takes_the_picture_along_and_restore_brings_it_bac
     assert_eq!(content_end(&document), 10.0);
     let picture = element(&document, "video-c1-1");
     assert_eq!(span(picture), (Some(0.0), Some(2.0), Some(0.0)));
-    assert_eq!(picture.fx, element(&document, "el-1").fx, "属性原样保留");
+    assert_eq!(picture.fx, element(&document, "el-1").fx, "properties are kept as they are");
     assert_eq!(
         report.created,
         vec![FollowCreated {
@@ -192,7 +192,7 @@ fn cutting_a_detached_document_takes_the_picture_along_and_restore_brings_it_bac
     assert_eq!(
         pictures_of(&document),
         vec![(0.0, 4.0, 0.0), (4.0, 12.0, 4.0)],
-        "不自动合并相邻两件"
+        "adjacent pieces are not merged automatically"
     );
     assert_eq!(content_end(&document), 12.0);
     assert!(report.removed.is_empty() && report.created.is_empty());
@@ -328,7 +328,7 @@ fn removing_a_clip_drops_its_picture_and_ripples_the_rest() {
     assert_eq!(
         span(element(&document, "music")),
         (Some(0.0), Some(7.0), Some(5.0)),
-        "起点推后，srcStart 同步"
+        "start moved later, srcStart follows"
     );
 }
 
@@ -430,7 +430,7 @@ fn trimming_outward_extends_the_neighbouring_picture_but_never_resurrects_a_dele
     });
     assert!(
         deleted.tracks[0].elements.is_empty(),
-        "原本就没有画面的片段不补"
+        "segments that never had picture are not filled"
     );
 }
 
@@ -468,7 +468,7 @@ fn restoring_across_a_deleted_gap_clones_instead_of_stretching() {
         restore_cut(&mut d.sources.get_mut("main").unwrap().cuts, "cut-1");
     });
     assert_eq!(coverage(&document), vec![(0.0, 2.0), (4.0, 12.0)]);
-    assert!(report.created.is_empty(), "新露出的 6–8 由前一件延长补上");
+    assert!(report.created.is_empty(), "the newly exposed 6–8 is filled by extending the previous piece");
 }
 
 /// A newly added segment is created with the default separated picture; when the clock is changed by speed, the picture's `rate` follows.
@@ -615,7 +615,7 @@ fn legacy_documents_ripple_numeric_elements_without_claiming_pictures() {
             .map(|track| track.id.as_str())
             .collect::<Vec<_>>(),
         vec!["tr-overlays", "tr-empty"],
-        "只删被跟随清空的轨"
+        "only delete tracks emptied by follow"
     );
     assert_eq!(
         report.removed,
@@ -628,7 +628,7 @@ fn legacy_documents_ripple_numeric_elements_without_claiming_pictures() {
     assert_eq!(
         span(element(&document, "crossing")),
         (Some(3.0), Some(5.0), None),
-        "跨被删范围的只缩短，不挖洞"
+        "a piece spanning the deleted range is only shortened, no hole is dug"
     );
     assert_eq!(
         span(element(&document, "later")),
@@ -947,7 +947,7 @@ fn frames_of(element: &Element, prop: &str) -> Vec<(Value, f64)> {
         .keyframes
         .as_ref()
         .and_then(|keyframes| keyframes.get(prop))
-        .unwrap_or_else(|| panic!("{} 没有 {prop} 关键帧", element.id))
+        .unwrap_or_else(|| panic!("{} has no {prop} keyframes", element.id))
         .iter()
         .map(|frame| (serde_json::to_value(&frame.t).unwrap(), frame.v))
         .collect()
@@ -993,7 +993,7 @@ fn a_mid_cut_divides_picture_keyframes_between_the_two_pieces() {
         &frames_of(right, "x"),
         &[(json!("0%"), 4.0), (json!("100%"), 12.0)],
     );
-    document.validate().expect("跟随后的关键帧仍合法");
+    document.validate().expect("keyframes are still valid after follow");
 }
 
 /// An element that was only trimmed: second-based notation is shifted by the amount its start was pushed later (the frames dropped are replaced by a sampled frame at 0), while percentages
@@ -1057,7 +1057,7 @@ fn splitting_divides_keyframes_and_copies_duck_to_both_halves() {
     );
     assert_eq!(left.duck, right.duck);
     assert!(right.duck.is_some());
-    document.validate().expect("分割后仍合法");
+    document.validate().expect("still valid after split");
 }
 
 /// Following deletes all the elements on the track that a ducking references: the track remains (empty), `duck.under` does not dangle, and the write is still valid.
@@ -1080,9 +1080,9 @@ fn a_ducked_track_survives_being_emptied_by_follow() {
         .tracks
         .iter()
         .find(|track| track.id == "tr-vo")
-        .expect("被闪避引用的空轨保留");
+        .expect("the empty track referenced by ducking is kept");
     assert!(track.elements.is_empty());
-    document.validate().expect("duck.under 仍指向存在的轨");
+    document.validate().expect("duck.under still points to an existing track");
 }
 
 /// An element without keyframes does not gain `keyframes` after following.

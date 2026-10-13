@@ -329,7 +329,7 @@ impl ResidualVectorQuantizer {
                 None => embed,
             });
         }
-        let sum = sum.context("RVQ 没有码本")?;
+        let sum = sum.context("RVQ has no codebook")?;
         Ok(ops::matmul(&sum, &self.output_proj.t())?)
     }
 }
@@ -377,7 +377,7 @@ impl CodecDecoder {
     /// [`crate::synthesize::loudness`] scales the whole segment down proportionally by its peak.
     fn forward(&self, codes: &Array) -> Result<Array> {
         if codes.dim(1) != NUM_CODEBOOKS as i32 {
-            bail!("解码器需要 {} 组 codebook，实际 {}", NUM_CODEBOOKS, codes.dim(1));
+            bail!("decoder needs {} codebook groups, got {}", NUM_CODEBOOKS, codes.dim(1));
         }
         let first = self.rvq_first.decode(&codes.index((.., ..1, ..)))?;
         let rest = self.rvq_rest.decode(&codes.index((.., 1.., ..)))?;

@@ -36,7 +36,7 @@ pub struct CutSet {
 impl CutSet {
     pub fn new(duration: f64, cuts: Vec<Cut>) -> Result<Self, TimelineError> {
         if !duration.is_finite() || duration < 0.0 {
-            return Err(TimelineError::Invalid("source duration 非法".to_owned()));
+            return Err(TimelineError::Invalid("invalid source duration".to_owned()));
         }
 
         let mut previous_end = 0.0;
@@ -53,7 +53,7 @@ impl CutSet {
                 || cut.t1 > duration
             {
                 return Err(TimelineError::Invalid(format!(
-                    "cut {} 必须排序、互不重叠且位于 source 时长内",
+                    "cut {} must be sorted, non-overlapping and within the source duration",
                     cut.id
                 )));
             }
@@ -272,7 +272,7 @@ pub fn insert_cut(
         || incoming.t1 > duration
     {
         return Err(TimelineError::Invalid(format!(
-            "cut {} 区间非法",
+            "cut {} has an invalid range",
             incoming.id
         )));
     }
@@ -305,7 +305,7 @@ pub fn insert_cut(
     cuts.iter()
         .find(|cut| cut.id == incoming.id || (cut.t0 <= incoming.t0 && cut.t1 >= incoming.t1))
         .cloned()
-        .ok_or_else(|| TimelineError::Invalid("cut 合并结果缺失".to_owned()))
+        .ok_or_else(|| TimelineError::Invalid("cut merge result is missing".to_owned()))
 }
 
 pub fn restore_cut(cuts: &mut Vec<Cut>, id: &str) -> bool {
@@ -338,7 +338,7 @@ pub fn retime_cut(
         || t1 <= t0
         || t1 > duration
     {
-        return Err(TimelineError::Invalid(format!("cut {id} 区间非法")));
+        return Err(TimelineError::Invalid(format!("cut {id} has an invalid range")));
     }
     if let Some(other) = cuts
         .iter()
@@ -347,7 +347,7 @@ pub fn retime_cut(
         .map(|(_, cut)| cut)
     {
         return Err(TimelineError::Invalid(format!(
-            "cut {id} 的新区间与 cut {} 重叠",
+            "the new range of cut {id} overlaps cut {}",
             other.id
         )));
     }

@@ -290,7 +290,7 @@ pub fn plan(video: &Video, value: PlanParams) -> Result<Value, ErrorBody> {
                     }
                     let plan = plan_text(view, &sequence_id, &content.document, &content.body, &value.scope_item_ids, range)
                         .map_err(plan_error)?;
-                    plans.push(serde_json::to_value(&plan).expect("能序列化"));
+                    plans.push(serde_json::to_value(&plan).expect("can serialize"));
                 }
                 parts.push(json!({ "plans": plans }));
             }
@@ -351,7 +351,7 @@ pub fn plan(video: &Video, value: PlanParams) -> Result<Value, ErrorBody> {
             for item in &sequence.items {
                 for asset in item.asset_refs() {
                     if let Some(record) = snapshot.assets.get(&asset.id) {
-                        records.insert(asset.id.clone(), serde_json::to_value(record).expect("能序列化"));
+                        records.insert(asset.id.clone(), serde_json::to_value(record).expect("can serialize"));
                     }
                 }
             }
@@ -376,7 +376,7 @@ pub fn plan(video: &Video, value: PlanParams) -> Result<Value, ErrorBody> {
             result["parts"] = Value::Array(parts);
             let (width, height) = value.output.as_ref().map_or((None, None), |o| (o.width, o.height));
             let canvas = &sequence.header.canvas;
-            result["output"] = serde_json::to_value(output_geometry(canvas.width, canvas.height, width, height)).expect("能序列化");
+            result["output"] = serde_json::to_value(output_geometry(canvas.width, canvas.height, width, height)).expect("can serialize");
             // Waveform with `speaker` set (format spec §3.7): the intervals in which each speaker talks across the whole sequence, computed the same way as in preview. Not provided when the video has no transcript;
             // export renders it as having no transcript (silent, with a notice).
             let speaker_visualizer = sequence.items.iter().any(|item| match item {
@@ -385,7 +385,7 @@ pub fn plan(video: &Video, value: PlanParams) -> Result<Value, ErrorBody> {
             });
             if speaker_visualizer && !transcript_pairs.is_empty() {
                 let speakers = speaker_activity(view, &sequence_id, &transcript_pairs).map_err(plan_error)?;
-                result["speakers"] = serde_json::to_value(speakers).expect("能序列化");
+                result["speakers"] = serde_json::to_value(speakers).expect("can serialize");
             }
         }
         other => return Err(invalid(

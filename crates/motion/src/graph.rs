@@ -799,7 +799,7 @@ pub fn scale_amplitude(amplitude: &Value, factor: f64) -> Result<Value, MotionEr
     }
     let length =
         crate::preset_registry::manifest::parse_length_value(amplitude).ok_or_else(|| {
-            MotionError::ManifestInvalid(format!("amplitude {amplitude} 既不是数字也不是长度"))
+            MotionError::ManifestInvalid(format!("amplitude {amplitude} is neither a number nor a length"))
         })?;
     Ok(serde_json::json!({
         "value": length.value * factor,

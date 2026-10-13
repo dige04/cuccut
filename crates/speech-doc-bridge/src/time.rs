@@ -21,7 +21,7 @@ pub struct Rounded {
 
 pub fn check_timescale(timescale: i64) -> Result<(), BridgeError> {
     if timescale <= 0 || timescale as i128 > MAX_SAFE_INTEGER {
-        return Err(BridgeError::new(format!("timescale {timescale} 必须是正的安全整数")));
+        return Err(BridgeError::new(format!("timescale {timescale} must be a positive safe integer")));
     }
     Ok(())
 }
@@ -30,7 +30,7 @@ pub fn check_timescale(timescale: i64) -> Result<(), BridgeError> {
 pub fn ticks_to_seconds(ticks: i64, timescale: i64) -> Result<f64, BridgeError> {
     check_timescale(timescale)?;
     if (ticks as i128).abs() > MAX_SAFE_INTEGER {
-        return Err(BridgeError::new(format!("刻度 {ticks} 超出安全整数")));
+        return Err(BridgeError::new(format!("ticks {ticks} exceed the safe integer range")));
     }
     Ok(ticks as f64 / timescale as f64)
 }
@@ -40,7 +40,7 @@ pub fn media_time_seconds(value: &MediaTime) -> Result<f64, BridgeError> {
     let ticks: i64 = value
         .ticks
         .parse()
-        .map_err(|_| BridgeError::new(format!("MediaTime 的 ticks 不是整数：{}", value.ticks)))?;
+        .map_err(|_| BridgeError::new(format!("MediaTime ticks is not an integer: {}", value.ticks)))?;
     ticks_to_seconds(ticks, value.timescale)
 }
 
@@ -48,18 +48,18 @@ pub fn media_time_seconds(value: &MediaTime) -> Result<f64, BridgeError> {
 pub fn seconds_to_ticks(seconds: f64, timescale: i64) -> Result<Rounded, BridgeError> {
     check_timescale(timescale)?;
     if !seconds.is_finite() {
-        return Err(BridgeError::new(format!("时间 {seconds} 不是有限数")));
+        return Err(BridgeError::new(format!("time {seconds} is not a finite number")));
     }
     // The result must be a safe integer; coarse-filter first so the decimal string below does not get too long.
     if seconds.abs() > (MAX_SAFE_INTEGER as f64) / timescale as f64 + 1.0 {
-        return Err(BridgeError::new(format!("时间 {seconds} 秒换成刻度超出安全整数")));
+        return Err(BridgeError::new(format!("converting {seconds} seconds to ticks exceeds the safe integer range")));
     }
     // Rust's `Display` gives the shortest round-trip decimal form, and never uses exponent notation.
     let text = format!("{}", seconds.abs());
     let (whole, fraction) = text.split_once('.').unwrap_or((&text, ""));
     let digits: u128 = format!("{whole}{fraction}")
         .parse()
-        .map_err(|_| BridgeError::new(format!("时间 {seconds} 的十进制写法读不出来")))?;
+        .map_err(|_| BridgeError::new(format!("cannot read the decimal form of time {seconds}")))?;
     // Decimal value = digits / 10^k. |seconds| < 2^53 / timescale + 1, at most 17 significant digits, digits · timescale < 10^17 · 2^53 ≈ 9·10^32, which fits within u128.
     let k = fraction.len() as u32;
     let scaled = digits * timescale as u128;
@@ -74,7 +74,7 @@ pub fn seconds_to_ticks(seconds: f64, timescale: i64) -> Result<Rounded, BridgeE
         (if r * 2 >= unit { q + 1 } else { q }, r == 0)
     };
     if quotient > MAX_SAFE_INTEGER as u128 {
-        return Err(BridgeError::new(format!("时间 {seconds} 秒换成刻度超出安全整数")));
+        return Err(BridgeError::new(format!("converting {seconds} seconds to ticks exceeds the safe integer range")));
     }
     let magnitude = quotient as i64;
     Ok(Rounded {

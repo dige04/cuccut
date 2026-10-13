@@ -339,7 +339,7 @@ mod tests {
     #[test]
     fn blend_codes_are_declaration_order() {
         for (index, mode) in BlendMode::ALL.into_iter().enumerate() {
-            assert_eq!(mode.code() as usize, index, "{mode:?} 的编号必须等于声明序");
+            assert_eq!(mode.code() as usize, index, "the code of {mode:?} must equal its declaration order");
             assert_eq!(BlendMode::from_code(index as u8), Some(mode));
             assert_eq!(BlendMode::parse(mode.as_str()), Some(mode));
         }

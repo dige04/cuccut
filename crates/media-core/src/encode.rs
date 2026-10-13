@@ -231,7 +231,7 @@ impl Encoder {
             .spawn()
             .map_err(|e| MediaError::spawn(&tools.ffmpeg, e))?;
         let stdin = child.stdin.take();
-        let mut stderr = child.stderr.take().expect("管道");
+        let mut stderr = child.stderr.take().expect("pipe");
         let log = std::thread::spawn(move || {
             let mut text = String::new();
             let _ = stderr.read_to_string(&mut text);
@@ -249,12 +249,12 @@ impl Encoder {
     /// Write one frame (RGBA, `width`×`height`).
     pub fn write(&mut self, rgba: &[u8]) -> Result<(), MediaError> {
         if rgba.len() != self.frame_bytes {
-            return Err(MediaError::new("EXPORT_ENCODE_FAILED", "帧的大小与输出尺寸不符"));
+            return Err(MediaError::new("EXPORT_ENCODE_FAILED", "frame size does not match the output size"));
         }
         let stdin = self
             .stdin
             .as_mut()
-            .ok_or_else(|| MediaError::new("EXPORT_ENCODE_FAILED", "编码器已关闭"))?;
+            .ok_or_else(|| MediaError::new("EXPORT_ENCODE_FAILED", "encoder is closed"))?;
         match stdin.write_all(rgba) {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == ErrorKind::BrokenPipe => {
@@ -262,10 +262,10 @@ impl Encoder {
                 let _ = self.child.wait();
                 Err(MediaError::new(
                     "EXPORT_ENCODE_FAILED",
-                    format!("编码器提前退出：{}", self.log_tail()),
+                    format!("encoder exited early: {}", self.log_tail()),
                 ))
             }
-            Err(e) => Err(MediaError::new("EXPORT_ENCODE_FAILED", format!("写编码器失败：{e}"))),
+            Err(e) => Err(MediaError::new("EXPORT_ENCODE_FAILED", format!("failed to write to encoder: {e}"))),
         }
     }
 
@@ -275,9 +275,9 @@ impl Encoder {
         let status = self
             .child
             .wait()
-            .map_err(|e| MediaError::new("EXPORT_ENCODE_FAILED", format!("等编码器失败：{e}")))?;
+            .map_err(|e| MediaError::new("EXPORT_ENCODE_FAILED", format!("failed waiting for encoder: {e}")))?;
         if !status.success() {
-            let message = format!("编码失败：{}", self.log_tail());
+            let message = format!("encoding failed: {}", self.log_tail());
             let _ = std::fs::remove_file(&self.output);
             return Err(MediaError::new("EXPORT_ENCODE_FAILED", message));
         }
@@ -355,7 +355,7 @@ impl QueuedEncoder {
         let opened = QueuedEncoder::spawn(frame_bytes, depth, fill, move || Ok(Box::new(encoder) as Box<dyn FrameSink>));
         match opened {
             Ok(queued) => queued,
-            Err(_) => unreachable!("现成的编码器不会打开失败"),
+            Err(_) => unreachable!("a ready-made encoder cannot fail to open"),
         }
     }
 
@@ -405,7 +405,7 @@ impl QueuedEncoder {
         let failed = match open_result.recv() {
             Ok(Ok(())) => None,
             Ok(Err(e)) => Some(e),
-            Err(_) => Some(MediaError::new("EXPORT_ENCODE_FAILED", "写编码器的线程崩溃了")),
+            Err(_) => Some(MediaError::new("EXPORT_ENCODE_FAILED", "the encoder write thread crashed")),
         };
         if let Some(e) = failed {
             let _ = writer.join();
@@ -427,7 +427,7 @@ impl QueuedEncoder {
     /// Take a frame buffer (its length is one frame; its contents are whatever was left from its last use). If all buffers are in the queue, wait for the write thread to write one frame.
     pub fn buffer(&mut self) -> Result<Vec<u8>, MediaError> {
         if self.writer.is_none() {
-            return Err(MediaError::new("EXPORT_ENCODE_FAILED", "编码器已关闭"));
+            return Err(MediaError::new("EXPORT_ENCODE_FAILED", "encoder is closed"));
         }
         match self.empty.recv() {
             Ok(buffer) => Ok(buffer),
@@ -438,7 +438,7 @@ impl QueuedEncoder {
     /// Hand a drawn frame to the write thread; wait if the queue is full.
     pub fn submit(&mut self, frame: Vec<u8>) -> Result<(), MediaError> {
         if frame.len() != self.frame_bytes {
-            return Err(MediaError::new("EXPORT_ENCODE_FAILED", "帧的大小与输出尺寸不符"));
+            return Err(MediaError::new("EXPORT_ENCODE_FAILED", "frame size does not match the output size"));
         }
         let sent = self.frames.as_ref().is_some_and(|frames| frames.send(frame).is_ok());
         if sent { Ok(()) } else { Err(self.writer_error()) }
@@ -466,8 +466,8 @@ impl QueuedEncoder {
         match self.writer.take() {
             Some(writer) => writer
                 .join()
-                .unwrap_or_else(|_| Err(MediaError::new("EXPORT_ENCODE_FAILED", "写编码器的线程崩溃了"))),
-            None => Err(MediaError::new("EXPORT_ENCODE_FAILED", "编码器已关闭")),
+                .unwrap_or_else(|_| Err(MediaError::new("EXPORT_ENCODE_FAILED", "the encoder write thread crashed"))),
+            None => Err(MediaError::new("EXPORT_ENCODE_FAILED", "encoder is closed")),
         }
     }
 
@@ -476,7 +476,7 @@ impl QueuedEncoder {
         drop(self.frames.take());
         match self.join() {
             Err(e) => e,
-            Ok(()) => MediaError::new("EXPORT_ENCODE_FAILED", "编码器已关闭"),
+            Ok(()) => MediaError::new("EXPORT_ENCODE_FAILED", "encoder is closed"),
         }
     }
 }

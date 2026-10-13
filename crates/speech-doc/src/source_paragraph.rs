@@ -34,10 +34,10 @@ pub enum SourceParagraphError {
 impl fmt::Display for SourceParagraphError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::ParagraphMissing => formatter.write_str("转写段落已不存在"),
-            Self::CannotSplit => formatter.write_str("段落没有可拆分的内部词边界"),
-            Self::StructuralBoundary => formatter.write_str("不能跨说话人或章节合并段落"),
-            Self::MissingParagraphPin => formatter.write_str("段落边界不是可移除的 paragraph pin"),
+            Self::ParagraphMissing => formatter.write_str("The transcript paragraph no longer exists"),
+            Self::CannotSplit => formatter.write_str("The paragraph has no internal word boundary to split at"),
+            Self::StructuralBoundary => formatter.write_str("Paragraphs cannot be merged across speakers or chapters"),
+            Self::MissingParagraphPin => formatter.write_str("The paragraph boundary is not a removable paragraph pin"),
             Self::InvalidDocument(message) => formatter.write_str(message),
         }
     }
@@ -86,7 +86,7 @@ pub fn split_paragraph_at_char(
     next.breaks
         .insert(break_after_word_id.clone(), BreakOverride::Break);
     next.validate().map_err(|error| {
-        SourceParagraphError::InvalidDocument(format!("拆分段落后的 transcript 无效：{error:#}"))
+        SourceParagraphError::InvalidDocument(format!("Transcript is invalid after splitting the paragraph: {error:#}"))
     })?;
     *doc = next;
     Ok(ParagraphSplitOutcome {
@@ -124,7 +124,7 @@ pub fn merge_paragraph_up(
     let mut next = doc.clone();
     next.para_breaks.remove(&pin);
     next.validate().map_err(|error| {
-        SourceParagraphError::InvalidDocument(format!("合并段落后的 transcript 无效：{error:#}"))
+        SourceParagraphError::InvalidDocument(format!("Transcript is invalid after merging the paragraph: {error:#}"))
     })?;
     *doc = next;
     Ok(ParagraphMergeOutcome {

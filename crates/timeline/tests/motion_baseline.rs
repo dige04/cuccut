@@ -69,16 +69,16 @@ fn updating() -> bool {
 /// a `BTreeMap`, and key order is naturally stable.
 fn assert_golden(name: &str, actual: &Value) {
     let path = fixture_dir().join(name);
-    let mut text = serde_json::to_string_pretty(actual).expect("序列化 golden");
+    let mut text = serde_json::to_string_pretty(actual).expect("serialize golden");
     text.push('\n');
     if updating() {
-        std::fs::create_dir_all(fixture_dir()).expect("创建 fixtures/motion");
-        std::fs::write(&path, &text).expect("写入 golden");
+        std::fs::create_dir_all(fixture_dir()).expect("create fixtures/motion");
+        std::fs::write(&path, &text).expect("write golden");
         return;
     }
     let expected = std::fs::read_to_string(&path).unwrap_or_else(|error| {
         panic!(
-            "读取 {} 失败：{error}；用 CCUT_UPDATE_GOLDEN=1 重生成",
+            "failed to read {}: {error}; regenerate with CCUT_UPDATE_GOLDEN=1",
             path.display()
         )
     });
@@ -99,8 +99,8 @@ fn assert_golden(name: &str, actual: &Value) {
             )
         });
     panic!(
-        "{} 与当前实现不一致（第 {line} 行）：\n  golden: {want}\n  实得:   {got}\n\
-         这是语义变更，必须先确认再用 CCUT_UPDATE_GOLDEN=1 重生成。",
+        "{} differs from the current implementation (line {line}):\n  golden: {want}\n  actual: {got}\n\
+         This is a semantic change; confirm it first, then regenerate with CCUT_UPDATE_GOLDEN=1.",
         path.display()
     );
 }
@@ -179,7 +179,7 @@ fn animation_json(animation: &Animation) -> Value {
             other => other,
         }
     }
-    prune(serde_json::to_value(animation).expect("序列化 animation"))
+    prune(serde_json::to_value(animation).expect("serialize animation"))
 }
 
 struct Case {
@@ -522,7 +522,7 @@ fn timeline_text_parts_match_golden() {
                             } else {
                                 assert_eq!(
                                     ranges, here,
-                                    "{preset}/{label} 的 ranges 在级联期间漂移"
+                                    "{preset}/{label} ranges drift during cascade"
                                 );
                                 assert_eq!(unit, here_unit);
                             }
@@ -605,7 +605,7 @@ fn timeline_text_parts_match_golden() {
                 );
                 assert_eq!(
                     frame.container, pose,
-                    "{preset} 非级联，容器 pose 必须与 resolve_animation_pose 相同"
+                    "{preset} is not cascaded, so the container pose must match resolve_animation_pose"
                 );
                 json!({"t": time, "frame": frame_json(&frame)})
             })
@@ -666,7 +666,7 @@ fn resolve_animation_pose_is_order_independent() {
     assert_ne!(
         order,
         (0..times.len()).collect::<Vec<_>>(),
-        "置换必须真乱序"
+        "the permutation must really be out of order"
     );
     for case in cases() {
         let sorted = times
@@ -696,7 +696,7 @@ fn resolve_animation_pose_is_order_independent() {
         for (index, (a, b)) in sorted.iter().zip(shuffled_out.iter()).enumerate() {
             assert!(
                 bitwise_eq(*a, *b),
-                "{} 在 t={} 上顺序/乱序采样不一致：{a:?} vs {b:?}",
+                "{} in-order and out-of-order sampling differ at t={}: {a:?} vs {b:?}",
                 case.id,
                 times[index]
             );
@@ -748,15 +748,15 @@ fn resolve_text_animation_is_order_independent() {
                 let at = times[index];
                 assert_eq!(
                     expected.unit, actual.unit,
-                    "{preset} 在 t={at} 上 unit 不一致"
+                    "{preset} unit differs at t={at}"
                 );
                 assert_eq!(
                     expected.ranges, actual.ranges,
-                    "{preset} 在 t={at} 上 ranges 不一致"
+                    "{preset} ranges differ at t={at}"
                 );
                 assert!(
                     bitwise_eq(expected.container, actual.container),
-                    "{preset} 在 t={at} 上容器 pose 不一致"
+                    "{preset} container pose differs at t={at}"
                 );
                 assert_eq!(expected.parts.len(), actual.parts.len());
                 for (a, b) in expected.parts.iter().zip(actual.parts.iter()) {
@@ -780,20 +780,20 @@ fn golden_covers_every_declared_preset() {
     assert_eq!(
         ids.len(),
         ids.iter().collect::<std::collections::BTreeSet<_>>().len(),
-        "case id 必须唯一"
+        "case id must be unique"
     );
     for preset in ENTER_PRESETS {
         assert!(
             ids.iter()
                 .any(|id| id.starts_with(&format!("progress/enter/{preset}@"))),
-            "缺 enter preset 覆盖：{preset}"
+            "missing enter preset coverage: {preset}"
         );
     }
     for preset in LOOP_PRESETS {
         assert!(
             ids.iter()
                 .any(|id| id.starts_with(&format!("loop/{preset}@"))),
-            "缺 loop preset 覆盖：{preset}"
+            "missing loop preset coverage: {preset}"
         );
     }
     // The set difference between the exit-recipe table and the schema declaration must be explicitly covered, to avoid silent drift.
@@ -896,7 +896,7 @@ fn timeline_schema_preset_lists_are_frozen() {
     for preset in ENTER_PRESETS.iter().chain(LOOP_PRESETS.iter()) {
         assert!(
             schema.contains(&format!("\"{preset}\"")),
-            "schema 缺 {preset}"
+            "schema is missing {preset}"
         );
     }
 }

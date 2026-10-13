@@ -322,12 +322,12 @@ mod tests {
     }
 
     fn document(value: Value) -> TimelineDocument {
-        serde_json::from_value(value).expect("测试文档")
+        serde_json::from_value(value).expect("test document")
     }
 
     fn projection(document: &TimelineDocument, main: f64) -> TimelineProjection {
         TimelineProjection::build(document, &BTreeMap::from([("main".to_owned(), main)]))
-            .expect("投影")
+            .expect("projection")
     }
 
     /// A blank project (no `main`, no clips, no main media) is an element document. It is legacy only if it has explicit clips, or an implicit whole-length clip, and is not marked detached. A document marked detached is never legacy.
@@ -409,7 +409,7 @@ mod tests {
         assert_eq!(
             document(doc.clone()).original_audio(),
             expected,
-            "两种入参同一答案"
+            "both inputs give the same answer"
         );
 
         let mut off = doc.clone();
@@ -418,12 +418,12 @@ mod tests {
         assert_eq!(
             off["tracks"][0]["elements"][2].get("muted"),
             None,
-            "静音源不写"
+            "muted sources are not written"
         );
         assert_eq!(
             off["tracks"][1]["elements"][0].get("muted"),
             None,
-            "分离音轨不是原声"
+            "a detached audio track is not the original sound"
         );
         assert_eq!(off["main"]["muted"], json!(true));
         assert!(original_audio_json(&off).muted);
@@ -431,7 +431,7 @@ mod tests {
         assert_eq!(
             off["main"]["muted"],
             json!(true),
-            "分离文档的 main.muted 不动"
+            "main.muted of a detached document stays unchanged"
         );
         assert!(!original_audio_json(&off).muted);
 

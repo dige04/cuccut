@@ -204,7 +204,7 @@ mod tests {
         let mut page = PageRecord::pending("p002", "p002.src.html");
         page.status = RunStatus::Failed;
         page.problems
-            .push(Problem::sentence(ProblemCode::MissingId, "s-g1.0", "缺失"));
+            .push(Problem::sentence(ProblemCode::MissingId, "s-g1.0", "missing"));
         let json = serde_json::to_string(&page).unwrap();
         assert!(json.contains("\"missing-id\""));
         let decoded: PageRecord = serde_json::from_str(&json).unwrap();

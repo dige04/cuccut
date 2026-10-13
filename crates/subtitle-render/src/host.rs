@@ -133,8 +133,8 @@ pub fn register(host: Box<dyn OverlayHost>) -> bool {
 fn host() -> Result<&'static dyn OverlayHost> {
     HOST.get().map(AsRef::as_ref).ok_or_else(|| {
         anyhow!(
-            "ccut-subtitle-render 未注册 OverlayHost：\
-             宿主进程必须在渲染前调用 `subtitle_render::host::register`"
+            "ccut-subtitle-render has no OverlayHost registered: \
+             the host process must call `subtitle_render::host::register` before rendering"
         )
     })
 }

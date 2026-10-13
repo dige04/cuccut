@@ -229,14 +229,14 @@ pub fn probe_with_fallback(
     };
     let Some(ffprobe) = ffprobe else {
         return Err(native_error.context(format!(
-            "{} 无法纯 Rust 探测，且没有可用的 ffprobe 兜底",
+            "{} cannot be probed in pure Rust, and no ffprobe fallback is available",
             path.display()
         )));
     };
     match ffprobe::probe_with_ffprobe(path, ffprobe) {
         Ok(probe) => Ok((probe, ProbeBackend::Ffprobe)),
         Err(error) => Err(anyhow!(
-            "{} 两条探测路径都失败：纯 Rust：{native_error:#}；ffprobe：{error:#}",
+            "{} failed on both probe paths: pure Rust: {native_error:#}; ffprobe: {error:#}",
             path.display()
         )),
     }
@@ -247,7 +247,7 @@ pub(crate) fn read_magic(path: &Path) -> Result<[u8; 16]> {
     use std::io::Read as _;
 
     let mut file = std::fs::File::open(path)
-        .map_err(|error| anyhow!("打开 {} 失败：{error}", path.display()))?;
+        .map_err(|error| anyhow!("failed to open {}: {error}", path.display()))?;
     let mut magic = [0_u8; 16];
     let mut filled = 0;
     while filled < magic.len() {
@@ -255,7 +255,7 @@ pub(crate) fn read_magic(path: &Path) -> Result<[u8; 16]> {
             Ok(0) => break,
             Ok(count) => filled += count,
             Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
-            Err(error) => bail!("读取 {} 失败：{error}", path.display()),
+            Err(error) => bail!("failed to read {}: {error}", path.display()),
         }
     }
     Ok(magic)

@@ -327,7 +327,7 @@ mod tests {
         let a = parse("AI 让这一<行|hang2>变了，<read|R EH1 D> it，a < b");
         assert_eq!(a.surface, "AI 让这一行变了，<read|R EH1 D> it，a < b");
         assert_eq!(a.readings, [user(6, 7, "hang2")]);
-        assert!(a.malformed.is_empty(), "英文音素注记不是拼音注记，不报");
+        assert!(a.malformed.is_empty(), "English phoneme annotations are not pinyin annotations, so they are not reported");
     }
 
     #[test]

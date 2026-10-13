@@ -50,7 +50,7 @@ pub fn read(video: &Video) -> Value {
         });
         if schema == SPEECH_SCHEMA || schema == CAPTION_SCHEMA {
             match plan_text(view, &root, &content.document, &content.body, &[], None) {
-                Ok(plan) => entry["plan"] = serde_json::to_value(&plan).expect("能序列化"),
+                Ok(plan) => entry["plan"] = serde_json::to_value(&plan).expect("can serialize"),
                 Err(error) => entry["planError"] = json!({ "code": error.code, "message": error.message }),
             }
         }

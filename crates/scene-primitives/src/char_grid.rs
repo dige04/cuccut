@@ -56,23 +56,23 @@ fn number(v: &Value, key: &str, default: Option<f64>) -> Result<f64> {
         .and_then(Value::as_f64)
         .or_else(|| if v.get(key).is_none() { default } else { None });
     n.filter(|n| n.is_finite())
-        .ok_or_else(|| anyhow!("schema: charGrid.{key} 须为有限数值"))
+        .ok_or_else(|| anyhow!("schema: charGrid.{key} must be a finite number"))
 }
 fn int(v: &Value, key: &str, default: Option<f64>, min: i32, max: i32) -> Result<i32> {
     let n = number(v, key, default)?;
     if n.fract() != 0.0 || n < min as f64 || n > max as f64 {
-        bail!("schema: charGrid.{key} 须为 {min}..{max} 的整数");
+        bail!("schema: charGrid.{key} must be an integer in {min}..{max}");
     }
     Ok(n as i32)
 }
 fn glyphs(text: &str, budget: &mut usize) -> Result<Vec<String>> {
     if text.len() > 1_048_576 || text.chars().any(|c| c.is_control() && c != '\n') {
-        bail!("schema: charGrid 文本含控制字符或过长");
+        bail!("schema: charGrid text contains control characters or is too long");
     }
     let out: Vec<_> = text.graphemes(true).map(str::to_owned).collect();
     *budget += out.len();
     if *budget > MAX_CELLS {
-        bail!("schema: charGrid 字符数据超过 {MAX_CELLS} 个 grapheme");
+        bail!("schema: charGrid character data exceeds {MAX_CELLS} graphemes");
     }
     Ok(out)
 }
@@ -81,10 +81,10 @@ fn symbol(v: &Value, key: &str, default: &str) -> Result<String> {
         None => default,
         Some(v) => v
             .as_str()
-            .ok_or_else(|| anyhow!("schema: charGrid.{key} 须为字符"))?,
+            .ok_or_else(|| anyhow!("schema: charGrid.{key} must be a character"))?,
     };
     if s.graphemes(true).count() != 1 || s.chars().any(char::is_control) {
-        bail!("schema: charGrid.{key} 须为单个 grapheme");
+        bail!("schema: charGrid.{key} must be a single grapheme");
     }
     Ok(s.to_owned())
 }
@@ -93,7 +93,7 @@ impl CharGrid {
     pub fn parse(v: &Value) -> Result<Self> {
         let object = v
             .as_object()
-            .ok_or_else(|| anyhow!("schema: charGrid 须为对象"))?;
+            .ok_or_else(|| anyhow!("schema: charGrid must be an object"))?;
         if object.keys().any(|key| {
             ![
                 "type",
@@ -115,22 +115,22 @@ impl CharGrid {
             ]
             .contains(&key.as_str())
         }) {
-            bail!("schema: charGrid 含未知字段；字体写在 style.font，叠放内容用外层 group");
+            bail!("schema: charGrid has unknown fields; put the font in style.font and stack content with an outer group");
         }
         let cols = int(v, "cols", None, 1, 256)? as usize;
         let rows = int(v, "rows", None, 1, 256)? as usize;
         let cell_width = number(v, "cellWidth", Some(10.0))?;
         let cell_height = number(v, "cellHeight", Some(20.0))?;
         if !(1.0..=256.0).contains(&cell_width) || !(1.0..=256.0).contains(&cell_height) {
-            bail!("schema: charGrid 单元尺寸须在 1..256 px");
+            bail!("schema: charGrid cell size must be in 1..256 px");
         }
         let raw = v
             .get("layers")
             .and_then(Value::as_array)
             .filter(|a| !a.is_empty() && a.len() <= 8)
-            .ok_or_else(|| anyhow!("schema: charGrid.layers 须为 1..8 层"))?;
+            .ok_or_else(|| anyhow!("schema: charGrid.layers must have 1..8 layers"))?;
         if cols * rows * raw.len() > MAX_CELLS {
-            bail!("schema: charGrid 总格子数超过 {MAX_CELLS}");
+            bail!("schema: charGrid total cell count exceeds {MAX_CELLS}");
         }
         let (mut layers, mut budget, mut op_count) = (Vec::new(), 0, 0);
         let mut ids = std::collections::HashSet::new();
@@ -140,25 +140,25 @@ impl CharGrid {
                     .keys()
                     .any(|key| !["id", "color", "ops"].contains(&key.as_str()))
             }) {
-                bail!("schema: charGrid layer 含未知字段");
+                bail!("schema: charGrid layer has unknown fields");
             }
             let id = layer
                 .get("id")
                 .and_then(Value::as_str)
                 .filter(|s| !s.is_empty())
-                .ok_or_else(|| anyhow!("schema: charGrid layer 缺少 id"))?;
+                .ok_or_else(|| anyhow!("schema: charGrid layer is missing id"))?;
             if !ids.insert(id) {
-                bail!("schema: charGrid layer id 重复");
+                bail!("schema: charGrid layer id is duplicated");
             }
             let color = Rgba::parse_value(layer.get("color"))
-                .ok_or_else(|| anyhow!("schema: charGrid layer 缺少有效 color"))?;
+                .ok_or_else(|| anyhow!("schema: charGrid layer is missing a valid color"))?;
             let items = layer
                 .get("ops")
                 .and_then(Value::as_array)
-                .ok_or_else(|| anyhow!("schema: charGrid layer.ops 须为数组"))?;
+                .ok_or_else(|| anyhow!("schema: charGrid layer.ops must be an array"))?;
             op_count += items.len();
             if op_count > 2048 {
-                bail!("schema: charGrid ops 超过 2048 条");
+                bail!("schema: charGrid ops exceed 2048");
             }
             let mut ops = Vec::new();
             for item in items {
@@ -170,7 +170,7 @@ impl CharGrid {
                     .map(|_| number(item, "end", None))
                     .transpose()?;
                 if start < 0.0 || end.is_some_and(|end| end <= start) {
-                    bail!("schema: charGrid op 须满足 0 ≤ start < end");
+                    bail!("schema: charGrid op must satisfy 0 ≤ start < end");
                 }
                 let name = item.get("op").and_then(Value::as_str).unwrap_or("");
                 let allowed: &[&str] = match name {
@@ -178,7 +178,7 @@ impl CharGrid {
                     "sprite" => &["lines", "dur"],
                     "box" => &["width", "height", "dur"],
                     "bar" => &["width", "value", "filled", "empty"],
-                    _ => bail!("schema: 未知 charGrid op {name}"),
+                    _ => bail!("schema: unknown charGrid op {name}"),
                 };
                 if item.as_object().is_some_and(|object| {
                     object.keys().any(|k| {
@@ -186,20 +186,20 @@ impl CharGrid {
                             && !allowed.contains(&k.as_str())
                     })
                 }) {
-                    bail!("schema: charGrid {name} 含未知字段");
+                    bail!("schema: charGrid {name} has unknown fields");
                 }
                 let kind = match name {
                     "text" => {
                         let text = item
                             .get("text")
                             .and_then(Value::as_str)
-                            .ok_or_else(|| anyhow!("schema: charGrid text 缺少 text"))?;
+                            .ok_or_else(|| anyhow!("schema: charGrid text is missing text"))?;
                         let cps = item
                             .get("cps")
                             .map(|_| number(item, "cps", None))
                             .transpose()?;
                         if cps.is_some_and(|c| !(0.0..=10000.0).contains(&c) || c == 0.0) {
-                            bail!("schema: cps 须在 (0,10000]");
+                            bail!("schema: cps must be in (0,10000]");
                         }
                         OpKind::Text {
                             x,
@@ -215,7 +215,7 @@ impl CharGrid {
                     "sprite" | "box" => {
                         let duration = number(item, "dur", Some(0.0))?;
                         if duration < 0.0 {
-                            bail!("schema: charGrid dur 须非负");
+                            bail!("schema: charGrid dur must not be negative");
                         }
                         let mut cells = Vec::new();
                         if name == "sprite" {
@@ -224,15 +224,15 @@ impl CharGrid {
                                 .and_then(Value::as_array)
                                 .filter(|a| a.len() <= 256)
                                 .ok_or_else(|| {
-                                    anyhow!("schema: sprite.lines 须为最多 256 行的数组")
+                                    anyhow!("schema: sprite.lines must be an array of at most 256 lines")
                                 })?;
                             for (dy, line) in lines.iter().enumerate() {
                                 let line = line.as_str().filter(|s| !s.contains('\n')).ok_or_else(
-                                    || anyhow!("schema: sprite 每行须为无换行字符串"),
+                                    || anyhow!("schema: each sprite line must be a string without newlines"),
                                 )?;
                                 let chars = glyphs(line, &mut budget)?;
                                 if chars.len() > 256 {
-                                    bail!("schema: sprite 行超过 256 格");
+                                    bail!("schema: sprite line exceeds 256 cells");
                                 }
                                 cells.extend(
                                     chars
@@ -280,7 +280,7 @@ impl CharGrid {
                             budget += cells.len();
                         }
                         if budget > MAX_CELLS {
-                            bail!("schema: charGrid 格子数据超过 {MAX_CELLS}");
+                            bail!("schema: charGrid cell data exceeds {MAX_CELLS}");
                         }
                         OpKind::Cells { cells, duration }
                     }
@@ -288,11 +288,11 @@ impl CharGrid {
                         let width = int(item, "width", None, 1, 256)? as usize;
                         budget += width;
                         if budget > MAX_CELLS {
-                            bail!("schema: charGrid 格子数据超过 {MAX_CELLS}");
+                            bail!("schema: charGrid cell data exceeds {MAX_CELLS}");
                         }
                         let value = item
                             .get("value")
-                            .ok_or_else(|| anyhow!("schema: bar 缺少 value"))?;
+                            .ok_or_else(|| anyhow!("schema: bar is missing value"))?;
                         let mut values = Vec::new();
                         if let Some(n) = value.as_f64() {
                             values.push((0.0, n));
@@ -303,13 +303,13 @@ impl CharGrid {
                                 values.push((number(frame, "t", None)?, number(frame, "v", None)?));
                             }
                         } else {
-                            bail!("schema: bar.value 须为数值或最多 512 个 {{t,v}} 帧");
+                            bail!("schema: bar.value must be a number or at most 512 {{t,v}} frames");
                         }
                         if values.iter().any(|(t, v)| {
                             !t.is_finite() || *t < 0.0 || !v.is_finite() || !(0.0..=1.0).contains(v)
                         }) || values.windows(2).any(|p| p[0].0 >= p[1].0)
                         {
-                            bail!("schema: bar 的 t 须递增、v 在 0..1");
+                            bail!("schema: bar t must be increasing and v in 0..1");
                         }
                         OpKind::Bar {
                             x,

@@ -58,7 +58,7 @@ fn write_tone_pcm(path: &Path) {
             bytes.extend_from_slice(&value.to_le_bytes());
         }
     }
-    std::fs::write(path, bytes).expect("写正弦 PCM");
+    std::fs::write(path, bytes).expect("write sine PCM");
 }
 
 /// Writes a test MP4. Returns `None` when the encoder is unavailable (repository convention: no backend is not a failure).
@@ -70,13 +70,13 @@ fn write_fixture(out: &Path, audio: Option<&Path>) -> Option<()> {
         Ok(writer) => writer,
         // There is no usable H.264 / AAC encoder on this machine, so skip rather than fail.
         Err(error) if format!("{error:#}").contains("unsupported") => return None,
-        Err(error) => panic!("打开原生 MP4 写入器失败：{error:#}"),
+        Err(error) => panic!("failed to open native MP4 writer: {error:#}"),
     };
     assert_eq!(writer.backend(), encode_backend());
     for index in 0..TOTAL_FRAMES {
-        writer.write_frame(&frame_rgba(index)).expect("写帧");
+        writer.write_frame(&frame_rgba(index)).expect("write frame");
     }
-    writer.finish().expect("收尾 MP4");
+    writer.finish().expect("finish MP4");
     Some(())
 }
 
@@ -88,7 +88,7 @@ fn decode_audio(path: &Path) -> Vec<f32> {
     use symphonia::core::io::{MediaSourceStream, MediaSourceStreamOptions};
     use symphonia::core::meta::MetadataOptions;
 
-    let file = std::fs::File::open(path).expect("打开产物");
+    let file = std::fs::File::open(path).expect("open output");
     let stream = MediaSourceStream::new(Box::new(file), MediaSourceStreamOptions::default());
     let mut hint = Hint::new();
     hint.with_extension("mp4");
@@ -99,20 +99,20 @@ fn decode_audio(path: &Path) -> Vec<f32> {
             FormatOptions::default(),
             MetadataOptions::default(),
         )
-        .expect("解复用产物");
+        .expect("demux output");
     let track = format
         .first_track_known_codec(TrackType::Audio)
-        .expect("产物应当有音轨");
+        .expect("output should have an audio track");
     let track_id = track.id;
     let params = track
         .codec_params
         .as_ref()
         .and_then(|params| params.audio())
-        .expect("音频编解码参数")
+        .expect("audio codec parameters")
         .clone();
     let mut decoder = symphonia::default::get_codecs()
         .make_audio_decoder(&params, &AudioDecoderOptions::default())
-        .expect("AAC 解码器");
+        .expect("AAC decoder");
     let mut interleaved = Vec::new();
     let mut out = Vec::new();
     while let Ok(Some(packet)) = format.next_packet() {
@@ -123,7 +123,7 @@ fn decode_audio(path: &Path) -> Vec<f32> {
             continue;
         };
         let channels = decoded.spec().channels().count();
-        assert_eq!(channels, 2, "输出音轨应当是立体声");
+        assert_eq!(channels, 2, "output audio track should be stereo");
         decoded.copy_to_vec_interleaved(&mut interleaved);
         out.extend_from_slice(&interleaved);
     }
@@ -135,7 +135,7 @@ fn tone_metrics(samples: &[f32], start: f64, end: f64) -> (f64, f64) {
     let rate = f64::from(media_native::AUDIO_SAMPLE_RATE);
     let first = (start * rate) as usize;
     let last = ((end * rate) as usize).min(samples.len() / 2);
-    assert!(last > first, "窗口内没有样本");
+    assert!(last > first, "no samples in the window");
     let left: Vec<f64> = (first..last).map(|i| f64::from(samples[i * 2])).collect();
     let rms = (left.iter().map(|value| value * value).sum::<f64>() / left.len() as f64).sqrt();
     // Zero-crossing count: a sine crosses zero exactly twice per period, once up and once down. Noise at this SNR does not add extra crossings.
@@ -152,22 +152,22 @@ fn the_native_writer_produces_a_probeable_mp4_with_the_requested_geometry() {
     let dir = tempfile::tempdir().unwrap();
     let out = dir.path().join("video-only.mp4");
     if write_fixture(&out, None).is_none() {
-        eprintln!("跳过：当前平台没有原生 MP4 编码后端");
+        eprintln!("skipping: no native MP4 encoding backend on this platform");
         return;
     }
-    assert!(out.is_file(), "产物应当存在");
-    assert!(std::fs::metadata(&out).unwrap().len() > 0, "产物不应为空");
+    assert!(out.is_file(), "output should exist");
+    assert!(std::fs::metadata(&out).unwrap().len() > 0, "output should not be empty");
 
-    let probe = media_probe::probe(&out).expect("探测产物");
+    let probe = media_probe::probe(&out).expect("probe output");
     assert_eq!(probe.dimensions(), Some((WIDTH, HEIGHT)));
-    let duration = probe.positive_duration().expect("产物应当有时长");
+    let duration = probe.positive_duration().expect("output should have a duration");
     assert!(
         (duration - TOTAL_SECONDS).abs() <= 0.1,
-        "时长应当在 ±0.1s 内：{duration}"
+        "duration should be within ±0.1 s: {duration}"
     );
-    assert!(!probe.has_audio(), "无音频参数时不应写出音轨");
-    let fps = probe.fps().expect("产物应当有帧率");
-    assert!((fps - FPS).abs() <= 0.05, "帧率应当是请求的那个：{fps}");
+    assert!(!probe.has_audio(), "no audio track should be written without audio parameters");
+    let fps = probe.fps().expect("output should have a frame rate");
+    assert!((fps - FPS).abs() <= 0.05, "frame rate should be the requested one: {fps}");
 }
 
 #[test]
@@ -175,19 +175,19 @@ fn each_colour_segment_decodes_back_to_its_own_dominant_channel() {
     let dir = tempfile::tempdir().unwrap();
     let out = dir.path().join("segments.mp4");
     if write_fixture(&out, None).is_none() {
-        eprintln!("跳过：当前平台没有原生 MP4 编码后端");
+        eprintln!("skipping: no native MP4 encoding backend on this platform");
         return;
     }
     // Take the midpoint of each segment, avoiding the segment boundaries (where the encoder's B-frame references may mix two segments).
     for (index, expected) in ["red", "green", "blue"].iter().enumerate() {
         let time = index as f64 * SEGMENT_SECONDS + SEGMENT_SECONDS / 2.0;
-        let frame: RgbaFrame = extract_frame_rgba(&out, time, WIDTH).expect("解回单帧");
+        let frame: RgbaFrame = extract_frame_rgba(&out, time, WIDTH).expect("decode a single frame back");
         assert_eq!(frame.width, WIDTH);
         assert_eq!(frame.height, HEIGHT);
         assert_eq!(
             common::dominant(&frame),
             *expected,
-            "t={time:.2}s 的主导色应当是 {expected}"
+            "the dominant colour at t={time:.2}s should be {expected}"
         );
     }
 }
@@ -199,29 +199,29 @@ fn the_mixed_audio_track_survives_the_aac_round_trip() {
     write_tone_pcm(&pcm);
     let out = dir.path().join("with-audio.mp4");
     if write_fixture(&out, Some(&pcm)).is_none() {
-        eprintln!("跳过：当前平台没有原生 MP4 编码后端");
+        eprintln!("skipping: no native MP4 encoding backend on this platform");
         return;
     }
-    let probe = media_probe::probe(&out).expect("探测产物");
-    assert!(probe.has_audio(), "给了 PCM 就应当写出音轨");
-    let duration = probe.positive_duration().expect("产物应当有时长");
+    let probe = media_probe::probe(&out).expect("probe output");
+    assert!(probe.has_audio(), "an audio track should be written when PCM is given");
+    let duration = probe.positive_duration().expect("output should have a duration");
     assert!(
         (duration - TOTAL_SECONDS).abs() <= 0.1,
-        "带音轨的时长同样在 ±0.1s 内：{duration}"
+        "duration with audio should likewise be within ±0.1 s: {duration}"
     );
 
     let samples = decode_audio(&out);
-    assert!(!samples.is_empty(), "音轨应当解得出样本");
+    assert!(!samples.is_empty(), "audio track should decode to samples");
     // Trim 0.3 seconds from each end. The encoder's AAC warm-up samples and the trailing zero padding both lie within those two parts.
     let (rms, frequency) = tone_metrics(&samples, 0.3, TOTAL_SECONDS - 0.3);
     let expected_rms = f64::from(TONE_AMPLITUDE) / std::f64::consts::SQRT_2;
     assert!(
         (rms - expected_rms).abs() <= 0.05,
-        "RMS 应当接近 {expected_rms:.3}，实得 {rms:.3}"
+        "RMS should be close to {expected_rms:.3}, got {rms:.3}"
     );
     assert!(
         (frequency - TONE_HZ).abs() <= 5.0,
-        "基频应当接近 {TONE_HZ} Hz，实得 {frequency:.1}"
+        "fundamental should be close to {TONE_HZ} Hz, got {frequency:.1}"
     );
 }
 
@@ -243,22 +243,22 @@ fn the_encode_backend_label_matches_platform_availability() {
 #[test]
 fn ntsc_frame_rates_survive_the_container_timebase() {
     if !encode_available() {
-        eprintln!("跳过：当前平台没有原生 MP4 编码后端");
+        eprintln!("skipping: no native MP4 encoding backend on this platform");
         return;
     }
-    let dir = tempfile::tempdir().expect("临时目录");
+    let dir = tempfile::tempdir().expect("temporary directory");
     let out = dir.path().join("ntsc.mp4");
     let fps = 30000.0 / 1001.0;
     let mut writer = match media_native::open_mp4_writer(&out, WIDTH, HEIGHT, fps, None) {
         Ok(writer) => writer,
         Err(error) if format!("{error:#}").contains("unsupported") => return,
-        Err(error) => panic!("打开原生 MP4 写入器失败：{error:#}"),
+        Err(error) => panic!("failed to open native MP4 writer: {error:#}"),
     };
     for index in 0..60 {
-        writer.write_frame(&frame_rgba(index)).expect("写帧");
+        writer.write_frame(&frame_rgba(index)).expect("write frame");
     }
-    writer.finish().expect("收尾");
-    let probe = media_probe::probe(&out).expect("探测产物");
-    let read = probe.fps().expect("产物应当有帧率");
-    assert!((read - fps).abs() < 1e-6, "29.97 读回成了 {read}");
+    writer.finish().expect("finish");
+    let probe = media_probe::probe(&out).expect("probe output");
+    let read = probe.fps().expect("output should have a frame rate");
+    assert!((read - fps).abs() < 1e-6, "29.97 read back as {read}");
 }

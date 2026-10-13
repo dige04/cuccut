@@ -70,7 +70,7 @@ impl AnimationPlan {
     pub fn validate(&self) -> Result<(), TimelineError> {
         if self.is_empty() {
             return Err(TimelineError::Invalid(
-                "animation apply 没有任何动画参数".to_owned(),
+                "animation apply has no animation parameters".to_owned(),
             ));
         }
         validate_plan_slot(AnimationSlotKind::Enter, &self.enter)?;
@@ -87,7 +87,7 @@ fn validate_plan_slot(
         && !kind.presets().contains(&preset.as_str())
     {
         return Err(TimelineError::Invalid(format!(
-            "{} animation preset 不存在：{preset}",
+            "{} animation preset does not exist: {preset}",
             kind.token()
         )));
     }
@@ -95,7 +95,7 @@ fn validate_plan_slot(
         && (!value.is_finite() || !(DURATION_MIN..=DURATION_MAX).contains(&value))
     {
         return Err(TimelineError::Invalid(format!(
-            "{}-dur 须在 {DURATION_MIN}..={DURATION_MAX}",
+            "{}-dur must be in {DURATION_MIN}..={DURATION_MAX}",
             kind.token()
         )));
     }
@@ -103,7 +103,7 @@ fn validate_plan_slot(
         && (!value.is_finite() || !(PERIOD_MIN..=PERIOD_MAX).contains(&value))
     {
         return Err(TimelineError::Invalid(format!(
-            "{}-period 须在 {PERIOD_MIN}..={PERIOD_MAX}",
+            "{}-period must be in {PERIOD_MIN}..={PERIOD_MAX}",
             kind.token()
         )));
     }
@@ -111,7 +111,7 @@ fn validate_plan_slot(
         && (!value.is_finite() || !(INTENSITY_MIN..=INTENSITY_MAX).contains(&value))
     {
         return Err(TimelineError::Invalid(format!(
-            "{}-strength 须在 0..=1",
+            "{}-strength must be in 0..=1",
             kind.token()
         )));
     }
@@ -119,21 +119,21 @@ fn validate_plan_slot(
         && (!value.is_finite() || value < 0.0)
     {
         return Err(TimelineError::Invalid(format!(
-            "{}-delay 须为有限非负秒数",
+            "{}-delay must be finite non-negative seconds",
             kind.token()
         )));
     }
     if let Some(value) = plan.phase
         && !value.is_finite()
     {
-        return Err(TimelineError::Invalid("loop-phase 须为有限数".to_owned()));
+        return Err(TimelineError::Invalid("loop-phase must be a finite number".to_owned()));
     }
     if kind == AnimationSlotKind::Loop && plan.dur.is_some() {
-        return Err(TimelineError::Invalid("loop 不接受 dur".to_owned()));
+        return Err(TimelineError::Invalid("loop does not accept dur".to_owned()));
     }
     if kind != AnimationSlotKind::Loop && (plan.period.is_some() || plan.phase.is_some()) {
         return Err(TimelineError::Invalid(format!(
-            "{} 不接受 period/phase",
+            "{} does not accept period/phase",
             kind.token()
         )));
     }
@@ -218,7 +218,7 @@ pub fn apply_animation(element: &mut Element, plan: &AnimationPlan) -> Result<bo
     plan.validate()?;
     if element.kind == ElementKind::Audio {
         return Err(TimelineError::Invalid(format!(
-            "audio element {} 不支持动画",
+            "audio element {} does not support animation",
             element.id
         )));
     }
@@ -255,7 +255,7 @@ pub fn clear_animation(
 ) -> Result<bool, TimelineError> {
     if element.kind == ElementKind::Audio {
         return Err(TimelineError::Invalid(format!(
-            "audio element {} 不支持动画",
+            "audio element {} does not support animation",
             element.id
         )));
     }

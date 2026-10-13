@@ -157,14 +157,14 @@ pub fn load_gif(label: &str, bytes: &[u8]) -> anyhow::Result<(Gif, Option<String
     match render_raster::source::AnimatedImage::decode(label, bytes, &GIF_BUDGET) {
         Ok(animated) if animated.frame_count() > 1 => Ok((Gif::Animated(animated), None)),
         Ok(animated) => {
-            let first = animated.frame(0).ok_or_else(|| anyhow::anyhow!("{label}：GIF 没有帧"))?;
+            let first = animated.frame(0).ok_or_else(|| anyhow::anyhow!("{label}: GIF has no frames"))?;
             Ok((Gif::Still(first), None))
         }
         Err(error) => {
             let still = render_raster::source::animated_image::decode_first_frame(label, bytes)?;
             let note = error
                 .is::<render_raster::source::animated_image::AnimatedImageBudgetExceeded>()
-                .then(|| format!("GIF 太大，只画第一帧：{error:#}"));
+                .then(|| format!("GIF is too large; drawing only the first frame: {error:#}"));
             Ok((Gif::Still(std::sync::Arc::new(still)), note))
         }
     }
@@ -209,7 +209,7 @@ mod tests {
             .collect();
         assert!(
             files == super::bundled_fonts(),
-            "BUNDLED_FONT_FILES 与内核的内置字体次序或内容不一致"
+            "BUNDLED_FONT_FILES does not match the kernel's built-in font order or contents"
         );
     }
 }

@@ -83,7 +83,7 @@ impl CodePredictor {
     /// Sum of the embeddings of the 15 tokens (one per group): `[1, 1, D]`.
     pub fn batch_embed_all_groups(&self, tokens: &[i32]) -> Result<Array> {
         if tokens.len() != self.num_groups {
-            bail!("Code Predictor 需要 {} 个 token，实际 {}", self.num_groups, tokens.len());
+            bail!("Code Predictor needs {} tokens, got {}", self.num_groups, tokens.len());
         }
         let mut sum = self.embed_group(&token_array(&tokens[..1]), 0);
         for (group, &token) in tokens.iter().enumerate().skip(1) {

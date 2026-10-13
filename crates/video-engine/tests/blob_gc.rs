@@ -31,7 +31,7 @@ fn new_video(dir: &Path) -> Video {
         width: 1920,
         height: 1080,
     };
-    Video::create(dir, &options, &ffprobe()).expect("新建视频")
+    Video::create(dir, &options, &ffprobe()).expect("create the video")
 }
 
 fn apply(video: &mut Video, command_id: &str, operations: Vec<Value>) -> video_engine::Committed {
@@ -170,12 +170,12 @@ fn referenced_blobs_survive_and_orphans_go() {
     let report = video.gc_blobs(STAGING_GRACE).unwrap();
 
     for path in [&kept_blob, &removed_blob, &collected_blob] {
-        assert!(path.is_file(), "仍被引用的 {} 应留着", path.display());
+        assert!(path.is_file(), "still-referenced {} should be kept", path.display());
     }
     for path in [&bundle_a_dir, &bundle_b_dir] {
         assert!(
             path.join("lib").join("main.js").is_file(),
-            "仍被引用的代码包 {} 应留着",
+            "still-referenced code bundle {} should be kept",
             path.display()
         );
     }
@@ -183,7 +183,7 @@ fn referenced_blobs_survive_and_orphans_go() {
     assert!(stray.is_file());
     assert!(!old_file.exists() && !old_tree.exists());
     assert!(fresh_file.is_file() && busy_tree.is_dir());
-    assert!(staging.is_dir(), "staging 目录本身留着");
+    assert!(staging.is_dir(), "the staging directory itself is kept");
 
     let removed_paths: Vec<&str> = report.removed.iter().map(|r| r.path.as_str()).collect();
     assert_eq!(
@@ -235,7 +235,7 @@ fn a_blob_that_cannot_be_removed_is_reported_not_fatal() {
     let report = video.gc_blobs(STAGING_GRACE).unwrap();
     fs::set_permissions(tree.join("locked"), fs::Permissions::from_mode(0o700)).unwrap();
 
-    assert!(!orphan.exists(), "别的孤儿照常删掉");
+    assert!(!orphan.exists(), "other orphans are still deleted");
     assert_eq!(report.failed.len(), 1);
     assert_eq!(report.failed[0].path, format!("blobs/{}", "4".repeat(64)));
 }

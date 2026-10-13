@@ -7267,13 +7267,13 @@ mod tests {
                 "zh",
             )
         };
-        let long = issue_for(&sentences[0]).expect("超长源行必须命中硬档");
+        let long = issue_for(&sentences[0]).expect("over-long source line must hit the hard tier");
         assert_eq!(long.index, 0);
         assert_eq!(long.words, 14);
         assert!(long.units > 63, "{long:?}");
         assert!(
             issue_for(&sentences[1]).is_none(),
-            "源行合规的句不得产生硬档诊断"
+            "a sentence with a compliant source line must not produce hard-tier diagnostics"
         );
     }
 
@@ -8239,13 +8239,16 @@ mod tests {
         let raw = r#"{"sentences":[{"key":"s-g79.0","sourceBreaks":["b8"],"target":"生产部署已观察到 50% 的吞吐量提升， | 同时还可以将 max_num_batched_tokens 设置为大于 2048。"}]}"#;
         let (accepted, salvaged, failures) =
             validate_batch_partial(&batch, &params, "en", "zh", raw).unwrap();
-        assert!(accepted.is_empty(), "首轮不当场落库：{accepted:?}");
+        assert!(
+            accepted.is_empty(),
+            "the first round does not commit on the spot: {accepted:?}"
+        );
         assert_eq!(failures.len(), 1, "{failures:?}");
         assert!(
             failures[0].contains("s-g79.0")
                 && failures[0].contains("over the absolute hard ceiling")
                 && failures[0].contains("data-unsplittable"),
-            "定向说明必须指名句子、说明超限片并给出出路：{}",
+            "targeted instructions must name the sentence, state the over-limit piece and give a way out: {}",
             failures[0]
         );
         let result = &salvaged["s-g79.0"];
@@ -8772,7 +8775,7 @@ mod tests {
         assert_eq!(
             source_boundary_issue(&["We", "fixed", "it.", "This", "way", "works."], 3),
             None,
-            "句末后的新句不能被固定短语规则误报"
+            "a new sentence after a sentence end must not be falsely flagged by fixed-phrase rules"
         );
     }
 
@@ -8785,7 +8788,7 @@ mod tests {
         assert_eq!(
             source_boundary_issue(&words, 5),
             None,
-            "及物动词宾语代词 this 不是悬空修饰语"
+            "object pronoun 'this' after a transitive verb is not a dangling modifier"
         );
         let words: Vec<&str> = "the tools you reach for this instead of that"
             .split_whitespace()
@@ -8793,7 +8796,7 @@ mod tests {
         assert_eq!(
             source_boundary_issue(&words, 6),
             None,
-            "介词宾语代词 this 不是悬空修饰语"
+            "object pronoun 'this' after a preposition is not a dangling modifier"
         );
         // A genuine determiner usage must still be hinted: the next piece starts with a noun head.
         let words: Vec<&str> = "we are going to use this model for everything"
@@ -8802,7 +8805,7 @@ mod tests {
         assert!(
             source_boundary_issue(&words, 6)
                 .is_some_and(|reason| reason.contains("detached from its noun phrase")),
-            "限定词 this 后接名词仍应报悬空修饰语"
+            "determiner 'this' followed by a noun should still be reported as a dangling modifier"
         );
     }
 
@@ -10153,21 +10156,21 @@ mod tests {
         assert_eq!(
             paired_balance_seam("GitLab、CircleCI 或其他工具", "zh"),
             None,
-            "普通产品名列表不能被并列动作规则误切"
+            "ordinary product-name lists must not be split by the coordinated-action rule"
         );
         assert_eq!(
             paired_balance_seam("控制器、执行器", "zh"),
             None,
-            "设备名列表不能因名称含动词字样而被误切"
+            "device-name lists must not be split just because a name contains a verb"
         );
         assert_eq!(
             paired_balance_seam("实际操作中，因为我们用的是智能体，", "zh"),
             None,
-            "前置状语不能被当成完整小句"
+            "a fronted adverbial must not be treated as a full clause"
         );
         assert!(
             paired_balance_seam("你有一个控制器，它读取测得的误差，", "zh").is_some(),
-            "带谓词的完整小句仍应保留配对密度切点"
+            "a full clause with a predicate should still keep the paired-density cut point"
         );
     }
 
@@ -10200,27 +10203,35 @@ mod tests {
         assert_eq!(issues[0].index, 0);
         assert_eq!(issues[0].units, 95);
         // Boundary check: source_piece_hard(42) = 63. 64 is reported, 63 is not. The coefficient is pinned down.
-        assert_eq!(ceiling_case(target, 64, 1, 5.0).len(), 1, "64 单位应过硬档");
+        assert_eq!(
+            ceiling_case(target, 64, 1, 5.0).len(),
+            1,
+            "64 units should hit the hard tier"
+        );
         assert!(
             ceiling_case(target, 63, 1, 5.0).is_empty(),
-            "63 单位恰好不过硬档"
+            "63 units just miss the hard tier"
         );
         // The duration tier is independent of width: 40 units (compliant) spanning 8s is still reported, but spanning 5s is not.
         assert!(
             ceiling_case(target, 40, 1, 5.0).is_empty(),
-            "40 单位 5.0s 不应报"
+            "40 units at 5.0s should not be reported"
         );
         let slow = ceiling_case(target, 40, 1, 8.0);
-        assert_eq!(slow.len(), 1, "40 单位 8.0s 应过时长硬档");
+        assert_eq!(
+            slow.len(),
+            1,
+            "40 units at 8.0s should hit the duration hard tier"
+        );
         // The target piece is too short (9 units): further splitting would only produce fragmented lines, so nothing is reported.
         assert!(
             ceiling_case("这条译文偏短了一点", 95, 1, 5.0).is_empty(),
-            "目标片 < 10 单位不应触发硬档"
+            "target piece < 10 units must not trigger the hard tier"
         );
         // Fewer than 4 source words: no usable cut point, so nothing is reported.
         assert!(
             ceiling_case(target, 3, 30, 5.0).is_empty(),
-            "源词 < 4 不应触发硬档"
+            "source words < 4 must not trigger the hard tier"
         );
     }
 
@@ -10279,7 +10290,7 @@ mod tests {
                 .blockers
                 .iter()
                 .any(|blocker| blocker.contains("past the paired-row ceiling")),
-            "草稿门必须报出源行硬上限：{:?}",
+            "the draft gate must report the source-line hard ceiling: {:?}",
             draft.blockers
         );
         assert!(!draft.ready);
@@ -10290,7 +10301,10 @@ mod tests {
         );
         let (accepted, _salvaged, failures) =
             validate_batch_partial(&[&pending], &params, "en", "zh", &answer).unwrap();
-        assert!(failures.is_empty(), "引擎验收不得因硬档拒绝：{failures:?}");
+        assert!(
+            failures.is_empty(),
+            "engine acceptance must not reject on hard tiers: {failures:?}"
+        );
         assert!(accepted.contains_key("s-wide"));
         // The public wrapper used by the post-hoc check: the same entry should still be reported, so that refine-align can fix it in a targeted way.
         let units = source_word_units(&pending.words, "en");
@@ -10306,7 +10320,10 @@ mod tests {
             "en",
             "zh",
         );
-        assert!(!issues.is_empty(), "check 侧公开包装必须报出同一条目");
+        assert!(
+            !issues.is_empty(),
+            "the public check-side wrapper must report the same item"
+        );
     }
 
     /// Fragment trap test: source rows that are **too narrow** rise and fall together with those that are too wide. The draft gate reports them, the public check wrapper reports them, and engine acceptance and the submit-time lint let them pass. The material comes from the measured Jeff Dean shape (a translation piece attached to two-word fragments such as "batch jobs").
@@ -10360,7 +10377,7 @@ mod tests {
                 .blockers
                 .iter()
                 .any(|blocker| blocker.contains("under the paired-row floor")),
-            "草稿门必须报出源行下限：{:?}",
+            "the draft gate must report the source-line floor: {:?}",
             draft.blockers
         );
         assert!(!draft.ready);
@@ -10371,12 +10388,19 @@ mod tests {
         );
         let (accepted, _salvaged, failures) =
             validate_batch_partial(&[&pending], &params, "en", "zh", &answer).unwrap();
-        assert!(failures.is_empty(), "引擎验收不得因碎片拒绝：{failures:?}");
+        assert!(
+            failures.is_empty(),
+            "engine acceptance must not reject on fragments: {failures:?}"
+        );
         assert!(accepted.contains_key("s-crumb"));
         // The public wrapper used by the post-hoc check: the same entry should still be reported, so that refine-align can fix it in a targeted way.
         let units = source_word_units(&pending.words, "en");
         let issues = source_fragment_issues_for_ranges(&texts, &ranges, &units, "en", "zh");
-        assert_eq!(issues.len(), 1, "check 侧公开包装必须报出同一条目");
+        assert_eq!(
+            issues.len(),
+            1,
+            "the public check-side wrapper must report the same item"
+        );
         assert_eq!(issues[0].index, 0);
         assert_eq!(issues[0].words, 2);
     }
@@ -10417,7 +10441,7 @@ mod tests {
                 "zh",
             )
             .is_empty(),
-            "整句只有 4 词、2 片时不得报"
+            "a whole sentence with only 4 words in 2 pieces must not be reported"
         );
 
         // 3. A wide enough source piece: "high performance." (two words, 15 units) is a normal many-to-one.
@@ -10441,7 +10465,7 @@ mod tests {
                 "zh",
             )
             .is_empty(),
-            "两词但显示宽度达标的源片不是碎片"
+            "a two-word source piece whose display width meets the target is not a fragment"
         );
 
         // 4. Target piece ≥ DEGENERATE_TARGET_MIN_UNITS: that is the territory of degenerate_paired_row (including its audited 40% width exemption), and the two channels must not both report the same piece.
@@ -10461,7 +10485,7 @@ mod tests {
                 "zh"
             )
             .is_empty(),
-            "宽译文片配窄源属退化通道，碎片通道不得抢辖区"
+            "a wide translation piece paired with a narrow source is the degenerate channel; the fragment channel must not take its territory"
         );
         // With the same material but a narrow translation piece, the fragment channel must claim it.
         let owned = ["再来一次，".to_owned(), "非常感谢你今天过来。".to_owned()];
@@ -10552,7 +10576,10 @@ mod tests {
         let answer = r#"{"sentences":[{"key":"s-wide","sourceBreaks":["b2"],"target":"每个工程师整周都保留自己的独立上下文， | 谁也不会碰到别人正在做的工作。"}]}"#;
         let (accepted, salvaged, failures) =
             validate_batch_partial(&[&pending], &params, "en", "zh", answer).unwrap();
-        assert!(accepted.is_empty(), "净倒退答案不得被接受：{accepted:?}");
+        assert!(
+            accepted.is_empty(),
+            "a net-regressing answer must not be accepted: {accepted:?}"
+        );
         assert!(
             failures
                 .iter()
@@ -10562,7 +10589,7 @@ mod tests {
         // Salvage tier exemption: the rescue channel can still stand in for `fallback_word_entry`, and the guardrail must not widen the exposure of the deterministic fallback.
         assert!(
             salvaged.contains_key("s-wide"),
-            "Salvage 档必须仍然收下该答案：{salvaged:?}"
+            "the salvage tier must still accept this answer: {salvaged:?}"
         );
     }
 
@@ -10585,7 +10612,10 @@ mod tests {
         let same = r#"{"sentences":[{"key":"s-wide","sourceBreaks":["b15"],"target":"每个工程师整周都保留自己的独立上下文， | 谁也不会碰到别人正在做的工作。"}]}"#;
         let (accepted, _salvaged, failures) =
             validate_batch_partial(&[&pending], &params, "en", "zh", same).unwrap();
-        assert!(failures.is_empty(), "等宽答案不得被护栏拒绝：{failures:?}");
+        assert!(
+            failures.is_empty(),
+            "an equal-width answer must not be rejected by the guardrail: {failures:?}"
+        );
         assert!(accepted.contains_key("s-wide"));
     }
 
@@ -10945,7 +10975,10 @@ mod tests {
         let mut llm = file_llm([declared, good_align_table()]);
         run_align(&mut doc, &mut llm, &opts(AlignMode::ManyToOne), &mut |_| {}).unwrap();
         assert_eq!(llm.calls.len(), 2);
-        assert!(!llm.calls[0].2.contains("data-unsplittable"), "首轮不回带");
+        assert!(
+            !llm.calls[0].2.contains("data-unsplittable"),
+            "the first round does not carry it back"
+        );
         assert!(
             llm.calls[1].2.contains("data-unsplittable=\"true\""),
             "{}",
@@ -11163,7 +11196,11 @@ mod tests {
         .unwrap();
         assert_eq!(outcome.aligned_sentences, 1);
         assert_eq!(outcome.prealigned_sentences, 1);
-        assert_eq!(llm.calls.len(), 1, "融合草稿验收后不应再调用 align worker");
+        assert_eq!(
+            llm.calls.len(),
+            1,
+            "after the fused draft is accepted, the align worker must not be called again"
+        );
         let entry = &doc.trans_align["zh"]["s-g1.0"];
         assert_eq!(entry.pieces.len(), 2);
         assert_eq!(entry.pieces[0].to, Some(4));
@@ -11309,7 +11346,11 @@ mod tests {
         .unwrap();
         assert_eq!(outcome.aligned_sentences, 1);
         assert_eq!(outcome.prealigned_sentences, 1);
-        assert_eq!(llm.calls.len(), 1, "行分区验收后不应再调用 align worker");
+        assert_eq!(
+            llm.calls.len(),
+            1,
+            "after row-partition acceptance, the align worker must not be called again"
+        );
 
         let entry = &doc.trans_align["zh"]["s-g1.0"];
         assert_eq!(entry.aligner.as_deref(), Some(LLM_ROWS_ALIGNER_TAG));
@@ -11364,7 +11405,7 @@ mod tests {
         assert_eq!(
             llm.calls.len(),
             1,
-            "块内切分不派改写轮: {:#?}",
+            "in-block splits do not dispatch a rewrite round: {:#?}",
             outcome.violations
         );
         let entry = &doc.trans_align["zh"]["s-g1.0"];
@@ -11452,7 +11493,7 @@ mod tests {
         assert_eq!(
             llm.calls.len(),
             1,
-            "行文本草稿验收后不应再调用 align worker"
+            "after the row-text draft is accepted, the align worker must not be called again"
         );
 
         let entry = &doc.trans_align["zh"]["s-g1.0"];
@@ -11574,7 +11615,11 @@ mod tests {
             &mut |_| {},
         )
         .unwrap();
-        assert_eq!(llm.calls.len(), 0, "两句都走行直通，不该派 align 调用");
+        assert_eq!(
+            llm.calls.len(),
+            0,
+            "both sentences take the row pass-through; no align call should be dispatched"
+        );
         assert_eq!(outcome.prealigned_sentences, 2);
         // The first row of each sentence is merged once, and the merge count accumulates per sentence.
         assert_eq!(outcome.rows_merged, 2);
@@ -11630,7 +11675,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(translated.alignment_drafts.len(), 1);
-        assert!(!translated.alignment_drafts["s-g1.0"].rows, "序号 5 未覆盖");
+        assert!(
+            !translated.alignment_drafts["s-g1.0"].rows,
+            "index 5 is not covered"
+        );
 
         run_align_with_drafts_and_artifacts(
             &mut doc,
@@ -11644,7 +11692,7 @@ mod tests {
         assert_eq!(
             doc.trans_align["zh"]["s-g1.0"].aligner.as_deref(),
             Some(LLM_CHUNK_ALIGNER_TAG),
-            "不合格行分区不得写行标签"
+            "a failing row partition must not write row labels"
         );
     }
 
@@ -11687,7 +11735,11 @@ mod tests {
             &mut |_| {},
         )
         .unwrap();
-        assert_eq!(llm.calls.len(), 2, "没有草稿必须回落 align-edges 轮");
+        assert_eq!(
+            llm.calls.len(),
+            2,
+            "without a draft, must fall back to the align-edges round"
+        );
         assert_ne!(
             doc.trans_align["zh"]["s-g1.0"].aligner.as_deref(),
             Some(LLM_ROWS_ALIGNER_TAG)

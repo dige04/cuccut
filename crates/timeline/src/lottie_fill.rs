@@ -175,7 +175,7 @@ mod tests {
             ]},
         ]}]});
         let cards = fills_of_doc(&doc);
-        assert_eq!(cards.len(), 1, "带关键帧的描边色不出卡：{cards:?}");
+        assert_eq!(cards.len(), 1, "a keyframed stroke color must not produce a card: {cards:?}");
         assert_eq!(cards[0].hex, "#FF0000");
     }
 

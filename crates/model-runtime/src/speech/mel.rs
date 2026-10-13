@@ -157,7 +157,7 @@ impl WhisperFeaturePipeline {
             }
             self.fft
                 .process_with_scratch(&mut padded_frame, &mut spectrum, &mut scratch)
-                .context("执行 512 点 real FFT")?;
+                .context("run 512-point real FFT")?;
             let base = frame * frequency_bins;
             for (bin, value) in spectrum.iter().enumerate() {
                 // Qwen's Swift vDSP path needs 4x power compensation; MOSS uses the standard DFT.

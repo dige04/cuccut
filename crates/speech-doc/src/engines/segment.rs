@@ -1249,7 +1249,10 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(doc.words, original, "超宽焊接文本必须降级回源词");
+        assert_eq!(
+            doc.words, original,
+            "over-wide welded text must fall back to source words"
+        );
         assert_eq!(outcome.records.len(), 1);
         assert!(outcome.records[0].text.is_empty());
         assert_eq!(outcome.cue_layout.over_width, 0);

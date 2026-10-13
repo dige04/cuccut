@@ -240,13 +240,13 @@ mod tests {
         assert!(supports(FAMILY_QWEN3_ASR, "fil"));
         assert!(!supports(FAMILY_QWEN3_ASR, "sw"));
         assert!(supports(FAMILY_WHISPER_MLX, "sw-KE"));
-        assert!(supports(FAMILY_WHISPER_MLX, "jv"), "别名折到 jw");
+        assert!(supports(FAMILY_WHISPER_MLX, "jv"), "alias folds to jw");
         assert!(!supports(FAMILY_WHISPER_MLX, "fil"));
         // whisper.cpp's GGML package and the MLX package are the same model, so they accept the same table.
         assert!(supports(FAMILY_WHISPER_GGML, "sw-KE"));
         assert!(supports(FAMILY_WHISPER_GGML, "yue"));
         assert!(!supports(FAMILY_WHISPER_GGML, "fil"));
-        assert!(supports(FAMILY_MOSS_TRANSCRIBE_DIARIZE, "zh-Hant"), "按主语种比较");
+        assert!(supports(FAMILY_MOSS_TRANSCRIBE_DIARIZE, "zh-Hant"), "compare by primary language subtag");
         assert!(!supports(FAMILY_MOSS_TRANSCRIBE_DIARIZE, "tlh"));
         assert!(!supports("unknown-family", "en"));
         assert!(!supports(FAMILY_QWEN3_ASR, "12"));

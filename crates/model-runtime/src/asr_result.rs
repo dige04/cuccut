@@ -207,20 +207,20 @@ pub fn fix_word_times(segment: &mut Segment) -> bool {
 /// Self-check before writing (the validation rules of §6). `asserted` is the language asserted in the request.
 pub fn validate(result: &AsrResult, asserted: Option<&str>) -> Result<(), String> {
     if result.schema != SCHEMA {
-        return Err(format!("schema 应为 {SCHEMA}"));
+        return Err(format!("schema must be {SCHEMA}"));
     }
     if result.clock != CLOCK {
-        return Err(format!("clock 应为 {CLOCK}"));
+        return Err(format!("clock must be {CLOCK}"));
     }
     if result.timescale == 0 {
-        return Err("timescale 必须大于 0".into());
+        return Err("timescale must be greater than 0".into());
     }
     if result.outcome != Outcome::Transcribed && !result.segments.is_empty() {
-        return Err("outcome 不是 transcribed 时 segments 必须为空".into());
+        return Err("segments must be empty unless outcome is transcribed".into());
     }
     for span in &result.coverage {
         if span.start > span.end || span.end > result.duration {
-            return Err(format!("coverage [{}, {}] 越界", span.start, span.end));
+            return Err(format!("coverage [{}, {}] is out of range", span.start, span.end));
         }
     }
     let speakers: HashSet<&str> = result.speakers.iter().map(|speaker| speaker.id.as_str()).collect();
@@ -229,50 +229,50 @@ pub fn validate(result: &AsrResult, asserted: Option<&str>) -> Result<(), String
     for segment in &result.segments {
         let id = &segment.id;
         if !ids.insert(id.as_str()) {
-            return Err(format!("段 id 重复：{id}"));
+            return Err(format!("segment id repeated: {id}"));
         }
         if segment.start >= segment.end || segment.end > result.duration {
             return Err(format!(
-                "段 {id} 的时间 [{}, {}] 不合法（duration {}）",
+                "segment {id} has invalid time [{}, {}] (duration {})",
                 segment.start, segment.end, result.duration
             ));
         }
         if segment.start < previous_end {
-            return Err(format!("段 {id} 与前一段重叠或未按 start 递增"));
+            return Err(format!("segment {id} overlaps the previous segment or start is not increasing"));
         }
         previous_end = segment.end;
         if segment.text.trim().is_empty() {
-            return Err(format!("段 {id} 的文本为空"));
+            return Err(format!("segment {id} has empty text"));
         }
         if let Some(speaker) = &segment.speaker_id
             && !speakers.contains(speaker.as_str())
         {
-            return Err(format!("段 {id} 的 speakerId {speaker} 不在 speakers[] 中"));
+            return Err(format!("segment {id} speakerId {speaker} is not in speakers[]"));
         }
         let mut previous: Option<&Word> = None;
         for word in &segment.words {
             if word.text.trim().is_empty() {
-                return Err(format!("段 {id} 有空词"));
+                return Err(format!("segment {id} has an empty word"));
             }
             if let Some(speaker) = &word.speaker_id
                 && !speakers.contains(speaker.as_str())
             {
-                return Err(format!("段 {id} 的词「{}」的 speakerId {speaker} 不在 speakers[] 中", word.text));
+                return Err(format!("word '{}' in segment {id} has speakerId {speaker} not in speakers[]", word.text));
             }
             if word.start > word.end || word.start < segment.start || word.end > segment.end {
-                return Err(format!("段 {id} 的词「{}」越出段或起止倒挂", word.text));
+                return Err(format!("word '{}' in segment {id} is outside the segment or its start is after its end", word.text));
             }
             if let Some(previous) = previous
                 && (word.start < previous.start || word.end < previous.end)
             {
-                return Err(format!("段 {id} 的词时间不单调"));
+                return Err(format!("segment {id} word times are not monotonic"));
             }
             match word.timing_quality {
                 TimingQuality::Missing if word.start != segment.start || word.end != segment.start => {
-                    return Err(format!("段 {id} 的 missing 词必须取段起点"));
+                    return Err(format!("segment {id} missing word must use the segment start"));
                 }
                 TimingQuality::Aligned if result.provenance.models.aligner.is_none() => {
-                    return Err(format!("段 {id} 有 aligned 的词，但没有对齐器"));
+                    return Err(format!("segment {id} has aligned words but no aligner"));
                 }
                 _ => {}
             }
@@ -282,10 +282,10 @@ pub fn validate(result: &AsrResult, asserted: Option<&str>) -> Result<(), String
     if let Some(tag) = &result.language.tag
         && !is_bcp47(tag)
     {
-        return Err(format!("language.tag 不是合法的 BCP 47：{tag}"));
+        return Err(format!("language.tag is not valid BCP 47: {tag}"));
     }
     if result.language.source == LanguageSource::Asserted && result.language.tag.as_deref() != asserted {
-        return Err("asserted 语言必须等于请求的断言".into());
+        return Err("asserted language must equal the requested assertion".into());
     }
     Ok(())
 }
@@ -434,13 +434,13 @@ mod tests {
     #[test]
     fn segment_rules_are_enforced() {
         let overlap = result(vec![segment("seg-0001", 0, 1_000, vec![]), segment("seg-0002", 900, 2_000, vec![])]);
-        assert!(validate(&overlap, None).unwrap_err().contains("重叠"));
+        assert!(validate(&overlap, None).unwrap_err().contains("overlap"));
         let empty = result(vec![segment("seg-0001", 0, 0, vec![])]);
         assert!(validate(&empty, None).is_err());
         let beyond = result(vec![segment("seg-0001", 9_000, 10_001, vec![])]);
         assert!(validate(&beyond, None).is_err());
         let duplicate = result(vec![segment("seg-0001", 0, 10, vec![]), segment("seg-0001", 10, 20, vec![])]);
-        assert!(validate(&duplicate, None).unwrap_err().contains("重复"));
+        assert!(validate(&duplicate, None).unwrap_err().contains("repeated"));
         let mut blank = result(vec![segment("seg-0001", 0, 10, vec![])]);
         blank.segments[0].text = "  ".into();
         assert!(validate(&blank, None).is_err());
@@ -484,7 +484,7 @@ mod tests {
         let outside = result(vec![segment("seg-0001", 100, 1_000, vec![word(50, 400, "hello")])]);
         assert!(validate(&outside, None).is_err());
         let backwards = result(vec![segment("seg-0001", 0, 1_000, vec![word(500, 600, "a"), word(100, 200, "b")])]);
-        assert!(validate(&backwards, None).unwrap_err().contains("单调"));
+        assert!(validate(&backwards, None).unwrap_err().contains("monotonic"));
         let mut missing = result(vec![segment("seg-0001", 100, 1_000, vec![word(200, 200, "a")])]);
         missing.segments[0].words[0].timing_quality = TimingQuality::Missing;
         assert!(validate(&missing, None).is_err());
@@ -493,7 +493,7 @@ mod tests {
         assert_eq!(validate(&missing, None), Ok(()));
         let mut aligned = result(vec![segment("seg-0001", 0, 1_000, vec![word(0, 100, "a")])]);
         aligned.segments[0].words[0].timing_quality = TimingQuality::Aligned;
-        assert!(validate(&aligned, None).unwrap_err().contains("对齐器"));
+        assert!(validate(&aligned, None).unwrap_err().contains("aligner"));
     }
 
     #[test]

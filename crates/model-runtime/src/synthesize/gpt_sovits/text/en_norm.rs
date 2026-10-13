@@ -177,7 +177,7 @@ fn enword(num: &str, args: &NumberArgs) -> Result<String, PyError> {
             };
             Ok(head + &tail)
         }
-        group => unimplemented!("inflect group={group} 未移植"),
+        group => unimplemented!("inflect group={group} is not ported"),
     }
 }
 
@@ -260,7 +260,7 @@ pub fn number_to_words(num: &str, args: NumberArgs) -> Result<String, PyError> {
     if myord {
         num = &num[..num.len() - 2];
     }
-    debug_assert!(!num.contains('.'), "小数分块未移植: {num}");
+    debug_assert!(!num.contains('.'), "decimal chunking is not ported: {num}");
     let mut chunk: String = num.chars().filter(char::is_ascii_digit).collect();
     if chunk.is_empty() {
         chunk.push('0');
@@ -360,7 +360,7 @@ fn sub_regex(re: &Regex, text: &str, mut repl: impl FnMut(&Captures) -> Result<S
 }
 
 fn regex(pattern: &str) -> Regex {
-    Regex::new(pattern).expect("en_norm 正则")
+    Regex::new(pattern).expect("en_norm regex")
 }
 
 /// `RE_ASMD`
@@ -435,7 +435,7 @@ fn expand_time(text: &str) -> Result<String, PyError> {
         if !matches!(at(c), '0'..='5') || !at(c + 1).is_ascii_digit() || !boundary_after(chars, c + 2) {
             return None;
         }
-        let hours: usize = chars[i..i + hour_len].iter().collect::<String>().parse().expect("小时");
+        let hours: usize = chars[i..i + hour_len].iter().collect::<String>().parse().expect("hour");
         let minutes = digit(at(c) as u8) * 10 + digit(at(c + 1) as u8);
         let period = if hours < 12 { "a.m." } else { "p.m." };
         let hours = if hours > 12 { hours - 12 } else { hours };
@@ -510,7 +510,7 @@ fn expand_money(amount: &str, unit: [&str; 2], cent: [&str; 2]) -> Result<String
 
 /// `_expend_fraction`
 fn expand_fraction(fraction: &str) -> Result<String, PyError> {
-    let (numerator, denominator) = fraction.split_once('/').expect("分数");
+    let (numerator, denominator) = fraction.split_once('/').expect("fraction");
     let (numerator, denominator) = (py_int(numerator)?, py_int(denominator)?);
     let numerator_part = number_to_words(numerator, NumberArgs::default())?;
     let denominator_part = match denominator {
@@ -531,7 +531,7 @@ fn expand_fraction(fraction: &str) -> Result<String, PyError> {
 /// `_expand_number`
 fn expand_number(digits: &str) -> Result<String, PyError> {
     let num = py_int(digits)?;
-    let value: u32 = if num.len() <= 4 { num.parse().expect("数字") } else { u32::MAX };
+    let value: u32 = if num.len() <= 4 { num.parse().expect("number") } else { u32::MAX };
     if value > 1000 && value < 3000 {
         let plain = NumberArgs::default();
         return Ok(if value == 2000 {
@@ -604,7 +604,7 @@ pub fn normalize(text: &str) -> Result<String, PyError> {
     let text = sub_regex(&DOLLARS_START, &text, dollars)?;
     let text = sub_regex(&DOLLARS_END, &text, dollars)?;
     let text = DECIMAL.replace_all(&text, |caps: &Captures| {
-        let (int_part, frac) = caps[0].split_once('.').expect("小数点");
+        let (int_part, frac) = caps[0].split_once('.').expect("decimal point");
         let spelled: Vec<String> = frac.chars().map(String::from).collect();
         format!("{int_part} point {}", spelled.join(" "))
     });

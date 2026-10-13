@@ -943,7 +943,7 @@ mod tests {
         );
         assert!(
             payload.contains("7| 戏 ⏸\n8| 很"),
-            "停顿标记跟在词后：{payload}"
+            "pause marker must follow the word: {payload}"
         );
         let metas = speaker_repair_payload_windows(&payload);
         assert_eq!(metas.len(), 1);

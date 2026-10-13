@@ -103,7 +103,7 @@ pub struct Overflow;
 
 impl std::fmt::Display for Overflow {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("DiT 在 f16 下溢出（输出含非有限值）")
+        f.write_str("DiT overflowed in f16 (output contains non-finite values)")
     }
 }
 
@@ -127,7 +127,7 @@ impl Lin {
         let w = s.take(&format!("{p}.weight"))?;
         if !s.contains(&format!("{p}.scales")) {
             if w.dim(1) != input {
-                bail!("{p}: 权重输入维 {} ≠ {input}", w.dim(1));
+                bail!("{p}: weight input dimension {} ≠ {input}", w.dim(1));
             }
             return Ok(Self::Dense(w.as_dtype(dtype)?));
         }
@@ -137,7 +137,7 @@ impl Lin {
         let packed = w.dim(1) * 32;
         if groups == 0 || input % groups != 0 || packed % input != 0 {
             bail!(
-                "{p}: 量化形状对不上输入维 {input}（权重 {:?}，scales {:?}）",
+                "{p}: quantized shape does not match input dimension {input} (weight {:?}, scales {:?})",
                 w.shape(),
                 scales.shape()
             );
@@ -175,7 +175,7 @@ fn pick<'a>(s: &WeightStore, names: &[&'a str]) -> Result<&'a str> {
         .iter()
         .copied()
         .find(|n| s.contains(&format!("{n}.weight")))
-        .with_context(|| format!("DiT 缺少权重：{}", names.join(" / ")))
+        .with_context(|| format!("DiT is missing weights: {}", names.join(" / ")))
 }
 
 fn scalar(v: f32, like: &Array) -> Result<Array> {
@@ -246,7 +246,7 @@ struct BlockStream {
 
 impl BlockStream {
     fn open(files: &[PathBuf], prec: Precision) -> Result<Self> {
-        let lazy = weights::lazy(files, |k| k.starts_with("transformer_blocks.")).context("打开 DiT 层权重")?;
+        let lazy = weights::lazy(files, |k| k.starts_with("transformer_blocks.")).context("open DiT block weights")?;
         Ok(Self { lazy, prec })
     }
 
@@ -262,7 +262,7 @@ impl BlockStream {
         let b = Block::load(&mut s, i, self.prec)?;
         let left = s.remaining();
         if !left.is_empty() {
-            bail!("DiT 第 {i} 层有未使用的权重：{:?}", &left[..left.len().min(5)]);
+            bail!("DiT block {i} has unused weights: {:?}", &left[..left.len().min(5)]);
         }
         Ok(b)
     }
@@ -348,10 +348,10 @@ impl Dit {
             stream.take(i, false)?;
         }
         if let Some(k) = stream.lazy.keys().next() {
-            bail!("DiT 有多余的层权重：{k}");
+            bail!("DiT has extra block weights: {k}");
         }
         let files = files.to_vec();
-        let s = &mut weights::resident(&files, |k| !k.starts_with("transformer_blocks.")).context("加载 DiT 层外权重")?;
+        let s = &mut weights::resident(&files, |k| !k.starts_with("transformer_blocks.")).context("load DiT non-block weights")?;
         let t1 = pick(s, &["time_text_embed.linear_1", "time_text_embed.timestep_embedder.linear_1"])?;
         let t2 = pick(s, &["time_text_embed.linear_2", "time_text_embed.timestep_embedder.linear_2"])?;
         let modulation = pick(s, &["modulation.0", "modulation.1"])?;
@@ -371,7 +371,7 @@ impl Dit {
         };
         let left = s.remaining();
         if !left.is_empty() {
-            bail!("DiT 有未使用的权重：{:?}", &left[..left.len().min(5)]);
+            bail!("DiT has unused weights: {:?}", &left[..left.len().min(5)]);
         }
         Ok(me)
     }
@@ -490,7 +490,7 @@ impl Dit {
     pub fn step(&self, cache: &mut TextCache, latents: &Array, sigma: f64, grid_h: usize, grid_w: usize, chunk: usize) -> Result<Array> {
         let n = grid_h * grid_w;
         if latents.dim(1) as usize != n {
-            bail!("latent token 数 {} ≠ {grid_h}×{grid_w}", latents.dim(1));
+            bail!("latent token count {} ≠ {grid_h}×{grid_w}", latents.dim(1));
         }
         let (cos_all, sin_all) = rope::dit_rope_tables(cache.text_len, grid_h, grid_w);
         let (cos, sin) = Self::tables(&cos_all, &sin_all, cache.text_len, cache.text_len + n);
@@ -506,7 +506,7 @@ impl Dit {
         let mut stream = BlockStream::open(&self.files, self.prec)?;
         let mut next = Some(stream.take(0, true)?);
         for i in 0..LAYERS {
-            let b = next.take().context("DiT 层权重缺失")?;
+            let b = next.take().context("DiT block weights are missing")?;
             if i + 1 < LAYERS {
                 next = Some(stream.take(i + 1, true)?);
             }

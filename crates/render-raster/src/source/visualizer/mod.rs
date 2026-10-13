@@ -156,10 +156,10 @@ impl VizTrack {
         for index in 0..view.frame_count() {
             let time = view
                 .time_row(index)
-                .ok_or_else(|| anyhow::anyhow!("BCS1 第 {index} 帧缺少时域行"))?;
+                .ok_or_else(|| anyhow::anyhow!("BCS1 frame {index} is missing its time-domain row"))?;
             let freq = view
                 .freq_row(index)
-                .ok_or_else(|| anyhow::anyhow!("BCS1 第 {index} 帧缺少频域行"))?;
+                .ok_or_else(|| anyhow::anyhow!("BCS1 frame {index} is missing its frequency-domain row"))?;
             remapper.push_row(freq, &mut row);
             frames.push(VizFrame {
                 time: time.to_vec().into_boxed_slice(),
@@ -179,10 +179,10 @@ impl VizTrack {
         source_hash: u64,
     ) -> Result<VizTrack> {
         if analysis_rate == 0 {
-            bail!("VizTrack 的 analysisRate 必须大于 0");
+            bail!("VizTrack analysisRate must be greater than 0");
         }
         if frames.is_empty() {
-            bail!("VizTrack 至少要有一帧");
+            bail!("VizTrack needs at least one frame");
         }
         let time_bins = frames[0].time.len();
         let freq_bins = frames[0].freq.len();
@@ -190,7 +190,7 @@ impl VizTrack {
             .iter()
             .position(|frame| frame.time.len() != time_bins || frame.freq.len() != freq_bins)
         {
-            bail!("VizTrack 第 {bad} 帧的行宽与首帧不一致");
+            bail!("VizTrack frame {bad} has a row width that differs from the first frame");
         }
         let mut hasher = Sha256::new();
         hasher.update(b"ccut-viztrack");

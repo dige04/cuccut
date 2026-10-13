@@ -139,21 +139,21 @@ pub fn resolve_speaker(speaker: Option<&str>, config: Option<&SpeakerConfig>, la
         return ResolvedSpeaker {
             token: None,
             language: language.to_string(),
-            warning: Some(format!("模型没有说话人表，忽略说话人 {name:?}（需要 CustomVoice 变体）")),
+            warning: Some(format!("model has no speaker table; ignoring speaker {name:?} (needs the CustomVoice variant)")),
         };
     };
     let mut key = name.to_lowercase();
     if !config.speaker_ids.contains_key(&key)
         && let Some(near) = nearest_speaker(name, config)
     {
-        eprintln!("[qwen3-tts] CustomVoice 没有内置音色 {name:?}，就近用 {near}");
+        eprintln!("[qwen3-tts] CustomVoice has no built-in voice {name:?}; using the nearest, {near}");
         key = near.to_owned();
     }
     let Some(&token) = config.speaker_ids.get(&key) else {
         return ResolvedSpeaker {
             token: None,
             language: language.to_string(),
-            warning: Some(format!("未知说话人 {name:?}，可用：{}", config.available_speakers().join(", "))),
+            warning: Some(format!("unknown speaker {name:?}; available: {}", config.available_speakers().join(", "))),
         };
     };
     let mut effective = language.to_string();

@@ -595,7 +595,7 @@ pub fn parse_translate_page(
             parsed.diagnostics.push_warning(Warning::sentence(
                 WarningCode::DuplicateId,
                 id,
-                "同一 id 出现多次，已取首个",
+                "the same id appears more than once; kept the first",
             ));
         }
     }
@@ -621,13 +621,13 @@ pub fn parse_translate_page(
             parsed.diagnostics.push_warning(Warning::sentence(
                 WarningCode::ContentIgnored,
                 id,
-                "模型自加的容器节点，已忽略",
+                "container node added by the model, ignored",
             ));
         } else {
             parsed.diagnostics.push_problem(Problem::sentence(
                 ProblemCode::UnknownId,
                 id,
-                "协议外的 id，已忽略该节点",
+                "id outside the protocol, node ignored",
             ));
         }
     }
@@ -676,7 +676,7 @@ pub fn parse_translate_page(
         parsed.page_rejected = true;
         parsed.diagnostics.push_problem(Problem::document(
             code,
-            format!("未解析到任何期望句 id（共 {} 句）", ordered_ids.len()),
+            format!("no expected sentence id was parsed ({} sentences in total)", ordered_ids.len()),
         ));
         return parsed;
     }
@@ -688,7 +688,7 @@ pub fn parse_translate_page(
         parsed.diagnostics.push_problem(Problem::document(
             ProblemCode::DocumentTruncated,
             format!(
-                "尾部 {} 句连续缺失，疑似输出截断；已接受前 {} 句，缺失 id 进补做波次",
+                "the last {} sentences are missing in a row; the output may be truncated. Accepted the first {} sentences; the missing ids go to a make-up wave",
                 missing.len(),
                 present.len()
             ),
@@ -700,7 +700,7 @@ pub fn parse_translate_page(
             parsed.diagnostics.push_problem(Problem::sentence(
                 ProblemCode::MissingId,
                 *id,
-                "输出中缺少该句 id",
+                "the sentence id is missing from the output",
             ));
         }
     }
@@ -727,13 +727,13 @@ pub fn parse_translate_page(
                 parsed.diagnostics.push_problem(Problem::sentence(
                     ProblemCode::ParagraphMove,
                     id,
-                    format!("句子被移到段 {actual}（应在 {expected}）"),
+                    format!("sentence moved to paragraph {actual} (should be in {expected})"),
                 ));
             } else {
                 parsed.diagnostics.push_warning(Warning::sentence(
                     WarningCode::FrozenIgnored,
                     id,
-                    format!("冻结句被移到段 {actual}（应在 {expected}），已忽略"),
+                    format!("frozen sentence moved to paragraph {actual} (should be in {expected}), ignored"),
                 ));
             }
         }
@@ -744,7 +744,7 @@ pub fn parse_translate_page(
                 parsed.diagnostics.push_warning(Warning::sentence(
                     WarningCode::FrozenIgnored,
                     id,
-                    "冻结句被改动，已忽略模型文本并保留既有译文",
+                    "frozen sentence was changed; ignored the model text and kept the existing translation",
                 ));
             }
             continue;
@@ -755,7 +755,7 @@ pub fn parse_translate_page(
             parsed.diagnostics.push_problem(Problem::sentence(
                 ProblemCode::EmptyTranslation,
                 id,
-                "译文为空",
+                "the translation is empty",
             ));
             continue;
         }
@@ -771,7 +771,7 @@ pub fn parse_translate_page(
             parsed.diagnostics.push_problem(Problem::sentence(
                 ProblemCode::GlossaryMissing,
                 id,
-                format!("锁定术语缺失：{}", missing_terms.join(", ")),
+                format!("locked terms missing: {}", missing_terms.join(", ")),
             ));
             continue;
         }
@@ -801,7 +801,7 @@ pub fn parse_translate_page(
     if !normalized.text.trim_start().starts_with('<') && !parsed.translations.is_empty() {
         parsed.diagnostics.push_warning(Warning::document(
             WarningCode::ContentIgnored,
-            "输出开头存在非 HTML 内容，已按 id 抽取",
+            "the output starts with non-HTML content; extracted by id",
         ));
     }
 
@@ -852,7 +852,7 @@ pub fn validate_translation_quality(page: &TranslatePage, parsed: &mut Translate
         parsed.diagnostics.push_problem(Problem::sentence(
             ProblemCode::TranslationDuplicateCollapse,
             &id,
-            format!("本页 {collapsed_count} 句塌缩成同一个短译文"),
+            format!("{collapsed_count} sentences on this page collapsed into the same short translation"),
         ));
     }
 }
@@ -1355,7 +1355,7 @@ mod tests {
         assert!(!touched.page_rejected);
         assert!(
             !touched.translations.contains_key("s-g1.7"),
-            "冻结句从不写回"
+            "frozen sentences are never written back"
         );
         assert!(
             touched
@@ -1950,7 +1950,7 @@ mod tests {
             "<p id=\"s-g1.7\">没投一分广告。</p>",
             "</section></article>",
         );
-        assert!(!output.contains("data-align-words"), "答案不回显只读属性");
+        assert!(!output.contains("data-align-words"), "the answer must not echo read-only attributes");
         let parsed = parse_translate_page(&page, Some(&rendered), output);
         assert!(!parsed.page_rejected);
         assert!(parsed.retry_ids.is_empty(), "{:?}", parsed.diagnostics);

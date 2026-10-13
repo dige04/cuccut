@@ -11,7 +11,7 @@ use timeline::schema::{Element, ElementKind, TimeValue, Track, TrackKind};
 #[test]
 fn every_builtin_text_preset_lands_as_a_valid_document() {
     let presets = text_presets();
-    assert_eq!(presets.len(), 51, "内置目录条数变了就要同步这条断言");
+    assert_eq!(presets.len(), 51, "update this assertion when the built-in catalog size changes");
 
     for recipe in presets {
         let elements = textpreset::instantiate(recipe, 3.0, 600.0);
@@ -25,7 +25,7 @@ fn every_builtin_text_preset_lands_as_a_valid_document() {
                 // The id for `addElement` is assigned by the kernel; fill one in first so validation can run.
                 value["id"] = serde_json::json!(format!("el-{index}"));
                 serde_json::from_value(value).unwrap_or_else(|error| {
-                    panic!("{} 的第 {index} 个元素不是合法 Element：{error}", recipe.id)
+                    panic!("{} element {index} is not a valid Element: {error}", recipe.id)
                 })
             })
             .collect();
@@ -33,23 +33,23 @@ fn every_builtin_text_preset_lands_as_a_valid_document() {
         for element in &parsed {
             assert!(
                 matches!(element.kind, ElementKind::Text | ElementKind::Shape),
-                "{} 出现了非 text/shape 的 kind",
+                "{} has a kind other than text/shape",
                 recipe.id
             );
             let seconds = |value: &Option<TimeValue>| match value {
                 Some(TimeValue::Seconds(seconds)) => *seconds,
-                other => panic!("预设的时间点必须是秒，实为 {other:?}"),
+                other => panic!("preset times must be in seconds, got {other:?}"),
             };
             let (start, end) = (seconds(&element.start), seconds(&element.end));
-            assert!(start < end, "{} 的元素时长非正", recipe.id);
-            assert!(start >= 3.0 - 1e-9, "{} 的成员早于预设起点", recipe.id);
+            assert!(start < end, "{} element duration is not positive", recipe.id);
+            assert!(start >= 3.0 - 1e-9, "{} member starts before the preset start", recipe.id);
         }
 
         // Run validation over the whole document: the animation closed set, the `dur` range and `place` finiteness all turn red here.
         let document = document_with(parsed);
         document
             .validate()
-            .unwrap_or_else(|error| panic!("{} 校验不过：{error}", recipe.id));
+            .unwrap_or_else(|error| panic!("{} failed validation: {error}", recipe.id));
     }
 }
 
@@ -70,7 +70,7 @@ fn the_catalogue_keeps_the_ported_category_split() {
 #[test]
 fn every_preset_carries_at_least_one_text_member() {
     for recipe in text_presets() {
-        assert!(recipe.headline().is_some(), "{} 没有文字成员", recipe.id);
+        assert!(recipe.headline().is_some(), "{} has no text member", recipe.id);
     }
 }
 

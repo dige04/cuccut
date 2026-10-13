@@ -491,7 +491,7 @@ impl HDecLayer {
         } else {
             let l = z.dim(2);
             if self.pad + length > l {
-                bail!("时域解码输出长度 {l} 不足以裁出 [{}, +{length})", self.pad);
+                bail!("time-domain decoder output length {l} is too short to crop [{}, +{length})", self.pad);
             }
             z = z.index((.., .., self.pad..self.pad + length));
         }

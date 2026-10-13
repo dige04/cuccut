@@ -112,11 +112,11 @@ fn validate_count_format(format: &Map<String, Value>) -> Result<()> {
                 .as_f64()
                 .is_some_and(|n| (0.0..=20.0).contains(&n) && n.fract() == 0.0),
             _ => bail!(
-                "schema: textCount format 未知键 `{key}`（可用 decimals / prefix / suffix / negativePrefix / grouping / pad）"
+                "schema: textCount format has unknown key `{key}` (available: decimals / prefix / suffix / negativePrefix / grouping / pad)"
             ),
         };
         if !valid {
-            bail!("schema: textCount format.{key} 类型或范围无效（{value}）");
+            bail!("schema: textCount format.{key} has an invalid type or range ({value})");
         }
     }
     Ok(())
@@ -978,21 +978,21 @@ impl TextStroke {
     pub fn parse(value: &Value) -> Result<Self> {
         let map = value
             .as_object()
-            .ok_or_else(|| anyhow!("schema: textStroke 必须是 {{width,paint}} 对象"))?;
+            .ok_or_else(|| anyhow!("schema: textStroke must be a {{width,paint}} object"))?;
         if map.keys().any(|key| key != "width" && key != "paint") {
-            bail!("schema: textStroke 只接受 width/paint");
+            bail!("schema: textStroke only accepts width/paint");
         }
         let width = map
             .get("width")
             .and_then(Value::as_f64)
             .filter(|w| w.is_finite() && *w >= 0.0)
-            .ok_or_else(|| anyhow!("schema: textStroke.width 须为非负像素"))?;
+            .ok_or_else(|| anyhow!("schema: textStroke.width must be non-negative pixels"))?;
         let paint = map
             .get("paint")
             .cloned()
             .unwrap_or_else(|| Value::String("#000000".into()));
         if paint.is_null() {
-            bail!("schema: textStroke.paint 需要颜色或渐变");
+            bail!("schema: textStroke.paint needs a color or gradient");
         }
         let gradient =
             BgGradient::parse(&paint).map_err(|e| anyhow!("schema: textStroke.paint: {e}"))?;
@@ -1014,26 +1014,26 @@ impl BgGradient {
                 let trimmed = text.trim();
                 if trimmed.contains("gradient(") {
                     bail!(
-                        "schema: style.background 不接受 CSS 渐变字串 \"{trimmed}\"；\
-                         请写对象形态 {{ kind: \"linear\", angle, stops: [{{ at, color }}] }} 或 \
+                        "schema: style.background does not accept the CSS gradient string \"{trimmed}\"; \
+                         write the object form {{ kind: \"linear\", angle, stops: [{{ at, color }}] }} or \
                          {{ kind: \"radial\", cx, cy, r, stops }}（§6.3）"
                     );
                 }
                 if Rgba::parse(trimmed).is_none() {
-                    bail!("schema: style.background \"{trimmed}\" 不是可解析的颜色（§6.3）");
+                    bail!("schema: style.background \"{trimmed}\" is not a parsable color (§6.3)");
                 }
                 Ok(None)
             }
             Value::Object(map) => {
                 let kind = map.get("kind").and_then(Value::as_str).ok_or_else(|| {
-                    anyhow!("schema: style.background 对象形态必须带 kind: \"linear\" | \"radial\"（§6.3）")
+                    anyhow!("schema: style.background object form must have kind: \"linear\" | \"radial\" (§6.3)")
                 })?;
                 let stops = Self::parse_stops(map.get("stops"))?;
                 let number = |key: &str, default: f64| -> Result<f64> {
                     match map.get(key) {
                         None | Some(Value::Null) => Ok(default),
                         Some(v) => v.as_f64().filter(|x| x.is_finite()).ok_or_else(|| {
-                            anyhow!("schema: style.background.{key} 必须是有限数值（§6.3）")
+                            anyhow!("schema: style.background.{key} must be a finite number (§6.3)")
                         }),
                     }
                 };
@@ -1045,7 +1045,7 @@ impl BgGradient {
                     "radial" => {
                         let r = number("r", 0.5)?;
                         if r <= 0.0 {
-                            bail!("schema: style.background.r 必须大于 0（§6.3）");
+                            bail!("schema: style.background.r must be greater than 0 (§6.3)");
                         }
                         Ok(Some(BgGradient::Radial {
                             cx: number("cx", 0.5)?,
@@ -1055,22 +1055,22 @@ impl BgGradient {
                         }))
                     }
                     other => bail!(
-                        "schema: style.background.kind \"{other}\" 不在 linear | radial（§6.3）"
+                        "schema: style.background.kind \"{other}\" is not one of linear | radial (§6.3)"
                     ),
                 }
             }
             other => {
-                bail!("schema: style.background 必须是颜色字串或渐变对象，实得 {other}（§6.3）")
+                bail!("schema: style.background must be a color string or gradient object, got {other} (§6.3)")
             }
         }
     }
 
     fn parse_stops(value: Option<&Value>) -> Result<Vec<(f64, Rgba)>> {
         let Some(items) = value.and_then(Value::as_array) else {
-            bail!("schema: style.background.stops 必须是至少两项的数组（§6.3）");
+            bail!("schema: style.background.stops must be an array of at least two items (§6.3)");
         };
         if items.len() < 2 {
-            bail!("schema: style.background.stops 至少需要两个色标（§6.3）");
+            bail!("schema: style.background.stops needs at least two color stops (§6.3)");
         }
         let mut out = Vec::with_capacity(items.len());
         let mut last = 0.0f64;
@@ -1084,11 +1084,11 @@ impl BgGradient {
                     .as_f64()
                     .filter(|x| x.is_finite() && (0.0..=1.0).contains(x))
                     .ok_or_else(|| {
-                        anyhow!("schema: style.background.stops[{index}].at 必须在 [0, 1]（§6.3）")
+                        anyhow!("schema: style.background.stops[{index}].at must be in [0, 1] (§6.3)")
                     })?,
             };
             if at < last {
-                bail!("schema: style.background.stops 的 at 必须单调不减（§6.3）");
+                bail!("schema: style.background.stops at values must be non-decreasing (§6.3)");
             }
             last = at;
             let color = item
@@ -1097,7 +1097,7 @@ impl BgGradient {
                 .and_then(Rgba::parse)
                 .ok_or_else(|| {
                     anyhow!(
-                        "schema: style.background.stops[{index}].color 必须是可解析的颜色（§6.3）"
+                        "schema: style.background.stops[{index}].color must be a parsable color (§6.3)"
                     )
                 })?;
             out.push((at, color));
@@ -1121,13 +1121,13 @@ impl BoxShadow {
     pub fn parse(value: &Value) -> Result<BoxShadow> {
         let Some(map) = value.as_object() else {
             bail!(
-                "schema: style.shadow 必须是对象 {{ color, blur, dx, dy }}（像素，§6.3），实得 {value}"
+                "schema: style.shadow must be an object {{ color, blur, dx, dy }} (pixels, §6.3), got {value}"
             );
         };
         for key in map.keys() {
             if !matches!(key.as_str(), "color" | "blur" | "dx" | "dy") {
                 bail!(
-                    "schema: style.shadow 不接受键 \"{key}\"（只有 color / blur / dx / dy，§6.3）"
+                    "schema: style.shadow does not accept key \"{key}\" (only color / blur / dx / dy, §6.3)"
                 );
             }
         }
@@ -1137,12 +1137,12 @@ impl BoxShadow {
                 Some(v) => v
                     .as_f64()
                     .filter(|x| x.is_finite())
-                    .ok_or_else(|| anyhow!("schema: style.shadow.{key} 必须是有限数值（§6.3）")),
+                    .ok_or_else(|| anyhow!("schema: style.shadow.{key} must be a finite number (§6.3)")),
             }
         };
         let blur = number("blur", 0.0)?;
         if blur < 0.0 {
-            bail!("schema: style.shadow.blur 不能为负（§6.3）");
+            bail!("schema: style.shadow.blur must not be negative (§6.3)");
         }
         let color = match map.get("color") {
             None | Some(Value::Null) => Rgba {
@@ -1154,7 +1154,7 @@ impl BoxShadow {
             Some(v) => v
                 .as_str()
                 .and_then(Rgba::parse)
-                .ok_or_else(|| anyhow!("schema: style.shadow.color 必须是可解析的颜色（§6.3）"))?,
+                .ok_or_else(|| anyhow!("schema: style.shadow.color must be a parsable color (§6.3)"))?,
         };
         Ok(BoxShadow {
             color,
@@ -1203,12 +1203,12 @@ impl BoxBorder {
     pub fn parse(value: &Value) -> Result<BoxBorder> {
         let Some(map) = value.as_object() else {
             bail!(
-                "schema: style.border 必须是对象 {{ width, color }}（像素，§6.3），不接受 CSS 简写，实得 {value}"
+                "schema: style.border must be an object {{ width, color }} (pixels, §6.3); CSS shorthand is not accepted; got {value}"
             );
         };
         for key in map.keys() {
             if !matches!(key.as_str(), "width" | "color") {
-                bail!("schema: style.border 不接受键 \"{key}\"（只有 width / color，§6.3）");
+                bail!("schema: style.border does not accept key \"{key}\" (only width / color, §6.3)");
             }
         }
         let width = map
@@ -1216,13 +1216,13 @@ impl BoxBorder {
             .and_then(Value::as_f64)
             .filter(|w| w.is_finite() && *w > 0.0)
             .ok_or_else(|| {
-                anyhow!("schema: style.border.width 必须是正的有限数值（像素，§6.3）")
+                anyhow!("schema: style.border.width must be a positive finite number (pixels, §6.3)")
             })?;
         let color = map
             .get("color")
             .and_then(Value::as_str)
             .and_then(Rgba::parse)
-            .ok_or_else(|| anyhow!("schema: style.border.color 必须是可解析的颜色（§6.3）"))?;
+            .ok_or_else(|| anyhow!("schema: style.border.color must be a parsable color (§6.3)"))?;
         Ok(BoxBorder { width, color })
     }
 }
@@ -1243,12 +1243,12 @@ impl ElementMask {
     pub fn parse(value: &Value) -> Result<ElementMask> {
         let Some(map) = value.as_object() else {
             bail!(
-                "schema: style.mask 必须是对象 {{ source: \"#id\", mode?, invert? }}（§6.3），实得 {value}"
+                "schema: style.mask must be an object {{ source: \"#id\", mode?, invert? }} (§6.3), got {value}"
             );
         };
         for key in map.keys() {
             if !matches!(key.as_str(), "source" | "mode" | "invert") {
-                bail!("schema: style.mask 不接受键 \"{key}\"（只有 source / mode / invert，§6.3）");
+                bail!("schema: style.mask does not accept key \"{key}\" (only source / mode / invert, §6.3)");
             }
         }
         let source = map
@@ -1256,20 +1256,20 @@ impl ElementMask {
             .and_then(Value::as_str)
             .and_then(|s| s.strip_prefix('#'))
             .filter(|s| !s.is_empty())
-            .ok_or_else(|| anyhow!("schema: style.mask.source 必须是 \"#<元素 id>\"（§6.3）"))?;
+            .ok_or_else(|| anyhow!("schema: style.mask.source must be \"#<element id>\" (§6.3)"))?;
         let luma = match map.get("mode") {
             None | Some(Value::Null) => false,
             Some(v) => match v.as_str() {
                 Some("alpha") => false,
                 Some("luma") => true,
-                _ => bail!("schema: style.mask.mode 必须是 alpha | luma（§6.3）"),
+                _ => bail!("schema: style.mask.mode must be alpha | luma (§6.3)"),
             },
         };
         let invert = match map.get("invert") {
             None | Some(Value::Null) => false,
             Some(v) => v
                 .as_bool()
-                .ok_or_else(|| anyhow!("schema: style.mask.invert 必须是布尔（§6.3）"))?,
+                .ok_or_else(|| anyhow!("schema: style.mask.invert must be a boolean (§6.3)"))?,
         };
         Ok(ElementMask {
             source: source.to_string(),
@@ -1298,28 +1298,28 @@ pub fn parse_morph_to(value: &Value, d: Option<&str>) -> Result<Vec<String>> {
             .map(|v| {
                 v.as_str()
                     .map(str::to_string)
-                    .ok_or_else(|| anyhow!("schema: morphTo 的每一项必须是 path d 字符串"))
+                    .ok_or_else(|| anyhow!("schema: each morphTo item must be a path d string"))
             })
             .collect::<Result<_>>()?,
-        _ => bail!("schema: morphTo 必须是 path d 字符串或字符串数组（§6.2.1）"),
+        _ => bail!("schema: morphTo must be a path d string or an array of strings (§6.2.1)"),
     };
     if targets.is_empty() || targets.len() > MORPH_TARGETS_MAX {
-        bail!("schema: morphTo 需要 1..={MORPH_TARGETS_MAX} 个目标形状");
+        bail!("schema: morphTo needs 1..={MORPH_TARGETS_MAX} target shapes");
     }
     let Some(d) = d else {
-        bail!("schema: morphTo 需要同一节点上的 d");
+        bail!("schema: morphTo needs d on the same node");
     };
     let base: Vec<usize> = crate::svgpath::parse(d).iter().map(Vec::len).collect();
     for (i, target) in targets.iter().enumerate() {
         let parsed = crate::svgpath::parse_checked(target);
         if let Some(c) = parsed.unsupported.first() {
-            bail!("path-command-unsupported: morphTo[{i}] 含不支持的命令 \"{c}\"");
+            bail!("path-command-unsupported: morphTo[{i}] contains unsupported command \"{c}\"");
         }
         let topo: Vec<usize> = parsed.subpaths.iter().map(Vec::len).collect();
         if topo != base {
             bail!(
-                "path-morph-topology: morphTo[{i}] 展平后的顶点数 {topo:?} 与 d 的 {base:?} 不一致\
-                 （子路径数与各子路径顶点数必须逐一相等）"
+                "path-morph-topology: morphTo[{i}] flattened vertex counts {topo:?} do not match d's {base:?}\
+                 (subpath counts and each subpath's vertex count must match one by one)"
             );
         }
     }
@@ -1340,12 +1340,12 @@ impl ClipPoly {
         for key in map.keys() {
             if !CLIP_KEYS_PATH.contains(&key.as_str()) {
                 bail!(
-                    "schema: clipPath 形状 \"path\" 没有键 \"{key}\"（封闭键集 {CLIP_KEYS_PATH:?}）"
+                    "schema: clipPath shape \"path\" has no key \"{key}\" (closed key set {CLIP_KEYS_PATH:?})"
                 );
             }
         }
         let Some(d) = map.get("d").and_then(Value::as_str) else {
-            bail!("schema: clipPath 形状 \"path\" 缺少 d");
+            bail!("schema: clipPath shape \"path\" is missing d");
         };
         let vb = match map.get("viewBox") {
             None | Some(Value::Null) => [0.0, 0.0, 1.0, 1.0],
@@ -1357,7 +1357,7 @@ impl ClipPoly {
                     .filter_map(|x| x.parse().ok())
                     .collect();
                 if nums.len() != 4 || nums[2] <= 0.0 || nums[3] <= 0.0 {
-                    bail!("schema: clipPath.viewBox 必须是 \"minX minY width height\"（宽高为正）");
+                    bail!("schema: clipPath.viewBox must be \"minX minY width height\" (positive width and height)");
                 }
                 [nums[0], nums[1], nums[2], nums[3]]
             }
@@ -1365,11 +1365,11 @@ impl ClipPoly {
         let even_odd = match map.get("fillRule").and_then(Value::as_str) {
             None | Some("nonzero") => false,
             Some("evenodd") => true,
-            Some(other) => bail!("schema: clipPath.fillRule \"{other}\" 不在 nonzero|evenodd"),
+            Some(other) => bail!("schema: clipPath.fillRule \"{other}\" is not one of nonzero|evenodd"),
         };
         let parsed = crate::svgpath::parse_checked(d);
         if let Some(c) = parsed.unsupported.first() {
-            bail!("path-command-unsupported: clipPath.d 含不支持的命令 \"{c}\"");
+            bail!("path-command-unsupported: clipPath.d contains unsupported command \"{c}\"");
         }
         let subpaths: Vec<Vec<(f64, f64)>> = parsed
             .subpaths
@@ -1382,7 +1382,7 @@ impl ClipPoly {
             })
             .collect();
         if subpaths.is_empty() {
-            bail!("schema: clipPath.d 没有可闭合的子路径（至少三个点）");
+            bail!("schema: clipPath.d has no closable subpath (at least three points)");
         }
         Ok(Some(ClipPoly { subpaths, even_odd }))
     }
@@ -1425,7 +1425,7 @@ impl ClipShape {
             return Ok(None);
         }
         let Some(map) = value.as_object() else {
-            bail!("schema: clipPath 必须是参数化形状对象（§6.3），实得 {value}");
+            bail!("schema: clipPath must be a parameterized shape object (§6.3), got {value}");
         };
         let shape = map
             .get("shape")
@@ -1440,19 +1440,19 @@ impl ClipShape {
             "circle" => CLIP_KEYS_CIRCLE,
             "ellipse" => CLIP_KEYS_ELLIPSE,
             "path" => bail!(
-                "schema: clipPath 形状 \"path\" 只能写在静态 style.clipPath 上，不能进 clipPath 通道（§6.3）"
+                "schema: clipPath shape \"path\" can only be set on a static style.clipPath, not on the clipPath channel (§6.3)"
             ),
             "polygon" => bail!(
-                "effect-capability-unsupported: clipPath \"polygon\" 没有光栅化实现，\
-                 请改用 inset / circle / ellipse，或用 mask.image 提供遮罩（§6.3 / §6.6）"
+                "effect-capability-unsupported: clipPath \"polygon\" has no rasterizer implementation; \
+                 use inset / circle / ellipse instead, or provide a mask with mask.image (§6.3 / §6.6)"
             ),
             other => {
-                bail!("schema: clipPath.shape \"{other}\" 不在 inset|circle|ellipse|path|polygon")
+                bail!("schema: clipPath.shape \"{other}\" is not one of inset|circle|ellipse|path|polygon")
             }
         };
         for key in map.keys() {
             if !allowed.contains(&key.as_str()) {
-                bail!("schema: clipPath 形状 \"{shape}\" 没有键 \"{key}\"（封闭键集 {allowed:?}）");
+                bail!("schema: clipPath shape \"{shape}\" has no key \"{key}\" (closed key set {allowed:?})");
             }
         }
         Ok(Some(match shape.as_str() {
@@ -1497,18 +1497,18 @@ pub fn parse_effects(value: &Value) -> Result<Vec<ResolvedEffect>> {
     use motion::effect::{UniformMap, lookup};
 
     let Some(items) = value.as_array() else {
-        bail!("schema: effects 必须是数组（§6.6），实得 {value}");
+        bail!("schema: effects must be an array (§6.6), got {value}");
     };
     let mut out = Vec::with_capacity(items.len());
     for item in items {
         let id = item
             .gstr("preset")
-            .ok_or_else(|| anyhow!("schema: effects[] 条目缺少 preset（§6.6）"))?;
+            .ok_or_else(|| anyhow!("schema: effects[] entry is missing preset (§6.6)"))?;
         // Persisted data must pin the version. The default is 1 (the first batch of recipes are all @1), and a version higher than the implementation is an error.
         let version = match item.get_("presetVersion") {
             Some(value) if !value.is_null() => value
                 .as_u64()
-                .ok_or_else(|| anyhow!("schema: effects[].presetVersion 必须是整数"))?
+                .ok_or_else(|| anyhow!("schema: effects[].presetVersion must be an integer"))?
                 as u32,
             _ => 1,
         };
@@ -1518,7 +1518,7 @@ pub fn parse_effects(value: &Value) -> Result<Vec<ResolvedEffect>> {
             for (key, raw) in params {
                 let spec = manifest.params.get(key).ok_or_else(|| {
                     anyhow!(
-                        "preset-param-unknown: {} 没有参数 {key}；{}（§6.6）",
+                        "preset-param-unknown: {} has no parameter {key}; {} (§6.6)",
                         manifest.qualified(),
                         manifest.params_hint()
                     )
@@ -1549,21 +1549,21 @@ fn uniform_from_json(
     use motion::effect::{ParamKind, UniformValue};
     let bad = |want: &str| {
         anyhow!(
-            "schema: {} 的参数 {key} 期望 {want}，实得 {raw}",
+            "schema: {} parameter {key} expects {want}, got {raw}",
             manifest.qualified()
         )
     };
     Ok(match kind {
         ParamKind::Number | ParamKind::Length => {
-            UniformValue::Scalar(raw.as_f64().ok_or_else(|| bad("数值"))?)
+            UniformValue::Scalar(raw.as_f64().ok_or_else(|| bad("number"))?)
         }
-        ParamKind::Bool => UniformValue::Bool(raw.as_bool().ok_or_else(|| bad("布尔"))?),
+        ParamKind::Bool => UniformValue::Bool(raw.as_bool().ok_or_else(|| bad("boolean"))?),
         ParamKind::Enum | ParamKind::Text => {
-            UniformValue::Text(raw.as_str().ok_or_else(|| bad("字符串"))?.to_owned())
+            UniformValue::Text(raw.as_str().ok_or_else(|| bad("string"))?.to_owned())
         }
         ParamKind::Color => {
-            let text = raw.as_str().ok_or_else(|| bad("颜色字符串"))?;
-            let rgba = Rgba::parse(text).ok_or_else(|| bad("可解析的颜色"))?;
+            let text = raw.as_str().ok_or_else(|| bad("color string"))?;
+            let rgba = Rgba::parse(text).ok_or_else(|| bad("parsable color"))?;
             UniformValue::Color([
                 rgba.r / 255.0,
                 rgba.g / 255.0,
@@ -1597,7 +1597,7 @@ pub fn parse_split_unit(split: &Value) -> Result<motion::PartUnit> {
         "grapheme" => Ok(motion::PartUnit::Char),
         "word" => Ok(motion::PartUnit::Word),
         "line" => Ok(motion::PartUnit::Line),
-        other => bail!("schema: split.by \"{other}\" 不在 grapheme|word|line（§7.9）"),
+        other => bail!("schema: split.by \"{other}\" is not one of grapheme|word|line (§7.9)"),
     }
 }
 
@@ -1718,7 +1718,7 @@ impl Resolver {
             return Ok(Some(n));
         }
         let Some(s) = expr.as_str() else {
-            bail!("非法 TimeExpr: {expr}");
+            bail!("invalid TimeExpr: {expr}");
         };
         let parsed = timeexpr::parse(s)?;
         let base = match parsed {
@@ -1741,7 +1741,7 @@ impl Resolver {
                         let sc = self
                             .cues
                             .get(&id)
-                            .ok_or_else(|| anyhow!("time-ref-unknown: 场景 \"{id}\" 不存在"))?;
+                            .ok_or_else(|| anyhow!("time-ref-unknown: scene \"{id}\" does not exist"))?;
                         match mark {
                             Mark::Pct(p) => sc.0 + sc.1 * p / 100.0,
                             Mark::End => sc.2,
@@ -1752,7 +1752,7 @@ impl Resolver {
                     let w = self
                         .clip_wins
                         .get(&id)
-                        .ok_or_else(|| anyhow!("time-ref-unknown: clip \"{id}\" 不存在"))?;
+                        .ok_or_else(|| anyhow!("time-ref-unknown: clip \"{id}\" does not exist"))?;
                     let need = if mark == Mark::End { w.1 } else { w.0 };
                     match need {
                         Some(n) => n,
@@ -1791,7 +1791,7 @@ impl Resolver {
         let is_asset = self.ctx.assets.get_(ref_id).is_some();
         let is_clip = self.clip_wins.contains_key(ref_id);
         if is_asset && is_clip {
-            bail!("word-anchor-name-clash: \"{ref_id}\" 同时是媒体 id 与 clip id，词锚点无法消歧");
+            bail!("word-anchor-name-clash: \"{ref_id}\" is both a media id and a clip id; the word anchor cannot be disambiguated");
         }
         let refs: Vec<&MediaRef> = if is_clip {
             self.media_refs
@@ -1804,11 +1804,11 @@ impl Resolver {
                 .filter(|r| r.asset_id == ref_id)
                 .collect()
         } else {
-            bail!("time-ref-unknown: 词锚点引用的 \"{ref_id}\" 既不是媒体 id 也不是 clip id");
+            bail!("time-ref-unknown: word anchor refers to \"{ref_id}\", which is neither a media id nor a clip id");
         };
         if refs.is_empty() {
             bail!(
-                "word-anchor-unmapped: \"{ref_id}\" 没有任何媒体引用点（audio clip 或 video 元素）"
+                "word-anchor-unmapped: \"{ref_id}\" has no media reference point (audio clip or video element)"
             );
         }
         let mut any_transcript = false;
@@ -1847,19 +1847,19 @@ impl Resolver {
         }
         if !any_transcript {
             bail!(
-                "word-anchor-no-transcript: \"{ref_id}\" 引用的媒体未注入词级转录（CLI --transcript）"
+                "word-anchor-no-transcript: the media referenced by \"{ref_id}\" has no word-level transcript injected (CLI --transcript)"
             );
         }
         if !word_found {
-            bail!("time-ref-unknown: 词 \"{word_id}\" 不存在于 \"{ref_id}\" 的转录");
+            bail!("time-ref-unknown: word \"{word_id}\" does not exist in the transcript of \"{ref_id}\"");
         }
         match hits.len() {
             0 => {
-                bail!("word-anchor-unmapped: 词 \"{word_id}\" 不落在 \"{ref_id}\" 的任何引用窗口内")
+                bail!("word-anchor-unmapped: word \"{word_id}\" does not fall within any reference window of \"{ref_id}\"")
             }
             1 => Ok(Some(hits[0])),
             n => bail!(
-                "word-anchor-ambiguous: 词 \"{word_id}\" 在 \"{ref_id}\" 有 {n} 个引用点命中，请用 clip id 限定（~clipId:wordId）"
+                "word-anchor-ambiguous: word \"{word_id}\" hits {n} reference points in \"{ref_id}\"; qualify it with a clip id (~clipId:wordId)"
             ),
         }
     }
@@ -1942,24 +1942,24 @@ impl Resolver {
     fn video_media_fields(n: &Value) -> Result<(f64, f64, Option<(f64, f64)>, bool)> {
         let rate = n.gf64("playbackRate").unwrap_or(1.0);
         if rate <= 0.0 || !rate.is_finite() {
-            bail!("媒体元素 playbackRate {rate} 必须为正数");
+            bail!("media element playbackRate {rate} must be positive");
         }
         let segment = match n.get_("segment").filter(|v| !v.is_null()) {
             Some(v) => {
                 let arr = v
                     .as_array()
                     .filter(|a| a.len() == 2)
-                    .ok_or_else(|| anyhow!("媒体元素 segment 须为 [start, end] 两元素数组"))?;
+                    .ok_or_else(|| anyhow!("media element segment must be a two-item array [start, end]"))?;
                 let (s0, s1) = (
                     arr[0]
                         .as_f64()
-                        .ok_or_else(|| anyhow!("媒体元素 segment[0] 不是数字"))?,
+                        .ok_or_else(|| anyhow!("media element segment[0] is not a number"))?,
                     arr[1]
                         .as_f64()
-                        .ok_or_else(|| anyhow!("媒体元素 segment[1] 不是数字"))?,
+                        .ok_or_else(|| anyhow!("media element segment[1] is not a number"))?,
                 );
                 if !(s0 >= 0.0 && s1 > s0) {
-                    bail!("媒体元素 segment [{s0}, {s1}] 须满足 0 ≤ start < end");
+                    bail!("media element segment [{s0}, {s1}] must satisfy 0 ≤ start < end");
                 }
                 Some((s0, s1))
             }
@@ -2053,12 +2053,12 @@ impl Resolver {
         octx: &OriginCtx,
     ) -> Result<RNode> {
         if depth > 64 {
-            bail!("component-cycle: 组件实例化深度超过 64（疑似递归）");
+            bail!("component-cycle: component instantiation depth exceeds 64 (suspected recursion)");
         }
         if n.gstr("type") == Some("use") {
             let comp_name = n
                 .gstr("component")
-                .ok_or_else(|| anyhow!("use 节点缺少 component 字段"))?;
+                .ok_or_else(|| anyhow!("use node is missing the component field"))?;
             let comp = self
                 .doc
                 .get_("components")
@@ -2068,7 +2068,7 @@ impl Resolver {
                 resolve_ref(each, ectx)
                     .as_array()
                     .cloned()
-                    .ok_or_else(|| anyhow!("use.each 不是数组: {each}"))?
+                    .ok_or_else(|| anyhow!("use.each is not an array: {each}"))?
             } else {
                 vec![
                     n.get_("props")
@@ -2149,7 +2149,7 @@ impl Resolver {
                 !v.as_f64()
                     .is_some_and(|n| n.is_finite() && (1.0..=256.0).contains(&n))
             }) {
-                bail!("schema: charGrid fontSize 须在 1..256 px");
+                bail!("schema: charGrid fontSize must be in 1..256 px");
             }
             node.style
                 .entry("width")
@@ -2184,20 +2184,20 @@ impl Resolver {
                 .or_insert(Value::from(canvas.height));
             node.composition = Some(canvas);
         } else if n.get_("canvas").is_some() {
-            bail!("schema: canvas 只用于 composition");
+            bail!("schema: canvas is only for composition");
         }
         if let Some(map) = n.get_("timeMap") {
             if !matches!(
                 node.ntype.as_str(),
                 "composition" | "video" | "animatedImage" | "lottie" | "program"
             ) {
-                bail!("schema: timeMap 只用于 composition 或带源时钟的媒体");
+                bail!("schema: timeMap is only for composition or media with a source clock");
             }
             if ["playbackRate", "mediaStart", "segment", "loop"]
                 .iter()
                 .any(|key| n.get_(*key).is_some())
             {
-                bail!("schema: timeMap 不能与 playbackRate/mediaStart/segment/loop 混用");
+                bail!("schema: timeMap cannot be combined with playbackRate/mediaStart/segment/loop");
             }
             node.time_map = Some(crate::composition::TimeMap::parse(&deep_resolve(
                 map, ectx,
@@ -2205,22 +2205,22 @@ impl Resolver {
         }
         if let Some(camera) = n.get_("camera") {
             let Some(canvas) = &node.composition else {
-                bail!("schema: 节点 camera 只用于 composition");
+                bail!("schema: node camera is only for composition");
             };
             let camera = deep_resolve(camera, ectx);
             let Some(frames) = camera.as_array().filter(|v| v.len() <= 4096) else {
-                bail!("schema: composition.camera 必须是最多 4096 帧的数组");
+                bail!("schema: composition.camera must be an array of at most 4096 frames");
             };
             for frame in frames {
                 let t = frame
                     .get_("t")
                     .and_then(Value::as_f64)
                     .filter(|v| v.is_finite() && *v >= 0.0 && *v <= canvas.duration)
-                    .ok_or_else(|| anyhow!("schema: camera.t 须在局部时间范围内"))?;
+                    .ok_or_else(|| anyhow!("schema: camera.t must be within the local time range"))?;
                 let v = frame
                     .get_("v")
                     .and_then(Value::as_object)
-                    .ok_or_else(|| anyhow!("schema: camera.v 须为 {{x,y,zoom}}"))?;
+                    .ok_or_else(|| anyhow!("schema: camera.v must be {{x,y,zoom}}"))?;
                 if v.keys()
                     .any(|key| !matches!(key.as_str(), "x" | "y" | "zoom"))
                     || v.values()
@@ -2232,7 +2232,7 @@ impl Resolver {
                         .last()
                         .is_some_and(|previous| previous.t >= t)
                 {
-                    bail!("schema: camera 帧须按 t 递增，x/y 有限且 zoom > 0");
+                    bail!("schema: camera frames must increase by t, x/y must be finite, and zoom > 0");
                 }
                 node.local_camera.push(Kf {
                     t,
@@ -2243,7 +2243,7 @@ impl Resolver {
         }
         if n.get_("crop").is_some() || n.get_("focalPoint").is_some() {
             if !matches!(node.ntype.as_str(), "image" | "video" | "animatedImage") {
-                bail!("schema: crop/focalPoint 只用于位图媒体");
+                bail!("schema: crop/focalPoint only applies to bitmap media");
             }
             if let Some(crop) = n.get_("crop") {
                 node.media_crop = Some(crate::composition::crop(&deep_resolve(crop, ectx))?);
@@ -2260,17 +2260,17 @@ impl Resolver {
                         .filter(|v| v.is_finite() && (0.0..=1.0).contains(v))
                 };
                 let (Some(x), Some(y)) = (number("x"), number("y")) else {
-                    bail!("schema: focalPoint 须为 {{x,y}}，值在 0..1");
+                    bail!("schema: focalPoint must be {{x,y}} with values in 0..1");
                 };
                 if !valid {
-                    bail!("schema: focalPoint 只接受 x/y");
+                    bail!("schema: focalPoint only accepts x/y");
                 }
                 node.media_focal = Some([x, y]);
             }
         }
         if node.ntype == "image" {
             node.fit = n.gstr("fit").map_or(Ok(Fit::Fill), |fit| {
-                Fit::parse(fit).ok_or_else(|| anyhow!("schema: image fit 无效"))
+                Fit::parse(fit).ok_or_else(|| anyhow!("schema: image fit is invalid"))
             })?;
         }
         if let Some(t) = n.get_("text") {
@@ -2278,16 +2278,16 @@ impl Resolver {
         }
         if let Some(stroke) = node.style.get("textStroke").filter(|v| !v.is_null()) {
             if node.ntype != "text" {
-                bail!("schema: textStroke 只适用于 text");
+                bail!("schema: textStroke only applies to text");
             }
             node.text_stroke = Some(TextStroke::parse(stroke)?);
         }
         if let Some(runs) = n.get_("runs").filter(|v| !v.is_null()) {
             if node.ntype != "text" || n.get_("text").is_some() {
-                bail!("schema: runs 只用于 text，且不能与 text 字段混用");
+                bail!("schema: runs is only for text and cannot be mixed with the text field");
             }
             if node.style.get("textWrap").is_none_or(Value::is_null) {
-                bail!("schema: runs 需要显式 style.textWrap（none/word/grapheme）");
+                bail!("schema: runs needs an explicit style.textWrap (none/word/grapheme)");
             }
             let (text, runs) = crate::text_layout::parse_runs(&deep_resolve(runs, ectx))?;
             node.text = Some(text);
@@ -2299,13 +2299,13 @@ impl Resolver {
         if let Some(wrap) = node.style.get("textWrap") {
             use crate::text_layout::Wrap;
             if node.ntype != "text" {
-                bail!("schema: textWrap 只适用于 text");
+                bail!("schema: textWrap only applies to text");
             }
             node.text_wrap = Some(match wrap.as_str() {
                 Some("none") => Wrap::None,
                 Some("word") => Wrap::Word,
                 Some("grapheme") => Wrap::Grapheme,
-                _ => bail!("schema: textWrap 必须是 none | word | grapheme"),
+                _ => bail!("schema: textWrap must be none | word | grapheme"),
             });
         }
         if let Some(split) = n.get_("split").filter(|v| !v.is_null()) {
@@ -2316,7 +2316,7 @@ impl Resolver {
         }
         if let Some(wrap) = node.text_wrap {
             if node.ntype != "text" {
-                bail!("schema: paragraph layout 只适用于 text");
+                bail!("schema: paragraph layout only applies to text");
             }
             if wrap != crate::text_layout::Wrap::None
                 && !node
@@ -2325,41 +2325,41 @@ impl Resolver {
                     .and_then(Value::as_f64)
                     .is_some_and(|w| w.is_finite() && w > 0.0)
             {
-                bail!("schema: 自动折行需要正数 style.width");
+                bail!("schema: automatic wrapping needs a positive style.width");
             }
             if node
                 .style
                 .get("lineHeight")
                 .is_some_and(|v| !v.as_f64().is_some_and(|n| n.is_finite() && n > 0.0))
             {
-                bail!("schema: lineHeight 须为正数像素");
+                bail!("schema: lineHeight must be positive pixels");
             }
             if node
                 .style
                 .get("letterSpacing")
                 .is_some_and(|v| !v.as_f64().is_some_and(f64::is_finite))
             {
-                bail!("schema: letterSpacing 须为有限像素数");
+                bail!("schema: letterSpacing must be a finite pixel value");
             }
             if node
                 .style
                 .get("textAlign")
                 .is_some_and(|v| !matches!(v.as_str(), Some("left" | "center" | "right")))
             {
-                bail!("schema: textAlign 须为 left | center | right");
+                bail!("schema: textAlign must be left | center | right");
             }
             if node
                 .style
                 .get("fontSize")
                 .is_some_and(|v| !v.as_f64().is_some_and(|n| n.is_finite() && n > 0.0))
             {
-                bail!("schema: fontSize 须为正数像素");
+                bail!("schema: fontSize must be positive pixels");
             }
             if node.style.get("fontWeight").is_some_and(|v| {
                 !v.as_f64()
                     .is_some_and(|n| n.is_finite() && (1.0..=1000.0).contains(&n))
             }) {
-                bail!("schema: fontWeight 须在 1..1000");
+                bail!("schema: fontWeight must be in 1..1000");
             }
         }
         // Effect stack / blend / clip shape (spec §6.6, §6.3). All three are finalized here. At record time only the resolved results are read, and JSON is no longer touched.
@@ -2371,7 +2371,7 @@ impl Resolver {
             for effect in &node.backdrop_effects {
                 if !effect.effect.id.starts_with("filter.") {
                     bail!(
-                        "effect-capability-unsupported: backdropEffects 只接受 filter.* 单输入滤镜"
+                        "effect-capability-unsupported: backdropEffects only accepts single-input filter.* filters"
                     );
                 }
             }
@@ -2379,7 +2379,7 @@ impl Resolver {
         if let Some(mode) = node.style.get("blendMode").and_then(Value::as_str) {
             node.blend = motion::effect::BlendMode::parse(mode).ok_or_else(|| {
                 anyhow!(
-                    "schema: style.blendMode \"{mode}\" 不在封闭枚举 {:?}（§6.6）",
+                    "schema: style.blendMode \"{mode}\" is not in the closed set {:?} (§6.6)",
                     motion::effect::BlendMode::ALL.map(motion::effect::BlendMode::as_str)
                 )
             })?;
@@ -2407,7 +2407,7 @@ impl Resolver {
             node.font_italic = match style.as_str() {
                 Some("normal") => false,
                 Some("italic") => true,
-                _ => bail!("schema: style.fontStyle 必须是 normal | italic（§6.3）"),
+                _ => bail!("schema: style.fontStyle must be normal | italic (§6.3)"),
             };
         }
         if let Some(mask) = node.style.get("mask").filter(|v| !v.is_null()) {
@@ -2423,7 +2423,7 @@ impl Resolver {
                     .all(|v| v.as_f64().is_some_and(|x| x.is_finite()));
             if !ok {
                 bail!(
-                    "schema: style.anchor 的数组形态必须是 [x, y] 两个有限数值（元素盒比例，§6.3）"
+                    "schema: style.anchor array form must be [x, y], two finite numbers (element box ratios, §6.3)"
                 );
             }
         }
@@ -2435,7 +2435,7 @@ impl Resolver {
             let src = n.gstr("src").unwrap_or("");
             let id = asset_ref_id(src).ok_or_else(|| {
                 anyhow!(
-                    "asset-src-literal: {} 节点 src \"{src}\" 必须是 $assets.* 引用",
+                    "asset-src-literal: {} node src \"{src}\" must be a $assets.* reference",
                     node.ntype
                 )
             })?;
@@ -2454,7 +2454,7 @@ impl Resolver {
                 node.fit = match n.gstr("fit") {
                     None => Fit::Cover,
                     Some(s) => Fit::parse(s)
-                        .ok_or_else(|| anyhow!("video fit \"{s}\" 不在 cover|contain|fill"))?,
+                        .ok_or_else(|| anyhow!("video fit \"{s}\" is not one of cover|contain|fill"))?,
                 };
                 node.with_audio = n
                     .get_("withAudio")
@@ -2475,7 +2475,7 @@ impl Resolver {
                 node.fit = match n.gstr("fit") {
                     None => Fit::Cover,
                     Some(s) => Fit::parse(s).ok_or_else(|| {
-                        anyhow!("{} fit \"{s}\" 不在 cover|contain|fill", node.ntype)
+                        anyhow!("{} fit \"{s}\" is not one of cover|contain|fill", node.ntype)
                     })?,
                 };
                 // An explicit `loop` takes priority. If not written, it inherits the asset's own loop count (§6.5.1).
@@ -2498,7 +2498,7 @@ impl Resolver {
             node.path_d = Some(
                 deep_resolve(d, ectx)
                     .as_str()
-                    .ok_or_else(|| anyhow!("schema: path.d 须为字符串"))?
+                    .ok_or_else(|| anyhow!("schema: path.d must be a string"))?
                     .to_owned(),
             );
         }
@@ -2508,7 +2508,7 @@ impl Resolver {
             let parsed = crate::svgpath::parse_checked(d);
             if !parsed.unsupported.is_empty() {
                 bail!(
-                    "path-command-unsupported: path.d 含不支持的命令 {:?}",
+                    "path-command-unsupported: path.d contains unsupported command {:?}",
                     parsed.unsupported
                 );
             }
@@ -2523,7 +2523,7 @@ impl Resolver {
             node.stroke_width = deep_resolve(sw, ectx)
                 .as_f64()
                 .filter(|v| v.is_finite() && *v >= 0.0)
-                .ok_or_else(|| anyhow!("schema: strokeWidth 须为有限非负数"))?;
+                .ok_or_else(|| anyhow!("schema: strokeWidth must be a finite non-negative number"))?;
         }
         if let Some(f) = n.get_("fill") {
             node.fill = Rgba::parse_value(Some(&resolve_ref(f, ectx)));
@@ -2531,7 +2531,7 @@ impl Resolver {
         match n.gstr("fillRule") {
             None | Some("nonzero") => {}
             Some("evenodd") => node.fill_even_odd = true,
-            Some(other) => bail!("schema: fillRule \"{other}\" 不在 nonzero|evenodd（§6.2.1）"),
+            Some(other) => bail!("schema: fillRule \"{other}\" is not one of nonzero|evenodd (§6.2.1)"),
         }
         if let Some(tx) = n.get_("texture") {
             node.texture = PathTexture::parse(&deep_resolve(tx, ectx))?;
@@ -2541,11 +2541,11 @@ impl Resolver {
         }
         if let Some(cap) = n.gstr("lineCap") {
             node.line_cap = LineCap::parse(cap)
-                .ok_or_else(|| anyhow!("schema: lineCap \"{cap}\" 不在 butt|round|square"))?;
+                .ok_or_else(|| anyhow!("schema: lineCap \"{cap}\" is not one of butt|round|square"))?;
         }
         if let Some(join) = n.gstr("lineJoin") {
             node.line_join = LineJoin::parse(join)
-                .ok_or_else(|| anyhow!("schema: lineJoin \"{join}\" 不在 miter|round|bevel"))?;
+                .ok_or_else(|| anyhow!("schema: lineJoin \"{join}\" is not one of miter|round|bevel"))?;
         }
         if let Some(dash) = n.get_("dash") {
             node.dash = crate::pathstyle::parse_dash(&deep_resolve(dash, ectx))?;
@@ -2555,11 +2555,11 @@ impl Resolver {
                 let screen = match deep_resolve(value, ectx).as_str() {
                     Some("scene") => false,
                     Some("screen") => true,
-                    _ => bail!("schema: {key} 须为 scene|screen"),
+                    _ => bail!("schema: {key} must be scene|screen"),
                 };
                 if stroke {
                     if node.ntype != "path" {
-                        bail!("schema: strokeScale 只用于 path");
+                        bail!("schema: strokeScale only applies to path");
                     }
                     node.screen_stroke = screen;
                 } else {
@@ -2569,14 +2569,14 @@ impl Resolver {
         }
         if let Some(trim) = n.get_("trim") {
             if node.ntype != "path" {
-                bail!("schema: trim 只用于 path");
+                bail!("schema: trim only applies to path");
             }
             let trim = deep_resolve(trim, ectx);
             let map = trim
                 .as_object()
-                .ok_or_else(|| anyhow!("schema: trim 须为 {{start,end}}"))?;
+                .ok_or_else(|| anyhow!("schema: trim must be {{start,end}}"))?;
             if map.keys().any(|k| !matches!(k.as_str(), "start" | "end")) {
-                bail!("schema: trim 含未知字段");
+                bail!("schema: trim has unknown fields");
             }
             let number = |key: &str, default: f64| -> Result<f64> {
                 match map.get(key) {
@@ -2584,27 +2584,27 @@ impl Resolver {
                     Some(v) => v
                         .as_f64()
                         .filter(|v| v.is_finite() && (0.0..=1.0).contains(v))
-                        .ok_or_else(|| anyhow!("schema: trim.{key} 须在 0..1")),
+                        .ok_or_else(|| anyhow!("schema: trim.{key} must be in 0..1")),
                 }
             };
             let (start, end) = (number("start", 0.0)?, number("end", 1.0)?);
             if start > end {
-                bail!("schema: trim.start 不能超过 end");
+                bail!("schema: trim.start cannot exceed end");
             }
             node.path_trim = Some((start, end));
         }
         if let Some(offset) = n.get_("dashOffset") {
             if node.ntype != "path" {
-                bail!("schema: dashOffset 只用于 path");
+                bail!("schema: dashOffset only applies to path");
             }
             node.dash_offset = deep_resolve(offset, ectx)
                 .as_f64()
                 .filter(|v| v.is_finite())
-                .ok_or_else(|| anyhow!("schema: dashOffset 须为有限路径单位"))?;
+                .ok_or_else(|| anyhow!("schema: dashOffset must be a finite path-unit value"))?;
         }
         if let Some(brush) = n.get_("brush").filter(|v| !v.is_null()) {
             if node.ntype != "path" {
-                bail!("schema: brush 只用于 path");
+                bail!("schema: brush only applies to path");
             }
             node.stroke_brush = Some(crate::pathstyle::StrokeBrush::parse(&deep_resolve(
                 brush, ectx,
@@ -2680,7 +2680,7 @@ impl Resolver {
             _ => {}
         }
         self.eval_t(value)?
-            .ok_or_else(|| anyhow!("time-ref-unknown: flow 时间 {value} 无法求值"))
+            .ok_or_else(|| anyhow!("time-ref-unknown: flow time {value} cannot be evaluated"))
     }
 
     /// One track of `CompiledFlow` → `Channel`. The `v` of keyframes is the raw JSON (possibly still an unevaluated relative-length object), and goes through the same finalize as the legacy channels.
@@ -2726,7 +2726,7 @@ impl Resolver {
             }
         }
         if text_tween(flow) {
-            bail!("schema: text 内容使用离散 keyframes 或 flow.set，不使用 tween");
+            bail!("schema: text content uses discrete keyframes or flow.set, not tween");
         }
         let resolved = self.preresolve_flow_times(flow, win)?;
         let mut graph = motion::parse_flow(&resolved, &motion::FlowParseCtx::default())
@@ -2751,7 +2751,7 @@ impl Resolver {
         extra: f64,
     ) -> Result<Option<PartMotion>> {
         if node.ntype != "text" {
-            bail!("schema: animate.parts 只能用在 text 节点上（§7.9）");
+            bail!("schema: animate.parts can only be used on text nodes (§7.9)");
         }
         let text = node.text.clone().unwrap_or_default();
         let unit = node.split.unwrap_or(motion::PartUnit::Char);
@@ -2775,7 +2775,7 @@ impl Resolver {
         for track in &compiled.tracks {
             let index = track.target.0 as usize;
             if index == 0 || index > map.len() {
-                bail!("motion-flow-invalid: animate.parts 产出了越界的 part target {index}");
+                bail!("motion-flow-invalid: animate.parts produced an out-of-range part target {index}");
             }
             channels[index - 1].push(Self::flow_track_channel(track));
         }
@@ -2805,7 +2805,7 @@ impl Resolver {
                     .any(|slot| a.get_(slot).is_some_and(|v| !v.is_null()))
             {
                 bail!(
-                    "motion-legacy-and-flow: 元素 \"{}\" 同时声明了 animate.flow 与 enter/exit/emphasis/keyframes（§7.5）",
+                    "motion-legacy-and-flow: element \"{}\" declares both animate.flow and enter/exit/emphasis/keyframes (§7.5)",
                     node.id
                 );
             }
@@ -2815,7 +2815,7 @@ impl Resolver {
             if let Some(parts) = a.get_("parts").filter(|v| !v.is_null()) {
                 if node.split == Some(motion::PartUnit::Line) {
                     if node.ntype != "text" {
-                        bail!("schema: animate.parts 只能用在 text");
+                        bail!("schema: animate.parts can only be used on text");
                     }
                     node.pending_line_motion = Some(PendingLineMotion {
                         spec: self.preresolve_flow_times(parts, win)?,
@@ -2854,7 +2854,7 @@ impl Resolver {
                 }
                 let at = self
                     .eval_t(em.get_("at").unwrap_or(&Value::Null))?
-                    .ok_or_else(|| anyhow!("emphasis.at 无法求值"))?;
+                    .ok_or_else(|| anyhow!("emphasis.at cannot be evaluated"))?;
                 chs.extend(self.slot_channels(
                     em,
                     at,
@@ -2889,7 +2889,7 @@ impl Resolver {
                         win.0 + n
                     } else {
                         self.eval_t(&tv)?
-                            .ok_or_else(|| anyhow!("keyframe t 无法求值: {tv}"))?
+                            .ok_or_else(|| anyhow!("keyframe t cannot be evaluated: {tv}"))?
                     };
                     frames.push(Kf {
                         t,
@@ -2905,7 +2905,7 @@ impl Resolver {
                     .map(|format| {
                         let resolved = deep_resolve(format, &self.ctx);
                         let Value::Object(map) = resolved else {
-                            bail!("schema: textCount format 必须是对象");
+                            bail!("schema: textCount format must be an object");
                         };
                         validate_count_format(&map)?;
                         Ok(map)
@@ -2923,7 +2923,7 @@ impl Resolver {
                 "text" | "textReveal" | "fontWeight" | "letterSpacing"
             ) {
                 if node.ntype != "text" {
-                    bail!("schema: {} 只适用于 text", channel.prop);
+                    bail!("schema: {} only applies to text", channel.prop);
                 }
                 for frame in &channel.frames {
                     let valid = match channel.prop.as_str() {
@@ -2931,7 +2931,7 @@ impl Resolver {
                         _ => frame.v.as_f64().is_some_and(f64::is_finite),
                     };
                     if !valid {
-                        bail!("schema: {} 通道值类型或范围无效", channel.prop);
+                        bail!("schema: {} channel value has an invalid type or range", channel.prop);
                     }
                 }
             }
@@ -2942,20 +2942,20 @@ impl Resolver {
                 .iter()
                 .any(|c| matches!(c.prop.as_str(), "text" | "textCount"))
         {
-            bail!("schema: 富文本 runs 保持静态；内容/计数变化请使用独立 text 节点");
+            bail!("schema: rich text runs stay static; for content or count changes, use separate text nodes");
         }
         if node.channels.iter().any(|c| c.prop == "text")
             && node.channels.iter().any(|c| c.prop == "textCount")
         {
-            bail!("schema: text 与 textCount 通道不能混用");
+            bail!("schema: text and textCount channels cannot be mixed");
         }
         for channel in &node.channels {
             if matches!(channel.prop.as_str(), "crop" | "focalX" | "focalY") {
                 if channel.composite != motion::CompositeMode::Replace {
-                    bail!("schema: crop/focal 通道只接受 replace");
+                    bail!("schema: crop/focal channels only accept replace");
                 }
                 if !matches!(node.ntype.as_str(), "image" | "video" | "animatedImage") {
-                    bail!("schema: {} 只用于位图媒体", channel.prop);
+                    bail!("schema: {} only applies to bitmap media", channel.prop);
                 }
                 for frame in &channel.frames {
                     if channel.prop == "crop" {
@@ -2965,7 +2965,7 @@ impl Resolver {
                         .as_f64()
                         .is_some_and(|v| v.is_finite() && (0.0..=1.0).contains(&v))
                     {
-                        bail!("schema: focalX/focalY 帧须在 0..1");
+                        bail!("schema: focalX/focalY frames must be in 0..1");
                     }
                 }
             }
@@ -2976,20 +2976,20 @@ impl Resolver {
                 "pathStart" | "pathEnd" | "dashOffset" | "pathProgress"
             ) {
                 if channel.composite != motion::CompositeMode::Replace {
-                    bail!("schema: 路径范围/跟随通道只接受 replace");
+                    bail!("schema: path range/follow channels only accept replace");
                 }
                 if channel.prop == "pathProgress" {
                     if node.follow.is_none() {
-                        bail!("schema: pathProgress 需要 follow.source");
+                        bail!("schema: pathProgress needs follow.source");
                     }
                 } else if node.ntype != "path" {
-                    bail!("schema: {} 只用于 path", channel.prop);
+                    bail!("schema: {} only applies to path", channel.prop);
                 }
                 for frame in &channel.frames {
                     if !frame.v.as_f64().is_some_and(|v| {
                         v.is_finite() && (channel.prop == "dashOffset" || (0.0..=1.0).contains(&v))
                     }) {
-                        bail!("schema: 路径范围/跟随通道须为 0..1，dashOffset 须为有限数值");
+                        bail!("schema: path range/follow channels must be in 0..1, and dashOffset must be a finite number");
                     }
                 }
             }
@@ -3140,7 +3140,7 @@ impl Resolver {
         let version = match spec.and_then(|value| value.get_("presetVersion")) {
             Some(value) if !value.is_null() => value
                 .as_u64()
-                .ok_or_else(|| anyhow!("schema: transitionIn/Out.presetVersion 必须是整数"))?
+                .ok_or_else(|| anyhow!("schema: transitionIn/Out.presetVersion must be an integer"))?
                 as u32,
             _ => 1,
         };
@@ -3154,7 +3154,7 @@ impl Resolver {
         };
         if manifest.domain != EffectDomain::Transition {
             bail!(
-                "transition-unknown: \"{preset}\" 是 {} 域的效果，不是转场（§9）",
+                "transition-unknown: \"{preset}\" is a {} domain effect, not a transition (§9)",
                 manifest.domain.as_str()
             );
         }
@@ -3167,7 +3167,7 @@ impl Resolver {
             for (key, raw) in params {
                 let param = manifest.params.get(key).ok_or_else(|| {
                     anyhow!(
-                        "preset-param-unknown: {} 没有参数 {key}；{}（§9）",
+                        "preset-param-unknown: {} has no parameter {key}; {} (§9)",
                         manifest.qualified(),
                         manifest.params_hint()
                     )
@@ -3188,7 +3188,7 @@ impl Resolver {
             .to_owned();
         if motion::preset_registry::bcf_transition(&fallback).is_none() {
             bail!(
-                "transition-unknown: \"{preset}\" 的 fallback \"{fallback}\" 不是 Motion Transition（§9）"
+                "transition-unknown: \"{preset}\" fallback \"{fallback}\" is not a Motion Transition (§9)"
             );
         }
 
@@ -3208,7 +3208,7 @@ impl Resolver {
     // ── Main entry ──
     pub fn resolve(&mut self) -> Result<Ir> {
         let doc = self.doc.clone();
-        let meta = doc.get_("meta").ok_or_else(|| anyhow!("缺少 meta"))?;
+        let meta = doc.get_("meta").ok_or_else(|| anyhow!("missing meta"))?;
         let w = meta.gf64("width").unwrap_or(1920.0);
         let h = meta.gf64("height").unwrap_or(1080.0);
         let fps = meta.gf64("fps").unwrap_or(30.0);
@@ -3219,7 +3219,7 @@ impl Resolver {
                 for key in map.keys() {
                     if key != "color" && key != "texture" {
                         bail!(
-                            "schema: meta.background 没有键 \"{key}\"（封闭键集 [color, texture]）"
+                            "schema: meta.background has no key \"{key}\" (closed key set [color, texture])"
                         );
                     }
                 }
@@ -3254,7 +3254,7 @@ impl Resolver {
                 Some(v @ Value::String(_)) => {
                     let r = resolve_ref(v, &self.ctx);
                     r.as_f64().ok_or_else(|| {
-                        anyhow!("场景 \"{id}\" dur 变量引用 {v} 未解析为数字（实为 {r}）")
+                        anyhow!("scene \"{id}\" dur variable reference {v} did not resolve to a number (got {r})")
                     })?
                 }
                 Some(v) => match v.as_f64() {
@@ -3331,7 +3331,7 @@ impl Resolver {
             let id = c.gstr("id").unwrap_or("?");
             let win = self.clip_wins.get(id).copied().unwrap_or((None, None));
             if win.0.is_none() || win.1.is_none() {
-                bail!("time-ref-cycle: clip \"{id}\" 的时间引用无法收敛");
+                bail!("time-ref-cycle: time references of clip \"{id}\" do not converge");
             }
         }
 
@@ -3383,7 +3383,7 @@ impl Resolver {
                         Some(v) => match v.as_str() {
                             Some("scene") => false,
                             Some("screen") => true,
-                            _ => bail!("schema: clip.space 须为 scene|screen"),
+                            _ => bail!("schema: clip.space must be scene|screen"),
                         },
                     },
                     start: ws,
@@ -3457,7 +3457,7 @@ impl Resolver {
             for (mut vc, raw) in clips {
                 let el = raw
                     .get_("element")
-                    .ok_or_else(|| anyhow!("clip {} 缺少 element", vc.id))?;
+                    .ok_or_else(|| anyhow!("clip {} is missing element", vc.id))?;
                 let mut tree = self.expand_node(el, &self.ctx.clone())?;
                 link_mask_sources(&mut tree)?;
                 self.build_channels(&mut tree, (vc.start, vc.end))?;
@@ -3495,7 +3495,7 @@ impl Resolver {
                 };
                 let cam = c
                     .get_("camera")
-                    .ok_or_else(|| anyhow!("schema: camera clip {id} 缺少 camera 配置"))?;
+                    .ok_or_else(|| anyhow!("schema: camera clip {id} is missing camera configuration"))?;
                 let frames: Vec<Kf> = if let Some(preset) = cam.gstr("preset") {
                     let (kfs, _) = self.expand_preset_def(preset, cam.get_("params"), &self.ctx)?;
                     Self::lay_preset_frames(&kfs, ws, we - ws, None)
@@ -3521,7 +3521,7 @@ impl Resolver {
                             ws + n
                         } else {
                             self.eval_t(&tv)?
-                                .ok_or_else(|| anyhow!("camera keyframe t 无法求值"))?
+                                .ok_or_else(|| anyhow!("camera keyframe t cannot be evaluated"))?
                         };
                         out.push(Kf {
                             t,
@@ -3556,7 +3556,7 @@ impl Resolver {
             let track_muted = match tr.get_("muted") {
                 None | Some(Value::Null) => false,
                 Some(Value::Bool(b)) => *b,
-                Some(other) => bail!("schema: audio 轨 \"{track_id}\" muted 必须是布尔：{other}"),
+                Some(other) => bail!("schema: audio track \"{track_id}\" muted must be a boolean: {other}"),
             };
             let track_bus = crate::audio_mix::default_bus(Some(&track_id));
             for c in tr
@@ -3571,7 +3571,7 @@ impl Resolver {
                 let raw_src = c.gstr("src").unwrap_or("");
                 let asset_id = asset_ref_id(raw_src)
                     .ok_or_else(|| {
-                        anyhow!("asset-src-literal: audio clip \"{id}\" src \"{raw_src}\" 必须是 $assets.* 引用")
+                        anyhow!("asset-src-literal: audio clip \"{id}\" src \"{raw_src}\" must be a $assets.* reference")
                     })?
                     .to_string();
                 let mut volume: Vec<Kf> = Vec::new();
@@ -3600,7 +3600,7 @@ impl Resolver {
                                 ws + n
                             } else {
                                 self.eval_t(&tv)?.ok_or_else(|| {
-                                    anyhow!("audio volume keyframe t 无法求值: {tv}")
+                                    anyhow!("audio volume keyframe t cannot be evaluated: {tv}")
                                 })?
                             };
                             volume.push(Kf {
@@ -3624,7 +3624,7 @@ impl Resolver {
                             .as_f64()
                             .filter(|x| x.is_finite() && *x >= 0.0)
                             .ok_or_else(|| {
-                                anyhow!("schema: audio clip \"{id}\" {key} 必须是 ≥ 0 的秒数")
+                                anyhow!("schema: audio clip \"{id}\" {key} must be seconds ≥ 0")
                             }),
                     }
                 };
@@ -3635,14 +3635,14 @@ impl Resolver {
                     Some(v) => v
                         .as_f64()
                         .filter(|x| x.is_finite())
-                        .ok_or_else(|| anyhow!("schema: audio clip \"{id}\" pan 必须是数"))?
+                        .ok_or_else(|| anyhow!("schema: audio clip \"{id}\" pan must be a number"))?
                         .clamp(-1.0, 1.0),
                 };
                 let bus = match c.get_("bus") {
                     None | Some(Value::Null) => track_bus.clone(),
                     Some(Value::String(b)) if !b.is_empty() => b.clone(),
                     Some(other) => {
-                        bail!("schema: audio clip \"{id}\" bus 必须是非空字符串：{other}")
+                        bail!("schema: audio clip \"{id}\" bus must be a non-empty string: {other}")
                     }
                 };
                 let audio = AudioClip {
@@ -3669,7 +3669,7 @@ impl Resolver {
                         .any(|key| c.get_(*key).is_some())
                     {
                         bail!(
-                            "schema: audio timeMap 不与 mediaStart/playbackRate/segment/loop 混用"
+                            "schema: audio timeMap cannot be combined with mediaStart/playbackRate/segment/loop"
                         );
                     }
                     let map = crate::composition::TimeMap::parse(&deep_resolve(map, &self.ctx))?;
@@ -4057,8 +4057,8 @@ fn validate_render_channels(node: &RNode) -> Result<()> {
         .find(|prop| matches!(*prop, "rotationX" | "rotationY"));
     if let Some(prop) = offending {
         bail!(
-            "motion-unsupported: 元素 \"{}\" 的通道 \"{prop}\" 需要 3D 透视变换，本实现只有仿射变换（§6.4）；\
-             翻页 / 立牌一类的效果请改用 scaleY + skewX 近似，或用 clipPath 擦除",
+            "motion-unsupported: element \"{}\" channel \"{prop}\" needs a 3D perspective transform; this implementation only has affine transforms (§6.4); \
+             for page-turn or standee-like effects, approximate with scaleY + skewX, or erase with clipPath",
             node.id
         );
     }
@@ -4069,7 +4069,7 @@ fn validate_render_channels(node: &RNode) -> Result<()> {
                 "text" | "fontWeight" | "letterSpacing"
             ) {
                 bail!(
-                    "motion-unsupported: {} 仅支持整段 text，不支持 animate.parts",
+                    "motion-unsupported: {} only supports whole text, not animate.parts",
                     channel.prop
                 );
             }
@@ -4079,8 +4079,8 @@ fn validate_render_channels(node: &RNode) -> Result<()> {
                 "opacity" | "x" | "y" | "scale" | "color" | "textReveal" | "blur"
             ) {
                 bail!(
-                    "motion-unsupported: animate.parts 的通道 \"{}\" 不受支持；part 只支持 \
-                     opacity / x / y / scale / color / textReveal / blur（§6.4），旋转、斜切等请作用于整个元素",
+                    "motion-unsupported: animate.parts channel \"{}\" is not supported; parts only support \
+                     opacity / x / y / scale / color / textReveal / blur (§6.4); for rotation, skew and similar, apply them to the whole element",
                     channel.prop
                 );
             }
@@ -4090,7 +4090,7 @@ fn validate_render_channels(node: &RNode) -> Result<()> {
                     .iter()
                     .any(|frame| !frame.v.as_f64().is_some_and(f64::is_finite))
             {
-                bail!("schema: part.textReveal 须为有限数值");
+                bail!("schema: part.textReveal must be a finite number");
             }
         }
     }
@@ -4160,28 +4160,28 @@ fn link_mask_sources(tree: &mut RNode) -> Result<()> {
         let mut source_path = scope.clone();
         if !find(at_path(tree, &scope), &source, &mut source_path, true) {
             if !is_mask {
-                bail!("schema: follow.source #{source} 在同一局部范围内找不到（元素 {owner}）");
+                bail!("schema: follow.source #{source} not found in the same local scope (element {owner})");
             }
             bail!(
-                "mask-source-unknown: 元素 \"{owner}\" 的 style.mask.source \"#{source}\" 在同一 clip / composition 范围里找不到（§6.3）"
+                "mask-source-unknown: element \"{owner}\" style.mask.source \"#{source}\" is not found in the same clip / composition scope (§6.3)"
             );
         }
         let prefix = |a: &[usize], b: &[usize]| b.starts_with(a);
         if prefix(&owner_path, &source_path) || prefix(&source_path, &owner_path) {
             if !is_mask {
-                bail!("schema: follow.source 不能是自己、祖先或后代（元素 {owner}）");
+                bail!("schema: follow.source cannot be itself, an ancestor or a descendant (element {owner})");
             }
-            bail!("mask-source-unknown: 元素 \"{owner}\" 的遮罩源不能是自己、祖先或后代（§6.3）");
+            bail!("mask-source-unknown: element \"{owner}\" mask source cannot be itself, an ancestor or a descendant (§6.3)");
         }
         if is_mask {
             at_path(tree, &source_path).mask_source = true;
         } else {
             if at_path(tree, &source_path).ntype != "path" {
-                bail!("schema: follow.source #{source} 必须是 path");
+                bail!("schema: follow.source #{source} must be a path");
             }
             for depth in scope.len() + 1..=source_path.len() {
                 if at_path(tree, &source_path[..depth]).follow.is_some() {
-                    bail!("schema: follow 的源路径及其局部祖先不能再带 follow");
+                    bail!("schema: the source path of follow and its local ancestors cannot carry follow");
                 }
             }
         }
@@ -4220,18 +4220,18 @@ fn validate_mask_dependencies(tree: &RNode) -> Result<()> {
         temporal: bool,
     ) -> Result<()> {
         if active.len() >= 128 {
-            bail!("mask-source-unknown: 遮罩依赖深度超过 128（§6.3）");
+            bail!("mask-source-unknown: mask dependency depth exceeds 128 (§6.3)");
         }
         let key = node as *const RNode as usize;
         if temporal && node.echo.is_some() {
-            bail!("schema: echo 不能嵌套（包括遮罩依赖）");
+            bail!("schema: echo cannot be nested (including mask dependencies)");
         }
         if done.contains(&(key, temporal)) {
             return Ok(());
         }
         if !active.insert(key) {
             bail!(
-                "mask-source-unknown: 遮罩依赖成环，涉及元素 #{}（§6.3）",
+                "mask-source-unknown: mask dependency forms a cycle involving element #{} (§6.3)",
                 node.id
             );
         }
@@ -4307,7 +4307,7 @@ fn resolve_tree_lengths(
             for track in &flow.tracks {
                 let index = track.target.0 as usize;
                 if index == 0 || index > map.len() {
-                    bail!("motion-flow-invalid: line part target 越界");
+                    bail!("motion-flow-invalid: line part target out of range");
                 }
                 channels[index - 1].push(Resolver::flow_track_channel(track));
             }
@@ -4376,11 +4376,11 @@ fn resolve_frame_lengths(prop: &str, value: &mut Value, ctx: &motion::LengthCont
     if motion::preset_registry::manifest::is_relative_length_object(value) {
         if !motion::RELATIVE_LENGTH_PROPS.contains(&prop) {
             bail!(
-                "relative-not-allowed: 属性 \"{prop}\" 不接受相对长度（规范 §7.8 只允许 transform / blur / 效果参数）"
+                "relative-not-allowed: property \"{prop}\" does not accept relative lengths (spec §7.8 only allows transform / blur / effect parameters)"
             );
         }
         let length = motion::preset_registry::manifest::parse_length_value(value)
-            .ok_or_else(|| anyhow!("relative-basis-unresolved: 无法解析长度 {value}"))?;
+            .ok_or_else(|| anyhow!("relative-basis-unresolved: cannot resolve length {value}"))?;
         let px = length.resolve(ctx).map_err(|error| anyhow!("{error}"))?;
         *value = Value::from(px);
         return Ok(());
@@ -4430,7 +4430,7 @@ fn collect_with_audio(node: &RNode, vc: &VisualClip, out: &mut Vec<AudioClip>) -
             if warped || node.time_map.is_some() {
                 if node.loop_media || node.segment.is_some() {
                     bail!(
-                        "schema: 局部合成 withAudio 不与 segment/loop 混用；用独立音轨明确编排循环"
+                        "schema: local composition withAudio cannot be combined with segment/loop; use a separate audio track to arrange the loop explicitly"
                     );
                 }
                 let local: Vec<_> = spans

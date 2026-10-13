@@ -74,7 +74,7 @@ impl Checkpoints {
         let tmp = self.path.with_extension("json.tmp");
         std::fs::write(&tmp, status.to_bytes())
             .and_then(|()| std::fs::rename(&tmp, &self.path))
-            .map_err(|error| Failure::new("STAGING_WRITE_FAILED", format!("检查点写不进 staging：{error}")))
+            .map_err(|error| Failure::new("STAGING_WRITE_FAILED", format!("cannot write the checkpoint to staging: {error}")))
     }
 }
 

@@ -186,7 +186,7 @@ mod tests {
 
     fn error_of(result: Result<Box<dyn TtsEngine>>) -> ErrorBody {
         match result {
-            Ok(_) => panic!("不该加载成功"),
+            Ok(_) => panic!("loading should not have succeeded"),
             Err(error) => error.downcast_ref::<ErrorBody>().expect("ErrorBody").clone(),
         }
     }

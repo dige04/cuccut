@@ -36,7 +36,7 @@ pub struct Comparison {
 pub fn compare(a: &Pixmap, b: &Pixmap) -> Result<Comparison> {
     if (a.width(), a.height()) != (b.width(), b.height()) {
         bail!(
-            "尺寸不一致: {}x{} vs {}x{}",
+            "size mismatch: {}x{} vs {}x{}",
             a.width(),
             a.height(),
             b.width(),
@@ -238,7 +238,7 @@ mod tests {
         let a = solid(8, 8, 0);
         let b = solid(9, 8, 0);
         let error = compare(&a, &b).unwrap_err();
-        assert!(error.to_string().contains("尺寸不一致"), "{error}");
+        assert!(error.to_string().contains("size mismatch"), "{error}");
     }
 
     /// When the image is smaller than the downsampling factor, it neither panics nor produces NaN.

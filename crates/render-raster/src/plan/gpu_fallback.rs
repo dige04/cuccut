@@ -79,11 +79,11 @@ impl fmt::Display for GpuFallbackRecord {
             Some((domain, style)) => {
                 write!(
                     f,
-                    "{}: {domain}.{style} 回退 CPU（{}）",
+                    "{}: {domain}.{style} falls back to CPU ({})",
                     self.reason, self.detail
                 )
             }
-            None => write!(f, "{}: GPU 后端不可用（{}）", self.reason, self.detail),
+            None => write!(f, "{}: GPU backend unavailable ({})", self.reason, self.detail),
         }
     }
 }
@@ -104,7 +104,7 @@ impl GpuBackendReport {
             records: vec![GpuFallbackRecord {
                 target: None,
                 reason: GpuFallbackReason::FeatureDisabled,
-                detail: "本二进制未启用 ccut-render 的 `gpu` feature".to_owned(),
+                detail: "this binary was built without ccut-render's `gpu` feature".to_owned(),
             }],
         }
     }
@@ -149,7 +149,7 @@ mod tests {
         assert_eq!(
             report.records[0].reason.code(),
             "gpu-feature-disabled",
-            "原因码是稳定标识"
+            "reason codes are stable identifiers"
         );
     }
 
@@ -163,11 +163,11 @@ mod tests {
         report.push(
             Some((ShaderDomain::Visualizer, "bars".to_owned())),
             GpuFallbackReason::ShaderMissing,
-            "P5b 才落地",
+            "lands in P5b",
         );
         assert!(!report.is_fully_accelerated());
         let line = &report.lines()[0];
         assert!(line.contains("visualizer.bars"), "{line}");
-        assert!(line.contains("回退 CPU"), "{line}");
+        assert!(line.contains("falls back to CPU"), "{line}");
     }
 }

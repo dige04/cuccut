@@ -231,7 +231,7 @@ fn check_group(state: &VideoState, sequence_id: &str, group: &DuckingGroup, fiel
 fn ramp(text: &str, field: &str) -> EngineResult<MediaTime> {
     let value = editor_semantics::parse_decimal_seconds(text, field)?;
     let (lo, hi) = timeline::duck::DUCK_TIME_RANGE;
-    let max = Ratio::from_int(hi as i128).expect("常量");
+    let max = Ratio::from_int(hi as i128).expect("constant");
     if value.is_negative() || value > max {
         return Err(ErrorBody::invalid_operation(msg!("engine.secondsRange", "{field} must be between {lo} and {hi} seconds", field, lo, hi)).details(json!({ field: text })));
     }

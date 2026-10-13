@@ -269,7 +269,7 @@ mod tests {
             ]}"#]);
         let artifact =
             run_broll_suggest(&doc, &mut llm, &BrollOptions::default(), &mut |_| {}).unwrap();
-        assert_eq!(llm.calls.len(), 1, "不重试整份答案");
+        assert_eq!(llm.calls.len(), 1, "do not retry the whole answer");
         assert_eq!(artifact.suggestions.len(), 1);
         assert_eq!(artifact.suggestions[0].query, "planet Mars orbit");
 

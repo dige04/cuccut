@@ -388,7 +388,7 @@ fn master_store(
         for v in &mut x {
             *v = v.clamp(-1.0, 1.0);
         }
-        out(&x).context("写出母带后的混音")?;
+        out(&x).context("writing the mix after mastering")?;
     }
     Ok(MasterMeasure {
         input_lufs: input_lufs.unwrap_or(SILENCE_LUFS),

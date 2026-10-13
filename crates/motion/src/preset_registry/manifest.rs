@@ -534,7 +534,7 @@ pub fn parse_manifest(
             .is_some_and(|params| params.contains_key("dur"))
         {
             return Err(MotionError::ManifestInvalid(format!(
-                "{file}: ops 体里的 \"{{dur}}\" 是隐式绑定（引用点时长），不得再声明同名参数"
+                "{file}: \"{{dur}}\" in the ops body is an implicit binding (the reference point's duration) and must not be declared again as a parameter"
             )));
         }
     }
@@ -653,12 +653,12 @@ pub fn parse_manifest(
 fn reject_preset_ops(file: &str, op: &Value) -> Result<(), MotionError> {
     let Some(map) = op.as_object() else {
         return Err(MotionError::ManifestInvalid(format!(
-            "{file}: ops[] 元素不是对象"
+            "{file}: ops[] item is not an object"
         )));
     };
     if map.get("op").and_then(Value::as_str) == Some("preset") {
         return Err(MotionError::ManifestInvalid(format!(
-            "{file}: ops 体不接受 \"preset\" op（配方不得经 ops 递归引用配方）"
+            "{file}: the ops body does not accept a \"preset\" op (a recipe must not reference recipes recursively through ops)"
         )));
     }
     if let Some(items) = map.get("items").and_then(Value::as_array) {

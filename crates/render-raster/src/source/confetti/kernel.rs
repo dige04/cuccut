@@ -360,7 +360,7 @@ mod tests {
         assert_eq!(
             a,
             splitmix64_unit(1, 0),
-            "纯函数：同一 (seed, k) 恒得同一值"
+            "pure function: the same (seed, k) always yields the same value"
         );
         // seed 0 / k 0 is a known vector: z = 0, which is still 0 after the two rounds of mixing.
         assert_eq!(splitmix64_unit(0, 0), 0.0);
@@ -418,7 +418,7 @@ mod tests {
                 let t0 = spawn_at(&e, 9, i, None, life).unwrap();
                 let alive = t0 <= t && t - t0 < life;
                 if alive {
-                    assert!(i >= lo && i <= hi, "t={t} i={i} 在窗口 [{lo},{hi}] 之外");
+                    assert!(i >= lo && i <= hi, "t={t} i={i} is outside the window [{lo},{hi}]");
                 }
             }
         }

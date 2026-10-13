@@ -414,14 +414,14 @@ fn strip_markup(line: &str) -> String {
 
 fn parse_json(text: &str) -> Result<Vec<ScriptLine>, String> {
     let value: Value =
-        serde_json::from_str(text).map_err(|error| format!("JSON 文稿解析失败：{error}"))?;
+        serde_json::from_str(text).map_err(|error| format!("Failed to parse JSON script: {error}"))?;
     let items = match &value {
         Value::Array(items) => items,
         Value::Object(map) => ["lines", "segments", "cues"]
             .iter()
             .find_map(|key| map.get(*key).and_then(Value::as_array))
-            .ok_or("JSON 文稿要么是数组，要么带 lines / segments / cues 数组")?,
-        _ => return Err("JSON 文稿要么是数组，要么带 lines / segments / cues 数组".into()),
+            .ok_or("JSON script must be an array, or an object with a lines / segments / cues array")?,
+        _ => return Err("JSON script must be an array, or an object with a lines / segments / cues array".into()),
     };
     let mut lines = Vec::new();
     for (index, item) in items.iter().enumerate() {
@@ -458,7 +458,7 @@ fn parse_json(text: &str) -> Result<Vec<ScriptLine>, String> {
                 if let (Some(start), Some(end)) = (start, end)
                     && end < start
                 {
-                    return Err(format!("JSON 文稿第 {} 行终点早于起点", index + 1));
+                    return Err(format!("JSON script line {} ends before it starts", index + 1));
                 }
                 lines.push(ScriptLine {
                     text,
@@ -469,7 +469,7 @@ fn parse_json(text: &str) -> Result<Vec<ScriptLine>, String> {
             }
             _ => {
                 return Err(format!(
-                    "JSON 文稿第 {} 项既不是字符串也不是对象",
+                    "JSON script item {} is neither a string nor an object",
                     index + 1
                 ));
             }

@@ -87,18 +87,18 @@ fn one() -> f64 {
 
 impl TranslateInput {
     pub fn load(path: &Path) -> Result<TranslateInput, Failure> {
-        let bytes = std::fs::read(path).map_err(|error| Failure::new("INPUT_UNREADABLE", format!("读不了冻结的输入：{error}")))?;
+        let bytes = std::fs::read(path).map_err(|error| Failure::new("INPUT_UNREADABLE", format!("cannot read the frozen input: {error}")))?;
         let input: TranslateInput =
-            serde_json::from_slice(&bytes).map_err(|error| Failure::new("INPUT_UNREADABLE", format!("冻结的输入不合格式：{error}")))?;
+            serde_json::from_slice(&bytes).map_err(|error| Failure::new("INPUT_UNREADABLE", format!("the frozen input is malformed: {error}")))?;
         if input.schema != INPUT_SCHEMA {
-            return Err(Failure::new("INPUT_UNREADABLE", format!("冻结的输入的 schema 应为 {INPUT_SCHEMA}")));
+            return Err(Failure::new("INPUT_UNREADABLE", format!("the frozen input schema must be {INPUT_SCHEMA}")));
         }
         let lang = &input.target_language;
         if lang.is_empty() || lang.len() > 35 || !lang.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-') {
-            return Err(Failure::new("INPUT_UNREADABLE", format!("目标语言不是 BCP 47 标签：{lang}")));
+            return Err(Failure::new("INPUT_UNREADABLE", format!("the target language is not a BCP 47 tag: {lang}")));
         }
         if !(input.params.backoff_scale >= 0.0 && input.params.backoff_scale.is_finite()) {
-            return Err(Failure::new("INPUT_UNREADABLE", "params.backoffScale 应为非负数"));
+            return Err(Failure::new("INPUT_UNREADABLE", "params.backoffScale must be non-negative"));
         }
         match (&input.translation, &input.sentences) {
             (None, None) => {}
@@ -106,14 +106,14 @@ impl TranslateInput {
                 if base.language != input.target_language {
                     return Err(Failure::new(
                         "INPUT_UNREADABLE",
-                        format!("底稿译文的语言 {} 与目标语言 {lang} 不同", base.language),
+                        format!("the base translation language {} differs from the target language {lang}", base.language),
                     ));
                 }
                 if sentences.is_empty() {
-                    return Err(Failure::new("INPUT_UNREADABLE", "就地刷新至少要给一句"));
+                    return Err(Failure::new("INPUT_UNREADABLE", "in-place refresh needs at least one sentence"));
                 }
             }
-            _ => return Err(Failure::new("INPUT_UNREADABLE", "translation 与 sentences 要一起给")),
+            _ => return Err(Failure::new("INPUT_UNREADABLE", "translation and sentences must be given together")),
         }
         Ok(input)
     }

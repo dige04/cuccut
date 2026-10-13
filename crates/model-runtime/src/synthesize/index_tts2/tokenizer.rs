@@ -57,7 +57,7 @@ impl Tokenizer {
 
     pub fn from_pieces(pieces: Vec<Piece>) -> Result<Self> {
         if pieces.is_empty() {
-            bail!("IndexTTS2 分词器词表为空");
+            bail!("IndexTTS2 tokenizer vocabulary is empty");
         }
         let mut token_to_id = HashMap::with_capacity(pieces.len());
         for (index, piece) in pieces.iter().enumerate() {
@@ -126,7 +126,7 @@ impl Tokenizer {
         }
         let scalars: Vec<char> = normalized.chars().collect();
         if scalars.len() > Self::MAX_INPUT_SCALARS {
-            bail!("IndexTTS2 分词输入过长：最多 {} 个 Unicode 标量", Self::MAX_INPUT_SCALARS);
+            bail!("IndexTTS2 tokenizer input is too long: at most {} Unicode scalars", Self::MAX_INPUT_SCALARS);
         }
 
         let n = scalars.len();
@@ -168,7 +168,7 @@ impl Tokenizer {
         }
 
         if !best_scores[n].is_finite() {
-            bail!("IndexTTS2 分词器无法编码文本：{text}");
+            bail!("IndexTTS2 tokenizer cannot encode text: {text}");
         }
 
         let mut ids: Vec<usize> = Vec::new();
@@ -298,7 +298,7 @@ pub(crate) fn rewrite_punctuation(text: &str) -> String {
                 continue 'outer;
             }
         }
-        let c = rest.chars().next().expect("非空");
+        let c = rest.chars().next().expect("non-empty");
         output.push(c);
         rest = &rest[c.len_utf8()..];
     }
@@ -437,7 +437,7 @@ mod tests {
         let pieces: Vec<String> = t.tokenize(&rendered.text).unwrap().into_iter().map(|token| token.piece).collect();
         assert!(pieces.contains(&"▁XING2".to_owned()), "{pieces:?}");
         assert!(pieces.contains(&"绿".to_owned()), "{pieces:?}");
-        assert!(!pieces.iter().any(|p| p == "2"), "声调数字没被拆开：{pieces:?}");
+        assert!(!pieces.iter().any(|p| p == "2"), "tone digit was not split: {pieces:?}");
     }
 
     #[test]

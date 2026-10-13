@@ -41,7 +41,7 @@ impl WhisperGgml {
     /// Same as [`Self::load`], but uses `device` when given (when the model pack's device is `cpu`, pass the CPU device).
     pub fn load_on(weights: &Path, device: Option<GgmlDevice>) -> Result<Self> {
         if !weights.is_file() {
-            bail!("Whisper GGML 权重不存在：{}", weights.display());
+            bail!("Whisper GGML weights do not exist: {}", weights.display());
         }
         // whisper.cpp / ggml sends its loading logs straight to stderr by default; install a hook once to suppress them,
         // keeping only our own one-line device log.
@@ -50,7 +50,7 @@ impl WhisperGgml {
         let mut params = WhisperContextParameters::default();
         params.use_gpu(device.is_gpu);
         let context =
-            WhisperContext::new_with_params(weights, params).with_context(|| format!("加载 Whisper GGML 权重 {}", weights.display()))?;
+            WhisperContext::new_with_params(weights, params).with_context(|| format!("load Whisper GGML weights {}", weights.display()))?;
         let threads = std::thread::available_parallelism()
             .map(|n| n.get())
             .unwrap_or(4)
@@ -120,15 +120,15 @@ impl WhisperGgml {
             params.set_abort_callback_safe(move || flag.load(Ordering::Relaxed));
         }
 
-        let mut state = self.context.create_state().context("创建 whisper.cpp 解码状态")?;
-        state.full(params, audio).context("whisper.cpp 解码失败")?;
+        let mut state = self.context.create_state().context("create whisper.cpp decoding state")?;
+        state.full(params, audio).context("whisper.cpp decoding failed")?;
         if self.cancel.as_ref().is_some_and(|flag| flag.load(Ordering::Relaxed)) {
-            bail!("转录已取消");
+            bail!("transcription cancelled");
         }
 
         let mut pieces = Vec::new();
         for segment in state.as_iter() {
-            let text = segment.to_str_lossy().context("读取 whisper.cpp 段文本")?;
+            let text = segment.to_str_lossy().context("read whisper.cpp segment text")?;
             let text = text.trim();
             if !text.is_empty() {
                 pieces.push(text.to_owned());
@@ -217,7 +217,7 @@ mod tests {
             Ok(_) => panic!("missing weights must fail"),
             Err(error) => error,
         };
-        assert!(format!("{error:#}").contains("不存在"));
+        assert!(format!("{error:#}").contains("do not exist"));
     }
 
     /// End-to-end runs with weights are only done manually on a real device: `CUCCUT_WHISPER_GGML=/path/ggml-large-v3-turbo-q8_0.bin`.

@@ -10,7 +10,7 @@ use std::path::Path;
 /// Writes stereo f32 PCM as a 16-bit PCM WAV. Samples outside [-1, 1] are clipped.
 pub fn write_wav_stereo_pcm16(path: &Path, audio: &StereoAudio) -> Result<()> {
     let bytes = encode_wav_stereo_pcm16(audio)?;
-    let mut file = std::fs::File::create(path).with_context(|| format!("无法创建 WAV：{}", path.display()))?;
+    let mut file = std::fs::File::create(path).with_context(|| format!("cannot create WAV: {}", path.display()))?;
     file.write_all(&bytes)?;
     file.flush()?;
     Ok(())
@@ -19,7 +19,7 @@ pub fn write_wav_stereo_pcm16(path: &Path, audio: &StereoAudio) -> Result<()> {
 /// Encodes stereo 16-bit PCM WAV in memory.
 pub fn encode_wav_stereo_pcm16(audio: &StereoAudio) -> Result<Vec<u8>> {
     if audio.left.len() != audio.right.len() {
-        bail!("左右声道长度不一致：{} / {}", audio.left.len(), audio.right.len());
+        bail!("left and right channels have different lengths: {} / {}", audio.left.len(), audio.right.len());
     }
     Ok(encode_wav_stereo_i16(audio.sample_rate, &interleave_pcm16(audio)))
 }
@@ -69,7 +69,7 @@ pub fn encode_wav_stereo_i16(sample_rate: u32, interleaved: &[i16]) -> Vec<u8> {
 /// Writes the output of [`encode_wav_stereo_i16`] to a file.
 pub fn write_wav_stereo_i16(path: &Path, sample_rate: u32, interleaved: &[i16]) -> Result<()> {
     let bytes = encode_wav_stereo_i16(sample_rate, interleaved);
-    let mut file = std::fs::File::create(path).with_context(|| format!("无法创建 WAV：{}", path.display()))?;
+    let mut file = std::fs::File::create(path).with_context(|| format!("cannot create WAV: {}", path.display()))?;
     file.write_all(&bytes)?;
     file.flush()?;
     Ok(())
@@ -77,13 +77,13 @@ pub fn write_wav_stereo_i16(path: &Path, sample_rate: u32, interleaved: &[i16]) 
 
 /// Reads WAV (16-bit PCM or 32-bit float, 1 or 2 channels); mono is duplicated into left and right.
 pub fn read_wav(path: &Path) -> Result<StereoAudio> {
-    let bytes = std::fs::read(path).with_context(|| format!("无法读取 WAV：{}", path.display()))?;
+    let bytes = std::fs::read(path).with_context(|| format!("cannot read WAV: {}", path.display()))?;
     decode_wav(&bytes)
 }
 
 pub fn decode_wav(bytes: &[u8]) -> Result<StereoAudio> {
     if bytes.len() < 12 || &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
-        bail!("不是 RIFF/WAVE 文件");
+        bail!("not a RIFF/WAVE file");
     }
     let mut cursor = 12;
     let mut format = 0u16;
@@ -100,7 +100,7 @@ pub fn decode_wav(bytes: &[u8]) -> Result<StereoAudio> {
         match id {
             b"fmt " => {
                 if body.len() < 16 {
-                    bail!("fmt 块过短");
+                    bail!("fmt chunk is too short");
                 }
                 format = u16::from_le_bytes(body[0..2].try_into()?);
                 channels = u16::from_le_bytes(body[2..4].try_into()?);
@@ -119,12 +119,12 @@ pub fn decode_wav(bytes: &[u8]) -> Result<StereoAudio> {
         }
         cursor = body_start + size + (size & 1);
     }
-    let data = data.context("WAV 缺少 data 块")?;
+    let data = data.context("WAV is missing the data chunk")?;
     if !(channels == 1 || channels == 2) {
-        bail!("只支持 1 或 2 声道 WAV，实际 {channels}");
+        bail!("only 1- or 2-channel WAV is supported, found {channels}");
     }
     if sample_rate == 0 {
-        bail!("WAV 采样率为 0");
+        bail!("WAV sample rate is 0");
     }
     let interleaved: Vec<f32> = match (format, bits) {
         (1, 16) => data
@@ -132,7 +132,7 @@ pub fn decode_wav(bytes: &[u8]) -> Result<StereoAudio> {
             .map(|c| f32::from(i16::from_le_bytes([c[0], c[1]])) / 32768.0)
             .collect(),
         (3, 32) => data.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect(),
-        _ => bail!("只支持 16-bit PCM 或 32-bit float WAV，实际 format {format} / {bits} bit"),
+        _ => bail!("only 16-bit PCM or 32-bit float WAV is supported, found format {format} / {bits} bit"),
     };
     let (left, right) = if channels == 1 {
         (interleaved.clone(), interleaved)
@@ -181,7 +181,7 @@ mod tests {
         assert_eq!(
             encode_wav_stereo_pcm16(&audio).unwrap(),
             encode_wav_stereo_i16(48_000, &interleave_pcm16(&audio)),
-            "f32 与 i16 两条写法同一份字节"
+            "f32 and i16 encodings should produce the same bytes"
         );
     }
 

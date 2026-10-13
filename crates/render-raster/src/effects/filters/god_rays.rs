@@ -151,9 +151,9 @@ mod tests {
         god_rays(&mut data, size, size, &params());
         let red = |x: usize, y: usize| data[(y * size + x) * 4];
         // The area below the bright block (away from the light source) is lit. The area above it (the light-source side) and the sides stay dark.
-        assert!(red(48, 40) > 10, "下方应有光柱：{}", red(48, 40));
-        assert!(red(48, 40) > red(48, 60), "光柱应随距离衰减");
-        assert_eq!(red(48, 12), 0, "光源一侧不应有光");
-        assert_eq!(red(20, 40), 0, "侧面不应有光");
+        assert!(red(48, 40) > 10, "there should be a light shaft below: {}", red(48, 40));
+        assert!(red(48, 40) > red(48, 60), "the light shaft should fade with distance");
+        assert_eq!(red(48, 12), 0, "there should be no light on the source side");
+        assert_eq!(red(20, 40), 0, "there should be no light at the sides");
     }
 }

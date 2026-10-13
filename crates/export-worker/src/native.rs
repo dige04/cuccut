@@ -65,7 +65,7 @@ pub fn decode_unavailable() -> Option<(&'static str, String)> {
         return Some(("native-disabled", format!("{NATIVE_ENV}=0")));
     }
     if !media_native::available() {
-        return Some(("native-unavailable", "当前平台没有原生解码后端".into()));
+        return Some(("native-unavailable", "no native decoding backend on this platform".into()));
     }
     None
 }
@@ -109,11 +109,11 @@ pub fn choose_encoder(settings: &EncodeSettings) -> EncoderPlan {
     let audio_ok = |path: &Path| match media_native::read_wav_layout(path) {
         Ok(layout) if layout.is_native_pcm() => Ok(()),
         Ok(layout) => Err(format!(
-            "混音是 {} Hz、{} 声道、{} 位{}，原生写入器只收 48000 Hz 立体声、32 位浮点或 16/24/32 位整数",
+            "mix is {} Hz, {} channels, {}-bit {}; the native writer only accepts 48000 Hz stereo, 32-bit float, or 16/24/32-bit integer",
             layout.sample_rate,
             layout.channels,
             layout.bits_per_sample,
-            if layout.float { "浮点" } else { "整数" }
+            if layout.float { "float" } else { "integer" }
         )),
         Err(_) if !path.exists() => Ok(()),
         Err(e) => Err(format!("{e:#}")),
@@ -132,25 +132,25 @@ fn choose_encoder_with(
         return fallback("native-disabled", format!("{NATIVE_ENV}=0"));
     }
     if !available {
-        return fallback("native-unavailable", "当前平台没有原生编码后端".into());
+        return fallback("native-unavailable", "no native encoding backend on this platform".into());
     }
     if settings.codec != VideoCodec::H264 {
-        return fallback("codec", format!("原生写入器只编 H.264，要的是 {}", settings.codec.name()));
+        return fallback("codec", format!("the native writer only encodes H.264, requested {}", settings.codec.name()));
     }
     if settings.container != Container::Mp4 {
-        return fallback("container", "原生写入器只写 MP4".into());
+        return fallback("container", "the native writer only writes MP4".into());
     }
     if !settings.width.is_multiple_of(2) || !settings.height.is_multiple_of(2) {
-        return fallback("odd-size", format!("{}×{} 不是偶数尺寸", settings.width, settings.height));
+        return fallback("odd-size", format!("{}×{} is not an even size", settings.width, settings.height));
     }
     let (Ok(fps_num), Ok(fps_den)) = (u32::try_from(settings.fps_num), u32::try_from(settings.fps_den)) else {
         return fallback(
             "frame-rate",
-            format!("帧率 {}/{} 超出原生写入器的范围", settings.fps_num, settings.fps_den),
+            format!("frame rate {}/{} is outside the native writer's range", settings.fps_num, settings.fps_den),
         );
     };
     if fps_num == 0 || fps_den == 0 {
-        return fallback("frame-rate", format!("帧率 {fps_num}/{fps_den} 不对"));
+        return fallback("frame-rate", format!("frame rate {fps_num}/{fps_den} is invalid"));
     }
     let audio = match &settings.audio {
         None => None,
@@ -209,19 +209,19 @@ impl FrameSink for NativeSink {
         let writer = self
             .writer
             .as_mut()
-            .ok_or_else(|| MediaError::new("EXPORT_ENCODE_FAILED", "编码器已关闭"))?;
+            .ok_or_else(|| MediaError::new("EXPORT_ENCODE_FAILED", "encoder is closed"))?;
         writer
             .write_frame(rgba)
-            .map_err(|e| MediaError::new("EXPORT_ENCODE_FAILED", format!("原生编码失败：{e:#}")))
+            .map_err(|e| MediaError::new("EXPORT_ENCODE_FAILED", format!("native encoding failed: {e:#}")))
     }
 
     fn finish(mut self: Box<Self>) -> Result<(), MediaError> {
         let Some(writer) = self.writer.take() else {
-            return Err(MediaError::new("EXPORT_ENCODE_FAILED", "编码器已关闭"));
+            return Err(MediaError::new("EXPORT_ENCODE_FAILED", "encoder is closed"));
         };
         writer.finish().map_err(|e| {
             self.remove_output();
-            MediaError::new("EXPORT_ENCODE_FAILED", format!("原生编码收尾失败：{e:#}"))
+            MediaError::new("EXPORT_ENCODE_FAILED", format!("native encoding finalization failed: {e:#}"))
         })
     }
 
@@ -265,7 +265,7 @@ mod tests {
     fn h264_mp4_with_even_size_and_native_pcm_goes_native() {
         let plan = choose_encoder_with(&settings(), true, true, |_| Ok(()));
         let EncoderPlan::Native(options) = plan else {
-            panic!("应当走原生：{plan:?}")
+            panic!("should take the native path: {plan:?}")
         };
         assert_eq!(
             (options.width, options.height, options.fps_num, options.fps_den),
@@ -273,7 +273,7 @@ mod tests {
         );
         let fps = 30000.0 / 1001.0;
         assert_eq!(options.video_bitrate, Some(media_native::crf_bitrate(1920, 1080, fps, 20)));
-        let audio = options.audio.expect("有声音");
+        let audio = options.audio.expect("has audio");
         assert_eq!(
             (audio.bitrate, audio.format, audio.duration_seconds),
             (192_000, PcmFormat::Wav, Some(2.5))
@@ -283,7 +283,7 @@ mod tests {
         fixed.quality = Quality::BitrateKbps(6000);
         fixed.audio = None;
         let EncoderPlan::Native(options) = choose_encoder_with(&fixed, true, true, |_| Ok(())) else {
-            panic!("应当走原生")
+            panic!("should take the native path")
         };
         assert_eq!((options.video_bitrate, options.audio), (Some(6_000_000), None));
     }

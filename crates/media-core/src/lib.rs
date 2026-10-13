@@ -51,9 +51,9 @@ impl MediaError {
 
     pub(crate) fn spawn(tool: &std::path::Path, error: std::io::Error) -> MediaError {
         if error.kind() == std::io::ErrorKind::NotFound {
-            MediaError::new("EXPORT_TOOL_MISSING", format!("找不到 {}", tool.display()))
+            MediaError::new("EXPORT_TOOL_MISSING", format!("cannot find {}", tool.display()))
         } else {
-            MediaError::new("EXPORT_TOOL_MISSING", format!("启动 {} 失败：{error}", tool.display()))
+            MediaError::new("EXPORT_TOOL_MISSING", format!("failed to start {}: {error}", tool.display()))
         }
     }
 }

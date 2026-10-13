@@ -28,7 +28,7 @@ fn new_video(dir: &Path) -> Video {
         width: 1920,
         height: 1080,
     };
-    Video::create(dir, &options, &ffprobe()).expect("新建视频")
+    Video::create(dir, &options, &ffprobe()).expect("create the video")
 }
 
 fn apply(video: &mut Video, command_id: &str, operations: Vec<Value>) -> Result<video_engine::Committed, ErrorBody> {
@@ -166,7 +166,7 @@ fn a_clip_sharing_its_track_is_split_out_to_a_new_adjacent_track() {
 
     // Move forward one layer: the text is split onto a new V3 created above V1, and the tracks above shift up one; the graphic stays on V1.
     let committed = arrange(&mut f.video, "cmd_forward", &f.text, "forward").unwrap();
-    assert_eq!(committed.receipt.created_ids.len(), 1, "新建了一条轨道");
+    assert_eq!(committed.receipt.created_ids.len(), 1, "created one track");
     let v3 = committed.receipt.created_ids[0].clone();
     assert_eq!(track_of(&f.video, &f.text), v3);
     assert_eq!(track_of(&f.video, &f.shape), v1);
@@ -183,7 +183,7 @@ fn a_clip_sharing_its_track_is_split_out_to_a_new_adjacent_track() {
     assert!(committed.receipt.updated_ids.contains(&f.text));
     assert!(
         committed.receipt.updated_ids.contains(&a1) && committed.receipt.updated_ids.contains(&v2),
-        "让位的轨道列在 updatedIds"
+        "tracks that made room are listed in updatedIds"
     );
 
     // Undo: the track is gone, the text returns to V1, and order is restored.

@@ -35,14 +35,14 @@ impl Conv1d {
     fn load(weights: &mut Weights, prefix: &str, in_channels: i32, padding: i32, dilation: i32) -> Result<Self> {
         let raw = weights.take(&format!("{prefix}.weight"))?;
         if raw.ndim() != 3 {
-            bail!("{prefix}.weight 不是三维卷积核：{:?}", raw.shape());
+            bail!("{prefix}.weight is not a 3-D convolution kernel: {:?}", raw.shape());
         }
         let weight = if raw.dim(2) == in_channels {
             raw
         } else if raw.dim(1) == in_channels {
             raw.transpose_axes(&[0, 2, 1])?
         } else {
-            bail!("{prefix}.weight 形状 {:?} 与输入通道 {in_channels} 不符", raw.shape());
+            bail!("{prefix}.weight shape {:?} does not match input channels {in_channels}", raw.shape());
         };
         let weight = weight.as_dtype(Dtype::Float32)?;
         let bias = weights

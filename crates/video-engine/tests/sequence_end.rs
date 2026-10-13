@@ -26,7 +26,7 @@ fn new_video(dir: &Path) -> Video {
         width: 1920,
         height: 1080,
     };
-    Video::create(dir, &options, &ffprobe()).expect("新建视频")
+    Video::create(dir, &options, &ffprobe()).expect("create the video")
 }
 
 fn apply_guarded(video: &mut Video, command_id: &str, operations: Vec<Value>, guard: &[TaskProtection]) -> Result<Committed, ErrorBody> {
@@ -47,7 +47,7 @@ fn apply(video: &mut Video, command_id: &str, operations: Vec<Value>) -> Result<
 }
 
 fn frames_of(video: &Video, id: &str) -> (i64, i64) {
-    let span = video.state().items[id].value.span().expect("帧网格上的实例");
+    let span = video.state().items[id].value.span().expect("item on the frame grid");
     (span.from_frame, span.end_frame())
 }
 
@@ -145,7 +145,7 @@ fn the_open_end_follows_the_latest_other_item() {
     assert_eq!(frames_of(&video, &open[0]), (0, 150));
     assert_eq!(frames_of(&video, &open[1]), (60, 150));
     assert_eq!(shortened.receipt.impact.new_duration_frames, 150);
-    assert!(shortened.receipt.updated_ids.contains(&open[0]), "回执列出跟着变的实例");
+    assert!(shortened.receipt.updated_ids.contains(&open[0]), "the receipt lists the items that changed with it");
 
     trim_end(&mut video, "cmd_long", &main, 240).unwrap();
     assert_eq!(frames_of(&video, &open[0]), (0, 240));
@@ -278,7 +278,7 @@ fn clip() -> Option<(tempfile::TempDir, PathBuf)> {
         .output()
         .is_ok_and(|o| o.status.success());
     if !ok {
-        eprintln!("跳过：没有可用的 ffmpeg 生成测试素材");
+        eprintln!("skipping: no usable ffmpeg to generate test media");
         return None;
     }
     Some((dir, path))
@@ -329,7 +329,7 @@ fn an_open_video_stops_at_the_end_of_its_source() {
     assert_eq!(
         frames_of(&video, &open[0]),
         (100, 360),
-        "主内容短于素材时，终点是序列里其余实例的终点（这里是 12 秒的原片）"
+        "when the main content is shorter than the material, the end is the end of the other items in the sequence (here the 12-second original)"
     );
 }
 

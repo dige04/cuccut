@@ -36,7 +36,7 @@ pub fn bloom(
     let mut pyramid: Vec<(Vec<Px>, usize, usize)> = Vec::with_capacity(levels);
     pyramid.push(downsample_bright(data, width, height, threshold, knee));
     while pyramid.len() < levels {
-        let (prev, w, h) = pyramid.last().expect("至少一级");
+        let (prev, w, h) = pyramid.last().expect("at least one level");
         if *w == 1 && *h == 1 {
             // Already shrunk to 1×1: further downsampling is pointless, so the last level is computed at full weight.
             last_weight = 1.0;
@@ -52,7 +52,7 @@ pub fn bloom(
 
     // Upsample chain: b_{n-1} = w·a_{n-1}; b_i = a_i + up(b_{i+1}).
     {
-        let (deepest, _, _) = pyramid.last_mut().expect("至少一级");
+        let (deepest, _, _) = pyramid.last_mut().expect("at least one level");
         if last_weight != 1.0 {
             for px in deepest.iter_mut() {
                 for c in px.iter_mut() {
@@ -271,6 +271,6 @@ mod tests {
             .map(|(x, y)| (i16::from(*x) - i16::from(*y)).abs())
             .max()
             .unwrap();
-        assert!(max_delta <= 3, "跨级跳变 {max_delta}");
+        assert!(max_delta <= 3, "jump across levels {max_delta}");
     }
 }

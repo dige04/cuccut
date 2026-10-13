@@ -40,10 +40,10 @@ pub enum DecodeError {
 impl std::fmt::Display for DecodeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NoAudioTrack => f.write_str("素材没有所选的音轨"),
-            Self::InputUnreadable(detail) => write!(f, "输入不可读：{detail}"),
-            Self::DecodeFailed(detail) => write!(f, "解码失败：{detail}"),
-            Self::Cancelled => f.write_str("解码已取消"),
+            Self::NoAudioTrack => f.write_str("the media has no selected audio track"),
+            Self::InputUnreadable(detail) => write!(f, "input is unreadable: {detail}"),
+            Self::DecodeFailed(detail) => write!(f, "decode failed: {detail}"),
+            Self::Cancelled => f.write_str("decode cancelled"),
         }
     }
 }
@@ -78,9 +78,9 @@ pub fn decode_to_file(
     progress: &mut dyn FnMut(f64),
 ) -> Result<u64, DecodeError> {
     if !request.file.is_file() {
-        return Err(DecodeError::InputUnreadable("文件不存在".into()));
+        return Err(DecodeError::InputUnreadable("file does not exist".into()));
     }
-    let out = File::create(output).map_err(|e| DecodeError::DecodeFailed(format!("无法写解码缓存：{e}")))?;
+    let out = File::create(output).map_err(|e| DecodeError::DecodeFailed(format!("cannot write decode cache: {e}")))?;
     let mut sink = PcmSink::new(BufWriter::new(out), progress);
     let is_wav = request
         .file
@@ -117,7 +117,7 @@ impl<'a> PcmSink<'a> {
         debug_assert!(bytes.len().is_multiple_of(4));
         self.out
             .write_all(bytes)
-            .map_err(|e| DecodeError::DecodeFailed(format!("无法写解码缓存：{e}")))?;
+            .map_err(|e| DecodeError::DecodeFailed(format!("cannot write decode cache: {e}")))?;
         self.samples += (bytes.len() / 4) as u64;
         self.tick();
         Ok(())
@@ -142,7 +142,7 @@ impl<'a> PcmSink<'a> {
     fn finish(mut self) -> Result<u64, DecodeError> {
         self.out
             .flush()
-            .map_err(|e| DecodeError::DecodeFailed(format!("无法写解码缓存：{e}")))?;
+            .map_err(|e| DecodeError::DecodeFailed(format!("cannot write decode cache: {e}")))?;
         (self.progress)(self.samples as f64 / f64::from(SAMPLE_RATE));
         Ok(self.samples)
     }
@@ -168,7 +168,7 @@ fn decode_wav(
     let mut remaining = wanted.min(total_frames - first);
     reader
         .seek(first as u32)
-        .map_err(|e| DecodeError::InputUnreadable(format!("WAV 无法定位：{e}")))?;
+        .map_err(|e| DecodeError::InputUnreadable(format!("cannot seek in WAV: {e}")))?;
     let scale = match spec.sample_format {
         hound::SampleFormat::Float => 1.0,
         hound::SampleFormat::Int => 1.0 / (1_u64 << (spec.bits_per_sample.clamp(1, 32) - 1)) as f32,
@@ -185,7 +185,7 @@ fn decode_wav(
                     match samples.next() {
                         Some(Ok(sample)) => frame.push(sample as f32 * scale),
                         Some(Err(e)) => {
-                            let detail = format!("WAV 读取失败：{e}");
+                            let detail = format!("failed to read WAV: {e}");
                             return Err(if decoded_any {
                                 DecodeError::DecodeFailed(detail)
                             } else {
@@ -272,7 +272,7 @@ fn ffmpeg_args_with(request: &DecodeRequest<'_>, sample_rate: u32, channels: u16
 /// Only the first audio track is taken, for the whole clip, with no progress reporting.
 pub fn decode_mono(path: &Path, sample_rate: u32) -> Result<Vec<f32>, DecodeError> {
     if !path.is_file() {
-        return Err(DecodeError::InputUnreadable("文件不存在".into()));
+        return Err(DecodeError::InputUnreadable("file does not exist".into()));
     }
     let is_wav = path
         .extension()
@@ -287,7 +287,7 @@ pub fn decode_mono(path: &Path, sample_rate: u32) -> Result<Vec<f32>, DecodeErro
         None => decode_ffmpeg_to_memory(path, sample_rate)?,
     };
     if samples.is_empty() {
-        return Err(DecodeError::InputUnreadable("没有解出任何样本".into()));
+        return Err(DecodeError::InputUnreadable("no samples were decoded".into()));
     }
     Ok(samples)
 }
@@ -306,7 +306,7 @@ fn read_wav_mono(mut reader: hound::WavReader<std::io::BufReader<File>>) -> Resu
                 .collect()
         }
     };
-    let interleaved = interleaved.map_err(|e| DecodeError::InputUnreadable(format!("WAV 读取失败：{e}")))?;
+    let interleaved = interleaved.map_err(|e| DecodeError::InputUnreadable(format!("failed to read WAV: {e}")))?;
     Ok(interleaved
         .chunks_exact(channels)
         .map(|frame| frame.iter().sum::<f32>() / channels as f32)
@@ -326,7 +326,7 @@ pub struct StereoPcm {
 /// Mono or stereo PCM / float WAV (track 0) goes through hound and keeps its original sample rate; other formats use the same restricted ffmpeg arguments as [`decode_to_file`], outputting two channels at `fallback_rate` (mono assets are duplicated into two channels; multichannel assets are downmixed to two channels by ffmpeg).
 pub fn decode_stereo(path: &Path, track: u32, fallback_rate: u32) -> Result<StereoPcm, DecodeError> {
     if !path.is_file() {
-        return Err(DecodeError::InputUnreadable("文件不存在".into()));
+        return Err(DecodeError::InputUnreadable("file does not exist".into()));
     }
     let is_wav = path
         .extension()
@@ -354,7 +354,7 @@ pub fn decode_stereo(path: &Path, track: u32, fallback_rate: u32) -> Result<Ster
         }
     };
     if pcm.left.is_empty() {
-        return Err(DecodeError::InputUnreadable("没有解出任何样本".into()));
+        return Err(DecodeError::InputUnreadable("no samples were decoded".into()));
     }
     Ok(pcm)
 }
@@ -372,7 +372,7 @@ fn read_wav_stereo(mut reader: hound::WavReader<std::io::BufReader<File>>) -> Re
                 .collect()
         }
     };
-    let interleaved = interleaved.map_err(|e| DecodeError::InputUnreadable(format!("WAV 读取失败：{e}")))?;
+    let interleaved = interleaved.map_err(|e| DecodeError::InputUnreadable(format!("failed to read WAV: {e}")))?;
     let (left, right) = if spec.channels == 1 {
         (interleaved.clone(), interleaved)
     } else {
@@ -401,7 +401,7 @@ fn run_ffmpeg_to_memory(request: &DecodeRequest<'_>, sample_rate: u32, channels:
         .args(ffmpeg_args_with(request, sample_rate, channels))
         .stdin(Stdio::null())
         .output()
-        .map_err(|e| DecodeError::DecodeFailed(format!("无法启动 ffmpeg：{e}")))?;
+        .map_err(|e| DecodeError::DecodeFailed(format!("cannot start ffmpeg: {e}")))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         if stderr.contains("matches no streams") {
@@ -409,7 +409,7 @@ fn run_ffmpeg_to_memory(request: &DecodeRequest<'_>, sample_rate: u32, channels:
         }
         let tail: String = stderr.trim().lines().last().unwrap_or("").chars().take(400).collect();
         return Err(DecodeError::InputUnreadable(format!(
-            "ffmpeg 退出码 {}：{tail}",
+            "ffmpeg exited with code {}: {tail}",
             output.status.code().unwrap_or(-1)
         )));
     }
@@ -427,7 +427,7 @@ fn decode_ffmpeg(request: &DecodeRequest<'_>, sink: &mut PcmSink<'_>, should_can
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| DecodeError::DecodeFailed(format!("无法启动 ffmpeg：{e}")))?;
+        .map_err(|e| DecodeError::DecodeFailed(format!("cannot start ffmpeg: {e}")))?;
     // stderr is read on a separate thread (with a size cap); otherwise long error output would block the pipe.
     let mut stderr = child.stderr.take().expect("stderr piped");
     let stderr_reader = std::thread::spawn(move || {
@@ -466,7 +466,7 @@ fn decode_ffmpeg(request: &DecodeRequest<'_>, sink: &mut PcmSink<'_>, should_can
             }
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
             Err(e) => {
-                outcome = Err(DecodeError::DecodeFailed(format!("读取 ffmpeg 输出失败：{e}")));
+                outcome = Err(DecodeError::DecodeFailed(format!("failed to read ffmpeg output: {e}")));
                 break;
             }
         }
@@ -478,23 +478,23 @@ fn decode_ffmpeg(request: &DecodeRequest<'_>, sink: &mut PcmSink<'_>, should_can
     let status = child.wait();
     let stderr = stderr_reader.join().unwrap_or_default();
     outcome?;
-    let status = status.map_err(|e| DecodeError::DecodeFailed(format!("等待 ffmpeg 失败：{e}")))?;
+    let status = status.map_err(|e| DecodeError::DecodeFailed(format!("failed to wait for ffmpeg: {e}")))?;
     if status.success() {
         return Ok(());
     }
     let tail: String = stderr.trim().lines().last().unwrap_or("").chars().take(400).collect();
     if !tail.is_empty() {
-        eprintln!("model-worker: ffmpeg 失败（{status}）：{}", stderr.trim());
+        eprintln!("model-worker: ffmpeg failed ({status}): {}", stderr.trim());
     }
     if stderr.contains("matches no streams") {
         Err(DecodeError::NoAudioTrack)
     } else if sink.samples == 0 {
         Err(DecodeError::InputUnreadable(format!(
-            "ffmpeg 退出码 {}",
+            "ffmpeg exited with code {}",
             status.code().unwrap_or(-1)
         )))
     } else {
-        Err(DecodeError::DecodeFailed(format!("ffmpeg 退出码 {}", status.code().unwrap_or(-1))))
+        Err(DecodeError::DecodeFailed(format!("ffmpeg exited with code {}", status.code().unwrap_or(-1))))
     }
 }
 
@@ -504,7 +504,7 @@ pub struct PcmFile {
 }
 
 #[cfg(not(target_endian = "little"))]
-compile_error!("audio.f32 是 little-endian f32，按原生字节序映射");
+compile_error!("audio.f32 is little-endian f32, mapped in native byte order");
 
 impl PcmFile {
     pub fn open(path: &Path) -> std::io::Result<Self> {
@@ -514,7 +514,7 @@ impl PcmFile {
             return Ok(Self { map: None });
         }
         if length % 4 != 0 {
-            return Err(std::io::Error::other("解码缓存的长度不是 4 的倍数"));
+            return Err(std::io::Error::other("decode cache length is not a multiple of 4"));
         }
         // SAFETY: the file is in staging; it is mapped read-only after this process finishes writing it; other processes should not modify it.
         let map = unsafe { Mmap::map(&file)? };
@@ -634,7 +634,7 @@ mod tests {
 
         assert_eq!(
             decode_mono(&dir.path().join("missing.wav"), 16_000).unwrap_err(),
-            DecodeError::InputUnreadable("文件不存在".into())
+            DecodeError::InputUnreadable("file does not exist".into())
         );
         let empty = dir.path().join("empty.wav");
         write_wav(&empty, 16_000, 1, &[]);
@@ -706,7 +706,7 @@ mod tests {
 
         assert_eq!(
             decode_stereo(&dir.path().join("missing.wav"), 0, 44_100).unwrap_err(),
-            DecodeError::InputUnreadable("文件不存在".into())
+            DecodeError::InputUnreadable("file does not exist".into())
         );
         let empty = dir.path().join("empty.wav");
         write_wav(&empty, 44_100, 2, &[]);

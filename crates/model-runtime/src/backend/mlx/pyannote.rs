@@ -195,7 +195,7 @@ impl SegmentationNetwork {
         if !weights.is_empty() {
             let mut unused = weights.keys().cloned().collect::<Vec<_>>();
             unused.sort();
-            bail!("Pyannote 存在未使用权重：{}", unused.join("、"));
+            bail!("Pyannote has unused weights: {}", unused.join(", "));
         }
         Ok(Self {
             sincnet,
@@ -210,8 +210,8 @@ impl SegmentationNetwork {
     /// binarization are all left to `pyannote_common`, which both backends share for the same decoding.
     pub(crate) fn frame_logits(&mut self, packed: &[f32], batch_size: usize) -> Result<Vec<Vec<f32>>> {
         let _cache_guard = MemoryCacheGuard::new();
-        let batch = i32::try_from(batch_size).context("Pyannote batch 超出 i32")?;
-        let samples = i32::try_from(WINDOW_SAMPLES).expect("固定窗口可装入 i32");
+        let batch = i32::try_from(batch_size).context("Pyannote batch exceeds i32")?;
+        let samples = i32::try_from(WINDOW_SAMPLES).expect("fixed window fits in i32");
         let input = Array::from_slice(packed, &[batch, samples, 1]);
         let mut hidden = self.sincnet.forward(&input)?;
         hidden = self.lstm.forward(&hidden)?;
@@ -220,7 +220,7 @@ impl SegmentationNetwork {
         }
         let logits = self.classifier.forward(&hidden)?;
         if logits.shape() != [batch, FRAMES_PER_WINDOW as i32, CLASS_COUNT] {
-            bail!("Pyannote 输出形状异常：{:?}", logits.shape());
+            bail!("Pyannote output shape is abnormal: {:?}", logits.shape());
         }
         logits.eval()?;
         Ok(logits
@@ -369,7 +369,7 @@ fn load_linear(weights: &mut HashMap<String, Array>, prefix: &str) -> Result<Lin
 }
 
 fn take(weights: &mut HashMap<String, Array>, key: &str) -> Result<Array> {
-    weights.remove(key).with_context(|| format!("缺少 Pyannote 权重：{key}"))
+    weights.remove(key).with_context(|| format!("missing Pyannote weight: {key}"))
 }
 
 fn leaky_relu(input: &Array) -> Result<Array> {

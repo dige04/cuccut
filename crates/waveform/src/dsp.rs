@@ -80,11 +80,11 @@ pub fn analyze(pcm: &[f32], backend: SpectrumBackend) -> Result<Vec<u8>> {
 /// Computes only the payload (`frame_count × 640`), without the header.
 pub fn analyze_payload(pcm: &[f32]) -> Result<Vec<u8>> {
     if pcm.is_empty() {
-        bail!("媒体没有可解码的音频样本");
+        bail!("media has no decodable audio samples");
     }
     let frame_count = frame_count_for(pcm.len());
     if u32::try_from(frame_count).is_err() {
-        bail!("频谱帧数 {frame_count} 超过 BCS1 上限");
+        bail!("spectrum frame count {frame_count} exceeds the BCS1 limit");
     }
     let mut analyser = FrameAnalyser::new();
     let mut payload = Vec::with_capacity(frame_count * FRAME_LEN);
@@ -128,7 +128,7 @@ impl FrameAnalyser {
         }
         self.fft
             .process_with_scratch(&mut self.input, &mut self.spectrum, &mut self.scratch)
-            .context("执行 1024 点 real FFT")?;
+            .context("running the 1024-point real FFT")?;
         for bin in self.spectrum.iter().take(FREQ_BINS as usize) {
             // Web Audio's analyser normalizes the FFT output by 1/N before smoothing and the dB window. realfft returns unnormalized results, so the division by N is explicit here.
             let magnitude = (bin.re * bin.re + bin.im * bin.im).sqrt() / window_len as f64;
@@ -199,11 +199,11 @@ impl SpectrumStream {
     /// Done feeding: computes the trailing frames that run past the end (zero-padded), and returns the full BCS1 file bytes.
     pub fn finish(mut self, backend: SpectrumBackend) -> Result<Vec<u8>> {
         if self.samples == 0 {
-            bail!("媒体没有可解码的音频样本");
+            bail!("media has no decodable audio samples");
         }
         let frame_count = frame_count_for(self.samples);
         let Ok(frames) = u32::try_from(frame_count) else {
-            bail!("频谱帧数 {frame_count} 超过 BCS1 上限");
+            bail!("spectrum frame count {frame_count} exceeds the BCS1 limit");
         };
         while self.next < frame_count {
             let start = self.next * HOP as usize - self.offset;
@@ -303,7 +303,7 @@ mod tests {
             assert_eq!(
                 stream.finish(SpectrumBackend::Symphonia).unwrap(),
                 whole,
-                "块长 {chunk}"
+                "chunk size {chunk}"
             );
         }
         assert!(
@@ -348,8 +348,8 @@ mod tests {
         let view = bcs1::parse(&bytes).unwrap();
         assert_eq!(view.frame_count(), 12);
         let row = view.freq_row(4).unwrap();
-        assert!(row[64] > row[63] && row[64] > row[65], "主瓣应落在 bin 64");
-        assert!(row[64] > row[80] + 20, "主瓣应显著高于远端 bin");
+        assert!(row[64] > row[63] && row[64] > row[65], "main lobe should fall on bin 64");
+        assert!(row[64] > row[80] + 20, "main lobe should be well above the distant bin");
     }
 
     #[test]
@@ -382,6 +382,6 @@ mod tests {
         let view = bcs1::parse(&bytes).unwrap();
         let peak_db = crate::remap::canonical_db(view.freq_row(0).unwrap()[64]);
         assert!((peak_db - magnitude_db(0.105)).abs() <= 0.7, "{peak_db}");
-        assert!(peak_db < -18.0, "归一化后的峰值不应贴顶：{peak_db}");
+        assert!(peak_db < -18.0, "normalized peak should not hit the ceiling: {peak_db}");
     }
 }

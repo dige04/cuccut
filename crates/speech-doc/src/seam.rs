@@ -2231,13 +2231,13 @@ mod tests {
         if let Some(split) = preferred_target_split(bare, "zh", params.soft, Some(params.hard)) {
             assert!(
                 !split.right.trim_start().starts_with('或'),
-                "advisory 推荐了 lint 会拒绝的裸切: {split:?}"
+                "advisory suggested a bare cut that lint would reject: {split:?}"
             );
         }
         // When punctuation comes before it, a cut after the punctuation with the right piece starting with 「或者」 is legal.
         let punct = "我们可以直接采用现有的方案，或者重新设计一套完全不同的架构";
         let split = preferred_target_split(punct, "zh", params.soft, Some(params.hard))
-            .expect("句读缝应给出建议");
+            .expect("a punctuation seam should yield a suggestion");
         assert!(split.right.starts_with("或者"), "{split:?}");
     }
 

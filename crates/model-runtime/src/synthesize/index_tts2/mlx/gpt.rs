@@ -35,7 +35,7 @@ use crate::synthesize::tensor::{Array, Dtype, ops};
 use anyhow::{Result, bail, ensure};
 
 /// Error message used when the caller returns false to cancel generation.
-pub const ABORT_MESSAGE: &str = "IndexTTS2 合成已被调用方取消";
+pub const ABORT_MESSAGE: &str = "IndexTTS2 synthesis was cancelled by the caller";
 
 const LN_EPS: f32 = 1e-5;
 const SUBSAMPLE_CHANNELS: i32 = 512;
@@ -244,7 +244,7 @@ impl ConformerEncoder {
         let mut h = self.subsample_out.forward(&h)? * (SUBSAMPLE_CHANNELS as f32).sqrt();
         ensure!(
             t <= self.pos_enc.dim(1),
-            "参考音频过长：Conformer 位置编码只有 {} 帧，收到 {t}",
+            "reference audio is too long: Conformer positional encoding only covers {} frames, got {t}",
             self.pos_enc.dim(1)
         );
         let pos = self.pos_enc.index((.., ..t, ..)).as_dtype(h.dtype())?;
@@ -447,7 +447,7 @@ impl KvCache for BatchedKvCache {
             }
             _ => {}
         }
-        let (bk, bv) = self.buffers[layer].as_mut().expect("缓存已分配");
+        let (bk, bv) = self.buffers[layer].as_mut().expect("cache is allocated");
         bk.index_mut((.., .., self.offset..end, ..), &keys);
         bv.index_mut((.., .., self.offset..end, ..), &values);
         Ok((bk.index((.., .., ..end, ..)), bv.index((.., .., ..end, ..))))
@@ -535,12 +535,12 @@ impl SemanticGpt {
     fn load_checkpoint(mut w: WeightMap, config: &GptConfig, codebook_size: usize, v25: bool) -> Result<Self> {
         ensure!(
             config.condition_type == "conformer_perceiver",
-            "IndexTTS2 仅支持 conformer_perceiver 条件类型，收到 {}",
+            "IndexTTS2 only supports the conformer_perceiver conditioning type, got {}",
             config.condition_type
         );
         let model_dim = config.model_dim as i32;
         let heads = config.heads as i32;
-        ensure!(heads > 0 && model_dim % heads == 0, "GPT model_dim 必须能被 heads 整除");
+        ensure!(heads > 0 && model_dim % heads == 0, "GPT model_dim must be divisible by heads");
         let mut blocks = Vec::with_capacity(config.layers);
         for i in 0..config.layers {
             blocks.push(GptBlock::load(&mut w, &format!("gpt.h.{i}"))?);
@@ -593,7 +593,7 @@ impl SemanticGpt {
     /// Speaker semantic hidden states `[1, T, 1024]` → latent `[1, 32, 1280]`.
     pub fn speaker_conditioning(&self, hidden: &Array) -> Result<Array> {
         let (Some(encoder), Some(perceiver)) = (&self.conditioning_encoder, &self.perceiver) else {
-            bail!("IndexTTS 2.5 GPT 没有说话人 Conformer 条件");
+            bail!("IndexTTS 2.5 GPT has no speaker Conformer conditioning");
         };
         let encoded = encoder.forward(hidden)?;
         let latent = perceiver.forward(&encoded)?;
@@ -624,7 +624,7 @@ impl SemanticGpt {
     /// `[speakerLatent + emotion, speed_emb[1], speed_emb[0]]` → `[1, 34, 1280]`。
     fn prefix_conditioning(&self, speaker_latent: &Array, emotion: &Array) -> Result<Array> {
         let Some(speed_emb) = &self.speed_emb else {
-            bail!("IndexTTS 2.5 GPT 没有语速嵌入，应走 generate_semantic_codes_v25");
+            bail!("IndexTTS 2.5 GPT has no speed embedding; use generate_semantic_codes_v25");
         };
         let dtype = speaker_latent.dtype();
         let conditioned = speaker_latent + emotion.as_dtype(dtype)?.expand_dims(1)?;
@@ -637,7 +637,7 @@ impl SemanticGpt {
     /// `[spk_emb_proj(style) + emotion, 0, 0]` → `[1, 3, 1280]`.
     fn style_conditioning(&self, style: &Array, emotion: &Array) -> Result<Array> {
         let Some(projection) = &self.spk_emb_proj else {
-            bail!("GPT 检查点没有 spk_emb_proj，不是 IndexTTS 2.5");
+            bail!("GPT checkpoint has no spk_emb_proj; not IndexTTS 2.5");
         };
         let speaker = projection.forward(&style.reshape(&[1, -1])?)?; // [1, 1280]
         let dtype = speaker.dtype();
@@ -649,10 +649,10 @@ impl SemanticGpt {
     /// 2.5 text embedding: token + position + the segment language's `lang_embedding` row (added at each text position).
     fn text_embeddings_v25(&self, ids: &[i32], language_id: usize) -> Result<Array> {
         let Some(table) = &self.lang_embedding else {
-            bail!("GPT 检查点没有 lang_embedding，不是 IndexTTS 2.5");
+            bail!("GPT checkpoint has no lang_embedding; not IndexTTS 2.5");
         };
         let row = language_id as i32;
-        ensure!(row < table.dim(0), "语言 id {row} 超出 lang_embedding 表（{} 行）", table.dim(0));
+        ensure!(row < table.dim(0), "language id {row} is out of range for lang_embedding table ({} rows)", table.dim(0));
         let text = self.text_embeddings(ids)?;
         let language = table.index((row..row + 1, ..)).expand_dims(0)?.as_dtype(text.dtype())?;
         Ok(text + language)
@@ -673,7 +673,7 @@ impl SemanticGpt {
     fn embeddings_with_positions(table: &Array, pos_table: &Array, ids: &[i32]) -> Result<Array> {
         let token = Self::embed(table, ids)?;
         let n = ids.len() as i32;
-        ensure!(n <= pos_table.dim(0), "序列长度 {n} 超过位置表容量 {}", pos_table.dim(0));
+        ensure!(n <= pos_table.dim(0), "sequence length {n} exceeds position table capacity {}", pos_table.dim(0));
         let pos = pos_table.index((..n, ..)).expand_dims(0)?.as_dtype(token.dtype())?;
         Ok(token + pos)
     }
@@ -691,7 +691,7 @@ impl SemanticGpt {
         let position = if mel_index == 0 { 0 } else { mel_index + 1 };
         ensure!(
             position < self.mel_pos_embedding.dim(0),
-            "生成的语义 token 数超过梅尔位置表容量 {}",
+            "generated semantic token count exceeds mel position table capacity {}",
             self.mel_pos_embedding.dim(0)
         );
         Ok(self
@@ -813,7 +813,7 @@ impl SemanticGpt {
         options: &GenerationOptions,
         progress: &mut dyn FnMut(usize) -> bool,
     ) -> Result<Vec<i32>> {
-        ensure!(!text_tokens.is_empty(), "IndexTTS2 文本 token 为空");
+        ensure!(!text_tokens.is_empty(), "IndexTTS2 text tokens are empty");
         let prefix = self.prefix_conditioning(speaker_latent, emotion)?;
         let text_emb = self.text_embeddings(&self.text_input(text_tokens))?;
         let prefix_text = ops::concatenate_axis(&[&prefix, &text_emb], 1)?;
@@ -836,7 +836,7 @@ impl SemanticGpt {
             .copied()
             .filter(|&t| t != self.start_text_token && t != self.stop_text_token)
             .collect();
-        ensure!(!content.is_empty(), "IndexTTS 2.5 文本 token 为空");
+        ensure!(!content.is_empty(), "IndexTTS 2.5 text tokens are empty");
         let text_emb = self.text_embeddings_v25(&self.text_input(&content), language_id)?;
         let prefix = self.style_conditioning(style, emotion)?.as_dtype(text_emb.dtype())?;
         let prefix_text = ops::concatenate_axis(&[&prefix, &text_emb], 1)?;
@@ -1104,7 +1104,7 @@ impl SemanticGpt {
                 let logits = if beam.ended {
                     None
                 } else {
-                    let token = *beam.tokens.last().expect("未结束的束至少有一个 token");
+                    let token = *beam.tokens.last().expect("unfinished beam has at least one token");
                     Some(self.step_mel_logits(token, beam.tokens.len() as i32, &mut cache)?)
                 };
                 next_states.push(State { beam, cache, logits });

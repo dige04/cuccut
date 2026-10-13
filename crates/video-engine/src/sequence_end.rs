@@ -60,7 +60,7 @@ fn settle_sequence(state: &mut VideoState, sequence_id: &str) -> EngineResult<()
         if let Some(next) = next {
             target = target.min(next);
         }
-        let current = state.items[&id].value.span().expect("只收了帧网格上的实例").end_frame();
+        let current = state.items[&id].value.span().expect("only items on the frame grid were collected").end_frame();
         let mut delta = target - current;
         if delta > 0 {
             let length = frame_time(delta as i128, fps).ok_or_else(overflow)?;

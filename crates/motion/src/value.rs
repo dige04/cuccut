@@ -66,7 +66,7 @@ pub fn is_animatable(prop: &str) -> bool {
 /// Supplement to the "not in animatable property allowlist" error: the only static style key whose name differs from its animation channel is the background color (style writes `background`, the channel is called `backgroundColor`). When a style key is written, the error points directly to the channel name.
 pub fn not_animatable_hint(prop: &str) -> &'static str {
     match prop {
-        "background" => "；背景色的动画通道叫 backgroundColor（style 里仍写 background）",
+        "background" => "; the animation channel for background color is backgroundColor (style still writes background)",
         _ => "",
     }
 }

@@ -137,7 +137,7 @@ mod tests {
     const TF: Mat6 = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
 
     fn style(id: &str) -> &'static CatalogueRecipe {
-        motion::preset_registry::timeline_visualizer(id).expect("样式已登记")
+        motion::preset_registry::timeline_visualizer(id).expect("style is registered")
     }
 
     fn draw(id: &str, viz: &VizFrame) -> FrameBuilder {
@@ -172,12 +172,12 @@ mod tests {
     #[test]
     fn every_catalogue_style_draws_something_even_in_silence() {
         let styles = motion::preset_registry::timeline_visualizers();
-        assert_eq!(styles.len(), 10, "10 种 sound wave 全部登记在目录里");
+        assert_eq!(styles.len(), 10, "all 10 sound wave styles are registered in the catalog");
         for recipe in styles {
             for viz in [frame(), silence(), shaped()] {
                 let mut builder = FrameBuilder::default();
                 let pushed = visualizer_frame(&mut builder, recipe, &params(), &viz, 0.0, BOX, TF);
-                assert!(pushed > 0, "{} 必须画出东西", recipe.id);
+                assert!(pushed > 0, "{} must draw something", recipe.id);
                 assert_eq!(pushed, builder.frame.ops.len(), "{}", recipe.id);
             }
         }
@@ -219,7 +219,7 @@ mod tests {
     fn the_bar_family_follows_the_manifest() {
         let bars = rects(&draw("bars", &frame()));
         assert_eq!(bars.len(), 48);
-        assert!(bars.iter().all(|r| r.4 == 0.0), "bars 没有圆角");
+        assert!(bars.iter().all(|r| r.4 == 0.0), "bars have no rounded corners");
         // mirror: the columns are symmetric about the box's center line.
         for (_, y, _, h, _) in &bars {
             assert!((y + h / 2.0 - 45.0).abs() < 1e-3, "y={y} h={h}");
@@ -230,14 +230,14 @@ mod tests {
         for (_, _, w, h, radius) in &rounded {
             assert!(
                 (radius - w.min(*h) / 2.0).abs() < 1e-4,
-                "胶囊：半径 = 短边一半"
+                "capsule: radius = half the short side"
             );
         }
 
         let bottom = rects(&draw("bars_bottom", &frame()));
         assert_eq!(bottom.len(), 64);
         for (_, y, _, h, _) in &bottom {
-            assert!((y + h - 70.0).abs() < 1e-3, "贴底：y+h = 盒底");
+            assert!((y + h - 70.0).abs() < 1e-3, "flush to bottom: y+h = box bottom");
         }
     }
 
@@ -306,7 +306,7 @@ mod tests {
             1
         );
         let path = &flat.frame.paths[0].0;
-        assert_eq!(path.len(), 128, "samples 来自 manifest");
+        assert_eq!(path.len(), 128, "samples come from the manifest");
         assert!(path.iter().all(|seg| (seg.pts[1] - 45.0).abs() < 1e-3));
 
         let wavy = draw("oscilloscope", &shaped());
@@ -315,7 +315,7 @@ mod tests {
             (lo.min(seg.pts[1]), hi.max(seg.pts[1]))
         });
         assert!(min < 30.0 && max > 60.0, "min={min} max={max}");
-        assert!(min >= 20.0 && max <= 70.0, "不出盒子");
+        assert!(min >= 20.0 && max <= 70.0, "stays inside the box");
     }
 
     /// `ring_wave` is a closed polar oscilloscope. In silence it is the base circle, and the path closes with `close`.
@@ -330,7 +330,7 @@ mod tests {
             let r = ((seg.pts[0] - cx).powi(2) + (seg.pts[1] - cy).powi(2)).sqrt();
             assert!(
                 (r - 15.0).abs() < 1e-2,
-                "baseRadius 0.6 × 25 = 15，读到 {r}"
+                "baseRadius 0.6 × 25 = 15, read {r}"
             );
         }
     }
@@ -364,11 +364,11 @@ mod tests {
         assert_eq!(peaks, 32);
         assert!(
             loud.frame.ops.len() > 32 * 4,
-            "200/255 经 easeOutQuad 点亮大半"
+            "200/255 lights up most of the way through easeOutQuad"
         );
 
         let quiet = draw("dots", &silence());
-        assert_eq!(quiet.frame.ops.len(), 32, "每列一颗底灯");
+        assert_eq!(quiet.frame.ops.len(), 32, "one base light per column");
         assert!(
             rects(&quiet)
                 .iter()
@@ -388,7 +388,7 @@ mod tests {
         assert_eq!(quiet.frame.ops.len(), 5);
         assert!(
             (radius_of(&quiet, 0) - 0.22 * 25.0).abs() < 1e-3,
-            "圆盘停在 coreRadius"
+            "the disc stops at coreRadius"
         );
         let loud = draw("pulse_rings", &frame());
         assert!(radius_of(&loud, 0) > radius_of(&quiet, 0));
@@ -421,7 +421,7 @@ mod tests {
     /// A progress recipe reaching the visualizer entry: returns 0 and does not panic.
     #[test]
     fn a_progress_recipe_draws_nothing_instead_of_panicking() {
-        let recipe = motion::preset_registry::timeline_progress("normal").expect("已登记");
+        let recipe = motion::preset_registry::timeline_progress("normal").expect("registered");
         let mut builder = FrameBuilder::default();
         assert_eq!(
             visualizer_frame(&mut builder, recipe, &params(), &frame(), 0.0, BOX, TF),

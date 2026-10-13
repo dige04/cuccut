@@ -21,11 +21,11 @@ impl LlmMode {
         }
         if let Some(rest) = text.strip_prefix("provider:") {
             let (vendor, model) = rest.split_once('/').ok_or_else(|| {
-                format!("--llm provider 需形如 provider:<vendor>/<model>：{text}")
+                format!("--llm provider must look like provider:<vendor>/<model>: {text}")
             })?;
             if vendor.is_empty() || model.is_empty() {
                 return Err(format!(
-                    "--llm provider 需形如 provider:<vendor>/<model>：{text}"
+                    "--llm provider must look like provider:<vendor>/<model>: {text}"
                 ));
             }
             return Ok(Self::Provider {
@@ -34,7 +34,7 @@ impl LlmMode {
             });
         }
         Err(format!(
-            "未知 --llm 模式：{text}（agent | provider:<vendor>/<model>）"
+            "Unknown --llm mode: {text} (agent | provider:<vendor>/<model>)"
         ))
     }
 }
@@ -56,7 +56,7 @@ impl ReasoningEffort {
             "medium" => Ok(Self::Medium),
             "high" => Ok(Self::High),
             other => Err(format!(
-                "未知 --llm-effort {other}（可用：auto|low|medium|high）"
+                "Unknown --llm-effort {other} (available: auto|low|medium|high)"
             )),
         }
     }
@@ -433,7 +433,7 @@ mod tests {
                 message: "connection reset".to_owned()
             }
             .is_retryable(),
-            "无 HTTP 响应的短暂传输错误必须进入有界重试"
+            "a transient transport error with no HTTP response must enter bounded retry"
         );
         assert!(
             LlmError::Http {

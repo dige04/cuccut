@@ -201,7 +201,7 @@ pub fn segment(text: &str) -> Vec<String> {
     let mut words = Vec::new();
     let mut prefix = String::new();
     for chunk in clean.as_bytes().chunks(WS_CHUNK) {
-        let chunk = std::str::from_utf8(chunk).expect("clean 文本是 ASCII");
+        let chunk = std::str::from_utf8(chunk).expect("cleaned text is ASCII");
         let mut chunk_words = ws_search(&(prefix + chunk));
         let tail = chunk_words.len().saturating_sub(5);
         prefix = chunk_words[tail..].concat();

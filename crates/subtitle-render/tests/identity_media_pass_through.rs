@@ -47,7 +47,7 @@ fn identity_draw_pixmap_onto_transparent_field_is_bit_exact() {
         .post_translate(WIDTH as f32 / 2.0, HEIGHT as f32 / 2.0);
     assert!(
         transform.is_identity(),
-        "构造出的变换不是恒等：{transform:?}"
+        "the constructed transform is not the identity: {transform:?}"
     );
     field.draw_pixmap(
         0,
@@ -100,7 +100,7 @@ fn render_pip(width_percent: f64) -> Pixmap {
     let element = plan.elements[0].clone();
     plan.render_media_element(&element, 1.0, Default::default())
         .unwrap()
-        .expect("媒体元素必须出图")
+        .expect("media element must produce an image")
 }
 
 /// An identity PIP (box equal to the canvas, no fx/mask/tile/transform, fully opaque) must pass the source image through byte for byte.
@@ -153,7 +153,7 @@ fn render_fullscreen(source: Pixmap, bg: &str) -> Pixmap {
     let element = plan.elements[0].clone();
     plan.render_media_element(&element, 1.0, Default::default())
         .unwrap()
-        .expect("媒体元素必须出图")
+        .expect("media element must produce an image")
 }
 
 /// Reference result of the old background-plate path: fill the canvas with the base color, then contain-paste the source image.
@@ -172,7 +172,7 @@ fn opaque_fullscreen_contain_with_black_bg_passes_the_source_through() {
     assert_eq!(
         reference.data(),
         source.data(),
-        "旧背景板路径对不透明源应是恒等"
+        "the old background-plate path should be the identity for an opaque source"
     );
     let rendered = render_fullscreen(source.clone(), "black");
     assert_eq!(rendered.data(), source.data());
@@ -193,7 +193,7 @@ fn translucent_fullscreen_contain_with_black_bg_keeps_the_backdrop() {
     assert_eq!(
         rendered.data()[index + 3],
         255,
-        "黑底应把半透明像素垫成不透明"
+        "a black backing should make semi-transparent pixels opaque"
     );
 }
 

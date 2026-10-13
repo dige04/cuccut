@@ -98,8 +98,8 @@ impl Remapper {
     /// # Panics
     /// Panics when the length of `row` or `out` does not match `bins` given at construction. This is a programming error by the caller, not a data error.
     pub fn push_row(&mut self, row: &[u8], out: &mut [u8]) {
-        assert_eq!(row.len(), self.previous.len(), "canonical 行宽不匹配");
-        assert_eq!(out.len(), self.previous.len(), "输出行宽不匹配");
+        assert_eq!(row.len(), self.previous.len(), "canonical row width mismatch");
+        assert_eq!(out.len(), self.previous.len(), "output row width mismatch");
         for (bin, &byte) in row.iter().enumerate() {
             let magnitude = canonical_magnitude(byte);
             let smoothed = smooth(self.previous[bin], magnitude, self.tau);
@@ -166,7 +166,7 @@ mod tests {
             let mut previous = 0u8;
             for byte in 0..=255u8 {
                 let value = remap(byte, min_db, max_db);
-                assert!(value >= previous, "({min_db},{max_db}) 在 {byte} 处不单调");
+                assert!(value >= previous, "({min_db},{max_db}) is not monotonic at {byte}");
                 previous = value;
             }
         }
@@ -212,7 +212,7 @@ mod tests {
         assert_eq!(remapper.map_row(&[200]), vec![expected(0.5 * magnitude)]);
         assert_eq!(remapper.map_row(&[200]), vec![expected(0.75 * magnitude)]);
         assert_eq!(remapper.map_row(&[200]), vec![expected(0.875 * magnitude)]);
-        assert_ne!(expected(0.5 * magnitude), 100, "不能退回字节域平滑");
+        assert_ne!(expected(0.5 * magnitude), 100, "must not fall back to byte-domain smoothing");
         remapper.reset();
         assert_eq!(remapper.map_row(&[200]), vec![expected(0.5 * magnitude)]);
     }
@@ -243,7 +243,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "canonical 行宽不匹配")]
+    #[should_panic(expected = "canonical row width mismatch")]
     fn row_width_mismatch_is_a_programming_error() {
         Remapper::new(4, -120.0, 40.0, 0.0, 1.0).map_row(&[1, 2, 3]);
     }

@@ -84,7 +84,7 @@ impl LoadedAssets {
         if let Some(before) = self.media_signatures.get(path) {
             let meta = std::fs::metadata(path)?;
             if (meta.len(), meta.modified().ok()) != *before {
-                bail!("BCF 媒体在准备后发生变化，请重新加载：{}", path.display());
+                bail!("BCF media changed after preparation; reload it: {}", path.display());
             }
         }
         Ok(())
@@ -110,7 +110,7 @@ pub fn load_assets_with_vars(
     for req in &reqs {
         let path = base_dir.join(&req.src);
         let before = std::fs::metadata(&path)
-            .with_context(|| format!("asset \"{}\": 读取 {} 失败", req.id, path.display()))?;
+            .with_context(|| format!("asset \"{}\": failed to read {}", req.id, path.display()))?;
         let before = (before.len(), before.modified().ok());
         let lazy = matches!(req.kind, AssetKind::Video | AssetKind::Audio) || req.bounded_image;
         let bytes = if lazy {
@@ -148,20 +148,20 @@ pub fn load_assets_with_vars(
                     )
                 ) {
                     bail!(
-                        "asset {}: bounded cache 只接受 PNG/JPEG/WebP/GIF 位图",
+                        "asset {}: bounded cache only accepts PNG/JPEG/WebP/GIF bitmaps",
                         req.id
                     );
                 }
                 let (w, h) = reader.into_dimensions()?;
                 if u64::from(w).saturating_mul(u64::from(h)).saturating_mul(4) > 64 * 1024 * 1024 {
-                    bail!("asset {}: bounded image 单图不得超过 64 MiB", req.id);
+                    bail!("asset {}: a bounded image must not exceed 64 MiB", req.id);
                 }
                 out.inputs.insert_image(&req.id, w as f64, h as f64);
                 out.bounded_images.insert(req.id.clone(), path.clone());
             }
             AssetKind::Image => {
                 let pm = decode_image(&req.src, &bytes)
-                    .with_context(|| format!("asset \"{}\" 解码失败", req.id))?;
+                    .with_context(|| format!("asset \"{}\" failed to decode", req.id))?;
                 out.inputs
                     .insert_image(&req.id, pm.width() as f64, pm.height() as f64);
                 out.images.insert(req.id.clone(), Arc::new(pm));
@@ -169,7 +169,7 @@ pub fn load_assets_with_vars(
             AssetKind::AnimatedImage => {
                 let budget = PrepareCtx::default();
                 let src = AnimatedImage::decode(&req.src, &bytes, &budget)
-                    .with_context(|| format!("asset \"{}\" 解码失败", req.id))?;
+                    .with_context(|| format!("asset \"{}\" failed to decode", req.id))?;
                 src.prepare(&budget)?;
                 let meta = src.probe()?;
                 out.inputs.insert_animated_image(
@@ -183,13 +183,13 @@ pub fn load_assets_with_vars(
             }
             AssetKind::Lottie => {
                 let mut src = Lottie::parse(&req.id, &req.src, &bytes)
-                    .with_context(|| format!("asset \"{}\" 解析失败", req.id))?;
+                    .with_context(|| format!("asset \"{}\" failed to parse", req.id))?;
                 // Sub-resources are collected, read from disk and decoded here, and folded into the content fingerprint chain by asset name. There must be no I/O at render time (the `VisualSource` convention).
                 let lottie_dir = path.parent().unwrap_or(base_dir).to_path_buf();
                 let mut loaded = Vec::new();
                 for requirement in src.image_requirements().to_vec() {
                     let (bytes, label) = match (&requirement.embedded, &requirement.path) {
-                        (Some(inline), _) => (inline.clone(), format!("<内嵌 {}>", requirement.id)),
+                        (Some(inline), _) => (inline.clone(), format!("<inline {}>", requirement.id)),
                         (None, Some(relative)) => {
                             let child = lottie_dir.join(relative);
                             let meta = std::fs::metadata(&child)?;
@@ -197,7 +197,7 @@ pub fn load_assets_with_vars(
                                 .push((child.clone(), Some((meta.len(), meta.modified().ok()))));
                             let bytes = std::fs::read(&child).with_context(|| {
                                 format!(
-                                    "asset \"{}\"：读 Lottie 子资源 {} 失败",
+                                    "asset \"{}\": failed to read Lottie sub-asset {}",
                                     req.id,
                                     child.display()
                                 )
@@ -206,13 +206,13 @@ pub fn load_assets_with_vars(
                             (bytes, child.display().to_string())
                         }
                         (None, None) => bail!(
-                            "asset \"{}\"：Lottie 子资源 \"{}\" 既不是内嵌也没有路径",
+                            "asset \"{}\": Lottie sub-asset \"{}\" is neither inline nor has a path",
                             req.id,
                             requirement.id
                         ),
                     };
                     let pixmap = requirement.decode(&bytes).with_context(|| {
-                        format!("asset \"{}\"：Lottie 子资源 {label} 解码失败", req.id)
+                        format!("asset \"{}\": Lottie sub-asset {label} failed to decode", req.id)
                     })?;
                     let pixmap = Arc::new(pixmap);
                     // The same image goes both into Lottie's own sampling table and into MediaStore. The element path emits `DrawMedia`, which is fetched from MediaStore at rasterization.
@@ -240,7 +240,7 @@ pub fn load_assets_with_vars(
                     let program = req
                         .program
                         .as_ref()
-                        .ok_or_else(|| anyhow!("asset \"{}\"：缺少 program 声明", req.id))?;
+                        .ok_or_else(|| anyhow!("asset \"{}\": missing program declaration", req.id))?;
                     let bundle = ccut_compile::program::ProgramBundle::load(
                         &ccut_compile::program::ProgramSpec {
                             base_dir,
@@ -261,7 +261,7 @@ pub fn load_assets_with_vars(
                 // v3: `ccut-compile` is not ported (architecture design §13.6); the `program` feature is only a placeholder.
                 #[cfg(not(feature = "program"))]
                 bail!(
-                    "asset \"{}\"：program 资产要 BCF 编译器（ccut-compile），v3 不移植（架构设计 §13.6）",
+                    "asset \"{}\": program assets need the BCF compiler (ccut-compile), which v3 does not port (architecture design §13.6)",
                     req.id
                 );
             }
@@ -296,7 +296,7 @@ pub fn load_assets_with_vars(
                     .next()
                     .and_then(|face| face.families.first())
                     .map(|(name, _)| name.clone())
-                    .ok_or_else(|| anyhow!("asset {} 不含可用字体族", req.id))?;
+                    .ok_or_else(|| anyhow!("asset {} contains no usable font family", req.id))?;
                 out.inputs
                     .font_families
                     .insert(req.src.clone(), family.clone());
@@ -308,7 +308,7 @@ pub fn load_assets_with_vars(
         }
         let after = std::fs::metadata(&path)?;
         if before != (after.len(), after.modified().ok()) {
-            bail!("asset \"{}\" 在加载期间发生变化，请重试", req.id);
+            bail!("asset \"{}\" changed while loading; retry", req.id);
         }
         if lazy {
             out.media_signatures.insert(path, before);
@@ -342,7 +342,7 @@ pub fn load_assets_with_vars(
     for (path, before) in &out.file_signatures {
         let meta = std::fs::metadata(path)?;
         if Some((meta.len(), meta.modified().ok())) != *before {
-            bail!("asset {} 在加载期间发生变化，请重试", path.display());
+            bail!("asset {} changed while loading; retry", path.display());
         }
     }
     Ok(out)
@@ -364,10 +364,10 @@ fn verify_digest(req: &AssetReq, actual: &str) -> Result<()> {
     let Some(decl) = &req.hash else { return Ok(()) };
     let hex = decl
         .strip_prefix("sha256-")
-        .ok_or_else(|| anyhow!("asset \"{}\" hash 缺少 sha256- 前缀", req.id))?;
+        .ok_or_else(|| anyhow!("asset \"{}\" hash is missing the sha256- prefix", req.id))?;
     if !actual.eq_ignore_ascii_case(hex) {
         bail!(
-            "asset \"{}\" 内容与声明 hash 不符：期望 {hex}，实际 {actual}（文件被替换或损坏）",
+            "asset \"{}\" content does not match its declared hash: expected {hex}, got {actual} (file replaced or corrupted)",
             req.id
         );
     }
@@ -387,15 +387,15 @@ pub fn decode_image(src: &str, bytes: &[u8]) -> Result<Pixmap> {
         "jpg" | "jpeg" => {
             let img = image::load_from_memory(bytes)?.to_rgba8();
             let (w, h) = (img.width(), img.height());
-            let mut pm = Pixmap::new(w, h).ok_or_else(|| anyhow!("空 JPEG"))?;
+            let mut pm = Pixmap::new(w, h).ok_or_else(|| anyhow!("empty JPEG"))?;
             pm.data_mut().copy_from_slice(img.as_raw()); // JPEG has no alpha, so straight == premultiplied
             Ok(pm)
         }
         "svg" => crate::svg::decode_svg_natural(bytes),
         "gif" | "webp" => bail!(
-            "静态图片解码器不认 .{ext}：动图请把 asset 声明成 type: \"animatedImage\"、元素写 animatedImage（规范 §6.5.1）"
+            "the static image decoder does not accept .{ext}: for animated images, declare the asset as type: \"animatedImage\" and use an animatedImage element (spec §6.5.1)"
         ),
-        other => bail!("不支持的图像格式 .{other}（png/jpg/svg）"),
+        other => bail!("unsupported image format .{other} (png/jpg/svg)"),
     }
 }
 
@@ -425,8 +425,8 @@ pub fn decode_image_bytes(label: &str, bytes: &[u8]) -> Result<Pixmap> {
         px[2] = pm.blue();
         px[3] = pm.alpha();
     }
-    let size = tiny_skia::IntSize::from_wh(w, h).ok_or_else(|| anyhow!("{label}: 零尺寸"))?;
-    Pixmap::from_vec(raw, size).ok_or_else(|| anyhow!("{label}: 构造 pixmap 失败"))
+    let size = tiny_skia::IntSize::from_wh(w, h).ok_or_else(|| anyhow!("{label}: zero size"))?;
+    Pixmap::from_vec(raw, size).ok_or_else(|| anyhow!("{label}: failed to construct pixmap"))
 }
 
 struct ProbedMediaInfo {
@@ -440,11 +440,11 @@ struct ProbedMediaInfo {
 
 fn probe_media_info(path: &Path, want_video: bool) -> Result<ProbedMediaInfo> {
     let (probe, _backend) = media_probe::probe_with_fallback(path, ffprobe_path())
-        .with_context(|| format!("探测 {} 失败", path.display()))?;
+        .with_context(|| format!("failed to probe {}", path.display()))?;
     let (natural_width, natural_height) = probe.dimensions().unwrap_or((0, 0));
     let (display_width, display_height) = probe.display_dimensions().unwrap_or((0, 0));
     if want_video && (display_width == 0 || display_height == 0) {
-        bail!("{} 没有视频流", path.display());
+        bail!("{} has no video stream", path.display());
     }
     Ok(ProbedMediaInfo {
         natural_width,

@@ -315,7 +315,7 @@ mod tests {
         );
         let mut buf = PoseBuffer::identity();
         write(&mut buf, "opacity", 1.5, CompositeMode::Replace, 0);
-        assert_eq!(buf.scalar("opacity"), Some(1.5), "单轨不做 clamp");
+        assert_eq!(buf.scalar("opacity"), Some(1.5), "a single track is not clamped");
     }
 
     #[test]

@@ -74,14 +74,14 @@ impl MossTranscribeDiarize {
             "model.language_model",
         )?;
         let tokenizer = Qwen3Tokenizer::load(vocabulary, files.path("merges.txt"), files.path("tokenizer_config.json"))
-            .context("加载 MOSS tokenizer")?;
+            .context("load MOSS tokenizer")?;
         let processor = MossProcessorConfig::load(files.path("processor_config.json"))?;
         let digit_token_ids = "0123456789"
             .chars()
             .map(|digit| {
                 let encoded = tokenizer.encode(&digit.to_string());
                 if encoded.len() != 1 {
-                    bail!("MOSS 数字 {digit} 不是单 token：{encoded:?}");
+                    bail!("MOSS digit {digit} is not a single token: {encoded:?}");
                 }
                 Ok((digit, encoded[0]))
             })
@@ -157,7 +157,7 @@ impl MossTranscribeDiarize {
         let inputs_seconds = inputs_started.elapsed().as_secs_f64();
         let total_tokens = prompt_ids.len();
         if total_tokens == 0 {
-            bail!("MOSS prompt 为空");
+            bail!("MOSS prompt is empty");
         }
         let prefill_started = Instant::now();
         let mut cache: Option<Vec<KvCache>> = None;
@@ -250,7 +250,7 @@ impl MossTranscribeDiarize {
             padded[..chunk.len()].copy_from_slice(chunk);
             let features = self.mel.extract(&padded)?;
             if features.time_frames != 3_000 || features.mel_bins != self.config.mel_bins {
-                bail!("MOSS Whisper mel 形状错误：{}×{}", features.time_frames, features.mel_bins);
+                bail!("MOSS Whisper mel shape is wrong: {}×{}", features.time_frames, features.mel_bins);
             }
             mel_values.extend(features.data);
             feature_lengths.push(self.compute_audio_token_length(chunk.len().max(1)));
@@ -313,7 +313,7 @@ impl MossTranscribeDiarize {
                     *self
                         .digit_token_ids
                         .get(&digit)
-                        .with_context(|| format!("MOSS 缺少数字 {digit} token"))?,
+                        .with_context(|| format!("MOSS is missing digit {digit} token"))?,
                 );
             }
             seconds += self.time_marker_every_seconds;
@@ -358,7 +358,7 @@ struct VqAdaptor {
 impl VqAdaptor {
     fn load(store: &mut WeightStore, config: &MossConfig) -> Result<Self> {
         if config.adaptor_input_dim != config.audio_model_size * config.audio_merge_size {
-            bail!("MOSS adaptor_input_dim 与音频维度不匹配");
+            bail!("MOSS adaptor_input_dim does not match the audio dimension");
         }
         let prefix = "model.vq_adaptor.layers";
         Ok(Self {
@@ -469,7 +469,7 @@ impl WhisperEncoder {
         let conv2 = load_conv1d(store, &format!("{prefix}.conv2"), 2)?;
         let positions = store.take_compute(&format!("{prefix}.embed_positions.weight"))?;
         if positions.dim(0)? < config.maximum_source_positions {
-            bail!("MOSS Whisper 位置编码长度不足");
+            bail!("MOSS Whisper position embedding is too short");
         }
         let mut layers = Vec::with_capacity(config.audio_layers);
         for index in 0..config.audio_layers {
@@ -517,7 +517,7 @@ fn inject_audio_embeddings(prompt_ids: &[i32], text_embeddings: &Tensor, audio_e
         .collect::<Vec<_>>();
     if positions.len() != audio_embeddings.dim(1)? {
         bail!(
-            "MOSS 音频 token 与特征数不一致：{} vs {}",
+            "MOSS audio token count does not match feature count: {} vs {}",
             positions.len(),
             audio_embeddings.dim(1)?
         );

@@ -169,7 +169,7 @@ impl VerifiedFiles {
         self.path(relative).ok_or_else(|| {
             ErrorBody::new(
                 codes::MODEL_NOT_INSTALLED,
-                format!("模型包的 {} 组件缺少文件 {}{relative}", self.component, self.scope),
+                format!("model bundle component {} is missing file {}{relative}", self.component, self.scope),
             )
             .with_details(json!({ "component": self.component, "file": format!("{}{relative}", self.scope), "reason": "not-listed" }))
         })
@@ -192,7 +192,7 @@ impl VerifiedFiles {
         if files.is_empty() {
             return Err(ErrorBody::new(
                 codes::MODEL_NOT_INSTALLED,
-                format!("模型包的 {} 组件没有 .{extension} 文件", self.component),
+                format!("model bundle component {} has no .{extension} file", self.component),
             )
             .with_details(json!({ "component": self.component, "file": format!("{}*.{extension}", self.scope), "reason": "not-listed" })));
         }
@@ -226,7 +226,7 @@ impl VerifiedFiles {
             };
             return Err(ErrorBody::new(
                 codes::MODEL_NOT_INSTALLED,
-                format!("模型包的 {} 组件没有 {pattern} 文件", self.component),
+                format!("model bundle component {} has no {pattern} file", self.component),
             )
             .with_details(json!({ "component": self.component, "file": pattern, "reason": "not-listed" })));
         }
@@ -275,7 +275,7 @@ impl VerifiedFiles {
             let directory = format!("{}{}/", self.scope, directory.trim_end_matches('/'));
             ErrorBody::new(
                 codes::MODEL_NOT_INSTALLED,
-                format!("模型包的 {} 组件缺少目录 {directory}", self.component),
+                format!("model bundle component {} is missing directory {directory}", self.component),
             )
             .with_details(json!({ "component": self.component, "file": directory, "reason": "not-listed" }))
         })
@@ -287,7 +287,7 @@ impl VerifiedFiles {
             let directory = format!("{}{}/", self.scope, directory.trim_end_matches('/'));
             ErrorBody::new(
                 codes::MODEL_NOT_INSTALLED,
-                format!("模型包的 {} 组件缺少目录 {directory}", self.component),
+                format!("model bundle component {} is missing directory {directory}", self.component),
             )
             .with_details(json!({ "component": self.component, "file": directory, "reason": "not-listed" }))
         })
@@ -393,17 +393,17 @@ pub fn verify(bundle: &ModelBundle) -> Result<VerifiedBundle, ErrorBody> {
 fn verify_files(component: &'static str, files: &ModelFiles) -> Result<VerifiedFiles, ErrorBody> {
     let dir = PathBuf::from(&files.dir);
     if !dir.is_absolute() {
-        return Err(ErrorBody::invalid_params(format!("{component} 组件的 dir 必须是绝对路径")));
+        return Err(ErrorBody::invalid_params(format!("{component} component's dir must be an absolute path")));
     }
     let mut verified = Vec::with_capacity(files.files.len());
     for entry in &files.files {
         if !is_plain_relative(&entry.path) {
             return Err(ErrorBody::invalid_params(format!(
-                "{component} 组件的文件路径必须是 dir 之下的相对路径"
+                "{component} component's file path must be relative to dir"
             )));
         }
         if verified.iter().any(|(rel, _, _): &(String, PathBuf, u64)| rel == &entry.path) {
-            return Err(ErrorBody::invalid_params(format!("{component} 组件重复列出文件 {}", entry.path)));
+            return Err(ErrorBody::invalid_params(format!("{component} component lists file {} more than once", entry.path)));
         }
         let path = dir.join(&entry.path);
         let not_installed = |reason: &str, extra: serde_json::Value| {
@@ -411,7 +411,7 @@ fn verify_files(component: &'static str, files: &ModelFiles) -> Result<VerifiedF
             if let (Some(details), Some(extra)) = (details.as_object_mut(), extra.as_object()) {
                 details.extend(extra.clone());
             }
-            ErrorBody::new(codes::MODEL_NOT_INSTALLED, format!("模型文件 {} 不可用（{reason}）", entry.path)).with_details(details)
+            ErrorBody::new(codes::MODEL_NOT_INSTALLED, format!("model file {} is unavailable ({reason})", entry.path)).with_details(details)
         };
         let metadata = match std::fs::metadata(&path) {
             Ok(metadata) if metadata.is_file() => metadata,
@@ -582,7 +582,7 @@ mod tests {
         let qwen = vad.require_subdirectory("qwen").unwrap();
         assert_eq!(qwen.component, "vad");
         assert_eq!(qwen.require("vocab.json").unwrap(), dir.path().join("qwen/vocab.json"));
-        assert!(qwen.path("config.json").is_none(), "上一级的文件不在子目录视图里");
+        assert!(qwen.path("config.json").is_none(), "a file from the parent directory is not in the subdirectory view");
         assert_eq!(qwen.with_extension_in("", "safetensors").len(), 2);
         assert_eq!(qwen.total_bytes(), 2 + 2 + 1 + 1);
         // When a file is missing in a subdirectory view, the error gives the full relative path within the bundle.
@@ -632,7 +632,7 @@ mod tests {
         let error = find().unwrap_err();
         let body = error.downcast_ref::<ErrorBody>().expect("ErrorBody survives the anyhow conversion");
         assert_eq!(body.code, codes::MODEL_NOT_INSTALLED);
-        assert!(!error.to_string().contains(&*dir.path().to_string_lossy()), "报错不含本机绝对路径");
+        assert!(!error.to_string().contains(&*dir.path().to_string_lossy()), "error does not contain the local absolute path");
     }
 
     #[test]

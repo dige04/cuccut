@@ -29,7 +29,7 @@ fn new_video(dir: &Path) -> Video {
         width: 1920,
         height: 1080,
     };
-    Video::create(dir, &options, &ffprobe()).expect("新建视频")
+    Video::create(dir, &options, &ffprobe()).expect("create the video")
 }
 
 fn apply(video: &mut Video, command_id: &str, operations: Vec<Value>) -> Result<Committed, ErrorBody> {
@@ -54,7 +54,7 @@ fn undo(video: &mut Video, command_id: &str, committed: &Committed) -> Result<Co
 }
 
 fn code(result: Result<Committed, ErrorBody>) -> String {
-    result.expect_err("应当失败").code
+    result.expect_err("should fail").code
 }
 
 fn seq(video: &Video) -> String {
@@ -180,7 +180,7 @@ fn set_effects_replaces_the_whole_fx_and_undoes() {
         assert_eq!(
             code(apply(&mut video, &format!("cmd_bad_{n}"), vec![op])),
             "INVALID_OPERATION",
-            "第 {n} 个"
+            "case {n}"
         );
     }
     assert_eq!(video.revision(), before);
@@ -201,7 +201,7 @@ fn set_effects_replaces_the_whole_fx_and_undoes() {
         .find(|i| i["id"] == json!(counter))
         .unwrap()
         .clone();
-    assert!(item.get("fx").is_none(), "没有效果时不写 fx");
+    assert!(item.get("fx").is_none(), "no fx is written without effects");
     undo(&mut video, "cmd_undo", &cleared).unwrap();
     assert_eq!(fx_json(&video, &counter)["filterPreset"], "calm1");
 
@@ -260,7 +260,7 @@ fn insert_items_validates_fx_against_the_element_model() {
             vec![json!({ "type": "insertItems", "sequenceId": s, "items": [item] })],
         )
         .unwrap_err();
-        assert_eq!(err.code, "INVALID_OPERATION", "第 {n} 个");
+        assert_eq!(err.code, "INVALID_OPERATION", "case {n}");
     }
 }
 
@@ -284,7 +284,7 @@ fn clip() -> Option<(tempfile::TempDir, PathBuf)> {
         .output()
         .is_ok_and(|o| o.status.success());
     if !ok {
-        eprintln!("跳过：没有可用的 ffmpeg 生成测试素材");
+        eprintln!("skipping: no usable ffmpeg to generate test media");
         return None;
     }
     Some((dir, path))
@@ -353,7 +353,7 @@ fn crop_goes_through_set_style() {
         vec![json!({ "type": "setStyle", "itemId": id, "crop": { "left": 0, "top": 0, "right": 0, "bottom": 0 } })],
     )
     .unwrap();
-    assert_eq!(crop_of(&video), None, "四边都是 0 等于没有裁剪");
+    assert_eq!(crop_of(&video), None, "all four edges at 0 is the same as no crop");
     let _ = cropped;
 }
 
@@ -425,7 +425,7 @@ fn chapters_are_set_upserted_and_removed() {
     .into_iter()
     .enumerate()
     {
-        assert!(apply(&mut video, &format!("cmd_bad_{n}"), vec![op]).is_err(), "第 {n} 个");
+        assert!(apply(&mut video, &format!("cmd_bad_{n}"), vec![op]).is_err(), "case {n}");
     }
     assert_eq!(video.revision(), before);
 
@@ -510,7 +510,7 @@ fn ducking_rules_are_validated_and_undoable() {
     .into_iter()
     .enumerate()
     {
-        assert!(apply(&mut video, &format!("cmd_bad_{n}"), vec![op]).is_err(), "第 {n} 个");
+        assert!(apply(&mut video, &format!("cmd_bad_{n}"), vec![op]).is_err(), "case {n}");
     }
     assert_eq!(video.revision(), before);
 
@@ -613,16 +613,16 @@ fn only_version_three_videos_open() {
         conn.execute("UPDATE meta SET value = ?1 WHERE key = 'schemaVersion'", [old])
             .unwrap();
         for mode in [OpenMode::ReadOnly, OpenMode::Write] {
-            let err = Video::open(&dir, mode, &ffprobe()).err().expect("旧版本拒绝打开");
+            let err = Video::open(&dir, mode, &ffprobe()).err().expect("an old version is rejected on open");
             assert_eq!(err.code, "VIDEO_UNSUPPORTED");
             assert!(err.message.contains("import again"), "{}", err.message);
             assert_eq!(err.message_ref.as_ref().map(|r| r.key.as_str()), Some("engine.schemaRetired"));
             assert_eq!(err.recovery_ref.as_ref().map(|r| r.key.as_str()), Some("engine.schemaRetiredRecovery"));
             assert_eq!(err.details["supported"], json!([3]));
         }
-        assert_eq!(version(&conn), old, "拒绝时不改版本");
+        assert_eq!(version(&conn), old, "rejection does not change the version");
     }
     conn.execute("UPDATE meta SET value = '4' WHERE key = 'schemaVersion'", []).unwrap();
-    let err = Video::open(&dir, OpenMode::ReadOnly, &ffprobe()).err().expect("更新的版本拒绝打开");
+    let err = Video::open(&dir, OpenMode::ReadOnly, &ffprobe()).err().expect("a newer version is rejected on open");
     assert_eq!(err.code, "VIDEO_UNSUPPORTED");
 }

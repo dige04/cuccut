@@ -43,9 +43,9 @@ pub fn word_timings_from_transcripts(
             continue;
         }
         let doc = TranscriptDoc::from_json(
-            &fs::read(&path).with_context(|| format!("读取 {}", path.display()))?,
+            &fs::read(&path).with_context(|| format!("read {}", path.display()))?,
         )
-        .map_err(|error| anyhow::anyhow!("{} 无效：{error:#}", path.display()))?;
+        .map_err(|error| anyhow::anyhow!("{} is invalid: {error:#}", path.display()))?;
         result.insert(
             source_id,
             doc.words
@@ -136,7 +136,7 @@ pub fn tracks_with_resolved_anchors(
                             Some(start) => resolved[field] = json!((time - start).max(0.0)),
                             None => {
                                 failure.get_or_insert_with(|| {
-                                    "元素 start 自己没有解析出来".to_owned()
+                                    "the element's own start did not resolve".to_owned()
                                 });
                             }
                         },
@@ -346,7 +346,7 @@ mod tests {
 
         let (tracks, errors) = tracks_with_resolved_anchors(&document, &projection, &words);
 
-        assert!(errors.is_empty(), "意外的 anchor 错误：{errors:?}");
+        assert!(errors.is_empty(), "unexpected anchor errors: {errors:?}");
         let element = &tracks[0]["elements"][0];
         assert_eq!(element["start"], json!(2.5));
         assert_eq!(element["end"], json!(3.25));
@@ -370,7 +370,7 @@ mod tests {
         let (tracks, errors) =
             tracks_with_resolved_anchors(&document, &projection, &WordTimings::new());
 
-        assert_eq!(errors.len(), 1, "每个坏锚一条：{errors:?}");
+        assert_eq!(errors.len(), 1, "one error per bad anchor: {errors:?}");
         assert_eq!(errors[0]["elementId"], json!("el-1"));
         assert_eq!(errors[0]["field"], json!("start"));
         let element = &tracks[0]["elements"][0];
@@ -401,7 +401,7 @@ mod tests {
 
         let words = word_timings_from_transcripts(project.path(), &document).unwrap();
 
-        assert_eq!(words.len(), 1, "只有 main 有转录稿");
+        assert_eq!(words.len(), 1, "only main has a transcript");
         assert_eq!(words["main"].len(), 2);
         assert_eq!(words["main"][1].id, "w2");
     }

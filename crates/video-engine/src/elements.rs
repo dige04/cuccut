@@ -113,7 +113,7 @@ fn to_element(item: &TimelineItem, keyframes: Keyframes) -> Element {
         TimelineItem::Placeholder(_) => ElementKind::Placeholder,
         TimelineItem::Confetti(_) => ElementKind::Confetti,
         TimelineItem::Whiteboard(_) => ElementKind::Whiteboard,
-        TimelineItem::Composition(_) | TimelineItem::Caption(_) => unreachable!("不是 v2 的元素种类"),
+        TimelineItem::Composition(_) | TimelineItem::Caption(_) => unreachable!("not a v2 element kind"),
     };
     // The five roles that are paired for validation are handed to v2. The rest are an open vocabulary and are kept as they are.
     let role = base

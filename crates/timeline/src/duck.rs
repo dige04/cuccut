@@ -79,7 +79,7 @@ impl Duck {
     pub fn validate(&self, element_id: &str) -> Result<(), TimelineError> {
         if self.under.trim().is_empty() || self.under == "none" {
             return Err(TimelineError::Invalid(format!(
-                "element {element_id} 的 duck.under 须是 \"speech\" 或一条轨的 id"
+                "element {element_id} duck.under must be \"speech\" or a track id"
             )));
         }
         let within = |value: Option<f64>, range: (f64, f64)| {
@@ -87,14 +87,14 @@ impl Duck {
         };
         if !within(self.depth, DUCK_DEPTH_RANGE) {
             return Err(TimelineError::Invalid(format!(
-                "element {element_id} 的 duck.depth 须在 {}..={} dB",
+                "element {element_id} duck.depth must be in {}..={} dB",
                 DUCK_DEPTH_RANGE.0, DUCK_DEPTH_RANGE.1
             )));
         }
         for (name, value) in [("attack", self.attack), ("release", self.release)] {
             if !within(value, DUCK_TIME_RANGE) {
                 return Err(TimelineError::Invalid(format!(
-                    "element {element_id} 的 duck.{name} 须在 {}..={} 秒",
+                    "element {element_id} duck.{name} must be in {}..={} seconds",
                     DUCK_TIME_RANGE.0, DUCK_TIME_RANGE.1
                 )));
             }
@@ -408,7 +408,7 @@ pub fn element_gain_envelopes(timeline: &Value, cues: &Value, project_end: f64) 
                         plan.warnings.push(GainWarning {
                             element: id.clone(),
                             code: DUCK_NO_SPEECH.into(),
-                            message: "没有带时间的文稿，按人声闪避不生效".into(),
+                            message: "no timed transcript, so speech ducking has no effect".into(),
                         });
                     }
                     intervals.clone()
@@ -419,7 +419,7 @@ pub fn element_gain_envelopes(timeline: &Value, cues: &Value, project_end: f64) 
                             plan.warnings.push(GainWarning {
                                 element: id.clone(),
                                 code: DUCK_TRACK_MISSING.into(),
-                                message: format!("闪避依据的轨 {} 不存在，闪避不生效", duck.under),
+                                message: format!("the track {} that ducking depends on does not exist, so ducking has no effect", duck.under),
                             });
                             Vec::new()
                         }

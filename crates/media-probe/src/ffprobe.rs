@@ -41,16 +41,16 @@ pub fn probe_with_ffprobe(path: &Path, ffprobe: &Path) -> Result<MediaProbe> {
     hide_console(&mut command);
     let output = command
         .output()
-        .map_err(|error| anyhow!("启动 {} 失败：{error}", ffprobe.display()))?;
+        .map_err(|error| anyhow!("failed to start {}: {error}", ffprobe.display()))?;
     if !output.status.success() {
         bail!(
-            "ffprobe 无法读取 {}：{}",
+            "ffprobe cannot read {}: {}",
             path.display(),
             String::from_utf8_lossy(&output.stderr).trim()
         );
     }
     let value: Value = serde_json::from_slice(&output.stdout)
-        .map_err(|error| anyhow!("解析 ffprobe 输出：{error}"))?;
+        .map_err(|error| anyhow!("failed to parse ffprobe output: {error}"))?;
     let streams = value
         .get("streams")
         .and_then(Value::as_array)
@@ -126,7 +126,7 @@ pub fn probe_with_ffprobe(path: &Path, ffprobe: &Path) -> Result<MediaProbe> {
     } else if audio.is_some() {
         MediaKind::Audio
     } else {
-        bail!("{} 没有视频或音频流", path.display());
+        bail!("{} has no video or audio stream", path.display());
     };
     let duration = if image {
         None

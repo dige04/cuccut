@@ -44,11 +44,11 @@ pub fn probe_picture(tools: &Tools, path: &Path) -> Result<Option<PictureInfo>, 
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(MediaError::new(
             "EXPORT_DECODE_FAILED",
-            format!("ffprobe 读不了这个文件：{}", tail(&stderr, 3)),
+            format!("ffprobe cannot read this file: {}", tail(&stderr, 3)),
         ));
     }
     let value: Value = serde_json::from_slice(&output.stdout)
-        .map_err(|e| MediaError::new("EXPORT_DECODE_FAILED", format!("ffprobe 的输出读不懂：{e}")))?;
+        .map_err(|e| MediaError::new("EXPORT_DECODE_FAILED", format!("cannot parse ffprobe output: {e}")))?;
     let Some(stream) = value.get("streams").and_then(Value::as_array).and_then(|s| s.first()) else {
         return Ok(None);
     };
@@ -96,7 +96,7 @@ pub fn encoders(tools: &Tools) -> Result<BTreeSet<String>, MediaError> {
         .output()
         .map_err(|e| MediaError::spawn(&tools.ffmpeg, e))?;
     if !output.status.success() {
-        return Err(MediaError::new("EXPORT_TOOL_MISSING", "ffmpeg -encoders 失败"));
+        return Err(MediaError::new("EXPORT_TOOL_MISSING", "ffmpeg -encoders failed"));
     }
     let text = String::from_utf8_lossy(&output.stdout);
     let mut names = BTreeSet::new();

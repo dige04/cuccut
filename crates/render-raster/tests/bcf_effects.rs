@@ -380,7 +380,7 @@ fn mask_chain_renders_and_cycles_fail_during_resolve() {
     document["tracks"][0]["clips"][0]["element"]["children"][2]["style"]["mask"] =
         json!({"source":"#m1"});
     let result = Resolver::new(document, None).unwrap().resolve();
-    assert!(result.err().unwrap().to_string().contains("成环"));
+    assert!(result.err().unwrap().to_string().contains("possible cycle"));
 }
 
 // ── Effect parameter channel `effects[N].<param>` (§6.6) ─────────────────────────

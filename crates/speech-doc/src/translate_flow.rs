@@ -135,7 +135,7 @@ pub fn row_repair_tail_skip_advisory(
         .join(", ");
     let more = if remaining.len() > 5 { " …" } else { "" };
     Some(format!(
-        "{lang}: 本轮 --align-density paired 之后仍有 {} 句译文黏结多行源字幕（{sample}{more}）；收尾轮按设计不会在 paired 轮上再叠一轮，请跑 ccut check + ccut refine-align",
+        "{lang}: after this --align-density paired round, {} translated sentences still cling to multi-line source subtitles ({sample}{more}); the closing round is designed not to stack another paired round, so run ccut check + ccut refine-align",
         remaining.len()
     ))
 }
@@ -356,7 +356,7 @@ mod tests {
             RowRepairTailSkip::AlreadyPaired,
             None,
         )
-        .expect("paired 轮之后仍有黏结");
+        .expect("sentences still cling after the paired round");
         assert!(advisory.contains("s-g1.0"), "{advisory}");
         assert!(advisory.contains("refine-align"), "{advisory}");
     }
@@ -431,7 +431,7 @@ mod tests {
             true,
             None,
         )
-        .expect("45 句黏结");
+        .expect("45 sentences cling together");
         // Truncation only affects this round's targeted sentence set. The complete hit set is still handed to the engine in full, and the engine records the
         // difference in `row_repair.capped` (left for the next round).
         assert_eq!(plan.keys.len(), ROW_DEFICIT_MAX_KEYS);

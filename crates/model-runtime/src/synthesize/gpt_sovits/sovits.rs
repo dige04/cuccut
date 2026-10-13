@@ -305,7 +305,7 @@ impl StyleEncoder {
     /// Reference linear spectrogram → timbre vector `ge` (`[1, 1, 512]`).
     fn forward(&self, spec: &Spectrogram) -> Result<Array> {
         let frames = spec.frames;
-        ensure!(frames > 0, "参考音频频谱为空");
+        ensure!(frames > 0, "reference audio spectrogram is empty");
         let mut data = vec![0.0f32; frames * STYLE_BINS];
         for bin in 0..STYLE_BINS {
             for frame in 0..frames {
@@ -374,7 +374,7 @@ impl Wn {
                 None => skip,
             });
         }
-        output.context("WN 没有层")
+        output.context("WN has no layers")
     }
 }
 
@@ -535,7 +535,7 @@ impl Generator {
                     None => y,
                 });
             }
-            x = sum.context("Generator 缺少残差块")? / kernels as f32;
+            x = sum.context("Generator is missing residual blocks")? / kernels as f32;
         }
         // `F.leaky_relu` default slope 0.01.
         let x = self.conv_post.forward_nlc(&leaky_relu(&x, 0.01)?)?;
@@ -559,7 +559,7 @@ impl Sovits {
         let codebook = w.take_f32("quantizer.vq.layers.0._codebook.embed")?;
         ensure!(
             codebook.dim(0) as usize == CODEBOOK_SIZE && codebook.dim(1) == SSL_DIM,
-            "SoVITS 码本形状不对：[{}, {}]",
+            "SoVITS codebook has the wrong shape: [{}, {}]",
             codebook.dim(0),
             codebook.dim(1)
         );
@@ -586,11 +586,11 @@ impl Sovits {
 
     /// `decode`: semantic codes + target phonemes + reference linear spectrogram → 32 kHz waveform (no peak normalization applied).
     pub fn decode(&self, codes: &[u32], phones: &[i32], refer: &Spectrogram, noise_scale: f32, seed: u64) -> Result<Vec<f32>> {
-        ensure!(!codes.is_empty(), "SoVITS 输入语义码为空");
-        ensure!(!phones.is_empty(), "SoVITS 输入音素为空");
+        ensure!(!codes.is_empty(), "SoVITS input semantic codes are empty");
+        ensure!(!phones.is_empty(), "SoVITS input phonemes are empty");
         ensure!(
             codes.iter().all(|&c| (c as usize) < CODEBOOK_SIZE),
-            "语义码越界（码本 {CODEBOOK_SIZE}）"
+            "semantic code out of range (codebook {CODEBOOK_SIZE})"
         );
         let ge = self.ref_enc.forward(refer)?;
         // 25 Hz → 50 Hz nearest-neighbor upsampling.

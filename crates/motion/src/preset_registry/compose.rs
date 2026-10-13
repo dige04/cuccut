@@ -326,7 +326,7 @@ fn lower_ops(
     for track in compiled.tracks {
         if track.target != crate::program::TargetId::SELF {
             return Err(MotionError::ManifestInvalid(format!(
-                "{}: ops 体不得声明 target",
+                "{}: the ops body must not declare target",
                 manifest.id
             )));
         }

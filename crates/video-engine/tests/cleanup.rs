@@ -29,7 +29,7 @@ fn new_video(dir: &Path) -> Video {
         width: 1920,
         height: 1080,
     };
-    Video::create(dir, &options, &ffprobe()).expect("新建视频")
+    Video::create(dir, &options, &ffprobe()).expect("create the video")
 }
 
 fn apply(video: &mut Video, command_id: &str, operations: Vec<Value>) -> Result<video_engine::Committed, ErrorBody> {
@@ -149,7 +149,7 @@ fn a_track_with_clips_is_not_deleted() {
     assert_eq!(err.details["next"], json!(["deleteItems", "moveItem"]));
     assert!(err.recovery.as_deref().unwrap().contains("deleteItems"));
     assert!(err.entity_ids.contains(&v1));
-    assert_eq!(video.revision(), revision, "拒绝时视频不变");
+    assert_eq!(video.revision(), revision, "video unchanged on rejection");
 
     // Deleting a clip first, then the track, in the same transaction is fine.
     let committed = apply(
@@ -194,7 +194,7 @@ fn deleting_an_empty_track_keeps_the_other_orders() {
     assert_eq!(committed.receipt.deleted_ids, vec![v2.clone()]);
     assert!(
         committed.receipt.updated_ids.iter().all(|id| ![&v1, &a1, &v3].contains(&id)),
-        "其他轨道没有改"
+        "other tracks were not changed"
     );
     assert_eq!(impact(&committed)["removedTracks"], json!([v2]));
     assert!(!video.state().tracks.contains_key(&v2));
@@ -414,7 +414,7 @@ fn prerender_clip(dir: &Path, name: &str, seconds: u32) -> Option<PathBuf> {
         .output()
         .is_ok_and(|o| o.status.success());
     if !ok {
-        eprintln!("跳过：没有可用的 ffmpeg 生成测试素材");
+        eprintln!("skipping: no usable ffmpeg to generate test media");
         return None;
     }
     Some(path)

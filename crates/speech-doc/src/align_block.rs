@@ -3404,7 +3404,7 @@ mod tests {
             let merged = target_cps_chars(left, "zh") + target_cps_chars(right, "zh");
             assert!(
                 !(ends_list_separator(left) && merged <= input.params.hard),
-                "顿号后不该有一刀（合并后 {merged} ≤ hard）：{pieces:?}"
+                "there should be no cut after an enumeration comma (merged {merged} ≤ hard): {pieces:?}"
             );
         }
         // The cut check pointed at (after “采取的行动，”) is already made, so the 20-unit line no longer appears.
@@ -3472,7 +3472,7 @@ mod tests {
                     "paired must re-split: {:?}",
                     entry.pieces
                 );
-                assert_eq!(concat(&entry), target, "paired 不得改写译文");
+                assert_eq!(concat(&entry), target, "paired must not rewrite the translation");
                 assert_invariants(&entry, src.len());
             }
             other => panic!("paired: {other:?}"),
@@ -3641,7 +3641,7 @@ mod tests {
         let input = BilingualPlanInput::new(src.clone(), target, "en", "zh");
         assert!(
             target_cps_chars(rows[1], "zh") > input.params.hard,
-            "第二行必须超 hard 才能覆盖再切分支"
+            "the second line must exceed hard for the re-split branch to apply"
         );
         assert!(plan_sentence_rows(&edges, &ranges, &input).is_none());
         // The regular path after fallback still produces a plan as usual (this sentence has a dedicated round to fall back on).

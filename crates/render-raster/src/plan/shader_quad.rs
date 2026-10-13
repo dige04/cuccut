@@ -334,14 +334,14 @@ pub fn pack_frame_v1(body: &ProgressBody) -> Result<RecipeUniform> {
         recipe.flag("background"),
         recipe.object("colorMode"),
     ) else {
-        bail!("frame-v1 配方缺必填参数");
+        bail!("frame-v1 recipe is missing required parameters");
     };
     let kind = mode.get("kind").and_then(Value::as_str).unwrap_or("solid");
     let color_kind = match kind {
         "solid" => 0.0,
         "rainbow" => 1.0,
         "strobe" => 2.0,
-        other => bail!("frame-v1 的 colorMode.kind 未知：{other}"),
+        other => bail!("frame-v1 has unknown colorMode.kind: {other}"),
     };
     let number = |key: &str| mode.get(key).and_then(Value::as_f64).unwrap_or_default() as f32;
     let mut values = vec![
@@ -379,7 +379,7 @@ pub fn pack_ring_v1(body: &ProgressBody) -> Result<RecipeUniform> {
         recipe.number("innerRadius"),
         recipe.text("direction"),
     ) else {
-        bail!("ring-v1 配方缺必填参数");
+        bail!("ring-v1 recipe is missing required parameters");
     };
     Ok(RecipeUniform::from_floats(&[
         feather as f32,
@@ -410,10 +410,10 @@ pub fn pack_snake_v1(body: &ProgressBody) -> Result<RecipeUniform> {
         recipe.object("colorMode"),
     )
     else {
-        bail!("snake-v1 配方缺必填参数");
+        bail!("snake-v1 recipe is missing required parameters");
     };
     if increment == 0.0 {
-        bail!("snake-v1 的 angleIncrementDeg 不能是 0");
+        bail!("snake-v1 angleIncrementDeg must not be 0");
     }
     let mut boosts = [0f32; 4];
     if let Some(list) = recipe.array("boostSteps") {
@@ -435,7 +435,7 @@ pub fn pack_snake_v1(body: &ProgressBody) -> Result<RecipeUniform> {
     let color_kind = match kind {
         "solid" => 0.0,
         "rainbow" => 1.0,
-        other => bail!("snake-v1 的 colorMode.kind 未知：{other}"),
+        other => bail!("snake-v1 has unknown colorMode.kind: {other}"),
     };
     let track_is_main = if mode.get("trackColor").and_then(Value::as_str) == Some("main") {
         1.0
@@ -472,7 +472,7 @@ pub fn pack_snake_v1(body: &ProgressBody) -> Result<RecipeUniform> {
 pub fn pack_bar_v1(body: &ProgressBody, pixel_scale: f64) -> Result<RecipeUniform> {
     let recipe = &body.recipe;
     let Some(direction) = recipe.text("direction") else {
-        bail!("bar-v1 配方缺 direction");
+        bail!("bar-v1 recipe is missing direction");
     };
     let radius_px = recipe
         .object("corner")
@@ -595,10 +595,10 @@ impl ShaderQuad {
         canvas: (f64, f64),
     ) -> Result<ShaderQuad> {
         let Some(body) = recipe.progress() else {
-            bail!("{} 不是 progress 配方", recipe.id);
+            bail!("{} is not a progress recipe", recipe.id);
         };
         let Some(shader) = shader_for(ShaderDomain::Progress, &recipe.id) else {
-            bail!("progress 样式 \"{}\" 还没有 WGSL 实现", recipe.id);
+            bail!("progress style \"{}\" has no WGSL implementation yet", recipe.id);
         };
         let bbox = match body.aspect {
             ProgressAspect::Square => bbox.inscribed_square(),
@@ -609,7 +609,7 @@ impl ShaderQuad {
             RecipeAlgorithm::FrameV1 => pack_frame_v1(body)?,
             RecipeAlgorithm::RingV1 => pack_ring_v1(body)?,
             RecipeAlgorithm::SnakeV1 => pack_snake_v1(body)?,
-            other => bail!("算法 {:?} 不是 progress 配方", other),
+            other => bail!("algorithm {:?} is not a progress recipe", other),
         };
         // Handling of non-finite values is identical to `progress_frame`: no panic, read as 0.
         let progress = if progress.is_finite() {
@@ -799,7 +799,7 @@ mod tests {
         assert_eq!(transform, vec![64, 48]);
         // `@group(3)`: four f32 in `struct BarRecipe`.
         assert_eq!(quad.recipe.bytes.len(), 16);
-        assert!(quad.data_texture.is_none(), "progress 没有音频纹理");
+        assert!(quad.data_texture.is_none(), "progress has no audio texture");
     }
 
     /// The row semantics of §8.3: row 0 = time domain, row 1 = frequency domain, no flip.
@@ -852,7 +852,7 @@ mod tests {
                     .unwrap_or_else(|error| panic!("progress/{}: {error}", recipe.id));
             // The recipe pack for `@group(3)` must be a multiple of 16 bytes (WGSL uniform alignment).
             assert_eq!(quad.recipe.bytes.len() % 16, 0, "{}", recipe.id);
-            assert!(quad.data_texture.is_none(), "progress 没有音频纹理");
+            assert!(quad.data_texture.is_none(), "progress has no audio texture");
         }
     }
 

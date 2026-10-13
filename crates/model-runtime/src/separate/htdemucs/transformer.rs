@@ -325,7 +325,7 @@ impl CrossTransformerEncoder {
         let (b, c, fr, t1) = (x_in.dim(0), x_in.dim(1), x_in.dim(2), x_in.dim(3));
         let t2 = xt_in.dim(2);
         if xt_in.dim(1) != c {
-            bail!("transformer 两路通道数不一致：{} / {}", c, xt_in.dim(1));
+            bail!("transformer branch channel counts differ: {} / {}", c, xt_in.dim(1));
         }
         let (pe2d, pe1d) = self.pos_embeddings(c as usize, fr as usize, t1 as usize, t2 as usize)?;
 
@@ -346,7 +346,7 @@ impl CrossTransformerEncoder {
                     x = l.forward(&old_x, &xt)?;
                     xt = lt.forward(&xt, &old_x)?;
                 }
-                _ => bail!("transformer 两路层类型不一致"),
+                _ => bail!("transformer branch layer types differ"),
             }
         }
 

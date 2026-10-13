@@ -74,8 +74,8 @@ impl Qwen3Tokenizer {
 
     /// Loads from the files listed in the model package. The caller supplies the paths; other files in the same directory are not derived from the vocabulary path.
     pub fn load(vocabulary: &Path, merges: Option<&Path>, config: Option<&Path>) -> Result<Self> {
-        let data = std::fs::read(vocabulary).context("读取 vocab.json")?;
-        let vocabulary: HashMap<String, i32> = serde_json::from_slice(&data).context("vocab.json 应为 {token: id} 字典")?;
+        let data = std::fs::read(vocabulary).context("read vocab.json")?;
+        let vocabulary: HashMap<String, i32> = serde_json::from_slice(&data).context("vocab.json must be a {token: id} dictionary")?;
         let mut tokenizer = Self::default();
         for (token, id) in vocabulary {
             tokenizer.register(token, id);
@@ -242,7 +242,7 @@ impl Qwen3Tokenizer {
             rank += 1;
         }
         if rank == 0 {
-            bail!("merges.txt 不含有效合并规则");
+            bail!("merges.txt contains no valid merge rules");
         }
         Ok(())
     }
@@ -401,7 +401,7 @@ mod tests {
         for split in 0..=tokens.len() {
             let mut joined = tokenizer.decode_bytes(&tokens[..split]);
             joined.extend(tokenizer.decode_bytes(&tokens[split..]));
-            assert_eq!(joined, bytes, "切点 {split}");
+            assert_eq!(joined, bytes, "split point {split}");
         }
     }
 

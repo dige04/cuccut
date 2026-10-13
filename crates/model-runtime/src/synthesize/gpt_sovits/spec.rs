@@ -20,7 +20,7 @@ pub struct Spectrogram {
 
 /// `F.pad(mode="reflect")`: the boundary sample itself is not repeated.
 pub fn reflect_pad(samples: &[f32], pad: usize) -> Result<Vec<f32>> {
-    ensure!(samples.len() > pad, "反射填充需要至少 {} 个样本，实际 {}", pad + 1, samples.len());
+    ensure!(samples.len() > pad, "reflection padding needs at least {} samples, got {}", pad + 1, samples.len());
     let n = samples.len();
     let mut out = Vec::with_capacity(n + 2 * pad);
     out.extend((1..=pad).rev().map(|i| samples[i]));
@@ -31,7 +31,7 @@ pub fn reflect_pad(samples: &[f32], pad: usize) -> Result<Vec<f32>> {
 
 pub fn spectrogram(samples: &[f32]) -> Result<Spectrogram> {
     let padded = reflect_pad(samples, (N_FFT - HOP_LENGTH) / 2)?;
-    ensure!(padded.len() >= N_FFT, "参考音频太短，无法计算频谱");
+    ensure!(padded.len() >= N_FFT, "reference audio is too short to compute a spectrogram");
     let frames = (padded.len() - N_FFT) / HOP_LENGTH + 1;
     // torch.hann_window defaults to periodic=True.
     let window: Vec<f32> = (0..N_FFT)
@@ -53,7 +53,7 @@ pub fn spectrogram(samples: &[f32]) -> Result<Spectrogram> {
             *slot = padded[start + k] * window[k];
         }
         fft.process_with_scratch(&mut input, &mut spectrum, &mut scratch)
-            .context("参考音频 STFT 失败")?;
+            .context("reference audio STFT failed")?;
         for (bin, value) in spectrum.iter().enumerate() {
             data[bin * frames + frame] = (value.norm_sqr() + 1e-8).sqrt();
         }

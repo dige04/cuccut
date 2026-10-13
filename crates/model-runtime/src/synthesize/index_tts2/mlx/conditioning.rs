@@ -217,11 +217,11 @@ fn decode_native(audio: &ReferenceAudio) -> Result<(Vec<f32>, u32)> {
                 .map(|reader| reader.spec().sample_rate)
                 .filter(|rate| *rate > 0)
                 .unwrap_or(FALLBACK_DECODE_RATE);
-            let decoded = crate::audio::decode_mono(path, native).with_context(|| format!("解码参考音频 {} 失败", path.display()))?;
+            let decoded = crate::audio::decode_mono(path, native).with_context(|| format!("failed to decode reference audio {}", path.display()))?;
             Ok((decoded, native))
         }
         ReferenceAudio::Builtin(id) => {
-            let voice = voices::find(id).with_context(|| format!("没有内置音色 {id}"))?;
+            let voice = voices::find(id).with_context(|| format!("no built-in voice {id}"))?;
             decode_wav_pcm16(voices::wav(voice))
         }
     }
@@ -231,7 +231,7 @@ fn decode_native(audio: &ReferenceAudio) -> Result<(Vec<f32>, u32)> {
 fn describe(audio: &ReferenceAudio) -> String {
     match audio {
         ReferenceAudio::File(path) => path.display().to_string(),
-        ReferenceAudio::Builtin(id) => format!("内置音色 {id}"),
+        ReferenceAudio::Builtin(id) => format!("built-in voice {id}"),
     }
 }
 
@@ -239,7 +239,7 @@ fn describe(audio: &ReferenceAudio) -> String {
 fn semantic_front_end_features(audio_16k: &[f32], source: &ReferenceAudio) -> Result<Array> {
     if audio_16k.len() < SEAMLESS_FRAME_LENGTH {
         bail!(
-            "参考音频 {} 太短（{} 个采样，至少需要 {} 个）",
+            "reference audio {} is too short ({} samples, at least {} needed)",
             describe(source),
             audio_16k.len(),
             SEAMLESS_FRAME_LENGTH
@@ -247,7 +247,7 @@ fn semantic_front_end_features(audio_16k: &[f32], source: &ReferenceAudio) -> Re
     }
     let (features, frames) = dsp::seamless_input_features(audio_16k);
     if frames == 0 {
-        bail!("参考音频 {} 太短，无法提取前端特征", describe(source));
+        bail!("reference audio {} is too short to extract frontend features", describe(source));
     }
     Ok(Array::from_slice(&features, &[1, frames as i32, SEAMLESS_FEATURE_DIM as i32]))
 }
@@ -292,7 +292,7 @@ impl<'a> ConditioningModels<'a> {
         };
         let (mel, frames) = dsp::slaney_mel(&padded, &cfg);
         if frames == 0 {
-            bail!("参考音频太短，无法提取提示梅尔谱");
+            bail!("reference audio is too short to extract the prompt mel spectrogram");
         }
         let mel = Array::from_slice(&mel, &[frames as i32, s2mel.n_mels as i32]);
         Ok(mel.t().expand_dims(0)?)
@@ -309,14 +309,14 @@ impl<'a> ConditioningModels<'a> {
         emotion_control: Option<&EmotionControl>,
         progress: &mut dyn FnMut(f32, &str) -> bool,
     ) -> Result<ReferenceConditioning> {
-        if !progress(0.05, "读取参考音频") {
+        if !progress(0.05, "reading reference audio") {
             bail!(super::gpt::ABORT_MESSAGE);
         }
         let loaded = load_clipped_audio(reference_audio, LIBROSA_DEFAULT_SAMPLE_RATE)?;
         let reference_16k = dsp::torchaudio_resample(&loaded, LIBROSA_DEFAULT_SAMPLE_RATE, dsp::SEAMLESS_SAMPLE_RATE);
         let reference_22k = dsp::torchaudio_resample(&loaded, LIBROSA_DEFAULT_SAMPLE_RATE, self.config.s2mel.sample_rate);
 
-        if !progress(0.25, "提取音色语义特征") {
+        if !progress(0.25, "extracting voice semantic features") {
             bail!(super::gpt::ABORT_MESSAGE);
         }
         let speaker_hidden = self.semantic_hidden(&reference_16k, reference_audio)?;
@@ -329,14 +329,14 @@ impl<'a> ConditioningModels<'a> {
             None => speaker_hidden.clone(),
         };
 
-        if !progress(0.55, "提取情感特征") {
+        if !progress(0.55, "extracting emotion features") {
             bail!(super::gpt::ABORT_MESSAGE);
         }
         let emotion_source = emotion_source(reference_audio, emotion_audio, emotion_control);
         let emotion_16k = load_clipped_audio(emotion_source, dsp::SEAMLESS_SAMPLE_RATE)?;
         let emotion_hidden = self.semantic_hidden(&emotion_16k, emotion_source)?;
 
-        if !progress(0.75, "计算提示梅尔谱与风格向量") {
+        if !progress(0.75, "computing prompt mel spectrogram and style vector") {
             bail!(super::gpt::ABORT_MESSAGE);
         }
         let prompt_mel = self.prompt_mel(&reference_22k)?;
@@ -349,7 +349,7 @@ impl<'a> ConditioningModels<'a> {
 
         prompt_mel.eval()?;
         prompt_condition.eval()?;
-        if !progress(1.0, "参考条件就绪") {
+        if !progress(1.0, "reference conditioning ready") {
             bail!(super::gpt::ABORT_MESSAGE);
         }
         Ok(ReferenceConditioning {
@@ -385,13 +385,13 @@ mod tests {
         let mut cache = ConditioningCache::new(2);
         cache.insert(key(&a), 1);
         cache.insert(key(&b), 2);
-        assert_eq!(cache.get(&key(&a)), Some(1), "命中后 a 变成最近用过");
+        assert_eq!(cache.get(&key(&a)), Some(1), "after a hit, a becomes the most recently used");
         cache.insert(key(&c), 3);
-        assert_eq!(cache.get(&key(&b)), None, "淘汰最久没用的 b");
+        assert_eq!(cache.get(&key(&b)), None, "evicts the least recently used b");
         assert_eq!(cache.get(&key(&a)), Some(1));
         assert_eq!(cache.get(&key(&c)), Some(3));
         cache.insert(key(&c), 4);
-        assert_eq!(cache.entries.len(), 2, "同键覆盖不占新位");
+        assert_eq!(cache.entries.len(), 2, "overwriting the same key does not take a new slot");
         assert_eq!(cache.get(&key(&c)), Some(4));
     }
 
@@ -403,16 +403,16 @@ mod tests {
         assert_ne!(
             ConditioningKey::new(&voice, &voice),
             ConditioningKey::new(&voice, &mood),
-            "情感参考不同就是不同的条件"
+            "different emotion references are different conditioning"
         );
         let before = ConditioningKey::new(&voice, &voice).unwrap();
         let ReferenceAudio::File(path) = &voice else { unreachable!() };
         std::fs::write(path, b"re-recorded voice").unwrap();
-        assert_ne!(ConditioningKey::new(&voice, &voice), Some(before), "同一路径改写后不能命中旧条件");
+        assert_ne!(ConditioningKey::new(&voice, &voice), Some(before), "after the same path is rewritten, the old conditioning must not hit");
         assert_eq!(
             ConditioningKey::new(&ReferenceAudio::File(dir.path().join("missing.wav")), &voice),
             None,
-            "读不到文件就不缓存"
+            "unreadable files are not cached"
         );
         // Built-in voices are identified by id and do not touch the file system.
         let builtin = ReferenceAudio::Builtin("zh-female");

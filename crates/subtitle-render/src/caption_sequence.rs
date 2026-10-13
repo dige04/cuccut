@@ -2777,7 +2777,7 @@ mod caption_sequence_tests {
                 };
                 assert!(
                     dwell >= SEQ_MIN_BLOCK_DWELL_S - 1e-9,
-                    "{} 只停 {dwell}s",
+                    "{} stays only {dwell}s",
                     block.key
                 );
                 // Merging keeps the earlier entrance time; word order and word timing are unchanged
@@ -2790,7 +2790,7 @@ mod caption_sequence_tests {
                 }
             }
         }
-        assert!(folded > 0, "并完装不下一行的块应当折行");
+        assert!(folded > 0, "blocks that do not fit on one line when merged should wrap");
         // No character is lost
         let words: usize = plan
             .sequences

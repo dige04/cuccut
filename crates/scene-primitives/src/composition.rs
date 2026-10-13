@@ -4,13 +4,13 @@ use serde_json::Value;
 
 pub fn crop(value: &Value) -> Result<[f64; 4]> {
     let Some(map) = value.as_object() else {
-        bail!("schema: crop 须为 {{x,y,width,height}} 比例矩形");
+        bail!("schema: crop must be a {{x,y,width,height}} ratio rectangle");
     };
     if map
         .keys()
         .any(|key| !matches!(key.as_str(), "x" | "y" | "width" | "height"))
     {
-        bail!("schema: crop 键无效");
+        bail!("schema: invalid crop key");
     }
     let mut out = [0.0; 4];
     for (i, key) in ["x", "y", "width", "height"].iter().enumerate() {
@@ -18,14 +18,14 @@ pub fn crop(value: &Value) -> Result<[f64; 4]> {
             .get(key)
             .and_then(Value::as_f64)
             .filter(|v| v.is_finite() && (0.0..=1.0).contains(v))
-            .ok_or_else(|| anyhow::anyhow!("schema: crop.{key} 须为 0..1 比例"))?;
+            .ok_or_else(|| anyhow::anyhow!("schema: crop.{key} must be a 0..1 ratio"))?;
     }
     if out[2] <= 0.0
         || out[3] <= 0.0
         || out[0] + out[2] > 1.0 + 1e-9
         || out[1] + out[3] > 1.0 + 1e-9
     {
-        bail!("schema: crop 须为源图内的正面积矩形");
+        bail!("schema: crop must be a rectangle with positive area inside the source image");
     }
     Ok(out)
 }
@@ -38,18 +38,18 @@ pub struct TimeMap {
 impl TimeMap {
     pub fn parse(value: &Value) -> Result<Self> {
         let Some(items) = value.as_array().filter(|v| (2..=4096).contains(&v.len())) else {
-            bail!("schema: timeMap 须为 2..4096 个 {{t, source}} 点");
+            bail!("schema: timeMap must have 2..4096 {{t, source}} points");
         };
         let mut points = Vec::with_capacity(items.len());
         for item in items {
             let Some(object) = item.as_object() else {
-                bail!("schema: timeMap 点须为对象");
+                bail!("schema: timeMap points must be objects");
             };
             if object
                 .keys()
                 .any(|key| !matches!(key.as_str(), "t" | "source"))
             {
-                bail!("schema: timeMap 点只接受 t/source");
+                bail!("schema: timeMap points only accept t/source");
             }
             let number = |key| {
                 item.get(key)
@@ -57,15 +57,15 @@ impl TimeMap {
                     .filter(|v| v.is_finite() && *v >= 0.0)
             };
             let (Some(t), Some(source)) = (number("t"), number("source")) else {
-                bail!("schema: timeMap 的 t/source 必须是有限非负秒数");
+                bail!("schema: timeMap t/source must be finite non-negative seconds");
             };
             if points.last().is_some_and(|(previous, _)| t <= *previous) {
-                bail!("schema: timeMap 的 t 必须严格递增");
+                bail!("schema: timeMap t must be strictly increasing");
             }
             points.push((t, source));
         }
         if points[0].0 != 0.0 {
-            bail!("schema: timeMap 首点 t 必须为 0");
+            bail!("schema: the first timeMap point must have t = 0");
         }
         Ok(Self { points })
     }
@@ -116,7 +116,7 @@ impl TimeMap {
                     to: self.sample(at(pair[1])),
                 });
                 if out.len() > 4096 {
-                    bail!("schema: 嵌套 timeMap 展开超过 4096 段");
+                    bail!("schema: nested timeMap expands to more than 4096 segments");
                 }
             }
         }
@@ -139,7 +139,7 @@ impl TimeSpan {
         }
         let rate = (self.to - self.from) / (self.end - self.start);
         if !rate.is_finite() || rate <= 0.0 {
-            bail!("schema: timeMap 音频速率超出有限数值范围");
+            bail!("schema: timeMap audio rate is outside the finite number range");
         }
         Ok(Some(rate))
     }
@@ -155,13 +155,13 @@ pub struct LocalCanvas {
 impl LocalCanvas {
     pub fn parse(value: &Value) -> Result<Self> {
         let Some(object) = value.as_object() else {
-            bail!("schema: composition.canvas 必须为对象");
+            bail!("schema: composition.canvas must be an object");
         };
         if object
             .keys()
             .any(|key| !matches!(key.as_str(), "width" | "height" | "duration"))
         {
-            bail!("schema: canvas 只接受 width/height/duration");
+            bail!("schema: canvas only accepts width/height/duration");
         }
         let number = |key| {
             value
@@ -172,13 +172,13 @@ impl LocalCanvas {
         let (Some(width), Some(height), Some(duration)) =
             (number("width"), number("height"), number("duration"))
         else {
-            bail!("schema: composition.canvas 的 width/height/duration 须为有限正数");
+            bail!("schema: composition.canvas width/height/duration must be finite positive numbers");
         };
         if width.fract() != 0.0 || height.fract() != 0.0 {
-            bail!("schema: composition.canvas 尺寸须为整数像素");
+            bail!("schema: composition.canvas size must be whole pixels");
         }
         if width > 16384.0 || height > 16384.0 {
-            bail!("schema: composition.canvas 边长不得超过 16384");
+            bail!("schema: composition.canvas side must not exceed 16384");
         }
         Ok(Self {
             width,

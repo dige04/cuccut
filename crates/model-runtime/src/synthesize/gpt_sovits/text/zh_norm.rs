@@ -14,7 +14,7 @@ const UNITS: [(usize, &str); 5] = [(8, "亿"), (4, "万"), (3, "千"), (2, "百"
 const POWER: &str = "[⁰¹²³⁴⁵⁶⁷⁸⁹ˣʸⁿ]";
 
 fn regex(pattern: &str) -> Regex {
-    Regex::new(pattern).expect("zh_normalization 正则")
+    Regex::new(pattern).expect("zh_normalization regex")
 }
 
 fn group<'t>(caps: &Captures<'t>, index: usize) -> &'t str {

@@ -135,9 +135,9 @@ fn follow(before: &VideoState, next: &mut VideoState, id: &str, ctx: &mut EditCo
     let Some(placed) = next.items.get(id) else { return Ok(false) };
     let sequence_id = placed.sequence_id.clone();
     let fps = fps_of(next, &sequence_id)?;
-    let after_target = target_of(&placed.value).cloned().expect("只补算 item-local");
+    let after_target = target_of(&placed.value).cloned().expect("only item-local targets are recomputed");
     let follower_before = &before.items[id].value;
-    let before_target = target_of(follower_before).cloned().expect("只补算 item-local");
+    let before_target = target_of(follower_before).cloned().expect("only item-local targets are recomputed");
     let Some(target_was) = before.items.get(&before_target).filter(|p| p.sequence_id == sequence_id) else {
         return Ok(false);
     };
@@ -156,7 +156,7 @@ fn follow(before: &VideoState, next: &mut VideoState, id: &str, ctx: &mut EditCo
         .iter()
         .map(|p| item_range(&next.items[p].value, fps).map(|(s, e)| (p.clone(), s, e)))
         .collect::<EngineResult<_>>()?;
-    let earliest = ranges.iter().min_by(|a, b| a.1.cmp(&b.1)).expect("至少一段").clone();
+    let earliest = ranges.iter().min_by(|a, b| a.1.cmp(&b.1)).expect("at least one segment").clone();
 
     let (piece, start) = if anchor < s0 {
         // Follower is before the target's start: keep the distance to the target's new start.

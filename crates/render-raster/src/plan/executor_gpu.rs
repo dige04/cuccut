@@ -166,7 +166,7 @@ impl GpuExecutor {
                 Err(_) => continue,
             }
         }
-        bail!("gpu-backend-unavailable: Metal / Vulkan / DX12 都拿不到 adapter")
+        bail!("gpu-backend-unavailable: no adapter available from Metal / Vulkan / DX12")
     }
 
     #[cfg(feature = "gpu")]
@@ -179,7 +179,7 @@ impl GpuExecutor {
             power_preference: wgpu::PowerPreference::HighPerformance,
             ..Default::default()
         }))
-        .map_err(|error| anyhow!("request_adapter 失败：{error}"))?;
+        .map_err(|error| anyhow!("request_adapter failed: {error}"))?;
         let info = adapter.get_info();
         // On Windows, WARP would add texture uploads/readbacks around a CPU
         // rasterizer. Let auto callers use the native CPU reference instead.
@@ -200,11 +200,11 @@ impl GpuExecutor {
             required_limits: adapter.limits(),
             ..Default::default()
         }))
-        .map_err(|error| anyhow!("request_device 失败：{error}"))?;
+        .map_err(|error| anyhow!("request_device failed: {error}"))?;
         // A validation failure on a self-created device should not panic the whole process; falling back to CPU is the established policy.
         // An injected host device keeps the host's own uncaptured-error handler.
         device.on_uncaptured_error(std::sync::Arc::new(|error| {
-            eprintln!("ccut-render gpu: 未捕获的 wgpu 错误：{error}");
+            eprintln!("ccut-render gpu: uncaught wgpu error: {error}");
         }));
 
         Ok(GpuExecutor::from_device(
@@ -356,7 +356,7 @@ impl GpuExecutor {
         // `downlevel_defaults()` then in use.
         let max = self.device.limits().max_texture_dimension_2d;
         if rw > max || rh > max {
-            bail!("gpu-execution-failed: 渲染目标 {rw}x{rh}（{factor}× 超采样）超出设备上限 {max}");
+            bail!("gpu-execution-failed: render target {rw}x{rh} ({factor}× supersampling) exceeds the device limit {max}");
         }
 
         let pipeline = self.pipeline(quad.shader, wgpu::TextureFormat::Rgba8Unorm, false)?;
@@ -470,14 +470,14 @@ impl GpuExecutor {
         });
         self.device
             .poll(wgpu::PollType::wait_indefinitely())
-            .map_err(|error| anyhow!("等待 GPU 回读失败：{error:?}"))?;
+            .map_err(|error| anyhow!("waiting for GPU readback failed: {error:?}"))?;
         receiver
             .recv()
-            .context("回读通道断开")?
-            .map_err(|error| anyhow!("缓冲映射失败：{error}"))?;
+            .context("readback channel disconnected")?
+            .map_err(|error| anyhow!("buffer mapping failed: {error}"))?;
         let mapped = slice
             .get_mapped_range()
-            .map_err(|error| anyhow!("取回读区间失败：{error}"))?;
+            .map_err(|error| anyhow!("fetching the readback range failed: {error}"))?;
         let mut rgba = Vec::with_capacity((rw * rh * 4) as usize);
         for row in 0..rh {
             let start = (row * padded) as usize;
@@ -585,10 +585,10 @@ impl GpuExecutor {
         };
         match (signature.domain, signature.audio) {
             (ShaderDomain::Visualizer, None) => {
-                bail!("gpu-quad-bindings-invalid: visualizer 缺少音频纹理")
+                bail!("gpu-quad-bindings-invalid: visualizer is missing its audio texture")
             }
             (ShaderDomain::Progress, Some(_)) => {
-                bail!("gpu-quad-bindings-invalid: progress 不接受音频纹理")
+                bail!("gpu-quad-bindings-invalid: progress does not accept an audio texture")
             }
             _ => {}
         }
@@ -672,7 +672,7 @@ impl GpuExecutor {
         // and each one is validated by native tests; the browser's own validation errors reach the host via the uncaptured error and make
         // it fall back to CPU.
         #[cfg(feature = "wgsl-validate")]
-        validate_wgsl(&wgsl).with_context(|| format!("{key} 的 WGSL 校验失败"))?;
+        validate_wgsl(&wgsl).with_context(|| format!("WGSL validation failed for {key}"))?;
         let module = self
             .device
             .create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -1075,14 +1075,14 @@ fn uniform_layout(
 #[cfg(feature = "wgsl-validate")]
 pub fn validate_wgsl(source: &str) -> Result<naga::Module> {
     let module = naga::front::wgsl::parse_str(source)
-        .map_err(|error| anyhow!("WGSL 解析失败：{}", error.emit_to_string(source)))?;
+        .map_err(|error| anyhow!("WGSL parse failed: {}", error.emit_to_string(source)))?;
     let mut validator = naga::valid::Validator::new(
         naga::valid::ValidationFlags::all(),
         naga::valid::Capabilities::default(),
     );
     validator
         .validate(&module)
-        .map_err(|error| anyhow!("WGSL 校验失败：{}", error.emit_to_string(source)))?;
+        .map_err(|error| anyhow!("WGSL validation failed: {}", error.emit_to_string(source)))?;
     Ok(module)
 }
 
@@ -1131,8 +1131,8 @@ fn into_pixmap(mut rgba: Vec<u8>, width: u32, height: u32) -> Result<Pixmap> {
         }
     }
     let size = tiny_skia::IntSize::from_wh(width, height)
-        .ok_or_else(|| anyhow!("非法的 quad 尺寸 {width}x{height}"))?;
-    Pixmap::from_vec(rgba, size).ok_or_else(|| anyhow!("回读字节无法构成 Pixmap"))
+        .ok_or_else(|| anyhow!("invalid quad size {width}x{height}"))?;
+    Pixmap::from_vec(rgba, size).ok_or_else(|| anyhow!("readback bytes cannot form a Pixmap"))
 }
 
 /// `&[f32]` → `&[u8]` (little-endian). Pulling in a bytemuck dependency just for a constant array of four vertices is not worth it.
@@ -1167,6 +1167,6 @@ mod tests {
     #[test]
     fn the_pixmap_conversion_repairs_a_rounding_overshoot() {
         let pixmap = into_pixmap(vec![200, 10, 10, 128], 1, 1).unwrap();
-        assert_eq!(pixmap.data()[0], 128, "rgb 被夹回 alpha 以内");
+        assert_eq!(pixmap.data()[0], 128, "rgb is clamped to within alpha");
     }
 }

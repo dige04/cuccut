@@ -17,7 +17,7 @@ pub struct WeightMap {
 impl WeightMap {
     /// Reads a single safetensors file.
     pub fn load_file(path: &Path) -> Result<Self> {
-        let map = load_safetensors(&[path]).map_err(|e| anyhow::anyhow!("读取 {} 失败：{e}", path.display()))?;
+        let map = load_safetensors(&[path]).map_err(|e| anyhow::anyhow!("failed to read {}: {e}", path.display()))?;
         Ok(Self {
             map,
             name: path.display().to_string(),
@@ -28,7 +28,7 @@ impl WeightMap {
     pub fn take(&mut self, key: &str) -> Result<Array> {
         match self.map.remove(key) {
             Some(array) => Ok(array),
-            None => bail!("{} 缺少权重 {key}", self.name),
+            None => bail!("{} is missing weight {key}", self.name),
         }
     }
 

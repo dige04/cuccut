@@ -139,7 +139,7 @@ impl HtDemucsModel {
         let tc = config.transformer_channels() as i32;
         let dim = config.transformer_dim() as i32;
         if a.bottom_channels == 0 || a.t_layers == 0 {
-            bail!("本移植要求 bottom_channels > 0 且 t_layers > 0（htdemucs_ft 配置）");
+            bail!("this port requires bottom_channels > 0 and t_layers > 0 (htdemucs_ft config)");
         }
         let channel_upsampler = Conv1dW::load(store, "channel_upsampler", tc, dim, 1, 1, 0, 1)?;
         let channel_downsampler = Conv1dW::load(store, "channel_downsampler", dim, tc, 1, 1, 0, 1)?;
@@ -181,20 +181,20 @@ impl HtDemucsModel {
     pub fn forward(&self, mix: &[Vec<f32>], source: usize) -> Result<Vec<Vec<f32>>> {
         let c = self.audio_channels;
         if mix.len() != c {
-            bail!("输入声道数 {} 与模型 {} 不符", mix.len(), c);
+            bail!("input channel count {} does not match model {}", mix.len(), c);
         }
         if source >= self.num_sources {
-            bail!("声部序号 {source} 超出 {}", self.num_sources);
+            bail!("source index {source} is out of range for {} sources", self.num_sources);
         }
         let length = mix[0].len();
         if length == 0 {
-            bail!("输入为空");
+            bail!("input is empty");
         }
         if length > self.training_length {
-            bail!("单窗输入长度 {length} 超过 training_length {}", self.training_length);
+            bail!("single-window input length {length} exceeds training_length {}", self.training_length);
         }
         if mix.iter().any(|ch| ch.len() != length) {
-            bail!("各声道长度不一致");
+            bail!("channels have different lengths");
         }
         let tl = self.training_length;
         // Zero-pad on the right up to training_length (Swift: lengthPrePad).
@@ -276,12 +276,12 @@ impl HtDemucsModel {
 
         // Decoder
         for idx in 0..self.depth {
-            let skip = saved.pop().context("saved 栈为空")?;
-            let len = lengths.pop().context("lengths 栈为空")?;
+            let skip = saved.pop().context("saved stack is empty")?;
+            let len = lengths.pop().context("lengths stack is empty")?;
             let (nx, _pre) = self.decoder[idx].forward(&x, Some(&skip), len)?;
             x = nx;
-            let skip_t = saved_t.pop().context("savedT 栈为空")?;
-            let len_t = lengths_t.pop().context("lengthsT 栈为空")?;
+            let skip_t = saved_t.pop().context("savedT stack is empty")?;
+            let len_t = lengths_t.pop().context("lengthsT stack is empty")?;
             let (nxt, _) = self.tdecoder[idx].forward(&xt, Some(&skip_t), len_t)?;
             xt = nxt;
             transforms::eval([&x, &xt])?;
@@ -301,11 +301,11 @@ impl HtDemucsModel {
         let out_fq = x_src.dim(2) as usize;
         let out_le = x_src.dim(3) as usize;
         if out_fq != fq || out_le != le {
-            bail!("频域输出形状 [{out_fq}, {out_le}] 与输入 [{fq}, {le}] 不符");
+            bail!("frequency-domain output shape [{out_fq}, {out_le}] does not match input [{fq}, {le}]");
         }
         let actual_len = xt_src.dim(2) as usize;
         if actual_len != tl {
-            bail!("时域输出长度 {actual_len} 与 training_length {tl} 不符");
+            bail!("time-domain output length {actual_len} does not match training_length {tl}");
         }
 
         let plane = fq * le;

@@ -28,7 +28,7 @@ pub fn decode_svg_natural(bytes: &[u8]) -> Result<Pixmap> {
     let tree = resvg::usvg::Tree::from_data(bytes, &svg_options())?;
     let size = tree.size();
     let (w, h) = (size.width().ceil() as u32, size.height().ceil() as u32);
-    let mut pm = Pixmap::new(w.max(1), h.max(1)).ok_or_else(|| anyhow!("空 SVG"))?;
+    let mut pm = Pixmap::new(w.max(1), h.max(1)).ok_or_else(|| anyhow!("empty SVG"))?;
     resvg::render(&tree, tiny_skia::Transform::identity(), &mut pm.as_mut());
     Ok(pm)
 }
@@ -41,12 +41,12 @@ pub fn decode_svg_at_long_edge(bytes: &[u8], long_edge: u32) -> Result<Pixmap> {
     let size = tree.size();
     let (w, h) = (f64::from(size.width()), f64::from(size.height()));
     if w <= 0.0 || h <= 0.0 {
-        bail!("空 SVG");
+        bail!("empty SVG");
     }
     let scale = f64::from(long_edge.max(1)) / w.max(h);
     let out_w = (w * scale).round().max(1.0) as u32;
     let out_h = (h * scale).round().max(1.0) as u32;
-    let mut pm = Pixmap::new(out_w, out_h).ok_or_else(|| anyhow!("空 SVG"))?;
+    let mut pm = Pixmap::new(out_w, out_h).ok_or_else(|| anyhow!("empty SVG"))?;
     resvg::render(
         &tree,
         tiny_skia::Transform::from_scale(scale as f32, scale as f32),

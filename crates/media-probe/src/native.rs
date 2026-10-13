@@ -11,7 +11,7 @@ const EBML_MAGIC: [u8; 4] = [0x1A, 0x45, 0xDF, 0xA3];
 
 pub(crate) fn probe_native(path: &Path) -> Result<MediaProbe> {
     if !path.is_file() {
-        bail!("媒体不存在或不是文件：{}", path.display());
+        bail!("media does not exist or is not a file: {}", path.display());
     }
     if is_image_path(path) {
         return probe_image(path);
@@ -32,13 +32,13 @@ fn probe_image(path: &Path) -> Result<MediaProbe> {
     use image::ImageDecoder as _;
 
     let reader = image::ImageReader::open(path)
-        .with_context(|| format!("打开图片 {} 失败", path.display()))?
+        .with_context(|| format!("failed to open image {}", path.display()))?
         .with_guessed_format()
-        .with_context(|| format!("识别图片格式失败：{}", path.display()))?;
+        .with_context(|| format!("failed to detect image format: {}", path.display()))?;
     let format = reader.format();
     let decoder = reader
         .into_decoder()
-        .with_context(|| format!("读取图片头失败：{}", path.display()))?;
+        .with_context(|| format!("failed to read image header: {}", path.display()))?;
     let (width, height) = decoder.dimensions();
     let alpha = decoder.color_type().has_alpha();
     Ok(MediaProbe {
@@ -64,14 +64,14 @@ fn probe_iso_bmff(path: &Path) -> Result<MediaProbe> {
     use re_mp4::{StsdBoxContent, TrackKind};
 
     let file = std::fs::File::open(path)
-        .map_err(|error| anyhow!("打开 {} 失败：{error}", path.display()))?;
+        .map_err(|error| anyhow!("failed to open {}: {error}", path.display()))?;
     let size = file
         .metadata()
-        .map_err(|error| anyhow!("读取 {} 元数据失败：{error}", path.display()))?
+        .map_err(|error| anyhow!("failed to read metadata of {}: {error}", path.display()))?
         .len();
     // `Mp4::read` uses `Read + Seek` and **skips mdat**: even multi-GB files only have their box headers read.
     let mp4 = re_mp4::Mp4::read(std::io::BufReader::new(file), size)
-        .map_err(|error| anyhow!("解析 MP4 {} 失败：{error}", path.display()))?;
+        .map_err(|error| anyhow!("failed to parse MP4 {}: {error}", path.display()))?;
 
     let mut video = None;
     let mut audio = None;
@@ -151,7 +151,7 @@ fn probe_iso_bmff(path: &Path) -> Result<MediaProbe> {
         .or_else(|| symphonia_duration(path));
 
     if video.is_none() && audio.is_none() {
-        bail!("{} 没有视频或音频轨", path.display());
+        bail!("{} has no video or audio track", path.display());
     }
     let kind = if video.is_some() {
         MediaKind::Video
@@ -233,9 +233,9 @@ fn probe_matroska(path: &Path) -> Result<MediaProbe> {
     use matroska_demuxer::{MatroskaFile, TrackType};
 
     let file = std::fs::File::open(path)
-        .map_err(|error| anyhow!("打开 {} 失败：{error}", path.display()))?;
+        .map_err(|error| anyhow!("failed to open {}: {error}", path.display()))?;
     let mut mkv = MatroskaFile::open(std::io::BufReader::new(file))
-        .map_err(|error| anyhow!("解析 Matroska {} 失败：{error}", path.display()))?;
+        .map_err(|error| anyhow!("failed to parse Matroska {}: {error}", path.display()))?;
 
     let info = mkv.info();
     // The unit of `Info::duration` is `TimestampScale` (nanoseconds per tick).
@@ -294,7 +294,7 @@ fn probe_matroska(path: &Path) -> Result<MediaProbe> {
     }
 
     if video.is_none() && audio.is_none() {
-        bail!("{} 没有视频或音频轨", path.display());
+        bail!("{} has no video or audio track", path.display());
     }
     let kind = if video.is_some() {
         MediaKind::Video
@@ -389,7 +389,7 @@ fn probe_symphonia(path: &Path) -> Result<MediaProbe> {
             .is_some_and(|params| params.video().is_some())
     });
     if audio_track.is_none() && video_track.is_none() {
-        bail!("{} 没有可识别的音轨或视频轨", path.display());
+        bail!("{} has no recognizable audio or video track", path.display());
     }
 
     let audio_params = audio_track
@@ -427,7 +427,7 @@ fn probe_symphonia(path: &Path) -> Result<MediaProbe> {
     if video.is_none() && audio.is_none() {
         // The video track is present, but not even its size can be determined. Reporting failure is better than returning a “success” result with neither video nor audio: the caller will fall back to ffprobe.
         bail!(
-            "{} 的轨道信息不完整（问不出尺寸也没有音轨）",
+            "track information for {} is incomplete (no size and no audio track)",
             path.display()
         );
     }
@@ -473,7 +473,7 @@ fn symphonia_format(
     use symphonia::core::io::{MediaSourceStream, MediaSourceStreamOptions};
 
     let file = std::fs::File::open(path)
-        .map_err(|error| anyhow!("打开 {} 失败：{error}", path.display()))?;
+        .map_err(|error| anyhow!("failed to open {}: {error}", path.display()))?;
     let stream = MediaSourceStream::new(Box::new(file), MediaSourceStreamOptions::default());
     let mut hint = Hint::new();
     if let Some(extension) = path.extension().and_then(|value| value.to_str()) {
@@ -486,7 +486,7 @@ fn symphonia_format(
             symphonia::core::formats::FormatOptions::default(),
             symphonia::core::meta::MetadataOptions::default(),
         )
-        .map_err(|error| anyhow!("Symphonia 无法识别 {}：{error}", path.display()))
+        .map_err(|error| anyhow!("Symphonia cannot recognize {}: {error}", path.display()))
 }
 
 /// In 0.6, the duration is split into “`duration` in timebase units” and “playable frame count `num_frames`”; only the former is the quantity that can pass through `calc_duration`; the latter can only be computed from the sample rate.

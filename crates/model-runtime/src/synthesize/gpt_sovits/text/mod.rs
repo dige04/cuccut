@@ -56,7 +56,7 @@ impl Language {
         match language.split('-').next() {
             Some("zh") => Ok(Self::Zh),
             Some("en") => Ok(Self::En),
-            _ => bail!("GPT-SoVITS v2 只支持中文与英文，不支持「{language}」"),
+            _ => bail!("GPT-SoVITS v2 only supports Chinese and English, not '{language}'"),
         }
     }
 
@@ -65,7 +65,7 @@ impl Language {
         let kana = |c: char| matches!(c, '\u{3041}'..='\u{3096}' | '\u{30A1}'..='\u{30FA}');
         let hangul = |c: char| matches!(c, '\u{AC00}'..='\u{D7AF}' | '\u{1100}'..='\u{11FF}');
         if text.chars().any(|c| kana(c) || hangul(c)) {
-            bail!("GPT-SoVITS v2 只支持中文与英文，文本含日文假名或韩文：{text}");
+            bail!("GPT-SoVITS v2 only supports Chinese and English; the text contains Japanese kana or Korean: {text}");
         }
         let han = |c: char| matches!(c, '\u{3400}'..='\u{4DBF}' | '\u{4E00}'..='\u{9FFF}');
         Ok(if text.chars().any(han) { Self::Zh } else { Self::En })
@@ -111,7 +111,7 @@ pub fn split_sentences(text: &str, language: Language) -> Result<Vec<String>> {
 /// One sentence of text → phone ids per segment (when there are fewer than 6 phones, 「.」 is prepended and the result is recomputed once, as upstream does).
 pub fn phonemize(text: &str, language: Language) -> Result<Vec<Piece>> {
     let segments =
-        gpb::text_phones(text, language.seg_mode()).map_err(|err| anyhow!("GPT-SoVITS 文本前端无法处理（{}）：{text}", err.name()))?;
+        gpb::text_phones(text, language.seg_mode()).map_err(|err| anyhow!("GPT-SoVITS text frontend cannot process it ({}): {text}", err.name()))?;
     Ok(segments
         .into_iter()
         .map(|segment| Piece {

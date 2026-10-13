@@ -60,7 +60,7 @@ impl Weights {
     }
 
     pub fn take(&mut self, key: &str) -> Result<Array> {
-        self.tensors.remove(key).with_context(|| format!("缺少权重：{key}"))
+        self.tensors.remove(key).with_context(|| format!("missing weight: {key}"))
     }
 
     pub fn take_optional(&mut self, key: &str) -> Option<Array> {
@@ -82,7 +82,7 @@ impl Weights {
     pub fn take_conv_transpose1d(&mut self, key: &str) -> Result<Array> {
         let weight = self.take(key)?;
         if weight.ndim() != 3 {
-            bail!("ConvTranspose1d 权重维度错误：{key} {:?}", weight.shape());
+            bail!("ConvTranspose1d weight has the wrong dimensions: {key} {:?}", weight.shape());
         }
         Ok(weight.transpose_axes(&[1, 2, 0])?)
     }

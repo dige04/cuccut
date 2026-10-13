@@ -148,12 +148,12 @@ pub fn external_media_scene_nodes_at(
         return None;
     }
     let Some(texture) = element.texture else {
-        warn(format!("元素 {} 的外部纹理缺少 srcId", element.id));
+        warn(format!("element {} external texture is missing srcId", element.id));
         return None;
     };
     if metadata.width == 0 || metadata.height == 0 {
         warn(format!(
-            "元素 {} 的外部纹理尺寸非法（{}×{}）",
+            "element {} external texture has an invalid size ({}×{})",
             element.id, metadata.width, metadata.height
         ));
         return None;
@@ -194,7 +194,7 @@ pub fn external_media_scene_nodes_at(
         }
     };
     if !(box_width.is_finite() && box_width > 0.0 && box_height.is_finite() && box_height > 0.0) {
-        warn(format!("元素 {} 的媒体盒尺寸非法", element.id));
+        warn(format!("element {} media box has an invalid size", element.id));
         return None;
     }
     // The CPU reference and Konva both first establish an integer-pixel local canvas, then apply an affine transform around the center of this box.
@@ -210,7 +210,7 @@ pub fn external_media_scene_nodes_at(
         Ok(effects) => effects,
         Err(error) => {
             warn(format!(
-                "元素 {} 的媒体效果链无法进入 GPU texture scene（{error}），继续由共享 CPU 效果栈渲染",
+                "element {} media effect chain cannot enter the GPU texture scene ({error}); continuing with the shared CPU effect stack",
                 element.id
             ));
             return None;
@@ -247,7 +247,7 @@ pub fn external_media_scene_nodes_at(
             .any(|pair| (pair[0] - pair[1]).abs() > f64::EPSILON)
     {
         warn(format!(
-            "元素 {} 的四角独立圆角尚未进入 GPU texture scene，继续由共享 CPU 效果栈渲染",
+            "element {} per-corner radii have not entered the GPU texture scene yet; continuing with the shared CPU effect stack",
             element.id
         ));
         return None;
@@ -343,7 +343,7 @@ pub fn external_media_scene_nodes_at(
     );
     if points.len() > EXTERNAL_MEDIA_TILE_NODE_LIMIT {
         warn(format!(
-            "元素 {} 的平铺媒体需要 {} 个纹理节点，超过实时上限 {}，继续由 host 渲染",
+            "element {} tiled media needs {} texture nodes, which exceeds the real-time limit {}; continuing with host rendering",
             element.id,
             points.len(),
             EXTERNAL_MEDIA_TILE_NODE_LIMIT
@@ -394,7 +394,7 @@ fn lower_texture_effects(
             effect
                 .uniforms
                 .scalar(key)
-                .ok_or_else(|| format!("{} 缺少 {key}", effect.id()))
+                .ok_or_else(|| format!("{} is missing {key}", effect.id()))
         };
         let mapped = match effect.id() {
             "filter.colorAdjust" => TextureEffect::ColorAdjust {
@@ -556,7 +556,7 @@ mod tests {
         assert_eq!(
             node.source_effects.as_ref(),
             [TextureEffect::Blur(7)],
-            "8 × 500 / 540 应四舍五入为 7 px"
+            "8 × 500 / 540 should round to 7 px"
         );
     }
 
@@ -581,7 +581,7 @@ mod tests {
                 ExternalMediaMetadata::image(400, 200),
                 &mut |message| warnings.push(message),
             )
-            .unwrap_or_else(|| panic!("GPU 应完整接管 {fx}: {warnings:?}"));
+            .unwrap_or_else(|| panic!("GPU should fully take over {fx}: {warnings:?}"));
             let [SceneNode::Texture(node)] = nodes.as_slice() else {
                 panic!("expected one texture node for {fx}")
             };
@@ -641,7 +641,7 @@ mod tests {
             ExternalMediaMetadata::image(400, 200),
             &mut |message| warnings.push(message),
         )
-        .expect("Timeline 0.3 的最大合法配方必须完整进入 GPU scene");
+        .expect("the largest valid Timeline 0.3 recipe must fully enter the GPU scene");
         let [SceneNode::Texture(node)] = nodes.as_slice() else {
             panic!("expected one texture node")
         };
@@ -703,7 +703,7 @@ mod tests {
         let [SceneNode::BlurredGroup(group)] = nodes.as_slice() else {
             panic!("pose blur must wrap the complete media slot")
         };
-        assert_eq!(group.radius, 7.0, "8 × 500 / 540 应四舍五入为 7 px");
+        assert_eq!(group.radius, 7.0, "8 × 500 / 540 should round to 7 px");
         let [SceneNode::Texture(node)] = group.nodes.as_slice() else {
             panic!("blurred media group must retain its texture child")
         };
@@ -730,7 +730,7 @@ mod tests {
             panic!("expected one masked texture node")
         };
         assert_eq!(node.mask_shape, TextureMaskShape::Ellipse);
-        assert_eq!(node.radius, 0.0, "ellipse 必须忽略 place.radius");
+        assert_eq!(node.radius, 0.0, "ellipse must ignore place.radius");
         assert_eq!(node.mask_feather, 5.0);
         assert_eq!(
             node.source_effects.as_ref(),
@@ -890,7 +890,7 @@ mod tests {
         assert_eq!(first.fit, TextureFit::Contain);
         assert_eq!(first.background, TextureBackground::Black);
         assert_eq!(first.opacity, 0.6);
-        assert!(first.radius > 0.0, "fullscreen tile 也必须应用圆角");
+        assert!(first.radius > 0.0, "fullscreen tile must also apply rounded corners");
         assert!(nodes.iter().all(|node| matches!(
             node,
             SceneNode::Texture(node)
@@ -916,6 +916,6 @@ mod tests {
         );
         assert!(nodes.is_none());
         assert_eq!(warnings.len(), 1);
-        assert!(warnings[0].contains("超过实时上限 256"), "{:?}", warnings);
+        assert!(warnings[0].contains("exceeds the real-time limit 256"), "{:?}", warnings);
     }
 }

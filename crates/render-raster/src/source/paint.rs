@@ -609,7 +609,7 @@ mod tests {
         assert_eq!(keys, sorted);
         assert!(
             a.buckets.iter().any(|b| b.0 > 0),
-            "有第二种颜料时要有含色带"
+            "with a second paint color there should be a band containing it"
         );
     }
 

@@ -52,18 +52,18 @@ pub enum TranslationParagraphMergeError {
 impl fmt::Display for TranslationParagraphMergeError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let message = match self {
-            Self::InvalidLanguage => "目标语言为空",
-            Self::SentenceMissing => "译文句已不存在",
-            Self::NotAdjacent => "两张译文卡不是相邻 Sentence",
-            Self::MissingParagraphPin => "下句不是可移除的 paragraph pin 边界",
-            Self::SpeakerBoundary => "说话人切换处无法合并",
-            Self::SentenceEnding => "完整句末标点处无法合并",
-            Self::HardGap => "长停顿处无法合并",
-            Self::TooManyWords => "合并后超过 80 个词",
-            Self::ChapterBoundary => "章节边界处无法合并",
-            Self::DerivedBoundary => "移除 paragraph pin 后仍无法合并为一个 Sentence",
-            Self::UpperConflict => "上句译文基线已变化",
-            Self::LowerConflict => "下句译文基线已变化",
+            Self::InvalidLanguage => "The target language is empty",
+            Self::SentenceMissing => "The translated sentence no longer exists",
+            Self::NotAdjacent => "The two translation cards are not adjacent Sentences",
+            Self::MissingParagraphPin => "The next sentence is not a removable paragraph pin boundary",
+            Self::SpeakerBoundary => "Cannot merge across a speaker change",
+            Self::SentenceEnding => "Cannot merge at a complete sentence-final punctuation mark",
+            Self::HardGap => "Cannot merge across a long pause",
+            Self::TooManyWords => "Merged result would exceed 80 words",
+            Self::ChapterBoundary => "Cannot merge across a chapter boundary",
+            Self::DerivedBoundary => "Still cannot merge into one Sentence after removing the paragraph pin",
+            Self::UpperConflict => "The upper sentence's translation baseline has changed",
+            Self::LowerConflict => "The lower sentence's translation baseline has changed",
             Self::InvalidDocument(message) => return formatter.write_str(message),
         };
         formatter.write_str(message)
@@ -254,7 +254,7 @@ pub fn merge_translation_paragraphs(
     }
     next.validate().map_err(|error| {
         TranslationParagraphMergeError::InvalidDocument(format!(
-            "合并后的 transcript 无效：{error:#}"
+            "Transcript is invalid after merging: {error:#}"
         ))
     })?;
     *doc = next;

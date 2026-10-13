@@ -62,7 +62,7 @@ mod tests {
     fn check_sine(from: u32, to: u32, freq: f64) {
         let input = sine(from as usize, from, freq); // 1 second
         let out = resample(&input, from, to);
-        assert!((out.len() as i64 - to as i64).abs() <= 1, "长度 {}", out.len());
+        assert!((out.len() as i64 - to as i64).abs() <= 1, "length {}", out.len());
         let expected = sine(out.len(), to, freq);
         // Ignore edge effects of 100 samples at each end.
         let err = out
@@ -72,7 +72,7 @@ mod tests {
             .take(out.len() - 200)
             .map(|(a, b)| (a - b).abs())
             .fold(0.0f32, f32::max);
-        assert!(err < 2e-3, "{from}->{to} @ {freq} Hz 误差 {err}");
+        assert!(err < 2e-3, "{from}->{to} @ {freq} Hz error {err}");
     }
 
     #[test]

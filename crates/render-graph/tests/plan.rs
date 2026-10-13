@@ -44,12 +44,12 @@ fn fixture_path(name: &str) -> PathBuf {
 }
 
 fn fixture() -> VideoSnapshot {
-    let text = std::fs::read_to_string(fixture_path("video.json")).expect("读夹具视频");
-    serde_json::from_str(&text).expect("夹具是完整的视频快照")
+    let text = std::fs::read_to_string(fixture_path("video.json")).expect("read video fixture");
+    serde_json::from_str(&text).expect("fixture is a complete video snapshot")
 }
 
 fn plan(video: &VideoSnapshot, seconds: f64) -> FramePlan {
-    plan_interactive(VideoView::from(video), "seq_main", seconds).expect("求计划")
+    plan_interactive(VideoView::from(video), "seq_main", seconds).expect("compute plan")
 }
 
 fn layer_ids(plan: &FramePlan) -> Vec<&str> {
@@ -60,7 +60,7 @@ fn layer<'a>(plan: &'a FramePlan, item_id: &str) -> &'a VisualLayer {
     plan.layers
         .iter()
         .find(|layer| layer.item_id == item_id)
-        .unwrap_or_else(|| panic!("{item_id} 在画面上"))
+        .unwrap_or_else(|| panic!("{item_id} is on screen"))
 }
 
 /// Linear multiplier converted to dB, using the same formula as the planner; results are bit-identical.
@@ -105,7 +105,7 @@ fn rotated_portrait_video_is_contained_in_its_box() {
         .layers
         .into_iter()
         .find(|layer| layer.item_id == "item_port")
-        .expect("竖屏片段在画面上");
+        .expect("portrait clip is on screen");
     // The picture-in-picture box's height follows the source aspect ratio: width 15% = 288, and the 1080×1920 source has height 512. The center is at (60%, 40%) = (1152, 432), rotated 90° clockwise.
     assert_eq!(port.matrix, [0.0, 288.0, -512.0, 0.0, 1408.0, 288.0]);
     assert_eq!(port.source_rect, Some([0.0, 0.0, 1.0, 1.0]));
@@ -129,7 +129,7 @@ fn cover_crops_the_source_around_its_center() {
         .layers
         .into_iter()
         .find(|layer| layer.item_id == "item_port")
-        .expect("竖屏片段在画面上");
+        .expect("portrait clip is on screen");
     // 1080×1920 filling 1920×1080: width aligns, and the middle part is taken with height (1080/1920)².
     let [u0, v0, u1, v1] = port.source_rect.expect("视频有取源区域");
     let kept = (1080.0f64 / 1920.0).powi(2);
@@ -562,7 +562,7 @@ fn ducking_lowers_the_target_and_keeps_the_unducked_gain() {
 #[test]
 fn new_element_kinds_are_generators_or_reported_never_blank() {
     // Hand-drawn, template stickers and waveforms are generators. The whiteboard is decoded from its image asset; the reveal is drawn by the backend from instance fields.
-    let text = std::fs::read_to_string(fixture_path("video.json")).expect("读夹具视频");
+    let text = std::fs::read_to_string(fixture_path("video.json")).expect("read video fixture");
     let mut value: serde_json::Value = serde_json::from_str(&text).expect("JSON");
     let base = |id: &str, extra: serde_json::Value| {
         let mut item = serde_json::json!({

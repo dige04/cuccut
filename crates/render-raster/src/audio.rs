@@ -94,7 +94,7 @@ pub fn master_interleaved(
         },
         &mut || Ok(()),
     )?;
-    let measure = report.master.context("母带没有产出实测")?;
+    let measure = report.master.context("the master produced no measurement")?;
     Ok((out, measure))
 }
 
@@ -138,7 +138,7 @@ pub fn mix_audio_reported(ir: &Ir, assets: &LoadedAssets) -> Result<Option<Audio
             .audios
             .get(&clip.asset_id)
             .or_else(|| assets.videos.get(&clip.asset_id).map(|v| &v.path))
-            .ok_or_else(|| anyhow!("音频资源 \"{}\" 未加载", clip.asset_id))?;
+            .ok_or_else(|| anyhow!("audio resource \"{}\" is not loaded", clip.asset_id))?;
         let dur = (clip.end - clip.start).max(0.0);
         if dur <= 0.0 {
             continue;
@@ -243,10 +243,10 @@ fn decode_with_ffmpeg(
 ) -> Result<Vec<f32>> {
     let out = ffmpeg_decode_command(path, media_start, source_seconds, rate)
         .output()
-        .context("启动 ffmpeg 音频解码失败")?;
+        .context("failed to start ffmpeg audio decode")?;
     if !out.status.success() {
         bail!(
-            "audio clip \"{clip_id}\" 解码失败: {}",
+            "audio clip \"{clip_id}\" failed to decode: {}",
             String::from_utf8_lossy(&out.stderr)
         );
     }

@@ -209,7 +209,7 @@ pub fn sequence_end(sequence: &Sequence) -> Result<Ratio, PlanError> {
     for item in &sequence.items {
         let item_end = match item {
             TimelineItem::Audio(audio) => audio_bounds(audio, fps)?.1,
-            other => span_bounds(other.span().expect("音频之外的实例都在帧网格上"), fps)?.1,
+            other => span_bounds(other.span().expect("non-audio items are on the frame grid"), fps)?.1,
         };
         end = end.max(item_end);
     }
@@ -223,12 +223,12 @@ pub fn resolve_range(sequence: &Sequence, range: Option<(Ratio, Ratio)>) -> Resu
     if start.is_negative() || end <= start {
         return Err(PlanError::new(
             "EXPORT_RANGE_EMPTY",
-            "导出范围是空的：终点必须大于起点，起点不能为负",
+            "the export range is empty: the end must be greater than the start, and the start must not be negative",
         ));
     }
     let end = end.min(end_of_sequence);
     if end <= start {
-        return Err(PlanError::new("EXPORT_RANGE_EMPTY", "导出范围在序列之外，或者序列是空的"));
+        return Err(PlanError::new("EXPORT_RANGE_EMPTY", "the export range is outside the sequence, or the sequence is empty"));
     }
     Ok((start, end))
 }
@@ -288,7 +288,7 @@ fn for_each_spoken_word(
     let sequence = video
         .sequences
         .get(sequence_id)
-        .ok_or_else(|| PlanError::new("SEQUENCE_NOT_FOUND", format!("没有序列 {sequence_id}")))?;
+        .ok_or_else(|| PlanError::new("SEQUENCE_NOT_FOUND", format!("no sequence {sequence_id}")))?;
     let fps = checked_fps(sequence)?;
     for (document, body) in documents {
         if body.get("schema").and_then(Value::as_str) != Some("cuccut.speech/1") {
@@ -340,7 +340,7 @@ pub fn plan_audio_with_speech(
     let sequence = video
         .sequences
         .get(sequence_id)
-        .ok_or_else(|| PlanError::new("SEQUENCE_NOT_FOUND", format!("没有序列 {sequence_id}")))?;
+        .ok_or_else(|| PlanError::new("SEQUENCE_NOT_FOUND", format!("no sequence {sequence_id}")))?;
     let fps = checked_fps(sequence)?;
     let (range_start, range_end) = resolve_range(sequence, range)?;
     let rules = TrackRules::new(&sequence.tracks);

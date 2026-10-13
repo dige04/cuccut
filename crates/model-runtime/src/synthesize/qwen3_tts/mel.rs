@@ -111,7 +111,7 @@ pub fn compute(samples_24k: &[f32]) -> LogMel {
             *c = Complex::new(0.0, 0.0);
         }
         fft.process_with_scratch(&mut input, &mut spectrum, &mut scratch)
-            .expect("realfft 长度匹配");
+            .expect("realfft length matches");
         for (k, c) in spectrum.iter().enumerate() {
             magnitudes[k] = c.norm();
         }

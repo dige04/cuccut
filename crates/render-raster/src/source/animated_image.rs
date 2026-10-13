@@ -32,11 +32,11 @@ impl std::fmt::Display for AnimatedImageBudgetExceeded {
         match *self {
             Self::Frames { actual, limit } => write!(
                 f,
-                "动图帧数 {actual} 超过上限 {limit}（先用 ffmpeg 抽帧或转成视频资产）"
+                "animated image has {actual} frames, over the limit of {limit} (extract frames with ffmpeg or convert to a video asset first)"
             ),
             Self::Bytes { actual, limit } => write!(
                 f,
-                "动图解码后占用 {:.1} MiB 超过上限 {:.1} MiB（先缩小画幅或减帧）",
+                "animated image takes {:.1} MiB once decoded, over the limit of {:.1} MiB (reduce the dimensions or the frame count first)",
                 actual as f64 / (1 << 20) as f64,
                 limit as f64 / (1 << 20) as f64
             ),
@@ -89,30 +89,30 @@ impl AnimatedImage {
     /// Bytes → decoded animated image source. `src` is used only for error location.
     pub fn decode(src: &str, bytes: &[u8], ctx: &PrepareCtx) -> Result<AnimatedImage> {
         let format = AnimatedFormat::sniff(bytes).ok_or_else(|| {
-            anyhow!("{src}：animatedImage 资产必须是 GIF / APNG / WebP 容器（按魔数判定）")
+            anyhow!("{src}: an animatedImage asset must be a GIF / APNG / WebP container (detected by magic bytes)")
         })?;
         let (loops, frames, starts) = match format {
             AnimatedFormat::Gif => {
                 let d = image::codecs::gif::GifDecoder::new(Cursor::new(bytes))
-                    .map_err(|e| anyhow!("{src}：GIF 解码失败：{e}"))?;
+                    .map_err(|e| anyhow!("{src}: GIF decode failed: {e}"))?;
                 collect(src, d, ctx)?
             }
             AnimatedFormat::Apng => {
                 let d = image::codecs::png::PngDecoder::new(Cursor::new(bytes))
-                    .map_err(|e| anyhow!("{src}：PNG 解码失败：{e}"))?;
-                if !d.is_apng().map_err(|e| anyhow!("{src}：{e}"))? {
+                    .map_err(|e| anyhow!("{src}: PNG decode failed: {e}"))?;
+                if !d.is_apng().map_err(|e| anyhow!("{src}: {e}"))? {
                     bail!(
-                        "{src}：这是静态 PNG（没有 acTL 动画块）；静态图片请声明 type: \"image\""
+                        "{src}: this is a static PNG (no acTL animation chunk); declare static images as type: \"image\""
                     );
                 }
-                let d = d.apng().map_err(|e| anyhow!("{src}：APNG 解码失败：{e}"))?;
+                let d = d.apng().map_err(|e| anyhow!("{src}: APNG decode failed: {e}"))?;
                 collect(src, d, ctx)?
             }
             AnimatedFormat::WebP => {
                 let d = image::codecs::webp::WebPDecoder::new(Cursor::new(bytes))
-                    .map_err(|e| anyhow!("{src}：WebP 解码失败：{e}"))?;
+                    .map_err(|e| anyhow!("{src}: WebP decode failed: {e}"))?;
                 if !d.has_animation() {
-                    bail!("{src}：这是静态 WebP（没有 ANIM 块）；静态图片请声明 type: \"image\"");
+                    bail!("{src}: this is a static WebP (no ANIM chunk); declare static images as type: \"image\"");
                 }
                 collect(src, d, ctx)?
             }
@@ -120,12 +120,12 @@ impl AnimatedImage {
         let (width, height) = frames
             .first()
             .map(|p| (p.width(), p.height()))
-            .ok_or_else(|| anyhow!("{src}：动图没有任何帧"))?;
+            .ok_or_else(|| anyhow!("{src}: animated image has no frames"))?;
         let total = starts.last().copied().unwrap_or(0);
         if total <= 0 {
             bail!(
-                "{src}：动图总时长为 0（每帧 delay 都是 0）——本实现按字面取值，不做浏览器式的最小延时钳制；\
-                 请修正素材，或声明为 type: \"image\" 用其首帧"
+                "{src}: total duration is 0 (every frame delay is 0); this implementation uses the values literally and does not clamp to a minimum delay as browsers do; \
+                 fix the asset, or declare it as type: \"image\" to use its first frame"
             );
         }
         let mut hasher = Sha256::new();
@@ -188,7 +188,7 @@ impl VisualSource for AnimatedImage {
         let index = self.meta.frame_at(time);
         let pixmap =
             self.frames.get(index).cloned().ok_or_else(|| {
-                anyhow!("动图在 {time} 无帧可取（帧表 {} 项）", self.frames.len())
+                anyhow!("no frame available at {time} in the animated image (frame table has {} entries)", self.frames.len())
             })?;
         Ok(SourceFrame {
             index,
@@ -238,7 +238,7 @@ fn collect<'a, D: AnimationDecoder<'a>>(
     let mut bytes = 0usize;
     let mut cursor = 0i64;
     for (i, frame) in decoder.into_frames().enumerate() {
-        let frame = frame.map_err(|e| anyhow!("{src}：第 {i} 帧解码失败：{e}"))?;
+        let frame = frame.map_err(|e| anyhow!("{src}: frame {i} failed to decode: {e}"))?;
         let delay = delay_ms(frame.delay());
         let buffer = frame.into_buffer();
         let (w, h) = (buffer.width(), buffer.height());
@@ -248,7 +248,7 @@ fn collect<'a, D: AnimationDecoder<'a>>(
         {
             if first != (w, h) {
                 bail!(
-                    "{src}：第 {i} 帧尺寸 {w}×{h} 与画布 {}×{} 不一致（解码器应已合成到整幅画布）",
+                    "{src}: frame {i} size {w}×{h} does not match the canvas {}×{} (the decoder should already have composited onto the full canvas)",
                     first.0,
                     first.1
                 );
@@ -261,7 +261,7 @@ fn collect<'a, D: AnimationDecoder<'a>>(
         starts.push(cursor);
     }
     if frames.is_empty() {
-        bail!("{src}：动图没有任何帧");
+        bail!("{src}: animated image has no frames");
     }
     Ok((loops, frames, starts))
 }
@@ -297,14 +297,14 @@ fn delay_ms(delay: Delay) -> i64 {
 
 /// Decode only the first frame (premultiplied): when an animation exceeds the budget or its total duration is 0, fall back to drawing it. Does not depend on the `media` feature, so the preview's wasm can use it too.
 pub fn decode_first_frame(src: &str, bytes: &[u8]) -> Result<Pixmap> {
-    let image = image::load_from_memory(bytes).map_err(|e| anyhow!("{src}：解不开：{e}"))?;
+    let image = image::load_from_memory(bytes).map_err(|e| anyhow!("{src}: failed to decode: {e}"))?;
     to_pixmap(src, image.to_rgba8())
 }
 
 /// Straight RGBA (`image`'s output) → premultiplied (tiny-skia's pixel format).
 fn to_pixmap(src: &str, buffer: image::RgbaImage) -> Result<Pixmap> {
     let (w, h) = (buffer.width(), buffer.height());
-    let size = IntSize::from_wh(w, h).ok_or_else(|| anyhow!("{src}：零尺寸动图帧"))?;
+    let size = IntSize::from_wh(w, h).ok_or_else(|| anyhow!("{src}: zero-sized animated image frame"))?;
     let mut raw = buffer.into_raw();
     for px in raw.chunks_exact_mut(4) {
         let pm = tiny_skia::ColorU8::from_rgba(px[0], px[1], px[2], px[3]).premultiply();
@@ -313,7 +313,7 @@ fn to_pixmap(src: &str, buffer: image::RgbaImage) -> Result<Pixmap> {
         px[2] = pm.blue();
         px[3] = pm.alpha();
     }
-    Pixmap::from_vec(raw, size).ok_or_else(|| anyhow!("{src}：动图帧构造失败"))
+    Pixmap::from_vec(raw, size).ok_or_else(|| anyhow!("{src}: failed to construct animated image frame"))
 }
 
 #[cfg(test)]
@@ -363,8 +363,8 @@ mod tests {
         buf.put_pixel(1, 0, image::Rgba([255, 0, 0, 0]));
         let pm = to_pixmap("t", buf).unwrap();
         let data = pm.data();
-        assert!(data[0] <= data[3], "premultiplied 分量不得超过 alpha");
+        assert!(data[0] <= data[3], "premultiplied components must not exceed alpha");
         assert_eq!(data[3], 128);
-        assert_eq!(&data[4..8], &[0, 0, 0, 0], "全透明像素折为零");
+        assert_eq!(&data[4..8], &[0, 0, 0, 0], "fully transparent pixels fold to zero");
     }
 }

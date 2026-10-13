@@ -94,12 +94,12 @@ fn load(state: &VideoState, ctx: &EditContext<'_>, asset_id: &str) -> EngineResu
             problems = message_ref::join(problems)
         )).entities([id]));
     }
-    let parsed: CutSetBody = serde_json::from_value(body).expect("刚核对过形状");
+    let parsed: CutSetBody = serde_json::from_value(body).expect("just checked the shape");
     let cuts = parsed
         .cuts
         .iter()
         .map(|c| {
-            let (t0, t1) = c.range(parsed.timescale).expect("刚核对过刻度");
+            let (t0, t1) = c.range(parsed.timescale).expect("just checked the timescale");
             ExactCut {
                 id: c.id.clone(),
                 t0,
@@ -146,7 +146,7 @@ fn write(state: &mut VideoState, ctx: &mut EditContext<'_>, asset_id: &str, load
             })
             .collect(),
     };
-    let body = serde_json::to_value(&body).expect("剪口集合可以序列化");
+    let body = serde_json::to_value(&body).expect("cut set can be serialized");
     let target = AssetTarget::Id {
         asset_id: asset_id.to_string(),
     };
@@ -156,7 +156,7 @@ fn write(state: &mut VideoState, ctx: &mut EditContext<'_>, asset_id: &str, load
             document_id: loaded.document_id.as_deref(),
             reference: None,
             kind: CUT_SET_KIND,
-            name: loaded.document_id.is_none().then_some("剪口"),
+            name: loaded.document_id.is_none().then_some("Cuts"),
             language: None,
             source_asset: Some(&target),
             source_document: None,
@@ -190,7 +190,7 @@ pub(crate) fn source_duration(state: &VideoState, asset_id: &str) -> EngineResul
 
 /// Cuts whose gap is no more than [`CUT_MERGE_GAP`] (0.02 seconds) are merged into one, keeping the ID and provenance of the earlier one (same rule as `timeline::cuts::insert_cut`, compared at exact times: a gap of exactly 0.02 seconds also merges).
 fn insert_exact(cuts: &mut Vec<ExactCut>, incoming: ExactCut) {
-    let gap = Ratio::new(1, 50).expect("常量");
+    let gap = Ratio::new(1, 50).expect("constant");
     debug_assert!((gap.to_f64() - CUT_MERGE_GAP).abs() < 1e-12);
     cuts.push(incoming);
     cuts.sort_by(|a, b| a.t0.cmp(&b.t0).then(a.t1.cmp(&b.t1)));
@@ -291,7 +291,7 @@ fn scope_of(state: &VideoState, sequence_id: &str, fps: Rate, asset_id: &str, st
         let map = match item {
             TimelineItem::Video(v) => &v.time_map,
             TimelineItem::Audio(a) => &a.time_map,
-            _ => unreachable!("只取视频与音频"),
+            _ => unreachable!("only video and audio are taken"),
         };
         let TimeMap::Linear { source_in, rate } = map else {
             return Err(
@@ -597,7 +597,7 @@ pub(crate) fn resize_end(state: &mut VideoState, item_id: &str, delta: Ratio, de
                 .ok_or_else(overflow)?;
             audio.play_duration = editor_semantics::MediaTime::from_ratio(length, "playDuration")?;
         }
-        other => other.span_mut().expect("音频之外的实例都在帧网格上").duration_frames += delta_frames,
+        other => other.span_mut().expect("items other than audio are on the frame grid").duration_frames += delta_frames,
     }
     let new_end = item_range(&state.items[item_id].value, fps)?.1;
     if new_end <= start {
@@ -732,7 +732,7 @@ pub(crate) fn restore_cut(
     if !timeline::cuts::restore_cut(&mut remaining, cut_id) {
         return Err(ErrorBody::not_found(kinds::cut(), cut_id));
     }
-    let index = loaded.cuts.iter().position(|c| c.id == cut_id).expect("刚找到");
+    let index = loaded.cuts.iter().position(|c| c.id == cut_id).expect("just found");
     let cut = loaded.cuts.remove(index);
     check_structure(&loaded.cuts, duration)?;
     let scope = scope_of(state, &sequence_id, fps, asset_id, &loaded.scope)?;

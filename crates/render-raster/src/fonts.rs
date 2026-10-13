@@ -1930,14 +1930,14 @@ mod tests {
     #[test]
     #[cfg_attr(
         not(feature = "media"),
-        ignore = "待 media：内置 CJK 字体只在 media 下挂进 fontdb（见 Cargo.toml 文件头），不开时回退到系统字体"
+        ignore = "waiting for media: built-in CJK fonts are only attached to fontdb under media (see the Cargo.toml header); without it, fall back to system fonts"
     )]
     fn a_chinese_line_is_shaped_with_a_single_face() {
         let mut engine = TextEngine::new();
         assert_eq!(
             engine.cjk_chain.first().map(String::as_str),
             Some(BUNDLED_CJK_FAMILY),
-            "内置 CJK 字体必须进 BCF 渲染用的 fontdb，并排在回退链最前"
+            "built-in CJK fonts must enter the fontdb used for BCF rendering and rank first in the fallback chain"
         );
 
         for weight in [400u16, 600, 700] {
@@ -1948,7 +1948,7 @@ mod tests {
             assert_eq!(
                 families,
                 HashSet::from([BUNDLED_CJK_FAMILY.to_owned()]),
-                "weight {weight} 的中文行没有整行一个字体：{families:?}"
+                "weight {weight}: the Chinese line does not use one font for the whole line: {families:?}"
             );
         }
     }
@@ -1975,7 +1975,7 @@ mod tests {
         assert_eq!(
             picked.len(),
             1,
-            "缺字的回退随字重漂了：{picked:?}（同一段文本必须整体用同一款回退字体）"
+            "fallback for missing characters drifts with weight: {picked:?} (the same text must use one fallback font throughout)"
         );
         assert_eq!(picked, HashSet::from(["Source Han Sans SC".to_owned()]));
     }
@@ -1986,7 +1986,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         not(feature = "media"),
-        ignore = "待 media：内置 CJK 字体只在 media 下挂进 fontdb（见 Cargo.toml 文件头），不开时回退到系统字体"
+        ignore = "waiting for media: built-in CJK fonts are only attached to fontdb under media (see the Cargo.toml header); without it, fall back to system fonts"
     )]
     fn chinese_punctuation_follows_the_han_run() {
         let mut engine = TextEngine::new();
@@ -1998,7 +1998,7 @@ mod tests {
             assert_eq!(
                 families,
                 HashSet::from([BUNDLED_CJK_FAMILY.to_owned()]),
-                "weight {weight} 的中文标点没跟着汉字：{families:?}"
+                "weight {weight}: Chinese punctuation does not follow the Chinese characters: {families:?}"
             );
         }
         // In pure English the same punctuation still belongs to the Latin family. The neutral rule applies only when it is next to a Han character.
@@ -2007,7 +2007,7 @@ mod tests {
             .collect::<HashSet<_>>();
         assert!(
             !latin.contains(BUNDLED_CJK_FAMILY),
-            "英文行不该被拖进 CJK 族：{latin:?}"
+            "the Latin line should not be pulled into a CJK family: {latin:?}"
         );
     }
 
@@ -2021,7 +2021,7 @@ mod tests {
             .into_iter()
             .find(|family| engine.has_family(family) && *family != BUNDLED_CJK_FAMILY)
         else {
-            eprintln!("跳过：本机没装可点名的系统 CJK 族");
+            eprintln!("skipped: no named system CJK family is installed on this machine");
             return;
         };
         let families = families_by_char(&mut engine, "导数是什么", named, 400)
@@ -2030,7 +2030,7 @@ mod tests {
         assert_eq!(
             families,
             HashSet::from([named.to_owned()]),
-            "点名 {named} 却排成了别的族：{families:?}"
+            "asked for {named} by name but laid out with another family: {families:?}"
         );
     }
 
@@ -2044,7 +2044,7 @@ mod tests {
             .into_iter()
             .flat_map(|weight| families_by_char(&mut engine, "Slope = dy / dx", "", weight))
             .collect::<HashSet<_>>();
-        assert_eq!(families.len(), 1, "缺省无衬线族随字重漂了：{families:?}");
+        assert_eq!(families.len(), 1, "default sans-serif family drifts with weight: {families:?}");
     }
 
     #[test]
@@ -2070,11 +2070,11 @@ mod tests {
     #[test]
     fn fullwidth_punctuation_counts_as_cjk() {
         for character in ['：', '，', '（', '）', '、', '「', '」', '。'] {
-            assert!(is_cjk_character(character), "{character} 应按 CJK 排版");
+            assert!(is_cjk_character(character), "{character} should be laid out as CJK");
         }
         // Half-width punctuation still belongs to the Latin run. Do not pull the commas of English sentences into the CJK family.
         for character in [':', ',', '(', ')', '.'] {
-            assert!(!is_cjk_character(character), "{character} 不该算 CJK");
+            assert!(!is_cjk_character(character), "{character} should not count as CJK");
         }
     }
 
@@ -2135,25 +2135,25 @@ mod tests {
             .into_iter()
             .find(|family| engine.has_family(family));
         let Some(emoji_family) = emoji_family else {
-            eprintln!("跳过：本机没有安装彩色 emoji 字体");
+            eprintln!("skipped: no color emoji font is installed on this machine");
             return;
         };
         // Other installed fonts may also cover emoji with monochrome outlines.
         // Select the detected color font so this test exercises its color tables.
         let shaped = engine.shape("A😀B", emoji_family, 64.0, 400);
-        assert!(!shaped.glyphs.is_empty(), "shaping 不应为空");
+        assert!(!shaped.glyphs.is_empty(), "shaping should not be empty");
         let mut bitmaps = 0_usize;
         let mut outlines = 0_usize;
         for glyph in &shaped.glyphs {
             match engine.glyph_render(glyph.cache_key) {
                 GlyphRender::Outline(path) => {
-                    assert!(path_has_area(&path), "Outline 分支必须能填出像素");
+                    assert!(path_has_area(&path), "the Outline branch must be able to fill pixels");
                     outlines += 1;
                 }
                 GlyphRender::ColorBitmap { rgba, .. } => {
                     assert!(
                         rgba.chunks_exact(4).any(|pixel| pixel[3] > 0),
-                        "彩色位图字形不能是全透明"
+                        "a color bitmap glyph must not be fully transparent"
                     );
                     bitmaps += 1;
                 }
@@ -2162,9 +2162,9 @@ mod tests {
         }
         assert!(
             bitmaps >= 1,
-            "😀 应走彩色位图通道（回退字体 {emoji_family}）"
+            "😀 should take the color bitmap path (fallback font {emoji_family})"
         );
-        assert!(outlines >= 1, "A / B 仍应走矢量轮廓");
+        assert!(outlines >= 1, "A / B should still take the vector outline path");
     }
 
     /// COLR/CPAL glyphs (the structure of Windows `Segoe UI Emoji`) must go through the color channel.
@@ -2177,17 +2177,17 @@ mod tests {
         let probe = include_bytes!("../tests/fixtures/fonts/ColrProbe.ttf").to_vec();
         let mut engine = TextEngine::with_document_fonts(&[probe]);
         let shaped = engine.shape("A", "ColrProbe", 64.0, 400);
-        assert_eq!(shaped.glyphs.len(), 1, "探针字体应把 'A' shape 成单字形");
+        assert_eq!(shaped.glyphs.len(), 1, "the probe font should shape 'A' into a single glyph");
         let key = shaped.glyphs[0].cache_key;
 
-        let path = engine.glyph_path(key).expect("COLR 基字形应有回退轮廓");
+        let path = engine.glyph_path(key).expect("the COLR base glyph should have a fallback outline");
         assert!(
             path_has_area(&path),
-            "探针必须保留非空单色回退轮廓，否则测不到面积判据的失效"
+            "the probe must keep a non-empty monochrome fallback outline, or the area check's failure goes undetected"
         );
 
         let GlyphRender::ColorBitmap { rgba, .. } = engine.glyph_render(key) else {
-            panic!("COLR 字形必须走彩色通道，而不是被当成单色轮廓画成剪影");
+            panic!("COLR glyphs must take the color path, not be drawn as a silhouette of a monochrome outline");
         };
 
         let mut partial_red = 0_usize;
@@ -2201,7 +2201,7 @@ mod tests {
             }
             assert_eq!(
                 red, alpha,
-                "COLR 输出被二次预乘：不透明纯红像素的 red 被 alpha 压暗"
+                "COLR output was premultiplied twice: the red of an opaque pure-red pixel is darkened by alpha"
             );
             // swash's `>>8` compositing makes fully covered pixels land at alpha=254. So only values below 200 count as partial coverage.
             if alpha < 200 {
@@ -2210,10 +2210,10 @@ mod tests {
         }
         assert!(
             partial_red > 0,
-            "菱形斜边应产生部分覆盖的红色 AA 像素；否则预乘断言是空转"
+            "the diamond's diagonal edge should produce partially covered red AA pixels; otherwise the premultiplication assertion is a no-op"
         );
         let GlyphAtlasRender::Color(atlas) = engine.glyph_atlas_render(key) else {
-            panic!("COLR 字形必须保留 RGBA atlas 数据");
+            panic!("COLR glyphs must keep RGBA atlas data");
         };
         assert!(Arc::ptr_eq(&rgba, &atlas.rgba));
         assert!(matches!(
@@ -2249,18 +2249,18 @@ mod tests {
                 include_bytes!("../assets/fonts/VKSans-400.ttf").to_vec()
             ]);
         let shaped = engine.shape("Ag", "VK Sans", 48.0, 400);
-        assert!(!shaped.glyphs.is_empty(), "shaping 不应为空");
+        assert!(!shaped.glyphs.is_empty(), "shaping should not be empty");
         for glyph in &shaped.glyphs {
             assert!(
                 !engine.face_has_color(glyph.cache_key),
-                "单色 face 不应过彩色门"
+                "a monochrome face must not pass the color gate"
             );
             assert!(
                 matches!(
                     engine.glyph_render(glyph.cache_key),
                     GlyphRender::Outline(_)
                 ),
-                "单色字形必须留在矢量轮廓通道"
+                "monochrome glyphs must stay on the vector outline path"
             );
         }
     }
@@ -2274,13 +2274,13 @@ mod tests {
         let shaped = engine.shape("O", "VK Sans", 48.0, 400);
         let key = shaped.glyphs[0].cache_key;
         let GlyphAtlasRender::Mask(base) = engine.glyph_atlas_render(key) else {
-            panic!("普通字形必须有基础 mask")
+            panic!("ordinary glyphs must have a base mask")
         };
         let GlyphAtlasRender::Mask(first) = engine.glyph_stroke_atlas_render(key, 6.0) else {
-            panic!("普通字形必须有描边 mask")
+            panic!("ordinary glyphs must have a stroke mask")
         };
         let GlyphAtlasRender::Mask(second) = engine.glyph_stroke_atlas_render(key, 6.0) else {
-            panic!("缓存命中仍必须返回描边 mask")
+            panic!("a cache hit must still return the stroke mask")
         };
         assert!(first.width >= base.width && first.height >= base.height);
         assert!(first.left <= base.left);
@@ -2296,7 +2296,7 @@ mod tests {
         for id in 0..6_u32 {
             assert!(
                 cache.insert(id, vec![0_u8; 512]).is_empty(),
-                "还没超预算就不该淘汰"
+                "nothing should be evicted before the budget is exceeded"
             );
         }
         assert_eq!(cache.entries.len(), 6);
@@ -2305,16 +2305,16 @@ mod tests {
         assert!(cache.get(&1).is_some());
 
         let evicted = cache.insert(6, vec![0_u8; 512]);
-        assert_eq!(evicted, vec![2, 3], "最久未使用的先走，且键要交还给调用方");
+        assert_eq!(evicted, vec![2, 3], "least recently used entries go first, and keys must be handed back to the caller");
         assert!(
             cache.bytes <= 4096 / 4 * 3,
-            "淘汰必须一路降到低水位，而不是刚好压回预算线"
+            "eviction must go all the way down to the low-water mark, not just barely back under the budget line"
         );
         for present in [0_u32, 1, 4, 5, 6] {
-            assert!(cache.get(&present).is_some(), "{present} 不该被淘汰");
+            assert!(cache.get(&present).is_some(), "{present} should not be evicted");
         }
         for gone in [2_u32, 3] {
-            assert!(cache.get(&gone).is_none(), "{gone} 应已被淘汰");
+            assert!(cache.get(&gone).is_none(), "{gone} should have been evicted");
         }
         assert_eq!(
             cache.bytes,
@@ -2323,7 +2323,7 @@ mod tests {
                 .values()
                 .map(|entry| entry.bytes)
                 .sum::<usize>(),
-            "字节账必须与表内容一致，否则预算会随淘汰漂移"
+            "the byte accounting must match the table contents, or the budget drifts with eviction"
         );
     }
 
@@ -2336,13 +2336,13 @@ mod tests {
             ]);
         let shaped = engine.shape("Ag", "VK Sans", 48.0, 400);
         let key = shaped.glyphs[0].cache_key;
-        let before = engine.glyph_path(key).expect("字形应有轮廓");
+        let before = engine.glyph_path(key).expect("glyph should have an outline");
 
         engine.path_cache.entries.clear();
         engine.path_cache.bytes = 0;
         engine.swash.outline_command_cache.clear();
 
-        let after = engine.glyph_path(key).expect("重算后仍应有轮廓");
+        let after = engine.glyph_path(key).expect("should still have an outline after recomputation");
         assert_eq!(before.verbs(), after.verbs());
         assert_eq!(before.points(), after.points());
     }
@@ -2365,7 +2365,7 @@ mod tests {
         let (shape, path, bitmap, mask, stroke, face) = engine.cache_bytes();
         assert!(
             shape > 0 && path > 0 && mask > 0 && stroke > 0,
-            "shaping、轮廓、正文 atlas mask 与描边 mask 缓存都应有内容"
+            "shaping, outline, body atlas mask and stroke mask caches should all have content"
         );
         assert!(shape <= SHAPE_CACHE_BUDGET);
         assert!(path <= PATH_CACHE_BUDGET);
@@ -2396,7 +2396,7 @@ mod tests {
         assert_eq!(
             engine.font_system.db().face(id).unwrap().weight,
             Weight::EXTRA_BOLD,
-            "CucCut 管理的同名 family 应覆盖 host 字体"
+            "the same-named family managed by CucCut should override the host font"
         );
     }
 }

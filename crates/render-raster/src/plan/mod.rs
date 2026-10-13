@@ -247,7 +247,7 @@ impl FramePlanner {
     ) -> FramePlan {
         debug_assert!(
             self.topology.is_empty(),
-            "非空效果拓扑必须走 4B 的分支，而不是折叠"
+            "a non-empty effect topology must take the 4B branch, not be folded"
         );
         FramePlan::single_draw(width, height, ops, self.capability_fingerprint)
     }

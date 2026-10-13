@@ -53,7 +53,7 @@ pub fn apply_media_effects(pixmap: &mut Pixmap, fx: Option<&Fx>, reference_scale
             pixmap,
             short_edge,
         )
-        .expect("内置 filter 配方必须可执行");
+        .expect("built-in filter recipe must be executable");
     }
 }
 
@@ -200,7 +200,7 @@ pub fn apply_main_transform_bgra(
     let width_usize = width as usize;
     let height_usize = height as usize;
     if pixels.len() < stride.saturating_mul(height_usize) || stride < width_usize * 4 {
-        bail!("主画面 BGRA 缓冲区尺寸无效");
+        bail!("main picture BGRA buffer size is invalid");
     }
     if main_transform_is_identity(Some(main), width, height) {
         return Ok(());
@@ -247,10 +247,10 @@ pub fn apply_main_transform_bgra(
     }
     let source = Pixmap::from_vec(
         source_rgba,
-        IntSize::from_wh(width, height).context("主画面尺寸非法")?,
+        IntSize::from_wh(width, height).context("invalid main picture size")?,
     )
-    .context("主画面 RGBA 尺寸非法")?;
-    let mut destination = Pixmap::new(width, height).context("无法创建主画面变换层")?;
+    .context("invalid main picture RGBA size")?;
+    let mut destination = Pixmap::new(width, height).context("could not create main picture transform layer")?;
     match main.background.unwrap_or(Background::Black) {
         Background::Black => destination.fill(tiny_skia::Color::BLACK),
         Background::Color([r, g, b]) => {
@@ -2187,7 +2187,7 @@ pub fn draw_caption_recipe_decorations(
                 top,
             } => {
                 let bitmap = PixmapRef::from_bytes(&rgba, width, height)
-                    .expect("彩色字形 RGBA 尺寸已由 TextEngine 验证");
+                    .expect("colour glyph RGBA size was already validated by TextEngine");
                 let placement =
                     Transform::from_translate(left as f32, -top as f32).post_concat(local);
                 pixmap.draw_pixmap(
@@ -2816,7 +2816,7 @@ pub fn draw_line_layout(
                         top,
                     } => {
                         let bitmap = PixmapRef::from_bytes(&rgba, width, height)
-                            .expect("彩色字形 RGBA 尺寸已由 TextEngine 验证");
+                            .expect("colour glyph RGBA size was already validated by TextEngine");
                         // Bitmap glyphs take no part in stroking and do not take the text colour. The placement offset is in glyph-local space and must be applied beneath `local`, so that it follows group_transform (camera zoom, pop scale).
                         let placement =
                             Transform::from_translate(left as f32, -top as f32).post_concat(local);

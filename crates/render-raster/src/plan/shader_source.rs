@@ -163,17 +163,17 @@ mod tests {
                 .join("\n");
             assert!(
                 !code.contains("#include"),
-                "{} 残留了 #include",
+                "{} still contains #include",
                 source.label()
             );
             assert!(
                 text.contains(&format!("fn {FRAGMENT_ENTRY}")),
-                "{} 缺 fragment 入口",
+                "{} is missing the fragment entry point",
                 source.label()
             );
             assert!(
                 text.contains(&format!("fn {VERTEX_ENTRY}")),
-                "{} 缺 vertex 入口",
+                "{} is missing the vertex entry point",
                 source.label()
             );
         }
@@ -188,22 +188,22 @@ mod tests {
         for recipe in motion::preset_registry::timeline_visualizers() {
             assert!(
                 shader_for(ShaderDomain::Visualizer, &recipe.id).is_none(),
-                "visualizer/{} 是 CPU 矢量配方，不该有 WGSL 源",
+                "visualizer/{} is a CPU vector recipe and should have no WGSL source",
                 recipe.id
             );
         }
         for recipe in motion::preset_registry::timeline_progresses() {
             let source = shader_for(ShaderDomain::Progress, &recipe.id)
-                .unwrap_or_else(|| panic!("progress/{} 没有登记 WGSL 源", recipe.id));
+                .unwrap_or_else(|| panic!("progress/{} has no registered WGSL source", recipe.id));
             seen.push(source.label());
         }
-        assert_eq!(seen.len(), 14, "14 种 progress");
+        assert_eq!(seen.len(), 14, "14 progress styles");
         seen.sort();
         seen.dedup();
         assert_eq!(
             seen.len(),
             SHADER_SOURCES.len(),
-            "每份源码都至少服务一个样式"
+            "every source file serves at least one style"
         );
 
         // The same style id must not be registered in two source files.
@@ -219,7 +219,7 @@ mod tests {
         let total = styles.len();
         styles.sort();
         styles.dedup();
-        assert_eq!(styles.len(), total, "样式 id 在登记表里重复了");
+        assert_eq!(styles.len(), total, "style id is duplicated in the registry");
         assert_eq!(total, 14);
     }
 
@@ -238,7 +238,7 @@ mod tests {
                 assert_eq!(
                     declared.as_deref(),
                     Some(source.file),
-                    "{}/{style} 的 manifest `shader` 字段与源文件名不一致",
+                    "{}/{style}: the manifest `shader` field does not match the source file name",
                     source.domain
                 );
             }

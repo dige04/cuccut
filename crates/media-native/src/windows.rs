@@ -36,10 +36,10 @@ impl Runtime {
         unsafe {
             CoInitializeEx(None, COINIT_MULTITHREADED)
                 .ok()
-                .map_err(|error| media_feature_error("初始化 COM", error))?;
+                .map_err(|error| media_feature_error("initialize COM", error))?;
             if let Err(error) = MFStartup(MF_VERSION, MFSTARTUP_FULL) {
                 CoUninitialize();
-                return Err(media_feature_error("启动 Media Foundation", error));
+                return Err(media_feature_error("start Media Foundation", error));
             }
         }
         Ok(Self)
@@ -57,7 +57,7 @@ impl Drop for Runtime {
 
 pub(crate) fn media_feature_error(context: &str, error: windows::core::Error) -> anyhow::Error {
     anyhow!(
-        "{context}失败：{error}。如果使用 Windows N/KN，请在‘可选功能’中安装 Media Feature Pack"
+        "{context} failed: {error}. On Windows N/KN, install the Media Feature Pack under Optional features"
     )
 }
 
@@ -98,7 +98,7 @@ pub(crate) fn extract_frame_rgba(
     target_width: u32,
 ) -> Result<RgbaFrame> {
     if !path.is_file() {
-        bail!("媒体文件不存在：{}", path.display());
+        bail!("media file does not exist: {}", path.display());
     }
     let _runtime = Runtime::start()?;
     unsafe { extract_inner(path, time_seconds, target_width) }
@@ -108,21 +108,21 @@ unsafe fn extract_inner(path: &Path, time_seconds: f64, target_width: u32) -> Re
     let attributes = unsafe {
         let mut value = None;
         MFCreateAttributes(&mut value, 2)
-            .map_err(|error| media_feature_error("创建 Media Foundation 属性", error))?;
-        let value = value.context("Media Foundation 返回空属性对象")?;
+            .map_err(|error| media_feature_error("create Media Foundation attributes", error))?;
+        let value = value.context("Media Foundation returned an empty attributes object")?;
         value.SetUINT32(&MF_SOURCE_READER_ENABLE_ADVANCED_VIDEO_PROCESSING, 1)?;
         value
     };
     let wide = wide_path(path);
     let reader = unsafe { MFCreateSourceReaderFromURL(PCWSTR(wide.as_ptr()), &attributes) }
-        .map_err(|error| media_feature_error("打开源媒体", error))?;
+        .map_err(|error| media_feature_error("open source media", error))?;
 
     let native = unsafe { reader.GetNativeMediaType(VIDEO_STREAM, 0) }
-        .context("unsupported: 源媒体没有视频流")?;
+        .context("unsupported: source media has no video stream")?;
     let (encoded_width, encoded_height) =
-        unpack_ratio(unsafe { native.GetUINT64(&MF_MT_FRAME_SIZE) }.context("读取视频尺寸失败")?);
+        unpack_ratio(unsafe { native.GetUINT64(&MF_MT_FRAME_SIZE) }.context("failed to read video size")?);
     if encoded_width == 0 || encoded_height == 0 {
-        bail!("unsupported: 源媒体没有有效的视频尺寸");
+        bail!("unsupported: source media has no valid video size");
     }
     let rotation = unsafe { native.GetUINT32(&MF_MT_VIDEO_ROTATION) }
         .unwrap_or(0)
@@ -140,14 +140,14 @@ unsafe fn extract_inner(path: &Path, time_seconds: f64, target_width: u32) -> Re
         media_type
     };
     unsafe { reader.SetCurrentMediaType(VIDEO_STREAM, None, &rgb32) }.map_err(|error| {
-        anyhow!("unsupported: Media Foundation 无法把该视频解成 RGB32（{error}）")
+        anyhow!("unsupported: Media Foundation cannot decode this video to RGB32 ({error})")
     })?;
 
     let target_hns = (time_seconds * HNS_PER_SECOND) as i64;
     if target_hns > 0 {
         let position = PROPVARIANT::from(target_hns);
         unsafe { reader.SetCurrentPosition(&GUID::zeroed(), &position) }.map_err(|error| {
-            anyhow!("Media Foundation 无法定位到 {time_seconds:.3}s（{error}）")
+            anyhow!("Media Foundation cannot seek to {time_seconds:.3}s ({error})")
         })?;
     }
 
@@ -172,7 +172,7 @@ unsafe fn extract_inner(path: &Path, time_seconds: f64, target_width: u32) -> Re
     }
     let sample = held.with_context(|| {
         format!(
-            "Media Foundation 在 {time_seconds:.3}s 处没有解出任何帧（{}）",
+            "Media Foundation decoded no frame at {time_seconds:.3}s ({})",
             path.display()
         )
     })?;
@@ -224,7 +224,7 @@ unsafe fn sample_to_rgba(
         unsafe { buffer.Lock2D(&mut scanline0, &mut pitch)? };
         // Between Lock2D and Unlock2D, do not use `?`: the result first lands in `outcome`, and the unlock runs unconditionally.
         let outcome = if scanline0.is_null() || (pitch.unsigned_abs() as usize) < width * 4 {
-            Err(anyhow!("Media Foundation 返回了不完整的 RGB32 视频帧"))
+            Err(anyhow!("Media Foundation returned an incomplete RGB32 video frame"))
         } else {
             Ok(unsafe { copy_rows(scanline0, pitch as isize, width, height, rotation) })
         };
@@ -240,7 +240,7 @@ unsafe fn sample_to_rgba(
     unsafe { buffer.Lock(&mut pointer, Some(&mut maximum), Some(&mut current))? };
     let stride = width * 4;
     let outcome = if (current as usize) < stride * height {
-        Err(anyhow!("Media Foundation 返回了不完整的 RGB32 视频帧"))
+        Err(anyhow!("Media Foundation returned an incomplete RGB32 video frame"))
     } else {
         // A contiguous RGB32 buffer is bottom-up: the first visual row is at the end of the buffer, so the stride is negative.
         let first_visual_row = unsafe { pointer.add(stride * (height - 1)) };
@@ -313,7 +313,7 @@ pub(crate) fn open_frame_source(
     from_seconds: f64,
 ) -> Result<Box<dyn crate::frames::FrameSource>> {
     if !path.is_file() {
-        bail!("媒体文件不存在：{}", path.display());
+        bail!("media file does not exist: {}", path.display());
     }
     let runtime = Runtime::start()?;
     unsafe { open_inner(runtime, path, from_seconds) }
@@ -327,21 +327,21 @@ unsafe fn open_inner(
     let attributes = unsafe {
         let mut value = None;
         MFCreateAttributes(&mut value, 2)
-            .map_err(|error| media_feature_error("创建 Media Foundation 属性", error))?;
-        let value = value.context("Media Foundation 返回空属性对象")?;
+            .map_err(|error| media_feature_error("create Media Foundation attributes", error))?;
+        let value = value.context("Media Foundation returned an empty attributes object")?;
         value.SetUINT32(&MF_SOURCE_READER_ENABLE_ADVANCED_VIDEO_PROCESSING, 1)?;
         value
     };
     let wide = wide_path(path);
     let reader = unsafe { MFCreateSourceReaderFromURL(PCWSTR(wide.as_ptr()), &attributes) }
-        .map_err(|error| media_feature_error("打开源媒体", error))?;
+        .map_err(|error| media_feature_error("open source media", error))?;
 
     let native = unsafe { reader.GetNativeMediaType(VIDEO_STREAM, 0) }
-        .context("unsupported: 源媒体没有视频流")?;
+        .context("unsupported: source media has no video stream")?;
     let (encoded_width, encoded_height) =
-        unpack_ratio(unsafe { native.GetUINT64(&MF_MT_FRAME_SIZE) }.context("读取视频尺寸失败")?);
+        unpack_ratio(unsafe { native.GetUINT64(&MF_MT_FRAME_SIZE) }.context("failed to read video size")?);
     if encoded_width == 0 || encoded_height == 0 {
-        bail!("unsupported: 源媒体没有有效的视频尺寸");
+        bail!("unsupported: source media has no valid video size");
     }
     let rotation = unsafe { native.GetUINT32(&MF_MT_VIDEO_ROTATION) }
         .unwrap_or(0)
@@ -364,14 +364,14 @@ unsafe fn open_inner(
         media_type
     };
     unsafe { reader.SetCurrentMediaType(VIDEO_STREAM, None, &rgb32) }.map_err(|error| {
-        anyhow!("unsupported: Media Foundation 无法把该视频解成 RGB32（{error}）")
+        anyhow!("unsupported: Media Foundation cannot decode this video to RGB32 ({error})")
     })?;
 
     let from_hns = (from_seconds * HNS_PER_SECOND) as i64;
     if from_hns > 0 {
         let position = PROPVARIANT::from(from_hns);
         unsafe { reader.SetCurrentPosition(&GUID::zeroed(), &position) }.map_err(|error| {
-            anyhow!("Media Foundation 无法定位到 {from_seconds:.3}s（{error}）")
+            anyhow!("Media Foundation cannot seek to {from_seconds:.3}s ({error})")
         })?;
     }
 
@@ -472,7 +472,7 @@ mod tests {
                     .join("src")
                     .join(file),
             )
-            .expect("读取平台源码");
+            .expect("read platform source");
             for (index, line) in source.lines().enumerate() {
                 if line.trim() != "_runtime: Runtime," {
                     continue;
@@ -489,7 +489,7 @@ mod tests {
                     }
                     assert!(
                         following.contains("PhantomData"),
-                        "{file}:{} 的 Runtime 后面还有会析构的字段 `{following}`",
+                        "{file}:{} has a field with a destructor after Runtime: `{following}`",
                         index + 1
                     );
                 }

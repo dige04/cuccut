@@ -410,7 +410,7 @@ mod tests {
             let actual = grid.seeds.len() as f64;
             assert!(
                 actual >= pieces * 0.5 && actual <= pieces * 1.8,
-                "请求 {pieces} 片，实际 {actual}"
+                "requested {pieces} pieces, got {actual}"
             );
         }
     }
@@ -427,6 +427,6 @@ mod tests {
         let inner: usize = area[..grid.n_theta].iter().sum::<usize>() / grid.n_theta;
         let outer_ring = grid.n_r - 1;
         let outer: usize = area[outer_ring * grid.n_theta..].iter().sum::<usize>() / grid.n_theta;
-        assert!(inner * 4 < outer, "内圈 {inner} px/片，外圈 {outer} px/片");
+        assert!(inner * 4 < outer, "inner ring {inner} px/piece, outer ring {outer} px/piece");
     }
 }

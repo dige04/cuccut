@@ -170,7 +170,7 @@ impl CodecDecoderV25 {
 
     /// `N` semantic codes → content features `[1, 2N, 1024]`.
     pub fn decode(&self, codes: &[i32]) -> Result<Array> {
-        ensure!(!codes.is_empty(), "IndexTTS 2.5 语义码为空");
+        ensure!(!codes.is_empty(), "IndexTTS 2.5 semantic codes are empty");
         let n = codes.len() as i32;
         let code_tensor = Array::from_slice(codes, &[1, n]);
         let embedded = self.quantizer.vq2emb(&code_tensor)?.swap_axes(1, 2)?; // [1, N, 1024]

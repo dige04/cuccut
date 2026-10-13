@@ -214,7 +214,7 @@ impl FfmpegWriter {
         .stdin(Stdio::piped());
         let mut child = cmd
             .spawn()
-            .context("启动 ffmpeg 失败（需要安装 ffmpeg：PATH 或 Homebrew 等标准位置）")?;
+            .context("failed to start ffmpeg (install ffmpeg on PATH or in a standard location such as Homebrew)")?;
         let stdin = child.stdin.take();
         Ok(FfmpegWriter { child, stdin })
     }
@@ -228,7 +228,7 @@ impl FfmpegWriter {
         drop(self.stdin.take());
         let status = self.child.wait()?;
         if !status.success() {
-            bail!("ffmpeg 退出码 {status}");
+            bail!("ffmpeg exited with status {status}");
         }
         Ok(())
     }
@@ -321,9 +321,9 @@ fn write_mixed_audio_temp(bytes: &[u8]) -> Result<tempfile::NamedTempFile> {
         .prefix("ccut-mix-")
         .suffix(".f32le")
         .tempfile()
-        .context("创建系统临时混音文件")?;
-    file.write_all(bytes).context("写系统临时混音文件")?;
-    file.as_file_mut().flush().context("刷新系统临时混音文件")?;
+        .context("failed to create temporary audio mix file")?;
+    file.write_all(bytes).context("failed to write temporary audio mix file")?;
+    file.as_file_mut().flush().context("failed to flush temporary audio mix file")?;
     Ok(file)
 }
 
@@ -476,13 +476,13 @@ pub fn render_video_with_motion_blur(
                 next += 1;
                 if next % 120 == 0 || next == total_frames {
                     if !progress(next, total_frames) {
-                        bail!("cancelled: render 已在帧边界取消");
+                        bail!("cancelled: render was cancelled at a frame boundary");
                     }
                 }
             }
         }
         if next != total_frames {
-            bail!("渲染中断：{next}/{total_frames} 帧");
+            bail!("render interrupted: {next}/{total_frames} frames");
         }
         Ok(())
     });

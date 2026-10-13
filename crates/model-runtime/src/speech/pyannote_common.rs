@@ -70,7 +70,7 @@ pub struct PyannoteCancelled;
 
 impl std::fmt::Display for PyannoteCancelled {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("Pyannote 说话人识别已取消")
+        formatter.write_str("Pyannote speaker diarization cancelled")
     }
 }
 
@@ -225,7 +225,7 @@ where
     F: FnMut(&[f32], usize) -> Result<Vec<Vec<f32>>>,
 {
     if options.max_speakers == Some(0) {
-        bail!("说话人数上限必须至少为 1");
+        bail!("the speaker count limit must be at least 1");
     }
     if samples.is_empty() {
         return Ok(Vec::new());
@@ -246,12 +246,12 @@ where
         }
         let batch_logits = infer(&packed, batch_size)?;
         if batch_logits.len() != batch_size {
-            bail!("Pyannote 返回窗口数异常：实际 {}，期望 {batch_size}", batch_logits.len());
+            bail!("Pyannote returned an abnormal window count: found {}, expected {batch_size}", batch_logits.len());
         }
         for (offset, logits) in batch_logits.into_iter().enumerate() {
             if logits.len() != FRAMES_PER_WINDOW * CLASS_COUNT {
                 bail!(
-                    "Pyannote 返回 logits 数异常：实际 {}，期望 {}",
+                    "Pyannote returned an abnormal logits count: found {}, expected {}",
                     logits.len(),
                     FRAMES_PER_WINDOW * CLASS_COUNT
                 );
@@ -845,7 +845,7 @@ mod tests {
         // Two units in the same chunk are mutually exclusive and can never be merged; with cap=1, the shorter one must be dropped by duration ordering rather than outputting two speakers.
         let assignment = vec![0, 1];
         let seconds = vec![9.0, 0.4];
-        let keep = surviving_clusters(&assignment, &seconds, Some(1)).expect("超限");
+        let keep = surviving_clusters(&assignment, &seconds, Some(1)).expect("over limit");
         assert_eq!(keep, BTreeSet::from([0]));
         assert!(surviving_clusters(&assignment, &seconds, Some(2)).is_none());
         assert!(surviving_clusters(&assignment, &seconds, None).is_none());

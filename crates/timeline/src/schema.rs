@@ -34,13 +34,13 @@ impl Display for TimelineError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::UnsupportedVersion(version) => {
-                write!(formatter, "不支持 timeline 版本 {version}")
+                write!(formatter, "unsupported timeline version {version}")
             }
             Self::Invalid(message) => formatter.write_str(message),
-            Self::MissingSource(id) => write!(formatter, "source 不存在：{id}"),
-            Self::EmptyClip(id) => write!(formatter, "clip 扣除 cuts 后为空：{id}"),
-            Self::Unmapped(id) => write!(formatter, "对象未映射到时间轴：{id}"),
-            Self::Ambiguous(id) => write!(formatter, "对象在时间轴上有多个映射：{id}"),
+            Self::MissingSource(id) => write!(formatter, "source does not exist: {id}"),
+            Self::EmptyClip(id) => write!(formatter, "clip is empty after applying cuts: {id}"),
+            Self::Unmapped(id) => write!(formatter, "object is not mapped to the timeline: {id}"),
+            Self::Ambiguous(id) => write!(formatter, "object has multiple mappings on the timeline: {id}"),
         }
     }
 }
@@ -153,7 +153,7 @@ impl TimelineDocument {
             unique_id(&mut ids, source_id)?;
             if source_id == "main" && source.has_identity_fields() {
                 return Err(TimelineError::Invalid(
-                    "main source 的媒体身份必须只存在于 project.json".to_owned(),
+                    "the main source's media identity must only exist in project.json".to_owned(),
                 ));
             }
             source.validate(source_id, &mut ids)?;
@@ -169,7 +169,7 @@ impl TimelineDocument {
                 || clip.rate <= 0.0
             {
                 return Err(TimelineError::Invalid(format!(
-                    "clip {} 的区间或 rate 非法",
+                    "clip {} has an invalid range or rate",
                     clip.id
                 )));
             }
@@ -179,7 +179,7 @@ impl TimelineDocument {
                 };
                 if source.kind == Some(SourceKind::Lottie) {
                     return Err(TimelineError::Invalid(format!(
-                        "clip {} 引用的 source {} 是 lottie，Lottie 只能作为贴纸元素的素材",
+                        "clip {} references source {} which is lottie; Lottie can only be used as the asset of a sticker element",
                         clip.id, clip.src_id
                     )));
                 }
@@ -199,7 +199,7 @@ impl TimelineDocument {
                 );
                 if media_kind && element.src_id.is_none() {
                     return Err(TimelineError::Invalid(format!(
-                        "媒体元素 {} 缺少 srcId",
+                        "media element {} is missing srcId",
                         element.id
                     )));
                 }
@@ -211,7 +211,7 @@ impl TimelineDocument {
                     };
                     if source.kind == Some(SourceKind::Lottie) && !element.is_asset_sticker() {
                         return Err(TimelineError::Invalid(format!(
-                            "元素 {} 引用的 source {} 是 lottie，只有 sticker.source=\"asset\" 的贴纸元素可以引用",
+                            "element {} references source {} which is lottie; only sticker elements with sticker.source=\"asset\" can reference it",
                             element.id, source_id
                         )));
                     }
@@ -219,19 +219,19 @@ impl TimelineDocument {
                         && source.kind.is_some_and(|kind| kind != SourceKind::Image)
                     {
                         return Err(TimelineError::Invalid(format!(
-                            "元素 {} 引用的 source {} 不是 image，白板手绘只接受静态图片源（{WHITEBOARD_SOURCE_KIND}）",
+                            "element {} references source {} which is not an image; whiteboard drawings only accept static image sources ({WHITEBOARD_SOURCE_KIND})",
                             element.id, source_id
                         )));
                     }
                 } else if element.kind == ElementKind::Whiteboard {
                     return Err(TimelineError::Invalid(format!(
-                        "元素 {} 是白板手绘，不能引用 main 源（{WHITEBOARD_SOURCE_KIND}）",
+                        "element {} is a whiteboard drawing and cannot reference the main source ({WHITEBOARD_SOURCE_KIND})",
                         element.id
                     )));
                 }
                 if (track.kind == TrackKind::Audio) != (element.kind == ElementKind::Audio) {
                     return Err(TimelineError::Invalid(format!(
-                        "track {} 的 kind 与 element {} 不匹配",
+                        "track {} kind does not match element {}",
                         track.id, element.id
                     )));
                 }
@@ -247,13 +247,13 @@ impl TimelineDocument {
                 }
                 if duck.under == track.id {
                     return Err(TimelineError::Invalid(format!(
-                        "element {} 的 duck.under 不能是它自己所在的轨 {}",
+                        "element {} duck.under cannot be the track it is on ({})",
                         element.id, track.id
                     )));
                 }
                 if !self.tracks.iter().any(|other| other.id == duck.under) {
                     return Err(TimelineError::Invalid(format!(
-                        "element {} 的 duck.under 指向不存在的轨：{}",
+                        "element {} duck.under points to a track that does not exist: {}",
                         element.id, duck.under
                     )));
                 }
@@ -267,7 +267,7 @@ impl TimelineDocument {
                 && (!main.muted || main.place.as_ref().and_then(|place| place.opacity) != Some(0.0))
         }) {
             return Err(TimelineError::Invalid(
-                "detached main 必须 muted=true 且 place.opacity=0；请编辑普通视频元素".into(),
+                "detached main must have muted=true and place.opacity=0; edit a regular video element instead".into(),
             ));
         }
         if self
@@ -277,7 +277,7 @@ impl TimelineDocument {
             .is_some_and(|duration| !duration.is_finite() || duration <= 0.0)
         {
             return Err(TimelineError::Invalid(
-                "main.sourceDuration 必须是正有限数".into(),
+                "main.sourceDuration must be a positive finite number".into(),
             ));
         }
         Ok(())
@@ -333,7 +333,7 @@ impl Source {
             && !SOURCE_ORIGINS.contains(&origin.as_str())
         {
             return Err(TimelineError::Invalid(format!(
-                "source {source_id} 的 origin 只能是 {}",
+                "source {source_id} origin must be {}",
                 SOURCE_ORIGINS.join(" / ")
             )));
         }
@@ -343,7 +343,7 @@ impl Source {
             .is_some_and(|path| path.trim().is_empty())
         {
             return Err(TimelineError::Invalid(format!(
-                "source {source_id} 的 provenance 不能为空"
+                "source {source_id} provenance cannot be empty"
             )));
         }
         let mut previous_end = -f64::INFINITY;
@@ -352,20 +352,20 @@ impl Source {
             unique_id(ids, &cut.id)?;
             if !cut.t0.is_finite() || !cut.t1.is_finite() || cut.t0 < 0.0 || cut.t1 <= cut.t0 {
                 return Err(TimelineError::Invalid(format!(
-                    "source {source_id} 的 cut {} 区间非法",
+                    "source {source_id} cut {} has an invalid range",
                     cut.id
                 )));
             }
             if cut.t0 < previous_end {
                 return Err(TimelineError::Invalid(format!(
-                    "source {source_id} 的 cuts 必须排序且不重叠"
+                    "source {source_id} cuts must be sorted and non-overlapping"
                 )));
             }
             if let Some(duration) = self.duration
                 && cut.t1 > duration
             {
                 return Err(TimelineError::Invalid(format!(
-                    "cut {} 超过 source {source_id} 时长",
+                    "cut {} exceeds the duration of source {source_id}",
                     cut.id
                 )));
             }
@@ -583,13 +583,13 @@ impl Element {
             match time {
                 TimeValue::Seconds(value) if !value.is_finite() || *value < 0.0 => {
                     return Err(TimelineError::Invalid(format!(
-                        "element {} 的时间非法",
+                        "element {} has invalid timing",
                         self.id
                     )));
                 }
                 TimeValue::Anchor(anchor) if !valid_anchor(anchor) => {
                     return Err(TimelineError::Invalid(format!(
-                        "element {} 的词锚点非法：{anchor}",
+                        "element {} has an invalid word anchor: {anchor}",
                         self.id
                     )));
                 }
@@ -598,7 +598,7 @@ impl Element {
         }
         if self.kind == ElementKind::Audio && self.animate.is_some() {
             return Err(TimelineError::Invalid(format!(
-                "audio element {} 不支持动画",
+                "audio element {} does not support animation",
                 self.id
             )));
         }
@@ -607,19 +607,19 @@ impl Element {
             && end <= start
         {
             return Err(TimelineError::Invalid(format!(
-                "element {} 的 end 必须晚于 start",
+                "element {} end must be later than start",
                 self.id
             )));
         }
         if self.kind == ElementKind::Text && self.text.is_none() && self.counter.is_none() {
             return Err(TimelineError::Invalid(format!(
-                "text element {} 必须带 text 或 counter",
+                "text element {} must have text or counter",
                 self.id
             )));
         }
         if self.kind == ElementKind::Text && self.text.is_some() && self.counter.is_some() {
             return Err(TimelineError::Invalid(format!(
-                "text element {} 的 text 与 counter 必须互斥",
+                "text element {} text and counter are mutually exclusive",
                 self.id
             )));
         }
@@ -640,7 +640,7 @@ impl Element {
         );
         if is_media && self.src_id.is_none() {
             return Err(TimelineError::Invalid(format!(
-                "{} element {} 缺少 srcId",
+                "{} element {} is missing srcId",
                 self.kind.as_str(),
                 self.id
             )));
@@ -669,7 +669,7 @@ impl Element {
                 || self.fx.is_some())
         {
             return Err(TimelineError::Invalid(format!(
-                "text element {} 带有不适用的媒体字段",
+                "text element {} has inapplicable media fields",
                 self.id
             )));
         }
@@ -680,13 +680,13 @@ impl Element {
                 || self.style_preset_id.is_some())
         {
             return Err(TimelineError::Invalid(format!(
-                "非 text element {} 带有文本字段",
+                "non-text element {} has text fields",
                 self.id
             )));
         }
         if self.kind != ElementKind::Image && (self.source.is_some() || self.html.is_some()) {
             return Err(TimelineError::Invalid(format!(
-                "非 image element {} 带有 source/html",
+                "non-image element {} has source/html",
                 self.id
             )));
         }
@@ -696,37 +696,37 @@ impl Element {
             .is_some_and(|source| !matches!(source, "file" | "html"))
         {
             return Err(TimelineError::Invalid(format!(
-                "image element {} 的 source 不是 file/html",
+                "image element {} source must be file/html",
                 self.id
             )));
         }
         if self.html.is_some() && self.source.as_deref() != Some("html") {
             return Err(TimelineError::Invalid(format!(
-                "image element {} 的 html 必须配合 source=html",
+                "image element {} html requires source=html",
                 self.id
             )));
         }
         if !is_visual_media && (self.mode.is_some() || self.fit.is_some() || self.bg.is_some()) {
             return Err(TimelineError::Invalid(format!(
-                "element {} 的 mode/fit/bg 只适用于 image/video",
+                "element {} mode/fit/bg only apply to image/video",
                 self.id
             )));
         }
         if !matches!(self.kind, ElementKind::Text | ElementKind::Image) && self.tile.is_some() {
             return Err(TimelineError::Invalid(format!(
-                "element {} 的 tile 只适用于 text/image",
+                "element {} tile only applies to text/image",
                 self.id
             )));
         }
         if !is_visual_media && (self.mask.is_some() || self.fx.is_some()) {
             return Err(TimelineError::Invalid(format!(
-                "element {} 的 mask/fx 只适用于 image/video",
+                "element {} mask/fx only apply to image/video",
                 self.id
             )));
         }
         if self.kind == ElementKind::Audio && self.place.is_some() {
             return Err(TimelineError::Invalid(format!(
-                "audio element {} 不支持 place",
+                "audio element {} does not support place",
                 self.id
             )));
         }
@@ -734,7 +734,7 @@ impl Element {
             && (self.audio_fade_in.is_some() || self.audio_fade_out.is_some())
         {
             return Err(TimelineError::Invalid(format!(
-                "element {} 的 audioFadeIn/audioFadeOut 只适用于 audio/video",
+                "element {} audioFadeIn/audioFadeOut only apply to audio/video",
                 self.id
             )));
         }
@@ -747,7 +747,7 @@ impl Element {
         if let Some(duck) = &self.duck {
             if !matches!(self.kind, ElementKind::Audio | ElementKind::Video) {
                 return Err(TimelineError::Invalid(format!(
-                    "element {} 的 duck 只适用于 audio/video",
+                    "element {} duck only applies to audio/video",
                     self.id
                 )));
             }
@@ -757,7 +757,7 @@ impl Element {
             && (self.kind != ElementKind::Audio || clip.trim().is_empty())
         {
             return Err(TimelineError::Invalid(format!(
-                "element {} 的 bcfClip 只适用于 audio，且不能为空",
+                "element {} bcfClip only applies to audio and cannot be empty",
                 self.id
             )));
         }
@@ -770,7 +770,7 @@ impl Element {
                     || !(AUDIO_FADE_RANGE.0..=AUDIO_FADE_RANGE.1).contains(&value))
             {
                 return Err(TimelineError::Invalid(format!(
-                    "element {} 的 {name} 须在 0..=5 秒",
+                    "element {} {name} must be within 0..=5 seconds",
                     self.id
                 )));
             }
@@ -793,7 +793,7 @@ impl Element {
             };
             if !compatible {
                 return Err(TimelineError::Invalid(format!(
-                    "element {} 的 role 与 kind={} 不匹配",
+                    "element {} role does not match kind={}",
                     self.id,
                     self.kind.as_str()
                 )));
@@ -801,7 +801,7 @@ impl Element {
         }
         if self.tile.as_ref().is_some_and(|tile| !tile.on) {
             return Err(TimelineError::Invalid(format!(
-                "element {} 的 tile.on=false 应删除整个 tile 字段",
+                "element {} tile.on=false should remove the whole tile field",
                 self.id
             )));
         }
@@ -814,7 +814,7 @@ impl Element {
             })
         {
             return Err(TimelineError::Invalid(format!(
-                "element {} 的 typewriter/riseWords 只适用于 text",
+                "element {} typewriter/riseWords only apply to text",
                 self.id
             )));
         }
@@ -827,7 +827,7 @@ impl Element {
             })
         {
             return Err(TimelineError::Invalid(format!(
-                "counter element {} 不支持 typewriter/riseWords",
+                "counter element {} does not support typewriter/riseWords",
                 self.id
             )));
         }
@@ -845,7 +845,7 @@ impl Element {
                     || (name == "rate" && value == 0.0))
             {
                 return Err(TimelineError::Invalid(format!(
-                    "element {} 的 {name} 非法",
+                    "element {} has an invalid {name}",
                     self.id
                 )));
             }
@@ -874,14 +874,14 @@ impl Element {
         ] {
             if present && expected != Some(field) {
                 return Err(TimelineError::Invalid(format!(
-                    "element {} 的 kind={} 不接受 {field} props（{ELEMENT_PROPS_MISMATCH}）",
+                    "element {} with kind={} does not accept {field} props ({ELEMENT_PROPS_MISMATCH})",
                     self.id,
                     self.kind.as_str()
                 )));
             }
             if !present && expected == Some(field) {
                 return Err(TimelineError::Invalid(format!(
-                    "element {} 的 kind={} 缺少 {field} props（{ELEMENT_PROPS_MISMATCH}）",
+                    "element {} with kind={} is missing {field} props ({ELEMENT_PROPS_MISMATCH})",
                     self.id,
                     self.kind.as_str()
                 )));
@@ -1112,7 +1112,7 @@ impl ShapeProps {
     fn validate(&self, element_id: &str) -> Result<(), TimelineError> {
         if self.shape.trim().is_empty() {
             return Err(TimelineError::Invalid(format!(
-                "element {element_id} 的 shape.shape 为空"
+                "element {element_id} shape.shape is empty"
             )));
         }
         for (name, color) in [("fill", &self.fill), ("stroke", &self.stroke)] {
@@ -1132,7 +1132,7 @@ impl ShapeProps {
         }
         if self.stroke_width.is_some_and(|width| width < 0.0) {
             return Err(TimelineError::Invalid(format!(
-                "element {element_id} 的 shape.strokeWidth 必须非负"
+                "element {element_id} shape.strokeWidth must be non-negative"
             )));
         }
         if let Some(radius) = self.corner_radius
@@ -1141,14 +1141,14 @@ impl ShapeProps {
                 .any(|value| !value.is_finite() || *value < 0.0)
         {
             return Err(TimelineError::Invalid(format!(
-                "element {element_id} 的 shape.cornerRadius 必须是四个非负有限数"
+                "element {element_id} shape.cornerRadius must be four non-negative finite numbers"
             )));
         }
         if let Some(head) = &self.head
             && !SHAPE_HEADS.contains(&head.as_str())
         {
             return Err(TimelineError::Invalid(format!(
-                "element {element_id} 的 shape.head 非法：{head}"
+                "element {element_id} shape.head is invalid: {head}"
             )));
         }
         Ok(())
@@ -1191,7 +1191,7 @@ impl StickerProps {
     fn validate(&self, element_id: &str) -> Result<(), TimelineError> {
         if !STICKER_SOURCES.contains(&self.source.as_str()) {
             return Err(TimelineError::Invalid(format!(
-                "element {element_id} 的 sticker.source 非法：{}",
+                "element {element_id} sticker.source is invalid: {}",
                 self.source
             )));
         }
@@ -1199,7 +1199,7 @@ impl StickerProps {
             && !STICKER_LOOPS.contains(&mode.as_str())
         {
             return Err(TimelineError::Invalid(format!(
-                "element {element_id} 的 sticker.loop 非法：{mode}"
+                "element {element_id} sticker.loop is invalid: {mode}"
             )));
         }
         for (source, target) in &self.fill_overrides {
@@ -1293,7 +1293,7 @@ impl VisualizerProps {
     fn validate(&self, element_id: &str) -> Result<(), TimelineError> {
         if self.style.trim().is_empty() {
             return Err(TimelineError::Invalid(format!(
-                "element {element_id} 的 visualizer.style 为空"
+                "element {element_id} visualizer.style is empty"
             )));
         }
         for (name, color) in [
@@ -1308,7 +1308,7 @@ impl VisualizerProps {
             && !VISUALIZER_FFT_SIZES.contains(&size)
         {
             return Err(TimelineError::Invalid(format!(
-                "element {element_id} 的 visualizer.fftSize 非法：{size}"
+                "element {element_id} visualizer.fftSize is invalid: {size}"
             )));
         }
         for (name, value) in [
@@ -1324,17 +1324,17 @@ impl VisualizerProps {
             >= self.max_db.unwrap_or(VISUALIZER_MAX_DB_DEFAULT)
         {
             return Err(TimelineError::Invalid(format!(
-                "element {element_id} 的 visualizer.minDb 必须小于 maxDb"
+                "element {element_id} visualizer.minDb must be less than maxDb"
             )));
         }
         if self.smoothing.is_some_and(|tau| !(0.0..1.0).contains(&tau)) {
             return Err(TimelineError::Invalid(format!(
-                "element {element_id} 的 visualizer.smoothing 须在 [0, 1)"
+                "element {element_id} visualizer.smoothing must be in [0, 1)"
             )));
         }
         if self.gain.is_some_and(|gain| gain < 0.0) {
             return Err(TimelineError::Invalid(format!(
-                "element {element_id} 的 visualizer.gain 必须非负"
+                "element {element_id} visualizer.gain must be non-negative"
             )));
         }
         if self
@@ -1343,7 +1343,7 @@ impl VisualizerProps {
             .is_some_and(|speaker| speaker.trim().is_empty())
         {
             return Err(TimelineError::Invalid(format!(
-                "element {element_id} 的 visualizer.speaker 为空"
+                "element {element_id} visualizer.speaker is empty"
             )));
         }
         Ok(())
@@ -1382,7 +1382,7 @@ impl ProgressProps {
     fn validate(&self, element_id: &str) -> Result<(), TimelineError> {
         if self.style.trim().is_empty() {
             return Err(TimelineError::Invalid(format!(
-                "element {element_id} 的 progress.style 为空"
+                "element {element_id} progress.style is empty"
             )));
         }
         for (name, color) in [
@@ -1401,7 +1401,7 @@ impl ProgressProps {
                 && (!value.is_finite() || !(0.0..=1.0).contains(&value))
             {
                 return Err(TimelineError::Invalid(format!(
-                    "element {element_id} 的 progress.{name} 须在 0..=1"
+                    "element {element_id} progress.{name} must be in 0..=1"
                 )));
             }
         }
@@ -1565,13 +1565,13 @@ impl ConfettiProps {
     fn validate(&self, element_id: &str) -> Result<(), TimelineError> {
         if self.style.trim().is_empty() {
             return Err(TimelineError::Invalid(format!(
-                "element {element_id} 的 confetti.style 为空"
+                "element {element_id} confetti.style is empty"
             )));
         }
         if let Some(colors) = &self.colors {
             if colors.is_empty() || colors.len() > CONFETTI_MAX_COLORS {
                 return Err(TimelineError::Invalid(format!(
-                    "element {element_id} 的 confetti.colors 须有 1..={CONFETTI_MAX_COLORS} 项"
+                    "element {element_id} confetti.colors must have 1..={CONFETTI_MAX_COLORS} items"
                 )));
             }
             for color in colors {
@@ -1581,7 +1581,7 @@ impl ConfettiProps {
         if let Some(shapes) = &self.shapes {
             if shapes.is_empty() || shapes.len() > CONFETTI_SHAPES.len() {
                 return Err(TimelineError::Invalid(format!(
-                    "element {element_id} 的 confetti.shapes 须有 1..={} 项",
+                    "element {element_id} confetti.shapes must have 1..={} items",
                     CONFETTI_SHAPES.len()
                 )));
             }
@@ -1590,7 +1590,7 @@ impl ConfettiProps {
                 .find(|shape| !CONFETTI_SHAPES.contains(&shape.as_str()))
             {
                 return Err(TimelineError::Invalid(format!(
-                    "element {element_id} 的 confetti.shapes 含未知形状：{unknown}"
+                    "element {element_id} confetti.shapes contains an unknown shape: {unknown}"
                 )));
             }
         }
@@ -1640,7 +1640,7 @@ fn check_confetti_range(
         && (!value.is_finite() || !(lo..=hi).contains(&value))
     {
         return Err(TimelineError::Invalid(format!(
-            "element {element_id} 的 confetti.{name} 须在 {lo}..={hi}"
+            "element {element_id} confetti.{name} must be in {lo}..={hi}"
         )));
     }
     Ok(())
@@ -1748,7 +1748,7 @@ impl DrawProps {
         validate_color(element_id, "draw.color", &self.color)?;
         if !self.size.is_finite() || !(1.0..=40.0).contains(&self.size) {
             return Err(TimelineError::Invalid(format!(
-                "element {element_id} 的 draw.size 须在 1..=40"
+                "element {element_id} draw.size must be in 1..=40"
             )));
         }
         if self
@@ -1756,12 +1756,12 @@ impl DrawProps {
             .is_some_and(|alpha| !alpha.is_finite() || !(0.0..=1.0).contains(&alpha))
         {
             return Err(TimelineError::Invalid(format!(
-                "element {element_id} 的 draw.alpha 须在 0..=1"
+                "element {element_id} draw.alpha must be in 0..=1"
             )));
         }
         if self.strokes.len() > Self::MAX_STROKES {
             return Err(TimelineError::Invalid(format!(
-                "element {element_id} 的 draw.strokes 超过 {}",
+                "element {element_id} draw.strokes exceeds {}",
                 Self::MAX_STROKES
             )));
         }
@@ -1775,14 +1775,14 @@ impl DrawProps {
                     || !(0.0..=100.0).contains(y)
                 {
                     return Err(TimelineError::Invalid(format!(
-                        "element {element_id} 的 draw point 须在 0..=100"
+                        "element {element_id} draw point must be in 0..=100"
                     )));
                 }
             }
         }
         if total > Self::MAX_POINTS {
             return Err(TimelineError::Invalid(format!(
-                "element {element_id} 的 draw points 总数超过 {}",
+                "element {element_id} total draw points exceed {}",
                 Self::MAX_POINTS
             )));
         }
@@ -1814,7 +1814,7 @@ impl PlaceholderProps {
             .is_some_and(|notes| notes.len() > 2_048)
         {
             return Err(TimelineError::Invalid(format!(
-                "element {element_id} 的 placeholder.notes 超过 2048 字节"
+                "element {element_id} placeholder.notes exceeds 2048 bytes"
             )));
         }
         Ok(())
@@ -1824,7 +1824,7 @@ impl PlaceholderProps {
 fn finite(element_id: &str, field: &str, value: Option<f64>) -> Result<(), TimelineError> {
     match value {
         Some(value) if !value.is_finite() => Err(TimelineError::Invalid(format!(
-            "element {element_id} 的 {field} 非法"
+            "element {element_id} {field} is invalid"
         ))),
         _ => Ok(()),
     }
@@ -2002,13 +2002,13 @@ impl WhiteboardProps {
             && !(draw.is_finite() && draw > 0.0)
         {
             return Err(TimelineError::Invalid(format!(
-                "element {element_id} 的 whiteboard.draw 须为正数：{draw}"
+                "element {element_id} whiteboard.draw must be a positive number: {draw}"
             )));
         }
         if let Some(beats) = &self.beats {
             if beats.len() > WHITEBOARD_MAX_BEATS {
                 return Err(TimelineError::Invalid(format!(
-                    "element {element_id} 的 whiteboard.beats 至多 {WHITEBOARD_MAX_BEATS} 条"
+                    "element {element_id} whiteboard.beats allows at most {WHITEBOARD_MAX_BEATS} entries"
                 )));
             }
             let mut last = f64::NEG_INFINITY;
@@ -2018,12 +2018,12 @@ impl WhiteboardProps {
                     match value {
                         Some(TimeValue::Seconds(value)) if !value.is_finite() || *value < 0.0 => {
                             return Err(TimelineError::Invalid(format!(
-                                "element {element_id} 的 whiteboard.beats[{index}].{field} 须为非负秒数"
+                                "element {element_id} whiteboard.beats[{index}].{field} must be non-negative seconds"
                             )));
                         }
                         Some(TimeValue::Anchor(anchor)) if !valid_anchor(anchor) => {
                             return Err(TimelineError::Invalid(format!(
-                                "element {element_id} 的 whiteboard.beats[{index}].{field} 词锚点非法：{anchor}"
+                                "element {element_id} whiteboard.beats[{index}].{field} has an invalid word anchor: {anchor}"
                             )));
                         }
                         _ => {}
@@ -2033,21 +2033,21 @@ impl WhiteboardProps {
                     && label.chars().count() > WHITEBOARD_MAX_LABEL_CHARS
                 {
                     return Err(TimelineError::Invalid(format!(
-                        "element {element_id} 的 whiteboard.beats[{index}].label 至多 {WHITEBOARD_MAX_LABEL_CHARS} 字符"
+                        "element {element_id} whiteboard.beats[{index}].label allows at most {WHITEBOARD_MAX_LABEL_CHARS} characters"
                     )));
                 }
                 // Numeric beat timing can be validated at the contract layer. Anchor forms must wait for the host to resolve them (the same code is reported with elementId + field).
                 if let Some(at) = beat.at_local() {
                     if at < last {
                         return Err(TimelineError::Invalid(format!(
-                            "element {element_id} 的 whiteboard.beats[{index}].at 须单调不减（{WHITEBOARD_BEAT_WINDOW}）"
+                            "element {element_id} whiteboard.beats[{index}].at must be non-decreasing ({WHITEBOARD_BEAT_WINDOW})"
                         )));
                     }
                     if let Some(prev_end) = last_end
                         && prev_end > at
                     {
                         return Err(TimelineError::Invalid(format!(
-                            "element {element_id} 的 whiteboard.beats[{}].end 须不晚于下一拍的 at（{WHITEBOARD_BEAT_WINDOW}）",
+                            "element {element_id} whiteboard.beats[{}].end must not be later than the next beat's at ({WHITEBOARD_BEAT_WINDOW})",
                             index - 1
                         )));
                     }
@@ -2057,7 +2057,7 @@ impl WhiteboardProps {
                     (Some(at), Some(end)) => {
                         if end <= at {
                             return Err(TimelineError::Invalid(format!(
-                                "element {element_id} 的 whiteboard.beats[{index}].end 须晚于 at（{WHITEBOARD_BEAT_WINDOW}）"
+                                "element {element_id} whiteboard.beats[{index}].end must be later than at ({WHITEBOARD_BEAT_WINDOW})"
                             )));
                         }
                         Some(end)
@@ -2070,7 +2070,7 @@ impl WhiteboardProps {
                     && end > draw
                 {
                     return Err(TimelineError::Invalid(format!(
-                        "element {element_id} 的 whiteboard.beats[{index}].end 须不晚于 draw（{WHITEBOARD_BEAT_AFTER_DRAW}）"
+                        "element {element_id} whiteboard.beats[{index}].end must not be later than draw ({WHITEBOARD_BEAT_AFTER_DRAW})"
                     )));
                 }
                 let [x, y, w, h] = beat.rect;
@@ -2083,7 +2083,7 @@ impl WhiteboardProps {
                     || h > 300.0
                 {
                     return Err(TimelineError::Invalid(format!(
-                        "element {element_id} 的 whiteboard.beats[{index}].box 非法：{:?}",
+                        "element {element_id} whiteboard.beats[{index}].box is invalid: {:?}",
                         beat.rect
                     )));
                 }
@@ -2101,7 +2101,7 @@ pub(crate) fn validate_color(
     let hex = color.strip_prefix('#').unwrap_or("");
     if !matches!(hex.len(), 6 | 8) || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
         return Err(TimelineError::Invalid(format!(
-            "element {element_id} 的 {field} 不是 #RRGGBB[AA]：{color}"
+            "element {element_id} {field} is not #RRGGBB[AA]: {color}"
         )));
     }
     Ok(())
@@ -2198,7 +2198,7 @@ impl Place {
                 && (!value.is_finite() || (name == "radius" && value < 0.0))
             {
                 return Err(TimelineError::Invalid(format!(
-                    "element {element_id} 的 place.{name} 非法"
+                    "element {element_id} place.{name} is invalid"
                 )));
             }
         }
@@ -2209,7 +2209,7 @@ impl Place {
                 .any(|value| !value.is_finite() || *value < 0.0)
         }) {
             return Err(TimelineError::Invalid(format!(
-                "element {element_id} 的 place.cornerRadii 必须是非负有限数"
+                "element {element_id} place.cornerRadii must be non-negative finite numbers"
             )));
         }
         Ok(())
@@ -2287,7 +2287,7 @@ impl<'de> Deserialize<'de> for Background {
         let text = String::deserialize(deserializer)?;
         Self::parse(&text).ok_or_else(|| {
             serde::de::Error::custom(format!(
-                "背景须是 \"blur\"、\"black\" 或 \"#RRGGBB\"：{text}"
+                "background must be \"blur\", \"black\" or \"#RRGGBB\": {text}"
             ))
         })
     }
@@ -2406,7 +2406,7 @@ impl Fx {
                 && (!value.is_finite() || !(lo..=hi).contains(&value))
             {
                 return Err(TimelineError::Invalid(format!(
-                    "element {element_id} 的 fx.{name} 须在 0..=1"
+                    "element {element_id} fx.{name} must be in 0..=1"
                 )));
             }
         }
@@ -2422,7 +2422,7 @@ impl Fx {
                 && (!value.is_finite() || !(lo..=hi).contains(&value))
             {
                 return Err(TimelineError::Invalid(format!(
-                    "element {element_id} 的 fx.{name} 须在 -1..=1"
+                    "element {element_id} fx.{name} must be in -1..=1"
                 )));
             }
         }
@@ -2432,7 +2432,7 @@ impl Fx {
             .is_some_and(|value| !value.is_finite() || !(lo..=hi).contains(&value))
         {
             return Err(TimelineError::Invalid(format!(
-                "element {element_id} 的 fx.blur 须在 0..=100"
+                "element {element_id} fx.blur must be in 0..=100"
             )));
         }
         Ok(())
@@ -2639,7 +2639,7 @@ impl AnimationSlot {
     ) -> Result<(), TimelineError> {
         if !accepted(self.preset.as_str()) {
             return Err(TimelineError::Invalid(format!(
-                "element {element_id} 的 {slot_name} preset 非法：{}",
+                "element {element_id} has an invalid {slot_name} preset: {}",
                 self.preset
             )));
         }
@@ -2650,21 +2650,21 @@ impl AnimationSlot {
             && (!duration.is_finite() || !(DURATION_MIN..=DURATION_MAX).contains(&duration))
         {
             return Err(TimelineError::Invalid(format!(
-                "element {element_id} 的 {slot_name}.dur 须在 {DURATION_MIN}..={DURATION_MAX}"
+                "element {element_id} {slot_name}.dur must be in {DURATION_MIN}..={DURATION_MAX}"
             )));
         }
         if let Some(period) = self.period
             && (!period.is_finite() || !(PERIOD_MIN..=PERIOD_MAX).contains(&period))
         {
             return Err(TimelineError::Invalid(format!(
-                "element {element_id} 的 {slot_name}.period 须在 {PERIOD_MIN}..={PERIOD_MAX}"
+                "element {element_id} {slot_name}.period must be in {PERIOD_MIN}..={PERIOD_MAX}"
             )));
         }
         if let Some(intensity) = self.intensity
             && (!intensity.is_finite() || !(INTENSITY_MIN..=INTENSITY_MAX).contains(&intensity))
         {
             return Err(TimelineError::Invalid(format!(
-                "element {element_id} 的 {slot_name}.intensity 须在 {INTENSITY_MIN}..={INTENSITY_MAX}"
+                "element {element_id} {slot_name}.intensity must be in {INTENSITY_MIN}..={INTENSITY_MAX}"
             )));
         }
         for (name, value) in [("delay", self.delay), ("phase", self.phase)] {
@@ -2672,7 +2672,7 @@ impl AnimationSlot {
                 && !value.is_finite()
             {
                 return Err(TimelineError::Invalid(format!(
-                    "element {element_id} 的 {slot_name}.{name} 非法"
+                    "element {element_id} {slot_name}.{name} is invalid"
                 )));
             }
         }
@@ -2680,26 +2680,26 @@ impl AnimationSlot {
             && (!stagger.is_finite() || stagger <= 0.0)
         {
             return Err(TimelineError::Invalid(format!(
-                "element {element_id} 的 {slot_name}.stagger 须为正有限数"
+                "element {element_id} {slot_name}.stagger must be a positive finite number"
             )));
         }
         if let Some(from) = &self.stagger_from
             && !["start", "end", "center"].contains(&from.as_str())
         {
             return Err(TimelineError::Invalid(format!(
-                "element {element_id} 的 {slot_name}.staggerFrom 非法：{from}"
+                "element {element_id} {slot_name}.staggerFrom is invalid: {from}"
             )));
         }
         if slot_name == "loop" && (self.stagger.is_some() || self.stagger_from.is_some()) {
             return Err(TimelineError::Invalid(format!(
-                "element {element_id} 的 loop 不接受 stagger/staggerFrom"
+                "element {element_id} loop does not accept stagger/staggerFrom"
             )));
         }
         if let Some(ease) = &self.ease
             && !EASE_NAMES.contains(&ease.as_str())
         {
             return Err(TimelineError::Invalid(format!(
-                "element {element_id} 的 {slot_name}.ease 非法：{ease}"
+                "element {element_id} {slot_name}.ease is invalid: {ease}"
             )));
         }
         Ok(())
@@ -2729,13 +2729,13 @@ fn unique_id(ids: &mut HashSet<String>, id: &str) -> Result<(), TimelineError> {
     if ids.insert(id.to_owned()) {
         Ok(())
     } else {
-        Err(TimelineError::Invalid(format!("重复 id：{id}")))
+        Err(TimelineError::Invalid(format!("duplicate id: {id}")))
     }
 }
 
 pub(crate) fn validate_id(kind: &str, id: &str) -> Result<(), TimelineError> {
     if id.is_empty() || id.chars().any(char::is_whitespace) {
-        Err(TimelineError::Invalid(format!("{kind} id 非法：{id}")))
+        Err(TimelineError::Invalid(format!("{kind} id is invalid: {id}")))
     } else {
         Ok(())
     }
@@ -3277,7 +3277,7 @@ mod tests {
             let mut bad = serde_json::to_value(&doc).unwrap();
             bad["sources"]["ai1"][field] = value;
             let bad: TimelineDocument = serde_json::from_value(bad).unwrap();
-            assert!(bad.validate().is_err(), "{field} 应被拒");
+            assert!(bad.validate().is_err(), "{field} should be rejected");
         }
         let schema = schema_json();
         assert_eq!(
@@ -3388,19 +3388,19 @@ mod tests {
         for (element, why) in [
             (
                 r#"{"id":"e1","kind":"image","srcId":"s1"}"#,
-                "image 元素不能引用 lottie",
+                "image element cannot reference lottie",
             ),
             (
                 r#"{"id":"e1","kind":"video","srcId":"s1"}"#,
-                "video 元素不能引用 lottie",
+                "video element cannot reference lottie",
             ),
             (
                 r#"{"id":"e1","kind":"placeholder","srcId":"s1","placeholder":{"variant":"camera"}}"#,
-                "placeholder 不能引用 lottie",
+                "placeholder cannot reference lottie",
             ),
             (
                 r#"{"id":"e1","kind":"sticker","srcId":"s1","sticker":{"source":"template","templateId":"box"}}"#,
-                "模板贴纸不能引用 lottie",
+                "template sticker cannot reference lottie",
             ),
         ] {
             let document: TimelineDocument = serde_json::from_str(&with_element(element)).unwrap();
@@ -3465,7 +3465,7 @@ mod tests {
         assert!(serde_json::from_value::<ElementKind>(json!("motion")).is_err());
         assert!(
             serde_json::from_str::<Element>(r#"{"id":"e1","kind":"motion"}"#).is_err(),
-            "未知 kind 必须解析期报错"
+            "unknown kind must fail at parse time"
         );
     }
 
@@ -3498,7 +3498,7 @@ mod tests {
             "y2",
             "head",
         ] {
-            assert!(round_tripped.get(key).is_some(), "缺 {key}");
+            assert!(round_tripped.get(key).is_some(), "missing {key}");
         }
 
         let sticker = element(
@@ -3637,7 +3637,7 @@ mod tests {
                 r#"{"id":"e9","kind":"confetti","confetti":{"style":"rainbow-paper","emit":{"mode":"loop"}}}"#
             )
             .is_err(),
-            "emit.mode 是封闭枚举"
+            "emit.mode is a closed enum"
         );
         assert!(
             serde_json::from_str::<Element>(
@@ -3654,43 +3654,43 @@ mod tests {
         for (source, why) in [
             (
                 r#"{"id":"e1","kind":"shape"}"#,
-                "kind=shape 却没有 shape props",
+                "kind=shape has no shape props",
             ),
             (
                 r#"{"id":"e1","kind":"text","text":"hi","shape":{"shape":"rect"}}"#,
-                "text 带 shape props",
+                "text with shape props",
             ),
             (
                 r#"{"id":"e1","kind":"shape","shape":{"shape":"rect"},"progress":{"style":"normal"}}"#,
-                "shape 同时带 progress props",
+                "shape with progress props too",
             ),
             (
                 r#"{"id":"e1","kind":"visualizer","sticker":{"source":"asset"}}"#,
-                "visualizer 带 sticker props",
+                "visualizer with sticker props",
             ),
             (
                 r##"{"id":"e1","kind":"draw","draw":{"brush":"round","color":"#ffffff","size":4},"placeholder":{"variant":"media"}}"##,
-                "draw 同时带 placeholder props",
+                "draw with placeholder props too",
             ),
             (
                 r#"{"id":"e1","kind":"confetti"}"#,
-                "kind=confetti 却没有 confetti props",
+                "kind=confetti has no confetti props",
             ),
             (
                 r#"{"id":"e1","kind":"sticker","sticker":{"source":"asset","path":"a.png"},"confetti":{"style":"rainbow-paper"}}"#,
-                "sticker 同时带 confetti props",
+                "sticker with confetti props too",
             ),
             (
                 r#"{"id":"e1","kind":"confetti","confetti":{"style":"rainbow-paper"},"progress":{"style":"normal"}}"#,
-                "confetti 同时带 progress props",
+                "confetti with progress props too",
             ),
             (
                 r#"{"id":"e1","kind":"whiteboard","srcId":"s1"}"#,
-                "kind=whiteboard 却没有 whiteboard props",
+                "kind=whiteboard has no whiteboard props",
             ),
             (
                 r#"{"id":"e1","kind":"image","srcId":"s1","whiteboard":{}}"#,
-                "image 带 whiteboard props",
+                "image with whiteboard props",
             ),
         ] {
             let error = element(source).validate(&mut HashSet::new()).unwrap_err();
@@ -3792,15 +3792,15 @@ mod tests {
             ),
             (
                 r##"{"id":"e1","kind":"whiteboard","srcId":"s1","whiteboard":{"beats":[{"at":"main:g1:start","box":[0,0,50,100]}]}}"##,
-                "词锚点非法",
+                "invalid word anchor",
             ),
             (
                 r##"{"id":"e1","kind":"whiteboard","srcId":"s1","whiteboard":{"beats":[{"at":-1,"box":[0,0,50,100]}]}}"##,
-                "非负秒数",
+                "non-negative seconds",
             ),
             (
                 r##"{"id":"e1","kind":"whiteboard","srcId":"s1","whiteboard":{"beats":[{"at":0,"box":[0,0,50,100],"label":"很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很"}]}}"##,
-                "label 至多",
+                "label allows at most",
             ),
             (
                 r##"{"id":"e1","kind":"whiteboard","srcId":"s1","whiteboard":{"beats":[{"at":0,"box":[0,0,50,100]},{"at":"~main:g1.1:start","box":[50,0,50,100]}]}}"##,
@@ -3821,7 +3821,7 @@ mod tests {
                 r##"{"id":"e1","kind":"whiteboard","srcId":"s1","whiteboard":{"pace":"fast"}}"##
             )
             .is_err(),
-            "pace 是封闭枚举"
+            "pace is a closed enum"
         );
         assert!(
             serde_json::from_str::<Element>(
@@ -3880,7 +3880,7 @@ mod tests {
                 r#"{"id":"e1","kind":"placeholder","placeholder":{"variant":"recording"}}"#
             )
             .is_err(),
-            "placeholder.variant 必须是封闭枚举"
+            "placeholder.variant must be a closed enum"
         );
     }
 
@@ -3941,7 +3941,7 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&old).unwrap(),
             source.replace("0.1", TIMELINE_VERSION),
-            "不含新字段的文档只差 version 字符串"
+            "a document without the new fields differs only in the version string"
         );
         // Unknown versions are kept as-is, and validate reports UnsupportedVersion (not a serde text error).
         let future: TimelineDocument = serde_json::from_str(r#"{"ccutTimeline":"9.9"}"#).unwrap();

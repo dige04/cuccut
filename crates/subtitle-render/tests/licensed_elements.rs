@@ -15,7 +15,7 @@ fn root() -> PathBuf {
 }
 
 #[test]
-#[ignore = "读 v2 的贴纸库 apps/cuccut/assets/stickers：元素素材未随本批带来，待元素素材批次"]
+#[ignore = "reads the v2 sticker library apps/cuccut/assets/stickers: element assets were not brought in this batch, waiting for the element-asset batch"]
 fn a_reopened_colored_lottie_keeps_its_animation_and_export_pixels() {
     use serde_json::json;
     use subtitle_render::OverlayRenderPlan;
@@ -70,7 +70,7 @@ fn a_reopened_colored_lottie_keeps_its_animation_and_export_pixels() {
 }
 
 #[test]
-#[ignore = "读 v2 的贴纸库 apps/cuccut/assets/stickers：元素素材未随本批带来，待元素素材批次"]
+#[ignore = "reads the v2 sticker library apps/cuccut/assets/stickers: element assets were not brought in this batch, waiting for the element-asset batch"]
 fn every_shipped_static_sticker_has_editable_regions_and_renders_after_partial_recolor() {
     let base = root();
     let mut count = 0;
@@ -148,7 +148,7 @@ fn every_shipped_static_sticker_has_editable_regions_and_renders_after_partial_r
 }
 
 #[test]
-#[ignore = "读 v2 的贴纸库 apps/cuccut/assets/stickers：元素素材未随本批带来，待元素素材批次"]
+#[ignore = "reads the v2 sticker library apps/cuccut/assets/stickers: element assets were not brought in this batch, waiting for the element-asset batch"]
 fn every_shipped_lottie_sticker_carries_its_attribution_and_parses() {
     let mut count = 0;
     for entry in std::fs::read_dir(root().join("anim")).unwrap().flatten() {

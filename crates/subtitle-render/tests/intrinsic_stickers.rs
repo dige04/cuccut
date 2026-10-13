@@ -75,7 +75,7 @@ fn fullscreen_cover_reaches_the_edges_in_landscape_portrait_and_square() {
 
 /// Two stickers share one source and enter 0.5 s apart. Under `loop` each runs on its own clock. Under `hold` (freeze on the first frame) and `once` (play, then stop on the last frame) the two only match. Both dynamic sources, SVG animation (user-uploaded) and Lottie (built-in / uploaded), must uphold this.
 #[test]
-#[ignore = "读 v2 的贴纸库 apps/cuccut/assets/stickers：元素素材未随本批带来，待元素素材批次"]
+#[ignore = "reads the v2 sticker library apps/cuccut/assets/stickers: element assets were not brought in this batch, waiting for the element-asset batch"]
 fn shared_sources_keep_independent_clocks_and_honor_hold_and_once() {
     use serde_json::json;
     use subtitle_render::OverlayRenderPlan;
@@ -144,7 +144,7 @@ fn shared_sources_keep_independent_clocks_and_honor_hold_and_once() {
 
 /// Every entry in the built-in dynamic catalog (81 Noto Lottie) must animate by its own frames, without relying on element-level `animate`, and must still animate after recoloring. Rendering goes through `OverlayRenderPlan`, the same frame-fetch path as export.
 #[test]
-#[ignore = "读 v2 的贴纸库 apps/cuccut/assets/stickers：元素素材未随本批带来，待元素素材批次"]
+#[ignore = "reads the v2 sticker library apps/cuccut/assets/stickers: element assets were not brought in this batch, waiting for the element-asset batch"]
 fn all_81_dynamic_sources_animate_their_own_pixels_without_element_animation() {
     use render_raster::drawop::{DrawOp, FrameBuilder};
     use render_raster::source::MediaTime;
@@ -218,7 +218,7 @@ fn all_81_dynamic_sources_animate_their_own_pixels_without_element_animation() {
                 .map(|hex| (hex.clone(), "#10FE72".to_string()))
                 .collect();
             let touched = lottie.apply_fill_overrides(&overrides);
-            assert!(touched > 0, "{} 的静态填充一个都没换到", p.display());
+            assert!(touched > 0, "{} has no static fill recoloured", p.display());
             assert!(
                 distinct_frames(&lottie) >= 2,
                 "{} stopped after recolor",
@@ -229,7 +229,7 @@ fn all_81_dynamic_sources_animate_their_own_pixels_without_element_animation() {
         count += 1;
     }
     assert_eq!(count, 81);
-    assert!(recoloured >= 40, "只有 {recoloured} 款带静态纯色填充");
+    assert!(recoloured >= 40, "only {recoloured} stickers have a static solid fill");
 }
 
 /// Collect the `#RRGGBB` of every `ty:"fl"` static solid fill in bodymovin (0..1 dialect).

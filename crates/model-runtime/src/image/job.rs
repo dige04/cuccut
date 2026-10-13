@@ -192,7 +192,7 @@ mod tests {
         ) -> anyhow::Result<RawImage> {
             self.seen = Some(request.clone());
             if self.fail {
-                bail!("权重坏了：/secret/path/model.safetensors");
+                bail!("weights are corrupt: /secret/path/model.safetensors");
             }
             progress(ImageProgress::EncodingPrompt);
             progress(ImageProgress::Denoising {

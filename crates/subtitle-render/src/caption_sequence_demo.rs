@@ -176,7 +176,7 @@ mod tests {
         let mut text = TextEngine::new();
         let plan = plan(&mut text, 176, 96, default_seed());
         let blocks: usize = plan.sequences.iter().map(|s| s.blocks.len()).sum();
-        assert!(blocks >= 3, "样例至少三行，得到 {blocks}");
+        assert!(blocks >= 3, "the sample has at least three lines, got {blocks}");
         let image = render(
             &mut text,
             &plan,
@@ -192,6 +192,6 @@ mod tests {
             .chunks(4)
             .filter(|px| px[..3] != background[..3])
             .count();
-        assert!(ink > 50, "小样应当画出字，只有 {ink} 个非底色像素");
+        assert!(ink > 50, "the sample should draw glyphs, but only {ink} pixels differ from the background");
     }
 }

@@ -278,7 +278,7 @@ impl Recorder {
     }
 
     fn push_group(&mut self, layer: FrameLayer) {
-        debug_assert!(self.stack.is_empty(), "离屏组不能拆开祖先的透明度或裁剪");
+        debug_assert!(self.stack.is_empty(), "an offscreen group cannot split an ancestor's opacity or clip");
         let ops = std::mem::take(&mut self.b).finish();
         if !ops.ops.is_empty() {
             self.layers.push(FrameLayer::Ops(ops));
@@ -298,7 +298,7 @@ impl Recorder {
         from_static: bool,
         to_static: bool,
     ) {
-        debug_assert!(self.stack.is_empty(), "转场层只在 clip 循环顶层开");
+        debug_assert!(self.stack.is_empty(), "transition layers only open at the top level of the clip loop");
         let ops = std::mem::take(&mut self.b).finish();
         if !ops.ops.is_empty() {
             self.layers.push(FrameLayer::Ops(ops));
@@ -541,7 +541,7 @@ impl FrameRenderer {
         let mut frame = self.record_into(ir, engine, t, RecordMode::Flat);
         match frame.layers.pop() {
             Some(FrameLayer::Ops(ops)) => ops,
-            _ => unreachable!("平坦录制只会产出一层普通指令流"),
+            _ => unreachable!("flat recording only ever produces a single plain op stream"),
         }
     }
 
@@ -3394,11 +3394,11 @@ fn check_lottie_sources(
         match &node.asset_id {
             Some(id) if lotties.contains_key(id) => {}
             Some(id) => bail!(
-                "lottie-source-missing: 元素 \"{}\" 引用的 Lottie 资产 \"{id}\" 没有被加载；\
-                 渲染器必须注入已解析的 Lottie 源",
+                "lottie-source-missing: element \"{}\" references Lottie asset \"{id}\", which was not loaded; \
+                 the renderer must be given the resolved Lottie source",
                 node.id
             ),
-            None => bail!("lottie-source-missing: 元素 \"{}\" 没有 src", node.id),
+            None => bail!("lottie-source-missing: element \"{}\" has no src", node.id),
         }
     }
     for child in &node.children {

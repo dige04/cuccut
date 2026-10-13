@@ -22,8 +22,8 @@ fn each_segment_yields_its_own_colour() {
         return;
     };
     for (time, expected) in [(0.5, "red"), (1.5, "green"), (2.5, "blue")] {
-        let frame = extract_frame_rgba(&media, time, 168).expect("原生取帧");
-        assert_eq!(dominant(&frame), expected, "t={time} 应取到 {expected} 段");
+        let frame = extract_frame_rgba(&media, time, 168).expect("native frame extraction");
+        assert_eq!(dominant(&frame), expected, "t={time} should yield the {expected} segment");
     }
 }
 
@@ -41,14 +41,14 @@ fn frames_do_not_bleed_across_a_segment_boundary() {
     let last_red = SEGMENT - frame_step * 0.5;
     let first_green = SEGMENT + frame_step * 0.5;
     assert_eq!(
-        dominant(&extract_frame_rgba(&media, last_red, 168).expect("原生取帧")),
+        dominant(&extract_frame_rgba(&media, last_red, 168).expect("native frame extraction")),
         "red",
-        "t={last_red} 仍在红段内"
+        "t={last_red} is still inside the red segment"
     );
     assert_eq!(
-        dominant(&extract_frame_rgba(&media, first_green, 168).expect("原生取帧")),
+        dominant(&extract_frame_rgba(&media, first_green, 168).expect("native frame extraction")),
         "green",
-        "t={first_green} 已进入绿段"
+        "t={first_green} has entered the green segment"
     );
 }
 
@@ -61,12 +61,12 @@ fn frames_are_scaled_to_the_requested_width_with_an_even_height() {
         return;
     };
     for width in [84_u32, 168, 320, 640] {
-        let frame = extract_frame_rgba(&media, 0.5, width).expect("原生取帧");
-        assert_eq!(frame.width, width, "宽度必须恰为请求值");
+        let frame = extract_frame_rgba(&media, 0.5, width).expect("native frame extraction");
+        assert_eq!(frame.width, width, "width must match the requested value exactly");
         assert_eq!(
             frame.height,
             scaled_height(WIDTH, HEIGHT, width),
-            "高度必须按源宽高比推出并偶数对齐"
+            "height must follow the source aspect ratio and be rounded to an even number"
         );
         assert_eq!(frame.height % 2, 0);
         assert_eq!(
@@ -75,7 +75,7 @@ fn frames_are_scaled_to_the_requested_width_with_an_even_height() {
         );
         assert!(
             frame.data.chunks_exact(4).all(|pixel| pixel[3] == 255),
-            "视频帧必须交出不透明 alpha"
+            "video frames must return opaque alpha"
         );
     }
 }
@@ -101,21 +101,20 @@ fn native_frames_match_the_ffmpeg_fallback_within_the_cross_backend_tolerance() 
         return;
     };
     for time in [0.5_f64, 1.5, 2.5] {
-        let native = extract_frame_rgba(&media, time, 168).expect("原生取帧");
+        let native = extract_frame_rgba(&media, time, 168).expect("native frame extraction");
         let Some(reference) = ffmpeg_frame(&media, time, 168) else {
             return;
         };
         assert_eq!(
             (native.width, native.height),
             (reference.width, reference.height),
-            "两条路径的尺寸契约必须一致"
+            "both paths must agree on the size contract"
         );
         let measured = imgcmp::compare(&to_pixmap(&native), &to_pixmap(&reference))
-            .expect("尺寸已在上面断言过一致");
+            .expect("size was already asserted equal above");
         assert!(
             measured.ssim_downsampled >= SSIM_FLOOR,
-            "t={time}s 跨后端 SSIM（4× 降采样）{:.4} 低于 {SSIM_FLOOR}（后端 {} ↔ ffmpeg，\
-             全分辨率 ssim={:.4}，逐通道最大偏差 {}，平坦区最大偏差 {}）",
+            "t={time}s cross-backend SSIM (4× downsampled) {:.4} is below {SSIM_FLOOR} (backend {} vs ffmpeg, full-resolution ssim={:.4}, per-channel max deviation {}, flat-region max deviation {})",
             measured.ssim_downsampled,
             media_native::backend(),
             measured.ssim,

@@ -190,7 +190,7 @@ impl ScreenTextQueue {
                 || previous.is_some_and(|previous| frame.t - previous < TIME_EPSILON)
             {
                 return Err(TimelineError::Invalid(
-                    "screentext frames 须按有限非负且不重复的 t 排序".to_owned(),
+                    "screentext frames must be sorted by finite, non-negative and unique t".to_owned(),
                 ));
             }
             previous = Some(frame.t);
@@ -198,7 +198,7 @@ impl ScreenTextQueue {
             for block in &frame.blocks {
                 if block.block_id.is_empty() || !ids.insert(block.block_id.clone()) {
                     return Err(TimelineError::Invalid(format!(
-                        "screentext frame {} 的 blockId 为空或重复",
+                        "screentext frame {} has an empty or duplicate blockId",
                         frame.t
                     )));
                 }
@@ -555,7 +555,7 @@ fn validate_geometry(block: &ScreenTextBlock) -> Result<(), TimelineError> {
             .is_some_and(|align| !matches!(align, "left" | "center" | "right"))
     {
         return Err(TimelineError::Invalid(format!(
-            "screentext block {} 几何/置信度非法",
+            "screentext block {} has invalid geometry or confidence",
             block.block_id
         )));
     }
@@ -570,7 +570,7 @@ fn validate_geometry(block: &ScreenTextBlock) -> Result<(), TimelineError> {
             ))
     {
         return Err(TimelineError::Invalid(format!(
-            "screentext block {} span 非法",
+            "screentext block {} has an invalid span",
             block.block_id
         )));
     }
@@ -615,7 +615,7 @@ pub fn apply_translations(
 ) -> Result<ScreenTextTranslationResult, TimelineError> {
     if file.items.is_empty() {
         return Err(TimelineError::Invalid(
-            "translation items 不能为空".to_owned(),
+            "translation items cannot be empty".to_owned(),
         ));
     }
     if file
@@ -623,25 +623,25 @@ pub fn apply_translations(
         .as_deref()
         .is_some_and(|lang| lang.trim().is_empty())
     {
-        return Err(TimelineError::Invalid("targetLang 不能为空".to_owned()));
+        return Err(TimelineError::Invalid("targetLang cannot be empty".to_owned()));
     }
     // Validate every key and change before mutating: the batch is atomic.
     let mut locations = Vec::new();
     for (index, item) in file.items.iter().enumerate() {
         if !item.t.is_finite() || item.t < 0.0 || item.block_id.is_empty() {
             return Err(TimelineError::Invalid(format!(
-                "translation item {index} key 非法"
+                "translation item {index} has an invalid key"
             )));
         }
         if item.trans.is_none() && item.skip.is_none() && item.src.is_none() {
             return Err(TimelineError::Invalid(format!(
-                "translation item {index} 没有修改"
+                "translation item {index} has no changes"
             )));
         }
         for value in [&item.trans, &item.src].into_iter().flatten() {
             if value.trim().is_empty() {
                 return Err(TimelineError::Invalid(format!(
-                    "translation item {index} 文本为空"
+                    "translation item {index} has empty text"
                 )));
             }
         }
@@ -663,7 +663,7 @@ pub fn apply_translations(
         let still_skipped = item.skip.unwrap_or(block.skip == Some(true));
         if item.trans.is_some() && still_skipped {
             return Err(TimelineError::Invalid(format!(
-                "已 skip block {}:{} 须同批 skip:false 才能翻译",
+                "block {}:{} is already skipped; set skip:false in the same batch to translate it",
                 item.t, item.block_id
             )));
         }
@@ -716,7 +716,7 @@ impl ScreenTextTiming {
             .parse::<f64>()
             .ok()
             .filter(|value| value.is_finite() && *value > 0.0)
-            .ok_or_else(|| TimelineError::Invalid("duration 须为正秒数或 source".to_owned()))?;
+            .ok_or_else(|| TimelineError::Invalid("duration must be a positive number of seconds or source".to_owned()))?;
         Ok(Self::Seconds(value))
     }
 

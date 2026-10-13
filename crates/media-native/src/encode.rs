@@ -206,7 +206,7 @@ pub fn open_mp4_writer_with_bitrate(
     bitrate: Option<u32>,
 ) -> Result<Mp4Writer> {
     if !fps.is_finite() || fps <= 0.0 {
-        bail!("unsupported: MP4 输出帧率必须是有限正值（实得 {fps}）");
+        bail!("unsupported: MP4 output frame rate must be a finite positive value (got {fps})");
     }
     let (fps_num, fps_den) = frame_rate_rational(fps);
     open_mp4_writer_with_options(
@@ -277,24 +277,24 @@ pub fn open_mp4_writer_with_options(out: &Path, options: &Mp4Options) -> Result<
         ..
     } = options;
     if width == 0 || height == 0 {
-        bail!("unsupported: MP4 输出尺寸必须为正（实得 {width}x{height}）");
+        bail!("unsupported: MP4 output size must be positive (got {width}x{height})");
     }
     if width % 2 != 0 || height % 2 != 0 {
-        bail!("unsupported: H.264 输出尺寸必须为偶数（实得 {width}x{height}）");
+        bail!("unsupported: H.264 output size must be even (got {width}x{height})");
     }
     if fps_num == 0 || fps_den == 0 || i32::try_from(fps_num).is_err() {
-        bail!("unsupported: MP4 输出帧率必须是正的有理数（实得 {fps_num}/{fps_den}）");
+        bail!("unsupported: MP4 output frame rate must be a positive rational number (got {fps_num}/{fps_den})");
     }
     if let Some(bitrate) = bitrate
         && bitrate == 0
     {
-        bail!("unsupported: MP4 输出码率必须为正（实得 {bitrate}）");
+        bail!("unsupported: MP4 output bitrate must be positive (got {bitrate})");
     }
     let (audio, audio_bitrate) = match &options.audio {
         None => (None, AUDIO_BITRATE),
         Some(input) => {
             if input.bitrate == 0 {
-                bail!("unsupported: AAC 码率必须为正");
+                bail!("unsupported: AAC bitrate must be positive");
             }
             let mut source = match input.format {
                 PcmFormat::RawF32 => PcmSource::open(&input.path)?,
@@ -302,7 +302,7 @@ pub fn open_mp4_writer_with_options(out: &Path, options: &Mp4Options) -> Result<
             };
             if let Some(seconds) = input.duration_seconds {
                 if !seconds.is_finite() || seconds < 0.0 {
-                    bail!("unsupported: 音轨长度必须是非负有限值（实得 {seconds}）");
+                    bail!("unsupported: audio track length must be a non-negative finite value (got {seconds})");
                 }
                 source.total = Some((seconds * f64::from(AUDIO_SAMPLE_RATE)).round() as u64);
             }
@@ -332,7 +332,7 @@ pub fn open_mp4_writer_with_options(out: &Path, options: &Mp4Options) -> Result<
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = (out, setup);
-        bail!("unsupported: 当前平台没有原生 MP4 编码后端（请安装 ffmpeg 走兜底路径）")
+        bail!("unsupported: no native MP4 encoding backend on this platform (install ffmpeg to use the fallback path)")
     }
 }
 
@@ -407,28 +407,28 @@ impl SampleKind {
 /// or the data chunk comes before the format chunk or is missing; the format itself is not judged here ([`WavLayout::is_native_pcm`]).
 pub fn read_wav_layout(path: &Path) -> Result<WavLayout> {
     let mut file =
-        File::open(path).with_context(|| format!("打开混音 WAV 失败：{}", path.display()))?;
-    let len = file.metadata().context("读混音 WAV 失败")?.len();
+        File::open(path).with_context(|| format!("failed to open mix WAV: {}", path.display()))?;
+    let len = file.metadata().context("failed to read mix WAV")?.len();
     let mut head = [0_u8; 12];
-    file.read_exact(&mut head).context("混音不是 WAV 文件")?;
+    file.read_exact(&mut head).context("mix is not a WAV file")?;
     if &head[0..4] != b"RIFF" || &head[8..12] != b"WAVE" {
-        bail!("混音不是 WAV 文件");
+        bail!("mix is not a WAV file");
     }
     let mut at = 12_u64;
     let mut format: Option<(u16, u16, u32, u16)> = None;
     loop {
         let mut chunk = [0_u8; 8];
         if file.read_exact(&mut chunk).is_err() {
-            bail!("混音的 WAV 没有数据块");
+            bail!("mix WAV has no data chunk");
         }
         let size = u64::from(u32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]));
         let body = at + 8;
         match &chunk[0..4] {
             b"fmt " => {
                 let mut fmt = vec![0_u8; size.min(64) as usize];
-                file.read_exact(&mut fmt).context("读混音 WAV 失败")?;
+                file.read_exact(&mut fmt).context("failed to read mix WAV")?;
                 if fmt.len() < 16 {
-                    bail!("混音的 WAV 格式块不完整");
+                    bail!("mix WAV format chunk is incomplete");
                 }
                 let tag = u16::from_le_bytes([fmt[0], fmt[1]]);
                 let channels = u16::from_le_bytes([fmt[2], fmt[3]]);
@@ -444,7 +444,7 @@ pub fn read_wav_layout(path: &Path) -> Result<WavLayout> {
             }
             b"data" => {
                 let Some((tag, channels, sample_rate, bits_per_sample)) = format else {
-                    bail!("混音的 WAV 在格式块之前就是数据块");
+                    bail!("mix WAV has a data chunk before the format chunk");
                 };
                 let rest = len.saturating_sub(body);
                 let data_bytes = if size == 0 || size == u64::from(u32::MAX) || size > rest {
@@ -465,7 +465,7 @@ pub fn read_wav_layout(path: &Path) -> Result<WavLayout> {
         }
         // Chunks are aligned to even byte boundaries.
         at = body + size + (size & 1);
-        file.seek(SeekFrom::Start(at)).context("读混音 WAV 失败")?;
+        file.seek(SeekFrom::Start(at)).context("failed to read mix WAV")?;
     }
 }
 
@@ -505,7 +505,7 @@ impl PcmChunk {
 impl PcmSource {
     fn open(path: &Path) -> Result<Self> {
         let file =
-            File::open(path).with_context(|| format!("打开混音 PCM 失败：{}", path.display()))?;
+            File::open(path).with_context(|| format!("failed to open mix PCM: {}", path.display()))?;
         Ok(Self {
             reader: BufReader::with_capacity(1 << 16, file),
             frames: 0,
@@ -528,19 +528,19 @@ impl PcmSource {
         let kind = layout.sample_kind();
         if !layout.is_native_pcm() {
             bail!(
-                "unsupported: 混音不是 {AUDIO_SAMPLE_RATE} Hz、{AUDIO_CHANNELS} 声道的 32 位浮点或 16/24/32 位整数 WAV（{} Hz、{} 声道、{} 位{}）",
+                "unsupported: mix is not a {AUDIO_SAMPLE_RATE} Hz, {AUDIO_CHANNELS}-channel 32-bit float or 16/24/32-bit integer WAV ({} Hz, {} channels, {}-bit {})",
                 layout.sample_rate,
                 layout.channels,
                 layout.bits_per_sample,
-                if layout.float { "浮点" } else { "整数" }
+                if layout.float { "float" } else { "integer" }
             );
         }
         let mut source = Self::open(path)?;
         source
             .reader
             .seek(SeekFrom::Start(layout.data_offset))
-            .context("定位混音 WAV 的数据块失败")?;
-        source.kind = kind.expect("is_native_pcm 查过");
+            .context("failed to seek to the mix WAV data chunk")?;
+        source.kind = kind.expect("is_native_pcm was checked");
         source.remaining = Some(layout.data_bytes / source.frame_bytes() as u64);
         Ok(source)
     }
@@ -572,7 +572,7 @@ impl PcmSource {
                 Ok(0) => self.exhausted = true,
                 Ok(read) => filled += read,
                 Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
-                Err(error) => return Err(error).context("读取混音 PCM 失败"),
+                Err(error) => return Err(error).context("failed to read mix PCM"),
             }
         }
         let read = filled / frame_bytes;
@@ -809,7 +809,7 @@ mod tests {
         };
         assert!(open_mp4_writer_with_options(&out, &options(0, 1)).is_err());
         assert!(open_mp4_writer_with_options(&out, &options(30, 0)).is_err());
-        assert!(!out.exists(), "守卫不该创建产物文件");
+        assert!(!out.exists(), "the guard should not create the output file");
     }
 
     #[test]

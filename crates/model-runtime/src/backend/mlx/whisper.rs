@@ -56,7 +56,7 @@ impl WhisperConfig {
                 .and_then(Value::as_u64)
                 .filter(|value| *value > 0)
                 .map(|value| value as usize)
-                .ok_or_else(|| format!("Whisper config.json 缺少正整数字段 {name}"))
+                .ok_or_else(|| format!("Whisper config.json is missing positive integer field {name}"))
         };
         let config = Self {
             n_mels: field("n_mels")?,
@@ -71,14 +71,14 @@ impl WhisperConfig {
             n_text_layer: field("n_text_layer")?,
         };
         if config.n_audio_ctx * 2 != WINDOW_FRAMES as usize {
-            return Err(format!("Whisper n_audio_ctx 应为 1500（30 s 窗），实际 {}", config.n_audio_ctx));
+            return Err(format!("Whisper n_audio_ctx must be 1500 (30 s window), found {}", config.n_audio_ctx));
         }
         if !config.n_audio_state.is_multiple_of(config.n_audio_head) || !config.n_text_state.is_multiple_of(config.n_text_head) {
-            return Err("Whisper 的注意力头数除不尽隐藏宽度".into());
+            return Err("Whisper attention head count does not divide the hidden width".into());
         }
         if config.n_text_ctx < DECODER_TOKEN_BUDGET {
             return Err(format!(
-                "Whisper n_text_ctx {} 小于解码预算 {DECODER_TOKEN_BUDGET}",
+                "Whisper n_text_ctx {} is smaller than the decoder token budget {DECODER_TOKEN_BUDGET}",
                 config.n_text_ctx
             ));
         }
@@ -204,7 +204,7 @@ impl AudioEncoder {
         let conv1_weight = store.take("encoder.conv1.weight")?;
         ensure!(
             conv1_weight.shape() == [config.n_audio_state as i32, 3, config.n_mels as i32],
-            "encoder.conv1.weight 的形状 {:?} 不是 [out, 3, n_mels] 布局",
+            "encoder.conv1.weight shape {:?} is not the [out, 3, n_mels] layout",
             conv1_weight.shape()
         );
         let dtype = conv1_weight.dtype();
@@ -300,7 +300,7 @@ impl TextDecoder {
         let token_embedding = store.take("decoder.token_embedding.weight")?;
         ensure!(
             token_embedding.shape() == [config.n_vocab as i32, config.n_text_state as i32],
-            "decoder.token_embedding.weight 的形状 {:?} 与 config.json 不符",
+            "decoder.token_embedding.weight shape {:?} does not match config.json",
             token_embedding.shape()
         );
         let mut blocks = Vec::with_capacity(config.n_text_layer);
@@ -366,8 +366,8 @@ impl WhisperMlx {
         ensure_metal_device()?;
         // If loading fails partway through, the weights already read in must also be cleared.
         let memory_cache_guard = ModelMemoryCacheGuard;
-        let raw: Value = serde_json::from_slice(&std::fs::read(&files.config).with_context(|| format!("读取 {}", files.config.display()))?)
-            .context("解析 Whisper config.json")?;
+        let raw: Value = serde_json::from_slice(&std::fs::read(&files.config).with_context(|| format!("read {}", files.config.display()))?)
+            .context("parse Whisper config.json")?;
         let config = WhisperConfig::parse(&raw).map_err(anyhow::Error::msg)?;
         let tokenizer = WhisperTokenizer::load(&files.tokenizer)?;
         let generation = GenerationConfig::load(&files.generation_config)?;
@@ -380,7 +380,7 @@ impl WhisperMlx {
         let decoder = TextDecoder::load(&mut store, &config)?;
         let remaining = store.remaining();
         if !remaining.is_empty() {
-            bail!("Whisper 权重里有认不出的张量：{}", remaining.join(", "));
+            bail!("Whisper weights contain unrecognized tensors: {}", remaining.join(", "));
         }
         transforms::eval([&encoder.positional])?;
 
@@ -475,7 +475,7 @@ impl WhisperMlx {
         let mel = self.features.extract(&padded)?;
         ensure!(
             mel.time_frames == WINDOW_FRAMES as usize,
-            "30 s 窗的 mel 应有 {WINDOW_FRAMES} 帧，实际 {}",
+            "mel for a 30 s window should have {WINDOW_FRAMES} frames, found {}",
             mel.time_frames
         );
         let dtype = self.decoder.token_embedding.dtype();
@@ -579,12 +579,12 @@ impl SpeechRecognizer for WhisperMlx {
 /// Reads files from a path (for tests and benchmarks): `config.json` and `*.safetensors` in `dir`, plus the two JSON files in the tokenizer directory.
 pub fn files_in(weights_dir: &Path, tokenizer_dir: &Path) -> Result<WhisperFiles> {
     let mut weights = std::fs::read_dir(weights_dir)
-        .with_context(|| format!("读取 {}", weights_dir.display()))?
+        .with_context(|| format!("read {}", weights_dir.display()))?
         .filter_map(|entry| entry.ok().map(|entry| entry.path()))
         .filter(|path| path.extension().is_some_and(|extension| extension == "safetensors"))
         .collect::<Vec<_>>();
     weights.sort();
-    ensure!(!weights.is_empty(), "{} 里没有 safetensors", weights_dir.display());
+    ensure!(!weights.is_empty(), "no safetensors in {}", weights_dir.display());
     Ok(WhisperFiles {
         config: weights_dir.join("config.json"),
         weights,
@@ -674,7 +674,7 @@ mod tests {
             second.as_secs_f64(),
             recognition.language_name,
         );
-        assert_eq!(runs[1].1.text, recognition.text, "贪心解码两次应逐字相同");
+        assert_eq!(runs[1].1.text, recognition.text, "two greedy decodes should match exactly");
         if let Ok(expected) = std::env::var("CUCCUT_WHISPER_EXPECT") {
             assert!(recognition.text.starts_with(&expected), "{preview}");
         }

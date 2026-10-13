@@ -127,7 +127,7 @@ fn tm06_invalid_values_fail_without_float_fallback() {
         "0x10",
         "1.2.3",
     ] {
-        let err = parse_decimal_seconds(bad, "t").err().unwrap_or_else(|| panic!("{bad:?} 应被拒绝"));
+        let err = parse_decimal_seconds(bad, "t").err().unwrap_or_else(|| panic!("{bad:?} should be rejected"));
         assert_eq!(err.code(), "INVALID_TIME_VALUE", "{bad:?}");
     }
     let huge = parse_decimal_seconds("1234567890123456789012", "t").err().unwrap();

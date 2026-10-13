@@ -17,14 +17,14 @@ use crate::backend::mlx::qwen3::WeightStore;
 /// Opens the given safetensors shards, keeping only the tensors selected by `keep`, and evaluates none of them.
 pub fn lazy(files: &[PathBuf], keep: impl Fn(&str) -> bool) -> Result<HashMap<String, Array>> {
     if files.is_empty() {
-        bail!("没有 safetensors 文件");
+        bail!("no safetensors files");
     }
     let mut map = HashMap::new();
     for (index, f) in files.iter().enumerate() {
-        let arrays = Array::load_safetensors(f).with_context(|| format!("读取 safetensors 第 {index} 个文件"))?;
+        let arrays = Array::load_safetensors(f).with_context(|| format!("read safetensors file {index}"))?;
         for (k, v) in arrays {
             if keep(&k) && map.insert(k.clone(), v).is_some() {
-                bail!("重复权重键：{k}");
+                bail!("duplicate weight key: {k}");
             }
         }
     }

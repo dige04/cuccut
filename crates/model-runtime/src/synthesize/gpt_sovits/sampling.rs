@@ -41,15 +41,15 @@ impl SamplingParams {
             temperature: options.temperature.unwrap_or(defaults.temperature),
             repetition_penalty: options.repetition_penalty.unwrap_or(defaults.repetition_penalty),
         };
-        ensure!(params.top_k >= 1, "{engine} 的 top_k 必须 ≥ 1");
-        ensure!(params.top_p > 0.0 && params.top_p <= 1.0, "{engine} 的 top_p 必须在 (0, 1] 内");
+        ensure!(params.top_k >= 1, "{engine} top_k must be ≥ 1");
+        ensure!(params.top_p > 0.0 && params.top_p <= 1.0, "{engine} top_p must be in (0, 1]");
         ensure!(
             params.temperature.is_finite() && params.temperature > 0.0,
-            "{engine} 的 temperature 必须 > 0"
+            "{engine} temperature must be > 0"
         );
         ensure!(
             params.repetition_penalty.is_finite() && params.repetition_penalty > 0.0,
-            "{engine} 的 repetition_penalty 必须 > 0"
+            "{engine} repetition_penalty must be > 0"
         );
         Ok(params)
     }

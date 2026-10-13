@@ -582,7 +582,7 @@ mod tests {
         assert_ne!(
             turn_texts(&legacy),
             turn_texts(&authoritative),
-            "夹具必须真的触发吸附"
+            "the fixture must actually trigger snapping"
         );
 
         let report = realign_to_row_speakers(&mut legacy, &rows);

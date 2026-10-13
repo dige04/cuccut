@@ -322,7 +322,7 @@ mod tests {
             callbacks: &mut PyannoteCallbacks<'_>,
         ) -> anyhow::Result<Vec<DiarizedSegment>> {
             if self.fail {
-                bail!("权重坏了：/secret/path/segmentation.safetensors");
+                bail!("weights are corrupt: /secret/path/segmentation.safetensors");
             }
             if let Some(progress) = callbacks.on_progress.as_mut() {
                 progress(1.0, 2.0);

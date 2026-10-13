@@ -19,7 +19,7 @@ const EMO_PERCEIVER: &str = "emo_perceiver_encoder";
 pub fn remap_gpt(w: &mut WeightMap) -> Result<()> {
     let conv_key = format!("{EMO_ENCODER}.embed.conv.weight");
     if !w.contains(&conv_key) {
-        bail!("不是 IndexTTS 2.5 MLX 检查点：缺少 {conv_key}");
+        bail!("not an IndexTTS 2.5 MLX checkpoint: missing {conv_key}");
     }
     w.map_arrays(|key, array| {
         if is_gpt2_block_weight(key) {
@@ -48,7 +48,7 @@ pub fn remap_gpt(w: &mut WeightMap) -> Result<()> {
     if !w.contains(&pe_key) {
         let norm_key = format!("{EMO_ENCODER}.after_norm.weight");
         let Some(dim) = w.get(&norm_key).map(|a| a.dim(0) as usize) else {
-            bail!("IndexTTS 2.5 GPT 缺少 {norm_key}");
+            bail!("IndexTTS 2.5 GPT is missing {norm_key}");
         };
         let pe = sinusoidal_position_encoding(CONFORMER_PE_LEN, dim);
         w.insert(pe_key, Array::from_slice(&pe, &[1, CONFORMER_PE_LEN as i32, dim as i32]));
@@ -59,7 +59,7 @@ pub fn remap_gpt(w: &mut WeightMap) -> Result<()> {
 /// S2Mel: convolutions converted back to torch layout, key names reverted to 2.0, and the `net.` prefix added.
 pub fn remap_s2mel(w: &mut WeightMap) -> Result<()> {
     if w.keys().iter().any(|k| k.starts_with("net.")) {
-        bail!("不是 IndexTTS 2.5 MLX S2Mel 检查点：键已带 net. 前缀");
+        bail!("not an IndexTTS 2.5 MLX S2Mel checkpoint: keys already have the net. prefix");
     }
     transpose_conv1d_weights(w)?;
     w.rename_all(|key| Some(s2mel_key(key)));
@@ -69,7 +69,7 @@ pub fn remap_s2mel(w: &mut WeightMap) -> Result<()> {
 /// Semantic codebook: only the convolution layout differs; key names match 2.0 (weight-norm already fused).
 pub fn remap_codec(w: &mut WeightMap) -> Result<()> {
     if w.contains("quantizer.quantizers.0.in_project.weight_v") {
-        bail!("不是 IndexTTS 2.5 MLX 语义码本检查点：仍是 weight-norm 布局");
+        bail!("not an IndexTTS 2.5 MLX semantic codebook checkpoint: still in weight-norm layout");
     }
     transpose_conv1d_weights(w)
 }
@@ -119,7 +119,7 @@ fn remap_perceiver(w: &mut WeightMap, prefix: &str) -> Result<()> {
         }
         layer += 1;
     }
-    ensure!(layer > 0, "IndexTTS 2.5 GPT 缺少 {prefix} 的 Perceiver 层");
+    ensure!(layer > 0, "IndexTTS 2.5 GPT is missing Perceiver layers for {prefix}");
     Ok(())
 }
 

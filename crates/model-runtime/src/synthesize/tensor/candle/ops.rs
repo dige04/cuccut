@@ -111,16 +111,16 @@ pub fn dequantize<'a>(
 ) -> Result<Array> {
     let (w, scales) = (w.borrow(), scales.borrow());
     let Some(biases) = biases.into() else {
-        bail!("dequantize 需要 biases（仿射量化）")
+        bail!("dequantize needs biases (affine quantization)")
     };
     let group_size = group_size.into().unwrap_or(64);
     let bits = bits.into().unwrap_or(4);
     if bits <= 0 || 32 % bits != 0 || group_size <= 0 {
-        bail!("dequantize 不支持的量化参数：group {group_size} bits {bits}")
+        bail!("dequantize does not support quantization parameters: group {group_size} bits {bits}")
     }
     let mut out_shape = w.shape();
     let Some(last) = out_shape.last_mut() else {
-        bail!("dequantize 需要至少一维")
+        bail!("dequantize needs at least one dimension")
     };
     *last *= 32 / bits;
     let cols = w.dim(-1);

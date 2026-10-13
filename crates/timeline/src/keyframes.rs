@@ -173,7 +173,7 @@ impl Keyframes {
         let invalid = |message: String| Err(TimelineError::Invalid(message));
         if self.is_empty() {
             return invalid(format!(
-                "element {element_id} 的 keyframes 为空，应删除整个字段"
+                "element {element_id} keyframes is empty; remove the whole field"
             ));
         }
         for (name, frames) in self.tracks() {
@@ -182,17 +182,17 @@ impl Keyframes {
             };
             if !caps.allows(name) {
                 return invalid(format!(
-                    "element {element_id} 的 keyframes.{name} 不适用于这种元素"
+                    "element {element_id} keyframes.{name} does not apply to this kind of element"
                 ));
             }
             if frames.is_empty() {
                 return invalid(format!(
-                    "element {element_id} 的 keyframes.{name} 为空，应删除该属性"
+                    "element {element_id} keyframes.{name} is empty; remove the property"
                 ));
             }
             if frames.len() > KEYFRAMES_MAX_PER_PROP {
                 return invalid(format!(
-                    "element {element_id} 的 keyframes.{name} 超过 {KEYFRAMES_MAX_PER_PROP} 帧"
+                    "element {element_id} keyframes.{name} exceeds {KEYFRAMES_MAX_PER_PROP} frames"
                 ));
             }
             let percent = matches!(frames[0].t, KeyTime::Percent(_));
@@ -202,7 +202,7 @@ impl Keyframes {
                     KeyTime::Seconds(value) if !percent => {
                         if !value.is_finite() || *value < 0.0 {
                             return invalid(format!(
-                                "element {element_id} 的 keyframes.{name}[{index}].t 须是非负秒数"
+                                "element {element_id} keyframes.{name}[{index}].t must be non-negative seconds"
                             ));
                         }
                         *value
@@ -213,32 +213,32 @@ impl Keyframes {
                         }
                         _ => {
                             return invalid(format!(
-                                "element {element_id} 的 keyframes.{name}[{index}].t 须是 \"0%\"…\"100%\""
+                                "element {element_id} keyframes.{name}[{index}].t must be \"0%\"…\"100%\""
                             ));
                         }
                     },
                     _ => {
                         return invalid(format!(
-                            "element {element_id} 的 keyframes.{name} 混用了秒与百分比两种时间写法"
+                            "element {element_id} keyframes.{name} mixes seconds and percentage time notations"
                         ));
                     }
                 };
                 if previous.is_some_and(|last| at <= last) {
                     return invalid(format!(
-                        "element {element_id} 的 keyframes.{name} 的时刻必须严格递增"
+                        "element {element_id} keyframes.{name} times must be strictly increasing"
                     ));
                 }
                 previous = Some(at);
                 if !value_in_range(name, frame.v) {
                     return invalid(format!(
-                        "element {element_id} 的 keyframes.{name}[{index}].v 超出取值范围"
+                        "element {element_id} keyframes.{name}[{index}].v is out of range"
                     ));
                 }
                 if let Some(ease) = &frame.ease
                     && !::motion::curve::EASE_NAMES.contains(&ease.as_str())
                 {
                     return invalid(format!(
-                        "element {element_id} 的 keyframes.{name}[{index}].ease 未知：{ease}"
+                        "element {element_id} keyframes.{name}[{index}].ease is unknown: {ease}"
                     ));
                 }
             }
@@ -800,7 +800,7 @@ mod tests {
         assert_eq!(opacity[1].t, KeyTime::Percent("100%".to_owned()));
         assert!(
             (0.0..=1.0).contains(&opacity[1].v),
-            "越界缓动的取样夹回区间"
+            "out-of-range easing samples are clamped to the interval"
         );
         middle
             .validate("el", KeyframeCaps::for_kind(&ElementKind::Image, true))

@@ -53,11 +53,11 @@ fn timeline_enums_equal_the_recipe_tables_in_order() {
     for id in EXIT_LEGACY_PRESETS {
         assert!(
             timeline_exit(id).is_none(),
-            "{id} 有配方就该进 EXIT_PRESETS"
+            "{id} has a recipe, so it should be in EXIT_PRESETS"
         );
         assert!(
             ENTER_PRESETS.contains(id),
-            "{id} 只可能是借用入场词表时留下的"
+            "{id} can only be left over from borrowing the enter preset list"
         );
         assert!(exit_preset_accepted(id));
     }
@@ -73,11 +73,11 @@ fn no_canonical_family_leaks_into_the_timeline_enums() {
         let entry = manifest(id).unwrap();
         assert!(
             !entry.exposed_to.contains(&Surface::Timeline),
-            "{id} 声明了 timeline 表面"
+            "{id} declares the timeline surface"
         );
         assert!(
             !entry.exposed_to.contains(&Surface::MacStage),
-            "{id} 声明了 macStage 表面（ADR-M09：Mac catalogue 冻结）"
+            "{id} declares the macStage surface (ADR-M09: Mac catalogue is frozen)"
         );
     }
 }

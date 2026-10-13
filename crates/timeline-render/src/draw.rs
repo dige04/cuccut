@@ -377,7 +377,7 @@ pub fn push_draw_ops(
                     ],
                 ));
             }
-            let last = point(stroke.points.last().expect("非空笔迹"));
+            let last = point(stroke.points.last().expect("non-empty stroke"));
             segments.push(line_to(last.0, last.1));
         }
         let path = builder.path_id(PathData(segments));
@@ -708,7 +708,7 @@ mod tests {
             builder.frame.ops[0],
             DrawOp::FillRect { radius: 12.0, .. }
         ));
-        assert!(builder.frame.paths.is_empty(), "圆角矩形不该建 path 侧表");
+        assert!(builder.frame.paths.is_empty(), "a rounded rect should not create a path side table");
     }
 
     #[test]

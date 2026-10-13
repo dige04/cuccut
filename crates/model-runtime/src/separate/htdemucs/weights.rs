@@ -35,7 +35,7 @@ impl WeightStore {
     /// Evaluated one at a time: weights are materialized as resident f32 at load time (one short command buffer per tensor), and the fp16 original is released right away;
     /// this way the cost and resident memory of `model.load` are real, and the first window no longer carries the loading overhead.
     pub fn take(&mut self, key: &str) -> Result<Array> {
-        let value = self.weights.remove(key).with_context(|| format!("缺少权重 {}{key}", self.prefix))?;
+        let value = self.weights.remove(key).with_context(|| format!("missing weight {}{key}", self.prefix))?;
         let value = if value.dtype() == Dtype::Float32 {
             value
         } else {
@@ -49,7 +49,7 @@ impl WeightStore {
     pub fn take_shape(&mut self, key: &str, expected: &[i32]) -> Result<Array> {
         let value = self.take(key)?;
         if value.shape() != expected {
-            bail!("权重 {}{key} 形状 {:?} 与期望 {:?} 不符", self.prefix, value.shape(), expected);
+            bail!("weight {}{key} shape {:?} does not match expected {:?}", self.prefix, value.shape(), expected);
         }
         Ok(value)
     }
@@ -62,6 +62,6 @@ impl WeightStore {
         let mut keys: Vec<&String> = self.weights.keys().collect();
         keys.sort();
         let preview: Vec<String> = keys.iter().take(8).map(|k| k.to_string()).collect();
-        bail!("{} 有 {} 个权重未被使用，例如 {:?}", self.prefix, self.weights.len(), preview);
+        bail!("{} has {} unused weights, for example {:?}", self.prefix, self.weights.len(), preview);
     }
 }

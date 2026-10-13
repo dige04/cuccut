@@ -41,7 +41,7 @@ pub(crate) trait FrameSource {
     /// Random access (dragging the playhead in preview) has to change the starting point on every jump. A full rebuild (re-parsing the container, finding tracks, building the reader) takes roughly 20 ms on macOS, and re-parsing the container and finding tracks is pure waste. Where the platform can reuse the track object, only the reader is swapped here. The default is `Err`: the caller falls back to a full reopen, with the same semantics.
     fn reopen(&mut self, from_seconds: f64) -> Result<()> {
         let _ = from_seconds;
-        bail!("unsupported: 该平台解码器不支持原地重开")
+        bail!("unsupported: this platform's decoder does not support reopening in place")
     }
     /// The presentation time of the nearest **fully sync sample** (keyframe) at or before `time_seconds`.
     ///
@@ -116,12 +116,12 @@ unsafe impl Send for FrameStream {}
 /// Returning `Err` means "this source cannot be decoded natively" (container or codec not supported, no platform implementation, or the file cannot be opened). **The caller must bring its own ffmpeg fallback**. This crate does not discover or start any external binary.
 pub fn open_frame_stream(path: &Path, from_seconds: f64, fps: f64) -> Result<FrameStream> {
     if !fps.is_finite() || fps <= 0.0 {
-        bail!("fps 必须是正的有限值，实得 {fps}");
+        bail!("fps must be a positive finite value, got {fps}");
     }
     let from = if from_seconds.is_finite() {
         from_seconds.max(0.0)
     } else {
-        bail!("from_seconds 必须是有限值，实得 {from_seconds}");
+        bail!("from_seconds must be finite, got {from_seconds}");
     };
     let source = open_source(path, from, None)?;
     Ok(FrameStream::new(source, from, fps))
@@ -140,7 +140,7 @@ fn open_source(path: &Path, from: f64, size: Option<(u32, u32)>) -> Result<Box<d
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let source: Box<dyn FrameSource> = {
         let _ = (path, from, size);
-        bail!("unsupported: 当前平台没有原生顺序帧流后端（请安装 ffmpeg 走兜底路径）")
+        bail!("unsupported: no native sequential frame-stream backend on this platform (install ffmpeg to use the fallback path)")
     };
     Ok(source)
 }
@@ -182,12 +182,12 @@ pub fn open_sequential_decoder(
     size: Option<(u32, u32)>,
 ) -> Result<SequentialDecoder> {
     if !from_seconds.is_finite() {
-        bail!("from_seconds 必须是有限值，实得 {from_seconds}");
+        bail!("from_seconds must be finite, got {from_seconds}");
     }
     if let Some((width, height)) = size
         && (width == 0 || height == 0)
     {
-        bail!("交付尺寸必须为正，实得 {width}x{height}");
+        bail!("delivery size must be positive, got {width}x{height}");
     }
     let source = open_source(path, from_seconds.max(0.0), size)?;
     Ok(SequentialDecoder::new(source, size))
@@ -238,7 +238,7 @@ impl SequentialDecoder {
     /// Restarts reading from `from_seconds` on the same source. `Err` = the platform does not support it, or the reopen failed. The decoder is then in an undefined state, and the caller discards it and reopens.
     pub fn reopen(&mut self, from_seconds: f64) -> Result<()> {
         if !from_seconds.is_finite() {
-            bail!("from_seconds 必须是有限值，实得 {from_seconds}");
+            bail!("from_seconds must be finite, got {from_seconds}");
         }
         self.source.reopen(from_seconds.max(0.0))
     }
@@ -282,7 +282,7 @@ impl FrameStream {
     /// On success, this stream has exactly the same semantics as one newly opened with `open_frame_stream(path, from_seconds, fps)`. `Err` means the platform does not support it or the reopen failed. In that case the stream is in an **undefined** state, and the caller should discard it and reopen completely.
     pub fn reopen(&mut self, from_seconds: f64) -> Result<()> {
         if !from_seconds.is_finite() {
-            bail!("from_seconds 必须是有限值，实得 {from_seconds}");
+            bail!("from_seconds must be finite, got {from_seconds}");
         }
         let from = from_seconds.max(0.0);
         self.source.reopen(from)?;
@@ -366,7 +366,7 @@ impl FrameStream {
 
     /// Promotes the lookahead frame to the current frame, and remembers the right end of its presentation interval.
     fn take_pending(&mut self) {
-        let decoded = self.pending.take().expect("调用前已确认 pending 非空");
+        let decoded = self.pending.take().expect("pending was checked non-empty before the call");
         self.current_end = decoded
             .duration_seconds
             .filter(|duration| duration.is_finite() && *duration > 0.0)

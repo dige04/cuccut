@@ -37,7 +37,7 @@ impl Embedding {
         let weight = weights.take(&format!("{prefix}.weight"))?;
         match weights.take_optional(&format!("{prefix}.scales")) {
             Some(scales) => {
-                ensure!(bits > 0, "权重 {prefix} 带 scales 但配置未声明量化位数");
+                ensure!(bits > 0, "weight {prefix} has scales but the config does not declare quantization bits");
                 Ok(Self::Quantized {
                     weight,
                     scales,
@@ -46,7 +46,7 @@ impl Embedding {
                     bits: bits as i32,
                 })
             }
-            None if weight.dtype() == Dtype::Uint32 => bail!("权重 {prefix} 是 U32 但缺少 scales"),
+            None if weight.dtype() == Dtype::Uint32 => bail!("weight {prefix} is U32 but has no scales"),
             None => Ok(Self::Float(weight)),
         }
     }
@@ -106,7 +106,7 @@ impl Backbone {
         let llm = &config.llm_config;
         ensure!(
             config.audio_mask_id + 1 == config.audio_vocab_size,
-            "OmniVoice 的 audio_mask_id 必须是音频词表最后一项（{} / {}）",
+            "OmniVoice audio_mask_id must be the last audio vocabulary entry ({} / {})",
             config.audio_mask_id,
             config.audio_vocab_size
         );
@@ -154,7 +154,7 @@ impl Backbone {
     pub fn embed_audio(&self, codes: &[u32], frames: usize) -> Result<Array> {
         ensure!(
             codes.len() == self.codebooks * frames && frames > 0,
-            "OmniVoice 音频 token 数 {} 与 {} 码本 × {frames} 帧不符",
+            "OmniVoice audio token count {} does not match {} codebooks × {frames} frames",
             codes.len(),
             self.codebooks
         );
@@ -202,7 +202,7 @@ impl Backbone {
         }
         let len = h.dim(1);
         let tail = tail as i32;
-        ensure!(tail > 0 && tail <= len, "OmniVoice 目标长度 {tail} 超出序列 {len}");
+        ensure!(tail > 0 && tail <= len, "OmniVoice target length {tail} exceeds sequence {len}");
         let h = self.norm.forward(&h.index((.., len - tail.., ..)))?;
         Ok(self
             .audio_heads

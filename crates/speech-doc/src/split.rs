@@ -1811,7 +1811,7 @@ mod tests {
             .words
             .iter()
             .any(|w| (w.t1 - stream[0].end).abs() < 1e-9);
-        assert!(boundary_ok, "边界必须是某源词的 t1");
+        assert!(boundary_ok, "the boundary must be the t1 of some source word");
     }
 
     #[test]

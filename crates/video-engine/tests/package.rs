@@ -29,7 +29,7 @@ fn apply(video: &mut Video, command_id: &str, operations: Vec<Value>) {
         },
         task_id: None,
     };
-    video.apply(&transaction).expect("提交");
+    video.apply(&transaction).expect("commit");
 }
 
 fn place() -> Value {
@@ -135,8 +135,8 @@ fn a_package_becomes_a_new_video_with_the_same_content_and_versions() {
 
     let target = root.path().join("项目").join("导入的视频");
     fs::create_dir_all(target.parent().unwrap()).unwrap();
-    let imported = import_package(&target, &package, Some("proj_1"), &ffprobe()).expect("导入");
-    assert_ne!(imported.id(), source.id(), "新视频有新的 videoId");
+    let imported = import_package(&target, &package, Some("proj_1"), &ffprobe()).expect("import");
+    assert_ne!(imported.id(), source.id(), "the new video has a new videoId");
     assert_eq!(content(&imported), content(&source));
     assert_eq!(imported.revision(), source.revision());
     for (id, record) in &source.state().documents {
@@ -150,7 +150,7 @@ fn a_package_becomes_a_new_video_with_the_same_content_and_versions() {
     for (id, asset) in &source.state().assets {
         let resolved = imported.resolve_asset(id, Some(&asset.current_revision)).unwrap();
         assert_eq!(resolved.storage, "managed");
-        assert!(resolved.path.starts_with(&target), "素材收进了新视频的目录");
+        assert!(resolved.path.starts_with(&target), "the material was moved into the new video's directory");
     }
     let project = imported.project_id().unwrap();
     assert_eq!(project.as_deref(), Some("proj_1"));
@@ -183,9 +183,9 @@ fn a_tampered_or_newer_package_is_rejected_and_leaves_nothing() {
     let doc_path = package.join(package_document_path(doc_id, &record.current_revision));
     let original = fs::read_to_string(&doc_path).unwrap();
     fs::write(&doc_path, original.replace("[]", "[1]")).unwrap();
-    let err = import_package(&target, &package, None, &ffprobe()).err().expect("应拒绝");
+    let err = import_package(&target, &package, None, &ffprobe()).err().expect("should be rejected");
     assert_eq!(err.code, "PACKAGE_DIGEST_MISMATCH");
-    assert!(!target.exists(), "失败时不留目录");
+    assert!(!target.exists(), "no directory is left behind on failure");
     fs::write(&doc_path, &original).unwrap();
 
     // The material bytes were replaced (length unchanged).
@@ -201,7 +201,7 @@ fn a_tampered_or_newer_package_is_rejected_and_leaves_nothing() {
     let mut changed = bytes.clone();
     changed[1] = b'X';
     fs::write(&blob, &changed).unwrap();
-    let err = import_package(&target, &package, None, &ffprobe()).err().expect("应拒绝");
+    let err = import_package(&target, &package, None, &ffprobe()).err().expect("should be rejected");
     assert_eq!(err.code, "PACKAGE_DIGEST_MISMATCH");
     assert!(!target.exists());
     fs::write(&blob, &bytes).unwrap();
@@ -212,7 +212,7 @@ fn a_tampered_or_newer_package_is_rejected_and_leaves_nothing() {
     let mut snapshot: Value = serde_json::from_str(&text).unwrap();
     snapshot["schemaVersion"] = json!(99);
     fs::write(&snapshot_path, snapshot.to_string()).unwrap();
-    let err = import_package(&target, &package, None, &ffprobe()).err().expect("应拒绝");
+    let err = import_package(&target, &package, None, &ffprobe()).err().expect("should be rejected");
     assert_eq!(err.code, "PACKAGE_VERSION_UNSUPPORTED");
 
     // References material that is not in the package.
@@ -222,7 +222,7 @@ fn a_tampered_or_newer_package_is_rejected_and_leaves_nothing() {
     let caption = items.iter_mut().find(|i| i["type"] == "caption").unwrap();
     caption["documentId"] = json!("doc_不存在");
     fs::write(&snapshot_path, snapshot.to_string()).unwrap();
-    let err = import_package(&target, &package, None, &ffprobe()).err().expect("应拒绝");
+    let err = import_package(&target, &package, None, &ffprobe()).err().expect("should be rejected");
     assert_eq!(err.code, "PACKAGE_INVALID");
     assert!(!target.exists());
 
@@ -237,7 +237,7 @@ fn a_tampered_or_newer_package_is_rejected_and_leaves_nothing() {
     let caption = items.iter_mut().find(|i| i["type"] == "caption").unwrap();
     caption["documentId"] = json!("../escape");
     fs::write(&snapshot_path, snapshot.to_string()).unwrap();
-    let err = import_package(&target, &package, None, &ffprobe()).err().expect("应拒绝");
+    let err = import_package(&target, &package, None, &ffprobe()).err().expect("should be rejected");
     assert_eq!(err.code, "PACKAGE_INVALID");
     assert!(!target.exists());
 
@@ -245,7 +245,7 @@ fn a_tampered_or_newer_package_is_rejected_and_leaves_nothing() {
     fs::write(&snapshot_path, &text).unwrap();
     fs::create_dir_all(&target).unwrap();
     fs::write(target.join("别人的文件"), "x").unwrap();
-    let err = import_package(&target, &package, None, &ffprobe()).err().expect("应拒绝");
+    let err = import_package(&target, &package, None, &ffprobe()).err().expect("should be rejected");
     assert_eq!(err.code, "INVALID_OPERATION");
     assert!(target.join("别人的文件").exists());
 }

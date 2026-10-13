@@ -626,7 +626,7 @@ pub(crate) fn parse_catalogue(
     let id = text(file, doc, "id")?.to_owned();
     if id != file {
         return Err(MotionError::ManifestInvalid(format!(
-            "{file}: \"id\" 必须与文件名一致（读到 {id:?}）"
+            "{file}: \"id\" must match the file name (got {id:?})"
         )));
     }
     // `domain` / `namespace` are for self-description only; dispatch relies on manifest ownership. The check is done once to block
@@ -634,14 +634,14 @@ pub(crate) fn parse_catalogue(
     let domain = text(file, doc, "domain")?;
     if domain != kind.dir() {
         return Err(MotionError::ManifestInvalid(format!(
-            "{file}: \"domain\" 应为 {:?}，读到 {domain:?}",
+            "{file}: \"domain\" should be {:?}, got {domain:?}",
             kind.dir()
         )));
     }
     let namespace = text(file, doc, "namespace")?;
     if namespace != "timeline" {
         return Err(MotionError::ManifestInvalid(format!(
-            "{file}: 目录型配方的 \"namespace\" 恒为 \"timeline\"，读到 {namespace:?}"
+            "{file}: directory recipe \"namespace\" is always \"timeline\", got {namespace:?}"
         )));
     }
     let order = field(file, doc, "order")?
@@ -716,7 +716,7 @@ fn parse_sticker_body(file: &str, doc: &Value) -> Result<StickerBody, MotionErro
     })?;
     if items.is_empty() {
         return Err(MotionError::ManifestInvalid(format!(
-            "{file}: sticker 至少要有一层"
+            "{file}: sticker needs at least one layer"
         )));
     }
     let mut layers = Vec::with_capacity(items.len());
@@ -725,7 +725,7 @@ fn parse_sticker_body(file: &str, doc: &Value) -> Result<StickerBody, MotionErro
         let stroke = optional_color(file, item, "stroke")?;
         if fill.is_none() && stroke.is_none() {
             return Err(MotionError::ManifestInvalid(format!(
-                "{file}: sticker 的层既没有 \"fill\" 也没有 \"stroke\"，画不出任何东西"
+                "{file}: a sticker layer has neither \"fill\" nor \"stroke\", so nothing would be drawn"
             )));
         }
         let stroke_width = match item.get("strokeWidth") {
@@ -735,7 +735,7 @@ fn parse_sticker_body(file: &str, doc: &Value) -> Result<StickerBody, MotionErro
                 .filter(|width| *width > 0.0 && *width <= 1.0)
                 .ok_or_else(|| {
                     MotionError::ManifestInvalid(format!(
-                        "{file}: \"strokeWidth\" 是元素盒短边的比例，必须落在 (0, 1]（读到 {value}）"
+                        "{file}: \"strokeWidth\" is a ratio of the element box's short side and must be in (0, 1] (got {value})"
                     ))
                 })?,
         };
@@ -797,14 +797,14 @@ fn parse_outline(file: &str, doc: &Value) -> Result<Vec<PathSegment>, MotionErro
             ("close", 0) => PathSegment::Close,
             (verb, count) => {
                 return Err(MotionError::ManifestInvalid(format!(
-                    "{file}: verb {verb:?} 不接受 {count} 个点"
+                    "{file}: verb {verb:?} does not accept {count} points"
                 )));
             }
         });
     }
     if !matches!(out.first(), Some(PathSegment::Move(_))) {
         return Err(MotionError::ManifestInvalid(format!(
-            "{file}: outline 必须以 move 开头"
+            "{file}: outline must start with move"
         )));
     }
     Ok(out)
@@ -819,7 +819,7 @@ fn parse_visualizer_body(file: &str, doc: &Value) -> Result<VisualizerBody, Moti
     let default_max_db = number(file, doc, "defaultMaxDb")?;
     if !(default_min_db < default_max_db) {
         return Err(MotionError::ManifestInvalid(format!(
-            "{file}: dB 窗必须 min < max（读到 {default_min_db} / {default_max_db}）"
+            "{file}: dB window must have min < max (got {default_min_db} / {default_max_db})"
         )));
     }
     let bin_width = text(file, doc, "binWidth")?;
@@ -852,7 +852,7 @@ fn parse_visualizer_shader(file: &str, doc: &Value) -> Result<Option<String>, Mo
     match doc.get("shader") {
         None | Some(Value::Null) => Ok(None),
         Some(shader) => Err(MotionError::ManifestInvalid(format!(
-            "{file}: visualizer 配方没有 shader（读到 {shader}）"
+            "{file}: visualizer recipe has no shader (got {shader})"
         ))),
     }
 }
@@ -882,20 +882,20 @@ fn parse_confetti_body(file: &str, doc: &Value) -> Result<ConfettiBody, MotionEr
     let aspect = text(file, doc, "aspect")?;
     if aspect != "frame" {
         return Err(MotionError::ManifestInvalid(format!(
-            "{file}: confetti 的 \"aspect\" 恒为 \"frame\"（读到 {aspect:?}）"
+            "{file}: confetti \"aspect\" is always \"frame\" (got {aspect:?})"
         )));
     }
     if let Some(shader) = doc.get("shader")
         && !shader.is_null()
     {
         return Err(MotionError::ManifestInvalid(format!(
-            "{file}: confetti 没有 shader（读到 {shader}）"
+            "{file}: confetti has no shader (got {shader})"
         )));
     }
     let palette = string_list(file, doc, "palette")?;
     if palette.is_empty() || palette.len() > 8 {
         return Err(MotionError::ManifestInvalid(format!(
-            "{file}: \"palette\" 须有 1..=8 项（读到 {}）",
+            "{file}: \"palette\" must have 1..=8 items (got {})",
             palette.len()
         )));
     }
@@ -903,14 +903,14 @@ fn parse_confetti_body(file: &str, doc: &Value) -> Result<ConfettiBody, MotionEr
         let hex = color.strip_prefix('#').unwrap_or("");
         if !matches!(hex.len(), 6 | 8) || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
             return Err(MotionError::ManifestInvalid(format!(
-                "{file}: \"palette[{index}]\" 不是 #RRGGBB / #RRGGBBAA（读到 {color:?}）"
+                "{file}: \"palette[{index}]\" is not #RRGGBB / #RRGGBBAA (got {color:?})"
             )));
         }
     }
     let shapes = string_list(file, doc, "shapes")?;
     if shapes.is_empty() {
         return Err(MotionError::ManifestInvalid(format!(
-            "{file}: \"shapes\" 不能为空"
+            "{file}: \"shapes\" must not be empty"
         )));
     }
     if let Some(unknown) = shapes
@@ -956,18 +956,18 @@ fn string_list(file: &str, doc: &Value, key: &str) -> Result<Vec<String>, Motion
 /// there is at least one emitter and its coordinates are numbers, `emit.mode` is a closed set, and `pulse` is `null` or
 /// `{min, max, hz}`. The values themselves remain the recipe's degrees of freedom; the Rust side carries not a single number.
 fn validate_confetti_recipe(file: &str, recipe: &Recipe) -> Result<(), MotionError> {
-    let bad = |what: &str| MotionError::ManifestInvalid(format!("{file}: confetti-v1 的 {what}"));
+    let bad = |what: &str| MotionError::ManifestInvalid(format!("{file}: confetti-v1 {what}"));
     for key in ["speedPx", "sizePx", "spinDps", "flipHz"] {
         let pair = recipe
             .array(key)
-            .ok_or_else(|| bad(&format!("\"{key}\" 不是数组")))?;
+            .ok_or_else(|| bad(&format!("\"{key}\" is not an array")))?;
         let lo = pair.first().and_then(Value::as_f64);
         let hi = pair.get(1).and_then(Value::as_f64);
         match (pair.len(), lo, hi) {
             (2, Some(lo), Some(hi)) if lo >= 0.0 && hi >= lo => {}
             _ => {
                 return Err(bad(&format!(
-                    "\"{key}\" 须是升序非负的 [lo, hi]（读到 {pair:?}）"
+                    "\"{key}\" must be an ascending non-negative [lo, hi] (got {pair:?})"
                 )));
             }
         }
@@ -986,37 +986,37 @@ fn validate_confetti_recipe(file: &str, recipe: &Recipe) -> Result<(), MotionErr
         "fadeOut",
     ] {
         if recipe.number(key).is_none() {
-            return Err(bad(&format!("\"{key}\" 不是数字")));
+            return Err(bad(&format!("\"{key}\" is not a number")));
         }
     }
     if recipe.number("lifeSec").is_some_and(|life| life <= 0.0) {
-        return Err(bad("\"lifeSec\" 须为正"));
+        return Err(bad("\"lifeSec\" must be positive"));
     }
     if recipe.flag("sizeRamp").is_none() {
-        return Err(bad("\"sizeRamp\" 不是布尔"));
+        return Err(bad("\"sizeRamp\" is not a boolean"));
     }
     let emitters = recipe
         .array("emitters")
-        .ok_or_else(|| bad("\"emitters\" 不是数组"))?;
+        .ok_or_else(|| bad("\"emitters\" is not an array"))?;
     if emitters.is_empty() {
-        return Err(bad("\"emitters\" 至少一枚"));
+        return Err(bad("\"emitters\" needs at least one entry"));
     }
     for emitter in emitters {
         for key in ["x", "y", "spreadX", "spreadY"] {
             if emitter.get(key).and_then(Value::as_f64).is_none() {
-                return Err(bad(&format!("发射器缺 \"{key}\"（读到 {emitter}）")));
+                return Err(bad(&format!("emitter is missing \"{key}\" (got {emitter})")));
             }
         }
         if let Some(angle) = emitter.get("angle")
             && !angle.is_null()
             && angle.as_f64().is_none()
         {
-            return Err(bad(&format!("发射器 \"angle\" 不是数字（读到 {emitter}）")));
+            return Err(bad(&format!("emitter \"angle\" is not a number (got {emitter})")));
         }
     }
     let emit = recipe
         .object("emit")
-        .ok_or_else(|| bad("\"emit\" 不是对象"))?;
+        .ok_or_else(|| bad("\"emit\" is not an object"))?;
     validate_tagged(file, recipe, "emit", "mode", &["continuous", "burst"])?;
     for key in ["rate", "count", "interval", "jitter"] {
         if !emit
@@ -1024,7 +1024,7 @@ fn validate_confetti_recipe(file: &str, recipe: &Recipe) -> Result<(), MotionErr
             .and_then(Value::as_f64)
             .is_some_and(|v| v >= 0.0)
         {
-            return Err(bad(&format!("\"emit.{key}\" 须是非负数（读到 {emit:?}）")));
+            return Err(bad(&format!("\"emit.{key}\" must be a non-negative number (got {emit:?})")));
         }
     }
     if let Some(pulse) = recipe.object("pulse") {
@@ -1035,12 +1035,12 @@ fn validate_confetti_recipe(file: &str, recipe: &Recipe) -> Result<(), MotionErr
                 .is_some_and(|v| v >= 0.0)
             {
                 return Err(bad(&format!(
-                    "\"pulse.{key}\" 须是非负数（读到 {pulse:?}）"
+                    "\"pulse.{key}\" must be a non-negative number (got {pulse:?})"
                 )));
             }
         }
     } else if recipe.get("pulse").is_some_and(|v| !v.is_null()) {
-        return Err(bad("\"pulse\" 须是 null 或对象"));
+        return Err(bad("\"pulse\" must be null or an object"));
     }
     Ok(())
 }
@@ -1064,7 +1064,7 @@ fn parse_color_labels(file: &str, doc: &Value, num_colors: u8) -> Result<Vec<Str
         .collect::<Result<Vec<_>, _>>()?;
     if labels.len() != usize::from(num_colors) {
         return Err(MotionError::ManifestInvalid(format!(
-            "{file}: \"colorLabels\" 有 {} 条，\"numColors\" 是 {num_colors}",
+            "{file}: \"colorLabels\" has {} entries, but \"numColors\" is {num_colors}",
             labels.len()
         )));
     }
@@ -1075,7 +1075,7 @@ fn parse_num_colors(file: &str, doc: &Value) -> Result<u8, MotionError> {
     match field(file, doc, "numColors")?.as_u64() {
         Some(count @ 0..=2) => Ok(count as u8),
         other => Err(MotionError::ManifestInvalid(format!(
-            "{file}: \"numColors\" 必须是 0 / 1 / 2（读到 {other:?}）"
+            "{file}: \"numColors\" must be 0 / 1 / 2 (got {other:?})"
         ))),
     }
 }
@@ -1086,7 +1086,7 @@ fn parse_color(file: &str, doc: &Value, key: &str) -> Result<String, MotionError
     let hex = value.strip_prefix('#').unwrap_or("");
     if !matches!(hex.len(), 6 | 8) || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err(MotionError::ManifestInvalid(format!(
-            "{file}: \"{key}\" 不是 #RRGGBB / #RRGGBBAA（读到 {value:?}）"
+            "{file}: \"{key}\" is not #RRGGBB / #RRGGBBAA (got {value:?})"
         )));
     }
     Ok(value.to_owned())
@@ -1103,7 +1103,7 @@ fn parse_shader(file: &str, doc: &Value) -> Result<String, MotionError> {
     let value = text(file, doc, "shader")?;
     if !value.ends_with(".wgsl") || value.len() <= ".wgsl".len() {
         return Err(MotionError::ManifestInvalid(format!(
-            "{file}: \"shader\" 必须是 WGSL 文件名（读到 {value:?}）"
+            "{file}: \"shader\" must be a WGSL file name (got {value:?})"
         )));
     }
     Ok(value.to_owned())
@@ -1118,7 +1118,7 @@ fn parse_recipe(file: &str, doc: &Value, kind: CatalogueKind) -> Result<Recipe, 
     })?;
     if algorithm.kind() != kind {
         return Err(MotionError::ManifestInvalid(format!(
-            "{file}: 算法 {name:?} 属于 {} 目录，不能用在 {} 配方里",
+            "{file}: algorithm {name:?} belongs to the {} directory and cannot be used in a {} recipe",
             algorithm.kind().dir(),
             kind.dir()
         )));
@@ -1139,7 +1139,7 @@ fn validate_recipe(file: &str, recipe: &Recipe) -> Result<(), MotionError> {
     for key in recipe.algorithm.required() {
         if !recipe.params.contains_key(*key) {
             return Err(MotionError::ManifestInvalid(format!(
-                "{file}: 配方 {name} 缺参数 \"{key}\""
+                "{file}: recipe {name} is missing parameter \"{key}\""
             )));
         }
     }
@@ -1151,33 +1151,33 @@ fn validate_recipe(file: &str, recipe: &Recipe) -> Result<(), MotionError> {
             && !value.as_u64().is_some_and(|count| count > 0)
         {
             return Err(MotionError::ManifestInvalid(format!(
-                "{file}: 配方 {name} 的 \"{key}\" 必须是正整数（读到 {value}）"
+                "{file}: recipe {name} \"{key}\" must be a positive integer (got {value})"
             )));
         }
         if UNIT_INTERVAL_KEYS.contains(&key.as_str())
             && !value.as_f64().is_some_and(|v| (0.0..=1.0).contains(&v))
         {
             return Err(MotionError::ManifestInvalid(format!(
-                "{file}: 配方 {name} 的 \"{key}\" 必须落在 [0, 1]（读到 {value}）"
+                "{file}: recipe {name} \"{key}\" must be in [0, 1] (got {value})"
             )));
         }
         if POSITIVE_NUMBER_KEYS.contains(&key.as_str())
             && !value.as_f64().is_some_and(|v| v > 0.0 && v.is_finite())
         {
             return Err(MotionError::ManifestInvalid(format!(
-                "{file}: 配方 {name} 的 \"{key}\" 必须是正数（读到 {value}）"
+                "{file}: recipe {name} \"{key}\" must be positive (got {value})"
             )));
         }
         if key == "samples" && !value.as_u64().is_some_and(|n| n >= MIN_SAMPLES) {
             return Err(MotionError::ManifestInvalid(format!(
-                "{file}: 配方 {name} 的 \"samples\" 至少是 {MIN_SAMPLES}（读到 {value}）"
+                "{file}: recipe {name} \"samples\" must be at least {MIN_SAMPLES} (got {value})"
             )));
         }
         if let Some((_, allowed)) = ENUM_KEYS.iter().find(|(name, _)| name == key) {
             let found = value.as_str().unwrap_or_default();
             if !allowed.contains(&found) {
                 return Err(MotionError::ManifestInvalid(format!(
-                    "{file}: 配方 {name} 的 \"{key}\" 只接受 {allowed:?}（读到 {value}）"
+                    "{file}: recipe {name} \"{key}\" only accepts {allowed:?} (got {value})"
                 )));
             }
         }
@@ -1212,7 +1212,7 @@ fn validate_tagged(
     match found {
         Some(found) if allowed.contains(&found) => Ok(()),
         _ => Err(MotionError::ManifestInvalid(format!(
-            "{file}: 配方 {} 的 \"{key}.{tag}\" 只接受 {allowed:?}（读到 {value}）",
+            "{file}: recipe {} \"{key}.{tag}\" only accepts {allowed:?} (got {value})",
             recipe.algorithm.name()
         ))),
     }

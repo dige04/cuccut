@@ -112,10 +112,10 @@ fn pull_frames(mut stdout: ChildStdout, times: Receiver<f64>, spares: Receiver<V
         let chunk = match stdout.read_exact(&mut data) {
             Ok(()) => match times.recv() {
                 Ok(pts) => Chunk::Frame(data, pts),
-                Err(_) => Chunk::Failed("解码的帧没有时间戳".into()),
+                Err(_) => Chunk::Failed("decoded frame has no timestamp".into()),
             },
             Err(e) if e.kind() == ErrorKind::UnexpectedEof => Chunk::End,
-            Err(e) => Chunk::Failed(format!("读解码输出失败：{e}")),
+            Err(e) => Chunk::Failed(format!("failed to read decoder output: {e}")),
         };
         let last = !matches!(chunk, Chunk::Frame(..));
         if frames.send(chunk).is_err() || last {
@@ -143,8 +143,8 @@ fn pull_native(native: NativeDecode, path: PathBuf, from: f64, size: (u32, u32),
                 delivered += 1;
                 Chunk::Frame(data, pts)
             }
-            Ok(Some(_)) => Chunk::NativeFailed("read-failed", format!("原生解码交出的帧是 {} 字节，应为 {len}", data.len())),
-            Ok(None) if delivered == 0 => Chunk::NativeFailed("no-frames", format!("原生解码从 {from:.3} 秒起一帧都没有")),
+            Ok(Some(_)) => Chunk::NativeFailed("read-failed", format!("native decoder returned a frame of {} bytes, expected {len}", data.len())),
+            Ok(None) if delivered == 0 => Chunk::NativeFailed("no-frames", format!("native decoder produced no frames from {from:.3} s")),
             Ok(None) => Chunk::End,
             Err(message) => Chunk::NativeFailed("read-failed", message),
         };
@@ -235,7 +235,7 @@ impl VideoDecoder {
     /// The picture at source time `seconds`.
     pub fn frame_at(&mut self, seconds: f64) -> Result<&Picture, MediaError> {
         self.advance(seconds)?;
-        Ok(&self.current.as_ref().expect("advance 成功就有当前帧").picture)
+        Ok(&self.current.as_ref().expect("advance succeeded, so a current frame exists").picture)
     }
 
     /// Advance to the picture at source time `seconds` (same rules as [`frame_at`](Self::frame_at)), and return the current frame's generation number: the same value as last time means it is still the same frame.
@@ -261,7 +261,7 @@ impl VideoDecoder {
             }
             match &self.next {
                 Some(next) if next.seconds <= target || self.current.is_none() => {
-                    let next = self.next.take().expect("上面看过");
+                    let next = self.next.take().expect("checked above");
                     self.generation += 1;
                     if let Some(old) = self.current.replace(next) {
                         self.recycle(old.picture.data);
@@ -274,7 +274,7 @@ impl VideoDecoder {
             Some(_) => Ok(self.generation),
             None => Err(MediaError::new(
                 "EXPORT_DECODE_FAILED",
-                format!("{} 里解不出画面", self.path.display()),
+                format!("cannot decode a picture from {}", self.path.display()),
             )),
         }
     }
@@ -361,8 +361,8 @@ impl VideoDecoder {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         let mut child = command.spawn().map_err(|e| MediaError::spawn(&self.tools.ffmpeg, e))?;
-        let stdout = child.stdout.take().expect("管道");
-        let stderr = child.stderr.take().expect("管道");
+        let stdout = child.stdout.take().expect("pipe");
+        let stderr = child.stderr.take().expect("pipe");
         let (sender, times) = channel();
         let log = Arc::new(Mutex::new(String::new()));
         let sink = Arc::clone(&log);
@@ -377,7 +377,7 @@ impl VideoDecoder {
                         break;
                     }
                 } else if !line.contains("Parsed_showinfo") {
-                    let mut log = sink.lock().expect("锁");
+                    let mut log = sink.lock().expect("lock");
                     if log.len() < 64 * 1024 {
                         log.push_str(&line);
                         log.push('\n');
@@ -442,10 +442,10 @@ impl VideoDecoder {
                 }
                 let failed = status.is_some_and(|s| !s.success());
                 if failed && self.current.is_none() {
-                    let log = stream.log.lock().expect("锁").clone();
+                    let log = stream.log.lock().expect("lock").clone();
                     return Err(MediaError::new(
                         "EXPORT_DECODE_FAILED",
-                        format!("解码 {} 失败：{}", self.path.display(), tail(&log, 3)),
+                        format!("decoding {} failed: {}", self.path.display(), tail(&log, 3)),
                     ));
                 }
                 return Ok(None);
@@ -493,7 +493,7 @@ pub fn decode_still(tools: &Tools, path: &Path, width: u32, height: u32) -> Resu
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(MediaError::new(
             "EXPORT_DECODE_FAILED",
-            format!("解码 {} 失败：{}", path.display(), tail(&stderr, 3)),
+            format!("decoding {} failed: {}", path.display(), tail(&stderr, 3)),
         ));
     }
     let mut data = output.stdout;
@@ -521,7 +521,7 @@ mod tests {
     impl FrameFeed for Fake {
         fn next_into(&mut self, data: &mut Vec<u8>) -> Result<Option<f64>, String> {
             if Some(self.next) == self.fail_at {
-                return Err("坏帧".into());
+                return Err("bad frame".into());
             }
             if self.next >= self.count {
                 return Ok(None);
@@ -541,7 +541,7 @@ mod tests {
         let open: FeedOpener = Arc::new(move |_: &Path, from: f64, width: u32, height: u32| {
             seen.lock().unwrap().push(from);
             if fail_open {
-                return Err("不支持的编码".to_string());
+                return Err("unsupported codec".to_string());
             }
             let first = ((from - origin) * 10.0 + 1e-6).floor().max(0.0) as u32;
             Ok(Box::new(Fake {
@@ -571,7 +571,7 @@ mod tests {
         // 0.25 s: the last frame not later than it is frame 2 (0.2).
         assert_eq!(decoder.frame_at(0.25).unwrap().data[0], 2);
         let first = decoder.advance(0.25).unwrap();
-        assert_eq!(decoder.advance(0.29).unwrap(), first, "同一帧代号不变");
+        assert_eq!(decoder.advance(0.29).unwrap(), first, "same frame generation");
         assert_eq!(decoder.frame_at(1.0).unwrap().data[0], 10);
         assert_eq!(decoder.restarts(), 0);
         // Rewind: reopen, counted once; the start is on the media timeline (plus the PTS origin).
@@ -590,9 +590,9 @@ mod tests {
         // Start ffmpeg after the fallback: there is no ffmpeg here, so the reported error is a start failure.
         let error = decoder.frame_at(0.0).unwrap_err();
         assert_ne!(error.code, "EXPORT_DECODE_FAILED", "{error:?}");
-        let fallback = decoder.fallback().expect("记下回落");
+        let fallback = decoder.fallback().expect("record the fallback");
         assert_eq!(fallback.reason, "open-failed");
-        assert!(fallback.message.contains("不支持的编码"), "{}", fallback.message);
+        assert!(fallback.message.contains("unsupported codec"), "{}", fallback.message);
         assert_eq!(decoder.backend(), "ffmpeg");
         assert_eq!(decoder.restarts(), 0);
     }
@@ -603,7 +603,7 @@ mod tests {
         let mut decoder = VideoDecoder::new(&no_ffmpeg(), Path::new("a.mp4"), 0.0, 4, 2).with_native(native);
         assert_eq!(decoder.frame_at(0.3).unwrap().data[0], 3);
         assert!(decoder.frame_at(1.0).is_err());
-        let fallback = decoder.fallback().expect("记下回落");
+        let fallback = decoder.fallback().expect("record the fallback");
         assert_eq!(fallback.reason, "read-failed");
         assert_eq!(decoder.restarts(), 0);
     }

@@ -28,7 +28,7 @@ fn new_video(dir: &Path) -> Video {
         width: 1920,
         height: 1080,
     };
-    Video::create(dir, &options, &ffprobe()).expect("新建视频")
+    Video::create(dir, &options, &ffprobe()).expect("create the video")
 }
 
 fn apply(video: &mut Video, command_id: &str, operations: Vec<Value>) -> Result<video_engine::Committed, ErrorBody> {
@@ -87,7 +87,7 @@ fn find(video: &Video, pick: impl Fn(&TimelineItem) -> bool) -> String {
 }
 
 fn place_of(video: &Video, id: &str) -> Place {
-    item(video, id).place().cloned().expect("画面实例")
+    item(video, id).place().cloned().expect("visual item")
 }
 
 struct Fixture {
@@ -163,7 +163,7 @@ fn set_transform_changes_only_the_given_place_fields_and_bumps_the_sequence_revi
         (p.x, p.y, p.w, p.rot, p.flip_x, p.flip_y),
         (Some(40.5), Some(25.0), Some(50.0), Some(-30.0), true, false)
     );
-    assert_eq!(video.snapshot().sequences[&s].revision, video.revision(), "改片段也是改序列");
+    assert_eq!(video.snapshot().sequences[&s].revision, video.revision(), "changing a clip also changes the sequence");
 
     // null removes the field and reverts to the default.
     let reset = apply(
@@ -186,7 +186,7 @@ fn set_transform_changes_only_the_given_place_fields_and_bumps_the_sequence_revi
     .into_iter()
     .enumerate()
     {
-        assert!(apply(&mut video, &format!("cmd_bad_{n}"), vec![op]).is_err(), "第 {n} 个");
+        assert!(apply(&mut video, &format!("cmd_bad_{n}"), vec![op]).is_err(), "case {n}");
     }
     assert_eq!(video.revision(), before);
 
@@ -267,7 +267,7 @@ fn style_text_and_props_go_to_the_matching_item_kinds() {
     ];
     for (n, op) in cases.into_iter().enumerate() {
         let err = apply(&mut video, &format!("cmd_bad_{n}"), vec![op]).unwrap_err();
-        assert_eq!(err.code, "INVALID_OPERATION", "第 {n} 个");
+        assert_eq!(err.code, "INVALID_OPERATION", "case {n}");
     }
     assert_eq!(video.revision(), before);
 }
@@ -330,7 +330,7 @@ fn animation_keyframes_and_template_layers_are_checked_by_the_element_model() {
         json!({ "type": "setTemplate", "sequenceId": s, "template": { "id": "tpl_1", "name": " ", "layers": [] } }),
     ];
     for (n, op) in cases.into_iter().enumerate() {
-        assert!(apply(&mut video, &format!("cmd_bad_{n}"), vec![op]).is_err(), "第 {n} 个");
+        assert!(apply(&mut video, &format!("cmd_bad_{n}"), vec![op]).is_err(), "case {n}");
     }
     assert_eq!(video.revision(), before);
 
@@ -483,7 +483,7 @@ fn canvas_changes_keep_percent_geometry_and_take_a_hex_background() {
         assert_eq!(
             apply(&mut video, &format!("cmd_bad_{n}"), vec![op]).unwrap_err().code,
             "INVALID_OPERATION",
-            "第 {n} 个"
+            "case {n}"
         );
     }
     assert_eq!(video.revision(), revision);
@@ -542,7 +542,7 @@ fn opacity_and_mask_feather_take_the_spec_ranges() {
     ];
     for (n, op) in cases.into_iter().enumerate() {
         let err = apply(&mut video, &format!("cmd_bad_{n}"), vec![op]).unwrap_err();
-        assert_eq!(err.code, "INVALID_OPERATION", "第 {n} 个：{}", err.message);
+        assert_eq!(err.code, "INVALID_OPERATION", "case {n}: {}", err.message);
     }
     assert_eq!(video.revision(), before);
 }

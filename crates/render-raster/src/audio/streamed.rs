@@ -57,7 +57,7 @@ pub fn mix_audio_file(
             .audios
             .get(&clip.asset_id)
             .or_else(|| assets.videos.get(&clip.asset_id).map(|v| &v.path))
-            .ok_or_else(|| anyhow!("音频资源 \"{}\" 未加载", clip.asset_id))?;
+            .ok_or_else(|| anyhow!("audio resource \"{}\" is not loaded", clip.asset_id))?;
         let rate = if clip.rate > 0.0 { clip.rate } else { 1.0 };
         let mut pcm = NamedTempFile::new()?;
         let native = ((rate - 1.0).abs() <= 1e-9 && dur * 48000.0 * 8.0 <= (32 << 20) as f64)
@@ -75,7 +75,7 @@ pub fn mix_audio_file(
                 .stdout(Stdio::from(pcm.reopen()?))
                 .stderr(Stdio::null())
                 .spawn()
-                .context("启动流式音频解码失败")?;
+                .context("failed to start streamed audio decode")?;
             loop {
                 if let Err(error) = checkpoint() {
                     let _ = child.kill();
@@ -84,7 +84,7 @@ pub fn mix_audio_file(
                 }
                 if let Some(status) = child.try_wait()? {
                     if !status.success() {
-                        bail!("audio clip \"{}\" 流式解码失败：{status}", clip.id);
+                        bail!("audio clip \"{}\" streamed decode failed: {status}", clip.id);
                     }
                     break;
                 }
@@ -115,7 +115,7 @@ pub fn mix_audio_file(
         let target = doc.master.filter(|_| !partial);
         if doc.master.is_some() && partial {
             warnings.push(
-                "audio-master-skipped: 部分 audio clip 由时间轴另放，audio.master 没有施加到这份局部混音；整片响度用 ccut export --loudness / --true-peak".to_string(),
+                "audio-master-skipped: some audio clips are placed separately on the timeline, so audio.master was not applied to this partial mix; for whole-program loudness use ccut export --loudness / --true-peak".to_string(),
             );
         }
         let clips: Vec<super::chain::ChainClip<'_>> = decoded
@@ -195,7 +195,7 @@ pub fn mix_audio_file(
         writer.flush()?;
     }
     let wav = NamedTempFile::with_suffix(".wav")?;
-    let size = frames.checked_mul(8).context("BCF 音频时长溢出")?;
+    let size = frames.checked_mul(8).context("BCF audio duration overflow")?;
     if size <= u64::from(u32::MAX) - 36 {
         let mut writer = BufWriter::new(wav.as_file());
         writer.write_all(b"RIFF")?;
@@ -223,7 +223,7 @@ pub fn mix_audio_file(
             .arg(wav.path())
             .status()?;
         if !status.success() {
-            bail!("写入 BCF RF64 音频失败：{status}");
+            bail!("failed to write BCF RF64 audio: {status}");
         }
     }
     checkpoint()?;

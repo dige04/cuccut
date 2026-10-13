@@ -100,7 +100,7 @@ pub(super) fn speaking_rate(speed: Option<f32>, engine: &str) -> Result<f32> {
     let (min, max) = crate::synthesize::index_tts2::SPEAKING_RATE_RANGE;
     ensure!(
         rate.is_finite() && (min..=max).contains(&rate),
-        "{engine} 语速倍率须在 {min}–{max}，收到 {rate}"
+        "{engine} speed factor must be within {min}–{max}, got {rate}"
     );
     Ok(rate)
 }
@@ -151,9 +151,9 @@ impl SharedAux {
         let w2v_bert_file = files.w2v_bert;
 
         stage("campplus")?;
-        let campplus = CampPlus::load(WeightMap::load_file(&files.campplus)?).context("加载 CAM++")?;
+        let campplus = CampPlus::load(WeightMap::load_file(&files.campplus)?).context("failed to load CAM++")?;
         stage("bigvgan")?;
-        let vocoder = BigVgan::load(WeightMap::load_file(&files.bigvgan)?).context("加载 BigVGAN")?;
+        let vocoder = BigVgan::load(WeightMap::load_file(&files.bigvgan)?).context("failed to load BigVGAN")?;
 
         stage("stats")?;
         let mut stats = WeightMap::load_file(&files.stats)?;
@@ -161,7 +161,7 @@ impl SharedAux {
         let w2v_var = to_host_f32(&stats.take_f32("var")?)?;
         ensure!(
             w2v_mean.len() == 1024 && w2v_var.len() == 1024,
-            "wav2vec2bert_stats 形状不符：mean {} / var {}",
+            "wav2vec2bert_stats shape mismatch: mean {} / var {}",
             w2v_mean.len(),
             w2v_var.len()
         );
@@ -172,14 +172,14 @@ impl SharedAux {
         let bucket_total: usize = config.emo_num.iter().sum();
         ensure!(
             speaker_table.ndim() == 2 && speaker_table.dim(0) as usize == bucket_total && speaker_table.dim(1) == 192,
-            "feat1.safetensors 期望 [{bucket_total}, 192]，收到 {:?}",
+            "feat1.safetensors expected [{bucket_total}, 192], got {:?}",
             speaker_table.shape()
         );
         ensure!(
             emotion_table.ndim() == 2
                 && emotion_table.dim(0) as usize == bucket_total
                 && emotion_table.dim(1) as usize == config.gpt.model_dim,
-            "feat2.safetensors 期望 [{bucket_total}, {}]，收到 {:?}",
+            "feat2.safetensors expected [{bucket_total}, {}], got {:?}",
             config.gpt.model_dim,
             emotion_table.shape()
         );
@@ -216,12 +216,12 @@ impl SharedAux {
         let key = ConditioningKey::new(reference_audio, emotion_source(reference_audio, plan.audio.as_ref(), control));
         if let Some(mut cached) = key.as_ref().and_then(|key| self.conditioning_cache.get(key)) {
             cached.explicit_emotion = explicit_emotion(config, &self.speaker_rows, &self.emotion_rows, control, &cached.style)?;
-            loading("参考条件就绪（缓存）")?;
+            loading("reference conditioning ready (cached)")?;
             return Ok(cached);
         }
 
         loading("w2v-bert")?;
-        let w2v_bert = Wav2Vec2Bert::load(WeightMap::load_file(&self.w2v_bert_file)?).context("加载 w2v-BERT 2.0")?;
+        let w2v_bert = Wav2Vec2Bert::load(WeightMap::load_file(&self.w2v_bert_file)?).context("failed to load w2v-BERT 2.0")?;
         let models = ConditioningModels {
             config,
             w2v_bert: &w2v_bert,
@@ -284,7 +284,7 @@ impl IndexTts2 {
 
     pub fn load_with_progress(model: &VerifiedFiles, progress: &mut dyn FnMut(TtsProgress) -> bool) -> Result<Self> {
         let config = RuntimeConfig::load(model.path("config.yaml"))?;
-        ensure!(!config.is_v25(), "这是 IndexTTS 2.5 权重，请用 index-tts2.5 引擎加载");
+        ensure!(!config.is_v25(), "these are IndexTTS 2.5 weights; load them with the index-tts2.5 engine");
         let bpe_model = model.require(&config.bpe_model)?;
         let gpt_file = model.require("gpt.safetensors")?;
         let s2mel_file = model.require("s2mel.safetensors")?;
@@ -294,7 +294,7 @@ impl IndexTts2 {
         configure_memory_cache()?;
         // Create the guard first: if any later step fails to load, unwinding will also wait for the GPU and clear the cache already allocated.
         let cache_guard = ModelMemoryCacheGuard;
-        let tokenizer = Tokenizer::load(bpe_model).with_context(|| format!("加载 IndexTTS2 分词器 {}", config.bpe_model))?;
+        let tokenizer = Tokenizer::load(bpe_model).with_context(|| format!("failed to load IndexTTS2 tokenizer {}", config.bpe_model))?;
 
         let mut stage = |name: &str| -> Result<()> {
             if !progress(TtsProgress::Loading { stage: name.to_string() }) {
@@ -305,13 +305,13 @@ impl IndexTts2 {
 
         stage("gpt")?;
         let gpt = SemanticGpt::load(WeightMap::load_file(gpt_file)?, &config.gpt, config.semantic_codec.codebook_size)
-            .context("加载 IndexTTS2 GPT")?;
+            .context("failed to load IndexTTS2 GPT")?;
 
         stage("s2mel")?;
-        let s2mel = S2Mel::load(WeightMap::load_file(s2mel_file)?, config.s2mel.n_mels as i32).context("加载 IndexTTS2 S2Mel")?;
+        let s2mel = S2Mel::load(WeightMap::load_file(s2mel_file)?, config.s2mel.n_mels as i32).context("failed to load IndexTTS2 S2Mel")?;
 
         stage("semantic-codec")?;
-        let semantic_codec = SemanticCodec::load(WeightMap::load_file(semantic_codec_file)?).context("加载 MaskGCT 语义码本")?;
+        let semantic_codec = SemanticCodec::load(WeightMap::load_file(semantic_codec_file)?).context("failed to load MaskGCT semantic codebook")?;
 
         let aux = SharedAux::load(aux_files, &config, &mut stage)?;
         clear_memory_cache()?;
@@ -342,7 +342,7 @@ impl IndexTts2 {
             .gpt
             .generate_semantic_codes(text_tokens, speaker_latent, emotion, options, token_progress)?;
         if codes.is_empty() {
-            bail!("IndexTTS2 语义 GPT 没有生成任何语音 token");
+            bail!("IndexTTS2 semantic GPT generated no speech tokens");
         }
         let latent = self.gpt.latent_for_s2mel(text_tokens, &codes, speaker_latent, emotion)?;
         let latent = self.s2mel.gpt_latent(&latent)?; // [1, N, 1024]
@@ -370,22 +370,22 @@ pub(super) fn clone_reference(request: &TtsRequest, engine: &str) -> Result<Refe
 pub(super) fn generation_options(sampling: &SamplingOptions, engine: &str) -> Result<GenerationOptions> {
     let mut options = GenerationOptions::default();
     if let Some(t) = sampling.temperature {
-        ensure!(t.is_finite() && t > 0.0, "{engine} temperature 必须为正有限值，收到 {t}");
+        ensure!(t.is_finite() && t > 0.0, "{engine} temperature must be a positive finite value, got {t}");
         options.temperature = t;
     }
     if let Some(k) = sampling.top_k {
         options.top_k = k;
     }
     if let Some(p) = sampling.top_p {
-        ensure!(p.is_finite() && p > 0.0 && p <= 1.0, "{engine} top_p 必须在 (0, 1]，收到 {p}");
+        ensure!(p.is_finite() && p > 0.0 && p <= 1.0, "{engine} top_p must be in (0, 1], got {p}");
         options.top_p = p;
     }
     if let Some(r) = sampling.repetition_penalty {
-        ensure!(r.is_finite() && r > 0.0, "{engine} repetition_penalty 必须为正有限值，收到 {r}");
+        ensure!(r.is_finite() && r > 0.0, "{engine} repetition_penalty must be a positive finite value, got {r}");
         options.repetition_penalty = r;
     }
     if let Some(n) = sampling.max_tokens {
-        ensure!(n > 0, "{engine} max_tokens 必须大于 0");
+        ensure!(n > 0, "{engine} max_tokens must be greater than 0");
         options.max_semantic_tokens = n;
     }
     if let Some(seed) = sampling.seed {
@@ -413,11 +413,11 @@ pub(super) fn emotion_plan(spec: Option<&EmotionSpec>, engine: &str) -> Result<E
         Some(EmotionSpec::Audio { reference_audio, alpha }) => {
             ensure!(
                 alpha.is_finite() && (0.0..=1.0).contains(alpha),
-                "{engine} 情感音频混合系数 alpha 必须在 [0, 1]，收到 {alpha}"
+                "{engine} emotion audio mix coefficient alpha must be in [0, 1], got {alpha}"
             );
             ensure!(
                 reference_audio.is_file(),
-                "{engine} 情感参考音频不存在：{}",
+                "{engine} emotion reference audio does not exist: {}",
                 reference_audio.display()
             );
             Ok(EmotionPlan {
@@ -429,7 +429,7 @@ pub(super) fn emotion_plan(spec: Option<&EmotionSpec>, engine: &str) -> Result<E
         Some(EmotionSpec::Vector { weights, alpha }) => Ok(EmotionPlan {
             audio: None,
             alpha: 1.0,
-            control: Some(EmotionControl::from_sliders(*weights, *alpha).with_context(|| format!("{engine} 情感向量无效"))?),
+            control: Some(EmotionControl::from_sliders(*weights, *alpha).with_context(|| format!("{engine} emotion vector is invalid"))?),
         }),
     }
 }
@@ -514,7 +514,7 @@ impl TtsEngine for IndexTts2 {
         let tokens = self.tokenizer.tokenize(&request.text)?;
         let segments = TextSegmenter::split(&tokens, TextSegmenter::DEFAULT_MAX_TOKENS);
         if segments.is_empty() {
-            bail!("IndexTTS2 文本没有产生任何 token：{:?}", request.text);
+            bail!("IndexTTS2 text produced no tokens: {:?}", request.text);
         }
 
         let conditioning = self.aux.prepare_conditioning(

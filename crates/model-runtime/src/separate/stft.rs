@@ -55,7 +55,7 @@ impl Spectrum {
 impl Spectrogram {
     pub fn new(nfft: usize, hop: usize) -> Result<Self> {
         if nfft == 0 || hop == 0 || !nfft.is_multiple_of(hop) || !nfft.is_multiple_of(2) {
-            bail!("STFT 参数无效：nfft {nfft} hop {hop}（要求 nfft 为偶数且是 hop 的倍数）");
+            bail!("invalid STFT parameters: nfft {nfft} hop {hop} (nfft must be even and a multiple of hop)");
         }
         // Periodic Hann (torch.hann_window default, periodic=True).
         let window = (0..nfft)
@@ -88,7 +88,7 @@ impl Spectrogram {
     pub fn reflect_pad(x: &[f32], left: usize, right: usize) -> Result<Vec<f32>> {
         let len = x.len();
         if len < 2 || left >= len || right >= len {
-            bail!("reflect 填充超出范围：长度 {len}，左 {left}，右 {right}");
+            bail!("reflect padding out of range: length {len}, left {left}, right {right}");
         }
         let mut out = Vec::with_capacity(left + len + right);
         out.extend((1..=left).rev().map(|i| x[i]));
@@ -115,7 +115,7 @@ impl Spectrogram {
             }
             self.forward
                 .process_with_scratch(&mut input, &mut output, &mut scratch)
-                .map_err(|e| anyhow::anyhow!("rfft 失败：{e}"))?;
+                .map_err(|e| anyhow::anyhow!("rfft failed: {e}"))?;
             for (k, v) in output.iter().enumerate() {
                 out.data[k * frames + f] = *v;
             }
@@ -128,7 +128,7 @@ impl Spectrogram {
     pub fn istft(&self, z: &Spectrum, length: usize) -> Result<Vec<f32>> {
         let bins = self.nfft / 2 + 1;
         if z.bins != bins {
-            bail!("istft 期望 {bins} 个频率 bin，实际 {}", z.bins);
+            bail!("istft expects {bins} frequency bins, found {}", z.bins);
         }
         let frames = z.frames;
         let total = (frames - 1) * self.hop + self.nfft;
@@ -147,7 +147,7 @@ impl Spectrogram {
             spectrum[bins - 1].im = 0.0;
             self.inverse
                 .process_with_scratch(&mut spectrum, &mut frame, &mut scratch)
-                .map_err(|e| anyhow::anyhow!("irfft 失败：{e}"))?;
+                .map_err(|e| anyhow::anyhow!("irfft failed: {e}"))?;
             let start = f * self.hop;
             for k in 0..self.nfft {
                 let w = self.window[k];
@@ -157,7 +157,7 @@ impl Spectrogram {
         }
         let pad = self.nfft / 2;
         if pad + length > total {
-            bail!("istft 输出长度 {length} 超出可重建范围 {}", total - pad);
+            bail!("istft output length {length} exceeds the reconstructable range {}", total - pad);
         }
         Ok((pad..pad + length).map(|i| accum[i] / win_sum[i].max(1e-8)).collect())
     }
@@ -172,7 +172,7 @@ impl Spectrogram {
         let xp = Self::reflect_pad(x, pad, pad + le * self.hop - len)?;
         let z = self.stft(&xp)?;
         if z.frames < 2 + le {
-            bail!("spec 帧数不足：{} < {}", z.frames, 2 + le);
+            bail!("not enough spec frames: {} < {}", z.frames, 2 + le);
         }
         let bins = self.nfft / 2;
         let mut out = Spectrum::zeros(bins, le);
@@ -187,7 +187,7 @@ impl Spectrogram {
     pub fn ispec(&self, z: &Spectrum, length: usize) -> Result<Vec<f32>> {
         let bins = self.nfft / 2;
         if z.bins != bins {
-            bail!("ispec 期望 {bins} 个频率 bin，实际 {}", z.bins);
+            bail!("ispec expects {bins} frequency bins, found {}", z.bins);
         }
         let le = z.frames;
         // Zero-pad: frequency nfft/2 → nfft/2+1, and 2 frames are padded on each side.
@@ -246,7 +246,7 @@ mod tests {
         assert_eq!(z.bins, 2049);
         assert_eq!(z.frames, 1 + (20_000 + 4096 - 4096) / 1024);
         let y = spec.istft(&z, x.len()).unwrap();
-        assert!(max_abs_diff(&x, &y) < 1e-4, "重建误差 {}", max_abs_diff(&x, &y));
+        assert!(max_abs_diff(&x, &y) < 1e-4, "reconstruction error {}", max_abs_diff(&x, &y));
     }
 
     #[test]
@@ -264,10 +264,10 @@ mod tests {
             // and confirm that the edge attenuation really exists (otherwise the frame-cropping arithmetic would differ from demucs).
             let edge = 3 * 1024;
             let err = max_abs_diff(&x[edge..len - edge], &y[edge..len - edge]);
-            assert!(err < 1e-3, "长度 {len} 内部重建误差 {err}");
+            assert!(err < 1e-3, "interior reconstruction error for length {len}: {err}");
             assert!(x[10].abs() > 1e-2);
             let ratio = y[10] / x[10];
-            assert!((ratio - 0.5).abs() < 0.05, "长度 {len} 边缘衰减比 {ratio}");
+            assert!((ratio - 0.5).abs() < 0.05, "edge attenuation ratio for length {len}: {ratio}");
         }
     }
 

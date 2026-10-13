@@ -467,10 +467,10 @@ mod tests {
         assert_eq!(stack.len(), 4);
         for lowered in &stack {
             let manifest = ::motion::effect::lookup(lowered.id(), lowered.effect.version)
-                .unwrap_or_else(|error| panic!("{} 未注册：{error}", lowered.id()));
+                .unwrap_or_else(|error| panic!("{} is not registered: {error}", lowered.id()));
             manifest
                 .resolve_uniforms(&lowered.uniforms)
-                .unwrap_or_else(|error| panic!("{} 的 uniform 非法：{error}", lowered.id()));
+                .unwrap_or_else(|error| panic!("{} has an invalid uniform: {error}", lowered.id()));
         }
     }
 }

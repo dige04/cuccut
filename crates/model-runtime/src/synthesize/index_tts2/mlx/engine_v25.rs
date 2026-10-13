@@ -61,7 +61,7 @@ impl IndexTts25 {
         let config = RuntimeConfig::load(Some(model.require("config.yaml")?))?;
         ensure!(
             config.is_v25(),
-            "不是 IndexTTS 2.5 权重（config.yaml 没有 tiktoken 分词器），请用 index-tts2 引擎加载"
+            "not IndexTTS 2.5 weights (config.yaml has no tiktoken tokenizer); load them with the index-tts2 engine"
         );
         let vocabulary = model.require(&config.bpe_model)?;
         let gpt_file = model.require("gpt.safetensors")?;
@@ -72,7 +72,7 @@ impl IndexTts25 {
         configure_memory_cache()?;
         // Create the guard first: if any later step fails to load, unwinding will also wait for the GPU and clear the cache already allocated.
         let cache_guard = ModelMemoryCacheGuard;
-        let tokenizer = TiktokenTokenizer::load(vocabulary).with_context(|| format!("加载 {ENGINE_NAME} 分词器 {}", config.bpe_model))?;
+        let tokenizer = TiktokenTokenizer::load(vocabulary).with_context(|| format!("failed to load {ENGINE_NAME} tokenizer {}", config.bpe_model))?;
 
         let mut stage = |name: &str| -> Result<()> {
             if !progress(TtsProgress::Loading { stage: name.to_string() }) {
@@ -83,16 +83,16 @@ impl IndexTts25 {
 
         stage("gpt")?;
         let gpt = SemanticGpt::load_v25(WeightMap::load_file(gpt_file)?, &config.gpt, config.semantic_codec.codebook_size)
-            .with_context(|| format!("加载 {ENGINE_NAME} GPT"))?;
+            .with_context(|| format!("failed to load {ENGINE_NAME} GPT"))?;
 
         stage("s2mel")?;
         let mut s2mel_weights = WeightMap::load_file(s2mel_file)?;
         v25_weights::remap_s2mel(&mut s2mel_weights)?;
-        let s2mel = S2Mel::load(s2mel_weights, config.s2mel.n_mels as i32).with_context(|| format!("加载 {ENGINE_NAME} S2Mel"))?;
+        let s2mel = S2Mel::load(s2mel_weights, config.s2mel.n_mels as i32).with_context(|| format!("failed to load {ENGINE_NAME} S2Mel"))?;
 
         stage("codec")?;
         let codec =
-            CodecDecoderV25::load(WeightMap::load_file(codec_file)?).with_context(|| format!("加载 {ENGINE_NAME} 语义码本解码器"))?;
+            CodecDecoderV25::load(WeightMap::load_file(codec_file)?).with_context(|| format!("failed to load {ENGINE_NAME} semantic codebook decoder"))?;
 
         let aux = SharedAux::load(aux_files, &config, &mut stage)?;
         clear_memory_cache()?;
@@ -123,7 +123,7 @@ impl IndexTts25 {
             self.gpt
                 .generate_semantic_codes_v25(text_tokens, language_id, &conditioning.style, emotion, options, token_progress)?;
         if codes.is_empty() {
-            bail!("{ENGINE_NAME} 语义 GPT 没有生成任何语音 token");
+            bail!("{ENGINE_NAME} semantic GPT generated no speech tokens");
         }
         let content = self.codec.decode(&codes)?.as_dtype(Dtype::Float32)?; // [1, 2N, 1024]
         let generated_condition = self
@@ -159,7 +159,7 @@ impl TtsEngine for IndexTts25 {
             &self.tokenizer,
             DEFAULT_MAX_SEGMENT_TOKENS,
         )
-        .with_context(|| format!("{ENGINE_NAME} 文本前端"))?;
+        .with_context(|| format!("{ENGINE_NAME} text frontend"))?;
 
         let conditioning = self
             .aux

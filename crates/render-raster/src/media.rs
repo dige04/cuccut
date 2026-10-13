@@ -151,8 +151,8 @@ impl VideoReader {
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
-            .context("启动 ffmpeg 视频解码失败")?;
-        let stdout = child.stdout.take().context("ffmpeg 没有交出 stdout 管道")?;
+            .context("failed to start ffmpeg video decode")?;
+        let stdout = child.stdout.take().context("ffmpeg did not provide a stdout pipe")?;
         self.decoder = Some(Decoder::Ffmpeg { child, stdout });
         self.backend = FFMPEG_BACKEND;
         self.origin = from;
@@ -187,9 +187,9 @@ impl VideoReader {
         let pixmap = Pixmap::from_vec(
             bytes,
             tiny_skia::IntSize::from_wh(self.info.width, self.info.height)
-                .ok_or_else(|| anyhow!("零尺寸视频"))?,
+                .ok_or_else(|| anyhow!("zero-sized video"))?,
         )
-        .ok_or_else(|| anyhow!("解码帧构造失败"))?;
+        .ok_or_else(|| anyhow!("failed to construct decoded frame"))?;
         let pixmap = Arc::new(pixmap);
         self.last = Some(pixmap.clone());
         Ok(pixmap)
@@ -345,7 +345,7 @@ impl VideoReader {
         }
         self.last
             .clone()
-            .ok_or_else(|| anyhow!("视频 {} 在 t={mtime:.3} 无帧可读", self.info.path.display()))
+            .ok_or_else(|| anyhow!("video {} has no readable frame at t={mtime:.3}", self.info.path.display()))
     }
 
     /// No frame can be read from `origin` onward, meaning the origin falls after the end of the video stream. This happens when the clip or project is longer than the video stream (container duration is computed from the audio track, and encoders pad the tail), on a cold start or when seeking to the last few tens of milliseconds. Reopen while stepping backwards, sequentially drain to the end, and freeze the true last frame (the same frame that draining from the beginning to the end yields). If a fallback frame left over from before the jump is in hand, that is used instead. If nothing can be read at all, return as-is and let the caller report the error.
@@ -563,7 +563,7 @@ impl MediaStore {
             .assets
             .bounded_images
             .get(id)
-            .ok_or_else(|| anyhow!("图像资源 {id} 未加载"))?;
+            .ok_or_else(|| anyhow!("image resource {id} is not loaded"))?;
         self.assets.validate_media_file(path)?;
         let key = (id.to_owned(), -1, 0, 0);
         if let Some(hit) = self.image_cache.get(&key) {
@@ -575,14 +575,14 @@ impl MediaStore {
             image::ImageFormat::Jpeg => "tile.jpg",
             image::ImageFormat::WebP => "tile.webp",
             image::ImageFormat::Gif => "tile.gif",
-            _ => bail!("BCF bounded image 的格式不受支持：{id}"),
+            _ => bail!("unsupported format for BCF bounded image: {id}"),
         };
         let image = crate::assets::decode_image(label, &bytes)?;
         self.assets.validate_media_file(path)?;
         if let Some(meta) = self.assets.inputs.media.get(id)
             && (image.width() as f64 != meta.width || image.height() as f64 != meta.height)
         {
-            bail!("BCF bounded image 的尺寸在准备后改变：{id}");
+            bail!("BCF bounded image changed size after preparation: {id}");
         }
         let image = Arc::new(image);
         self.image_cache.put(key, image.clone());
@@ -777,7 +777,7 @@ impl MediaStore {
 
     pub fn video_frame(&mut self, id: &str, mtime: f64) -> Result<Arc<Pixmap>> {
         if !mtime.is_finite() {
-            bail!("media-time-invalid: 非有限源时间");
+            bail!("media-time-invalid: source time is not finite");
         }
         if let Some(source) = self.external_video.get_mut(id) {
             return source.frame(id, (mtime.max(0.0) * 1000.0).round() as i64);
@@ -798,7 +798,7 @@ impl MediaStore {
                 .assets
                 .videos
                 .get(id)
-                .ok_or_else(|| anyhow!("视频资源 \"{id}\" 未加载"))?
+                .ok_or_else(|| anyhow!("video resource \"{id}\" is not loaded"))?
                 .clone();
             let mut reader = VideoReader::new(info, self.fps, self.random_access);
             reader.snap = self.keyframe_snap;

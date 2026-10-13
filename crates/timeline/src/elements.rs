@@ -25,7 +25,7 @@ pub fn resolve_element_id(
 ) -> Result<String, TimelineError> {
     if selector.is_empty() {
         return Err(TimelineError::Invalid(
-            "element selector 不能为空".to_owned(),
+            "element selector cannot be empty".to_owned(),
         ));
     }
     if let Some((_, _, element)) =
@@ -42,7 +42,7 @@ pub fn resolve_element_id(
     }
     if prefix.len() > 1 {
         return Err(TimelineError::Ambiguous(format!(
-            "element 前缀 {selector} 匹配 {prefix:?}"
+            "element prefix {selector} matches {prefix:?}"
         )));
     }
     let names = element_locations(document)
@@ -53,7 +53,7 @@ pub fn resolve_element_id(
         [id] => Ok(id.clone()),
         [] => Err(TimelineError::Unmapped(selector.to_owned())),
         _ => Err(TimelineError::Ambiguous(format!(
-            "element name {selector} 匹配 {names:?}"
+            "element name {selector} matches {names:?}"
         ))),
     }
 }
@@ -70,7 +70,7 @@ pub fn add_element(
         .flat_map(|track| &track.elements)
         .any(|candidate| candidate.id == element.id)
     {
-        return Err(TimelineError::Invalid(format!("重复 id：{}", element.id)));
+        return Err(TimelineError::Invalid(format!("duplicate id: {}", element.id)));
     }
     let required_kind = if element.kind == crate::schema::ElementKind::Audio {
         TrackKind::Audio
@@ -84,11 +84,11 @@ pub fn add_element(
     {
         let track = &document.tracks[index];
         if track.locked {
-            return Err(TimelineError::Invalid(format!("track {} 已锁定", track.id)));
+            return Err(TimelineError::Invalid(format!("track {} is locked", track.id)));
         }
         if track.kind != required_kind {
             return Err(TimelineError::Invalid(format!(
-                "track {} kind 与 element {} 不匹配",
+                "track {} kind does not match element {}",
                 track.id, element.id
             )));
         }
@@ -126,7 +126,7 @@ pub fn merge_patch(target: &mut Value, patch: &Value) {
         *target = Value::Object(serde_json::Map::new());
     }
     let Value::Object(target) = target else {
-        unreachable!("刚刚已保证 target 是对象");
+        unreachable!("target was just checked to be an object");
     };
     for (key, value) in patch {
         if value.is_null() {
@@ -148,20 +148,20 @@ pub fn patch_element(
         .expect("resolved element exists");
     if document.tracks[track_index].locked {
         return Err(TimelineError::Invalid(format!(
-            "track {} 已锁定",
+            "track {} is locked",
             document.tracks[track_index].id
         )));
     }
     if patch.get("id").is_some() || patch.get("kind").is_some() {
         return Err(TimelineError::Invalid(
-            "element patch 不允许修改 id/kind".to_owned(),
+            "element patch cannot change id/kind".to_owned(),
         ));
     }
     let mut value = serde_json::to_value(&document.tracks[track_index].elements[element_index])
         .map_err(|error| TimelineError::Invalid(error.to_string()))?;
     merge_patch(&mut value, patch);
     let updated: Element = serde_json::from_value(value)
-        .map_err(|error| TimelineError::Invalid(format!("element patch 非法：{error}")))?;
+        .map_err(|error| TimelineError::Invalid(format!("invalid element patch: {error}")))?;
     document.tracks[track_index].elements[element_index] = updated.clone();
     document.validate()?;
     Ok(updated)
@@ -175,7 +175,7 @@ pub fn replace_element(
     let id = resolve_element_id(document, selector)?;
     if replacement.id != id {
         return Err(TimelineError::Invalid(
-            "replacement 必须保留 element id".to_owned(),
+            "replacement must keep the element id".to_owned(),
         ));
     }
     let (track_index, element_index, _) = element_locations(document)
@@ -183,7 +183,7 @@ pub fn replace_element(
         .expect("resolved element exists");
     if document.tracks[track_index].locked {
         return Err(TimelineError::Invalid(format!(
-            "track {} 已锁定",
+            "track {} is locked",
             document.tracks[track_index].id
         )));
     }
@@ -202,7 +202,7 @@ pub fn remove_element(
         .expect("resolved element exists");
     if document.tracks[track_index].locked {
         return Err(TimelineError::Invalid(format!(
-            "track {} 已锁定",
+            "track {} is locked",
             document.tracks[track_index].id
         )));
     }
@@ -224,11 +224,11 @@ pub fn reorder_element(
         .expect("resolved element exists");
     let track = &document.tracks[track_index];
     if track.locked {
-        return Err(TimelineError::Invalid(format!("track {} 已锁定", track.id)));
+        return Err(TimelineError::Invalid(format!("track {} is locked", track.id)));
     }
     if to >= track.elements.len() {
         return Err(TimelineError::Invalid(format!(
-            "reorder 目标下标越界：{to}（track {} 共 {} 个元素）",
+            "reorder target index out of range: {to} (track {} has {} elements)",
             track.id,
             track.elements.len()
         )));
@@ -271,7 +271,7 @@ pub fn move_element_to_track(
     for index in [from_track, target] {
         let track = &document.tracks[index];
         if track.locked {
-            return Err(TimelineError::Invalid(format!("track {} 已锁定", track.id)));
+            return Err(TimelineError::Invalid(format!("track {} is locked", track.id)));
         }
     }
     let required_kind = if element == crate::schema::ElementKind::Audio {
@@ -281,14 +281,14 @@ pub fn move_element_to_track(
     };
     if document.tracks[target].kind != required_kind {
         return Err(TimelineError::Invalid(format!(
-            "track {} kind 与 element {id} 不匹配",
+            "track {} kind does not match element {id}",
             document.tracks[target].id
         )));
     }
     let length = document.tracks[target].elements.len();
     if to > length {
         return Err(TimelineError::Invalid(format!(
-            "move 目标下标越界：{to}（track {} 共 {length} 个元素）",
+            "move target index out of range: {to} (track {} has {length} elements)",
             document.tracks[target].id
         )));
     }
@@ -304,7 +304,7 @@ pub fn patch_main(
     patch: &Value,
 ) -> Result<crate::schema::Main, TimelineError> {
     if !patch.is_object() {
-        return Err(TimelineError::Invalid("main patch 须为 object".to_owned()));
+        return Err(TimelineError::Invalid("main patch must be an object".to_owned()));
     }
     let mut value = document
         .main
@@ -315,7 +315,7 @@ pub fn patch_main(
         .unwrap_or_else(|| serde_json::json!({}));
     merge_patch(&mut value, patch);
     let updated: crate::schema::Main = serde_json::from_value(value)
-        .map_err(|error| TimelineError::Invalid(format!("main patch 非法：{error}")))?;
+        .map_err(|error| TimelineError::Invalid(format!("invalid main patch: {error}")))?;
     document.main = Some(updated.clone());
     document.validate()?;
     Ok(updated)
@@ -380,7 +380,7 @@ pub fn split_element(
     let id = resolve_element_id(document, selector)?;
     if new_id.is_empty() || element_locations(document).any(|(_, _, el)| el.id == new_id) {
         return Err(TimelineError::Invalid(format!(
-            "element id 已被占用：{new_id}"
+            "element id is already in use: {new_id}"
         )));
     }
     let (track_index, element_index, _) = element_locations(document)
@@ -388,7 +388,7 @@ pub fn split_element(
         .expect("resolved element exists");
     if document.tracks[track_index].locked {
         return Err(TimelineError::Invalid(format!(
-            "track {} 已锁定",
+            "track {} is locked",
             document.tracks[track_index].id
         )));
     }
@@ -694,7 +694,7 @@ mod tests {
             serde_json::to_value(&document.tracks[0].elements[0]).unwrap()["sticker"]
                 .get("fillOverrides")
                 .is_none(),
-            "前提：空表不序列化"
+            "precondition: an empty table is not serialized"
         );
 
         let updated = patch_element(
@@ -702,7 +702,7 @@ mod tests {
             "st-1",
             &json!({"sticker": {"fillOverrides": {"#ffffff": null, "#112233": "#ff0000"}}}),
         )
-        .expect("首次改色不能因 null 分组失败");
+        .expect("the first color change must not fail on a null group");
         let overrides = &updated.sticker.as_ref().unwrap().fill_overrides;
         assert_eq!(overrides.len(), 1);
         assert_eq!(
@@ -847,15 +847,15 @@ mod tests {
         assert!(!split_point_inside(10.0, Some(20.0), 19.9, 0.5));
         assert!(
             split_point_inside(10.0, None, 19.9, 0.5),
-            "跟片尾只查左边界"
+            "follow-tail only checks the left edge"
         );
 
         let right = split_element(&mut document, "el-1", (10.0, 20.0), 12.0, "el-1-2").unwrap();
-        assert_eq!(right.src_start, Some(7.0), "srcStart 前进 (12 − 10) × 2");
+        assert_eq!(right.src_start, Some(7.0), "srcStart advances by (12 − 10) × 2");
         assert!(split_element(&mut document, "el-1", (10.0, 20.0), 11.0, "el-1-2").is_err());
         let elements = &document.tracks[0].elements;
         assert_eq!(elements.len(), 2);
-        assert_eq!(elements[1].id, "el-1-2", "右半紧挨在原件之上");
+        assert_eq!(elements[1].id, "el-1-2", "the right half sits directly above the original");
 
         let (left, right) = (elements[0].clone(), elements[1].clone());
         // Both orders merge back into the original: keeps the id of the element that is earlier on the timeline.
@@ -924,9 +924,9 @@ mod tests {
                 .find(|element| element.id == id)
                 .unwrap()
                 .clone();
-            assert_eq!(left.duck, original.duck, "闪避两半照抄");
+            assert_eq!(left.duck, original.duck, "both halves copy the duck settings");
             assert_eq!(right.duck, original.duck);
-            assert_ne!(left.keyframes, original.keyframes, "关键帧按新窗口改写");
+            assert_ne!(left.keyframes, original.keyframes, "keyframes are rewritten for the new window");
             if id == "bgm" {
                 let volume = |element: &Element| {
                     serde_json::to_value(element.keyframes.as_ref().unwrap().get("volume").unwrap())
@@ -939,13 +939,13 @@ mod tests {
                 assert_eq!(
                     volume(&right)[1]["t"],
                     json!("16.6667%"),
-                    "原 50% = 右半 1/6"
+                    "original 50% = right half 1/6"
                 );
             }
             let left_span = (span.0, at);
             let right_span = (at, span.1);
             let joined = join_elements(&left, left_span, &right, right_span, None).unwrap();
-            assert_eq!(joined, original, "{id}：split→join 回原状");
+            assert_eq!(joined, original, "{id}: split then join restores the original");
             let swapped = join_elements(&right, right_span, &left, left_span, None).unwrap();
             assert_eq!(swapped, original);
             // Revert the two halves to the original, then the next one is cut.

@@ -83,12 +83,12 @@ impl Rate {
     }
 
     pub fn ratio(self) -> Ratio {
-        Ratio::new(self.num as i128, self.den as i128).expect("Rate 已校验")
+        Ratio::new(self.num as i128, self.den as i128).expect("Rate was already validated")
     }
 
     /// Duration of one frame (seconds).
     pub fn frame_duration(self) -> Ratio {
-        Ratio::new(self.den as i128, self.num as i128).expect("Rate 已校验")
+        Ratio::new(self.den as i128, self.num as i128).expect("Rate was already validated")
     }
 }
 
@@ -274,7 +274,7 @@ pub fn quantize_frame(time: Ratio, fps: Rate, policy: FrameAlignment, field: &st
     let x = frames_at(time, fps).ok_or_else(|| TimeError::overflow(field))?;
     let floor = x.floor();
     let fract = x.fract();
-    let half = Ratio::new(1, 2).expect("常量");
+    let half = Ratio::new(1, 2).expect("constant");
     let nearest = if fract > half { floor + 1 } else { floor };
     let frame = match policy {
         FrameAlignment::FloorFrame => floor,

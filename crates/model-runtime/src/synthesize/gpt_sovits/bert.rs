@@ -27,17 +27,17 @@ pub struct BertVocab {
 
 impl BertVocab {
     pub fn load(path: &Path) -> Result<Self> {
-        let text = std::fs::read_to_string(path).with_context(|| format!("读取 BERT 分词器 {}", path.display()))?;
-        let json: serde_json::Value = serde_json::from_str(&text).with_context(|| format!("解析 BERT 分词器 {}", path.display()))?;
+        let text = std::fs::read_to_string(path).with_context(|| format!("failed to read BERT tokenizer {}", path.display()))?;
+        let json: serde_json::Value = serde_json::from_str(&text).with_context(|| format!("failed to parse BERT tokenizer {}", path.display()))?;
         let vocab = json
             .pointer("/model/vocab")
             .and_then(|v| v.as_object())
-            .context("BERT 分词器缺少 model.vocab")?;
+            .context("BERT tokenizer is missing model.vocab")?;
         let ids: HashMap<String, i32> = vocab
             .iter()
             .filter_map(|(token, id)| id.as_i64().map(|id| (token.clone(), id as i32)))
             .collect();
-        let special = |token: &str| -> Result<i32> { ids.get(token).copied().with_context(|| format!("BERT 词表缺少 {token}")) };
+        let special = |token: &str| -> Result<i32> { ids.get(token).copied().with_context(|| format!("BERT vocabulary is missing {token}")) };
         let (cls, sep, unk) = (special("[CLS]")?, special("[SEP]")?, special("[UNK]")?);
         Ok(Self { ids, cls, sep, unk })
     }
@@ -129,13 +129,13 @@ impl Bert {
         let ids = self.vocab.encode_chars(text);
         ensure!(
             ids.len() == word2ph.len() + 2,
-            "BERT 输入字数 {} 与 word2ph 长度 {} 不一致：{text}",
+            "BERT input has {} characters but word2ph length is {}: {text}",
             ids.len() - 2,
             word2ph.len()
         );
         ensure!(
             ids.len() <= MAX_POSITIONS,
-            "单句过长（{} 字），BERT 最多 {} 字",
+            "sentence too long ({} characters); BERT allows at most {}",
             ids.len() - 2,
             MAX_POSITIONS - 2
         );

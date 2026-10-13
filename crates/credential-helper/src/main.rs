@@ -14,7 +14,7 @@ fn main() {
     let mut line = String::new();
     let response = match reader.read_line(&mut line) {
         Ok(_) => handle_line(line.trim_end_matches(['\r', '\n']), &SystemKeychain),
-        Err(_) => r#"{"ok":false,"error":"internal","message":"读不到请求"}"#.to_owned(),
+        Err(_) => r#"{"ok":false,"error":"internal","message":"Could not read the request"}"#.to_owned(),
     };
     let mut out = io::stdout().lock();
     let written = out.write_all(response.as_bytes()).is_ok() && out.write_all(b"\n").is_ok() && out.flush().is_ok();

@@ -37,7 +37,7 @@ mod platform {
     fn failure(error: Error) -> HelperError {
         let code = error.code();
         let detail = error.message().unwrap_or_default();
-        HelperError::new(classify(code), format!("钥匙串返回 {code}：{detail}"))
+        HelperError::new(classify(code), format!("Keychain returned {code}: {detail}"))
     }
 
     /// Generic password in the login keychain whose service is [`crate::SERVICE`], with the key as the account.
@@ -46,7 +46,7 @@ mod platform {
     impl SecretBackend for SystemKeychain {
         fn get(&self, key: &str) -> Result<String, HelperError> {
             let bytes = get_generic_password(crate::SERVICE, key).map_err(failure)?;
-            String::from_utf8(bytes).map_err(|_| HelperError::new(ErrorCode::Internal, "钥匙串里的内容不是 UTF-8"))
+            String::from_utf8(bytes).map_err(|_| HelperError::new(ErrorCode::Internal, "Keychain item is not valid UTF-8"))
         }
 
         fn set(&self, key: &str, secret: &str) -> Result<(), HelperError> {
@@ -140,7 +140,7 @@ mod platform {
     pub struct SystemKeychain;
 
     fn unsupported() -> HelperError {
-        HelperError::new(ErrorCode::Unsupported, "这个平台还不支持系统的安全存储")
+        HelperError::new(ErrorCode::Unsupported, "The system secure store is not supported on this platform yet")
     }
 
     impl SecretBackend for SystemKeychain {

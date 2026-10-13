@@ -971,7 +971,7 @@ mod tests {
         let spaced_cut = spaced_atoms
             .iter()
             .position(|atom| atom == "在")
-            .expect("在 atom present");
+            .expect("atom should be present");
         assert!(seam_backed_by_whitespace(spaced, &spaced_atoms, spaced_cut));
     }
 

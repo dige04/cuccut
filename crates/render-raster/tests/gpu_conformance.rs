@@ -392,7 +392,7 @@ fn a_missing_shader_falls_back_instead_of_rendering_nothing() {
     }
     assert_eq!(report.records.len(), 2);
     assert!(!report.is_fully_accelerated());
-    assert!(report.lines()[0].contains("回退 CPU"));
+    assert!(report.lines()[0].contains("falls back to CPU"));
 
     for recipe in motion::preset_registry::timeline_visualizers() {
         assert!(

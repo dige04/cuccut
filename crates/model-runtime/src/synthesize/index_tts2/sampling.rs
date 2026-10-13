@@ -411,7 +411,7 @@ mod tests {
         let ta: Vec<i32> = (0..8).map(|_| sample_token(logits.clone(), &[], &options, &mut a)).collect();
         let tb: Vec<i32> = (0..8).map(|_| sample_token(logits.clone(), &[], &options, &mut b)).collect();
         assert_eq!(ta, tb);
-        assert!(ta.iter().all(|&t| logits[t as usize] > 1.0), "采样应落在 top-k/top-p 核内");
+        assert!(ta.iter().all(|&t| logits[t as usize] > 1.0), "samples should fall within the top-k/top-p nucleus");
     }
 
     #[test]

@@ -30,18 +30,18 @@ pub struct Tokenizer {
 
 impl Tokenizer {
     pub fn load(path: &Path) -> Result<Self> {
-        let text = std::fs::read_to_string(path).with_context(|| format!("无法读取 OmniVoice 分词表 {}", path.display()))?;
-        let json: Value = serde_json::from_str(&text).with_context(|| format!("解析 OmniVoice 分词表 {} 失败", path.display()))?;
+        let text = std::fs::read_to_string(path).with_context(|| format!("failed to read OmniVoice tokenizer {}", path.display()))?;
+        let json: Value = serde_json::from_str(&text).with_context(|| format!("failed to parse OmniVoice tokenizer {}", path.display()))?;
         Self::from_json(&json)
     }
 
     pub fn from_json(json: &Value) -> Result<Self> {
         let model = &json["model"];
-        ensure!(model["type"].as_str() == Some("BPE"), "OmniVoice 分词表不是 BPE");
-        let vocab = model["vocab"].as_object().context("OmniVoice 分词表缺少 model.vocab")?;
+        ensure!(model["type"].as_str() == Some("BPE"), "OmniVoice tokenizer is not BPE");
+        let vocab = model["vocab"].as_object().context("OmniVoice tokenizer is missing model.vocab")?;
         let mut ids: HashMap<&str, u32> = HashMap::with_capacity(vocab.len());
         for (token, id) in vocab {
-            let id = id.as_u64().context("OmniVoice 分词表 id 不是整数")? as u32;
+            let id = id.as_u64().context("OmniVoice tokenizer id is not an integer")? as u32;
             ids.insert(token.as_str(), id);
         }
         let byte_chars = bytes_to_unicode();
@@ -50,10 +50,10 @@ impl Tokenizer {
             let mut buf = [0u8; 4];
             let id = ids
                 .get(&*c.encode_utf8(&mut buf))
-                .with_context(|| format!("OmniVoice 分词表缺少字节符号 {c:?}"))?;
+                .with_context(|| format!("OmniVoice tokenizer is missing byte symbol {c:?}"))?;
             char_ids.insert(c, *id);
         }
-        let merge_list = model["merges"].as_array().context("OmniVoice 分词表缺少 model.merges")?;
+        let merge_list = model["merges"].as_array().context("OmniVoice tokenizer is missing model.merges")?;
         let mut merges = HashMap::with_capacity(merge_list.len());
         for (rank, merge) in merge_list.iter().enumerate() {
             let (left, right) = match merge {
@@ -63,24 +63,24 @@ impl Tokenizer {
                 ),
                 Value::String(line) => match line.split_once(' ') {
                     Some((l, r)) => (l.to_string(), r.to_string()),
-                    None => bail!("OmniVoice 分词表 merge 第 {rank} 条格式不对"),
+                    None => bail!("OmniVoice tokenizer merge #{rank} is malformed"),
                 },
-                _ => bail!("OmniVoice 分词表 merge 第 {rank} 条格式不对"),
+                _ => bail!("OmniVoice tokenizer merge #{rank} is malformed"),
             };
             let (Some(&l), Some(&r), Some(&merged)) = (
                 ids.get(left.as_str()),
                 ids.get(right.as_str()),
                 ids.get(format!("{left}{right}").as_str()),
             ) else {
-                bail!("OmniVoice 分词表 merge 第 {rank} 条引用了词表外的符号");
+                bail!("OmniVoice tokenizer merge #{rank} references a symbol outside the vocabulary");
             };
             merges.entry((l, r)).or_insert((rank as u32, merged));
         }
         let mut added = Vec::new();
         if let Some(tokens) = json["added_tokens"].as_array() {
             for token in tokens {
-                let content = token["content"].as_str().context("OmniVoice added token 缺少 content")?;
-                let id = token["id"].as_u64().context("OmniVoice added token 缺少 id")?;
+                let content = token["content"].as_str().context("OmniVoice added token is missing content")?;
+                let id = token["id"].as_u64().context("OmniVoice added token is missing id")?;
                 added.push((content.to_string(), id as u32));
             }
         }
@@ -89,7 +89,7 @@ impl Tokenizer {
             char_ids,
             merges,
             added,
-            pattern: Regex::new(PATTERN).expect("静态预切分正则应能编译"),
+            pattern: Regex::new(PATTERN).expect("static pre-tokenization regex should compile"),
             byte_chars,
         })
     }
@@ -203,15 +203,15 @@ mod tests {
     /// Expected ids were produced by HF `tokenizers` reading the same `tokenizer.json` (`encode(add_special_tokens=False)`);
     /// real weights are needed: `aufklarer/OmniVoice-MLX-int8` under `CUCCUT_TEST_MODELS_DIR`.
     #[test]
-    #[ignore = "需要 CUCCUT_TEST_MODELS_DIR 下的 aufklarer/OmniVoice-MLX-int8"]
+    #[ignore = "needs aufklarer/OmniVoice-MLX-int8 under CUCCUT_TEST_MODELS_DIR"]
     fn real_tokenizer_matches_hf_tokenizers() {
         let Some(root) = std::env::var_os("CUCCUT_TEST_MODELS_DIR") else {
-            println!("跳过：没设 CUCCUT_TEST_MODELS_DIR");
+            println!("skipped: CUCCUT_TEST_MODELS_DIR is not set");
             return;
         };
         let path = Path::new(&root).join("aufklarer/OmniVoice-MLX-int8/tokenizer.json");
         if !path.is_file() {
-            println!("跳过：没有 {}", path.display());
+            println!("skipped: {} not found", path.display());
             return;
         }
         let tokenizer = Tokenizer::load(&path).unwrap();

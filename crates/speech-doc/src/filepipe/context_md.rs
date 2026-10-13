@@ -757,14 +757,14 @@ pub fn parse_source_context_with_mode(
     let Some(document) = split_document(&text) else {
         diagnostics.push_problem(Problem::document(
             ProblemCode::ContextInvalid,
-            "缺少 frontmatter（`---` 包裹的键值区）",
+            "missing frontmatter (key-value block wrapped in `---`)",
         ));
         return ContextParsed::failed(diagnostics);
     };
     let Some(lines) = document.section("Canonical Terms") else {
         diagnostics.push_problem(Problem::document(
             ProblemCode::ContextInvalid,
-            "缺少 `# Canonical Terms` 小节",
+            "missing `# Canonical Terms` section",
         ));
         return ContextParsed::failed(diagnostics);
     };
@@ -772,7 +772,7 @@ pub fn parse_source_context_with_mode(
         diagnostics.push_problem(Problem::document(
             ProblemCode::ContextInvalid,
             format!(
-                "`Canonical Terms` 表头必须逐字为 {}",
+                "the `Canonical Terms` table header must be exactly {}",
                 CANONICAL_HEADER.join(" | ")
             ),
         ));
@@ -785,7 +785,7 @@ pub fn parse_source_context_with_mode(
             diagnostics.push_problem(Problem::document(
                 ProblemCode::ContextInvalid,
                 format!(
-                    "术语行列数为 {}，期望 {}",
+                    "term row has {} columns, expected {}",
                     row.len(),
                     CANONICAL_HEADER.len()
                 ),
@@ -796,7 +796,7 @@ pub fn parse_source_context_with_mode(
         if source.is_empty() {
             diagnostics.push_problem(Problem::document(
                 ProblemCode::ContextInvalid,
-                "术语行的 Source 为空",
+                "term row has an empty Source",
             ));
             return ContextParsed::failed(diagnostics);
         }
@@ -805,7 +805,7 @@ pub fn parse_source_context_with_mode(
                 ProblemCode::ContextInvalid,
                 &source,
                 format!(
-                    "未知 Category `{}`（闭集：product/person/tech/proper/other）",
+                    "unknown Category `{}` (closed set: product/person/tech/proper/other)",
                     row[1]
                 ),
             ));
@@ -815,7 +815,7 @@ pub fn parse_source_context_with_mode(
             diagnostics.push_problem(Problem::sentence(
                 ProblemCode::ContextInvalid,
                 &source,
-                format!("Lock/Origin 取值非法：`{}` / `{}`", row[4], row[5]),
+                format!("invalid Lock/Origin value: `{}` / `{}`", row[4], row[5]),
             ));
             return ContextParsed::failed(diagnostics);
         };
@@ -823,7 +823,7 @@ pub fn parse_source_context_with_mode(
             diagnostics.push_problem(Problem::sentence(
                 ProblemCode::DuplicateId,
                 &source,
-                "同一 Source 出现多行",
+                "the same Source appears on multiple rows",
             ));
             return ContextParsed::failed(diagnostics);
         }
@@ -841,7 +841,7 @@ pub fn parse_source_context_with_mode(
     if summary.is_empty() {
         diagnostics.push_warning(super::common::Warning::document(
             WarningCode::ContentIgnored,
-            "`# Summary` 为空",
+            "`# Summary` is empty",
         ));
     }
     ContextParsed {
@@ -888,14 +888,14 @@ fn parse_source_context_model(input: Option<&str>, output: &str) -> ContextParse
     if !has_section && rows.is_empty() {
         diagnostics.push_problem(Problem::document(
             ProblemCode::ContextInvalid,
-            "缺少 `# Canonical Terms` 小节，且全文没有任何可解析的表格行",
+            "missing `# Canonical Terms` section, and the document has no parseable table rows at all",
         ));
         return ContextParsed::failed(diagnostics);
     }
     if !has_section {
         diagnostics.push_warning(super::common::Warning::document(
             WarningCode::RowRepaired,
-            "缺少 `# Canonical Terms` 小节，已按全文表格行接受",
+            "missing `# Canonical Terms` section; accepted the table rows found in the document",
         ));
     }
 
@@ -965,20 +965,20 @@ fn parse_source_context_model(input: Option<&str>, output: &str) -> ContextParse
     if merged_rows > 0 {
         diagnostics.push_warning(super::common::Warning::document(
             WarningCode::DuplicateId,
-            format!("同一 Source 出现多行，已合并 {merged_rows} 行"),
+            format!("the same Source appears on multiple rows; merged {merged_rows} rows"),
         ));
     }
     if repaired_rows > 0 || demoted > 0 {
         diagnostics.push_warning(super::common::Warning::document(
             WarningCode::RowRepaired,
-            format!("确定性修复了 {repaired_rows} 行列数、{demoted} 处非法取值"),
+            format!("deterministically repaired {repaired_rows} rows' column counts and {demoted} invalid values"),
         ));
     }
     if dropped_rows > 0 {
         diagnostics.push_warning(super::common::Warning::document(
             WarningCode::ContentIgnored,
             format!(
-                "丢弃了 {dropped_rows} 行无法使用的术语行（空 Source / 单字 / 纯标点数字 / 语气词）"
+                "dropped {dropped_rows} unusable term rows (empty Source / single character / pure punctuation or digits / interjection)"
             ),
         ));
     }
@@ -987,7 +987,7 @@ fn parse_source_context_model(input: Option<&str>, output: &str) -> ContextParse
         terms.truncate(ANALYSIS_MAX_TERMS_PER_PAGE);
         diagnostics.push_warning(super::common::Warning::document(
             WarningCode::ContentIgnored,
-            format!("术语行超过单页上限 {ANALYSIS_MAX_TERMS_PER_PAGE}，丢弃了末尾 {overflow} 行"),
+            format!("term rows exceed the per-page limit of {ANALYSIS_MAX_TERMS_PER_PAGE}; dropped the last {overflow} rows"),
         ));
     }
 
@@ -995,7 +995,7 @@ fn parse_source_context_model(input: Option<&str>, output: &str) -> ContextParse
     if summary.is_empty() {
         diagnostics.push_warning(super::common::Warning::document(
             WarningCode::ContentIgnored,
-            "`# Summary` 为空",
+            "`# Summary` is empty",
         ));
     }
     ContextParsed {
@@ -1044,14 +1044,14 @@ pub fn parse_target_context_with_mode(
     let Some(document) = split_document(&text) else {
         diagnostics.push_problem(Problem::document(
             ProblemCode::ContextInvalid,
-            "缺少 frontmatter（`---` 包裹的键值区）",
+            "missing frontmatter (key-value block wrapped in `---`)",
         ));
         return ContextParsed::failed(diagnostics);
     };
     let Some(lines) = document.section("Bilingual Glossary") else {
         diagnostics.push_problem(Problem::document(
             ProblemCode::ContextInvalid,
-            "缺少 `# Bilingual Glossary` 小节",
+            "missing `# Bilingual Glossary` section",
         ));
         return ContextParsed::failed(diagnostics);
     };
@@ -1059,7 +1059,7 @@ pub fn parse_target_context_with_mode(
         diagnostics.push_problem(Problem::document(
             ProblemCode::ContextInvalid,
             format!(
-                "`Bilingual Glossary` 表头必须逐字为 {}",
+                "the `Bilingual Glossary` table header must be exactly {}",
                 BILINGUAL_HEADER.join(" | ")
             ),
         ));
@@ -1072,7 +1072,7 @@ pub fn parse_target_context_with_mode(
             diagnostics.push_problem(Problem::document(
                 ProblemCode::ContextInvalid,
                 format!(
-                    "术语行列数为 {}，期望 {}",
+                    "term row has {} columns, expected {}",
                     row.len(),
                     BILINGUAL_HEADER.len()
                 ),
@@ -1083,7 +1083,7 @@ pub fn parse_target_context_with_mode(
         if source.is_empty() {
             diagnostics.push_problem(Problem::document(
                 ProblemCode::ContextInvalid,
-                "术语行的 Source 为空",
+                "term row has an empty Source",
             ));
             return ContextParsed::failed(diagnostics);
         }
@@ -1091,7 +1091,7 @@ pub fn parse_target_context_with_mode(
             diagnostics.push_problem(Problem::sentence(
                 ProblemCode::ContextInvalid,
                 &source,
-                format!("Lock/Origin 取值非法：`{}` / `{}`", row[3], row[4]),
+                format!("invalid Lock/Origin value: `{}` / `{}`", row[3], row[4]),
             ));
             return ContextParsed::failed(diagnostics);
         };
@@ -1099,7 +1099,7 @@ pub fn parse_target_context_with_mode(
             diagnostics.push_problem(Problem::sentence(
                 ProblemCode::DuplicateId,
                 &source,
-                "同一 Source 出现多行",
+                "the same Source appears on multiple rows",
             ));
             return ContextParsed::failed(diagnostics);
         }
@@ -1109,7 +1109,7 @@ pub fn parse_target_context_with_mode(
                 diagnostics.push_problem(Problem::sentence(
                     ProblemCode::EmptyTranslation,
                     &source,
-                    "锁定术语缺少 Target",
+                    "locked term is missing a Target",
                 ));
                 return ContextParsed::failed(diagnostics);
             }
@@ -1190,7 +1190,7 @@ fn parse_target_context_model(input: Option<&str>, output: &str) -> ContextParse
     if !has_section && rows.is_empty() {
         diagnostics.push_problem(Problem::document(
             ProblemCode::ContextInvalid,
-            "缺少 `# Bilingual Glossary` 小节，且全文没有任何可解析的表格行",
+            "missing `# Bilingual Glossary` section, and the document has no parseable table rows at all",
         ));
         return ContextParsed::failed(diagnostics);
     }
@@ -1246,19 +1246,19 @@ fn parse_target_context_model(input: Option<&str>, output: &str) -> ContextParse
     if merged_rows > 0 {
         diagnostics.push_warning(super::common::Warning::document(
             WarningCode::DuplicateId,
-            format!("同一 Source 出现多行，已合并 {merged_rows} 行"),
+            format!("the same Source appears on multiple rows; merged {merged_rows} rows"),
         ));
     }
     if repaired_rows > 0 {
         diagnostics.push_warning(super::common::Warning::document(
             WarningCode::RowRepaired,
-            format!("确定性修复了 {repaired_rows} 行列数"),
+            format!("deterministically repaired the column counts of {repaired_rows} rows"),
         ));
     }
     if dropped_rows > 0 {
         diagnostics.push_warning(super::common::Warning::document(
             WarningCode::ContentIgnored,
-            format!("丢弃了 {dropped_rows} 行无法使用的术语行"),
+            format!("dropped {dropped_rows} unusable term rows"),
         ));
     }
 
@@ -1473,7 +1473,7 @@ mod tests {
         let mut rendered = render_source_context(&sample_source());
         rendered = rendered.replace("| CucCut | product |", "| CucCut | brand |");
         let parsed = parse_source_context(None, &rendered);
-        assert!(parsed.context.is_none(), "解析失败时绝不返回半张表");
+        assert!(parsed.context.is_none(), "a failed parse must never return a half-built table");
         assert!(parsed.diagnostics.has_code(ProblemCode::ContextInvalid));
     }
 
@@ -1702,7 +1702,7 @@ mod tests {
                 .map(|term| term.source.as_str())
                 .collect::<Vec<_>>(),
             vec!["论文集", "CucCut"],
-            "只有单字/纯标点/纯数字/应答词被丢弃"
+            "only single characters, pure punctuation, pure digits and acknowledgement words are dropped"
         );
         assert!(is_junk_term_source("嗯"));
         assert!(is_junk_term_source("OK"));

@@ -510,14 +510,14 @@ impl TranscriptDoc {
         if !SUPPORTED_TRANSCRIPT_VERSIONS.contains(&self.ccut_transcript.as_str()) {
             // An unrecognized version is not data corruption. Most likely this CLI is older than the project. Say in one go what I support, what the project is, and where to look up who I am, so the caller does not think the transcript is broken.
             bail!(
-                "不支持的 transcript 版本 {}（本 CLI 只认 {}）：这不是文件损坏，多半是当前 ccut 比项目旧；用 `ccut --json version` 核对正在运行的二进制与提交，再升级到能写出 {} 的构建",
+                "Unsupported transcript version {} (this CLI only accepts {}). The file is probably not corrupt; most likely the ccut CLI is older than the project. Check the running binary and commit with `ccut --json version`, then upgrade to a build that can write {}",
                 self.ccut_transcript,
                 SUPPORTED_TRANSCRIPT_VERSIONS.join(" / "),
                 self.ccut_transcript,
             );
         }
         if !self.media.duration.is_finite() || self.media.duration < 0.0 {
-            bail!("media.duration 必须是非负有限数");
+            bail!("media.duration must be a finite, non-negative number");
         }
         let mut seen = std::collections::HashSet::with_capacity(self.words.len());
         let mut previous: Option<&Word> = None;
@@ -529,30 +529,30 @@ impl TranscriptDoc {
                     bail!("words[{index}] ({}): {message}", word.id)
                 }
             };
-            check(!word.id.is_empty(), "id 不能为空")?;
-            check(seen.insert(word.id.as_str()), "id 重复")?;
-            check(!word.text.is_empty(), "text 不能为空")?;
+            check(!word.id.is_empty(), "id must not be empty")?;
+            check(seen.insert(word.id.as_str()), "duplicate id")?;
+            check(!word.text.is_empty(), "text must not be empty")?;
             check(
                 word.t0.is_finite() && word.t1.is_finite() && word.t0 >= 0.0 && word.t1 >= word.t0,
-                "时间范围无效",
+                "invalid time range",
             )?;
             // Tolerate half-tick leaks at floating-point and centisecond rounding boundaries.
             check(
                 word.t1 <= self.media.duration + 0.005,
-                "词时间越出 media.duration",
+                "word time extends past media.duration",
             )?;
             check(
                 self.speakers.contains_key(&word.sp),
-                "sp 不在 speakers 表中",
+                "sp is not in the speakers table",
             )?;
             if let Some(previous) = previous {
                 check(
                     word.t0 >= previous.t0,
-                    "transcript-word-order：t0 必须非降序",
+                    "transcript-word-order: t0 must be non-decreasing",
                 )?;
                 check(
                     word.t0 >= previous.t1 - 0.005,
-                    "transcript-word-order：词区间不得交叠",
+                    "transcript-word-order: word ranges must not overlap",
                 )?;
             }
             previous = Some(word);
@@ -560,12 +560,12 @@ impl TranscriptDoc {
         let mut chapter_previous: Option<&Chapter> = None;
         for chapter in &self.chapters {
             if !chapter.start.is_finite() || chapter.end < chapter.start {
-                bail!("chapter {} 时间区间无效", chapter.id);
+                bail!("chapter {} has an invalid time range", chapter.id);
             }
             if let Some(previous) = chapter_previous
                 && chapter.start < previous.end
             {
-                bail!("chapter {} 与前一章节交叠", chapter.id);
+                bail!("chapter {} overlaps the previous chapter", chapter.id);
             }
             chapter_previous = Some(chapter);
         }
@@ -623,7 +623,7 @@ impl TranscriptDoc {
 
     /// Parses and reads under current-version semantics. Older documents only add fields and change none, so after reading, the version number is raised to [`TRANSCRIPT_VERSION`] (writing it back completes the upgrade). Legacy fields `crossing` and `cues` are kept as they are, and read-side code such as [`TransAlign::correspondence`] interprets them. Words from before 0.5 get glue markers, which are added during deserialization.
     pub fn from_json(bytes: &[u8]) -> Result<Self> {
-        let doc: TranscriptDoc = serde_json::from_slice(bytes).context("解析 transcript JSON")?;
+        let doc: TranscriptDoc = serde_json::from_slice(bytes).context("parse transcript JSON")?;
         doc.validate()?;
         Ok(doc)
     }
@@ -676,7 +676,7 @@ mod tests {
         let doc = doc_with(vec![word("g1.0", 0.0, 0.5), word("g1.1", 0.5, 1.0)]);
         doc.validate().unwrap();
         let bad = doc_with(vec![word("g1.0", 0.0, 0.6), word("g1.1", 0.5, 1.0)]);
-        assert!(bad.validate().unwrap_err().to_string().contains("交叠"));
+        assert!(bad.validate().unwrap_err().to_string().contains("overlap"));
     }
 
     #[test]
@@ -685,7 +685,7 @@ mod tests {
         doc.words[0].sp = "s9".to_owned();
         assert!(doc.validate().is_err());
         let doc = doc_with(vec![word("g1.0", 0.0, 0.5), word("g1.0", 0.5, 1.0)]);
-        assert!(doc.validate().unwrap_err().to_string().contains("重复"));
+        assert!(doc.validate().unwrap_err().to_string().contains("duplicate"));
     }
 
     #[test]
@@ -823,7 +823,7 @@ mod tests {
         json["words"][7]["text"] = serde_json::json!("다");
         json["hidden"] = serde_json::json!({"g1.8": true});
         let doc = TranscriptDoc::from_json(&serde_json::to_vec(&json).unwrap()).unwrap();
-        assert!(doc.words[9].glue, "「그」贴着前一个可见词「다」");
+        assert!(doc.words[9].glue, "「그」 is glued to the previous visible word 「다」");
         let visible = doc
             .words
             .iter()
@@ -962,7 +962,7 @@ mod tests {
             "aligner",
             "blocks",
         ] {
-            assert!(align.get(absent).is_none(), "{absent} 不应落键");
+            assert!(align.get(absent).is_none(), "{absent} must not become a key");
         }
         assert!(align["pieces"][0].get("from").is_none());
     }

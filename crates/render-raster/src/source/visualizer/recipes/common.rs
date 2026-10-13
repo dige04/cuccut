@@ -121,7 +121,7 @@ mod tests {
         assert_eq!(
             mix_color([0.0; 4], [1.0; 4], 2.0),
             [1.0; 4],
-            "t 夹在 [0, 1]"
+            "t is clamped to [0, 1]"
         );
     }
 

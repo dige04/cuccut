@@ -774,12 +774,12 @@ mod tests {
     fn one_node_can_carry_the_colour_in_two_places() {
         let svg = "<svg><path fill=\"#fff\" style=\"fill: #FFFFFF\" d=\"M0 0\"/></svg>";
         let groups = groups_of(svg);
-        assert_eq!(groups.len(), 1, "两处是同一组");
+        assert_eq!(groups.len(), 1, "both occurrences are one group");
         assert_eq!(groups[0].hex, "#FFFFFF");
-        assert_eq!(groups[0].count, 1, "算的是节点数不是承载数");
+        assert_eq!(groups[0].count, 1, "counts nodes, not carriers");
         assert_eq!(groups[0].spans.len(), 2);
         let out = apply_fills(svg, &[Some("#FF0000".to_owned())]);
-        assert_eq!(out.matches("#FF0000").count(), 2, "两处都得换");
+        assert_eq!(out.matches("#FF0000").count(), 2, "both occurrences must be replaced");
         assert!(!out.contains("#FFFFFF") && !out.contains("#fff\""));
     }
 
@@ -839,7 +839,7 @@ mod tests {
         assert_eq!(
             cards.iter().map(|c| c.hex.as_str()).collect::<Vec<_>>(),
             ["#FFCC00", "#000000"],
-            "大小写不同的同一个色只算一组"
+            "the same color in different letter case counts as one group"
         );
         assert_eq!(cards[0].count, 2);
 
@@ -877,7 +877,7 @@ mod tests {
         let cards = fills_of(svg);
         let list = [Some("#FFFFFF".to_owned()), Some("#ff0000".to_owned())];
         let overrides = fills_to_overrides(&cards, &list);
-        assert_eq!(overrides.len(), 1, "与默认色相等的那一组不落键");
+        assert_eq!(overrides.len(), 1, "a group equal to the default color is not keyed");
         assert_eq!(
             overrides.get("#000000").map(String::as_str),
             Some("#FF0000")
@@ -889,7 +889,7 @@ mod tests {
             back,
             vec![Some("#FFFFFF".to_owned()), Some("#FF0000".to_owned())]
         );
-        assert!(is_default(svg, &[]), "空表 = 没改过");
+        assert!(is_default(svg, &[]), "empty table means unchanged");
         assert!(!is_default(svg, &back));
     }
 
@@ -910,7 +910,7 @@ mod tests {
         );
         assert!(
             by_overrides.contains(r##"fill="#ffdfd5""##),
-            "未被覆盖的组不能动"
+            "groups that are not covered must not change"
         );
 
         // The panel side, given the same edit (swatch 1 recoloured, swatch 2 left at default), must produce the same

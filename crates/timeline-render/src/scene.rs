@@ -512,7 +512,7 @@ mod tests {
             (1..100)
                 .map(|step| motion.sample(1.0 + f64::from(step) / 100.0))
                 .any(|pose| pose.transform[0] > 1.0),
-            "magic-pop 的 manifest 曲线过冲不能在 scene 层被夹掉"
+            "magic-pop manifest curve overshoot must not be clamped in the scene layer"
         );
     }
 

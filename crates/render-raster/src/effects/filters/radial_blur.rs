@@ -158,9 +158,9 @@ mod tests {
         radial_blur(&mut data, size, size, 0.5, 0.5, 0.4, 8.0);
         let alpha = |x: usize, y: usize| data[(y * size + x) * 4 + 3];
         // The point is to the right of the center. The outer side (opposite the direction toward the center) has smearing, and the inner side has none.
-        assert!(alpha(60, 32) > 0, "外侧应有拖影");
-        assert_eq!(alpha(50, 32), 0, "内侧不应有拖影");
-        assert_eq!(alpha(56, 20), 0, "垂直方向不应扩散");
+        assert!(alpha(60, 32) > 0, "there should be a trail on the outside");
+        assert_eq!(alpha(50, 32), 0, "there should be no trail on the inside");
+        assert_eq!(alpha(56, 20), 0, "it should not spread vertically");
     }
 
     #[test]

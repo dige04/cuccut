@@ -127,7 +127,7 @@ fn plan_text_scan(
     let sequence = video
         .sequences
         .get(sequence_id)
-        .ok_or_else(|| PlanError::new("SEQUENCE_NOT_FOUND", format!("没有序列 {sequence_id}")))?;
+        .ok_or_else(|| PlanError::new("SEQUENCE_NOT_FOUND", format!("no sequence {sequence_id}")))?;
     let (range_start, range_end) = resolve_range(sequence, range)?;
     let schema = body.get("schema").and_then(Value::as_str).unwrap_or_default();
     let (unit, entries) = match schema {
@@ -136,7 +136,7 @@ fn plan_text_scan(
         other => {
             return Err(PlanError::new(
                 "EXPORT_SOURCE_UNSUPPORTED",
-                format!("这份文档（{}）不能导出为字幕或文稿：schema {other}", document.kind),
+                format!("this document ({}) cannot be exported as captions or a transcript: schema {other}", document.kind),
             ));
         }
     };
@@ -271,7 +271,7 @@ fn projectors(
     } else if !explicit.is_empty() {
         basis = "explicit";
         for id in explicit {
-            let item = find(id).ok_or_else(|| PlanError::new("ITEM_NOT_FOUND", format!("没有实例 {id}")))?;
+            let item = find(id).ok_or_else(|| PlanError::new("ITEM_NOT_FOUND", format!("no item {id}")))?;
             candidates.push((Some(item), whole));
         }
     } else {
@@ -301,7 +301,7 @@ fn projectors(
             let Some(asset_id) = &document.source_asset_id else {
                 return Err(PlanError::new(
                     "EXPORT_SOURCE_UNPLACED",
-                    "文档在源素材的时钟上，但没有记下是哪个素材，时间线上也没有字幕实例显示它：给出作用实例（scopeItemIds）",
+                    "the document is on a source asset's clock, but it does not record which asset, and no caption item on the timeline displays it: provide the scoped items (scopeItemIds)",
                 ));
             };
             let mut items: Vec<(Ratio, &TimelineItem)> = Vec::new();
@@ -348,7 +348,7 @@ fn projectors(
     if projectors.is_empty() && basis != "sequence" && scope_item_ids.is_empty() {
         return Err(PlanError::new(
             "EXPORT_SOURCE_UNPLACED",
-            "时间线上没有能投影这份文档的实例（文档的素材不在时间线上，或者都是定格）",
+            "no item on the timeline can project this document (its asset is not on the timeline, or every item is frozen)",
         ));
     }
     Ok((
@@ -421,7 +421,7 @@ fn linear_map(item: &TimelineItem) -> Result<Option<TimeMapRef>, PlanError> {
 fn item_bounds(item: &TimelineItem, fps: editor_semantics::Rate) -> Result<(Ratio, Ratio), PlanError> {
     match item {
         TimelineItem::Audio(a) => audio_bounds(a, fps),
-        other => span_bounds(other.span().expect("音频之外的实例都在帧网格上"), fps),
+        other => span_bounds(other.span().expect("non-audio items are on the frame grid"), fps),
     }
 }
 
@@ -488,14 +488,14 @@ fn subtract_pairwise(interval: (Ratio, Ratio), taken: &[(Ratio, Ratio)]) -> Vec<
 fn timescale(body: &Value) -> Result<i64, PlanError> {
     match body.get("timescale").and_then(Value::as_i64) {
         Some(t) if t > 0 => Ok(t),
-        _ => Err(PlanError::new("EXPORT_SOURCE_INVALID", "文档的 timescale 必须是正整数")),
+        _ => Err(PlanError::new("EXPORT_SOURCE_INVALID", "the document's timescale must be a positive integer")),
     }
 }
 
 fn ticks(value: Option<&Value>, timescale: i64, field: &str) -> Result<Ratio, PlanError> {
     let ticks = value
         .and_then(Value::as_i64)
-        .ok_or_else(|| PlanError::new("EXPORT_SOURCE_INVALID", format!("文档里的 {field} 必须是整数刻度")))?;
+        .ok_or_else(|| PlanError::new("EXPORT_SOURCE_INVALID", format!("{field} in the document must be an integer tick")))?;
     Ok(MediaTime {
         ticks: ticks.to_string(),
         timescale,
@@ -517,7 +517,7 @@ fn caption_entries(body: &Value) -> Result<Vec<SourceEntry>, PlanError> {
     let cues = body
         .get("cues")
         .and_then(Value::as_array)
-        .ok_or_else(|| PlanError::new("EXPORT_SOURCE_INVALID", "字幕文档没有 cues"))?;
+        .ok_or_else(|| PlanError::new("EXPORT_SOURCE_INVALID", "caption document has no cues"))?;
     let mut entries = Vec::new();
     for cue in cues {
         let text = text_of(cue);
@@ -561,7 +561,7 @@ fn speech_entries(body: &Value) -> Result<Vec<SourceEntry>, PlanError> {
     let words = body
         .get("words")
         .and_then(Value::as_array)
-        .ok_or_else(|| PlanError::new("EXPORT_SOURCE_INVALID", "转写文档没有 words"))?;
+        .ok_or_else(|| PlanError::new("EXPORT_SOURCE_INVALID", "transcript document has no words"))?;
     let index: std::collections::HashMap<&str, usize> = words
         .iter()
         .enumerate()
@@ -640,7 +640,7 @@ mod tests {
 
     /// The fixture video turned into many instances of the same source: two video tracks alternating front and back, with speed changes, repeatedly reusing the same source span, plus one audio instance and one caption instance.
     fn video(clips: usize) -> VideoSnapshot {
-        let mut value: Value = serde_json::from_str(include_str!("../tests/fixtures/video.json")).expect("夹具");
+        let mut value: Value = serde_json::from_str(include_str!("../tests/fixtures/video.json")).expect("fixture");
         value["assets"] = json!({ "asset_a": { "id": "asset_a", "kind": "video", "name": "a", "currentRevision": "r1", "revisions": { "r1": {
             "revision": "r1", "contentHash": "sha256:a", "byteLength": 10, "mediaType": "video/mp4", "storage": { "mode": "managed" },
             "provenance": { "origin": "import" }, "audio": { "sampleRate": 48000, "channels": 2 } } } } });
@@ -705,14 +705,14 @@ mod tests {
         );
         items.push(caption);
         sequence["items"] = Value::Array(items);
-        serde_json::from_value(value).expect("视频快照")
+        serde_json::from_value(value).expect("video snapshot")
     }
 
     fn record(id: &str, kind: &str) -> DocumentRecord {
         serde_json::from_value(
             json!({ "id": id, "kind": kind, "name": id, "currentRevision": "d1", "revisions": {}, "sourceAssetId": "asset_a" }),
         )
-        .expect("文档头")
+        .expect("document header")
     }
 
     /// Words and sentences: mostly short, mixed with long sentences crossing cut points, overlapping sentences, and duplicate IDs.
@@ -746,9 +746,9 @@ mod tests {
             let body = body(schema, clock);
             let scope: Vec<String> = scope.iter().map(|s| s.to_string()).collect();
             for range in ranges {
-                let fast = plan_text_scan(view(), "seq_main", &record(id, kind), &body, &scope, range, false).expect("投影");
-                let full = plan_text_scan(view(), "seq_main", &record(id, kind), &body, &scope, range, true).expect("投影");
-                assert!(range.is_some() || full.entries.len() > 20, "{id} {scope:?}：夹具要真的投出东西");
+                let fast = plan_text_scan(view(), "seq_main", &record(id, kind), &body, &scope, range, false).expect("projection");
+                let full = plan_text_scan(view(), "seq_main", &record(id, kind), &body, &scope, range, true).expect("projection");
+                assert!(range.is_some() || full.entries.len() > 20, "{id} {scope:?}: the fixture must actually project something");
                 assert_eq!(fast, full, "{id} {scope:?} {range:?}");
             }
         }
@@ -791,18 +791,18 @@ mod tests {
                     },
                 };
                 let probe = fresh(&mut next);
-                assert_eq!(taken.subtract(probe), subtract_pairwise(probe, &raw), "{probe:?} 扣 {raw:?}");
+                assert_eq!(taken.subtract(probe), subtract_pairwise(probe, &raw), "{probe:?} minus {raw:?}");
                 assert_eq!(
                     taken.subtract((start, end)),
                     subtract_pairwise((start, end), &raw),
-                    "{start:?}..{end:?} 扣 {raw:?}"
+                    "{start:?}..{end:?} minus {raw:?}"
                 );
                 taken.add((start, end));
                 raw.push((start, end));
                 assert!(taken.0.iter().all(|&(a, b)| a < b), "{:?}", taken.0);
                 assert!(
                     taken.0.windows(2).all(|w| w[0].1 < w[1].0),
-                    "并集要按起点排好、互不相接：{:?}",
+                    "the union must be sorted by start and non-touching: {:?}",
                     taken.0
                 );
             }

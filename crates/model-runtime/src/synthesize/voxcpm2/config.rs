@@ -125,8 +125,8 @@ pub struct Quantization {
 impl VoxCpm2Config {
     /// Reads the `config.json` listed in the manifest.
     pub fn load(path: &Path) -> Result<Self> {
-        let text = std::fs::read_to_string(path).with_context(|| format!("读取 VoxCPM2 配置 {}", path.display()))?;
-        serde_json::from_str(&text).with_context(|| format!("解析 VoxCPM2 配置 {}", path.display()))
+        let text = std::fs::read_to_string(path).with_context(|| format!("failed to read VoxCPM2 config {}", path.display()))?;
+        serde_json::from_str(&text).with_context(|| format!("failed to parse VoxCPM2 config {}", path.display()))
     }
 
     pub fn quant(&self) -> (usize, u32) {

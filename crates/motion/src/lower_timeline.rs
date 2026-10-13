@@ -902,14 +902,14 @@ mod tests {
                         track.assert_segments_agree();
                         assert!(
                             !seen.contains(&track.property.as_str()),
-                            "{enter}/{exit:?}/{lp:?}: {} 出现了第二条轨",
+                            "{enter}/{exit:?}/{lp:?}: {} has a second track",
                             track.property
                         );
                         seen.push(track.property.as_str());
                     }
                     assert!(
                         lowered.program.replace_overlaps().is_empty(),
-                        "{enter}/{exit:?}/{lp:?}: 段在时间上交叠了"
+                        "{enter}/{exit:?}/{lp:?}: segments overlap in time"
                     );
                 }
             }
@@ -1189,7 +1189,7 @@ mod tests {
     fn scalar(buf: &PoseBuffer, prop: &str) -> f64 {
         buf.get(prop)
             .and_then(|value| value.as_f64())
-            .unwrap_or_else(|| panic!("{prop} 没有值"))
+            .unwrap_or_else(|| panic!("{prop} has no value"))
     }
 
     fn enter_only(preset: &str) -> AnimationInput<'_> {
@@ -1344,9 +1344,9 @@ mod tests {
             let recipe = timeline_enter(id).unwrap();
             assert_eq!(recipe.surface, RecipeSurface::Element, "{id}");
             assert!(!recipe.keyframes.is_empty(), "{id}");
-            assert!(recipe.from.get("opacity").is_none(), "{id}: from 必须为空");
+            assert!(recipe.from.get("opacity").is_none(), "{id}: from must be empty");
             assert_eq!(recipe.mirror.as_deref(), Some(id), "{id}");
-            let exit = timeline_exit(id).unwrap_or_else(|| panic!("{id} 缺同名退场"));
+            let exit = timeline_exit(id).unwrap_or_else(|| panic!("{id} is missing a same-name exit"));
             assert_eq!(exit.surface, RecipeSurface::Element);
             assert_eq!(recipe.basis.dx, LengthBasis::SelfWidth);
             assert_eq!(recipe.basis.dy, LengthBasis::SelfHeight);

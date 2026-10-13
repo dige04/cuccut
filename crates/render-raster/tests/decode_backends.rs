@@ -330,7 +330,7 @@ fn prepared_video_rejects_replacement_without_touching_inactive_media() {
             .video_frame("clip", 0.04)
             .unwrap_err()
             .to_string()
-            .contains("准备后发生变化")
+            .contains("changed after preparation")
     );
 }
 

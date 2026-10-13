@@ -116,7 +116,7 @@ fn a_copy_in_another_project_gets_a_new_id_with_history_intact() {
     copy_dir(&original_dir, &copy_dir_path);
 
     let mut copy = open(&copy_dir_path);
-    assert_eq!(copy.id(), original_id, "认领之前副本还是旧的 id");
+    assert_eq!(copy.id(), original_id, "before the claim, the copy still has the old id");
     let claim = copy.claim_project("proj_b").unwrap();
     let new_id = copy.id().to_string();
     assert_ne!(new_id, original_id);

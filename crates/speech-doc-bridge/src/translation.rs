@@ -23,13 +23,13 @@ pub(crate) fn to_doc(doc: &mut TranscriptDoc, bodies: &[TranslationBody]) -> Res
     for body in bodies {
         if body.schema != TRANSLATION_SCHEMA {
             return Err(BridgeError::new(format!(
-                "译文正文的 schema 是 {}，只认 {TRANSLATION_SCHEMA}",
+                "translation body schema is {}, only {TRANSLATION_SCHEMA} is accepted",
                 body.schema
             )));
         }
         let lang = body.language.clone();
         if doc.trans.contains_key(&lang) {
-            return Err(BridgeError::new(format!("语言 {lang} 有不止一份译文")));
+            return Err(BridgeError::new(format!("language {lang} has more than one translation")));
         }
         let mut trans = BTreeMap::new();
         let mut display = BTreeMap::new();
@@ -38,11 +38,11 @@ pub(crate) fn to_doc(doc: &mut TranscriptDoc, bodies: &[TranslationBody]) -> Res
         for unit in &body.units {
             let sid = unit.source_sentence_id.clone();
             if trans.insert(sid.clone(), unit.natural_text.clone()).is_some() {
-                return Err(BridgeError::new(format!("{lang} 的译文里句子 {sid} 有不止一个单元")));
+                return Err(BridgeError::new(format!("the {lang} translation has more than one unit for sentence {sid}")));
             }
             if unit.source_fingerprint.starts_with(STALE_PREFIX) {
                 return Err(BridgeError::new(format!(
-                    "单元 {} 的 sourceFingerprint 不能以 {STALE_PREFIX} 开头",
+                    "unit {} sourceFingerprint must not start with {STALE_PREFIX}",
                     unit.id
                 )));
             }
@@ -92,7 +92,7 @@ fn trans_align(unit_id: &str, alignment: &UnitAlignment, split: &AlignmentSplit)
         position
             .get(id)
             .copied()
-            .ok_or_else(|| BridgeError::new(format!("单元 {unit_id} 的对齐块引用了 sourceWordIds 之外的词 {id}")))
+            .ok_or_else(|| BridgeError::new(format!("alignment block of unit {unit_id} references word {id}, which is not in sourceWordIds")))
     };
     let mut blocks = Vec::with_capacity(alignment.blocks.len());
     for block in &alignment.blocks {
@@ -182,7 +182,7 @@ pub(crate) fn from_doc(doc: &TranscriptDoc, base: &WriteBase<'_>) -> Result<(Vec
         ("transAlign", doc.trans_align.keys().collect()),
     ] {
         if let Some(lang) = langs.into_iter().find(|lang| !doc.trans.contains_key(*lang)) {
-            return Err(BridgeError::new(format!("{table} 有语言 {lang}，trans 里没有")));
+            return Err(BridgeError::new(format!("{table} has language {lang}, but trans has none")));
         }
     }
     // The source sentence's visible words: alignment records with no base take `sourceWordIds` from here.
@@ -199,7 +199,7 @@ pub(crate) fn from_doc(doc: &TranscriptDoc, base: &WriteBase<'_>) -> Result<(Vec
     let mut seen = HashSet::new();
     for body in base.translations {
         if !seen.insert(body.language.as_str()) {
-            return Err(BridgeError::new(format!("底稿里语言 {} 有不止一份译文", body.language)));
+            return Err(BridgeError::new(format!("the base draft has more than one translation for language {}", body.language)));
         }
     }
     let base_by_lang: HashMap<&str, &TranslationBody> = base.translations.iter().map(|b| (b.language.as_str(), b)).collect();
@@ -231,7 +231,7 @@ pub(crate) fn from_doc(doc: &TranscriptDoc, base: &WriteBase<'_>) -> Result<(Vec
             ("transAlign", align.map(|a| a.keys().collect()).unwrap_or_default()),
         ] {
             if let Some(sid) = keys.into_iter().find(|sid| !trans.contains_key(*sid)) {
-                return Err(BridgeError::new(format!("{table}[{lang}] 有句子 {sid}，trans 里没有")));
+                return Err(BridgeError::new(format!("{table}[{lang}] has sentence {sid}, but trans has none")));
             }
         }
         let prior_units: HashMap<&str, &TranslationUnit> = prior_body
@@ -339,7 +339,7 @@ pub(crate) fn from_doc(doc: &TranscriptDoc, base: &WriteBase<'_>) -> Result<(Vec
             None => base
                 .source_basis
                 .cloned()
-                .ok_or_else(|| BridgeError::new(format!("新语言 {lang} 的译文需要 sourceBasis")))?,
+                .ok_or_else(|| BridgeError::new(format!("the translation for new language {lang} needs sourceBasis")))?,
         };
         bodies.push(TranslationBody {
             schema: TRANSLATION_SCHEMA.to_owned(),
@@ -387,7 +387,7 @@ fn alignment_from(
             source_word_ids
                 .get(index)
                 .cloned()
-                .ok_or_else(|| BridgeError::new(format!("对齐块的源下标 {index} 超出了 {} 个词", source_word_ids.len())))
+                .ok_or_else(|| BridgeError::new(format!("alignment block source index {index} is out of range for {} words", source_word_ids.len())))
         };
         let range = SourceWordRange {
             first_word_id: word(block.src.0)?,

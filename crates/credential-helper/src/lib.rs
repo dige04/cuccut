@@ -99,12 +99,12 @@ pub fn handle_line(line: &str, backend: &dyn SecretBackend) -> String {
 
 fn parse(line: &str) -> Result<Request, HelperError> {
     if line.len() > MAX_REQUEST_BYTES {
-        return Err(HelperError::new(ErrorCode::Internal, "请求过长"));
+        return Err(HelperError::new(ErrorCode::Internal, "Request is too long"));
     }
     // Parse error details may quote fragments of the request (which may contain a secret), so they are kept out of the response.
-    let request: Request = serde_json::from_str(line).map_err(|_| HelperError::new(ErrorCode::Internal, "请求不是合规的 JSON"))?;
+    let request: Request = serde_json::from_str(line).map_err(|_| HelperError::new(ErrorCode::Internal, "Request is not valid JSON"))?;
     if request.key.is_empty() || request.key.len() > MAX_KEY_BYTES || request.key.chars().any(char::is_control) {
-        return Err(HelperError::new(ErrorCode::Internal, "key 不合规"));
+        return Err(HelperError::new(ErrorCode::Internal, "Invalid key"));
     }
     Ok(request)
 }
@@ -131,10 +131,10 @@ fn dispatch(request: &Request, backend: &dyn SecretBackend) -> Result<Value, Hel
         }
         ("get", None) => backend.get(key).map(|secret| json!({ "ok": true, "secret": secret })),
         ("set", Some(secret)) if !secret.is_empty() => backend.set(key, secret).map(|()| json!({ "ok": true })),
-        ("set", _) => Err(HelperError::new(ErrorCode::Internal, "set 要给出非空的 secret")),
+        ("set", _) => Err(HelperError::new(ErrorCode::Internal, "set needs a non-empty secret")),
         ("delete", None) => backend.delete(key).map(|()| json!({ "ok": true })),
         ("has", None) => backend.has(key).map(|exists| json!({ "ok": true, "exists": exists })),
-        ("get" | "delete" | "has", Some(_)) => Err(HelperError::new(ErrorCode::Internal, "只有 set 带 secret")),
-        _ => Err(HelperError::new(ErrorCode::Internal, "不认识的操作")),
+        ("get" | "delete" | "has", Some(_)) => Err(HelperError::new(ErrorCode::Internal, "Only set takes a secret")),
+        _ => Err(HelperError::new(ErrorCode::Internal, "Unknown operation")),
     }
 }

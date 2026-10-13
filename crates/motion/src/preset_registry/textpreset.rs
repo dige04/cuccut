@@ -172,31 +172,31 @@ pub fn parse_text_preset(
 
     let domain = text(file, doc, "domain")?;
     if domain != "textpreset" {
-        return Err(invalid(format!("domain 应为 textpreset，实为 {domain}")));
+        return Err(invalid(format!("domain should be textpreset, got {domain}")));
     }
     let id = text(file, doc, "id")?;
     if id != file {
-        return Err(invalid(format!("id \"{id}\" 与文件名不一致")));
+        return Err(invalid(format!("id \"{id}\" does not match the file name")));
     }
     let category = TextPresetCategory::parse(text(file, doc, "category")?)
-        .ok_or_else(|| invalid("未知 category".to_owned()))?;
+        .ok_or_else(|| invalid("unknown category".to_owned()))?;
     if !id.starts_with(category.key()) {
-        return Err(invalid("id 前缀应是它自己的 category".to_owned()));
+        return Err(invalid("id prefix should be its own category".to_owned()));
     }
     let order = field(file, doc, "order")?
         .as_u64()
         .filter(|order| *order > 0)
-        .ok_or_else(|| invalid("order 须是正整数".to_owned()))? as u32;
+        .ok_or_else(|| invalid("order must be a positive integer".to_owned()))? as u32;
     let duration = number(file, doc, "duration")?;
     if !duration.is_finite() || duration < MIN_SPAN {
-        return Err(invalid(format!("duration 非法：{duration}")));
+        return Err(invalid(format!("invalid duration: {duration}")));
     }
 
     let items = field(file, doc, "content")?
         .as_array()
-        .ok_or_else(|| invalid("content 不是数组".to_owned()))?;
+        .ok_or_else(|| invalid("content is not an array".to_owned()))?;
     if items.is_empty() {
-        return Err(invalid("content 为空".to_owned()));
+        return Err(invalid("content is empty".to_owned()));
     }
     let mut content = Vec::with_capacity(items.len());
     for (index, item) in items.iter().enumerate() {
@@ -225,24 +225,24 @@ fn parse_item(
     };
     let object = item
         .as_object()
-        .ok_or_else(|| invalid("不是对象".to_owned()))?;
+        .ok_or_else(|| invalid("not an object".to_owned()))?;
     let kind = object
         .get("kind")
         .and_then(Value::as_str)
         .and_then(TextPresetItemKind::parse)
-        .ok_or_else(|| invalid("kind 只能是 text / shape".to_owned()))?;
+        .ok_or_else(|| invalid("kind must be text / shape".to_owned()))?;
 
     let place = object
         .get("place")
         .and_then(Value::as_object)
-        .ok_or_else(|| invalid("缺 place".to_owned()))?;
+        .ok_or_else(|| invalid("missing place".to_owned()))?;
     for key in ["x", "y"] {
         let value = place
             .get(key)
             .and_then(Value::as_f64)
-            .ok_or_else(|| invalid(format!("place.{key} 缺失或非数字")))?;
+            .ok_or_else(|| invalid(format!("place.{key} is missing or not a number")))?;
         if !value.is_finite() {
-            return Err(invalid(format!("place.{key} 非法")));
+            return Err(invalid(format!("place.{key} is invalid")));
         }
     }
     for key in ["w", "rot"] {
@@ -250,9 +250,9 @@ fn parse_item(
             let value = value
                 .as_f64()
                 .filter(|value| value.is_finite())
-                .ok_or_else(|| invalid(format!("place.{key} 非法")))?;
+                .ok_or_else(|| invalid(format!("place.{key} is invalid")))?;
             if key == "w" && value <= 0.0 {
-                return Err(invalid("place.w 须为正".to_owned()));
+                return Err(invalid("place.w must be positive".to_owned()));
             }
         }
     }
@@ -263,24 +263,24 @@ fn parse_item(
                 .get("text")
                 .and_then(Value::as_str)
                 .filter(|text| !text.is_empty())
-                .ok_or_else(|| invalid("text 缺失或为空".to_owned()))?;
+                .ok_or_else(|| invalid("text is missing or empty".to_owned()))?;
             object
                 .get("style")
                 .and_then(Value::as_object)
-                .ok_or_else(|| invalid("缺 style 对象".to_owned()))?;
+                .ok_or_else(|| invalid("missing style object".to_owned()))?;
         }
         TextPresetItemKind::Shape => {
             let shape = object
                 .get("shape")
                 .and_then(Value::as_object)
-                .ok_or_else(|| invalid("缺 shape 对象".to_owned()))?;
+                .ok_or_else(|| invalid("missing shape object".to_owned()))?;
             let name = shape
                 .get("shape")
                 .and_then(Value::as_str)
-                .ok_or_else(|| invalid("shape.shape 缺失".to_owned()))?;
+                .ok_or_else(|| invalid("shape.shape is missing".to_owned()))?;
             // Shape names go through the **shape catalogue**. Writing a name the catalogue does not have fails here, instead of waiting until the user clicks the preset, the element is saved, and rendering discovers it cannot be drawn.
             if !tables.shapes.iter().any(|recipe| recipe.id == name) {
-                return Err(invalid(format!("形状目录里没有 \"{name}\"")));
+                return Err(invalid(format!("no \"{name}\" in the shape catalogue")));
             }
         }
     }
@@ -289,37 +289,37 @@ fn parse_item(
         Some(value) => value
             .as_f64()
             .filter(|value| value.is_finite() && *value >= 0.0)
-            .ok_or_else(|| invalid("delay 非法".to_owned()))?,
+            .ok_or_else(|| invalid("delay is invalid".to_owned()))?,
         None => 0.0,
     };
 
     if let Some(animate) = object.get("animate") {
         let animate = animate
             .as_object()
-            .ok_or_else(|| invalid("animate 不是对象".to_owned()))?;
+            .ok_or_else(|| invalid("animate is not an object".to_owned()))?;
         for (slot, value) in animate {
             let preset = value
                 .get("preset")
                 .and_then(Value::as_str)
-                .ok_or_else(|| invalid(format!("animate.{slot} 缺 preset")))?;
+                .ok_or_else(|| invalid(format!("animate.{slot} is missing preset")))?;
             let known = match slot.as_str() {
                 "enter" => tables.enter.iter().any(|recipe| recipe.id == preset),
                 "exit" => tables.exit.iter().any(|recipe| recipe.id == preset),
                 "loop" => tables.loops.iter().any(|recipe| recipe.id == preset),
-                other => return Err(invalid(format!("未知动画槽 {other}"))),
+                other => return Err(invalid(format!("unknown animation slot {other}"))),
             };
             if !known {
-                return Err(invalid(format!("animate.{slot} 的 \"{preset}\" 没有配方")));
+                return Err(invalid(format!("animate.{slot} \"{preset}\" has no recipe")));
             }
             if let Some(dur) = value.get("dur") {
                 let dur = dur
                     .as_f64()
                     .filter(|dur| dur.is_finite())
-                    .ok_or_else(|| invalid(format!("animate.{slot}.dur 非法")))?;
+                    .ok_or_else(|| invalid(format!("animate.{slot}.dur is invalid")))?;
                 // Same basis as `ccut_timeline::animations::{DURATION_MIN, DURATION_MAX}`.
                 // Those two constants live in a downstream crate and cannot be referenced here, so they are restated, and pinned in reverse by the preset-landing tests in `ccut-timeline`.
                 if !(0.1..=2.0).contains(&dur) {
-                    return Err(invalid(format!("animate.{slot}.dur 须在 0.1..=2.0")));
+                    return Err(invalid(format!("animate.{slot}.dur must be in 0.1..=2.0")));
                 }
             }
         }
@@ -328,7 +328,7 @@ fn parse_item(
     // The payload should not contain fields that `instantiate` or the kernel is responsible for.
     for key in ["id", "start", "end", "role"] {
         if object.contains_key(key) {
-            return Err(invalid(format!("不许自带 \"{key}\"")));
+            return Err(invalid(format!("must not carry its own \"{key}\"")));
         }
     }
 
@@ -380,12 +380,12 @@ mod tests {
             counts[TextPresetCategory::ALL
                 .iter()
                 .position(|kind| *kind == recipe.category)
-                .expect("已知分类")] += 1;
+                .expect("known category")] += 1;
             if index > 0 {
-                assert!(all[index - 1].order < recipe.order, "order 必须升序");
+                assert!(all[index - 1].order < recipe.order, "order must be ascending");
                 assert!(
                     all[index - 1].category <= recipe.category,
-                    "分类必须成段：{}",
+                    "categories must be contiguous: {}",
                     recipe.id
                 );
             }
@@ -401,7 +401,7 @@ mod tests {
             assert_eq!(found.id, recipe.id);
             assert!(recipe.id.starts_with(recipe.category.key()));
             assert!(!recipe.content.is_empty());
-            assert!(recipe.headline().is_some(), "{} 没有文字项", recipe.id);
+            assert!(recipe.headline().is_some(), "{} has no text item", recipe.id);
         }
     }
 
@@ -411,7 +411,7 @@ mod tests {
         let recipe = text_presets()
             .iter()
             .find(|recipe| recipe.content.iter().any(|item| item.delay > 0.0))
-            .expect("至少有一条带错峰的预设");
+            .expect("at least one preset with staggered timing");
         let elements = instantiate(recipe, 2.0, 600.0);
         assert_eq!(elements.len(), recipe.content.len());
         for (element, item) in elements.iter().zip(&recipe.content) {
@@ -420,7 +420,7 @@ mod tests {
                 element["end"].as_f64().unwrap(),
                 round3(2.0 + recipe.duration)
             );
-            assert!(element.get("id").is_none(), "id 由内核分配");
+            assert!(element.get("id").is_none(), "id is assigned by the kernel");
             assert_eq!(element["kind"].as_str().unwrap(), item.kind.key());
         }
         // Clip-length clamping: the whole group is squeezed to 3.0, and member starts may not pass the end.

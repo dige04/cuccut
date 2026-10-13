@@ -332,7 +332,7 @@ mod tests {
         assert!(line.outline_on);
         assert!(
             (line.outline_width - 4.5).abs() < 1e-9,
-            "15/200 × 60 = 4.5，实际 {}",
+            "15/200 × 60 = 4.5, got {}",
             line.outline_width
         );
 
@@ -340,16 +340,16 @@ mod tests {
         let row = header
             .lines()
             .find(|line| line.starts_with("Style: CucCut,"))
-            .expect("必须有主样式行");
+            .expect("the main style line must exist");
         // The 17th field of Format (0-based, index 16) is Outline.
         let outline = row
             .trim_start_matches("Style: ")
             .split(',')
             .nth(16)
-            .expect("Outline 字段");
+            .expect("Outline field");
         assert_eq!(
             outline, "2.3",
-            "15/400 × 60 = 2.25，写头时保留一位；行={row}"
+            "15/400 × 60 = 2.25, the header keeps one decimal place; row={row}"
         );
     }
 
@@ -378,7 +378,7 @@ mod tests {
         );
         let ass = ass_style_sheet(&json!({}), "bi", (1920, 1080));
         let translation_style = ass.translation_style.clone();
-        assert!(translation_style.is_some(), "双语头必须带译文样式");
+        assert!(translation_style.is_some(), "the bilingual header must carry a translation style");
         let rendered = render_subtitle_events(
             &doc,
             &events,

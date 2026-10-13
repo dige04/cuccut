@@ -139,7 +139,7 @@ pub fn resolve_events(
             "schema",
             Severity::Error,
             "/events".into(),
-            "`events` 须是数组".into(),
+            "`events` must be an array".into(),
         );
         return table;
     };
@@ -151,7 +151,7 @@ pub fn resolve_events(
                 "event-id-missing",
                 Severity::Error,
                 ptr,
-                "事件须是对象 `{ id, t, … }`".into(),
+                "each event must be an object `{ id, t, … }`".into(),
             );
             continue;
         };
@@ -164,7 +164,7 @@ pub fn resolve_events(
                 "event-id-missing",
                 Severity::Error,
                 format!("{ptr}/id"),
-                "事件缺 `id`（非空字符串）".into(),
+                "event is missing `id` (non-empty string)".into(),
             );
             continue;
         };
@@ -173,7 +173,7 @@ pub fn resolve_events(
                 "event-id-duplicate",
                 Severity::Error,
                 format!("{ptr}/id"),
-                format!("事件 id \"{id}\" 重复"),
+                format!("event id \"{id}\" is duplicated"),
             );
             continue;
         }
@@ -182,12 +182,12 @@ pub fn resolve_events(
         let eval = |key: &str| -> Result<f64, String> {
             let expr = map.get(key).unwrap_or(&Value::Null);
             if expr.is_null() {
-                return Err(format!("缺 `{key}`"));
+                return Err(format!("missing `{key}`"));
             }
             match resolver.eval_t_exact(expr) {
                 Ok(Some(t)) if t.is_finite() => Ok(t),
-                Ok(Some(_)) => Err(format!("`{key}` = {expr} 不是有限时刻")),
-                Ok(None) => Err(format!("`{key}` = {expr} 引用的窗口没有解出")),
+                Ok(Some(_)) => Err(format!("`{key}` = {expr} is not a finite time")),
+                Ok(None) => Err(format!("`{key}` = {expr} refers to a window that did not resolve")),
                 Err(error) => Err(format!("`{key}` = {expr}：{error}")),
             }
         };
@@ -198,7 +198,7 @@ pub fn resolve_events(
                     "event-time-invalid",
                     Severity::Error,
                     format!("{ptr}/t"),
-                    format!("事件 \"{id}\"：{message}"),
+                    format!("event \"{id}\": {message}"),
                 );
                 continue;
             }
@@ -213,7 +213,7 @@ pub fn resolve_events(
                         Severity::Error,
                         format!("{ptr}/until"),
                         format!(
-                            "事件 \"{id}\"：`until` = {:.3}s 早于 `t` = {t:.3}s",
+                            "event \"{id}\": `until` = {:.3}s is earlier than `t` = {t:.3}s",
                             round_ms(until)
                         ),
                     );
@@ -224,7 +224,7 @@ pub fn resolve_events(
                         "event-time-invalid",
                         Severity::Error,
                         format!("{ptr}/until"),
-                        format!("事件 \"{id}\"：{message}"),
+                        format!("event \"{id}\": {message}"),
                     );
                     continue;
                 }
@@ -236,7 +236,7 @@ pub fn resolve_events(
                 "event-outside-doc",
                 Severity::Warn,
                 ptr.clone(),
-                format!("事件 \"{id}\" 落在全片 [0, {total:.3}s] 之外"),
+                format!("event \"{id}\" falls outside the whole film [0, {total:.3}s]"),
             );
         }
 
@@ -260,7 +260,7 @@ pub fn resolve_events(
                         "event-phase-invalid",
                         Severity::Error,
                         pointer,
-                        format!("事件 \"{id}\"：`phase` 须是 u 的表达式字符串"),
+                        format!("event \"{id}\": `phase` must be an expression string in u"),
                     );
                     continue;
                 };
@@ -269,7 +269,7 @@ pub fn resolve_events(
                         "event-phase-invalid",
                         Severity::Error,
                         pointer,
-                        format!("事件 \"{id}\"：写了 `phase` 就要写 `until`（扫描到哪里为止）"),
+                        format!("event \"{id}\": a `phase` requires `until` (where the scan stops)"),
                     );
                     continue;
                 };
@@ -280,7 +280,7 @@ pub fn resolve_events(
                             "event-phase-invalid",
                             Severity::Error,
                             pointer,
-                            format!("事件 \"{id}\"：phase \"{text}\"：{message}"),
+                            format!("event \"{id}\": phase \"{text}\": {message}"),
                         );
                         continue;
                     }
@@ -303,7 +303,7 @@ pub fn resolve_events(
                         "event-phase-invalid",
                         Severity::Error,
                         pointer,
-                        format!("事件 \"{id}\"：phase \"{text}\"：{message}"),
+                        format!("event \"{id}\": phase \"{text}\": {message}"),
                     ),
                 }
             }
@@ -318,12 +318,12 @@ pub fn resolve_events(
 /// If several integers are crossed within the same millisecond, that many rows are emitted; after the phase falls back and rises again, nothing is repeated (only new highs count).
 pub fn phase_crossings(expr: &PhaseExpr, span: f64) -> Result<Vec<(f64, i64)>, String> {
     if !(span >= 0.0) || span > PHASE_MAX_SPAN {
-        return Err(format!("扫描跨度 {span:.3}s 超出 0–{PHASE_MAX_SPAN}s"));
+        return Err(format!("scan span {span:.3}s is outside 0–{PHASE_MAX_SPAN}s"));
     }
     let level = |u: f64| -> Result<i64, String> {
         let value = expr.eval(u);
         if !value.is_finite() {
-            return Err(format!("u = {u:.3} 处相位不是有限数"));
+            return Err(format!("phase at u = {u:.3} is not a finite number"));
         }
         Ok(libm::floor(value - PHASE_CROSSING) as i64)
     };
@@ -337,7 +337,7 @@ pub fn phase_crossings(expr: &PhaseExpr, span: f64) -> Result<Vec<(f64, i64)>, S
             high += 1;
             out.push((u, high));
             if out.len() > PHASE_MAX_ROWS {
-                return Err(format!("展开超过 {PHASE_MAX_ROWS} 行"));
+                return Err(format!("expansion exceeds {PHASE_MAX_ROWS} rows"));
             }
         }
     }
@@ -380,7 +380,7 @@ impl PhaseExpr {
         let mut parser = Parser { tokens, pos: 0 };
         let expr = parser.expr()?;
         if parser.pos != parser.tokens.len() {
-            return Err(format!("多余的 {:?}", parser.tokens[parser.pos]));
+            return Err(format!("unexpected {:?}", parser.tokens[parser.pos]));
         }
         Ok(expr)
     }
@@ -432,7 +432,7 @@ fn tokenize(text: &str) -> Result<Vec<Token>, String> {
             let literal: String = chars[start..i].iter().collect();
             let value = literal
                 .parse::<f64>()
-                .map_err(|_| format!("数字 \"{literal}\" 写法不对"))?;
+                .map_err(|_| format!("malformed number \"{literal}\""))?;
             out.push(Token::Num(value));
         } else if c.is_ascii_alphabetic() {
             let start = i;
@@ -445,12 +445,12 @@ fn tokenize(text: &str) -> Result<Vec<Token>, String> {
             i += 1;
         } else {
             return Err(format!(
-                "不认识的字符 '{c}'（只许 + - * / ( ) 、数字、u 与 sin / cos / pow / floor）"
+                "unknown character '{c}' (only + - * / ( ), numbers, u and sin / cos / pow / floor are allowed)"
             ));
         }
     }
     if out.is_empty() {
-        return Err("表达式是空的".into());
+        return Err("expression is empty".into());
     }
     Ok(out)
 }
@@ -514,7 +514,7 @@ impl Parser {
 
     fn primary(&mut self) -> Result<PhaseExpr, String> {
         let Some(token) = self.peek().cloned() else {
-            return Err("表达式不完整".into());
+            return Err("expression is incomplete".into());
         };
         self.pos += 1;
         match token {
@@ -522,31 +522,31 @@ impl Parser {
             Token::Sym('(') => {
                 let inner = self.expr()?;
                 if !self.eat(')') {
-                    return Err("缺右括号".into());
+                    return Err("missing closing parenthesis".into());
                 }
                 Ok(inner)
             }
             Token::Ident(name) if name == "u" => Ok(PhaseExpr::U),
             Token::Ident(name) => {
                 let (f, arity) = PhaseFn::parse(&name).ok_or_else(|| {
-                    format!("不认识的名字 \"{name}\"（只许 u 与 sin / cos / pow / floor）")
+                    format!("unknown name \"{name}\" (only u and sin / cos / pow / floor are allowed)")
                 })?;
                 if !self.eat('(') {
-                    return Err(format!("{name} 后面要跟括号"));
+                    return Err(format!("{name} must be followed by parentheses"));
                 }
                 let mut args = vec![self.expr()?];
                 while self.eat(',') {
                     args.push(self.expr()?);
                 }
                 if !self.eat(')') {
-                    return Err(format!("{name}(…) 缺右括号"));
+                    return Err(format!("{name}(…) is missing a closing parenthesis"));
                 }
                 if args.len() != arity {
-                    return Err(format!("{name} 要 {arity} 个参数，给了 {}", args.len()));
+                    return Err(format!("{name} takes {arity} argument(s), got {}", args.len()));
                 }
                 Ok(PhaseExpr::Call(f, args))
             }
-            Token::Sym(c) => Err(format!("这里不该出现 '{c}'")),
+            Token::Sym(c) => Err(format!("unexpected '{c}' here")),
         }
     }
 }

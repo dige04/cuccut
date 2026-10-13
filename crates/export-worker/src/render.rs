@@ -66,7 +66,7 @@ pub fn run(path: &Path) -> Result<ExitCode, Failure> {
     if !report.missing_encoders.is_empty() {
         let mut failure = Failure::new(
             "EXPORT_TOOL_MISSING",
-            format!("本机的 ffmpeg 没有编码器 {}", report.missing_encoders.join("、")),
+            format!("the local ffmpeg has no encoder {}", report.missing_encoders.join(", ")),
         );
         failure.details = json!({ "missing": report.missing_encoders });
         return Err(failure);
@@ -200,7 +200,7 @@ fn start_encoder(
                         let mut failure = Failure::new(
                             "EXPORT_TOOL_MISSING",
                             format!(
-                                "原生编码器打不开（{}），本机的 ffmpeg 又没有编码器 {}",
+                                "native encoder cannot be opened ({}), and the local ffmpeg has no encoder {}",
                                 fallback.message,
                                 report.ffmpeg_missing.join("、")
                             ),
@@ -230,7 +230,7 @@ fn frozen_fonts(frozen: &[InputFont]) -> Result<Vec<Arc<Vec<u8>>>, Failure> {
         let missing = |reason: &str, why: String| {
             let mut failure = Failure::new(
                 "FONT_MISSING",
-                format!("字体无法复现：「{}」用的本机字体 {} {why}", font.family, font.path.display()),
+                format!("font cannot be reproduced: '{}' uses local font {} {why}", font.family, font.path.display()),
             );
             failure.details = json!({
                 "family": font.family,
@@ -242,9 +242,9 @@ fn frozen_fonts(frozen: &[InputFont]) -> Result<Vec<Arc<Vec<u8>>>, Failure> {
             failure
         };
         if checked.insert(font.path.clone()) {
-            let digest = file_digest(&font.path).map_err(|e| missing("missing", format!("读不到了（{e}）")))?;
+            let digest = file_digest(&font.path).map_err(|e| missing("missing", format!("unreadable ({e})")))?;
             if digest != (font.byte_length, font.content_hash.clone()) {
-                return Err(missing("changed", "与导出开始时不一样了".into()));
+                return Err(missing("changed", "differs from when the export started".into()));
             }
         }
         let face = FontFace {
@@ -253,7 +253,7 @@ fn frozen_fonts(frozen: &[InputFont]) -> Result<Vec<Arc<Vec<u8>>>, Failure> {
             file_len: font.byte_length,
         };
         let bytes =
-            font_files::read_face(&face).map_err(|e| missing("unreadable", format!("抽不出第 {} 个字体（{e}）", font.face_index)))?;
+            font_files::read_face(&face).map_err(|e| missing("unreadable", format!("cannot extract font face {} ({e})", font.face_index)))?;
         fonts.push(Arc::new(bytes));
     }
     Ok(fonts)
@@ -353,7 +353,7 @@ mod tests {
         let failure = frozen_fonts(std::slice::from_ref(&font)).unwrap_err();
         assert_eq!(failure.code, "FONT_MISSING");
         assert_eq!(failure.details["reason"], "changed");
-        assert!(failure.message.starts_with("字体无法复现"), "{}", failure.message);
+        assert!(failure.message.starts_with("font cannot be reproduced"), "{}", failure.message);
 
         std::fs::remove_file(&path).unwrap();
         let failure = frozen_fonts(&[font]).unwrap_err();

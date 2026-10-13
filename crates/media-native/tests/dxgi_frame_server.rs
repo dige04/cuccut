@@ -19,20 +19,20 @@ fn gpu_frames_can_cross_the_decoder_and_renderer_thread_boundary() {
 
 #[test]
 fn media_engine_publishes_shareable_gpu_frames_without_a_cpu_buffer() {
-    let mut server = open_dxgi_frame_server(&fixture()).expect("打开 IMFMediaEngine frame-server");
+    let mut server = open_dxgi_frame_server(&fixture()).expect("open IMFMediaEngine frame-server");
     assert_eq!((server.width(), server.height()), (160, 90));
     assert!(server.duration_seconds() >= 0.9);
     assert_eq!(server.playback_state().unwrap(), DxgiPlaybackState::Paused);
 
-    server.play().expect("开始播放");
+    server.play().expect("start playback");
     let started = Instant::now();
     let frame = loop {
-        if let Some(frame) = server.try_acquire_frame().expect("查询 GPU 帧") {
+        if let Some(frame) = server.try_acquire_frame().expect("query GPU frame") {
             break frame;
         }
         assert!(
             started.elapsed() < Duration::from_secs(5),
-            "Media Engine 在 5 秒内没有发布视频帧"
+            "Media Engine published no video frame within 5 seconds"
         );
         std::thread::sleep(Duration::from_millis(5));
     };
@@ -50,9 +50,9 @@ fn media_engine_publishes_shareable_gpu_frames_without_a_cpu_buffer() {
         DxgiPlaybackState::Playing | DxgiPlaybackState::Buffering
     ));
 
-    server.pause().expect("暂停播放");
+    server.pause().expect("pause playback");
     assert_eq!(server.playback_state().unwrap(), DxgiPlaybackState::Paused);
-    server.seek(0.5).expect("定位播放");
+    server.seek(0.5).expect("seek playback");
     assert!(matches!(
         server.playback_state().unwrap(),
         DxgiPlaybackState::Paused | DxgiPlaybackState::Buffering
@@ -61,28 +61,28 @@ fn media_engine_publishes_shareable_gpu_frames_without_a_cpu_buffer() {
 
 #[test]
 fn the_three_surface_pool_drops_instead_of_blocking_or_reading_back() {
-    let mut server = open_dxgi_frame_server(&fixture()).expect("打开 IMFMediaEngine frame-server");
-    server.play().expect("开始播放");
+    let mut server = open_dxgi_frame_server(&fixture()).expect("open IMFMediaEngine frame-server");
+    server.play().expect("start playback");
     let started = Instant::now();
     let mut held = Vec::new();
     while held.len() < 3 && started.elapsed() < Duration::from_secs(5) {
-        if let Some(frame) = server.try_acquire_frame().expect("查询 GPU 帧") {
+        if let Some(frame) = server.try_acquire_frame().expect("query GPU frame") {
             held.push(frame);
         } else {
             std::thread::sleep(Duration::from_millis(5));
         }
     }
-    assert_eq!(held.len(), 3, "应填满三个独立的共享 surface 槽位");
+    assert_eq!(held.len(), 3, "should fill three independent shared surface slots");
     let handles = held
         .iter()
         .map(|frame| frame.texture_handle() as usize)
         .collect::<HashSet<_>>();
-    assert_eq!(handles.len(), 3, "三个槽位必须持有三个不同的 NT handle");
+    assert_eq!(handles.len(), 3, "the three slots must hold three distinct NT handles");
     let surface_ids = held
         .iter()
         .map(DxgiVideoFrame::surface_id)
         .collect::<HashSet<_>>();
-    assert_eq!(surface_ids.len(), 3, "三个槽位必须有三个稳定 surface id");
+    assert_eq!(surface_ids.len(), 3, "the three slots must have three stable surface ids");
     let synchronization_ids = held
         .iter()
         .map(DxgiVideoFrame::synchronization_id)
@@ -90,7 +90,7 @@ fn the_three_surface_pool_drops_instead_of_blocking_or_reading_back() {
     assert_eq!(
         synchronization_ids.len(),
         1,
-        "同一 frame-server 的三槽共用一条 shared fence"
+        "the three slots of one frame-server share a single shared fence"
     );
 
     let before = Instant::now();
@@ -98,14 +98,14 @@ fn the_three_surface_pool_drops_instead_of_blocking_or_reading_back() {
         assert!(
             server
                 .try_acquire_frame()
-                .expect("池满时查询 GPU 帧")
+                .expect("query GPU frame while the pool is full")
                 .is_none(),
-            "三个 surface 都被持有时不得覆盖仍在消费的纹理"
+            "textures still being consumed must not be overwritten while all three surfaces are held"
         );
         std::thread::sleep(Duration::from_millis(5));
     }
     assert!(
         server.dropped_frame_count() > 0,
-        "池满后应观测到非阻塞丢帧，而不是卡住解码线程"
+        "a non-blocking frame drop should be observed when the pool is full, instead of stalling the decode thread"
     );
 }

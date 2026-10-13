@@ -20,9 +20,9 @@ impl PathError {
     /// Explanation without a code. For the full wording of [`PathError::Escape`], use [`escape_message`].
     pub fn describe(self, rel: &str) -> String {
         match self {
-            PathError::Backslash => format!("路径 \"{rel}\" 须用 / 分隔"),
-            PathError::Escape => format!("路径 \"{rel}\" 越出文档所在目录"),
-            PathError::Empty => format!("路径 \"{rel}\" 为空"),
+            PathError::Backslash => format!("path \"{rel}\" must use / as the separator"),
+            PathError::Escape => format!("path \"{rel}\" escapes the document's directory"),
+            PathError::Empty => format!("path \"{rel}\" is empty"),
         }
     }
 }
@@ -59,9 +59,10 @@ pub fn escapes(dir: &str, rel: &str) -> bool {
 /// `subject` says where the path came from, e.g. `src`, `imports.remotion`, `files[0]`, `import in film/Film.tsx`, `asset()`.
 pub fn escape_message(subject: &str, rel: &str) -> String {
     format!(
-        "{subject} 的路径 \"{rel}\" 用 .. 越出了文档所在目录。program 的 src、imports、files、\
-         模块里的相对 import 与 asset() 都以文档（.ccut.tsx / .ccut.json）所在的目录为边界，\
-         不能走到它外面；改法：把文档放到项目根，或放到模块旁边，让路径不必用 .. 出去"
+        "{subject} path \"{rel}\" uses .. and escapes the document's directory. The program's src, imports, \
+         files, relative imports in modules and asset() paths are bounded by the directory that holds the \
+         document (.ccut.tsx / .ccut.json) and cannot leave it. Fix: move the document to the project root, \
+         or next to the module, so the path does not need to use .."
     )
 }
 
@@ -82,15 +83,15 @@ mod tests {
         // Going down and then back up without leaving the boundary is not an escape
         assert_eq!(normalize("", "film/../x.tsx").unwrap(), "x.tsx");
         assert!(escapes("", "../x"));
-        assert!(!escapes("", "a\\..\\x"), "反斜杠是另一种错");
+        assert!(!escapes("", "a\\..\\x"), "a backslash is a different error");
     }
 
     #[test]
     fn the_escape_message_names_the_boundary_the_path_and_the_fix() {
         let message = escape_message("src", "../film/X.tsx");
         assert!(message.contains("\"../film/X.tsx\""));
-        assert!(message.contains("文档所在目录"));
-        assert!(message.contains("项目根"));
-        assert!(message.contains("模块旁边"));
+        assert!(message.contains("document's directory"));
+        assert!(message.contains("project root"));
+        assert!(message.contains("next to the module"));
     }
 }

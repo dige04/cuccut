@@ -63,7 +63,7 @@ fn downgrade(dir: &Path) {
     let legacy: i64 = conn
         .query_row("SELECT count(*) FROM outbox WHERE body LIKE '%\"movieId\":%'", [], |r| r.get(0))
         .unwrap();
-    assert!(legacy > 0, "倒回之后事件里是旧的键");
+    assert!(legacy > 0, "after rewinding, the events still use the old keys");
     conn.close().unwrap();
     fs::rename(dir.join("video.db"), dir.join("movie.db")).unwrap();
     fs::rename(dir.join("video.lock"), dir.join("movie.lock")).unwrap();
@@ -94,7 +94,7 @@ fn a_movie_db_directory_is_upgraded_in_place_on_open() {
 
     let mut video = Video::open(dir.path(), OpenMode::Write, &ffprobe()).unwrap();
     for name in ["movie.db", "movie.db-wal", "movie.db-shm", "movie.lock"] {
-        assert!(!dir.path().join(name).exists(), "{name} 已改名");
+        assert!(!dir.path().join(name).exists(), "{name} was renamed");
     }
     assert!(dir.path().join("video.db").is_file() && dir.path().join("video.lock").is_file());
     assert_eq!(video.snapshot(), snapshot);

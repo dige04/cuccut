@@ -46,13 +46,13 @@ pub struct GenerationConfig {
 
 impl GenerationConfig {
     pub fn load(path: &Path) -> Result<Self> {
-        let raw: Value = serde_json::from_slice(&fs::read(path).with_context(|| format!("读取 {}", path.display()))?)
-            .context("解析 Whisper generation_config.json")?;
+        let raw: Value = serde_json::from_slice(&fs::read(path).with_context(|| format!("read {}", path.display()))?)
+            .context("parse Whisper generation_config.json")?;
         Self::from_json(&raw)
     }
 
     pub fn from_json(raw: &Value) -> Result<Self> {
-        let object = raw.as_object().context("Whisper generation_config.json 顶层应为对象")?;
+        let object = raw.as_object().context("Whisper generation_config.json top level must be an object")?;
         let mut languages = HashMap::new();
         if let Some(entries) = object.get("lang_to_id").and_then(Value::as_object) {
             for (token, id) in entries {
@@ -162,8 +162,8 @@ pub struct WhisperTokenizer {
 
 impl WhisperTokenizer {
     pub fn load(path: &Path) -> Result<Self> {
-        let raw: Value = serde_json::from_slice(&fs::read(path).with_context(|| format!("读取 {}", path.display()))?)
-            .context("解析 Whisper tokenizer.json")?;
+        let raw: Value = serde_json::from_slice(&fs::read(path).with_context(|| format!("read {}", path.display()))?)
+            .context("parse Whisper tokenizer.json")?;
         let mut id_to_token = HashMap::new();
         if let Some(vocabulary) = raw.get("model").and_then(|model| model.get("vocab")).and_then(Value::as_object) {
             for (token, id) in vocabulary {
@@ -187,7 +187,7 @@ impl WhisperTokenizer {
             }
         }
         if id_to_token.is_empty() {
-            bail!("Whisper tokenizer.json 未包含 model.vocab");
+            bail!("Whisper tokenizer.json does not contain model.vocab");
         }
         // `model.merges` may be either ["a b", …] (old format) or [["a","b"], …].
         let merges = raw
@@ -248,7 +248,7 @@ pub fn prompt_tokens(tokenizer: &WhisperTokenizer, generation: &GenerationConfig
         return Vec::new();
     };
     let Some(start_of_prev) = tokenizer.start_of_prev else {
-        eprintln!("whisper: 词表缺 <|startofprev|>，识别提示已忽略");
+        eprintln!("whisper: vocabulary is missing <|startofprev|>; the recognition prompt is ignored");
         return Vec::new();
     };
     let mut tokens = tokenizer.encode(text);

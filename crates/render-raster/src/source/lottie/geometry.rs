@@ -812,25 +812,25 @@ mod tests {
         let measured: f64 = trimmed.0.iter().map(|c| measure(c).total).sum();
         assert!(
             (measured - 20.0).abs() < 0.05,
-            "半周长应当是 20，实际 {measured}"
+            "half-perimeter should be 20, got {measured}"
         );
-        assert!(trimmed.0.iter().all(|c| !c.closed), "trim 结果是开放路径");
+        assert!(trimmed.0.iter().all(|c| !c.closed), "the trim result is an open path");
     }
 
     #[test]
     fn a_trim_offset_rotates_the_kept_arc() {
         let a = trim(&square(), 0.0, 25.0, 0.0, false);
         let b = trim(&square(), 0.0, 25.0, 90.0, false);
-        assert_ne!(a, b, "offset 必须挪动保留段");
+        assert_ne!(a, b, "offset must move the kept segment");
         let la: f64 = a.0.iter().map(|c| measure(c).total).sum();
         let lb: f64 = b.0.iter().map(|c| measure(c).total).sum();
-        assert!((la - lb).abs() < 0.05, "长度不变，只是起点变了");
+        assert!((la - lb).abs() < 0.05, "the length is unchanged, only the start moved");
     }
 
     #[test]
     fn round_corners_only_touches_sharp_vertices() {
         let rounded = round_corners(&square(), 2.0);
-        assert_eq!(rounded.0[0].v.len(), 8, "四个尖角各裂成两个顶点");
+        assert_eq!(rounded.0[0].v.len(), 8, "each of the four sharp corners splits into two vertices");
         // An ellipse that already carries curvature is left unchanged.
         let circle = ShapePath::single(ellipse([0.0, 0.0], [10.0, 10.0]));
         assert_eq!(round_corners(&circle, 3.0), circle);
@@ -839,9 +839,9 @@ mod tests {
     #[test]
     fn dashes_cut_the_path_into_alternating_pieces() {
         let dashed = dash(&square(), &[5.0, 5.0], 0.0);
-        assert_eq!(dashed.0.len(), 4, "周长 40、5 开 5 关 ⇒ 4 段");
+        assert_eq!(dashed.0.len(), 4, "perimeter 40, 5 on 5 off ⇒ 4 segments");
         let kept: f64 = dashed.0.iter().map(|c| measure(c).total).sum();
-        assert!((kept - 20.0).abs() < 0.05, "留下一半长度，实际 {kept}");
+        assert!((kept - 20.0).abs() < 0.05, "half the length is kept, got {kept}");
     }
 
     #[test]

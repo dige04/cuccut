@@ -147,10 +147,10 @@ impl EffectManifest {
     /// up an effect's parameter table, so the list goes in the error itself. An effect without parameters says “it takes no parameters”.
     pub fn params_hint(&self) -> String {
         if self.params.is_empty() {
-            return "它不带参数".to_owned();
+            return "it takes no parameters".to_owned();
         }
         let names = self.params.keys().map(String::as_str).collect::<Vec<_>>();
-        format!("可用参数：{}", names.join(" / "))
+        format!("available parameters: {}", names.join(" / "))
     }
 
     /// Validates and fills in uniforms: unknown parameter → `preset-param-unknown`; missing required parameter →
@@ -162,7 +162,7 @@ impl EffectManifest {
         for (key, _) in given.iter() {
             if !self.params.contains_key(key) {
                 return Err(MotionError::PresetParamUnknown(format!(
-                    "{} 没有参数 {key}；{}",
+                    "{} has no parameter {key}; {}",
                     self.qualified(),
                     self.params_hint()
                 )));
@@ -176,7 +176,7 @@ impl EffectManifest {
                     Some(value) => value.clone(),
                     None => {
                         return Err(MotionError::PresetParamMissing(format!(
-                            "{} 缺必填参数 {key}",
+                            "{} is missing required parameter {key}",
                             self.qualified()
                         )));
                     }
@@ -184,7 +184,7 @@ impl EffectManifest {
             };
             if !spec.kind.accepts(&value) {
                 return Err(MotionError::ManifestInvalid(format!(
-                    "{} 的 {key} 类型不符（期望 {:?}）",
+                    "{} {key} has the wrong type (expected {:?})",
                     self.qualified(),
                     spec.kind
                 )));
@@ -193,7 +193,7 @@ impl EffectManifest {
                 && !spec.options.iter().any(|option| option == text)
             {
                 return Err(MotionError::ManifestInvalid(format!(
-                    "{} 的 {key} 取值 {text} 不在闭集 {:?}",
+                    "{} {key} value {text} is not in the closed set {:?}",
                     self.qualified(),
                     spec.options
                 )));
@@ -259,7 +259,7 @@ fn closed_keys(
 ) -> Result<(), MotionError> {
     for key in object.keys() {
         if !allowed.contains(&key.as_str()) {
-            return Err(invalid(format!("{what} 出现未知键 {key}")));
+            return Err(invalid(format!("{what} has unknown key {key}")));
         }
     }
     Ok(())
@@ -274,10 +274,10 @@ fn closed_value<'a>(
     let text = object
         .get(key)
         .and_then(Value::as_str)
-        .ok_or_else(|| invalid(format!("{id} 缺字符串 {key}")))?;
+        .ok_or_else(|| invalid(format!("{id} is missing string {key}")))?;
     if !allowed.contains(&text) {
         return Err(invalid(format!(
-            "{id} 的 {key} = {text} 不在闭集 {allowed:?}"
+            "{id} {key} = {text} is not in the closed set {allowed:?}"
         )));
     }
     Ok(text)
@@ -288,7 +288,7 @@ fn uniform_from_json(
     value: &Value,
     what: &str,
 ) -> Result<UniformValue, MotionError> {
-    let bad = || invalid(format!("{what} 的默认值与类型不符"));
+    let bad = || invalid(format!("{what} default value does not match its type"));
     Ok(match kind {
         ParamKind::Number | ParamKind::Length => {
             UniformValue::Scalar(value.as_f64().ok_or_else(bad)?)
@@ -324,21 +324,21 @@ fn uniform_from_json(
 /// Parses one manifest source text. The caller computes `source_hash` over the original text.
 pub fn parse_manifest(source: &str, source_hash: u64) -> Result<EffectManifest, MotionError> {
     let value: Value =
-        serde_json::from_str(source).map_err(|error| invalid(format!("JSON 解析失败 {error}")))?;
-    let object = value.as_object().ok_or_else(|| invalid("顶层必须是对象"))?;
+        serde_json::from_str(source).map_err(|error| invalid(format!("JSON parse failed: {error}")))?;
+    let object = value.as_object().ok_or_else(|| invalid("top level must be an object"))?;
     closed_keys(object, MANIFEST_KEYS, "effect manifest")?;
 
     let id = object
         .get("id")
         .and_then(Value::as_str)
-        .ok_or_else(|| invalid("缺 id"))?
+        .ok_or_else(|| invalid("missing id"))?
         .to_owned();
     let version = object
         .get("version")
         .and_then(Value::as_u64)
-        .ok_or_else(|| invalid(format!("{id} 缺 version")))? as u32;
+        .ok_or_else(|| invalid(format!("{id} is missing version")))? as u32;
     if version == 0 {
-        return Err(invalid(format!("{id} 的 version 必须 ≥ 1")));
+        return Err(invalid(format!("{id} version must be ≥ 1")));
     }
     let domain_text = object
         .get("domain")

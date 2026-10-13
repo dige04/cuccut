@@ -27,8 +27,8 @@ fn data_files_match_the_readme_digests() {
         let row = readme
             .lines()
             .find(|line| line.starts_with(&format!("| `{name}` |")))
-            .unwrap_or_else(|| panic!("README 没有 {name} 一行"));
-        assert!(row.contains(&digest), "{name} 的 SHA-256 与 README 不符：{digest}");
+            .unwrap_or_else(|| panic!("README has no {name} row"));
+        assert!(row.contains(&digest), "{name} SHA-256 does not match README: {digest}");
     }
 }
 

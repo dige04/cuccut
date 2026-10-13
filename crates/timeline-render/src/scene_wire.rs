@@ -351,7 +351,7 @@ fn encode_glyph_run(writer: &mut Writer, run: &GlyphRun, version: u32) -> Result
             GlyphCompositeMode::Normal => 0,
             GlyphCompositeMode::Screen => 1,
             GlyphCompositeMode::Difference | GlyphCompositeMode::Exclusion => {
-                unreachable!("target-sampling glyph mode 已拒绝")
+                unreachable!("target-sampling glyph mode was already rejected")
             }
         });
     }
@@ -392,7 +392,7 @@ fn decode_glyph_run(reader: &mut Reader<'_>, version: u32) -> Result<GlyphRun> {
         let mask = match kind {
             0 => GlyphMask::new(key, width, height, left, top, pixels.to_vec()),
             1 => GlyphMask::new_color(key, width, height, left, top, pixels.to_vec()),
-            _ => unreachable!("kind 已验证"),
+            _ => unreachable!("kind was already validated"),
         }
         .ok_or_else(|| anyhow!("subtitle-scene-mask-invalid"))?;
         glyphs.push(GlyphInstance {
@@ -974,7 +974,7 @@ mod tests {
         let SceneNode::Glyphs(run) = &group.nodes[1] else {
             panic!("expected v2 glyph run")
         };
-        assert_eq!(run.uniforms[0].clip, None, "BCS2 v2 没有 clip 字段");
+        assert_eq!(run.uniforms[0].clip, None, "BCS2 v2 has no clip field");
         assert_eq!(run.uniforms[0].paint, GlyphPaint::Solid);
     }
 

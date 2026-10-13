@@ -15,7 +15,7 @@ pub fn align_metrics_summary_lines(report: &Value) -> Vec<String> {
         .filter(|(_, metrics)| metrics["aligned"].as_u64().unwrap_or(0) > 0)
         .map(|(lang, metrics)| {
             format!(
-                "align {lang}: {}/{} 句已对齐 · 覆盖 源 {} / 译 {} · 安全边界 {} · 整句对应 {} · 改写 {} · 弱块 {} · 局部乱序 {} · 意思未核对",
+                "align {lang}: {}/{} sentences aligned · coverage source {} / translation {} · safe boundaries {} · whole-sentence matches {} · rewritten {} · weak blocks {} · local reordering {} · meaning not verified",
                 metrics["aligned"],
                 metrics["sentences"],
                 pct(&metrics["coverageSrc"]),

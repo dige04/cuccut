@@ -551,7 +551,7 @@ pub fn rasterize_with_media(
                 let id = frame
                     .strings
                     .get(*asset as usize)
-                    .ok_or_else(|| anyhow!("DrawMedia 引用未知 string {asset}"))?;
+                    .ok_or_else(|| anyhow!("DrawMedia references unknown string {asset}"))?;
                 // Vector animated images are rasterized at the pixel size they actually occupy in the image (a shrunken preview saves rasterization work, and a magnified export stays sharp). `tf` and `src` are still in natural-size units and are converted using the size returned.
                 let natural = (*media_ms >= 0)
                     .then(|| media.vector_natural_size(id))
@@ -581,11 +581,11 @@ pub fn rasterize_with_media(
                         (src[2].round() as u32).max(1),
                         (src[3].round() as u32).max(1),
                     )
-                    .ok_or_else(|| anyhow!("DrawMedia 裁剪矩形非法 {src:?}"))?;
+                    .ok_or_else(|| anyhow!("DrawMedia has an invalid crop rectangle {src:?}"))?;
                     let cropped = pm
                         .as_ref()
                         .clone_rect(rect)
-                        .ok_or_else(|| anyhow!("DrawMedia 裁剪越界 {src:?}"))?;
+                        .ok_or_else(|| anyhow!("DrawMedia crop is out of bounds {src:?}"))?;
                     if clip.is_some() || !copy_over(target!(), cropped.as_ref(), tf) {
                         target!().draw_pixmap(0, 0, cropped.as_ref(), &paint, tf, clip);
                     }
@@ -601,11 +601,11 @@ pub fn rasterize_with_media(
                 let data = frame
                     .bitmaps
                     .get(*bitmap as usize)
-                    .ok_or_else(|| anyhow!("DrawBitmap 引用未知 bitmap {bitmap}"))?;
+                    .ok_or_else(|| anyhow!("DrawBitmap references unknown bitmap {bitmap}"))?;
                 let pixels = PixmapRef::from_bytes(&data.rgba, data.width, data.height)
                     .ok_or_else(|| {
                         anyhow!(
-                            "DrawBitmap 位图 {bitmap} 尺寸与字节不符（{}x{}，{} 字节）",
+                            "DrawBitmap bitmap {bitmap} size does not match its bytes ({}x{}, {} bytes)",
                             data.width,
                             data.height,
                             data.rgba.len()
@@ -631,10 +631,10 @@ pub fn rasterize_with_media(
                 tf,
             } => {
                 let Some(Some(p)) = paths.get(*path as usize) else {
-                    return Err(anyhow!("FillPathPaint 引用未知 path {path}"));
+                    return Err(anyhow!("FillPathPaint references unknown path {path}"));
                 };
                 let Some(paint) = paints.get(*paint as usize) else {
-                    return Err(anyhow!("FillPathPaint 引用未知 paint {paint}"));
+                    return Err(anyhow!("FillPathPaint references unknown paint {paint}"));
                 };
                 let rule = if *even_odd {
                     FillRule::EvenOdd
@@ -653,10 +653,10 @@ pub fn rasterize_with_media(
                 tf,
             } => {
                 let Some(Some(p)) = paths.get(*path as usize) else {
-                    return Err(anyhow!("StrokePathPaint 引用未知 path {path}"));
+                    return Err(anyhow!("StrokePathPaint references unknown path {path}"));
                 };
                 let Some(paint) = paints.get(*paint as usize) else {
-                    return Err(anyhow!("StrokePathPaint 引用未知 paint {paint}"));
+                    return Err(anyhow!("StrokePathPaint references unknown paint {paint}"));
                 };
                 let stroke = Stroke {
                     width: *sw,
@@ -669,7 +669,7 @@ pub fn rasterize_with_media(
             }
             DrawOp::PushMatte => {
                 if layers.is_empty() {
-                    return Err(anyhow!("PushMatte 必须处在某个 PushLayer 之内"));
+                    return Err(anyhow!("PushMatte must be inside a PushLayer"));
                 }
                 mattes.push(layers.len());
                 layers.push((
@@ -680,21 +680,21 @@ pub fn rasterize_with_media(
             }
             DrawOp::PopMatte { mode } => {
                 let mode = MatteMode::from_code(*mode)
-                    .ok_or_else(|| anyhow!("PopMatte 未知模式 {mode}"))?;
+                    .ok_or_else(|| anyhow!("PopMatte has unknown mode {mode}"))?;
                 if mattes.last() != Some(&(layers.len().saturating_sub(1))) {
-                    return Err(anyhow!("PopMatte 无匹配 PushMatte"));
+                    return Err(anyhow!("PopMatte has no matching PushMatte"));
                 }
                 if clips
                     .last()
                     .is_some_and(|entry| entry.layer_depth == layers.len())
                 {
                     return Err(anyhow!(
-                        "PopMatte 时裁剪栈仍有遮罩层压入的 ClipPath：PopClip 不得跨越层边界"
+                        "PopMatte: the clip stack still holds a ClipPath pushed by the matte layer; PopClip must not cross layer boundaries"
                     ));
                 }
                 mattes.pop();
                 let (matte, _, _) = layers.pop().expect("matte layer");
-                let (content, _, _) = layers.last_mut().expect("PushMatte 已保证下面有层");
+                let (content, _, _) = layers.last_mut().expect("PushMatte guarantees a layer below");
                 apply_matte(content, &matte, mode);
             }
             DrawOp::PushLayer { opacity, blend } => {
@@ -706,19 +706,19 @@ pub fn rasterize_with_media(
             }
             DrawOp::PopLayer => {
                 if mattes.last() == Some(&layers.len().saturating_sub(1)) {
-                    return Err(anyhow!("PopLayer 时遮罩源层未 PopMatte"));
+                    return Err(anyhow!("PopLayer: the matte source layer has not been PopMatte'd"));
                 }
                 if clips
                     .last()
                     .is_some_and(|entry| entry.layer_depth == layers.len())
                 {
                     return Err(anyhow!(
-                        "PopLayer 时裁剪栈仍有本层压入的 ClipPath：PopClip 不得跨越层边界"
+                        "PopLayer: the clip stack still holds a ClipPath pushed by this layer; PopClip must not cross layer boundaries"
                     ));
                 }
                 let (layer, opacity, blend_mode) = layers
                     .pop()
-                    .ok_or_else(|| anyhow!("PopLayer 无匹配 PushLayer"))?;
+                    .ok_or_else(|| anyhow!("PopLayer has no matching PushLayer"))?;
                 // Compositing the layer back is unaffected by the clip, since the clip has already applied to each draw inside the layer.
                 target!().draw_pixmap(
                     0,
@@ -735,7 +735,7 @@ pub fn rasterize_with_media(
             }
             DrawOp::ClipPath { path, tf } => {
                 let Some(Some(p)) = paths.get(*path as usize) else {
-                    return Err(anyhow!("ClipPath 引用未知 path {path}"));
+                    return Err(anyhow!("ClipPath references unknown path {path}"));
                 };
                 let mut mask = match clips.last() {
                     Some(entry) => entry.mask.clone(),
@@ -754,10 +754,10 @@ pub fn rasterize_with_media(
             DrawOp::PopClip => {
                 let entry = clips
                     .pop()
-                    .ok_or_else(|| anyhow!("PopClip 无匹配 ClipPath"))?;
+                    .ok_or_else(|| anyhow!("PopClip has no matching ClipPath"))?;
                 if entry.layer_depth != layers.len() {
                     return Err(anyhow!(
-                        "PopClip 跨越了 PushLayer/PopLayer 边界（压入时层深 {}，弹出时 {}）",
+                        "PopClip crossed a PushLayer/PopLayer boundary (layer depth {} when pushed, {} when popped)",
                         entry.layer_depth,
                         layers.len()
                     ));
@@ -774,17 +774,17 @@ pub fn rasterize_with_media(
         static_prefix_put(key, &base);
     }
     if !layers.is_empty() {
-        return Err(anyhow!("帧结束时层栈非空（{} 层未 Pop）", layers.len()));
+        return Err(anyhow!("layer stack is not empty at end of frame ({} layers not popped)", layers.len()));
     }
     if !mattes.is_empty() {
         return Err(anyhow!(
-            "帧结束时遮罩栈非空（{} 层未 PopMatte）",
+            "matte stack is not empty at end of frame ({} layers not PopMatte'd)",
             mattes.len()
         ));
     }
     if !clips.is_empty() {
         return Err(anyhow!(
-            "帧结束时裁剪栈非空（{} 层未 PopClip）",
+            "clip stack is not empty at end of frame ({} layers not PopClip'd)",
             clips.len()
         ));
     }

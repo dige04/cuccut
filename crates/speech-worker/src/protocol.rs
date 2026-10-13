@@ -228,7 +228,7 @@ impl Control {
                 None
             }
             Inbound::Malformed { line } => {
-                eprintln!("speech-worker: 读不懂的一行输入（{} 字节）", line.len());
+                eprintln!("speech-worker: cannot parse an input line ({} bytes)", line.len());
                 None
             }
             Inbound::Request { id, method, params } => match method.as_str() {
@@ -252,7 +252,7 @@ impl Control {
                         respond_error(
                             &id,
                             "UNEXPECTED_REPLY",
-                            "没有在等这次模型调用的应答",
+                            "not waiting for this model call reply",
                             json!({ "requestId": request_id }),
                         );
                         None
@@ -282,16 +282,16 @@ pub fn hello() -> Value {
 }
 
 fn parse_reply(params: &Value) -> Result<(u64, Reply), String> {
-    let request_id = params.get("requestId").and_then(Value::as_u64).ok_or("llm.reply 缺少 requestId")?;
+    let request_id = params.get("requestId").and_then(Value::as_u64).ok_or("llm.reply is missing requestId")?;
     if let Some(text) = params.get("text").and_then(Value::as_str) {
         return Ok((request_id, Reply::Text(text.to_owned())));
     }
-    let error = params.get("error").ok_or("llm.reply 既没有 text 也没有 error")?;
+    let error = params.get("error").ok_or("llm.reply has neither text nor error")?;
     let class = error
         .get("class")
         .and_then(Value::as_str)
         .and_then(ErrorClass::parse)
-        .ok_or("llm.reply 的 error.class 应为 retryable、malformed、terminal 或 cancelled")?;
+        .ok_or("llm.reply error.class must be retryable, malformed, terminal or cancelled")?;
     let text = |key: &str| error.get(key).and_then(Value::as_str).unwrap_or_default().to_owned();
     Ok((
         request_id,

@@ -29,7 +29,7 @@ fn new_video(dir: &Path) -> Video {
         width: 1920,
         height: 1080,
     };
-    Video::create(dir, &options, &ffprobe()).expect("新建视频")
+    Video::create(dir, &options, &ffprobe()).expect("create the video")
 }
 
 fn apply(video: &mut Video, command_id: &str, operations: Vec<Value>) -> Result<Committed, ErrorBody> {
@@ -86,7 +86,7 @@ fn clip() -> Option<(tempfile::TempDir, PathBuf)> {
         .output()
         .is_ok_and(|o| o.status.success());
     if !ok {
-        eprintln!("跳过：没有可用的 ffmpeg 生成测试素材");
+        eprintln!("skipping: no usable ffmpeg to generate test media");
         return None;
     }
     Some((dir, path))
@@ -98,7 +98,7 @@ fn frames_of(video: &Video, id: &str) -> (i64, i64) {
     let (a, b) = video.state().item_range(&video.state().items[id].value, s).unwrap();
     let f = |r: editor_semantics::Ratio| r.checked_mul(editor_semantics::Ratio::new(30, 1).unwrap()).unwrap();
     let (a, b) = (f(a), f(b));
-    assert!(a.is_integer() && b.is_integer(), "{id} 不在帧网格上");
+    assert!(a.is_integer() && b.is_integer(), "{id} is not on the frame grid");
     (a.floor() as i64, b.floor() as i64)
 }
 
@@ -106,10 +106,10 @@ fn source_in(video: &Video, id: &str) -> f64 {
     let map = match &video.state().items[id].value {
         TimelineItem::Video(v) => &v.time_map,
         TimelineItem::Audio(a) => &a.time_map,
-        _ => panic!("{id} 没有源时钟"),
+        _ => panic!("{id} has no source clock"),
     };
     let TimeMap::Linear { source_in, .. } = map else {
-        panic!("应是线性映射")
+        panic!("expected a linear mapping")
     };
     source_in.to_ratio("sourceIn").unwrap().to_f64()
 }
@@ -478,7 +478,7 @@ fn cuts_are_rejected_whole_and_change_nothing() {
         let err = add_cuts(&mut t.video, &format!("cmd_bad_{n}"), &t.asset, cuts).unwrap_err();
         assert!(
             ["INVALID_OPERATION", "INVALID_TIME_VALUE"].contains(&err.code.as_str()),
-            "第 {n} 个：{}",
+            "case {n}: {}",
             err.code
         );
     }
@@ -991,7 +991,7 @@ fn one_sided_sentence_offset_and_blocked_anchors() {
 fn follows(video: &Video, id: &str) -> String {
     match &video.state().items[id].value.base().follow_policy {
         FollowPolicy::ItemLocal { item_id } => item_id.clone(),
-        other => panic!("{id} 不是 item-local：{other:?}"),
+        other => panic!("{id} is not item-local: {other:?}"),
     }
 }
 

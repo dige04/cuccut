@@ -68,8 +68,8 @@ pub struct TiktokenTokenizer {
 
 impl TiktokenTokenizer {
     pub fn load(path: &Path) -> Result<Self> {
-        let text = std::fs::read_to_string(path).with_context(|| format!("无法读取 IndexTTS 2.5 词表 {}", path.display()))?;
-        Self::parse(&text).with_context(|| format!("解析 IndexTTS 2.5 词表 {} 失败", path.display()))
+        let text = std::fs::read_to_string(path).with_context(|| format!("failed to read IndexTTS 2.5 vocabulary {}", path.display()))?;
+        Self::parse(&text).with_context(|| format!("failed to parse IndexTTS 2.5 vocabulary {}", path.display()))
     }
 
     /// Parses `.tiktoken` text: each line is `base64(bytes) rank`; ranks must cover 0..n contiguously.
@@ -82,21 +82,21 @@ impl TiktokenTokenizer {
             }
             let mut parts = line.split_whitespace();
             let (Some(token), Some(rank), None) = (parts.next(), parts.next(), parts.next()) else {
-                bail!("第 {} 行不是 `base64 rank` 形式", line_no + 1);
+                bail!("line {} is not in `base64 rank` form", line_no + 1);
             };
-            let rank: usize = rank.parse().with_context(|| format!("第 {} 行的 rank 不是整数", line_no + 1))?;
-            let bytes = decode_base64(token).with_context(|| format!("第 {} 行的 base64 无效", line_no + 1))?;
+            let rank: usize = rank.parse().with_context(|| format!("rank on line {} is not an integer", line_no + 1))?;
+            let bytes = decode_base64(token).with_context(|| format!("base64 on line {} is invalid", line_no + 1))?;
             if rank >= entries.len() {
                 entries.resize(rank + 1, None);
             }
             if entries[rank].replace(bytes).is_some() {
-                bail!("rank {rank} 重复出现");
+                bail!("rank {rank} appears more than once");
             }
         }
         let pieces = entries
             .into_iter()
             .enumerate()
-            .map(|(rank, entry)| entry.ok_or_else(|| anyhow!("词表缺少 rank {rank}")))
+            .map(|(rank, entry)| entry.ok_or_else(|| anyhow!("vocabulary is missing rank {rank}")))
             .collect::<Result<Vec<_>>>()?;
         Self::from_pieces(pieces)
     }
@@ -110,12 +110,12 @@ impl TiktokenTokenizer {
                 continue;
             }
             if ranks.insert(piece.clone(), rank as u32).is_some() {
-                bail!("词表含重复 piece（rank {rank}）");
+                bail!("vocabulary contains a duplicate piece (rank {rank})");
             }
         }
         for byte in 0..=u8::MAX {
             if !ranks.contains_key(&[byte][..]) {
-                bail!("词表缺少单字节 0x{byte:02X}");
+                bail!("vocabulary is missing single-byte 0x{byte:02X}");
             }
         }
         let special_tokens = special_token_strings();
@@ -130,7 +130,7 @@ impl TiktokenTokenizer {
             decoder: pieces,
             special_ids,
             special_tokens,
-            pattern: Regex::new(PATTERN).expect("静态预切分正则应能编译"),
+            pattern: Regex::new(PATTERN).expect("static pre-tokenization regex should compile"),
         })
     }
 
@@ -267,7 +267,7 @@ fn decode_base64(input: &str) -> Result<Vec<u8>> {
             b'+' => 62,
             b'/' => 63,
             b'=' => break,
-            other => bail!("非法 base64 字符 {:?}", other as char),
+            other => bail!("invalid base64 character {:?}", other as char),
         };
         buffer = (buffer << 6) | u32::from(value);
         bits += 6;

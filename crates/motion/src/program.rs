@@ -86,7 +86,7 @@ impl PropertyTrack {
             self.segments
                 .iter()
                 .all(|segment| segment.composite == self.composite && segment.order == self.order),
-            "track {} 的段与轨的 (composite, order) 不一致",
+            "track {} segments and track disagree on (composite, order)",
             self.property
         );
     }

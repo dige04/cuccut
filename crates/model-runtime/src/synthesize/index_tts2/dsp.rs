@@ -33,7 +33,7 @@ fn rfft_frames(framed: &[f32], frames: usize, n_fft: usize) -> Vec<Complex<f32>>
     let mut spectrum = vec![Complex::new(0.0, 0.0); frames * n_bins];
     for t in 0..frames {
         input.copy_from_slice(&framed[t * n_fft..(t + 1) * n_fft]);
-        fft.process(&mut input, &mut output).expect("rfft 尺寸匹配");
+        fft.process(&mut input, &mut output).expect("rfft size should match");
         spectrum[t * n_bins..(t + 1) * n_bins].copy_from_slice(&output);
     }
     spectrum

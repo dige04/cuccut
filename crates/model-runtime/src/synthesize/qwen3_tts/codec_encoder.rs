@@ -319,7 +319,7 @@ impl CodecEncoder {
     /// 24 kHz mono samples → `[1, 16, T]` Int32 codes.
     pub fn encode(&self, samples: &[f32]) -> Result<Array> {
         if samples.is_empty() {
-            bail!("参考音频为空，无法编码");
+            bail!("reference audio is empty; cannot encode");
         }
         let audio = Array::from_slice(samples, &[1, samples.len() as i32, 1]);
         let h = self.seanet.forward(&audio)?;

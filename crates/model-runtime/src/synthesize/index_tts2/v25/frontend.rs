@@ -19,10 +19,10 @@ pub const DEFAULT_MAX_SEGMENT_TOKENS: usize = 120;
 /// Stop id appended to the end of each encoded segment (`F.pad(toks, (0, 1), value=1)`).
 pub const STOP_TEXT_TOKEN: u32 = 1;
 
-static PRONUNCIATION_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<([^|>\n]+)\|([^>\n]+)>").expect("静态正则"));
+static PRONUNCIATION_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<([^|>\n]+)\|([^>\n]+)>").expect("static regex"));
 static PROTECTED_PATTERN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"<\|SPECIAL_TOKEN_\d+\|>.*?<\|SPECIAL_TOKEN_\d+\|>").expect("静态正则"));
-static SPECIAL_TOKEN_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<\|([^|]+)\|>").expect("静态正则"));
+    LazyLock::new(|| Regex::new(r"<\|SPECIAL_TOKEN_\d+\|>.*?<\|SPECIAL_TOKEN_\d+\|>").expect("static regex"));
+static SPECIAL_TOKEN_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<\|([^|]+)\|>").expect("static regex"));
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LanguageResolution {
@@ -56,7 +56,7 @@ pub fn normalize_language(requested: &str) -> Result<&'static str> {
     match RELEASED_LANGUAGES.iter().find(|candidate| **candidate == aliased) {
         Some(code) => Ok(*code),
         None => bail!(
-            "IndexTTS 2.5 不支持语言 `{}`，可选 {}",
+            "IndexTTS 2.5 does not support language `{}`; choose from {}",
             requested.trim(),
             RELEASED_LANGUAGES.join(" / ")
         ),
@@ -75,13 +75,13 @@ pub fn resolve_language(text: &str, requested: Option<&str>) -> Result<LanguageR
         });
     }
     if text.trim().is_empty() {
-        bail!("文本为空，无法判定 IndexTTS 2.5 的语言");
+        bail!("text is empty; cannot determine the IndexTTS 2.5 language");
     }
     let has = |predicate: fn(char) -> bool| text.chars().any(predicate);
     let arabic = has(is_arabic);
     let cjk = has(is_kana) || has(is_han);
     if arabic && cjk {
-        bail!("文本同时含阿拉伯文与中日文字，请显式指定语言");
+        bail!("text contains both Arabic and Chinese or Japanese characters; specify the language explicitly");
     }
     let (language, ambiguous) = if arabic {
         ("ar", false)
@@ -94,7 +94,7 @@ pub fn resolve_language(text: &str, requested: Option<&str>) -> Result<LanguageR
     } else if has(|c| c.is_ascii_alphabetic()) {
         ("en", true)
     } else {
-        bail!("无法判定 IndexTTS 2.5 的语言，请从 {} 中指定", RELEASED_LANGUAGES.join(" / "));
+        bail!("cannot determine the IndexTTS 2.5 language; specify one of {}", RELEASED_LANGUAGES.join(" / "));
     };
     Ok(LanguageResolution { language, ambiguous })
 }
@@ -272,7 +272,7 @@ pub fn prepare(
         .filter(|segment| !segment.trim().is_empty())
         .collect();
     if segments.is_empty() {
-        bail!("规整后没有可朗读的文本");
+        bail!("no speakable text after normalization");
     }
     let token_ids = segments
         .iter()
@@ -284,7 +284,7 @@ pub fn prepare(
         .collect();
     Ok(PreparedText {
         language,
-        language_id: language_id(language).expect("公开语言都在语言码表里"),
+        language_id: language_id(language).expect("public languages are all in the language code table"),
         language_ambiguous: resolution.ambiguous,
         normalized_text: prepared,
         segments,
@@ -297,7 +297,7 @@ fn replace_captures(pattern: &Regex, text: &str, mut replace: impl FnMut(&Captur
     let mut cursor = 0;
     for captures in pattern.captures_iter(text) {
         let Ok(captures) = captures else { break };
-        let whole = captures.get(0).expect("第 0 组总是存在");
+        let whole = captures.get(0).expect("group 0 always exists");
         output.push_str(&text[cursor..whole.start()]);
         output.push_str(&replace(&captures));
         cursor = whole.end();

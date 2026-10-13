@@ -61,7 +61,7 @@ impl TtsEngine for PeakLimited {
         let mut audio = self.inner.synthesize(request, progress)?;
         if let Some(gain) = limit_peak(&mut audio.samples) {
             eprintln!(
-                "[{}] 峰值超过 −1 dBFS，整段乘 {gain:.3}（{:.2} dB）",
+                "[{}] peak exceeds −1 dBFS, scaling the whole segment by {gain:.3} ({:.2} dB)",
                 self.inner.kind().as_str(),
                 20.0 * gain.log10()
             );
@@ -82,8 +82,8 @@ mod tests {
     fn hot_audio_is_scaled_down_to_the_ceiling() {
         let mut samples: Vec<f32> = (0..1000).map(|i| (i as f32 / 10.0).sin() * 1.4).collect();
         let original = samples.clone();
-        let gain = limit_peak(&mut samples).expect("应当缩小");
-        assert!((peak(&samples) - PEAK_CEILING).abs() < 1e-6, "峰值 {}", peak(&samples));
+        let gain = limit_peak(&mut samples).expect("should have been reduced");
+        assert!((peak(&samples) - PEAK_CEILING).abs() < 1e-6, "peak {}", peak(&samples));
         assert!((gain - PEAK_CEILING / peak(&original)).abs() < 1e-6);
         // Proportional scale-down: the waveform shape is unchanged, and nothing is clipped.
         for (out, before) in samples.iter().zip(&original) {
@@ -111,7 +111,7 @@ mod tests {
         assert_eq!(samples, vec![0.5, 0.0, -0.25, 0.0, 0.0, 0.75]);
 
         let mut hot = vec![1.2, f32::INFINITY, -0.6, f32::NAN];
-        let gain = limit_peak(&mut hot).expect("应当缩小");
+        let gain = limit_peak(&mut hot).expect("should have been reduced");
         assert!((gain - PEAK_CEILING / 1.2).abs() < 1e-6);
         assert!((hot[0] - PEAK_CEILING).abs() < 1e-6);
         assert_eq!(hot[1], 0.0);

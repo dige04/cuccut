@@ -335,7 +335,7 @@ fn load_store(files: &[PathBuf], prefix: &'static str, dtype: Dtype) -> Result<W
         };
         ours && !k.contains(".time_conv.")
     })
-    .context("加载 VAE 权重")?;
+    .context("load VAE weights")?;
     // The mlx-community package uses MLX layout (conv kernel [O,kh,kw,C], gamma [C]); the ddalcu 8-bit package keeps PyTorch layout ([O,C,kh,kw], gamma [C,1,1(,1)]).
     // When C=3/4, the 3×3 kernel shapes can be identical in both layouts, so the layout is decided as a whole from this half's (post_)quant_conv (a 1×1 convolution C→C, C > 1).
     let probe = if prefix == "decoder" {
@@ -346,7 +346,7 @@ fn load_store(files: &[PathBuf], prefix: &'static str, dtype: Dtype) -> Result<W
     let torch = match lazy.get(probe).map(|w| w.shape().to_vec()).as_deref() {
         Some(&[o, 1, 1, c]) if o == c && c > 1 => false,
         Some(&[o, c, 1, 1]) if o == c && c > 1 => true,
-        other => bail!("{probe} 的形状认不出布局：{other:?}"),
+        other => bail!("cannot determine the layout from the shape of {probe}: {other:?}"),
     };
     let mut cast = HashMap::with_capacity(lazy.len());
     for (k, v) in lazy {
@@ -369,9 +369,9 @@ fn load_store(files: &[PathBuf], prefix: &'static str, dtype: Dtype) -> Result<W
 impl Decoder {
     /// `files` are the safetensors shards under `vae/`, and `config` is `vae/config.json`.
     pub fn load(files: &[PathBuf], config: &Path, dtype: Dtype) -> Result<Self> {
-        let cfg: VaeConfig = serde_json::from_str(&std::fs::read_to_string(config).context("读取 vae/config.json")?)?;
+        let cfg: VaeConfig = serde_json::from_str(&std::fs::read_to_string(config).context("read vae/config.json")?)?;
         if cfg.latents_mean.len() != Z_DIM as usize || cfg.latents_std.len() != Z_DIM as usize {
-            bail!("vae config 的 latents_mean/std 长度不是 {Z_DIM}");
+            bail!("vae config latents_mean/std length is not {Z_DIM}");
         }
         let s = &mut load_store(files, "decoder", dtype)?;
         // dims = base * [mult[-1]] + mult[::-1] = [1152,1152,1152,576,288,144]
@@ -414,7 +414,7 @@ impl Decoder {
         };
         let left = s.remaining();
         if !left.is_empty() {
-            bail!("VAE 解码器有未使用的权重：{:?}", &left[..left.len().min(5)]);
+            bail!("VAE decoder has unused weights: {:?}", &left[..left.len().min(5)]);
         }
         Ok(me)
     }
@@ -472,14 +472,14 @@ impl Decoder {
             let finite = y.is_finite()?.all(None)?;
             finite.eval()?;
             if !finite.item::<bool>() {
-                bail!("VAE 解码在 {dtype:?} 下出现非有限值");
+                bail!("VAE decode produced non-finite values in {dtype:?}");
             }
             let y = ops::clip(&y, (-1.0f32, 1.0f32))?;
             y.eval()?;
             outs.push(y);
             r0 = r1;
         }
-        trace!("[vae] 尾段 {} 条带 × {rows} 行（halo {TAIL_HALO}）-> {} 行", outs.len(), h * scale);
+        trace!("[vae] tail segment {} strips × {rows} rows (halo {TAIL_HALO}) -> {} rows", outs.len(), h * scale);
         let out = ops::concatenate_axis(&outs, 1)?;
         out.eval()?;
         Ok(out)

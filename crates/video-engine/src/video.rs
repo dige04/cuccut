@@ -515,7 +515,7 @@ impl Video {
     }
 
     pub fn undo_state(&self, actor: &Actor) -> EngineResult<UndoState> {
-        let actor = serde_json::to_string(actor).expect("能序列化");
+        let actor = serde_json::to_string(actor).expect("can serialize");
         let (undo, redo) = self.store.undo_steps(&self.state.id, &actor)?;
         Ok(UndoState { undo, redo })
     }

@@ -203,7 +203,7 @@ impl Qwen3TtsConfig {
 
     /// Parses the text of `config.json` in the model directory.
     pub fn parse(json: &str) -> Result<Self> {
-        let raw: RawConfig = serde_json::from_str(json).context("解析 Qwen3-TTS config.json 失败")?;
+        let raw: RawConfig = serde_json::from_str(json).context("failed to parse Qwen3-TTS config.json")?;
 
         let declared = raw.model_size.as_deref().map(size_from_model_size).transpose()?;
         let by_dim = raw
@@ -215,16 +215,16 @@ impl Qwen3TtsConfig {
         if let (Some(a), Some(b)) = (declared, by_dim)
             && a != b
         {
-            bail!("config.json 的 model_size 与 talker_config.hidden_size 冲突");
+            bail!("config.json model_size conflicts with talker_config.hidden_size");
         }
         let Some(size) = declared.or(by_dim) else {
-            bail!("config.json 缺少 model_size 或 talker_config.hidden_size");
+            bail!("config.json is missing model_size or talker_config.hidden_size");
         };
 
         let bits = match &raw.quantization_config {
             Some(q) => {
                 if q.bits != 4 && q.bits != 8 {
-                    bail!("quantization_config.bits 只支持 4 或 8，实际 {}", q.bits);
+                    bail!("quantization_config.bits must be 4 or 8, got {}", q.bits);
                 }
                 q.bits
             }
@@ -234,7 +234,7 @@ impl Qwen3TtsConfig {
         let mut config = Self::for_size(size, bits);
         if let Some(group) = raw.quantization_config.as_ref().and_then(|q| q.group_size) {
             if group == 0 {
-                bail!("quantization_config.group_size 必须为正");
+                bail!("quantization_config.group_size must be positive");
             }
             config.talker.group_size = group;
             config.code_predictor.group_size = group;
@@ -258,7 +258,7 @@ impl Qwen3TtsConfig {
                     ModelVariant::Base
                 }
             }
-            Some(other) => bail!("不支持的 tts_model_type：{other}"),
+            Some(other) => bail!("unsupported tts_model_type: {other}"),
         };
         Ok(config)
     }
@@ -268,7 +268,7 @@ fn size_from_model_size(value: &str) -> Result<ModelSize> {
     match value.trim().to_ascii_lowercase().as_str() {
         "0.6b" => Ok(ModelSize::Small),
         "1.7b" => Ok(ModelSize::Large),
-        other => bail!("不支持的 model_size：{other}"),
+        other => bail!("unsupported model_size: {other}"),
     }
 }
 
@@ -276,7 +276,7 @@ fn size_from_hidden(hidden: usize) -> Result<ModelSize> {
     match hidden {
         1024 => Ok(ModelSize::Small),
         2048 => Ok(ModelSize::Large),
-        other => bail!("不支持的 talker_config.hidden_size：{other}"),
+        other => bail!("unsupported talker_config.hidden_size: {other}"),
     }
 }
 
@@ -318,7 +318,7 @@ struct RawTalker {
 
 fn positive(name: &str, value: Option<usize>) -> Result<()> {
     if value == Some(0) {
-        bail!("{name} 必须为正");
+        bail!("{name} must be positive");
     }
     Ok(())
 }

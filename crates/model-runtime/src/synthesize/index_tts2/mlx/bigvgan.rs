@@ -276,7 +276,7 @@ impl BigVgan {
                 });
             }
             x = acc
-                .expect("至少一个 resblock")
+                .expect("at least one resblock")
                 .divide(&Array::from_f32(n as f32).as_dtype(dtype)?)?;
             x.eval()?;
             if crate::synthesize::tensor::host::speech_timing_enabled() {

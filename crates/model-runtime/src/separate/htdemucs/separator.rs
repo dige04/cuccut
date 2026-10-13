@@ -39,18 +39,18 @@ impl HtDemucs {
         ensure_device()?;
         let config = HtDemucsConfig::load(files.require("htdemucs_ft_config.json")?)?;
         if config.audio_channels != 2 {
-            bail!("只支持双声道模型，配置 audio_channels = {}", config.audio_channels);
+            bail!("only stereo models are supported; config audio_channels = {}", config.audio_channels);
         }
         let weights_path = files.require("htdemucs_ft.safetensors")?;
         configure_memory_cache()?;
-        let mut all = load_safetensors_deferred(&[weights_path], |_| true).context("无法加载 HTDemucs 权重")?;
+        let mut all = load_safetensors_deferred(&[weights_path], |_| true).context("cannot load HTDemucs weights")?;
         let mut models = Vec::with_capacity(config.num_models);
         for index in 0..config.num_models {
             let mut store = WeightStore::split(&mut all, &model_prefix(index));
             if store.is_empty() {
-                bail!("权重文件里没有 {} 前缀的键", model_prefix(index));
+                bail!("no keys with prefix {} in the weight file", model_prefix(index));
             }
-            let model = HtDemucsModel::new(&config, &mut store).with_context(|| format!("构建子模型 {index}"))?;
+            let model = HtDemucsModel::new(&config, &mut store).with_context(|| format!("build sub-model {index}"))?;
             store.finish()?;
             models.push(model);
         }
@@ -58,7 +58,7 @@ impl HtDemucs {
             let mut keys: Vec<&String> = all.keys().collect();
             keys.sort();
             bail!(
-                "权重文件含 {} 个不属于任何子模型的键，例如 {:?}",
+                "weight file has {} keys that belong to no sub-model, for example {:?}",
                 all.len(),
                 keys.iter().take(4).collect::<Vec<_>>()
             );
@@ -79,16 +79,16 @@ impl Separator for HtDemucs {
     fn separate(&mut self, mix: &StereoAudio, progress: ProgressSink<'_>) -> Result<SeparatedStems> {
         let _guard = MemoryCacheGuard::new();
         if mix.left.len() != mix.right.len() {
-            bail!("左右声道长度不一致");
+            bail!("left and right channels have different lengths");
         }
         let target_rate = self.config.samplerate;
         let (left, right) = if mix.sample_rate == target_rate {
             (mix.left.clone(), mix.right.clone())
         } else {
             if !progress(SeparationProgress::Loading {
-                stage: format!("重采样 {} → {} Hz", mix.sample_rate, target_rate),
+                stage: format!("resample {} → {} Hz", mix.sample_rate, target_rate),
             }) {
-                bail!("已取消");
+                bail!("cancelled");
             }
             (
                 resample(&mix.left, mix.sample_rate, target_rate),
@@ -114,12 +114,12 @@ impl Separator for HtDemucs {
         let windows = plan_windows(length, segment_len, OVERLAP);
         let sources = self.config.num_sources();
         if self.models.len() != sources {
-            bail!("子模型数 {} 与声部数 {} 不符", self.models.len(), sources);
+            bail!("sub-model count {} does not match source count {}", self.models.len(), sources);
         }
         let total = windows.len() * sources;
         let mut done = 0;
         if !progress(SeparationProgress::Window { done, total }) {
-            bail!("已取消");
+            bail!("cancelled");
         }
 
         let channels = [left, right];
@@ -136,12 +136,12 @@ impl Separator for HtDemucs {
                 acc.add(*window, &stem)?;
                 done += 1;
                 if !progress(SeparationProgress::Window { done, total }) {
-                    bail!("已取消");
+                    bail!("cancelled");
                 }
             }
             let mut out = acc.finish();
-            let right = out.pop().context("输出缺少右声道")?;
-            let left = out.pop().context("输出缺少左声道")?;
+            let right = out.pop().context("output is missing the right channel")?;
+            let left = out.pop().context("output is missing the left channel")?;
             outputs[s] = Some(StereoAudio {
                 left,
                 right,
@@ -155,8 +155,8 @@ impl Separator for HtDemucs {
                 .sources
                 .iter()
                 .position(|n| n == name)
-                .with_context(|| format!("配置 sources 里没有 {name}"))?;
-            outputs[index].take().with_context(|| format!("声部 {name} 没有输出"))
+                .with_context(|| format!("config sources has no {name}"))?;
+            outputs[index].take().with_context(|| format!("stem {name} has no output"))
         };
         Ok(SeparatedStems {
             drums: take("drums")?,

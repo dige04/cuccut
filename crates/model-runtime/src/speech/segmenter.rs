@@ -182,7 +182,7 @@ mod tests {
         let mut padded = padded(&[span(0.05, 1.0), span(1.1, 2.0), span(3.0, 3.95)], 4.0);
         assert_eq!(padded[0].start, 0.0);
         assert_eq!(padded[2].end, 4.0);
-        assert!(padded[1].start < padded[0].end, "补边后相邻段重叠：{padded:?}");
+        assert!(padded[1].start < padded[0].end, "adjacent segments overlap after padding: {padded:?}");
         resolve_overlaps(&mut padded);
         for pair in padded.windows(2) {
             assert!(pair[0].end <= pair[1].start);

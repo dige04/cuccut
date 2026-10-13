@@ -25,7 +25,7 @@ fn timescale_of(body: &SpeechBody) -> Result<i64, BridgeError> {
 pub(crate) fn to_doc(media: &MediaFacts, language: Option<&str>, body: &SpeechBody) -> Result<TranscriptDoc, BridgeError> {
     if body.schema != SPEECH_SCHEMA {
         return Err(BridgeError::new(format!(
-            "转写正文的 schema 是 {}，只认 {SPEECH_SCHEMA}",
+            "transcript body schema is {}, only {SPEECH_SCHEMA} is accepted",
             body.schema
         )));
     }
@@ -43,22 +43,22 @@ pub(crate) fn to_doc(media: &MediaFacts, language: Option<&str>, body: &SpeechBo
     let mut speakers = BTreeMap::new();
     for speaker in body.speakers.iter().flatten() {
         if speaker.id == NO_SPEAKER {
-            return Err(BridgeError::new("说话人的 ID 不能是空字符串"));
+            return Err(BridgeError::new("speaker ID must not be an empty string"));
         }
         let value = Speaker {
             name: speaker.name.clone(),
             hue: speaker.hue.flatten(),
         };
         if speakers.insert(speaker.id.clone(), value).is_some() {
-            return Err(BridgeError::new(format!("说话人 {} 重复", speaker.id)));
+            return Err(BridgeError::new(format!("speaker {} is duplicated", speaker.id)));
         }
     }
     for word in &body.words {
         let (Some(start), Some(end)) = (word.start, word.end) else {
-            return Err(BridgeError::new(format!("词 {} 没有源时间", word.id)));
+            return Err(BridgeError::new(format!("word {} has no source time", word.id)));
         };
         if word.speaker.as_deref() == Some(NO_SPEAKER) {
-            return Err(BridgeError::new(format!("词 {} 的说话人是空字符串", word.id)));
+            return Err(BridgeError::new(format!("word {} has an empty speaker", word.id)));
         }
         doc.words.push(Word {
             id: word.id.clone(),
@@ -235,9 +235,9 @@ pub(crate) fn from_doc(
     let word_ids: HashSet<&str> = doc.words.iter().map(|w| w.id.as_str()).collect();
     for (id, hidden) in &doc.hidden {
         if !hidden {
-            report.dropped.push(format!("hidden 里词 {id} 的 false"));
+            report.dropped.push(format!("word {id} in hidden is false"));
         } else if !word_ids.contains(id.as_str()) {
-            report.dropped.push(format!("隐藏的词 {id} 已经不在词表里"));
+            report.dropped.push(format!("hidden word {id} is no longer in the word list"));
         }
     }
 
@@ -252,7 +252,7 @@ pub(crate) fn from_doc(
     for (id, speaker) in &doc.speakers {
         if id == NO_SPEAKER {
             if !speaker.name.is_empty() || speaker.hue.is_some() {
-                report.dropped.push("没有说话人的词（保留的说话人 \"\"）的名字与色相".to_owned());
+                report.dropped.push("name and hue of the words with no speaker (reserved speaker \"\")".to_owned());
             }
         } else if !placed.contains(id.as_str()) {
             speakers.push(speaker_from(id, speaker, None));
@@ -278,7 +278,7 @@ pub(crate) fn from_doc(
     let paragraph_set: BTreeSet<&str> = doc.para_breaks.iter().filter(|(_, on)| **on).map(|(id, _)| id.as_str()).collect();
     for (id, on) in &doc.para_breaks {
         if !on {
-            report.dropped.push(format!("paraBreaks 里词 {id} 的 false"));
+            report.dropped.push(format!("word {id} in paraBreaks is false"));
         }
     }
     let prior_paragraphs = base.and_then(|b| b.paragraph_breaks.as_ref());

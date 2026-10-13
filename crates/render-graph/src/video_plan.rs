@@ -45,7 +45,7 @@ pub fn plan_video(video: VideoView<'_>, sequence_id: &str, range: Option<(Ratio,
     let sequence = video
         .sequences
         .get(sequence_id)
-        .ok_or_else(|| PlanError::new("SEQUENCE_NOT_FOUND", format!("没有序列 {sequence_id}")))?;
+        .ok_or_else(|| PlanError::new("SEQUENCE_NOT_FOUND", format!("no sequence {sequence_id}")))?;
     let fps = checked_fps(sequence)?;
     let (start, end) = resolve_range(sequence, range)?;
     // Frames covered by the range `[f0, f1)`: from the frame where the start lies up to the last frame before the end.

@@ -74,6 +74,8 @@ import { VoiceCloneService } from './library/voice-clone-service.ts';
 import { openModelJobs, type ModelJobs, type ModelJobsOptions } from './models/model-jobs.ts';
 import { ModelInstallTools } from './agent-tools/model-install-tools.ts';
 import { ExportService } from './exports/export-service.ts';
+import { PublishingService } from './publishing/publishing-service.ts';
+import { runtimePublishingVideos } from './publishing/publishing-videos.ts';
 import { FontService } from './fonts/font-service.ts';
 import type { FontCatalogue } from './fonts/font-catalogue.ts';
 import type { FontDownloadOptions } from './fonts/font-download.ts';
@@ -241,6 +243,8 @@ export interface RunningRuntime {
   externalTools: ExternalToolService;
   /** Fonts downloaded on demand (architecture design §9.1). */
   fonts: FontService;
+  /** Publishing calendar and connections (design m2-publishing §4.1). */
+  publishing: PublishingService;
   log: Logger;
   close(): Promise<void>;
 }
@@ -272,6 +276,7 @@ const STOP_ORDER = [
   'storage-gc',
   'services',
   'nodes',
+  'publishing',
   'jobs',
   'grants',
   'usage',
@@ -616,6 +621,18 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       exportWorker: () => resolveExportWorkerCommand(options.engineHost !== undefined ? options.engineHost : resolveEngineHostCommand()),
       log: log.child('exports'),
     });
+    // Publishing calendar (design m2-publishing §4.1): its own store under the Runtime Home. The Space catalog is built later, so it is fetched at call
+    // time. An unreadable store leaves publishing unavailable (the snapshot says why) without stopping the Runtime.
+    const publishing = await PublishingService.open({
+      file: home.publishingFile,
+      dir: home.publishingDir,
+      jobs: models.jobs,
+      exports,
+      videos: runtimePublishingVideos({ videos, space: () => spaceRef }),
+      log: log.child('publishing'),
+    });
+    stops.add('publishing', () => publishing.close(), 'Stopping publishing failed');
+    publishing.start();
     // If sharing is on, the node service starts listening here (the pairing code is not reissued). A port that is already taken does not stop the Runtime from starting.
     const nodes = await openNodeShare(home, models, log, options.nodes);
     // Stopping the node service cancels remote jobs, closes the listener, and withdraws the mDNS registration. It may listen on all interfaces, so even when startup fails this externally reachable port must not be left open.
@@ -923,6 +940,7 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       activity,
       requestStop: options.requestStop ?? null,
       legacyUpgrade,
+      publishing,
     };
     // The web service (§4.8) uses the same handler functions, swapping in only its own media handle (a same-origin address, requiring a session). The allowlist is at its gateway entry.
     services.web.bind({
@@ -1021,6 +1039,7 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       services,
       externalTools,
       fonts,
+      publishing,
       log,
       close,
     };

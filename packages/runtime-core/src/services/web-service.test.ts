@@ -566,6 +566,23 @@ describe('Web 服务', () => {
     expect(await page.request('subscribe', { topic: 'settings' })).toMatchObject({ mode: 'snapshot' });
     // The agent's view is exposed through `agents.list` (§3.11).
     expect(await page.request('subscribe', { topic: 'agents' })).toMatchObject({ mode: 'snapshot' });
+    // Publishing (docs/cuccut/m2-publishing.md §4.2): the browser reads and edits the calendar, but authorizing, sending, recording results,
+    // connections and transfer stay in the desktop app.
+    expect(await page.request('subscribe', { topic: 'publishing' })).toMatchObject({ mode: 'snapshot' });
+    expect(await page.request('publishing.calendar', { from: '2026-10-01', to: '2026-10-31' })).toMatchObject({ publications: [], total: 0 });
+    for (const [method, params] of [
+      ['publishing.authorize', { publicationId: 'pub_none', revision: 0 }],
+      ['publishing.send', { publicationId: 'pub_none', revision: 0, confirmed: true }],
+      ['publishing.reconcile', { publicationId: 'pub_none', revision: 0, destinationId: 'd', state: 'published', remoteUrl: null, at: null, note: 'checked it there' }],
+      ['publishing.connections.save', { provider: 'manual', name: 'By hand' }],
+      ['publishing.transfer.export', {}],
+      ['publishing.cleanup', {}],
+    ] as const) {
+      expect(details(await page.request(method as 'publishing.send', params as never).catch((e: unknown) => e)), method).toMatchObject({
+        code: 'forbidden',
+        details: { code: 'WEB_METHOD_NOT_ALLOWED', method },
+      });
+    }
 
     // Configuration can only be tightened within the default set. The web service has no access level and no video scope.
     for (const methods of [['settings.*'], ['services.list'], ['projects.*'], ['nodes.share.status']]) {
@@ -606,6 +623,12 @@ describe('Web 服务', () => {
     expect((await page.request('projects.list', {})).projects).toEqual([]);
     // Usage is also in the read-only set.
     expect((await page.request('models.usage', { period: 'all' })).byProvider).toEqual([]);
+    // Publishing: the calendar is a read; preparing a publication is a write.
+    expect(await page.request('publishing.calendar', { from: '2026-10-01', to: '2026-10-31' })).toMatchObject({ total: 0 });
+    expect(details(await page.request('publishing.prepare', { videoIds: ['vid_none'] }).catch((e: unknown) => e))).toMatchObject({
+      code: 'forbidden',
+      details: { code: 'WEB_READ_ONLY', method: 'publishing.prepare' },
+    });
     expect(details(await page.request('projects.create', { name: '只读' }).catch((e: unknown) => e))).toMatchObject({
       code: 'forbidden',
       details: { code: 'WEB_READ_ONLY', method: 'projects.create' },

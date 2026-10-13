@@ -2,7 +2,12 @@ import { z } from 'zod';
 import {
   CALENDAR_ARCHIVE_FORMAT,
   DELIVERY_STATES,
+  PUBLICATION_STATUSES,
+  PUBLISHING_BATCH_MAX,
+  PUBLISHING_CALENDAR_MAX_LIMIT,
   PUBLISHING_FORMATS,
+  PUBLISHING_PREPARE_MAX,
+  RECONCILE_STATES,
   PUBLISHING_NETWORKS,
   PUBLISHING_PROVIDERS,
   PUBLISHING_SETTINGS_DEFAULTS,
@@ -21,6 +26,7 @@ import {
   type ResolvedPayload,
 } from './publishing.ts';
 import { isMessageRef, type MessageRef } from './message-ref.ts';
+import { SLOT_PLAN_MAX_DAYS, isCivilDate } from './publishing/schedule.ts';
 
 /**
  * zod schemas for publishing records (types in `publishing.ts`). Exported through `@cuccut/protocol/schemas` only, so the UI bundle does not include
@@ -162,6 +168,10 @@ export const publicationDestinationSchema = z.object({
   error: z.string().nullable().default(null),
   errorRef: messageRef.nullable().default(null),
   evidence: z.array(z.string()).default([]),
+  verification: z
+    .object({ state: deliveryStateSchema, note: z.string(), by: z.string(), at: instant })
+    .nullable()
+    .default(null),
 });
 
 export const publicationSchema = z.object({
@@ -186,6 +196,7 @@ export const publicationSchema = z.object({
     .object({ revision: z.number().int().nonnegative(), copy: publicationCopySchema, reason: z.string(), jobId: id.nullable(), at: instant })
     .nullable()
     .default(null),
+  pinJob: z.object({ jobId: id, at: instant, error: z.string().nullable(), errorRef: messageRef.nullable() }).nullable().default(null),
   destinations: z.array(publicationDestinationSchema).max(50).default([]),
   revision: z.number().int().nonnegative(),
   createdAt: instant,
@@ -266,6 +277,133 @@ export const calendarArchiveSchema = z
     connections: z.array(publishingConnectionSchema.pick({ id: true, provider: true, name: true })),
   })
   .strict();
+
+// ---- RPC parameters (`publishing.*`, merged into `methodParamSchemas` by `schemas.ts`) ----
+
+const civilDate = z.string().refine(isCivilDate);
+const revision = z.number().int().nonnegative();
+const publicationRef = z.object({ publicationId: id }).strict();
+const atRevision = z.object({ publicationId: id, revision }).strict();
+const destinationAction = z.object({ publicationId: id, revision, destinationId: id }).strict();
+const label = z.string().trim().min(1).max(500);
+const name = z.string().trim().min(1).max(500);
+
+export const PUBLISHING_PARAM_SCHEMAS = {
+  'publishing.get': publicationRef,
+  'publishing.calendar': z
+    .object({
+      from: civilDate,
+      to: civilDate,
+      projectId: id.nullable().optional(),
+      accountIds: z.array(id).max(200).optional(),
+      statuses: z.array(z.enum(PUBLICATION_STATUSES)).max(PUBLICATION_STATUSES.length).optional(),
+      includeUnscheduled: z.boolean().optional(),
+      offset: z.number().int().nonnegative().max(1_000_000).optional(),
+      limit: z.number().int().positive().max(PUBLISHING_CALENDAR_MAX_LIMIT).optional(),
+    })
+    .strict(),
+  'publishing.prepare': z
+    .object({
+      videoIds: z.array(id).min(1).max(PUBLISHING_PREPARE_MAX),
+      sequenceId: id.optional(),
+      accountIds: z.array(id).max(50).optional(),
+      repeat: z.boolean().optional(),
+      origin: z.string().trim().min(1).max(200).optional(),
+    })
+    .strict(),
+  'publishing.update': z
+    .object({
+      publicationId: id,
+      revision,
+      patch: z
+        .object({
+          label: label.optional(),
+          copy: publicationCopySchema.optional(),
+          scheduledAt: instant.nullable().optional(),
+          timezone: z.string().min(1).max(100).optional(),
+          priority: z.number().int().min(-1000).max(1000).optional(),
+          expiresAt: instant.nullable().optional(),
+        })
+        .strict(),
+      destinations: z.array(destinationInputSchema).max(50).optional(),
+    })
+    .strict(),
+  'publishing.reschedule': z
+    .object({
+      publicationId: id,
+      revision,
+      placements: z
+        .array(z.object({ destinationId: id, at: instant.nullable() }).strict())
+        .min(1)
+        .max(50),
+    })
+    .strict(),
+  'publishing.slots': z
+    .object({
+      publicationIds: z.array(id).min(1).max(PUBLISHING_PREPARE_MAX),
+      from: civilDate.optional(),
+      days: z.number().int().positive().max(SLOT_PLAN_MAX_DAYS).optional(),
+      reserve: z.boolean().optional(),
+      revisions: z.record(id, revision).optional(),
+    })
+    .strict(),
+  'publishing.pin': z
+    .object({
+      publicationId: id,
+      revision,
+      source: z.union([z.object({ jobId: id }).strict(), z.object({ render: z.literal(true) }).strict()]),
+    })
+    .strict(),
+  'publishing.exports': z.object({ videoId: id }).strict(),
+  'publishing.approve': atRevision,
+  'publishing.validate': publicationRef,
+  'publishing.authorize': atRevision,
+  'publishing.send': z.object({ publicationId: id, revision, confirmed: z.literal(true) }).strict(),
+  'publishing.batch': z
+    .object({
+      action: z.enum(['authorize', 'send']),
+      items: z.array(atRevision).min(1).max(PUBLISHING_BATCH_MAX),
+      confirmed: z.literal(true),
+    })
+    .strict(),
+  'publishing.withdraw': destinationAction,
+  'publishing.cancel': destinationAction,
+  'publishing.reconcile': z
+    .object({
+      publicationId: id,
+      revision,
+      destinationId: id,
+      state: z.enum(RECONCILE_STATES),
+      remoteUrl: z.url({ protocol: /^https?$/ }).max(2000).nullable(),
+      at: instant.nullable(),
+      note: z.string().trim().min(10).max(2000),
+    })
+    .strict(),
+  'publishing.archive': atRevision,
+  'publishing.unarchive': atRevision,
+  'publishing.cleanup': z.object({}).strict(),
+  'publishing.copy.propose': z.object({ publicationId: id, instruction: z.string().trim().max(2000).optional() }).strict(),
+  'publishing.copy.apply': z.object({ publicationId: id, revision, copy: publicationCopySchema }).strict(),
+  'publishing.openHandle': publicationRef,
+  'publishing.settings.save': z.object({ settings: publishingSettingsInputSchema }).strict(),
+  'publishing.connections.save': z.object({ id: id.optional(), provider: publishingProviderSchema, name }).strict(),
+  'publishing.connections.remove': z.object({ connectionId: id }).strict(),
+  'publishing.accounts.save': z
+    .object({
+      id: id.optional(),
+      connectionId: id,
+      network: publishingNetworkSchema,
+      name,
+      remoteId: z.string().trim().min(1).max(500),
+      disabled: z.boolean().optional(),
+    })
+    .strict(),
+  'publishing.accounts.remove': z.object({ accountId: id }).strict(),
+  'publishing.accounts.link': z.object({ accountId: id, equivalentTo: id.nullable() }).strict(),
+  'publishing.transfer.export': z.object({}).strict(),
+  'publishing.transfer.preview': z.object({ archive: z.unknown() }).strict(),
+  'publishing.transfer.apply': z.object({ archive: z.unknown() }).strict(),
+};
 
 // Compile-time checks: each schema's output is exactly its protocol type.
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;

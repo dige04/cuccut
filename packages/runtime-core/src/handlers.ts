@@ -68,6 +68,8 @@ import type { ToolCatalog } from './agent-tools/tool-catalog.ts';
 import type { RuntimeActivity } from './runtime-activity.ts';
 import type { LegacyUpgrade } from './legacy-upgrade.ts';
 import { catalogMethods } from './agent-tools/catalog-methods.ts';
+import type { PublishingService } from './publishing/publishing-service.ts';
+import { publishingMethods } from './publishing/publishing-methods.ts';
 
 type MethodHandler<M extends RpcMethod> = (params: RpcParams<M>, principal: TrustedPrincipal) => RpcResult<M> | Promise<RpcResult<M>>;
 
@@ -132,6 +134,8 @@ export interface HandlerDeps {
   requestStop: (() => void) | null;
   /** Startup migration from old versions (§2.7): the import prompt for old-version projects (`legacyImport.*` and the `legacy-import` topic). */
   legacyUpgrade: LegacyUpgrade;
+  /** Publishing calendar and connections (`publishing.*` and the `publishing` topic; design m2-publishing §4). */
+  publishing: PublishingService;
 }
 
 /** Resolves a file target to its source directory and file (a path in a Space entry, a session working directory or a project directory). Checks inside the directory are done in the media channel (or the video service). */
@@ -206,6 +210,7 @@ export function createHandlers({
   activity,
   requestStop,
   legacyUpgrade,
+  publishing,
 }: HandlerDeps): RpcHandlers {
   const { catalog, jobs, services, pipelines } = models;
   const packages = new PackageImporter(videos);
@@ -548,6 +553,8 @@ export function createHandlers({
       ...externalToolMethods(() => externalTools),
       ...templateMethods({ templates, media, harness, skills, slideAnnotationsOf, designAnnotationsOf, designSystemAnnotationsOf }),
       ...skillMethods({ skills, installer: skillInstaller }),
+      // Publishing (design m2-publishing §4.3): the same service as the agent tools; read handles go through this gateway's media channel.
+      ...publishingMethods({ publishing, media }),
       ...catalogMethods(toolCatalog, agentSkillsDir === undefined ? {} : { agentSkillsDir: () => agentSkillsDir }),
       ...toolCatalogueMethods({
         space,
@@ -642,6 +649,7 @@ export function createHandlers({
       if (topic === 'grants') return models.grants.topic.subscribe(afterSeq, listener) as TopicSubscription<unknown, unknown>;
       if (topic === 'agent-setup') return setup.subscribe(afterSeq, listener) as TopicSubscription<unknown, unknown>;
       if (topic === 'legacy-import') return legacyUpgrade.topic.subscribe(afterSeq, listener) as TopicSubscription<unknown, unknown>;
+      if (topic === 'publishing') return publishing.topic.subscribe(afterSeq, listener) as TopicSubscription<unknown, unknown>;
       const videoId = parseVideoTopic(topic);
       if (videoId) return videos.subscribe(videoId, afterSeq, listener);
       return harness.subscribe(topic, afterSeq, listener);

@@ -216,7 +216,23 @@ export interface PublicationDestination {
   errorRef: MessageRef | null;
   /** Evidence identifiers (phase 3, attended phone route). */
   evidence: string[];
+  /** The owner's last recorded observation of this destination (`publishing.reconcile`). */
+  verification: DestinationVerification | null;
 }
+
+/** What the owner checked in the network's app and recorded. */
+export interface DestinationVerification {
+  state: DeliveryState;
+  /** What the owner verified, in their words (at least 10 characters). */
+  note: string;
+  /** Who recorded it (the principal name). */
+  by: string;
+  at: string;
+}
+
+/** Results the owner can record after checking the network's app (`publishing.reconcile`). */
+export const RECONCILE_STATES = ['published', 'scheduled', 'cancelled', 'not_sent'] as const;
+export type ReconcileState = (typeof RECONCILE_STATES)[number];
 
 /** Who approved which pinned export. A publication is approved only while `approval.exportId === exportId`. */
 export interface PublicationApproval {
@@ -231,6 +247,14 @@ export interface PublicationApproval {
 export interface PublicationAuthorization {
   revision: number;
   at: string;
+}
+
+/** The export job a "Render and pin" started. `error` is set when the job failed or its output could not be pinned. */
+export interface PublicationPinJob {
+  jobId: Id;
+  at: string;
+  error: string | null;
+  errorRef: MessageRef | null;
 }
 
 /** A text proposal waiting for the owner (from a text-model job or an agent). Never applied by itself. */
@@ -265,6 +289,8 @@ export interface Publication {
   approval: PublicationApproval | null;
   authorization: PublicationAuthorization | null;
   proposal: PublicationProposal | null;
+  /** A "Render and pin" export in progress or the reason it failed; null when none was asked for. Cleared when an export is pinned. */
+  pinJob: PublicationPinJob | null;
   destinations: PublicationDestination[];
   /** Increments on every change; every write names the revision it read. */
   revision: number;
@@ -487,3 +513,133 @@ export type PublishingEvent =
   | { type: 'settings.updated'; settings: PublishingSettings }
   | { type: 'connections.updated'; connections: PublishingConnection[]; accounts: PublishingAccount[] }
   | { type: 'due'; publicationId: Id; destinationId: Id; at: string };
+
+/** Archived publications stay in the topic snapshot this many days after archiving. */
+export const PUBLISHING_SNAPSHOT_ARCHIVED_DAYS = 30;
+
+// ---- RPC (`publishing.*`, design §4.3) ----
+
+/** Most days one `publishing.calendar` query covers. */
+export const PUBLISHING_CALENDAR_MAX_DAYS = 93;
+/** Most rows one `publishing.calendar` page returns. */
+export const PUBLISHING_CALENDAR_MAX_LIMIT = 200;
+/** Most videos one `publishing.prepare` call prepares. */
+export const PUBLISHING_PREPARE_MAX = 50;
+/** Most items one `publishing.batch` call handles. */
+export const PUBLISHING_BATCH_MAX = 50;
+
+/** `publishing.calendar`: civil dates `from`..`to` (inclusive) in the workspace timezone. Filters apply before pagination. */
+export interface PublishingCalendarParams {
+  from: string;
+  to: string;
+  /** Only this project's publications (`null`: videos outside projects). */
+  projectId?: Id | null;
+  /** Only publications going to one of these accounts. */
+  accountIds?: Id[];
+  statuses?: PublicationStatus[];
+  /** Also list publications with a destination that has no time (the Unscheduled inbox). Default true. */
+  includeUnscheduled?: boolean;
+  offset?: number;
+  limit?: number;
+}
+
+export interface PublishingCalendarResult {
+  publications: PublicationRow[];
+  /** Total matching rows before pagination. */
+  total: number;
+  nextOffset: number | null;
+}
+
+export interface PublishingPrepareParams {
+  videoIds: Id[];
+  /** The sequence to publish; default each video's main sequence. */
+  sequenceId?: Id;
+  /** Accounts for new publications; default the settings' default accounts. */
+  accountIds?: Id[];
+  /** Prepare a new release even when the video already has one that is not archived. */
+  repeat?: boolean;
+  /** Where the request came from (for example `shorts`), kept on new publications for the record. */
+  origin?: string;
+}
+
+export interface PublicationPatch {
+  label?: string;
+  copy?: PublicationCopy;
+  scheduledAt?: string | null;
+  timezone?: string;
+  priority?: number;
+  expiresAt?: string | null;
+}
+
+export interface PublishingUpdateParams {
+  publicationId: Id;
+  revision: number;
+  patch: PublicationPatch;
+  /** The full destination list; omitted keeps the destinations as they are. */
+  destinations?: DestinationInput[];
+}
+
+export interface PublishingSlotsParams {
+  publicationIds: Id[];
+  /** First civil day to consider (workspace timezone); default today. */
+  from?: string;
+  /** Days to look ahead; default 30, at most `SLOT_PLAN_MAX_DAYS`. */
+  days?: number;
+  /** Write the planned times (each publication's default time). Needs `revisions`. */
+  reserve?: boolean;
+  /** The revision read for each publication (required to reserve). */
+  revisions?: Record<Id, number>;
+}
+
+export interface PublishingSlotsResult extends SlotPlan {
+  /** The reserved publications as saved (only when `reserve`). */
+  publications: PublicationDetail[];
+}
+
+/** A finished MP4 export of a video that `publishing.pin` can pin. */
+export interface PinnableExport {
+  jobId: Id;
+  videoId: Id;
+  sequenceId: Id;
+  videoRevision: string;
+  /** Rendered from the video's current revision (false: the video changed since; null: the current revision is not known). */
+  current: boolean | null;
+  fileName: string;
+  bytes: number;
+  width: number;
+  height: number;
+  durationSec: number;
+  fps: string | null;
+  codec: string;
+  createdAt: string;
+}
+
+export type PublishingPinSource = { jobId: Id } | { render: true };
+
+export interface PublishingBatchItemResult {
+  publicationId: Id;
+  ok: boolean;
+  publication?: PublicationDetail;
+  error?: { code: string; message: string; messageRef?: MessageRef; details?: unknown };
+}
+
+export interface PublishingReconcileParams {
+  publicationId: Id;
+  revision: number;
+  destinationId: Id;
+  state: ReconcileState;
+  remoteUrl: string | null;
+  /** When it was published, or the time the network confirmed it will publish (required for `scheduled`). */
+  at: string | null;
+  /** What the owner verified (at least 10 characters). */
+  note: string;
+}
+
+/** What `publishing.cleanup` removed. */
+export interface PublishingCleanupResult {
+  /** Archived publications older than the retention setting, deleted for good. */
+  publications: number;
+  /** Pinned export files no publication uses any more. */
+  files: number;
+  bytes: number;
+}

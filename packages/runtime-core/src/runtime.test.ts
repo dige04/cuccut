@@ -30,6 +30,7 @@ import { ConversationStore, readDiscovery, resolveRuntimeHome, type RuntimeHome 
 import { Gateway } from './gateway.ts';
 import { MediaAnalysis } from './media-analysis.ts';
 import { VideoService } from './videos/video-service.ts';
+import { PublishingService } from './publishing/publishing-service.ts';
 import { fakeProbe } from './agent-tools/testing/fake-agent.ts';
 import { startRuntime, type RunningRuntime, type StartRuntimeOptions } from './runtime.ts';
 import { SpaceCatalog } from './space-catalog.ts';
@@ -221,6 +222,19 @@ describe('Runtime（假 Driver）', () => {
     const reply = runtime.harness.getConversation(conversation.id).items.find((i) => i.kind === 'agent-message');
     expect(reply).toMatchObject({ text: '你好', streaming: false });
     expect(done.conversation).toMatchObject({ title: 'hello', activity: 'idle', activeTaskId: null });
+  });
+
+  it('publishing: the topic and methods are served, and the command line is not the owner', async () => {
+    expect(await client.request('subscribe', { topic: 'publishing' })).toMatchObject({
+      mode: 'snapshot',
+      snapshot: { publications: [], connections: [], accounts: [], degraded: null },
+    });
+    expect(await client.request('publishing.calendar', { from: '2026-10-01', to: '2026-10-31' })).toEqual({ publications: [], total: 0, nextOffset: null });
+    const refused = await rejection(client.request('publishing.connections.save', { provider: 'manual', name: 'By hand' }));
+    expect(refused).toMatchObject({ code: 'forbidden', details: { code: 'OWNER_REQUIRED' } });
+    const missing = await rejection(client.request('publishing.prepare', { videoIds: ['vid_none'] }));
+    expect(missing).toMatchObject({ code: 'not-found', details: { code: 'VIDEO_NOT_FOUND' } });
+    expect(runtime.publishing.store.publications()).toEqual([]);
   });
 
   it('同一个 commandId 重发不会再起一个任务', async () => {
@@ -1342,6 +1356,7 @@ describe('Runtime 启动失败', () => {
     };
     track('services', ServiceManager.prototype, 'close');
     track('nodes', NodeService.prototype, 'close');
+    track('publishing', PublishingService.prototype, 'close');
     track('jobs', JobManager.prototype, 'shutdown');
     track('initiator', NodeInitiator.prototype, 'close');
     track('space', SpaceCatalog.prototype, 'close');
@@ -1410,9 +1425,9 @@ describe('Runtime 启动失败', () => {
     return { sharePort };
   }
 
-  const STARTED_STOPS = ['services', 'nodes', 'jobs', 'initiator', 'space', 'analysis', 'videos', 'harness', 'gateway'];
+  const STARTED_STOPS = ['services', 'nodes', 'publishing', 'jobs', 'initiator', 'space', 'analysis', 'videos', 'harness', 'gateway'];
 
-  it('正常停止的顺序：对外服务、节点服务、任务、发起端、Space、媒体分析、视频引擎、Harness、网关', async () => {
+  it('正常停止的顺序：对外服务、节点服务、发布、任务、发起端、Space、媒体分析、视频引擎、Harness、网关', async () => {
     await prepareHome();
     const runtime = await boot({ watchSpace: true });
     const calls = recordStops();
@@ -1453,7 +1468,7 @@ describe('Runtime 启动失败', () => {
 
     const error = await startupError(boot({ watchSpace: true }));
     expect(error).toMatchObject({ code: 'EISDIR' });
-    expect(calls).toEqual(['services', 'nodes', 'jobs', 'initiator', 'analysis', 'videos', 'harness']);
+    expect(calls).toEqual(['services', 'nodes', 'publishing', 'jobs', 'initiator', 'analysis', 'videos', 'harness']);
     expect(await portFree(sharePort)).toBe(true);
     expect(await childProcesses()).toEqual([]);
     expect(await readDiscovery(home)).toBeNull();

@@ -17,7 +17,7 @@ import {
 import { REVIEW_COPY } from '../components/review/review-copy.ts';
 import { metricLabel } from '../components/review/review-metrics-copy.ts';
 import { REVIEW_SETTINGS_COPY as T } from '../components/settings/review-settings-copy.ts';
-import { defaultCheckId, formatReviewValue, parseLimit } from './review.ts';
+import { defaultCheckId, formatReviewValue, parseLimit, shortName } from './review.ts';
 
 /**
  * Settings › Review in the UI's words and moves (docs/cuccut/m2-review-gate.md §2.3): the rows of the user's standard
@@ -60,6 +60,11 @@ export function checkLine(check: ReviewCheck): string {
 /** What a question is worth and what its answer points at: "Critical · A quote". */
 export function questionMeta(question: Pick<ReviewQuestion, 'severity' | 'evidence'>): string {
   return T.questionMeta(REVIEW_COPY.severity[question.severity], T.evidence[question.evidence]);
+}
+
+/** A question as its row's controls and the removal toast name it: the question cut to a short line, never its id. */
+export function questionName(question: Pick<ReviewQuestion, 'ask'>): string {
+  return shortName(question.ask);
 }
 
 /** The side list's line for Settings › Review: the user's counts, "Built-in" when they have nothing, null before the topic arrives. */

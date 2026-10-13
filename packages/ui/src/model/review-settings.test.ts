@@ -13,6 +13,7 @@ import {
   questionDraftProblem,
   questionFromDraft,
   questionMeta,
+  questionName,
   standardStatus,
   takenIds,
   validReviewId,
@@ -68,6 +69,13 @@ describe('the rows of Settings › Review', () => {
     expect(checkLine(placeholders)).toBe('Placeholder boxes ≤ 0');
     expect(checkLine({ id: 'text-edge', metric: 'text.offCanvas', is: false, severity: 'suggestion', fix: '' })).toBe('Text past the edge: no');
     expect(questionMeta({ severity: 'critical', evidence: 'quote' })).toBe('Critical · answered with: A quote');
+  });
+
+  it('names a question by its words, cut short, never by its id', () => {
+    expect(questionName({ ask: '  Does the last line land?  ' })).toBe('Does the last line land?');
+    const long = questionName({ ask: 'Does the video open on the point it makes, before anything else is said or shown?' });
+    expect(long.endsWith('…')).toBe(true);
+    expect(long.length).toBeLessThanOrEqual(49);
   });
 
   it('says “Built-in” for an empty standard and counts otherwise; nothing before the topic', () => {

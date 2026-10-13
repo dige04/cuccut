@@ -32,6 +32,7 @@ import {
   questionDraftProblem,
   questionFromDraft,
   questionMeta,
+  questionName,
   takenIds,
   withBuiltinSeverity,
   withCheck,
@@ -141,7 +142,7 @@ export function ReviewSettings() {
   const removeQuestion = (question: ReviewQuestion) => {
     const index = latest.current?.standard.rubric.findIndex((q) => q.id === question.id) ?? -1;
     void save(`remove:${question.id}`, (s) => withoutQuestion(s, question.id)).then((ok) => {
-      if (ok) offerUndo(T.removed(question.id), () => save(`undo:${question.id}`, (s) => withQuestion(s, question, index)));
+      if (ok) offerUndo(T.removed(questionName(question)), () => save(`undo:${question.id}`, (s) => withQuestion(s, question, index)));
     });
   };
 
@@ -403,6 +404,8 @@ function AddCheckForm({ view, busy, onAdd }: { view: ReviewCriteriaView; busy: s
     { value: 'no', label: T.limitNo },
   ];
   const limitBad = !!metric && metric.kind === 'number' && !!draft.limit.trim() && problem === T.limitInvalid;
+  // A reason already said under its field (an unreadable limit, a critical check without a fix) is not repeated by the button.
+  const saidAt = limitBad ? `${id}-limit-hint` : problem === T.fixRequired ? `${id}-fix-hint` : null;
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -480,12 +483,11 @@ function AddCheckForm({ view, busy, onAdd }: { view: ReviewCriteriaView; busy: s
         <Button
           type="submit"
           disabled={problem !== null || busy !== null}
-          aria-describedby={limitBad ? `${id}-limit-hint` : problem ? `${id}-why` : undefined}>
+          aria-describedby={saidAt ?? (problem ? `${id}-why` : undefined)}>
           {saving ? <Loader2 aria-hidden className="motion-safe:animate-spin" /> : <Plus aria-hidden />}
           {T.addCheck}
         </Button>
-        {/* An unreadable limit is already said under the field. */}
-        {problem && !limitBad ? (
+        {problem && !saidAt ? (
           <span id={`${id}-why`} className="text-xs text-muted-foreground">
             {problem}
           </span>
@@ -521,8 +523,8 @@ function QuestionsPanel({
               {busy === `severity:${q.id}` ? <Loader2 aria-hidden className="size-4 text-muted-foreground motion-safe:animate-spin" /> : null}
               {editable ? (
                 <>
-                  <WorthSelect value={q.severity} label={T.worthOf(q.id)} disabled={busy !== null} onChange={(s) => onSeverity(q, s)} />
-                  <RemoveButton name={q.id} busy={busy === `remove:${q.id}`} disabled={busy !== null} onPress={() => onRemove(q)} />
+                  <WorthSelect value={q.severity} label={T.worthOf(questionName(q))} disabled={busy !== null} onChange={(s) => onSeverity(q, s)} />
+                  <RemoveButton name={questionName(q)} busy={busy === `remove:${q.id}`} disabled={busy !== null} onPress={() => onRemove(q)} />
                 </>
               ) : null}
             </Row>
@@ -543,6 +545,8 @@ function AddQuestionForm({ view, busy, onAdd }: { view: ReviewCriteriaView; busy
   const problem = questionDraftProblem(draft);
   const saving = busy === 'add-question';
   const evidenceItems = REVIEW_EVIDENCE_KINDS.map((kind) => ({ value: kind, label: T.evidence[kind] }));
+  // A critical question without a fix is already said under the fix field.
+  const saidAt = problem === T.fixRequired ? `${id}-fix-hint` : null;
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -587,11 +591,15 @@ function AddQuestionForm({ view, busy, onAdd }: { view: ReviewCriteriaView; busy
         <Input id={`${id}-fix`} value={draft.fix} placeholder={T.fixPlaceholder} onChange={(event) => set({ fix: event.target.value })} />
       </Field>
       <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
-        <Button type="submit" variant="secondary" disabled={problem !== null || busy !== null} aria-describedby={problem ? `${id}-why` : undefined}>
+        <Button
+          type="submit"
+          variant="secondary"
+          disabled={problem !== null || busy !== null}
+          aria-describedby={saidAt ?? (problem ? `${id}-why` : undefined)}>
           {saving ? <Loader2 aria-hidden className="motion-safe:animate-spin" /> : <Plus aria-hidden />}
           {T.addQuestion}
         </Button>
-        {problem ? (
+        {problem && !saidAt ? (
           <span id={`${id}-why`} className="text-xs text-muted-foreground">
             {problem}
           </span>

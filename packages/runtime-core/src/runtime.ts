@@ -115,6 +115,7 @@ import { SkillInstaller } from './skills/skill-installer.ts';
 import { PackRegistry } from './packs/pack-registry.ts';
 import { PackPreviews } from './packs/pack-previews.ts';
 import { PackInstaller, type PackLibrary } from './packs/pack-installer.ts';
+import { PackStyle } from './packs/pack-style.ts';
 import { skillIndexBlock } from './skills/skill-brief.ts';
 import { aiToolDefinition } from './ai-tools/ai-tool-wiring.ts';
 import { resolveBuiltinAgentSkillsDir } from './skills/agent-skill-renderer.ts';
@@ -678,9 +679,27 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
     // Each project's style choice (pack spec §7); a choice naming a removed pack stays and resolves to none.
     const packChoices = new PackChoicesStore(home.packChoicesFile, { log: log.child('pack-choices') });
     await packChoices.load();
+    // The active style guide (pack spec §7) reads conversations and projects from the Harness, which opens later; it is only asked once sessions run.
+    const packStyle = new PackStyle({
+      registry: packRegistry,
+      choices: packChoices,
+      sessions: {
+        conversation: (conversationId) => requireHarness().getConversation(conversationId),
+        projects: () => requireHarness().listProjects(),
+      },
+      exclusive: (run) => packInstaller.exclusive(run),
+    });
+    // At the start of each native session, the guidance gets the index of enabled skills, then the active pack's style guide (pack spec §7). A guide that can't be read
+    // is left out rather than holding up the session.
     const grants = new AgentGrants(
       (principal) => videos.connectionClosed(principal.connectionId),
-      async () => skillIndexBlock(await skills.enabled()),
+      async (conversationId) => {
+        const style = await packStyle.sessionBlock(conversationId).catch((error: unknown) => {
+          log.warn('Building the style guide block failed', { conversationId, error: String(error) });
+          return '';
+        });
+        return [skillIndexBlock(await skills.enabled()), style].filter(Boolean).join('\n\n');
+      },
     );
     // Images in messages: uploaded through the same gateway port, and handed to the Driver on send (product design §3.2.4).
     const attachments = new AttachmentStore({
@@ -955,7 +974,7 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       templates,
       skills,
       skillInstaller,
-      packs: { registry: packRegistry, installer: packInstaller, choices: packChoices },
+      packs: { registry: packRegistry, installer: packInstaller, style: packStyle },
       fonts,
       // The code view (§8): the UI's `compositions.*` and the tools share the same service and host.
       compositions,

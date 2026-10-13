@@ -874,6 +874,9 @@ export const methodParamSchemas = {
   'packs.install': PACK_PARAM_SCHEMAS['packs.install'],
   'packs.remove': PACK_PARAM_SCHEMAS['packs.remove'],
   'packs.restore': PACK_PARAM_SCHEMAS['packs.restore'],
+  'packs.active': PACK_PARAM_SCHEMAS['packs.active'],
+  'packs.choose': PACK_PARAM_SCHEMAS['packs.choose'],
+  'packs.setStyle': PACK_PARAM_SCHEMAS['packs.setStyle'],
   'media.resolve': mediaTarget,
   'media.playback': z
     .object({ url: z.string().min(1).max(8192), playable: z.array(z.enum(PLAYBACK_CODECS)).max(PLAYBACK_CODECS.length).optional() })

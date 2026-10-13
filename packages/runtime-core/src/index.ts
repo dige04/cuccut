@@ -40,5 +40,6 @@ export { SkillCatalog, resolveBuiltinSkillsDir, scanSkillDir, type LoadedSkill, 
 export { PackRegistry, packDirHash, type InstalledPack, type PackLibraryView } from './packs/pack-registry.ts';
 export { PackInstaller, type PackLibrary, type PackInstallStep } from './packs/pack-installer.ts';
 export { PackPreviews } from './packs/pack-previews.ts';
+export { PackStyle, packStyleReasonText, styleBlock, PACK_STYLE_STILLS_DIR, type PackStyleResolution, type PackStyleSessions } from './packs/pack-style.ts';
 export { inspectStagedPack, type PackInspection } from './packs/pack-inspect.ts';
 export { parsePackSource, readPackSource, checkStagedPack, type StagedPack } from './packs/pack-source.ts';

@@ -131,6 +131,52 @@ describe('packs end to end', () => {
     expect(again.details).toMatchObject({ code: 'PACK_TRASH_EXPIRED' });
   });
 
+  it("the session guidance carries the active pack's style guide; packs.active, packs.choose and packs.setStyle", async () => {
+    await boot();
+    await client.request('packs.install', { source: SAMPLE_PACK_DIR, commandId: newId('cmd') });
+    const { project } = await client.request('projects.create', { name: 'Evening news' });
+    expect(await client.request('packs.active', { projectId: project.id })).toEqual({ pack: { id: 'news-desk', name: 'News desk' }, reason: 'only' });
+
+    const { conversation } = await client.request('conversations.create', { projectId: project.id });
+    expect(await client.request('packs.active', { conversationId: conversation.id })).toMatchObject({ reason: 'only' });
+    await client.request('conversations.send', {
+      conversationId: conversation.id,
+      text: 'Make the daily take',
+      commandId: newId('cmd'),
+      template: { id: 'news-desk-daily' },
+    });
+    const session = await until(() => driver.sessions[0]);
+    const guidance = session.options.developerInstructions ?? '';
+    // After the skill index: the style block, with the guide and the still copied into the project.
+    expect(guidance).toContain('<cuccut-style pack="news-desk">');
+    expect(guidance.indexOf('<cuccut-skills>')).toBeLessThan(guidance.indexOf('<cuccut-style'));
+    expect(guidance).toContain((await fs.readFile(path.join(SAMPLE_PACK_DIR, 'STYLE.md'), 'utf8')).trim());
+    expect(guidance).toContain('- .ccut/style/news-desk/lower-third.png — Lower third:');
+    expect((await fs.stat(path.join(project.path, '.ccut', 'style', 'news-desk', 'lower-third.png'))).isFile()).toBe(true);
+    // The template's block names the pack.
+    await until(() => (session.inputs.length ?? 0) > 0);
+    expect(session.inputs[0]).toContain('This template comes from the pack "News desk"; its style guide applies (packs_read id=news-desk).');
+    // The conversation used a template from the pack, which comes before "the only pack with a guide", in the session block as well.
+    expect(guidance).toContain('Why this guide: This conversation used the template "news-desk-daily" from this pack.');
+    expect(await client.request('packs.active', { conversationId: conversation.id })).toMatchObject({ reason: 'template' });
+
+    expect(await client.request('packs.choose', { projectId: project.id, pack: 'none' })).toEqual({
+      choice: 'none',
+      active: { pack: null, reason: 'chosen-none' },
+    });
+    expect(await client.request('packs.active', { conversationId: conversation.id })).toEqual({ pack: null, reason: 'chosen-none' });
+    expect(await client.request('packs.choose', { projectId: project.id, pack: null })).toMatchObject({ choice: null });
+    // Without a choice, the template used in this conversation decides.
+    expect(await client.request('packs.active', { conversationId: conversation.id })).toMatchObject({ reason: 'template' });
+    expect((await rejection(client.request('packs.choose', { projectId: project.id, pack: 'no-such-pack' }))).details).toMatchObject({ code: 'PACK_NOT_FOUND' });
+
+    const detail = await client.request('packs.get', { id: 'news-desk' });
+    const saved = await client.request('packs.setStyle', { id: 'news-desk', text: 'Calm and quick.\n', expectedHash: detail.style!.hash });
+    expect(saved.style?.text).toBe('Calm and quick.\n');
+    const stale = await rejection(client.request('packs.setStyle', { id: 'news-desk', text: 'x', expectedHash: detail.style!.hash }));
+    expect(stale.details).toMatchObject({ code: 'PACK_STYLE_CHANGED' });
+  });
+
   it('install from a source in one call; installing again updates in place and reuses the library entries', async () => {
     await boot();
     const first = await client.request('packs.install', { source: SAMPLE_PACK_DIR, commandId: newId('cmd') });

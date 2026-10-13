@@ -77,4 +77,9 @@ export const es: RcPacksMessages = {
   recordMissing: (p: { file: string }) => `${p.file} is missing`,
   recordNotJson: (p: { file: string }) => `${p.file} can't be read as JSON`,
   recordIdMismatch: (p: { id: string; dir: string }) => `The record names the pack "${p.id}", but its folder is called "${p.dir}"`,
+
+  // Style guides (pack-style)
+  chooseStyleSummary: (p: { pack: string }) => `Use the style guide of the pack "${p.pack}" in this project`,
+  chooseStyleNone: 'Use no style guide in this project',
+  chooseStyleAuto: 'Let CucCut decide which style guide this project uses',
 };

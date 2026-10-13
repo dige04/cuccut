@@ -1153,10 +1153,13 @@ export interface PackRpcMethods {
 }
 
 /**
- * The `packs.*` methods the Runtime handles: listing, the pack page, inspect, install, remove and restore. Style choice and editing, reference files and export join
- * `RpcMethods` together with their handlers.
+ * The `packs.*` methods the Runtime handles: listing, the pack page, inspect, install, remove and restore, the active style guide, the project's choice and editing the guide.
+ * Reference files and export join `RpcMethods` together with their handlers.
  */
-export type PackRpcMethodsHandled = Pick<PackRpcMethods, 'packs.list' | 'packs.get' | 'packs.inspect' | 'packs.install' | 'packs.remove' | 'packs.restore'>;
+export type PackRpcMethodsHandled = Pick<
+  PackRpcMethods,
+  'packs.list' | 'packs.get' | 'packs.inspect' | 'packs.install' | 'packs.remove' | 'packs.restore' | 'packs.active' | 'packs.choose' | 'packs.setStyle'
+>;
 
 /** The location of a file (or video directory): a Space entry, or a relative path in a session working directory or project directory. */
 export type FileTarget = { entryId: Id } | { conversationId: Id; path: string } | { projectId: Id; path: string };

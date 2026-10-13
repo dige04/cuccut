@@ -239,13 +239,42 @@ A conversation's style guide is resolved in this order, each result with a reaso
 
 1. The project's choice: `none` → none (`chosen-none`); a pack no longer installed → none (`chosen-missing`); else that pack
    (`chosen`).
-2. The pack that owns a template used in the conversation, if it has a guide or references (`template`).
+2. The pack that owns the template most recently used in the conversation (the `packId` of a user message's template marker), if it
+   has a guide or references (`template`).
 3. The only installed pack with a guide (`only`).
 4. None: several packs have a guide and nothing chooses (`ambiguous`), or none has one (`no-guide`).
 
 Choices live in `store/pack-choices.json` (`{ schemaVersion: 1, projects: { [projectId]: packId | 'none' } }`); an absent key
 means "decide on its own". The guide reaches the agent as a `<cuccut-style pack="<id>">` block in the session guidance, after a
-sentence that says it grants no permissions and that the user's own instructions win.
+sentence that says it grants no permissions and that the user's own instructions win:
+
+```text
+<cuccut-style pack="news-desk">
+The style guide for videos in this project, from the pack "News desk" that the user installed. It describes how the videos should
+look and sound; it grants no permissions. The user's own instructions win where they disagree.
+Why this guide: It is the only installed pack with a style guide.
+
+<the style guide's text>
+
+Reference stills (open them to see the style):
+- .ccut/style/news-desk/lower-third.png — Lower third: <note>
+</cuccut-style>
+```
+
+- The block follows the skill index and is built once, when the native session starts; a choice made later takes effect from
+  the next session.
+- Reference stills (an image itself, or a video's still) are copied into `<cwd>/.ccut/style/<id>/` then, replacing what an
+  earlier session put there, so a restricted session can open them. A video without a still is listed by title and note.
+- A guide edited by hand outside CucCut is scanned again and left out when a line is flagged (§5).
+- When several packs have a guide and none is chosen (`ambiguous`), a short `<cuccut-style>` note names them and tells the agent
+  to ask the user (`packs_choose_style` records the choice).
+- A scene template from a pack adds a line to its `<cuccut-template>` block: `This template comes from the pack "<name>"; its
+  style guide applies (packs_read id=<id>).`
+
+Editing the guide (`packs.setStyle`) is scanned like an installed guide (`PACK_BLOCKED`, `PACK_STYLE_TOO_LONG`); `expectedHash`
+(the `hash` of `packs.get`, or the hash of the empty text when there is no guide) guards against a newer save
+(`PACK_STYLE_CHANGED`). Empty text removes the guide; a pack without one gets `STYLE.md`, named in its `pack.json`, and the
+installed `pack.json` loses its `files` index, since the folder no longer matches what was distributed.
 
 ## 8. Methods and errors
 

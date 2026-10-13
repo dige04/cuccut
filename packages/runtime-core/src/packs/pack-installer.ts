@@ -132,6 +132,11 @@ export class PackInstaller {
     return this.#serial(() => this.#restore(trashId));
   }
 
+  /** Runs another change to an installed pack (saving its style guide) in the same queue as installs, removals and restores. */
+  exclusive<T>(run: () => Promise<T>): Promise<T> {
+    return this.#serial(run);
+  }
+
   /** At startup: previews do not survive a restart, and trash older than 24 hours is purged (with the toggles of the skills it held). */
   async startup(): Promise<void> {
     await this.#o.previews.sweepAll();

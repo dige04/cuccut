@@ -478,6 +478,15 @@ describe('Web 服务', () => {
       code: 'not-found',
       details: { code: 'PACK_NOT_FOUND' },
     });
+    // The active style guide and a project's choice are open too (the Video menu's Style guide).
+    expect(details(await page.request('packs.active', { projectId: 'prj_none' }).catch((e: unknown) => e))).toMatchObject({
+      code: 'not-found',
+      details: { code: 'PROJECT_NOT_FOUND' },
+    });
+    expect(details(await page.request('packs.choose', { projectId: 'prj_none', pack: null }).catch((e: unknown) => e))).toMatchObject({
+      code: 'not-found',
+      details: { code: 'PROJECT_NOT_FOUND' },
+    });
     const refused: [string, unknown][] = [
       ['settings.set', { patch: {} }],
       ['models.configure', { providerId: 'openai', enabled: true }],
@@ -526,6 +535,7 @@ describe('Web 服务', () => {
       ['packs.install', { token: 'abcdefgh12345678' }],
       ['packs.remove', { id: 'news-desk' }],
       ['packs.restore', { trashId: 'abcdefgh12345678' }],
+      ['packs.setStyle', { id: 'news-desk', text: 'Calm.' }],
     ];
     let forbidden = 0;
     for (const [method, params] of refused) {

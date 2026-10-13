@@ -1,17 +1,10 @@
 import type { Harness, ResolvedDesignAnnotation, ResolvedDesignSystemAnnotation, ResolvedSlideAnnotation } from '@cuccut/harness';
-import {
-  sendSkillRefs,
-  type DesignAnnotation,
-  type DesignSystemAnnotation,
-  type Id,
-  type SlideAnnotation,
-  type TemplateSendRef,
-} from '@cuccut/protocol';
+import { sendSkillRefs, type DesignAnnotation, type DesignSystemAnnotation, type Id, type SlideAnnotation } from '@cuccut/protocol';
 import type { RpcHandlers } from '../handlers.ts';
 import type { MediaRegistry } from '../media.ts';
 import { resolveSendSkills } from '../skills/skill-brief.ts';
 import type { SkillCatalog } from '../skills/skill-catalog.ts';
-import { resolveSceneTemplate, type ResolvedTemplate } from './template-brief.ts';
+import { resolveSceneTemplate } from './template-brief.ts';
 import type { TemplateCatalog } from './template-catalog.ts';
 
 type TemplateMethod = 'templates.list' | 'templates.get' | 'templates.openHandle' | 'conversations.send';
@@ -51,7 +44,7 @@ export function templateMethods(deps: {
       const resolved = await resolveSendSkills(skills, sendSkillRefs({ skill, skills: picked }));
       return harness.send({
         ...params,
-        ...(template ? { template: await resolvePackTemplate(templates, template) } : {}),
+        ...(template ? { template: await resolveSceneTemplate(templates, template) } : {}),
         ...(resolved ? { skills: resolved } : {}),
         ...(annotations ? { slideAnnotations: annotations } : {}),
         ...(design ? { designAnnotations: design } : {}),
@@ -61,9 +54,3 @@ export function templateMethods(deps: {
   };
 }
 
-/** A scene template with the pack that owns it on the marker (`packId`, pack spec §7), so the style resolver can see which pack a conversation used. */
-async function resolvePackTemplate(templates: TemplateCatalog, request: TemplateSendRef): Promise<ResolvedTemplate> {
-  const resolved = await resolveSceneTemplate(templates, request);
-  const pack = await templates.packOf(resolved.ref.id, resolved.ref.origin);
-  return pack ? { ...resolved, ref: { ...resolved.ref, packId: pack.id } } : resolved;
-}

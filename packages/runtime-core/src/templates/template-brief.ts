@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { RpcError, type TemplateMessageRef, type TemplateSendRef } from '@cuccut/protocol';
+import { RpcError, type PackRef, type TemplateMessageRef, type TemplateSendRef } from '@cuccut/protocol';
 import { localizeTemplate, type LoadedTemplate, type TemplateCatalog } from './template-catalog.ts';
 import { RcTemplates } from '@cuccut/protocol/messages/runtime-core';
 
@@ -63,14 +63,19 @@ export async function resolveSceneTemplate(catalog: TemplateCatalog, request: Te
     }
   }
   const kept = request.assets ? new Set(request.assets) : registered;
+  // A template from an installed pack (pack spec §7): the marker names the pack, so the style resolver sees it, and the block points at the pack's guide.
+  const pack = await catalog.packOf(manifest.id, template.origin);
   return {
-    ref: { id: manifest.id, version: manifest.version, title: manifest.title, kind: manifest.kind, origin: template.origin },
-    instructions: sceneTemplateBlock({ ...template, manifest, prompt: localized.prompt }, kept),
+    ref: { id: manifest.id, version: manifest.version, title: manifest.title, kind: manifest.kind, origin: template.origin, ...(pack ? { packId: pack.id } : {}) },
+    instructions: sceneTemplateBlock({ ...template, manifest, prompt: localized.prompt }, kept, pack),
   };
 }
 
-/** The template block handed to the agent: preamble, defaults, body and assets, wrapped in `<cuccut-template>`. `template` is the manifest and body in the chosen language. */
-export function sceneTemplateBlock(template: Pick<LoadedTemplate, 'manifest' | 'prompt' | 'dir'>, assets: ReadonlySet<string>): string {
+/**
+ * The template block handed to the agent: preamble, defaults, body and assets, wrapped in `<cuccut-template>`. `template` is the manifest and body in the chosen language;
+ * `pack` is the installed pack it came from, whose style guide applies.
+ */
+export function sceneTemplateBlock(template: Pick<LoadedTemplate, 'manifest' | 'prompt' | 'dir'>, assets: ReadonlySet<string>, pack: PackRef | null = null): string {
   const { manifest } = template;
   const defaults = [
     manifest.ratio ? `aspect ratio ${manifest.ratio}` : 'aspect ratio automatic',
@@ -80,6 +85,7 @@ export function sceneTemplateBlock(template: Pick<LoadedTemplate, 'manifest' | '
   const lines = [
     `<cuccut-template id="${manifest.id}" version="${manifest.version}">`,
     `The user chose the scene template "${manifest.title}".`,
+    ...(pack ? [`This template comes from the pack ${JSON.stringify(pack.name)}; its style guide applies (packs_read id=${pack.id}).`] : []),
     SCENE_BRIEF_PREAMBLE,
     '',
     `Template defaults: ${defaults}.`,

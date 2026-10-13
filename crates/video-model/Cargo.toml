@@ -1,6 +1,6 @@
 [package]
 name = "video-model"
-description = "CucCut 视频的交换 DTO（视频格式规范 §3、§4）：引擎、渲染计划与 WASM 预览共用，不碰存储"
+description = "CucCut video's exchange DTOs (video format spec §3, §4): shared by the engine, the render plan and the WASM preview; no storage access"
 version.workspace = true
 edition.workspace = true
 license-file.workspace = true

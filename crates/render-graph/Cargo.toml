@@ -1,6 +1,6 @@
 [package]
 name = "render-graph"
-description = "CucCut 的帧计划（架构设计 §9）：某一时刻画面上有哪些层、怎么摆、各自的源时间，以及哪些声音在响。纯函数，原生导出与 WASM 预览共用"
+description = "CucCut's frame plan (architecture design §9): which layers are on screen at a given moment, how they are placed, each one's source time, and which sounds are playing. Pure functions, shared by native export and the WASM preview"
 version.workspace = true
 edition.workspace = true
 license-file.workspace = true
@@ -9,9 +9,9 @@ publish.workspace = true
 [dependencies]
 editor-semantics.workspace = true
 video-model.workspace = true
-# 几何（`place` 换成像素框）用 v2 元素模型的单一实现。
+# Geometry (`place` turned into pixel boxes) uses the single implementation of the v2 element model.
 timeline.workspace = true
-# 三角函数与取整走 libm：std 的同名方法在原生与 wasm32 上末位可能不同，预览与导出要逐位一致。
+# Trigonometry and rounding go through libm: std's methods of the same name can differ in the last digit between native and wasm32, and preview and export must match bit for bit.
 libm = "0.2.16"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"

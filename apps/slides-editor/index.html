@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <!--
-  CucCut 幻灯片编辑器页面（docs/design/slides §3、§5）。Runtime 在 /slides/<grant>/ 下提供，宿主由 src/main.ts 装上。
-  appifact-capabilities 是运行时读的能力声明：有 db 才按 deck 文件模式启动（boot/bootstrap.ts），有 downloads 才开导出；
-  不声明 room（单用户）与 mcp（不接 Google Drive）。appifact-mode 是运行时的明暗模式引导脚本，导出单页 HTML 时原样带上。
+  CucCut slides editor page (docs/design/slides §3, §5). The runtime serves it under /slides/<grant>/, and the host is installed by src/main.ts.
+  appifact-capabilities is the capability declaration the runtime reads: only with db does it start in deck file mode (boot/bootstrap.ts), and only with downloads is export enabled;
+  it does not declare room (single user) or mcp (no Google Drive). appifact-mode is the runtime's light/dark mode bootstrap script; it is carried over as is when exporting a single-page HTML.
 -->
 <meta name="appifact-capabilities" content="{&quot;downloads&quot;:{},&quot;artifact&quot;:{},&quot;comments&quot;:{&quot;composer_only&quot;:true,&quot;customAnchors&quot;:true},&quot;db&quot;:{&quot;rules&quot;:[{&quot;path&quot;:&quot;&quot;,&quot;write&quot;:&quot;admin&quot;},{&quot;path&quot;:&quot;notes&quot;,&quot;read&quot;:&quot;admin&quot;,&quot;write&quot;:&quot;admin&quot;}]},&quot;assets&quot;:{},&quot;user&quot;:{&quot;scopes&quot;:[&quot;profile&quot;]}}">
 <meta name="viewport" content="width=device-width, initial-scale=1">

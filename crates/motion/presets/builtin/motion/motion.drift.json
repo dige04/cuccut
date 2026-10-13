@@ -3,7 +3,7 @@
   "version": 1,
   "domain": "motion",
   "family": "drift",
-  "doc": "缓慢漂浮：x / y 两条不同周期的正弦轨（Lissajous），composite=add。与 shake 的区别是连续可导、周期以秒计。",
+  "doc": "Slow floating: sine tracks on x and y with different periods (Lissajous), composite=add. Unlike shake, it is continuously differentiable and its periods are in seconds.",
   "aliases": [
     "drift",
     "floatDrift"
@@ -18,19 +18,19 @@
         "value": 0.012,
         "basis": "canvasShortEdge"
       },
-      "doc": "漂移幅度；缺省是画布短边的 1.2%"
+      "doc": "Drift amplitude; default is 1.2% of the canvas short edge."
     },
     "period": {
       "type": "number",
       "default": 3.2,
       "min": 0.001,
-      "doc": "水平方向的周期（秒）"
+      "doc": "Horizontal period (seconds)"
     },
     "periodY": {
       "type": "number",
       "default": 4.1,
       "min": 0.001,
-      "doc": "竖直方向的周期（秒）；与 period 互质感更强"
+      "doc": "Vertical period (seconds); a value coprime with period makes the motion less repetitive."
     }
   },
   "ops": [

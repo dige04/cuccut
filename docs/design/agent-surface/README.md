@@ -1,9 +1,9 @@
-# docs/design/agent-surface/ — 面向外部 Agent 的能力面
+# docs/design/agent-surface/ — Capability surface for external agents
 
-CucCut 向其他 Agent 开放能力的三样东西的设计：命令行 `cuccut`、对外的 MCP 服务，以及教外部 Agent 使用它们的 CucCut skill。机制上三者共用 Runtime 里的工具目录（[架构设计 §3.5](../../architecture/architecture-design.md#35-工具目录)、[§4.8](../../architecture/architecture-design.md#48-对外服务)）。
+Design of the three things through which CucCut exposes its capabilities to other agents: the command-line `cuccut`, an outward-facing MCP service, and the CucCut skill that teaches external agents to use them. Mechanically, all three share the tool catalog in the Runtime ([architecture design §3.5](../../architecture/architecture-design.md#35-tool-catalog), [§4.8](../../architecture/architecture-design.md#48-external-services)).
 
-| 文件 | 内容与状态 |
+| File | Content and status |
 | --- | --- |
-| [`agent-surface-design.md`](agent-surface-design.md) | **方案稿（2026-10-06，未实现）**：CLI 成为工具目录的第三个消费者；`LocalPrincipal` 与三种主体的权限对照；一级动词 + 名词组 + 元命令的 Agent 面目录与 MCP `a_b` ↔ CLI `a b` 的映射规则；CLI 的信封、退出码、`--wait`、大结果落盘与 Runtime 归属；MCP 的开放清单与 `jobs_wait`；现有 CLI 命令的去向；说明书 `skills/cuccut/` 的结构与 SKILL.md 大纲；要修订的规范条目与分阶段实施顺序 |
+| [`agent-surface-design.md`](agent-surface-design.md) | **Proposal (2026-10-06, not implemented)**: the CLI becomes the third consumer of the tool catalog; `LocalPrincipal` and the permission comparison across the three principal kinds; the Agent-facing catalog of top-level verbs + noun groups + meta-commands, and the mapping rule between MCP `a_b` and CLI `a b`; CLI envelope, exit codes, `--wait`, spilling large results to disk and Runtime ownership; the MCP open list and `jobs_wait`; what becomes of existing CLI commands; the structure of the instruction set `skills/cuccut/` and the SKILL.md outline; spec entries to revise and the phased implementation order |
 
-v2 的对应设计（`ccut` CLI 与 skill）在 cuccut-app 仓库的 `docs/design/cli/` 与 `skills/cuccut/`，只作参考，不兼容。
+The corresponding v2 designs (the `ccut` CLI and skill) live in the cuccut-app repository under `docs/design/cli/` and `skills/cuccut/`. They are for reference only and are not compatible.

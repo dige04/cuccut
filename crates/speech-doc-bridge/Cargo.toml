@@ -1,6 +1,6 @@
 [package]
 name = "speech-doc-bridge"
-description = "v2 TranscriptDoc 与 v3 转写、译文文档之间的无损映射（视频格式规范 §5.2、§5.3）：纯函数，不碰存储"
+description = "Lossless mapping between v2 TranscriptDoc and the v3 transcript and translation documents (video format spec §5.2, §5.3): pure functions, no storage access"
 version.workspace = true
 edition.workspace = true
 license-file.workspace = true

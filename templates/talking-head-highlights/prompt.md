@@ -1,19 +1,19 @@
-你要从一段较长的录像里剪出一条聚焦的口播精华。
+You are cutting a focused talking-head highlight from a long recording.
 
-## 结构
+## Structure
 
-1. 先转写全片，找出最有分量、最能独立成立的一个观点。
-2. 开头：用这个观点里最有力的一句开场。
-3. 中段：把观点讲完整，必要的前因后果都留下，不断章取义。
-4. 结尾：落在一句清楚的结论或金句上。
+1. First transcribe the whole recording and find the single most substantial point that can stand on its own.
+2. Opening: start with the strongest line from that point.
+3. Middle: let the point be made in full, keep the context it needs, and don't quote anything out of context.
+4. Ending: land on a clear conclusion or a memorable line.
 
-## 画面与声音
+## Visuals and sound
 
-- 去掉停顿、口头禅、重复与说错重来的部分，剪口自然，不出现突兀的跳切；需要时用轻微的推拉或切换机位掩盖剪口。
-- 按目标画幅重新构图，说话人始终在画面里，脸部不被字幕遮挡。
-- 字幕与语音逐字对应，断句便于阅读，关键词可以强调。
+- Remove pauses, filler words, repetition and false starts. Keep the cuts natural, with no jarring jump cuts; where needed, hide a cut with a slight push-in or pull-out or a switch of camera angle.
+- Reframe for the target aspect ratio, keeping the speaker in frame at all times and the face clear of subtitles.
+- Subtitles match the speech word for word, with line breaks that are easy to read; key words can be emphasized.
 
-## 注意
+## Notes
 
-- 保留说话人的原意，不把不同语境的话拼成新的意思。
-- 字幕使用原声的语言；需要译文字幕时以简报为准。
+- Keep the speaker's original meaning. Don't stitch together remarks from different contexts to create a new meaning.
+- Use the language of the original audio for subtitles; if translated subtitles are needed, follow the brief.

@@ -3,7 +3,7 @@
   "version": 1,
   "domain": "motion",
   "family": "shake",
-  "doc": "抖动：x / y 两条 splitmix64 噪声轨（规范 §7.3），composite=add，可叠加主运动。seed 缺省 0。",
+  "doc": "Shake: two splitmix64 noise tracks for x / y (spec §7.3), composite=add, can stack on the main motion. seed defaults to 0.",
   "aliases": [
     "shake"
   ],
@@ -17,18 +17,18 @@
         "value": 0.008,
         "basis": "canvasShortEdge"
       },
-      "doc": "抖动幅度；缺省是画布短边的 0.8%"
+      "doc": "Shake amplitude; default is 0.8% of the canvas short side"
     },
     "period": {
       "type": "number",
       "default": 0.12,
       "min": 0.001,
-      "doc": "一个噪声周期的秒数；越小越碎"
+      "doc": "Seconds per noise cycle; smaller is choppier"
     },
     "seed": {
       "type": "seed",
       "default": 0,
-      "doc": "确定性种子（规范 §7.3）；x / y 由 channel 派生出各自的子种子"
+      "doc": "Deterministic seed (spec §7.3); x / y derive their own sub-seeds from the channel"
     }
   },
   "ops": [

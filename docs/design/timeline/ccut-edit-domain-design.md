@@ -1,30 +1,30 @@
-> 移植自 CucCut v2；文中的数据模型名（timeline.json、Element、Source / Clip / Cut 等）指 v2 的模型，与 v3 序列、轨道、实例的对应见[元素模型对照](element-model-mapping.md)与[架构设计 §14](../../architecture/architecture-design.md#14-待评审事项)。
+> Ported from CucCut v2. The data model names used in this text (timeline.json, Element, Source / Clip / Cut, etc.) refer to the v2 model. For how they map to v3 sequences, tracks and instances, see the [element model mapping](element-model-mapping.md) and [Architecture design §14](../../architecture/architecture-design.md#14-items-pending-review).
 
-# CucCut 剪辑域协议设计（Cut / Clip / 元素 / 水印 / 工程导出）
+# CucCut Clip-Domain Protocol Design (Cut / Clip / Element / Watermark / Project Export)
 
-状态：实现完成 v0.5（2026-08-02；E0–E4 仓库内实现与回归已落地并经全面审计修复一轮语义缺口，客户端接入边界与剩余缺口如实登记于 §9/§11；外部 NLE 实机打开属于发布候选验收）
-范围：为 `.ccut` 产品项目补齐剪辑域——媒体级剪切（Cut）、时间轴编排（Clip）、叠加元素（B-roll / 文字 / 水印 / 屏幕文字）、元素动画、成片全叠加烧录、CapCut 等六目标剪辑工程导出，以及老项目剪辑数据补迁移与 skill 剪辑面回归。本文同时记录 [ccut-mac-app-port-design.md](../../archive/mac/ccut-mac-app-port-design.md) 的剪辑域续作及其已落地实现契约。
+Status: implementation complete, v0.5 (2026-08-02; E0–E4 are implemented in the repository and regression-tested, and one full audit pass has fixed the semantic gaps. The client integration boundary and remaining gaps are recorded honestly in §9/§11. Opening the project in external NLEs on real hardware belongs to release-candidate acceptance.)
+Scope: add the clip domain to `.ccut` product projects: media-level cutting (Cut), timeline arrangement (Clip), overlay elements (B-roll / text / watermark / on-screen text), element animation, full-overlay burn-in of the finished video, project export to six NLE targets including CapCut, backfilling clip data for old projects, and skill clip-surface regression. This document also records the clip-domain continuation of [ccut-mac-app-port-design.md](../../archive/mac/ccut-mac-app-port-design.md) and its implemented contract.
 
-关联文档：
-[格式规范（BCF 0.1 / Project / Transcript v0.3）](../bcf/cuccut-format-spec.md) ·
-[CLI 与 Agent 协议](ccut-cli-design.md) ·
-[Studio Web 与 serve](ccut-studio-web-implementation.md) ·
-[Mac App 移植](../../archive/mac/ccut-mac-app-port-design.md)
+Related documents:
+[Format spec (BCF 0.1 / Project / Transcript v0.3)](../bcf/cuccut-format-spec.md) ·
+[CLI and Agent protocol](ccut-cli-design.md) ·
+[Studio Web and serve](ccut-studio-web-implementation.md) ·
+[Mac App port](../../archive/mac/ccut-mac-app-port-design.md)
 
 ---
 
-## 目录
+## Contents
 
-本文已按章拆分（2026-09-10）：正文在 [`ccut-edit-domain-design/`](ccut-edit-domain-design/) 下，一章一个文件，超长的章再按节拆成子目录（子目录的 `README.md` 是该章导言与节目录）。引用写「§N」仍指下表第 N 章；改哪节就编辑哪个文件，新增章节新建文件并在这里加一行，**不要把正文写回本文件**。
+This document has been split by chapter (2026-09-10). The body is under [`ccut-edit-domain-design/`](ccut-edit-domain-design/), one chapter per file. Chapters that are too long are further split into subdirectories by section (the `README.md` in a subdirectory is that chapter's introduction and section index). References written as "§N" still mean chapter N in the table below. When changing a section, edit the file that holds it. For a new chapter, create a new file and add a line here. **Do not write the body back into this file.**
 
-- [1. 背景与决策基线](ccut-edit-domain-design/01.md)
-- [2. 总体架构](ccut-edit-domain-design/02.md)
-- [3. timeline.json 数据模型](ccut-edit-domain-design/03.md)
-- [4. 派生与投影](ccut-edit-domain-design/04.md)
-- [5. 命令面与 serve](ccut-edit-domain-design/05.md)
-- [6. 导出](ccut-edit-domain-design/06.md)
-- [7. 老项目剪辑数据补迁移](ccut-edit-domain-design/07.md)
-- [8. skill 剪辑面回归](ccut-edit-domain-design/08.md)
-- [9. 里程碑](ccut-edit-domain-design/09.md)
-- [10. 对既有文档的修订清单（随 E0 落地）](ccut-edit-domain-design/10.md)
-- [11. 开放问题与风险](ccut-edit-domain-design/11.md)
+- [1. Background and decision baseline](ccut-edit-domain-design/01.md)
+- [2. Overall architecture](ccut-edit-domain-design/02.md)
+- [3. timeline.json data model](ccut-edit-domain-design/03.md)
+- [4. Derivation and projection](ccut-edit-domain-design/04.md)
+- [5. Command surface and serve](ccut-edit-domain-design/05.md)
+- [6. Export](ccut-edit-domain-design/06.md)
+- [7. Backfilling clip data for old projects](ccut-edit-domain-design/07.md)
+- [8. Skill clip-surface regression](ccut-edit-domain-design/08.md)
+- [9. Milestones](ccut-edit-domain-design/09.md)
+- [10. Revisions to existing documents (landed with E0)](ccut-edit-domain-design/10.md)
+- [11. Open questions and risks](ccut-edit-domain-design/11.md)

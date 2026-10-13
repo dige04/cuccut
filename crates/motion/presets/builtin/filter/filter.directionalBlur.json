@@ -32,5 +32,5 @@
       "max": 180
     }
   },
-  "doc": "沿 angle 对称采样 17 个整数像素位置，透明边界，四通道一起平均。"
+  "doc": "Samples 17 integer pixel positions symmetrically along angle, transparent boundary, all four channels averaged together."
 }

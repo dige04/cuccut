@@ -3,18 +3,18 @@
 <head>
 <meta charset="utf-8">
 <!--
-  CucCut 设计系统编辑器页面（docs/design/canvas §10.2），照原 Design System 类型的页面改来。Runtime 在 /design-system/<grant>/ 下提供，
-  宿主由 src/main.ts 装上。与原页面不同的地方：
-  - 原页面开头的内联脚本向父窗口要功能开关（__appifact_flags）并装健康上报（__appifact_health）。这里只装固定取值的
-    __appifact_flags（下一个 script），不装健康上报。
-  - appifact-capabilities 去掉 room（单用户）；其余照原样，运行时只读其中的 db（判断存储方式）与 downloads（是否声明了下载）。
-  - 不带 README 注释与 meta（写给托管平台上的 Claude 看的，CucCut 的说明在 skill design-system 里）。
-  - 样式与脚本由 Vite 从 src/main.ts 打进 assets/，不再是 artifact-type/app.css、artifact-type/app.js；artifact-type/ 下只有
-    预览的 run.html（原样）与预览用的 React UMD（vendor/）。
+  CucCut design system editor page (docs/design/canvas §10.2), adapted from the original Design System type page. The runtime serves it under /design-system/<grant>/,
+  and the host is installed by src/main.ts. Differences from the original page:
+  - The inline script at the top of the original page asks the parent window for feature flags (__appifact_flags) and installs health reporting (__appifact_health).
+    Here only __appifact_flags is installed, with fixed values (the next script); health reporting is not installed.
+  - appifact-capabilities drops room (single user); the rest is kept as is. The runtime reads only db (to decide how to store) and downloads (whether downloads are declared) from it.
+  - No README comment or meta (written for Claude on the hosting platform; CucCut's instructions live in the design-system skill).
+  - Styles and scripts are bundled by Vite from src/main.ts into assets/; there is no longer artifact-type/app.css or artifact-type/app.js. artifact-type/ holds only
+    the preview run.html (unchanged) and the React UMD used for preview (vendor/).
 -->
 <script>
-// 固定的功能开关，取原版的值，不向宿主要（docs/design/canvas §10.2）：
-//   design_system_clean_up_button  true  迁移没做完的系统顶上给「Finish the migration」（editor/migration-banners.tsx）
+// Fixed feature flags, using the original values, not requested from the host (docs/design/canvas §10.2):
+//   design_system_clean_up_button  true  On systems whose migration is unfinished, shows “Finish the migration” at the top (editor/migration-banners.tsx)
 (function(){var values={design_system_clean_up_button:true};function kind(v){return v===null?"null":Array.isArray(v)?"array":typeof v}function copy(v){return JSON.parse(JSON.stringify(v))}globalThis.__appifact_flags={version:"appifact-flags:v1",ready:function(){return Promise.resolve(true)},get:function(key,fallback){if(!Object.prototype.hasOwnProperty.call(values,key)||kind(values[key])!==kind(fallback))return fallback;return copy(values[key])},all:function(){return copy(values)}};})();
 </script>
 <title>Design System</title>

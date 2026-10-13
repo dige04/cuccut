@@ -30,5 +30,5 @@
   "determinism": "strict",
   "capabilities": [],
   "fallback": null,
-  "doc": "Timeline 0.1 的 fx {grayscale, brightness} 复合配方——**逐行等价于 studio_export 的 apply_media_effects**：同一趟循环里先向 Rec.709 亮度插值再加亮度偏移，最后一次 clamp+预乘。拆成两条 filter 串联会多一次 u8 round-trip，像素不同，所以它自成一个配方。"
+  "doc": "Compound recipe for Timeline 0.1’s fx {grayscale, brightness}: **line-for-line equivalent to studio_export’s apply_media_effects**. In the same loop, it first interpolates toward Rec.709 luminance, then adds the brightness offset, and finally does one clamp+premultiply. Chaining two filters would add an extra u8 round-trip and produce different pixels, so it is its own recipe."
 }

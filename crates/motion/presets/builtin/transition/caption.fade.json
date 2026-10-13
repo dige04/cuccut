@@ -19,5 +19,5 @@
     { "prop": "blur", "factor": 6.0, "a": 1.0, "b": -1.0, "scaleBy": "canvasScale", "clampMin": 0.0 }
   ],
   "determinism": "strict",
-  "doc": "字幕入场姿态：淡入 + 去模糊。通道值 = factor × scaleBy × (a + b·e)，e 是曲线取值——这个**求值顺序**是契约的一部分：blur 原式是 6.0 × canvasScale × (1 − e)，先乘 canvasScale 再乘括号，换成 (6 − 6e) × canvasScale 会换像素。"
+  "doc": "Caption entrance pose: fade in + de-blur. Channel value = factor × scaleBy × (a + b·e), where e is the curve value. The **evaluation order** is part of the contract: blur is written as 6.0 × canvasScale × (1 − e), multiplying by canvasScale before the parentheses; rewriting it as (6 − 6e) × canvasScale changes the pixels."
 }

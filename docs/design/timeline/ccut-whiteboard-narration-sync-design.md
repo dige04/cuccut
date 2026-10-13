@@ -1,79 +1,64 @@
-> 移植自 CucCut v2；文中的数据模型名（timeline.json、Element、Source / Clip / Cut 等）指 v2 的模型，与 v3 序列、轨道、实例的对应见[元素模型对照](element-model-mapping.md)与[架构设计 §14](../../architecture/architecture-design.md#14-待评审事项)。
+> Ported from CucCut v2. The data model names in this doc (timeline.json, Element, Source / Clip / Cut, etc.) refer to the v2 model. For how they map to v3 sequences, tracks and instances, see [element model mapping](element-model-mapping.md) and [architecture design §14](../../architecture/architecture-design.md#14-items-pending-review).
 
-# CucCut 白板手绘动画：旁白同步与文字生成（设计稿）
+# CucCut Whiteboard Hand-Drawn Animation: Narration Sync and Text Generation (Design Draft)
 
-> 状态：**P0 + P1 已落地 2026-09-18**（core：`ccutTimeline` 0.9、`ccut-render` natural / strict、`ccut whiteboard sync`、`plan` / `probe` 扩展、`transcribe --script`；App v2：属性页「节奏」/「每拍」/「分区」/「按旁白重新对齐」、时间轴拍点与定格纹、新建项目页磁贴文案；skill 与参考文档同步；Web 只读 0.9、有意不做属性页）。P2 笔迹质量未做。P3 BCF 路线词级锚定已落地 2026-09-23（§4 BCF 分支、§12）。原型先行 `cf9fa53ee`。审查基准 `main @ 17e329814`。
-> 本文是 [`ccut-whiteboard-animation-design.md`](ccut-whiteboard-animation-design.md) 的续篇：修订 ADR-WB05 的时序语义，
-> 给 `beats` 补显式窗口与词锚点，把已有的本地 TTS 与强制对齐接成「文字 → 白板视频」入口。
-> 来源：用户 2026-09-17 的方案稿《旁白同步与文字生成视频技术方案》（下称「方案稿」），以及四个参考仓库
-> `hi-nikola/hand-drawn-explainer-video-nikola`、`geeklee/srt-whiteboard-animation`、`ChenShuo2004/cs-board`、
-> `masihsultani/whiteboard-animator`（审查结论见 §2，对方案稿的修正见 §3）。
+> Status: **P0 + P1 landed 2026-09-18** (core: `ccutTimeline` 0.9, `ccut-render` natural / strict, `ccut whiteboard sync`, extensions to `plan` / `probe`, `transcribe --script`; App v2: property page "Pace" / "Per beat" / "Sections" / "Re-align to narration", timeline beat markers and hold ticks, new-project page tile copy; skill and reference docs synced; Web read-only 0.9, intentionally no property page). P2 (ink quality) not done. P3 (word-level anchoring on the BCF route) landed 2026-09-23 (§4 BCF branch, §12). Prototype first: `cf9fa53ee`. Review baseline: `main @ 17e329814`.
+> This doc is a sequel to [`ccut-whiteboard-animation-design.md`](ccut-whiteboard-animation-design.md). It revises the timing semantics of ADR-WB05, gives `beats` explicit windows and word anchors, and chains the existing local TTS and forced alignment into a "text → whiteboard video" entry point.
+> Sources: the user's 2026-09-17 proposal draft "Narration-Sync and Text-to-Video Technical Proposal" (hereafter "the proposal draft"), and four reference repos: `hi-nikola/hand-drawn-explainer-video-nikola`, `geeklee/srt-whiteboard-animation`, `ChenShuo2004/cs-board`, `masihsultani/whiteboard-animator` (review conclusions in §2, corrections to the proposal draft in §3).
 
-## 0. 一句话
+## 0. In One Sentence
 
-两个症状一个根：**镜与镜之间已经跟着句子走，镜内画多快仍由图片几何决定**。缺省画时
-`min(0.8 × 时长, 自然画时)` 让简单图几秒画完、剩下十几秒静止；skill 又不写 `draw` / `beats`，
-把这个缺省当成了成品。修法分三层：作者层立刻显式写「按旁白算出来的」画时与节拍（不改格式、不动老项目）；
-格式层给 `beats` 补显式结束、词锚点与「自然速度画完后定格」的节奏，让节拍随转录自动重排；
-入口层把 `ccut tts` → 建项 → 已知文本强制对齐 → 分镜 接成一条链，文字也能直接出白板视频。
-目标是「讲到哪里，画面推进到哪里」，不是「每一帧都得有东西动」。
+Two symptoms, one root: **between scenes, the picture already follows the sentences, but within a scene, how fast the drawing proceeds is still determined by the image geometry**. The default draw time `min(0.8 × duration, natural draw time)` finishes simple images in a few seconds and leaves the rest of the scene static for a dozen seconds. The skill also does not write `draw` / `beats`, so it treats this default as the finished product. The fix has three layers. At the authoring layer, immediately write explicit draw times and beats computed from the narration (no format change, no change to existing projects). At the format layer, give `beats` explicit ends, word anchors, and a rhythm of "draw at natural speed, then hold", so beats re-flow automatically with the transcript. At the entry layer, chain `ccut tts` → create project → forced alignment against known text → storyboard, so text can directly produce a whiteboard video. The goal is "the picture advances as the narration proceeds", not "something must move in every frame".
 
-## 1. 现状核查（与代码对过）
+## 1. Current State Check (Verified Against the Code)
 
-| 事实 | 位置 | 后果 |
+| Fact | Location | Consequence |
 | --- | --- | --- |
-| 缺省画时 `draw = min(0.8 × 时长, natural)`，再 `max(0.1)` | `ccut-timeline-render::element::whiteboard_draw_seconds` | 时长越长、图越简单，静止越久 |
-| 自然画时 `(路径长 / 900 + 连通域 × 0.25).clamp(1, 15)` | `ccut-render::source::whiteboard::natural_draw_seconds` | 简单图 1–4 s 画完；上限 15 s 也罩不住 20 s 的镜 |
-| 进度 `((t − start) / draw).clamp(0, 1)`，原点固定在元素 `start` | 同 `element.rs` | 有前导静音时 `draw` 必须从元素起点量起 |
-| `beats[].at` 换算成 `at / draw` 再 clamp 到 1 | `element.rs::whiteboard_params` | 拍点晚于 `draw` 会被静默压成零宽窗 |
-| beats 只是分组 + 起点：质心落入第一个 box、否则最近 box；组窗 `[at_g, at_{g+1}]`，末组到 `draw`；组内 √面积分配、墨线 0.7 / 色块 0.3 | `whiteboard.rs::analyze` / `group_window` | 组窗撑满（stretch）：窗长笔迹少就慢爬；没有停留概念；一条连线可把两个对象连成一个连通域提前泄露 |
-| `plan` 每镜给 `start/end`（首尾相接）、`speechStart/speechEnd`、`sentenceIds`、`text`、`hint`；`probe` 给 `inkRatio/components/suggestedDraw/warnings/suitable` | `ccut-kernel::cmd::whiteboard` | 镜间已按句子切；缺「镜内哪个对象对应哪句」 |
-| skill 第 4 步写「`suggestedDraw` 仅供参考、不必手工设置」，第 5 步 `element add` 不写 `draw` / `beats` | `skills/ccut-whiteboard-video/SKILL.md` | 每个新项目都落进缺省分支 |
-| 三处同口径画时：`ccut-editor-core::whiteboard_lane::effective_draw`、App `engine/whiteboard_strip.rs`、原型 `model-whiteboard.js::effectiveDraw` | 时间轴画时带 / 缩略条 / 原型 | 改语义必须三处同改 |
-| `ccut tts` 出 WAV；`TtsAudio { samples, sample_rate }` 无词级时间戳 | `ccut-tts`、`ccut-cli-server-reference/06/ccut-tts.md` | 时间戳要靠对齐，不靠 TTS |
-| `ForcedAlignment::{align, align_long}` 已有；配音服务 `TimingRuntime::measure` 已经在「TTS 输出 + 已知文本 → VAD + 强制对齐」 | `ccut-speech-core::traits`、`ccut-kernel::services::dubbing::acoustic_timing` | 文字入口不必新建对齐引擎，直接复用 |
-| 元素 `start` / `end` 已接受词锚点 `~<source>:<wordId>:start\|end±偏移`（`TimeValue::Anchor`），渲染宿主逐元素解析并报 `word-anchor-missing / cut / unmapped / ambiguous` | `ccut-timeline::anchors`、`ccut-subtitle-render::host_support` | 节拍跟随转录的机制**已经存在**，只是 `beats[].at` 还没用上 |
-| 词 id 由 flow 构建时按序号生成 `w{index+1}` | `ccut-flow-core` | 同一份文稿重对齐得到同样的 id；文稿一变 id 就漂 |
-| 源时间 → 输出时间投影 `TimelineProjection::source_to_timeline`（`arrange.rs`）/ `clamp_source_event`（`map.rs`） | `ccut-timeline` | 转录秒数不能直接塞 `beats.at`，要先投影再减元素起点 |
+| Default draw time `draw = min(0.8 × duration, natural)`, then `max(0.1)` | `ccut-timeline-render::element::whiteboard_draw_seconds` | The longer the scene and the simpler the image, the longer it sits still |
+| Natural draw time `(path length / 900 + connected components × 0.25).clamp(1, 15)` | `ccut-render::source::whiteboard::natural_draw_seconds` | Simple images finish in 1–4 s; the 15 s cap also cannot cover a 20 s scene |
+| Progress `((t − start) / draw).clamp(0, 1)`, origin fixed at the element's `start` | same as `element.rs` | With leading silence, `draw` must be measured from the element's start |
+| `beats[].at` converted to `at / draw`, then clamped to 1 | `element.rs::whiteboard_params` | A beat later than `draw` is silently compressed into a zero-width window |
+| Beats are only grouping + start points: the centroid falls into the first box, otherwise the nearest box; group window `[at_g, at_{g+1}]`, last group runs to `draw`; within a group, allocation by √area, ink lines 0.7 / colour blocks 0.3 | `whiteboard.rs::analyze` / `group_window` | The group window is always stretched to fill its span: with a long window and little ink, it creeps slowly; there is no concept of a pause; one connecting line can join two objects into one connected component and leak one of them early |
+| `plan` gives each scene `start/end` (contiguous), `speechStart/speechEnd`, `sentenceIds`, `text`, `hint`; `probe` gives `inkRatio/components/suggestedDraw/warnings/suitable` | `ccut-kernel::cmd::whiteboard` | Cuts between scenes already follow sentences; missing is "which object within a scene corresponds to which sentence" |
+| Skill step 4 says "`suggestedDraw` is for reference only, no need to set it by hand"; step 5 `element add` writes no `draw` / `beats` | `skills/ccut-whiteboard-video/SKILL.md` | Every new project falls into the default branch |
+| Three places with the same draw-time definition: `ccut-editor-core::whiteboard_lane::effective_draw`, App `engine/whiteboard_strip.rs`, prototype `model-whiteboard.js::effectiveDraw` | timeline draw lane / thumbnail strip / prototype | Changing the semantics requires changing all three together |
+| `ccut tts` outputs WAV; `TtsAudio { samples, sample_rate }` has no word-level timestamps | `ccut-tts`, `ccut-cli-server-reference/06/ccut-tts.md` | Timestamps have to come from alignment, not from TTS |
+| `ForcedAlignment::{align, align_long}` already exist; the dubbing service's `TimingRuntime::measure` already does "TTS output + known text → VAD + forced alignment" | `ccut-speech-core::traits`, `ccut-kernel::services::dubbing::acoustic_timing` | The text entry point does not need a new alignment engine; reuse directly |
+| Element `start` / `end` already accept word anchors `~<source>:<wordId>:start\|end±offset` (`TimeValue::Anchor`); the render host resolves them per element and reports `word-anchor-missing / cut / unmapped / ambiguous` | `ccut-timeline::anchors`, `ccut-subtitle-render::host_support` | The mechanism for beats to follow the transcript **already exists**; only `beats[].at` has not used it yet |
+| Word ids are generated by sequence number at flow build time as `w{index+1}` | `ccut-flow-core` | Re-aligning the same script yields the same ids; when the script changes, the ids drift |
+| Source time → output time projection `TimelineProjection::source_to_timeline` (`arrange.rs`) / `clamp_source_event` (`map.rs`) | `ccut-timeline` | Transcript seconds cannot be dropped straight into `beats.at`; project first, then subtract the element's start |
 
-方案稿 §1 的代码核查（[B1]–[B11]）与仓库一致，本文不重复。它漏掉的两项现成能力是上表最后四行：
-**词锚点**与 **`TimingRuntime`**，这两项决定了 §3 的多处修正。
+The proposal draft's code check in §1 ([B1]–[B11]) matches the repo, so this doc does not repeat it. The two capabilities it missed are the last four rows of the table above: **word anchors** and **`TimingRuntime`**. These two determine several of the corrections in §3.
 
-## 2. 四个参考仓库审查
+## 2. Review of Four Reference Repos
 
-| 仓库 | 时间从哪来 | 镜内节奏模型 | 借 | 不借 |
+| Repo | Where timing comes from | In-scene pace model | Borrow | Don't borrow |
 | --- | --- | --- | --- | --- |
-| nikola | 先复用 / 生成完整旁白，真实音频出 SRT，再按区域分 `startMs/durationMs` | 拉伸到区域窗；「笔迹仍过快就拆幕，不加快笔」 | 顺序纪律（声音先于排时）；4–8 s 一幕、拆幕优先；`check_drawable_regions` 的重叠 / 留白 / 跨区连通检查；`hand-follow` 只平滑手不改笔迹 | 火山 TTS 默认音色、Python 渲染器、HyperFrames 程序动画路线 |
-| srt-whiteboard-animation | `annotation.json` 每区域 `sequence/startMs/durationMs/region/protectedRegions/subtitle` | 拉伸到区域窗；墨 : 色 = 2 : 1；结尾 ≥ 0.5 s 停留 | **允许掩码 = 本区域扣后续区域与保护区**；未开始的区域完全不可见；一支笔串行；已画内容常驻 | 状态化画布（依赖上一帧）；把 regions 持久化进项目 |
-| cs-board | Whisper.cpp DTW 先出完整短语时间表；模型只引用短语 id；程序算 ms → 帧（`ceil` 到 30 fps）；覆盖率 < 72% 拒绝；禁均分兜底 | 事件驱动，非逐笔 | **模型选锚点、程序算秒**；对齐不足要报错不要假装 | Remotion / 30 fps 固定 / 72% 阈值 |
-| whiteboard-animator | 默认前 70% 画完；region plan 用字符占比 70% + 面积 30% 估算，不做语音对齐；`element_plan` 才收显式 `start/end` | **自然时长画完后 hold，不拉伸笔迹**（`_schedule_semantic_objects`：`natural = 0.28 + √面积 / 190`，窗不够才整体压缩）；跨元素的结构性连通域归最早的元素；未匹配的连通域并入末元素，「一个都不能跳」 | 自然速度 + 定格的镜内模型；√面积、骨架、笔画分解；跨区连通域归属规则 | 70% / 75% 缺省与字数估时；OpenCV 离线烘片 |
+| nikola | Reuse or generate the full narration first; real audio produces SRT, then regions are split into `startMs/durationMs` | Stretch to the region window; "if the strokes are still too fast, split the scene, don't speed up the pen" | Ordering discipline (audio before timing); 4–8 s per scene, with splitting scenes taking priority; `check_drawable_regions` overlap / blank / cross-region connectivity checks; `hand-follow` only smooths the hand, never changes the strokes | Volcano Engine TTS default voice, Python renderer, HyperFrames programmatic-animation route |
+| srt-whiteboard-animation | `annotation.json` per region: `sequence/startMs/durationMs/region/protectedRegions/subtitle` | Stretch to the region window; ink : colour = 2 : 1; ≥ 0.5 s hold at the end | **Allowed mask = this region minus later regions and protected regions**; regions not yet started are completely invisible; one pen in series; drawn content persists | Stateful canvas (depends on the previous frame); persisting regions into the project |
+| cs-board | Whisper.cpp DTW first produces a full phrase timetable; the model only references phrase ids; the program computes ms → frames (`ceil` to 30 fps); coverage < 72% is rejected; no even-split fallback | Event-driven, not per-stroke | **The model picks anchors, the program computes seconds**; insufficient alignment must raise an error, not pretend | Remotion / fixed 30 fps / 72% threshold |
+| whiteboard-animator | Default: first 70% drawn; region plan estimates by 70% character share + 30% area, no speech alignment; `element_plan` only accepts explicit `start/end` | **After drawing at natural duration, hold; do not stretch the strokes** (`_schedule_semantic_objects`: `natural = 0.28 + √area / 190`, compressing the whole only when the window is insufficient); structural connected components spanning elements go to the earliest element; unmatched connected components are merged into the last element, "none may be skipped" | Natural-speed + hold in-scene model; √area, skeleton, stroke decomposition; the rule for assigning cross-region connected components | 70% / 75% defaults and character-count timing estimates; OpenCV offline baking |
 
-四家分成两派：nikola / srt 把笔迹**拉伸**到旁白窗，whiteboard-animator 按**自然速度画完再定格**。
-方案稿 §2.4 只看到 whiteboard-animator 的 70% 缺省不做对齐，漏掉了它底层这条「自然长度 + hold」——
-恰恰是镜内该用的模型：窗口由旁白定（借 srt / cs-board），窗内按自然速度画、画完停住（借 whiteboard-animator），
-窗装不下才压缩并报警（借 nikola 的「拆幕优先于加快笔」）。CucCut 现状是「组窗撑满」的拉伸派，
-所以简单图配长句会慢爬，复杂图配短句会赶工，两头都不自然。
+The four repos split into two camps: nikola and srt **stretch** strokes to the narration window, while whiteboard-animator draws at **natural speed, then holds**. §2.4 of the proposal draft only saw whiteboard-animator's 70% default without alignment, and missed the underlying "natural length + hold". That is exactly the right in-scene model for us: the window is set by the narration (borrowing from srt / cs-board); within the window, draw at natural speed and hold when done (borrowing from whiteboard-animator); when the window cannot fit, compress and warn (borrowing nikola's "splitting scenes takes priority over speeding up the pen"). CucCut's current state is the stretch-to-fill camp, so simple images with long sentences creep slowly and complex images with short sentences rush, and both feel unnatural.
 
-## 3. 对方案稿的审查结论
+## 3. Review Conclusions on the Proposal Draft
 
-保留的：三递进（作者层显式写 → 语义绑定 → 硬遮罩与笔迹）、不改历史项目缺省、三个时钟不混用、
-「完成点 = min(scene.end, speechEnd)、draw 从元素起点量」的公式、诊断思路、测试矩阵、不用 `ccut frames` 验收、
-不引 Remotion / Python 渲染器与第二套 TTS。以下是修正：
+Kept: the three progressive steps (explicit authoring layer → semantic binding → hard masking and strokes), no change to the default for existing projects, the three clocks not being mixed, the formula "completion point = min(scene.end, speechEnd), draw measured from the element's start", the diagnostic approach, the test matrix, acceptance not using `ccut frames`, and not introducing a Remotion / Python renderer or a second TTS. The following are corrections:
 
-| 方案稿 | 问题 | 修正 |
+| Proposal draft | Problem | Correction |
 | --- | --- | --- |
-| §6.5 另建「作者层清单」（`authoringVersion / narration.audioSha256 / transcriptRevision / startAnchor.wordId`）+ 编译缓存 | 仓库已有词锚点语法与解析器、错误码、渲染宿主接线；再造一层清单 + 缓存 = 两份时间真相、一套新文件所有权 | `beats[].at` / `beats[].end` 直接接受 `TimeValue`（秒或 `~main:w12:start` 这种词锚点），解析复用 `resolve_word_anchor`；「配音换了自动重排」由锚点天然给出（§5、§10） |
-| §8.3 新增 `regions[]` 分支，与 `draw/beats` 互斥 | 两条格式分支、两套渲染路径、属性页两种 UI；互斥规则本身就是「两套真相」的承认 | 对 `beats` 做增量扩展：`end`（显式结束）、元素级 `pace`（stretch / natural）、`strict`（硬遮罩）、`label`；老字段语义不变（§5） |
-| §5.2 `displayText / spokenText / textMap` 三概念 | 本地 TTS 直接朗读原稿，skill 不改写读音；三概念是为「读稿 ≠ 显示稿」准备的，P1 用不上 | P1 规则「原稿即读稿」：`ccut tts` 与强制对齐吃同一份文本；要改读音只能改原稿。`textMap` 留到真有需求时（§13） |
-| §1.5 / §11 「补已知文本的可复用编排服务」 | 已存在：配音的 `TimingRuntime::measure(samples, expected)` | 抽成 `ccut transcribe <project> --script <文件>`：已知文本强制对齐直接落 transcript，不跑 ASR（§7.3） |
-| §7.1 白板流程加「文字 / 音频 / 当前文字稿」三来源面板 | 产品设计 §08 已裁决：新建项目页「白板教学动画」磁贴 → Agent + `ccut-whiteboard-video` skill；2026-09-14 裁决白板目录分节暂不上架 | 文字入口就是那张磁贴 + skill 的文字路线；App 不新造白板面板。编辑期入口只加属性页一枚「按旁白重新对齐」（§9） |
-| §4.2 公式 | 正确，但少三条边界：`plan` 的 `end` 已含到下一句的空隙；纯静音镜；`draw > 时长` 按格式规则截断 | §6.1 补齐；`sync` 与 `lint` 校验 `at < end ≤ draw ≤ 时长`，不靠 `at / draw` 的 clamp |
-| §6.2 `resolve_narration_anchors / schedule_whiteboard_scene` 两个新纯函数 | 前者 = `resolve_word_anchor` + 减元素起点；后者应落在既有 `analyze()` 里而不是新层 | 只加一个 `ccut whiteboard sync`（§7.4）和 `analyze()` 的 `pace/strict` 分支（§6） |
-| §10.3 诊断名 camelCase、`staleNarrationBinding` | 仓库校验码惯例是 kebab-case；锚点失效已有 `word-anchor-*` 码 | §10 诊断码合流；「配音变了排时没变」= 锚点缺失或 `label` 与词文本不符，不另设一码 |
-| §12 P0 「现有 TTS → 建项 → 转录 → 白板链路整合到同一入口」 | 今天 `ccut transcribe` 只有 ASR 路径；ASR 回写会改原稿标点与错字 | P0 允许 ASR 路径先跑通（文稿以 ASR 为准）；P1 上 `--script` 后 skill 切换 |
-| §7.2 编辑器左 / 中 / 右 三栏联动 | 白板元素是 Timeline 的普通元素，编辑器没有「白板模式」 | 属性页节拍列表显示 `label` + 句时间、点击定位；不做专属三栏（§9） |
+| §6.5 adds a separate "authoring manifest" (`authoringVersion / narration.audioSha256 / transcriptRevision / startAnchor.wordId`) + compile cache | The repo already has the word-anchor syntax and parser, error codes, and render-host wiring; adding a manifest layer + cache = two sources of timing truth and a new set of file ownership | `beats[].at` / `beats[].end` directly accept `TimeValue` (seconds or word anchors such as `~main:w12:start`); parsing reuses `resolve_word_anchor`; "re-time automatically when the narration changes" comes naturally from the anchors (§5, §10) |
+| §8.3 adds a `regions[]` branch, mutually exclusive with `draw/beats` | Two format branches, two render paths, two UIs in the property page; the mutual-exclusion rule itself admits "two sources of truth" | Incremental extension to `beats`: `end` (explicit end), per-element `pace` (stretch / natural), `strict` (hard mask), `label`; existing field semantics unchanged (§5) |
+| §5.2 `displayText / spokenText / textMap` three concepts | Local TTS reads the original text directly, and the skill does not rewrite pronunciation; the three concepts are for "reading script ≠ display script", which P1 does not need | P1 rule "the original is the reading script": `ccut tts` and forced alignment consume the same text; to change pronunciation, change the original. `textMap` is deferred until there is a real need (§13) |
+| §1.5 / §11 "add a reusable orchestration service for known text" | Already exists: dubbing's `TimingRuntime::measure(samples, expected)` | Extract into `ccut transcribe <project> --script <file>`: forced alignment of known text writes directly to the transcript, with no ASR (§7.3) |
+| §12 P0 "integrate the existing TTS → create project → transcribe → whiteboard chain into one entry" | Today `ccut transcribe` has only the ASR path; ASR write-back would change the original's punctuation and typos | P0 allows the ASR path to run first (the script follows ASR); after P1 adds `--script`, switch the skill |
+| §7.1 whiteboard flow adds a three-source panel: "text / audio / current script" | Product design §08 has decided: the "Whiteboard teaching animation" tile on the new-project page → Agent + `ccut-whiteboard-video` skill; the 2026-09-14 decision: the whiteboard directory section is not listed for now | The text entry is that tile plus the skill's text route; the App does not build a new whiteboard panel. The only editing-time entry added is one "Re-align to narration" button in the property page (§9) |
+| §4.2 formula | Correct, but misses three boundary conditions: `plan`'s `end` already includes the gap to the next sentence; pure-silence scenes; `draw > duration` truncated per format rules | §6.1 fills these in; `sync` and `lint` validate `at < end ≤ draw ≤ duration`, rather than relying on clamping `at / draw` |
+| §6.2 two new pure functions `resolve_narration_anchors / schedule_whiteboard_scene` | The former = `resolve_word_anchor` + subtract the element's start; the latter should go inside the existing `analyze()` rather than a new layer | Add only one `ccut whiteboard sync` (§7.4) and a `pace/strict` branch in `analyze()` (§6) |
+| §10.3 diagnostic names in camelCase, `staleNarrationBinding` | The repo's validation-code convention is kebab-case; anchor invalidation already has `word-anchor-*` codes | §10 diagnostic codes merge into these; "narration changed but timing did not" = anchor missing or `label` not matching the word text, with no separate code |
+| §7.2 editor left / middle / right three-pane linkage | Whiteboard elements are ordinary elements of the Timeline; the editor has no "whiteboard mode" | The property page beat list shows `label` + sentence time, click to jump; no dedicated three-pane layout (§9) |
 
-## 4. 架构：一条旁白准备链，三个时钟
+## 4. Architecture: one narration preparation chain, three clocks
 
 ```text
 文字 ──ccut tts──► narration.wav ─┐
@@ -100,23 +85,21 @@ BCF 手绘分支（无线稿位图时 skill 走这条，P3，2026-09-23）：
             └─ ccut lint narration-idle ──► 成片 ──► transcribe --script 台词稿 ──► 项目字幕轨
 ```
 
-三个时钟（沿方案稿 §3.1）：**源时间**（WAV 采样位置、transcript 秒）→ **输出时间**（经
-`TimelineProjection`，含裁切 / 变速 / 同源多次使用）→ **元素本地时间**（减元素 `start`）。
-词锚点解析产出的是输出时间，`beats` 语义是元素本地时间，所以「锚点形式的 `at`」= 解析值 − 解析后的元素起点。
-同一源在时间轴上出现两次时 `resolve_word_anchor` 返回 `word-anchor-ambiguous`，`sync` 照实报错，不猜。
+Three clocks (following design doc §3.1): **source time** (WAV sample position, transcript seconds) → **output time** (via `TimelineProjection`, including trims / speed changes / multiple uses of the same source) → **element-local time** (minus the element's `start`).
+Word-anchor resolution yields output time, while `beats` semantics are element-local time, so an anchor-form `at` = resolved value − the resolved element start.
+When the same source appears twice on the timeline, `resolve_word_anchor` returns `word-anchor-ambiguous`, and `sync` reports the error as is rather than guessing.
 
-音频仍可编辑（裁停顿、换音色、变速）：锚点跟着 `TimelineProjection` 走；文稿变了 id 漂，
-靠 `label` 对拍发现（§10）。禁止为了「看起来同步」截声、加速或补静音。
+Audio stays editable (trim pauses, change voice, change speed): anchors follow `TimelineProjection`; if the script changes, ids drift, and the drift is caught by cross-checking `label` (§10). Do not clip, speed up, or pad with silence just to make things “look in sync.”
 
-## 5. 数据格式：`ccutTimeline` 0.8 → 0.9（全部可选、向后兼容）
+## 5. Data format: `ccutTimeline` 0.8 → 0.9 (all optional, backward compatible)
 
 ```jsonc
 "whiteboard": {
   "hand": "marker", "paper": "#FFFFFF",
-  "draw": 12.0,                 // 不变：元素起点到全图完成的本地秒；缺省公式不变（老项目不变）
+  "draw": 12.0,                 // unchanged: local seconds from element start to full-image completion; default formula unchanged (old projects unchanged)
   "inkFirst": true,
-  "pace": "natural",            // 新：stretch（缺省 = 现状，组窗撑满）| natural（自然速度画完后定格）
-  "strict": true,               // 新：box 是硬遮罩（本 box 扣后续 box）；缺省 false = 现状的质心分组
+  "pace": "natural",            // new: stretch (default = current behaviour, group window fully used) | natural (drawn at natural speed, then frozen at completion)
+  "strict": true,               // new: box is a hard mask (this box subtracts from later boxes); default false = current centroid grouping
   "beats": [
     { "at": "~main:w12:start", "end": "~main:w18:end", "box": [0, 0, 30, 100], "label": "太阳升起" },
     { "at": 4.1,               "end": 7.8,             "box": [35, 0, 30, 100] },
@@ -125,181 +108,159 @@ BCF 手绘分支（无线稿位图时 skill 走这条，P3，2026-09-23）：
 }
 ```
 
-规则（在 §3 原规则之上）：
+Rules (on top of the original §3 rules):
 
-- `beats[].at`、`beats[].end` 是 `TimeValue`：数字 = 元素本地秒；字符串 = 词锚点，解析后减元素起点。
-  同一元素里两种写法可以混用。`end` 缺省 = 下一拍的 `at`，末拍缺省 = `draw`。
-- 校验：解析后 `at_g < end_g ≤ at_{g+1}`（新码 `whiteboard-beat-window`），`end_末 ≤ draw ≤ 时长`
-  （`whiteboard-beat-after-draw`）；锚点无法解析时沿用 `word-anchor-*` 码并报到 `elementId + field`（`beats[3].at`）。
-  渲染宿主对解析失败的拍**整拍降级为几何顺序**并记错，不让整个元素消失。
-- `pace:"natural"`：每组按自然速度画（§6.2），画完停到组窗结束；自然时长 > 组窗时压缩到组窗并出
-  `whiteboard-window-too-short`。`stretch` 完全等于 0.8 的行为。
-- `strict:true`：像素归属按 box 顺序决定，**重叠部分归后面的拍**（srt 规则：先画的区域不能提前露出后画的内容）；
-  跨 box 的连通域按像素切开，各自在所属拍内做测地时间场；未被任何 box 覆盖的前景排到末拍之后
-  （`whiteboard-unassigned-foreground`，warning）；扣空的 box 出 `whiteboard-empty-box`。`false` = 现状。
-- `label` ≤ 80 字符，只做展示与对拍，不参与渲染。
-- 版本：读 0.1–0.9，写 0.9；`specVersion` 相应 bump；`docs/generated/` 重新生成；
-  JSON schema `$defs.whiteboardProps` 同步。0.8 文档不含新字段，读入即 0.9 语义（缺省值 = 老行为）。
+- `beats[].at` and `beats[].end` are `TimeValue`s: a number = element-local seconds; a string = a word anchor, which after resolution has the element start subtracted.
+  Both forms may be mixed within one element. `end` defaults to the next beat's `at`; the last beat's `end` defaults to `draw`.
+- Validation: after resolution, `at_g < end_g ≤ at_{g+1}` (new code `whiteboard-beat-window`), and `end_last ≤ draw ≤ duration` (`whiteboard-beat-after-draw`). When an anchor cannot be resolved, reuse the `word-anchor-*` codes and report them at `elementId + field` (`beats[3].at`). The render host **degrades a beat whose parsing fails to geometric order** and logs an error, so the whole element does not disappear.
+- `pace:"natural"`: each group is drawn at natural speed (§6.2), then holds until the group window ends. If the natural duration exceeds the group window, it is compressed to fit and emits `whiteboard-window-too-short`. `stretch` behaves exactly as 0.8.
+- `strict:true`: pixel ownership is decided by box order, and **overlaps belong to the later beat** (srt rule: a region drawn earlier must not reveal later content early). Connected components that span boxes are split by pixel, and each part gets a geodesic time field within its owning beat. Foreground not covered by any box is placed after the last beat (`whiteboard-unassigned-foreground`, warning). A box emptied by this process emits `whiteboard-empty-box`. `false` = current behaviour.
+- `label` ≤ 80 characters; used only for display and cross-checking, not rendering.
+- Versions: read 0.1–0.9, write 0.9; bump `specVersion` accordingly; regenerate `docs/generated/`; sync the JSON schema `$defs.whiteboardProps`. 0.8 documents do not contain the new fields and are read with 0.9 semantics on load (defaults = old behaviour).
 
-不做的：不加 `regions` 分支（§3）；`draw` 不接受锚点（完成点由 `sync` 算成数字写入，一处真相）；
-不加每拍独立 `draw`（原设计 §9 的开放问题由 `end` + `pace` 收口）。
+Not doing: no `regions` branch (§3); `draw` does not accept anchors (the completion point is computed by `sync` as a number and written in one place, the single source of truth); no per-beat independent `draw` (the open question in §9 of the original design is resolved by `end` + `pace`).
 
-## 6. 渲染算法变化（`ccut-render::source::whiteboard`）
+## 6. Rendering algorithm changes (`ccut-render::source::whiteboard`)
 
-### 6.1 组窗与完成点
+### 6.1 Group windows and completion point
 
-- 组窗 `W_g = [at_g, end_g]`（§5 缺省规则），仍在 `[0, draw]` 内；`draw` 仍是唯一完成点。
-- 无 beats：不变。
-- `sync` 写入的 `draw = min(元素 end, 最后一句 end) − 元素 start`；首拍 `at = 首句 start − 元素 start`；
-  纯静音镜（无句子落在窗内）不写 beats，`draw` 取自然画时（等于今天的行为）。
+- Group window `W_g = [at_g, end_g]` (default rules in §5), still within `[0, draw]`; `draw` remains the only completion point.
+- No beats: unchanged.
+- `draw` written by `sync` = `min(element end, last sentence end) − element start`; first beat `at` = first sentence start − element start. A purely silent shot (no sentence falls inside the window) writes no beats, and `draw` takes the natural drawing time (equal to today's behaviour).
 
-### 6.2 `pace:"natural"` 的组内分配
+### 6.2 Allocation within groups for `pace:"natural"`
 
 ```text
-natural_g = Σ_i(path_len_i / 900) + comps_g × 0.25          // 与 natural_draw_seconds 同口径，不再 clamp [1,15]
-draw_g    = min(natural_g, |W_g|)                           // 装不下就压缩，报 window-too-short
-组内：墨线占 [at_g, at_g + 0.7·draw_g]，色块占其后（inkFirst 时），√面积份额同 0.8
-hold：[at_g + draw_g, end_g] 该组静止，手抬起（不画手或停在末笔）
+natural_g = Σ_i(path_len_i / 900) + comps_g × 0.25          // same basis as natural_draw_seconds; no longer clamped to [1,15]
+draw_g    = min(natural_g, |W_g|)                           // if it doesn't fit, compress and report window-too-short
+Within group: ink lines occupy [at_g, at_g + 0.7·draw_g]; color fills follow them (when inkFirst); √-area share same as 0.8
+hold: [at_g + draw_g, end_g] the group stays still; pen lifted (hand not drawn, or resting on the last stroke)
 ```
 
-组与组之间是抬笔阶段，手的位置从上一组末笔移到下一组首笔（线性，只是显示，不改落墨时间）。
-`stretch` 保持 0.8 的公式一字不改，老项目逐字节不变（§11 对拍）。
+Between groups is a pen-lift phase: the hand moves from the last stroke of the previous group to the first stroke of the next (linear, display only; it does not change when ink lands).
+The `stretch` formula keeps the 0.8 formula verbatim, so old projects stay byte-identical (cross-checked in §11).
 
-### 6.3 `strict:true` 的像素归属
+### 6.3 Pixel ownership for `strict:true`
 
-分析步骤 3（连通域）之后、步骤 4（排序）之前插入「所有权」：按拍顺序为每个像素标 owner
-（后拍覆盖前拍），连通域被切成 `(域, owner)` 子域；步骤 5–6 在子域上做。膨胀 3 px 不得跨 owner 边界。
-手位置仍取「刚显现像素质心」，因为子域已限定在 box 内，跨对象跳动消失。
+Insert an “ownership” step after analysis step 3 (connected components) and before step 4 (ordering): tag each pixel with an owner in beat order (later beats override earlier ones), and split each connected component into `(region, owner)` sub-regions; steps 5–6 run on the sub-regions. A 3 px dilation must not cross an owner boundary.
+The hand position still uses the “centroid of just-revealed pixels”; because sub-regions are already confined to their box, the jumping between objects disappears.
 
-### 6.4 记忆化键
+### 6.4 Memoization key
 
-`(source_id, 盒尺寸, props 哈希)` 不变；`pace / strict / beats.end / label` 进 props 哈希
-（`label` 可以排除，避免改标签重算）。锚点形式的 `at/end` 在宿主解析成秒后再进哈希——转录一变，键自然失效。
+`(source_id, box size, props hash)` is unchanged; `pace / strict / beats.end / label` go into the props hash (`label` may be excluded, to avoid recomputation when only the label changes). Anchor-form `at/end` enter the hash after the host resolves them to seconds, so when the transcript changes, the key is naturally invalidated.
 
-## 7. CLI（`ccut whiteboard` 一条命令，四个子命令）
+## 7. CLI (`ccut whiteboard`, one command with four subcommands)
 
-改哪条都同步 [`06/ccut-whiteboard.md`](../cli/ccut-cli-server-reference/06/ccut-whiteboard.md)、`serve_contract.rs`（如经 serve 暴露）与 `ccut spec`。
+Whenever any of these changes, update in sync [`06/ccut-whiteboard.md`](../cli/ccut-cli-server-reference/06/ccut-whiteboard.md), `serve_contract.rs` (if exposed through serve) and `ccut spec`.
 
-### 7.1 `plan`（扩展输出）
+### 7.1 `plan` (extended output)
 
-每镜增加：
+Each shot gains:
 
 ```jsonc
 {
   "start": 20.0, "end": 32.5, "speechStart": 20.2, "speechEnd": 32.0,
-  "drawBudget": 12.0,                          // = min(end, speechEnd) − start；与 probe 的 suggestedDraw（自然画时）区分
+  "drawBudget": 12.0,                          // = min(end, speechEnd) − start; distinguish from probe's suggestedDraw (natural drawing time)
   "anchors": { "start": "~main:w101:start", "speechEnd": "~main:w140:end" },
-  "sentences": [                               // 本镜每句：给 Agent 映射对象用
+  "sentences": [                               // each sentence in this shot: for the agent to map objects
     { "id": "s-w101", "text": "…", "localStart": 0.2, "localEnd": 3.9,
       "at": "~main:w101:start", "end": "~main:w108:end" }
   ]
 }
 ```
 
-`localStart/localEnd` 已经过 `TimelineProjection` 投影并减去 `start`；`at/end` 是可直接写进 `beats` 的锚点串。
-镜的切法不变（`--seconds` 每镜目标 12 s、`--scenes` ≤ 64、句中不切）。加 `--max-seconds <N>` 硬上限：超过的镜按句拆，
-落实 nikola 的「拆幕优先于加快笔」。
+`localStart/localEnd` have already been projected through `TimelineProjection` and have `start` subtracted; `at/end` are anchor strings that can be written directly into `beats`.
+Shot splitting is unchanged (`--seconds` targets 12 s per shot, `--scenes` ≤ 64, never cut mid-sentence). Add a hard cap with `--max-seconds <N>`: shots exceeding it are split by sentence, implementing nikola's rule “split scenes before speeding up strokes.”
 
-### 7.2 `probe`（扩展输出）
+### 7.2 `probe` (extended output)
 
-增 `boxes[]`：连通域按阅读序的包围盒（百分比 `[x,y,w,h]`）、`area`、`kind`（ink / color）、`natural`（秒）。
-Agent 据此把「太阳 / 树叶 / 箭头」映到 box，不再靠肉眼估百分比。`suggestedDraw` 含义不变（自然画时），
-文档改口为「几何参考，不是画时缺省」。
+Adds `boxes[]`: bounding boxes of connected components in reading order (percentages `[x,y,w,h]`), `area`, `kind` (ink / color), and `natural` (seconds). The agent uses these to map “sun / leaves / arrow” to boxes, instead of estimating percentages by eye. The meaning of `suggestedDraw` is unchanged (natural drawing time); the docs are revised to say it is “a geometric reference, not the default draw time.”
 
-### 7.3 `ccut transcribe <project> --script <文件>`（P1，属于 transcribe 而不是 whiteboard）
+### 7.3 `ccut transcribe <project> --script <file>` (P1, belongs to transcribe rather than whiteboard)
 
-已知文本 → 强制对齐 → transcript：复用 `TimingRuntime`（SileroVad + ForcedAligner，`align_long` 分块，
-块偏移取最终 WAV 的真实采样位置），词落盘走 flow 的 build 路径，id 仍是 `w{index+1}`，
-`--source-lang` 决定分词。与 `--model` 互斥；重做需 `--yes`。对齐质量记进阶段戳
-（`aligned: { mode: "script", coverage, lowConfidence[] }`），覆盖率不足**报错退出**而不是回退均分（cs-board 规则）。
-它对配音、任何「有稿的音频」都有用，不是白板专属。
+Known text → forced alignment → transcript: reuses `TimingRuntime` (SileroVad + ForcedAligner, `align_long` chunking, with chunk offsets taken from the real sample positions in the final WAV). Words are written to disk via the flow's build path, ids remain `w{index+1}`, and `--source-lang` determines tokenization. Mutually exclusive with `--model`; redoing requires `--yes`. Alignment quality is recorded in the stage stamp (`aligned: { mode: "script", coverage, lowConfidence[] }`). If coverage is insufficient, it **exits with an error** instead of falling back to even distribution (cs-board rule). It is useful for voice-over and any “audio with a script,” not whiteboard-specific.
 
 ### 7.4 `ccut whiteboard sync <project> [--element <id>…] [--beats <json>] [--pace natural|stretch] [--strict] [--check] [--yes] [--json]`
 
-对每个白板元素（缺省全部，`--element` 筛选）：
+For each whiteboard element (all by default; filter with `--element`):
 
-1. 取元素窗内的句子（投影后），算 `draw`、首拍 `at`（§6.1）。
-2. 有 `--beats`（Agent 给的 `{ elementId: [{ sentenceId | at, box, label? }] }`）：按句写 `at/end` 锚点 + box。
-   没有：只写 `draw` + `pace`，并按**阅读序连通域累计 √面积 ∝ 句字数**把 box 分给句子，
-   报 `whiteboard-beats-heuristic`（warning）——这是「对象 → 句」的兜底映射，时间仍来自真实语音，
-   不是 cs-board 禁止的「均分时间」。
-3. 校验 §5 规则，写回走 `element set` 同一写路径（可撤销、`docRev` 推进）。
-4. `--check` 不写，只输出诊断（§10），作为「分析同步问题」。
+1. Take the sentences within the element's window (after projection), and compute `draw` and the first beat's `at` (§6.1).
+2. With `--beats` (the `{ elementId: [{ sentenceId | at, box, label? }] }` supplied by the agent): write `at/end` anchors + box per sentence. Without it: write only `draw` + `pace`, and assign boxes to sentences by **accumulating √area ∝ sentence character count across reading-order connected components**, reporting `whiteboard-beats-heuristic` (warning). This is the fallback mapping from “object → sentence”; the timing still comes from the real speech, not from the “even time distribution” that cs-board forbids.
+3. Validate against the §5 rules; write back through the same write path as `element set` (undoable, `docRev` advances).
+4. `--check` writes nothing and only outputs diagnostics (§10), serving as “analysing sync issues.”
 
-P0 时格式还是 0.8，`sync` 写数字而非锚点；0.9 落地后缺省写锚点，`--seconds` 可强制写数字。
+At P0 the format is still 0.8, and `sync` writes numbers rather than anchors. Once 0.9 lands, anchors are written by default, and `--seconds` can force numeric output.
 
-## 8. skill `ccut-whiteboard-video` 修改
+## 8. Changes to the skill `ccut-whiteboard-video`
 
-- 输入扩为三种：音频 / 视频（现状）、**文字稿**（`ccut tts --text-file … --out narration.wav` → `project create --media narration.wav --ptype a2v` → P1 `transcribe --script`，P0 先 `transcribe`）、已有项目。
-  音色 / 模型 / 语言全部沿用 `ccut tts` 的现有参数与模型表，不在 skill 里列音色。
-- 第 2 步分镜：读 `drawBudget` 与 `sentences[]`；一镜超过约 15 s 或一句要画三个以上对象时拆镜（`--max-seconds`）。
-- 第 3 步出图提示词加「对象之间留白、不用连线把对象连起来、每个对象独立成块」——为 box 划分与 `strict` 铺路。
-- 第 4 步 `probe`：读 `boxes[]`，Agent 把本镜每句对应的对象映到 box，写成 `--beats` 文件；`suitable:false` 仍重画。
-- 第 5 步入时间轴后**必须** `sync`：`ccut whiteboard sync <project> --element <id> --beats beats.json --pace natural --strict`
-  （P0：`--beats` 给秒，不带 `--pace/--strict`）。删掉「不必手工设置」那句。
-- 第 6 步核对：`sync --check` 无 error 级诊断 + 抽成片帧看三处（首句起笔、一次跨拍、末句完成）。
-- 最小披露：只写命令与输入输出，不写 0.7 / 900 / 0.25 这些常数。
+- Inputs expand to three kinds: audio / video (current), **script text** (`ccut tts --text-file … --out narration.wav` → `project create --media narration.wav --ptype a2v` → P1 `transcribe --script`; at P0, `transcribe` first), and existing projects. Voice, model and language all reuse the existing parameters and model table of `ccut tts`; voices are not listed in the skill.
+- Step 2, storyboard: read `drawBudget` and `sentences[]`; split a shot when it exceeds about 15 s or a sentence has to draw more than three objects (`--max-seconds`).
+- Step 3, image prompt: add “leave space between objects, do not connect objects with lines, make each object a separate block,” laying groundwork for box partitioning and `strict`.
+- Step 4, `probe`: read `boxes[]`. The agent maps each sentence's objects in this shot to boxes and writes a `--beats` file; `suitable:false` still means redraw.
+- Step 5, after placing on the timeline, `sync` is **required**: `ccut whiteboard sync <project> --element <id> --beats beats.json --pace natural --strict` (P0: `--beats` takes seconds, without `--pace/--strict`). Delete the sentence “no manual setup needed.”
+- Step 6, verify: `sync --check` shows no error-level diagnostics, plus check three points in extracted frames of the finished video (first sentence starts drawing, one cross-beat transition, last sentence completes).
+- Minimal disclosure: state only commands and inputs/outputs; do not write constants such as 0.7 / 900 / 0.25.
 
-## 9. 三表面
+## 9. Three surfaces
 
-按「多表面同步」规则，原型与 App v2 同批；Web 沿 2026-09-11 裁决不做（wasm 只保证读 0.9 不报错、按普通图片回退）。
+Under the “multi-surface sync” rule, the prototype and App v2 ship in the same batch. Web is not built, per the 2026-09-11 decision (wasm only guarantees that 0.9 reads without error and falls back to a plain image).
 
-| 表面 | 属性页 | 时间轴 | 其他 |
+| Surface | Property page | Timeline | Other |
 | --- | --- | --- | --- |
-| 原型 `designs/cuccut` | `panel-element-whiteboard.jsx`：画时段加「节奏」三档只读徽标（**跟随旁白** = beats 含锚点 / **自然速度** = 无 `draw` / **手动** = 手填 `draw`）；节拍列表显示 `label` + 本地起止；按钮「按旁白重新对齐」（演示态只弹 toast） | `timeline-whiteboard.jsx` 画时带上加拍点刻度；`model-whiteboard.js` 补 `pace` / `strict` / `end` / `label` 与校验，`effectiveDraw` 不变 | 变更记录 + 台账；product-design §14.4 / §12.6 改文案 |
-| App v2 `apps/cuccut` | `elements/panel.rs` 同上；「按旁白重新对齐」→ 内核 `whiteboard sync --element`，走元素补丁的现有写路径（可撤销、外部写检测照旧）；`--check` 结果以 toast / 面板小字显示 | `timeline/whiteboard.rs` 拍点刻度；`whiteboard_strip.rs` 的缩略条键含 `pace/strict/end`；`whiteboard_lane::effective_draw` 不变 | 新建项目页「白板教学动画」磁贴文案改为「一段文字或一段音频…」；i18n 15 语 |
-| Web `apps/web` | 不做 | 不做 | 台账登记 |
+| Prototype `designs/cuccut` | `panel-element-whiteboard.jsx`: add a three-level read-only “pace” badge to the drawing-time segment (**Follow narration** = beats contain anchors / **Natural speed** = no `draw` / **Manual** = hand-entered `draw`); the beat list shows `label` + local start/end; button “Re-align to narration” (in demo mode it only shows a toast) | `timeline-whiteboard.jsx` adds beat-point ticks on the drawing-time band; `model-whiteboard.js` adds `pace` / `strict` / `end` / `label` and validation, `effectiveDraw` unchanged | Change log + ledger; update copy in product-design §14.4 / §12.6 |
+| App v2 `apps/cuccut` | `elements/panel.rs`, same as above; “Re-align to narration” → kernel `whiteboard sync --element`, going through the existing write path for element patches (undoable, external-write detection unchanged); `--check` results shown as toast / small text in the panel | `timeline/whiteboard.rs` beat-point ticks; the thumbnail strip key in `whiteboard_strip.rs` includes `pace/strict/end`; `whiteboard_lane::effective_draw` unchanged | The new-project page’s “whiteboard teaching animation” tile copy changes to “a block of text or a block of audio…”; i18n in 15 languages |
+| Web `apps/web` | Not done | Not done | Ledger entry |
 
-## 10. 诊断码（`sync --check` / `lint` / 渲染宿主共用）
+## 10. Diagnostic codes (shared by `sync --check` / `lint` / the render host)
 
-| 码 | 级别 | 含义 |
+| Code | Level | Meaning |
 | --- | --- | --- |
-| `whiteboard-speech-without-progress` | warning | 元素窗内有语音、连续 ≥ 1.5 s 没有揭示推进且不在任何拍的 hold 段（阈值先当实验值，用真实项目校准） |
-| `whiteboard-window-too-short` | warning | 某拍自然时长 > 组窗（被压缩） |
-| `whiteboard-beat-window` / `whiteboard-beat-after-draw` | error | §5 时序校验失败 |
-| `word-anchor-missing / cut / unmapped / ambiguous` | error | 沿用；附 `elementId` 与 `beats[i].at|end` |
-| `whiteboard-label-mismatch` | warning | `label` 与锚点词所在句文本不符——文稿变了、id 漂了 |
-| `whiteboard-unassigned-foreground` / `whiteboard-empty-box` | warning | `strict` 下的归属问题 |
-| `whiteboard-beats-heuristic` | warning | `sync` 没拿到 Agent 的对象映射，用了兜底 |
-| `whiteboard-source-kind` / `element-props-mismatch` | error | 不变 |
+| `whiteboard-speech-without-progress` | warning | Speech within the element window lasts ≥ 1.5 s in a row with no reveal progress and is not in any beat’s hold segment (the threshold is an experimental value for now; calibrate against real projects) |
+| `whiteboard-window-too-short` | warning | A beat’s natural duration > group window (compressed) |
+| `whiteboard-beat-window` / `whiteboard-beat-after-draw` | error | §5 timing validation failed |
+| `word-anchor-missing / cut / unmapped / ambiguous` | error | Carried over; attach `elementId` and `beats[i].at|end` |
+| `whiteboard-label-mismatch` | warning | `label` does not match the text of the sentence containing the anchor word — the script changed or the id drifted |
+| `whiteboard-unassigned-foreground` / `whiteboard-empty-box` | warning | Ownership issues under `strict` |
+| `whiteboard-beats-heuristic` | warning | `sync` did not get the Agent’s object mapping and used the fallback |
+| `whiteboard-source-kind` / `element-props-mismatch` | error | Unchanged |
 
-「配音已换、排时未更」不单设码：同稿重对齐 id 不变 → 锚点自动跟随；稿变了 → `word-anchor-missing` 或 `label-mismatch`。
+“Voiceover swapped, timing not updated” does not get its own code: re-aligning the same script keeps the ids unchanged, so anchors follow automatically; if the script changed → `word-anchor-missing` or `label-mismatch`.
 
-## 11. 对拍与测试
+## 11. Alignment and tests
 
-- `ccut-timeline`：0.9 往返；`beats.at/end` 两种写法与混用；校验码；0.8 文档读入后再写出与 0.9 缺省等价。
-- `ccut-render`：(a) 0.8 fixture 在 `pace:"stretch"` 下逐字节不变；(b) `natural` 下 `frame(at_g + draw_g) == frame(end_g)`（hold 段稳定）且 `draw_g ≤ |W_g|`；(c) `strict` 下一条连线跨两个 box，第二拍开始前第二 box 内像素全透明；(d) 重叠归后拍；(e) 未覆盖前景排末尾。
-- `ccut-timeline-render`：复现「12 s 镜、自然画时 4 s」缺省提前定格的回归测试；`sync` 写入后完成点 = `speechEnd`。
-- `ccut-kernel`：`plan` 的 `drawBudget/anchors/sentences` 投影正确（含裁切、变速、同源两次 → ambiguous）；`sync --check` 诊断矩阵；`transcribe --script` 覆盖率门槛。
-- 三表面：`whiteboard_lane` / `whiteboard_strip` / `model-whiteboard.test.js` 补 `pace/end` 用例；App 属性页快照钩子。
-- 端到端：一段 60 s 文字 → `tts` → 建项 → 对齐 → 6 镜 → `sync --pace natural --strict` → 导出；检查首句起笔时刻、每句完成点、末句完整；乱序 seek 像素一致。
-- 验收矩阵沿方案稿 §10.4，改三行：「新 regions」→「`strict` + `end`」；「staleNarrationBinding」→「同稿重对齐 id 不变 / 改稿报 missing 或 label-mismatch」；「换音色只让对齐失效」→ 记忆化键只含解析后的秒。
+- `ccut-timeline`: 0.9 round trip; the two spellings of `beats.at/end` and mixing them; validation codes; a 0.8 document read in and then written out is equivalent to the 0.9 defaults.
+- `ccut-render`: (a) the 0.8 fixture under `pace:"stretch"` is byte-for-byte unchanged; (b) under `natural`, `frame(at_g + draw_g) == frame(end_g)` (the hold segment is stable) and `draw_g ≤ |W_g|`; (c) under `strict`, one connector spans two boxes, and before the second beat starts, the pixels inside the second box are fully transparent; (d) overlaps are assigned to the later beat; (e) uncovered foreground is sorted to the end.
+- `ccut-timeline-render`: regression test reproducing the default early freeze for a “12 s shot, 4 s natural drawing time” case; after `sync` writes, the completion point = `speechEnd`.
+- `ccut-kernel`: the `plan` projections of `drawBudget/anchors/sentences` are correct (including cropping, speed changes, and the same source appearing twice → ambiguous); the `sync --check` diagnostic matrix; the coverage threshold for `transcribe --script`.
+- Three surfaces: add `pace/end` cases to `whiteboard_lane` / `whiteboard_strip` / `model-whiteboard.test.js`; App property-page snapshot hook.
+- End to end: a 60 s text → `tts` → create project → align → 6 shots → `sync --pace natural --strict` → export; check the pen-down time of the first sentence, the completion point of each sentence, and that the final sentence is complete; pixels match under out-of-order seeks.
+- The acceptance matrix follows §10.4 of the design draft, with three rows changed: “new regions” → “`strict` + `end`”; “staleNarrationBinding” → “re-aligning the same script keeps ids unchanged / a changed script reports missing or label-mismatch”; “changing the voice only invalidates alignment” → the memoization key contains only the resolved seconds.
 
-## 12. 分阶段
+## 12. Phases
 
-| 阶段 | 内容 | 格式 | 完成定义 |
+| Phase | Content | Format | Done when |
 | --- | --- | --- | --- |
-| P0 作者层止血 | skill 三种输入 + 必写 `sync`；`plan` 加 `drawBudget/sentences`；`probe` 加 `boxes`；`ccut whiteboard sync`（写秒）；缺省公式回归测试；参考文档 | 0.8 不变 | 新流程的镜不再被自然画时截短；文字稿经 `tts` + ASR 路径能出成片；老项目零变化 |
-| P1 格式与对齐 | 0.9：`pace/strict/end/label` + 锚点 `at/end`；`analyze()` natural / strict 分支；`transcribe --script`；`sync` 写锚点 + `--check`；属性页「节奏」+「按旁白重新对齐」+ 拍点刻度（原型 + App）；product-design §14.4 / §12.6 | 0.9 | 换音色 / 语速后 `sync` 复用图片重排；改稿能被诊断；`strict` 下无提前泄露；乱序 seek 一致 |
-| P2 笔迹质量 | 骨架 / 端点路径替代扩散感揭示；抬笔手轨迹预计算；多边形 / alpha mask；如确有读稿 ≠ 显示稿的需求再做 `textMap` | 0.9+ | 观感，不影响时序 |
-| P3 BCF 路线词级锚定（2026-09-23） | `ccut tts --align` 写 `<清单>.words.json`（`457469e95`，spec 1.191.0）；`@cuccut/dsl` `narration()`（`core/runtime/dsl/bcf.tsx`）与 `ccut-core` lint `narration-idle`（`b1bf5f574`，spec 1.192.0）；skill `references/video/narration.md` 主路径、`create.md` / `qa.md` / `sketch.md` / `whiteboard.md`；总述见 [`ccut-whiteboard-animation-design.md`](ccut-whiteboard-animation-design.md) §10 | 不涉及 `ccutTimeline` | BCF 场景内每个画面动作锚到真实词时刻，缺 `words.json` 或短语对不上即编译错误；旁白在说、画面 > 4 s 不动由 lint 报出 |
+| P0 Stop the bleeding at the authoring layer | skill: three input types + required `sync`; `plan` adds `drawBudget/sentences`; `probe` adds `boxes`; `ccut whiteboard sync` (writes seconds); regression test for the default formula; reference docs | 0.8 unchanged | Shots in the new flow are no longer cut short by natural drawing time; a text script can produce a finished video via the `tts` + ASR path; old projects have zero changes |
+| P1 Format and alignment | 0.9: `pace/strict/end/label` + anchors `at/end`; `analyze()` natural / strict branches; `transcribe --script`; `sync` writes anchors + `--check`; property page “Pace” + “Re-align to narration” + beat-point ticks (prototype + App); product-design §14.4 / §12.6 | 0.9 | After changing voice / speaking rate, `sync` reuses the images and re-lays them out; script edits can be diagnosed; no early leak under `strict`; out-of-order seeks are consistent |
+| P2 Stroke quality | Skeleton / endpoint paths replace the diffuse-feeling reveal; pen-lift hand trajectories precomputed; polygon / alpha masks; build `textMap` only if a real need arises for a read script ≠ displayed script | 0.9+ | Perceived quality; does not affect timing |
+| P3 BCF track word-level anchoring (2026-09-23) | `ccut tts --align` writes `<manifest>.words.json` (`457469e95`, spec 1.191.0); `@cuccut/dsl` `narration()` (`core/runtime/dsl/bcf.tsx`) and `ccut-core` lint `narration-idle` (`b1bf5f574`, spec 1.192.0); skill `references/video/narration.md` as the main path, plus `create.md` / `qa.md` / `sketch.md` / `whiteboard.md`; overview in [`ccut-whiteboard-animation-design.md`](ccut-whiteboard-animation-design.md) §10 | Does not involve `ccutTimeline` | Within a BCF scene, every on-screen action is anchored to the real word time; a missing `words.json` or a phrase that doesn’t match is a compile error; lint reports narration that is speaking while the picture stays still for > 4 s |
 
-顺序不能倒：先把时间依据和工作流立住，再做笔迹物理感。
+The order must not be reversed: first establish the timing basis and the workflow, then work on the physical feel of the strokes.
 
-## 13. 刻意不做
+## 13. Deliberately not done
 
-- 不改 `whiteboard_draw_seconds` 的缺省公式（老项目不变）；不把 0.8 改成 0.95 当方案。
-- 不加 `regions` 分支、不加独立白板项目类型、不做白板专属三栏编辑器、不上架白板目录分节（2026-09-14 裁决不变）。
-- 不用字数占比分配**时间**；不靠末帧延长、循环手抖、平移缩放、降帧率、`-shortest` 伪装同步。
-- 不引 Remotion / Python / Chromium 渲染器、第二套 TTS、OCR。
-- 不做 `displayText / spokenText / textMap`（P1 原稿即读稿）；不做 `TtsAudio` 词级时间戳（对齐负责）。
-- 不用 `ccut frames` 验收（不含元素层）。
+- Do not change the default formula of `whiteboard_draw_seconds` (old projects stay the same); do not treat changing 0.8 to 0.95 as the solution.
+- Do not add a `regions` branch, do not add a separate whiteboard project type, do not build a whiteboard-only three-column editor, and do not add a whiteboard section to the catalog listing (the 2026-09-14 decision stands).
+- Do not allocate **time** by word-count share; do not fake sync with last-frame extension, looping hand jitter, pan/zoom, frame-rate reduction, or `-shortest`.
+- Do not bring in a Remotion, Python, or Chromium renderer, a second TTS, or OCR.
+- Do not build `displayText / spokenText / textMap` (in P1 the script is the read script); do not build word-level timestamps on `TtsAudio` (alignment handles that).
+- Do not use `ccut frames` for acceptance (it does not include the element layer).
 
-## 14. 来源
+## 14. Sources
 
-- 方案稿：用户 2026-09-17《CucCut 白板手绘动画：旁白同步与文字生成视频技术方案》（基准 `main @ 17e329814`），其 [B1]–[B11] 代码引用已逐条核对。
-- 仓库：`core/crates/ccut-timeline-render/src/element.rs`、`core/crates/ccut-render/src/source/whiteboard.rs`、`core/crates/ccut-kernel/src/cmd/whiteboard.rs`、`core/crates/ccut-timeline/src/{schema,anchors,arrange,map}.rs`、`core/crates/ccut-subtitle-render/src/host_support.rs`、`core/crates/ccut-kernel/src/services/dubbing/acoustic_timing.rs`、`core/crates/ccut-speech-core/src/{traits,refine}.rs`、`skills/ccut-whiteboard-video/SKILL.md`、[`product-design/08.md`](../product/product-design/08.md)、[`14/14.4.md`](../product/product-design/14/14.4.md)、[`12.md`](../product/product-design/12.md)。
-- nikola `3ee5d1c0`：`SKILL.md`、`references/{voiceover,stroke-story-workflow,quality-and-delivery}.md`、`scripts/check_drawable_regions.py`、`vendor/srt-whiteboard-animation/scripts/render_stream_whiteboard.py`。
-- srt-whiteboard-animation `696a724`：`SKILL.md`、`annotation.json` 契约。
-- cs-board `e752abe`：`docs/semantic-timing-contract.md`、`scripts/semantic_timeline.py`。
-- whiteboard-animator `e6e4dbc`：`README.md`、`whiteboard_animator/animator.py`（`_schedule_elements`、`_schedule_semantic_objects`）、`regions.py`。
+- Design draft: the user’s 2026-09-17 《CucCut 白板手绘动画：旁白同步与文字生成视频技术方案》 (baseline `main @ 17e329814`); its code references [B1]–[B11] have each been checked line by line.
+- Repository: `core/crates/ccut-timeline-render/src/element.rs`, `core/crates/ccut-render/src/source/whiteboard.rs`, `core/crates/ccut-kernel/src/cmd/whiteboard.rs`, `core/crates/ccut-timeline/src/{schema,anchors,arrange,map}.rs`, `core/crates/ccut-subtitle-render/src/host_support.rs`, `core/crates/ccut-kernel/src/services/dubbing/acoustic_timing.rs`, `core/crates/ccut-speech-core/src/{traits,refine}.rs`, `skills/ccut-whiteboard-video/SKILL.md`, [`product-design/08.md`](../product/product-design/08.md), [`14/14.4.md`](../product/product-design/14/14.4.md), [`12.md`](../product/product-design/12.md).
+- nikola `3ee5d1c0`: `SKILL.md`, `references/{voiceover,stroke-story-workflow,quality-and-delivery}.md`, `scripts/check_drawable_regions.py`, `vendor/srt-whiteboard-animation/scripts/render_stream_whiteboard.py`.
+- srt-whiteboard-animation `696a724`: `SKILL.md`, `annotation.json` contract.
+- cs-board `e752abe`: `docs/semantic-timing-contract.md`, `scripts/semantic_timeline.py`.
+- whiteboard-animator `e6e4dbc`: `README.md`, `whiteboard_animator/animator.py` (`_schedule_elements`, `_schedule_semantic_objects`), `regions.py`.

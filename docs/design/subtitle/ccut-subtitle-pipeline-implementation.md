@@ -1,26 +1,21 @@
-> 移植自 CucCut v2；文中的数据模型名（TranscriptDoc 等）指 v2 的模型，与 v3 文档模型的对应见[架构设计 §14](../../architecture/architecture-design.md#14-待评审事项)。
+> Ported from CucCut v2. The data model names in this document (such as TranscriptDoc) refer to the v2 models. For how they map to the v3 document model, see [Architecture design §14](../../architecture/architecture-design.md#14-items-pending-review).
 
-# ccut 转录后字幕管线实现说明
+# ccut Post-Transcription Subtitle Pipeline Implementation Notes
 
-本文解释 ccut 当前在完成语音转录后，如何把词级 ASR 结果依次变成可编辑、可翻译、
-可导出的字幕。重点覆盖四个容易混淆的阶段：
+This document explains how ccut, after speech transcription finishes, turns word-level ASR results step by step into subtitles that can be edited, translated and exported. It focuses on four stages that are easy to confuse:
 
-- `segment`：语义段落规划；
-- `polish`：纠正 ASR、补标点、分句，并在首次运行时顺带生成段落；
-- `translate`：按完整语义句生成自然译文；
-- `align`：把完整译句拆成可展示的字幕片，并重新锚定到源词时间轴。
+- `segment`: semantic paragraph planning;
+- `polish`: correct ASR output, add punctuation, split sentences, and generate paragraphs on the first run;
+- `translate`: produce natural translations by complete semantic sentence;
+- `align`: split a complete translated sentence into displayable subtitle fragments and re-anchor them to the source word timeline.
 
-本文以 2026-07-30 的工作树实现为准。格式和设计背景仍可参考
-[ccut AI 管线设计](ccut-ai-pipeline-design.md)与
-[Transcript v0.3 设计](ccut-transcript-v03-design.md)，但本文优先描述当前 Rust
-代码实际执行的路径。
+This document reflects the working-tree implementation as of 2026-07-30. The format and design background can still be found in the [ccut AI pipeline design](ccut-ai-pipeline-design.md) and the [Transcript v0.3 design](ccut-transcript-v03-design.md), but this document prioritizes describing the path the current Rust code actually executes.
 
-## 1. 先说结论
+## 1. Conclusions First
 
-### 1.1 `words[]` 是唯一持久化的文本和时间真相
+### 1.1 `words[]` is the only persisted source of truth for text and timing
 
-ccut 不把 Cue、Sentence、Paragraph 当成另一套可独立修改的字幕正文。项目中的
-`transcript.json` 以 `words[]` 为核心：
+ccut does not treat Cue, Sentence and Paragraph as a separate subtitle body that can be edited independently. The project's `transcript.json` is centered on `words[]`:
 
 ```jsonc
 {
@@ -43,116 +38,109 @@ ccut 不把 Cue、Sentence、Paragraph 当成另一套可独立修改的字幕�
 }
 ```
 
-每个词同时拥有：
+Each word has all of the following at once:
 
-- 稳定 id；
-- 媒体时间 `t0..t1`；
-- 当前文本；
-- 说话人 id。
+- a stable id;
+- media timing `t0..t1`;
+- its current text;
+- a speaker id.
 
-后续所有结构都从词流派生，或者以词 id 为键写入稀疏覆盖表。这样可以保证：
+All later structures are either derived from the word stream or written to a sparse override table keyed by word id. This guarantees that:
 
-1. LLM 永远不直接决定时间戳；
-2. 修改少量文本时，未变化词的 id 和时间可以保持不动；
-3. Cue、句子、段落和译文切片可以随时重新推导；
-4. 每个阶段是否过期可以通过指纹计算，而不是依赖易漂移的流程状态。
+1. the LLM never directly decides timestamps;
+2. when a small amount of text is changed, the ids and timings of unchanged words can stay where they are;
+3. Cues, sentences, paragraphs and translated fragments can be re-derived at any time;
+4. whether each stage is stale can be computed from fingerprints, rather than relying on process state that tends to drift.
 
-对应实现：
+Corresponding implementation:
 
 - [`doc.rs`](../../../core/crates/ccut-flow-core/src/doc.rs)
 - [`cue.rs`](../../../core/crates/ccut-flow-core/src/cue.rs)
 - [`sentence.rs`](../../../core/crates/ccut-flow-core/src/sentence.rs)
 
-### 1.2 `segment` 和“字幕拆行”不是一回事
+### 1.2 `segment` and "subtitle line breaking" are not the same thing
 
-在 ccut 中：
+In ccut:
 
-- `segment` 决定话题段落，最终写入 `paraBreaks`；
-- `derive_cues` 决定源字幕如何换行；
-- `derive_sentences` 决定翻译的完整语义句；
-- `align` 决定完整译句如何拆成目标字幕片。
+- `segment` decides topic paragraphs, which are finally written to `paraBreaks`;
+- `derive_cues` decides how source subtitles are broken into lines;
+- `derive_sentences` decides the complete semantic sentences used for translation;
+- `align` decides how a complete translated sentence is split into target subtitle fragments.
 
-因此，“segment”更接近文章的段落组织，而不是 SRT 中的每一条字幕。最终字幕行是
-代码根据词、标点、停顿、宽度和 `transAlign` 动态派生的。
+So "segment" is closer to the paragraph organization of an article than to each individual SRT subtitle entry. The final subtitle lines are derived dynamically by the code, based on words, punctuation, pauses, width and `transAlign`.
 
-### 1.3 LLM 提议语义，代码维护边界、时间和不变量
+### 1.3 The LLM proposes semantics; the code maintains boundaries, timing and invariants
 
-整个管线的基本分工是：
+The basic division of labor across the pipeline is:
 
-- LLM 擅长理解全文、纠错、分句、段落规划、翻译和跨语言语义对应；
-- Rust 代码负责分页、id 对账、文本覆盖检查、LCS 映射、词重绑、时间插值、
-  指纹、拆分预算、连续区间校验、降级和导出投影。
+- the LLM is good at understanding the full text, correcting errors, splitting sentences, planning paragraphs, translating, and mapping meaning across languages;
+- the Rust code is responsible for pagination, id reconciliation, text coverage checks, LCS mapping, word rebinding, timing interpolation, fingerprints, split budgets, contiguous-interval validation, degradation and export projection.
 
-不是“LLM 输出什么就保存什么”，而是“LLM 给候选答案，代码证明它可以安全落库”。
+It is not "save whatever the LLM outputs", but "the LLM gives a candidate answer, and the code proves it is safe to write to the database".
 
-### 1.4 当前推荐的高性能路径
+### 1.4 The currently recommended high-performance path
 
 ```bash
 ccut auto video.ccut --polish --lang zh
 
 ccut check video.ccut --for srt --lang zh --strict
 
-# 仅在 check 仍有顽固对齐问题时定向重切
+# Only re-cut targeted cues when check still reports stubborn alignment problems
 # ccut refine-align video.ccut --lang zh
 ```
 
-实际阶段是：
+The actual stages are:
 
 ```mermaid
 flowchart LR
-    A["ASR 词原子<br/>words[]"] --> B["analysis<br/>全文摘要与术语"]
-    B --> C["polish<br/>纠错、标点、分句、段落"]
-    C --> D["代码派生<br/>Cue / Sentence / Para"]
-    D --> E["translate<br/>完整自然译句"]
-    E --> F["代码阈值过滤"]
-    F -->|"双侧 fit 内短句"| G["整句上屏<br/>不写 transAlign"]
-    F -->|"源语或目标语超长"| K["批量 LLM align<br/>长度计划 + 候选切点"]
+    A["ASR word atoms<br/>words[]"] --> B["analysis<br/>full-text summary and terms"]
+    B --> C["polish<br/>fix errors, punctuation, sentence splits, paragraphs"]
+    C --> D["code derivation<br/>Cue / Sentence / Para"]
+    D --> E["translate<br/>complete natural sentence translation"]
+    E --> F["code threshold filter"]
+    F -->|"short sentence fitting both sides"| G["show whole sentence<br/>no transAlign written"]
+    F -->|"source or target too long"| K["batch LLM align<br/>length plan + candidate cut points"]
     G --> I
-    K --> I["check<br/>质量门"]
-    I -.->|"顽固残余"| J["targeted LLM align"]
+    K --> I["check<br/>quality gate"]
+    I -.->|"stubborn residue"| J["targeted LLM align"]
 ```
 
-首次 `polish` 会从自己的段落分组顺带写 `paraBreaks` 和 `stages.segment`，所以普通
-翻译任务不需要先单独运行一次 `ccut segment`。单独的 `segment` 主要用于“需要段落
-结构，但不希望润色正文”的任务。Subtitle Studio 默认把全部长句按批交给 LLM，
-在首轮同时完成语义拆分与长度均衡；`refine-align` 只处理 check 后的顽固残余。
+The first `polish` run writes `paraBreaks` and `stages.segment` from its own paragraph grouping, so an ordinary translation task does not need to run `ccut segment` separately first. A standalone `segment` is mainly for tasks that "need paragraph structure but do not want the body text polished". Subtitle Studio hands all long sentences to the LLM in batches by default, completing semantic splitting and length balancing in the first pass; `refine-align` only handles the stubborn residue left after check.
 
-## 2. 持久层和派生层
+## 2. Persistence Layer and Derived Layers
 
-### 2.1 层级关系
+### 2.1 Hierarchy
 
-| 层级 | 是否持久化 | id | 用途 |
+| Level | Persisted | id | Purpose |
 | --- | --- | --- | --- |
-| Word | 是 | `g1.4` / `w...` | 文本、时间和说话人的唯一真相 |
-| Cue | 否 | `q-<首词id>` | 源字幕展示行 |
-| Sentence | 否 | `s-<首词id>` | 翻译、脏检测和对齐单位 |
-| Paragraph | 否 | `p-<首词id>` | 话题段落、分页和编辑导航 |
-| 完整译句 | 是 | `trans[lang][sentenceId]` | 目标语自然译文真相 |
-| 对齐覆盖层 | 是 | `transAlign[lang][sentenceId]` | 完整译句的展示切法 |
-| 目标字幕片 | 否 | — | 导出、Studio 和渲染消费的最终投影 |
+| Word | Yes | `g1.4` / `w...` | The sole source of truth for text, timing and speaker |
+| Cue | No | `q-<first word id>` | Source subtitle display line |
+| Sentence | No | `s-<first word id>` | Translation, dirty detection and alignment unit |
+| Paragraph | No | `p-<first word id>` | Topic paragraph, pagination and edit navigation |
+| Full translated sentence | Yes | `trans[lang][sentenceId]` | The source of truth for natural target-language text |
+| Alignment overlay | Yes | `transAlign[lang][sentenceId]` | How the full translated sentence is cut for display |
+| Target subtitle fragment | No | — | The final projection consumed by export, Studio and rendering |
 
-严格关系是：
+The strict relationship is:
 
 ```text
 word ⊂ cue ⊂ sentence ⊂ paragraph
 ```
 
-一个 Sentence 可以覆盖多个 Cue。这样翻译模型可以看到完整语义句，不会被源语言的
-视觉换行强行切断。
+One Sentence can cover multiple Cues. This lets the translation model see the complete semantic sentence, rather than having it forcibly cut by the visual line breaks of the source language.
 
-### 2.2 Cue 如何由代码派生
+### 2.2 How Cues are derived by the code
 
-`derive_cues` 顺序扫描所有未隐藏词，并按照以下条件封口：
+`derive_cues` scans all non-hidden words in order and closes a cue under the following conditions:
 
-1. 手工 `break`；
-2. 说话人切换；
-3. 句末标点（无显式 `nobreak` 时无条件封口）；
-4. 从句标点且当前行达到最小长度（破折号用更低门槛）；
-5. 词间停顿至少 0.6 秒且当前行达到最小长度；
-6. 加入下一词后行宽超过 `maxChars`（仅当下一词以从句/句末标点收尾且总宽仍在
-   `maxChars + overflowSlack` 内时延长一词收入标点）。
+1. a manual `break`;
+2. a speaker change;
+3. sentence-final punctuation (unconditionally closes unless an explicit `nobreak` is present);
+4. clause punctuation while the current line has reached the minimum length (dashes use a lower threshold);
+5. a pause of at least 0.6 seconds between words while the current line has reached the minimum length;
+6. the line width exceeds `maxChars` after adding the next word (the next word is pulled in together with its punctuation only when that word ends in clause or sentence punctuation and the total width still stays within `maxChars + overflowSlack`).
 
-默认参数为：
+Default parameters are:
 
 ```text
 maxChars = 42
@@ -164,38 +152,24 @@ overflowSlack = 8
 minCueDisplaySec = 1.0
 ```
 
-`nobreak` 可以抑制默认的句末、标点、停顿与溢出断点，但不能抑制手工强断和说话人
-切换。
+`nobreak` can suppress the default sentence-final, punctuation, pause and overflow breaks, but it cannot suppress manual hard breaks or speaker changes.
 
-派生读取的钉表是 `autoBreaks[layoutProfile] ⊕ breaks`（transcript 0.4）：
-`breaks` 只保存用户显式意图，`autoBreaks` 按 `LayoutProfile` id（缺省
-`default`）保存优化器输出，同键以用户 `breaks` 为准。三端（Rust
-`derive_cues`、Swift `TranscriptModel.cues`、designs 原型 `VK_MODEL.cues`）
-只多做这一次 map 合并，派生算法本身不变。
+The pinned table read by derivation is `autoBreaks[layoutProfile] ⊕ breaks` (transcript 0.4): `breaks` stores only explicit user intent, while `autoBreaks` stores the optimizer output keyed by `LayoutProfile` id (defaulting to `default`); on the same key, the user's `breaks` takes precedence. The three ends (Rust `derive_cues`, Swift `TranscriptModel.cues`, and the designs prototype `VK_MODEL.cues`) perform only this one map merge; the derivation algorithm itself is unchanged.
 
-派生保持贪心；阅读速度均衡（孤儿短尾回收、过快 Cue 的缝重排/合并、悬垂词尾
-回避）由 `ccut-flow-core::layout` 的候选断点全局 DP 在润色/分段写回时一次性
-计算：用户 `break`、说话人切换、`paraBreaks` 与句末是硬边界，用户 `nobreak`
-是禁止边界，其余位置按缝等级（句末 0 < 从句标点 0.3 < 停顿 0.5 < 普通词间
-0.8 < 悬垂尾 1.5 < CJK 词内 3.0）、阅读速度（`LayoutProfile` 的 warn/bad）、
-时长（min/max duration，时窗按 lead-in/tail 借静音口径）、孤立短尾与欠满打
-分整体选择。优化器**总是运行**（不再因已有钉集跳过），结果落成与 `auto_break`
-重放不一致处的最小钉集写入 `autoBreaks[layoutProfile]`，**绝不写 `breaks`**；
-派生端从 `words + autoBreaks ⊕ breaks` 重放即可复现。阈值来源是
-`ccut-flow-core::layout_profile::LayoutProfile`（`default` = 既有全部常量）。
+Derivation remains greedy. Reading-speed balancing (reclaiming orphaned short tails, reflowing or merging gaps around cues that are too fast, and avoiding dangling word endings) is computed in one pass by the global DP over candidate breakpoints in `ccut-flow-core::layout` at polish/segment write-back time: user `break`s, speaker changes, `paraBreaks` and sentence ends are hard boundaries; user `nobreak` is a forbidden boundary; all other positions are scored by seam level (sentence end 0 < clause punctuation 0.3 < pause 0.5 < ordinary word gap 0.8 < dangling tail 1.5 < CJK intra-word 3.0), reading speed (the `LayoutProfile` warn/bad thresholds), duration (min/max duration, with the time window following the lead-in/tail silence convention), orphaned short tails, and under-filled cues, and then chosen as a whole. The optimizer **always runs** (it no longer skips when a pinned set already exists). The result is written as the minimal pinned set at the points where it diverges from what `auto_break` replay would produce, into `autoBreaks[layoutProfile]`, and **never into `breaks`**; the derivation side can reproduce it by replaying from `words + autoBreaks ⊕ breaks`. The threshold source is `ccut-flow-core::layout_profile::LayoutProfile` (`default` = all existing constants).
 
-### 2.3 Sentence 如何由代码派生
+### 2.3 How Sentences are derived by the code
 
-`derive_sentences` 把连续 Cue 合并为翻译句。满足任一条件即封句：
+`derive_sentences` merges consecutive Cues into translation sentences. A sentence is closed when any one of the following conditions holds:
 
-1. 末词有句末标点；
-2. 下一 Cue 与当前 Cue 的间隔至少 1.8 秒；
-3. 说话人切换；
-4. 当前句达到 80 个词；
-5. 下一 Cue 的首词被 `paraBreaks` 钉住；
-6. 下一 Cue 跨章节。
+1. the last word has sentence-final punctuation;
+2. the gap between the next Cue and the current Cue is at least 1.8 seconds;
+3. a speaker change;
+4. the current sentence reaches 80 words;
+5. the first word of the next Cue is pinned by `paraBreaks`;
+6. the next Cue crosses a chapter boundary.
 
-0.6–1.2 秒的停顿可以拆源 Cue，却不会自动拆翻译句。例如：
+Pauses of 0.6–1.2 seconds can split source Cues, but they do not automatically split translation sentences. For example:
 
 ```text
 An agent is an LLM with tools
@@ -205,18 +179,17 @@ running in a loop to accomplish
 a goal.
 ```
 
-这可以派生为三个源 Cue，但仍是一个完整 Sentence：
+This can be derived into three source Cues, yet it remains one complete Sentence:
 
 ```text
 An agent is an LLM with tools running in a loop to accomplish a goal.
 ```
 
-这一区分对自然翻译非常重要。
+This distinction matters a great deal for natural translation.
 
-### 2.4 Paragraph 如何由代码派生
+### 2.4 How Paragraphs are derived by the code
 
-`derive_paras` 按“章节 × 连续同说话人”分组，再叠加 `paraBreaks`。`paraBreaks`
-是以“新段首词 id”为键的稀疏表：
+`derive_paras` groups by "chapter × consecutive same speaker", then overlays `paraBreaks`. `paraBreaks` is a sparse table keyed by the "first word id of a new paragraph":
 
 ```json
 {
@@ -227,28 +200,27 @@ An agent is an LLM with tools running in a loop to accomplish a goal.
 }
 ```
 
-这表示 `g5.0` 和 `g12.4` 分别开启一个新段，而不是保存一份重复的段落正文。
+This means that `g5.0` and `g12.4` each open a new paragraph, rather than storing a duplicate paragraph body.
 
-## 3. 哪些步骤依赖 LLM，哪些依赖代码
+## 3. Which Steps Depend on the LLM and Which on Code
 
-| 步骤 | LLM 负责 | Rust 代码负责 | LLM 失败后的行为 |
+| Step | LLM responsibility | Rust code responsibility | Behavior when the LLM fails |
 | --- | --- | --- | --- |
-| Cue 派生 | 无 | 标点、停顿、宽度、覆盖表规则 | 不适用 |
-| Sentence / Para 派生 | 无 | 句末、强停顿、说话人、章节、段落钉 | 不适用 |
-| analysis | 摘要、术语、命名实体 | 分页、缓存指纹、变体过滤 | 非终止错误可忽略，继续无简报润色 |
-| polish | 纠错、补标点、语义分句和分段 | LCS 映射、相似度门、rebind、时间修复、降级 | 保留原词，按句末/30 词规则切分 |
-| standalone segment | 补标点和话题段落建议 | 覆盖证明、边界映射、说话人硬断、兜底 | 索引契约后再退到纯规则分段 |
-| translate | 自然、忠实的完整句翻译 | 句派生、分页、CPS 预算、id 对账、增量落盘 | 重试耗尽后终止；不会伪造机器翻译 |
-| `independent` align | 无 | 目标语 DP 拆分、比例词锚、时间平滑 | 不适用 |
-| `manyToOne` align | 按双侧长度计划选择同步语义片 | 长句判定、候选词边界、覆盖/hard/lint 校验、全局修复预算 | 失败句退到确定性目标语切分 |
-| check / export / Studio 投影 | 无 | stale、覆盖率、CPS、宽度、闪烁、时间投影 | 不适用 |
+| Cue derivation | None | Punctuation, pauses, width, override-table rules | Not applicable |
+| Sentence / Para derivation | None | Sentence ends, strong pauses, speakers, chapters, paragraph pins | Not applicable |
+| analysis | Summary, terms, named entities | Pagination, cache fingerprints, variant filtering | Non-terminal errors can be ignored; polishing continues without a brief |
+| polish | Error correction, punctuation, semantic sentence splitting and paragraphing | LCS mapping, similarity gate, rebind, timing repair, degradation | Original words are kept; split by the sentence-end / 30-word rule |
+| standalone segment | Punctuation and topic paragraph suggestions | Coverage proof, boundary mapping, hard speaker breaks, fallback | After the index contract, fall back to pure rule-based segmentation |
+| translate | Natural, faithful complete-sentence translation | Sentence derivation, pagination, CPS budget, id reconciliation, incremental writes to disk | Terminates after retries are exhausted; never fabricates machine translation |
+| `independent` align | None | Target-language DP splitting, proportional word anchors, timing smoothing | Not applicable |
+| `manyToOne` align | Selects synchronized semantic fragments according to the two-sided length plan | Long-sentence detection, candidate word boundaries, coverage/hard/lint validation, global repair budget | Failed sentences fall back to deterministic target-language splitting |
+| check / export / Studio projection | None | stale, coverage rate, CPS, width, flicker, timing projection | Not applicable |
 
-这里的“LLM 失败”不包括 401、403、模型不存在等终止性配置错误。这类错误会直接停止
-任务，避免用降级结果掩盖配置问题。
+"LLM failure" here does not include terminal configuration errors such as 401, 403 or a nonexistent model. Such errors stop the task directly, so that degraded results do not mask the configuration problem.
 
-## 4. 统一的 LLM 调用层
+## 4. The Unified LLM Call Layer
 
-四个 AI 阶段都只依赖 `ccut-flow-core` 中的 `LlmJson` trait：
+All four AI stages depend only on the `LlmJson` trait in `ccut-flow-core`:
 
 ```rust
 pub trait LlmJson {
@@ -256,27 +228,25 @@ pub trait LlmJson {
 }
 ```
 
-引擎本身没有网络和文件 I/O。CLI 提供两种执行器。
+The engine itself has no network or file I/O. The CLI provides two executors.
 
-### 4.1 Provider 模式
+### 4.1 Provider mode
 
 ```bash
 ccut polish project.ccut --llm provider:openai/model-name
 ```
 
-CLI 直接请求 OpenAI 兼容或 Anthropic API。大多数 provider 使用
-`response_format={"type":"json_object"}`；不支持该参数的模型遇到对应 HTTP 400
-后会去掉它重试。
+The CLI sends requests directly to an OpenAI-compatible or Anthropic API. Most providers use `response_format={"type":"json_object"}`; for models that do not support this parameter, the parameter is removed and the request is retried after the corresponding HTTP 400.
 
-### 4.2 Agent 模式
+### 4.2 Agent mode
 
-Agent 是默认模式：
+Agent is the default mode:
 
 ```bash
 ccut polish project.ccut --llm agent
 ```
 
-每次调用都会创建文件：
+Each call creates files:
 
 ```text
 project.ccut/tasks/t-.../
@@ -287,62 +257,60 @@ project.ccut/tasks/t-.../
 └── responses/c0001.json
 ```
 
-外部 Agent 使用 `task claim` 领取调用，读取契约和 payload，把 JSON 答案写到临时
-文件后通过 `task submit` 提交。引擎在收到 response 文件后继续执行。
+An external Agent claims a call with `task claim`, reads the contract and payload, writes the JSON answer to a temporary file, and then submits it with `task submit`. The engine continues execution once it receives the response file.
 
-Provider 和 Agent 的差别只在“谁生成回答”，不影响后续解析、校验、重试、落库和日志。
+Provider and Agent differ only in "who generates the answer". They do not affect subsequent parsing, validation, retries, persistence or logging.
 
-### 4.3 三层结构化校验
+### 4.3 Three-layer structured validation
 
-LLM 输出依次经过：
+LLM output passes through the following, in order:
 
-1. JSON-mode 提示或 provider 的 `response_format`；
-2. `decode` 从响应中截取最外层 `{...}`，容忍 Markdown 围栏；
-3. 每个引擎自己的确定性语义校验。
+1. JSON-mode prompting or the provider's `response_format`;
+2. `decode` extracts the outermost `{...}` from the response, tolerating Markdown code fences;
+3. each engine's own deterministic semantic validation.
 
-默认最多尝试 3 次，重试退避 2 秒，并把上次的具体问题通过 `retry_reason` 反馈给
-下一次调用。
+By default it makes at most 3 attempts, with a 2-second retry backoff, and passes the specific problem from the previous attempt to the next call through `retry_reason`.
 
-所有调用写入：
+Every call is written to:
 
 ```text
 project.ccut/logs/llm/<kind>.jsonl
 ```
 
-记录 kind、执行器、模型或 worker、输入、响应、错误和耗时，可用于审计和性能分析。
+Each record includes the kind, the executor, the model or worker, the input, the response, the error and the duration, for auditing and performance analysis.
 
-## 5. Segment：段落规划
+## 5. Segment: paragraph planning
 
-实现入口：
+Implementation entry points:
 
 - [`segment.rs`](../../../core/crates/ccut-flow-core/src/engines/segment.rs)
-- CLI：`ccut segment <project>`
+- CLI: `ccut segment <project>`
 
-### 5.1 LLM 看见什么
+### 5.1 What the LLM sees
 
-代码先把词流渲染为纯文本，并在词间加入只读元数据：
+The code first renders the word stream as plain text and adds read-only metadata between words:
 
-| 标记 | 触发条件 | 含义 |
+| Marker | Trigger condition | Meaning |
 | --- | --- | --- |
-| `⏸` | gap ≥ 0.6s | 短停顿 |
-| `⏸⏸` | gap ≥ 1.0s | 中停顿 |
-| `⏸⏸⏸` | gap ≥ 1.8s | 长停顿 |
-| `⏹` | 说话人发生变化 | 必须跨段 |
+| `⏸` | gap ≥ 0.6s | short pause |
+| `⏸⏸` | gap ≥ 1.0s | medium pause |
+| `⏸⏸⏸` | gap ≥ 1.8s | long pause |
+| `⏹` | speaker changes | must cross a segment boundary |
 
-示意输入：
+Illustrative input:
 
 ```text
 Today we are launching ChatGPT ⏸ on web desktop and mobile ⏹
 Now let us look at the data
 ```
 
-Segment LLM 的任务很窄：
+The Segment LLM's task is narrow:
 
-1. 逐字保留原文；
-2. 只补充或修正标点；
-3. 按话题组织成通常含 1–4 句的段落；
-4. 不能跨说话人；
-5. 返回：
+1. keep the original text word for word;
+2. only add or correct punctuation;
+3. organise the text into paragraphs by topic, usually 1–4 sentences each;
+4. never cross speakers;
+5. return:
 
 ```json
 {
@@ -353,30 +321,27 @@ Segment LLM 的任务很窄：
 }
 ```
 
-### 5.2 代码如何证明答案能安全使用
+### 5.2 How the code proves an answer is safe to use
 
-当前实现的有效阶梯是：
+The current implementation's effective ladder is:
 
-#### Tier 1：exact
+#### Tier 1: exact
 
-把源词和 LLM 段落都做 `normalize_chars`。它会忽略标点、空白和大小写。若两边字符流
-完全相同，代码可用 O(n) 字符偏移把每个段落边界映射回词下标。
+Both the source words and the LLM paragraphs are passed through `normalize_chars`, which ignores punctuation, whitespace and case. If the two character streams are identical, the code can map each paragraph boundary back to a word index using O(n) character offsets.
 
-#### Tier 2：diff
+#### Tier 2: diff
 
-如果模型顺手改了少量字符，代码对两侧运行相同的 `atomize`，再做 atom-LCS。匹配率
-至少 0.75 才接受边界。
+If the model changed a small number of characters in passing, the code runs the same `atomize` on both sides and then computes an atom-LCS. A boundary is accepted only if the match rate is at least 0.75.
 
-即便边界可恢复，只要某个段落文本与对应源词区间不能通过“只改标点”的严格文本门，
-该段落的 LLM 文本也不会落库；代码只使用边界，正文退回原词。
+Even when the boundaries can be recovered, a paragraph's LLM text is not stored unless it passes the strict text gate of "punctuation-only changes" against its corresponding source word range. The code uses only the boundaries, and the body text falls back to the original words.
 
-#### Tier 3：当前省略
+#### Tier 3: currently omitted
 
-历史设计中存在一层游标式区间恢复；当前 Rust 实现明确省略它，直接升级到索引契约。
+The historical design included a cursor-based range recovery layer. The current Rust implementation explicitly omits it and goes straight to the index contract.
 
-#### Tier 4：索引契约
+#### Tier 4: index contract
 
-三次文本契约都失败后，再发一次更简单的 LLM 请求：
+After all three text-contract attempts fail, one more LLM request is sent with a simpler format:
 
 ```json
 {
@@ -387,25 +352,24 @@ Segment LLM 的任务很窄：
 }
 ```
 
-代码钳位范围、检查顺序和重叠，并自动吸附不超过 10 个词的小空隙。
+The code clamps the ranges, checks their order and overlaps, and automatically snaps gaps of no more than 10 words.
 
-#### Tier 5：确定性兜底
+#### Tier 5: deterministic fallback
 
-索引契约仍失败时，完全不再依赖 LLM，按以下规则切段：
+If the index contract still fails, the code stops relying on the LLM entirely and splits paragraphs by these rules:
 
-- 说话人切换；
-- 停顿至少 1.2 秒；
-- 已有 200 字符后遇到句末；
-- 400 字符硬断。
+- a speaker change;
+- a pause of at least 1.2 seconds;
+- a sentence-ending mark once 200 characters have accumulated;
+- a hard break at 400 characters.
 
-这条路径永不丢词。
+This path never drops words.
 
-### 5.3 写回什么
+### 5.3 What is written back
 
-LLM 补充的合法标点通过 `rebind_corrected` 写回 `words[]`。段落边界则保存为新段首词
-的 `paraBreaks`。现有人工段落钉不会被清除。
+Legal punctuation added by the LLM is written back to `words[]` through `rebind_corrected`. Paragraph boundaries are saved as `paraBreaks` on the first word of each new paragraph. Existing manual paragraph pins are not cleared.
 
-同时写：
+At the same time, this is written:
 
 ```jsonc
 {
@@ -415,30 +379,28 @@ LLM 补充的合法标点通过 `rebind_corrected` 写回 `words[]`。段落边�
 }
 ```
 
-`segment` 使用 id 指纹，所以纯文本变化但词 id 不变时，段落结构仍可保持 fresh；
-重转录换发 id 后才会自然过期。
+`segment` uses an id fingerprint, so the paragraph structure can stay fresh when the plain text changes but the word ids do not. It expires naturally only after a re-transcription issues new ids.
 
-## 6. Polish：纠错、标点、分句与段落
+## 6. Polish: correction, punctuation, sentence splitting and paragraphs
 
-实现入口：
+Implementation entry points:
 
 - [`brief.rs`](../../../core/crates/ccut-flow-core/src/engines/brief.rs)
 - [`polish.rs`](../../../core/crates/ccut-flow-core/src/engines/polish.rs)
 - [`rebind.rs`](../../../core/crates/ccut-flow-core/src/rebind.rs)
-- CLI：`ccut polish <project>`
+- CLI: `ccut polish <project>`
 
-### 6.1 先跑 analysis
+### 6.1 Run analysis first
 
-CLI 会先读取 `ai/brief.json`。只有当其中的内容指纹与当前词流一致时才复用；否则调用
-LLM 提取：
+The CLI first reads `ai/brief.json`. It is reused only if its content fingerprint matches the current word stream; otherwise the LLM is called to extract:
 
 ```json
 {
-  "summary": "视频介绍 ChatGPT 如何连接工具并完成工作。",
+  "summary": "The video introduces how ChatGPT connects to tools and completes work.",
   "terms": [
     {
       "term": "ChatGPT",
-      "note": "产品名",
+      "note": "product name",
       "observedVariants": ["Chat GBT"]
     }
   ],
@@ -446,15 +408,13 @@ LLM 提取：
 }
 ```
 
-长文按 8000 字符分页，多页结果再经过一次 LLM 合并。代码会删除没有在原文中实际出现
-的 `observedVariants`，防止模型虚构错误变体。
+Long transcripts are split into pages of 8000 characters, and the results from multiple pages go through one more LLM call to merge them. The code removes any `observedVariants` that do not actually appear in the source text, to prevent the model from inventing wrong variants.
 
-Analysis 的普通失败不会阻塞 polish；只有鉴权等终止错误会停止任务。没有 analysis 时，
-润色仍可运行，只是缺少全文摘要和术语锁。
+An ordinary analysis failure does not block polish; only terminal errors such as authentication stop the task. Without analysis, polish can still run, but it lacks the whole-text summary and the term lock.
 
-### 6.2 Polish 的 LLM 契约
+### 6.2 The Polish LLM contract
 
-输入仍是带 `⏸` / `⏹` 的词流，但以带全局词下标的 JSON 传递：
+The input is still the word stream with `⏸` / `⏹`, but it is passed as JSON keyed by global word index:
 
 ```json
 {
@@ -469,14 +429,14 @@ Analysis 的普通失败不会阻塞 polish；只有鉴权等终止错误会停�
 }
 ```
 
-LLM 可以：
+The LLM may:
 
-- 修明显 ASR 错误；
-- 补标点；
-- 按语义分句；
-- 把连续句组织成段落。
+- fix obvious ASR errors;
+- add punctuation;
+- split sentences by meaning;
+- organise consecutive sentences into paragraphs.
 
-不能翻译、改写、总结、增删或重排内容。响应不带时间和词下标：
+It may not translate, rewrite, summarise, add, remove or reorder content. The response carries no times and no word indices:
 
 ```json
 {
@@ -491,25 +451,23 @@ LLM 可以：
 }
 ```
 
-### 6.3 代码如何映射回词
+### 6.3 How the code maps back to words
 
-1. 源词和输出句子使用同一个 `atomize`；
-2. 对两侧做 atom-LCS；
-3. 总匹配率低于 0.7，整页本次 attempt 失败；
-4. 每个输出句由其最后一个匹配源词决定初始边界；
-5. 相邻边界可在 ±10 词窗口内移动，但只有“两侧相似度都不下降，且至少一侧改善”
-   才接受；
-6. 边界移动不能破坏说话人一致性。
+1. The source words and the output sentences go through the same `atomize`;
+2. an atom-LCS is computed between the two sides;
+3. if the overall match rate is below 0.7, the whole page's attempt fails;
+4. each output sentence's initial boundary is set by its last matched source word;
+5. adjacent boundaries may move within a ±10-word window, but a move is accepted only if "similarity on both sides does not drop and at least one side improves";
+6. boundary moves must not break speaker consistency.
 
-### 6.4 两层相似度保险
+### 6.4 Two layers of similarity protection
 
-句级低相似度阈值为：
+The sentence-level low-similarity thresholds are:
 
-- Latin 文本：0.70；
-- CJK 文本：0.75。
+- Latin text: 0.70;
+- CJK text: 0.75.
 
-若一页中低相似句比例超过 30%，整页重试。否则先接受页结构，再把低相似句组成一个
-`polish-retry` 调用，附带：
+If more than 30% of the sentences on a page are low-similarity, the whole page is retried. Otherwise the page structure is accepted first, and the low-similarity sentences are grouped into one `polish-retry` call, carrying:
 
 ```json
 {
@@ -521,94 +479,93 @@ LLM 可以：
 }
 ```
 
-重试仍不安全时，该句把 `corrected` 清空并标记 fallback，最终保留原词。
+If the retry is still unsafe, that sentence has its `corrected` cleared and is marked as fallback, and the original words are kept in the end.
 
-### 6.5 Rebind 如何保住时间轴
+### 6.5 How Rebind keeps the timeline intact
 
-`rebind_corrected` 不会把 LLM 返回文本粗暴覆盖到原词数组：
+`rebind_corrected` does not crudely overwrite the original word array with the LLM's text:
 
-1. 剥离公共前后缀；
-2. 对变化区间做词级 LCS；
-3. 匹配上的词原样保留 id、`t0`、`t1`；
-4. 新 token 生成 `w...` id；
-5. 新 token 在原时间窗内按字符权重插值；
-6. 收尾做时间单调性和边界归一化。
+1. strip the common prefix and suffix;
+2. run a word-level LCS over the changed span;
+3. matched words keep their id, `t0` and `t1` unchanged;
+4. new tokens get `w...` ids;
+5. new tokens are interpolated by character weight within the original time window;
+6. finally, time monotonicity and boundary normalisation are enforced.
 
-示例：
+Example:
 
 ```text
-源词：
+Source words:
 g1.3  2.00–2.60  "Chat"
 g1.4  2.60–3.10  "GBT"
 
-润色：
+Polished:
 "ChatGPT"
 
-结果：
+Result:
 w...  2.00–3.10  "ChatGPT"
 ```
 
-变化区间可能换发 id，但其他词完全不受影响。翻译的 stale 检测因此可以精确到句。
+The changed span may get new ids, but other words are completely unaffected. Stale detection for translation can therefore be exact down to the sentence.
 
-### 6.6 Polish 首次运行为何也完成 segment
+### 6.6 Why the first Polish run also completes segment
 
-`run_polish` 的响应本来已经按段落组织。若 `stages.segment` 从未存在，代码会：
+The `run_polish` response is already organised into paragraphs. If `stages.segment` has never existed, the code:
 
-1. 取每个 LLM 段落的首词 id；
-2. 从第二段开始写 `paraBreaks[id] = true`；
-3. 写 `stages.segment = id_fingerprint(words)`；
-4. 更新 `stages.asrLayout`。
+1. takes the first word id of each LLM paragraph;
+2. from the second paragraph onward, writes `paraBreaks[id] = true`;
+3. writes `stages.segment = id_fingerprint(words)`;
+4. updates `stages.asrLayout`.
 
-所以标准翻译链中：
+So in the standard translation chain:
 
 ```text
 transcribe → polish → translate
 ```
 
-已经拥有分句和段落结构。提前单独运行 `segment` 会让 LLM 对同一全文再做一次相近工作，
-增加延迟。
+sentence splitting and paragraph structure already exist. Running `segment` separately beforehand would make the LLM do roughly the same work again on the same full text, adding latency.
 
-### 6.7 Polish 产物
+### 6.7 Polish outputs
 
-除了更新 `transcript.json`，CLI 还写：
+Besides updating `transcript.json`, the CLI also writes:
 
 ```text
 ai/brief.json
 ai/polish.json
 ```
 
-`polish.json` 包含：
+`polish.json` contains:
 
-- 句记录和词 id / 时间范围；
-- `typo` / `punct` 修改建议；
-- 段落到句下标的分组；
-- fallback 页数；
-- 说话人实名候选。
+- sentence records with word ids and time ranges;
+- `typo` / `punct` edit suggestions;
+- the grouping of paragraphs into sentence indices;
+- the number of fallback pages;
+- candidates for speakers' real names.
 
-## 7. Translate：完整语义句翻译
+## 7. Translate: full semantic sentence translation
 
-实现入口：
+Implementation entry points:
 
 - [`translate.rs`](../../../core/crates/ccut-flow-core/src/engines/translate.rs)
 - [`sentence.rs`](../../../core/crates/ccut-flow-core/src/sentence.rs)
-- CLI：`ccut translate <project> --lang zh`
+- CLI: `ccut translate <project> --lang zh`
 
-### 7.1 翻译单位不是 Cue
+### 7.1 The translation unit is not the Cue
 
-代码先派生 Cue，再把 1..N 个 Cue 合成 Sentence。翻译键是：
+The code first derives Cues, then merges 1..N Cues into a Sentence. The translation key is:
 
 ```text
-s-<句首词id>
+s-<first-word-id-of-sentence>
 ```
 
-例如：
+For example:
 
 ```text
 q-g1.0  Now, ChatGPT goes from just answering questions
 q-g1.7  to doing work for you by connecting to all of your tools.
 ```
 
-可能形成一个翻译句：
+These may form one translation sentence:
 
 ```text
 s-g1.0
@@ -616,20 +573,19 @@ Now, ChatGPT goes from just answering questions to doing work for you by
 connecting to all of your tools.
 ```
 
-### 7.2 增量选择
+### 7.2 Incremental selection
 
-每句都会计算 `src_fingerprint`。翻译开始前，代码：
+Each sentence gets a `src_fingerprint`. Before translation starts, the code:
 
-1. 删除已经不对应任何当前 Sentence 的 `trans`、`transSrc` 和 `transAlign` 孤儿键；
-2. 找出没有译文的句；
-3. 找出 `transSrc` 与当前句指纹不一致的 stale 句；
-4. `--force` 时选择所有句；
-5. 其他已有新鲜译文直接跳过，不产生 LLM 调用。
+1. deletes orphaned `trans`, `transSrc` and `transAlign` keys that no longer correspond to any current Sentence;
+2. finds sentences with no translation;
+3. finds stale sentences whose `transSrc` does not match the current sentence fingerprint;
+4. with `--force`, selects all sentences;
+5. skips any other sentence that already has a fresh translation, with no LLM call.
 
-### 7.3 请求格式和阅读预算
+### 7.3 Request format and reading budget
 
-待翻句按源文字符数打包，默认每页 6000 字符。相邻页只提供静态源文上下文，不依赖
-前一页译文：
+The sentences to translate are packed by source character count, with a default of 6000 characters per page. Adjacent pages supply only static source context and do not depend on the previous page's translation:
 
 ```json
 {
@@ -645,27 +601,27 @@ connecting to all of your tools.
 }
 ```
 
-`maxChars` 由句时长和目标语 CPS 预算计算：
+`maxChars` is calculated from the sentence duration and the target language's CPS budget:
 
 ```text
 maxChars = max(1, floor(sentenceDuration × targetCps))
 ```
 
-默认 CPS：
+Default CPS:
 
-| 目标语 | CPS |
+| Target language | CPS |
 | --- | ---: |
-| 简体中文 | 9 |
-| 日文 / 韩文 | 13 |
-| 泰文 | 15 |
-| 阿拉伯文 / 印地文 | 18 |
-| 其他语言 | 21 |
+| Simplified Chinese | 9 |
+| Japanese / Korean | 13 |
+| Thai | 15 |
+| Arabic / Hindi | 18 |
+| Other languages | 21 |
 
-这个预算用于提示译文尽量简洁，但不能为了预算删除关键信息。
+This budget is used to prompt the translation to be as concise as possible, but key information must never be dropped to meet it.
 
-### 7.4 LLM 输出和代码校验
+### 7.4 LLM output and code validation
 
-LLM 只返回完整译句：
+The LLM returns only complete translated sentences:
 
 ```json
 {
@@ -675,19 +631,18 @@ LLM 只返回完整译句：
 }
 ```
 
-代码做双向 id 对账：
+The code performs two-way id reconciliation:
 
-- 出现未知 id：拒绝；
-- 缺少任一请求 id：拒绝；
-- 任一译文为空：拒绝；
-- 重复、合并或拆分句子：契约不允许。
+- an unknown id appears: reject;
+- any requested id is missing: reject;
+- any translation is empty: reject;
+- sentences are duplicated, merged or split: the contract does not allow it.
 
-翻译与对齐明确分成两个阶段，所以翻译模型可以使用自然目标语语序，不必迁就源 Cue
-边界。
+Translation and alignment are explicitly separated into two stages, so the translation model can use natural target-language word order and does not have to conform to source Cue boundaries.
 
-### 7.5 逐页持久化
+### 7.5 Per-page persistence
 
-每完成一页立即写：
+Each page is written immediately upon completion:
 
 ```jsonc
 {
@@ -704,104 +659,93 @@ LLM 只返回完整译句：
 }
 ```
 
-因此 `transcript.json` 本身就是断点续跑现场。进程在后续页失败时，已经完成的句仍然
-存在；重跑会自动跳过它们。
+So `transcript.json` itself is the checkpoint for resumable runs. If the process fails on a later page, the sentences already completed remain; a rerun skips them automatically.
 
-与 segment / polish 不同，translate 没有“用规则生成近似译文”的降级。三次请求都
-失败后命令返回错误，因为伪造一份不可靠译文比明确失败更危险。
+Unlike segment and polish, translate has no fallback that "generates an approximate translation by rule". If all three requests fail, the command returns an error, because fabricating an unreliable translation is more dangerous than failing explicitly.
 
-## 8. Align：目标字幕拆分与时间锚定
+## 8. Align: target subtitle splitting and time anchoring
 
-实现入口：
+Implementation entry points:
 
 - [`align.rs`](../../../core/crates/ccut-flow-core/src/engines/align.rs)
 - [`split.rs`](../../../core/crates/ccut-flow-core/src/split.rs)
 - [`seam.rs`](../../../core/crates/ccut-flow-core/src/seam.rs)
 
-### 8.1 为什么翻译后还需要 align
+### 8.1 Why align is still needed after translation
 
-完整译句是语言质量真相，但经常不适合一次上屏。例如：
+The complete translated sentence is the ground truth for language quality, but it often does not fit on screen at once. For example:
 
 ```text
 现在，ChatGPT不再只是回答问题，还能连接你的所有工具，替你完成工作。
 ```
 
-它需要被拆成：
+It needs to be split into:
 
 ```text
 现在，ChatGPT不再只是回答问题，
 还能连接你的所有工具，替你完成工作。
 ```
 
-同时还要回答：每个译片对应源句的哪些词，应该在什么时间显示。
+Align must also answer: which words of the source sentence each translated piece corresponds to, and when each piece should be displayed.
 
-### 8.2 三个预算
+### 8.2 Three budgets
 
-`TransParams` 为目标语言定义：
+`TransParams` defines the budgets for each target language:
 
-| 语言 | fit | soft | hard |
+| Language | fit | soft | hard |
 | --- | ---: | ---: | ---: |
-| 中 / 日 / 韩 | 16 | 14 | 20 |
-| 其他语言 | 42 | 30 | 42 |
+| Chinese / Japanese / Korean | 16 | 14 | 20 |
+| Other languages | 42 | 30 | 42 |
 
-- `fit`：触发拆分的单行容量；
-- `soft`：希望每片接近的长度；
-- `hard`：任何译片不能超过的硬上限。
+- `fit`: the single-line capacity that triggers splitting;
+- `soft`: the length each piece should ideally approach;
+- `hard`: the hard ceiling no translated piece may exceed.
 
-简中预算先做非破坏性交付投影：
+For Simplified Chinese, the budget is first computed as a non-destructive delivery projection:
 
-- 普通逗号、句号不占预算；
-- 空白不计；
-- 两个 Latin 半角格约等于一个汉字阅读单位；
-- 数字中的 `1.2`、`1,000` 仍保留内部标点。
+- Ordinary commas and periods do not count against the budget;
+- Whitespace is not counted;
+- Two Latin half-width characters are roughly equal to one Chinese reading unit;
+- Internal punctuation in numbers, such as `1.2` and `1,000`, is kept.
 
-如果完整译句同时没有超过 fit 和 hard，代码会删除不必要的 `transAlign`，直接让整句
-覆盖整个 Sentence 的词时间窗。源 Cue 数量和边界不参与该判断。
+If the full translated sentence exceeds neither fit nor hard, the code removes the unnecessary `transAlign` and lets the whole sentence cover the entire word time window of the Sentence directly. Source Cue count and boundaries do not take part in this check.
 
-### 8.3 `independent`：纯代码、目标语优先
+### 8.3 `independent`: pure code, target language first
 
 ```bash
 ccut translate project.ccut --lang zh --align-mode independent
 ```
 
-代码把译句原子化，并用动态规划选择缝：
+The code atomizes the translated sentence and uses dynamic programming to choose the seams:
 
-- 句末标点成本最低；
-- 从句标点次之；
-- 词间空白再次；
-- CJK 字界最后；
-- 每片不得超过 hard；
-- 整体尽量接近 soft；
-- 片数不能超过源词数。
+- Sentence-final punctuation costs the least;
+- Clause punctuation is next;
+- Whitespace between words comes after that;
+- CJK character boundaries come last;
+- Each piece must not exceed hard;
+- The overall result should stay as close to soft as possible;
+- The number of pieces cannot exceed the number of source words.
 
-切完后按译片累计阅读单位占比，把每片分配到至少一个连续源词。它不建立双语逐行语义
-对应，适合目标语单语字幕。
+After splitting, each piece is assigned at least one contiguous run of source words, in proportion to the cumulative reading units of the translated pieces. It does not establish a bilingual line-by-line semantic correspondence, so it suits monolingual target-language subtitles.
 
-### 8.4 `oneToOne` 历史兼容
+### 8.4 `oneToOne` (historical compatibility)
 
-该模式直接依赖源 Cue，已经停用。枚举值仅用于读取历史 JSON；CLI 会拒绝新请求，
-历史条目会被视为无效并降级到 Sentence 整句投影，直到用 `many-to-one` 或
-`independent` 重对齐。
+This mode depends directly on source Cues and has been retired. The enum value exists only so historical JSON can be read. The CLI rejects new requests, and historical entries are treated as invalid and fall back to whole-Sentence projection until they are realigned with `many-to-one` or `independent`.
 
-### 8.5 `manyToOne`：默认的语义对齐
+### 8.5 `manyToOne`: the default semantic alignment
 
-默认模式：
+Default mode:
 
 ```bash
 ccut translate project.ccut --lang zh --align-mode many-to-one
 ```
 
-双侧都短的句不会调用 LLM。源语或目标语任一侧超长的句最多 32 句一批。代码为每句
-计算语言感知的 `lengthPlan`：英文等空格分词语言按词数，中文/日文/泰文按阅读字符，
-韩文按 eojeol（空格词组），同时仍受目标显示字符 hard 约束。块数同时受源语和目标语
-驱动。每侧的 `preferredPerPiece` 是语义允许时的均衡目标，
-不是破坏固定短语或语序交叉区的许可。
+Sentences that are short on both sides do not call the LLM. Sentences where either the source or the target side is overlong are sent in batches of up to 32. For each sentence the code computes a language-aware `lengthPlan`: for space-delimited languages such as English, it counts words; for Chinese, Japanese and Thai, it counts reading characters; for Korean, it counts eojeol (space-separated word groups). It is still constrained by the hard limit on target display characters. The number of pieces is driven by both the source and the target language. Each side's `preferredPerPiece` is the balanced target when the meaning allows it. It is not permission to break fixed phrases or to cross word-order intersections.
 
-请求还列出所有合法的 `sourceBreakCandidates`。模型修订时只返回候选 id，不重抄
-源文，因此不会再把 `faster—for` 这类单个 transcript token 从中间切开。
+The request also lists every legal `sourceBreakCandidates` entry. When the model revises, it returns only candidate ids and does not re-copy the source text, so a single transcript token such as `faster—for` can no longer be cut in the middle.
 
 ```jsonc
-// 请求
+// request
 {
   "budgets": {"fit": 16, "soft": 14, "hard": 20},
   "sentences": [
@@ -829,7 +773,7 @@ ccut translate project.ccut --lang zh --align-mode many-to-one
   ]
 }
 
-// 响应
+// response
 {
   "sentences": [
     {
@@ -841,60 +785,50 @@ ccut translate project.ccut --lang zh --align-mode many-to-one
 }
 ```
 
-模型先保证每对片语义相同、固定短语完整、目标片不超 hard，再在语义允许时靠近
-`lengthPlan`。例如 `a new | AI-assisted coding tool` 必须被判为无效边界。
-程序依据 `sourceBreaks` 直接恢复连续词区间；目标语只允许插入分隔符，不能改写。
+The model first ensures that each pair of pieces has the same meaning, that fixed phrases stay intact, and that no target piece exceeds hard. Then, where the meaning allows, it moves closer to `lengthPlan`. For example, `a new | AI-assisted coding tool` must be judged an invalid boundary. The program recovers the contiguous word ranges directly from `sourceBreaks`. The target side may only insert separators; it may not rewrite the text.
 
-Align 自己的源文停顿提示采用：
+The source pause markers that Align uses are:
 
-| 标记 | 词间 gap |
+| Marker | Gap between words |
 | --- | ---: |
 | `⏸` | ≥ 0.25s |
 | `⏸⏸` | ≥ 0.6s |
 | `⏸⏸⏸` | ≥ 1.2s |
 
-它比 polish / segment 的停顿标记更敏感，因为这里是在句内寻找展示缝，而不是判断句子
-或段落边界。
+They are more sensitive than the pause markers in polish / segment, because here the task is to find display seams inside a sentence, not to judge sentence or paragraph boundaries.
 
-### 8.6 代码如何验证 manyToOne
+### 8.6 How the code verifies manyToOne
 
-LLM 响应必须同时满足：
+An LLM response must satisfy all of the following at once:
 
-1. key 是已请求的 Sentence，且不重复；
-2. `sourceBreaks + 1` 与译文片数相同；
-3. source break id 已知、去重、严格递增；
-4. 高置信度的冠词、所有格或修饰语悬空边界会被拒绝；
-5. 所有源词被连续、无重叠、无遗漏地覆盖；
-6. 译片拼接后与完整译句归一化相等；
-7. 每片不超过 hard；
-8. 中间片不能以悬垂连接词结尾；
-9. 后片不能无条件以“的、了、吗”等黏着助词开头；
-10. 可与邻片安全合并的 3 字及以下闪现片会被拒绝。
+1. The key is a requested Sentence, and it is not duplicated;
+2. `sourceBreaks + 1` equals the number of translated pieces;
+3. The source break ids are known, deduplicated and strictly increasing;
+4. Boundaries that leave a high-confidence article, possessive or modifier dangling are rejected;
+5. All source words are covered contiguously, without overlap or omission;
+6. After the pieces are concatenated, the result equals the normalized full translated sentence;
+7. Each piece does not exceed hard;
+8. A middle piece may not end with a dangling connective;
+9. A later piece may not unconditionally begin with a clitic particle such as “的、了、吗” (possessive, aspect and question particles);
+10. A flash piece of 3 characters or fewer that can safely merge with a neighbour is rejected.
 
-soft 到 hard 之间存在更好自然缝只记 advisory，不会阻塞。
+A better natural seam that lies between soft and hard is recorded only as advisory and does not block.
 
-批次中合格句会立即收下。每批最多 32 句，每批只做一次首轮调用；所有批次失败句
-合并后共享一次全局修复调用，仍失败才退到确定性拆分。模型输入同时包含一份
-确定性 `draftSource` / `draftTarget`：草稿已合格时可用紧凑的 `useDraft` 应答，
-只对真正需要改善的边界重写标记串。
+Sentences that pass within a batch are accepted immediately. Each batch holds at most 32 sentences and gets only one first-round call. The sentences that fail in every batch are merged and share one global repair call. Any that still fail fall back to deterministic splitting. The model input also includes a deterministic `draftSource` / `draftTarget`. When the draft already qualifies, the model can answer with a compact `useDraft`. It rewrites marker strings only for the boundaries that genuinely need improvement.
 
-### 8.7 定向重切与弃用兼容参数
+### 8.7 Targeted re-cut and deprecated compatibility parameters
 
-`--align-local` 仅为旧命令兼容而保留，已经不会绕过长句 LLM。普通流程不需要
-`refine-align`；只有 check 仍报告顽固残余时才运行：
+`--align-local` is kept only for compatibility with old commands. It no longer bypasses the LLM for long sentences. The normal flow does not need `refine-align`; run it only when `check` still reports stubborn residue:
 
 ```bash
 ccut refine-align project.ccut --lang zh
 ```
 
-如果需要手工指定句，也可以直接运行
-`ccut translate project.ccut --lang zh --align-only --sentences s-g1.0,s-g8.4`。
-精修一轮后仍超限的句通常不是继续 recut 能解决的：在“译片拼接必须等于完整译句”的
-不变量下，应改写得更紧凑，或把它作为已知残留报告。
+To specify sentences by hand, you can also run `ccut translate project.ccut --lang zh --align-only --sentences s-g1.0,s-g8.4`. A sentence that is still over the limit after one refinement round usually cannot be fixed by further re-cutting. Under the invariant that "the concatenated pieces must equal the full translated sentence", it should be rewritten more compactly, or reported as a known residue.
 
-### 8.8 `transAlign` 落盘示例
+### 8.8 Example of `transAlign` on disk
 
-前面的例子有 19 个源词，切点落在 `questions | to`：
+In the earlier example there are 19 source words, and the cut falls at `questions | to`:
 
 ```jsonc
 {
@@ -926,29 +860,27 @@ ccut refine-align project.ccut --lang zh
 }
 ```
 
-`words` 是 Sentence 内的词 id 快照；词序列变化后旧切法自动变成 `align-stale`。
-历史 `cues` 字段读取后忽略，新写入不再产生它。只改变源 Cue 的 break 不会使翻译
-Cue 失效。
+`words` is a snapshot of the word ids inside the Sentence. Once the word sequence changes, the old split automatically becomes `align-stale`. The historical `cues` field is ignored when read, and new writes no longer produce it. Changing only the break of a source Cue does not invalidate the translated Cue.
 
-### 8.9 如何变成最终带时间的目标字幕
+### 8.9 How it becomes timed target subtitles
 
-`derive_trans_cues` 验证 `transAlign` 后：
+After `derive_trans_cues` validates `transAlign`:
 
-- manyToOne 新条目直接用 `from/to` 对应源词的 `t0/t1`；
-- independent 按片长比例分配连续源词；
-- 缺少或无效对齐时，完整译句覆盖整个 Sentence 的首末词时间窗。
+- For new manyToOne entries, `from/to` map directly to the `t0/t1` of the corresponding source words;
+- independent allocates contiguous source words in proportion to piece length;
+- When the alignment is missing or invalid, the full translated sentence covers the first-to-last word time window of the whole Sentence.
 
-代码随后尝试：
+The code then tries to:
 
-1. 在整句总时长足够时，平滑片间边界，使每片满足最低阅读时长；
-2. 使用相邻字幕之间真实存在的静音补足短片；
-3. 不覆盖下一条字幕，也不改持久化词时间。
+1. When the total duration of the sentence is sufficient, smooth the boundaries between pieces so that each piece meets the minimum reading duration;
+2. Use real silence that exists between adjacent subtitles to pad short pieces;
+3. Not overlap the next subtitle, and not change the persisted word times.
 
-因此 `transAlign` 保存的是稳定的词锚，最终展示时间仍是可重新派生的投影。
+So `transAlign` stores stable word anchors, and the final display times remain a projection that can be re-derived.
 
-## 9. 指纹、过期和增量重跑
+## 9. Fingerprints, staleness and incremental reruns
 
-### 9.1 阶段戳
+### 9.1 Stage stamps
 
 ```jsonc
 {
@@ -962,62 +894,61 @@ Cue 失效。
 }
 ```
 
-| 状态 | 指纹 | 过期条件 |
+| State | Fingerprint | Staleness condition |
 | --- | --- | --- |
-| ASR | 词文本 | 当前内容不再等于原转录 |
-| ASR layout | breaks / paraBreaks / hidden | 人工版式变化 |
-| Polish | 词文本 | 润色后又修改正文 |
-| Segment | 词 id | 重转录或重绑导致结构 id 变化 |
-| Chapters | 词文本 | 正文改变 |
-| Translation | 每句源文指纹 | 该句源文改变 |
-| Align | Sentence 词快照 + 拼接不变量 | 句内词结构或完整译句改变 |
+| ASR | Word text | Current content no longer equals the original transcript |
+| ASR layout | breaks / paraBreaks / hidden | Manual layout change |
+| Polish | Word text | Body text is edited again after polishing |
+| Segment | Word ids | Re-transcription or rebinding changes the structural ids |
+| Chapters | Word text | Body text changes |
+| Translation | Per-sentence source fingerprint | The source of that sentence changes |
+| Align | Sentence word snapshot + concatenation invariant | Word structure inside the sentence, or the full translated sentence, changes |
 
-Polish 本身会让 `asr` 变 stale，这是预期的管线修改。CLI 判断人工编辑时会同时比较
-当前内容是否等于 `stages.polish`，避免把正常润色误判为用户改稿。
+Polish itself makes `asr` stale; this is an expected modification in the pipeline. When the CLI judges whether a human edited the text, it also compares the current content with `stages.polish`, so that normal polishing is not mistaken for a user edit.
 
-### 9.2 常见编辑的连锁反应
+### 9.2 Chain reactions of common edits
 
-| 操作 | 需要重跑 |
+| Operation | Rerun needed |
 | --- | --- |
-| 只改某个译片文本，并同步更新完整译句 | 不重翻；保持 `transSrc` |
-| 改完整译句 | 删除该句 `transAlign`，只重对齐 |
-| 改源词文本 | 该 Sentence 的 translation stale，增量重翻 |
-| 只改源 Cue 的 break | 完整译句与翻译 Cue 都保持有效 |
-| 移动段落钉 | Sentence 可能重新派生；孤儿译文键会在下次翻译清理 |
-| 重转录 | 词 id 全换发，所有下游结构重新派生 |
+| Edit the text of one translated piece and update the full translated sentence to match | No retranslation; keep `transSrc` |
+| Edit the full translated sentence | Delete that sentence's `transAlign`; realign only |
+| Edit the source word text | The Sentence's translation is stale; incremental retranslation |
+| Edit only the break of a source Cue | The full translated sentence and the translated Cues both stay valid |
+| Move a paragraph pin | The Sentence may be re-derived; orphaned translation keys are cleaned up on the next translation |
+| Re-transcribe | Word ids are all reissued; all downstream structures are re-derived |
 
-## 10. `ccut check` 如何收口
+## 10. How `ccut check` closes out
 
-`check` 全部由代码执行，不调用 LLM。它至少检查：
+`check` is executed entirely by code and does not call the LLM. It checks at least:
 
-- 词时间是否非负、单调、无非法重叠；
-- 目标语言是否有译文、是否为空或部分覆盖；
-- `transSrc` 是否与当前 Sentence 指纹一致；
-- 是否存在不再对应任何当前 Sentence 的孤儿键；
-- `transAlign` 是否缺失或违反快照、拼接、连续覆盖不变量；
-- 目标译片是否超过 hard；
-- 是否仍超过 fit 且存在可执行自然缝；
-- SRT/VTT 交付时的宽度、CPS 和闪现时长。
+- Whether word times are non-negative and monotonic, with no illegal overlaps;
+- Whether the target language has translations, and whether they are empty or only partially cover the Sentence;
+- Whether `transSrc` matches the current Sentence fingerprint;
+- Whether any orphan keys remain that no longer correspond to a current Sentence;
+- Whether `transAlign` is missing, or violates the snapshot, concatenation or contiguous-coverage invariants;
+- Whether target pieces exceed hard;
+- Whether a piece still exceeds fit and an executable natural seam exists;
+- Width, CPS and flash duration when delivering SRT/VTT.
 
-典型命令：
+Typical command:
 
 ```bash
 ccut check project.ccut --for srt --lang zh --strict
 ```
 
-重要状态：
+Important states:
 
-- `translation-stale`：必须重翻，对交付是 blocker；
-- `align-stale`：展示会退为整句上屏，通常可只重对齐；
-- `translation-overflow`：SRT/VTT 交付下超过 hard 时是 blocker；
-- `align-overfit`：给出可定向精修的句 id 和现成命令；
-- `flash`：展示时长低于目标语阅读预算。
+- `translation-stale`: must be retranslated; it is a blocker for delivery;
+- `align-stale`: display falls back to whole-sentence on-screen; usually only a realignment is needed;
+- `translation-overflow`: when delivering SRT/VTT, exceeding hard is a blocker;
+- `align-overfit`: gives the sentence ids that can be targeted for refinement, with ready-made commands;
+- `flash`: display duration is below the target-language reading budget.
 
-## 11. 一个完整的端到端示例
+## 11. A complete end-to-end example
 
-以下例子省略不相关字段。
+The following example omits unrelated fields.
 
-### 11.1 ASR 落词
+### 11.1 ASR word placement
 
 ```jsonc
 {
@@ -1032,7 +963,7 @@ ccut check project.ccut --for srt --lang zh --strict
 
 ### 11.2 Polish
 
-LLM 从全文术语判断 `Chat GBT` 是 `ChatGPT`，并补标点。代码验证相似度后 rebind：
+The LLM uses terminology from the full text to judge that `Chat GBT` is `ChatGPT`, and it adds punctuation. After the code verifies the similarity, it rebinds:
 
 ```jsonc
 {
@@ -1048,7 +979,7 @@ LLM 从全文术语判断 `Chat GBT` 是 `ChatGPT`，并补标点。代码验证
 }
 ```
 
-### 11.3 代码派生句
+### 11.3 Code-derived sentence
 
 ```text
 s-g1.0
@@ -1067,23 +998,22 @@ connecting to all of your tools.
   },
   "transSrc": {
     "zh": {
-      "s-g1.0": "<当前源句指纹>"
+      "s-g1.0": "<current source sentence fingerprint>"
     }
   }
 }
 ```
 
-### 11.5 默认 manyToOne align
+### 11.5 Default manyToOne align
 
 ```text
 现在，ChatGPT不再只是回答问题，
 还能连接你的所有工具，替你完成工作。
 ```
 
-LLM 选择源词候选切点 id，并只在目标语插入对应的 `|`；代码将两片分别锚到
-连续源词 `0..6` 和 `7..18`，写入 `transAlign`。
+The LLM selects candidate cut-point ids over the source words and inserts the matching `|` only in the target language; the code anchors the two pieces to consecutive source words `0..6` and `7..18` and writes them to `transAlign`.
 
-### 11.6 最终投影
+### 11.6 Final projection
 
 ```text
 09.93 → 12.11
@@ -1093,38 +1023,35 @@ LLM 选择源词候选切点 id，并只在目标语插入对应的 `|`；代码
 还能连接你的所有工具，替你完成工作。
 ```
 
-这里的展示时间来自源词锚和投影算法，不来自 LLM 返回的时间。
+The display times here come from the source-word anchors and the projection algorithm, not from times returned by the LLM.
 
-## 12. 当前实现的几个关键取舍
+## 12. Key trade-offs in the current implementation
 
-1. **完整译句和展示切法分离。** 改拆行不会破坏翻译真相，改翻译只需让对齐过期。
-2. **正常链不重复 segment。** 首次 polish 已经生成语义段落。
-3. **翻译失败不伪造结果。** Segment、polish、align 都有保守降级；translate 没有。
-4. **所有长句首轮批量语义拆分。** 源语或目标语超长即进入 align LLM；
-   `refine-align` 只处理 check 后仍残留的顽固句。
-5. **时间戳不进 LLM。** 模型只决定文本和语义缝；时间始终从源词派生。
-6. **当前 translate 页循环仍是串行。** 它使用静态邻页源文，没有语义上的前页译文
-   依赖，未来可以并发，但当前 `run_translate` 按页顺序执行。
-7. **对齐协议只让模型选择合法边界。** 当前 manyToOne 返回源词候选 id 和目标语
-   分隔符，程序恢复词区间；模型不重抄源文，也不维护 `from/to`。
+1. **The full translated sentence and the display split are separate.** Changing line breaks does not break the translation's truth; changing the translation only requires the alignment to be marked stale.
+2. **The normal chain does not repeat segmentation.** The first polish pass already produces the semantic paragraphs.
+3. **A failed translation never fabricates a result.** Segment, polish and align all have conservative fallbacks; translate has none.
+4. **All long sentences are split semantically in batch on the first pass.** When the source or target text is too long, it goes to the align LLM; `refine-align` only handles stubborn sentences that remain after the check.
+5. **Timestamps do not go to the LLM.** The model only decides the text and the semantic seams; timing is always derived from the source words.
+6. **The current translate page loop is still serial.** It uses the static source text of neighbouring pages and has no semantic dependency on the previous page's translation, so it could run concurrently in the future, but `run_translate` currently executes pages in order.
+7. **The alignment protocol only lets the model choose legal boundaries.** The current manyToOne returns source-word candidate ids and target-language separators, and the program reconstructs the word ranges; the model does not re-copy the source text and does not maintain `from/to`.
 
-## 13. 代码索引
+## 13. Code index
 
-| 主题 | 实现 |
+| Topic | Implementation |
 | --- | --- |
-| Transcript 数据模型 | [`doc.rs`](../../../core/crates/ccut-flow-core/src/doc.rs) |
-| Cue / Paragraph 派生 | [`cue.rs`](../../../core/crates/ccut-flow-core/src/cue.rs) |
-| Sentence 派生和 stale | [`sentence.rs`](../../../core/crates/ccut-flow-core/src/sentence.rs) |
-| 分页 | [`paging.rs`](../../../core/crates/ccut-flow-core/src/paging.rs) |
-| 停顿 / 说话人标记 | [`markers.rs`](../../../core/crates/ccut-flow-core/src/engines/markers.rs) |
-| 全文分析 | [`brief.rs`](../../../core/crates/ccut-flow-core/src/engines/brief.rs) |
+| Transcript data model | [`doc.rs`](../../../core/crates/ccut-flow-core/src/doc.rs) |
+| Cue / Paragraph derivation | [`cue.rs`](../../../core/crates/ccut-flow-core/src/cue.rs) |
+| Sentence derivation and stale | [`sentence.rs`](../../../core/crates/ccut-flow-core/src/sentence.rs) |
+| Pagination | [`paging.rs`](../../../core/crates/ccut-flow-core/src/paging.rs) |
+| Pauses / speaker markers | [`markers.rs`](../../../core/crates/ccut-flow-core/src/engines/markers.rs) |
+| Full-text analysis | [`brief.rs`](../../../core/crates/ccut-flow-core/src/engines/brief.rs) |
 | Segment | [`segment.rs`](../../../core/crates/ccut-flow-core/src/engines/segment.rs) |
 | Polish | [`polish.rs`](../../../core/crates/ccut-flow-core/src/engines/polish.rs) |
-| 词重绑 | [`rebind.rs`](../../../core/crates/ccut-flow-core/src/rebind.rs) |
+| Word rebinding | [`rebind.rs`](../../../core/crates/ccut-flow-core/src/rebind.rs) |
 | Translate | [`translate.rs`](../../../core/crates/ccut-flow-core/src/engines/translate.rs) |
 | Align | [`align.rs`](../../../core/crates/ccut-flow-core/src/engines/align.rs) |
-| 目标语拆分和展示投影 | [`split.rs`](../../../core/crates/ccut-flow-core/src/split.rs) |
-| 缝质量和本地重锚 | [`seam.rs`](../../../core/crates/ccut-flow-core/src/seam.rs) |
-| CLI 编排和 check | [`cmd/ai.rs`](../../../core/crates/ccut-kernel/src/cmd/ai.rs) + [`cmd/ai/check.rs`](../../../core/crates/ccut-kernel/src/cmd/ai/check.rs) |
-| Provider / Agent 执行器 | [`services/llm_exec.rs`](../../../core/crates/ccut-kernel/src/services/llm_exec.rs) |
-| 热点批量精修编排 | [`cmd/refine.rs`](../../../core/crates/ccut-kernel/src/cmd/refine.rs) |
+| Target-language splitting and display projection | [`split.rs`](../../../core/crates/ccut-flow-core/src/split.rs) |
+| Seam quality and local re-anchoring | [`seam.rs`](../../../core/crates/ccut-flow-core/src/seam.rs) |
+| CLI orchestration and check | [`cmd/ai.rs`](../../../core/crates/ccut-kernel/src/cmd/ai.rs) + [`cmd/ai/check.rs`](../../../core/crates/ccut-kernel/src/cmd/ai/check.rs) |
+| Provider / Agent executor | [`services/llm_exec.rs`](../../../core/crates/ccut-kernel/src/services/llm_exec.rs) |
+| Hotspot batch refinement orchestration | [`cmd/refine.rs`](../../../core/crates/ccut-kernel/src/cmd/refine.rs) |

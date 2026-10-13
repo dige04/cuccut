@@ -9,28 +9,28 @@
       "default": 48,
       "min": 4,
       "max": 400,
-      "doc": "目标碎片数（取整）；按对数极坐标网格取整后实际片数与它相近。爆心附近的碎片小、外圈的大"
+      "doc": "Target number of shards (rounded); after snapping to the logarithmic polar grid, the actual count is close to this. Shards near the burst center are small, and those on the outer ring are large"
     },
     "seed": {
       "type": "number",
       "default": 0,
       "min": 0,
       "max": 4294967295,
-      "doc": "碎片形状与各片运动的种子（取整）；同一个 seed 每次渲染逐字节相同"
+      "doc": "Shard shape and per-shard motion seed (rounded); the same seed renders byte-identical output every time"
     },
     "cx": {
       "type": "number",
       "default": 0.5,
       "min": 0,
       "max": 1,
-      "doc": "爆心 x，画布宽度的比例"
+      "doc": "Burst center x, as a fraction of canvas width"
     },
     "cy": {
       "type": "number",
       "default": 0.5,
       "min": 0,
       "max": 1,
-      "doc": "爆心 y，画布高度的比例"
+      "doc": "Burst center y, as a fraction of canvas height"
     },
     "force": {
       "type": "length",
@@ -39,14 +39,14 @@
       "max": 3,
       "basis": "canvasShortEdge",
       "quantize": "none",
-      "doc": "飞散力度：碎片沿「爆心 → 片心」方向飞出的典型距离，画布短边的比例；离爆心越近飞得越快"
+      "doc": "Flying force: the typical distance shards travel along the 'burst center → shard center' direction, as a fraction of the canvas short side; shards closer to the burst center fly faster"
     },
     "rotation": {
       "type": "number",
       "default": 240,
       "min": 0,
       "max": 1440,
-      "doc": "每片在整段转场里最多转过的角度（度），各片在 ±rotation 之间随机"
+      "doc": "Maximum angle (degrees) each shard rotates over the whole transition; each shard picks a random value within ±rotation"
     },
     "gravity": {
       "type": "length",
@@ -55,14 +55,14 @@
       "max": 3,
       "basis": "canvasShortEdge",
       "quantize": "none",
-      "doc": "重力：整段转场里碎片额外下落的距离（按 τ² 加速），画布短边的比例；负值向上飘"
+      "doc": "Gravity: extra distance shards fall over the whole transition (accelerating with τ²), as a fraction of the canvas short side; negative values float upward"
     },
     "crack": {
       "type": "number",
       "default": 0.6,
       "min": 0,
       "max": 1,
-      "doc": "还没飞走的碎片边界上画的亮裂纹不透明度；0 = 不画裂纹"
+      "doc": "Opacity of the bright crack lines drawn along the boundaries of shards that have not yet flown away; 0 = no cracks"
     }
   },
   "color": {
@@ -78,5 +78,5 @@
   "determinism": "strict",
   "capabilities": [],
   "fallback": null,
-  "doc": "出场画面像玻璃一样碎开，露出入场画面。碎片是以爆心 (cx·W, cy·H) 为原点的对数极坐标抖动网格 Voronoi：U = ln(1 + r/r₀)（r₀ = 0.04 × 短边）、V = atan2 + π，各按网格边长归一化，格数按 pieces 取成近似方格，每格一个 splitmix64(seed, 格号) 抖动的种子点，像素归属查 3×3 邻格（V 首尾相接）。第 i 片：离爆心的归一化距离 n = |c_i − o| / r_max，delay = 0.3n + 0.06·rand，τ = clamp((p − delay)/(1 − delay), 0, 1)；位移 = 单位方向 × force × (0.55 + 0.9·rand)(1.25 − 0.75n) × τ(2 − τ) + (0, gravity × τ²)；旋转 = rotation × (2·rand − 1) × τ；放大 = 1 + 0.4·rand × τ；不透明度 = clamp((1 − τ)/0.45, 0, 1)。τ = 0 的片留在原位，在与邻片的边界上画不透明度 crack × min(1, p/0.06) 的白色裂纹（线宽 max(1, round(短边/540)) px）。飞行中的片按放大量从小到大、同量按片号依次以双线性取样 source-over 叠在入场画面上。超越函数一律走 libm，其余是 f64 四则运算；出场画面只作为 Transition pass 的一张输入，不复制。progress = 0 / 1 逐字节等于 from / to。出场画面透明的地方从一开始就透出入场画面。推荐 dur 0.6–1.2 s。"
+  "doc": "The outgoing frame shatters like glass, revealing the incoming frame. The shards are a jittered logarithmic-polar Voronoi grid with origin at the burst center (cx·W, cy·H): U = ln(1 + r/r₀) (r₀ = 0.04 × short side), V = atan2 + π, each normalized by the grid cell size. The cell count is chosen from pieces to approximate square cells; each cell has a seed point jittered by splitmix64(seed, cell index), and each pixel's owner is found by checking the 3×3 neighboring cells (V wraps around). For shard i: normalized distance from the burst center n = |c_i − o| / r_max, delay = 0.3n + 0.06·rand, τ = clamp((p − delay)/(1 − delay), 0, 1); displacement = unit direction × force × (0.55 + 0.9·rand)(1.25 − 0.75n) × τ(2 − τ) + (0, gravity × τ²); rotation = rotation × (2·rand − 1) × τ; scale = 1 + 0.4·rand × τ; opacity = clamp((1 − τ)/0.45, 0, 1). Shards with τ = 0 stay in place, and on their boundaries with neighboring shards a white crack with opacity crack × min(1, p/0.06) is drawn (line width max(1, round(short side/540)) px). Flying shards are composited source-over onto the incoming frame with bilinear sampling, ordered by scale amount from smallest to largest, with ties broken by shard index. Transcendental functions always go through libm; everything else is f64 arithmetic. The outgoing frame is used only as one input to the Transition pass and is not copied. progress = 0 / 1 is byte-identical to from / to. Where the outgoing frame is transparent, the incoming frame shows through from the start. Recommended dur 0.6–1.2 s."
 }

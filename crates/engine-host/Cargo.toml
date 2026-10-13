@@ -1,6 +1,6 @@
 [package]
 name = "engine-host"
-description = "CucCut 的 Engine Host：持有视频写锁的独立进程，通过 stdio 的 JSON 行与 Runtime 通信（架构设计 §2.3）"
+description = "CucCut's Engine Host: a separate process that holds the video write lock and talks to the Runtime over JSON lines on stdio (architecture design §2.3)"
 version.workspace = true
 edition.workspace = true
 license-file.workspace = true

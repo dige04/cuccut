@@ -1,6 +1,6 @@
 [package]
 name = "editor-wasm"
-description = "界面与 Node 共用的纯语义 WASM 入口：字幕与翻译核心的句子派生与原文指纹、舞台的框、引擎的取值区间、元素的样式目录、已有转写的识别说话人、来源自带章节的解析与吸附（架构设计 §1.4、§6.6、§7.9、§13.6）"
+description = "Pure-semantics WASM entry point shared by the UI and Node: sentence derivation and source-text fingerprints for the subtitle and translation core, stage boxes, the engine's value ranges, the element style catalog, speaker identification for existing transcripts, and parsing and snapping of source-embedded chapters (architecture design §1.4, §6.6, §7.9, §13.6)"
 version.workspace = true
 edition.workspace = true
 license-file.workspace = true

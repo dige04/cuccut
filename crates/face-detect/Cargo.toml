@@ -1,6 +1,6 @@
 [package]
 name = "face-detect"
-description = "CucCut 的人脸检测（videos_frames 的 faces）：YuNet（OpenCV Zoo，ONNX）经纯 Rust 的 tract 推理；Runtime 以子进程调用，stdin/stdout 的 JSON 行；Windows 与 macOS 同一份实现，不带原生运行库"
+description = "CucCut face detection (videos_frames' faces): YuNet (OpenCV Zoo, ONNX) run through the pure-Rust tract inference engine; the Runtime calls it as a child process over JSON lines on stdin/stdout. Windows and macOS share one implementation with no native runtime libraries bundled"
 version.workspace = true
 edition.workspace = true
 license-file.workspace = true
@@ -19,5 +19,5 @@ anyhow = "1.0.102"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
-# 纯 Rust 的 ONNX 推理：不随应用分发 onnxruntime 的 DLL / dylib，发布构建（`--locked`）不在构建时下载原生库。
+# Pure-Rust ONNX inference: onnxruntime's DLL / dylib are not shipped with the app, and release builds (`--locked`) do not download native libraries at build time.
 tract-onnx = "0.23.8"

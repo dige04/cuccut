@@ -39,7 +39,7 @@
   font-variant-numeric: tabular-nums;
   color: var(--media-muted);
 }
-/* 用 flex 而非 block：S2 的轨道行是 inline-flex，放进 block 会落入行盒、底部多出行高空隙，轨道比同排按钮偏上。 */
+/* Uses flex rather than block: S2's track row is inline-flex, and placing it in a block falls into a line box and leaves a line-height gap underneath, so the track sits higher than the buttons in the same row. */
 .cc-media-slider {
   display: flex;
   flex-direction: column;

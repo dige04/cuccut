@@ -1,20 +1,20 @@
 # legacy-import
 
-把 cuccut-app 的 `.ccut` 项目和外部视频项目目录导入成视频（`cuccut.video`）。这里保留手动批量导入入口；可复用的转换核心已移到 [`@cuccut/legacy-import`](../../packages/legacy-import/README.md)，也供 Runtime 启动迁移使用。它只通过 `engine-host` 的公开协议写视频，不直接碰 `video.db`。
+Imports cuccut-app `.ccut` projects and external video project directories into videos (`cuccut.video`). This keeps the manual batch-import entry point. The reusable conversion core has moved to [`@cuccut/legacy-import`](../../packages/legacy-import/README.md) and is also used by Runtime startup migration. It writes videos only through the public protocol of `engine-host` and never touches `video.db` directly.
 
-写出来的是视频格式第 3 版（`schemaVersion: 3`）的实例模型。逐字段的映射规则见 [元素模型映射](../../docs/design/timeline/element-model-mapping.md) 第 5 节，下面「映射」一节是摘要。
+The output is the instance model of video format version 3 (`schemaVersion: 3`). The field-by-field mapping rules are in [Element model mapping](../../docs/design/timeline/element-model-mapping.md), section 5. The “Mapping” section below is a summary.
 
-启动时的 v1 / v2 检测、设置与凭据迁移、完成标记见[架构设计 §2.7](../../docs/architecture/architecture-design.md#27-历史版本的启动迁移)。下面的 CLI 用法保持不变。
+For v1/v2 detection at startup, settings and credential migration, and completion markers, see [Architecture design §2.7](../../docs/architecture/architecture-design.md#27-startup-migration-of-historical-versions). The CLI usage below is unchanged.
 
-## 用法
+## Usage
 
-需要 Node 22.18+（直接跑 `.ts`）、`ffprobe`，以及编好的引擎：
+Requires Node 22.18+ (to run `.ts` directly), `ffprobe`, and a built engine:
 
 ```bash
 cargo build --release -p engine-host
 ```
 
-先预演（不写任何视频，只出报告和每个视频的写入计划）：
+Dry run first (writes no videos; produces only a report and a per-video write plan):
 
 ```bash
 node scripts/legacy-import/import.ts \
@@ -23,7 +23,7 @@ node scripts/legacy-import/import.ts \
   --report /tmp/legacy-import-dry --dry-run
 ```
 
-正式导入到一个项目文件夹（每个旧项目一个视频，一个子目录）：
+Real import into one project folder (one video per legacy project, one subdirectory each):
 
 ```bash
 node scripts/legacy-import/import.ts \
@@ -32,80 +32,80 @@ node scripts/legacy-import/import.ts \
   --out /Volumes/ExtremeSSD/CucCut/projects/legacy-import
 ```
 
-导入之后核对（素材都按原路径找得到、没有进视频目录，文档正文都读得出来，实例都是第 3 版的字段，剪口集合的正文成立）。目录里有 `import-report.json` 时，同时核对报告中的视频已写出、没有导入失败和缺失素材；存在这些问题或目录里没有视频时退出码为 1，不能因跳过了缺失素材就把整批导入报告为完整：
+Verify after importing: media are still found at their original paths and were not moved into the video directory, document bodies are readable, every instance uses schema-v3 fields, and the body of each cut-point set holds. When `import-report.json` is in the directory, also check that the videos in the report were written and that there are no failed imports or missing media. If these problems exist, or the directory has no videos, the exit code is 1. A batch cannot be reported as complete just because missing media were skipped:
 
 ```bash
 node scripts/legacy-import/verify.ts /Volumes/ExtremeSSD/CucCut/projects/legacy-import
 ```
 
-| 参数                 | 含义                                                                                        |
-| -------------------- | ------------------------------------------------------------------------------------------- |
-| `--ccut <目录>`      | 一个 `.ccut` 项目目录，或装着它们的目录；可以给多次                                         |
-| `--external <目录>`  | 一个外部视频项目目录（里面有 `project.json`）；可以给多次                                   |
-| `--out <项目文件夹>` | 视频写到哪里                                                                                |
-| `--report <目录>`    | 报告写到哪里，默认同 `--out`                                                                |
-| `--only <名字片段>`  | 只导入名字里带这个片段的项目；可以给多次                                                    |
-| `--dry-run`          | 预演：不启动引擎，报告写成 `import-report.dry-run.md`，并在 `plans/` 下留每个视频的写入计划 |
-| `--replace`          | 目标视频已存在时删掉重建（默认是接着上次的导入）                                            |
-| `--engine <路径>`    | `engine-host` 可执行文件，默认 `target/release/engine-host`                                 |
-| `--ffprobe <路径>`   | 默认取 `CUCCUT_FFPROBE` 或 `PATH` 里的 `ffprobe`                                            |
+| Parameter            | Meaning                                                                                                                 |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `--ccut <dir>`       | A `.ccut` project directory, or a directory containing them; may be given multiple times                                |
+| `--external <dir>`   | An external video project directory (containing `project.json`); may be given multiple times                            |
+| `--out <project folder>` | Where the videos are written                                                                                        |
+| `--report <dir>`     | Where the report is written; defaults to the same as `--out`                                                            |
+| `--only <name fragment>` | Import only projects whose name contains this fragment; may be given multiple times                                 |
+| `--dry-run`          | Dry run: does not start the engine; the report is written as `import-report.dry-run.md`, and a write plan per video is left under `plans/` |
+| `--replace`          | If the target video already exists, delete it and rebuild (default: resume the previous import)                         |
+| `--engine <path>`    | `engine-host` executable; default `target/release/engine-host`                                                          |
+| `--ffprobe <path>`   | Defaults to `CUCCUT_FFPROBE` or `ffprobe` on `PATH`                                                                     |
 
-有项目导入失败时退出码是 1。报告是 `import-report.md`（给人看）和 `import-report.json`（逐项目的明细）。
+The exit code is 1 when any project import fails. The reports are `import-report.md` (for people) and `import-report.json` (per-project detail).
 
-## 它做什么、不做什么
+## What it does and does not do
 
-- **素材只链接，不复制**：所有素材以 `storage: 'linked'` 登记在原路径，视频目录的 `blobs/` 是空的。之后想收进视频目录，用引擎的 `collectAssets`；文件挪了地方，用 `relinkAsset`。
-- **可以重复跑**：每一步是一笔事务，`commandId` 固定为 `legacy-import:<步骤>`，标签里带内容摘要。标签的 200 字符上限优先保留摘要，过长的文件名说明截短。重跑时已经提交过、内容没变的步骤直接跳过；内容变了会停下来要求 `--replace`，不会悄悄叠一份。
-- **只经过引擎写**：每个实例、关键帧、转场、闪避规则、剪口集合都走 `engine-host` 的操作，引擎的校验照常生效，不写引擎不收的视频。
-- **超出范围的值夹住或丢掉，都记账**：报告里「夹到范围里的值」「没有写进去的」逐项计数，逐条说明在警告里。引擎退回一个实例时，逐组去掉可选字段（`fx`、`mask`、`animate`、包络、跟随策略……）重试，去掉了哪组也记在「没有写进去的」里；还是写不进去才算失败。
-- **导入扩展里只有来源说明**：`extensions["cuccut.import"]` 只留旧 ID（`sourceId`）以及 `bcfClip`、`mediaId`、`itemCount` 这几项来源信息，不放元素数据；`bcfClip` 是认领的句子 ID，对应关系另外写成音画联动组（见下表）。导入时估算出来的值（画布尺寸、没有终点的音频长度）在「导入时估算的」里计数。每个视频带一份 `import-record` 文档，记着旧项目的路径和这个视频的导入明细。
-- **不导入**的旧数据（撤销历史、AI 中间结果、任务与日志、波形缩略图缓存等可再生或与成片无关的文件）列在报告的「没有导入的旧数据」里。
-- **字幕投影兼容**：句子的词成员优先取 `sourceWordIds`，旧投影只有 `cueIds` 时按字幕行恢复。缺行、空词引用或引用失效时放弃对应投影并报告，保留原始转写。换行、分段、阶段指纹与词的贴前标记写入视频格式 §5.2 已定义的正式字段。
-- **长标题**：`.ccut` 项目标题超过 200 个 Unicode 字符时截短视频显示名，计入 `clamped.video-name`；完整原标题保留在报告与视频内的 `import-record` 文档。
+- **Media is linked, not copied**: all media are registered with `storage: 'linked'` at their original paths, and the video directory's `blobs/` is empty. To collect them into the video directory later, use the engine's `collectAssets`. If a file has been moved, use `relinkAsset`.
+- **Safe to re-run**: each step is one transaction. `commandId` is fixed as `legacy-import:<step>`, and the label carries a content digest. The 200-character label limit keeps the digest first, and overly long file-name notes are truncated. On re-run, steps already committed with unchanged content are skipped. If content has changed, the import stops and asks for `--replace` instead of silently stacking a second copy.
+- **Writes only through the engine**: every instance, keyframe, transition, ducking rule and cut-point set goes through `engine-host` operations. Engine validation applies as usual, and nothing the engine does not accept is written.
+- **Out-of-range values are clamped or dropped, and both are recorded**: the report counts “values clamped into range” (夹到范围里的值) and “not written” (没有写进去的) item by item, and each is explained in the warnings. When the engine rejects an instance, optional fields are removed group by group (`fx`, `mask`, `animate`, envelopes, follow policies, …) and the write is retried. Which groups were removed is also recorded under “not written”. It counts as a failure only if the instance still cannot be written.
+- **Import extensions carry only source notes**: `extensions["cuccut.import"]` keeps only the legacy ID (`sourceId`) and the source fields `bcfClip`, `mediaId` and `itemCount`. It does not hold element data. `bcfClip` is the claimed sentence ID, and the correspondence is written separately as an audio-video linked group (see the table below). Values estimated at import (canvas size, audio length without an end point) are counted under “estimated at import” (导入时估算的). Each video has an `import-record` document that records the legacy project path and the import details for that video.
+- **Legacy data not imported** (undo history, AI intermediate results, tasks and logs, waveform thumbnail caches, and other regenerable files or files unrelated to the final cut) is listed in the report under “legacy data not imported” (没有导入的旧数据).
+- **Subtitle projection compatibility**: a sentence's word members prefer `sourceWordIds`. When a legacy projection has only `cueIds`, the members are restored by subtitle line. If a line is missing, a word reference is empty, or a reference is invalid, that projection is abandoned and reported, and the original transcript is kept. Line breaks, segments, stage fingerprints and word pre-attach markers are written into the formal fields defined in video format §5.2.
+- **Long titles**: when a `.ccut` project title exceeds 200 Unicode characters, the video's display name is truncated and counted under `clamped.video-name`. The full original title is kept in the report and in the video's `import-record` document.
 
-## 映射
+## Mapping
 
-| 旧数据                                                    | 写成                                                                                                                                              |
+| Legacy data                                               | Written as                                                                                                                                        |
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 主媒体与 `clips`                                          | 按剪口拆开的 `video`（或 `audio`）实例，`role: 'a-roll'`；默认位置写 `mode: 'fullscreen'`、`fit: 'contain'`、`bg` 取 `main.background` 或黑色 |
-| 元素 `place`、`fx`、`mask`、`tile`、`animate`、`mode`、`fit`、`bg` | 同名实例字段，原样带过来；`opacity` 夹到 [0, 1]，未知的 `place` 键丢掉                                                                     |
-| 元素 `kind`                                               | 同名实例类型；`text` 带 `counter` 时写 `counter` 不写 `text`；素材贴纸指向图片、视频或 Lottie 素材，`loop`、`fillOverrides` 原样，`srcStart`、`rate` 没有对应（计入「没有写进去的」） |
-| 代码项目（`entry` + `data.json`）                         | `composition` 实例，来源是代码包，预渲染替身是渲染出来的成片：取 `media` 记着的项目内文件；没记或文件不在时，取项目根与 `out/` 下唯一的视频，有几个时取文件名等于合成 ID 的那个。找不到成片的合成不导入、代码包也不登记，计入「没有写进去的」（`没有预渲染替身的代码合成`），警告里逐个写出项目与合成；只有这种合成的项目照样导入成视频 |
-| Lottie 源                                                 | 和别的源一样链接登记，引擎按内容认成 `lottie` 素材，尺寸与时长用渲染内核读出                                                                       |
-| 元素 `keyframes`（`x`、`y`、`scale`、`scaleY`、`rot`、`opacity`、`radius`） | 序列上的关键帧绑定；秒落到实例内的帧（落到同一帧的只留第一个），百分比保留；缓动不在缓动表里的按线性                         |
-| 音量 `volume` 与音量关键帧                                 | 线性倍数夹到 [0, 4]；音量关键帧成实例的 `envelope`；淡入淡出夹到 [0, 5] 秒                                                                       |
-| 视频元素 `transitions.in` / `out`                         | 单侧转场，`in` 落在实例开头、`out` 落在结尾；长度夹到 [0.1, 2] 秒；实例不够长时引擎缩短生效长度，报告逐条列出                                   |
-| 音频元素 `duck`                                           | 闪避规则：`under: 'speech'` 用转写触发，`under: <轨道>` 用那条轨道的实例触发；深度夹到 [0, 60] dB，同一触发与参数的实例归成一条                  |
-| 词锚点 `~源:词`                                           | `speech-anchor` 跟随策略，指向转写文档的当前版本；跨过剪口求出成片时刻；求不出的元素不导入                                                       |
-| 源上的 `cuts`                                             | 每个源一份剪口集合文档（`cuccut.cut-set/1`，精确刻度），作用于这个源的音视频实例；其他实例 `follow-cuts`                                         |
-| 没有终点的元素                                            | `untilSequenceEnd`                                                                                                                                |
-| 元素与轨道的隐藏、静音、锁定                              | 实例 `enabled: false`；轨道的 `visible` / `muted` / `locked`                                                                                      |
-| `template`                                                | 序列的模板层，原样带过来                                                                                                                          |
-| 外部项目的 dB 音量                                        | 线性倍数                                                                                                                                          |
-| 外部项目的代码合成（`hyperframes`）                       | 不导入：外部项目不记渲染结果，合成没有预渲染替身，计入「没有写进去的」（`没有预渲染替身的代码合成`），代码包不登记，只放合成的轨道不建             |
-| 配音的 `bcfClip`（认领代码合成里的口播句子）              | 带替身的合成实例与认领它的配音实例写同一个 `linkGroupId`（`narration:<合成 ID>`），合成的声音关掉，计入「写进序列的对象」；合成没有导入时配音按普通音频导入，计入「不适用」。按句扣声音、钉住位置、重新生成配音等跟着代码走的行为不移植 |
-| 外部项目的字幕                                            | 一份字幕文档（序列时钟）、一份定位框样式文档（`cuccut.boxed-caption-style/<N>`）与一个字幕实例；字幕动画预设 `animationPresetId` 不带过来（外部工具的预设名不说明逐词动画的画法，成片里也没有逐词效果），计入「没有写进去的」，每个预设一条警告 |
+| Main media and `clips`                                    | `video` (or `audio`) instances split at cuts, `role: 'a-roll'`; default placement writes `mode: 'fullscreen'`, `fit: 'contain'`, `bg` taken from `main.background` or black |
+| Element `place`, `fx`, `mask`, `tile`, `animate`, `mode`, `fit`, `bg` | Same-named instance fields, carried over as-is; `opacity` clamped to [0, 1]; unknown `place` keys dropped                                |
+| Element `kind`                                            | Same-named instance type; `text` with `counter` is written as `counter`, not `text`; media stickers point to image, video or Lottie assets, with `loop` and `fillOverrides` kept as-is; `srcStart` and `rate` have no counterpart (counted under “not written” (没有写进去的)) |
+| Code project (`entry` + `data.json`)                      | `composition` instance; the source is the code package, and the pre-rendered stand-in is the rendered final cut: take the in-project file recorded by `media`; if none is recorded or the file is missing, take the single video under the project root and `out/`, and if there are several, the one whose filename equals the composition ID. A composition with no final cut found is not imported and its code package is not registered; it is counted under “not written” (没有写进去的) as `没有预渲染替身的代码合成` (code composition without a pre-rendered stand-in), and the warning lists each project and composition. A project with only such compositions is still imported as a video |
+| Lottie source                                             | Registered as a link like other sources; the engine recognizes it as a `lottie` asset by content; size and duration are read by the rendering core                                |
+| Element `keyframes` (`x`, `y`, `scale`, `scaleY`, `rot`, `opacity`, `radius`) | Keyframe bindings on the sequence; seconds fall to frames within the instance (only the first is kept when several land on the same frame); percentages kept; easings not in the easing table become linear |
+| Volume `volume` and volume keyframes                      | Linear multiplier clamped to [0, 4]; volume keyframes become the instance's `envelope`; fade in/out clamped to [0, 5] seconds                     |
+| Video element `transitions.in` / `out`                    | One-sided transitions: `in` at the start of the instance, `out` at the end; length clamped to [0.1, 2] seconds; if the instance is too short, the engine shortens the effective length, and the report lists each case |
+| Audio element `duck`                                      | Ducking rule: `under: 'speech'` triggers from the transcript; `under: <track>` triggers from that track's instances; depth clamped to [0, 60] dB; instances with the same trigger and parameters are merged into one rule |
+| Word anchor `~源:词`                                      | `speech-anchor` follow policy, pointing at the current version of the transcript document; the final-cut time is computed across cut points; elements whose time cannot be computed are not imported |
+| `cuts` on a source                                        | One cut-set document per source (`cuccut.cut-set/1`, exact timing), applied to that source's audio and video instances; other instances `follow-cuts` |
+| Elements with no end point                                | `untilSequenceEnd`                                                                                                                                |
+| Hidden, muted and locked elements and tracks              | Instance `enabled: false`; track `visible` / `muted` / `locked`                                                                                   |
+| `template`                                                | The sequence's template layer, carried over as-is                                                                                                 |
+| External project dB volume                                | Linear multiplier                                                                                                                                 |
+| External project code composition (`hyperframes`)         | Not imported: external projects do not record render results, so the composition has no pre-rendered stand-in; counted under “not written” (没有写进去的) as `没有预渲染替身的代码合成`; the code package is not registered, and tracks holding only the composition are not created |
+| Narration `bcfClip` (claims a spoken sentence in a code composition) | The composition instance with its stand-in and the narration instance that claims it share the same `linkGroupId` (`narration:<composition ID>`); the composition's sound is turned off and counted under “objects written into the sequence” (写进序列的对象); if the composition was not imported, the narration is imported as plain audio and counted under “not applicable” (不适用). Behaviours that follow the code, such as per-sentence ducking, pinning position or regenerating narration, are not ported |
+| External project subtitles                                | One subtitle document (sequence clock), one boxed-caption style document (`cuccut.boxed-caption-style/<N>`) and one subtitle instance; the subtitle animation preset `animationPresetId` is not carried over (the external tool's preset name does not say how per-word animation is drawn, and the final cut has no per-word effect); counted under “not written” (没有写进去的), with one warning per preset |
 
-## 测试
+## Testing
 
 ```bash
 CUCCUT_ENGINE_HOST=<engine-host> node --test scripts/legacy-import/legacy-import.test.ts
 ```
 
-测试在临时目录里用 `ffmpeg` 合成旧项目（每种元素、几何、效果、转场与缩短、闪避、关键帧、词锚点、剪口集合），只看计划的那组不需要引擎；经过引擎的那组导入三遍（首次、原样重跑、`--replace`），再跑核对脚本。没有 `CUCCUT_ENGINE_HOST` 或 `ffmpeg` 时对应的组跳过。
+The tests build old projects in a temporary directory with `ffmpeg` (every element kind, geometry, effects, transitions and shortening, ducking, keyframes, word anchors, cut-point sets). The group that only checks the plan does not need the engine. The group that goes through the engine imports three times (first run, unchanged re-run, `--replace`), then runs the verification script. Without `CUCCUT_ENGINE_HOST` or `ffmpeg`, the corresponding group is skipped.
 
-## 文件
+## Files
 
-| 文件               | 内容                                              |
-| ------------------ | ------------------------------------------------- |
-| `import.ts`        | 命令行入口：收集计划、执行、写报告                |
-| `ccut-project.ts`  | `.ccut` 项目 → 导入计划                           |
-| `external-project.ts` | 外部视频项目 → 导入计划                        |
-| `video-plan.ts`    | 计划与报告的数据结构（纯数据，不碰引擎）          |
-| `video-writer.ts`  | 把计划经 `engine-host` 写成视频（幂等的分步事务） |
-| `engine-host.ts`   | `engine-host` 的 stdio JSON-lines 客户端          |
-| `exact-time.ts`    | 浮点秒 → 精确时间（帧、MediaTime、有理数帧率）    |
-| `verify.ts`        | 导入之后的核对                                    |
-| `legacy-import.test.ts` | 合成旧项目的导入测试                         |
+| File                    | Contents                                                                                  |
+| ----------------------- | ----------------------------------------------------------------------------------------- |
+| `import.ts`             | Command-line entry point: collects the plan, runs it, writes the report                   |
+| `ccut-project.ts`       | `.ccut` project → import plan                                                             |
+| `external-project.ts`   | External video project → import plan                                                      |
+| `video-plan.ts`         | Data structures for the plan and report (pure data, does not touch the engine)            |
+| `video-writer.ts`       | Writes the plan to video through `engine-host` (idempotent, step-by-step transaction)     |
+| `engine-host.ts`        | stdio JSON-lines client for `engine-host`                                                 |
+| `exact-time.ts`         | Float seconds → exact time (frames, MediaTime, rational frame rates)                      |
+| `verify.ts`             | Verification after import                                                                 |
+| `legacy-import.test.ts` | Import tests on synthesised old projects                                                  |
 
-类型检查：`npx tsc -p scripts/legacy-import`。
+Type check: `npx tsc -p scripts/legacy-import`.

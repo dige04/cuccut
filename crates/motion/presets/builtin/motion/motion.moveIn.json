@@ -3,7 +3,7 @@
   "version": 1,
   "domain": "motion",
   "family": "moveIn",
-  "doc": "按方向位移入场（可选淡入）。",
+  "doc": "Directional shift entrance (optional fade-in).",
   "aliases": [
     "rise",
     "slideIn"
@@ -21,7 +21,7 @@
         "down"
       ],
       "default": "up",
-      "doc": "元素进入/离开的方向（'up' = 从下方进入）"
+      "doc": "Direction the element enters/leaves from ('up' = enters from below)"
     },
     "distance": {
       "type": "length",
@@ -29,17 +29,17 @@
         "value": 0.045,
         "basis": "canvasShortEdge"
       },
-      "doc": "位移量；缺省是画布短边的 4.5%"
+      "doc": "Shift amount; default is 4.5% of the canvas short side"
     },
     "curve": {
       "type": "curve",
       "default": "easeOutCubic",
-      "doc": "时间曲线（规范 §7.6 的封闭名称）"
+      "doc": "Easing curve (closed name from spec §7.6)"
     },
     "fade": {
       "type": "bool",
       "default": true,
-      "doc": "是否同时淡入/淡出"
+      "doc": "Whether to also fade in/out"
     }
   },
   "compose": [

@@ -1,86 +1,86 @@
-# 仓库约定
+# Repository conventions
 
-代码放在哪里、文件怎么命名。模块的职责划分与依赖方向见[架构设计 §13.1](architecture/architecture-design.md#131-目标目录)，本文只管落到仓库里的规则。
+Where code lives and how files are named. Module responsibilities and dependency direction are in [Architecture design §13.1](architecture/architecture-design.md#131-target-directory-layout); this document covers only the rules that apply inside the repository.
 
-## 目录
+## Contents
 
-- [1. 顶层目录](#1-顶层目录)
-- [2. 放置规则](#2-放置规则)
-- [3. 命名](#3-命名)
-- [4. 界面图标](#4-界面图标)
-- [5. 文案与多语言](#5-文案与多语言)
+- [1. Top-level directories](#1-top-level-directories)
+- [2. Placement rules](#2-placement-rules)
+- [3. Naming](#3-naming)
+- [4. Interface icons](#4-interface-icons)
+- [5. Copy and multilingual support](#5-copy-and-multilingual-support)
 
-## 1. 顶层目录
+## 1. Top-level directories
 
-按职责划分，不按语言或前后端划分：不建 `frontend/`、`backend/`、`rust/` 这类目录。
+Organize by responsibility, not by language or frontend/backend: do not create directories such as `frontend/`, `backend/`, or `rust/`.
 
-| 目录 | 放什么 |
+| Directory | Contents |
 | --- | --- |
-| `apps/` | 能启动的程序：`desktop`（Electron）、`runtime`（Runtime 进程）、`cli` |
-| `packages/` | TypeScript 包，按领域拆 |
-| `crates/` | Rust crate，按领域拆；Worker 进程（如 `engine-host`）也是这里的二进制 crate |
-| `bindings/` | TS ↔ Rust 的边界入口，如编辑器预览的 WASM（`preview-wasm`）、界面与 Node 共用的编辑语义 WASM（`editor-wasm`） |
-| `tools/` | 构建与代码生成脚本，由根 `package.json` 的 scripts 调用 |
-| `scripts/` | 归档的一次性脚本（数据迁移、导入），一个任务一个子目录，带自己的 `README.md` 与 `tsconfig.json`；不被产品代码引用，不进 workspace 与发布物 |
-| `docs/` | 产品、架构与规范文档，见 [docs/README.md](README.md) |
-| `designs/` | 界面原型，自成一体，有自己的 `AGENTS.md` |
-| `templates/` | 随应用分发的内置创作模板，一个模板一个目录，格式见[模板包规范](spec/template-spec.md) |
-| `skills/` | 「怎么用 CucCut」的说明书（`cuccut/`，CucCut skill）是入口，随 CLI 与桌面端分发；一个来源渲染成 CLI 面与工具桥面。随应用分发的内置 Agent skill（craft，做法）在它下面的 `cuccut/built-in-skills/`，一个 skill 一个目录，由 Runtime 作为内置目录加载，[索引](../skills/cuccut/built-in-skills/README.md)在那里；说明书里的 craft 副本（`cuccut/references/craft/`）由 `tools/sync-agent-skill.ts` 从它同步，不手改。见 [`skills/README.md`](../skills/README.md)、[架构设计 §3.8](architecture/architecture-design.md) 与 [Agent 能力面设计 §8](design/agent-surface/agent-surface-design.md#8-cuccut-skill) |
+| `apps/` | Runnable programs: `desktop` (Electron), `runtime` (Runtime process), `cli` |
+| `packages/` | TypeScript packages, split by domain |
+| `crates/` | Rust crates, split by domain; Worker processes (such as `engine-host`) are also binary crates here |
+| `bindings/` | TS ↔ Rust boundary entry points, such as the editor preview WASM (`preview-wasm`) and the editing-semantics WASM shared by the UI and Node (`editor-wasm`) |
+| `tools/` | Build and code-generation scripts, invoked from the scripts in the root `package.json` |
+| `scripts/` | Archived one-off scripts (data migrations, imports), one subdirectory per task, each with its own `README.md` and `tsconfig.json`; not referenced by product code, and not part of the workspace or release artifacts |
+| `docs/` | Product, architecture and specification docs; see [docs/README.md](README.md) |
+| `designs/` | UI prototypes, self-contained, with their own `AGENTS.md` |
+| `templates/` | Built-in creation templates shipped with the app, one directory per template; format in the [template package spec](spec/template-spec.md) |
+| `skills/` | The “how to use CucCut” guide (`cuccut/`, the CucCut skill) is the entry point and ships with the CLI and the desktop app; one source renders to both the CLI surface and the tool-bridge surface. The built-in Agent skills shipped with the app (craft, i.e. method) live under it in `cuccut/built-in-skills/`, one directory per skill, loaded by the Runtime as a built-in catalog; the index is in [there](../skills/cuccut/built-in-skills/README.md). The craft copy in the guide (`cuccut/references/craft/`) is synced from it by `tools/sync-agent-skill.ts` and must not be edited by hand. See [`skills/README.md`](../skills/README.md), [Architecture design §3.8](architecture/architecture-design.md) and [Agent surface design §8](design/agent-surface/agent-surface-design.md#8-cuccut-skill) |
 
-两个 workspace 并存，各管各的依赖：
+Two workspaces coexist, each managing its own dependencies:
 
-- npm workspaces（根 `package.json`）收录 `apps/*` 与 `packages/*`；
-- Cargo workspace（根 `Cargo.toml`）收录 `crates/*` 与 `bindings/*`，编译产物默认在根的 `target/`；本机可在不入库的 `.cargo/config.local.toml` 里设 `build.target-dir` 挪到外置盘（模板见 `.cargo/config.local.toml.example`）。
+- npm workspaces (root `package.json`) include `apps/*` and `packages/*`;
+- the Cargo workspace (root `Cargo.toml`) includes `crates/*` and `bindings/*`; build output defaults to `target/` at the root. On your machine you can set `build.target-dir` in the uncommitted `.cargo/config.local.toml` to move it to an external drive (template: `.cargo/config.local.toml.example`).
 
-## 2. 放置规则
+## 2. Placement rules
 
-- **app 要薄**：`apps/` 只做进程生命周期、窗口、装配与参数解析，业务逻辑放进 `packages/` 或 `crates/`。
-- **按领域拆，不按代码类型拆**：不建 `utils`、`common`、`helpers` 这类包或目录；包内的文件也用领域名（`seek.ts`、`video-store.ts`），不用 `utils.ts`、`types.ts`、`manager.rs`。
-- **只经公开入口引用**：包的对外接口由 `package.json` 的 `exports` 声明，入口是 `src/index.ts`。别的包只能导入 `@cuccut/<名>` 或 `exports` 声明过的子路径（如 `@cuccut/protocol/schemas`），不得导入 `@cuccut/<名>/src/...`，也不得用相对路径跨包导入。
-- **TypeScript 不直接碰 Rust 内部**：只经 `bindings/` 的入口（WASM），或 Worker 进程的 IPC（如 `engine-host` 的 stdio JSON 行）。
-- **依赖不成环**，方向按架构设计 §13.1。
-- **测试就近放**：TypeScript 的单元测试与被测文件同目录（`seek.ts` 旁边是 `seek.test.ts`）；Rust 的集成测试放 crate 的 `tests/`，夹具放 `tests/fixtures/`。
-- **生成物不进 git**：构建出的文件（如 `packages/ui/src/render/generated/`）写进 `.gitignore`，由 `tools/` 的脚本生成。已验证发布产物的更新清单是版本钉，例外提交到 `apps/desktop/releases/`，仅在公开归档验收后更新。开发代理使用的发布 skill 放在 `.agents/skills/`，不进入 Runtime 加载的 `skills/` 或应用资源。
-- **随应用分发的数据文件不按模块相对路径找**：Runtime 与主进程被打进 `apps/desktop/out/main/` 的 bundle，`new URL('../x', import.meta.url)`、`__dirname` 指的是 bundle 的位置，到了打包后的应用里还在 asar 里面（子进程按路径读不到）。按路径读的数据要有一个解析函数，依次找环境变量、打包后的 `<resources>/<目录>`、从模块往上找仓库里的源目录，打包后的位置由主进程经环境变量告诉 Runtime；现有的是内置模板（`CUCCUT_TEMPLATES_DIR`）、内置 Agent skill（`CUCCUT_SKILLS_DIR`）、Web 客户端（`CUCCUT_WEB_DIST`）、幻灯片编辑器（`CUCCUT_SLIDES_EDITOR_DIST`）与模型数据 `packages/models/assets`（`CUCCUT_MODEL_ASSETS_DIR`，打包后是 `<resources>/model-assets`）。随应用分发的原生程序（Worker、凭据助手）同理，经 `process-host` 的 `findBundledBinary` 找：`CUCCUT_BIN_DIR`（打包后是 `<resources>/bin`，Windows 上带 `.exe`），开发时退回 cargo 产物目录。`<resources>` 下的布局只在 `apps/desktop/src/main/packaged-resources.ts` 定义，主进程、打包脚本与产物自检共用。新增这类文件放进已有的目录，或照同样的办法加一个，并让 `npm run check:model-assets` 一类对构建产物的检查覆盖它。能 `import` 的数据（JSON）直接打进 bundle。
+- **Keep apps thin**: `apps/` handles only process lifecycle, windows, wiring and argument parsing; business logic goes into `packages/` or `crates/`.
+- **Split by domain, not by code type**: do not create packages or directories such as `utils`, `common` or `helpers`; files inside a package are also named after their domain (`seek.ts`, `video-store.ts`), not `utils.ts`, `types.ts` or `manager.rs`.
+- **Reference only through public entry points**: a package's public interface is declared by the `exports` field in its `package.json`, with the entry at `src/index.ts`. Other packages may import only `@cuccut/<name>` or subpaths declared in `exports` (such as `@cuccut/protocol/schemas`); they must not import `@cuccut/<name>/src/...`, and they must not use relative paths to import across packages.
+- **TypeScript does not touch Rust internals directly**: it goes only through the `bindings/` entry points (WASM), or through the Worker process's IPC (such as the stdio JSON lines of `engine-host`).
+- **No dependency cycles**; the direction follows Architecture design §13.1.
+- **Keep tests next to the code**: TypeScript unit tests sit in the same directory as the file under test (`seek.test.ts` beside `seek.ts`); Rust integration tests go in the crate's `tests/`, and fixtures go in `tests/fixtures/`.
+- **Generated files stay out of git**: build output (such as `packages/ui/src/render/generated/`) goes in `.gitignore` and is produced by scripts in `tools/`. The update manifest for verified release artifacts is a version pin; the exception is committed to `apps/desktop/releases/` and updated only after public archive acceptance. Release skills used by development agents go in `.agents/skills/`, not in `skills/` (which the Runtime loads) or in app resources.
+- **Data files shipped with the app are not located by module-relative paths**: the Runtime and the main process are bundled into `apps/desktop/out/main/`, so `new URL('../x', import.meta.url)` and `__dirname` point to the bundle's location; in the packaged app that location is inside the asar archive (child processes cannot read it by path). Data read by path needs a single resolver function that checks, in order: an environment variable, the packaged `<resources>/<dir>`, and walking up from the module to the source directory in the repository. The main process tells the Runtime the packaged location through environment variables. The existing ones are: built-in templates (`CUCCUT_TEMPLATES_DIR`), built-in Agent skills (`CUCCUT_SKILLS_DIR`), the web client (`CUCCUT_WEB_DIST`), the slides editor (`CUCCUT_SLIDES_EDITOR_DIST`), and model data `packages/models/assets` (`CUCCUT_MODEL_ASSETS_DIR`; packaged as `<resources>/model-assets`). Native programs shipped with the app (the Worker and the credential helper) work the same way, located via `findBundledBinary` in `process-host`: `CUCCUT_BIN_DIR` (packaged as `<resources>/bin`, with `.exe` on Windows); in development it falls back to the cargo output directory. The layout under `<resources>` is defined only in `apps/desktop/src/main/packaged-resources.ts` and is shared by the main process, the packaging scripts and the artifact self-check. When adding such a file, put it in an existing directory or add a new one the same way, and make sure a build-artifact check such as `npm run check:model-assets` covers it. Data that can be `import`ed (JSON) is bundled directly.
 
-新增模块：
+Adding a module:
 
-- TypeScript 包：`packages/<名>/`，包名 `@cuccut/<名>`，入口 `src/index.ts`。根 `tsconfig.json` 与 `vitest.config.ts` 已按 `packages/*/src` 收录。
-- Rust crate：`crates/<名>/`，`version`、`edition`、`license-file`、`publish` 用 `workspace = true` 继承；要被其他 crate 依赖时，在根 `Cargo.toml` 的 `[workspace.dependencies]` 登记路径。workspace 的 members 是通配符，不用改。
+- TypeScript package: `packages/<name>/`, package name `@cuccut/<name>`, entry `src/index.ts`. The root `tsconfig.json` and `vitest.config.ts` already include `packages/*/src`.
+- Rust crate: `crates/<name>/`; `version`, `edition`, `license-file` and `publish` inherit with `workspace = true`. When other crates depend on it, register its path in `[workspace.dependencies]` in the root `Cargo.toml`. The workspace members are a wildcard, so nothing else needs changing.
 
-## 3. 命名
+## 3. Naming
 
-- **文件与目录一律 lowercase-dashed**：全小写，单词之间用 `-`。React 组件文件也一样：`media-panel.tsx` 导出 `MediaPanel`。CSS、Markdown 文档、脚本同理。
-- **名字一一对应**：目录名就是包名或 crate 名。`packages/runtime-core` 是 `@cuccut/runtime-core`；`crates/render-graph` 是 crate `render-graph`（Rust 代码里写作 `render_graph`）。
-- **测试文件**：TypeScript 用 `<被测文件名>.test.ts`；Rust 集成测试按测的行为命名（`tests/time_model.rs`）。
-- **代码标识符**照各语言惯例：TypeScript 的类型与组件用 PascalCase，函数与变量用 camelCase；Rust 按 rustfmt 与 clippy 的默认风格。
-- **内部命名用英文**：变量、函数、类型、对象键，以及供代码引用的枚举值、分类值、状态、错误码与基准结果键必须用稳定的英文标识；给人看的名称与说明分开存放，按 §5 处理。控制逻辑按标识或结构化错误类型判断，不匹配中文或其他本地化文案。语言处理词表、解析关键词、语言自称、用户内容与第三方原始数据保持原样。
-- **术语**：同一概念只用一个词，见[术语表](glossary.md)。
+- **Files and directories are always lowercase-dashed**: all lowercase, with words separated by `-`. React component files follow the same rule: `media-panel.tsx` exports `MediaPanel`. CSS, Markdown docs and scripts follow the same rule.
+- **Names correspond one to one**: a directory name is the package name or crate name. `packages/runtime-core` is `@cuccut/runtime-core`; `crates/render-graph` is the crate `render-graph` (written `render_graph` in Rust code).
+- **Test files**: TypeScript uses `<tested-file-name>.test.ts`; Rust integration tests are named after the behaviour they test (`tests/time_model.rs`).
+- **Code identifiers** follow each language's conventions: TypeScript types and components use PascalCase, functions and variables use camelCase; Rust follows the default style of rustfmt and clippy.
+- **Internal names are in English**: variables, functions, types, object keys, and the enum values, category values, statuses, error codes and benchmark result keys that code refers to must use stable English identifiers. Human-facing names and descriptions are stored separately and handled per §5. Control logic branches on identifiers or structured error types, never on matching Chinese or other localized text. Language-processing word lists, parsing keywords, language self-names, user content and third-party raw data stay as they are.
+- **Terms**: use one word per concept; see the [glossary](glossary.md).
 
-例外：
+Exceptions:
 
-- Rust 的模块文件与测试文件用 snake_case（`time_model.rs`），这是语言规则；crate 目录与 crate 名仍用短横线。
-- 工具规定的文件名照原样：`README.md`、`AGENTS.md`、`Cargo.toml`、`Cargo.lock`、`package.json`、`tsconfig.json`、`*.config.ts`、`*.d.ts`。
-- `designs/` 是原型，沿用它自己的约定。
+- Rust module files and test files use snake_case (`time_model.rs`); this is a language rule. Crate directories and crate names still use dashes.
+- File names mandated by tooling stay as they are: `README.md`, `AGENTS.md`, `Cargo.toml`, `Cargo.lock`, `package.json`, `tsconfig.json`, `*.config.ts`, `*.d.ts`.
+- `designs/` contains prototypes and follows its own conventions.
 
-## 4. 界面图标
+## 4. Interface icons
 
-视觉规则以[产品设计 §2.1](product/product-design.md#图标尺寸与语义)为准，原型和 Electron 同步实现：只有应用 Rail（与图标块）20px；Rail 以外的正文、页面侧栏（含新建会话）、菜单与弹层的 workflow 图标一律 16px。标题栏的外壳图标（侧栏开关、标签页、完整视图、会话摘要）按产品设计 §2.1 取 S2 原件，或用 S2 的 20 格画法（1.5px 线宽、展开面板图标的方形外框）自绘，显示 16px，居中放在 32px 方块按钮里；原型的图形在 `designs/cuccut/assets/shell/`（来源记在同目录 `provenance.json`），Electron 与 Web 用 `packages/ui/src/components/shell-icons/` 里逐字节相同的一份（原型的 `icon-sync.test.js` 核对），由 `shell-icons.tsx` 当 CSS 遮罩渲染。新建会话用 S2 `AddCircle`，Space 入口用 `Asset`。
+Visual rules follow [Product design §2.1](product/product-design.md#icon-sizes-and-semantics). The prototype and Electron are implemented in sync: only the app Rail (and icon blocks) uses 20px; workflow icons in body text, page sidebars (including New session), menus and popovers outside the Rail are always 16px. Title-bar shell icons (sidebar toggle, tabs, full view, session summary) take the original S2 icon per Product design §2.1, or are drawn by hand on S2's 20-grid (1.5px stroke; the expanding-panel icon uses a square outer frame). They are displayed at 16px and centred in a 32px square button. The prototype's graphics are in `designs/cuccut/assets/shell/` (sources recorded in `provenance.json` in the same directory). Electron and the web client use a byte-identical copy in `packages/ui/src/components/shell-icons/` (checked by the prototype's `icon-sync.test.js`), rendered as CSS masks by `shell-icons.tsx`. New session uses S2 `AddCircle`; the Space entry uses `Asset`.
 
-- Electron 的公共 UI 在 `packages/ui`。`src/app.css` 按 workflow 图标的特征（`role="img"`、20 × 20 viewBox）把 Rail 以外的图标统一成 16px，不用逐个容器声明；Rail 与图标块在容器上标 `data-bc-icons="primary"`（20px），要保留自身尺寸的 UI 图形、大图形与类型预览在图标或容器上标 `data-bc-icons="own"`。弹层通过 portal 渲染时，标记写在实际内容容器上。
-- 原型使用同名 token（源在 `designs/cuccut/_ds/adobe-spectrum-2/tokens/artboard-tokens.css`），组件范围集中在 `app/spectrum.css`，更新后重建原型生成物。
-- 不依赖 S2 的哈希 class，不用文字字号推导 workflow 图标大小，不逐页面添加 18px、21px 等新档位。工作区标签类型图标也固定 16px。
-- 图标画布与按钮点击区域分开。UI 箭头、复选标记、插画、缩略图和视频内容不套 workflow 尺寸；保持原始路径与 viewBox。
-- 改尺寸后同时检查原型和 Electron 的 Home、Space、设置；测量 SVG 的实际宽高，并检查新建入口、菜单、列表、弹层和键盘焦点。
+- Electron's shared UI lives in `packages/ui`. `src/app.css` normalises workflow icons outside the Rail to 16px by their traits (`role="img"`, 20 × 20 viewBox), without per-container declarations. The Rail and icon blocks are marked on their container with `data-bc-icons="primary"` (20px). UI graphics that must keep their own size, large graphics and type previews are marked `data-bc-icons="own"` on the icon or container. When a popover is rendered through a portal, the marker goes on the actual content container.
+- The prototype uses tokens with the same names (source: `designs/cuccut/_ds/adobe-spectrum-2/tokens/artboard-tokens.css`); component scope is centralised in `app/spectrum.css`. After updating, rebuild the prototype's generated output.
+- Do not depend on S2's hashed class names, do not derive workflow icon sizes from text font size, and do not add new size steps such as 18px or 21px page by page. Workspace tab type icons are also fixed at 16px.
+- Keep the icon canvas and the button hit area separate. UI arrows, check marks, illustrations, thumbnails and video content do not take workflow sizes; keep their original paths and viewBox.
+- After changing sizes, check the prototype and Electron's Home, Space and Settings together. Measure the SVG's actual width and height, and check the New entry, menus, lists, popovers and keyboard focus.
 
-## 5. 文案与多语言
+## 5. Copy and multilingual support
 
-给人看的文字（界面、Runtime 发出的错误与任务说明、CLI 输出、桌面端菜单与对话框）不写死在代码里，按当前语言取。出货语言见 `@cuccut/protocol` 的 `LOCALES`（顺序就是设置 › 通用里语言列表的顺序）；英文是缺省与兜底。系统语言按主语言对应出货语言：中文按文字与地区分简繁（`Hant`、台湾、香港、澳门归繁体），葡萄牙语都归 `pt-BR`。语言偏好的存放见[架构设计 §5.10](architecture/architecture-design.md#510-偏好设置)，用词见[术语表](glossary.md#界面英文用词)。
+Human-facing text (UI, errors and task descriptions emitted by the Runtime, CLI output, desktop menus and dialogs) is not hard-coded; it is fetched for the current language. The shipping languages are in `LOCALES` from `@cuccut/protocol` (the order is the order of the language list in Settings › General); English is the default and the fallback. The system language maps by primary language to a shipping language: Chinese is split into Simplified and Traditional by script and region (`Hant`, Taiwan, Hong Kong and Macau map to Traditional), and all Portuguese maps to `pt-BR`. For where language preference is stored, see [Architecture design §5.10](architecture/architecture-design.md#510-preferences); for terminology, see the [glossary](glossary.md#english-ui-terms).
 
-- **界面文案目录**：一个模块一个 `<模块>-copy.ts`，英文写在里面并用 `defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, … })` 导出；译文放同目录的 `<模块>-copy.<语言>.ts`（导出名是语言代码的驼峰写法：`zhHans`、`zhHant`、`ja`、`ptBR`），`import type` 英文目录的类型标注，缺键、多键、缺一种出货语言都是类型错误。新增语言就是给每个目录新增 `*.<语言>.ts`、接到 `defineMessages` / `defineCatalog` 并登记到 `LOCALES`。测试里的临时目录用 `partialTranslations({ 'zh-Hans': … })`，缺的语言运行期回退英文。参考 `packages/ui/src/components/settings/general-settings-copy.ts`。
-- **在用的时候读**：目录对象每次读属性取当前语言，渲染或调用时读（`M.title`、`M.count(n)`）；不要在模块顶层把它读进常量、默认参数或存进 store。要保留旧的具名导出时用 `live(() => M.x)`；对象字面量里引用别的目录用 getter。
-- **语序与单复数**：带变量的句子写成函数条目，由各语言自己拼，不在调用方拼接片段；有多种复数形式的语言用 `pluralForm('<语言>', n, { one, few, many, other })`（按 `Intl.PluralRules` 挑词形）；数字、日期、排序用 `Intl.*` 与 `localeCompare(…, intlLocale())`。
-- **Runtime 文字**：Runtime 发出、会落盘或过线的文字（界面随命令写进视频的也算，例如编辑事务的修改名 `EditLabel`，目录在 `messages/ui/`）用 `defineCatalog('<区域>', en, { 'zh-Hans': zh })` 生成 `Localized`（文本 + 引用）。目录放 `packages/protocol/src/messages/<包>/`，在该目录的 `index.ts` 登记，界面与 CLI 才能重新生成。带文字的字段 `foo` 旁边放 `fooRef?: MessageRef`，存盘与过线都带上；界面显示用 `localizeText(foo, fooRef)`。错误用 `new RpcError(code, M.x({...}))`，引用随 `messageRef` 过线。第三方原话、文件名作为字符串参数原样传。
-- **Rust 文字**：Worker 与引擎给人看的文字用 `message-ref` crate 的 `msg!("<区域>.<名字>", "英文模板 {参数}", 参数…)`，得到英文缺省文字与引用（`Text`），错误体里放 `messageRef`；译文只在 `packages/protocol/src/messages/<crate>/` 的目录里，英文条目与 Rust 模板一字不差。`node tools/rust-messages.mjs` 列出全部键，`tools/rust-messages.test.ts` 核对登记、英文与参数。语言处理规则（标点、断行）与开发者日志不走目录。
-- **不翻译的**：给模型的提示词与工具说明、解析用的关键词、语言的自称、用户与模型写出的内容。这些行标 `// i18n-ignore: <理由>`（作用于本行与下一行），成段的用 `i18n-ignore-start` / `i18n-ignore-end`，整个文件在前 20 行写 `i18n-ignore-file`。
-- **检查**：`node tools/i18n-scan.mjs [路径…]` 列出代码、字符串与 JSX 里还没进目录的中文（注释、正则、测试与译文文件不算），测试套件里有同一道门。测试默认在 `CUCCUT_LOCALE=zh-Hans` 下跑（`vitest.config.ts`），既有的中文断言照旧；测英文用 `vi.stubEnv('CUCCUT_LOCALE', 'en')` 再 `setLocale`。
+- **UI copy catalogs**: one `<module>-copy.ts` per module. English is written inside it and exported via `defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, … })`. Translations go in a sibling `<module>-copy.<language>.ts`; the export name is the camelCase form of the language code (`zhHans`, `zhHant`, `ja`, `ptBR`). Use `import type` to type-annotate against the English catalog; a missing key, an extra key, or a missing shipping language is a type error. Adding a language means adding `*.<language>.ts` to every catalog, wiring it into `defineMessages` / `defineCatalog`, and registering it in `LOCALES`. Temporary catalogs in tests use `partialTranslations({ 'zh-Hans': … })`; languages that are missing fall back to English at runtime. Reference: `packages/ui/src/components/settings/general-settings-copy.ts`.
+- **Read at the point of use**: each property read on a catalog object returns the current language, so read it while rendering or calling (`M.title`, `M.count(n)`). Do not read it at module top level into a constant, a default parameter or a store. To keep an old named export, use `live(() => M.x)`; to reference another catalog from an object literal, use a getter.
+- **Word order and plurals**: sentences with variables are written as function entries, and each language assembles them itself; callers do not concatenate fragments. For languages with several plural forms, use `pluralForm('<language>', n, { one, few, many, other })` (which picks the word form per `Intl.PluralRules`). Numbers, dates and sorting use `Intl.*` and `localeCompare(…, intlLocale())`.
+- **Runtime text**: text the Runtime emits, writes to disk or sends over the wire is produced with `defineCatalog('<area>', en, { 'zh-Hans': zh })` as `Localized` (text plus reference). This includes UI text that commands write into the video, such as the edit-transaction label `EditLabel`, whose catalog is in `messages/ui/`. Catalogs go in `packages/protocol/src/messages/<package>/` and must be registered in that directory's `index.ts`, so that the UI and CLI can regenerate. Next to a text-bearing field `foo`, put `fooRef?: MessageRef`; it is stored and sent over the wire with the text. The UI displays it with `localizeText(foo, fooRef)`. Errors use `new RpcError(code, M.x({...}))`; the reference travels over the wire as `messageRef`. Third-party quotes and file names are passed unchanged as string parameters.
+- **Rust text**: human-facing text from the Worker and engine uses `msg!("<area>.<name>", "English template {param}", param…)` from the `message-ref` crate, producing English default text and a reference (`Text`); error bodies carry `messageRef`. Translations live only in `packages/protocol/src/messages/<crate>/`, and the English entries match the Rust templates exactly. `node tools/rust-messages.mjs` lists all keys; `tools/rust-messages.test.ts` checks registration, English text and parameters. Language-processing rules (punctuation, line breaking) and developer logs do not go through catalogs.
+- **Not translated**: prompts and tool descriptions for models, parsing keywords, language self-names, and content written by users and models. Mark these lines with `// i18n-ignore: <reason>` (applies to that line and the next); mark a block with `i18n-ignore-start` / `i18n-ignore-end`; for a whole file, write `i18n-ignore-file` in the first 20 lines.
+- **Check**: `node tools/i18n-scan.mjs [paths…]` lists Chinese in code, strings and JSX that is not yet in a catalog (comments, regexes, tests and translation files are excluded); the test suite has the same gate. Tests run by default under `CUCCUT_LOCALE=zh-Hans` (`vitest.config.ts`), so existing Chinese assertions stay as they are. To test English, use `vi.stubEnv('CUCCUT_LOCALE', 'en')` and then `setLocale`.

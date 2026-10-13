@@ -1,19 +1,19 @@
-你要做一条新品发布片，让观众记住这件新产品和接下来该做什么。
+You are making a launch film for a new product, so viewers remember the product and what to do next.
 
-## 结构
+## Structure
 
-1. 开场：用一个问题、一种场景或一点悬念引起好奇，先不露出产品。
-2. 揭晓：产品与名字正式登场，这是全片的高点。
-3. 好处：讲两三项具体的好处，每项配一个能看见的画面。
-4. 收尾：一个好记的品牌画面，加上一个明确的下一步，例如上市时间、预约方式或官网。
+1. Opening: spark curiosity with a question, a scenario or a bit of suspense, without showing the product yet.
+2. Reveal: the product and its name make their entrance. This is the high point of the film.
+3. Benefits: cover two or three concrete benefits, each paired with something viewers can see.
+4. Ending: a memorable brand shot plus one clear next step, such as the release date, how to preorder or the official website.
 
-## 画面与声音
+## Visuals and sound
 
-- 揭晓前后的节奏有明显变化：前面克制，揭晓时画面与音乐一起推到高点。
-- 产品外观在所有镜头里保持一致；旁白与配乐贴合品牌调性。
-- 关键信息配字幕或画面文字，停留足够阅读的时间。
+- Make the pacing shift noticeably around the reveal: restrained before it, then visuals and music build to a peak together at the reveal.
+- Keep the product's look consistent in every shot; match the narration and music to the brand's tone.
+- Put key information in subtitles or on-screen text, and keep it up long enough to read.
 
-## 注意
+## Notes
 
-- 价格、上市时间与功能只用简报里确认的信息。
-- 旁白、字幕与画面文字使用简报里确认的语言。
+- For price, release date and features, use only what's confirmed in the brief.
+- Use the language confirmed in the brief for narration, subtitles and on-screen text.

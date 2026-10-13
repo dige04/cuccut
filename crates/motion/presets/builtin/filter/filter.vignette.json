@@ -14,5 +14,5 @@
   "determinism": "strict",
   "capabilities": [],
   "fallback": null,
-  "doc": "从归一化半径 0.42 开始向边缘平滑压暗，alpha 保持不变。"
+  "doc": "Smoothly darkens toward the edges, starting at normalized radius 0.42; alpha is unchanged."
 }

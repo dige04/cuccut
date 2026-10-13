@@ -8,21 +8,21 @@ publish.workspace = true
 
 [dependencies]
 anyhow = "1.0"
-# `float_roundtrip`：十进制读成 f64 必须正确舍入，与 std `str::parse`、JS `JSON.parse` 同值
-# （v2 在 workspace 级打开，这里随 crate 声明）。
+# `float_roundtrip`: a decimal read as f64 must be correctly rounded, giving the same value as std `str::parse` and JS `JSON.parse`
+# (v2 turns it on at the workspace level; here it is declared by the crate).
 serde_json = { version = "1.0.151", features = ["float_roundtrip"] }
-# 音频容器与时长：不解 packet，只读 `Track.duration + time_base`（WP2 已把
-# symphonia 提为音频解码主路径，这里与它同版本同 features，不新增编译单元）。
+# Audio container and duration: does not decode packets, only reads `Track.duration + time_base` (WP2 promoted
+# symphonia to the main audio decoding path, so it uses the same version and features here and adds no compilation unit).
 symphonia = { version = "0.6", features = ["all"] }
-# MP4 / MOV（ISO-BMFF）：rerun-io 维护的 mp4-rust 派生，MIT，纯 Rust 零 C 依赖。
-# `Mp4::read` 走 `Read + Seek` 且跳过 `mdat`，几 GB 的片子也只读 box 头。
+# MP4 / MOV (ISO-BMFF): derived from mp4-rust maintained by rerun-io; MIT, pure Rust with zero C dependencies.
+# `Mp4::read` works with `Read + Seek` and skips `mdat`, so even multi-GB files only read box headers.
 re_mp4 = "0.5"
-# MKV / WebM：hasenbanck/matroska-demuxer，Zlib OR MIT OR Apache-2.0，**零依赖**。
-# 选它的唯一硬理由：它是调研过的 Matroska crate 里唯一把 `AlphaMode`
-# （0x53C0）解出来并公开成 `Video::alpha_mode()` 的——带 alpha 的 WebM 贴纸
-# 判据全靠它（symphonia 的 mkv demuxer 认得这个 ID 但直接丢弃）。
+# MKV / WebM: hasenbanck/matroska-demuxer, Zlib OR MIT OR Apache-2.0, **zero dependencies**.
+# The only hard reason for choosing it: of the Matroska crates surveyed, it is the only one that decodes `AlphaMode`
+# (0x53C0) and exposes it as `Video::alpha_mode()`; the test for WebM stickers with alpha relies
+# entirely on it (symphonia's mkv demuxer recognizes this ID but discards it).
 matroska-demuxer = "0.8"
-# 图片只读头部尺寸（`image::ImageReader` 不解码像素）。
+# Images: only the header dimensions are read (`image::ImageReader` does not decode pixels).
 image = { version = "0.25", default-features = false, features = [
     "png",
     "jpeg",

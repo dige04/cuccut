@@ -1,74 +1,74 @@
-# CucCut App 图标：设计思路
+# CucCut App Icon: Design Rationale
 
-状态：2026-10-06 定稿。绘制源码与导出方法见 [`tools/app-icon/`](../../../tools/app-icon/README.md)，这里只讲为什么长这样。
+Status: finalized 2026-10-06. For the drawing source and export method, see [`tools/app-icon/`](../../../tools/app-icon/README.md). This document only explains why the icon looks the way it does.
 
-![CucCut App 图标](../../../apps/desktop/build/icon.png)几何从 v2 原样移植（v2 的设计记录在 `cuccut-app` 仓库 `docs/design/product/ccut-app-icon.md`）。
+![CucCut App icon](../../../apps/desktop/build/icon.png)The geometry was carried over unchanged from v2 (the v2 design record is at `docs/design/product/ccut-app-icon.md` in the `cuccut-app` repo).
 
-## 1. 要表达什么
+## 1. What it must express
 
-CucCut 是「用 AI Agent 剪视频、做字幕」的工具。图标只讲两件事：
+CucCut is the tool for "cutting video and making subtitles with an AI Agent". The icon says only two things:
 
-- **视频编辑**：时间线上的轨道、被剪开的片段、播放键。
-- **AI Agent**：一颗星芒，与界面里 `ai-sparkle` 图标同一种四角星，用户已经把它当成「AI 入口」来认。
+- **Video editing**: timeline tracks, a clip that has been cut, a play button.
+- **AI Agent**: a four-point sparkle, the same four-pointed star as the `ai-sparkle` icon in the interface. Users already read it as the "AI entry point".
 
-约束：
+Constraints:
 
-- **简单**：16 px 的 Finder 列表里也要认得出。
-- **颜色少**：v2 用了六种片段色加金色，用户评价「颜色偏多」。本版整张图标**只有三种颜色**。
-- **底砖不随深浅色变**：借鉴 Adobe 的做法，产品图标是一块固定的品牌色底砖，放到深色 Dock 上也不换色，自身的颜色就是识别点。v2 的暖白底在深色 Dock 上只剩一个白方块。
-- **可复现**：矢量源码生成，位图按目标尺寸各自渲染，不从大图缩小。
+- **Simple**: it must be recognizable in a 16 px Finder list.
+- **Few colors**: v2 used six clip colors plus gold, and users said it had "too many colors". This version uses **only three colors** across the whole icon.
+- **Tile does not change with light or dark mode**: borrowing Adobe's approach, the product icon is a fixed brand-colored tile. It does not change color on a dark Dock, and its own color is the recognition cue. The warm-white tile of v2 became just a white square on a dark Dock.
+- **Reproducible**: generated from vector source; each bitmap is rendered at its target size and not downscaled from a large image.
 
-## 2. 图形由什么组成
+## 2. What the graphic is made of
 
-1. **播放键**：三个角圆角的三角形，远看就是播放键。
-2. **三条轨道**：三条横条裁进三角里，横条之间露出底砖作为缝。「轨道拼成播放箭头」是核心。
-3. **播放头**：一根竖线落在三角宽度 42% 处，把每条轨道切成左右两段深浅不同的片段。这就是「剪」。左边是播放头已经走过的片段，用浅色；右边还没播到，用实色——和 App 里播过的字幕变灰是同一个语义。播放头两侧露出底砖，这道缝同时也是两段片段之间的缝。
-4. **星芒**：装在播放头顶端，整根读成一支魔杖——「AI 替你剪」。星芒伸出三角上沿，小尺寸下轮廓不会糊成一团。
+1. **Play button**: a triangle with three rounded corners; from a distance it reads as a play button.
+2. **Three tracks**: three horizontal bars clipped into the triangle, with the tile color showing through as gaps between the bars. "The tracks form a play arrow" is the core idea.
+3. **Playhead**: a vertical line placed at 42% of the triangle's width, which cuts each track into a left and a right segment of different shades. This is the "cut". The left side is the segment the playhead has already passed, in a light tint; the right side has not been played yet, in a solid color. This matches the App's convention where subtitles that have already played turn gray. The tile shows on both sides of the playhead, and this gap is also the gap between the two segments.
+4. **Sparkle**: mounted at the top of the playhead, so the line and the sparkle read as one magic wand, meaning "AI cuts for you". The sparkle extends above the triangle's upper edge, so its outline does not blur into a blob at small sizes.
 
-## 3. 配色
+## 3. Color
 
-按 Spectrum 2 的「一个产品色，配深浅两档」来定：品牌色做底砖，图形用白，切口右侧的片段用品牌色的浅档。
+Following Spectrum 2's "one product color, with a dark and a light step": the brand color is the tile, the graphic is white, and the clip segment on the right of the cut uses the light step of the brand color.
 
-| 位置 | 推荐变体 A | 说明 |
+| Position | Recommended variant A | Notes |
 | --- | --- | --- |
-| 底砖 | 珊瑚 `#FF5C4A` | CucCut 的品牌色。比 v2 箭头尖的 `#FF6A5A` 深一点点：整块底砖都是它，略深才托得住白色图形 |
-| 播放头右侧片段（未播）、播放头、星芒 | 白 `#FFFFFF` | 白色片段与 AI 元素一个颜色，图形读成一个整体 |
-| 播放头左侧片段（已播） | 浅珊瑚 `#FFC1B8` | 和右侧只差明度，足够看出「切开」，又不引入第二个色相；再浅会和底砖混掉 |
+| Tile | Coral `#FF5C4A` | CucCut's brand color. Slightly darker than the v2 arrow tip `#FF6A5A`: the whole tile is this color, and it needs to be a bit deeper to hold up the white graphic |
+| Right clip segment (not yet played), playhead, sparkle | White `#FFFFFF` | White clip and AI elements share one color, so the graphic reads as one whole |
+| Left clip segment (already played) | Light coral `#FFC1B8` | Differs from the right side only in lightness, enough to show the "cut" without adding a second hue; any lighter and it blends into the tile |
 
-原则：
+Principles:
 
-- **整张图只有三种颜色**，不加第四种。
-- **片段的左右差异只靠明度**，不靠色相。
-- **不画内部投影、不加柔光**。只保留 macOS 模板的主体投影。
-- 底砖两档都在 Spectrum 2 的「品牌色可与 UI token 略有出入」范围内；界面里的 accent 仍按设计系统走，图标不反过来定义 UI 色。
+- **The whole icon uses only three colors**; no fourth color is added.
+- **The left/right difference between segments comes only from lightness**, not hue.
+- **No inner shadows and no soft glow.** Only the main drop shadow from the macOS template is kept.
+- Both tile variants fall within Spectrum 2's allowance that brand colors may differ slightly from UI tokens. The accent in the interface still follows the design system; the icon does not define UI colors in reverse.
 
-### 备选变体
+### Alternative variants
 
-| 变体 | 组成 | 结论 |
+| Variant | Composition | Conclusion |
 | --- | --- | --- |
-| **A 珊瑚底砖** | 珊瑚底、白图形、浅珊瑚已播片段 | **推荐**。三种背景（浅 Dock、深 Dock、壁纸）上都跳出来，16 px 是「红方块 + 白块」，最好认 |
-| B 深色底砖 | 近黑底 `#1F1F1F`、白色已播片段、珊瑚未播片段、白色 AI 元素 | 浅底上最沉稳，但在深色 Dock 上底砖消失，只剩图形悬空；与 Adobe Express 的深底白字也过于相似 |
-| C 渐变底砖 | 珊瑚到深珊瑚 `#E8381F` 的单色相竖向渐变，其余同 A | Spectrum 2 的品牌渐变味道；与 A 在小尺寸下无法区分，渐变只在 128 px 以上可见，收益不大 |
+| **A Coral tile** | Coral tile, white graphic, light-coral played segment | **Recommended**. Stands out on all three backgrounds (light Dock, dark Dock, wallpaper); at 16 px it is "red block + white block", the easiest to recognize |
+| B Dark tile | Near-black tile `#1F1F1F`, white played segment, coral unplayed segment, white AI element | Most restrained on light backgrounds, but on a dark Dock the tile disappears and only the graphic floats; also too similar to Adobe Express's dark background with white letters |
+| C Gradient tile | Single-hue vertical gradient from coral to deep coral `#E8381F`, otherwise as A | Has the flavor of Spectrum 2 brand gradients; at small sizes it cannot be told apart from A, and the gradient is only visible at 128 px and above, so the gain is small |
 
-## 4. 外形与尺寸
+## 4. Shape and size
 
-- **外形模板**沿用 v2 的 macOS 模板：主体 824×824 落在 1024 画布的 (100,100)；连续圆角半径 185.4、平滑 0.6；投影黑 30%、模糊 20、下移 12。Dock 里的占位不变。
-- **重心**：首稿三角左边在 312、播放头 38%，用户反馈重心偏左。肉眼分不出候选差别后改用数据定：把图形（白与浅珊瑚）相对底砖的亮度增量当权重，算水平质心，目标是落在底砖中线 512。质心几乎只随三角左边位置变（左边每移 1，质心约移 1），播放头在 36%–46% 之间只影响 ±2。v2 几何的质心在 490，偏左 22；定稿 **左边 332、播放头 42%**，质心 512。垂直质心在 537，比中线低 25，这是三角比星芒重的自然结果，图形的外接框（星芒顶 168 到三角底 836）本身居中，不再调。
-- **小尺寸**：16–32 px 时轨道缝与播放头融掉，剩下「珊瑚方块 + 白色播放键 + 白星点」；48 px 以上看出三条轨道与切口。
+- **Shape template**: keeps the v2 macOS template. The body is 824×824, placed at (100,100) on a 1024 canvas; continuous corner radius 185.4, smoothing 0.6; shadow black 30%, blur 20, offset down 12. The placeholder in the Dock is unchanged.
+- **Center of mass**: in the first draft the triangle's left edge was at 312 and the playhead at 38%, and users said the center of mass was too far left. After visual comparison could not separate the candidates, the choice was made from data: the graphic's (white and light coral) brightness increment relative to the tile is used as the weight, the horizontal centroid is computed, and the target is the tile's center line at 512. The centroid changes almost only with the triangle's left edge position (moving the left edge by 1 moves the centroid by about 1); the playhead between 36% and 46% affects it by only ±2. The centroid of the v2 geometry is at 490, 22 to the left. The final choice is **left edge 332, playhead 42%**, centroid 512. The vertical centroid is at 537, 25 below the center line, which is the natural result of the triangle being heavier than the sparkle. The bounding box of the graphic (sparkle top at 168 to triangle bottom at 836) is itself centered, so it is not adjusted further.
+- **Small sizes**: at 16–32 px the track gaps and the playhead merge, leaving "coral block + white play button + white star dot"; at 48 px and above the three tracks and the cut are visible.
 
-## 5. 走过的路
+## 5. The path taken
 
-| 方案 | 结论 |
+| Option | Conclusion |
 | --- | --- |
-| v2：暖白底、六色片段、金色星芒与播放头 | 颜色偏多；暖白底在深色 Dock 上不成立 |
-| 两字母字标（Adobe Creative Cloud 式） | 不采用：借 Adobe 的原则（单一产品色、底砖不随主题变、渐变不喧宾夺主），不借它的字标外观 |
-| 本版 A / B / C | 用户选 A |
-| A 的重心：只右移 28、只把播放头挪到 44%、只加深浅段 | 各自都只解决一半；定稿是三项各取一点（右移 16、42%、`#FFC1B8`） |
-| 浅段在右、白在左 | 改为浅段在左：左边是播放头走过的，和 App 里播过的字幕变灰同义 |
-| 几何靠肉眼挑 | 候选之间肉眼已分不出，改按亮度质心定稿（见 §4） |
+| v2: warm-white tile, six clip colors, gold sparkle and playhead | Too many colors; a warm-white tile does not work on a dark Dock |
+| Two-letter wordmark (Adobe Creative Cloud style) | Not adopted: borrows Adobe's principles (single product color, tile that does not change with theme, gradient that does not overpower), but not its wordmark look |
+| This version's A / B / C | The user chose A |
+| A's center of mass: only shift right by 28, only move the playhead to 44%, only deepen the segment shades | Each solves only half the problem; the final version takes a little from each of the three (shift right 16, 42%, `#FFC1B8`) |
+| Light segment on the right, white on the left | Changed to light segment on the left: the left is what the playhead has already passed, which means the same as played subtitles turning gray in the App |
+| Geometry chosen by eye | Candidates could no longer be told apart by eye, so the final choice was made by brightness centroid (see §4) |
 
-## 6. 怎么改
+## 6. How to change it
 
-- 几何在 [`tools/app-icon/app-icon.mjs`](../../../tools/app-icon/app-icon.mjs) 的 `GEOMETRY`，配色在 `VARIANTS`（`tile` / `left` / `right` / `mark`）。
-- 改完在仓库根运行 `npm run icons`，重新生成原型的 `app-icon.svg` 与 `apps/desktop/build/` 下的 `icon.png`、`icon.icns`、`icon.ico`。生成物不手改。
-- Windows 的 `.ico` 不带模板投影，其余生成物带；要改这一点在 `render.mjs` 里改 `shadow`。
+- The geometry is in `GEOMETRY` in [`tools/app-icon/app-icon.mjs`](../../../tools/app-icon/app-icon.mjs); the colors are in `VARIANTS` (`tile` / `left` / `right` / `mark`).
+- After changing, run `npm run icons` from the repo root to regenerate the prototype's `app-icon.svg` and the `icon.png`, `icon.icns` and `icon.ico` under `apps/desktop/build/`. Do not hand-edit generated files.
+- Windows `.ico` files carry no template shadow, while the other outputs do; to change this, edit `shadow` in `render.mjs`.

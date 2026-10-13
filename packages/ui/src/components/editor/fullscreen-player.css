@@ -1,21 +1,21 @@
 /*
- * 全屏播放器（fullscreen-player.tsx；原型 player.css）里样式宏表达不了的部分：收起时连指针一起收、上下两条遮罩、
- * 进度条悬停变粗与章节刻痕、悬停气泡、音量滑杆展开、键表卡片。
+ * Parts of the fullscreen player (fullscreen-player.tsx; prototype player.css) that style macros cannot express: when hidden, the pointer hides with it; the top and bottom scrims;
+ * the progress bar thickens on hover and gets chapter ticks; the hover bubble; the volume slider expands; the key-table card.
  *
- * 这一层贴在视频上，画面底下是什么亮度谁也不知道，所以不吃明暗主题：用 rgba 的黑与白，控件自带对比。
- * 几何照原型落在 S2 阶梯：内边距 24、行距 8、圆角 8 / 16 / pill、动效 150ms cubic-bezier(0.45, 0, 0.4, 1)。
+ * This layer sits on the video, and nobody knows what brightness lies beneath the picture, so it does not follow the light/dark theme: it uses rgba black and white, and the controls carry their own contrast.
+ * Geometry follows the prototype on the S2 scale: padding 24, row gap 8, radii 8 / 16 / pill, motion 150ms cubic-bezier(0.45, 0, 0.4, 1).
  */
 
 .cc-fsp {
   cursor: default;
 }
-/* 收起时连指针一起收：不然黑画面上会一直浮着一支箭头。 */
+/* When hidden, the pointer hides with it: otherwise an arrow would keep floating over the black picture. */
 .cc-fsp[data-idle] {
   cursor: none;
 }
 
-/* chrome 铺满整幅画面（上下两条遮罩各占一头），自己不吃指针：吃了的话中间那一大片「点画面 = 播放 / 暂停」就失效了。
-   只有控件条与键表收指针。 */
+/* The chrome fills the whole picture (the top and bottom scrims each take one end) and does not take the pointer itself: if it did, the large middle area where “click the picture = play / pause” would stop working.
+   Only the control bar and the key table take the pointer. */
 .cc-fsp-chrome {
   position: absolute;
   inset: 0;
@@ -26,7 +26,7 @@
 .cc-fsp[data-idle] .cc-fsp-chrome {
   opacity: 0;
 }
-/* 看不见的控件条不许被点中。 */
+/* An invisible control bar must not be clickable. */
 .cc-fsp[data-idle] .cc-fsp-bar {
   pointer-events: none;
 }
@@ -52,7 +52,7 @@
   background: linear-gradient(to top, rgba(0, 0, 0, 0.72), rgba(0, 0, 0, 0));
 }
 
-/* ---------- 进度条 ---------- */
+/* ---------- Progress bar ---------- */
 
 .cc-fsp-seek {
   width: 100%;
@@ -81,7 +81,7 @@
   inset: 0 auto 0 0;
   border-radius: 9999px;
 }
-/* 章节刻痕：进度条上的一道缝，首章的 0 不画（model/player `chapterTicks`）。 */
+/* Chapter tick: a notch on the progress bar; the 0 of the first chapter is not drawn (model/player `chapterTicks`). */
 .cc-fsp-seek-tick {
   position: absolute;
   top: 0;
@@ -90,7 +90,7 @@
   margin-left: -1px;
   background: rgba(0, 0, 0, 0.56);
 }
-/* 拇指的位置与 translate 是 react-aria 内联给的，这里用独立的 `scale` 让它悬停、拖动、键盘聚焦时才长出来。 */
+/* The thumb's position and translate are given inline by react-aria, so an independent `scale` here makes it grow only on hover, drag, or keyboard focus. */
 .cc-fsp-seek-thumb {
   top: 50%;
   width: 14px;
@@ -110,8 +110,8 @@
   outline-offset: 2px;
 }
 
-/* 悬停气泡：一格画面 + 松手会落到的时码 + 那一刻在哪一章。居中对准指针，片头片尾会探出条子一点——不夹：
-   夹到边上就不再对准指针，而「它指着哪一帧」正是它存在的理由。 */
+/* Hover bubble: one frame of the picture + the timecode the pointer would land on + which chapter that moment is in. Centred on the pointer; at the opening and closing it pokes a little out of the bar — not clamped:
+   clamping it to the edge would stop it lining up with the pointer, and “which frame it points at” is the whole reason it exists. */
 .cc-fsp-bubble {
   position: absolute;
   bottom: 24px;
@@ -134,14 +134,14 @@
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
 }
 
-/* ---------- 音量：钮常驻，滑杆悬停、聚焦或拖动时展开 ---------- */
+/* ---------- Volume: the button is always visible; the slider expands on hover, focus or drag ---------- */
 
 .cc-fsp-volume {
   display: flex;
   align-items: center;
   gap: 4px;
 }
-/* 滑杆 80px，两边各留 8px 给拇指探出去的半个身子与聚焦环（收着时整个裁掉）。 */
+/* Slider 80px, with 8px left on each side for the half of the thumb that pokes out and the focus ring (fully clipped when collapsed). */
 .cc-fsp-volume-slider {
   display: flex;
   justify-content: center;
@@ -156,8 +156,8 @@
   width: 96px;
 }
 
-/* ---------- 键表（`?`，控件行也有一枚钮）----------
-   压在画面上而不是走 Dialog：全屏里再叠一层模态遮罩，等于把片子盖掉两次。点表外、Esc、再按一次 `?` 都关得掉。 */
+/* ---------- Key table (`?`; the control row also has a button for it) ----------
+   Sits over the picture rather than using a Dialog: stacking another modal scrim in fullscreen would cover the video twice. Clicking outside the table, Esc, or pressing `?` again all close it. */
 .cc-fsp-keys {
   position: absolute;
   inset: 0;

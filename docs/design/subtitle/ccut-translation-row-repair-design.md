@@ -1,673 +1,480 @@
-> 移植自 CucCut v2；文中的数据模型名（TranscriptDoc 等）指 v2 的模型，与 v3 文档模型的对应见[架构设计 §14](../../architecture/architecture-design.md#14-待评审事项)。
+> Ported from CucCut v2. The data-model names in this document (TranscriptDoc etc.) refer to the v2 models; for their correspondence with the v3 document models, see [Architecture design §14](../../architecture/architecture-design.md#14-items-pending-review).
 
-# 译文黏结检测与二次校正技术方案（translation row repair）
+# Translation row-sticking detection and second-pass correction plan (translation row repair)
 
-状态：**M1–M3 已完成（2026-08-26）；M5 自动收尾轮已完成（2026-08-28）**。M2 经 review 发现并修复了两处语义缺陷：`refine-align` 的密度三态判据写反，以及 paired 放宽只落在草稿路径、未进入真实 `pair_cost` 调用链；M3 四表面的条件 3 已统一为排除 `align-stale` 降级集合。CLI/serve 契约测试的既有编译阻塞也已修复并完成验证。M4 真实样本校准尚未开始。里程碑与完成标准见 §9。
-范围：`ccut check` 的对齐判据、align 引擎的每句切分密度语义、`ccut refine-align`
-闭环、Mac/App v2/Studio/原型四个消费表面。
-不改：`words[]` 真相、Sentence 派生、`trans` 句级译文真相、翻译主提示与忠实度契约、
-`derive_trans_cues` 的派生规则本身。
+Status: **M1–M3 completed (2026-08-26); the M5 automatic wrap-up round completed (2026-08-28)**. Review of M2 found and fixed two semantic defects: the density tri-state criterion in `refine-align` was inverted, and the paired relaxation applied only on the draft path and did not reach the real `pair_cost` call chain. Condition 3 of M3's four surfaces is now unified to exclude the `align-stale` degraded set. The pre-existing compile blocker in the CLI/serve contract tests has also been fixed and verified. M4 real-sample calibration has not started. Milestones and completion criteria are in §9.
+Scope: the alignment criterion of `ccut check`, the per-sentence split-density semantics of the align engine, the `ccut refine-align` loop, and the four consumer surfaces: Mac, App v2, Studio, and the prototypes.
+Not changed: `words[]` as the source of truth, Sentence derivation, sentence-level translation `trans` as the source of truth, the main translation prompt and faithfulness contract, and the derivation rules of `derive_trans_cues` itself.
 
-关联文档：
-[ccut-alignment-block-subtitle-split-design.md](ccut-alignment-block-subtitle-split-design.md)（四层分离与对齐块模型，本方案的上位契约）、
-[ccut-ai-pipeline-design.md](ccut-ai-pipeline-design.md) §8–§9（translate/align 引擎与波次）、
-[ccut-cli-server-reference.md](../cli/ccut-cli-server-reference.md) §4.5 / §8（serve 白名单与 `translate` 参数表）、
-[ccut-transcript-v03-design.md](ccut-transcript-v03-design.md) §4（`transAlign` 不变量）、
-[product-design.md](../product/product-design.md) §13.2（Subtitle · Edit 的 statbar 与多对一卡）。
+Related documents:
+[ccut-alignment-block-subtitle-split-design.md](ccut-alignment-block-subtitle-split-design.md) (four-layer separation and the alignment-block model; the higher-level contract this plan sits under),
+[ccut-ai-pipeline-design.md](ccut-ai-pipeline-design.md) §8–§9 (translate/align engines and waves),
+[ccut-cli-server-reference.md](../cli/ccut-cli-server-reference.md) §4.5 / §8 (serve allowlist and `translate` parameter table),
+[ccut-transcript-v03-design.md](ccut-transcript-v03-design.md) §4 (`transAlign` invariant),
+[product-design.md](../product/product-design.md) §13.2 (Subtitle · Edit statbar and the many-to-one card).
 
-## 0. 结论摘要
+## 0. Summary of conclusions
 
-### 修复优先级与预算一致性（2026-09-12）
+### Fix priority and budget consistency (2026-09-12)
 
-`refine-align` / auto 精修共用硬故障优先的有界轮：存在 overflow、stale 或
-degraded fallback 时只做 `table + auto`，先重新确定自然译文片；不同时追加
-paired 密度，也不重建 brief 或嵌套 row repair。复查后再决定是否需要独立的
-黏结修复；不能把修复请求已提交视为实际字幕已改善。未处理的热点在
-`deferred` 中显式报告，未解决的本轮目标在 `remaining` 中报告。
+`refine-align` and auto refinement share a bounded round in which hard faults take priority: when an overflow, stale, or degraded fallback exists, only `table + auto` runs, re-determining the natural translation pieces first. Paired density is not appended in the same round, and neither the brief nor a nested row repair is rebuilt. After re-checking, decide whether an independent sticking repair is needed; do not treat a submitted repair request as proof that the actual subtitles have improved. Unhandled hotspots are reported explicitly in `deferred`, and unresolved targets of this round are reported in `remaining`.
 
-真正的 paired 表格轮把同一建议片数写入载荷预算（2026-09-24 起只作指导语，最终验收改按
-驻留谓词，见 §4.3 ④），禁止改写译文；不再出现提示要求至少 8 片而表格建议最多 4 片的自相矛盾。派发前校验
-结构化预算与冻结目标片的一致性；Agent submit 和 provider 引擎共用此校验，
-矛盾输入报 `input-conflict`，不交给模型试错。任意自由文本指令是否可满足不在
-纯函数预检能力内，语义自然度仍由模型与共享验收负责。
+The real paired table round writes the same suggested piece count into the payload budget (from 2026-09-24 it is guidance only; final acceptance is now by the residency predicate, see §4.3 ④), and it is forbidden to rewrite the translation. The contradiction of a prompt requiring at least 8 pieces while the table suggests at most 4 no longer appears. The structured budget and the frozen target pieces are checked for consistency before dispatch. Agent submit and the provider engine share this check; contradictory input reports `input-conflict` and is not handed to the model for trial and error. Whether an arbitrary free-text instruction can be satisfied is outside the scope of a pure-function pre-check; semantic naturalness remains the responsibility of the model and shared acceptance.
 
-以下历史阶段说明不改变这些当前编排优先级。CLI 精确语义见
-[`refine-align` 参考](../cli/ccut-cli-server-reference/06/ccut-refine-align.md)。
+The historical stage notes below do not change these current orchestration priorities. For the exact CLI semantics, see the [`refine-align` reference](../cli/ccut-cli-server-reference/06/ccut-refine-align.md).
 
-用户报告的现象是：转录 + 翻译跑完后，**一条中文压着好几条英文字幕**，中文行数远少于
-英文行数，希望能"二次校正"。
+The user-reported symptom: after transcription and translation finish, **one Chinese line sits over several English subtitles**. The Chinese line count is far lower than the English line count, and the user wants a "second-pass correction".
 
-复核代码后的结论分两半：
+After reviewing the code, the conclusion has two halves:
 
-1. **多对一本身是有意设计，不是缺陷。** 译文一行放得下时，几条短源短语共享一条译文
-   正是 CucCut 两阶段模型的默认形态（[`align.rs:700–711`](../../../core/crates/ccut-flow-core/src/engines/align.rs)
-   的注释是显式裁决）。因此判据不能是"译文 cue 数 ≠ 源 cue 数"。
-2. **但现有护栏留下了一条可精确刻画的黑洞**：`no_entry_needed` 的四项豁免
-   （[`align.rs:725–728`](../../../core/crates/ccut-flow-core/src/engines/align.rs)）与
-   `source_ceiling` 的三项抑制条件（[`align.rs:3325–3334`](../../../core/crates/ccut-flow-core/src/engines/align.rs)）
-   叠加后，**译文短于 10 个阅读单位的句子完全不受源侧宽度与时长约束**，最长可以让
-   一条中文钉在屏幕上 7 秒、盖住任意多条英文 cue，而 `ccut check` 一条警告都不出。
-   这就是用户看到的黏结带。
+1. **Many-to-one is an intentional design, not a defect.** When a translation line fits on one line, several short source phrases sharing one translation line is the default shape of CucCut's two-stage model (the comment at [`align.rs:700–711`](../../../core/crates/ccut-flow-core/src/engines/align.rs) is an explicit ruling). Therefore the criterion cannot be "translation cue count ≠ source cue count".
+2. **But the existing guardrails leave a precisely describable blind spot.** The four exemptions of `no_entry_needed` ([`align.rs:725–728`](../../../core/crates/ccut-flow-core/src/engines/align.rs)) combined with the three suppression conditions of `source_ceiling` ([`align.rs:3325–3334`](../../../core/crates/ccut-flow-core/src/engines/align.rs)) mean that **sentences whose translation is shorter than 10 reading units are completely unconstrained by source width and duration**. At most one Chinese line can stay on screen for 7 seconds, covering any number of English cues, and `ccut check` emits no warning at all. This is the sticking band the user saw.
 
-本方案做四件事：
+This plan does four things:
 
-1. **M1 检测**：新增确定性、零 LLM 的 `ccut check` 判据 `align-row-deficit`，判的是
-   **驻留失衡**（一条译文覆盖 ≥2 条源 cue 且长时间独占屏幕）而不是数量差；判据函数落在
-   `ccut-flow-core`，引擎、check 与四个表面共用同一谓词，不复制阈值。
-2. **M2 修复**：新增每句级切分密度指令 `density: paired`（CLI 面板 `--align-density
-   paired`，默认 `auto` 行为完全不变）。被标记的句子绕过 `no_entry_needed`、关掉宽度触发的
-   行合并、换一段"每源组尽量一行"的提示变体，并按驻留谓词验收（2026-09-24 前是纯算术最小片数验收，见 §4.3 ④）。
-3. **M3 UI**：Mac / App v2 statbar 与句卡右键给出"N 处黏结 → 按源行重新对齐"的入口；
-   Studio 与 `designs/` 原型只出只读计数（Studio 没有任何 AI 下单通道，见 §1.4）。
-4. **M4 验收**：五种黏结形态 golden + 短片/长片真跑对拍，校准唯一的可调阈值。
+1. **M1 detection**: add a deterministic, zero-LLM `ccut check` criterion `align-row-deficit`. It judges **residency imbalance** (one translation covers ≥2 source cues and monopolizes the screen for a long time), not a count difference. The criterion function lives in `ccut-flow-core`; the engine, check, and the four surfaces share the same predicate and do not copy the thresholds.
+2. **M2 repair**: add a per-sentence split-density directive `density: paired` (CLI panel `--align-density paired`; the default `auto` behaviour is unchanged). Flagged sentences bypass `no_entry_needed`, turn off width-triggered row merging, switch to a prompt variant that tries to keep one row per source group, and are accepted by the residency predicate (before 2026-09-24 acceptance was pure arithmetic minimum-piece counting, see §4.3 ④).
+3. **M3 UI**: the Mac / App v2 statbar and the sentence-card right-click menu offer an entry "N sticking points → realign by source row". Studio and the `designs/` prototypes show only read-only counts (Studio has no AI job-submission channel, see §1.4).
+4. **M4 acceptance**: golden tests for the five sticking shapes, plus side-by-side real runs on short and long films, to calibrate the only tunable threshold.
 
-最关键的一条规则：**修复只改 `transAlign`，永不触碰 `trans`**——二次校正是重新切分
-展示层，不是重新翻译。
+The most critical rule: **repair only changes `transAlign`; it never touches `trans`.** Second-pass correction re-splits the display layer; it is not re-translation.
 
-## 1. 现状复核（代码事实，作为设计前提）
+## 1. Current-state review (code facts, as design premises)
 
-以下均以当前 `main`（`7a70c595`）为准。
+The following are all based on the current `main` (`7a70c595`).
 
-### 1.1 黏结的三条产生链
+### 1.1 The three production chains of sticking
 
-| 链 | 位置 | 形态 |
+| Chain | Location | Shape |
 | --- | --- | --- |
-| A. 引擎主动不写条目 | [`align.rs:725–763`](../../../core/crates/ccut-flow-core/src/engines/align.rs) `no_entry_needed` | 四项全满足 ⇒ `removals.push`（无投影时）或写一条单片条目（有投影时）。此后 [`split.rs:1191–1206`](../../../core/crates/ccut-flow-core/src/split.rs) `derive_trans_cues` 为该句产出**一条覆盖整句时窗**的译文 cue |
-| B. 模型/引擎把行并回去 | [`translate.rs:1392–1411`](../../../core/crates/ccut-flow-core/src/engines/translate.rs) `fusion_rows_prompt_section` + [`align_block.rs:1477–1549`](../../../core/crates/ccut-flow-core/src/align_block.rs) `merge_short_rows` | 契约明写 "A sentence of four groups usually wants two rows, not four"、短组（<1.5s 或 <6 units）要求并邻、语序排不开时 "emit a single span covering `1-N`"；落库前引擎再按读速/时长/宽度确定性合并 |
-| C. 兜底降级成整句 | [`align_block.rs:1214`](../../../core/crates/ccut-flow-core/src/align_block.rs) `sentence_level_entry`；[`align_block.rs:1274–1313`](../../../core/crates/ccut-flow-core/src/align_block.rs) `plan_sentence` 的三个 `SentenceLevel` 出口；[`align.rs:1043–1061`](../../../core/crates/ccut-flow-core/src/engines/align.rs) `plan_sentence_rows` 失败静默回落常规 fusion | `correspondence: "sentence"`、一块一片、整句静态上屏 |
+| A. Engine deliberately writes no entry | [`align.rs:725–763`](../../../core/crates/ccut-flow-core/src/engines/align.rs) `no_entry_needed` | All four conditions hold ⇒ `removals.push` (when there is no projection) or write a single-piece entry (when there is a projection). Afterwards [`split.rs:1191–1206`](../../../core/crates/ccut-flow-core/src/split.rs) `derive_trans_cues` produces for this sentence **one translation cue covering the whole-sentence time window** |
+| B. Model/engine merges rows back together | [`translate.rs:1392–1411`](../../../core/crates/ccut-flow-core/src/engines/translate.rs) `fusion_rows_prompt_section` + [`align_block.rs:1477–1549`](../../../core/crates/ccut-flow-core/src/align_block.rs) `merge_short_rows` | The contract explicitly says "A sentence of four groups usually wants two rows, not four"; short groups (<1.5s or <6 units) must merge with an adjacent group; when word order cannot be laid out, "emit a single span covering `1-N`"; before persisting, the engine then merges deterministically by reading speed, duration, and width |
+| C. Fallback degrades to the whole sentence | [`align_block.rs:1214`](../../../core/crates/ccut-flow-core/src/align_block.rs) `sentence_level_entry`; the three `SentenceLevel` exits of [`align_block.rs:1274–1313`](../../../core/crates/ccut-flow-core/src/align_block.rs) `plan_sentence`; [`align.rs:1043–1061`](../../../core/crates/ccut-flow-core/src/engines/align.rs) `plan_sentence_rows` silently falls back to regular fusion on failure | `correspondence: "sentence"`, one block with one piece, the whole sentence shown statically on screen |
 
-链 A 的四项豁免（全部满足才跳过）：
+The four exemptions of chain A (all must hold to skip):
 
 ```rust
 // core/crates/ccut-flow-core/src/engines/align.rs:725
 let no_entry_needed = !exceeds_one_line_fit(&translation, &options.lang, params.fit)  // zh fit = 16
     && crate::split::piece_display_units(&translation, &options.lang) <= params.hard   // zh hard = 20
-    && dwell <= LONG_DWELL_SECONDS                                                     // 7.0s，align.rs:87
+    && dwell <= LONG_DWELL_SECONDS                                                     // 7.0s, align.rs:87
     && source_ceiling.is_none();
 ```
 
-链 B 的确定性合并（[`align_block.rs:1488–1516`](../../../core/crates/ccut-flow-core/src/align_block.rs)）触发条件：
-`too_fast` = 读速 > `ROW_MAX_CPS`（6.0，[`align_block.rs:1434`](../../../core/crates/ccut-flow-core/src/align_block.rs)）、
-`too_small` = 时长 < `min_duration_sec`（1.0s）**或**宽度 < `ROW_MIN_UNITS`（6，[`align_block.rs:1436`](../../../core/crates/ccut-flow-core/src/align_block.rs)）；
-由"太快"触发时合并守卫放宽到 `hard`(20)，只由"太小"触发时仍守 `fit`(16)。
+The deterministic merge of chain B ([`align_block.rs:1488–1516`](../../../core/crates/ccut-flow-core/src/align_block.rs)) triggers on:
+`too_fast` = reading speed > `ROW_MAX_CPS` (6.0, [`align_block.rs:1434`](../../../core/crates/ccut-flow-core/src/align_block.rs)), or
+`too_small` = duration < `min_duration_sec` (1.0s) **or** width < `ROW_MIN_UNITS` (6, [`align_block.rs:1436`](../../../core/crates/ccut-flow-core/src/align_block.rs));
+when triggered by “太快” (too fast), the merge guard relaxes to `hard` (20); when triggered only by “太小” (too small), it still guards at `fit` (16).
 
-### 1.2 已有护栏覆盖到哪里、漏在哪里
+### 1.2 Where the existing guardrails cover, and where they leak
 
-`source_ceiling`（[`align.rs:3307–3343`](../../../core/crates/ccut-flow-core/src/engines/align.rs)
-`source_ceiling_issues`，经 [`align.rs:3576`](../../../core/crates/ccut-flow-core/src/engines/align.rs)
-`whole_sentence_source_ceiling_issue` 被 `no_entry_needed` 门与 `ccut check` **共用同一谓词**）
-的判据是：
+`source_ceiling` ([`align.rs:3307–3343`](../../../core/crates/ccut-flow-core/src/engines/align.rs) `source_ceiling_issues`, reached via [`align.rs:3576`](../../../core/crates/ccut-flow-core/src/engines/align.rs) `whole_sentence_source_ceiling_issue`, which the `no_entry_needed` gate and `ccut check` **share as the same predicate**) has this criterion:
 
 ```text
 words ≥ PAIRED_MIN_SOURCE_WORDS(4)                    // align.rs:103
 && target_units ≥ PAIRED_TARGET_MIN_UNITS(10)         // align.rs:100
-&& ( source_units > source_piece_hard(fit)            // en: 42*3/2 = 63 字符
+&& ( source_units > source_piece_hard(fit)            // en: 42*3/2 = 63 characters
    || seconds > PAIRED_SOURCE_HARD_SECONDS(6.0) )     // align.rs:97
 ```
 
-也就是说，**译文短于 10 个阅读单位的句子对源侧长度完全免疫**。把它与 §1.1 的四项豁免
-合并，得到 `no_entry_needed` 放行的残余集合：
+That is, **sentences whose translation is shorter than 10 reading units are completely immune to source-side length.** Combining this with the four exemptions of §1.1 gives the residual set that `no_entry_needed` lets through:
 
-- **R1（主因）**：`target_units < 10`（一条不到十个字的中文），源侧可以是任意宽度、
-  任意条数的 cue，只要整句时窗 ≤ 7s。用户截图里"一条中文压三条英文"绝大多数落在这里。
-- **R2**：`target_units ∈ [10, 16]` 且源侧 ≤63 字符且 ≤6s——大致是"一条半英文 cue"的量级，
-  黏结程度轻。
-- **R3**：源词数 < 4 的极短句，按定义豁免。
+- **R1 (main cause)**: `target_units < 10` (a Chinese line of fewer than ten units). The source side may have any width and any number of cues, as long as the whole-sentence window is ≤ 7s. Most of the user's “one Chinese line over three English lines” cases fall here.
+- **R2**: `target_units ∈ [10, 16]`, source side ≤63 characters and ≤6s. This is roughly the scale of “one and a half English cues”; the sticking is mild.
+- **R3**: very short sentences with fewer than 4 source words are exempt by definition.
 
-check 侧的覆盖同样有洞：
+Coverage on the check side also has holes:
 
-| 已有码 | 位置 | 判据 | 对黏结的覆盖 |
+| Existing code | Location | Criterion | Coverage of sticking |
 | --- | --- | --- | --- |
-| `align-stale` | [`check.rs:947–959`](../../../core/crates/ccut-engine/src/flows/check.rs) | `TransCue.fallback`，而 fallback 只在 **"译文超出单行 fit"** 时为真（[`split.rs:1200–1202`](../../../core/crates/ccut-flow-core/src/split.rs) 的注释是显式裁决：「翻译流不读取源 Cue 数量」） | **零覆盖**：R1/R2 的译文按定义放得下一行，`fallback = false` |
-| `align-source-ceiling` | [`check.rs:986–1005`](../../../core/crates/ccut-engine/src/flows/check.rs)（无条目分支）+ [`:1114`](../../../core/crates/ccut-engine/src/flows/check.rs)（有条目分支） | 同 §1.2 谓词 | 覆盖"源行过宽/过长且译文够长"，正是 R1 的补集 |
-| `align-paired-density` | [`check.rs:1249`](../../../core/crates/ccut-engine/src/flows/check.rs) + [`align.rs:3603`](../../../core/crates/ccut-flow-core/src/engines/align.rs) | 源行**过密**且译文片自身已有自然缝 | 方向相反：管的是"源行太多太挤"，不是"译文太少" |
-| `align-sentence-level` | [`check.rs:1492`](../../../core/crates/ccut-engine/src/flows/check.rs) | `correspondence == sentence` 计数，info 档 | 覆盖链 C，但不分辨该句盖了几条源 cue |
+| `align-stale` | [`check.rs:947–959`](../../../core/crates/ccut-engine/src/flows/check.rs) | `TransCue.fallback`, and fallback is true only when **“译文超出单行 fit”** (translation exceeds the single-line fit) ([`split.rs:1200–1202`](../../../core/crates/ccut-flow-core/src/split.rs); the comment there is an explicit ruling: “翻译流不读取源 Cue 数量” (the translation flow does not read the source cue count)) | **Zero coverage**: by definition the R1/R2 translations fit on one line, so `fallback = false` |
+| `align-source-ceiling` | [`check.rs:986–1005`](../../../core/crates/ccut-engine/src/flows/check.rs) (no-entry branch) + [`:1114`](../../../core/crates/ccut-engine/src/flows/check.rs) (with-entry branch) | Same predicate as §1.2 | Covers “source row too wide or too long and translation long enough”, which is the complement of R1 |
+| `align-paired-density` | [`check.rs:1249`](../../../core/crates/ccut-engine/src/flows/check.rs) + [`align.rs:3603`](../../../core/crates/ccut-flow-core/src/engines/align.rs) | Source rows **too dense**, and the translation pieces already have natural seams | Opposite direction: it governs “source has too many rows and they are too cramped”, not “translation is too short” |
+| `align-sentence-level` | [`check.rs:1492`](../../../core/crates/ccut-engine/src/flows/check.rs) | Counts `correspondence == sentence`, info level | Covers chain C, but does not distinguish how many source cues the sentence covers |
 
-**全仓没有任何"译文 cue 数 vs 源 cue 数"的比较。** 这是有意的设计选择（避免把多对一
-判成错误），也正是二次校正要补的那一个洞——补的方式不是恢复数量比较，而是引入驻留判据。
+**Nowhere in the repository is there a comparison of "translation cue count vs. source cue count".** This is a deliberate design choice (to avoid judging many-to-one as an error), and it is exactly the hole that second-pass correction must fill. The way to fill it is not to restore a count comparison, but to introduce a residency criterion.
 
-### 1.3 用户可见的五种黏结形态
+### 1.3 The five user-visible sticking shapes
 
-| 形态 | 数据特征 | 产生链 |
+| Shape | Data signature | Chain |
 | --- | --- | --- |
-| F1 无条目 | `transAlign[lang]` 无该句键 | A |
-| F2 单片 sentence 级 | 一片、`correspondence: "sentence"` | C |
-| F3 片数少于源 cue 数 | 多片但每片跨多条源 cue | B |
-| F4 条目失效 | `align_entry_valid`（[`split.rs:983`](../../../core/crates/ccut-flow-core/src/split.rs)）不成立 ⇒ 派生时 `fallback: true` | 编辑后漂移 |
-| F5 independent 无锚 | `mode == independent`、`from = null` | 独立切分路径 |
+| F1 no entry | `transAlign[lang]` has no key for this sentence | A |
+| F2 single piece, sentence level | one piece, `correspondence: "sentence"` | C |
+| F3 piece count below source cue count | multiple pieces, but each piece spans multiple source cues | B |
+| F4 entry invalid | `align_entry_valid` ([`split.rs:983`](../../../core/crates/ccut-flow-core/src/split.rs)) does not hold ⇒ `fallback: true` on derivation | drift after editing |
+| F5 independent, no anchor | `mode == independent`, `from = null` | independent split path |
 
-F4 已被 `align-stale` 完整覆盖，本方案不重复报（§3.2 的排他规则）。F5 没有源词区间，
-无从计数源 cue，只在 metrics 里记形态、不进判据。
+F4 is already fully covered by `align-stale`, so this plan does not report it again (the exclusion rule in §3.2). F5 has no source-word interval, so source cues cannot be counted; it only records the shape in metrics and does not enter the criterion.
 
-### 1.4 现成可复用资产
+### 1.4 Existing reusable assets
 
-**引擎与 CLI**
+**Engine and CLI**
 
-- `ccut refine-align` 闭环（[`refine.rs:272`](../../../core/crates/ccut-engine/src/flows/refine.rs)
-  `run_refine_round`）：`check_verdict` → `hotspot_keys`（[`refine.rs:31`](../../../core/crates/ccut-engine/src/flows/refine.rs)，
-  按码收集句 key，`align-source-*`/`align-paired-density`/`align-bilingual-anchor`/
-  `align-degraded-fallback` 各 40 上限，`align-overfit`/`align-stale` 不设限）→
-  `align_instructions`（[`refine.rs:155`](../../../core/crates/ccut-engine/src/flows/refine.rs)，
-  逐句诊断转定向复审说明，每句 ≤3 条、整体 ≤3000 字符）→ 一次
-  `translate --align-only --sentences <热点>`（[`refine.rs:303–311`](../../../core/crates/ccut-engine/src/flows/refine.rs)，
-  固定 `align_fusion = "rows"`、`align_mode = "many-to-one"`）→ 复核 check 算
-  `refined` / `remaining`。**新判据只要进 `hotspot_keys` 与 `align_instructions`，
-  refine-align 立刻获得修复能力，不需要新 flow。**
-- 定向请求形状已就位：`--align-only --sentences`，且 `AlignOptions.force = options.align_only`
-  （[`translate.rs:209`](../../../core/crates/ccut-engine/src/flows/translate.rs) 与
-  [`:1008`](../../../core/crates/ccut-engine/src/flows/translate.rs)）——**只要是 `--align-only` 轮，
-  force 恒为真**，现有有效切分会作为载荷 draft 基准（[`align.rs:854–879`](../../../core/crates/ccut-flow-core/src/engines/align.rs)）。
-  `AlignOptions` 已有 `sentences` / `targeted` / `force` 三个定向字段，新增 `density` 是同族扩展。
-- serve 已注册 `refine-align` job kind（[`supervisor.rs:975–992`](../../../core/crates/ccut-serve/src/supervisor.rs)），
-  `translate` kind 已白名单 `alignOnly` / `sentences` / `alignFusion`
-  （[`supervisor.rs:839–860`](../../../core/crates/ccut-serve/src/supervisor.rs)）。
-- 方法论范本：speaker-repair 波次（[`speaker_repair.rs:1–52`](../../../core/crates/ccut-flow-core/src/engines/speaker_repair.rs)）
-  的六件套——确定性筛候选 → 开窗 → 索引契约 → 纯算术验收 → 确定性改动上限（超限整窗忽略）→
-  轮次耗尽即原样。
+- The `ccut refine-align` loop ([`refine.rs:272`](../../../core/crates/ccut-engine/src/flows/refine.rs)
+  `run_refine_round`): `check_verdict` → `hotspot_keys` ([`refine.rs:31`](../../../core/crates/ccut-engine/src/flows/refine.rs),
+  collects sentence keys by code; `align-source-*`/`align-paired-density`/`align-bilingual-anchor`/
+  `align-degraded-fallback` are each capped at 40; `align-overfit`/`align-stale` are uncapped) →
+  `align_instructions` ([`refine.rs:155`](../../../core/crates/ccut-engine/src/flows/refine.rs),
+  turns the per-sentence diagnosis into targeted review instructions, ≤3 per sentence, ≤3000 characters overall) → one
+  `translate --align-only --sentences <hotspots>` ([`refine.rs:303–311`](../../../core/crates/ccut-engine/src/flows/refine.rs),
+  with `align_fusion = "rows"` and `align_mode = "many-to-one"` fixed) → re-run check to compute
+  `refined` / `remaining`. **As soon as a new criterion enters `hotspot_keys` and `align_instructions`,
+  refine-align gains the ability to fix it at once, with no new flow.**
+- The targeted request shape is already in place: `--align-only --sentences`, and `AlignOptions.force = options.align_only`
+  ([`translate.rs:209`](../../../core/crates/ccut-engine/src/flows/translate.rs) and
+  [`:1008`](../../../core/crates/ccut-engine/src/flows/translate.rs)). **In every `--align-only` round, force is always true**,
+  and the existing valid segmentation is used as the payload draft baseline ([`align.rs:854–879`](../../../core/crates/ccut-flow-core/src/engines/align.rs)).
+  `AlignOptions` already has three targeting fields, `sentences` / `targeted` / `force`; the new `density` is an extension of the same family.
+- serve already registers the `refine-align` job kind ([`supervisor.rs:975–992`](../../../core/crates/ccut-serve/src/supervisor.rs)),
+  and the `translate` kind already whitelists `alignOnly` / `sentences` / `alignFusion`
+  ([`supervisor.rs:839–860`](../../../core/crates/ccut-serve/src/supervisor.rs)).
+- Methodology model: the six-part set of the speaker-repair wave ([`speaker_repair.rs:1–52`](../../../core/crates/ccut-flow-core/src/engines/speaker_repair.rs)):
+  deterministic candidate screening → windowing → index contract → pure-arithmetic acceptance → deterministic cap on changes (a window that exceeds the cap is ignored entirely) →
+  when rounds run out, keep the original as is.
 
-**表面**
+**Surfaces**
 
-- **Mac**：`OrigLineView.sourceRuns(_:cueIdByWord:)`
-  （[`TranslateCardOriginalLineView.swift:127`](../apps/mac/Sources/VoiceInk/Translation/Card/TranslateCardOriginalLineView.swift)
-  = `sourceCueRuns` + `mergeShortRuns`）已经在**每条译文片内部按源 cue 切子行**并吸收
-  ≤2 词碎渣；它的 `.count` 就是"这一条中文覆盖了几条英文字幕行"——现成度量，被
-  [`TranslatePaneTable.swift:68`](../apps/mac/Sources/VoiceInk/Translation/Pane/TranslatePaneTable.swift)
-  用来画子行，但**从未被用作诊断信号**。同一套规则在
-  [`subtitle-rendering.js:226`](../skills/cuccut/templates/studio/subtitle-rendering.js) 与
-  `designs/cuccut-mac/app/translate-model.js` 有逐条一致的镜像，三者必须同进同退。
-- Mac 统计条 `TransStatBar`（[`TranslatePaneSupport.swift:336`](../apps/mac/Sources/VoiceInk/Translation/Pane/TranslatePaneSupport.swift)）
-  已有一个可点的统计项（stale → `openSetup(lang, staleOnly: true)`，
-  [`TranslatePaneView.swift:274`](../apps/mac/Sources/VoiceInk/Translation/Pane/TranslatePaneView.swift)），
-  点击区、优先级降级、警示色三套机制齐备，新增一项是同构扩展。
-- Mac 定向入口：AI 菜单「Re-align %@ lines…」（[`TranslatePaneActions.swift:59`](../apps/mac/Sources/VoiceInk/Translation/Pane/TranslatePaneActions.swift)）、
-  句卡右键「Re-align this line」（[`TransSentenceCardView.swift:365`](../apps/mac/Sources/VoiceInk/Translation/Card/TransSentenceCardView.swift)）、
-  卡片徽章 `TranslateCardBadge`（[`TranslateCardBadge.swift:9–15`](../apps/mac/Sources/VoiceInk/Translation/Card/TranslateCardBadge.swift)：
-  `.realigning` / `.refreshing` / `.outOfDate` / `.timingSplit` / `.speakerSplit` / `.rewritten`）。
-  请求装配在 [`Contracts.swift:458–464`](../apps/mac/Sources/CucCutCore/Contracts.swift)：
-  `kind = "translate"` + `alignOnly: true` + `sentences[]`。
-- **App v2**：`AlignSpec::Scoped { language, sentences, align_only }`
-  （[`ai/mod.rs:114–125`](../../../apps/cuccut/src/app/editor/ai/mod.rs)），句卡已有
-  `SentenceOp::Realign` / `Retranslate` / `Edit`（[`lists/translate.rs:2146–2196`](../../../apps/cuccut/src/app/editor/lists/translate.rs)）
-  与右键 `TranslateCardAction::Realign`（[`lists/translate.rs:2224–2250`](../../../apps/cuccut/src/app/editor/lists/translate.rs)）。
-- **Studio web**：`skills/cuccut/templates/studio` **没有任何 AI 任务下单通道**——
-  全部 `fetch` 端点只有 `__ccut/{healthz,projects,put,undo,redo,restore,history,media,
-  waveform,spectrum,filmstrip,thumb,upload,transcript/apply,timeline/apply,studio/poll,ws,export/*}`，
-  没有 `jobs`。因此 Studio 只能做**只读提示**，不能提供修复按钮。
-- **designs/cuccut**：产品设计文档 §13.2（[`product-design/13/13.2/README.md`](../product/product-design/13/13.2/README.md)）
-  已经规定了「多对一卡」形态——原文侧渲染成虚线分隔子行 + chip「1 行译文 · 对应 2 条原文字幕」+
-  注「几条短原文共享一条紧凑译文是多对一的默认形态……不是对齐错了」。**黏结提示必须与这张卡
-  共存而不打架**：chip 说的是"这是正常的"，新提示说的是"这一条超时了"，两者的分界线正是 §3 的判据。
-- **apps/windows**：无翻译/对齐 UI，本方案不适用；该表面已于 2026-08-26 归档删除。
+- **Mac**: `OrigLineView.sourceRuns(_:cueIdByWord:)`
+  ([`TranslateCardOriginalLineView.swift:127`](../apps/mac/Sources/VoiceInk/Translation/Card/TranslateCardOriginalLineView.swift)
+  = `sourceCueRuns` + `mergeShortRuns`) already **splits each translation segment into sub-lines by source cue** and absorbs
+  fragments of ≤2 words; its `.count` is "how many English subtitle lines this one Chinese line covers". It is an existing metric,
+  used by [`TranslatePaneTable.swift:68`](../apps/mac/Sources/VoiceInk/Translation/Pane/TranslatePaneTable.swift)
+  to draw the sub-lines, but it has **never been used as a diagnostic signal**. The same rules have line-for-line identical mirrors in
+  [`subtitle-rendering.js:226`](../skills/cuccut/templates/studio/subtitle-rendering.js) and `designs/cuccut-mac/app/translate-model.js`; the three must change together.
+- The Mac stats bar `TransStatBar` ([`TranslatePaneSupport.swift:336`](../apps/mac/Sources/VoiceInk/Translation/Pane/TranslatePaneSupport.swift))
+  already has a clickable stat item (stale → `openSetup(lang, staleOnly: true)`,
+  [`TranslatePaneView.swift:274`](../apps/mac/Sources/VoiceInk/Translation/Pane/TranslatePaneView.swift)).
+  The click area, priority demotion and warning color are all in place, so adding an item is an isomorphic extension.
+- Mac targeted entry points: the AI menu “Re-align %@ lines…” ([`TranslatePaneActions.swift:59`](../apps/mac/Sources/VoiceInk/Translation/Pane/TranslatePaneActions.swift)),
+  the sentence-card right-click “Re-align this line” ([`TransSentenceCardView.swift:365`](../apps/mac/Sources/VoiceInk/Translation/Card/TransSentenceCardView.swift)),
+  and the card badge `TranslateCardBadge` ([`TranslateCardBadge.swift:9–15`](../apps/mac/Sources/VoiceInk/Translation/Card/TranslateCardBadge.swift):
+  `.realigning` / `.refreshing` / `.outOfDate` / `.timingSplit` / `.speakerSplit` / `.rewritten`). Request assembly is at
+  [`Contracts.swift:458–464`](../apps/mac/Sources/CucCutCore/Contracts.swift):
+  `kind = "translate"` + `alignOnly: true` + `sentences[]`.
+- **App v2**: `AlignSpec::Scoped { language, sentences, align_only }`
+  ([`ai/mod.rs:114–125`](../../../apps/cuccut/src/app/editor/ai/mod.rs)); sentence cards already have `SentenceOp::Realign` / `Retranslate` / `Edit`
+  ([`lists/translate.rs:2146–2196`](../../../apps/cuccut/src/app/editor/lists/translate.rs))
+  and the right-click `TranslateCardAction::Realign` ([`lists/translate.rs:2224–2250`](../../../apps/cuccut/src/app/editor/lists/translate.rs)).
+- **Studio web**: `skills/cuccut/templates/studio` **has no AI task submission channel at all**.
+  Every `fetch` endpoint is one of `__ccut/{healthz,projects,put,undo,redo,restore,history,media,
+  waveform,spectrum,filmstrip,thumb,upload,transcript/apply,timeline/apply,studio/poll,ws,export/*}`,
+  with no `jobs`. So Studio can only show **read-only hints**, and cannot offer a repair button.
+- **designs/cuccut**: product design doc §13.2 ([`product-design/13/13.2/README.md`](../product/product-design/13/13.2/README.md))
+  already specifies the 「多对一卡」 form, “many-to-one card”: the source side renders as dashed-separator sub-lines, with a chip
+  “1 行译文 · 对应 2 条原文字幕” (“1 translation line · corresponds to 2 source subtitle lines”) and the note
+  「几条短原文共享一条紧凑译文是多对一的默认形态……不是对齐错了」 (“several short source lines sharing one compact translation is the default many-to-one form… it is not a misalignment”).
+  **The stickiness hint must coexist with this card without conflict.** The chip says “this is normal”, while the new hint says “this one overruns in time”.
+  The boundary between the two is exactly the criterion in §3.
+- **apps/windows**: no translation or alignment UI, so this plan does not apply. That surface was archived and deleted on 2026-08-26.
 
-## 2. 设计原则与不变量
+## 2. Design principles and invariants
 
-- **P1 检测确定性、零 LLM。** 判据只读 `transcript.json` 与派生 cue 流，可在 UI 线程
-  同步算，不产生调用成本。
-- **P2 复用 refine-align 闭环，不新造 flow/波次。** 新增的是一个 check 码与一个每句级
-  指令位，不是新的 job kind、新的 lane、新的阶段戳。
-- **P3 修复必须换语义。** 见 §4.1：同参数重跑会撞上同一个 `no_entry_needed` 门与同一套
-  合并偏置，结果逐字节相同。这是本方案必须改引擎的唯一理由。
-- **P4 验收纯算术、耗尽即原样。** 沿用 speaker-repair 的裁决：修复结果必须过一条可算的
-  下限，不过就**保留原状并记账**，绝不写一个更差的切分。
-- **P5 只改 `transAlign`。** `trans` 是句级译文真相，`transAlign` 是展示切分覆盖层；
-  二次校正是重切，不是重译，不得写 `trans`，也不得走 `transDisplay` 改写通道
-  （改写是"语序交叉且超 hard"的窄任务，与黏结无关）。
-- **P6 数量不匹配不是缺陷。** 判据的输出必须让 §1.4 那张「多对一卡」上的文案继续成立。
+- **P1 Detection is deterministic, with zero LLM calls.** The criterion reads only `transcript.json` and the derived cue stream,
+  can be computed synchronously on the UI thread, and incurs no call cost.
+- **P2 Reuse the refine-align loop; do not create a new flow or wave.** What is added is one check code and one per-sentence
+  instruction slot, not a new job kind, a new lane or a new stage stamp.
+- **P3 The fix must change the semantics.** See §4.1: re-running with the same parameters hits the same `no_entry_needed` gate
+  and the same merge bias, and the result is byte-for-byte identical. This is the only reason this plan must change the engine.
+- **P4 Acceptance is pure arithmetic; when retries are exhausted, keep the original.** Following the speaker-repair ruling, a repaired
+  result must pass a computable lower bound. If it fails, **keep the original and record it**; never write a worse segmentation.
+- **P5 Only change `transAlign`.** `trans` is the sentence-level translation source of truth, and `transAlign` is the display
+  segmentation overlay. Secondary correction is re-segmentation, not re-translation. It must not write `trans`, and must not go through
+  the `transDisplay` rewrite channel (rewriting is the narrow task of “word order crossing and exceeding hard”, unrelated to stickiness).
+- **P6 A count mismatch is not a defect.** The criterion's output must keep the copy on the §1.4 “many-to-one card” valid.
 
-## 3. M1 检测判据：`align-row-deficit`
+## 3. M1 detection criterion: `align-row-deficit`
 
-### 3.1 裁决：判驻留失衡，不判数量差
+### 3.1 Decision: judge dwell imbalance, not count difference
 
-三个候选判据与取舍：
+Three candidate criteria and their trade-offs:
 
-| 候选 | 问题 |
+| Candidate | Problem |
 | --- | --- |
-| 译文 cue 数 < 源 cue 数 | 直接违反 P6，会把全部合法多对一报成缺陷（真跑项目里这是多数句） |
-| 译文 cue 数 / 源 cue 数 < 比例阈值 | 比例对短句极不稳定（1:2 与 2:4 同比例但观感差别巨大），且阈值无法从既有常量派生 |
-| **单条译文 cue 覆盖 ≥2 条源 cue 且驻留 ≥ D 秒** | 直接对应用户体感（"钉在屏幕上"），与既有 `LONG_DWELL_SECONDS` 同族，只引入一个可校准参数 |
+| Translation cue count < source cue count | Directly violates P6; it would flag every legitimate many-to-one as a defect (in real projects, this is most sentences) |
+| Translation cue count / source cue count < ratio threshold | The ratio is very unstable for short sentences (1:2 and 2:4 have the same ratio but feel very different), and the threshold cannot be derived from existing constants |
+| **A single translation cue covers ≥2 source cues and dwells ≥ D seconds** | Maps directly onto the user's experience (“stuck on screen”), belongs to the same family as the existing `LONG_DWELL_SECONDS`, and introduces only one calibratable parameter |
 
-取第三个。它的物理含义是：**观众读完这一行中文之后，还要盯着它看很久，而屏幕另一半
-的英文已经翻过两三条了。**
+We take the third. Its physical meaning: **after the viewer finishes reading this line of Chinese, they still have to stare at it for a long time, while the English on the other half of the screen has already scrolled past two or three lines.**
 
-### 3.2 判据定义
+### 3.2 Criterion definition
 
-对语言 `lang` 的每个已翻译句 `s`，令：
+For each translated sentence `s` in language `lang`, let:
 
-- `src_rows(s)` = 该句锚定词区间覆盖的**源 cue 段数**，按
-  `OrigLineView.sourceRuns` 的同一规则计算：先按源 cue id 分段，再用 `mergeShortRuns`
-  （≤2 词的段并入相邻段，首段前并、末段后并、中段并入较短侧、平局取前、级联）吸收碎渣。
-  用 `mergeShortRuns` 而不是裸 cue 数是有意的：句首/句尾切在半条 cue 上产生的一两个词的
-  残段不是黏结，Mac 已经在渲染层把它们吞掉了，判据必须与用户看到的子行数一致。
-- `trans_cues(s)` = `derive_trans_cues` 为该句产出的译文 cue 列表。
+- `src_rows(s)` = the **number of source cue segments** covered by the sentence's anchored word interval, computed by the same rule as
+  `OrigLineView.sourceRuns`: first split by source cue id, then absorb fragments with `mergeShortRuns`
+  (segments of ≤2 words merge into adjacent segments: a first segment merges forward, a last segment merges backward, a middle segment merges into the shorter side, ties go to the earlier one, and merges cascade).
+  Using `mergeShortRuns` rather than the raw cue count is deliberate: one- or two-word remnants produced when a sentence starts or ends mid-cue are not stickiness.
+  Mac already swallows them at the rendering layer, so the criterion must match the number of sub-lines the user actually sees.
+- `trans_cues(s)` = the list of translation cues that `derive_trans_cues` produces for this sentence.
 
-判 `align-row-deficit` 命中，当且仅当同时满足：
+`align-row-deficit` fires if and only if all of the following hold:
 
-1. `src_rows(s) ≥ 2`（单源行无从谈黏结）；
-2. `trans_cues(s).len() < src_rows(s)`（确实少）；
-3. 该句**不在** `align-stale` 的降级集合里（即没有一条 `TransCue.fallback == true`）——
-   F4 归 `align-stale`，不重复报；
-4. 且满足下列任一：
-   - **(a) 驻留失衡**：存在一条译文 cue，其 `end - start ≥ D`，且它覆盖的源行数 ≥2；
-   - **(b) 整句降级且源行多**：`correspondence == "sentence"` 且 `src_rows(s) ≥ S`。
+1. `src_rows(s) ≥ 2` (a single source row cannot be stickiness);
+2. `trans_cues(s).len() < src_rows(s)` (there really are fewer);
+3. the sentence is **not** in the degraded set of `align-stale` (that is, no `TransCue.fallback == true`).
+   F4 belongs to `align-stale` and is not reported twice;
+4. and one of the following holds:
+   - **(a) dwell imbalance**: some translation cue has `end - start ≥ D` and covers ≥2 source rows;
+   - **(b) whole-sentence degradation with many source rows**: `correspondence == "sentence"` and `src_rows(s) ≥ S`.
 
-命中项的载荷（供 UI 与 `align_instructions` 使用）：
+Payload of a hit (used by the UI and `align_instructions`):
 
 ```jsonc
 {
   "sentence": "s12", "key": "s12",
   "sourceRows": 3,          // src_rows
   "transCues": 1,           // trans_cues.len()
-  "maxDwellSec": 6.4,       // 最长的那条译文 cue 的驻留
-  "targetUnits": 8,         // 该 cue 的阅读单位数，用来解释为何 source_ceiling 没兜住
+  "maxDwellSec": 6.4,       // dwell of the longest translation cue
+  "targetUnits": 8,         // reading units of that cue, used to explain why source_ceiling did not catch it
   "reason": "dwell" | "sentence-level"
 }
 ```
 
-档位：**warning**（与 `align-source-ceiling` 同档，进 `next` 的 fix 串）。只满足
-`src_rows ≥ 2 && trans_cues < src_rows` 而不满足 (a)/(b) 的句子**不报**，只在 metrics 里
-计数——它们正是 §1.4 那张「多对一卡」描述的合法形态。
+Severity: **warning** (same level as `align-source-ceiling`; it goes into the `fix` string in `next`). A sentence that satisfies only
+`src_rows ≥ 2 && trans_cues < src_rows` without (a) or (b) is **not reported**. It is only counted in the metrics, because it is exactly
+the legitimate form that the “many-to-one card” in §1.4 describes.
 
-`fix` 串与既有码同形，并带上 §4 的新开关：
+The `fix` string has the same shape as the existing codes, and carries the new switch from §4:
 
 ```text
 ccut translate <project> --lang <lang> --align-only --align-density paired --sentences a,b,c
 ```
 
-### 3.3 阈值与校准
+### 3.3 Thresholds and calibration
 
-两个参数，初值与依据：
+Two parameters, with initial values and their basis:
 
-| 参数 | 初值 | 依据 |
+| Parameter | Initial value | Basis |
 | --- | --- | --- |
-| `D`（单条译文 cue 的驻留上限） | **5.0s** | `LONG_DWELL_SECONDS = 7.0` 是"必须请 LLM 切"的门；5–7s 这一段正是被 7s 门放过、又已经明显超过舒适阅读时长的区间。取 5.0 让判据只咬进这条缝，不与 7s 门重叠 |
-| `S`（整句降级时的源行下限） | **3** | 整句对应盖 2 条源行是 `sentence_level_entry` 的常见正常形态（语序交叉）；盖 3 条起才值得请用户复核 |
+| `D` (dwell upper limit for a single translation cue) | **5.0s** | `LONG_DWELL_SECONDS = 7.0` is the gate that “must ask the LLM to split”. The 5–7s band is exactly the range the 7s gate lets through, yet it clearly exceeds comfortable reading time. Taking 5.0 makes the criterion bite only in that gap and not overlap the 7s gate |
+| `S` (source-row floor when the whole sentence is degraded) | **3** | A whole sentence covering 2 source rows is a common normal form of `sentence_level_entry` (crossed word order). It is only worth asking the user to review when it covers 3 or more source rows |
 
-两者都以 `pub const` 落在 `ccut-flow-core`，**不允许任何表面复制字面量**。校准方法（M4）：
-在既有真跑项目上导出 `(src_rows, maxDwellSec, targetUnits)` 三元组的联合分布，
-按 `src_rows` 分层看 `maxDwellSec` 的分位数；`D` 取"人工盲评认为黏结"的那一簇的下四分位。
-初值先按 §1.2 的残余集合推理给出，**M4 前不得当作已定案数值写进任何用户可见文案**。
+Both are placed in `ccut-flow-core` as `pub const`, and **no surface may copy the literals**.
 
-### 3.4 实现位置与共用契约
+Calibration method (M4): on existing real projects, export the joint distribution of the triples `(src_rows, maxDwellSec, targetUnits)`,
+stratify by `src_rows`, and look at the quantiles of `maxDwellSec`. `D` is set to the lower quartile of the cluster that human blind review judges to be stickiness.
+The initial values are first derived from the residual-set reasoning in §1.2. **Before M4, they must not be written as settled numbers into any user-visible copy.**
 
-- **判据函数**：`ccut-flow-core` 新增 `pub fn row_deficit_issues(doc, sentences, lang, cues)
-  -> Vec<RowDeficitIssue>`，与 `source_ceiling_issues_for_ranges` /
-  `paired_density_issue_for_ranges` 并列，放在 `engines::align`。
-  源行分段（`source_cue_runs` + `merge_short_runs`）作为 `pub fn` 一并上移到 flow-core：
-  **今天这段逻辑只存在于三个表面的三份镜像里，判据一旦引用它，Rust 侧必须成为第四份，
-  那就应该反过来让 Rust 成为规范来源**，三份 JS/Swift 镜像的注释改为指回 flow-core。
-  规则一字不改，三方现有测试（[`subtitle-rendering.test.js:201`](../skills/cuccut/templates/studio/subtitle-rendering.test.js)
-  一族）保持通过。
-- **check 接入**：[`check.rs`](../../../core/crates/ccut-engine/src/flows/check.rs) 已在 `:477`
-  派生源 cue、在 `:940` 派生译文 cue 流，两份都现成；新增码只是多一个收集与 push 块。
-- **metrics**：`SentenceAlignMetrics`（[`metrics.rs:740–770`](../../../core/crates/ccut-flow-core/src/metrics.rs)）
-  增 `source_rows: usize`、`trans_cues: usize`、`max_dwell_sec: f64`；
-  `AlignMetrics` 增 `row_deficit_rate: f64`（命中句 / 已翻译句）。这是 M4 校准的数据来源，
-  也让 `--json` 汇总在不改 check 档位的前提下先跑起来。
-- **refine 接入**：[`refine.rs:95–124`](../../../core/crates/ccut-engine/src/flows/refine.rs) 的
-  码列表加 `align-row-deficit`（上限 `ROW_DEFICIT_MAX_KEYS = 40`，与同族一致）；
-  [`refine.rs:196–218`](../../../core/crates/ccut-engine/src/flows/refine.rs) 的 `note` 表加一条
-  英文说明，例如
-  `"one translation row covers {sourceRows} source rows for {maxDwellSec}s — split it along the source rows"`。
+### 3.4 Implementation location and shared contract
 
-M1 到此为止**不改任何引擎行为、不改 UI、不 bump spec**：`ccut check` 多一条警告，
-`ccut refine-align` 多一类热点。这一步可以独立发布并立即让用户拿到诊断。
+- **Criterion function**: `ccut-flow-core` adds `pub fn row_deficit_issues(doc, sentences, lang, cues)
+  -> Vec<RowDeficitIssue>`, placed in `engines::align` alongside `source_ceiling_issues_for_ranges` /
+  `paired_density_issue_for_ranges`.
+  Source-row segmentation (`source_cue_runs` + `merge_short_runs`) is also lifted into flow-core as `pub fn`.
+  **Today this logic exists only as three mirrored copies across three surfaces. Once the criterion references it, the Rust side would become a fourth copy, so the direction should be reversed: Rust becomes the canonical source**,
+  and the comments in the three JS/Swift mirrors are changed to point back to flow-core. The rules stay unchanged, character for character, and the existing tests on all three sides
+  (the [`subtitle-rendering.test.js:201`](../skills/cuccut/templates/studio/subtitle-rendering.test.js) family) keep passing.
+- **check integration**: [`check.rs`](../../../core/crates/ccut-engine/src/flows/check.rs) already derives source cues at `:477` and the translation cue stream at `:940`; both are ready. The new code is just one collection block and one push block.
+- **metrics**: `SentenceAlignMetrics` ([`metrics.rs:740–770`](../../../core/crates/ccut-flow-core/src/metrics.rs))
+  adds `source_rows: usize`, `trans_cues: usize`, `max_dwell_sec: f64`;
+  `AlignMetrics` adds `row_deficit_rate: f64` (hit sentences / translated sentences). This is the data source for M4 calibration, and it lets the `--json` summary run first without changing check severity.
+- **refine integration**: the code list at [`refine.rs:95–124`](../../../core/crates/ccut-engine/src/flows/refine.rs) adds `align-row-deficit` (cap `ROW_DEFICIT_MAX_KEYS = 40`, consistent with the family);
+  the `note` table at [`refine.rs:196–218`](../../../core/crates/ccut-engine/src/flows/refine.rs) adds one English explanation, for example
+  `"one translation row covers {sourceRows} source rows for {maxDwellSec}s — split it along the source rows"`.
 
-## 4. M2 修复语义：paired 重切
+M1 stops here. It **changes no engine behaviour, no UI and no spec version**: `ccut check` gains one warning, and `ccut refine-align` gains one class of hotspot.
+This step can ship on its own and gives users the diagnostic immediately.
 
-### 4.1 为什么必须改引擎
+## 4. M2 repair semantics: paired re-splitting
 
-假设 M1 报出热点后直接跑现有的 `ccut translate --align-only --sentences <热点>`：
+### 4.1 Why the engine must change
 
-1. R1 类句子（译文 <10 units）进入 `align_sentences` 后，第一个碰到的就是
-   [`align.rs:725`](../../../core/crates/ccut-flow-core/src/engines/align.rs) 的 `no_entry_needed`——
-   四项判定与上一轮**逐字节相同**（译文没变、词时间没变、参数没变），于是再一次
-   `removals.push`，条目再一次不存在。
-2. R2/F3 类句子即使进了 LLM 轮，走的也是 `--align-only` 恒用的
-   [`align_edges_system_prompt`](../core/crates/ccut-flow-core/src/engines/align.rs:1753)（要求"切成最小自然语义块"，
-   与融合草稿的 `fusion_rows_prompt_section` 是两段不同提示、这一步不受
-   `--align-density` 影响）；即便模型这次给出更细的块，落库前仍要经过同一个
-   `bilingual_dp` 用同一个 [`pair_cost`](../core/crates/ccut-flow-core/src/align_block.rs:1040)
-   计价——`((units - soft) / soft).powi(2)` 对偏窄和偏宽两个方向同罚，DP 天然会把
-   细块焊回接近 `soft` 宽度的那几片，参数不变则代价函数不变，结果不变。
+Suppose M1 reports a hotspot and we run the existing `ccut translate --align-only --sentences <hotspot>` directly:
 
-**结论：同参数重跑是空操作。** 修复必须以"这一句换一套切分密度"的方式表达，这是
-本方案唯一必须改引擎的地方，也是 P3 的全部内容。
+1. An R1-type sentence (translation <10 units) enters `align_sentences`, and the first check it hits is
+   the `no_entry_needed` gate at [`align.rs:725`](../../../core/crates/ccut-flow-core/src/engines/align.rs).
+   Its four conditions are **byte-for-byte identical** to the previous round (translation unchanged, word timings unchanged, parameters unchanged), so it again runs `removals.push`, and the entry again does not exist.
+2. R2/F3-type sentences, even when they do reach the LLM round, go through [`align_edges_system_prompt`](../core/crates/ccut-flow-core/src/engines/align.rs:1753), which `--align-only` always uses. That prompt asks for "the smallest natural semantic blocks". It is a different prompt from the fused-draft `fusion_rows_prompt_section`, and this step is not affected by `--align-density`. Even if the model now returns finer blocks, they still pass through the same `bilingual_dp` before being stored, priced by the same [`pair_cost`](../core/crates/ccut-flow-core/src/align_block.rs:1040). `((units - soft) / soft).powi(2)` penalises both directions, too narrow and too wide alike, so the DP naturally welds the fine blocks back into pieces close to the `soft` width. With the parameters unchanged, the cost function is unchanged, and so is the result.
 
-**修复入口走的是 dedicated edges 轮，不是 rows 草稿轮。** `--align-only` 定向修复、
-`ccut check` 的 fix 串、`refine-align`、Mac/App v2 的定向按钮，全部命中现存的有效
-`transAlign`（或 `no_entry_needed` 短路的整句写入），因此在 `run_align_with_drafts_and_artifacts`
-里没有新草稿可接受，`accept_fused_drafts` 直接落空，句子进入
-[`plan_sentence`](../core/crates/ccut-flow-core/src/align_block.rs:1310) → `bilingual_dp` →
-`pair_cost` 这条常规块规划路径。只有**全新翻译**（`ccut translate` 未加
-`--align-only`、这一句此前没有译文）才会先产出 `--align-fusion rows` 草稿，交给
-`plan_sentence_rows` → `merge_short_rows`。下一个实施者改 paired 语义时，改错管道
-（`merge_short_rows`）不会报错、也不会被 M2 的黄金测试挡住——它只是在一条黏结修复
-永远不会实际经过的代码上生效，必须先认清这个岔路口。
+**Conclusion: re-running with the same parameters is a no-op.** The fix has to be expressed as "use a different splitting density for this one sentence". This is the only place where the engine must change, and it is the whole of P3.
 
-### 4.2 `density` 指令位
+**The repair entry point goes through the dedicated edges round, not the rows draft round.** The targeted `--align-only` repair, the fix chain of `ccut check`, `refine-align`, and the targeted buttons in the Mac/App v2 all hit an existing valid `transAlign` (or write the whole sentence through the `no_entry_needed` short circuit). So inside `run_align_with_drafts_and_artifacts` there is no new draft to accept, `accept_fused_drafts` falls through, and the sentence goes into [`plan_sentence`](../core/crates/ccut-flow-core/src/align_block.rs:1310) → `bilingual_dp` → `pair_cost`, the normal block-planning path. Only a **fresh translation** (`ccut translate` without `--align-only`, for a sentence that had no translation before) produces a `--align-fusion rows` draft first, which is handed to `plan_sentence_rows` → `merge_short_rows`. If the next implementer changes paired semantics in the wrong pipeline (`merge_short_rows`), nothing will error, and M2's golden tests will not catch it. The change would only take effect on code that the glued-row repair never actually runs through. This fork has to be recognised first.
+
+### 4.2 The `density` directive
 
 ```rust
 /// core/crates/ccut-flow-core/src/engines/align.rs
 pub enum AlignDensity {
-    /// 现状：多对一是默认形态，短译文不因源长而拆。
+    /// Current: many-to-one is the default shape; short translations are not split just because the source is long.
     Auto,
-    /// 二次校正：这一句尽量做到"每源行一条译文行"。
+    /// Second-pass correction: make this sentence aim for one translation row per source row.
     Paired,
 }
 ```
 
-- `AlignOptions` 新增 `density: AlignDensity`（缺省 `Auto`）与
-  `density_sentences: BTreeSet<String>`（为空时 `density` 作用于全部定向句）。
-  之所以是**每句级**而不是整轮开关：refine-align 一轮会同时携带 `align-overfit`、
-  `align-source-ceiling` 等其它热点，那些句子不该被强行拆密。
-- CLI：`ccut translate <project> --lang <l> --align-only --align-density <auto|paired>`；
-  枚举值、默认值、与 `--align-fusion` / `--align-mode` 的关系写进
-  [`ccut-cli-server-reference.md`](../cli/ccut-cli-server-reference.md) §8 的 translate 参数表。
-  `--align-density paired` 仅在 `--align-mode many-to-one` 下有意义（`independent` 无源锚），
-  组合非法时报错而不是静默忽略。
-- `ccut refine-align` 对**因 `align-row-deficit` 入选**的句子自动带上 `paired`，
-  其余热点句保持 `auto`；这正是 `density_sentences` 存在的理由。
+- `AlignOptions` gains `density: AlignDensity` (default `Auto`) and `density_sentences: BTreeSet<String>` (when empty, `density` applies to all targeted sentences). The reason it is **per sentence** rather than a round-wide switch: a single refine-align round also carries other hotspots such as `align-overfit` and `align-source-ceiling`. Those sentences should not be forcibly split more finely.
+- CLI: `ccut translate <project> --lang <l> --align-only --align-density <auto|paired>`. The enum values, the default, and the relationship with `--align-fusion` / `--align-mode` are recorded in the translate parameter table in §8 of [`ccut-cli-server-reference.md`](../cli/ccut-cli-server-reference.md). `--align-density paired` is only meaningful under `--align-mode many-to-one` (`independent` has no source anchor). An illegal combination reports an error instead of being silently ignored.
+- `ccut refine-align` automatically sets `paired` for sentences **selected because of `align-row-deficit`**. The other hotspot sentences stay at `auto`. This is the reason `density_sentences` exists.
 
-### 4.3 `Paired` 与 `Auto` 的五条差异
+### 4.3 Five differences between `Paired` and `Auto`
 
-对被标记的句子：
+For the flagged sentences:
 
-1. **绕过 `no_entry_needed`**（[`align.rs:725`](../../../core/crates/ccut-flow-core/src/engines/align.rs)）：
-   `density == Paired` 时该门恒为 `false`，句子必然入队产出条目。这一条单独就治好了 R1。
-2. **把密度语义下推到 `pair_cost`**：真实入口不经过 `merge_short_rows`
-   （见 §4.1），因此放宽必须落在 `bilingual_dp` 逐片计价的
-   [`pair_cost`](../core/crates/ccut-flow-core/src/align_block.rs:1040) 里——paired 下
-   取消"窄于 `soft`"方向的宽度二次惩罚（`((units - soft) / soft).powi(2)` 目前对准和
-   偏窄两个方向同罚，paired 只免掉偏窄那一半，鼓励切成更多短片）；其余代价项原样
-   不动：超 `fit` 的二次递增罚、`units > hard` 硬约束、源侧宽度/时窗罚
-   （`SOURCE_OVER_FIT_PENALTY` / `PAIRED_SOURCE_MAX_SECONDS` / `PAIRED_SOURCE_HARD_SECONDS`）、
-   阅读时长缺口罚（`DURATION_DEFICIT_WEIGHT`）与超停留罚（`DURATION_EXCESS_WEIGHT`）、
-   缝罚（`seam_costs` / `BLOCKING_SEAM_PENALTY`）、块合并罚（`BLOCK_MERGE_PENALTY`）、
-   置信度罚，一律照旧。`merge_short_rows` 的 `too_small` 保留按 `input.density` 放宽
-   `units < ROW_MIN_UNITS` 判据（[`align_block.rs:1522–1526`](../../../core/crates/ccut-flow-core/src/align_block.rs)），
-   但那只服务 §4.1 说的 rows 草稿轮，不是 paired 修复的生效路径；`too_fast`
-   （读速硬守卫）在两条路径上都**原样保留**——读速是生理上限，不是排版偏好，放开它
-   只会制造读不完的行。
+1. **Bypass `no_entry_needed`** ([`align.rs:725`](../../../core/crates/ccut-flow-core/src/engines/align.rs)): when `density == Paired`, this gate is always `false`, so the sentence is necessarily queued and produces an entry. This alone fixes R1.
+2. **Push the density semantics down into `pair_cost`**: the real entry point does not go through `merge_short_rows` (see §4.1), so the relaxation has to land in [`pair_cost`](../core/crates/ccut-flow-core/src/align_block.rs:1040), which `bilingual_dp` uses to price each piece. Under paired, the width quadratic penalty for the "narrower than `soft`" direction is removed. Today `((units - soft) / soft).powi(2)` penalises both the aligned and the too-narrow directions; paired exempts only the too-narrow half, which encourages cutting into more short pieces. All other cost terms stay exactly as they are: the quadratic penalty for exceeding `fit`, the hard constraint `units > hard`, the source-side width and time-window penalties (`SOURCE_OVER_FIT_PENALTY` / `PAIRED_SOURCE_MAX_SECONDS` / `PAIRED_SOURCE_HARD_SECONDS`), the reading-duration deficit penalty (`DURATION_DEFICIT_WEIGHT`) and the on-screen-excess penalty (`DURATION_EXCESS_WEIGHT`), the seam penalties (`seam_costs` / `BLOCKING_SEAM_PENALTY`), the block-merge penalty (`BLOCK_MERGE_PENALTY`), and the confidence penalty. `merge_short_rows` keeps its `too_small` check, which relaxes `units < ROW_MIN_UNITS` according to `input.density` ([`align_block.rs:1522–1526`](../../../core/crates/ccut-flow-core/src/align_block.rs)). But that only serves the rows-draft round described in §4.1. It is not the path where the paired repair takes effect. `too_fast` (the reading-speed hard guard) is **kept as is** on both paths. Reading speed is a physiological limit, not a layout preference, and relaxing it would only produce lines nobody can finish reading.
 
-   **已知边界（实测，M4 需带数据复核）**：宽度项的节省上限不到 1.0，因此当某个切点
-   的缝价明显更高时，paired 仍然切不开。两类句子会因此稳定落进 `rowRepair.rejected`：
-   一是任何两分法都会产生 ≤ `MIN_PIECE_CHARS` 碎片的极短译文——`target_cut_candidates`
-   （[`split.rs`](../../../core/crates/ccut-flow-core/src/split.rs) 的 `SeamLintClass::FlashFragment`）
-   给这类缝盖 `BLOCKING_SEAM_PENALTY`，**这是有意保留的**：放开它等于允许两三个字的
-   闪片字幕，比黏结更糟，这类句保持多对一并记 `rejected` 正是 P4「耗尽即原样」的
-   正确出口。二是没有任何标点或语义缝可用的句子（缝价按 `NO_SEAM_PENALTY` 计）。
-   反过来，源侧时窗 > `PAIRED_SOURCE_HARD_SECONDS` 的句子 auto 本来就会切，
-   paired 在那一段没有增量。paired 真正改变结果的区间大致是「缝价便宜（≈0.3）
-   且源侧时窗落在软硬阈值之间或只触发 `SOURCE_OVER_FIT_PENALTY`」——因此
-   `rejected` 的基线会明显高于零，**不能把 `rejected > 0` 当失败**，M4 校准时应
-   分别统计上述两类的占比，再决定是否调整 §4.3④ 的下限式。
-3. **提示段落在 `AlignOptions.instructions` 通道**：`fusion_rows_prompt_section`
-   （[`translate.rs:1392`](../../../core/crates/ccut-flow-core/src/engines/translate.rs)）本身
-   一字不改——它是 `ccut translate` 生成初次译文时的融合草稿提示，align-only 定向
-   修复根本不会再调用它（见 §4.1）。paired 的措辞改动落在
-   [`paired_prompt_instructions`](../core/crates/ccut-flow-core/src/engines/align.rs:356)：
-   命中 paired 的句子逐句拼出"这些句子至少要 N 个对齐块（`aim for at least N blocks`，
-   要的是沿相邻源区间给出更多更细的块、不要塌成整句一块；**行数由引擎的 DP 决定，
-   模型在 edges 载体上控制不了行**）、保留自然译文原文、
-   只在读速超标或时长不足 1 秒时才并行、不得为这次修复改写或挪动译文"的追加说明，
-   经 `AlignOptions.instructions` 附加在 edges/table 载体的契约末尾——这是定向 refine
-   本来就有的"为什么/怎么切"通道（[`AlignOptions.instructions`](../core/crates/ccut-flow-core/src/engines/align.rs:421)），
-   不是新开的通道。原文那条约束保留：不得改变 `<span data-src>` 的行分区载体形状，
-   Agent 与 provider 仍必须共用同一个 `is_row_partition` 校验，不允许分叉。
-   **已知边界**：`ccut translate --align-density paired`（不带 `--align-only`）命中的
-   句子若此前没有译文，会先走 `ccut translate` 的初次翻译，那一步用的还是
-   `fusion_rows_prompt_section`（"四组通常想要两行"），paired 的追加说明要等到后续
-   align 轮才会附加，在这条路径上近乎不起作用。CLI 校验层已把 paired 钉死为
-   **必须**配 `--sentences`（详见 §4.2/CLI 参考文档），
-   缩小误用面，但不强制要求 `--align-only`——真正有效的组合仍是
-   `--align-only --align-density paired --sentences …`。
-4. **按驻留谓词验收（2026-09-24 修订）**：原先的纯算术最小片数验收
+   **Known boundary (measured; M4 must re-check with data)**: the saving from the width term is capped below 1.0. So when the seam price at some cut point is clearly higher, paired still cannot split there. Two kinds of sentences will consistently land in `rowRepair.rejected` for this reason. The first: any split of a very short translation produces fragments of ≤ `MIN_PIECE_CHARS`. `target_cut_candidates` ([`split.rs`](../../../core/crates/ccut-flow-core/src/split.rs), `SeamLintClass::FlashFragment`) assigns `BLOCKING_SEAM_PENALTY` to such seams. **This is kept on purpose.** Relaxing it would allow flash subtitles of two or three characters, which is worse than gluing. Sentences of this kind stay many-to-one and are recorded as `rejected`. That is the correct exit for P4, "leave as-is when exhausted". The second: sentences with no usable punctuation or semantic seam at all (the seam price is `NO_SEAM_PENALTY`). Conversely, sentences whose source-side time window is > `PAIRED_SOURCE_HARD_SECONDS` already split under auto, so paired adds nothing in that range. The range where paired really changes the result is roughly: "the seam price is cheap (≈0.3) and the source-side time window lies between the soft and hard thresholds, or only triggers `SOURCE_OVER_FIT_PENALTY`". So the baseline of `rejected` will be clearly above zero. **Do not treat `rejected > 0` as failure.** During M4 calibration, count the share of each of the two kinds above separately, then decide whether to adjust the lower-bound form in §4.3④.
+3. **The prompt paragraph goes through the `AlignOptions.instructions` channel**: `fusion_rows_prompt_section` ([`translate.rs:1392`](../../../core/crates/ccut-flow-core/src/engines/translate.rs)) itself is not changed by a single character. It is the fused-draft prompt that `ccut translate` uses when it generates the first translation. The align-only targeted repair never calls it at all (see §4.1). The paired wording change lives in [`paired_prompt_instructions`](../core/crates/ccut-flow-core/src/engines/align.rs:356). For each sentence hit by paired, an appended note is concatenated sentence by sentence. It says: these sentences should have at least N alignment blocks (`aim for at least N blocks`, meaning give more and finer blocks along adjacent source intervals, and do not collapse the sentence into one block. **The number of rows is decided by the engine's DP. The model cannot control rows on the edges carrier**). It also says: keep the natural translation wording, only run pieces in parallel when reading speed is exceeded or the duration is under 1 second, and do not rewrite or move the translation for this repair. The note is attached through `AlignOptions.instructions` at the end of the contract for the edges/table carrier. This is the "why/how to split" channel that targeted refine already has ([`AlignOptions.instructions`](../core/crates/ccut-flow-core/src/engines/align.rs:421)). It is not a newly opened channel. The original constraint still holds: the row-partition carrier shape of `<span data-src>` must not change. The Agent and the provider must both use the same `is_row_partition` validation, and they must not diverge.
+   **Known boundary**: if a sentence hit by `ccut translate --align-density paired` (without `--align-only`) had no translation before, it first goes through the initial translation of `ccut translate`. That step still uses `fusion_rows_prompt_section` ("four groups usually want two rows", a Chinese prompt fragment: “四组通常想要两行”). The paired note is only appended in a later align round, so on this path it has almost no effect. The CLI validation layer already pins paired to **require** `--sentences` (see §4.2 and the CLI reference). This narrows the misuse surface but does not force `--align-only`. The combination that actually works is still `--align-only --align-density paired --sentences …`.
+4. **Acceptance by the dwell predicate (revised 2026-09-24)**: the original pure-arithmetic acceptance on the minimum piece count,
 
    ```text
    pieces.len() ≥ min( src_rows, max(2, ceil(target_units / ROW_MIN_UNITS)) )
    ```
 
-   把"消除了黏结但片数少一片"的好答案也拒掉了（s-g9.0：7 个 chunk 的答案被引擎合成 2 片、要求 4 片 ⇒
-   `below-minimum`；worker 第 2 轮 3 行答案同样被拒）。现在这个数只进提示（"aim for about N
-   blocks"）与 `rejections[].required`，是指导语不是配额。验收改用与 `align-row-deficit`
-   同一个驻留谓词 `row_dwell_deficit`（驻留 ≥`ROW_DEFICIT_DWELL_SECONDS`(5s) 且覆盖 ≥2 条
-   合并后的源行）逐句比较新旧形态（黏结行数、最长驻留、最大跨源行数）：
-   - 新形态无黏结 ⇒ 接受，不看片数；
-   - 仍有黏结但**严格更好**（三项都不变差且至少一项改善），或原条目缺失/已失效（曾有条目
-     但与当前译文不匹配，或译文整句超 fit/hard）而新形态不变差 ⇒ 接受，保留
-     `align-row-deficit` 告警并在 violations 记 `accepted a partial fix`；
-   - 否则 `rejected`，`reason: "not-improved"`，**保留原条目/原状**（P4）。
-   - 例外在前：修复调用没拿到可用答案、预算尾巴落下的是模型缺席切法
-     （`deterministic/1` 等宽切、`anchor/1` 纯锚点）时，只要原条目是模型给的
-     `llm-*` 对齐就直接 `rejected`，`reason: "model-free"`，不进驻留谓词——等宽切
-     清掉黏结行只是因为切得更碎，不是更对的对应（2026-09-30 现场：stanford 一批
-     `align-edge-ordinal` 拒收把同批 4 句 `llm-lines` 对齐换成了等宽切 / 纯锚点，
-     其中一句驻留只从 6.8s 缩到 6.5s）。原条目缺失、失效或本身就是模型缺席切法时
-     照常验收。
+   also rejected good answers that had removed the glue but had one fewer piece (s-g9.0: the answer for a 7-chunk sentence was merged by the engine into 2 pieces, and 4 were required, which gave `below-minimum`. Round 2 of the worker's 3-row answer was rejected for the same reason). Now this number only goes into the prompt ("aim for about N blocks") and into `rejections[].required`. It is guidance, not a quota. Acceptance instead uses the same dwell predicate as `align-row-deficit`, `row_dwell_deficit` (dwell ≥ `ROW_DEFICIT_DWELL_SECONDS` (5s) and coverage of ≥2 merged source rows). The old and new shapes are compared sentence by sentence (glued row count, longest dwell, maximum number of source rows spanned):
+   - A new shape with no glue ⇒ accept, regardless of piece count.
+   - Still glued, but **strictly better** (none of the three measures is worse and at least one improves), or the original entry is missing or invalid (there was an entry but it no longer matches the current translation, or the whole translation exceeds fit/hard), while the new shape is not worse ⇒ accept. Keep the `align-row-deficit` warning and record `accepted a partial fix` in violations.
+   - Otherwise `rejected`, with `reason: "not-improved"`, **keeping the original entry as it was** (P4).
+   - Exception first: when the repair call got no usable answer, and the budget tail falls on a model-absent split (`deterministic/1` equal-width splitting, `anchor/1` pure anchors), then as long as the original entry is a model-produced `llm-*` alignment it is directly `rejected` with `reason: "model-free"`. It does not go through the dwell predicate. Equal-width splitting clears glued rows only because it cuts them into finer pieces, not because it is a more correct correspondence. (Field case on 2026-09-30: in a stanford batch, the `align-edge-ordinal` rejection replaced 4 `llm-lines` alignments from the same batch with equal-width or pure-anchor splits, and one sentence's dwell only dropped from 6.8s to 6.5s.) When the original entry is missing, invalid, or itself a model-absent split, acceptance proceeds as usual.
 
-   引擎规划层同步用这个谓词：`bilingual_dp` 第一遍方案若仍黏结，第二遍给黏结片加罚分，并只
-   放开可读片（≥`ROW_MIN_UNITS` 单位、时长 ≥ 最小时长、读速 ≤ `ROW_MAX_CPS`）作新切点；
-   `merge_short_rows` 不再为"太窄"把两片并回一条黏结行。
-5. **碎渣防线不放**：结果仍必须过 `align_entry_valid`（[`split.rs:983`](../../../core/crates/ccut-flow-core/src/split.rs)）、
-   `source_fragment_issues`（≤2 词源区间配 ≥8 units 译文的"窄源配宽译"，
-   [`align.rs:3513–3527`](../../../core/crates/ccut-flow-core/src/engines/align.rs)）与块层 I3/I4。
-   paired 放开的是"译文行可以短"，不是"源锚可以碎"。
+   The engine's planning layer uses this predicate too. If the first-pass plan of `bilingual_dp` is still glued, the second pass adds a penalty to the glued pieces, and only reopens readable pieces (≥ `ROW_MIN_UNITS` units, duration ≥ minimum duration, reading speed ≤ `ROW_MAX_CPS`) as new cut points. `merge_short_rows` no longer merges two pieces back into one glued row just because they are "too narrow".
+5. **The fragment guard is not relaxed**: the result must still pass `align_entry_valid` ([`split.rs:983`](../../../core/crates/ccut-flow-core/src/split.rs)), `source_fragment_issues` (a "narrow source paired with wide translation" check, where a source span of ≤2 words is paired with ≥8 units of translation, [`align.rs:3513–3527`](../../../core/crates/ccut-flow-core/src/engines/align.rs)), and the block-level I3/I4 checks. Paired relaxes "a translation row may be short". It does not relax "a source anchor may be fragmented".
 
-### 4.4 记账
+### 4.4 Bookkeeping
 
-`AlignOutcome` 增一个 `row_repair` 信封，随 translate 的 `--json` 与 report 输出
-（与已有的 `rowsMerged` 并列，[`translate.rs:568`](../../../core/crates/ccut-engine/src/flows/translate.rs)）：
+`AlignOutcome` gains a `row_repair` envelope, emitted with the translate `--json` and report output (alongside the existing `rowsMerged`, [`translate.rs:568`](../../../core/crates/ccut-engine/src/flows/translate.rs)):
 
 ```jsonc
 "rowRepair": {
-  "candidates": 37,   // 带 paired 标记入队的句数
-  "repaired": 29,     // 过了 §4.3 ④ 验收并落库
-  "rejected": 6,      // 新形态仍黏结且不比原来好，保留原状
-  "capped": 2,        // 被 40 句上限截掉、留给下一轮
-  "rejections": [     // 被拒句逐句明细，最多 40 条
+  "candidates": 37,   // sentences enqueued with the paired flag
+  "repaired": 29,     // passed the §4.3 ④ acceptance check and were written
+  "rejected": 6,      // new shape still stuck and no better than the original; original kept
+  "capped": 2,        // cut off by the 40-sentence cap, left for the next round
+  "rejections": [     // per-sentence details of rejected sentences, up to 40 entries
     {
       "sentence": "s-g21.1",
       "reason": "not-improved",   // | "no-write" | "rewritten-basis" | "model-free"
-      "sourceRows": 4,            // 该句当前占用的源字幕行数
-      "targetUnits": 14,          // 译文显示单位数（中日韩按全角计）
-      "required": 3,              // 提示建议片数（指导语）= min(sourceRows, max(2, ceil(targetUnits / 6)))
-      "delivered": 1,             // 本轮实际交付片数
+      "sourceRows": 4,            // number of source subtitle rows this sentence currently occupies
+      "targetUnits": 14,          // display units of the translation (CJK counted as full-width)
+      "required": 3,              // suggested piece count in the prompt (guidance) = min(sourceRows, max(2, ceil(targetUnits / 6)))
+      "delivered": 1,             // pieces actually delivered this round
       "unitsPerRow": 3.5          // targetUnits / sourceRows
     }
   ],
-  "rejectionsTruncated": 0        // 超出 40 条上限、只计数的被拒句
+  "rejectionsTruncated": 0        // rejected sentences beyond the 40-entry cap, counted only
 }
 ```
 
-`rejected` 非零不是失败，是 P4 的正常出口。但只有计数时「38 候选 → 38 拒 → 0 修」
-判断不了是验收式过严还是这批句在目标语下本就切不出那么多片，所以逐句把算出
-`required` 的两个度量一并写下来：`unitsPerRow` 明显低于 `ROW_MIN_UNITS`(6) 就是
-「译文没有足够字数铺满源行」的结构性不可满足，改提示词没有用。
+A non-zero `rejected` is not a failure; it is the normal exit of P4. But with counts alone, "38 candidates → 38 rejected → 0 repaired" cannot tell whether the acceptance check is too strict or whether this batch simply cannot be split into that many pieces in the target language. So each rejected sentence records the two metrics that go into `required`: when `unitsPerRow` is clearly below `ROW_MIN_UNITS` (6), the translation does not have enough characters to fill its source rows. That is a structural condition that cannot be satisfied, and changing the prompt will not help.
 
-### 4.5 契约同步义务（硬性）
+### 4.5 Contract sync obligation (mandatory)
 
-提示段与验收器的任何改动都必须**同时**落在两条路径上：本地 Agent 与 Cloud
-Model/provider。两者共用同一份解析器与行分区校验器
-（[`translate_html.rs:87`](../../../core/crates/ccut-flow-core/src/filepipe/translate_html.rs)
-`is_row_partition`，经 [`filepipe/mod.rs:68`](../../../core/crates/ccut-flow-core/src/filepipe/mod.rs) 导出），
-因此 paired 变体**不得**引入新的载体形状——只改提示措辞与落库后的验收阈值，
-`<span data-src="a-b">` 的行分区形状原样不动。共享回归测试同批更新。
+Any change to the prompt section or the acceptance checker must land on **both** paths at the same time: the local Agent and the Cloud Model/provider. The two share one parser and one row-partition validator ([`translate_html.rs:87`](../../../core/crates/ccut-flow-core/src/filepipe/translate_html.rs) `is_row_partition`, exported via [`filepipe/mod.rs:68`](../../../core/crates/ccut-flow-core/src/filepipe/mod.rs)). The paired variant therefore **must not** introduce a new carrier shape. It may only change the prompt wording and the post-write acceptance threshold; the `<span data-src="a-b">` row-partition shape stays exactly as it is. Shared regression tests are updated in the same batch.
 
-## 5. M3 四表面 UI
+## 5. M3 four-surface UI
 
-统一口径：**"黏结"计数一律来自 §3.4 的共用判据，不读 `check` 报告文件。** 表面自己
-（Swift/Rust/JS）按同一规则同步计算，或消费引擎导出的 metrics；`jobs.json` 仍是任务态
-唯一真相，表面不另存进度。
+Common rule: the "stuck" count always comes from the shared criterion in §3.4 and never reads the `check` report file. Each surface (Swift/Rust/JS) computes it with the same rule, or consumes the metrics exported by the engine. `jobs.json` remains the single source of truth for task state; surfaces do not keep their own progress.
 
 ### 5.1 apps/mac
 
-- **statbar**：`TransStatBar.stats` 增 `stuck: Int`，新增一个警示色统计项「N 处黏结」，
-  优先级排在 `untrans` 与 stale 之间（窄条时先掉原始计数、后掉可操作警告，沿用
-  [`TranslatePaneSupport.swift:400`](../apps/mac/Sources/VoiceInk/Translation/Pane/TranslatePaneSupport.swift)
-  的 `Stat.priority` 机制）。点击 → `onRepairRows`，与既有 `onRetranslate` 同构。
-- **确认对话**：复用 `AlignSetupBody`（[`AlignSetupBody.swift`](../apps/mac/Sources/VoiceInk/AI/Flows/Translate/AlignSetupBody.swift)），
-  标题改为「按源行重新对齐」，脚注行的 `≈N lines` 用黏结句数；确认后走
-  `startAlign(keys:)`（[`TranslatePaneActions.swift:72`](../apps/mac/Sources/VoiceInk/Translation/Pane/TranslatePaneActions.swift)）。
-- **请求装配**：[`Contracts.swift:458`](../apps/mac/Sources/CucCutCore/Contracts.swift) 的
-  `alignOnly` 分支增 `result["alignDensity"] = .string("paired")`（仅在按黏结入口发起时）。
-- **句卡右键**：在「Re-align this line」下方加「按源行拆分对齐」
-  （[`TransSentenceCardView.swift:365`](../apps/mac/Sources/VoiceInk/Translation/Card/TransSentenceCardView.swift)），
-  同一路径带 `density = paired`。
-- **卡片徽章**：`TranslateCardBadge` 增 `.rowStuck`（warning 档），文案「N 条原文共用一行」，
-  与 `.realigning` 互斥（运行中优先）。**它必须与 §1.4 的多对一 chip 并存**：chip 说明
-  这是默认形态，徽章只在判据命中时出现。
-- Result 阶段、Undo、运行态头（`TransRunInfo`）全部沿用现状，不新增分支。
+- **statbar**: `TransStatBar.stats` gains `stuck: Int`, adding a warning-colored stat item "N stuck" (N 处黏结). Its priority sits between `untrans` and stale. When the bar is narrow, the raw counts drop first and the actionable warning is kept longer, following the `Stat.priority` mechanism in [`TranslatePaneSupport.swift:400`](../apps/mac/Sources/VoiceInk/Translation/Pane/TranslatePaneSupport.swift). Clicking it calls `onRepairRows`, mirroring the existing `onRetranslate`.
+- **Confirmation dialog**: reuse `AlignSetupBody` ([`AlignSetupBody.swift`](../apps/mac/Sources/VoiceInk/AI/Flows/Translate/AlignSetupBody.swift)). The title changes to “Re-align by source row” (按源行重新对齐). The footnote's `≈N lines` uses the number of stuck sentences. After confirmation, call `startAlign(keys:)` ([`TranslatePaneActions.swift:72`](../apps/mac/Sources/VoiceInk/Translation/Pane/TranslatePaneActions.swift)).
+- **Request assembly**: in the `alignOnly` branch of [`Contracts.swift:458`](../apps/mac/Sources/CucCutCore/Contracts.swift), add `result["alignDensity"] = .string("paired")`. This applies only when the request starts from the stuck-row entry point.
+- **Sentence card context menu**: add “Re-align by source row” (按源行拆分对齐) below “Re-align this line”, in [`TransSentenceCardView.swift:365`](../apps/mac/Sources/VoiceInk/Translation/Card/TransSentenceCardView.swift). It takes the same path with `density = paired`.
+- **Card badge**: `TranslateCardBadge` gains `.rowStuck` (warning tier), with the text "N source lines share one row" (N 条原文共用一行). It is mutually exclusive with `.realigning`, and the running state takes priority. **It must coexist with the many-to-one chip from §1.4**: the chip says this is the default shape, while the badge appears only when the criterion is met.
+- The Result stage, Undo, and the running header (`TransRunInfo`) all stay as they are. No new branches.
 
-### 5.2 App v2（apps/cuccut）
+### 5.2 App v2 (apps/cuccut)
 
-- `AlignSpec::Scoped` 增 `density: AlignDensity`（[`ai/mod.rs:112`](../../../apps/cuccut/src/app/editor/ai/mod.rs)），
-  `start_align` 增一个 `start_align_paired` 入口；下单时透传 `alignDensity`。
-- 句卡右键 `TranslateCardAction` 与悬停 `SentenceOp` 各增一项 `RealignPaired`
-  （[`lists/translate.rs:2157`](../../../apps/cuccut/src/app/editor/lists/translate.rs) 与
-  [`:2224`](../../../apps/cuccut/src/app/editor/lists/translate.rs)），沿用"不弹设置窗直接跑"的既定裁决
-  （[`product-design/13/13.2/13.2.13.md:29`](../product/product-design/13/13.2/13.2.13.md)）。
-- statbar 同 Mac 加一项黏结计数；v2 的运行态头不改。
+- `AlignSpec::Scoped` gains `density: AlignDensity` ([`ai/mod.rs:112`](../../../apps/cuccut/src/app/editor/ai/mod.rs)). Add a `start_align_paired` entry point to `start_align`, and pass `alignDensity` through when the job is submitted.
+- The sentence card's right-click `TranslateCardAction` and the hover `SentenceOp` each gain a `RealignPaired` item ([`lists/translate.rs:2157`](../../../apps/cuccut/src/app/editor/lists/translate.rs) and [`:2224`](../../../apps/cuccut/src/app/editor/lists/translate.rs)). This follows the established decision to run directly without opening a settings window ([`product-design/13/13.2/13.2.13.md:29`](../product/product-design/13/13.2/13.2.13.md)).
+- The statbar adds a stuck-count item, the same as on Mac. v2's running header does not change.
 
-### 5.3 Studio web（skills/cuccut/templates/studio）
+### 5.3 Studio web (skills/cuccut/templates/studio)
 
-Studio **没有任何 AI 任务下单端点**（§1.4），因此：
+Studio has **no AI task submission endpoint** (§1.4), so:
 
-- `translate-pane.js` 的统计条只增一个**只读**「黏结 N」计数（警示色，不可点），
-  与「不画不可点的假动作」的既有裁决不冲突——不可点的计数是静态事实，
-  不可点的**动作**才是假动作。
-- 计数复用 `subtitle-rendering.js` 已有的 `mergeShortRuns`（[`:226`](../skills/cuccut/templates/studio/subtitle-rendering.js)）
-  与译文 cue 投影，规则与 flow-core 逐条一致，新增 `subtitle-rendering.test.js` 用例锁死。
-- 不新增 fetch 端点、不新增按钮。
+- `translate-pane.js` adds only a **read-only** "stuck N" count (黏结 N) to the stat bar, in the warning color and not clickable. This does not conflict with the existing rule against drawing non-clickable fake actions: a non-clickable count is a static fact, while a non-clickable **action** is the fake kind.
+- The count reuses `mergeShortRuns` already in `subtitle-rendering.js` ([`:226`](../skills/cuccut/templates/studio/subtitle-rendering.js)) and the translation cue projection. The rule matches flow-core case by case, and a new `subtitle-rendering.test.js` case locks it down.
+- No new fetch endpoints and no new buttons.
 
-### 5.4 designs/ 原型
+### 5.4 designs/ prototypes
 
-- [`designs/cuccut/`](../../../designs/cuccut/README.md)：Subtitle · Edit 画板的
-  statbar 增黏结计数项；四张块语义演示卡增第五张「黏结卡」——形态 = 多对一卡 + 警示 chip +
-  注「这一条中文停留 6.4s、覆盖 3 条原文字幕，超过了舒适阅读时长」。同轮更新
-  [`product-design.md`](../product/product-design.md) §13.2 与该目录 README 的轮次日志（这是
-  `designs/cuccut` 的强制同步规则）。
-- [`designs/cuccut-mac/`](../designs/cuccut-mac/CLAUDE.md)：`app/translate-model.js` 的
-  `mergeShortRuns` 注释改为指回 flow-core；statbar 同步计数项。
+- [`designs/cuccut/`](../../../designs/cuccut/README.md): on the Subtitle · Edit board, the statbar gains the stuck-count item. The four block-semantics demo cards gain a fifth, the “stuck card”. Its shape is a many-to-one card plus a warning chip, with the note "This Chinese line stays on screen for 6.4s and covers 3 source subtitle lines, longer than a comfortable reading time" (这一条中文停留 6.4s、覆盖 3 条原文字幕，超过了舒适阅读时长). In the same round, update [`product-design.md`](../product/product-design.md) §13.2 and the round log in this directory's README. This is the mandatory sync rule for `designs/cuccut`.
+- [`designs/cuccut-mac/`](../designs/cuccut-mac/CLAUDE.md): change the `mergeShortRuns` comment in `app/translate-model.js` to point back to flow-core. Sync the count item in the statbar.
 
-### 5.5 apps/windows（已归档）
+### 5.5 apps/windows (archived)
 
-无翻译/对齐 UI，**不适用**，不创建占位实现。2026-08-26 该目录已归档删除，本节只留作
-M3 表面清点的记录。
+There is no translate/align UI here, so this does not apply, and no placeholder implementation is created. On 2026-08-26 this directory was archived and deleted. This section is kept only as a record of the M3 surface inventory.
 
-## 6. M4 验收、校准与过渡方案
+## 6. M4 acceptance, calibration and transition plan
 
-### 6.1 单元测试
+### 6.1 Unit tests
 
-- **五种形态 golden**（§1.3 F1–F5 各一条 fixture）：F1/F2/F3 必须报 `align-row-deficit`
-  （在满足 (a)/(b) 时），F4 只报 `align-stale`、不重复报，F5 不报。
-- **合法多对一负例**：译文 12 units、覆盖 2 条源行、驻留 3.2s ⇒ **不得**命中（P6 的锁）。
-- **paired plan 探针**：真实入口是 `plan_sentence` → `bilingual_dp` → `pair_cost`
-  （见 §4.1），不是 `plan_sentence_rows` + `merge_short_rows`（那条只服务 rows 草稿）。
-  同一条 fixture 分别以 `Auto` / `Paired` 跑 `plan_sentence`，断言 `Auto` 产 1 片、
-  `Paired` 产 ≥2 片、且两者 `concat(pieces) == target`（paired 不改写译文）；再单独
-  探 `pair_cost`，断言 `units ≥ soft` 时 `Auto`/`Paired` 逐字节同代价、只有
-  `units < soft` 的窄侧代价被 paired 免掉。
-- **建议片数**：构造一条 6 units / 3 源行的译文，断言提示建议片数被 `min` 夹到 2 而不是 3。
-- **驻留验收**（2026-09-24）：s-g9.0 源词 + 7 个 chunk 的答案 ⇒ ≥3 行无黏结；少于建议片数但无黏结 ⇒
-  接受；严格更好的部分修复 ⇒ 接受并告警；不改善 ⇒ `not-improved`（`align.rs` 的 `sg9_*` 测试）。
-- **解析器共享测试**：paired 提示变体产出的回答仍过 `is_row_partition`；
-  Agent lint 与 provider 解析走同一断言集（§4.5）。
-- **镜像一致性**：flow-core 的 `merge_short_runs` 与
-  [`subtitle-rendering.test.js:201`](../skills/cuccut/templates/studio/subtitle-rendering.test.js)
-  一族的既有用例逐条对齐（同输入同输出）。
+- **Golden tests for the five shapes** (one fixture each for F1–F5 in §1.3): F1/F2/F3 must report `align-row-deficit` (when (a)/(b) are met). F4 reports only `align-stale` and is not reported twice. F5 reports nothing.
+- **Legitimate many-to-one negative case**: a translation of 12 units covering 2 source rows, dwelling 3.2s ⇒ it **must not** match (the P6 lock).
+- **Paired plan probe**: the real entry point is `plan_sentence` → `bilingual_dp` → `pair_cost` (see §4.1), not `plan_sentence_rows` + `merge_short_rows` (that path serves only the rows draft). Run the same fixture through `plan_sentence` with `Auto` and with `Paired`. Assert that `Auto` yields 1 piece, that `Paired` yields ≥2 pieces, and that in both cases `concat(pieces) == target` (paired does not rewrite the translation). Separately probe `pair_cost`: when `units ≥ soft`, `Auto` and `Paired` must have byte-identical cost; only the narrow-side cost for `units < soft` is waived by paired.
+- **Suggested piece count**: for a translation of 6 units across 3 source rows, assert that the suggested piece count in the prompt is clamped to 2 by `min`, not 3.
+- **Dwell acceptance** (2026-09-24): sentence s-g9.0 source words plus an answer of 7 chunks ⇒ ≥3 rows with no stuck; fewer than the suggested count but no stuck ⇒ accept; a strictly better partial repair ⇒ accept and warn; no improvement ⇒ `not-improved` (`sg9_*` tests in `align.rs`).
+- **Shared parser tests**: answers produced by the paired prompt variant must still pass `is_row_partition`. The Agent lint and the provider parse use the same assertion set (§4.5).
+- **Mirror consistency**: flow-core `merge_short_runs` must align case by case with the existing cases in the [`subtitle-rendering.test.js:201`](../skills/cuccut/templates/studio/subtitle-rendering.test.js) family (same input, same output).
 
-### 6.2 真跑对拍
+### 6.2 Live-run comparison
 
-两个项目：短片（IBM 9min，既有对拍基准）与一个长片（≥1h）。各跑
-`before`（现状）/ `after`（M2 全开 + refine-align 一轮），对比：
+Two projects: a short film (IBM, 9 min, the existing comparison baseline) and a long film (≥1h). Run each as `before` (current state) and `after` (M2 fully enabled plus one refine-align round), then compare:
 
-| 指标 | 来源 | 期望方向 |
+| Metric | Source | Expected direction |
 | --- | --- | --- |
-| `src_rows ≥ 2 且 maxDwellSec ≥ D` 的句数 | 新 metrics | 显著下降 |
-| cps > 6 的译文 cue 比例 | 既有对拍口径 | **不上升**（paired 保留读速硬守卫，这是它的验证点） |
-| overFit（超 `fit` 片比例） | 既有 | 允许小幅上升（片变短本应下降；若上升说明合并守卫写反了） |
-| `align-sentence-level` 句数 | check | 不上升 |
-| `rowRepair.rejected / candidates` | 新 --json | 记录，用于判断验收式是否过严 |
-| 盲评忠实度 | 人工 | 不下降（paired 不改 `trans`，理论上恒等；抽样验证没有走漏改写通道） |
+| Sentences with `src_rows ≥ 2` and `maxDwellSec ≥ D` | new metrics | Drops significantly |
+| Share of translation cues with cps > 6 | existing comparison basis | **Must not rise** (paired keeps the reading-speed hard guard; this is what it is verified against) |
+| overFit (share of pieces exceeding `fit`) | existing | A small rise is allowed (pieces get shorter, so this should drop; if it rises, the merge guard is inverted) |
+| Sentence count at `align-sentence-level` | check | Must not rise |
+| `rowRepair.rejected / candidates` | new --json | Record, to judge whether the acceptance check is too strict |
+| Blind-review fidelity | manual | Must not drop (paired does not change `trans`, so it should be identical in theory; sampling confirms no rewrite path leaked through) |
 
-校准产出：`D` 与 `S` 的定案值，以及 §4.3 ④ 的分母是否该从 `ROW_MIN_UNITS` 调整。
+Calibration output: the fixed values for `D` and `S`, and whether the denominator in §4.3 ④ should change from `ROW_MIN_UNITS`.
 
-### 6.3 过渡方案（M2 落地前用户能做什么）
+### 6.3 Transition plan (what users can do before M2 lands)
 
-现状下用户已经可以：
+Today users can already do the following:
 
 ```bash
-ccut check <project> --lang zh          # 看 align-stale / align-source-ceiling / align-overfit
-ccut refine-align <project> --lang zh   # check → 定向重对齐 → 复核
+ccut check <project> --lang zh          # look at align-stale / align-source-ceiling / align-overfit
+ccut refine-align <project> --lang zh   # check → targeted re-align → review
 ccut translate <project> --lang zh --align-only --sentences s12,s13
 ```
 
-Mac 侧对应 AI 菜单「Re-align … lines…」与句卡「Re-align this line」。
+On the Mac side, the corresponding entries are the AI menu's “Re-align … lines…” and the sentence card's “Re-align this line”.
 
-**但这只能部分缓解，且治标不治本**，原因是 §4.1 的两条：R1 类句子（译文 <10 units）
-重跑时会再次命中同一个 `no_entry_needed` 门，结果完全相同；能被改善的只有已经有条目、
-且被其它码（`align-overfit` / `align-source-ceiling`）捞出来的句子。用户观感上"重新
-对齐了一遍，最黏的那几条还是没变"正是这个机制的直接后果。这一段必须写进
-release note，避免把过渡方案当成解法。
+**This only partly mitigates the problem, and does not fix the root cause**, for two reasons from §4.1. R1 sentences (translation <10 units) hit the same `no_entry_needed` gate on re-run, giving exactly the same result. Only sentences that already have an entry, and that are caught by other codes (`align-overfit` / `align-source-ceiling`), can improve. The user-visible effect "re-aligned once, but the stickiest few lines did not change" is the direct consequence of this mechanism. This must be written into the release notes so the transition plan is not mistaken for a fix.
 
-## 7. 注册与同步清单
+## 7. Registration and sync checklist
 
-| 事项 | 触发里程碑 | 位置 |
+| Item | Milestone | Location |
 | --- | --- | --- |
-| 新 check 码 `align-row-deficit` | M1 | [`check.rs`](../../../core/crates/ccut-engine/src/flows/check.rs)；`ccut check` 的码表文档 |
-| `hotspot_keys` / `align_instructions` 新分支 | M1 | [`refine.rs:95`](../../../core/crates/ccut-engine/src/flows/refine.rs) / [`:196`](../../../core/crates/ccut-engine/src/flows/refine.rs) |
-| metrics 新字段 | M1 | [`metrics.rs`](../../../core/crates/ccut-flow-core/src/metrics.rs)；`--json` 形状变化需在 reference 文档记一笔 |
-| CLI `--align-density` | M2 | [`core/crates/ccut-kernel/src/cmd/ai.rs:380`](../../../core/crates/ccut-kernel/src/cmd/ai.rs) 附近（与 `align_fusion` 同族）；`ccut spec` 自动回显 |
-| serve 白名单 `alignDensity` | M2 | [`supervisor.rs`](../../../core/crates/ccut-serve/src/supervisor.rs) `translate` kind 的 options 表 + [`contract.rs`](../../../core/crates/ccut-kernel/src/serve_contract.rs) 契约测试 |
-| **spec 版本 bump 1.34.0 → 1.35.0** | M2 | [`core/crates/ccut-kernel/src/cmd/spec.rs:7`](../../../core/crates/ccut-kernel/src/cmd/spec.rs)。新增 job option 是协议面变化，必须 bump |
-| CLI/serve 参考文档 | M2 | [`ccut-cli-server-reference.md`](../cli/ccut-cli-server-reference.md)：§4.5 的 `translate` 行加 `alignDensity`:`string` → `--align-density`；§8 的 translate 参数表加枚举、默认值、与 `--align-mode` 的冲突规则；`--json` 的 `rowRepair` 信封 |
-| 四表面 UI | M3 | §5 各条；`apps/windows` 明确不适用（且已于 2026-08-26 归档删除） |
-| 产品设计文档 | M3 | [`product-design.md`](../product/product-design.md) §13.2（statbar 计数项 + 黏结卡）；`designs/cuccut/README.md` 轮次日志 |
-| CLI `--no-row-repair` + serve 白名单 `noRowRepair` + **spec bump 1.35.0 → 1.36.0** | M5 | [`core/crates/ccut-kernel/src/cmd/ai.rs`](../../../core/crates/ccut-kernel/src/cmd/ai.rs) `TranslateArgs` / [`supervisor.rs`](../../../core/crates/ccut-serve/src/supervisor.rs) `translate` kind / [`contract.rs`](../../../core/crates/ccut-kernel/src/serve_contract.rs) 契约测试 / [`spec.rs:7`](../../../core/crates/ccut-kernel/src/cmd/spec.rs)；三个 `specVersion` 断言的集成测试同步 |
-| `--json` 新增 `rowRepairAuto` / `rowRepairAutoSkipped` | M5 | [`translate.rs`](../../../core/crates/ccut-engine/src/flows/translate.rs) 两个变体的 summary；[`ccut-cli-server-reference.md`](../cli/ccut-cli-server-reference.md) §8 的 `--json` 汇总段 |
-| 本文档回链 | M1 | [`AGENTS.md`](../../../AGENTS.md) 的文档路由表加一行 |
+| New check code `align-row-deficit` | M1 | [`check.rs`](../../../core/crates/ccut-engine/src/flows/check.rs); the code table docs for `ccut check` |
+| New branches in `hotspot_keys` / `align_instructions` | M1 | [`refine.rs:95`](../../../core/crates/ccut-engine/src/flows/refine.rs) / [`:196`](../../../core/crates/ccut-engine/src/flows/refine.rs) |
+| New metrics fields | M1 | [`metrics.rs`](../../../core/crates/ccut-flow-core/src/metrics.rs); a change in `--json` shape must be noted in the reference docs |
+| CLI `--align-density` | M2 | Near [`core/crates/ccut-kernel/src/cmd/ai.rs:380`](../../../core/crates/ccut-kernel/src/cmd/ai.rs) (same family as `align_fusion`); `ccut spec` echoes it automatically |
+| serve allowlist `alignDensity` | M2 | Options table for the `translate` kind in [`supervisor.rs`](../../../core/crates/ccut-serve/src/supervisor.rs) + contract tests in [`contract.rs`](../../../core/crates/ccut-kernel/src/serve_contract.rs) |
+| **Spec version bump 1.34.0 → 1.35.0** | M2 | [`core/crates/ccut-kernel/src/cmd/spec.rs:7`](../../../core/crates/ccut-kernel/src/cmd/spec.rs). A new job option is a protocol-surface change, so the bump is required |
+| CLI/serve reference docs | M2 | [`ccut-cli-server-reference.md`](../cli/ccut-cli-server-reference.md): add `alignDensity`:`string` → `--align-density` to the `translate` row in §4.5; in the translate parameter table in §8, add the enum, default value, and the conflict rules with `--align-mode`; the `rowRepair` envelope for `--json` |
+| Four-surface UI | M3 | Items in §5; `apps/windows` is explicitly not applicable (and was archived and deleted on 2026-08-26) |
+| Product design doc | M3 | [`product-design.md`](../product/product-design.md) §13.2 (statbar count item + stuck card); round log in `designs/cuccut/README.md` |
+| CLI `--no-row-repair` + serve allowlist `noRowRepair` + **spec bump 1.35.0 → 1.36.0** | M5 | [`core/crates/ccut-kernel/src/cmd/ai.rs`](../../../core/crates/ccut-kernel/src/cmd/ai.rs) `TranslateArgs` / [`supervisor.rs`](../../../core/crates/ccut-serve/src/supervisor.rs) `translate` kind / [`contract.rs`](../../../core/crates/ccut-kernel/src/serve_contract.rs) contract tests / [`spec.rs:7`](../../../core/crates/ccut-kernel/src/cmd/spec.rs); sync the three `specVersion` assertions in the integration tests |
+| New `rowRepairAuto` / `rowRepairAutoSkipped` in `--json` | M5 | The summaries of both variants in [`translate.rs`](../../../core/crates/ccut-engine/src/flows/translate.rs); the `--json` summary section §8 of [`ccut-cli-server-reference.md`](../cli/ccut-cli-server-reference.md) |
+| Backlink from this document | M1 | Add one line to the document routing table in [`AGENTS.md`](../../../AGENTS.md) |
 
-**不需要**的注册：新 job kind、新 lane、新 `AIFlowKind`、新阶段戳、新指纹、transcript
-版本号变更（`transAlign` 形状不变）。
+**Not needed**: a new job kind, a new lane, a new `AIFlowKind`, a new stage stamp, a new fingerprint, or a transcript version change (the `transAlign` shape does not change).
 
-## 8. 被否决的方案
+## 8. Rejected approaches
 
-- **新独立 flow / 波次 kind（`row-repair`）。** 注册面很大：job kind 白名单、lane、
-  阶段戳、四个表面的 kind 映射（[`FlowLiveProjector.swift:22`](../apps/mac/Sources/VoiceInk/Adapters/FlowLiveProjector.swift)、
-  [`task_kind.rs:451`](../apps/cuccut/src/adapters/task_kind.rs)、
-  [`progress-status.js:33`](../skills/cuccut/templates/studio/progress-status.js)）、
-  spec、reference 文档全要动。而 `refine-align` 的闭环骨架（check → 热点 → 定向 → 复核）
-  与本方案需要的形状**逐条同构**，本方案只需要往里加一个码和一个指令位。用注册成本换
-  一个语义上完全重复的 kind 不划算。
-- **把源 cue 数直接塞进翻译主 prompt。** 违背既有裁决"翻译对齐一律先按目标语独立确定并
-  冻结译文 Cue，再映射到源文词区间"——让模型在翻译时就照着源行数写译文，会为了凑行数
-  拉长或切碎句子，全局劣化忠实度，而黏结只是少数句的问题。付出的是全篇代价，换回的是
-  局部收益。
-- **无差别调低 `LONG_DWELL_SECONDS` 或 `TransParams.fit`。** 这两个常量是全局阈值，
-  调低会把**全部**合法多对一打碎：`LONG_DWELL` 从 7s 降到 5s 会让大量 5–7s 的正常整句
-  入队请 LLM 切分（调用量与降级率同时上升），`fit` 从 16 降下来则直接改变全部语言的
-  单行容量与派生 cue 形状。判据要的是"只咬进残余集合"，全局阈值做不到这件事。
-- **Mac 端本地拆行、不写回 transcript。** 表面上最省事：反正 Mac 已经会算 `sourceRuns`，
-  照着源行把译文按比例切开显示就行。但这违背单一真相——切分结果不进 `transAlign`，
-  导出（SRT/烧录）、Studio、App v2、CLI 全都看不到，同一个项目在不同表面显示不同行数，
-  且下一次 `ccut check` 依然报同样的问题。展示切分必须是落盘的覆盖层。
-- **把判据做成 `align-stale` 的一个新 `reason`。** `align-stale` 的语义是"条目缺失或
-  失效导致降级"，其 fix 是重建条目；黏结句的条目往往是**有效的**，只是密度不对。
-  混进同一个码会让 `hotspot_keys` 的无上限分支吞掉全部黏结句（该分支不设 40 上限），
-  一轮 refine 的定向句集会失控。
+- **A new standalone flow / wave kind (`row-repair`).** The registration surface is large: the job-kind allowlist, lanes, stage stamps, and the kind mappings across four surfaces ([`FlowLiveProjector.swift:22`](../apps/mac/Sources/VoiceInk/Adapters/FlowLiveProjector.swift), [`task_kind.rs:451`](../apps/cuccut/src/adapters/task_kind.rs), [`progress-status.js:33`](../skills/cuccut/templates/studio/progress-status.js)), plus the spec and the reference docs, would all have to change. But the closed-loop skeleton of `refine-align` (check → hotspots → targeted → re-check) is **item-for-item isomorphic** with the shape this plan needs; this plan only has to add one code and one instruction slot to it. Paying the registration cost for a semantically duplicate kind is not worth it.
+- **Putting the source cue count directly into the main translation prompt.** This violates the existing ruling that "translation alignment always first fixes the target-language translation independently and freezes the translated Cues, then maps them onto source word spans." Having the model match source line counts while translating would stretch or chop sentences to fit the rows, degrading fidelity across the whole document, when the clumping is only a problem for a few sentences. We would pay a whole-document cost for a local gain.
+- **Indiscriminately lowering `LONG_DWELL_SECONDS` or `TransParams.fit`.** These two constants are global thresholds. Lowering them would split **all** legitimate many-to-one cases: lowering `LONG_DWELL` from 7s to 5s would send many normal 5–7s full sentences to the LLM for splitting (call volume and degradation rate both rise), and lowering `fit` from 16 directly changes the single-line capacity and the derived cue shapes for every language. The criterion needs to bite only the residual set, which a global threshold cannot do.
+- **Splitting lines locally on the Mac, without writing back to the transcript.** It looks like the cheapest option: the Mac already computes `sourceRuns`, so it could split the translation proportionally along the source rows for display. But this violates the single source of truth. The split result never enters `transAlign`, so export (SRT/burn-in), Studio, App v2 and the CLI would all miss it, the same project would show different row counts on different surfaces, and the next `ccut check` would still report the same problem. Display splitting must be a persisted overlay.
+- **Making the criterion a new `reason` of `align-stale`.** `align-stale` means "entry missing or invalidated, causing degradation", and its fix is to rebuild the entry. A clumped sentence's entry is often **valid**; it just has the wrong density. Mixing it into the same code would let the unbounded branch of `hotspot_keys` (which has no 40 cap) swallow every clumped sentence, and the targeted sentence set of a single refine round would spiral out of control.
 
-## 9. 实施里程碑与任务拆分
+## 9. Implementation milestones and task breakdown
 
-每个里程碑独立可验收、可单独发布。
+Each milestone can be accepted and released independently.
 
-### M1 · 判据与诊断（不动 UI、不 bump spec）
+### M1 · Criterion and diagnostics (no UI changes, no spec bump)
 
-内容：`source_cue_runs` / `merge_short_runs` 上移 flow-core；`row_deficit_issues`；
-check 新码；metrics 新字段；refine 接入；§6.1 的单测（除 paired 探针外全部）。
+Scope: move `source_cue_runs` / `merge_short_runs` up into flow-core; `row_deficit_issues`; the new check code; new metrics fields; wire into refine; the §6.1 unit tests (all except the paired probe).
 
-完成标准：在既有真跑项目上 `ccut check --json` 能列出黏结句及其
-`sourceRows/transCues/maxDwellSec`；合法多对一负例不命中；三份 JS/Swift 镜像的既有测试
-全绿。
+Done when: on existing real-run projects, `ccut check --json` lists the clumped sentences with their `sourceRows/transCues/maxDwellSec`; legitimate many-to-one negative cases do not hit; the existing tests of the three JS/Swift mirrors are all green.
 
 ```bash
 cd core
@@ -677,94 +484,52 @@ cargo test -p ccut-engine
 cd ../skills/cuccut/templates/studio && node --test subtitle-rendering.test.js
 ```
 
-### M2 · paired 重切语义（引擎 + CLI + serve + 文档）
+### M2 · Paired re-split semantics (engine + CLI + serve + docs)
 
-内容：`AlignDensity`；`no_entry_needed` 旁路；`merge_short_rows` 的 paired 分支；
-提示变体；最小片数验收；`rowRepair` 记账；`--align-density`；serve 白名单 + 契约测试；
-spec bump 1.35.0；reference 文档三处。
+Scope: `AlignDensity`; the `no_entry_needed` bypass; the paired branch of `merge_short_rows`; prompt variants; the minimum piece-count acceptance; `rowRepair` accounting; `--align-density`; the serve allowlist + contract tests; spec bump to 1.35.0; the reference docs in three places.
 
-完成标准：`--align-density paired --sentences <黏结句>` 对 R1 类句子必产出 ≥2 片或
-明确 `rejected` 记账；`auto` 路径的 golden 输出**逐字节不变**（零行为漂移是本里程碑的
-第一验收项）；serve 契约测试覆盖新 option；`ccut spec` 回显新枚举。
+Done when: `--align-density paired --sentences <clumped sentence>` must produce ≥2 pieces for R1-type sentences, or record an explicit `rejected` in the ledger; the `auto` path's golden output stays **byte-for-byte identical** (zero behaviour drift is this milestone's first acceptance item); serve contract tests cover the new option; `ccut spec` echoes the new enum.
 
 ```bash
 cd core
 cargo fmt --all -- --check
 cargo test -p ccut-flow-core
 cargo test -p ccut-engine
-cargo test --workspace          # 跨 crate：serve 契约测试在 apps/cli
+cargo test --workspace          # cross-crate: serve contract tests live in apps/cli
 ```
 
-### M3 · 四表面 UI
+### M3 · Four-surface UI
 
-内容：§5.1–§5.4。Mac、App v2、Studio、两个原型目录 + `product-design.md`。
+Scope: §5.1–§5.4. Mac, App v2, Studio, the two prototype directories + `product-design.md`.
 
-完成标准：四个适用表面各自显示同一个黏结计数（同一项目、同一数值）；Mac 与 App v2
-能发起 paired 定向重跑并在运行态头/徽章上反映；Studio 只读；`apps/windows`（已归档）在最终
-回复中明确标注不适用。各表面按风险跑自己的测试（Swift 单测、`cargo test -p cuccut`、
-`node --test`、原型视觉检查 + `check-conformance.mjs`）。
+Done when: the four applicable surfaces each show the same clumped-sentence count (same project, same value); Mac and App v2 can start a paired targeted rerun and reflect it in the running-state header/badge; Studio is read-only; `apps/windows` (archived) is explicitly marked not applicable in the final reply. Each surface runs its own tests according to risk (Swift unit tests, `cargo test -p cuccut`, `node --test`, prototype visual check + `check-conformance.mjs`).
 
-### M4 · 校准与真跑验收
+### M4 · Calibration and real-run acceptance
 
-内容：§6.2 两个项目的 before/after 对拍；`D` / `S` 定案；必要时回头收紧 §4.3 ④ 的验收式；
-release note 写清 §6.3 的过渡方案边界。
+Scope: before/after comparison of the two projects in §6.2; settle `D` / `S`; if necessary, tighten the acceptance formula in §4.3 ④ afterwards; state the boundaries of the §6.3 transitional plan clearly in the release note.
 
-完成标准：黏结句数显著下降且 cps>6 比例不上升；盲评忠实度不降；阈值以定案值写回
-`pub const` 与用户可见文案。
+Done when: the clumped-sentence count drops significantly and the share with cps>6 does not rise; blind-rated fidelity does not drop; the thresholds are written back to the `pub const` and the user-visible copy at their settled values.
 
-真跑属重活，遵守"不并行跑重活"的既有纪律：短片与长片串行，`--llm-concurrency` 保持默认。
+Real runs are heavy work; follow the existing discipline of "don't run heavy work in parallel": short and long films run serially, and `--llm-concurrency` stays at its default.
 
-### M5 · 翻译收尾的自动重切（2026-08-28 已完成）
+### M5 · Automatic re-split at the end of translation (completed 2026-08-28)
 
-M2 交付的是**手动**修复通道：`ccut check` 报 `align-row-deficit` → 用户自己抄
-`ccut translate --align-only --align-density paired --sentences …` 或跑 `ccut refine-align`。
-M5 把这条通道接进 `ccut translate` 自身，让用户翻译完就看不到黏结，不需要任何手动命令。
+M2 delivered a **manual** repair channel: `ccut check` reports `align-row-deficit`, and the user copies `ccut translate --align-only --align-density paired --sentences …` by hand, or runs `ccut refine-align`. M5 wires this channel into `ccut translate` itself, so users see no clumping after translating and need no manual command.
 
-**形态**：单文档 `translate_cmd_core_with_analysis` 的每语言循环里，主对齐轮拿到
-`align_outcome` 之后、`cancel_point` / `save_doc` 之前，插一次固定单轮的 paired 定向重切
-（[`translate.rs`](../../../core/crates/ccut-engine/src/flows/translate.rs) 的
-`plan_row_repair_tail` + `run_row_repair_tail`）。必须在 flow 内做：review 模式下 doc
-不落盘，候选包本身要包含修复结果，拒绝时整包回滚。
+**Shape**: in the per-language loop of the single-document `translate_cmd_core_with_analysis`, after the main alignment round receives `align_outcome` and before `cancel_point` / `save_doc`, insert one fixed single-round paired targeted re-split (`plan_row_repair_tail` + `run_row_repair_tail` in [`translate.rs`](../../../core/crates/ccut-engine/src/flows/translate.rs)). It must run inside the flow: in review mode the doc is not written to disk, so the candidate bundle itself must contain the repair result, and a rejection rolls back the whole bundle.
 
-**检测**：复用 check 的唯一谓词入口 `row_deficit_issues`，确定性、零 LLM，不复制阈值。
-译文 cue 必须在主对齐**之后**重新 `derive_trans_cues`——它读 `trans` / `transAlign`，
-两者刚被主轮改过，复用主轮之前的派生会得到空命中集、收尾轮永不触发。
+**Detection**: reuse check's single predicate entry point `row_deficit_issues`. It is deterministic, zero LLM, and duplicates no thresholds. The translated cues must be re-derived with `derive_trans_cues` **after** the main alignment: it reads `trans` / `transAlign`, which the main round has just changed. Reusing a derivation from before the main round would yield an empty hit set, and the tail round would never fire.
 
-**四条跳过判据**（命中任一即跳过，不产生第二次调用）：`--no-row-repair`、本轮
-`--align-density` 已是 `paired`、本轮零写入（`translated == 0 && aligned == 0`，保证重复
-跑 translate 仍是 no-op）、检测无命中。跳过原因回显在 `--json` 的 `rowRepairAutoSkipped`。
+**Four skip criteria** (any one hit skips, producing no second call): `--no-row-repair`; this round's `--align-density` is already `paired`; this round wrote nothing (`translated == 0 && aligned == 0`, so repeated translate runs remain no-ops); detection finds no hits. The skip reason is echoed in `rowRepairAutoSkipped` in `--json`.
 
-**选择**：命中集与本轮 `--sentences` 取交集（定向重翻只收尾自己碰过的句，历史遗留黏结
-仍归 check + `refine-align`），截断到 `ROW_DEFICIT_MAX_KEYS`（40，与 refine 的黏结轮共用
-同一个 `pub const`，禁止两份字面量）作为 `sentences`；**完整**命中集整份作为
-`density_sentences`，差额由引擎算进 `row_repair.capped` 留给下一轮。
+**Selection**: intersect the hit set with this round's `--sentences` (a targeted re-translation only tidies the sentences it touched itself; legacy clumping remains with check + `refine-align`), and truncate to `ROW_DEFICIT_MAX_KEYS` (40, sharing the same `pub const` as refine's clumping round, so no duplicate literal) as `sentences`. The **full** hit set goes whole as `density_sentences`, and the engine counts the difference into `row_repair.capped` for the next round.
 
-**执行**：第二次 `run_align_with_drafts_and_artifacts`，`density: Paired`、`targeted: true`、
-`force: true`、`repair_calls: 0`、空 `FusionDrafts`（paired 走专门的 edges 轮），其余字段
-沿用主轮同源取值。`force: true` 不是可选项：命中句按定义都已有**有效**的 ManyToOne 条目，
-非 force 轮会在 [`align.rs` 的「已有同 mode 有效条目：非 force 跳过」](../../../core/crates/ccut-flow-core/src/engines/align.rs)
-处把整批命中句跳过，收尾轮会变成零调用的空转。审计工件 run mode 为 `row-repair-tail`，
-与主轮 manifest 分开。
+**Execution**: a second `run_align_with_drafts_and_artifacts` call, with `density: Paired`, `targeted: true`, `force: true`, `repair_calls: 0`, and empty `FusionDrafts` (paired uses its dedicated edges round); the other fields take the same sources as the main round. `force: true` is not optional: by definition the hit sentences already have **valid** ManyToOne entries, and a non-force round would skip the whole batch at the “existing valid entry with same mode: skipped without force” check in [`align.rs`](../../../core/crates/ccut-flow-core/src/engines/align.rs), turning the tail round into a zero-call no-op. The audit artifact's run mode is `row-repair-tail`, kept separate from the main round's manifest.
 
-**验收记账**：`rowRepairAuto` 是四计数对象，形状恒定（跳过或不适用时四个 `0`），消费方
-不必分支 `null`。引擎自带"切不动就保持原状"（驻留验收不过 ⇒ `rejected`，原条目不变），
-因此 `rejected > 0` 不是失败。收尾轮的 violations 以 `<lang> (row-repair-tail): …` 前缀
-并入 advisory。只写 `transAlign`，绝不触碰句级译文真相 `trans`。
+**Accounting**: `rowRepairAuto` is a four-counter object with a fixed shape (all four `0` when skipped or not applicable), so consumers never need to branch on `null`. The engine has a built-in "keep as-is if re-splitting fails" rule (dwell check fails ⇒ `rejected`, original entry unchanged), so `rejected > 0` is not a failure. The tail round's violations are merged into the advisory with the prefix `<lang> (row-repair-tail): …`. It writes only `transAlign` and never touches the sentence-level translation truth `trans`.
 
-**调用方**：`ccut auto` 内嵌的 translate 轮传 `false`（fast 模式直接受益）；
-`refine-align` 内部的定向 `translate --align-only` 轮传 `true`——它自己就是修复轮，
-防修复套修复（其 `align_density` 本就常为 `paired`，两道闸互为冗余）。
+**Callers**: the translate round embedded in `ccut auto` passes `false` (fast mode benefits directly); the targeted `translate --align-only` round inside `refine-align` passes `true`, because it is itself a repair round, which prevents repair-of-repair (its `align_density` is often already `paired`, so the two gates are mutually redundant).
 
-**时间线变体不做（V1 明确跳过，不静默）**：`translate_timeline_cmd_core` 按素材调
-`run_align_projected`，对齐建立在**可见词投影**上；而 `row_deficit_issues` 的 `source_rows`
-来自整篇 doc 的 cue 派生，会把剪掉的词一并算进源行——两者口径不一致，硬接会得到错误的
-命中集。该变体的 summary 记 `rowRepairAutoSkipped: "timeline-unsupported"`、
-`rowRepairAuto` 四个 `0`，并附一条 advisory 指向 `ccut check` + `ccut refine-align`。
-接通它需要先给 `row_deficit_issues` 一条投影入参，属独立里程碑。
+**Timeline variant not done (V1 explicitly skipped, not silently)**: `translate_timeline_cmd_core` calls `run_align_projected` per material, and alignment is built on the **visible-word projection**. `row_deficit_issues`'s `source_rows`, however, are derived from the cues of the whole document, which counts cut words into the source rows. The two bases are inconsistent, and wiring them together would give a wrong hit set. That variant's summary records `rowRepairAutoSkipped: "timeline-unsupported"`, `rowRepairAuto` with all four `0`, and attaches an advisory pointing to `ccut check` + `ccut refine-align`. Enabling it requires first giving `row_deficit_issues` a projection input, which is a separate milestone.
 
-**测试**：整条 translate flow 在进程内自建 LLM（`make_llm` 对 agent 模式直接构造
-`AgentLlm`），没有注入夹具的缝，因此测试直接打在收尾轮本体与它的纯判定上，而不是把整条
-flow 跑起来：`core/crates/ccut-engine/src/flows/tests.rs` 的 `row_repair_tail_tests`
-覆盖「黏结句被重切成 ≥2 片、恰好 1 次调用（force 生效的哨兵）、`trans` 逐字节不变」、
-「切不动则 `rejected` 且原条目原封不动」、四条跳过判据各一例、`--sentences` 交集、
-45 句命中的 40 截断。
+**Tests**: the whole translate flow builds its LLM in-process (`make_llm` constructs `AgentLlm` directly in agent mode), and there is no seam for injecting fixtures. The tests therefore target the tail round itself and its pure judgement, not the whole flow run end to end. `row_repair_tail_tests` in `core/crates/ccut-engine/src/flows/tests.rs` covers: a clumped sentence re-split into ≥2 pieces with exactly 1 call (the sentinel that force takes effect) and `trans` byte-for-byte unchanged; if re-splitting fails, `rejected` with the original entry untouched; one case for each of the four skip criteria; the `--sentences` intersection; and truncation to 40 of 45 hit sentences.

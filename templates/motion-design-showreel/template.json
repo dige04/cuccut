@@ -3,30 +3,30 @@
   "id": "motion-design-showreel",
   "version": "1.1.0",
   "kind": "example",
-  "title": "动效设计展示",
-  "summary": "一条节奏紧凑的动态图形短片，展示动效设计功力。",
-  "description": "形变、遮罩揭示、弹性运动与卡点转场轮番登场，像一位动效设计师的作品集开场。适合用来感受 CucCut 做动态图形的能力。",
-  "language": "zh-CN",
+  "title": "Motion design showreel",
+  "summary": "A tight motion graphics short that shows off motion design skills.",
+  "description": "Morphs, mask reveals, elastic motion and beat-synced transitions take turns, like the opening of a motion designer's portfolio. A good way to get a feel for what CucCut can do with motion graphics.",
+  "language": "en",
   "category": "motion-design",
   "durationSeconds": 15,
   "fields": [
     {
-      "label": "配色风格",
-      "hint": "想要的配色或视觉风格",
-      "example": "黑底配荧光色"
+      "label": "color style",
+      "hint": "The color scheme or visual style you want",
+      "example": "neon on black"
     },
     {
-      "label": "成片语言",
-      "hint": "画面文字用的语言"
+      "label": "video language",
+      "hint": "The language for on-screen text"
     }
   ],
   "author": "CucCut",
   "source": "official",
   "license": "LicenseRef-CucCut-Community-1.0",
   "tags": [
-    "动态图形",
-    "作品集",
-    "转场"
+    "motion graphics",
+    "portfolio",
+    "transitions"
   ],
   "skills": [
     "video-production"
@@ -40,10 +40,10 @@
   "preview": {
     "file": "preview.mp4",
     "beats": [
-      "几何形状弹入",
-      "文字遮罩揭示",
-      "形变与卡点转场",
-      "干净的收尾画面"
+      "Geometric shapes bounce in",
+      "Text revealed through masks",
+      "Morphs and beat-synced cuts",
+      "A clean final frame"
     ]
   },
   "verification": {

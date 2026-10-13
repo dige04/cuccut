@@ -3,38 +3,38 @@
   "id": "event-recap",
   "version": "1.1.0",
   "kind": "scene",
-  "title": "活动回顾",
-  "summary": "把活动现场素材剪成一条让人记住的集锦。",
-  "description": "留住一场工作坊、聚会或发布活动的现场气氛，把场地、关键时刻和参与者的反应串成一条有开头有收尾的回顾短片。",
-  "language": "zh-CN",
+  "title": "Event recap",
+  "summary": "Cut footage from an event into a highlight reel people will remember.",
+  "description": "Capture the atmosphere of a workshop, gathering or launch event, stringing together the venue, key moments and attendees' reactions into a recap with a clear beginning and end.",
+  "language": "en",
   "category": "marketing",
   "ratio": "9:16",
   "durationSeconds": 45,
-  "brief": "这些是{{活动}}的现场照片和视频，剪一条回顾短片，发给{{给谁看}}。一定要保留：{{必须保留的片段}}。",
+  "brief": "These are photos and videos from {{event}}. Cut a short recap to share with {{viewers}}. Be sure to keep: {{must-keep moments}}.",
   "fields": [
     {
-      "label": "活动",
-      "hint": "活动的名称与时间",
-      "example": "昨天读书会"
+      "label": "event",
+      "hint": "The event's name and when it took place",
+      "example": "yesterday's book club"
     },
     {
-      "label": "给谁看",
-      "hint": "回顾发给谁、发在哪里",
-      "example": "没来的朋友看"
+      "label": "viewers",
+      "hint": "Who the recap is for, and where it will be shared",
+      "example": "friends who couldn't make it"
     },
     {
-      "label": "必须保留的片段",
-      "hint": "点名要留下的瞬间；没有可以写「没有」",
-      "example": "大家的合影和主持人的结束语"
+      "label": "must-keep moments",
+      "hint": "Moments you want kept; write \"none\" if there aren't any",
+      "example": "the group photo and the host's closing remarks"
     }
   ],
   "author": "CucCut",
   "source": "official",
   "license": "LicenseRef-CucCut-Community-1.0",
   "tags": [
-    "活动",
-    "回顾",
-    "集锦"
+    "event",
+    "recap",
+    "highlights"
   ],
   "skills": [
     "video-production",
@@ -49,10 +49,10 @@
   "preview": {
     "file": "preview.mp4",
     "beats": [
-      "交代场地与氛围",
-      "几个关键时刻",
-      "参与者的反应",
-      "收在一句收获上"
+      "Setting the venue and mood",
+      "A few key moments",
+      "Attendees' reactions",
+      "Ending on one takeaway"
     ]
   },
   "verification": {

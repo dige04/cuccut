@@ -3,30 +3,30 @@
   "id": "typography-motion",
   "version": "1.1.0",
   "kind": "example",
-  "title": "排版动效短片",
-  "summary": "用 JavaScript 做一条以排版驱动、温暖极简的短片。",
-  "description": "多种风格的字体、温暖的极简美学，节奏与色彩丰富，配上背景音乐。也可以生成图片或视频片段来点缀。",
-  "language": "zh-CN",
+  "title": "Kinetic typography short",
+  "summary": "A warm, minimalist, typography-driven short made with JavaScript.",
+  "description": "Fonts in many styles, a warm minimalist look, plenty of rhythm and color, and background music. Generated images or video clips can add accents too.",
+  "language": "en",
   "category": "motion-design",
   "ratio": "16:9",
   "durationSeconds": 30,
   "fields": [
     {
-      "label": "主题",
-      "hint": "视频围绕什么内容",
-      "example": "四季的变化"
+      "label": "topic",
+      "hint": "What the video is about",
+      "example": "the changing seasons"
     },
     {
-      "label": "成片语言",
-      "hint": "画面文字用的语言"
+      "label": "video language",
+      "hint": "The language for on-screen text"
     }
   ],
   "author": "CucCut",
   "source": "official",
   "license": "LicenseRef-CucCut-Community-1.0",
   "tags": [
-    "排版",
-    "字体",
+    "typography",
+    "fonts",
     "JavaScript"
   ],
   "skills": [
@@ -41,10 +41,10 @@
   "preview": {
     "file": "preview.mp4",
     "beats": [
-      "一个词占满画面",
-      "字体与字重交替",
-      "色彩随节奏切换",
-      "安静的收尾"
+      "One word fills the frame",
+      "Fonts and weights alternate",
+      "Colors shift with the beat",
+      "A quiet ending"
     ]
   },
   "verification": {

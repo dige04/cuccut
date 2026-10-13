@@ -50,5 +50,5 @@
     "exclusion",
     "plus"
   ],
-  "doc": "混合模式的封闭表与稳定 u8 编号（下标即编号）。DrawOp v3 的 PushLayer{blend} 与 FramePlan 的 Composite pass 共用这张表；重排等于改二进制契约。"
+  "doc": "Closed table of blend modes with stable u8 numbers (the index is the number). DrawOp v3’s PushLayer{blend} and the FramePlan’s Composite pass share this table; reordering it changes the binary contract."
 }

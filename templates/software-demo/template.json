@@ -3,43 +3,43 @@
   "id": "software-demo",
   "version": "1.1.0",
   "kind": "scene",
-  "title": "软件演示",
-  "summary": "一步步展示你的软件怎样解决一个问题。",
-  "description": "用截图、录屏或产品资料，把一个用户问题和对应的功能、最终结果连起来。演示始终围绕一条真实的使用流程。",
-  "language": "zh-CN",
+  "title": "Software demo",
+  "summary": "Show step by step how your software solves a problem.",
+  "description": "Use screenshots, screen recordings or product docs to connect a user's problem with the feature that solves it and the end result. The demo always follows one real workflow.",
+  "language": "en",
   "category": "product-launch",
   "ratio": "16:9",
   "durationSeconds": 45,
-  "brief": "用{{录屏或截图}}做一条演示视频，展示怎么用{{软件}}{{要演示的操作}}，解决{{用户遇到的麻烦}}的问题。",
+  "brief": "Use {{recording or screenshots}} to make a demo video showing how {{software}} lets you {{task to demo}}, solving the problem of {{pain point}}.",
   "fields": [
     {
-      "label": "录屏或截图",
-      "hint": "附上的录屏、截图或操作说明",
-      "example": "这段录屏"
+      "label": "recording or screenshots",
+      "hint": "The attached screen recording, screenshots or instructions",
+      "example": "this screen recording"
     },
     {
-      "label": "软件",
-      "hint": "软件或功能的名字",
-      "example": "我们的记账应用"
+      "label": "software",
+      "hint": "The name of the software or feature",
+      "example": "our budgeting app"
     },
     {
-      "label": "要演示的操作",
-      "hint": "一条完整的使用流程",
-      "example": "三步导出月度报表"
+      "label": "task to demo",
+      "hint": "One complete workflow",
+      "example": "export a monthly report in three steps"
     },
     {
-      "label": "用户遇到的麻烦",
-      "hint": "这个功能替用户省掉了什么",
-      "example": "月底手动整理账单太费时间"
+      "label": "pain point",
+      "hint": "What this feature saves users from",
+      "example": "spending hours sorting bills by hand at month end"
     }
   ],
   "author": "CucCut",
   "source": "official",
   "license": "LicenseRef-CucCut-Community-1.0",
   "tags": [
-    "软件",
-    "演示",
-    "录屏"
+    "software",
+    "demo",
+    "screen recording"
   ],
   "skills": [
     "video-production",
@@ -54,10 +54,10 @@
   "preview": {
     "file": "preview.mp4",
     "beats": [
-      "用户遇到的问题",
-      "打开对应功能",
-      "关键操作逐步演示",
-      "得到的结果"
+      "The user's problem",
+      "Opening the feature",
+      "Key steps, one by one",
+      "The result"
     ]
   },
   "verification": {

@@ -1,169 +1,168 @@
-> 移植自 CucCut v2；文中的数据模型名（TranscriptDoc 等）指 v2 的模型，与 v3 文档模型的对应见[架构设计 §14](../../architecture/architecture-design.md#14-待评审事项)。
+> Ported from CucCut v2; the data-model names in this document (such as TranscriptDoc) refer to the v2 models. For the mapping to the v3 document model, see [architecture design §14](../../architecture/architecture-design.md#14-items-pending-review).
 
-# 泰文一类文字的分词：新建文稿按词存，短语内的词缝带「贴前」标记
+# Word segmentation for Thai-class scripts: new scripts are stored by word, and intra-phrase seams carry a “glued-to-previous” mark
 
-状态：**已实施**（2026-10-01）。只改新建的文稿；已有文稿不迁移、逐字节不变。文稿格式仍是 0.5，`specVersion` 不动。
+Status: **Implemented** (2026-10-01). Only newly created scripts change. Existing scripts are not migrated and stay byte-for-byte identical. The script format is still 0.5, and `specVersion` is unchanged.
 
-来源：2026-10-01 多语言验收（[`lean-carrier-acceptance-2026-10-01`](../../../scripts/bench/fixtures/lean-carrier-acceptance-2026-10-01/README.md)）里泰语→英语的 `th-01`…`th-06` 首轮与修复轮都是 `needs-rewrite`，每句只有 1 块，切不细。§8.11（[`ccut-lean-llm-carrier-design.md`](ccut-lean-llm-carrier-design.md)）修完印地语后，剩下的 6 句 `needs-rewrite` 全是这一组。
+Source: In the 2026-10-01 multilingual acceptance run ([`lean-carrier-acceptance-2026-10-01`](../../../scripts/bench/fixtures/lean-carrier-acceptance-2026-10-01/README.md)), the Thai→English `th-01`…`th-06` sentences were `needs-rewrite` in both the first round and the fix round. Each sentence had only one block, so it could not be split finely. After §8.11 ([`ccut-lean-llm-carrier-design.md`](ccut-lean-llm-carrier-design.md)) fixed Hindi, the remaining six `needs-rewrite` sentences were all in this group.
 
-## 1. 根因
+## 1. Root cause
 
-泰、老挝、缅甸、高棉文字的词与词之间不写空格，空格只出现在短语或分句之间。建稿（`build.rs` 的 `atomized`）用 `atomize`：空白之间整段是一个原子，所以一个泰文短语在文稿里就是**一个词**。验收页 `th-01`…`th-06` 的每句都是一个短语，也就是一个源词。
+Thai, Lao, Burmese and Khmer scripts do not write spaces between words; spaces appear only between phrases or clauses. Script building (`atomized` in `build.rs`) uses `atomize`: everything between whitespace is one atom, so a Thai phrase becomes **one word** in the script. Each sentence on the acceptance page `th-01`…`th-06` is one phrase, which means one source word.
 
-后果（实测，评分工具 `lean_carrier_grade` 读存档回答）：
+Consequences (measured with the grading tool `lean_carrier_grade`, which reads the saved answer):
 
-- 译文只能切成 1 块。`lines/1` 的块数上限是 `words.div_ceil(2)`，一个词的句子上限就是 1；分片提示、`¦` 回显都给不出更多切点。这是旧文稿下的真实地板，不是模型的问题。
-- 模型引用的是它读到的词（`พลอย`、`นัท`），文稿里没有这样的词边界，引文定位不出。
+- The translation can only be split into one block. The block-count ceiling for `lines/1` is `words.div_ceil(2)`, so a sentence of one word has a ceiling of 1. Chunking hints and `¦` echoes cannot produce more cut points. This is the real floor for old scripts, not a model problem.
+- The model cites the words it reads (`พลอย`, `นัท`), but the script has no such word boundaries, so the quotes cannot be located.
 
-藏文（含宗喀）在 `atomize` 里按音节符 `་` 切开，但拼回时缝上会补空格（`sep_len` 只认中日文与旧韩文标记）——这是本轮之前就有的有损，见 §8。
+Tibetan (including Dzongkha) is split at the syllable mark `་` in `atomize`, but when rejoined, a space is inserted at the seam. `sep_len` only recognises the CJK and legacy Hangul marks. This lossy behaviour predates this round; see §8.
 
-## 2. 改法
+## 2. The fix
 
-1. **分词用 ICU4X 的 LSTM 分词器**（`ccut-speech-core/src/word_breaks.rs`，`lstm_word_boundaries`、`grapheme_count`）。它正好覆盖泰、老挝、缅甸、高棉四种文字。
-2. **`atomize_words`**（`ccut-flow-core/src/atomize.rs`）先按 `atomize` 切，再把含这四种文字的原子按词切开：
-   - 只采用至少一侧是这四种文字的边界，`F-07`、`14:30` 这类夹在中间的拉丁或数字段保持完整；
-   - 组合附标前不切；
-   - 只有标点的段并进相邻的词：开定界符（Ps/Pi）给后一个词，其余给前一个词；重复符 `ๆ` / `ໆ` 给前一个词。
-3. **词内后续各段带「贴前」标记**（`Word.glue`，与 0.5 韩文旧稿是同一个字段）。按标记拼回（`join_word_texts`）与原文逐字相同，短语之间的空格还在。藏文按音节符切开的缝也带标记。
-4. **时间。** 引擎按词给了时间的行（强制对齐器 `text_prep` 用 `WordSegmenter::new_auto`，对泰文本来就是先分词再对齐）直接用引擎的词与时间，词缝的标记按行文本补（`script_glue_from_text`）。只给行时间的，在短语的时间窗里按字素簇个数分摊。行首词与上一行之间一律不贴。
-5. **永远不拿字素簇边界当词边界。** 字素簇只用来分摊时间。
+1. **Segment with ICU4X's LSTM word segmenter** (`ccut-speech-core/src/word_breaks.rs`: `lstm_word_boundaries`, `grapheme_count`). It covers exactly these four scripts: Thai, Lao, Burmese and Khmer.
+2. **`atomize_words`** (`ccut-flow-core/src/atomize.rs`) first splits by `atomize`, then splits atoms that contain these four scripts into words:
+   - Only use boundaries where at least one side is one of these four scripts. Latin or digit runs in between, such as `F-07` and `14:30`, stay intact.
+   - Do not split before combining marks.
+   - Segments that are only punctuation are merged into a neighbouring word. Opening delimiters (Ps/Pi) go to the following word; all others go to the preceding word. The repetition marks `ๆ` / `ໆ` go to the preceding word.
+3. **Within a word, each later segment carries a “glued-to-previous” mark** (`Word.glue`, the same field as the old 0.5 Korean scripts). Rejoining by the marks (`join_word_texts`) gives exactly the original text, and the spaces between phrases are kept. The seams in Tibetan split at syllable marks also carry the mark.
+4. **Timing.** For lines where the engine gives per-word timing (the forced aligner `text_prep` uses `WordSegmenter::new_auto`, which for Thai text segments words first and then aligns), use the engine's words and times directly, and fill in the marks at seams from the line text (`script_glue_from_text`). For lines that only have line-level timing, divide the phrase's time window by the number of grapheme clusters. The first word of a line is never glued to the previous line.
+5. **Grapheme-cluster boundaries are never used as word boundaries.** Grapheme clusters are used only to apportion time.
 
-`Word.glue` 现在有两种含义，按词文本区分：
+`Word.glue` now has two meanings, distinguished by the word text:
 
-| 谓词 | 判据 | 来源 |
+| Predicate | Criterion | Source |
 | --- | --- | --- |
-| `is_legacy_glued` | 带标记、且含谚文音节 | 0.5 之前逐音节的韩文文稿，读入时打的标记 |
-| `is_script_glued` | 带标记、且不是上一种 | 本文：泰文一类新建稿时按词切开 |
+| `is_legacy_glued` | Carries a mark and contains Hangul syllables | The mark applied on read to pre-0.5 Korean scripts written syllable by syllable |
+| `is_script_glued` | Carries a mark and is not the above | This document: newly created Thai-class scripts split by word |
 
-`rebind::is_legacy_span` 改成「有 `is_legacy_glued` 的词」。原来的判据是「有任何带标记的词」，会把泰文的词区间当成逐音节旧韩文处理。
+`rebind::is_legacy_span` is changed to “a span that has a word with `is_legacy_glued`”. The old criterion was “any word that carries a mark”, which treated Thai word spans as legacy Korean written syllable by syllable.
 
-## 3. 审计
+## 3. Audit
 
-| 项 | 结果 |
+| Item | Result |
 | --- | --- |
-| 许可 | 没有新 crate。`icu_segmenter` 等是 Unicode-3.0，2.2 版本本来就在依赖树里（`text_prep` 用它），release 版 `ccut-serve` 里本来就有 LSTM 的符号 |
-| `--locked` | `cargo build -p ccut -p ccut-serve-bin --locked` 通过，`Cargo.lock` 不变 |
-| 体积 | debug 版 `ccut-serve` 434,745,352 → 435,059,608 字节（+314,256）。release 版没量 |
-| wasm | `wasm-release` cdylib，raw / gzip -9：editor 5,320,607 / 1,388,760 → 5,320,557 / 1,388,768；subtitle 4,207,002 / 1,242,626 → 4,207,002 / 1,242,623。subtitle 在 1.5 MiB 门以内，wasm 导出够不到 LSTM |
-| Windows | `cargo check --target x86_64-pc-windows-gnu -p ccut-speech-core -p ccut-flow-core -p ccut-workspace` 通过 |
-| App | `cargo metadata --manifest-path apps/cuccut/Cargo.toml --locked` 通过 |
+| Licence | No new crate. `icu_segmenter` and the others are Unicode-3.0. Version 2.2 was already in the dependency tree (`text_prep` uses it), and the LSTM symbols were already in the release build of `ccut-serve` |
+| `--locked` | `cargo build -p ccut -p ccut-serve-bin --locked` passes; `Cargo.lock` unchanged |
+| Size | Debug `ccut-serve` 434,745,352 → 435,059,608 bytes (+314,256). Release not measured |
+| wasm | `wasm-release` cdylib, raw / gzip -9: editor 5,320,607 / 1,388,760 → 5,320,557 / 1,388,768; subtitle 4,207,002 / 1,242,626 → 4,207,002 / 1,242,623. Subtitle is within the 1.5 MiB gate, and the wasm exports do not reach the LSTM |
+| Windows | `cargo check --target x86_64-pc-windows-gnu -p ccut-speech-core -p ccut-flow-core -p ccut-workspace` passes |
+| App | `cargo metadata --manifest-path apps/cuccut/Cargo.toml --locked` passes |
 
-### 3.1 LSTM 与词典分词的对照
+### 3.1 LSTM vs. dictionary segmentation
 
-实测（`icu_segmenter 2.2.0`，验收页的泰文句子与老挝、高棉、缅甸各一句；`|` 是边界）：
+Measured (`icu_segmenter 2.2.0`, using the Thai sentences on the acceptance page plus one Lao, one Khmer and one Burmese sentence; `|` marks a boundary):
 
-| 句子 | LSTM | 词典 |
+| Sentence | LSTM | Dictionary |
 | --- | --- | --- |
-| `th-01` 句首人名 | `ลลิตา` | `ลลิต\|า`（切坏人名） |
-| `th-02` | `อง\|ศา`、`หน้า\|ต่าง` | `องศา`、`หน้าต่าง` |
-| `th-04` | `ที่\|มาลี`、`ก้องยืม` | `ที่มา\|ลี`、`ก้อง\|ยืม` |
-| `th-05` | `ร\|หัส`（切坏「代码」） | `รหัส` |
-| `th-06` | `นัทแต่`（人名与连词粘在一起） | `นัท\|แต่` |
-| 老挝 | `ສະບາຍ\|ດີ` | `ສະບາຍດີ` |
-| 缅甸 | `မြန်\|မာ\|ဘာသာ` | `မြန်မာဘာသာ` |
+| `th-01` sentence-initial name | `ลลิตา` | `ลลิต\|า` (splits the name wrongly) |
+| `th-02` | `อง\|ศา`, `หน้า\|ต่าง` | `องศา`, `หน้าต่าง` |
+| `th-04` | `ที่\|มาลี`, `ก้องยืม` | `ที่มา\|ลี`, `ก้อง\|ยืม` |
+| `th-05` | `ร\|หัส` (wrongly splits รหัส, “code”) | `รหัส` |
+| `th-06` | `นัทแต่` (name and conjunction run together) | `นัท\|แต่` |
+| Lao | `ສະບາຍ\|ດີ` | `ສະບາຍດີ` |
+| Burmese | `မြန်\|မာ\|ဘာသာ` | `မြန်မာဘာသာ` |
 
-两种都有错，各错在不同的地方：LSTM 偏碎、偶尔把两个词粘在一起；词典偏粗、会切坏不在词典里的人名。选 LSTM 的理由是体积：词典模式要带中日文词典，LSTM 只带这四种文字的模型，而且已经在发布二进制里。分词错误由 §6 的引文级容忍兜底，不靠换分词器消除。
+Both are wrong, in different places. The LSTM is too fine-grained and occasionally fuses two words together. The dictionary is too coarse and splits names that are not in its lexicon. The LSTM was chosen for size: dictionary mode needs the Chinese and Japanese dictionaries, whereas the LSTM ships models only for these four scripts, and it is already in the release binary. Segmentation errors are covered by the quote-level tolerance in §6, not eliminated by changing the segmenter.
 
-两者**都断开**的缝在上表里全对（`องศา`、`หน้าต่าง`、`ลลิตา`、`รหัส` 都保住了）。文稿里存的词仍然是 LSTM 的；词典只作为第二意见，用来判断哪些缝可以放切分提示，见 §10。
+Seams that **both** segmenters split are all correct in the table above (`องศา`, `หน้าต่าง`, `ลลิตา`, `รหัส` are all kept). Words stored in the script remain the LSTM's. The dictionary is used only as a second opinion, to decide which seams may take split hints; see §10.
 
-## 4. 改写区间锚定在原有的词上
+## 4. Rewrite spans are anchored to the existing words
 
-LSTM 依赖上下文：把短语中的一段单独拿去分词，边界可能和整段分词时不同。实测：验收页的泰文短语，每个词边界处取前缀与后缀单独重切，210 个子区间里 18 个与整段结果不同（1508 个边界里 18 个），差异总在区间的两头（`ล|ลิตา`、`ได้ยก`、`อุณหภูมิลด`）。
+The LSTM depends on context, so segmenting a part of a phrase on its own can give different boundaries from segmenting the whole phrase. Measured: for the Thai phrases on the acceptance page, re-segmenting the prefix and suffix at each word boundary separately gave 18 of 210 sub-spans that differ from the whole-phrase result (18 of 1508 boundaries). The differences always fall at the ends of spans (`ล|ลิตา`, `ได้ยก`, `อุณหภูมิลด`).
 
-所以改写（润色重绑、文本编辑）不能直接拿改写文本重切，否则一个字没改的区间也会换词、换 id。`atomize_words_anchored`：
+So rewriting (polish re-binding, text edits) cannot re-cut the rewritten text directly. Otherwise, a span whose text did not change would get new words and new ids. `atomize_words_anchored`:
 
-- 从头、从尾各自沿用旧词，直到文本开始不同，只把中间改过的那段交给 `atomize_words`；
-- 首尾沿用时有切缝守卫：组合附标前不切，泰 / 老挝前置元音（U+0E40–0E44、U+0EC0–0EC4）后不切；
-- 中间段切出来的第一段或最后一段是纯标点时，把挨着它的那个锚定词还给中间段一起切，每侧最多还一个（本来就单独成段的标点，比如两边都有空格的 `—`，还一个也贴不上，再还下去只会让没改的词换切法）（沙盒真跑：润色在引号外加了空格，`ว่า“ยืนยัน` → `ว่า “ยืนยัน`，尾锚 `ยืนยัน` 原样留下，中间只剩 `ว่า “`，引号单成了一个词；还回去之后切成 `ว่า`、`“ยืนยัน`，与整段重切一致）；
-- 标记按改写文本重算（`script_glue_from_text`）；
-- 最后核对按标记拼回的结果与整段重切的拼回结果相同，不同就退回整段重切。
+- From the start and from the end, keep the old words until the text first differs. Pass only the changed middle to `atomize_words`.
+- When keeping words at the ends, a seam guard applies: no split before combining marks, and no split after Thai or Lao leading vowels (U+0E40–0E44, U+0EC0–0EC4).
+- When the first or last segment of the middle cut is pure punctuation, the adjacent anchored word is returned to the middle to be cut together with it, at most one per side. Punctuation that already stood alone, such as an `—` with spaces on both sides, gets nothing back, because returning more would only change the cut of unchanged words. (Sandbox run: polish added a space outside a quote, `ว่า“ยืนยัน` → `ว่า “ยืนยัน`. The tail anchor `ยืนยัน` stayed as it was, so only `ว่า “` was left in the middle and the quote became a word on its own. After returning the anchor, the cut became `ว่า` and `“ยืนยัน`, consistent with a whole-phrase re-cut.)
+- Marks are recomputed from the rewritten text (`script_glue_from_text`).
+- A final check confirms that the rejoined result by marks equals the rejoined result of a whole-phrase re-cut. If not, fall back to a whole-phrase re-cut.
 
-测试 `script_word_spans_are_recut_only_where_the_text_changed` 覆盖：每个子区间原文不变时切回原来的词；只改中间时首尾的词不动。`a_space_added_outside_a_thai_quote_keeps_the_quote_on_a_word` 覆盖纯标点那一条（去掉这条规则时失败）。
+The test `script_word_spans_are_recut_only_where_the_text_changed` covers two things: when each sub-span's original text is unchanged, it is cut back to its original words; when only the middle changes, the words at the ends stay put. `a_space_added_outside_a_thai_quote_keeps_the_quote_on_a_word` covers the pure-punctuation rule (it fails when that rule is removed).
 
-## 5. 调用点
+## 5. Call sites
 
-| 调用点 | 问的是什么 | 处理 |
+| Call site | Question asked | Handling |
 | --- | --- | --- |
-| `build.rs` `atomized` | 建稿成词 | `atomize_words`；时间按字素簇分摊；引擎逐词的行按行文本补标记 |
-| `rebind.rs` `rebind_corrected` | 改写区间成词 | `atomize_words_like`：泰文区间走 §4 的锚定 |
-| `rebind.rs` `reglue_legacy_span` | 旧韩文按旧规则重定标记 | 跳过 `is_script_glued` 的词 |
-| `atomize.rs` `atomize_like` / `atomize_word_like` | 比对键 | 泰文区间改写文本侧锚定切；已有的词本身就是词，不再送去分词 |
-| `engines/polish.rs` `sentence_alignment` | 润色比对的源侧键 | 改用 `atomize_word_like` |
-| `engines/polish.rs` `map_corrected_page`（也给超长句拆分用） | 润色答案的句子映射回词区间（原子 LCS） | 区间里有 `is_script_glued` 的词时，两侧都用 `comparison_atoms(text, true)`：每个原子再切到字素簇。见下 |
-| `engines/segment.rs` `map_paragraphs_by_diff` | 分段答案映射回词区间 | 同上 |
-| `engines/polish.rs` `fallback_sentences` | 润色整页失败时按 30 词硬切句 | 下一个词是 `is_script_glued` 时不切（不切进短语），到 60 词仍然硬切 |
-| `engines/markers.rs` `collapse_cjk_spaces_like` | 比较时要不要折掉谚文间空格 | 只看 `is_legacy_glued`；泰文的空格是短语停顿，原样比较 |
-| `filepipe/lines_translation.rs` `pieces_with_params` | 源文是否逐字；`¦` 放在哪 | 逐字只看 `is_legacy_glued`；`¦` 不放在词典不认的缝上（§10） |
-| `filepipe/lines.rs` 引文定位 | 引文边界落在词中间 | 新增最宽一级 Snap（§6） |
-| `ccut-workspace` `studio/apply.rs` | 文本编辑写回 | 已有的 script-glue 处理；测试 `thai_text_edits_keep_word_glue` |
-| `ccut-workspace` `review.rs` `restrict_polish_candidate` | 拼块后要不要按旧规则重定 | 改用 `is_legacy_span` |
-| `layout.rs` `seam_grade` | 字幕断行的缝等级 | 不改代码。带标记的缝本来就按「词内字缝」档（3.0，比普通词缝 0.8 贵）；新泰文稿里长短语内部因此**可以**断行，只是排在短语之间的空格之后 |
-| `ccut-subtitle-render` `timed_runs` | 渲染逐词高亮 | 不改。按子串在 Cue 文本里定位每个词，与标记无关 |
-| `ccut-editor-core` `subtext.rs` | 编辑器拼接 / 量宽 | 不改。`JoinWord::glued()` 本来就认标记 |
+| `build.rs` `atomized` | Building the script into words | `atomize_words`; time apportioned by grapheme cluster; lines that the engine gave per word get marks filled from the line text |
+| `rebind.rs` `rebind_corrected` | Segmenting a rewritten span into words | `atomize_words_like`: Thai spans use the anchoring in §4 |
+| `rebind.rs` `reglue_legacy_span` | Re-marking old Korean by the old rules | Skip words with `is_script_glued` |
+| `atomize.rs` `atomize_like` / `atomize_word_like` | Comparison keys | Thai spans: the rewritten-text side is cut with anchoring; existing words are already words and are no longer sent for segmentation |
+| `engines/polish.rs` `sentence_alignment` | Source-side key for polish alignment | Switch to `atomize_word_like` |
+| `engines/polish.rs` `map_corrected_page` (also used to split over-long sentences) | Mapping polish-answer sentences back to word spans (atom LCS) | When a span has `is_script_glued` words, use `comparison_atoms(text, true)` on both sides: each atom is further cut to grapheme clusters. See below |
+| `engines/segment.rs` `map_paragraphs_by_diff` | Mapping paragraph-split answers back to word spans | Same as above |
+| `engines/polish.rs` `fallback_sentences` | Hard-cutting sentences at 30 words when whole-page polish fails | Do not cut when the next word is `is_script_glued` (no cutting inside a phrase); still hard-cut at 60 words |
+| `engines/markers.rs` `collapse_cjk_spaces_like` | Whether to collapse spaces between Hangul syllables when comparing | Looks only at `is_legacy_glued`; Thai spaces are phrase pauses and are compared as they are |
+| `filepipe/lines_translation.rs` `pieces_with_params` | Whether the source is verbatim; where `¦` goes | Verbatim check looks only at `is_legacy_glued`; `¦` is not placed at seams the dictionary does not recognise (§10) |
+| `filepipe/lines.rs` quote location | Quote boundary falls mid-word | Adds the widest level, Snap (§6) |
+| `ccut-workspace` `studio/apply.rs` | Writing back text edits | Existing script-glue handling; test `thai_text_edits_keep_word_glue` |
+| `ccut-workspace` `review.rs` `restrict_polish_candidate` | Whether to re-mark by the old rules after blocks are joined | Use `is_legacy_span` |
+| `layout.rs` `seam_grade` | Grade of subtitle line-break seams | No code change. Seams with marks are already graded in the “within-word seam” tier (3.0, more expensive than an ordinary word seam at 0.8). So in new Thai scripts, long phrases **can** break lines internally, but those breaks rank after the spaces between phrases |
+| `ccut-subtitle-render` `timed_runs` | Rendering per-word highlight | No change. Each word is located by substring within the Cue text, independent of marks |
+| `ccut-editor-core` `subtext.rs` | Editor joining / width measurement | No change. `JoinWord::glued()` already recognises marks |
 
-**润色 / 分段映射为什么要切到字素簇。** 第一笔（`507c7b532`）漏了这两处：文稿那侧已经是一个个词，模型答案那侧按空白只能切到短语，原子 LCS 的匹配率掉到 0.7 以下，整页报 `source-drift` 退回原文（沙盒真跑：9 句、2 页全部退回，`fallbackSentences` 6）。拿分词模型去切答案也不行：它依赖上下文，模型改一处空格就换切法。两侧都切到字素簇才对称；所有原子都切（不只含泰文的），否则 `14:30` 这种夹在泰文里的段一边整一边碎。**字素簇在这里只是比对键**：匹配映射回文稿词的下标，句界、段界仍然只落在文稿的词边界上，不拿字素簇当词界。没有泰文一类标记的区间（旧文稿、其他语言）比对键与改前逐个相同。
+**Why mapping in polish and paragraph segmentation is cut to grapheme clusters.** The first commit (`507c7b532`) missed these two places. The script side was already individual words, while the model's answer side could only be split by whitespace into phrases. The atom LCS match rate dropped below 0.7, so the whole page reported `source-drift` and fell back to the original. (Sandbox run: 9 sentences on 2 pages, all fell back, `fallbackSentences` 6.) Cutting the answer with the segmentation model is also wrong: it depends on context, so if the model changes one space, the cut changes. Cutting both sides to grapheme clusters is symmetric. All atoms are cut, not only those containing Thai; otherwise a segment such as `14:30` inside Thai would be whole on one side and fragmented on the other. **The grapheme cluster here is only a comparison key.** Matches map back to indices of script words, and sentence and paragraph boundaries still fall only on script word boundaries. Grapheme clusters are never used as word boundaries. For spans without a Thai-class mark (old scripts, other languages), the comparison keys are identical, one by one, to those before this change.
 
-**没有改任何 UI 代码。** 编辑器与两个客户端里按词的交互（逐词高亮、选词、按词切分）通过已有的认标记拼接拿到泰文的词粒度；新文稿在这些地方的单位从短语变成词。这是读代码得出的，没有在 App 或 Web 上实测。
+**No UI code was changed.** Word-level interactions in the editor and in both clients (per-word highlight, word selection, split by word) get Thai word granularity through the existing mark-aware joining. In new scripts, the unit there changes from phrase to word. This was derived by reading the code; it was not tested in the App or on the Web.
 
-## 6. 引文的 Snap 级
+## 6. Snap Level for Quote Anchoring
 
-模型看不到分词器的边界，它在自己读到的词尾处截断；分词器偶尔又把两个词粘在一起（`นัทแต่`）。所以 `lines/1` 引文定位在已有五级（Exact → Punct → Fold → Stem → Glued）之后加最宽的一级 Snap：
+The model cannot see the tokenizer's boundaries. It cuts off at the end of the word it has just read, and the tokenizer sometimes glues two words together (`นัทแต่`). So `lines/1` quote anchoring, after the existing five levels (Exact → Punct → Fold → Stem → Glued), adds the widest level, Snap:
 
-- 引文按 Fold 规整、去掉空白，必须出现在这句的规整文本里；
-- 至少一侧边界落在某个词的中间时才扩到整词，而且每个落在词中间的边界所在的词，都必须是与邻词贴着、且含不写空格的文字的词；
-- 旧文稿里一个短语一个原子的、按空格分词的文字，都不会在这一级命中；`cat` 不会扩到 `catalog`。
+- The quote is normalized by Fold and stripped of whitespace, and it must appear in the normalized text of this sentence;
+- It expands to whole words only when at least one side's boundary falls in the middle of a word. Every word whose middle contains a boundary must abut its neighbor and contain text that is written without spaces;
+- Text in old transcripts that is one atom per phrase and segmented by spaces will never match at this level; `cat` will not expand to `catalog`.
 
-测试 `a_quote_stopping_inside_a_segmented_word_widens_to_that_word`。CLI 参考 [`ccut-translate.md`](../cli/ccut-cli-server-reference/06/ccut-translate.md) 的引文分级同步。`lines/1` 只有 provider 直连，Agent 路径不适用；`rows` 载体用源词序号，不涉及。
+Test: `a_quote_stopping_inside_a_segmented_word_widens_to_that_word`. The CLI reference [`ccut-translate.md`](../cli/ccut-cli-server-reference/06/ccut-translate.md) is synced with this quote grading. `lines/1` applies only to direct provider connections; the Agent path does not apply. The `rows` carrier uses source word indices and is not involved.
 
-## 7. 已有文稿与兼容
+## 7. Existing Transcripts and Compatibility
 
-- **不迁移。** 已有的泰文一类文稿没有标记，粒度判为普通词区间，改写时仍走 `atomize`，一个短语一个原子，结果与改前逐字节相同。要拿到词粒度只能重新转录。
-- 新文稿里如果一句的每个短语恰好都只有一个词（没有任何标记），这句改写时也按普通区间处理，新出现的多词短语不会被切开。显示不受影响。
-- **旧版本程序读新文稿**（读代码推断，未实测）：0.5 之后、本轮之前的程序用「有任何标记」判逐音节旧稿，会把新泰文稿的改写区间当成旧韩文处理。旧规则只在谚文之间贴，结果是改写区间里的泰文标记被清掉、短语内出现空格。这种程序本来就会把 `text_prep` 逐词给时间的泰文行拼出空格（§8），不是新增的一类错误，但范围会扩大到所有新泰文稿。
+- **No migration.** Existing Thai-type transcripts have no markers, so their granularity is judged as ordinary word intervals. When rewriting, they still go through `atomize`, one phrase per atom, and the result is byte-identical to before. To get word granularity, the transcript must be re-transcribed.
+- If, in a new transcript, every phrase of a sentence has exactly one word (no markers at all), that sentence is also treated as an ordinary interval when rewriting, and newly appearing multi-word phrases are not split. Display is unaffected.
+- **Old program versions reading new transcripts** (inferred from reading the code, not tested): programs after 0.5 but before this round decide "per-syllable old transcript" by checking "has any marker". They will treat the rewrite intervals of new Thai transcripts as old Korean. The old rule joined only between Hangul syllables, so Thai markers inside rewrite intervals are cleared and spaces appear inside phrases. Such programs already join Thai rows whose per-word timing comes from `text_prep` with spaces (§8), so this is not a new class of error. However, the scope extends to all new Thai transcripts.
 
-## 8. 已知、没修的问题
+## 8. Known Issues Not Fixed
 
-- **强制对齐器逐词给时间的泰文行，本轮之前拼出来带空格。** `text_prep` 先分词再对齐，建稿时词缝没有标记，`join_word_texts` 在每个词之间补空格。本轮之后新建稿按行文本补标记，已有文稿不变。
-- **藏文音节符后的空格。** 已有文稿同上，只修新建稿。
-- **`ccut-subtitle-render` 的 `source_word_fields` 用空格拼源词。** 中文、日文也受影响，与本轮无关，没有动。
-- **旧泰文稿的润色映射仍然脆。** 旧文稿一个短语一个原子，模型在短语里加一个空格（`เวลา14:30น.` → `เวลา 14:30 น.`），这个原子在两侧就对不上。沙盒那一页答案按旧文稿映射同样报 `source-drift`（测试 `a_legacy_thai_transcript_keeps_phrase_level_comparison` 把这个现状钉住）。这是本轮之前就有的，没有修：把字素簇比对键放宽到旧泰文稿会改变旧文稿的润色结果。**裁决（2026-10-01）：不放宽，保留这条测试钉住的现状。** §7 已定旧文稿不迁移、逐字节不变；放宽会改变已有文稿的润色结果；要词粒度就重新转录，走新路径。
-- ~~切分提示 `¦` 落在分词错误处时，模型照着切。~~ 已修，见 §10。
-- **没有长度估计的语言对会给多块。** 泰文→英文 / 中文没有 `estimated_units`，`chunk_hint` 退到按词数估，13 词左右的句子给 ≥4，出现 `120 | baht`、`three | tickets` 这种过碎的块。这是 `chunk_hint` 本来的行为，与分词无关。（另：`estimated_units` 曾经看到源文里有任何 ASCII 字母就按拉丁文算。）
-  **裁决与处理（2026-10-01）：** 源文改按字母数取主导文字，`รหัสF-07…` 不再走拉丁文 0.34；只登记实测过的语言对：泰文→英文 1.3（8 句、189 条译文的逐句中位数取 p75），首轮 `≥k` 总数 33 → 25，`120 | baht` 不再出现。泰文→中文也量过（0.40），但它的 `≥3` 给出三段很长的泰文片段，DeepSeek Flash 有 8/16 页把原文照抄回来（按预算的五段是 0/16），所以不登记，仍按预算。泰文→其他目标语、老挝 / 高棉 / 缅甸文源没有实测，也按预算。
-- **模型会引用源文里没有的字。** 沙盒真跑 s-g6.0 的引文写成 `สิบห้านาที`（十五分钟），源文是 `สิบนาที`（十分钟），10 块里 9 块定位到，剩下的块超过硬上限，进了改写轮，最后 `aligned`。译文本身是对的（ten minutes）。
+- **Thai rows that the forced aligner timed word by word came out with spaces before this round.** `text_prep` segments first and then aligns. When the transcript was built, there were no markers at word seams, so `join_word_texts` inserted a space between each word. After this round, newly created transcripts get markers from the row text. Existing transcripts are unchanged.
+- **Space after the Tibetan syllable mark.** Same as above: existing transcripts are unchanged, and only newly created ones are fixed.
+- **`ccut-subtitle-render`'s `source_word_fields` joins source words with spaces.** Chinese and Japanese are affected too. This is unrelated to this round and was not touched.
+- **The polish mapping for old Thai transcripts is still fragile.** In old transcripts each phrase is one atom. When the model adds a space inside a phrase (`เวลา14:30น.` → `เวลา 14:30 น.`), that atom no longer matches on both sides. The sandbox page's answer also reports `source-drift` against the old-transcript mapping (the test `a_legacy_thai_transcript_keeps_phrase_level_comparison` pins this current state). This predates this round and is not fixed. Relaxing the grapheme-cluster comparison key to cover old Thai transcripts would change the polish results of those transcripts. **Ruling (2026-10-01): do not relax; keep the state pinned by this test.** §7 settled that old transcripts are not migrated and stay byte-identical. Relaxing would change polish results for existing transcripts. For word granularity, re-transcribe and use the new path.
+- ~~When the segmentation hint `¦` falls at a segmentation error, the model cuts along it.~~ Fixed; see §10.
+- **Language pairs without a length estimate produce multiple chunks.** Thai→English and Thai→Chinese have no `estimated_units`, so `chunk_hint` falls back to estimating by word count. A sentence of about 13 words gets ≥4, producing over-fragmented chunks such as `120 | baht` and `three | tickets`. This is `chunk_hint`'s original behavior and is unrelated to segmentation. (Also: `estimated_units` once treated any ASCII letter in the source as Latin.)
+  **Ruling and handling (2026-10-01):** The source now takes the dominant script by letter count, so `รหัสF-07…` no longer uses the Latin factor 0.34. Only the language pairs that were measured are registered. Thai→English is 1.3 (the per-sentence median over 8 sentences and 189 translation rows, taking p75). In the first round, the `≥k` total went from 33 to 25, and `120 | baht` no longer appears. Thai→Chinese was also measured (0.40), but its `≥3` yields three very long Thai pieces, and DeepSeek Flash echoed the source back on 8/16 pages (0/16 with the budgeted five pieces). So it is not registered and still uses the budget. Thai→other target languages, and Lao, Khmer, and Burmese sources, have not been measured and also use the budget.
+- **The model cites words that are not in the source.** In a real sandbox run of s-g6.0, the quote was written as `สิบห้านาที` (fifteen minutes), while the source is `สิบนาที` (ten minutes). Nine of ten chunks were located. The remaining chunk exceeded the hard limit and went to the rewrite round, ending `aligned`. The translation itself was correct (ten minutes).
 
-## 9. 验证
+## 9. Verification
 
-见 [`docs/changelog/core/`](../../changelog/core/README.md) 2026-10-01 的两条记录：第一条是实现与离线回归，第二条是泰文真跑、沙盒端到端，以及沙盒里发现的润色退回与引号单成词两处修正。
+See the two 2026-10-01 entries in [`docs/changelog/core/`](../../changelog/core/README.md). The first covers the implementation and offline regression. The second covers the real Thai run, the sandbox end-to-end test, and two fixes found in the sandbox: the polish fallback and the quote mark counted as a single word.
 
-## 10. 切分提示只落在两种分词都同意的缝上
+## 10. Segmentation Hints Fall Only on Seams Both Segmenters Agree On
 
-来源：2026-10-01 复验（[`lean-carrier-acceptance-2026-10-01-915bfef13`](../../../scripts/bench/fixtures/lean-carrier-acceptance-2026-10-01-915bfef13/README.md)）。带阅读预算的泰文补测 8/8 aligned，但 `th-02` 把 `ปิดหน้าต่าง`（关窗）译成 `close the front panel`。那一页的提示是 `ต่ำกว่า5อง ¦ ศาให้ปิดหน้า ¦ ต่างก่อนเปิดเครื่อง`：均匀切点正好落在 LSTM 切开的 `อง|ศา`（度）与 `หน้า|ต่าง`（窗）里。模型逐片翻译，`หน้า` 单独成片就成了「前面」，`5อง` 单独成片就写出 `5 de|grees`。
+Source: 2026-10-01 re-verification ([`lean-carrier-acceptance-2026-10-01-915bfef13`](../../../scripts/bench/fixtures/lean-carrier-acceptance-2026-10-01-915bfef13/README.md)). The budgeted Thai supplementary test got 8/8 aligned, but `th-02` translated `ปิดหน้าต่าง` (close the window) as `close the front panel`. That page's hint was `ต่ำกว่า5อง ¦ ศาให้ปิดหน้า ¦ ต่างก่อนเปิดเครื่อง`. The evenly spaced cut points fell exactly inside `อง|ศา` (degree) and `หน้า|ต่าง` (window), which the LSTM had split. The model translates piece by piece: `หน้า` on its own as a piece became "front", and `5อง` on its own as a piece produced `5 de|grees`.
 
-**改法**（`lines_translation.rs` `unsure_boundaries` / `piece_boundaries_over`）：两个相邻源词在原文里紧贴、贴着的两个字符都是泰、老挝、缅甸、高棉字母，且 ICU4X 词典分词（`word_breaks::dictionary_word_boundaries`）不在这里断开，这条缝就是「不可信」的。`¦` 不放在不可信的缝上：
+**Fix** (`lines_translation.rs` `unsure_boundaries` / `piece_boundaries_over`): a seam between two adjacent source words is "unsure" when the two words touch in the source text, both characters on either side are Thai, Lao, Myanmar, or Khmer letters, and the ICU4X dictionary word segmentation (`word_breaks::dictionary_word_boundaries`) does not break there. `¦` is not placed on unsure seams:
 
-- 均匀切点附近的窗口里还有可信的缝，就在这些缝里照原来的打分选；
-- 整个窗口都不可信，就往外找离切点最近的可信缝（同样不切进数字）；
-- 一条都没有就少放一片。这时 `≥k` 会比实际的片数多一，与原来窗口为空时跳过一片的情形相同。
+- If the window near an evenly spaced cut point still contains trusted seams, choose among those using the original scoring;
+- If the whole window is unsure, look outward for the trusted seam nearest the cut point (again not cutting into digits);
+- If there are none at all, drop one piece. In that case `≥k` will be one more than the actual piece count, the same as the earlier case where an empty window skipped a piece.
 
-空格、标点、数字、换文字处的缝都算可信；藏文等两种分词都不覆盖的文字不受影响。只改提示里 `¦` 的位置（以及读答案时同一组片起点），**文稿存的词不变**。
+Spaces, punctuation, digits, and script changes are all trusted seams. Text such as Tibetan, which neither segmenter covers, is unaffected. Only the position of `¦` in the hint changes (along with the piece start points used when reading answers from the same set). **The words stored in the transcript are unchanged.**
 
-**存储粒度的裁决（2026-10-01）：继续存 LSTM 的词。** 细粒度唯一实测到的害处是 `¦` 落进复合词，已在提示一侧由本节修掉（`37d274245`）。改存词典或交集要动对齐锚点、时间分摊和高亮单位，目前看不到收益。
+**Storage granularity ruling (2026-10-01): keep storing the LSTM words.** The only measured harm from finer granularity was `¦` falling inside compound words, which this section fixes on the hint side (`37d274245`). Storing dictionary or intersection segments would touch the alignment anchors, time apportioning, and highlight units, and no benefit is visible at present.
 
-**代价**：词典数据（泰、老挝、缅甸、高棉词表）约 1.8 MB，进 CLI / Runtime / App 的二进制。Web 的编辑 WASM 用不到这条路径：`ccut-wasm-editor` 的 `wasm-release` 产物改前改后都是 5,105,682 B。
+**Cost:** The dictionary data (Thai, Lao, Myanmar, and Khmer word lists) is about 1.8 MB and goes into the CLI, Runtime, and App binaries. The Web editing WASM does not use this path: the `wasm-release` artifact of `ccut-wasm-editor` is 5,105,682 B both before and after the change.
 
-**验证**（数据在 `/Volumes/ExtremeSSD/cuccut-lean-validation/round12/th-pieces/`，脚本 `scripts/th-pieces-ab.py`）：同一份带预算的 8 句泰文页，旧提示与新提示各采样 8 次（DeepSeek V4.1 Flash，温度 0.2）：
+**Verification** (data in `/Volumes/ExtremeSSD/cuccut-lean-validation/round12/th-pieces/`, script `scripts/th-pieces-ab.py`): the same budgeted set of 8 Thai sentences. The old hints and the new hints were each sampled 8 times (DeepSeek V4.1 Flash, temperature 0.2):
 
-| | 旧 `¦` | 新 `¦` |
+| | Old `¦` | New `¦` |
 | --- | ---: | ---: |
 | aligned | 64/64 | 64/64 |
-| 译文里切进英文单词（`de\|grees`） | 8/8 次 | 0 |
-| `th-02` 译出 window | 6/8（2 次 `front door`） | 8/8 |
-| 引文定位问题 | 2 | 0 |
+| Translation splits an English word (`de\|grees`) | 8/8 runs | 0 |
+| `th-02` translates the window | 6/8 (2 runs `front door`) | 8/8 |
+| Quote-location problems | 2 | 0 |
 
-样本量小，只说明方向。508 句英文源回放与 Codex 夹具回放逐句不变。中文、日文逐字源文的 `¦` 也会落在词中间（[`ccut-lean-llm-carrier-design.md`](ccut-lean-llm-carrier-design.md) §8.5）。
+The sample is small, so it shows only the direction. Replay of 508 English source sentences and replay of the Codex fixtures are unchanged, sentence by sentence. In Chinese and Japanese per-character source text, `¦` also falls mid-word ([`ccut-lean-llm-carrier-design.md`](ccut-lean-llm-carrier-design.md) §8.5).
 
-**中文、日文（2026-10-01 接上）：** 同一道门扩到汉字与假名：两侧都是汉字或假名、词典分词不断开的缝不可信。中日文的文稿是一个字一个词，没有 LSTM 这一边，所以只看词典。真跑 A/B 与盲评见 lean 设计稿 §8.14。词典对日文仍会把一些词干与词尾分开（`集 ¦ まって`），这些缝照旧可信。韩文音节不在这两族里，不受影响。
+**Chinese and Japanese (continued 2026-10-01):** The same gate extends to Han characters and kana. A seam where both sides are Han characters or kana, and where dictionary segmentation does not break, is unsure. Chinese and Japanese transcripts have one character per word and no LSTM side, so only the dictionary is consulted. The real-run A/B and blind review are in the lean design doc §8.14. For Japanese, the dictionary still separates some stems from their endings (`集 ¦ まって`), and those seams remain trusted as before. Korean syllables are not in these two families and are unaffected.
 
-**括号、引号里侧（2026-10-01 接上）：** 不论哪种文字，开括号、开引号之后与闭括号、闭引号之前的缝也不可信。不写空格的源文里开引号挂在前一个词尾（`ว่า“`），片标落在它后面时，模型把引号留在前一块，译文就成了 `“ confirmed”`。引号方向随语言变，所以只在引号紧贴另一侧或单独成词时算。细则见 lean 设计稿 §8.15。
-
+**Inside of brackets and quotes (continued 2026-10-01):** Regardless of script, a seam after an opening bracket or quote and before a closing bracket or quote is unsure. In source text without spaces, an opening quote attaches to the end of the preceding word (`ว่า“`). When a piece mark falls after it, the model leaves the quote in the previous chunk, and the translation becomes `“ confirmed”`. Quote direction varies by language, so this applies only when the quote touches the other side or stands alone as a word. Details are in the lean design doc §8.15.

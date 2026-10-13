@@ -7,10 +7,10 @@ license-file.workspace = true
 publish.workspace = true
 
 [dependencies]
-# 超越函数只走 libm（与 ccut-motion 同一理由）：同一份输入在 macOS / Windows / Linux 出逐位相同的采样。
+# Transcendental functions go through libm only (same reason as ccut-motion): the same input yields bit-identical samples on macOS, Windows and Linux.
 libm = "0.2.16"
 
 [dev-dependencies]
-# 独立实现的 EBU R128 测量（MIT），只在测试里与本 crate 自写的 BS.1770 对拍，不进库的依赖图：
-# 它的滤波系数与对数走 std 浮点，平台间末位可能不同，而响度值会反馈成母带增益。
+# An independently implemented EBU R128 measurement (MIT), checked against this crate's own BS.1770 only in tests; it is not in the library's dependency graph:
+# its filter coefficients and logarithms use std floating point, so the last digit may differ between platforms, and loudness values feed back into the master gain.
 ebur128 = "0.1.10"

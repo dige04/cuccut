@@ -3,7 +3,7 @@
   "version": 1,
   "domain": "motion",
   "family": "fadeIn",
-  "doc": "淡入。composite=multiply，可与主运动叠加。",
+  "doc": "Fade in. composite=multiply, can stack with the main motion.",
   "exposedTo": [
     "bcf"
   ],
@@ -11,7 +11,7 @@
     "curve": {
       "type": "curve",
       "default": "easeOutCubic",
-      "doc": "时间曲线（规范 §7.6 的封闭名称）"
+      "doc": "Timing curve (closed name set from spec §7.6)"
     }
   },
   "tracks": [

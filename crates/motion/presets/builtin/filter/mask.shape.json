@@ -19,7 +19,7 @@
       "max": 0.5,
       "basis": "canvasShortEdge",
       "quantize": "none",
-      "doc": "圆角半径，画布短边的比例；会被夹到短边的一半"
+      "doc": "Corner radius as a fraction of the canvas short edge; clamped to half the short edge."
     },
     "radiusTopLeft": {"type":"length","default":0,"min":0,"max":0.5,"basis":"canvasShortEdge","quantize":"none"},
     "radiusTopRight": {"type":"length","default":0,"min":0,"max":0.5,"basis":"canvasShortEdge","quantize":"none"},
@@ -32,7 +32,7 @@
       "max": 0.25,
       "basis": "canvasShortEdge",
       "quantize": "none",
-      "doc": "羽化宽度，画布短边的比例"
+      "doc": "Feather width as a fraction of the canvas short edge."
     }
   },
   "color": {
@@ -48,5 +48,5 @@
   "determinism": "strict",
   "capabilities": [],
   "fallback": null,
-  "doc": "圆角矩形 / 椭圆的 SDF 覆盖率遮罩，**逐行等价于 studio_export 的 apply_local_clip**：softness = 1 + feather，coverage = (0.5 - sd)/softness + 0.5×(softness-1)/softness，覆盖率乘在预乘四通道上。radius 会被夹到短边的一半。"
+  "doc": "SDF coverage mask for rounded rectangles and ellipses, **line-for-line equivalent to `apply_local_clip` in studio_export**: softness = 1 + feather, coverage = (0.5 - sd)/softness + 0.5×(softness-1)/softness, and the coverage multiplies all four premultiplied channels. radius is clamped to half the short edge."
 }

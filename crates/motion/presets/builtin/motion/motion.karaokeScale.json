@@ -4,7 +4,7 @@
   "domain": "motion",
   "family": "karaokeScale",
   "appliesTo": "part",
-  "doc": "逐 part 弹一下：绕该 part 自己的包围盒中心缩放（record_text 负责锚点），composite=multiply。",
+  "doc": "Per-part pop: scales around each part's own bounding-box center (record_text owns the anchor), composite=multiply.",
   "aliases": [
     "karaoke"
   ],
@@ -16,12 +16,12 @@
       "type": "number",
       "default": 1.18,
       "min": 0.0,
-      "doc": "峰值缩放"
+      "doc": "Peak scale"
     },
     "curve": {
       "type": "curve",
       "default": "easeOutBack",
-      "doc": "时间曲线（规范 §7.6 的封闭名称）"
+      "doc": "Easing curve (closed name from spec §7.6)"
     }
   },
   "defaults": {

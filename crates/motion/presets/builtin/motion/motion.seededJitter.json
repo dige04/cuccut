@@ -4,7 +4,7 @@
   "domain": "motion",
   "family": "seededJitter",
   "appliesTo": "part",
-  "doc": "逐 part 的确定性抖动：splitmix64 噪声（规范 §7.3），seed 缺省 0，composite=add。",
+  "doc": "Per-part deterministic jitter: splitmix64 noise (spec §7.3), seed defaults to 0, composite=add.",
   "exposedTo": [
     "bcf"
   ],
@@ -15,18 +15,18 @@
         "value": 0.004,
         "basis": "canvasShortEdge"
       },
-      "doc": "抖动幅度"
+      "doc": "Jitter amplitude"
     },
     "period": {
       "type": "number",
       "default": 0.5,
       "min": 0.001,
-      "doc": "一个噪声周期的秒数"
+      "doc": "Seconds per noise cycle"
     },
     "seed": {
       "type": "seed",
       "default": 0,
-      "doc": "确定性种子（规范 §7.3）"
+      "doc": "Deterministic seed (spec §7.3)"
     }
   },
   "defaults": {

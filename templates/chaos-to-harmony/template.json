@@ -3,30 +3,30 @@
   "id": "chaos-to-harmony",
   "version": "1.1.0",
   "kind": "example",
-  "title": "混沌归于秩序",
-  "summary": "一部全部由代码渲染的短片：物理形态与材质从混乱走向和谐。",
-  "description": "不用生成视频片段，也不用图库素材，所有画面与动画都由代码搭建和渲染，交付成片和可以继续修改的源码。",
-  "language": "zh-CN",
+  "title": "From chaos to order",
+  "summary": "A short rendered entirely in code: forms and materials go from chaos to harmony.",
+  "description": "No generated video clips and no stock footage: every visual and animation is built and rendered in code. You get the final video plus source code you can keep editing.",
+  "language": "en",
   "category": "motion-design",
   "ratio": "16:9",
   "fields": [
     {
-      "label": "形态与材质",
-      "hint": "想看哪些东西从混乱走向秩序",
-      "example": "各种物理形态与材质"
+      "label": "forms and materials",
+      "hint": "What you want to see go from chaos to order",
+      "example": "all kinds of physical forms and materials"
     },
     {
-      "label": "成片语言",
-      "hint": "画面文字、歌词或旁白用的语言"
+      "label": "video language",
+      "hint": "The language for on-screen text, lyrics or narration"
     }
   ],
   "author": "CucCut",
   "source": "official",
   "license": "LicenseRef-CucCut-Community-1.0",
   "tags": [
-    "代码动画",
-    "物理",
-    "材质"
+    "code animation",
+    "physics",
+    "materials"
   ],
   "skills": [
     "video-production"
@@ -40,10 +40,10 @@
   "preview": {
     "file": "preview.mp4",
     "beats": [
-      "散乱的碎片与材质",
-      "彼此碰撞、吸引",
-      "逐渐找到节奏",
-      "归于和谐的整体"
+      "Scattered fragments and materials",
+      "Colliding and attracting",
+      "Gradually finding a rhythm",
+      "Settling into a harmonious whole"
     ]
   },
   "verification": {

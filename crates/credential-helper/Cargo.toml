@@ -1,6 +1,6 @@
 [package]
 name = "credential-helper"
-description = "CucCut 的凭据助手：Runtime 以子进程调用，经 stdin/stdout 的一行 JSON 读写 macOS 钥匙串与 Windows Credential Manager（架构设计 §6.8）"
+description = "CucCut credential helper: the Runtime calls it as a child process and reads and writes the macOS Keychain and Windows Credential Manager over one JSON line on stdin/stdout (architecture design §6.8)"
 version.workspace = true
 edition.workspace = true
 license-file.workspace = true
@@ -18,7 +18,7 @@ path = "src/main.rs"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 
-# macOS 钥匙串与 Windows Credential Manager；其他平台明确回答 unsupported。
+# macOS Keychain and Windows Credential Manager; other platforms explicitly answer unsupported.
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = "3.7.0"
 

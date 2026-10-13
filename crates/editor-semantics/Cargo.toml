@@ -1,6 +1,6 @@
 [package]
 name = "editor-semantics"
-description = "CucCut 的时间语义：精确有理数、十进制秒、帧量化、时间映射（视频格式规范 §2）"
+description = "Time semantics of CucCut: exact rationals, decimal seconds, frame quantization, time mapping (video format spec §2)"
 version.workspace = true
 edition.workspace = true
 license-file.workspace = true

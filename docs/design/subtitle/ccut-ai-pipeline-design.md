@@ -1,41 +1,36 @@
-> 移植自 CucCut v2；文中的数据模型名（TranscriptDoc 等）指 v2 的模型，与 v3 文档模型的对应见[架构设计 §14](../../architecture/architecture-design.md#14-待评审事项)。
+> Ported from CucCut v2. The data model names in this document (such as TranscriptDoc) refer to the v2 models. For their mapping to the v3 document model, see [Architecture design §14](../../architecture/architecture-design.md#14-items-pending-review).
 
-# ccut 转录后处理 AI 管线技术方案（润色 / 分段 / 分章节 / 翻译 / 字幕对齐）
+# ccut Post-Transcription AI Pipeline Technical Design (Polish / Segment / Chapters / Translate / Subtitle Alignment)
 
-> **版本**：实现对齐版 v0.4（2026-08-01）
-> **状态**：P0–P5 与最终时间线跨源翻译已实现；代码与测试是算法参数的权威来源
-> **后续重构提案**：模型内容协议从 JSON 改为 TXT / Markdown / HTML 的方案见
-> [文件化字幕 AI 管线重设计](ccut-file-based-subtitle-ai-design.md)。本文继续描述当前已实现行为，
-> 在该提案落地前仍是实现参考。
-> **关联文档**：
-> - [cuccut-format-spec.md](../bcf/cuccut-format-spec.md) —— §17 Project 容器 / §18 Transcript 词原子规范（本方案的数据层）
-> - [ccut-cli-design.md](../cli/ccut-cli-design.md) —— §8 LLM 双执行模式 / task 应答循环（本方案的执行层）
-> - [ccut-transcribe-port-plan.md](../speech/ccut-transcribe-port-plan.md) —— 本地 ASR 栈移植计划（本方案的上游）
-> **参考实现**：voice-ink（Swift 版 CucCut）的 Pipeline / Translation / AI 目录——本方案大量继承其经过实战检验的机制，并在文末（§13）列出刻意差异。
+> **Version**: implementation-aligned v0.4 (2026-08-01)
+> **Status**: P0–P5 and final-timeline cross-source translation are implemented; the code and tests are the authoritative source for algorithm parameters
+> **Follow-up refactor proposal**: the plan to change the model content protocol from JSON to TXT / Markdown / HTML is described in
+> [File-based subtitle AI pipeline redesign](ccut-file-based-subtitle-ai-design.md). This document continues to describe the currently implemented behaviour and remains the implementation reference until that proposal lands.
+> **Related documents**:
+> - [cuccut-format-spec.md](../bcf/cuccut-format-spec.md) — §17 Project container / §18 Transcript word-atom spec (the data layer of this design)
+> - [ccut-cli-design.md](../cli/ccut-cli-design.md) — §8 LLM dual execution modes / task reply loop (the execution layer of this design)
+> - [ccut-transcribe-port-plan.md](../speech/ccut-transcribe-port-plan.md) — local ASR stack porting plan (the upstream of this design)
+> **Reference implementation**: the Pipeline / Translation / AI directories of voice-ink (the Swift version of CucCut). This design inherits much of its battle-tested machinery and lists the deliberate differences at the end (§13).
 >
-> **v0.3 收口**：翻译与对齐的数据结构已按
-> [ccut-transcript-v03-design.md](ccut-transcript-v03-design.md) 重设计——句子
-> （sentence）一等公民、`trans` 句级真相 + `transAlign` 对齐覆盖层、两种对齐
-> 策略（independent / manyToOne）、fit/soft/hard 三阈值。翻译 Cue 只从 Sentence
-> 派生，与源 Cue 完全独立。最终时间线项目还按 `(srcId, sentenceId)` 路由，使用
-> cut 后可见词指纹、跨源上下文与源级散写；§8/§9 以下已按当前实现统一描述。
+> **v0.3 consolidation**: the data structures for translation and alignment have been redesigned per
+> [ccut-transcript-v03-design.md](ccut-transcript-v03-design.md) — sentences as first-class entities, `trans` as the sentence-level source of truth plus the `transAlign` alignment overlay, two alignment strategies (independent / manyToOne), and three fit/soft/hard thresholds. Translation Cues are derived only from Sentences and are fully independent of source Cues. Final-timeline items are also routed by `(srcId, sentenceId)`, using a fingerprint of the visible words after cut, cross-source context and per-source scatter write-back; §8/§9 and below are now described uniformly according to the current implementation.
 
 ---
 
-## 目录
+## Table of Contents
 
-本文已按章拆分（2026-09-10）：正文在 [`ccut-ai-pipeline-design/`](ccut-ai-pipeline-design/) 下，一章一个文件，超长的章再按节拆成子目录（子目录的 `README.md` 是该章导言与节目录）。引用写「§N」仍指下表第 N 章；改哪节就编辑哪个文件，新增章节新建文件并在这里加一行，**不要把正文写回本文件**。
+This document was split by chapter on 2026-09-10: the body lives under [`ccut-ai-pipeline-design/`](ccut-ai-pipeline-design/), one chapter per file. Chapters that are too long are further split into subdirectories by section (the `README.md` in a subdirectory is that chapter's introduction and section list). References written as “§N” still mean chapter N in the table below. To change a section, edit its file; to add a chapter, create a new file and add a line here. **Do not write the body back into this file.**
 
-- [1. 背景与现状](ccut-ai-pipeline-design/01.md)
-- [2. 总体架构](ccut-ai-pipeline-design/02.md)
-- [3. 数据与状态](ccut-ai-pipeline-design/03.md)
-- [4. 阶段〇：词级时间戳与强制对齐](ccut-ai-pipeline-design/04.md)
-- [5. 阶段一：润色（polish）](ccut-ai-pipeline-design/05.md)
-- [6. 阶段二：分段（segment）](ccut-ai-pipeline-design/06.md)
-- [7. 阶段三：分章节（chapters）](ccut-ai-pipeline-design/07.md)
-- [8. 阶段四：翻译（translate）](ccut-ai-pipeline-design/08.md)
-- [9. 阶段五：展示切分与字幕对齐（display split / align）](ccut-ai-pipeline-design/09.md)
-- [10. LLM 调用层](ccut-ai-pipeline-design/10.md)
-- [11. 编排、进度与 CLI 命令面](ccut-ai-pipeline-design/11.md)
-- [12. 实施状态](ccut-ai-pipeline-design/12.md)
-- [13. 与 voice-ink 的对照与刻意差异](ccut-ai-pipeline-design/13.md)
+- [1. Background and current state](ccut-ai-pipeline-design/01.md)
+- [2. Overall architecture](ccut-ai-pipeline-design/02.md)
+- [3. Data and state](ccut-ai-pipeline-design/03.md)
+- [4. Stage 0: word-level timestamps and forced alignment](ccut-ai-pipeline-design/04.md)
+- [5. Stage 1: polish](ccut-ai-pipeline-design/05.md)
+- [6. Stage 2: segment](ccut-ai-pipeline-design/06.md)
+- [7. Stage 3: chapters](ccut-ai-pipeline-design/07.md)
+- [8. Stage 4: translate](ccut-ai-pipeline-design/08.md)
+- [9. Stage 5: display split / align](ccut-ai-pipeline-design/09.md)
+- [10. LLM call layer](ccut-ai-pipeline-design/10.md)
+- [11. Orchestration, progress and CLI command surface](ccut-ai-pipeline-design/11.md)
+- [12. Implementation status](ccut-ai-pipeline-design/12.md)
+- [13. Comparison with voice-ink and deliberate differences](ccut-ai-pipeline-design/13.md)

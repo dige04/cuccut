@@ -3,7 +3,7 @@
   "version": 1,
   "domain": "motion",
   "family": "scaleIn",
-  "doc": "缩放离场（可选淡出）。",
+  "doc": "Scale-out exit (optional fade-out).",
   "aliases": [
     "scaleOut"
   ],
@@ -15,17 +15,17 @@
       "type": "number",
       "default": 0.7,
       "min": 0.0,
-      "doc": "终止缩放"
+      "doc": "End scale"
     },
     "curve": {
       "type": "curve",
       "default": "easeInCubic",
-      "doc": "时间曲线（规范 §7.6 的封闭名称）"
+      "doc": "Easing curve (closed name from spec §7.6)"
     },
     "fade": {
       "type": "bool",
       "default": true,
-      "doc": "是否同时淡入/淡出"
+      "doc": "Whether to also fade in/out"
     }
   },
   "compose": [

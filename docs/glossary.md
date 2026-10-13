@@ -1,44 +1,44 @@
-# 术语表
+# Glossary
 
-同一概念只用一个词。界面文案与文档用词不一致时，以界面文案为准并回改文档。
+Use one term for one concept. When UI copy and the docs use different wording, the UI copy wins and the docs are revised to match.
 
-## 界面
+## Interface
 
-| 术语 | 定义 |
+| Term | Definition |
 | --- | --- |
-| Home | 一级入口之一。以会话为中心的三栏界面：项目与会话列表、当前会话、功能区。见产品设计 §3 |
-| Space | 一级入口之一。跨所有项目的派生视图：视频、素材与其他产物，也是二次编辑的入口。见产品设计 §4 |
-| 工具 | Rail 一级入口，位于 Space 下方。不经过会话，直接调用模型或固定流程完成确定的任务，不启动 Agent loop。见产品设计 §2.7 |
-| 后台任务 | Rail 二级入口，位于服务下方。查看跨会话、跨项目的任务状态与结果；不是任务发起的主入口 |
-| 设置 | Rail 底部的全局入口，管理偏好、默认值、模型与 Agent 等能力配置。入口归属原则见产品设计 §2.1 |
-| 功能区 | Home 的第三栏，在会话右侧，按需打开。打开的对象各占一个标签页；打开视频时显示完整编辑器，也用来查看候选、产物与任务详情。视图分会话、分屏与完整视图，见产品设计 §3.3 |
-| 编辑器 | 预览、时间线、文稿、检查器与内容面板组成的编辑界面，打开的是一个视频。Home 的功能区与 Space 用同一套组件、同一个布局，都带这部视频的会话（Home 在左侧，Space 是右下角的悬浮会话）。见产品设计 §5 |
-| Space 条目 | Space 中的一行或一张卡片：一个视频、一份素材，或一个产物。条目是视图，不是第二份存储 |
-| 幻灯片 | 智能体在会话里做的一份演示文稿：工作目录里一个含 `deck.json` 的目录，每页一个 HTML 文件。在功能区的幻灯片标签里预览、编辑与标注，在 Space 里是一个条目。见 [幻灯片设计](design/slides/slides-design.md) |
-| 幻灯片标注 | 用户在幻灯片编辑器里圈出某个元素或区域并写下的意见，随下一条消息交给智能体，是消息上的一种特殊附件 |
-| 设计稿 | 智能体在会话里做的一份视觉设计（界面、网页、海报、图表）：工作目录里一个含 `canvas.json` 的目录，画布上每块画板一个 `.dc.html` 文件。在功能区的设计稿标签里预览、编辑与标注，在 Space 里是一个条目。见[产品设计 §3.3](product/product-design.md#33-功能区ux-07) |
-| 画板 | 设计稿画布上的一块独立画面，有自己的位置与尺寸（例如「首屏 · 桌面」1280 × 800） |
-| 设计稿标注 | 用户在设计稿编辑器里点中某个元素或区域并写下的意见，随下一条消息交给智能体；与幻灯片标注是同一种附件、各自编号 |
-| 设计系统 | 一套可复用的设计规范：工作目录里一个含 `design-system.json` 的目录，有颜色、字体等 token、品牌说明、组件包与素材。在功能区的设计系统标签里查看与编辑，设计稿可以装上它。见[`packages/design-system-runtime`](../packages/design-system-runtime/README.md) |
-| 设计系统标注 | 用户在设计系统标签里点中某个 token、文字样式、组件、素材或章节并写下的意见，随下一条消息交给智能体；与设计稿标注并列、各自编号。见[产品设计 §3.2.3](product/product-design.md#323-输入区) |
-| 引用标签 | 输入框上方显示的上下文引用，例如某个对象、某句话、某段时间、某个版本 |
-| 任务卡片 | 对话中由真实事件驱动的结构化卡片：目标、阶段、候选、变更、授权、问题、交付等 |
-| 在文件夹中显示 | 打开系统的文件管理器并选中目标文件或目录。所有平台同一个说法，不写「访达」「Finder」「资源管理器」等平台专有名词 |
+| Home | One of the top-level entries. A session-centred three-column interface: project and session list, current session, and the function area. See product design §3 |
+| Space | One of the top-level entries. A derived view across all projects: videos, assets and other outputs; also the entry point for secondary editing. See product design §4 |
+| Tools | Rail top-level entry, placed below Space. Does not go through a session; calls a model or a fixed flow directly to complete a defined task, without starting the agent loop. See product design §2.7 |
+| Background tasks | Rail secondary entry, placed below Services. Shows task status and results across sessions and projects; not the main entry for starting tasks |
+| Settings | Global entry at the bottom of the Rail. Manages preferences, defaults, models and agent capability configuration. For the principle behind where entries belong, see product design §2.1 |
+| Function area | The third column of Home, beside the session, opened on demand. Each opened object gets its own tab; opening a video shows the full editor, and it is also used to view candidates, outputs and task details. Views are split by session, split view and full view; see product design §3.3 |
+| Editor | The editing interface made up of preview, timeline, transcript, inspector and content panels; it opens one video. Home's function area and Space use the same components and the same layout, and both carry the session for this video (in Home it sits on the left; in Space it is a floating session in the bottom-right corner). See product design §5 |
+| Space item | A row or a card in Space: one video, one asset, or one output. An item is a view, not a second copy of storage |
+| Slides | A presentation the agent makes in a session: a directory in the working folder containing `deck.json`, with one HTML file per page. Previewed, edited and annotated in the Slides tab of the function area; an item in Space. See [slides design](design/slides/slides-design.md) |
+| Slide annotation | A comment the user draws around an element or region in the slide editor and writes down; it is sent to the agent with the next message and is a special kind of attachment on the message |
+| Design | A visual design the agent makes in a session (interface, web page, poster, chart): a directory in the working folder containing `canvas.json`, with one `.dc.html` file per artboard on the canvas. Previewed, edited and annotated in the Design tab of the function area; an item in Space. See [product design §3.3](product/product-design.md#33-feature-area-ux-07) |
+| Artboard | An independent frame on the design canvas, with its own position and size (for example "Hero · Desktop" at 1280 × 800) |
+| Design annotation | A comment the user picks on an element or region in the design editor and writes down; it is sent to the agent with the next message. It is the same kind of attachment as a slide annotation, each numbered separately |
+| Design system | A reusable set of design rules: a directory in the working folder containing `design-system.json`, with tokens such as colours and fonts, brand notes, component packs and assets. Viewed and edited in the Design system tab of the function area; a design can have it attached. See [`packages/design-system-runtime`](../packages/design-system-runtime/README.md) |
+| Design system annotation | A comment the user picks on a token, text style, component, asset or section in the Design system tab and writes down; it is sent to the agent with the next message. It sits alongside design annotations, each numbered separately. See [product design §3.2.3](product/product-design.md#323-input-area) |
+| Reference chip | A context reference shown above the input box, for example an object, a sentence, a time span or a version |
+| Task card | A structured card in the conversation, driven by real events: goal, stages, candidates, changes, authorisation, questions, delivery and so on |
+| Show in Folder | Opens the system file manager with the target file or directory selected. The same wording on every platform; do not write platform-specific names such as "Finder" or "Explorer" |
 
-## 界面英文用词
+## English UI terms
 
-英文界面的说法。英文是界面的缺省语言，同一概念在英文里也只用一个词；中文列与上下各表一致。
+The English wording for the interface. English is the default UI language; within English too, one concept uses one term. The Chinese column and the rows above and below each agree.
 
-| 中文 | English | 备注 |
+| Chinese | English | Notes |
 | --- | --- | --- |
 | 项目 | Project | |
-| 视频 | Video | 只指编辑对象；导出的文件是 Export |
-| 短视频（切出的子视频） | Short | 工具名是 Cut into shorts |
+| 视频 | Video | Refers only to the editing object; the exported file is Export |
+| 短视频（切出的子视频） | Short | The tool name is Cut into shorts |
 | 会话 / 新会话 | Session / New session | |
 | 工作目录 | Working folder | |
 | 素材 | Asset | |
 | 产物 | Output | |
-| 成片 | Export | 动作也是 Export |
+| 成片 | Export | The action is also Export |
 | 文稿 | Transcript | |
 | 字幕 | Subtitles | |
 | 译文 / 翻译 | Translation / Translate | |
@@ -48,9 +48,9 @@
 | 语音合成 | Speech synthesis | |
 | 说话人 | Speaker | |
 | 章节 | Chapter | |
-| 幻灯片 / 幻灯片标注 | Slides / Slide annotation | 一份幻灯片也叫 Slides，不写 Deck、Presentation |
-| 设计稿 / 画板 / 设计稿标注 | Design / Artboard / Design annotation | 一份设计稿也叫 Design，不写 Canvas、Mockup；画板不写 Frame、Board |
-| 设计系统 / 设计系统标注 | Design system / Design system annotation | 不写 Style guide、UI kit |
+| 幻灯片 / 幻灯片标注 | Slides / Slide annotation | A slide deck is also called Slides; do not write Deck or Presentation |
+| 设计稿 / 画板 / 设计稿标注 | Design / Artboard / Design annotation | A design is also called Design; do not write Canvas or Mockup; do not write Frame or Board for artboard |
+| 设计系统 / 设计系统标注 | Design system / Design system annotation | Do not write Style guide or UI kit |
 | 时间线 / 检查器 / 编辑器 | Timeline / Inspector / Editor | |
 | 候选 / 检查点 | Candidate / Checkpoint | |
 | 任务 / 后台任务 | Task / Background tasks | |
@@ -58,141 +58,141 @@
 | 技能 | Skill | |
 | 设置 / 帮助 / 诊断 / 日志 | Settings / Help / Diagnostics / Logs | |
 | 术语表 / 品牌库 | Glossary / Brand kit | |
-| 在文件夹中显示 | Show in Folder | 所有平台同一个说法，不写 Finder、Explorer |
+| 在文件夹中显示 | Show in Folder | The same wording on every platform; do not write Finder or Explorer |
 | 侧栏 | Sidebar | |
 | 标签页 / 打开新标签页 | Tab / New tab | |
-| 分屏 / 完整视图 | Split view / Full view | Home 工作区的视图，见产品设计 §3.3 |
-| 显示标签页 / 隐藏标签页 / 进入分屏视图 | Show tabs / Hide tabs / Enter split view | 标签页按钮随状态换用 |
+| 分屏 / 完整视图 | Split view / Full view | Views of the Home workspace; see product design §3.3 |
+| 显示标签页 / 隐藏标签页 / 进入分屏视图 | Show tabs / Hide tabs / Enter split view | The tab button switches wording with its state |
 | 会话摘要 | Summary | |
-| 新建网页 / 浏览项目文件 | New web page / Browse project files | 新标签页起始页的工具卡 |
+| 新建网页 / 浏览项目文件 | New web page / Browse project files | Tool cards on the new-tab start page |
 | 访问模式：先给方案 / 监督 / 自动接受修改 / 自动 / 完全访问 | Plan first / Supervised / Auto-accept edits / Auto / Full access | |
 | 外观：跟随系统 / 浅色 / 深色 | System / Light / Dark | |
 | 取消 / 重试 / 撤销 / 恢复 / 删除 / 重命名 | Cancel / Try again / Undo / Restore / Delete / Rename | |
 | 排队中 / 正在工作 / 已完成 / 失败 / 已取消 | Queued / Working / Done / Failed / Cancelled | |
 
-## 视频与编辑
+## Video and editing
 
-| 术语 | 定义 |
+| Term | Definition |
 | --- | --- |
-| 项目（Project） | 一个目录，也是智能体的工作目录。里面可以有一个或多个视频，以及它们的素材与产物。会话挂在项目下。标识保存在目录里的 `.ccut/project.json`，目录移动后仍是同一个项目。不另用「工程」 |
-| 视频（Video） | 项目下的一个子目录：一个权威的、可以编辑和导出的编辑对象。包含序列、素材引用、文稿、代码包与语言版本。单说「视频」只指它。导出的文件叫成片；导入或生成的媒体文件叫视频文件或视频素材；时间线上的叫视频实例。代码里实体用 `Video` / `videoId`，媒体种类用枚举值 `'video'`。不另用「视频」「视频项目」「作品」 |
-| 子视频、派生（Derived video） | 从另一部视频（父视频）的一段派生出来的普通视频，剪成短视频的结果：建在父视频旁边，复制它的时间线与文稿、引用同一份素材，区间之外记成可恢复的剪口，并带一份派生记录（`derivation` 文档）。Space 里的来源是「派生」，代码里是 `origin.source: 'derived'` 与 `videos.derive`。界面上称「短视频」。见产品设计 §2.3、§5.10 |
-| Revision | 视频或实体的已提交版本号。非负十进制整数字符串。视频、序列、文档各有自己的版本轴 |
-| 序列（Sequence） | 一条带编辑帧率与画布的时间线。一个视频有一个根序列，可有多个序列 |
-| 轨道（Track） | 序列中承载实例的层 |
-| 实例（Item） | 素材、文字、字幕、代码合成等在时间线上的一次使用。同一素材出现三次是三个实例 |
-| 素材（Asset / AssetRevision） | 资源身份及其某一版确定的 bytes 与元数据 |
-| 工作稿 | 视频当前已提交的状态 |
-| 候选（Candidate） | 待选方案。未应用的候选不是工作稿 |
-| 检查点（Checkpoint） | 命名的历史状态 |
-| 转场（Transition） | 同一轨道上首尾相接的两个画面实例之间，或一个实例开头、结尾的过渡。见视频格式规范 §3.9 |
-| handles | 实例用到的源区间之外还可以取的素材。两侧转场在剪切点两侧要用它 |
-| 效果（Effect，`fx`） | 画面实例上的一组固定效果字段：滤镜与特效预设、调色、模糊、描边、投影。作用顺序固定，不是可以任意排序的栈。见视频格式规范 §3.9 |
-| 章节（Chapter） | 序列上 `kind: 'chapter'` 的标记，固定在时间线的时刻上。见视频格式规范 §3.13 |
-| 闪避（Ducking） | 一组声音响起时自动压低另一组声音，例如人声压低配乐。按时间线上的区间展开成增益包络。见视频格式规范 §3.9 |
-| 变体（Variant） | 明确的衍生输出配置，例如语言版本或画幅版本 |
-| ChangeSet | 待提交的一组修改及其影响说明。可预览，不能独立演进 |
-| 批量预检 | 先对一批修改做校验并返回影响，再决定是否提交。预检是提案，不预留成功 |
-| 事务（Transaction） | 经校验后原子提交的一组编辑操作 |
-| 回执（Receipt） | 事务持久化成功后返回的结果：新旧版本、变更对象、影响与可撤销范围 |
-| lineage | 拆分、裁切后新旧实例之间的来源关系 |
-| occurrence | 同一源词或源对象在时间线上的一次出现 |
-| 保护范围 | 当前任务不得修改的对象、属性或区间 |
-| pin | 用户手动固定的结果，例如断行、音效位置。自动流程不得覆盖 |
-| stale / orphaned / needs-fit | 派生结果的三种待处理状态：输入已变、锚点已不存在、配音放不进目标时窗 |
+| Project (Project) | A directory, and also the agent's working directory. It can contain one or more videos, together with their assets and outputs. Sessions hang under the project. Its identity is kept in `.ccut/project.json` inside the directory, so it stays the same project after the directory is moved. Do not use "工程" as a separate term |
+| Video (Video) | A subdirectory under a project: one authoritative editing object that can be edited and exported. It contains sequences, asset references, the transcript, the code package and language versions. "视频" on its own refers only to this. The exported file is called Export (成片); imported or generated media files are called video files or video assets; the one on the timeline is called a video instance. In code the entity is `Video` / `videoId`, and the media kind uses the enum value `'video'`. Do not use "视频项目" or "作品" as separate terms |
+| Child video, derived (Derived video) | An ordinary video derived from a segment of another video (the parent video); the result of cutting a short video. It is built beside the parent video, copies its timeline and transcript, references the same assets, keeps the regions outside the range as recoverable cut points, and carries a derivation record (the `derivation` document). In Space its source is "派生" (derived); in code it is `origin.source: 'derived'` and `videos.derive`. The UI calls it "短视频" (short video). See product design §2.3 and §5.10 |
+| Revision | The committed version number of a video or entity. A non-negative decimal integer string. Videos, sequences and documents each have their own version axis |
+| Sequence (Sequence) | A timeline with an editing frame rate and a canvas. A video has one root sequence and may have several sequences |
+| Track (Track) | A layer in a sequence that carries instances |
+| Instance (Item) | One use of an asset, text, subtitles, a code composition and so on on the timeline. The same asset appearing three times gives three instances |
+| Asset (Asset / AssetRevision) | An asset identity and the bytes and metadata of one fixed version of it |
+| Working draft | The video's currently committed state |
+| Candidate (Candidate) | A proposed option. An unapplied candidate is not the working draft |
+| Checkpoint (Checkpoint) | A named historical state |
+| Transition (Transition) | A transition between two picture instances that meet end to end on the same track, or at the head or tail of one instance. See video format spec §3.9 |
+| handles | Material beyond the source range an instance uses that can still be taken. Transitions on either side use it on both sides of a cut point |
+| Effect (Effect, `fx`) | A fixed set of effect fields on a picture instance: filter and effect presets, colour grading, blur, stroke, drop shadow. The order of application is fixed; it is not a stack that can be reordered freely. See video format spec §3.9 |
+| Chapter (Chapter) | A marker with `kind: 'chapter'` on a sequence, fixed at a moment on the timeline. See video format spec §3.13 |
+| Ducking (Ducking) | Automatically lowers one group of sounds while another group plays, for example lowering background music under a voice. Expanded from intervals on the timeline into a gain envelope. See video format spec §3.9 |
+| Variant (Variant) | An explicit derived output configuration, such as a language version or an aspect-ratio version |
+| ChangeSet | A group of pending changes with a description of their impact. It can be previewed and cannot evolve on its own |
+| Batch pre-check | Validates a batch of changes first and returns their impact before deciding whether to commit. A pre-check is a proposal; it does not reserve success |
+| Transaction (Transaction) | A group of editing operations that is validated and then committed atomically |
+| Receipt | The result returned after a transaction is persisted successfully: old and new versions, the objects changed, the impact and the scope that can be undone |
+| lineage | The source relationship between old and new instances after a split or trim |
+| occurrence | One appearance of the same source word or source object on the timeline |
+| Protected scope | Objects, properties or ranges that the current task must not modify |
+| pin | A result the user fixes by hand, such as a line break or the position of a sound effect. Automatic flows must not overwrite it |
+| stale / orphaned / needs-fit | The three pending states of a derived result: the input has changed, the anchor no longer exists, or the voice-over does not fit the target window |
 
-## 时间
+## Time
 
-| 术语 | 定义 |
+| Term | Definition |
 | --- | --- |
-| MediaTime | 精确时间值，`ticks / timescale` 秒 |
-| Rate | 约分的正有理数，用于帧率与速率 |
-| TimeDomain | 时间值所属的坐标系：序列、源素材、合成局部、音频 |
-| FrameSpan | 视觉实例在序列帧网格上的位置与长度 |
-| TimeMap | 实例时间到源时间的唯一映射 |
-| 编辑帧率 | `Sequence.fps`，视觉编辑网格 |
-| 输出帧率 | `ExportSettings.fps`，导出采样网格。与编辑帧率独立 |
+| MediaTime | An exact time value, `ticks / timescale` seconds |
+| Rate | A reduced positive rational number, used for frame rates and speeds |
+| TimeDomain | The coordinate system a time value belongs to: sequence, source asset, composition-local, audio |
+| FrameSpan | The position and length of a visual instance on the sequence's frame grid |
+| TimeMap | The unique mapping from instance time to source time |
+| Editing frame rate | `Sequence.fps`, the visual editing grid |
+| Output frame rate | `ExportSettings.fps`, the export sampling grid. Independent of the editing frame rate |
 
-## 语音、字幕与配音
+## Speech, subtitles and voice-over
 
-| 术语 | 定义 |
+| Term | Definition |
 | --- | --- |
-| SpeechDocument | 语音文档：词级文本与源时间，是文本与时间的真源 |
-| Sentence | 由词锚与结构规则派生的语义句，翻译的单元 |
-| AlignmentBlock | 源词区间与目标文本区间的语义对应块 |
-| Cue | 一次显示的字幕时间单元 |
-| Line | 按字体、画幅与样式排出的行。渲染投影 |
-| TranslationDocument | 某一目标语言的译文文档 |
-| 换用文稿 | Switch transcript。转录结果取代视频当前文稿时的那一笔可撤销事务：同一份 SpeechDocument 写新版本、视频换用它，并结转译文、字幕与配音。界面上的落点叫「取代这部视频的文稿」，另一个落点是新建视频。见产品设计 §5.11 |
-| 结转 | Carry。换用文稿时把旧译文、字幕 pin 与配音带到新文稿上；其中旧句与新句的对应叫配对（pair）。规则见视频格式规范 §5.3 |
-| CaptionProgram | 字幕显示规则：指向哪份文档、作用于哪些实例、用什么时序与样式 |
-| EditedSpeechView | 由当前时间线保留范围派生的有效词流 |
-| EditorialProposal | 口播剪辑建议集合 |
-| DubbingPlan | 配音计划：脚本、说话人、时序策略与结果 |
-| LocalizationSet | 一个语言版本所选用的字幕、配音、文字覆盖与音频路由 |
-| SoundCueSheet | 旁白、配乐、音效的事件计划，编译成普通音频实例 |
-| NarrationCueSheet | 旁白时序表：用配音驱动画面时，记录句子、词锚、镜头意图与实际时间。受控的输入与派生物，不是独立的时钟 |
-| CanvasVariant | 一个画幅版本：引用基础序列，加上画布、布局、裁切与参数的覆盖 |
+| SpeechDocument | The speech document: word-level text and source times; the source of truth for text and time |
+| Sentence | A semantic sentence derived from word anchors and structural rules; the unit of translation |
+| AlignmentBlock | A semantic correspondence block between a range of source words and a range of target text |
+| Cue | One subtitle time unit shown on screen |
+| Line | A line laid out by font, aspect ratio and style. A render projection |
+| TranslationDocument | The translated document for one target language |
+| Switch transcript | The single undoable transaction that happens when a transcription result replaces the video's current transcript: the same SpeechDocument gets a new version, the video switches to it, and the translation, subtitles and voice-over are carried over. In the UI the entry point is "取代这部视频的文稿" (replace this video's transcript); the other entry point is creating a new video. See product design §5.11 |
+| Carry | Carrying the old translation, subtitle pins and voice-over over to the new transcript when switching transcripts; the correspondence between old and new sentences is called a pair. Rules in video format spec §5.3 |
+| CaptionProgram | The subtitle display rules: which document it points to, which instances it applies to, and what timing and style it uses |
+| EditedSpeechView | The effective word stream derived from the time ranges the current timeline keeps |
+| EditorialProposal | A set of spoken-content editing suggestions |
+| DubbingPlan | The voice-over plan: script, speakers, timing strategy and result |
+| LocalizationSet | The subtitles, voice-over, text overrides and audio routing selected for one language version |
+| SoundCueSheet | The event plan for narration, background music and sound effects, compiled into ordinary audio instances |
+| NarrationCueSheet | The narration timing sheet: when voice-over drives the picture, it records sentences, word anchors, shot intent and actual times. A controlled input and derived output, not an independent clock |
+| CanvasVariant | An aspect-ratio version: references a base sequence, plus overrides for canvas, layout, cropping and parameters |
 
-## 代码合成与渲染
+## Code synthesis and rendering
 
-| 术语 | 定义 |
+| Term | Definition |
 | --- | --- |
-| CodeBundle | 不可变的代码合成包：源码、依赖锁、构建产物、清单 |
-| 代码合成实例 | 引用某个 CodeBundle 版本并带参数的时间线实例 |
-| Adapter | 把某类代码运行时接到 CucCut 取帧与取音频合同上的适配器 |
-| RenderGraph | 由冻结视频编译出的派生执行计划 |
-| FrameTicket | 一次取帧请求的完整身份 |
-| Bake | 把代码合成实例渲染为普通媒体，同时保留回到源码的引用 |
-| 时间依赖（timeDependencies） | 代码包声明的、画面所依赖的外部时间：只依赖局部时间、依赖放置位置、依赖某条 cue 轨，或依赖序列时钟。未声明视为未知 |
-| 三层编辑 | 对代码合成的三种修改：实例、参数、源码。在界面、命令与回执中始终分开 |
-| EvidenceReceipt | 一次检查的可追溯记录：检查了哪个版本的哪些范围 |
+| CodeBundle | An immutable code-synthesis package: source, dependency lock, build output, manifest |
+| Code synthesis instance | A timeline instance that references a version of a CodeBundle and carries parameters |
+| Adapter | An adapter that connects a class of code runtime to CucCut's frame-fetch and audio-fetch contracts |
+| RenderGraph | A derived execution plan compiled from a frozen video |
+| FrameTicket | The complete identity of one frame-fetch request |
+| Bake | Renders a code-synthesis instance as ordinary media while keeping references back to its source |
+| Time dependencies (timeDependencies) | The external time that a code package declares its picture depends on: only local time, placement position, a cue track, or the sequence clock. Undeclared means unknown |
+| Three-layer editing | Three kinds of change to a code synthesis: instance, parameters, source. Kept separate at all times in the UI, commands and receipts |
+| EvidenceReceipt | A traceable record of one check: which ranges of which version were checked |
 
-## 智能体与执行
+## Agents and execution
 
-| 术语 | 定义 |
+| Term | Definition |
 | --- | --- |
-| 会话（Conversation） | 用户与智能体的协作记录。可以属于一个项目，也可以不属于任何项目；从会话可以打开该项目下的视频 |
-| AgentSession | 某个 Driver 的原生会话 |
-| AgentDriver | 连接一个完整智能体运行时的适配器 |
-| Turn | 一次模型回合 |
-| 任务（Task） | 一次结果委托 |
-| TaskContract | 任务的结果约定：目标、范围、约束、保护、交付阶段、自主程度、预算 |
-| Run | 任务的一次有预算的执行尝试 |
-| Job | 一次计算：识别、生成、构建、渲染等。面向用户时称具体步骤 |
-| 产物（Artifact） | Job 发布的不可变结果 |
-| Application | 把某个产物应用到视频的动作，有独立的幂等键与回执 |
-| ModelProvider | 执行一次结构化模型能力的适配器。与 AgentDriver 分别注册 |
-| API 提供方 | 在线模型服务的一个接入：一家模型厂商、一个中转平台或一个自建的兼容端点，对应一个在线 Provider（`providerId`）。旧称「服务商」，设置里按旧称搜索仍能找到。它的账号（密钥）对它的全部能力共用。与设置里的「Agent 提供方」对仗而不同：Agent 提供方是智能体运行时（Codex、Claude 等），用它们自己的登录，没有账号与密钥列表，不算 API 提供方；本机模型与局域网节点也不算；Rail 的「服务」是 CucCut 对外开放的入口，与它无关。见架构设计 §6.4 |
-| 账号 | API 提供方下的一把密钥（或一次登录）。一家提供方可以有多个账号，有先后，调用用第一个启用且有密钥的。界面只显示掩码。见架构设计 §6.8 |
-| 用量 | API 提供方与智能体每次调用的记录：次数、token、音频时长、字符、图片张数与费用（提供方报告、按标价估算或未知）。不是预算。见架构设计 §6.10 |
-| CapabilitySnapshot | 按主体与视频过滤的当前能力快照 |
-| ContextBarrier | 提交请求前的读后写屏障：先结算本次引用的本地编辑，再冻结上下文 |
-| Grant | 一次授权：数据种类、接收方、范围、目的、预算、有效期 |
-| runGeneration | Run 的执行代。停止时提升，旧代的调用与自动应用被拒绝 |
+| Conversation | A collaborative record between the user and an agent. It may belong to a project or to none; from a conversation you can open a video under that project |
+| AgentSession | A Driver's native session |
+| AgentDriver | An adapter that connects one complete agent runtime |
+| Turn | One model turn |
+| Task | One delegation of a result |
+| TaskContract | A task's result agreement: goal, scope, constraints, protections, delivery stage, autonomy level, budget |
+| Run | One budgeted execution attempt of a task |
+| Job | One computation: recognition, generation, build, render, and so on. In the user-facing UI, the specific step is named |
+| Artifact | An immutable result published by a Job |
+| Application | The action of applying an artifact to a video; it has its own idempotency key and receipt |
+| ModelProvider | An adapter that executes one structured model capability. Registered separately from AgentDriver |
+| API provider | One online model-service connection: a model vendor, a relay platform, or a self-hosted compatible endpoint. Corresponds to one online Provider (`providerId`). Formerly called “服务商” (service provider); the settings search still finds it under the old name. Its account (key) is shared across all of its capabilities. Not to be confused with “Agent 提供方” (agent provider) in settings: an agent provider is an agent runtime (Codex, Claude, etc.) that uses its own sign-in, has no account or key list, and does not count as an API provider. Local models and LAN nodes do not count either. The Rail “服务” (service) is the entry point CucCut exposes to outside programs and is unrelated to this. See architecture design §6.4 |
+| Account | One key (or one sign-in) under an API provider. A provider may have several accounts, in order; calls use the first enabled account that has a key. The UI shows only a masked value. See architecture design §6.8 |
+| Usage | A record of each call made by an API provider or agent: count, tokens, audio duration, characters, image count and cost (as reported by the provider, estimated at list price, or unknown). Not a budget. See architecture design §6.10 |
+| CapabilitySnapshot | The current capability snapshot, filtered by subject and video |
+| ContextBarrier | A read-then-write barrier before a request is submitted: first settle this request's local edits, then freeze the context |
+| Grant | One authorization: data category, recipient, scope, purpose, budget, validity period |
+| runGeneration | The execution generation of a Run. Advanced on stop; calls and automatic applications from the old generation are rejected |
 
-## 运行时
+## Runtime
 
-| 术语 | 定义 |
+| Term | Definition |
 | --- | --- |
-| Runtime | Node 实现的产品运行时，唯一对外业务入口 |
-| Runtime Home | Runtime 的数据根目录。一个 Home 一个 Supervisor |
-| Supervisor | 启动并监管 Runtime Worker 的常驻进程 |
-| Engine Host | Runtime 私有管理的 Rust 宿主进程，承载 VideoEngine 与 VideoStore |
-| Model Worker | Runtime 按需启动的 Rust 推理进程，一个进程承载一个常驻模型包，一次只执行一个任务 |
-| 远端节点 | 开启了共享的另一台机器上的 Runtime；只接受能力任务，不接触视频 |
-| 节点服务 | Runtime 内面向局域网的监听面，承载远端节点的配对与能力任务 |
-| 对外服务 | Runtime 向其他程序或设备开放的受管入口：MCP 服务、模型接口服务、Web 服务与节点服务。各有自己的监听面、认证与访问策略，默认关闭 |
-| 服务主体 | 经对外服务进入的外部连接的可信身份。没有会话与任务合同，权限由该服务的访问策略决定 |
-| 工具目录（ToolCatalog） | Runtime 里唯一的一份工具清单：每一项写明说明、参数、效果（只读、写入、任务、删除）、示例与开放在哪些面。会话里的智能体（工具桥）、MCP 服务与 CLI 三个面都从它派生，不另抄清单；工具实现相同，区别只在调用的主体与范围。见架构设计 §3.5 |
-| Agent 面 | 工具目录里对外部 Agent 开放的那部分：一级动词（转录、翻译、配音、下载、导出等固定流程与生成）、名词组（视频、文档、修改、字幕、素材、任务等对象的读写）与元命令（帮助、`spec`、`status`）。一级动词与名词组在三个面同名：MCP 工具 `a_b` 即 CLI 的 `cuccut a b`。见 Agent 能力面设计 §4 |
-| 管理桶 | 只在 CLI 里、给人用的本机管理命令：设置、模型服务与凭据、对外服务、skill 的添加与开关等。手写实现，不进工具目录，Agent 面里没有它们。见 Agent 能力面设计 §7 |
-| Agent skill（craft） | 一种做法的说明：润色、翻译、分章、剪口播等怎么判断、按什么步骤做。内置的在仓库 `skills/cuccut/built-in-skills/<id>/`，用户也可以自己添加；会话内智能体按需读取，外部 Agent 经 CucCut skill 里的同步副本读。界面上叫「技能」。见架构设计 §3.8 |
-| CucCut skill | 「怎么用 CucCut」的说明书：何时用、怎么启动、每类任务用哪个工具、硬规则与怎么交付。在仓库 `skills/cuccut/`，一份文稿按面渲染：外部 Agent 装进自己宿主的 skills 目录，经 CLI 或 MCP 使用；会话内智能体拿到的是工具桥写法的同一份。它引用 Agent skill（craft），不复制。见 Agent 能力面设计 §8 |
-| 用户库 | Runtime Home 里跨视频复用的用户数据：术语表、音色、品牌库。进入视频时拷贝 |
-| 固定流程（Pipeline） | 步骤固定、不需要模型做规划的多步工作，由 Runtime 编排，不创建智能体会话。每一步是一个 Job |
-| 生成记录 | 没有视频的生成 Job 留下的记录：产物、参数、seed、模型与来源 |
-| 受管外部工具 | 不随应用发布、由 CucCut 探测或下载隔离副本的外部程序，例如 ffmpeg 与视频下载工具 |
-| VideoEngine | 视频领域校验、时间与编辑语义、事务与回执的唯一实现 |
-| VideoStore | 视频的唯一持久化写入方 |
-| ownerGeneration | 视频写入权的所有权代 |
+| Runtime | The product runtime implemented in Node; the only external business entry point |
+| Runtime Home | The data root of a Runtime. One Home has one Supervisor |
+| Supervisor | The resident process that starts and supervises the Runtime Worker |
+| Engine Host | The Rust host process privately managed by the Runtime, which hosts the VideoEngine and VideoStore |
+| Model Worker | A Rust inference process the Runtime starts on demand. One process hosts one resident model package and executes one task at a time |
+| Remote node | A Runtime on another machine that has sharing turned on. It accepts only capability tasks and never touches video |
+| Node service | The LAN-facing listening surface inside the Runtime, which hosts pairing with remote nodes and their capability tasks |
+| External services | Managed entry points the Runtime opens to other programs or devices: the MCP service, the model-interface service, the web service and the node service. Each has its own listening surface, authentication and access policy. Off by default |
+| Service principal | The trusted identity of an external connection that arrives through an external service. It has no session and no task contract; its permissions are set by that service's access policy |
+| ToolCatalog | The single tool list in the Runtime. Each entry states its description, parameters, effect (read-only, write, task, delete), examples, and which surfaces it is exposed on. Three surfaces are derived from it: the in-session agent (tool bridge), the MCP service and the CLI. Their list is not copied elsewhere. The tool implementation is the same; the difference lies only in the calling subject and scope. See architecture design §3.5 |
+| Agent surface | The part of the ToolCatalog exposed to external agents: first-level verbs (transcribe, translate, dub, download, export, and other fixed workflows and generation), noun groups (read/write access to objects such as video, documents, edits, subtitles, assets and tasks), and meta-commands (help, `spec`, `status`). First-level verbs and noun groups have the same names on all three surfaces: the MCP tool `a_b` is the CLI command `cuccut a b`. See Agent capability surface design §4 |
+| Admin bucket | Local management commands meant for people, available only in the CLI: settings, model services and credentials, external services, adding and toggling skills, and so on. Hand-written, not in the ToolCatalog, and absent from the Agent surface. See Agent capability surface design §7 |
+| Agent skill (craft) | A written description of a method: how to judge and carry out polishing, translation, chaptering, trimming spoken narration, and so on. Built-in ones live in the repository at `skills/cuccut/built-in-skills/<id>/`; users can also add their own. The in-session agent reads them on demand; external agents read synced copies through the CucCut skill. Called “技能” (skills) in the UI. See architecture design §3.8 |
+| CucCut skill | The instruction manual for “how to use CucCut”: when to use it, how to start it, which tool to use for each kind of task, hard rules, and how to deliver. Lives in the repository at `skills/cuccut/`. One text is rendered per surface: external agents install it in their own host's skills directory and use it through the CLI or MCP; the in-session agent receives the same text in tool-bridge form. It references the Agent skill (craft) and does not copy it. See Agent capability surface design §8 |
+| User library | User data reused across videos, stored in the Runtime Home: glossary, voices, brand library. Copied in when entering a video |
+| Fixed workflow (Pipeline) | Multi-step work with fixed steps that needs no model planning. The Runtime orchestrates it and creates no agent session. Each step is one Job |
+| Generation record | The record left by a generation Job that has no video: artifact, parameters, seed, model and source |
+| Managed external tool | An external program that is not shipped with the app, which CucCut detects or downloads as an isolated copy, for example ffmpeg and video download tools |
+| VideoEngine | The sole implementation of video-domain validation, time and editing semantics, transactions and receipts |
+| VideoStore | The sole persistent writer of videos |
+| ownerGeneration | The ownership generation of write rights to a video |

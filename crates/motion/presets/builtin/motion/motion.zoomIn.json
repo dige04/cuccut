@@ -3,7 +3,7 @@
   "version": 1,
   "domain": "motion",
   "family": null,
-  "doc": "内部积木：缩放从 scaleFrom 回到 1。",
+  "doc": "Internal building block: scale goes from scaleFrom back to 1.",
   "exposedTo": [
     "bcf"
   ],
@@ -12,12 +12,12 @@
       "type": "number",
       "default": 0.7,
       "min": 0.0,
-      "doc": "起始缩放"
+      "doc": "Starting scale"
     },
     "curve": {
       "type": "curve",
       "default": "easeOutCubic",
-      "doc": "时间曲线（规范 §7.6 的封闭名称）"
+      "doc": "Time curve (a closed name from spec §7.6)"
     }
   },
   "tracks": [

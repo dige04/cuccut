@@ -1,4 +1,4 @@
-> 移植自 CucCut v2；文中的数据模型名（TranscriptDoc 等）指 v2 的模型，与 v3 文档模型的对应见[架构设计 §14](../../architecture/architecture-design.md#14-待评审事项)。
+> Ported from CucCut v2. The data model names in this text (TranscriptDoc, etc.) refer to the v2 models. For their mapping to the v3 document models, see [Architecture design §14](../../architecture/architecture-design.md#14-items-pending-review).
 
 # Translation prompt A/B gate
 

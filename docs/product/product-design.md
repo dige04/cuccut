@@ -1,1587 +1,1595 @@
-# CucCut 产品设计
+# CucCut Product Design
 
-> 以 AI 智能体为任务主体，以可编辑视频为协作中心。用户说出想要的结果，智能体制作并交付一个可以继续修改的视频。
+> Built around AI agents as the subject of the task and editable video as the center of collaboration. The user states the result they want; the agent makes and delivers a video that can keep being revised.
 
-本文定义 CucCut 的产品范围、界面与用户可见的行为。系统如何实现见[系统架构设计](../architecture/architecture-design.md)；持久格式与数值规则见 [`spec/`](../spec/video-format-spec.md)；通过标准见[验收与测试](../acceptance/acceptance-spec.md)。用语与范围标记（P0 / P1 / P2 / G）见[文档约定](../README.md#文档约定)，术语见[术语表](../glossary.md)。
+This document defines CucCut's product scope, interface, and user-visible behavior. For how the system is implemented, see the [System Architecture Design](../architecture/architecture-design.md); for persistent formats and numeric rules, see [`spec/`](../spec/video-format-spec.md); for acceptance criteria, see [Acceptance and Testing](../acceptance/acceptance-spec.md). For terminology and scope markers (P0 / P1 / P2 / G), see [Document Conventions](../README.md#conventions-for-this-document); for terms, see the [Glossary](../glossary.md).
 
-## 目录
+## Contents
 
-- [1. 产品定位](#1-产品定位)
-- [2. 界面总览](#2-界面总览)
+- [1. Product Positioning](#1-product-positioning)
+- [2. Interface Overview](#2-interface-overview)
 - [3. Home](#3-home)
 - [4. Space](#4-space)
-- [5. 编辑器](#5-编辑器)
-- [6. 任务与对话](#6-任务与对话)
-- [7. 自主执行、权限与隐私](#7-自主执行权限与隐私)
-- [8. 质量与交付](#8-质量与交付)
-- [9. 端到端工作流](#9-端到端工作流)
-- [10. 需求清单](#10-需求清单)
-- [11. 发布路线与成功指标](#11-发布路线与成功指标)
-- [12. 待评审事项](#12-待评审事项)
+- [5. Editor](#5-editor)
+- [6. Tasks and Conversation](#6-tasks-and-conversation)
+- [7. Autonomous Execution, Permissions, and Privacy](#7-autonomous-execution-permissions-and-privacy)
+- [8. Quality and Delivery](#8-quality-and-delivery)
+- [9. End-to-End Workflows](#9-end-to-end-workflows)
+- [10. Requirements Checklist](#10-requirements-checklist)
+- [11. Release Roadmap and Success Metrics](#11-release-roadmap-and-success-metrics)
+- [12. Items Pending Review](#12-items-pending-review)
 
 ---
 
-## 1. 产品定位
+## 1. Product Positioning
 
-### 1.1 CucCut 是什么
+### 1.1 What CucCut Is
 
-CucCut 是能够创作、剪辑并持续修改视频的 AI 智能体，同时是一个可以独立使用的视频编辑器。视频不是聊天的附属缓存，交付也不以生成一次 MP4 结束。
+CucCut is an AI agent that can create, edit, and keep revising video, and it is also a video editor that can be used on its own. Video is not an attached cache of a chat, and delivery does not end with generating one MP4.
 
-五条约束不可退回：
+Five constraints are not to be relaxed:
 
-- **任务优先**：用户委托的是结果，不是一串工具调用。
-- **视频优先**：一切修改落在权威的可编辑视频里。
-- **局部修改优先**：改一处就只改一处，不重做全片。
-- **有边界的自主执行**：智能体在明确的范围、权限与预算内行动。
-- **可编辑交付**：交付物包含可以重新打开、继续修改的视频，而不只是成片。
+- **Task first:** the user delegates a result, not a series of tool calls.
+- **Video first:** all changes land in the authoritative, editable video.
+- **Local changes first:** changing one place changes only that place; the whole film is not redone.
+- **Bounded autonomous execution:** the agent acts within a clear scope, permissions, and budget.
+- **Editable delivery:** the deliverable includes a video that can be reopened and revised further, not only the finished cut.
 
-### 1.2 两个同等重要的闭环
+### 1.2 Two Equally Important Loops
 
-**闭环 A：已有素材 → 理解 → 字幕 / 口播 / 图示编辑 → 连续三轮局部修改 → 成片与可重开的视频。**
+**Loop A: existing material → understanding → subtitle / narration / diagram edits → three consecutive local revisions → finished cut and a reopenable video.**
 
-**闭环 B：文字或给定配音 → 实际声音 → 场景与画面 → 连续三轮参数 / 源码 / 时序修改 → 成片与可编辑的视频。**
+**Loop B: text or a supplied voiceover → actual sound → scenes and visuals → three consecutive revisions to parameters / source code / timing → finished cut and an editable video.**
 
-P0 可以限制时长、模板、设备和受控的代码合同。不能只实现闭环 A 就宣称创作智能体完成，也不能只生成一版模板短片却改不了第二轮。
+P0 may limit duration, templates, devices, and the controlled code contract. Implementing only Loop A does not count as completing the creative agent, and producing one template-based short that cannot be changed in a second round does not count either.
 
-### 1.3 用户与价值假设
+### 1.3 Users and Value Assumptions
 
-首批用户假设为：知识、课程与口播创作者；产品与技术内容制作者；双语内容制作者；需要维护代码动画的创作者。共同点是有内容和素材、需要反复修改，但不愿自己组织大量底层操作。这个优先级是假设，尚未经市场研究确认（见 §12）。
+The initial users are assumed to be: creators of knowledge, courses, and talking-head content; product and technical content producers; bilingual content producers; and creators who need to maintain code-driven animation. What they share is that they have content and material, need to revise repeatedly, and do not want to organize a lot of low-level operations themselves. This priority is an assumption and has not yet been confirmed by market research (see §12).
 
-价值验证聚焦四件事：表达准确、局部可维护、减少重复劳动、交付可靠。观察的是三轮修改中的误伤、纠正成本和最终可用性；回复速度、调用量和生成的代码行数不能替代它们。
+Value validation focuses on four things: accurate expression, local maintainability, reduced repetitive work, and reliable delivery. What is observed is the mis-edits, correction cost, and final usability across three rounds of revision; response speed, call volume, and lines of generated code cannot substitute for them.
 
-### 1.4 使用表面
+### 1.4 Usage Surfaces
 
-| 表面 | 用途 |
+| Surface | Purpose |
 | --- | --- |
-| 桌面应用 | 主要界面。Home 用来和智能体协作，Space 用来查看与二次编辑全部成果 |
-| CLI | 薄客户端，用于脚本化与自动化 |
-| 外部智能体 | 其他智能体经工具协议调用 CucCut 的同一套能力 |
-| Web | 本机浏览器里的客户端，由用户开启 Web 服务后可用；能力是桌面界面的一个子集。用 `cuccut web open` 取得一次性的访问链接登录；查询、会话、编辑、转写与生成、导出可用，设置、模型服务的配置、对外服务与节点的管理只在桌面应用里，浏览器只能查看模型服务的状态与用量：设置页里改不了的控件置灰，并写明要到桌面应用里改；数据外发授权与术语库浏览器里看不到，写明这一点而不是一直显示加载中。浏览器拿不到本机文件的路径：首版不能在浏览器里选目录、导入或拖入本机文件，只能打开已登记的项目或新建项目。浏览器里的修改算用户本人的，桌面应用里可以撤销 |
+| Desktop app | The main interface. Home is for collaborating with the agent; Space is for viewing and secondarily editing all results |
+| CLI | A thin client for scripting and automation |
+| External agents | Other agents call the same capabilities of CucCut through the tool protocol |
+| Web | A client in the local browser, available once the user turns on the web service; its capabilities are a subset of the desktop interface. Use `cuccut web open` to get a one-time access link to sign in. Querying, sessions, editing, transcription and generation, and export are available. Settings, configuration of model services, management of external services and nodes are only in the desktop app; in the browser you can only view model service status and usage. Controls that cannot be changed on the settings page are greyed out, with a note that they must be changed in the desktop app. Data outbound-sharing authorization and the glossary are not visible in the browser, and this is stated explicitly rather than showing a perpetual loading state. The browser cannot access local file paths: in the first release you cannot pick a directory, import, or drag in local files in the browser; you can only open a registered project or create a new one. Changes made in the browser count as made by the user themselves and can be undone in the desktop app |
 
-这些表面连接同一个 Runtime、操作同一份视频，没有哪个表面拥有另一套业务逻辑。
+These surfaces connect to the same Runtime and operate on the same video; no surface owns a separate set of business logic.
 
-### 1.5 人工与智能体共享编辑器
+### 1.5 Humans and Agents Share the Editor
 
 ```text
-手工交互 → 视频命令入口 → 视频引擎 → 事务回执
-自然语言 → 智能体 → 工具 → 同一个视频命令入口
-模型产物 → 应用动作 → 同一个视频命令入口
+Manual interaction → video command entry point → video engine → transaction receipt
+Natural language → agent → tools → the same video command entry point
+Model output → application action → the same video command entry point
 ```
 
-人工拖动、改字、调音量不必经过模型；智能体也不需要模拟鼠标来完成原生编辑。界面是预览、审阅、审批和精修的工作台，不是终端日志。用户可以随时接管当前视频。
+Manual dragging, text editing, and volume adjustment do not have to go through a model; the agent also does not need to simulate a mouse to perform native edits. The interface is a workbench for preview, review, approval, and refinement, not a terminal log. Users can take over the current video at any time.
 
-### 1.6 非目标
+### 1.6 Non-Goals
 
-首版不提供：
+The first release does not provide:
 
-- 任意 MP4 的原生图层恢复；
-- 任意 Canvas 内部对象的可视化编辑；
-- 任意 HTML / CSS 的原生重绘；
-- 任意并发修改的自动合并；
-- 全 GPU 零拷贝；
-- 所有设备逐像素一致；
-- 任意长度的译文无损塞进原时窗；
-- 完整的团队实时协作；
-- 默认自动发布。
+- native layer recovery for arbitrary MP4 files;
+- visual editing of arbitrary objects inside a Canvas;
+- native redrawing of arbitrary HTML / CSS;
+- automatic merging of arbitrary concurrent edits;
+- fully GPU zero-copy;
+- pixel-identical output on all devices;
+- lossless fitting of translations of arbitrary length into the original time window;
+- full real-time team collaboration;
+- automatic publishing by default.
 
-新需求不能借这些远期能力挤占两个闭环。
+New requirements must not use these long-term capabilities to crowd out the two loops.
 
 ---
 
-## 2. 界面总览
+## 2. Interface Overview
 
-### 2.1 结构
+### 2.1 Structure
 
-窗口最左侧是一条图标栏（Rail），顶部的一级入口依次是 **Home、Space、工具**。分隔线下的二级入口依次是 **服务、后台任务**；设置固定在底部，与工作入口留出空白。Rail 是应用级导航；进入某个区域后显示的页面侧栏，只组织该区域内部的内容。
+The leftmost part of the window is an icon bar (Rail). The primary entries at the top are, in order, **Home, Space, Tools**. The secondary entries below the divider are, in order, **Services and Background Tasks**; Settings is fixed at the bottom, separated from the work entries by empty space. The Rail is app-level navigation; the page sidebar that appears after entering an area only organizes the content inside that area.
 
-#### 入口归属与层级原则
+#### Entry Placement and Hierarchy Principles
 
-按用户目的区分做事、管理运行和配置应用，再按产品价值决定层级。侧边栏入口代表稳定、可反复返回的工作区域；单个按钮或操作不单独占一格。
+Distinguish by user purpose: doing work, managing runtime, and configuring the app; then decide the hierarchy by product value. A sidebar entry represents a stable work area that users return to repeatedly; a single button or action does not get its own slot.
 
-| 位置 | 判断标准 | CucCut 示例 |
+| Position | Criterion | CucCut examples |
 | --- | --- | --- |
-| Rail 一级 | 直接推进核心工作，有独立、完整的工作流程；不要求经过智能体 | Home：委托与审阅；Space：浏览与整理成果；工具：直接调用模型或固定流程完成任务 |
-| Rail 二级 | 跨会话或跨项目支撑核心工作，负责连接、控制、监控和排查 | 服务、后台任务 |
-| Rail 底部 | 与当前工作无关、需要随时找到的全局应用入口 | 设置；帮助当前收在设置中，账号等按实际需求添加 |
-| 设置内部 | 主要改变应用以后如何工作，包括偏好、默认值、模型与能力配置 | 模型安装、密钥、默认模型、Agent 配置、快捷键、隐私 |
-| 页面内部 | 依赖当前视频、任务或会话的上下文 | 导出、字幕样式、任务取消、会话访问模式 |
+| Rail primary | Directly advances core work and has an independent, complete workflow; does not require going through the agent | Home: delegation and review; Space: browsing and organizing results; Tools: directly calling a model or fixed flow to complete a task |
+| Rail secondary | Supports core work across sessions or projects; responsible for connecting, controlling, monitoring, and troubleshooting | Services, Background Tasks |
+| Rail bottom | Unrelated to the current work; a global app entry that must be easy to find at any time | Settings; help is currently inside Settings; accounts and similar items are added as actually needed |
+| Inside Settings | Mainly changes how the app works going forward, including preferences, defaults, and model and capability configuration | Model installation, keys, default model, Agent configuration, shortcuts, privacy |
+| Inside a page | Depends on the context of the current video, task, or session | Export, subtitle style, task cancellation, session access mode |
 
-一级与二级按核心价值和支撑作用区分，不只看使用频率。工具即使不经过 Agent，也是一等能力；后台任务即使经常查看，也仍是辅助入口，保留运行数量与异常提示。服务排在后台任务前面，先管理可用能力，再查看执行情况。二级表达功能层级，底部表达全局入口的位置，低频功能不必都放到底部。
+Primary and secondary levels are distinguished by core value and supporting role, not only by frequency of use. Tools are first-class capabilities even when they do not go through an Agent; Background Tasks are a supporting entry even though they are viewed often, so they keep the running count and abnormal-state alerts. Services come before Background Tasks: first manage the available capabilities, then view execution. The secondary level expresses functional hierarchy, the bottom expresses the position of global entries, and low-frequency functions do not all have to go to the bottom.
 
-使用模型完成转录、生成、翻译等工作放在工具或相应编辑页面；安装、连接、选择默认模型放在设置（§7.6），不设独立的模型 Rail 入口。设置中的检查（本地模型）与测试（在线服务）用于验证配置是否可用。服务页负责服务运行与连接状态，密钥、默认值等配置进入设置。设置里的「模型」组按 API 提供方与能力组织：「API 提供方」管理连接与账号，「用量」查看调用与花费，每种能力一页，本机模型与云端模型在同一页（§7.6）。「API 提供方」与 Rail 的「服务」是两回事：服务是 CucCut 向外开放的入口，API 提供方是 CucCut 调用的在线模型服务（旧称「服务商」）。
+Work that uses a model to complete transcription, generation, translation, and similar tasks goes under Tools or the corresponding editing page; installation, connection, and selection of the default model go under Settings (§7.6), with no separate model entry in the Rail. The checks (local models) and tests (online services) in Settings verify whether the configuration is usable. The Services page is responsible for service running and connection status; configuration such as keys and defaults goes into Settings. The “Models” group in Settings is organized by API provider and capability: “API Providers” manages connections and accounts, “Usage” shows calls and spending, and each capability has its own page, with local and cloud models on the same page (§7.6). “API Providers” and the Rail’s “Services” are different things: Services are the entry points through which CucCut is exposed to the outside, while API Providers are the online model services that CucCut calls (formerly called “service providers”).
 
-新增功能依次判断：是否依赖当前对象？是否主要在改配置？是否直接完成核心工作？是否支撑或监控工作？分别归入页面内部、设置、一级入口或二级入口。同类单项操作优先归入已有区域。
+When adding a new feature, ask in order: Does it depend on the current object? Is it mainly changing configuration? Does it directly complete core work? Does it support or monitor work? Accordingly it goes inside a page, into Settings, into a primary entry, or into a secondary entry. Single actions of the same kind should preferentially go into an existing area.
 
-#### 图标尺寸与语义
+#### Icon Sizes and Semantics
 
-桌面端与浏览器原型使用同一套 Spectrum 2 workflow 图标。尺寸指 **SVG 画布**：主档 20 × 20 CSS px（图形约 18px），紧凑档 16 × 16 CSS px（图形约 14px）。18px 是图形的参考占用，不另设 18px 画布；同类图标不因控件字号或行高变成 21px。应用 Rail 与页面侧栏采用 20 / 16 的层级。
+The desktop and the browser prototype use the same set of Spectrum 2 workflow icons. Sizes refer to the **SVG canvas**: the primary tier is 20 × 20 CSS px (graphic about 18px), and the compact tier is 16 × 16 CSS px (graphic about 14px). 18px is the reference footprint of the graphic and no separate 18px canvas is defined; icons of the same kind do not become 21px because the control font size or line height changes. The app Rail and the page sidebar use the 20 / 16 hierarchy.
 
-| 场景 | 画布 | 例子 |
+| Scenario | Canvas | Examples |
 | --- | --- | --- |
-| 应用 Rail | 20px | Home、Space、工具、服务、后台任务、设置 |
-| 标题栏外壳图标 | 16px（S2 20 格画法），按钮 32px 方块 | 侧栏开关、标签页按钮、完整视图、会话摘要、隐藏标签页 / 进入分屏视图；侧栏浮层的「固定侧边栏」；已打开标签页列表的行尾按钮（按钮 24px 方块） |
-| 正文与页面侧边栏的 workflow 图标 | 16px | 新建会话、项目文件夹、Space 分类、设置分类；Home 输入框工具条与快捷开始、Space 新建与搜索、网格/列表切换、菜单项、模型页签、查看框操作；列表文件类型、收藏、行尾菜单、会话状态、工作区标签的类型图标；标题栏里外壳图标以外的按钮，如会话菜单 ··· |
-| 图标块 | 20px | 工具卡、服务卡、会话产出前 32–48px 底块里的标识图形 |
-| 组件内的 UI 图形 | 组件原生尺寸 | 折叠箭头、复选标记、清除按钮、标签关闭；不套 workflow 的尺寸规则 |
-| 缩略图、空态插画与画面内容 | 对应内容规范 | 模板插画、素材预览、Space 类型预览；不作为导航图标放大缩小 |
+| App Rail | 20px | Home, Space, Tools, Services, Background Tasks, Settings |
+| Title bar shell icons | 16px (S2 20-grid drawing), buttons are 32px squares | Sidebar toggle, tab button, full view, session summary, hide tabs / enter split view; “pin sidebar” in the sidebar overlay; the trailing button on each row of the open-tabs list (24px square button) |
+| Workflow icons in body text and page sidebars | 16px | New session, project folder, Space categories, settings categories; Home input toolbar and quick start, Space new and search, grid/list toggle, menu items, model tabs, viewer actions; type icons for list files, favorites, row-end menus, session status, workspace tags; buttons in the title bar other than the shell icons, such as the session menu ··· |
+| Icon blocks | 20px | The identifying graphic within the 32–48px base block of tool cards, service cards, and session output |
+| UI graphics inside components | Component’s native size | Collapse arrows, checkmarks, clear buttons, tab close; the workflow size rules do not apply |
+| Thumbnails, empty-state illustrations, and on-screen content | Per content specification | Template illustrations, material previews, Space type previews; not enlarged or shrunk as navigation icons |
 
-workflow 图标只有应用 Rail 用 20px；Rail 以外的正文、页面侧栏、菜单、弹层与对话框里的 workflow 图标一律 16px，不按页面、控件字号或操作主次另设档位。上表的标题栏外壳图标同样以 16px 显示、居中放在 32 × 32 的方块按钮里，与会话菜单 ··· 同高同大；它们不在 S2 图标库里，按 Spectrum 2《Icon fundamentals》的画法画在 20 格画布上：1.5px 线宽、外圆角 2.25、圆头线端。窗口类图形共用 S2 展开面板图标（expand right）的方形外框（2–18）：侧栏开关是外框里 x 5、y 5–15 的面板条，侧栏隐藏时宽 1.5（即该图标原样），显示时加宽到 4；标签页外框是外框本身，隐藏标签页 / 进入分屏视图在正中加一条分隔。完整视图是取 S2 `FullScreen` / `FullScreenExit` 的尖角画的两只对角折角（右上、左下；外侧圆角 1.25、内侧尖角），进入时向外、退出时向内；两只折角的臂长、间距与线宽之比保持旧外壳图标的比例（进入：跨度 11、臂长 5.75、两角投影相叠 0.5；退出：跨度 13、臂长 5.75、间隔 1.5）。S2 已有对应含义的直接用原件：会话摘要 `ListBulleted`。标签页外框里的加号按同一线宽画在 20 格上，标签页数用字号阶梯最小的 10px，都与外框叠在同一个 16px 渲染盒里。外壳图标只用于上表所列的外壳控件，跟随文字颜色表达悬停、按下与禁用。图标画布与点击区域分开，按钮继续使用 S2 的控件高度、焦点环和键盘行为。保留图标原始 viewBox、路径、描边与安全留白，不靠修改路径或 transform 拉伸来追求视觉等宽。
+Only the app Rail uses 20px for workflow icons; workflow icons in body text outside the Rail, page sidebars, menus, popups, and dialogs are always 16px, with no separate size tiers set by page, control font size, or action priority. The shell icons in the title bar listed above are likewise displayed at 16px, centered in the 32 × 32 square button, at the same height and size as the session menu ···; they are not in the S2 icon library and are drawn on a 20-grid canvas following the drawing method in Spectrum 2 *Icon fundamentals*: 1.5px stroke width, outer corner radius 2.25, round line caps. The window-type graphics share the square frame (2–18) of the S2 expand-right panel icon: the sidebar toggle is a panel bar at x 5, y 5–15 inside the frame, with width 1.5 when the sidebar is hidden (that is, the icon as-is) and widened to 4 when shown; the tab frame is the frame itself, and hide tabs / enter split view adds a divider at the center. The full-view icon is two diagonal corner folds (upper right and lower left) drawn with the sharp corners of S2 `FullScreen` / `FullScreenExit`, with outer corner radius 1.25 and inner sharp corners; on entering they point outward, and on exiting inward; the arm length, spacing, and ratio of stroke width for the two folds keep the proportions of the old shell icon (entering: span 11, arm length 5.75, the two corner projections overlap by 0.5; exiting: span 13, arm length 5.75, gap 1.5). Where S2 already has a corresponding meaning, the original is used directly: session summary uses `ListBulleted`. The plus sign in the tab frame is drawn at the same stroke width on the 20-grid, and the tab count uses 10px, the smallest step on the font-size ladder; both are stacked with the frame in the same 16px render box. Shell icons are used only for the shell controls listed above and follow the text color to express hover, pressed, and disabled states. The icon canvas and the click area are kept separate; buttons continue to use S2 control heights, focus rings, and keyboard behavior. Keep each icon’s original viewBox, paths, strokes, and safe margins; do not stretch paths or apply transforms to chase visual uniformity.
 
-实现使用 `--bc-icon-primary`（20px）和 `--bc-icon-compact`（16px）。固定 workflow 图标的画布，避免跟随文字 em 尺寸；Rail 用主档，其余按 workflow 图标的特征（`role="img"`、20 × 20 viewBox）统一用紧凑档，UI 图形、图标块、缩略图与画面内容除外。外壳图标不是 S2 组件，是一组 SVG 文件，当 CSS 遮罩以 16px 显示、填文字颜色，不经这条匹配。验收以浏览器 100% 缩放时的 SVG bounding box 为准，同时检查同一行的对齐、焦点和点击区域。
+Implementation uses `--bc-icon-primary` (20px) and `--bc-icon-compact` (16px). The canvas of fixed workflow icons is pinned and does not follow the text em size: the Rail uses the primary tier, and everything else uses the compact tier according to the characteristics of workflow icons (`role="img"`, 20 × 20 viewBox), except UI graphics, icon blocks, thumbnails, and on-screen content. Shell icons are not S2 components; they are a set of SVG files, shown as a CSS mask at 16px and filled with the text color, and do not go through this matching rule. Acceptance is judged by the SVG bounding box at 100% browser zoom, while also checking alignment, focus, and click area within the same row.
 
-“新建会话”统一使用 `import AddCircle from '@react-spectrum/s2/icons/AddCircle';`；编辑、重命名仍用 Edit。规范依据用户提供的 Spectrum 2《Icon fundamentals》和《Using icons》：Desktop/Web 的主画布 20px、次画布 16px，UI icons 由组件决定。
+“New session” uniformly uses `import AddCircle from '@react-spectrum/s2/icons/AddCircle';`; editing and renaming still use Edit. The specification is based on the user-supplied Spectrum 2 *Icon fundamentals* and *Using icons*: on Desktop/Web the primary canvas is 20px and the secondary canvas is 16px, and UI icons are determined by the component.
 
-#### Space 图标
+#### Space icon
 
-所有代表 Space 入口或跳转到 Space 的图标，统一使用 React Spectrum S2 的 `Asset`：`import Asset from '@react-spectrum/s2/icons/Asset';`。覆盖 Rail、菜单和快捷入口；文字继续使用 Space，图标尺寸沿用所在控件的规范。文件夹、素材类型、网格视图与内容集合的图标按各自语义保留，不因为出现在 Space 页面内就替换成 Asset。
+All icons that represent the Space entry or jump to Space use React Spectrum S2's `Asset` uniformly: `import Asset from '@react-spectrum/s2/icons/Asset';`. They cover the Rail, menus and quick entries. The text keeps saying Space, and the icon size follows the spec of the control it sits in. Icons for folders, asset types, grid view and content collections keep their own meanings and are not replaced with Asset just because they appear on a Space page.
 
-#### 工作区域布局
+#### Workspace layout
 
 ```text
 Home
 +------+------------------+--------------------------+------------------------+
-| Rail | 侧栏             | 会话区                   | 功能区                 |
-|      | 项目与会话       | 当前会话                 | 打开视频后：           |
-| Home |                  | 消息、任务卡片、输入框   | 完整编辑器             |
-| Space|                  |                          | （按需打开）           |
-| 工具 |                  |                          |                        |
+| Rail | Sidebar          | Session area            | Function area          |
+|      | Projects and     | Current session          | After a video opens:   |
+| Home | sessions         | Messages, task cards,    | full editor            |
+| Space|                  | input box                | (opened on demand)     |
+| Tools|                  |                          |                        |
 +------+------------------+--------------------------+------------------------+
 
 Space
 +------+------------------+---------------------------------------------------+
-| Rail | 分类侧栏         | 条目列表                                          |
-|      | 全部 / 视频 /    | 视频、素材与其他产物                              |
-| Home | 成片 / 图片 …    |                                                   |
-| Space|                  |                                                   |
-| 工具 |                  |                                                   |
+| Rail | Category sidebar | Item list                                         |
+|      | All / Videos /   | Videos, assets and other outputs                  |
+| Home | Final cuts /     |                                                   |
+| Space| Images …         |                                                   |
+| Tools|                  |                                                   |
 +------+------------------+---------------------------------------------------+
 
-打开视频后（从 Home 或 Space 进入，布局相同）
+After a video is opened (from Home or Space; same layout)
 +------+--------------------------+----------------------------------------+
-| Rail | 会话                     | 完整编辑器                             |
-|      | 消息、任务卡片、输入框   | 预览、检查器、时间线、内容面板         |
+| Rail | Session                  | Full editor                            |
+|      | Messages, task cards, input box | Preview, inspector, timeline, content panels |
 +------+--------------------------+----------------------------------------+
 ```
 
-Home 的标题栏与下方各栏对齐：最左是侧栏开关；会话区上方是会话头（标题、状态、会话菜单 ···）；功能区上方是页签条；最右是按钮组，从左到右为会话摘要、完整视图与标签页按钮。各控件在三种视图下的出现与位置见 §3.3。
+The Home title bar lines up with the columns below it. At the far left is the sidebar toggle. Above the session area is the session header (title, status, session menu ···). Above the function area is the tab strip. At the far right is a button group, from left to right: session summary, full view and the tabs button. Where each control appears in the three views is in §3.3.
 
-### 2.2 Home 与 Space 的分工
+### 2.2 Home and Space: roles
 
 | | Home | Space |
 | --- | --- | --- |
-| 组织方式 | 按会话：我让它做了什么、现在做到哪 | 按成果：我有哪些视频、素材和产物 |
-| 主要动作 | 委托、补充、审阅、批准、停止、修改 | 浏览、查看、二次编辑、整理、导出 |
-| 打开视频后 | 会话在左，完整编辑器在右（功能区） | 完整编辑器占满内容区，会话是右下角的悬浮会话（§5.1） |
-| 典型进入方式 | 开始新任务，或继续一个进行中的会话 | 找到以前做的东西，继续改或导出 |
+| Organized by | Session: what I asked it to do and where it is now | Output: which videos, assets and products I have |
+| Main actions | Delegate, add to, review, approve, stop, modify | Browse, view, re-edit, organize, export |
+| After opening a video | Session on the left, full editor on the right (function area) | Full editor fills the content area; the session is a floating session in the bottom-right corner (§5.1) |
+| Typical entry | Start a new task, or continue a session in progress | Find something made earlier and keep editing or export it |
 
-两者不是两套产品。同一个视频、会话、任务和产物在两边是同一个对象，打开视频用的是同一套组件、同一个布局：
+The two are not two separate products. The same video, session, task and output is the same object in both places, and opening a video uses the same components and the same layout:
 
-- 在 Space 里手工改的内容，Home 里的智能体下一次行动时能看到；智能体的修改也会实时出现在 Space 打开的编辑器里。
-- 两边的修改都经过同一个命令入口，遵守同样的版本检查、保护范围与权限。
-- 从任何一边发起自然语言请求，都先完成发送前同步（§3.2.4）。
+- Changes made by hand in Space are visible to the Home agent on its next action. Changes the agent makes also appear live in the editor open in Space.
+- Changes from either side go through the same command entry point and follow the same version checks, protection scope and permissions.
+- A natural-language request from either side first completes pre-send sync (§3.2.4).
 
-### 2.3 项目、视频与会话
+### 2.3 Projects, videos and sessions
 
-- **项目**（Project）是一个目录，不是一个视频，也是智能体的工作目录。一个项目里可以有一个或多个视频，以及它们用到的素材和产物。
-- **视频**（Video）是项目下的一个子目录：一个可以编辑、导出的编辑对象。导出得到的文件是成片；导入或生成的媒体文件是视频素材。它有自己的素材引用、序列、文稿、语言与画幅版本，以及历史。
-- **会话**是一段与智能体的协作记录。一个会话最多属于一个项目；一个项目可以有多个会话。从会话可以打开该项目下的视频。
-- 会话可以不属于任何项目，用于不需要视频的快速任务，例如转录一个文件、生成一张封面、写一份脚本。它们的产物同样出现在 Space。
-- 无项目的会话需要可编辑的时间线时（例如用户拖入视频或贴上链接并要求加字幕），视频建在会话自己的文件夹里，不另建项目，会话仍不属于任何项目；这些视频同样出现在 Space。用户明确要建项目时，智能体才把会话连同其中的视频收进一个新项目，名字默认取视频名，会话内容保留。删除还有视频的无项目会话时，视频先收进一个以视频命名的项目，不随会话删除。
-- 从这样的视频新开会话（Space 的悬浮会话、AI 工具交给智能体）时，新会话与视频所在的那条会话共用同一个文件夹：同样能打开、修改这些视频，仍不属于任何项目，不另建项目。收进项目时共用文件夹的几条会话一起进去；删掉其中后开的一条不动文件夹。文件夹里的视频还开着（编辑器、任务或别的连接）时不收进项目、也不删会话，说明是哪几部视频开着，关掉后再试（[架构设计 §3.10](../architecture/architecture-design.md#310-会话与项目的绑定)）。
-- 新会话可以继续旧的项目：智能体读取其中视频当前的事实与已确认的约束，不要求用户重传材料。
-- 关闭或归档会话不取消任务，不删除项目、视频和产物。
-- **子视频**是从另一部视频的一段派生出来的普通视频（剪成短视频的结果，§5.10）：建在父视频旁边、同一个项目里，整份复制父视频的轨道、片段、文稿与译文，引用同一份素材，区间之外记成剪口，所以剪掉的部分在子视频里还能恢复；它带一份派生记录（父视频、父视频的版本与区间），不复制章节。之后两部视频各改各的，删父视频不删子视频。机制见[架构设计 §3.5「派生子视频」](../architecture/architecture-design.md#35-工具目录)与[视频格式规范 §4.6](../spec/video-format-spec.md#46-文档的种类)。
+- A **project** (Project) is a directory, not a video. It is also the agent's working directory. A project can contain one or more videos, along with the assets and outputs they use.
+- A **video** (Video) is a subdirectory of a project: one editable, exportable editing object. An exported file is a final cut (成片). An imported or generated media file is a video asset. A video has its own asset references, sequences, script, language and aspect-ratio versions, and history.
+- A **session** is a record of collaboration with the agent. A session belongs to at most one project. A project can have several sessions. From a session you can open the videos in that project.
+- A session can belong to no project. Use these for quick tasks that need no video, such as transcribing a file, generating a cover or writing a script. Their outputs also appear in Space.
+- When a no-project session needs an editable timeline (for example, the user drags in a video or pastes a link and asks for subtitles), the video is created in the session's own folder. No project is created, and the session still belongs to no project. These videos also appear in Space. Only when the user explicitly asks for a project does the agent move the session, together with its videos, into a new project. The project is named after the video by default, and the session content is kept. When you delete a no-project session that still has videos, the videos are first moved into a project named after the video. They are not deleted with the session.
+- A new session started from such a video (the floating session in Space, or an AI tool handing work to the agent) shares the folder of the session the video lives in. It can open and modify these videos in the same way, and still belongs to no project. No new project is created. When the folder moves into a project, all sessions sharing it move together. Deleting a session that was opened later does not touch the folder. If a video in the folder is still open (in the editor, a task or another connection), the folder is not moved into a project and no session is deleted. The message says which videos are open, so you can close them and try again ([Architecture design §3.10](../architecture/architecture-design.md#310-binding-sessions-to-projects)).
+- A new session can continue an old project. The agent reads the current facts of its videos and the confirmed constraints, so the user does not need to re-upload material.
+- Closing or archiving a session does not cancel its tasks. It does not delete projects, videos or outputs.
+- A **sub-video** (子视频) is an ordinary video derived from a segment of another video. It is the result of cutting a short video (§5.10). It is created next to the parent video in the same project. It copies the parent's tracks, clips, script and translations in full, references the same assets, and keeps the portions outside its range as cut points, so the trimmed parts can still be restored in the sub-video. It carries a derivation record (the parent video, the parent's version and the range), and does not copy chapters. After that, the two videos are edited independently. Deleting the parent does not delete the sub-video. For the mechanism, see [Architecture design §3.5 "Derived sub-videos"](../architecture/architecture-design.md#35-tool-catalog) and [Video format spec §4.6](../spec/video-format-spec.md#46-document-kinds).
 
-三个词不混用：项目是目录，视频是能编辑的，成片是导出的文件。
+Do not mix up the three terms: a project is a directory, a video is editable, and a final cut is an exported file.
 
-### 2.4 入口之间的导航
+### 2.4 Navigation between entries
 
-- Home → Space：功能区里的任何视频或产物都有「在 Space 中显示」。视频卡上导出的文件同样可以跳转。
-- Space → Home：每个条目都有「在会话中继续」（新建或回到会话，并把条目作为引用带入输入框）和「查看来源会话」。
-- 两个入口各自记住上次的位置与布局。切换入口不打断任务，不改变任何选区或草稿。
-- 多个窗口连接同一个 Runtime，看到相同的已提交版本。
+- Home → Space: any video or output in the function area has "Show in Space". Files exported from a video card can also jump to Space.
+- Space → Home: every item has "Continue in session" (create a new session or return to one, bringing the item into the input as a reference) and "View source session".
+- Each of the two entries remembers its last position and layout. Switching entries does not interrupt tasks or change any selection or draft.
+- Several windows connected to the same Runtime see the same committed version.
 
-### 2.5 窗口与布局
+### 2.5 Windows and layout
 
-- 三栏宽度可拖动调整；侧栏与功能区可以收起。初始比例是布局建议，需原型验证（见 §12）。
-- **侧栏浮出**。页面侧栏隐藏时，指针在 Rail 的某个入口或标题栏的侧栏开关上停留 100 ms，浮出该区域的侧栏：浮层距应用面板的上、下、左缘各内缩 6 px，圆角与应用面板同心（面板 16 px − 内缩 6 px = 10 px），盖在内容之上，不改变下方布局。浮层里有「固定侧边栏」，点击后恢复常驻侧栏；浮出的是其他区域时同时进入该区域。在浮层里选择条目会跳转并关闭浮层，选的就是当前位置时也关闭；Esc、点击浮层与 Rail 以外的地方或路由变化时关闭；指针离开浮层与触发它的入口 100 ms 后关闭，浮层内有焦点或打开着菜单、对话框时不关。用侧栏开关收起侧栏后，指针仍停在开关上时不立即再浮出。设置没有页面侧栏，不浮出。桌面端浮层显示期间，功能区内嵌的网页视图像打开菜单与对话框时一样暂时隐藏，浮层关闭后恢复。
-- 小窗口优先保证当前会话的输入框和当前预览，不把所有面板压成窄列。Home 的工作区（会话区 + 功能区）有三种视图：**会话**（功能区收起，会话占满）、**分屏**（会话在左，功能区的标签页在右）与**完整视图**（只有一条页签条，会话是其中固定的第一个页签）。工作区按自身宽度而不是窗口宽度判定窄模式，宽度不足时同样改用这条单列页签条。细则见 §3.3。
-- 用户手动调整布局后，智能体不能反复抢回界面。智能体可以在卡片中提供「打开预览」「定位到这里」，由用户点击后才改变功能区。
+- The widths of the three columns can be dragged. The sidebar and function area can be collapsed. The initial proportions are layout suggestions and need prototype validation (see §12).
+- **Sidebar flyout.** When the page sidebar is hidden, if the pointer rests for 100 ms on an entry in the Rail or on the sidebar toggle in the title bar, that area's sidebar flies out. The overlay is inset 6 px from the top, bottom and left edges of the app panel. Its corner radius is concentric with the app panel (panel 16 px − inset 6 px = 10 px). It sits over the content without changing the layout beneath. The overlay has "Pin sidebar"; clicking it restores the persistent sidebar. If the flyout is for a different area, the pointer also enters that area. Choosing an item in the overlay jumps there and closes the overlay, and it also closes when the chosen item is the current location. The overlay closes on Esc, on a click outside the overlay and the Rail, or on a route change. It closes 100 ms after the pointer leaves both the overlay and the trigger. It does not close while focus is inside the overlay or while a menu or dialog is open. After the sidebar is collapsed with the toggle, it does not fly out again immediately while the pointer stays on the toggle. Settings has no page sidebar, so nothing flies out. While the desktop flyout is showing, web views embedded in the function area are temporarily hidden, as they are when a menu or dialog is open. They return after the flyout closes.
+- In a small window, the session's input box and the current preview take priority. The panels are not squeezed into narrow columns. Home's workspace (session area + function area) has three views: **Session** (function area collapsed, session fills the space), **Split** (session on the left, function area tabs on the right) and **Full view** (one tab strip only, with the session as its fixed first tab). The workspace judges narrow mode by its own width, not the window width. When the width is insufficient, it likewise switches to this single-column tab strip. Details are in §3.3.
+- After the user adjusts the layout by hand, the agent must not keep pulling the interface back. An agent can offer "Open preview" or "Go to this" on a card. The function area changes only after the user clicks.
 
-### 2.6 状态表达与可访问性〔UX-05〕
+### 2.6 State display and accessibility〔UX-05〕
 
-- 核心操作支持键盘，焦点状态清楚。
-- 问题不只用颜色区分；时间、费用和权限有文字说明。
-- 载入、排队、等待 GPU、需要授权、远端状态未知和失败是不同的状态，不能共用一个旋转图标。
-- 「已连接」不等于「数据已追平」；界面在未追平时不允许提交修改。
-- 文稿的编辑模式（§5.7）始终有可见的标签。
-- toast 只停几秒（约 5 秒）就自动消失，带按钮（撤销、查看）的也一样；指针停在上面或焦点在里面时暂不消失。toast 不是唯一的出处：要用户处理的事同时留在任务页或对应页面上。
-- 界面文案走国际化机制，排版不假定文字的长短与方向。
+- Core operations support the keyboard, and focus state is clear.
+- Problems are not distinguished by color alone. Time, cost and permissions are explained in text.
+- Loading, queued, waiting for GPU, needs authorization, remote state unknown and failed are different states. They must not share one spinning icon.
+- "Connected" does not mean "data is caught up". While data is not caught up, the interface does not allow submitting changes.
+- The script editing mode (§5.7) always shows a visible label.
+- A toast disappears automatically after a few seconds (about 5 seconds). This also applies to toasts with buttons (undo, view). It does not disappear while the pointer is over it or focus is inside it. A toast is not the only record: items the user must act on also remain on the task page or the relevant page.
+- UI text goes through the internationalization mechanism. The layout does not assume text length or direction.
 
+### 2.7 Tools
 
-### 2.7 工具
+Tools are first-level entries in the Rail, placed below Space. They do one defined thing directly, without going through a session: transcribe, translate subtitles, translate dubbing, generate speech, text generation, generate images, generate music, download video, compress, merge videos and extract audio. Tools only call models and fixed flows. They do not start an agent. A tool that uses a model lets you pick a model configured locally or in the cloud on the page. Tools that need a text model (translation, text generation) call the configured text model directly.
 
-工具是 Rail 中位于 Space 下方的一级入口，用来不经过会话直接做一件确定的事：转录、翻译字幕、翻译配音、生成语音、文本生成、生成图片、生成音乐、下载视频、压缩、合并视频与提取音频。工具只调用模型与固定流程，不启动智能体；用到模型的工具在页面里选用本机或云端已配置的模型，需要文本模型的（翻译、文本生成）直接调用配置好的文本模型。
+**A tool's result is an item in Space that can be processed further, not a one-off file.** By default a result belongs to no project. It is saved to the default save location (§2.7 "Page"), appears as a Space item, and can then be processed by another tool, used to create a new video, added to a video, or handed to an agent to continue. Tools fall into four groups by the object they process:
 
-**工具的结果是 Space 里可以继续处理的条目，不是一次性的文件。** 结果缺省不属于任何项目：保存到默认保存位置（§2.7「页面」），作为 Space 条目出现，可以接着用别的工具处理、以此新建视频、加到视频，或交给智能体继续。工具按处理的对象分四组：
-
-| 组 | 工具 | 结果 |
+| Group | Tools | Result |
 | --- | --- | --- |
-| 语音与字幕 | 转录、翻译字幕、翻译配音、生成语音 | 文档与字幕条目，或写进视频的文稿、译文、字幕层与配音；音频条目 |
-| 文字与图片 | 文本生成、生成图片 | 文档条目、图片条目 |
-| 音乐 | 生成音乐 | 音频条目（在本机生成，不联网） |
-| 视频文件 | 下载视频、压缩视频、合并视频、提取音频 | 视频文件条目、音频条目 |
+| Speech and subtitles | Transcribe, translate subtitles, translate dubbing, generate speech | Document and subtitle items, or the script, translation, subtitle layer and dubbing written into a video; audio items |
+| Text and images | Text generation, generate images | Document items, image items |
+| Music | Generate music | Audio items (generated locally, no network) |
+| Video files | Download video, compress video, merge videos, extract audio | Video file items, audio items |
 
-输入与落点：
+Inputs and destinations:
 
-| 工具 | 输入从哪里来 | 结果 |
+| Tool | Where the input comes from | Result |
 | --- | --- | --- |
-| 转录 | 本机的视频或音频文件；Space 里的视频文件、成片或音频；一个链接；Space 里可编辑的视频 | 文件、Space 里的媒体与链接：缺省不建视频，生成一份文稿（TXT）与一份字幕（SRT），作为文档与字幕条目保存到保存位置（链接的与下载的视频一起保存到下载目录，见「下载视频」，页面没有保存位置一行）；改选「新建视频」时放进一个项目，素材在时间线上，带语音文档与可编辑的字幕层（S01）。可编辑的视频：已有文稿时默认新建一部视频（同一项目、链接同一份素材，原视频与它的译文不动），改选「取代这部视频的文稿」就换用文稿（§5.11）；没有文稿的视频直接写进它 |
-| 翻译字幕 | Space 里有文稿的视频（选择器只列出转录过的，标出已有的语言）；一个 SRT、VTT 文件：本机的，或 Space 里的字幕条目 | 视频：新增译文文档与目标语言的字幕层，可以选双语显示（S02），不改原文。字幕文件：一个译好的字幕条目，可以配上媒体「以此新建视频」 |
-| 翻译配音 | Space 里有文稿的视频；有译文时可以直接选用 | 写进这个视频：新的一组配音（S07） |
-| 生成语音 | 输入的文字；Space 里的文档或字幕（取它的文字） | 一个音频条目 |
-| 文本生成 | 输入的要求；可以附上 Space 里的文档或字幕作为材料 | 一个文档条目 |
-| 生成图片 | 一句描述 | 图片条目 |
-| 生成音乐 | 一句风格描述；做歌曲时另给歌词；可选目标时长与编排方式。只有本机的音乐模型（设置 › 音乐生成），没有模型时「模型」一行给出去设置的入口；生成要几分钟到十几分钟，页面写明 | 一个音频条目（WAV）；模型只许非商业用途时在页面与结果上写明。从编辑器「生成配乐」进来的另加到那部视频的音乐轨，视频比单次上限长时循环铺满（见下文「生成配乐」） |
-| 下载视频 | 一个视频页面或媒体直链 | 用 yt-dlp 下载的视频文件条目；可勾选下载后转录，另得文档与字幕条目 |
-| 压缩视频、合并视频、提取音频 | 本机的视频文件；Space 里的视频文件或成片（提取音频另收本机与 Space 里的音频） | 视频文件条目（压缩、合并）或音频条目（提取音频）。三个工具共用一页，页内可以切换，各自仍是目录里的一个工具 |
+| Transcribe | A local video or audio file; a video file, final cut or audio in Space; a link; an editable video in Space | Files, and media and links in Space: by default no video is created. It produces one transcript (TXT) and one subtitle file (SRT), saved to the save location as document and subtitle items. A linked video is saved to the download folder together with the downloaded video (see "Download video"; the page has no save-location row). With "New video" selected instead, the content goes into a project, with the asset on the timeline, a voice document and an editable subtitle layer (S01). Editable videos: if the video already has a script, a new video is created by default (same project, linked to the same asset; the original video and its translation are unchanged). Selecting "Replace this video's script" instead switches to the transcript (§5.11). A video with no script has the transcript written directly into it |
+| Translate subtitles | Videos in Space that have a script (the picker lists only transcribed videos and marks the languages already present); one SRT or VTT file, either local or a subtitle item in Space | Video: adds a translated script document and a subtitle layer in the target language. Bilingual display can be chosen (S02). The original is unchanged. Subtitle file: one translated subtitle item, which can be paired with media to "Create video from this" |
+| Translate dubbing | Videos in Space that have a script; an existing translation can be selected directly | Written into this video: a new set of dubbing (S07) |
+| Generate speech | Typed text; a document or subtitle in Space (its text is used) | One audio item |
+| Text generation | The request; a document or subtitle in Space can be attached as material | One document item |
+| Generate images | One line of description | Image item |
+| Generate music | One line of style description; for a song, lyrics are given separately; optional target duration and arrangement. Only local music models are available (Settings › Music generation). When there is no model, the "Model" row gives an entry to settings. Generation takes several to more than ten minutes, which the page states | One audio item (WAV). If the model is licensed for non-commercial use only, this is stated on the page and in the result. Music started from the editor's "Generate score" is added to that video's music track. If the video is longer than the single-generation limit, it loops to fill the length (see "Generate score" below) |
+| Download video | A video page or a direct media link | Video file item downloaded with yt-dlp. You can tick the option to transcribe after downloading, which also yields document and subtitle items |
+| Compress video, merge videos, extract audio | Local video files; video files or final cuts in Space (extract audio also takes local and Space audio) | Video file items (compress, merge) or audio items (extract audio). The three tools share one page and can be switched within it. Each is still a separate tool in the directory |
 
-#### 生成配乐
+#### Generate score
 
-编辑器 AI 工具的「生成配乐」（§5.10）打开本页，带上那部视频：页顶一张卡写明给哪部视频配乐，目标时长按视频长度预填，做好后直接加进它的音乐轨，也留在 Space 里；卡上可以改成「只生成，不加到视频」。
+The "Generate score" entry point (§5.10) in the editor's AI tools opens this page with that video attached. A card at the top of the page states which video the score is for. The target duration is prefilled from the video's length. When the score is done, it is added directly to that video's music track and also stays in Space. On the card you can switch to "Generate only, don't add to video".
 
-- **视频不长于模型的单次上限**（`maxDurationSec`，YuE2 3B 为 300 秒）：目标时长按视频长度预填（按 5 秒向上取整，音乐不比视频短，加到音乐轨时只放一段、截在结尾并片尾淡出），卡上写「时长按这部视频预填成 N 秒」。
-- **视频更长**：不悄悄截到上限，卡上写明「视频 X 秒超过单次上限 300 秒，会生成 300 秒并循环铺满，片尾淡出。」目标时长预填为上限。做好后按实际生成的时长**循环铺满**：同一段从开头起首尾相接地重复放到视频结尾，每个接缝两侧交叉淡化（2 秒），最后一段截在视频结尾、片尾淡出（3 秒）；不拉伸、不变速、不改节奏。生成记录与提示写出铺法，例如「已加进音乐轨 · 循环 6 段铺满 1740 秒 · 接缝交叉淡化 2 秒 · 片尾淡出 3 秒」。音乐比视频长时只放一段，截在结尾、片尾淡出。
-- 写到上限的结果照常提醒结尾可能收得急；上限已经是单次上限时不再建议加长，循环铺满的结果另说明接缝有交叉淡化。
-- 界面只提供循环这一种铺法。按配乐情绪弧表分几段各自生成、在镜间切换处接上，是智能体在有弧表时可选的做法（说明书的配乐页 `skills/cuccut/references/catalog/music.md`，视频制作等 skill 引用它），不在界面里出现。
-- 加到音乐轨是这个入口自己的一笔编辑（每段一个音频实例加淡入淡出，见架构设计 §7.9），不是生成任务的一步：生成任务给了视频时只把结果导入为候选素材。
+- **Video no longer than the model's single-run limit** (`maxDurationSec`, 300 seconds for YuE2 3B): the target duration is prefilled from the video length, rounded up to the next 5 seconds. The music is never shorter than the video. When added to the music track, only one segment is placed, cut at the end, with a fade-out at the tail. The card says "Duration prefilled to N seconds for this video."
+- **Video longer than the limit**: the duration is not silently cut to the limit. The card states "The video is X seconds, over the single-run limit of 300 seconds. 300 seconds will be generated and looped to fill the video, with a fade-out at the end." The target duration is prefilled to the limit. After generation, the result is **looped to fill** the video, based on the actual generated length: the same segment is repeated from its start, back to back, to the end of the video. Each seam is cross-faded on both sides (2 seconds). The last segment is cut at the video's end, with a fade-out at the tail (3 seconds). It is not stretched, sped up or slowed down, and its rhythm is unchanged. The generation record and notes describe the fill, for example "Added to music track · looped 6 segments to fill 1740 seconds · 2-second cross-fade at seams · 3-second tail fade-out." If the music is longer than the video, only one segment is placed, cut at the end, with a tail fade-out.
+- For a result that reaches the limit, the usual reminder that the ending may feel rushed still applies. When the limit is already the single-run maximum, the UI does not suggest making it longer. Looped results note separately that the seams are cross-faded.
+- The UI offers only this one fill method, loop. Generating separate segments that follow a mood-arc table and joining them at shot changes is an option the agent may choose when an arc table exists (the music page of the manual, `skills/cuccut/references/catalog/music.md`, which skills such as video production refer to). It does not appear in the UI.
+- Adding to the music track is this entry point's own edit (one audio instance per segment, each with a fade-in and fade-out; see architecture design §7.9), not a step of the generation task. When the generation task was given a video, it only imports the result as a candidate asset.
 
-#### 下载视频
+#### Download video
 
-- 工具卡片与侧栏统一使用 S2 `Download` 图标。页面依次是视频链接、下载目录、下载设置摘要、下载后转录。摘要一行写 yt-dlp 的状态与版本和网站登录用哪些浏览器，工具没就绪时就地给「准备下载工具」，「更改下载设置」打开设置 › 视频下载。
-- yt-dlp 的状态与维护、网站登录（浏览器 Cookie）在设置里单独一节「视频下载」（偏好设置一组，地址 `/settings/downloader`），设置 › 通用不再列下载工具。下载视频工具、从链接转录与智能体下载都按这一节的设置。
-- 默认下载到运行下载的主机的 `~/Downloads`。更改目录打开系统文件夹选择器，保存到 `downloads.directory`，下次继续使用。
-- 去掉“下载之后”选项和新建视频入口。下载本身只产出媒体文件，不建立编辑视频或时间线。
-- “下载后转录”默认关闭。开启后使用默认语音识别模型、自动检测语言，生成 TXT 与 SRT；“转录结果放到项目”可选，默认不选。项目归属与保存目录独立：视频、文稿和字幕都保存到选定的下载目录；选择项目仅关联转录结果，不移动文件。选项写作“不放到项目”，不附加保存目录说明。
-- 这一节的下载工具状态显示检测到的版本、来源与安装方式。可重新检测、更新 yt-dlp、指定本机可执行文件；受管安装仅在可信发布清单完整时可用，不把重新检测称为更新。
-- 更新按原安装方式（macOS 与 Linux 上是 Homebrew、pipx、pip 或官方独立程序，Windows 上是 winget、Scoop、pip、pipx 或官方独立程序），由 CucCut 在本机代为执行：工具卡片里写明安装方式，把将要执行的完整命令显示成一行代码块（按 Runtime 所在主机的写法，Windows 上按 PowerShell，其他系统按 POSIX shell），右边是执行（三角）与复制两个图标按钮；点执行就开始，不再弹确认。点执行时安装方式已经变了就不执行，改显示新的命令。执行中执行按钮变成停止，命令下面逐行显示输出；结束后自动重新检测，按前后版本说「已更新到 …」或「已是最新版本 …」（winget 没有可升级的版本时不以 0 退出，也算已是最新），失败时说明退出码并保留输出。更新在后台任务里进行，离开页面不中断；进行中不能开始新的下载。
-- 判断不了安装方式时按 Runtime 所在主机列出常用命令：macOS 与 Linux 上是 Homebrew、pip、官方独立程序三条，Windows 上是 winget、Scoop、pip（`py -m pip`）、官方独立程序四条。要管理员权限才能改写时（Windows 上包括装在 Program Files、ProgramData 等系统目录下的，以及 Chocolatey 装的）不代为执行、不提权，只给出命令让用户在终端里执行：macOS 与 Linux 上命令带 `sudo`，Windows 上不带，提示用管理员身份打开终端执行。这两种情况的命令行只有复制按钮，都提示完成后回来点「重新检测」。
-- 网站登录默认带 Cookie，用所有检测到的浏览器；勾选保存为设置，全部勾上时存的是「所有浏览器」，之后新检测到的浏览器也算在内。CucCut 检测这台电脑上有哪些浏览器（按 yt-dlp 的查找规则看各浏览器的 Cookie 库在不在、最近什么时候改过，不读内容），只列出检测到的，最近用过的排在前面；打开页面时检测，也可以点「重新检测浏览器」；一个都没有时说明没找到，不列选项。浏览器是一组复选框，横向排列、放不下自然换行，最前面是「所有浏览器」（勾上即全选检测到的；只勾了一部分时显示半选）。都不勾就是匿名下载。每次下载开始时按当时的检测结果展开成浏览器列表，冻结进这一次下载。
-- 勾选多个时按列出的顺序逐个尝试：读不到某个浏览器的 Cookie、或网站仍要求登录时换下一个，用上一个就停，结果里写明用的是哪个浏览器。复选框下面写清楚：只读勾选的浏览器，yt-dlp 在本机读取并只用于目标网站，CucCut 只记录浏览器名称、不保存 Cookie 内容；运行下载的主机（看 Runtime 所在的主机，不看界面）是 macOS 时，Chrome、Edge 等 Chromium 内核的浏览器第一次读取时各弹一次钥匙串授权，Safari 要给 CucCut「完全磁盘访问权限」；是 Windows 时，勾了 Chromium 内核的浏览器提示它开着时 Cookie 库被占用、要先完全退出（包括在后台运行的），勾了 Chrome、Edge、Brave 时再提示它们通常用应用绑定加密保护 Cookie、yt-dlp 目前可能读不到，退出浏览器也不行，没勾 Firefox 时建议改用 Firefox；其他系统不显示这些提示。
-- 失败按登录/验证、Cookie 无法读取、工具需更新、不支持/不可用、网络、磁盘空间分别说明补救。Cookie 无法读取时提示退出占用数据库的浏览器、检查系统密钥权限或换浏览器（Runtime 在 Windows 上时不说系统密钥：Chromium 内核的提示完全退出、包括在后台运行的，Chrome、Edge、Brave 再说明应用绑定加密时读不到、改用 Firefox）；只在读不到 Cookie 或要求登录时换下一个浏览器，不对网络、磁盘或工具过旧的错误轮换 Cookie。勾选的浏览器都没成功时一次说明每个浏览器的结果。
-- 原参数重试从失败步骤继续；修改链接或网站登录的勾选后开始新的下载。网站要求登录、或勾选的浏览器 Cookie 都读不到时，失败说明与智能体的回复都带设置 › 视频下载的设置链接（§3.2.2）。转录失败保留已下载文件，重试不重复下载；结果提供视频、文稿、字幕的文件位置。
-- 在线转录在开始前走现有外发授权，下载不进入 Agent loop。
+- The tool card and the sidebar both use the S2 `Download` icon. The page shows, in order: the video link, the download folder, a summary of download settings, and post-download transcription. The summary line gives yt-dlp's status and version and which browsers are used for website login. When the tool is not ready, "Prepare download tool" appears in place, and "Change download settings" opens Settings › Video Download.
+- yt-dlp status and maintenance, and website login (browser cookies), are in a separate Settings section, "Video Download" (in the Preferences group, at `/settings/downloader`). Settings › General no longer lists the download tool. The download-video tool, transcription from a link, and agent downloads all follow the settings in this section.
+- By default, downloads go to `~/Downloads` on the host that runs the download. Changing the folder opens the system folder picker, saves to `downloads.directory`, and is used next time.
+- Remove the "After download" option and the new-video entry point. A download only produces a media file; it does not create an edit video or timeline.
+- "Transcribe after download" is off by default. When on, it uses the default speech recognition model and auto-detects the language, producing a TXT and an SRT. "Put transcript in project" is optional and unchecked by default. Project membership and save folder are independent: the video, transcript and subtitles are all saved to the chosen download folder. Choosing a project only links the transcript results and moves no files. The option reads "Don't put in project" and adds no save-folder note.
+- The download tool status in this section shows the detected version, source and install method. You can re-detect, update yt-dlp, or specify a local executable. A managed install is only available when the trusted release manifest is complete. Re-detecting is not called updating.
+- Updates use the original install method (on macOS and Linux: Homebrew, pipx, pip or the official standalone program; on Windows: winget, Scoop, pip, pipx or the official standalone program). CucCut runs them on this machine. The tool card states the install method and shows the full command that will run as a one-line code block, written for the Runtime host's shell (PowerShell on Windows, POSIX shell elsewhere). To the right are two icon buttons: run (triangle) and copy. Clicking run starts the update immediately, with no confirmation dialog. If the install method has changed by the time run is clicked, nothing runs and the new command is shown instead. While the command runs, the run button becomes stop, and its output appears line by line below the command. When it finishes, detection runs again automatically and the page says "Updated to …" or "Already up to date …", based on the versions before and after. If winget has no upgradable version and exits without code 0, this also counts as already up to date. On failure, the page states the exit code and keeps the output. Updates run as background tasks, so leaving the page does not interrupt them. A new download cannot start while an update is in progress.
+- When the install method cannot be determined, the page lists the common commands for the Runtime host. On macOS and Linux there are three: Homebrew, pip, and the official standalone program. On Windows there are four: winget, Scoop, pip (`py -m pip`), and the official standalone program. When changing the install requires administrator rights, CucCut does not run it and does not elevate. This covers Windows installs under system folders such as Program Files and ProgramData, and installs made by Chocolatey. In these cases CucCut only shows the command for the user to run in a terminal. On macOS and Linux the command includes `sudo`. On Windows it does not, and the page says to open the terminal as administrator. Both cases show the command block with a copy button only, and the page asks the user to come back and click "Re-detect" when done.
+- Website login uses cookies by default, taken from all detected browsers. If the user ticks "save as setting", the saved value is "All browsers" when every browser is ticked, so browsers detected later are included as well. CucCut detects which browsers are on this computer. Following yt-dlp's lookup rules, it checks whether each browser's cookie database exists and when it was last modified, without reading the contents. Only detected browsers are listed, with recently used ones first. Detection runs when the page opens, and "Re-detect browsers" is also available. If no browser is found, the page says so and shows no options. Browsers appear as a row of checkboxes that wraps onto new lines when there is not enough room, with "All browsers" first. Ticking it selects every detected browser; when only some are ticked, it shows a partial state. Ticking none means anonymous download. At the start of each download, the browser list is expanded from the detection results at that moment and frozen into that download.
+- When several browsers are ticked, they are tried one by one in the listed order. If a browser's cookies cannot be read, or the site still requires login, the next browser is tried. Once one works, it stops, and the result states which browser was used. Below the checkboxes, the page states clearly: only the ticked browsers are read; yt-dlp reads them on this machine and uses them only for the target site; CucCut records only browser names and never stores cookie contents. When the Runtime host is macOS, the first read of each Chromium-based browser (Chrome, Edge and others) triggers a Keychain authorization prompt, and Safari requires CucCut to have Full Disk Access. When the host is Windows, ticking a Chromium-based browser shows a warning that its cookie database is locked while the browser is open, so it must be fully quit, including background processes. Ticking Chrome, Edge or Brave also shows a warning that these browsers usually protect cookies with app-bound encryption, which yt-dlp may currently be unable to read, and that quitting the browser does not help. If Firefox is not ticked, the page suggests using Firefox instead. On other systems these warnings are not shown.
+- Failures are explained with a remedy for each category: login or verification, cookies unreadable, tool needs updating, unsupported or unavailable, network, and disk space. For unreadable cookies, the page suggests quitting the browsers that hold the database open, checking system keychain permissions, or switching browsers. When the Runtime is on Windows, the keychain is not mentioned. Instead, for Chromium-based browsers the page says to fully quit them, including background processes; for Chrome, Edge and Brave it adds that app-bound encryption means the cookies may be unreadable, so Firefox should be used. The next browser is tried only when cookies cannot be read or login is required. Cookies are not rotated for network, disk or outdated-tool errors. When none of the ticked browsers succeeds, the result explains each browser's outcome at once.
+- Retrying with the original parameters continues from the failed step. Changing the link or the website-login checkboxes starts a new download. When a site requires login, or none of the ticked browsers' cookies can be read, both the failure message and the agent's reply include a link to Settings › Video Download (§3.2.2). If transcription fails, the downloaded files are kept and a retry does not download again. The result gives the file locations of the video, transcript and subtitles.
+- Online transcription goes through the existing outbound-data authorization before it starts. Downloading does not enter the agent loop.
 
+#### Pages
 
-#### 页面
+Every tool page follows the same layout from top to bottom. Each tool fills in only its own rows:
 
-每个工具页从上到下是同一套骨架，工具只填自己的那几行：
+1. **Input.** The source switch lists the sources each tool declares: local file, Space, link, or text. Choosing Space opens the Space picker. It lists only the kinds this tool accepts, with thumbnails, source and status. Items in the trash are not listed. When entering from "Process with tool…" in the Space viewer, the input is already selected. Tools that take a video list only transcribed videos, marking the languages and translations each one already has.
+2. **Model.** Tools that use a model list the local and cloud models configured for that capability. The default is the capability's default model from settings. A changed choice is remembered per tool. When no model is available, this row links to settings, and the start button explains why, instead of a full-width warning card blocking the parameters.
+3. **Options.** The tool's own parameters, such as language, speaker identification, aspect ratio, and bitrate.
+4. **Save location.** Shows the folder where this result will be saved. The default is the default save location from settings. "Change…" opens the system folder picker and applies to this run only. Runs that write into an existing video do not have this row.
+5. **Start.**
 
-1. **输入**。来源切换按工具声明列出：本机文件、Space、链接、文字。选 Space 时打开 Space 选择器：只列这个工具收的种类，带缩略图、来源与状态，回收站里的不列；从 Space 查看器的「用工具处理…」进来时输入已经选好。要视频的工具列的是转录过的视频，标出已有的语言与译文。
-2. **模型**。用到模型的工具列出这项能力已配置的本机与云端模型，缺省是设置里这项能力的默认模型；改选按工具记住。没有可用模型时，这一行给出去设置的入口，开始按钮说明原因，不用整张警告卡片挡在参数前面。
-3. **选项**。工具自己的参数（语言、识别说话人、画幅、码率等）。
-4. **保存位置**。显示这次结果要保存到的目录，缺省是设置里的默认保存位置；「更改…」打开系统文件夹选择器，只改这一次。写进已有视频的运行没有这一行。
-5. **开始**。
+The default save location is in Settings › General. Tool results, downloaded videos, and files handed over by agents are all saved there. It defaults to the system Downloads folder (`~/Downloads`) of the computer running the Runtime. File names in the save location are readable (taken from the title or the source file name). Existing files are not overwritten; duplicates get a number suffix.
 
-默认保存位置在设置 › 通用：工具结果、下载的视频与智能体交出的文件都保存到这里，默认是运行 Runtime 的那台电脑的系统下载文件夹（`~/Downloads`）。保存位置里的文件名可读（取标题或源文件名），不覆盖已有文件，重名时加序号。
+#### Results and next steps
 
-#### 结果与下一步
+When a run finishes, the result page lists each output with its name, kind, duration and spec. Types with a duration show it. The spec is written the same way as Space's "Spec" (§4.3). Each output also has this set of actions:
 
-运行结束后结果页列出每个产物：名字、种类、时长与规格（有时长的类型写时长，规格与 Space 的「规格」同一个写法，§4.3），以及这一组操作：
+- **View in Space** (opens that item's viewer) and **Show in folder** (opens the file in the save location). Show in folder does not appear on the web, because a browser cannot open folders on the Runtime's computer.
+- **Use in another tool**: the tools that can continue from this result, with the previous result already selected. After a transcript or subtitle file: translate subtitles (accepts subtitles only), generate speech, and create a new video from it. After a translation: translate dubbing. After audio, image or video files: create a new video from it, and add to video (§4.6). Results written into a video offer "Open in editor". For "Create new video from" with audio, image or video files, the user first chooses a project. The files stay where they are, and the new video only links to them. In this version, "Create new video from" for transcripts and subtitles is greyed out, with the reason stated: the Runtime does not yet provide a way to create a media-based video from text. "Add to video" is not built yet.
+- **Hand to Agent**: brings the result into a session as a reference (§4.7). The input is pre-filled with an editable sentence, such as "Translate this subtitle into English". The user sends it; nothing is sent automatically. If the result does not belong to a project, the session has no project.
 
-- **在 Space 中查看**（打开那个条目的查看框）、**在文件夹中显示**（保存位置里的那个文件；Web 上没有这一项，浏览器打不开 Runtime 那台电脑的文件夹）。
-- **接着用工具**：按结果能接着做的工具，上一步的结果已经选好。文稿与字幕之后是翻译字幕（只收字幕）、生成语音、以此新建视频；译文之后是翻译配音；音频、图片与视频文件之后是以此新建视频、加到视频（§4.6）；写进视频的结果给出「打开编辑」。音频、图片与视频文件的「以此新建视频」先选一个项目，文件留在原处、新视频里只做链接。这一版文稿与字幕的「以此新建视频」置灰并写明原因（Runtime 还没有给文字配一份媒体再新建视频的方法），「加到视频」还没有做。
-- **交给 Agent**：把结果作为引用带进一个会话（§4.7），输入框里预填一句可以改写的说明（例如「把这份字幕翻译成英文」），由用户发送，不自动发送。结果不属于项目时是无项目的会话。
+Rules:
 
-规则：
+- **Pick existing items; no need to open them first.** The input picker reads Space's catalog: for each video, whether it has a transcript, what language it is in, and which translations and dubs exist. The selected video does not need to be open in the editor. The Runtime opens it while the tool runs and closes it afterwards.
+- **Results need not belong to a project.** Only "Create new video" asks for a project, defaulting to the last one used. The material stays in place by default and is only linked. The new video is an ordinary video entry in Space, with its source recorded as this tool run. Other results are saved to the save location and do not ask for a project.
+- **Transcription can identify speakers.** Under "More options", folded below the speech model, is "Identify speakers". Its current status appears in the heading. Models that diarize on their own (MOSS Transcribe) always have it on. Other local models need the "speaker diarization" model pack: if the pack is installed, the option is on by default; if not, it is off by default, and turning it on downloads the pack in place. The run cannot start until that download finishes. Cloud services that do not diarize keep it off and cannot turn it on. A choice the user has made is kept when switching models. When a model pack does the diarization, the run gains one extra step, "Identify speakers", and the result states how many speakers were found.
+- **Writing into an existing video is an ordinary edit.** The result is committed as one edit, subject to the same version checks and protections as a manual edit, and it can be undone. Translations and dubs do not overwrite: translating the same language again adds another translation, and dubbing again adds another set of dubs. The user decides in the editor which one to use. Transcripts do not coexist as two copies: transcribing again either creates a new video or replaces the current transcript, and translations, subtitles and dubs carry over according to the rules (§5.11). A tool never silently rewrites content the user has edited by hand. Replacing an edited transcript requires accepting a warning first (§5.11).
+- **Same-named operations in the editor.** Actions such as "Transcribe" or "Translate" inside an open video are handed to the agent by default (§5.10). When the user switches to "Call the model directly", it runs the same flow and creates the same task record as selecting this video from the tool entry point.
+- **Authorization is handled on the spot.** When a tool needs to send data to an online service and the existing authorization is not enough, the tool page states what will be sent, to whom, and the estimated cost. Once the user agrees, the tool continues. The user is not sent elsewhere to add authorization and then come back to retry.
+- **Progress and failure.** Each run, including direct tasks such as speech generation, image generation and text generation, is one task in the task center, with progress shown per step. A failure stops at that step, and the run can be retried from that step. Videos already created and completed steps are kept. Direct tasks and file transcoding have no steps. The failure reason is written above "Retry". "Retry" (for finished runs, "Run again") returns to the tool page with the parameters already filled in, and whether to change them is up to the user. After a failed transcription, entering from the Space item's "Retry transcription…" (§4.4) works the same way: the tool page is pre-filled with the failed run's model, language, speaker identification and other parameters, and the top shows the failure reason and "Last run · model · how long ago". The task details show the same output list, save location and result actions, so the user can return to the work after leaving the tool page.
+- **Relationship with the agent.** Tool results are visible to the agent. When the video is opened in a session later, its transcript, translations and dubs are there. Results in Space are brought into a session with "Hand to Agent" or "Continue in session". Tool entry points (the Rail's tool pages and the matching CLI commands) follow a fixed flow only and do not start an agent. Entry points in the editor hand off to the agent by default, and take the fixed flow only when the user explicitly switches (§5.10). Once a run has started, the two do not hand off to each other (architecture design §7.9).
 
-- **选已有的，不要求先打开。** 输入选择器读的是 Space 的目录：每个视频有没有文稿、是什么语言、已有哪些译文与配音。选中的视频不需要在编辑器里开着，工具运行期间由 Runtime 代为打开，结束后放下。
-- **结果不必属于项目。** 只有「新建视频」要选一个项目（默认是上次用的），素材默认留在原处、只做链接；新视频在 Space 里是普通的视频条目，来源记为这次工具运行。其他结果都保存到保存位置，不问项目。
-- **转录可以识别说话人。** 语音模型下面折起的「更多选项」里有「识别说话人」，标题上写着当前状态：自带区分的模型（MOSS Transcribe）一直开着；其他本机模型要「说话人区分」模型包，装了默认开、没装默认关，打开时就地下载，下完之前不能开始；不区分说话人的在线服务关着、不能开。用户拨过的选择换模型也保留。由模型包区分时，运行多一步「识别说话人」，结果写出区分出几位。
-- **写进已有视频是普通的编辑。** 结果作为一笔编辑提交，与手工编辑一样受版本检查与保护约束，可以撤销。译文与配音不覆盖：再次翻译同一种语言新增一份译文，再次配音新增一组配音，由用户在编辑器里决定用哪一份。文稿不并存两份：再次转录要么新建一部视频，要么取代当前文稿，译文、字幕与配音按规则结转（§5.11）。用户手工改过的内容不被工具悄悄改写：取代改过的文稿要先接受警告（§5.11）。
-- **编辑器里的同名操作。** 在打开的视频里做「转录」「翻译」这类事，默认交给智能体（§5.10）；用户改选「直接调模型」时，与从工具入口选中这个视频是同一个流程、同一条任务记录。
-- **授权在当场完成。** 工具需要把数据发给在线服务而授权不够时，在工具页里说明要发什么、发给谁、预计多少钱，用户同意后继续；不让用户去别处补授权再回来重试。
-- **进度与失败。** 每次运行（包括生成语音、生成图片、文本生成这类直接任务）是任务中心里的一条任务，按步骤显示进度；失败停在那一步，可以从那一步重试。已经建好的视频与完成的步骤保留。直接任务与文件转码没有步骤：失败原因写在「重试」上面，「重试」（做完的叫「再做一次」）回到参数已经填好的工具页，改不改由用户。转录失败后从 Space 条目的「重试转录…」进来（§4.4）也是这样：工具页预填失败那次的模型、语言、识别说话人等参数，顶部写出失败原因与「上次 · 模型 · 多久前」。任务详情里有同样的产物列表、保存位置与结果操作，离开工具页也能回来处理。
-- **与智能体的关系。** 工具的结果对智能体可见：之后在会话里打开这个视频，文稿、译文与配音都在；Space 里的结果经「交给 Agent」或「在会话中继续」带进会话。工具入口（Rail 的工具页与 CLI 里对应的命令）只走固定流程，不启动智能体；编辑器里的入口默认交给智能体，由用户显式改选才走固定流程（§5.10）。一次运行开始之后，两者不互相转交（架构设计 §7.9）。
+#### Command line and external agents
 
-#### 命令行与外部 Agent
+Besides the commands that match the tool pages, the `cuccut` command line gives the user in the terminal, and the agents the user runs there (Claude Code, Codex, and so on), a set of commands for operating CucCut. These cover one-step actions such as transcribe, translate, dub, download and export, plus reading and writing videos, documents, assets, subtitles and jobs. This is the [agent surface](../glossary.md#runtime).
 
-命令行 `cuccut` 除了与工具页对应的命令，还给终端里的用户、以及用户在终端里使用的 Agent（Claude Code、Codex 等）一套操作 CucCut 的命令，即 [Agent 面](../glossary.md#运行时)：转录、翻译、配音、下载、导出这类一步完成的动作，以及对视频、文档、素材、字幕与任务的读写。
-
-- **与 MCP 同名**。Agent 面由 Runtime 里同一份工具目录派生：会话里的智能体、经 MCP 服务接入的外部 Agent 与命令行用的是同一套能力。命令名与 MCP 工具名一一对应，MCP 的 `a_b` 就是 `cuccut a b`（`videos_frames` ↔ `cuccut videos frames`），转录、导出这类一级动词两边同名（`transcribe` ↔ `cuccut transcribe`）。每条命令的参数、效果与示例用 `cuccut help <命令>` 查看。
-- **确认由终端负责**。命令行是用户本人在操作，或是用户授权的 Agent：不走 CucCut 里的审批，确认由终端里的用户或 Agent 宿主自己的权限提示负责。删除这类不能撤销的命令要加 `--yes`，否则只说明将要做什么并拒绝。命令行的修改算用户本人的，桌面应用里可以撤销；数据外发与桌面应用遵守同样的授权（§7.2）。
-- **长任务等到完成**。转录、导出这类耗时的命令默认等到任务结束再返回，期间显示进度，结束时给出结果的位置。
-- **不必先开 App**。App 开着时命令行用它的 Runtime；没开时命令行自己拉起一个，空闲一段时间后自动退出，不在后台留下进程。
-- **管理桶另列**。设置、模型服务与凭据、对外服务、skill 的添加与开关这类本机管理是命令行的[管理桶](../glossary.md#运行时)：给人用的管理命令，不在 Agent 面里。
+- **Same names as MCP.** The agent surface is derived from the same tool catalog in the Runtime. The agent in a session, external agents connected through the MCP server, and the command line all use the same capabilities. Command names map one-to-one to MCP tool names: MCP's `a_b` is `cuccut a b` (`videos_frames` ↔ `cuccut videos frames`). Top-level verbs such as `transcribe` and `export` have the same name on both sides (`transcribe` ↔ `cuccut transcribe`). Use `cuccut help <command>` to see each command's arguments, effects and examples.
+- **Confirmation is handled by the terminal.** The command line is operated by the user in person, or by an agent the user has authorized. It does not go through CucCut's approval step. Confirmation is left to the user in the terminal or to the agent host's own permission prompts. Commands that delete something irreversibly require `--yes`; without it, the command only says what it would do and is refused. Changes made from the command line count as the user's own and can be undone in the desktop app. Sending data out follows the same authorization as the desktop app (§7.2).
+- **Long jobs run to completion.** Time-consuming commands such as transcribe and export wait until the job finishes by default. They show progress while running and report where the result is when they finish.
+- **No need to open the App first.** When the App is open, the command line uses its Runtime. When it is not, the command line starts its own Runtime, which exits automatically after a period of inactivity and leaves no process running in the background.
+- **Admin bucket is listed separately.** Local administration, such as settings, model services and credentials, external services, and adding or toggling skills, is the command line's [admin bucket](../glossary.md#runtime). These are management commands for people and are not part of the agent surface.
 
 ---
 
 ## 3. Home
 
-Home 是与智能体协作的地方，分三栏：侧栏、会话区、功能区。会话区的顶部列出当前项目下的视频，可以从这里打开。
+Home is where you collaborate with the agent. It has three columns: the sidebar, the session area and the feature area. The top of the session area lists the videos in the current project, and you can open them from there.
 
-### 3.1 侧栏：项目与会话列表〔UX-06〕
+### 3.1 Sidebar: project and session list〔UX-06〕
 
-自上而下：
+From top to bottom:
 
-| 区域 | 内容 |
+| Area | Content |
 | --- | --- |
-| 顶部 | 新建会话、搜索、通知 |
-| 置顶 | 用户置顶的项目或会话 |
-| 项目 | 项目列表，以目录（文件夹）呈现，不显示视频缩略图。展开后显示该项目下的会话，按最近活动排序；可新建项目、打开已有目录 |
-| 最近 | 不属于任何项目的会话 |
+| Top | New session, search, notifications |
+| Pinned | Projects or sessions the user has pinned |
+| Projects | Project list, shown as directories (folders). Video thumbnails are not shown. Expanding a project shows its sessions, sorted by most recent activity. You can create a project or open an existing directory |
+| Recent | Sessions that do not belong to any project |
 
-规则：
+Rules:
 
-- 每个会话显示标题与状态徽标：进行中、等待批准、有待审阅结果、已完成未读、失败。项目行汇总其下会话的状态。
-- 切换会话只切换视图。正在运行的任务继续运行。
-- 项目的菜单：新建会话、重命名、在 Space 中显示、归档。会话的菜单：重命名、置顶、移入项目（P1）、归档、删除。
-- 归档只影响列表显示。删除会话不删除项目、视频、产物或已发生的修改；删除视频是另一个操作，遵守 §4.9 的删除规则。
-- 标题由系统根据任务生成，用户可改。
+- Each session shows its title and a status badge: in progress, waiting for approval, has results to review, completed and unread, or failed. A project row summarizes the status of the sessions under it.
+- Switching sessions only switches the view. Running tasks keep running.
+- Project menu: new session, rename, show in Space, archive. Session menu: rename, pin, move into a project (P1), archive, delete.
+- Archiving only affects the list display. Deleting a session does not delete the project, its videos, its outputs or changes already made. Deleting a video is a separate action and follows the deletion rules in §4.9.
+- Titles are generated by the system from the task and can be changed by the user.
 
-### 3.2 会话区
+### 3.2 Session area
 
-#### 3.2.1 起始状态〔UX-01〕
+#### 3.2.1 Starting state〔UX-01〕
 
-没有选中会话时，主入口是输入与拖放：「描述要做的视频，或把已有视频拖进来」。可以展示「从内容创作」「修改已有视频」「继续项目」三个起点，但它们不是必须填写的向导，也不按手绘、数学、白板等风格拆成互斥的产品入口。输入框不另设画幅与时长：智能体从用户的话和材料里看出来，没说的按内容决定。
+When no session is selected, the main entry point is the input box and drag-and-drop: “描述要做的视频，或把已有视频拖进来” (Describe the video to make, or drag in an existing one). It may show three starting points, “从内容创作” (Create from content), “修改已有视频” (Edit an existing video) and “继续项目” (Continue a project). These are not required wizards, and they are not split into mutually exclusive product entries by style, such as hand-drawn, math or whiteboard. The input box has no separate frame-size or duration fields: the agent infers them from what the user says and the materials, and anything unspecified is decided by the content.
 
-**项目托盘**。输入框下沿是项目托盘：「这台电脑」、项目菜单与项目路径。菜单第一项是「不用项目」，其余是项目（按最近活动排，同侧栏）与「新建项目…」，当前那一项标「当前」；不用项目时路径处写明视频和文件放在这个会话自己的文件夹里（§2.3）。从项目的「新建会话」进来时选中那个项目；否则沿用上次在托盘里选的（记在这台电脑上；项目还在、没归档才算），没有就不用项目。编辑器开着某个项目里的视频时，新会话只能建在那个项目里（会话要能改这部视频），「不用项目」不可选。
+**Project tray.** Below the input box is the project tray: “这台电脑” (This computer), the project menu and the project path. The first item in the menu is “不用项目” (No project). The rest are projects (sorted by recent activity, as in the sidebar) and “新建项目…” (New project…). The current one is marked “当前” (Current). With “不用项目”, the path area states that videos and files are kept in the session's own folder (§2.3). When you enter from a project's “新建会话” (New session), that project is selected. Otherwise the last choice made in the tray is reused (stored on this computer; it applies only if the project still exists and is not archived), and if there is none, “不用项目” is used. When the editor has a video from a project open, a new session can only be created in that project, because the session must be able to modify that video, so “不用项目” cannot be selected.
 
-**快速开始**。输入框下面一行快速开始（加字幕、转录并翻译、剪口播、音频转视频，以及新建空白视频）。点一个只把一句提示词填进输入框，提示写明接着把视频（音频）拖进来或贴上链接：本机文件、YouTube、X 等下载工具支持的网站链接都可以（§2.7「下载视频」）。「转录并翻译」的目标语言是一处待填项，不预设任何语言：用户填过一次就沿用上次填的（记在这台电脑上），没填就以待填项交给智能体，由它动手前先问。
+**Quick starts.** Below the input box is a row of quick starts: add subtitles, transcribe and translate, cut a talking-head video, audio to video, and new blank video. Clicking one only fills the input box with a prompt. The prompt says to drag in or paste the video (audio) next. Local files, YouTube, X, and links to any site supported by the download tool are all accepted (§2.7 “Download video”). The target language of “转录并翻译” (Transcribe and translate) is a field to fill in, with no language preset. Once the user has filled it in, the last value is reused (stored on this computer). If it is left blank, it is handed to the agent as a blank field, and the agent asks before it acts.
 
-拖入材料后，先显示识别到的类型、可用音轨、可访问状态和必要的警告。新用户可以先探索示例或打开已有的视频；需要某个模型时再引导完成对应配置，不在首次启动时用一整页密钥表单拦住用户。
+After materials are dragged in, the app first shows the detected type, the available audio tracks, accessibility status and any necessary warnings. New users can first explore examples or open an existing video. When a model is needed, the app guides the user through the matching setup and does not block first launch with a full-page key form.
 
-**模板**。起始页的输入框下方有一组创作模板卡片（格式与使用语义见[模板包规范](../spec/template-spec.md)），「全部模板」打开带筛选与详情的模板库。模板分两类：**场景模板**选中后挂在输入框上并把它的一两句简报填进去，发送时由 Runtime 拼上简报引导前言、模板的默认画幅与时长和模板正文；**作品示例**只把一段用户口吻的请求放进输入框，之后与普通消息相同。填进去的文字里留着待填项（受众、产品、成片语言等），显示成可点击的标记：点一处就地替换，Tab / Shift+Tab 前后跳；输入框下方一行提示还有几处没填与「填下一处」，不拦发送——没填的项以「[label]」交给智能体，由它当作简报缺项一起问。模板详情列出每一项要补什么并给一句示例，还写明这个模板建议智能体先读的 skill（§6.9）。换选另一个场景模板会换掉输入框里的文字并给出撤销；再点一次已挂着的模板只摘掉它，文字不动。
+**Templates.** Below the input box on the starting page is a set of creative template cards (for format and usage semantics, see the [template package spec](../spec/template-spec.md)). “全部模板” (All templates) opens the template library with filtering and details. Templates come in two kinds. **Scene templates**, once selected, attach to the input box and fill it with their one or two sentence brief. When sent, the Runtime prepends the brief's guiding preamble, the template's default frame size and duration, and the template body. **Example works** only put a request in the user's voice into the input box, and from then on behave like any normal message. Fields left in the filled text (audience, product, output language and so on) appear as clickable markers. Clicking one replaces it in place, and Tab / Shift+Tab move forward and back. A line below the input box shows how many fields remain and offers “填下一处” (Fill next). Sending is not blocked: unfilled fields are passed to the agent as “[label]”, and the agent asks about them together as missing brief items. Template details list what each field needs and give one example, and also state which skill the template suggests the agent read first (§6.9). Choosing a different scene template replaces the text in the input box and offers undo. Clicking an already attached template again only removes it, and the text is left unchanged.
 
-#### 3.2.2 消息流
+#### 3.2.2 Message stream
 
-会话由三类内容组成：
+A session is made of three kinds of content:
 
-- **用户消息**：文字、附件与引用标签。
-- **智能体回复**：文字说明。
-- **任务卡片**：由真实事件、任务记录和提交回执驱动的结构化卡片（§6.5），承载目标、视频与在它上面做的活、下载、候选、变更和授权。
+- **User messages**: text, attachments and reference tags.
+- **Agent replies**: text explanations.
+- **Task cards**: structured cards driven by real events, task records and submission receipts (§6.5). They carry the goal, the video and the work done on it, downloads, candidates, changes and authorizations.
 
-执行过程默认折叠：两段回复之间的步骤与变更回执收成一行灰字摘要加展开箭头，不放图标；按种类首次出现的顺序归纳，读取与修改按去重后的文件计数，视频修改按回执计笔数（例如「读取了 2 个文件、运行了命令」「调用了工具、提交了 1 笔视频修改」）。有失败也是灰字，只在后面写「N 项失败」。展开后是一个带边框的框，每一步一行、每张变更回执一行（§6.5），行间有分隔线；框里的每一行还能再展开，看输入、输出与错误。步骤行是固定的类别名（运行命令、读取文件、修改文件、搜索、其他工具）加次级摘要（命令、相对路径或查询词），右侧是非零退出码与耗时。CucCut 自己的工具不写「其他工具」，念这一类自己的名字，摘要只取调用参数里现成的字段（例如「转录 · large-v3」「翻译 · en」「剪辑 · 3 处」「导出 · 成片 · MP4」「生成图片 · 4 张」「下载视频 · youtube.com」）；参数里没有的时长、句数不写。会话在跑、这一组里有步骤正在进行时，摘要行换成正在进行的那一步：前面是像素加载动画，按步骤类别轮换几个相关的图（转录用麦克风、对话，剪辑用时间线、裁剪……），类别名上显示扫光，后面是已用时间；几步同时进行时不写时间，写「等 N 项」。这一行也默认折叠；展开后框里那一步用静止的类别图标，只留扫光（系统要求减少动态效果时都不动）。正在进行的步骤展开后还没有输出时显示骨架占位，步骤完成后仍没有输出才写「没有输出」。输出是 unified diff 时按增删行上色。失败的步骤换成警示图标，展开后多一段「错误」；失败一旦出现，不被之后的更新改回。默认呈现的是任务状态，不是底层日志，也不依赖模型服务暴露内部推理。
+Execution steps are collapsed by default. The steps and change receipts between two replies are folded into a single line of grey text with an expand arrow, without an icon. They are summarized in the order each kind first appears. Reads and edits count deduplicated files, and video edits count receipts as edit counts. For example: “读取了 2 个文件、运行了命令” (read 2 files, ran a command) or “调用了工具、提交了 1 笔视频修改” (called a tool, submitted 1 video edit). A failure also appears as grey text, with “N 项失败” (N failed) at the end. When expanded, a bordered box appears. Each step gets one line, and each change receipt gets one line (§6.5), with dividers between lines. Each line in the box can be expanded again to see its input, output and errors. Step lines use fixed category names (run command, read file, edit file, search, other tool), followed by a secondary summary (the command, relative path or query term). On the right are the non-zero exit code and the duration. CucCut's own tools are not labeled “其他工具” (other tool). They use the tool's own name for that category, and the summary only takes fields already present in the call arguments, for example “转录 · large-v3” (transcribe · large-v3), “翻译 · en” (translate · en), “剪辑 · 3 处” (edit · 3 places), “导出 · 成片 · MP4” (export · final cut · MP4), “生成图片 · 4 张” (generate image · 4), and “下载视频 · youtube.com” (download video · youtube.com). Durations and sentence counts that are not in the arguments are not written. While the session is running and a step in this group is in progress, the summary line changes to the step in progress. It starts with a pixel loading animation that rotates through several images related to the step category (for transcription, a microphone or dialogue; for editing, a timeline or crop, and so on). The category name shows a shimmer sweep, and after it is the elapsed time. When several steps run at once, no time is written and “等 N 项” (waiting on N items) is shown instead. This line is also collapsed by default. When expanded, the in-progress step in the box uses a static category icon, with only the shimmer kept (no motion when the system requests reduced motion). An in-progress step that has no output yet shows a skeleton placeholder. If a completed step still has no output, “没有输出” (no output) is written. When the output is a unified diff, added and removed lines are colored. A failed step is replaced by a warning icon, and when expanded it gains an “错误” (Error) section. Once a failure appears, later updates do not change it back. The default view presents task status, not low-level logs, and does not depend on the model service exposing internal reasoning.
 
-回复文字匀速逐字显示：每帧放出的字数与尚未显示的积压成正比，切点不落在一个字的中间；回复结束（包括停止）立即显示全文，打开会话时已经写完的回复整段显示。正文按 Markdown 渲染，段落里的单个换行保留为换行。流式中只处理最后一段：没写完的加粗、斜体、删除线与行内代码先补齐，没写完的链接只显示文字，没写完的图片先不显示，未闭合的代码块里不作处理，不闪出标记符号。代码块悬停时可以复制。行内代码像项目里的文件路径（带目录前缀，或多段路径加已知扩展名，可带行号或行范围）时可以点击，在功能区打开文件，提示里是相对路径与行范围；单独的文件名不链接。
+Reply text is shown character by character at a steady pace. The number of characters released each frame is proportional to the backlog not yet shown, and cut points never fall in the middle of a character. When a reply finishes (including when it is stopped), the full text appears immediately. A reply that was already fully written when the session is opened is shown in full. Body text is rendered as Markdown, and single line breaks within a paragraph are kept as line breaks. While streaming, only the last paragraph is processed. Unfinished bold, italic, strikethrough and inline code are completed first. An unfinished link shows only its text. An unfinished image is not shown yet. Unclosed code blocks are not processed, so markup symbols never flash on screen. Code blocks can be copied on hover. Inline code that looks like a project file path (with a directory prefix, or a multi-part path with a known extension, optionally with a line number or line range) is clickable. It opens the file in the feature area, and the tooltip shows the relative path and line range. A bare file name is not linked.
 
-需要用户去设置里改的（安装或启用模型服务、更换密钥、调整 Agent 或权限、网站登录要勾选的浏览器），回复里写成设置链接，不只写「去设置里改」：链接指向具体的那一节，模型的设置精确到那种能力的能力页、服务商页或我的声音那一页（§7.6），地址与界面内链接相同（`/settings/<节>`、`/settings/models/<类>[/<页>]`）；旧的本地模型、云端模型页的地址落到那种能力的能力页。设置链接前面有设置图标，提示里是它在设置里的位置，点了在当前窗口打开那一页，后退回到会话。地址由工具结果与给智能体的说明提供，智能体不自己猜；认不出的地址只显示文字。浏览器里没有设置，设置链接只显示文字。
+Anything the user needs to change in Settings (installing or enabling a model service, replacing a key, adjusting the agent or permissions, or the browser where website login must be ticked) is written in the reply as a settings link, not just as “去设置里改” (change it in Settings). The link points to the specific section. Model settings go to the capability page for that kind of capability, the provider page, or the “我的声音” (My voice) page (§7.6). The addresses are the same as the in-app links (`/settings/<section>`, `/settings/models/<kind>[/<page>]`). Old addresses for local models and the cloud model page resolve to the capability page for that kind of capability. A settings link has a settings icon in front. The tooltip shows its location in Settings. Clicking it opens that page in the current window, and going back returns to the session. Addresses are provided by tool results and by the instructions given to the agent. The agent does not guess them. Addresses that are not recognized show only as text. In the browser there are no settings, so settings links show only as text.
 
-一个回合从一条用户消息到下一条用户消息之前，回合最后一行下面是页脚。进行中写「正在工作 · 0:42」并每秒更新，前面一个轮换全部图形的像素加载动画；等用户允许时写「等你允许 · 0:42」，不带动画；完成后写「已工作 1:03」，悬停时换成结束时刻；停止与失败按任务事件如实写明。页脚右侧的「复制」复制这一轮全部回复正文（Markdown 源码，不含步骤与推理），回复本身不再各带复制按钮。只有用户消息、还没有回复的回合不显示页脚，除非这一轮已停止或失败。线程末尾不另设「正在回复」之类的占位，进行状态由页脚表达。同一会话里同时播放的加载动画不超过两处（正在进行的那一步所在的摘要行与页脚），跑完的摘要行、头像与输入框不放动画；像素图只用图案类图形，不用字母或第三方标识。
+A turn runs from one user message to the next user message. Below the last line of a turn is a footer. While in progress, it reads “正在工作 · 0:42” (Working · 0:42) and updates every second, with a pixel loading animation in front that rotates through all the shapes. When waiting for the user's permission, it reads “等你允许 · 0:42” (Waiting for your permission · 0:42), without animation. When complete, it reads “已工作 1:03” (Worked 1:03). On hover, it changes to show the end time. Stopping and failure are stated as the task events report them. On the right side of the footer, “复制” (Copy) copies the full body text of all replies in this turn (Markdown source, excluding steps and reasoning). Replies do not each carry their own copy button. A turn that has only a user message and no reply yet shows no footer, unless the turn has been stopped or has failed. The end of the thread has no separate placeholder such as “正在回复” (Replying). Progress is expressed by the footer. No more than two loading animations play at the same time in a session (the summary line of the step in progress and the footer). Completed summary lines, avatars and the input box do not animate. Pixel images use only pattern-type shapes, not letters or third-party marks.
 
-行与行的间距按相邻两行的种类定：连续的用户消息之间 4，用户消息到回复 0，相邻步骤 0，用户消息到步骤 16，回复与步骤之间 4，同一条回复里的段块之间 12，任何一行到页脚 4，其余 16。
+The spacing between lines is determined by the kinds of the two adjacent lines: 4 between consecutive user messages, 0 from a user message to a reply, 0 between adjacent steps, 16 from a user message to a step, 4 between a reply and a step, 12 between blocks within the same reply, 4 from any line to the footer, and 16 otherwise.
 
-卡片状态不从「已经完成」这样的自然语言推断。卡片上的对象可以点击：在功能区打开预览、定位到时间点、对比前后、试听候选。
+Card status is not inferred from natural language such as “已经完成” (already completed). Objects on a card are clickable: open a preview in the feature area, jump to a timestamp, compare before and after, or listen to a candidate.
 
-**视频卡**。智能体新建或修改了一部视频，或在它上面提交了转录、翻译、导出、从链接导入，会话里就出这部视频的视频卡；会话的第一句话带着开着的视频发出（Space 的悬浮会话、开着视频的起始页，§5.1），这部视频也随那条消息出一张卡，之后的消息带着编辑器状态不再挪卡。视频一存在卡就出现，「打开编辑器」始终可用；还不知道视频在哪（固定流程刚建出来、Space 还没扫到）时先置灰。一条会话里一部视频只有一张卡，挂在下面两处里靠后的那一处：最后一个引用它的块之后（步骤组里这个任务提交了指向它的活、变更回执、新建它的那一步所在的块，或带它发出的第一句话）；卡上的活在后面的回合开始时还没结束（在跑或排队）时，这件活结束之前开始的最后一轮（还在跑时就是最新一轮）的最后一个块之后。先后只比活的结束时刻与那一轮用户消息的发送时刻。卡挪走后前面的回合不再有它；活结束后卡不挪回去。
+**Video card.** When the agent creates or modifies a video, or submits transcription, translation, export or import from a link on it, a video card for that video appears in the session. The first message of a session is sent with the open video attached (from the floating session in Space, or the starting page with a video open, §5.1). That video also gets a card alongside that message, and later messages do not move the card even if the editor state changes. As soon as a video exists, its card appears, and “打开编辑器” (Open editor) is always available. If the location of the video is not yet known (the fixed flow has just created it and Space has not scanned it yet), the card is greyed out until it is known. A session has only one card per video, and it sits at the later of two positions. The first is after the last block that references it: within a step group, this is the step that submitted a job pointing at it, a change receipt, or the step that created it, or the block that carries the first message sent with it. The second applies when a job on the card has not finished at the start of a later turn (still running or queued). Then it sits after the last block of the last turn that started before that job finished (if still running, this is the latest turn). Ordering compares only the job's finish time with the send time of that turn's user message. When the card moves, earlier turns no longer show it. Once the job finishes, the card does not move back.
 
-卡头是画面、名字、状态词与时长。画面默认不画播放钮；能在卡里播的（有画面、Space 里有这部视频、源文件在），指针移上去或键盘聚焦时画面中间才出现播放钮，没有悬停的设备一直显示。点画面就在卡里原地播放，播放器占画面的位置，带播放控制（播放暂停、进度、音量、倍速、全屏），不离开会话；播的是视频的原片，不是剪过的版本。不能在卡里播的，点画面照旧打开编辑器。
+The card header shows the picture, the name, the status word and the duration. The picture does not show a play button by default. If the video can be played in the card (it has a picture, is available in Space, and its source file exists), a play button appears in the middle of the picture when the pointer moves over it or the keyboard focuses it. On devices without hover, it is always shown. Clicking the picture plays the video in place within the card. The player takes the picture's position and has playback controls (play/pause, progress, volume, speed, fullscreen), without leaving the session. It plays the original source of the video, not an edited version. For a video that cannot be played in the card, clicking the picture still opens the editor.
 
-状态词只来自任务记录与已打开视频的文稿：转录在跑时写「转录中」与百分比，排队时写「排队中」；没有转录在跑或排队、有翻译在跑时写「翻译中」，只有一件固定流程的翻译在跑、且已经有步骤进度时才加百分比（智能体自己逐句翻译的不写）；有转录结果时写「已转录」，转录失败过写「失败」，什么都不知道时不写，不从「没有记录」推出「未转录」。下面是这条会话在这部视频上的活（转录、重新转录、翻译、导出、从链接导入），卡上只摊开要看的那部分：有活在进行（在跑或排队）时摊开全部进行中的，一件一行；都结束了只摊开最后结束的一件（按提交先后）。其余收进一行「之前的 N 项」，默认收起，展开后按新的在前列出，每件只留名称、状态词、导出的文件名、失败原因与按钮；收起的活里有失败且带补救或重试按钮的，这一行右侧加警示图标与「N 项待处理」。每一行的内容：
+Status words come only from task records and from the transcript of an open video. While transcription is running, the card shows “转录中” (Transcribing) with a percentage. When queued, it shows “排队中” (Queued). When no transcription is running or queued, but a translation is running, it shows “翻译中” (Translating). A percentage is added only when a fixed-flow translation is the only one running and it already has step progress (translations the agent does sentence by sentence show no percentage). When a transcription result exists, it shows “已转录” (Transcribed). If a transcription has failed before, it shows “失败” (Failed). When nothing is known, nothing is shown. The card does not infer “未转录” (Not transcribed) from “no record”. Below are this session's jobs on this video (transcribe, re-transcribe, translate, export, import from a link). The card only expands the parts that need attention. If jobs are in progress (running or queued), all in-progress jobs are expanded, one per line. If all have finished, only the most recently finished one is expanded (ordered by submission). The rest are collapsed into one line, “之前的 N 项” (N earlier items). It is collapsed by default. When expanded, they are listed newest first, and each keeps only its name, status word, exported file name, failure reason and buttons. If a collapsed job has a failure with a remedy or retry button, a warning icon and “N 项待处理” (N items pending) appear on the right of this line. The content of each line:
 
-- 进行中：阶段、细进度条（没有总量时不写百分比）、按单位的计数（「已识别 1:02 / 3:26」「已识别 12 / 40 段」「已译 120 / 300 句」「已下载 12 MB / 45 MB」）、已用时长与「取消」。
-- 智能体自己逐句翻译（不交给翻译流程，译完一次写进视频）也是卡上的一行：名称写「翻译 · 目标语言」，进行中写「Agent 逐句翻译 · 共 N 句」与不定进度条，不写百分比，没有「取消」——这件活跟着智能体的回合走，要停下就停止那条会话；回合结束还没写进视频的记为中断，用户停止的记为已取消。
-- 转录与重新转录另写一行用的模型与参数：模型名 · 本机或云端 · 语言，开了识别说话人时再写「识别说话人」，只读。
-- 完成：结果事实（文稿已写进视频、译文语言、警告）；导出列出文件名、尺寸、时长与大小，成片和音频可以播放，文件可以在文件夹中显示。
-- 失败：原因；有确定去处时给补救按钮（去对应能力的设置页、API 提供方、智能体设置）；只有能对账重试的（中断、结果不明）才给「重试」。取消写「已取消」。
-- 导出在渲染时，已用时长后面接预计剩余时间（「已用 0:41 · 剩余 0:52」，与导出窗口同一份推算，§8.3）；别的活不写预计剩余时间。不编造句数与说话人数，不放没有动作的按钮。
+- In progress: the stage, a fine progress bar (no percentage when there is no total), unit-based counts (“已识别 1:02 / 3:26” (recognized 1:02 / 3:26), “已识别 12 / 40 段” (recognized 12 / 40 segments), “已译 120 / 300 句” (translated 120 / 300 sentences), “已下载 12 MB / 45 MB” (downloaded 12 MB / 45 MB)), the elapsed duration, and “取消” (Cancel).
+- Sentence-by-sentence translation done by the agent itself (not handed to the translation flow, and written into the video once when finished) is also one line on the card. Its name reads “翻译 · 目标语言” (Translate · target language). While in progress it reads “Agent 逐句翻译 · 共 N 句” (Agent sentence-by-sentence translation · N sentences in total) with an indeterminate progress bar and no percentage. There is no “取消” (Cancel). This job follows the agent's turn, so to stop it, stop that session. If the turn ends before the result is written into the video, it is recorded as interrupted. If the user stopped it, it is recorded as cancelled.
+- Transcription and re-transcription have a separate line showing the model and parameters used: model name · local or cloud · language. If speaker identification is on, “识别说话人” (Speaker identification) is added. This line is read-only.
+- Completed: result facts (transcript written into the video, translation language, warnings). An export lists the file name, dimensions, duration and size. Final cuts and audio can be played, and files can be shown in the folder.
+- Failed: the reason. When there is a definite place to go, a remedy button is given (the settings page for the relevant capability, the API provider, or agent settings). Only jobs that can be reconciled and retried (interrupted, result unknown) get a “重试” (Retry) button. A cancelled job shows “已取消” (Cancelled).
+- While an export is rendering, the estimated remaining time follows the elapsed time (“已用 0:41 · 剩余 0:52” (Elapsed 0:41 · Remaining 0:52)). It uses the same projection as the export window (§8.3). Other jobs do not show estimated remaining time. Do not invent sentence counts or speaker counts, and do not place buttons that have no action.
 
-**下载卡**。智能体从链接导入、视频还没建出来时出一张下载卡：标题（还不知道时写站点）、脱敏后的链接、已下载与总量、百分比、已用时长与「取消」；失败写原因与说明。视频一建出来，同一位置换成视频卡，下载后的转录作为卡上的一行接着进行。只下载、不建视频的，完成后仍是下载卡，列出落地的文件，可以在文件夹中显示。
+**Download card.** When the agent imports from a link and the video has not been created yet, a download card appears. It shows the title (the site name if the title is not yet known), the redacted link, the downloaded amount and total, the percentage, the elapsed duration and “取消” (Cancel). A failure shows the reason and an explanation. Once the video is created, the video card replaces the same position, and the transcription after download continues as a line on the card. For a download that does not create a video, the card stays a download card after completion, listing the files saved, which can be shown in the folder.
 
-会话摘要（§3.3）里的视频卡与线程里的是同一张，内容与摊开、收起的规则相同。
+The video card in the session summary (§3.3) is the same card as in the thread. Its content and the rules for expanding and collapsing are the same.
 
-只为智能体内部取帧、检查字幕排版或试听而生成的导出标为 `purpose: preview`，不触发视频卡，不进入卡上的导出行、「之前的 N 项」与会话摘要的产物列表及计数，也不出现在 Space 里；没指定位置时写进工作目录下的隐藏目录，不和交付的文件混在一起。后台任务保留完整记录、进度、失败与文件。用户要求的预览、短片或分段仍是交付，按 `deliverable` 显示；省略用途的旧记录也按交付处理，不根据文件名或时长猜测。
+Exports generated only for the agent's internal use, such as extracting frames, checking subtitle layout or listening to a preview, are marked `purpose: preview`. They do not trigger a video card, do not enter the export line on the card, the “之前的 N 项” (N earlier items) list, the artifact list and count in the session summary, and do not appear in Space. If no location is given, they are written to a hidden directory in the working directory, so they are not mixed with delivered files. Background jobs keep the full record, progress, failures and files. A preview, short clip or segment the user asked for is still a deliverable and is displayed according to `deliverable`. Old records that omit the purpose are also treated as deliverables, and their purpose is not guessed from the file name or duration.
 
-#### 3.2.3 输入区
+#### 3.2.3 Input area
 
-- **附件与拖放**：视频、音频、图片、字幕、文档。输入框的「+」菜单以「添加」为标题，首项是带回形针图标的「文件和文件夹」，统一选择本地附件，不按图片、视频或文档拆成多个入口；桌面端的系统选择器支持文件和文件夹：macOS 可在同一个选择器里混选；Windows / Linux 先选择文件或文件夹，再打开相应的系统选择器。图片沿用附图上传通道；其他本机文件与文件夹作为可移除的路径引用随消息交给智能体，不因选择而扩大它的权限范围。Web 客户端支持通过同源认证通道上传图片和普通文件；每条消息最多 8 个附件，单文件为正大小且不超过 20 MiB。浏览器不获取本机路径，也不递归上传文件夹。已有内容的引用通过 `@` 补全或功能区的引用标签进入，不再单设文件引用菜单项。
-- **引用标签**〔UX-02〕：在功能区或 Space 中选中的对象、句子、时间段或版本，显示在输入框上方，例如「英文字幕 / 第 3 句 / 00:18–00:22 / 当前工作稿」。用户可以移除标签，或把范围改为整片。
-- **幻灯片标注**：在幻灯片标签里标注元素或区域、点「添加到对话」后，输入框上方出现「幻灯片标注 · N 条」。点开列出每条的位置和批注，可以逐条或全部移除，点一条跳回那一页。只带标注不写话也能发送，正文是一句固定的「请按这些幻灯片标注修改。」。发送后标注随消息显示，同样可以点开跳转（幻灯片设计 §8.2）。
-- **设计稿标注**：同一种做法，在设计稿标签里标注画板里的元素或区域，输入框上方另有一个「设计稿标注 · N 条」，点一条打开那份设计稿并定位到那个画板；只带标注时正文是「请按这些设计稿标注修改。」。同一条消息可以同时带幻灯片标注与设计稿标注，各自从 1 编号。
-- **设计系统标注**：同一种做法，在设计系统标签里打开「标注」（或按 C），点一个 token、文字样式、组件、素材、用法说明、章节标题或封面写批注，输入框上方另有一个「设计系统标注 · N 条」，点一条打开那套设计系统并定位到那个目标；只带标注时正文是「请按这些设计系统标注修改。」，与幻灯片、设计稿标注各自从 1 编号。
-- **访问模式**：监督、自动接受修改、自动（默认）、完全访问（§7.1）。每个会话各自设置，随时可切换。
-- **Skill**：为这条消息点选一个 skill（§6.9）。
-- **执行引擎**：只列出已验证可用的智能体引擎与模型。切换引擎时会话的目标、约束、视频状态和最近回执以摘要形式交接，不宣称原生会话逐字迁移。
-- **图标与窄输入区**：执行引擎选择器的收起按钮和菜单里每个引擎都带服务商图标；用户添加的自定义引擎显示名字首字母。输入区自身内容宽度不足 520px 时（首页与会话输入区相同，按输入区宽度而不是窗口宽度判断），访问模式只显示图标（悬停提示与无障碍标签仍是完整名称），执行引擎只显示图标加模型档位（如「Sonnet」，不带版本号）；跟随引擎默认模型时显示「默认」，只有厂商名加版本号的显示厂商名（如「GPT-5.5」显示「GPT」），认不出的模型名（例如整串小写的模型 id）原样显示，放不下时截断。
-- **发送与停止**：任务运行时发送按钮变为停止（§3.2.6）。
+- **Attachments and drag-and-drop**: video, audio, images, subtitles, documents. The "+" menu in the input box has a heading "Add", and its first item is "Files and folders" with a paperclip icon. It selects local attachments in one place and is not split into separate entries for images, video or documents. On desktop, the system picker accepts files and folders: on macOS, both can be mixed in the same picker; on Windows / Linux, the user first picks files or folders, then the matching system picker opens. Images use the attached-image upload channel. Other local files and folders are passed to the agent with the message as removable path references, and selecting them does not widen the agent's permission scope. The web client supports uploading images and ordinary files through the same-origin authenticated channel; each message allows at most 8 attachments, and each file must be non-empty and no larger than 20 MiB. The browser does not obtain local paths and does not upload folders recursively. References to existing content enter through `@` completion or through the reference chips in the feature area; there is no separate file-reference menu item.
+- **Reference chips** [UX-02]: the object, sentence, time range or version selected in the feature area or in Space appears above the input box, for example "English subtitles / Sentence 3 / 00:18–00:22 / Current working draft". The user can remove the chip, or change the range to the whole film.
+- **Slide annotations**: when the user annotates an element or area in the slide tab and clicks "Add to conversation", "Slide annotations · N" appears above the input box. Opening it lists each annotation's position and comment; the user can remove them one by one or all at once, and clicking one jumps back to that page. A message with annotations only, and no text, can still be sent; its body is the fixed sentence "Please revise according to these slide annotations." After sending, the annotations are shown with the message and can likewise be opened and jumped to (slide design §8.2).
+- **Design annotations**: the same approach, using the design tab to annotate elements or areas on the artboard. Above the input box there is a separate "Design annotations · N"; clicking one opens that design and locates that artboard. With annotations only, the body is "Please revise according to these design annotations." One message can carry both slide and design annotations at once, and each numbers from 1.
+- **Design system annotations**: the same approach. In the design system tab, the user opens "Annotate" (or presses C), then clicks a token, text style, component, asset, usage note, section heading or cover to write a comment. Above the input box there is a separate "Design system annotations · N"; clicking one opens that design system and locates that target. With annotations only, the body is "Please revise according to these design system annotations." Like slide and design annotations, it numbers from 1 on its own.
+- **Access mode**: Supervised, Auto-accept edits, Auto (default), Full access (§7.1). Each session sets its own mode and can switch at any time.
+- **Skill**: choose one skill for this message (§6.9).
+- **Execution engine**: lists only agent engines and models that have been verified to work. When switching engines, the session's goal, constraints, video state and latest receipts are handed over as a summary; the app does not claim that the native session carries over verbatim.
+- **Icons and narrow input area**: the collapse button of the execution engine picker, and every engine in its menu, shows the provider's icon; custom engines added by the user show the first letter of their name. When the input area's own content width is under 520px (the home page and session input area are the same; judged by the input area's width, not the window width), access mode shows only its icon (the hover hint and accessibility label still carry the full name), and the execution engine shows only its icon plus the model tier (such as "Sonnet", without the version number). When following the engine's default model, it shows "Default". Names that consist only of vendor and version show the vendor name (for example "GPT-5.5" shows "GPT"). Unrecognised model names (for example a fully lowercase model id) are shown as-is and truncated if they do not fit.
+- **Send and stop**: while a task is running, the send button becomes Stop (§3.2.6).
 
-#### 3.2.4 发送前同步
+#### 3.2.4 Sync before sending
 
-用户提交请求时，本次引用所依赖的本地修改必须先落盘，智能体才开始读取上下文。
+When the user submits a request, the local changes that this request's references depend on must be written to disk before the agent starts reading the context.
 
-- 等待期间输入框显示「正在保存本次引用的修改」。
-- 保存失败时显示具体对象和继续方式。不吞掉用户已输入的文字，也不带着旧上下文提交。
-- 正在进行且不能安全结束的手势或输入法组合文本：提示等待、取消发送或明确排除，不为了发送消息偷偷提交半个拖拽。
-- 只等待与本次引用相关的修改，不相关的后台任务继续运行。
-- 同步完成后显示所绑定的版本。之后移动播放头不改变任务目标〔AT-11〕。
-- 工作稿、候选和历史版本的引用标签必须能区分；候选要显式引用，不会被当成已应用的工作稿。
-- 收到「输入已过期」或「版本冲突」时，保留候选和用户输入，重新定位，不自动改选邻近片段。
+- While waiting, the input box shows "Saving changes for this request's references".
+- If saving fails, the specific object and how to continue are shown. Text the user has already typed is not discarded, and the request is not submitted with stale context.
+- For a gesture or IME composition that is in progress and cannot end safely: show a wait prompt, cancel the send, or explicitly exclude it. Do not silently commit half a drag just to send the message.
+- Only changes related to this request are waited for; unrelated background tasks keep running.
+- After sync completes, the bound version is shown. Afterwards, moving the playhead does not change the task goal [AT-11].
+- Reference chips for working drafts, candidates and history versions must be distinguishable. A candidate must be referenced explicitly and is never treated as an applied working draft.
+- On receiving "Input expired" or "Version conflict", keep the candidate and the user's input, re-locate, and do not automatically switch to a neighbouring clip.
 
-机制见架构设计 §4.6。
+For the mechanism, see architecture design §4.6.
 
-#### 3.2.5 长任务中的补充、排队与改向〔CON-03〕
+#### 3.2.5 Additions, queueing and redirection during a long task [CON-03]
 
-- 任务运行中可以继续输入。智能体引擎支持中途插话时直接送达；不支持时排队到当前回合结束，或由用户选择中断后执行。
-- 用户改变目标时，选择「停止旧工作」或「把旧产物留作候选」，然后建立新的执行尝试。
-- 已经冻结输入的步骤不会在执行中换内容；新约束对尚未开始的步骤生效。
-- 局部的手工操作不打断无关的任务。
+- Input can continue while a task is running. If the agent engine supports mid-run interjection, the message is delivered directly; if not, it is queued until the current turn ends, or the user can choose to interrupt and then run it.
+- When the user changes the goal, they choose "Stop the old work" or "Keep the old output as a candidate", and then a new execution attempt is started.
+- Steps whose inputs are already frozen do not change content mid-execution; new constraints apply to steps that have not yet started.
+- Local manual operations do not interrupt unrelated tasks.
 
-#### 3.2.6 停止〔CON-04〕
+#### 3.2.6 Stop [CON-04]
 
-主停止按钮停止**任务**，不只是停止回复：
+The main stop button stops the **task**, not just the reply:
 
-1. 立刻禁止新的工具调用和自动应用；
-2. 再请求取消进行中的步骤与模型回合。
+1. Immediately forbid new tool calls and automatic application;
+2. then request cancellation of the steps and model turns in progress.
 
-停止确认要如实列出：已经提交的修改（不会自动消失）、仍可能在远端运行或计费的步骤、保留为候选的结果。停止被接受不等于远端已取消。
+The stop confirmation must honestly list: changes already submitted (they do not disappear automatically), steps that may still be running or billing on the remote side, and results kept as candidates. A stop being accepted does not mean the remote side has been cancelled.
 
-细节菜单提供两个次级操作：「停止回复」只停当前模型输出；「取消此步骤」只取消一项计算。「停止并撤销」先建立停止屏障，再逐项验证可以安全撤销的修改，不整体回滚视频。只有真正支持安全续跑的任务才提供「暂停」。
+The detail menu offers two secondary actions: "Stop reply" stops only the current model output; "Cancel this step" cancels only one computation. "Stop and undo" first sets up a stop barrier, then verifies item by item which changes can be safely undone; it does not roll back the whole video. "Pause" is offered only for tasks that truly support safe resumption.
 
-#### 3.2.7 交付后的下一步〔CON-05〕
+#### 3.2.7 Next steps after delivery [CON-05]
 
-任务完成后，视频卡上导出那一行提供播放与在文件夹中显示，「打开编辑器」继续修改；本次检查发现的少量待办写在回复里。不自动发起新的购买或生成。
+After a task completes, the export row on the video card provides play and "Show in folder", and "Open editor" continues editing. A small number of to-dos found by this check are written in the reply. No new purchase or generation is started automatically.
 
-### 3.3 功能区〔UX-07〕
+### 3.3 Feature area [UX-07]
 
-功能区是 Home 的第三栏，在会话区右侧，打开的对象各占一个标签页。它按需打开：从会话打开一个视频、点击卡片上的对象、点击产物，或用户手动打开。没有内容时保持收起，会话区占满。
+The feature area is the third column of Home, on the right of the session area; each open object gets its own tab. It opens on demand: opening a video from the session, clicking an object on a card, clicking an output, or the user opening it manually. With no content it stays collapsed and the session area fills the space.
 
-| 打开的对象 | 功能区显示 | 可以做什么 |
+| Open object | What the feature area shows | What can be done |
 | --- | --- | --- |
-| 视频 | 完整编辑器（§5.1）：预览、检查器、时间线、内容面板 | 全部编辑操作；点选对象、拖选时间段、选句，并把选择引用到输入框；导出 |
-| 候选与变更 | 审阅视图：候选对比、剪辑建议列表、变更前后 | 应用、保留为备选、丢弃；逐条接受或忽略；撤销某次变更 |
-| 产物 | 与 Space 相同的查看器：图片、音频、字幕文件、文档、成片 | 查看、试听、另存、二次编辑、在 Space 中显示 |
-| 任务 | 当前任务的阶段、步骤、费用、检查报告 | 展开详情、取消某个步骤 |
-| 项目文件 | 项目目录的文件列表与搜索；按类型选择查看器；从新标签页起始页的「浏览项目文件」进入 | 只读浏览智能体产生的各种文件；在文件夹中显示 |
-| 幻灯片 | 幻灯片编辑器：页面列表、画布、讲稿；从线程里的幻灯片卡片、Space 条目或 `deck.json` 的文件标签打开 | 预览与放映；改字、拖动元素、增删页面，改动写回 deck 目录；打开「标注」后点元素或框区域写批注，加进输入框的「幻灯片标注」（§3.2.3、幻灯片设计 §8） |
-| 设计稿 | 设计稿编辑器：画布上排着各块画板，属性面板、预览与导出；从线程里的设计稿卡片、Space 条目或 `canvas.json` 的文件标签打开 | 预览画板、改样式与文字、排布画板，改动写回设计稿目录；打开「标注」后点元素或框区域写批注，加进输入框的「设计稿标注」（§3.2.3）；标签头部的「导出」把整份设计稿存成单个 HTML 或 PDF，桌面端弹存储对话框、存好后提示路径，Web 端交给浏览器下载。Web 端编辑器放在另一个回环主机名上，页面不在 `127.0.0.1` 或 `localhost` 上时标签说明不可用 |
-| 网页 | 应用内的网页标签，只开 http 与 https；新开时先显示起始页 | 查看智能体给出的链接与资料；在系统浏览器中打开；从起始页新建网页或浏览项目文件 |
+| Video | Full editor (§5.1): preview, inspector, timeline, content panel | All editing operations; select objects, drag-select time ranges, select sentences and reference them in the input box; export |
+| Candidates and changes | Review view: candidate comparison, list of editing suggestions, before/after changes | Apply, keep as an alternative, discard; accept or ignore each item; undo a particular change |
+| Output | Same viewer as Space: images, audio, subtitle files, documents, final cut | View, preview audio, save as, re-edit, show in Space |
+| Task | Current task's stages, steps, cost, check report | Expand details, cancel a particular step |
+| Project files | File list and search for the project directory; choose a viewer by type; entered from "Browse project files" on the new-tab start page | Read-only browsing of the various files produced by the agent; show in folder |
+| Slides | Slide editor: page list, canvas, speaker notes; opened from a slide card in the thread, a Space entry, or the file tab for `deck.json` | Preview and present; edit text, drag elements, add or remove pages, with changes written back to the deck directory; after opening "Annotate", click an element or box area to write a comment, which is added to the input box as "Slide annotations" (§3.2.3, slide design §8) |
+| Design | Design editor: the canvas lays out the artboards, with a property panel, preview and export; opened from a design card in the thread, a Space entry, or the file tab for `canvas.json` | Preview artboards, change styles and text, arrange artboards, with changes written back to the design directory; after opening "Annotate", click an element or box area to write a comment, which is added to the input box as "Design annotations" (§3.2.3); "Export" in the tab header saves the whole design as a single HTML or PDF file: on desktop a save dialog opens and then shows the path, and on web the browser downloads it. The web editor runs on a separate loopback hostname; when the page is not on `127.0.0.1` or `localhost`, the tab shows that the feature is unavailable |
+| Web page | In-app web tab, http and https only; a new one shows the start page first | View links and materials given by the agent; open in the system browser; from the start page, create a new web page or browse project files |
 
-功能区可以同时开多个标签。应用内网页与应用自己的界面隔离，拿不到本机服务的访问权（架构设计 §12.10）。
+The feature area can have several tabs open at once. In-app web pages are isolated from the app's own interface and have no access to local services (architecture design §12.10).
 
-回复里的文件链接打开功能区的文件标签，不导航或刷新主界面。相对路径按会话工作目录解析；已登记的交付物按产物记录定位，包括下载目录里的文件；智能体用 downloads_save 交出的文件也登记为交付物。桌面端遇到工作目录外、没有产物记录的文档或媒体副本，仍在文件标签里按只读预览打开（Runtime 只对桌面客户端按文件自己的目录发放受限句柄），标签内保留「用默认应用打开」与「在文件夹中显示」；只有查看器不支持的类型才直接交给系统默认应用。浏览器没有此能力，按 Runtime 的访问范围在查看器中报告不可用，不扩大本机文件权限。回复正文里的 Markdown 图片与音视频按同一规则定位：桌面端工作目录外、没有产物记录的本机图片直接在正文显示；浏览器仍报告不可用。
+File links in a reply open a file tab in the feature area, without navigating or refreshing the main interface. Relative paths resolve against the session's working directory; registered deliverables are located by their output records, including files in the downloads directory; files handed over by the agent with `downloads_save` are also registered as deliverables. On desktop, a document or media copy outside the working directory that has no output record is still opened in a file tab as a read-only preview (the Runtime grants restricted handles to the desktop client only, based on each file's own directory). The tab keeps "Open with default app" and "Show in folder". Only types the viewer does not support are handed directly to the system default app. The browser does not have this capability: the viewer reports it as unavailable according to the Runtime's access scope, without widening local file permissions. Markdown images and audio/video in the reply body follow the same locating rules: on desktop, local images outside the working directory with no output record are shown directly in the body; the browser reports them as unavailable.
 
-文件类型先按受限内容采样识别，扩展名只用于文本的视图选择与兼容旧 Runtime。未知扩展名和无扩展名的可读文本按源码显示；图片、PDF、音视频按检测出的类型选择已有查看器；不支持的二进制或压缩包只显示基本信息与在文件夹中显示入口，不强行解码或启动程序。文件不存在、读取失败和超过预览上限使用各自的错误说明。工作目录外的链接无法用安全的默认应用打开时，桌面端回退到文件管理器定位；Web 不具备本机文件管理器能力。
+File types are identified first by sampling restricted content; the extension is used only for choosing a text view and for compatibility with old Runtimes. Readable text with unknown or no extension is shown as source; images, PDFs and audio/video use the existing viewer matching the detected type; unsupported binaries or archives show only basic information and a "Show in folder" entry, without forced decoding or launching a program. Missing files, read failures and files over the preview limit each use their own error message. When a link outside the working directory cannot be opened safely with the default app, desktop falls back to locating it in the file manager; web has no local file manager capability.
 
-常用文档的只读预览：PDF 翻页与缩放；HTML 页面预览与源码切换（隔离脚本、网络、表单与父页面导航）；CSV / TSV 表格与源码切换（保留引号内的分隔符与换行）；JSON 格式化与源码切换；代码文本带行号查看。Markdown 保留阅读与源码视图。无法预览或解析失败时说明原因，保留原文查看或系统应用入口。Electron 与 Web 共用查看器；PDF 上限 100 MiB，文本上限 1 MiB，表格超过 2000 行或 200 列时显示源码。PDF 支持文本选择；加密或无法解析的文件报告失败，可在桌面端交给默认应用。DOCX / XLSX 的内嵌预览不在本批范围。
+Read-only previews of common documents: PDF with page turning and zoom; HTML page preview with a switch to source (isolating scripts, network, forms and parent-page navigation); CSV / TSV tables with a switch to source (preserving separators and line breaks inside quotes); JSON formatted with a switch to source; code text viewed with line numbers. Markdown keeps reading and source views. When preview or parsing is not possible, the reason is stated, and the original text or the system app entry is kept. Electron and web share the viewer. PDF limit is 100 MiB, text limit is 1 MiB, and tables over 2000 rows or 200 columns show source. PDFs support text selection; encrypted or unparseable files report failure, and on desktop can be handed to the default app. Inline preview of DOCX / XLSX is outside the scope of this batch.
 
-图片文件与生成图片进入专用文件标签：同组候选以缩略图切换，切换时同步标签名与当前文件信息；独立图片不混入其他组。提供适合窗口、比例缩放、拖动查看、下载和系统默认应用入口。图片批注支持点选或框选区域、编辑与删除；坐标相对原图归一化，缩放后标记不漂移，切换图片保留已保存批注与未完成的批注草稿。批注和比例调整（1:1、3:4、9:16、4:3、16:9）把原图与请求追加到会话草稿，不覆盖已有文字或附件，不自动发送、不覆盖原图。聊天里的图片可放大查看并从查看器进入标签，视频可在正文播放并进入独立文件标签；视频按真实媒体状态提供播放、进度、音量、倍速与全屏，打开另一媒体或隐藏其标签时暂停。该媒体面板由 Electron / Web 共用；候选按同一回复或同一生成任务分组。追加图片请求受当前宿主附件能力与 Agent 图片能力限制，不支持时保留查看和批注，并说明原因。
+Image files and generated images enter a dedicated file tab: candidates in the same group switch via thumbnails, and switching syncs the tab name and the current file information; standalone images are not mixed into other groups. Provides fit-to-window, proportional zoom, drag to pan, download, and a system default app entry. Image annotation supports selecting or box-selecting areas, editing and deleting; coordinates are normalised relative to the original image, so marks do not drift when zoomed, and switching images keeps saved annotations and unfinished annotation drafts. Annotations and aspect-ratio adjustments (1:1, 3:4, 9:16, 4:3, 16:9) append the original image and the request to the session draft; they do not overwrite existing text or attachments, do not send automatically, and do not overwrite the original image. Images in chat can be enlarged for viewing and opened in a tab from the viewer; video can play in the body and enter a standalone file tab. Video provides play, progress, volume, playback speed and fullscreen based on the real media state; opening another media item or hiding its tab pauses it. The media panel is shared by Electron and web. Candidates are grouped by the same reply or the same generation task. Adding image requests is limited by the host's current attachment capability and the Agent's image capability; when not supported, viewing and annotation are kept and the reason is stated.
 
-媒体查看器：图片缩放覆盖 10%–400%，支持围绕指针或双指中心缩放；同一会话的生成图片支持单图与画布视图、多选和跨图片批注，独立图片保持独立。画笔、矩形、箭头与文字标记生成第二张参考图；涂抹移除生成黑白蒙版；去背景和比例调整生成明确请求。所有编辑请求连同所需原图、标记图或蒙版一起追加到会话草稿，附件去重并检查数量上限，失败时保留编辑内容，不自动发送、不覆盖原图。GIF 支持逐帧查看、暂停与变速、分帧网格、逐帧批注、复制或下载当前帧、下载变速或原始 GIF；分帧限制为 64 MiB、256 帧、累计 64 Mi 像素，环境不支持或超限时保留原图查看与下载。用户明确选择等距柱状全景查看时，图片可进入 360° 查看、拖动视角、缩放、重置与全屏，失败可返回普通图片。视频正文、标签和展开弹层共用播放器与播放状态（时间、暂停、音量、静音、倍速）；拖动进度期间暂停，结束后按原状态恢复，倍速为 0.25×–2×，提供全屏、受环境能力限制的画中画和另存为。显式从正文移交到标签或弹层时延续播放，普通切换标签仍暂停；关闭弹层回传最新状态。音频正文卡采用两行结构：文件图标、文件名与格式、播放和更多菜单在上，进度与时间在下；更多菜单提供复制路径与另存副本。视频画面下只保留单行播放、进度、时间、音量、更多与全屏图标，音量滑杆在弹层内，另存为、倍速和画中画收在更多菜单，当前倍速带选中标记；原有展开预览与标签页入口也收进菜单。窄会话不把控件折成多行，全屏菜单在全屏容器内显示。图片正文采用最大 480px 大图与右侧 56px 竖向缩略图，同组切图保留会话路由，缩略图提供选中态、方向键与首尾键导航；单张图片不展示空缩略图栏。点击大图打开模糊背景的全窗口查看器，左侧缩略图、顶部视图/缩放/打开/下载/关闭、底部编辑工具与图片修改输入区分层展示。Esc 或关闭按钮返回原会话与原焦点；选中的图片同步回正文。修改要求按图片保留草稿，明确加入对话草稿后才附上图片与请求，不直接发送。原有文件链接仍可直接打开右侧标签，查看器的打开菜单也提供该入口。原型、Electron 与 Web 共用这些交互；App 与 Web 由共享 UI 实现，默认应用与系统文件夹操作按宿主能力提供。
+Media viewer: image zoom covers 10%–400%, supporting zoom around the pointer or the center of a two-finger gesture. Generated images in the same session support single-image and canvas views, multi-select and cross-image annotation; standalone images stay independent. Brush, rectangle, arrow and text marks generate a second reference image; erasing generates a black-and-white mask for removal; background removal and aspect-ratio adjustment generate explicit requests. All editing requests are appended to the session draft together with the required original, marked image or mask; attachments are de-duplicated and checked against the count limit. On failure the edits are kept; nothing is sent automatically and the original is not overwritten. GIF supports frame-by-frame viewing, pause and speed change, a frame grid, per-frame annotation, copy or download of the current frame, and download of the speed-changed or original GIF. Frame splitting is limited to 64 MiB, 256 frames and 64 Mi pixels cumulative; when the environment does not support it or the limit is exceeded, the original can still be viewed and downloaded. When the user explicitly chooses equirectangular panorama viewing, the image can enter 360° viewing, with drag-to-look, zoom, reset and fullscreen; on failure it can return to a normal image. Video body, tab and expanded overlay share the same player and playback state (time, pause, volume, mute, speed). Dragging the progress bar pauses playback, and after it ends the previous state is restored. Speed is 0.25×–2×. Fullscreen, picture-in-picture (subject to environment capability), and save-as are provided. An explicit handoff from the body to a tab or overlay keeps playback going, while an ordinary tab switch still pauses it; closing the overlay returns the latest state. The audio body card has two rows: on top, a file icon, file name and format, the play button and the more menu; below, progress and time. The more menu offers copy path and save a copy. Under the video picture, only a single row remains: play, progress, time, volume, more and fullscreen icons. The volume slider is inside the overlay; save-as, speed and picture-in-picture are in the more menu, with the current speed marked as selected. The existing expand-preview and tab entries are also moved into the menu. Narrow sessions do not fold controls into multiple rows, and the fullscreen menu is shown inside the fullscreen container. The image body uses a large image up to 480px with a 56px-wide vertical thumbnail strip on the right; switching within a group keeps session routing, and thumbnails provide a selected state and arrow-key and Home/End navigation. A single image does not show an empty thumbnail bar. Clicking the large image opens a full-window viewer with a blurred background, where the left thumbnails, top view / zoom / open / download / close controls, bottom editing tools and the image-change input area are layered separately. Esc or the close button returns to the original session and original focus; the selected image is synced back to the body. Change requests are kept as a draft per image, and the image and request are attached only after the user explicitly adds them to the conversation draft; nothing is sent directly. Existing file links still open the right-hand tab directly, and the viewer's open menu also provides that entry. The prototype, Electron and web share these interactions; the App and web use the shared UI implementation, and the default app and system folder operations are provided according to host capabilities.
 
-Composer 中的附件与已发送消息中的附件均可点击或按 Enter 打开，预览操作与删除按钮分离。图片附件使用相同的沉浸式查看器，并可在本次附件组内切换；图片编辑追加到 Composer 的参考图也保持可打开。用户选择上传的文件保留实际内容与类型，会话中的 PDF、HTML、表格、代码文本及音视频进入对应右侧文件标签；尚未建立会话时使用附件弹层。附件预览独立于 Space 产物，发送、移除草稿附件或切换标签不提前销毁仍被引用的文件内容。没有内容的旧附件提示重新选择文件，未知二进制保留下载入口。上述附件交互已同步 Electron 与 Web。桌面的普通本机路径引用优先在受限文件标签中预览，不在工作目录范围内的文件也在文件标签里预览、标签内给默认应用入口；上传的附件始终通过其所属会话的受限句柄读取。
+Attachments in the Composer and attachments in sent messages can both be opened by click or Enter, with preview actions separated from the delete button. Image attachments use the same immersive viewer and can switch within the current attachment group; reference images added to the Composer from image edits also remain openable. User-uploaded files keep their actual content and type. PDF, HTML, tables, code text, audio and video in a session enter the corresponding right-hand file tab; before a session is established, the attachment popover is used. Attachment preview is independent of Space outputs: sending, removing a draft attachment, or switching tabs does not destroy file content still referenced in advance. Old attachments without content prompt the user to choose the file again; unknown binaries keep a download entry. The above attachment interactions are synced between Electron and web. On desktop, ordinary local path references preview first in a restricted file tab; files outside the working directory also preview in a file tab, with a default-app entry in the tab. Uploaded attachments are always read through the restricted handle of their owning session.
 
-网页标签保留各自的页面、历史与缩放状态；切换标签不重新加载。地址栏支持网址与搜索、后退、前进、停止、重新加载及忽略缓存重新加载；可复制地址、在新标签页或系统浏览器中打开。页内查找显示当前项 / 总数，支持上一项、下一项、Enter / Shift+Enter 与 Escape。设备预览支持手机、平板、笔记本、自定义宽高与横竖旋转。加载慢、失败、弹窗被拦截与下载交给系统浏览器时给出明确状态与恢复入口；下载和权限边界仍按架构设计 §12.10。Electron 的网页内容与工具栏都支持 Cmd/Ctrl+L、Cmd/Ctrl+F、Cmd/Ctrl+R 与 Cmd/Ctrl+Shift+R；网页中的 HTTP/HTTPS 链接从会话打开时进入网页标签。设备视口宽高各为 240–4096 CSS px，按面板空间等比缩小显示。Web 客户端没有内嵌网页宿主，网页标签以入口能力为准：起始页与工具卡照常显示，外部网页在浏览器新标签打开；原型以演示页呈现宿主行为。
+Web page tabs keep their own page, history and zoom state; switching tabs does not reload them. The address bar supports URLs and search, back, forward, stop, reload, and reload ignoring cache; the address can be copied, or opened in a new tab or the system browser. In-page find shows current item / total, with previous, next, Enter / Shift+Enter and Escape. Device preview supports phone, tablet, laptop, custom width and height, and rotation between portrait and landscape. When loading is slow, fails, a popup is blocked, or a download is handed to the system browser, a clear status and a recovery entry are shown; download and permission boundaries still follow architecture design §12.10. On Electron, both the web content and the toolbar support Cmd/Ctrl+L, Cmd/Ctrl+F, Cmd/Ctrl+R and Cmd/Ctrl+Shift+R; HTTP/HTTPS links in a web page opened from a session go into a web tab. The device viewport width and height are each 240–4096 CSS px and are scaled down proportionally to fit the panel space. The web client has no embedded web host, so web page tabs follow the entry capability: the start page and tool cards display as usual, and external web pages open in a new browser tab; the prototype presents host behaviour as a demo page.
 
-**新标签页起始页**。新开的网页标签还没有地址时显示起始页：地址栏照常保留；正文是「搜索或打开网页」提示与「输入网址」按钮（焦点移到地址栏），下面是「工具」一组卡片——「新建网页」在会话所属项目里新建一个 HTML 文件（没有项目时放在会话的工作目录；同一目录里不与已有文件重名）并在这个标签页里预览，还没有会话也没有项目的空白草稿不显示这张卡，「浏览项目文件」在这个标签页里查看项目目录。两者都把起始页签原地换成对应的文件或项目文件标签，位置不变，不留下空的起始页。
+**New-tab start page**. A newly opened web tab with no address yet shows the start page. The address bar is kept as usual. The body has the prompt "Search or open a web page" and an "Enter URL" button (which moves focus to the address bar), and below it a group of "Tools" cards. "New web page" creates an HTML file in the session's project (if there is no project, in the session's working directory; it does not clash with existing file names in that directory) and previews it in this tab. "Browse project files" views the project directory in this tab. A blank draft with no session and no project does not show the "New web page" card. Both actions replace the start page in place with the corresponding file or project-file tab, keeping its position, and no empty start page is left behind.
 
-规则：
+Rules:
 
-- 打开视频后，会话留在左侧，完整编辑器在右侧。这与从 Space 打开同一个视频是同一套组件、同一个布局，不存在另一种精简的编辑器。
-- 功能区可以关闭，回到只有会话的状态；选区、播放位置和未提交的草稿保持。
-- **三种视图**。每个会话各自记住视图与标签页；还没发出第一句话的草稿工作区也有自己的标签页与视图，第一句话发出、会话建立后随会话带走。
-  - **会话**：功能区收起，会话占满；已打开的标签页保留。
-  - **分屏**：会话在左，功能区在右；标题栏上会话头与页签条以两栏之间的分隔线为界。
-  - **完整视图**：单列页签条（见下），会话是固定的第一个页签。进入时保留屏幕上的内容：分屏可见时停在当前标签页，否则选中会话页签。退出回到分屏：会话在左，上次的标签页在右。关闭最后一个标签页时退出完整视图，回到会话。
-- **标题栏按钮组**。标题栏最右从左到右是会话摘要、完整视图与标签页按钮；窄窗口下只保留会话摘要。
-  - 标签页按钮随状态变化：没有标签页时是页签框加一个加号，「打开新标签页」新开一个网页标签并显示分屏；有标签页而分屏收起时页签框里显示标签页数量（超过 9 显示「9+」），「显示标签页」恢复分屏与上次的标签页，指针停留 300 ms 或按向下方向键列出已打开的标签页，点一行在分屏打开，行尾按钮在完整视图打开；分屏可见时是「隐藏标签页」，收起功能区，不显示数量也不列出标签页；完整视图下同一图标是「进入分屏视图」。
-  - 完整视图按钮只在有标签页时出现；在完整视图下为按下态，提示改为「退出完整视图」。
-  - 会话摘要：分屏可见时挂在会话头 ··· 之后、会话与功能区之间的分隔线左侧，其余情况在按钮组第一位；还没有会话的草稿不显示。弹层宽 360，列出会话标题、状态（进行中、待允许）、「产物 · N」与整条会话的产物卡（视频卡见 §3.2.2）；没有产物时写「这条会话还没有产物。」。会话头不另设产物入口。
-- **页签条**。页签条右端的「+」直接新开一个网页标签（起始页），不弹菜单；已打开标签页的列表由标签页按钮提供，页签条不另设。指针在页签上停留 500 ms 显示该页签内容的缩略卡：缩略图、标题与路径（网页写地址，文件写项目内路径，会话页签写「会话」）；按下或拖动页签时取消，缩略卡显示时页签自己的提示不再出现。内嵌的原生网页视图无法截取时缩略图留白；桌面端缩略卡显示期间该网页视图暂时隐藏（同菜单与对话框），缩略卡消失后恢复。
-- **拖动收起**。分屏下，会话与功能区之间的分隔线不受会话 560px / 45% 宽度上限限制；两侧正常显示的最小宽度各为 320px。功能区达到最小宽度后继续跟踪指针，拖到右侧剩余空间小于 160px 时隐藏功能区，会话占满；同一次拖动向左回拉可重新展开。收起不关闭标签、不修改路由或清空草稿；通过标签页按钮的「显示标签页」恢复上次可用的分栏宽度。工作区自身变窄仍沿用下述窄窗口规则。原型、Electron 与 Web 使用相同交互。
-- **单列页签条**。完整视图与窄窗口共用同一条页签条，同一时间只显示会话或一个标签页：
-  - 会话是页签条里固定的第一个页签，显示会话标题；不得被拖动、关闭或被其它页签排到前面，样式上须与资源页签可区分（强调色的底与描边、与可拖动页签之间的分隔，不另加图标），提示语写明不能拖动或关闭。会话进行中或待允许时，页签上有不只靠颜色的状态标记。
-  - 会话头（标题、状态、菜单）从标题栏移到会话面板顶部。
-  - 只由用户点击页签、卡片或「打开编辑器」切换，智能体引起的路由变化不得切走会话。
-  - 未显示的一侧不卸载：会话草稿、编辑器选区与播放位置都保持。
-- **窄窗口**。工作区宽度不足以并排放下会话区与功能区（会话区最小宽度 320px 加编辑器最小宽度 695px，即容器宽 1015px；原型以容器宽 960px 近似，均不随拖动中的会话宽度改变）时改用单列页签条。此时：
-  - 从并排切到单列的那一刻按焦点选页签：焦点在会话区内（含输入框）或功能区本来就收起时显示会话页签，否则停在正在使用的标签页。
-  - 从单列切回并排时恢复会话区与上次的标签页；只有用户在并排时手动收起过功能区且单列期间一直停在会话页签上，才保持收起。
-- 预览看的是候选方案时，顶部必须标明「候选方案」；看的是当前工作稿时不另加标志。打开的对象在标题里写明名称与版本。
-- 从 Home 与从 Space 做的手工修改等价：同一个命令入口、同样的回执与撤销。
-- 画面中的区域选择只表示像素位置，不自动变成一个可编辑对象。
-- P0 支持点选对象、拖选时间和句子引用。任意画面涂画、语音反馈和多区域批注为 P1。
+- After a video is opened, the session stays on the left and the full editor is on the right. This is the same component set and the same layout as opening the same video from Space; there is no separate slimmed-down editor.
+- The feature area can be closed, returning to a session-only state; selection, playhead position and uncommitted drafts are kept.
+- **Three views**. Each session remembers its own view and tabs; a draft workspace that has not yet sent its first message also has its own tabs and view, and these travel with the session once the first message is sent and the session is created.
+  - **Session**: the feature area is collapsed and the session fills the space; open tabs are kept.
+  - **Split**: the session is on the left and the feature area on the right; on the title bar, the session header and tab strip are separated by the divider between the two columns.
+  - **Full view**: a single-column tab strip (see below), with the session as the fixed first tab. On entry, the content on screen is kept: if the split was visible, it stays on the current tab; otherwise the session tab is selected. Exiting returns to split: the session on the left and the last tab on the right. Closing the last tab exits full view and returns to the session.
+- **Title bar button group**. From left to right at the far right of the title bar: session summary, full-view button and tab button. In a narrow window only the session summary is kept.
+  - The tab button changes with state: with no tabs, it is a tab-frame icon with a plus sign, and "Open new tab" opens a new web tab and shows the split. With tabs and the split collapsed, the tab-frame icon shows the number of tabs (over 9 shows "9+"); "Show tabs" restores the split and the last tab. Hovering for 300 ms, or pressing the down arrow key, lists the open tabs; clicking a row opens it in the split, and the button at the end of the row opens it in full view. When the split is visible, the button becomes "Hide tabs", which collapses the feature area and shows no count and no list. In full view, the same icon means "Enter split view".
+  - The full-view button appears only when there are tabs; in full view it shows a pressed state, and its hint changes to "Exit full view".
+  - Session summary: when the split is visible, it sits after the session header's ··· button, on the left of the divider between session and feature area; in other cases it is the first item of the button group. A draft with no session does not show it. The popover is 360 wide and lists the session title, status (in progress, awaiting permission), "Outputs · N", and the session-wide output cards (video cards in §3.2.2). With no outputs it reads "This session has no outputs yet." The session header has no separate output entry.
+- **Tab strip**. The "+" at the right end of the tab strip opens a new web tab (start page) directly, without a menu. The list of open tabs is provided by the tab button; the tab strip has no separate list. Hovering over a tab for 500 ms shows a thumbnail card of that tab's content: thumbnail, title and path (a web page shows its address, a file shows its project path, and a session tab shows "Session"). Pressing or dragging a tab cancels it, and while the thumbnail card is shown the tab's own hint does not appear. When a native web view cannot be captured, the thumbnail is left blank. On desktop, while the thumbnail card is shown, the web view is temporarily hidden (as with menus and dialogs) and restored after the card disappears.
+- **Drag to collapse**. In split view, the divider between session and feature area is not limited by the session's 560px / 45% width cap. The minimum normal display width for each side is 320px. Once the feature area reaches its minimum width, it keeps tracking the pointer; when the remaining space on the right drops below 160px, the feature area is hidden and the session fills the space. Dragging back to the left in the same gesture can re-expand it. Collapsing does not close tabs, change the route or clear the draft; "Show tabs" from the tab button restores the last usable split width. When the workspace itself narrows, the narrow-window rules below still apply. The prototype, Electron and web use the same interaction.
+- **Single-column tab strip**. Full view and narrow windows share the same tab strip, and only one of the session or one tab is shown at a time:
+  - The session is the fixed first tab in the strip and shows the session title. It cannot be dragged, closed, or moved in front of other tabs by them. Visually it must be distinguishable from resource tabs (an accent-coloured background and outline, a separator from draggable tabs, with no added icon), and its hint says it cannot be dragged or closed. When the session is in progress or awaiting permission, the tab carries a status marker that does not rely on colour alone.
+  - The session header (title, status, menu) moves from the title bar to the top of the session panel.
+  - Switching happens only when the user clicks a tab, card or "Open editor"; route changes caused by the agent must not switch away from the session.
+  - The hidden side is not unmounted: session drafts, editor selection and playhead position are all kept.
+- **Narrow window**. When the workspace is too narrow to fit the session area and the feature area side by side (session minimum width 320px plus editor minimum width 695px, that is a container width of 1015px; the prototype approximates with a container width of 960px; neither changes with the session width during dragging), the single-column tab strip is used. In this case:
+  - At the moment of switching from side-by-side to single column, the tab is chosen by focus: if focus is inside the session area (including the input box), or the feature area was already collapsed, the session tab is shown; otherwise it stays on the tab in use.
+  - Switching from single column back to side-by-side restores the session area and the last tab; only if the user manually collapsed the feature area while side-by-side and stayed on the session tab for the entire single-column period does it remain collapsed.
+- When the preview is showing a candidate plan, the top must state "Candidate plan"; when showing the current working draft, no extra flag is added. The title of an open object states its name and version.
+- Manual edits made from Home and from Space are equivalent: the same command entry point, with the same receipts and undo.
+- Region selection on the canvas only indicates pixel position and does not automatically become an editable object.
+- P0 supports selecting objects, dragging to select time, and referencing sentences. Free-form painting on the canvas, voice feedback and multi-region annotation are P1.
 
 ---
 
 ## 4. Space
 
-### 4.1 定位〔SPC-01〕
+### 4.1 Positioning〔SPC-01〕
 
-Space 是视频、素材和其他产物的统一视图：所有生成的结果和所有视频都能在这里看到、打开并继续修改。它按成果组织，不按会话组织。
+Space is the unified view of videos, assets and other outputs: every generated result and every video can be seen, opened and continued here. It is organized by outcome, not by session.
 
-Space 是派生的视图，不是第二份存储。条目来自各个项目里权威的视频、产物与任务记录；索引损坏时可以重建，重建不丢用户的收藏与整理。
+Space is a derived view, not a second store. Its entries come from the authoritative video, output and task records in each project; the index can be rebuilt if it is corrupted, and rebuilding does not lose the user's favorites or organization.
 
-### 4.2 条目
+### 4.2 Entries
 
-| 类型 | 是什么 | 打开后 |
+| Type | What it is | Opens to |
 | --- | --- | --- |
-| 视频 | 可以编辑、导出的视频，带完整的时间线。封面取当前工作稿 | 完整编辑器，会话在左侧（与从 Home 打开相同） |
-| 成片 | 经校验后发布的导出视频，绑定一个确定的视频版本 | 播放器 |
-| 视频素材 | 生成或导入的视频文件 | 播放器 |
-| 图片 | 封面、插图、生成图 | 图片查看器 |
-| 音频 | 配音、音乐、音效 | 音频播放器 |
-| 字幕 | 导出的字幕文件 | 文稿查看器 |
-| 文档 | 脚本、分镜、文章、总结 | 文本查看器 |
-| 便携包 | 导出的视频包 | 包内容清单 |
-| 模板〔P1〕 | 可复用的原生结构或代码包 | 模板预览与参数 |
+| Video | An editable, exportable video with a full timeline. The cover uses the current working draft | Full editor, with the session on the left (same as opening from Home) |
+| Final cut | An exported video that has been verified and published, bound to a fixed video version | Player |
+| Video asset | A generated or imported video file | Player |
+| Image | Covers, illustrations, generated images | Image viewer |
+| Audio | Voiceover, music, sound effects | Audio player |
+| Subtitles | Exported subtitle files | Script viewer |
+| Document | Scripts, storyboards, articles, summaries | Text viewer |
+| Portable package | An exported video package | Package contents list |
+| Template〔P1〕 | A reusable native structure or code package | Template preview and parameters |
 
-项目本身不是条目：它是条目的来源，用来筛选和聚合（§4.3）。
+A project is not an entry: it is the source of entries, used for filtering and grouping (§4.3).
 
-进入 Space 的是用户能认出的结果。代理文件、缩略图、波形、缓存和检查截图这类派生物不作为条目显示。
+Only results that the user can recognize enter Space. Derived artifacts such as proxy files, thumbnails, waveforms, caches and check screenshots are not shown as entries.
 
-进行中的生成以占位条目出现，显示所属任务与进度，完成后原位变成结果。
+Generations in progress appear as placeholder entries showing their task and progress, and turn into the result in place when complete.
 
-### 4.3 浏览
+### 4.3 Browsing
 
-- **分类侧栏**：全部、视频、成片、图片、音频、字幕、文档、幻灯片、设计稿、模板（P1）；收藏；回收站。幻灯片与设计稿各是一个目录，一份一个条目，点了在功能区的对应标签里打开。
-- **列表区**：搜索；按最近活动、创建时间、更新时间、名称、类型排序；创建时间与更新时间默认倒序（最新在前），未知时间的条目放在末尾，同时间保留原次序；按项目、状态筛选；网格与列表两种视图。
-- **列表列**：名称、时长、类型、来源、规格、状态、最近活动。视频、成片与音频的时长是首要事实，必须显示：列表里「时长」紧跟名称，网格卡片在缩略图右下角压一枚时长角标；分辨率、文件大小、句数与行数这类次要事实归「规格」，卡片的描述行写「类型 · 规格」。
-- **缩略图**：网格的卡片与列表的名称列都显示缩略图：视频是封面那一帧，成片、视频文件与图片是其中一帧，文档与字幕是开头的文字，其余显示类型图标。列表视图因此用宽松的行高。
-- 属于同一个项目的视频、成片与产物可以按项目聚合查看。
-- **一部视频只出现一次**：从某部视频导出、为它生成或下载的文件（成片、字幕、文稿、图片、音频、源文件）在「全部」与「视频」里收进那部视频，不另成卡片或行；侧栏这两类的计数按视频算。卡片写「N 个文件」，列表在名称下写个数与按类型的明细；视频自己没有状态时，状态替名下文件里最该被看见的那个说话，依次是生成中、失败、缺失、来源已变。搜索与状态筛选也看名下的文件：只靠文件对上的视频照样列出，并写明对上的是哪个文件；「无状态」只看视频自己。「最近活动」排序取视频与名下文件里最近的一次。按类型看、收藏与回收站仍逐个文件列出；模板不收；回收站里的文件不收；视频不在或进了回收站时，它的文件各自出现（§4.9）。
-- **切出的短视频各是一部视频**：子视频（§2.3）是独立的视频条目，不收进父视频的卡片。父视频的卡片与列表行写「N 支短视频」，点一下把列表筛成这部父视频切出的几支，筛选显示为一枚可清除的标签；父视频查看框里「切出的短视频」一节的「在列表中查看」（§4.5）同样筛。
+- **Category sidebar**: All, Videos, Final cuts, Images, Audio, Subtitles, Documents, Slides, Design files, Templates (P1); Favorites; Trash. Slides and design files are each a directory, one entry per file; clicking one opens it in the matching tab in the function area.
+- **List area**: search; sort by recent activity, creation time, update time, name, type; creation and update times default to descending (newest first), entries with unknown times go last, and entries with the same time keep their original order; filter by project and status; grid and list views.
+- **List columns**: name, duration, type, source, specs, status, recent activity. Duration is a primary fact for videos, final cuts and audio and must be shown: in the list, “Duration” follows the name directly, and grid cards carry a duration badge at the bottom-right corner of the thumbnail; secondary facts such as resolution, file size, sentence count and row count belong under “Specs”, and the card's description line reads “Type · Specs”.
+- **Thumbnails**: grid cards and the list's name column both show thumbnails: for a video, the cover frame; for a final cut, video file or image, one of its frames; for documents and subtitles, the opening text; everything else shows a type icon. The list view therefore uses generous row height.
+- Videos, final cuts and outputs that belong to the same project can be viewed grouped by project.
+- **A video appears only once**: files exported from a video, or generated or downloaded for it (final cuts, subtitles, scripts, images, audio, source files), are folded into that video under “All” and “Videos”, and do not get their own cards or rows; the counts for these two categories in the sidebar are counted per video. The card reads “N files”; the list writes the count and a per-type breakdown under the name. When a video has no status of its own, its status is taken from the file under it that most needs attention, in this order: generating, failed, missing, source changed. Search and status filters also look at the files under a video: a video matched only through its files is still listed, and states which file it matched; “No status” looks only at the video itself. “Recent activity” sorts by the most recent time among the video and its files. Browsing by type, Favorites and Trash still list files one by one; templates are not folded; files in Trash are not folded; when a video is missing or in Trash, its files appear individually (§4.9).
+- **Each cut-out short video is its own video**: sub-videos (§2.3) are independent video entries and are not folded into the parent video's card. The parent video's card and list row read “N short videos”; clicking it filters the list to the short videos cut from that parent, and the filter shows as a removable tag; the “Cut-out short videos” section in the parent video's viewer, with its “View in list” (§4.5), filters the same way.
 
-### 4.4 状态与来源〔SPC-02〕
+### 4.4 Status and Source〔SPC-02〕
 
-每个条目都能回答三个问题：它从哪来、它是什么状态、它对应哪个版本。
+Every entry can answer three questions: where it came from, what state it is in, and which version it corresponds to.
 
-| 状态 | 含义 |
+| Status | Meaning |
 | --- | --- |
-| 生成中 | 所属步骤仍在运行 |
-| 候选 | 已生成，尚未应用到视频 |
-| 已应用 | 已通过事务进入视频的工作稿 |
-| 已发布 | 成片或文件已校验并发布 |
-| 来源已变 | 该结果对应的输入之后被修改。结果仍可用，但不再代表当前的视频 |
-| 缺失 | 文件或外部依赖当前不可用 |
+| Generating | The owning step is still running |
+| Candidate | Generated, not yet applied to the video |
+| Applied | Entered the video's working draft through a transaction |
+| Published | A final cut or file that has been verified and published |
+| Source changed | The inputs this result was based on have been modified since. The result is still usable but no longer represents the current video |
+| Missing | The file or an external dependency is currently unavailable |
 
-- 来源信息包括：项目、视频与版本、会话、任务、生成服务与模型（如有）、费用状态（估算、已报告或未知）。
-- 子视频的来源是「派生」，「来源」一列写「来自「父视频名」」（[架构设计 §5.7](../architecture/architecture-design.md#57-space-目录)）。
-- 候选不显示为成片，未发布的导出不显示为已完成。
-- 成片绑定的是导出时冻结的视频版本。视频之后继续修改时，成片标为「来源已变」，并提供「用当前版本重新导出」。
-- 失败与重做从条目的菜单进入：转录过的视频提供「重新转录…」，转录失败的提供「重试转录…」并排在最前，有素材但还没转录的提供「转录…」。三项都打开转录工具页并预选这部视频；「重试转录…」另带上失败那次的任务，预填它的参数、显示失败原因（§2.7「进度与失败」）。转录中、排队中或源文件缺失的视频不提供。生成中的条目提供「查看任务」。
+- Source information includes: project, video and version, session, task, generation service and model (if any), and cost status (estimated, reported or unknown).
+- The source of a sub-video is “Derived”; the “Source” column reads “From "[parent video name]"” ([Architecture Design §5.7](../architecture/architecture-design.md#57-space-directory)).
+- A candidate is not shown as a final cut; an unpublished export is not shown as completed.
+- A final cut is bound to the video version frozen at export time. When the video is changed afterward, the final cut is marked “Source changed” and offers “Re-export from current version”.
+- Failure and redo are reached from the entry's menu: a video that has been transcribed offers “Re-transcribe…”; one whose transcription failed offers “Retry transcription…” and is listed first; one with footage but no transcription yet offers “Transcribe…”. All three open the transcription tool page with this video preselected; “Retry transcription…” additionally carries the failed run's task, prefilling its parameters and showing the failure reason (§2.7, “Progress and failure”). Videos that are being transcribed, queued, or whose source file is missing do not offer these. Entries that are generating offer “View task”.
 
-### 4.5 打开与查看
+### 4.5 Opening and Viewing
 
-- 视频、音频用播放器；图片、字幕、文档用对应的查看器。查看器顶部显示来源与状态。
-- 查看器提供：另存或在文件管理器中显示、在会话中继续、用工具处理…（列出收这个条目的工具，选中后进工具页、输入已经选好，§2.7）、二次编辑、查看来源会话或任务（工具生成的条目写出是哪个工具做的、落在哪个目录，可以「再做一次」：直接任务与文件转码回到参数已填好的工具页，视频工具打开那次运行）、收藏。
-- 视频的查看框列出名下的文件，点一个换成那个文件的查看框；收在视频里的文件的查看框提供「查看视频」回到那部视频。
-- 切出过短视频的视频，查看框在名下的文件之前列出「切出的短视频 N」：没移进回收站的几支，新切的在前，每行缩略图、名字、在原片上的区间（「原片 10:12–10:58」）、时长与状态，点一支换成那一支的查看框；最多露出 6 支，多的写「还有 N 支，在列表中查看全部」，一节右上角的「在列表中查看」把列表按这部父视频筛选（§4.3）。短视频的查看框提供「查看来源视频」，父视频还在、不在回收站里时换回父视频的查看框。
-- 视频条目直接进入完整编辑器（§5）：编辑器与从 Home 的会话打开同一个视频完全相同，区别只在会话的位置——从 Space 进来时会话是右下角的悬浮会话（§5.1），起手是一个空的新会话。
+- Videos and audio use the player; images, subtitles and documents use their respective viewers. The top of a viewer shows source and status.
+- Viewers provide: save as or show in file manager; continue in a session; process with a tool… (lists the tools that accept this entry; selecting one goes to the tool page with the input already chosen, §2.7); secondary edit; view the source session or task (for entries generated by a tool, it records which tool made them and which directory they landed in, and offers “Do again”: direct tasks and file transcodes return to the tool page with parameters pre-filled, and video tools open that particular run); favorite.
+- A video's viewer lists the files under it; clicking one swaps to that file's viewer. The viewer of a file that is folded into a video provides “View video” to return to that video.
+- A video that has had short videos cut from it shows “Cut-out short videos N” in its viewer, before the files under it: the ones not moved to Trash, with the newest first; each row shows a thumbnail, name, its range in the original (“Original 10:12–10:58”), duration and status; clicking one swaps to that short video's viewer. At most 6 are shown; if there are more, it reads “N more, view all in list”, and the “View in list” at the top right of the section filters the list to that parent video (§4.3). The viewer of a short video provides “View source video”, which switches back to the parent video's viewer if the parent still exists and is not in Trash.
+- Video entries go directly into the full editor (§5): the editor opens the same video exactly as it does from a session on Home; the only difference is where the session sits. When entering from Space, the session is the floating session at the bottom right (§5.1), starting as a new empty session.
 
-### 4.6 二次编辑〔SPC-03〕
+### 4.6 Secondary Editing〔SPC-03〕
 
-| 打开的条目 | 二次编辑的方式 |
+| Opened entry | How secondary editing works |
 | --- | --- |
-| 视频 | 完整编辑器，直接修改工作稿 |
-| 成片，有来源视频 | 回到来源视频的完整编辑器。若它已不是成片对应的版本，先提示差异；可以打开当前工作稿，或从成片对应的版本建立检查点后继续 |
-| 成片或视频素材，无来源视频 | 以它为素材新建视频。它是扁平视频：可以加字幕、叠加元素、剪切，但不能恢复内部图层（§5.6） |
-| 图片 | 裁切、标注等手工修改；抠图、擦除等依赖模型的修改按能力开放。也可以交给智能体修改 |
-| 音频 | 裁切、试听；重新生成交给智能体，或用生成它的工具再做一次 |
-| 字幕、文档 | 直接编辑文字；也可以用工具翻译、生成语音，字幕配上媒体可以以此新建视频（§2.7） |
+| Video | Full editor, modify the working draft directly |
+| Final cut, with a source video | Return to the source video's full editor. If it is no longer the version the final cut corresponds to, show the differences first; you may open the current working draft, or create a checkpoint from the version the final cut corresponds to and continue from there |
+| Final cut or video asset, without a source video | Create a new video using it as material. It is a flat video: subtitles, overlays and cuts can be added, but internal layers cannot be restored (§5.6) |
+| Image | Manual changes such as cropping and annotation; model-dependent changes such as matting and erasing are offered as capabilities allow. Can also be handed to an agent for modification |
+| Audio | Trimming and preview; regeneration is handed to an agent, or redone with the tool that generated it |
+| Subtitles, documents | Edit the text directly; can also be translated or voiced with tools; subtitles can be paired with media to create a new video (§2.7) |
 
-规则：
+Rules:
 
-- 产物不可变。对产物的二次编辑产生新版本或新产物，不覆盖原条目；原条目保留在历史里。
-- 对视频的二次编辑是普通的视频事务，有回执，可撤销。
-- 依赖模型、上传或付费的二次编辑遵守 §7 的授权规则，与在会话中发起没有区别。
-- 编辑器左侧的会话属于该视频所在的项目，也出现在 Home 的侧栏里。
+- Outputs are immutable. Secondary editing of an output produces a new version or a new output and does not overwrite the original entry; the original remains in history.
+- Secondary editing of a video is an ordinary video transaction, with a receipt, and can be undone.
+- Secondary editing that depends on a model, uploads, or costs money follows the authorization rules in §7 and is no different from initiating it in a session.
+- The session on the left of the editor belongs to the project the video is in, and also appears in Home's sidebar.
 
-P0 提供视频、成片、字幕与文档的二次编辑；图片与音频的模型辅助修改为 P1。
+P0 provides secondary editing for videos, final cuts, subtitles and documents; model-assisted modification of images and audio is P1.
 
-### 4.7 在会话中继续
+### 4.7 Continuing in a Session
 
-从任意条目可以发起或回到一个会话，条目作为引用标签带入输入框。条目属于某个项目时，会话归入该项目；否则是无项目的会话。工具结果页与任务详情的「交给 Agent」走同一条路径，另在输入框预填一句可以改写的说明（§2.7）。
+From any entry, a session can be started or resumed, and the entry is brought into the input box as a reference tag. If the entry belongs to a project, the session is filed under that project; otherwise it is a session with no project. “Hand to agent” from a tool result page or task details follows the same path, and additionally prefills one editable sentence of instructions in the input box (§2.7).
 
-- 带入的是条目的引用：名字、位置、种类、来源与状态，不是文件内容。引用随用户下一条消息发给智能体，智能体需要内容时自己去读；发出之前可以在输入框里去掉。
-- 不指定会话时：项目里的条目新建一个该项目的会话（项目里的会话各有各的话题，不猜该接哪一个）；不属于项目的条目回到产生它的会话，那个会话不在了时新建一个。
-- 指定已有的会话时，那个会话要能看到这个条目（同一个项目，或同一个会话的工作目录），否则说明原因。
-- 回收站里的条目要先恢复才能带入。
+- What is brought in is a reference to the entry: its name, location, kind, source and status, not the file contents. The reference is sent to the agent with the user's next message; the agent reads the content itself when it needs it. It can be removed from the input box before sending.
+- When no session is specified: for an entry in a project, a new session for that project is created (sessions within a project each have their own topics, so it does not guess which one to continue); an entry not in a project returns to the session that produced it, and if that session no longer exists, a new one is created.
+- When an existing session is specified, that session must be able to see the entry (same project, or the same session working directory); otherwise the reason is stated.
+- Entries in Trash must be restored before they can be brought in.
 
-### 4.8 新建与导入
+### 4.8 New and Import
 
-Space 的「新建」提供：新建空的视频、从文件新建视频、导入素材。新建时选择放进哪个项目，或新建一个项目。导入素材与把素材放上时间线是两件事（§5.9）。
+Space's “New” offers: create an empty video, create a video from a file, import footage. When creating, choose which project to put it in, or create a new project. Importing footage and placing footage on the timeline are two separate actions (§5.9).
 
-### 4.9 整理与删除〔SPC-04〕
+### 4.9 Organization and Deletion〔SPC-04〕
 
-- 重命名、收藏、移入回收站、从回收站恢复。
-- 删除条目、删除视频、删除项目、清缓存、删除会话、删除模型是不同的操作，界面分别表达。
-- 删除一个产物条目前，检查它是否仍被视频、历史、冻结中的任务或模板引用。仍被引用的唯一来源不做物理删除，界面说明原因和影响。
-- 删除视频把整个视频移进项目里的回收站，可以撤销与恢复。链接的原始素材文件留在原处，删除与之后的物理删除都不碰它们；由这个视频导出、生成的条目留在 Space 里，删除时列出它们。从它切出的子视频（§2.3）不随它删除，确认里多一行写明有几支派生视频、它们各自保留；子视频的横幅此后改写「来源视频已不在视频库」，不再给「回到原片」（§5.10）。视频还在别的窗口打开着、还有任务或导出在跑、被别的程序占用时不能删除，界面说明原因。
-- 回收站里的内容在保留期内可以恢复。保留期是一个偏好设置，默认 30 天；到期后没有引用的才物理删除，仍被引用的留在回收站里并说明原因。视频目录里放着不属于视频的文件时，不物理删除这个视频。
-- 本地删除不声称能撤回已经发送给外部服务的副本。
+- Rename, favorite, move to Trash, restore from Trash.
+- Deleting an entry, deleting a video, deleting a project, clearing cache, deleting a session and deleting a model are distinct operations, and the interface expresses each separately.
+- Before deleting an output entry, check whether it is still referenced by a video, history, a frozen task or a template. If it is still referenced, the sole source is not physically deleted; the interface explains the reason and impact.
+- Deleting a video moves the whole video to the project's Trash, where it can be undone and restored. Linked original source files stay where they are; deleting and later physical deletion never touch them. Entries exported or generated from this video remain in Space, and deletion lists them. Sub-videos cut from it (§2.3) are not deleted with it: the confirmation has an extra line stating how many derived videos there are and that each is kept; afterward the sub-videos' banner is rewritten to “Source video is no longer in the video library” and no longer offers “Back to original” (§5.10). A video cannot be deleted while it is open in another window, while a task or export is running, or while it is held by another program; the interface explains the reason.
+- Content in Trash can be restored within the retention period. The retention period is a preference, 30 days by default; after it expires, only entries with no references are physically deleted, and entries still referenced stay in Trash with an explanation. When a video's directory contains files that are not part of the video, that video is not physically deleted.
+- Local deletion does not claim to be able to recall copies already sent to external services.
 
 ---
 
-## 5. 编辑器
+## 5. Editor
 
-### 5.1 一套编辑器，两个入口
+### 5.1 One editor, two entry points
 
-编辑器由预览、时间线、文稿、检查器和内容面板组成，打开的是一个视频。Home 的功能区和 Space 用的是同一套组件、同一个布局、同一份视频数据、同一个命令入口：都是完整编辑器，都带这部视频的会话。两个入口的区别只在于从哪里进来、返回到哪里，以及会话放在哪里：从 Home 的会话打开时会话在左侧；从 Space 打开时是右下角的悬浮会话。
+The editor is made up of the preview, timeline, script, inspector and content panel, and it opens one video. Home's ribbon and Space use the same components, the same layout, the same video data and the same command entry point: both are the full editor, and both carry a session for this video. The two entry points differ only in where you come from, where you return to, and where the session sits: when opened from a Home session, the session is on the left; when opened from Space, it is a floating session in the lower right corner.
 
-编辑器的区域分工：
+Division of areas in the editor:
 
-| 区域 | 职责 | 核心操作 |
+| Area | Responsibility | Core actions |
 | --- | --- | --- |
-| 视频栏 | 视频名、当前版本、保存与任务状态 | 查看历史、切换版本、导出 |
-| 预览 | 查看工作稿与候选 | 播放、定位、前后对比、点选对象 |
-| 检查器 | 当前选择可以编辑什么 | 改文字、样式、参数、位置、声音 |
-| 时间线 | 精确定位与直接编辑 | 选择、裁切、移动、联动、关键帧 |
-| 内容面板 | 素材、文稿、字幕、AI 工具、翻译、配音 | 检索、审阅、试听、校正、引用；发起工具（§5.10） |
-| 会话（左侧，或右下角悬浮） | 该视频所在项目的会话 | 发起任务、补充约束、批准、停止；可收起 |
+| Video bar | Video name, current version, save and task status | View history, switch versions, export |
+| Preview | View the working script and candidates | Play, seek, before/after comparison, click to select objects |
+| Inspector | What can be edited for the current selection | Edit text, style, parameters, position, sound |
+| Timeline | Precise positioning and direct editing | Select, trim, move, link, keyframes |
+| Content panel | Assets, script, subtitles, AI tools, translation, voice-over | Search, review, audition, proofread, cite; launch tools (§5.10) |
+| Session (left, or floating in the lower right) | The session for the project this video belongs to | Start tasks, add constraints, approve, stop; can be collapsed |
 
-在 Home 与 Space 之间切换、收起或展开会话时，选区、播放位置和未提交的草稿保持。
+When switching between Home and Space, or collapsing or expanding the session, the selection, playhead position and unsubmitted drafts are kept.
 
-**叠放次序**。画面上谁盖住谁由轨道的上下决定：时间线上越靠上的画面轨道越在前面，同一条轨道上的片段在时间上不重叠、按先后排开。用户不用管这条规则也能换前后：选中画布上任意一件画面元素，工具条菜单里的「层级」给四个动作，前移一层（⌘↑）、后移一层（⌘↓）、移到最前（F）、移到最后（B）。这一件与别的片段共用一条轨道时，它被拆到相邻新建的一条轨道上，别的片段不动；它独占一条轨道时，整条轨道（连同上面别的时段的片段）与相邻那条互换，或挪到最上 / 最下。已经在最前 / 最后时菜单项灰着。时间线上也可以直接拖动行头，把一条轨道拖到另一条轨道的上面或下面，画面的前后随之改变。画面轨道与字幕轨道是同一叠，可以互相穿插（把波形或贴纸拖到字幕上面，画面就盖住字幕），字幕不自动在最上；声音轨道另一叠，只在声音轨道之间排序。两种做法都是一步撤销（命令协议规范 §4.2 `arrangeItem`、`moveTrack`）。
+**Stacking order.** Which picture covers which is determined by track position: on the timeline, picture tracks higher up are in front, and clips on the same track do not overlap in time and are arranged in sequence. Users do not need to know this rule to change front and back. Select any picture element on the canvas, and the “层级” (Layer) menu in the toolbar offers four actions: Bring Forward One Layer (⌘↑), Send Backward One Layer (⌘↓), Bring to Front (F), Send to Back (B). If the element shares a track with other clips, it is split onto a newly created adjacent track, and the other clips stay put. If it occupies a track alone, the whole track (together with the clips on it at other time spans) swaps with the adjacent track, or moves to the very top or bottom. When already at the front or back, the menu items are greyed out. On the timeline, you can also drag a track header directly above or below another track, and the picture stacking changes accordingly. Picture tracks and subtitle tracks form one stack and can be interleaved (drag a waveform or sticker above a subtitle, and the picture covers the subtitle); subtitles are not automatically kept on top. Audio tracks form a separate stack and are ordered only among audio tracks. Both approaches are a single undo step (command protocol spec §4.2 `arrangeItem`, `moveTrack`).
 
-**声音行**。视频自带的声音跟着视频那一行走，不另起一行。引擎给每个视频默认建的那条音频轨在放进音频之前是空的，时间线不画它：没有名字、也没有片段的音频轨都不画，有名字的（自己建的、配音建的）照画。放音频时照样落到它上面，放进去之后这一行就出现。
+**Audio row.** The video's own sound follows the video row and does not get its own row. The audio track the engine creates by default for each video is empty until audio is placed on it, and the timeline does not draw it: audio tracks with no name and no clips are not drawn, while named ones (ones you create yourself, or ones voice-over creates) are drawn. Audio still lands on it when placed, and the row appears once it contains something.
 
-**行高与行头**。放视频的画面行要画胶片条与原声波形，高一些；别的行（图片、文字、声音、配音、字幕）看不到缩略图，与字幕行一样矮。字幕行与配音行的行头写语言标签（ZH、EN、PT-BR），任何界面语言下都放得下；原文字幕用字幕图标，译文用翻译图标，全名与原文 / 译文写在悬停说明里。同一类里同一个标签不止一行时按先后编号（EN 1、EN 2），没有语言的行照旧写全名。
+**Row height and headers.** Picture rows that show video need a filmstrip and original-audio waveform, so they are taller. Other rows (image, text, audio, voice-over, subtitles) show no thumbnails and are as short as subtitle rows. Subtitle and voice-over row headers carry language labels (ZH, EN, PT-BR), which fit in any interface language. Source subtitles use the subtitle icon and translations use the translate icon; the full name and source or translation are given in the hover tooltip. When several rows of the same kind share a label, they are numbered in order (EN 1, EN 2); rows with no language keep their full name.
 
-**删除与合拢**。删除选中的片段（Delete、走带的删除钮、检查器、右键菜单、画布工具条）之后，删掉的那几段里所有轨道都空了的部分合拢：后面的内容前移，总长变短。还有别的轨占着（例如一段文字、一段自己放的音频或配音）就留空隙。跟着视频的字幕只在它跟着的视频还在的地方算占着：视频删了，那一截字幕也跟着没了；不跟视频的字幕（例如导入的字幕文件）按整段算。配音分离出的背景声与人声跟着画面走，不算占着，合拢时一起拿掉那一段。在时间线上框选不会选中整层字幕（框过字幕行只选到别的轨上的片段），要删整层字幕就点字幕行。右键菜单的「从所有轨道删除这一段」（⇧Delete）把选中片段盖住的时间从每一条轨上拿掉，跨在边上的片段裁掉落在段里的部分，后面的内容前移，等于框选所有轨道再删；只选中字幕时不可用，因为字幕铺满整条轨。两种做法里章节都与「剪掉一章」一样跟着前移：落在拿掉的那段里的章回到段首，整章都在段里的删掉。删除与合拢是一笔事务、一步撤销。合拢的段后面有锁住的轨道或片段时不合拢，删除照做，提示里说明；⇧Delete 遇到锁住的则整件不做，提示先解锁（命令协议规范 §4.2 `removeRange`）。
+**Deleting and closing gaps.** After deleting selected clips (Delete, the delete button on the transport, the inspector, the context menu, or the canvas toolbar), the parts of the removed span where all tracks are empty are closed: later content moves forward and the total length shortens. If other tracks still occupy the span (for example a text clip, a self-placed audio clip or voice-over), a gap is left. Subtitles that follow their video only count as occupying where the video they follow still exists: if the video is deleted, the stretch of subtitles goes with it; subtitles that do not follow video (for example imported subtitle files) count as a whole span. Background sound and vocals separated from voice-over follow the picture and do not count as occupying; when closing, they are removed along with that span. Box-selecting on the timeline does not select an entire subtitle layer (dragging across a subtitle row only selects clips on other tracks); to delete a whole subtitle layer, click the subtitle row. The context menu item “从所有轨道删除这一段” (Delete This Span From All Tracks, ⇧Delete) removes the time covered by the selected clips from every track: clips straddling the edge are trimmed where they fall inside the span, and later content moves forward, the same as box-selecting all tracks and deleting. It is unavailable when only subtitles are selected, because subtitles fill the whole track. In both approaches, chapters move forward as they do for “剪掉一章” (Cut a Chapter): a chapter that falls inside the removed span moves to the start of the span, and a chapter wholly inside the span is deleted. Deleting and closing gaps is one transaction with one undo step. If there are locked tracks or clips after the span being closed, the gap is not closed; the deletion still happens, and a notice explains this. ⇧Delete does nothing at all if locked items are involved, and a notice asks you to unlock them first (command protocol spec §4.2 `removeRange`).
 
-**预览载入与卡住**。预览还没出画面时，不留一块光秃秃的黑：
+**Preview loading and stalls.** When the preview has no picture yet, do not leave a bare black frame:
 
-- **载入中**：画面出来之前（渲染内核还在载入，或这一刻要画的媒体还在来；载入失败的不再等，照画、缺的由提示说明）一块不透明的深色面板盖住画面，不露出等着媒体时的黑帧；满 0.5 秒还没好才出现转圈与「正在载入预览」，打开很快的视频不闪。重试或换一部视频之后从头算；主媒体放不出来已有专门的提示卡时不再盖着。
-- **转换中**：浏览器放不了的媒体（例如这台机器解不了的 WebM）要先由 Runtime 转换出一份能播放的副本。这时面板上是「正在准备预览 · N%」与进度条，点名在转哪个媒体，并说明只在第一次打开时转换、之后直接播放、原文件不会改动。百分比向下取整，没转完最多显示 99%；Runtime 还不知道进度时只有标题、进度条不定。头 0.5 秒与载入中一样安静，很快就转好的短片不闪出进度条。进度在走就不算卡住，进度满 10 秒没动才算卡在转换；还不知道进度时不算卡住（转换有自己的超时，失败走主媒体放不出来那张卡）。
-- **卡住**：同一步卡住满 10 秒（与预览引擎的卡住诊断同一个门槛），画面正中出一张卡：说预览卡住了、卡在哪一步（预览引擎还在载入、还在准备这部视频、在等某个媒体（点名素材）、转换媒体没有进展（点名素材）、在等字幕、在等字体、画面一直没有更新）、已经等了多少秒并逐秒更新，带「重试」。重试只重新载入预览（渲染内核、视频、媒体地址与元素），不改动视频。主媒体放不出来已有专门的提示卡时不再出这张卡；页面隐藏时不计时、不显示。开发细节（元素状态、意外的错）只进开发日志。
-- 面板与卡片接住指针：点在上面不会暂停播放，也不会选中或框选底下看不见的画面元素，卡上的「重试」照常可点。
+- **Loading:** until a picture appears (the render kernel is still loading, or the media to be drawn at this moment is still arriving; if loading has failed, it no longer waits and draws what it can, with a notice explaining what is missing), an opaque dark panel covers the picture so the black frame shown while waiting for media does not show through. A spinner and “正在载入预览” (Loading preview) appear only if it is still not ready after 0.5 seconds, so quickly opened videos do not flicker. After a retry or after switching to another video, timing restarts from zero. When a dedicated notice card for unplayable main media is already showing, the panel no longer covers it.
+- **Converting:** media the browser cannot play (for example, WebM that this machine cannot decode) must first be converted by the Runtime into a playable copy. During this, the panel shows “正在准备预览 · N%” (Preparing preview · N%) with a progress bar, names the media being converted, and explains that conversion happens only on first open, after which it plays directly, and the original file is not changed. The percentage is rounded down and shows at most 99% until conversion finishes; if the Runtime does not yet know the progress, only the title appears and the progress bar is indeterminate. The first 0.5 seconds stay quiet, as in loading, so short clips that convert quickly do not flash a progress bar. While progress is moving, it does not count as stuck; it counts as stuck in conversion only if progress has not changed for 10 seconds. While progress is unknown, it does not count as stuck (conversion has its own timeout, and failure goes to the unplayable-main-media card).
+- **Stuck:** if the same step stalls for 10 seconds (the same threshold as the preview engine's stall diagnostics), a card appears in the center of the picture saying the preview is stuck, which step it is stuck on (the preview engine is still loading, still preparing this video, waiting on a media item (named asset), conversion of a media item has no progress (named asset), waiting on subtitles, waiting on fonts, or the picture has not updated), how many seconds it has been waiting (updated every second), and a “重试” (Retry) button. Retry only reloads the preview (render kernel, video, media addresses and elements) and does not change the video. When a dedicated notice card for unplayable main media is already showing, this card does not appear. The timer does not run and nothing is shown while the page is hidden. Development details (element states, unexpected errors) go only to the development log.
+- The panel and cards take the pointer: clicking on them does not pause playback, and does not select or box-select picture elements underneath that you cannot see. The “重试” (Retry) button on the card remains clickable.
 
-**悬浮会话**。从 Space 打开的视频没有左侧会话栏，会话浮在编辑器右下角：
+**Floating session.** Videos opened from Space have no left session bar; the session floats in the lower right corner of the editor:
 
-- **默认是一个输入框，不是一颗图标。** 用户不点开也能看到这里可以对话。输入框不抢键盘焦点，编辑器的快捷键照常生效。
-- **最小化是用户的选择。** 点最小化才收成一颗浮动图标，这个选择跨视频记住；有任务在跑或等待批准时图标带状态点。
-- **输入区底栏。** 左侧选择访问模式，右侧选择 Agent provider 和模型，沿用 Home 会话的选择器与设置语义。左右与上方保留足够留白，底部紧贴工具栏，不留额外空白。
-- **发送后进入新会话。** 输入的 prompt 作为第一条用户消息发送，并立即跳转到 Home 的会话区开始对话。会话归入当前视频绑定的项目；视频没有绑定项目时，会话不属于任何项目，与视频所在的那条会话共用文件夹（§2.3），显示在「最近」。当前视频作为卡片随首条消息带入，点击卡片可重新打开编辑器。发送前不创建空会话，所选 provider、模型、推理强度、访问模式与附件一并保留；再次从 Space 打开视频时仍从新会话输入框开始。
-- 展开时不遮住右侧的面板切换栏；它压住的内容面板底部区域，由用户用最小化让开。
+- **By default it is an input box, not an icon.** Users can see that they can chat here without clicking anything. The input box does not take keyboard focus, so editor shortcuts keep working.
+- **Minimizing is the user's choice.** It collapses to a floating icon only when the user clicks minimize, and this choice is remembered across videos. The icon shows a status dot when a task is running or awaiting approval.
+- **Input footer bar.** On the left, choose the access mode; on the right, choose the agent provider and model, following the same pickers and settings semantics as the Home session. Leave enough margin on the left, right and above; the bottom sits tight against the toolbar with no extra space.
+- **Sending opens a new session.** The typed prompt is sent as the first user message, and the app immediately jumps to the session area on Home to start the conversation. The session is filed under the project bound to the current video. If the video has no bound project, the session belongs to no project, shares the folder with the session of the video's location (§2.3), and appears under “最近” (Recent). The current video is carried in with the first message as a card; clicking the card reopens the editor. No empty session is created before sending; the selected provider, model, reasoning effort, access mode and attachments are all kept. When the video is opened from Space again, it still starts from a new session input box.
+- When expanded, it does not cover the right-hand panel switch bar. Where it covers the bottom of the content panel, the user clears the space by minimizing.
 
-### 5.2 任务布局
+### 5.2 Task layouts
 
-创作、审阅、精修是同一个编辑器的三种布局，共享同一个视频与会话，不是三个应用：
+Creating, reviewing and refining are three layouts of the same editor, sharing the same video and session; they are not three apps:
 
-- **创作**：优先展开脚本与分镜视图。
-- **审阅**：优先展开文稿、候选与建议列表。
-- **精修**：优先展开检查器与时间线。
+- **Create:** prioritize expanding the script and storyboard views.
+- **Review:** prioritize expanding the script, candidates and suggestion list.
+- **Refine:** prioritize expanding the inspector and timeline.
 
-系统按任务类型给出初始布局：做视频时展开脚本与分镜，剪口播时展开文稿，做局部视觉修改时展开检查器。用户手动调整之后，以用户的选择为准。
+The system gives an initial layout by task type: when making a video, the script and storyboard are expanded; when cutting talking-head footage, the script is expanded; when making local visual edits, the inspector is expanded. Once the user adjusts the layout manually, the user's choice prevails.
 
-### 5.3 预览与上下文选择〔UX-02〕
+### 5.3 Preview and context selection 〔UX-02〕
 
-画布点选、时间线选区和文稿选句都可以直接「让 CucCut 修改」：选择变成输入框上方的引用标签（§3.2.3）。
+Canvas selection, timeline range selection and script sentence selection can all be sent directly to “让 CucCut 修改” (Let CucCut Edit). The selection becomes a reference tag above the input box (§3.2.3).
 
-- 引用标签绑定的是稳定的对象、句子或时间范围，以及当时的版本，不是屏幕位置。
-- 「第三句」这样的说法在提交时解析为具体的句子；之后列表重排不改变已提交任务的目标。
-- 视频画面中的区域选择只表示像素位置，不自动建立可编辑对象。
+- A reference tag binds to a stable object, sentence or time range, along with the version at that time, not to a screen position.
+- A phrase such as “第三句” (the third sentence) is resolved to a specific sentence at submission; later reordering of the list does not change the target of a task already submitted.
+- Region selection on the video picture only indicates a pixel location and does not automatically create an editable object.
 
-舞台下沿是一条工具条（原型 `designs/cuccut/app/stage.jsx` 的 `StageBar`）：左边是画幅与倍速，图标加当前值；右边是字幕显隐、音量与全屏，只有图标。
+The strip along the bottom of the stage is a toolbar (prototype `designs/cuccut/app/stage.jsx`, `StageBar`). On the left are aspect ratio and playback speed, each shown as an icon plus its current value. On the right are subtitle visibility, volume and fullscreen, icons only.
 
-- 画幅：列出原始（与视频文件同比例，没有视频文件时不可选）与 16:9、9:16、1:1、4:3、3:4、2:1、2.35:1、1.85:1，另有「自定义…」输入任意 `w:h`。换画幅改的是视频的画布：短边不变、长边取偶数，与检查器的画幅同一种换法，一步撤销；长边超过 16384 像素的自定义比例不能应用，只读的视频不能换。菜单里的「平台安全区」只在竖幅画布上可开，在画面上标出平台的按钮与文字会盖住的区域。
-- 倍速与全屏播放器共用一份，只改这个窗口播放的快慢。
-- 字幕显隐只决定舞台上看不看得见字幕（含转录中的临时字幕），不改字幕轨、不影响导出。
-- 音量只是监听音量，与 ↑ / ↓、M 和全屏播放器是同一份，不改视频的混音；切换听配音还是原声在配音轨行头的菜单里，不在这里。
-- 安全区、字幕显隐与倍速都是这个窗口的观看态：不进视频、不进撤销、不影响导出，换到另一个视频时复位。
+- Aspect ratio: lists Original (same ratio as the video file; not selectable when there is no video file) and 16:9, 9:16, 1:1, 4:3, 3:4, 2:1, 2.35:1, 1.85:1, plus “自定义…” (Custom…), which accepts any `w:h`. Changing the aspect ratio changes the video's canvas: the short side stays the same and the long side is rounded to an even number, the same method as the inspector's aspect ratio, as a single undo step. A custom ratio whose long side exceeds 16384 pixels cannot be applied, and read-only videos cannot change ratio. The “平台安全区” (Platform Safe Zone) menu item is only available on portrait canvases and marks the area that platform buttons and text would cover on the picture.
+- Playback speed and the fullscreen player share one setting, and changing it only changes how fast this window plays.
+- Subtitle visibility only determines whether subtitles are visible on the stage (including temporary subtitles during transcription). It does not change subtitle tracks and does not affect export.
+- Volume is only monitoring volume. It is the same as ↑ / ↓, M and the fullscreen player, and does not change the video's mix. Switching between voice-over and original sound is in the voice-over track header menu, not here.
+- Safe zone, subtitle visibility and playback speed are all viewing states of this window: they do not enter the video, do not enter undo, do not affect export, and reset when switching to another video.
 
-预览可以进入全屏播放（F，或舞台工具条右端的全屏钮；原型 `designs/cuccut/app/player.jsx`）。全屏只是这个窗口的观看方式，不进视频、不进撤销、不影响导出：
+The preview can enter fullscreen playback (F, or the fullscreen button at the right end of the stage toolbar; prototype `designs/cuccut/app/player.jsx`). Fullscreen is only a way to view within this window. It does not enter the video, does not enter undo, and does not affect export:
 
-- 画面就是预览本身，贴边按画布比例居中，画面之外纯黑；不画舞台点选层，单击画面播放 / 暂停，双击退出。
-- 控件条：进度条（章节刻痕；悬停显示该处的一格画面、时码与章节）、播放、上一章 / 下一章、音量、时码、字幕、倍速、键表与退出。播放中指针 3 秒不动时，控件连同指针一起淡出；指针停在控件条上、拖动进度或音量、菜单或键表开着时不收。
-- 字幕按画面上实有的字幕给出关闭 / 原文 / 译文 / 双语几档，默认显示全部；舞台上隐藏了字幕时从关闭起步。档位只管全屏这一次，退出时回到舞台的字幕显隐；倍速与舞台工具条共用，退出后保持。
-- 全屏时键盘归播放器，编辑器的快捷键（含撤销、删除）不得生效。键位：Space / K 播放，Esc / F 退出，← / → 跳 5 秒，J / L 跳 10 秒，⇧← / ⇧→ 跳章节，↑ / ↓ 音量 ±10，M 静音，C 换字幕档，Home / End 到头尾，0–9 跳到 0%–90%，? 打开键表。浏览器允许锁定 Esc 时，键表开着时按 Esc 先关表；不允许时 Esc 由浏览器直接退出全屏。
+- The picture is the preview itself, centered at the canvas aspect ratio and flush to the edges, with pure black outside it. No stage pick layer is drawn; a single click on the picture plays or pauses, and a double click exits.
+- Control bar: progress bar (chapter ticks; hovering shows one frame at that point, its timecode and chapter), play, previous and next chapter, volume, timecode, subtitles, playback speed, shortcut list and exit. During playback, if the pointer stays still for 3 seconds, the controls fade out along with the pointer. The controls do not fade while the pointer rests on the control bar, while dragging the progress bar or volume, or while a menu or the shortcut list is open.
+- Subtitles offer Off / Source / Translation / Bilingual steps, based on the subtitles actually on the picture, and show all by default. If subtitles are hidden on the stage, it starts from Off. The step applies only to this fullscreen session; on exit, subtitle visibility returns to the stage setting. Playback speed is shared with the stage toolbar and persists after exit.
+- In fullscreen, the keyboard belongs to the player, and editor shortcuts (including undo and delete) must not take effect. Keys: Space / K play, Esc / F exit, ← / → skip 5 seconds, J / L skip 10 seconds, ⇧← / ⇧→ skip chapter, ↑ / ↓ volume ±10, M mute, C cycle subtitle step, Home / End to start and end, 0–9 jump to 0%–90%, ? open the shortcut list. When the browser allows locking Esc, pressing Esc with the shortcut list open closes the list first; when it does not, Esc exits fullscreen directly through the browser.
 
-### 5.4 工作稿、候选与对比〔UX-03〕
+### 5.4 Working drafts, candidates and comparison〔UX-03〕
 
-- 预览看的是候选方案时，顶部必须显示明确的「候选方案」标志；看的是当前工作稿（默认）时不另加标志，标题里已写明名称与版本。
-- 比较版本时支持同一时间点同步播放、必要的音频切换，以及在修改区间之间跳转。
-- 修改导致总时长不同时，按对应的内容与锚点比较。不能假装两边相同的绝对秒数仍是同一句话。
-- 「应用」「保留为备选」「丢弃候选」是三个不同的动作。应用后显示真实的提交结果；应用失败或版本冲突时，候选仍可查看，但不标成已写入视频。
-- 检查点是命名的历史状态。回到检查点、从检查点另开方向都是显式操作，不覆盖当前工作稿之后的历史〔COL-03〕。
+- When the preview shows a candidate, a clear “Candidate” badge must appear at the top. When it shows the current working draft (the default), no extra badge is added, since the title already states the name and version.
+- When comparing versions, support synchronized playback from the same point in time, audio switching where needed, and jumping between edited ranges.
+- When an edit changes the total duration, compare by corresponding content and anchors. Do not pretend that the same absolute second on both sides is still the same sentence.
+- “Apply”, “Keep as alternative” and “Discard candidate” are three different actions. After applying, show the real commit result. If applying fails or the version conflicts, the candidate can still be viewed, but must not be marked as written to the video.
+- A checkpoint is a named historical state. Returning to a checkpoint, or branching a new direction from one, are both explicit actions and do not overwrite history after the current working draft〔COL-03〕.
 
-### 5.5 精修与自然语言协作〔UX-04〕
+### 5.5 Fine editing and natural-language collaboration〔UX-04〕
 
-时间线不是隐藏的实现细节，也不是强迫所有用户学习的入口。用户可以随时直接移动片段、改字幕、调音量；智能体下次行动时会拿到这些修改。快捷键、撤销和已经稳定的手势尽量沿用通行习惯，不为了突出对话而重新发明全部编辑操作。
+The timeline is neither a hidden implementation detail nor an entry point that forces every user to learn it. Users can move clips, edit subtitles and adjust volume directly at any time; the agent gets these edits the next time it acts. Shortcuts, undo and established gestures should follow common conventions where possible, rather than reinventing every editing operation just to highlight the conversation.
 
-每次修改都有回执：实际改了哪些对象、时间上的影响、连带受影响的内容，以及哪些可以安全撤销〔COL-02〕。撤销可以针对某一次修改，而不只是「撤销上一步」；撤销前检查这次修改之后是否有依赖它的新修改，有冲突时说明冲突，不静默覆盖。
+Every edit comes with a receipt: which objects were actually changed, the impact on timing, the content affected as a result, and which changes can safely be undone〔COL-02〕. Undo can target a single edit, not only “undo the last step”. Before undoing, check whether any later edits depend on this one; if there is a conflict, state it and do not silently overwrite.
 
-### 5.6 可编辑层级〔EDT-01〕
+### 5.6 Editability levels〔EDT-01〕
 
-不同输入能编辑到的深度不同。系统拿到输入后先给出可编辑性报告，界面只展示已经验证的操作：
+Different inputs can be edited to different depths. After receiving an input, the system first produces an editability report; the interface shows only operations that have been verified.
 
-| 输入 | 能做什么 | 不能做什么 |
+| Input | What it can do | What it cannot do |
 | --- | --- | --- |
-| 原生视频对象（文字、字幕、形状、片段） | 直接改属性、位置、时间 | — |
-| 带公开参数的代码合成 | 整体移动缩放；改公开参数 | 没有公开的内部细节 |
-| 带源码的代码合成 | 以上，加上修改源码并发布新版本 | 像原生对象那样拖动内部元素 |
-| 扁平视频（成片、录屏、无源码的片段） | 剪切、变速、裁切、叠加新元素 | 修改画面里已有的文字或图层 |
-| 只有音频或字幕 | 作为时间与文本依据 | 恢复对应的画面 |
+| Native video objects (text, subtitles, shapes, clips) | Edit properties, position and timing directly | — |
+| Code compositions with public parameters | Move and scale as a whole; change public parameters | No public internal details |
+| Code compositions with source | All of the above, plus edit the source and publish a new version | Drag internal elements the way native objects are dragged |
+| Flat video (final cut, screen recording, clips without source) | Cut, change speed, crop, overlay new elements | Modify existing text or layers in the frame |
+| Audio or subtitles only | Serve as a time and text reference | Restore the corresponding picture |
 
-代码合成在检查器中显示三级能力：「整体」「可调参数」「作者源码」。没有公开参数时不出现无效的滑杆；源码不可用时不出现假装能恢复源码的按钮。
+Code compositions show three capability levels in the inspector: “Whole”, “Adjustable parameters” and “Author source”. When there are no public parameters, no ineffective sliders appear; when the source is unavailable, no button that pretends to restore the source appears.
 
-扁平视频里原有的文字不能当作原生文字直接改。可以用覆盖、替换原素材或专门的图像修复任务来实现视觉变化，但必须如实保留这一来源与限制。
+Existing text in a flat video must not be treated as native text and edited directly. Visual changes can be achieved through overlays, replacing the original material, or a dedicated image-inpainting task, but this source and its limitation must be kept honestly.
 
-### 5.7 文稿的编辑模式
+### 5.7 Script editing modes
 
-文稿面板至少区分四种模式，模式标签始终可见：
+The transcript panel distinguishes at least four modes; the mode label is always visible.
 
-| 模式 | 改的是什么 | 影响 |
+| Mode | What it changes | Effect |
 | --- | --- | --- |
-| 改原文 | 转录文字 | 字幕文字与依赖它的译文；不改音画 |
-| 改译文 / 显示 | 译文或字幕显示文字 | 该语言的字幕；关联配音标记为可能不一致 |
-| 改配音脚本 | 用于说出口的脚本 | 对应配音单元需要重新生成 |
-| 剪辑音画 | 时间线上保留哪些内容 | 视频、音频、字幕及跟随对象一起变化 |
+| Edit source text | Transcribed text | Subtitle text and the translations that depend on it; does not change audio or picture |
+| Edit translation / display | Translated or displayed subtitle text | Subtitles for that language; linked voiceover is marked as possibly out of sync |
+| Edit voiceover script | The script to be spoken | The corresponding voiceover units must be regenerated |
+| Edit audio and picture | Which content is kept on the timeline | Video, audio, subtitles and attached objects change together |
 
-同一个删除键在不同模式下含义不同，不能在用户不知情时跨模式生效。在「改原文」模式下删除文字不会剪掉视频。重新转录取代整份原文时，译文、字幕与配音怎样跟着变见 §5.11。
+The same delete key means different things in different modes and must not take effect across modes without the user knowing. In “Edit source text” mode, deleting text does not cut the video. When re-transcription replaces the entire source text, see §5.11 for how translations, subtitles and voiceover follow.
 
-口播剪辑的修改——在「剪辑音画」模式下剪掉一段、接受剪辑建议、恢复剪口、在时间线的剪缝上拖动改范围——都让章节跟着内容走，与「剪掉一章」、时间线上的删除合拢（§5.1）一致：剪掉的段后面的章前移，落在剪掉那段里的章回到剪口处，整章都剪掉的删掉；恢复时剪口之后的章后移，正好在剪口上的章不动（它可能是被剪掉开头的那一章，留在原处也不会让片头空出一段没有章）。章节的移动与剪切是同一笔事务、一步撤销（视频格式规范 §6.7）。
+Edits to narration cuts — in “Edit audio and picture” mode, cutting a segment, accepting a cut suggestion, restoring a cut point, or dragging the seam on the timeline to change a range — all make chapters follow their content, consistent with “cutting a chapter” and deletion on the timeline (§5.1): chapters after a cut segment move forward; chapters that fall inside a cut segment move back to the cut point; chapters that are cut entirely are deleted. On restore, chapters after the cut point move back; a chapter exactly on the cut point stays put (it may be the chapter whose opening was cut, and leaving it in place also keeps the opening from having a stretch with no chapter). Moving and cutting chapters are one transaction, undone in one step (video format spec §6.7).
 
-播放时文稿跟随播放头：原文高亮正在说的词，已经说过的词退灰，当前词保持在列表的垂直中间。暂停时不自动滚动；播放中用户手动滚开后停止跟随，在文稿里跳转或重新开始播放时恢复。没有逐词时间的文字（例如译文）只按整段跟随，不按字数推算逐词时间。字幕列表与译文列表高亮播放头所在的那一句，暂停时高亮停在那句，播放头落在两句之间时不高亮；播放时只把这一句滚进视野，不居中；暂停时不自动滚动；手动滚开后停止跟随、在列表里跳转或重新开始播放时恢复，与文稿相同。
+During playback the transcript follows the playhead: the word being spoken is highlighted, words already spoken are greyed, and the current word stays at the vertical middle of the list. When paused, it does not scroll automatically. During playback, if the user scrolls away manually, following stops; it resumes when the user jumps within the transcript or restarts playback. Text without per-word timing (such as translations) follows only at paragraph level; per-word timing is not estimated from character counts. The subtitle list and the translation list highlight the sentence under the playhead; when paused, the highlight stays on that sentence; when the playhead falls between two sentences, nothing is highlighted. During playback, only that sentence is scrolled into view, not centered. When paused, there is no automatic scrolling. After manual scrolling away, following stops, and it resumes when jumping in the list or restarting playback, the same as the transcript.
 
-文稿面板头上的复制是挨着的两枚钮。复制钮一点就按记住的组合复制全文，提示里写着这个组合；没改过时是 Markdown、五个开关全开。旁边的下拉打开「复制设置」：格式（Markdown / 纯文本）、与导出「文稿」页同一组五个开关（文首元信息、章节标题、段落时间戳、说话人、跳过已剪段）、正文预览与复制按钮；选过的格式与勾选都记住（记在本机，不进项目），下次一点复制钮、再打开「复制设置」都是上一次的选择。复制后的提示写清带了什么与篇幅，并带「复制设置」回到下拉。全文与同样设置导出的文稿逐字节相同（几份转写时按面板的次序各排一份接起来，文首元信息只写在第一份），语言跟面板当前的视图（原文、译文或双语对照）。只看译文时导出排不了（文稿的主文档只认转写与字幕），由面板按同一写法排：不写文首元信息，剪掉的部分不出现。段落与章节的菜单里有「按复制设置」与「只复制文字」，两者写出来一样时只留一项「复制文字」；这一段、这一章不写标题与文首元信息，正文只有时间线上留下的部分，时间是序列上的时刻，这一段不写章节标题。
+The copy controls in the transcript panel header are two adjacent buttons. Clicking the copy button copies the full text with the remembered shortcut combination, and the tooltip states that combination; if nothing has been changed, the default is Markdown with all five switches on. The dropdown beside it opens “Copy settings”: format (Markdown / plain text), the same five switches as the “Transcript” page of export (metadata at the top of the file, chapter titles, paragraph timestamps, speaker, skip cut segments), a body preview and a copy button. The chosen format and checkboxes are remembered (stored on this machine, not in the project), so the next time you click the copy button or open “Copy settings”, you see the last choices. After copying, the notice states clearly what was included and its length, and includes a “Copy settings” link back to the dropdown. The full text is byte-for-byte identical to a transcript exported with the same settings (when there are several transcriptions, each is laid out in panel order and joined together, with the metadata at the top written only in the first one); the language follows the panel's current view (original, translation, or bilingual side-by-side). When only viewing translations, export cannot produce this (the transcript's main document only recognizes transcription and subtitles), so the panel lays it out with the same format: no metadata at the top, and cut portions do not appear. The paragraph and chapter menus include “By copy settings” and “Copy text only”; if both produce the same output, only one item, “Copy text”, is kept. This paragraph or chapter is written without title or metadata at the top; the body contains only the parts remaining on the timeline; times are moments on the sequence; this paragraph does not write a chapter title.
 
-转录进行中，文稿面板换成只读的实时文稿：识别出来的段落按到达顺序一段段出现，还没有说话人，点一段跳到那里，不能改写、不进撤销；新段落进来时跟到最新，用户往上翻就停住并给出「回到最新」。一段都还没有时显示占位，不承诺几秒后出现（有的服务完成时才一起返回）。第一次转录时还没有字幕轨，时间线在字幕行的位置画一条临时行：已识别的段落照常画，还没转录到的部分是一条「转录中」待定带，点它只移动播放头；字幕轨生成后临时行收起。同样只在第一次转录时，画面按默认字幕样式放已经识别出来的部分：播放头落在一段已识别的段落里就显示这一段，还没转录到的部分不显示字幕，它不进撤销、不进导出；字幕面板在转录进度下面按到达顺序列出已识别的段落，一段一张只读卡，点了跳到那里，跟随最新与「回到最新」同文稿面板。重新转录时只有文稿面板切到实时态，已有的字幕轨不受影响。实时文稿是任务事件流的投影，不是项目内容，转录结束后以落进视频的文稿为准。
+While transcription is in progress, the transcript panel switches to a read-only live transcript: recognized paragraphs appear one by one in arrival order, with no speakers yet. Clicking a paragraph jumps there; they cannot be edited and do not enter undo. As new paragraphs arrive, the view follows the latest; if the user scrolls up, it stops and offers “Back to latest”. When no paragraph exists yet, a placeholder is shown, with no promise that content will appear within a few seconds (some services only return everything at completion). During the first transcription no subtitle track exists yet, so the timeline draws a temporary row at the subtitle row's position: recognized paragraphs are drawn as usual, and the portion not yet transcribed is a “Transcribing” pending band; clicking it only moves the playhead. The temporary row collapses once the subtitle track is generated. Also only during the first transcription, the picture shows the already-recognized portion with the default subtitle style: when the playhead falls within a recognized paragraph, that paragraph is shown; the portion not yet transcribed shows no subtitles, and this does not enter undo or export. The subtitle panel, below the transcription progress, lists recognized paragraphs in arrival order, one read-only card per paragraph; clicking jumps there; following the latest and “Back to latest” work as in the transcript panel. When re-transcribing, only the transcript panel switches to the live state; existing subtitle tracks are unaffected. The live transcript is a projection of the task event stream, not project content; after transcription ends, the transcript written into the video is authoritative.
 
-转录过、却一条字幕轨都没有的视频（转录时没建字幕层，例如从链接导入默认不建；或字幕轨都删了），时间线在字幕行的位置画一条只读的「文稿」行，免得转录过的视频时间线上看不出哪里在说话：转写按字幕同一套断句一句一块，中性灰、与字幕的颜色分开，剪掉的部分不出现；它不是轨，没有开关，不上画面、不进导出、不可选中，点一句只把播放头落到句首；行头的提示说明它只读、去字幕 Tab 生成字幕。每个转录过、在时间线上的素材一行；生成字幕轨后收起，正画着第一次转录的临时行的素材不重复画。
+For a video that has been transcribed but has no subtitle track at all (transcription did not create a subtitle layer, e.g. importing from a link does not create one by default; or all subtitle tracks have been deleted), the timeline draws a read-only “Transcript” row at the subtitle row's position, so that you can see where speech occurs on a transcribed video. The transcript is split into sentences using the same segmentation as subtitles, one block per sentence, in neutral grey, distinct from subtitle colors; cut portions do not appear. It is not a track: it has no toggle, does not appear on the picture, does not enter export, and cannot be selected. Clicking a sentence only moves the playhead to the sentence start. The hint at the row header explains that it is read-only and says to generate subtitles from the Subtitles tab. Each transcribed asset on the timeline gets one row; after a subtitle track is generated, the row collapses, and an asset currently showing the temporary row from its first transcription does not get a duplicate row.
 
-字幕面板的翻译在跑时，面板头写正在翻译的语言与进度。智能体自己逐句翻译时（§3.2.2）同样显示：写「共 N 句」与「Agent 逐句翻译，译完一次写进视频」，进度条不定、不写百分比；没有「取消」，说明这件活由一条 Agent 会话在做、要停下就停止那条会话，并给「打开会话」。
+While the subtitle panel's translation is running, the panel header shows the language being translated and the progress. The same applies when the agent translates sentence by sentence (§3.2.2): it shows “N sentences in total” and “Agent translating sentence by sentence; written into the video once translation completes”. The progress bar is indeterminate, with no percentage shown. There is no “Cancel”; instead, it explains that this work is being done by one agent session, that stopping it means stopping that session, and it offers an “Open session” button.
 
-### 5.8 时间的显示与输入
+### 5.8 Time display and input
 
-- 默认显示秒和可读时码；精修时可以显示视频帧。两种显示读的是同一个权威位置。
-- 输入框和变更卡显示所属序列、编辑帧率、请求的时间与实际落点。发生量化时可以展开查看偏差。用户看到「10.000 秒」不应掩盖实际落在 10.010 秒的结果。
-- 导出窗口分别显示「视频编辑帧率」和「输出帧率」。默认继承，可以独立选择。
-- 帧步进标明是在视频网格上还是在输出网格上。
-- 显示时的截断与补零只影响呈现；复制和提交时使用精确值，不用屏幕上的三位小数覆盖原时间。
-- 子视频（§2.3）的文稿面板列出父视频的全文，段落时间按这一条规则（暂定，§12）：在保留段里的段落显示成片时间，与时间线一致；整段在片段之外的段落显示原片时间、置灰，并标「片段外 · 原片时间」；跨过片段边界的段落显示它第一个保留时刻的成片时间。父视频的文稿不受影响。
+- By default, seconds and readable timecodes are shown; during fine editing, video frames can be shown. Both displays read the same authoritative position.
+- Input boxes and change cards show the owning sequence, the edit frame rate, the requested time and the actual landing point. When quantization occurs, the deviation can be expanded to view. A user seeing “10.000 seconds” should not be hidden the fact that the result actually landed at 10.010 seconds.
+- The export window shows “Video edit frame rate” and “Output frame rate” separately. The default is inherited, but they can be chosen independently.
+- Frame stepping indicates whether it is on the video grid or the output grid.
+- Display truncation and zero-padding affect only presentation; copy and commit use exact values, and do not overwrite the original time with the three decimal places shown on screen.
+- For sub-videos (§2.3), the transcript panel lists the full text of the parent video. Paragraph times follow this rule (tentative, §12): paragraphs within kept segments show the output-timeline time, consistent with the timeline; paragraphs entirely outside the clip show the source time, greyed out, labelled “Outside clip · source time”; paragraphs crossing a clip boundary show the output time of their first kept moment. The parent video's transcript is unaffected.
 
-时间模型见视频格式规范 §2。
+The time model is in video format spec §2.
 
-### 5.9 素材、风格与模板
+### 5.9 Assets, styles and templates
 
-**素材**〔AST-01〕。导入素材与添加到时间线是两个动作。素材面板显示类别、出处、许可或未知状态、可用性与使用位置。同名文件换了内容，要作为新版本替换，不能随意找一个相似素材来修复缺项。
+**Assets**〔AST-01〕. Importing an asset and adding it to the timeline are two separate actions. The asset panel shows category, provenance, license or unknown status, availability and where it is used. When a file with the same name has changed content, it must be replaced as a new version; do not arbitrarily pick a similar asset to fix a missing item.
 
-**检索与生成**〔AST-02〕。搜索到的候选不等于已导入，更不等于已获得使用许可。P0 接纳用户手工提供的素材和已接入的生成能力；外部检索与多素材库为 P1。
+**Search and generation**〔AST-02〕. A searched candidate is not the same as imported, and even less the same as having a usage license. P0 accepts assets the user provides manually and generation capabilities that are already connected; external search and multiple asset libraries are P1.
 
-**字幕属性**。新建字幕默认将普通逗号、句号换成空格（显示投影见视频格式规范 §5.6）。用户修改位置、锚线、水平位置、宽度、双语上下顺序、行间距、提前与延后显示时间、标点或文字外观后，记住这些选项，重启后新建字幕仍使用上次的选择。原文与译文的外观分别记住，不带入语言、字幕文字或单句覆盖；打开已有视频以它保存的样式为准。字幕片段的开始、结束时间与轨道归属属于视频内容，不作为下次的偏好。
+**Subtitle properties**. A newly created subtitle by default replaces ordinary commas and full stops with spaces (for the display projection, see video format spec §5.6). After the user changes position, anchor line, horizontal position, width, bilingual top-bottom order, line spacing, early and late display times, punctuation or text appearance, these options are remembered, so newly created subtitles still use the last choices after a restart. Original and translation appearance are remembered separately, without carrying over language, subtitle text or per-sentence overrides. When opening an existing video, its saved style takes precedence. Subtitle clip start and end times and track membership belong to video content and are not treated as a preference for next time.
 
-**风格**〔AST-03〕。风格由主题、字体、配色、布局、运动、声音、内容元素和节奏组成，可以组合（例如手绘、白板、数学、演示），不形成互斥的工作流。
+**Styles**〔AST-03〕. A style consists of theme, font, colour palette, layout, motion, sound, content elements and rhythm. Styles can be combined (for example hand-drawn, whiteboard, math, presentation) and do not form mutually exclusive workflows.
 
-**字体**。可选的字体有三种来源：随应用发布的、本机已装的，以及 Google Fonts 字体目录里的（约 1900 个族，开源许可，按需下载）。选用一个还没下载的族时立即生效，先照回退字体显示，下载好后自动换成这个字体；打开视频、预览与导出用到字体目录里的族时同样自动下载（可在设置里关掉）。下载的字体存在应用数据里、不进项目，可以查看大小、逐个删除或清空；每个族的许可在选字时可见。下载不成时（离线、关掉了自动下载、服务出错）照回退字体显示与导出，并说明是哪个族、为什么，不默默替换；导出不因此拦下，也不要求先选替代字体（§8.1）。选字界面的交互以原型为准（架构设计 §9.1）。
+**Fonts**. There are three sources for selectable fonts: those shipped with the app, those installed on this machine, and those from the Google Fonts catalog (about 1,900 families, open-source licensed, downloaded on demand). Selecting a family not yet downloaded takes effect immediately: it is displayed with the fallback font first, and switches automatically to this font once downloaded. When a video is opened, or a preview or export uses families from the catalog, they are likewise downloaded automatically (this can be turned off in settings). Downloaded fonts are stored in app data, not in the project; their sizes can be viewed, and they can be deleted one by one or cleared all at once. Each family's license is visible when choosing the font. When a download fails (offline, auto-download turned off, service error), the fallback font is displayed and exported, and the panel states which family and why, without silently replacing it. Export is not blocked by this, and it does not require first choosing a substitute font (§8.1). The interaction of the font picker follows the prototype (architecture design §9.1).
 
-**模板**〔AST-04，P1〕。模板保存原生结构或代码包及其公开参数。新实例不修改模板的原版本，也不携带密钥、私有机器路径或未授权的资料。
+**Templates**〔AST-04, P1〕. Templates save native structures or code packages and their public parameters. New instances do not modify the template's original version, and do not carry keys, private machine paths or unlicensed materials.
 
-### 5.10 工具与对话
+### 5.10 Tools and conversation
 
-润色、分章、翻译、配音、裁剪、写作这些事是**工具**：每个工具定义一次（参数、范围、回执、撤销、复核界面），从四个地方用到，缺省都交给智能体。编辑器右侧 rail 有一个「AI 工具」Tab，排在文稿、字幕之后的第三格，是工具的目录与宿主；别的入口都通到它。
+Polishing, chaptering, translating, dubbing, trimming and writing are **tools**. Each tool is defined once (parameters, scope, receipt, undo, review UI) and is reached from four places. By default, all of them hand the work to the agent. The editor's right rail has an “AI tools” tab, the third slot after the script and subtitle tabs. It is the catalog and host for tools, and every other entry point leads to it.
 
-| 入口 | 行为 |
+| Entry point | Behaviour |
 | --- | --- |
-| AI 工具 Tab | 列表页按组列出工具，每行一句说明、这部视频上的状态（在跑的进度、待处理的条数、上次跑过的时间）。点一行进这个工具的参数页，「返回」回列表。顶上一张卡：不在列表里的活用一句话交给智能体，新开一条会话；没有可用的智能体时这张卡换成配置引导 |
-| 对话 | 在输入框开头输入 `/`，或点输入框的「使用工具」，列出这部视频能用的全部工具。选中后是一条普通的消息：智能体接手，写入前在批准卡片里可以改模型与范围（§6.5）。不点名工具、直接用一句话描述也可以，由智能体自己选 |
-| 所在面板 | 带范围的入口留在它处理的对象旁边：文稿面板的章节与段落菜单（润色这一章、重新转录这一段），字幕面板 AI 菜单里原文被剪切的译文（「处理」），素材与时间线的裁剪与配音。点开是切到 AI 工具 Tab 并打开那一页，范围已填好。字幕面板的逐句重译与过期译文的「重译」不切走，原地直接调模型或发到当前会话（见下面的「逐句与过期译文」）。文稿面板顶部不再有整理全文的菜单——同一份工具列表只放一处 |
-| 智能体 | 智能体在任务里自己调用同一个工具；需要人复核的结果，它在收尾时指向对应的复核界面 |
+| AI tools tab | The list page groups tools. Each row has a one-sentence description and this video's status: a running job's progress, the number of items waiting, and when it last ran. Opening a row goes to that tool's parameters page; “Back” returns to the list. A card at the top hands work that is not in the list to the agent in one sentence, opening a new conversation. When no agent is available, this card becomes a setup prompt. |
+| Conversation | Type `/` at the start of the input box, or click “Use tool” in the input box, to list every tool this video can use. Selecting one sends an ordinary message: the agent takes over, and before it writes, the approval card lets you change the model and scope (§6.5). You can also describe the task in a sentence without naming a tool, and the agent picks one. |
+| Panel where the work sits | Entry points with a scope stay beside the object they act on: the chapter and paragraph menus in the script panel (polish this chapter, re-transcribe this paragraph); the translation of a cut source sentence in the subtitle panel AI menu (“Process”); and trimming and dubbing from the media and timeline. Opening one switches to the AI tools tab and opens that page, with the scope already filled in. The per-sentence retranslate and the “Retranslate” action for stale translations in the subtitle panel do not switch away: they call the model directly or send to the current conversation in place (see “Per-sentence and stale translations” below). The script panel no longer has a whole-text tidy-up menu at the top; the tool list lives in one place only. |
+| Agent | The agent calls the same tool itself during a task. When a result needs human review, it points to the matching review UI when it finishes. |
 
-**分批。** 列表页第一批只列从文稿出发的三组：整理文稿（润色、生成章节、识别说话人、重新转录、找可剪的口）、写作（写总结、写博客）、发布（起标题、写简介、做封面），再加「画面」组里的剪成短视频（只交给智能体、总是新开一条会话，找到就直接创建引用原片的子视频，原视频和时间轴不动；参数页没有「用」与「会话」两行），以及「声音」组里的生成配乐：它不从文稿出发，没有文稿也能点，点了去工具 › 生成音乐，目标时长按这部视频的长度预填，做好的音频加到这部视频的音乐轨；视频比模型的单次上限长时预填上限并写明，加到音乐轨时循环铺满、接缝交叉淡化、片尾淡出（§2.7「生成配乐」）；没装本机音乐模型时由工具页的「模型」一行给出去设置的入口（§2.7「页面」）。翻译字幕、翻译配音、智能裁剪仍从各自面板进入，列表脚注说清去处，之后再搬进来。没有文稿的视频，列表顶上加一张说明卡（这些工具都从文稿出发，先转录）并给转录入口，工具行置灰不可点，仍让人看见有哪些工具。
+**Batches.** The first batch on the list page lists only the three groups that start from the script: tidy up the script (polish, generate chapters, identify speakers, re-transcribe, find cuttable pauses); writing (write a summary, write a blog post); and publishing (suggest a title, write a description, make a cover). It also adds “cut into short videos” from the “Visuals” group, which is agent-only and always opens a new conversation. When it finds clips, it creates child videos that reference the source footage directly. The original video and its timeline stay untouched. Its parameters page has no “Use” or “Conversation” rows. The “Sound” group adds music generation. It does not start from the script, so it can be clicked without one. Clicking it goes to Tools › Generate music, with the target duration pre-filled from this video's length. The finished audio is added to this video's music track. If the video is longer than the model's single-generation limit, the page pre-fills the maximum and says so. When added to the music track, the audio loops to fill the video, cross-fades at the seams, and fades out at the end (§2.7 “Generate music”). If no local music model is installed, the tool page's “Model” row links to settings (§2.7 “Page”). Translate subtitles, translate dubbing and smart trim are still entered from their own panels. The list footnote explains where they are, and they will move here later. For a video with no script, a note card at the top of the list explains that these tools all start from the script and need transcription first, and it gives a transcription entry point. Tool rows are greyed out and unclickable, but still visible so people can see which tools exist.
 
-**参数页**自上而下固定四段：
+**Parameters page.** From top to bottom, the page always has four sections:
 
-1. 一张卡：工具名、一句说明、一行「会不会改视频」（会改文稿则完成后应用、一步撤销；只写建议；不改视频、结果给你读、拷走）。新用户第一眼要知道的是按下去会发生什么。
-2. 设置行：「用」（交给智能体 / 直接调模型，按工具记住）、「范围」（整篇 / 某一章 / 下单时带来的段落）、交给智能体时多一行「会话」。工具自己的勾选项与数字接在后面（先润色一遍、按术语库纠正、候选数、发到哪、画幅、添加关键帧插图）。写博客的「添加关键帧插图」默认不勾：勾上时智能体在需要配图的地方从视频取帧插进正文；直接调模型拿不到画面，这一项置灰并写明原因。语言、风格、篇幅、视角不再是下拉——它们写在提示词里。
-3. 提示词框：预填一段模板，第一行是意图句（范围、勾选项、已选用的标题都折在里面），下面几行固定约束（写作类：用 Markdown 写、用什么语言、篇幅与结构；润色：不改写表达、不删内容）。这段话就是会发出去的话，用户直接改；改过才出「恢复默认」。它与会话输入框是同一个控件：`+` 菜单加文件与 Skill，`@` 引用章节、说话人与译文，支持拖放与粘贴图片。不再另放一只「还有什么要求」——同一段话不出现两次。每个工具配一个内置 skill（§6.9 的那一组），打开参数页时它已经挂在框上、标着「这个工具的做法」；摘掉就只发框里的提示词（框下一行说明「没挂 skill」并给加回入口）；`+` 菜单还能再挂别的已添加 skill，关着的也行，接在已挂的后面，几个一起按顺序发出。直接调模型时挂着的 skill 作为系统提示词发出：只带 `SKILL.md` 和用到的 `references/`，不带别的文件；框下一行提醒用户这一点。
-4. 主按钮与一行去向说明。按钮写明动作（交给 Agent / 润色 / 写总结）；下面一行说清谁来做、结果落在哪、算不算钱。
+1. A card with the tool name, a one-sentence description, and a line stating whether it changes the video. Possible values: changes the script (applied on completion, undoable in one step); only writes a suggestion; does not change the video, and the result is for you to read or copy. New users need to know immediately what happens when they press the button.
+2. Settings rows: “Use” (hand to the agent, or call the model directly; remembered per tool), “Scope” (whole text, one chapter, or the paragraphs brought in when the tool was launched), and, when handing to the agent, an extra “Conversation” row. The tool's own checkboxes and numbers follow (polish once first, correct using the glossary, number of candidates, where to send, aspect ratio, add keyframe illustrations). For the blog post's “Add keyframe illustrations”, the default is off. When it is on, the agent pulls frames from the video and inserts them into the article where an illustration is needed. A direct model call cannot access the picture, so this option is greyed out with the reason stated. Language, style, length and point of view are no longer dropdowns; they are written in the prompt.
+3. Prompt box. It is pre-filled with a template. The first line is the intent sentence, with scope, checked options and any selected title folded in. Below it are fixed constraints. For writing tools these are: write in Markdown, which language to use, length and structure. For polishing: do not reword the expression, and do not delete content. This text is exactly what gets sent, and the user may edit it directly. A “Restore default” button appears only after an edit. The box is the same control as the conversation input: the `+` menu attaches files and Skills, `@` references chapters, speakers and translations, and images can be dragged, dropped or pasted. There is no separate “Anything else?” field, so the same text never appears twice. Each tool has a built-in Skill (the group in §6.9). When the parameters page opens, the Skill is already attached to the box, labelled “This tool's method”. Removing it sends only the prompt text in the box. A line under the box says “No Skill attached” and gives a way to add it back. The `+` menu can also attach other Skills you have added, even when they are off. They go after the attached ones, and all are sent in order. When a direct model call has a Skill attached, the Skill is sent as the system prompt. Only `SKILL.md` and the `references/` it uses are sent, not other files. A line under the box reminds the user of this.
+4. Primary button and a one-line note on where the result goes. The button states the action (Hand to agent / Polish / Write summary). The line below says who does the work, where the result lands, and whether it costs money.
 
-**交给智能体。** 缺省新开一条会话、把这部视频作为上下文：一件事一条会话好找，也不用重发整段历史（同一条长会话在 prompt cache 过期后每次都是额外成本）。「会话」行可改成接着这部视频当前的会话，选项上写明已有几条消息。提示词框底栏与会话输入框一样是访问模式加「家 · 模型」的 chip；它与「用」一行是同一份状态，改一处另一处跟着变，不会各说各的；按下后发出的就是框里那段话加附件，参数页回到列表，那条会话（新开的或接着的）打开到眼前，生成在会话里进行，完成后结果出现在对应的面板或工具页；进度在顶栏胶囊与后台任务页。找可剪的口与刷新过期译文留在原地画进度：会话照样新开或接着、话照样发出去，只是不切过去；回列表再进来、或重启 App 之后，那条会话的任务还在跑就接着画，已经跑完的回到参数页。
+**Hand to the agent.** By default, this opens a new conversation and uses this video as context. One task per conversation is easier to find, and it avoids resending the whole history. (In a long conversation, the prompt cache expires, so every turn costs extra.) The “Conversation” row can be changed to continue the video's current conversation. The option states how many messages it already has. The prompt box's footer works like the conversation input: an access mode plus a “Home · model” chip. It shares state with the “Use” row, so changing one updates the other. When you press the button, the prompt text and attachments are sent. The parameters page returns to the list, and that conversation (new or continued) opens in front of you. Generation runs in the conversation, and the result appears in the matching panel or tool page when it finishes. Progress is shown in the top bar capsule and on the background tasks page. Finding cuttable pauses and refreshing stale translations stay in place and show progress there. The conversation is still created or continued, and the message is still sent, but the view does not switch. If you return to the list or reopen the page, or restart the app, and the job is still running, progress continues to show. Jobs that have finished go back to the parameters page.
 
-**返回。** 结果页、收据页（含候选与确认页）的「返回」回到参数页，设置与提示词都保留；参数页的「返回」回到列表。
+**Back.** “Back” on the result page and the receipt page (including the candidates and confirmation pages) returns to the parameters page, and the settings and prompt are kept. “Back” on the parameters page returns to the list.
 
-**直接调模型。** 润色、生成章节、写总结、写博客、起标题、写简介可以不经过对话、直接调一只文本模型（Runtime 的 `ai-tool` 流程，命令协议 `pipelines`）；刷新过期译文也能直接调模型，走 `translate` 流程的就地刷新（见下面的「逐句与过期译文」）：这条路不带提示词、附件与 Skill，参数页不出提示词框，设置行改成选哪一份译文（从字幕面板进来时缺省是那一份）并写要重译几句（过期、未翻译），再一行说明原文被剪切的句子要按剪后的原文重译、只能交给智能体；下面是文本模型选择（同翻译工具，要结构化输出）、主按钮「重译 N 句」与一行去向，没有要重译的句子时主按钮置灰；按下后参数页原地换成进度（可取消，从字幕面板发起的同一份刷新也画在这里），完成后回到参数页，提示里给撤销；重新转录（要语音模型，而转录流程整篇另加一份转写、不按范围替换）、找可剪的口（要逐处斟酌）、做封面（要生成与合成图片）这一项置灰，下面一行写各自的原因；识别说话人有自己的本机流程。选了直接调模型时：底栏的访问模式与「家 · 模型」换成文本模型选择器（云端与本机模型，按服务商分组；润色与章节要结构化输出，不支持的模型标原因、不能用），不出「会话」行；挂着 skill 时框下一行说明它们作为系统提示词发出、只带 `SKILL.md` 和用到的 `references/`；再一行写清随提示词发出的上下文——「发给模型的：提示词 + 文稿 N 段 · 章节 N · 附件 N · Skill …」（文稿按所选范围计段，随文稿带时间码、说话人与章节；润色只发逐词编号的文稿，不带章节），什么都不带时写「只有上面的提示词」；附了图片时说明图片不发给模型、会略过。主按钮写这个工具自己的动作（润色、生成章节、写总结、写博客、起标题、写简介），下面一行写「直接调 <模型>，不经过对话；完成即应用，可一键撤销 / 结果给你读、拷走，不写进视频。云端模型按用量计费 / 本机模型，不出本机」。按下后参数页原地换成进度（可取消，润色分批时写第几部分），任务同时在后台任务页；完成后润色、章节写进视频并留收据（改了几处、一键撤销），写作与发布类给出模型写的正文原样，可复制，不写进视频、没有收据；「完成」回到参数页。失败留问题卡：原因、去配置模型、从停下的那一步重试。章节总是整篇（没有「范围」行，也没有「先润色一遍」）；直接调模型的润色只逐词改错字、补标点，不分段，「用」一行下写明这一点。选中的模型不能用（没连 key、没装好）时框下给门卡与连接入口，主按钮不置灰，按下时说清差什么并把门卡带到眼前。「用」与所选模型按工具记在本机。
+**Call the model directly.** Polish, generate chapters, write a summary, write a blog post, suggest a title, and write a description can skip the conversation and call a text model directly (the Runtime's `ai-tool` flow, command protocol `pipelines`). Refreshing stale translations can also call the model directly, using the in-place refresh of the `translate` flow (see “Per-sentence and stale translations” below). This path carries no prompt, attachments or Skill. The parameters page has no prompt box. The settings row changes to choose which translation to use (when opened from the subtitle panel, the default is that translation) and states how many sentences to retranslate (stale, untranslated). A further line explains that sentences whose source was cut must be retranslated from the cut source, which only the agent can do. Below that is the text model selector (the same as the translation tool, and it needs structured output), the primary button “Retranslate N sentences”, and a destination line. When there are no sentences to retranslate, the button is greyed out. When pressed, the parameters page is replaced in place with progress (cancellable; the same refresh started from the subtitle panel is also shown here). When it finishes, the page returns to the parameters page, and the message offers undo. Re-transcription (which needs a speech model; the transcription flow adds a whole separate transcript and does not replace by scope), finding cuttable pauses (each one needs judgment), and making a cover (which needs image generation and compositing) are greyed out, with a line below each stating why. Identifying speakers has its own local flow. When direct model calls are selected: the access mode and “Home · model” chip are replaced by a text model selector (cloud and local models, grouped by provider). Polish and chapters need structured output, so unsupported models are marked with the reason and cannot be used. The “Conversation” row is not shown. When a Skill is attached, a line under the box says it is sent as the system prompt, with only `SKILL.md` and the `references/` it uses. Another line states what context goes with the prompt: “Sent to the model: prompt + N script paragraphs · chapters N · attachments N · Skills …”. Script paragraphs are counted by the chosen scope and carry timecodes, speakers and chapters. Polish sends only the script with per-word numbering and no chapters. If nothing else is sent, it says “Only the prompt above”. If images are attached, a note says the images are not sent to the model and are skipped. The primary button states the tool's own action (polish, generate chapters, write summary, write blog post, suggest title, write description). The line below reads “Direct call to <model>, no conversation; applied on completion, undoable in one step / result for you to read or copy, not written into the video. Cloud models are billed by usage / local models, nothing leaves this machine.” When pressed, the parameters page is replaced in place with progress (cancellable; for polish in batches, it states which part is running). The job also appears on the background tasks page. On completion, polish and chapters are written into the video and leave a receipt (how many changes, one-click undo). Writing and publishing tools show the body text the model wrote, unchanged, which can be copied. It is not written into the video and has no receipt. “Done” returns to the parameters page. If a job fails, an issue card appears with the cause, a link to model settings, and a retry from the step where it stopped. Chapters always cover the whole text (there is no “Scope” row and no “Polish once first” option). Polish done by direct call only fixes typos word by word and adds punctuation. It does not split paragraphs, and the “Use” row says so. If the selected model cannot be used (no key connected, or not installed), a gate card and a connection link appear under the box. The primary button is not greyed out. When pressed, it explains what is missing and brings the gate card into view. The “Use” choice and the selected model are remembered on this machine, per tool.
 
-**逐句与过期译文。** 字幕面板的译文列表（双语对照与只看译文）里，每一句的 ⋯ 菜单有：「用模型 API 重译这一句」、「交给 Agent 重译这一句」、「标为过期」或已过期时的「去掉过期标记」；手工翻译就是点进译文直接改。统计条只占一行：左边是句数与要处理的计数（「N 未翻译」「N 过期」「N 被剪切」「N 黏结」，全称在提示里），右边只有两枚图标钮：查找，与一枚 AI 钮。AI 钮的菜单上一组是重译，只在有过期、未翻译或原文被剪切的句子时出现：「用模型 API 重译这 N 句」、「交给 Agent 重译这 N 句」，以及有被剪切的句子时的「处理原文被剪切的 N 句」（打开刷新过期译文的工具页）；下一组是「翻译工具」与「让 Agent 翻译或校对」。Web 只有查找。规矩：
+**Per-sentence and stale translations.** In the subtitle panel's translation list (bilingual view and translation-only view), each sentence's ⋯ menu has: “Retranslate this sentence with the model API”, “Retranslate this sentence with the agent”, and “Mark as stale”, or “Remove stale mark” if it is already stale. Manual translation means clicking into the translation and editing it directly. The stats bar takes one line. On the left are the sentence count and the counts needing attention (“N untranslated”, “N stale”, “N cut”, “N glued”; full names are in the tooltip). On the right are only two icon buttons: search, and an AI button. The first group of the AI button's menu is retranslation. It only appears when there are stale, untranslated or source-cut sentences: “Retranslate these N sentences with the model API”, “Retranslate these N sentences with the agent”, and, when there are cut sentences, “Handle the N cut source sentences” (opens the tool page for refreshing stale translations). The next group is “Translation tool” and “Have the agent translate or proofread”. The web version has only search. The rules:
 
-- 两条路的文案要让人分得清：模型 API 那项下一行写「直接调 <模型> · 按用量计费」（本机模型写「不出本机」），不经过对话、完成即应用；Agent 那项写「在当前会话里做 · 用 Agent 订阅」，写入前会问你。
-- 「过期」与「待翻译」是同一个标记（译文单元 `status: stale`）。改原文、剪掉半句时 Runtime 自动标；用户也可以手工标、手工去掉。手工改了一句的译文就是审过这一句，过期标记随这一笔去掉。标与去都进撤销历史；Web 也有这两项（它只改文档，不调模型）。
-- 直接重译走 Runtime 的 `translate` 流程就地刷新这份译文（`translationId`，一句时再给 `sentences`，命令协议 `pipelines`）：只重译点名的句子，不点名时是标了过期、原文改过与还没有译文的句子；写成同一份译文文档的新版本，从它生成的字幕层里只换这几句的字幕条，时间仍取原句的词时间，别的条与字幕样式不动；一笔事务，撤销一次两边一起回去。模型按翻译工具记住的那只，不弹参数页；进度在统计条与后台任务页，完成后给一条带「撤销」的提示。
-- 交给 Agent 发到这部视频当前的会话（Home 左侧那条，或 Space 的悬浮会话），没有就新开一条；面板留在原地，不切走。发出去的话写明语言与范围（这一句的时间码与原文开头，或过期的句数），只改这几句的译文，时间轴、字幕样式与别的句子一个字不动。智能体改已有译文时，字幕层同样在同一笔编辑里跟着换（`documents_put` 的回执写 `syncedCaptions`）。
-- 这些入口都要调模型或会话，Web 只显示句数与「从 Agent 或 CucCut App 发起」的提示。
+- The two routes must be easy to tell apart. The model API item has a second line: “Direct call to <model> · billed by usage” (for local models: “nothing leaves this machine”). It skips the conversation and applies on completion. The agent item says “Runs in the current conversation · uses the agent subscription”, and it asks for confirmation before writing.
+- “Stale” and “to be translated” are the same mark (the translation unit `status: stale`). When the source is edited, or half a sentence is cut, the Runtime marks it automatically. Users can also add or remove the mark by hand. Hand-editing a sentence's translation counts as reviewing that sentence, so the stale mark is removed along with that edit. Adding and removing the mark both go into the undo history. The web version has both actions too (it only edits the document and does not call a model).
+- A direct retranslation refreshes this translation in place through the Runtime's `translate` flow (`translationId`, with `sentences` when it is one sentence; command protocol `pipelines`). It retranslates only the named sentences. If none are named, it retranslates the sentences marked stale, whose source changed, and those with no translation yet. The result is written as a new version of the same translation document. In the subtitle layer built from it, only those sentences' caption entries are replaced. Their timing still comes from the original sentence's word timing, and other entries and the caption style are unchanged. This is one transaction, so undo reverts both sides at once. The model is the one remembered for the translation tool, and no parameters page opens. Progress appears in the stats bar and on the background tasks page. When it finishes, a notice with “Undo” appears.
+- Handing to the agent sends the work to this video's current conversation (the one on the left of Home, or the floating conversation in Space). If there is none, a new one is opened. The panel stays where it is and does not switch away. The message sent states the language and scope (this sentence's timecode and the opening words of its source, or the number of stale sentences). It changes only the translations of those sentences. The timeline, caption style and other sentences are not touched at all. When the agent edits existing translations, the caption layer is also updated in the same editing transaction (`documents_put` returns `syncedCaptions` in its receipt).
+- All of these entry points need a model or a conversation. The web version only shows the sentence counts and a note: “Start from the agent or the CucCut app”.
 
-**剪成短视频。** 它只交给智能体、新开一条会话（见上面的「分批」）；视频还不属于项目时也是新开一条，与视频所在的会话共用文件夹（§2.3），不建项目。参数页第二段依次是：切成什么样——切几支（「自动」，默认：够格的话题有几个就切几支，不拿弱的凑数，最多 10 支；或 1–10 支）、每支多长（「自动」，默认：每支从开头能抓人的那句剪到话题讲完，不为凑时长拉长或截短；或 15–30 秒 / 30–60 秒 / 60–90 秒 / 1–3 分钟，或自定义最短与最长；不按平台设上限，超出平台常见上限时只提一句，例如 YouTube Shorts 的 3 分钟），两项里有自动时下面一行小字说明自动怎么定、画幅（9:16、1:1、保留原画幅）、取景（「自动」，默认：智能体在片段里均匀抽几帧，看说话的人在画面哪一侧，把裁框放到他身上，找不到人就居中；「我自己定」，即之后在子视频的画布上拖动画面定位置，没有另外的取景控件；「跟着说话的人」置灰，写明这一版还没有人物与发言人模型）；字幕——带哪几轨（原文 + 译文 / 只要原文 / 只要译文，没有译文时只有原文）与样式（短视频字幕预设 / 沿用这部视频的样式）；范围——整篇、某一章，文稿里正选着一段时另有「当前选区」；「已经切过的不再找」（默认勾上，跳过之前几支用到的区间）。这些选择折成提示词框里一行一句，框上预挂 `shorts-segments` skill（§6.9）：智能体挑的单位是话题——先读文稿找出值得单独发的话题，每支从开头的钩子剪到这个话题讲完，不按章节平均切、也不只围着一句金句凑时长；几支、多长是自动的那一项按话题定，给了数目或时长就在其中挑最强的、宁缺毋滥；最后一行是可以单独删改的「找好就直接创建成视频，不用先问我」——留着它，智能体挑好片段就直接创建；删掉它，智能体先在会话里列出候选、问过再建。每支短视频是一部子视频（§2.3），原视频与它的时间线不动；会话里每支一张视频卡，父视频另有一张（§3.2.2）。
+**Cut into short videos.** This is agent-only and always opens a new conversation (see “Batches” above). If the video is not yet in a project, it also opens a new conversation. It shares a folder with the conversation the video is in (§2.3), and does not create a project. The second section of the parameters page has these settings, in order:
 
-**短视频的结果页**（只在桌面端的 AI 工具 Tab）。运行结束时这一轮建出了子视频，就自动从参数页切到结果页。头上写「已创建 N 支」与「第 k/N ‹ ›」；每支一张卡：标题（点一下改）、在父视频上的区间与时长、「开头」那一句（智能体派生时给了就用它，没给取这一支保留段的第一句）、「为什么挑它」与提示牌（智能体给了才有）、按镜头分别取景时一行「取景：按 N 个镜头分别取景 · 打开后在画布上拖某一段改」（只有一个取景位置时没有这一行）、正在看的那支标「正在看」并多一个「调起止」（同横幅的「去文稿调整」，见下面「改一支短视频」）、「打开」（在同一个编辑器里换成这一支）、「不要这支」（移进回收站，提示里可以撤销）。页底三个去处：「再切几支」（回到参数页，已经切过的不再找）、「在 Space 里看这几支」（按来源筛好，§4.3）、「全部导出…」（这一轮没移进回收站的几支各按缺省设置导出一份成片，各是一条导出任务，进度在任务列表里；桌面端先选一次存放的文件夹；正在打开或打不开的那一支跳过，提示里说明）。「返回」回到参数页。结果页的状态按这一轮（会话）记：在父视频与它的几支子视频之间来回切换，回到 AI 工具 Tab 都还在这一页。
+- What to cut: how many clips (“Auto”, the default: as many as there are strong topics, never padding with weak ones, up to 10; or 1–10).
+- How long each clip is (“Auto”, the default: each clip runs from an attention-grabbing opening line to the end of its topic, without stretching or trimming to hit a duration; or 15–30 seconds, 30–60 seconds, 60–90 seconds, 1–3 minutes, or custom minimum and maximum). There is no platform-specific cap. Only if a clip exceeds a common platform limit is there a one-line note, for example YouTube Shorts' 3 minutes. When either of the two settings is “Auto”, a small line below explains how Auto decides.
+- Aspect ratio (9:16, 1:1, or keep the original).
+- Framing (“Auto”, the default: the agent samples several frames evenly across the clip, sees which side of the frame the speaker is on, and places the crop on them; if no person is found, it centres the crop. “I'll set it myself” means you drag the picture on the child video's canvas to position it afterward; there is no separate framing control. “Follow the speaker” is greyed out, with the reason stated: this version has no person or speaker model yet).
+- Subtitles: which tracks to include (source + translation, source only, or translation only; with no translation, only the source is available), and style (the short-video subtitle preset, or the video's current style).
+- Scope: the whole text, one chapter, or, when a paragraph is selected in the script, “Current selection”.
+- “Don't search areas already cut” (on by default, which skips ranges used by earlier clips).
 
-**父视频的「切出的短视频」。** 父视频的视频面板顶上另有一组「切出的短视频」（桌面端与 Web 一样）：列出它切出、没移进回收站的子视频，新建的排在最上面（按建立时间倒序）；默认露出 6 行，多的收起成一颗「还有 N 支」，点开全部列出、再点「收起」收回。每行名字、在父视频上的区间与时长，点一行在同一个编辑器里打开那一支；组可以收起。
+These choices are folded into one line each in the prompt box. The `shorts-segments` Skill (§6.9) is pre-attached to the box. The agent picks units by topic. It first reads the script to find topics worth posting on their own. Each clip runs from a hook at its start to the end of its topic. It is not cut evenly by chapter, and it is not built by padding around a single quotable line. When the number of clips or the length is set to Auto, the agent decides by topic. When a number or duration is given, it picks the strongest within that, and it would rather give fewer than pad. The final line is “Create the video directly once found, no need to ask me first”, which can be edited or deleted on its own. If you keep it, the agent creates the videos as soon as it has picked the clips. If you delete it, the agent first lists its candidates in the conversation and asks you before creating. Each short video is a child video (§2.3). The original video and its timeline stay untouched. In the conversation, each clip gets one video card, and the parent video gets its own card (§3.2.2).
 
-**改一支短视频。** 子视频在同一个编辑器里打开，没有另一套界面：画布按所选画幅，时间线只显示保留的那一段，删内容就是普通的剪口（§5.7「剪辑音画」）。顶部一条横幅写「从「父视频名」切出的短视频」，右边一格进文稿调起止的按钮与「回到原片」；父视频已经删了时横幅改写「切出的短视频 · 来源视频已不在视频库」，不给「回到原片」。「回到原片」在桌面端打开父视频并落在 AI 工具 Tab 的这个结果页，Web 端只打开父视频。起止就在文稿里调：子视频打开时没有指定面板（从 Space、会话里的视频卡、父视频的「切出的短视频」或直接打开）就落在文稿、剪辑音画打开；从结果页点卡打开的停在结果页。横幅那一格看右侧面板在哪：不在文稿时是「去文稿调整」（结果页「正在看」那张卡的「调起止」是同一个动作）——切到文稿、剪辑音画打开、滚到片段前面那条接缝行，没有接缝行就落在片段第一句所在的段，同时记下来处；进来之后这一格换成回去的路，从结果页来是「回到结果页」，从别的面板来是「回到<那个面板>」；不是这样进的文稿（直接落在文稿，或跳过来之后又换过面板、换过视频），桌面端有结果页时是「看结果页」，没有就不摆。子视频文稿的剪辑提示多一句「片段外的话已划掉，点一下放回来」。文稿面板列出父视频的全文：片段之外的句子划掉显示，片段两端各露出几句（暂定 3 句，§12），再往外折成一条接缝行「前面 / 后面 X 已剪掉 · 展开」，每点一次多展开若干句（暂定 10 句），展开后可以收起。点一个划掉的句子，从它到片段边缘的部分一起放回这一支，不在中间留洞；没有把片段外整段一键恢复的按钮。段落时间怎样显示见 §5.8。
+**Short-video result page** (desktop only, in the AI tools tab). When the run finishes and this round created child videos, the view switches automatically from the parameters page to the result page. The header says “N created” and “k/N ‹ ›”. Each clip has a card with: the title (click to edit); its range on the parent video and its duration; the opening line (the one the agent supplied if any, otherwise the first sentence of the kept segment for this clip); “Why this one” and a label (only if the agent provided them); when framing is done per shot, a line “Framing: per N shots · open and drag a segment on the canvas to change” (omitted when there is only one framing position); the clip currently being viewed is marked “Viewing” and gets an extra “Adjust start/end” (the same action as the banner's “Adjust in script”, see “Editing a short video” below); “Open” (switches to this clip in the same editor); and “Don't keep this one” (moves it to the trash; the notice offers undo). At the bottom are three destinations: “Cut more” (back to the parameters page, with already cut areas excluded), “See these in Space” (filtered by source, §4.3), and “Export all…” (each clip not moved to the trash is exported with default settings as a finished video, each as its own export job whose progress is shown in the job list. On desktop, you first choose a folder once. Any clip that is open or cannot be opened is skipped, and the notice says so). “Back” returns to the parameters page. The result page state is remembered per round (conversation). You can switch back and forth between the parent video and its child clips, and returning to the AI tools tab keeps this page.
 
-**画面怎么取景。** 子视频的原片铺满画面，按裁剪取景；按镜头分别取景时原片按镜头拆成几段，各带自己的裁剪（时间线上不标镜头号，几段本身就分开）。在画布上选中原片后拖动画面，只平移这一段的取景：左右拖动挪裁剪窗口，窗口比原片矮时上下也能挪，窗口大小不变、不拖出原片，松手记一步撤销。原片拆成不止一段时，选中其中一段，画面左下角外挂一枚小牌「这一段 · 第 X–Y 秒」（子视频时间线上的秒），说明拖的是哪一段；小牌上的「套到整支」（悬停提示「把这一段现在的摆位用到这支视频的每一段」）把这一段的取景写到这支视频的每一段，一步撤销，提示里也可以撤销。桌面端与 Web 一样。
+**Child-video section on the parent.** Above the parent video's video panel, there is a group called “Cut short videos”. It works the same on desktop and web. It lists child videos cut from this parent that have not been moved to the trash. The newest ones appear first, in reverse creation order. Six rows show by default. Any more are collapsed into one “N more” button. Clicking it lists them all, and clicking “Collapse” hides them again. Each row shows the name, its range on the parent video, and its duration. Clicking a row opens that clip in the same editor. The group can be collapsed.
 
-规则：
+**Editing a short video.** A child video opens in the same editor, with no separate interface. The canvas follows the chosen aspect ratio, and the timeline shows only the kept segment. Deleting content is just a normal cut (§5.7 “Cut audio and picture”). A banner at the top reads “Short video cut from ‘<parent video name>’”. On the right is a cell with a button to adjust the start and end in the script, plus “Back to source”. If the parent video has been deleted, the banner instead reads “Short video cut from a video no longer in the library”, and “Back to source” is not shown. On desktop, “Back to source” opens the parent video and lands on this result page in the AI tools tab. On web, it only opens the parent video. The start and end are adjusted in the script. When a child video is opened without a designated panel (from Space, from a video card in a conversation, from the parent's “Cut short videos” list, or opened directly), it lands on the script, with the cut-audio-and-picture view open. When it is opened by clicking a card on the result page, it stays on the result page. The cell in the banner depends on which panel is showing on the right. When the script is not showing, the cell reads “Adjust in script” (the “Adjust start/end” action on the “Viewing” card of the result page is the same action). This switches to the script, opens the cut-audio-and-picture view, scrolls to the seam row just before the clip, or, if there is no seam row, to the paragraph containing the clip's first sentence, and records where it came from. Once you are in, the cell changes to a way back. From the result page, it reads “Back to result page”. From another panel, it reads “Back to <that panel>”. If the script was not opened this way (it opened directly on the script, or the panel or video was switched after arriving), the cell reads “See result page” on desktop when a result page exists, and is not shown when there is none. The child video script's cut hint has one more sentence: “Sentences outside the clip are struck through; click one to bring it back.” The script panel lists the full text of the parent video. Sentences outside the clip are shown struck through. A few sentences are shown at each end of the clip (tentatively 3, §12). Further out, it collapses into a seam row, “X sentences before / after cut · Expand”. Each click expands a few more (tentatively 10 sentences), and the expansion can be collapsed again. Clicking a struck-through sentence brings back everything from it to the clip edge, so no gaps are left in the middle. There is no one-click button to restore the entire outside of the clip. For how paragraph times are displayed, see §5.8.
 
-- **`/` 是动作，`@` 是对象。** `/` 点名一个工具，只认输入开头；`@` 引用章节、说话人、译文或别的视频，可以出现在任何位置。两者不混在一个列表里。
-- **缺省交给智能体。** 「用」缺省是当前的智能体，主按钮是「交给 Agent」。用户可以改选「直接调模型」，选择按工具记住。
-- **没有可用的智能体时说清去处。** 列表页顶上的卡与输入框说明原因并给出去设置的入口；参数页的「用」落在已配置的模型上，没有就在这一行给出连接入口。不用整张警告卡片挡在参数前面，也不把按钮置灰。
-- **需要人复核的工具保留复核界面。** 智能裁剪的逐镜头构图、剪成短视频的候选、识别说话人的确认、剪口播的建议、配音的时长对比、封面候选，都在各自的界面里完成；对话负责发起与汇报，不把复核压成一行文字。
-- **每个有自己界面的工具有一个固定入口。** 入口放在它处理的那样东西旁边、不依赖对话：智能裁剪在视频面板里每段视频的菜单上，选中的视频片段另有带范围的入口；有一份没做完的裁剪时，入口回到原地。
-- **结果落在界面上，不只落在话里。** 智能体跑完一件要在界面里看的事（复核构图、挑候选、读成稿），这部视频正开着就切到 AI 工具 Tab 打开那个界面，停在结果上而不是参数页；悬浮会话此时收成图标让出右侧，再点回来对话都在。收尾话下面留一个同名按钮：视频没开着（Home 会话）时由它连视频一起打开，之后想再看也从这里回去。
-- **写作与发布类工具只读不写。** 总结、博客、标题、简介、封面不改视频，没有批准卡片，也不落撤销；结果在对应界面里读、挑、拷走。
-- 尚未接入智能体的工具保留参数页里的「直接调模型」，对话不得把它列进 `/`（文档约定「范围标记」）。
-- Web 表面没有 AI 工具 Tab（§1.4：能力是桌面界面的子集，没有 AI 入口），落到它时退回文稿。
+**How the picture is framed.** The child video's source footage fills the frame and is framed by its crop. When framing is done per shot, the source is split into several segments by shot, each with its own crop (the timeline does not show shot numbers; the segments are simply separated). When you select the source on the canvas and drag the picture, you pan only that segment's framing. Dragging left and right moves the crop window. If the window is shorter than the source, it can also move up and down. The window size stays fixed, and it never drags outside the source. Releasing the drag records one undo step. When the source is split into more than one segment, selecting one of them shows a small tag hanging at the bottom-left of the picture: “This segment · seconds X–Y” (in seconds on the child video's timeline), which says which segment you are dragging. The tag's “Apply to whole clip” button (hover tooltip: “Use this segment's current position for every segment of this video”) writes this segment's framing to every segment of the clip, as one undo step. The notice also offers undo. Desktop and web work the same way.
 
-### 5.11 换用文稿时的译文、字幕与配音
+Rules:
 
-已有文稿的视频再转录（转录工具页、Space 条目的「重新转录…」或编辑器里的「重新转录」，§2.7、§4.4），结果有两个落点，在工具页上单选：
+- **`/` is an action, `@` is an object.** `/` names a tool and is recognised only at the start of the input. `@` references chapters, speakers, translations or other videos, and can appear anywhere. The two are not mixed into one list.
+- **Default is to hand to the agent.** “Use” defaults to the current agent, and the primary button is “Hand to agent”. Users can switch to “Call the model directly”, and the choice is remembered per tool.
+- **When no agent is available, say where to go.** The card at the top of the list page and the input box explain the reason and link to settings. On the parameters page, “Use” points to a configured model. If there is none, that row shows a connection link. Do not block the parameters with a full warning card, and do not grey out the button.
+- **Tools that need human review keep their review UI.** Smart trim's per-shot framing, the short-video candidates, speaker identification confirmation, speech-cut suggestions, the dubbing duration comparison, and cover candidates are all completed in their own interfaces. The conversation starts the work and reports back, but does not reduce the review to a line of text.
+- **Every tool with its own interface has a fixed entry point.** The entry point sits next to the thing it acts on and does not depend on the conversation. Smart trim lives in the video panel's menu for each video, and selected clips have a scoped entry too. When an unfinished trim exists, the entry point returns to that place.
+- **Results land on the interface, not only in speech.** When the agent finishes something that should be seen in the interface (reviewing framing, choosing candidates, reading a finished draft), and this video is open, the view switches to the AI tools tab and opens that interface, stopping on the result rather than the parameters page. A floating conversation collapses to an icon to make room on the right, and clicking it again brings back the full conversation. Below the closing message is a button with the same name. When no video is open (a Home conversation), this button opens the video along with it. It also lets you return here later.
+- **Writing and publishing tools are read-only.** Summary, blog, titles, description and cover do not change the video. They have no approval card and no undo. The results are read, chosen and copied in their own interface.
+- **Tools not yet connected to an agent keep “Call the model directly” on the parameters page.** The conversation must not list them under `/` (documented convention “scope marker”).
+- The web surface has no AI tools tab (§1.4: the web is a subset of the desktop, with no AI entry point). When it is reached there, it falls back to the script.
 
-- **新建视频**（默认）：在同一项目里新建一部视频，链接同一份素材、不复制文件，带新文稿与一条可编辑的字幕层，名字默认「<原名> · 重新转录」，可以改。原视频与它的译文、字幕、配音一动不动。
-- **取代这部视频的文稿**：新文稿取代当前文稿，这部视频的译文、字幕与配音按下面的规则结转到新文稿上，叫换用文稿。
+### 5.11 Translations, subtitles and voiceover when switching the transcript
 
-没有文稿的视频（没转录过，或上次失败）没有落点一行，结果直接写进它。
+Re-transcribing a video that already has a transcript (from the Transcription tool page, the “Re-transcribe…” entry on a Space item, or “Re-transcribe” in the editor, §2.7, §4.4) produces a result with two destinations, chosen by a single selection on the tool page:
 
-**改过的文稿先警告。** 用户在转录之后改过原文（改错字、润色、分段）时，工具页显示「你改过这部视频的文稿」，说明取代会丢掉这些修改（撤销能拿回来），落点默认退回新建视频。用户仍可以改选取代，那就是接受这条警告（架构设计 §10.3）：同意只对当时那份文稿有效，开始之后文稿又被改了就再拦一次。命令行与智能体要显式加 `--accept-edited`（`acceptEdited`）才能取代改过的文稿。
+- **New video** (default): creates a new video in the same project, linking the same media without copying files, with the new transcript and one editable subtitle layer. The default name is “<original name> · Re-transcribed”, which can be changed. The original video and its translations, subtitles and voiceover stay untouched.
+- **Replace this video's transcript**: the new transcript replaces the current one, and this video's translations, subtitles and voiceover carry over to the new transcript under the rules below. This is called switching the transcript.
 
-**结转的结果。**
+A video with no transcript (never transcribed, or the last attempt failed) has no destination row; the result is written straight into it.
 
-- 译文：原文没变的句子保留译文与审阅状态，对齐降为句级；原文变了或配不上的句子标为过期，旧译文留着作参考，用字幕面板的「重译」只重译这几句（§5.10「逐句与过期译文」）。
-- 字幕：派生自这份文稿与译文的字幕层按新文稿重新切条，样式与排版方案不变。手工换行、固定在词上的时间这类 pin 按时间重新锚到新词上，锚不上的标为 orphaned、不再输出；锚在片段或时间线上的 pin 不动。
-- 配音：译句没变的配音保留音频，标为可能不一致（与改译文时同一种提示，§5.7），不自动重新生成；译文过期的配音标为过期。
+**Edited transcripts trigger a warning first.** When the user has edited the original text after transcription (fixing typos, polishing, re-segmenting), the tool page shows “You have edited this video's transcript”, explaining that replacing will discard those edits (Undo can bring them back), and the destination falls back to New video by default. The user can still choose Replace, which accepts this warning (architecture design §10.3). The consent applies only to the transcript as it was at that time; if the transcript is edited again after the operation starts, the warning is raised again. The command line and agents must explicitly pass `--accept-edited` (`acceptEdited`) to replace an edited transcript.
 
-配对与结转的规则见视频格式规范 §5.3，字幕 pin 见同文 §5.5，配音见同文 §7.2。
+**Carry-over results.**
 
-**影响预览与结果。** 选了取代，工具页显示一张影响卡：每种译文语言一行，写句数与已审句数（如「英语 · 62 句 · 已审 40 句」）；一句规则，说明原文没变的句子保留译文与审阅状态、对齐降为句级，原文变了或配不上的标为过期、完成后用「刷新过期译文」重译——开始之前算不出会过期几句，具体数字在结果里报告；字幕 pin 的处数与按时间重新锚定、锚不上标 orphaned 的说明；每种语言的配音组数与「句子译文不变的保留，标可能不一致」；以及「一笔事务，可以撤销」。转录完成后，结果页与任务摘要写出每种语言保留几句（其中已审几句）、过期几句，字幕 pin 重锚与 orphaned 各几处，配音保留与过期各几句，并给出「刷新过期译文」与「撤销」。
+- Translations: sentences whose source text is unchanged keep their translation and review status, and alignment is downgraded to sentence level. Sentences whose source changed or that no longer fit are marked stale; the old translation is kept for reference, and “Retranslate” in the subtitle panel retranslates only those sentences (§5.10 “Sentence-level and stale translations”).
+- Subtitles: the subtitle layer derived from this transcript and its translations is re-cut against the new transcript, with style and layout presets unchanged. Pins such as manual line breaks and times fixed to a word are re-anchored to the new words by time; pins that cannot be anchored are marked orphaned and are no longer output. Pins anchored to a clip or to the timeline do not move.
+- Voiceover: audio for sentences whose translation is unchanged is kept and marked as possibly inconsistent (the same hint used when editing a translation, §5.7); it is not regenerated automatically. Voiceover whose translation is stale is marked stale.
 
-**一笔可撤销的事务。** 新文稿、换用与全部结转是一笔编辑，撤销一次回到取代之前的文稿、译文、字幕与配音。
+For the pairing and carry-over rules, see §5.3 of the video format specification; for subtitle pins, see §5.5 of the same document; for voiceover, see §7.2.
 
-**局部重跑。** 在编辑器里按章或按范围重新转录时，只有范围内的句子参与配对，范围外的词、句子、译文与 pin 不动。
+**Impact preview and result.** When Replace is selected, the tool page shows an impact card: one row per translation language, giving the sentence count and the reviewed count (e.g. “English · 62 sentences · 40 reviewed”); one sentence explaining that unchanged sentences keep their translation and review status with alignment downgraded to sentence level, and that changed or unmatched sentences are marked stale and can be retranslated with “Refresh stale translations” after completion. Before the operation starts, the number of sentences that will go stale cannot be computed; the exact count is reported in the result. The card also shows the number of subtitle pins to be re-anchored by time, with a note that pins which cannot be anchored are marked orphaned; for each language, the number of voiceover groups and the note “sentences whose translation is unchanged are kept and marked possibly inconsistent”; and “one transaction, can be undone”. When transcription completes, the result page and task summary report, for each language, how many sentences were kept (and how many of those were reviewed) and how many went stale; how many subtitle pins were re-anchored and how many became orphaned; how many voiceover sentences were kept and how many went stale. They also offer “Refresh stale translations” and “Undo”.
+
+**One undoable transaction.** The new transcript, the switch and all carry-overs form a single edit; undoing it returns to the transcript, translations, subtitles and voiceover from before the replacement.
+
+**Partial re-runs.** When re-transcribing by chapter or by range in the editor, only sentences within the range take part in pairing; words, sentences, translations and pins outside the range do not move.
 
 ---
 
-## 6. 任务与对话
+## 6. Tasks and conversation
 
-### 6.1 对象
+### 6.1 Objects
 
-| 对象 | 定义 | 关系 |
+| Object | Definition | Relationship |
 | --- | --- | --- |
-| 项目 | 一个目录，包含一个或多个视频 | 一个项目可以有多个会话 |
-| 视频 / 版本 | 权威的可编辑时间线及其已提交版本 | 属于一个项目，是项目下的一个子目录 |
-| 会话 | 用户与智能体的协作记录 | 切换执行引擎不自动迁移原生历史 |
-| 任务 / 任务合同 | 一次委托及其结果约定 | 可以跨多个回合，包含多次执行尝试 |
-| 执行尝试 | 任务的一次有预算的执行 | 停止针对当前的执行尝试及其子工作 |
-| 步骤 | 识别、生成、构建、渲染等一次计算 | 产生一个或多个产物 |
-| 应用 | 把某个结果应用到视频的动作 | 有独立的幂等保证与回执 |
-| 候选 / 产物 | 待选方案 / 不可变的结果 | 未应用的候选不是工作稿 |
-| 检查点 / 变体 | 命名的历史状态 / 明确的衍生输出配置 | 不自动复制和重写全部媒体 |
+| Project | A directory containing one or more videos | A project can have multiple sessions |
+| Video / version | The authoritative editable timeline and its committed versions | Belongs to a project; is a subdirectory under it |
+| Session | The collaboration record between the user and the agent | Switching the execution engine does not automatically migrate native history |
+| Task / task contract | One delegation and its result agreement | Can span multiple turns; contains multiple execution attempts |
+| Execution attempt | One budgeted execution of a task | Stopping targets the current execution attempt and its sub-work |
+| Step | One computation such as recognition, generation, build or render | Produces one or more artifacts |
+| Application | The action of applying a result to the video | Has its own idempotency guarantee and receipt |
+| Candidate / artifact | A candidate option / an immutable result | An unapplied candidate is not a working draft |
+| Checkpoint / variant | A named historical state / an explicit derived output configuration | Does not automatically copy and rewrite all media |
 
-界面上的「任务」是一次结果委托；一次计算在界面上叫具体的步骤名，例如「配音生成」。一个生成步骤结束不等于整个任务完成。
+In the interface, “task” means one delegated result; a single computation appears under its concrete step name, e.g. “Voiceover generation”. A finished generation step does not mean the whole task is complete.
 
-对象的内部名称（Task、Run、Job、Application 等）与状态机见架构设计 §3 与 §7。
+Internal names of objects (Task, Run, Job, Application, etc.) and their state machines are in the architecture design, §3 and §7.
 
-### 6.2 任务合同
+### 6.2 Task contract
 
-每个任务有一份结果约定，由系统从自然语言整理出来，用户不需要填表：
+Each task has a result agreement, organized by the system from natural language; the user does not need to fill in a form:
 
-| 内容 | 例子 |
+| Item | Example |
 | --- | --- |
-| 目标 | 「给这个视频加中英双语字幕」 |
-| 范围 | 整片，或某个对象、句子、时间段 |
-| 约束 | 内容、风格、节奏、时长、画幅、语言、声音 |
-| 保护范围 | 「其他别动」「原声不变」 |
-| 交付阶段 | 看一版预览 / 改到工作稿 / 输出成片 / 导出字幕文件 |
-| 自主程度 | 就是会话的访问模式（§7.1），不另设一套 |
-| 权限与预算 | 允许使用的数据与服务（授权，§7.2）；这个任务总共可以调用几次、花多少钱（任务预算，跨提供方合计） |
-| 验收检查 | 完成前要通过的检查 |
+| Goal | “Add bilingual Chinese–English subtitles to this video” |
+| Scope | The whole video, or an object, a sentence or a time span |
+| Constraints | Content, style, pacing, duration, aspect ratio, language, sound |
+| Protection scope | “Don't touch anything else”, “keep the original sound unchanged” |
+| Delivery stage | Watch a preview / apply to the working draft / export the finished video / export a subtitle file |
+| Autonomy level | The session's access mode (§7.1); not a separate setting |
+| Permissions and budget | Data and services allowed to be used (authorization, §7.2); the total number of calls this task may make and how much it may spend (task budget, summed across providers) |
+| Acceptance checks | Checks that must pass before completion |
 
-- 系统采用的默认值在目标卡上可见、可改。
-- 已有视频默认保留画幅与声音。
-- 「做一版看看」和「输出成片」要求的交付阶段不同（§6.8）。
-- 合同修改产生新版本。新约束对尚未开始的步骤生效；已经冻结输入的步骤不在执行中换内容。
-- 每个版本记下谁改的（用户、智能体或系统默认）、为什么改、改了什么；旧版本可以查看。切换会话的访问模式也会记一个版本。
-- 用户可以改合同的全部内容。智能体可以读自己的合同，细化范围、约束、交付与验收检查，改动对用户可见；访问模式、预算与保护范围只由用户决定，智能体改不了。
-- 任务预算用完时不再发起新的外发调用，智能体告诉用户，由用户决定是否调高；金额上限无法按同一币种保证时同样不执行（§7.4）。
-- **改变目标**：用户换一个目标时选择旧工作怎么办——停止（取消还没结束的后台任务），或保留（已经提交的后台任务照常完成，产物留作候选）。两种都以新目标开始一个新任务，沿用旧合同的范围、约束、保护与预算上限。
-- **验收检查**：首版由用户或智能体记录每项检查的结果（通过、未通过、跳过），按时间保留；自动执行检查不在首版。
-- 合同在桌面应用的任务卡片里查看与修改，CLI 只能查看（`cuccut tasks contract`）；Web 服务非只读时可以查看与修改，只读时只能查看；对外服务（MCP）不涉及任务合同。
+- The default values the system adopts are visible on the goal card and can be changed.
+- For an existing video, the aspect ratio and sound are kept by default.
+- The delivery stages requested by “Make a preview” and “Export the finished video” differ (§6.8).
+- Changing the contract creates a new version. New constraints apply to steps that have not started; steps whose inputs are already frozen do not switch content mid-execution.
+- Each version records who changed it (user, agent or system default), why, and what changed; old versions can be viewed. Switching the session's access mode also records a version.
+- The user can change all of the contract. The agent can read its own contract and refine the scope, constraints, delivery and acceptance checks; the changes are visible to the user. Access mode, budget and protection scope are decided only by the user; the agent cannot change them.
+- When the task budget runs out, no new outbound calls are made; the agent tells the user, who decides whether to raise it. If the monetary limit cannot be guaranteed in the same currency, it is likewise not enforced (§7.4).
+- **Changing the goal**: when the user switches goals, they choose what happens to the old work — stop (cancel background tasks not yet finished), or keep (background tasks already submitted finish as usual, and their outputs are kept as candidates). Either way, a new task starts with the new goal, carrying over the old contract's scope, constraints, protection and budget cap.
+- **Acceptance checks**: in the first version, the user or agent records the result of each check (passed, failed, skipped), kept by time. Automatic check execution is not in the first version.
+- The contract is viewed and edited on the task card in the desktop app; the CLI can only view it (`cuccut tasks contract`). The Web service can view and edit when not read-only, and only view when read-only. The external service (MCP) does not involve task contracts.
 
-### 6.3 保护范围
+### 6.3 Protection scope
 
-- **已确认**：后续不应无故重做。
-- **锁定**：当前任务不得修改，必须显式解锁。
-- **「其他别动」**：形成一组可检查的对象与属性保护范围。
+- **Confirmed**: should not be redone later without reason.
+- **Locked**: the current task must not modify it; it must be explicitly unlocked.
+- **“Leave everything else alone”**: forms a set of inspectable protected objects and attributes.
 
-保护范围细到视频、对象、属性和时间区间，并记录授权来源与有效范围。它是视频状态的一部分，由引擎在提交时强制检查，不依赖模型自觉遵守；质量检查还会比较未授权属性的前后差异。
+Protection scope is fine-grained down to video, object, attribute and time range, and records its authorization source and effective scope. It is part of the video state and is enforced by the engine at commit time; it does not rely on the model to comply voluntarily. Quality checks also compare before-and-after differences for unauthorized attributes.
 
-保护范围约束的是这个任务里的智能体：它的修改与撤销触碰保护范围时整笔不生效，智能体得到被触碰的对象与保护，需要改动时请用户调整。用户自己的修改不受限制。
+Protection scope constrains the agent in this task: if its edits or undos touch protected scope, the whole transaction does not take effect. The agent receives the touched objects and protections, and when a change is needed, it asks the user to adjust. The user's own edits are not restricted.
 
-不可避免的联动（例如剪辑导致后面的内容整体前移）先给出最小变更提案。因为渲染缓存失效而重新求帧，不等于允许重新设计内容。
+Unavoidable knock-on effects (e.g. cutting causes later content to shift forward as a whole) are first presented as a minimal change proposal. Re-rendering frames because the render cache was invalidated does not mean permission to redesign content.
 
-### 6.4 视频记忆〔AG-05〕
+### 6.4 Video memory [AG-05]
 
-视频记住已确认的方向、术语、参考样稿、声音选择与保护范围，并关联到稳定的对象。
+The video remembers confirmed direction, terminology, reference samples, voice choices and protection scope, and links them to stable objects.
 
-- 视频事实优先于旧聊天。用户刚手改过的标题，不能被上一次生成的结果覆盖。
-- 记忆可以查看、删除，也可以按任务覆盖。
-- 跨视频复用品牌、声音或术语，需要用户显式选择。
+- Facts in the video take precedence over old chat. A title the user has just hand-edited must not be overwritten by a previously generated result.
+- Memory can be viewed and deleted, and can be overridden per task.
+- Reusing a brand, voice or terminology across videos requires explicit user selection.
 
-### 6.5 任务卡片〔CON-01〕
+### 6.5 Task cards [CON-01]
 
-对话承载的是操作，不只是文字。
+The conversation carries operations, not only text.
 
-| 卡片 | 关键内容 | 用户行动 |
+| Card | Key content | User actions |
 | --- | --- | --- |
-| 目标卡 | 结果、范围、约束、继承的默认值 | 修改目标与保护范围 |
-| 视频卡 | 画面（悬停出播放钮、在卡里原地播放原片）、名字、状态词；这条会话在这部视频上的活（一条会话一部视频一张，位置见 §3.2.2）：摊开进行中的或最后结束的一件（阶段、进度与计数，转录用的模型与参数，完成的结果与文件，失败原因），其余收进「之前的 N 项」 | 打开编辑器、取消、补救、重试、播放、在文件夹中显示 |
-| 下载卡 | 来源、已下载与总量；失败原因；只下载时落地的文件 | 取消、在文件夹中显示 |
-| 选区引用卡 | 对象、句子、时间、版本 | 定位、替换范围 |
-| 候选卡 | 图片、声音、短动画及其来源 | 预览、试听、选用 |
-| 剪辑建议卡 | 原因、原片片段、前后内容 | 接受、忽略、恢复 |
-| 变更卡 | 实际修改的对象、时间与依赖影响 | 对比、定位、安全撤销 |
-| 授权卡 | 数据、服务、费用、范围、有效期 | 允许、调整、拒绝 |
+| Goal card | Result, scope, constraints, inherited defaults | Edit goal and protection scope |
+| Video card | Frame (hover shows a play button; plays the original in place on the card), name, status word; this session's work on this video (one session, one video, one card; position in §3.2.2): expands the in-progress or most recent item (stage, progress and counts, the model and parameters used for transcription, completed results and files, failure reason), with the rest collapsed under “N earlier items” | Open editor, cancel, remediate, retry, play, show in folder |
+| Download card | Source, downloaded and total amount; failure reason; files landed when download-only | Cancel, show in folder |
+| Selection reference card | Object, sentence, time, version | Locate, replace range |
+| Candidate card | Image, sound, short animation and their sources | Preview, audition, select |
+| Clip suggestion card | Reason, original clip segment, surrounding content | Accept, ignore, restore |
+| Change card | Objects actually modified, time and dependency impact | Compare, locate, safely undo |
+| Authorization card | Data, services, cost, scope, validity period | Allow, adjust, deny |
 
-阶段、问题与交付不再各出一张卡：进行中的阶段和失败原因写在视频卡对应的那一行，交付的文件挂在导出那一行，检查发现的待办写在回复里（§3.2.2、§3.2.7）。变更卡也不单独占一行：它是步骤组展开后框里的一行，与提交它的那一步按先后排，撤销与恢复在这一行上（§3.2.2）。
+Stages, issues and deliverables no longer each get their own card: in-progress stages and failure reasons are written on the corresponding line of the video card, delivered files hang on the export line, and to-dos found by checks are written in the reply (§3.2.2, §3.2.7). Change cards also do not take a line of their own: each is a line inside the box when the step group is expanded, ordered by sequence with the step that committed it, and undo and redo are on that line (§3.2.2).
 
-### 6.6 提问与默认值〔CON-02〕
+### 6.6 Questions and defaults [CON-02]
 
-- 只在缺失的信息影响正确性、不可逆风险、预算、隐私或主体表达时提问。
-- 能从当前视频和文件里读到的信息先读，不反复询问。
-- 低风险的默认值可以直接采用，但要在目标卡上看得到。
-- 需要选择创作方向时，优先给少量可见的候选或代表性样稿，不让用户去理解抽象的技术参数。
-- 用户说过「按你的判断做」之后，不再逐个镜头请示。但这句话不扩大支付、上传、声音克隆或发布的权限。
+- Ask only when missing information affects correctness, irreversible risk, budget, privacy or how the subject is represented.
+- Read information that can be read from the current video and files first; do not ask repeatedly.
+- Low-risk defaults can be adopted directly, but must be visible on the goal card.
+- When a creative direction must be chosen, prefer a few visible candidates or representative samples, rather than asking the user to understand abstract technical parameters.
+- After the user says “use your own judgment”, do not ask shot by shot. But this does not expand permission for payment, upload, voice cloning or publishing.
 
-### 6.7 智能体的工作方式
+### 6.7 How the agent works
 
-**上下文理解**〔AG-01〕。智能体拿到的是：视频版本、序列、选中的对象与词句、当前有效的文稿、时间位置、用户的界面语言、必要的画面帧和相关约束。先用摘要与检索，再按需扩展，不默认把完整的视频文件和全文外发。只读到文件名时不能声称理解了内容；实际读取的范围与方法有记录。
+**Context understanding** [AG-01]. The agent receives: the video version, the sequence, the selected objects and words or sentences, the currently valid transcript, the time position, the user's interface language, necessary frames and relevant constraints. It uses summaries and retrieval first, expanding on demand, and does not by default send out the full video file or full text. When it has only read a filename, it cannot claim to understand the content; the scope and method actually read are recorded.
 
-**规划与主动决策**〔AG-02〕。对用户而言只有一个负责结果的执行主体。计划按产物阶段组织，不要求用户理解内部框架或多个智能体。内部的分析与素材生成可以并行，对视频的提交按顺序进行。
+**Planning and proactive decisions** [AG-02]. To the user, there is only one execution subject responsible for the result. Plans are organized by production stage and do not require the user to understand internal frameworks or multiple agents. Internal analysis and material generation may run in parallel; submissions to the video proceed in order.
 
-**能力选择与真实执行**〔AG-03〕。优先使用已有素材、原生对象和当前已验证可用的模型，不为改一个标题重新购买生成。能力不可用时如实说明，不用文字描述代替执行。
+**Capability selection and real execution** [AG-03]. Prefer existing material, native objects and models currently verified as usable; do not buy a new generation to change one title. When a capability is unavailable, say so honestly; do not substitute a text description for execution.
 
-**看结果再修正**〔AG-04〕。工作循环是：理解 → 查看材料 → 计划 → 制作或编辑 → 看与听 → 修正 → 交付。改一个标题可以缩短这个循环；由配音驱动的动画必须先取得真实音频。自动的质量修复默认最多两轮，之后转给用户；这是可调的产品默认值，不是模型保证。付费重试另受预算限制。修复不能越过保护范围，也不能把主观的风格偏好当成硬错误。
+**Look at the result, then correct** [AG-04]. The work loop is: understand → review materials → plan → make or edit → look and listen → correct → deliver. Changing one title can shorten this loop; animation driven by voiceover must first obtain real audio. Automatic quality repairs default to at most two rounds, after which they are handed to the user; this is an adjustable product default, not a model guarantee. Paid retries are additionally limited by budget. Repairs cannot cross protection scope, and subjective style preferences must not be treated as hard errors.
 
-**持续修改**〔AG-05、EDT-04〕。改一处就只改一处。后续轮次基于视频当前的事实，而不是上一轮的聊天内容。
+**Continuous editing** [AG-05, EDT-04]. Change one place, change only that place. Later rounds are based on the video's current facts, not on the previous round's chat content.
 
-**有意义的结束**〔AG-06〕。按 §6.8 判断完成，不以模型输出结束为准。
+**Meaningful ending** [AG-06]. Judge completion per §6.8, not by the model's output ending.
 
-### 6.8 完成的定义〔OUT-03〕
+### 6.8 Definition of done [OUT-03]
 
-任务合同里的交付阶段决定什么算完成：
+The delivery stage in the task contract determines what counts as done:
 
-| 要求 | 完成的条件 |
+| Requirement | Condition for completion |
 | --- | --- |
-| 预览 | 有一个真实可以打开的候选 |
-| 修改工作稿 | 有目标版本的提交回执 |
-| 成片 | 有经过校验并已发布的文件 |
-| 字幕文件 | 文件已生成；不要求视频编码 |
+| Preview | A real, openable candidate exists |
+| Edit working copy | A commit receipt for the target version exists |
+| Final video | A verified and published file exists |
+| Subtitle file | The file is generated; no video encoding is required |
 
-- 已知的阻断问题解决后才能完成；留给人工审阅的视频明确列出。
-- 只有一部分成功时，任务以「部分完成」结束，并保留可用的产物。
-- 没有文件就不能报告导出成功。
+- A task can only be completed after known blocking issues are resolved; videos left for human review are listed explicitly.
+- When only part of the work succeeds, the task ends as “部分完成” (partially complete), and the usable outputs are kept.
+- Export cannot be reported as successful without a file.
 
-### 6.9 Skill〔AG-07〕
+### 6.9 Skill [AG-07]
 
-skill 是教内置 Agent 按某种方法做事的一份说明（一个带 `SKILL.md` 的文件夹），例如某种字幕排版规范或分章方法。它是指导，不是授权，也不是新的工具。
+A skill is an instruction file that teaches the built-in agent how to do something a particular way: a folder containing a `SKILL.md`, for example a subtitle typesetting standard or a chaptering method. It is guidance, not authorization, and not a new tool.
 
-- **来源**。三种：随应用提供的（内置）、用户从本机文件夹添加的（个人）、从 GitHub 导入的（第三方）。应用自带转录与字幕、润色转写、分章节、说话人标注、翻译字幕、视频内容总结、写成博客文章、起标题与写简介、封面与标题、剪口播、切短视频、旁白成片、从简报到成片、动效图形、幻灯片、设计稿这几个 skill；AI 工具 Tab 的每个工具对应其中一个，参数页默认挂着它（§5.10）。另有「怎么用 CucCut」的说明书页（各类能力的机制、端到端做法与通用约定），它们是智能体指导的一部分，总在会话里供智能体按需取用，不在设置的列表里，也不能关；与外部 Agent 装的 CucCut skill 是同一份内容（§2.7「命令行与外部 Agent」）。
-- **开关**。每个 skill 可以单独打开或关掉。内置与个人的默认开着；第三方的默认关着，用户看过内容再开。开着的 skill 由智能体在任务相关时自己取用，不相关时不读。
-- **点选**。在输入区可以为一条消息点选一个或几个 skill（关着的也可以），这条消息的智能体会按它们的做法做。「+ › 使用 Skill」每选一个就在输入框上多挂一个标记，接在已挂的后面；已经挂着的再选不重复；每个标记可以单独摘掉。发出时按挂上的顺序一起交给智能体（每个 skill 一段），会话里的这条消息按同样的顺序显示所选 skill 的标记。AI 工具页的提示词框预先挂着该工具的内置 skill，标着「这个工具的做法」，可摘掉、可再挂别的；摘掉后加回也接在后面（§5.10）。
-- **生效时间**。打开、关掉、添加或移除，从下一次新开始的智能体会话起生效；正在进行的会话不受影响。点选总是用当前的内容。
-- **管理**。设置里列出全部 skill 的名字、说明、来源与开关，可以查看 `SKILL.md` 全文与文件清单。添加与导入前说明来源，完成后显示放在哪里；同名的 skill 已存在时不覆盖，用户另起名字或先移除旧的。导入有大小与文件数的上限，超出、缺 `SKILL.md`、地址不对、网络或访问次数受限时如实说明原因。内置的不能移除，可以关掉。严格离线时不能从 GitHub 导入。
-- **浏览器与外部 Agent**。浏览器里可以查看与开关，不能添加、导入或移除。会话里的智能体、经 MCP 服务接入的外部 Agent 与命令行的 Agent 面（§2.7「命令行与外部 Agent」）都能只读地列出 skill 的索引、读取正文（`skills_list` / `skills_read`），不能添加、导入、开关或移除；这些管理只在界面与 CLI 的管理桶里。
-- **信任**。用户添加或导入的 skill 和其他用户材料一样不能扩大权限（§7.5）：访问模式、审批与保护范围照旧生效。CucCut 不执行 skill 里的任何文件。
+- **Sources.** There are three kinds: bundled with the app (built-in), added by the user from a local folder (personal), and imported from GitHub (third-party). The app ships with these skills: transcription and subtitles, transcript polishing, chaptering, speaker labeling, translated subtitles, video content summary, writing blog posts, titles and intros, covers and headlines, talking-head cutting, short-video cutting, voiceover-to-video, brief-to-video, motion graphics, slides, and design drafts. Each tool on the AI Tools tab corresponds to one of these, and the parameters page has it attached by default (§5.10). There is also a “怎么用 CucCut” (How to use CucCut) manual page covering the mechanism of each capability, end-to-end workflows, and common conventions. These pages are part of the agent's guidance: they are always available in the session for the agent to consult as needed, they are not in the settings list, and they cannot be turned off. They are the same content as the CucCut skill installed for external agents (§2.7, “Command line and external agents”).
+- **Toggles.** Each skill can be turned on or off individually. Built-in and personal skills are on by default; third-party skills are off by default, and the user turns them on after reviewing the content. An enabled skill is used by the agent on its own when relevant to the task, and is not read when irrelevant.
+- **Picking.** In the input area, the user can pick one or more skills for a single message, including disabled ones, and that message's agent follows their methods. “+ › 使用 Skill” (Use Skill) adds one marker to the input box for each pick, appended after the existing markers; picking an already attached skill does not duplicate it; each marker can be removed individually. On send, the skills are handed to the agent in the order they were attached (one passage per skill), and the message in the session shows the selected skills' markers in the same order. The prompt box on the AI Tools page comes with that tool's built-in skill pre-attached, labeled “这个工具的做法” (how this tool works); it can be removed, and another skill can be attached. Re-adding a removed skill also appends it at the end (§5.10).
+- **Effective time.** Turning a skill on or off, or adding or removing one, takes effect from the next agent session started after the change; sessions already in progress are unaffected. Picks always use the current content.
+- **Management.** Settings lists every skill with its name, description, source, and toggle, and lets the user view the full `SKILL.md` text and file list. Before adding or importing, the source is stated; after completion, the app shows where the skill was placed. If a skill with the same name already exists, it is not overwritten; the user either gives the new one a different name or removes the old one first. Imports have size and file-count limits. When a limit is exceeded, when `SKILL.md` is missing, when the address is wrong, or when the network or access rate is limited, the reason is stated honestly. Built-in skills cannot be removed, but they can be turned off. In strict offline mode, GitHub import is not possible.
+- **Browser and external agents.** The browser can view and toggle skills, but cannot add, import, or remove them. The agent in a session, external agents connected through MCP servers, and the command-line agent surface (§2.7, “Command line and external agents”) can all list the skill index and read skill bodies read-only (`skills_list` / `skills_read`), but cannot add, import, toggle, or remove. That management exists only in the UI and in the CLI's management bucket.
+- **Trust.** Skills that the user adds or imports, like other user-supplied material, cannot expand permissions (§7.5). Access modes, approvals, and protection scopes apply as usual. CucCut does not execute any file inside a skill.
 
-界面的布局与交互以原型为准；机制见架构设计 §3.8、§12.9。
-
----
-
-## 7. 自主执行、权限与隐私
-
-### 7.1 访问模式〔AUT-01〕
-
-访问模式是智能体的权限设置，在会话的输入区选择，决定智能体的动作什么时候需要用户确认。
-
-| 模式 | 行为 | 适合 |
-| --- | --- | --- |
-| 监督 | 执行命令或修改文件、视频之前都先征求许可 | 初次探索、不确定的大改 |
-| 自动接受修改 | 修改自动批准；其他动作先询问 | 字幕与局部编辑 |
-| 自动（默认） | 常规动作自动批准；高风险动作仍然询问 | 日常创作 |
-| 完全访问 | 不再逐次确认 | 用户已确认方向的批量步骤 |
-
-所有模式受同一条权限底线约束。更宽的模式不授予无限费用、数据外发、声音克隆或公开发布的权限；这些仍然逐项授权，授权的有效范围持续可见。机制见架构设计 §3.12。
-
-### 7.2 权限与审批矩阵〔AUT-02〕
-
-| 行为 | 默认策略 | 需要再次确认的情况 |
-| --- | --- | --- |
-| 读取用户已选的材料、预览、分析 | 在当前授权的数据范围内执行 | 要读新目录、敏感材料或其他视频 |
-| 用户明确要求的、本地可撤销的编辑 | 直接执行并给出变更回执 | 超出选区、触碰锁定对象或改变含义 |
-| 批量删减观点、改变核心脚本 | 给出可对比的方案 | 用户尚未明确授权这类结构性变更 |
-| 外发转录、截图、音频、原视频 | 先取得对应数据与接收方的授权 | 服务变化、数据范围扩大、授权失效 |
-| 云端付费生成 | 先展示服务、范围与已知费用或估算 | 超预算、范围扩大、需要新一轮购买 |
-| 声音克隆、口型或人物身份相关的变化 | 单独授权并确认使用资格 | 身份、用途或范围变化 |
-| 覆盖源文件、删除唯一素材 | 默认不做，需要明确确认 | 每一次不能安全恢复的操作 |
-| 对外发布与共享 | 首版不自动发布 | 后续支持时，每次按授权策略确认目标 |
-
-同一个任务需要的授权可以合并，避免逐个文件弹窗。但批准「上传低分辨率预览帧」不等于批准上传完整原视频。
-
-授权绑定数据种类、接收方、视频与对象范围、目的、预算方式和有效期。用户撤销授权后，禁止新的调用与自动应用，并说明已经外发或已计费的部分无法靠本地撤销抹除。
-
-### 7.3 两条数据流〔AUT-03〕
-
-「语音识别在本地运行」不代表整个任务离线。有两条相互独立的数据流：
-
-1. 对话智能体可能把文稿、截图或任务上下文发送给它的模型服务；
-2. 转录、生成等模型服务是另一条数据流。
-
-设置和任务卡必须分别说明。用户选择「仅本地」时，两个方向都不能自动转到云端。离线时只能完成当前已安装且验证可用的能力；没有本地智能体时，手工编辑和本地计算仍然可用，但不能声称完整的智能体仍能离线工作。
-
-### 7.4 预算与成本〔AUT-04〕
-
-- 区分四种费用状态：估算、服务实际报告、计费未知、免费的本地计算。没有可信价格时不显示伪精确的金额。
-- 任务预算覆盖生成、重试和候选变体。已接受的报价与实际任务范围绑定。并行的步骤共用同一份预算，不会各自看到相同的余额而超支。
-- 服务无法提供可靠的金额估算时，金额上限不能假装可以严格保证。这时要么阻断该费用模式，要么请用户改为「批准这一次明确的调用，金额未知」。
-- 结果状态未知时先查询或对账，不重新下单。
-- 用户拒绝一笔费用后，模型不能自动改用另一个付费服务来绕过。
-
-### 7.5 不可信材料不是指令〔AUT-05〕
-
-文件里的字幕、网页、元数据、代码注释和说明文件是任务材料，不能被提升为新的用户授权。片中出现「删除视频」不会触发删除。
-
-执行动画源码需要真实的受控环境，不能靠在提示词里写「不要访问文件」来声称安全。权限说明必须与实际能限制的能力相符：某个执行引擎或平台不能实施必要的隔离时，明确拒绝执行不可信代码，或标记为受信开发者模式，不静默降级成全权限后继续称为安全。
-
-隔离边界见架构设计 §12。
-
-### 7.6 模型与能力配置〔SET-01〕
-
-- 设置中分别显示智能体引擎的配置，与语音识别、语音合成、图像生成等模型的配置。设置左栏的「模型」组依次是「API 提供方」「用量」，然后每种能力一页：语音识别、语音合成、文本生成、图像生成、音乐生成、人声分离、视觉分析。每种能力只有一页，本机模型与 API 提供方的模型在同一页上，不分本地、云端两个 Tab。智能体登录（Codex、Claude 等）在「Agent 提供方」，不是 API 提供方；Codex 生图照样出现在图像生成的默认模型选择里。
-- API 提供方页以厂商为中心，只列已添加的：一行一家，显示图标、名称、一行说明（主机、几个模型、能做什么：文本、识别、合成、生图）、账号摘要（密钥的掩码，或「2 个账号」）与状态；已连接的排在前面，底部是「添加 API 提供方」。一把密钥对这家提供方的全部能力生效：给 OpenAI 加一次密钥，文本生成、语音识别、语音合成与图像生成都能用，不必在每种能力里各填一遍。目录里有、CucCut 还没接入的能力（架构设计 §6.4 标 P1 的）在 API 提供方详情里列出，标「尚未接入」，不能测试，也不能设为默认；能力页的默认模型选择器里不出现。
-- API 提供方详情：顶部是图标、名称、官网链接与启用开关；有国际与中国两个地址的提供方可以切换地区。「账号」：一家提供方可以加多个账号（多把密钥），每行有开关、名称（没起名时显示掩码）、掩码、状态（正常、密钥无效、限速及几点恢复、额度用尽）、「设为首选」与移除；账号有自己的端点时，副行显示它的主机名。点击名称进入编辑，同一处改名称与端点地址。账号有先后，调用总是用第一个启用且有密钥的账号；它出错时不会自动换下一个，先后由用户自己调整。「添加账号」在详情里展开：名称（可选）、密钥、地区（有两个地址的提供方），以及折叠的「端点（高级）」——一个地址输入，占位符是所选地区的默认地址，空着就用这家（所选地区）的默认地址，填了要以 http:// 或 https:// 开头。端点按账号存（架构设计 §6.8 的账号 `endpoint`），界面不再单独提供提供方级的端点改写。「验证并保存」先向提供方验证一次，不通过不保存，并用一句话说明原因。删掉最后一个账号时提供方还在，只是没有可用的密钥。「能力与模型」按能力分组列出这家的模型：默认标记、测试、刷新列表、添加模型 id。「用量」卡显示本月与今天的调用次数、估算的花费与费用未知的次数，「查看用量」跳到用量页并只看这一家；能查余额的提供方（P1）另有「查余额」。底部「移除 API 提供方」要二次确认，并说明指向它的默认模型会变成不可用、需要另选。
-- 添加 API 提供方：顶部搜索，分三组：模型厂商、中转平台、自建端点（OpenAI 兼容）。目录里没有的提供方都走自建端点：模型厂商的卡片末尾有一张「自建端点 · OpenAI 兼容」，点了跳到下面的表单并聚焦名称；搜「OpenAI」「兼容」「自建」「custom」也会列出这张卡。自建端点填名称、地址、协议（OpenAI 兼容）、第一个模型 id 与它的能力；地址与已添加的提供方相同时提示添加到那一家。有国际与中国两个地址的厂商只有一张卡，地区在详情里切换。选一张卡进入它的详情，并直接展开「添加账号」。
-- 能力页从上到下：默认模型（一个选择器，按本机、各 API 提供方（只列已添加的）、智能体分组，不可用的项置灰并写明原因）；这种能力的参数（并发，文本生成另有推理强度）；本机模型（模型目录、已安装与可安装、检查、修复与试用、下载来源，见后面「本地模型由用户安装」「模型目录」「模型下载来源」三条）；API 提供方（副标题说明「有这种能力的提供方；添加密钥后它的模型可选」，「管理 API 提供方」去 API 提供方页，见下一条）。语音合成页另有「我的声音」Tab。音乐生成、人声分离与视觉分析只有本机模型，没有「API 提供方」一节；音乐生成页说明模型在本机生成、很慢，并显示模型的许可（YuE2 只许非商业用途）；音乐模型靠 audio.cpp 引擎运行，引擎是这个模型的一个组件，下载大小已包含它：它在模型自己的组件列表里显示为「audio.cpp 引擎」，带说明、来源「GitHub 发布 0xShug0/audio.cpp v0.9.1」、大小与许可（Apache-2.0）（Windows / Linux 还要有 Vulkan 显卡驱动）；权重在而缺引擎时沿用通用的「缺 audio.cpp 引擎」标签与「补齐 <大小>」操作。
-- 能力页的「API 提供方」一节列出目录里有这种能力的全部提供方（这种能力在目录里标 P1 的不列，智能体不列），加上声明了这种能力的自建端点；已连接的在前，其次是已添加但没有账号的，最后是还没添加的，同一档按目录顺序，自建端点排在最后。每家一组，表头是图标、名称与类型标签（中转、自建）：已连接的在右侧显示账号摘要与「N 个模型」，默认展开，可以折叠；还没添加或没有账号的显示「配置」，点了进入它的详情并直接展开「添加账号」（还没添加的同时添加进来），默认收起。顶部始终有搜索框，按提供方名称与模型 id 过滤，有查询词时匹配的组自动展开。展开后一个模型一行，紧凑排列：已连接的每行可以测试、显示默认标记；未连接的只读列出模型 id，不能测试，也不能设为默认。列表末尾是一行「没有你用的提供方？添加 OpenAI 兼容端点」，点了去 API 提供方页、打开「添加 API 提供方」并聚焦自建端点的名称。目录里没有哪家提供方有这种能力时，这一节只用一句话说明并给「添加 API 提供方」。默认模型选择器仍只列已添加的 API 提供方，不把这一节里没添加的提供方放进去。
-- 密钥只显示掩码：前 3 位与后 4 位（`sk-…ab12`），8 位以内的全部显示为圆点。保存之后任何地方都不再显示原文，编辑账号时也不显示。
-- 用量页：时段（今天、7 天、30 天、全部）；右上角是花费，例如「≈ $12.34 · 按标价估算」，有费用未知的调用时说明有几次；统计格是调用次数（含失败）、文本 token（输入、输出）、音频分钟、字符数与图片张数；按天的柱状图，按能力分色堆叠；按 API 提供方、按能力、按模型、按账号的拆分列表（调用、份额、用量、花费）；能查余额的提供方（P1）在顶部显示余额。还没有调用时说明还没有调用。只统计 API 提供方与智能体的调用，本机模型不计费，不进用量。
-- 费用如实（§7.4）：提供方报告的金额、按标价估算的金额与未知分开显示，不合成一个数；估算写明是按标价估算，标价可能过时；不同币种分别显示，不换算。
-- 浏览器（Web）里能查看 API 提供方、账号的状态与用量，不能添加、修改或移除 API 提供方与账号，也不能查余额。能测试模型；默认模型、参数、密钥、刷新模型或音色目录与添加模型的控件置灰，页头说明要到桌面应用里做。「我的声音」用的音色库不对浏览器开放，浏览器里这一页写明看不到，不一直显示加载中。
-- 按任务需要引导配置，不在首次启动时要求全部填写。
-- 用户可以固定服务与模型，或选择本地优先、成本受限等策略。重试不会无提示更换模型或音色；从免费转付费、从本地转云端都要重新取得授权。
-- 能力不可用时，准确显示原因：未安装、未连接、权限不足或不支持。此时手工编辑和其他本地能力仍然可用。
-- 本地模型由用户安装：先显示要下载的大小与来源，确认后才下载；下载可以暂停、续传，显示已收到的字节，大小未知时不显示百分比。缺部分组件的模型只补缺的，几个模型共用的组件只装一份。装好后可以「检查」：用随附的样本跑一遍，确认模型能正常使用。检查与试用（语音合成与音乐生成的「试听」；音乐生成的试听固定生成几秒纯音乐、只挑风格，证明这只模型和引擎能出声）是两件事：有试用的模型，试用是行上的主操作，检查与「修复…」放在更多菜单里；没有试用的模型在行上另有一个检查按钮。模型能不能用只写在这一行的一条状态里：检查中（阶段、进度，可以取消，取消后回到之前那一条）、几分钟前检查通过，或没通过——一句话说哪里不对与怎么办，修复帮得上时才给「修复…」，另有重新检查与可复制的技术详情；检查没能开始也写在这一条里，不弹提示。修复只重新下载坏掉的文件，修好后自动再检查一次。上次检查没通过时，试用面板开头先说明，那次检查之后试用做成了就撤掉这条说明（行上的检查结果照旧，重新检查才换）；试用自己的失败写在面板里，读不出用户的录音时说出文件名。智能体缺模型时可以提出下载，同样先说明大小并经用户确认；浏览器与对外服务不能安装或删除本地模型。浏览器里只能查看状态与试用：下载、检查、修复、删除与默认模型的选择都置灰，页面顶上说明要到桌面应用里做。
-- 模型目录：各能力页「本机模型」一节的顶部（各能力共用同一个目录）显示模型放在哪个文件夹、已用多少、所在磁盘还剩多少、认出几个模型，可以在系统里显示这个文件夹。用户可以把它改到外置盘或和别的程序共用的文件夹：选好文件夹后先说明里面已经有几个模型、磁盘可用多少；当前位置有模型时让用户选「把现有模型移过去」（显示要移的大小，放不下时不可选）或「只切换位置」（原来的文件留着，只有新位置里已有的模型可用）。移动在后台进行、显示进度，失败时回到原样；移动期间不能用本地模型。有任务在用本地模型时不能更改，说明原因并能跳到任务。文件夹不在（外置盘没接上）或不能写时如实说明。可以恢复默认位置。由环境变量指定时只显示、不能改。提醒用户：和别的程序共用文件夹时，在这里删除模型会删掉文件夹里的文件。浏览器里不显示这一项，对外服务也不能改。
-- 模型下载来源：各能力页「本机模型」一节的底部是折叠的「下载与存储」，标题旁写现在从哪里下载；展开后可选 Hugging Face（默认）、ModelScope（中国大陆通常更快）或自定义（填镜像的基址，地址不合规时就地说明，保存后才改用）。设置 › 通用 › 下载来源与离线里是同一个选择器，两处改的是同一个设置，对所有本地模型生效。选 ModelScope 时，它上面没有的少数文件仍从 Hugging Face 下载，每个文件都按内置的校验值核对。环境变量 `CUCCUT_MODELS_ENDPOINT` 优先于这里的选择，界面写明这一点。浏览器里只显示、不能改。
-- 智能体引擎内置九家。Claude Code、Codex CLI、GitHub Copilot CLI、Pi、OpenCode 常驻在设置的智能体列表里，没装也列出并给出安装方法；Gemini CLI、Cursor Agent、Grok、Kimi Code 经 ACP（Agent Client Protocol）接入，没检测到时收在列表下方的「更多」里。列表里每家前面是它的服务商图标（与 §3.2.3 执行引擎选择器相同），用户添加的显示名字首字母；是否可用由图标底块的颜色和状态标签表示，图标本身不随状态变色。内置的可以停用，不能移除。装的版本低于 CucCut 能驱动的最低版本时说明至少要哪一版并给出升级命令；换了发行包、原地升级到不了的说明要改装哪个包——例如 OpenCode 只有 npm 包 @opencode/cli 是 2.x，官方脚本与 opencode-ai 包装出的 1.x 驱动不了。浏览器里只能查看智能体与复制命令：启停、重新检测、登录、在应用内运行安装与升级、默认模型与手动指定位置都置灰，页上说明要到桌面应用里做。
-- 验证程度：Codex 与 Claude Code 端到端验证过；经同一份 ACP 实现接入的几家，这份实现在真机上跑通后都能使用，没有亲自跑通的标「未在 CucCut 实测」。没有逐次审批通道的引擎（如 Pi）只能用完全访问，选别的模式时说明原因，不替用户改。
-- 其他支持 ACP 的命令行智能体由用户添加，有两种方式：从可搜索的目录里添加（每条有名字、一句话介绍与启动命令，经 npx 等包管理器现取现用的钉住版本）；或填自定义命令——id（小写字母开头，只用小写字母、数字和连字符，不与内置、已添加和目录里的重复）、名字、一条启动命令（按空格拆成程序与参数，引号括住的算一个参数；直接启动、不经过终端，管道与重定向不生效），可附环境变量（每行一个 KEY=VALUE；值只留在本机，界面只显示名字）。填错的字段就地说明哪里不对，改对之前不添加。界面说明添加的智能体没有经过 CucCut 逐一验证。浏览器与对外服务不能添加或移除。
-- 添加的智能体与内置的一样检测、登录和读取模型表，模型表在检测到之后才有。没检测到时它留在主列表里、不收进「更多」，也不出现在会话与工具的智能体选择器里；检测到之后与内置的同等对待。添加的可以移除，移除前确认；移除连同它的启用状态与默认模型偏好一起清掉，默认智能体是它时改由其余可用的接替，正在用它的任务结束并说明原因。
-- 字体下载（§5.9）：设置里可以关掉自动下载、填写镜像地址（只接受 https），查看已下载的字体与总大小，逐个删除或全部清空。下载只发送族名与字重，不需要账号或密钥；严格离线时不下载。浏览器与对外服务不能下载或删除字体。
-- 视频下载工具（yt-dlp）不随应用提供。从链接导入第一次用到它时，先显示工具的名字、来源、版本、大小与许可，用户同意后才下载；用户也可以指定自己装好的那一份。同意可以撤回，撤回之后从链接导入停用。设置里列出外部工具的状态（未安装、已安装及版本与来源、需要更新、不可用）与补救办法，yt-dlp 在设置 › 视频下载。智能体要下载工具时同样先经用户确认；浏览器与对外服务不能安装工具，浏览器也不能从链接导入；对外服务只在用户已经装好 yt-dlp 并同意使用之后才能从链接下载，而且只能落到它范围之内的视频或项目里（§2.7）。
-
-### 7.7 日志、诊断与删除〔NFR-03〕
-
-- 默认不收集原视频、声音、完整字幕、提示词或密钥。
-- 产品分析以必要的事件与性能摘要为限，非必要的采集可以关闭。
-- 导出诊断信息前可以预览、脱敏，并显示范围。
-- 删除的语义见 §4.9。
-
-### 7.8 重开、退出与后台运行〔COL-05〕
-
-- 关闭窗口只是不再观察；任务与服务状态保留。
-- 退出桌面应用时如果有活动任务，用户选择「继续在后台运行」或「停止服务及相关的本地执行」。界面同时列出仍可能在远端运行或计费的步骤。
-- 后台运行依赖服务进程与设备保持运行，不承诺关机、休眠或服务停止后本地渲染仍会继续。
-- 崩溃后重开：已提交的修改都在；未完成的步骤按其类型显示为可恢复、需要对账或需要重新发起，不笼统地显示「继续」。恢复矩阵见架构设计 §7。
+The layout and interaction follow the prototype; the mechanisms are in the architecture design §3.8 and §12.9.
 
 ---
 
-## 8. 质量与交付
+## 7. Autonomous execution, permissions and privacy
 
-### 8.1 质量是流程的一部分〔QUA-01〕
+### 7.1 Access modes [AUT-01]
 
-质量问题分三类：
+An access mode is the agent's permission setting. It is chosen in the session's input area and determines when the agent's actions require the user's confirmation.
 
-| 类别 | 例子 | 处理 |
+| Mode | Behavior | Suited for |
 | --- | --- | --- |
-| 程序硬错误 | 结构缺失、无法解码、未授权外发、用到了尚不支持的必需效果、脚本与声音不匹配 | 必须解决，不能用笼统的「仍然导出」绕过 |
-| 可辅助发现的内容问题 | 字幕遮挡、术语不一致、数字丢失、配音放不进时窗 | 列出并建议修复；用户可以审阅后接受 |
-| 创作判断 | 节奏、风格、叙事 | 留给用户 |
+| Supervised | Asks for permission before running commands or modifying files or videos | First exploration, uncertain large changes |
+| Auto-accept edits | Edits are approved automatically; other actions ask first | Subtitles and local edits |
+| Auto (default) | Routine actions are approved automatically; high-risk actions still ask | Everyday creation |
+| Full access | No per-action confirmation | Batch steps in a direction the user has already confirmed |
 
-冻结了的字体在导出时不见了或变了，可接受的替代要先由用户明确选择，再重新生成冻结的输入并检查；按需下载的字体没下载或下载失败时不在此列：直接用回退字体导出并给出警告（哪个族、用什么代替、为什么），不拦导出、不要求先选替代（§5.9）。有意安排的黑场、静音和停顿不自动当成故障。
+All modes are bound by the same permission floor. Wider modes do not grant unlimited spending, data export, voice cloning, or public publishing. Those remain authorized item by item, and the effective scope of each authorization stays visible. The mechanism is in the architecture design §3.12.
 
-### 8.2 质量报告必须诚实〔QUA-02〕
+### 7.2 Permission and approval matrix [AUT-02]
 
-检查报告记录：检查了哪个版本、用什么方法、覆盖了哪些范围、哪些范围没有覆盖、发现了什么、严重程度，以及用户接受了哪些警告。
+| Behavior | Default policy | Cases that require reconfirmation |
+| --- | --- | --- |
+| Reading user-selected material, previews, analysis | Runs within the currently authorized data scope | Reading a new directory, sensitive material, or other videos |
+| Local, reversible edits the user explicitly requested | Runs directly and gives a change receipt | Going beyond the selection, touching locked objects, or changing meaning |
+| Batch removal of viewpoints, changing the core script | Gives a comparable plan | The user has not explicitly authorized this kind of structural change |
+| Sending out transcripts, screenshots, audio, original videos | First obtains authorization for the corresponding data and recipient | Service changes, expanded data scope, authorization expired |
+| Paid cloud generation | First shows the service, scope, and known cost or estimate | Over budget, expanded scope, a new purchase round needed |
+| Voice cloning, lip-sync, or changes involving a person's identity | Separate authorization, and eligibility to use is confirmed | Change of identity, purpose, or scope |
+| Overwriting source files, deleting the only copy of material | Not done by default; requires explicit confirmation | Every operation that cannot be safely restored |
+| Public publishing and sharing | Not published automatically in the first version | When supported later, the target is confirmed each time under the authorization policy |
 
-- 抽查关键帧不等于全片逐帧检查；读过脚本不等于听过音频。
-- 用代理画质截的图不能用来证明导出质量。
-- 语义与风格判断保留给人工评审。
+Authorizations that one task needs can be merged, to avoid a popup for each file. However, approving “upload low-resolution preview frames” does not equal approving upload of the full original video.
 
-### 8.3 预览与最终文件是两种交付〔OUT-01〕
+An authorization is bound to the data type, recipient, video and object scope, purpose, budget method, and validity period. After the user revokes an authorization, new calls and automatic applications are prohibited, and the app explains that parts already sent out or already billed cannot be erased by local revocation.
 
-- 预览用于判断方向，可以用代理画质，必须标明。
-- 导出冻结一个确定的视频版本与全部输入。导出期间用户可以继续编辑，本次导出不读取新的状态。
-- 导出前预检：缺失的媒体或字体、已失效的翻译或配音、孤立的锚点、超出边界的片段、未授权的网络访问、尚未实现的效果、不兼容的输出设置。
-- 导出先写到临时位置，校验帧数、时长、音轨和可解码性之后再发布。失败不会覆盖已有的成功文件。
-- 编码进度 100% 不等于文件可用；文件检查与抽样的视觉检查是两种覆盖范围，不互相冒充。
-- 只导出字幕文件不需要渲染视频。
-- 输出帧率与视频编辑帧率不同时，导出窗口说明帧数与尾端时长的规则（视频格式规范 §2）。
-- 桌面应用点击导出设置页的最终「导出」按钮后，单文件先打开系统保存窗口，选择路径并确认或修改文件名；确认后才创建任务，取消或窗口失败不启动导出。默认文件名沿用导出摘要；已选目录作为窗口的初始位置，否则成片优先用原视频（时间线上最早出现的那段素材）所在的文件夹。一次导出多个文件时先选择输出目录，沿用各文件的名称，不给多份设置同一个文件名。选择已有文件时由系统窗口确认替换，确认后允许替换该文件。
-- 没有系统保存窗口的浏览器，以及 CLI / 智能体导出，继续按导出目的地合同保存。成片没有选位置时，桌面应用导到原视频（时间线上最早出现的那段素材）所在的文件夹；原视频在视频目录里面，或在浏览器里导出时，放项目的 `exports/`。音频、字幕、文字稿与项目文件没选位置时都放项目的 `exports/`。成片的默认文件名带上画面里烧着的字幕的语言（`访谈.zh-Hans.mp4`），未明确确认替换时同名加序号，不覆盖已有文件。
-- 导出窗口与后台任务在渲染时显示速度（fps）与预计剩余时间（`m:ss`，超过一小时 `h:mm:ss`），会话里视频卡的导出行写剩余时间（§3.2.2）；都按最近几秒的进度推算，还算不出速度时不写，不编造。
+### 7.3 Two data flows [AUT-03]
 
-冻结导出的合同见架构设计 §9。
+“语音识别在本地运行” (speech recognition runs locally) does not mean the whole task is offline. There are two independent data flows:
 
-### 8.4 可编辑交付〔OUT-02〕
+1. The conversational agent may send the script, screenshots, or task context to its model service;
+2. Model services such as transcription and generation are a separate data flow.
 
-- **P0**：保留可以重新打开的本地视频、原始素材引用、声音和作者源码。
-- **P1**：便携包，收集被引用的媒体、字体、代码与依赖清单。清单列明缺失的、仅链接的或因许可限制未包含的素材。
-- 只有预先渲染好的 MP4 是可播放的媒体，不等于可编辑的源。
-- 包含源码的包固定依赖版本并带上离线可用的内容；不能只因为有一个锁文件就声称可以离线重建。
-- 打包不包含密钥、受保护的机器路径或任务未授权的文件。
-- 代理文件或预先渲染的预览可以让用户先浏览，但不能被当作已经恢复了可编辑的源。
+Settings and task cards must state each one separately. When the user selects “仅本地” (local only), neither direction may switch to the cloud automatically. When offline, only capabilities that are already installed and verified as usable can be completed. Without a local agent, manual editing and local computation remain available, but the app may not claim that the full agent can still work offline.
 
-便携包格式见视频格式规范 §8。
+### 7.4 Budget and cost [AUT-04]
 
-### 8.5 输入兼容〔SET-02〕
+- Distinguish four cost states: estimate, amount reported by the service, billing unknown, and free local computation. Do not show a pseudo-precise amount when there is no trustworthy price.
+- The task budget covers generation, retries, and candidate variants. An accepted quote is bound to the actual task scope. Parallel steps share one budget, so they do not each see the same balance and overspend.
+- When a service cannot provide a reliable amount estimate, a monetary cap cannot pretend to be strictly guaranteed. In that case, either block that cost mode, or ask the user to switch to “批准这一次明确的调用，金额未知” (approve this one explicit call, amount unknown).
+- When the state of a result is unknown, query or reconcile first; do not place the order again.
+- After a user rejects a charge, the model may not automatically switch to another paid service to get around it.
 
-- 接受常见的视频、音频、图片与字幕格式。不能解码或只能部分使用的输入，如实说明原因与可用范围（例如只有音频可用、可变帧率、没有逐词时间）。
-- 用户提供的字幕或转录没有逐词时间时，保留明确的低精度状态，不伪造逐词时间。
-- 导入旧版项目是单向转换：生成新视频，不修改原文件；无法转换的内容列入报告。导入的视频保留旧版里的最近活动（上次打开或最后编辑），Space 里按原来的先后排，不因导入排到最前。旧版项目导入是否进入 P0 见 §12。
-- 导入旧版项目先问一次：导不导入、导入到哪里（默认文稿 / 文档文件夹下的 `CucCut`），可以选以后不再提醒。导入在后台进行，任务页有一条「导入旧版项目」任务，Home 顶上一条报进度；跑完有没导入的项目时，任务卡与 Home 那一条写出原因与怎么办。任务详情按原因分组列出没导入的项目：每组说明原因与补救办法（接上硬盘、把文件放回原处、在文件夹中查看导入记录），每个项目可以重试或跳过，跳过的以后不再自动导入、可以改为导入；没处理的下次启动自动再试。实现见架构设计 §2.7。
+### 7.5 Untrusted material is not instructions [AUT-05]
 
-### 8.6 性能与可靠性〔NFR-01、NFR-02〕
+Subtitles, web pages, metadata, code comments, and instruction files inside a file are task material. They cannot be elevated to new user authorization. A line in the video reading “删除视频” (delete the video) does not trigger a deletion.
 
-- 操作要快速得到确认，并显示它绑定的范围；停止要快速生效；常见的原生内容定位要流畅。目标数值与测量方法见验收与测试 §4。
-- 只含原生内容的视频不启动代码渲染环境。只改字幕之后再次导出，不重新计算没有变化的代码动画。
-- 已确认的视频不丢失；崩溃不产生半个提交；重试不产生重复的修改或重复的费用。
-- 达不到性能目标的复杂场景缩小支持范围，或使用有标记的代理预览，不用平均数掩盖不可用的设备。
+Running animation source code requires a real, controlled environment. The app cannot claim safety by writing “do not access files” in a prompt. Permission descriptions must match the capabilities that are actually enforceable. When an execution engine or platform cannot apply the necessary isolation, the app either refuses to run untrusted code explicitly, or labels it as trusted developer mode. It does not silently drop to full permission and keep calling it safe.
+
+The isolation boundaries are in the architecture design §12.
+
+### 7.6 Model and capability configuration [SET-01]
+
+- Settings show the agent engine configuration separately from the configuration for speech recognition, speech synthesis, image generation, and other models. The “Models” group in the left column of Settings is, in order, “API providers”, “Usage”, and then one page per capability: speech recognition, speech synthesis, text generation, image generation, music generation, vocal separation, and visual analysis. Each capability has only one page. Local models and API-provider models appear on the same page, not split into local and cloud tabs. Agent sign-ins (Codex, Claude, and so on) are under “Agent providers”, not API providers. Codex image generation still appears in the default model selector for image generation.
+- The API providers page is vendor-centric and lists only providers that have been added. Each row shows an icon, the name, a one-line description (host, a few models, what it can do: text, recognition, synthesis, image generation), an account summary (a masked key, or “2 个账号” (2 accounts)), and the status. Connected providers are listed first, and “添加 API 提供方” (Add API provider) sits at the bottom. One key takes effect for all of that provider's capabilities. Adding an OpenAI key once makes text generation, speech recognition, speech synthesis, and image generation all usable, without filling it in again for each capability. Capabilities in the catalog that CucCut has not yet integrated (those marked P1 in architecture design §6.4) are listed in the API provider detail with the label “尚未接入” (not yet integrated). They cannot be tested or set as default, and they do not appear in the default model selector on capability pages.
+- The API provider detail has, at the top, the icon, name, official-site link, and an enable switch. Providers that have both an international and a China address can switch region. Under “Accounts”, one provider can have several accounts (several keys). Each row has a switch, a name (the mask is shown when no name was given), the mask, a status (normal, invalid key, rate-limited with the time it recovers, quota exhausted), “设为首选” (Set as preferred), and remove. When an account has its own endpoint, the secondary line shows that endpoint's hostname. Clicking the name enters edit mode, where the name and endpoint address are changed in the same place. Accounts have an order: calls always use the first enabled account that has a key. When that account errors, the app does not automatically switch to the next one; the user adjusts the order. “添加账号” (Add account) expands inside the detail, with a name (optional), a key, a region (for providers with two addresses), and a collapsed “端点（高级）” (Endpoint, advanced) section. The endpoint is one address input whose placeholder is the default address of the selected region. If it is left empty, the provider's default address for the selected region is used. If filled in, it must start with http:// or https://. Endpoints are stored per account (the account `endpoint` in architecture design §6.8), and the interface no longer offers a separate provider-level endpoint override. “验证并保存” (Verify and save) first verifies once with the provider. If verification fails, nothing is saved, and a one-sentence reason is shown. Deleting the last account leaves the provider in place, but with no usable key. “能力与模型” (Capabilities and models) lists this provider's models grouped by capability, with a default badge, test, refresh list, and add model id. The “用量” (Usage) card shows this month's and today's call counts, estimated spend, and the number of calls whose cost is unknown. “查看用量” (View usage) jumps to the usage page filtered to this provider only. Providers that can query balance (P1) also have “查余额” (Check balance). At the bottom, “移除 API 提供方” (Remove API provider) requires a second confirmation, and it explains that the default model pointing to this provider will become unavailable and must be re-chosen.
+- Adding an API provider: a search box at the top, with results in three groups: model vendors, relay platforms, and self-hosted endpoints (OpenAI-compatible). Providers that are not in the catalog all go through self-hosted endpoints. The end of the model-vendor cards has a card reading “自建端点 · OpenAI 兼容” (Self-hosted endpoint · OpenAI-compatible). Tapping it jumps to the form below and focuses the name field. Searching “OpenAI”, “兼容”, “自建”, or “custom” also lists this card. A self-hosted endpoint takes a name, an address, a protocol (OpenAI-compatible), the first model id, and its capabilities. If the address matches an already added provider, the app prompts to add the account to that provider instead. Vendors with both an international and a China address have only one card; the region is switched in the detail. Selecting a card opens its detail and directly expands “添加账号” (Add account).
+- A capability page, from top to bottom: the default model (one selector, grouped into local models, each API provider (added providers only), and agents; unavailable items are greyed out with the reason stated); the parameters for this capability (concurrency; text generation also has reasoning intensity); local models (the model catalog, installed and installable models, check, repair and trial, and the download source, see the three sections “本地模型由用户安装” (Local models are installed by the user), “模型目录” (Model catalog), and “模型下载来源” (Model download source) below); and API providers. The API providers section has the subtitle “有这种能力的提供方；添加密钥后它的模型可选” (providers with this capability; once a key is added, their models become selectable), and “管理 API 提供方” (Manage API providers) goes to the API providers page (see the next item). The speech synthesis page also has a “我的声音” (My voice) tab. Music generation, vocal separation, and visual analysis have only local models, with no “API providers” section. The music generation page explains that the model generates on the local machine, that it is very slow, and shows the model's license (YuE2 is for non-commercial use only). The music model runs on the audio.cpp engine. The engine is a component of this model, and the download size already includes it. In the model's own component list it appears as “audio.cpp 引擎” (audio.cpp engine), with a description, the source “GitHub 发布 0xShug0/audio.cpp v0.9.1” (GitHub release 0xShug0/audio.cpp v0.9.1), its size, and its license (Apache-2.0). On Windows and Linux a Vulkan GPU driver is also required. When the weights are present but the engine is missing, the generic “缺 audio.cpp 引擎” (missing audio.cpp engine) label appears with the action “补齐 <大小>” (complete <size>).
+- The “API providers” section of a capability page lists every provider in the catalog that has this capability (catalog entries marked P1 for this capability are not listed, and agents are not listed), plus any self-hosted endpoint that declares this capability. Connected providers come first, then providers that were added but have no account, and finally providers not yet added. Within each tier, catalog order applies, and self-hosted endpoints come last. Each provider is a group. Its header shows the icon, the name, and a type label (relay or self-hosted). Connected providers show the account summary and “N 个模型” (N models) on the right, are expanded by default, and can be collapsed. Providers that are not added or have no account show “配置” (Configure). Tapping it enters the provider's detail and directly expands “添加账号” (Add account), adding the provider too if it was not yet added. These groups are collapsed by default. A search box is always shown at the top. It filters by provider name and model id, and when there is a query, matching groups expand automatically. Once expanded, each model takes one row, arranged compactly. For connected providers, each row can be tested and shows the default badge. Unconnected providers only list model ids, read-only; they cannot be tested or set as default. At the end of the list is a line reading “没有你用的提供方？添加 OpenAI 兼容端点” (No provider you use? Add an OpenAI-compatible endpoint). It goes to the API providers page, opens “添加 API 提供方” (Add API provider), and focuses the name field of the self-hosted endpoint. When no provider in the catalog has this capability, this section says so in one sentence and offers “添加 API 提供方” (Add API provider). The default model selector still lists only added API providers. It does not include providers from this section that have not been added.
+- Keys show only a mask: the first 3 and last 4 characters (`sk-…ab12`). Keys of 8 characters or fewer are shown entirely as dots. After saving, the original key is never shown anywhere, including when editing an account.
+- Usage page: a time range (today, 7 days, 30 days, all). The top right shows spend, for example “≈ $12.34 · 按标价估算” (≈ $12.34 · estimated at list price), with a note of how many calls have unknown cost if there are any. The stat cells are call counts (including failures), text tokens (input and output), audio minutes, character counts, and image counts. A daily bar chart is stacked and colored by capability. Breakdown lists are by API provider, by capability, by model, and by account (calls, share, usage, spend). Providers that can query balance (P1) show their balance at the top. When there are no calls yet, the page says so. Only API-provider and agent calls are counted. Local models are not billed and do not enter usage.
+- Costs are shown honestly (§7.4). Amounts reported by the provider, amounts estimated at list price, and unknown amounts are displayed separately and are never merged into one figure. An estimate states that it is at list price, and that list prices may be out of date. Different currencies are displayed separately and not converted.
+- In the browser (Web), you can view API providers, account status, and usage, but you cannot add, modify, or remove API providers and accounts, and you cannot check balances. You can test models. The controls for the default model, parameters, keys, refreshing the model or voice catalog, and adding models are greyed out, and the page header says this must be done in the desktop app. The voice library behind “我的声音” (My voice) is not exposed to the browser. On that page, the browser states that it cannot be seen, instead of showing loading indefinitely.
+- Configuration is guided by task need. Not everything is required on first launch.
+- The user can pin a service and model, or choose a strategy such as local-first or cost-limited. A retry does not silently switch the model or voice. Moving from free to paid, or from local to cloud, requires fresh authorization each time.
+- When a capability is unavailable, the app shows the exact reason: not installed, not connected, insufficient permission, or unsupported. Manual editing and other local capabilities stay available.
+- Local models are installed by the user. The app first shows the size to download and the source, and downloads only after confirmation. Downloads can be paused and resumed, and show the bytes received. When the size is unknown, no percentage is shown. A model missing some components downloads only the missing ones, and components shared by several models are installed once. After installation, the user can run “检查” (Check), which runs the bundled sample to confirm that the model works. Check and trial are different things. Trial is the “试听” (preview) for speech synthesis and music generation. For music generation, the preview always generates a few seconds of pure music and lets the user pick only the style; it proves that this model and engine can produce sound. For models that have a trial, trial is the primary action on the row, and check and “修复…” (Repair…) are in the more menu. Models without a trial have a separate check button on the row. Whether a model is usable is shown only in one status line on that row: a check in progress (with stage and progress, cancellable, returning to the previous line after cancel), a check passed a few minutes ago, or a failure. A failure gets one sentence saying what is wrong and what to do; “修复…” (Repair…) is offered only when repair can help. The row also offers re-check and copyable technical details. If a check could not start, that is also written on this line, without a popup. Repair re-downloads only the broken files, and re-checks automatically once it is fixed. When the last check failed, the trial panel opens by explaining this. Once a trial succeeds after that check, the note is removed; the check result on the row stays until a new check replaces it. Trial failures are written in the panel, and when the user's recording cannot be read, the file name is stated. An agent may propose downloading a missing model, again stating the size first and requiring the user's confirmation. The browser and external services cannot install or delete local models. In the browser, you can only view status and run trials. Download, check, repair, delete, and default-model selection are all greyed out, and a note at the top says these must be done in the desktop app.
+- Model catalog: the top of the “本机模型” (Local models) section on each capability page shows the catalog, which is shared by all capabilities. It shows which folder models are stored in, how much space they use, how much space remains on that disk, and how many models were recognized. The folder can be opened in the system. Users can move it to an external drive or to a folder shared with other programs. After a folder is chosen, the app first says how many models are already in it and how much disk space is available. When the current location has models, the user chooses between “把现有模型移过去” (Move existing models there), which shows the size to move and is disabled if it will not fit, and “只切换位置” (Only switch location), in which the original files stay and only models already in the new location are usable. Moves run in the background and show progress; on failure, everything returns to its original state. Local models cannot be used while a move is in progress. The location cannot be changed while a task is using local models. The app states the reason and offers a link to that task. If the folder is missing (for example, the external drive is not connected) or cannot be written to, the app says so honestly. The default location can be restored. When the location is set by an environment variable, it is shown read-only and cannot be changed. Remind the user that when the folder is shared with other programs, deleting a model here deletes the files in that folder. This item is not shown in the browser, and external services cannot change it.
+- Model download source: at the bottom of the “本机模型” (Local models) section on each capability page is a collapsed “下载与存储” (Download and storage) section. The current download source is written beside its title. When expanded, the user can choose Hugging Face (default), ModelScope (usually faster in mainland China), or a custom mirror (enter the base URL of the mirror). An invalid address is explained on the spot, and the change takes effect only after saving. The same selector appears in Settings › General › Download source and offline. Both places change the same setting, which applies to all local models. When ModelScope is chosen, the few files it lacks are still downloaded from Hugging Face, and every file is verified against built-in checksums. The environment variable `CUCCUT_MODELS_ENDPOINT` takes precedence over the choice here, and the interface says so. In the browser, the setting is only displayed and cannot be changed.
+- There are nine built-in agent engines. Claude Code, Codex CLI, GitHub Copilot CLI, Pi, and OpenCode stay in the agent list in Settings. Uninstalled ones are listed too, with install instructions. Gemini CLI, Cursor Agent, Grok, and Kimi Code connect through ACP (Agent Client Protocol), and when they are not detected they are collected under “更多” (More) below the list. Each entry in the list has its provider's icon in front (the same icon as the execution-engine selector in §3.2.3). User-added agents show the initial letter of their name. Availability is shown by the color of the icon's base block and by a status label; the icon itself does not change color with status. Built-in agents can be disabled but not removed. When an installed version is below the minimum version CucCut can drive, the app states the minimum version needed and gives the upgrade command. When the distribution package was changed, and an in-place upgrade cannot reach a usable version, the app states which package to install instead. For example, for OpenCode only the npm package @opencode/cli at 2.x is usable; the official script and the opencode-ai package, which wrap 1.x, cannot be driven. In the browser, you can only view agents and copy commands. Start and stop, re-detect, sign in, install and upgrade inside the app, the default model, and manual location are all greyed out, and the page says these must be done in the desktop app.
+- Verification level: Codex and Claude Code have been verified end to end. Several agents that connect through the same ACP implementation can be used once that implementation runs on real hardware. Those not run through personally are marked “未在 CucCut 实测” (not tested in CucCut). Engines without a per-action approval channel (such as Pi) can only use full access. When another mode is selected, the reason is stated, and the mode is not changed on the user's behalf.
+- Other command-line agents that support ACP are added by the user in one of two ways. The first is from a searchable directory, where each entry has a name, a one-sentence introduction, and a launch command, pinned to a version that is fetched and run on demand through npx or another package manager. The second is a custom command. It takes an id (starts with a lowercase letter, uses only lowercase letters, digits, and hyphens, and must not duplicate a built-in, added, or directory entry), a name, and one launch command. The command is split on spaces into a program and its arguments, and quoted text counts as one argument. It is launched directly, not through a terminal, so pipes and redirects do not work. Environment variables can be attached, one `KEY=VALUE` per line. Values stay on this machine, and the interface shows only the names. A field that is wrong is explained in place, and nothing is added until it is corrected. The interface notes that added agents have not been individually verified by CucCut. The browser and external services cannot add or remove them.
+- Added agents are detected, signed in to, and have their model table read in the same way as built-in agents. The model table exists only after detection. When an agent is not detected, it stays in the main list and is not collapsed into “更多” (More). It also does not appear in the agent selectors of sessions and tools. Once detected, it is treated the same as a built-in agent. Added agents can be removed, after confirmation. Removal also clears their enabled state and default-model preference. If the removed agent was the default, one of the remaining available agents takes over, and any task using it ends with an explanation.
+- Font downloads (§5.9): in settings the user can turn off automatic download, enter a mirror address (https only), view the downloaded fonts and their total size, and delete them one by one or clear them all. Downloads send only the family name and weight, and need no account or key. In strict offline mode, nothing is downloaded. The browser and external services cannot download or delete fonts.
+- The video download tool (yt-dlp) is not bundled with the app. When importing from a link for the first time, the app first shows the tool's name, source, version, size, and license, and downloads it only after the user agrees. The user can also point to their own installed copy. Consent can be withdrawn, after which importing from links is disabled. Settings lists the status of external tools (not installed; installed, with version and source; needs update; unavailable) along with remedies. yt-dlp is under Settings › Video download. When an agent needs to download the tool, the user confirms first, in the same way. The browser and external services cannot install tools, and the browser cannot import from links. External services can download from links only after the user has installed yt-dlp and agreed to its use, and only into videos or projects within their scope (§2.7).
+
+### 7.7 Logs, Diagnostics and Deletion〔NFR-03〕
+
+- By default, original video, audio, full subtitles, prompts or keys are not collected.
+- Product analytics are limited to necessary events and performance summaries; non-essential collection can be turned off.
+- Before exporting diagnostic information, the user can preview it and redact it, and the scope is shown.
+- For the semantics of deletion, see §4.9.
+
+### 7.8 Reopening, Quitting and Background Running〔COL-05〕
+
+- Closing the window only stops observing; task and service state is kept.
+- When the desktop app is quit while tasks are active, the user chooses “继续在后台运行” (continue running in the background) or “停止服务及相关的本地执行” (stop the service and related local execution). The interface also lists steps that may still be running or billing on the remote side.
+- Background running depends on the service process and the device staying on. It does not guarantee that local rendering continues after shutdown, sleep, or service stop.
+- After a crash and reopen: all committed changes are kept; unfinished steps are shown by their type as resumable, needing reconciliation, or needing to be restarted, rather than uniformly as “继续” (continue). The recovery matrix is in the architecture design §7.
 
 ---
 
-## 9. 端到端工作流
+## 8. Quality and Delivery
 
-所有工作流遵循同一个闭环：
+### 8.1 Quality Is Part of the Process〔QUA-01〕
+
+Quality issues fall into three categories:
+
+| Category | Examples | Handling |
+| --- | --- | --- |
+| Hard program errors | Missing structure, undecodable data, unauthorized outbound transfer, use of a required effect not yet supported, script and audio mismatch | Must be resolved; cannot be bypassed with a generic “仍然导出” (export anyway) |
+| Content issues that can be found with assistance | Subtitle occlusion, inconsistent terminology, lost numbers, voiceover that does not fit the time window | List them and suggest fixes; the user can review and accept |
+| Creative judgment | Pacing, style, narrative | Left to the user |
+
+If a frozen font is missing or changed at export time, an acceptable replacement must first be explicitly chosen by the user, and then the frozen inputs are regenerated and checked. Fonts downloaded on demand that were not downloaded, or whose download failed, are not in this category: export directly with the fallback font and give a warning (which family, what it is replaced with, and why). Do not block the export or require a replacement to be chosen first (§5.9). Intentional black frames, silence and pauses are not automatically treated as faults.
+
+### 8.2 Quality Reports Must Be Honest〔QUA-02〕
+
+A check report records: which version was checked, by what method, what scope was covered, which scope was not covered, what was found, the severity, and which warnings the user accepted.
+
+- Spot-checking key frames is not a frame-by-frame check of the whole film; reading the script is not listening to the audio.
+- Screenshots taken from proxy-quality footage cannot be used to prove export quality.
+- Semantic and style judgments remain for human review.
+
+### 8.3 Preview and Final File Are Two Kinds of Delivery〔OUT-01〕
+
+- Previews are for judging direction; they may use proxy quality and must be labeled as such.
+- Export freezes one definite video version and all inputs. The user can keep editing during export; this export does not read the new state.
+- Pre-export checks: missing media or fonts, stale translations or voiceovers, orphaned anchors, clips beyond boundaries, unauthorized network access, effects not yet implemented, incompatible output settings.
+- Export writes to a temporary location first, and publishes only after verifying frame count, duration, audio tracks and decodability. A failure never overwrites an existing successful file.
+- 100% encoding progress does not mean the file is usable. A file check and a sampled visual check are two different coverage scopes and do not stand in for each other.
+- Exporting only a subtitle file does not require rendering video.
+- When the output frame rate differs from the video editing frame rate, the export window explains the rule for frame count and trailing duration (video format spec §2).
+- In the desktop app, after clicking the final “导出” (Export) button on the export settings page, for a single file the system save dialog opens first. The user chooses a path and confirms or edits the file name; the task is created only after confirmation. Cancelling or a dialog failure does not start the export. The default file name follows the export summary. A folder already selected is used as the dialog's initial location; otherwise the finished video goes to the folder of the source video (the material that appears earliest on the timeline). When exporting several files at once, the output folder is chosen first, each file keeps its own name, and no two settings are given the same file name. When an existing file is selected, the system dialog confirms replacement, and replacing that file is allowed only after that confirmation.
+- Browsers without a system save dialog, and CLI / agent exports, continue to save according to the export destination contract. If no location is chosen for the finished video, the desktop app exports to the folder of the source video (the material that appears earliest on the timeline); if the source video is inside the videos folder, or when exporting from a browser, it goes to the project's `exports/`. Audio, subtitles, transcripts and project files with no chosen location go to the project's `exports/`. The default file name of the finished video carries the language of the burned-in subtitles on screen (`访谈.zh-Hans.mp4`). Unless replacement is explicitly confirmed, a same name gets a sequence number and existing files are not overwritten.
+- The export window and background tasks show speed (fps) and estimated remaining time (`m:ss`, or `h:mm:ss` beyond one hour) while rendering. The export row of the video card in the session shows the remaining time (§3.2.2). Both are estimated from progress over the last few seconds; when speed cannot yet be calculated, nothing is shown. Nothing is made up.
+
+The contract for frozen export is in the architecture design §9.
+
+### 8.4 Editable Delivery〔OUT-02〕
+
+- **P0**: keep the local video that can be reopened, references to the original material, sound, and the author's source code.
+- **P1**: a portable package that collects referenced media, fonts, code and a dependency manifest. The manifest lists missing assets, assets that are link-only, and assets not included because of license restrictions.
+- A pre-rendered MP4 is playable media, but it is not the same as an editable source.
+- A package that includes source code pins dependency versions and includes what is needed to work offline; it cannot claim it can be rebuilt offline just because it has a lock file.
+- Packaging does not include keys, protected machine paths, or files the task is not authorized to include.
+- Proxy files or pre-rendered previews let the user browse first, but they cannot be treated as having restored an editable source.
+
+The portable package format is in the video format spec §8.
+
+### 8.5 Input Compatibility〔SET-02〕
+
+- Accepts common video, audio, image and subtitle formats. Inputs that cannot be decoded or can only be partly used are explained honestly, with the reason and the usable scope (for example, only audio is usable, variable frame rate, no word-level timing).
+- When user-provided subtitles or transcripts have no word-level timing, keep an explicit low-precision status and do not fabricate word-level timing.
+- Importing a legacy project is a one-way conversion: it generates a new video and does not modify the original files; content that cannot be converted is listed in a report. Imported videos keep their recent activity from the legacy project (last opened or last edited), and in Space they stay in their original order and are not moved to the top because of the import. Whether legacy project import is part of P0 is in §12.
+- Before importing a legacy project, ask once: whether to import, and where to import to (default: the `CucCut` folder under Documents (文稿 / 文档)). The user may choose not to be reminded again. The import runs in the background; the task page has a single “导入旧版项目” (Import legacy projects) task, and a bar at the top of Home reports progress. When the run finishes with projects not imported, the task card and that Home bar state the reason and what to do. The task details group the unimported projects by reason; each group explains the reason and the remedy (reconnect the drive, put the files back where they were, view the import record in the folder). Each project can be retried or skipped. A skipped project is not imported automatically again, but it can be changed to import later. Anything unhandled is retried automatically on the next launch. The implementation is in the architecture design §2.7.
+
+### 8.6 Performance and Reliability〔NFR-01, NFR-02〕
+
+- Operations are confirmed quickly and show the scope they are bound to; stop takes effect quickly; common native content positioning is smooth. Target values and measurement methods are in acceptance and testing §4.
+- A video containing only native content does not start the code rendering environment. When exporting again after only changing subtitles, code animations that have not changed are not recomputed.
+- Confirmed videos are not lost; a crash does not produce a half-committed change; a retry does not produce duplicate changes or duplicate charges.
+- Complex scenes that cannot meet performance targets have their supported scope reduced, or use a labeled proxy preview; averages are not used to hide devices on which something is unusable.
+
+---
+
+## 9. End-to-End Workflows
+
+All workflows follow the same closed loop:
 
 ```text
-理解并绑定选区 → 读取冻结的输入 → 生成提案或产物 → 校验 → 事务应用 → 预览与质量检查 → 导出
+Understand and bind the selection → read frozen inputs → generate proposal or artifact → validate → apply as transaction → preview and quality check → export
 ```
 
-下面每个工作流说明用户意图、系统做什么、之后怎么改、边界在哪里，以及怎样算通过。涉及的数据对象见视频格式规范，机制见架构设计。
+Each workflow below describes user intent, what the system does, how it can be changed afterwards, where the boundaries are, and what counts as passing. The data objects involved are described in the video format spec; the mechanisms are in the architecture design.
 
-### S01：给视频添加字幕
+### S01: Add Subtitles to a Video
 
-**用户意图**：「给这个视频加中文字幕，修正错字，原视频声音不变。」
+**User intent**: “给这个视频加中文字幕，修正错字，原视频声音不变。” (Add Chinese subtitles to this video, fix typos, keep the original video audio unchanged.)
 
-**过程**：导入视频，建立视频实例与原音频路由。运行语音识别，或接纳用户提供的转录。有逐词时间就建立语音文档；没有就保留明确的低精度状态。从编辑后的语音视图派生句子与原文字幕，应用排版规则。可以提出错字修正，但不能以「润色字幕」为由改变实际说话的含义。
+**Process**: Import the video, create a video instance and route the original audio. Run speech recognition, or accept a transcript provided by the user. If there is word-level timing, build a speech document; if not, keep an explicit low-precision status. Derive sentences and source subtitles from the edited speech view, and apply typesetting rules. Typo corrections may be proposed, but the actual meaning of what is spoken must not be changed under the pretext of “polishing subtitles”.
 
-字幕是可编辑的字幕层，不是先把视频烧成新的 MP4 再放回去。样式与文字内容分开：之后改字号、阴影、底色只更新样式，不重新识别。
+Subtitles are an editable subtitle layer, not a video burned into a new MP4 and then placed back. Style is separate from text content: afterwards, changing font size, shadow or background color only updates the style and does not re-run recognition.
 
 ```text
-视频素材 → 语音识别 → 语音文档
-                          ↓
-                字幕规则 + 字幕实例
-                          ↓
-                原生字幕渲染 / 字幕文件导出
+Video material → speech recognition → speech document
+                                          ↓
+                          subtitle rules + subtitle instances
+                                          ↓
+                    native subtitle rendering / subtitle file export
 ```
 
-**之后的修改**：改错字只影响相关的词、句与依赖项。人工断行会被固定；重新自动排版不覆盖已固定的断行。
+**Later changes**: Correcting a typo only affects the related words, sentences and dependent items. Manual line breaks are fixed; re-running automatic typesetting does not overwrite fixed line breaks.
 
-**边界**：没有音轨时报告没有可转录的语音；背景噪声导致的低置信词标记为待审阅；画面里已经烧录的字幕可能与新字幕重复，在预览中提示，不自行抹掉原画面的文字。
+**Boundaries**: If there is no audio track, report that there is no speech to transcribe. Low-confidence words caused by background noise are marked for review. Subtitles already burned into the picture may duplicate the new subtitles; flag this in the preview and do not erase the text in the original picture on your own.
 
-**通过标准**：关闭字幕层能看到未改变的原视频；原音频不变；重复应用同一个结果不产生第二条字幕轨；只导出 SRT 不启动视频渲染。
+**Pass criteria**: With the subtitle layer turned off, the unchanged original video is visible; the original audio is unchanged; applying the same result again does not produce a second subtitle track; exporting only SRT does not start video rendering.
 
-### S02：翻译字幕，输出双语或多个语言版本
+### S02: Translate Subtitles, Output Bilingual or Multiple Language Versions
 
-**用户意图**：「翻译成英文，保留中文，显示双语；专有名词按术语表。」
+**User intent**: “翻译成英文，保留中文，显示双语；专有名词按术语表。” (Translate into English, keep the Chinese, show bilingual; proper nouns follow the glossary.)
 
-**过程**：按句子提交翻译，带上稳定 ID、文本、必要的上下文和术语表，不按屏幕上的一行一行孤立翻译。得到自然的译句后，单独生成语义对应块，再在块的边界上派生目标语言的字幕。中文与英文可以有不同的字幕条数和不同的换行。
+**Process**: Submit translation sentence by sentence, with stable IDs, text, necessary context and the glossary. Do not translate isolated screen lines one by one. After getting natural translated sentences, generate semantic alignment blocks separately, then derive target-language subtitles at the block boundaries. Chinese and English may have different numbers of subtitle entries and different line breaks.
 
-应用时新建译文文档与目标语言的字幕规则，不覆盖中文语音文档。双语布局指定两条语言流、位置、安全区和显示策略。只翻译字幕不生成新的声音；显示时序用源语音的语义块对应，这不是英文实际被说出的逐词时间。
+On apply, create a new translation document and target-language subtitle rules; do not overwrite the Chinese speech document. The bilingual layout specifies two language streams, their positions, safe areas and display policy. Translating subtitles does not generate new audio. Display timing is aligned to the source speech's semantic blocks; this is not the actual word-level timing of the English as spoken.
 
-**之后的修改**：改英文译句只让这一句的目标对齐、显示布局和关联配音失效；改源字幕的换行不让译句失效。改源句的内容要检查译文是否仍然对应。返回结果缺句、ID 重复、丢数字或术语冲突时，不接受整批无条件覆盖。
+**Later changes**: Editing an English sentence only invalidates the target alignment, display layout and linked voiceover for that sentence. Changing the line breaks of the source subtitles does not invalidate the translation. If the source sentence's content changes, check whether the translation still corresponds. When a returned result has missing sentences, duplicate IDs, lost numbers or terminology conflicts, do not accept the whole batch as an unconditional overwrite.
 
-**降级**：无法可靠拆块时整句显示，并标明是句级对应。不能按英文词数平均分出伪造的「准确逐词时间」。
+**Degradation**: If blocks cannot be split reliably, display the whole sentence and state that the alignment is sentence-level. Do not split into a fabricated “exact word timing” by averaging English word counts.
 
-**通过标准**：源句、译句与显示改写可以分别查看；源语言与目标语言的字幕条数不要求一一对应；可以分别导出中文 SRT、英文 SRT 和双语画面。
+**Pass criteria**: Source sentences, translated sentences and display rewrites can each be viewed separately; the number of subtitle entries in the source and target languages does not need to correspond one-to-one; Chinese SRT, English SRT and the bilingual picture can each be exported separately.
 
-### S03：剪口播——删口头禅、长停顿、重录与废弃起句
+### S03: Cut Spoken Content — Remove Filler Words, Long Pauses, Re-recorded and Abandoned Starts
 
-**用户意图**：「删掉明显的『嗯啊』、重复起句和过长的停顿，保留自然的呼吸。」
+**User intent**: “删掉明显的『嗯啊』、重复起句和过长的停顿，保留自然的呼吸。” (Remove obvious filler words “嗯啊” (um-ah), repeated sentence starts and overly long pauses; keep natural breaths.)
 
-**过程**：语义检测给出词句位置与理由，声学分析给出可测量的切点候选。界面展示待处理的建议，用户可以逐条接受或忽略。直接在文稿里选中删除，必须处于「剪辑音画」模式；普通的字幕改字模式不会误删视频。
+**Process**: Semantic detection gives the positions of words and sentences along with reasons; acoustic analysis gives measurable cut-point candidates. The interface shows pending suggestions, and the user can accept or ignore them one by one. Selecting and deleting directly in the script must be in “剪辑音画” (edit audio and picture) mode; the ordinary subtitle text-editing mode will not accidentally delete video.
 
-剪辑在本次明确读取并绑定的视频版本上计算安全边界、帧量化和联动范围，一次性更新视频与音频实例、来源关系、语音视图、字幕和关联元素的锚点。原始视频文件和完整的原始转录不删除。
+The edit computes the safe boundaries, frame quantization and linked scope on the video version that was explicitly read and bound for this operation, and updates the video and audio instances, source relations, speech view, subtitles and anchors of linked elements in one pass. The original video file and the complete original transcript are not deleted.
 
-**可复算的例子**：12 秒、30 fps 的源视频，删除源时间 [4, 6) 秒。结果是两段：源 [0, 4) 位于视频 [0, 4)，源 [6, 12) 位于视频 [4, 10)。原本在源 [8.2, 9.0) 的字幕应出现在视频 [6.2, 7.0)，即帧区间 [186, 210)，而不是仍然出现在第 246 帧。
+**A reproducible example**: A 12-second source video at 30 fps, with source time [4, 6) seconds deleted. The result is two segments: source [0, 4) sits at video [0, 4), and source [6, 12) sits at video [4, 10). A subtitle originally at source [8.2, 9.0) should now appear at video [6.2, 7.0), i.e. frame range [186, 210), and not still at frame 246.
 
-**之后的修改**：文稿保留已剪掉的区域和恢复入口；恢复是带冲突检查的事务。剪辑让一句话只剩半句时，重新评估译文，不能简单按中文删掉的字数去截英文。
+**Later changes**: The script keeps the cut regions and a restore entry; restore is a transaction with conflict checks. When an edit leaves only half a sentence, re-evaluate the translation; do not simply trim the English by the number of Chinese characters removed.
 
-**跳切包装**：推近镜头是明确的变换或裁切提案；补充画面是独立的上层视频实例，默认静音，主讲话音轨继续播放。音频的微淡化不会隐式缩短时间线。
+**Jump-cut wrapping**: A push-in shot is an explicit transform or crop proposal; a cutaway is a separate upper-layer video instance, muted by default, while the main speaker's audio track continues to play. A slight audio fade does not implicitly shorten the timeline.
 
-**通过标准**：可以撤销与恢复；字幕不漂移；同一素材的多个实例不互相误切；锁定的轨道按事先声明的策略处理；最终没有保留的源内容仍在素材库中。
+**Pass criteria**: Can be undone and redone; subtitles do not drift; multiple instances of the same material do not mis-cut each other; locked tracks are handled according to the policy declared in advance; no source content that was finally cut is removed from the asset library.
 
-### S04：用给定配音或「文字 + 语音合成」做动画或手绘视频
+### S04: Animation or whiteboard video from given narration, or from "text + speech synthesis"
 
-**用户意图**：「用这段 MP3 和 SRT 做白板动画，镜头跟着讲解走。」
+**User intent**: "Make a whiteboard animation from this MP3 and SRT, with the camera following the narration."
 
-**过程**：已有 MP3 时，以这段音频作为时间依据，用户提供的 SRT 是时序参考，不自动重新合成语音。只有文字时，先生成并确认旁白，再取得真实的音频时长与对齐结果。然后建立旁白时序表，记录句子、词的位置、镜头意图与实际时间；它是受控的输入与派生物，不是另一条会独立漂移的时钟。
+**Process**: When an MP3 already exists, use that audio as the timing basis. The SRT the user provides is a timing reference; speech is not re-synthesized automatically. When there is only text, first generate the narration and get it confirmed, then obtain the real audio duration and alignment result. Then build a narration timing table that records sentences, word positions, shot intent and actual times. It is a controlled input and derived artifact, not a second clock that can drift independently.
 
-智能体决定镜头、素材与风格。简单的标题、箭头、字幕尽量用原生元素；复杂的手绘路径或画布仿真做成代码合成。每个合成拿到的是本地的事件表与参数，渲染时不调用语音合成、图像生成或在线搜索。
+The agent decides shots, assets and style. Simple titles, arrows and captions should use native elements where possible; complex hand-drawn paths or canvas simulations are built as code compositions. Each composition receives a local event table and parameters. At render time it does not call speech synthesis, image generation or online search.
 
 ```text
-已有音频，或已确认的语音合成结果
-              ↓ 真实时长 / 对齐
-         旁白时序表
-              ↓ 场景规划 + 素材生成
-     原生实例 + 代码合成
-              ↓ 共用视频时钟
-     画面 + 独立的旁白音轨
+Existing audio, or a confirmed speech synthesis result
+              ↓ real duration / alignment
+         Narration timing table
+              ↓ scene planning + asset generation
+     Native instances + code composition
+              ↓ shared video clock
+     Picture + separate narration track
 ```
 
-**之后的修改**：替换 MP3 产生新版本，对齐结果和绑定的场景按依赖标记为过期；不把所有画面统一变速。改字幕样式不重新生成图像。图像生成可以使用外部服务，但产物在正式渲染之前必须冻结。
+**Later changes**: Replacing the MP3 produces a new version; the alignment result and the scenes bound to it are marked stale according to their dependencies. Do not speed up all the picture uniformly. Changing caption styling does not regenerate images. Image generation may use external services, but its outputs must be frozen before final render.
 
-**质量检查**：画面可以有意停留，但关键动作不能在讲解开始之前就全部结束。检查每个讲解段的进入、强调、停留和退出是否覆盖了预定的事件。音画校验依据实际的时序，不用「每句固定三秒」。
+**Quality check**: A picture may deliberately hold, but key actions must not all finish before the narration starts. Check that each narration segment's entry, emphasis, hold and exit cover the planned events. Audio-picture verification relies on the actual timing, not on "three seconds per sentence".
 
-### S05：智能体用 p5.js / Three.js / Remotion 制作动画
+### S05: Agent makes an animation with p5.js / Three.js / Remotion
 
-**用户意图**：「做一个 8 秒的旋转地球动画，插到视频第 12 秒。」
+**User intent**: "Make an 8-second rotating Earth animation and insert it at second 12 of the video."
 
-**过程**：选择合适的运行时，建立受限的创作工作区，生成源码、资源与清单。必须公开合理的参数，例如转速、相机距离、标题、强调色。随机访问、音频与透明通道的能力由适配器验证，不是智能体自己勾选就算支持。
+**Process**: Choose a suitable runtime, set up a constrained authoring workspace, and generate source, assets and a manifest. Reasonable parameters must be exposed, for example rotation speed, camera distance, title and accent color. Support for random access, audio and transparency is verified by the adapter; it is not supported merely because the agent ticks a box.
 
-构建之后检查第 0 帧、关键动作、末帧和若干随机时刻，并比较顺序渲染与乱序取样的结果。通过后发布不可变的代码包版本，并新增一个代码合成实例。如果请求的第 12 秒超出了序列当前的长度，必须显式延长，不创建隐形的越界对象。
+After building, check frame 0, key actions, the last frame and several random moments, and compare sequential rendering with out-of-order sampling. Once it passes, publish an immutable code package version and add a new code-composition instance. If the requested second 12 is beyond the current length of the sequence, the sequence must be extended explicitly; no hidden out-of-range object is created.
 
-**三个修改例子**：
+**Three modification examples**:
 
-- 「晚两秒出现」：只更新实例的起始位置，原合成的缓存通常可以复用。
-- 「转速减半」：更新实例参数，重新求值这个合成，不改其他实例。
-- 「加一颗卫星绕行」：修改源码，发布新版本，验证参数兼容，再替换选中实例的引用。
+- "Appear two seconds later": update only the instance's start position; the original composition's cache can usually be reused.
+- "Halve the rotation speed": update the instance parameter and re-evaluate this composition only, without touching other instances.
+- "Add a satellite orbiting it": change the source, publish a new version, verify that the parameters are compatible, then replace the reference on the selected instance.
 
-**运行差异**：p5 的顺序型草图先重放再取帧；Three.js 按它的场景、动画与仿真合同求值；Remotion 使用自己的播放器与批量渲染器。主时间线只组合它们的输出，不要求把任意代码转成原生形状。
+**Runtime differences**: p5's sequential sketches replay first and then capture frames; Three.js is evaluated according to its scene, animation and simulation contracts; Remotion uses its own player and batch renderer. The main timeline only composes their outputs and does not require arbitrary code to be converted into native shapes.
 
-**通过标准**：交付包含可复现的源码，不只是 MP4；断网后仍能渲染已发布的包；改原生字幕不重新渲染没有变化的地球；做不到真正透明的内容不谎称带透明通道。
+**Pass criteria**: The deliverable includes reproducible source, not just an MP4. A published package still renders with the network off. Changing native captions does not re-render an unchanged Earth. Content that cannot truly be transparent must not claim to have an alpha channel.
 
-### S06：给现有视频加标题、箭头、Logo、补充画面、图表或动画
+### S06: Add titles, arrows, logos, supplementary footage, charts or animation to an existing video
 
-**用户意图**：「在讲到这句话时加一个数据图表，再放一段补充画面。」
+**User intent**: "When they say this sentence, add a data chart, and also put in a piece of supplementary footage."
 
-**过程**：先区分用户给的是可编辑的视频还是扁平视频。可编辑的视频直接绑定到实例与词句；扁平视频先作为素材和视频实例，识别出的屏幕区域只能作为建议，不等于找回了它内部的图层。
+**Process**: First distinguish whether the user's video is editable or flat. An editable video is bound directly to instances and words or sentences. A flat video is first treated as media and a video instance; screen regions identified in it are only suggestions and do not mean that its internal layers have been recovered.
 
-适合手动编辑的文字、标记、形状建成原生实例；复杂图表可以做成代码合成，并公开数据、标题、主题等参数。补充画面作为更高的视觉层独立放置，音轨默认关闭。用户说「跟着这句话」时使用语音锚点；说「第 10 秒」时默认固定在序列时间上，并允许手工改变策略。
+Text, markers and shapes suited to manual editing are built as native instances. Complex charts can be built as code compositions, with data, title, theme and other parameters exposed. Supplementary footage is placed independently on a higher visual layer, with its audio track off by default. When the user says "along with this sentence", use a speech anchor; when they say "at second 10", pin it to sequence time by default and allow the strategy to be changed manually.
 
-**之后的修改**：之后口播删掉了前面两秒，跟随语音的图表随对应的句子移动，固定位置的 Logo 不动。改图表数据只让这个图表的缓存失效。
+**Later changes**: If the narration later cuts the first two seconds, a speech-following chart moves with its corresponding sentence, while a fixed-position logo stays put. Changing chart data invalidates only that chart's cache.
 
-**边界**：扁平视频里原有的文字不能当作原生文字改（§5.6）。
+**Boundary**: Original text in a flat video cannot be treated as native text to edit (§5.6).
 
-**通过标准**：关闭新增的轨道可以恢复原画面；主声音不中断；新增的信息不会因为后续剪辑跑到错误的句子上；原视频的其他元素不被重新生成覆盖。
+**Pass criteria**: Turning off the added tracks restores the original picture; the main sound is not interrupted; new information does not land on the wrong sentence after later edits; the video's other elements are not overwritten by regeneration.
 
-### S07：翻译并重新配音
+### S07: Translate and re-voice
 
-**用户意图**：「把中文视频翻译配成英文，保留画面，英文字幕跟新配音同步。」
+**User intent**: "Translate this Chinese video into English dubbing, keep the picture, and sync the English subtitles to the new voice."
 
-**过程**：先冻结已接受的口播剪辑版本。生成句级的自然译文，再单独生成适合说出口的配音脚本，绑定说话人与声音，向用户呈现需要的上传、付费和声音使用确认。「翻译字幕」不是所有这些操作的授权。
+**Process**: First freeze the accepted narration cut version. Generate natural sentence-level translation, then separately generate a dubbing script suitable for speaking, bind speakers and voices, and present the user with the needed confirmations for uploads, payment and voice use. "Translate the subtitles" does not authorize all of these operations.
 
-语音合成按语义单元生成真实音频，并登记采样长度。默认策略是保持原画面时长：超出时窗就进入脚本压缩或有界拉伸；仍然放不下的单元进入「待适配」状态。每次最终音频确定后重新对齐，生成以新音频为时间依据的字幕。
+Speech synthesis generates real audio per semantic unit and registers the sampled length. The default strategy is to keep the original picture duration: if the audio exceeds the window, go to script compression or bounded stretching; units that still do not fit enter a "pending adaptation" state. After each final audio is settled, re-align, and generate subtitles timed to the new audio.
 
-原音频的处理要有明确选择：已有独立背景轨就保留；只有混合音轨时，可以提出分离、整体静音后换背景，或保留低音量原声。不能假设可以无损去掉说话声。新配音与原说话声默认不以同等音量叠放。
+Handling of the original audio needs an explicit choice: if there is already a separate background track, keep it; if there is only a mixed track, one can propose separating it, muting it entirely and swapping in a new background, or keeping the original speech at low volume. It cannot be assumed that the speaking voice can be removed losslessly. By default the new dubbing and the original speech are not layered at equal volume.
 
-**应用**：注册声音素材与对齐 → 更新配音计划 → 创建目标语言的音频实例 → 设置目标语言的字幕 → 设置该语言版本的原声路由。原中文版本保持可选，不被替换或删除。
+**Application**: register voice assets and alignment → update the dubbing plan → create target-language audio instances → set target-language subtitles → set the original-audio routing for that language version. The original Chinese version stays optional and is not replaced or deleted.
 
-**边界**：一句生成失败不丢掉已完成句子的音频；重新生成只针对过期或失败的单元。用户在生成期间改了文本，结果可以保存，但不能自动应用到已经变化的脚本上。
+**Boundary**: If one sentence fails to generate, the audio of completed sentences is not discarded; regeneration applies only to stale or failed units. If the user edits the text while generation is running, the result may be saved, but it must not be applied automatically to a script that has changed.
 
-**通过标准**：字幕与英文的实际发音同步；专名、数字、否定关系经过审阅；没有截断、双音轨误叠、越界或句间不合理的重叠。长度不够时停在显式的待处理状态，而不是导出一段被截短的结果。
+**Pass criteria**: Subtitles are synced to the actual English pronunciation; proper nouns, numbers and negations have been reviewed; there is no truncation, no accidental double-audio overlap, no out-of-bounds placement, and no unreasonable overlap between sentences. When the length is insufficient, stop at an explicit pending state rather than exporting a truncated result.
 
-### S08：修改翻译、字幕或声音之后的局部更新
+### S08: Local updates after changing a translation, subtitles or voice
 
-**用户意图**：「只把英文第三句改成这个说法，声音保持同一个人。」
+**User intent**: "Change only the third English sentence to this wording, and keep the voice the same person."
 
-**过程**：定位到具体的译文单元或配音单元，不按屏幕上的「第三条字幕」猜测是哪一句。如果只是改字幕的显示文字，先标记关联的配音可能不一致，不立即重新购买语音合成。用户明确要求同步语音时，更新脚本、生成这一个单元、重做它的对齐与时间适配。
+**Process**: Locate the specific translation unit or dubbing unit; do not guess which sentence is meant from the "third subtitle" on screen. If only the on-screen subtitle text is changed, first mark the related dubbing as possibly inconsistent, and do not immediately buy new speech synthesis. When the user explicitly asks to sync the speech, update the script, generate this one unit, and redo its alignment and time adaptation.
 
-**影响范围**：这一个单元的声音与对齐发生变化；关联的字幕和任何响应声音或节拍的动画失效；没有变化的视觉合成和其他配音单元继续复用。新语音变长时仍受该单元时序策略的约束。
+**Scope of impact**: The voice and alignment of this one unit change; the related subtitles and any animation that responds to the voice or beats become stale; unchanged visual compositions and other dubbing units continue to be reused. If the new speech runs longer, it is still constrained by that unit's timing policy.
 
-**通过标准**：任务范围、实际成本和过期标记准确；其他语言和其他句子保持不变；字幕与配音不一致时，界面不能仍然显示「已全部同步」。
+**Pass criteria**: The task scope, actual cost and stale markers are accurate; other languages and other sentences remain unchanged; when subtitles and dubbing are inconsistent, the interface must not still show "all synced".
 
-### S09：已经加了字幕、翻译和配音之后，再剪口播
+### S09: Cutting the narration after subtitles, translation and dubbing have already been added
 
-这是必须专门支持的场景，不能要求用户「重新做一遍」。
+This is a scenario that must be specifically supported; the user must not be asked to "do it all again".
 
-**过程**：新的剪辑先生成编辑后的语音视图：源词仍然来自原始语音文档，但顺序、保留范围和出现次数由当前时间线决定。只是把完整的句子往前移动时，自然译文的内容仍然有效，重新投影显示时序即可。句内的删改让有效的句子文本发生变化时，译文和配音单元标记为过期；不能按源语言的时间直接去裁另一种语言的发音。
+**Process**: The new cut first generates an edited speech view: source words still come from the original speech document, but their order, retained ranges and number of occurrences are determined by the current timeline. When only whole sentences are moved forward, the content of the natural translation remains valid, and only the display timing needs to be re-projected. When an in-sentence edit changes the effective sentence text, the translation and dubbing units are marked stale; another language's pronunciation must not be trimmed directly according to the source language's timing.
 
-剪辑给出依赖影响：哪些字幕只需要重新定时、哪些译句需要审阅、哪些配音需要重新生成、哪些图表的锚点已经不存在。用户可以先提交剪辑并保留待修复的标记；严格导出要求先解决会导致内容不一致的阻断项。
+The cut reports dependency impact: which subtitles only need re-timing, which translated sentences need review, which dubbing needs regeneration, and which chart anchors no longer exist. The user may commit the cut first and keep the markers for repair; strict export requires resolving blocking items that would cause inconsistent content.
 
-**通过标准**：简单的挪动不浪费重译与重配；句内删词之后不会留下另一种语言还在说已删内容；已经消失的图表锚点不会被静默挂到相邻的句子上。
+**Pass criteria**: Simple moves do not waste re-translation and re-dubbing; after deleting words within a sentence, no other language is left still speaking the deleted content; chart anchors that have disappeared are not silently attached to neighboring sentences.
 
-### S10：多个语言、横竖屏与发布版本
+### S10: Multiple languages, landscape and portrait, and release versions
 
-**用户意图**：「同一个视频出中文横版、英文横版和英文竖版。」
+**User intent**: "Output the same video as a Chinese landscape version, an English landscape version and an English portrait version."
 
-**过程**：语言差异用语言版本来选择字幕、配音、可本地化的文字参数和音频路由。画幅差异建立画幅版本或分叉出新序列；保留对源素材与代码包的引用，不复制大的媒体文件。
+**Process**: Language differences are handled by language versions, which select subtitles, dubbing, localizable text parameters and audio routing. Aspect-ratio differences create aspect-ratio versions or fork a new sequence; references to the source media and code packages are kept, and large media files are not copied.
 
-竖版按显示对象重新调整布局。说话人聚焦可以用已冻结的人脸与发言分析结果生成裁切关键帧；检测失败时保留可以人工修改的默认裁切，不声称已经准确识别了发言人。字幕按竖版的排版规则重新排，不重新翻译自然译句。
+The portrait version is relaid out for its display target. Speaker focus can use frozen face and speaking-analysis results to generate crop keyframes; when detection fails, keep an editable default crop, and do not claim that the speaker was identified accurately. Subtitles are re-set according to portrait typesetting rules; natural translated sentences are not re-translated.
 
-代码包可以声明响应式参数或多尺寸支持；没有声明时按覆盖或包含的方式放置，并预检被裁掉的内容。不要默认把 16:9 的三维相机改成 9:16 之后构图仍然正确。
+A code package may declare responsive parameters or multi-size support; if it does not, it is placed by cover or contain, and cropped content is checked in advance. Do not assume that a 16:9 3D camera converted to 9:16 will still have correct composition.
 
-**通过标准**：每个输出都绑定明确的版本；横版与竖版的字体和安全区分别检查；修改共享的自然译句只影响对应的语言，各画幅重新布局而不是重做语音识别。
+**Pass criteria**: Each output is bound to an explicit version; font and safe areas are checked separately for landscape and portrait; changing a shared natural translation sentence affects only the corresponding language, and each aspect ratio is relaid out rather than re-running speech recognition.
 
-### S11：多机位、屏幕录制与主音频
+### S11: Multi-camera, screen recording and the master audio
 
-**用户意图**：「剪我的摄像头和屏幕录制，声音始终用麦克风轨。」
+**User intent**: "Cut my camera and screen recording, and keep the sound always on the microphone track."
 
-**过程**：建立同步组，明确每个素材与主时钟之间的偏移、时间映射、可信度与来源。自动对齐是一次分析的结果，用户可以手动修正同步点。
+**Process**: Set up a sync group and make explicit the offset, time mapping, confidence and source of each media item relative to the master clock. Automatic alignment is the result of one analysis; the user can manually correct sync points.
 
-切换画面只修改摄像头与屏幕的视频实例，主音轨独立连续。画中画是两层同时存在。删除主语音段时，对整个同步组中选定的范围做联动剪辑。混合帧率与可变帧率由各素材自己的时间戳映射解决，不在组装时假装它们都以同一个帧率拍摄。
+Switching the picture modifies only the camera and screen video instances; the master audio track stays independent and continuous. Picture-in-picture means two layers exist at the same time. When a main speech segment is deleted, a linked cut is applied to the selected range across the whole sync group. Mixed and variable frame rates are resolved by each item's own timestamp mapping; the assembly does not pretend that they were all shot at the same frame rate.
 
-**通过标准**：换镜头不换声音；锁定了外部音乐时，联动提案必须说明影响；同步偏移变化后，相关的字幕与说话人跟踪结果重新验证。
+**Pass criteria**: Changing the shot does not change the audio; when external music is locked, a linked-edit proposal must state its impact; after the sync offset changes, the related subtitle and speaker-tracking results are re-verified.
 
-### S12：重复使用模板、交接视频、重新打开继续改
+### S12: Reusing a template, handing off a video, reopening it to keep editing
 
-**用户意图**：「把这个片头用于下一个视频，换标题和颜色；以后还能继续改。」
+**User intent**: "Use this opening for the next video, swap the title and colors; I want to keep editing it later."
 
-**过程**：把可复用的代码合成发布为带参数定义的代码包，把原生片头发布为嵌套序列模板。新实例只覆盖参数与媒体绑定，不修改模板的原版本。原视频里的旧实例继续可以复现。
+**Process**: Publish reusable code compositions as code packages with parameter definitions, and publish native opening titles as nested sequence templates. A new instance overrides only parameters and media bindings and does not modify the template's original version. Old instances in the original video can still be reproduced.
 
-打包视频时收集被引用的媒体、字体、代码和依赖清单；不打包密钥、机器路径、未授权的用户文件。打开时验证清单，缺失的资源明确列出。
+When packaging a video, collect the referenced media, fonts, code and dependency manifest; do not package keys, machine paths or unauthorized user files. On opening, verify the manifest, and clearly list any missing resources.
 
-**通过标准**：已冻结且没有外部依赖的视频可以离线重新渲染；删除缓存之后仍能从源重建；参数升级失败不会默默丢掉旧值；没有源码的片段明确显示为媒体素材。
+**Pass criteria**: A frozen video with no external dependencies can be re-rendered offline; it can still be rebuilt from source after the cache is deleted; a failed parameter upgrade does not silently drop old values; fragments without source are clearly shown as media assets.
 
-### 9.13 两个连续三轮演示
+### 9.13 Two consecutive three-round demos
 
-**演示 A：已有视频。**
+**Demo A: existing video.**
 
-1. 删掉明显的重复和长停顿，加中英字幕，原声保持不变。
-2. 选中一句话，补一个解释图，避免被字幕遮挡，其他不变。
-3. 恢复先前删掉的开头第二句，并让解释图继续跟着对应的语义走。
+1. Remove obvious repetitions and long pauses, add Chinese and English subtitles, keep the original audio unchanged.
+2. Select one sentence, add an explanatory diagram placed so subtitles do not cover it, leave everything else unchanged.
+3. Restore the second opening sentence removed earlier, and keep the explanatory diagram following its matching meaning.
 
-必须保留原素材和第二轮新增的内容；回执能定位每一轮的修改。
+The original material and the content added in round two must be kept; the receipt must be able to locate each round's changes.
 
-**演示 B：从讲稿或配音创作。**
+**Demo B: creation from a script or voiceover.**
 
-1. 制作一个轻手绘风格的解释短片，保留完整旁白。
-2. 把第二幕的图表改成三个步骤，结尾的原生标题变大，其他场景与声音不变。
-3. 让第二幕晚一点出现，但总长不变。如果可用的停留时间不够，「保持声音完整」与「总长不变」不能同时满足，则明确指出冲突和最小的调整方案，不截断声音。
+1. Make a light hand-drawn style explainer short, keeping the full narration.
+2. Change the act-two chart into three steps, enlarge the native title at the end, leave other scenes and sound unchanged.
+3. Make act two appear a little later, but keep the total length unchanged. If the available hold time is not enough and “Keep the voice complete” and “Keep the total length unchanged” cannot both be met, state the conflict explicitly and the minimal adjustment, without truncating the voice.
 
-两个演示都要产出真实的预览、可编辑的结构和要求的成片，并且在连续三轮之后可以重新打开。自动回归可以使用固定的模型产物或模拟的模型服务，但这样的测试不能被说成真实模型效果已经通过。
+Both demos must produce a real preview, an editable structure and the required final cut, and must be reopenable after three consecutive rounds. Automated regression may use fixed model artifacts or a simulated model service, but such tests must not be described as proof that real model results have passed.
 
 ---
 
-## 10. 需求清单
+## 10. Requirements Checklist
 
-共 61 项。「位置」指本文章节；实现机制与数据格式从该章节的交叉引用进入。「验收」指验收与测试 §6 中的条目，一个条目可以覆盖多项需求，列出不代表已经通过。
+61 items in total. “Location” refers to the sections of this document; implementation mechanisms and data formats are reached through cross-references from those sections. “Acceptance” refers to entries in acceptance and testing §6; one entry may cover several requirements, and listing an entry does not mean it has passed.
 
-### 智能体（AG）
+### Agent (AG)
 
-| ID | 需求 | 等级 | 位置 | 验收 |
+| ID | Requirement | Level | Location | Acceptance |
 | --- | --- | --- | --- | --- |
-| AG-01 | 上下文理解与引用 | P0 | §3.2、§6.7 | AT-11、AT-29、T09 |
-| AG-02 | 规划与主动决策 | P0 | §6.2、§6.7 | AT-03、AT-36 |
-| AG-03 | 能力选择与真实执行 | P0 | §6.7、§7.6 | AT-34、C08 |
-| AG-04 | 看结果再修正 | P0 | §6.7、§8.1 | AT-29、AT-32 |
-| AG-05 | 持续修改与视频记忆 | P0 | §6.4、§6.7 | AT-18、AT-33 |
-| AG-06 | 有意义的结束 | P0 | §6.8 | AT-01、AT-32、C07 |
-| AG-07 | Agent skill：来源、开关、点选与安装 | P1 | §3.2.3、§6.9 | M25 |
+| AG-01 | Context understanding and reference | P0 | §3.2、§6.7 | AT-11、AT-29、T09 |
+| AG-02 | Planning and proactive decisions | P0 | §6.2、§6.7 | AT-03、AT-36 |
+| AG-03 | Capability selection and real execution | P0 | §6.7、§7.6 | AT-34、C08 |
+| AG-04 | Look at the result, then correct | P0 | §6.7、§8.1 | AT-29、AT-32 |
+| AG-05 | Continuous modification and video memory | P0 | §6.4、§6.7 | AT-18、AT-33 |
+| AG-06 | Meaningful ending | P0 | §6.8 | AT-01、AT-32、C07 |
+| AG-07 | Agent skill: source, toggle, selection and installation | P1 | §3.2.3、§6.9 | M25 |
 
-### 界面（UX）
+### Interface (UX)
 
-| ID | 需求 | 等级 | 位置 | 验收 |
+| ID | Requirement | Level | Location | Acceptance |
 | --- | --- | --- | --- | --- |
-| UX-01 | 起始状态与开始任务 | P0 | §3.2.1 | AT-01、AT-34 |
-| UX-02 | 预览与上下文选择 | P0 | §3.2.3、§5.3 | AT-11、UI-10 |
-| UX-03 | 工作稿、候选与对比 | P0 | §5.4 | AT-18、AT-19 |
-| UX-04 | 精修与自然语言协作 | P0 | §5.5、§5.6 | AT-15、AT-16、AT-18 |
-| UX-05 | 可访问性与状态表达 | P0 | §2.6 | AT-09、T30 |
-| UX-06 | Home 三栏与会话组织 | P0 | §2、§3.1 | UI-01、UI-02、UI-03 |
-| UX-07 | 功能区：按需打开完整编辑器与查看器 | P0 | §3.3、§5.1 | UI-04、UI-05、UI-10 |
+| UX-01 | Starting state and starting a task | P0 | §3.2.1 | AT-01、AT-34 |
+| UX-02 | Preview and context selection | P0 | §3.2.3、§5.3 | AT-11、UI-10 |
+| UX-03 | Working draft, candidates and comparison | P0 | §5.4 | AT-18、AT-19 |
+| UX-04 | Refinement and natural-language collaboration | P0 | §5.5、§5.6 | AT-15、AT-16、AT-18 |
+| UX-05 | Accessibility and state expression | P0 | §2.6 | AT-09、T30 |
+| UX-06 | Home three columns and session organization | P0 | §2、§3.1 | UI-01、UI-02、UI-03 |
+| UX-07 | Feature area: open the full editor and viewer on demand | P0 | §3.3、§5.1 | UI-04、UI-05、UI-10 |
 
-### 成品库（SPC）
+### Finished Library (SPC)
 
-| ID | 需求 | 等级 | 位置 | 验收 |
+| ID | Requirement | Level | Location | Acceptance |
 | --- | --- | --- | --- | --- |
-| SPC-01 | 成品库：全部结果与视频统一可见 | P0 | §4.1–§4.3 | UI-06 |
-| SPC-02 | 条目的来源、状态与版本可追溯 | P0 | §4.4 | UI-06、UI-07 |
-| SPC-03 | 二次编辑 | P0 基础 / P1 图片与音频的模型辅助修改 | §4.6、§4.7 | UI-05、UI-07、UI-09 |
-| SPC-04 | 整理、删除与回收 | P0 | §4.9 | UI-08、AT-27 |
+| SPC-01 | Finished library: all results and videos visible in one place | P0 | §4.1–§4.3 | UI-06 |
+| SPC-02 | Source, status and version of items are traceable | P0 | §4.4 | UI-06、UI-07 |
+| SPC-03 | Secondary editing | P0 basic / P1 model-assisted editing of images and audio | §4.6、§4.7 | UI-05、UI-07、UI-09 |
+| SPC-04 | Organization, deletion and recycling | P0 | §4.9 | UI-08、AT-27 |
 
-### 对话（CON）
+### Conversation (CON)
 
-| ID | 需求 | 等级 | 位置 | 验收 |
+| ID | Requirement | Level | Location | Acceptance |
 | --- | --- | --- | --- | --- |
-| CON-01 | 对话承载操作，不只是文字 | P0 | §3.2.2、§6.5 | AT-19、AT-32、C07 |
-| CON-02 | 提问规则 | P0 | §6.6 | AT-03、AT-34 |
-| CON-03 | 长任务中的补充、排队与改向 | P0 | §3.2.5 | AT-19、AT-20、AT-25 |
-| CON-04 | 停止、暂停与撤销 | G | §3.2.6 | AT-20、C04 |
-| CON-05 | 交付后的下一步 | P0 | §3.2.7 | AT-32、AT-33 |
+| CON-01 | Conversation carries operations, not only text | P0 | §3.2.2、§6.5 | AT-19、AT-32、C07 |
+| CON-02 | Question-asking rules | P0 | §6.6 | AT-03、AT-34 |
+| CON-03 | Additions, queuing and redirection during long tasks | P0 | §3.2.5 | AT-19、AT-20、AT-25 |
+| CON-04 | Stop, pause and undo | G | §3.2.6 | AT-20、C04 |
+| CON-05 | Next steps after delivery | P0 | §3.2.7 | AT-32、AT-33 |
 
-### 创作（CRE）
+### Creation (CRE)
 
-| ID | 需求 | 等级 | 位置 | 验收 |
+| ID | Requirement | Level | Location | Acceptance |
 | --- | --- | --- | --- | --- |
-| CRE-01 | 从文字或脚本制作视频 | P0 | §1.2、S04、§9.13 | AT-01、AT-36 |
-| CRE-02 | 从既有配音制作讲解或白板动画 | P0 | S04 | AT-02 |
-| CRE-03 | 组合素材制作产品演示或叙事短片 | P0 基础 / P1 扩展 | §5.9、S06、S11 | AT-10、AT-31 |
-| CRE-04 | 生成代码动画并继续修改 | P0 受控模板 / P1 外部代码 | S05 | AT-03、AT-15–17、T21–29 |
+| CRE-01 | Make video from text or a script | P0 | §1.2、S04、§9.13 | AT-01、AT-36 |
+| CRE-02 | Make explainer or whiteboard animation from an existing voiceover | P0 | S04 | AT-02 |
+| CRE-03 | Combine materials into a product demo or narrative short | P0 basic / P1 extended | §5.9、S06、S11 | AT-10、AT-31 |
+| CRE-04 | Generate code animation and keep modifying it | P0 controlled templates / P1 external code | S05 | AT-03、AT-15–17、T21–29 |
 
-### 编辑（EDT）
+### Editing (EDT)
 
-| ID | 需求 | 等级 | 位置 | 验收 |
+| ID | Requirement | Level | Location | Acceptance |
 | --- | --- | --- | --- | --- |
-| EDT-01 | 先识别输入能编辑到哪一层 | P0 | §5.6 | AT-17、T25 |
-| EDT-02 | 文本驱动的口播剪辑 | P0 | §5.7、S03、S09 | AT-08、AT-09、T14–16 |
-| EDT-03 | 增加标题、图示、补充画面与动画 | P0 | S06 | AT-10、T16 |
-| EDT-04 | 改一处，而不是重新制作全片 | P0 | §6.3、§6.7 | AT-12、AT-16、AT-31 |
-| EDT-05 | 长视频精编、画幅改编与多机位 | P1 | S10、S11 | AT-28、T03、T38 |
+| EDT-01 | First identify which layer the input can be edited at | P0 | §5.6 | AT-17、T25 |
+| EDT-02 | Text-driven voiceover editing | P0 | §5.7、S03、S09 | AT-08、AT-09、T14–16 |
+| EDT-03 | Add titles, diagrams, supplementary footage and animation | P0 | S06 | AT-10、T16 |
+| EDT-04 | Change one place, not remake the whole film | P0 | §6.3、§6.7 | AT-12、AT-16、AT-31 |
+| EDT-05 | Long-video fine editing, aspect-ratio adaptation and multi-camera | P1 | S10、S11 | AT-28、T03、T38 |
 
-### 语言与声音（LNG）
+### Language and Voice (LNG)
 
-| ID | 需求 | 等级 | 位置 | 验收 |
+| ID | Requirement | Level | Location | Acceptance |
 | --- | --- | --- | --- | --- |
-| LNG-01 | 添加和维护字幕 | P0 | S01 | AT-04、AT-05、AT-07、AT-30、T10、T12、T39 |
-| LNG-02 | 翻译字幕与术语审阅 | P0 | S02 | AT-06、AT-12、T11、T13 |
-| LNG-03 | 文字转语音与局部试听 | P0 | S04、S08 | AT-02、AT-12、T17–20 |
-| LNG-04 | 翻译配音与时窗适配 | P1；已有的稳定能力优先接入 | S07 | AT-13、T17–19 |
-| LNG-05 | 配完音再剪辑 | P1；基础的失效提示为 G | S09 | AT-14、T15 |
-| LNG-06 | 语言与画幅版本 | P1 | S10 | AT-28、T38 |
+| LNG-01 | Add and maintain subtitles | P0 | S01 | AT-04、AT-05、AT-07、AT-30、T10、T12、T39 |
+| LNG-02 | Translate subtitles and review terminology | P0 | S02 | AT-06、AT-12、T11、T13 |
+| LNG-03 | Text-to-speech and local audition | P0 | S04、S08 | AT-02、AT-12、T17–20 |
+| LNG-04 | Translated dubbing and timing-window adaptation | P1; prioritize integrating existing stable capabilities | S07 | AT-13、T17–19 |
+| LNG-05 | Edit after dubbing is complete | P1; basic invalidation notice is G | S09 | AT-14、T15 |
+| LNG-06 | Language and aspect-ratio versions | P1 | S10 | AT-28、T38 |
 
-### 素材（AST）
+### Assets (AST)
 
-| ID | 需求 | 等级 | 位置 | 验收 |
+| ID | Requirement | Level | Location | Acceptance |
 | --- | --- | --- | --- | --- |
-| AST-01 | 素材状态与引用 | P0 | §5.9 | AT-27、T05、T33、T34 |
-| AST-02 | 外部检索与生成 | P1；P0 接纳手工提供的素材 | §5.9、§7 | AT-21–23、C10 |
-| AST-03 | 风格是可组合的规则，不是固定工作流 | P0 基础 | §5.9、S04 | AT-02、AT-03、AT-31 |
-| AST-04 | 把满意的结果保存为可复用模板 | P1 | §5.9、S12 | AT-35、T34 |
+| AST-01 | Asset status and references | P0 | §5.9 | AT-27、T05、T33、T34 |
+| AST-02 | External search and generation | P1; P0 accepts manually provided assets | §5.9、§7 | AT-21–23、C10 |
+| AST-03 | Styles are composable rules, not fixed workflows | P0 basic | §5.9、S04 | AT-02、AT-03、AT-31 |
+| AST-04 | Save satisfying results as reusable templates | P1 | §5.9、S12 | AT-35、T34 |
 
-### 协作与版本（COL）
+### Collaboration and Versions (COL)
 
-| ID | 需求 | 等级 | 位置 | 验收 |
+| ID | Requirement | Level | Location | Acceptance |
 | --- | --- | --- | --- | --- |
-| COL-01 | 手工操作与对话共享视频 | G | §1.5、§2.2 | AT-18、T07、A01、A02 |
-| COL-02 | 修改回执与选择性撤销 | P0 | §5.5 | AT-08、T08 |
-| COL-03 | 版本与方向探索 | P0 检查点 / P1 完整分支 | §5.4 | AT-28、AT-36 |
-| COL-04 | 长任务的结果不覆盖新的视频状态 | G | §3.2.4、§3.2.5 | AT-19、T09、A06 |
-| COL-05 | 重开、崩溃与设备运行状态 | P0 | §7.8 | AT-24、A04、A05、A12、C11 |
+| COL-01 | Manual operations and conversation share the video | G | §1.5、§2.2 | AT-18、T07、A01、A02 |
+| COL-02 | Modification receipts and selective undo | P0 | §5.5 | AT-08、T08 |
+| COL-03 | Versions and direction exploration | P0 checkpoints / P1 full branches | §5.4 | AT-28、AT-36 |
+| COL-04 | Long-task results do not overwrite a newer video state | G | §3.2.4、§3.2.5 | AT-19、T09、A06 |
+| COL-05 | Reopening, crash and device runtime state | P0 | §7.8 | AT-24、A04、A05、A12、C11 |
 
-### 自主与权限（AUT）
+### Autonomy and Permissions (AUT)
 
-| ID | 需求 | 等级 | 位置 | 验收 |
+| ID | Requirement | Level | Location | Acceptance |
 | --- | --- | --- | --- | --- |
-| AUT-01 | 三种自主执行模式 | P0 | §7.1 | AT-20、AT-21、AT-31 |
-| AUT-02 | 权限与审批矩阵 | G | §7.2 | AT-21、AT-23、AT-31、C06 |
-| AUT-03 | 两条数据流必须同时说明 | G | §7.3 | AT-21、C10 |
-| AUT-04 | 预算与成本展示 | P0 | §7.4 | AT-22、T37、C12 |
-| AUT-05 | 不可信材料不是指令 | G | §7.5 | AT-23、T36 |
+| AUT-01 | Three autonomous execution modes | P0 | §7.1 | AT-20、AT-21、AT-31 |
+| AUT-02 | Permission and approval matrix | G | §7.2 | AT-21、AT-23、AT-31、C06 |
+| AUT-03 | Both data flows must be explained together | G | §7.3 | AT-21、C10 |
+| AUT-04 | Budget and cost display | P0 | §7.4 | AT-22、T37、C12 |
+| AUT-05 | Untrusted material is not instructions | G | §7.5 | AT-23、T36 |
 
-### 质量与交付（QUA、OUT）
+### Quality and Delivery (QUA, OUT)
 
-| ID | 需求 | 等级 | 位置 | 验收 |
+| ID | Requirement | Level | Location | Acceptance |
 | --- | --- | --- | --- | --- |
-| QUA-01 | 质量是流程的一部分 | P0 | §8.1 | AT-29、T35、T40 |
-| QUA-02 | 质量报告必须诚实 | G | §8.2 | AT-29、C07 |
-| OUT-01 | 预览和最终文件是不同的交付 | P0 | §8.3 | AT-25、AT-26、T31、T32 |
-| OUT-02 | 交付包与长期可维护性 | P0 基础 / P1 便携增强 | §8.4 | AT-27、T34 |
-| OUT-03 | 任务完成的定义 | G | §6.8 | AT-01、AT-32、C07 |
+| QUA-01 | Quality is part of the process | P0 | §8.1 | AT-29、T35、T40 |
+| QUA-02 | Quality reports must be honest | G | §8.2 | AT-29、C07 |
+| OUT-01 | Preview and final file are different deliveries | P0 | §8.3 | AT-25、AT-26、T31、T32 |
+| OUT-02 | Delivery package and long-term maintainability | P0 basic / P1 portability enhancements | §8.4 | AT-27、T34 |
+| OUT-03 | Definition of task completion | G | §6.8 | AT-01、AT-32、C07 |
 
-### 配置与非功能（SET、NFR）
+### Configuration and Non-functional (SET, NFR)
 
-| ID | 需求 | 等级 | 位置 | 验收 |
+| ID | Requirement | Level | Location | Acceptance |
 | --- | --- | --- | --- | --- |
-| SET-01 | 按任务配置能力；API 提供方、账号与用量 | P0 | §7.6 | AT-34、AT-37、C08 |
-| SET-02 | 输入兼容与旧版项目导入 | P0 | §8.5 | T33、T35、T40、C09 |
-| NFR-01 | 响应性与性能目标 | P0 | §8.6 | T21–24、T30、A09 |
-| NFR-02 | 可靠性与数据完整性 | G | §8.6 | AT-26、T06、T30–33、C01、C05 |
-| NFR-03 | 隐私、日志与诊断 | P0 | §7.7 | AT-21、AT-23、AT-27、T36 |
+| SET-01 | Configure capabilities per task; API provider, account and usage | P0 | §7.6 | AT-34、AT-37、C08 |
+| SET-02 | Input compatibility and import of legacy projects | P0 | §8.5 | T33、T35、T40、C09 |
+| NFR-01 | Responsiveness and performance targets | P0 | §8.6 | T21–24、T30、A09 |
+| NFR-02 | Reliability and data integrity | G | §8.6 | AT-26、T06、T30–33、C01、C05 |
+| NFR-03 | Privacy, logging and diagnostics | P0 | §7.7 | AT-21、AT-23、AT-27、T36 |
 
 ---
 
-## 11. 发布路线与成功指标
+## 11. Release Roadmap and Success Metrics
 
-### 11.1 发布阶段
+### 11.1 Release Stages
 
-| 阶段 | 主要交付 | 出口条件 |
+| Stage | Main deliverables | Exit criteria |
 | --- | --- | --- |
-| R0 体验与合同基线 | Home / Space 界面原型、能力清单、服务进程、协议、视频引擎单一写入、权限、固定的测试样本 | 快照与事件无缺口；命令重试与崩溃时的提交安全 |
-| R1 可委托的编辑 | 导入、原生字幕与元素、手工编辑、一个真实的智能体引擎、任务与回执、Space 列表与视频重开 | 改字、加元素、撤销、预览、导出可用；不改错对象 |
-| R2 P0 双闭环 | 口播剪辑、双语字幕、文字或配音驱动的创作、受控代码动画、局部维护、Space 二次编辑 | 两个闭环各连续三轮（§9.13）；全部已开放的 G 约束 |
-| R3 完整版 | 翻译配音与时窗适配、语言与画幅版本、外部代码导入、模板、多个智能体引擎 | 原版本不被误伤；源码可维护；输入过期与费用对账完整 |
-| R4 加固与规模 | 长片、设备矩阵、性能、恢复 | 有实测报告；未验证的快速路径保持关闭 |
+| R0 Experience and contract baseline | Home / Space UI prototype, capability list, service process, protocol, single-writer video engine, permissions, fixed test samples | No gaps in snapshots and events; command retries and commit safety on crash |
+| R1 Delegable editing | Import, native subtitles and elements, manual editing, one real agent engine, tasks and receipts, Space list and video reopening | Text editing, adding elements, undo, preview and export work; no wrong objects modified |
+| R2 P0 dual loops | Voiceover-based editing, bilingual subtitles, text- or voice-driven creation, controlled code animation, local maintenance, Space secondary editing | Both loops pass three consecutive rounds (§9.13); all open G constraints |
+| R3 Full version | Translated dubbing and timing-window adaptation, language and aspect-ratio versions, external code import, templates, multiple agent engines | Original versions not harmed; source code maintainable; input expiry and cost reconciliation complete |
+| R4 Hardening and scale | Long-form films, device matrix, performance, recovery | Measured reports exist; unverified fast paths stay disabled |
 
-R1 是编辑助手的中间形态，不能宣传为完整的创作闭环。P0 的出口在 R2。
+R1 is an intermediate form of the editing assistant and must not be promoted as a complete creation loop. The P0 exit is at R2.
 
-**起步版本。** R0 与 R1 的前半拆成四个版本，按顺序交付，每一版都能独立运行：
+**Starting versions.** The first half of R0 and R1 is split into four versions, delivered in order, each able to run independently:
 
-| 版本 | 主要交付 | 出口条件 | 不包含 |
+| Version | Main deliverables | Exit criteria | Not included |
 | --- | --- | --- | --- |
-| 0.1 最基本的智能体 | Runtime 进程、业务协议与客户端 SDK、Agent Harness、会话存储；智能体引擎只接 Codex；项目即目录，是智能体的工作目录；入口是命令行或一个最简的会话页 | 一个回合经 Driver 完整往返；中断与审批经 Harness；会话关闭后可以重开并继续；事件流无缺口 | 外壳、视频引擎、模型路由、任务调度 |
-| 0.2 外壳 | 桌面应用：最左侧一级入口 Home / Space / 工具，二级入口服务 / 后台任务，底部设置；Home 的侧栏、会话区与功能区；Space 列出项目目录里的文件 | 入口切换、项目与会话列表可用；界面重载或断线不取消运行中的回合 | 播放与编辑 |
-| 0.3 播放器 | 功能区里的只读播放器：播放项目目录里的视频文件，叠加显示字幕文件；字幕列表与画面同步，点一句跳到对应位置；从会话和 Space 都能打开 | 画面、声音与字幕同步；拖动定位时旧画面不覆盖新请求；不修改任何文件 | 视频格式、任何写入 |
-| 0.4 编辑器 | 视频格式与视频引擎落地：视频子目录、单一写入、事务、回执、撤销；时间线与手工编辑；播放器成为编辑器的预览 | R0 的出口：快照与事件无缺口；命令重试与崩溃时的提交安全 | 智能体修改时间线、导出 |
+| 0.1 Most basic agent | Runtime process, business protocol and client SDK, Agent Harness, session storage; the agent engine connects only to Codex; a project is a directory and is the agent's working directory; entry is the command line or a minimal session page | One turn completes a full round trip through the Driver; interruption and approval go through the Harness; a closed session can be reopened and continued; the event stream has no gaps | Shell, video engine, model routing, task scheduling |
+| 0.2 Shell | Desktop app: leftmost primary entries Home / Space / Tools, secondary entries Services / Background tasks, Settings at the bottom; Home's sidebar, session area and feature area; Space lists files in the project directory | Entry switching and project and session lists work; a UI reload or disconnect does not cancel a running turn | Playback and editing |
+| 0.3 Player | Read-only player in the feature area: plays video files in the project directory, overlays subtitle files; subtitle list stays in sync with the picture, clicking a line jumps to its position; can be opened from both sessions and Space | Picture, sound and subtitles in sync; while scrubbing, an old frame never overwrites a newer request; no files modified | Video formats, any writes |
+| 0.4 Editor | Video format and video engine land: video subdirectory, single writer, transactions, receipts, undo; timeline and manual editing; the player becomes the editor's preview | R0 exit: no gaps in snapshots and events; command retries and commit safety on crash | Agent modifying the timeline, export |
 
-- 0.1 的架构按完整形态搭建（进程、协议、Harness、Driver 合同、会话存储），但只实现一条最短的路径。它不提供视频领域的工具：Codex 用自带的文件与命令能力在项目目录里工作。
-- 0.3 播放的是文件，不是视频。视频格式随第一次写入在 0.4 出现。
-- 0.4 只有手工编辑。之后两步：0.5 让智能体经同一个视频引擎修改时间线，§1.5 的共享编辑器从这里成立；0.6 加上导出与 Space 条目。到 0.6，R1 完成。
+- The 0.1 architecture is built in its full shape (processes, protocol, Harness, Driver contract, session storage), but implements only the shortest path. It provides no video-domain tools: Codex works in the project directory using its own file and command capabilities.
+- 0.3 plays files, not videos. The video format appears in 0.4, together with the first write.
+- 0.4 has only manual editing. Two steps follow: 0.5 lets the agent modify the timeline through the same video engine, and the shared editor in §1.5 is established from here; 0.6 adds export and Space entries. R1 is complete at 0.6.
 
-### 11.2 范围
+### 11.2 Scope
 
-| 能力 | P0：首个闭环 | P1：完整版 | P2：扩展 |
+| Capability | P0: first closed loop | P1: full version | P2: extensions |
 | --- | --- | --- | --- |
-| Home 与会话 | 三栏、项目与会话列表、任务卡片、功能区 | 会话移入项目、更细的改向与并行协同 | 复杂的批量任务模板 |
-| Space | 列表、筛选、查看器、视频与成片的二次编辑、回收站 | 图片与音频的模型辅助修改、模板分类 | 团队共享的成品库 |
-| 对话任务与选区 | 目标卡、选区绑定、执行与停止、结果回执 | 画面涂画、语音反馈、多区域批注 | — |
-| 字幕与翻译 | 识别或导入、校正、样式、双语、术语 | 更多排版与格式映射 | 大规模本地化生产 |
-| 口播剪辑 | 建议、审阅、恢复、字幕联动 | 长片精编与同步组 | 更复杂的多机位节目 |
-| 从零创作 | 文字或音频驱动的短视频 | 更丰富的叙事与长内容 | 持续的系列内容生产 |
-| 图文与动画 | 原生元素 + 验证过的 Web 代码合同 + 外部 HyperFrames 代码导入（`hyperframes/1`） | 外部 Remotion 代码导入 | 更多运行时与高级控制 |
-| 配音 | 单语言语音合成、试听、局部重做 | 翻译配音、说话人绑定、时窗适配 | 口型同步等专门能力 |
-| 二次编辑 | 局部作用域、前后对比、保护范围 | 复杂的版本比较 | 团队审阅 |
-| 版本与语言 | 检查点、候选、可靠的历史 | 语言与画幅分支及其关联 | 跨人协作与批量版本 |
-| 素材 | 本地导入、生成候选、来源记录 | 检索、多素材库与模板复用 | 团队素材库 |
-| 交付 | MP4、SRT / VTT、可重开的视频 | 便携包、更多音频与格式 | 发布集成 |
-| 智能体引擎与模型 | 一个完整验证的接入（Codex），可固定选择 | 多引擎与续作交接 | 更灵活的能力路由 |
-| 权限与可靠性 | 全部 G 约束 | 全部 G 约束 | 全部 G 约束 |
+| Home and sessions | Three-pane layout, project and session lists, task cards, function area | Move sessions into projects, finer redirection and parallel collaboration | Complex batch task templates |
+| Space | List, filters, viewer, secondary editing of videos and finished cuts, trash | Model-assisted editing of images and audio, template categories | Team-shared finished-asset library |
+| Conversation tasks and selection | Goal card, selection binding, execution and stop, result receipt | Brush painting on frames, voice feedback, multi-region annotation | — |
+| Subtitles and translation | Recognition or import, proofreading, styling, bilingual, terminology | More typesetting and format mapping | Large-scale localization production |
+| Talking-head editing | Suggestions, review, restore, subtitle linkage | Long-form fine editing and sync groups | More complex multi-camera programs |
+| Creation from scratch | Short video driven by text or audio | Richer narrative and long-form content | Ongoing serial content production |
+| Graphics and animation | Native elements + validated Web code contract + external HyperFrames code import (`hyperframes/1`) | External Remotion code import | More runtimes and advanced control |
+| Dubbing | Single-language speech synthesis, audition, local redo | Translated dubbing, speaker binding, time-window adaptation | Lip-sync and other specialized capabilities |
+| Secondary editing | Local scope, before/after comparison, protected range | Complex version comparison | Team review |
+| Versions and languages | Checkpoints, candidates, reliable history | Language and aspect-ratio branches and their associations | Cross-person collaboration and batch versions |
+| Assets | Local import, generated candidates, source records | Search, multiple asset libraries and template reuse | Team asset library |
+| Delivery | MP4, SRT / VTT, reopenable video | Portable package, more audio and formats | Publishing integration |
+| Agent engine and models | One fully validated integration (Codex), with fixed selection allowed | Multiple engines and continuation handoff | More flexible capability routing |
+| Permissions and reliability | All G constraints | All G constraints | All G constraints |
 
-### 11.3 分阶段不降低全阶段约束
+### 11.3 Phased rollout does not relax full-stage constraints
 
-安全、错误诚实、目标正确、版本冲突、人工保护、费用对账和源素材保留从 R0 起建立，之后不能以「这是 P1 功能」为由绕过。在起步版本里，与智能体有关的约束（错误诚实、停止、权限、不可信材料）从 0.1 起生效；0.1–0.3 不写视频，与视频有关的约束随视频引擎在 0.4 一并生效。
+Safety, honest errors, correct goals, version conflicts, human protection, cost reconciliation and source-material retention are established from R0 onward and cannot later be bypassed on the grounds that "this is a P1 feature". In the starting version, agent-related constraints (honest errors, stop, permissions, untrusted material) take effect from 0.1; 0.1–0.3 do not write video, and video-related constraints take effect together with the video engine at 0.4.
 
-任何能力进入产品入口时，都继承它完整的正确性与权限要求。例如提前接入已有的翻译配音能力时，即使新的译配体验整体归 P1，也不得跳过实际音频对齐与过期提示。尚未开放的能力先被能力检查拒绝，而不是半开放。
+Any capability that enters a product entry point inherits its full correctness and permission requirements. For example, when the existing translated-dubbing capability is brought in early, even though the new dubbing experience as a whole belongs to P1, it must still perform real audio alignment and stale-state prompts without skipping them. Capabilities not yet open are first rejected by a capability check, rather than half-opened.
 
-开发按短闭环推进：先让一个智能体引擎经 Harness 跑通会话，再做外壳、只读播放和视频引擎（§11.1 的起步版本）；先让手工命令经视频引擎写入并把回执显示到界面，再让智能体调用同一组命令；先做不需要浏览器的原生字幕，再加代码合成；先把计算与应用分开，再扩展并行与恢复。
+Development proceeds in short loops: first get one agent engine running a session through the Harness, then build the shell, read-only playback and the video engine (the starting version in §11.1); first let manual commands write through the video engine and show receipts in the UI, then let the agent call the same set of commands; first build native subtitles that need no browser, then add code synthesis; first separate computation from the app, then expand parallelism and recovery.
 
-### 11.4 北极星指标
+### 11.4 North-star metric
 
-**每周被用户确认可用、且仍然可以继续编辑的视频数。**
+**Number of videos per week that users confirm as usable and that remain editable.**
 
-- 同一个视频的一连串小修改，在一个统计周期里不重复累计为多个新视频。
-- 语言与画幅版本单独记录，但不通过批量导出相同内容来虚增主指标。
-- 「已导出」是行为信号，不等于用户认可。明确点击「可用 / 定稿」才计入确认口径；没有确认的播放、下载或导出只是代理指标，必须分开展示。
+- A series of small changes to the same video is not counted repeatedly as multiple new videos within one statistics period.
+- Language and aspect-ratio versions are recorded separately, but batch-exporting the same content does not inflate the primary metric.
+- "Exported" is a behavioral signal and does not equal user approval. Only an explicit click on "Usable / Final" counts toward the confirmed basis. Plays, downloads or exports without confirmation are proxy metrics and must be shown separately.
 
-### 11.5 核心指标
+### 11.5 Core metrics
 
-| 指标 | 口径 | 用途 |
+| Metric | Definition | Purpose |
 | --- | --- | --- |
-| 双闭环完成率 | 达到结果约定的任务 / 已开始执行的同类任务 | 分开看创作与已有视频编辑 |
-| 二次编辑正确完成率 | 用户接受且没有越界改动的局部修改 / 已执行的局部修改 | 识别「会生成但不会改」 |
-| 人工纠正负担 | 用户纠正错误所花的时长、操作数及原因 | 不把用户有意的创作选择当作系统错误 |
-| 首个可审阅结果的时间 | 从可执行的任务开始，到真实的候选出现 | 不以第一条文字回复代替画面 |
-| 未涉及内容的保持率 | 未授权变化的对象与属性检查 | 锁定范围的测试必须零误伤 |
-| 恢复成功率 | 按承诺恢复的中断任务 / 该类可恢复的中断 | 按本地、远端和状态未知分类 |
-| 重复费用与重复提交 | 由系统重试造成的重复副作用次数 | 发布阻断与运行警报 |
-| 后续继续编辑率 | 已交付的视频在观察窗内再次被有效修改的比例 | 验证可维护性，不等同于强制留存 |
-| Space 二次编辑率 | 从 Space 打开并产生有效修改的条目 / 被打开的条目 | 验证成品库不只是下载目录 |
+| Dual-loop completion rate | Tasks reaching the agreed result / same-type tasks started | Look at creation and editing of existing videos separately |
+| Secondary-edit correct completion rate | Local changes the user accepted with no out-of-scope changes / local changes executed | Identify "generates but cannot edit" |
+| Manual correction burden | Time, operation count and reasons spent by the user correcting errors | Do not treat the user's deliberate creative choices as system errors |
+| Time to first reviewable result | From the start of an executable task to a real candidate appearing | Do not substitute a first text reply for a picture |
+| Retention of uninvolved content | Object and attribute checks for unauthorized changes | Tests for locked scope must have zero collateral damage |
+| Recovery success rate | Interrupted tasks recovered as promised / interruptions of this type that are recoverable | Classify by local, remote and unknown state |
+| Duplicate cost and duplicate submission | Number of duplicate side effects caused by system retries | Release blocking and runtime alerts |
+| Subsequent continued-editing rate | Share of delivered videos effectively modified again within the observation window | Verifies maintainability; not equivalent to forced retention |
+| Space secondary-edit rate | Entries opened from Space that produced effective changes / entries opened | Verifies that the finished-asset library is not just a download folder |
 
-用户主动取消的任务仍然计入已启动任务的总体，不从分母里静默移除；同时细分为改主意、等待过久、结果不满意、预算和技术失败。模型返回的文本量、工具调用量、代码行数和生成的素材数不作为成功指标。
+Tasks the user actively cancels still count in the overall started-task total and are not silently removed from the denominator. They are further broken down into: changed mind, waited too long, result unsatisfactory, budget, and technical failure. The amount of text the model returns, the number of tool calls, lines of code and the number of generated assets are not used as success metrics.
 
-完成率的正式目标在用户研究建立基线之后设定。本文不虚构当前的转化率或行业对比。
+The formal target for the completion rate is set after user research establishes a baseline. This document does not invent current conversion rates or industry comparisons.
 
 ---
 
-## 12. 待评审事项
+## 12. Items pending review
 
-| 事项 | 需要决定什么 | 当前文档的假设 |
+| Item | What needs deciding | Current document's assumption |
 | --- | --- | --- |
-| 首批用户优先级 | §1.3 的四类用户中先服务谁 | 尚未经市场研究确认，按并列处理 |
-| 项目在架构中的落地 | 无项目会话的产物放在哪里 | 已定：项目是目录，标识在目录里的标记文件中；视频是它的子目录，会话挂在项目下（§2.3）。素材默认留在原处，用户选择才复制进视频（架构设计 §5.1） |
-| 自动创建的时机 | 无项目的会话何时自动创建项目与视频，是否先询问 | 已定：不自动建项目。视频建在会话自己的文件夹里；用户明确要求时才收进以视频命名的新项目（§2.3） |
-| 三栏的初始比例 | 侧栏、会话区与功能区的默认宽度 | 布局建议，需原型验证；窄窗口的断点与单列页签条见 §3.3 |
-| Space 的 P0 类型范围 | 图片与音频的手工修改是否进入 P0 | 视频、成片、字幕、文档的二次编辑为 P0；图片与音频的模型辅助修改为 P1 |
-| 回收站保留期 | 多久之后物理删除 | 已定：偏好设置，默认 30 天；到期后没有引用的才物理删除（§4.9，架构设计 §5.7） |
-| 主停止按钮的语义 | 主按钮是否停止整个任务 | 是。停止回复与取消步骤是次级操作 |
-| 首版智能体引擎 | 其余引擎何时接入；本地模型是否进入 P0 | 已定：Claude Code 与 Codex CLI 已实测；GitHub Copilot CLI、Pi、OpenCode 与经 ACP 接入的 Gemini CLI、Cursor Agent、Grok、Kimi Code 内置；其他支持 ACP 的智能体由用户添加（§7.6）。本地模型不进起步版本 |
-| 下载页的目录行 | 下载视频页的「更改目录」是写回 `downloads.directory`，还是与其他工具页一样只改这一次 | §2.7「页面」定的是只改这一次、默认保存位置在设置里改；下载视频块仍写「保存到 `downloads.directory`，下次继续使用」，待下载工具的并行改动落地后统一 |
-| 生成语音收 Space 文档的长度 | 文字超过模型单次上限时拒绝、截断还是分段合成 | 先拒绝并报出字数与上限，不截断 |
-| 严格离线模式 | 「仅本地」下功能边界与提示方式 | 按 §7.3 |
-| 下载不成的字体在导出时怎么办 | 按需下载的字体没下载或下载失败时，导出是否要先拦下来让用户选替代 | 已定：下载失败时直接用回退字体导出，给出警告即可（§8.1）。导出面板在导出前提示还在下载、下载失败与没下载的族，导出时念「下载字体 · 族 百分比」，完成后列出族 → 回退字体 · 原因；不拦导出、不要求先选替代字体 |
-| 下载视频的范围 | 下载、转录、项目与网站登录 | 已定：工具只下载媒体文件；转录可选，项目可选，默认下载到 ~/Downloads。网站登录在设置 › 视频下载里勾选本机检测到的浏览器 Cookie（默认所有浏览器，按顺序逐个尝试；都不勾为匿名下载），错误分类及工具更新指引。Agent 的旧目标参数保留兼容（§2.7） |
-| 退出时的后台策略 | 默认继续运行还是停止 | 每次询问，可记住选择 |
-| 诊断数据的保留 | 本地诊断日志保留多久、包含什么 | 按 §7.7 的最小集合；期限未定 |
-| 旧版项目导入 | 是否进入 P0；支持哪些来源版本 | 单向导入器；阶段未定 |
-| 子视频文稿的折叠参数 | 片段两端各露几句划掉的句子、接缝行每次展开几句 | 暂定：两端各露 3 句，每次展开 10 句（§5.10） |
-| 子视频文稿的段落时间 | 片段外与跨边界的段落显示哪个时钟 | 暂定：保留段显示成片时间；整段在片段外显示原片时间、置灰并标「片段外 · 原片时间」；跨边界取第一个保留时刻的成片时间（§5.8） |
-| 成功指标的目标值 | 各指标的基线与目标 | 待用户研究 |
+| First-batch user priority | Which of the four user types in §1.3 to serve first | Not yet confirmed by market research; treated as equal |
+| Where projects land in the architecture | Where artifacts of sessions without a project go | Decided: a project is a directory, identified by a marker file inside it; a video is its subdirectory, and sessions hang under the project (§2.3). Assets stay in place by default and are copied into the video only when the user chooses to (architecture design §5.1) |
+| Timing of automatic creation | When a session without a project automatically creates a project and video, and whether to ask first | Decided: do not auto-create projects. The video is created in the session's own folder; it is moved into a new project named after the video only when the user explicitly asks (§2.3) |
+| Initial ratio of the three panes | Default widths of the sidebar, session area and function area | Layout suggestion, needs prototype validation; narrow-window breakpoints and the single-column tab bar see §3.3 |
+| Space P0 type scope | Whether manual editing of images and audio enters P0 | Secondary editing of video, finished cuts, subtitles and documents is P0; model-assisted editing of images and audio is P1 |
+| Trash retention period | After how long before physical deletion | Decided: a preference, default 30 days; only items with no references are physically deleted after expiry (§4.9, architecture design §5.7) |
+| Semantics of the main stop button | Whether the main button stops the whole task | Yes. Stopping the reply and cancelling steps are secondary actions. |
+| First agent engine release | When the other engines are integrated; whether local models enter P0 | Decided: Claude Code and Codex CLI have been tested in practice; GitHub Copilot CLI, Pi, OpenCode, and Gemini CLI, Cursor Agent, Grok and Kimi Code connected via ACP are built in; other ACP-capable agents are added by the user (§7.6). Local models do not enter the starting version |
+| Directory row on the download page | The "Change directory" on the download-video page: write back to `downloads.directory`, or change only this once, like other tool pages | §2.7 "Page" decides change-only-once, with the default save location changed in settings; the download-video block still says "Saved to `downloads.directory`, used next time", to be unified after the download tool's parallel changes land |
+| Length of generated speech sent to a Space document | When text exceeds the model's single-call limit: reject, truncate or synthesize in segments | Reject first, reporting the character count and the limit; do not truncate |
+| Strict offline mode | Feature boundaries and prompting method under "local only" | Per §7.3 |
+| What to do with fonts that fail to download at export | When on-demand fonts are not downloaded or fail to download, whether export should stop and let the user choose a substitute | Decided: on download failure, export directly with the fallback font and show a warning (§8.1). The export panel warns before export about families still downloading, failed, or not downloaded; during export it reads "Downloading font · family percentage", and on completion it lists family → fallback font · reason. Export is not blocked and the user is not required to pick a substitute first |
+| Scope of downloaded videos | Download, transcription, project and website login | Decided: the tool only downloads media files; transcription is optional, project is optional, default download is to ~/Downloads. Website login: under Settings › Video download, tick the browser cookies detected on this machine (default: all browsers, tried in order one by one; none ticked means anonymous download), plus error classification and tool update guidance. The Agent's legacy target parameter is kept for compatibility (§2.7) |
+| Background policy on exit | Default to keep running or to stop | Ask each time; the choice can be remembered |
+| Retention of diagnostic data | How long local diagnostic logs are kept and what they contain | Follow the minimal set in §7.7; period not yet decided |
+| Legacy project import | Whether it enters P0; which source versions are supported | One-way importer; phase not yet decided |
+| Fold parameters for the sub-video script | How many struck-through sentences show at each end of a clip, and how many sentences each seam line expands per click | Tentative: 3 sentences shown at each end, 10 sentences expanded per click (§5.10) |
+| Paragraph timing for the sub-video script | Which clock is shown for paragraphs outside the clip and for paragraphs crossing a boundary | Tentative: kept segments show finished-cut time; a whole paragraph outside the clip shows source time, greyed out and labelled "outside clip · source time"; a paragraph crossing a boundary takes the finished-cut time of its first kept moment (§5.8) |
+| Success metric targets | Baselines and targets for each metric | Pending user research |

@@ -1,162 +1,162 @@
-> 移植自 CucCut v2；文中的数据模型名（TranscriptDoc 等）指 v2 的模型，与 v3 文档模型的对应见[架构设计 §14](../../architecture/architecture-design.md#14-待评审事项)。
+> Ported from CucCut v2. The data-model names in the text (such as TranscriptDoc) refer to v2's models; for the mapping to the v3 document models, see [Architecture design §14](../../architecture/architecture-design.md#14-items-pending-review).
 
-# 韩文的词与空格：现状、改法与待裁决事项
+# Korean words and spaces: current state, the fix, and open decisions
 
-状态：**方案一已实施**（2026-09-30 裁决并落地，transcript 0.5 / `specVersion 1.302.0`）。实施时与本文原稿不同的地方、各项裁决的取值、验证结果都在 §8；§1–§7 保留提案时的原文，只在与实施不符处加了「实施注」。
+Status: **Option 1 implemented** (decided and landed 2026-09-30; transcript 0.5 / `specVersion 1.302.0`). Where the implementation differs from the original draft, the values chosen for each decision, and the verification results are in §8. §1–§7 keep the original proposal text, with an "Implementation note" added only where it differs from the implementation.
 
-来源：`lines/1` 多语言复验（数据集 `3e7e4f1a6`）的第四条。前三条已修（`d9fd2eb4d`、`8ba2f112f`、`7fa215bb5`）；这一条不在载体里，在分词与拼接的公共层，改它等于改所有韩文文稿的读法，所以单独成文。
+Source: the fourth item from the multilingual re-check of `lines/1` (dataset `3e7e4f1a6`). The first three are fixed (`d9fd2eb4d`, `8ba2f112f`, `7fa215bb5`). This one is not in the carrier; it sits in the shared tokenization and concatenation layer. Changing it changes how all Korean scripts are read, so it is written up separately.
 
-本文的调用点清单来自一次只读普查（读代码，没有跑测试；行号以 `8ba2f112f` 为准，之后会漂，以函数名为准）。我自己验证过的只有标了「实测」的几处。
+The call-site inventory in this document comes from a read-only survey (code reading only; no tests were run). Line numbers refer to `8ba2f112f` and will drift, so go by function name. The only things I verified myself are the places marked "measured".
 
-## 1. 现象
+## 1. Symptoms
 
-**分词对韩文是有损的。** 韩文按空格分词（一个空格隔开的单位叫어절），代码把它当成不写空格的文字，逐音节切、拼回去不加空格。实测（`lean_carrier_grade atomize`，当前 `main`）：
-
-```
-输入   저는 내일 학교에 갑니다.
-切成   ["저","는","내","일","학","교","에","갑","니","다."]
-拼回   저는내일학교에갑니다.
-```
-
-真实项目的样本（多语言数据集里的 `ko-real`，12 句，韩文→中文）：
+**Tokenization is lossy for Korean.** Korean is split by spaces (a space-delimited unit is called 어절, eojeol), but the code treats it like a script without spaces: it splits by syllable and joins back without adding spaces. Measured (`lean_carrier_grade atomize`, current `main`):
 
 ```
-源文稿  도쿄여행앞두고이것저것알아보다보면뭐어디서부터어떻게계획을짜야할지막막한분들많으실거예요.
-词      [1]도 [2]쿄 [3]여 [4]행 [5]앞 [6]두 [7]고 …（44 个）
+Input       저는 내일 학교에 갑니다.
+Split into  ["저","는","내","일","학","교","에","갑","니","다."]
+Joined back 저는내일학교에갑니다.
 ```
 
-这 12 句在 `lines/1` 上是 12/12 对齐、107/107 块定位（前三条修复前后相同）。也就是说**载体的指标看不出这个问题**：模型读得懂没有空格的韩文，照样能引用。坏的是别处：
+Sample from a real project (`ko-real` in the multilingual dataset, 12 sentences, Korean→Chinese):
 
-- 发给模型的源文没有空格（翻译、润色、分段都一样），屏幕上的韩文字幕、导出的 SRT / VTT、搜索用的文本也没有空格。`skills/cuccut/references/video/music.md` 已经把它当成引擎的既有表现写给了 Agent（「默认引擎识别韩文就是这样」）。
-- 每个音节都是一个「词」，所以切字幕行、切翻译块时任何两个音节之间都算词边界，切点可以落在一个词中间。
-- 韩文作目标语时同样丢空格：`lines/1` 的块缝（两侧都是谚文时不留空格，模型写了也删）、`rows` 载体解析（`collapse_cjk_spaces`）、译文按片重拼（`split.rs`、`engines/align.rs` 回写 `trans` 的那一处）。这一条是读代码得出的，没有跑过英文→韩文的真调用。
+```
+Source text 도쿄여행앞두고이것저것알아보다보면뭐어디서부터어떻게계획을짜야할지막막한분들많으실거예요.
+Tokens      [1]도 [2]쿄 [3]여 [4]행 [5]앞 [6]두 [7]고 …（44 total）
+```
 
-## 2. 根因：一个谓词答了四个问题
+These 12 sentences align 12/12 on `lines/1` and locate 107/107 blocks (the same before and after the first three fixes). In other words, **the carrier's metrics cannot show this problem**: the model reads unspaced Korean fine and can still cite it. The damage is elsewhere:
 
-`is_cjk_char`（汉字 + 假名 + 谚文音节 U+AC00–D7AF）与由它派生的 `is_cjk_adjacent` / `is_cjk_text` / `is_cjk_language` 被用来回答四个不同的问题。对中文、日文四个答案相同；对韩文不同；对泰文一类又是另一组答案。
+- The source text sent to the model has no spaces (the same for translation, polishing and segmentation). The Korean subtitles on screen, the exported SRT / VTT, and the text used for search also have no spaces. `skills/cuccut/references/video/music.md` already describes this to the agent as the engine's existing behaviour (「默认引擎识别韩文就是这样」, “that is how the default engine recognizes Korean”).
+- Each syllable is a "word", so when splitting subtitle lines or translation blocks, any boundary between two syllables counts as a word boundary, and a cut can land in the middle of a word.
+- Korean as a target language also loses its spaces: the seams between `lines/1` blocks (no space when both sides are Hangul; the model writes one and it is deleted anyway), `rows` carrier parsing (`collapse_cjk_spaces`), and the re-joining of translations by segment (`split.rs`, and the write-back to `trans` in `engines/align.rs`). This item comes from reading the code; an actual English→Korean call has not been run.
 
-| 问题 | 中文 / 日文 | 韩文 | 泰 / 老挝 / 缅 / 高棉 / 藏 |
+## 2. Root cause: one predicate answering four questions
+
+`is_cjk_char` (Han characters + kana + Hangul syllables U+AC00–D7AF) and the predicates derived from it, `is_cjk_adjacent` / `is_cjk_text` / `is_cjk_language`, are used to answer four different questions. For Chinese and Japanese the four answers are the same; for Korean they differ; for Thai and similar scripts they form yet another set of answers.
+
+| Question | Chinese / Japanese | Korean | Thai / Lao / Burmese / Khmer / Tibetan |
 | --- | --- | --- | --- |
-| **S** 词与词之间不写空格（切词逐字、拼接不加空格） | 是 | **否**（按空格分词） | 是（但不逐字切：没有分词，空白之间整段是一个词。**实施注**：2026-10-01 起新建的文稿按词切开、短语内的词缝带「贴前」标记，已有文稿不变，见 [`ccut-unspaced-script-segmentation-design.md`](ccut-unspaced-script-segmentation-design.md)） |
-| **W** 一个字符算一个阅读单位、占两格宽 | 是 | 是 | 否 |
-| **B** 可以在任意两个字符之间断行 / 切块 | 是（再由 lint 把关） | **否**（只在空格处） | 否 |
-| **L** 语言层面的排版（全角标点、中西文之间补空格、句末补 `。`） | 是 | 部分（中西文间距适用；标点用半角，不补 `。`） | 否 |
+| **S** No spaces between words (split per character, join without spaces) | Yes | **No** (split by spaces) | Yes (but not split per character: there is no segmentation, so the whole run between whitespace is one word. **Implementation note**: scripts created from 2026-10-01 onward are split into words, and the intra-phrase word seams carry a "glue to previous" marker; existing scripts are unchanged. See [`ccut-unspaced-script-segmentation-design.md`](ccut-unspaced-script-segmentation-design.md)) |
+| **W** One character counts as one reading unit and takes two cells of width | Yes | Yes | No |
+| **B** Line breaks / block cuts allowed between any two characters | Yes (then lint checks it) | **No** (only at spaces) | No |
+| **L** Language-level typesetting (full-width punctuation, spacing between CJK and Western text, appending `。` at sentence end) | Yes | Partial (CJK/Western spacing applies; punctuation is half-width, no `。` appended) | No |
 
-韩文今天在四个问题上都被答成「是」。`7fa215bb5` 给泰文一类加的 `is_unspaced_script_language` 只是 S 问题在语言标签上的一半，没有动韩文。
+Today Korean gets "yes" on all four questions. The `is_unspaced_script_language` that `7fa215bb5` added for Thai and similar scripts covers only the language-tag half of question S, and does not touch Korean.
 
-已有的先例都站在「韩文按空格分词」这边：`ccut-subtitle-render/raster.rs` 的断行（「谚文按空格分词」，有测试）、`ccut-subtitle-agent-workflow.md` 与 `ccut-subtitle-pipeline-implementation.md` 对韩文单位的说法。逐音节切的唯一出处是早期与 voice-ink 对拍的测试向量（`atomize.rs` 里 `いい天気 한국어` 那一条），没有哪篇设计稿论证过它。
+Existing precedents all side with "Korean is split by spaces": the line breaking in `ccut-subtitle-render/raster.rs` ("Hangul is split by spaces", tested), and what `ccut-subtitle-agent-workflow.md` and `ccut-subtitle-pipeline-implementation.md` say about Korean units. The only source of per-syllable splitting is the early test vector checked against voice-ink (the `いい天気 한국어` case in `atomize.rs`); no design document has argued for it.
 
-## 3. 调用点，按问的是哪个问题分
+## 3. Call sites, grouped by which question they ask
 
-### 3.1 问的是 S，韩文必须改答案
+### 3.1 Asks S: Korean must change its answer
 
-- `ccut-flow-core/atomize.rs`：`atomize` 的逐字分支、`sep_len`（经 `is_cjk_adjacent`）、`join_word_texts`、`join_prefix_char_lens`。源头。
-- `build.rs` 的 `atomized`：建稿时每个转录词都过一遍 `atomize`，逐音节的词就是这里来的。
-- `engines/markers.rs` 的 `collapse_cjk_spaces`：把模型写回来的韩文空格删掉。`polish.rs` 拿它做「这句改没改」的比较，`filepipe/html.rs`（`rows` 载体解析）也用它。
-- `seam.rs` 的 `is_ideograph` → `cjk_midword_boundary`：只看缝两侧的字符、不看空白，韩文每个词边界都被当成「词内」。`split.rs`、`align_block.rs`、`align_table.rs`、`engines/align.rs` 都经过它。
-- `filepipe/lines_translation.rs`：`is_cjk_language(source_lang)` 被当成「源文不写空格」来决定 `≥k` 分片与 `¦` 片标怎么放；`tidy_joints` 的 `wide` 分支删韩文块缝的空格。`filepipe/lines.rs` 的块拼接同理。
-- 译文重拼并写回 `trans` 的几处：`split.rs` 的 `join_atoms` / `canonical`、`engines/align.rs` 改写轮回写、`ccut-workspace` 的 `apply.rs` 与 `studio/apply.rs`、`kernel/cmd/upgrade.rs`。
-- `cue.rs`、`layout.rs`、`layout_profile.rs`、`engines/segment.rs`、`source_boundary.rs`、`speaker_apply.rs` 的断点判断：都经 `sep_len`，跟着源头变。
-- **第二份实现**：`ccut-editor-core/subtext.rs`（`is_cjk`、`is_cjk_adjacent`、`sep_len`、`join_word_texts`、`join_words`、`join_prefix_char_lens`、`collapse_cjk_spaces`、`normalize_cjk_boundaries`），App 的光标 ↔ 词映射、润色 diff、译文源编辑都用它。
-- 私有副本：`ccut-subtitle-render/document.rs` 的 `join_pieces`、`ccut-timeline/match_text.rs`（`ccut cut --query`，今天带空格的韩文查询永远对不上）、`ccut-flow-core/script.rs` 的 `join_words`、`ccut-editor-core` 的 `paras.rs`（把 Cue 拼成段落）与 `transcript_lang.rs`、原型 `designs/cuccut/app/model-wordanim.js`（正则含 `가-힯`）。
-- Web 没有自己的拼接实现，文本来自 `ccut serve` 的投影；但 `transcript.logic.ts` 有一处写死单空格拼接的比较，对中日文今天就不对，与韩文无关，顺手可修。
+- `ccut-flow-core/atomize.rs`: the per-character branch of `atomize`, `sep_len` (via `is_cjk_adjacent`), `join_word_texts`, `join_prefix_char_lens`. The source.
+- `build.rs`'s `atomized`: when a script is built, every transcript word goes through `atomize`. This is where the per-syllable words come from.
+- `engines/markers.rs`'s `collapse_cjk_spaces`: removes the spaces the model writes back into Korean. `polish.rs` uses it for the "was this sentence changed?" comparison, and `filepipe/html.rs` (`rows` carrier parsing) uses it too.
+- `seam.rs`'s `is_ideograph` → `cjk_midword_boundary`: looks only at the characters on either side of a seam, not at whitespace, so every Korean word boundary is treated as "inside a word". `split.rs`, `align_block.rs`, `align_table.rs` and `engines/align.rs` all go through it.
+- `filepipe/lines_translation.rs`: `is_cjk_language(source_lang)` is taken to mean "the source text has no spaces", and it decides how the `≥k` splits and the `¦` segment markers are placed. `tidy_joints`' `wide` branch deletes the spaces at Korean block seams. The block concatenation in `filepipe/lines.rs` works the same way.
+- Several places that re-join translated text and write it back to `trans`: `join_atoms` / `canonical` in `split.rs`, the write-back in the rewrite loop of `engines/align.rs`, `apply.rs` and `studio/apply.rs` in `ccut-workspace`, and `kernel/cmd/upgrade.rs`.
+- Break-point decisions in `cue.rs`, `layout.rs`, `layout_profile.rs`, `engines/segment.rs`, `source_boundary.rs` and `speaker_apply.rs`: all of them go through `sep_len`, so they follow the source.
+- **Second implementation**: `ccut-editor-core/subtext.rs` (`is_cjk`, `is_cjk_adjacent`, `sep_len`, `join_word_texts`, `join_words`, `join_prefix_char_lens`, `collapse_cjk_spaces`, `normalize_cjk_boundaries`). The App's cursor ↔ word mapping, the polish diff, and editing of the translation source all use it.
+- Private copies: `join_pieces` in `ccut-subtitle-render/document.rs`; `ccut-timeline/match_text.rs` (`ccut cut --query`, where a Korean query with spaces never matches today); `join_words` in `ccut-flow-core/script.rs`; `paras.rs` in `ccut-editor-core` (which joins Cues into paragraphs) and `transcript_lang.rs`; and the prototype `designs/cuccut/app/model-wordanim.js` (its regex contains `가-힯`).
+- The Web has no concatenation implementation of its own; its text comes from the projection of `ccut serve`. However, `transcript.logic.ts` has one comparison that joins with a hard-coded single space, which is already wrong for Chinese and Japanese today. It has nothing to do with Korean, but it can be fixed in passing.
 
-### 3.2 问的是 W，韩文保持原答案
+### 3.2 Asks W: Korean keeps its current answer
 
-`visual_width`（两份）、`script.rs` 的 `display_width`、`split.rs` 的 `cjk_cell_lang`、`layout.rs` 的 `reading_budget`、CPS 与 `fast_count`、`translate_list.rs` 的 `target_is_cjk`、`lines_translation.rs` 的 `repeat_units`、`initial_segment.rs` 的字数统计、`language_quality.rs` 的文字占比与照抄检测、`metrics.rs` 的 `is_char_token`（与 sacrebleu 对拍，**不能动**）。
+`visual_width` (two copies), `display_width` in `script.rs`, `cjk_cell_lang` in `split.rs`, `reading_budget` in `layout.rs`, CPS and `fast_count`, `target_is_cjk` in `translate_list.rs`, `repeat_units` in `lines_translation.rs`, the word counting in `initial_segment.rs`, the text-share and copy-detection in `language_quality.rs`, and `is_char_token` in `metrics.rs` (checked against sacrebleu; **must not change**).
 
-### 3.3 问的是 L
+### 3.3 Asks L
 
-- `autocorrect.rs` 的 `is_cjk_language`（含 `ko`）作为中西文间距的开关是对的，`한국어hello` → `한국어 hello` 的既有用例要继续过。
-- 两处是韩文上的既有错误，与本文同一个根：`normalize_cjk_ascii_punctuation` 把韩文旁边的 `,` 换成全角 `，`；`polish.rs` 给韩文句末补 `。`。
+`is_cjk_language` in `autocorrect.rs` (including `ko`) as the switch for CJK/Western spacing is correct. The existing case `한국어hello` → `한국어 hello` must keep passing.
 
-> **实施后的更正（2026-10-01）**：上面第一条在**原文一侧**不成立。韩文按어절成词之后，一个词里常有数字或拉丁字母（`2박`、`600원`、`AI가`），中西文间距规则会把它改成 `2 박`——词里出现空格，润色重绑时再被拆成两个词；引号旁的去空格规则还会把两个词并成一个。原文一侧现在不动含谚文的文本里的空白。**译文一侧同样不成立**：en→ko 真跑里模型按「CJK 与西文之间加空格」写出 `AI 는`、`PM 이라는`，助词被拆开（韩文的分写规则是助词贴前词）。brief 提示词与译文排版都改成韩文保持自己的分写（见 §8.2 末两条）。`format()` 的缺省行为没变，`한국어hello` → `한국어 hello` 这条向量还在——它现在只管中文 / 日文文本里夹着的谚文。
+Two places are existing errors on Korean with the same root: `normalize_cjk_ascii_punctuation` turns a `,` next to Korean into a full-width `，`, and `polish.rs` appends `。` to Korean sentence ends.
 
-### 3.4 要先定口径的
+> **Correction after implementation (2026-10-01):** the first item above does not hold on the **source-text side**. Once Korean is segmented into 어절, a word often contains digits or Latin letters (`2박`, `600원`, `AI가`), and the CJK/Western spacing rule turns it into `2 박`: a space appears inside a word, and when a polish is rebound it is split into two words. The rule that removes spaces next to quotation marks also merges two words into one. The source-side whitespace in text containing Hangul is now left alone. **The translation side does not hold either**: in a real en→ko run the model wrote `AI 는` and `PM 이라는`, with spaces between CJK and Western text, which splits the particles apart (Korean spacing rules attach particles to the preceding word). The brief prompt and the translation typesetting were both changed so that Korean keeps its own word spacing (see the last two items of §8.2). The default behaviour of `format()` has not changed; the `한국어hello` → `한국어 hello` vector still stands, but it now only governs Hangul inside Chinese or Japanese text.
 
-- `atomize::word_count`（分页、翻译页预算、章节、写作提示）：韩文从按音节计变成按어절计，数字大约缩到三分之一，同样的「500 词一页」会装进三倍的内容。
-- 润色回写与重绑（`rebind.rs`、`polish.rs`、`polish_txt.rs` 的 LCS）：粒度从音节变成整词，改一个助词会重铸整个词的 id。英文一直是这个粒度。
-- 逐词高亮 / 卡拉 OK：按어절走。转录引擎给的本来就是어절的时间，音节的时间是按字符权重摊出来的，没有信息损失。逐字动画（`ccut-motion/text_parts.rs`，`edit-domain-design/03.md` 规定中日韩逐字）不受影响。
+### 3.4 Points that need the scope settled first
 
-## 4. 耦合：为什么不能先修一半
+- `atomize::word_count` (pagination, translation page budget, chapters, writing prompts): Korean changes from being counted by syllable to being counted by 어절. The numbers shrink to about a third, so the same "500 words per page" would fit three times as much content.
+- Polish write-back and rebinding (`rebind.rs`, `polish.rs`, the LCS in `polish_txt.rs`): the granularity changes from syllable to whole word, so editing one particle re-mints the id of the whole word. English has always been at this granularity.
+- Word-by-word highlighting / karaoke: follows 어절. The transcription engine already provides timing per 어절; the per-syllable timing was spread out by weighting characters, so there is no information loss. Per-character animation (`ccut-motion/text_parts.rs`; `edit-domain-design/03.md` specifies per-character for CJK) is not affected.
 
-- **只停掉删空格、不改分词**：源词仍是逐音节、拼回去没有空格，模型润色后写回带空格的句子，`polish.rs` 的改动判定会把每一句都判成「改了」。
-- **只改 `sep_len`、不动已有文稿**：已有韩文文稿的词都是单音节，立刻显示成 `도 쿄 여 행`，字幕、导出、发给模型的源文全是这样。比现在更糟。
-- **只改目标侧**：`trans` 是字符串，看起来独立，但译文切片后重拼走的是同一个 `atomize` + `join`，分词不改，片内空格照丢。
+## 4. Coupling: why half a fix is not possible
 
-所以这是一次改完的事：S 谓词从 W 谓词里拆出来、两份实现与几处私有副本一起改、已有文稿有迁移路径。
+- **Only stop removing spaces, without changing tokenization**: source words are still per-syllable and join back without spaces. After the model polishes, it writes back a sentence with spaces, and the change check in `polish.rs` marks every sentence as "changed".
+- **Only change `sep_len`, without touching existing scripts**: the words in existing Korean scripts are all single syllables, so they would immediately display as `도 쿄 여 행`, and subtitles, exports and the source text sent to the model would all look like this. That is worse than today.
+- **Only change the target side**: `trans` is a string and looks independent, but after a translation segment is sliced, re-joining goes through the same `atomize` + `join`. If tokenization does not change, the spaces inside a segment are still dropped.
 
-## 5. 已有文稿怎么办
+So this is one change to make in full: split the S predicate out of the W predicate, change the two implementations and the several private copies together, and provide a migration path for existing scripts.
 
-词不存空白（`Word { id, t0, t1, text, sp }`），空格每次都由 `sep_len` 现算。一旦规则变了，旧文稿没有任何地方记着「这两个音节原来是连着的」。可用的线索只有：
+## 5. What to do with existing scripts
 
-- 没被润色或编辑碰过的词保留着建稿时的 id：同一个转录词切出来的子词是 `<id>~k`，`~k` 就是「贴着前一个」。被润色 / 编辑重铸过的词（`w<时间戳>-<n>`）没有这个线索。
-- `ai/asr-rows.json` 里的原始行文本带空格，行与词能对得上时可以重新推出词界。文本被润色改过的句子对不上。
+Words store no whitespace (`Word { id, t0, t1, text, sp }`); spaces are recomputed every time by `sep_len`. Once the rule changes, old scripts have nothing recording that "these two syllables were joined". The only clues available are:
 
-### 方案一（推荐）：词上加一个稀疏的「贴前」标记
+- Words that have not been touched by polishing or editing keep the id they had when the script was built. A sub-word split from the same transcript word is `<id>~k`, and `~k` means "glued to the previous one". Words re-minted by polishing / editing (`w<timestamp>-<n>`) have no such clue.
+- The raw line text in `ai/asr-rows.json` contains spaces. When lines can be matched to words, word boundaries can be re-derived. Sentences whose text was changed by polishing cannot be matched.
 
-`Word` 加一个可选布尔（暂名 `glue`，缺省省略）：为真时这个词与前一个词之间不加空格，不论默认规则怎么说。文稿版本升到 0.5。
+### Option 1 (recommended): add a sparse "glue to previous" marker on words
 
-- 旧的韩文文稿迁移是**无损、不改 id** 的：每个紧跟在谚文词后面的谚文词打上标记，显示与今天逐字相同；`breaks`、`autoBreaks`、`hidden`、`paraBreaks`、`transAlign.sourceWordIds`、`s-<首词 id>` 的句键、指纹（只算词文本与首末 id）都不用动。旧项目不会突然变样，也不会被标成全部过期。
-- 新建的韩文文稿按어절存词，不需要标记，空格自然出现。
-- 旧项目要拿回空格：重新转录，或者重新润色（模型写回带空格的句子，重绑时按新规则分词）。可以另给一个命令，对 `asr-rows` 还对得上的句子直接重推词界。
-  - **实施注**：重新润色**拿不回**空格。旧的逐音节区间被改写时沿用逐音节、标记按旧规则重定（§8.2），模型写的空格不进这种文稿；只有重新转录能拿回。重推词界的命令没有做。
-- （**实施注**：下面这一条没有做——目前只有读旧文稿的迁移会写这个标记。2026-10-01 补注：泰、老挝、缅甸、高棉、藏文的新建文稿也写这个标记了，用在短语内的词缝上，见 [`ccut-unspaced-script-segmentation-design.md`](ccut-unspaced-script-segmentation-design.md)。紧贴后文的开引号在新建稿里随之不再多出空格（测试 `atomize_words_splits_unspaced_scripts_and_leaves_the_rest_alone` 的 `คำว่า“ยืนยันแล้ว”` 一句拼回与原文相同）；已有文稿没有迁移，仍会多一个空格。）这个标记顺带解决别的有损情形：泰文里紧贴后文的开引号（`คำว่า“ยืนยันแล้ว”` 今天重拼会多一个空格，`7fa215bb5` 只让引用匹配绕过了它）、任何「原文没有空格但规则会加」的地方。
-- 代价：所有「拿文稿里的词拼文本」的地方要改成认这个标记（§3.1 列的那些；按文本重新分词再拼的地方不涉及）。**问 B 的地方也要认**：带标记的词与前一个词之间不是词边界，断行、切块、按说话人切分（`seam.rs` 的 `is_ideograph` / `cjk_midword_boundary`、`split.rs` 的切点候选、`speaker_apply.rs`）都不能把它当合法断点。否则旧韩文文稿迁移后显示没变，切分行为却变了——谚文离开「可逐字断」之后，每个音节缝会被当成普通词缝。旧文稿里这些缝今天就是可断的（且被当成词内缝压着），迁移后是保持可断还是一律不可断，实施时要定一个并写进迁移测试。旧版本的程序读不了 0.5 的文稿——**这一步不可逆**，升级过的项目回不到旧版 App。
+Add an optional boolean to `Word` (provisional name `glue`, omitted by default). When it is true, there is no space between this word and the previous one, regardless of what the default rules say. The script format version goes up to 0.5.
 
-### 方案二：迁移时重推词界、重铸词
+- Migration of old Korean scripts is **lossless and does not change ids**: every Hangul word that directly follows a Hangul word gets the marker, and the display is the same as per-character today. `breaks`, `autoBreaks`, `hidden`, `paraBreaks`, `transAlign.sourceWordIds`, the segment keys `s-<first word id>`, and the fingerprint (computed only from word text and first and last ids) need no change. Old projects will not suddenly look different, and will not all be marked as stale.
+- Newly created Korean scripts store words by 어절, need no marker, and spaces appear naturally.
+- To get spaces back in an old project: re-transcribe, or re-polish (the model writes back sentences with spaces, and rebinding segments them by the new rules). A separate command could re-derive word boundaries directly for sentences that still match `asr-rows`.
+  - **Implementation note**: re-polishing **does not** bring the spaces back. Old per-syllable ranges, when rewritten, keep the per-syllable granularity and the markers are re-determined under the old rules (§8.2), so the spaces the model writes never enter this kind of script. Only re-transcription can bring them back. The command to re-derive word boundaries was not built.
+- (**Implementation note**: the item below was not done. At present only the migration that reads old scripts writes this marker. Update 2026-10-01: Thai, Lao, Burmese, Khmer and Tibetan scripts created new also write this marker, used on the seams between words inside a phrase; see [`ccut-unspaced-script-segmentation-design.md`](ccut-unspaced-script-segmentation-design.md). An opening quote mark that sits right after a word no longer gets an extra space in newly created scripts (the test `atomize_words_splits_unspaced_scripts_and_leaves_the_rest_alone`, with the sentence `คำว่า“ยืนยันแล้ว”`, rejoins to the same text as the original). Existing scripts were not migrated and still gain one extra space.) This marker also solves other lossy cases: in Thai, an opening quote mark placed right after a word (`คำว่า“ยืนยันแล้ว”` gains an extra space when re-joined today; `7fa215bb5` only made quote matching bypass it), and any place where "the source has no space but the rule adds one".
+- Cost: every place that builds text by joining a script's words has to recognize this marker (the places listed in §3.1; places that re-segment by text and then join are not involved). **Places that ask B must also recognize it**: a word with the marker is not a word boundary relative to the previous word, so line breaks, block cuts, and speaker-based splitting (`seam.rs`'s `is_ideograph` / `cjk_midword_boundary`, the cut candidates in `split.rs`, `speaker_apply.rs`) must not treat it as a legal break point. Otherwise, after migrating an old Korean script the display is unchanged but the splitting behaviour changes: once Hangul is no longer "breakable per character", every syllable seam would be treated as an ordinary word seam. Today the seams in old scripts are breakable (and are treated as within-word seams, which suppresses them). After migration, a decision is needed during implementation: keep them breakable, or make them all unbreakable uniformly. Write that decision into the migration test. Old versions of the program cannot read 0.5 scripts. **This step is irreversible**: a project that has been upgraded cannot go back to the old App.
 
-把旧文稿的音节合并成어절（靠 `~k` 与 `asr-rows`），id 重铸，所有按 id 挂的覆盖层重映射，指纹全变、各阶段全部过期。对不上的句子（被润色改过的）没有可靠的词界来源。改动面与方案一相同，另加一套重映射，且有一部分句子迁不动。不推荐。
+### Option 2: re-derive word boundaries and re-mint words during migration
 
-### 方案三：不迁移
+Merge the transcript's syllables into eojeol (Korean word units) using `~k` and `asr-rows`, re-mint the IDs, remap every overlay keyed by ID, and all fingerprints change and every stage goes stale. Sentences that do not line up (those reworded by polishing) have no reliable source for word boundaries. The change surface is the same as Option 1, plus a separate remapping pass, and some sentences cannot be migrated at all. Not recommended.
 
-旧韩文项目直接按新规则读，显示成 `도 쿄 여 행`。不可接受，列出来只为说明为什么必须有迁移。
+### Option 3: no migration
 
-## 6. 需要裁决的事
+The old Korean project is read directly under the new rules and displays as `도 쿄 여 행`. Not acceptable; listed only to show why a migration is required.
 
-1. **是否升文稿格式到 0.5、加「贴前」标记（方案一）。** 不可逆：升级后的项目旧版 App 打不开。
-2. **旧韩文项目默认怎么处理**：保持现在的显示（没有空格）直到用户重新转录 / 润色；还是打开时提示、并提供按 `asr-rows` 重推词界的命令。手上有多少韩文项目我没有数——要数得读真实项目数据，没有做。
-3. **韩文的页预算按什么计**：建议翻译页、章节、写作这些「一页装多少」的预算继续按音节计（行为不变），只有词的粒度（切点、重绑、高亮）换成어절。
-4. **范围**：core（两份实现 + 私有副本）、App（经 `ccut-editor-core`）、原型的 `model-wordanim.js` 同一任务改；Web 经投影自动跟随。§3.3 的两处韩文标点错误是否同批修。
-5. **验证数据**：现有的只有 `ko-real` 12 句和合成句。改之前需要至少一个真实的韩文项目做前后对照（转录 → 润色 → 翻译 → 字幕行），以及一次英文→韩文的翻译。可以用哪个项目需要点名。
+## 6. Decisions needed
 
-## 7. 实施顺序（裁决后）
+1. **Whether to raise the transcript format to 0.5 and add the “贴前” (attach-to-previous) marker (Option 1).** Irreversible: after the upgrade, the old App cannot open the project.
+2. **Default handling for existing Korean projects**: keep the current display (no spaces) until the user re-transcribes or re-polishes; or, on open, prompt and offer a command that re-derives word boundaries from `asr-rows`. I have not counted how many Korean projects are on hand; counting them would mean reading real project data, which has not been done.
+3. **How the Korean page budget is measured**: I suggest that page-capacity budgets (translation pages, chapters, writing) keep counting syllables (behaviour unchanged), and only the word-granularity operations (cut points, rebinding, highlighting) switch to eojeol.
+4. **Scope**: core (both implementations plus the private copy), App (via `ccut-editor-core`), and the prototype `model-wordanim.js` change in the same task; Web follows automatically via projection. Should the two Korean punctuation errors in §3.3 be fixed in the same batch?
+5. **Verification data**: the existing data is only the 12 sentences of `ko-real` and synthetic sentences. Before changing anything, we need at least one real Korean project for before/after comparison (transcription → polishing → translation → subtitle lines), plus one English→Korean translation. Which project to use needs to be named.
 
-1. `atomize.rs` 里拆出 S 谓词（汉字 + 假名；泰文一类另算），W 谓词保持现有范围；`sep_len` / `join_*` 改用 S 谓词并认「贴前」标记；断点判断（B）同时认这个标记。`ccut-editor-core/subtext.rs` 同步，两份实现用同一张测试表对拍。
-2. 文稿 0.5：`Word.glue`、读旧版时的无损迁移、`ccut-protocol` 的版本表、`docs/generated/`。
-3. §3.1 其余调用点与私有副本逐个收口；`collapse_cjk_spaces` 与 `polish.rs` 的改动判定一起改。
-4. §3.4 的口径按裁决落地；§3.3 的两处标点错误。
-5. 三表面：App 的光标映射与编辑、原型 `model-wordanim.js`、Web 的那一处比较。
-6. 验收：真实韩文项目前后对照；`lines/1` 多语言回放（`ko-real` 仍应 12/12）；中文 / 日文 / 英文项目逐句零差异；旧韩文项目迁移后显示逐字不变。
+## 7. Implementation order (after decisions)
 
-## 8. 实施记录（2026-09-30）
+1. Split the S predicate out of `atomize.rs` (Han characters and kana; Thai and similar scripts counted separately). The W predicate keeps its existing scope. `sep_len` and `join_*` switch to the S predicate and recognise the “贴前” marker; the break-point check (B) also recognises this marker. Sync `ccut-editor-core/subtext.rs`, and check the two implementations against the same test table.
+2. Transcript 0.5: `Word.glue`, lossless migration when reading old versions, the version table in `ccut-protocol`, and `docs/generated/`.
+3. Close out the remaining §3.1 call sites and private copies one by one; change `collapse_cjk_spaces` together with the change-detection in `polish.rs`.
+4. Apply the §3.4 scope as decided; fix the two punctuation errors in §3.3.
+5. Three surfaces: App's cursor mapping and editing, the prototype `model-wordanim.js`, and the one comparison in Web.
+6. Acceptance: before/after comparison on a real Korean project; multilingual replay of `lines/1` (`ko-real` should still be 12/12); Chinese, Japanese and English projects with zero per-sentence differences; after migrating an old Korean project, its display is unchanged character for character.
 
-### 8.1 裁决
+## 8. Implementation log (2026-09-30)
 
-| §6 | 取值 |
+### 8.1 Decisions
+
+| §6 | Value |
 | --- | --- |
-| 1 格式 | 升 0.5，加 `glue`。不可逆：0.5 文稿旧版 `ccut` / `ccut-serve` / App 读不了 |
-| 2 旧韩文项目 | 保持现在的显示（没有空格），直到重新转录。不提示，没有重推词界的命令 |
-| 3 页预算 | 继续按音节计（`word_count` 用 `atomize_syllables`），行为不变 |
-| 4 范围 | core 两份实现 + 私有副本、App（经 `ccut-editor-core`）、原型 `model-wordanim.js`、Web；两处韩文标点错误同批修 |
-| 5 验证数据 | 用户点名的两个真实韩文项目（只在副本上做） |
+| 1 Format | Upgrade to 0.5 and add `glue`. Irreversible: 0.5 transcripts cannot be read by the old `ccut` / `ccut-serve` / App |
+| 2 Existing Korean projects | Keep the current display (no spaces) until re-transcription. No prompt, and no command to re-derive word boundaries |
+| 3 Page budget | Keep counting syllables (`word_count` uses `atomize_syllables`); behaviour unchanged |
+| 4 Scope | Both core implementations plus the private copy, App (via `ccut-editor-core`), the prototype `model-wordanim.js`, and Web; the two Korean punctuation errors fixed in the same batch |
+| 5 Verification data | The two real Korean projects named by the user (run only on copies) |
 
-§8.2 末两条（原文排版不动谚文空白、韩文译文保持自己的分写）是实施中按真跑证据加的，超出原稿 §3.3 的判断。**2026-10-01 裁决保留**（译文一侧是 `094e28bf1`）：原来的规则是中文 / 日文的中西文间距，因为「CJK」的说法被推到了谚文上；韩文正字法本来就让助词贴前词（`AI가`）、量词贴数字（`2박`）。真跑数据（pm / altman 两个项目，[`2026-10-01-011216`](../../changelog/core/2026-10-01-011216.md)）：拆开的助词 / 量词 8 → 0、85 → 0。带定位 / 回退 14/4 → 16/1、245/65 → 294/6 是这一笔与标记残片修复（`7dcd4b5f7`）合起来的结果。
+The last two items in §8.2 (leaving the Hangul whitespace in the original typesetting untouched, and Korean translations keeping their own word spacing) were added during implementation based on real-run evidence, going beyond the judgment in the original draft §3.3. **The 2026-10-01 decision stands** (translation-side commit `094e28bf1`). The original rule applied Chinese/Japanese spacing between Chinese and Western text, because the term “CJK” had been extended to Hangul; Korean orthography itself attaches particles to the preceding word (`AI가`) and counters to the numeral (`2박`). Real-run data (the pm and altman projects, [`2026-10-01-011216`](../../changelog/core/2026-10-01-011216.md)): split particles and counters went from 8 to 0 and from 85 to 0. The positioning and fallback counts changing from 14/4 to 16/1 and from 245/65 to 294/6 are the combined result of this change and the marker-fragment fix (`7dcd4b5f7`).
 
-### 8.2 与原稿不同的地方
+### 8.2 Where this differs from the draft
 
-- **三种原子化，不是一种。** `atomize` 管成词与找断点（韩文按어절）；`atomize_syllables` 是 0.5 之前的切法，只给 LCS 对齐键、词面签名、页预算用——这些量是「比较用的键」，逐音节比逐어절更稳，而且这样它们对所有已有文稿都不变；`atomize_like(words, text)` 跟着区间走，区间里有词带标记就逐音节。§3.4「润色回写与重绑的粒度从音节变成整词」只对新文稿成立。
-- **旧文稿的改写留在旧粒度。** 逐音节的区间被润色、分段、文稿替换、文本编辑、逐项接受润色改写时，新词仍是音节，标记按「旧规则不加空格、新规则会加」重定（`rebind::reglue_legacy_span`，与读入迁移同一条规则）。好处是没改的音节保住 id 与时间、显示与以前改写同一段文本逐字相同；代价是 §5 说的「重新润色拿回空格」不成立。
-- **迁移规则按可见词判。** 可见词对它前面最近的可见词，隐藏词对紧挨着的前一个词。保证的是「可见文本逐字不变」；取消隐藏一个夹在两个谚文词之间的非谚文词时，后一个词会少一个空格。
-- **`sep_len` 多一条**：谚文挨着汉字 / 假名不加空格（否则中文 / 日文文稿里夹的韩文会变样）。两侧都是谚文、谚文挨着拉丁字母或数字才加。
-- **`seam.rs::is_ideograph` 没改**，只改了 `cjk_midword_boundary`（两侧都是谚文不算词内）。`is_ideograph` 的其它调用点是中文词法启发式，谚文进不去。
-- **原文排版不动韩文的空白**（2026-10-01，真实项目副本上建新稿时发现）。`autocorrect::Options::source()`（`hangul_spacing: false`）给三处原文入口用：转录建稿、`project seed-transcript`、润色回写。含谚文的片与含谚文的整段不过间距 / 去空格规则，全角字母数字归一化与独立成词的技术词大小写照常；逐词入口另有一道兜底，排版结果带空白的词保持原样（`autocorrect::format_words`）。
-- **韩文译文保持自己的分写**（2026-10-01，en→ko 真跑发现）。brief 提示词的中西文间距规则限定为用汉字或假名书写的目标语，并明说不适用于谚文；翻译规则行点明韩文按词分写、助词贴前词；`format_translation*` 对 `ko` 目标关掉 `hangul_spacing`。两条翻译路径共用这份提示词与排版函数。样片（31 句）拆写 17 → 0；423 句的访谈拆开的助词 / 量词 85 → 0。
-- **迁移挂在反序列化上**，不是只挂在 `from_json`：仓库里有几处直接 `serde_json::from_*::<TranscriptDoc>`（候选稿、克隆），挂在 serde 上才不会漏。
+- **Three kinds of atomization, not one.** `atomize` handles word formation and finding break points (Korean by eojeol). `atomize_syllables` is the splitting used before 0.5, and is only used for the LCS alignment key, the surface-text signature and the page budget. These quantities are comparison keys, which are more stable compared syllable by syllable than eojeol by eojeol, and this way they stay unchanged for all existing transcripts. `atomize_like(words, text)` follows the span; within a span that contains a marked word, it goes syllable by syllable. The claim in §3.4 that “the granularity of polish write-back and rebinding changes from syllable to whole word” holds only for new transcripts.
+- **Rewrites of old transcripts stay at the old granularity.** When a syllable-level span is polished, re-segmented, replaced in the transcript, edited as text, or accepted item by item as a polish rewrite, the new words are still syllables, and their markers are re-set using the rule “the old rules add no space, the new rules do” (`rebind::reglue_legacy_span`, the same rule as the migration on read). The benefit: untouched syllables keep their IDs and timings, and a rewritten passage displays character for character as it did before. The cost: the “re-polish to regain spaces” described in §5 does not hold.
+- **The migration rule judges by visible words.** A visible word is compared with the nearest visible word before it; a hidden word is compared with the immediately preceding word. What is guaranteed is that “visible text stays character for character identical”. When a non-Hangul word sitting between two Hangul words is unhidden, the later word loses one space.
+- **`sep_len` gets one extra rule**: Hangul adjacent to Han characters or kana gets no space (otherwise Korean mixed into Chinese or Japanese transcripts would be altered). A space is added only when both sides are Hangul, or when Hangul is adjacent to Latin letters or digits.
+- **`seam.rs::is_ideograph` is unchanged**; only `cjk_midword_boundary` changed (two Hangul sides are not treated as within a word). The other call sites of `is_ideograph` are Chinese lexical heuristics, which Hangul cannot enter.
+- **The original typesetting leaves Korean whitespace alone** (2026-10-01, found when creating a new transcript on a real-project copy). `autocorrect::Options::source()` (`hangul_spacing: false`) is used at the three original-text entry points: transcription to create the transcript, `project seed-transcript`, and polish write-back. Segments containing Hangul, and whole paragraphs containing Hangul, skip the spacing and space-removal rules; full-width letter and digit normalisation, and case handling of technical terms that stand as separate words, still apply. The word-level entry point has an additional safeguard: words whose formatted result contains whitespace are kept as they are (`autocorrect::format_words`).
+- **Korean translations keep their own word spacing** (2026-10-01, found in an en→ko real run). The brief prompt's Chinese/Western spacing rule is limited to target languages written in Han characters or kana, and explicitly states that it does not apply to Hangul. The translation rules line states that Korean is spaced by word and that particles attach to the preceding word. `format_translation*` turns `hangul_spacing` off for `ko` targets. Both translation paths share this prompt and formatting function. In the sample (31 sentences), split words went from 17 to 0; in the 423-sentence interview, split-off particles and counters went from 85 to 0.
+- **The migration hangs on deserialization, not only on `from_json`**: several places in the repo call `serde_json::from_*::<TranscriptDoc>` directly (candidate transcripts, cloning), so attaching it to serde ensures none are missed.
 
-### 8.3 验证
+### 8.3 Verification
 
-见 [`docs/changelog/core/2026-09-30-235033.md`](../../changelog/core/2026-09-30-235033.md)：两个真实韩文项目（副本）切换前后全部派生输出逐字节相同；多语种回放与 508 句回放的评分逐字节相同；各 crate 测试除既有红之外全绿。
+See [`docs/changelog/core/2026-09-30-235033.md`](../../changelog/core/2026-09-30-235033.md): on two real Korean projects (copies), all derived output is byte-identical before and after the switch; the multilingual replay and 508-sentence replay scores are byte-identical; crate tests are all green apart from existing failures.
 
-新文稿这条路与韩文译文的真跑（DeepSeek Flash）见 [`docs/changelog/core/2026-10-01-011216.md`](../../changelog/core/2026-10-01-011216.md)。
-
+The real run of this path for new transcripts and Korean translations (DeepSeek Flash) is in [`docs/changelog/core/2026-10-01-011216.md`](../../changelog/core/2026-10-01-011216.md).

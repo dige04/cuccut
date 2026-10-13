@@ -1,4 +1,4 @@
-/* 少数 style 宏表达不了的规则：窗口拖动区与滚动条。颜色与字号走 S2 的宏。 */
+/* A few rules that style macros cannot express: the window drag region and the scrollbar. Colours and font sizes come from S2's macros. */
 html,
 body,
 #root {
@@ -19,7 +19,7 @@ body,
   -webkit-app-region: no-drag;
 }
 
-/* 滚动条平时透明，指针移进滚动区才显示（原型 ui.css `.cc-scroll`）；轨道宽度一直保留，显隐不挤动内容。 */
+/* The scrollbar is transparent normally and shows only when the pointer moves into the scroll area (prototype ui.css `.cc-scroll`); the track width is always kept, so showing or hiding it does not push content. */
 .cc-scroll {
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
@@ -29,9 +29,9 @@ body,
 }
 
 /*
- * 页面侧栏的行（产品设计 §3.1 用户修订）：整行底色表达当前页与 hover，替换 S2 SideNav 的指示条；
- * 没有子项的行去掉展开钮占的空位。S2 1.7 的内容网格第一个子元素是指示条，后面是缩进与链接。
- * 颜色变量由 PageSidebar 给（style 宏里的 S2 token）。
+ * Rows of the page sidebar (product design §3.1, user revision): the whole row's background shows the current page and hover, replacing S2 SideNav's indicator bar;
+ * rows without children drop the gap the expand button occupies. In S2 1.7 the first child of the content grid is the indicator bar, followed by the indent and the link.
+ * The colour variables are supplied by PageSidebar (S2 tokens in the style macros).
  */
 [data-cc-row] {
   border-radius: 8px;
@@ -50,8 +50,8 @@ body,
   display: none;
 }
 /*
- * 行里的图标与文字：S2 按行框把两者居中，文字的字形中心比行框中心低约 1 px（中文与拉丁大写都是），
- * 看起来文字比图标低。文字上移 1 px 对齐到图标中心。
+ * Icon and text in a row: S2 centres both on the row box, but the glyph centre of the text sits about 1 px below the row-box centre (true for Chinese and for Latin capitals),
+ * so the text looks lower than the icon. Shifting the text up 1 px aligns it to the icon's centre.
  */
 [data-cc-row] a > [data-rsp-slot='text'] {
   position: relative;
@@ -59,9 +59,9 @@ body,
 }
 
 /*
- * 行尾与段头的操作（项目菜单、会话的置顶与归档、段头的整理与新建）：悬停或键盘聚焦时才出现；
- * 用透明度藏起来，它们仍在 Tab 序里。展开钮同理；触屏上一直显示。
- * 项目行的 ActionMenu 不接 UNSAFE_className，按它的菜单按钮来选。
+ * Row-end and section-header actions (project menu, a session's pin and archive, a section's tidy and new): they appear only on hover or keyboard focus;
+ * they are hidden with opacity but remain in the Tab order. The expand button is the same; on touch screens it is always shown.
+ * The ActionMenu of a project row does not accept UNSAFE_className, so it is selected by its menu button.
  */
 .cc-row-actions,
 [data-cc-expandable] button[aria-haspopup] {
@@ -121,24 +121,24 @@ body,
   }
 }
 
-/* 新会话起始页（原型 new-project.css `.home-create`）：输入框正文至少三行高。 */
+/* New-session start page (prototype new-project.css `.home-create`): the input's body text is at least three lines high. */
 [data-composer-start] [contenteditable] {
   min-height: 80px;
 }
 
-/* S2 PromptField 始终生成提示段落；起始页没有提示（`aiDisclaimer` 是空的），空段落不占位。它若留着，盖在项目托盘上面的输入框
-   （z-index 1）底下会多出 24px 透明的一条，挡住托盘里的项目按钮（原型 new-project.css 同一条规则）。 */
+/* S2 PromptField always generates a hint paragraph; the start page has no hint (`aiDisclaimer` is empty), and an empty paragraph takes no space. If it were left in, the input box sitting over the project tray
+   (z-index 1) would show a 24px transparent strip underneath, blocking the project buttons in the tray (prototype new-project.css, same rule). */
 [data-composer-start] p:empty {
   display: none;
 }
 
 /*
- * Workflow 图标的画布（产品设计 §2.1）：只有应用 Rail 用 20px；Rail 以外正文、页面侧栏、菜单、弹层、对话框与标题栏里的
- * workflow 图标一律 16px。按 S2 workflow 图标的特征（role=img、20×20 viewBox）匹配，不靠逐个容器声明；S2 的 UI 图形
- * （viewBox 更小）、插画、缩略图与画面内容不受影响。S2 的样式在 cascade layer 里，这里不分层，所以连 iconStyle 写死的
- * 尺寸也会被改成 16——要保留自己尺寸的在图标或其容器上标 `data-cc-icons="own"`（标签关闭等 14px 的 UI 图形、空态与
- * 结果的大图形、编辑器里的小角标、画面与 Space 类型预览）。图标块（32–48px 底块里的标识）用 `data-cc-icons="primary"`，
- * 和 Rail 一样 20px。
+ * The canvas for Workflow icons (product design §2.1): only the application Rail uses 20px. Outside the Rail, the body text, page sidebar, menus, popovers, dialogs and title bar
+ * use 16px for all workflow icons. They are matched by the features of S2's workflow icons (role=img, 20×20 viewBox), not by declaring each container; S2's UI graphics
+ * (smaller viewBox), illustrations, thumbnails and on-canvas content are unaffected. S2's styles live in a cascade layer and this file does not use layers, so even sizes hard-coded by iconStyle
+ * will be changed to 16. To keep one's own size, mark the icon or its container with `data-cc-icons="own"` (14px UI graphics such as tag close, large graphics for empty states and results,
+ * small corner badges in the editor, and canvas and Space-type previews). Icon blocks (the mark inside a 32–48px base block) use `data-cc-icons="primary"`,
+ * and are 20px, like the Rail.
  */
 :root {
   --cc-icon-primary: 20px;
@@ -158,9 +158,9 @@ svg[role='img'][viewBox='0 0 20 20']:not(
 }
 
 /*
- * 模板封面（components/start/template-cover.tsx；原型 home-templates.css）：画进视频画面的内容。
- * 颜色由组件给（style 宏的 S2 token）；这里只有几何：统一的 16:10 格子里按模板的画幅放一帧，
- * --u 是画面里图形的单位，跟着尺寸档走。
+ * Template covers (components/start/template-cover.tsx; prototype home-templates.css): the content drawn into the video frame.
+ * The colours are supplied by the component (S2 tokens in the style macros); here there is only geometry: a frame of the template at its aspect ratio, placed in a uniform 16:10 cell,
+ * --u is the unit for graphics within the frame, following the size tier.
  */
 .cc-tpl-cover {
   position: relative;
@@ -334,7 +334,7 @@ svg[role='img'][viewBox='0 0 20 20']:not(
   padding: 4px;
   gap: 1px;
 }
-/* 封面图与预览视频（清单 cover.file / preview.file）：盖在占位封面上，加载前与失败时看到的是占位。 */
+/* Cover image and preview video (manifest cover.file / preview.file): placed over the placeholder cover; before loading and on failure, the placeholder is what shows. */
 .cc-tpl-cover__image,
 .cc-tpl-cover__video {
   position: absolute;
@@ -351,8 +351,8 @@ svg[role='img'][viewBox='0 0 20 20']:not(
 }
 
 /*
- * 起始页「快捷开始」卡片（components/start/home-starters.tsx；原型 new-project.css .home-quick）：
- * 色系由深到浅的底，正中一块小屏，屏里按这件事画几笔。颜色变量（--cc-quick-*）由组件给（style 宏里的 S2 token），这里只有几何。
+ * Start-page “Quick start” cards (components/start/home-starters.tsx; prototype new-project.css .home-quick):
+ * a base running from deep to light in one colour family, with a small screen in the middle on which a few strokes are drawn for the task. The colour variables (--cc-quick-*) are supplied by the component (S2 tokens in the style macros); here there is only geometry.
  */
 .cc-quick-card {
   transition:
@@ -391,7 +391,7 @@ svg[role='img'][viewBox='0 0 20 20']:not(
   border-radius: 4px;
   background: var(--cc-quick-1000);
 }
-/* 加字幕：上面是画面，下面两行字幕 */
+/* Add subtitles: picture on top, two lines of subtitles below */
 .cc-quick-screen[data-kind='sub'] {
   flex-direction: column;
   align-items: center;
@@ -411,7 +411,7 @@ svg[role='img'][viewBox='0 0 20 20']:not(
   width: 48%;
   background: var(--cc-quick-400);
 }
-/* 转录并翻译：原文（灰）与译文（色）一行对一行 */
+/* Transcribe and translate: original (grey) and translation (colour) line by line */
 .cc-quick-screen[data-kind='trans'] {
   flex-direction: column;
   justify-content: center;
@@ -435,7 +435,7 @@ svg[role='img'][viewBox='0 0 20 20']:not(
 .cc-quick-screen[data-kind='trans'] i:nth-child(4) {
   width: 52%;
 }
-/* 剪口播：一段波形，中间要剪掉的几拍是灰的；音频转视频：一张封面圆片配一段波形 */
+/* Cut talking-head: a waveform, with the few beats to be cut out in the middle greyed out; audio to video: a round cover disc paired with a waveform */
 .cc-quick-screen[data-kind='clean'],
 .cc-quick-screen[data-kind='a2v'] {
   align-items: center;
@@ -478,9 +478,9 @@ svg[role='img'][viewBox='0 0 20 20']:not(
 }
 
 /*
- * 「全部模板」弹窗的两栏（components/start/template-library.tsx；原型 home-templates.css .home-tpl）：
- * 左边找，右边看；两栏各自滚动，弹窗高度不随翻页与换模板跳动。窄窗口叠成上下，整块一起滚。
- * 分隔线的颜色变量由组件给（style 宏里的 S2 token）。
+ * The two columns of the “All templates” dialog (components/start/template-library.tsx; prototype home-templates.css .home-tpl):
+ * find on the left, look on the right. Each column scrolls on its own, and the dialog height does not jump when paging or switching templates. In a narrow window they stack top and bottom, and the whole block scrolls together.
+ * The divider colour variable is supplied by the component (S2 tokens in the style macros).
  */
 .cc-tpl-library {
   display: grid;
@@ -536,7 +536,7 @@ svg[role='img'][viewBox='0 0 20 20']:not(
     grid-template-columns: minmax(0, 1fr);
     height: auto;
   }
-  /* 上下排时列表自己滚，详情不被九张卡片挤到很下面。 */
+  /* When stacked top and bottom, the list scrolls by itself, so the details are not pushed far down by the nine cards. */
   .cc-tpl-library__list {
     flex: none;
     max-height: 44vh;
@@ -558,16 +558,16 @@ svg[role='img'][viewBox='0 0 20 20']:not(
 }
 
 /*
- * 输入区的提示（原型 spectrum.css `.cc-ai-prompt`）：PromptTokenField 的提示是 contenteditable 自己的 :empty::before，
- * 继承正文色，聚焦时和已输入的文字一样深；降到 gray-500，和普通输入框的 placeholder 一致。颜色变量由 Composer 给（style 宏里的 S2 token）。
+ * Hint in the input area (prototype spectrum.css `.cc-ai-prompt`): PromptTokenField's hint is the contenteditable's own :empty::before,
+ * inheriting the body text colour; when focused it is as dark as typed text, and it drops to gray-500 so that it matches an ordinary input's placeholder. The colour variable is supplied by Composer (S2 tokens in the style macros).
  */
 [data-composer] [role='textbox'][data-placeholder]:empty::before {
   color: var(--cc-prompt-placeholder);
 }
 
 /*
- * 页签悬停缩略卡（components/workspace/workspace-tab-preview.tsx；原型 `.shell-tab-preview*`）：缩略图区的底边分隔线；
- * 面板的克隆按 960 × 600 排版，再整体缩到卡片宽（280 / 960）。分隔线颜色变量由组件给。
+ * Tab-hover thumbnail card (components/workspace/workspace-tab-preview.tsx; prototype `.shell-tab-preview*`): the bottom divider of the thumbnail area;
+ * the panel's clone is laid out at 960 × 600, then scaled as a whole to the card width (280 / 960). The divider colour variable is supplied by the component.
  */
 .cc-tab-preview-image {
   border-bottom: 1px solid var(--cc-tab-preview-line);

@@ -6,7 +6,7 @@
   "order": 9,
   "prop": null,
   "ease": null,
-  "doc": "甩镜：离场 clip 以 easeInQuart 加速甩出 1.2 个画布宽（超程），入场 clip 以 easeOutQuart 从 +1.2 个画布宽刹停回位；两侧各配一条 Quart 透明度通道，在甩程两端洗白，近似甩镜的拖影。真正的运动模糊要离屏，属 Surface Transition（规范 §9）。",
+  "doc": "Whip pan: the outgoing clip is flung out with easeInQuart, accelerating past the canvas by 1.2 canvas widths (overshoot); the incoming clip slides in with easeOutQuart from +1.2 canvas widths and brakes into place. Each side gets a Quart opacity channel that washes out at both ends of the pan, approximating the smear of a whip pan. True motion blur needs an offscreen pass and belongs to Surface Transition (spec §9).",
   "out": {
     "channels": [
       {

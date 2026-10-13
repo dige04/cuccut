@@ -1,48 +1,48 @@
 # AGENTS.md
 
-CucCut 编码代理的通用规则。本文只保留全局约束和阅读入口；细则按任务加载，目录内的 `AGENTS.md` 补充局部约束。
+General rules for coding agents in CucCut. This document keeps only the global constraints and the reading entry points. Details are loaded per task, and the local `AGENTS.md` in a directory adds local constraints.
 
-## 阅读与语言
+## Reading and language
 
-- 默认跟随用户输入的语言回复；代码标识符、命令与已有术语保持原样。
-- 先按下表定位，再从相关文档目录选 1–3 个章节读，随后看目标目录的 README、局部 `AGENTS.md` 与相邻测试；不要通读 `docs/`。
-- 根文件保持精简，不超过 80 行、6 KB；新增细则放到所属文档，在这里写明触发条件与链接，不复制正文。
+- By default, reply in the language the user writes in. Code identifiers, commands and existing terms stay as they are.
+- Locate the material with the table below first, then read 1–3 sections from the relevant docs directory. Next, read the target directory's README, its local `AGENTS.md` and adjacent tests. Do not read all of `docs/`.
+- Keep the root file concise: no more than 80 lines and 6 KB. Put new details in the document they belong to, and state the trigger condition and link here without copying the body.
 
-## 按需阅读
+## On-demand reading
 
-| 何时 | 读什么 |
+| When | What to read |
 | --- | --- |
-| 定位模块、运行项目 | [根 README](README.md)；目录与依赖边界见[仓库约定](docs/repo-conventions.md) |
-| 新建文件、包或 crate | [仓库约定](docs/repo-conventions.md)（放置与命名） |
-| 新增或修改代码标识、枚举、分类或结果键（必须用英文） | [仓库约定 §3](docs/repo-conventions.md#3-命名) |
-| 产品、架构、格式、协议或领域行为 | [文档阅读路线](docs/README.md#阅读路线)，选择对应主题与章节 |
-| 修改规范或其他文档 | [文档约定](docs/README.md#文档约定)；[开发流程 §1](docs/development-workflow.md#1-规范与实现) |
-| 准备验证改动 | [开发流程 §2](docs/development-workflow.md#2-验证)；通过标准见[验收与测试](docs/acceptance/acceptance-spec.md) |
-| 修改用户可见 UI（原型先行） | [开发流程 §3](docs/development-workflow.md#3-多端同步)；图标见[仓库约定 §4](docs/repo-conventions.md#4-界面图标) |
-| 修改原型 | [原型 README](designs/cuccut/README.md) → [原型局部协议](designs/cuccut/AGENTS.md) |
-| 启动或重启设计网页 | [原型局部协议「HTTP 预览」](designs/cuccut/AGENTS.md#http-预览) |
-| 修改提示词、语言处理或平台专属实现 | [开发流程 §4](docs/development-workflow.md#4-语言与平台) |
-| 修改文件或目录的打开、定位、选择，或其他系统集成 | [开发流程 §4.1](docs/development-workflow.md#41-跨平台系统集成) |
-| 新增或修改给人看的文字（界面、错误、CLI 输出） | [仓库约定 §5](docs/repo-conventions.md#5-文案与多语言)；用词见[术语表](docs/glossary.md#界面英文用词) |
-| 修改依赖、生成物，或使用 worktree | [开发流程 §5](docs/development-workflow.md#5-工作区与产物) |
-| 复盘某次运行：找会话记录、工具调用参数、产物 | [开发流程 §5.3](docs/development-workflow.md#53-开发态数据与会话记录) |
+| Locate a module, run the project | [Root README](README.md); directory and dependency boundaries in [Repository conventions](docs/repo-conventions.md) |
+| Create a new file, package or crate | [Repository conventions](docs/repo-conventions.md) (placement and naming) |
+| Add or change code identifiers, enums, categories or result keys (must be in English) | [Repository conventions §3](docs/repo-conventions.md#3-naming) |
+| Product, architecture, formats, protocols or domain behaviour | [Docs reading route](docs/README.md#reading-routes); choose the matching topic and section |
+| Change the specs or other docs | [Documentation conventions](docs/README.md#conventions-for-this-document); [Development workflow §1](docs/development-workflow.md#1-specification-and-implementation) |
+| Prepare to verify a change | [Development workflow §2](docs/development-workflow.md#2-verification); pass criteria in [Acceptance and testing](docs/acceptance/acceptance-spec.md) |
+| Change user-visible UI (prototype first) | [Development workflow §3](docs/development-workflow.md#3-multi-surface-sync); icons in [Repository conventions §4](docs/repo-conventions.md#4-interface-icons) |
+| Change a prototype | [Prototype README](designs/cuccut/README.md) → [Prototype local protocol](designs/cuccut/AGENTS.md) |
+| Start or restart the design web page | [Prototype local protocol "HTTP preview"](designs/cuccut/AGENTS.md#http-预览) |
+| Change prompts, language handling or platform-specific implementation | [Development workflow §4](docs/development-workflow.md#4-language-and-platform) |
+| Change opening, locating or selecting files or directories, or other system integration | [Development workflow §4.1](docs/development-workflow.md#41-cross-platform-system-integration) |
+| Add or change text meant for people (UI, errors, CLI output) | [Repository conventions §5](docs/repo-conventions.md#5-copy-and-multilingual-support); wording in the [Glossary](docs/glossary.md#english-ui-terms) |
+| Change dependencies or generated outputs, or use worktrees | [Development workflow §5](docs/development-workflow.md#5-workspace-and-artifacts) |
+| Review a run: find session records, tool-call arguments, artifacts | [Development workflow §5.3](docs/development-workflow.md#53-development-data-and-session-records) |
 
-## 通用约束
+## General constraints
 
-- 协议、格式或公开行为有意变化时，在同一任务同步实现、对应规范与测试；发现冲突明确说明，不为迁就实现擅改规格。
-- UI 变化先只改原型并交用户确认，确认后才改 Electron 与 Web（[开发流程 §3](docs/development-workflow.md#3-多端同步)）；届时审计三个表面的对应功能并同步适用部分，无对应功能说明原因。后台改动未改变用户可见行为时不触发 UI 同步。
-- 验证按影响选择最小但充分的范围；视觉改动检查实际页面，文档改动核对链接、路径与命令，不把未执行的检查写成通过。
-- 产品能力不假定中文或英文；语言分支有明确兜底，平台专属代码条件化；系统集成必须审计 Windows / macOS 与 Web 的能力差异，按[开发流程 §4.1](docs/development-workflow.md#41-跨平台系统集成)验证。
-- 依赖变化同步相应 lockfile；生成物遵守所属目录规则，临时产物放仓库外的临时目录。
+- When a protocol, format or public behaviour changes on purpose, implement it in the same task and update the matching spec and tests. If a conflict is found, state it explicitly; do not quietly change the spec to fit the implementation.
+- UI changes: change only the prototype first and hand it to the user for confirmation. Only after confirmation, change Electron and Web ([Development workflow §3](docs/development-workflow.md#3-multi-surface-sync)). Then audit the corresponding features on all three surfaces and sync the applicable parts; where a feature has no counterpart, state why. Background changes that do not change user-visible behaviour do not trigger UI sync.
+- Verify at the smallest scope that is still sufficient for the impact. For visual changes, check the actual page; for doc changes, check links, paths and commands. Do not write unexecuted checks as passed.
+- Product capabilities must not assume Chinese or English. Language branches have explicit fallbacks, and platform-specific code is conditional. System integration must audit the capability differences between Windows / macOS and Web, and be verified per [Development workflow §4.1](docs/development-workflow.md#41-cross-platform-system-integration).
+- When a dependency changes, sync the corresponding lockfile. Generated outputs follow the rules of the directory they belong to; temporary artifacts go in a temp directory outside the repository.
 
-## 强制完成门
+## Mandatory completion gate
 
-凡是修改文件的实现任务，都必须在最终回复前创建 git commit。
+Every implementation task that modifies files must create a git commit before the final reply.
 
-- 开始编辑前先检查 `git status`，把任务前已有或并发出现的工作区改动视为用户所有。
-- 提交前审阅最终 diff，并按风险运行适量验证；始终报告实际执行的检查和已知跳过项。
-- 只暂存本任务所属的文件或 hunk；`git add` 后复核 `git diff --cached`，不得夹带无关改动。
-- 在当前分支按[提交分类](docs/development-workflow.md#11-提交分类)使用 `type(scope): summary`，同类修复使用统一 scope；提交信息默认英文，写明具体变化，不加署名行；最终回复报告 commit hash。
-- 完成任务后只创建本地 commit，不得自动 push（包括 force push）。推送必须由用户针对当前任务另行明确要求，之前任务的推送授权不得沿用。
-- 分支／worktree 合并回 `main` 前，按[合并前提交整理](docs/development-workflow.md#12-合并前提交整理)归并为一条或少量有意义的 commit；除上述整理或用户明确要求外，不得 amend 或改写历史。只读任务与没有文件改动的任务不得创建空提交。
-- **worktree 不遗留**：在 worktree（含 subagent 的 `.claude/worktrees/agent-*`）里做的任务，完成时必须删除该 worktree 及其分支。它专用的 cargo target 目录一并删掉。删除前二选一：合并进 `main`；或不合并时先把未提交改动提交到该分支，打 `archive/<worktree 名>` tag 存档，再 `git worktree remove` + `git branch -D`。编排 subagent 的会话负责收尾它派生的 worktree。确需保留的（待用户裁决、有冲突待解）在最终回复里点名路径与原因，不得默默留下。
+- Before editing, check `git status`. Treat workspace changes that existed before the task, or appeared concurrently, as belonging to the user.
+- Before committing, review the final diff and run verification proportional to the risk. Always report the checks actually run and any known skipped items.
+- Stage only the files or hunks that belong to this task. After `git add`, re-check `git diff --cached`, and do not sneak in unrelated changes.
+- On the current branch, use `type(scope): summary` per [commit classification](docs/development-workflow.md#11-commit-classification). Fixes of the same kind use one unified scope. Commit messages default to English, state the concrete change, and carry no sign-off lines. The final reply reports the commit hash.
+- After finishing, create only a local commit and never push automatically (including force push). Pushing requires the user to explicitly ask for it for the current task; push authorization from an earlier task must not be carried over.
+- Before merging a branch or worktree back into `main`, consolidate it into one or a few meaningful commits per [pre-merge commit cleanup](docs/development-workflow.md#12-commit-tidying-before-merge). Except for that cleanup or an explicit user request, do not amend or rewrite history. Read-only tasks and tasks with no file changes must not create empty commits.
+- **No leftover worktrees:** a task done in a worktree (including a subagent's `.claude/worktrees/agent-*`) must, when finished, have that worktree and its branch deleted, along with its dedicated cargo target directory. Before deleting, choose one of two options: merge into `main`; or, if not merging, first commit any uncommitted changes to that branch, tag `archive/<worktree name>` to archive it, then run `git worktree remove` and `git branch -D`. The session that orchestrates subagents is responsible for cleaning up the worktrees it spawned. Any worktree that must be kept (pending the user's decision, or with an unresolved conflict) must be named with its path and reason in the final reply; do not leave it silently.

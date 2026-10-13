@@ -6,7 +6,7 @@
   "order": 8,
   "prop": null,
   "ease": null,
-  "doc": "镜头「穿过」离场画面：离场 clip 以画布中心为锚点加速推近到 2.5× 并淡出（easeInCubic），入场 clip 从 0.5× 减速落回 1× 并淡入（easeOutCubic）。两条 scale 通道以画布中心为锚点，逐条相乘。",
+  "doc": "The camera “passes through” the outgoing frame: the outgoing clip zooms in toward the canvas center, accelerating to 2.5× and fading out (easeInCubic), while the incoming clip decelerates from 0.5× back to 1× and fades in (easeOutCubic). The two scale channels are anchored at the canvas center and multiplied together.",
   "out": {
     "channels": [
       {

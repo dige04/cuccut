@@ -1,5 +1,5 @@
 {
-  "$comment": "阶段 A 示例：studio/style.json 只动 wordAnimation.caption（schema 1 不变，新增 seed 与 options.daoyazi）。阶段 C 的 captionSequences 见 ccut-daoyazi-caption-design.md §5.4，这里不出现。",
+  "$comment": "Stage A example: studio/style.json only changes wordAnimation.caption (schema 1 unchanged; adds seed and options.daoyazi). Stage C's captionSequences are described in ccut-daoyazi-caption-design.md §5.4 and are not shown here.",
   "ccutStudioStyle": "0.1",
   "tracks": [
     { "role": "source", "lang": "zh-CN", "hidden": false },

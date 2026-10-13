@@ -1,20 +1,20 @@
-你要做一条软件演示，用一条真实的使用流程说明这个功能怎样解决用户的问题。
+You are making a software demo that uses one real workflow to show how this feature solves the user's problem.
 
-## 结构
+## Structure
 
-1. 问题：一句话说清用户遇到了什么麻烦。
-2. 入口：展示从哪里打开对应的功能。
-3. 操作：按真实顺序演示关键步骤，每一步只讲一件事。
-4. 结果：展示完成后的效果，并点明省下了什么。
+1. Problem: say in one sentence what trouble the user runs into.
+2. Entry point: show where to open the feature.
+3. Actions: demonstrate the key steps in their real order, covering one thing per step.
+4. Result: show the finished outcome and point out what it saves.
 
-## 画面与声音
+## Visuals and sound
 
-- 录屏或截图按需要放大到操作区域，用光标高亮、点击提示或框选引导视线。
-- 每一步配简短的字幕与旁白，界面上的文字保持清晰可读。
-- 节奏紧凑，等待加载之类的空档剪掉。
+- Zoom the recording or screenshots in on the area being used as needed, and guide the eye with cursor highlights, click indicators or selection boxes.
+- Give each step a short subtitle and narration, and keep text in the interface clear and legible.
+- Keep the pace tight; cut dead time such as waiting for things to load.
 
-## 注意
+## Notes
 
-- 只演示软件实际具备的功能，不用效果图冒充真实界面。
-- 画面里出现的账号、邮箱等个人信息要打码或换成示例数据。
-- 旁白与字幕使用简报里确认的语言。
+- Only demonstrate features the software actually has. Don't pass off mockups as the real interface.
+- Blur any personal information on screen, such as account names and email addresses, or replace it with sample data.
+- Use the language confirmed in the brief for narration and subtitles.

@@ -3,31 +3,31 @@
   "id": "physics-ball-escape",
   "version": "1.1.0",
   "kind": "example",
-  "title": "解压物理动画",
-  "summary": "用代码做一条小球冲出层层圆环的解压动画。",
-  "description": "一个小球在一层层旋转的圆环里弹跳、撞开缺口逃出去，物理运动真实又带悬念。全部用代码生成，适合做成让人想反复看的横屏短片。",
-  "language": "zh-CN",
+  "title": "Satisfying physics animation",
+  "summary": "Use code to make a satisfying animation of a ball breaking out of rings.",
+  "description": "A ball bounces inside layer after layer of spinning rings, breaking through gaps to escape, with physics that feel real and keep the suspense going. Generated entirely in code, it makes a landscape short people want to watch again and again.",
+  "language": "en",
   "category": "motion-design",
   "ratio": "16:9",
   "fields": [
     {
-      "label": "时长",
-      "hint": "成片大概多长",
-      "example": "30 秒"
+      "label": "length",
+      "hint": "Roughly how long the video should be",
+      "example": "30 seconds"
     },
     {
-      "label": "配色",
-      "hint": "想要的配色，越鲜明越抓眼球",
-      "example": "黑底配鲜明的霓虹色"
+      "label": "color scheme",
+      "hint": "The colors you want; the bolder, the more eye-catching",
+      "example": "vivid neon on black"
     }
   ],
   "author": "CucCut",
   "source": "official",
   "license": "LicenseRef-CucCut-Community-1.0",
   "tags": [
-    "物理",
-    "代码动画",
-    "解压"
+    "physics",
+    "code animation",
+    "satisfying"
   ],
   "skills": [
     "video-production"
@@ -41,10 +41,10 @@
   "preview": {
     "file": "preview.mp4",
     "beats": [
-      "小球在最里层弹跳",
-      "撞开第一道缺口",
-      "圆环一层层减少",
-      "彻底逃脱"
+      "The ball bounces in the innermost ring",
+      "Breaking through the first gap",
+      "The rings fall away one by one",
+      "A clean escape"
     ]
   },
   "verification": {

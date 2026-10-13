@@ -1,32 +1,32 @@
-> 移植自 CucCut v2；文中的数据模型名（TranscriptDoc 等）指 v2 的模型，与 v3 文档模型的对应见[架构设计 §14](../../architecture/architecture-design.md#14-待评审事项)。
+> Ported from CucCut v2. The data model names in this document (TranscriptDoc, etc.) refer to the v2 models. For how they correspond to the v3 document models, see [Architecture design §14](../../architecture/architecture-design.md#14-items-pending-review).
 
-# 术语库设计稿（跨项目专名表）
+# Glossary Library Design Draft (Cross-Project Terminology Table)
 
-> 状态：2026-09-20 原型先行（`designs/cuccut`，产品规格 [§15.10](../product/product-design/15-glossary.md)），同日二次收口为**两种表**（转录术语表 / 翻译术语表，§2）。纯层与 App v2 已落地，CLI 与识别提示通道未做（§6）。
+> Status: 2026-09-20 prototype first (`designs/cuccut`, product spec [§15.10](../product/product-design/15-glossary.md)). The same day it was narrowed to **two kinds of table** (transcription glossary / translation glossary, §2). The pure layer and App v2 have landed; the CLI and the recognition-hint channel are not built yet (§6).
 
-## 1. 为什么需要第二层
+## 1. Why a second layer is needed
 
-项目里已经有一张术语表：`ai/context.md` 的 `# Canonical Terms`（`Source | Category | Variants | Note | Lock | Origin`）与 `ai/context.<lang>.md` 的 `# Bilingual Glossary`（`Source | Target | Note | Lock | Origin`），由分析阶段的模型抽出、随项目走（[文件契约 §5](ccut-file-contract-subtitle-ai-design/05.md)）；翻译阶段读到的是它在 `ai/brief-<lang>.json` 里的投影 `glossary[]`（`GlossaryEntry { source, target, note, locked }`，`engines/brief.rs`）。它已经接上四道硬约束：
+The project already has a glossary: `# Canonical Terms` in `ai/context.md` (`Source | Category | Variants | Note | Lock | Origin`) and `# Bilingual Glossary` in `ai/context.<lang>.md` (`Source | Target | Note | Lock | Origin`). The analysis stage's model extracts them, and they travel with the project ([file contract §5](ccut-file-contract-subtitle-ai-design/05.md)). The translation stage reads their projection in `ai/brief-<lang>.json` as `glossary[]` (`GlossaryEntry { source, target, note, locked }`, `engines/brief.rs`). It already has four hard constraints:
 
-1. `Lock=yes` 的双语行编译进翻译 payload 的 `rt`（required targets）；
-2. `validate_translated_page` 缺 `rt` 判 `Malformed`；
-3. 本地 Agent 路径 `lint_agent_answer` 同判据；
-4. `ccut … check` 汇总 `missingTargets`。
+1. Bilingual rows with `Lock=yes` are compiled into the translation payload's `rt` (required targets);
+2. `validate_translated_page` marks a page `Malformed` when `rt` is missing;
+3. The local Agent path `lint_agent_answer` uses the same criterion;
+4. `ccut … check` aggregates `missingTargets`.
 
-缺的是**用户自己的、跨项目的**那一层：专业领域的惯例（`commit` 在量价方法里是「突破确认」）既不会被模型猜中，也不该每个项目重抽一次。
+What is missing is the **user's own, cross-project** layer. Field conventions (`commit` in volume-price methods means “突破确认” (breakout confirmation)) are neither guessed correctly by the model nor should they be re-extracted for every project.
 
-**术语库是那张表的上游，不是并行机制。** 库只做一件事：把**本篇命中的**条目以 `Origin=user` 写进项目那张表。这样下游一行不改，`ccut lint` / `check` / 翻译校验的口径全部沿用；用户手改项目那张表仍然有效（`Origin=user` 的行在既有归并里已经优先于 `analyzed`）。
+**The glossary library is upstream of that table, not a parallel mechanism.** The library does one thing: it writes the entries **hit by the current piece** into the project's table with `Origin=user`. Downstream then needs no changes, and the `ccut lint` / `check` / translation validation rules all stay as they are. Users' manual edits to the project table remain valid (`Origin=user` rows already take precedence over `analyzed` in the existing merge).
 
-同一个理由决定了**库文件的格式就是同构的 Markdown 表**：人能读、能手改、能发给同事，导入导出不需要第二种格式，也不需要第二套解析器（复用 `filepipe::context_md`，用户文件走 `ParseMode::Strict`，剪贴板导入可放宽到 `Model` 并把消解过的地方作为警告报出来）。
+For the same reason, **the library file format is the same-shaped Markdown table**: people can read it, edit it by hand, and send it to colleagues. Import and export need no second format and no second parser (it reuses `filepipe::context_md`; user files use `ParseMode::Strict`, while clipboard import can be relaxed to `Model` and report the places it resolved as warnings).
 
-## 2. 数据模型
+## 2. Data model
 
-**库里有两种表，一张表一个 Markdown 文件。**第一版把误识与译名记在同一条里，加一条词要填六格、译名按目标语各存一份、方向无处可写；二次收口拆开：
+**The library holds two kinds of table, one table per Markdown file.** The first version recorded misrecognitions and translated names in the same entry, so adding one word meant filling six cells, translated names had to be stored per target language, and the direction had nowhere to go. The second version splits them:
 
-| 种类 | front matter | 正文 | 一条是什么 | 用在哪 |
+| Kind | Front matter | Body | What one entry is | Used for |
 | --- | --- | --- | --- | --- |
-| 转录术语表 | `kind: transcribe`，可选 `lang`（口播语言，缺省 = 任意） | `# Canonical Terms` | 规范写法 + 常听错成（`Variants`，可空） | 转录的识别提示、润色纠正、翻译命中时借它的误识 |
-| 翻译术语表 | `kind: translate`，`from`（可缺省 = 任意）、`to`（必填） | `# Bilingual Glossary` | 原文 → 译文，可选备注，`Lock` 默认 `yes` | 翻译；**只有方向对得上的表参与** |
+| Transcription glossary | `kind: transcribe`, optional `lang` (spoken language; default = any) | `# Canonical Terms` | Canonical spelling + commonly misheard forms (`Variants`, may be empty) | Transcription recognition hints and polishing corrections; when a translation hits, it borrows the misrecognitions |
+| Translation glossary | `kind: translate`, `from` (may be omitted = any), `to` (required) | `# Bilingual Glossary` | Source → target, optional note, `Lock` defaults to `yes` | Translation; **only tables whose direction matches take part** |
 
 ```markdown
 ---
@@ -60,104 +60,104 @@ default: true
 | KV cache | other | 开维缓存, KV 换成 |  | no | user |
 ```
 
-约束与项目那张表同源，不新增语义：
+The constraints share a source with the project table and add no new semantics:
 
-- 表格列沿用项目那张表的形状，所以解析器仍是 `filepipe::context_md` 那一套。**`Category` 不再让用户填**，库一律写 `other`（读入时闭集外的值降级为 `other` 并报警告）；转录表的 `Lock` 恒为 `no`。
-- 归并键 = `term_merge_key`（小写、去空白、去 ASCII 标点）：`KV cache` / `kv-cache` / `KV Cache` 是同一条。
-- `Variants` 只写**真的被听错过**的写法。这条是反幻觉条款：编出来的近义词会把本来正确的句子改坏，代价不对称。
-- **翻译条目默认 `Lock=yes`**：用户自己写下的译文本来就是要求。`Lock=no` 在 UI 里叫「可变通」（优先用、语境不合时可以换）。翻译条目两格都必填，所以不存在「锁定却没有译名」的行。
-- **方向匹配**：`from` 按主子标签比（`zh-Hans` / `zh-CN` / `zh` 同为 `zh`），缺省或 `auto` = 任意原文语言；`to` 按语言目录的规范 code 比（`zh` ≠ `zh-Hant`——译成简体与译成繁体是两张表）。语言 code 与名字一律取全 App 共用的语言目录（真身是无依赖的叶子 crate `ccut-lang`，`ccut-editor-core::translate_list::LANGS` 是它的翻译子集门面，原型镜像 `app/model-languages.js`），**术语库不自带语言表**——转录 / 翻译 / 配音读的也是同一份。
-- **冲突只在同一方向内算**：同一方向里两张启用的表把同一个原文译成不同的词，启用顺序靠前的赢；不同方向互不相干。转录表之间没有冲突，`Variants` 取并集。
-- **掉头**：翻译表可以生成反向表（原文译文互换、`from`/`to` 互换，掉头后归并键撞车的只留第一条，`from` 为任意时反向表的 `to` 无从得知，不提供）。生成的表默认不启用——译名不总是可逆的，要人过一眼。
+- The table columns follow the shape of the project table, so the parser is still the `filepipe::context_md` one. **`Category` is no longer filled in by users**: the library always writes `other` (values outside the closed set are downgraded to `other` on read, with a warning). The `Lock` of a transcription table is always `no`.
+- Merge key = `term_merge_key` (lowercase, whitespace removed, ASCII punctuation removed). `KV cache` / `kv-cache` / `KV Cache` are the same entry.
+- `Variants` lists only spellings that **were actually misheard**. This is an anti-hallucination clause: invented near-synonyms would corrupt correct sentences, and the cost is asymmetric.
+- **Translation entries default to `Lock=yes`**: a translation the user wrote is meant to be enforced. `Lock=no` is called “可变通” (flexible) in the UI: it is preferred, but may be replaced when the context does not fit. Both cells of a translation entry are required, so there is no row that is locked but has no translated name.
+- **Direction matching**: `from` is compared by primary subtag (`zh-Hans` / `zh-CN` / `zh` are all `zh`); omitted or `auto` = any source language. `to` is compared by the canonical code in the language catalog (`zh` ≠ `zh-Hant`: translating into Simplified and into Traditional are two tables). Language codes and names always come from the language catalog shared by the whole App (the real one is the dependency-free leaf crate `ccut-lang`; `ccut-editor-core::translate_list::LANGS` is its translation-subset facade; the prototype mirrors `app/model-languages.js`). **The glossary library carries no language table of its own**: transcription, translation and dubbing read the same one.
+- **Conflicts count only within the same direction**: within one direction, if two enabled tables translate the same source term into different words, the table earlier in the enabled order wins. Different directions do not interact. There are no conflicts between transcription tables; their `Variants` are unioned.
+- **Reversal**: a translation table can generate a reverse table (source and target swapped, `from`/`to` swapped). When reversal makes merge keys collide, only the first entry is kept. When `from` is any, the reverse table's `to` cannot be known, so reversal is not offered. The generated table is disabled by default, because translated names are not always reversible and a person should check it.
 
-**第一版的混合文件**（没有 `kind`、两个小节都有）读入时**无损拆成两张**：`# Canonical Terms` 进同名的转录表（`lang` 缺省），`# Bilingual Glossary` 进同名的翻译表（`from` 缺省，`to` 取旧 front matter 的 `targetLang`，没有就取 `targets` 的第一个）。只有一个小节的旧文件按小节定种类。磁盘上的旧文件在第一次写回时按新形状落盘（翻译那一半另起一个文件）。这同时裁决了旧 Q1 / Q2：**一张翻译表只有一个方向，一个方向一个文件**，不加语言列。
+**Mixed files from the first version** (no `kind`, both sections present) are **losslessly split into two tables** on read. `# Canonical Terms` goes into a transcription table of the same name (`lang` defaults). `# Bilingual Glossary` goes into a translation table of the same name (`from` defaults, `to` takes the old front matter's `targetLang`, or else the first of `targets`). Old files with only one section are classified by that section. Old files on disk are written in the new shape on their first write-back (the translation half gets its own file). This also settles the old Q1 / Q2: **a translation table has exactly one direction, and one file per direction**, with no language column.
 
-**批量录入的行格式**（UI 的「一次粘一批」、剪贴板导入、CLI `add --from-file` 共用一只解析）：一行一条，分隔符认 `=`、`→`、`->`、`=>`、Tab；第三格是备注；转录表右边用 `、` `,` `·` 分多个误识，只写规范写法也行；`|` 开头的按 Markdown 表行读，有表头就按表头找列（`Source / Target / Variants / Note`）。解析不了的行**连同原因一起返回**，不悄悄丢。
+**Bulk-entry line format** (shared by the UI's “一次粘一批” (paste a batch at once), clipboard import, and CLI `add --from-file`, parsed by one parser): one entry per line. Separators accept `=`, `→`, `->`, `=>`, and Tab. The third cell is the note. On a transcription table, the right side uses `、` `,` `·` to separate multiple misrecognitions, and writing only the canonical spelling is also fine. Lines starting with `|` are read as Markdown table rows; if there is a header, columns are found by the header (`Source / Target / Variants / Note`). Lines that cannot be parsed are **returned together with the reason**, not silently dropped.
 
-**存放位置**：用户数据目录（macOS `~/Library/Application Support/CucCut/glossary/*.md`，Windows `%LOCALAPPDATA%\ccut\glossary\*.md`），App 与 CLI 共用一份，与 `tts-pace.json` 同级同规则。项目侧只存**启用了哪几张表**（id 数组，两种表共用一个），不复制内容；没定过的项目取 `default: true` 的那几张。
+**Storage location**: the user data directory (macOS `~/Library/Application Support/CucCut/glossary/*.md`, Windows `%LOCALAPPDATA%\ccut\glossary\*.md`), shared by the App and the CLI, at the same level and under the same rules as `tts-pace.json`. The project side stores only **which tables are enabled** (an array of ids, shared by both kinds), not their contents. Projects that have not set anything take the tables with `default: true`.
 
-## 3. 编译进项目：只带命中的
+## 3. Compiled into the project: only what is hit
 
-跑润色或翻译前，按项目启用的、**这一步用得上的**表（润色 = 口播语言对得上的转录表；翻译 = 方向对得上的翻译表）合并出一份术语集合，再对本篇文稿求命中：
+Before running polishing or translation, merge the tables the project has enabled that **are useful for this step** (polishing = transcription tables whose spoken language matches; translation = translation tables whose direction matches) into one term set, then find hits in this document:
 
-- 拉丁词看词边界（`(?<![A-Za-z0-9])…(?![A-Za-z0-9])`，`commitment` 里的 `commit` 不算命中），CJK 直接子串，大小写不敏感。
-- **翻译命中时借转录表的误识**：翻译表本身不记误识，但文稿还没润色时正文里写的可能是「维科夫」而不是 `Wyckoff`。同一个归并键在启用的转录表里记过的错法也算命中。
-- 命中的条目才写进 `ai/context.md`（转录表）/ `ai/context.<lang>.md`（翻译表），`Origin=user`。**不命中的不写**：整库灌进去会把一张给模型读的表撑成几百行噪声，会让 `ANALYSIS_MAX_TERMS`（400）的截断开始丢真正用得上的行。
-- 模型抽出的同名行（`Origin=analyzed`）被库里的行覆盖，`Variants` 取并集。
+- Latin words respect word boundaries (`(?<![A-Za-z0-9])…(?![A-Za-z0-9])`, so `commit` inside `commitment` is not a hit). CJK matches as direct substrings. Case-insensitive.
+- **On translation hits, borrow the transcription tables' misrecognitions.** Translation tables do not record misrecognitions themselves, but before the text is polished, the body may say “维科夫” (a misrecognition of `Wyckoff`) rather than `Wyckoff`. A wrong spelling recorded for the same merge key in the enabled transcription tables also counts as a hit.
+- Only hit entries are written into `ai/context.md` (transcription table) / `ai/context.<lang>.md` (translation table), with `Origin=user`. **Non-hits are not written**: dumping the whole library in would bloat a table meant for the model to read with hundreds of lines of noise, and would make the truncation at `ANALYSIS_MAX_TERMS` (400) start dropping the rows that are actually useful.
+- Same-named rows extracted by the model (`Origin=analyzed`) are overwritten by the library's rows, with `Variants` unioned.
 
-**翻译提示词那一层也只带命中的。**项目那张表编译成 `ai/brief-<lang>.json` 的 `glossary[]` 后，`DocumentBrief::glossary_for_prompt(source_text, 80)` 过去只是**按命中次数排序再取前 80**——零命中的条目照样排在后面进了系统提示词（分析阶段抽出来、后来被剪掉的片段里的词就是这样混进去的）。2026-09-20 起改为**只留真的出现在原文里的条目**（与 `term_present` 同口径：拉丁词看词边界、CJK 子串），再按次数排序取前 80。`rt`（每页的 required targets）本来就按页判命中，不受影响。
+**The translation prompt layer also carries only hits.** After the project table is compiled into `glossary[]` in `ai/brief-<lang>.json`, `DocumentBrief::glossary_for_prompt(source_text, 80)` used to **sort by hit count and take the first 80**. Entries with zero hits still ranked lower and got into the system prompt (words from fragments extracted in the analysis stage and later trimmed got mixed in this way). Since 2026-09-20 it **keeps only entries that actually appear in the source text** (same criterion as `term_present`: Latin words respect word boundaries, CJK matches by substring), then sorts by count and takes the first 80. `rt` (per-page required targets) already judges hits per page and is unaffected.
 
-**过期范围**：改一条术语只让**命中它的句子**过期。既有 `provenance.rs` 的 `term_hashes` 已经按句记录了当时命中的术语哈希（覆盖 `source / target / note / lock` 四元），库改动因此复用同一条通道，不需要新的 stale 语义，也不会触发全文重译。
+**Staleness scope**: changing one term only makes **the sentences that hit it** stale. The existing `term_hashes` in `provenance.rs` already records, per sentence, the hashes of the terms that were hit at the time (covering the four fields `source / target / note / lock`). Library changes therefore reuse the same channel, requiring no new stale semantics and not triggering a full retranslation.
 
-## 4. 三个使用点
+## 4. The three points of use
 
-### 4.1 转录：识别提示（选表 + 自定义提示词，能力门）
+### 4.1 Transcription: recognition hints (table selection + custom prompt, capability gate)
 
-| 通道 | 后端 | 预算 | 形态 |
+| Channel | Backend | Budget | Form |
 | --- | --- | --- | --- |
-| `prompt` | whisper.cpp / whisper-rs、`gpt-4o-transcribe` | ~224 token（UI 按约 180 字报） | initial prompt：模型把它当成**前文**来读，不是指令 |
-| `context` | Qwen3-ASR | 宽得多（UI 按约 1200 字报） | 上下文文本，可以写这段录音在讲什么 |
-| `none` | MOSS 等 | — | 没有这条通道 |
+| `prompt` | whisper.cpp / whisper-rs, `gpt-4o-transcribe` | ~224 tokens (UI reports about 180 characters) | Initial prompt: the model reads it as **preceding text**, not as an instruction |
+| `context` | Qwen3-ASR | Much wider (UI reports about 1200 characters) | Context text; can say what the recording is about |
+| `none` | MOSS, etc. | — | No such channel |
 
-每次转录由用户决定两样东西（新建向导的「更多选项」与重新转录面板同一块）：**带哪几张转录术语表**（只列口播语言对得上的；没动过取默认那几张）与**一段自定义提示词**（可空）。没有通道的模型整块收成一句话，不给点了没用的控件。第一版那只全局开关（`glossaryHint`）撤掉。
+For each transcription, the user decides two things (the same block appears in the “more options” of the new-project wizard and in the re-transcribe panel): **which transcription glossaries to include** (only those whose spoken language matches are listed; if untouched, the default ones are used) and **a custom prompt** (may be empty). Models with no channel have the whole block collapsed into one sentence, so no control is shown that does nothing. The first version's single global switch (`glossaryHint`) has been removed.
 
-**合成口径**（`hint_compose(custom, terms, budget)`，纯层，UI 与后端同一只）：自定义提示词在前、**一个字不截**；术语的规范写法用顿号拼在后面填满剩下的预算，按表的启用顺序，放不下的丢在末尾并**报出丢了几条**；提示词自己超预算时报 `over`（UI 转橙色写明超了多少，后端按通道自己的规则截尾）。JSON 回执里同样要有 `dropped / over`，不悄悄截。
+**Composition rule** (`hint_compose(custom, terms, budget)`, pure layer, one function shared by UI and backend): the custom prompt comes first, **not a single character cut**. The canonical spellings of the terms are appended after it, separated by `、`, to fill the remaining budget, in the tables' enabled order. Terms that do not fit are dropped at the end and **the number dropped is reported**. If the prompt itself exceeds the budget, `over` is reported (the UI turns orange and states by how much it exceeds; the backend truncates at the tail according to the channel's own rules). The JSON receipt must likewise carry `dropped / over`, with no silent truncation.
 
-**2026-09-20 已通电**（spec `1.153.0`）。落地形状与上面这张表一致，三件事各自的真身：
+**Wired up on 2026-09-20** (spec `1.153.0`). The landed shape matches the table above. The actual implementation of each of the three items:
 
-1. **后端入参**：`SpeechRecognition::transcribe_with_hint(audio, language, hint: Option<&TranscribeHint>)`，`transcribe` 变成它 `hint = None` 的那一支，既有调用方一行不用改。Whisper CoreML 把提示编成 `<|startofprev|> + BPE` 挂在解码前缀上（与生成共用 KV 缓存，超预算**截头不截尾**——截尾会把话说到一半，截头只丢最早的几条术语）；whisper.cpp 走 `initial_prompt`（`no_context` 在它之前清历史，两者并存，提示因此逐段都生效）；Qwen3-ASR 写 `Qwen3DecodingOptions.context`；MOSS 显式收下并丢弃。
-2. **能力查询**：后端自报 `SpeechRecognition::hint_kind()`，与按模型 id 判的 `ccut_speech_core::asr_hint` 对照；编排层（`transcribe_all_hinted`）发现后端没通道就报一行「已忽略」，不悄悄丢。能力表有两份（语音一份、编辑器纯层一份，后者要编 wasm），`core/crates/ccut-kernel/tests/asr_hint_parity.rs` 逐只对拍，漂了就红。
-3. **CLI / serve**：`ccut transcribe --prompt <TEXT>`（env `CCUT_TRANSCRIBE_PROMPT`），`ccut auto` 与 `ccut clip transcribe` 同名同义；serve 的 `POST /projects`、`POST /imports` 与任务 `options` 都多认一个 `prompt`；远端节点的 `POST /v1/asr/jobs` 的 `options.prompt` 与 OpenAI 兼容面的 `prompt` 表单字段都真的转发给引擎。
+1. **Backend input**: `SpeechRecognition::transcribe_with_hint(audio, language, hint: Option<&TranscribeHint>)`. `transcribe` becomes the `hint = None` branch of it, so existing callers need no changes. Whisper CoreML encodes the hint as `<|startofprev|> + BPE` attached to the decoding prefix (sharing the KV cache with generation). When over budget it **truncates the head, not the tail**: cutting the tail would cut the speech mid-sentence, while cutting the head only drops the earliest terms. whisper.cpp uses `initial_prompt` (`no_context` clears the history before it; the two coexist, so the hint takes effect in every segment). Qwen3-ASR writes `Qwen3DecodingOptions.context`. MOSS explicitly accepts it and discards it.
+2. **Capability query**: the backend self-reports `SpeechRecognition::hint_kind()`, cross-checked against the model-id-based `ccut_speech_core::asr_hint`. The orchestration layer (`transcribe_all_hinted`) reports a line “已忽略” (ignored) when it finds the backend has no channel, rather than silently dropping it. There are two copies of the capability table (one in the speech crate, one in the editor pure layer, which must compile to wasm). `core/crates/ccut-kernel/tests/asr_hint_parity.rs` compares them one by one, and if they drift, the test goes red.
+3. **CLI / serve**: `ccut transcribe --prompt <TEXT>` (env `CCUT_TRANSCRIBE_PROMPT`). `ccut auto` and `ccut clip transcribe` have the same name and meaning. serve's `POST /projects`, `POST /imports` and task `options` each also accept a `prompt`. On the remote node, `options.prompt` of `POST /v1/asr/jobs` and the `prompt` form field of the OpenAI-compatible surface are both really forwarded to the engine.
 
-**没有做 `--glossary <pack,…>`**：`ccut glossary` 子命令族（§5）还不存在，CLI 这一侧认不出 pack id。契约取最简的那种——**收拼好的提示文本**，拼装仍由唯一一只 `hint_compose` 做（App 页面上写着送多少字，起任务时就送多少字）。`ccut glossary` 落地后再加 `--glossary` 作为「帮你拼」的糖，不改这条通道。
+**`--glossary <pack,…>` is not implemented**: the `ccut glossary` subcommand family (§5) does not exist yet, so on the CLI side it cannot recognize pack ids. The contract takes the simplest form: **it takes the assembled prompt text**. Assembly is still done by the single `hint_compose`, and the App page shows how many characters will be sent, so the same number is sent when the task starts. After `ccut glossary` lands, `--glossary` will be added as an “帮你拼” (assemble it for you) convenience on top; this channel does not change.
 
-### 4.2 润色：逐处纠正 + 候选回流
+### 4.2 Polishing: per-spot correction + candidate backflow
 
-润色任务在既有 prompt 之外带上命中的条目，并要求模型只按「误识 → 规范写法」改写、不扩大解释。确定性部分（哪一段有哪几处、替换后的整段）可以在 Rust 侧先算出来作为期望值与校验：一段一条建议，段内同一术语多次误识合成一条，两条术语咬住同一截文字时取靠前且更长的那条。
+The polish task adds the matched entries to the existing prompt and tells the model to rewrite only by “misrecognition → canonical form” and not to expand the explanation. The deterministic part (which paragraphs have which hits, and the full paragraph after replacement) can be computed up front on the Rust side as expected values for validation: one suggestion per paragraph; repeated misrecognitions of the same term within a paragraph are merged into one; when two terms overlap the same span of text, keep the earlier and longer one.
 
-**候选回流**：润色同时给出「库里还没有、但本篇反复出现（≥2 次）的疑似专名」。判据应当由确定性代码给候选池（重复出现的未登记片段），模型只做筛选与归类；纯靠模型开列会把「嗯 / 论文 / 学习」也开进来（与 `ANALYSIS_MAX_TERMS_PER_PAGE` 那条实测教训同源）。
+**Candidate backflow**: polish also proposes suspected proper nouns that are “not yet in the library but recur in this article (≥2 times)”. The criterion should be that deterministic code supplies the candidate pool (repeated unregistered fragments), and the model only filters and classifies. If the model lists them on its own, it will also pick up “嗯 / 论文 / 学习” (“um / paper / study”, filler words), the same lesson learned from the measured `ANALYSIS_MAX_TERMS_PER_PAGE` case.
 
-### 4.3 翻译：方向对得上的表、只带命中的
+### 4.3 Translation: direction-matched tables, matched entries only
 
-不新增机制：方向对得上的翻译表里**本篇命中的**条目进 `ai/context.<lang>.md`，`Lock=yes`（默认）的走既有 `rt` → `validate` → `lint` → `check` 四道，`Lock=no`（可变通）的只进提示词。UI 在设置态写明「N 张表 · M 条 · 本篇命中 K 条，只把命中的交给模型」并可展开看是哪几条；Agent 路径的意图句同口径（「翻译术语表里本篇命中的 K 条照着译，其中 J 条必须逐字照用」）。
+No new mechanism. In translation tables whose direction matches, the **entries matched in this article** go into `ai/context.<lang>.md`. Entries with `Lock=yes` (the default) go through the existing four gates `rt` → `validate` → `lint` → `check`; entries with `Lock=no` (flexible) go only into the prompt. In the settings state, the UI states “N 张表 · M 条 · 本篇命中 K 条，只把命中的交给模型” (“N tables · M entries · K entries matched in this article; only the matched ones are passed to the model”) and can expand to show which entries they are. The intent sentence on the Agent path uses the same basis: “翻译术语表里本篇命中的 K 条照着译，其中 J 条必须逐字照用” (“Translate the K glossary entries matched in this article as written, J of which must be used verbatim”).
 
 ## 5. CLI
 
-CLI 今天**没有**任何术语相关命令（术语只能靠手改 `ai/context.md` 与 `ai/brief-<lang>.json`）。库需要一个自己的子命令族：
+The CLI currently has **no** glossary-related commands at all (terms can only be edited by hand in `ai/context.md` and `ai/brief-<lang>.json`). The library needs its own subcommand family:
 
 ```
 ccut glossary list
 ccut glossary show <pack>
 ccut glossary new <name> --kind transcribe [--lang <l>] | --kind translate [--from <l>] --to <l>
 ccut glossary add <pack> <source> [<target 或 误识,…>] [--note <n>] [--flexible]
-ccut glossary add <pack> --from-file <file|->   # 一行一条，与 UI 的「一次粘一批」同一只解析
+ccut glossary add <pack> --from-file <file|->   # one entry per line, parsed by the same code as the UI's “paste a batch at once”
 ccut glossary reverse <pack>
 ccut glossary import <file> [--pack <name>]
 ccut glossary export <pack> [--out <file>]
 ccut glossary enable <pack> --project <p> / disable
-ccut glossary compile --project <p>     # 打印这一篇会被写进 context.md 的行
+ccut glossary compile --project <p>     # print the lines that will be written into context.md for this article
 ```
 
-全部走稳定 JSON 信封；`compile --json` 是 skill 与 Agent 路径的接入点（[`skills/cuccut`](../../../skills/cuccut/SKILL.md) 的转录/翻译流程可以在这一步取到该用哪些术语，不必自己读用户目录）。新增任何命令与字段都要在同一任务同步 CLI 参考正文。
+All commands go through a stable JSON envelope. `compile --json` is the integration point for the skill and the Agent path (the transcription/translation flow in [`skills/cuccut`](../../../skills/cuccut/SKILL.md) can get at this step which terms to use, without reading the user directory itself). Adding any command or field must sync the CLI reference body in the same task.
 
-## 6. 三表面
+## 6. Three surfaces
 
-| 表面 | 现状 | 计划 |
+| Surface | Current state | Plan |
 | --- | --- | --- |
-| `designs/cuccut` | 2026-09-20 已画（设置一节 + 项目内三处露面 + 能力门）；同日二次收口（两种表 / 两格加词 / 一次粘一批 / 翻译只带命中 / 转录选表与自定义提示词 / 共用语言目录） | — |
-| `apps/cuccut` | **2026-09-20 已落地**（[首版](../../changelog/app-v2/2026-09-20-050743.md)、[二次收口](../../changelog/app-v2/2026-09-20-161926.md)、[识别提示通电](../../changelog/app-v2/2026-09-20-201317.md)） | 设置一节（两种表 / 两格加词 / 一次粘一批 / 掉头 / 导入导出）+ 润色与翻译设置态一行（翻译写明本篇命中并可展开）+ **新建向导的转录设置与重新转录**两处同一只识别提示块（选表 + 自定义提示词，按模型能力收放，起任务时真的送进 `--prompt`）+ 结果里的术语卡与回流；语言取共用目录；纯层落在 `ccut-editor-core`，GPUI 侧只画 |
-| `apps/web` | 无 | **不适用**：Web 没有任何 AI 入口与设置页（[§22](../product/product-design/22.md)） |
-| `core` | **纯层已有**：`ccut-editor-core::glossary`（两种表 / 按语境归并 / 命中 / 提示拼装与预算 / 逐行解析 / 掉头 / 校对 / 候选 / 能力门 / Markdown 往返 / 编译行的生成，25 条单测）；翻译引擎的 `glossary_for_prompt` 只收命中条目；**识别提示通道 2026-09-20 通电**（`ccut_speech_core::hint`、各后端的 `transcribe_with_hint`、`--prompt` 与三条派发路径） | CLI 编排（`apps/cli` 的 `ccut glossary` 子命令族，§5） |
+| `designs/cuccut` | Drawn 2026-09-20 (one settings section + three in-project surfaces + capability gate); second consolidation the same day (two table kinds / two-cell word addition / paste a batch at once / translation carries only matches / transcription picks a table and custom prompt / shared language catalog) | — |
+| `apps/cuccut` | **Landed 2026-09-20** ([first version](../../changelog/app-v2/2026-09-20-050743.md), [second consolidation](../../changelog/app-v2/2026-09-20-161926.md), [recognition hint powered on](../../changelog/app-v2/2026-09-20-201317.md)) | Settings section (two table kinds / two-cell word addition / paste a batch at once / direction flip / import and export) + one-line glossary state in the polish and translation settings (translation states the entries matched in this article and can expand) + **the transcription settings in the new-project wizard and re-transcription**, using the same recognition-hint block (table selection + custom prompt, scaled to model capability, actually sent as `--prompt` when a job starts) + glossary cards and backflow in results; language uses the shared catalog; the pure layer lives in `ccut-editor-core`, and the GPUI side only draws |
+| `apps/web` | None | **Not applicable**: Web has no AI entry point and no settings page ([§22](../product/product-design/22.md)) |
+| `core` | **Pure layer exists**: `ccut-editor-core::glossary` (two table kinds / merging by context / matching / prompt assembly and budget / line-by-line parsing / direction flip / proofreading / candidates / capability gate / Markdown round-trip / generation of compiled lines, 25 unit tests); the translation engine's `glossary_for_prompt` only collects matched entries; **recognition-hint channel powered on 2026-09-20** (`ccut_speech_core::hint`, `transcribe_with_hint` in each backend, `--prompt` and the three dispatch paths) | CLI orchestration (`ccut glossary` subcommand family in `apps/cli`, §5) |
 
-落地次序建议：**core 的库读写与编译 → CLI → App v2 → 识别提示通道 → Web**。识别提示排在后面是因为它是唯一需要动语音后端的部分，而前面三步已经能让库在润色与翻译两处真正生效。
+Suggested rollout order: **core library read/write and compile → CLI → App v2 → recognition-hint channel → Web**. The recognition hint is placed later because it is the only part that touches the speech backend, while the first three steps already make the library truly effective in both polish and translation.
 
-**实际次序**（2026-09-20）：纯层与 App v2 一起做了，CLI 排到了后面——纯层的判据与磁盘格式已经冻在 `ccut-editor-core::glossary` 与 `apps/cuccut/src/engine/glossary.rs`，`ccut glossary` 接的是同一份格式，先做哪个不改契约；先做 App 是因为库要长起来只能靠结果页的候选回流，那条路在 App 里。识别提示通道同日插到了 CLI 前面（原计划排在它后面）：它是「页面上的开关到底算不算数」这一问的答案，拖着就是一直在界面里写「这一版还没接」。剩下的只有 **CLI（`ccut glossary`）**；Web 不适用。
+**Actual order** (2026-09-20): the pure layer and App v2 were done together, and the CLI moved later. The pure layer's criteria and disk format were already frozen in `ccut-editor-core::glossary` and `apps/cuccut/src/engine/glossary.rs`, and `ccut glossary` would use the same format, so which goes first does not change the contract. App went first because for the library to grow, the only route is the candidate backflow on the result page, and that path lives in the App. The recognition-hint channel was inserted ahead of the CLI on the same day (originally scheduled after it): it is the answer to the question “do the on-page toggles actually count”, and delaying it would keep the UI saying “not wired yet”. What remains is only the **CLI (`ccut glossary`)**; Web does not apply.
 
-库的磁盘面今天在 `apps/cuccut/src/engine/glossary.rs`（薄：目录扫描、原子写、编译落盘），判据全在纯层。做 `ccut glossary` 时把这一层挪进 core 即可，两边不各写一份。
+The library's on-disk surface today lives in `apps/cuccut/src/engine/glossary.rs` (thin: directory scanning, atomic writes, compiled output to disk), and the criteria are all in the pure layer. When doing `ccut glossary`, just move this layer into core so the two sides do not each keep their own copy.
 
-## 7. 待裁决
+## 7. Pending decisions
 
-- ~~Q1 一张表能不能跨语言共用~~ / ~~Q2 库文件的多语言载体~~：**已裁决（2026-09-20）**——一张翻译表一个方向、一个文件，见 §2。
-- **Q3 命中的大小写与词形**：英文复数 / 所有格（`Wyckoff's`）目前不命中。是否加有限的词形归一（只做后缀 `s / 's`），还是一律要求用户把词形写进 `Variants`。
-- **Q4 回流候选的来源**：确定性候选池的抽取算法（未登记的重复片段）尚未定；CJK 无空格分词是主要难点，可能需要先落一个保守版本（只收含拉丁字母或已知边界的片段）。
-- **Q5 同步**：库在用户数据目录，换一台电脑就没了。是否给「导出全部 / 导入全部」之外的同步方式（例如放进用户指定的目录由他自己同步），需要产品裁决。
+- ~~Q1 can one table be shared across languages~~ / ~~Q2 the multi-language carrier of the library file~~: **Decided (2026-09-20)**: one translation table per direction, one file each; see §2.
+- **Q3 case and word-form matching**: English plurals and possessives (`Wyckoff's`) do not match currently. Should limited word-form normalization be added (only the suffixes `s / 's`), or should users always be required to write word forms into `Variants`?
+- **Q4 source of backflow candidates**: the extraction algorithm for the deterministic candidate pool (unregistered repeated fragments) is not yet settled. Word segmentation of CJK text without spaces is the main difficulty, so a conservative version may need to land first (only collect fragments that contain Latin letters or known boundaries).
+- **Q5 sync**: the library lives in the user data directory and is lost when switching to another computer. Whether to offer a sync method beyond “export all / import all” (for example, placing it in a user-specified directory for the user to sync himself) needs a product decision.

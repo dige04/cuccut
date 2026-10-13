@@ -1,2 +1,2 @@
-# 移植自 CucCut v2 的代码沿用它的格式（rustfmt 缺省 max_width 100），不按仓库根的 140 重排。
+# Code ported from CucCut v2 keeps its formatting (rustfmt default max_width 100) and is not reflowed to the repo root's 140.
 edition = "2024"

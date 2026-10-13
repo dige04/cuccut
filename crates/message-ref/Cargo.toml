@@ -1,6 +1,6 @@
 [package]
 name = "message-ref"
-description = "Rust 一侧给人看的文字：英文文本 + 消息引用（key + params），与 @cuccut/protocol 的 message-ref.ts 同形（仓库约定 §5）"
+description = "Human-readable text on the Rust side: English text plus message references (key + params), with the same shape as message-ref.ts in @cuccut/protocol (repo convention §5)"
 version.workspace = true
 edition.workspace = true
 license-file.workspace = true

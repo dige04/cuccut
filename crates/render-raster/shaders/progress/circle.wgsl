@@ -1,28 +1,28 @@
-// `ring-v1` 的 WGSL 实现（元素方案 §7.4）：`circle` / `donut`。
+// `ring-v1` WGSL implementation (element scheme §7.4): `circle` / `donut`.
 //
-// CPU 参照是 `src/source/progress/recipes/ring_v1.rs`：底环（整圆 / 整环，副色）
-// + 进度扇区（饼形 / 环形扇区，主色）。`innerRadius` 是**相对外半径**的比例。
+// The CPU reference is `src/source/progress/recipes/ring_v1.rs`: background ring (full circle / full ring, secondary colour)
+// + progress sector (pie / ring sector, primary colour). `innerRadius` is a ratio **relative to the outer radius**.
 //
-// ## 角度：自正上方顺时针，在 **v 向上**的坐标里算
+// ## Angle: clockwise from straight up, computed in **v-up** coordinates
 //
-// 参考实现写的是 `atan2(−centred.x, −centred.y) + π`，配它自己那套 y 向下的
-// `texCoord`。CucCut 的真相是 CPU 参照（`kernel::polar` 的零角在正上方、顺时针
-// 为正），因此这里先做 P5a 偏离 4 的那次 v 翻转，再用 `atan2(x, y)` 直接得到
-// "自正上方顺时针"的角——两条写法在各自的坐标系里是同一件事，但只有这一条与
-// CPU 逐像素对得上。
+// The reference implementation writes `atan2(−centred.x, −centred.y) + π`, matching its own y-down
+// `texCoord`. CucCut's source of truth is the CPU reference (`kernel::polar`: zero angle straight up, clockwise
+// positive), so here we first do the v flip from P5a deviation 4, then use `atan2(x, y)` directly to get the
+// "clockwise from straight up" angle. The two forms are the same thing in their own coordinate systems, but only this one
+// matches the CPU pixel by pixel.
 //
-// `featherPx` / `edgeFeatherPx` 是 shader 的抗锯齿**带宽**，CPU 侧不读（矢量边
-// 由光栅器抗锯齿）。GPU 侧经 `softEdge` 把过渡带对称地铺在 CPU 那条边上，
-// 而不是照抄参考实现的单侧 `smoothstep`——理由见 `common.wgsl` 里 `softEdge`
-// 的文档（单侧读法会让圆整体缩小半个带宽）。
+// `featherPx` / `edgeFeatherPx` are the shader's anti-aliasing **band width**; the CPU side does not read them (vector edges
+// are anti-aliased by the rasteriser). The GPU side uses `softEdge` to lay the transition band symmetrically across the CPU edge,
+// rather than copying the reference's one-sided `smoothstep`. The reasoning is in the `softEdge` doc in `common.wgsl`
+// (the one-sided reading would shrink the whole circle by half a band width).
 
-/// 配方参数。字段顺序 = Rust 侧 `pack_ring_v1` 的打包顺序。
+/// Recipe parameters. Field order = the packing order of Rust's `pack_ring_v1`.
 struct RingRecipe {
-    /// 外/内圆边缘的羽化半径，**像素**。
+    /// Feather radius of the outer/inner circle edges, **pixels**.
     featherPx : f32,
-    /// 颜色分界的羽化半径，**像素**。
+    /// Feather radius of the colour boundary, **pixels**.
     edgeFeatherPx : f32,
-    /// 内圈半径（相对外半径）；0 = 实心饼。
+    /// Inner radius (relative to outer radius); 0 = solid pie.
     innerRadius : f32,
     /// `direction`：0 = `cw`，1 = `ccw`。
     ccw : f32,
@@ -33,7 +33,7 @@ struct RingRecipe {
 @fragment fn fragmentMain(in : VertexOutput) -> @location(0) vec4f {
     DiscardProgressClip(in.texCoord);
 
-    // 羽化半径与分辨率挂钩；单维度上取两边的平均（参考实现的口径）。
+    // The feather radius is tied to resolution; on a single dimension take the average of both sides (the reference's convention).
     let res : f32 = (u_dstRes.value.x + u_dstRes.value.y) * 0.5;
     let feather : f32 = u_recipe.featherPx / res;
 
@@ -41,7 +41,7 @@ struct RingRecipe {
     let centred : vec2f = uv * 2.0 - 1.0;
     let len : f32 = length(centred);
 
-    // 自正上方顺时针的一周编号。`atan2(x, y)` ∈ (−π, π]，负半周补一圈。
+    // Clockwise index of one revolution from straight up. `atan2(x, y)` ∈ (−π, π]; the negative half-turn gets a full turn added.
     var percent : f32 = atan2(centred.x, centred.y) / TWO_PI;
     if (u_recipe.ccw > 0.5) {
         percent = -percent;

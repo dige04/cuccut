@@ -1,136 +1,136 @@
-# CucCut 视频格式规范
+# CucCut Video Format Specification
 
-> 视频是权威的可编辑对象；导出的成片与导入的视频文件都不是它。本规范定义它的数据模型：时间、序列与实例、素材与文档、语音与字幕、口播剪辑、配音与版本，以及便携包。
+> The video is the authoritative editable object; neither the exported final cut nor the imported video files are it. This specification defines its data model: time, sequences and instances, assets and documents, speech and subtitles, talking-head editing, dubbing and versions, and the portable package.
 
-格式标识：`cuccut.video`，`schemaVersion: 3`。
+Format identifier: `cuccut.video`, `schemaVersion: 3`.
 
-本规范定义**数据与数值规则**。修改视频的命令见[命令与协议规范](command-protocol-spec.md)；代码合成包见[代码包规范](code-bundle-spec.md)；存储、渲染与依赖失效的机制见[系统架构设计](../architecture/architecture-design.md)。本规范是草案。画面元素的种类与参数采用 v2 的元素模型（`crates/timeline`），逐项对照与裁决见[元素模型对照](../design/timeline/element-model-mapping.md)。用语见[文档约定](../README.md#文档约定)，术语见[术语表](../glossary.md)。
+This specification defines the **data and numeric rules**. For the commands that modify a video, see [Command and Protocol Specification](command-protocol-spec.md); for the code composition package, see [Code Bundle Specification](code-bundle-spec.md); for the mechanisms of storage, rendering and dependency invalidation, see [System Architecture Design](../architecture/architecture-design.md). This specification is a draft. The kinds and parameters of picture elements adopt the v2 element model (`crates/timeline`); the item-by-item comparison and rulings are in [Element Model Mapping](../design/timeline/element-model-mapping.md). For terms of use see [Documentation Conventions](../README.md#conventions-for-this-document), and for terminology see the [Glossary](../glossary.md).
 
-## 目录
+## Contents
 
-- [1. 范围与约定](#1-范围与约定)
-- [2. 时间模型](#2-时间模型)
-- [3. 视频](#3-视频)
-- [4. 素材与文档](#4-素材与文档)
-- [5. 语音、字幕与翻译文档](#5-语音字幕与翻译文档)
-- [6. 口播剪辑](#6-口播剪辑)
-- [7. 配音、版本与声音事件](#7-配音版本与声音事件)
-- [8. 便携包](#8-便携包)
-- [9. 待补全项](#9-待补全项)
+- [1. Scope and Conventions](#1-scope-and-conventions)
+- [2. Time Model](#2-time-model)
+- [3. Video](#3-video)
+- [4. Assets and Documents](#4-assets-and-documents)
+- [5. Speech, Subtitles and Translation Documents](#5-speech-captions-and-translation-documents)
+- [6. Talking-Head Editing](#6-talking-head-editing)
+- [7. Dubbing, Versions and Sound Events](#7-dubbing-versions-and-sound-events)
+- [8. Portable Package](#8-portable-package)
+- [9. Items to Be Completed](#9-items-to-complete)
 
 ---
 
-## 1. 范围与约定
+## 1. Scope and Conventions
 
-### 1.1 类型的地位
+### 1.1 Status of Types
 
-文中的类型用 TypeScript 写法表达，是交换用的 DTO 概要。
+The types in this document are written in TypeScript notation and serve as a summary of the DTOs used for exchange.
 
-- 语义与校验由 Rust 实现单源定义；TypeScript 的 DTO 与 JSON Schema 由它生成（架构设计 §13.2）。
-- DTO 不规定数据库的实体布局。素材版本与文档版本引用不可变的内容；一次视频响应不需要带上几万个词或全部源码（§4.4）。
-- 标注「本规范补全」的类型在原始设计中只有名称或用法，其字段由本规范给出，列入 §9 待评审。
+- Semantics and validation are defined once in Rust; the TypeScript DTOs and the JSON Schema are generated from it (Architecture Design §13.2).
+- The DTOs do not prescribe the database's entity layout. Asset versions and document versions reference immutable content; a single video response does not need to carry tens of thousands of words or all the source code (§4.4).
+- Types marked "added by this specification" have only a name or a usage in the original design; their fields are given by this specification and are listed in §9 for review.
 
-### 1.2 基础类型
+### 1.2 Basic Types
 
 ```ts
 type Id = string;
-type Revision = string;                          // 非负十进制整数字符串
+type Revision = string;                          // non-negative decimal integer string
 interface VersionRef { id: Id; revision: Revision }
 type JsonValue = null | boolean | number | string | JsonValue[] | { [k: string]: JsonValue };
 ```
 
-`Revision` 与事件序号用十进制字符串，避免 64 位整数在 JSON 中丢失精度。比较按数值，不按字符串。
+`Revision` and event sequence numbers use decimal strings, so that 64-bit integers do not lose precision in JSON. Comparison is by numeric value, not by string.
 
-时间类型 `Rate`、`MediaTime`、`FrameSpan` 见 §2.3。
+The time types `Rate`, `MediaTime` and `FrameSpan` are described in §2.3.
 
-### 1.3 身份规则
+### 1.3 Identity Rules
 
-- 所有实体使用稳定 ID。
-- 素材 ID 标识资源的身份；素材版本标识一份确定的 bytes 与元数据。
-- 实例 ID 标识时间线上的一次使用。同一素材在时间线上出现三次是三个实例，不是同一个实例的三个位置。
-- 同一素材的多处使用、同一代码包的多个参数实例、嵌套序列和语言覆盖，都必须有各自稳定的 ID。
-- ID 与内容指纹是两回事：ID 不变不代表内容没变（§5.2）。
-- 视频的 `id`（`videoId`）在它的 `video.db` 里，不另放标记。`video.db` 的元数据另记两项，它们不属于视频的修订内容：写它们不产生新版本，不进撤销历史，也不出现在 `VideoSnapshot` 里。
-  - `projectId`：视频所属的项目。没有记时（升级前的视频、不属于项目的视频）由第一次认领它的项目写入，`id` 不变。
-  - `previousVideoIds`：这个视频曾经用过的 `id`，JSON 数组，旧的在前。视频被认领到与记下的不同的项目时（项目目录被复制，或视频被搬到另一个项目）换成新的 `id`，旧的追加进来；内容、修订号与历史不变。换 `id` 是一个数据库事务：所有表里的视频 `id`、视频自身实体的 id，以及回执、事件与撤销记录里引用它的地方一起改。
-- 项目是一个目录，它的标识在项目目录的 `.ccut/project.json`，与视频分开（架构设计 §5.1）：
+- All entities use stable IDs.
+- An asset ID identifies the identity of a resource; an asset version identifies one definite set of bytes and metadata.
+- An instance ID identifies one use on the timeline. The same asset appearing three times on the timeline is three instances, not three positions of one instance.
+- Multiple uses of the same asset, multiple parameter instances of the same code bundle, nested sequences and language overrides must each have their own stable ID.
+- ID and content fingerprint are different things: an unchanged ID does not mean the content is unchanged (§5.2).
+- The video's `id` (`videoId`) lives in its `video.db`; no separate marker is placed elsewhere. The `video.db` metadata records two further items separately, and they are not part of the video's revision content: writing them does not produce a new version, does not enter the undo history, and does not appear in `VideoSnapshot`.
+  - `projectId`: the project the video belongs to. If it is not recorded (videos from before the upgrade, and videos not belonging to a project), it is written by the first project that claims the video; `id` does not change.
+  - `previousVideoIds`: the `id`s this video has used before, as a JSON array, oldest first. When the video is claimed by a project different from the recorded one (the project directory was copied, or the video was moved to another project), it is replaced with a new `id` and the old one is appended; content, revision number and history are unchanged. Changing the `id` is one database transaction: the video `id` in all tables, the id of the video's own entity, and every place that references it in receipts, events and undo records are changed together.
+- A project is a directory. Its identity is in the project directory's `.ccut/project.json`, separate from the video (Architecture Design §5.1):
 
   ```ts
   interface ProjectMarker {
     format: 'cuccut.project';
-    schemaVersion: 1;            // 高于已知版本时拒绝打开，不改写
+    schemaVersion: 1;            // reject opening when higher than the known version; do not rewrite
     projectId: Id;
     createdAt: string;           // RFC 3339
   }
   ```
 
-### 1.4 未知字段与扩展
+### 1.4 Unknown Fields and Extensions
 
-- 遇到未知的**必需**字段或能力：只读打开，或拒绝。不得忽略之后写回。
-- 可选的 vendor extensions 保留在自己的命名空间；读到不认识的可选扩展时，写回不得丢失它。
-- 能力矩阵决定哪些实例类型与效果当前可以编辑。尚未实现的类型不得被静默当成普通图片或空白。
-- 视频的 `schemaVersion`（§3.1）是格式版本（架构设计 §13.3 的 `videoSchemaVersion`），当前为 3。新增的对象会改变渲染结果、旧版本的程序读到会画错时（例如把转场画成硬切），版本加一；只增加可以忽略的字段时不加。高于已知版本时拒绝打开，不改写。
-- 版本 3 的画面元素采用 v2 的元素模型（§3.4–§3.9、§3.15–§3.17）。按架构设计 §13.4，它不为版本 1–2 的视频保留兼容：读取只接受 3；版本 1–2 的视频拒绝打开并说明版本已不受支持，不改写；它们的内容从原来的旧项目重新导入。这一条就是这次升级的兼容检查（架构设计 §13.3）。
+- On encountering an unknown **required** field or capability: open read-only, or reject. Do not ignore it and write back.
+- Optional vendor extensions are kept in their own namespace; when an unrecognized optional extension is read, write-back must not drop it.
+- The capability matrix determines which instance types and effects can currently be edited. Types not yet implemented must not be silently treated as an ordinary image or as blank.
+- The video's `schemaVersion` (§3.1) is the format version (`videoSchemaVersion` in Architecture Design §13.3), currently 3. Increase the version by one when a new object changes the rendering result so that an older program reading it would draw incorrectly (for example, drawing a transition as a hard cut); when only ignorable fields are added, do not increase it. Reject opening when the version is higher than the known version; do not rewrite.
+- Version 3's picture elements adopt the v2 element model (§3.4–§3.9, §3.15–§3.17). Per Architecture Design §13.4, it does not keep compatibility for version 1–2 videos: reading accepts only 3; version 1–2 videos are refused on open with a note that the version is no longer supported, and are not rewritten; their content is re-imported from the original legacy project. This item is the compatibility check for this upgrade (Architecture Design §13.3).
 
 ---
 
-## 2. 时间模型
+## 2. Time Model
 
-**一句话：用户意图用秒或语义锚点；视觉编辑网格用帧；精确运算用 `MediaTime`；素材按 PTS；音频按采样；导出从输出帧直接求采样时刻。**
+**In one sentence: user intent uses seconds or semantic anchors; the visual editing grid uses frames; precise arithmetic uses `MediaTime`; assets follow PTS; audio follows samples; export computes sample instants directly from output frames.**
 
-同一个位置只有一个可写的权威值。其他单位只是输入形式、显示投影或回执，不得各自修改。
+Each position has only one writable authoritative value. Other units are only input forms, display projections or receipts, and must not each modify it independently.
 
-### 2.1 规则总览
+### 2.1 Rule Overview
 
-| ID | 规则 | 展开 |
+| ID | Rule | Details |
 | --- | --- | --- |
-| TIME-01 | 秒是单位，不等于浮点存储。`MediaTime` 用整数比值；时间域另行绑定 | §2.3、§2.4 |
-| TIME-02 | 命令接纳十进制秒字符串或显式的视频帧；词句编辑优先使用稳定的语义锚点 | §2.8 |
-| TIME-03 | 一个请求只量化一次；舍入政策明确；回执报告请求值、实际值与偏差；禁止同时写入秒与帧 | §2.6、§2.9 |
-| TIME-04 | 音频与原始语音时间不提前量化到视频帧；视觉投影与采样级时长各有权威 | §2.10 |
-| TIME-05 | 编辑帧率、素材时间基、代码帧率、输出帧率分别管理；输出帧直接求精确的视频时刻 | §2.11 |
-| TIME-06 | 更改 `Sequence.fps` 是带影响报告的视频事务，不是修改导出设置，也不是裸改字段 | §2.12 |
-| TIME-07 | 时间类型、量化、映射与取样规则由共享的 Rust 语义实现；只在边界转成宿主数值 | §2.13 |
-| TIME-08 | 时间合同独立版本化（`timeContractVersion`）；改变舍入或采样规则必须升级版本，并由 TM01–TM20 验收 | §2.13、验收与测试 §6 |
+| TIME-01 | Seconds are a unit, not floating-point storage. `MediaTime` uses integer ratios; the time domain is bound separately | §2.3, §2.4 |
+| TIME-02 | Commands accept decimal second strings or explicit video frames; word and sentence editing prefers stable semantic anchors | §2.8 |
+| TIME-03 | A request is quantized only once; the rounding policy is explicit; receipts report the requested value, the actual value and the deviation; writing seconds and frames at the same time is forbidden | §2.6, §2.9 |
+| TIME-04 | Audio and raw speech time are not quantized to video frames early; visual projection and sample-level duration each have their own authority | §2.10 |
+| TIME-05 | Edit frame rate, asset time base, code frame rate and output frame rate are managed separately; output frames directly derive exact video instants | §2.11 |
+| TIME-06 | Changing `Sequence.fps` is a video transaction with an impact report; it is not an export setting change, nor a bare field edit | §2.12 |
+| TIME-07 | Time types, quantization, mapping and sampling rules are implemented by shared Rust semantics; they are converted to host numeric values only at boundaries | §2.13 |
+| TIME-08 | The time contract is versioned independently (`timeContractVersion`); changing rounding or sampling rules must bump the version and be accepted by TM01–TM20 | §2.13, Acceptance and Testing §6 |
 
-### 2.2 按层选择单位
+### 2.2 Choosing Units by Layer
 
-不全用帧，也不全用浮点秒。
+Not everything uses frames, and not everything uses floating-point seconds.
 
-| 位置 | 表达 | 权威与限制 |
+| Location | Representation | Authority and limits |
 | --- | --- | --- |
-| 用户与智能体的命令 | 十进制秒、视频帧、词 / 句 / 对象锚点 | 输入可以多样；归一化之后只有一份视频事实 |
-| 视觉片段、视觉关键帧、转场 | 整数帧，绑定 `Sequence.fps`；关键帧也可以写实例长度的百分比（§3.15） | 不能把视频帧当成源帧或代码帧 |
-| 源视频取样 | 源 PTS + timebase | 可变帧率不用平均帧率反推真实的展示位置 |
-| 转录、词锚、字幕的原始时序 | 精确的源时间 + `timingQuality` | 不提前舍入到视频帧；低精度的证据不能伪装成准确 |
-| 音频剪切、混音、淡化 | 采样位置与精确时长 | 不受视频最短一帧的限制 |
-| 代码合成与嵌套合成 | 精确的局部时间 | Adapter 根据已验证的能力转成秒、帧或仿真步 |
-| 最终导出 | 输出帧索引 + `ExportSettings.fps` | 不改变 `Sequence.fps`，也不改变源内容的速度 |
+| User and agent commands | decimal seconds, video frames, word / sentence / object anchors | Input may vary; after normalization there is only one set of video facts |
+| Visual clips, visual keyframes, transitions | integer frames, bound to `Sequence.fps`; keyframes may also be written as a percentage of the instance length (§3.15) | Video frames must not be treated as source frames or code frames |
+| Source video samples | source PTS + timebase | For variable frame rate, the actual presentation position is not inferred from the average frame rate |
+| Transcription, word anchors, raw subtitle timing | precise source time + `timingQuality` | Not rounded early to video frames; low-precision evidence must not pass as accurate |
+| Audio cuts, mixing, fades | sample position and exact duration | Not limited by the video's shortest frame |
+| Code composition and nested composition | precise local time | The Adapter converts to seconds, frames or simulation steps based on verified capabilities |
+| Final export | output frame index + `ExportSettings.fps` | Does not change `Sequence.fps`, nor the speed of the source content |
 
-一个裸的 `frame: 300` 没有完整的含义：30 fps 下它是 10 秒，60 fps 下是 5 秒。必须同时知道所属的时间域与帧率。秒也一样：源的第 10 秒、剪辑后的第 10 秒和动画内部的第 10 秒不能直接比较。
+A bare `frame: 300` has no complete meaning: at 30 fps it is 10 seconds, and at 60 fps it is 5 seconds. Both the time domain and the frame rate must be known. The same goes for seconds: the 10th second of the source, the 10th second after editing and the 10th second inside an animation cannot be compared directly.
 
-### 2.3 基础类型与唯一权威
+### 2.3 Basic Types and the Single Authority
 
 ```ts
-interface Rate { num: number; den: number }               // 正有理数，约分
-interface MediaTime { ticks: string; timescale: number }  // ticks / timescale 秒
+interface Rate { num: number; den: number }               // positive rational, reduced
+interface MediaTime { ticks: string; timescale: number }  // ticks / timescale seconds
 interface FrameSpan { fromFrame: number; durationFrames: number }
 ```
 
-**`MediaTime`**。`ticks` 是有符号的十进制整数字符串；`timescale` 是大于 0 的安全整数。同一个数值可以有不同的时间基（1.5 秒可以写成 1500/1000）；比较按有理数的值，不比较 JSON 字符串。用于内容键时统一成约分后的规范值；原媒体的 PTS 与 timebase 原样保存在素材元数据里，以便追溯。
+**`MediaTime`**. `ticks` is a signed decimal integer string; `timescale` is a safe integer greater than 0. The same value may have different time bases (1.5 seconds can be written as 1500/1000); comparison is by the rational value, not by the JSON string. When used for content keys, normalize to the reduced canonical value; the original media's PTS and timebase are stored as-is in the asset metadata for traceability.
 
-**`Rate`**。`num` 与 `den` 是大于 0 的安全整数，读写都校验上限。视频帧率用精确的 `Rate`，例如 30000/1001。界面可以显示「29.97」，但只有选择明确的帧率预设才映射到 30000/1001；API 收到精确小数 29.97 时不得把它默默当成另一个有理数。导出帧率使用同一个类型。
+**`Rate`**. `num` and `den` are safe integers greater than 0; both reads and writes validate the upper bound. Video frame rates use the exact `Rate`, for example 30000/1001. The UI may display "29.97", but only selecting an explicit frame-rate preset maps to 30000/1001; when the API receives the exact decimal 29.97, it must not silently treat it as a different rational. Export frame rates use the same type.
 
-**运算**。Rust 内部使用检查溢出的整数与有理数运算；超限返回错误，不退化为浮点数。不同分母相乘除之前先约分，并检查中间值。
+**Arithmetic**. Internally Rust uses overflow-checked integer and rational arithmetic; overflow returns an error and does not degrade to floating point. Before multiplying or dividing rationals with different denominators, reduce them and check the intermediate values.
 
-**`FrameSpan`** 只规定视觉网格对象的位置与长度，不强制音频、词和 Cue 继承整数帧。
+**`FrameSpan`** only specifies the position and length of visual grid objects; it does not force audio, words and Cues to inherit integer frames.
 
-- 帧号从 0 开始。`fromFrame` 非负，`durationFrames` 为正；二者及其和都必须在安全整数范围内。
-- N 帧的序列，可显示的帧索引是 [0, N)，边界索引是 [0, N]。第 N 个边界是结束点，不是另一张可显示的帧。
+- Frame numbers start at 0. `fromFrame` is non-negative and `durationFrames` is positive; both of them, and their sum, must be within the safe integer range.
+- For a sequence of N frames, the displayable frame indices are [0, N) and the boundary indices are [0, N]. The N-th boundary is the end point, not another displayable frame.
 
-**唯一权威**。同一个视觉位置只保存 `fromFrame`，它的秒值由所属 `Sequence.fps` 推导；不另外保存一个可写的 `startSeconds`。`MediaTime` 是值，不自带来源：每个字段由所属的实体或显式的 `TimeDomain` 指定坐标系。位置（Position）、时长（Duration）与偏移（Offset）在 Schema 与类型中区分用途；不能把持续时长当成绝对时刻。
+**Single authority**. A visual position stores only `fromFrame`; its seconds value is derived from the owning `Sequence.fps`. A separate writable `startSeconds` is not stored. `MediaTime` is a value and does not carry its own origin: each field's coordinate system is specified by the owning entity or by an explicit `TimeDomain`. Position, Duration and Offset are distinguished by purpose in the schema and types; a duration must not be treated as an absolute instant.
 
-### 2.4 时间域
+### 2.4 Time Domains
 
 ```ts
 type TimeDomain =
@@ -142,15 +142,15 @@ type TimeDomain =
 interface TimePoint { domain: TimeDomain; time: MediaTime }
 ```
 
-- 序列时间由上下文的视频版本与序列版本固定；源时间由素材版本固定；合成时间还绑定选中的实例、代码包与 timeMap。
-- 只有同一个时间域里的点才可以直接相减。跨域必须经过显式的映射；不能仅仅因为 `timescale` 相同就比较或覆盖。
-- 所有区间统一为**左闭右开 [start, end)**。
-- 视频中的逻辑位置不为负。素材的原始 PTS 可能有负的 origin；导入时保存原始的 origin 与 edit list，并建立归一化的展示时间，不丢弃原始信息。
-- 相对移动量可以为负，但要先算出目标再验证范围。内部的 handles 与预滚时刻不代表允许保存负的视觉片段位置。
+- Sequence time is fixed by the context's video version and sequence version; source time is fixed by the asset version; composition time is additionally bound to the selected instance, code bundle and timeMap.
+- Only points in the same time domain may be subtracted directly. Crossing domains requires an explicit mapping; you cannot compare or overwrite values merely because their `timescale` is the same.
+- All intervals are uniformly **left-closed, right-open [start, end)**.
+- Logical positions in a video are not negative. An asset's raw PTS may have a negative origin; on import, the raw origin and edit list are saved and a normalized display time is established, without discarding the original information.
+- Relative movement amounts may be negative, but compute the target first and then validate the range. Internal handles and pre-roll instants do not permit saving a negative visual clip position.
 
-### 2.5 映射与非整数帧求值
+### 2.5 Mapping and Non-Integer Frame Evaluation
 
-每个实例只保存一个 `timeMap`，不同时保留可能相互矛盾的 in / out / speed / duration 四套事实。
+Each instance stores only one `timeMap`; it does not simultaneously keep four possibly contradictory sets of in / out / speed / duration facts.
 
 ```ts
 type TimeMap =
@@ -158,7 +158,7 @@ type TimeMap =
   | { kind: 'hold'; sourceAt: MediaTime };
 ```
 
-给定任意精确的视频时刻 t（不要求落在整数帧上）：
+For any exact video instant t (not required to fall on an integer frame):
 
 ```text
 itemStart  = item.fromFrame × sequence.fps.den / sequence.fps.num
@@ -166,50 +166,50 @@ localTime  = t − itemStart
 sourceTime = sourceIn + localTime × rate.num / rate.den
 ```
 
-这是有理数的运算关系，不是要求用 JS number 逐步计算。视觉帧在网格上的求值只是它的特例：t = sequenceFrame × fps.den / fps.num。关键帧之间按精确的局部时刻插值（§3.15）。
+This is a rational-number relation, not a requirement to compute step by step with JS numbers. Evaluating a visual frame on the grid is just a special case: t = sequenceFrame × fps.den / fps.num. Keyframes interpolate between exact local instants (§3.15).
 
-- `sourceOut` 是由映射与播放时长推导的结果，不是另一份可以独立编辑的数据。
-- 首版的 `linear` 只支持正速率；`hold` 默认不重复播放音频。
-- 倒放与变速曲线在实现之前一律拒绝；不能把未知的映射当成 1 倍速。
-- 嵌套序列逐层传递精确时间，不在每一层入口吸附一次帧网格。只有实际由帧驱动的源或 Adapter 边界，才按其声明的采样策略取离散样本。
+- `sourceOut` is derived from the mapping and the playback duration; it is not a separately editable piece of data.
+- The first version's `linear` supports only positive rates; `hold` does not repeat audio by default.
+- Reverse playback and speed curves are rejected uniformly until they are implemented; an unknown mapping must not be treated as 1x speed.
+- Nested sequences pass exact time through each layer and do not snap to the frame grid once at each layer's entry. Only a source or Adapter boundary that is actually frame-driven takes discrete samples, according to its declared sampling policy.
 
-**例**。30 fps 的视频，视觉片段 `fromFrame=90`、`durationFrames=60`、`sourceIn`=2 秒、`rate`=3/2。视频播放区间是 [3, 5) 秒，源区间是 [2, 5) 秒。视频时刻 4 秒（第 120 帧）映射到源 3.5 秒。导出在 4 + 1/60 秒采样时也直接计算，不先取整回第 120 帧。
+**Example**. A 30 fps video with a visual clip `fromFrame=90`, `durationFrames=60`, `sourceIn`=2 seconds, `rate`=3/2. The video playback interval is [3, 5) seconds, and the source interval is [2, 5) seconds. The video instant 4 seconds (frame 120) maps to source 3.5 seconds. When export samples at 4 + 1/60 seconds, that is also computed directly, without first rounding back to frame 120.
 
-### 2.6 量化、区间与可变帧率取样
+### 2.6 Quantization, intervals and variable-frame-rate sampling
 
-**编辑量化**决定用户请求的秒如何落在视觉编辑网格上。**媒体取样**决定某个精确的源时刻使用哪一张真实的源图像。二者不同：不能在选到最近的源样本之后，偷偷修改已提交的切点。
+**Edit quantization** determines how the seconds a user requests land on the visual edit grid. **Media sampling** determines which real source image is used at a given exact source moment. The two differ: after choosing the nearest source sample, you must not quietly modify a committed cut point.
 
 ```ts
 type FrameAlignment = 'exact-frame' | 'nearest-frame' | 'floor-frame' | 'ceil-frame';
 ```
 
-| 政策 | 规则 | 适用 |
+| Policy | Rule | Use for |
 | --- | --- | --- |
-| `exact-frame` | 必须恰好落在目标网格上，否则拒绝 | 精确位置或严格的脚本 |
-| `nearest-frame` | 取最近的边界；恰好居中时取**较早**的边界 | 普通视觉移动的默认值 |
-| `floor-frame` | 取不晚于请求的边界 | 显式要求向前对齐 |
-| `ceil-frame` | 取不早于请求的边界 | 显式要求向后对齐 |
+| `exact-frame` | Must land exactly on the target grid, otherwise reject | Exact positions or strict scripts |
+| `nearest-frame` | Take the nearest boundary; on an exact tie, take the **earlier** boundary | Default for ordinary visual moves |
+| `floor-frame` | Take the boundary no later than the requested one | Explicit request for forward alignment |
+| `ceil-frame` | Take the boundary no earlier than the requested one | Explicit request for backward alignment |
 
-规则：
+Rules:
 
-- 对齐政策由命令规定，不存在全局默认的「四舍五入」。
-- 口播删除先根据可信的词锚与声学边界生成安全的候选，再量化，并校验不会吞掉相邻的词。
-- 区间操作显式声明边界政策。公共的拼接边界只量化一次；不得分别取整每一段的长度再累加，也不得默认扩大删除范围。
-- 量化导致零长度或超出范围时拒绝，不自动补一帧。
-- 相对移动：先由当前的权威位置加上精确的偏移得到绝对目标，再量化。不能先把每个增量舍入再累计。
-- 一次事务产生最终的 `FrameSpan` 与量化回执。下游不得把显示用的秒值再转一次帧。
+- The alignment policy is set by the command. There is no global default of “round to nearest”.
+- For speech cuts, first generate safe candidates from trusted word anchors and acoustic boundaries, then quantize, and verify that no adjacent word is swallowed.
+- Range operations declare their boundary policy explicitly. A shared splice boundary is quantized only once. Do not round each segment's length separately and then add them up, and do not silently widen the deletion range.
+- If quantization yields zero length or goes out of range, reject. Do not automatically add a frame.
+- Relative moves: first add the exact offset to the current authoritative position to get the absolute target, then quantize. Do not round each increment and accumulate.
+- One transaction produces the final `FrameSpan` and a quantization receipt. Downstream code must not convert a display seconds value back into frames.
 
-**可变帧率**。素材按 PTS 索引和真实的展示区间 [pts_i, pts_next) 取帧。最后一个样本的终点来自明确的样本时长或素材终点，不假定一定有下一条 PTS。遇到 gap、重叠或 discontinuity，由导入与采样合同显式处理。不能用 DTS、平均帧率或最近的关键帧代替正确的展示样本。精确的非关键帧编辑需要解码与重编码，或者明确拒绝快速路径；不悄悄移动视频的切点。
+**Variable frame rate.** Material is indexed by PTS, and frames are fetched by the real presentation interval [pts_i, pts_next). The end of the last sample comes from an explicit sample duration or the end of the material; do not assume a next PTS always exists. Gaps, overlaps or discontinuities are handled explicitly by the import and sampling contract. Do not substitute DTS, the average frame rate or the nearest keyframe for the correct presentation sample. Exact non-keyframe edits require decoding and re-encoding, or an explicit rejection of the fast path. Never silently move a video cut point.
 
-### 2.7 拆分、裁切与运动相位
+### 2.7 Splitting, trimming and motion phase
 
-- 视觉拆分点满足 0 < `splitLocalFrame` < `durationFrames`。右片段的 `sourceIn` 由旧的 timeMap 在精确的拆分时刻求值，不从格式化之后的秒字符串重建。
-- 音频拆分按音频的采样与时间合同，不套用视频的整数帧限制。
-- 裁切要明确是 trim、slip、ripple 还是 rateStretch。
-- 移动保留局部动画。左裁切与拆分保留原相位和真实的子曲线，不重新启动同一条 easing。
-- rateStretch 必须显式选择是否缩放关键帧、音频、字幕和语义锚，并返回依赖影响。「延长外壳」不等于「放慢内容」。
+- A visual split point satisfies 0 < `splitLocalFrame` < `durationFrames`. The right segment's `sourceIn` is evaluated from the old timeMap at the exact split moment, not rebuilt from a formatted seconds string.
+- Audio splits follow the audio's sample and time contract, not the video's integer-frame limit.
+- A trim must be explicitly one of trim, slip, ripple or rateStretch.
+- Moves preserve local animation. Left trims and splits preserve the original phase and the real sub-curve; do not restart the same easing.
+- rateStretch must explicitly choose whether to scale keyframes, audio, subtitles and semantic anchors, and must return the dependency impact. “Extending the shell” is not the same as “slowing down the content”.
 
-### 2.8 时间输入：秒优先，帧可选，锚点更优先
+### 2.8 Time input: seconds first, frames optional, anchors preferred
 
 ```ts
 type TimelineTimeInput =
@@ -224,11 +224,11 @@ interface MoveItemInput {
 }
 ```
 
-- `frames` 只表示命令所属序列的视频帧；不接受裸的源帧或代码帧。其他时间域使用各自的 Schema 与 `VersionRef`。
-- `seconds` 是十进制字符串，精确解析。不接受 NaN、Infinity、科学计数法，也不接受直接用 JS number 冒充精确输入。界面可以用浮点数交互，但提交时调用共享的格式化与解析合同。
-- 绝对位置 `at` 非负；相对偏移使用独立的字段，允许负值。
-- 显示的小数位数不改变已保存的精度。
-- 「晚两秒」不要求智能体计算帧号。「跟着这句话」优先发送句、词或 occurrence 的锚点，由引擎解析当前的视频关系。禁止按逐词的数目平均分配出伪精确的时间。
+- `frames` only means video frames of the sequence the command belongs to. Raw source frames or code frames are not accepted. Other time domains use their own schema and `VersionRef`.
+- `seconds` is a decimal string, parsed exactly. NaN, Infinity and scientific notation are not accepted, and a JS number may not pass as exact input directly. The UI may use floats for interaction, but on submit it calls the shared formatting and parsing contract.
+- The absolute position `at` is non-negative. Relative offsets use a separate field and may be negative.
+- Displayed decimal places do not change the saved precision.
+- “Two seconds later” does not require the agent to compute a frame number. “Follow this sentence” should send a sentence, word or occurrence anchor first, and let the engine resolve the current video relationship. Dividing time evenly across words by count is forbidden, because it produces false precision.
 
 ```json
 {
@@ -240,9 +240,9 @@ interface MoveItemInput {
 }
 ```
 
-在 30 fps 的 `main` 序列中，上例归一化为 `fromFrame=375`。用户直接传 `frames=375` 的结果相同。命令不会同时写入 `startSeconds=12.5` 与 `startFrame=375`。
+In the 30 fps `main` sequence, the example above normalizes to `fromFrame=375`. Passing `frames=375` directly gives the same result. The command does not write `startSeconds=12.5` and `startFrame=375` at the same time.
 
-### 2.9 量化回执
+### 2.9 Quantization receipt
 
 ```ts
 interface TimeQuantizationReceipt {
@@ -253,128 +253,128 @@ interface TimeQuantizationReceipt {
   requestedTime: MediaTime;
   actualFrame: number;
   actualTime: MediaTime;
-  delta: MediaTime;             // actual − requested，可以为负
+  delta: MediaTime;             // actual − requested; may be negative
   policy: FrameAlignment;
 }
 ```
 
-**例**。在 30000/1001 fps 的视频中请求 10.000 秒，`nearest-frame` 得到第 300 帧；实际时间是 1001/100 秒，即 10.010 秒；偏差是 +1/100 秒，即 +10 毫秒。这是帧网格的量化，不是数值计算的误差。对同一请求使用 `exact-frame` 则返回 `TIME_NOT_ON_FRAME_GRID`，并给出最近的合法边界，不自动提交。
+**Example**. In 30000/1001 fps video, requesting 10.000 seconds with `nearest-frame` gives frame 300. The actual time is 1001/100 seconds, i.e. 10.010 seconds, and the deviation is +1/100 second, i.e. +10 ms. This is quantization to the frame grid, not an error from numerical computation. Using `exact-frame` for the same request returns `TIME_NOT_ON_FRAME_GRID`, with the nearest legal boundary given, and does not commit automatically.
 
-- 同一个意图用同一个 `commandId` 重试，返回原回执；同一个 key 换了 payload 则拒绝。
-- 界面可以同时显示请求值与实际落点。之后的读取必须使用 `actualFrame` 或权威的时间，不从格式化的文本反推。
+- Retrying the same intent with the same `commandId` returns the original receipt. The same key with a different payload is rejected.
+- The UI may show both the requested value and the actual landing point. Later reads must use `actualFrame` or the authoritative time, and must not infer back from formatted text.
 
-### 2.10 音频、转录与字幕保留子帧精度
+### 2.10 Audio, transcription and subtitles keep sub-frame precision
 
-48 kHz 下，10 毫秒的淡化是 480 个采样；30 fps 的一帧是 1600 个采样。音频的最短时长、采样点与淡化不受视觉最短一帧的约束。
+At 48 kHz, a 10 ms fade is 480 samples. One frame at 30 fps is 1600 samples. The minimum audio duration, sample points and fades are not constrained by the video's minimum one-frame limit.
 
-**音频实例**
+**Audio instances**
 
-- 精确的开始位置表示为 `fromFrame` + `subframeOffset`。前者是所属序列上的粗网格位置；后者是 `MediaTime`，范围是 [0, 一帧时长)。
-- 播放长度由显式的 `playDuration: MediaTime` 表示。整数的 `durationFrames` 不是采样级长度的权威。
-- 界面上音频条的帧宽只是派生的投影。
-- 纯音频片段不需要人为补足一帧。纯音频导出以明确的精确音频范围为准，不继承序列视觉尾端的补帧。视频内嵌音频的路由与视觉边界，另按联动合同约束。
-- `actualSamples` / `sampleRate` 表示生成音频的真实源长度；`playDuration` 表示这个实例在视频中经过裁切与变速之后的播放长度。二者经 timeMap 关联，不是可以任意并行修改的两份数据。
-- 更改编辑帧率时，保留精确的音频开始与长度，再重建「粗帧 + 余数」的表示。
+- An exact start position is represented as `fromFrame` + `subframeOffset`. The former is the coarse-grid position on the owning sequence; the latter is a `MediaTime` in the range [0, one frame's duration).
+- Playback length is represented by an explicit `playDuration: MediaTime`. The integer `durationFrames` is not the authority for sample-level length.
+- The frame width of an audio clip in the UI is only a derived projection.
+- Pure audio clips do not need an artificial frame pad. Pure audio export follows the explicit exact audio range and does not inherit the visual tail padding of the sequence. The routing and visual boundaries of audio embedded in video are governed by the linkage contract.
+- `actualSamples` / `sampleRate` represent the real source length of generated audio. `playDuration` represents the playback length of this instance in the video after trimming and speed change. The two are linked through the timeMap; they are not two independently editable copies of data.
+- When changing the edit frame rate, keep the exact audio start and length, then rebuild the “coarse frames + remainder” representation.
 
-**语音与字幕**
+**Speech and subtitles**
 
-- `SpeechWord.sourceSpan`、对齐结果和源字幕时序使用精确的源时间与 `timingQuality`。
-- 字幕的可见性按精确的投影区间在输出时刻上求值。在界面的帧网格上拖动字幕可以产生显式的 override，但不回写原始的词时间。
-- 目标语言的字幕如果依据新配音，使用实际的目标采样与对齐结果。
-- 改变输出帧率不重新识别、翻译或购买语音合成。
-- 时间输入在数值上精确，不等于证据准确：`estimated` / `provider` / `aligned` / `missing` 的质量标记始终保留。
-- 十进制浮点秒与整数刻度的互换（旧项目导入的微秒、字幕与翻译核心的 `TranscriptDoc`，§5.2）只用一条规则。刻度 → 秒：`ticks / timescale` 的最近 f64（两数都不超过 2^53 − 1，是真实商的正确舍入）。秒 → 刻度：取这个 f64 的最短十进制写法（能读回同一个数的最少位数），精确乘以 `timescale`，取最近的整数，正好一半时远离零；非有限数与超出安全整数的结果报错。这条规则不同于 §2.13 的 pts 取整（一半取偶）与编辑吸附，只用于这两处边界。由此 |ticks| < 2^51 时刻度 → 秒 → 刻度回到原值；秒 → 刻度 → 秒在十进制值乘以 `timescale` 为整数时回到原值，否则偏差不超过半个刻度，写回的一方报告发生取整的个数与最大偏差。
+- `SpeechWord.sourceSpan`, alignment results and source subtitle timing use exact source time and `timingQuality`.
+- Subtitle visibility is evaluated at the output moment against the exact projected interval. Dragging a subtitle on the UI's frame grid may produce an explicit override, but it does not write back to the original word times.
+- Target-language subtitles that depend on new dubbing use the actual target samples and alignment results.
+- Changing the output frame rate does not re-recognize, re-translate or re-buy speech synthesis.
+- Time input is numerically exact, which does not mean the evidence is accurate. The quality markers `estimated` / `provider` / `aligned` / `missing` are always kept.
+- The conversion between decimal float seconds and integer tick scales (microseconds from legacy project import, and `TranscriptDoc` for subtitles and the translation core, §5.2) uses a single rule. Ticks → seconds: the nearest f64 of `ticks / timescale` (when both numbers are at most 2^53 − 1, this is the correct rounding of the true quotient). Seconds → ticks: take the shortest decimal representation of this f64 (the fewest digits that read back the same number), multiply exactly by `timescale`, take the nearest integer, and at exactly half round away from zero. Non-finite numbers and results beyond the safe integer range raise an error. This rule differs from the pts rounding in §2.13 (half to even) and from edit snapping, and applies only to these two boundaries. Hence when |ticks| < 2^51, ticks → seconds → ticks returns the original value. Seconds → ticks → seconds returns the original value when the decimal value multiplied by `timescale` is an integer; otherwise the deviation is at most half a tick, and the side that writes back reports the number of values that were rounded and the maximum deviation.
 
-**外部字幕格式**。导出 SRT、VTT 等格式时，才按该格式允许的精度和固定的端点规则转换，并报告发生的量化或重叠修复；不修改视频里的原始时间。两个相邻 Cue 共用的边界统一转换，防止分别舍入造成缝隙。
+**External subtitle formats.** When exporting formats such as SRT and VTT, convert according to the precision that format allows and its fixed endpoint rules, and report any quantization or overlap repairs made. Do not modify the original times in the video. Boundaries shared by two adjacent cues are converted uniformly, to prevent gaps caused by separate rounding.
 
-### 2.11 编辑帧率与输出帧率严格分离
+### 2.11 Edit frame rate and output frame rate are strictly separate
 
 ```ts
 interface ExportSettings {
-  fps: Rate;                                   // 输出采样网格，不是 Sequence.fps
+  fps: Rate;                                   // output sampling grid, not Sequence.fps
   frameCountPolicy: 'exact-grid' | 'cover-range';
-  // 分辨率、编码、音频等字段见导出合同
+  // resolution, codec, audio and other fields: see the export contract
 }
 ```
 
-输出帧率默认继承根序列的 `Sequence.fps`，但保存进冻结的导出快照之后独立存在。30 fps 的视频里一个 300 帧的片段是 10 秒；以 60 fps 导出得到 600 个输出帧，视频仍然是 30 fps / 300 帧，声音不变速。
+The output frame rate defaults to inheriting the root sequence's `Sequence.fps`, but once it is saved into a frozen export snapshot it exists independently. In a 30 fps video, a 300-frame clip is 10 seconds. Exported at 60 fps, it yields 600 output frames; the video remains 30 fps / 300 frames, and the sound is not speed-changed.
 
 ```text
-t0 = 导出范围的精确起点
-D  = 导出范围的精确时长
-N  = 按 frameCountPolicy 计算 D × outputFps
+t0 = exact start of the export range
+D  = exact duration of the export range
+N  = D × outputFps, computed per frameCountPolicy
 outputTime(n)   = n × outputFps.den / outputFps.num
 sequenceTime(n) = t0 + outputTime(n),   0 ≤ n < N
 contentTime(n)  = mapToContentTime(sequenceTime(n))
 ```
 
-输出帧直接取精确的视频时刻，再映射到各层。不得先 floor 或 round 到视频帧之后再插值连续的原生动画。30 → 60 fps 时，可以连续求值的原生曲线应在半个视频帧处求值；源视频与帧驱动的代码则按已验证的策略重复或选择其离散帧。仅仅提高导出帧率不会创造出真实的源运动。
+Output frames take the exact video moment directly, then map to each layer. Do not first floor or round to a video frame and then interpolate a continuous native animation. For 30 → 60 fps, continuously evaluable native curves should be evaluated at the half-video-frame point. Source video and frame-driven code instead repeat or select their discrete frames according to a verified policy. Merely raising the export frame rate does not create real source motion.
 
-**帧数政策**
+**Frame count policy**
 
-| 政策 | 规则 |
+| Policy | Rule |
 | --- | --- |
-| `exact-grid` | 要求 D × outputFps 是整数，否则返回 `EXPORT_RANGE_NOT_ON_OUTPUT_GRID` |
-| `cover-range` | N 取上整。最后一个输出帧的起点仍然小于逻辑终点，但在恒定帧率的容器里，视觉的展示尾端可能延长不到一个输出帧 |
+| `exact-grid` | Requires D × outputFps to be an integer, otherwise returns `EXPORT_RANGE_NOT_ON_OUTPUT_GRID` |
+| `cover-range` | N is rounded up. The start of the last output frame is still less than the logical end, but in a constant-frame-rate container the visual display tail may extend by less than one output frame |
 
-使用 `cover-range` 时，预检与交付记录必须说明 `requestedDuration`、`frameCount`、`encodedVideoDuration` 与 `audioDuration`。逻辑音频区间不会为了强行对齐尾端而加速或截词。输出合同另外要求等长时，只能在显式授权下用静音安全补齐，或者拒绝；不改动已有的讲话内容。
+When using `cover-range`, the preflight and delivery record must state `requestedDuration`, `frameCount`, `encodedVideoDuration` and `audioDuration`. The logical audio range is not sped up or trimmed to force the tail to align. If the output contract additionally requires equal length, it may only pad with silence-safe fill under explicit authorization, or reject; existing speech content is not altered.
 
-**例**。精确的 10 秒以 30000/1001 fps 导出：`cover-range` 得到 300 帧，画面展示时长 10.010 秒，音频仍然可以是 10 秒；`exact-grid` 则拒绝。末帧的展示延长不是向源码请求越界的帧，也不授权修改主视频的时长。
+**Example**. An exact 10 seconds exported at 30000/1001 fps: `cover-range` yields 300 frames, the picture displays for 10.010 seconds, and the audio can still be 10 seconds. `exact-grid` rejects. Extending the final frame's display does not request an out-of-bounds frame from the source, and it does not authorize changing the main video's duration.
 
-交互场景默认使用可见的 `cover-range`；严格的机器任务可以指定 `exact-grid`。不得暗中切换政策。
+Interactive scenarios default to the visible `cover-range`; strict machine tasks may specify `exact-grid`. The policy must never be switched silently.
 
-### 2.12 修改 `Sequence.fps` 是显式的视频事务
+### 2.12 Changing `Sequence.fps` is an explicit video transaction
 
-改变导出帧率不修改视频。改变编辑帧率必须使用 `changeSequenceFrameRate`，带上 `expectedRevision`、新旧 `Rate`、`preserve` 策略、对齐政策、影响范围、锁定处理和必要的确认。禁止直接 `setProperty(fps)` 之后让所有的帧号换一种含义。
+Changing the output frame rate does not modify the video. Changing the edit frame rate must use `changeSequenceFrameRate`, carrying `expectedRevision`, the old and new `Rate`, the `preserve` policy, the alignment policy, the scope of impact, lock handling and the necessary confirmation. Directly calling `setProperty(fps)` and letting all frame numbers take on a different meaning is forbidden.
 
-| `preserve` | 语义 | 必须处理 |
+| `preserve` | Meaning | Must handle |
 | --- | --- | --- |
-| `time`（默认） | 保留真实时间；帧坐标重采样到新的编辑网格 | 报告量化偏差、零长度、转场、关键帧、锚点与嵌套的影响 |
-| `frames`（显式的高级操作） | 保留视觉帧计数；真实时长按新网格变化 | 必须联动规划 timeMap、音频与字幕；没有实现完整 retime 时拒绝 |
+| `time` (default) | Keep real time; resample frame coordinates to the new edit grid | Report the impact on quantization deviation, zero-length segments, transitions, keyframes, anchors and nesting |
+| `frames` (explicit advanced operation) | Keep the visual frame count; real duration changes with the new grid | Must plan timeMap, audio and subtitles together; reject if the full retime is not implemented |
 
-- P0 可以只实现 `preserve=time`。`preserve=frames` 必须受能力门控制，不以裸改 fps 作为退化实现。
-- 30 → 60 fps、`preserve=time`：视觉的 `fromFrame` 与 `durationFrames` 在整数比的情况下乘 2；音频的绝对采样时刻不变。
-- 30 → 25 等非整数比：公共边界统一量化，可能影响最短的片段与锁定范围。事务必须先给出差异报告；无法满足硬约束时拒绝。
-- 原生视觉关键帧先从旧网格求出精确时间，再转换到新网格，并保留原曲线的语义。量化使关键点合并或无法保持形状时，必须报告或拒绝；不承诺任意改帧率都无损。
-- 精确的音频、语音证据和源素材的帧率不被改写。
-- `CodeBundle.intrinsic.fps` 是不可变的作者合同，不随视频设置原地修改。
-- 嵌套序列的 fps 默认不递归更改；调用者显式选择目标序列的集合。
-- 导出中的旧快照继续使用原来的全部 `Rate`。
+- P0 may implement only `preserve=time`. `preserve=frames` must be gated by a capability, and must not be degraded into a bare fps change.
+- 30 → 60 fps, `preserve=time`: the visual `fromFrame` and `durationFrames` are multiplied by 2 when the ratio is an integer. The absolute sample times of audio do not change.
+- Non-integer ratios such as 30 → 25: shared boundaries are uniformly quantized, which may affect the shortest segments and locked ranges. The transaction must first provide a difference report, and it rejects when hard constraints cannot be met.
+- Native visual keyframes first compute exact times from the old grid, then convert to the new grid, preserving the semantics of the original curve. When quantization causes keyframes to merge or prevents the shape from being kept, it must be reported or rejected. No lossless guarantee is made for arbitrary frame-rate changes.
+- Exact audio, speech evidence and source material frame rates are not rewritten.
+- `CodeBundle.intrinsic.fps` is an immutable author contract and is not modified in place with the video settings.
+- Nested sequences' fps is not changed recursively by default. The caller explicitly selects the set of target sequences.
+- Old snapshots used during export continue to use all of their original `Rate` values.
 
-### 2.13 边界数值、宿主转换与缓存
+### 2.13 Boundary Values, Host Conversion and Caching
 
-精确时间只在浏览器 draw、媒体 API、编码器这些要求原生数值的边界上，才转换成浮点秒、微秒或整数采样。
+Exact time is converted to floating-point seconds, microseconds or integer samples only at boundaries that require native numeric values: browser draw, media APIs and encoders.
 
-用输出帧率生成编码时间戳时使用绝对索引：
+When generating encoding timestamps from the output frame rate, use absolute indices:
 
 ```text
 pts(n)      = round(n × outputFps.den / outputFps.num × 1_000_000)
 duration(n) = pts(n+1) − pts(n)
 ```
 
-- 这里 `round` 的 tie 规则是 **nearest-ties-to-even**，并固定在 `timeContractVersion` 里。它与编辑吸附的 `nearest-frame`（取较早边界）是两个不同接口的规则，不可混用。
-- 每帧的 duration 可以相差 1 微秒。不得把舍入之后的单帧 duration 重复累加。
-- 音频的采样边界同样从绝对的有理时刻求出；实际的采样量化偏差写入结果合同。
+- The tie rule for `round` here is **nearest-ties-to-even**, fixed in `timeContractVersion`. It and the edit-snapping `nearest-frame` (which takes the earlier boundary) are two different rules for two different interfaces, and they must not be mixed.
+- The duration of each frame may differ by 1 microsecond. Do not accumulate rounded per-frame durations repeatedly.
+- Audio sample boundaries are likewise derived from absolute rational instants; the actual sample quantization deviation is written into the result contract.
 
-**共享实现**。Rust 与 WASM 导出同一套 `parseDecimalSeconds`、`compareTime`、`mapTime`、`quantizeFrame`、`timestampAt`、`sampleAt` 语义。JS 不另外手写一套 `Math.round` 转换。JS number 只能承载经过范围检查的宿主近似值，不用作精确的 ID、hash 或数据库去重值。
+**Shared implementation.** The Rust and WASM exports share the same semantics for `parseDecimalSeconds`, `compareTime`, `mapTime`, `quantizeFrame`, `timestampAt` and `sampleAt`. JS does not hand-write a separate `Math.round` conversion. A JS number can only carry a range-checked host approximation; it is not used as an exact ID, hash or database de-duplication value.
 
-**缓存**。缓存键必须区分编辑帧率、输出帧率、代码包与素材的时间基、采样策略、实际的局部采样点和帧数政策。参数、依赖与实际局部时刻完全一致的源码样本可以复用；不同输出帧率的编码产物不是同一个产物。对 1500/1000 与 3/2 这样等价的时间，缓存使用规范的有理值；原始 PTS 的来源字段另行保留。
+**Cache.** Cache keys must distinguish the edit frame rate, the output frame rate, the time base of the code package and of the material, the sampling policy, the actual local sample points and the frame-count policy. Source samples whose parameters, dependencies and actual local instant are fully identical may be reused; encoded output at different output frame rates is not the same artifact. For equivalent times such as 1500/1000 and 3/2, the cache uses the canonical rational value; the source field of the original PTS is kept separately.
 
-### 2.14 硬不变量
+### 2.14 Hard Invariants
 
-1. 视觉的 `FrameSpan`、精确的音频时长、语音的源时序，各有唯一的权威。
-2. 单位转换、编辑量化、源取样三者分别可追踪。
-3. 导出帧率不改变视频时间，也不改变声音速度。
-4. 可以连续求值的对象不在中间层多次吸附。
-5. 可变帧率不伪造平均帧号。
-6. 代码包的帧率不等于主时间线的帧率。
-7. 回执反映实际落点，而不是只回显请求。
+1. Visual `FrameSpan`, exact audio duration and speech source timing each have a single authority.
+2. Unit conversion, edit quantization and source sampling are each separately traceable.
+3. The export frame rate changes neither video time nor audio speed.
+4. Objects that can be evaluated continuously are not snapped repeatedly in intermediate layers.
+5. A variable frame rate does not fabricate an average frame number.
+6. The frame rate of a code package is not the frame rate of the main timeline.
+7. A receipt reflects the actual landing point, not just an echo of the request.
 
-本规范不包含完整的变速曲线、倒放、光流补帧，以及任意保留帧数的 retime。它们是否开放由能力门与测试决定。
+This specification does not include full speed-change curves, reverse playback, optical-flow frame interpolation, or retime that keeps an arbitrary number of frames. Whether they are opened is decided by capability gates and tests.
 
 ---
 
-## 3. 视频
+## 3. Video
 
 ### 3.1 VideoSnapshot
 
@@ -389,8 +389,8 @@ interface VideoSnapshot {
   rootSequenceId: Id;
 
   sequences: Record<Id, Sequence>;
-  assets: Record<Id, AssetRecord>;            // 文件与目录：媒体、字体、代码包（§4.1–§4.3）
-  documents: Record<Id, DocumentRecord>;      // 文稿类内容的文档头（§4.4）；正文不在快照里
+  assets: Record<Id, AssetRecord>;            // files and directories: media, fonts, code packages (§4.1–§4.3)
+  documents: Record<Id, DocumentRecord>;      // document headers for text-type content (§4.4); the body is not in the snapshot
 
   fonts: Record<Id, FontRecord>;
   localizationSets: Record<Id, LocalizationSet>;
@@ -403,12 +403,12 @@ interface VideoSnapshot {
 }
 ```
 
-`VideoSnapshot` 是权威状态的可交换快照。工作态由 VideoStore 持有；快照不是第二个写入端。视频名称 `name` 去掉首尾空白后必须为 1–200 个 Unicode 标量值（不按 UTF-8 字节数或 UTF-16 编码单元计数）；创建、改名和便携包导入使用同一限制。
+`VideoSnapshot` is the interchangeable snapshot of authoritative state. The working state is held by VideoStore; the snapshot is not a second write endpoint. The video `name`, after trimming leading and trailing whitespace, must be 1–200 Unicode scalar values (counted neither by UTF-8 bytes nor by UTF-16 code units); creating, renaming and portable-package import use the same limit.
 
-视频的内容只有两张表：
+A video's content has only two tables:
 
-- **素材**是 bytes：一个文件或一个目录。代码包不另设一张表，它是 `kind: 'bundle'` 的素材（§4.3）。
-- **文档**是结构化的文稿：转写、译文、字幕、字幕样式、剪辑提案、配音计划、声音事件表等。它们共用一张表，用开放的 `kind` 区分（§4.4、§4.6）。增加一种文稿不需要升级视频格式。
+- **Assets** are bytes: one file or one directory. A code package does not get a table of its own; it is an asset with `kind: 'bundle'` (§4.3).
+- **Documents** are structured texts: transcripts, translations, subtitles, subtitle styles, edit proposals, dubbing plans, sound-event tables and so on. They share one table and are distinguished by an open `kind` (§4.4, §4.6). Adding a new kind of document does not require upgrading the video format.
 
 ### 3.2 Sequence
 
@@ -417,31 +417,31 @@ interface Sequence {
   id: Id;
   revision: Revision;
   name: string;
-  nameRef?: MessageRef;              // name 还是引擎起的缺省名时它的消息引用；改名后没有
-  fps: Rate;                         // 编辑网格。输出帧率见 ExportSettings.fps
+  nameRef?: MessageRef;              // message reference while name is the engine's default name; gone after a rename
+  fps: Rate;                         // edit grid. Output frame rate: see ExportSettings.fps
   canvas: {
     width: number;
     height: number;
     workingSpace: 'linear-rec709';
-    background: string;              // 画布底色，'#RRGGBB'，缺省 '#000000'
+    background: string;              // canvas background colour, '#RRGGBB', default '#000000'
   };
   durationPolicy: { kind: 'derived' } | { kind: 'fixed'; frames: number };
   tracks: Track[];
   items: SequenceItem[];                // §3.4
   animationBindings: AnimationBinding[];
-  transitions: Transition[];         // §3.9，按 ID 排序
-  markers: Marker[];                 // §3.13，按帧排序，同帧按 ID
-  ducking: DuckingRule[];            // 闪避规则（§3.9），按 ID 排序
-  template?: TemplateLayers;         // 模板层（§3.17）；没有时省略
+  transitions: Transition[];         // §3.9, sorted by ID
+  markers: Marker[];                 // §3.13, sorted by frame, ties by ID
+  ducking: DuckingRule[];            // ducking rules (§3.9), sorted by ID
+  template?: TemplateLayers;         // template layers (§3.17); omitted when absent
 }
 ```
 
-- 名字：新建视频时根序列的缺省名由引擎起，存英文 `name: 'Main sequence'` 与 `nameRef: { key: 'engine.mainSequence' }`（命令与协议规范 §11.1 的消息引用）；`updateSequence` 给了 `name` 就是用户起的名字，去掉 `nameRef`。给人看时按 `localizeText(name, nameRef)` 用读者的语言显示，用户起的名字原样（`@cuccut/protocol` 的 `sequenceDisplayName`）。有 `nameRef` 之前新建的视频存的是 `name: '主序列'`、没有引用：引擎读写都不补，原样保留（撤销按存下的原样比对）；显示时把这个字面值也当缺省名。只增加可以忽略的字段，不加格式版本（§1.4）。
-- `derived`：先求所有可计时对象的精确终点，再向上投影为序列的整数帧长度。音频可能有子帧的尾端；它的真实长度不被这个视觉边界反向覆盖。
-- `fixed`：允许片尾留白；超出终点的内容必须显式裁切或延长序列。
-- 恒定帧率输出的尾帧政策见 §2.11；不能为了编码方便而偷偷修改视频时长。
-- 画布的宽与高必须是正整数。编码对尺寸的约束在导出校验中处理。
-- `canvas.background` 是纯色，不透明，铺满画布，画在所有轨道下面；画面没有盖满画布的地方露出它。读入时大小写不限，写出一律大写。实例自己的留边底色是 `bg`（§3.5），不是画布背景。
+- Name: when a new video is created, the root sequence's default name is set by the engine and stored as the English `name: 'Main sequence'` with `nameRef: { key: 'engine.mainSequence' }` (a message reference per the command and protocol specification §11.1). If `updateSequence` is given a `name`, that is a name the user chose, and `nameRef` is removed. For display, `localizeText(name, nameRef)` shows it in the reader's language; a user-chosen name is shown as is (`sequenceDisplayName` in `@cuccut/protocol`). Videos created before `nameRef` existed store `name: '主序列'` with no reference: the engine neither fills it in on read nor on write, and keeps the stored literal as is (undo compares against the stored original); display also treats this literal as the default name. Only ignorable fields are added; no format version is bumped (§1.4).
+- `derived`: first compute the exact end points of all timeable objects, then project upward to an integer frame length for the sequence. Audio may have a sub-frame tail; its true length is not overridden backward by this visual boundary.
+- `fixed`: allows blank space at the end; content beyond the end must be explicitly cropped, or the sequence must be extended.
+- The tail-frame policy for constant-frame-rate output is in §2.11; the video duration must never be silently changed for encoding convenience.
+- The canvas width and height must be positive integers. Encoder constraints on dimensions are handled in export validation.
+- `canvas.background` is a solid, opaque colour that fills the canvas and is drawn beneath all tracks; wherever the picture does not cover the canvas, it shows through. On read, case is not significant; on write, it is always uppercase. An instance's own letterbox fill colour is `bg` (§3.5), not the canvas background.
 
 ### 3.3 Track
 
@@ -458,58 +458,58 @@ interface Track {
 }
 ```
 
-- `order` 越大，越靠后合成（画面上越靠上）。视觉轨道与字幕轨道在同一叠里按 `order` 统一排序，字幕不自动在最上，画面轨道挪到字幕轨道之上就盖住字幕；音频轨道的 `order` 只排声音轨道之间的次序。画面的叠放次序就是轨道的上下：用户在画布上「前移一层 / 后移一层 / 移到最前 / 移到最后」改的是实例所在的轨道（命令协议规范 §4.2 `arrangeItem`：共用轨道的实例拆到相邻新建的轨道上，独占轨道的实例整条轨道挪位），在时间线上拖动轨道换的是 `order`（`moveTrack`）。`order` 在序列内唯一，可以有空洞；删轨道不重排。
-- 同一轨道内的实例在时间上不重叠（§3.4），`paintOrder` 由引擎在写入时取轨道内最大值加一，只用来给边界恰好相接或由旧数据带来的重叠排一个确定的先后；没有操作直接改它，禁止依赖数据库的返回顺序。
-- 锁定阻止修改，不等于隐藏。
-- 静音不等于删除源音频。
-- Solo 必须声明作用于音频组还是视觉组。
+- A larger `order` composites later (appears higher on screen). Visual and subtitle tracks are sorted together by `order` in the same stack; subtitles are not automatically on top, so a visual track moved above a subtitle track covers the subtitles. The `order` of audio tracks only orders audio tracks among themselves. The stacking order of pictures is the up/down position of their tracks: when the user on the canvas chooses “前移一层 / 后移一层 / 移到最前 / 移到最后” (bring forward one layer / send back one layer / bring to front / send to back), what changes is the track the instance is on (command protocol specification §4.2 `arrangeItem`: an instance sharing its track is split onto newly created adjacent tracks; an instance with a track to itself moves that whole track). Dragging a track on the timeline changes its `order` (`moveTrack`). `order` is unique within a sequence and may have gaps; deleting a track does not renumber.
+- Items on the same track must not overlap in time (§3.4). `paintOrder` is set by the engine at write time to the track's maximum plus one, and is used only to give a deterministic order to items whose boundaries exactly touch or that overlap because of old data. Do not change it directly, and never rely on database return order.
+- Locking blocks modification; it is not the same as hiding.
+- Muting is not the same as deleting the source audio.
+- Solo must declare whether it acts on the audio group or the visual group.
 
-### 3.4 实例（Item）
+### 3.4 Item
 
-实例是素材或文档在序列上的一次使用。画面元素的种类与参数采用 v2 的元素模型：种类与 `crates/timeline` 的 `ElementKind` 一一对应，参数的字段名、取值与范围以它为准；实例的身份、所在的轨道与时间是 v3 的容器（§2、§3.2、§3.3）。
+An item is one use of an asset or document on a sequence. Picture elements use the v2 element model: the kinds correspond one-to-one to `ElementKind` in `crates/timeline`, and the field names, values and ranges of their parameters follow it. An item's identity, its track and its time belong to the v3 container (§2, §3.2, §3.3).
 
 ```ts
 type ItemType =
   | 'text' | 'image' | 'video' | 'audio' | 'shape' | 'sticker'
-  | 'visualizer' | 'progress' | 'draw' | 'placeholder' | 'confetti' | 'whiteboard'   // v2 的元素种类
-  | 'composition' | 'caption';                                                       // 代码合成、字幕
+  | 'visualizer' | 'progress' | 'draw' | 'placeholder' | 'confetti' | 'whiteboard'   // v2 element kinds
+  | 'composition' | 'caption';                                                       // code composition, subtitles
 
-// 所有实例共用的字段
+// fields shared by all items
 interface ItemBase {
   id: Id;
   type: ItemType;
   trackId: Id;
   name?: string;
-  enabled: boolean;                    // 停用的实例不出画面也不出声
+  enabled: boolean;                    // a disabled item shows neither picture nor sound
   locked: boolean;
   paintOrder: number;
   followPolicy: FollowPolicy;          // §3.16
-  lineage?: ItemLineage;               // 拆分、裁切后的来源关系
-  linkGroupId?: Id;                    // 音画联动组
-  role?: string;                       // 实例在视频里的作用，见下
-  ai?: JsonValue;                      // 生成来源的说明；引擎不解释，原样保留
-  untilSequenceEnd?: true;             // 终点跟着序列末尾（§3.16）；不是时省略
-  extensions?: Record<string, JsonValue>;   // 命名空间下的扩展（§1.4）
+  lineage?: ItemLineage;               // source relationship after split or crop
+  linkGroupId?: Id;                    // audio-picture link group
+  role?: string;                       // the item's role in the video, see below
+  ai?: JsonValue;                      // description of the generation source; not interpreted by the engine, kept as is
+  untilSequenceEnd?: true;             // end follows the end of the sequence (§3.16); omitted when not in use
+  extensions?: Record<string, JsonValue>;   // extensions under a namespace (§1.4)
 }
 
 interface ItemLineage {
-  originItemId: Id;                    // 最初的实例
-  parentItemId?: Id;                   // 直接来源
+  originItemId: Id;                    // the original item
+  parentItemId?: Id;                   // direct source
   viaTransactionId: Id;
 }
 
-// 画面实例：位置与长度在帧网格上
+// picture items: position and length on the frame grid
 interface VisualItemBase extends ItemBase {
   span: FrameSpan;
-  place: Place;                        // 几何（§3.5）
-  animate?: Animation;                 // 元素动画的三槽（§3.15）
+  place: Place;                        // geometry (§3.5)
+  animate?: Animation;                 // three slots of element animation (§3.15)
 }
 
-// 视觉媒体的公共字段：视频、图片、占位框、白板、素材贴纸
+// common fields of visual media: video, image, placeholder frame, whiteboard, media sticker
 interface MediaFields {
-  mode?: 'fullscreen' | 'pip';         // §3.5，缺省 'pip'
-  fit?: 'cover' | 'contain';           // §3.5，缺省 'cover'
-  bg?: Background;                     // §3.5，缺省 'black'
+  mode?: 'fullscreen' | 'pip';         // §3.5, default 'pip'
+  fit?: 'cover' | 'contain';           // §3.5, default 'cover'
+  bg?: Background;                     // §3.5, default 'black'
   mask?: Mask;                         // §3.9
   fx?: Fx;                             // §3.9
 }
@@ -519,7 +519,7 @@ interface VideoItem extends VisualItemBase, MediaFields {
   assetRef: VersionRef;
   timeMap: TimeMap;
   crop?: Crop;                         // §3.5
-  embeddedAudio: EmbeddedAudio;        // 内嵌音频的路由（§3.9）
+  embeddedAudio: EmbeddedAudio;        // routing of embedded audio (§3.9)
 }
 
 interface ImageItem extends VisualItemBase, MediaFields {
@@ -527,16 +527,16 @@ interface ImageItem extends VisualItemBase, MediaFields {
   assetRef: VersionRef;
   crop?: Crop;
   tile?: Tile;                         // §3.5
-  source?: 'file' | 'html';            // 图片的编辑来源；渲染只用 assetRef
-  html?: string;                       // source 为 'html' 时保留的原始片段
+  source?: 'file' | 'html';            // editing source of the image; rendering uses only assetRef
+  html?: string;                       // original fragment kept when source is 'html'
 }
 
-// 音频实例：采样级的位置与长度（§2.10）
+// audio items: sample-level position and length (§2.10)
 interface AudioItem extends ItemBase {
   type: 'audio';
   assetRef: VersionRef;
   fromFrame: number;
-  subframeOffset: MediaTime;           // [0, 一帧时长)
+  subframeOffset: MediaTime;           // [0, one frame duration)
   playDuration: MediaTime;
   timeMap: TimeMap;
   mix: AudioMix;                       // §3.9
@@ -551,86 +551,86 @@ type SequenceItem =
   | CaptionItem;                                             // §3.8
 ```
 
-| 类型 | 轨道 | 内容 | 编辑语义 |
+| Type | Track | Content | Editing semantics |
 | --- | --- | --- | --- |
-| `video` | 视觉 | 素材版本、timeMap、几何、内嵌音频的路由 | 裁切、移动、拆分、恒定速率、音画关联 |
-| `image` | 视觉 | 素材版本、几何、展示长度 | 移动、缩放、旋转、平铺 |
-| `audio` | 音频 | 素材版本、timeMap、`fromFrame` + `subframeOffset`、`playDuration`、混音 | 采样级的裁切与长度、音量、淡化、包络；条形的帧宽只是投影 |
-| `text` | 视觉 | 一段文字或计时读数，加文字样式（§3.6） | 改字、样式 |
-| `shape` | 视觉 | 形状目录里的一款，加填充、描边与端点（§3.6） | 基础图形 |
-| `sticker`、`visualizer`、`progress`、`draw`、`placeholder`、`confetti`、`whiteboard` | 视觉 | 贴纸、声波、进度条、手绘笔迹、占位框、彩纸、白板手绘（§3.7） | 参数编辑；占位框可以换成媒体 |
-| `composition` | 视觉 | 由代码包按局部时间画出来的画面，加参数（§3.7） | 实例编辑、参数编辑、源码换版 |
-| `caption` | 字幕 | 一份字幕文档在一段序列时间里的显示（§3.8） | 内容、语言、断句、样式分层编辑 |
+| `video` | visual | Asset version, timeMap, geometry, routing of embedded audio | Crop, move, split, constant speed, audio–picture linking |
+| `image` | visual | Asset version, geometry, display length | Move, scale, rotate, tile |
+| `audio` | audio | Asset version, timeMap, `fromFrame` + `subframeOffset`, `playDuration`, mix | Sample-level crop and length, volume, fades, envelopes; the frame width of the bar is only a projection |
+| `text` | visual | A piece of text or a timing readout, plus text style (§3.6) | Edit text, style |
+| `shape` | visual | One entry from the shape catalogue, plus fill, stroke and endpoints (§3.6) | Basic shapes |
+| `sticker`, `visualizer`, `progress`, `draw`, `placeholder`, `confetti`, `whiteboard` | visual | Sticker, sound wave, progress bar, freehand strokes, placeholder frame, confetti, whiteboard freehand (§3.7) | Parameter editing; a placeholder frame can be replaced with media |
+| `composition` | visual | Picture drawn from a code package by local time, plus parameters (§3.7) | Item editing, parameter editing, source version swap |
+| `caption` | subtitle | Display of a subtitle document over a span of sequence time (§3.8) | Content, language, line breaks, layered style editing |
 
-- **种类封闭**。认不出的 `type` 按 §1.4 处理，不得当成空白画过去。
-- **字段的适用范围**，不适用的字段写入时拒绝：
-  - `place`、`animate`：全部画面实例；音频实例与字幕实例没有。音频实例也不能有 `animate`。
-  - `mode`、`fit`、`bg`：视频、图片、占位框、白板，以及 `sticker.source` 为 `'asset'` 的贴纸（下称视觉媒体）。`mask`、`fx` 用于视觉媒体与合成实例。
-  - `tile`：文字与图片。
-  - `crop`：视频与图片。
-  - `source`、`html`：只用于图片；有 `html` 时 `source` 必须是 `'html'`。
-- **`role`** 说明实例的作用，供界面分组与智能体理解，不改变渲染。词表开放，读到不认识的取值照常保留。其中五个值写入时校验与种类的搭配：`broll`（图片、视频）、`watermark`（文字、图片、视频、贴纸）、`screentext`（文字）、`overlay` 与 `frame`（图片、视频、贴纸）。其余常用的取值：`a-roll`、`narration`、`dub`、`music`、`sfx`；字幕实例用 `source`、`translation`。
-- **`extensions`** 的键是命名空间（例如 `cuccut.import`）。引擎不解释其中的内容，写回时原样保留。画面元素的参数一律写正式字段，不放进这里（架构设计 §13.4）；这里只放说明来源的数据，例如导入时的原始 ID。
-- **时间**。画面实例的 `span` 在序列的帧网格上。以秒给出的时刻（v2 的元素时间、命令里的秒）按最短的十进制写法读成精确有理数，取最近的帧，等距时取较早的（§2.6），长度至少 1 帧，并给出量化回执（§2.9）。音频实例的位置与长度按 §2.10，不量化。挂在词上的起止写成 `followPolicy` 的 `speech-anchor`，不设终点写成 `untilSequenceEnd`（§3.16）；这两种实例的 `span` 由引擎按当前的时间线求出，同样量化到帧。
-- 同一条轨道上的实例在时间上不重叠，需要叠在一起的画面放在不同的轨道上。导入与编辑器写入遇到重叠时，把后来的实例放到相邻的轨道上（没有空位就新建一条），不改它的时间。
-- 嵌套序列（`nested-sequence`）与调整层（`adjustment`）不在当前的类型集合里，等有了真实的需求再加入。
+- **Closed set of kinds.** A `type` that is not recognised is handled per §1.4; it must not be silently drawn as blank.
+- **Scope of fields.** Fields that do not apply are rejected on write:
+  - `place`, `animate`: all picture items. Audio items and caption items have neither. Audio items also cannot have `animate`.
+  - `mode`, `fit`, `bg`: video, image, placeholder frame, whiteboard, and stickers whose `sticker.source` is `'asset'` (hereafter visual media). `mask` and `fx` apply to visual media and composition items.
+  - `tile`: text and images.
+  - `crop`: video and images.
+  - `source`, `html`: images only; when `html` is present, `source` must be `'html'`.
+- **`role`** states an item's function, for grouping in the interface and for agents to understand; it does not change rendering. The vocabulary is open, and unrecognised values are kept as they are. Five of its values are validated on write against the kinds they pair with: `broll` (image, video), `watermark` (text, image, video, sticker), `screentext` (text), `overlay` and `frame` (image, video, sticker). Other common values: `a-roll`, `narration`, `dub`, `music`, `sfx`; caption items use `source` and `translation`.
+- **`extensions`** keys are namespaces (for example `cuccut.import`). The engine does not interpret their contents and preserves them as is on write-back. Parameters of picture elements always go in the formal fields, not here (architecture design §13.4); this is only for data describing provenance, such as the original ID at import.
+- **Time.** The `span` of a picture item sits on the sequence's frame grid. Instants given in seconds (element time in v2, seconds in commands) are read as exact rationals in their shortest decimal form, snapped to the nearest frame, with ties going to the earlier frame (§2.6). The length is at least 1 frame, and a quantization receipt is given (§2.9). The position and length of audio items follow §2.10 and are not quantized. A start or end attached to a word is written as `followPolicy` `speech-anchor`; an item with no end is written as `untilSequenceEnd` (§3.16). The `span` of these two kinds of item is computed by the engine from the current timeline and likewise quantized to frames.
+- Items on the same track must not overlap in time; items that need to be layered go on different tracks. When import or an editor write meets an overlap, the later item is placed on an adjacent track (a new track is created if there is no room), and its time is not changed.
+- Nested sequences (`nested-sequence`) and adjustment layers (`adjustment`) are not in the current set of types; they will be added when there is a real need.
 
-字段来源：`crates/timeline/src/schema.rs` 的 `Element`、`ElementKind`、`ElementRole` 与 `Element::validate`。
+Field source: `Element`, `ElementKind`, `ElementRole` and `Element::validate` in `crates/timeline/src/schema.rs`.
 
-### 3.5 视觉坐标
+### 3.5 Visual coordinates
 
-画面实例的几何按画幅的百分比保存：换画幅时元素按比例重排，不跟着像素走。
+An instance's geometry on the frame is stored as percentages of the frame. When the frame changes size, elements are re-laid out proportionally; they do not keep their pixel positions.
 
 ```ts
 interface Place {
-  x?: number;                          // 框中心的横坐标，画布宽的百分比，左边为 0；缺省 50
-  y?: number;                          // 框中心的纵坐标，画布高的百分比，上边为 0；缺省按种类，见下
-  w?: number;                          // 框宽，宽度基准的百分比；缺省按种类，见下
-  scale?: number;                      // 整体倍率，缺省 1
-  scaleY?: number;                     // 纵向再乘的倍率，缺省 1
-  rot?: number;                        // 度，绕框中心顺时针，缺省 0
-  opacity?: number;                    // [0, 1]，缺省 1
-  radius?: number;                     // 四角相同的圆角，540 短边下的像素，≥ 0，缺省 0
-  cornerRadii?: { topLeft: number; topRight: number; bottomRight: number; bottomLeft: number };   // 四角各自的圆角，单位同 radius，≥ 0
-  flipX?: boolean; flipY?: boolean;    // 内容在框里镜像；为 false 时省略
+  x?: number;                          // Horizontal center of the box, percent of canvas width, 0 at left; default 50
+  y?: number;                          // Vertical center of the box, percent of canvas height, 0 at top; default depends on kind, see below
+  w?: number;                          // Box width, percent of the width basis; default depends on kind, see below
+  scale?: number;                      // Overall scale multiplier, default 1
+  scaleY?: number;                     // Extra vertical multiplier, default 1
+  rot?: number;                        // Degrees, clockwise around the box center, default 0
+  opacity?: number;                    // [0, 1], default 1
+  radius?: number;                     // Uniform corner radius, pixels at a 540 short side, ≥ 0, default 0
+  cornerRadii?: { topLeft: number; topRight: number; bottomRight: number; bottomLeft: number };   // Per-corner radii, same unit as radius, ≥ 0
+  flipX?: boolean; flipY?: boolean;    // Content mirrored inside the box; omitted when false
 }
 
-type Background = 'blur' | 'black' | string;   // string 是 '#RRGGBB'
+type Background = 'blur' | 'black' | string;   // string is '#RRGGBB'
 
 interface Tile {
-  on: true;                            // 不平铺时整个 tile 省略，不写 on: false
-  angle?: number;                      // 整片网格的旋转，度，顺时针为正；缺省 -30
-  gapX?: number;                       // 横向间距，画布宽的百分比，缺省 8，小于 2 按 2
-  gapY?: number;                       // 纵向间距，画布高的百分比，缺省 10，小于 2 按 2
-  stagger?: boolean;                   // 奇数行错开半格，缺省 true
+  on: true;                            // When not tiled, the whole tile is omitted; do not write on: false
+  angle?: number;                      // Rotation of the whole grid, degrees, clockwise positive; default -30
+  gapX?: number;                       // Horizontal gap, percent of canvas width, default 8; below 2 is treated as 2
+  gapY?: number;                       // Vertical gap, percent of canvas height, default 10; below 2 is treated as 2
+  stagger?: boolean;                   // Alternate rows offset by half a cell, default true
 }
 
-interface Crop { left: number; top: number; right: number; bottom: number }   // 四边各裁掉的比例
+interface Crop { left: number; top: number; right: number; bottom: number }   // Ratio trimmed from each of the four edges
 ```
 
-- 数值都必须是有限数。`x`、`y` 可以落在画布之外。
-- **框的宽**是 `宽度基准 × w% × scale`。宽度基准一般是画布宽；像素正方的种类量的是画布短边：没有显式高度的声波、进度条、手绘与占位框。
-- **框的高**是种类决定的自然高再乘 `scaleY`。自然高：图形有 `shape.h` 时是画布高 × `h`% × `scale`，没有时等于框宽；模板贴纸 `box` 是框宽 × 0.62，其余贴纸等于框宽；声波、进度条、手绘、占位框、彩纸按缺省落位给出的高（横条、铺满或正方）；视觉媒体由素材的显示宽高比推出；文字由排版决定。
-- **缺省落位**（`x` 都是 50）：文字、图形、贴纸 `w` 20、`y` 50；视频与图片 `w` 34；声波横条 `w` 100、高 20%、`y` 85，正方款 `w` 30；进度条横条 `w` 80、高 5%，正方款 `w` 30，边框款 100 × 100；手绘与彩纸 100 × 100；占位框 42 × 24。新建实例按它写入 `place`，「恢复默认」也用它。
-- **视觉媒体**。`mode: 'fullscreen'` 时框就是整张画布，`x`、`y`、`w` 不参与；`'pip'` 时按上面的规则。`fit` 决定素材怎样放进框：`cover` 铺满并裁掉多余的部分，`contain` 完整放进框里。`bg` 只在 `fullscreen` 加 `contain` 时起作用，铺满整张画布、画在素材下面：`black` 是黑色，`'#RRGGBB'` 是这种颜色，`blur` 是同一画面放大模糊；读入时颜色大小写不限，写出一律大写。
-- **圆角**。`radius` 与 `cornerRadii` 的单位是画布短边为 540 时的像素，渲染时乘 `短边 / 540`；两者都有时 `cornerRadii` 优先。圆角只裁视觉媒体，且只在 `pip` 或平铺时生效。图形自己的圆角在 `shape.cornerRadius`（§3.6），与这里的裁切是两件事。
-- **平铺**。实例的画面按网格重复铺满画布：网格以画布中心为原点，排好点位后整体旋转 `angle`；横向步长是单格宽加 `gapX`% 的画布宽，纵向同理。点位由 `timeline::geometry::tile_stamp_points` 给出，预览与导出共用。
-- 文字的纵向钉点是 `TextItem.verticalAlign`（§3.6），不在 `place` 里。
-- **裁剪**（`crop`）从源的显示画面（已按旋转元数据摆正）四边各裁掉一个比例：每边在 [0, 1)，左右之和、上下之和都小于 1。四边都是 0 等于没有裁剪，不保存。裁剪在 `fit` 之前：留下的区域当作源画面，它的宽高比参与框的高与 `fit`。
-- 选中框、命中框与露底检查读静态的 `place`；关键帧与元素动画叠在它上面（§3.15）。
+- All numeric values must be finite numbers. `x` and `y` may fall outside the canvas.
+- **Box width** is `width basis × w% × scale`. The width basis is generally the canvas width. Kinds in square variants measure the canvas short side instead: sound waves, progress bars, hand-drawn and placeholder boxes that have no explicit height.
+- **Box height** is the kind's natural height multiplied by `scaleY`. Natural height: for a shape with `shape.h`, it is canvas height × `h`% × `scale`; without it, it equals box width. Template stickers `box` are box width × 0.62; other stickers equal box width. Sound waves, progress bars, hand-drawn strokes, placeholder boxes and confetti take the height given by their default placement (horizontal bars, full-frame or square). Visual media is derived from the material's display aspect ratio. Text is determined by its layout.
+- **Default placement** (`x` is 50 for all): text, shapes and stickers have `w` 20 and `y` 50; video and image have `w` 34; horizontal sound wave bars have `w` 100, height 20% and `y` 85, square variants have `w` 30; horizontal progress bars have `w` 80 and height 5%, square variants have `w` 30, bordered variants 100 × 100; hand-drawn and confetti 100 × 100; placeholder boxes 42 × 24. A new instance is written with these values as its `place`, and “Restore default” (恢复默认) also uses them.
+- **Visual media.** With `mode: 'fullscreen'`, the box is the whole canvas and `x`, `y` and `w` do not apply; with `'pip'`, the rules above apply. `fit` determines how the material fits the box: `cover` fills it and crops the excess, `contain` fits it entirely inside the box. `bg` only takes effect with `fullscreen` plus `contain`; it fills the whole canvas and is drawn beneath the material: `black` is black, `'#RRGGBB'` is that color, and `blur` is the same picture enlarged and blurred. On read, color case is not significant; on write, colors are always uppercase.
+- **Corner radius.** `radius` and `cornerRadii` are in pixels at a canvas short side of 540; rendering multiplies them by `short side / 540`. When both are present, `cornerRadii` takes precedence. Corner radius clips only visual media, and only applies with `pip` or when tiled. A shape's own corner radius is `shape.cornerRadius` (§3.6); that is a separate thing from the clipping here.
+- **Tiling.** The instance's picture repeats across a grid that fills the canvas. The grid is centered on the canvas center; after the points are placed, the whole grid is rotated by `angle`. The horizontal step is one cell's width plus `gapX`% of canvas width, and the vertical step works the same way. Point positions are given by `timeline::geometry::tile_stamp_points`, which preview and export share.
+- The vertical anchor of text is `TextItem.verticalAlign` (§3.6), not part of `place`.
+- **Crop** (`crop`) trims a ratio from each edge of the source's displayed picture (already upright per its rotation metadata). Each side is in [0, 1), and the left+right sum and the top+bottom sum are each less than 1. All four sides at 0 equals no crop and is not stored. Cropping happens before `fit`: the remaining area is treated as the source picture, and its aspect ratio takes part in the box height and in `fit`.
+- Selection, hit-testing and background-exposure checks read the static `place`; keyframes and element animation are layered on top of it (§3.15).
 
-字段来源：`schema.rs` 的 `Place`、`CornerRadii`、`VisualMode`、`Fit`、`Background`、`Tile`；`geometry.rs` 的 `default_place`、`width_basis`、`static_box`、`media_box`、`tile_stamp_points`。
+Field sources: `schema.rs`'s `Place`, `CornerRadii`, `VisualMode`, `Fit`, `Background` and `Tile`; `geometry.rs`'s `default_place`, `width_basis`, `static_box`, `media_box` and `tile_stamp_points`.
 
-### 3.6 文字与图形
+### 3.6 Text and shapes
 
 ```ts
 interface TextItem extends VisualItemBase {
   type: 'text';
-  text?: string;                       // 与 counter 二选一，必须有其一
-  counter?: CounterProps;              // 计时读数（§3.7）
-  style?: TextStyle;                   // 文字样式，见下
-  stylePresetId?: string;              // 样式取自的样式库条目或文字预设
-  verticalAlign?: 'top' | 'center' | 'bottom';   // place.y 钉住文字块的哪一处，缺省 'center'
+  text?: string;                       // Choose one of text or counter; one must be present
+  counter?: CounterProps;              // Timed readout (§3.7)
+  style?: TextStyle;                   // Text style, see below
+  stylePresetId?: string;              // Style library entry or text preset the style is taken from
+  verticalAlign?: 'top' | 'center' | 'bottom';   // Which point of the text block place.y pins, default 'center'
   tile?: Tile;                         // §3.5
 }
 
@@ -642,49 +642,49 @@ interface ShapeItem extends VisualItemBase {
 }
 
 interface ShapeProps {
-  shape: string;                       // 形状目录里的一款，非空
-  fill?: string;                       // '#RRGGBB' 或 '#RRGGBBAA'
-  stroke?: string;                     // 同上
-  strokeWidth?: number;                // ≥ 0，540 短边下的像素，缺省 2
-  cornerRadius?: [number, number, number, number];   // 左上、右上、右下、左下，≥ 0，单位同 strokeWidth，缺省全 0
-  h?: number;                          // 框的自然高，画布高的百分比；省略时框是正方
-  x1?: number; y1?: number; x2?: number; y2?: number;   // 线与箭头的端点，框内的百分比，缺省 (0, 50) → (100, 50)
-  head?: 'arrow' | 'none';             // 箭头的头
+  shape: string;                       // One entry in the shape catalog, non-empty
+  fill?: string;                       // '#RRGGBB' or '#RRGGBBAA'
+  stroke?: string;                     // Same as fill
+  strokeWidth?: number;                // ≥ 0, pixels at a 540 short side, default 2
+  cornerRadius?: [number, number, number, number];   // Top-left, top-right, bottom-right, bottom-left; ≥ 0, same unit as strokeWidth, default all 0
+  h?: number;                          // Natural height of the box, percent of canvas height; when omitted the box is square
+  x1?: number; y1?: number; x2?: number; y2?: number;   // Endpoints of lines and arrows, percent within the box; default (0, 50) → (100, 50)
+  head?: 'arrow' | 'none';             // Arrowhead
 }
 ```
 
-- **文字样式**。`style` 是 v2 的文字样式对象，没有 `schema` 包装。它的键与取值由渲染核心的文字样式类型定义，随渲染核心移植后写进本节（§9）；文字预设数据里用到的键有 `fontFamily`、`fontSize`、`fontWeight`、`fontStyle`、`italic`、`underline`、`fontColor`、`lineHeight`、`letterSpacing`、`textAlign`、`textTransform`、`backgroundColor`、`backgroundPadding`、`backgroundStyle`、`borderRadius`、`textOutline`、`dropShadow`。在那之前引擎按对象保存、不解释；渲染器认不出的键要报告，不得悄悄跳过。
-- 文字的描边、阴影与底色在 `style` 里，`fx` 与 `mask` 不用于文字。
-- `stylePresetId` 只记样式的来源，渲染只读 `style`；它指向的条目不存在时不影响渲染。
-- 文字用到的字体按 §3.14 引用：`style.fontFamily` 按族名在视频的字体记录里解析，解析不到时按缺字体处理。
-- `text` 与 `counter` 互斥，必须有其一。计时读数见 §3.7。
-- **图形**。`shape` 是预设注册表形状目录里的 id（首批 `rect`、`ellipse`、`line`、`arrow`，其余是目录里的轮廓）。写入只要求非空；目录里没有这个名字时渲染报 `preset-unknown`，这个实例画不出来，不得画成空白。这一款不用的参数（例如线没有填充）不读。端点与 `head` 只对 `line`、`arrow` 有意义。
-- `strokeWidth` 与 `cornerRadius` 渲染时乘 `短边 / 540`，再夹到框的半边长以内。`shape.cornerRadius` 是图形自己的轮廓，不与 `place` 的圆角裁切（§3.5）合并。
-- 旧版的 `cuccut.legacy-text-style/0` 与 `cuccut.legacy-shape/0` 两种形态已取消，从 v2 导入的文字与图形直接写本节的字段。
+- **Text style.** `style` is the v2 text style object, without the `schema` wrapper. Its keys and values are defined by the rendering core's text style type, which will be written into this section (§9) when the rendering core is ported. Keys used by text preset data are `fontFamily`, `fontSize`, `fontWeight`, `fontStyle`, `italic`, `underline`, `fontColor`, `lineHeight`, `letterSpacing`, `textAlign`, `textTransform`, `backgroundColor`, `backgroundPadding`, `backgroundStyle`, `borderRadius`, `textOutline`, `dropShadow`. Until then the engine stores the object as-is without interpreting it. Keys the renderer does not recognize must be reported, not silently skipped.
+- Text outline, shadow and background color live in `style`; `fx` and `mask` are not used for text.
+- `stylePresetId` only records where the style came from; rendering reads only `style`. If the entry it points to does not exist, rendering is not affected.
+- Fonts used by text are referenced per §3.14: `style.fontFamily` is resolved by family name against the video's font records; if it cannot be resolved, it is treated as a missing font.
+- `text` and `counter` are mutually exclusive, and one of them must be present. Timed readouts are in §3.7.
+- **Shapes.** `shape` is an id from the shape catalog of the preset registry (the first batch is `rect`, `ellipse`, `line` and `arrow`; the rest are outlines in the catalog). Writing only requires a non-empty value. If the name is not in the catalog, rendering reports `preset-unknown`, and the instance cannot be drawn; it must not be drawn as blank. Parameters a given shape does not use (for example, fill on a line) are not read. Endpoints and `head` are meaningful only for `line` and `arrow`.
+- `strokeWidth` and `cornerRadius` are multiplied by `short side / 540` when rendered, then clamped to within half the box's side length. `shape.cornerRadius` is the shape's own outline and is not merged with the corner clipping of `place` (§3.5).
+- The legacy forms `cuccut.legacy-text-style/0` and `cuccut.legacy-shape/0` have been withdrawn. Text and shapes imported from v2 write the fields of this section directly.
 
-字段来源：`schema.rs` 的 `Element`（`text`、`style`、`stylePresetId`、`verticalAlign`）、`ShapeProps`、`SHAPE_STROKE_WIDTH_DEFAULT`；单位见 v2 `ccut-timeline-render/src/draw.rs`。
+Field sources: `schema.rs`'s `Element` (`text`, `style`, `stylePresetId`, `verticalAlign`), `ShapeProps` and `SHAPE_STROKE_WIDTH_DEFAULT`; for units, see v2 `ccut-timeline-render/src/draw.rs`.
 
-### 3.7 生成类元素与代码合成
+### 3.7 Generated elements and code composition
 
-生成类元素的画面由渲染核心按实例的局部时间算出来。参数对象与种类同名、一一对应：带了别的种类的参数对象，或缺了自己的，写入时拒绝（`element-props-mismatch`）。
+The picture of a generated element is computed by the rendering core from the instance's local time. Parameter objects share the name of their kind, one to one: a parameter object for a different kind, or a missing one for its own kind, is rejected on write (`element-props-mismatch`).
 
 ```ts
 interface CounterProps {               // TextItem.counter
   mode: 'countdown' | 'countup';
-  format?: 's' | 'mm:ss' | 'hh:mm:ss';   // 缺省 's'
+  format?: 's' | 'mm:ss' | 'hh:mm:ss';   // Default 's'
 }
 
-interface StickerItem extends VisualItemBase, MediaFields {   // MediaFields 只用于素材贴纸
+interface StickerItem extends VisualItemBase, MediaFields {   // MediaFields only applies to asset stickers
   type: 'sticker';
-  assetRef?: VersionRef;               // 素材贴纸必有：图片、视频或 Lottie 素材（§4.1）
+  assetRef?: VersionRef;               // Required for asset stickers: an image, video or Lottie asset (§4.1)
   sticker: StickerProps;
 }
 interface StickerProps {
   source: 'template' | 'asset';
-  templateId?: string;                 // 模板贴纸：贴纸目录里的一款
-  path?: string;                       // v2 的字段，原样保留，渲染不读
-  loop?: 'loop' | 'once' | 'hold';     // 动态素材的取帧方式，缺省 'loop'
-  fillOverrides?: Record<string, string>;   // 原色 → 目标色，键与值都是颜色
+  templateId?: string;                 // Template sticker: one entry in the sticker catalog
+  path?: string;                       // v2 field, kept as-is; not read by rendering
+  loop?: 'loop' | 'once' | 'hold';     // Frame-sampling mode for dynamic assets, default 'loop'
+  fillOverrides?: Record<string, string>;   // Original color → target color; keys and values are both colors
 }
 
 interface VisualizerItem extends VisualItemBase {
@@ -692,15 +692,15 @@ interface VisualizerItem extends VisualItemBase {
   visualizer: VisualizerProps;
 }
 interface VisualizerProps {
-  style: string;                       // 声波目录里的一款
-  mainColor?: string; secondaryColor?: string;   // 缺省取这一款的配色
-  fftSize?: 256 | 512 | 1024 | 2048;   // 缺省 1024
-  minDb?: number; maxDb?: number;      // dB，缺省取这一款的值；minDb < maxDb（没写的一端按 -80、40 比较）
-  smoothing?: number;                  // [0, 1)，缺省 0.8
-  gain?: number;                       // ≥ 0，缺省 1
-  audio?: string;                      // 'project'（缺省，这条序列混好的声音）或一个音频、视频素材的 ID
-  speaker?: string;                    // 只在这位说话人说话时动，非空
-  alwaysShow?: boolean;                // 没有声音或说话人不在时仍画静止的样子，缺省 true；false 时静了 0.5 秒就不画
+  style: string;                       // One entry in the sound wave catalog
+  mainColor?: string; secondaryColor?: string;   // Default taken from this entry's palette
+  fftSize?: 256 | 512 | 1024 | 2048;   // Default 1024
+  minDb?: number; maxDb?: number;      // dB, default taken from this entry; minDb < maxDb (an unwritten end is compared as -80 or 40)
+  smoothing?: number;                  // [0, 1), default 0.8
+  gain?: number;                       // ≥ 0, default 1
+  audio?: string;                      // 'project' (default: the mixed sound of this sequence) or the ID of an audio or video asset
+  speaker?: string;                    // Moves only while this speaker is talking; non-empty
+  alwaysShow?: boolean;                // When there is no sound or the speaker is absent, still draw the still look; default true; when false, nothing is drawn after 0.5 seconds of silence
 }
 
 interface ProgressItem extends VisualItemBase {
@@ -708,10 +708,10 @@ interface ProgressItem extends VisualItemBase {
   progress: ProgressProps;
 }
 interface ProgressProps {
-  style: string;                       // 进度条目录里的一款
+  style: string;                       // One entry in the progress bar catalog
   mainColor?: string; secondaryColor?: string;
-  startProgress?: number;              // [0, 1]，缺省 0
-  endProgress?: number;                // [0, 1]，缺省 1；可以小于 startProgress（倒走）
+  startProgress?: number;              // [0, 1], default 0
+  endProgress?: number;                // [0, 1], default 1; may be less than startProgress (runs backward)
 }
 
 interface DrawItem extends VisualItemBase {
@@ -721,15 +721,15 @@ interface DrawItem extends VisualItemBase {
 interface DrawProps {
   brush: 'round' | 'sliced';
   color: string;
-  size: number;                        // 笔宽，540 短边下的像素，[1, 40]
+  size: number;                        // Stroke width, pixels at a 540 short side, [1, 40]
   alpha?: number;                      // [0, 1]
-  strokes?: Array<{ points: Array<[number, number]> }>;   // 每个点是框内的百分比，每维 [0, 100]
+  strokes?: Array<{ points: Array<[number, number]> }>;   // Each point is a percent within the box, each axis [0, 100]
 }
 
 interface PlaceholderItem extends VisualItemBase, MediaFields {
   type: 'placeholder';
-  assetRef?: VersionRef;               // 换上的媒体；没有时画占位的外观
-  placeholder: { variant: 'camera' | 'media' | 'screen'; notes?: string };   // notes 不超过 2048 字节
+  assetRef?: VersionRef;               // Swapped-in media; when absent, the placeholder appearance is drawn
+  placeholder: { variant: 'camera' | 'media' | 'screen'; notes?: string };   // notes must not exceed 2048 bytes
 }
 
 interface ConfettiItem extends VisualItemBase {
@@ -737,125 +737,125 @@ interface ConfettiItem extends VisualItemBase {
   confetti: ConfettiProps;
 }
 interface ConfettiProps {
-  style: string;                       // 彩纸目录里的一款配方；其余字段缺省时取配方的值
-  seed?: number;                       // 非负整数，缺省 0；新建时写入随机值
-  colors?: string[];                   // 1–8 个颜色
-  shapes?: string[];                   // 1–12 个，取自 rect strip circle ellipse triangle diamond star starlet sparkle heart petal ribbon
-  size?: number; speed?: number;       // 对配方的倍率，[0.25, 4]
-  gravity?: number;                    // 倍率，[-2, 4]
-  drift?: number; spin?: number;       // 倍率，[0, 3]
-  wind?: number;                       // 水平加速度，540 短边下的像素 / 秒²，[-600, 600]
+  style: string;                       // One recipe from the confetti catalog; omitted fields take the recipe's values
+  seed?: number;                       // Non-negative integer, default 0; a random value is written on creation
+  colors?: string[];                   // 1–8 colors
+  shapes?: string[];                   // 1–12, taken from rect strip circle ellipse triangle diamond star starlet sparkle heart petal ribbon
+  size?: number; speed?: number;       // Multipliers on the recipe, [0.25, 4]
+  gravity?: number;                    // Multiplier, [-2, 4]
+  drift?: number; spin?: number;       // Multipliers, [0, 3]
+  wind?: number;                       // Horizontal acceleration, pixels per second² at a 540 short side, [-600, 600]
   opacity?: number;                    // [0, 1]
   emit?: {
     mode?: 'continuous' | 'burst';
-    rate?: number;                     // continuous：每秒的粒数，[1, 400]
-    count?: number;                    // burst：每次的粒数，[1, 500]
-    interval?: number;                 // burst：间隔秒，[0, 60]；0 只放一次
-    settle?: boolean;                  // 实例结束前留出一段粒子寿命，不再发射
+    rate?: number;                     // continuous: particles per second, [1, 400]
+    count?: number;                    // burst: particles per burst, [1, 500]
+    interval?: number;                 // burst: interval in seconds, [0, 60]; 0 fires only once
+    settle?: boolean;                  // Before the instance ends, leave time for particle lifetimes; no more emission
   };
-  origin?: { x: number; y: number };   // 发射点，框内的百分比，每维 [-20, 120]；给出时替换配方的发射器
-  angle?: number;                      // 发射方向，度，[-180, 180]；0 向右，-90 向上，90 向下
-  spread?: number;                     // 扇面，度，[0, 360]
+  origin?: { x: number; y: number };   // Emit point, percent within the box, each axis [-20, 120]; when given, it replaces the recipe's emitter
+  angle?: number;                      // Emit direction in degrees, [-180, 180]; 0 is right, -90 is up, 90 is down
+  spread?: number;                     // Fan spread in degrees, [0, 360]
 }
 
 interface WhiteboardItem extends VisualItemBase, MediaFields {
   type: 'whiteboard';
-  assetRef: VersionRef;                // 一个图片素材
+  assetRef: VersionRef;                // An image asset
   whiteboard: WhiteboardProps;
 }
 interface WhiteboardProps {
-  hand?: 'marker' | 'pen' | 'none';    // 缺省 'marker'
-  paper?: string;                      // 纸色；缺省透明，露出下面的画面
-  draw?: number;                       // 画完全图的秒数，> 0；缺省 min(0.8 × 实例长度, 自然时长)，超过实例长度按实例长度
-  inkFirst?: boolean;                  // 先墨线后色块，缺省 true
-  pace?: 'stretch' | 'natural';        // 缺省 'stretch'
-  strict?: boolean;                    // box 是硬遮罩，缺省 false
-  beats?: WhiteboardBeat[];            // 最多 64 拍
+  hand?: 'marker' | 'pen' | 'none';    // Default 'marker'
+  paper?: string;                      // Paper color; default transparent, showing the picture below
+  draw?: number;                       // Seconds to finish the full drawing, > 0; default min(0.8 × instance length, natural duration); beyond the instance length, it is capped to the instance length
+  inkFirst?: boolean;                  // Ink lines before color blocks, default true
+  pace?: 'stretch' | 'natural';        // Default 'stretch'
+  strict?: boolean;                    // box is a hard mask, default false
+  beats?: WhiteboardBeat[];            // Up to 64 beats
 }
 interface WhiteboardBeat {
-  at: MediaTime | string;              // 这一拍开始：实例局部时间，或词锚点（§3.16）
-  end?: MediaTime | string;            // 缺省是下一拍的 at，末拍是 draw
-  box: [number, number, number, number];   // [x, y, 宽, 高]，画布的百分比；x、y 在 [-100, 200]，宽、高在 (0, 300]
-  label?: string;                      // 不超过 80 个字，只展示，不参与渲染
+  at: MediaTime | string;              // Beat start: instance local time, or a word anchor (§3.16)
+  end?: MediaTime | string;            // Default is the next beat's at; the last beat uses draw
+  box: [number, number, number, number];   // [x, y, width, height], percent of canvas; x and y in [-100, 200], width and height in (0, 300]
+  label?: string;                      // At most 80 characters; display only, not used in rendering
 }
 
-type CompositionSource = { kind: 'bundle'; assetRef: VersionRef };   // 代码包素材的一个版本（§4.3、代码包规范）
+type CompositionSource = { kind: 'bundle'; assetRef: VersionRef };   // One version of a code bundle asset (§4.3, code bundle spec)
 
 interface CompositionItem extends VisualItemBase {
   type: 'composition';
   source: CompositionSource;
-  parameterValues: JsonValue;          // 实例的参数值
-  timeMap: TimeMap;                    // 实例时间 → 合成的局部时间
-  prerender?: VersionRef;              // 预渲染替身：一个视频素材版本
-  audio?: EmbeddedAudio;               // 合成自己发出的声音的路由；没有声音的合成不写
+  parameterValues: JsonValue;          // Parameter values of the instance
+  timeMap: TimeMap;                    // Instance time → composition local time
+  prerender?: VersionRef;              // Pre-rendered stand-in: one video asset version
+  audio?: EmbeddedAudio;               // Routing for the composition's own sound; omitted for compositions with no sound
   mask?: Mask;                         // §3.9
   fx?: Fx;                             // §3.9
 }
 ```
 
-- **款式引用**。`shape`、`templateId`、`visualizer.style`、`progress.style`、`confetti.style` 都是预设注册表里对应目录的 id。预设是数据，内容在 `crates/motion/presets/builtin/` 下，本规范只规定引用：写入只要求非空；渲染时目录里找不到报 `preset-unknown`，这个实例画不出来，要报告，不得画成空白。款式给出的缺省（配色、纵横比、配方参数）只在实例没写这个字段时用。
-- 颜色一律 `#RRGGBB` 或 `#RRGGBBAA`。
-- **计时读数**。读数在毫秒栅格上求值，单位秒：倒计时是 ⌈实例终点 − t⌉，正计时是 ⌊t − 实例起点⌋，按 `format` 显示。实例是半开区间，终点那一刻已不可见。计时文字沿用普通文字的 `style`、`place` 与 `animate`，但不能用 `typewriter`、`riseWords`。
-- **贴纸**。`source: 'template'` 画贴纸目录里的矢量；`'asset'` 画 `assetRef` 指向的图片、视频或 Lottie 素材。`loop` 只对视频、Lottie 与 GIF 素材起作用：`loop` 循环，`once` 播一次停在末帧，`hold` 停在首帧。`fillOverrides` 在绘制前把 SVG 或 Lottie 里的原色换成目标色（Lottie 的渐变不参与；位图与视频素材不换色）。GIF 是图片素材，按帧的延时播放，没有单独的种类；图片实例里的 GIF 按自己的总时长循环。
-- **声波**。画面由声音的频谱驱动：`audio` 指定取哪一路声音，按序列时刻映射到那一路的源时刻取样；`speaker` 只在这位说话人的词区间里动。
-  - `'project'` 是这条序列混好的声音：每一刻在响的每一段声音（与导出混音同一份声音计划，音量、淡变、交叉淡化与闪避都算进去）各取它源时刻的频谱，频域按功率相加；按文稿触发的闪避不算进去，预览与导出相同。
-  - 素材 ID 只听这个素材：取这一刻正在播它的那一段的源时刻（两段相接时取后一段），不乘音量；这一刻没有在播它就是静音。
-  - 序列里没有声音时按静止的样子画，不报告；听的素材读不出声音时也按静止的样子画，并报告。
-  - `speaker`：说话的区间来自视频里的转写投到这条序列上的有效词流（§3.9 按文稿触发的闪避用的同一份）里这位说话人的词；同一位说话人两个词相隔不超过 0.5 秒算一直在说。区间外按静音画。视频里没有转写、或转写里没有这位说话人在这条序列上说的话时整条按静音画，并报告。
-  - `alwaysShow: false`：这一刻和它之前 0.5 秒里都静音（`speaker` 不在说话也算静音）时不画，一出声就画；没有频谱时也不画。缺省一直画。
-- **进度条**。进度 p = clamp((t − 实例起点) / (实例终点 − 实例起点), 0, 1)，显示的值是 `startProgress + p × (endProgress − startProgress)`。它只取决于播放头，不读媒体。
-- **手绘**。一个实例最多 256 条笔迹，合计最多 16384 个点。
-- **占位框**。没有 `assetRef` 时画 `variant` 对应的占位外观；有时在同一个框里按视觉媒体画。只能换成视频或图片素材。
-- **彩纸**。粒子由 `seed` 确定性地求出：任意时刻只计算还活着的粒子，与实例总长无关，实例可以随意拉长缩短。
-- **白板**。按素材图片推导揭示的顺序（先墨线后色块，按阅读顺序），画到 `draw` 秒画完，之后整图静止到终点；推导出的揭示顺序不保存。`beats` 把画面分成按时间揭示的几拍：落在 `box` 里的笔画归这一拍，从 `at` 画到 `end`。数字 `at` 单调不减，`end` 晚于 `at` 且不晚于下一拍的 `at`，末拍的 `end` 不晚于 `draw`。词锚点解析到序列时刻后减去实例起点；解析不到的锚点让这一拍退回几何顺序并报告。`pace: 'stretch'` 每拍撑满自己的窗口，`'natural'` 按自然速度画完后停住；`strict` 时 `box` 是硬遮罩，重叠处的像素归后一拍。
-- **生成类元素的秒**（`draw`、`interval`、拍的时刻、`wind` 里的秒）都是实例局部时间，按最短的十进制写法读成精确有理数，不量化，渲染按精确的局部时刻取样（§2.5）。
-- **代码合成**。`bundle` 指向一个确定的代码包版本，执行合同见代码包规范。原来的内置生成器（`cuccut.counter`、`cuccut.sticker`、`cuccut.lottie`、`cuccut.audio-visualizer`、`cuccut.progress`）已由上面的种类取代，不再是合成的来源。运行环境不可用的代码包不得画成空白之后当作成功：有预渲染替身就用替身，没有就报告这个实例画不出来。
-- **预渲染替身**。`prerender` 是把这段合成渲染好的视频。它与合成共用 `timeMap`：合成的局部时间就是替身视频的源时间。合成的运行环境不可用，或来不及实时渲染时，预览与导出用替身代替；能运行时以代码为准。替身不是源：改了参数或换了代码包版本，替身就过期了。
-- **声音**。合成发出的声音（用替身时是替身视频的音轨）由 `audio` 路由。时间线上另有同一段声音的音频实例时（例如渲染结果里已经混入了配音，配音又单独放在音频轨道上），必须关掉 `audio.enabled`，不得两处同时出声。合成与这些音频实例写进同一个音画联动组（`linkGroupId`，§3.4）表示组里的音频是合成声音单独放的一份：引擎写入时核对，同一条序列里组内有音频实例时，组内合成的 `audio` 必须省略或 `enabled: false`。替身是混好的成片，只扣掉其中几句做不到，整条关掉。
+- **Style references.** `shape`, `templateId`, `visualizer.style`, `progress.style` and `confetti.style` are all ids into the corresponding catalog of the preset registry. Presets are data; their contents live under `crates/motion/presets/builtin/`. This spec only defines the references. Writing only requires a non-empty value. At render time, if the catalog has no such entry, rendering reports `preset-unknown` and the instance cannot be drawn; it must be reported, not drawn as blank. Defaults given by a style (colors, aspect ratio, recipe parameters) apply only when the instance does not write that field.
+- Colors are always `#RRGGBB` or `#RRGGBBAA`.
+- **Timed readouts.** Readouts are evaluated on the millisecond grid, in seconds. A countdown is ⌈instance end − t⌉; a count-up is ⌊t − instance start⌋; both are displayed per `format`. Instances are half-open intervals, so at the end moment the instance is no longer visible. Timed text keeps the ordinary text `style`, `place` and `animate`, but cannot use `typewriter` or `riseWords`.
+- **Stickers.** `source: 'template'` draws vectors from the sticker catalog; `'asset'` draws the image, video or Lottie asset that `assetRef` points to. `loop` applies only to video, Lottie and GIF assets: `loop` repeats, `once` plays once and holds on the last frame, and `hold` holds on the first frame. `fillOverrides` replaces the original colors in an SVG or Lottie with the target colors before drawing (Lottie gradients are not affected; bitmap and video assets are not recolored). A GIF is an image asset, played with its per-frame delays, and has no separate kind. A GIF inside an image instance loops over its own total duration.
+- **Sound waves.** The picture is driven by the sound's spectrum. `audio` selects which sound track to use; sequence time is mapped to that track's source time for sampling. `speaker` moves only within that speaker's word spans.
+  - `'project'` is the sequence's mixed sound. At each moment, every sound playing then (using the same sound plan as the export mix, with volume, fades, crossfades and ducking all included) contributes the spectrum at its source time; the spectra are added by power in the frequency domain. Ducking triggered by the script is not included; preview and export are the same.
+  - A material ID listens only to that material: it takes the source time of the segment currently playing it (where two segments meet, the later one), without applying volume. If the material is not playing at this moment, it is silent.
+  - When the sequence has no sound, it is drawn in its still look and not reported. When the listened material cannot yield sound, it is also drawn still, and this is reported.
+  - `speaker`: the speaking spans come from the effective word stream that the video's transcript projects onto this sequence (the same one used for script-triggered ducking in §3.9), taking this speaker's words. Two words from the same speaker no more than 0.5 seconds apart count as continuous speech. Outside these spans it is drawn silent. When the video has no transcript, or the transcript has no speech from this speaker on this sequence, the whole element is drawn silent and this is reported.
+  - `alwaysShow: false`: at a moment when it and the 0.5 seconds before it are silent (a `speaker` who is not talking also counts as silent), nothing is drawn; it is drawn as soon as sound starts. With no spectrum, nothing is drawn either. The default is to always draw.
+- **Progress bar.** Progress p = clamp((t − instance start) / (instance end − instance start), 0, 1), and the displayed value is `startProgress + p × (endProgress − startProgress)`. It depends only on the playhead and does not read media.
+- **Hand-drawn.** An instance holds at most 256 strokes and at most 16384 points in total.
+- **Placeholder box.** Without `assetRef`, it draws the appearance for `variant`; with one, it is drawn as visual media in the same box. It can only be replaced by a video or image asset.
+- **Confetti.** Particles are determined deterministically by `seed`. At any moment, only living particles are computed, independent of the instance's total length, so the instance can be stretched or shortened freely.
+- **Whiteboard.** The reveal order is derived from the source image (ink lines before color blocks, in reading order). The drawing finishes at `draw` seconds, after which the full image stays still until the end. The derived reveal order is not stored. `beats` splits the picture into several beats revealed over time: strokes falling within `box` belong to that beat and are drawn from `at` to `end`. Numeric `at` values are non-decreasing; `end` is later than `at` and not later than the next beat's `at`; the last beat's `end` is not later than `draw`. A word anchor is resolved to a sequence time and then has the instance start subtracted. If an anchor cannot be resolved, that beat falls back to geometric order and this is reported. `pace: 'stretch'` has each beat fill its own window; `'natural'` draws at natural speed and then stops. With `strict`, `box` is a hard mask, and in overlapping pixels the later beat wins.
+- **Seconds in generated elements** (`draw`, `interval`, beat times, and seconds in `wind`) are all instance-local time. They are read as exact rationals from their shortest decimal form, are not quantized, and rendering samples at the exact local moment (§2.5).
+- **Code composition.** `bundle` points to a fixed code bundle version; the execution contract is in the code bundle spec. The original built-in generators (`cuccut.counter`, `cuccut.sticker`, `cuccut.lottie`, `cuccut.audio-visualizer`, `cuccut.progress`) have been replaced by the kinds above and are no longer sources of composition. A code bundle whose runtime is unavailable must not be drawn as blank and then treated as success. If there is a pre-rendered stand-in, use the stand-in; if not, report that the instance cannot be drawn.
+- **Pre-rendered stand-in.** `prerender` is a video of this composition, rendered in advance. It shares `timeMap` with the composition: the composition's local time is the stand-in video's source time. When the composition's runtime is unavailable, or real-time rendering cannot keep up, preview and export substitute the stand-in; when the code can run, the code is authoritative. The stand-in is not a source. If parameters change or the bundle version changes, the stand-in is stale.
+- **Sound.** The sound the composition emits (when a stand-in is used, the stand-in video's audio track) is routed by `audio`. When the timeline has a separate audio instance of the same sound (for example, the render already has the voiceover mixed in and the voiceover is also placed on an audio track), `audio.enabled` must be turned off; the same sound must not play in two places at once. When the composition and these audio instances are written into the same audio-video link group (`linkGroupId`, §3.4), the audio in the group is a separately placed copy of the composition's sound. The engine checks this on write: if the same sequence has audio instances in the group, the composition's `audio` in that group must be omitted or set to `enabled: false`. A stand-in is a finished mixed cut, and removing only a few lines from it is not possible, so it is turned off entirely.
 
-字段来源：`schema.rs` 的 `CounterProps`、`StickerProps`、`VisualizerProps`、`ProgressProps`、`DrawProps`、`PlaceholderProps`、`ConfettiProps`、`WhiteboardProps`、`WhiteboardBeat` 及其 `validate`；缺省落位见 `geometry.rs`。
+Field sources: `schema.rs`'s `CounterProps`, `StickerProps`, `VisualizerProps`, `ProgressProps`, `DrawProps`, `PlaceholderProps`, `ConfettiProps`, `WhiteboardProps`, `WhiteboardBeat` and their `validate`; default placement is in `geometry.rs`.
 
-### 3.8 字幕实例
+### 3.8 Caption instances
 
 ```ts
 interface CaptionItem extends ItemBase {
   type: 'caption';
   span: FrameSpan;
-  documentId: Id;                      // kind 为 caption 的文档（§4.6）
-  styleDocumentId?: Id;                // kind 为 caption-style 的文档
+  documentId: Id;                      // document of kind caption (§4.6)
+  styleDocumentId?: Id;                // document of kind caption-style
   scopeItemIds?: Id[];
 }
 ```
 
-- 字幕实例只在字幕轨道上。它没有 `place`：字幕的位置与排版由样式文档决定（§5.6）。
-- 它引用文档的 **ID** 而不是某个版本：字幕跟随文档的当前版本，改字不需要改时间线。
-- **时钟**。字幕文档里的时间要么在源素材的时钟上，要么已经是序列时间，由文档自己声明。`scopeItemIds` 列出把字幕投影到序列上的实例：一行字幕的源时间落在某个实例取用的源区间里，就经过那个实例的 `timeMap` 映射到序列时间；落在所有实例之外的行（被剪掉的话）不显示。`scopeItemIds` 省略表示文档里的时间已经是序列时间。
-- `span` 限定显示的范围：投影之后落在 `span` 之外的行不显示。
-- 一个字幕实例显示一份文档。双语字幕是两条字幕轨道上的两个实例，各自启用或停用；原文与译文不要求逐行对应（§5.1）。
-- **句子的词**。字幕文档（`cuccut.caption/1`）的一句可以用 `words`（`{ first, last }` 或 `{ wordIds }`）指向文档头 `sourceDocumentId` 那份转写（`kind: speech`）里的词，生成字幕时写上。逐词动画、逐词高亮与设计字幕的强调（样式里按词 ID 写的 `captionEmphasis`）按这些词推进，词取自有效词流（§5.7）：隐藏的词与剪掉的词不画，句子里有词因此被拿掉时按留下的词重拼文字（认词上的「贴前」标记），一个也不剩的句子不画；多字的 CJK 词按转写落盘的规则逐字拆开，时间按字符权重分摊，子 ID 是 `<词 ID>~<k>`（第一个字沿用词 ID），写在整个词上的强调落到它拆出来的每个字上。逐句样式（样式里的 `cueStyles`）按字幕文档里的句子 ID 找。在源素材时钟上的字幕用词自己的源时刻；在序列时钟上的字幕用词投到序列上、与这一句重叠的那一处。没写 `words` 的句子取时刻落在句子里的词，文字不动。译文字幕、导入的字幕与不派生自转写的字幕没有词，逐词动画按空白切分推算，不冒充词时间（§5.6）。
+- Caption instances exist only on caption tracks. They have no `place`: a caption's position and layout are set by its style document (§5.6).
+- It references a document by **ID**, not by version: the caption follows the document's current version, so editing the text does not require changing the timeline.
+- **Clock.** Times in a caption document are either on the source media's clock or already sequence time; the document declares which. `scopeItemIds` lists the instances that project the captions onto the sequence: a caption line whose source time falls within the source range taken by one of those instances is mapped to sequence time through that instance's `timeMap`; lines that fall outside all instances (cut away) are not shown. If `scopeItemIds` is omitted, the times in the document are already sequence time.
+- `span` limits the displayed range: after projection, lines that fall outside `span` are not shown.
+- One caption instance displays one document. Bilingual captions are two instances on two caption tracks, each enabled or disabled independently; source and translation lines need not correspond one-to-one (§5.1).
+- **Words in a sentence.** A sentence in a caption document (`cuccut.caption/1`) can use `words` (`{ first, last }` or `{ wordIds }`) to point at words in the transcript (`kind: speech`) of the document that the header's `sourceDocumentId` names; these are written when the caption is generated. Word-by-word animation, word-by-word highlighting and the design emphasis of a caption (`captionEmphasis` in the style, keyed by word ID) advance by these words, taken from the effective word stream (§5.7). Hidden words and cut words are not drawn. If words in a sentence are removed as a result, the text is reassembled from the remaining words (following the “贴前” (attach-to-previous) mark on the word); a sentence with no words left is not drawn. Multi-character CJK words are split character by character using the rules the transcript follows when saved to disk, time is apportioned by character weight, and sub-IDs are `<word ID>~<k>` (the first character keeps the word ID). Emphasis written on a whole word lands on each character it splits into. Per-sentence styles (`cueStyles` in the style) are looked up by sentence ID in the caption document. For captions on the source clock, words use their own source times; for captions on the sequence clock, words use the sequence positions they project to, at the place that overlaps this sentence. A sentence without `words` takes the words whose times fall within the sentence; its text is unchanged. Translated captions, imported captions and captions not derived from a transcript have no words; word-by-word animation then infers splits from whitespace and does not pass off guessed times as word times (§5.6).
 
-### 3.9 混音、转场与效果
+### 3.9 Mixing, transitions and effects
 
 ```ts
 interface AudioMix {
-  volume: number;                      // 线性倍数，[0, 4]，缺省 1
-  muted?: boolean;                     // 为 false 时省略
-  fadeIn?: MediaTime;                  // [0, 5] 秒
-  fadeOut?: MediaTime;                 // [0, 5] 秒
-  envelope?: EnvelopePoint[];          // 音量关键帧；有它时取代 volume
+  volume: number;                      // linear multiplier, [0, 4], default 1
+  muted?: boolean;                     // omitted when false
+  fadeIn?: MediaTime;                  // [0, 5] seconds
+  fadeOut?: MediaTime;                 // [0, 5] seconds
+  envelope?: EnvelopePoint[];          // volume keyframes; when present, replaces volume
 }
 
 interface EnvelopePoint {
-  at?: MediaTime;                      // 实例局部的精确时刻
-  percent?: number;                    // 实例长度的百分比，[0, 100]；与 at 二选一
-  volume: number;                      // 线性倍数，[0, 4]
-  ease?: EaseName;                     // 进入这一点的那一段的缓动（§3.15），缺省 'linear'
+  at?: MediaTime;                      // exact time local to the instance
+  percent?: number;                    // percent of instance length, [0, 100]; mutually exclusive with at
+  volume: number;                      // linear multiplier, [0, 4]
+  ease?: EaseName;                     // easing of the segment entering this point (§3.15), default 'linear'
 }
 
-// 视频实例的内嵌音频、合成实例自己的声音
+// Embedded audio of a video instance; a compound instance's own sound
 interface EmbeddedAudio {
   enabled: boolean;
-  volume: number;                      // 同 AudioMix
+  volume: number;                      // same as AudioMix
   fadeIn?: MediaTime;
   fadeOut?: MediaTime;
   envelope?: EnvelopePoint[];
@@ -863,36 +863,36 @@ interface EmbeddedAudio {
 
 interface Transition {
   id: Id;
-  leftItemId?: Id;                     // 出场的一侧：画面从它离开
-  rightItemId?: Id;                    // 入场的一侧：画面进入它。两个至少有一个
-  kind: TransitionKind | string;       // 认不出的种类原样保留
-  params?: Record<string, JsonValue>;  // 按种类；空的时候省略
-  durationFrames: number;              // 单侧 0.1–2 秒（v2 的区间）取最近的帧，至少 1 帧；两侧 1 帧到 10 秒
+  leftItemId?: Id;                     // outgoing side: the picture leaves from it
+  rightItemId?: Id;                    // incoming side: the picture enters it. At least one of the two
+  kind: TransitionKind | string;       // unrecognized kinds are kept as-is
+  params?: Record<string, JsonValue>;  // per kind; omitted when empty
+  durationFrames: number;              // per side 0.1–2 seconds (v2's range), snapped to the nearest frame, at least 1 frame; both sides 1 frame to 10 seconds
   easing: Easing;
   placement: 'center' | 'start-at-cut' | 'end-at-cut';
-  audioCrossfade?: boolean;            // 两侧自带的声音等功率交叉淡化；为 false 时省略
+  audioCrossfade?: boolean;            // both sides' own sound crossfaded at equal power; omitted when false
 }
 
 type TransitionKind = 'dissolve' | 'wipe' | 'slide' | 'zoom' | 'iris' | 'dip-to-color' | 'push';
 type Easing = 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out';
 
 interface Fx {
-  filterPreset?: FilterPreset;         // 缺省 'none'
-  effectPreset?: EffectPreset;         // 缺省 'none'
-  effectIntensity?: number;            // [0, 1]，缺省 1
+  filterPreset?: FilterPreset;         // default 'none'
+  effectPreset?: EffectPreset;         // default 'none'
+  effectIntensity?: number;            // [0, 1], default 1
   grayscale?: number;                  // [0, 1]
   brightness?: number;                 // [-1, 1]
   exposure?: number;                   // [-1, 1]
   contrast?: number;                   // [-1, 1]
   saturation?: number;                 // [-1, 1]
-  hue?: number;                        // [-1, 1]，乘 180 度
+  hue?: number;                        // [-1, 1], times 180 degrees
   temperature?: number;                // [-1, 1]
-  blur?: number;                       // [0, 100]，540 短边下的像素
+  blur?: number;                       // [0, 100], pixels at 540 short edge
   sharpen?: number;                    // [0, 1]
   noise?: number;                      // [0, 1]
   vignette?: number;                   // [0, 1]
-  shadow?: { offsetX: number; offsetY: number; blur: number; color: string; opacity: number };   // 长度是 540 短边下的像素
-  stroke?: { width: number; color: string };                                                     // 同上
+  shadow?: { offsetX: number; offsetY: number; blur: number; color: string; opacity: number };   // lengths are pixels at 540 short edge
+  stroke?: { width: number; color: string };                                                     // same as above
 }
 
 type FilterPreset = 'none' | 'calm1' | 'calm2' | 'calm3' | 'clean1' | 'clean2' | 'clean3'
@@ -901,99 +901,99 @@ type EffectPreset = 'none' | 'invert' | 'night_vision' | 'thermal_vision' | 'old
   | 'filmic' | 'snowy' | 'box_blur' | 'bokeh_blur';
 
 interface Mask {
-  shape: 'ellipse';                    // 椭圆遮罩，内切于框
-  feather?: number;                    // 羽化，540 短边下的像素，≥ 0，缺省 0
+  shape: 'ellipse';                    // ellipse mask, inscribed in the frame
+  feather?: number;                    // feather, pixels at 540 short edge, ≥ 0, default 0
 }
 
 interface DuckingRule {
   id: Id;
   name?: string;
   enabled: boolean;
-  trigger: { kind: 'speech' } | ({ kind: 'items' } & DuckingGroup);   // 有人说话时，或这些实例发声时
-  target: DuckingGroup;                // 被压低的
-  depth: number;                       // 压低的 dB，[0, 60]，缺省 10
-  attack: MediaTime;                   // 触发开始之前多久开始下降，[0, 5] 秒，缺省 0.02
-  release: MediaTime;                  // 触发结束之后多久恢复，[0, 5] 秒，缺省 0.35
+  trigger: { kind: 'speech' } | ({ kind: 'items' } & DuckingGroup);   // when someone is speaking, or when these instances sound
+  target: DuckingGroup;                // the ones being ducked
+  depth: number;                       // dB to duck, [0, 60], default 10
+  attack: MediaTime;                   // how long before triggering starts the ramp down, [0, 5] seconds, default 0.02
+  release: MediaTime;                  // how long after triggering ends before recovery, [0, 5] seconds, default 0.35
 }
 
-interface DuckingGroup { trackIds?: Id[]; itemIds?: Id[] }   // 轨道上的全部实例，加上点名的实例
+interface DuckingGroup { trackIds?: Id[]; itemIds?: Id[] }   // all instances on the tracks, plus named instances
 ```
 
-**混音**
+**Mixing**
 
-- 音量是线性倍数，1 是原声，0 无声。界面与命令可以按 dB 显示与输入，换算是 `dB = 20·log10(volume)`，0 对应 −∞；保存的一律是倍数。
-- 实例上保存的增益只有 `volume`。§7.6 与 §7.9 的 `gainDb` 是声音计划（v3 的容器）上的偏移，不是实例的字段：混音时乘 `10^(gainDb / 20)`，不写回实例。
-- 淡入淡出与包络的时刻都是实例局部的精确时间，按最短的十进制写法读成有理数，不量化到帧。淡入从实例起点在 `fadeIn` 内由 0 线性升到 1，淡出在终点前 `fadeOut` 内线性降到 0。
-- **包络**。点按时刻严格递增，一条包络只用一种时刻写法（`at` 或 `percent`），最多 256 个点。第一个点之前取它的值，最后一个点之后取最后一个点的值；`at` 超出实例终点的点不生效。相邻两点之间按后一点的 `ease` 在线性倍数上插值，带缓动的段按 0.02 秒烘焙成折线（与闪避的斜坡相同）。百分比的点随实例的裁切伸缩。
-- 实例的增益 = 音量（`envelope` 的取样值，没有包络时是 `volume`）× 淡入淡出 × 闪避（见下）。导出与预览用同一个求值函数。
-- 音频的微淡化与视觉的 dissolve 是不同的对象。不能只为了消除爆音而改变视频总长。
+- Volume is a linear multiplier: 1 is the original sound, 0 is silence. The UI and commands may display and accept dB; the conversion is `dB = 20·log10(volume)`, with 0 corresponding to −∞. What is stored is always the multiplier.
+- The only gain stored on an instance is `volume`. The `gainDb` in §7.6 and §7.9 is an offset on the sound plan (the v3 container), not a field of the instance: when mixing it multiplies by `10^(gainDb / 20)` and is not written back to the instance.
+- Fade-in, fade-out and envelope times are exact instance-local times, read as rationals from their shortest decimal form, not quantized to frames. A fade-in rises linearly from 0 to 1 over `fadeIn` from the instance start; a fade-out falls linearly to 0 over `fadeOut` before the end.
+- **Envelope.** Point times are strictly increasing; one envelope uses only one time form (`at` or `percent`), with at most 256 points. Before the first point, its value is used; after the last point, the last point's value is used. Points whose `at` lies past the instance end have no effect. Between two adjacent points, interpolation on the linear multiplier follows the later point's `ease`; eased segments are baked into a polyline at 0.02 s steps (the same as the ducking ramps). Percent points stretch with the instance's trimming.
+- The instance's gain = volume (the sampled `envelope` value, or `volume` when there is no envelope) × fade-in/fade-out × ducking (below). Export and preview use the same evaluation function.
+- Audio micro-fades and visual dissolves are different things. Do not change the total video length just to eliminate clicks.
 
-字段来源：`schema.rs` 的 `volume`、`audioFadeIn`、`audioFadeOut`、`AUDIO_FADE_RANGE`；`keyframes.rs` 的 `VOLUME_RANGE`、`volume_at`；`duck.rs` 的 `volume_curve`、`element_gain_envelopes`。
+Field sources: `volume`, `audioFadeIn`, `audioFadeOut` and `AUDIO_FADE_RANGE` in `schema.rs`; `VOLUME_RANGE` and `volume_at` in `keyframes.rs`; `volume_curve` and `element_gain_envelopes` in `duck.rs`.
 
-**转场**
+**Transitions**
 
-- 两侧转场连接同一条轨道上首尾相接的两个视觉实例：左侧的终点等于右侧的起点，这一帧是剪切点 `cut`。只有 `rightItemId` 的是这个实例的入场转场，只有 `leftItemId` 的是出场转场。一个实例的开头与结尾各最多一个转场：设置新的转场替换同一条边上已有的；同一对实例沿用原来的 ID。
-- 种类：`dissolve`、`wipe`、`slide`、`zoom`、`iris` 可以单侧也可以两侧；`dip-to-color`、`push` 只用于两侧。
-- **单侧转场**作用在实例自己的框上。入场的窗口从实例起点开始，出场的窗口在实例终点结束，只能 `center`，不能 `audioCrossfade`。`durationFrames` 缺省是 0.5 秒取最近的帧；生效的长度是 min(D, ⌊L / 2⌋)，L 是实例的帧数：实例变短时转场随之变短，不删除，变短的转场在回执的 `impact.shortenedTransitions` 里列出（ID、写入的长度、生效的长度）。⌊L / 2⌋ 为 0 时这一头按硬切画。
-- 两侧转场的窗口是 `[start, start + D)`，`D = durationFrames`：`center` 时 `start = cut − ⌊D/2⌋`，`start-at-cut` 时 `start = cut`，`end-at-cut` 时 `start = cut − D`。窗口不得越出两侧实例合起来的范围。
-- 两侧转场在窗口里要同时画两侧：左侧在剪切点之后继续按自己的 timeMap 取源（尾部 handles），右侧在剪切点之前同样（头部 handles）。只有线性 timeMap 的视频实例与有预渲染替身的合成受素材长度限制：头部可用的帧数是实例起点映射到的源时刻除以速率，尾部是素材时长减去实例终点映射到的源时刻、再除以速率，都向下取整到帧。图片、文字、图形、生成类元素、定格、没有预渲染替身的合成以及素材时长未知的实例不受限制。
-- **handles 不够时拒绝**（`TRANSITION_HANDLES_INSUFFICIENT`，说明哪个实例的哪一头缺几帧），不自动缩短两侧转场，也不移动实例。
-- 每笔事务的操作全部执行之后，引擎检查全部转场，删掉不再成立的，并在回执的 `impact.removedTransitions` 里给出原因：`item-deleted`（实例没了，或不再是视觉实例）、`not-adjacent`（两侧不在同一轨道上或不再相接）、`too-long`（两侧转场的窗口越出实例）、`handles-insufficient`、`overlap`（同一个实例上两个转场的窗口重叠：按窗口起点、再按 ID 排序，先开始的留下）。移动、裁切、删除都按这一条处理。
-- 拆分实例时，以它为左侧的转场改挂到右半上，以它为右侧的留在左半。
-- 撤销之后会留下不成立的转场时，撤销被拒绝（命令与协议规范 §8.3）。
-- 进度：`p = (t − start) / (end − start)` 是线性进度；`e` 是 `easing` 作用之后的进度：`ease-in` 为 p²，`ease-out` 为 1 − (1 − p)²，`ease-in-out` 为 p²(3 − 2p)。画面按 `e`，声音按 `p`。
-- **入场的画法**，作用在进入的实例 B 上，框、旋转与镜像都是 B 自己的：
-  - `dissolve`：B 的不透明度乘 e。
-  - `wipe`：只露出 B 的框里从左边起 e 的部分（框自己的坐标，随旋转与镜像）。
-  - `slide`：B 沿框自己的横轴从左边移入，位移 (e − 1) × 框宽，不透明度乘 e。
-  - `zoom`：B 以框中心为原点缩放 0.75 + 0.25 × e，不透明度乘 e。
-  - `iris`：只露出以框中心为圆心、半径为 e × 框对角线一半的圆里的部分。
-- 单侧出场按同一种画法作用在离开的实例上，进度改用 p′ = (end − t) / (end − start)，即从 1 走到 0，再作用 `easing`；缺的一侧是透明的，露出下面的轨道。两侧转场先照常画 A，再把 B 按入场的画法盖在上面。两侧专用的种类：
-  - `dip-to-color`（`params.color` 为 `#RRGGBB`）：e < 0.5 时从 A 混向这种颜色（比例 2e），之后从颜色混向 B（比例 2e − 1）。
-  - `push`（`params.direction` 为 `left`、`right`、`up`、`down`，是运动的方向）：B 从画布外沿这个方向推入，A 同时沿同一方向被推出；B 剩余的位移是 (1 − e) 个画布宽或高，A 已走的位移是 e 个。
-- 转场不成立、另一侧停用、所在轨道隐藏或画不出来时，这一刻按硬切画。认不出的种类保留在视频里，渲染按硬切并报告不支持。
-- `audioCrossfade` 只用于两侧都是视频实例的转场，且两侧都启用：两段自带的声音在窗口里等功率交叉淡化，左侧乘 cos(p·π/2)，右侧乘 sin(p·π/2)。在自己区间之外的一侧按它的 timeMap 取 handles 里的声音，不套它自己的淡入淡出。有一侧停用时按硬切。轨道隐藏不影响声音，只看静音与 Solo。
+- Two-sided transitions join two visual instances that are adjacent on the same track: the left one's end equals the right one's start, and this frame is the cut point `cut`. A transition with only `rightItemId` is the instance's in-transition; one with only `leftItemId` is its out-transition. An instance has at most one transition at its head and at most one at its tail: setting a new transition replaces the existing one on the same edge; the same pair keeps its original ID.
+- Kinds: `dissolve`, `wipe`, `slide`, `zoom` and `iris` can be one-sided or two-sided; `dip-to-color` and `push` are two-sided only.
+- **One-sided transitions** act on the instance's own frame. An in-transition window starts at the instance's start, and an out-transition window ends at the instance's end. They can only be `center` and cannot use `audioCrossfade`. `durationFrames` defaults to 0.5 s, snapped to the nearest frame. The effective length is min(D, ⌊L / 2⌋), where L is the instance's frame count: when an instance gets shorter, its transition shortens with it rather than being deleted, and shortened transitions are listed in the receipt's `impact.shortenedTransitions` (ID, written length, effective length). When ⌊L / 2⌋ is 0, that edge is drawn as a hard cut.
+- The window of a two-sided transition is `[start, start + D)`, with `D = durationFrames`: for `center`, `start = cut − ⌊D/2⌋`; for `start-at-cut`, `start = cut`; for `end-at-cut`, `start = cut − D`. The window must not extend beyond the combined range of the two instances.
+- Within the window, both sides are drawn: the left side keeps taking source through its own timeMap past the cut point (tail handles), and the right side does the same before the cut point (head handles). Only video instances with linear timeMaps and compounds with pre-rendered stand-ins are limited by source length: the head frames available are the source time mapped from the instance's start, divided by the rate; the tail frames are the source duration minus the source time mapped from the instance's end, divided by the rate; both are rounded down to whole frames. Images, text, graphics, generated elements, freezes, compounds without a pre-rendered stand-in, and instances whose source duration is unknown are not limited.
+- **Insufficient handles are rejected** (`TRANSITION_HANDLES_INSUFFICIENT`, stating which instance and which edge is missing how many frames). The engine does not shorten the two-sided transition automatically, nor move any instance.
+- After all operations in a transaction have run, the engine checks every transition, removes those that no longer hold, and gives the reason in the receipt's `impact.removedTransitions`: `item-deleted` (the instance is gone, or is no longer a visual instance), `not-adjacent` (the two sides are no longer on the same track or no longer touch), `too-long` (the transition's window extends beyond an instance), `handles-insufficient`, and `overlap` (two transitions on one instance have overlapping windows: sorted by window start and then by ID, the one that starts first is kept). Moving, trimming and deleting are all handled this way.
+- When an instance is split, a transition for which it is the left side is reattached to the right half; one for which it is the right side stays on the left half.
+- When an undo would leave an invalid transition, the undo is rejected (command and protocol spec §8.3).
+- Progress: `p = (t − start) / (end − start)` is the linear progress, and `e` is the progress after `easing` is applied: `ease-in` gives p², `ease-out` gives 1 − (1 − p)², and `ease-in-out` gives p²(3 − 2p). The picture uses `e`; the sound uses `p`.
+- **In-transition rendering**, applied to the entering instance B; the frame, rotation and mirroring are B's own:
+  - `dissolve`: B's opacity × e.
+  - `wipe`: only the part of B's frame that is revealed from the left as e grows is shown (in the frame's own coordinates, following rotation and mirroring).
+  - `slide`: B moves in from the left along its own frame's horizontal axis, with displacement (e − 1) × frame width, and opacity × e.
+  - `zoom`: B scales about the frame's centre by 0.75 + 0.25 × e, and opacity × e.
+  - `iris`: only the part inside a circle centred on the frame's centre, with radius e × half the frame's diagonal, is shown.
+- A one-sided out-transition applies the same rendering to the leaving instance, but the progress is p′ = (end − t) / (end − start), which goes from 1 to 0, and then `easing` is applied. The missing side is transparent, exposing the track below. For a two-sided transition, A is drawn first as usual, then B is drawn over it with the in-transition rendering. Kinds that are two-sided only:
+  - `dip-to-color` (`params.color` is `#RRGGBB`): when e < 0.5, it blends from A toward this colour (ratio 2e); after that, it blends from the colour toward B (ratio 2e − 1).
+  - `push` (`params.direction` is `left`, `right`, `up` or `down`, the direction of motion): B pushes in from off the canvas along this direction while A is pushed out along the same direction. B's remaining displacement is (1 − e) canvas widths or heights; A's displacement so far is e.
+- When a transition does not hold, the other side is disabled, the track it is on is hidden, or it cannot be drawn, that moment is drawn as a hard cut. Unrecognized kinds are kept in the video; rendering falls back to a hard cut and reports them as unsupported.
+- `audioCrossfade` is used only for transitions between two video instances, with both sides enabled. The two sides' own sound is crossfaded at equal power within the window: the left is multiplied by cos(p·π/2) and the right by sin(p·π/2). A side outside its own interval takes sound from its handles through its timeMap and does not apply its own fades. If one side is disabled, the transition is a hard cut. Hiding a track does not affect sound; only mute and Solo do.
 
-字段来源：`video_transitions.rs` 的 `PRESETS`、`DURATION_RANGE`、`DURATION_DEFAULT` 与单侧的取样、画法。
+Field sources: `PRESETS`, `DURATION_RANGE` and `DURATION_DEFAULT` in `video_transitions.rs`, and the one-sided sampling and rendering.
 
-**效果**
+**Effects**
 
-- `fx` 用于视觉媒体与合成实例（§3.4），不用于文字、图形与其余生成类元素：文字的描边、阴影在 `style` 里（§3.6），图形的在 `shape` 里。
-- 字段是固定的，每个字段越界时拒绝写入，省略或等于恒等值时不产生效果。渲染按下面的固定顺序作用在这一层画好的结果上，与字段在对象里的书写顺序无关，之后再乘 `place.opacity`、与下面的层混合：
-  1. `filterPreset`：滤镜预设，展开成固定的一串调色。
-  2. `effectPreset`：特效预设，强度乘 `effectIntensity`。
-  3. `grayscale` 与 `brightness`（`filter.colorAdjust@1`）。
-  4. `exposure`（`filter.brightness`，量为 exposure × 2/3）。
-  5. `contrast`（`filter.contrast`）。
-  6. `saturation`（`filter.saturation`，量为 1 + saturation）。
-  7. `hue`（`filter.hueRotate`，hue × 180 度）。
-  8. `temperature`：红乘 1 + 0.2 × temperature、蓝乘 1 − 0.2 × temperature，夹到 [0, 1]。
-  9. `blur`（`filter.blur@1`，半径 blur / 540 × 短边）。
-  10. `sharpen`、`noise`、`vignette`（`filter.sharpen`、`filter.noise`、`filter.vignette`）。
-  11. 圆角或椭圆遮罩（`mask.shape@1`）：`place` 的圆角（§3.5）或 `mask`，只在 `pip` 或平铺时生效。
-  12. 动画的揭示（`mask.progress@1`，§3.15）。
-  13. `stroke`：沿 alpha 轮廓的外侧画一圈，`width` 在 (0, 100]。
-  14. `shadow`：alpha 轮廓平移、模糊、填色，画在画面下面；`blur` 在 [0, 200]，`opacity` 在 [0, 1]，向右、向下为正。
-- 作用的位置：1–10 作用在素材画面上（裁剪之后、放进 `place` 的框之前），11–12 在元素的画法里，13–14 作用在这一层画好的结果上、沿它的 alpha 轮廓：描边贴着转过之后的轮廓，阴影的 `offsetX`、`offsetY` 按画布的右与下，不随 `place.rot` 转（实例转 90 度，`offsetX` 为正的阴影仍在画面右边）。
-- 每一步的公式以配方为准（`render-raster` 的 `filter.*`、`mask.*` 配方与 `effects.rs` 的滤镜预设表），本规范不另写一份。
-- 长度一律按画布短边为 540 时的像素保存，渲染时乘 `短边 / 540`。
-- 遮罩、调整层、混合模式这类有后向依赖的效果进入 RenderGraph；不能逐个元素独立渲染之后假定可以无损拼回。`mask` 与圆角遮罩都受这一条约束。
+- `fx` applies to visual media and compound instances (§3.4), not to text, graphics or the other generated elements: text stroke and shadow live in `style` (§3.6), and a graphic's are in `shape`.
+- The fields are fixed. A write is rejected if any field is out of range. An omitted field, or one equal to its identity value, produces no effect. Rendering applies the following fixed order to the result already drawn at this layer, regardless of the order in which the fields are written in the object. Then `place.opacity` is multiplied in, and the layer is blended with the layers below:
+  1. `filterPreset`: the filter preset, expanded into a fixed chain of colour adjustments.
+  2. `effectPreset`: the effect preset, with its strength multiplied by `effectIntensity`.
+  3. `grayscale` and `brightness` (`filter.colorAdjust@1`).
+  4. `exposure` (`filter.brightness`, with amount exposure × 2/3).
+  5. `contrast` (`filter.contrast`).
+  6. `saturation` (`filter.saturation`, with amount 1 + saturation).
+  7. `hue` (`filter.hueRotate`, hue × 180 degrees).
+  8. `temperature`: red × (1 + 0.2 × temperature), blue × (1 − 0.2 × temperature), clamped to [0, 1].
+  9. `blur` (`filter.blur@1`, radius blur / 540 × short edge).
+  10. `sharpen`, `noise`, `vignette` (`filter.sharpen`, `filter.noise`, `filter.vignette`).
+  11. Rounded-corner or ellipse mask (`mask.shape@1`): the `place` corner radius (§3.5) or `mask`; applies only in `pip` or tiling.
+  12. Animated reveal (`mask.progress@1`, §3.15).
+  13. `stroke`: a ring drawn along the outside of the alpha contour, with `width` in (0, 100].
+  14. `shadow`: the alpha contour offset, blurred and filled, drawn beneath the picture; `blur` in [0, 200], `opacity` in [0, 1], with positive values going right and down.
+- Where each step applies: 1–10 act on the source picture (after cropping, before it is fitted into the `place` frame); 11–12 act within the element's drawing; 13–14 act on the result drawn at this layer, along its alpha contour. The stroke hugs the contour after it has been rotated, and the shadow's `offsetX` and `offsetY` follow the canvas's right and down, not `place.rot` (for an instance rotated 90 degrees, a shadow with positive `offsetX` still falls to the right of the frame).
+- Each step's formula follows the recipe (the `filter.*` and `mask.*` recipes in `render-raster`, and the filter preset table in `effects.rs`); this spec does not restate them.
+- Lengths are always stored as pixels for a 540 canvas short edge; rendering multiplies them by `short edge / 540`.
+- Effects with backward dependencies, such as masks, adjustment layers and blend modes, go into the RenderGraph. They cannot be rendered element by element and then assumed to recombine losslessly. Both `mask` and rounded-corner masks are bound by this rule.
 
-字段来源：`schema.rs` 的 `Fx`、`FX_AMOUNT_RANGE`、`FX_ADJUST_RANGE`、`FX_BLUR_RANGE`、`FilterPreset`、`EffectPreset`、`Mask`；`effects.rs` 的 `lower_element_effects`、`REFERENCE_SHORT_EDGE`。`temperature`、`shadow`、`stroke` 是 v3 原有的三种效果并入 `fx` 的字段。
+Field sources: `Fx`, `FX_AMOUNT_RANGE`, `FX_ADJUST_RANGE`, `FX_BLUR_RANGE`, `FilterPreset`, `EffectPreset` and `Mask` in `schema.rs`; `lower_element_effects` and `REFERENCE_SHORT_EDGE` in `effects.rs`. `temperature`, `shadow` and `stroke` are the three effects from v3 that were folded into the fields of `fx`.
 
-**闪避**
+**Ducking**
 
-- 闪避规则存在序列上：触发时，目标组里的实例压低 `depth` dB。按时间线上的区间算，不看信号电平：结果只取决于时间线，逐帧确定，预览与导出一致。
-- **按文稿触发**（`kind: 'speech'`）：触发区间是当前有效词流（§5.7）里每个词在序列上的区间；没有词级时间的词用它所在的句或 cue 的区间。视频没有文稿或有效词流为空时不压低，并报告 `duck-no-speech`（导出警告里是 `DUCK_NO_SPEECH`）。有效词流取视频里每份转写文档投到序列上的词：剪掉的、定格的、不在时间线上的不算。
-- **按实例触发**（`kind: 'items'`）：触发区间是组里这些实例在序列上的区间（音频按采样精度，§2.10）：启用、所在轨道发声（没有静音，符合 Solo），而且本身发声——没有静音的音频实例、内嵌音频启用且素材有音轨的视频实例、有预渲染替身且声音启用的合成。组里引用的轨道不存在时报告 `duck-track-missing`。
-- 触发区间先合并：间隔不超过 max(0.5 秒, attack + release) 的相邻区间并成一段。每段 `[s, e]` 展开成增益曲线上的四个点：(s − attack, 1)、(s, g)、(e, g)、(e + release, 1)，g = 10^(−depth / 20)，点之间在线性增益上插值，段外是 1。`attack`、`release` 小于 0.001 秒时按 0.001 秒算。
-- 闪避增益与实例的音量、淡入淡出相乘；一个实例落在几条规则的目标组里时，各条的增益相乘。逐帧计划与导出读同一串压低量折点（dB）：各段的四个点之外，斜坡按 0.02 秒（`ENVELOPE_BAKE_STEP`）等分取样，折点之间在 dB 上线性。
-- 取值：`depth` 在 [0, 60]；`attack`、`release` 在 [0, 5] 秒，是精确时间，不量化。目标组不能空，按实例触发时触发组也不能空，各最多 256 项；轨道须是视觉或音频轨道，实例须是音频、视频或合成实例；同一条轨道或实例不能同时在两组里。目标组里有锁定的轨道或实例时，不能设置或删除这条规则。
-- 拆分组里点名的实例时，右半一起进组；合并（`joinItems`）时被并掉的一半从组里换成留下的那一件。组里引用的轨道或实例被删掉之后，那一项留着、不匹配任何实例；修改规则时只校验这次给出的组。
+- Ducking rules live on the sequence. When triggered, the instances in the target group are lowered by `depth` dB. Ducking is computed from intervals on the timeline, not from signal level: the result depends only on the timeline, is determined frame by frame, and preview and export match.
+- **Triggered by script** (`kind: 'speech'`): the trigger intervals are each word's interval on the sequence in the current effective word stream (§5.7). A word with no word-level timing uses the interval of the sentence or cue it belongs to. If the video has no script, or the effective word stream is empty, nothing is lowered and `duck-no-speech` is reported (in export warnings it is `DUCK_NO_SPEECH`). The effective word stream takes the words of each transcript document in the video, projected onto the sequence: cut words, frozen words and words not on the timeline do not count.
+- **Triggered by instances** (`kind: 'items'`): the trigger intervals are the sequence intervals of these instances in the group (audio at sample precision, §2.10). The instance must be enabled, on a track that is sounding (not muted, consistent with Solo), and itself sounding: an audio instance that is not muted, a video instance whose embedded audio is enabled and whose source has an audio track, or a compound with a pre-rendered stand-in and sound enabled. If a track referenced by the group does not exist, `duck-track-missing` is reported.
+- Trigger intervals are merged first: adjacent intervals whose gap does not exceed max(0.5 s, attack + release) are merged into one segment. Each segment `[s, e]` expands into four points on the gain curve: (s − attack, 1), (s, g), (e, g) and (e + release, 1), with g = 10^(−depth / 20). Between points the interpolation is linear in gain; outside the segments the value is 1. `attack` and `release` below 0.001 s are treated as 0.001 s.
+- The ducking gain is multiplied with the instance's volume and fades. When an instance falls within the target groups of several rules, their gains multiply. The per-frame plan and the export read the same ducking dB breakpoints: beyond the four points of each segment, the ramps are sampled evenly every 0.02 s (`ENVELOPE_BAKE_STEP`), with linear interpolation in dB between breakpoints.
+- Ranges: `depth` is in [0, 60]; `attack` and `release` are in [0, 5] s, are exact times, and are not quantized. The target group cannot be empty; when triggering by instances, the trigger group cannot be empty either; each group holds at most 256 items. Tracks must be visual or audio tracks, and instances must be audio, video or compound instances. The same track or instance cannot be in both groups. If the target group contains a locked track or instance, the rule cannot be set or deleted.
+- When a named instance in a group is split, the right half joins the group. When items are joined (`joinItems`), the half that is absorbed is replaced in the group by the one that remains. After a track or instance referenced by a group is deleted, that entry stays and matches no instance. When a rule is modified, only the groups given in that edit are validated.
 
-字段来源：`duck.rs` 的 `Duck`、`DUCK_DEPTH_DEFAULT`、`DUCK_DEPTH_RANGE`、`DUCK_TIME_RANGE`、`DUCK_MERGE_GAP`、`DUCK_MIN_RAMP`、`duck_curve`、`speech_intervals`、`track_intervals`；缺省的 attack 与 release 来自 `scene_primitives::audio_mix`。
+Field sources: `Duck`, `DUCK_DEPTH_DEFAULT`, `DUCK_DEPTH_RANGE`, `DUCK_TIME_RANGE`, `DUCK_MERGE_GAP`, `DUCK_MIN_RAMP`, `duck_curve`, `speech_intervals` and `track_intervals` in `duck.rs`; the default attack and release come from `scene_primitives::audio_mix`.
 
-### 3.10 保护与锁（本规范补全）
+### 3.10 Protection and Locks (supplement to this spec)
 
 ```ts
 interface ProtectionRecord {
@@ -1008,12 +1008,12 @@ interface ProtectionRecord {
 }
 ```
 
-- `locked`：提交时强制检查；触碰它的事务被拒绝，必须显式解锁。
-- `confirmed`：表示已确认的方向；自动流程不得无故重做，触碰时需要提案。
-- 视频里保存的是持久的保护。只对一个任务生效的保护范围（「这次其他别动」）属于 TaskContract，由 Runtime 在提交时随授权上下文交给引擎一并检查，不写入视频。
-- 轨道与实例上的 `locked` 字段是保护的快捷形式，语义等同于对该实体的 `locked` 保护。
+- `locked`: enforced at commit time; a transaction that touches it is rejected and the lock must be explicitly removed.
+- `confirmed`: marks an agreed direction; automated flows must not redo it without reason, and touching it requires a proposal.
+- Persistent protection is stored in the video. A protection scoped to a single task (“leave the rest alone this time”, i.e. “这次其他别动”) belongs to TaskContract. The Runtime hands it to the engine together with the authorization context and checks it at commit time; it is not written into the video.
+- The `locked` field on tracks and items is a shorthand for protection; its semantics are the same as a `locked` protection on that entity.
 
-### 3.11 检查点（本规范补全）
+### 3.11 Checkpoint (supplement to this spec)
 
 ```ts
 interface Checkpoint {
@@ -1026,49 +1026,49 @@ interface Checkpoint {
 }
 ```
 
-检查点是对某个已提交版本的命名引用，不复制媒体。被检查点引用的版本及其引用的素材版本不被 GC。
+A checkpoint is a named reference to a committed version. It does not copy media. The versions referenced by a checkpoint, and the asset versions they reference, are not garbage-collected.
 
-### 3.12 依赖链接
+### 3.12 Dependency Links
 
 ```ts
 interface DependencyLink {
-  from: VersionRef;                    // 派生物
-  to: VersionRef;                      // 输入
+  from: VersionRef;                    // derived artifact
+  to: VersionRef;                      // input
   kind: 'derived-from' | 'aligned-to' | 'translated-from' | 'rendered-from' | 'anchored-to';
   inputFingerprint: string;
 }
 ```
 
-每个派生产物都记录输入的指纹。失效规则见架构设计 §10。
+Every derived artifact records a fingerprint of its inputs. For invalidation rules, see architecture design §10.
 
 ### 3.13 Marker
 
 ```ts
 interface Marker {
   id: Id;
-  frame: number;                       // 序列的帧
+  frame: number;                       // frame of the sequence
   durationFrames?: number;
-  label: string;                       // 章节的标题
+  label: string;                       // chapter title
   kind?: 'chapter' | 'note' | 'todo';
-  summary?: string;                    // 章节的摘要
-  thumbnail?: VersionRef;              // 章节的缩略图：一个图片素材版本
+  summary?: string;                    // chapter summary
+  thumbnail?: VersionRef;              // chapter thumbnail: one image asset version
 }
 ```
 
-- 章节是 `kind: 'chapter'` 的标记，不另设对象。序列的章节表就是按帧排序的章节标记。
-- 章节固定在序列时间上：移动、裁切、删除实例与波纹删除（`removeRange`）都不改变它的帧。例外是剪口：应用与恢复剪口时章节跟着内容走（§6.7）。
-- 章节的帧不小于 0，严格递增（同一帧不能有两章）。标题 1–200 个字符（去掉首尾空白），摘要不超过 2000 个字符，一个序列最多 1000 章。缩略图是写入时那个图片素材的当前版本。
-- 整表替换章节时，其他种类的标记不动。章节不受轨道与实例的锁定影响。
-- 章节不进帧计划，不影响画面与声音。
+- A chapter is a marker with `kind: 'chapter'`; there is no separate object. A sequence's chapter table is its chapter markers sorted by frame.
+- Chapters are fixed to sequence time: moving, trimming or deleting items, and ripple delete (`removeRange`), do not change their frame. The exception is cut points: when cuts are applied and restored, chapters move with the content (§6.7).
+- A chapter's frame is ≥ 0 and strictly increasing (two chapters cannot share a frame). The title is 1–200 characters (after trimming surrounding whitespace), the summary is at most 2000 characters, and a sequence holds at most 1000 chapters. The thumbnail is the current version of the image asset that was written.
+- Replacing the chapter table as a whole leaves markers of other kinds untouched. Chapters are not affected by track and item locks.
+- Chapters are not part of the frame plan and do not affect picture or sound.
 
-### 3.14 字体
+### 3.14 Fonts
 
-字体使用视频资源引用与精确的样式标识，不只保存机器上的字体名。
+Fonts are referenced through video assets and exact style identifiers, not only by the font name on the machine.
 
 ```ts
 interface FontRecord {
   id: Id;
-  assetRef: VersionRef;               // 字体文件 bytes
+  assetRef: VersionRef;               // font file bytes
   family: string;
   style: { weight: number; italic: boolean; stretch?: number };
   postscriptName?: string;
@@ -1076,29 +1076,29 @@ interface FontRecord {
 }
 ```
 
-缺字体时预览可以警告并使用替代字体；严格导出必须要求用户显式接受替代，或补齐字体。
+When a font is missing, preview may warn and use a substitute font. Strict export must require the user to explicitly accept the substitute, or the font must be supplied.
 
-现状：视频里还没有 `FontRecord`，文字样式与字幕样式只写字体族名（`fontFamily`）。渲染时先找随渲染内核发布的字体；不在其中的族按族名到本机字体里找（族名不分大小写，或按 PostScript 名精确匹配），预览与导出用同一份解析，同一个族名落到同一组文件（架构设计 §9.1）。哪里都找不到的族用替代字体画，文字元素与字幕在预览与导出里都报同一句提示；导出不拒绝，也不要求显式接受。本机字体不进视频，换一台机器画出来可能不同。
+Current status: the video does not yet have a `FontRecord`. Text styles and caption styles only write the font family name (`fontFamily`). At render time, the renderer first looks for fonts shipped with the render kernel. A family not found there is looked up by family name among the local machine's fonts (family names are case-insensitive, or matched exactly by PostScript name). Preview and export use the same resolution, so one family name resolves to the same set of files (architecture design §9.1). A family found nowhere is drawn with a substitute font, and text elements and captions show the same notice in both preview and export. Export does not refuse and does not require explicit acceptance. Local fonts are not stored in the video, so the result may look different on another machine.
 
-### 3.15 关键帧与元素动画
+### 3.15 Keyframes and Element Animation
 
-画面实例的运动有三层，自下而上叠加：静态的 `place`（§3.5），关键帧取样之后的基础姿态，元素动画（`animate`）与单侧转场（§3.9）。
+The motion of a visual instance has three layers, stacked bottom to top: the static `place` (§3.5), the base pose after keyframe sampling, element animation (`animate`), and one-sided transitions (§3.9).
 
-**关键帧**
+**Keyframes**
 
 ```ts
 interface AnimationBinding {
   id: Id;
-  targetId: Id;                        // 一个画面实例
+  targetId: Id;                        // one visual instance
   propertyPath: 'x' | 'y' | 'scale' | 'scaleY' | 'rot' | 'opacity' | 'radius';
-  keyframes: Keyframe[];               // 1–256 个
+  keyframes: Keyframe[];               // 1–256 items
 }
 
 interface Keyframe {
-  localFrame?: number;                 // 实例局部的帧，序列编辑网格，≥ 0
-  percent?: number;                    // 实例长度的百分比，[0, 100]；与 localFrame 二选一
+  localFrame?: number;                 // frame local to the instance, on the sequence edit grid, ≥ 0
+  percent?: number;                    // percent of the instance length, [0, 100]; mutually exclusive with localFrame
   value: number;
-  ease?: EaseName;                     // 进入这一帧的那一段的缓动，缺省 'linear'
+  ease?: EaseName;                     // easing of the segment entering this frame; default 'linear'
 }
 
 type EaseName =
@@ -1112,65 +1112,65 @@ type EaseName =
   | 'easeOutElastic';
 ```
 
-- 属性与 `place` 的同名字段一一对应，单位相同：`x`、`y` 是画布的百分比，`scale`、`scaleY` 是倍率，`rot` 是度，`opacity` 在 [0, 1]，`radius` ≥ 0（540 短边下的像素）。值越界时拒绝写入。音量的关键帧是混音的包络（§3.9），不在这里。
-- 适用范围：`radius` 只用于视觉媒体，其余属性用于全部画面实例。同一个实例的同一个属性至多一条绑定。
-- 一条绑定里的帧只用一种时刻写法，时刻严格递增。`localFrame` 跟着内容走；`percent` 跟着实例的长度伸缩，裁切之后仍落在同样的比例上。
-- **取样**。在实例局部的精确时刻取样（§2.5），不先量化到帧。第一帧之前取第一帧的值，最后一帧之后取最后一帧的值；`localFrame` 超出实例长度的帧不生效。帧 i − 1 到帧 i 之间按帧 i 的 `ease` 插值，缓动函数以 `motion` 的缓动表为准。
-- 取样值**取代** `place` 的同名静态值，成为基础姿态；`radius` 的取样值取代四个角的全部圆角（包括 `cornerRadii`）。元素动画与单侧转场叠在基础姿态上。
-- **露底检查**。静态位置盖满画布的视频或图片带画面关键帧时，引擎按帧网格与每个关键帧时刻取样，运动中露出画布超过 0.5 像素就在回执里提醒，不拒绝。
-- **拆分、合并与裁切**。拆分时两半各自保留落在自己窗口里的帧，并在接缝处各补一帧取样值，看得见的动画不变。合并是拆分的逆：能还原成同一串帧时合并，否则拒绝。裁切或跟随剪口改变实例的窗口时，`localFrame` 按内容的位移换算，落到窗口外的帧去掉并在新边界补一帧取样值；`percent` 原样保留。以上换算的结果按 §2.6 量化到帧。
-- 以秒给出的关键帧时刻（v2 的 `t`、命令里的秒）换算成 `localFrame` 时取最近的帧，并给出量化回执；百分比原样保存。改变 `Sequence.fps` 时按 §2.12 的事务转换。
-- 认不出的属性或缓动名写入时拒绝。拖动带关键帧的对象时，命令要说明是「改基础姿态」还是「在当前帧加关键帧」。
-- 代码合成内部的关键帧由代码包自己管理，不在这里。
+- Property names map one-to-one to the same-named fields of `place`, with the same units: `x` and `y` are canvas percentages, `scale` and `scaleY` are multipliers, `rot` is degrees, `opacity` is in [0, 1], and `radius` is ≥ 0 (pixels at a 540 short side). Out-of-range values are rejected on write. Volume keyframes are the mix envelope (§3.9) and are not covered here.
+- Scope: `radius` applies only to visual media; the other properties apply to all visual instances. An instance may have at most one binding per property.
+- The frames in one binding use only one time notation, and their times are strictly increasing. `localFrame` follows the content. `percent` scales with the instance length, so after a trim it still lands at the same proportion.
+- **Sampling.** Sample at the exact moment local to the instance, without quantizing to frames first (§2.5). Before the first frame, the first frame's value is used; after the last frame, the last frame's value is used. A frame whose `localFrame` is beyond the instance length has no effect. Between frame i − 1 and frame i, interpolate with frame i's `ease`; easing functions follow the easing table in `motion`.
+- Sampled values **replace** the same-named static value of `place` and become the base pose. A sampled `radius` replaces all four corner radii (including `cornerRadii`). Element animation and one-sided transitions layer on top of the base pose.
+- **Uncover check.** When a static video or image that covers the whole canvas has visual keyframes, the engine samples on the frame grid and at each keyframe time. If the canvas shows through by more than 0.5 px during motion, the receipt warns, but the edit is not rejected.
+- **Split, merge and trim.** On a split, each half keeps the frames that fall inside its own window and adds one sampled value at the seam, so the visible animation is unchanged. Merge is the inverse of split: it merges when the pieces can be restored to the same frame series, and is rejected otherwise. When a trim or a cut-following change alters an instance's window, `localFrame` is converted by the content's displacement. Frames that fall outside the window are removed, and a sampled value is added at the new boundary. `percent` is kept as is. Results of these conversions are quantized to frames per §2.6.
+- Keyframe times given in seconds (v2's `t`, seconds in commands) are converted to `localFrame` by taking the nearest frame, and a quantization receipt is issued. Percentages are stored as they are. When `Sequence.fps` changes, the conversion follows the transaction rules in §2.12.
+- Unrecognized property or easing names are rejected on write. When dragging an object that has keyframes, the command must state whether it changes the base pose (“改基础姿态”) or adds a keyframe at the current frame (“在当前帧加关键帧”).
+- Keyframes inside code composition are managed by the code package itself and are not covered here.
 
-字段来源：`keyframes.rs` 的 `KEYFRAME_PROPS`、`KEYFRAMES_MAX_PER_PROP`、`KeyTime`、`Keyframe`、`KeyframeCaps`、`sample`、`place_at`、`keyframes_uncover`、`UNCOVERED_TOLERANCE_PX`、`rewindow`、`split_keyframes`、`join_keyframes`；缓动名见 `crates/motion/src/curve.rs` 的 `EASE_NAMES`。
+Field sources: `keyframes.rs` (`KEYFRAME_PROPS`, `KEYFRAMES_MAX_PER_PROP`, `KeyTime`, `Keyframe`, `KeyframeCaps`, `sample`, `place_at`, `keyframes_uncover`, `UNCOVERED_TOLERANCE_PX`, `rewindow`, `split_keyframes`, `join_keyframes`); easing names are in `EASE_NAMES` in `crates/motion/src/curve.rs`.
 
-**元素动画**
+**Element animation**
 
 ```ts
 interface Animation {
-  enter?: AnimationSlot;               // 入场
-  exit?: AnimationSlot;                // 出场
-  loop?: AnimationSlot;                // 循环
+  enter?: AnimationSlot;               // enter
+  exit?: AnimationSlot;                // exit
+  loop?: AnimationSlot;                // loop
 }
 
 interface AnimationSlot {
-  preset: string;                      // 这一槽的预设名，见下
-  presetVersion?: number;              // 预设的版本，当前为 1
-  dur?: number;                        // 秒，[0.1, 2]；只用于入场、出场，缺省取预设的值
-  delay?: number;                      // 秒，≥ 0，缺省 0
-  intensity?: number;                  // [0, 1]，缺省 1
-  ease?: EaseName;                     // 缺省取预设的曲线
-  stagger?: number;                    // 逐字、逐词错开的秒数，> 0；只用于入场、出场
-  staggerFrom?: 'start' | 'end' | 'center';   // 只用于入场、出场
-  period?: number;                     // 秒，[0.2, 6]；只用于循环，缺省取预设的值
-  phase?: number;                      // 秒，有限数；只用于循环，缺省 0
-  seed?: number;                       // 非负整数；只用于循环，缺省取预设的值
+  preset: string;                      // preset name for this slot, see below
+  presetVersion?: number;              // preset version, currently 1
+  dur?: number;                        // seconds, [0.1, 2]; only for enter and exit; default from the preset
+  delay?: number;                      // seconds, ≥ 0; default 0
+  intensity?: number;                  // [0, 1]; default 1
+  ease?: EaseName;                     // default: the preset's curve
+  stagger?: number;                    // seconds between per-character or per-word offsets, > 0; only for enter and exit
+  staggerFrom?: 'start' | 'end' | 'center';   // only for enter and exit
+  period?: number;                     // seconds, [0.2, 6]; only for loop; default from the preset
+  phase?: number;                      // seconds, finite number; only for loop; default 0
+  seed?: number;                       // non-negative integer; only for loop; default from the preset
 }
 ```
 
-- 三个槽是实例的正式字段，原样保存，不展开成关键帧。渲染时由 `motion` 按实例局部的精确时刻取样（`timeline::motion::compile_animation`），三端同一个结果。
-- `preset` 是封闭的名字表，写入时校验：入场取 `ENTER_PRESETS`，出场取 `EXIT_PRESETS`（旧名 `EXIT_LEGACY_PRESETS` 可以读），循环取 `LOOP_PRESETS`。预设的配方是数据，在 `crates/motion/presets/builtin/motion/` 下；本规范只规定按 `preset` 与 `presetVersion` 引用。渲染时找不到这一对的配方，这一槽跳过并报告，实例的其余部分照常画。
-- 不适用于这一槽的字段写入时拒绝。
-- 没写出场槽时，按入场预设的镜像推出出场，时长是入场的有效时长 × 0.75；出场写 `preset: 'none'` 关掉这个推导。入场、循环写 `'none'` 等于删掉这一槽。
-- `typewriter`、`riseWords` 只用于文字，不用于计时读数。音频实例没有 `animate`。
-- 秒都是实例局部的精确时间，不量化。
+- The three slots are formal fields of the instance. They are stored as written and are not expanded into keyframes. At render time, `motion` samples them at the exact moment local to the instance (`timeline::motion::compile_animation`), and all three ends get the same result.
+- `preset` is a closed list of names, validated on write. Enter takes `ENTER_PRESETS`, exit takes `EXIT_PRESETS` (legacy names in `EXIT_LEGACY_PRESETS` may be read), and loop takes `LOOP_PRESETS`. Preset recipes are data under `crates/motion/presets/builtin/motion/`. This spec only defines referencing by `preset` and `presetVersion`. If the recipe for a given pair cannot be found at render time, that slot is skipped and reported, and the rest of the instance renders as usual.
+- Fields that do not apply to a slot are rejected on write.
+- When no exit slot is written, exit is derived as the mirror of the enter preset, with a duration equal to the effective enter duration × 0.75. Write exit with `preset: 'none'` to turn this derivation off. Writing `'none'` for enter or loop removes that slot.
+- `typewriter` and `riseWords` apply only to text, not to timer or counter readouts. Audio instances have no `animate`.
+- All seconds are exact times local to the instance and are not quantized.
 
-字段来源：`schema.rs` 的 `Animation`、`AnimationSlot`、`ENTER_PRESETS`、`EXIT_PRESETS`、`EXIT_LEGACY_PRESETS`、`LOOP_PRESETS`；`animations.rs` 的 `ANIMATION_PRESET_VERSION` 与各区间常量；出场的推导见 `crates/motion/src/lower_timeline.rs` 的 `effective_exit`。
+Field sources: `schema.rs` (`Animation`, `AnimationSlot`, `ENTER_PRESETS`, `EXIT_PRESETS`, `EXIT_LEGACY_PRESETS`, `LOOP_PRESETS`); `animations.rs` (`ANIMATION_PRESET_VERSION` and the interval constants); the derivation of exit is in `effective_exit` in `crates/motion/src/lower_timeline.rs`.
 
-### 3.16 FollowPolicy 与语义锚
+### 3.16 FollowPolicy and Semantic Anchors
 
-每个附属元素声明它跟着什么移动：
+Each attached element declares what it moves with:
 
 ```ts
 type FollowPolicy =
-  | { kind: 'sequence-fixed' }                         // 固定在序列时间上，例如片头 Logo
-  | { kind: 'follow-cuts' }                            // 跟着剪口移动与缩短，见下
-  | { kind: 'item-local'; itemId: Id }                 // 跟着指定的片段移动，见下
-  | { kind: 'speech-anchor'; start?: SemanticAnchor; end?: SemanticAnchor }   // 起点、终点挂在词或句上，至少一个
-  | { kind: 'explicit-link-group'; groupId: Id };      // 音画成组，按规则联动
+  | { kind: 'sequence-fixed' }                         // fixed to sequence time, e.g. an opening logo
+  | { kind: 'follow-cuts' }                            // moves and shortens with cut points, see below
+  | { kind: 'item-local'; itemId: Id }                 // moves with the specified item, see below
+  | { kind: 'speech-anchor'; start?: SemanticAnchor; end?: SemanticAnchor }   // start and end anchored to words or sentences; at least one
+  | { kind: 'explicit-link-group'; groupId: Id };      // audio and picture grouped; linked by rules
 
-// 本规范补全
+// supplement to this spec
 type SemanticAnchor =
   | { kind: 'word'; speechRef: VersionRef; wordId: Id; occurrenceId?: Id; edge: 'start' | 'end'; offset?: MediaTime }
   | { kind: 'sentence'; speechRef: VersionRef; sentenceId: Id; occurrenceId?: Id; edge: 'start' | 'end' }
@@ -1178,70 +1178,70 @@ type SemanticAnchor =
   | { kind: 'sequence'; sequenceId: Id; frame: number };
 ```
 
-- **到序列末尾**。`ItemBase.untilSequenceEnd` 为 true 的实例没有自己的终点：终点是序列里其余对象的最晚终点，`durationPolicy` 为 `fixed` 时是固定的长度。它与任何 `FollowPolicy` 都可以同时使用，`speech-anchor` 有 `end` 时不能用。
-  - 引擎在每笔编辑事务的最后按最终的时间线求终点，写回 `span`；写入时给的长度与直接修剪它的终点都不算数。
-  - 其余对象是序列上其余实例（包括停用的），它们精确终点的最大值向上取整到帧；到序列末尾的实例互不计入。
-  - 同一条轨道上后面还有实例时，终点截到那个实例的起点。长度至少 1 帧。带线性 `timeMap` 的不超出素材。
-  - 终点是求出来的，不是对实例的编辑：实例或轨道锁着也照样更新。任务保护按改动核对（命令与协议规范 §3.4），改到受保护的这种实例时整笔拒绝。
-  - 关键帧按起点不动的窗口换算（§3.15）。
-- **`speech-anchor`**。已定：每笔编辑事务的最后（求到序列末尾的终点之前），引擎按最终的时间线重新求每个锚点并摆放实例；起点、终点各自求值，没有锚点的一端：只有起点时保持长度，只有终点时起点不动。求出的时刻按 §2.6 的 `nearest-frame` 量化到帧，摆放按移动起点、再修剪终点（关键帧按 §3.15 换算）。
-  - 词的投影与按文稿闪避相同（§3.9）：作用实例是转写素材在序列上的视频、音频实例，按起点、再按 ID 排，同一刻只取第一个；隐藏的词与没有文字的词不投影。投影决定词出现在哪里，时刻按那个实例的线性映射与词的刻度精确求。
-  - 词的中点落在素材的剪口里（§6.7）算被剪掉。端点落在剪口里时向保留下来的部分靠：起点推到剪口之后，终点拉到剪口之前；端点被修剪掉时靠到中点所在实例的边上。词锚点的 `offset` 是带符号的精确时长，在映射到序列时间之后加上；结果为负时这个锚点无效。
-  - 出现处：中点映射到不止一处时有歧义。`occurrenceId` 是作用实例的 ID，或拆分之前的那个（`lineage.originItemId`），按它只取那一处。
-  - 句子锚点用存下来的 `sentences`（§5.2）：起点是第一个求得出的成员词的开头，终点是最后一个求得出的成员词的结尾；文档没有存句子时求不出。`item` 锚点是那个实例的起点加 `localOffset`；`sequence` 锚点就是那一帧，序列不是实例所在的序列时求不出。
-- 锚点求不出来时（已定）：
-  - 词被剪掉、词或句子不存在、词在当前的时间线上没有出现、偏移之后为负、求出的终点不晚于起点，或者求出的位置摆不下（与同一轨道上的实例重叠、超出素材），实例留在上一次的位置，进入 `orphaned` 状态；不得静默地挂到相邻的句子上，也不得跑到 0 秒。之后的事务照样重求，求得出、摆得下时回到锚点上。
-  - `orphaned` 不落盘，按时间线现算：每笔事务的回执在 `impact.orphanedAnchors` 列出这时的 `orphaned` 实例，`videos.inspect` 列出实例与原因（原因码同 `anchors.rs`：`word-anchor-missing`、`-cut`、`-unmapped`、`-ambiguous`、`-invalid`，另有 `sentence-anchor-missing`、`item-anchor-missing`、`sequence-anchor-mismatch`、`anchor-range-empty`、`anchor-blocked`）。渲染不看这个状态，实例照常输出。
-  - 这笔事务里写下（新建或改了跟随策略）的锚点有歧义、或指向不存在的转写文档版本时整笔拒绝（`INVALID_OPERATION`，`details.rule` 是原因码）；锚点的形状不对时同样在写入时拒绝。早先写下的锚点后来有了歧义时只进入 `orphaned`，不拒绝那笔编辑。
-  - 实例或轨道锁着、而锚点要移动它时整笔拒绝（`TARGET_LOCKED`），与 `follow-cuts` 相同。
-- **`item-local`**。已定：实例保持它相对目标实例起点的位置，每笔编辑事务的最后按目标在这笔事务里的变化补算；只移动，不改长度。锚点时刻是跟随者的起点。
-  - 目标带线性 `timeMap` 时，锚点换成目标上的源时刻，在事务之后的目标与由它拆出来的实例（lineage）上找回：落在哪一段里就跟着那一段，`itemId` 改指那一段；源时刻被修剪或剪掉时移到它之后最近那一段的起点；在所有段之后时按最后一段外推。合并（`joinItems`）之后改指留下的那件。
-  - 没有 `timeMap` 的目标：整体移动时跟着移动；只改起点时不动，起点越过锚点时移到目标的新起点；拆开时跟着锚点所在的那一段。
-  - 跟随者在目标起点之前时，保持到目标新起点的距离。
-  - 目标被删掉（拆出来的也一段不剩）时，跟随者在同一笔事务里一起删掉，列在回执的 `impact.removedWithTarget`；跟着它的实例再一起删。
-  - 跟随者自己在这笔事务里被移动或修剪过、或者跟随策略是这笔事务写下的，不再补算。写下时目标必须在同一个序列上，否则拒绝（`INVALID_OPERATION`，`details.rule: 'item-local-target'`）。跟随者锁着而要移动或删掉时整笔拒绝（`TARGET_LOCKED`）；移动之后与同轨道的实例重叠时按 §3.10 拒绝。
-- **`explicit-link-group`**。已定：这一版不做联动，只保存与校验形状，编辑时不移动。
-- **`follow-cuts`**。应用或恢复剪口（§6.7）的事务里，这样的实例按剪口之前与之后的时间线移动：
-  - 起点与终点各自先从旧的序列时刻映射回被剪素材上的源时刻，再映射到新的序列时刻。
-  - 落进被删掉的区间时，起点推到下一个保留的时刻，终点拉到上一个保留的时刻；终点不晚于起点时删掉这个实例，在回执里列出。
-  - 起点被推后时，带 timeMap 的实例的源起点同步后移（推后的长度乘速率）。
-  - 跨过剪口的实例只缩短，不在中间开洞，也不拆开。
-  - 落在被剪素材所有实例之后的实例，保持它到序列末尾的距离。
-  - 恢复剪口时，起点在接缝处或之后的后移放回的长度；跨过接缝的延长这么长（带 timeMap 的不超出素材）；终点正好在接缝处的不动。
-  - 结果按 §2.6 量化到帧；关键帧按 §3.15 换算。
-  - 被剪的轨道（§6.7）上的实例随波纹删除与插回移动，不看自己的 `FollowPolicy`。
-- **缺省**。已定：按时刻放置的实例从新建起缺省 `follow-cuts`，视频有没有剪口集合都一样：文字、形状、贴纸、图片与视频画中画、字幕、生成类实例、取自另一素材的音频。`sequence-fixed` 要显式选择（`insertItems` 或 `updateItem` 写明）。播放被剪素材本身的实例照旧随剪口重排，不看策略。早先版本没有写 `followPolicy` 的实例读作缺省的 `follow-cuts`，不另做迁移；早先按旧缺省显式写成 `sequence-fixed` 的实例与用户选的分不开，保持不动。用户说「跟着这句话」时使用 `speech-anchor`。
-- 「全局 ripple」必须在命令中点明受影响的轨道集合与锁定轨道的处理方式。不能把全部轨道都左移，也不能只改主视频却让字幕和旁白留在旧的时间上。
+- **To the end of the sequence.** An instance with `ItemBase.untilSequenceEnd` set to true has no end of its own. Its end is the latest end of the other objects in the sequence. When `durationPolicy` is `fixed`, its length is fixed. It can be combined with any `FollowPolicy`, but it cannot be used when a `speech-anchor` has an `end`.
+  - At the end of each edit transaction, the engine computes the end from the final timeline and writes it back to `span`. A length given on write, or a direct trim of its end, has no effect.
+  - The other objects are the other instances on the sequence (including disabled ones). The maximum of their exact ends is rounded up to a frame. Instances that run to the sequence end do not count toward each other.
+  - If another instance follows on the same track, the end is clipped to that instance's start. The length is at least 1 frame. Instances with a linear `timeMap` do not exceed their source material.
+  - The end is computed, not an edit to the instance, so it is updated even when the instance or track is locked. Task protection is checked against changes (command and protocol spec §3.4), and a transaction that changes a protected instance of this kind is rejected as a whole.
+  - Keyframes are converted with a window whose start stays fixed (§3.15).
+- **`speech-anchor`.** Decided: at the end of each edit transaction (before the end-to-sequence-end is computed), the engine recomputes every anchor from the final timeline and places the instance. The start and end are each evaluated separately. For an end without an anchor: if there is only a start, the length is kept; if there is only an end, the start stays fixed. The computed times are quantized to frames by `nearest-frame` (§2.6). Placement moves the start first, then trims the end (keyframes converted per §3.15).
+  - Word projection is the same as caption dodging (§3.9). The acting instances are the video and audio instances of the transcript asset on the sequence, sorted by start and then by ID; at any given moment only the first is taken. Hidden words and words without text do not project. Projection decides where the word appears; the time is computed exactly from that instance's linear mapping and the word's timing.
+  - If the midpoint of a word falls inside a cut in the material (§6.7), the word counts as cut. If an endpoint falls inside a cut, it snaps toward the part that is kept: the start is pushed to after the cut, and the end is pulled to before the cut. If an endpoint is trimmed away, it snaps to the edge of the instance that contains the midpoint. A word anchor's `offset` is a signed exact duration, added after mapping to sequence time. If the result is negative, the anchor is invalid.
+  - Occurrences: if a midpoint maps to more than one place, it is ambiguous. `occurrenceId` is the ID of the acting instance, or the one from before the split (`lineage.originItemId`); using it selects only that occurrence.
+  - Sentence anchors use the stored `sentences` (§5.2). The start is the beginning of the first computable member word, and the end is the end of the last computable member word. If the document has no stored sentences, the anchor cannot be computed. An `item` anchor is that instance's start plus `localOffset`. A `sequence` anchor is that frame; it cannot be computed when the sequence is not the one the instance is on.
+- When an anchor cannot be computed (decided):
+  - If the word was cut, the word or sentence does not exist, the word does not appear on the current timeline, the offset makes the time negative, the computed end is not later than the start, or the computed position cannot be placed (it overlaps another instance on the same track or exceeds the source), the instance stays at its previous position and enters the `orphaned` state. It must not silently attach to a neighbouring sentence, nor jump to 0 seconds. Later transactions recompute it as usual, and it returns to the anchor once the anchor can be computed and the position fits.
+  - `orphaned` is not stored; it is computed from the current timeline. Each transaction's receipt lists the instances that are `orphaned` at that point in `impact.orphanedAnchors`. `videos.inspect` lists the instances and the reasons (reason codes as in `anchors.rs`: `word-anchor-missing`, `-cut`, `-unmapped`, `-ambiguous`, `-invalid`, plus `sentence-anchor-missing`, `item-anchor-missing`, `sequence-anchor-mismatch`, `anchor-range-empty`, `anchor-blocked`). Rendering ignores this state, and the instance renders as usual.
+  - If an anchor written in this transaction (newly created, or a changed follow policy) is ambiguous, or points to a transcript document version that does not exist, the whole transaction is rejected (`INVALID_OPERATION`, with `details.rule` set to the reason code). A malformed anchor is likewise rejected on write. If an anchor written earlier later becomes ambiguous, it only enters `orphaned`, and that edit is not rejected.
+  - If an instance or track is locked and an anchor would move it, the whole transaction is rejected (`TARGET_LOCKED`), the same as for `follow-cuts`.
+- **`item-local`.** Decided: the instance keeps its position relative to the start of the target instance. At the end of each edit transaction it is recomputed from how the target changed in that transaction. It only moves and does not change length. The anchor time is the follower's start.
+  - When the target has a linear `timeMap`, the anchor becomes a source time on the target. It is found again on the target after the transaction and on the pieces split from it (lineage). It follows the piece the time falls in, and `itemId` is redirected to that piece. If the source time was trimmed or cut, it moves to the start of the nearest following piece. If it lies after all pieces, it is extrapolated from the last piece. After a merge (`joinItems`), it is redirected to the surviving item.
+  - For a target without `timeMap`: a whole-target move is followed. A start-only change leaves it in place; if the start passes the anchor, it moves to the target's new start. On a split, it follows the piece that contains the anchor.
+  - When the follower is before the target's start, it keeps its distance to the target's new start.
+  - When the target is deleted (no piece remains), the follower is deleted in the same transaction and listed in the receipt as `impact.removedWithTarget`. Instances following the follower are deleted with it.
+  - If the follower itself was moved or trimmed in this transaction, or its follow policy was written in this transaction, it is not recomputed. When written, the target must be on the same sequence, otherwise the write is rejected (`INVALID_OPERATION`, `details.rule: 'item-local-target'`). If the follower is locked and would be moved or deleted, the whole transaction is rejected (`TARGET_LOCKED`). If it overlaps an instance on the same track after moving, it is rejected per §3.10.
+- **`explicit-link-group`.** Decided: this version does not implement linking. Only the shape is stored and validated, and it does not move on edit.
+- **`follow-cuts`.** In transactions that apply or restore cut points (§6.7), such instances move according to the timeline before and after the cut:
+  - The start and the end are each first mapped back from the old sequence time to the source time in the cut material, then mapped to the new sequence time.
+  - If a point falls inside a deleted range, the start is pushed to the next kept time and the end is pulled to the previous kept time. If the end is then not later than the start, the instance is deleted and listed in the receipt.
+  - When the start is pushed later, the source start of an instance with timeMap also moves later (pushed length × rate).
+  - An instance that crosses a cut only shortens. It is not split, and no gap is opened in the middle.
+  - An instance that lies after all instances of the cut material keeps its distance to the end of the sequence.
+  - When a cut is restored: a start at or after the seam moves back by the restored length. An instance crossing the seam is extended by that length (instances with timeMap do not exceed their source). An end exactly at the seam does not move.
+  - Results are quantized to frames per §2.6, and keyframes are converted per §3.15.
+  - Instances on a cut track (§6.7) move with ripple delete and reinsertion, regardless of their own `FollowPolicy`.
+- **Default.** Decided: instances placed on the timeline default to `follow-cuts` from creation, whether or not the video has a cut set. This covers text, shapes, stickers, picture-in-picture images and videos, captions, generated instances, and audio taken from another asset. `sequence-fixed` must be chosen explicitly (stated in `insertItems` or `updateItem`). Instances that play the cut material itself are rearranged with the cuts as before, regardless of policy. Instances from earlier versions that did not write `followPolicy` are read as the default `follow-cuts`, with no separate migration. Instances that were explicitly written as `sequence-fixed` under the old default cannot be told apart from ones the user chose, so they are left unchanged. When the user says “跟着这句话” (follow this sentence), use `speech-anchor`.
+- “Global ripple” must name in the command the set of affected tracks and how locked tracks are handled. It must not shift all tracks left, nor change only the main video while leaving captions and narration at their old times.
 
-字段来源：`anchors.rs`（锚点文法、`start`/`end` 边界、偏移、落在剪口里的靠边规则、`word-anchor-invalid`、`-missing`、`-cut`、`-unmapped`、`-ambiguous`）；`follow.rs` 的数字元素规则与 `COMPOSE_EPS`；开放的终点见 `motion.rs` 里按项目末尾取值的分支。
+Field sources: `anchors.rs` (anchor grammar, `start`/`end` boundaries, offsets, the snap-to-edge rule for cut points, `word-anchor-invalid`, `-missing`, `-cut`, `-unmapped`, `-ambiguous`); `follow.rs` (numeric element rules and `COMPOSE_EPS`); for the open end, see the branch in `motion.rs` that takes the value at the end of the project.
 
-### 3.17 模板层
+### 3.17 Template layers
 
-模板层是序列上的一组固定版面：章节条、进度线、台标、文字。它画在所有轨道之上，坐标是画面的百分比，时间是序列时钟。
+A template layer is a fixed set of layouts on the sequence: chapter bar, progress line, logo, and text. It is drawn above all tracks. Coordinates are percentages of the frame; time is the sequence clock.
 
 ```ts
 interface TemplateLayers {
   id: string;
-  name: string;                        // 非空
-  hue: string;                         // 目录卡片的色相：purple cyan orange yellow magenta blue gray red green pink；缺省 'gray'
-  group?: string;                      // 目录分组
-  canvas: '16:9' | '9:16';             // 版面按哪种画幅画，缺省 '16:9'
-  ratio?: string;                      // 套用时把序列画布改成的画幅：'original' 或 'W:H'
-  lockRatio?: boolean;                 // 与 ratio 同时给出时，锁住序列的画幅；为 false 时省略
-  builtin?: boolean;                   // 内置目录里的定义为 true；为 false 时省略
-  tag?: string;                        // 'watermark' 表示水印类
-  imported?: string;                   // 'watermark' 表示由旧水印预设导入
+  name: string;                        // non-empty
+  hue: string;                         // hue of the catalog card: purple cyan orange yellow magenta blue gray red green pink; default 'gray'
+  group?: string;                      // catalog group
+  canvas: '16:9' | '9:16';             // aspect ratio the layout is drawn for; default '16:9'
+  ratio?: string;                      // aspect ratio the sequence canvas is changed to when applied: 'original' or 'W:H'
+  lockRatio?: boolean;                 // given together with ratio, locks the sequence's aspect ratio; omitted when false
+  builtin?: boolean;                   // true for definitions in the built-in catalog; omitted when false
+  tag?: string;                        // 'watermark' marks watermark-type templates
+  imported?: string;                   // 'watermark' means imported from a legacy watermark preset
   desc?: string;
-  font?: string;                       // 整套的字体族；省略时跟随字幕样式的字体
-  from?: string;                       // 实例来源的定义 id
-  subsAvoid?: boolean;                 // 字幕避让底部横条，缺省 true
-  layers: TemplateLayer[];             // 数组顺序就是叠放顺序，靠后的在上
+  font?: string;                       // font family for the whole set; when omitted, follows the subtitle style font
+  from?: string;                       // id of the definition the instance comes from
+  subsAvoid?: boolean;                 // subtitles avoid the bottom bar; default true
+  layers: TemplateLayer[];             // array order is stacking order; later entries are on top
 }
 
 type TemplateLayer = {
-  id: string;                          // 在这套模板里唯一
-  on?: boolean;                        // 缺省 true
-  box: { x: number; y: number; w: number; h: number };   // 画面的百分比，左上为原点
+  id: string;                          // unique within this template set
+  on?: boolean;                        // default true
+  box: { x: number; y: number; w: number; h: number };   // percent of the frame, origin at top-left
 } & (
   | { kind: 'chapters'; fill?: 'bar' | 'dim'; bg: string; color: string; accent: string; colorDone?: string; divider?: boolean; size?: number }
   | { kind: 'progress'; accent: string; track: string }
@@ -1252,24 +1252,24 @@ type TemplateLayer = {
 );
 ```
 
-- 颜色一律 `#RRGGBB` 或 `#RRGGBBAA`。`size` 与 `pad` 是画面高的百分比：章节条缺省 `size` 2.6、台标 3.0、文字 2.8；`pad` 缺省按字号推。文字的 `weight` 在 [100, 900]，缺省 700。章节条的 `fill` 缺省 `bar`，`divider` 缺省 true。台标的 `src` 缺省 `'text'`，`shape` 缺省 `badge`，`align` 缺省 `center`，`opacity` 读时夹到 [0.05, 1]、缺省 1；文字的 `align` 缺省 `left`。
-- 盒子：`x`、`y` ≥ 0，`w` ≥ 4，`h` ≥ 0.6，`x + w` ≤ 100，`y + h` ≤ 100，容差 0.051。
-- 台标的 `file` 是项目里的相对路径，`brandLogo` 是品牌库里的图片 id；用到时按素材登记（§4.1）。
-- **时间**。章节条按序列上 `kind: 'chapter'` 的标记（§3.13）分段，当前段高亮；没有章节时整条是一段。进度线的进度是 clamp(t / 序列长度, 0, 1)。
-- **文字变量**。文字层里的 `{chapter}`、`{n}`、`{count}`、`{time}`、`{remain}`、`{total}`、`{percent}`、`{title}` 按当前时刻替换：当前章节名、序号、章节数、已播时间、剩余时间、总长、百分比、视频标题。认不出的变量原样显示。
-- **字幕避让**。`subsAvoid` 为 true 时，打开的、`y` ≥ 50 的整宽横条（章节条、进度线）把字幕抬起来：字幕的锚线（样式的 `y`，画面高的百分比）不低于 `y − 2`，几条横条取最高的一条。只挪位置，不改字号、宽度与底板；双语的两行一起挪，居中摆放的字幕不动。
-- **画幅**。`ratio` 只在套用模板时改一次序列的画布；`lockRatio` 生效时，改序列画幅的命令只接受与 `ratio` 相同的画幅，要改先解锁。
-- 模板层是序列的参数，不是实例：不在轨道上，没有 `span`，不参与 `durationPolicy`。
+- Colours are always `#RRGGBB` or `#RRGGBBAA`. `size` and `pad` are percentages of the frame height: chapter bar default `size` 2.6, logo 3.0, text 2.8; `pad` defaults from the font size. The text `weight` is in [100, 900], default 700. The chapter bar `fill` defaults to `bar`, and `divider` defaults to true. The logo `src` defaults to `'text'`, `shape` to `badge`, `align` to `center`, and `opacity` is clamped to [0.05, 1] on read, default 1; the text `align` defaults to `left`.
+- Box: `x` and `y` ≥ 0, `w` ≥ 4, `h` ≥ 0.6, `x + w` ≤ 100, `y + h` ≤ 100, tolerance 0.051.
+- The logo `file` is a path relative to the project; `brandLogo` is the id of an image in the brand library. When used, register it as an asset (§4.1).
+- **Time.** The chapter bar is split into segments by the `kind: 'chapter'` markers on the sequence (§3.13), and the current segment is highlighted; with no chapters, the whole bar is one segment. Progress on the progress line is clamp(t / sequence length, 0, 1).
+- **Text variables.** In text layers, `{chapter}`, `{n}`, `{count}`, `{time}`, `{remain}`, `{total}`, `{percent}` and `{title}` are replaced according to the current moment with: current chapter name, chapter index, chapter count, elapsed time, remaining time, total length, percentage, and video title. Unrecognised variables are shown as written.
+- **Subtitle avoidance.** When `subsAvoid` is true, an open full-width bar (chapter bar or progress line) with `y` ≥ 50 raises the subtitles: the subtitle anchor line (the style's `y`, a percentage of frame height) is not lower than `y − 2`; when several bars apply, the highest one wins. Only the position moves; font size, width and background do not change. For bilingual subtitles the two lines move together; subtitles placed at the centre do not move.
+- **Aspect ratio.** `ratio` changes the sequence canvas only once, when the template is applied. While `lockRatio` is in effect, commands that change the sequence's aspect ratio accept only the same ratio as `ratio`; unlock first to change it.
+- Template layers are parameters of the sequence, not instances: they are not on a track, have no `span`, and do not take part in `durationPolicy`.
 
-字段来源：`crates/timeline/src/protocol/template.rs` 的 `TemplateDoc`、`TemplateLayer`、`LayerBox`、`LayerKind`、`MIN_W`、`MIN_H`、`VAR_NAMES`、`HUES`、`MIN_OPACITY`、`validate`、`ratio_lock`；派生规则见 `crates/timeline/src/template.rs` 的 `progress`、`segments`、`vars`、`fill`、`subs_bottom`。
+Source of the fields: `TemplateDoc`, `TemplateLayer`, `LayerBox`, `LayerKind`, `MIN_W`, `MIN_H`, `VAR_NAMES`, `HUES`, `MIN_OPACITY`, `validate` and `ratio_lock` in `crates/timeline/src/protocol/template.rs`; derivation rules are in `progress`, `segments`, `vars`, `fill` and `subs_bottom` in `crates/timeline/src/template.rs`.
 
 ---
 
-## 4. 素材与文档
+## 4. Assets and documents
 
 ### 4.1 AssetRecord
 
-素材是视频用到的 bytes：一个文件，或一个目录。
+An asset is the bytes a video uses: one file, or one directory.
 
 ```ts
 interface AssetRecord {
@@ -1282,9 +1282,9 @@ interface AssetRecord {
 
 interface AssetRevision {
   revision: Revision;
-  contentHash: string;                // 文件的 sha256；目录的树摘要（§4.3）
+  contentHash: string;                // SHA-256 of the file; tree digest for a directory (§4.3)
   byteLength: number;
-  mediaType: string;                  // 目录是 inode/directory
+  mediaType: string;                  // directories are inode/directory
   storage: AssetStorage;              // §4.2
   duration?: MediaTime;
   timebase?: Rate;
@@ -1294,75 +1294,75 @@ interface AssetRevision {
     rotation: 0 | 90 | 180 | 270;
     pixelAspectRatio: Rate;
     frameRate: { kind: 'cfr'; rate: Rate } | { kind: 'vfr'; nominal?: Rate };
-    ptsOrigin: MediaTime;             // 原始 origin；可以为负
+    ptsOrigin: MediaTime;             // original origin; may be negative
     hasAlpha: boolean;
   };
   audio?: { sampleRate: number; channels: number; layout?: string };
-  tree?: { fileCount: number; include?: string[] };   // 素材是目录时（§4.3）
-  bundle?: JsonValue;                 // 代码包的清单（代码包规范 §2）
+  tree?: { fileCount: number; include?: string[] };   // when the asset is a directory (§4.3)
+  bundle?: JsonValue;                 // manifest of the code package (code package spec §2)
   provenance: Provenance;             // §4.5
 }
 ```
 
-- 素材 ID 标识资源的身份；素材版本标识一份确定的 bytes 与元数据。版本一旦写入不再修改。
-- `contentHash` 必填，登记时算好。不存在「摘要待定」的素材版本。
-- `kind: 'lottie'` 是一个 Lottie 动画文件，只能被素材贴纸引用（§3.7）；它没有音轨，显示尺寸取动画声明的宽与高。素材是一份 bodymovin JSON（`mediaType` 是 `application/json`），或一个 `.lottie` 压缩包（`application/zip`，画清单里的当前动画，没有清单时画第一段）。导入时 `.lottie` 文件，以及读出来像 Lottie 的 `.json`（顶层有版本 `v`、数值的 `fr`、`ip`、`op` 与图层数组）记成 `lottie`，别的 JSON 仍是 `other`；版本记下 `video`（动画声明的宽高、帧率，像素比 1，`hasAlpha`）与 `duration`（帧范围除以帧率，按毫秒取整），都用渲染内核读 Lottie 的同一份实现读出。读不开、用了内核不支持的特性或帧范围为空的不收（`MEDIA_PROBE_FAILED`），超过 32 MiB 的不收（`INVALID_OPERATION`）。图片子资源可以是 PNG、JPEG、GIF（首帧）、WebP 或 SVG（按资源声明的宽高光栅，`<text>` 不画），要么内嵌成 data URI，要么放在同一个压缩包里；只写了路径、包里也没有的外部图片读不到，这个实例画不出来，报 `lottie-asset-missing`。
-- `kind: 'caption'` 与 `kind: 'document'` 是**文件**（一个 SRT、一份 PDF），不是 §4.4 的文档。导入字幕文件时，文件是素材，解析出来的字幕行是文档，文档用 `sourceAssetId` 指回文件。
-- 可变帧率的索引、代理、缩略图、波形和反向 conform 都是派生产物，不属于素材版本。
-- 颜色信息（`ColorInfo`）与许可状态（`LicenseState`）尚未纳入（§9）。
+- The asset ID identifies the resource's identity; an asset revision identifies a definite set of bytes and metadata. Once written, a revision is never modified.
+- `contentHash` is required and is computed at registration. There is no asset revision with a "digest pending" state.
+- `kind: 'lottie'` is a Lottie animation file that can only be referenced by an asset sticker (§3.7); it has no audio track, and its display size is the width and height the animation declares. The asset is either a bodymovin JSON (`mediaType` is `application/json`), or a `.lottie` archive (`application/zip`, which plays the current animation in its manifest, or the first animation if there is no manifest). On import, `.lottie` files, and `.json` files that read as Lottie (top-level version `v`, numeric `fr`, `ip`, `op`, and a layers array), are recorded as `lottie`; other JSON stays `other`. The revision records `video` (the animation's declared width and height, frame rate, pixel aspect ratio 1, `hasAlpha`) and `duration` (frame range divided by frame rate, rounded to milliseconds). Both are read by the same implementation the render kernel uses to read Lottie. Files that cannot be opened, use features the kernel does not support, or have an empty frame range are rejected (`MEDIA_PROBE_FAILED`); files over 32 MiB are rejected (`INVALID_OPERATION`). Image sub-resources may be PNG, JPEG, GIF (first frame), WebP, or SVG (rasterised at the resource's declared width and height; `<text>` is not drawn). They must either be embedded as data URIs or be in the same archive. An external image that is only referenced by path and is not in the archive cannot be read; the instance cannot be drawn and reports `lottie-asset-missing`.
+- `kind: 'caption'` and `kind: 'document'` are **files** (an SRT, a PDF), not the documents of §4.4. When a subtitle file is imported, the file is the asset, and the subtitle lines parsed from it are documents; a document points back to its file through `sourceAssetId`.
+- Variable-frame-rate indexes, proxies, thumbnails, waveforms and reverse conform are derived products, not part of an asset revision.
+- Colour information (`ColorInfo`) and licence state (`LicenseState`) are not yet included (§9).
 
-### 4.2 存储位置
+### 4.2 Storage location
 
-bytes 放在哪里是素材版本的属性，不属于版本的身份。
+Where the bytes live is a property of the asset revision, not part of the revision's identity.
 
 ```ts
 type AssetStorage =
-  | { mode: 'managed' }                                      // 在视频目录的 blobs/ 里，按内容寻址
-  | { mode: 'linked'; locator: FileLocator; frozen: boolean };   // 留在原处，视频只记下去哪里找
+  | { mode: 'managed' }                                      // in the video directory's blobs/, content-addressed
+  | { mode: 'linked'; locator: FileLocator; frozen: boolean };   // stays in place; the video only records where to find it
 
 interface FileLocator {
-  path: string;                       // 文件在项目目录里时是相对视频目录的路径（`/` 分隔），否则是绝对路径
-  modifiedAt?: string;                // 链接时文件的修改时间，用来便宜地发现「文件可能变了」
-  volume?: string;                    // 所在卷的名字，文件找不到时提示「请接上某个盘」
+  path: string;                       // when the file is inside the project directory, a path relative to the video directory (`/`-separated); otherwise an absolute path
+  modifiedAt?: string;                // file modification time at link time, used to cheaply detect "the file may have changed"
+  volume?: string;                    // name of the volume it is on; used to prompt "please connect drive X" when the file cannot be found
 }
 ```
 
-- 导入默认是 `linked`（留在原处）；用户选择「复制到视频里」时是 `managed`。没有原文件可以指向的内容（模型生成的结果、录制与粘贴的内容）总是 `managed`；目录（代码包）不指定时也是 `managed`。`importAsset` 不给 `storage` 时按这条决定：文件 `linked`，目录 `managed`。`managed` 的导入要给绝对路径；`linked` 可以给绝对路径，也可以给相对视频目录的路径。**任何素材都可以链接，任何链接素材都可以随时收进来**：`collectAssets` 把链接素材的 bytes 复制进 `blobs/`，`storage` 从 `linked` 变成 `managed`。
-- **定位跟着项目走。** 链接时（`importAsset` 与 `relinkAsset`）引擎把调用方给的路径按字面规范化（去掉 `.`、抵掉 `..`，不解析符号链接），再看它在不在视频所在的**项目目录**里：在就记相对视频目录的路径，可以有 `..`，但不越出项目目录；不在就记绝对路径。整个项目目录移动或改名之后，项目里的链接照样有效。项目目录是视频目录的父目录链上带 `.ccut/project.json` 的最近一层（引擎只看这个文件在不在）；都没有时是视频目录的父目录。路径的写法不同（例如经过符号链接的上级目录）时，再按两边所在目录的真实路径比较一次；文件本身是符号链接时不解析它，项目里的那个链接跟着项目走。
-- **相对定位不越出项目目录。** 解析时相对路径按视频目录求值，结果越出项目目录就不读（`ASSET_MISSING`，`reason: 'outside-project'`），收进来（`collectAssets`）也一样，免得一个别处拿来的视频用 `../../..` 读项目外的文件。只拷走视频目录而不带项目时，项目里的链接会落空或越界，要重新链接。绝对路径的链接素材按下文的预览类型检查把关。
-- 已经按绝对路径登记、其实在项目里的链接（这条规则之前导入的）不批量迁移，也不从旧路径猜测新位置：项目被移动之后它们按缺失报告，用 `relinkAsset` 重新指向，定位随之改成相对路径。
-- 文件挪了地方用 `relinkAsset`：核对新位置上的内容与登记的 `contentHash` 一致，然后更新定位。
-- 收进来与重新链接都**不产生新版本**，引用这个版本的实例不受影响。
-- 同一路径上出现了不同的 bytes 是**新版本**，不是重新链接：必须经显式的替换素材版本，并由它影响选定的实例（架构设计 §5.3）。`relinkAsset` 遇到内容不一致时拒绝。
-- 链接的文件找不到时，视频照常打开，素材标为缺失；用到它的实例不得画成空白之后当作成功。缺失经 `videos.assetStatus` 报告（命令与协议规范 §4.1）：每个素材的当前版本与实例引用的版本里，此刻读不到的逐个列出，原因是 `missing`（不在了）、`changed`（已经不是登记时的文件）或 `outside-project`（相对定位越出了项目目录），与取用时 `ASSET_MISSING` 的 `details.reason` 相同。它只看文件在不在、长度对不对，不重算摘要。
-- `linked` 且 `frozen = false` 的素材不能用于严格的冻结导出（架构设计 §5.6）。
-- 定位素材只看 `storage.locator` 里的本机路径。从本机媒体新建视频时，来源也记下原文件的路径（§4.5）。两处都是这台机器上的事实，不进入便携包（§8）。
-- 应用把链接素材交给界面预览时，只放行视频登记的那一个文件，不放行它所在目录里别的东西；而且只放行预览用得到的类型（图片、音视频、字体、确认是 Lottie 的 JSON、中央目录里确实有动画的 `.lottie` 压缩包），登记的媒体类型要与文件实际的扩展名相符。字幕文件与目录不经这条路给出。
-- 导出的成片可以写到任何位置。视频不要求导出物在视频目录里，只记下它去了哪里（`export-record` 文档，§4.6）。
-- `blobs/` 里归视频管理的只有 `<sha256-hex>.<ext>`（文件素材）与 `<sha256-hex>/`（目录素材）；`blobs/.staging/` 是发布前的临时区，里面修改时间超过宽限期（1 小时）的残留由引擎的 blob GC 清掉（架构设计 §5.2）。名字不是这个形状的条目不归视频管理，GC 与物理删除都不碰。
+- Import defaults to `linked` (stays in place). When the user chooses "copy into video", it is `managed`. Content with no original file to point to (model-generated results, and recorded or pasted content) is always `managed`; directories (code packages) are also `managed` when unspecified. When `importAsset` is given no `storage`, it decides as follows: files are `linked`, directories are `managed`. A `managed` import must give an absolute path; `linked` may give either an absolute path or a path relative to the video directory. **Any asset can be linked, and any linked asset can be collected at any time**: `collectAssets` copies a linked asset's bytes into `blobs/` and changes its `storage` from `linked` to `managed`.
+- **Location follows the project.** When linking (`importAsset` and `relinkAsset`), the engine normalises the path the caller gave literally (removes `.`, resolves `..`, and does not resolve symbolic links). It then checks whether the path is inside the video's **project directory**. If it is, the engine records a path relative to the video directory, which may contain `..` but must not leave the project directory. If it is not, the engine records the absolute path. After the whole project directory is moved or renamed, links inside the project still work. The project directory is the nearest level on the video directory's parent chain that contains `.ccut/project.json` (the engine only checks whether this file exists); if there is none, it is the parent directory of the video directory. When the path is written differently (for example through a symlinked parent directory), the two sides are compared once more by the real paths of their directories. A file that is itself a symbolic link is not resolved; the link inside the project follows the project.
+- **Relative locations do not leave the project directory.** On resolution, relative paths are evaluated against the video directory. If the result leaves the project directory, the file is not read (`ASSET_MISSING`, `reason: 'outside-project'`). Collection (`collectAssets`) behaves the same way, so that a video brought in from elsewhere cannot use `../../..` to read files outside the project. If only the video directory is copied without the project, links inside the project will be missing or out of bounds and must be relinked. Linked assets with absolute paths are checked by the preview-type gate described below.
+- Linked assets already registered by absolute path that are in fact inside the project (imported before this rule) are not migrated in bulk, and their new locations are not guessed from old paths. After the project is moved, they are reported as missing; re-point them with `relinkAsset`, which changes their location to a relative path.
+- When a file has been moved, use `relinkAsset`. It checks that the content at the new location matches the registered `contentHash`, then updates the location.
+- Collecting and relinking **do not create a new revision**; instances that reference this revision are unaffected.
+- Different bytes appearing at the same path are a **new revision**, not a relink. They must go through an explicit replacement of the asset revision, which affects the chosen instances (architecture design §5.3). `relinkAsset` refuses when the content does not match.
+- When a linked file cannot be found, the video still opens as normal and the asset is marked missing. An instance that uses it must not be drawn as blank and then treated as a success. Missing assets are reported through `videos.assetStatus` (command and protocol spec §4.1): for each asset's current revision and for the revisions referenced by instances, every one that cannot be read at this moment is listed. The reason is `missing` (gone), `changed` (no longer the file that was registered), or `outside-project` (the relative location left the project directory). These match the `details.reason` of `ASSET_MISSING` when the asset is accessed. This check only looks at whether the file exists and whether its length matches; it does not recompute the digest.
+- A `linked` asset with `frozen = false` cannot be used for strict frozen export (architecture design §5.6).
+- Locating an asset only looks at the local path in `storage.locator`. When a video is created from local media, the source also records the original file's path (§4.5). Both are facts about this machine and do not enter the portable package (§8).
+- When the app hands a linked asset to the interface for preview, it allows only the one file the video registered, not other things in its directory. It also allows only the types useful for preview: images, audio and video, fonts, JSON confirmed to be Lottie, and `.lottie` archives whose central directory actually contains an animation. The registered media type must match the file's actual extension. Subtitle files and directories are not served through this path.
+- Exported finished videos can be written to any location. The video does not require the export to be inside the video directory; it only records where the export went (`export-record` document, §4.6).
+- The only entries in `blobs/` that the video manages are `<sha256-hex>.<ext>` (file assets) and `<sha256-hex>/` (directory assets). `blobs/.staging/` is the temporary area used before publishing; leftovers there whose modification time is older than the grace period (1 hour) are removed by the engine's blob GC (architecture design §5.2). Entries that do not match this shape are not managed by the video, and neither GC nor physical deletion touches them.
 
-### 4.3 目录素材与代码包
+### 4.3 Directory Assets and Code Bundles
 
-素材可以是一个目录。代码包就是目录素材：`kind: 'bundle'`，清单放在版本的 `bundle` 字段里。
+An asset can be a directory. A code bundle is a directory asset: `kind: 'bundle'`, with the manifest stored in the version's `bundle` field.
 
-- **树摘要**。目录的 `contentHash` 这样求：每个文件一行 `<sha256> <字节数> <相对路径>`，按路径排序，整体再求 sha256。`byteLength` 是各文件字节数之和，`tree.fileCount` 是文件数。
-- **只收一部分**。`tree.include` 列出收入的文件与子目录（相对路径）；省略表示整个目录。树摘要只覆盖收入的文件。源码目录里常有依赖缓存、渲染输出与工作文件，它们不属于代码包。
-- 目录素材同样可以 `managed` 或 `linked`，同样可以收进来或重新链接。
-- 代码包的每个版本不可变。改源码产生新版本，再显式替换合成实例的引用（代码包规范 §3）。
-- 清单的字段、作者合同与验证见代码包规范。视频格式只保证清单随版本原样保存。
+- **Tree digest.** The directory's `contentHash` is computed as follows: each file contributes one line `<sha256> <byte count> <relative path>`, the lines are sorted by path, and the whole is hashed again with sha256. `byteLength` is the sum of the byte counts of all files, and `tree.fileCount` is the number of files.
+- **Partial inclusion.** `tree.include` lists the files and subdirectories (relative paths) that are included; omitting it means the whole directory is included. The tree digest covers only the included files. Source directories often contain dependency caches, render output and working files, and these do not belong to the code bundle.
+- Directory assets can likewise be `managed` or `linked`, and can likewise be collected in or relinked.
+- Each version of a code bundle is immutable. Changing the source produces a new version, and the composition instance's reference is then explicitly replaced (code bundle spec §3).
+- The manifest's fields, the author contract and validation are defined in the code bundle spec. The video format only guarantees that the manifest is stored unchanged with the version.
 
-### 4.4 文档
+### 4.4 Documents
 
-文档是结构化的文稿。转写、译文、字幕、样式、提案、计划都是文档。
+A document is a structured text. Transcripts, translations, captions, styles, proposals and plans are all documents.
 
 ```ts
 interface DocumentRecord {
   id: Id;
-  kind: string;                       // 开放词表（§4.6）
+  kind: string;                       // open vocabulary (§4.6)
   name: string;
   language?: string;                  // BCP 47
-  sourceAssetId?: Id;                 // 这份文档描述的素材，例如转写对应的录音
-  sourceDocumentId?: Id;              // 这份文档派生自哪份文档，例如译文对应的转写
+  sourceAssetId?: Id;                 // the asset this document describes, e.g. the recording a transcript corresponds to
+  sourceDocumentId?: Id;              // the document this one derives from, e.g. the transcript a translation corresponds to
   currentRevision: Revision;
   revisions: Record<Revision, DocumentRevision>;
   extensions?: Record<string, JsonValue>;
@@ -1373,131 +1373,131 @@ interface DocumentRevision {
   contentHash: string;
   byteLength: number;
   createdAt: string;
-  createdBy: Id;                      // 写入这个版本的事务
-  summary?: JsonValue;                // 正文的概要：词数、句数、行数等
+  createdBy: Id;                      // the transaction that wrote this revision
+  summary?: JsonValue;                // summary of the body: word count, sentence count, line count, etc.
 }
 ```
 
-- **正文不在快照里。** 快照只带文档头。正文是一个 JSON 值，按版本保存在视频的存储里，需要时按 `(文档 ID, 版本)` 读取。一部六小时的视频有几万个词，打开视频、列出文档、给智能体看概要都不应该为此读入全部正文。
-- `summary` 让列表与智能体不必读正文就知道文档有多大、有什么。
-- 每次写入产生一个新版本，旧版本留给历史、撤销与冻结中的任务。当前版本是后续计算的依据。
-- 正文带 `schema` 字段，写明它的格式与版本（§4.6）。
-- 文档之间、文档与素材之间的派生关系用 `sourceDocumentId`、`sourceAssetId` 表达；带版本与指纹的依赖用 §3.12 的依赖链接。
-- 实例引用文档的 ID（字幕实例，§3.8），跟随文档的当前版本。
+- **The body is not in the snapshot.** The snapshot carries only the document header. The body is a JSON value stored per revision in the video's storage, and it is read on demand by `(document ID, revision)`. A six-hour video has tens of thousands of words; opening the video, listing documents and showing the summary to an agent should not read the entire body into memory.
+- `summary` lets lists and agents know how large a document is and what it contains without reading the body.
+- Each write produces a new revision. Older revisions are kept for history, undo and frozen tasks. The current revision is the basis for later computation.
+- The body carries a `schema` field that states its format and version (§4.6).
+- Derivation relations between documents, and between documents and assets, are expressed with `sourceDocumentId` and `sourceAssetId`. Dependencies that carry a version and a fingerprint use the dependency links of §3.12.
+- An instance references a document by its ID (caption instances, §3.8), and follows the document's current revision.
 
-### 4.5 来源
+### 4.5 Provenance
 
 ```ts
 interface Provenance {
-  origin: string;                     // 开放词表：user-import、file-import、generated、derived、baked、template、library……
+  origin: string;                     // open vocabulary: user-import, file-import, generated, derived, baked, template, library...
   importedFrom?: { originalName: string; importedAt: string };
-  source?: JsonValue;                 // 已知的出处：来源网址、原平台的元数据、生成记录
+  source?: JsonValue;                 // known origin: source URL, metadata from the original platform, generation record
 }
 ```
 
-- 来源可以记本机路径。从本机媒体新建的视频（转录流程，`origin: 'file-import'`，架构设计 §7.9），`source.path` 是原文件的绝对路径，`source.jobId` 是这次运行。它只说明素材从哪里来，不用来定位：读素材只看 `storage.locator`（§4.2），文件之后移动、改名或重新链接，来源都不跟着改。打包成便携包时这个路径换成占位（§8）。
-- 从链接下载的素材，`origin` 为 `link-import`（架构设计 §7.9），`source` 记：`url`（脱敏的链接）、`webpageUrl`、`platform`、`mediaId`、`title`、`uploader`、`uploadDate`、`durationSec`、`description`（页面简介，去掉首尾空白，最多 20000 个字符）、`chapters`（平台给的章节 `[{ start, end?, title }]`，源时间秒：丢掉起点不是有限非负数的与空标题，标题合并空白、最多 160 个字符，按起点排序、同起点只留第一条，最多 400 条；`end` 只在大于 `start` 时写）、`tool`（`{ name, version, source }`）、`downloadedAt` 与流程的 `jobId`。平台没有给简介或章节时这两个字段省略，之前的版本导入的素材也没有它们。简介与章节是作者写的参考：读取视频的摘要列出它们，`chapters_adopt` 把章节吸附到转写后写成序列的章节（§3.13）；素材本身不因它们改变。
-- 从用户库拷进来的素材，`origin` 为 `library`，`source.library` 记下条目所在的库、条目 ID、版本、内容摘要、名字与种类（架构设计 §5.9）；之后库里的修改与删除不改变这个素材。
-- 用户上传的媒体只记录已知的出处；上传不代表拥有第三方素材的全部权利。
-- 临时 URL、blob URL、签名地址、浏览器对象和 GPU 句柄不得进入视频格式。
-- 生成的素材应在 `source` 里记下任务、供应方、模型、输入输出的摘要与费用；费用未知时写 `unknown`，不从估算伪造实付金额。这些字段的结构，以及派生关系、授权与许可状态，待生成与授权功能加入时确定（§9）。
+- Provenance may record a local path. For a video newly created from local media (the transcription flow, `origin: 'file-import'`, architecture design §7.9), `source.path` is the absolute path of the original file and `source.jobId` is this run. It only says where the asset came from and is not used for locating it: reading an asset looks only at `storage.locator` (§4.2). If the file is later moved, renamed or relinked, the provenance does not change with it. When packed into a portable package, this path is replaced with a placeholder (§8).
+- For an asset downloaded from a link, `origin` is `link-import` (architecture design §7.9), and `source` records: `url` (sanitized link), `webpageUrl`, `platform`, `mediaId`, `title`, `uploader`, `uploadDate`, `durationSec`, `description` (the page description, trimmed of leading and trailing whitespace, up to 20000 characters), `chapters` (the chapters supplied by the platform, `[{ start, end?, title }]`, in source-time seconds: entries whose start is not a finite non-negative number and entries with an empty title are dropped; titles have whitespace collapsed and are capped at 160 characters; the list is sorted by start, and only the first entry is kept for a given start; up to 400 entries; `end` is written only when it is greater than `start`), `tool` (`{ name, version, source }`), `downloadedAt` and the flow's `jobId`. When the platform gives no description or chapters, these two fields are omitted, and assets imported by earlier versions do not have them either. The description and chapters are reference material written by the author: the video summary reading lists them, and `chapters_adopt` snaps the chapters onto the chapters of the sequence written after transcription (§3.13). The asset itself is not changed by them.
+- An asset copied in from the user's library has `origin` set to `library`, and `source.library` records the library, the entry ID, the version, the content digest, the name and the kind of the entry (architecture design §5.9). Later changes to or deletion of the entry in the library do not change this asset.
+- User-uploaded media records only its known provenance. Uploading does not mean owning all rights to third-party assets.
+- Temporary URLs, blob URLs, signed addresses, browser objects and GPU handles must not enter the video format.
+- A generated asset should record in `source` the task, the provider, the model, a digest of the inputs and outputs, and the cost. When the cost is unknown, write `unknown`; do not fabricate an amount actually paid from an estimate. The structure of these fields, and the derivation, authorization and license status, will be settled when the generation and licensing features are added (§9).
 
-### 4.6 文档的种类
+### 4.6 Document Kinds
 
-`kind` 是开放的。下表是已经在用的种类，以及本规范后面的章节计划的种类。
+`kind` is open. The table below lists the kinds already in use, and the kinds that later sections of this spec plan.
 
-| `kind` | 内容 | 正文的 `schema` | 定义 |
+| `kind` | Content | `schema` of the body | Definition |
 | --- | --- | --- | --- |
-| `speech` | 一段录音的转写：词、说话人、句子、章节 | `cuccut.speech/1` | §5.2 |
-| `translation` | 一种目标语言的译文单元 | `cuccut.translation/2`（按 §5.3，新写入一律用它）；`cuccut.translation/1`（旧项目导入，只读兼容） | §5.3 |
-| `caption` | 一种语言的字幕行 | `cuccut.caption/1` | §5.4 |
-| `caption-style` | 字幕的样式与布局 | `cuccut.legacy-studio-style/0.1`（Studio 样式）；`cuccut.boxed-caption-style/<N>`（定位框样式，外部项目导入，`<N>` 是来源格式的版本号） | §5.6 |
-| `library-selection` | 视频里启用的用户库条目：每一步的术语表、说话人的音色 | `cuccut.library-selection/1` | 见下 |
-| `export-record` | 导出过的成片与字幕文件在哪里 | `cuccut.export-record/1` | — |
-| `import-record` | 这部视频从别的格式导入时的明细 | `cuccut.import-record/1` | — |
-| `editorial-proposal` | 口播剪辑提案 | 已实现 | §6.2 |
-| `cut-set` | 一个源素材上被口播剪辑删掉的区间 | `cuccut.cut-set/1` | §6.7 |
-| `derivation` | 派生子视频的来源：父视频、版本、区间与区间之外的剪口 | `cuccut.derivation/1` | 见下 |
-| `dubbing-plan` | 配音计划 | 计划 | §7.2 |
-| `sound-cue-sheet`、`narration-cue-sheet` | 声音事件表、旁白事件表 | 计划 | §7.9、§7.10 |
+| `speech` | A transcript of one recording: words, speakers, sentences, chapters | `cuccut.speech/1` | §5.2 |
+| `translation` | Translation units for one target language | `cuccut.translation/2` (per §5.3; all new writes use this); `cuccut.translation/1` (old project imports, read-only compatibility) | §5.3 |
+| `caption` | Caption lines for one language | `cuccut.caption/1` | §5.4 |
+| `caption-style` | Caption style and layout | `cuccut.legacy-studio-style/0.1` (Studio style); `cuccut.boxed-caption-style/<N>` (positioned-box style, imported from external projects; `<N>` is the version number of the source format) | §5.6 |
+| `library-selection` | Entries of the user library enabled in the video: glossaries for each step, speaker voices | `cuccut.library-selection/1` | see below |
+| `export-record` | Where exported renders and subtitle files are | `cuccut.export-record/1` | — |
+| `import-record` | Details when this video was imported from another format | `cuccut.import-record/1` | — |
+| `editorial-proposal` | Spoken-content editing proposal | implemented | §6.2 |
+| `cut-set` | Intervals on one source asset that were removed by spoken-content editing | `cuccut.cut-set/1` | §6.7 |
+| `derivation` | Source of a derived child video: parent video, revision, interval and cut points outside the interval | `cuccut.derivation/1` | see below |
+| `dubbing-plan` | Dubbing plan | plan | §7.2 |
+| `sound-cue-sheet`, `narration-cue-sheet` | Sound event sheet, narration event sheet | plan | §7.9, §7.10 |
 
-- 时间在正文里用整数表示，并写明时间基与时钟：`timescale`（每秒的刻度数）与 `clock`（`source-asset`：这份文档或它的来源文档的 `sourceAssetId` 所指素材的时钟；`sequence`：序列时间）。不用浮点秒。
-- 引擎只核对 `cuccut.speech/1` 与 `cuccut.translation/2` 里 §5.2、§5.3 补充的字段：出现时形状必须对（类型、枚举值与取值范围），引用的词在不在不查；`cuccut.cut-set/1` 按 §6.7 的约束整份核对。其余正文不校验。带 `/1` 的几种格式是导入旧项目时定下来的，比 §5 描述的模型简单；二者怎么统一列在 §9。
-- `export-record` 与 `import-record` 是这台机器上的记录：正文里有本机路径（成片写到了哪里、旧项目原来在哪里）。它们不参与渲染，也不是任何实例的输入；打包成便携包时不带出去，或去掉路径之后再带（§8）；这两种记录还没有实现，现在正文里有本机路径的文档一律在导出便携包时拒绝（§8.2，架构设计 §14）。
-- 读到不认识的 `kind` 或 `schema`：文档头照常显示，正文不解释，写回时保留。
-- `derivation` 记这部视频是从哪个视频的哪一段派生的（`videos.derive`，架构设计 §3.5「派生子视频」）：派生时写一份，正文与文档头的 `summary` 相同（Space 的内容索引只读 `summary`），名字「派生来源」（按当前语言）。之后不随父视频或子视频的修改更新，只记派生那一刻。正文：
+- Times in the body are integers, and the time base and clock are stated: `timescale` (ticks per second) and `clock` (`source-asset`: the clock of the asset that the `sourceAssetId` of this document or its source document points to; `sequence`: sequence time). Floating-point seconds are not used.
+- The engine checks only the fields that §5.2 and §5.3 add to `cuccut.speech/1` and `cuccut.translation/2`: when present, their shape must be correct (types, enum values and value ranges). Whether referenced words exist is not checked. `cuccut.cut-set/1` is checked in full against the constraints of §6.7. Other bodies are not validated. The `/1` formats were fixed when old projects were imported, and they are simpler than the model described in §5. How the two are unified is listed in §9.
+- `export-record` and `import-record` are records for this machine: their bodies contain local paths (where the rendered output was written, where the old project originally lived). They take no part in rendering and are not inputs to any instance. When packed into a portable package, they are either left out or carried only after their paths are removed (§8). Neither record is implemented yet, so for now any document whose body contains local paths is rejected outright when a portable package is exported (§8.2, architecture design §14).
+- On reading an unknown `kind` or `schema`, the document header is still shown, the body is not interpreted, and the body is kept as it is when written back.
+- `derivation` records which video this video was derived from, and which segment (`videos.derive`, architecture design §3.5 "derived child video"). One is written at derivation time. Its body and the header's `summary` are the same (the Space content index reads only `summary`), and it is named "Derivation source" (in the current language). It is not updated later as the parent or child video changes; it records only the moment of derivation. Body:
 
   ```ts
   interface DerivationBody {
     schema: 'cuccut.derivation/1';
     parentVideoId: Id;
-    parentRevision: string;            // 派生时父视频的版本
-    range: { start: number; end: number };  // 父视频剪辑后时间线上的秒，已对到帧
-    primaryAssetId: Id | null;         // 记剪口的主素材（父视频里的 ID）；没有可剪的媒体时 null
-    cuts: Array<{ assetId: Id; from: number; to: number }>;  // 区间之外的剪口：主素材源时钟上的秒
+    parentRevision: string;            // parent video's revision at derivation time
+    range: { start: number; end: number };  // seconds on the parent video's edited timeline, aligned to frames
+    primaryAssetId: Id | null;         // the primary asset where cuts are recorded (its ID in the parent video); null when there is no cuttable media
+    cuts: Array<{ assetId: Id; from: number; to: number }>;  // cut points outside the interval: seconds on the primary asset's source clock
     settings: { width: number; height: number; fit: 'cover' | 'contain' | null; crop: Crop | null;
                 captions: boolean; translations: boolean; chapters: boolean;
-                crops?: Array<{ from: number; to: number } & Crop> };  // 分段取景：父视频剪辑后时间线上的秒，已对到帧、截到区间
-    framing?: {                        // 分段取景落在主素材源时钟上的样子：给了 crops 且有主素材时才有
-      assetId: Id;                     // 主素材（父视频里的 ID）
-      shots: Array<{ from: number; to: number; crop: Crop | null }>;  // 区间里主素材的每一段：源时钟上的秒与它用的裁剪
+                crops?: Array<{ from: number; to: number } & Crop> };  // segmented framing: seconds on the parent video's edited timeline, aligned to frames and clipped to the interval
+    framing?: {                        // how segmented framing falls on the primary asset's source clock: present only when crops are given and a primary asset exists
+      assetId: Id;                     // primary asset (its ID in the parent video)
+      shots: Array<{ from: number; to: number; crop: Crop | null }>;  // each segment of the primary asset within the interval: seconds on the source clock and the crop it uses
     };
-    key: string;                       // 幂等键：父视频、版本、区间与设置的 sha256 前 12 位（settings.crops 有才算进来）
-    hook?: string;                     // 开头一句：派生时调用方给了才有
-    reason?: string;                   // 为什么挑这一段
-    notes?: string[];                  // 提示牌：几句短提醒
+    key: string;                       // idempotency key: first 12 characters of the sha256 of the parent video, revision, interval and settings (settings.crops is included only when present)
+    hook?: string;                     // opening line: present only when the caller supplied it at derivation time
+    reason?: string;                   // why this segment was picked
+    notes?: string[];                  // signage: a few short reminders
   }
   ```
 
-  `settings.crops` 与 `framing` 也是加上去的可选字段：派生时给了分段取景才写，旧文档没有它们照常读，按只有 `crop` 一份取景理解。`framing` 留给以后恢复剪口时按镜头补拆片段用；子视频里各片段的 `crop` 才是当前状态。
+  `settings.crops` and `framing` are also optional fields added later. They are written only when segmented framing was given at derivation. Older documents without them are read normally and are understood as having only one framing, `crop`. `framing` is reserved for re-splitting clips by shot when cut points are later restored. The `crop` of each clip in the child video is the current state.
 
-  `hook`、`reason`、`notes` 是加上去的可选字段（派生时调用方给了才写，不参与幂等键），旧文档没有它们照常读；界面没有 `hook` 时取子视频保留段的第一句，没有 `reason`、`notes` 时不显示。
+  `hook`, `reason` and `notes` are optional fields added later. They are written only when the caller supplied them at derivation, and they are not part of the idempotency key. Older documents without them are still read normally. When there is no `hook`, the interface takes the first sentence of the child video's retained segment. When there is no `reason` or `notes`, nothing is shown.
 
-  子视频复制了父视频的时间线与文稿，区间之外的部分是记在主素材剪口集合（`cut-set`，§6.7）里的剪口，恢复它们就回到父视频的样子；`cuts` 只是派生时记下的那几个，剪口集合才是当前状态。
+  The child video copies the parent's timeline and script. The parts outside the interval are cut points recorded in the primary asset's cut-set (`cut-set`, §6.7), and restoring them returns the parent video's form. `cuts` holds only the few cut points recorded at derivation time. The cut-set is the current state.
 
-- `library-selection` 记视频启用了用户库里的哪些条目（架构设计 §5.9）：每个视频至多一份，有几份时只认 ID 最小的一份，名字「启用的库条目」。它记条目 ID，不记内容；条目的内容在用到时冻结，记在用到它的文档或任务上（例如译文的 `glossaryRef`，§5.3）。正文：
+- `library-selection` records which entries of the user library the video has enabled (architecture design §5.9). Each video has at most one. If there are several, only the one with the smallest ID is used. Its name is "enabled library entries". It records entry IDs, not content. Entry content is frozen when it is used, and is recorded on the document or task that uses it (for example the translation's `glossaryRef`, §5.3). Body:
 
   ```ts
   interface LibrarySelectionBody {
     schema: 'cuccut.library-selection/1';
     glossaries: {
-      transcribe: Id[];   // 转写用术语表，按顺序，靠前的优先；最多 20 张
-      translate: Id[];    // 翻译用术语表，同上
+      transcribe: Id[];   // glossaries for transcription, in order; earlier ones take priority; at most 20
+      translate: Id[];    // glossaries for translation, same as above
     };
-    speakerVoices: Array<{  // 最多 200 条；同一份转写的同一位说话人只有一条
-      documentId: Id;       // 哪份转写（kind: 'speech'）
-      speakerId: string;    // 转写里说话人的 ID
-      voice: string;        // 'library:<音色 id>'，或 Provider 的音色 ID
-      providerId?: string;  // Provider 的音色 ID 只在这个 Provider 上用；library: 音色不给
+    speakerVoices: Array<{  // at most 200 entries; each speaker in the same transcript has only one entry
+      documentId: Id;       // which transcript (kind: 'speech')
+      speakerId: string;    // the speaker's ID in the transcript
+      voice: string;        // 'library:<voice id>', or the provider's voice ID
+      providerId?: string;  // a provider's voice ID is used only with that provider; not given for library: voices
     }>;
   }
   ```
 
-  读的时候 `schema` 不对就当作什么都没启用，不合的项丢掉；条目在库里删了不改这份文档，用到时跳过并报告。它只经 `library.setVideoSelection` 整份重写（命令与协议规范 §4.1），新建的视频由 Runtime 写入默认启用的术语表。不参与渲染，打包时照常带走（便携包里的条目 ID 在另一台机器的库里可能没有，用到时同样跳过）。
+  On reading, if `schema` does not match, the selection is treated as though nothing is enabled, and mismatched items are dropped. If an entry has been deleted from the library, this does not change the document; the entry is skipped when used and reported. The document is rewritten as a whole only through `library.setVideoSelection` (command and protocol spec §4.1). Newly created videos get the default-enabled glossaries written by the Runtime. It takes no part in rendering, and it is carried along when packing. Entry IDs in a portable package may not exist in the library on another machine, and they are likewise skipped when used.
 
 ---
 
-## 5. 语音、字幕与翻译文档
+## 5. Speech, Captions and Translation Documents
 
-本章的文档都按 §4.4 保存：一种文稿一个 `kind`，正文按版本存放，快照里只有文档头。下面的 `SpeechDocumentVersion`、`TranslationDocumentVersion` 等类型描述的是正文的目标模型；字幕在时间线上由字幕实例显示（§3.8）。
+The documents in this chapter are all stored per §4.4: one `kind` per script, with the body stored per version, and the snapshot holds only the document header. The `SpeechDocumentVersion`, `TranslationDocumentVersion` and similar types below describe the target model of the body. On the timeline, captions are shown by caption instances (§3.8).
 
-### 5.1 五个层次
+### 5.1 Five layers
 
-字幕不是一个 chunks 数组。它分五层，自然译句与显示改写分开保存：
+Captions are not an array of chunks. They have five layers, and the natural translated sentence is stored separately from the display rewrite:
 
 ```text
-SpeechDocument.words                 词级的文本与源时间
-          ├─ Sentence               翻译的语义单元
-          │    └─ naturalTranslation 完整的自然译句
-          │          ├─ AlignmentBlocks 语义对应
-          │          ├─ displayRewrite  必要时的字幕显示改写
-          │          └─ DubbingScript   为口语与时长适配的配音脚本
-          └─ Source Cue             源语言的展示时间单元
-Target Cue                          从目标语言与块边界独立派生
-Line                                按字体、画幅与样式排出的行；渲染投影
+SpeechDocument.words                 word-level text and source times
+          ├─ Sentence               semantic unit of translation
+          │    └─ naturalTranslation the complete natural translated sentence
+          │          ├─ AlignmentBlocks semantic correspondence
+          │          ├─ displayRewrite  caption display rewrite, when needed
+          │          └─ DubbingScript   dubbing script adapted for spoken delivery and duration
+          └─ Source Cue             display time unit in the source language
+Target Cue                          derived independently from the target language and block boundaries
+Line                                lines laid out by font, frame size and style; render projection
 ```
 
-原文与译文的 Cue 数量不要求相同。一个源句可以对应多个目标 Cue。双语画面是两条独立的时间流；界面可以展示句级或块级的对应，但不得伪造逐行一一对应。
+The source and target cue counts are not required to match. One source sentence may map to several target cues. The bilingual picture is two independent time streams. The UI may show sentence-level or block-level correspondence, but it must not fabricate a line-by-line one-to-one correspondence.
 
 ### 5.2 SpeechDocument
 
@@ -1524,19 +1524,19 @@ interface SpeechDocumentVersion {
 }
 ```
 
-- 必须保存可追溯的词 ID、说话人 ID、文本、源时间区间、时间质量和词的来源。
-- 原始的识别结果归档为不可变的产物（`rawResultArtifactId`）。人工校正产生新的 SpeechDocument 版本；当前版本是后续计算的文本与时间依据。不能一边改归档，一边在 Cue 里另外藏一份不同的原文。
-- 句子由稳定的词锚与结构规则派生。句子的 **ID 与内容指纹分离**：只要句子的文本、词成员或语义边界改变，关联的译句就要做失效判断；不能因为 ID 没变就认为仍然有效。
-- 手工添加的标题不需要 SpeechDocument。
+- Must keep traceable word IDs, speaker IDs, text, source time spans, timing quality and word provenance.
+- The raw recognition result is archived as an immutable artifact (`rawResultArtifactId`). Manual corrections produce a new SpeechDocument version; the current version is the text and timing basis for later computation. Do not edit the archive while keeping a different copy of the source text hidden in cues.
+- Sentences are derived from stable word anchors and structural rules. A sentence's **ID is separate from its content fingerprint**: whenever a sentence's text, word membership or semantic boundary changes, the linked translation must be checked for invalidation. An unchanged ID does not mean it is still valid.
+- Manually added titles do not need a SpeechDocument.
 
-**`cuccut.speech/1` 的正文**。已落盘的转写正文是下面的形状（与目标模型的差别列在 §9）。时间是整数刻度，单位是 `timescale`，时钟是 `sourceAssetId` 所指的素材（§4.6）：
+**Body of `cuccut.speech/1`.** The persisted transcript body has the shape below (differences from the target model are listed in §9). Times are integers in units of `timescale`, and the clock is the media referenced by `sourceAssetId` (§4.6):
 
 ```ts
 interface SpeechBody {
   schema: 'cuccut.speech/1';
   clock: 'source-asset';
-  timescale: number;                    // 读的时候没有就按 1 000 000
-  engine: JsonValue | null;             // 识别引擎的说明，内容开放
+  timescale: number;                    // when absent on read, defaults to 1 000 000
+  engine: JsonValue | null;             // description of the recognition engine; open-ended
   createdAt?: string | null;
   speakers: Array<{ id: Id; name: string; hue?: number | null }>;
   words: Array<{
@@ -1546,15 +1546,15 @@ interface SpeechBody {
     text: string;
     speaker?: Id;
     hidden?: true;
-    timingQuality?: 'estimated' | 'missing';   // 没有这个字段表示时间可信
-    glue?: true;                                // 与前一个词之间不加空格
+    timingQuality?: 'estimated' | 'missing';   // absent means the timing is trustworthy
+    glue?: true;                                // no space before the previous word
   }>;
   sentences: Array<{ id: Id; first: Id; last: Id; paragraphStart?: true } | { id: Id; wordIds: Id[]; paragraphStart?: true }> | null;
   chapters: Array<{ id: Id; title: string; start: number; end: number }>;
-  // 以下字段由字幕与翻译核心读写；没有时为空
+  // The following fields are read and written by the caption and translation core; empty when absent
   userBreaks?: Record<Id, 'break' | 'no-break'>;
-  autoBreaks?: Record<Id, Record<Id, 'break' | 'no-break'>>;   // 键是 LayoutProfile 的 ID（§5.6）
-  layoutProfileId?: Id;                                          // 没有时是 'default'
+  autoBreaks?: Record<Id, Record<Id, 'break' | 'no-break'>>;   // keys are LayoutProfile IDs (§5.6)
+  layoutProfileId?: Id;                                          // defaults to 'default' when absent
   paragraphBreaks?: Id[];
   stages?: {
     asr?: string;
@@ -1567,41 +1567,41 @@ interface SpeechBody {
 }
 ```
 
-- 词不存词间的空格：拼接时按文字的规则现算（中文、日文不加，拉丁字母之间加，谚文按词加）。`glue` 记住规则答不对的地方，拼接、量宽与断行都认它。转写流程写入的词可能自带前导空格，读的一方照原样处理，不改写。
-- `userBreaks` 的键是词：`break` 在这个词之前强制换行，`no-break` 抑制这里的默认断点（§5.5）。`paragraphBreaks` 里的词开始一个新段落，段落边界也是句子的边界。两者引用的词被删掉之后条目留着，不生效。
-- `hidden: true` 的词不进文本、句子与字幕，词与时间仍然保留。
-- `sentences` 不为 null 时是存下来的句子，导出的双语合并按它配句（§5.3）；译文的句子与原文指纹不读它，一律按 §5.3 的规则从词派生。写回的一方改了词的 ID、顺序、隐藏或分段，就把它清成 null，不留过期的句子。
-- 没有说话人的词不写 `speaker`；说话人的 ID 不能是空字符串。`hue` 为 null 与没有这个字段相同。
-- `stages` 的含义见 §5.5。`engine` 是开放的：转写流程写 Provider 与模型，旧项目导入写旧格式的引擎对象，或 null；需要「词时间是不是真实对齐的」时，先看 `engine.alignedWords`，没有就看有没有 `estimated` / `missing` 的词。
+- Words do not store the spaces between them. Spacing is computed at concatenation time by each script's rules: none for Chinese and Japanese, spaces between Latin letters, and per word for Hangul. `glue` records the cases the rules get wrong; concatenation, width measurement and line breaking all respect it. Words written by the transcription pipeline may carry a leading space; readers handle it as-is and do not rewrite it.
+- The keys of `userBreaks` are words: `break` forces a line break before that word, and `no-break` suppresses the default break point here (§5.5). A word listed in `paragraphBreaks` starts a new paragraph, and paragraph boundaries are also sentence boundaries. If the word referenced by either is deleted, the entry is kept but has no effect.
+- A word with `hidden: true` is excluded from the text, sentences and captions, but its word and timing are kept.
+- When `sentences` is not null, it holds the saved sentences, and the bilingual export uses it to pair sentences (§5.3). The translation's sentence fingerprints do not read it; they are always derived from the words by the rules in §5.3. A writer that changes word IDs, order, hiding or paragraphing sets it to null, so no stale sentences remain.
+- When there is no speaker, the word does not write `speaker`; a speaker ID must not be an empty string. `hue` of null is the same as the field being absent.
+- The meaning of `stages` is in §5.5. `engine` is open-ended: the transcription pipeline writes the provider and model, legacy project imports write the old-format engine object, or null. When you need to know whether word timing is truly aligned, check `engine.alignedWords` first; if it is absent, check whether any words are `estimated` or `missing`.
 
-**与字幕与翻译核心的映射**。字幕与翻译核心（`speech-doc`，架构设计 §7.9）在内存里用 v2 的 `TranscriptDoc`：时间是浮点秒，说话人、换行、分段、隐藏、译文都是按 ID 的表。两边的映射是无损的，规则如下：
+**Mapping to the caption and translation core.** The caption and translation core (`speech-doc`, architecture design §7.9) uses the v2 `TranscriptDoc` in memory: times are floating-point seconds, and speakers, line breaks, paragraphs, hidden flags and translations are ID-keyed tables. The mapping between the two is lossless, with these rules:
 
-- 刻度与秒的互换按 §2.10 的规则。写回时底稿里同一个词或章节的刻度换成秒正好等于新值的，沿用底稿的刻度。
-- 素材的事实（ID、本机路径、内容摘要、时长、采样率）取自 `AssetRecord`（§4.1），只读入、不写回。文档头的 `language` 对应 `lang`，没有时是 `und`；语言标签两边原样照抄。
-- 没有说话人的词在 `TranscriptDoc` 里归到保留的说话人 `""`，写回时去掉。`userBreaks` 的 `no-break` 对应 v2 的 `nobreak`；`paragraphBreaks` 与 `hidden` 对应 v2 的按 ID 的表，v2 里值为 false 的项与隐藏了不存在的词的项没有对应，写回时丢掉并报告。
-- `engine` 读成名字（`name`，没有时 `provider`）、版本与 `alignedWords`；写回时这三项没变就保留底稿的 `engine` 原样，变了写成 `{ name, version?, alignedWords }`。写回的新词与改了时间的词，`alignedWords` 为假时标 `timingQuality: 'estimated'`，否则不标；时间没变的词沿用底稿的标记。
-- 底稿里有、`TranscriptDoc` 没有的字段（不认识的字段、`legacy`、`sentences`、`clock`）按 ID 从底稿带回。v2 的 `readOnlyNote` 与格式版本号不写进正文。
+- Conversion between ticks and seconds follows the rules in §2.10. On write-back, a word or chapter whose tick, converted to seconds, equals the new value exactly keeps the base document's tick.
+- Source-asset facts (ID, local path, content digest, duration, sample rate) are taken from `AssetRecord` (§4.1). They are read in only and not written back. The document header's `language` maps to `lang`; when absent it is `und`. Language tags are copied verbatim on both sides.
+- Words without a speaker are assigned to the reserved speaker `""` in `TranscriptDoc` and removed on write-back. `userBreaks` `no-break` maps to v2 `nobreak`. `paragraphBreaks` and `hidden` map to v2's ID-keyed tables. Entries in v2 whose value is false, and entries hiding words that do not exist, have no counterpart; they are dropped on write-back and reported.
+- `engine` is read as its name (`name`, or `provider` when absent), its version and `alignedWords`. On write-back, if these three are unchanged, the base document's `engine` is kept as is; if any changed, it is written as `{ name, version?, alignedWords }`. For newly written words and words whose timing changed, `timingQuality: 'estimated'` is set when `alignedWords` is false, and not set otherwise. Words whose timing is unchanged keep the base document's mark.
+- Fields that are in the base document but not in `TranscriptDoc` (unknown fields, `legacy`, `sentences`, `clock`) are carried back from the base by ID. v2's `readOnlyNote` and the format version number are not written into the body.
 
-**导入的字幕**。导入 SRT 或 VTT 时只有 Cue 级的时间，使用 `ImportedCaptionDocument`，不凭空制造逐词时间：
+**Imported captions.** When importing SRT or VTT, only cue-level timing exists, so use `ImportedCaptionDocument` and do not fabricate word-level timing:
 
 ```ts
-// 本规范补全
+// Completed in this spec
 interface ImportedCaptionDocumentVersion {
   id: Id;
   revision: Revision;
   language: string;
-  sourceAssetRef?: VersionRef;         // 对应的媒体素材，如果已知
+  sourceAssetRef?: VersionRef;         // the matching media asset, if known
   cues: Array<{ id: Id; text: string; span: { start: MediaTime; end: MediaTime } }>;
   originalFormat: 'srt' | 'vtt' | 'ass' | 'other';
   rawArtifactId: Id;
 }
 ```
 
-需要逐字高亮时增加对齐任务；没有可信的逐词结果，就降级为普通的整句字幕。
+When word-by-word highlighting is needed, add an alignment task. Without a trustworthy word-level result, degrade to ordinary whole-sentence captions.
 
 ### 5.3 TranslationDocument
 
-每个目标语言有独立的文档版本，保存：源 SpeechDocument 的版本、句子 ID、源内容指纹、完整的自然译句、术语表版本、审阅状态、对齐块，以及可选的显示改写。
+Each target language has its own document version, which stores: the version of the source SpeechDocument, sentence IDs, source content fingerprints, the complete natural translated sentences, the glossary version, review status, alignment blocks, and optional display rewrites.
 
 ```ts
 interface TranslationDocumentVersion {
@@ -1618,22 +1618,22 @@ interface TranslationDocumentVersion {
   units: TranslationUnit[];
 }
 
-// 翻译时用的术语表（架构设计 §7.9）。调用时没给术语、视频里也没启用时没有这个字段。
+// Glossary used during translation (architecture design §7.9). Absent when no glossary was passed at call time and none is enabled in the video.
 interface GlossaryRef {
-  entries: Array<{                    // 用到的库里的翻译用术语表与冻结的版本
+  entries: Array<{                    // translation glossaries from the library that were used, with frozen versions
     library: 'glossaries';
     id: Id;
     version: number;
     contentHash: string;              // 'sha256:<hex>'
     name: string;
   }>;
-  inline: { contentHash: string; count: number } | null;   // 调用时直接给的术语的摘要与条数
-  terms: Array<{                      // 原文里出现过的术语与翻译时的译法；entryId 为 null 是调用时直接给的
+  inline: { contentHash: string; count: number } | null;   // digest and count of the terms passed directly at call time
+  terms: Array<{                      // terms that appeared in the source and their translations at translation time; entryId null means passed directly at call time
     entryId: Id | null;
     source: string;
     target: string;
   }>;
-  termsTruncated?: true;              // 出现的术语多于 2000 条、没有记全
+  termsTruncated?: true;              // more than 2000 terms appeared; not all were recorded
 }
 
 interface TranslationUnit {
@@ -1645,7 +1645,7 @@ interface TranslationUnit {
     text: string;
     reason: string;
     reviewed: boolean;
-    naturalFingerprint?: string;        // 改写依据的自然译句的指纹
+    naturalFingerprint?: string;        // fingerprint of the natural translation the rewrite is based on
   };
   alignment: {
     basis: 'natural' | 'display-rewrite';
@@ -1653,58 +1653,58 @@ interface TranslationUnit {
     blocks: AlignmentBlock[];
     sourceWordIds: Id[];
     textHash: string;
-    split?: AlignmentSplit;             // 字幕上的显示切分
+    split?: AlignmentSplit;             // display split on captions
   } | null;
   status: 'draft' | 'reviewed' | 'stale';
 }
 
-// 本规范补全
+// Completed in this spec
 interface AlignmentBlock {
   id: Id;
-  sourceWordRange: { firstWordId: Id; lastWordId: Id };   // 连续的词区间
-  targetTextRange: { start: number; end: number };        // Unicode code point 索引，右开
-  confidence?: number;                  // 0–1，支撑两侧边界的对齐边的最小权重；没有时未知或确定性构造
-  flags?: string[];                     // 'local-reorder'（块内有交叉）、'anchor'（含硬锚）、'weak'（只有软边）等
+  sourceWordRange: { firstWordId: Id; lastWordId: Id };   // contiguous word range
+  targetTextRange: { start: number; end: number };        // Unicode code point index, half-open
+  confidence?: number;                  // 0–1: minimum weight of the alignment edges supporting the boundaries on both sides; unknown or deterministically constructed when absent
+  flags?: string[];                     // 'local-reorder' (crossings within the block), 'anchor' (contains a hard anchor), 'weak' (soft edges only), etc.
 }
 
 interface AlignmentSplit {
   mode: 'independent' | 'many-to-one' | 'one-to-one';
   wordAnchored: boolean;
-  correspondence?: 'block' | 'sentence';   // 写入方明写的粒度；没有时由 mode 推出
-  aligner?: string;                        // 对齐边的来源，如 'deterministic/1'
-  pieces: Array<{ text: string; from?: number; to?: number }>;   // 非空；from ≤ to
-  legacy?: { crossing?: true; cueIds?: Id[] };                  // 旧项目留下的，只为无损导入保存
+  correspondence?: 'block' | 'sentence';   // granularity explicitly stated by the writer; derived from mode when absent
+  aligner?: string;                        // source of the alignment edges, e.g. 'deterministic/1'
+  pieces: Array<{ text: string; from?: number; to?: number }>;   // non-empty; from ≤ to
+  legacy?: { crossing?: true; cueIds?: Id[] };                  // left by legacy projects; saved only for lossless import
 }
 ```
 
-- 对齐块在源侧覆盖连续的词区间，在目标侧覆盖连续的文本区间；块与块之间单调，块内允许多对多。
-- 展示上的切分只能落在块的边界上。语序交叉时优先合并块；确实存在显示预算问题时才提出 `displayRewrite`，它不得覆盖 `naturalText`。
-- 缺少对齐时允许明确的句级降级（`correspondence: 'sentence'`）；不允许输出虚假的逐词同步。没有块的句级对齐写成 `{ basis: 'natural', correspondence: 'sentence', blocks: [], sourceWordIds: <源句的可见词>, textHash }`；智能体经 `edits_apply` 写入的单元 `alignment` 为 null 时，Runtime 按源句补成这样（架构设计 §3.5）。
-- 字符区间用 Unicode code point 索引，禁止在 grapheme cluster 内部切分。界面的 UTF-16 偏移必须经过转换。
-- 中文不假设空格等于词边界。标点与空格的规范化规则必须版本化，并由引擎共享。
-- 对齐块表达语义对应，不等于目标语言实际的发音时间。
-- `textHash` 是 `'sha256:' +` 自然译句 UTF-8 字节的 sha256（小写十六进制）。`targetTextRange` 有 `split` 时指各片文本按顺序拼起来的串，没有时指 `basis` 所指的文本（自然译句或显示改写）；片的拼接与它规范化之后相同，不要求逐字相同。块的 ID 在单元内唯一，写入方新造的块按顺序编为 `b1`、`b2`……
-- `split` 记字幕上怎么把这句译文切成几片显示。`independent`：译文按目标语自己的习惯切，不与源词对应；`many-to-one`：每片对应一段连续的源词，`from`、`to` 是闭区间的下标；`one-to-one` 只出现在旧项目里，按整句对应读。`wordAnchored` 为真时，片的下标与块的源侧都指 `sourceWordIds`，那是对齐时句子的可见词（时间线剪过之后是剩下的子序列）；为假时片的下标指源句现在的可见词。没有明写 `correspondence` 时，`legacy.crossing`、`independent` 与没有词锚的片只按整句对应，其余按块对应；推出的值就是 `alignment.correspondence`。片的拼接与 `basis` 所指的文本规范化之后不同、或片的边界不落在块的边界上时，切分过期，显示降级为整句。
-- `sourceFingerprint` 是字幕与翻译核心的内容指纹 `<词数>:<首词 ID>:<末词 ID>:<摘要>`（词数与首末词只算可见的词，摘要是句内可见词文本的 FNV-1a，36 进制）。空字符串表示没有记下指纹，不算过期；别的写法当作原句改过。
-- `displayRewrite.naturalFingerprint` 是写改写时自然译句的指纹；自然译句的指纹与它不符，改写就过期（删掉改写与这句的切分）。没有这个字段时按过期处理。
-- 与字幕与翻译核心的映射（§5.2）：一份译文对应 `TranscriptDoc` 的一种语言，`naturalText`、`displayRewrite`（`reason` 对应 v2 的 `basis`）、`split` 连同块、`sourceFingerprint` 分别对应 v2 按句子 ID 的 `trans`、`transDisplay`、`transAlign`、`transSrc`；`/1` 的译文不能换算。`status: 'stale'` 在 v2 里写成 `transSrc` 的 `stale:<sourceFingerprint>`，它不等于任何真实指纹，核心因此把这句当作原文改过；写回时去掉前缀、恢复 `stale`。写回时单元的 ID、`reviewed`、`status`、扩展字段从底稿按句子 ID 带回：译句与改写都没变的单元沿用底稿的状态，变了的是 `draft`。v2 没有切分的句子，底稿的对齐没有 `split` 时照用（译句变了只更新 `textHash`），底稿是 null 时仍是 null，其余写句级降级记录，`sourceWordIds` 取底稿的，没有底稿时取核心派生的源句的可见词。新单元的 ID 是 `t-<句子 ID>`，按首词的位置插进底稿的单元之间。新语言的 `sourceBasis` 由调用方给。
-- 正文的 `schema` 为 `cuccut.translation/2` 时，字段严格是上面的 `TranslationDocumentVersion`，除了上面标为可选的字段不多不少；`id` 与 `revision` 由文档记录给出，正文里不重复。整份转写一起翻译时 `sourceBasis.scopeLineage` 为空。源 SpeechDocument 的句子按字幕与翻译核心的规则从词得出（`speech-doc/sentences`，不读存下的 `sentences`）：句末标点之后断句，分号不算句末；停顿不少于 1.8 秒、换了说话人、句内满 80 个词、分段与章节的边界也断句；隐藏的词不进句子，句子 ID 是 `s-<首词 ID>`。`sourceFingerprint` 见上，`editViewHash` 是 `'sha256:' +` 派生规则的名字与全部句子的 ID、指纹的摘要。写译文的 Worker、核对译文的 Runtime 与界面用同一份实现（架构设计 §7.9）。没有对齐块时用句级降级。
-- **源文稿换版本时的结转**。视频换用一份新转写的文稿（换用文稿，架构设计 §6.6）时，新文稿的词全是新 ID，句子 ID（`s-<首词 ID>`）与指纹随之全换，旧单元的 ID、`sourceFingerprint`、对齐块与 `sourceWordIds` 都失效。每种语言在换用的同一笔事务里写一份新的 TranslationDocumentVersion：同一份文档、新版本，`sourceBasis.speechRef` 指向新的文稿版本，`editViewHash` 按新句子重算，`glossaryRef` 原样带过去。单元按下面的规则产生：
-  - **配对**。按素材时钟配。一句的时间区间是它首个可见词的起点到末个可见词的终点，旧句与新句相同。与旧句区间重叠的新句是它的候选；在全部候选对里先配重叠最长的一对，配上的两句不再参与，依次往下，所以一旧句只配一新句、一新句只配一旧句。重叠不到两句中较短那句时长的一半不算配上。按章或按范围局部重跑时只在范围内配：范围外的词 ID 不变，句子与单元原样带到新版本。
-  - **规范化文本**。比较原文时取句子可见词拼成的文本，去掉标点与空白，做 NFKC，再做大小写折叠。
-  - **配上、规范化原文相同**。保留 `naturalText`、`displayRewrite` 与 `status`（`reviewed` 仍是 `reviewed`，`draft` 仍是 `draft`）；对齐降为句级 `{ basis, correspondence: 'sentence', blocks: [], sourceWordIds: <新句的可见词>, textHash }`，`basis` 沿用，去掉 `split`；`sourceSentenceId`、`sourceFingerprint` 换成新句的，单元 ID 按上面的规则是 `t-<新句 ID>`。
-  - **配上、原文变了**。保留 `naturalText` 给人参考，去掉 `displayRewrite` 与 `split`，`status: 'stale'`；对齐同样降为句级，ID 与指纹换成新句的。
-  - **新句没配上**。新单元 `t-<新句 ID>`，`naturalText` 为空字符串，`status: 'stale'`，对齐降为句级。
-  - **旧句没配上**。不结转；它留在旧版本里，撤销换用就回来。
-  - 结转不调用模型。过期的单元由「刷新过期译文」重译（产品设计 §5.10）。
-- 旧项目导入的译文是 `cuccut.translation/1`：`{ schema, sourceLanguage, units: [{ id, text, display?, source?, alignment? }] }`，单元的 `id` 就是源 SpeechDocument 的句子 ID，`display` 是字幕显示用的改写，`source` 与 `alignment` 原样保留旧项目的指纹与对齐（格式与 §5.3 的指纹、对齐块不同，不能换算）。它只为已经导入的视频读取：导出的双语合并认它（按句子 ID 配，成员取 SpeechDocument 的句子），新写入的译文一律是 `/2`。派生子视频（架构设计 §3.5）把它升级成 `/2` 再复制：不换算旧的指纹与对齐，只取译句，按单元的词（SpeechDocument 存下的同 ID 句子，没有时取 `source` 的首末词）与按本节规则派生的句子配对（共有的词不少于较短一句的一半，先配共有词最多的一对），词相同的单元 `draft`、变了的 `stale`（译句留着），对齐写成句级降级记录，`display` 不带（没有改写依据的指纹）；配不上的旧单元不带，没有旧译文的句子不写单元。
-- 导出的双语合并读 `/2` 时按 `sourceSentenceId` 配到主文档的句子，译文取 `displayRewrite.text`，没有时取 `naturalText`；句子的成员取 `alignment.sourceWordIds`，剪剩的词与它不完全相同时不配；`alignment` 为 null 的单元，成员取按上面的规则从源 SpeechDocument 的词得出的、ID 为 `sourceSentenceId` 的那一句的可见词，`sourceFingerprint` 不为空又与那一句的指纹不同时按过期处理、不写出（派生要 `editor-wasm`，没有构建时导出失败，不悄悄少写译文）。源 SpeechDocument 没有句子时，导出按这些成员切句（与翻译时得出的句子相同）。`status: 'stale'` 的单元不写出。给没有 Worker 字幕条的译文建字幕层时同样按 `alignment.sourceWordIds` 取原句成员词的时间，有 `alignment` 为 null 的单元时不建。
-- 术语表改了之后的过期：`glossaryRef.terms` 记下了每条出现过的术语当时的译法。单元的原文里出现的术语，按 `entries` 里那张表在库里的当前版本，译法变了、被删了，或那张表新加的术语出现在这句里，这个单元就因术语表过期（`glossary-changed`）；整张表删了时，含它的术语的单元都过期。只看术语出现的单元，别的单元不受影响；`inline` 的术语不受库的影响。过期是读的时候算出来的（翻译配音核对译文时，§7.2），不改写这份文档的 `status`。
-- 文档头的 `sourceDocumentId` 指向源 SpeechDocument；由固定流程写入时，文档的 `extensions.engine` 记录 Provider、模型、模型版本与提示词版本，`extensions.pipeline` 记录流程、任务与执行主体。
+- On the source side, an alignment block covers a contiguous word range; on the target side, it covers a contiguous text range. Blocks are monotonic with respect to each other, and many-to-many mappings are allowed within a block.
+- A display split may only fall on block boundaries. When word order crosses, prefer merging blocks. A `displayRewrite` is proposed only when there is a real display-budget problem, and it must not override `naturalText`.
+- When alignment is missing, an explicit sentence-level degradation is allowed (`correspondence: 'sentence'`). Outputting fake word-level sync is not allowed. A sentence-level alignment without blocks is written as `{ basis: 'natural', correspondence: 'sentence', blocks: [], sourceWordIds: <the visible words of the source sentence>, textHash }`. When an agent writes a unit through `edits_apply` and its `alignment` is null, the Runtime fills it in this way from the source sentence (architecture design §3.5).
+- Character ranges use Unicode code point indices, and splitting inside a grapheme cluster is forbidden. UTF-16 offsets in the UI must be converted.
+- For Chinese, do not assume that spaces equal word boundaries. The normalization rules for punctuation and spaces must be versioned and shared by the engine.
+- Alignment blocks express semantic correspondence; they are not the actual pronunciation times of the target language.
+- `textHash` is `'sha256:' +` the lowercase hexadecimal SHA-256 of the UTF-8 bytes of the natural translation. When `split` is present, `targetTextRange` refers to the pieces' text concatenated in order; when absent, it refers to the text that `basis` points to (the natural translation or the display rewrite). The concatenation of pieces must match its normalized form, not be identical character by character. Block IDs are unique within a unit; blocks newly created by a writer are numbered in order as `b1`, `b2`, and so on.
+- `split` records how the translation is cut into display pieces on captions. `independent`: the translation is cut by the target language's own conventions and is not mapped to source words. `many-to-one`: each piece corresponds to a contiguous run of source words, and `from` and `to` are inclusive indices. `one-to-one` appears only in legacy projects and is read as whole-sentence correspondence. When `wordAnchored` is true, piece indices and the source side of blocks refer to `sourceWordIds`, the visible words of the sentence at alignment time (after timeline cuts, this is the remaining subsequence). When false, piece indices refer to the sentence's currently visible words. When `correspondence` is not stated explicitly, `legacy.crossing`, `independent`, and pieces without word anchors map at whole-sentence level only; everything else maps by block. The derived value becomes `alignment.correspondence`. When the concatenation of pieces differs from the normalized text that `basis` refers to, or when a piece boundary does not fall on a block boundary, the split is stale and the display degrades to whole-sentence.
+- `sourceFingerprint` is the content fingerprint of the caption and translation core, `<word count>:<first word ID>:<last word ID>:<digest>`. The word count and first and last words count only visible words. The digest is the FNV-1a of the visible word text in the sentence, in base 36. An empty string means no fingerprint was recorded, and it is not treated as stale. Any other form is treated as the original sentence having been edited.
+- `displayRewrite.naturalFingerprint` is the fingerprint of the natural translation at the time the rewrite was written. If the fingerprint of the natural translation no longer matches, the rewrite is stale (delete the rewrite and the split for this sentence). When this field is absent, it is treated as stale.
+- Mapping to the caption and translation core (§5.2): one translation document corresponds to one language of `TranscriptDoc`. `naturalText`, `displayRewrite` (`reason` maps to v2's `basis`), `split` together with its blocks, and `sourceFingerprint` correspond respectively to v2's per-sentence-ID `trans`, `transDisplay`, `transAlign` and `transSrc`. `/1` translations cannot be converted. `status: 'stale'` is written in v2 as `stale:<sourceFingerprint>` in `transSrc`; this does not equal any real fingerprint, so the core treats the sentence as edited source. On write-back, the prefix is removed and `stale` is restored. On write-back, a unit's ID, `reviewed`, `status` and extension fields are carried back from the base by sentence ID: units whose translation and rewrite are both unchanged keep the base's status, and changed ones become `draft`. For sentences without a split in v2, the base's alignment is used as-is when it has no `split` (if the translation changed, only `textHash` is updated). When the base is null, it stays null. Otherwise it is written as a sentence-level degradation record, with `sourceWordIds` taken from the base; without a base, the visible words of the source sentence derived by the core are used. The ID of a new unit is `t-<sentence ID>`, inserted between existing units by the position of its first word. The `sourceBasis` of a new language is supplied by the caller.
+- When the `schema` of the body is `cuccut.translation/2`, the fields are strictly those of `TranslationDocumentVersion` above, with no more and no fewer fields than the optional ones listed there. `id` and `revision` are given by the document record and are not repeated in the body. When the whole transcript is translated together, `sourceBasis.scopeLineage` is empty. The sentences of the source SpeechDocument are derived from words by the caption and translation core's rules (`speech-doc/sentences`; the saved `sentences` are not read): break sentences after sentence-final punctuation; semicolons do not end a sentence; also break sentences at pauses of at least 1.8 seconds, at speaker changes, when a sentence holds 80 words, and at paragraph and chapter boundaries. Hidden words are not part of any sentence. A sentence ID is `s-<first word ID>`. `sourceFingerprint` is as above, and `editViewHash` is `'sha256:' +` the digest of the name of the derivation rule together with the IDs and fingerprints of all sentences. The worker that writes translations, the Runtime that checks them, and the UI use the same implementation (architecture design §7.9). When there are no alignment blocks, use sentence-level degradation.
+- **Carry-over when the source document changes version.** When a video switches to a document made from a new transcription (switching the document, architecture design §6.6), all words in the new document have new IDs. Sentence IDs (`s-<first word ID>`) and fingerprints are therefore all replaced, and the old units' IDs, `sourceFingerprint`, alignment blocks and `sourceWordIds` all become invalid. For each language, a new TranslationDocumentVersion is written in the same transaction as the switch: the same document with a new version, `sourceBasis.speechRef` pointing to the new document version, `editViewHash` recomputed from the new sentences, and `glossaryRef` carried over unchanged. Units are produced by the following rules:
+  - **Pairing.** Pairing is done on the media clock. A sentence's time span runs from the start of its first visible word to the end of its last visible word; for an old sentence, the same span is used. A new sentence that overlaps an old sentence's span is a candidate for it. Among all candidate pairs, first pair the one with the longest overlap; the two sentences paired this way no longer take part, and the process continues in order. This means each old sentence pairs with at most one new sentence, and each new sentence with at most one old sentence. An overlap shorter than half the duration of the shorter of the two sentences does not count as a pair. When carrying over a chapter or a range locally, pairing happens only within that range: word IDs outside the range are unchanged, and sentences and units are carried to the new version as they are.
+  - **Normalized text.** When comparing source text, take the text formed by the sentence's visible words, remove punctuation and whitespace, apply NFKC, then apply case folding.
+  - **Paired, normalized source identical.** Keep `naturalText`, `displayRewrite` and `status` (`reviewed` stays `reviewed`, `draft` stays `draft`). The alignment is downgraded to sentence level as `{ basis, correspondence: 'sentence', blocks: [], sourceWordIds: <visible words of the new sentence>, textHash }`; `basis` is kept, and `split` is removed. `sourceSentenceId` and `sourceFingerprint` are replaced with those of the new sentence, and the unit ID is `t-<new sentence ID>` per the rules above.
+  - **Paired, source changed.** Keep `naturalText` for human reference, remove `displayRewrite` and `split`, and set `status: 'stale'`. The alignment is likewise downgraded to sentence level, and its ID and fingerprint are replaced with those of the new sentence.
+  - **New sentence not paired.** A new unit `t-<new sentence ID>` with `naturalText` set to an empty string and `status: 'stale'`. The alignment is downgraded to sentence level.
+  - **Old sentence not paired.** Not carried over. It remains in the old version, and undoing the switch brings it back.
+  - Carry-over does not call the model. Stale units are retranslated by "refresh stale translations" (product design §5.10).
+- A translation imported from a legacy project is `cuccut.translation/1`: `{ schema, sourceLanguage, units: [{ id, text, display?, source?, alignment? }] }`. The unit's `id` is the source SpeechDocument's sentence ID; `display` is the rewrite used for captions; `source` and `alignment` are kept as-is with the legacy project's fingerprint and alignment. Their format differs from §5.3's fingerprints and alignment blocks and cannot be converted. It is read only for videos that have already been imported. The bilingual export accepts it (paired by sentence ID, with members taken from the SpeechDocument's sentences). Newly written translations are always `/2`. Derived child videos (architecture design §3.5) upgrade it to `/2` when copying. The old fingerprints and alignment are not converted; only the translation sentence is taken. It is paired with sentences derived by the rules in this section, using the unit's words (the sentence with the same ID stored in the SpeechDocument, or when absent, the first and last words of `source`). The pairing uses shared words, requiring at least half of the shorter sentence's words to be shared, and pairs the pair with the most shared words first. A unit whose words are the same becomes `draft`; one whose words changed becomes `stale` (the translation is kept). The alignment is written as a sentence-level degradation record. `display` is not carried over (it has no fingerprint on which the rewrite is based). Old units that cannot be paired are not carried over, and sentences with no old translation do not get a unit.
+- The bilingual export, when reading `/2`, pairs units to the master document's sentences by `sourceSentenceId`. The translation text is `displayRewrite.text`, or `naturalText` when there is no rewrite. The sentence's members are taken from `alignment.sourceWordIds`. If these are not exactly the same as the remaining words after cuts, the unit is not paired. For a unit whose `alignment` is null, the members are the visible words of the sentence with ID `sourceSentenceId`, derived from the source SpeechDocument's words by the rules above. When `sourceFingerprint` is non-empty and differs from that sentence's fingerprint, the unit is treated as stale and not exported (deriving sentences requires `editor-wasm`; without a build, the export fails rather than silently dropping translations). When the source SpeechDocument has no sentences, the export splits sentences from these members (the same sentences as at translation time). Units with `status: 'stale'` are not exported. When building a caption layer for translations that have no Worker caption entries, the times of the original sentence's member words are taken from `alignment.sourceWordIds`, the same way; units whose `alignment` is null are not used for this.
+- Staleness after the glossary changes: `glossaryRef.terms` records the translation each term had at the time. For a term that appears in a unit's source, if, under the current version of its table in the library in `entries`, the translation has changed or the term was deleted, or a term newly added to that table appears in this sentence, the unit is stale due to the glossary (`glossary-changed`). When an entire table is deleted, every unit containing one of its terms is stale. Only units where terms appear are affected; other units are unaffected. `inline` terms are not affected by the library. Staleness is computed at read time (when the dubbing pipeline checks translations, §7.2) and does not rewrite this document's `status`.
+- The document header's `sourceDocumentId` points to the source SpeechDocument. When written by a fixed pipeline, the document's `extensions.engine` records the provider, model, model version and prompt version, and `extensions.pipeline` records the pipeline, task and executing principal.
 
 ### 5.4 CaptionProgram
 
-CaptionProgram 是显示规则，不是另一份原文。
+CaptionProgram is a display rule, not a second copy of the source text.
 
 ```ts
 interface CaptionProgram {
@@ -1717,7 +1717,7 @@ interface CaptionProgram {
     importedCaptionRef?: VersionRef;
   };
   language: string;
-  scope: { itemIds: Id[] };              // 明确作用于哪些素材实例，不按同名文件猜测
+  scope: { itemIds: Id[] };              // the exact media instances this applies to; never guessed from same-named files
   timingBasis: 'source-speech' | 'dubbing-audio' | 'imported-cues';
   layoutProfileId: Id;
   styleRef: VersionRef;
@@ -1725,23 +1725,23 @@ interface CaptionProgram {
 }
 ```
 
-**投影**。字幕解析器把「源词时间 → 指定素材实例的 timeMap → 序列时间」投影成 `ResolvedCaptionCue[]`。解析结果是派生缓存，不能与源词同时被独立修改。文档编辑、实例拆分、裁切、变速都经过事务更新引用，然后重新投影。
+**Projection.** The caption parser projects "source word time → the timeMap of the given media instance → sequence time" into `ResolvedCaptionCue[]`. The result is a derived cache and cannot be edited independently of the source words. Document edits, instance splits, trims and speed changes all update references through a transaction, and the result is then re-projected.
 
-**occurrence**。同一素材被重复使用时，一个词可以产生多个展示 occurrence。每个 occurrence 由 `sourceWordId + itemLineage + occurrenceId` 标识，不能只用 `wordId`。拆分之后维护 lineage 映射；禁止把字幕自动挂到另一个恰好引用同一媒体的片段上。
+**Occurrence.** When the same media is used more than once, one word can produce several display occurrences. Each occurrence is identified by `sourceWordId + itemLineage + occurrenceId`, not by `wordId` alone. After a split, the lineage mapping must be maintained. Captions must never be attached automatically to another clip that happens to reference the same media.
 
-**显示采样**。解析器先得到精确的序列区间，再按当前预览或导出的真实采样时刻判断 Cue 是否可见。改变导出帧率只改变显示采样，不产生新的语音或译文版本。
+**Display sampling.** The parser first obtains the exact sequence interval, then decides whether a Cue is visible at the actual sample time of the current preview or export. Changing the export frame rate only changes display sampling; it does not create a new speech or translation version.
 
-### 5.5 手工修改与显示覆盖
+### 5.5 Manual edits and display overrides
 
-| 用户做了什么 | 写到哪里 |
+| What the user does | Where it is written |
 | --- | --- |
-| 改错字 | SpeechDocument 的新版本 |
-| 改自然译句 | TranslationDocument |
-| 改换行 | 用户 pin（`userBreaks` 或 `CaptionOverride`） |
-| 拖动字幕的时间 | 有范围的 timing override |
+| Fixes a typo | A new version of the SpeechDocument |
+| Edits a natural translation sentence | TranslationDocument |
+| Changes a line break | User pin (`userBreaks` or `CaptionOverride`) |
+| Drags a caption's time | A timing override with a range |
 
 ```ts
-// 本规范补全
+// Added in this spec
 interface CaptionOverride {
   id: Id;
   kind: 'line-break' | 'timing' | 'text-display' | 'hide';
@@ -1754,16 +1754,16 @@ interface CaptionOverride {
 }
 ```
 
-- 用户 pin 的优先级高于自动排版。自动优化不能冲掉手工修改的边界。
-- 每个 override 必须声明锚点。源词被剪掉时显示为 `orphaned`，默认不再输出；不得静默地跑到 0 秒。
-- `sequence-fixed` 的字幕不随口播的波纹移动；界面用「固定时间」的标记提醒。
-- 换用文稿（§5.3「源文稿换版本时的结转」）时 pin 在同一笔事务里按时间重锚：`source-word` 锚着的旧词，取它源时间区间的中点，落在哪个新词的区间里、且两词的规范化文本（§5.3）相同，就改锚到那个新词；否则这个 override 是 `orphaned`。旧词没有源时间时锚不上。转写正文的 `userBreaks` 与 `paragraphBreaks` 引用的词按同样的规则换成新词，换不上的条目留着、不生效（§5.2）。`item-local` 与 `sequence-fixed` 锚不随文稿变，不动。
-- 转写正文的 `stages`（§5.2）记各自动步骤提交时的指纹，是「之后有没有人工修改」的依据：`asr`、`polish`、`chapters` 是转写完成、润色提交、章节提交时全文的内容指纹，`asrLayout` 是转写完成时换行、分段与隐藏的指纹，`segment` 是分段提交时词 ID 序列的指纹；当前的指纹与之不符，就说明之后有人改过，自动步骤不覆盖这部分。`aligned` 表示词时间来自文稿强制对齐（`coverage` 是对齐上的字符占文稿的比例，`lowConfidence` 是时长塌成 0、需要复核的词），重新识别时去掉。指纹的写法由写它的一方决定，读的一方只比较相等。
+- A user pin takes priority over automatic layout. Automatic optimisation must never overwrite boundaries set by hand.
+- Every override must declare its anchor. When the source word is cut, the override shows as `orphaned` and is no longer output by default; it must never silently jump to 0 s.
+- Captions with `sequence-fixed` do not ripple when the voiceover moves; the UI marks them with a "fixed time" badge.
+- When the script is replaced (§5.3, "carry-over when the source script changes version"), pins are re-anchored by time in the same transaction as the replacement. A `source-word` anchor on an old word takes the midpoint of that word's source-time interval. If the midpoint falls inside a new word's interval and the two words have the same normalised text (§5.3), the anchor moves to that new word; otherwise the override becomes `orphaned`. An old word without source time cannot be re-anchored. The words referenced by the transcript body's `userBreaks` and `paragraphBreaks` are mapped to new words by the same rule; entries that cannot be mapped are kept but have no effect (§5.2). The anchors of `item-local` and `sequence-fixed` do not depend on the script and are left unchanged.
+- The `stages` of the transcript body (§5.2) record a fingerprint of each automatic step at the moment it was committed. They are the basis for deciding whether a person has edited the content afterwards. `asr`, `polish` and `chapters` are content fingerprints of the full text at transcription completion, polish commit and chapters commit respectively. `asrLayout` is the fingerprint of line breaks, paragraphs and hidden words at transcription completion. `segment` is the fingerprint of the word-ID sequence at segment commit. If the current fingerprint differs, someone has edited it afterwards, and the automatic step does not overwrite that part. `aligned` means the word times come from forced alignment of the script (`coverage` is the proportion of script characters covered by the alignment, and `lowConfidence` marks words whose duration collapsed to 0 and need review); it is removed when recognition is run again. The fingerprint format is decided by the party that writes it; the reader only compares for equality.
 
-### 5.6 LayoutProfile、样式与导出
+### 5.6 LayoutProfile, styles and export
 
 ```ts
-// 本规范补全
+// Added in this spec
 interface LayoutProfile {
   id: Id;
   language: string;
@@ -1771,187 +1771,187 @@ interface LayoutProfile {
   readingBudget: { soft: number; hard: number; unit: 'cps' | 'cpl' | 'wpm' };
   minDuration: MediaTime;
   maxDuration: MediaTime;
-  safeArea: { left: number; top: number; right: number; bottom: number };   // 归一化
+  safeArea: { left: number; top: number; right: number; bottom: number };   // normalised
   breakRules: string[];
 }
 
 interface CaptionStyleBody {
-  // 目标合同 `cuccut.caption-style/1`：七个彼此独立的维度各取一个值，预设只是取值。
-  // 维度定义、当前词模式（含 KTV 扫色）、倒鸭子的 `layout.sequence` 与到 Studio 样式的编译
-  // 见 docs/design/subtitle/caption-style-model-design.md。
+  // Target contract `cuccut.caption-style/1`: each of seven independent dimensions takes one value; a preset is just a set of values.
+  // Dimension definitions, the current word mode (including KTV colour sweep), the inverted-pyramid `layout.sequence`,
+  // and the compilation to Studio style are in docs/design/subtitle/caption-style-model-design.md.
   schema: 'cuccut.caption-style/1';
-  typography: Typography;          // 字体、字重、字号（占短边比例）、行高、字距、大小写、对齐
-  surface: Surface;                // 字色、描边、阴影、发光、底板、逐词底块
-  layout: Layout;                  // mode 'line' | 'sequence'（倒鸭子）、锚点、y、宽、行数
-  activeWord: ActiveWord;          // 必填：none | color | box | scale | lift | underline | sweep，
-                                   // 外加念过 / 没念到的词的三态；无词时间的轨恒 none
-  motion?: Motion;                 // 入场 / 退场 / 循环，trigger 'enter' | 'spoken'
-  emphasis?: EmphasisLook;         // 强调词的外观；哪些词是强调词记在实例上（§3.8）
+  typography: Typography;          // font, weight, size (as a proportion of the short edge), line height, letter spacing, case, alignment
+  surface: Surface;                // text colour, outline, shadow, glow, background plate, per-word background block
+  layout: Layout;                  // mode 'line' | 'sequence' (inverted pyramid), anchor, y, width, line count
+  activeWord: ActiveWord;          // required: none | color | box | scale | lift | underline | sweep,
+                                   // plus three states for spoken / not-yet-spoken words; tracks without word times are always none
+  motion?: Motion;                 // enter / exit / loop, trigger 'enter' | 'spoken'
+  emphasis?: EmphasisLook;         // look of emphasised words; which words are emphasised is recorded on the instance (§3.8)
   preset?: { id: Id; revision: Revision };
 }
 ```
 
-- LayoutProfile 的数值是产品预设，不冒称某个平台现行的强制标准。预览、字幕列表、检查与导出使用同一个 profile。
-- 源字幕的自动排版结果按 profile 分开保存：转写正文的 `autoBreaks[<profile ID>]`（§5.2），换一个 profile 不冲掉另一个的结果；当前用哪个 profile 记在 `layoutProfileId`，没有时是 `default`。同一个词上用户的 `userBreaks` 优先于自动的 pin。
-- 样式与文字内容分开。改样式不重新识别；改源语言的换行不引起全文重译；改一句英文的显示文本不会自动下单整片的语音合成。
-- 输出支持烧录、SRT 与 VTT；ASS 在 P1 以格式能力映射实现。只导出字幕文件不触发视频重编码。
-- 烧录字幕必然是对画面的合成，不能描述为「不改视频码流」。
-- 原片中已经烧录的字幕位于源像素里，只关闭新的字幕层不会让它消失；覆盖、重构或修复必须声明新操作的性质。
-- 没有可信词时间的导入字幕可以作为普通字幕，不输出伪精确的逐词动画。
+- The numbers in LayoutProfile are product presets. They do not claim to be the currently mandated standard of any platform. Preview, caption list, checks and export all use the same profile.
+- The automatic layout result for source captions is stored per profile: `autoBreaks[<profile ID>]` in the transcript body (§5.2). Switching profile does not overwrite the result of another. The profile in use is recorded in `layoutProfileId`; if absent, it is `default`. For a word, the user's `userBreaks` take priority over automatic pins.
+- Style is kept separate from text content. Changing the style does not re-recognise anything. Changing a source-language line break does not trigger a full re-translation. Changing the display text of one English sentence does not automatically queue a speech synthesis of the whole film.
+- Output supports burn-in, SRT and VTT. ASS is implemented in P1 as a mapping of format capabilities. Exporting only a caption file does not trigger a video re-encode.
+- Burning in captions is necessarily a composite over the picture. It must not be described as "does not change the video bitstream".
+- Captions already burned into the source footage live in the source pixels. Turning off the new caption layer does not make them disappear. Covering, reconstructing or repairing them must declare the nature of the new operation.
+- Imported captions without trustworthy word times can be used as ordinary captions, but no pseudo-precise per-word animation is output for them.
 
-**已落盘的样式正文**。`CaptionStyleBody` 还没有落盘，落盘时由一层确定的编译折成 Studio 样式（设计稿 §8），内核不换；现在字幕样式文档的正文是下面两种之一，渲染内核都读：
+**Persisted style body.** `CaptionStyleBody` is not yet persisted. At persistence time, a deterministic compilation layer folds it into Studio style (design doc §8); the kernel does not change. Today, the body of a caption style document is one of the two forms below, and the render kernel reads both:
 
-- Studio 样式（`cuccut.legacy-studio-style/0.1`）：`style` 是 v2 的字幕样式，逐词动画写在 `style.wordAnimation`（或 `style.anim`）里，`catalogId` 指逐词动画目录的一格。
-- 定位框样式（`cuccut.boxed-caption-style/<N>`）：`canvas` 是样式所在画布的像素尺寸，`box` 是字幕框（相对画布中心的像素），`style` 是字号、颜色、对齐、底板等外观；渲染时换算成等价的 Studio 样式。`style.animationPresetId` 选逐词动画，取值是目录的 id，按那一格画，与 Studio 样式选中同一格相同；省略表示不动画。
-- 逐词动画目录有 19 格：`none`、`boxHighlight`、`flipClock`、`highlight`、`karaoke`、`impact`、`reveal`、`floatInTop`、`floatInBottom`、`scaleIn`、`dropIn`、`impactPop`、`colourHighlight`、`rotateFlipClock`、`rotateHighlight`、`stack`、`stomp`、`bounce`、`paint`。`reveal` 是逐字显现：没念到的词不画，念到一个就整个显出来。句子没有词时先应用显示间距，再按 §3.8 的空白切分推算；补间距后仍不带空格的一句是一个词、开头就整句显出来。
-- 引擎写入定位框样式时核对：`style` 是对象，`style.animationPresetId` 出现时是目录里的 id，否则拒绝整份文档（`INVALID_OPERATION`）。Studio 样式的正文不核对；内核遇到认不出的 `catalogId` 按动画名画。
+- Studio style (`cuccut.legacy-studio-style/0.1`): `style` is the v2 caption style. Per-word animation is written in `style.wordAnimation` (or `style.anim`), and `catalogId` refers to one cell of the per-word animation catalogue.
+- Boxed-caption style (`cuccut.boxed-caption-style/<N>`): `canvas` is the pixel size of the canvas the style belongs to, `box` is the caption box (in pixels relative to the canvas centre), and `style` holds font size, colour, alignment, background plate and other appearance settings. At render time it is converted into an equivalent Studio style. `style.animationPresetId` selects the per-word animation; its value is a catalogue id, and it is drawn with that cell, the same as when the same cell is selected in Studio style. Omitting it means no animation.
+- The per-word animation catalogue has 19 cells: `none`, `boxHighlight`, `flipClock`, `highlight`, `karaoke`, `impact`, `reveal`, `floatInTop`, `floatInBottom`, `scaleIn`, `dropIn`, `impactPop`, `colourHighlight`, `rotateFlipClock`, `rotateHighlight`, `stack`, `stomp`, `bounce`, `paint`. `reveal` shows text word by word: words not yet spoken are not drawn, and once one is spoken, the whole of it is shown. When a sentence has no word times, display spacing is applied first, then the sentence is split by the whitespace rules of §3.8. A sentence that still has no spaces after spacing is treated as one word, and the whole sentence appears from the start.
+- When the engine writes a boxed-caption style, it checks that `style` is an object, and that `style.animationPresetId`, when present, is an id in the catalogue. Otherwise the entire document is rejected (`INVALID_OPERATION`). The body of a Studio style is not checked; when the kernel meets an unrecognised `catalogId`, it draws the animation by its name.
 
-**显示间距**。预览与烧录在汉字、假名与 ASCII 字母数字直接相邻处补一个半角空格（如 `让Claude创建Artifact` → `让 Claude 创建 Artifact`）。原文、译文与导入字幕共用这条规则，不依赖语言标签、样式种类或 `punct` 开关；已有空白与换行保留，标点旁不额外补空格。按空格、LF、CR 分片，含谚文的片段以及路径、URL 沿用 v2 的保护规则，原样保留间距（如 `AI가`、`2박`、`600원`）；其他片段照常补间距。该投影不修改字幕正文、转写词 ID、词时刻、译文对齐范围或导出的 SRT、VTT。
+**Display spacing.** Preview and burn-in insert one half-width space where Chinese characters, kana and ASCII letters or digits are directly adjacent (for example `让Claude创建Artifact` → `让 Claude 创建 Artifact`). The original, the translation and imported captions share this rule, which does not depend on the language tag, the style kind or the `punct` switch. Existing spaces and line breaks are kept, and no extra space is added next to punctuation. Text is split by space, LF and CR. Fragments containing Hangul, as well as paths and URLs, keep the v2 protection rules and their spacing is kept as is (for example `AI가`, `2박`, `600원`); other fragments are spaced as usual. This projection does not modify the caption text, transcript word IDs, word times, translation alignment ranges, or the exported SRT and VTT.
 
-**默认预设**。没有样式文档的字幕实例按默认预设画；新建字幕层时种下的 Studio 样式（编辑器里第一次改样式或套用画廊里的卡、把译文双语放上画面，智能体与固定流程建双语字幕层）也是这一份。它是新建项目的「经典」涂装加一个开关，不分语言：
+**Default preset.** Captions without a style document are drawn with the default preset. The Studio style that is seeded when a new caption layer is created (the first time a style is edited in the editor, when a gallery card is applied, or when a bilingual caption is put on screen; agents and fixed flows creating bilingual caption layers also use this one) is also this one. It is the "Classic" livery of a new project plus one switch, and it does not depend on language:
 
-- 白字、`fontWeight` 700，黑色描边 `textOutline: { on: true, color: '#000000', width: 14 }`（`width` 按字号的比例换算成笔宽，描边随字号缩放），黑色投影 `dropShadow: { on: true, distance: 0.08, rotation: 45, blur: 0.12, opacity: 0.9 }`；底板关着（`background: false`）。浅色画面上靠描边与投影看清。当前词变色 `wordAnimation: { animationId: 'magic-wbw', animationName: 'Color', catalogId: 'colourHighlight', active: { color: '#18E1D6' } }`（画廊里「经典」卡自带的当前词样式，[字幕样式模型设计](../design/subtitle/caption-style-model-design.md) §4），没有词时间的行照常整行画。
-- `punct: true`：普通逗号、句号在烧录与预览里换成一个空格（数字、网址这类 ASCII 写法里的不换），只有标点的一句不画。Studio 样式的 `punct` 缺省（没写）也是 true；用户在属性页的「标点」里切换为 false 时照原文画。该投影不修改转写正文或导出的 SRT、VTT。界面新建字幕时可以用用户记住的属性覆盖预设（产品设计 §5.9）。
-- 有样式文档时照它画，没写的键按内核的兜底（无描边、`punct` 为 true），不拿默认预设去补；已有项目里正文为空的样式文档（`style: {}`）因此画法不变。
+- White text, `fontWeight` 700, black outline `textOutline: { on: true, color: '#000000', width: 14 }` (`width` is converted to stroke width as a proportion of the font size, so the outline scales with the font), black drop shadow `dropShadow: { on: true, distance: 0.08, rotation: 45, blur: 0.12, opacity: 0.9 }`; background plate off (`background: false`). On light footage it stays legible through the outline and shadow. Current-word colour change `wordAnimation: { animationId: 'magic-wbw', animationName: 'Color', catalogId: 'colourHighlight', active: { color: '#18E1D6' } }` (the current-word style that comes with the "Classic" card in the gallery; see [subtitle style model design](../design/subtitle/caption-style-model-design.md) §4). A line without word times is still drawn as a whole line.
+- `punct: true`: ordinary commas and full stops are replaced by one space in burn-in and preview (not in ASCII notations such as numbers and URLs). A sentence consisting only of punctuation is not drawn. The `punct` default in Studio style (when not written) is also true. When the user switches it to false in the "Punctuation" setting of the properties page, the text is drawn as written. This projection does not modify the transcript body or the exported SRT and VTT. When a caption is created in the interface, the user's remembered properties can override the preset (product design §5.9).
+- When a style document exists, it is drawn as written. Keys it omits fall back to the kernel's defaults (no outline, `punct` true); the default preset is not used to fill them. Therefore, in existing projects, a style document whose body is empty (`style: {}`) keeps its current appearance.
 
-**结果校验**。翻译任务返回缺句、重复 ID、漏数字或术语冲突时，只接受通过合同校验的部分，不无条件覆盖。术语按「任务覆盖 → 视频设置 → 显式共享的设置」的顺序解析，并显示来源。
+**Result validation.** When a translation task returns missing sentences, duplicate IDs, dropped numbers or terminology conflicts, only the parts that pass the contract validation are accepted; nothing is overwritten unconditionally. Terminology is resolved in the order "task override → video settings → explicitly shared settings", and the source of each term is shown.
 
 ### 5.7 EditedSpeechView
 
-原始的 SpeechDocument 描述完整的源录音，不因为时间线上删掉一个片段就抹掉其中的词。
+The original SpeechDocument describes the complete source recording. Removing a clip from the timeline does not erase the words in it.
 
-`EditedSpeechView` 是从当前序列的保留范围、timeMap 和 occurrence 派生出来的有效词流。它不是另一份可以随意改时间的转录。
+`EditedSpeechView` is the effective word stream derived from the sequence's kept ranges, timeMap and occurrences. It is not another transcript whose times can be changed freely.
 
-| 情况 | 结果 |
+| Case | Result |
 | --- | --- |
-| 源句完整保留，只是整体移动 | 自然译文可以复用；字幕时间重新投影 |
-| 只保留源句的一部分、改变句序、或重复使用片段 | 为有效的句子与 occurrence 计算新的语义指纹 |
+| The source sentence is kept whole and only moved | The natural translation can be reused; caption times are re-projected |
+| Only part of the source sentence is kept, the sentence order changes, or the clip is used more than once | A new semantic fingerprint is computed for the valid sentences and occurrences |
 
-`TranslationUnit.sourceFingerprint` 绑定的是这份**有效句**，而不只是原始文档的版本。文档头记录 `sourceBasis`：`speechRef`、`sequenceId`、scope lineage 和 `editViewHash`。
+`TranslationUnit.sourceFingerprint` binds to this **valid sentence**, not merely to the version of the original document. The document header records `sourceBasis`: `speechRef`, `sequenceId`, scope lineage and `editViewHash`.
 
-已有的整句译文可以保留给其他实例使用，但不能不加检查地用于被剪成半句的输出。没有可用时间的词（时长为零、或没有文字）本来就进不了字幕与导出，它们缺席不算剪成半句，不妨碍配整句的译文；隐藏的词才算剪掉。配音脚本与语义图表的锚点同样绑定有效视图。纯粹的时间位移与实际的内容改变触发不同的失效范围（架构设计 §10）。
+Existing whole-sentence translations may be kept for other instances, but they must not be used unchecked for an output that has been trimmed to half a sentence. Words without usable time (zero duration, or no text) could never enter captions or exports anyway, so their absence does not count as trimming a sentence in half, and does not prevent a whole-sentence translation from being used. Hidden words do count as cut. Anchors for the dubbing script and semantic diagrams likewise bind to the effective view. Pure time shifts and actual content changes trigger different invalidation scopes (architecture design §10).
 
 ---
 
-## 6. 口播剪辑
+## 6. Talking-head editing
 
-### 6.1 约束
+### 6.1 Constraints
 
-- 建议可以逐条接受或忽略；在文稿中的选择对应到时间线；删除可以恢复；每一步都可以撤销。
-- 智能体判断语义；切点、呼吸垫、量化和音画同步由引擎计算。
-- 字幕翻译与语义剪辑建议的任务优先接收词与句的 ID 和文本。不让模型自由编造精确的时间戳。
+- Suggestions can be accepted or ignored one by one. Choices in the script map to the timeline. Deletions can be restored, and every step can be undone.
+- The agent judges semantics. Cut points, breath padding, quantization and audio-video sync are computed by the engine.
+- Tasks for subtitle translation and semantic-cut suggestions receive word and sentence IDs and text first. Do not let the model invent exact timestamps.
 
 ### 6.2 EditorialProposal
 
-剪辑提案是文档 `kind: 'editorial-proposal'`，`sourceAssetId` 指向被剪的素材，每个源素材至多一份。正文：
+An editorial proposal is a document with `kind: 'editorial-proposal'`. `sourceAssetId` points to the source asset being cut, and each source asset has at most one proposal. Body:
 
 ```ts
 interface EditorialProposalBody {
   schema: 'cuccut.editorial-proposal/1';
-  timescale: number;                      // 每秒的刻度数
-  clock: 'source-asset';                  // 时刻在被剪素材的时钟上
-  speechRef: VersionRef;                  // 检测读的转写版本
-  suggestions: Array<{                    // 按 t0 排序，可以互相重叠
+  timescale: number;                      // ticks per second
+  clock: 'source-asset';                  // moments are on the clock of the source asset being cut
+  speechRef: VersionRef;                  // transcript version the detector read
+  suggestions: Array<{                    // sorted by t0; may overlap
     id: Id;
     kind: 'filler' | 'pause';
-    t0: string;                           // 建议剪掉的源区间 [t0, t1)，整数刻度写成十进制字符串
+    t0: string;                           // source interval [t0, t1) proposed for removal; integer ticks written as decimal strings
     t1: string;
-    wordIds?: Id[];                       // 口癖：区间里的词
-    afterWordId?: Id;                     // 停顿：停顿之前的词
-    text: string;                         // 区间里的文字；停顿为空
-    reason: string;                       // 检测器写的短句，原样展示
+    wordIds?: Id[];                       // filler: words in the interval
+    afterWordId?: Id;                     // pause: word before the pause
+    text: string;                         // text inside the interval; empty for a pause
+    reason: string;                       // short sentence written by the detector, shown as-is
     detail?: string;
-    confidence?: number;                  // 0–1，检测器给不出时没有
+    confidence?: number;                  // 0–1; absent when the detector cannot give one
     status: 'pending' | 'accepted';
   }>;
 }
 ```
 
-- 已定：提案只记建议剪掉的源区间、类别、对应的文字与置信度，是这里的最小形状；`putDocument` 写入时核对刻度、`0 ≤ t0 < t1`、排序、`confidence` 的范围与 ID 不重复。
-- 已定：`proposeCuts` 按源素材的转写检测口癖与长停顿，沿用 v2 的检测（`timeline::detect`）与缺省参数：停顿 0.8 秒以上、3 秒以下，压缩到 0.3 秒（句末多留 0.1 秒，至多 0.5 秒），跨章节的停顿缺省不动；口癖按中英文的表，含只在断句处才算的软口癖。隐藏的词、没有时间的词不参与；已经整个落在剪口里的、超出素材时长的不提出。建议的 ID 由所在的词决定，重新提出时不变。再提出时整份替换，不改时间线。v2 没有重复片段与说错重来的检测，这两类不提出。
-- 已定：`acceptCutSuggestions` 把接受的建议编译成剪口（同 `addCuts`，§6.7，剪口的 `ref` 是建议的 ID），并把它们标成 `accepted`，**用一笔事务提交**，撤销时一起回去。与已有剪口间隔不超过 0.02 秒的照 §6.7 并成一个，保留靠前那个的 ID 与出处，所以被并进去的建议不出现在剪口的 `ref` 里。
-- 已定：转写在提出建议之后改过（当前版本不是 `speechRef`）时建议过期，接受时整笔拒绝（`details.rule: 'proposal-stale'`），须重新提出。恢复剪口不改提案里的状态；剪口集合才是剪掉了什么的依据。
-- 剪辑建议不是视频的时间线。接受建议时，编译得到确定的剪切集合与普通的视频、音频实例变更，**用一笔事务提交**。
-- EDL 用于交换与审阅，可以从当前的实例导出。首版不允许同时维护一份会自动覆盖界面时间线的、长期可写的 EDL。
-- 建议记录保留理由与影响区间。之后手工改过片段，旧建议必须按最新的实例与 readSet 重新验证。
-- 恢复已剪掉的内容是新的事务；不能拿一份旧的时间线快照覆盖后来添加的元素。
+- Decided: a proposal records only the source intervals suggested for removal, their categories, the matching text and the confidence. This is the minimal shape here. When `putDocument` writes it, it checks the ticks, `0 ≤ t0 < t1`, the ordering, the range of `confidence`, and that IDs are not duplicated.
+- Decided: `proposeCuts` detects filler words and long pauses from the source asset's transcript, reusing v2's detection (`timeline::detect`) and default parameters. Pauses of 0.8 s or more and under 3 s are compressed to 0.3 s (keeping an extra 0.1 s at sentence end, at most 0.5 s). Pauses across chapters are left alone by default. Filler words follow a table of Chinese and English words, including soft fillers that count only at sentence breaks. Hidden words and words without time do not take part. Anything already fully inside a cut, or beyond the asset's duration, is not proposed. A suggestion's ID is determined by the word it belongs to and does not change when re-proposed. Re-proposing replaces the whole proposal and does not change the timeline. v2 has no detection for duplicated takes or misspoken-then-redone takes, so those two kinds are not proposed.
+- Decided: `acceptCutSuggestions` compiles accepted suggestions into cuts (same as `addCuts`, §6.7; a cut's `ref` is the suggestion's ID) and marks them `accepted`, **committed in one transaction**, so undo reverts them together. Cuts whose gap to an existing cut is no more than 0.02 s are merged into one per §6.7, keeping the earlier one's ID and origin. So a suggestion merged in does not appear in the cut's `ref`.
+- Decided: if the transcript has changed after the suggestions were proposed (the current version is not `speechRef`), the suggestions are stale. Accepting rejects the whole batch (`details.rule: 'proposal-stale'`), and they must be proposed again. Restoring a cut does not change the status in the proposal. The cut set is the basis for what has been removed.
+- A cut suggestion is not the video's timeline. When a suggestion is accepted, the result is a definite set of cuts plus ordinary video and audio instance changes, **committed in one transaction**.
+- EDL is for exchange and review, and can be exported from the current instances. The first version does not allow maintaining a long-lived, writable EDL that automatically overwrites the timeline on screen.
+- Suggestion records keep the reason and the affected interval. If a clip is edited by hand later, the old suggestions must be re-validated against the latest instances and readSet.
+- Restoring cut material is a new transaction. An old timeline snapshot must not overwrite elements added later.
 
-### 6.3 切点
+### 6.3 Cut points
 
-模型指出「删这个口头禅」之后，引擎根据可信的词时间、VAD 与能量分析、上下文和可用的静音区选择切点。相邻的词连读、没有安全边界时，建议标记为「不推荐自动切」，而不是硬切。
+After the model points out “delete this filler word”, the engine chooses cut points from trusted word times, VAD and energy analysis, context and the available silent regions. When adjacent words are run together and there is no safe boundary, the suggestion is marked “not recommended for auto-cut” rather than cut hard.
 
-- 视频默认硬切。音频可以在保留区间的内部做短的淡出与淡入。
-- 需要重叠的 crossfade 时，必须显式使用 handles，并检查是否把已删除的词重新带了进来。
-- 不假定视觉 dissolve、音频 crossfade 与 EDL 的保留时长天然等价。
-- 音频的消爆淡化不隐式改变视觉总长。
+- Video cuts are hard by default. Audio may use short fade-outs and fade-ins inside the kept intervals.
+- When an overlapping crossfade is needed, handles must be declared explicitly, and it must be checked that deleted words have not been pulled back in.
+- Do not assume that a visual dissolve, an audio crossfade and the kept duration in an EDL are naturally equivalent.
+- De-click fades on audio do not implicitly change the visual total length.
 
-### 6.4 波纹与语义依附
+### 6.4 Ripple and semantic attachment
 
-附属元素按 §3.16 的 `FollowPolicy` 决定是否随剪辑移动；按时刻放置的附属实例缺省 `follow-cuts`。剪辑命令必须声明受影响的轨道集合与锁定轨道的处理方式。
+Attached elements decide whether they move with a cut according to `FollowPolicy` in §3.16. Attached instances placed at a moment default to `follow-cuts`. Cut commands must declare the set of affected tracks and how locked tracks are handled.
 
-### 6.5 风险分级
+### 6.5 Risk grading
 
-明显的静音与观点的删改，风险不同。连读边界、否定词、单位词和前提条件必须经过审阅，不能只按字符串命中自动删除。批量接受时显示类别、数量、范围、锁定轨道的处理和语义影响。
+Obvious silence removal and edits to a speaker's viewpoint carry different risks. Connected-speech boundaries, negations, unit words and preconditions must be reviewed, and must not be deleted automatically just because a string matched. Batch acceptance shows the category, count, range, how locked tracks are handled, and the semantic impact.
 
-文稿面板的模式（产品设计 §5.7）决定删除键的含义：只有「剪辑音画」模式才对词锚提出或执行剪辑。切换模式不会让一个旧的选区偷偷改变操作的含义。
+The script panel's mode (product design §5.7) determines what the delete key means. Only the “Cut audio and video” mode proposes or executes cuts for word anchors. Switching modes never silently changes the meaning of an old selection.
 
-### 6.6 复算例
+### 6.6 Worked recalculation
 
-12 秒、30 fps 的片段，删除源 [4, 6) 秒。
+A 12-second clip at 30 fps, deleting source [4, 6) seconds.
 
-- 剩余的 [0, 4) 与 [6, 12) 拼成 10 秒：源 [0, 4) 位于视频 [0, 4)，源 [6, 12) 位于视频 [4, 10)。
-- 源 [8.2, 9.0) 的字幕 occurrence 投影到视频 [6.2, 7.0)，对应帧 [186, 210)。
-- 恢复剪辑产生新的事务，不从旧快照里抹去后来添加的补充画面。
+- The remaining [0, 4) and [6, 12) join into 10 seconds. Source [0, 4) sits at video [0, 4), and source [6, 12) sits at video [4, 10).
+- A subtitle occurrence at source [8.2, 9.0) projects to video [6.2, 7.0), which is frames [186, 210).
+- Restoring a cut creates a new transaction, and does not wipe supplementary footage added later out of an old snapshot.
 
-### 6.7 剪口集合
+### 6.7 Cut set
 
-口播剪辑删掉的区间记在一份剪口集合里，供逐条恢复与重新验证。时间线上仍是普通的实例：剪口集合说明哪些源区间被删了，实例的排布是它的结果。
+The intervals removed by spoken-word cutting are recorded in a cut set, for per-cut restore and re-validation. On the timeline, instances remain ordinary. The cut set says which source intervals were removed, and the layout of the instances is its result.
 
 ```ts
-// 文档 kind: 'cut-set'（§4.6），文档头的 sourceAssetId 指向被剪的源素材
+// Document kind: 'cut-set' (§4.6). The document header's sourceAssetId points to the source asset being cut.
 interface CutSetBody {
   schema: 'cuccut.cut-set/1';
-  timescale: number;                   // 每秒的刻度数
-  clock: 'source-asset';               // 时刻在被剪素材的时钟上
-  scopeItemIds: Id[];                  // 按这份剪口排布的实例：源素材在序列上的视频、音频实例
-  cuts: Cut[];                         // 按 t0 排序，互不重叠
+  timescale: number;                   // ticks per second
+  clock: 'source-asset';               // moments are on the clock of the source asset being cut
+  scopeItemIds: Id[];                  // instances laid out by this cut set: the source asset's video and audio instances on the sequence
+  cuts: Cut[];                         // sorted by t0; non-overlapping
 }
 
 interface Cut {
   id: Id;
-  t0: string;                          // 删掉的源区间 [t0, t1)，整数刻度；0 ≤ t0 < t1 ≤ 素材时长
+  t0: string;                          // source interval [t0, t1) removed; integer ticks; 0 ≤ t0 < t1 ≤ asset duration
   t1: string;
-  ref?: Id;                            // 出处：EditorialProposal 里一条建议的 ID（§6.2）
+  ref?: Id;                            // origin: ID of a suggestion in the EditorialProposal (§6.2)
 }
 ```
 
-- 一个源素材至多一份剪口集合。
-- **加入剪口**。新的剪口与已有的剪口间隔不超过 0.02 秒时并成一个，保留靠前那个的 ID 与出处。拖动一个剪口的边界不合并，只要求不与其他剪口重叠（贴边允许）。
-- **应用与恢复**都是 VideoEngine 的事务：同一笔事务改剪口集合，并按新的保留区间重排 `scopeItemIds` 里的实例；附属实例按各自的 `FollowPolicy` 移动（§3.16，按时刻放置的缺省 `follow-cuts`）。恢复一个剪口是新的事务，不从旧快照里覆盖后来的修改。
-- **范围**。剪口集合的实例是 `scopeItemIds` 里的实例与 lineage 指回它们的实例（拆出来的右段）；一个都不在序列上时，取序列上播放这个素材的全部视频、音频实例。它们的源时钟须是正速率的线性映射，否则整笔拒绝。写回时 `scopeItemIds` 是重排之后的实例，按序列起点、再按 ID 排。
-- **重排**。这次新删掉的源区间经每个实例映射到序列上，起止各自量化到最近的帧，不足一帧的不动；同一条轨道上重叠的并成一段。产生这段区间的轨道是**被剪的轨道**，在它们上按 §6.4 波纹删除（盖住区间的拆开删掉中间，之后的前移）；其余轨道上的实例按 `FollowPolicy` 移动。同步放置的音画映射成同一段区间；不同轨道上的区间部分重叠时整笔拒绝（`INVALID_OPERATION`，`details.rule: 'scope-misaligned'`）。随剪口删掉的实例列在回执的 `impact.removedByCuts`。
-- **章节跟着剪口**。已定：应用剪口时，序列的章节按这次拿掉的各段区间（重排之前的帧）移动：段后的章前移拿掉的长度，落在段里的回到段首；几章落到同一帧时只留原来起点最晚的那一章，其余删掉（它们整章都被剪掉了）。恢复剪口时，接缝之后的章后移放回的长度；正在接缝上的章不动——它可能是被剪掉开头的那一章，也可能是剪口之后挪到接缝上的那一章，引擎分不出来，留在原地不会让序列开头空出一段没有章。找不到接缝时章节不动。章节不受锁定影响（§3.13）。
-- **恢复的接缝**。左边实例的源终点对着剪口起点、同一条轨道上紧接着的右边实例的源起点对着剪口终点时（各容差一帧，换到源时钟上），在接缝处放回两者之间的源区间：被剪的轨道上从接缝开始的实例后移，左边实例延长，两段按 `joinItems` 的规则能合并时接回一段，否则留成两段。只有左边时实例往后延长到剪口终点，只有右边时往前延长到剪口起点。同一处接缝在不同轨道上要放回的长度不同时整笔拒绝（`scope-misaligned`）。找不到接缝时只改剪口集合，剪口列在回执的 `impact.cutsNotRelaid`，实例不动。
-- 轨道或要动的实例锁着时整笔拒绝（`TARGET_LOCKED`），不跳过。
-- **重新验证**。实例在剪口之外被手工改过（裁切、移动、换素材）时，与剪口集合不一致的部分在回执里列出，由用户或智能体决定重新应用还是删掉对应的剪口；引擎不悄悄改回。
-- 接受剪辑建议（§6.2）时写入的剪口带 `ref`；建议被忽略或恢复时按 `ref` 找到对应的剪口。
-- 秒形式的输入（v2 的 `t0`、`t1`）按最短的十进制写法读成精确有理数，再换到 `timescale` 上；`timescale` 取能精确表示全部剪口的值，不舍入。
+- One source asset has at most one cut set.
+- **Adding a cut.** When a new cut is no more than 0.02 s from an existing cut, they merge into one, keeping the earlier one's ID and origin. Dragging a cut's boundary does not merge. It only requires that the cut not overlap other cuts (touching edges is allowed).
+- **Applying and restoring** are both VideoEngine transactions. The same transaction changes the cut set and rearranges the instances in `scopeItemIds` according to the new kept intervals. Attached instances move according to their own `FollowPolicy` (§3.16; attached instances placed at a moment default to `follow-cuts`). Restoring a cut is a new transaction, and does not overwrite later changes from an old snapshot.
+- **Scope.** The cut set's instances are those in `scopeItemIds` plus the instances whose lineage points back to them (the right-hand segment from a split). If none of them is on the sequence, take all video and audio instances on the sequence that play this asset. Their source clocks must be a linear mapping with positive rate, otherwise the whole batch is rejected. On write-back, `scopeItemIds` holds the rearranged instances, sorted by sequence start and then by ID.
+- **Rearrangement.** The newly removed source intervals are mapped through each instance onto the sequence. Start and end are each quantized to the nearest frame, and anything under one frame does not move. Overlapping ranges on the same track are merged into one segment. The tracks where such a segment arises are **the cut tracks**. On them, ripple delete per §6.4 applies (an interval covered by an instance is split and the middle removed, and later content moves forward). Instances on other tracks move according to `FollowPolicy`. Video and audio placed in sync map to the same interval. If intervals on different tracks partly overlap, the whole batch is rejected (`INVALID_OPERATION`, `details.rule: 'scope-misaligned'`). Instances removed along with cuts are listed in the receipt's `impact.removedByCuts`.
+- **Chapters follow cuts.** Decided: when a cut is applied, the sequence's chapters move according to the segments just removed (positions before rearrangement, in frames). A chapter after a removed segment moves earlier by the removed length. A chapter that falls inside a segment goes back to the segment's start. If several chapters land on the same frame, only the one with the latest original start is kept and the others are deleted, since they were entirely cut. When a cut is restored, chapters after the seam move later by the length put back. A chapter sitting exactly on the seam does not move. It may be the chapter at the start that was cut away, or a chapter moved onto the seam after the cut, and the engine cannot tell which. Leaving it in place avoids an empty stretch at the start of the sequence with no chapter. If no seam is found, chapters do not move. Chapters are not affected by locks (§3.13).
+- **Seam on restore.** When the source end of the left instance meets the cut start, and the source start of the right instance immediately following on the same track meets the cut end (each within a tolerance of one frame, converted to the source clock), the source interval between them is put back at the seam. On the cut tracks, instances starting at the seam move later, and the left instance is extended. If the two segments can be merged under the `joinItems` rules, they are rejoined into one; otherwise they stay as two. With only a left instance, it extends to the cut end. With only a right instance, it extends back to the cut start. If the same seam needs different lengths put back on different tracks, the whole batch is rejected (`scope-misaligned`). If no seam is found, only the cut set changes, the cut is listed in the receipt's `impact.cutsNotRelaid`, and instances stay put.
+- If a track or an instance to be moved is locked, the whole batch is rejected (`TARGET_LOCKED`). Nothing is skipped.
+- **Re-validation.** When an instance is edited by hand outside a cut (trimmed, moved, or asset swapped), the parts inconsistent with the cut set are listed in the receipt. The user or agent decides whether to re-apply or delete the corresponding cuts. The engine does not silently change them back.
+- A cut written when accepting an editorial suggestion (§6.2) carries `ref`. When a suggestion is ignored or restored, the corresponding cut is found by `ref`.
+- Seconds-form inputs (v2's `t0` and `t1`) are read as exact rationals in their shortest decimal form, then converted to `timescale`. `timescale` is chosen so that it represents all cuts exactly, with no rounding.
 
-字段来源：`schema.rs` 的 `Cut`；`cuts.rs` 的 `CutSet`、`CUT_MERGE_GAP`、`insert_cut`、`restore_cut`、`retime_cut`；章节的移动见 `crates/video-engine/src/chapters.rs` 的 `close_spans`、`open_gap`。
+Field sources: `Cut` in `schema.rs`; `CutSet`, `CUT_MERGE_GAP`, `insert_cut`, `restore_cut` and `retime_cut` in `cuts.rs`. For chapter movement, see `close_spans` and `open_gap` in `crates/video-engine/src/chapters.rs`.
 
 ---
 
-## 7. 配音、版本与声音事件
+## 7. Dubbing, versions and sound events
 
-### 7.1 三种文本分别保存
+### 7.1 Store the three texts separately
 
-| 文本 | 负责什么 |
+| Text | Responsible for |
 | --- | --- |
-| `naturalTranslation` | 语义完整 |
-| `subtitleDisplayRewrite` | 屏幕展示 |
-| `dubbingScript` | 说出口、语气与时长 |
+| `naturalTranslation` | Semantic completeness |
+| `subtitleDisplayRewrite` | On-screen display |
+| `dubbingScript` | What is spoken, tone and duration |
 
-三者指向同一个来源句，互不覆盖。用户改英文字幕不必无条件购买一轮语音合成；用户明确要求「同步配音」时才产生任务提案。
+All three point to the same source sentence and do not overwrite each other. Editing the English subtitle does not unconditionally require buying another round of speech synthesis. A task proposal is produced only when the user explicitly asks for “synced dubbing”.
 
 ### 7.2 DubbingPlan
 
@@ -1983,56 +1983,56 @@ interface DubbingPlan {
 }
 ```
 
-- 语音合成返回的**真实采样长度**才是音频时长的依据。
-- 字幕的逐词时间来自生成音频的时间标记，或对生成音频再做一次强制对齐；不得套用源语言的词时间。
-- 对配音做 time-stretch 时，字幕对齐必须经过相同的映射。
+- The **real sample length** returned by speech synthesis is the basis for audio duration.
+- Per-word subtitle timing comes from the time markers in the generated audio, or from one more forced alignment run on the generated audio. The source language's word timings must not be reused.
+- When dubbing is time-stretched, subtitle alignment must go through the same mapping.
 
-**翻译配音写下的配音计划**（架构设计 §7.9）。文档种类 `dubbing-plan`，正文的 `schema` 是 `cuccut.dubbing-plan/1`。`id` 与 `revision` 是文档记录的，不在正文里。与上面的接口相比：
+**The dubbing plan written when translating for dubbing** (architecture design §7.9). Document kind `dubbing-plan`; the body's `schema` is `cuccut.dubbing-plan/1`. `id` and `revision` are recorded by the document and are not in the body. Compared with the interface above:
 
-- 计划多两个字段：`groupId`，即这一组配音的 ID，与实例上的相同；`extensions['cuccut.dub']`，包括合成用的 `voice { providerId, modelId, voice }`（参数的或模型默认的音色，没有绑定的说话人用它）、各说话人用的音色 `speakers[] { speakerId, voice, voiceSource, available, units }`（`speakerId` 为 null 是没有说话人的句子；`voiceSource`：`video` 视频里的绑定、`params` 参数、`default` 模型默认），以及这次才静音的实例 `mutedItemIds`（原声静音时的原句实例，或分离过时换成两轨的原句实例；之前已经静音的不算）。`translationRef` 是用的那份译文与版本。`backgroundPolicy` 是 `separate-stems`（分离过）或 `none`。
-- 每个译文单元一个配音单元，`id` 是 `d-<译文单元 ID>`。`sourceSentenceIds` 只有一句。`script` 是译文与译文的版本，`reviewed: false`；过期的单元 `script: null`。`speakerBindingId` 是这句用了视频里的说话人绑定（`library-selection` 的 `speakerVoices`，§4.6）时那位说话人的 ID，用参数或默认音色的句子与过期的单元是 `null`。`targetAnchor` 是原句的开头（`kind: 'sentence'`、`edge: 'start'`）。`timingPolicy` 总是 `fit-fixed-slot`。
-- 换用文稿结转译文（§5.3）时，配音计划在同一笔事务里写新版本，`translationRef` 指向结转出的译文版本。原文相同、译句不变的单元换到新 ID `d-<新译文单元 ID>`，`sourceSentenceIds`、`sourceFingerprint`、`targetAnchor`、`extensions['cuccut.dub'].translationUnitId` 与配音实例扩展里的 `unitId` 换成新句与新单元的，音频、实例与其余字段保留；`script.revision` 仍是合成时用的译文版本，与计划的 `translationRef` 不同，界面据此提示可能不一致（与改译文时同一种提示，产品设计 §5.7），不自动重新合成。原文变了、译文因此过期的单元 `status: 'stale'`、`script: null`，`staleReason: 'source-changed'`，已放上的音频实例留在时间线上。旧句没配上的单元与译文一样不结转。
-- `actualSamples` 与 `sampleRate` 只写在放上时间线的单元上，是第一次出现的那段音频的实测值。`voiceAssetRef` 与 `alignmentRef` 不写：音频从实例找到，合成的产物 ID 在单元的扩展里。
-- `status` 只用五种：`ready`（放上了）、`needs-fit`（加速到上限、占用之后的静音仍放不下）、`draft`（原句不在时间线上）、`stale`（译文过期：没有合成，或换用文稿之前合成过、音频已不代表现在的译文）、`failed`（说话人绑定的音色不可用，没有合成，也没有换成别的音色）。
-- 单元的 `extensions['cuccut.dub']`：`translationUnitId`；没有过期的单元有 `voice`（这句用的音色：`library:<id>` 或 Provider 的音色 ID）与 `voiceSource`；放上时有 `fit`（`fit`、`tempo`、`extended`）、`tempo` 与 `artifactId`；放不下时有 `overflowSeconds`；不在时间线上时有 `offTimeline: true`；音色不可用时有 `voiceUnavailable { speakerId, voice, code, reason }`（`code` 如 `VOICE_CLONE_REQUIRED`、`VOICE_CONSENT_REQUIRED`、`VOICE_NOT_FOUND`，`reason` 如 `missing`、`stale`、`no-consent`、`removed`）；过期时有 `staleReason`（`marked-stale`、`sentence-gone`、`source-changed`、`glossary-changed`、`empty`）。
-- 配音实例是一条新音频轨（名字「配音（<语言>）」）上的 `audio` 实例，`role: 'dub'`，`extensions['cuccut.dub']` 是 `{ groupId, language, unitId }`。分离过时，分离出的背景声在另一条音频轨（「背景声（<语言>）」）上，`role: 'music'`，扩展是 `{ groupId, stem: 'background' }`；原声压低时人声也单独成轨（「人声（<语言>）」），`role: 'a-roll'`，扩展是 `{ groupId, stem: 'vocals' }`，闪避以它为目标。两轨的实例与被替换的原句实例同位置、同源区间。轨道没有语言字段，语言写在轨道名、实例扩展与计划里。导出按这些标记选择声音来源（命令与协议规范 §4.4）。
+- The plan has two extra fields. `groupId` is the ID of this dubbing group, the same as on its instances. `extensions['cuccut.dub']` includes `voice { providerId, modelId, voice }` used for synthesis (the parameter's or the model's default voice, used for speakers without a binding); the voice for each speaker, `speakers[] { speakerId, voice, voiceSource, available, units }` (`speakerId` null means a sentence with no speaker; `voiceSource` is `video` for a binding in the video, `params` for parameters, `default` for the model default); and `mutedItemIds`, the instances muted in this step (the original-sentence instances when the original audio is muted, or the original-sentence instances replaced by two tracks after separation; those already muted before do not count). `translationRef` is the translation version used. `backgroundPolicy` is `separate-stems` (if separated) or `none`.
+- One dubbing unit per translation unit, with `id` `d-<translation unit ID>`. `sourceSentenceIds` has exactly one sentence. `script` is the translation and its version, with `reviewed: false`; for a stale unit, `script: null`. `speakerBindingId` is the ID of the speaker whose video binding (`library-selection`'s `speakerVoices`, §4.6) this sentence uses. For sentences using a parameter or default voice, and for stale units, it is `null`. `targetAnchor` is the start of the original sentence (`kind: 'sentence'`, `edge: 'start'`). `timingPolicy` is always `fit-fixed-slot`.
+- When translation is carried over from the script (§5.3) by switching to a script, the dubbing plan writes a new version in the same transaction, and `translationRef` points to the carried-over translation version. Units whose source is unchanged and whose translated sentence is unchanged move to the new ID `d-<new translation unit ID>`. `sourceSentenceIds`, `sourceFingerprint`, `targetAnchor`, `extensions['cuccut.dub'].translationUnitId`, and the `unitId` in the dubbing instance's extensions are replaced with those of the new sentence and new unit. Audio, instances and other fields are kept. `script.revision` remains the translation version used at synthesis, which differs from the plan's `translationRef`. The UI uses this to show a possible mismatch (the same kind of hint as when a translation is edited, product design §5.7), and does not re-synthesize automatically. Units whose source changed, so their translation became stale, get `status: 'stale'`, `script: null` and `staleReason: 'source-changed'`. Audio instances already placed stay on the timeline. Units whose old sentence was not dubbed are not carried over, same as the translation.
+- `actualSamples` and `sampleRate` are written only on units placed on the timeline, as the measured values of the first audio segment. `voiceAssetRef` and `alignmentRef` are not written. Audio is found from the instance, and synthesis product IDs are in the unit's extensions.
+- `status` uses only five values. `ready` means placed on the timeline. `needs-fit` means sped up to the limit, but the silence after it still cannot fit. `draft` means the original sentence is not on the timeline. `stale` means the translation is stale: either not synthesized, or synthesized before a script switch, so the audio no longer represents the current translation. `failed` means the speaker binding's voice is unavailable; nothing was synthesized, and it was not switched to another voice.
+- A unit's `extensions['cuccut.dub']` holds `translationUnitId`. Non-stale units have `voice` (the voice used for this sentence: `library:<id>` or the Provider's voice ID) and `voiceSource`. When placed, they have `fit` (`fit`, `tempo`, `extended`), `tempo` and `artifactId`. When it does not fit, `overflowSeconds`. When not on the timeline, `offTimeline: true`. When the voice is unavailable, `voiceUnavailable { speakerId, voice, code, reason }` (`code` such as `VOICE_CLONE_REQUIRED`, `VOICE_CONSENT_REQUIRED`, `VOICE_NOT_FOUND`; `reason` such as `missing`, `stale`, `no-consent`, `removed`). When stale, `staleReason` (`marked-stale`, `sentence-gone`, `source-changed`, `glossary-changed`, `empty`).
+- A dubbing instance is an `audio` instance on a new audio track named “配音（<语言>）” (“Dub (<language>)”), with `role: 'dub'` and `extensions['cuccut.dub']` set to `{ groupId, language, unitId }`. When separated, the separated background sound sits on another audio track named “背景声（<语言>）” (“Background (<language>)”), with `role: 'music'` and extensions `{ groupId, stem: 'background' }`. When the original is ducked, the vocals also get their own track, “人声（<语言>）” (“Vocals (<language>)”), with `role: 'a-roll'` and extensions `{ groupId, stem: 'vocals' }`, and ducking targets it. The instances on the two tracks sit at the same position and the same source interval as the original-sentence instances they replace. Tracks have no language field. The language is written in the track name, the instance extensions and the plan. Export selects the sound source by these markers (command and protocol spec §4.4).
 
-### 7.3 长度适配
+### 7.3 Length fitting
 
-默认 `fit-fixed-slot`，即保留原画面的时长。流程：
+The default is `fit-fixed-slot`, which keeps the duration of the original picture. Flow:
 
 ```text
-按术语与含义约束重写口语脚本 → 语音合成 → 测量
-  → 有界的语速调整或时间拉伸 → 重新对齐 → 质量检查
+Rewrite the spoken script under term and meaning constraints → speech synthesis → measure
+  → bounded speaking-rate adjustment or time stretch → re-align → quality check
 ```
 
-调整的边界是用户或视频的策略（例如「最多调整若干比例」）。这个阈值只是产品规则，不保证听感。
+The bounds of the adjustment are set by user or video policy (for example, “adjust by at most N percent”). This threshold is only a product rule; it does not guarantee how the result sounds.
 
-仍然放不下时，返回 `needs-fit`，并给出明确的提案：重写脚本、延长允许延长的静态或代码画面，或创建节奏不同的语言版本。不得默认加速整段口播画面，也不得截断最后几个词。
+If it still does not fit, return `needs-fit` with a clear proposal: rewrite the script, extend the static or code frames that are allowed to be extended, or create a language version with a different pacing. Do not speed up the whole narrated picture by default, and do not cut off the last few words.
 
-### 7.4 生成与局部维护
+### 7.4 Generation and local maintenance
 
-- 给定的音频文件是默认的时间依据，不自动重新合成语音。
-- 文字任务先确认脚本与声音；允许先试听有代表性的短段，再按明确的范围生成。
-- 旧脚本的音频可以保留为候选，但不得标成与新脚本同步。
-- 只有用户明确要求「同步声音」，或原任务合同已经包含这一步时，改配音文本才产生新的语音合成。
-- 更换 Provider 不会默默更换声音身份。
-- 剪口播之后：完整的句子只是移动时可以重新投影；句内删词需要检查有效语义。绝不能用源语言的剪点直接去裁目标语言的发音。
-- 自动修复尚未开放时，`stale` 与 `needs-fit` 的提示仍然是全阶段约束。
+- The given audio file is the default timing basis. Speech is not re-synthesized automatically.
+- For text tasks, confirm the script and the voice first. You may audition a representative short segment before generating within an explicit scope.
+- Old audio may be kept as a candidate, but it must not be labeled as in sync with the new script.
+- Speech synthesis for changed dubbing text happens only when the user explicitly asks to “sync the voice,” or when the original task contract already includes this step.
+- Changing the provider does not silently change the voice identity.
+- After cutting narration: a complete sentence may only be re-projected when it is moved. Deleting words inside a sentence requires checking the effective meaning. Never cut the target-language pronunciation directly with source-language cut points.
+- While automatic repair is not yet available, the `stale` and `needs-fit` hints remain constraints for all stages.
 
-### 7.5 音频的现实边界
+### 7.5 Real limits of audio
 
-- 源视频只有「人声 + 音乐 + 环境声」的混合轨时，静音它会让三者全部消失。要保留背景，必须使用已有的分轨，或新增分离任务并检查分离的伪影。不能声称关一个开关就能完美去掉原说话声。
-- 译配的声音与原声默认不同时以同等音量播放。
-- 说话人分离、声音身份与画面中的人物，是三个不同的推断。没有证据时保持未知身份，由用户绑定声音。
-- 声音克隆与上传外部服务是独立的审批项，不由「翻译字幕」的请求隐式授权。
+- When the source video has only a mixed track of “voice + music + ambience,” muting it removes all three. To keep the background, use existing separate stems, or add a separation task and check the separation artifacts. Do not claim that flipping one switch perfectly removes the original speech.
+- Dubbed voice and original audio do not play at equal volume by default.
+- Speaker diarization, voice identity, and the people on screen are three different inferences. Without evidence, keep the identity unknown and let the user bind the voice.
+- Voice cloning and uploading to external services are separate approval items. A request to “translate subtitles” does not implicitly authorize them.
 
 ### 7.6 LocalizationSet
 
-同一个画面序列可以有多个语言版本。每个版本选择字幕流、配音计划、文字覆盖与音频路由。
+One picture sequence can have several language versions. Each version selects its caption streams, dubbing plan, text overrides and audio routing.
 
 ```ts
-// 本规范补全
+// Completed by this spec
 interface LocalizationSet {
   id: Id;
   revision: Revision;
@@ -2040,47 +2040,47 @@ interface LocalizationSet {
   language: string;
   captionProgramIds: Id[];
   dubbingPlanId?: Id;
-  textOverrides: Array<{ itemId: Id; propertyPath: string; value: JsonValue }>;   // 仅白名单字段
+  textOverrides: Array<{ itemId: Id; propertyPath: string; value: JsonValue }>;   // allowlisted fields only
   audioRouting: { originalDialogue: 'mute' | 'duck' | 'keep'; trackOverrides?: Record<Id, { muted: boolean; gainDb?: number }> };
 }
 ```
 
-- 覆盖只允许白名单内的字段：语言文本、字幕、配音与音频路由。
-- 结构差异较大时，分叉出新的序列（`forkSequence`），并保存父版本与来源关系；不维护一套无限复杂的覆盖语言。
-- 一个版本可以用源语言字幕，另一个用译文加译配。切换版本不得删除其他语言的资源。
-- 只涉及画面变换的修改对共享的版本都生效；会改变时序的操作必须给出所有语言的依赖失效摘要。
+- Overrides are allowed only on allowlisted fields: language text, captions, dubbing and audio routing.
+- When structural differences are large, fork a new sequence (`forkSequence`) and keep the parent version and the source relation. Do not maintain an endlessly complex set of override languages.
+- One version may use source-language captions, while another uses translated text plus dubbing. Switching versions must not delete the resources of other languages.
+- Changes that only involve picture transforms take effect in every shared version. Operations that change timing must provide a dependency invalidation summary for all languages.
 
 ### 7.7 CanvasVariant
 
 ```ts
-// 本规范补全
+// Completed by this spec
 interface CanvasVariant {
   id: Id;
   revision: Revision;
   baseSequenceRef: VersionRef;
   canvas: { width: number; height: number };
   layoutOverrides: Array<{ itemId: Id; place?: Place; crop?: Crop; mode?: 'fullscreen' | 'pip'; fit?: 'cover' | 'contain'; hidden?: boolean }>;   // §3.5
-  parameterOverrides: Array<{ itemId: Id; parameters: JsonValue }>;      // 代码合成的响应式参数
+  parameterOverrides: Array<{ itemId: Id; parameters: JsonValue }>;      // responsive parameters of code composition
   captionLayoutProfileId?: Id;
 }
 ```
 
-- 画幅版本引用基础序列，加上明确的画布、布局、裁切与参数覆盖。编译时生成派生的快照，而不是另一条可以随意写入的主时间线。
-- 结构差异大时分叉序列，保留父版本。
-- 用户说「只改英文竖版」时，命令必须携带 `variantId` 与覆盖范围。
-- 共享的字体或自然译句改变时，相关的投影重新布局，不重做语音识别。影响时序的修改必须列出所有语言的依赖。
-- 代码包没有声明响应式能力时，明确使用 contain 或 cover，或提出重构。改变纵横比不等于相机会自动重新构图。
+- An aspect-ratio variant references a base sequence, plus explicit canvas, layout, crop and parameter overrides. At compile time it produces a derived snapshot, not another main timeline that can be written freely.
+- When structural differences are large, fork the sequence and keep the parent version.
+- When the user says “only change the English vertical version,” the command must carry `variantId` and the override scope.
+- When a shared font or a natural translated sentence changes, the related projections re-lay out. Speech recognition is not redone. Changes that affect timing must list the dependencies of all languages.
+- When the code package does not declare responsive capability, explicitly use contain or cover, or propose a refactor. Changing the aspect ratio does not mean the camera will automatically recompose the shot.
 
 ### 7.8 SyncGroup
 
 ```ts
-// 本规范补全。P1
+// Completed by this spec. P1
 interface SyncGroup {
   id: Id;
   masterClock: { assetRef: VersionRef } | { kind: 'sequence'; sequenceId: Id };
   members: Array<{
     assetRef: VersionRef;
-    offset: MediaTime;                 // 相对主时钟
+    offset: MediaTime;                 // relative to master clock
     timeMap?: TimeMap;
     confidence?: number;
     source: 'auto-audio' | 'timecode' | 'manual';
@@ -2088,15 +2088,15 @@ interface SyncGroup {
 }
 ```
 
-- 自动同步是可以校正的分析产物。
-- 切换视觉机位不切换主麦克风。画中画是两层。
-- 删除语音段时，按显式的联动范围处理整个同步组。
-- 混合帧率与可变帧率的素材各自按 PTS 映射。
-- 未知的人物或声音身份由用户绑定，不猜测。
+- Automatic sync is an analysis artifact that can be corrected.
+- Switching the visual camera angle does not switch the master microphone. Picture-in-picture is two layers.
+- When deleting a speech segment, handle the whole sync group according to the explicit linked scope.
+- Mixed-frame-rate and variable-frame-rate footage is mapped by PTS, each on its own.
+- Unknown person or voice identities are bound by the user. They are not guessed.
 
 ### 7.9 SoundCueSheet
 
-旁白、配乐与音效分开组织。SoundCueSheet 是可以受控编辑的声音事件计划；不在代码合成的 `renderAt` 里随机播放音效。
+Narration, music and sound effects are organized separately. SoundCueSheet is a sound-event plan that can be edited under control. Sound effects are not played at random inside the code-composition `renderAt`.
 
 ```ts
 interface SoundCue {
@@ -2119,88 +2119,88 @@ interface SoundCueSheet {
 }
 ```
 
-- SoundCueSheet 是作者意图与构建记录，不是第二条可以独立演进的主音轨。
-- 编译之后，每个 cue 以确定性的 ID 映射到一个普通的 `AudioItem`，经同一个事务写入。回执保留 cue → item 的映射与 lineage。
-- 重复出现的同一个音效引用同一个素材版本，只创建多个音频实例，不重复下载或购买。
-- 用户在时间线上移动、替换或静音某个音效之后，记录对应的 pin 或 override。之后重新编译时保留它、提示冲突，或由用户显式重置；不从旧的计划全量覆盖。
-- 语音锚消失时进入 `orphaned`。固定的音效不跟随无关的 ripple。
-- 旁白、配乐、音效各自路由。Adapter 内部的音频不得同时再进入外部混音。
-- `gainDb` 不是响度的测量结果；是否过响需要通过真实的混音、峰值与响度检查以及试听来判断。
-- 生成新的音乐或音效是独立的能力与费用授权。
-- 复用原生 `AudioItem` 的能力属于 P0；更丰富的自动声音设计按验证的范围逐步开放。
+- SoundCueSheet is a record of author intent and build output. It is not a second main audio track that can evolve on its own.
+- After compilation, each cue maps to an ordinary `AudioItem` with a deterministic ID, written through the same transaction. The receipt keeps the cue → item mapping and lineage.
+- A repeated sound effect references the same asset version. It creates only more audio instances, with no repeated download or purchase.
+- After the user moves, replaces or mutes a sound effect on the timeline, record the corresponding pin or override. On later recompilation, keep it, raise a conflict, or let the user reset it explicitly. Do not overwrite everything from the old plan.
+- When the voice anchor disappears, the cue enters `orphaned`. A pinned sound effect does not follow unrelated ripple edits.
+- Narration, music and sound effects are routed separately. Audio inside an adapter must not also enter the external mix.
+- `gainDb` is not a loudness measurement. Whether something is too loud must be judged through a real mix, peak and loudness checks, and audition.
+- Generating new music or sound effects is a separate capability and cost authorization.
+- Reusing native `AudioItem` belongs to P0. Richer automatic sound design opens up step by step, as its scope is validated.
 
 ### 7.10 NarrationCueSheet
 
-用配音驱动画面时（产品设计 S04），旁白时序表记录句子、词锚、镜头意图与实际时间。
+When the picture is driven by narration (product design S04), the narration timing sheet records sentences, word anchors, shot intent and actual times.
 
 ```ts
-// 本规范补全
+// Completed by this spec
 interface NarrationCueSheet {
   id: Id;
   revision: Revision;
   sequenceId: Id;
-  audioRef: VersionRef;                 // 给定的或已确认的旁白音频
-  speechRef?: VersionRef;               // 对齐得到的语音文档
+  audioRef: VersionRef;                 // narration audio given or confirmed
+  speechRef?: VersionRef;               // speech document produced by alignment
   cues: Array<{
     id: Id;
     sentenceId?: Id;
     wordIds?: Id[];
-    span: { start: MediaTime; end: MediaTime };     // 音频域的精确时间
+    span: { start: MediaTime; end: MediaTime };     // exact time in the audio domain
     shotIntent?: string;
-    sceneRef?: Id;                                  // 对应的场景或实例
+    sceneRef?: Id;                                  // corresponding scene or instance
   }>;
 }
 ```
 
-- 它是受控的输入与派生物，不是另一条会独立漂移的播放时钟。
-- 保留真实的音频与词锚时序。只有在为视觉场景生成 `fromFrame` / `durationFrames` 时才量化，并记录偏差。
-- 替换音频产生新版本；对齐结果与绑定的场景按依赖标记为过期。
+- It is a controlled input and a derived artifact. It is not another playback clock that drifts on its own.
+- Keep the real audio and word-anchor timing. Quantize only when generating `fromFrame` / `durationFrames` for visual scenes, and record the deviation.
+- Replacing the audio creates a new version. Alignment results and bound scenes are marked stale according to their dependencies.
 
-### 7.11 音频事件与视频网格相互独立
+### 7.11 Audio events and the video grid are independent
 
-`SoundCue`、语音合成的 `actualSamples`、对齐结果和淡化都使用采样或精确的时间。音频实例使用 §2.10 的精确开始位置与 `playDuration`；时间线上的帧宽只是界面投影。10 毫秒的淡化在 48 kHz 下是 480 个采样，不向上补成一个视频帧。
+`SoundCue`, speech synthesis `actualSamples`, alignment results and fades all use samples or exact time. Audio instances use the exact start position and `playDuration` from §2.10. The frame width on the timeline is only a UI projection. A 10 ms fade is 480 samples at 48 kHz, and it is not rounded up to a video frame.
 
-修改 `ExportSettings.fps` 不改变脚本、音频长度、采样率或声音身份。修改 `Sequence.fps` 需要保留音频精确的绝对位置，并重建它的「帧 + 余数」表示。
+Changing `ExportSettings.fps` does not change the script, the audio length, the sample rate or the voice identity. Changing `Sequence.fps` requires keeping the exact absolute audio positions and rebuilding their “frame + remainder” representation.
 
 ---
 
-## 8. 便携包
+## 8. Portable package
 
-视频可以导出为一个 `.cuccut` 文件：不压缩的 POSIX ustar 归档，只有普通文件（架构设计 §5.8）。文件夹形式不做。
+A video can be exported as a `.cuccut` file: an uncompressed POSIX ustar archive that contains only regular files (architecture design §5.8). The folder form is not supported.
 
 ```text
-video.snapshot.json              # 权威状态的可交换快照（§3.1）；不是第二个写入端。素材全部是 managed
-documents/<id>/<revision>.json   # 文档正文的各个版本，按存下的原文（摘要按原文算）
-assets/<sha256>.<ext>            # 收进来的素材：文件；扩展名由 mediaType 定，没有对应的是 bin
-assets/<sha256>/<相对路径>        # 收进来的素材：目录（代码包的源码、清单、依赖锁与静态资源），逐个文件
-video.manifest.json              # 打包版本与内容清单，归档里的最后一个文件
+video.snapshot.json              # exchangeable snapshot of authoritative state (§3.1); not a second writer. All assets are managed
+documents/<id>/<revision>.json   # versions of document bodies, stored as the original text (digests are computed over the original text)
+assets/<sha256>.<ext>            # imported asset: file; extension determined by mediaType, bin when there is no match
+assets/<sha256>/<relative path>  # imported asset: directory (code package source, manifest, dependency lock and static resources), file by file
+video.manifest.json              # package version and content manifest, the last file in the archive
 ```
 
-来源与生成说明在快照的 `provenance` 里，不另设目录。路径都是 `/` 分隔的相对路径，只能是上面这几种形式。
+Provenance and generation notes are in `provenance` inside the snapshot, with no separate directory. Paths are `/`-separated relative paths and may only take the forms above.
 
-### 8.1 清单
+### 8.1 Manifest
 
 ```ts
-// 本规范补全
+// Completed by this spec
 interface PackageManifest {
   format: 'cuccut.package';
   packageVersion: 1;
   videoSchemaVersion: number;
   timeContractVersion: number;
-  videoId: Id;                           // 导出时的视频；打开包得到的视频有新的 videoId
+  videoId: Id;                           // video at export time; a video opened from a package gets a new videoId
   videoName: string;
   videoRevision: Revision;
   createdAt: string;
   entries: Array<{
     ref: VersionRef;
     kind: 'asset' | 'document';
-    path?: string;                       // 包内的相对路径
+    path?: string;                       // relative path inside the package
     contentHash: string;
     byteLength: number;
-    inclusion: 'included' | 'linked' | 'missing' | 'excluded-license';   // 现在只写 included 与 missing
+    inclusion: 'included' | 'linked' | 'missing' | 'excluded-license';   // currently only included and missing are written
     note?: string;
   }>;
-  files: Array<{                         // 包里的每个文件（清单自己除外）
+  files: Array<{                         // every file in the package (except the manifest itself)
     path: string;
     byteLength: number;
     sha256: string;                      // 'sha256:<hex>'
@@ -2208,63 +2208,63 @@ interface PackageManifest {
 }
 ```
 
-`entries` 是每个素材版本与文档版本一项。收进包的单个文件，它在 `files` 里的 sha256 就是版本的 `contentHash`；目录素材的 `contentHash` 是按 §4.2 的规则算出的目录摘要，由引擎打开时重算。`files` 与归档里的文件一一对应。
+`entries` has one item for each asset version and each document version. For a single file collected into the package, its sha256 in `files` is the version's `contentHash`. For a directory asset, the `contentHash` is the directory digest computed by the rule in §4.2, which the engine recomputes when the package is opened. `files` corresponds one-to-one with the files in the archive.
 
-### 8.2 规则
+### 8.2 Rules
 
-- 打包使用一致性快照。不把带有未 checkpoint 的 WAL 的工作数据库直接复制出去当作完成的视频。
-- 链接素材复制进包，快照里改成 `managed`。读不到的素材默认拒绝导出；用户选择跳过时清单标 `missing`，快照里是只有文件名、`frozen: false` 的链接素材，接收方用 `relinkAsset` 找回。「链接式」的包（`linked` / `excluded-license`，素材留在外面）以后再做。
-- 包里不带本机的绝对路径（§4.2）：快照里出现本机根目录的字符串换成占位并警告，文档正文里出现时拒绝导出。
-- 打开时逐项核对，任何一项不符都拒绝、不建视频：`format` 是 `cuccut.package`；`packageVersion` 不高于读的一方支持的版本（更高的拒绝，`PACKAGE_VERSION_UNSUPPORTED`）；归档里只有普通文件，路径只能是上面的布局，不能有 `..`、绝对路径、反斜杠，符号链接与硬链接条目拒绝（`PACKAGE_PATH_UNSAFE`）；清单的 `files` 与归档一一对应、没有重复；每个文件的长度与 sha256 相符，收进包的单个文件的摘要等于版本的 `contentHash`（`PACKAGE_DIGEST_MISMATCH`）。引擎建视频时再按 `contentHash` 重算一次文档与素材，按提交时的规则检查快照。
-- 只有预先渲染好的 MP4 是可播放的媒体，不是可编辑的源。
-- 含源码的代码包固定依赖锁，并带上离线可用的 bytes。只有锁文件而没有 bytes，不能声称可以离线重建。
-- 包里不包含密钥、受保护的机器路径或任务未授权的文件。
-- 临时 URL、blob URL、浏览器对象和 GPU 句柄不得进入交换格式。
-- 打开包时验证清单；缺失的资源明确列出。代理或预先渲染的预览可以让用户先浏览，但不能被当成已经恢复了可编辑的源。
+- Packaging uses a consistent snapshot. Do not copy a working database that has a WAL which has not been checkpointed, and treat it as a finished video.
+- Linked assets are copied into the package and marked `managed` in the snapshot. Assets that cannot be read are rejected for export by default. If the user chooses to skip them, the manifest marks them `missing`, and the snapshot holds a linked asset with only its filename and `frozen: false`, which the receiver recovers with `relinkAsset`. “Linked” packages (`linked` / `excluded-license`, with assets left outside) will come later.
+- Local absolute paths (§4.2) are not included in the package. A string in the snapshot that contains the local root directory is replaced with a placeholder and a warning is issued. If it appears in a document body, export is rejected.
+- On open, every item is checked. Any mismatch rejects the package and creates no video: `format` must be `cuccut.package`; `packageVersion` must not be higher than the version the reader supports (a higher one is rejected with `PACKAGE_VERSION_UNSUPPORTED`); the archive may contain only regular files, the paths must follow the layout above, and there may be no `..`, absolute paths or backslashes; symlink and hard-link entries are rejected (`PACKAGE_PATH_UNSAFE`); the manifest's `files` must correspond one-to-one with the archive, with no duplicates; each file's length and sha256 must match, and for each single file collected into the package the digest must equal the version's `contentHash` (`PACKAGE_DIGEST_MISMATCH`). When the engine creates the video, it recomputes the `contentHash` of documents and assets again, and checks the snapshot against the rules applied at commit time.
+- Only pre-rendered MP4 is playable media, not editable source.
+- A code package that contains source pins its dependency lock and includes bytes that work offline. A lock file without bytes does not allow a claim of offline rebuild.
+- The package does not include keys, protected machine paths, or files the task is not authorized to include.
+- Temporary URLs, blob URLs, browser objects and GPU handles must not enter the exchange format.
+- When a package is opened, its manifest is verified, and missing resources are listed explicitly. A proxy or pre-rendered preview may let the user browse first, but it must not be treated as having restored editable source.
 
-压缩、签名、pax 扩展（路径超过 255 字节、单个文件 8 GiB 以上）与文件夹形式以后再做（架构设计 §14）。
+Compression, signing, pax extensions (paths longer than 255 bytes, single files of 8 GiB or more) and the folder form come later (architecture design §14).
 
 ---
 
-## 9. 待补全项
+## 9. Items to complete
 
-以下类型或规则由本规范补全，或仍有空缺，需要在实现前评审。
+The following types or rules are completed by this spec, or still have gaps, and need review before implementation.
 
-| 事项 | 状态 | 需要决定什么 |
+| Item | Status | What needs to be decided |
 | --- | --- | --- |
-| 文字样式与图形模型（§3.6） | 已定：图形取 v2 的 `shape` 参数与形状目录；文字样式取 v2 的样式对象，字体按 §3.14 引用；文字样式的键表还没有写进本规范 | 随渲染核心移植写入文字样式的键、单位与取值；文字框固定还是随内容撑开 |
-| 关键帧与元素动画（§3.15） | 已定：关键帧的属性白名单、百分比时刻、`motion` 的缓动表；入场、出场、循环三槽作为正式字段保存，由 `motion` 取样，不展开成关键帧；`animationBindings` 与 `animate` 都未实现 | 字幕动画是否沿用同一套槽 |
-| 圆角的单位（§3.5） | 已定：540 短边下的像素，四角各自的值 `cornerRadii` | — |
-| 留边底色与画布背景（§3.2、§3.5） | 已定：实例的 `bg` 在全屏加 `contain` 时铺满画布；画布背景是纯色 | — |
-| `Crop`（§3.5） | 已定：四边各裁掉的比例，在 `fit` 之前，只用于视频与图片 | — |
-| 生成类元素（§3.7） | 已定：取消内置生成器，计时、贴纸、声波、进度条、手绘、占位框、彩纸、白板各是实例的种类或参数，Lottie 是一种素材（§4.1） | — |
-| 预渲染替身的失效（§3.7） | 未跟踪 | 参数或代码包版本变化之后，替身怎么标为过期 |
-| 嵌套序列、调整层（§3.4） | 未纳入 | 是否以及何时加入 |
-| 替换素材版本（§4.2） | 操作未实现 | 代码包换版、源文件重新导出时如何登记新版本并影响选定的实例 |
-| 派生媒体的源时钟（§4.5、§4.6） | 待评审：重构图等产物替代原素材后，仅有来源说明不足以把原素材上的转写自动投影到新素材实例 | 是否增加绑定素材版本的派生时间映射，以及恒等映射的显式声明；缺少映射时不能仅凭文件名或相近时长认定两份素材共用时钟 |
-| 链接素材的失效检测（§4.2） | 只记了修改时间；缺失的报告已定：`videos.assetStatus` 列出读不到的素材版本与原因，视频照常打开 | 何时重新核对内容；`frozen` 的确切含义；缺失素材在导出里的表现 |
-| 文档正文的校验（§4.4、§4.6） | 引擎只核对 `cuccut.speech/1`、`cuccut.translation/2` 补充字段的形状与定位框字幕样式的逐词动画（§5.6） | 哪些 `kind` 由引擎完整校验；`kind` 与 `schema` 的登记处 |
-| §5 的模型与已落盘的正文格式（§4.6） | 不一致；译文按 §5.3 的是 `cuccut.translation/2`，旧项目导入的 `/1` 只读兼容（§5.3），不迁移；`cuccut.speech/1` 补上了字幕与翻译核心读写的字段，与 `TranscriptDoc` 无损互换（§5.2） | 句子与字幕行存结果，还是存派生算法的版本加人工钉子；过期如何发现。已定：译文的句子派生与原文指纹只有字幕与翻译核心的一套（§5.3），原来翻译流程的 `cuccut.sentences/1` 与 `sha256:` 指纹删除 |
-| `caption-style`（§5.6） | 已落盘的是 Studio 样式与定位框样式两种正文，引擎只核对定位框样式的逐词动画；`CaptionStyleBody`（按维度组合的目标合同，[设计稿](../design/subtitle/caption-style-model-design.md)）已在编辑器与原型落地（编译到 Studio 样式），尚未作为正文落盘。默认预设已落盘（§5.6「默认预设」）：一份不分语言的 Studio 样式 | 与 `LayoutProfile`、`CaptionStyle` 的关系；阅读预算的单位；是否按语言分开默认预设 |
-| 导出记录与导入记录（§4.6） | 借用文档 | 产物记录是否成为一等概念；与依赖链接的衔接 |
-| `Provenance` 的结构化字段、`LicenseState`、`ColorInfo`（§4） | 未纳入 | 生成记录、派生关系、授权与许可状态的字段；颜色元数据的字段 |
-| 视频级的 `extensions`（§1.4） | 只有实例与文档有 | 是否需要 |
-| `ItemBase`（§3.4） | 本规范补全 | `paintOrder` 与 `Track.order` 的组合规则 |
-| `Sequence.canvas.workingSpace`（§3.2） | 引擎不限定取值 | 首版支持的工作空间 |
-| `SemanticAnchor`、`FollowPolicy`（§3.16） | 已定：起止各自的锚点、词锚点的偏移、到序列末尾、`follow-cuts` 与它的缺省（按时刻放置的实例从新建起缺省）。已定：`speech-anchor` 每笔事务按时间线重求，出现处与歧义按 v2 的规则，求不出的留在原处、`orphaned` 现算不落盘。已定：`item-local` 按目标的源时刻跟随，拆开跟锚点所在的一段，起点修剪越过锚点时到新起点，目标删掉时一起删。已实现 `sequence-fixed`、`follow-cuts`（剪口事务里）、`speech-anchor`、`item-local` 与到序列末尾；`explicit-link-group` 不在这一版的范围，只保存与校验形状，不移动 | `explicit-link-group` 的联动规则 |
-| `ProtectionRecord`（§3.10） | 本规范补全 | 持久保护与任务级保护的边界；`confirmed` 的强制程度 |
-| `Checkpoint`（§3.11） | 本规范补全 | 检查点是否允许带分支 |
-| `DependencyLink.kind`（§3.12） | 本规范补全 | 依赖种类的枚举 |
-| `ImportedCaptionDocument`、`AlignmentBlock`、`CaptionOverride`（§5） | 本规范补全 | override 的种类与取值 |
-| `LocalizationSet`、`CanvasVariant`、`SyncGroup`（§7） | 本规范补全 | 覆盖字段的白名单 |
-| `NarrationCueSheet`（§7.10） | 本规范补全 | 是否与 `SoundCueSheet` 的 narration 角色合并 |
-| `PackageManifest`（§8.1） | 已定：容器是 ustar，逐个文件的长度与 sha256 | 签名；压缩与 pax 扩展 |
-| 章节（§3.13） | 已定：`kind: 'chapter'` 的标记，固定在序列时间上 | — |
-| 效果、转场、easing 的白名单（§3.9） | 已定：转场 `dissolve`、`wipe`、`slide`、`zoom`、`iris`、`dip-to-color`、`push`，单侧按 v2 的画法；效果是 `fx` 的固定字段与固定顺序，加滤镜与特效预设；转场的 easing `linear`、`ease-in`、`ease-out`、`ease-in-out` | `temperature`、`shadow`、`stroke` 的配方；效果与转场参数的关键帧。已定不合并：转场的 easing 保持这四种，`motion` 的缓动表只用于关键帧与元素动画 |
-| 闪避（§3.9） | 已定：按文稿或按实例触发，v2 的曲线与合并规则 | — |
-| 剪口集合（§6.7） | 已定：加入、合并、恢复与重排已实现（`addCuts`、`restoreCut`） | 手工修改与剪口不一致时的提示方式 |
-| 模板层（§3.17） | 已定，未实现 | `ratio` 与画幅锁和画幅版本（§7.7）怎么共处 |
-| v2 的 `bcfClip`（音频元素） | 已定：配音认领代码合成里的口播句子，落成合成与配音的音画联动组（§3.7「声音」）；认领的句子 ID 不进格式 | 合成能实时运行时，是否按句只扣掉认领的声音 |
-| 可变帧率（§2.11） | 规则已定，未实现 | 现在按标称帧率处理 |
-| HDR | 首版只支持 SDR 严格导出 | HDR 输入的 tone-map 策略 |
-| 变速曲线、倒放、`preserve=frames` | 未纳入 | 是否以及何时开放 |
+| Text style and graphics model (§3.6) | Decided: graphics take v2's `shape` parameter and shape catalog; text styles take v2's style object, with fonts referenced per §3.14; the key table for text styles is not yet written into this spec | The keys, units and values for writing text styles when porting the render core; whether the text box is fixed or grows with its content |
+| Keyframes and element animation (§3.15) | Decided: the keyframe property allowlist, percentage timing, and the easing table for `motion`; the entrance, exit and loop slots are saved as formal fields, sampled by `motion`, and not expanded into keyframes; `animationBindings` and `animate` are not implemented | Whether caption animation reuses the same slots |
+| Corner radius unit (§3.5) | Decided: pixels at the 540 short edge, with a value per corner, `cornerRadii` | — |
+| Margin fill color and canvas background (§3.2, §3.5) | Decided: the instance `bg` fills the canvas when full-screen with `contain`; the canvas background is a solid color | — |
+| `Crop` (§3.5) | Decided: the proportion cut from each of the four edges, applied before `fit`, used only for video and images | — |
+| Generated elements (§3.7) | Decided: built-in generators are removed; timers, stickers, sound waves, progress bars, hand-drawn, placeholder frames, confetti and whiteboards are each an instance kind or parameter; Lottie is one kind of asset (§4.1) | — |
+| Invalidation of pre-rendered stand-ins (§3.7) | Not tracked | How a stand-in is marked stale after a parameter or code package version changes |
+| Nested sequences, adjustment layers (§3.4) | Not included | Whether and when to add them |
+| Asset version replacement (§4.2) | Operation not implemented | How a new version is recorded, and which selected instances it affects, when the code package is replaced or the source file is re-exported |
+| Source clock of derived media (§4.5, §4.6) | Under review: after a derived product such as a reconstructed shot replaces the original asset, a source note alone is not enough to automatically project the transcript on the original asset onto the new asset instance | Whether to add a derived time mapping bound to the asset version, and an explicit declaration of the identity mapping; without a mapping, two assets must not be considered to share a clock based only on filename or similar duration |
+| Failure detection for linked assets (§4.2) | Only the modification time is recorded; reporting for missing assets is decided: `videos.assetStatus` lists the asset versions that cannot be read and the reason, and the video still opens | When to re-check content; the exact meaning of `frozen`; how missing assets appear in export |
+| Validation of document body (§4.4, §4.6) | The engine only checks the shape of the supplementary fields of `cuccut.speech/1` and `cuccut.translation/2`, and the per-word animation of box-positioned caption styles (§5.6) | Which `kind`s the engine fully validates; the registry for `kind` and `schema` |
+| The §5 model and the body format already on disk (§4.6) | Inconsistent. Per §5.3, translations are `cuccut.translation/2`; `/1` from old projects is read-only compatible (§5.3) and not migrated. `cuccut.speech/1` adds the fields that the subtitle and translation core read and write, and is losslessly interchangeable with `TranscriptDoc` (§5.2) | Whether sentences and subtitle lines are stored as results, or as the version of the derivation algorithm plus a manual pin; how staleness is detected. Decided: the sentence derivation and source-text fingerprint for translation exist only in the subtitle and translation core (§5.3); the original translation-flow `cuccut.sentences/1` and `sha256:` fingerprint are deleted |
+| `caption-style` (§5.6) | Already on disk are two body types, Studio style and box-positioned style; the engine only checks the per-word animation of box-positioned style. `CaptionStyleBody` (a target contract composed by dimension, [design draft](../design/subtitle/caption-style-model-design.md)) has landed in the editor and prototype (compiled to Studio style) but is not yet saved to disk as a body. The default preset is on disk (§5.6 "Default preset"): one language-neutral Studio style | The relationship with `LayoutProfile` and `CaptionStyle`; the unit of the reading budget; whether default presets are split by language |
+| Export records and import records (§4.6) | Borrows the document | Whether artifact records become a first-class concept; how they connect with dependency links |
+| Structured fields of `Provenance`, `LicenseState`, `ColorInfo` (§4) | Not included | Fields for generation records, derivation relations, license and permission state; fields for color metadata |
+| Video-level `extensions` (§1.4) | Only instances and documents have them | Whether they are needed |
+| `ItemBase` (§3.4) | Completed by this spec | Combination rules for `paintOrder` and `Track.order` |
+| `Sequence.canvas.workingSpace` (§3.2) | The engine does not restrict values | Working spaces supported in the first version |
+| `SemanticAnchor`, `FollowPolicy` (§3.16) | Decided: separate anchors for start and end, an offset for word anchors, to the end of the sequence, `follow-cuts` and its default (instances placed by time default to it from creation). Decided: `speech-anchor` is re-solved against the timeline on every transaction; occurrences and ambiguity follow the v2 rules; anchors that cannot be solved stay in place, and `orphaned` is computed on the fly and not saved. Decided: `item-local` follows the source time of its target, is split along the segment that contains the anchor, moves to the new start when trimming the start crosses the anchor, and is deleted together with the target. Implemented: `sequence-fixed`, `follow-cuts` (within the cut transaction), `speech-anchor`, `item-local` and to-end-of-sequence. `explicit-link-group` is outside this version's scope: only its shape is saved and validated, and it does not move | Linkage rules for `explicit-link-group` |
+| `ProtectionRecord` (§3.10) | Completed by this spec | The boundary between persistent protection and task-level protection; how strictly `confirmed` is enforced |
+| `Checkpoint` (§3.11) | Completed by this spec | Whether checkpoints may have branches |
+| `DependencyLink.kind` (§3.12) | Completed by this spec | The enumeration of dependency kinds |
+| `ImportedCaptionDocument`, `AlignmentBlock`, `CaptionOverride` (§5) | Completed by this spec | The kinds and values of override |
+| `LocalizationSet`, `CanvasVariant`, `SyncGroup` (§7) | Completed by this spec | The allowlist of override fields |
+| `NarrationCueSheet` (§7.10) | Completed by this spec | Whether to merge it with the narration role of `SoundCueSheet` |
+| `PackageManifest` (§8.1) | Decided: the container is ustar, with the length and sha256 of each file | Signing; compression and pax extensions |
+| Chapters (§3.13) | Decided: a `kind: 'chapter'` marker, fixed on sequence time | — |
+| Allowlist of effects, transitions and easing (§3.9) | Decided: transitions `dissolve`, `wipe`, `slide`, `zoom`, `iris`, `dip-to-color` and `push`, with one-sided rendering per v2; effects are fixed fields of `fx` in a fixed order, plus filter and effect presets; transition easing is `linear`, `ease-in`, `ease-out` and `ease-in-out`. Decided not to merge: transition easing stays at these four, and the `motion` easing table is used only for keyframes and element animation | Recipes for `temperature`, `shadow` and `stroke`; keyframes for effect and transition parameters |
+| Ducking (§3.9) | Decided: triggered per script or per instance, with v2's curve and merge rules | — |
+| Cut set (§6.7) | Decided: add, merge, restore and reorder are implemented (`addCuts`, `restoreCut`) | How to prompt when manual edits are inconsistent with cuts |
+| Template layer (§3.17) | Decided, not implemented | How `ratio` coexists with the aspect-ratio lock and aspect-ratio versions (§7.7) |
+| v2 `bcfClip` (audio element) | Decided: claims the spoken sentences in the code composition for dubbing, forming an audio-video linked group of composition and dubbing (§3.7 "Sound"); claimed sentence IDs are not part of the format | When the composition can run in real time, whether to subtract only the claimed sound per sentence |
+| Variable frame rate (§2.11) | Rules decided, not implemented | Currently treated as the nominal frame rate |
+| HDR | The first version only supports strict SDR export | Tone-mapping strategy for HDR input |
+| Variable speed curves, reverse playback, `preserve=frames` | Not included | Whether and when to open them |

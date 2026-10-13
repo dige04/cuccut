@@ -14,5 +14,5 @@
   "determinism": "strict",
   "capabilities": [],
   "fallback": null,
-  "doc": "由像素坐标固定散列出的单色噪点，无随机时钟，alpha 保持不变。"
+  "doc": "Monochrome noise from a fixed hash of pixel coordinates; no random clock, alpha is preserved."
 }

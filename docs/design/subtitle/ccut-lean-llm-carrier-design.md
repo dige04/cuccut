@@ -1,51 +1,51 @@
-> 移植自 CucCut v2；文中的数据模型名（TranscriptDoc 等）指 v2 的模型，与 v3 文档模型的对应见[架构设计 §14](../../architecture/architecture-design.md#14-待评审事项)。
+> Ported from CucCut v2. The data model names in this text (TranscriptDoc, etc.) refer to the v2 models; for their mapping to the v3 document models, see [Architecture design §14](../../architecture/architecture-design.md#14-items-pending-review).
 
-# 字幕 AI 管线 LLM 交换格式精简设计（行文本载体 + 首尾锚词）
+# Streamlined LLM Exchange Format for the Subtitle AI Pipeline (Line-Text Carrier + First/Last Anchor Words)
 
-> 状态：**M0 基础已实施；M1 第二轮（分片提示 + 联合定位 + 行归属门 + 再问式补做轮）在同一 508 句上达到 491 / 0 / 17（对齐 / 整句 / 改写，旧载体 378 / 97 / 33），两轮合计公价折算约 0.4×；M2 的 provider 直连路径已作为 opt-in 接入生产 `ccut translate --align-fusion lines`（默认仍是 `rows`，Agent 路径未接、§5 的部分提交 / 状态机未做）**（2026-09-30，§8.2–§8.3）。已落地逐次 provider 原始响应/用量账本、首尾压缩、`lines/1` 实验编解码和共享翻译验收适配器。4 个项目、10 页、508 句的 DeepSeek V4.1 Flash 对照发现跨句内容错位及规划退化，详见 §8.1。部分提交、会话恢复、LCS 冻结切点恢复与 M2–M4 尚未接入；实验冻结回显不完全相同时保留原文并撤销切点。§7 的旧起点回放不作为首尾锚词格式验收。
-> 范围：翻译、翻译对齐（`align-edges/1`、`align-rewrite/1`、`align-table/1`）的 LLM 交换格式、会话形态与容错；翻译前的润色不并进页会话（§6.6），它自己的补丁式输出见 §10.1；说话人页排在最后。
-> 不动的东西：`words[]` / `trans` / `transDisplay` / `transAlign` 数据模型、「先定译文、再映射连续源词区间」的纪律（[transcript-v03 §5.2](ccut-transcript-v03-design.md)）、对齐块与切行 DP（[alignment-block](ccut-alignment-block-subtitle-split-design.md)）、三级 Problem 与有界重试原则（[ai-pipeline §10.2](ccut-ai-pipeline-design/10.md)）。新任务载体的补交计数与终态在 §5 定义，不追溯改变旧任务。
-> 本文访谈样例取自一个英文 → 简体中文的项目，另用英文 → 西班牙文的短句说明交叉；都是示意。规则按 `words[]` 原子与显示单位写，不预设产出语言。
+> Status: **M0 foundation implemented; M1 second round (chunked prompts + joint localization + line-attribution gate + re-ask completion round) reaches 491 / 0 / 17 (aligned / whole-sentence / rewritten) on the same 508 sentences, versus 378 / 97 / 33 for the old carrier; the combined cost of the two rounds, converted at list price, is about 0.4×. The M2 direct-provider path is wired into production `ccut translate --align-fusion lines` as opt-in (the default is still `rows`; the Agent path is not wired yet; the partial-commit / state machine of §5 is not implemented)** (2026-09-30, §8.2–§8.3). Per-call provider raw response/usage ledger, first/last compression, the experimental `lines/1` codec, and the shared translation acceptance adapter have landed. A 4-project, 10-page, 508-sentence comparison with the DeepSeek V4.1 Flash model found cross-sentence content misalignment and planning degradation; see §8.1. Partial commit, session recovery, LCS frozen-cut recovery and M2–M4 are not yet wired in. When frozen echoes in the experiment are not exactly identical, the original text is kept and the cut is revoked. The old start-replay of §7 is not used as acceptance for the first/last anchor-word format.
+> Scope: translation and the LLM exchange formats for translation alignment (`align-edges/1`, `align-rewrite/1`, `align-table/1`), session shape and fault tolerance. Pre-translation polishing is not merged into the page session (§6.6); its patch-style output is in §10.1. The speaker page comes last.
+> Unchanged: the `words[]` / `trans` / `transDisplay` / `transAlign` data model; the discipline of “fix the translation first, then map contiguous source-word spans” ([transcript-v03 §5.2](ccut-transcript-v03-design.md)); alignment blocks and the line-splitting DP ([alignment-block](ccut-alignment-block-subtitle-split-design.md)); the three-level Problem and the bounded-retry principle ([ai-pipeline §10.2](ccut-ai-pipeline-design/10.md)). The resubmission count and terminal states for the new task carrier are defined in §5; old tasks are not retroactively changed.
+> The interview examples in this document are taken from an English → Simplified Chinese project; a short English → Spanish sentence set is used as a cross-check. Both are illustrative. The rules are written in terms of `words[]` atoms and display units, and do not presuppose the output language.
 
-## 1. 问题与实测
+## 1. Problem and measurements
 
-样本：本机项目「AMD Acquires Fei-Fei Li's World Labs」（英文源，3819 词，220 句，译成简体中文，本地 Agent 路径）。`logs/llm/*.jsonl` 记了每次调用完整的 system / user / response，下表是字符数的精确合计。
+Sample: the local project “AMD Acquires Fei-Fei Li's World Labs” (English source, 3,819 words, 220 sentences, translated into Simplified Chinese, local Agent path). `logs/llm/*.jsonl` records the full system / user / response of every call; the table below gives exact character totals.
 
-| 阶段 | 调用 | system | user | response |
+| Stage | Calls | system | user | response |
 | --- | ---: | ---: | ---: | ---: |
 | translate | 5 | 59,755 | 92,158 | 23,766 |
-| 对齐三种页合计 | 10 | 83,036 | 41,183 | 49,841 |
+| Alignment, three page types combined | 10 | 83,036 | 41,183 | 49,841 |
 | polish | 3 | 28,161 | 23,104 | 22,746 |
-| 其余（analysis / chapters / brief / 说话人） | 5 | 19,486 | 58,954 | 4,845 |
-| 合计 | 23 | 190,438 | 215,399 | 101,198 |
+| Others (analysis / chapters / brief / speaker) | 5 | 19,486 | 58,954 | 4,845 |
+| Total | 23 | 190,438 | 215,399 | 101,198 |
 
-翻译加对齐占了 system 的 75%、user 的 62%、response 的 73%。浪费有五处：
+Translation plus alignment accounts for 75% of system, 62% of user, and 73% of response. Waste occurs in five places:
 
-1. **源文发两遍，第二遍逐词带编号。** 翻译页每句有正文，又有 `data-align-words="[1]I [2]can …"`，外加 `data-align-groups` 的时间分组。五页 92,158 字符里，正文只有 20,921，`data-align-words` 占 36,759，`data-align-groups` 占 12,523。
-2. **输出整页回显。** 对齐页要求「return the SAME table」。`w001` 输出 12,780 字符，模型真正决定的内容（切点与译文）约 1,600 字符，其余是照抄的源文、序号和 HTML 骨架。
-3. **提示词比内容大。** `align-table/1` 的 system 约 13.4 KB，三次定向修复连同重试共 5 次调用，一共只处理 19 句。翻译 system 约 12 KB，同一批专名在其中出现三遍（源语术语、术语表、专名清单）。Cloud 路径每次调用整份重发 system，没有显式缓存断点和完整 usage 账本（`ccut-engine/src/llm_exec.rs`）；这不能证明服务商没有隐式缓存命中，实际费用待 §6.5 的观测补齐。
-4. **四种载体，四套提示词和解析器。** `translation-source/1`、`align-edges/1`、`align-rewrite/1`、`align-table/1` 各有各的格式规则，模型和 worker 每种都要重新学。
-5. **一句出错，整页受罚。** Agent 路径提交时整份 lint，有任何一个 problem 就整份退回，退回后要把整页重写一遍。当前 `LINT_MAX_TRIES = 3`，但不是所有 kind 在第三次都放行：`translate` / `align-edges` 耗尽后仍受 `hardGate` 拒收，对齐类相同问题还有 `noProgress` 分支；部分其他 kind 保留 force-through（`ccut-kernel/src/cmd/task.rs`）。本项目 `align/zh-Hans/v001` 的 `w001`（22 句）整页记为 `failed`。Cloud 路径虽然逐句写入，页产物同样记 `Failed`。
+1. **The source text is sent twice, and the second copy carries per-word numbering.** Each sentence on a translation page has its body text, plus `data-align-words="[1]I [2]can …"`, plus the time groups in `data-align-groups`. Of the 92,158 characters across the five pages, only 20,921 are body text; `data-align-words` takes 36,759 and `data-align-groups` takes 12,523.
+2. **Output echoes the whole page.** Alignment pages ask for “return the SAME table”. The `w001` output is 12,780 characters, of which the content the model actually decides (cut points and translations) is about 1,600 characters; the rest is copied source text, serial numbers and HTML skeleton.
+3. **Prompts are bigger than the content.** The `align-table/1` system prompt is about 13.4 KB; three targeted repair rounds plus retries make 5 calls in total, processing only 19 sentences. The translation system prompt is about 12 KB, and the same proper nouns appear there three times (source-language terms, glossary, proper-noun list). The Cloud path resends the whole system prompt on every call, with no explicit cache breakpoint and no complete usage ledger (`ccut-engine/src/llm_exec.rs`). This does not prove the provider has no implicit cache hits; actual cost awaits the observation in §6.5.
+4. **Four carriers, four prompt sets and four parsers.** `translation-source/1`, `align-edges/1`, `align-rewrite/1` and `align-table/1` each have their own format rules, and the model and worker must learn each one anew.
+5. **One bad sentence penalises the whole page.** On the Agent path, the whole document is linted at submission, and any single problem sends the whole document back; the page then has to be rewritten in full. The current `LINT_MAX_TRIES = 3`, but not every kind is released on the third attempt: after `translate` / `align-edges` are exhausted they are still rejected by `hardGate`; alignment kinds with the same problem have a `noProgress` branch; some other kinds keep force-through (`ccut-kernel/src/cmd/task.rs`). In this project, `w001` of `align/zh-Hans/v001` (22 sentences) is recorded as `failed` for the whole page. The Cloud path writes sentence by sentence, but page artifacts are likewise recorded as `Failed`.
 
-另一个事实：220 句里有 44 句（20%）因为译文语序与源文交叉、合并后的块超过 hard，进了 `align-rewrite` 二次改写页。这一步是纪律要求的（先有自然译文，放不下再按源序改写），不应取消，但它现在很贵。
+Another fact: 44 of the 220 sentences (20%) had translation word order crossing the source, and the merged block exceeded hard, so they went to the `align-rewrite` second-pass rewrite page. This step is required by discipline (first obtain a natural translation; if it does not fit, rewrite in source order) and should not be dropped, but it is currently expensive.
 
-## 2. 方案总览
+## 2. Solution overview
 
-五个改动，前两个是核心：
+Five changes; the first two are the core:
 
-| 改动 | 现在 | 改成 |
+| Change | Now | Becomes |
 | --- | --- | --- |
-| 寻址 | 每个源词前插编号，输出写源词集合 | **首尾锚词**：引用每块对应源词的最左、最右端点，代码定位并结合确定性锚点判断交叉；不按下一起点推测终点 |
-| 载体 | HTML 文档 / 表格，输出回显整页 | **行文本**：一句一行，页内短序号；输出只写模型决定的内容 |
-| 页种 | 翻译、edges、rewrite、table 四种格式 | **一种语法**，按句标权限：新译、冻结、可按源序改写 |
-| 容错 | Agent 整页 lint、整页退回 | 译文和对齐分开接受；不确定的映射不制造安全切点，问题句经有界补做后按失败类型收尾 |
-| 会话 | 每次调用都是独立的 system + user | 一页一个会话是候选 A；与冷队列 C 按实际费用、质量和延迟比较后选择（§6.5） |
+| Addressing | Each source word is prefixed with a number; output writes the set of source words | **First/last anchor words**: reference the leftmost and rightmost endpoints of the source words each block corresponds to; code locates them and combines deterministic anchors to judge crossings; no end point is inferred from the next start point |
+| Carrier | HTML document / table; output echoes the whole page | **Line text**: one sentence per line, page-local short serial numbers; output writes only what the model decides |
+| Page type | Four formats: translation, edges, rewrite, table | **One syntax**, with per-sentence permissions: new translation, frozen, or rewritable in source order |
+| Fault tolerance | Agent lints the whole page and returns the whole page | Translations and alignments are accepted separately; uncertain mappings do not create safe cut points; problem sentences are closed out by failure type after bounded re-issue |
+| Session | Every call is an independent system + user | One session per page is candidate A; choose it against cold queue C by actual cost, quality and latency (§6.5) |
 
-代码继续复用 `AlignEdge`、`AnchorAligner`、`safe_boundaries` → 最小单调块 → `plan_sentence` / `bilingual_dp`（`ccut-flow-core/src/align_block.rs`）。新增的是引用定位、证据不足时的保守门和提交状态机；模型只给语义块及对应端点，交叉判定、合并、切行与时间分配由代码完成。
+The code continues to reuse `AlignEdge`, `AnchorAligner`, `safe_boundaries` → minimal monotone block → `plan_sentence` / `bilingual_dp` (`ccut-flow-core/src/align_block.rs`). What is new is reference-based localization, a conservative gate for insufficient evidence, and a submission state machine. The model only gives semantic blocks and their corresponding endpoints; crossing judgement, merging, line splitting and time allocation are done by code.
 
-## 3. 行文本载体 `lines/1`
+## 3. Line-text carrier `lines/1`
 
-### 3.1 输入
+### 3.1 Input
 
 ```
 @S2
@@ -58,13 +58,13 @@
 15 I think we should get to the backstory with both of you, but would you talk a little bit, Lisa, how it came about, the catalyst for doing the actual transaction?
 ```
 
-- 一句一行：`<页内序号> <源文>`。序号从 1 连续编到 N，和 `s-g6.14` 这类句 id 的对应关系记在页清单里，不进载荷。短序号的依据是现有的索引契约页（补分段、页缝修复、说话人修复）：补分段页改成只回行号区间后，47 次调用没有一次区间非法，也没有改字（[file-contract §6](ccut-file-contract-subtitle-ai-design/06.md)）。
-- 空行分段，`@S2` 是说话人。两者只给模型看，输出不回显。
-- `⏸` 沿用润色页的停顿提示，只在停顿够长的位置出现；正文同名字符按 §3.2 转义，解析保留两者区别。时间分组 `data-align-groups` 整体取消，理由见 §6.2。
-- `#` 开头的是只读上下文行（相邻页的句子），没有序号，不回答。
-- `!` 开头的是提示行，只在约束真的起作用时出现：紧的读速预算（`! ≤37`，单位是显示单位）、必须原样出现的锁定译名、修复轮里上一轮的拒收原因。没有约束的句子没有这一行。
+- One sentence per line: `<in-page serial number> <source text>`. Serial numbers run continuously from 1 to N; their correspondence to sentence IDs such as `s-g6.14` is recorded in the page manifest and is not part of the payload. The rationale for short serial numbers is the existing index-contract pages (paragraph fill, page-seam repair, speaker repair): after the paragraph-fill page was changed to return only line-number ranges, none of 47 calls had an illegal range and none altered text ([file-contract §6](ccut-file-contract-subtitle-ai-design/06.md)).
+- Blank lines separate paragraphs; `@S2` is the speaker. Both are shown to the model only and are not echoed in output.
+- `⏸` keeps the pause hint from the polish page; it appears only where the pause is long enough. Same-named characters in the body are escaped as in §3.2, and parsing keeps the two distinct. The time groups `data-align-groups` are removed entirely; reasons in §6.2.
+- Lines beginning with `#` are read-only context lines (sentences from adjacent pages); they have no serial number and are not answered.
+- Lines beginning with `!` are hint lines and appear only when a constraint actually applies: a tight reading-speed budget (`! ≤37`, where the unit is display units), locked translated names that must appear verbatim, and the rejection reason from the previous round in repair rounds. Sentences with no constraints have no such line.
 
-对齐与改写页在源文行下面多一行现有译文，行首字符就是权限：
+For alignment and rewrite pages, each source line is followed by a line carrying the existing translation; the first character of that line is its permission:
 
 ```
 4 So World Labs is a frontier model company specializing in spatial and physical intelligence.
@@ -75,17 +75,17 @@
 = 如今加入 AMD，World Labs 进入了新阶段。
 ```
 
-| 行首 | 权限 | 对应现在的 |
+| Leading char | Permission | Corresponds to today's |
 | --- | --- | --- |
-| 没有译文行 | 新译：模型写译文并标切点 | 翻译页（rows 融合） |
-| `=` | 冻结：译文一个字符都不改，只标切点 | `align-edges/1`、`data-no-rewrite`、`data-target-frozen` |
-| `~` | 可改写：允许把分句调成源文顺序，别的不动 | `align-rewrite/1`、`data-reordered` |
+| No translation line | New translation: model writes the translation and marks cut points | Translation page (rows fusion) |
+| `=` | Frozen: the translation is not changed at all; only cut points are marked | `align-edges/1`, `data-no-rewrite`, `data-target-frozen` |
+| `~` | Rewritable: sentence splitting may be adjusted to source order; nothing else changes | `align-rewrite/1`, `data-reordered` |
 
-同一页可以混放三种句子，所以修复队列（§5）只需要一种页。权限由页清单决定，模型输出的 `~` 不授予改写权限。每个 `=` / `~` 句明确记录当前文本基准及指纹（`trans` 或已接受的 `transDisplay.text`）；新改写的幅度仍对自然译文校验，不能多轮累积漂移。
+Sentences of all three kinds can be mixed on one page, so the repair queue (§5) needs only one page type. Permissions are determined by the page manifest; a `~` in the model's output does not grant rewrite permission. Each `=` / `~` sentence explicitly records its current text baseline and fingerprint (`trans`, or the accepted `transDisplay.text`). The magnitude of a new rewrite is still checked against the natural translation, so drift cannot accumulate over rounds.
 
-### 3.2 输出
+### 3.2 Output
 
-翻译页的输出：
+Output of a translation page:
 
 ```
 7 首先，Ed Ludlow，谢谢邀请我们。
@@ -93,87 +93,87 @@
 9 |I can..tell you|我可以告诉你，|that we..super excited|我们非常兴奋|to be..World Labs|能收购 World Labs。
 ```
 
-上面那页对齐与改写的输出：
+Output of the alignment and rewrite page above:
 
 ```
 4~ |So World..model company|World Labs 是一家前沿模型公司，|specializing in..physical intelligence|专攻空间智能和物理智能。
 5 |Now..Now|如今|as part..AMD|加入 AMD，|for World..World Labs|World Labs |this is..next phase|进入了新阶段。
 ```
 
-- 一句一行：`<序号> <译文>`。改写过的句子在序号后加 `~`。不回显源文、段落、说话人和提示行。
-- `|左端引用..右端引用|` 写在译文块前面。左端引用从该块对应的**最左源词**开始，右端引用到**最右源词**结束；可以向区间内部延长引用来消歧。块内允许源词归属不连续，端点只表达它跨到哪里。
-- `|完整原文短语|` 是等价简写：代码唯一匹配这段完整原子序列，以该短语自身的首尾作为两个端点。它不表示“只有起点”，不得借下一块或句尾补终点。重复短语仍判多义；非连续归属仍用首尾双引用。该形式来自 DeepSeek V4.1 Flash 的真实试验：模型常输出完整短语，代码可以确定性恢复其范围，无须让模型为补写同一短语两遍再调用一次。
-- 有分块的句子每块都要标，包括首块；不再把首块隐式绑定到源词 1。单个源词可写 `|light..light|`。明确没有独立源词归属的功能块写 `|∅|`；无法确定归属写 `|?|`，两者不是一回事。普通实义块不得以 `∅` 绕过引用定位。
-- 不需要切的短句可只给整句译文；代码按整句对应处理。需要切的句子省略标记，视为缺少映射证据，进入 §4.2 的规划分流。
+- One sentence per line: `<serial number> <translation>`. A sentence that has been rewritten carries `~` after its serial number. Source text, paragraphs, speakers and hint lines are not echoed.
+- `|left-ref..right-ref|` is written before a translation block. The left reference starts at the **leftmost source word** the block corresponds to, and the right reference ends at the **rightmost source word**. A reference may be extended inward into the span to disambiguate. Within a block, source-word attribution may be discontinuous; the endpoints only express how far it reaches.
+- `|full source phrase|` is an equivalent shorthand: the code uniquely matches this complete atom sequence, taking the phrase's own first and last atoms as the two endpoints. It does not mean “only a start point”, and the end must not be borrowed from the next block or filled from the sentence end. A repeated phrase is still ambiguous; discontinuous attribution still uses the first/last dual reference. This form comes from real trials with DeepSeek V4.1 Flash: the model often outputs the full phrase, and the code can deterministically recover its span, so there is no need to have the model write the same phrase twice or call again.
+- Every block of a segmented sentence is marked, including the first block; the first block is no longer implicitly bound to source word 1. A single source word may be written `|light..light|`. A functional block with explicitly no independent source-word attribution is written `|∅|`; an undeterminable attribution is written `|?|`, and the two are not the same thing. A substantive content block may not bypass reference localization with `∅`.
+- A short sentence that needs no splitting may be given just its whole-sentence translation; code treats it as a whole-sentence match. A sentence that needs splitting omits the markers; it is treated as lacking mapping evidence and goes to the planning triage of §4.2.
 
-**固定符号与转义。** 新译文事前未知，不能靠扫描输入后更换分隔符避免冲突。`lines/1` 固定使用 `|` 和标记内的 `..`：正文与引用中的字面 `|` 写 `\|`，反斜杠写 `\\`；引用内字面连续两点必须写 `\.\.`，不与端点分隔符混淆。编码器把所有引用内字面 `.` 统一写成 `\.`；解析器也接受未构成 `..` 的单点（如 `3.14`）。字面 `∅` / `?` 在引用内写 `\∅` / `\?`，与整个标记 `|∅|` / `|?|` 区分。正文不解释 `..`。字面停顿符写 `\⏸`；真正停顿提示由渲染器作为元数据插入。
+**Fixed symbols and escaping.** New translations are not known in advance, so a delimiter cannot be chosen after scanning the input to avoid collisions. `lines/1` always uses `|` and `..` inside markers: a literal `|` in body text and references is written `\|`, and a backslash is written `\\`. Inside a reference, two literal consecutive dots must be written `\.\.` so they are not confused with the endpoint separator. The encoder writes every literal `.` inside a reference as `\.`; the parser also accepts a single dot that does not form `..` (such as `3.14`). A literal `∅` / `?` inside a reference is written `\∅` / `\?`, to be distinguished from the whole markers `|∅|` / `|?|`. The body text does not interpret `..`. A literal pause symbol is written `\⏸`; the real pause hint is inserted by the renderer as metadata.
 
-文本字段里的 LF / CR / TAB 分别写 `\n` / `\r` / `\t`，只有物理换行结束一条记录；语法前缀只在物理行首识别，正文中的 `#`、`!`、`=`、`~`、`@` 不另作指令。解析先识别转义与标记，再解码正文，不能先反转义再按 `|` 切。未知转义、未闭合标记、双引用端点为空、多出端点分隔符或标记后没有正文，均为单句语法错误；没有分隔符的非特殊标记按完整短语处理，再检查唯一定位。不能猜测剥除疑似标记中的正文。源文、冻结译文和新译文都用同一个编解码器。
+Text fields write LF / CR / TAB as `\n` / `\r` / `\t`; only a physical line break ends a record. Syntax prefixes are recognized only at the start of a physical line; `#`, `!`, `=`, `~`, `@` inside body text are not separate directives. Parsing first recognizes escapes and markers, and only then decodes the body; it must not unescape first and then split on `|`. Unknown escapes, unclosed markers, empty endpoints in a dual reference, extra endpoint separators, or a marker with no body text following it are all single-sentence syntax errors. A marker without a separator is handled as a complete phrase, then checked for unique localization. Code must not guess and strip body text from a suspected marker. Source text, frozen translations and new translations all go through the same codec.
 
-外层 JSON 仍由 JSON 序列化器转义；CLI 通过文件传递正文，不拼接为 shell 命令。行文本只省掉 HTML 骨架，没有取消外层编码要求。
+The outer JSON is still escaped by the JSON serializer; the CLI passes body text through files and does not concatenate it into shell commands. Line text only removes the HTML skeleton; it does not cancel the outer encoding requirement.
 
-### 3.3 锚词怎么解析
+### 3.3 How anchor words are resolved
 
-#### 3.3.1 保留首尾，交叉由代码判断
+#### 3.3.1 Keep the first and last positions; the code judges crossings
 
-只存起点不能等价替换旧块归属。例如译文块 A 对应源词 `{1,3}`、B 对应 `{2}`，原边有交叉；按起点 1、2 推出 A=`{1}`、B=`{2,3}` 却会制造安全切点。
+Storing only start points cannot be treated as equivalent to replacing the ownership of old blocks. For example, if translated block A corresponds to source words `{1,3}` and B to `{2}`, the original edges cross. Deriving A=`{1}` and B=`{2,3}` from starts 1 and 2 would create a false safe cut point.
 
-对一个非空源词集合 `S_i`，保存 `lo_i = min(S_i)`、`hi_i = max(S_i)` 已足以保留块间判据：在目标块边界 `k`，安全条件为 `max(hi_left) < min(lo_right)`。首尾范围可以重叠，不能当作各块独占源词的分区。空集合保留为空，没有证据的未知集合单独标记。
+For a non-empty source word set `S_i`, storing `lo_i = min(S_i)` and `hi_i = max(S_i)` is enough to preserve the inter-block criterion. At target block boundary `k`, the safe condition is `max(hi_left) < min(lo_right)`. First-to-last ranges may overlap; they must not be treated as a partition in which each block exclusively owns its source words. An empty set is kept as empty; an unknown set with no evidence is marked separately.
 
-例如 `Turn the light off.` → `|Turn..off|Apaga |the light..the light|la luz.`，代码得到 `[1,4]` 和 `[2,3]`，据此合成一个块。不要把 `[1,4]` 展开为“中间每个源词都属于 Apaga”。源词覆盖与非重叠是最终 `blocks/pieces` 的不变量，不是输入端点范围的要求。
+For example, `Turn the light off.` → `|Turn..off|Apaga |the light..the light|la luz.`: the code gets `[1,4]` and `[2,3]` and synthesizes one block from them. Do not expand `[1,4]` into "every source word in the middle belongs to Apaga". Source word coverage and non-overlap are invariants of the final `blocks/pieces`, not requirements on the input endpoint ranges.
 
-这个等价性只针对相同目标块、相同有效边权下的边界判定；不恢复完整词级归属，也不证明模型端点的语义正确。覆盖率等诊断不得把范围内部算作已观测对应。审查时枚举过 43,688 个边界情况，结果一致；M0 必须把性质验证和非连续归属反例落实为共享回归，不能用这次离线枚举代替 golden 验收。
+This equivalence applies only to boundary decisions for the same target block with the same effective edge weights. It does not recover full word-level ownership, and it does not prove that the model's endpoints are semantically correct. Coverage and other diagnostics must not count the interior of a range as an observed correspondence. During review, 43,688 boundary cases were enumerated with consistent results. M0 must turn the property verification and the non-contiguous ownership counterexamples into shared regression tests, and must not use this offline enumeration in place of golden acceptance.
 
-#### 3.3.2 定位、补证据与降级
+#### 3.3.2 Locate, supplement evidence, and degrade
 
-1. 按 §3.2 解码，得到目标块及字符区间；拼接正文得到自然译文或显示改写候选。目标坐标用 Rust 字符下标，保留到原字符串的映射，不用归一化后的偏移直接写回。
-2. 源词使用页清单中的 `TransAlign.words` 同口径快照。先做精确匹配，再允许 NFKC、大小写折叠、引号形态归一及原子外沿句读标点容忍（如引用 `off` 匹配 `off.`）；每个归一化字符都保留原子位置。只省略可识别的外沿句读，不能剥除数字/URL/标识符有意义的字符。空白只作为原子间分隔，正文内部标点不一律删除。停顿提示作为元数据排除，字面字符保留；额外归一化后出现多个候选仍按多义处理。
-3. 左引用必须从一个原子的开头匹配，右引用必须到一个原子的末尾；两种引用都按完整原子序列定位，不以半个原子作端点。对候选组合施加 `lo ≤ hi`、两份引用均在该范围内的约束。只剩一个组合才接受；多个为 `anchor-ambiguous`，没有为 `anchor-unresolved`。不根据前一个目标块的位置选择“后面第一处”，也不自动接受有拼写编辑距离的近似匹配。端点无法用上下文引唯一时进入定向修复，可回退旧序号载体。
-4. 每个已定位非空块在同一目标区间生成 `lo`、`hi` 两条软 `AlignEdge`，相同端点只生成一条，复用 `CHUNK_EDGE_WEIGHT`。不同块同起点或重叠范围不是 `anchor-duplicate`，它们可能正是需要合并的证据；只对完全相同的边去重。
-5. 代码运行已有 `AnchorAligner`，补数字、URL、原样专名和双语术语的唯一匹配硬边，保留其真实目标字符区间。硬边在端点范围外时保留证据、记录冲突并重新规划，不能把硬边裁到模型范围里；这会禁止部分切点，必要时合并块。字符串规则只能补已知锚点，不能从“没有发现交叉”推断任意跨语言关系都完整。
-6. 完整且可信定位的边交给 `safe_boundaries` / 最小单调块 / DP。`∅` 是明确的空归属，不生成边；没有任一侧源词证据的切点不能单独制造显示时间窗。`?`、缺失块标记、定位失败或冲突未解则是证据不足：首版禁止这句新增语义切点，保留已接受译文并请求补标，耗尽后走标明降级的整句/确定性兜底。不能简单删边再交给“无边即安全”的现有判据。以后若能证明未知段的外包范围，可另行验证局部合并；本版不假定仅与前块合并就安全。
+1. Decode per §3.2 to get the target block and its character interval. Concatenate the body to get the natural translation or the display-rewrite candidate. Target coordinates use Rust character indices, with a mapping kept back to the original string; do not write back using offsets from normalized text directly.
+2. Source words use the same basis as the `TransAlign.words` snapshot in the page manifest. First try exact matching. Then allow NFKC, case folding, quote-form normalization, and tolerance for outer-edge sentence punctuation on atoms (for example, a quoted `off` matches `off.`); every normalized character keeps its atom position. Only recognizable outer-edge sentence punctuation may be dropped; characters that carry meaning in numbers, URLs, or identifiers must not be stripped. Whitespace serves only as a separator between atoms; punctuation inside the body is not uniformly deleted. Pause markers are excluded as metadata, while literal characters are kept. If extra normalization still leaves multiple candidates, they are still treated as ambiguous.
+3. A left quote must match from the start of an atom; a right quote must end at the end of an atom. Both quotes are located on the full atom sequence and never use half an atom as an endpoint. Apply the constraints `lo ≤ hi` to candidate combinations, with both quotes inside that range. Accept only when exactly one combination remains. Multiple combinations give `anchor-ambiguous`; none gives `anchor-unresolved`. Do not pick "the first occurrence after" based on the position of the previous target block, and do not automatically accept approximate matches with spelling edit distance. An endpoint that context cannot uniquely identify enters targeted repair, and may fall back to the old ordinal carrier.
+4. Each located non-empty block generates two soft `AlignEdge`s, `lo` and `hi`, over the same target interval. Identical endpoints generate only one edge, reusing `CHUNK_EDGE_WEIGHT`. Different blocks with the same start or overlapping ranges are not `anchor-duplicate`; they may be exactly the evidence needed to merge. Only fully identical edges are deduplicated.
+5. The code runs the existing `AnchorAligner`, adding hard edges for unique matches of numbers, URLs, verbatim proper nouns, and bilingual terms, and keeps their real target character intervals. When a hard edge lies outside the endpoint range, keep the evidence, record the conflict, and re-plan; do not clip the hard edge into the model's range. This forbids some cut points and merges blocks where necessary. String rules may only supplement known anchors; the absence of detected crossings must not be used to infer that every cross-language relation is complete.
+6. Complete and reliably located edges go to `safe_boundaries`, the minimal monotone blocks, and DP. `∅` is an explicit empty ownership and generates no edge. A cut point with no source-word evidence on either side must not create a display time window by itself. `?`, missing block markers, locating failures, or unresolved conflicts are insufficient evidence. In the first version, such a sentence may not add a new semantic cut point: keep the accepted translation, request re-annotation, and once that is exhausted, fall back to a whole-sentence or deterministic fallback clearly marked as degraded. Do not simply delete the edges and hand the result to the existing "no edge means safe" criterion. If the outer bounding range of an unknown segment can be proven later, local merging may be verified separately. This version does not assume that merging only with the previous block is safe.
 
-引用长度不按某种语言固定；使用字级或词级原子都按唯一定位判断。模型不需要排序、计算序号或处理交叉；代码负责定位、补证据和裁决。
+Reference length is not fixed for any language. Whether the atoms are character-level or word-level, judge by unique location. The model does not need to sort, compute ordinals, or handle crossings; the code is responsible for locating, supplementing evidence, and adjudicating.
 
-### 3.4 两种解释
+### 3.4 Two interpretations
 
-同一套语法有两种用法，由页首声明：
+One syntax has two usages, declared at the top of the page:
 
-- **块（默认）**：标记是语义切点的证据，越细越好，最后切成几行由代码的 DP 决定。对应现在的 `align-edges/1`。
-- **行**：标记是期望显示行的边界，仍须经过 §3.3 的交叉检查、读速合并和接缝 lint。交叉或证据不足时不能强行保留该行界，回执说明合并或补标原因。对应现在的 `align-table/1`，用在审阅者带 `--instructions` 的定向修复里。
+- **Block (default)**: markers are evidence of semantic cut points; the finer the better, and the final number of lines is decided by the code's DP. Corresponds to the current `align-edges/1`.
+- **Line**: markers are the boundaries of expected display lines. They must still pass the §3.3 crossing check, reading-speed merging, and seam lint. When there is a crossing or insufficient evidence, the line boundary must not be forcibly kept; the receipt explains the reason for merging or re-annotation. Corresponds to the current `align-table/1`, used in targeted repair when the reviewer passes `--instructions`.
 
-## 4. 校验
+## 4. Validation
 
-### 4.1 结构检查与冻结文本的逐切点校验
+### 4.1 Structural checks and per-cut-point verification of frozen text
 
-模型不再输出源词序号，所以新载体不会产生模型填写的越界 ordinal；引用解析仍须检查端点存在、`lo ≤ hi`、目标块非空、目标正文恰好拼接，以及最终 `blocks/pieces` 的源词连续全覆盖和目标字符覆盖。不删除旧载体的 `align-edge-ordinal` 检查，也不把端点范围重叠视作最终块重叠。
+The model no longer outputs source word ordinals, so the new carrier cannot produce out-of-range ordinals written by the model. Reference resolution must still check that endpoints exist, `lo ≤ hi`, the target block is non-empty, the target body concatenates exactly, and the final `blocks/pieces` have contiguous source word coverage and full target character coverage. Do not remove the old carrier's `align-edge-ordinal` check, and do not treat overlapping endpoint ranges as overlapping final blocks.
 
-冻结句（`=`）写入的永远是清单中冻结的文本。回显与它一致时直接定位；有小出入时允许字符级 LCS 辅助映射，但整句相似度只是初筛，不能代替逐切点验收：
+Frozen sentences (`=`) always write the text frozen in the manifest. When the echo matches, locate directly. When there are small discrepancies, character-level LCS may assist the mapping, but whole-sentence similarity is only a preliminary screen and cannot replace per-cut-point acceptance:
 
-1. 切点两侧必须有可唯一映射的匹配上下文。切点落在插入、删除区域，或重复短语造成多个等价位置时，丢弃该切点，合并相邻目标块并取其源端点并集的 `min/max`；不能任取一个 LCS 路径。
-2. 被删除/漏回显的冻结文本必须恢复到合并后的目标块中；合并块两端仍不确定时继续扩大，最坏整句合并。正文不允许随切点丢弃。
-3. 映射后重新检查空片、字符边界、保护词和目标语切分约束，再生成边和运行规划。恢复后的文本若包含新的数字/术语，也要重新运行 `AnchorAligner`。
-4. 整体相似度不足判该句对齐失败；相似度足够但切点不足，按 §4.2 请求补标或降级。对齐失败不撤销已接受译文。
+1. Both sides of a cut point must have a uniquely mappable matching context. If the cut point falls in an inserted or deleted region, or repeated phrases create several equivalent positions, discard that cut point, merge the adjacent target blocks, and take the `min/max` of the union of their source endpoints. Do not pick an arbitrary LCS path.
+2. Deleted or unechoed frozen text must be restored into the merged target block. If the two ends of the merged block remain uncertain, keep expanding; in the worst case, merge the whole sentence. Body text must not be discarded along with a cut point.
+3. After mapping, recheck empty pieces, character boundaries, protected terms, and target-language segmentation constraints, then generate edges and run planning. If the restored text contains new numbers or terms, rerun `AnchorAligner` as well.
+4. Insufficient overall similarity fails the sentence's alignment. Sufficient similarity with insufficient cut points requests re-annotation or degradation per §4.2. Alignment failure does not revoke the accepted translation.
 
-相似度与局部匹配窗口的阈值在 M0 用重复短语、漏字、否定词和标点夹具标定并固定进代码测试；不能靠降低整体阈值让错误切点通过。字符索引遵守 Unicode 字符和组合字符边界，不按字节或某一种语言的字数推定。
+The thresholds for similarity and local matching windows are calibrated in M0 using fixtures for repeated phrases, dropped characters, negation words, and punctuation, and are fixed in code tests. Do not let wrong cut points pass by lowering the overall threshold. Character indices follow Unicode character and combining-mark boundaries; do not infer them from bytes or from the character count of any one language.
 
-### 4.2 仍由代码检查的
+### 4.2 Still checked by code
 
-沿用三级 Problem，不新增级别。
+Reuse the three-level Problem; do not add new levels.
 
-| 级别 | 情形 | 处理 |
+| Level | Situation | Handling |
 | --- | --- | --- |
-| 整页致命 | 输出为空、体积超护栏、一个期望的序号都没出现 | 整页重试，沿用现有次数与对半拆页 |
-| 单句 | 缺序号、序号重复、转义/标记语法损坏、译文为空、占位文本、与源文相同、文字脚本不符、锁定译名缺失；越权改写、改写长度漂移超限、丢数字或锚点词；冻结句回显相似度不够 | 只拒收相应内容或对齐产物，同页其他句照常接受；沿用现有按语言判据及专名等豁免 |
-| 建议 | 锚词多义、找不到、端点与硬锚点冲突、冻结切点映射不唯一、保护词内部切点、未知序号、冻结句回显有小出入、未标注 | 不拒收独立有效的自然译文；记录并撤销未经证实的切分，再走规划分流，不能只告警后原样接受对齐 |
+| Whole-page fatal | Output empty, size over the guardrail, no expected ordinal appears at all | Retry the whole page, reusing the existing retry count and halving split of pages |
+| Single sentence | Missing ordinal, duplicate ordinal, broken escape or markup syntax, empty translation, placeholder text, identical to source, script mismatch, locked term missing; unauthorized rewrite, rewrite length drift beyond limit, dropped numbers or anchor words; frozen-sentence echo similarity insufficient | Reject only the corresponding content or alignment artifact; other sentences on the same page are accepted as usual; keep the existing per-language criteria and exemptions such as proper nouns |
+| Advisory | Ambiguous anchor, anchor not found, endpoint conflicts with hard anchor, frozen cut-point mapping not unique, cut point inside a protected term, unknown ordinal, frozen-sentence echo with small discrepancies, unannotated | Do not reject an independently valid natural translation; record and revoke unverified segmentation, then route through planning, rather than merely warning and accepting the alignment as-is |
 
-规划分流按以下优先级执行，避免把证据缺失误当作语序问题：先收下有效自然译文；缺少可靠映射且需要切行时以 `=` 请求补标；证据完整、交叉合并后确实超过 hard 且允许改写时才以 `~` 请求改写；满足预算和边界规则的对齐才接受。无改写权限的句子始终冻结，补做耗尽后按 §5.2 降级。短句能直接整句展示时不为补齐可省略的标记增加调用。
+Planning routing follows this priority, so missing evidence is not mistaken for a word-order problem: first accept valid natural translations; when there is no reliable mapping and the sentence needs splitting, request re-annotation with `=`; only when evidence is complete, the post-merge crossing result still exceeds hard, and rewriting is permitted, request a rewrite with `~`; accept alignments that satisfy budget and boundary rules. Sentences without rewrite permission always stay frozen, and after re-annotation is exhausted they degrade per §5.2. For short sentences that can be displayed whole, do not add a call just to fill in omittable markers.
 
-新的问题码（`anchor-ambiguous`、`anchor-unresolved`、`anchor-conflict`、`frozen-cut-ambiguous`、`lines-syntax`、`rewrite-forbidden` 等）实施时登记进 `ProblemCode` 闭集，两条路径共享。完全重复的边由代码去重，不新增拒收原因。
+New problem codes (`anchor-ambiguous`, `anchor-unresolved`, `anchor-conflict`, `frozen-cut-ambiguous`, `lines-syntax`, `rewrite-forbidden`, etc.) are registered in the closed `ProblemCode` set at implementation time and shared by both paths. Completely duplicate edges are deduplicated by code and add no new rejection reason.
 
-### 4.3 回执
+### 4.3 Receipt
 
-校验结果是结构化的，Cloud 路径写进页清单，Agent 路径作为 `ccut task submit` 的返回：
+The validation result is structured. The Cloud path writes it into the page manifest; the Agent path returns it as the result of `ccut task submit`:
 
 ```json
 {
@@ -193,406 +193,411 @@
 }
 ```
 
-示例只列三句，用于说明“17 的译文已接受、对齐仍待修”。`accepted` 按自然译文、显示改写、对齐分别列本次新增接受的页内序号，不混成一个计数；`queued` 是当前页剩余工作，`as` 区分 `translate` / `align` / `rewrite`。接受表示内容及回执已经持久化，文档应用进度单独记录（§5.3），不宣称所有投影已刷新。
+The example lists only three sentences, to show that "the translation of 17 is accepted, its alignment is still pending a fix". `accepted` lists, separately for natural translation, display rewrite, and alignment, the in-page ordinals newly accepted in this submission. They are not merged into one count. `queued` is the remaining work for the current page, and `as` distinguishes `translate` / `align` / `rewrite`. Acceptance means the content and receipt have been persisted. Document application progress is recorded separately (§5.3), and it does not claim that all projections have been refreshed.
 
-另给不落盘的预检入口，跑同一个纯函数校验器和规划器，返回相同诊断结构，但标明 `preview: true`，接受集合只是预测，不递增 revision、不消耗预算、不生成提交回执。正式提交仍须核对基准指纹与 revision。
+A separate non-persisting preflight entry is also provided. It runs the same pure-function validator and planner, returns the same diagnostic structure, but is marked `preview: true`. The accepted set is only a prediction: it does not increment the revision, consume budget, or produce a submission receipt. A formal submission must still verify the baseline fingerprint and revision.
 
-`queued` 同时就是页内补做的清单：Cloud 路径据此拼第二轮追问，Agent 路径的 worker 据此在同一个租约里补交（§6.5）。
+`queued` is also the checklist for in-page follow-up work. The Cloud path uses it to assemble the second-round follow-up question, and the Agent path's worker uses it to resubmit within the same lease (§6.5).
 
-## 5. 容错、状态与续跑
+## 5. Fault tolerance, state, and resumption
 
-### 5.1 按句接受与两轮补做
+### 5.1 Per-sentence acceptance and two rounds of remediation
 
-1. **证据级**：冻结切点能唯一恢复时就地纠正；源端点不确定时按 §3.3 保守处理。保留正文，不用猜测的端点制造切点。
-2. **句级**：自然译文、显示改写、对齐分开校验和持久化。一句可以“译文已接受、对齐待修”，同页好句立即进入 producer 的文档应用队列，无须等页补交结束。
-3. **页内补一轮（A）**：同一会话只追问问题句，给出序号、权限和具体原因。若代码纠正后的冻结文本与历史答案不同，追问必须附上当前冻结全文及文本基准，不能要求模型凭旧答案恢复；因此追问成本不总是只有序号和原因。
-4. **冷队列**：按阶段收集剩余句，带源文、当前有效文本、必要邻句和原因重新分页。每句最多两轮语义补做：A 为一轮页内加一轮冷队列；C 不走页内，保留两轮冷队列机会。A 的页内追问整体不可用时，经既有整页恢复策略仍失败才消耗该轮，随后只剩一轮冷队列。切换 A/C、接手租约、重新分页不重置句级预算；冷页混合不同剩余预算时逐句计数。
-5. **终止错误**：鉴权/模型配置等 `Terminal` 和取消立即上抛，保留已提交产物，不用内容兜底伪装成功。传输重试、整页致命重试/对半拆页沿用既有有界策略，与句级语义轮次分开记账。
+1. **Evidence level**: when a frozen cut point can be uniquely recovered, correct it in place. When the source endpoint is uncertain, handle it conservatively per §3.3. Keep the body text, and do not create a cut point from a guessed endpoint.
+2. **Sentence level**: natural translation, display rewrite, and alignment are validated and persisted separately. A sentence may be "translation accepted, alignment pending a fix". Good sentences on the same page enter the producer's document-application queue immediately, without waiting for the page-level remediation to finish.
+3. **One in-page remediation round (A)**: in the same session, follow up only on the problem sentences, giving the ordinal, the permissions, and the specific reason. If the frozen text after code correction differs from the historical answer, the follow-up must attach the current full frozen text and the text baseline. It must not require the model to recover from the old answer. Therefore, the cost of a follow-up is not always just the ordinal and reason.
+4. **Cold queue**: by stage, collect the remaining sentences and re-page them with the source text, the current effective text, necessary neighboring sentences, and the reasons. Each sentence gets at most two rounds of semantic remediation: A is one in-page round plus one cold-queue round; C does not go in-page and keeps its two cold-queue opportunities. If A's in-page follow-up is wholly unavailable, that round is consumed only when the existing whole-page recovery strategy still fails, and then only one cold-queue round remains. Switching between A and C, taking over a lease, and re-paging do not reset the sentence-level budget. When cold pages mix different remaining budgets, count per sentence.
+5. **Terminal errors**: `Terminal` errors such as authentication or model configuration, and cancellation, are raised immediately and committed artifacts are preserved. Do not disguise a content fallback as success. Transport retries, whole-page fatal retries, and halving splits follow the existing bounded strategy and are accounted for separately from sentence-level semantic rounds.
 
-冷队列使用干净上下文，可以带已接受译文和具体错误原因，不自动重放完整错误会话。各轮档位保持一致；是否采用中档须先完成 §8 的独立对照。
+The cold queue uses a clean context and may include accepted translations and the specific error reasons. It does not automatically replay the complete failed session. Each round keeps the same tier. Whether to adopt the middle tier must first be settled by the independent comparison in §8.
 
-### 5.2 按失败类型确定终态
+### 5.2 Determine the terminal state by failure type
 
-| 耗尽时的状态 | 写入与报告 |
+| State at exhaustion | Write and report |
 | --- | --- |
-| 缺译或译文始终无效 | 保留已有有效译文；本来没有有效译文则保持缺译，沿用 `translation-partial` 等检查。绝不把源文或占位文本当译文，也不调用需要有效译文的对齐兜底 |
-| 自然译文有效，对齐失败 | 只对已接受文本运行现有确定性阶梯：纯锚点对齐 → `fallback_word_entry` → `ai/align-fallback-<lang>.json`，由 `ccut check` 报 `align-degraded-fallback`；仍无法形成有效条目则保留缺失/陈旧状态并报告 |
-| 显示改写失败 | 不接受失败改写。保留 `trans`；已有且指纹有效的 `transDisplay` 可继续使用，否则对自然译文执行对齐降级 |
+| Missing translation, or translation always invalid | Keep the existing valid translation; if there was none, leave it missing and rely on existing checks such as `translation-partial`. Never treat source or placeholder text as a translation, and do not call the alignment fallback that requires a valid translation |
+| Natural translation valid, alignment failed | Run only the existing deterministic ladder on the accepted text: pure anchor alignment → `fallback_word_entry` → `ai/align-fallback-<lang>.json`, which `ccut check` reports as `align-degraded-fallback`; if no valid entry can still be formed, keep the missing/stale state and report it |
+| Display rewrite failed | Do not accept the failed rewrite. Keep `trans`; an existing `transDisplay` whose fingerprint is still valid may continue to be used, otherwise run the alignment fallback on the natural translation |
 
-自然翻译只写 `trans[lang][sid]`；字幕显示改写只写 `transDisplay` 并绑定自然译文指纹；对齐只写与当前文本基准一致的 `transAlign`。不能因为新载体混放三类句子而混淆写入目标。源词、用户编辑或自然译文变更导致指纹失配时，旧改写与对齐不得继续应用。
+The natural translation writes only `trans[lang][sid]`; the subtitle display rewrite writes only `transDisplay`, bound to the fingerprint of the natural translation; alignment writes only `transAlign` that matches the current text baseline. Because the new carrier mixes three kinds of sentences together, the write target must not be confused. When a change to the source word, a user edit or the natural translation causes a fingerprint mismatch, the old rewrite and alignment must no longer be applied.
 
-### 5.3 持久化状态机
+### 5.3 Persistent state machine
 
-页清单必须分开记录：
+The page manifest must record these separately:
 
-- **身份与输入**：任务/页 id、稳定的 `n ↔ (srcId, sid)` 映射、源词 id/文本/时间快照指纹、自然译文与显示文本指纹、权限、载体/契约版本、预算与规划配置指纹。源级项目可省略 `srcId`，跨源项目不能只用 `sid` 作键。
-- **句级状态**：`translation = pending | accepted | missing-final`；`display = unchanged | pending | accepted | rejected-final`；`alignment = pending | accepted | degraded | missing-final`。已有自然译文初始化为 accepted；这些是任务状态，不扩充 transcript 数据模型。
-- **页级状态**：`awaiting-initial → followup-pending → closed`，允许首次无残余或选择 C 时直接 closed；closed 表示当前调用结束，仍可有转交冷队列的句子。阶段完成须等待冷队列和文档应用收束，并报告缺译/降级计数。
-- **记账**：单调递增的 `pageRevision`、每次 `submissionId`/答案哈希/基准 revision、每句已消费补做轮次、当前租约、冷队列稳定条目键，以及 producer 的 applied revision。
+- **Identity and input**: task/page id, the stable mapping `n ↔ (srcId, sid)`, snapshot fingerprints of source word id/text/timing, fingerprints of the natural translation and display text, permissions, carrier/contract version, and the budget and planning config fingerprint. In single-source projects `srcId` may be omitted; in cross-source projects `sid` alone must not be used as a key.
+- **Sentence-level state**: `translation = pending | accepted | missing-final`; `display = unchanged | pending | accepted | rejected-final`; `alignment = pending | accepted | degraded | missing-final`. Existing natural translations are initialised as accepted. These are task states and do not extend the transcript data model.
+- **Page-level state**: `awaiting-initial → followup-pending → closed`. Going straight to closed is allowed when the first submission leaves no residue, or when option C is chosen. `closed` means the current call has ended, though sentences handed to the cold queue may remain. Completing the stage must wait for the cold queue and document application to converge, and must report the counts of missing translations and degradations.
+- **Bookkeeping**: a monotonically increasing `pageRevision`; for each submission, its `submissionId`, answer hash and base revision; per sentence, the number of follow-up rounds consumed; the current lease; the stable entry keys of the cold queue; and the producer's applied revision.
 
-| 事件 | 状态变化与动作 |
+| Event | State change and action |
 | --- | --- |
-| 首次提交部分成功 | 持久化接受集合与剩余句；有效译文可先接受，对齐保留 pending；A 留在 followup-pending，同租约补交，`--next` 不认领别页 |
-| 补交 | 只处理上一回执 queued 中仍待处理的句子及获准字段；不得覆盖已接受译文，`rewrite` 只写显示层；其余序号记建议。提交后按剩余预算入冷队列，页 closed |
-| 内容已接受但文档尚未应用 | 重跑只补做缺失阶段，并重放尚未应用的接受记录；不能因 translation=accepted 而跳过 alignment=pending |
-| 租约过期或 worker 掉线 | 接手者读取同一页 revision、剩余预算、当前冻结文本与回执。能恢复历史时接着做，否则用完整修复载荷开启新上下文；不能只发序号，不能重新接受整页 |
-| 用户编辑或输入基准变化 | 尚未应用的旧结果标 stale，按新快照重新规划；已接受历史留作审计，不覆盖当前文档 |
+| First submission partly succeeds | Persist the accepted set and the remaining sentences; valid translations may be accepted first, while alignment stays pending. A stays in followup-pending and follows up under the same lease; `--next` does not claim another page |
+| Follow-up submission | Handle only the sentences still pending from the previous submission's queued receipt, and only the fields permitted. Do not overwrite accepted translations; `rewrite` writes only the display layer; suggestions for the other sequence numbers are recorded. After submission, the rest goes to the cold queue within the remaining budget, and the page becomes closed |
+| Content accepted but document not yet applied | On rerun, complete only the missing stages and replay accepted records not yet applied. Do not skip alignment=pending just because translation=accepted |
+| Lease expired or worker dropped | The successor reads the same page revision, remaining budget, current frozen text and receipts. If history can be recovered, continue from it; otherwise open a new context with the full repair payload. Do not send only sequence numbers, and do not re-accept the whole page |
+| User edit or input baseline change | Mark pending old results stale and re-plan against the new snapshot. Accepted history is kept for audit and does not overwrite the current document |
 
-**提交和应用的顺序。** parser/planner 保持纯函数，正式提交由共享协调器在锁内核对基准，再写不可变提交记录（含有效正文、规划产物、答案哈希、回执与下一状态），原子发布页清单 revision。回执只在持久提交完成后返回。producer 是 transcript 的唯一写入者，按已提交记录增量应用；CLI submit 不另开一条直接修改 transcript 的路径。部分提交不提前写旧消费者视为“整次调用完成”的 `responses/<call>.json`；页 closed 后才发布终局响应，producer 通过新增的提交事件读取中间结果。
+**Order of submission and application.** The parser/planner stays a pure function. Formal submission is done by the shared coordinator, which checks the baseline under the lock, writes an immutable submission record (containing the valid text, planning artifacts, answer hash, receipt and next state), and then atomically publishes the page manifest revision. The receipt is returned only after the persistent commit completes. The producer is the sole writer of the transcript and applies changes incrementally from committed records; CLI submit must not open a separate path that modifies the transcript directly. A partial submission must not write `responses/<call>.json` early, because old consumers treat that file as "the whole call is complete". The final response is published only after the page is closed, and the producer reads intermediate results through the newly added submission events.
 
-文档更新与 applied revision 之间必须可重放：先记录应用意图及前后指纹，再经既有文档写路径原子写入，最后推进 applied revision。崩溃恢复时文档匹配后指纹则补记完成，匹配前指纹则应用一次，两者都不匹配则报 stale，不能无条件重放。必须覆盖“提交记录已写/清单未发布”和“文档已写/applied revision 未更新”等中断点；单个文件原子 rename 不等于跨文件事务。
+**Document update and applied revision must be replayable.** First record the intent to apply, together with the before and after fingerprints; then write atomically through the existing document write path; and finally advance the applied revision. On crash recovery: if the document matches the after-fingerprint, record completion; if it matches the before-fingerprint, apply once; if neither matches, report stale. Never replay unconditionally. The tests must cover interruption points such as "submission record written but manifest not published" and "document written but applied revision not yet updated". An atomic rename of a single file is not a cross-file transaction.
 
-**幂等与并发。** 幂等键包含任务、页、基准 revision 和答案哈希；`submissionId` 在首次发送前生成，同 id 不同内容为冲突。相同提交重发直接返回原回执，不再写文档或消耗轮次，即使首次响应丢失。新的提交必须对当前 revision 做 compare-and-swap；对冲或迟到答案仅在同一基准仍有效时竞争一次，旧 revision 返回 stale 和当前回执，不能覆盖胜者、关闭仍有补交的页或消耗现任 worker 的预算。接手和对冲共享页/句状态，不各建一套修复预算。
+**Idempotency and concurrency.** The idempotency key includes task, page, base revision and answer hash. `submissionId` is generated before the first send; the same id with different content is a conflict. Resending an identical submission returns the original receipt directly, without writing the document again or consuming a round, even if the first response was lost. A new submission must do compare-and-swap against the current revision. Hedged or late answers compete only once, and only while the same baseline is still valid. An old revision returns stale plus the current receipt; it must not overwrite the winner, close a page that still has follow-ups, or consume the current worker's budget. Takeover and hedging share page and sentence state; they do not each build their own repair budget.
 
-## 6. 各阶段怎么落
+## 6. How each stage lands
 
-### 6.1 对照
+### 6.1 Comparison
 
-| 现在 | 以后 |
+| Now | Later |
 | --- | --- |
-| 翻译页 `translation-source/1`，rows 融合属性 | `lines/1`，无译文行 |
-| `align-edges/1`（b 页） | `lines/1`，`=` 句，块解释 |
-| `align-rewrite/1`（w 页） | `lines/1`，`~` 句，块解释 |
-| `r` 修复页 | A 走同页补做后冷队列，C 直接冷队列；修复页混放三种句 |
-| `align-table/1`（定向修复、审阅） | `lines/1`，`=` 或 `~` 句，行解释 |
-| paired row-repair 尾轮 | 修复队列里的 `=` 句，`!` 行写「这几句标得更细」 |
+| Translation page `translation-source/1`, with rows that merge attributes | `lines/1`, with no translation rows |
+| `align-edges/1` (page b) | `lines/1`, `=` sentences, block interpretation |
+| `align-rewrite/1` (page w) | `lines/1`, `~` sentences, block interpretation |
+| `r` repair page | A follows up on the same page, then the cold queue; C goes straight to the cold queue; the repair page mixes all three sentence kinds |
+| `align-table/1` (targeted repair, review) | `lines/1`, `=` or `~` sentences, row interpretation |
+| Paired row-repair tail rounds | `=` sentences in the repair queue; the `!` line says "these sentences are now marked at finer granularity" |
 
-历史任务目录里的旧格式仍由旧解析器和旧提交状态机读，做法同当年 json-v0 的收尾。载体、提交协议与提示词版本进入持久请求及复用指纹；不能只改扩展名就让旧租约按新补交规则运行。
+Old-format data in historical task directories is still read by the old parser and the old submission state machine, handled the same way json-v0 was wound down. The carrier, submission protocol and prompt version enter the persisted request and the reuse fingerprints. An old lease must not run under the new follow-up rules just because the file extension changed.
 
-### 6.2 时间信息不再给模型
+### 6.2 Timing information is no longer given to the model
 
-`data-align-groups` 让模型按组的时长判断「每行至少 1 秒、每秒不超过 6 单位」。取消它的理由：
+`data-align-groups` has the model judge "at least 1 second per row, and no more than 6 units per second" by group duration. Reasons for dropping it:
 
-- 读速和最短时长本来就有确定性的收口（`merge_short_rows`、`pair_cost` 里的时长项），模型的行一直是草稿。
-- 分组的三个来源里，从句标点模型自己看得见，停顿可以用 `⏸` 表达，源 Cue 边界按纪律本就不该作为证据。
-- 它占翻译输入约 14%，而且把「译文先定」和「按源侧分组拼行」两件事搅在一起。
+- Reading speed and minimum duration already have deterministic bounds (`merge_short_rows`, and the duration term in `pair_cost`). The model's rows have always been drafts.
+- Of the three sources of grouping, the model can see sentence punctuation itself, and pauses can be expressed with `⏸`. Source Cue boundaries, by discipline, should not have been evidence in the first place.
+- It takes about 14% of the translation input, and it mixes two things together: "settle the translation first" and "group and join lines by the source side".
 
-代价是首轮的行可能更多地被代码合并。这是 §8 要对拍的第一个指标。
+The cost is that first-round rows may more often be merged by code. This is the first metric that §8 must compare.
 
-### 6.3 改写仍是第二步，但变便宜
+### 6.3 Rewriting is still a second step, but cheaper
 
-不把「放不下就按源序改写」并进翻译调用。理由是纪律要求先有完整自然的译文，row-first 实验也证明让模型边译边凑行会丢信息。改写句和其他问题句一起，在页内补做或冷队列中处理（§6.5）。§7 旧起点格式回放的改写输出约为原来的 15%；首尾引用的实际输出量须重新测量。
+"Rewrite in source order when it does not fit" is not merged into the translation call. The reason: the discipline requires a complete, natural translation first, and the row-first experiment also showed that letting the model fit lines while it translates loses information. Rewritten sentences are handled together with the other problem sentences, either as a follow-up on the same page or in the cold queue (§6.5). In §7, the rewrite output replayed from the old starting-format is about 15% of the original. The actual output volume of the head/tail anchors must be measured again.
 
-### 6.4 两条执行路径
+### 6.4 Two execution paths
 
-本地 Agent 与 Cloud Model 共用同一份契约文本和同一个解析器、校验器，切换必须同一笔提交完成：
+The local Agent and the Cloud Model share the same contract text, the same parser and the same validator. Switching must complete in the same submission:
 
-- Cloud：system prompt、`<BEGIN INPUT>` 的媒体类型、验收。
-- Agent：`contracts/<kind>.md`、`payloads/` 的扩展名、`ccut task submit` 的 lint 门与回执、skill 里 `agent-task-file-contracts.md` 等几篇参考（四种载体的说明合成一种，篇幅会明显缩短）。
-- 共享回归：同一批夹具两条路径都跑（§8）。
+- Cloud: system prompt, the media type of `<BEGIN INPUT>`, acceptance.
+- Agent: `contracts/<kind>.md`, the file extension of `payloads/`, the lint gate and receipt of `ccut task submit`, and several skill references such as `agent-task-file-contracts.md` (the descriptions of the four carriers are merged into one, which noticeably shortens the text).
+- Shared regression: the same batch of fixtures runs through both paths (§8).
 
-涉及 CLI 面：`--align-carrier` 增加取值、预检入口、提交基准/幂等字段、部分接受回执、`--next` 和迟到提交语义、`specVersion`，都要在实施时同步 [cli-server-reference](../cli/ccut-cli-server-reference.md)、协议闭集与相关测试。本设计稿不提前修改当前 CLI 参考，避免把提案当作已发布契约。
+Changes to the CLI surface: `--align-carrier` gains new values, plus a preflight entry, base-revision and idempotency fields on submission, partial-acceptance receipts, `--next` and late-submission semantics, and `specVersion`. All of these must be synchronised at implementation time with [cli-server-reference](../cli/ccut-cli-server-reference.md), the closed protocol set and the related tests. This design doc does not modify the current CLI reference in advance, so that a proposal is not treated as a published contract.
 
-### 6.5 会话与缓存
+### 6.5 Session and cache
 
-翻译和对齐可以放在同一个会话里，单位是**页**。是否使用页内补做由独立对照决定，不能由“缓存可用”单独推出。有三种形态可选：
+Translation and alignment can share one session, with the unit being a **page**. Whether to use in-page follow-up is decided by a separate controlled comparison; it must not be inferred from "the cache is available" alone. Three shapes are available:
 
-| 形态 | 第一轮 | 第二轮（同一会话） | 之后 |
+| Shape | Round 1 | Round 2 (same session) | Afterwards |
 | --- | --- | --- | --- |
-| **A 融合 + 页内补做**（候选） | 翻译，同时给首尾引用 | 只补本页的问题句 | 剩下的进一轮阶段末冷队列 |
-| B 先译后标 | 只翻译，不标 | 给需要切的句子写首尾引用，回显冻结译文 | 问题句按剩余预算补做，全部轮次计入成本 |
-| C 只有冷队列（成本基线） | 翻译，同时给首尾引用 | 没有 | 阶段末跨页队列，最多两轮，按句剩余预算执行 |
+| **A fused + in-page follow-up** (candidate) | Translate, while also giving head/tail anchors | Follow up only on this page's problem sentences | The rest goes to a cold queue at the end of the stage |
+| B translate first, mark later | Translate only, no marking | Give head/tail anchors for the sentences that need splitting, echoing the frozen translation | Problem sentences are followed up within the remaining budget; all rounds count toward cost |
+| C cold queue only (cost baseline) | Translate, while also giving head/tail anchors | None | A cross-page queue at the end of the stage, at most two rounds, executed within each sentence's remaining budget |
 
-B 的正常首次标注不是失败修复；其中若同时补缺译句，相关句须消耗语义补做预算，不能借阶段切换重置次数。
+B's normal first-pass marking is not failure repair. If it also fills missing translations, the affected sentences must consume the semantic follow-up budget, and the count must not be reset by switching stages.
 
-A 的第二轮是这样一条追问，输出格式同 §3.2，只回被点到的句子：
+A's round 2 is a follow-up of this form. The output format is the same as §3.2, and it returns only the sentences that were pointed out:
 
 ```
 4~
-! 整句 26 单位，只有一块，超过 20
+! Whole sentence 26 units, only one block, over 20
 17=
-! 锚词 you know 在本句出现 4 处，多引几个词
+! Anchor "you know" appears 4 times in this sentence; quote a few more words
 ```
 
-**成本先按实际缓存边界算。** 旧草案将 A 的第二轮写成 `c·(5S + P + T) + R + w·F`，假定首轮答案 `T` 也已缓存。对首轮断点停在 `user₁` 的 Claude 请求，第二轮只能读取到该处；新出现的 `assistant₁` 需按未缓存输入或缓存写入计费。官方多轮示例明确区分这两部分，不能以“同一会话”推定全部命中。[Claude 缓存说明](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)
+**Cost is first calculated by the actual cache boundary.** The old draft wrote A's round 2 as `c·(5S + P + T) + R + w·F`, assuming the round-1 answer `T` was also cached. For a Claude request whose first breakpoint stops at `user₁`, round 2 can only read up to that point; the newly appearing `assistant₁` must be billed as uncached input or as cache write. The official multi-turn examples distinguish these two parts clearly, so "same session" must not be taken to mean everything hits. [Claude prompt caching docs](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)
 
-为展示这一项修正的量级，暂沿用 §7 **旧起点格式**的数据：`S=6,000`、`P=22,157`、`T=8,657`、`F=3,056`、`Q=8,253`、`R≈2,000`；输入字符记 1，输出记 `w=4`，缓存读取记 `c`。下表假设五页都补做一次，C 的第一轮冷队列分两页，仍未计缓存写入溢价、存储费、推理 token、额外残余修复和跨页 system 折扣，**不是新方案的计费预测**：
+To show the magnitude of this correction, the old-starting-format data from §7 is used tentatively: `S=6,000`, `P=22,157`, `T=8,657`, `F=3,056`, `Q=8,253`, `R≈2,000`. Input characters count as 1, output counts as `w=4`, and cache reads count as `c`. The table assumes all five pages get one follow-up, and C's first-round cold queue is split into two pages. It still excludes the cache-write premium, storage fees, reasoning tokens, extra residual repairs and the cross-page system discount. **It is not a billing forecast for the new scheme**:
 
-| 形态 | 算式 | c = 0.1 | c = 0.25 | 没有缓存 |
+| Shape | Formula | c = 0.1 | c = 0.25 | No cache |
 | --- | --- | ---: | ---: | ---: |
-| A，首轮答案未缓存 | `5S + P + w·T + c·(5S + P) + T + R + w·F` | 114,882 | 122,705 | 161,823 |
-| C，仅计第一轮冷队列 | `5S + P + w·T + 2c·S + Q + w·F` | 108,462 | 110,262 | 119,262 |
+| A, round-1 answer not cached | `5S + P + w·T + c·(5S + P) + T + R + w·F` | 114,882 | 122,705 | 161,823 |
+| C, first-round cold queue only | `5S + P + w·T + 2c·S + Q + w·F` | 108,462 | 110,262 | 119,262 |
 
-因此撤回旧稿 `c≈0.13` 的打平结论和“B 比 A 贵四分之一”的定量结论。首尾引用增加输出；冻结文本纠正可能增加追问；A 的末轮冷队列和 C 的第二轮冷队列都要按真实残余计入。B 保留为“先译后标”的质量对照，按各轮实际请求重算，不能从旧起点字符表外推。
+Therefore the earlier draft's break-even conclusion at `c≈0.13`, and its quantitative conclusion that "B costs a quarter more than A", are withdrawn. Head/tail anchors add output; frozen-text corrections may add follow-ups; A's final-round cold queue and C's round-2 cold queue must both be counted at their real residual. B is kept as the quality control for "translate first, mark later", and is recalculated from each round's actual requests. It must not be extrapolated from the old-starting-format character table.
 
-**统一账本。** 每个真实请求记录 provider/API/model、输入/输出/推理 token、缓存读/写 token、计费类别和价格版本、显式缓存存储/TTL 成本（如有）、耗时及是否 hedge/retry。先按服务商定义把互有包含的 usage 字段转换为互斥计费类别，再求和；推理已包含在输出计费时不得重复加。usage 缺失标 unknown，不写 0；流式响应聚合最终 usage。Agent 读取宿主可提供的计费数据，拿不到时只报告字符/token 估计，不能声称实际费用下降。
+**Unified ledger.** Each real request records provider/API/model, input, output and reasoning tokens, cache read and write tokens, the billing category and price version, explicit cache storage/TTL cost (if any), latency, and whether it was a hedge or a retry. Usage fields that overlap by provider definition are first converted into mutually exclusive billing categories, and only then summed; reasoning already included in output billing must not be added again. When usage is missing, mark it unknown, not 0. Streaming responses aggregate the final usage. Agents read the billing data the host provides; when none is available, they report only character/token estimates and must not claim that the actual cost has dropped.
 
-**A/C 选择。** M1 先在相同载体、档位、页预算和两轮补做上限下对比，分别报告总费用、剩余错误与端到端延迟，再把通过的策略固定在 provider/model 配置中。system 命中不等于整页历史命中；不再使用“命中超过一半就用 A”的统一阈值。没有可靠用量信息或该配置未验证时用 C；中途退到 C 时保留句级已消费预算。A 的邻句上下文可能提高质量或缩短等待，但必须由对照结果支持。
+**A/C selection.** M1 first compares the two under the same carrier, tier, page budget and a two-round follow-up cap. It reports total cost, remaining errors and end-to-end latency separately, and then fixes the winning strategy into the provider/model configuration. A system cache hit does not mean the whole page history hit, and the unified rule "use A if more than half hits" is no longer used. Use C when there is no reliable usage information or the configuration is unverified. When falling back to C midway, keep the per-sentence budget already consumed. A's neighbouring-sentence context may improve quality or shorten waiting, but this must be supported by the comparison results.
 
-**跨页共享 system 可以单独实施。** 本项目五次翻译调用的 system 逐字节相同（各 12,753 字节、11,951 字符），重发不等于全价收费。假定此前全未命中、后四次完整命中且 `c=0.1`，仅 system 的字符权重才会从 59,755 变为约 16,700；实际收益以账本为准。Gemini 默认支持隐式缓存，证明缺少显式断点不足以推定无缓存。[Gemini 缓存说明](https://ai.google.dev/gemini-api/docs/generate-content/caching)
+**The cross-page shared system can be implemented separately.** The system prompt of this project's five translation calls is byte-identical (12,753 bytes, 11,951 characters each), and resending it does not mean full price. Assuming none of the earlier calls hit the cache, the later four hit fully, and `c=0.1`, only the system character weight would drop from 59,755 to about 16,700. The actual gain is subject to the ledger. Gemini enables implicit caching by default, which shows that the absence of explicit breakpoints is not enough to assume there is no cache. [Gemini caching docs](https://ai.google.dev/gemini-api/docs/generate-content/caching)
 
-- 页内容放 user，system 保持一次运行内逐字节不变，以测试守住。
-- 按 provider 能力选择显式/隐式缓存与断点；Claude 可在共享 system 和首条 user 末尾设置断点，首轮 assistant 的输入缓存资格另算。自动放断点也可能收写入费，不能按“自动/显式”划分免费与收费。
-- 只有需要首请求预热且实测收益成立的 provider 才延后其他页启动，记录等待带来的延迟。Claude 的条目在首次响应开始后可复用；其他 API 不能照搬这个时机。
-- 模型、API、最小可缓存 token 数、TTL、读写价格及适配行为记录为可更新的能力配置；不把本节示例字符数或统一命中比例写成路由常量。实施时重新核对官方文档。
+- Put page content in user; keep the system byte-identical throughout a run, enforced by a test.
+- Choose explicit or implicit caching and breakpoints per provider capability. Claude may set breakpoints at the end of the shared system and at the end of the first user message; the cache eligibility of the first-round assistant input is calculated separately. Automatic breakpoints can also incur write fees, so "automatic" versus "explicit" cannot be used to split free from paid.
+- Only a provider that needs first-request warm-up, and whose measured benefit holds, may defer the start of other pages, and the waiting latency is recorded. For Claude, the entry can be reused once the first response starts. Other APIs cannot copy this timing.
+- Record the model, API, minimum cacheable token count, TTL, read and write prices, and adaptation behaviour as an updatable capability config. Do not write this section's example character counts or uniform hit ratios as routing constants. Re-check the official docs at implementation time.
 
-**不把所有页放进一个长会话。** 每一轮都要重读前面全部内容，成本按页数平方涨；页之间不能并发；一页坏了会影响后面；数小时的文稿放不下。跨页要共享的东西只有 system。
+**Do not put all pages into one long session.** Each round re-reads all earlier content, so cost grows with the square of the page count. Pages cannot run concurrently, one bad page affects the ones after it, and hours-long manuscripts do not fit. The only thing to share across pages is the system.
 
-**Cloud 路径要补的。** 现在每次调用是无状态的 `system + 一条 user`（`LlmRequest` 只有这两段）。「同一会话」在这里的意思是请求体带上历史 `[system, user₁, assistant₁, user₂]`：
+**What the cloud path needs to add.** Each call is now stateless: `system + one user` (`LlmRequest` has only these two parts). "Same session" here means the request body carries the history `[system, user₁, assistant₁, user₂]`:
 
-- `assistant₁` 保存服务商支持重放的完整消息表示，不从清洗后的译文反建。当前 `response_text` 和 `logs/llm/*.jsonl` 主要保留抽出的答案文本，不能当作完整 provider 响应；新增专用页产物保存重放必需的 content blocks、签名/不透明状态和文本，遵守各 API 的要求，不尝试获取未返回的隐藏推理。
-- 会话从持久请求和响应重建，响应在解析前先持久化并绑定请求指纹。已有响应或提交回执直接复用；网络发出后但响应未持久化的中断可能导致重复计费，不能承诺只损失缓存。磁盘幂等保证的是应用一次，不是服务商执行一次。
-- 第二轮和第一轮用同一套模型与档位。OpenAI 兼容、Anthropic、Gemini 分别测试历史重放、所需不透明字段、usage 和错误恢复；不支持可靠重放时转完整载荷的冷队列，不靠拼一个通用 assistant 字符串冒充原历史。
-- 校验后尽快追问，但 TTL 还受首轮生成耗时和排队影响，不能因代码校验快就保证命中；记录实际命中。冷队列也不能预先保证 system 缓存仍有效。
-- 当前 `reasoning_tokens` 只在部分错误诊断中读取，并非完整用量记录；补齐上述账本后才评估降费。
+- `assistant₁` stores the complete message representation that the provider supports for replay. It is not reconstructed from the cleaned translation. The current `response_text` and `logs/llm/*.jsonl` mainly keep the extracted answer text and cannot be treated as the full provider response. A new dedicated page artifact must store the content blocks, signatures/opaque state and text that replay requires, following each API's rules, and must not attempt to obtain hidden reasoning that was not returned.
+- The session is rebuilt from persisted requests and responses. A response is persisted before parsing and bound to the request fingerprint. An existing response or submission receipt is reused directly. An interruption after the request was sent but before the response was persisted may cause duplicate billing, so no promise is made that only the cache is lost. Disk idempotency guarantees "applied once", not "executed once by the provider".
+- Round 2 and round 1 use the same model and tier. OpenAI-compatible, Anthropic and Gemini each need tests for history replay, required opaque fields, usage and error recovery. Where reliable replay is not supported, fall back to the cold queue with the full payload; do not pretend a generic assistant string is the original history.
+- Follow up as soon as validation finishes, but the TTL is also affected by first-round generation time and queueing, so fast code validation does not guarantee a hit. Record the actual hit. The cold queue also cannot assume the system cache is still valid in advance.
+- The current `reasoning_tokens` is read only in some error diagnostics and is not a full usage record. Cost reduction is evaluated only after the ledger above is complete.
 
-**Agent 路径要补的。** worker 的 CLI 会话本来就跨调用保留上下文，缓存由 CLI 自己管。缺的是「同一个 worker 接着补同一页」：
+**What the Agent path needs to add.** The worker's CLI session already keeps context across calls, and the cache is managed by the CLI itself. What is missing is "the same worker continues to follow up the same page":
 
-- `ccut task submit` 同步运行共享解析器和规划器，以 §5.3 的原子提交返回 `queued`。A 的 `followup-pending` 回执让 worker 在同一租约内补交一次，`--next` 必须先完成当前页；页关闭后才认领别页。租约接手、迟到提交和 hedge 也遵守 revision/幂等规则。
-- 新载体不复制旧 kind 的 force-through 行为；第一次提交后保留有效部分，失败单元按两轮补做上限处理。旧任务的 hardGate/noProgress 保持旧协议，新协议不得因迁移绕过内容验收。
-- Agent 的 CLI 会话不保证永久存在，宿主压缩上下文或重启后按清单恢复完整修复载荷。provider 的 usage 缓存门不直接套到 Agent；使用独立测得的 worker 成本与延迟结果选择 A/C。
-- 推理档位的目标配置为各轮中档且不自动升档，但“中档足够”尚未验证。先固定现有档位测载体，再单独对照中档；通过 §8 质量门后才将对应 `recommendedEffort` 从 `high` 改成 `medium`，否则保留现有档位。错误反馈仍优先补具体原因和上下文。
+- `ccut task submit` runs the shared parser and planner synchronously, and returns `queued` through the atomic submission of §5.3. A's `followup-pending` receipt lets the worker submit one follow-up within the same lease. `--next` must first finish the current page, and claims another page only after the page is closed. Lease takeover, late submission and hedging also follow the revision and idempotency rules.
+- The new carrier does not copy the old kind's force-through behaviour. After the first submission, valid parts are kept, and failed units are subject to the two-round follow-up cap. Old tasks keep the old protocol for hardGate/noProgress; the new protocol must not bypass content acceptance through migration.
+- The Agent's CLI session is not guaranteed to persist. If the host compresses context or restarts, the full repair payload is restored from the manifest. The provider's usage cache gate does not apply directly to Agents; choose A or C based on independently measured worker cost and latency.
+- The target reasoning effort is medium for every round, with no automatic step-up, but "medium is sufficient" is not yet verified. First fix the current tiers and test the carrier, then compare medium separately. Only after passing the §8 quality gate may the corresponding `recommendedEffort` change from `high` to `medium`; otherwise keep the current tier. Error feedback should still prioritise adding the specific reason and context.
 
-### 6.6 翻译前的润色不并进页会话（已裁决）
+### 6.6 Pre-translation polishing is not merged into the page session (decided)
 
-页会话只管翻译和对齐。翻译前的润色（改源文）仍是独立的阶段，有自己的页，理由：
+The page session handles only translation and alignment. Polishing before translation (which edits the source text) remains a separate stage with its own pages, for these reasons:
 
-- 分页不同：润色页的核心区 2200 词，两侧各带最多 200 词只读上下文（`PolishBudget`）；rows 翻译页 800 词。
-- 阶段之间有整篇的步骤：润色之后还有四个跨页波次（`punct-repair`、`polish-retry`、`seam-repair`、`segment-repair`）和一次整篇写回，`translate-brief` 读的是润色后的全文节选，翻译要等这些都做完。并进来就要重排这一整段。
-- 可复用页界受限：本机 26 个项目里有 4 个项目两成以上的句末位置被润色改过。旧稿的额外节省 10%–13% 依赖未核准的缓存假设，撤回定量结论，不作为合并阶段的依据。
+- Different paging: the polish pages have a 2,200-word core region, with up to 200 words of read-only context on each side (`PolishBudget`); the rows translation pages use 800 words.
+- Whole-document steps sit between the stages: after polishing there are four cross-page waves (`punct-repair`, `polish-retry`, `seam-repair`, `segment-repair`) and one whole-document write-back, and `translate-brief` reads an excerpt of the polished full text, so translation must wait until all of these are done. Merging them into the session would require reordering this entire sequence.
+- Reusable page boundaries are limited: on this machine, 4 of the 26 projects have more than 20% of their sentence-final positions changed by polishing. The extra saving of 10%–13% from the old draft depended on an unapproved cache assumption, so that quantitative conclusion is withdrawn and is not a basis for the merge stage.
 
-润色自己的精简（补丁式输出）见 §10.1，和页会话无关。
+Polishing's own condensation (patch-style output) is covered in §10.1 and is unrelated to the page session.
 
-现在的管线里没有「润色译文」这一步。`~` 句只生成独立的显示改写，不覆盖自然译文。以后若增加自然译文润色，要重新定义其写入权限、指纹失效与对齐重算，不能仅因已有页会话就追加一轮。
+The current pipeline has no "polish translation" step. `~` sentences only produce a separate display rewrite and do not overwrite the natural translation. If a natural-translation polishing step is added later, its write permissions, fingerprint invalidation and alignment recomputation must be redefined. It must not be appended as an extra round merely because a page session already exists.
 
-## 7. 历史回放与待重测数据
+## 7. Historical replay and data to be re-measured
 
-以下保留原草案的**仅起点格式**回放：把本项目已有输出机械转换，不调用模型，只比体积。锚词取「本句内唯一的最短前缀，至少两个原子」。这些字符数是该次回放的值；token 是同一个启发式估算器下的相对值，不是任何一家分词器的绝对数。本次文档审查未独立重跑这些项目，也未用首尾引用重算；不能把旧输出节省比例标成当前 `lines/1` 的结果。
+The following keeps the **starting-point-only format** replay from the original draft: existing outputs of this project are mechanically converted without calling any model, and only the size is compared. Anchors are taken as “the shortest prefix that is unique within the sentence, at least two atoms.” The character counts are the values from that replay. Tokens are relative values under the same heuristic estimator, not absolute counts from any vendor's tokenizer. This document review did not rerun these projects independently and did not recalculate with head-and-tail references, so the old output saving ratios must not be labelled as results of the current `lines/1`.
 
-| 页 | 输入字符 | 输出字符 | 估算 token（入 / 出） |
+| Page | Input characters | Output characters | Estimated tokens (in / out) |
 | --- | --- | --- | --- |
-| 翻译五页 | 92,158 → 22,157（−76%） | 23,766 → 8,657（−64%） | −86% / −61% |
-| `w001` 改写页 | 10,552 → 4,283（−59%） | 12,780 → 1,640（−87%） | −69% / −84% |
-| `w002` 改写页 | 10,216 → 3,970（−61%） | 12,075 → 1,416（−88%） | −71% / −86% |
-| `v002` 的 `b001` edges 页（含 10 处乱序） | 7,411 → 3,424（−54%） | 9,924 → 1,503（−85%） | −67% / −83% |
+| Five translation pages | 92,158 → 22,157 (−76%) | 23,766 → 8,657 (−64%) | −86% / −61% |
+| `w001` rewrite page | 10,552 → 4,283 (−59%) | 12,780 → 1,640 (−87%) | −69% / −84% |
+| `w002` rewrite page | 10,216 → 3,970 (−61%) | 12,075 → 1,416 (−88%) | −71% / −86% |
+| `b001` edges page of `v002` (including 10 out-of-order spots) | 7,411 → 3,424 (−54%) | 9,924 → 1,503 (−85%) | −67% / −83% |
 
-锚词要引几个原子才在句内唯一：
+How many atoms an anchor must quote to be unique within a sentence:
 
-| 样本 | 切点数 | 1 个 | ≤2 | ≤3 | ≤4 |
+| Sample | Cut points | 1 | ≤2 | ≤3 | ≤4 |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| 本机 27 个英文源项目的现有 `transAlign` 切点 | 3,561 | 72.3% | 95.3% | 98.5% | 99.6% |
-| 中文源（字级原子），长访谈前 3 万字，合成切点 | 2,167 | 60.7% | 86.7% | 94.5% | 97.7% |
-| 中文源（字级原子），短片，合成切点 | 151 | 72.8% | 93.4% | 98.0% | 98.7% |
+| Existing `transAlign` cut points in the 27 local English-source projects | 3,561 | 72.3% | 95.3% | 98.5% | 99.6% |
+| Chinese source (character-level atoms), first 30,000 characters of a long interview, synthetic cut points | 2,167 | 60.7% | 86.7% | 94.5% | 97.7% |
+| Chinese source (character-level atoms), short film, synthetic cut points | 151 | 72.8% | 93.4% | 98.0% | 98.7% |
 
-中文源的两行没有真实译文可用，切点是按停顿切句后每 10 个原子取一个，只能说明碰撞率的量级。引到 5 个原子仍不唯一的切点在英文样本里有 5 个（0.14%）；新规则不得按“上一锚点之后第一处”猜测，须补上下文引用、回退序号或标为未知。其他源语言也按自身原子定位，不套用这些百分比。
+The two Chinese-source rows have no real translations to use. Their cut points come from splitting sentences at pauses and taking one cut point every 10 atoms, so they indicate only the order of magnitude of the collision rate. In the English sample, there are 5 cut points (0.14%) that are still not unique even when quoting 5 atoms. The new rule must not guess by “the first occurrence after the previous anchor”; it must add context references, fall back to ordinal numbers, or mark the position as unknown. Other source languages are positioned by their own atoms, and these percentages do not apply to them.
 
-M0 重测时固定输入快照、转换脚本版本和 tokenizer，报告首尾引用总长度、端点联合唯一率、无法编码比例、转义开销、输入/输出 token。M1 才能回答实际模型的错误锚定率、信息保留与最终成本；碰撞率和正确定位率不能混为一个指标。
+In the M0 re-measurement, fix the input snapshot, the conversion script version and the tokenizer, and report the total length of head-and-tail references, the joint uniqueness rate of the endpoints, the proportion that cannot be encoded, the escaping overhead, and the input/output tokens. Only M1 can answer the actual model's mis-anchoring rate, information retention and final cost. Collision rate and correct-positioning rate must not be merged into one metric.
 
-## 8. 验证与实施顺序
+## 8. Verification and implementation order
 
-| 步 | 内容 | 通过条件 |
+| Step | Content | Pass condition |
 | --- | --- | --- |
-| M0a | 先补 §6.5 用量账本、历史重放产物与现状基线；载体、档位、分页先不变。共享 system 缓存和取消无用回显可各自独立实验 | 实际计费字段可核对；unknown 不冒充零；逐项报告成本和延迟，不把多项改动的合计收益归给锚词 |
-| M0b | 先把旧 `AlignChunk.ordinals` 压成首尾两条边，不涉及字符串；再加入 `lines/1` 编解码和引用定位。固定目标块、候选切点、硬边和权重，复用 `core/fixtures/align/golden/` 的 126 例并补契约夹具 | 完整证据的端点压缩保留安全边界及块/行结果；覆盖率指标不得按范围填充。空归属/未知证据的新保守门单列预期变化，不能隐性放宽。格式往返、冻结正文保持和下列反例全部通过；§7 用真实 tokenizer 重算 |
-| M1 | 新旧格式在同项目上真实对拍：先固定模型、档位、页预算、修复策略，再分别测试载体、提示词瘦身、移除时间组、A/B/C 会话、中档及扩大页预算。扩展 `scripts/bench/translate_prompt_ab.py` 或其配套 harness 采集新回执和账本 | 按下方内容/对齐/成本三类门验收。至少一个弱模型和一个强模型；Agent 以 Sonnet worker 跑真实项目，800 / 1200 / 2000 每档至少约 10 页（同一源语料重新分页）；每次只变一个因素 |
-| M2 | 通过 M1 后，两条路径在同一笔切换提交中启用新载体；接入 §5 的部分接受、producer 增量消费、修复预算、状态机和协议兼容；同步 CLI 参考与产品 skill | `cargo test -p ccut-flow-core -p ccut-engine -p ccut-kernel -p ccut-serve`，skill 目录检查，两条执行路径各一次完整真跑；下列故障恢复测试通过，旧载体任务仍可继续 |
-| M3 | 润色补丁（§10.1），仍是独立阶段 | 对照词级改动、事实/数字保留、句界/段界一致性；补丁冲突及重放幂等通过 |
-| M4 | 说话人页（§10.2） | 换人位置准确率、未知定位不误改、旧索引回退与成本分别对拍 |
+| M0a | First add the §6.5 usage ledger, the historical replay artifacts and the current baseline; carrier, tier and paging stay unchanged for now. The shared system cache and removing useless echo can each be tested separately | Actual billed fields can be reconciled; unknown is not reported as zero; cost and latency are reported item by item, and the combined gain from several changes is not credited to anchors |
+| M0b | First compress the old `AlignChunk.ordinals` into two edges, the head and the tail, without involving strings; then add `lines/1` encoding/decoding and reference positioning. Fix the target block, candidate cut points, hard edges and weights, and reuse the 126 cases in `core/fixtures/align/golden/` and add contract fixtures | With complete evidence, endpoint compression preserves the safety boundary and the block/line results; coverage metrics must not be padded by scope. The new conservative gate for empty attribution and unknown evidence is listed separately as an expected change and must not be relaxed silently. Format round trips, frozen body preservation and all the counterexamples below pass; §7 is recalculated with the real tokenizer |
+| M1 | Run a real head-to-head comparison of old and new formats on the same projects. First fix the model, tier, page budget and repair strategy, then test carriers, prompt slimming, removal of the time group, A/B/C sessions, the middle tier and an expanded page budget. Extend `scripts/bench/translate_prompt_ab.py` or its companion harness to collect the new receipts and ledger | Accept against the content, alignment and cost gates below. At least one weak model and one strong model; Agent runs real projects with Sonnet workers, with at least about 10 pages per tier at 800 / 1200 / 2000 (re-paginated from the same source corpus); change only one factor at a time |
+| M2 | After M1 passes, enable the new carrier on both paths in the same switch commit; connect partial acceptance, producer incremental consumption, repair budget, state machine and protocol compatibility from §5; sync the CLI reference and the product skill | `cargo test -p ccut-flow-core -p ccut-engine -p ccut-kernel -p ccut-serve`, a skill directory check, and one full real run on each of the two execution paths; the fault-recovery tests below pass, and tasks on the old carrier can still continue |
+| M3 | Polish patch (§10.1), still a separate stage | Checked against word-level changes, preservation of facts and numbers, and consistency of sentence and paragraph boundaries; patch conflicts and idempotent replay pass |
+| M4 | Speaker page (§10.2) | Accuracy of speaker-change positions, no wrong edits for unknown positions, fallback to old indexes, and cost compared separately in head-to-head runs |
 
-**M0 的必测反例：** `{1,3}` / `{2}` 非连续交叉；首块对应源文后半句；重复短语出现在上一块之前；相同起点、范围包含和多个相邻交叉；空归属与未知归属；硬锚点落在模型范围外；短引用碰撞、纯标点原子、数字与 URL；新译文含分隔符、反斜杠、`..` 和换行；冻结句重复短语、局部漏字/否定词、插入和保护词边界。归一化与索引覆盖字级、词级、组合字符、双向文字，不为未列语言推定空格分词。
+**Required M0 counterexamples:** non-contiguous crossing `{1,3}` / `{2}`; the first block corresponds to the second half of the source sentence; a repeated phrase appears before the previous block; identical starts, containing ranges and multiple adjacent crossings; empty attribution and unknown attribution; a hard anchor falls outside the model's range; short-reference collisions, pure-punctuation atoms, numbers and URLs; new translations containing delimiters, backslashes, `..` and line breaks; repeated phrases in frozen sentences, local dropped characters or negation words, insertion, and protected-word boundaries. Normalization and indexing cover character-level, word-level, combining-character and bidirectional text; do not infer space tokenization for languages not listed.
 
-**M1 的质量与成本门：**
+**Quality and cost gates for M1:**
 
-- 内容：人工盲评抽样比较自然度、完整性、否定、数字、专名；A 相对 B 不劣化。不能以结构接受率代替翻译质量。
-- 对齐：相同人工参考下报告错误锚定率、虚假安全切点率、整句降级率、首轮接受率、修复残余、`overFit`、按目标语言/profile 的读速超限占比、SubER 和 boundary F1（`CCUT_VERIFY_METRICS=1`）。原例的每秒 6 显示单位只是对应 profile，不能推广为全部语言门槛。
-- 成本与延迟：累计所有实际请求，包括冷队列、推理、缓存写入/存储和对冲，分别列 Agent 与各 provider；目标为相同质量下实际成本下降至少一半，同时报告端到端延迟。无计费数据的路径保留成本未知结论，不能据估算宣布过门。
-- 对拍前固定样本、版本、重复次数和非劣容忍度，按语言对/长短句分层报告；约 10 页只作探索下限，不足以排除尾部退化时扩大样本，不凭一次平均分裁决。
+- Content: blind human review of a sample comparing naturalness, completeness, negation, numbers and proper nouns; A must not be worse than B. Structural acceptance rate must not substitute for translation quality.
+- Alignment: under the same human reference, report the mis-anchoring rate, the false-safe cut-point rate, the whole-sentence downgrade rate, the first-round acceptance rate, the residual repairs, `overFit`, the proportion exceeding reading-speed limits per target language/profile, SubER and boundary F1 (`CCUT_VERIFY_METRICS=1`). The 6 display units per second in the original example is only the corresponding profile and must not be generalized into a threshold for all languages.
+- Cost and latency: sum all actual requests, including cold queues, inference, cache writes and storage, and hedges, and list them separately for Agent and for each provider. The target is at least halving the actual cost at the same quality, while also reporting end-to-end latency. Paths without billing data keep the conclusion that cost is unknown, and estimates must not be used to declare a pass.
+- Before a head-to-head run, fix the samples, versions, repeat counts and non-inferiority tolerance, and report by language pair and by sentence length. About 10 pages is only an exploratory lower bound and is not enough to rule out tail degradation; if needed, expand the sample, and do not decide on a single average score.
 
-**M2 的故障恢复门：** 部分提交后中断、响应丢失后同答案重发、相同 id 不同答案、预检后基准变化、租约接手、旧 worker 迟到、hedge 竞争、记录/清单/文档各写入间隙崩溃、取消后恢复，以及源词/用户译文编辑导致 stale。断言已接受正文不被覆盖、未完成对齐不被跳过、每句预算不重置、文档应用幂等、终局响应不提前关闭补交。
+**Fault-recovery gates for M2:** interruption after a partial commit; resending the same answer after a lost response; same id with different answers; baseline changes after pre-check; lease takeover; late arrival from an old worker; hedge races; crashes between the record, manifest and document writes; recovery after cancellation; and staleness caused by edits to source words or user translations. Assert that accepted body text is not overwritten, unfinished alignment is not skipped, the per-sentence budget is not reset, document application is idempotent, and a final response does not close early before late resubmissions.
 
-锚词路径未通过 M0/M1 就不切默认，退到 §11 的序号保守方案；其他独立过门的观测、缓存和回显优化可以保留。
+If the anchor path does not pass M0/M1, the default is not switched, and the system falls back to the conservative ordinal scheme in §11. Other independently passed observation, caching and echo optimizations may be kept.
 
-### 8.1 2026-09-30 实施与真实对照
+### 8.1 Implementation and real comparison on 2026-09-30
 
-本轮按用户指定，由 sol 子代理只读收集数据，真实 LLM 请求统一使用 DeepSeek V4.1 Flash（API ID `deepseek-flash`）。实现入口为 `ccut-flow-core::filepipe::{lines,lines_translation}`、`plan_sentence_at_cuts`，实验命令在 `lean_carrier_grade` / `lean_carrier_replay` / `provider_carrier_bench` examples 与 `scripts/bench/lean_carrier_ab.py`。生产默认、任务提交协议和产品 skill 尚未切换。
+This round, as the user specified, had the sol sub-agent collect data read-only, and all real LLM requests used DeepSeek V4.1 Flash (API ID `deepseek-flash`). The implementation entry points are `ccut-flow-core::filepipe::{lines,lines_translation}` and `plan_sentence_at_cuts`; the experiment commands are in the `lean_carrier_grade` / `lean_carrier_replay` / `provider_carrier_bench` examples and `scripts/bench/lean_carrier_ab.py`. The production default, the task-submission protocol and the product skill have not been switched yet.
 
-**确定性验证。** 73,728 组组合及 126 个 golden 保留安全边界、块与 golden 最终规划。真实历史 43 条调用共 1,553 行，经旧 Rust 解析器重新解析后，1,197 行有可用标注、356 行无标注；3,961 块的边从 24,935 压到 7,752，边界/块差异与往返失败均为 0。26 块无法唯一编码引用，保留 unknown；不把范围内部当成已观测对应。这只证明相同标注压缩的性质。
+**Deterministic validation.** 73,728 combinations and the 126 golden cases preserve the safety boundary, the blocks and the golden final plan. Of 43 real historical calls with 1,553 lines in total, after re-parsing with the old Rust parser, 1,197 lines had usable annotations and 356 had none. For 3,961 blocks, the edges were reduced from 24,935 to 7,752, and there were 0 boundary/block differences and 0 round-trip failures. 26 blocks could not be encoded as unique references, so they kept unknown; the interior of a range was not treated as observed correspondence. This only proves the property of compressing identical annotations.
 
-**真实首轮。** 4 个项目、10 页、508 句、8,724 源词，均为 en→zh-Hans；使用真实词时间、相同默认规划器、auto 档（关闭 thinking）、temperature 0.2，逐页交替旧/新调用顺序，每页各一次。候选同时替换格式指令并移除时间组，保留上下文和术语约束，属于组合探索，不能归因为单一改动。评分器未额外注入双语 TermPair；第一 AMD 页与 pilot 重叠且缓存冷热混合。
+**Real first round.** 4 projects, 10 pages, 508 sentences and 8,724 source words, all en→zh-Hans. The test used real word timings, the same default planner, auto tier (thinking off), temperature 0.2, and alternated the old/new call order page by page, with one run per page per variant. The candidate replaced the format instructions and removed the time group simultaneously, while keeping the context and terminology constraints, so it is a combined exploration and cannot be attributed to any single change. The scorer did not inject extra bilingual TermPairs. The first AMD page overlapped with the pilot, and its cache was a mix of cold and warm.
 
-| 首轮指标 | 旧 HTML / 序号 | 新行文本 / 首尾引用 |
+| First-round metric | Old HTML / ordinal | New line text / head-and-tail references |
 | --- | ---: | ---: |
-| 输入 token | 115,394 | 36,366 |
-| 输出 token | 41,079 | 16,761 |
-| 格式与既有内容校验通过 | 508 / 508 | 500 / 508 |
-| 直接通过对齐规划 | 378 / 508 | 329 / 508 |
-| 需改写 / 整句降级 / 翻译待补做 | 33 / 97 / 0 | 98 / 73 / 8 |
-| 实际缓存用量按公价折算（USD） | 0.03753474 | 0.01306542 |
-| 10 页调用耗时合计 / 单页中位数（秒） | 126.627 / 10.596 | 79.347 / 7.370 |
+| Input tokens | 115,394 | 36,366 |
+| Output tokens | 41,079 | 16,761 |
+| Format and existing-content validation passed | 508 / 508 | 500 / 508 |
+| Passed alignment planning directly | 378 / 508 | 329 / 508 |
+| Needs rewrite / whole-sentence downgrade / translation pending | 33 / 97 / 0 | 98 / 73 / 8 |
+| Actual cached usage converted at list price (USD) | 0.03753474 | 0.01306542 |
+| Total call time for 10 pages / per-page median (s) | 126.627 / 10.596 | 79.347 / 7.370 |
 
-费用用真实 hit/miss/output token 按调用时 [DeepSeek 官方空闲时段公价](https://api-docs.deepseek.com/quick_start/pricing/) 折算：每百万 token 分别为 $0.003 / $0.15 / $0.6；不是账单扣款，不把 reasoning 再加一次。探索 pilot 的失败与修复另记账，不混入上表。补做及完整项目收尾未完成，不能据首轮节省宣称“同等质量总成本下降”。
+Costs were converted from the real hit/miss/output tokens at the time of the call using the [DeepSeek official off-peak list price](https://api-docs.deepseek.com/quick_start/pricing/), at $0.003 / $0.15 / $0.6 per million tokens respectively. These are not billed charges, and reasoning tokens are not counted again. Failures and fixes from the exploratory pilot are accounted separately and are not mixed into the table above. Backfill and whole-project wrap-up have not been completed, so the first-round saving cannot be used to claim that “total cost at equal quality has fallen.”
 
-sol agent 抽查发现 Open Models 第二页连续跨句错位：第 29 句的 Nvidia / Apple Silicon 内容移到第 28 句，第 31 句提前出现下一句的“24 小时”，第 45 句否定表达被下一句内容替代；第 46 句缺失。AMD 长句还出现旧输出 4–6 块而新输出只有 1 块，增加 needs-rewrite。格式通过不等于语义正确，自动定位成功也不等于对应关系正确。这些例子已足以阻止默认切换；本轮不是人工盲评，没有 SubER / boundary F1 或完整项目导出验收。
+The sol agent spot check found that the second page of Open Models had consecutive cross-sentence misalignment: the Nvidia / Apple Silicon content of sentence 29 moved into sentence 28, sentence 31 showed the next sentence's “24 hours” early, the negation in sentence 45 was replaced by the next sentence's content, and sentence 46 was missing. In the AMD long sentences, the old output had 4–6 blocks while the new output had only 1 block, which added needs-rewrite. Format passing does not mean semantic correctness, and successful automatic positioning does not mean correct correspondence. These examples are enough to block switching the default. This round was not blind human review and has no SubER / boundary F1 or full-project export acceptance.
 
-实验适配器比完整规格更窄：冻结回显只接受完全相同正文；诊断暂为实验 `Issue`，未登记生产 ProblemCode；渲染器用 `= N text` / `! N constraint` 显式关联页内序号，尚未开放 `~` 改写页或任务补交。M0 的 LCS 与完整冻结覆盖、M1 的单因素/多配置及最终质量验收、M2–M4 仍待完成。下一轮先分开测载体、时间组和切块指令，保留序号寻址对照并加入跨句内容错位夹具。
+The experimental adapter is narrower than the full specification: frozen echo accepts only exactly identical body text; the diagnostics are temporarily experimental `Issue` entries and are not registered as production ProblemCodes; the renderer uses `= N text` / `! N constraint` to explicitly tie on-page ordinal numbers, and `~` rewrite pages and task backfill are not yet supported. M0's LCS and full frozen coverage, M1's single-factor and multi-configuration tests and final quality acceptance, and M2–M4 are still pending. The next round should test the carrier, the time group and the chunking instruction separately, keep the ordinal-addressing control, and add cross-sentence content-misalignment fixtures.
 
-### 8.2 2026-09-30 第二轮：切块提示、联合定位、行归属门与补做轮
+### 8.2 2026-09-30 Round 2: chunk hints, joint location, line-ownership gate and re-ask round
 
-§8.1 的三类失败（跨句错位、长句切块塌成一块、引用定位脆）逐项归因后在同一批样本上修正；不回退到旧载体。仍是 DeepSeek V4.1 Flash、auto 档、temperature 0.2、同一 10 页 508 句，每轮各一次。
+The three classes of failure from §8.1 (cross-sentence misalignment, long sentences collapsing into one chunk, fragile quote-based location) were attributed one by one and fixed on the same batch of samples; no rollback to the old carrier. Still DeepSeek V4.1 Flash, auto tier, temperature 0.2, the same 10 pages and 508 sentences, one run per round.
 
-**改了什么。**
+**What changed.**
 
-- *切块提示与分片记号*：模型不理会抽象的「≥k」，所以源句在渲染时直接按 k 片切开、片间放 `¦`（`lines_translation::piece_boundaries` / `with_pieces`）：均分落点附近优先取标点之后，其次取从句起始词之前（起始词表按源语言给，未列语言只用标点与均分），两侧都是大写起首的词之间（双大小写文字里的多词专名）不切，无大小写的文字不受影响。k 由 `chunk_hint` 定：源为拉丁文字、目标为中日韩时按非空白字符 ×0.34（实测 en→zh 的 p75）估目标长度，其他语言对只用预算；再按 `chunk_units = fit×2/3` 除出片数（有意切得比一行细，交给规划器的短行合并），上限为词数的一半。协议要求每片一块、片内引用片首片尾词、不得跨 `¦` 引用、输出不写 `¦`；解析器剥掉回显的 `¦`。
-- *联合定位*：`lines::resolve_jointly` 把一行里的全部引用一起解，允许放弃个别引用，分支限界评分依次取「放下的引用数、覆盖词数、落在片边界上的端点数、少交叉、引用等级和」；等级为 Exact / Punct / Fold / Stem（Stem 允许 `you` 命中 `you're` 一类词首形），端点各自定级。修剪集补上破折号、省略号、括号与弯引号。行里只有一块时它拥有整句（最外侧的块向两端延伸），部分引用不再造成硬锚点冲突。
-- *行归属门*：`lines_translation::parse` 先算 `owned`（引用命中本句的行），再给每块下 `Verdict`：命中本句为 Own；引用全部命中别句且本句无块命中为 Drifted（按原逻辑重新归属到唯一未占用的可编辑句）；引用命中别句、且该句自己的行正文已包含这块文字为 Merged（丢这一块，留 `LineMismatch`）；该句没有自己的行则整行 Swallowed（拒收）。语法容忍：引用内部多余的 `..` 忽略（相邻 `....` 仍报错），行尾悬空的 `|` / `||` 丢弃。
-- *补做轮*：首轮后把「翻译缺失」的句子原样、把「块太粗（定位块数 < 所需块数）」的句子当**可编辑**句再问一次（`existing_translation` 只用来把 `≥k` 加一，不打印旧译文）。先试过用 `= N` 冻结旧译文只让模型补切，模型会顺手改译、严格冻结校验把切点全撤销，弃用。`ccut-flow-core` 里 `validate_translation_quality` 只在不可编辑句上看 `existing_translation`，所以再问是安全的。评分改为 `plan_sentence_at_cuts(edges, 候选切点 ∩ 证据切点)`，不再因整句缺证据一票否决。
+- *Chunk hints and piece markers*: the model ignores the abstract “≥k”, so at render time each source sentence is cut directly into k pieces, with `¦` between pieces (`lines_translation::piece_boundaries` / `with_pieces`). Cut points near the even split prefer positions after punctuation, otherwise positions before a clause-initial word (the list of initial words is given per source language; for unlisted languages only punctuation and even splitting are used). No cut is made between two words that both begin with a capital letter (multi-word proper names in cased scripts); scripts without case are unaffected. k is set by `chunk_hint`: for a Latin-script source and a CJK target, the target length is estimated as non-whitespace characters × 0.34 (the measured p75 for en→zh); for other language pairs only the budget is used. The count is then divided by `chunk_units = fit×2/3` to get the number of pieces (deliberately finer than one line, leaving short-line merging to the planner), capped at half the number of words. The protocol requires one chunk per piece, quotes within a piece use the first and last words of that piece, no quote may span `¦`, and the output must not contain `¦`; the parser strips any echoed `¦`.
+- *Joint location*: `lines::resolve_jointly` resolves all quotes in a line together and may drop individual quotes. Branch-and-bound scoring maximises, in order: the number of quotes kept, the number of words covered, the number of endpoints that fall on piece boundaries, fewer crossings, and the total quote grade. Grades are Exact / Punct / Fold / Stem (Stem lets `you` match word-initial forms such as `you're`), and each endpoint is graded separately. The trimming set gains dashes, ellipses, brackets and curly quotes. When a line has only one chunk, that chunk owns the whole sentence (the outermost chunk extends to both ends), so partial quotes no longer cause hard anchor conflicts.
+- *Line-ownership gate*: `lines_translation::parse` first computes `owned` (the lines whose quotes hit this sentence), then gives each chunk a `Verdict`. A chunk whose quote hits this sentence is Own. If all of its quotes hit other sentences and this sentence has no chunk hit, it is Drifted (re-attributed to the unique unoccupied editable sentence, per the original logic). If its quotes hit another sentence and that sentence's own line text already contains this chunk's text, it is Merged (the chunk is dropped and `LineMismatch` is left). If the sentence has no line of its own, the whole line is Swallowed (rejected). Syntax tolerance: redundant `..` inside a quote is ignored (adjacent `....` still errors), and dangling `|` / `||` at the end of a line are dropped.
+- *Re-ask round*: after the first round, sentences marked “translation missing” are re-asked as they are, and sentences where “chunks too coarse (located chunk count < required chunk count)” are re-asked as **editable** sentences (`existing_translation` is used only to raise `≥k` by one and does not print the old translation). An attempt to freeze the old translation with `= N` so the model would only re-split was tried first; the model silently changed the translation as well, and the strict frozen-validation then revoked all the cuts, so it was dropped. `validate_translation_quality` in `ccut-flow-core` only looks at `existing_translation` for non-editable sentences, so re-asking is safe. Scoring changes to `plan_sentence_at_cuts(edges, candidate cuts ∩ evidence cuts)`, so a sentence is no longer vetoed as a whole for lacking evidence.
 
-**结果。** 同一 508 句；「对齐」= 直接通过块级规划，「整句」= 降级为整句条目，「改写」= 某块超 hard 需单调化改写；token 为 wire 用量，费用按 §8.1 的公价折算（cache miss / hit / 输出 = $0.15 / $0.003 / $0.6 每百万，不是账单）。
+**Result.** The same 508 sentences. “Aligned” = passed block-level planning directly, “whole sentence” = demoted to a whole-sentence entry, “rewritten” = some chunk exceeds hard and needs monotone rewriting. Tokens are wire usage; cost is converted at the list prices from §8.1 (cache miss / hit / output = $0.15 / $0.003 / $0.6 per million; this is not a bill).
 
-| 轮 | 对齐 / 整句 / 改写 | 补翻 | 输入（其中缓存命中）/ 输出 token | 耗时 | 公价折算 |
+| Round | Aligned / whole sentence / rewritten | Re-translated | Input (of which cache hits) / output tokens | Time | Cost at list price |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| 旧 HTML 载体（§8.1，一轮） | 378 / 97 / 33 | 0 | 115,394（30,080）/ 41,079 | 126.6 s | $0.0375 |
-| §8.1 首轮用新解析器重评 | 364 / 1 / 132 | 11 | — | — | — |
-| 第 5 轮首轮（分片 + 联合定位 + 归属门） | 439 / 0 / 67 | 0 | 42,100（26,112）/ 16,321 | 88.7 s | $0.0123 |
-| 第 6 轮 = 第 5 轮首轮 + 再问式补做轮 | **491 / 0 / 17** | 0 | 补做 30,776（25,344）/ 3,738 | +26.6 s | 合计 $0.0154 |
-| 第 7 轮（专名不切，两轮全新） | 490 / 0 / 18 | 0 | 42,100（38,528）/ 16,317 + 31,889（25,984）/ 5,044 | 88.2 + 32.8 s | $0.0144 |
+| Old HTML carrier (§8.1, one round) | 378 / 97 / 33 | 0 | 115,394 (30,080) / 41,079 | 126.6 s | $0.0375 |
+| §8.1 first round re-scored with the new parser | 364 / 1 / 132 | 11 | — | — | — |
+| Round 5 first pass (chunking + joint location + ownership gate) | 439 / 0 / 67 | 0 | 42,100 (26,112) / 16,321 | 88.7 s | $0.0123 |
+| Round 6 = round 5 first pass + re-ask round | **491 / 0 / 17** | 0 | re-ask 30,776 (25,344) / 3,738 | +26.6 s | total $0.0154 |
+| Round 7 (proper names not cut; both rounds fresh) | 490 / 0 / 18 | 0 | 42,100 (38,528) / 16,317 + 31,889 (25,984) / 5,044 | 88.2 + 32.8 s | $0.0144 |
 
-第 7 轮首轮只有 412 / 0 / 67 且 29 句补翻：AMD 第四页 26 行模型写成 `文字 |引用||文字 |引用|` 的后置形式（同一协议、同一输入在第 5 轮只出现 2 行），整页语法失败由补做轮全部收回。这是模型随机进入并在页内自我强化的失败模式，解析器不猜它的约定（猜错会写出错的切点），只拒收重问；协议在第 7 轮之后加了一句「块先写引用再写正文」，未再跑对照。剩下的 17–18 句改写几乎都是译文语序调换、单调块超过一行 hard 的句子（旧载体同样 33 句），属于 §6.3 改写阶段的输入，不是载体问题。
+The round-7 first pass alone had only 412 / 0 / 67, with 29 sentences re-translated. On AMD page 4, 26 lines were written by the model in the postfix form `text |quote||text |quote|` (under the same protocol and the same input, round 5 produced only 2 such lines). This whole-page syntax failure was fully recovered by the re-ask round. It is a failure mode the model enters at random and then reinforces within the page. The parser does not guess its convention (a wrong guess would write wrong cut points); it only rejects and re-asks. After round 7 the protocol gained one more sentence, “write the quote before the body in each chunk”, which was not run as a control. The remaining 17–18 rewrites are almost all sentences where the translation's word order was swapped, or where a monotone chunk exceeds the one-line hard limit (the old carrier had 33 as well). They belong to the rewrite stage in §6.3, not to the carrier.
 
-**没做与边界。** 仍是 en→zh-Hans 单语言对、一次采样、无 SubER / boundary F1；`estimated_units` 的 0.34 只是拉丁→中日韩的系数，其他语言对靠预算；生产路径的切换见 §8.3。实验入口：`lean_carrier_grade {protocol|render|grade|render-fix|grade-fix}` 与 `scripts/bench/lean_carrier_ab.py {prepare|grade|prepare-fix|grade-fix}`，模型调用经 `provider_carrier_bench`，全部产物只写实验目录。
+**Not done and limits.** It is still a single en→zh-Hans language pair, with one sample per round, and there is no SubER or boundary F1. The 0.34 in `estimated_units` is only the Latin→CJK coefficient; other pairs rely on the budget. Switching the production path is covered in §8.3. Experiment entry points: `lean_carrier_grade {protocol|render|grade|render-fix|grade-fix}` and `scripts/bench/lean_carrier_ab.py {prepare|grade|prepare-fix|grade-fix}`. Model calls go through `provider_carrier_bench`, and all artifacts are written only to the experiment directory.
 
-### 8.3 2026-09-30 第三轮：内容盲检、解析护栏与生产接入（M2 provider 路径）
+### 8.3 2026-09-30 Round 3: content blind review, parser guardrails and production wiring (M2 provider path)
 
-**第 7 轮的内容盲检。** 分数只量切点，不量译文内容，所以对第 7 轮两轮的 508 句另做了一次只看源文与译文的盲检（不看评分、不看引用）：跨句内容错位 0、碎句 0；错误 1 处（补做轮 s-g96.0 把 Lisa 译成「李飞飞」）；相邻两块正文重复 4 处（模型为凑 `≥k` 块数把同一短语复述一遍）；补做轮的 30 行在块缝多出空格（`|` 两侧带空格被原样拼进译文）。抽 30 句核对 `≥k` 分片提示与模型给块的语义对应：20 句对应、8 句块数对但边界与片提示错开、2 句其他。结论是载体本身不串内容，缺陷都是「凑块数」与「块缝空白」两类可由代码兜住的表面问题。
+**Content blind review of round 7.** Scores measure only cut points, not translation content. So a separate blind review was run on the 508 sentences of both round-7 passes, looking only at the source and the translation (not the scores, not the quotes). Results: cross-sentence content misalignment 0, fragments 0. Errors: 1 (in the re-ask round, s-g96.0 rendered Lisa as “李飞飞” (Li Feifei), a wrong name). Duplicated body text between two adjacent chunks: 4 (the model restated the same phrase to pad the `≥k` chunk count). In the 30 lines of the re-ask round, extra spaces appeared at chunk seams (spaces on either side of `|` were copied into the translation as they were). Checking 30 sentences for whether the `≥k` piece hint matched the model's chunks: 20 corresponded, 8 had the right chunk count but boundaries offset from the piece hint, and 2 were other. The conclusion is that the carrier itself does not mix up content. The defects are two surface problems that code can guard against: padding the chunk count, and whitespace at seams.
 
-**解析护栏。** `lines_translation::parse` 在语法解析之后、语义归属之前加两步：`tidy_joints` 按目标文字整理块缝空白（中日韩相邻字符间不留空、其余保留单个空格，纯空白块视作无正文标记）；`repeated_chunk` 对相邻两块（各 ≥4 个有效字符）做 LCS，≥ 80% 即以新问题码 `translation-chunk-repeat` 拒收该行重问，不猜哪一块是多余的。协议再加两句：块只切译文、不许复述或凑数，切不出 k 块就少给；`|` 两侧不写目标语言本身没有的空格。这两句与第 7 轮后加的「块先写引用」一样没有再跑 10 页对照，效果由后续真实项目跑批来看。
+**Parser guardrails.** `lines_translation::parse` adds two steps after syntax parsing and before semantic attribution. `tidy_joints` normalises whitespace at chunk seams according to the target script (adjacent CJK characters get no space; otherwise a single space is kept; whitespace-only chunks count as having no body marker). `repeated_chunk` runs an LCS on adjacent chunk pairs (each with ≥4 valid characters). At ≥80%, it rejects the line with the new issue code `translation-chunk-repeat` and asks again, without guessing which chunk is the redundant one. Two more protocol sentences were added: chunks only split the translation and must not restate or pad it; if k chunks cannot be cut, give fewer. And `|` must not be surrounded by spaces that the target language itself does not have. Like the “write the chunk's quote first” sentence added after round 7, these two were not re-run against the 10-page control. Their effect will be judged from later real-project batches.
 
-**生产接入。** `ccut translate --align-fusion lines`（`specVersion` 1.299.0）：`engines/translate.rs` 用 `FileCarrier::{Html{rows}, Lines(TransParams)}` 切换载体，请求 kind `translate-lines`、`text/plain`、温度 0.2，system 末尾附 `lines_translation::PROTOCOL` 全文，页体由 `render_with_params` 生成、`parse_with_params` 解析，接受的句子连同片边界与源词快照进 `TranslateParsed.lines`；分页复用 `rows` 的 800 词档。提交时 `lines_translation::rebase` 把块正文重切到自动纠正后的落库译文上，`FusionDraft.lines` 进 `accept_fused_drafts`：源词与当前 transcript 逐词相同才采信，证据切点 ∩ 目标切点经 `plan_sentence_at_cuts` 成块（`TransAlign.aligner = "llm-lines+anchor/1"`），单调块超 `hard` 的句子进既有 `align-rewrite/1` 改写轮，其余回落独立 align。`--llm agent` 配 `lines` 在创建调用前以 `invalid_arg` 拒绝——Agent 路径的任务契约、worker 指引与提交 lint 尚未接入这份载体，两条路径的同步义务以「显式拒绝」而不是「静默走旧载体」的方式兑现，接入时再一起改。`rows` 专属的整页软重发与显示行合并不作用于 `lines`。默认值不变，产品 skill 不需要改。
+**Production wiring.** `ccut translate --align-fusion lines` (`specVersion` 1.299.0). `engines/translate.rs` switches carriers with `FileCarrier::{Html{rows}, Lines(TransParams)}`. The request kind is `translate-lines`, `text/plain`, temperature 0.2, and the full `lines_translation::PROTOCOL` text is appended to the end of the system prompt. The page body is generated by `render_with_params` and parsed by `parse_with_params`. Accepted sentences, together with their piece boundaries and source word snapshot, go into `TranslateParsed.lines`. Pagination reuses the 800-word tier of `rows`. On commit, `lines_translation::rebase` re-cuts the chunk text onto the auto-corrected stored translation, and `FusionDraft.lines` enters `accept_fused_drafts`. It is accepted only if the source words match the current transcript word for word. Evidence cut points ∩ target cut points form chunks via `plan_sentence_at_cuts` (`TransAlign.aligner = "llm-lines+anchor/1"`). Sentences with monotone chunks exceeding `hard` go into the existing `align-rewrite/1` rewrite round; the rest fall back to standalone align. `--llm agent` combined with `lines` is rejected with `invalid_arg` before the call is created. The Agent path's task contract, worker guidance and submission lint are not yet wired to this carrier. The synchronisation obligation for both paths is met by “explicit rejection” rather than “silently falling back to the old carrier”, and both will be changed together when wiring happens. The whole-page soft resend and the display-line merging specific to `rows` do not apply to `lines`. Defaults are unchanged; the product skill does not need changes.
 
-**没做。** §5 的部分提交、幂等回执与状态机（M2 故障恢复门）、M3–M4、Agent 路径；改写轮仍是独立调用（§6.3）。
+**Not done.** Partial commits, idempotency receipts and the state machine from §5 (the M2 fault-recovery gate), M3–M4, and the Agent path. The rewrite round is still a standalone call (§6.3).
 
-### 8.4 2026-09-30 第四轮：Codex 复测、真实项目跑批与归属门修正
+### 8.4 2026-09-30 Round 4: Codex re-test, real-project batch and ownership-gate fixes
 
-**Codex 对 §8.3 的复测（同 508 句回放，不打新调用）。** 四条发现全部采纳：(P1) 联合定位「放弃个别引用」会把交叉证据丢掉、造出假安全切点——改为引用是「这一块的源文包络」，两块包络互相重叠视作语序交叉证据照旧保留、只在两者之间不给切点，相邻两块共用端点按分区读法裁给一块（advisory `shared-endpoint quote(s) clipped`），不再放弃任何引用；(P1) 定不出引用的块原来只关掉相邻切点——改为只要有一块非 `∅` 引用定不出，整句一个切点都不给；(P2) 复述护栏 7 次命中里 6 次是正常译文——改按阅读单位（中日韩按字、其余按词，各 ≥4 个单位）算 LCS，源文自身有的重复放过；(P2) 正文里的字面 `¦` 被静默剥掉——改为与 `|`、`⏸` 一样转义为 `\¦`，未转义的回显剥掉并记 `marker-residue`。回放同一 508 句：首轮对齐 / 改写 / 待补 由 Codex 的 479 / 67 / 29 变为 477 / 63 / 31，带锚点冲突的句子 44 → 24，两轮合并 490 / 18 → 489 / 17；少的 2 句（`amd-p002 s-g40.4`、`open-models s-g51.0`）是模型真的把「美国和欧洲的模型，美国和欧洲模型，」这类复述写进了译文、原来被当成对齐通过，现在按 `translation-chunk-repeat` 拒收重问，是正确的代价。「把 `unlocated` 判定挪到锚点之后」试过一次：回放丢 8 句、一句都不多得（锚点跨过已定位的引用时把它判成定不出），已否决，`lines.rs` 的注释记了这条证据。`FusionDraft` 回执里 `translatedSentences` 改为真正入库的句数并新增 `missingSentences`（`specVersion` 1.300.0）。
+**Codex re-test of §8.3 (replay of the same 508 sentences, no new calls).** All four findings were adopted. (P1) Joint location “dropping individual quotes” discarded crossing evidence and produced false safe cut points. It now treats each quote as the source “envelope” of its chunk. When two chunk envelopes overlap, that is still kept as word-order crossing evidence, and only the gap between the two gets no cut point. Adjacent chunks sharing an endpoint are clipped to one chunk by the partition reading (advisory `shared-endpoint quote(s) clipped`). No quote is dropped any more. (P1) A chunk whose quotes could not be located previously only disabled the adjacent cuts. Now, if any non-`∅` chunk quote cannot be located, the whole sentence gets no cut points. (P2) Of the 7 hits from the repetition guard, 6 were normal translations. It now computes the LCS over reading units (per character for CJK, per word otherwise, each ≥4 units), and repetitions that already exist in the source are allowed. (P2) A literal `¦` in body text was silently stripped. It is now escaped as `\¦`, the same as `|` and `⏸`. Unescaped echoes are still stripped, and logged as `marker-residue`. Replaying the same 508 sentences: first-round aligned / rewritten / pending re-ask changed from Codex's 479 / 67 / 29 to 477 / 63 / 31. Sentences with anchor conflicts went from 44 to 24. The two-round merge went from 490 / 18 to 489 / 17. The 2 fewer (`amd-p002 s-g40.4`, `open-models s-g51.0`) are cases where the model really wrote restatements such as “美国和欧洲的模型，美国和欧洲模型，” (American and European models, American and European models,) into the translation, which had previously passed as aligned. They are now rejected with `translation-chunk-repeat` and re-asked, which is the correct cost. Moving the `unlocated` decision after the anchor step was tried once: the replay lost 8 sentences and gained none, because an anchor that crossed an already located quote was judged as unlocatable. This was rejected, and the evidence is recorded in the comments in `lines.rs`. In the `FusionDraft` receipt, `translatedSentences` now counts the sentences actually stored, and a new `missingSentences` field is added (`specVersion` 1.300.0).
 
-**真实项目跑批。** 按用户要求，Sonnet 子代理用重新编译的 `ccut translate --force --align-fusion lines --llm provider:deepseek/deepseek-flash` 跑六个真实项目的沙盒副本（`/private/tmp/cuccut-lean-real-20260930/<项目>-lines<N>.ccut`，保留），按时长分档：< 5 min（opus 3.4 min），5–20 min（dario 7.0、aisec 8.8、zhelite 5.3，后者是 zh→en），> 20 min（godmother 23.9、stanford 34.3）。沙盒由脚本从原项目复制，并**手工剥掉** `trans / transDisplay / transAlign / transSrc[lang]` 让翻译从头跑（这是实验准备，不是产品路径；产品路径靠 `--force`）。第一轮（`lines`）与第三轮（`lines3`）是干净沙盒；第二轮复用了第一轮的目录，provider 日志复用把旧答案又喂了回去，数字作废、不列。
+**Real-project batch.** At the user's request, Sonnet subagents ran the freshly compiled `ccut translate --force --align-fusion lines --llm provider:deepseek/deepseek-flash` over sandbox copies of six real projects (`/private/tmp/cuccut-lean-real-20260930/<project>-lines<N>.ccut`, kept). They are grouped by duration: < 5 min (opus 3.4 min), 5–20 min (dario 7.0, aisec 8.8, zhelite 5.3; the last is zh→en), > 20 min (godmother 23.9, stanford 34.3). The sandboxes were copied from the original projects by script, and `trans / transDisplay / transAlign / transSrc[lang]` were **stripped by hand** so that translation runs from scratch. This is experiment preparation, not the product path; the product path relies on `--force`. Round one (`lines`) and round three (`lines3`) were clean sandboxes. Round two reused round one's directory, and the provider log reuse fed the old answers back in, so its numbers are void and are not listed.
 
-第三轮暴露三类新问题，全部在本轮修：
+Round three exposed three new classes of problem, all fixed in this round:
 
-- *回显空标记吞掉整段尾巴*：stanford 第 7 页模型把第 35、36 两句合成一行后，后面每一行都以本句引用的空标记开头、正文却写下一句的译文（`|I..for| |it..towards| |the..but| |You..questions|我们问自己……`），`quote_hits` 把空标记也算命中，31 句（`s-wmty1w7j1-32` 起）整段拿到了下一句的译文，`ccut check` 也抓不到。修法：归属判定只看**有正文的块**（`quote_hits` 过滤空块，Merged / Swallowed 也跳过空块）；按有正文块归到别句时经 `reattributed` 剥掉那些不出现在目标句里的空标记；本句按缺译重问。补了一条五句的复现测试。第二轮同一页 0 行空标记、第三轮 46 行，差别在协议里我加的那句「照这一块在句子里的写法写，`|` 不代表任何东西」——它同时是 zhelite 整页照抄源文的诱因，已换成「块正文永远是译文、不是引用的源词；两块之间只保留目标语本身的空格」，并补一条不带空格书写的源文示例。
-- *整页照抄源文*：zhelite（zh→en）三页在第 1、2 次尝试全部回成 `|其实他的生活换个|其实他的生活换个|…`，只有第 3 次的 58 句残余才是英文；第二轮同一项目只有 2 处。协议措辞如上改。另外两句半译（`s-g24.0` 中英混写、`s-g111.0` 的 `technical sales，想当 product manager。`）过了脚本占比门：新增 `untranslated_run` ——表意文字（汉字 / 假名 / 谚文）源文译到非中日韩目标时，译文里原样照抄 ≥6 个连续表意字符即 `translation-source-copy`（`TRANSLATION_VALIDATOR_VERSION` 2 → 3；其他文字对不查这一条）。`s-g24.0` 这类能拦住，`s-g111.0` 只剩两个字，拦不住，照实记。
-- *复述护栏误伤*：`how-claude s-g24.0` 源文 `caring about … and caring about` 复述两次，译文两块 `那么在意对话记录` / `、那么在意` 被拒；原豁免要求两段源词几乎相同（共有 ≥80%），改成「共有 ≥80%，或 ≥2 个单位且占较短一段 ≥40%」。
+- *An echoed empty marker swallowed the whole tail*: on stanford page 7, after the model merged sentences 35 and 36 into one line, every following line began with this sentence's empty quote marker, but the body held the next sentence's translation (`|I..for| |it..towards| |the..but| |You..questions|我们问自己……`, “we ask ourselves…”). `quote_hits` also counted empty markers, so 31 sentences (starting at `s-wmty1w7j1-32`) received the next sentence's translation as a whole, and `ccut check` did not catch it. Fix: attribution looks only at **chunks with body text** (`quote_hits` filters out empty chunks, and Merged / Swallowed also skip empty chunks). When a chunk with body text is attributed to another sentence, `reattributed` strips the empty markers that do not appear in the target sentence, and this sentence is re-asked as missing. A five-sentence reproduction test was added. Round two had 0 empty-marker lines on the same page; round three had 46. The difference was the sentence I had added to the protocol, “write the chunk as it appears in the sentence; `|` stands for nothing”. That same sentence also triggered zhelite's whole-page copying of source text. It was replaced with “chunk body is always translation, never the source words of the quote; between two chunks keep only the spaces that the target language itself has”, and an example with unspaced source was added.
 
-顺手改了分片：源文是不带空格书写的文字时，片内没有标点就按字数均分而不是按从句起始词打分；分片不做分词，zhelite 这种长句的片标仍会落在一个词中间（`发|现`、`薪|资`），英文行边界跟着别扭（`from another | angle`），要么接分词、要么放开「不得跨 `¦` 引用」，本轮不做。
+- *Whole-page copying of the source*: zhelite (zh→en) had three pages that came back on the first and second attempts entirely as `|其实他的生活换个|其实他的生活换个|…` (“actually his life changes into…”, with the Chinese source echoed in the chunks). Only the third attempt's residue of 58 sentences was English. Round two had only 2 instances in the same project. The protocol wording was changed as above. Two further half-translated sentences (`s-g24.0`, mixed Chinese and English; `s-g111.0`, containing `technical sales，想当 product manager。`, “technical sales, wants to be a product manager”) passed the script's proportion gate. A new `untranslated_run` check was added: when the source is ideographic (Han / kana / Hangul) and the target is non-CJK, the translation is flagged `translation-source-copy` if ≥6 consecutive ideographic characters from the source are copied verbatim (`TRANSLATION_VALIDATOR_VERSION` 2 → 3; other script pairs do not run this rule). Cases like `s-g24.0` are now caught. `s-g111.0` has only two characters left, so it is not caught; this is recorded as is.
 
-**第四轮（`lines4`，六个项目全新沙盒）暴露的四处，同日修掉并用同一批模型回答重解析（`lines4s`，provider 日志复用，英文源的五个项目 0 次新调用；zhelite 的片标变了、重发 4 次）：**
+- *Repetition-guard false positives*: `how-claude s-g24.0` has a source `caring about … and caring about` that repeats twice, and the translation's two chunks `那么在意对话记录` (“so caring about the conversation log”) / `、那么在意` (“, so caring about”) were rejected. The original exemption required the two source segments to be nearly identical (≥80% shared). It now allows either ≥80% shared, or ≥2 units with ≥40% of the shorter segment.
 
-- *页尾译进上下文*：stanford 第 1 页最后一句（`s-wmty1s40b-53`）模型把 `# after` 上下文行也译进最后一行，作为一块 `|You..launched|你当时就在起点上……`；引用在本句定不出、整句没切点，改写轮又因内容漂移被拒，最后按确定性切分把下一句的译文重复进了这一句（第三轮同一句同样如此）。修法：有正文的块引用不命中本页任何一句、却命中上下文行时丢掉该块（warning `content-ignored`），整行只剩这种块按缺译重问。重解析后该句 3 块全部定位、`llm-lines+anchor/1`。
-- *拉丁词缝黏连*：godmother `s-g26.0` 模型在 `University ¦ of Toronto` 处分块，块缝整理按「中日韩目标不留空」把它拼成 `Universityof`，落库译文就是错的。修法：块缝两侧都是带空格文字的字母 / 数字时保留一个空格（泰文、老挝文、缅文、高棉文、藏文这些连写文字排除；未列出的文字按带空格处理）。
-- *只有标点的块*：aisec 四句（`s-g1.31` 等）模型写出 `|than..children|，` 这样只有一个标点的块，拼接后成了 `，，` / `、，`。修法：只有标点的块并进前一块，前一块已经以标点结尾就丢掉。
-- *数字被片标拆开*：zhelite 的 `二十 ¦ 七岁` 让模型把译文写成 `twen- ty-seven`、`已 ¦ 经` 跨句写成 `al-` / `ready`。修法：任何源文都不在两个数字 / 数词之间切；不带空格文字的搜索窗退回半个片长（放宽到整个片长会把片切得很不均匀，单块超行预算、改写被拒、整句落到确定性切分——zhelite 第四轮 13 句确定性对第三轮 5 句，多出来的就是这么来的）。跨句的 `已|经` 是 ASR 句边界落在词中间，不是分片的事。
+The chunking was also adjusted. When the source is written without spaces and there is no punctuation within the piece, it splits by even character count rather than scoring by clause-initial words. Chunking does no word segmentation, so in long sentences such as zhelite's, piece markers still fall inside a word (`发|现`, `薪|资`, split inside the words for “discover” and “salary”), and English line boundaries become awkward (`from another | angle`). The fix is either to add word segmentation or to relax “no quote may span `¦`”. Neither was done this round.
 
-**六个项目第一轮（`lines`，`e24acd607` 生产接入后的首次真跑，早于 Codex 复测与本轮全部修正）→ 第四轮（`lines4`，`f1590ab3b` 的代码真跑）→ 重解析（`lines4s`，本轮四处修正）。** 调用数只数 `translate-lines`（改写轮、`brief` 另计；其中每页之后 1–2 秒的短调用是波 2 的逐句补做，不是整页重试——六个项目所有调用都是 `attempt` 1、`retryReason` 空），token 取 wire 用量（prompt 含缓存命中）；对齐列是 `TransAlign.aligner` 的分布：`-` 是单行、不需切分的句，其余依次是 `llm-lines+anchor/1` / `llm-chunk+anchor/1` / `deterministic/1`；「显示改写」是落库译文与显示行不一致的句数（`lr-dump` 的 `DISP`）。
+**Round four (`lines4`, six projects with fresh sandboxes) exposed four issues. They were fixed the same day and re-parsed with the same batch of model answers (`lines4s`, provider log reuse: the five English-source projects made 0 new calls; zhelite's piece markers changed, so it was re-sent 4 times):**
 
-| 项目（句数） | 第一轮 调用 · prompt+completion · `-`/lines/chunk/det · 显示改写 | 第四轮 | 重解析 |
+- *Trailing context translated in*: on stanford page 1, the model's last sentence (`s-wmty1s40b-53`) also translated the `# after` context line into the last line, as one chunk `|You..launched|你当时就在起点上……` (“you were right at the starting point…”). The quote could not be located within this sentence, so the sentence had no cut point. The rewrite round was rejected for content drift, and in the end the deterministic split copied the next sentence's translation into this one (round three had the same problem on this sentence). Fix: a chunk with body text whose quote hits no sentence on the page but hits a context line is dropped (warning `content-ignored`). If only such chunks remain on a line, the sentence is re-asked as missing. After re-parsing, this sentence has all 3 chunks located, `llm-lines+anchor/1`.
+
+- *Latin word seams glued together*: in godmother `s-g26.0`, the model split at `University ¦ of Toronto`. The seam cleanup, which followed the rule “a CJK target keeps no space”, joined it into `Universityof`, so the stored translation was wrong. Fix: when both sides of a seam are spaced letters or digits, one space is kept. Scripts that are written without spaces (Thai, Lao, Myanmar, Khmer, Tibetan) are excluded; unlisted scripts are treated as spaced.
+
+- *Punctuation-only chunks*: four aisec sentences (`s-g1.31` and others) had the model write chunks such as `|than..children|，` that contain only one punctuation mark. After joining they became `，，` / `、，` (doubled punctuation). Fix: a punctuation-only chunk is merged into the previous chunk, and if the previous chunk already ends in punctuation, the extra one is dropped.
+
+- *Numbers split by piece markers*: in zhelite, `二十 ¦ 七岁` (“twenty | seven years old”) made the model write `twen- ty-seven`, and `已 ¦ 经` (“already | past”) across sentences became `al-` / `ready`. Fix: no source is split between two digits or number words. In scripts without spaces, the search window falls back to half a piece length. Widening it to the whole piece length made the splits very uneven: single chunks exceeded the line budget, rewrites were rejected, and sentences fell back to deterministic splitting. zhelite's round four had 13 deterministic sentences against 5 in round three, and the extra ones came from this. The cross-sentence `已|经` is an ASR sentence boundary that falls in the middle of a word; it is not a chunking matter.
+
+**Round one of the six projects (`lines`, the first real run after the production wiring at `e24acd607`, before the Codex re-test and all of this round's fixes) → round four (`lines4`, a real run with the code at `f1590ab3b`) → re-parse (`lines4s`, with the four fixes above).** Call counts count only `translate-lines` (rewrite rounds and `brief` are counted separately). The short calls 1–2 seconds after each page are the wave-2 per-sentence re-asks, not whole-page retries; all calls in the six projects were `attempt` 1, with `retryReason` empty. Tokens are wire usage (the prompt includes cache hits). The alignment column is the distribution of `TransAlign.aligner`: `-` is a single line that needs no splitting; the rest are, in order, `llm-lines+anchor/1` / `llm-chunk+anchor/1` / `deterministic/1`. “Display rewrite” is the number of sentences whose stored translation differs from the display line (`DISP` in `lr-dump`).
+
+| Project (sentences) | Round 1 calls · prompt+completion · `-`/lines/chunk/det · display rewrite | Round 4 | Re-parse |
 | --- | --- | --- | --- |
-| opus（39） | 1 · 3 873+1 485 · 4/26/8/1 · 0 | 1 · 4 908+1 493 · 5/28/5/1 · 1 | 同第四轮 |
-| dario（92） | 3 · 11 352+2 620 · 52/35/1/4 · 0 | 2 · 8 371+2 500 · 49/37/2/4 · 1 | 同第四轮 |
-| aisec（84） | 3 · 10 215+2 810 · 29/49/4/2 · 0 | 2 · 8 067+2 784 · 27/53/4/0 · 1 | 27/55/2/0 · 1，`，，` 0 处 |
-| zhelite（60，zh→en） | 5 · 19 705+3 718 · 14/36/0/10 · 0 | 3 · 11 631+3 576 · 13/33/1/13 · 0 | 7 · 26 568+7 624（其中 4 次新调用）· 13/38/0/9 · 0，连字符断词 0、译文残留汉字 0 |
-| godmother（326） | 5 · 24 530+7 321 · 177/103/40/6 · 5 | 6 · 28 254+7 940 · 175/127/18/6 · 5 | 175/128/18/5 · 6，`s-g26.0` 成 `University of Toronto` |
-| stanford（443） | 11 · 49 774+11 244 · 233/153(+4 旧 `llm-rows`)/35/18 · 8 | 8 · 42 609+11 488 · 230/163/36/14 · 3 | 230/164/36/13 · 3，`s-wmty1s40b-53` 成 3 块 `llm-lines` |
+| opus (39) | 1 · 3,873+1,485 · 4/26/8/1 · 0 | 1 · 4,908+1,493 · 5/28/5/1 · 1 | same as round 4 |
+| dario (92) | 3 · 11,352+2,620 · 52/35/1/4 · 0 | 2 · 8,371+2,500 · 49/37/2/4 · 1 | same as round 4 |
+| aisec (84) | 3 · 10,215+2,810 · 29/49/4/2 · 0 | 2 · 8,067+2,784 · 27/53/4/0 · 1 | 27/55/2/0 · 1, 0 instances of `，，` |
+| zhelite (60, zh→en) | 5 · 19,705+3,718 · 14/36/0/10 · 0 | 3 · 11,631+3,576 · 13/33/1/13 · 0 | 7 · 26,568+7,624 (of which 4 new calls) · 13/38/0/9 · 0; 0 hyphenated word breaks, 0 leftover Chinese characters in the translation |
+| godmother (326) | 5 · 24,530+7,321 · 177/103/40/6 · 5 | 6 · 28,254+7,940 · 175/127/18/6 · 5 | 175/128/18/5 · 6; `s-g26.0` becomes `University of Toronto` |
+| stanford (443) | 11 · 49,774+11,244 · 233/153 (+4 old `llm-rows`)/35/18 · 8 | 8 · 42,609+11,488 · 230/163/36/14 · 3 | 230/164/36/13 · 3; `s-wmty1s40b-53` becomes 3 chunks `llm-lines` |
 
-六个项目第四轮全部 rc 0、0 次 provider 错误 / 重试，`translate-lines` 0 处首行只有空标记、0 页照抄源文；第一轮 stanford 第 7 页整段错位与 zhelite 整页照抄在第三、四轮均未再现。zhelite 第一轮 10 句确定性切分是第三轮前的解析（3 页 + 2 次逐句补做），第四轮 13 句是分片窗过宽（上面已回退），重解析回到 9 句——剩下的都是英文行 `hard` 42 太紧、单块超预算、改写轮被拒的句子，第五轮起要么放宽行预算、要么让改写轮拿到片提示，与载体无关。第一轮 prompt 比第四轮多出的部分主要是逐句补做的次数更多（stanford 7 页 + 4 次补做对第四轮 8 次，zhelite 3 + 2 对 3）；第一轮 stanford 的 4 句 `llm-rows+anchor/1` 是当时的沙盒准备没剥干净的旧 `transAlign` 残留，不是这份载体的产出（第三、四轮的准备脚本已剥 `transAlign`）。
+All six projects in round four returned rc 0, with 0 provider errors and 0 retries. `translate-lines` had 0 first lines consisting only of empty markers and 0 pages copying the source. The round-one stanford page-7 whole-block misalignment and the zhelite whole-page copying did not recur in rounds three or four. Zhelite's 10 deterministic sentences in round one came from the parsing before round three (3 pages + 2 per-sentence re-asks). Round four's 13 sentences came from an overly wide piece-search window, which has been reverted above, and the re-parse is back to 9 sentences. What remains are English-line sentences where `hard` 42 is too tight, single chunks exceed the budget, and rewrite rounds are rejected. From round five either the line budget should be relaxed, or the rewrite round should receive the piece hint; this is unrelated to the carrier. The extra prompt tokens in round one compared with round four are mainly due to more per-sentence re-asks (stanford: 7 pages + 4 re-asks against 8 calls in round four; zhelite: 3 + 2 against 3). The 4 `llm-rows+anchor/1` sentences in stanford round one were leftover old `transAlign` entries that the sandbox preparation had not fully stripped at the time. They are not output of this carrier (the round-three and round-four preparation scripts strip `transAlign`).
 
-**子代理的内容审读只报不修的（第五轮候选，处置见 §8.5）：** 确定性切分的句几乎都有片边界落在词中或按比例硬切（godmother `s-g64.6` `成‖为`、stanford `s-wmty1s40b-87`、dario `s-g76.0` 片整体错一行、opus `s-g84.0` 丢了 `in settings JSON`），`llm-lines` 也有少量切在短语中间（stanford `s-g93.0` `不‖在`、godmother `s-g62.11` `一‖样`、aisec `s-g33.19`）——这些是 `¦` 落点与 `plan_sentence_at_cuts` 的事，不是解析；模型自身的误译与增删（godmother `s-g92.0` 把 advised 译反、`s-g106.16` 多出人名、`s-g81.14` 错字；dario `s-g99.0` 补了姓氏、`s-g56.0` 复述「在你身后」；aisec `s-g11.0` 行内重复「分析输出」、`s-g33.0` 等四句语序按源文硬排；opus `s-wmuetbszu-20` 英文语序、`s-g92.0` 「同时」→「一次」）载体抓不住，只有内容盲检能看；zhelite 长句 `¦` 仍落在词中间（`发|现`、`薪|资`，约 22 处）要分词；`ccut check` 没有「整句译错」的门；`polish-fallback` 阻断（stanford、zhelite 9 句）是润色侧既有问题。另一处观察：沙盒里已经有 `transAlign` 时 `translate --force` 会复用旧的对齐条目，译文只改了标点也照旧复用，`pieces` 拼起来与 `trans` 对不上——这一轮的重解析因此全部在剥掉翻译的副本上做（`lr-rerun-clean.py`）；产品路径上用户一般不会先改 `lines_translation` 再 `--force`，先记着。
+**Sentence-level content review by subagents, report only, not fixed (round-five candidates; disposition in §8.5):** Almost all of the deterministically split sentences have piece boundaries that fall inside a word or are hard proportional cuts (godmother `s-g64.6`, split inside `成‖为` (“become”); stanford `s-wmty1s40b-87`; dario `s-g76.0`, where the piece is off by one line as a whole; opus `s-g84.0`, which dropped `in settings JSON`). A few `llm-lines` sentences also cut mid-phrase (stanford `s-g93.0`, `不‖在`; godmother `s-g62.11`, `一‖样`; aisec `s-g33.19`). These are matters for the placement of `¦` and for `plan_sentence_at_cuts`, not for parsing. The model's own mistranslations and additions or omissions (godmother `s-g92.0` renders advised as its opposite; `s-g106.16` adds a personal name; `s-g81.14` has a typo; dario `s-g99.0` adds a surname; `s-g56.0` repeats “在你身后” (“behind you”); aisec `s-g11.0` repeats “分析输出” (“analysis output”) within one line; the word order of four aisec sentences such as `s-g33.0` follows the source too rigidly; opus `s-wmuetbszu-20` has English word order; `s-g92.0` renders “同时” (“at the same time”) as “一次” (“at once”)) are things the carrier cannot catch, and only the content blind review can see them. Zhelite's long-sentence `¦` markers still fall inside words (`发|现`, `薪|资`, about 22 instances), which needs word segmentation. `ccut check` has no gate for “a whole sentence mistranslated”. The `polish-fallback` blocking (stanford, 9 sentences in zhelite) is a pre-existing issue on the polishing side. One more observation: when a sandbox already has `transAlign`, `translate --force` reuses the old alignment entries, and a translation that only changed punctuation is still reused, so `pieces` does not match `trans` when joined. For this reason, all re-parsing in this round was done on copies with the translation stripped (`lr-rerun-clean.py`). On the product path, users will generally not edit `lines_translation` and then run `--force`, but this is noted for later.
 
-### 8.5 2026-09-30 第五轮：块内拆分治超行、成对修复不退化、`¦` 落点三种替代全部否决
+### 8.5 2026-09-30 Round 5: in-block splitting for over-limit lines, pairwise repair without regression, and all three `¦` placement alternatives rejected
 
-**`hard` 42 不动，改的是超行的处置。** 第四轮末尾的确定性切分句（六个项目 32 句）几乎都是英文行 `hard` 42 太紧、模型某一块写粗了、改写轮又被拒的句子。放宽预算会让每一行更长、所有目标语一起受影响，所以预算不动，在梯子里加一级（`183a3a844`，`specVersion` 1.301.0）：模型切点都放行了、某个单调块仍超 `hard` 时，先在**该块内部**取一个 lint 干净、两侧都 ≤ `hard`（同样合格时优先两侧都 ≤ `fit`，再取缝成本，再取离块中点近的）、不被硬锚横跨的目标候选缝把块一分为二再落库，`aligner` 写 `llm-lines+split/1`，advisory 记 `with N over-hard block(s) split at a lint-clean target seam`；块外证据一字不动，被拆块内的源断点在按比例的落点附近吸附到源侧标点 / 停顿 / 合法缝（`choose_source_break`；首稿写成「按比例取」，不准确）。块内没有这样的缝、或要两刀的句子才进 `align-rewrite/1`。缝的选法第七轮（§8.7）改成三档。六个项目用同一批模型回答重解析（`lines4s` → `lines5e`，英文源 0 次新调用）：确定性切分 32 → 2（opus `s-g84.0` 前后都是确定性，stanford `s-g304.0`；首稿误写成「32 → 1」，Codex 复验指出后改正），`llm-lines+split/1` 0 → 46，`llm-chunk+anchor/1` 63 → 45，改写调用 13 → 18（+5，是原来直接落到确定性切分的句现在有资格进改写轮），显示改写 12 → 13。六个项目 `ccut check`：对齐类 blocker 0（zhelite 9 句 / stanford 1 句的 `polish-fallback` blocker 是润色侧、本轮前已有），警告按命中条目数（不是句数）`align-target-seam` 11 → 3、`align-source-seam` 24 → 15、`align-bilingual-anchor` 6 → 0、`align-source-fragment` 5 → 2，超 `fit`（不超 `hard`）56 → 64（拆分只保证 ≤ `hard`，`fit` 偏好后从 66 降到 64），行不足 15 → 16——首稿把这串警告数错标成 508 句回放的指标、又写成「0 警告」，一并改正。508 句回放：首轮对齐 412 → 440、待改写 67 → 38、粗块 52 → 30。
+**`hard` 42 unchanged; what changed is how over-limit lines are handled.** The deterministic split sentences left at the end of round 4 (32 sentences across six projects) were mostly English lines where `hard` 42 is too tight, sentences where the model wrote one block too coarsely, and sentences that the rewrite round had then rejected. Loosening the budget would make every line longer and affect all target languages at once, so the budget stays and one more step is added to the ladder (`183a3a844`, `specVersion` 1.301.0): when the model's cut points are all allowed, but some monotone block still exceeds `hard`, first pick a cut **inside that block**. The cut must be a target seam that is lint-clean, leaves both sides ≤ `hard` (when equally qualified, prefer both sides ≤ `fit`, then the seam cost, then the seam closer to the block midpoint), and is not crossed by a hard anchor. Split the block in two there and store it. `aligner` writes `llm-lines+split/1`, and the advisory records `with N over-hard block(s) split at a lint-clean target seam`. Evidence outside the block stays byte-for-byte unchanged. Source breaks inside the split block are snapped, near the proportional landing point, to source-side punctuation, pauses or legal seams (`choose_source_break`; the first draft wrote "taken proportionally", which was inaccurate). If there is no such seam inside the block, or if the sentence needs two cuts, it goes to `align-rewrite/1`. Round 7 (§8.7) changed seam selection to three tiers. The six projects were re-parsed with the same model answers (`lines4s` → `lines5e`, 0 new calls for English source): deterministic splits 32 → 2 (opus `s-g84.0` is deterministic both before and after; stanford `s-g304.0`; the first draft wrongly wrote "32 → 1", corrected after Codex re-checked), `llm-lines+split/1` 0 → 46, `llm-chunk+anchor/1` 63 → 45, rewrite calls 13 → 18 (+5, because sentences that previously fell through to deterministic splitting are now eligible for the rewrite round), displayed rewrites 12 → 13. `ccut check` on the six projects: alignment-class blockers 0 (the `polish-fallback` blocker on 9 zhelite sentences and 1 stanford sentence is on the polish side and was already there before this round). Warnings are counted per hit entry (not per sentence): `align-target-seam` 11 → 3, `align-source-seam` 24 → 15, `align-bilingual-anchor` 6 → 0, `align-source-fragment` 5 → 2, over `fit` (not over `hard`) 56 → 64 (splitting only guarantees ≤ `hard`; after the `fit` preference it dropped from 66 to 64), lines short of 15 → 16. The first draft mislabeled these warning counts as the metric for the 508-sentence replay and wrote "0 warnings"; both were corrected. 508-sentence replay: first-pass alignment 412 → 440, pending rewrite 67 → 38, coarse blocks 52 → 30.
 
-**成对行修复不得用无模型切分顶掉模型对齐。** 拆分上线后 `lines5c` 出现 4 句回退：表格载体的成对行修复批里一句 `align-edge-ordinal` 出错会让整批成员落到 `fallback_word_entry`（`deterministic/1`），而验收只比驻留形状，`deterministic/1` 顶掉了原来的 `llm-lines+split/1`。加一道门：基线不陈旧、原条目是模型产出（`aligner` 以 `llm-` 开头）、候选不是模型产出时拒收，理由 `model-free`（拒收闭集 `no-write | rewritten-basis | model-free | not-improved`），`lines5d` 4 句全部回到原对齐。
+**Pair-line repair must not replace model alignment with a no-model split.** After splitting shipped, `lines5c` showed 4 sentences regressing. In the pair-repair batch for the table carrier, one `align-edge-ordinal` error sent every batch member to `fallback_word_entry` (`deterministic/1`), and the acceptance check compared only the resident shape, so `deterministic/1` displaced the original `llm-lines+split/1`. A gate is added: a candidate is rejected when the baseline is not stale, the original entry was model-produced (`aligner` starts with `llm-`), and the candidate is not model-produced. The rejection reason is `model-free` (the closed rejection set is `no-write | rewritten-basis | model-free | not-improved`). In `lines5d`, all 4 sentences returned to their original alignment.
 
-**Codex 对 `a4cd6ebcc` 的复测**：P2（复述门把 `critical, critical` 拒了）已在第四轮修；两条 P1（共用端点裁剪、硬锚冲突作废整段）本轮没量，第六轮（§8.6）在 508 句回放上量过后都改了，AMD `s-g107.0` `perfectly` 夹具随之钉进测试。另一处第五轮新拒收 `open-models s-g51.0`（`|And..US|而这目前主要是通过美国和欧洲的模型，|and..Europe|美国和欧洲模型，|…`）：模型在引号缝上把同一短语写了两遍，`translation-chunk-repeat` 拒收是对的，钉成测试；跨块的「源文自身复述」豁免同步加了 `seam_repeat` 判据。
+**Codex re-test of `a4cd6ebcc`:** P2 (the restatement gate rejected `critical, critical`) was fixed in round 4. The two P1s (shared-endpoint trimming, and a hard-anchor conflict voiding the whole segment) were not measured this round. Round 6 (§8.6) changed both after measuring them on the 508-sentence replay, and the AMD `s-g107.0` `perfectly` fixture was pinned into tests. Another sentence newly rejected in round 5, `open-models s-g51.0` (`|And..US|而这目前主要是通过美国和欧洲的模型，|and..Europe|美国和欧洲模型，|…`), had the model write the same phrase twice at a quote seam. The `translation-chunk-repeat` rejection is correct and was pinned as a test. The cross-block "source self-repetition" exemption was also extended with a `seam_repeat` criterion.
 
-**`¦` 落点：三种替代在 zhelite（六个项目里唯一不带空格书写的源文；508 句集全是英文源）上各真跑一次（每次 3 次 `translate-lines` 新调用），全部否决，代码回到确定性放置。** 起因是第四轮观察到的「片标落进词里、英文行边界跟着别扭」：真跑证实模型逐个照抄看到的片标——`lines5e` 与 `lines7` 各 183 个块起点 100% 落在片标上——`|毕业以后进|and after graduating entered |入美国大厂当了五|a big US tech company and spent five |年程序员|years as a programmer` 就是这么来的。(1) *吸附宿主源侧接缝*（`lines6`：`lines` 载体也算 `rows` 的源分组，片标在窗内优先取组起点）：zhelite 的词时间是插值的，整段 1895 个词只有 8 处 ≥0.35 s 静音（4 处不在标点后），组起点实际上就是源字幕行的预算切点，17 行片标换了位置、肉眼对照约半数变差（`他老|板`、`因为当时|需要` 这类；没有做盲判），`lines5e` → `lines6` 对齐分布持平（确定性 0 → 1、改写调用 +1）。(2) *协议允许模型把落进词里的片标挪到词边并配示例*（`lines7`）：183/183 仍照抄，译文差异只是同一片标下的模型随机性（`rash|ly` 还多了一处目标词被切开），无效。(3) *只显示有把握的片标（标点后、从句连词前），其余交给模型按 `≥k` 自己切*（`lines8`）：模型只在显示的片标处切，块起点 183 → 89，块变大后超行：`llm-lines+anchor/1` 38 → 18、`llm-lines+split/1` 9 → 20、`llm-chunk+anchor/1` 0 → 4、确定性 0 → 5，明显更差。另查过 `seam.rs` 的缝表能不能给均分点打分：表里是虚词（悬垂连词 / 黏着助词 / 弱尾副词），观察到的落点全在实词里（进入、薪资、已经、好像、女生、自己、护送、这些、老板、怎么），一个都抓不到。保留的两条确定性规则：不带空格书写的源文在窗内取从句连词起点（`CUT_BEFORE_CJK`，`或 ¦ 者` → `¦ 或者`，模型照做），任何源文不在两个数字 / 数词之间切（第四轮已有）。最终代码的片标放置与 `lines7` 相同、协议正文与 `lines5e` 相同（那句无效的措辞已恢复），两部分各自验过，没有再合起来跑一次：`lines5e` → `lines7` 对齐持平（`llm-lines+anchor/1` 38 → 39、split 9 → 8）。本轮的取舍都按 aligner 分布与引用落点判，没有派盲判子代理。要根治只剩接分词（本轮不做；第十四轮用词典分词做了门，见 §8.14）。三种替代的沙盒（`zhelite-lines6/7/8.ccut`）、wire 日志与 `lines7-pieces.txt` / `lines8-pieces.txt` 对照都保留。
+**`¦` placement: three alternatives, each run for real on zhelite (the only one of the six projects whose source is written without spaces; all 508 sentences are English source), each with 3 new `translate-lines` calls. All were rejected, and the code returned to deterministic placement.** The cause was the piece marker landing inside a word, observed in round 4, which made English line boundaries look awkward. Real runs confirmed that the model copies the piece markers it sees verbatim: in `lines5e` and `lines7`, 100% of the 183 block starts land on piece markers. This is how `|毕业以后进|and after graduating entered |入美国大厂当了五|a big US tech company and spent five |年程序员|years as a programmer` came about. (1) *Snap to the host's source-side seam* (`lines6`: the `lines` carrier also counts as a source group for `rows`, and within the window piece markers prefer group starts). zhelite's word timings are interpolated. Of its 1895 words, only 8 have ≥0.35 s of silence (4 of them not after punctuation), so group starts are in effect the budget cut points of the source subtitle lines. Seventeen lines' piece markers moved, and by eye about half looked worse (cases like `他老|板` and `因为当时|需要`; no blind judgment was done). The `lines5e` → `lines6` alignment distribution was flat (deterministic 0 → 1, rewrite calls +1). (2) *The protocol allows the model to move a piece marker that falls inside a word to a word boundary, with examples* (`lines7`). 183/183 were still copied verbatim. The translation differences were only model randomness under the same piece marker (`rash|ly` also split one more target word), so this was ineffective. (3) *Show only the piece markers we are confident in (after punctuation, before subordinating conjunctions), and leave the rest to the model to cut itself by `≥k`* (`lines8`). The model cut only at the shown markers, and block starts fell 183 → 89. The blocks grew and went over the limit: `llm-lines+anchor/1` 38 → 18, `llm-lines+split/1` 9 → 20, `llm-chunk+anchor/1` 0 → 4, deterministic 0 → 5. Clearly worse. I also checked whether the seam table in `seam.rs` could score midpoint cuts. The table holds function words (dangling conjunctions, clinging particles, weak trailing adverbs), while the observed landing points were all inside content words (进入, 薪资, 已经, 好像, 女生, 自己, 护送, 这些, 老板, 怎么), and the table caught none of them. Two deterministic rules are kept: for source written without spaces, within the window take the start point of a subordinate conjunction (`CUT_BEFORE_CJK`, `或 ¦ 者` → `¦ 或者`, which the model follows); and never cut between two numbers or number words in any source (already in round 4). The final code's piece-marker placement is the same as `lines7`, and the protocol body is the same as `lines5e` (the ineffective wording was restored). The two parts were each verified separately and not run combined again: `lines5e` → `lines7` alignment is flat (`llm-lines+anchor/1` 38 → 39, split 9 → 8). This round's trade-offs were judged by aligner distribution and citation landing points; no blind-judgment subagent was dispatched. The only root fix left is word segmentation (not done this round; round 14 added a dictionary-segmentation gate, see §8.14). The sandboxes for the three alternatives (`zhelite-lines6/7/8.ccut`), the wire logs, and the `lines7-pieces.txt` / `lines8-pieces.txt` comparisons are all kept.
 
-### 8.6 2026-09-30 第六轮：Codex 两条 P1 在 508 句回放上量过、都改
+### 8.6 2026-09-30 Round 6: Codex's two P1s measured on the 508-sentence replay, both changed
 
-**两条都是解析侧改动，协议与 `specVersion` 不动。** (1) 共用端点不再裁剪：相邻两块包络重叠（前一块 RIGHT 等于后一块 RIGHT 或反之，以及更大的交叉）一律照引用保留，`Evidence.overlapping` 只计数（advisory `N overlapping quote hull pair(s) kept as crossing evidence`），`safe_boundaries` 在重叠区里本来就不给切点；裁剪的前提「共用端点是模型抄错」在真实数据上多半不成立（中文把状语提前就会出现共用端点），裁出来的切点让左行带着右行时间窗里的字。(2) 硬锚冲突不再作废包络：锚点的源词落在某块包络之外只说明引用在那一侧写窄了，不说明引用没用——包络与锚点都留作边，只记 `Issue::AnchorConflict`；原来把整块判成定不出，会放过两块之外的一个切点（`World| Labs`）。
+**Both are parse-side changes; the protocol and `specVersion` are unchanged.** (1) Shared endpoints are no longer trimmed. When the envelopes of two adjacent blocks overlap (the previous block's RIGHT equals the next block's RIGHT or vice versa, plus any larger crossing), both are kept as quoted. `Evidence.overlapping` only counts them (advisory `N overlapping quote hull pair(s) kept as crossing evidence`), and `safe_boundaries` already offers no cut points inside the overlap zone. The premise of trimming, that "the shared endpoint is a copy error by the model", mostly does not hold on real data (Chinese fronting of adverbials produces shared endpoints), and the cut points that trimming produced left the left line carrying words from the right line's time window. (2) A hard-anchor conflict no longer voids the envelope. An anchor's source word falling outside some block's envelope only means the quote was written too narrowly on that side, not that the quote is unusable. The envelope and the anchor are both kept as edges, and only `Issue::AnchorConflict` is recorded. Previously this judged the whole block undeterminable, which let through a cut point two blocks away (`World| Labs`).
 
-四个变体在同一批 508 句上回放（10 页、第七轮存下的 DeepSeek 回答，历史补做轮按当时的映射重判、映射逐页断言未变，0 次新调用；`scratchpad/p1-replay.py` / `p1-diff.py`，输出在 `/private/tmp/cuccut-lean-p1-20260930/<变体>/`）：
+Four variants were replayed on the same 508 sentences (10 pages, DeepSeek answers stored in round 7; historical replays were re-judged under the mapping of that time, with the per-page mapping assertions unchanged; 0 new calls; `scratchpad/p1-replay.py` / `p1-diff.py`, output in `/private/tmp/cuccut-lean-p1-20260930/<variant>/`):
 
-| 变体 | 首轮 对齐 / 待改写 / 粗块 | 合并 对齐 / 待改写 | 合成反例假安全（Codex 4 例 + 100 组两块端点组合） |
+| Variant | First pass aligned / pending rewrite / coarse blocks | Merged aligned / pending rewrite | Synthetic counterexample false-safe (Codex 4 cases + 100 two-block endpoint combinations) |
 | --- | --- | --- | --- |
-| V0 `f3e8735f4` | 440 / 38 / 30 | 501 / 6 | 20 / 100；case 3、4 切 `[4]`，case 5 `[11,16]` |
-| V1 只取消裁剪 | 440 / 38 / 30（2 句各少一个假安全切点） | 501 / 6 | 0 / 100；case 5 仍 `[11,16]` |
-| V2 只保留冲突包络 | 445 / 33 / 25 | 503 / 4 | 20 / 100；case 5 `[16]` |
-| V3 两者（已落地） | 445 / 33 / 25 | 503 / 4 | 0 / 100；case 5 `[16]` |
+| V0 `f3e8735f4` | 440 / 38 / 30 | 501 / 6 | 20 / 100; cases 3 and 4 cut `[4]`, case 5 `[11,16]` |
+| V1 trimming removed only | 440 / 38 / 30 (2 sentences each lose one false-safe cut point) | 501 / 6 | 0 / 100; case 5 still `[11,16]` |
+| V2 keep conflict envelopes only | 445 / 33 / 25 | 503 / 4 | 20 / 100; case 5 `[16]` |
+| V3 both (landed) | 445 / 33 / 25 | 503 / 4 | 0 / 100; case 5 `[16]` |
 
-V1 去掉的两个切点是 `s-wmulx1t0s-40` `在今年早些时候融了|一大笔钱` 与 `s-g107.0` `完美地描述了|那项…`，Codex 点名的其余 5 行裁剪本来就被目标 lint 否掉，所以取消裁剪在 508 句上一句不丢。V2 首轮多得的 5 句（`s-g30.0`、`s-g35.1`、`s-g174.0`、`s-wmtpax7ia-92`、`s-g154.6`）4 句切得对，`s-g30.0` 落进拆分梯子、缝选在 `看到什|么机会`（逗号缝超 `hard`，只剩逐字候选；V0 下这句进改写轮）——这是拆分梯子选缝的缺口，第七轮处理；首轮块变化 4 句里 `s-g49.0`、`s-g52.13` 变好、`s-g65.0` 持平、`s-g44.14` 是模型滑笔；合并多得的 `s-g255.0` 把 `World| Labs` 修好。100 组端点组合的 oracle 是完整成员关系下的 `safe_boundaries`，V3 的切点集合是它的子集；模型真滑笔的 `|I..world|我劝她|joining..world|` 只丢自己那一个切点（12 字的块不超 `hard`）。测试：`an_anchor_conflict_keeps_the_hull_and_the_anchor_as_edges`、`shared_endpoint_quotes_keep_both_hulls_and_refuse_the_cut_between_them`（含 AMD `s-g107.0` 夹具）、`two_quoted_hulls_never_admit_a_cut_the_full_membership_refuses`。第五轮的六项目重解析本轮没再跑（与四个项目的真跑验收并发会撞同一个 Runtime），四项目真跑就是在这版代码上做的（§8.7）。
+V1 removes two cut points: `s-wmulx1t0s-40` `在今年早些时候融了|一大笔钱` and `s-g107.0` `完美地描述了|那项…`. The other 5 lines Codex named were trimmed anyway, and the target lint rejected those trims, so removing trimming loses not one sentence among the 508. V2 gained 5 extra sentences in the first pass (`s-g30.0`, `s-g35.1`, `s-g174.0`, `s-wmtpax7ia-92`, `s-g154.6`). Four of them were cut correctly. `s-g30.0` fell into the split ladder, where the seam was picked at `看到什|么机会` (the comma seam exceeds `hard`, leaving only character-level candidates; under V0 this sentence went to the rewrite round). This is a gap in the split ladder's seam selection, handled in round 7. Among the first-pass block changes in these 5 sentences, `s-g49.0` and `s-g52.13` improved, `s-g65.0` was flat, and `s-g44.14` is a model slip. The merge's extra `s-g255.0` fixed `World| Labs`. The oracle for the 100 endpoint combinations is `safe_boundaries` under full membership, and V3's set of cut points is a subset of it. The model's real slip `|I..world|我劝她|joining..world|` loses only its own cut point (a 12-character block does not exceed `hard`). Tests: `an_anchor_conflict_keeps_the_hull_and_the_anchor_as_edges`, `shared_endpoint_quotes_keep_both_hulls_and_refuse_the_cut_between_them` (including the AMD `s-g107.0` fixture), and `two_quoted_hulls_never_admit_a_cut_the_full_membership_refuses`. Round 5's six-project re-parse was not run this round (running it alongside the four-project real runs would collide on the same Runtime). The four-project real runs were done on this version of the code (§8.7).
 
-### 8.7 2026-09-30 第七轮：四个真实项目跑批，块内拆分改三档缝、`¦` 回显变切点提示、复述豁免改译文侧判据
+### 8.7 2026-09-30 Round 7: four real projects run in batch, in-block splitting moved to three-tier seams, `¦` echoes turned into cut hints, and the restatement exemption switched to a target-side criterion
 
-**四个最近项目的真跑（第六轮代码，Sonnet 子代理一项目一个并行跑，DeepSeek Flash，`rows` 与 `lines` 各一次，`translate` 不含润色，沙盒是剥掉 `trans / transDisplay / transAlign / transSrc[lang]` 的副本）。** wire 口径 token（输入 + 输出）：pm（31 句）`lines` 4,875 vs `rows` 8,971；altman（248 句）75.8k vs 140.1k；grok（337 句）54,349 + 25,853 vs 128,824 + 45,502；brockman（283 句）81.7k vs 128.0k。墙钟 grok 两边都 68 s，brockman `lines` 46.2 s 比 `rows` 37.1 s 慢（省的是 token 不是时间：页数少了但每页更长，改写轮串在后面）。子代理报出的问题：brockman 59 条 `lines draft leaves a N-unit block over hard 20 … rewrite turn`、3 次 `align-rewrite` 调用、40 句显示改写——两页回答把 `¦` 原样抄进了译文（wire 里 180 处回显，grok 75 处），解析剥掉片标后在中日韩文字之间留下双空格（brockman 57 句 `trans` 带空格、`C++  或`），块也因此只剩一个；Godmother `s-g50.10` 一块横跨两处时间；`seam_repeat` 豁免放过 `it; it`（Codex 探针）；`Dottie.` / `Okay` 这种单词句被 `translation-source-copy` 拒。
+**Real runs of four recent projects (round-6 code; one Sonnet subagent per project, in parallel; DeepSeek Flash; `rows` and `lines` once each; `translate` without polish; the sandbox is a copy with `trans / transDisplay / transAlign / transSrc[lang]` stripped).** Wire-count tokens (input + output): pm (31 sentences) `lines` 4,875 vs `rows` 8,971; altman (248 sentences) 75.8k vs 140.1k; grok (337 sentences) 54,349 + 25,853 vs 128,824 + 45,502; brockman (283 sentences) 81.7k vs 128.0k. Wall-clock: grok 68 s on both sides; brockman `lines` 46.2 s vs `rows` 37.1 s, so `lines` was slower (what it saved was tokens, not time: fewer pages, but each page was longer, and the rewrite rounds queued behind it). Problems the subagents reported: brockman had 59 entries `lines draft leaves a N-unit block over hard 20 … rewrite turn`, 3 `align-rewrite` calls, and 40 displayed rewrites of sentences. The two page answers copied `¦` verbatim into the translation (180 echoes in the wire for brockman, 75 for grok). After parsing stripped the piece markers, double spaces were left between CJK characters (57 brockman sentences with `trans` containing spaces, e.g. `C++  或`), which also left the block with only one. Godmother `s-g50.10` had one block spanning two timestamps. The `seam_repeat` exemption let through `it; it` (a Codex probe). Single-word sentences such as `Dottie.` and `Okay` were rejected by `translation-source-copy`.
 
-**改动（都在解析侧，协议与 `specVersion` 不动）：**
+**Changes (all on the parse side; protocol and `specVersion` unchanged):**
 
-1. 块内拆分的缝分三档（`SplitSeam`：`backed` 有标点 / 词间空白撑着且 lint 干净；`model-hinted` 模型自己给的切点；`character-level` 只是 lint 没否掉的逐字缝），档在前、同档再优先两侧都 ≤ `fit`、再比缝的代价与离块中点的距离。模型切点来自两处：引用的块边界，以及模型抄进译文正文的 `¦`——`Chunk.marks` 记它在块内的位置（规范化单位偏移，`#[serde(default)]`，旧 manifest 照常解析），`cut_hints` 合成提示；提示向后吸附到最近的原子起点（中间只许空白与标点），客观语病里的悬垂尾 / 弱尾 / 黏着首照收（比逐字切好），残缺名词组 / 列表分隔 / 未闭合定界符 / 锁定术语内部仍不收（`hinted_cut_candidates`）。advisory 改为 `split in place at N backed, N model-hinted, N character-level seam(s)`，回放的 grade 逐句记 `splitSeams`。有提示而没有一个证据切点放行的句也进梯子，但**不用逐字缝**（提示吸不上就留给改写轮：how-claude `s-g33.0` `软|件产品` 那类在首稿里被逐字缝顶掉，复核后加的门）。两刀才够的块仍切不了（AMD `s-g30.0`：拆过一次的块每一半只剩一条边，`split_edges_at` 判不了第二刀），钉在测试里作已知边界。
-2. `¦` 回显：剥掉后留作切点提示；片标两侧空白并成一个空格、两侧都是中日韩文字时不留（`split_piece_marks`）；引用里的片标只剥不提示；行首的片标也剥；`marker-residue` 按原始回答行计数。
-3. `seam_repeat` 豁免改成译文侧判据：前一段末词等于后一段首词时，只在较长一块在两块共有单位之外的长度不短于共有单位（`beyond_shared >= shared`）时放过——`|This..critical|这至关重要，|critical..project|对整个项目至关重要。` 放过，`|The committee rejected it;|委员会否决了它，|it was very expensive.|委员会否决了它。` 仍拒；Codex 四条探针钉进测试。原先按源侧单位数的方案（两段都长于共有部分）算过不成立，没上。
-4. `translation-source-copy`：源文只有一个带空格书写文字的词（`spaced_script_letter`，不含中日韩与泰 / 老 / 缅 / 高棉 / 藏文）时照抄不算复制。
-5. 设计稿 §8.5 的「被拆块内的源断点按比例取」改正为「在按比例的落点附近吸附到源侧标点 / 停顿 / 合法缝」（`choose_source_break` 本来就是这么做的）。
+1. In-block split seams come in three tiers (`SplitSeam`): `backed` has punctuation, or whitespace between words, and is lint-clean; `model-hinted` is a cut the model gave itself; `character-level` is only a per-character seam that lint did not reject. The tier comes first; within the same tier, prefer both sides ≤ `fit`, then compare the seam cost and the distance from the block midpoint. Model cut points come from two sources: quoted block boundaries, and the `¦` the model copied into the translation body. `Chunk.marks` records its position within the block (normalized unit offsets, `#[serde(default)]`, so old manifests still parse), and `cut_hints` synthesizes hints. A hint snaps forward to the nearest atom start (only whitespace and punctuation in between). Objective grammar-error cases (dangling tail, weak tail, clinging head) are accepted, since that cuts better than per-character; broken noun phrases, list separators, unclosed delimiters, and positions inside locked terms are still not accepted (`hinted_cut_candidates`). The advisory is now `split in place at N backed, N model-hinted, N character-level seam(s)`, and the replay's grade records `splitSeams` per sentence. Sentences with a hint but no evidence cut accepted by any candidate also enter the ladder, but **without character-level seams**. If the hint cannot snap, the sentence is left for the rewrite round (how-claude `s-g33.0`, `软|件产品`-type cases, was taken by a character seam in the first draft; the gate was added after review). A sentence that needs two cuts still cannot be split (AMD `s-g30.0`: a block already split once has only one edge per half, and `split_edges_at` cannot judge a second cut). This is recorded as a known limit in the tests.
+2. `¦` echoes: after stripping, they are kept as cut hints. The whitespace around a piece marker collapses to one space, and no space is kept when both sides are CJK characters (`split_piece_marks`). Piece markers inside quotes are stripped but give no hint. Piece markers at line start are also stripped. `marker-residue` counts by raw answer line.
+3. The `seam_repeat` exemption switched to a target-side criterion. When the last word of the previous segment equals the first word of the next, the exemption applies only if the longer block's length beyond the two blocks' shared units is at least the shared length (`beyond_shared >= shared`). `|This..critical|这至关重要，|critical..project|对整个项目至关重要。` is let through, while `|The committee rejected it;|委员会否决了它，|it was very expensive.|委员会否决了它。` is still rejected. Codex's four probes were pinned into tests. The earlier source-side unit-count scheme (both segments longer than the shared part) was calculated, found not to hold, and was not shipped.
+4. `translation-source-copy`: when the source has only one word written with spaces in a spaced script (`spaced_script_letter`, excluding CJK, Thai, Lao, Burmese, Khmer and Tibetan), copying it verbatim does not count as copying.
+5. The round-5 design note's "source break inside a split block taken proportionally" is corrected to "snapped, near the proportional landing point, to source-side punctuation, pauses or legal seams" (which is what `choose_source_break` already did).
 
-**508 句回放（0 次新调用）：** 首轮对齐 / 待改写 445 / 33 → 456 / 22（三档缝）→ 453 / 25（加「只靠提示不用逐字缝」后，退回的三句 how-claude `s-g22.0` / `s-g33.0` / `s-g45.0` 都是逐字缝），合并 503 / 4 → 506 / 1，`translationRetries` 1、接受译文 507。首轮新对齐的 8 句里 4 句 `backed`（amd `s-g122.0` / `s-g273.0`、open-models `s-g138.0` / `s-g144.7`）、4 句 `model-hinted`（amd `s-g141.0` / `s-g154.0` / `s-g180.0`、open-models `s-g8.0`）；拆分缝按档 16 `backed` / 12 `model-hinted` / 6 `character-level`（33 句）。首轮块变化的 10 句逐句看过：模型提示把 `这|项`、`机|器`、`优|秀`、`转|变`、`就|是` 这类词内缝换成词边；反例 amd `s-g75.0` 逗号缝 `4D 一致性，|` 一侧 18 > `fit` 16，输给了两侧都放得下、但 lint 标「并列连词起首」的提示缝 `…并让摄像头 | 和智能体…`（见下）。Godmother `s-g50.10` 不是拆分能修的（模型把一块写成横跨两处时间），记作 `split/1` 的边界。
+**508-sentence replay (0 new calls):** first-pass aligned / pending rewrite 445 / 33 → 456 / 22 (three-tier seams) → 453 / 25 (after adding "hint-only, no character-level seam", the three sentences sent back, how-claude `s-g22.0`, `s-g33.0` and `s-g45.0`, are all character seams). Merged 503 / 4 → 506 / 1, `translationRetries` 1, accepted translations 507. Of the 8 newly aligned first-pass sentences, 4 were `backed` (amd `s-g122.0` and `s-g273.0`, open-models `s-g138.0` and `s-g144.7`) and 4 were `model-hinted` (amd `s-g141.0`, `s-g154.0` and `s-g180.0`, open-models `s-g8.0`). Split seams by tier: 16 `backed` / 12 `model-hinted` / 6 `character-level` (33 sentences). I read through the 10 first-pass block-changed sentences one by one. The model hints replaced within-word seams such as `这|项`, `机|器`, `优|秀`, `转|变` and `就|是` with word boundaries. A counterexample is amd `s-g75.0`: the comma seam `4D 一致性，|` has one side at 18 > `fit` 16, and it lost to the hint seam `…并让摄像头 | 和智能体…`, which fits both sides but is flagged by lint as "starts with a coordinating conjunction" (see below). Conversely, the brockman echo example `我认为，|` (4 / 20) losing to the hint `…创造价值 | 的空间` follows the same rule. Godmother `s-g50.10` is not something splitting can fix (the model wrote one block spanning two timestamps), so it is recorded as the boundary of `split/1`.
 
-**四个项目用同一批回答重解析（`lines` → `lines8`，`translate-lines` 0 次新调用；超行块变了所以 `align-edges` / `align-rewrite` 请求不同，各发了新调用：altman 1 + 2、grok 2 + 2、brockman 2 + 2、pm 0）：**
+**Re-parsing the four projects with the same answers (`lines` → `lines8`, 0 `translate-lines` new calls; the over-limit blocks changed, so the `align-edges` / `align-rewrite` requests differ, and each issued new calls: altman 1 + 2, grok 2 + 2, brockman 2 + 2, pm 0):**
 
-| 项目 | `split/1` | `llm-chunk+anchor/1` | 确定性 | 超行 advisory | 显示改写 | 中日韩双空格句 | `check` blocker | `align-target-seam` 条目 | 超 `fit` 条目 | 改写 + edges 调用 token（输入 / 输出） |
+| Project | `split/1` | `llm-chunk+anchor/1` | Deterministic | Over-limit advisory | Displayed rewrites | CJK double-space sentences | `check` blocker | `align-target-seam` entries | Over-`fit` entries | Rewrite + edges call tokens (input / output) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| pm | 1 → 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 → 1 | 2 → 2 | 无新调用 |
+| pm | 1 → 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 → 1 | 2 → 2 | no new calls |
 | altman | 19 → 26 | 21 → 14 | 2 → 2 | 14 → 8 | 6 → 5 | 0 | 1 → 0 | 3 → 12 | 26 → 25 | 8,114 / 7,204 → 6,973 / 5,861 |
 | grok | 19 → 30 | 21 → 13 | 5 → 2 | 17 → 5 | 7 → 2 | 0 | 0 | 5 → 14 | 38 → 41 | 9,514 / 8,449 → 7,933 / 6,699 |
 | brockman | 9 → 52 | 56 → 18 | 6 → 1 | 59 → 12 | 40 → 0 | 57 → 0 | 0 | 1 → 6 | 23 → 28 | 15,367 / 14,889 → 7,447 / 5,960 |
 
-brockman 是最强的一组：改写轮从 3 次 13.2k / 14.0k token 降到 2 次 4.7k / 4.3k，40 句「verify no meaning shifted」的显示改写归零，`trans` 文本变了 57 句（去掉空白后逐句与原来相同，都是双空格修复；改写请求正文 3 次 35.6k 字符 → 2 次 14.8k）。「只靠提示不用逐字缝」这道门在四个项目上的代价（`lines7` → `lines8`）：`split/1` altman / grok / brockman 28 / 30 / 54 → 26 / 30 / 52，`llm-chunk+anchor/1` 10 / 15 / 15 → 14 / 13 / 18，改写句 3 / 1 / 2 → 5 / 2 / 0。代价是超 `fit`、`align-source-ceiling`（brockman 23 → 27）这类警告略升——改写轮原来会把句子改短，现在直接拆分落库。重解析的墙钟（altman 39 s / grok 47 s / brockman 36 s）只含新发的几次调用，不能与整跑比较。
+brockman is the strongest group. The rewrite round went from 3 calls at 13.2k / 14.0k tokens to 2 calls at 4.7k / 4.3k. The 40 displayed "verify no meaning shifted" rewrites dropped to zero. The `trans` text changed for 57 sentences (after removing whitespace, each matches the original sentence by sentence; all are double-space fixes). Rewrite request bodies went from 3 calls totaling 35.6k characters to 2 calls at 14.8k. The cost of the "hint-only, no character-level seam" gate across the four projects (`lines7` → `lines8`): `split/1` altman / grok / brockman 28 / 30 / 54 → 26 / 30 / 52, `llm-chunk+anchor/1` 10 / 15 / 15 → 14 / 13 / 18, rewritten sentences 3 / 1 / 2 → 5 / 2 / 0. The cost is that warnings such as over-`fit` and `align-source-ceiling` (brockman 23 → 27) rose slightly, because the rewrite round used to shorten sentences and now direct splitting stores them. The wall-clock of the re-parse (altman 39 s / grok 47 s / brockman 36 s) covers only the few new calls and cannot be compared with full runs.
 
-**待裁决：模型提示缝与 lint 的冲突。** 四个项目 35 句 `model-hinted` 拆分上有 28 条 `align-target-seam` 条目（grok `s-g17.0` 一句两条；四项目条目合计 9 → 33）：提示吸附时放行的三类语病（悬垂尾、弱尾全部形态——「得」「兼语式缺谓语」「处置式缺谓语」「系词缺表语」「动补缺宾」「方位框架」——以及黏着首含「并列连词 和/及/与/或 起首」）正是 `check` 的 lint 所报的。对照第六轮同句的落法（按条）：16 条原来是无依托的逐字缝，多数切在词内（`存|在于`、`意识|到`、`以人为|本`、`晨间|简报`），少数本身就是语病缝（`能|把`、`最|让人`）——`check` 看不见词内缝，所以这些在指标上「变差」、阅读上多数变好；8 条原来走 `llm-chunk+anchor/1`（多一次 `align-edges` 调用，缝干净：`另一件事 | 是我` → `是我自己个人的 | 插件栈`、`板块和领域，| 其实` → `板块 | 和领域`）；3 条原来是确定性切分；1 条原来是逗号缝（brockman `s-g371.0` `如果你，|`，4 字一行）。现在的排序里有依托缝与提示缝同档、先比 `fit`，所以一条 lint 标记的提示缝会赢过一侧略超 `fit` 的干净标点缝（amd `s-g75.0`），反过来 brockman 回显例 `我认为，|`（4 / 20）输给提示 `…创造价值 | 的空间`也是同一条规则。两个问题留给用户：干净缝是否不论 `fit` 一律先于被 lint 标记的提示缝；放行的语病类是否收窄到悬垂尾一类。本轮代码保持现状；`check` 看不见中日韩词内缝是指标本身的盲区，要补得接分词。（用户裁决「干净缝一律优先，放行只留悬垂尾」，第八轮落地，见 §8.8。）
+**Pending decision: conflict between model-hinted seams and lint.** Across the four projects, 35 `model-hinted` split sentences produced 28 `align-target-seam` entries (grok `s-g17.0` has two entries in one sentence; the four-project entry total went 9 → 33). The three classes of grammar problem that hint snapping lets through (all forms of dangling tail and weak tail: 「得」, "concurrent-style missing predicate" (兼语式缺谓语), "disposal-style missing predicate" (处置式缺谓语), "copula missing complement" (系词缺表语), "verb-complement missing object" (动补缺宾), "locative frame" (方位框架); and clinging heads that begin with the coordinating conjunction 和/及/与/或) are exactly what the `check` lint reports. Compared with how the same sentences were placed in round 6 (per entry): 16 entries were originally unsupported character-level seams, mostly cutting inside words (`存|在于`, `意识|到`, `以人为|本`, `晨间|简报`), and a few were themselves grammar-problem seams (`能|把`, `最|让人`). `check` cannot see within-word seams, so these look worse on the metric while reading as mostly better. 8 entries were originally via `llm-chunk+anchor/1` (one extra `align-edges` call, with clean seams: `另一件事 | 是我` → `是我自己个人的 | 插件栈`, `板块和领域，| 其实` → `板块 | 和领域`). 3 entries were originally deterministic splits. 1 was a comma seam (brockman `s-g371.0` `如果你，|`, a 4-character line). In the current ordering, anchored seams and hint seams share a tier and are compared by `fit` first. So a lint-flagged hint seam beats a clean punctuation seam with one side slightly over `fit` (amd `s-g75.0`). Conversely, the brockman echo example `我认为，|` (4 / 20) losing to hint `…创造价值 | 的空间` follows the same rule. Two questions are left for the user: whether clean seams should always take precedence over lint-flagged hint seams regardless of `fit`; and whether the permitted grammar-problem classes should be narrowed to dangling tails. This round's code stays as it is. `check` not seeing within-word CJK seams is a blind spot of the metric itself, and fixing it needs word segmentation. (User ruling: "clean seams always take precedence; only dangling tails are allowed", landed in round 8, see §8.8.)
 
-六个项目的重解析（§8.5 `lr-rerun-clean.py`）本轮没跑；四项目沙盒（`<项目>-lines.ccut` / `-lines7.ccut` / `-lines8.ccut`）、wire 日志、子代理报告（`<项目>-report.md`）与回放输出（`/private/tmp/cuccut-lean-p1-20260930/commitb*/`）都保留。
+The six-project re-parse (§8.5 `lr-rerun-clean.py`) was not run this round. The four-project sandboxes (`<project>-lines.ccut` / `-lines7.ccut` / `-lines8.ccut`), the wire logs, the subagent reports (`<project>-report.md`), and the replay outputs (`/private/tmp/cuccut-lean-p1-20260930/commitb*/`) are all kept.
 
-### 8.8 2026-09-30 第八轮：干净缝一律优先、放行只留悬垂尾、提示被拒也进梯子
+### 8.8 2026-09-30 Round 8: clean seams always first, only dangling tails are admitted, refused hints also enter the ladder
 
-**裁决（用户，对 §8.7 两问）：** 干净缝不论 `fit` 一律先于被 lint 标记的提示缝；提示吸附放行的语病收窄到悬垂尾一类。改完再回放一次。
+**Ruling (user, on the two questions in §8.7):** Clean seams rank ahead of lint-flagged hinted seams regardless of `fit`; hint-snap admission for grammatical errors is narrowed to dangling tails. Replay once more after the change.
 
-**改动（解析侧，协议与 `specVersion` 不动）：**
+**Changes (parser side; protocol and `specVersion` unchanged):**
 
-1. `SplitSeam` 分四档：`backed`（有标点 / 词间空白撑着且 lint 干净）与 `model-hinted`（lint 干净的模型切点，缝代价低于阻断罚分）同档在前；`model-hinted-flagged`（带悬垂尾、或落在词内启发式的模型切点）次之；`character-level` 最后。排序键改成（档，是否超 `fit`，缝代价，离块中点距离）——先比档再看 `fit`，所以一条两侧都放得下、但以「的」收尾的提示缝不再赢过一侧略超 `fit` 的逗号缝。
-2. `cut_candidate_at(…, tolerant)` 只放行 `DanglingTail`：弱尾全部形态（「得」「兼语式缺谓语」「处置式缺谓语」「系词缺表语」「动补缺宾」「方位框架」）与黏着首（并列连词起首、黏着助词、方位后缀）都不再收，这些提示按被拒处理。
-3. 梯子的门按**原始提示**（`cut_hints` 非空）开，不按吸附后放行的候选：提示全被 lint 拒了的句也进梯子，干净的 `backed` 缝照常可用；`character_allowed = !cuts.is_empty()` 不变，只靠提示进梯子的句仍不用逐字缝。只改排序与放行的那版回放（`commitc`）里，amd `s-g122.0`、open-models `s-g138.0` 本来各有一条干净逗号缝，因为唯一的提示被拒、`hinted` 为空而门关，退回改写轮——门改后两句回到 `backed`。advisory 的 `N cut hint(s)` 相应记原始提示数。
-4. 两条既有测试的期望按新规则改：PM 句 `有前景的 | 想法` 由 `Hinted` 改 `HintedFlagged`；brockman 回显例里 4 / 20 的逗号缝 `我认为，|` 现在赢过提示 `…创造价值 | 的空间`（黏着助词起首，已不放行）。
+1. `SplitSeam` has four tiers: `backed` (backed by punctuation or inter-word whitespace and lint-clean) and `model-hinted` (a lint-clean model cut point whose seam cost is below the blocking penalty) share the first tier; `model-hinted-flagged` (carries a dangling tail, or is a model cut point that falls inside a word per the heuristic) comes next; `character-level` last. The sort key is now (tier, whether it exceeds `fit`, seam cost, distance from the block midpoint). Tier is compared first, then `fit`, so a hinted seam that fits on both sides but ends in 「的」 (possessive particle 的) no longer beats a comma seam that slightly exceeds `fit` on one side.
+2. `cut_candidate_at(…, tolerant)` admits only `DanglingTail`. All weak-tail forms (「得」 complement tail, 兼语式 pivotal construction missing predicate, 处置式 disposal construction missing predicate, 系词 copula missing complement, 动补 verb complement missing object, 方位框架 locative frame) and sticky openers (coordinating-conjunction openers, clingy particles, locative suffixes) are no longer admitted; these hints are treated as refused.
+3. The ladder's gate is opened by the **raw hints** (`cut_hints` non-empty), not by the candidates admitted after snapping. Sentences whose hints were all rejected by lint also enter the ladder, and clean `backed` seams remain usable as before. `character_allowed = !cuts.is_empty()` is unchanged, so sentences that enter the ladder only through hints still do not get character-level seams. In the replay of the version that only changed sorting and admission (`commitc`), amd `s-g122.0` and open-models `s-g138.0` each had a clean comma seam, but because their only hint was rejected, `hinted` was empty and the gate closed, falling back to a rewrite round. After the gate change, both sentences are back on `backed`. The advisory `N cut hint(s)` now counts the raw hints.
+4. Expectations of two existing tests changed under the new rules. The PM sentence `有前景的 | 想法` changes from `Hinted` to `HintedFlagged`. In the brockman echo case, the comma seam `我认为，|` at 4/20 now beats the hint `…创造价值 | 的空间` (sticky particle 的 opener, no longer admitted).
 
-**508 句回放（0 次新调用）：** 首轮对齐 / 待改写 453 / 25（第七轮）→ 448 / 30（只改排序与放行，`commitc`）→ 451 / 27（加门修正，`commitd`）；合并 506 / 1 → 504 / 3 → 505 / 2。`commitd` 合并里多出的那一句（amd `s-g180.0`）是回放工具的伪像：它首轮已以 `backed` 缝对齐，但回放的改写页按原始运行的改写集合生成、结果无条件覆盖首轮，历史改写回答在新规则下待改写；按生产路径（首轮对齐的句不进改写轮）算 506 / 1。拆分缝按档：16 `backed` / 12 `model-hinted` / 6 `character-level`（33 句）→ 19 `backed` / 3 `model-hinted-flagged` / 10 `character-level`（31 句）。第七轮 → `commitd` 变化 9 句，原来都是 `model-hinted`：3 句改走 `backed`（amd `s-g75.0` `4D 一致性，|`、`s-g45.16` `研究团队，|`、`s-g180.0` `这一直是AMD |` 词间空格缝）；2 句退回改写轮（amd `s-g154.0` `就是用 |`、open-models `s-g8.0` `大家觉得 |`，提示被拒、无证据切点）；**4 句落到逐字缝**：ai-security `s-g40.34` `组合 | 是`、amd `s-g107.0` `这 | 项`、`s-g93.0` `前沿的机 | 器人`（原提示 `工作流 | 和前沿`）、`s-g165.0` `重视 | 是AI`——这是裁决的直接代价：被拒的提示不再挡在逐字缝前面，而 `check` 看不见中日韩词内缝。
+**508-sentence replay (0 new calls):** first round aligned / to-rewrite 453 / 25 (round 7) → 448 / 30 (sorting and admission only, `commitc`) → 451 / 27 (gate fix added, `commitd`). After merge: 506 / 1 → 504 / 3 → 505 / 2. The extra sentence in the `commitd` merge (amd `s-g180.0`) is an artifact of the replay tool. It had already aligned with a `backed` seam in the first round, but the rewrite page for the replay was generated from the rewrite set of the original run and unconditionally overwrote the first-round result, so historical rewrite answers count as to-rewrite under the new rules. Following the production path (sentences aligned in the first round do not enter the rewrite round), it counts as 506 / 1. Seam tiers: 16 `backed` / 12 `model-hinted` / 6 `character-level` (33 sentences) → 19 `backed` / 3 `model-hinted-flagged` / 10 `character-level` (31 sentences). Round 7 → `commitd` changed 9 sentences, all originally `model-hinted`: 3 moved to `backed` (amd `s-g75.0` `4D 一致性，|`, `s-g45.16` `研究团队，|`, `s-g180.0` `这一直是AMD |` inter-word space seam); 2 went back to the rewrite round (amd `s-g154.0` `就是用 |`, open-models `s-g8.0` `大家觉得 |`; hint rejected, no evidence cut point); **4 fell to character-level seams**: ai-security `s-g40.34` `组合 | 是`, amd `s-g107.0` `这 | 项`, `s-g93.0` `前沿的机 | 器人` (original hint `工作流 | 和前沿`), `s-g165.0` `重视 | 是AI`. This is the direct cost of the ruling: rejected hints no longer block character-level seams, and `check` cannot see CJK intra-word seams.
 
-**四个项目重解析（`lines8` → `lines9`，同一批 `translate-lines` 回答，0 次新调用；`align-edges` / `align-rewrite` 新调用 pm 0、altman 改写 1（edges 请求未变、未重发）、grok 改写 2 + edges 2、brockman 改写 2 + edges 2；四项目 `trans` 文本 0 句变）：**
+**Four projects reparsed (`lines8` → `lines9`, same batch of `translate-lines` answers, 0 new calls; `align-edges` / `align-rewrite` new calls: pm 0, altman rewrite 1 (edges request unchanged, not resent), grok rewrite 2 + edges 2, brockman rewrite 2 + edges 2; `trans` text unchanged for all four projects, 0 sentences differ):**
 
-| 项目 | `split/1` | `llm-chunk+anchor/1` | 确定性 | 超行 advisory | 显示改写 | `align-target-seam` 条目 | 逐字缝 | 超 `fit` 条目 | 改写 + edges 调用 token（输入 / 输出） |
+| Project | `split/1` | `llm-chunk+anchor/1` | Deterministic | Over-line advisory | Shown rewrites | `align-target-seam` entries | Character-level seams | Over-`fit` entries | Rewrite + edges call tokens (input / output) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| pm | 1 → 1 | 0 | 0 | 0 | 0 | 1 → 1 | 0 | 2 → 2 | 无新调用 |
+| pm | 1 → 1 | 0 | 0 | 0 | 0 | 1 → 1 | 0 | 2 → 2 | No new calls |
 | altman | 26 → 24 | 14 → 15 | 2 → 3 | 8 → 9 | 5 → 3 | 12 → 6 | 3 → 5 | 25 → 26 | 6,973 / 5,861 → 2,341 / 2,212 |
 | grok | 30 → 28 | 13 → 18 | 2 → 1 | 5 → 7 | 2 → 5 | 14 → 7 | 3 → 7 | 41 → 39 | 7,933 / 6,699 → 8,478 / 7,314 |
 | brockman | 52 → 51 | 18 → 18 | 1 → 2 | 12 → 13 | 0 | 6 → 1 | 1 → 2 | 28 → 28 | 7,447 / 5,960 → 7,634 / 6,063 |
 
-四项目拆分缝按档 74 `backed` / 36 `model-hinted` / 7 `character-level` → 86 `backed` / 12 `model-hinted-flagged` / 14 `character-level`。`lines8` 的 28 条落在 `model-hinted` 句上的 `align-target-seam` 条目在 `lines9` 的去向：7 条是悬垂尾、仍以 `model-hinted-flagged` 保留（pm 1、altman `s-g6.0`、grok `s-g17.0` / `s-g233.0` / `s-g321.0` / `s-g470.0`、brockman `s-g569.0`）；1 条的提示被拒（grok `s-g569.0` `形容为 |` 处置式缺谓语），句子改在另一条悬垂尾提示 `关系中的 |` 上拆，仍是 `model-hinted-flagged`；7 条改走干净 `backed` 缝（altman `s-g65.0` / `s-g131.0` / `s-g297.0`、grok `s-g232.0`、brockman `s-g252.0` `我认为，|` / `s-g371.0` `如果你，|` / `s-g392.0` `板块和领域，|`）；5 条退回 `llm-chunk+anchor/1`（多一次 `align-edges`：altman `s-g17.8` / `s-g40.0`、grok `s-g133.0` / `s-g413.0`、brockman `s-g528.0`）；1 条改确定性切分（altman `s-g248.0`）；**7 条落到逐字缝**（altman `s-g142.0` `当我在 | 散步`、`s-g398.0` `意识 | 到`；grok `s-g17.0` `最 | 让人`、`s-g108.0` `格式完全 | 按`、`s-g311.0` `在聊 | 天里`、`s-g336.0` `工程主 | 管`；brockman `s-g422.0` `晨间 | 简报` 两处），其中 `意识|到`、`聊|天`、`主|管`、`晨间|简报` 切在词内。`lines9` 新增 4 条条目都是 lint 本来就报的客观语病落在别的档上（altman `s-g65.0` 列表分隔、`s-g248.0` / `s-g382.0` 确定性切分的悬垂尾与「如何」、grok `s-g569.0` 就是上面那条挪位的悬垂尾）。altman `s-g65.0` 与 grok `s-g84.0`（`lines8` 已有）的 `backed` 缝落在列表分隔 `、` 后、`check` 却报 `align-target-seam`：拆分规划器的缝 lint 与 `check` 的 lint 对列表分隔的判法不一致，`backed` 的「lint 干净」指前者。brockman 的 `align-source-seam` 12 → 15、`align-source-fragment` 5 → 7 是块内源断点随新缝位重吸附的结果，没逐条看。
+Across the four projects, seam tiers went from 74 `backed` / 36 `model-hinted` / 7 `character-level` → 86 `backed` / 12 `model-hinted-flagged` / 14 `character-level`. Where the 28 `align-target-seam` entries from `lines8` on `model-hinted` sentences ended up in `lines9`: 7 are dangling tails and remain `model-hinted-flagged` (pm 1, altman `s-g6.0`, grok `s-g17.0` / `s-g233.0` / `s-g321.0` / `s-g470.0`, brockman `s-g569.0`); 1 has a refused hint (grok `s-g569.0` `形容为 |`, disposal construction missing predicate), so the sentence was re-split at another dangling-tail hint `关系中的 |`, still `model-hinted-flagged`; 7 moved to clean `backed` seams (altman `s-g65.0` / `s-g131.0` / `s-g297.0`, grok `s-g232.0`, brockman `s-g252.0` `我认为，|` / `s-g371.0` `如果你，|` / `s-g392.0` `板块和领域，|`); 5 fell back to `llm-chunk+anchor/1` (one extra `align-edges` call each: altman `s-g17.8` / `s-g40.0`, grok `s-g133.0` / `s-g413.0`, brockman `s-g528.0`); 1 moved to deterministic splitting (altman `s-g248.0`); **7 fell to character-level seams** (altman `s-g142.0` `当我在 | 散步`, `s-g398.0` `意识 | 到`; grok `s-g17.0` `最 | 让人`, `s-g108.0` `格式完全 | 按`, `s-g311.0` `在聊 | 天里`, `s-g336.0` `工程主 | 管`; brockman `s-g422.0` `晨间 | 简报` in two places). Of these, `意识|到`, `聊|天`, `主|管` and `晨间|简报` are cut inside words. The 4 new `lines9` entries are all objective grammatical errors that lint already reported, now falling in other tiers (altman `s-g65.0` list separator, `s-g248.0` / `s-g382.0` dangling tail and 如何 in deterministic splitting, grok `s-g569.0` the dangling tail moved above). altman `s-g65.0` and grok `s-g84.0` (already in `lines8`) have `backed` seams after the list separator `、`, yet `check` reports `align-target-seam`. The split planner's seam lint and `check`'s lint disagree on list separators; "lint-clean" for `backed` refers to the former. brockman `align-source-seam` 12 → 15 and `align-source-fragment` 5 → 7 result from block-internal source breakpoints re-snapping to the new seam positions; these were not reviewed one by one.
 
-**结论与遗留：** 指标上 `align-target-seam` 四项目 33 → 15、508 回放首轮少 2 句对齐、四项目 `split/1` 少 1–2 句；阅读上干净缝的占比从 74 / 117 升到 86 / 112，代价是逐字缝翻倍（7 → 14、6 → 10）且多数切在词内。逐字缝要不切词内，得接分词（§8.7 已记为 `check` 的盲区），或者再立一档「被拒的模型提示」排在逐字缝前——后者在 §8.9 做了。六个项目的重解析仍没跑。本轮的四项目沙盒（`-lines9.ccut`）、`table-lines8-lines9.txt` 与回放输出（`commitc` / `commitd`）当时都留在 `/private/tmp`，2026-09-30 晚机器重启时被系统清空（见 §8.9「数据」）。
+**Conclusions and open items:** On metrics, `align-target-seam` across the four projects went 33 → 15, the 508-replay first round has 2 more sentences aligned, and four-project `split/1` has 1–2 fewer sentences. On readability, the share of clean seams rose from 74 / 117 to 86 / 112, at the cost of character-level seams doubling (7 → 14, 6 → 10), most of them cutting inside words. To stop cutting inside words, character-level seams need word segmentation (recorded in §8.7 as a blind spot of `check`), or a tier of "refused model hints" ranked ahead of character-level seams; the latter was done in §8.9. Re-parsing the six projects has still not been run. This round's four-project sandbox (`-lines9.ccut`), `table-lines8-lines9.txt` and the replay outputs (`commitc` / `commitd`) were kept in `/private/tmp` at the time, and were wiped by the system when the machine restarted on the evening of 2026-09-30 (see §8.9 “数据”).
 
-### 8.9 2026-09-30 第九轮：被拒的提示自成一档、排在逐字缝前
+### 8.9 2026-09-30 Round 9: refused hints form their own tier, ranked ahead of character-level seams
 
-**裁决（用户，对 §8.8 遗留）：** 再立一档「被拒的提示」排在逐字缝前，改了再回放一次。
+**Ruling (user, on the §8.8 open items):** Add a tier of "refused hints" ranked ahead of character-level seams; change and replay once more.
 
-**改动（解析侧，协议与 `specVersion` 不动）：**
+**Changes (parser side; protocol and `specVersion` unchanged):**
 
-1. `SplitSeam` 分五档：`backed` = `model-hinted`（同档）> `model-hinted-flagged`（带悬垂尾）> `model-hinted-refused` > `character-level`。`hinted_cut_candidates` 改返回 `HintedCuts { admitted, refused }`：缝 lint 判出悬垂尾以外的客观语病（弱尾各形态、黏着首、名词性残缺、列表分隔、未配对的括引）的模型切点进 `refused`，不再丢掉；落在锁定术语内部的提示两头都不进。这些类别来自缝 lint，哪种语言有哪几类由 lint 的按语言实现决定；lint 对某种语言一类都不报时 `refused` 恒为空，行为与第八轮相同。
-2. 被拒的提示**不算放行**：它和逐字缝一样只在有证据切点的梯子里可用（`unadmitted()` = `HintedRefused | Character`，`cuts` 为空时两档都排除），只靠提示进梯子的句仍保持 `NeedsRewrite` 走改写轮。这是按「排在逐字缝前」的字面做的取舍——它只顶替本来会选逐字缝的位置，不新增被接受的句子。
-3. advisory 多一个标签 `N model-hinted-refused seam(s)`；`ccut-translate.md` 同步成五档。
-4. 测试：新增 `a_refused_hint_outranks_a_character_seam_but_never_carries_a_hint_only_ladder`（「得」收尾的提示：有证据切点时赢过逐字缝，只靠提示时不用）；AMD 句的集成用例由 `Character` 改 `HintedRefused`（两条模型边界都被 lint 拒，现在照模型的边界切）；锁定术语内部的提示两头都不进补了一条断言。
+1. `SplitSeam` has five tiers: `backed` = `model-hinted` (same tier) > `model-hinted-flagged` (with dangling tail) > `model-hinted-refused` > `character-level`. `hinted_cut_candidates` now returns `HintedCuts { admitted, refused }`. Model cut points that the seam lint flags with objective grammatical errors other than dangling tails (the various weak-tail forms, sticky openers, noun-phrase incompleteness, list separators, unpaired brackets or quotation marks) go into `refused` instead of being dropped. Hints that fall inside locked terms go into neither. These categories come from the seam lint; which categories apply to which language is decided by the per-language implementation of the lint. When the lint reports none of a category for a language, `refused` is always empty for that language, and behaviour matches round 8.
+2. Refused hints **do not count as admitted**. Like character-level seams, they are usable only in a ladder with evidence cut points (`unadmitted()` = `HintedRefused | Character`; when `cuts` is empty, both tiers are excluded). Sentences that rely only on hints to enter the ladder stay `NeedsRewrite` and go to the rewrite round. This follows "ranked ahead of character-level seams" literally: it only replaces the position that would otherwise pick a character-level seam, and does not admit any new sentences.
+3. The advisory gets an additional label, `N model-hinted-refused seam(s)`. `ccut-translate.md` is synced to five tiers.
+4. Tests: added `a_refused_hint_outranks_a_character_seam_but_never_carries_a_hint_only_ladder` (a hint ending in 「得」 outranks a character-level seam when evidence cut points exist, and is not used when only hints exist). The integration case for the AMD sentence changes from `Character` to `HintedRefused` (both model boundaries are rejected by lint, so it now cuts at the model boundary). Added an assertion that hints inside locked terms enter neither side.
 
-**数据（重要）：** 2026-09-30 约 20:15 机器重启，`/private/tmp` 被系统清空，§8.1–§8.8 的回放页答案、项目沙盒与跑批脚本全部丢失。508 句的页输入从 Codex 的复测证据包里找回，第七轮的模型原始回答找不回。所以本轮的回放用**新调用的回答**：数字与 §8.6–§8.8 的 453 / 451 系列不可比，本轮的结论只来自「同一批新回答、两版代码」的对照（旧行为 = 第九轮代码临时关掉 `refused` 档，等同第八轮）。验证数据改放外置盘 `/Volumes/ExtremeSSD/cuccut-lean-validation/`（`round9/`、`real/`、`scripts/`、`bin/`）。
+**Data (important):** On 2026-09-30 at about 20:15 the machine restarted and `/private/tmp` was wiped by the system. All replay-page answers, project sandboxes and batch scripts from §8.1–§8.8 were lost. The 508-sentence page inputs were recovered from Codex's re-test evidence package; the round-7 raw model answers could not be recovered. So this round's replay uses **new call answers**: its numbers are not comparable with the 453 / 451 series of §8.6–§8.8, and this round's conclusions come only from comparing "the same new answers, two code versions" (old behaviour = round 9 code with the `refused` tier temporarily disabled, equivalent to round 8). Validation data moved to the external drive `/Volumes/ExtremeSSD/cuccut-lean-validation/` (`round9/`, `real/`, `scripts/`, `bin/`).
 
-**508 句新一轮（DeepSeek Flash，首轮 10 次 + 补做 6 次调用；首轮输入 44,297 token 其中缓存命中 24,192、输出 16,868；补做输入 18,265 其中缓存命中 16,256、输出 723）：** 首轮对齐 495 / 待改写 11 / 待补译 2，合并 505 / 3。两版代码对这批回答的判定完全相同（495 / 11，505 / 3，`split/1` 44 句），只有缝的档位变：首轮 32 `backed` / 2 `model-hinted-flagged` / 10 `character-level` → 32 / 2 / 7 `model-hinted-refused` / 3 `character-level`。变的 7 句：
+**508 sentences, new round (DeepSeek Flash; first round 10 calls plus 6 supplementary calls; first-round input 44,297 tokens of which 24,192 cache hits, output 16,868; supplementary input 18,265 of which 16,256 cache hits, output 723):** first round aligned 495 / to-rewrite 11 / pending translation 2; after merge 505 / 3. Both code versions give identical verdicts for this batch of answers (495 / 11, 505 / 3, `split/1` 44 sentences). Only the seam tiers changed: first round 32 `backed` / 2 `model-hinted-flagged` / 10 `character-level` → 32 / 2 / 7 `model-hinted-refused` / 3 `character-level`. The 7 changed sentences:
 
-| 句 | 旧（逐字缝） | 新（被拒的提示） |
+| Sentence | Old (character-level seam) | New (refused hint) |
 | --- | --- | --- |
 | amd `s-g93.0` | `…首个此类 \| 机器人仿真工作流和前沿的机 \| 器人策略训练模型。` | `…打造了 \| 首个此类机器人仿真工作流 \| 和前沿的机器人策略训练模型。` |
 | amd `s-g52.13` | `…世界模型和物理智能 \| 这类下一件大事的边界。` | `…世界模型 \| 和物理智能这类下一件大事的边界。` |
@@ -602,250 +607,250 @@ brockman 是最强的一组：改写轮从 3 次 13.2k / 14.0k token 降到 2 �
 | how-claude `s-g60.0` | `我觉得我们 \| 把这些东西构建进 Claude Code 的框架里——` | `我觉得我们把这些东西 \| 构建进 Claude Code 的框架里——` |
 | how-claude `s-g115.0` | `所以我觉得这就是我们经 \| 历这个转变的起源故事，` | `所以我觉得这就是 \| 我们经历这个转变的起源故事，` |
 
-4 句原来切在词内（`机|器人`、`调|用`、`飞|速`、`经|历`），现在都在词边界；另 3 句两版都在词边界。剩下的 3 条逐字缝（amd `s-g165.0`、`s-g248.0` `共 | 同`、`s-g251.0` `都 | 是`）所在的块里模型没给提示。
+4 sentences were originally cut inside words (`机|器人`, `调|用`, `飞|速`, `经|历`) and are now at word boundaries. The other 3 were already at word boundaries in both versions. The remaining 3 character-level seams (amd `s-g165.0`, `s-g248.0` `共 | 同`, `s-g251.0` `都 | 是`) lie in blocks where the model gave no hints.
 
-**四个项目（`lines10`：从用户项目只读复制、去掉译文后新跑一遍，`translate-lines` 30 次、`align-edges` 4 次、`align-rewrite` 4 次；再用同一批回答分别按旧行为 / 新代码重解析成 `lines10r8` / `lines10r9`，两次重解析各类调用都是 0 次新调用，四项目 `trans` 文本逐句相同）：**
+**Four projects (`lines10`: copied read-only from the user's projects with translations removed and run from scratch; `translate-lines` 30 calls, `align-edges` 4 calls, `align-rewrite` 4 calls. The same answers were then reparsed as `lines10r8` (old behaviour) and `lines10r9` (new code). Both reparse runs made 0 new calls in every category, and `trans` text was identical sentence by sentence):**
 
-| 项目 | `split/1` | `llm-chunk+anchor/1` | 确定性 | 逐字缝 | 被拒的提示缝 | `align-target-seam` 条目 |
+| Project | `split/1` | `llm-chunk+anchor/1` | Deterministic | Character-level seams | Refused-hint seams | `align-target-seam` entries |
 | --- | --- | --- | --- | --- | --- | --- |
 | pm | 0 | 0 | 0 | 0 | 0 | 0 |
 | altman | 28 | 15 | 3 | 7 → 5 | 0 → 2 | 5 → 8 |
 | grok | 32 | 21 | 1 | 6 → 2 | 0 → 4 | 7 → 11 |
 | brockman | 14 | 5 | 1 | 2 → 1 | 0 → 1 | 1 → 2 |
 
-四项目缝按档 55 `backed` / 7 `model-hinted-flagged` / 15 `character-level` → 55 / 7 / 7 `model-hinted-refused` / 8 `character-level`；对齐器分布不变（774 `llm-lines+anchor/1` / 74 `split/1` / 41 `llm-chunk+anchor/1` / 5 确定性）。变的 7 句：altman `s-g193.0`（`让我的 Dot | 或者别人的 Dot 来做后续跟进`）、`s-g398.0`（`意识到我们 | 必须` → `意识到 | 我们必须`）；grok `s-g108.0`（`配方提 | 取清晰的要点` → `…要点 | 和下一步行动`）、`s-g311.0`（`…还是得 | 在聊天里说明…`）、`s-g336.0`（`工程主 | 管` → `工程主管 | 和两个工程师机器人`）、`s-g512.12`（`智能 | 体化` → `…间接的方式 | 或者说智能体化的方式`）；brockman `s-g422.0`（`晨间 | 简报` 两处 → `…因为我觉得 | 那个晨间简报智能体…`）。4 句原来切在词内或术语内，现在都在词边界；3 句两版都在词边界。
+Across the four projects, seam tiers went from 55 `backed` / 7 `model-hinted-flagged` / 15 `character-level` → 55 / 7 / 7 `model-hinted-refused` / 8 `character-level`. The aligner distribution is unchanged (774 `llm-lines+anchor/1` / 74 `split/1` / 41 `llm-chunk+anchor/1` / 5 deterministic). The 7 changed sentences: altman `s-g193.0` (`让我的 Dot | 或者别人的 Dot 来做后续跟进`), `s-g398.0` (`意识到我们 | 必须` → `意识到 | 我们必须`); grok `s-g108.0` (`配方提 | 取清晰的要点` → `…要点 | 和下一步行动`), `s-g311.0` (`…还是得 | 在聊天里说明…`), `s-g336.0` (`工程主 | 管` → `工程主管 | 和两个工程师机器人`), `s-g512.12` (`智能 | 体化` → `…间接的方式 | 或者说智能体化的方式`); brockman `s-g422.0` (`晨间 | 简报` in two places → `…因为我觉得 | 那个晨间简报智能体…`). 4 sentences were originally cut inside words or terms and are now at word boundaries; 3 sentences were at word boundaries in both versions.
 
-**代价：`check` 的 `align-target-seam` 四项目 13 → 21 条。** 新增的 8 条全部落在这 7 句上：4 条是并列连词起首（`和…` / `或者…`），2 条「得」收尾，1 条兼语式缺谓语，1 条动补缺宾。这是 §8.8 记过的那个盲区的另一面——`check` 的 lint 看得见这些词边界上的语病，看不见词内的逐字缝，所以把逐字缝换成模型的边界，告警数反而升。其中 `因为我觉得 |`（「觉得」是动词，不是补语标记「得」）和 `意识到 |` 是 lint 的误报，没在本轮改。其余指标的小幅波动（`align-overfit` 91 → 93、`align-paired-density` 91 → 90、`align-source-seam` 38 → 37）来自缝位移动后的重排，没逐条看。
+**Cost: `check`'s `align-target-seam` across the four projects went 13 → 21 entries.** The 8 new entries all fall on these 7 sentences: 4 are coordinating-conjunction openers (`和…` / `或者…`), 2 are 「得」-ending, 1 is a pivotal construction missing its predicate, and 1 is a verb complement missing its object. This is the other side of the blind spot recorded in §8.8. `check`'s lint sees grammatical errors at word boundaries but not character-level intra-word seams, so replacing character-level seams with model boundaries raised the warning count. `因为我觉得 |` (「觉得」 is a verb, not the complement marker 「得」) and `意识到 |` are lint false positives, not changed in this round. Small fluctuations in other metrics (`align-overfit` 91 → 93, `align-paired-density` 91 → 90, `align-source-seam` 38 → 37) come from re-sorting after seam shifts; these were not reviewed one by one.
 
-**结论与遗留：** 被拒的提示把有提示可用的逐字缝全部顶掉了（508：10 → 3，四项目：15 → 8），没有一句的对齐状态或译文变化。剩下的逐字缝都在模型没给提示的块里（四项目里仍有 `举 | 措`、`团 | 队`、`创 | 造`、`发消 | 息`、`东 | 西` 这类词内缝），要根治仍得接分词。两处取舍留给用户：一是被拒的提示现在不带只靠提示的梯子（那些句走改写轮），放开它会多收一些句子但让被 lint 拒的缝在没有任何证据切点时落库，本轮没量；二是 `check` 对被拒提示缝的告警与 `--align-only` 修复建议会指回同一条缝，告警口径要不要对 `model-hinted-refused` 降级没动。未做：六项目重解析、盲评；`polish` 没重跑（只跑 translate）。
+**Conclusions and open items:** Refused hints displaced all character-level seams where a hint was usable (508: 10 → 3; four projects: 15 → 8), without changing the alignment state or translation of any sentence. Remaining character-level seams lie in blocks where the model gave no hints (the four projects still have intra-word seams such as `举 | 措`, `团 | 队`, `创 | 造`, `发消 | 息`, `东 | 西`). Eliminating them still requires word segmentation. Two trade-offs are left for the user. First, refused hints no longer carry a hint-only ladder (those sentences go to the rewrite round); allowing it would admit a few more sentences but would land lint-refused seams in the store with no evidence cut point at all. This was not measured this round. Second, `check`'s warnings for refused-hint seams and the `--align-only` fix suggestions point back to the same seam; whether to downgrade the warning level for `model-hinted-refused` was not changed. Not done: six-project reparse, blind review; `polish` was not rerun (only translate was run).
 
-### 8.10 2026-10-01 第十轮：分片符写在标记开口处
+### 8.10 2026-10-01 Round 10: the segment marker is written at the marker's opening
 
-**来源：** 韩文分词改造的验收里第一次跑 en→ko。译文里出现原文标记的残片（`하지만 AI 는 of..in 전통적인…`），同一句还丢了一块译文，`check` 没拦。
+**Source:** The first en→ko run in the acceptance test of the Korean word-segmentation rework. The translation contained fragments of source markers (`하지만 AI 는 of..in 전통적인…`), and in the same sentence a piece of the translation was lost. `check` did not catch it.
 
-**形状：** 模型把输入里的 `¦` 当成下一块标记的开口——`N |a..b|译文 ¦ c..d|译文 ¦ e..f|译文`。解析器把未转义的 `¦` 当回显去掉，`c..d` 落进上一块的译文，下一块的译文被当成找不到原文词的标记。不是韩文特有：旧数据里 en→zh 的一轮（altman，446 行里 40 行）同样的形状，423 句里 17 句带残片；同一项目的另一轮一行都没有，是整页的随机偏移。
+**Shape:** The model treats the `¦` in the input as the opening of the next marker: `N |a..b|译文 ¦ c..d|译文 ¦ e..f|译文`. The parser strips an unescaped `¦` as an echo, so `c..d` lands in the previous block's translation, and the next block's translation is treated as a marker whose source word cannot be found. This is not specific to Korean. In an older en→zh run (altman, 40 of 446 lines) the same shape appeared, with 17 of 423 sentences carrying fragments. Another run in the same project had none; it showed a random offset across the whole page.
 
-**改动（解析侧，协议与 `specVersion` 不动）：** `reopen_markers` 在逐行解析前把这种 `¦` 改读成 `|`。判据三条都要满足：在译文段里（前面的 `|` 成对）；后面直接跟一个能在**本句**原文里找到的首尾引文；再后面是 `|`。正文里的切点提示、引文里回显的 `¦` 不动。改读个数记进 `MarkerResidue` 警告。
+**Change (parser side; protocol and `specVersion` unchanged):** `reopen_markers` now reads this kind of `¦` as `|` before parsing line by line. All three criteria must hold: it is inside a translation segment (the preceding `|` pair is balanced); it is directly followed by a leading and trailing quote that can be found in **this sentence's** source text; and it is followed by `|`. Cut-point hints in the body text, and a `¦` echoed inside a quote, are left alone. The number of reinterpreted occurrences is recorded in a `MarkerResidue` warning.
 
-**结果（DeepSeek Flash，同一批项目的新副本重跑）：**
+**Result (DeepSeek Flash, fresh copies of the same batches rerun):**
 
-| en→ko | 句数 | 带残片的译文 | 首轮带定位 | 回退 | 原文覆盖 |
+| en→ko | Sentences | Translations with fragments | First round anchored | Fallback | Source coverage |
 | --- | --- | --- | --- | --- | --- |
-| 样片，改前 → 改后 | 31 | 8 → 0 | 14 → 16 | 4 → 1 | 0.78 → 0.97 |
-| altman，改前 → 改后 | 423 | 69 → 0 | 237 → 281 | 65 → 6 | 0.77 → 0.97 |
+| Sample, before → after | 31 | 8 → 0 | 14 → 16 | 4 → 1 | 0.78 → 0.97 |
+| altman, before → after | 423 | 69 → 0 | 237 → 281 | 65 → 6 | 0.77 → 0.97 |
 
-改后那一轮模型没有再写出这种形状的行（两次真跑的回答不同，表里的差值不全是解析器的功劳）；解析器这一侧由单测与 508 句回放把关：旧二进制与新二进制逐句评分 0 处不同（495 首轮对齐 / 505 合并后对齐不变）。
+After the change, the model no longer wrote lines of this shape (the two real runs gave different answers, so not all the differences in the table are due to the parser). On the parser side, the change is guarded by unit tests and a replay of 508 sentences: the old and new binaries scored each sentence identically, with 0 differences (495 first-round aligned / 505 aligned after merge, unchanged).
 
-**遗留：** `check` 对「译文里有原文标记残片」没有专门的门；现在靠解析时不让它产生。
+**Open:** `check` has no dedicated gate for "a translation contains fragments of source markers". For now, the parser prevents them from being produced.
 
-### 8.11 2026-10-01 第十一轮：引文外沿标点按 Unicode 类别剥
+### 8.11 2026-10-01 Round 11: strip outer punctuation of quotes by Unicode category
 
-**来源：** 多语言验收夹具（`scripts/bench/fixtures/lean-carrier-acceptance-2026-10-01/`）里印地语源四句 `hi-03`、`hi-05`、`hi-06`、`hi-07` 首轮引文全部定位不出，进 `needs-rewrite`。
+**Source:** In the multilingual acceptance fixture (`scripts/bench/fixtures/lean-carrier-acceptance-2026-10-01/`), the four Hindi-source sentences `hi-03`, `hi-05`, `hi-06` and `hi-07` all failed to locate their first-round quotes and went to `needs-rewrite`.
 
-**根因：** 印地语句末是天城文的句号 `।`（U+0964），原文原子写成 `था।`、`है।`、`पहुँची।`、`भेजें।`、`गए।`，模型引用时照常省掉句号写 `था`。`canonical()` 的「去掉首尾标点」一级用的是写死的字表：ASCII 加 `，。！？；：—–…（）“”「」`，有 `。` 没有 `।`；`Glued` 级要两个以上原子，`Stem` 级只认撇号，所以五级都落空。组合附标的切分没有问题（`is_combining` 覆盖 Mn/Mc，清单里 `पहुँची।`、`मंज़ूरी` 都是完整原子）；`|लेकिन..नहीं..था|` 这种多个 `..` 的标记按既有约定读作首尾两端，也不是解析缺陷。
+**Root cause:** Hindi sentences end with the Devanagari danda `।` (U+0964). The source atoms are written as `था।`, `है।`, `पहुँची।`, `भेजें।` and `गए।`, and the model, when quoting, dropped the full stop and wrote `था`. The "strip leading and trailing punctuation" level of `canonical()` uses a hard-coded character set: ASCII plus `，。！？；：—–…（）“”「」`. It includes `。` but not `।`. The `Glued` level needs two or more atoms, and the `Stem` level only recognises apostrophes, so all five levels fall through. The combining-mark segmentation is not at fault (`is_combining` covers Mn/Mc, and `पहुँची।` and `मंज़ूरी` are complete atoms in the list). A marker with several `..`, such as `|लेकिन..नहीं..था|`, is read by the existing convention as its two ends, so this is not a parsing defect either.
 
-**改动（解析侧，协议正文、请求字节与 `specVersion` 不动）：** 外沿可剥的字符改由 `outer_punctuation` 判：ASCII 仍是原来那张表（`,.!?;:"-()`——`#%@&/'*` 属于词本身，`50%`、`#3`、`students’` 不会被引成 `50`、`3`、`students`）；ASCII 以外按 Unicode 标点类别 Pd/Ps/Pe/Pi/Pf/Po 剥，弯单引号 U+2018–U+201B 除外（与 ASCII `'` 一样当词的一部分）。原表里的非 ASCII 字符全属这些类别，新规则是旧规则的超集。这样 `।` `॥`（天城文）、`؟` `،`（阿拉伯文）、`¿` `«»`（西、法）、`։`（亚美尼亚文）、`、`（中日）都不再挡住引文。
+**Change (parser side; protocol body, request bytes and `specVersion` unchanged):** Whether an outer character can be stripped is now decided by `outer_punctuation`. For ASCII, the original table is kept (`,.!?;:"-()`; `#%@&/'*` belong to the word itself, so `50%`, `#3` and `students’` are not quoted as `50`, `3` or `students`). Beyond ASCII, characters are stripped by Unicode general category Pd/Ps/Pe/Pi/Pf/Po, except the curly single quotes U+2018–U+201B, which (like ASCII `'`) count as part of the word. Every non-ASCII character in the original table falls into these categories, so the new rule is a superset of the old one. As a result, `।` `॥` (Devanagari), `؟` `،` (Arabic), `¿` `«»` (Spanish, French), `։` (Armenian) and `、` (Chinese, Japanese) no longer block a quote.
 
-**两条路径：** `lines/1` 只有 provider 直连（`--llm agent` 以 `invalid_arg` 拒绝），Agent 路径不适用；容忍发生在解析器，协议正文本来就只要求「照句子里的写法引完整的词」，提示词不用改；`rows` 载体用源词序号不引原文，不涉及。
+**Two paths:** `lines/1` is available only through direct provider calls (`--llm agent` rejects it with `invalid_arg`), so the Agent path does not apply. The tolerance lives in the parser. The protocol body already requires only that whole words be quoted "as written in the sentence", so the prompt does not change. The `rows` carrier uses source word indices rather than quoting the source, so it is not affected.
 
-**修复请求那半：** 这四句改后首轮就定位出来，不再需要修复轮。顺带核对了生产路径：引文定位不出的句子在生产里走 `align-edges/1`（源词带序号，模型只能选序号，合法选项由构造保证）或 `align-rewrite/1`，**没有**再问一次 `lines` 的修复轮；验收夹具里的 `fix` 回答来自评分工具 `lean_carrier_grade` 的 `render-fix`，只在回放里存在。本轮不为 `lines` 新造生产修复轮（要不要造留给用户）。
+**Repair-request half:** These four sentences are located in the first round after the change, so no repair round is needed. I also checked the production path. Sentences whose quotes cannot be located go, in production, to `align-edges/1` (source words carry indices, and the model can only pick an index; valid choices are guaranteed by construction) or to `align-rewrite/1`. They do **not** trigger another repair round for `lines`. The `fix` answers in the acceptance fixture come from the scoring tool `lean_carrier_grade`'s `render-fix` and exist only in replay. This round does not add a new production repair round for `lines`; whether to add one is left to the user.
 
-**结果（零模型调用，同一批存档回答重评）：**
+**Result (zero model calls, archived answers re-scored):**
 
-| 集合 | 改前 | 改后 | 变化的句 |
+| Set | Before | After | Sentences changed |
 | --- | --- | --- | --- |
-| 验收夹具 92 句，首轮对齐 | 79 | 83 | `hi-03` `hi-05` `hi-06` `hi-07` 由 `needs-rewrite` 变为两块全定位 |
-| 验收夹具，合并修复回答后对齐 | 82 | 86 | 同上；另有三句原本已对齐、现在多一个切点：`hi-04`（`…lent Ravi yesterday \| belongs…`）、`hi-08`（切在 `；`）、`ar-08`（引文 `اشترينا..الأرز` 对上带 `،` 的原子，`我们买了2.5公斤大米， \| 晚饭后还剩一半。`） |
-| 508 句回放（`round9`） | 495 / 505 | 495 / 505 | 逐句 0 处不同 |
+| Acceptance fixture, 92 sentences, first-round aligned | 79 | 83 | `hi-03` `hi-05` `hi-06` `hi-07` change from `needs-rewrite` to fully located in both segments |
+| Acceptance fixture, aligned after merging repair answers | 82 | 86 | Same as above. Three more sentences that were already aligned now get one more cut point: `hi-04` (`…lent Ravi yesterday \| belongs…`), `hi-08` (cut at `；`), and `ar-08` (the quote `اشترينا..الأرز` now matches the atom with `،`; `我们买了2.5公斤大米， \| 晚饭后还剩一半。` = "We bought 2.5 kg of rice, \| half is left after dinner.") |
+| 508-sentence replay (`round9`) | 495 / 505 | 495 / 505 | 0 per-sentence differences |
 
-剩下 6 句 `needs-rewrite` 全是泰语源（`th-01`…`th-06`），是分词问题，不是标点。`hi-07` 的译文「另一个版本」对应源词 `दूसरा`（既可作「第二个」也可作「另一个」），对齐对了，语义是否贴切不在本轮判断之内。
+The remaining 6 `needs-rewrite` sentences are all Thai-source (`th-01`…`th-06`). These are a segmentation problem, not a punctuation one. For `hi-07`, the translation “另一个版本” (“another version”) corresponds to source word `दूसरा`, which can mean either "second" or "another". The alignment is correct; whether the wording is apt is outside the scope of this round.
 
-### 8.12 2026-10-01 第十二轮：泰文一类按词存，引文加 Snap 级
+### 8.12 2026-10-01 Round 12: Thai-style text stored per word, with a Snap level for quotes
 
-**来源：** §8.11 之后验收夹具剩下的 6 句 `needs-rewrite`（`th-01`…`th-06`）。
+**Source:** After §8.11, the remaining 6 `needs-rewrite` sentences in the acceptance fixture (`th-01`…`th-06`).
 
-**根因（不在载体）：** 泰文短语在文稿里是一个词，一句一个短语就是一个源词，块数上限 `words.div_ceil(2)` = 1。修法在分词与建稿，记在 [`ccut-unspaced-script-segmentation-design.md`](ccut-unspaced-script-segmentation-design.md)：新建文稿用 ICU4X LSTM 按词切开，短语内的词缝带「贴前」标记；已有文稿不迁移。
+**Root cause (not in the carrier):** In the document, a Thai phrase is one word. One phrase per sentence means one source word, so the block-count cap `words.div_ceil(2)` = 1. The fix is in segmentation and document construction, recorded in [`ccut-unspaced-script-segmentation-design.md`](ccut-unspaced-script-segmentation-design.md): new documents are split into words with ICU4X LSTM, and within a phrase, the word joins carry a "attached to the previous word" marker. Existing documents are not migrated.
 
-**载体侧的配套（解析侧，协议正文、请求字节与 `specVersion` 不动）：** 分词器的边界与模型读到的词不总一致（`นัทแต่` 被粘成一个词），引文在已有五级之后加最宽的 **Snap** 级：去掉空白后的引文出现在句子里、且落在词中间的边界所在的词都是「与邻词贴着、含不写空格文字」的词时，扩到整词。旧文稿一个短语一个原子、按空格分词的文字都不会在这一级命中（`cat` 不扩到 `catalog`）。`pieces_with_params` 判「源文逐字」只认 0.5 之前的韩文标记，泰文的标记不算。
+**Companion change on the carrier side (parser side; protocol body, request bytes and `specVersion` unchanged):** The tokenizer's boundaries do not always match the words the model sees (for example, `นัทแต่` is glued into one word). On top of the five existing levels, quote matching gets a widest **Snap** level. When the quote, with whitespace removed, appears in the sentence, and the word(s) at the boundary fall inside a word that is "glued to a neighbour, containing text without spaces", the match expands to the whole word. Old documents, where one phrase is one atom, and text segmented by spaces will not hit this level (`cat` does not expand to `catalog`). `pieces_with_params` checks that the source is verbatim only for the Korean markers from before 0.5; Thai markers are not counted.
 
-**两条路径：** `lines/1` 只有 provider 直连，Agent 路径不适用；`rows` 载体用源词序号，不涉及。
+**Two paths:** `lines/1` is available only through direct provider calls, so the Agent path does not apply. `rows` uses source word indices and is not affected.
 
-**离线回归（零模型调用）：** 508 句回放 `round9` 首轮 / 合并 495 / 505，逐句 0 处不同；验收夹具 92 句首轮 83 / 9、合并 86 / 6，与 §8.11 相同、逐句清单相同。存档回答都是按旧文稿（一个短语一个词）请求的，只有一块，所以泰文 6 句不会因为重评而变；新文稿下的真跑结果见分词设计稿 §9。
+**Offline regression (zero model calls):** The 508-sentence replay `round9` first round and merged results (495 / 505) show 0 per-sentence differences. The 92-sentence acceptance fixture gives 83 / 9 in the first round and 86 / 6 merged, the same as §8.11, with the same per-sentence list. The archived answers were all requested against the old document (one phrase per word) and produced one block, so the 6 Thai sentences do not change on re-scoring. For real runs on the new documents, see §9 of the segmentation design doc.
 
-**评测工具的限制：** 验收页没有 `data-budget`，`chunk_hint` 恒为 1，首轮与修复轮都不会出现「≥k」与 `¦`。旧文稿下一词一句的上限是 1 块，新文稿下这一限制才解除。
+**Limitation of the evaluation tool:** The acceptance page has no `data-budget`, so `chunk_hint` is always 1, and neither the first round nor the repair round shows "≥k" or `¦`. Under the old document, one word per sentence caps the output at 1 block. Under the new document, this limit no longer applies.
 
-**真跑（第二笔，[changelog](../../changelog/core/2026-10-01-024011.md)）：** 按生产口径注入预算后，DeepSeek Flash 首轮新文稿 8 / 8 `aligned`、旧文稿 3 / 8（另 5 句修复轮后 `sentence-level`）。`¦` 来自分词器的词界，落在分词错误处时模型照着在词中间断译文；没有长度估计的泰文源语按词数给块数，偏碎。两条都是载体外的事，记在分词设计稿 §8。同一笔修了 `chunk_hint` 一词一句时的 `clamp(2, 1)`（只有评测工具的修复页能触发）。
+**Real run (second run, [changelog](../../changelog/core/2026-10-01-024011.md)):** With the budget injected per the production setup, DeepSeek Flash's first round on the new document got 8 / 8 `aligned`, and on the old document 3 / 8 (the other 5 became `sentence-level` after a repair round). `¦` comes from the tokenizer's word boundaries. Where segmentation is wrong, the model follows it and breaks the translation mid-word. Thai source without a length estimate gets block counts by word count, which tends to be too fragmented. Both points lie outside the carrier and are recorded in §8 of the segmentation design doc. The same run also fixed `clamp(2, 1)` from `chunk_hint` when there is one word per sentence (only the evaluation tool's repair page can trigger it).
 
-### 8.13 2026-10-01 第十三轮：`aligned` 不含意思核对（`de-07` 未解决）
+### 8.13 2026-10-01 Round 13: `aligned` does not include a meaning check (`de-07` unresolved)
 
-**来源：** 验收夹具 README 的未通过项 1：`de-07`（德文→中文）意思译错仍判 `aligned`；`hi-07`（印地文→中文）「第二版」译作「另一个版本」。
+**Source:** Item 1 of the unresolved items in the acceptance fixture README: `de-07` (German→Chinese) was mistranslated in meaning but still judged `aligned`. `hi-07` (Hindi→Chinese) translated “第二版” ("second edition") as “另一个版本” ("another version").
 
-**现有三样东西都抓不到（事实）：**
+**None of the three existing mechanisms catches this (fact):**
 
-- `language_quality::translation_quality_issues` 只看文字脚本、照抄、占位与过短；两句的录制答案都返回空，测试 `a_fluent_mistranslation_passes_the_script_gate` 钉住。
-- `ccut translate --review` 只把前后两份文稿交给 `ccut review accept` 人工接受（`flows/translate.rs` 的 `stage_review_locked`），不看内容。
-- §8.3 的「内容盲检」是一次性的子代理离线审读，不是产品路径。
+- `language_quality::translation_quality_issues` checks only script, copying, placeholders and over-short output. The recorded answers for both sentences return empty, pinned by the test `a_fluent_mistranslation_passes_the_script_gate`.
+- `ccut translate --review` only hands the two document versions to `ccut review accept` for manual acceptance (`stage_review_locked` in `flows/translate.rs`). It does not look at content.
+- The "content blind check" in §8.3 was a one-off offline subagent read-through, not a product path.
 
-**试过的机制（只在评测工具里，没有接进生产）：** 首轮答案末尾加一行 `? N …`，由模型自报「意思容易错、自己没把握」的句子（谁对谁做了什么、条件、否定、数字、多义词）；被点名的句子再进一次核对调用，只给源文与当前译文，逐行答 `N ok` 或 `N fix <改正后的整句>`。验收夹具 16 页 / 92 句，DeepSeek Flash，同一批页面独立跑 3 次，外加 1 次不加这行的基线量 token：
+**Mechanism tried (only in the evaluation tool, not wired into production):** The first-round answer gets an extra line at the end, `? N …`, in which the model self-reports sentences where "the meaning is easy to get wrong and I am not confident" (who did what to whom, conditions, negation, numbers, polysemous words). Each flagged sentence goes through a further verification call that receives only the source text and the current translation, and replies line by line with `N ok` or `N fix <corrected full sentence>`. Acceptance fixture: 16 pages / 92 sentences, DeepSeek Flash, the same pages run 3 times independently, plus 1 baseline run without this line to measure tokens:
 
-| | 第 1 次 | 第 2 次 | 第 3 次 |
+| | Run 1 | Run 2 | Run 3 |
 | --- | --- | --- | --- |
-| 自报句数 / 92 | 34 | 35 | 33 |
-| 没写 `?` 行的页 | 0 | 1 | 1 |
-| `de-07` 被自报 | 是 | 否 | 否 |
-| `hi-07` 被自报 | 否 | 否 | 否 |
-| 核对调用（16 页里） | 11 | 10 | 11 |
-| 核对答 `fix` 的句 | 5 | 2 | 1 |
+| Self-reported sentences / 92 | 34 | 35 | 33 |
+| Pages with no `?` line | 0 | 1 | 1 |
+| `de-07` self-reported | yes | no | no |
+| `hi-07` self-reported | no | no | no |
+| Verification calls (out of 16 pages) | 11 | 10 | 11 |
+| Sentences answered `fix` by verification | 5 | 2 | 1 |
 
-- **`de-07` 没有抓到。** 4 次新跑（3 次加 `?` 行、1 次基线）的首轮都不再出现录制答案里多出的「安娜收到文件」条件，但 4 次都把批准的对象读成「第二版 / 第二稿的负责人同意」（夹具的读法：管理层批准第二版）。只有第 1 次自报了它，核对答 `fix`，改正后的句子仍是「第二稿的负责人同意」（那次修掉的是模型把整句复述了两遍）。把录制的错误答案直接送核对 3 次：3 次都答 `fix`，都去掉了多出的条件，3 次都保留「第二版的负责人同意」。核对与翻译是同一个模型，同一处误读两边都犯。（推断，没有请母语者核对：`der zweiten Fassung` 读成属格、「第二版的负责人同意了」在语法上也通，只是远不如与格「同意第二版」自然。）
-- **`hi-07`**：3 次都没自报；录制答案直接送核对 3 次都答 `ok`。`दूसरा` 本身既可读作「第二」也可读作「另一个」，核对提示里「源文两种读法都成立时答 ok」可能起了作用；夹具的 `required_facts` 是出题人的读法，这句不算确定的错。
-- **代价：** `?` 行让每次首轮输入多约 132 token（16 次共 +2,112，约 +9.7%），输出 +97…+135（约 +2%）；核对每次运行多 10–11 次调用（首轮 16 次），输入约 4.3k、输出 119–223 token。自报覆盖约 37% 的句子，核对页并不「精简」。
-- 核对答 `fix` 的其余句子没有逐句核实是否真错；抽看的 `hi-05`（第 1 次）改前改后意思相同，是无效改写。
+- **`de-07` was not caught.** The 4 new runs (3 with the `?` line, 1 baseline): the first-round output no longer contains the extra condition "Anna receives the file" that appears in the recorded answer. But all 4 read the approved object as "the second edition / the owner of the second draft agrees" (the fixture's reading: management approves the second edition). Only Run 1 self-reported it. Verification answered `fix`, but the corrected sentence still says “第二稿的负责人同意” ("the owner of the second draft agrees"). That run fixed the model repeating the whole sentence twice. Feeding the recorded wrong answer directly to verification 3 times: all 3 answered `fix` and removed the extra condition, but all 3 kept “第二版的负责人同意” ("the owner of the second edition agrees"). Verification and translation are the same model, and both make the same misreading. (Inference, not checked by a native speaker: `der zweiten Fassung` read as genitive, and “第二版的负责人同意了” ("the owner of the second edition agreed") is also grammatical, though far less natural than the dative “同意第二版” ("agreed to the second edition").)
+- **`hi-07`:** No run self-reported it. The recorded answer fed directly to verification 3 times returned `ok` each time. `दूसरा` itself can be read as "second" or "another". The verification prompt's rule "answer ok when both readings of the source hold" may have helped. The fixture's `required_facts` is the question-setter's reading, so this sentence is not a certain error.
+- **Cost:** The `?` line adds about 132 tokens to each first-round input (16 runs total +2,112, about +9.7%) and +97…+135 output tokens (about +2%). Verification adds 10–11 calls per run (16 first-round calls), with about 4.3k input and 119–223 output tokens. Self-reporting covers about 37% of sentences, so the verification page is not "slimmer".
+- The sentences answered `fix` by verification were not checked one by one for whether they were really wrong. `hi-05` (run 1), sampled, had the same meaning before and after the change, so it was a no-op rewrite.
 
-**落地的只有报告口径：** `ccut check` 每个有 `aligned` 句的语言多一条 info `translation-meaning-unverified`（`{code, lang, aligned, message}`，不产 `fix`、不进 `next`），摘要行 `align <lang>: …` 末尾写「意思未核对」。`aligned` 的含义不变。`infos[]` 是开放列表，以往新增 info 都没有升 `specVersion`，这次同样不升。`rows` 载体与本地 Agent 路径都没有改。
+**Only the reporting wording landed:** `ccut check` adds one info, `translation-meaning-unverified`, per language with `aligned` sentences (`{code, lang, aligned, message}`; it produces no `fix` and does not enter `next`). The summary line `align <lang>: …` ends with “意思未核对” ("meaning not verified"). The meaning of `aligned` is unchanged. `infos[]` is an open list, and past additions of info did not bump `specVersion`, so this one does not either. The `rows` carrier and the local Agent path are unchanged.
 
-**没有解决：** 自报加同模型核对抓不住「一致的误读」。可以考虑的方向：换一个模型做核对（代价是第二家 provider）；回译比对（同样是同一个模型）；人工抽检条件、否定这类句子。
+**Not resolved:** Self-report plus same-model verification cannot catch a consistent misreading. Directions to consider: use a different model for verification (cost: a second provider); back-translation comparison (again the same model); manual spot-checks of sentences with conditions or negation.
 
-**裁决（2026-10-01）：**
+**Ruling (2026-10-01):**
 
-- 这条 info 保留。它是 info、内容属实；去掉它，「`aligned` = 译对了」的误读就回来了，当初加它正是为了这个。
-- 生产路径不加语义核对。同模型核对 3/3 次失败；换模型或回译都会改变成本结构，要先量过再说。`de-07` 记为已知漏检，这条 info 就是对它的如实披露。
+- Keep this info. It is an info, and it is factually accurate. Removing it would bring back the misreading that "`aligned` = translated correctly", which is exactly why it was added.
+- No semantic verification on the production path. Same-model verification failed 3/3 times. Switching models or back-translation would change the cost structure, so measure first. `de-07` is recorded as a known miss, and this info is the honest disclosure of it.
 
-**跨模型探针（2026-10-01，裁决之后补量，生产路径仍不变）：**
+**Cross-model probe (2026-10-01, measured after the ruling; production path still unchanged):**
 
-- 设置：
-  - 核对提示与上文相同（`VERIFY_SYS`），输入是夹具里录制的错误答案；
-  - 核对模型换成 Gemini，`gemini-pro-latest`，实际解析到 `gemini-3.1-pro-preview`。
-- 单句强制核对，各 3 次：
-  - `de-07` 3/3 答 `fix`，改正后都是「只有在管理层同意第二版后，才把文件发给安娜」，误读和多出的条件都去掉了。
-  - `hi-07` 3/3 答 `ok`，与 DeepSeek 相同。
-- 整份夹具 16 页、92 句全部交给它核对（不靠自报），一次。它答 `fix` 的 6 句逐句核过：
+- Setup:
+  - The verification prompt is the same as above (`VERIFY_SYS`). The input is the recorded wrong answers from the fixture.
+  - The verification model is switched to Gemini, `gemini-pro-latest`, which resolved to `gemini-3.1-pro-preview`.
+- Single-sentence forced verification, 3 runs each:
+  - `de-07`: 3/3 answered `fix`. The corrected sentences were all “只有在管理层同意第二版后，才把文件发给安娜” ("only after management agrees to the second edition is the file sent to Anna"), removing both the misreading and the extra condition.
+  - `hi-07`: 3/3 answered `ok`, the same as DeepSeek.
+- Full fixture, 16 pages, 92 sentences, all submitted for verification (not relying on self-report), one run. Each of the 6 sentences it answered `fix` was checked one by one:
 
-  | 类别 | 句数 | 句子 |
+  | Category | Sentences | Examples |
   | --- | --- | --- |
-  | 确有意思错误 | 3 | `de-07`；`ko-real` 第 5 句，`자루우동`（竹屉乌冬）原译成「一根乌冬」；`hi-05`，E-12 写在「已确认」旁边，原译成写在上面 |
-  | 可算轻微偏移 | 1 | `ja-real` 第 8 句，多出「一直是」 |
-  | 与意思无关 | 2 | 一处多余的 `·`；一句韩→中病句改通顺 |
+  | Genuine meaning error | 3 | `de-07`; `ko-real` sentence 5, where `자루우동` (bamboo-steamer udon) was originally translated as “一根乌冬” ("one udon"); `hi-05`, where E-12 is written beside “已确认” ("confirmed") and the original translated it as "written above" |
+  | Arguably a slight drift | 1 | `ja-real` sentence 8, with an extra “一直是” ("has always been") |
+  | Unrelated to meaning | 2 | one stray `·`; one Korean→Chinese sentence with awkward phrasing changed to read smoothly |
 
-  §8.13 的同模型核对把 `hi-05` 判成无效改写，这里抓到了。
-- 代价：这 16 次调用的输入 7.7k token，输出 448 token，另有思考 18.5k token；串行墙钟 159 s。
-- 结论：换模型核对能抓到同模型抓不到的误读，方向成立。接进生产仍需第二家 provider 的 key、思考 token 的成本，以及一次误改率的正式评估（6 句里有 2 句是非意思改动），本轮不做。数据与脚本在 `/Volumes/ExtremeSSD/cuccut-lean-validation/round12/meaning-xmodel/` 和 `scripts/meaning-xmodel.py`。
+  The same-model verification in §8.13 judged `hi-05` a no-op rewrite. Here it was caught.
+- Cost: these 16 calls used 7.7k input tokens and 448 output tokens, plus 18.5k thinking tokens. Serial wall-clock time was 159 s.
+- Conclusion: cross-model verification catches misreadings that same-model verification misses, so the direction holds. Putting it into production still requires a key from a second provider, the cost of thinking tokens, and a formal evaluation of the false-change rate (2 of the 6 sentences were non-meaning changes). This is not done in this round. Data and scripts are at `/Volumes/ExtremeSSD/cuccut-lean-validation/round12/meaning-xmodel/` and `scripts/meaning-xmodel.py`.
 
-### 8.14 2026-10-01 第十四轮：中文、日文的 `¦` 只落在词典分词断开的缝上
+### 8.14 2026-10-01 Round 14: Chinese and Japanese `¦` only land on seams that dictionary segmentation breaks
 
-**来源：** §8.5 否决了三种替代，结论是「要根治只剩接分词」。第十二轮给泰文一类做的门（`unsure_boundaries`：词典分词不断开的缝不放 `¦`，见分词设计稿 §10）没有用到中日文。§8.5 没试过词典分词，所以这次补上 A/B。
+**Source:** §8.5 rejected three alternatives and concluded that "the only real fix left is to wire in word segmentation." The round-12 gate for Thai-like scripts (`unsure_boundaries`: a seam that dictionary segmentation does not break gets no `¦`, see the segmentation design note §10) was not applied to Chinese and Japanese. §8.5 never tried dictionary segmentation, so this round runs that A/B.
 
-**改法**（`lines_translation.rs` `unsure_boundaries`）：缝两侧都是汉字或假名、并且 ICU4X 词典分词不在此断开，这条缝就不可信。之后照泰文的规则走：窗口里换一条可信缝；整窗都不可信就往外找；一条都没有就少放一片。生产的渲染和解析都经 `pieces_with_params`，口径一致。夹拉丁词、标点、数字的缝照旧可信；韩文音节不在这两族里，不受影响。协议正文、请求格式和 `specVersion` 都不动，只改 `¦` 落在哪里。
+**Change** (`lines_translation.rs` `unsure_boundaries`): a seam is untrustworthy when both sides are Han characters or kana and the ICU4X dictionary segmenter does not break there. The Thai rules then apply: within the window, pick a trustworthy seam instead; if the whole window is untrustworthy, search outward; if none exists, emit one piece fewer. Production rendering and parsing both go through `pieces_with_params`, so they stay consistent. Seams next to Latin words, punctuation or digits remain trustworthy as before; Hangul syllables are in neither family and are unaffected. The protocol body, request format and `specVersion` are unchanged; only where `¦` lands changes.
 
-**数据：** 两个真实项目的生产页，原样复制、只读，带生产的 `data-budget`：
+**Data:** production pages from two real projects, copied as-is and read-only, with production `data-budget`:
 
-| 项目 | 方向 | 页 | 需对齐的句 |
+| Project | Direction | Pages | Sentences to align |
 | --- | --- | --- | --- |
-| skill8 | 中→英 | 3 | 84 |
-| tokyo | 日→简中 | 8 | 188 |
+| skill8 | zh→en | 3 | 84 |
+| tokyo | ja→zh-Hans | 8 | 188 |
 
-评分器 r21b 是改前，r22 是本轮。DeepSeek Flash，每页每版 2 次，两版交错跑，共 44 次调用。
+Scorer r21b is the version before the change; r22 is this round. DeepSeek Flash, 2 runs per page per version, the two versions interleaved, 44 calls in total.
 
-**确定性对比：**
+**Deterministic comparison:**
 
-- 两版的片标都是 1141 个，`≥k` 合计都是 1414，没有因为找不到可信缝而少放片。
-- 按词典口径数词中片标，r21b 是 359 个（skill8 48/291，tokyo 311/850），r22 是 0。这个数是用同一部词典量的，只能说明门生效了，不算独立证据。
+- Piece-marker counts are 1141 in both versions, and `≥k` totals are 1414 in both, so no piece was dropped for lack of a trustworthy seam.
+- Counting in-word piece markers with the dictionary criterion: r21b has 359 (skill8 48/291, tokyo 311/850), r22 has 0. This number uses the same dictionary the gate uses, so it only shows the gate works; it is not independent evidence.
 
-**真跑：**
+**Live runs:**
 
 | | skill8 r21b | skill8 r22 | tokyo r21b | tokyo r22 |
 | --- | --- | --- | --- | --- |
 | aligned | 167/168 | 168/168 | 360/360 | 376/376 |
 | needs-rewrite | 1 | 0 | 0 | 0 |
-| 格式错进重试的句 | 0 | 0 | 16 | 0 |
+| sentences retried after format error | 0 | 0 | 16 | 0 |
 | coarse | 6 | 2 | 0 | 0 |
-| 平均块数 | 4.45 | 4.46 | 5.25 | 5.20 |
-| 模型块起点落在词中（词典口径） | 80/547 | 8/560 | 401/1018 | 3/962 |
+| average chunk count | 4.45 | 4.46 | 5.25 | 5.20 |
+| model chunk starts inside a word (dictionary criterion) | 80/547 | 8/560 | 401/1018 | 3/962 |
 
-- **r21b tokyo 的 16 句重试**分布在 5/16 份回答里，都是 `lines-syntax`：一行末尾那片源文没有配上译文。其中 8 句，没配上的那片正好是被切开的词的后半（`集 ¦ まっています`、`鑑 ¦ 賞できます`、`誕 ¦ 生しました`）：模型把整个词译进了前一片，后一片就没东西可写。另外 8 句，同一行别处也有词中片标。r22 同一句同样是 `集 ¦ まっています`，模型写成 `|。`，配上了。这只是观察，没有证明因果。
+- **r21b tokyo's 16 retried sentences** fall across 5 of 16 responses, all `lines-syntax`: the source piece at the end of a line had no translation. In 8 of these sentences, the unpaired piece was exactly the second half of a split word (`集 ¦ まっています`, `鑑 ¦ 賞できます`, `誕 ¦ 生しました`): the model translated the whole word into the preceding piece, leaving the following piece with nothing to write. The other 8 sentences had in-word piece markers elsewhere on the same line. In r22, the same sentence `集 ¦ まっています` was written by the model as `|。` and was paired. This is an observation only; causation is not proven.
 
-**独立盲评：** 两版片标不同的 60 句交给一个 Opus 子代理。左右顺序随机，子代理不知道哪边是哪版，按词数词中片标，再判哪边好。盲评不允许平局：计数相等的句按严重度排（词内 > 词干|词尾 > 专名内部 > 前后缀），两句 0:0 按「切在虚词之后」定，子代理另列了 5 句自己最没把握的。60 句的左右对应逐句核过：`key.json` 的两版文本与两版评测工具重新渲染的片标逐句相同。
+**Independent blind review:** the 60 sentences whose piece markers differ between the two versions were given to an Opus subagent. Left/right order was randomized, and the subagent did not know which side was which version. It counted in-word piece markers per word and chose the better side. Ties were not allowed: sentences with equal counts were ranked by severity (inside a word > stem|suffix > inside a proper name > prefix/suffix), and 0:0 sentences were decided by "cut after a function word." The subagent also listed 5 sentences it was least sure about. The left/right mapping of all 60 sentences was checked one by one: the two text versions in `key.json` and the piece markers re-rendered by the two evaluation tools match sentence by sentence.
 
-| 语言 | 句 | r22 更好 | 词中片标 r21b → r22 |
+| Language | Sentences | r22 better | In-word piece markers r21b → r22 |
 | --- | --- | --- | --- |
-| 中文 | 17 | 17 | 21 → 2 |
-| 日文 | 43 | 43 | 105 → 34 |
+| Chinese | 17 | 17 | 21 → 2 |
+| Japanese | 43 | 43 | 105 → 34 |
 
-r22 剩下的 34 处日文：
+The 34 Japanese cases remaining in r22:
 
-| 类别 | 处 | 例 |
+| Category | Count | Examples |
 | --- | --- | --- |
-| 词内的活用 / 词尾（词典自己在这里断开） | 14 | `集\|まって`、`飾\|られ`、`食べた\|い`、`まさ\|に` |
-| 专名内部 | 10 | `国立科学\|博物館`、`ハリー・\|ポッター`、`麻布台\|ヒルズ` |
-| 前后缀分离 | 5 | `魅力\|的`、`お\|店`、`玄関\|口` |
-| 数字与量词 | 3 | `2007\|年`、`1\|階` |
-| 其他 | 2 | `牛\|たん`、`日本人\|と`（后者按子代理自己的规则不该算） |
+| Inflection / suffix inside a word (the dictionary itself breaks here) | 14 | `集\|まって`、`飾\|られ`、`食べた\|い`、`まさ\|に` |
+| Inside a proper name | 10 | `国立科学\|博物館`、`ハリー・\|ポッター`、`麻布台\|ヒルズ` |
+| Prefix/suffix split | 5 | `魅力\|的`、`お\|店`、`玄関\|口` |
+| Numbers and counters | 3 | `2007\|年`、`1\|階` |
+| Other | 2 | `牛\|たん`、`日本人\|と` (the latter should not count under the subagent's own rules) |
 
-分类是本文按上下文做的，不是盲评给的。中文剩 2 处：`二十一万|Star`、`配|图`。
+The classification was done by the author from context, not given by the blind review. The 2 remaining Chinese cases are `二十一万|Star` and `配|图`.
 
-**代价：** 每句多跑一次词典分词。在 11 页、284 句上各渲染 5 遍：0.34 s 对 0.37 s，每句约 20 µs。二进制体积：两版评测工具（debug）都是 15,335,808 B。词典分词器原本就在，泰文的门已经在用它；生产二进制没有单独量。
+**Cost:** one extra dictionary segmentation per sentence. Rendering 284 sentences across 11 pages, 5 times each: 0.34 s vs 0.37 s, about 20 µs per sentence. Binary size: both evaluation tools (debug) are 15,335,808 B. The dictionary segmenter was already present, and the Thai gate already uses it; the production binary was not measured separately.
 
-**回归：**
+**Regression:**
 
-- `cargo test --locked -p ccut-flow-core` 全过；新增测试 `chinese_and_japanese_pieces_open_at_dictionary_word_boundaries`，钉住中文、日文各一句改前改后的 `¦`。
-- 508 句英文源回放首轮 495、合并后 505，逐句不变。
-- `lean-carrier-acceptance-2026-10-01-915bfef13` 回放通过。
+- `cargo test --locked -p ccut-flow-core` passes. The new test `chinese_and_japanese_pieces_open_at_dictionary_word_boundaries` pins the `¦` of one Chinese and one Japanese sentence, before and after the change.
+- Replay of 508 English source sentences: 495 in the first round, 505 after merging; unchanged sentence by sentence.
+- Replay of `lean-carrier-acceptance-2026-10-01-915bfef13` passes.
 
-**没做：**
+**Not done:**
 
-- 日文词典在词干和词尾之间断开的缝仍然可信，这一类片标还会落在词中。要修，得给假名词尾单独立规则，或者换一部日文词典。本轮不做。
-- 专名内部、数字与量词之间的缝，这道门管不到（词典在那里断开）。
-- `々` 与 CJK 扩展区汉字不在 `is_unspaced_cjk_char` 里，`人 ¦ 々` 这种缝仍算可信。
-- 目标侧的逐字缝（§8.9 末尾）是另一回事，切的是译文，没有受影响。
-- 只有 provider 直连的 `lines/1`。`rows` 载体与本地 Agent 路径不用片标，不适用。
+- Seams that the Japanese dictionary breaks between stem and suffix are still trusted, so this kind of piece marker can still land inside a word. Fixing it needs a separate rule for kana suffixes, or switching to a different Japanese dictionary. Not in this round.
+- Seams inside proper names and between numbers and counters are outside this gate's reach (the dictionary breaks there).
+- `々` and CJK extension-area Han characters are not in `is_unspaced_cjk_char`, so seams like `人 ¦ 々` still count as trustworthy.
+- Per-character seams on the target side (end of §8.9) are a different matter: they cut the translation and are not affected.
+- Only the direct provider `lines/1` path. The `rows` carrier and the local Agent path do not use piece markers, so this does not apply to them.
 
-数据与脚本在 `/Volumes/ExtremeSSD/cuccut-lean-validation/round12/cjk-pieces/` 和 `scripts/cjk-pieces-ab.py`。盲评材料（`items.json` / `key.json` / `verdicts.json`）在 `judge/`。
+Data and scripts are in `/Volumes/ExtremeSSD/cuccut-lean-validation/round12/cjk-pieces/` and `scripts/cjk-pieces-ab.py`. Blind-review materials (`items.json` / `key.json` / `verdicts.json`) are in `judge/`.
 
-### 8.15 2026-10-01 第十五轮：片标不落在括号、引号里侧
+### 8.15 2026-10-01 Round 15: piece markers do not land on the inner side of brackets or quotes
 
-**来源：** Codex 验收 `lean-carrier-acceptance-2026-10-01-9bb2a8f62` 里，泰文 `th-05` 译成 `the word “ confirmed”`。请求是 `คำว่า“ ¦ ยืนยันแล้ว”`。在不写空格的源文里，开引号挂在前一个词尾（泰文 `ว่า“`，逐字的中日文 `说“`、`画『`）。「标点之后」打分最高，开引号也算标点，片标就落在了它后面。模型把 `“` 留在前一块，后面还写了空格。块缝整理又让「模型写了空格就留」先于「开引号后不加空格」生效。
+**Source:** In Codex acceptance `lean-carrier-acceptance-2026-10-01-9bb2a8f62`, Thai `th-05` was translated as `the word “ confirmed”`. The request was `คำว่า“ ¦ ยืนยันแล้ว`. In unspaced source text, an opening quote attaches to the end of the previous word (Thai `ว่า“`; in word-for-word Chinese or Japanese, `说“` (said “) and `画『` (drew 『)). The "after punctuation" score ranked highest, and an opening quote also counts as punctuation, so the piece marker landed after it. The model left `“` in the previous chunk and then wrote a space after it. Chunk-seam cleanup also let "keep the space if the model wrote one" take precedence over "no space after an opening quote."
 
-**改法**（`lines_translation.rs`，协议与请求格式不动）：
+**Change** (`lines_translation.rs`; protocol and request format unchanged):
 
-- 括号、引号里侧的缝不可信（`inside_delimiter`，并进 `unsure_boundaries`）。
-  - 括号（Ps / Pe）一律算。
-  - 引号（Pi / Pf）方向随语言变（德文 `„…“`、瑞典文 `”…”`、德文 `»…«`），只在两词之间没有空白、或引号单独成词（法文 `« mot »`）时算。
-- 每一片都要含字母或数字：挪开片标后出现过 `シャーロック ¦ ・ ¦ ホームズ`，中间那片只有一个 `・`。
-- 块缝在开括号、开引号之后，闭括号、闭引号之前不留空格，模型写了也去掉（`opens_at_end` / `closes_at_start`，排在「模型写了空格就留」前面）。
-  - `“`、`‘` 前面是空白、开头，或者是不写空格的文字时才算开引号，所以德文 `„Ja!“` 不受影响。
-  - `”` 后紧跟写空格文字的字母时算瑞典文开引号。
-  - `«»`、`’` 不处理。
+- Seams on the inner side of brackets and quotes are not trustworthy (`inside_delimiter`, merged into `unsure_boundaries`).
+  - Brackets (Ps / Pe) always count.
+  - Quotes (Pi / Pf) have a direction that depends on the language (German `„…“`, Swedish `”…”`, German `»…«`). They count only when there is no whitespace between the two words, or when the quote stands alone as a word (French `« mot »`).
+- Every piece must contain a letter or digit: after moving piece markers, `シャーロック ¦ ・ ¦ ホームズ` appeared, where the middle piece was only a `・`.
+- At chunk seams, no space is left after an opening bracket or opening quote, or before a closing bracket or closing quote. If the model wrote one, it is removed (`opens_at_end` / `closes_at_start`, ranked before "keep the space if the model wrote one").
+  - `“` and `‘` count as opening quotes only when preceded by whitespace, at the start of the text, or by unspaced text, so German `„Ja!“` is unaffected.
+  - A `”` immediately followed by a letter of spaced text counts as a Swedish opening quote.
+  - `«»` and `’` are not handled.
 
-**结果：**
+**Results:**
 
-- 508 句回放逐句不变。
-- 两个真实项目共 448 行请求变了 2 行，都是日文：`ポッター』 ¦ や『`，以及 `小説『シャーロック ¦ ・ホームズ』 ¦ の世界を`。片标总数不变。
-- 9bb2a8f62 夹具只有 th-05 一句评分不同：`“ confirmed”` → `“confirmed”`，92/92 aligned 不变。
-- 合成泰→英页真跑 3 次，都是 6/6 aligned，th-05 没有多余空格。
+- The 508-sentence replay is unchanged sentence by sentence.
+- Of 448 request lines across the two real projects, 2 lines changed, both Japanese: `ポッター』 ¦ や『`, and `小説『シャーロック ¦ ・ホームズ』 ¦ の世界を`. The total piece-marker count is unchanged.
+- In the 9bb2a8f62 fixture, only th-05 changed score: `“ confirmed”` → `“confirmed”`; 92/92 aligned is unchanged.
+- A synthetic Thai→English page was run 3 times; all runs were 6/6 aligned, and th-05 had no extra space.
 
-**仍然没做：**
+**Still not done:**
 
-- `・` 算标点，片标落在它后面得最高分，专名内部的 `ハリー・ ¦ ポッター` 仍在（§8.14 盲评的「专名内部」一类）。`・` 也用来分隔并列的词，规则要先分清这两种用法。
-- 同一份报告里首轮未接收的两句（目标语语序与源文不同、一片源文没有单独译文）、hi-07 把人名 `सारा` 读成「全部」、de-07，都只做记录。
+- `・` counts as punctuation, so a marker placed after it scores highest; `ハリー・ ¦ ポッター` inside a proper name remains (the "inside a proper name" category in the §8.14 blind review). `・` is also used to separate parallel words, so the rule must first distinguish these two uses.
+- Two sentences not accepted in the first round of the same report (target word order differs from the source; one source piece has no separate translation), hi-07 misreading the name `सारा` (Sara) as "all", and de-07 are only recorded.
 
-详见 [`docs/changelog/core/2026-10-01-115443.md`](../../changelog/core/2026-10-01-115443.md)。
+See [`docs/changelog/core/2026-10-01-115443.md`](../../changelog/core/2026-10-01-115443.md).
 
-## 9. 提示词与固定成本
+## 9. Prompts and fixed costs
 
-输入瘦下来以后，每次调用的固定成本占比会上升，要一起处理：
+Once the input shrinks, the fixed cost per call takes a larger share, and it has to be handled as well:
 
-- **翻译 system**：rows 融合那一段约 3.5 KB（分组、时长、读速规则），替换为首尾引用、权限、转义与失败反馈的最小说明；新体积在 M0 测量，不预设低于 1 KB。源语术语、术语表、专名清单三份合成一张表。
-- **对齐 system**：`align-table/1` 的 13.4 KB 里大半是接缝禁令清单。这些禁令已经有代码 lint，被拒时会带着具体原因回来。块解释下切行归代码，提示词只留原则；行解释下把命中的那条禁令写进该句的 `!` 行。
-- **顺序与缓存**：system 按「固定协议 → 目标语言策略 → 本文档的摘要与术语」排，不变的部分在前；整份 system 在一次运行里逐字节不变，便于跨页复用缓存。断点、按 provider 决定的预热和用量记录见 §6.5。
-- **页预算**：rows 翻译页定在 800 词，是因为带编号后每个源词的成本涨到 1.6–2 倍，长页上模型会中途放弃标注（[ai-pipeline §8.6](ccut-ai-pipeline-design/08.md)）。新载体下这个理由减弱，但页预算是影响质量的因素，不随载体一起改，也不靠回放定：M1 里用 Sonnet 子代理实际跑至少约 10 页真实数据，比较 800 / 1200 / 2000 三档。
+- **Translation system:** the row-fusion section is about 3.5 KB (grouping, duration, reading-speed rules). Replace it with a minimal description of the head and tail references, permissions, escaping and failure feedback. The new size is measured at M0; do not presume it will be under 1 KB. The source-language terms, glossary and proper-name list merge into one table.
+- **Alignment system:** most of the 13.4 KB of `align-table/1` is a list of seam prohibitions. These prohibitions are already enforced by code lint, and rejections come back with the specific reason. For chunk-level interpretation, line splitting moves to code and the prompt keeps only the principles; for line-level interpretation, the prohibition that matched is written into that sentence's `!` line.
+- **Ordering and cache:** the system prompt is ordered "fixed protocol → target-language policy → this document's summary and terms," so unchanged parts come first. The whole system prompt stays byte-identical within a run, so it can be reused across pages in the cache. Cache breakpoints, provider-dependent warm-up and usage logging are in §6.5.
+- **Page budget:** the rows translation page is set at 800 words, because with numbering the cost per source word rises to 1.6–2×, and on long pages the model gives up on annotation partway through ([ai-pipeline §8.6](ccut-ai-pipeline-design/08.md)). With the new carrier this reason weakens, but the page budget affects quality, so it is not changed together with the carrier, and it is not decided by replay either. In M1, run at least about 10 pages of real data with Sonnet subagents and compare three tiers: 800 / 1200 / 2000.
 
-## 10. 润色、说话人与其他
+## 10. Polishing, speakers and other
 
-### 10.1 润色（补丁式输出）
+### 10.1 Polishing (patch-style output)
 
-实测本项目三页润色：核心区 3,841 词，改动 86 词（2.2%，各页 1.6%–3.0%），输出却把 22,746 字符全文重写了一遍。改动主要是两类：反复出现的专名纠正（`Fei Fei` → `Fei-Fei Li` 十几处）和零星的标点、连字符。
+Measured on three pages of this project for polishing: core area 3,841 words, 86 words changed (2.2%; 1.6%–3.0% per page), yet the output rewrote the full text of 22,746 characters. The changes were mainly two kinds: repeated proper-name corrections (`Fei Fei` → `Fei-Fei Li`, a dozen-plus instances) and scattered punctuation and hyphens.
 
-方案是补丁式输出，输入按句编号（现有补分段页已经这样渲染）。下面是示意：
+The approach is patch-style output, with input sentences numbered (the existing paragraph-page rendering already does this). An illustration:
 
 ```
 Fei Fei => Fei-Fei Li
@@ -854,48 +859,48 @@ Marvel => Marble
 ¶ 1 3 4 5 6 10 12
 ```
 
-- `甲 => 乙`：本页可编辑核心区内按源词原子序列匹配替换，给反复出现的识别错误用；不把“整词”实现为空格或 Latin 正则边界。
-- `<序号> <整句新文本>`：只改这一句。没改的句子不出现。
-- `¶ …`：段首句的序号。
+- `A => B`: within this page's editable core area, matches and replaces the source words as an atomic sequence; used for repeated recognition errors. "Whole word" is not implemented as a space or Latin regex boundary.
+- `<index> <whole new sentence text>`: changes only this sentence. Sentences that are not changed do not appear.
+- `¶ …`: the index of the first sentence of a paragraph.
 
-代码把补丁应用到原文得到润色后的文本，之后的词级 LCS 重绑、时间插值不变。漂移检查从整页改成逐句，一句改过头只拒这一句。按本项目模拟，输出约为现在的 20%。
+The code applies the patch to the source text to get the polished text; the word-level LCS rebinding and time interpolation that follow are unchanged. Drift checking moves from the whole page to each sentence, so one over-edited sentence rejects only that sentence. In this project's simulation, the output is about 20% of the current size.
 
-M3 须在发布补丁载体前定死这些边界：所有匹配针对原始页快照，替换不级联；显式句替换优先于该句的全局规则，同级重叠或相互冲突的替换按受影响句拒收；只读区不应用。回执列受影响句与替换次数，按 §5 的幂等方式重放。正文里的 `=>`、`¶`、换行等须有可逆转义；句内补标点产生新句界时，段首如何寻址必须先验证，不能直接假定输入句序号仍覆盖所有新边界。
+M3 must settle these boundaries before the patch carrier is published: all matches apply to the original page snapshot, and replacements do not cascade; an explicit sentence-level replacement takes precedence over the global rules for that sentence; replacements that overlap at the same level or conflict with each other are rejected per affected sentence; read-only areas are not applied. The receipt lists affected sentences and replacement counts, and is replayed in the idempotent way of §5. Body text containing `=>`, `¶`, line breaks and so on needs reversible escaping. When in-sentence punctuation supplementation creates new sentence boundaries, how paragraph-start addressing works must be verified first; do not assume the input sentence indices still cover all the new boundaries.
 
-补丁省输出的前提是源文已经有句末标点。识别结果没有标点时几乎每句都要改，补丁退化成逐行重写，输出和全文契约相当，不省。这类页是继续用全文契约还是统一成逐行重写，M3 里对拍后定；代码里没有现成的标点密度判据，可以借用的是现有的超长句判据（单句过长且没有句末标点）。
+The patch saving on output depends on the source already having sentence-final punctuation. When the recognition result has no punctuation, almost every sentence must change, the patch degenerates into line-by-line rewriting, and the output is no better than the full-text contract, so there is no saving. Whether such pages keep the full-text contract or are unified into line-by-line rewriting is to be decided by comparison in M3. The code has no existing punctuation-density criterion, but the existing overlong-sentence criterion (a single sentence that is too long and has no sentence-final punctuation) can be borrowed.
 
-可以先做的一件小事：提示词要求逐字复述前后只读区、并称改了会整页拒收，解析器实际只取核心区、只读区有改动只记警告。去掉这条复述要求不影响解析，本项目三页里只读区占输出的 2%–12%。
+A small thing can be done first: the prompt requires repeating the read-only areas before and after, verbatim, and says the whole page is rejected if they change. The parser actually takes only the core area and only logs a warning if read-only areas change. Removing this repeat requirement does not affect parsing; in this project's three pages, read-only areas account for 2%–12% of the output.
 
-### 10.2 说话人修复页
+### 10.2 Speaker-fix page
 
-`sk` 页一词一行加行号，输入约为纯文本的 4 倍。换人位置本身是单个边界，可用单点引用，不套用翻译块首尾范围语法。复用 §3.3 的唯一定位、原子映射与转义机制，但使用独立的载体版本；重复致谢等多义引用不得按先后猜测，失败时保留现状或回退原索引契约。体量小，排在最后。
+The `sk` page numbers each word on its own line, so its input is about 4 times the plain text. A speaker change is a single boundary, so a single-point reference can be used; the range syntax for the first and last words of a translation block does not apply. Reuse the unique-positioning, atomic-mapping and escaping mechanisms of §3.3, but use an independent carrier version. Ambiguous references, such as repeated thanks, must not be guessed by order; on failure, keep the current state or fall back to the original index contract. It is small, so it goes last.
 
-### 10.3 Agent 路径的固定开销
+### 10.3 Fixed overhead of the Agent path
 
-worker 的契约文件就是 system prompt，随 §9 一起缩。skill 里任务相关的参考文档合计约 95 KB，其中载体说明 28 KB 是四种格式各讲一遍。载体合一后这篇应当重写缩短，让 `contracts/<kind>.md` 自己够用，worker 不必再读参考。
+The worker's contract file is the system prompt, and it shrinks together with §9. The task-related reference docs in the skill total about 95 KB, of which the carrier description (28 KB) explains each of the four formats separately. Once the carriers are unified, this document should be rewritten and shortened so that `contracts/<kind>.md` is self-sufficient, and the worker no longer needs to read the reference.
 
-## 11. 比较过的其他做法
+## 11. Other approaches considered
 
-| 做法 | 结论 |
+| Approach | Conclusion |
 | --- | --- |
-| 保留逐词编号，只取消回显 | M0/M1 不过时的保守方案。块解释仍返回任意源词集合，或其有明确语义的 min/max；不得只允许连续独占区间而再次丢掉交叉。省回显有收益，具体比例须重新测量 |
-| 只给起点，由代码按下一起点补终点 | 放弃作为默认方案。会把 `{1,3}` / `{2}` 错变成安全分区；确定性硬锚点只能发现部分遗漏，不能证明所有剩余关系完整 |
-| 代码先在源文里标候选缝（①②…），模型在译文里放同号标记 | 编号少了九成，但切点只能落在预先算好的缝上；与 json 契约时期的 `sourceBreaks`（[subtitle-agent-workflow](ccut-subtitle-agent-workflow.md)）和后来被块对齐边替换掉的 `data-align-breaks`（[alignment-block §6.1](ccut-alignment-block-subtitle-split-design.md)）同类 |
-| 源文、译文两列都切开回显（现在的 table） | 输出翻倍；让模型复述源文会漂移，补分段的先例是 87 次调用 22 次 `source-drift`（[file-contract §6](ccut-file-contract-subtitle-ai-design/06.md)） |
-| 冻结句不回显译文，只回「译文切点前几个字 + 源文锚词」 | 再省一半输出，但译文侧也要做引用定位，多一类多义。冻结句在新流程里量很小，先不做 |
-| 本地词对齐或向量模型 | 已评估，本地文本模型功能已于 2026-08-18 整体移除（[alignment-block §13.2](ccut-alignment-block-subtitle-split-design.md)），不重提 |
-| 模型只产显示行、不产整句译文 | row-first 实验结论是系统性丢信息 |
-| 把按源序改写并进翻译调用 | 与「先定译文」冲突，见 §6.3 |
+| Keep per-word numbering, only drop the echo | Conservative option that does not go stale with M0/M1. Block interpretation still returns arbitrary source-word sets, or their min/max with explicit semantics; it must not allow only contiguous exclusive intervals, which would lose crossings again. Dropping the echo saves output, but the actual ratio must be re-measured |
+| Give only start points; code fills end points from the next start | Abandoned as the default. It would wrongly turn `{1,3}` / `{2}` into a safe partition. Deterministic hard anchors can only find some omissions and cannot prove that all remaining relations are complete |
+| Code first marks candidate seams (①②…) in the source text; the model places markers with the same numbers in the translation | Cuts numbering by about 90%, but cut points can only fall on precomputed seams. Same class as `sourceBreaks` in the json-contract era ([subtitle-agent-workflow](ccut-subtitle-agent-workflow.md)) and `data-align-breaks`, later replaced by block-aligned edges ([alignment-block §6.1](ccut-alignment-block-subtitle-split-design.md)) |
+| Echo both the source and translation columns, split (the current table) | Doubles output. Having the model restate the source drifts. Precedent from segment supplementation: 22 of 87 calls hit `source-drift` ([file-contract §6](ccut-file-contract-subtitle-ai-design/06.md)) |
+| Frozen sentences do not echo the translation; only "a few characters before the translation cut point + source anchor words" | Saves another half of the output, but the translation side also needs reference positioning, which adds another ambiguity class. Frozen sentences are very few in the new flow, so not doing this for now |
+| Local word alignment or a vector model | Evaluated. The local text-model feature was removed entirely on 2026-08-18 ([alignment-block §13.2](ccut-alignment-block-subtitle-split-design.md)); not to be re-proposed |
+| Model produces only display lines, not full-sentence translations | The row-first experiment concluded that it systematically loses information |
+| Fold the rewrite in source order into the translation call | Conflicts with "settle the translation first"; see §6.3 |
 
-## 12. 裁决记录与待定项
+## 12. Decision record and pending items
 
-2026-09-30 审查后的方案决定（替代原稿对应结论）：
+Solution decisions after the 2026-09-30 review (they replace the corresponding conclusions in the original draft):
 
-1. **行文本 + 首尾锚词。** 保存块归属的 min/max，代码补确定性锚点并判断交叉；放弃按起点补终点。M0/M1 不过就退回保留语义的序号载体。
-2. **多义不猜、文本不丢。** 固定符号与可逆转义；冻结文本逐切点映射；证据不足不得制造安全边界。
-3. **部分接受分层记账。** 自然译文、显示改写、对齐分别接受；补交/接手共享 revision、幂等键和两轮句级预算，按失败类型确定终态。
-4. **时间组移除单独对拍。** 候选载体只保留停顿提示与必要预算；通过目标 profile 的读速/切分验收后才默认移除。
-5. **页会话不跨页、不并润色。** A/C 由真实成本、质量和延迟决定，B 保留为先译后标对照。跨页 system 缓存可独立落地，不能把隐式缓存算成零。
-6. **推理档位先验证。** 目标为各修复轮同档、不自动升档；中档独立对照过门后采用，不把质量假设当作已验证事实。
+1. **Line text + head/tail anchor words.** Store the min/max of block membership; code fills in deterministic anchors and judges crossings. Filling end points from start points is dropped. If M0/M1 fail, fall back to a sequence-number carrier that preserves the semantics.
+2. **No guessing on ambiguity; no loss of text.** Fixed symbols and reversible escaping; frozen text is mapped per cut point; never create a safe boundary when the evidence is insufficient.
+3. **Partial acceptance with tiered bookkeeping.** Natural translation, display rewrite and alignment are accepted separately. Resubmission and takeover share the revision, the idempotency key and a two-round sentence-level budget; the terminal state is determined by the failure type.
+4. **Time-group removal is tested separately.** Candidate carriers keep only pause hints and the necessary budget. Removal becomes the default only after passing reading-speed and split acceptance on the target profile.
+5. **Page sessions do not span pages, and polishing is not merged.** A/C are decided by real cost, quality and latency; B is kept as a translate-then-tag control. Cross-page system caching can land independently; implicit caching must not be counted as zero.
+6. **Reasoning tier is verified first.** The goal is the same tier for every repair round, with no automatic escalation. A medium tier is adopted only after an independent control passes the gate; the quality assumption is not treated as a verified fact.
 
-待验证后定：各 provider/Agent 的 A/C 配置、同等质量下的首尾格式总成本、LCS 局部阈值、归一化边界，以及 800 / 1200 / 2000 词页预算（每档至少约 10 页探索，见 §8）。§8.1 记录已实施的基础及未过门的首轮结果；不能据此视为 M0–M4 全部完成。
+To be decided after validation: the A/C configuration for each provider/Agent, the total head-and-tail format cost at equal quality, the LCS local threshold, the normalization boundaries, and the 800 / 1200 / 2000-word page budgets (each tier needs at least about 10 pages of exploration, see §8). §8.1 records the implemented foundation and the first-round results that did not pass the gate. It should not be taken as evidence that M0–M4 are all complete.

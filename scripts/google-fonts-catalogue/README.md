@@ -1,16 +1,16 @@
 # google-fonts-catalogue
 
-生成随 Runtime 发布的 Google Fonts 字体目录 `packages/runtime-core/src/fonts/google-fonts-catalogue.json`（架构设计 §9.1 的「按需下载的字体」）。选字列表靠它在离线、没有 API key 的情况下列出可下载的族；下载时 Runtime 按它把要的字重对到这个族实际有的字重。目录只有元数据，不含字体文件与样张。
+Generates the Google Fonts catalogue shipped with the Runtime, `packages/runtime-core/src/fonts/google-fonts-catalogue.json` (architecture design §9.1, “fonts downloaded on demand”). The font picker uses it to list downloadable families offline and without an API key. When downloading, the Runtime uses it to map the requested weights to the weights the family actually has. The catalogue holds metadata only, with no font files or specimens.
 
-## 用法
+## Usage
 
-需要 Node 22.18+（直接跑 `.ts`）。从公开的元数据重新生成（会访问 `fonts.google.com` 与 GitHub 的公开接口，不需要 key）：
+Requires Node 22.18+ (runs `.ts` directly). To regenerate from the public metadata (this accesses `fonts.google.com` and GitHub's public APIs; no key needed):
 
 ```bash
 node scripts/google-fonts-catalogue/generate.ts
 ```
 
-也可以用事先存下的两个文件离线生成，结果可复现：
+You can also generate offline from two saved files, which makes the result reproducible:
 
 ```bash
 node scripts/google-fonts-catalogue/generate.ts \
@@ -18,24 +18,24 @@ node scripts/google-fonts-catalogue/generate.ts \
   --licences /tmp/gf-licence-dirs.json
 ```
 
-- `--metadata`：`https://fonts.google.com/metadata/fonts` 的原始回应（开头的 `)]}'` 可留可去）。
-- `--licences`：`{ "ofl": [目录名…], "apache": […], "ufl": […] }`，即 google/fonts 仓库这三个顶层目录下的子目录名。
-- `--out`：写到别处（默认就是上面的目录文件）。
+- `--metadata`: the raw response from `https://fonts.google.com/metadata/fonts` (the leading `)]}'` may be kept or removed).
+- `--licences`: `{ "ofl": [directory names…], "apache": […], "ufl": […] }`, i.e. the names of the subdirectories under the three top-level directories of the google/fonts repository.
+- `--out`: write elsewhere (the default is the catalogue file above).
 
-脚本打印收了多少个族、文件多大，以及没收的族（认不出许可或分类的；许可按 google/fonts 仓库的目录对上，对不上的不收，因为选字时要给出许可）。
+The script prints how many families it collected, the file size, and the families it skipped (those whose licence or category it cannot recognise). Licences are matched against the google/fonts repository's directories, and families that do not match are not collected, because the font picker must show the licence.
 
-## 格式
+## Format
 
-一个 JSON 对象，`families` 按热门程度排，一行一个族，键用短名控制文件大小：
+A JSON object. `families` is sorted by popularity, one family per line, and short keys keep the file size down:
 
-| 键 | 含义 |
+| Key | Meaning |
 | --- | --- |
-| `f` | 族名（下载与排字都用它） |
-| `c` | 分类：`sans-serif`、`serif`、`display`、`handwriting`、`monospace` |
-| `s` | 字符子集（`latin`、`cyrillic`、`chinese-simplified`、`japanese`、`korean`……，去掉了 `menu`） |
-| `w` | 有正体的字重 |
-| `i` | 有斜体的字重（没有时省略） |
-| `v` | 可变字体时为 `1`（下载的仍是按字重取的静态实例） |
-| `l` | 许可：`OFL-1.1`、`Apache-2.0`、`UFL-1.0` |
+| `f` | Family name (used for both download and typesetting) |
+| `c` | Category: `sans-serif`, `serif`, `display`, `handwriting`, `monospace` |
+| `s` | Character subsets (`latin`, `cyrillic`, `chinese-simplified`, `japanese`, `korean`…; `menu` removed) |
+| `w` | Weights with an upright style |
+| `i` | Weights with an italic style (omitted when none) |
+| `v` | `1` for variable fonts (downloads are still static instances cut by weight) |
+| `l` | Licence: `OFL-1.1`, `Apache-2.0`, `UFL-1.0` |
 
-重新生成后跑 `npm test -- packages/runtime-core/src/fonts`，目录的读取与查询有测试。
+After regenerating, run `npm test -- packages/runtime-core/src/fonts`; the catalogue's reading and querying are covered by tests.

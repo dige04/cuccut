@@ -1,5 +1,5 @@
-> 移植自 CucCut v2；文中的数据模型名（TranscriptDoc 等）指 v2 的模型，与 v3 文档模型的对应见[架构设计 §14](../../../architecture/architecture-design.md#14-待评审事项)。
+> Ported from CucCut v2. Data model names in the text (TranscriptDoc, etc.) refer to the v2 models; for the mapping to the v3 document models, see [Architecture design §14](../../../architecture/architecture-design.md#14-items-pending-review).
 
-# ccut-file-contract-subtitle-ai-design/ — 《CucCut 文件契约字幕 AI 管线设计（File-Contract Pipeline, v0.3）》正文
+# ccut-file-contract-subtitle-ai-design/ — Body of "CucCut File-Contract Subtitle AI Pipeline Design (File-Contract Pipeline, v0.3)"
 
-本目录是 [`ccut-file-contract-subtitle-ai-design.md`](../ccut-file-contract-subtitle-ai-design.md) 的正文，一章一个文件（按章拆分的规则见 [`docs/README.md`](../../../README.md)）。文首摘要与目录在主文件里，先读主文件，再从目录跳到需要的章节；不要逐个文件通读。
+This directory is the body of [`ccut-file-contract-subtitle-ai-design.md`](../ccut-file-contract-subtitle-ai-design.md), one chapter per file (for the chapter-splitting rules, see [`docs/README.md`](../../../README.md)). The introductory summary and table of contents are in the main file: read the main file first, then jump from the table of contents to the chapters you need; do not read every file in sequence.

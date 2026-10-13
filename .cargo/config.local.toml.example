@@ -1,8 +1,8 @@
-# 复制为 `.cargo/config.local.toml`（不入版本控制）后按本机情况修改。
-# 常见用途：把 Cargo 产物挪到外置盘，避免 target 目录撑爆系统盘。
+# Copy to `.cargo/config.local.toml` (not under version control) and adjust for this machine.
+# Common use: move Cargo build output to an external drive so the target directory does not fill the system disk.
 [build]
 target-dir = "/Volumes/YourDisk/cargo-target/cuccut"
 
-# 也可以在这里放本机专属的环境变量覆盖，例如：
+# You can also put machine-specific environment variable overrides here, for example:
 # [env]
 # SDKROOT = "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"

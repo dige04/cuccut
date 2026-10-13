@@ -3,7 +3,7 @@
   "version": 1,
   "domain": "motion",
   "family": null,
-  "doc": "内部积木：旋转从 0 到 rotationTo。",
+  "doc": "Internal building block: rotation goes from 0 to rotationTo.",
   "exposedTo": [
     "bcf"
   ],
@@ -11,12 +11,12 @@
     "rotationTo": {
       "type": "number",
       "default": 12.0,
-      "doc": "终止角度（度）"
+      "doc": "End angle (degrees)"
     },
     "curve": {
       "type": "curve",
       "default": "easeInCubic",
-      "doc": "时间曲线（规范 §7.6 的封闭名称）"
+      "doc": "Time curve (a closed name from spec §7.6)"
     }
   },
   "tracks": [

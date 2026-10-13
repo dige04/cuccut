@@ -1,3 +1,3 @@
-用代码为一款虚构的{{产品类型}}做一条很酷、视觉冲击力强的发布视频，以漂亮的白色 UI 为主，适合发布到社交平台。产品名、功能和界面都由你原创，不借用真实品牌。
+Use code to make a cool, visually striking launch video for a fictional {{product type}}, built around a beautiful white UI and made for posting on social media. Invent the product name, features and interface yourself, without borrowing from real brands.
 
-可以生成音效。画面节奏要快，不要拖沓。画面文字用{{成片语言}}。
+You can generate sound effects. Keep the pace fast, with nothing dragging. Use {{video language}} for on-screen text.

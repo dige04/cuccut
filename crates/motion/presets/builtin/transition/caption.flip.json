@@ -18,5 +18,5 @@
     { "prop": "scaleY", "factor": 1.0, "a": 0.0, "b": 1.0, "scaleBy": "none", "clamp01": true }
   ],
   "determinism": "strict",
-  "doc": "字幕入场姿态：垂直方向从 0 展开到 1（翻牌）。"
+  "doc": "Caption entrance pose: expands vertically from 0 to 1 (flip card)."
 }

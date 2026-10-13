@@ -1,9 +1,9 @@
-# docs/design/slides/ — 会话里的幻灯片
+# docs/design/slides/ — In-session slide decks
 
-在会话里让智能体做一份幻灯片（deck），在功能区用 Slides 编辑器预览、编辑，并把对幻灯片的标注作为附件发回会话。编辑器是移植来的 Slides 运行时，宿主能力（文件、素材、用户、标注、外部改动）由 Runtime 与界面重新实现（[架构设计 §3.5](../../architecture/architecture-design.md#35-工具目录)、[§4.8](../../architecture/architecture-design.md#48-对外服务)）。
+In a session, have the agent build a deck (slides). Preview and edit it in the ribbon with the Slides editor, and send annotations on the slides back to the session as attachments. The editor is a ported Slides runtime. Host capabilities (files, assets, users, annotations, external changes) are re-implemented by the Runtime and the UI ([architecture design §3.5](../../architecture/architecture-design.md#35-tool-catalog), [§4.8](../../architecture/architecture-design.md#48-external-services)).
 
-| 文件 | 内容与状态 |
+| File | Content and status |
 | --- | --- |
-| [`slides-design.md`](slides-design.md) | **实施中（2026-10-10，第 2 到 5 阶段已实现）**：四项决定（运行时入库、截图、Web 范围、素材地址）；deck 的磁盘格式与运行时 URL 的映射；宿主能力逐项对照（`db` 不需要、`room` 不做）；Runtime 的 `slides.open` 与幻灯片路由、发布的乐观并发、素材、外部改动；skill 与 `slides_check` / `slides_import_asset`；功能区幻灯片标签与标注流程；标注附件的协议；要修订的规范与分阶段实施 |
+| [`slides-design.md`](slides-design.md) | **In progress (2026-10-10; stages 2 to 5 implemented)**: four decisions (runtime checked in, screenshots, web scope, asset URLs); mapping of the deck's disk format to runtime URLs; host capabilities compared item by item (`db` not needed, `room` not done); Runtime's `slides.open` and slide routes, optimistic concurrency for publishing, assets, external changes; skill and `slides_check` / `slides_import_asset`; ribbon slide tab and annotation flow; protocol for annotation attachments; spec to revise and staged implementation plan |
 
-实现在 `packages/slides`（协议、存储、路由、宿主 shim）、`packages/slides-runtime`（运行时源码，D1）与 `apps/slides-editor`（编辑器页面的构建），借鉴自 Claude Slides 的实现。
+The implementation lives in `packages/slides` (protocol, storage, routing, host shim), `packages/slides-runtime` (runtime source, D1) and `apps/slides-editor` (build of the editor page), drawing on an existing Slides implementation.

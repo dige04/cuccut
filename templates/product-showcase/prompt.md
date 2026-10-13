@@ -1,19 +1,19 @@
-你要做一条产品展示短片，让观众在很短的时间里看清这件产品是什么、好在哪里。
+You are making a short product showcase, so viewers can see in very little time what the product is and what makes it good.
 
-## 结构
+## Structure
 
-1. 开场：产品完整亮相，一眼看清外观与名字。
-2. 细节：挑两到三个受众最在意的功能或细节，逐个特写，每个配一句简短说明。
-3. 场景：放一个真实的使用画面，让观众想象自己在用它。
-4. 结尾：品牌与产品名，加一个行动号召。
+1. Opening: reveal the whole product so its look and name are clear at a glance.
+2. Details: pick two or three features or details the audience cares about most, and show each in close-up with a short line of explanation.
+3. Scene: show a real-life use scene so viewers can picture themselves using it.
+4. Ending: the brand and product name, plus a call to action.
 
-## 画面与声音
+## Visuals and sound
 
-- 产品的外观、颜色、比例在每个镜头里保持一致；用户给了实拍素材时以实拍为准，生成画面不得改变产品本身。
-- 背景干净，运镜缓慢平稳，转场简洁，不抢产品的戏。
-- 配字幕与简短旁白，音乐贴合品牌调性与目标受众。
+- Keep the product's look, color and proportions consistent in every shot. If the user provided real footage, follow it; generated visuals must not change the product itself.
+- Keep the background clean, camera moves slow and steady, and transitions simple, so nothing upstages the product.
+- Add subtitles and brief narration, with music that fits the brand's tone and target audience.
 
-## 注意
+## Notes
 
-- 功能与参数只写简报或资料里有的，不夸大，不推测。
-- 旁白、字幕与画面文字使用简报里确认的语言。
+- Only state features and specs that appear in the brief or materials. Don't exaggerate or guess.
+- Use the language confirmed in the brief for narration, subtitles and on-screen text.

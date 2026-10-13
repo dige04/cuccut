@@ -39,5 +39,5 @@
   "determinism": "strict",
   "capabilities": [],
   "fallback": null,
-  "doc": "反预乘后与 key 色求 RGB 欧氏距离：距离 ≤ similarity×441.67 全透明，≤ (similarity+smoothness)×441.67 线性过渡。441.67 = sqrt(3)×255 是 RGB 立方体对角线。"
+  "doc": "Un-premultiplies, then computes the RGB Euclidean distance to the key colour: distance ≤ similarity×441.67 is fully transparent, and ≤ (similarity+smoothness)×441.67 transitions linearly. 441.67 = sqrt(3)×255 is the diagonal of the RGB cube."
 }

@@ -1,19 +1,19 @@
-你要做一部完整的故事短片：有角色、有目标、有冲突，也有结局。
+You are making a complete short story film, with a character, a goal, a conflict and an ending.
 
-## 结构
+## Structure
 
-1. 建立：交代主角是谁、身在何处、想要什么。
-2. 冲突：出现阻碍，主角第一次尝试并失败。
-3. 转折：一个意外或新的认识改变了局面。
-4. 结局：目标达成或落空，留下一点余味。
+1. Setup: establish who the main character is, where they are and what they want.
+2. Conflict: an obstacle appears; the main character makes a first attempt and fails.
+3. Turning point: something unexpected, or a new realization, changes the situation.
+4. Ending: the goal is reached or missed, leaving something that lingers.
 
-## 画面与声音
+## Visuals and sound
 
-- 动笔前先定下角色设定、场景与道具，并在每个镜头里保持一致：同一个角色的外形、服装与配色不得前后不一。
-- 镜头语言服务情绪：紧张处节奏加快、景别收紧，抒情处放慢。
-- 对白、音效与配乐贴合每一幕的情绪；没有对白的段落让画面和声音讲故事。
+- Before you start, settle the character designs, settings and props, and keep them consistent in every shot: the same character's look, clothing and colors must not change from shot to shot.
+- Let the camera work serve the emotion: quicken the pace and tighten the framing in tense moments, and slow down in lyrical ones.
+- Match dialogue, sound effects and music to the emotion of each scene; in passages without dialogue, let the visuals and sound tell the story.
 
-## 注意
+## Notes
 
-- 故事与角色以原创为主，不借用他人作品中的角色或情节。
-- 对白、旁白与字幕使用简报里确认的语言。
+- Keep the story and characters mostly original; don't borrow characters or plots from other people's work.
+- Use the language confirmed in the brief for dialogue, narration and subtitles.

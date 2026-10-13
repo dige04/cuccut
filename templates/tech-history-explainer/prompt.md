@@ -1,3 +1,3 @@
-用代码做一条节奏快、适合发布到视频平台的科普，讲{{技术}}的发展史，面向{{受众}}。
+Use code to make a fast-paced explainer ready to post on video platforms, telling the history of {{technology}} for {{audience}}.
 
-加入原创的笑点和梗，旁白挑一个合适的音色；旁白与字幕用{{成片语言}}。画幅 16:9，时长约 90 秒。不需要我提供素材，直接开始。
+Add original jokes and memes, and pick a suitable voice for the narration. Use {{video language}} for narration and subtitles. Make it 16:9 and about 90 seconds long. You don't need any assets from me; just get started.

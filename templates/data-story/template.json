@@ -3,38 +3,38 @@
   "id": "data-story",
   "version": "1.1.0",
   "kind": "scene",
-  "title": "数据故事",
-  "summary": "把一张表格讲成清楚、直观的叙事。",
-  "description": "带观众走过一个问题、一张图表和一个结论。一次只引入一组对比，单位、日期与数据来源始终可见，让这个故事经得起核对。",
-  "language": "zh-CN",
+  "title": "Data story",
+  "summary": "Turn a spreadsheet into a clear, intuitive story.",
+  "description": "Walk viewers through a question, a chart and a conclusion. Introduce one comparison at a time and keep units, dates and data sources visible, so the story holds up to checking.",
+  "language": "en",
   "category": "news-data",
   "ratio": "16:9",
   "durationSeconds": 90,
-  "brief": "用{{数据}}讲一个数据故事，回答{{想回答的问题}}。观众是{{受众}}。",
+  "brief": "Use {{data}} to tell a data story that answers {{key question}}. The audience is {{audience}}.",
   "fields": [
     {
-      "label": "数据",
-      "hint": "附上的表格、文件，或数据的来源",
-      "example": "这份近五年的销售数据"
+      "label": "data",
+      "hint": "Attached spreadsheets or files, or where the data comes from",
+      "example": "this sales data from the past five years"
     },
     {
-      "label": "想回答的问题",
-      "hint": "希望观众看完弄清楚的一个问题",
-      "example": "哪个地区增长最快、为什么值得关注"
+      "label": "key question",
+      "hint": "The one question viewers should have answered by the end",
+      "example": "which region grew fastest and why it matters"
     },
     {
-      "label": "受众",
-      "hint": "谁来看，决定讲多深",
-      "example": "公司的管理层"
+      "label": "audience",
+      "hint": "Who is watching; this sets how deep to go",
+      "example": "the company's leadership"
     }
   ],
   "author": "CucCut",
   "source": "official",
   "license": "LicenseRef-CucCut-Community-1.0",
   "tags": [
-    "数据",
-    "图表",
-    "可视化"
+    "data",
+    "charts",
+    "visualization"
   ],
   "skills": [
     "video-production",
@@ -49,10 +49,10 @@
   "preview": {
     "file": "preview.mp4",
     "beats": [
-      "一个值得问的问题",
-      "一次一组对比",
-      "拆开看原因",
-      "有依据的结论"
+      "A question worth asking",
+      "One comparison at a time",
+      "Breaking down the causes",
+      "A well-grounded conclusion"
     ]
   },
   "verification": {

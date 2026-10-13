@@ -1,9 +1,9 @@
 /*
- * 线程里的视频卡行与下载卡（产品设计 §3.2.2、§6.5；原型 agent-cards.css `.mjob` / `.dlcard`）。
- * style 宏会丢掉逐边边框与等宽数字，这些写在这里；颜色变量由卡片根给（video-card-rows.tsx `cardVars`）。
+ * Video card rows and download cards in a thread (product design §3.2.2, §6.5; prototype agent-cards.css `.mjob` / `.dlcard`).
+ * The style macros drop per-edge borders and tabular numerals, so these are written here; the colour variables are supplied by the card root (video-card-rows.tsx `cardVars`).
  */
 
-/* ---------- 视频卡下面的活（进行中的或最后一件摊开，其余收起） ---------- */
+/* ---------- Work under a video card (in progress, or the last one spread open; the rest collapsed) ---------- */
 .cc-vjobs {
   display: flex;
   flex-direction: column;
@@ -70,7 +70,7 @@
   color: var(--cc-vc-body);
   font-variant-numeric: tabular-nums;
 }
-/* 转录用的模型与参数（原型 `.mjob__asr`）：只读的一行，放不下时截断，完整的在 title 里 */
+/* Model and parameters used for transcription (prototype `.mjob__asr`): a read-only line, truncated when it does not fit; the full text is in the title */
 .cc-vjob__asr {
   overflow: hidden;
   color: var(--cc-vc-faint);
@@ -125,7 +125,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ---------- 之前的活：一行「之前的 N 项」，默认收起（原型 agent-cards.css `.mjobs__more`） ---------- */
+/* ---------- Earlier work: one line “N earlier items”, collapsed by default (prototype agent-cards.css `.mjobs__more`) ---------- */
 .cc-vjobs__more {
   display: flex;
   flex-direction: column;
@@ -133,7 +133,7 @@
   padding: 4px 0;
   border-top: 1px solid var(--cc-vc-line);
 }
-/* 开合照线程步骤行（agent-thread.css `.cc-step__row`）：安静的文字、末尾一枚箭头；左右各出 8px 让悬停底色不贴字，字仍与上面的行对齐 */
+/* Open/close follows the thread step row (agent-thread.css `.cc-step__row`): quiet text with an arrow at the end; 8px on each side so the hover background does not touch the text, and the text still lines up with the row above */
 .cc-vjobs__toggle {
   display: flex;
   align-items: center;
@@ -164,7 +164,7 @@
 .cc-vjobs__label {
   flex: 1 1 auto;
 }
-/* 收起的里有失败待处理的：靠右一枚警示图标 +「N 项待处理」，与失败行的图标、原因同色 */
+/* Collapsed, with failures pending: a warning icon on the right + “N items pending”, in the same colour as the failure row's icon and reason */
 .cc-vjobs__pending {
   display: inline-flex;
   flex: none;
@@ -190,7 +190,7 @@
   padding: 0;
   list-style: none;
 }
-/* 紧凑的历史行：头一行降到 12px，只留导出的文件名、失败原因与按钮 */
+/* Compact history row: the first line drops to 12px, keeping only the exported file name, the failure reason and the button */
 .cc-vjob--compact {
   padding: 8px 0;
 }
@@ -200,7 +200,7 @@
   color: var(--cc-vc-body);
 }
 
-/* ---------- 下载卡 ---------- */
+/* ---------- Download card ---------- */
 .cc-dlcard {
   display: flex;
   flex-direction: column;
@@ -291,8 +291,8 @@
   min-width: 0;
 }
 
-/* ---------- 视频卡的画面区（产品设计 §3.2.2；原型 apprail.css `.chat-movie__open` / `.chat-movie__player`） ---------- */
-/* 播放钮默认不画，指针移上去或键盘聚焦时才出现；没有悬停的设备一直显示 */
+/* ---------- Picture area of a video card (product design §3.2.2; prototype apprail.css `.chat-movie__open` / `.chat-movie__player`) ---------- */
+/* The play button is not drawn by default; it appears when the pointer hovers over it or the keyboard focuses it. Devices without hover always show it. */
 .cc-vcard-play {
   opacity: 0;
   transition: opacity 150ms cubic-bezier(0.45, 0, 0.4, 1);
@@ -305,7 +305,7 @@
     opacity: 1;
   }
 }
-/* 卡里原地播：播放器占画面区的位置，画面 16:9，控制条在画面下面；卡的边框就是它的边框 */
+/* Plays in place within the card: the player takes the picture area's position, the picture is 16:9, and the control bar sits below the picture; the card's border is its border */
 .cc-vcard-player .cc-media-player {
   border: 0;
   border-radius: 0;

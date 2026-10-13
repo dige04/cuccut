@@ -3,38 +3,38 @@
   "id": "vlog-edit",
   "version": "1.1.0",
   "kind": "scene",
-  "title": "Vlog 剪辑",
-  "summary": "把日常素材剪成一条值得看完的 Vlog。",
-  "description": "把旅行或日常素材整理成有开头、有几个难忘瞬间、自然收尾的小故事。保留最好的反应和环境声，音乐与字幕贴合你的节奏。",
-  "language": "zh-CN",
+  "title": "Vlog edit",
+  "summary": "Edit everyday footage into a vlog worth watching to the end.",
+  "description": "Shape travel or everyday footage into a small story with an opening, a few memorable moments and a natural ending. Keep the best reactions and ambient sound, with music and subtitles that match your pace.",
+  "language": "en",
   "category": "editing",
   "ratio": "16:9",
   "durationSeconds": 180,
-  "brief": "这些是{{素材}}，帮我剪一条 Vlog，{{风格}}。一定要保留：{{必须保留的片段}}。",
+  "brief": "Here's {{footage}}. Cut it into a vlog with {{style}}. Be sure to keep: {{must-keep moments}}.",
   "fields": [
     {
-      "label": "素材",
-      "hint": "附上的素材在哪里、做什么时拍的",
-      "example": "周末去海边拍的素材"
+      "label": "footage",
+      "hint": "Where the attached footage is and what you were doing when you shot it",
+      "example": "footage from a weekend at the beach"
     },
     {
-      "label": "风格",
-      "hint": "想要的感觉",
-      "example": "轻松一点"
+      "label": "style",
+      "hint": "The feel you're going for",
+      "example": "a relaxed feel"
     },
     {
-      "label": "必须保留的片段",
-      "hint": "点名要留下的瞬间；没有可以写「没有」",
-      "example": "第一次冲浪站起来的那段"
+      "label": "must-keep moments",
+      "hint": "Moments you want kept; write \"none\" if there aren't any",
+      "example": "the first time I stood up on a surfboard"
     }
   ],
   "author": "CucCut",
   "source": "official",
   "license": "LicenseRef-CucCut-Community-1.0",
   "tags": [
-    "Vlog",
-    "旅行",
-    "日常"
+    "vlog",
+    "travel",
+    "everyday life"
   ],
   "skills": [
     "video-production",
@@ -49,10 +49,10 @@
   "preview": {
     "file": "preview.mp4",
     "beats": [
-      "交代去哪、为什么去",
-      "几个难忘的瞬间",
-      "真实的反应与环境声",
-      "自然的结尾"
+      "Where we're going and why",
+      "A few memorable moments",
+      "Real reactions and ambient sound",
+      "A natural ending"
     ]
   },
   "verification": {

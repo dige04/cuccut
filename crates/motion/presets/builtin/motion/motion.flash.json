@@ -3,7 +3,7 @@
   "version": 1,
   "domain": "motion",
   "family": "flash",
-  "doc": "一次不透明度下沉再回满。composite=multiply。",
+  "doc": "One opacity dip that returns to full. composite=multiply.",
   "aliases": [
     "flash"
   ],
@@ -16,12 +16,12 @@
       "default": 0.25,
       "min": 0.0,
       "max": 1.0,
-      "doc": "谷值不透明度"
+      "doc": "Trough opacity"
     },
     "curve": {
       "type": "curve",
       "default": "easeOutQuad",
-      "doc": "时间曲线（规范 §7.6 的封闭名称）"
+      "doc": "Easing curve (closed name from spec §7.6)"
     }
   },
   "tracks": [

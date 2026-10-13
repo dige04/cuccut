@@ -1,6 +1,6 @@
 [package]
 name = "timeline"
-description = "CucCut 时间线语义的纯函数核心：元素模型（schema、元素、几何、效果、转场、关键帧、动画、贴纸填色、模板）、口播剪口（检测、源级剪口、词、文本匹配、共享判据）、语义跟随与词锚点、按语音闪避、时间映射、片段排布、补丁与画面文字。不做 I/O，算法内部是浮点秒（移植自 CucCut v2 ccut-timeline）"
+description = "Pure-function core of CucCut's timeline semantics: the element model (schema, elements, geometry, effects, transitions, keyframes, animation, sticker color fill, templates), talking-head cut points (detection, source-level cuts, words, text matching, shared criteria), semantic follow and word anchors, voice-based ducking, time mapping, clip layout, patches and on-screen text. No I/O; the algorithms use floating-point seconds internally (ported from CucCut v2 ccut-timeline)"
 version.workspace = true
 edition.workspace = true
 license-file.workspace = true
@@ -9,11 +9,11 @@ publish.workspace = true
 [dependencies]
 motion = { workspace = true }
 scene-primitives = { workspace = true }
-# v2 是 workspace 级的 `regex = "1.12"`，Cargo.lock 解析到 1.13.1，与本仓库一致。
+# v2 pins `regex = "1.12"` at the workspace level; Cargo.lock resolves to 1.13.1, matching this repo.
 regex = "1.12"
 serde = { version = "1.0.229", features = ["derive"] }
-# `float_roundtrip`：十进制读成 f64 必须正确舍入，与 std `str::parse`、JS `JSON.parse` 同值
-# （v2 在 workspace 级打开，这里随 crate 声明）。
+# `float_roundtrip`: a decimal read as f64 must be correctly rounded, the same value as std `str::parse` and JS `JSON.parse`
+# (v2 turns it on at the workspace level; declared with the crate here).
 serde_json = { version = "1.0.151", features = ["float_roundtrip"] }
 unicode-general-category = "1.1"
 unicode-normalization = "0.1"

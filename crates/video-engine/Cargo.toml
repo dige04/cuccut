@@ -1,6 +1,6 @@
 [package]
 name = "video-engine"
-description = "CucCut 的视频引擎与视频存储：单写、事务、回执、撤销、outbox（架构设计 §2.3、§5.1、§5.2）"
+description = "CucCut's video engine and video storage: single writer, transactions, receipts, undo, outbox (architecture design §2.3, §5.1, §5.2)"
 version.workspace = true
 edition.workspace = true
 license-file.workspace = true
@@ -9,9 +9,9 @@ publish.workspace = true
 [dependencies]
 editor-semantics.workspace = true
 message-ref.workspace = true
-# 语义锚按文稿闪避的同一种词投影求值（`text_plan`）。
+# Semantic anchors are evaluated with the same word projection used for script-based ducking (`text_plan`).
 render-graph.workspace = true
-# 导入 Lottie 素材时用内核的读法（JSON 或 `.lottie` 压缩包）取尺寸与时长；不开 `media`，不带解码与字体。
+# When importing Lottie assets, size and duration are read with the kernel's reader (JSON or a `.lottie` archive); `media` is not enabled, so no decoding or fonts are pulled in.
 render-raster.workspace = true
 timeline.workspace = true
 video-model.workspace = true

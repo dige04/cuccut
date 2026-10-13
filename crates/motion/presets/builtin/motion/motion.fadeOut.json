@@ -3,7 +3,7 @@
   "version": 1,
   "domain": "motion",
   "family": "fadeIn",
-  "doc": "淡出。composite=multiply。",
+  "doc": "Fade out. composite=multiply.",
   "exposedTo": [
     "bcf"
   ],
@@ -11,7 +11,7 @@
     "curve": {
       "type": "curve",
       "default": "easeInCubic",
-      "doc": "时间曲线（规范 §7.6 的封闭名称）"
+      "doc": "Timing curve (closed name set from spec §7.6)"
     }
   },
   "tracks": [

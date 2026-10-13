@@ -14,5 +14,5 @@
   "determinism": "strict",
   "capabilities": [],
   "fallback": null,
-  "doc": "反预乘后向 255-rgb 插值，alpha 保持不变。"
+  "doc": "Un-premultiplies, then interpolates toward 255-rgb; alpha is unchanged."
 }

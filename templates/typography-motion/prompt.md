@@ -1,5 +1,5 @@
-用 JavaScript 做一条好看、让我惊喜、能展示你能力的视频，内容围绕{{主题}}。
+Use JavaScript to make a beautiful video about {{topic}} that surprises me and shows what you can do.
 
-我喜欢以排版驱动的剪辑：多种风格的字体、温暖的极简美学，节奏与色彩都要丰富。字体要能覆盖画面文字所用的语言，画面文字用{{成片语言}}。你也可以生成图片或视频片段，关键是好看。
+I like typography-driven edits: fonts in many styles, a warm minimalist aesthetic, and plenty of variety in rhythm and color. The fonts must cover the language of the on-screen text; use {{video language}} for on-screen text. You can also generate images or video clips; what matters is that it looks good.
 
-高质量输出，画幅 16:9，约 30 秒，配上背景音乐（没有配乐生成能力时，用代码合成一段简单的配乐）。
+Output in high quality, 16:9, about 30 seconds, with background music (if music generation isn't available, synthesize a simple track in code).

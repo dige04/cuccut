@@ -14,5 +14,5 @@
   "determinism": "strict",
   "capabilities": [],
   "fallback": null,
-  "doc": "四邻域 cross unsharp，amount 0 为恒等，alpha 保持不变。"
+  "doc": "Four-neighbour cross unsharp mask; amount 0 is the identity, alpha is preserved."
 }

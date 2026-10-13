@@ -3,7 +3,7 @@
   "version": 1,
   "domain": "motion",
   "family": "backIn",
-  "doc": "位移 + 缩放的回弹离场（easeInBack）。",
+  "doc": "Exit with translation + scale and overshoot bounce (easeInBack).",
   "exposedTo": [
     "bcf"
   ],
@@ -17,7 +17,7 @@
         "down"
       ],
       "default": "up",
-      "doc": "元素进入/离开的方向（'up' = 从下方进入）"
+      "doc": "Direction the element enters or leaves from ('up' = enters from below)."
     },
     "distance": {
       "type": "length",
@@ -25,23 +25,23 @@
         "value": 0.03,
         "basis": "canvasShortEdge"
       },
-      "doc": "位移量；缺省是画布短边的 3%"
+      "doc": "Translation amount; default is 3% of the canvas short edge."
     },
     "scaleTo": {
       "type": "number",
       "default": 0.7,
       "min": 0.0,
-      "doc": "终止缩放"
+      "doc": "End scale"
     },
     "curve": {
       "type": "curve",
       "default": "easeInBack",
-      "doc": "时间曲线（规范 §7.6 的封闭名称）"
+      "doc": "Timing curve (closed name set from spec §7.6)"
     },
     "fade": {
       "type": "bool",
       "default": true,
-      "doc": "是否同时淡入/淡出"
+      "doc": "Whether to fade in/out at the same time"
     }
   },
   "compose": [

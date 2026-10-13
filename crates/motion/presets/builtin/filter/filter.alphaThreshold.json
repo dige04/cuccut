@@ -30,5 +30,5 @@
   "determinism": "strict",
   "capabilities": [],
   "fallback": null,
-  "doc": "按 alpha 阈值二值化，softness > 0 时在 [threshold-softness, threshold+softness] 内线性过渡；覆盖率乘在预乘四通道上（预乘不变式 rgb ≤ a 因此保持成立）。"
+  "doc": "Binarizes by alpha threshold; when softness > 0, transitions linearly within [threshold-softness, threshold+softness]; the coverage is multiplied across all four premultiplied channels (so the invariant rgb ≤ a still holds)."
 }

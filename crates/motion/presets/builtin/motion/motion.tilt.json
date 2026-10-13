@@ -3,7 +3,7 @@
   "version": 1,
   "domain": "motion",
   "family": "tilt",
-  "doc": "一次角度轻推再回正。composite=add，与主运动的 rotation 相加。",
+  "doc": "One angle nudge that returns to zero. composite=add, summed with the main motion's rotation.",
   "aliases": [
     "tiltNudge"
   ],
@@ -14,12 +14,12 @@
     "angle": {
       "type": "number",
       "default": 4.0,
-      "doc": "峰值角度（度）"
+      "doc": "Peak angle (degrees)"
     },
     "curve": {
       "type": "curve",
       "default": "easeOutQuad",
-      "doc": "时间曲线（规范 §7.6 的封闭名称）"
+      "doc": "Easing curve (closed name from spec §7.6)"
     }
   },
   "tracks": [

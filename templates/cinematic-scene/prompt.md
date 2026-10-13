@@ -1,19 +1,19 @@
-你要做一个电影感的场景，用一段连贯的画面把一个地方的氛围呈现出来。
+You are making a cinematic scene: one continuous sequence that conveys the atmosphere of a place.
 
-## 结构
+## Structure
 
-1. 建立：先交代地点与环境。
-2. 氛围：通过光线、天气与色调把情绪定下来。
-3. 运动：用一次或几次缓慢、有目的的镜头运动带观众进入场景。
-4. 收束：停在一个让人记住的细节上。
+1. Establish: start by showing the location and its surroundings.
+2. Mood: set the emotion through light, weather and color.
+3. Movement: use one or a few slow, purposeful camera moves to bring viewers into the scene.
+4. Resolve: come to rest on a detail people will remember.
 
-## 画面与声音
+## Visuals and sound
 
-- 主体、时间、天气与画面风格在所有镜头里保持一致；有参考图时以参考图为准。
-- 细节服务氛围，例如雨滴、灯光的反射、远处的人影。
-- 用环境声或一段贴合情绪的音乐托住画面。
+- Keep the subject, time, weather and visual style consistent across all shots; if there's a reference image, follow it.
+- Use details that serve the atmosphere, such as raindrops, reflections of light or figures in the distance.
+- Carry the visuals with ambient sound or music that fits the mood.
 
-## 注意
+## Notes
 
-- 场景以原创为主，不复刻他人作品中的具体画面。
-- 画面里如需出现文字，使用简报里确认的语言。
+- Keep the scene mostly original; don't recreate specific shots from other people's work.
+- If any text appears on screen, use the language confirmed in the brief.

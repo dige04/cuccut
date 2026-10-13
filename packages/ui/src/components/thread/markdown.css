@@ -1,4 +1,4 @@
-/* 文件预览与 skill 详情里 Markdown 的正文排版（会话里的回复见 agent-thread.css）。颜色随 Provider 的明暗主题走（color-scheme）。 */
+/* Body typography for Markdown in file previews and skill details (replies in a session: see agent-thread.css). Colours follow the Provider's light/dark theme (color-scheme). */
 .cc-md {
   font: inherit;
   font-size: 14px;

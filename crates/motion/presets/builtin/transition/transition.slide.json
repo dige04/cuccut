@@ -13,7 +13,7 @@
         "up",
         "down"
       ],
-      "doc": "新画面推进的方向；离场画面被同向推走"
+      "doc": "Direction the incoming frame pushes in; the outgoing frame is pushed away in the same direction"
     }
   },
   "color": {
@@ -29,5 +29,5 @@
   "determinism": "strict",
   "capabilities": [],
   "fallback": null,
-  "doc": "推挤：两张画面一起朝 direction 平移一整屏，位移 s = round(progress × 该轴尺寸)。每个输出像素**整像素拷贝**自其中一张（没有混合、没有重采样），因此 progress = 0 / 1 逐字节等于 from / to。以 direction = left 为例：x < W − s 取 from[x + s]，否则取 to[x − (W − s)]。"
+  "doc": "Push: both frames translate together by one full screen in direction; offset s = round(progress × size along that axis). Each output pixel is an **exact pixel copy** from one of the two frames (no blending, no resampling), so progress = 0 / 1 is byte-identical to from / to. Using direction = left as an example: where x < W − s, take from[x + s]; otherwise take to[x − (W − s)]."
 }

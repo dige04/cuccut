@@ -1,6 +1,6 @@
-// 设计系统运行时与它的页面入口单独检查（README「类型」）：这份还原是 strict 的完整类型，按原工程的编译选项写成，
-// 不开 noUncheckedIndexedAccess，像原工程一样引入 vite/client（页面入口以副作用导入 app.css）。
-// 根 tsconfig.json 排除这两个目录，npm run typecheck 依次检查两者。
+// The design-system runtime and its page entry are checked separately (see README “Types”): this restored copy is a complete strict type set, written with the original project's compiler options,
+// without noUncheckedIndexedAccess, and vite/client is included as in the original project (the page entry imports app.css for side effects).
+// The root tsconfig.json excludes these two directories; `npm run typecheck` checks both in turn.
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {

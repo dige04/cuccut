@@ -3,7 +3,7 @@
   "version": 1,
   "domain": "motion",
   "family": "blurIn",
-  "doc": "失焦离场。",
+  "doc": "Defocus exit.",
   "exposedTo": [
     "bcf"
   ],
@@ -12,17 +12,17 @@
       "type": "number",
       "default": 8.0,
       "min": 0.0,
-      "doc": "终止模糊半径（px）"
+      "doc": "End blur radius (px)"
     },
     "curve": {
       "type": "curve",
       "default": "easeInCubic",
-      "doc": "时间曲线（规范 §7.6 的封闭名称）"
+      "doc": "Timing curve (closed name set from spec §7.6)"
     },
     "fade": {
       "type": "bool",
       "default": true,
-      "doc": "是否同时淡入/淡出"
+      "doc": "Whether to fade in/out at the same time"
     }
   },
   "compose": [

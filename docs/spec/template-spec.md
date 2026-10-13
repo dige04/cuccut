@@ -1,435 +1,435 @@
-# CucCut 模板包规范
+# CucCut Template Package Specification
 
-> 创作模板是 Home 起始页「模板」入口里的视频制作模板。它的形态接近 skill：以一段提示词为主，可以配封面、预览视频和图片、SVG、音频等素材，由 Runtime 提供目录。本规范定义模板包的目录布局、清单字段、取值与约束，以及 Runtime 使用模板时的语义。
+> Creative templates are the video production templates in the "Templates" entry of the Home starting page. They take the form of a skill: a prompt is the main content, optionally accompanied by a cover, a preview video, and images, SVG, audio and other assets. The Runtime provides the catalogue. This specification defines the template package's directory layout, manifest fields, allowed values and constraints, and how the Runtime uses templates.
 
-格式标识：模板目录里的 `template.json`，`schema: 1`。
+Format identifier: `template.json` in the template directory, `schema: 1`.
 
-本规范只定义**包的格式与使用语义**。Home 的交互见[产品设计](../product/product-design.md) §3.2.1；清单的类型与校验在 `@cuccut/protocol`（`template.ts`、`template-schemas.ts`）。用语见[文档约定](../README.md#文档约定)，术语见[术语表](../glossary.md)。
+This specification defines only the **package format and usage semantics**. For Home's interaction, see [Product Design](../product/product-design.md) §3.2.1. The manifest types and validation live in `@cuccut/protocol` (`template.ts`, `template-schemas.ts`). For terminology, see [Documentation Conventions](../README.md#conventions-for-this-document) and the [Glossary](../glossary.md).
 
-## 目录
+## Contents
 
-- [1. 范围与约定](#1-范围与约定)
-- [2. 目录与文件](#2-目录与文件)
-- [3. 清单](#3-清单)
-- [4. 约束](#4-约束)
-- [5. 使用语义](#5-使用语义)
-- [6. 目录来源与加载](#6-目录来源与加载)
-- [7. 新增与校验](#7-新增与校验)
-- [8. 待评审事项](#8-待评审事项)
+- [1. Scope and Conventions](#1-scope-and-conventions)
+- [2. Directory and Files](#2-directory-and-files)
+- [3. Manifest](#3-manifest)
+- [4. Constraints](#4-constraints)
+- [5. Usage Semantics](#5-usage-semantics)
+- [6. Catalogue Sources and Loading](#6-directory-sources-and-loading)
+- [7. Adding and Validation](#7-adding-and-validating)
+- [8. Items Pending Review](#8-items-for-review)
 
 ---
 
-## 1. 范围与约定
+## 1. Scope and Conventions
 
-### 1.1 创作模板是什么
+### 1.1 What a creative template is
 
-创作模板帮用户从一个创作方向起步：选一个模板，补上自己的内容，交给智能体去做。模板只提供提示词与展示用的元数据，不是视频的一部分，选用后不在视频里留下引用。
+A creative template helps users start from a creative direction: pick a template, fill in their own content, and hand it to the agent. A template provides only the prompt and display metadata. It is not part of the video, and selecting it leaves no reference in the video.
 
-它与下面两样东西不同，不共用格式：
+It differs from the following two things and does not share their format:
 
-- 产品设计 §5.9 的「模板」〔AST-04〕：把视频里的原生结构或代码包保存成带参数的可复用对象；
-- 架构设计 §8.7 的 `CreativeCatalogue`：经过验证的原生模板与代码配方目录。
+- The "template" in Product Design §5.9 [AST-04]: a native structure or code package from a video, saved as a reusable object with parameters;
+- The `CreativeCatalogue` in Architecture Design §8.7: a catalogue of verified native templates and code recipes.
 
-### 1.2 两类模板
+### 1.2 Two kinds of template
 
-| `kind` | 名称 | 用法 |
+| `kind` | Name | Usage |
 | --- | --- | --- |
-| `scene` | 场景模板 | 给一个创作方向和默认的画幅、时长。选用后智能体**先引导用户过一遍简报**，与用户确认后再开始制作（§5.2） |
-| `example` | 作品示例 | 一条可以直接拿来用的完整提示词。选用即把提示词放进输入框，不走简报；画幅、时长可以不指定，交给智能体（§5.1） |
+| `scene` | Scene template | Gives a creative direction and default ratio and duration. After selection, the agent **first guides the user through a brief** and starts production only after confirming with the user (§5.2) |
+| `example` | Work example | A complete prompt that can be used as is. Selecting it puts the prompt into the input box and skips the brief. The ratio and duration may be left unspecified for the agent to decide (§5.1) |
 
-两类模板用同一份清单格式与同一张分类表（§3.2），差别只在 §3.1 标注的必填项与 §5 的使用语义。
+Both kinds use the same manifest format and the same category table (§3.2). They differ only in the required fields marked in §3.1 and in the usage semantics of §5.
 
-### 1.3 类型的地位
+### 1.3 Status of the types
 
-类型用 TypeScript 写法表达，是 DTO 概要；权威定义是 `@cuccut/protocol` 的 `TemplateManifest` 与 `templateManifestSchema`，两者由编译期检查保持一致。本规范与代码不一致时按缺陷处理，在同一任务里改齐。
+Types are written in TypeScript and serve as a summary of the DTO. The authoritative definitions are `TemplateManifest` and `templateManifestSchema` in `@cuccut/protocol`. The two are kept consistent by compile-time checks. If this specification and the code disagree, treat it as a defect and fix both in the same task.
 
 ---
 
-## 2. 目录与文件
+## 2. Directory and Files
 
-### 2.1 布局
+### 2.1 Layout
 
-一个模板是一个目录，目录名就是模板 `id`：
+A template is a directory, and the directory name is the template `id`:
 
 ```text
 templates/<id>/
-  template.json      清单（必须）
-  prompt.md          提示词正文（必须）
-  cover.<ext>        封面图（可选）：png、jpg、jpeg、webp、svg
-  preview.<ext>      预览视频（可选）：mp4、webm
-  assets/            随模板分发的素材（可选），每个文件都在清单 assets 里登记
-  locales/           别的语言的文案（可选）：每种语言一对 <语言>.json 与 <语言>.md，§3.6
+  template.json      Manifest (required)
+  prompt.md          Prompt body (required)
+  cover.<ext>        Cover image (optional): png, jpg, jpeg, webp, svg
+  preview.<ext>      Preview video (optional): mp4, webm
+  assets/            Assets distributed with the template (optional); every file is registered in the manifest's assets
+  locales/           Text in other languages (optional): one <language>.json and one <language>.md per language, see §3.6
 ```
 
-- 目录里不得有清单没有登记的文件（`locales/` 下按 §3.6 命名的译文算登记过）；以 `.` 开头的隐藏文件（例如系统生成的 `.DS_Store`）加载时忽略，不得入库。
-- 封面与预览只能放在目录根，文件名固定为 `cover` 与 `preview`；素材只能放在 `assets/` 下，可以再分子目录。
-- 文件名与目录名遵守[仓库约定 §3](../repo-conventions.md#3-命名)：全小写，单词之间用 `-`。
+- The directory must not contain any file that is not registered in the manifest (translations named per §3.6 under `locales/` count as registered). Hidden files starting with `.` (for example the system-generated `.DS_Store`) are ignored on load and must not be committed.
+- The cover and preview may only be placed at the directory root, with fixed file names `cover` and `preview`. Assets may only be placed under `assets/`, and may be further divided into subdirectories.
+- File and directory names follow [Repository Conventions §3](../repo-conventions.md#3-naming): all lowercase, words separated by `-`.
 
 ### 2.2 `prompt.md`
 
-提示词正文是模板的主体，UTF-8 编码的 Markdown，不带 front matter（元数据都在清单里），不得为空，不超过 16 KiB。
+The prompt body is the main part of the template. It is UTF-8 encoded Markdown, without front matter (all metadata is in the manifest). It must not be empty and must not exceed 16 KiB.
 
-- `scene`：写给智能体的制作要求，第二人称（「你要做一条……」）。建议分「结构」「画面与声音」「注意」几小段：结构写几幕各讲什么，画面与声音写视觉、字幕、旁白、音乐的要求，注意写事实、授权与语言等约束。不写简报引导，那一段由 Runtime 统一拼接（§5.2）。正文里不得出现占位符 `{{`：留给用户填的项写在清单的 `brief` 里（§3.1）。
-- `example`：用户口吻的一段完整请求（「做一条……，你可以……」），会原样放进输入框，用户可以在发送前修改。写成一到三段连续文字，不用标题与列表。该由用户决定的内容（主题或话题、素材、产品名、时长、成片语言等）写成占位符 `{{label}}`，例如「旁白与字幕用{{成片语言}}」，每个占位符都在清单 `fields` 里声明（§3.1、§5.5）。
-- 两类都不写画幅与时长以外的界面参数；画幅与时长写在清单里（§5.3）。`example` 的清单值只用于卡片与详情的显示，不随消息发出：要智能体按某个画幅或时长做，就写进正文，并与清单一致。
+- `scene`: production requirements written for the agent, in the second person ("You are to make a video that…"). It is recommended to divide the text into short sections titled "Structure", "Visuals and Sound" and "Notes". Structure describes what each act covers. Visuals and sound describe requirements for visuals, subtitles, narration and music. Notes describe constraints on facts, permissions and language. Do not write brief guidance here, since the Runtime appends that section uniformly (§5.2). The body must not contain the placeholder `{{`: items the user is to fill in are written in the manifest's `brief` (§3.1).
+- `example`: a complete request in the user's voice ("Make a video that…, you can…"). It is placed into the input box verbatim, and the user may edit it before sending. Write one to three paragraphs of continuous text, with no headings and no lists. Content that the user should decide (topic or subject, materials, product name, duration, language of the finished video, etc.) is written as a placeholder `{{label}}`, for example "narration and subtitles in {{finished video language}}". Every placeholder must be declared in the manifest's `fields` (§3.1, §5.5).
+- Both kinds do not write interface parameters other than ratio and duration. Ratio and duration are written in the manifest (§5.3). The manifest values for `example` are used only for display on the card and in the details, and are not sent with the message. To have the agent work to a particular ratio or duration, write it into the body and keep it consistent with the manifest.
 
-### 2.3 `schema` 与未知字段
+### 2.3 `schema` and unknown fields
 
-- `schema` 是清单格式的版本，整数。这一版只认识 `1`。`schema` 缺失或不认识时，Runtime 跳过这个模板并记一条诊断（`unsupported-schema`），不让整个目录加载失败。
-- 清单的顶层与各个子对象都不接受未知字段：拼错的字段、别家格式带来的字段（质量档位、外链地址之类）一律判为不合规，模板跳过并记诊断（`invalid`）。
-- 新增字段即升 `schema`。Runtime 可以同时认识多个版本；不认识的版本照上一条跳过。格式发布之前的增补（例如 §3.5 的验证记录、§3.1 的 `brief`、`fields` 与 `skills`、§3.6 的语言版本）仍记为 `1`。
+- `schema` is the version of the manifest format, an integer. This version recognises only `1`. When `schema` is missing or unrecognised, the Runtime skips the template and records one diagnostic (`unsupported-schema`), without causing the whole directory to fail to load.
+- Neither the top level of the manifest nor any sub-object accepts unknown fields. Misspelled fields, and fields brought in from other formats (such as quality tiers or external link addresses), are all judged non-compliant. The template is skipped and a diagnostic is recorded (`invalid`).
+- Adding a field raises `schema`. The Runtime may recognise several versions at once. A version it does not recognise is skipped as described in the previous item. Additions made before the format is published (for example the verification record in §3.5, `brief`, `fields` and `skills` in §3.1, and language versions in §3.6) are still recorded as `1`.
 
 ---
 
-## 3. 清单
+## 3. Manifest
 
-### 3.1 字段
+### 3.1 Fields
 
 ```ts
 interface TemplateManifest {
   schema: 1;
-  id: string;                 // kebab-case，≤ 64，等于目录名
-  version: string;            // 模板自身的版本，semver（1.0.0）
+  id: string;                 // kebab-case, ≤ 64, equal to the directory name
+  version: string;            // version of the template itself, semver (1.0.0)
   kind: 'scene' | 'example';
   title: string;              // ≤ 40
-  summary: string;            // 卡片上的一句话，≤ 80
-  description: string;        // 详情里的一小段，≤ 400
-  language: string;           // 文案的语言标签，BCP 47（zh-CN）
+  summary: string;            // one sentence shown on the card, ≤ 80
+  description: string;        // a short paragraph in the details, ≤ 400
+  language: string;           // language tag of the copy, BCP 47 (en)
   category: TemplateCategory; // §3.2
   ratio?: '16:9' | '9:16' | '1:1';
-  durationSeconds?: number;   // 整数，5–600，5 的倍数
-  brief?: string;             // 选用时填进输入框的那段话，用 {{label}} 留出待填项，≤ 400
-  fields?: TemplateField[];   // 待填项，≤ 8 项
-  skills?: string[];          // 建议先读的 craft（skills/<id>），≤ 4 项
+  durationSeconds?: number;   // integer, 5–600, multiple of 5
+  brief?: string;             // the paragraph filled into the input box on selection, with {{label}} marking items to fill, ≤ 400
+  fields?: TemplateField[];   // items to fill, ≤ 8 items
+  skills?: string[];          // crafts suggested to read first (skills/<id>), ≤ 4 items
   author: string;             // ≤ 80
   source: 'official' | 'community';
-  license: string;            // SPDX 标识，可用 AND / OR / WITH 组合
-  tags: string[];             // ≤ 8 个，每个 ≤ 24，不重复
+  license: string;            // SPDX identifier, may be combined with AND / OR / WITH
+  tags: string[];             // ≤ 8, each ≤ 24, no duplicates
   cover: TemplateCover;       // §3.3
   preview: TemplatePreview;   // §3.3
-  assets?: TemplateAsset[];   // §3.4，≤ 64 项
+  assets?: TemplateAsset[];   // §3.4, ≤ 64 items
   verification?: TemplateVerification; // §3.5
 }
 
 interface TemplateField {
-  label: string;              // 占位符里的名字，≤ 24，模板内唯一，不含 `{`、`}` 与换行
-  hint?: string;              // 给用户看的「填什么」，≤ 80
-  example?: string;           // 示例值，≤ 80
+  label: string;              // the name inside the placeholder, ≤ 24, unique within the template, must not contain `{`, `}` or line breaks
+  hint?: string;              // what to fill in, shown to the user, ≤ 80
+  example?: string;           // example value, ≤ 80
 }
 ```
 
-| 字段 | 必填 | 规则 |
+| Field | Required | Rule |
 | --- | --- | --- |
-| `schema` | 是 | 固定为 `1`（§2.3） |
-| `id` | 是 | 小写字母开头，小写字母、数字与单个 `-`；等于目录名；在同一目录来源里唯一。发布后不改名 |
-| `version` | 是 | `主.次.修订`。改提示词或清单内容时递增；只改错别字可以只加修订号 |
-| `kind` | 是 | §1.2 |
-| `title`、`summary`、`description` | 是 | 非空，首尾无空白，不超过上表长度。产品口吻、第二人称，不用感叹号与 emoji |
-| `language` | 是 | 只标注清单文案与 `prompt.md` 的语言（别的语言版本见 §3.6），**不是成片的语言**（§4.3） |
-| `category` | 是 | 取自 §3.2 |
-| `ratio` | `scene` 必填 | 默认画幅。缺省表示自动，交给智能体 |
-| `durationSeconds` | `scene` 必填 | 默认时长（秒）：5–600 秒，步长 5。缺省表示自动 |
-| `brief` | `scene` 必填；`example` 不得有 | 选用模板时填进输入框的那段话：用户口吻，一到三句，用 `{{label}}` 留出待填项（§5.5），例如「给{{产品或服务}}做一条推广短片，目标是{{希望观众做什么}}，受众是{{受众}}。」。待填项按题材定，通常两到五项 |
-| `fields` | 否 | 待填项的声明，见下文。`scene` 对应 `brief` 里的占位符，`example` 对应 `prompt.md` 里的占位符 |
-| `skills` | 否 | 做这类成片建议先读的 craft，取仓库根 `skills/cuccut/built-in-skills/` 下的 `id`（kebab-case，≤ 64，不重复）。智能体用 `skills_read` 读（§5.2）。协议只校验形状；内置模板写的每一项都要在 `skills/cuccut/built-in-skills/` 里，由 §7 的测试检查 |
-| `author` | 是 | 官方模板写 `CucCut`；社区模板写作者的公开署名，不写邮箱或联系方式 |
-| `source` | 是 | `official`：随应用分发、由仓库维护；`community`：来自社区（§6） |
-| `license` | 是 | 模板文案与随附素材的许可。内置原创模板用 `LicenseRef-CucCut-Community-1.0`，对应仓库 [LICENSE](../../LICENSE)，允许将模板元素用于商业作品；第三方素材保留自己的许可 |
-| `tags` | 是 | 搜索用的关键词，可以为空数组 |
-| `cover` | 是 | §3.3 |
-| `preview` | 是 | §3.3 |
-| `assets` | 否 | §3.4 |
-| `verification` | 否 | 最近一次用真实智能体验证的记录，§3.5 |
+| `schema` | Yes | Fixed to `1` (§2.3) |
+| `id` | Yes | Starts with a lowercase letter, contains lowercase letters, digits and single `-`; equals the directory name; unique within the same directory source. Not renamed after publication |
+| `version` | Yes | `major.minor.patch`. Increment when the prompt or manifest content changes; a typo fix may only bump the patch number |
+| `kind` | Yes | §1.2 |
+| `title`, `summary`, `description` | Yes | Non-empty, no leading or trailing whitespace, not exceeding the lengths in the table above. Product voice, second person, no exclamation marks and no emoji |
+| `language` | Yes | Labels only the language of the manifest copy and `prompt.md` (for other language versions see §3.6). **It is not the language of the finished video** (§4.3) |
+| `category` | Yes | Taken from §3.2 |
+| `ratio` | Required for `scene` | Default ratio. When omitted, it means automatic and is left to the agent |
+| `durationSeconds` | Required for `scene` | Default duration (seconds): 5–600 seconds, step 5. When omitted, it means automatic |
+| `brief` | Required for `scene`; must not be present for `example` | The paragraph filled into the input box when the template is selected: in the user's voice, one to three sentences, with `{{label}}` marking items to fill (§5.5), for example "Make a promotional short for {{product or service}}, aiming for viewers to {{what the audience should do}}, with {{audience}} as the target audience." Items to fill depend on the subject, usually two to five |
+| `fields` | No | Declaration of items to fill, see below. For `scene`, corresponds to placeholders in `brief`; for `example`, corresponds to placeholders in `prompt.md` |
+| `skills` | No | Crafts suggested to read first for this kind of finished video. Takes the `id` under `skills/cuccut/built-in-skills/` at the repository root (kebab-case, ≤ 64, no duplicates). The agent reads them with `skills_read` (§5.2). The protocol validates only the shape; every entry in a built-in template must exist under `skills/cuccut/built-in-skills/`, which is checked by the test in §7 |
+| `author` | Yes | Official templates write `CucCut`; community templates write the author's public credit, without email addresses or contact details |
+| `source` | Yes | `official`: distributed with the app and maintained by the repository; `community`: from the community (§6) |
+| `license` | Yes | License for the template copy and bundled assets. Original built-in templates use `LicenseRef-CucCut-Community-1.0`, corresponding to the repository's [LICENSE](../../LICENSE), which allows template elements to be used in commercial works. Third-party assets keep their own licenses |
+| `tags` | Yes | Search keywords; may be an empty array |
+| `cover` | Yes | §3.3 |
+| `preview` | Yes | §3.3 |
+| `assets` | No | §3.4 |
+| `verification` | No | Record of the most recent verification with a real agent, §3.5 |
 
-字符长度按 UTF-16 码元计。
+Character length is counted in UTF-16 code units.
 
-**待填项**。`fields` 的每项是一个 `TemplateField`：`label` 是占位符里的名字，`hint` 告诉用户填什么，`example` 是示例值。占位符写成 `{{label}}`（双花括号包住 label，不留空格），规则如下：
+**Items to fill.** Each entry of `fields` is a `TemplateField`: `label` is the name inside the placeholder, `hint` tells the user what to fill in, and `example` is the example value. A placeholder is written as `{{label}}` (the label wrapped in double braces, with no spaces). The rules are as follows:
 
-- 文本里的每个 `{{…}}` 都必须对应一个声明的 `label`；声明的每项至少被引用一次（`scene` 看 `brief`，`example` 看 `prompt.md`）；拆不成占位符的 `{{` 也不合规。
-- `label` 在模板内不重复；同一个 `label` 可以在文本里出现多次，指同一项。
-- 把 `brief`（`example` 是 `prompt.md`）里的每个占位符换成该项的 `example`、没有 `example` 的换成 `label`，就是「可以这样说」的示例句，界面在详情里显示它；所以 `example` 要能直接代进句子读通。
-- `label`、`hint` 与 `example` 和其余文案同一种语言（`language`）；别的语言的待填项写在那种语言的译文里（§3.6），界面不另行翻译。
+- Every `{{…}}` in the text must correspond to a declared `label`. Every declared entry must be referenced at least once (for `scene`, checked in `brief`; for `example`, checked in `prompt.md`). A `{{` that cannot be parsed as a placeholder is also non-compliant.
+- `label` must not repeat within a template. The same `label` may appear several times in the text and refers to the same item.
+- Replacing each placeholder in `brief` (for `example`, in `prompt.md`) with the item's `example`, or with its `label` where there is no `example`, gives a sample sentence of the form "you could say this". The interface shows it in the details. Therefore `example` must read naturally when inserted directly into the sentence.
+- `label`, `hint` and `example` are in the same language as the rest of the copy (`language`). Items to fill in another language are written in the translation for that language (§3.6). The interface does not translate them separately.
 
-### 3.2 分类
+### 3.2 Categories
 
-两类模板共用一张分类表，按题材分。键是协议的一部分，发布后不改名、不复用；显示名由界面层按界面语言给出，下表的中文名是示意。
+Both kinds of template share one category table, classified by subject. The keys are part of the protocol: they are not renamed or reused after publication. Display names are supplied by the interface layer in the interface language. The Chinese names in the table below are illustrative.
 
-| 键 | 显示名（示意） | 放什么 |
+| Key | Display name (illustrative) | What belongs here |
 | --- | --- | --- |
-| `marketing` | 营销推广 | 广告、产品展示、活动回顾等促成行动或传播品牌的视频 |
-| `product-launch` | 产品发布 | 新品发布、软件演示、功能更新 |
-| `explainer` | 知识讲解 | 知识科普、分步教程、技术讲解 |
-| `news-data` | 资讯与数据 | 新闻快评、热点讲解、数据故事 |
-| `editing` | 剪辑整理 | 以用户已有素材为主的剪辑：口播精华、Vlog、混剪 |
-| `creative-short` | 创意短片 | 故事短片、电影感场景、预告片 |
-| `motion-design` | 动效设计 | 动态图形、代码动画、排版动效 |
+| `marketing` | Marketing | Videos that drive action or spread the brand, such as ads, product showcases and event recaps |
+| `product-launch` | Product launch | New product launches, software demos, feature updates |
+| `explainer` | Explainers | Knowledge popularisation, step-by-step tutorials, technical explanations |
+| `news-data` | News and data | Short news commentary, hot-topic explainers, data stories |
+| `editing` | Editing | Edits based mainly on the user's existing footage: highlights from talking-head videos, vlogs, montages |
+| `creative-short` | Creative short | Story shorts, cinematic scenes, trailers |
+| `motion-design` | Motion design | Motion graphics, code animation, typographic motion |
 
-一个模板只属于一个分类。新增分类要同时改本表、`TEMPLATE_CATEGORIES` 与界面的显示名。
+A template belongs to exactly one category. Adding a category requires changing this table, `TEMPLATE_CATEGORIES` and the interface's display names together.
 
-### 3.3 封面与预览
+### 3.3 Cover and preview
 
 ```ts
 interface TemplateCover {
   file?: string;    // 'cover.<ext>'
   tone?: 'blue' | 'orange' | 'green' | 'purple' | 'cyan' | 'indigo' | 'magenta' | 'seafoam' | 'brown';
   figure?: 'bars' | 'ring' | 'cards' | 'steps';
-  kicker?: string;  // 封面左上角的小字，≤ 24
+  kicker?: string;  // small text in the top-left corner of the cover, ≤ 24
 }
 
 interface TemplatePreview {
   file?: string;    // 'preview.<ext>'
-  beats?: string[]; // 3–5 句分镜要点，每句 ≤ 60
+  beats?: string[]; // 3–5 storyboard sentences, each ≤ 60
 }
 ```
 
-- 有 `cover.file` 时界面显示封面图；没有时用 `tone`（底色）、`figure`（图形画法）与 `kicker` 画一张占位封面，所以没有封面图的模板必须给出 `tone` 与 `figure`。有封面图时也应给出 `tone`，供图片加载前与加载失败时使用。
-- 有 `preview.file` 时界面播放预览视频；没有时按 `beats` 轮播占位预览，所以没有预览视频的模板必须给出 `beats`。有预览视频时也应给出 `beats`，供详情里列出分镜要点。`beats` 只用于展示，**不拼进提示词**：模板的制作要求以 `prompt.md` 为准。
-- `tone` 与 `figure` 的取值集合与界面的占位封面实现一致；新增取值要同时改协议常量与界面。
-- 体积上限：封面图不超过 150 KiB，预览视频不超过 2 MiB（`TEMPLATE_FILE_MAX_BYTES`）。预览是一段压缩过的示意，不是成片本身；内置模板由 §7 的测试检查，Runtime 加载时也检查（§6），超过的模板判为不合规。
-- 内置模板的预览与封面通常取自验证（§3.5）时做出的成片，按下面的做法压缩，保证同一份成片得到确定的结果：
+- When `cover.file` is set, the UI shows the cover image. When it is not set, the UI draws a placeholder cover from `tone` (background colour), `figure` (drawing style) and `kicker`, so a template without a cover image must provide `tone` and `figure`. When there is a cover image, `tone` should still be given, for use before the image loads and if it fails to load.
+- When `preview.file` is set, the UI plays the preview video. When it is not set, the UI cycles a placeholder preview through `beats`, so a template without a preview video must provide `beats`. When there is a preview video, `beats` should still be given, so the detail view can list the storyboard points. `beats` is for display only and **is not concatenated into the prompt**: the template's production requirements are defined by `prompt.md`.
+- The value sets of `tone` and `figure` match the UI's placeholder cover implementation. When adding a value, update both the protocol constants and the UI.
+- Size limits: cover image no more than 150 KiB, preview video no more than 2 MiB (`TEMPLATE_FILE_MAX_BYTES`). The preview is a compressed illustration, not the finished film itself. Built-in templates are checked by the tests in §7, and the Runtime also checks them on load (§6); a template that exceeds the limits is judged non-compliant.
+- The previews and covers of built-in templates are usually taken from the finished film made during verification (§3.5). Compress them as follows, so that the same finished film always gives the same result:
 
   ```sh
-  # 预览：取成片最有代表性的一段，不超过 15 秒（-ss 起点，-t 长度）；最长边 640，偶数像素；H.264 + yuv420p + faststart。
-  # 超过 2 MiB 时把 crf 每次加 2 再压（28 → 30 → 32 …），仍超过时把最长边降到 540。
-  # 成片有声音时用低码率 AAC：把 -an 换成 -c:a aac -b:a 64k -ac 2。
+  # Preview: take the most representative segment of the film, no longer than 15 seconds (-ss start, -t length); longest side 640, even pixel dimensions; H.264 + yuv420p + faststart.
+  # If over 2 MiB, raise crf by 2 and recompress each time (28 → 30 → 32 …); if still over, reduce the longest side to 540.
+  # If the film has sound, use low-bitrate AAC: replace -an with -c:a aac -b:a 64k -ac 2.
   ffmpeg -y -ss 0 -t 15 -i film.mp4 \
     -vf "scale='if(gte(iw,ih),640,-2)':'if(gte(iw,ih),-2,640)':flags=lanczos,fps=30" \
     -c:v libx264 -preset slow -crf 28 -profile:v high -pix_fmt yuv420p -movflags +faststart -an preview.mp4
 
-  # 封面：取一帧有代表性的画面（-ss 是它在成片里的时刻），最长边 640 的 JPEG；超过 150 KiB 时把 -q:v 加大（4 → 6 → 8）。
+  # Cover: take one representative frame (-ss is its timestamp in the film), JPEG with longest side 640; if over 150 KiB, increase -q:v (4 → 6 → 8).
   ffmpeg -y -ss 7 -i film.mp4 -frames:v 1 \
     -vf "scale='if(gte(iw,ih),640,-2)':'if(gte(iw,ih),-2,640)':flags=lanczos" -q:v 4 cover.jpg
   ```
 
-- 有封面图与预览视频时照样保留 `tone`、`figure`、`kicker` 与 `beats`（上两条），清单允许它们并存。
+- When a cover image and a preview video are both present, still keep `tone`, `figure`, `kicker` and `beats` (as described in the two bullets above); the manifest allows them to coexist.
 
-### 3.4 素材
+### 3.4 Assets
 
 ```ts
 interface TemplateAsset {
   path: string;                                   // 'assets/...'
   type: 'image' | 'svg' | 'audio' | 'video';
-  note: string;                                   // 用途说明，≤ 200
+  note: string;                                   // purpose of the asset, ≤ 200
 }
 ```
 
-| `type` | 扩展名 |
+| `type` | Extension |
 | --- | --- |
-| `image` | png、jpg、jpeg、webp、gif |
+| `image` | png, jpg, jpeg, webp, gif |
 | `svg` | svg |
-| `audio` | mp3、m4a、aac、wav、ogg、flac |
-| `video` | mp4、webm、mov |
+| `audio` | mp3, m4a, aac, wav, ogg, flac |
+| `video` | mp4, webm, mov |
 
-- `assets/` 下的每个文件都必须登记，登记的每个文件都必须存在；路径不重复。
-- `note` 写这个素材做什么用（「片尾标志」「背景音乐，约 30 秒」），给用户看，也随提示词交给智能体（§5.4）。
-- 素材必须是模板作者有权按 `license` 分发的内容。
+- Every file under `assets/` must be registered, and every registered file must exist. Paths must not be duplicated.
+- `note` says what the asset is for (“end-card logo”, “background music, about 30 seconds”). It is shown to the user and passed to the agent along with the prompt (§5.4).
+- Assets must be content that the template author is entitled to distribute under `license`.
 
-### 3.5 验证记录
+### 3.5 Verification record
 
-内置模板发布前用真实的智能体按模板做一条视频，记下这次的输入、条件与结果，作为模板的一部分维护：
+Before a built-in template is published, a real agent makes one video from the template. Record this run's input, conditions and result, and maintain them as part of the template:
 
 ```ts
 interface TemplateVerification {
-  date: string;              // 验证日期，YYYY-MM-DD
-  version: string;           // 跑的是哪个模板版本（semver）；之后按发现改了模板时，清单的 version 会比它新
-  engine: string;            // 智能体引擎的小写 id，例如 'codex'，≤ 32；不写引擎版本
-  input: string;             // 发给智能体的话，≤ 4000
-  materials: TemplateVerificationMaterial[]; // 用到的公开素材，≤ 16 项，可以为空
-  capabilities: TemplateVerificationCapability[]; // 缺失、因而降级或跳过的能力，不重复，可以为空
+  date: string;              // verification date, YYYY-MM-DD
+  version: string;           // which template version was run (semver); if the template is later changed after findings, the manifest's version will be newer than this
+  engine: string;            // lowercase id of the agent engine, e.g. 'codex', ≤ 32; do not write the engine version
+  input: string;             // the message sent to the agent, ≤ 4000
+  materials: TemplateVerificationMaterial[]; // public materials used, ≤ 16 items, may be empty
+  capabilities: TemplateVerificationCapability[]; // capabilities that were missing and therefore degraded or skipped, no duplicates, may be empty
   outcome: 'pass' | 'partial' | 'fail';
-  output?: { ratio: string; durationSeconds: number }; // 成片实测：宽高约分后的 W:H 与时长（秒）
-  notes: string;             // 发现的问题与对模板做的修改，≤ 1000
+  output?: { ratio: string; durationSeconds: number }; // measured values of the finished film: width:height ratio reduced to lowest terms, and duration in seconds
+  notes: string;             // problems found and changes made to the template, ≤ 1000
 }
 
 interface TemplateVerificationMaterial {
   title: string;             // ≤ 120
-  url: string;               // 素材页的 https 地址，≤ 500
-  license: string;           // 例如 CC0-1.0、Public-Domain，或素材站自己的许可名，≤ 60
-  note?: string;             // 用在哪里，≤ 200
+  url: string;               // https address of the material's page, ≤ 500
+  license: string;           // e.g. CC0-1.0, Public-Domain, or the asset site's own licence name, ≤ 60
+  note?: string;             // where it is used, ≤ 200
 }
 
 type TemplateVerificationCapability =
   'transcribe' | 'synthesizeSpeech' | 'generateImage' | 'generateText' | 'generateVideo' | 'generateMusic' | 'generateSoundEffect';
 ```
 
-- `input`：`scene` 写用户消息的原话（发送时挂上这个模板）；`example` 写「按提示词原样」，有改动或附加的说明（例如指定成片语言、测试环境缺哪些能力）时写明改了什么。
-- `outcome`：`pass` 是成片符合模板的画幅、时长与必需的制作要求；模板写成可选的部分（例如「可以生成配乐」）因为缺能力跳过、并且告诉了用户，仍算 `pass`。`partial` 是做出了成片，但有必需的要求没做到（例如必须有旁白却没有语音合成、画幅或时长不符、要人工另补一步才有成片）。`fail` 是没有做出能用的成片。`fail` 时可以没有 `output`，其余两种必须给出。
-- 只补验证记录、预览与封面时，清单的 `version` 不变；按验证的发现改了 `prompt.md` 或其他清单内容时照 §3.1 递增，`verification.version` 仍写跑的那个版本。
-- `output` 用 ffprobe 量出的值，不抄清单。
-- `materials` 只记来源与许可，素材本身不随模板分发；只用许可明确允许再分发的素材（CC0 或公有领域），因为预览里会出现它们。
-- `transcribe`、`synthesizeSpeech`、`generateImage`、`generateText` 与 `generateMusic` 与模型服务的能力同名（`generateMusic` 只有本机的服务）；视频与音效生成还没有对应的服务，先占名字。
-- 验证记录只供维护与展示，不拼进提示词，也不影响 §5 的使用语义；再验证一次就整份替换。
+- `input`: for `scene`, write the user's message verbatim (the message that attaches this template when sent). For `example`, write “as written in the prompt”. If there are changes or additions (for example, specifying the film's language, or which capabilities the test environment lacks), state what was changed.
+- `outcome`: `pass` means the finished film matches the template's aspect ratio, duration and required production requirements. If an optional part of the template (for example, “can generate a soundtrack”) was skipped because a capability was missing and the user was told, it still counts as `pass`. `partial` means a finished film was made but a required requirement was not met (for example, narration was required but no speech synthesis was done, the aspect ratio or duration does not match, or a manual extra step is needed to get a finished film). `fail` means no usable finished film was made. With `fail` there may be no `output`; the other two must give one.
+- If you only update the verification record, preview and cover, the manifest's `version` does not change. If findings from verification led to changes in `prompt.md` or other manifest content, increment `version` per §3.1; `verification.version` still records the version that was run.
+- `output` values are measured with ffprobe, not copied from the manifest.
+- `materials` records only source and licence; the materials themselves are not distributed with the template. Use only materials whose licence explicitly allows redistribution (CC0 or public domain), because they appear in the preview.
+- `transcribe`, `synthesizeSpeech`, `generateImage`, `generateText` and `generateMusic` share names with the capabilities of model services (`generateMusic` only for the local service). Video and sound-effect generation have no corresponding service yet, so their names are reserved.
+- The verification record is for maintenance and display only. It is not concatenated into the prompt and does not affect the usage semantics in §5. Re-verifying replaces the whole record.
 
 ---
 
-## 4. 约束
+## 4. Constraints
 
-### 4.1 路径
+### 4.1 Paths
 
-清单里的所有路径（`cover.file`、`preview.file`、`assets[].path`）都必须是模板目录内的相对路径：
+All paths in the manifest (`cover.file`, `preview.file`, `assets[].path`) must be relative paths inside the template directory:
 
-- 用 `/` 分隔，不得以 `/`、`~` 或盘符（`C:`）开头；
-- 不得含 `..`、`.`、空段、反斜杠或控制字符；
-- 不得是符号链接；加载时解析后仍须落在模板目录内。
+- Use `/` as the separator. Must not start with `/`, `~` or a drive letter (`C:`).
+- Must not contain `..`, `.`, empty segments, backslashes or control characters.
+- Must not be a symbolic link. After resolution on load, the path must still fall inside the template directory.
 
-### 4.2 不带密钥与机器路径
+### 4.2 No keys and no machine paths
 
-清单、`prompt.md` 与素材都不得含 API 密钥、令牌、密码、个人联系方式或某台机器上的绝对路径。提示词需要外部能力时写能力描述（「用视频生成能力做一个跳舞的动画角色」），不写具体的模型、服务或产品名；也不写真实品牌与他人作品名，开源技术名（例如 JavaScript、p5.js）可以保留。
+The manifest, `prompt.md` and assets must not contain API keys, tokens, passwords, personal contact details, or absolute paths from any machine. When the prompt needs an external capability, describe the capability (“use a video generation capability to make a dancing animated character”) and do not name a specific model, service or product. Do not name real brands or other people's works either; open-source technology names (for example, JavaScript or p5.js) may be kept.
 
-### 3.6 语言版本
+### 3.6 Language versions
 
-一个模板可以带多种界面语言的文案：`template.json` 与 `prompt.md` 是原文（语言见 `language`），别的语言的译文放在 `locales/` 下，每种语言一对文件：
+A template may carry copy in several UI languages. `template.json` and `prompt.md` are the original (its language is given by `language`), and translations in other languages go in `locales/`, one pair of files per language. Built-in templates use English as the original (`language` is `en`); Simplified Chinese and the other shipping languages are translations:
 
 ```text
 templates/<id>/locales/
-  en.json            清单文案的译文
-  en.md              prompt.md 的译文
+  zh-hans.json       translation of the manifest copy
+  zh-hans.md         translation of prompt.md
   zh-hant.json
   zh-hant.md
   ...
 ```
 
-- 语言取应用的出货语言（`zh-Hans`、`zh-Hant`、`en`、`ja`、`ko`、`es`、`fr`、`de`、`nl`、`pt-BR`、`it`、`ru`、`pl`、`tr`、`vi`），文件名用小写（`pt-br.json`）。别的文件名不认，按未登记的文件处理（§2.1）。
-- 两个文件成对出现；不放与 `language` 同一种语言的译文（`zh-CN` 的模板不放 `zh-hans.*`）。
-- 译文 JSON 只收文案，未知字段一律拒绝；没列的字段（`id`、`version`、`kind`、`category`、画幅、时长、`skills`、封面与预览文件、`verification` 等）只写在清单里，各语言共用：
+- Languages are the app's shipping languages (`zh-Hans`, `zh-Hant`, `en`, `ja`, `ko`, `es`, `fr`, `de`, `nl`, `pt-BR`, `it`, `ru`, `pl`, `tr`, `vi`), and file names are lowercase (`pt-br.json`). Other file names are not recognised and are handled as unregistered files (§2.1).
+- Files come in pairs. Do not include a translation in the same language as `language` (an `en` template must not include `en.*`; a `zh-CN` template must not include `zh-hans.*`).
+- Translated JSON carries only copy, and unknown fields are always rejected. Fields not listed (`id`, `version`, `kind`, `category`, aspect ratio, duration, `skills`, cover and preview files, `verification`, etc.) are written only in the manifest and shared by all languages:
 
 ```ts
 interface TemplateTranslation {
   title: string;
   summary: string;
   description: string;
-  brief?: string;                    // scene 必填，example 不得有
-  fields?: TemplateField[];          // 与清单的 fields 项数、顺序一一对应
+  brief?: string;                    // required for scene, must not be present for example
+  fields?: TemplateField[];          // count and order must match the manifest's fields one-to-one
   tags: string[];
-  cover?: { kicker?: string };       // 不给时沿用清单的角标
-  preview?: { beats?: string[] };    // 与清单的 beats 条数相同
-  assets?: { path: string; note: string }[];  // 只能是清单登记过的素材；没给的沿用清单的 note
+  cover?: { kicker?: string };       // if not given, the manifest's corner label is used
+  preview?: { beats?: string[] };    // same number of items as the manifest's beats
+  assets?: { path: string; note: string }[];  // may only be assets registered in the manifest; if note is not given, the manifest's note is used
 }
 ```
 
-- 长度上限同清单（§3.1、§4.4）；占位符对照译文自己的 `fields`（`scene` 看译文的 `brief`，`example` 看译文的 `.md`）；译文 `.md` 的写法与限制同 `prompt.md`（§2.2、§4.4）。
-- 任何一份译文不合规时整个模板不合规（§6 的 `invalid`），诊断里每条问题前面带上文件名。改了原文要同步改各个译文，并递增 `version`。
+- Length limits are the same as the manifest (§3.1, §4.4). Placeholders are checked against the translation's own `fields` (for `scene`, check the translation's `brief`; for `example`, check the translation's `.md`). The writing rules and limits for a translated `.md` are the same as for `prompt.md` (§2.2, §4.4).
+- If any one translation is non-compliant, the whole template is non-compliant (`invalid` in §6), and each diagnostic line is prefixed with the file name. When the original changes, update each translation and increment `version`.
 
-**挑语言**。`templates.list`、`templates.get` 与 `conversations.send` 的 `template` 可以带 `language`（BCP 47），没带时用 Runtime 的界面语言。Runtime 依次找：同一种出货语言的译文；同一主语言的另一种写法（例如繁体缺译文时用简体）；英文；都没有时用原文。找的过程中碰到原文的语言就用原文。挑中译文时，清单的文案换成译文、`language` 改成那种语言，其余字段不变，正文换成译文的 `.md`。列表的每项另带 `languages`：这个模板有哪些语言，原文的 `language` 在前。
+**Choosing a language.** `templates.list`, `templates.get` and `conversations.send` may take a `language` for `template` (BCP 47). If none is given, the Runtime's UI language is used. The Runtime looks in this order: a translation in the same shipping language; another written form of the same main language (for example, Simplified when a Traditional translation is missing); English; and if none exists, the original. If during the search it reaches the original's language, it uses the original. When a translation is chosen, the manifest copy is replaced by the translation, `language` becomes that language, other fields stay unchanged, and the body is replaced by the translation's `.md`. Each list item also carries `languages`: the languages this template has, with the original's `language` first.
 
-界面按界面语言要目录，取提示词与发送时带上目录里这个模板的 `language`，三处用同一个语言版本；换了界面语言后重新取目录。
+The catalogue is fetched according to the UI language. When fetching the prompt and sending, use the `language` of this template from the catalogue, and use the same language version in all three places. After the UI language changes, fetch the catalogue again.
 
-### 4.3 语言中立
+### 4.3 Language neutrality
 
-模板的文案有一种语言（`language`），成片的语言与它无关，遵守[开发流程 §4](../development-workflow.md#4-语言与平台)：
+The template's copy has one language (`language`), and the language of the finished film is independent of it. Follow [development workflow §4](../development-workflow.md#4-language-and-platform):
 
-- 清单与 `prompt.md` 不得把某种语言设为成片的默认语言，也不得写死面向某个语言市场的平台；发布去向写「社交平台」「视频平台」。
-- 需要提到语言时留出槽位：`scene` 的正文写「使用简报里确认的语言」，`example` 的正文写成待填项 `{{成片语言}}`。成片语言可以留成待填项，不写死；这一项不给 `example`，免得示例句把某种语言写成默认。
-- 译文（§3.6）同样遵守：照译这些槽位，不因译文的语言把成片写成那种语言。
-- 用户没有指定语言时，智能体按开发流程 §4 的顺序决定：用户的明确要求，其次已记录的偏好，再从任务上下文推断；简报引导里可以把语言作为一项确认（§5.2）。
+- The manifest and `prompt.md` must not set a language as the default language of the finished film, and must not hard-code a platform for a particular language market. Describe publication destinations as “social platforms” or “video platforms”.
+- When language needs to be mentioned, leave a slot. In the body of `scene`, write “the language confirmed in the brief”. In the body of `example`, write the fill-in placeholder `{{成片语言}}`. The finished film's language may be left as a fill-in placeholder rather than hard-coded. This item is not given an `example`, so that the example sentence does not make a language the default.
+- Translations (§3.6) follow the same rule: translate these slots faithfully, and do not make the finished film that language just because the translation is in it.
+- When the user has not specified a language, the agent decides in the order of development workflow §4: the user's explicit request, then the recorded preference, then inference from the task context. The brief guidance may include language as an item to confirm (§5.2).
 
-### 4.4 上限
+### 4.4 Limits
 
-| 项 | 上限 |
+| Item | Limit |
 | --- | --- |
-| `prompt.md` | 16 KiB（UTF-8） |
+| `prompt.md` | 16 KiB (UTF-8) |
 | `brief` | 400 |
-| `fields` | 8 项；`label` 24，`hint` 80，`example` 80 |
-| `skills` | 4 项，每个 64 |
-| `beats` | 3–5 句，每句 60 |
-| `tags` | 8 个，每个 24 |
-| `assets` | 64 项 |
-| 封面图 | 150 KiB |
-| 预览视频 | 2 MiB |
-| `verification.materials` | 16 项 |
+| `fields` | 8 items; `label` 24, `hint` 80, `example` 80 |
+| `skills` | 4 items, 64 each |
+| `beats` | 3–5 sentences, 60 each |
+| `tags` | 8, 24 each |
+| `assets` | 64 items |
+| Cover image | 150 KiB |
+| Preview video | 2 MiB |
+| `verification.materials` | 16 items |
 
-其余文案长度见 §3.1。
-
----
-
-## 5. 使用语义
-
-### 5.1 作品示例
-
-选用 `example` 模板时，客户端把 `prompt.md`（或所选语言的译文，§3.6）的全文连同其中的占位符放进输入框，占位符显示成待填项（§5.5）。之后就是一条普通的用户消息：用户可以替换待填项、修改别的文字，发送时不附加简报引导。
-
-### 5.2 场景模板与简报引导
-
-选用 `scene` 模板时，客户端把模板挂在输入框上（显示标题），把 `brief` 填进输入框（占位符显示成待填项，§5.5）；用户替换待填项、补充或改写别的文字、附上文件（可以不附）。发送时客户端只传模板 `id`（与 `version`、`language`）和用户输入，由 Runtime 读取那个语言版本的正文（§3.6），在前面拼上统一的**简报引导前言**，再交给智能体。前言不写进每个 `prompt.md`，也不在界面里复制。
-
-发送走 `conversations.send` 的可选参数 `template: { id, version?, assets?, language? }`（[命令与协议规范 §4.1](command-protocol-spec.md#41-方法)）：
-
-- `text` 仍是输入框里用户的话（填进去的 `brief` 连同用户的替换与改写，没填的待填项按 §5.5 写成「[label]」），照常必填（用户把文字删光、只附了材料时由客户端补一句，与不挂模板时相同）。会话里的用户消息就是 `text`，另带一个模板标记 `template: { id, version, title, kind, origin }`（`title` 是所用语言版本的标题），界面据此显示「模板：标题」；前言、正文与素材清单只交给智能体，不进 `text`。
-- Runtime 在 `text` 后面附上一段 `<cuccut-template id="…" version="…">`：模板标题、前言、模板的默认画幅与时长、建议先读的做法（`skills`，有才列）、`prompt.md` 正文，以及素材清单（§5.4）。编辑器上下文与 Space 引用照旧附在它之后。
-- `version` 只是参考：Runtime 总用目录里当前的模板，实际用的版本记在模板标记上；版本不同不报错。
-- 没有这个模板（或它没能加载）时 `not-found`（`TEMPLATE_NOT_FOUND`）。`example` 模板的正文本来就是用户输入（§5.1），挂上它发送是 `invalid-request`（`TEMPLATE_NOT_SCENE`），客户端应当把正文放进输入框直接发送。
-- 前言的文案是 Runtime 里的一个常量（`SCENE_BRIEF_PREAMBLE`），以中文写成；它要求智能体跟随用户的语言提问与回复，不因前言或正文的语言改用别的语言。
-
-前言的语义（Runtime 按此实现，措辞可以调整）：
-
-1. 这是一个场景模板任务。先和用户确认简报，确认之前不开始制作，不调用会产生费用或修改视频的工具。
-2. 简报包含四项：**主题**（做什么）、**目标**（希望观众看完做什么或记住什么）、**受众**、**手头的材料**（文件、链接或文字；没有也可以）。另外确认画幅与时长：以清单的默认值为准，用户可以改；必要时确认成片的语言（§4.3）。
-3. 用户消息与附件里已经给出的信息不再重复询问；能从材料里读出的先读。
-4. 缺的项合并成一轮提问，问题简短，给出可选的默认值；不逐项来回追问。
-5. 用用户的语言提问。
-6. 把整理好的简报复述给用户，等用户确认或修改；用户明确说「直接做」时，按已知信息与默认值继续，并在复述里写明哪些是默认的。
-7. 确认后按模板正文制作；简报与正文冲突时以用户确认的简报为准。
-8. 模板正文要求的某项能力没有配置时不中断：没有语音合成就用字幕承担旁白与对白；配乐有本机的音乐生成时先用它，没有就考虑用代码合成，做不到再跳过；没有音效生成就先考虑用代码合成，做不到再跳过；没有转写、图片或视频生成时改用用户给的材料或代码画面。在复述简报与交付时写明哪些要求因此降级，以及配置哪项能力后可以补上。
-9. 动手制作前先用 cuccut 工具 `skills_read` 读 `video-production`（从简报到成片的做法）；模板段里列出了建议先读的做法（`skills`）时也一并读。
-10. 用户消息里形如「[受众]」的方括号项，是模板留给用户填、用户没有填的待填项（§5.5）：归入简报缺项一起问，不当作已有信息，也不原样抄进成片。
-
-### 5.3 画幅与时长
-
-Home 没有画幅与时长的设置：智能体从用户的话里看出画幅与时长，用户没说的按内容决定。场景模板清单的 `ratio` 与 `durationSeconds` 是默认值，由 Runtime 写进 `<cuccut-template>` 段（§5.2），用户在消息里另说了的以用户为准；缺省表示自动，由智能体按内容决定。作品示例的清单值不随消息发出（§2.2）。
-
-### 5.4 素材
-
-模板带 `assets` 时，Runtime 把素材作为这次任务可读的输入交给智能体，并附上每项的 `path`、`type` 与 `note`；用户可以在发送前去掉不想用的素材。素材不自动写进视频，由智能体按提示词决定怎么用。
-
-这一版的做法：模板段里列出每项素材在本机的绝对路径（模板目录里的文件，只读）、`type` 与 `note`，不复制进项目。`template.assets` 给出时只列这些（必须是清单登记的路径，否则 `invalid-request`，`TEMPLATE_FILE_NOT_FOUND`），给空数组时一项也不列，不给时全部列出。
-
-### 5.5 待填项
-
-模板文字里的 `{{label}}`（§3.1）是留给用户填的待填项：`scene` 的在 `brief` 里，`example` 的在 `prompt.md` 里。
-
-- **在输入框里**：客户端把文字放进输入框时，每个占位符显示成一个可点击替换的标记，标记上是 `label`。点它就地输入替换；Tab / Shift+Tab 在待填项之间前后跳，填进去的文字之后与普通文字无异。同一个 `label` 出现多处时各自独立替换。标记以外的文字照常可以改；换选另一个 `scene` 模板会换掉输入框里的文字（可撤销），把挂着的模板摘掉则不动文字。
-- **提示与示例句**：模板详情里按清单顺序列出待填项（`label` 与 `hint`），并显示「可以这样说」的示例句，拼法见 §3.1。输入框下方的提示行也列出还没填的 `label`。
-- **没填也能发送**：发送时客户端把没填的项写成「[label]」（方括号里是 `label`）放进 `text`，不保留 `{{`；界面提示还有几处没填并说明「不填也能发送，Agent 会先问你」，不拦发送。
-- **智能体怎么对待**：挂着 `scene` 模板时，前言第 10 条（§5.2）要求智能体把「[label]」归入简报缺项一起问。`example` 不附前言，「[label]」作为消息里的普通文字交给智能体，由它照常追问或按上下文决定。
+Other copy length limits are in §3.1.
 
 ---
 
-## 6. 目录来源与加载
+## 5. Usage semantics
 
-- **内置模板**（`origin: 'builtin'`）：仓库根的 `templates/` 目录，随应用分发，`source` 为 `official`，`author` 为 `CucCut`。Runtime 依次找环境变量 `CUCCUT_TEMPLATES_DIR`、打包后的资源目录里的 `templates/`、开发时往上找到的仓库根（同时有 `package.json` 与 `templates/` 的目录）。都没有时没有内置模板。
-- **用户模板**（`origin: 'user'`）：Runtime Home 下的 `templates/`（`<CUCCUT_HOME>/templates`），用户自己放进来的模板，格式与校验同内置模板；`source` 以清单为准。目录不存在时当作空目录，Runtime 不替用户创建。
-- **社区模板**〔P1〕：来源、下载、安装位置与信任规则待定（§8）；`source` 为 `community`。
+### 5.1 Example works
 
-Runtime 加载一个目录来源时：
+When the `example` template is selected, the client puts the full text of `prompt.md` (or the translation in the chosen language, §3.6) into the input box, together with its placeholders, which are displayed as fill-in items (§5.5). After that it is an ordinary user message: the user can replace the fill-in items and change other text, and no brief guidance preamble is attached when it is sent.
 
-1. 逐个读取子目录；不是目录的条目与隐藏条目忽略。是符号链接的条目不跟随，记一条诊断（说明模板为什么没出现）。
-2. 按 §2.3 判断 `schema`，按 §3–§4 校验清单与文件：`id` 等于目录名，`prompt.md` 是非空的 UTF-8 且不超过上限、占位符与待填项对得上（§2.2、§3.1），`locales/` 里的译文成对且合规（§3.6），登记的文件都在、封面与预览不超过体积上限（§3.3），没有未登记的文件，模板目录里任何一层都没有符号链接。不合规的模板跳过并记诊断，其余照常提供。
-3. 同一来源里 `id` 重复时，两个都跳过并记诊断。
-4. 用户目录里的模板与内置模板同 `id` 时，内置的优先，用户的那一份跳过并记诊断：会话里的模板标记按 `id` 引用模板，不能让用户目录悄悄换掉官方模板的含义。要改一个内置模板，复制一份换个 `id`。
-5. 列表顺序由界面决定；Runtime 给出的顺序不是排序合同。
+### 5.2 Scene templates and brief guidance
 
-诊断随 `templates.list` 返回：`{ code, origin, dir, path, message, issues }`。`code` 取 `unsupported-schema`（§2.3）、`invalid`（清单、正文或文件不合规）、`duplicate-id`（第 3 条）、`builtin-conflict`（第 4 条）；`dir` 是模板目录名，`path` 是它的绝对路径，`issues` 是逐条的问题。
+When the `scene` template is selected, the client attaches the template to the input box (showing its title) and fills the `brief` into the input box (placeholders are displayed as fill-in items, §5.5). The user replaces the fill-in items, supplements or rewrites other text, and attaches files (optional). When sending, the client passes only the template `id` (with `version` and `language`) and the user input. The Runtime reads the body of that language version (§3.6), prepends a unified **brief guidance preamble**, and hands the result to the agent. The preamble is not written into each `prompt.md` and is not copied into the UI.
 
-Runtime 不缓存目录：每次 `templates.list`、`templates.get`、`templates.openHandle` 都重新读取，用户放进或改了模板之后再列一次就能看到。随附文件（`cover.file`、`preview.file`、`assets[].path`）经 `templates.openHandle({ id, path })` 换成媒体通道的短期地址；只认清单登记的路径，`prompt.md` 与清单本身不经这条路。方法的参数与返回见[命令与协议规范 §4.1](command-protocol-spec.md#41-方法)。
+Sending uses the optional parameter `template: { id, version?, assets?, language? }` of `conversations.send` ([Command and protocol spec §4.1](command-protocol-spec.md#41-methods)):
+
+- `text` is still the user's words in the input box: the `brief` as filled in, plus the user's replacements and rewrites; unfilled fill-in items are written as “[label]” per §5.5. It is required as usual (when the user deletes all the text and attaches only material, the client adds a sentence, the same as without a template). The user message in the conversation is `text`, carrying a template marker `template: { id, version, title, kind, origin }` (`title` is the title of the language version used). The UI shows the label “模板：标题” (Chinese UI copy, "template: title") based on this marker. The preamble, body, and asset list are passed only to the agent, not into `text`.
+- The Runtime appends to `text` a `<cuccut-template id="…" version="…">` block: the template title, the preamble, the template's default aspect ratio and duration, the recommended practices to read first (`skills`, listed only if present), the `prompt.md` body, and the asset list (§5.4). The editor context and Space references are still attached after it.
+- `version` is for reference only: the Runtime always uses the template currently in the catalog, and the version actually used is recorded in the template marker. A version mismatch does not raise an error.
+- If the template does not exist (or failed to load), the result is `not-found` (`TEMPLATE_NOT_FOUND`). The body of an `example` template is already user input (§5.1), so attaching it and sending gives `invalid-request` (`TEMPLATE_NOT_SCENE`); the client should put the body into the input box and send it directly.
+- The preamble text is a constant in the Runtime (`SCENE_BRIEF_PREAMBLE`), written in English. It requires the agent to follow the user's language when asking questions and replying, and not to switch languages because of the language of the preamble or body.
+
+Meaning of the preamble (the Runtime implements this; the wording may be adjusted):
+
+1. This is a scene-template task. First confirm the brief with the user. Do not start production before confirmation, and do not call tools that incur cost or modify the video.
+2. The brief has four items: **topic** (what to make), **goal** (what the viewer should do or remember after watching), **audience**, and **materials at hand** (files, links, or text; none is fine). Also confirm the aspect ratio and duration: the defaults in the manifest apply, and the user may change them. Where necessary, confirm the language of the finished video (§4.3).
+3. Information already given in the user message and attachments is not asked again; anything that can be read from the materials is read first.
+4. Missing items are merged into one round of questions. The questions are short and offer optional defaults; there is no item-by-item back-and-forth.
+5. Ask questions in the user's language.
+6. Restate the organized brief to the user and wait for confirmation or changes. When the user explicitly says “直接做” (just do it), proceed with the known information and defaults, and state in the restatement which items are defaults.
+7. After confirmation, produce the work following the template body. If the brief and the body conflict, the user-confirmed brief prevails.
+8. If a capability required by the template body is not configured, do not stop. Without speech synthesis, use subtitles to carry narration and dialogue. For background music, use local music generation first if it is available, otherwise consider code synthesis, and skip it if that is not possible. For sound effects, consider code synthesis first, and skip them if that is not possible. Without transcription, image, or video generation, use the user's materials or code-generated visuals instead. When restating the brief and delivering the result, state which requirements were downgraded as a result, and which capability to configure to add them back.
+9. Before production, read `video-production` with the cuccut tool `skills_read` (the approach from brief to finished video). If the template section lists recommended practices (`skills`), read those too.
+10. Bracketed items such as “[audience]” in the user message are fill-in items the template left for the user, which the user did not fill (§5.5). Include them among the missing brief items to ask about. Do not treat them as known information, and do not copy them verbatim into the finished video.
+
+### 5.3 Aspect ratio and duration
+
+Home has no aspect ratio or duration settings. The agent infers the aspect ratio and duration from the user's words, and where the user says nothing, decides them from the content. The `ratio` and `durationSeconds` in the scene template manifest are defaults; the Runtime writes them into the `<cuccut-template>` block (§5.2), and anything the user states in the message takes precedence. A missing value means automatic, decided by the agent from the content. The manifest values of example works are not sent with the message (§2.2).
+
+### 5.4 Assets
+
+When a template has `assets`, the Runtime hands them to the agent as input readable for this task, attaching each item's `path`, `type`, and `note`. The user may remove assets they do not want before sending. Assets are not written into the video automatically; the agent decides how to use them according to the prompt.
+
+In this version, the template section lists each asset's absolute path on this machine (files in the template directory, read-only), its `type`, and its `note`. The files are not copied into the project. When `template.assets` is given, only those entries are listed; they must be paths registered in the manifest, otherwise the result is `invalid-request` (`TEMPLATE_FILE_NOT_FOUND`). When it is an empty array, no assets are listed; when it is not given, all are listed.
+
+### 5.5 Fill-in items
+
+`{{label}}` in template text (§3.1) is a fill-in item for the user: in `scene` it is in `brief`, and in `example` it is in `prompt.md`.
+
+- **In the input box**: when the client puts the text into the input box, each placeholder is displayed as a clickable replacement marker showing its `label`. Clicking it lets the user type the replacement in place. Tab / Shift+Tab move forward and backward between fill-in items; text typed into them afterward is no different from ordinary text. When the same `label` appears in several places, each is replaced independently. Text outside the markers can still be edited. Switching to a different `scene` template replaces the text in the input box (undoable), while removing the attached template leaves the text unchanged.
+- **Hints and example sentences**: the template details list the fill-in items in manifest order (`label` and `hint`), and show example sentences under the heading “可以这样说” (Chinese UI copy, "you can say it like this"), formatted as described in §3.1. The hint line below the input box also lists the `label`s not yet filled.
+- **Sending without filling**: when sending, the client writes unfilled items as “[label]” (with `label` inside the brackets) into `text`, without keeping `{{`. The UI notes that some items are unfilled, with the message “不填也能发送，Agent 会先问你” (Chinese UI copy, "you can send without filling; the agent will ask first"), and does not block sending.
+- **How the agent treats them**: when a `scene` template is attached, preamble item 10 (§5.2) requires the agent to include “[label]” among the missing brief items it asks about. `example` gets no preamble, so “[label]” is passed as ordinary text in the message, and the agent asks follow-up questions or decides from context as usual.
 
 ---
 
-## 7. 新增与校验
+## 6. Directory sources and loading
 
-新增一个内置模板：
+- **Built-in templates** (`origin: 'builtin'`): the `templates/` directory at the repository root, distributed with the app. `source` is `official` and `author` is `CucCut`. The Runtime checks, in order, the environment variable `CUCCUT_TEMPLATES_DIR`, the `templates/` directory in the packaged resources, and, in development, the repository root found by searching upward (a directory that has both `package.json` and `templates/`). If none is found, there are no built-in templates.
+- **User templates** (`origin: 'user'`): `templates/` under the Runtime Home (`<CUCCUT_HOME>/templates`), which holds templates the user placed there. They follow the same format and validation as built-in templates, and `source` follows the manifest. If the directory does not exist, it is treated as empty; the Runtime does not create it on the user's behalf.
+- **Community templates** [P1]: the source, download, install location, and trust rules are to be decided (§8). `source` is `community`.
 
-1. 在 `templates/` 下建 `<id>/`，写 `template.json` 与 `prompt.md`（JSON 两空格缩进）；
-2. 有封面、预览或素材时放进对应位置，并在清单里登记；
-3. 用真实的智能体按模板做一条视频，把成片按 §3.3 的做法压成 `preview.mp4` 与 `cover.jpg`，在清单里写 `verification`（§3.5）；
-4. 运行 `npm test -- packages/protocol`：`template.test.ts` 会逐个校验 `templates/` 下的全部目录（清单合法、`id` 等于目录名且不重复、`prompt.md` 非空且不超限、占位符与 `fields` 对得上（`scene` 的 `brief` 在清单校验里查，`prompt.md` 不得有 `{{`；`example` 查 `prompt.md`）、`skills` 含 `video-production`、登记的文件存在、封面与预览不超过体积上限、没有未登记的文件）。`npm test -- packages/runtime-core/src/templates` 再用 Runtime 的加载器（§6）读一遍，要求全部加载、没有诊断，并检查 `skills` 写的每一项都在仓库根 `skills/` 里。
-5. 给原文以外的每种出货语言写译文（§3.6），内置模板要齐全。`template.test.ts` 按「模板 · 语言」逐条校验（只跑一种语言：`npx vitest run packages/protocol/src/template.test.ts -t ' · ja：'`）：两个文件都在、译文合法且与清单对得上、每项待填项的 `hint` 与 `example` 有无和原文一致、占位符对得上；原文角标是中文时要给译文的角标；中文与日文以外的译文不得残留汉字。
+When the Runtime loads a directory source:
 
-文案的语言中立、不出现真实品牌与他人作品名等要求（§4.2、§4.3）与译文的质量测试查不全，提交前人工审阅。
+1. It reads subdirectories one by one. Entries that are not directories, and hidden entries, are ignored. Entries that are symbolic links are not followed, and a diagnostic is recorded to explain why the template does not appear.
+2. It checks `schema` per §2.3, and validates the manifest and files per §3–§4: `id` equals the directory name; `prompt.md` is non-empty UTF-8 and within the size limit; placeholders and fill-in items match (§2.2, §3.1); translations in `locales/` come in pairs and are compliant (§3.6); all registered files exist; the cover and preview are within the size limit (§3.3); there are no unregistered files; and there are no symbolic links at any level of the template directory. Non-compliant templates are skipped with a diagnostic recorded, and the rest are provided as usual.
+3. If `id` is duplicated within the same source, both templates are skipped and a diagnostic is recorded.
+4. If a user-directory template has the same `id` as a built-in template, the built-in one takes precedence and the user's copy is skipped with a diagnostic recorded. A template marker in a conversation references the template by `id`, so the user directory must not silently change the meaning of an official template. To change a built-in template, copy it and give the copy a new `id`.
+5. The order of the list is decided by the UI; the order the Runtime returns is not a sorting contract.
+
+Diagnostics are returned with `templates.list` as `{ code, origin, dir, path, message, issues }`. `code` is one of `unsupported-schema` (§2.3), `invalid` (the manifest, body, or files are non-compliant), `duplicate-id` (item 3), or `builtin-conflict` (item 4). `dir` is the template directory name, `path` is its absolute path, and `issues` lists the problems one by one.
+
+The Runtime does not cache directories. Each `templates.list`, `templates.get`, and `templates.openHandle` call re-reads them, so templates the user adds or edits appear after the next listing. Attached files (`cover.file`, `preview.file`, `assets[].path`) are turned into short-lived addresses on the media channel through `templates.openHandle({ id, path })`. Only paths registered in the manifest are accepted; `prompt.md` and the manifest itself do not go through this route. For the method's parameters and return values, see [Command and protocol spec §4.1](command-protocol-spec.md#41-methods).
 
 ---
 
-## 8. 待评审事项
+## 7. Adding and validating
 
-- 社区模板的来源、下载、签名或信任规则；社区模板是否装进用户目录（§6），装进去时同 `id` 的处理是否沿用「内置优先」。
-- 素材交给智能体的方式：这一版只列本机路径（§5.4），智能体读项目目录以外的文件时可能要用户审批；是否在发送时把选用的素材复制进项目，待定。
-- 「模板」一词在产品设计 §5.9〔AST-04〕与本规范中指两种东西，术语表尚无条目，需要定一个区分的叫法。
+To add a built-in template:
+
+1. Create `<id>/` under `templates/`, and write `template.json` and `prompt.md` (JSON with two-space indentation);
+2. If there is a cover, preview, or assets, put them in the corresponding place and register them in the manifest;
+3. Use a real agent to make one video from the template. Compress the finished video into `preview.mp4` and `cover.jpg` per the method in §3.3, and write `verification` in the manifest (§3.5);
+4. Run `npm test -- packages/protocol`. `template.test.ts` validates every directory under `templates/` one by one: the manifest is valid; `id` equals the directory name and is not duplicated; `prompt.md` is non-empty and within the limit; placeholders match `fields` (for `scene`, `brief` is checked in manifest validation, and `prompt.md` must not contain `{{`; for `example`, `prompt.md` is checked); `skills` includes `video-production`; registered files exist; the cover and preview are within the size limit; and there are no unregistered files. Then run `npm test -- packages/runtime-core/src/templates`, which reads everything again with the Runtime's loader (§6), requires that all templates load with no diagnostics, and checks that every item in `skills` exists in the repository-root `skills/`.
+5. Write translations for every shipping language other than the original (§3.6). Built-in templates must be complete. `template.test.ts` validates each “template · language” entry one at a time (to run a single language only: `npx vitest run packages/protocol/src/template.test.ts -t ' · ja：'`). It checks that both files exist; the translation is valid and matches the manifest; each fill-in item's `hint` and `example` are present or absent consistently with the original; placeholders match. When the original's corner badges are Chinese, the translation must have corner badges. In translations other than Chinese and Japanese, no Han characters may remain.
+
+Language neutrality of the copy, the rules against showing real brands and others' work names (§4.2, §4.3), and translation quality are not fully covered by these tests, so they need manual review before submission.
+
+---
+
+## 8. Items for review
+
+- Source, download, signing, or trust rules for community templates; whether community templates are installed into the user directory (§6), and if so, whether handling of the same `id` keeps the "built-in first" rule.
+- How assets are handed to the agent: this version only lists local paths (§5.4), and when the agent reads files outside the project directory it may need user approval; whether selected assets are copied into the project when sending is undecided.
+- The word "template" refers to two different things in the product design §5.9〔AST-04〕 and in this specification. The glossary has no entry yet, so a name needs to be chosen to tell them apart.

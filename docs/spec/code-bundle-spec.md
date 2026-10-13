@@ -1,53 +1,53 @@
-# CucCut 代码包规范
+# CucCut Code Bundle Specification
 
-> 代码合成让作者与智能体用 p5.js、Three.js、Canvas、Remotion 等技术制作动画，并作为时间线上的一个实例参与合成。本规范定义代码包的清单、实例字段、作者必须遵守的合同、时间依赖的声明，以及 Bake。
+> Code composition lets authors and agents make animations with p5.js, Three.js, Canvas, Remotion and similar technologies, and take part in the composition as an instance on the timeline. This spec defines the bundle manifest, the instance fields, the author contract that authors must follow, the declaration of time dependencies, and Bake.
 
-格式标识：`cuccut.code-bundle`，`schemaVersion: 1`（即 `bundleSchemaVersion`）。
+Format identifier: `cuccut.code-bundle`, `schemaVersion: 1` (that is, `bundleSchemaVersion`).
 
-本规范定义**包的格式与作者合同**。Adapter、取帧票据、构建账本等运行机制见[系统架构设计](../architecture/architecture-design.md) §8；视频中的其他数据见[视频格式规范](video-format-spec.md)；修改实例的命令见[命令与协议规范](command-protocol-spec.md)。用语见[文档约定](../README.md#文档约定)，术语见[术语表](../glossary.md)。
+This spec defines **the bundle format and the author contract**. The runtime mechanics such as the Adapter, frame-fetch tickets and the build ledger are in [System Architecture Design](../architecture/architecture-design.md) §8; other data in the video is in [Video Format Spec](video-format-spec.md); commands that modify instances are in [Command and Protocol Spec](command-protocol-spec.md). For terminology conventions see [Document Conventions](../README.md#conventions-for-this-document), and for terms see the [Glossary](../glossary.md).
 
-## 目录
+## Contents
 
-- [1. 范围与约定](#1-范围与约定)
-- [2. 清单](#2-清单)
-- [3. 实例与三层编辑](#3-实例与三层编辑)
-- [4. 作者合同](#4-作者合同)
-- [5. 时间依赖](#5-时间依赖)
-- [6. 验证与发布](#6-验证与发布)
-- [7. Bake 与降级](#7-bake-与降级)
-- [8. 开放范围](#8-开放范围)
-- [9. 待评审事项](#9-待评审事项)
+- [1. Scope and Conventions](#1-scope-and-conventions)
+- [2. Manifest](#2-manifest)
+- [3. Instances and Three-Layer Editing](#3-instances-and-three-layer-editing)
+- [4. Author Contract](#4-author-contract)
+- [5. Time Dependencies](#5-time-dependencies)
+- [6. Verification and Publishing](#6-verification-and-publishing)
+- [7. Bake and Degradation](#7-bake-and-degradation)
+- [8. Open Scope](#8-open-scope)
+- [9. Items Pending Review](#9-items-pending-review)
 
 ---
 
-## 1. 范围与约定
+## 1. Scope and Conventions
 
-### 1.1 两种合成
+### 1.1 Two Kinds of Composition
 
-| 类型 | 引用什么 | CucCut 理解到哪一层 |
+| Type | What it references | How far CucCut understands |
 | --- | --- | --- |
-| 嵌套序列 | CucCut 自己的结构化序列 | 全部：可以继续逐个元素编辑（尚未纳入视频的实例类型，视频格式规范 §3.4） |
-| 代码合成 | 一个作者环境及其代码包 | 实例属性、公开参数、执行合同 |
+| Nested sequence | CucCut's own structured sequence | Everything: each element can still be edited one by one (instance types not yet in the video, Video Format Spec §3.4) |
+| Code composition | An author environment and its code bundle | Instance properties, public parameters, execution contract |
 
-本规范只涉及代码合成：来源是代码包的合成实例（`type: 'composition'`，`source.kind: 'bundle'`，视频格式规范 §3.7）。代码包本身是视频里的一个目录素材（`kind: 'bundle'`，视频格式规范 §4.3）：它的版本、存储位置与内容摘要都按素材的规则走，本规范只定义清单与执行合同。
+This spec covers only code compositions: the source is a composition instance of a code bundle (`type: 'composition'`, `source.kind: 'bundle'`, Video Format Spec §3.7). The code bundle itself is a directory asset in the video (`kind: 'bundle'`, Video Format Spec §4.3). Its version, storage location and content digest follow the rules for assets; this spec defines only the manifest and the execution contract.
 
-### 1.2 不为每个库增加类型
+### 1.2 No Type per Library
 
-视频的实例类型集合里，由代码画出来的画面只有 `composition` 一种。浏览器代码统一声明 `engine: 'browser'`，用 `contract` 区分不同的作者合同；`frameworkHints` 只用于开发提示。Remotion 使用独立的 `engine`。增加一个新的图形库不需要升级视频格式。
+Within the video's set of instance types, the only type for pictures drawn by code is `composition`. Browser code uniformly declares `engine: 'browser'` and uses `contract` to distinguish the different author contracts; `frameworkHints` is only for development hints. Remotion uses its own `engine`. Adding a new graphics library does not require a video format upgrade.
 
-### 1.3 类型的地位
+### 1.3 Status of the Types
 
-类型用 TypeScript 写法表达，是 DTO 概要。标注「本规范补全」的类型在原始设计中只有名称或用法，字段由本规范给出，列入 §9。基础类型 `Id`、`Revision`、`VersionRef`、`JsonValue`、`Rate`、`MediaTime` 见视频格式规范 §1.2 与 §2.3。
+Types are written in TypeScript notation and express a DTO outline. Types marked "supplemented by this spec" have only a name or a usage in the original design; this spec gives their fields, and they are listed in §9. The base types `Id`, `Revision`, `VersionRef`, `JsonValue`, `Rate` and `MediaTime` are in Video Format Spec §1.2 and §2.3.
 
-### 1.4 三条贯穿的原则
+### 1.4 Three Principles That Run Throughout
 
-1. **代码包不可变。** 已发布的版本不在原地修改。改源码产生新版本，再显式替换引用。
-2. **声明不等于能力。** 清单里写的随机访问、透明、音频与时间依赖，都要经过实测验证才开放（§6）。
-3. **实例、参数、源码三层分开。** 在界面、命令与回执中始终是三种不同的修改（§3.4）。
+1. **Code bundles are immutable.** A published version is never modified in place. Changing the source produces a new version, and references are then explicitly replaced.
+2. **A declaration is not a capability.** Random access, transparency, audio and time dependencies declared in the manifest are enabled only after they are verified by measurement (§6).
+3. **Instance, parameters and source are kept separate.** In the interface, in commands and in receipts, these are always three different kinds of change (§3.4).
 
 ---
 
-## 2. 清单
+## 2. Manifest
 
 ### 2.1 CodeBundleManifest
 
@@ -70,157 +70,157 @@ interface CodeBundleManifest {
     | { kind: 'placement' }
     | { kind: 'cue-track'; ref: VersionRef }
     | { kind: 'sequence-clock' }
-  >;                                   // 省略表示未知，不等于 local-only
+  >;                                   // Omitted means unknown, not local-only
   parametersSchemaRef?: string;
   exposedLayers?: Array<{ id: Id; isolation: 'independent' | 'requires-backdrop' }>;
   permissions: { network: 'deny'; assetIds: Id[] };
 }
 ```
 
-### 2.2 字段
+### 2.2 Fields
 
-| 字段 | 含义 | 规则 |
+| Field | Meaning | Rule |
 | --- | --- | --- |
-| `bundleId` | 代码包的身份 | 跨版本稳定 |
-| `revision` | 可读的版本号 | 用于关联；发布后不可在原地修改 |
-| `contentHash` | 实际 bytes 的摘要 | 用于验证；与 `revision` 一起构成缓存与冻结的身份；算法见本节末 |
-| `runtime.engine` | 执行引擎 | `browser` 或 `remotion` |
-| `runtime.contract` | 浏览器作者合同的标识与版本 | 格式 `<合同名>/<主版本>`，不兼容的变化提升主版本；`adapterContractVersion` 取同一个值。首版提供 `cuccut/1`（§4.1）与 `hyperframes/1`（§4.7） |
-| `runtime.entry` | 入口文件 | 包内的相对路径 |
-| `runtime.frameworkHints` | 使用的库 | 只是提示，不参与执行决定 |
-| `source.filesManifest` | 源文件清单 | 列出每个文件的路径与摘要 |
-| `source.dependencyLock` | 依赖锁 | 只固定版本，不提供离线 bytes（§2.4） |
-| `source.buildRecipe` | 构建配方 | 工具链版本、命令与输入 |
-| `intrinsic` | 作者设定的尺寸、帧率与时长 | `fps` 是包的局部帧率，不是序列或导出的帧率（§5.4） |
-| `output.alpha` | 是否输出透明 | 必须由代码真正实现（§4.5） |
-| `output.colorSpace` | 输出的颜色空间 | 首版只支持 SDR |
-| `output.audio` | 是否带声音，以什么形式 | `stems` 交给主混音；`mixed` 是明确的混合音轨（§4.8） |
-| `timing.access` | 取帧方式 | §5.3 |
-| `timing.fixedStep` | 仿真步率 | `sequential` / `checkpointed` 时必填；不随输出帧率改变 |
-| `timeDependencies` | 画面依赖哪些外部时间 | §5 |
-| `parametersSchemaRef` | 公开参数的 Schema | §3.2 |
-| `exposedLayers` | 可以独立输出的层 | `requires-backdrop` 的层不能脱离背景单独缓存 |
-| `permissions.network` | 网络权限 | 首版恒为 `deny` |
-| `permissions.assetIds` | 可以读取的素材 | 只有列出的素材可以被解析 |
+| `bundleId` | Identity of the code bundle | Stable across versions |
+| `revision` | Human-readable version number | Used for association; cannot be modified in place after publishing |
+| `contentHash` | Digest of the actual bytes | Used for verification; together with `revision` it forms the identity for caching and freezing; algorithm at the end of this section |
+| `runtime.engine` | Execution engine | `browser` or `remotion` |
+| `runtime.contract` | Identifier and version of the browser author contract | Format `<contract name>/<major version>`; incompatible changes bump the major version; `adapterContractVersion` takes the same value. The first release provides `cuccut/1` (§4.1) and `hyperframes/1` (§4.7) |
+| `runtime.entry` | Entry file | Relative path within the bundle |
+| `runtime.frameworkHints` | Libraries used | Hints only; they do not take part in execution decisions |
+| `source.filesManifest` | Source file manifest | Lists the path and digest of each file |
+| `source.dependencyLock` | Dependency lock | Pins versions only; does not provide offline bytes (§2.4) |
+| `source.buildRecipe` | Build recipe | Toolchain version, commands and inputs |
+| `intrinsic` | Size, frame rate and duration set by the author | `fps` is the bundle's local frame rate, not the frame rate of the sequence or the export (§5.4) |
+| `output.alpha` | Whether output is transparent | Must be actually implemented by the code (§4.5) |
+| `output.colorSpace` | Output color space | The first release supports SDR only |
+| `output.audio` | Whether there is sound, and in what form | `stems` are handed to the main mix; `mixed` is an explicit mixed audio track (§4.8) |
+| `timing.access` | How frames are fetched | §5.3 |
+| `timing.fixedStep` | Simulation step rate | Required for `sequential` / `checkpointed`; does not change with the output frame rate |
+| `timeDependencies` | Which external times the picture depends on | §5 |
+| `parametersSchemaRef` | Schema for public parameters | §3.2 |
+| `exposedLayers` | Layers that can be output independently | Layers with `requires-backdrop` cannot be cached separately from the background |
+| `permissions.network` | Network permission | Always `deny` in the first release |
+| `permissions.assetIds` | Assets that may be read | Only listed assets can be resolved |
 
-**`contentHash` 的算法**（本规范补全）。`contentHash = 'sha256-' + sha256(JSON.stringify(entries))`。`entries` 是包内文件按 `path` 排序的数组，每项为 `{ path, size, sha256 }`：键按这个顺序，紧凑 JSON；`path` 是 `/` 分隔的相对路径，`size` 是字节数，`sha256` 是小写十六进制。`bundle.manifest.json`、`files.manifest.json` 与 `verification.json` 不计入：清单含有摘要本身，文件清单列出的就是这组条目（计入就要列出自己的摘要），报告在摘要之后才写出，三者计入都成了循环。`files.manifest.json`（`source.filesManifest`）的内容就是 `entries`。这个值是清单的字段，与目录素材版本的树摘要（视频格式规范 §4.3）算法不同，不是同一个值（§9）。
+**Algorithm for `contentHash`** (supplemented by this spec). `contentHash = 'sha256-' + sha256(JSON.stringify(entries))`. `entries` is the array of files in the bundle, sorted by `path`, where each item is `{ path, size, sha256 }`: keys in this order, compact JSON. `path` is a `/`-separated relative path, `size` is the byte count, and `sha256` is lowercase hex. `bundle.manifest.json`, `files.manifest.json` and `verification.json` are not counted: the manifest contains its own digest, the files manifest lists exactly this set of entries (counting it would require listing its own digest), and the report is written only after the digest, so counting any of the three would create a cycle. The content of `files.manifest.json` (`source.filesManifest`) is `entries`. This value is a field of the manifest. Its algorithm differs from the tree digest of directory asset versions (Video Format Spec §4.3), so it is not the same value (§9).
 
-### 2.3 身份与不可变
+### 2.3 Identity and Immutability
 
-- 发布之后的版本不可在原地修改。任何改动产生新的 `revision` 与新的 `contentHash`。
-- 旧版本留给历史、撤销和冻结中的任务使用，在没有任何引用之后才可以回收。
-- 缓存键、冻结快照与导出记录使用 `bundleId + revision + contentHash`，不使用文件修改时间。
-- 导入与验证时按 §2.2 重新计算 `contentHash`，与清单不一致时拒绝（`BUNDLE_HASH_MISMATCH`，§6.3）。
+- After publishing, a version cannot be modified in place. Any change produces a new `revision` and a new `contentHash`.
+- Old versions are kept for history, undo and frozen tasks in progress, and can be reclaimed only once no references remain.
+- Cache keys, frozen snapshots and export records use `bundleId + revision + contentHash`, not the file modification time.
+- On import and verification, `contentHash` is recomputed per §2.2; if it does not match the manifest, the import is rejected (`BUNDLE_HASH_MISMATCH`, §6.3).
 
-### 2.4 源码与离线
+### 2.4 Source and Offline
 
-- 源码、构建输入、依赖锁、字体与静态素材必须可以定位。**只有一个 MP4，不能称为可编辑的代码包。**
-- 依赖锁只固定版本，不自动提供离线 bytes。离线的包还必须包含可以合法分发的构建产物或 vendor 依赖，或者引用一个已验证存在的运行时依赖仓库。
-- 缺少离线 bytes 时阻断离线重建。不得临时联网补齐，却仍然声称是断网渲染。
-- 远程字体、脚本与素材在发布时固定为 bytes，登记进清单；渲染时不再访问网络。
+- Source, build inputs, the dependency lock, fonts and static assets must be locatable. **A single MP4 cannot be called an editable code bundle.**
+- The dependency lock pins versions only and does not automatically provide offline bytes. An offline bundle must also contain build outputs or vendored dependencies that may be lawfully distributed, or reference a runtime dependency repository whose existence has been verified.
+- When offline bytes are missing, offline rebuild is blocked. Do not fetch the missing parts online on the sly while still claiming the render was offline.
+- Remote fonts, scripts and assets are fixed to bytes at publish time and registered in the manifest; rendering no longer accesses the network.
 
-### 2.5 包的布局
+### 2.5 Bundle Layout
 
 ```text
 <bundle>/<revision>/
-  bundle.manifest.json      # 本章的清单
-  src/                      # 作者源码
-  dist/                     # 构建产物（入口在这里或由清单指明）
-  vendor/                   # 离线依赖的 bytes
-  assets/                   # 包内的静态素材与字体
-  parameters.schema.json    # 公开参数的 Schema（如果有）
-  files.manifest.json       # 每个文件的路径与摘要
-  dependency.lock           # 依赖锁
-  build.recipe.json         # 构建配方
-  verification.json         # §6 的验证报告
+  bundle.manifest.json      # this chapter's manifest
+  src/                      # author source
+  dist/                     # build output (the entry is here or as the manifest specifies)
+  vendor/                   # bytes of offline dependencies
+  assets/                   # static assets and fonts in the bundle
+  parameters.schema.json    # Schema for public parameters (if any)
+  files.manifest.json       # path and digest of each file
+  dependency.lock           # dependency lock
+  build.recipe.json         # build recipe
+  verification.json         # verification report of §6
 ```
 
-`bundle.manifest.json`、`files.manifest.json` 与 `verification.json` 三个文件名在首版固定，放在包的根目录。其余目录名与文件名是建议的默认值，由清单中的路径字段最终决定。本节为本规范补全。
+The file names `bundle.manifest.json`, `files.manifest.json` and `verification.json` are fixed in the first release and placed at the bundle root. The other directory and file names are suggested defaults; the path fields in the manifest have the final say. This section is supplemented by this spec.
 
-### 2.6 权限
+### 2.6 Permissions
 
-- 代码包在隔离的执行环境里运行，默认没有网络、没有视频目录之外的文件访问、没有主机能力（架构设计 §12）。
-- 包只能通过受控的解析器读取 `permissions.assetIds` 中列出的素材，拿到的是只读的 bytes 或受控句柄，不是机器路径。
-- 清单不能给自己提升权限。超出清单声明的访问被拒绝，并记录为验证失败。
+- A code bundle runs in an isolated execution environment. By default it has no network, no file access outside the video directory, and no host capabilities (Architecture Design §12).
+- A bundle can read only the assets listed in `permissions.assetIds`, through a controlled resolver. It receives read-only bytes or controlled handles, not machine paths.
+- A manifest cannot grant itself extra permissions. Access beyond what the manifest declares is denied and recorded as a verification failure.
 
 ---
 
-## 3. 实例与三层编辑
+## 3. Instances and Three-Layer Editing
 
-### 3.1 合成实例
+### 3.1 Composition Instance
 
-实例的定义在视频格式规范 §3.7，这里只列出与代码包有关的字段：
+The definition of an instance is in Video Format Spec §3.7. Only the fields related to code bundles are listed here:
 
 ```ts
 interface CompositionItem extends VisualItemBase {
   type: 'composition';
-  source: { kind: 'bundle'; assetRef: VersionRef };   // 指向一个确定的代码包版本
-  parameterValues: JsonValue;          // 实例的参数值
-  timeMap: TimeMap;                    // 实例时间 → 合成的局部时间
-  prerender?: VersionRef;              // 预渲染替身：渲染好的视频素材
-  audio?: EmbeddedAudio;               // 合成自己发出的声音的路由
+  source: { kind: 'bundle'; assetRef: VersionRef };   // points to one fixed code bundle version
+  parameterValues: JsonValue;          // the instance's parameter values
+  timeMap: TimeMap;                    // instance time → local time of the composition
+  prerender?: VersionRef;              // pre-rendered stand-in: the rendered video asset
+  audio?: EmbeddedAudio;               // routing of the sound the composition itself emits
 }
 ```
 
-`span`、`transform`、`opacity` 等来自 `VisualItemBase`；`TimeMap`、`Transform` 见视频格式规范 §2.5 与 §3.5。
+`span`, `transform`, `opacity` and so on come from `VisualItemBase`; `TimeMap` and `Transform` are in Video Format Spec §2.5 and §3.5.
 
-预渲染替身与 Bake（§7）的关系：替身是「这段合成已经有一份渲染好的视频」这个事实，运行环境不可用时预览与导出用它代替；Bake 是产生这样一份视频的受控流程，带着输入指纹与验证记录。`audioRoute` 的声部模式、`qualityPolicy` 与 `BakeRecord` 尚未进入实例的字段（§9）；首版的 `BakeRecord` 记在烘焙素材的来源里（§7）。
+The relationship between the pre-render stand-in and Bake (§7): the stand-in is the fact that "this composition already has a rendered video". When the runtime environment is unavailable, preview and export use it in place of the composition. Bake is the controlled process that produces such a video, carrying input fingerprints and verification records. The voice (part) mode of `audioRoute`, `qualityPolicy` and `BakeRecord` have not yet entered the instance fields (§9). In the first release, `BakeRecord` is recorded in the source of the baked asset (§7).
 
-### 3.2 参数
+### 3.2 Parameters
 
-- 参数是**实例的值**。同一个包的两个实例可以使用不同的标题与颜色。
-- 修改参数不产生新的源码版本，但会改变渲染缓存键。
-- 参数由 `parametersSchemaRef` 指向的 JSON Schema 描述。界面只显示 Schema 允许的控件；没有公开的内部对象不能假装可以拖拽编辑。
-- 参数值必须通过 Schema 校验才能提交。校验失败的参数不写入视频。
+- Parameters are **the instance's values**. Two instances of the same bundle can use different titles and colors.
+- Changing a parameter does not produce a new source version, but it does change the render cache key.
+- Parameters are described by the JSON Schema that `parametersSchemaRef` points to. The interface shows only the controls the Schema allows. A non-public internal object cannot pretend to be draggable.
+- Parameter values must pass Schema validation before they can be committed. Parameters that fail validation are not written to the video.
 
-Schema 中建议为每个参数提供：类型、默认值、取值范围或枚举、显示名称、分组，以及是否影响时长或布局。影响时长的参数改动必须触发时长的重新检查（§3.3）。
+The Schema should suggest providing, for each parameter: type, default value, value range or enum, display name, group, and whether it affects duration or layout. A change to a parameter that affects duration must trigger a duration re-check (§3.3).
 
-### 3.3 替换版本
+### 3.3 Replacing a version
 
-- 替换代码包时必须做**参数 Schema 的兼容检查**。参数被重命名时，不得悄悄回到默认值；要么提供映射，要么列出丢失的参数并等待确认。
-- 同一个包有多处引用时，默认只替换用户选中的实例。「更新全部实例」是显式的批量操作。
-- 新版本的时长变短、旧实例超出了可用时段时，必须明确处理，不得静默拉长最后一帧：方案有裁短实例、保持最后一帧，或重新编排；首期的 `replaceCodeBundle` 默认裁短并在回执里写明（见下），其余方案待 `fit` 选项。
-- 更换场景默认保留 `itemId`、lineage、外部字幕锚和用户的 pin。
-- 源码发布、视频应用和缓存失效是三个分开的事件（架构设计 §8.2）。
+- When replacing a code bundle, a **parameter schema compatibility check** is mandatory. If a parameter has been renamed, it must not silently fall back to its default; either provide a mapping, or list the lost parameters and wait for confirmation.
+- When one bundle is referenced in several places, only the instance the user selected is replaced by default. “Update all instances” is an explicit bulk operation.
+- When the new version is shorter, or old instances now extend past the available range, this must be handled explicitly and the last frame must not be silently stretched. The options are: trim the instance, hold the last frame, or re-arrange the composition. In the first release, `replaceCodeBundle` defaults to trimming and states this in the receipt (see below); the other options wait for a `fit` option.
+- Swapping a scene keeps `itemId`, lineage, external subtitle anchors and the user's pins by default.
+- Publishing source code, applying the video and invalidating caches are three separate events (architecture design §8.2).
 
-首期的替换是编辑操作 `replaceCodeBundle`（[命令与协议规范 §12.6](command-protocol-spec.md#126-原地替换代码画面)），一次替换一个实例；智能体经 `compositions_import` 的 `replace` 调用它（重新打包、验证、烘焙之后，第二笔修改不新放实例而是替换）：
+In the first release, replacement is the edit operation `replaceCodeBundle` ([command and protocol spec §12.6](command-protocol-spec.md#126-replacing-a-code-picture-in-place)), which replaces one instance at a time. The agent calls it through the `replace` option of `compositions_import` (after the package has been re-bundled, verified and baked; for a second change, it replaces the instance rather than adding a new one):
 
-- **只换源**：写入新的 `source.assetRef` 与 `prerender`（`null` 或省略是不要替身），可选整个替换 `parameterValues`。实例 ID、轨道、起点、几何与不透明度、效果、遮罩、名字、开关与锁、跟随策略、关键帧、声音路由与 lineage 都不变。`timeMap` 回到从 0 开始、速率 1 的线性映射：新版本从头播放。
-- **长度跟新版本走**：有替身时取替身的长度（向下取整到实例所在序列的帧），没有替身时取清单的 `intrinsic.durationFrames` 按 `intrinsic.fps` 换算到实例所在序列的帧率。两者都拿不到时拒绝。`compositions_import` 替换时也按这个序列的帧率烘焙替身。
-- **变短就裁短实例**：这是上面三种方案中默认采用的一种，不保持最后一帧、不重新编排；裁短不静默，回执 `impact.codeEdits` 给出前后的帧数。关键帧跟着窗口变短，与裁切同一条规则。
-- **变长不推开别人**：变长后与同一轨道上的实例重叠时以 `TIMELINE_OVERLAP` 拒绝，`recovery` 提示先用 `moveItem` 挪开或 `deleteItems` 删掉后面的实例再替换。
-- **参数闸门**：实例的 `parameterValues` 不为空，而新版本的清单没有 `parametersSchemaRef` 或与旧版本的不同，又没有同时给出新的 `parameterValues` 时，以 `INVALID_OPERATION` 拒绝（`details.rule` 为 `parameters-incompatible`），不把旧值套到新 Schema 上。Schema 引用相同时保留旧值；按 Schema 内容校验参数仍未实现（§3.2）。
-- 实例不是合成、素材不是代码包、替身不是视频、实例或轨道被锁定时拒绝，错误与 `setCodeParameters`、`insertItems` 的相同。
-- **回执标明层**：`impact.codeEdits` 每项写 `layer: 'source'`（§3.4 的源码编辑），以及替换前后的代码包版本、替身与帧数。
-- **旧版本留在视频里**：替换不删素材。回执的 `previousBundleRef` 与撤销还要用到旧版本，引擎导入时按内容去重，留着不会重复占用。不再被引用的旧代码包与替身用通用的清理删掉：编辑操作 `removeAssets` 只删没有引用的素材，代码包与它烘焙出的替身成对删除；智能体用 `assets_prune` 先列出、确认后再删（[命令与协议规范 §4.2](command-protocol-spec.md#42-编辑操作)、[§12.7](command-protocol-spec.md#127-清理换下来的旧版本)）。
+- **Swap source only**: write the new `source.assetRef` and `prerender` (`null` or omitted means no stand-in), and optionally replace `parameterValues` entirely. Instance ID, track, start, geometry and opacity, effects, masks, name, toggles and locks, follow policy, keyframes, audio routing and lineage all stay unchanged. `timeMap` returns to a linear mapping starting at 0 with rate 1: the new version plays from the beginning.
+- **Length follows the new version**: if there is a stand-in, use the stand-in's length (rounded down to frames of the sequence the instance sits in); if there is none, take `intrinsic.durationFrames` from the manifest and convert it with `intrinsic.fps` to frames of the sequence the instance sits in. If neither is available, reject. When `compositions_import` replaces, the stand-in is also baked at this sequence's frame rate.
+- **If shorter, trim the instance**: this is the default of the three options above; it neither holds the last frame nor re-arranges. The trim is not silent: the receipt's `impact.codeEdits` gives the frame counts before and after. Keyframes follow the shortened window, under the same rule as cropping.
+- **If longer, do not push others away**: if the longer instance now overlaps another instance on the same track, it is rejected with `TIMELINE_OVERLAP`, and `recovery` suggests first moving the later instance away with `moveItem` or deleting it with `deleteItems`, then replacing again.
+- **Parameter gate**: if the instance's `parameterValues` is not empty, and the new version's manifest has no `parametersSchemaRef` or a different one, and no new `parameterValues` are supplied at the same time, the request is rejected with `INVALID_OPERATION` (`details.rule` is `parameters-incompatible`). The old values are not applied to the new schema. When the schema reference is the same, the old values are kept. Validating parameters against the schema content is still not implemented (§3.2).
+- If the instance is not a composition, the asset is not a code bundle, the stand-in is not a video, or the instance or track is locked, the request is rejected. The errors are the same as for `setCodeParameters` and `insertItems`.
+- **The receipt labels the layer**: each item in `impact.codeEdits` carries `layer: 'source'` (the source edit in §3.4), along with the code bundle versions before and after, the stand-ins and the frame counts.
+- **The old version stays in the video**: replacement does not delete the asset. The receipt's `previousBundleRef` and undo still need the old version, and the engine deduplicates imports by content, so keeping it does not take up space twice. Code bundles and stand-ins that are no longer referenced are removed by the general cleanup: the edit operation `removeAssets` deletes only unreferenced assets, and a code bundle is deleted together with the stand-in baked from it. The agent lists them first with `assets_prune` and deletes them only after confirmation ([command and protocol spec §4.2](command-protocol-spec.md#42-edit-operations), [§12.7](command-protocol-spec.md#127-pruning-superseded-old-versions)).
 
-未定：是否提供 `fit` 选项（新版本更长或更短时保持实例长度、保持最后一帧或按比例变速），以及「更新全部实例」的批量替换。
+Open questions: whether to provide a `fit` option (keep the instance length, hold the last frame, or change speed proportionally when the new version is longer or shorter), and bulk replacement for “Update all instances”.
 
-### 3.4 三层编辑
+### 3.4 Three layers of editing
 
-| 层 | 例子 | 写到哪里 |
+| Layer | Example | Where it is written |
 | --- | --- | --- |
-| **实例编辑** | 晚两秒出现、缩小、加透明度、拆分 | `CodeCompositionItem` |
-| **参数编辑** | 地球的转速、标题、主题色、粒子数量 | `item.parameterValues` |
-| **源码编辑** | 增加一颗卫星、改变运动算法、重构镜头 | 新的代码包版本，再显式替换引用 |
+| **Instance edit** | appear two seconds later, shrink, add opacity, split | `CodeCompositionItem` |
+| **Parameter edit** | the Earth's rotation speed, title, theme color, particle count | `item.parameterValues` |
+| **Source edit** | add a satellite, change the motion algorithm, restructure the camera | a new code bundle version, then an explicit replacement of the reference |
 
-三层在界面、命令与回执中始终分开。回执必须说明这次修改属于哪一层。
+The three layers always stay separate in the UI, in commands and in receipts. A receipt must state which layer a change belongs to.
 
-对于参数做不到的复杂修改，界面提供「交给智能体修改这个合成」。交给智能体的上下文包含：代码包版本、选中的实例、时间范围、当前参数和截图。
+For complex changes that parameters cannot express, the UI offers “Hand this composition to the agent for changes”. The context handed to the agent includes: the code bundle version, the selected instance, the time range, the current parameters and a screenshot.
 
-### 3.5 拆分与变速
+### 3.5 Splitting and speed changes
 
-- 拆分一个代码合成实例得到两个实例，它们引用同一个代码包版本，各自的 `timeMap` 指向原来的局部时间区间。拆分不复制源码。
-- 变速与裁切只改 `timeMap`。`sequential` 的包在变速之后仍然按 `fixedStep` 仿真，输出取样只决定读取哪些时刻（§5.3）。
-- 画幅版本（视频格式规范 §7.7）通过参数覆盖适配响应式的包。包没有声明响应式能力时，明确使用 contain 或 cover，或者提出重构；改变纵横比不等于相机会自动重新构图。
+- Splitting a code composition instance yields two instances that reference the same code bundle version, each with a `timeMap` pointing to its part of the original local time interval. Splitting does not copy the source code.
+- Speed changes and trims only change `timeMap`. A `sequential` bundle still simulates with `fixedStep` after a speed change; output sampling only decides which moments are read (§5.3).
+- Aspect-ratio versions (video format spec §7.7) adapt responsive bundles through parameter overrides. When a bundle does not declare responsive capability, either explicitly use contain or cover, or propose a refactor. Changing the aspect ratio does not mean the camera re-frames automatically.
 
 ---
 
-## 4. 作者合同
+## 4. Author contract
 
-### 4.1 浏览器合同
+### 4.1 Browser contract
 
-CucCut Web 合同的作者接口：
+The author interface of the CucCut Web contract:
 
 ```ts
 interface AuthoredComposition {
@@ -229,186 +229,186 @@ interface AuthoredComposition {
   dispose(): void;
 }
 
-// 本规范补全
+// Added by this spec
 interface CompositionContext {
-  target: HTMLCanvasElement | HTMLElement;     // 可捕获的绘制目标
+  target: HTMLCanvasElement | HTMLElement;     // capturable draw target
   width: number;
   height: number;
   pixelRatio: number;
   intrinsicFps: Rate;
   durationFrames: number;
-  seed: string;                                // 确定性的随机种子
-  assets: { resolve(assetId: Id): Promise<{ url: string; mime: string }> };   // 只读、已冻结的 bytes
+  seed: string;                                // deterministic random seed
+  assets: { resolve(assetId: Id): Promise<{ url: string; mime: string }> };   // read-only, frozen bytes
   fonts: { ready(): Promise<void> };
-  placement?: { sequenceStart: MediaTime; sequenceFps: Rate };                // 只有声明了 placement 依赖才提供
-  cueTracks?: Record<Id, JsonValue>;                                          // 只有声明了 cue-track 依赖才提供
+  placement?: { sequenceStart: MediaTime; sequenceFps: Rate };                // provided only when the placement dependency is declared
+  cueTracks?: Record<Id, JsonValue>;                                          // provided only when the cue-track dependency is declared
 }
 ```
 
-**`initialize`** 必须等到字体、图片、模型、纹理和必要的异步初始化全部完成后才 resolve。
+**`initialize`** must resolve only after fonts, images, models, textures and any necessary asynchronous initialization have all completed.
 
-**`renderAt`** 的 resolve 表示**这个时刻的画面已经提交到可捕获的目标上**，不能只代表修改了变量或发出了 seek。宿主需要处理视频的解码与呈现同步，不能把 `seeked` 事件一概当作已经显示了新的一帧。
+The resolution of **`renderAt`** means **the frame at this moment has been committed to the capturable target**. It must not represent only that variables were changed or that a seek was issued. The host is responsible for synchronizing video decoding with presentation, and must not treat every `seeked` event as proof that a new frame is already displayed.
 
-**`dispose`** 释放全部资源。会话被取消或替换时，宿主调用它并等待资源真正释放（架构设计 §7.7）。
+**`dispose`** releases all resources. When a session is cancelled or replaced, the host calls it and waits for the resources to actually be released (architecture design §7.7).
 
-**发现**。这个合同的标识是 `cuccut/1`。入口页面在 `window.__cuccutCompositions[<compositionId>]` 上暴露 `AuthoredComposition`。根元素带 `data-composition-id`，以及 `data-width`、`data-height`、`data-fps` 与 `data-duration`（秒），与 `hyperframes/1`（§4.7）相同，两种合同用同一条规则找根元素。找不到根元素报告 `COMPOSITION_ROOT_MISSING`；根元素的尺寸、帧率或时长与清单的 `intrinsic` 不一致时报告 `COMPOSITION_INTRINSIC_MISMATCH`（§6.3）。
+**Discovery.** The identifier of this contract is `cuccut/1`. The entry page exposes `AuthoredComposition` at `window.__cuccutCompositions[<compositionId>]`. The root element carries `data-composition-id`, along with `data-width`, `data-height`, `data-fps` and `data-duration` (in seconds), the same as `hyperframes/1` (§4.7); both contracts use the same rule to find the root element. If the root element is not found, report `COMPOSITION_ROOT_MISSING`. If the root element's size, frame rate or duration does not match the manifest's `intrinsic`, report `COMPOSITION_INTRINSIC_MISMATCH` (§6.3).
 
-`renderAt(time, params)` 的 `time` 是局部时间（`MediaTime`），`params` 是参数值（§3.2，首版为空对象）；只在这一帧提交之后 resolve。
+The `time` in `renderAt(time, params)` is local time (`MediaTime`), and `params` are the parameter values (§3.2; empty object in the first version). It resolves only after this frame has been committed.
 
-### 4.2 确定性
+### 4.2 Determinism
 
-同一个代码包版本、同样的参数、同样的局部时间、同样的输出配置，必须得到相同的画面。
+The same code bundle version, the same parameters, the same local time and the same output configuration must produce the same picture.
 
-- 画面只能由 `renderAt` 收到的 `time` 和 `params`，以及已经声明的时间依赖（§5）决定。
-- 不得读取墙上时钟（`Date.now()`、`performance.now()`）或真实的运行时长来决定画面。
-- 随机数必须来自 `ctx.seed` 派生的确定性随机源。应用还必须固定自己的噪声源与调用顺序；只给 `Math.random` 设种子，不能声称全部确定。
-- 不得依赖网络、用户输入或宿主的窗口尺寸。
-- 没有声明的时间依赖不会被提供；代码不得从其他途径取得自己在主时间线上的位置。
+- The picture may be determined only by the `time` and `params` received by `renderAt`, and by the time dependencies already declared (§5).
+- Do not read the wall clock (`Date.now()`, `performance.now()`) or real elapsed run time to decide the picture.
+- Random numbers must come from a deterministic random source derived from `ctx.seed`. The application must also fix its own noise sources and call order; seeding only `Math.random` does not make everything deterministic.
+- Do not depend on the network, user input or the host's window size.
+- Time dependencies that are not declared are not provided; code must not obtain its own position on the main timeline by any other route.
 
 ### 4.3 p5.js
 
-- 新的作者模板使用 `noLoop()`，由 Adapter 调用受控的绘制，使用明确的局部时间，而不是真实的运行时长。
-- 使用 `randomSeed` / `noiseSeed`，并固定自己的随机源与调用顺序。
-- 已有的、带状态的草图可以声明 `sequential`：从初始状态按固定步长重放到目标帧（§5.3）。
+- New author templates use `noLoop()`, and the Adapter calls controlled drawing with an explicit local time rather than real elapsed run time.
+- Use `randomSeed` / `noiseSeed`, and fix your own random source and call order.
+- Existing stateful sketches may declare `sequential`: replay from the initial state to the target frame with a fixed step (§5.3).
 
 ### 4.4 Three.js
 
-- 用局部时间直接求出对象的状态，再渲染场景。
-- 动画片段可以通过 `AnimationMixer.setTime` 驱动。但这不等于所有的物理、粒子和异步资源都天然可以随机访问；带状态的部分要么改写成时间的纯函数，要么声明 `sequential`。
+- Use local time to compute the state of objects directly, then render the scene.
+- Animation clips may be driven through `AnimationMixer.setTime`. However, this does not mean that all physics, particles and asynchronous resources are naturally random-access; stateful parts must either be rewritten as pure functions of time, or declare `sequential`.
 
-### 4.5 Canvas 与透明
+### 4.5 Canvas and transparency
 
-- Canvas 内部的像素不是 DOM 对象。一个 canvas 里的标题与图表，不能只凭 CSS 选择器拆成两个可编辑的元素。可编辑的内容要么暴露为参数，要么主动实现独立的层输出（`exposedLayers`），要么保留为整体。
-- 透明输出必须由代码真正把背景清成透明，并使用支持 alpha 的目标。配置 `alpha: true` 不能自动移除已经画上去的背景。
-- 声明 `output.alpha: true` 的包在验证时检查 alpha 是否真实（§6.2）。
+- Pixels inside a canvas are not DOM objects. A title and a chart inside one canvas cannot be split into two editable elements just by CSS selectors. Editable content must either be exposed as parameters, be implemented deliberately as independent layer output (`exposedLayers`), or be kept as a whole.
+- Transparent output requires the code to actually clear the background to transparent, and to use a target that supports alpha. Setting `alpha: true` in the configuration does not automatically remove a background that has already been painted.
+- A bundle that declares `output.alpha: true` has its alpha checked for authenticity during validation (§6.2).
 
 ### 4.6 Remotion
 
-- **只认不产**。CucCut 自带的模板与创作指导不使用 Remotion；`engine: 'remotion'` 的代码包来自用户的要求或外部导入，必须能被识别、预览与渲染。
-- CucCut 不分发 Remotion。Adapter 使用代码包自己依赖里的 Remotion（Player 与 renderer），版本以包的锁文件为准；包里没有可用的 Remotion 时合成报告为不可用并说明，有预渲染替身的用替身（§3.1）。Remotion 的许可由代码包的作者负责，界面在导入时提示一次。
-- 预览可以使用 Remotion Player；参数映射为 `inputProps`；导出使用它的 renderer 的批量或区间接口，不为每一帧重复启动一次渲染进程与浏览器。
-- Player 与 renderer 是两个分别存在的集成表面。Adapter 必须显式冻结相同的 props 与构建输入。
-- 单独适配 Remotion 是为了保留它的 frame / React / audio 语义，不是承诺导出更快。它内部的视频与音频处理需要在 Adapter 的能力测试中验证。
-- CucCut 的区间统一右开。调用第三方 renderer 时，在边界上转换它的 `frameRange` 端点规则；禁止漏掉最后一帧或多输出一帧。
-- 父序列与 Remotion 的帧率不同时，按源时间映射采样，并声明 hold 或 nearest 等策略。不能在每次界面 seek 时随意取整。
-- 不能把视频帧或输出帧直接当作 Remotion 的 composition frame，也不能通过改写已发布代码包的 `fps` 来支持新的导出帧率。
-- 透明视频与音频导出的具体容器和路径，按实际可用的版本与许可验证；不承诺所有模式默认可用。
+- **Recognize, do not produce.** CucCut's built-in templates and authoring guidance do not use Remotion. Code bundles with `engine: 'remotion'` come from user requests or external imports, and must be recognizable, previewable and renderable.
+- CucCut does not distribute Remotion. The Adapter uses the Remotion that the code bundle depends on (Player and renderer), with the version set by the bundle's lockfile. If the bundle has no usable Remotion, the composition is reported as unavailable with an explanation; if there is a pre-rendered stand-in, the stand-in is used (§3.1). Remotion's license is the responsibility of the code bundle's author, and the UI shows a notice once at import.
+- Preview may use the Remotion Player; parameters map to `inputProps`. Export uses the renderer's batch or range interface, and does not start a render process and browser again for every frame.
+- The Player and the renderer are two separately existing integration surfaces. The Adapter must explicitly freeze the same props and build inputs for both.
+- Adapting Remotion separately is to preserve its frame / React / audio semantics, not a promise that export is faster. Its internal video and audio processing must be verified in the Adapter's capability tests.
+- CucCut's ranges are uniformly right-open. When calling a third-party renderer, convert its `frameRange` endpoint rules at the boundary; dropping the last frame or outputting one extra frame is forbidden.
+- When the parent sequence's frame rate differs from Remotion's, sample by mapping source time, and declare a policy such as hold or nearest. Do not round arbitrarily on each UI seek.
+- Do not treat a video frame or an output frame directly as a Remotion composition frame, and do not support a new export frame rate by rewriting the `fps` of an already published code bundle.
+- The concrete containers and paths for transparent video and audio export are verified against the versions and licenses actually available; not all modes are promised to be available by default.
 
 ### 4.7 HyperFrames
 
-合同标识 `hyperframes/1`，对应 HyperFrames（Apache-2.0，https://github.com/hyperframes/hyperframes）的公开合同。本节只写 Adapter 依赖的部分，合同本身以上游为准。
+The contract identifier is `hyperframes/1`, corresponding to the public contract of HyperFrames (Apache-2.0, https://github.com/hyperframes/hyperframes). This section covers only the parts the Adapter depends on; the contract itself is defined by the upstream project.
 
-- **发现**。根元素与 §4.1 相同：`[data-composition-id]`，带 `data-width`、`data-height`、`data-fps`、`data-duration`。Adapter 等待 `window.__timelines[<compositionId>]` 出现：一条暂停的、可以 seek 的时间线，提供 `seek(秒)`，以及 `time()`，或者 `progress()` 与 `duration`。等不到时报告 `COMPOSITION_TIMELINE_MISSING`。
-- **取帧**。Adapter 先调用 `pause()`，之后每一帧调用 `seek(t)` 并回读时间线的实际时间。回读与 `t` 相差超过采样帧率下的半帧，即 1 / (2 × fps) 时，报告 `COMPOSITION_SEEK_MISMATCH`。fps 取取帧票据的 `fps`：烘焙按序列或导出的帧率（§7），验证与预览按秒取帧时票据带包的 `intrinsic.fps`；没有票据时取包的 `intrinsic.fps`。30 fps 时容差为 1/60 s。误差不到半帧时，回读的时间与 `t` 仍落在同一帧上；容差随帧率收紧，不用固定常数（架构设计 §8.4）。seek 之后等两个动画帧再捕获；这个等待策略的地位见架构设计 §8.4。
-- **末尾**。请求的时刻达到或超过时长时，夹到时长上取帧，并在回执里标明已夹取。这是这个合同对架构设计 §8.4 末尾行为的显式选择：取可用帧并报告，不当作成功的 hold。
-- **音频**。首版不从这个合同取声音，`output.audio` 必须为 `none`。
+- **Discovery.** The root element is the same as in §4.1: `[data-composition-id]`, with `data-width`, `data-height`, `data-fps` and `data-duration`. The Adapter waits for `window.__timelines[<compositionId>]` to appear: a paused, seekable timeline that provides `seek(seconds)`, and either `time()`, or `progress()` and `duration`. If it does not appear, report `COMPOSITION_TIMELINE_MISSING`.
+- **Frame capture.** The Adapter first calls `pause()`, then for each frame calls `seek(t)` and reads back the timeline's actual time. If the read-back differs from `t` by more than half a frame at the sampling frame rate, that is 1 / (2 × fps), report `COMPOSITION_SEEK_MISMATCH`. The fps is taken from the `fps` of the capture ticket: for baking, it is the frame rate of the sequence or export (§7); for verification and preview when capturing frames by seconds, the ticket uses the `intrinsic.fps` of the bundle; without a ticket, use the bundle's `intrinsic.fps`. At 30 fps the tolerance is 1/60 s. When the error is less than half a frame, the read-back time and `t` still fall on the same frame. The tolerance tightens with the frame rate and does not use a fixed constant (architecture design §8.4). After seeking, wait two animation frames before capturing; the status of this waiting strategy is described in architecture design §8.4.
+- **End of timeline.** When the requested moment reaches or exceeds the duration, clamp to the duration for frame capture, and note the clamp in the receipt. This is the explicit choice this contract makes for the end-of-timeline behaviour in architecture design §8.4: take the available frame and report it, rather than treating it as a successful hold.
+- **Audio.** In the first release, this contract does not take sound; `output.audio` must be `none`.
 
-这个合同有自己的 composition 与 seek 合同，不同时再用 CucCut 的第二个时钟去驱动其中的媒体。它区分 HTML 时序与可 seek 的动画，适配时保留这个分工。
+This contract has its own composition and seek contract, and does not additionally drive the media inside it with a second CucCut clock. It distinguishes HTML timing from seekable animation, and the adaptation preserves this division of labour.
 
-### 4.8 音频
+### 4.8 Audio
 
-合成内部含有音频时，必须在两种方式里选择一种：
+When a composition contains audio internally, choose one of two modes:
 
-- **`stems`**：由 Adapter 输出独立的分轨，交给主混音。
-- **`mixed`**：作为一条明确的混合音轨。
+- **`stems`**: the Adapter outputs separate tracks, which go into the main mix.
+- **`mixed`**: the Adapter outputs one explicit mixed track.
 
-不得同时播放合成内部的音频与同一份外部旁白。Adapter 内部的音频不得同时再进入外部混音。
+Do not play the audio inside a composition together with the same external narration. Audio inside an Adapter must not also enter the external mix.
 
-不在 `renderAt` 里随机播放音效。旁白、配乐与音效由 SoundCueSheet 组织，编译成普通的音频实例（视频格式规范 §7.9）。
+Do not play sound effects randomly in `renderAt`. Narration, music and sound effects are organized by the SoundCueSheet and compiled into ordinary audio instances (video format spec §7.9).
 
 ---
 
-## 5. 时间依赖
+## 5. Time Dependencies
 
-### 5.1 为什么要声明
+### 5.1 Why Declare Them
 
-把一段动画分成多个独立的包，并不证明移动实例之后可以复用全部缓存。场景代码可能读取自己在主时间线上的起点（例如用 `start + t` 驱动背景），也可能读取全局时钟或外部的声音事件。只有知道画面依赖哪些时间，才能判断一次修改之后哪些帧仍然有效。
+Splitting an animation into several independent packages does not prove that the cache can be fully reused after an instance is moved. Scene code may read its own start point on the main timeline (for example, `start + t` to drive a background), or it may read the global clock or external sound events. Only when we know which times a frame depends on can we tell which frames remain valid after a change.
 
-### 5.2 四种依赖
+### 5.2 Four Kinds of Dependency
 
-| `kind` | 画面依赖什么 | 移动实例之后 | 改 cue 或文稿之后 |
+| `kind` | What the frame depends on | After moving the instance | After changing a cue or script |
 | --- | --- | --- | --- |
-| `local-only` | 只依赖局部时间与参数 | 复用内部的求帧结果 | 不受影响 |
-| `placement` | 依赖实例在序列中的位置 | 重新求值 | 不受影响 |
-| `cue-track` | 依赖某个外部的 cue 轨（带版本引用） | 取决于 cue 是否随之变化 | 被引用的版本改变时重新求值 |
-| `sequence-clock` | 依赖序列的全局时钟 | 重新求值 | 序列时序变化时重新求值 |
+| `local-only` | Only local time and parameters | Reuse the internally computed frame results | Not affected |
+| `placement` | The instance's position in the sequence | Re-evaluate | Not affected |
+| `cue-track` | An external cue track (with a versioned reference) | Depends on whether the cue changes with it | Re-evaluate when the referenced version changes |
+| `sequence-clock` | The sequence's global clock | Re-evaluate | Re-evaluate when the sequence timing changes |
 
-规则：
+Rules:
 
-- **省略 `timeDependencies` 表示未知，不等于 `local-only`。** 未声明或未验证时保守失效。
-- `local-only` 必须与其他依赖互斥。
-- 冻结的合成输入必须包含这些依赖的值与版本（架构设计 §8.6）。
-- 不从代码文件的 hash 推断局部影响。
-- 声明要经过验证（§6.2）：声明为 `local-only` 的包，在不同的放置位置上求同一个局部时间，必须得到相同的画面。
+- **Omitting `timeDependencies` means unknown, not `local-only`.** If it is not declared or not verified, invalidate conservatively.
+- `local-only` must be mutually exclusive with the other dependencies.
+- A frozen composition input must include the values and versions of these dependencies (architecture design §8.6).
+- Do not infer local impact from a code file's hash.
+- Declarations must be verified (§6.2): a package declared as `local-only`, evaluated at the same local time at different placements, must produce the same frame.
 
-### 5.3 取帧方式
+### 5.3 Frame Access Modes
 
-| `timing.access` | 含义 | 局部重渲染 |
+| `timing.access` | Meaning | Local re-render |
 | --- | --- | --- |
-| `random` | 任意局部时间都可以直接求值 | 可以只重渲染受影响的区间 |
-| `sequential` | 必须从初始状态按 `fixedStep` 重放到目标帧 | 修改某个时刻的状态可能影响其后的所有帧，不得只重渲染局部 |
-| `checkpointed` | 可以从保存的检查点继续重放 | 从受影响时刻之前最近的检查点开始 |
+| `random` | Any local time can be evaluated directly | Only the affected range needs re-rendering |
+| `sequential` | Must replay from the initial state with `fixedStep` up to the target frame | Changing the state at one moment may affect all frames after it; must not re-render only locally |
+| `checkpointed` | Can resume replay from a saved checkpoint | Start from the nearest checkpoint before the affected moment |
 
-- `fixedStep` 是仿真的步率，不随输出帧率改变。输出取样只决定读取哪些时刻。
-- 检查点只在代码能够完整保存仿真状态、随机状态和必要的资源恢复信息时启用。任意的 JS 堆或 WebGL 状态不能自动被当作可保存的检查点。
-- 对 `sequential` 的包做远处的随机 seek 时，可以先展示缓存的预览，再计算正确的帧；不能把旧帧标记为已经精确求值。
+- `fixedStep` is the simulation step rate and does not change with the output frame rate. Output sampling only decides which moments are read.
+- Checkpoints are enabled only when the code can fully save the simulation state, the random state and any necessary resource recovery information. Arbitrary JS heap or WebGL state cannot automatically be treated as a saveable checkpoint.
+- For a `sequential` package, a distant random seek may first show a cached preview and then compute the correct frame. Old frames must not be marked as precisely evaluated.
 
-### 5.4 局部帧率
+### 5.4 Local Frame Rate
 
-- `intrinsic.fps` 是代码包自己的帧率。它与 `Sequence.fps`、`ExportSettings.fps` 相互独立（视频格式规范 §2.11）。
-- 连续的动画在精确的局部时间上求值，不先取整到某个帧网格。
-- 帧驱动的代码用 `intrinsic.fps` 选择局部帧；Adapter 返回实际的局部时间、实际的源帧或 PTS，以及使用的采样策略。
-- 是否支持插值、hold 或 nearest 必须经过能力验证。不支持时拒绝或明确降级。
-- 请求超出包的时长时，必须显式选择：取可用帧、hold，或报告越界。默认不把越界的请求当作成功的 hold。
+- `intrinsic.fps` is the code package's own frame rate. It is independent of `Sequence.fps` and `ExportSettings.fps` (video format spec §2.11).
+- Continuous animation is evaluated at exact local times and is not first rounded to a frame grid.
+- Frame-driven code uses `intrinsic.fps` to select local frames. The Adapter returns the actual local time, the actual source frame or PTS, and the sampling strategy used.
+- Whether interpolation, hold or nearest is supported must be verified by capability. If it is not supported, reject or degrade explicitly.
+- When a request exceeds the package's duration, an explicit choice is required: take the available frame, hold, or report out-of-range. Out-of-range requests are not treated as a successful hold by default.
 
 ---
 
-## 6. 验证与发布
+## 6. Verification and Publishing
 
-### 6.1 发布流程
+### 6.1 Publishing Flow
 
 ```text
-创作工作区里的草稿
-  → 构建（隔离环境，固定工具链）
-  → 静态检查（清单、Schema、权限、依赖是否齐全）
-  → 采样验证（§6.2）
-  → 计算摘要，登记为不可变的版本
-  → 通过事务把选定的实例从旧版本切到新版本
+Draft in the authoring workspace
+  → build (isolated environment, pinned toolchain)
+  → static checks (manifest, schema, permissions, dependencies complete)
+  → sample verification (§6.2)
+  → compute digest, register as an immutable version
+  → transactionally switch the selected instances from the old version to the new one
 ```
 
-- 草稿放在独立的创作工作区。保存草稿文件不会改变已发布的代码包，也不会改变正在导出的内容。
-- 构建草稿不是视频。不通过文件监听自动覆盖已发布的版本。
-- 每次构建的输入 hash、工具链、输出的代码包、验证报告和应用回执记录在构建账本里（架构设计 §8.6）。
+- Drafts live in a separate authoring workspace. Saving a draft file does not change the published code package or the content being exported.
+- Building a draft is not a video. Published versions are not overwritten automatically by file watching.
+- The input hash, toolchain, output code package, verification report and application receipt of each build are recorded in the build ledger (architecture design §8.6).
 
-**导入**。从一个目录导入代码包，同样经过静态检查与采样验证（§6.2）：
+**Import.** Importing a code package from a directory goes through the same static checks and sample verification (§6.2):
 
-- 用 `lstat` 列出文件，拒绝符号链接。
-- 只收白名单内的扩展名：`html` `htm` `js` `mjs` `cjs` `css` `json` `map` `txt` `md` `svg` `png` `jpg` `jpeg` `webp` `gif` `avif` `woff` `woff2` `ttf` `otf` `mp3` `wav` `ogg` `m4a` `mp4` `webm` `mov` `wasm` `lock`，以及有固定名字的清单文件（§2.5）。
-- 上限：4096 个文件，单个文件 64 MiB，合计 256 MiB，相对路径不超过 512 个字符。
-- 静态扫描网络引用：`src`、`href`、`url()`、`@import`、`fetch`、`new URL` 中的 `http(s)://`、`ws(s)://` 与协议相对 URL（`//` 开头）；XML 命名空间 URI 不算。发现即拒绝。
-- 没有 `bundle.manifest.json` 的包，导入方可以按入口页面根元素的 `data-*` 属性（§4.1）或调用方给出的覆盖值合成一份清单。合成的清单写进暂存副本，不写回源目录；`revision` 默认为 `1`（`Revision` 是非负十进制整数字符串，视频格式规范 §1.2）。
-- 通过的包按 `bundleId/revision` 不可变地存成托管的目录素材（视频格式规范 §4.3），清单放在素材版本的 `bundle` 字段里。
+- List files with `lstat` and reject symbolic links.
+- Accept only whitelisted extensions: `html` `htm` `js` `mjs` `cjs` `css` `json` `map` `txt` `md` `svg` `png` `jpg` `jpeg` `webp` `gif` `avif` `woff` `woff2` `ttf` `otf` `mp3` `wav` `ogg` `m4a` `mp4` `webm` `mov` `wasm` `lock`, plus manifest files with fixed names (§2.5).
+- Limits: 4096 files, 64 MiB per file, 256 MiB in total, and relative paths of no more than 512 characters.
+- Statically scan for network references: `src`, `href`, `url()`, `@import`, `http(s)://` and `ws(s)://` inside `fetch` and `new URL`, and protocol-relative URLs (starting with `//`). XML namespace URIs do not count. Reject on any finding.
+- A package without `bundle.manifest.json` can have a manifest synthesized by the importer from the `data-*` attributes on the root element of the entry page (§4.1), or from override values supplied by the caller. The synthesized manifest is written to a staging copy, not back to the source directory. `revision` defaults to `1` (`Revision` is a non-negative decimal integer string, video format spec §1.2).
+- A package that passes is stored immutably as a managed directory asset under `bundleId/revision` (video format spec §4.3), and the manifest is placed in the `bundle` field of the asset version.
 
-### 6.2 验证项
+### 6.2 Verification Items
 
-清单的声明经过实测才生效。验证结果是 `VerifiedCapabilities`（架构设计 §8.3），与清单不一致时拒绝，或把能力降级。
+A manifest's declarations take effect only after they have been tested. The verification result is `VerifiedCapabilities` (architecture design §8.3). If it does not match the manifest, reject or downgrade the capabilities.
 
-| 验证项 | 检查什么 |
+| Verification item | What it checks |
 | --- | --- |
-| 就绪 | `initialize` 完成后字体、纹理、媒体确实可用；首帧不是空白或占位 |
-| 确定性 | 同一个局部时间重复求值，画面一致 |
-| 随机访问 | 声明 `random` 的包：乱序求值与顺序求值的结果一致 |
-| 顺序重放 | 声明 `sequential` / `checkpointed` 的包：从头重放与从检查点重放的结果一致 |
-| 时间依赖 | 声明 `local-only` 的包：改变放置位置，同一个局部时间的画面一致 |
-| 末帧 | 第一帧、最后一帧和相邻帧可以区分；越界行为与声明一致 |
-| 透明 | 声明 `alpha` 的包：背景确实透明，边缘没有预乘错误 |
-| 音频 | 声明带音频的包：长度、采样率与声道符合声明；没有与外部混音重复 |
-| 权限 | 运行期间没有访问网络或未声明的素材 |
-| 参数 | 默认参数通过 Schema；边界值不崩溃 |
+| Ready | After `initialize` completes, fonts, textures and media are actually available; the first frame is not blank or a placeholder |
+| Determinism | Evaluating the same local time repeatedly produces the same frame |
+| Random access | For packages declaring `random`: out-of-order evaluation matches sequential evaluation |
+| Sequential replay | For packages declaring `sequential` / `checkpointed`: replay from the start matches replay from a checkpoint |
+| Time dependency | For packages declaring `local-only`: changing the placement produces the same frame at the same local time |
+| Last frame | The first frame, last frame and adjacent frames can be told apart; out-of-range behavior matches the declaration |
+| Transparency | For packages declaring `alpha`: the background is actually transparent and the edges have no premultiplication errors |
+| Audio | For packages declaring audio: length, sample rate and channels match the declaration; nothing is duplicated with the external mix |
+| Permissions | No network access or undeclared assets during runtime |
+| Parameters | Default parameters pass the schema; boundary values do not crash |
 
-验证没有通过的能力不开放。没有通过就绪与确定性验证的包不能用于 Export-Exact。
+Capabilities that do not pass verification are not enabled. A package that has not passed ready and determinism verification cannot be used for Export-Exact.
 
-**验证报告**是包根目录的 `verification.json`（本规范补全）：
+The **verification report** is `verification.json` in the package root (completed by this spec):
 
 ```ts
 interface CodeBundleVerificationReport {
@@ -419,130 +419,130 @@ interface CodeBundleVerificationReport {
   contentHash: string;
   verifiedAt: string;
   status: 'passed' | 'failed';
-  capabilities: VerifiedCapabilities | null;   // 架构设计 §8.3
+  capabilities: VerifiedCapabilities | null;   // architecture design §8.3
   checks: Array<{ id: CodeBundleCheckId; status: 'passed' | 'failed' | 'skipped'; code?: CodeBundleErrorCode; detail?: string }>;
-  sampledFrames: Array<{ seconds: number; sha256: string }>;   // 验证时取过的帧，供复核
+  sampledFrames: Array<{ seconds: number; sha256: string }>;   // frames taken during verification, kept for review
 }
 ```
 
-首版的检查项（`CodeBundleCheckId`）：
+Checks in the first version (`CodeBundleCheckId`):
 
-| `id` | 检查什么 |
+| `id` | What it checks |
 | --- | --- |
-| `manifest` | 清单符合 §2.1，或已由导入方合成（§6.1） |
-| `files` | 扩展名白名单、符号链接与大小上限（§6.1） |
-| `content-hash` | 重新计算的 `contentHash` 与清单一致（§2.2） |
-| `network-static` | 静态扫描没有网络引用（§6.1） |
-| `network-runtime` | 运行期间，不是包目录下的 `file:`、也不是 `data:`、`blob:`、`about:` 的请求一律取消并计数；计数不为零即失败 |
-| `root` | 找到根元素，`data-*` 与清单的 `intrinsic` 一致（§4.1） |
-| `timeline` | 合同的取帧入口出现（§4.1、§4.7） |
-| `seek` | seek 之后回读的时间与请求一致（§4.7） |
-| `determinism` | 同一个局部时间渲染两次，两帧的 sha256 相同 |
-| `alpha` | 声明 `output.alpha` 的包：测量透明像素；采样帧全部不透明即失败 |
-| `duration` | 末帧与越界行为符合声明（§5.4） |
+| `manifest` | The manifest conforms to §2.1, or has been synthesized by the importer (§6.1) |
+| `files` | Extension whitelist, symbolic links and size limits (§6.1) |
+| `content-hash` | The recomputed `contentHash` matches the manifest (§2.2) |
+| `network-static` | The static scan finds no network references (§6.1) |
+| `network-runtime` | During runtime, requests that are not `file:` within the package directory, and not `data:`, `blob:` or `about:`, are always cancelled and counted; a non-zero count fails |
+| `root` | The root element is found, and its `data-*` attributes match the manifest's `intrinsic` (§4.1) |
+| `timeline` | The contract's frame-access entry point is present (§4.1, §4.7) |
+| `seek` | The time read back after a seek matches the request (§4.7) |
+| `determinism` | Rendering the same local time twice yields the same sha256 for both frames |
+| `alpha` | For packages declaring `output.alpha`: measure transparent pixels; fails if all sampled frames are fully opaque |
+| `duration` | The last frame and out-of-range behavior match the declaration (§5.4) |
 
-首版报告没有覆盖上表中的就绪、随机访问（乱序与顺序一致）、顺序重放、时间依赖、音频与参数；权限只检查网络，不检查未声明的素材；透明也不检查预乘边缘。这些能力按本节的规则不开放，没有就绪验证的包也不能用于 Export-Exact。
+The first-version report does not cover the ready, random-access (out-of-order vs. sequential consistency), sequential-replay, time-dependency, audio and parameter items in the table above. Permissions only check the network, not undeclared assets; transparency does not check premultiplied edges. Under the rules of this section, these capabilities are not enabled, and a package without ready verification cannot be used for Export-Exact.
 
-### 6.3 失败时
+### 6.3 On Failure
 
-- 构建或验证失败时不产生新版本，已发布的版本与引用它的实例保持不变。
-- 失败报告指出具体的验证项、采样时刻和证据，交还给作者或智能体修正。
-- 沙箱不可用时，代码合成的预览与渲染关闭，并说明原因；不以降低隔离为代价继续执行。
+- If a build or verification fails, no new version is produced; the published version and the instances referencing it remain unchanged.
+- The failure report identifies the specific verification item, the sampled moment and the evidence, and returns them to the author or agent for correction.
+- When the sandbox is unavailable, code-composition preview and rendering are turned off and the reason is stated; execution does not continue at the cost of reduced isolation.
 
-错误码：
+Error codes:
 
-| 错误码 | 含义 |
+| Error code | Meaning |
 | --- | --- |
-| `BUNDLE_MANIFEST_INVALID` | 清单无法解析或不符合 §2.1，且没有合成 |
-| `BUNDLE_FILE_NOT_ALLOWED` | 包里有白名单之外的文件 |
-| `BUNDLE_SYMLINK` | 包里有符号链接 |
-| `BUNDLE_TOO_LARGE` | 超出文件数、单个文件、合计大小或路径长度的上限 |
-| `BUNDLE_NETWORK_REFERENCE` | 静态扫描发现网络引用 |
-| `BUNDLE_HASH_MISMATCH` | 重新计算的 `contentHash` 与清单不一致 |
-| `BUNDLE_ENTRY_MISSING` | `runtime.entry` 指向的文件不存在 |
-| `BUNDLE_CONTRACT_UNSUPPORTED` | `runtime.contract` 不是已开放的合同 |
-| `COMPOSITION_ROOT_MISSING` | 入口页面没有 `[data-composition-id]` 根元素 |
-| `COMPOSITION_TIMELINE_MISSING` | 等不到合同的取帧入口 |
-| `COMPOSITION_SEEK_MISMATCH` | seek 之后回读的时间超出容差 |
-| `COMPOSITION_INTRINSIC_MISMATCH` | 根元素的尺寸、帧率或时长与清单不一致 |
-| `COMPOSITION_NONDETERMINISTIC` | 同一个局部时间两次渲染的画面不同 |
-| `COMPOSITION_NETWORK_BLOCKED` | 运行期间有请求被拦截 |
-| `COMPOSITION_SCRIPT_ERROR` | 页面脚本抛出未处理的错误 |
-| `COMPOSITION_RENDER_TIMEOUT` | 初始化或取帧超时 |
-| `COMPOSITION_HOST_UNAVAILABLE` | 执行环境无法启动或已退出 |
+| `BUNDLE_MANIFEST_INVALID` | The manifest cannot be parsed or does not conform to §2.1, and no synthesis was done |
+| `BUNDLE_FILE_NOT_ALLOWED` | The package contains a file outside the whitelist |
+| `BUNDLE_SYMLINK` | The package contains a symbolic link |
+| `BUNDLE_TOO_LARGE` | Exceeds the limits on file count, single file size, total size or path length |
+| `BUNDLE_NETWORK_REFERENCE` | The static scan found a network reference |
+| `BUNDLE_HASH_MISMATCH` | The recomputed `contentHash` does not match the manifest |
+| `BUNDLE_ENTRY_MISSING` | The file that `runtime.entry` points to does not exist |
+| `BUNDLE_CONTRACT_UNSUPPORTED` | `runtime.contract` is not a published contract |
+| `COMPOSITION_ROOT_MISSING` | The entry page has no `[data-composition-id]` root element |
+| `COMPOSITION_TIMELINE_MISSING` | The contract's frame-access entry point never appears |
+| `COMPOSITION_SEEK_MISMATCH` | The time read back after a seek is outside tolerance |
+| `COMPOSITION_INTRINSIC_MISMATCH` | The root element's size, frame rate or duration does not match the manifest |
+| `COMPOSITION_NONDETERMINISTIC` | Two renders of the same local time produce different frames |
+| `COMPOSITION_NETWORK_BLOCKED` | A request was blocked during runtime |
+| `COMPOSITION_SCRIPT_ERROR` | The page script threw an unhandled error |
+| `COMPOSITION_RENDER_TIMEOUT` | Initialization or frame access timed out |
+| `COMPOSITION_HOST_UNAVAILABLE` | The execution environment failed to start or has exited |
 
 ---
 
-## 7. Bake 与降级
+## 7. Bake and Degradation
 
-`bakeCodeItem` 把一个代码合成实例渲染成普通媒体。
+`bakeCodeItem` renders a code-composition instance into an ordinary media asset.
 
 ```ts
-// 本规范补全
+// Added by this spec
 interface BakeRecord {
-  bakedAssetRef: VersionRef;           // 渲染得到的普通媒体
-  sourceBundleRef: VersionRef;         // 原代码包版本
+  bakedAssetRef: VersionRef;           // the ordinary media produced by rendering
+  sourceBundleRef: VersionRef;         // the original code package version
   parameterValuesHash: string;
   timeMapHash: string;
   outputProfileHash: string;
   bakedAt: string;
-  status: 'current' | 'stale';         // 源码包、参数或 timeMap 改变后为 stale
+  status: 'current' | 'stale';         // becomes stale after the source package, parameters or timeMap change
   encoding: { container: 'mov'; codec: string; pixelFormat: string; alpha: boolean; fps: Rate; frames: number };
 }
 ```
 
-- 烘焙按实例所在序列或导出的帧率取帧：第 k 帧的局部时间是 `t = k / fps`，不按包的 `intrinsic.fps`（§5.4）。`compositions_import` 新放置的实例在根序列上，用根序列的帧率；`replace` 用被替换实例所在序列的帧率。
-- **编码**。首版输出 QuickTime `.mov`：`output.alpha` 为 true 时用 ProRes 4444（`yuva444p10le`），否则用 ProRes 422 HQ。烘焙结果作为普通的视频素材导入，`hasAlpha` 如实记录。
-- **记录位置**。`BakeRecord` 记在烘焙素材的来源里：`provenance` 为 `{ origin: 'composition-bake', source: BakeRecord }`（视频格式规范 §4.5）。合成实例上还没有对应的字段（§3.1、§9）。首版的 `bakedAssetRef` 与 `sourceBundleRef` 先写代码包清单的 `bundleId/revision`：素材 ID 要等导入事务的回执才知道（§9）。
-- 新建的合成实例用 `prerender` 指向烘焙素材，导出走已有的预渲染替身路径（视频格式规范 §3.7）。
-- 首版分两次事务：先导入代码包与烘焙素材，再用 `insertItems` 放置合成实例。两步合起来不是原子的：第二步失败时，已导入的两个素材留在视频里，没有实例引用它们。并成一笔的做法见 §9。
+- Baking samples frames at the frame rate of the sequence containing the instance or of the export: frame k has local time `t = k / fps`, not the package's `intrinsic.fps` (§5.4). A newly placed instance from `compositions_import` sits on the root sequence and uses the root sequence's frame rate; `replace` uses the frame rate of the sequence containing the instance being replaced.
+- **Encoding.** The first version outputs QuickTime `.mov`: ProRes 4444 (`yuva444p10le`) when `output.alpha` is true, otherwise ProRes 422 HQ. The baked result is imported as an ordinary video asset, and `hasAlpha` is recorded truthfully.
+- **Where the record lives.** `BakeRecord` is recorded in the source of the baked asset: `provenance` is `{ origin: 'composition-bake', source: BakeRecord }` (video format spec §4.5). Composition instances do not yet have a corresponding field (§3.1, §9). In the first version, `bakedAssetRef` and `sourceBundleRef` initially hold the code package manifest's `bundleId/revision`, because the asset ID is not known until the import transaction's receipt is returned (§9).
+- A newly created composition instance uses `prerender` to point at the baked asset, and export goes through the existing pre-rendered stand-in path (video format spec §3.7).
+- In the first version, this takes two transactions: first import the code package and the baked asset, then place the composition instance with `insertItems`. Together the two steps are not atomic: if the second step fails, the two imported assets remain in the video and no instance references them. The approach that combines them into one transaction is in §9.
 
-- Bake **保留**源代码包、参数、映射和来源，并提供「回到可编辑的源码」。Bake 不是删除源文件。
-- Bake 之后修改参数或替换版本，烘焙结果标记为 `stale`；界面提示重新烘焙，或继续使用实时求值。
-- 只有源成片、没有作者代码时，不得把一个普通 MP4 包装成「可编辑的 Remotion 合成」。
-- Bake 与「只有成片的输入」是两回事：前者保留回到源码的引用，后者不能伪装成源视频。
+- Bake **keeps** the source code package, parameters, mapping and provenance, and provides “Back to editable source”. Bake does not delete source files.
+- After baking, changing parameters or replacing the version marks the baked result as `stale`; the interface prompts a re-bake, or continues using live evaluation.
+- When there is only a finished video and no author code, a plain MP4 must not be wrapped as an “editable Remotion composition”.
+- Bake and “finished-video-only inputs” are different things: the former keeps a reference back to source code, while the latter must not be disguised as source video.
 
-**降级**。运行环境不满足包的要求时（例如缺少 GPU 能力、Adapter 版本不兼容、沙箱不可用）：
+**Degradation.** When the runtime environment does not meet the package's requirements (for example, missing GPU capability, incompatible Adapter version, or unavailable sandbox):
 
-| 情况 | 行为 |
+| Situation | Behavior |
 | --- | --- |
-| 有当前的烘焙结果 | 使用烘焙结果播放与导出，并标注来源 |
-| 只有过期的烘焙结果或预览缓存 | 可以用来浏览，标注为过期；不能用于 Export-Exact |
-| 都没有 | 显示占位与原因；阻断依赖这个实例的严格导出 |
+| A current baked result exists | Play and export with the baked result, and label its source |
+| Only a stale baked result or preview cache exists | May be used for browsing, labeled as stale; must not be used for Export-Exact |
+| Neither exists | Show a placeholder and the reason; block strict export that depends on this instance |
 
-降级必须是可见的。不得用一张静态图或空白画面静默替代。
+Degradation must be visible. A static image or blank frame must not silently stand in for it.
 
 ---
 
-## 8. 开放范围
+## 8. Open Scope
 
-文中的第三方接口名称是集成参考，不是当前可用性的保证。实现必须锁定框架、浏览器与 renderer 的版本，取得验证过的能力之后才开放功能。
+The third-party API names in this document are integration references, not a guarantee of current availability. The implementation must pin the versions of the framework, the browser and the renderer, and only open a feature after its capability has been verified.
 
-| 阶段 | 范围 |
+| Phase | Scope |
 | --- | --- |
-| **P0** | 受控 Web 合同（`cuccut/1`）与 HyperFrames 合同（`hyperframes/1`）的导入、验证、取帧与烘焙；执行环境是 Electron 离屏窗口。p5.js、Three.js、Canvas 按各自被支持的子集接入 |
-| **P1** | 导入外部的 Remotion 代码；更丰富的独立层输出；检查点；Playwright 或无头 Chromium 的执行环境 |
-| **G** | 三层编辑的区分、不可变版本、时间依赖的保守失效、Bake 保留源码引用，对任何已开放的合同都生效 |
+| **P0** | Import, validation, frame capture and baking for the controlled Web contract (`cuccut/1`) and the HyperFrames contract (`hyperframes/1`); the execution environment is an Electron off-screen window. p5.js, Three.js and Canvas are integrated according to the subset each one supports |
+| **P1** | Importing external Remotion code; richer standalone layer output; checkpoints; an execution environment based on Playwright or headless Chromium |
+| **G** | Separation of the three editing layers, immutable versions, conservative invalidation for time dependencies, and Bake keeping source references; applies to every contract that is already open |
 
-HyperFrames 合同进入第一期，是 2026-10-07 用户开始实现任务时采纳的计划建议，不是更早的裁决。
+The HyperFrames contract enters in the first phase. It is a plan recommendation adopted when the user started implementation on 2026-10-07, not an earlier ruling.
 
-模板渲染成功不能被夸大为支持所有既有视频。
+Successful template rendering must not be overstated as support for all existing videos.
 
 ---
 
-## 9. 待评审事项
+## 9. Items Pending Review
 
-| 事项 | 状态 | 需要决定什么 |
+| Item | Status | What needs to be decided |
 | --- | --- | --- |
-| `CompositionContext`（§4.1） | 本规范补全 | 绘制目标的形式；素材解析的接口；是否提供音频上下文 |
-| 合成实例的字段（§3.1） | `audioRoute`、`qualityPolicy`、`bake` 未纳入 | 声部模式与质量政策的取值；Bake 记录是否从烘焙素材的来源（§7）移到实例上，与预渲染替身如何衔接、替身何时过期 |
-| 包的目录布局（§2.5） | 部分已定 | 已定：首版固定 `bundle.manifest.json`、`files.manifest.json`、`verification.json` 三个文件名。待定：其余文件名是否强制；文件名固定之后 `source.filesManifest` 是否还需要 |
-| `BakeRecord`（§7） | 已定 | 首版编码为 QuickTime `.mov`，带 alpha 用 ProRes 4444，否则 ProRes 422 HQ；记录放在烘焙素材的 `provenance` 里（§7）。是否进入实例字段见上面「合成实例的字段」 |
-| 参数 Schema 的约定（§3.2） | 只有原则 | 支持的 JSON Schema 子集；界面控件的映射；影响时长的标记方式 |
-| `runtime.contract` 的命名与版本 | 已定 | 格式 `<合同名>/<主版本>`，不兼容的变化提升主版本，`adapterContractVersion` 取同一个值（§2.2）；第一期同时提供 `cuccut/1` 与 `hyperframes/1` |
-| `contentHash` 的覆盖范围（§2.2） | 部分已定 | 已定：`files.manifest.json` 不计入 `entries`（计入则不能列出自己的摘要）。待定：清单的 `contentHash` 与目录素材的树摘要（视频格式规范 §4.3）算法不同，是否统一或写明两者的关系 |
-| 导入的原子性（§7） | 首版两笔事务 | 原子导入的路径：让合成实例的 `ItemInput` 接受 `assetImportRef`（命令与协议规范 §4.2 已允许视频、图片、白板与音频实例这样引用同一事务里 `importAsset` 的 `ref`），届时导入与放置并成一笔事务。在此之前 `BakeRecord` 的 `bakedAssetRef` 与 `sourceBundleRef` 用代码包清单的 `bundleId/revision` 占位，不是素材引用 |
-| `cue-track` 的数据形式 | 未定 | 传给代码的 cue 数据的结构 |
-| 检查点的格式 | 未定 | 作者如何声明与实现可保存的状态 |
-| Remotion 的许可与透明导出 | 待验证 | 已定：不随应用分发，用代码包自己的依赖（§4.6）。透明导出按实际版本确认可用的模式 |
-| 首批 P0 模板 | 未定 | 数量、类型与许可 |
+| `CompositionContext` (§4.1) | Completed by this specification | The form of the drawing target; the interface for asset resolution; whether an audio context is provided |
+| Fields of the composition instance (§3.1) | `audioRoute`, `qualityPolicy` and `bake` not yet included | The values for the voice mode and the quality policy; whether the Bake record moves from the source of the baked asset (§7) onto the instance, how this connects with the pre-rendered stand-in, and when the stand-in expires |
+| Package directory layout (§2.5) | Partly decided | Decided: the first version fixes three file names, `bundle.manifest.json`, `files.manifest.json` and `verification.json`. Pending: whether the other file names are mandatory; and whether `source.filesManifest` is still needed once the file names are fixed |
+| `BakeRecord` (§7) | Decided | The first version encodes to QuickTime `.mov`: ProRes 4444 when there is alpha, otherwise ProRes 422 HQ; the record is placed in the `provenance` of the baked asset (§7). Whether it enters the instance fields is covered by "Fields of the composition instance" above |
+| Conventions for the parameter Schema (§3.2) | Principles only | The supported JSON Schema subset; the mapping to interface controls; how to mark parameters that affect duration |
+| Naming and versioning of `runtime.contract` | Decided | Format `<contract name>/<major version>`; incompatible changes raise the major version, and `adapterContractVersion` takes the same value (§2.2); the first phase provides both `cuccut/1` and `hyperframes/1` |
+| Coverage of `contentHash` (§2.2) | Partly decided | Decided: `files.manifest.json` is not counted in `entries` (if it were, it could not list its own digest). Pending: the `contentHash` of the manifest and the tree digest of directory assets (video format specification §4.3) use different algorithms; either unify them or state how the two relate |
+| Atomicity of import (§7) | Two transactions in the first version | Path to atomic import: let the composition instance's `ItemInput` accept `assetImportRef` (the command and protocol specification §4.2 already allows video, image, whiteboard and audio instances to reference a `ref` from `importAsset` in the same transaction). Then import and placement become one transaction. Until then, `bakedAssetRef` and `sourceBundleRef` in `BakeRecord` use the `bundleId/revision` of the code package manifest as placeholders; they are not asset references |
+| Data form of `cue-track` | Not decided | The structure of the cue data passed to the code |
+| Format of checkpoints | Not decided | How authors declare, and implementations save, state |
+| Remotion licensing and transparent export | To be verified | Decided: not distributed with the application; uses the code package's own dependencies (§4.6). For transparent export, confirm which modes work in the actual version |
+| First batch of P0 templates | Not decided | Quantity, types and licensing |

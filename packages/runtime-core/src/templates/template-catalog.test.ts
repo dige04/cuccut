@@ -352,9 +352,9 @@ describe('内置模板', () => {
 
   it('内置模板每种别的出货语言都有译文，按各语言要时文案都换成那种语言', async () => {
     const catalog = new TemplateCatalog({ builtinDir: REPO_TEMPLATES, userDir: path.join(root, 'none') });
-    const base = await catalog.list('zh-Hans');
-    for (const t of base.templates) expect(t.languages, t.manifest.id).toEqual(['zh-CN', ...LOCALES.filter((l) => l !== 'zh-Hans')]);
-    for (const locale of LOCALES.filter((l) => l !== 'zh-Hans')) {
+    const base = await catalog.list('en');
+    for (const t of base.templates) expect(t.languages, t.manifest.id).toEqual(['en', ...LOCALES.filter((l) => l !== 'en')]);
+    for (const locale of LOCALES) {
       const { templates } = await catalog.list(locale);
       expect(templates.every((t) => t.manifest.language === locale), locale).toBe(true);
     }

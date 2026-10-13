@@ -4,7 +4,7 @@
   "domain": "motion",
   "family": "wipeParts",
   "appliesTo": "part",
-  "doc": "逐 part 侧向擦入（位移 + 淡入的近似）。真正的裁切式 wipe 需要 clipPath 通道，见阶段 4。",
+  "doc": "Per-part sideways wipe-in (an approximation of translation plus fade-in). A true clip-style wipe needs a clipPath channel; see stage 4.",
   "exposedTo": [
     "bcf"
   ],
@@ -16,7 +16,7 @@
         "right"
       ],
       "default": "left",
-      "doc": "擦入方向（'left' = 从左侧进入）"
+      "doc": "Wipe-in direction ('left' = enters from the left side)"
     },
     "distance": {
       "type": "length",
@@ -24,12 +24,12 @@
         "value": 0.02,
         "basis": "canvasShortEdge"
       },
-      "doc": "起始横向位移"
+      "doc": "Starting horizontal offset"
     },
     "curve": {
       "type": "curve",
       "default": "easeOutQuart",
-      "doc": "时间曲线（规范 §7.6 的封闭名称）"
+      "doc": "Time curve (a closed name from spec §7.6)"
     }
   },
   "defaults": {

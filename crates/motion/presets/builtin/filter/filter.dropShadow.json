@@ -51,5 +51,5 @@
   "determinism": "strict",
   "capabilities": [],
   "fallback": null,
-  "doc": "阴影层 = 输入按 color 着色并位移 → bounded box blur → 以预乘 source-over 垫在原图之下。radius / dx / dy 都以画布短边为基准的比例，求值后取整为像素。"
+  "doc": "Shadow layer = input tinted by color and offset → bounded box blur → placed beneath the original with premultiplied source-over. radius / dx / dy are all fractions of the canvas short edge, rounded to pixels after evaluation."
 }

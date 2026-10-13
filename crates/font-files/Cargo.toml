@@ -1,6 +1,6 @@
 [package]
 name = "font-files"
-description = "CucCut 按字体族名、字重与斜体找本机字体的一个 face（移植自 CucCut v2 ccut-render 的系统字体库）并把它从字体集合里抽成单独的字体：导出与预览用同一份解析与抽法；有大小上限，不列整个字体目录"
+description = "CucCut finds one face of an installed font by family name, weight and italic, and extracts it from the font collection as a standalone font (ported from the system font library of CucCut v2 ccut-render). Export and preview share the same parsing and extraction; there is a size cap, and the whole font directory is not listed"
 version.workspace = true
 edition.workspace = true
 license-file.workspace = true

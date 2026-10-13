@@ -3,31 +3,31 @@
   "id": "news-explainer",
   "version": "1.1.0",
   "kind": "example",
-  "title": "热点趣闻讲解",
-  "summary": "挑一条近期的热点，做成节奏快、梗图多的讲解视频。",
-  "description": "智能体先查近期新闻挑一个话题，再配上搜索到的梗图，做成约 90 秒的横屏讲解。不需要准备素材。",
-  "language": "zh-CN",
+  "title": "Trending news explainer",
+  "summary": "Pick a recent trending story and turn it into a fast, meme-heavy explainer.",
+  "description": "The agent looks up recent news, picks a story, and pairs it with memes it finds to make a landscape explainer of about 90 seconds. No assets needed from you.",
+  "language": "en",
   "category": "news-data",
   "ratio": "16:9",
   "durationSeconds": 90,
   "fields": [
     {
-      "label": "新闻领域",
-      "hint": "想看哪一类新闻；不限可以写「不限」",
-      "example": "科技"
+      "label": "news category",
+      "hint": "Which kind of news you want; write \"any\" if you don't mind",
+      "example": "tech"
     },
     {
-      "label": "成片语言",
-      "hint": "旁白与字幕用的语言"
+      "label": "video language",
+      "hint": "The language for narration and subtitles"
     }
   ],
   "author": "CucCut",
   "source": "official",
   "license": "LicenseRef-CucCut-Community-1.0",
   "tags": [
-    "新闻",
-    "热点",
-    "讲解"
+    "news",
+    "trending",
+    "explainer"
   ],
   "skills": [
     "video-production",
@@ -40,10 +40,10 @@
   },
   "preview": {
     "beats": [
-      "抛出热点",
-      "来龙去脉",
-      "梗图与反应",
-      "一句点评收尾"
+      "Lead with the story",
+      "The backstory",
+      "Memes and reactions",
+      "A one-line take to close"
     ]
   },
   "verification": {

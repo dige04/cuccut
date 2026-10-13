@@ -9,28 +9,28 @@
       "default": 0.5,
       "min": 0,
       "max": 1,
-      "doc": "模糊中心 x，画布宽度的比例（效果作用的 surface 与画布同尺寸）"
+      "doc": "Blur centre x, as a fraction of canvas width (the surface the effect runs on is the same size as the canvas)"
     },
     "cy": {
       "type": "number",
       "default": 0.5,
       "min": 0,
       "max": 1,
-      "doc": "模糊中心 y，画布高度的比例"
+      "doc": "Blur centre y, as a fraction of canvas height"
     },
     "strength": {
       "type": "number",
       "default": 0.15,
       "min": 0,
       "max": 0.95,
-      "doc": "强度：每个像素最远的取样点朝中心走过的比例（0.15 = 离中心 1000 px 的像素拖出约 150 px）；0 = 原样不动，可用 effects[N].strength 关键帧做推进冲击"
+      "doc": "Strength: for each pixel, the furthest sample point moves toward the centre by this fraction (0.15 = a pixel 1000 px from the centre smears about 150 px); 0 = no change; can be keyframed via effects[N].strength for a push-in impact"
     },
     "samples": {
       "type": "number",
       "default": 8,
       "min": 2,
       "max": 16,
-      "doc": "每遍取样数（取整），共三遍，等效 samples³ 个采样点；强度大时调高可去掉残留的分层"
+      "doc": "Samples per pass (rounded to an integer); three passes total, equivalent to samples³ sample points; raise it at high strength to remove residual banding"
     }
   },
   "color": {
@@ -46,5 +46,5 @@
   "determinism": "strict",
   "capabilities": [],
   "fallback": null,
-  "doc": "径向（zoom）模糊：像素 p 取 c + (p − c)·e^{−o} 处的双线性样本平均（c = (cx·W, cy·H)，边缘夹取），o 在 [0, σ) 上均匀，σ = −ln(1 − strength)。实现为三遍：第 k 遍取 o = j·σ/Tᵏ（j = 0..T−1，T = samples）等权平均，三遍复合恰好是步长 σ/T³ 的 T³ 个均匀点。预乘值直接平均，f32 四则运算，e^{−o} 与权重进像素循环前用 libm 算好；结果四舍五入并夹到 RGB ≤ alpha。strength = 0 逐字节恒等。"
+  "doc": "Radial (zoom) blur: pixel p takes the average of bilinear samples at c + (p − c)·e^{−o} (c = (cx·W, cy·H), edge clamp), with o uniform over [0, σ), σ = −ln(1 − strength). Implemented as three passes: pass k takes o = j·σ/Tᵏ (j = 0..T−1, T = samples) with equal weights; the three passes compose to exactly T³ uniform points at step σ/T³. Premultiplied values are averaged directly with f32 arithmetic; e^{−o} and the weights are computed with libm before the pixel loop; the result is rounded and clamped to RGB ≤ alpha. strength = 0 is byte-identical to the source."
 }

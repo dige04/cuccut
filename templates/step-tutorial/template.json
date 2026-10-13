@@ -3,38 +3,38 @@
   "id": "step-tutorial",
   "version": "1.1.0",
   "kind": "scene",
-  "title": "分步教程",
-  "summary": "把一段录屏或一份说明做成清楚的操作教程。",
-  "description": "用有序的步骤、看得见的操作和明确的检查点帮观众完成一件事：告诉他们要做什么，以及怎么确认自己做对了。",
-  "language": "zh-CN",
+  "title": "Step-by-step tutorial",
+  "summary": "Turn a screen recording or written steps into a clear how-to tutorial.",
+  "description": "Help viewers get one thing done with ordered steps, visible actions and clear checkpoints: show them what to do, and how to tell they did it right.",
+  "language": "en",
   "category": "explainer",
   "ratio": "16:9",
   "durationSeconds": 90,
-  "brief": "根据{{录屏或说明}}做一条教程，教{{受众}}{{要完成的事}}。",
+  "brief": "Make a tutorial from {{recording or steps}} that teaches {{audience}} how to {{task to complete}}.",
   "fields": [
     {
-      "label": "录屏或说明",
-      "hint": "附上的录屏、截图或文字步骤",
-      "example": "这份说明"
+      "label": "recording or steps",
+      "hint": "The attached recording, screenshots or written steps",
+      "example": "these steps"
     },
     {
-      "label": "受众",
-      "hint": "谁来学，基础怎样",
-      "example": "新手"
+      "label": "audience",
+      "hint": "Who is learning, and what they already know",
+      "example": "beginners"
     },
     {
-      "label": "要完成的事",
-      "hint": "看完能自己完成的一件事",
-      "example": "在路由器上设置访客网络"
+      "label": "task to complete",
+      "hint": "One thing they can do on their own afterwards",
+      "example": "set up a guest network on a router"
     }
   ],
   "author": "CucCut",
   "source": "official",
   "license": "LicenseRef-CucCut-Community-1.0",
   "tags": [
-    "教程",
-    "操作",
-    "步骤"
+    "tutorial",
+    "how-to",
+    "steps"
   ],
   "skills": [
     "video-production",
@@ -49,10 +49,10 @@
   "preview": {
     "file": "preview.mp4",
     "beats": [
-      "要完成什么、需要准备什么",
-      "按顺序逐步操作",
-      "每一步的检查点",
-      "最终结果"
+      "The goal and what to prepare",
+      "Each step, in order",
+      "A checkpoint after each step",
+      "The finished result"
     ]
   },
   "verification": {

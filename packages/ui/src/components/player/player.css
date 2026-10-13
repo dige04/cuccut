@@ -1,4 +1,4 @@
-/* 播放器里样式宏表达不了的部分：随画面宽度缩放的字幕字号、全屏、字幕列表的行。颜色随明暗主题走（light-dark）。 */
+/* The part of the player that style macros cannot express: subtitle font size scaling with frame width, fullscreen, and the rows of the subtitle list. Colours follow the light/dark theme (light-dark). */
 
 .cc-player-screen:fullscreen {
   display: flex;
@@ -22,7 +22,7 @@
   container-type: inline-size;
 }
 
-/* 叠加的字幕：字号按画面宽度缩放，长句换行。 */
+/* Overlaid subtitles: the font size scales with frame width, and long sentences wrap. */
 .cc-captions {
   position: absolute;
   inset-inline: 5%;
@@ -45,7 +45,7 @@
   white-space: pre-line;
   overflow-wrap: anywhere;
 }
-/* 没有画面（音频）时，当前句直接放大写在舞台上。 */
+/* With no picture (audio), the current line is enlarged and written directly onto the stage. */
 .cc-captions[data-audio] {
   inset: 0;
   justify-content: center;
@@ -61,7 +61,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* 字幕列表的一行：序号与时间一行，文字一行；当前句高亮，播过的变淡。 */
+/* One row of the subtitle list: index and time on one line, text on the next; the current line is highlighted, and lines already played fade. */
 .cc-cue {
   content-visibility: auto;
   contain-intrinsic-size: auto 52px;

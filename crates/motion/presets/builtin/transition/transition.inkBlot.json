@@ -9,14 +9,14 @@
       "default": 0.5,
       "min": 0,
       "max": 1,
-      "doc": "墨团中心 x，画布宽度的比例"
+      "doc": "Ink blot center x, as a fraction of canvas width"
     },
     "cy": {
       "type": "number",
       "default": 0.5,
       "min": 0,
       "max": 1,
-      "doc": "墨团中心 y，画布高度的比例"
+      "doc": "Ink blot center y, as a fraction of canvas height"
     },
     "softness": {
       "type": "length",
@@ -25,26 +25,26 @@
       "max": 0.25,
       "basis": "canvasShortEdge",
       "quantize": "none",
-      "doc": "边缘羽化宽度，画布短边的比例；0 = 硬边（手绘片推荐）"
+      "doc": "Edge feather width, as a fraction of the canvas short side; 0 = hard edge (recommended for hand-drawn footage)"
     },
     "roughness": {
       "type": "number",
       "default": 0.18,
       "min": 0,
       "max": 0.9,
-      "doc": "毛边幅度：各方向的半径在 ±roughness 的比例内起伏；0 退化成 transition.circleCrop"
+      "doc": "Rough edge amplitude: the radius varies by ±roughness (as a fraction) in each direction; 0 degenerates to transition.circleCrop"
     },
     "seed": {
       "type": "number",
       "default": 0,
       "min": 0,
       "max": 4294967295,
-      "doc": "毛边形状的种子（取整）；同一个 seed 在整段转场里形状不变，只是变大"
+      "doc": "Seed for the rough-edge shape (rounded); the shape stays the same throughout the transition and only grows"
     },
     "invert": {
       "type": "bool",
       "default": false,
-      "doc": "true = 墨团**收拢**：从画布外缘开始换成入场画面，最后收到中心"
+      "doc": "true = ink blot **contracts**: starts from the canvas outer edge with the incoming frame and ends at the center"
     }
   },
   "color": {
@@ -60,5 +60,5 @@
   "determinism": "strict",
   "capabilities": [],
   "fallback": null,
-  "doc": "一团毛边的墨从中心洇开，墨团内换成入场画面。记 d 为像素到中心 (cx·W, cy·H) 的欧氏距离、r = roughness、n(dir) ∈ [0, 1] 为按单位方向向量取的两倍频二维 value noise（格点值来自 splitmix64(seed, 格点编号)，只用加减乘除与 sqrt）。u = d·(1 + r·(2n − 1))，U 为全画面 u 的最大值（invert = true 时取 U − u），其余与 transition.circleCrop 相同：e = progress × (U + S + 1)，cov = clamp((e − u) / S, 0, 1)（S = 0 时 cov = [u < e]）。progress = 0 / 1 逐字节等于 from / to；形状不随 progress 变化，所以不会在转场途中「沸腾」。"
+  "doc": "A rough-edged blob of ink bleeds out from the center, and the incoming frame replaces the inside of the blot. Let d be the Euclidean distance from each pixel to the center (cx·W, cy·H), r = roughness, and n(dir) ∈ [0, 1] a two-octave 2D value noise sampled along the unit direction vector (lattice values come from splitmix64(seed, lattice index), using only add, subtract, multiply, divide and sqrt). u = d·(1 + r·(2n − 1)), U is the maximum of u over the whole frame (U − u when invert = true), and the rest is the same as transition.circleCrop: e = progress × (U + S + 1), cov = clamp((e − u) / S, 0, 1) (S = 0 gives cov = [u < e]). progress = 0 / 1 is byte-identical to from / to; the shape does not change with progress, so it does not “boil” mid-transition."
 }

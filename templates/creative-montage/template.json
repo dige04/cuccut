@@ -3,34 +3,34 @@
   "id": "creative-montage",
   "version": "1.1.0",
   "kind": "example",
-  "title": "创意混剪",
-  "summary": "一条素材丰富、高潮在后半段的混剪，展示剪辑与编程能力。",
-  "description": "镜头不重复，画面包装精致，声音一直延续到结尾，剪辑的重心放在后半段更强的高潮上。",
-  "language": "zh-CN",
+  "title": "Creative montage",
+  "summary": "A rich montage with a late climax that shows off editing and coding skills.",
+  "description": "No repeated shots, polished visual packaging, and sound that carries through to the end, with the edit weighted toward a stronger climax in the second half.",
+  "language": "en",
   "category": "editing",
   "fields": [
     {
-      "label": "混剪主题",
-      "hint": "混剪围绕什么展开",
-      "example": "一座城市从清晨到深夜"
+      "label": "montage theme",
+      "hint": "What the montage is about",
+      "example": "a city from dawn to late night"
     },
     {
-      "label": "手头的素材",
-      "hint": "附上的素材；没有可以写「没有，你来找或生成」",
-      "example": "没有，你来找或生成"
+      "label": "assets on hand",
+      "hint": "Attached assets; if you have none, write \"none, please find or make some\"",
+      "example": "none, please find or make some"
     },
     {
-      "label": "成片语言",
-      "hint": "画面文字与旁白用的语言"
+      "label": "video language",
+      "hint": "The language for on-screen text and narration"
     }
   ],
   "author": "CucCut",
   "source": "official",
   "license": "LicenseRef-CucCut-Community-1.0",
   "tags": [
-    "混剪",
-    "剪辑",
-    "节奏"
+    "montage",
+    "editing",
+    "pacing"
   ],
   "skills": [
     "video-production"
@@ -44,10 +44,10 @@
   "preview": {
     "file": "preview.mp4",
     "beats": [
-      "快速铺开的开场",
-      "多样素材交替",
-      "层层推高",
-      "后半段的高潮"
+      "A fast-moving opening",
+      "Varied footage, intercut",
+      "Building layer by layer",
+      "A climax in the second half"
     ]
   },
   "verification": {

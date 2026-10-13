@@ -1,3 +1,3 @@
-用 p5.js 做一条有氛围感的故事视频，情绪参考{{情绪参考}}；可以加旁白。
+Use p5.js to make an atmospheric story video whose mood draws on {{mood reference}}; you can add narration.
 
-把它剪成一分钟以内的快切预告，并加上字幕。旁白与字幕用{{成片语言}}。
+Cut it into a fast-paced trailer under a minute long, and add subtitles. Use {{video language}} for narration and subtitles.

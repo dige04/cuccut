@@ -1,11 +1,11 @@
-# 仓库级 Cargo 配置：只放对所有 clone 都成立的设置。
+# Repository-level Cargo config: only settings that hold for every clone go here.
 #
-# 机器专属的覆盖（例如把 target 目录挪到外置盘）写进同目录的
-# `config.local.toml`——该文件已被 .gitignore 忽略，不存在时下面这条 include
-# 会静默跳过，clone 出来即可直接构建。模板见 `config.local.toml.example`。
+# Machine-specific overrides (for example, moving the target directory to an external drive) go in the
+# `config.local.toml` next to this file. That file is ignored by .gitignore; when it is absent, the include below
+# is silently skipped, so a fresh clone builds directly. See `config.local.toml.example` for a template.
 #
-# 优先级：本文件里的键**覆盖** include 进来的同名键，所以希望本机可改的配置
-# 项（如 build.target-dir）一律不要在这里赋值。
+# Precedence: keys in this file **override** same-named keys pulled in by the include, so do not assign
+# settings that should be changeable per machine (such as build.target-dir) here.
 include = [{ path = "config.local.toml", optional = true }]
 
 [env]

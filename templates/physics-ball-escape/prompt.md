@@ -1,3 +1,3 @@
-用代码做一条抓眼球、容易被转发的横屏短片，时长约{{时长}}：一个小球在一层层旋转的圆环里弹跳，撞到缺口就冲到外一层，圆环一层层减少，直到彻底逃脱。
+Use code to make an eye-catching, highly shareable landscape short about {{length}} long: a ball bounces inside layer after layer of spinning rings. Whenever it hits a gap, it bursts out to the next ring, and the rings fall away one by one until it escapes completely.
 
-物理运动要真实、可预期又带点悬念，节奏越来越快；配色用{{配色}}，碰撞时配上清脆的音效（音效也用代码按碰撞时刻合成，不依赖音效生成能力），结尾给一个让人满足的收束。
+Make the physics feel real and predictable, with a touch of suspense, and let the pace keep picking up. Use {{color scheme}} for the colors, and add crisp sound effects on each collision (synthesize them in code as well, timed to each collision, rather than relying on sound effect generation). End with a satisfying finish.

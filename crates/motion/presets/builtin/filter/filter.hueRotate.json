@@ -24,5 +24,5 @@
   "determinism": "strict",
   "capabilities": [],
   "fallback": null,
-  "doc": "W3C filter-effects 的 hue-rotate 矩阵（绕亮度轴旋转），角度为度。"
+  "doc": "W3C filter-effects hue-rotate matrix (rotation around the luminance axis), angle in degrees."
 }

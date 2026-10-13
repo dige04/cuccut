@@ -1,29 +1,29 @@
 # ccut-resvg
 
-[resvg](https://github.com/linebender/resvg) **0.45.1**（crates.io 发布包，Apache-2.0 OR MIT，许可正文见同目录 `LICENSE-APACHE` / `LICENSE-MIT`）加六处 CucCut 补丁：四处修正确性，两处只提速、输出逐字节不变。包名改成 `ccut-resvg`、库名仍是 `resvg`，只由 `ccut-render` 以 `resvg = { package = "ccut-resvg", … }` 引用，调用处照旧写 `resvg::…`。不走 `[patch.crates-io]`：`apps/cuccut` 的 GPUI 另用 resvg 0.46，全局换包会碰到它。
+[resvg](https://github.com/linebender/resvg) **0.45.1** (crates.io release, Apache-2.0 OR MIT; the license texts are in `LICENSE-APACHE` / `LICENSE-MIT` in the same directory), plus six CucCut patches: four fix correctness, and two only speed things up with byte-identical output. The package is renamed to `ccut-resvg`, while the library name stays `resvg`. Only `ccut-render` references it, as `resvg = { package = "ccut-resvg", … }`, so call sites keep writing `resvg::…`. It does not use `[patch.crates-io]`, because the GPUI in `apps/cuccut` uses resvg 0.46, and swapping the package globally would affect it.
 
-去掉了上游的命令行程序（`src/main.rs`）、示例与它们专用的 `pico-args` 依赖，其余源码逐字保留。
+The upstream command-line program (`src/main.rs`) and examples, together with the `pico-args` dependency used only by them, have been removed. The rest of the source is kept verbatim.
 
-## 补丁
+## Patches
 
-用 `diff -r ~/.cargo/registry/src/*/resvg-0.45.1/src src` 可以看到全部改动，每处都带 `ccut-resvg:` 注释。
+Run `diff -r ~/.cargo/registry/src/*/resvg-0.45.1/src src` to see all changes. Each one carries a `ccut-resvg:` comment.
 
-| 位置 | 改了什么 | 为什么 |
+| Location | What changed | Why |
 | --- | --- | --- |
-| `src/render.rs` `render_group` | 子节点渲染时，把钳位矩形 `max_bbox` 平移到当前图层的像素坐标（`translate(-ibbox.x, -ibbox.y)`），`mask::apply` 也用平移后的那份 | 上游把画布坐标的矩形原样传进嵌套图层。图层离画布原点越远，被裁得越多：内层图层比它的滤镜区域小，`feDisplacementMap` 断言源图、位移图、目标三者同尺寸时 panic；没有 panic 的帧也会在画面边缘少一截（实测 `program` 元素一帧右缘 32 px 变黑） |
-| `src/render.rs` `layer_clamp_rect`、`src/lib.rs` | 钳位矩形从画布 −2W..3W（5 倍）收到四周各留长边的 1/4 | 5 倍画布的图层是可见区 25 倍的内存与模糊耗时。更远的像素只有经位移超过这段余量的滤镜才能进画面；实测 1/8、1/2、2 倍三档输出逐字节相同 |
-| `src/filter/mod.rs` `apply_inner` | 滤镜区域与图层尺寸不一致时，改用图层的整幅 `(0, 0, w, h)` | 图层被钳位或取整差一像素后，各原语拿到的图像尺寸不一；统一成图层尺寸后每个原语都在同一幅图上算 |
-| `src/filter/mod.rs` `apply_displacement_map` | 只把画布缩放传给 `displacement_map::apply`（它自己再乘 `scale`）；位移图先去预乘再读通道 | 上游传的是 `scale × 画布缩放`，`scale` 被平方：`scale="30"` 把像素挪出最多 450 px 而不是 15 px，烟雾、火焰一类被撕成碎块并整体偏向右下。上游还拿预乘过的位移图读通道（规范与该函数的注释都要求不预乘），`feTurbulence` 这种半透明噪声会让所有像素一齐往左上偏。0.46.0 同样有这两处 |
-| `src/filter/iir_blur.rs` | 四个通道交错进同一块 `[f64; 4]` 缓冲一起算；纵向一趟从逐列改成逐行扫所有列 | 上游逐通道、逐列跨行访问，每次取样都不命中缓存，σ < 2 的模糊是 `program` 元素一帧里最重的一项。各通道、各列互不读取，每个值经历的运算与顺序不变，所以输出逐位相同 |
-| `src/filter/box_blur.rs` `box_blur_vert` | 纵向滑窗从逐列改成每列一个整数累加器、逐行推进 | 同上的跨行访问；两侧补零时每个输出就是窗口内现存各行的整数和，整数和与求和顺序无关，结果逐位相同 |
+| `src/render.rs` `render_group` | When rendering child nodes, the clamp rectangle `max_bbox` is translated into the current layer's pixel coordinates (`translate(-ibbox.x, -ibbox.y)`), and `mask::apply` also uses the translated copy | Upstream passed a rectangle in canvas coordinates unchanged into nested layers. The farther a layer is from the canvas origin, the more it gets cropped: an inner layer ends up smaller than its filter region, and `feDisplacementMap` asserts that the source, displacement map and target have the same size, so it panics. Frames that do not panic still lose a strip at the edge of the image (measured: the right edge of a `program` element lost 32 px to black in one frame) |
+| `src/render.rs` `layer_clamp_rect`, `src/lib.rs` | The clamp rectangle is reduced from the canvas −2W..3W (5×) to a quarter of the long side on each edge | A layer at 5× the canvas costs 25× the visible area in memory and blur time. Pixels further out can only reach the frame through a filter whose displacement exceeds this margin. Measured output at 1/8×, 1/2× and 2× is byte-identical |
+| `src/filter/mod.rs` `apply_inner` | When the filter region does not match the layer size, the layer's full `(0, 0, w, h)` is used instead | After a layer is clamped, or off by one pixel from rounding, the primitives receive images of different sizes. Unifying on the layer size means every primitive operates on the same image |
+| `src/filter/mod.rs` `apply_displacement_map` | Only the canvas scale is passed to `displacement_map::apply` (which multiplies by `scale` itself); the displacement map is un-premultiplied before its channels are read | Upstream passed `scale × canvas scale`, so `scale` was effectively squared: `scale="30"` moved pixels by up to 450 px instead of 15 px, and smoke or fire was torn into fragments skewed toward the bottom right. Upstream also read channels from a premultiplied displacement map (the spec and the function's own comments require non-premultiplied), so semi-transparent noise from `feTurbulence` shifted every pixel toward the top left. 0.46.0 has the same two issues |
+| `src/filter/iir_blur.rs` | Four channels are interleaved into one `[f64; 4]` buffer and processed together; the vertical pass changed from column by column to scanning all columns row by row | Upstream accessed memory channel by channel and column by column across rows, so almost every sample missed the cache. A blur with σ < 2 was the heaviest item in a `program` element frame. Channels and columns never read each other, and each value goes through the same operations in the same order, so the output is bit-for-bit identical |
+| `src/filter/box_blur.rs` `box_blur_vert` | The vertical sliding window changed from column by column to one integer accumulator per column, advancing row by row | Same cross-row access problem as above. With zero padding on both sides, each output is the integer sum of the rows currently in the window. Integer sums do not depend on summation order, so the result is bit-for-bit identical |
 
-## 验证
+## Verification
 
-`cargo test -p ccut-resvg`（从 `core/` 运行）：
+`cargo test -p ccut-resvg` (run from `core/`):
 
-- 普通文档（无滤镜、画布内滤镜、遮罩、裁剪、透明组，以及走 IIR 与盒模糊两条路径、含盒半径超过区域高度的高斯模糊；不含 `feDisplacementMap`）与上游 0.45.1 逐字节相同；
-- 嵌套透明组的内容从画布外伸进来时不再被裁掉；
-- 滤镜区域大于图层钳位的 `feTurbulence` + `feDisplacementMap` 不再 panic；
-- `feDisplacementMap` 按 `scale × (C − 0.5)` 移动像素（不透明与半透明位移图、带缩放的组），与 Chrome 一致。
+- Ordinary documents (without filters, with in-canvas filters, masks, clipping, and transparent groups, and including Gaussian blur on both the IIR and box-blur paths, with box radius larger than the region height; no `feDisplacementMap`) are byte-identical to upstream 0.45.1;
+- Content from nested transparent groups that extends in from outside the canvas is no longer clipped;
+- A `feTurbulence` + `feDisplacementMap` where the filter region is larger than the layer clamp no longer panics;
+- `feDisplacementMap` moves pixels by `scale × (C − 0.5)` (opaque and semi-transparent displacement maps, and groups with scaling), matching Chrome.
 
-升级上游版本时：换源码、逐条重放上表补丁、重跑上面三组测试，并更新本表的版本号。
+When upgrading the upstream version: replace the source, replay each patch in the table above one by one, rerun the three test groups above, and update the version number in this table.

@@ -28,5 +28,5 @@
   "determinism": "strict",
   "capabilities": [],
   "fallback": null,
-  "doc": "水平进度擦除，**逐行等价于 studio_export 的 apply_horizontal_reveal**：boundary = progress × width，coverage = clamp(boundary - x, 0, 1)。progress ∈ [0,1] 闭区间，0 = 全透明、1 = 原样。"
+  "doc": "Horizontal progress wipe, **line-for-line equivalent to `apply_horizontal_reveal` in studio_export**: boundary = progress × width, coverage = clamp(boundary - x, 0, 1). progress ∈ [0,1] (closed interval); 0 = fully transparent, 1 = unchanged."
 }

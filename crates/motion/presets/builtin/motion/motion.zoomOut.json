@@ -3,7 +3,7 @@
   "version": 1,
   "domain": "motion",
   "family": null,
-  "doc": "内部积木：缩放从 1 到 scaleTo。",
+  "doc": "Internal building block: scale goes from 1 to scaleTo.",
   "exposedTo": [
     "bcf"
   ],
@@ -12,12 +12,12 @@
       "type": "number",
       "default": 0.7,
       "min": 0.0,
-      "doc": "终止缩放"
+      "doc": "End scale"
     },
     "curve": {
       "type": "curve",
       "default": "easeInCubic",
-      "doc": "时间曲线（规范 §7.6 的封闭名称）"
+      "doc": "Time curve (a closed name from spec §7.6)"
     }
   },
   "tracks": [

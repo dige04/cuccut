@@ -3,30 +3,30 @@
   "id": "rhythm-dance-video",
   "version": "1.1.0",
   "kind": "example",
-  "title": "节奏舞蹈动画",
-  "summary": "一条街机风的高能量舞蹈视频：动画角色配节奏游戏特效。",
-  "description": "用视频生成能力生成一个跳舞的原创动画角色，再用代码搭出节奏游戏的画面和跟着节拍走的特效。",
-  "language": "zh-CN",
+  "title": "Rhythm dance animation",
+  "summary": "A high-energy arcade dance video: animated character plus rhythm game effects.",
+  "description": "Video generation creates an original animated character dancing, and code builds the rhythm game screen and effects that follow the beat.",
+  "language": "en",
   "category": "motion-design",
   "ratio": "16:9",
   "fields": [
     {
-      "label": "角色形象",
-      "hint": "跳舞的角色长什么样",
-      "example": "一只戴耳机的机器猫"
+      "label": "character design",
+      "hint": "What the dancing character looks like",
+      "example": "a robot cat wearing headphones"
     },
     {
-      "label": "成片语言",
-      "hint": "画面文字用的语言"
+      "label": "video language",
+      "hint": "The language for on-screen text"
     }
   ],
   "author": "CucCut",
   "source": "official",
   "license": "LicenseRef-CucCut-Community-1.0",
   "tags": [
-    "舞蹈",
-    "节奏游戏",
-    "视频生成"
+    "dance",
+    "rhythm game",
+    "video generation"
   ],
   "skills": [
     "video-production"
@@ -40,10 +40,10 @@
   "preview": {
     "file": "preview.mp4",
     "beats": [
-      "角色登场",
-      "音符落下",
-      "连击与特效",
-      "满分结算"
+      "The character enters",
+      "Notes start falling",
+      "Combos and effects",
+      "Perfect score screen"
     ]
   },
   "verification": {

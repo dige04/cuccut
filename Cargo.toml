@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
-# `render-raster` 带来的打过补丁的 resvg（v2 `core/vendor/ccut-resvg`，见其 README.md）是它 `media` 的
-# 依赖；与 v2 一样是 workspace 成员，`tests/patches.rs` 的对上游逐字节门禁随 workspace 测试跑。
+# The patched resvg brought in by `render-raster` (v2 `core/vendor/ccut-resvg`, see its README.md) is `media`'s
+# dependency. As in v2, it is a workspace member, and the byte-for-byte upstream gate in `tests/patches.rs` runs with the workspace tests.
 members = ["crates/*", "bindings/*", "crates/render-raster/vendor/ccut-resvg"]
 
 [workspace.package]
@@ -26,20 +26,20 @@ font-files = { path = "crates/font-files" }
 audio-dsp = { path = "crates/audio-dsp" }
 media-probe = { path = "crates/media-probe" }
 media-native = { path = "crates/media-native" }
-# 缺省关掉 `media`（ffmpeg 子进程、host resvg、平台编解码、内置字体）：引用方不显式要它就拿到 `wasm-safe`
-# 的最小集，进 WASM 的构建图因此不会被 feature 合并带上 `media`。要 host 字节层的一方自己加
-# `features = ["media"]`。
+# `media` is off by default (ffmpeg subprocess, host resvg, platform codecs, bundled fonts): a consumer that does not ask for it gets the minimal `wasm-safe`
+# set, so the WASM build graph never picks up `media` through feature unification. A consumer that needs the host byte layer adds
+# `features = ["media"]` itself.
 render-raster = { path = "crates/render-raster", default-features = false }
-# 缺省关掉 `dsp`（STFT，realfft/rustfft）：消费方只读 BCS1，WASM 不带它；生产频谱的一方自己加 `features = ["dsp"]`。
+# `dsp` (STFT, realfft/rustfft) is off by default: consumers that only read BCS1 do not pull it into WASM; a producer of spectra adds `features = ["dsp"]` itself.
 waveform = { path = "crates/waveform", default-features = false }
 speech-doc-bridge = { path = "crates/speech-doc-bridge" }
 timeline = { path = "crates/timeline" }
 timeline-render = { path = "crates/timeline-render" }
-# 缺省关掉 `host`（项目 I/O、媒体解码、系统字体，经 `render-raster/media`）：与 `render-raster` 同理，
-# 进 WASM 的一方用 `features = ["wasm-safe"]`，要宿主能力的一方自己加 `features = ["host"]`。
+# `host` (project I/O, media decoding, system fonts, via `render-raster/media`) is off by default, as with `render-raster`:
+# a WASM consumer uses `features = ["wasm-safe"]`, and a consumer that needs host capabilities adds `features = ["host"]` itself.
 subtitle-render = { path = "crates/subtitle-render", default-features = false }
 
-# 预览的 WASM：体积优先，只给 `--profile wasm` 用，不影响原生的 engine-host。
+# Preview WASM: size first; used only with `--profile wasm`, and does not affect the native engine-host.
 [profile.wasm]
 inherits = "release"
 opt-level = "z"
@@ -48,16 +48,16 @@ codegen-units = 1
 panic = "abort"
 strip = true
 
-# 构建脚本与过程宏是宿主的动态库，`strip` 会去掉它们导出的符号，全新的 target 目录里因此找不到 serde_derive 等。
+# Build scripts and proc macros are host dynamic libraries, and `strip` removes the symbols they export, so a fresh target directory cannot find serde_derive and the like.
 [profile.wasm.build-override]
 strip = false
 
-# 原生 release 同理：缺省的 `strip = "debuginfo"` 在全新的 target 目录里会弄坏过程宏动态库（链接器报 mis-aligned LINKEDIT）。
+# Native release is the same: the default `strip = "debuginfo"` breaks proc-macro dynamic libraries in a fresh target directory (the linker reports mis-aligned LINKEDIT).
 [profile.release.build-override]
 strip = false
 
-# 预览每一帧都在 WASM 里画：光栅化的几个 crate 按速度优化（体积优先时 960×540 的一帧要慢三倍多）。
-# 另见 tools/build-wasm.mjs 给 wasm32 打开的 SIMD。
+# The preview draws every frame in WASM, so the rasterizing crates are optimized for speed (at 960×540 one frame is more than three times slower when optimized for size).
+# See also the SIMD that tools/build-wasm.mjs enables for wasm32.
 [profile.wasm.package.tiny-skia]
 opt-level = 3
 [profile.wasm.package.tiny-skia-path]
@@ -69,7 +69,7 @@ opt-level = 3
 [profile.wasm.package.frame-render]
 opt-level = 3
 
-# 调试构建里成片导出与预览测试也逐帧走光栅：这几个 crate 不优化时一帧要慢一个数量级，导出测试会超时。
+# In debug builds, the export and preview tests also rasterize frame by frame: if these crates are not optimized, one frame is an order of magnitude slower and export tests time out.
 [profile.dev.package.tiny-skia]
 opt-level = 3
 [profile.dev.package.tiny-skia-path]
@@ -80,8 +80,8 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.frame-render]
 opt-level = 3
-# 成片导出的其余逐帧路径：Worker 本身（搬帧、预乘）、解码与编码的管道读写、求计划，以及排版用的 cosmic-text / swash / rustybuzz；
-# 开发态（`npm run dev` 用 debug 的 Worker）不优化时导出比 release 慢两倍以上。
+# The remaining per-frame export paths: the Worker itself (moving frames, premultiplying), pipe reads and writes for decode and encode, plan computation, and cosmic-text / swash / rustybuzz for layout;
+# in dev mode (`npm run dev` uses the debug Worker), unoptimized export is more than twice as slow as release.
 [profile.dev.package.export-worker]
 opt-level = 3
 [profile.dev.package.media-core]
@@ -99,7 +99,7 @@ opt-level = 3
 [profile.dev.package.serde_json]
 opt-level = 3
 
-# candle 后端（`backend-candle`）的 CPU 张量运算与矩阵乘：不优化时真权重的识别测试要慢上百倍。
+# CPU tensor operations and matrix multiplication for the candle backend (`backend-candle`): unoptimized, recognition tests with real weights run more than 100 times slower.
 [profile.dev.package.candle-core]
 opt-level = 3
 [profile.dev.package.candle-nn]

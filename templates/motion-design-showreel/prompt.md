@@ -1,3 +1,3 @@
-做一条 15 秒、节奏紧凑的动态图形短片，展示一位出色的动效设计师能做到什么。
+Make a tight, 15-second motion graphics short that shows what an outstanding motion designer can do.
 
-每两三秒换一种手法，例如形变、遮罩揭示、弹性运动和卡点转场，但配色与字体保持统一，配色走{{配色风格}}，整体像一个作品集的开场。结尾停在一个干净的画面上。可以生成配乐与音效，让动作和节拍对齐。画面里如果有文字，用{{成片语言}}。
+Switch techniques every two or three seconds, such as morphs, mask reveals, elastic motion and beat-synced transitions, but keep the colors and fonts consistent. Go with {{color style}} for the colors, so the whole thing feels like the opening of a portfolio. End on a clean frame. You can generate music and sound effects so the motion lines up with the beat. If there's any text on screen, use {{video language}}.

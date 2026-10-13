@@ -1,3 +1,3 @@
-查一下近期关于{{关注的方向}}的 AI 新闻，挑一个有意思的话题，做一条节奏快、梗多、时长约{{时长}}、适合发布到视频平台的资讯快评。
+Look up recent AI news about {{focus area}}, pick an interesting story, and make a fast-paced, meme-heavy hot take of about {{length}}, ready to post on video platforms.
 
-你可以搜索视频片段、图片和动图来用，优先选择授权允许使用的素材，并注明来源。事实部分要核对清楚，梗只用来调节节奏，不歪曲新闻本身。旁白与字幕用{{成片语言}}；旁白全片用同一个声音、按正常语速念，稿子太长就删词，不要靠加速凑时长。
+You can search for video clips, images and GIFs to use. Prefer material whose license allows it, and credit the sources. Check the facts carefully; use memes only to set the pace, never to distort the news itself. Use {{video language}} for narration and subtitles. Keep one voice for the whole narration at a normal pace; if the script runs long, cut words instead of speeding it up to fit.

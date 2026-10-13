@@ -4,7 +4,7 @@ CucCut is an agentic video editor for the desktop: an Electron shell, a local Ru
 jobs and agents, a Rust/WASM video engine with native workers, an agent harness (Claude Code, Codex, Copilot,
 OpenCode, Pi, ACP engines), model providers, a CLI, an MCP server and a browser client. Its UI follows agentcut's
 Liquid Glass design (dark only, Figtree, one yellow tint per view). Plan and status: [docs/cuccut/PLAN.md](docs/cuccut/PLAN.md).
-[AGENTS.md](AGENTS.md) holds the older engineering rules (in Chinese); the rules below take precedence where they
+[AGENTS.md](AGENTS.md) holds the older engineering rules; the rules below take precedence where they
 differ.
 
 ## Where things are

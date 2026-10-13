@@ -1,5 +1,5 @@
-做一部让人看得入迷的短片，主题是{{形态与材质}}从混乱逐渐走向和谐。
+Make a mesmerizing short film in which {{forms and materials}} gradually move from chaos to harmony.
 
-全部画面与动画用代码搭建和渲染，框架由你选择，不使用视频生成的片段或图库素材；可以生成音频。画幅 16:9。画面文字、歌词或旁白（如果有）用{{成片语言}}。
+Build and render all visuals and animation in code, with a framework of your choice. Don't use generated video clips or stock footage; you can generate audio. Use a 16:9 aspect ratio. Use {{video language}} for any on-screen text, lyrics or narration.
 
-交付成片，并保留可以继续修改的代码源文件；另外导出一份压缩版，方便发布到社交平台。
+Deliver the final video and keep the source code so it can be edited further. Also export a compressed version that's easy to post on social media.

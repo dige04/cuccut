@@ -75,7 +75,7 @@ describe('目录换成界面用的形状', () => {
 
   it('时长按秒；没写的画幅、时长、示例输入是自动 / 空', () => {
     const promo = templateOf(catalog, 'promo-ad')!;
-    expect(promo).toMatchObject({ language: 'zh-CN', kind: 'scene', ratio: '9:16', length: 30, tone: 'magenta', figure: 'ring', kicker: 'AD' });
+    expect(promo).toMatchObject({ language: 'en', kind: 'scene', ratio: '9:16', length: 30, tone: 'magenta', figure: 'ring', kicker: 'AD' });
     expect(promo.sample).not.toBe('');
     const launch = templateOf(catalog, 'white-ui-launch')!;
     expect(launch).toMatchObject({ kind: 'example', ratio: null, length: null, sample: '', brief: '' });
@@ -148,9 +148,9 @@ describe('模板库的筛选', () => {
     for (const c of TEMPLATE_CATEGORIES) expect(findTemplates(catalog, '', { category: c }).length, c).toBeGreaterThan(0);
     const scenesInMarketing = findTemplates(catalog, '', { kind: 'scene', category: 'marketing' });
     expect(scenesInMarketing.every((t) => t.kind === 'scene' && t.category === 'marketing')).toBe(true);
-    expect(findTemplates(catalog, '推广').map((t) => t.id)).toContain('promo-ad');
+    expect(findTemplates(catalog, 'Promo').map((t) => t.id)).toContain('promo-ad');
     // Tags count too
-    expect(findTemplates(catalog, '转化').map((t) => t.id)).toEqual(['promo-ad']);
+    expect(findTemplates(catalog, 'conversion').map((t) => t.id)).toEqual(['promo-ad']);
   });
 
   it('认不出的分类键按键名显示，并多一个分类按钮', () => {

@@ -1,6 +1,6 @@
 [package]
 name = "export-worker"
-description = "CucCut 的 Render Worker（架构设计 §9.13、§13.1）：独立进程，按冻结的导出输入逐帧求计划、合成并交给编码器（平台原生优先，ffmpeg 兜底）；可取消，进度走 stdout 的 JSON 行"
+description = "CucCut's Render Worker (architecture design §9.13, §13.1): a separate process that computes the plan frame by frame from frozen export input, composites, and hands frames to the encoder (platform-native first, ffmpeg as fallback); cancellable, with progress as JSON lines on stdout"
 version.workspace = true
 edition.workspace = true
 license-file.workspace = true

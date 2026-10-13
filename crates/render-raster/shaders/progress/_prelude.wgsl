@@ -1,21 +1,21 @@
-// progress domain 的 binding 面与顶点着色器（设计 §8.1 / §8.2）。
+// Binding surface and vertex shader for the progress domain (design §8.1 / §8.2).
 //
-// 与 visualizer 的 `_prelude.wgsl` 是**两份**而不是一份：`@group(1)` 的布局不同
-// （progress 9 项、多 `u_progress` / `u_srcRes`、少 `u_textureSize`），而且
-// progress **没有 `@group(2)`**——它的内容由播放头推导，不是素材源。
+// Kept as **a second copy** of visualizer's `_prelude.wgsl` rather than shared: the `@group(1)` layout differs
+// (progress has 9 entries, more `u_progress` / `u_srcRes`, and no `u_textureSize`), and
+// progress has **no `@group(2)`**: its content is derived from the playhead, not from a material source.
 
 struct VertexOutput {
     @builtin(position) position : vec4f,
     @location(0) texCoord : vec2f,
 }
 
-// ── §8.1 `@group(0)`：顶点变换。
+// ── §8.1 `@group(0)`: vertex transform.
 @group(0) @binding(0) var<uniform> u_transform : mat4x4f;
 @group(0) @binding(1) var<uniform> u_texTransform : mat3x3f;
 
-// ── §8.2 `@group(1)`：progress 的 9 项，**顺序冻结**。
-// WebGL2 没有 `BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED`，故 scalar / vec2 的
-// binding 类型显式补到 16 B；binding 数量、名字和顺序仍与冻结表逐项相同。
+// ── §8.2 `@group(1)`: the 9 progress entries, **order frozen**.
+// WebGL2 has no `BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED`, so the scalar / vec2 binding types are explicitly padded to 16 B;
+// the binding count, names and order still match the frozen table one for one.
 struct ScalarUniform { value : vec4f }
 struct Vec2Uniform { value : vec2f, _padding : vec2f }
 @group(1) @binding(0) var<uniform> u_progress : ScalarUniform;
@@ -28,9 +28,9 @@ struct Vec2Uniform { value : vec2f, _padding : vec2f }
 @group(1) @binding(7) var<uniform> u_colourMultiplier : vec4f;
 @group(1) @binding(8) var<uniform> u_clip : vec4f;
 
-// ── `@group(3)`：配方参数（见 visualizer 侧同名段落的理由）。
+// ── `@group(3)`: recipe parameters (see the same-named section on the visualizer side for the reasoning).
 
-/// §8.5 的四边裁剪，progress 侧的名字。
+/// The four-edge clipping of §8.5, under the progress side's name.
 fn DiscardProgressClip(texCoord : vec2f) {
     var clipped : bool = false;
     if (texCoord.x <= u_clip[0]) { clipped = true; }
@@ -40,7 +40,7 @@ fn DiscardProgressClip(texCoord : vec2f) {
     if (clipped) { discard; }
 }
 
-/// §8.1：单 quad + y-flip，与 visualizer 侧逐字相同。
+/// §8.1: single quad + y-flip, identical word for word to the visualizer side.
 @vertex fn vertexMain(@location(0) pos : vec2f, @location(1) uv : vec2f) -> VertexOutput {
     var output : VertexOutput;
     output.position = u_transform * vec4f(pos.x, -pos.y, 0.0, 1.0);

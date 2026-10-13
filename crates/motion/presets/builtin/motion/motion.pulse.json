@@ -3,7 +3,7 @@
   "version": 1,
   "domain": "motion",
   "family": "pulse",
-  "doc": "呼吸式放大后回落。composite=multiply，与主运动的 scale 相乘。",
+  "doc": "Breathing-style scale-up then back down. composite=multiply, multiplies with the main motion's scale.",
   "aliases": [
     "pulse",
     "pop"
@@ -16,12 +16,12 @@
       "type": "number",
       "default": 1.06,
       "min": 0.0,
-      "doc": "峰值缩放"
+      "doc": "Peak scale"
     },
     "curve": {
       "type": "curve",
       "default": "easeOutBack",
-      "doc": "时间曲线（规范 §7.6 的封闭名称）"
+      "doc": "Timing curve (closed name set from spec §7.6)"
     }
   },
   "tracks": [

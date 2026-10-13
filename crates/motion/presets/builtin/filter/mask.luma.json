@@ -22,5 +22,5 @@
   "determinism": "strict",
   "capabilities": [],
   "fallback": null,
-  "doc": "第二个输入的亮度（Rec.709，先反预乘）作为遮罩（尺寸必须与输入一致）。invert 时用 1 - luma。"
+  "doc": "The luminance of the second input (Rec.709, un-premultiplied first) is the mask (dimensions must match the input). With invert, uses 1 - luma."
 }

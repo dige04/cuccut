@@ -1,99 +1,99 @@
-> 移植自 CucCut v2；文中的数据模型名（TranscriptDoc 等）指 v2 的模型，与 v3 文档模型的对应见[架构设计 §14](../../architecture/architecture-design.md#14-待评审事项)。
+> Ported from CucCut v2. The data model names in this text (TranscriptDoc, etc.) refer to the v2 models. For their correspondence to the v3 document model, see [Architecture design §14](../../architecture/architecture-design.md#14-items-pending-review).
 
-# CucCut「倒鸭子」字幕样式设计方案（审查修订版）
+# CucCut “倒鸭子” (Daoyazi) Caption Style Design (Review-Revised Version)
 
-状态：**核心（阶段 A）与 App v2（阶段 B 的原生渲染 + 画廊卡 + 首发面板）已于 2026-09-17 落地**（core `ccut-subtitle-render/src/caption_sequence.rs`、描述符 `caption-daoyazi`、App 画廊「动态排版」组与属性页「倒鸭子」段；差异与未做项见台账 [2026-09-17-214000](../../changelog/prototype-ledger/2026-09-17-214000.md)），Web 未实现；交互原型已接进编辑器原型 `designs/cuccut`（2026-09-17）；同日第二轮按 TypeMonkey（AE 脚本，倒鸭子这一族的源头）的 MonkeyCam 校准了相机、入场、排版走向与段间续接（§0 R2 / R6 / R8、§7.2、§8.3–§8.6）；**2026-09-18 第三轮对着 typeMonkey.js（网页移植，这一族里最还原的一份）重做了排版与取景**：行是最小单位、行在段里左对齐往下叠、段与段在上一行的左下 / 右下角 90° 枢转、镜头把当前行归一到同一屏宽、行从 0.3 倍以左中为原点弹入、停走档与弹入用 CSS `ease`（§0 R16、§6.3、§7.2、§8.2、§8.3、§8.5），原型与内核同步落地。本文是对 2026-09-17 原提案（`cuccut-daoyazi-subtitle-design.md`，基线 `f22da874`）的**审查修订版**：§0 列出审查发现与改法，§1 起是吸收修订后的完整方案，可直接作为实施依据。字段、模块、能力名与默认参数仍待开发与验收。
+Status: **the core (Phase A) and App v2 (Phase B: native rendering, gallery card and launch panel) landed on 2026-09-17** (core `ccut-subtitle-render/src/caption_sequence.rs`, descriptor `caption-daoyazi`, the App gallery's "Dynamic layout" group and the "Daoyazi" section of the properties page; differences and unfinished items are in the ledger [2026-09-17-214000](../../changelog/prototype-ledger/2026-09-17-214000.md)). The Web client is not implemented. The interactive prototype has been wired into the editor prototype `designs/cuccut` (2026-09-17). On the same day, a second round recalibrated the camera, entrance, layout direction and inter-segment continuation against MonkeyCam from TypeMonkey (an AE script, the origin of this family of styles) (§0 R2 / R6 / R8, §7.2, §8.3–§8.6). **On 2026-09-18 a third round reworked the layout and framing against typeMonkey.js (the web port, the most faithful version in this family)**: a row is the smallest unit; rows within a segment stack downward, left-aligned; a segment pivots 90° at the lower-left or lower-right corner of the previous row; the camera normalizes the current row to the same screen width; rows spring in from 0.3× on the left-center origin; and the stop-and-go camera and the spring-in use CSS `ease` (§0 R16, §6.3, §7.2, §8.2, §8.3, §8.5). The prototype and the kernel have been landed in sync. This document is a **review-revised version** of the original 2026-09-17 proposal (`cuccut-daoyazi-subtitle-design.md`, baseline `f22da874`): §0 lists the review findings and the fixes, and §1 onward is the full revised scheme, which can serve directly as the implementation basis. Fields, modules, capability names and default parameters are still to be developed and accepted.
 
-代码核对基线：`main@17e329814`（2026-09-17）。本次只读代码、未运行构建。示例载荷在 [`ccut-daoyazi-caption-style.example.json`](ccut-daoyazi-caption-style.example.json)；交互原型集成在 [`designs/cuccut/CucCut.html`](../../../designs/cuccut/CucCut.html) 的「字幕 → 样式 → 动态排版」分区（画廊卡、属性页「倒鸭子」段、舞台 canvas；产品行为见 [product-design §16.5](../product/product-design/16.md#165-倒鸭子动态排版样式2026-09-17)）：求解器与相机采样的参考实现在 [`designs/cuccut/app/model-daoyazi.js`](../../../designs/cuccut/app/model-daoyazi.js)，`node --test` 用例在 [`model-daoyazi.test.js`](../../../designs/cuccut/app/model-daoyazi.test.js)，舞台与面板视图在 [`daoyazi-stage.jsx`](../../../designs/cuccut/app/daoyazi-stage.jsx) / [`panel-daoyazi.jsx`](../../../designs/cuccut/app/panel-daoyazi.jsx)。
+Code verification baseline: `main@17e329814` (2026-09-17). This pass was read-only; no build was run. The example payload is in [`ccut-daoyazi-caption-style.example.json`](ccut-daoyazi-caption-style.example.json). The interactive prototype is integrated in the "Subtitles → Style → Dynamic layout" section of [`designs/cuccut/CucCut.html`](../../../designs/cuccut/CucCut.html) (gallery card, the "Daoyazi" section of the properties page, the stage canvas; product behavior is in [product-design §16.5](../product/product-design/16.md#165-倒鸭子动态排版样式2026-09-17)). The reference implementations of the solver and camera sampling are in [`designs/cuccut/app/model-daoyazi.js`](../../../designs/cuccut/app/model-daoyazi.js), the `node --test` cases are in [`model-daoyazi.test.js`](../../../designs/cuccut/app/model-daoyazi.test.js), and the stage and panel views are in [`daoyazi-stage.jsx`](../../../designs/cuccut/app/daoyazi-stage.jsx) / [`panel-daoyazi.jsx`](../../../designs/cuccut/app/panel-daoyazi.jsx).
 
-## 0. 审查结论
+## 0. Review Conclusions
 
-原提案的方向正确：倒鸭子是**跨句编排型 Designed Caption**，进 Rust 共享字幕内核，不复制文字与时序，不引入第二个动画运行时。下面按影响从大到小列出需要修订的地方；每条给出原提案怎么写、问题是什么、修订成什么。§1 之后的正文已按修订写。
+The original proposal's direction is correct: Daoyazi is a **cross-sentence, orchestrated Designed Caption**. It goes into the shared Rust caption kernel, does not copy text or timing, and does not introduce a second animation runtime. Below, in order of impact, are the places that need revision. Each row gives how the original wrote it, the problem, and the revision. The body from §1 onward is already written to the revised version.
 
-| # | 主题 | 原提案 | 问题 | 修订 |
+| # | Topic | Original proposal | Problem | Revision |
 |---|---|---|---|---|
-| R1 | 首发格式范围 | §5 一次定下 `captionSequences`、实例级 `caption` 替换、`blocks` 固定布局、`emphasisOverrides`、style `0.2`、caption schema 2、协议 capability | 把阶段 C/D 才需要的持久化提前写死，首发要跨 kernel / protocol / TS 生成 / 校验五层；style 文件升到 0.2 会让**整个项目**在旧版本里不可读，只为一个字幕样式 | 首发只写 `wordAnimation.caption`（schema 1 不变）新增 `seed` 与 `options.daoyazi`；现有代码已保留未知 `options` 往返 [R5]。`captionSequences` 推迟到阶段 C，独立 schema，读取器按「缺失即无」处理。能力门放在**配方描述符**的 `execution` 字段，不靠文件版本号（§5.1、§5.6） |
-| R2 | 镜头时机 | §8.4「在新焦点对应的发言开始时启动镜头」 | 新块前 320 ms 有一半在画外，读者损失每个块的开头；这与「当前块必须完整可见」矛盾。原型第一版用 320 ms 短跳 + 提前量修正后仍不顺：每块一次「急停—停住—急跳」，和 TypeMonkey 的 Stop and Go Fast 档一样生硬 | 相机运动分两档（§8.4）：**平滑**（默认，MonkeyCam Smooth）——镜头在相邻焦点的整段间隔里飞，`[onset − travel, onset]`，到达即开口，`travel = clamp((1 − dwell) × 间隔, minTravel, maxTravel / speed)`；**停走**（MonkeyCam Stop and Go）——`[onset − lead, onset − lead + travel]`，`lead = anticipation × travel`。两档文字都在 `onset − pre` 才开始入场，镜头飞向的是空位，不暴露未来文字 |
-| R3 | 逐词入场 | 阶段 D「可选逐词入场」 | 逐词出现是倒鸭子的身份特征，而且块的排版在编译期已完整求解，逐词只是可见性，零重排成本；放到阶段 D 会让首发看起来像「会转的整句字幕」 | `reveal: "word"` 是首发默认；只有句时间（SRT）或译文驱动时降级为 `"block"`（§8.5） |
-| R4 | 视口裁剪 | §2.2 / §9.4 要求新增通用 `ClipRectGroup` 贯通 CPU / GPU / BCS / Web 才能提供「下方 / 局部区域」 | 核对 `scene.rs`：`GlyphRunUniform.clip` 已是「施加 run transform 之前的画布坐标裁剪矩形」，跟随 pose 运动且只改 uniform [R7]。倒鸭子叠加模式没有每块底板，纯色底就是视口矩形本身，固定译文在视口外走普通路径——首发不需要新的 scene 指令 | 首发用 run clip；`ClipRectGroup` 留到出现每块底板 / 阴影 blur 溢出视口时再加（§9.4） |
-| R5 | 强调词的视觉映射 | 只说复用 normal / emphasis / hero 三档 | 没定义三档在这个样式里长什么样，也没说哪一档影响排版 | `emphasis` = 换色不重排；`hero` = 独立视觉块 + 1.5× 字号 + 第二强调色，进 shaping / 布局指纹（§6.4） |
-| R6 | 布局求解 | §7.2 评分公式 `a…e` 未定候选集、权重与平局规则 | 无法落成确定性实现；也没有防「折回已看过区域」的项，世界会缠成一团 | 固定候选集（4 边 × 3 对齐 × 允许角度）、固定权重初值、平局取索引最小、**顺着走加分**（TypeMonkey：不转的词往下叠、转 90° 的往左叠）与回折惩罚、转向节流；正交排版下碰撞退化为 AABB（§7.2） |
-| R7 | 确定性 | §7.3「stableHash」「随机算法版本化」 | 没指定 hash / RNG，也没说浮点如何跨 native / wasm 一致 | FNV-1a 64 + SplitMix64，整数域抽样；世界坐标量化到 1/64 参考单位；角度只取 {0, 90, 180, 270}，编译期不用三角函数（§7.3） |
-| R8 | 段间过渡 | 未定义 | 段尾「停住」之后下一段怎么开始没说，实现会各自发明；原型第一版按「硬切 + 200 ms 淡出」做，演示项目几乎每句一段，看起来就是每句闪一下 | 段不是切点：每段世界接在上一段世界旁边（同一张画布，顺着上一段最后的走向、隔约 0.6 个视口、与所有既有世界不重叠），镜头从上一段末姿态**飞过去**，到达后上一段在 `fadeMs`（默认 200）内淡出；淡出块计入节点预算（§8.6） |
-| R9 | zoom 边界 | 「对 zoom 设正值下限和上限」 | 抽象数值无法调参 | 用可读性表达：当前块正文屏幕字号在参考画布高的 3.2%–20% 之间、单块高 ≤ 视口高 85%，由此反推 zoom 区间（§8.2） |
-| R10 | 竖屏画幅 | 视口固定 `{0.06, 0.08, 0.88, 0.72}` | 9:16 与 1:1 下 fit / 折行 / 密度都不同；现有配方已有 `layoutTokens.wide / square / vertical` 机制 [R3] | 视口与密度按画幅档取 `layoutTokens`，用户覆盖只写差值（§5.3） |
-| R11 | 属性面板首发 | 面板顶部就是「应用范围：整轨 / 当前动画段 / 当前选区」+「固定这一段版式」 | 这些依赖阶段 C 的实例记录；首发画出来就是空控件 | 首发面板 = 动感、配色、换一版（整轨）、「镜头与排版」折叠区；作用域与固定版式随阶段 C 出现（§3.3） |
-| R12 | 注册表落点 | 「在既有字幕资源注册表中增加 `caption-daoyazi-v1`」 | 注册表有两处：core 的 `CAPTION_RECIPE_FILES`（编译期内嵌，渲染契约）与 App 的 `assets/captions/registry.json`（画廊），Web 另有副本；只加画廊会陈列一个渲染不了的样式 | 三处同一任务加；带 `execution` 的描述符在不支持的客户端里**不陈列**、已保存的项目显示为普通字幕并报诊断（§5.2） |
-| R13 | `seed` 的现状 | 「保留已有 seed 语义」 | 当前 `caption_registry::payload` 只写 schema / content / palette / intensity / speed / style，`seed` 不存在；描述符只有 `seeded` 布尔标记 [R5] | `seed` 是本方案**新增**字段，默认由文档 revision 派生一次后落盘；换配方保留（§5.3） |
-| R14 | 段长预算 | 「8 个 cue、12 秒」 | 只按 cue 数会让长 cue 段过重、短 cue 段过碎 | 三个预算取先到者：12 s、16 行（2026-09-18 起块 = 行，此前 10 个视觉块）、48 个词；行数是主预算（§6.2） |
-| R16 | 排版与取景的形状（2026-09-18） | §7.2 候选评分求解、§8.2 整块取景 | 对着 typeMonkey.js 校对：它的行（`tm-row`）是最小单位、行在段（`tm-block`）里左对齐往下叠、段与段在上一行的一个下角 90° 枢转（`rotate: 'lb' | 'rb'`）、镜头把**当前行**放成同一屏宽（`scale = conWidth / rowWidth`，最短两个字宽）。候选评分求出来的世界像地砖，块内折行 + 整块取景又让每块屏幕字号忽大忽小，都不是倒鸭子的样子 | 行是块：不折行、词左对齐、取景宽 = max(文字宽, 2 em)、行高 1.2；列式排版：顺着当前段往下叠，转向 = 绕上一行的左下 / 右下角枢转 ±90°，撞到已有行就换边或跳到世界外另起一段；逐行取景：`zoom = 视口宽 × fit / 行取景宽`，屏幕字号上限抬到 30%；弹入从 0.3 倍、原点左中、CSS `ease`；停走档相机也用 CSS `ease`；历史按行留 8 行、50%（§6.3、§7.2、§8.2、§8.3、§8.5） |
-| R15 | 舞台拾取 | 「点击文字只选择对应字幕」 | 历史块也在画面上，点到历史块选谁没说 | 只有当前块与历史块的**可见词**可拾取，拾取用逆相机矩阵；历史块点击 = 选中该 cue 并 seek 到它的 onset（§3.4） |
+| R1 | Scope of the first-release format | §5 fixes at once `captionSequences`, instance-level `caption` replacement, fixed `blocks` layout, `emphasisOverrides`, style `0.2`, caption schema 2, and a protocol capability | This pulls in persistence that only Phase C/D need and locks it in early. The first release would have to span five layers: kernel, protocol, TS generation, and validation. Raising the style file to `0.2` would make the **whole project** unreadable in older versions, just for one caption style | The first release writes only `wordAnimation.caption` (schema 1 unchanged), adding `seed` and `options.daoyazi`; existing code already round-trips unknown `options` [R5]. `captionSequences` is deferred to Phase C, with its own schema; readers treat it as "absent means none". The capability gate sits on the **recipe descriptor's** `execution` field, not on the file version number (§5.1, §5.6) |
+| R2 | Camera timing | §8.4 "start the camera at the speech of the new focus" | The first 320 ms of the new block are half off-screen, so readers lose the start of every block, which contradicts "the current block must be fully visible". The prototype's first version used a 320 ms short jump; even with lead correction it was still awkward: every block produced one "abrupt stop, pause, sudden jump", as harsh as TypeMonkey's Stop and Go Fast mode | Camera motion has two modes (§8.4). **Smooth** (default, MonkeyCam Smooth): the camera flies across the whole interval between adjacent focuses, `[onset − travel, onset]`, and speech starts on arrival, with `travel = clamp((1 − dwell) × interval, minTravel, maxTravel / speed)`. **Stop and Go** (MonkeyCam Stop and Go): `[onset − lead, onset − lead + travel]`, with `lead = anticipation × travel`. In both modes the text begins to enter at `onset − pre`, and the camera flies toward empty space, so future text is not exposed |
+| R3 | Word-by-word entrance | Phase D "optional word-by-word entrance" | Word-by-word appearance is the defining trait of Daoyazi, and the block layout is fully solved at compile time, so word reveal is only a visibility change with zero relayout cost. Putting it in Phase D would make the first release look like "a whole-sentence subtitle that moves" | `reveal: "word"` is the default for the first release; it degrades to `"block"` only when timing is sentence-level (SRT) or translation-driven (§8.5) |
+| R4 | Viewport clipping | §2.2 / §9.4 require a new generic `ClipRectGroup` threaded through CPU / GPU / BCS / Web to provide "below / local region" | Checking `scene.rs`: `GlyphRunUniform.clip` is already a "canvas-coordinate clip rectangle applied before the run transform", which follows the pose and changes only a uniform [R7]. The Daoyazi overlay mode has no per-block backing plate; a solid backdrop is the viewport rectangle itself, and translation text that is fixed in place and outside the viewport takes the ordinary path. So the first release needs no new scene instruction | The first release uses the run clip. `ClipRectGroup` is deferred until per-block plates or shadow blur overflowing the viewport appear (§9.4) |
+| R5 | Visual mapping of emphasis words | Only says to reuse the normal / emphasis / hero three tiers | The three tiers' appearance in this style is not defined, nor is which tier affects layout | `emphasis` = color change, no relayout; `hero` = separate visual block + 1.5× font size + a second emphasis color, included in the shaping / layout fingerprint (§6.4) |
+| R6 | Layout solving | §7.2 scoring formula `a…e` with an undefined candidate set, weights and tie rules | Cannot be turned into a deterministic implementation. It also has no term preventing folding back into already-seen regions, so the world would tangle | A fixed candidate set (4 edges × 3 alignments × allowed angles), fixed initial weights, ties broken by the smallest index, **a bonus for continuing in the same direction** (TypeMonkey: words that don't turn stack downward, words that turn 90° stack leftward), a penalty for folding back, and turn-rate throttling. Under orthogonal layout, collisions degrade to AABB (§7.2) |
+| R7 | Determinism | §7.3 "stableHash", "randomization algorithm versioned" | No hash or RNG is specified, and nothing says how floating point stays consistent across native and wasm | FNV-1a 64 + SplitMix64, sampling in the integer domain; world coordinates quantized to 1/64 of a reference unit; angles restricted to {0, 90, 180, 270}, with no trigonometry at compile time (§7.3) |
+| R8 | Inter-segment transition | Not defined | The original does not say how the next segment starts after the "hold" at the end of a segment, so each implementation would invent its own. The prototype's first version used a "hard cut + 200 ms fade-out"; since the demo project has nearly one segment per sentence, it looked like every sentence flickered | A segment is not a cut point. Each segment's world sits beside the previous segment's world (on the same canvas, continuing the previous segment's last direction, about 0.6 viewports away, overlapping no existing world). The camera **flies over** from the previous segment's end pose, and once it arrives the previous segment fades out within `fadeMs` (default 200). Fading-out blocks count toward the node budget (§8.6) |
+| R9 | Zoom bounds | "Set a positive lower and upper bound on zoom" | Abstract numbers cannot be tuned | Expressed as readability: the on-screen font size of the current block's body text is between 3.2% and 20% of the reference canvas height, and a single block's height is ≤ 85% of the viewport height; the zoom range is derived from these (§8.2) |
+| R10 | Portrait aspect ratio | Viewport fixed at `{0.06, 0.08, 0.88, 0.72}` | At 9:16 and 1:1, fit, line wrapping and density all differ. The existing recipe already has a `layoutTokens.wide / square / vertical` mechanism [R3] | Viewport and density are taken from `layoutTokens` per aspect-ratio tier; user overrides store only the difference (§5.3) |
+| R11 | Properties panel in the first release | The top of the panel is "Scope: whole track / current animation segment / current selection" plus "Pin this segment's layout" | These depend on Phase C instance records. In the first release they would be empty controls | First-release panel = motion, color, "Another version" (whole track), and a collapsible "Camera and layout" section. Scope and fixed layout appear with Phase C (§3.3) |
+| R12 | Registry placement | "Add `caption-daoyazi-v1` to the existing caption asset registry" | There are two registries: core's `CAPTION_RECIPE_FILES` (embedded at compile time, the rendering contract) and the App's `assets/captions/registry.json` (gallery), plus a copy in Web. Adding it only to the gallery would list a style that cannot be rendered | Add the same entry in all three places. Descriptors with an `execution` field are **not listed** in clients that do not support them, and saved projects that use them show as ordinary captions with a diagnostic (§5.2) |
+| R13 | Current state of `seed` | "Keep the existing seed semantics" | The current `caption_registry::payload` writes only schema / content / palette / intensity / speed / style. `seed` does not exist, and the descriptor has only a `seeded` boolean marker [R5] | `seed` is a **new** field in this proposal. By default it is derived once from the document revision and saved to disk; it is preserved when the recipe is changed (§5.3) |
+| R14 | Segment length budget | "8 cues, 12 seconds" | Counting cues alone makes long-cue segments too heavy and short-cue segments too fragmented | Three budgets, whichever is reached first: 12 s, 16 lines (since 2026-09-18 a block = a line; previously 10 visual blocks), and 48 words. The line count is the primary budget (§6.2) |
+| R16 | Shape of layout and framing (2026-09-18) | §7.2 candidate-scoring solver, §8.2 whole-block framing | Checked against typeMonkey.js: its rows (`tm-row`) are the smallest unit; rows stack downward, left-aligned, within a segment (`tm-block`); a segment pivots 90° at one lower corner of the previous row (`rotate: 'lb' | 'rb'`); and the camera makes the **current row** the same screen width (`scale = conWidth / rowWidth`, at least two character widths). The candidate-scored world looked like floor tiles, and in-block wrapping plus whole-block framing made the on-screen font size vary from block to block. Neither looks like Daoyazi | A row is a block: no wrapping, words left-aligned, framing width = max(text width, 2 em), line height 1.2. Column layout: stack downward along the current segment; a turn is a pivot of ±90° around the lower-left or lower-right corner of the previous row. If it hits an existing row, switch sides or jump outside the world and start a new segment. Per-row framing: `zoom = viewport width × fit / row framing width`, with the on-screen font size cap raised to 30%. Entrance from 0.3×, origin left-center, CSS `ease`. The stop-and-go camera also uses CSS `ease`. History keeps 8 rows, at 50% (§6.3, §7.2, §8.2, §8.3, §8.5) |
+| R15 | Stage picking | "Clicking text selects only the corresponding caption" | Historical blocks are also on screen, and it was not stated what is selected when one of them is clicked | Only the **visible words** of the current block and of historical blocks can be picked, using the inverse camera matrix. Clicking a historical block = select that cue and seek to its onset (§3.4) |
 
-保留不变的核心决策（§1）：不嵌 HTML / FFCreator / 第二播放器；不新增 ElementKind；`CaptionSequencePlan` 复用 `MotionProgram`；文本与时序只读投影；三表面共享编译结果。
+Core decisions kept unchanged (§1): no embedding of HTML, FFCreator or a second player; no new `ElementKind`; `CaptionSequencePlan` reuses `MotionProgram`; text and timing are read-only projections; the three surfaces share one compiled result.
 
-## 1. 核心决策
+## 1. Core Decisions
 
-把倒鸭子做成一种**跨句编排型 Designed Caption**。用户仍从「字幕 → 样式」选择它，仍编辑原来的字幕、时间和强调词；内部新增一个能同时考虑多条字幕的编译计划，而不是给每条字幕分别叠旋转特效。
+Make Daoyazi a **cross-sentence, orchestrated Designed Caption**. Users still choose it from "Subtitles → Style", and still edit the original captions, timing and emphasis words. Internally, a new compile plan considers several captions at once, instead of attaching separate rotation effects to each caption.
 
-画面模型：若干文字块放在一个持续存在的二维世界里，词随发言逐个出现，相机随发言在块之间平移、旋转、缩放；当前块保持可读，旧块留在空间中成为背景。相机只作用于字幕世界，不作用于主视频、贴纸、画中画、水印或另一条固定字幕轨。
+Picture model: several text blocks are placed in a persistent two-dimensional world. Words appear one at a time as the speech proceeds, and the camera pans, rotates and zooms between blocks as the speech moves on. The current block stays readable, and older blocks remain in space as background. The camera acts only on the subtitle world, not on the main video, stickers, picture-in-picture, watermarks, or another fixed caption track.
 
-1. **不嵌入 HTML、FFCreator 或第二个视频播放器。** 原型（`designs/cuccut` 里的倒鸭子卡与 `app/model-daoyazi.js`）是视觉与交互参考，也是求解器的可执行说明；生产实现进入 `ccut-subtitle-render`。
-2. **不新增 `ElementKind`、字幕媒体类型或持久化的逐帧关键帧文件。** 它是字幕的表现方式。
-3. **新增 `CaptionSequencePlan`，复用 `MotionProgram`。** 前者负责跨句排版、焦点和生命周期；后者仍是曲线与采样的唯一内核。
-4. **文本与时序只读 Transcript / Timeline 投影。** 保存的是样式、种子与（阶段 C 起）人工约束。
-5. **App、Web、CLI 导出共享同一份编译结果和采样规则。** UI 只产生编辑意图。
-6. **分阶段落盘。** 首发只动 `wordAnimation.caption`；实例记录、固定布局、实例强调是阶段 C 的独立 schema（R1）。
+1. **Do not embed HTML, FFCreator or a second video player.** The prototype (the Daoyazi card in `designs/cuccut` and `app/model-daoyazi.js`) is the visual and interaction reference, and also the executable specification of the solver. The production implementation goes into `ccut-subtitle-render`.
+2. **Do not add a new `ElementKind`, a subtitle media type, or a persisted per-frame keyframe file.** It is a way of presenting subtitles.
+3. **Add `CaptionSequencePlan` and reuse `MotionProgram`.** The former handles cross-sentence layout, focus and lifecycle; the latter remains the single kernel for curves and sampling.
+4. **Text and timing are read-only projections of the Transcript / Timeline.** What is saved is the style, the seed, and (from Phase C) manual constraints.
+5. **App, Web and CLI export share the same compiled result and sampling rules.** The UI only produces editing intent.
+6. **Persist in phases.** The first release touches only `wordAnimation.caption`. Instance records, fixed layout and instance emphasis are independent schemas for Phase C (R1).
 
-## 2. 当前工程已经具备什么
+## 2. What the project already has
 
-| 现有入口 | 已核实的能力 | 本次使用方式 |
+| Existing entry | Verified capability | How this feature uses it |
 |---|---|---|
-| `ccut-subtitle-render` | 共用字幕排版、逐词状态、Designed Caption、`OverlayRenderPlan`、CPU/GPU 场景输出、`cueStyles` 逐条覆盖 | 加入 sequence 编译分支，普通字幕原路径不动 |
-| `wordAnimation.caption` | `schema / content / style / palette / intensity / speed`，未知 `options` 换配方时保留 [R5] | 继续作为启用入口；新增 `seed` 与 `options.daoyazi` |
-| `captionEmphasis` | 文档级按词 `normal / emphasis / hero` | 复用；本样式给三档定义视觉映射（§6.4） |
-| `caption_recipe.rs` | 16 份描述子，`layoutTokens.wide/square/vertical`、`visibility`、`seeded`、`fonts` | 描述符新增 `execution`；按画幅档复用 `layoutTokens` |
-| `ccut-motion` | 无 I/O 的确定性曲线、`PropertyTrack`（同轨 segments 不重叠 [R10]）、`InterpolatorSpec::{Linear, Step, Angle, Color}` | 相机四通道与词级通道 lower 到它；对数缩放需新增插值器（§8.3） |
-| `ccut-timeline` 与共享投影 | source / clip / cuts / rate、词锚与输出时间映射 | 先得到成片中的字幕实例，再编排 |
-| `ccut-timeline-render::scene` | glyph / vector 节点、`ScenePose`、`SceneMotion`（六分量直接插值）、`GlyphRunUniform.clip`、`next_change` / `active_until`、1024 run / 4096 node 预算 [R7] | 复用 pose 与 run clip；新增分解变换不改旧 `SceneMotion` |
-| `ccut-compositor` | 共享 wgpu 合成 | 不引入新运行时 |
-| `ccut-editor-core`、`ccut-protocol` | App/Web 共享编辑语义，协议生成 TS | 样式操作只写一份 |
+| `ccut-subtitle-render` | Shared caption layout, per-word state, Designed Caption, `OverlayRenderPlan`, CPU/GPU scene output, per-cue overrides via `cueStyles` | Add a sequence compile branch; the ordinary caption path stays unchanged |
+| `wordAnimation.caption` | `schema / content / style / palette / intensity / speed`; unknown `options` are kept when the recipe changes [R5] | Still the entry point; add `seed` and `options.daoyazi` |
+| `captionEmphasis` | Document-level per-word `normal / emphasis / hero` | Reuse; this style defines a visual mapping for the three tiers (§6.4) |
+| `caption_recipe.rs` | 16 recipe descriptors; `layoutTokens.wide/square/vertical`, `visibility`, `seeded`, `fonts` | Add `execution` to the descriptor; reuse `layoutTokens` per aspect-ratio tier |
+| `ccut-motion` | Deterministic curves with no I/O, `PropertyTrack` (segments on the same track must not overlap [R10]), `InterpolatorSpec::{Linear, Step, Angle, Color}` | The camera's four channels and the per-word channels lower to it; logarithmic scaling needs a new interpolator (§8.3) |
+| `ccut-timeline` and shared projection | source / clip / cuts / rate, word anchors and output time mapping | First derive the caption instances in the exported video, then arrange them |
+| `ccut-timeline-render::scene` | glyph / vector nodes, `ScenePose`, `SceneMotion` (six components interpolated directly), `GlyphRunUniform.clip`, `next_change` / `active_until`, budget of 1024 runs / 4096 nodes [R7] | Reuse the pose and run clip; add a decomposed transform without changing the old `SceneMotion` |
+| `ccut-compositor` | Shared wgpu compositing | No new runtime |
+| `ccut-editor-core`, `ccut-protocol` | Shared App/Web editing semantics; protocol generates TS | Style operations are written once |
 
-### 2.1 不是「只增加一个配方 JSON」
+### 2.1 It is not "just add one recipe JSON"
 
-`caption_recipe.rs` 以 cue / 词为中心，返回逐词的位移、缩放、旋转、颜色、透明度。倒鸭子另外需要跨 cue 分组、全部块的静态布局、共享相机、历史块的可见性——这是编排层，注册表加名字给不了。
+`caption_recipe.rs` is centred on cues and words; it returns per-word offset, scale, rotation, colour and opacity. Daoyazi additionally needs grouping across cues, a static layout for all blocks, a shared camera, and visibility of historical blocks. This is an orchestration layer; a registry plus a name cannot provide it.
 
-### 2.2 两个必须明确的底层事实
+### 2.2 Two low-level facts that must be stated explicitly
 
-**相机插值不能走 `SceneMotion`。** `SceneMotion::sample()` 对六个仿射分量直接插值 [R7]：0° → 180° 的中间帧会退化成零矩阵，0° → 90° 会非预期缩小。相机必须先分别采样位置、角度、正缩放再合成矩阵；不修改旧 `SceneMotion` 的语义。
+**Camera interpolation cannot go through `SceneMotion`.** `SceneMotion::sample()` interpolates the six affine components directly [R7]: an intermediate frame from 0° to 180° degenerates to a zero matrix, and 0° to 90° shrinks unexpectedly. The camera must sample position, angle and positive scale separately, then compose the matrix. The semantics of the old `SceneMotion` are not changed.
 
-**视口裁剪首发不需要新指令（R4）。** `GlyphRunUniform.clip` 是画布坐标裁剪矩形，随 pose 运动、只改 uniform [R7]。叠加模式下画面只有字形，纯色底是视口矩形本身，固定译文在视口外走普通路径。通用 `ClipRectGroup` 留到出现每块底板或 blur 溢出时。
+**Viewport clipping needs no new instruction for launch (R4).** `GlyphRunUniform.clip` is a clip rectangle in canvas coordinates; it moves with the pose and only changes the uniform [R7]. In overlay mode the picture contains only glyphs; the solid background is the viewport rectangle itself, and fixed translations outside the viewport take the ordinary path. The generic `ClipRectGroup` is deferred until per-block backplates or blur overflow appear.
 
-## 3. 产品交互
+## 3. Product interaction
 
-### 3.1 默认工作流
+### 3.1 Default workflow
 
-转录或导入字幕后，进入「字幕 → 样式 → 动态排版」，选择「倒鸭子」。画廊卡片悬停时播放**当前句前后几句**的连续预览（临时试穿，不写盘）；点击应用后仍停留在字幕工作流。
+After transcribing or importing captions, go to “字幕 → 样式 → 动态排版” (Captions → Style → Dynamic layout) and choose “倒鸭子” (Daoyazi). Hovering a gallery card plays a continuous preview of **the current sentence and several sentences around it** (a temporary try-on, not written to disk). Clicking Apply keeps you in the caption workflow.
 
-第一次应用不弹向导。属性页首屏是三个主要入口：**动感、配色、换一版**，下面是「镜头与排版」折叠区。没有字幕时提示先识别 / 导入；只有一句时仍可使用，并提示「连续两句以上可看到镜头穿行」。
+The first application does not open a wizard. The first screen of the properties page has three main entries: **Motion, Colours, Reroll**, followed by a collapsible “Camera & layout” section. With no captions, prompt the user to recognise or import first. With only one sentence it still works, with a hint: “Two or more consecutive sentences are needed to see the camera travel through.”
 
-默认外观「倒鸭子·叠加」：透明底，不改变视频可见性与声音。另一外观「倒鸭子·纯文字舞台」在字幕层内绘制不透明底色，明确写明「覆盖此范围内的视频画面」，不删素材、不改主轨静音。
+Default appearance “倒鸭子·叠加” (Daoyazi · Overlay): transparent background; it does not change video visibility or audio. The other appearance, “倒鸭子·纯文字舞台” (Daoyazi · Text-only stage), draws an opaque background colour inside the caption layer and explicitly states “覆盖此范围内的视频画面” (Covers the video picture within this range). It does not delete footage or change the main track's mute state.
 
-首发只有一个样式族，两档运动预设「标准 / 轻动感」。黑底、配色、字幕区域是这个样式的选项，不是十几个名字不同的预设。
+Launch has only one style family, with two motion presets, “标准 / 轻动感” (Standard / Light motion). Black background, colours and caption region are options of this style, not a dozen differently named presets.
 
-### 3.2 应用范围（阶段 C）
+### 3.2 Application scope (phase C)
 
-| 范围 | 用户预期 | 持久化行为 |
+| Scope | User expectation | Persistence behaviour |
 |---|---|---|
-| 整条字幕轨（首发唯一） | 目标轨统一使用倒鸭子 | 改目标行的 `wordAnimation.caption` |
-| 当前动画段 | 只调当前连续编排的一段 | 把该段的词锚范围物化为实例记录，保存显式覆盖 |
-| 当前选区 | 只影响选中的成片内容 | 按 source / clip 实例与剪口拆成若干绑定，一次事务保存 |
-| 仅这一条 | 不影响邻句 | 单句范围；沿用 `cueStyles` 的外观能力，不偷偷扩成整段 |
+| Whole caption track (only option at launch) | The target track uses Daoyazi uniformly | Changes `wordAnimation.caption` on the target row |
+| Current animation segment | Adjusts only the continuous sequence currently arranged | Materialises the segment's word-anchor range as instance records and saves explicit overrides |
+| Current selection | Affects only the selected exported content | Splits into several bindings by source / clip instance and cut points, saved in one transaction |
+| This one only | Does not affect neighbouring sentences | Single-sentence scope; uses the appearance capability of `cueStyles` and does not quietly expand to the whole segment |
 
-非连续选择生成独立片段，相机绝不飞过未选中、被剪掉或其他说话人的字幕。绑定重叠时编辑器切分 / 替换 / 合并成不重叠分区；底层校验拒绝未规范化的重叠。`cueStyles` 是 sourceItemId 级覆盖，同一素材重复出现时不能假设它只影响某一个 clip；新的段 / 选区以成片实例为边界。
+Non-contiguous selections generate separate segments; the camera never flies over unselected, cut, or other-speaker captions. When bindings overlap, the editor splits, replaces or merges them into non-overlapping partitions; the low-level validator rejects non-normalised overlaps. `cueStyles` is an override at sourceItemId level. When the same source appears repeatedly, one cannot assume it only affects one particular clip, so new segments and selections are bounded by exported-timeline instances.
 
-### 3.3 属性面板
+### 3.3 Property panel
 
-首发（阶段 A–B）：
+Launch (phases A–B):
 
 ```text
 字幕 / 倒鸭子                         [标准 | 轻动感]
@@ -105,10 +105,10 @@
 
 镜头与排版 ▾
   旋转        不旋转 / 直角转向
-  镜头运动    平滑 / 停走              （camera.motion；下面一行提示语随之变）
+  镜头运动    平滑 / 停走              （camera.motion；the hint line below changes with it）
   镜头速度    慢 ───●─── 快
-  镜头停留    0 ───●─── 60%           （平滑档：camera.dwell）
-  镜头提前量  0 ───●─── 满            （停走档：camera.anticipation；两行只出其一）
+  镜头停留    0 ───●─── 60%           （smooth preset: camera.dwell）
+  镜头提前量  0 ───●─── 满            （stop-and-go preset: camera.anticipation; only one of the two lines appears）
   文字占屏    小 ───●─── 大          （camera.fit）
   文字密度    疏 ───●─── 密
   逐词出现    开
@@ -118,71 +118,71 @@
   段落结束    停住 / 有空余时间时拉远
 ```
 
-阶段 C 追加：面板顶部「应用范围：整轨 | 当前动画段 | 当前选区」、布局行的「调整布局」「固定这一段版式」、每段独立的「换一版」。
+Phase C adds, to the top of the panel, “应用范围：整轨 | 当前动画段 | 当前选区” (Apply to: Whole track | Current animation segment | Current selection); in the layout row, “调整布局” (Adjust layout) and “固定这一段版式” (Fix this segment's layout); and a per-segment “换一版” (Reroll).
 
-`designs/cuccut` 的原型把阶段 C 的这几样一并画出来了（换一版的「换给：整轨 / 当前动画段」、主角词 chip 与「在这一条前另起一段」、调整布局编辑态的拖动 / 旋转 / 固定 / 恢复自动），作为交互与文案参考。App v2 已于 2026-09-18 落地（`stylepane/daoyazi.rs`）：「换给：整轨 / 当前动画段」（段级种子写 `captionSequences.seeds`）、「在这一条前另起一段」开关（`sequenceBreakBefore`）、逐词出现、历史行数、背景、段落结束，以及「调整布局」编辑态（拖动钉行 / 旋转 90° / 固定 / 解除固定 / 恢复自动）。主角词在 App 里不在本段选：复用字幕面板的强调词 chip（`captionEmphasis`，`hero` 角色），本段只留一句提示。
+The `designs/cuccut` prototypes draw all of these phase-C items together: Reroll with “换给：整轨 / 当前动画段” (Apply to: Whole track / Current animation segment), the hero-word chip and “在这一条前另起一段” (Start a new segment before this one), and the edit state of Adjust layout (drag / rotate / pin / unpin / restore auto). They serve as references for interaction and copy. App v2 landed on 2026-09-18 (`stylepane/daoyazi.rs`): “换给：整轨 / 当前动画段” (Apply to: Whole track / Current animation segment; segment-level seeds are written to `captionSequences.seeds`), the “在这一条前另起一段” (Start a new segment before this one) toggle (`sequenceBreakBefore`), per-word appearance, history row count, background, segment end, and the “调整布局” (Adjust layout) edit state (drag to pin a row / rotate 90° / pin / unpin / restore auto). In the App, the hero word is not selected in this segment. It reuses the emphasis-word chip of the caption panel (`captionEmphasis`, `hero` role), and this segment only keeps one hint line.
 
-控件语义：
+Control semantics:
 
-- 「镜头速度」只缩放镜头运动窗口，不改语音、cue 时间、视频速率和总时长。
-- 「换一版」只更新本作用域种子，一步撤销；不换文稿、不改强调词。首发作用域只有整轨。
-- 「文字占屏」映射 `camera.fit`。自动取景会抵消「整块放大字号」的屏幕效果，所以**不保留一个普通字号滑杆**；普通 `fontSize` 作为基础度量 / 兼容值保留，局部强调才用相对字号。
-- 普通字幕的 x / y / rotation、入场动画与倒鸭子的视口 / 相机不是同一坐标层。倒鸭子生效时不叠加旧整句入场；原值保留，退出后恢复。
-- 改字体、相对字号、行宽、密度会重排；改纯填充颜色不重排。
-- 旋转、间距、镜头参数属于动画段；「仅这一条」的外观页不得暗中改整段。
+- “镜头速度” (Camera speed) only scales the camera motion window. It does not change speech, cue times, video rate, or total duration.
+- “换一版” (Reroll) only updates this scope's seed, undoable in one step. It does not change the script or the emphasis words. At launch the only scope is the whole track.
+- “文字占屏” (Text fills the screen) maps to `camera.fit`. Auto-framing cancels the screen effect of enlarging the whole block's font size, so **a plain font-size slider is not kept**. The ordinary `fontSize` is retained as a base metric or compatibility value, and only local emphasis uses relative font size.
+- The ordinary caption's x / y / rotation, its entrance animation, and Daoyazi's viewport / camera are not in the same coordinate layer. When Daoyazi is active, the old whole-sentence entrance is not stacked on top; original values are kept and restored on exit.
+- Changing font, relative font size, line width or density re-lays out. Changing only the solid fill colour does not re-lay out.
+- Rotation, spacing and camera parameters belong to the animation segment. The “仅这一条” (This one only) appearance page must not silently change the whole segment.
 
-### 3.4 舞台
+### 3.4 Stage
 
-默认点击文字 = 选中对应 cue，进入既有文稿编辑。只有**当前块与历史块的已显示词**可拾取，未来词不可见也不可拾取；拾取用相机矩阵的逆变换。点历史块 = 选中该 cue 并把播放头移到它的 onset（R15）。
+By default, clicking text selects the corresponding cue and enters the existing script editing. Only **the displayed words of the current and historical blocks** can be picked. Future words, which are not visible, cannot be picked. Picking uses the inverse of the camera matrix. Clicking a historical block selects that cue and moves the playhead to its onset (R15).
 
-布局编辑态（阶段 C）：双击文字或点「调整布局」进入。暂停相机，用可缩放的**文字地图**展示本段全部块，拖动块、固定位置、旋转 90°、恢复自动。退出后恢复播放头；一次拖拽一个撤销项。时间轴上的「动画段括号」是派生显示，不新增轨、不持久化第二套时序。
+Layout edit state (phase C): entered by double-clicking the text or clicking “调整布局” (Adjust layout). It pauses the camera and shows all blocks of this segment on a scalable **text map**. Drag blocks, pin positions, rotate 90°, restore auto. On exit, the playhead is restored; each drag is one undo item. The “animation segment bracket” on the timeline is a derived display. It adds no track and does not persist a second timing set.
 
-App v2 落地形状（2026-09-18）：舞台的行层来自 `ccut-editor-core` 几何侧车的 `LayoutFrame.sequence`（`SequenceLayout` / `SequenceRow`，帧内四角 + 段局部中心），侧车只在**暂停**时请求，所以 R15 点行跳转与拾取在播放中不可用。编辑态由属性页的「调整布局」按钮进入（App 未接双击）；进入即暂停；拖动经 `CaptionSequenceEdit { seq, drag: (key, 段局部中心) }` 走引擎的 `SequenceEdit` 通道实时预览，松手把四舍五入到 1/64 的中心写进 `captionSequences.pins`，一次 Blob 写回即一个撤销项；旋转 / 固定 / 解除固定 / 恢复自动同一条写路径。文字地图没有缩放：编辑态直接停在当前段的整体取景（`edit_mode` 由 core 的 `caption_sequence.rs` 求相机）。
+App v2 landed shape (2026-09-18): the row layer of the stage comes from `LayoutFrame.sequence` (`SequenceLayout` / `SequenceRow`) of the `ccut-editor-core` geometry sidecar (frame four corners plus segment-local centre). The sidecar is requested only while **paused**, so R15 row-click jump and picking are unavailable during playback. The edit state is entered from the “调整布局” (Adjust layout) button in the properties page; the App does not wire double-click. Entering pauses playback. Dragging goes through the engine's `SequenceEdit` channel, `CaptionSequenceEdit { seq, drag: (key, segment-local centre) }`, for live preview. On release, the centre, rounded to 1/64, is written into `captionSequences.pins`. One Blob write-back is one undo item. Rotate, pin, unpin and restore auto use the same write path. The text map has no zoom: the edit state stays at the current segment's overall framing (`edit_mode` derives the camera from core's `caption_sequence.rs`).
 
-### 3.5 预览、撤销与并发
+### 3.5 Preview, undo and concurrency
 
-沿用画廊临时文档试穿：悬停 / 键盘焦点不写盘、不进撤销、不影响导出；退出、换范围、文档 revision 改变即清除 [R11]。
+Keep the gallery's temporary-document try-on. Hover and keyboard focus do not write to disk, do not enter undo, and do not affect export. Leaving, changing scope, or a document revision change clears it [R11].
 
-重排可放工作线程，编译输入必须冻结。任务键至少含项目、文档 revision、样式摘要、画幅与字体指纹；旧结果不得覆盖新结果。撤销 / 重做恢复 seed 与人工约束，不重新抽随机数。
+Re-layout may run on a worker thread, and compile inputs must be frozen. The task key contains at least the project, document revision, style digest, and aspect-ratio and font fingerprint. Old results must not overwrite new ones. Undo and redo restore the seed and manual constraints and do not redraw random numbers.
 
-**seek 即采样。** 播放头跳到 t 时画面 = `sample(t)`，不从上一帧姿态过渡；顺播、seek、倒放到同一 t 逐位一致。
+**Seek is sampling.** When the playhead jumps to t, the picture = `sample(t)`. It does not transition from the previous frame's pose. Playing forward, seeking, and reverse playback to the same t are bit-identical.
 
-### 3.6 双语与减少动态效果
+### 3.6 Bilingual and reduced motion
 
-首发：原文倒鸭子 + 译文固定显示。固定译文在相机外，用既有翻译投影；字幕世界的视口避让译文行（视口高度由译文轨的 `y` / `verticalAlign` 派生）。
+Launch: original-text Daoyazi, with the translation shown fixed. The fixed translation is outside the camera and uses the existing translation projection. The caption world's viewport avoids translation rows; the viewport height is derived from the translation track's `y` / `verticalAlign`.
 
-译文驱动是下一阶段，必须用真实译文 cue 或对齐块时序；只有句级译文时 `reveal` 降级为 `block`。缺译按现有缺译策略显示为空。
+Translation-driven reveal is the next phase and must use real translation cues or aligned block timing. With only sentence-level translation, `reveal` degrades to `block`. Missing translations display as empty per the existing missing-translation policy.
 
-「不旋转」/「轻动感」是可保存、进导出的样式选项；系统「减少动态效果」只影响编辑器自动试穿。两轨同时穿行不在首发范围。
+“不旋转” (No rotation) and “轻动感” (Light motion) are style options that can be saved and carried into export. The system “减少动态效果” (Reduce motion) setting only affects the editor's automatic try-on. Two tracks crossing simultaneously is out of scope for launch.
 
-## 4. 领域对象
+## 4. Domain objects
 
-- `CaptionSequenceBinding`（阶段 C）：用户保存的作用范围、覆盖与人工约束，是作者意图。
-- `CaptionSequencePlan`：从当前投影编译出的世界布局、焦点与动画轨，是派生产物。
-- `CaptionSequenceFrame`：给定成片时刻的可见块、变换、颜色、裁剪与拾取几何，是采样结果。
+- `CaptionSequenceBinding` (phase C): the user-saved scope, overrides and manual constraints. It is author intent.
+- `CaptionSequencePlan`: the world layout, focus and animation tracks compiled from the current projection. It is a derived product.
+- `CaptionSequenceFrame`: the visible blocks, transforms, colour, clip and picking geometry at a given exported moment. It is the sampling result.
 
-一个绑定（首发即整轨）可因剪口、停顿或预算编译为多个连续 sequence。文字块的「展示期」不同于字幕的「发言期」：一个词结束发言后其块还可作为历史文字出现。不改 `cue.end`，不用当前 active cue 集合作为全部渲染输入。
+One binding (at launch, the whole track) may compile into several continuous sequences because of cuts, pauses or the budget. A text block's display period differs from a caption's speaking period: after a word finishes being spoken, its block may still appear as historical text. Do not change `cue.end`, and do not use the set of currently active cues as the full rendering input.
 
-## 5. 格式设计
+## 5. Format design
 
-### 5.1 唯一持久化位置
+### 5.1 Sole persistence location
 
-沿用 `studio/style.json`，不改 Transcript 的文字 / 时间，不进 `timeline.json` 顶层。**首发不改 `ccutStudioStyle` 版本、不改 caption schema**（R1）。
+Keep `studio/style.json`. Do not change Transcript text or timing, and do not add anything at the top level of `timeline.json`. **Launch does not change the `ccutStudioStyle` version or the caption schema** (R1).
 
-| 信息 | 存放处 | 阶段 | 作者真相 |
+| Information | Storage | Phase | Author truth |
 |---|---|---|---|
-| 文本、词 id、词时间 | Transcript | 既有 | 是，不复制 |
-| 剪口、clip、变速、顺序 | Timeline | 既有 | 是，不复制 |
-| 样式引用、palette、intensity、speed | `wordAnimation.caption` | 既有 | 是 |
-| `seed`、`options.daoyazi` | `wordAnimation.caption` | **A** | 是 |
-| 单条字体、描边等 | `cueStyles` | 既有 | 是 |
-| 全局强调词 | `captionEmphasis` | 既有 | 是 |
-| 范围 / 人工布局 / 实例级覆盖 | `captionSequences` | **C** | 是，稀疏 |
-| 世界坐标、相机轨、glyph layout | `CaptionSequencePlan` / 可删除缓存 | — | 否 |
+| Text, word ids, word times | Transcript | Existing | Yes, not copied |
+| Cut points, clip, speed change, order | Timeline | Existing | Yes, not copied |
+| Style reference, palette, intensity, speed | `wordAnimation.caption` | Existing | Yes |
+| `seed`, `options.daoyazi` | `wordAnimation.caption` | **A** | Yes |
+| Per-cue font, stroke, etc. | `cueStyles` | Existing | Yes |
+| Global emphasis words | `captionEmphasis` | Existing | Yes |
+| Scope / manual layout / instance-level overrides | `captionSequences` | **C** | Yes, sparse |
+| World coordinates, camera track, glyph layout | `CaptionSequencePlan` / deletable cache | — | No |
 
-### 5.2 配方描述符
+### 5.2 Recipe descriptor
 
-三处同一任务加入 `caption-daoyazi-v1`（R12）：core `CAPTION_RECIPE_FILES`（渲染契约）、App `assets/captions/registry.json` + `styles/`（画廊）、Web 的资源副本。描述符在现有 `cuccut-caption-style/1` 之上新增：
+Add the same task `caption-daoyazi-v1` in three places (R12): core `CAPTION_RECIPE_FILES` (render contract), the App `assets/captions/registry.json` + `styles/` (gallery), and the Web asset copy. On top of the existing `cuccut-caption-style/1`, the descriptor adds:
 
 ```json
 {
@@ -203,13 +203,13 @@ App v2 落地形状（2026-09-18）：舞台的行层来自 `ccut-editor-core` �
 }
 ```
 
-- `execution` 缺失的旧描述符继续按 cue 级逻辑。声明 `sequence` 的描述符必须命中已注册 compiler。
-- **能力门在描述符，不在文件版本**：不认识 `execution.compiler` 的客户端不陈列该样式；打开已保存的项目时按普通字幕渲染并给出「此版本不支持倒鸭子，已按普通字幕显示」的诊断，不改写文件。`caption_recipe_design_descriptor` 现在对未知 id 返回 `None`，实现时要确认这条回退路径落到「普通字幕 + 诊断」而不是空白。
-- `cjk: good` 只能在真实 CJK 字体与断行测试通过后发布。
-- `family` 是画廊分组，`execution.scope` 是执行能力；不让 UI 分类字符串隐式决定算法。
-- `layoutTokens` 复用现有 wide / square / vertical 三档机制 [R3]，值是首版起点。
+- An older descriptor without `execution` continues to follow cue-level logic. A descriptor declaring `sequence` must match a registered compiler.
+- **The capability gate lives in the descriptor, not in the file version**: a client that does not recognize `execution.compiler` does not list this style. When a saved project is opened, it renders as a regular caption and shows the diagnostic “此版本不支持倒鸭子，已按普通字幕显示” (“This version does not support Daoyazi; shown as a regular caption”), without rewriting the file. `caption_recipe_design_descriptor` currently returns `None` for an unknown id; when implementing, confirm that this fallback path lands on "regular caption + diagnostic" and not on a blank result.
+- `cjk: good` may only ship after real CJK font and line-break tests pass.
+- `family` is the gallery grouping and `execution.scope` is the execution capability; do not let the UI category string implicitly decide the algorithm.
+- `layoutTokens` reuses the existing wide / square / vertical three-tier mechanism [R3]; the values are starting points for the first version.
 
-### 5.3 样式载荷（阶段 A）
+### 5.3 Style payload (Phase A)
 
 ```json
 {
@@ -237,20 +237,20 @@ App v2 落地形状（2026-09-18）：舞台的行层来自 `ccut-editor-core` �
 }
 ```
 
-- 2026-09-17 落地修订：`options` **保持既有的数组形状**（每条 `{ kind, key, … }`，与 `caption-texture` 等配方同一套读写路径），倒鸭子的参数块是其中一条 `{ "kind": "object", "key": "daoyazi", "value": {…} }`，不另开对象形 `options.daoyazi`；`value` 里只写用户改过的键，缺省取配方与画幅档的默认。描述符 id 是 `caption-daoyazi`（与其他配方一样不带 `-v1`，文件名仍是 `caption-daoyazi-v1.json`）。
+- Revision landed 2026-09-17: `options` **keeps the existing array shape** (each entry `{ kind, key, … }`, using the same read/write path as recipes such as `caption-texture`). The Daoyazi parameter block is one such entry, `{ "kind": "object", "key": "daoyazi", "value": {…} }`, and is not split out into an object-shaped `options.daoyazi`. In `value`, write only the keys the user has changed; omitted keys take the recipe and frame-tier defaults. The descriptor id is `caption-daoyazi` (no `-v1`, as with the other recipes; the file name is still `caption-daoyazi-v1.json`).
 
-- `seed` 是本方案新增字段（R13）：首次应用时由文档 revision 派生一次后落盘，固定宽度无符号 32 位；换配方保留；「换一版」只改它。
-- `null` 表示取当前画幅档的 `layoutTokens`；用户在面板上改过才写具体值（R10）。
-- `intensity` 只调局部入场幅度与转向概率，参数映射固定在版本化配方里，不改词时间、不改种子。
-- `camera.motion` 两档（R2，§8.4）：`smooth`（默认）用 `dwell`（间隔里停在旧块上的比例）、`minTravelMs`、`maxTravelMs`，`speed` 缩放 `maxTravelMs`；`stopAndGo` 用 `travelMs`（首选时长，按可用窗口缩短，`speed` 缩放它）与 `anticipation ∈ [0, 1]`（提前量占 travel 的比例）。常数对着 TypeMonkey：Stop and Go 的 pre 0.167 s / dur 0.334 s，即 `travelMs` × `anticipation: 0.5`；2026-09-18 起 `travelMs` 默认 300（typeMonkey.js 的 `.tm-wrap transition: all .3s`），停走档三个通道走 CSS `ease`（§8.3）。
-- `entrance` 是词（或块）入场：`durMs` 是缩放 + 透明度的时长（`speed` 缩放），`pre` 是其中落在 onset **之前**的比例（TypeMonkey 的入场都在 marker 前 `pre` 起步，Fast Scale 是 0.167 / 0.333）。
-- `layout.turnEvery`：转过一次之后至少隔这么多**行**才允许再转（默认 2；TypeMonkey `rotationThrottle`）。`layout.mode` 只有 `column`（2026-09-18 起；旧文件里的 `orthogonal`、`maxLines`、`gapEm` 读到即忽略）。
-- `presentation.history.maxBlocks` 按**行**计（typeMonkey.js 念过的行全留在画面上，这里默认留 8 行、50%）。
-- `sequence.maxBlocks` 也按行计，默认 16（行比旧的视觉块短，同样 48 词的预算下行数约多七成）。
-- `maxTurnDeg` 限制**相邻镜头**的角度变化，不限制世界的绝对角度。
-- 「轻动感」预设 = `maxTurnDeg: 0`、`dwell: 0.35`、`anticipation: 0.3`、`intensity ≤ 40`，是保存进文件的值，不是 UI 临时隐藏。没有「超调」这一项：位置 / 角度 / 缩放三个通道共用一条 ease（§8.3）。
+- `seed` is a field added by this plan [R13]: on first application it is derived once from the document revision and saved to disk, as a fixed-width unsigned 32-bit integer. It is kept when the recipe is switched; “换一版” (“another version”, the shuffle action) changes only it.
+- `null` means take the current frame tier's `layoutTokens`; a concrete value is written only after the user changes it in the panel [R10].
+- `intensity` only adjusts the local entrance magnitude and turn probability; the parameter mapping is fixed in the versioned recipe and does not change word timing or the seed.
+- `camera.motion` has two modes [R2, §8.4]: `smooth` (default) uses `dwell` (the proportion of an interval spent on the old block), `minTravelMs`, and `maxTravelMs`, and `speed` scales `maxTravelMs`. `stopAndGo` uses `travelMs` (preferred duration, shortened to fit the available window, scaled by `speed`) and `anticipation ∈ [0, 1]` (lead time as a proportion of travel). The constants are matched to TypeMonkey: Stop and Go has pre 0.167 s / dur 0.334 s, i.e. `travelMs` × `anticipation: 0.5`. From 2026-09-18, `travelMs` defaults to 300 (typeMonkey.js `.tm-wrap transition: all .3s`), and the three channels of the stop-and-go mode use CSS `ease` (§8.3).
+- `entrance` is the entrance of a word (or block): `durMs` is the duration of the scale and opacity change (scaled by `speed`), and `pre` is the proportion of it that falls **before** the onset (TypeMonkey entrances all start `pre` before the marker; Fast Scale is 0.167 / 0.333).
+- `layout.turnEvery`: after a turn, at least this many **lines** must pass before another turn is allowed (default 2; TypeMonkey `rotationThrottle`). `layout.mode` has only `column` (from 2026-09-18 on); the legacy `orthogonal`, `maxLines`, and `gapEm` are ignored when read.
+- `presentation.history.maxBlocks` is counted in **lines** (lines already read by typeMonkey.js all stay on screen; here the default keeps 8 lines, at 50%).
+- `sequence.maxBlocks` is also counted in lines, default 16. Lines are shorter than the old visual blocks, so with the same 48-word budget there are roughly 70% more lines.
+- `maxTurnDeg` limits the angle change between **adjacent shots**; it does not limit the absolute angle of the world.
+- The “Light motion” preset (「轻动感」预设) = `maxTurnDeg: 0`, `dwell: 0.35`, `anticipation: 0.3`, `intensity ≤ 40`. These are the values saved into the file, not temporarily hidden UI. There is no “overshoot” (超调) option: the position, angle and scale channels share one ease (§8.3).
 
-### 5.4 项目级稀疏记录（阶段 C）
+### 5.4 Sparse project-level record (Phase C)
 
 ```json
 {
@@ -275,218 +275,221 @@ App v2 落地形状（2026-09-18）：舞台的行层来自 `ccut-editor-core` �
 }
 ```
 
-- **2026-09-18 App v2 实际落地的是精简形状**（core `caption_sequence.rs` 读、App `stylepane/daoyazi.rs` 写），存在 studio 样式根（`style.captionSequences`），不进样式库：
+- **The slimmed shape that App v2 actually shipped on 2026-09-18** (read by core `caption_sequence.rs`, written by App `stylepane/daoyazi.rs`) lives in the studio style root (`style.captionSequences`) and is not in the style library:
 
 ```json
 { "captionSequences": { "schema": 1, "sequenceBreakBefore": ["w58"], "seeds": { "<seq key>": 3 }, "pins": { "<row key>": { "center": [620.0, 240.0], "rotationDeg": 90.0 } } } }
 ```
 
-  段键与行键由 core 按词范围派生（`SequenceIntent`），段级种子是在轨种子上叠加的偏移；`instances[]` / `blocks[]` / `emphasisOverrides` / `caption` 的完整形状留到需要选区级绑定与局部样式替换时再上，届时按下面的规则迁移。
-- 它不包含字幕正文、输出秒数或排版包围盒。`binding` 首末词在源词序上形成闭区间，实际渲染取该范围在指定 clip 中仍可见的输出投影；重复播放必须带 `clipId`。
-- `blocks` 只记录人工分块、人工折行或固定布局；自动块不写。固定坐标用短边 540 的世界参考单位，不是输出像素。
-- `emphasisOverrides` 复用现有强调值类型：实例覆盖 > 已消歧的文档强调 > 自动建议；显式 `normal` 压过上层，删除条目 = 恢复继承。
-- `caption`：缺失 = 继承轨样式；对象 = 局部完整替换；`null` = 该范围关闭 sequence 效果。同一操作不得同时写 `cueStyles` 与 `instance.caption`。
-- 相机 / 视口 / 种子 / 执行版本变化切开序列；纯颜色与局部字号变化不拆。
+  Segment keys and row keys are derived by core from the word range (`SequenceIntent`). The segment-level seed is an offset added on top of the track seed. The full shapes of `instances[]` / `blocks[]` / `emphasisOverrides` / `caption` are deferred until selection-level binding and local style replacement are needed; at that point they will be migrated under the rules below.
 
-### 5.5 单位、版本与校验
+- It does not contain caption text, output seconds, or layout bounding boxes. The first and last words of `binding` form a closed interval on the source word order; rendering takes the output projection of that range that is still visible in the specified clip. Repeated playback must carry `clipId`.
+- `blocks` records only manual chunking, manual line breaks, or fixed layout; automatic blocks are not written. Fixed coordinates use the 540-short-side world reference unit, not output pixels.
+- `emphasisOverrides` reuses the existing emphasis value type: instance override > disambiguated document emphasis > automatic suggestion. An explicit `normal` overrides the layers above it, and deleting an entry restores inheritance.
+- `caption`: missing = inherit the track style; object = full local replacement; `null` = turn off the sequence effect for that range. The same operation must not write both `cueStyles` and `instance.caption`.
+- A change in camera, viewport, seed, or execution version cuts the sequence; pure color and local font-size changes do not cut it.
 
-- 世界位置用短边 540 参考系，量化到 1/64 单位；最终画布缩放只做一次。
-- 视口用 [0, 1] 归一化矩形，字段名 `viewport`；序列运行时用输出秒，JSON 调参用 `Ms`；作者层角度 `Deg`。
-- `opacity`、`fit`、`density`、`anticipation` 有明确范围；浮点必须有限；zoom 严格大于零。
-- 阶段 A 不改任何文件版本，不新增协议 capability；阶段 C 的 `captionSequences` 自带 `schema`，协议 capability 命名 `captionSequenceV1`，同任务更新协议版本、生成 TS 与参考文档。**2026-09-18 状态**：App v2 经既有 `StyleAction::Blob` 整份样式写回，未新增协议 capability 与 `ccut-protocol` 字段；`captionSequenceV1` 留到 Web / `ccut serve` 需要按字段读写时再加。
-- 校验至少覆盖：实例范围重叠、锚缺失、绑定跨素材、人工块词范围重叠、人工块跨强制分段边界、非法颜色 / 浮点、块数 / 节点预算、未知 compiler / version、缩放为零、重复实例 id。读取阶段返回诊断，不写盘「修复」。
+### 5.5 Units, versions and validation
 
-### 5.6 样式同步与模板
+- World positions use the 540 short-side reference frame, quantized to 1/64 units; the final canvas scaling is done only once.
+- Viewports use a [0, 1] normalized rectangle, with the field name `viewport`. The sequence runtime uses output seconds; JSON tuning uses `Ms`; authored angles use `Deg`.
+- `opacity`, `fit`, `density`, and `anticipation` have explicit ranges; floats must be finite; zoom must be strictly greater than zero.
+- Phase A changes no file version and adds no protocol capability. The `captionSequences` in Phase C carries its own `schema`, and the protocol capability is named `captionSequenceV1`, updated in the same task along with the protocol version, the generated TS, and the reference docs. **2026-09-18 status**: App v2 writes the whole style back via the existing `StyleAction::Blob`, without adding a protocol capability or any `ccut-protocol` field. `captionSequenceV1` is deferred until Web / `ccut serve` needs field-level reads and writes.
+- Validation covers at least: overlapping instance ranges, missing anchors, bindings across assets, overlapping manual-block word ranges, manual blocks crossing forced segment boundaries, illegal colors or floats, block-count and node budgets, unknown compiler or version, zero zoom, and duplicate instance ids. The read stage returns diagnostics and does not write “repairs” to disk.
 
-`style_sync` 必须保住 `wordAnimation.caption.seed` 与 `options.daoyazi` 的完整往返；`captionSequences` 留在根，不复制进 `voiceInkContexts`。新增样式应用须更新现有白名单与快照代码 [R6]。
+### 5.6 Style sync and templates
 
-「我的字幕样式」只保存配方引用、字体、通用参数、配色与 `options.daoyazi`；排除 `seed`、`cueStyles`、`captionSequences`、`captionEmphasis`、词锚与世界坐标。
+`style_sync` must preserve the full round trip of `wordAnimation.caption.seed` and `options.daoyazi`. `captionSequences` stays at the root and is not copied into `voiceInkContexts`. New style application must update the existing allowlist and snapshot code [R6].
 
-## 6. 编译流水线
+“My caption styles” (「我的字幕样式」) saves only the recipe reference, font, general parameters, color scheme and `options.daoyazi`. It excludes `seed`, `cueStyles`, `captionSequences`, `captionEmphasis`, word anchors and world coordinates.
+
+## 6. Compile pipeline
 
 ```text
-Transcript + Timeline + 当前 style（+ 阶段 C 的稀疏实例意图）
-        ↓ 既有共享投影：删除、剪口、变速、排序、重复实例 → 成片时间
-        ↓ 解析有效样式、目标轨、范围、强调词、画幅档 layoutTokens
-        ↓ Sequence 划分 → 视觉分块（hero 独立块）
-        ↓ 同一 TextEngine shaping → 块内行布局与真实边界
-        ↓ 有界世界排版（确定性候选评分）→ 相机焦点与运动窗口
-        ↓ CaptionSequencePlan（量化静态几何 + MotionProgram + 资源 / 诊断）
+Transcript + Timeline + current style (+ Phase C sparse instance intent)
+        ↓ existing shared projection: deletions, cuts, speed changes, ordering, repeated instances → output timeline
+        ↓ resolve effective style, target track, range, emphasis words, frame-tier layoutTokens
+        ↓ Sequence partitioning → visual blocks (hero blocks stand alone)
+        ↓ same TextEngine shaping → line layout within blocks and real boundaries
+        ↓ bounded world layout (deterministic candidate scoring) → camera focus and motion window
+        ↓ CaptionSequencePlan (quantized static geometry + MotionProgram + resources / diagnostics)
         ↓ sample(outputTime) → CaptionSequenceFrame
-        ↓ 现有 SceneFrame / DrawOp + glyph run clip
-        ↓ App / Web-WASM / CLI 导出
+        ↓ existing SceneFrame / DrawOp + glyph run clip
+        ↓ App / Web-WASM / CLI export
 ```
 
-### 6.1 先投影，再编排
+### 6.1 Project first, then orchestrate
 
-输入是成片时序而不是源文件时间；共享投影已处理 source / clip / cuts / rate，不另写 `(sourceTime − in) / rate` [R9]。编译输入显式携带：
+The input is the output timeline, not source-file time. The shared projection already handles source / clip / cuts / rate, so do not write a separate `(sourceTime − in) / rate` [R9]. The compile input carries these explicitly:
 
 ```rust
 struct CaptionOccurrence {
     source_id: SourceId,
     clip_id: ClipId,
     source_item_id: SourceItemId,
-    occurrence_key: OccurrenceKey,   // sourceId + clipId + 原始词 id（跨可见片段时再加片段身份）
+    occurrence_key: OccurrenceKey,   // sourceId + clipId + original word id (add the clip identity when spanning visible clips)
     output_window: TimeRange,
     words: Arc<[ProjectedWord]>,
     effective_style: EffectiveCaptionStyle,
 }
 ```
 
-不把派生实例 id 写回 `word.id`；不存在或不可解析的锚返回诊断，不回落到第 0 秒。
+Do not write the derived instance id back into `word.id`. A missing or unresolvable anchor returns a diagnostic and does not fall back to second 0.
 
-### 6.2 序列边界
+### 6.2 Sequence boundaries
 
-强制边界：目标轨 / 语言改变、效果类型改变、显式「从这里重新开始」、实例范围结束、clip 实例改变、源剪口。默认还在停顿 ≥ `pauseThresholdMs`、说话人改变处分段。
+Hard boundaries: a change of target track or language, a change of effect type, an explicit “restart from here” (「从这里重新开始」), the end of an instance range, a change of clip instance, and source cuts. By default, also split on a pause ≥ `pauseThresholdMs` and on a speaker change.
 
-软预算三个取先到者（R14）：`maxDurationMs` 12 s、`maxBlocks` 16（行）、`maxWords` 48；另有节点 / glyph 硬预算。超预算确定性拆段或返回诊断。纯颜色、普通字号的局部变化不断段；相机、视口、种子、执行版本不同则断段。
+Soft budgets, where the first one reached applies (R14): `maxDurationMs` 12 s, `maxBlocks` 16 (lines), `maxWords` 48. There are also hard node and glyph budgets. When over budget, split deterministically or return a diagnostic. Local changes to color or regular font size do not split a sequence; differences in camera, viewport, seed, or execution version do split it.
 
-### 6.3 视觉分块不是修改字幕
+### 6.3 Visual Chunking Is Not Editing the Captions
 
-一个长 cue 可派生多个视觉块，一组紧密的短 cue 可共享一个焦点。保留 cue / word 映射和每词真实时间，不执行 transcript split / merge。
+A long cue may derive several visual blocks, and a group of tightly spaced short cues may share one focal point. Keep the cue / word mapping and each word's real timing; do not perform transcript split / merge.
 
-分块顺序（2026-09-18 起，块 = **行**，typeMonkey.js 的 `tm-row`）：先按 hero 词切独立行；再按标点、词边界与字符预算切行——预算 `2.5 + 5 × density` 个 CJK 单位（density 0.65 → 5.75，中文四五个字、英文一两个词），句读处满四成预算就断。行**不折行**：词左对齐从 0 起一路排过去；行的取景宽 = max(文字宽, 2 em)（typeMonkey.js `minWidthNum`），行高 = 1.2 × 字号；行盒量化到 1/32 参考单位，半宽 / 半高与段内累计高度都落在 1/64 网格上。不机械按字符数切断英文单词、emoji、连写字形或数字单位。
+Chunking order (since 2026-09-18, block = **row**, `tm-row` in typeMonkey.js): first split into independent rows at each hero word; then split rows by punctuation, word boundaries and a character budget. The budget is `2.5 + 5 × density` CJK units (density 0.65 → 5.75, i.e. four or five Chinese characters or one or two English words). At a clause break, the row breaks once it has reached 40% of the budget. Rows **do not wrap**: words are left-aligned and laid out in sequence from 0; the row's framing width = max(text width, 2 em) (`minWidthNum` in typeMonkey.js), and row height = 1.2 × font size. Row boxes are quantized to 1/32 of a reference unit, and the half-width, half-height and cumulative in-paragraph height all fall on a 1/64 grid. Do not mechanically cut English words, emoji, ligatures or numeric units at a character count.
 
-人工块边界落在词锚上；词内折行共享原词时序。只有句时间或句级译文时整块按句入场（`reveal: "block"`），不合成假的词时间。
+Manual block boundaries fall on word anchors; line wrapping within a single word shares the timing of that original word. Only when there is sentence timing or sentence-level translation does the whole block enter by sentence (`reveal: "block"`); fake word timings are not synthesized.
 
-### 6.4 强调词（R5）
+### 6.4 Emphasis Words (R5)
 
-优先级：实例显式覆盖 > 文档 `captionEmphasis` > 用户接受的自动建议 > normal。
+Priority: explicit per-instance override > document `captionEmphasis` > user-accepted automatic suggestion > normal.
 
-| 角色 | 颜色 | 字号 | 排版影响 |
+| Role | Color | Font size | Layout impact |
 |---|---|---|---|
-| `normal` | `primary` | 1× | 无 |
-| `emphasis` | `accent` | 1× | 无；只改帧键 |
-| `hero` | `secondary` | 撑到列宽，封顶 2.75×（算法 v3 前固定 1.5×） | 强制独立视觉块，进 shaping / 布局指纹 |
+| `normal` | `primary` | 1× | None |
+| `emphasis` | `accent` | 1× | None; only changes the frame key |
+| `hero` | `secondary` | Grows to fill the column width, capped at 2.75× (fixed at 1.5× before algorithm v3) | Forces a separate visual block; enters the shaping / layout fingerprint |
 
-当前发言词在任何角色上都用 `accent` 高亮（`emphasis` 词在发言时不变色，靠入场缩放区分）。自动建议首版只用数字、用户选词等可解释规则；若引入 AI，模型只返回受限的词 id 与角色建议，由正常编辑事务写入。
+The currently spoken word is highlighted in `accent` for every role (`emphasis` words do not change color while spoken; they are distinguished by their entrance scale). The first version of automatic suggestions uses only explainable rules such as numbers and user word selection; if AI is introduced, the model only returns restricted word IDs and role suggestions, which are written through a normal editing transaction.
 
-## 7. 文字度量与世界排版
+## 7. Text Measurement and World Layout
 
-### 7.1 只保留一份 shaping
+### 7.1 Keep Only One Shaping
 
-复用 TextEngine / cosmic-text，「测量块」与「绘制字形」建立在同一份 shaped runs 上；不得 Web 先 `measureText()` 排一遍再让 Rust 重排 [R1][R2]。布局中保留 word → 文本范围 → cluster / glyph 范围的映射（连字、组合符号、RTL）[W2]。缓存键含文本、face 指纹、fallback 集、字重 / 轴、方向 / 语言、字号、字距、`density`。字体未就绪时只能用标明状态的临时预览。
+Reuse TextEngine / cosmic-text: the "measure block" and "draw glyphs" steps are built on the same set of shaped runs. Do not run a `measureText()` layout pass in the Web layer and then have Rust re-lay out [R1][R2]. Layout keeps the mapping word → text range → cluster / glyph range (ligatures, combining marks, RTL) [W2]. The cache key includes text, face fingerprint, fallback set, weight / axes, direction / language, font size, letter spacing and `density`. While fonts are not ready, only a temporary preview with a clearly marked status may be shown.
 
-### 7.2 静态世界布局（R6，2026-09-18 改为列式 + 枢转）
+### 7.2 Static World Layout (R6, changed to columns + pivot on 2026-09-18)
 
-只做正交排版：行角度 ∈ {0, 90, 180, 270}，所有行在世界里是轴对齐矩形（90 / 270 时宽高互换），碰撞退化为 AABB 相交测试，不需要 OBB / SAT。世界的形状对着 typeMonkey.js：
+Only orthogonal layout: row angle ∈ {0, 90, 180, 270}. All rows are axis-aligned rectangles in the world (width and height swap at 90 / 270), and collision reduces to an AABB intersection test; no OBB / SAT is needed. The shape of the world matches typeMonkey.js:
 
-- **段（paragraph，它的 `tm-block`）**：若干行左对齐往下叠成一列，整段一个角度。段有局部原点（首行左上角的世界位置）、角度与已叠高度；第 k 行的中心 = 原点 + R(角度)·(w/2, 已叠高度 + h/2)，`R` 是直角旋转（顺时针为正、y 向下），编译期不用三角函数。
-- **顺着走**：平常一行接一行往下叠（typeMonkey.js 的 `top = −rowHeight × n`）。第一段从原点开始，角度接上一动画段的末角度（列跨段续接）。
-- **转向 = 枢转**（它的 `rotate: 'lb' | 'rb'`）：新段绕上一行的一个下角转 90°——`lb` 绕**左下角**，新段顺时针 +90°，新首行的左下角就是那个角（它 `transform-origin: left bottom` + 上一段 `rotate(−90deg)` 的逆）；`rb` 绕**右下角**，新段逆时针 −90°，新首行的右下角就是那个角（`originX × 100% bottom` + `rotate(90deg)` 的逆）。角取的是行**取景宽**的角（与它按 `minWidthNum` 夹取后的 `cur.width` 定位一致）。
-- **什么时候转**：上次转向之后至少隔 `layout.turnEvery` 行（默认 2），用行种子抽一次「转不转」：cue 边界或上一行以句读收尾处概率 `0.55 × min(intensity / 60, 1.6)`，行中间 `0.2 × …`（`maxTurnDeg < 90` 恒否）。默认动感下约每 4 行竖一次——TypeMonkey 的 `rotatePct` 25% 是按词算的，typeMonkey.js 的作者标 lb / rb 也不看句读；第三轮首发时只在句读处抽 25%、隔 3 行，35 行只转两三次，用户反馈「垂直翻转太少」（2026-09-18 调高）；转的话先抽方向：第一次 50/50，之后 70% 与上一次相反（typeMonkey.js 的作者也是 lb / rb 交替着标）；抽到的方向撞上已有行就换另一边。
-- **撞了怎么办**：顺着叠会撞上别的段（同向连转三次会往里卷）时，节流允许就转（两个方向都试），不允许就把新段**跳**到世界包围盒外顺着走的那一侧（隔 0.6 个视口，按本行取景 zoom 换算），角度不变，记 `layout-jump` 诊断。不接受重叠。
+- **Paragraph (`tm-block` in typeMonkey.js)**: several rows, left-aligned, stacked downward into one column, with one angle for the whole paragraph. The paragraph has a local origin (the world position of the top-left corner of its first row), an angle, and the accumulated stacked height. The center of row k = origin + R(angle)·(w/2, stacked height + h/2), where `R` is a right-angle rotation (clockwise positive, y downward); no trigonometric functions are used at compile time.
+- **Going straight**: normally rows stack one after another downward (`top = −rowHeight × n` in typeMonkey.js). The first paragraph starts at the origin; its angle continues from the final angle of the previous animated paragraph (column continuation across paragraphs).
+- **Turning = pivot** (`rotate: 'lb' | 'rb'` in typeMonkey.js): the new paragraph rotates 90° around a bottom corner of the previous row. `lb` pivots around the **bottom-left corner**: the new paragraph turns +90° clockwise, and the bottom-left corner of its new first row is that pivot point (`transform-origin: left bottom` plus the inverse of the previous paragraph's `rotate(−90deg)`). `rb` pivots around the **bottom-right corner**: the new paragraph turns −90° counterclockwise, and the bottom-right corner of its new first row is that pivot point (`originX × 100% bottom` plus the inverse of `rotate(90deg)`). The corner is taken from the row's **framing width** (consistent with positioning by `cur.width` after clamping with `minWidthNum`).
+- **When to turn**: at least `layout.turnEvery` rows (default 2) must pass after the last turn. A row seed decides once whether to turn: at a cue boundary, or where the previous row ends with a clause break, the probability is `0.55 × min(intensity / 60, 1.6)`; mid-row it is `0.2 × …` (if `maxTurnDeg < 90`, never). With the default intensity this turns roughly every 4 rows. TypeMonkey's `rotatePct` of 25% is computed per word, and the typeMonkey.js author marks lb / rb without regard to clause breaks either. When first shipped in the third round, it rolled 25% only at clause breaks and at least 3 rows apart, so 35 rows turned only two or three times, and users reported "too few vertical flips" (raised on 2026-09-18). When it turns, the direction is rolled first: 50/50 the first time, and afterwards 70% opposite to the previous turn (the typeMonkey.js author also alternates lb / rb). If the rolled direction collides with existing rows, the other side is used.
+- **If it collides**: when stacking straight would hit another paragraph (turning the same way three times in a row curls inward), turn if throttling allows (both directions are tried). If not, **jump** the new paragraph to the side of the world bounding box in the direction it was heading (0.6 viewport heights away, converted using the zoom for this row's framing), keep the angle unchanged, and record a `layout-jump` diagnostic. Overlap is never accepted.
 
-种子只在「转不转」「往哪转」两处进入布局求解，算法 v3 起另有一处定行色（每行 `blockSeed` 依次抽 seedHex / turnRoll / dirRoll / toneRoll，原型与内核同序）；「换一版」改变布局只经前两个入口，顺带换一套逐句配色。历史行不在新行出现时重排；位置一旦在计划中确定，后续相机只改取景。世界包围盒上限 = 参考画布 6 × 6 倍，超出记诊断。pinned 行（阶段 C）先登记进碰撞表，自动行绕开；轮到它时按固定姿态另起一段。
+Seeds enter the layout solver only at the two points "turn or not" and "which way to turn". From algorithm v3 there is a third point that sets row colors: each row's `blockSeed` draws seedHex / turnRoll / dirRoll / toneRoll in turn (same order in the prototype and the kernel). "Shuffle to another version" changes the layout only through the first two entry points, and also swaps in a new sentence-by-sentence color set. Historical rows are not re-laid out when a new row appears; once a position is fixed in the plan, later cameras only change framing. The upper bound of the world bounding box = 6 × 6 times the reference canvas; exceeding it records a diagnostic. Pinned rows (stage C) are registered in the collision table first, and automatic rows route around them; when their turn comes, they start a new paragraph in their fixed pose.
 
-第二轮（2026-09-17）的候选评分求解（4 边 × 3 对齐 × 角度、顺着走加分、回折惩罚）已废：它把世界排成地砖，转向处新块贴在旧块侧边，而不是倒鸭子那种「一列念完、绕角一转、再念一列」。
+The candidate-scoring solver of the second round (4 edges × 3 alignments × angle, bonus for going straight, penalty for doubling back) has been abandoned. It arranged the world like floor tiles, with new blocks at a turn sitting against the sides of old blocks, instead of the 倒鸭子 (daoyazi) reference style of "one column read through, turn at the corner, then read another column".
 
-### 7.3 稳定随机（R7）
+### 7.3 Stable Randomness (R7)
 
 ```text
 blockSeed = fnv1a64(recipeVersion ‖ algorithmVersion ‖ userSeed ‖ sourceId ‖ clipId ‖ blockAnchorWordId)
-rng       = SplitMix64(blockSeed)          // 只在整数域抽样：rng.next() % n
-坐标      = round(x × 64) / 64             // 世界参考单位，量化后写入 plan
-角度      ∈ {0, 90, 180, 270}              // 编译期不调用 sin / cos
+rng       = SplitMix64(blockSeed)          // sample only in the integer domain: rng.next() % n
+coordinate = round(x × 64) / 64            // world reference units, quantized before writing to the plan
+angle     ∈ {0, 90, 180, 270}              // no sin / cos calls at compile time
 ```
 
-不用数组索引、时间、内存地址、HashMap 次序作为种子或平局规则。自动块以稳定首词为身份，人工块用保存的 id；同一字幕在不同 clip 的实例因 `clipId` 不同得到独立但确定的布局。
+Array indices, time, memory addresses and HashMap order are never used as seeds or tie-breaking rules. Automatic blocks are identified by their stable first word; manual blocks use their saved ID. The same caption instantiated in different clips gets an independent but deterministic layout, because `clipId` differs.
 
-改稿通常只影响本段，但不保证绝对：修改停顿、删边界词、换字体、改分段阈值可能重算到下一个强制边界。UI 提示真实影响范围；需要绝对稳定的段，用户在阶段 C 保存手动边界与布局约束。
+Edits usually affect only the current paragraph, but this is not guaranteed: changing pauses, deleting boundary words, swapping fonts, or changing the paragraphing threshold may recompute up to the next forced boundary. The UI shows the real scope of impact. For paragraphs that must be absolutely stable, users save manual boundaries and layout constraints in stage C.
 
-### 7.2.1 同列等宽与逐句换色（2026-09-18，算法版本 3）
+### 7.2.1 Equal-Width Columns and Per-Sentence Color (2026-09-18, algorithm version 3)
 
-用户反馈「动画效果不太好」，对着参考片（整句一行、一列的行左右两边都齐、逐句换色、念过的行不淡）改了三处，原型与内核同口径：
+User feedback: "the animation effect isn't great." Working from a reference video (one whole sentence per row, one column, rows justified on both the left and right edges, color changing sentence by sentence, read rows not fading), three things were changed. The prototype and the kernel use the same definitions:
 
-- **同列等宽**：列宽 = `基础字号 × (2.5 + 5 × density)`，也就是分块时的每行字数预算。每行先按基础字号量自然宽，再把这一行的字号乘上 `rowScale = clamp(列宽 / 自然宽, 0.75, 2)`（主角行封顶 2.75，量化到 1/64）。短句字大、长句字小，一列的左右两边都齐；行距收到 1.12 倍字号，行与行贴着才像一块字。主角行不再固定 1.5×。
-- **逐句换色**：每行在 `dirRoll` 之后再抽一次 `toneRoll`（三表面同序）。换到新 cue 时定色：`< 0.5` 主色、`< 0.78` 强调色、其余次强调色；抽到与上一句相同的强调档就回主色，两档强调色不连着出。一句的各行同色。行内的强调词 / 主角词取「另一档」，撞上行色就让到剩下那一档。
-- **整行入场、历史不淡**：`reveal` 默认改 `"block"`，`history.opacity` 默认改 1。中文 transcript 常常一字一词，逐字弹入又逐字换高亮色在屏幕上就是一片碎闪。整行入场从 0.7 倍起（逐词档仍是 0.3 倍），整行档不标「正在说」。逐词档保留，属性页那颗开关照旧。
+- **Equal-width columns**: column width = `base font size × (2.5 + 5 × density)`, i.e. the per-row character budget used when splitting. Each row first measures its natural width at the base font size, then multiplies that row's font size by `rowScale = clamp(column width / natural width, 0.75, 2)` (the hero row is capped at 2.75, quantized to 1/64). Short sentences get larger type and long sentences smaller type, so both edges of a column are justified. Line spacing is reduced to 1.12× font size so rows sit tight and read as one block. Hero rows no longer use a fixed 1.5×.
+- **Per-sentence color**: after `dirRoll`, each row draws `toneRoll` once more (same order on all three surfaces). When a new cue begins, its color is set: `< 0.5` primary color, `< 0.78` accent color, otherwise the secondary accent color. If the drawn accent tier matches the previous sentence's, it reverts to the primary color, so the two accent colors never appear back to back. All rows of one sentence share one color. Emphasized words and hero words within a row take "the other tier", and if that collides with the row color, they shift to the remaining tier.
+- **Whole-row entrance, no fading history**: `reveal` now defaults to `"block"`, and `history.opacity` now defaults to 1. Chinese transcripts often have one character or word per timing, so entering word by word while recoloring word by word looks like a flicker of fragments on screen. Whole-row entrance starts at 0.7× (the per-word tier is still 0.3×), and the whole-row tier does not mark "currently speaking". The per-word tier is kept, and the switch on the properties page is unchanged.
 
-`fit` 三档 token 同步调低（0.60 / 0.62 / 0.66）：同列等宽之后每行都是满列宽，0.78 会把整列顶到视口边，上一列转过去之后看不到。
+The three `fit` preset tokens are also lowered (0.60 / 0.62 / 0.66). With equal-width columns every row fills the full column width, so 0.78 would push the whole column to the edge of the viewport, and after the previous column turns away nothing would remain visible.
 
-### 7.2.2 防「快闪」：并块与块内折行（2026-09-18，算法版本 4）
+### 7.2.2 Preventing "Flash" Captions: Merging Blocks and Wrapping Within Blocks (2026-09-18, algorithm version 4)
 
-用户反馈：有些文字时间太短，刚出来镜头就走了，像快闪；折行没关系。按预算切行会留下只有一两个字的尾巴，语速快的句子每行也只有半秒，一个字的短句（「哦」）更是一闪而过。
+User feedback: some text stays on screen too briefly. It appears and the camera moves on immediately, like a flash. Wrapping is fine. Splitting rows by budget leaves tails of only one or two characters, and in fast speech each row lasts only about half a second. A one-character sentence ("哦", "oh") flashes past even faster.
 
-- **并块**：分段之后逐块量停留时间（下一块首词开口 − 本块首词开口；段尾块 = 末词收声 − 首词开口）。不足 **0.7 s** 的块并进相邻块。并块总是保住较早的那个入场时刻：字可以早一点出来，不能念完了才出来。邻块挑字数少的那个，一样多取前一块，所以一串都很短的块两两成对，不会滚成一大块。可以跨 cue 并（块的 `cueId` 取首词所在的 cue）。主角块不参与，换说话人不并，并完不超过 3 行的字数。词序与词时间一个都不动。
-- **块内折行**：块的字数超过「预算 ÷ 0.75」（字号缩到下限也装不下一行）时，按字数均分折成 `ceil(字数 / 预算)` 行，每行各自撑到列宽（§7.2.1），行高累加。看上去与几个单行块一样，只是一起入场、镜头只停一次。`SeqBlock.lines` 记行数，`font` 取块里最小的那行字号，取景的可读性区间按它算（不再从块高反推）。
-- 固定块（§7.4）按首词 id 记，并块后首词变了的 pin 会失配，按既有规则回到自动。
+- **Merging blocks**: after segmenting, measure each block's dwell time (first-word onset of the next block − first-word onset of this block; for the final block, last-word end − first-word onset). Blocks shorter than **0.7 s** are merged into an adjacent block. Merging always keeps the earlier entry time: characters may appear earlier, but must never appear only after they have already been spoken. The neighbor chosen is the one with fewer characters; on a tie, the earlier block is taken, so a run of short blocks pairs off two by two rather than rolling into one large block. Merging may cross cues (the block's `cueId` is taken from the cue containing its first word). Hero blocks do not take part, merging does not cross a speaker change, and the merged result may not exceed 3 lines' worth of characters. Word order and word timings are not changed at all.
+- **Wrapping within a block**: when a block's character count exceeds "budget ÷ 0.75" (it would not fit in one row even with the font shrunk to its lower limit), its characters are divided evenly into `ceil(characters / budget)` lines. Each line is stretched to the column width on its own (§7.2.1), and line heights accumulate. Visually this looks like several single-line blocks, except that they enter together and the camera stops only once. `SeqBlock.lines` records the line count. `font` takes the smallest line font size in the block, and the readability range for framing is calculated from it (it is no longer derived back from block height).
+- Fixed blocks (§7.4) are recorded by their first word ID. After merging, if a pinned block's first word has changed, the pin no longer matches and reverts to automatic under the existing rules.
 
-### 7.4 人工约束（阶段 C）
+### 7.4 Manual Constraints (stage C)
 
-固定块优先于自动求解，其他块绕开它。改字体后固定块碰撞时提示「固定布局与新文字冲突」，允许重排未固定块或解除约束，不擅自移动锁定块。读取、编译或缓存失效不得静默删除人工约束。
+Fixed blocks take precedence over automatic solving, and other blocks route around them. After a font change, if a fixed block collides, a prompt "Fixed layout conflicts with new text" appears. The user may allow unfixed blocks to be re-laid out or lift the constraint, but locked blocks are never moved silently. Reading, compiling or cache invalidation must never silently delete manual constraints.
 
-## 8. 相机与动画求值
+## 8. Camera and Animation Evaluation
 
-### 8.1 变换约定
+### 8.1 Transform Conventions
 
-列向量，世界与屏幕坐标 x 向右、y 向下，角度顺时针为正。完整变换：
+Column vectors. In world and screen coordinates x points right and y points down; angles are positive clockwise. Full transform:
 
 ```text
 Mscreen = MoutputScale × T(viewportCenter) × S(zoom) × R(−cameraAngle) × T(−cameraCenter) × Mblock × MwordLocal
 Mblock  = T(blockCenter) × R(blockAngle) × T(−blockWidth/2, −blockHeight/2)
 ```
 
-`MoutputScale` 把短边 540 的参考画布转成输出像素，只乘一次。当前块角度等于相机角度时块在屏幕上正立。底色与固定译文在屏幕空间，不参与相机矩阵。调用 `post_concat_mat6` 时注意其「先 first 后 second」约定 [R7]。
+`MoutputScale` converts the reference canvas (short side 540) to output pixels, and is applied only once. When a block's angle equals the camera angle, the block appears upright on screen. The background color and fixed translations are in screen space and are not part of the camera matrix. When calling `post_concat_mat6`, mind its order convention ("first" is applied before "second") [R7].
 
-### 8.2 焦点与取景（R9，2026-09-18 改为逐行归一）
+### 8.2 Focus and Framing (R9, changed to per-row normalization on 2026-09-18)
 
-镜头对着**当前行**（typeMonkey.js 的 `scale = conWidth / rowWidth`，`conPercent` 0.8）：
+The camera aims at the **current row** (`scale = conWidth / rowWidth` in typeMonkey.js, `conPercent` 0.8):
 
 ```text
-zoom = viewportW × fit / rowW          rowW = max(文字宽, 2 em)，即行的取景宽
+zoom = viewportW × fit / rowW          rowW = max(text width, 2 em), i.e. the row's framing width
 ```
 
-短行大、长行小，每行都占同一屏宽，行盒在视口居中，相机角度 = 行角度。算法 v3 起行本身已经同列等宽（§7.2.1），所以一列之内镜头几乎不变焦，只在碰到字号上下限的行上才动；可读性区间按**这一行自己的字号**算（`行高 / 1.12`），不再按基础字号。zoom 夹在可读性区间内：下限使当前行屏幕字号 ≥ 参考画布高的 3.2%（1080p 下约 35 px）；上限取两者较小：单行高 ≤ 视口高 × fit，且屏幕字号 ≤ 参考画布高的 **30%**（两个字的行也能占满屏宽；第二轮的 20% 是为整块取景定的，逐行取景下会把短行压小）。阅读态当前行四角在视口内；移动过程中允许旧行出画。局部弹跳、描边扩张计入安全预算，不只检查结束帧。
+Short rows appear large and long rows small, so every row fills the same screen width. The row box is centered in the viewport, and the camera angle = the row's angle. Since algorithm v3, rows are already equal-width per column (§7.2.1), so within one column the camera almost never zooms; it only changes on rows that hit the font-size limits. The readability range is calculated from **that row's own font size** (`row height / 1.12`), no longer from the base font size. Zoom is clamped to the readability range. The lower bound ensures the current row's on-screen font size is ≥ 3.2% of the reference canvas height (about 35 px at 1080p). The upper bound is the smaller of two limits: single-row height ≤ viewport height × fit, and on-screen font size ≤ **30%** of the reference canvas height (so even a two-character row can fill the screen width; the 20% of round two was set for framing whole blocks, and with per-row framing it made short rows too small). In the reading state, the four corners of the current row are inside the viewport; during movement, earlier rows may leave the frame. Local bounce and outline expansion count against the safety budget; it is not only the end frame that is checked.
 
-### 8.3 相机通道
+### 8.3 Camera Channels
 
-相机四个独立通道 x、y、rotation、zoom；局部文字用既有 opacity / dx / dy / scale / rotation。统一 lower 到 `ccut-motion`。
+The camera has four independent channels: x, y, rotation, zoom. Local text uses the existing opacity / dx / dy / scale / rotation. Everything is lowered uniformly to `ccut-motion`.
 
-- 三个通道**共用一条 ease**：平滑档 `ease(u) = u²(3 − 2u)`（首尾速度为零的 Hermite，就是 AE 表达式 `ease()`，TypeMonkey 的位置 / X / Y / Z 旋转 / dolly 全用它）；停走档 CSS `ease` = cubic-bezier(0.25, 0.1, 0.25, 1)（typeMonkey.js 的 `transition`，起步快、落地软，`x(t)` 用 8 步牛顿法反解，原型与内核同一份常数与步序）。位置、角度、缩放同时起步、同时停下；不叠「超调」回弹——第一版位置通道单独叠了一段中途鼓包，与角度 / 缩放曲线不同步，是「不顺」的直接来源之一。
-- 位置：`lerp(from, to, ease(u))`。
-- 角度：编译期已选定转向（cw / ccw 写进 plan），插值只在 [from, from + Δ] 上做，不在运行时求最短路；180° 平局固定取 cw。
-- 缩放：`zoomLog: true` 时 `zoom(u) = exp(lerp(log z0, log z1, ease(u)))`，需要在 `ccut-motion` 新增并测试 `LogPositive` 插值器——现有 `InterpolatorSpec` 没有它 [R10]。首个闭环可先用线性正缩放。
+- The three channels **share one ease**. The smooth preset is `ease(u) = u²(3 − 2u)` (a Hermite with zero velocity at both ends; this is the AE expression `ease()`, which TypeMonkey uses for position / X / Y / Z rotation / dolly). The stop-and-go preset uses CSS `ease` = cubic-bezier(0.25, 0.1, 0.25, 1) (the `transition` in typeMonkey.js: fast start, soft landing; `x(t)` is solved by 8 Newton iterations, and the prototype and kernel use the same constants and step count). Position, angle and scale start together and stop together. No “overshoot” bounce is stacked on top. The first version stacked a mid-way bump on the position channel alone, out of sync with the angle / scale curves, and that was one direct source of the “not smooth” feel.
+- Position: `lerp(from, to, ease(u))`.
+- Angle: the turn direction is chosen at compile time (cw / ccw is written into the plan). Interpolation runs only over [from, from + Δ] and does not compute the shortest path at runtime. A 180° tie always takes cw.
+- Scale: when `zoomLog: true`, `zoom(u) = exp(lerp(log z0, log z1, ease(u)))`. This requires adding and testing a `LogPositive` interpolator in `ccut-motion`; the existing `InterpolatorSpec` does not have it [R10]. The first closed loop can start with linear positive scaling.
 
-不对合成后的 Mat6 做 tween。
+Do not tween the composed Mat6.
 
-### 8.4 运动窗口与语音（R2）
+### 8.4 Motion Windows and Speech (R2)
 
-对第 i 个焦点（块），`onset_i` = 块首词在成片中的开始时间，`prevEnd` = 上一段镜头停下的时刻（上一相机段的 `t1`；本段第一块取上一动画段的末段 `t1`）：
+For the i-th focus (block), `onset_i` = the start time in the final cut of the block's first word, and `prevEnd` = the moment the previous shot came to rest (the `t1` of the previous camera segment; for the first block of this segment, the `t1` of the last segment of the previous animation):
 
 ```text
-平滑（camera.motion = "smooth"，默认；MonkeyCam Smooth）
+Smooth (camera.motion = "smooth", default; MonkeyCam Smooth)
   travel_i  = clamp((1 − dwell) × (onset_i − onset_{i−1}), minTravelMs, maxTravelMs / speed)
   travel_i  = min(travel_i, onset_i − prevEnd)
-  segment_i = [onset_i − travel_i, onset_i]                 （到达即开口）
+  segment_i = [onset_i − travel_i, onset_i]                 (opens on arrival)
 
-停走（camera.motion = "stopAndGo"；MonkeyCam Stop and Go）
+Stop-and-go (camera.motion = "stopAndGo"; MonkeyCam Stop and Go)
   travel_i  = min(travelMs / speed, 0.45 × (onset_{i+1} − onset_i))
   lead_i    = min(anticipation × travel_i, 0.3 × (onset_i − onset_{i−1}))
-  segment_i = [onset_i − lead_i, onset_i − lead_i + travel_i]，且不早于 prevEnd
+  segment_i = [onset_i − lead_i, onset_i − lead_i + travel_i], not before prevEnd
 ```
 
-平滑档里镜头在两个焦点之间一直在飞、用整段间隔的 `1 − dwell` 做运动（TypeMonkey 是整段），到达时刻正好是新块开口；间隔很长时封在 `maxTravelMs / speed`（默认 1.6 s）里，免得镜头爬两三秒。停走档保留第一版的短跳（默认 0.3 s、提前一半），是 TypeMonkey 的 Fast 档 / typeMonkey.js 的 0.3 s transition。两档下新块文字都在 `onset_i − pre` 才开始入场（§8.5），镜头飞向的是空位。窗口短于 `minTravelMs` 时去掉旋转（角度突变最刺眼）；不推迟词时间。
+In smooth mode the camera is in flight between the two focuses the whole time, moving over the entire gap with `1 − dwell` (TypeMonkey does the whole gap), and arrival lands exactly on the new block's opening. When the gap is long, travel is capped at `maxTravelMs / speed` (default 1.6 s), so the camera does not crawl for two or three seconds. Stop-and-go keeps the short hop of the first version (default 0.3 s, lead by half), which matches TypeMonkey's Fast preset and the 0.3 s transition in typeMonkey.js. In both modes the new block's text only starts entering at `onset_i − pre` (§8.5), so the camera flies toward an empty spot. When the window is shorter than `minTravelMs`, drop the rotation (an abrupt angle change is the most jarring); do not delay word timing.
 
-所有相机段按输出时间排序并消除重叠（`PropertyTrack` 要求 [R10]）：`segment_i.start ≥ segment_{i−1}.end`，平滑档缩 `travel_i`，停走档先缩 `lead_i` 再缩 `travel_i`。新段的 `from` 是上一段的 `to`（相机姿态在段边界连续）。静止段有明确 hold；不用依赖上一帧状态的弹簧积分。
+All camera segments are sorted by output time and overlaps are removed (`PropertyTrack` requires [R10]): `segment_i.start ≥ segment_{i−1}.end`. Smooth mode shrinks `travel_i`; stop-and-go shrinks `lead_i` first, then `travel_i`. The `from` of a new segment is the `to` of the previous one, so camera pose is continuous across segment boundaries. Rest segments have an explicit hold. Do not use spring integration that depends on the previous frame's state.
 
-### 8.5 文字生命周期（R3）
+### 8.5 Text Lifecycle (R3)
 
-每个块有：首次可见时刻（= 首词 onset − pre）、焦点窗口、历史可见窗口、所在 sequence 的结束时刻。`reveal: "word"` 时块内每个词在自己的 `onset − pre` 开始入场（`pre = entrance.pre × entrance.durMs / speed`，默认 0.15 s；入场 = `durMs`（默认 300 ms）内从 `popFrom` 倍放大到 1 并淡入，原点在**左中**——逐词时是词的左边、整块时是行的左边（typeMonkey.js 的 `zoomIn` + `transform-origin: left center`），曲线是 CSS `ease`；`popFrom = 1 − 0.7 × min(intensity / 60, 1)`，动感 60 从 0.3 倍起、动感 0 不缩放），到 onset 时已站住大半——TypeMonkey 的全部入场预设都在 marker 之前起步，这样词不会「慢半拍」；`"block"` 时整块按首词计。「在念」（高亮）仍严格是 `[start, end)`，与入场分开处理。
+Each block has: its first-visible time (= first-word onset − pre), its focus window, its history-visible window, and the end time of the sequence it belongs to.
 
-默认保留最近 `history.maxBlocks` 行历史（默认 8 行；透明度算法 v3 起默认 100%，此前 50%），按稳定规则降到 `history.opacity`；更早的行不绘制。未来块即便已编译也不绘制。历史块用自身最终局部姿态与样式，不被当前 cue 的颜色或入场计时器覆盖。
+With `reveal: "word"`, each word in a block starts entering at its own `onset − pre` (`pre = entrance.pre × entrance.durMs / speed`, default 0.15 s). The entrance takes `durMs` (default 300 ms): the word scales from `popFrom` up to 1 while fading in, with the origin at the **left middle**. For per-word reveal that is the word's left edge; for whole-block reveal it is the line's left edge (typeMonkey.js `zoomIn` + `transform-origin: left center`). The curve is CSS `ease`. `popFrom = 1 − 0.7 × min(intensity / 60, 1)`: intensity 60 starts at 0.3×, intensity 0 does not scale. By onset the word is already mostly settled. All of TypeMonkey's entrance presets start before the marker, so words do not lag “half a beat behind”. With `"block"`, the whole block is timed from its first word. The “在念” (being read) highlight is still strictly `[start, end)` and is handled separately from the entrance.
 
-### 8.6 段尾与段间（R8）
+By default the most recent `history.maxBlocks` lines of history are kept (default 8 lines; since transparency algorithm v3 the default is 100%, previously 50%), fading down to `history.opacity` by a stable rule. Older lines are not drawn. Future blocks are not drawn even if already compiled. History blocks use their own final local pose and style, and are not overridden by the current cue's color or entrance timers.
 
-默认停在最后焦点。`ending: "overviewIfRoom"` 只消费范围内已有的非发言余量（≥ 1.2 s 时拉远到本段世界包围盒，最长 1.5 s），没有余量就停住，不压缩末词阅读时间、不延长 project duration。
+### 8.6 Segment Endings and Transitions (R8)
 
-段与段在**同一张画布**上：每段世界先在自己的局部坐标里排好，再接到上一段世界旁边——顺着上一段最后的走向（§7.2 的「下方」），隔 0.6 个视口（按首块取景的 zoom 换算），与所有既有世界不重叠（不行就换边、加倍间距，最后放到最右远处）；块的 `center` 是全局值，`localCenter` 与 pins 是局部值（重排上一段不该挪走这一段固定的块）。下一段的第一个相机段是从上一段末姿态（含总览）出发的 `enter` 段，按 §8.4 的规则定窗口、到达即开口，`cutAt` 就是它的起飞时刻；飞行途中上一段仍用**同一台相机**画在画面上，从起飞到到达后 `fadeMs` 走一条 ease 淡掉，淡出中的块计入节点预算。第一段是硬切到首块。TypeMonkey 只有一张无限画布、镜头一路飞，这里的「段」只是排版局部性的单位，不是切点。用户主动选择「增加片尾总览」是明确的剪辑操作，由 Timeline / 导出层负责补尾段，不由字幕 renderer 补帧；可后置。
+By default the camera stops on the last focus. `ending: "overviewIfRoom"` only uses the existing non-speech slack within the range (at ≥ 1.2 s, pull back to the segment's world bounding box, up to 1.5 s). With no slack it holds still, without compressing the final word's reading time or extending the project duration.
 
-## 9. 共享渲染落地
+Segments sit on the **same canvas**. Each segment's world is first laid out in its own local coordinates, then attached beside the previous segment's world: continuing in the direction the previous segment ended (§7.2 “below”), separated by 0.6 viewports (converted from the zoom used to frame the first block), and not overlapping any existing world. If that fails, switch sides and double the gap; as a last resort, place it far to the right. A block's `center` is a global value, while `localCenter` and pins are local values (re-laying out the previous segment must not move this segment's fixed blocks). The first camera segment of the next segment is an `enter` segment departing from the previous segment's end pose (including the overview). Its window follows the rules in §8.4 and opens on arrival, and `cutAt` is its takeoff time. During the flight the previous segment is still drawn on screen with the **same camera**; from takeoff until arrival, and then over `fadeMs`, it fades out along an ease curve. Blocks that are fading out count toward the node budget. The first segment is a hard cut to the first block. TypeMonkey has a single infinite canvas with the camera flying throughout; here a “segment” is only a unit of layout locality, not a cut point. When the user explicitly chooses “add end overview”, that is a deliberate editing operation: the Timeline / export layer is responsible for adding the tail segment, and the subtitle renderer does not fill in frames for it. It can be deferred.
 
-### 9.1 内部接口
+## 9. Shared Rendering Implementation
 
-新增模块 `core/crates/ccut-subtitle-render/src/caption_sequence/`（`model / resolve / segment / layout / camera / sample`），不新建 crate，不放进 `apps/cuccut`。
+### 9.1 Internal Interfaces
+
+Add a module `core/crates/ccut-subtitle-render/src/caption_sequence/` (`model / resolve / segment / layout / camera / sample`). Do not create a new crate, and do not put it in `apps/cuccut`.
 
 ```rust
 pub struct CaptionSequencePlan {
@@ -500,209 +503,209 @@ pub fn compile_sequence(input: &ProjectedCaptionInput, style: &ResolvedSequenceS
 pub fn sample_sequence(plan: &CaptionSequencePlan, output_time: f64) -> CaptionSequenceFrame;
 ```
 
-`sample_sequence` 不读文件、不探测字体、不做网络、不生成随机数。
+`sample_sequence` does not read files, probe fonts, touch the network, or generate random numbers.
 
-### 9.2 OverlayRenderPlan 集成
+### 9.2 OverlayRenderPlan Integration
 
-编译时按有效样式建立普通 cue 计划与 sequence 计划两类；渲染时 sequence 拥有的 cue 不再画普通字幕，固定译文仍走普通路径。CPU 图像、GPU scene、拾取几何、字体需求、可见边界、诊断都从同一份 `CaptionSequenceFrame` 派生。
+At compile time, build two kinds of plan, a plain cue plan and a sequence plan, according to the effective style. At render time, cues owned by a sequence are no longer drawn as plain subtitles; fixed translations still take the plain path. The CPU image, GPU scene, picking geometry, font requirements, visible bounds, and diagnostics are all derived from the same `CaptionSequenceFrame`.
 
-### 9.3 GPU 路径与最小可行方案
+### 9.3 GPU Path and Minimum Viable Approach
 
-首个闭环：编译一次 shaped geometry；每个采样时刻从相机通道算一次矩阵，与可见块 / 词姿态组合后写进现有 glyph pose 与逐词 uniform（含 `clip`）。动态帧执行**轻量 sample**，不是重新 compile；`next_change` 指向下一次需要采样的时刻（运动中 = 下一帧；静止 = 下一个词 onset / 段边界）。
+First closed loop: compile the shaped geometry once. At each sample time, compute one matrix from the camera channels, combine it with the visible block / word poses, and write the result into the existing glyph pose and per-word uniforms (including `clip`). Dynamic frames run a **lightweight sample**, not a recompile. `next_change` points to the next time a sample is needed (while moving = next frame; at rest = next word onset / segment boundary).
 
-后续把静态 scene 与动态 pose 更新拆开，结构边界才重建 scene；那时再用 `active_until` 表达持续运动，并为 retained scene 加通用的**分解变换** motion（新类型 / 新编码能力，保持旧 `SceneMotion` 不变）。native 与 Web 的 compositor 不各写一套相机。
+Later, split static scene updates from dynamic pose updates, and rebuild the scene only at structural boundaries. At that point, use `active_until` to express continuous motion, and add a general **decomposed-transform** motion to the retained scene (a new type / new encoding capability, leaving the old `SceneMotion` unchanged). The native and Web compositors do not each implement their own camera.
 
-### 9.3.1 清晰度：按屏幕字号光栅 + 自动描边（2026-09-18）
+### 9.3.1 Clarity: Rasterize at Screen Size + Automatic Stroke (2026-09-18)
 
-用户反馈「字有点糊，还不如视频里烧进去的字幕清楚」。根因在 GPU 路径：atlas 里的 glyph mask 按**世界字号**（约 30 px）光栅，再被镜头 zoom 放大两三倍采样。CPU 路径走轮廓填充，本来就是清楚的。
+User feedback: “The text is a bit blurry; the burned-in subtitles in the video were clearer.” The root cause is in the GPU path: glyph masks in the atlas are rasterized at the **world font size** (about 30 px), then sampled after the camera zoom magnifies them two to three times. The CPU path uses contour filling, which was already clear.
 
-- **按屏幕字号光栅**：每个词取「行变换 ∘ 相机」的实际缩放，向上量化到 2^(1/4) 一档（变焦途中不至于每帧换一套 mask），在 `字号 × 倍率` 下整形并取 mask，实例变换里再乘 `1 / 倍率` 缩回行内坐标。光栅字号封顶 144 px（一帧的字形要装进 2048² 的 atlas），下限 0.25 倍。
-- **区域外不出字形**：行盒四角过变换后的包围盒（四周留一行高）与字幕区域不相交的行整行跳过，GPU 省 atlas，CPU 省填充。
-- **自动描边**：叠在视频上（不是「舞台模式 + 不透明底色」）时，序列层给每个字描一圈深色边，单侧 0.045 em。GPU 是排在填充 run 之前的另一个 glyph run，用 `glyph_stroke_atlas_render` 的 stroke mask（宽度量化到 0.5 px）；CPU 先整层 `stroke_path`（圆角连接）再整层填充，两遍分开，后一个字的描边不会压在前一个字上。描边的不透明度取词不透明度的平方，入场时比填充晚一点显出来。涂装里的描边 / 阴影仍不读（§3.4），这一圈不是用户可调项。
+- **Rasterize at screen size**: for each word, take the actual scale of “line transform ∘ camera”, quantized up to steps of 2^(1/4) so the mask is not regenerated every frame during zoom. Shape and take the mask at `font size × scale factor`, then multiply by `1 / scale factor` in the instance transform to shrink back to line coordinates. The raster font size is capped at 144 px (a frame's glyphs must fit in a 2048² atlas), with a floor of 0.25×.
+- **No glyphs outside the region**: lines whose transformed line-box bounding box (the four corners, padded by one line height on each side) does not intersect the subtitle region are skipped entirely, saving atlas space on GPU and fill work on CPU.
+- **Automatic outline**: when overlaid on video (as opposed to “stage mode + opaque background”), the sequence layer draws a dark outline around each glyph, 0.045 em on each side. On GPU it is a separate glyph run placed before the fill run, using the stroke mask from `glyph_stroke_atlas_render` (width quantized to 0.5 px). On CPU, the whole layer is first `stroke_path`-ed (round joins), then the whole layer is filled, in two separate passes, so one glyph's outline never sits on top of the previous glyph. The outline's opacity is the square of the word's opacity, so it appears slightly later than the fill during entrance. Stroke and shadow from the paint styling are still not read (§3.4); this outline is not a user-adjustable option.
 
-### 9.4 视口裁剪（R4）
+### 9.4 Viewport Clipping (R4)
 
-首发：把视口矩形（屏幕空间，编译期量化为整数输出像素）写进每个 glyph run 的 `clip`。GPU 与当前 scissor 求交；CPU 对整个字幕子场景应用同一边界；正确保存 / 恢复原有 scissor。需要 `ClipRectGroup` 的条件：出现每块底板 / 装饰 vector、或阴影 / blur 溢出视口。届时同步 BCS 编解码、Web reader 与 fallback preflight。
+Initial release: write the viewport rectangle (screen space, quantized at compile time to integer output pixels) into each glyph run's `clip`. GPU intersects it with the current scissor. CPU applies the same bounds to the entire subtitle sub-scene. The existing scissor is saved and restored correctly. `ClipRectGroup` is needed when per-block backing plates / decorative vectors appear, or when shadows / blur overflow the viewport. At that point, update the BCS encoder/decoder, the Web reader and the fallback preflight together.
 
-### 9.5 层级与排除开关
+### 9.5 Layering and Exclusion Switches
 
-字幕层内部绘制顺序：可选屏幕底色 → 历史块 → 当前块 → 固定译文。整体仍在现有字幕与 timeline 元素的合成位置。`--no-subs` 排除全部倒鸭子内容；`--no-texts` 不把它当文本元素删；轨隐藏与 burn-in mode 一致 [R2]。
+Drawing order inside the subtitle layer: optional screen background → history blocks → current block → fixed translation. The whole layer still sits at the existing compositing position of subtitles and timeline elements. `--no-subs` excludes all caption-sequence content; `--no-texts` does not delete it as a text element; track hiding matches burn-in mode [R2].
 
-### 9.6 缓存身份和调度
+### 9.6 Cache Identity and Scheduling
 
-四层：文本 shaping 缓存；世界布局缓存（块尺寸、种子、约束、画幅、算法版本）；时间计划缓存（输出投影、分段、镜头窗口）；帧身份（相机矩阵、可见块 / 词状态、颜色、裁剪）。`subtitle_key` 不能只看当前 cue id；`draw_op_fingerprint` 代表整幅 overlay；`next_change` 与 `active_until` 分清 [R2][R7]。不把 PNG 当缓存；Web CPU fallback 处理 straight alpha。倒鸭子可能覆盖整个画布，不沿用「字幕只占底部窄条」的假设。
+Four layers: text shaping cache; world layout cache (block size, seed, constraints, frame aspect, algorithm version); timing plan cache (output projection, segmentation, camera windows); frame identity (camera matrix, visible block / word state, color, clip). `subtitle_key` must not look only at the current cue id. `draw_op_fingerprint` represents the whole overlay. Keep `next_change` and `active_until` distinct [R2][R7]. Do not use PNGs as cache; the Web CPU fallback handles straight alpha. A caption sequence may cover the entire canvas, so do not carry over the assumption that “subtitles only occupy a narrow strip at the bottom”.
 
-### 9.7 性能边界
+### 9.7 Performance Boundaries
 
-首版不做 motion blur、3D 透视、物理碰撞、动态字重轴。按可见区域剔除历史块（AABB 扩张效果范围）。遵守 1024 run / 4096 node 预算 [R7]，达到上限拆段、缩历史或走已声明 fallback。性能指标分开记：计划编译耗时、每帧 sample、glyph 上传量、fallback 次数、1080p / 4K 峰值内存。
+The first version does not do motion blur, 3D perspective, physics collision, or a dynamic weight axis. Cull history blocks outside the visible area (AABB expanded by the effect's extent). Respect the 1024-run / 4096-node budget [R7]; when the limit is reached, split the segment, shrink history, or take the declared fallback. Record performance metrics separately: plan compile time, per-frame sample, glyph upload volume, fallback count, and peak memory at 1080p / 4K.
 
-## 10. 编辑联动与失效规则
+## 10. Edit Linkage and Invalidation Rules
 
-| 操作 | 保留 | 重新计算 / 诊断 |
+| Operation | Preserved | Recompute / diagnose |
 |---|---|---|
-| 只改文字颜色 | 世界位置、相机、shaping | 帧键 |
-| 改字幕文字 | 稳定词身份、其他段 seed | 当前块 shaping；本段布局与镜头 |
-| 改字号 / 字体 / 字距 / 密度 | 文稿、seed、人工意图 | 度量、碰撞、fit；固定块冲突提示 |
-| 改 `hero` 角色 | 文稿、seed | 视觉分块、本段布局与镜头（R5） |
-| 改 `emphasis` 角色 | 一切几何 | 帧键 |
-| 拆分 / 合并 cue | 原始词 id | 视觉块与作用域；不按 cue 数组索引绑定 |
-| 隐藏字幕词 | 音视频剪辑 | 可见集合与焦点；隐藏词不留作历史 |
-| 剪掉媒体片段 | 未剪部分的意图 | 新输出投影；剪口前后独立序列 |
-| 修改 clip 速率 | 静态几何 | 相机窗口、词级动画时间、分段 |
-| 移动 clip | 内容与实例 id | 输出时间偏移；不按绝对秒追踪 |
-| 复制 clip | 源文稿 | 新实例身份；显式复制或不复制约束 |
-| 修改画幅 | 文稿、seed、相对视口 | 画幅档 tokens、折行、碰撞、镜头 |
-| 重新识别生成新词 id | 不猜配对 | 有编辑映射则显式重绑；无则标记孤儿 |
-| 撤销 / 重做 | seed、作用域、约束 | 确定性重编译 |
+| Change text color only | World position, camera, shaping | Frame key |
+| Edit subtitle text | Stable word identity, seeds of other segments | Current block shaping; this segment's layout and camera |
+| Change font size / typeface / tracking / density | Script, seed, manual intent | Metrics, collision, fit; conflict warning for fixed blocks |
+| Change `hero` role | Script, seed | Visual chunking, this segment's layout and camera (R5) |
+| Change `emphasis` role | All geometry | Frame key |
+| Split / merge cues | Original word IDs | Visual blocks and scope; do not bind by cue array index |
+| Hide subtitle words | Audio/video edits | Visible set and focus; hidden words are not kept as history |
+| Cut a media clip | Intent of the uncut parts | New output projection; sequences before and after the cut are independent |
+| Change clip speed | Static geometry | Camera windows, word-level animation timing, segmentation |
+| Move clip | Content and instance ID | Output time offset; do not track by absolute seconds |
+| Duplicate clip | Source script | New instance identity; explicitly copy or not copy constraints |
+| Change frame aspect | Script, seed, relative viewport | Aspect-tier tokens, line wrapping, collision, camera |
+| Re-recognize, generating new word IDs | Do not guess pairings | Explicitly rebind if an edit mapping exists; otherwise mark as orphaned |
+| Undo / redo | Seed, scope, constraints | Deterministic recompile |
 
-词锚迁移复用现有编辑映射，作为共享事务的一部分；不在读取时靠时间或相似文本静默重绑。清理孤儿是显式可撤销操作。
+Word-anchor migration reuses the existing edit mapping as part of the shared transaction. Never silently rebind on read based on time or similar text. Cleaning up orphans is an explicit, undoable operation.
 
-### 10.1 事务入口
+### 10.1 Transaction entry points
 
-阶段 A：`ApplySequenceStyle(scope = track, preset)`、`ReseedSequenceStyle(scope = track)`、既有 `SetCaptionEmphasis`。阶段 C 追加：`SetSequenceCaption(instanceId, caption)`、`SetSequenceBoundary(wordAnchor)`、`PinTypographyBlock(blockSpan, placement)`、`SetInstanceEmphasis(wordAnchor, role)`、`ClearSequenceOverride(scope, section)`。
+Stage A: `ApplySequenceStyle(scope = track, preset)`, `ReseedSequenceStyle(scope = track)`, and the existing `SetCaptionEmphasis`. Stage C adds: `SetSequenceCaption(instanceId, caption)`, `SetSequenceBoundary(wordAnchor)`, `PinTypographyBlock(blockSpan, placement)`, `SetInstanceEmphasis(wordAnchor, role)`, `ClearSequenceOverride(scope, section)`.
 
-通过现有 Kernel / workspace 样式事务落盘；协议扩展从 Rust 定义生成 TS。`style/apply` 与 Transcript 用 studio 文档 revision，Timeline 另有 revision [R12]。为选区分割重叠范围、生成实例 id、保存样式与约束必须一次提交；新 id 在事务里分配，不在 `sample(t)` 中生成。
+Persist through the existing Kernel / workspace style transactions; protocol extensions generate TS from the Rust definitions. `style/apply` and Transcript use the studio document revision; Timeline has its own revision [R12]. Splitting overlapping ranges for a selection, generating instance ids, and saving styles and constraints must be committed in one go. New ids are allocated inside the transaction, never generated in `sample(t)`.
 
-## 11. 输出与兼容
+## 11. Output and compatibility
 
-- **MP4 / 本机视频**：沿用 `OverlayRenderPlan` 与既有装配、合成、编码管线。按 `t = n / fps` 取样，不累加墙钟；总帧数沿用统一时长策略。
-- **SRT / VTT / ASS**：来自成片字幕的语义投影，不输出历史残留，不写坐标；重复 clip 按成片出现次数重复。ASS 首发明确提示「文本与时间可导出，倒鸭子效果不保留」[R4]。
-- **可编辑 NLE 工程**：接入 `ccut-editable` 预检；三选一：保留普通可编辑字幕 / 目标格式支持时烘焙该范围的字幕层 / 取消。未验证的透明视频导出不写成已有能力。
-- **BCF 作者层**：不改造成 BCF 特殊节点。未来提供显式「冻结 / 烘焙」把字幕投影与计划输出为作者格式的文字、变换与时间轨，副本与原字幕解绑并在 UI 说明。
+- **MP4 / local video**: reuse `OverlayRenderPlan` and the existing assembly, compositing, and encoding pipeline. Sample by `t = n / fps`; do not accumulate wall-clock time. The total frame count follows the unified duration policy.
+- **SRT / VTT / ASS**: a semantic projection of the subtitles in the finished cut. No historical leftovers are output and no coordinates are written. A repeated clip is repeated according to how many times it appears in the finished cut. For the first ASS release, show the explicit notice 「文本与时间可导出，倒鸭子效果不保留」 (“Text and timing can be exported; the daoyazi effect is not preserved”) [R4].
+- **Editable NLE project**: hook into the `ccut-editable` preflight and offer three choices: keep ordinary editable subtitles / bake the subtitle layer for that range if the target format supports it / cancel. Unverified transparent-video export is not recorded as an existing capability.
+- **BCF author layer**: do not rework it into a special BCF node. In the future, provide an explicit “Freeze / Bake” that projects and plans the subtitles into author-format text, transform, and timing tracks. The copy is detached from the original subtitles, and the UI explains this.
 
-## 12. 具体改动清单
+## 12. Concrete change list
 
-| 类型 | 位置 | 改动 | 阶段 |
+| Type | Location | Change | Stage |
 |---|---|---|---|
-| 新增 | `ccut-subtitle-render/src/caption_sequence.rs`（落地时合成一个文件，随 `lib.rs` 的 `include!` 平铺） | 跨句输入、分段、视觉分块、世界排版、镜头与采样 | A（2026-09-17 已做） |
-| 新增 | `ccut-subtitle-render/src/caption_sequence_demo.rs` | 画廊小样：三句固定样例过同一条序列编译 / 采样 / 真字形，App `stylepane/sequence_thumb.rs` 后台按 30 fps 排帧 | C（2026-09-18 已做） |
-| 扩展 | `ccut-subtitle-render/src/{document,caption_recipe,render_plan,transition}.rs` | 按 `execution.scope` 分派；scene / CPU 共用 sequence frame；动态键与 fallback；run clip 写视口 | A–B（2026-09-17 已做；拾取未接） |
-| 扩展 | `ccut-subtitle-render/src/style_sync.rs` | `seed` 与 `options.daoyazi` 无损往返 | A |
-| 新增 | core `CAPTION_RECIPE_FILES`、`apps/cuccut/assets/captions/`、Web 资源副本 | `caption-daoyazi` 描述符与 `execution`（core 与 App 两份副本 2026-09-17 已做，Web 未做） | A |
-| 扩展 | `ccut-motion/src/{program,interpolate,sample}` | `LogPositive` 插值器与测试；不改旧曲线 | A（可后置） |
-| 扩展 | `ccut-editor-core/src/style_library.rs`、`apps/cuccut/src/host/style_library.rs`、`apps/cuccut/src/app/editor/stylepane/daoyazi.rs` | 注册 / 保存 / 换一版（整轨）；画廊按注册表 `family == "kinetic"` 分组（2026-09-17 已做）；作用域与段级换一版、断段、逐词 / 历史行数 / 背景 / 段落结束、调整布局编辑态（2026-09-18 已做；`captionSequences` 列入样式库排除键） | A、C（已做） |
-| 扩展 | `ccut-compositor` / CPU scene 执行器 | 每帧 pose 采样、run clip 与 scissor 求交、预算与 fallback | B |
-| 扩展 | `ccut-wasm-subtitle`、`ccut-wasm-editor` | 计划 / 意图的 wasm 出口 | B |
-| 扩展 | `apps/web` 字幕渲染与属性页、`apps/cuccut` 字幕样式 / 舞台 | 只传数据与控制预览；同名操作；布局编辑态（App 2026-09-18 已做：`stage/sequence.rs` 行层 + `StageGesture::SequenceRow`，几何侧车 `LayoutFrame.sequence`；Web 未做） | B–C |
-| 扩展 | `ccut-timeline-render/src/scene.rs` 及编解码 | 分解变换 motion（retained 优化时）；`ClipRectGroup`（按需） | D |
-| 扩展 | `ccut-protocol`、Kernel 写路径 | `captionSequences`、`captionSequenceV1`、校验、TS / docs 重生成 | C（未做：App 走整份 Blob 写回，见 §5.5） |
-| 扩展 | `ccut-editable` 与导出 preflight | 不支持效果时的明确选择（2026-09-18 已做：预检码 `caption-sequence` warning，原文轨按普通行进 `tr-subs`；由 kernel 按原文行配方判定） | B（已做） |
-| 扩展 | `designs/cuccut` | 画廊「动态排版」区的倒鸭子卡、属性页「倒鸭子」段、舞台 canvas 与布局编辑态（2026-09-17 已接入，含阶段 C 的控件） | 已做（原型） |
-| 扩展 | 文档与 fixtures | 样式契约、协议变化、产品行为、golden | 各阶段 |
+| Added | `ccut-subtitle-render/src/caption_sequence.rs` (when landed, merged into one file, flattened via `include!` in `lib.rs`) | Cross-sentence input, segmentation, visual chunking, world typesetting, camera and sampling | A (done 2026-09-17) |
+| Added | `ccut-subtitle-render/src/caption_sequence_demo.rs` | Gallery sample: three fixed sentences run through the same sequence compile / sample / real glyphs; the App's `stylepane/sequence_thumb.rs` lays out frames at 30 fps in the background | C (done 2026-09-18) |
+| Extended | `ccut-subtitle-render/src/{document,caption_recipe,render_plan,transition}.rs` | Dispatch by `execution.scope`; scene / CPU share the sequence frame; dynamic keys and fallback; run clip writes the viewport | A–B (done 2026-09-17; picking not yet wired) |
+| Extended | `ccut-subtitle-render/src/style_sync.rs` | Lossless round-trip of `seed` and `options.daoyazi` | A |
+| Added | core `CAPTION_RECIPE_FILES`, `apps/cuccut/assets/captions/`, Web asset copies | `caption-daoyazi` descriptor and `execution` (core and App copies done 2026-09-17; Web not done) | A |
+| Extended | `ccut-motion/src/{program,interpolate,sample}` | `LogPositive` interpolator and tests; old curves unchanged | A (can be deferred) |
+| Extended | `ccut-editor-core/src/style_library.rs`, `apps/cuccut/src/host/style_library.rs`, `apps/cuccut/src/app/editor/stylepane/daoyazi.rs` | Register / save / “Re-roll” (换一版, whole track); gallery groups by registry `family == "kinetic"` (done 2026-09-17); scope and segment-level re-roll, segment breaks, per-word / history line count / background / paragraph end, layout edit state (done 2026-09-18; `captionSequences` added to the style library exclusion keys). “Apply to” (换给) has two levels: whole track and current segment | A, C (done) |
+| Extended | `ccut-compositor` / CPU scene executor | Per-frame pose sampling, run clip intersected with scissor, budget and fallback | B |
+| Extended | `ccut-wasm-subtitle`, `ccut-wasm-editor` | wasm export for plans / intents | B |
+| Extended | `apps/web` subtitle rendering and property page, `apps/cuccut` subtitle style / stage | Only pass data and control the preview; same-named operations; layout edit state (App done 2026-09-18: `stage/sequence.rs` row layer + `StageGesture::SequenceRow`, geometry sidecar `LayoutFrame.sequence`; Web not done) | B–C |
+| Extended | `ccut-timeline-render/src/scene.rs` and encode/decode | Decompose transform motion (when retained optimization is used); `ClipRectGroup` (as needed) | D |
+| Extended | `ccut-protocol`, Kernel write path | `captionSequences`, `captionSequenceV1`, validation, regeneration of TS / docs | C (not done: App writes the whole Blob back, see §5.5) |
+| Extended | `ccut-editable` and export preflight | Explicit choice when an effect is unsupported (done 2026-09-18: preflight code `caption-sequence` warning; the original-text track goes through `tr-subs` as ordinary lines, determined by the kernel from the original-line recipe) | B (done) |
+| Extended | `designs/cuccut` | Gallery “Dynamic typography” section's daoyazi card, property page's 「倒鸭子」 section, stage canvas and layout edit state (wired 2026-09-17, including stage C controls) | Done (prototype) |
+| Extended | Docs and fixtures | Style contract, protocol changes, product behavior, golden | Per stage |
 
-不引入 `ffcreator`、React 动画引擎、浏览器录屏 API 或新的服务端渲染服务。
+Do not introduce `ffcreator`, a React animation engine, browser screen-recording APIs, or a new server-side rendering service.
 
-## 13. 分阶段实施与验收
+## 13. Staged implementation and acceptance
 
-### 阶段 A：格式与纯编译闭环
+### Stage A: format and pure compile loop
 
-2026-09-17 已落地（core `caption_sequence.rs` + `render_plan.rs`；`cargo test -p ccut-subtitle-render` 里 `caption_sequence_tests` 与 `daoyazi_sequence_takes_over_the_original_track_on_both_render_paths` 钉住确定性、seek 一致、视口裁剪与 GPU / CPU 两条路径）。native / wasm 逐字节一致尚未在 wasm 侧验证。
+Landed 2026-09-17 (core `caption_sequence.rs` + `render_plan.rs`; `caption_sequence_tests` and `daoyazi_sequence_takes_over_the_original_track_on_both_render_paths` in `cargo test -p ccut-subtitle-render` pin determinism, seek consistency, viewport clipping, and both GPU / CPU paths). Byte-identical native / wasm output is not yet verified on the wasm side.
 
-交付：描述符 `execution`、`seed` / `options.daoyazi` 往返、source + clip 实例投影、分段、真实字体度量、确定性世界布局、相机轨（含提前量）、逐词生命周期。先用全画布、单语、普通填充、有限直角运动，用已有 CPU / Scene 输出验证。
+Deliverables: descriptor `execution`, lossless round-trip of `seed` / `options.daoyazi`, source + clip instance projection, segmentation, real font metrics, deterministic world layout, camera track (including lead time), per-word lifecycle. First use a full canvas, single language, plain fill, and finite right-angle motion, verified with existing CPU / Scene output.
 
-退出条件：固定输入在顺播、seek、倒放取样时逐位一致；改色不重排；改一段不随机改变无关段；剪切 / 变速 / 重复 clip 不错词、不串组；同一 seed 在 native 与 wasm 得到同一份量化 plan。没有 UI 之前先把这些不变量写成测试。
+Exit criteria: for a fixed input, sampling during forward playback, seek, and reverse playback is bit-identical; changing color does not reflow; changing one segment does not randomly change unrelated segments; cut / speed change / repeated clip neither misplaces words nor mixes groups; the same seed yields the same quantized plan on native and wasm. Before any UI exists, write these invariants as tests.
 
-### 阶段 B：原生与 Web 渲染
+### Stage B: native and Web rendering
 
-2026-09-17 原生侧已落地（App v2 舞台走共享 `OverlayRenderPlan`，画廊「动态排版」组与属性页「倒鸭子」段）；Web 渲染、导出预检未做。
+Native side landed 2026-09-17 (App v2 stage goes through the shared `OverlayRenderPlan`; gallery “Dynamic typography” group and property page 「倒鸭子」 section). Web rendering and export preflight not done.
 
-交付：GPU glyph pose 路径、run clip 视口、CPU fallback、动态缓存 / `next_change`、画廊门控、导出预检。
+Deliverables: GPU glyph pose path, run clip viewport, CPU fallback, dynamic cache / `next_change`, gallery gating, export preflight.
 
-退出条件：原生预览、Web、正式导出对同一时刻使用同一布局 / 相机 / 生命周期；不支持的 GPU 条件明确回退不漏层；局部 viewport 不漏字、不误裁其他层。
+Exit criteria: native preview, Web, and formal export use the same layout / camera / lifecycle at the same moment; unsupported GPU conditions fall back explicitly without dropping layers; a local viewport neither drops glyphs nor wrongly clips other layers.
 
-### 阶段 C：样式交互与编辑
+### Stage C: style interaction and editing
 
-2026-09-18 App v2 已落地：画廊卡真跑小样（选中后按用户色板 / 种子排帧）、整轨 / 当前段两档「换给」、`captionSequences`（精简形状，见 §5.4）、断段、逐词出现 / 历史行数 / 背景 / 段落结束控件、调整布局编辑态（拖动钉行 / 旋转 / 固定 / 恢复自动，一次拖拽一个 Blob 写回即一个撤销项）、舞台点行跳转（R15，仅暂停时）、导出预检 warning。未做：当前选区 / 仅这一条两档范围、双击进入编辑态、画廊悬停试穿（选中即真跑，不做悬停临时文档）、Web、协议 capability；「字幕修改联动」（改词后 pins 键失配即回到自动）与「复开项目保持布局」只有单元测试，未在真实项目上端到端验证。
+App v2 landed 2026-09-18: the gallery card runs the sample for real (after selection, frames are laid out by the user's palette / seed); whole-track / current-segment two-level “Apply to” (换给); `captionSequences` (compact shape, see §5.4); segment breaks; per-word appearance / history line count / background / paragraph end controls; layout edit state (drag to pin rows / rotate / fix / restore auto; one Blob write-back per drag is one undo step); click-a-row-to-jump on the stage (R15, only when paused); export preflight warning. Not done: current-selection / “this one only” two-level scope, double-click to enter edit state, gallery hover try-on (selection runs for real, with no hover temporary document), Web, protocol capability. “Subtitle edit linkage” (「字幕修改联动」: after editing words, the pins key mismatches and reverts to auto) and “keep layout when reopening a project” (「复开项目保持布局」) have only unit tests and are not verified end-to-end on a real project.
 
-交付：画廊连续预览、整轨 / 本段 / 选区范围、`captionSequences`、固定版式与布局编辑态、每段换一版、撤销 / 重做、字幕修改联动。双语「原文动态、译文固定」。
+Deliverables: continuous gallery preview; whole-track / this-segment / selection scope; `captionSequences`; fixed layout and layout edit state; per-segment re-roll; undo / redo; subtitle-edit linkage. Bilingual “original dynamic, translation fixed” (「原文动态、译文固定」).
 
-退出条件：每次操作只影响声明范围；试穿不污染导出；取消、撤销、复开项目保持同样布局；App / Web 共享操作结果一致。
+Exit criteria: each operation only affects its declared scope; try-on does not pollute export; cancel, undo, and reopening a project keep the same layout; App and Web share identical operation results.
 
-### 阶段 D：质量和高级能力
+### Stage D: quality and advanced features
 
-交付：样片调参、对数缩放、段尾总览、译文驱动、实例迁移、retained scene / atlas 优化、`ClipRectGroup`。译文驱动、AI 关键词建议、手动相机关键帧、3D、运动模糊、多轨同时穿行不阻塞首发。
+Deliverables: sample parameter tuning, logarithmic scaling, segment-end overview, translation-driven motion, instance migration, retained scene / atlas optimization, `ClipRectGroup`. Translation-driven motion, AI keyword suggestions, manual camera keyframes, 3D, motion blur, and simultaneous multi-track traversal do not block the initial release.
 
-## 14. 测试矩阵
+## 14. Test matrix
 
-### 14.1 确定性与几何
+### 14.1 Determinism and geometry
 
-- 相同输入、字体、算法版本、seed 与采样时刻重复渲染一致；native / wasm 量化 plan 逐字节一致。
-- 顺播到 7.2 s、直接 seek 7.2 s、从 10 s 倒退到 7.2 s 一致。
-- 0 → 90 → 180 转向无矩阵塌缩；转向方向与 plan 记录一致；`maxTurnDeg: 0` 时全程角度为 0。
-- 行是最小单位：每块单行、词左对齐从 0 起不回头、取景宽 ≥ 2 em 且 ≥ 文字宽、行高 = 1.2 × 字号、行盒落在 1/32 网格；一个字的行取景宽恰好 2 em。
-- 逐行取景：阅读态 `zoom × 行取景宽 = 视口宽 × fit`（除非碰到 30% 字号上限），镜头中心 = 行中心。
-- 枢转几何：`lb` 后新段角度 +90、新首行左下角与上一行左下角重合；`rb` 后 −90、右下角重合；同段相邻行紧贴、左对齐；相邻段角度差只有 ±90 或 0（跳段）。
-- CSS `ease`：`cssEase(0.5) ≈ 0.802`、`cssEase(0.25) ≈ 0.409`，单调，端点归零归一；停走档运动中点走到 `cssEase(0.5)`；弹入起点 = `popFrom`、原点 = 词的左边（整块时行的左边）。
-- zoom 全程在可读性区间内；极短句、单字、标点、空块无 NaN / Inf。
-- 阅读态当前块四角在视口内；平滑档新块首词 onset 时镜头已到达（`t1 = onset`），停走档提前量 ≤ 0.6 × travel。
-- 位置 / 角度 / 缩放同一条 ease：平滑档运动中点三者都恰好走一半，位置不越过两端（无超调）。
-- 段与段：各段世界包围盒互不重叠；`center = localCenter + origin`；`enter` 段起点等于上一段末姿态、不早于其停下时刻；`cutAt` 前后一瞬相机姿态连续。
-- 排版顺着走：多数行落在上一行坐标系的「下方」（≥ 60%），两次转向之间至少隔 `turnEvery` 行。
-- 竖过来的频率：默认动感下转向不少于行数的 15%，且行中间（非句读、同一 cue 内）也会转（2026-09-18 调高转向概率后的下限）。
-- 布局：任意两块 AABB 不相交；pinned 块位置不变；hero 词单独成块。
-- 像素 golden 只在固定软件后端与字体下做；CPU / GPU 用边界位置、透明度与阈值误差。
+- Same input, font, algorithm version, seed, and sampling time rendered repeatedly are identical; native / wasm quantized plans are byte-identical.
+- Forward playback to 7.2 s, direct seek to 7.2 s, and reverse from 10 s back to 7.2 s are consistent.
+- 0 → 90 → 180 turns without matrix collapse; the turn direction matches the recorded plan; with `maxTurnDeg: 0`, the angle is 0 throughout.
+- A line is the minimal unit: each block is a single line; words are left-aligned starting at 0 and never go back; viewport width ≥ 2 em and ≥ text width; line height = 1.2 × font size; line boxes fall on a 1/32 grid. The viewport width of a one-character line is exactly 2 em.
+- Per-line framing: in reading state, `zoom × line viewport width = viewport width × fit` (unless the 30% font-size cap is hit); camera center = line center.
+- Pivot geometry: after `lb`, the new segment's angle is +90 and the new first line's bottom-left corner coincides with the previous line's bottom-left corner; after `rb`, −90 and the bottom-right corners coincide; adjacent lines in the same segment sit tightly and are left-aligned; the angle difference between adjacent segments is only ±90 or 0 (segment skip).
+- CSS `ease`: `cssEase(0.5) ≈ 0.802`, `cssEase(0.25) ≈ 0.409`, monotonic, endpoints zero and normalized; in the stop-and-go profile, the motion midpoint reaches `cssEase(0.5)`; pop-in start = `popFrom`, origin = the word's left edge (the line's left edge for a whole block).
+- Zoom stays within the readability range throughout; very short sentences, single characters, punctuation, and empty blocks produce no NaN / Inf.
+- In reading state, the four corners of the current block are within the viewport. In smooth mode, at the new block's first-word onset the camera has already arrived (`t1 = onset`); in stop-and-go mode the lead time is ≤ 0.6 × travel.
+- Position / angle / zoom share one ease: in smooth mode, at the midpoint all three have covered exactly half; position does not pass the endpoints (no overshoot).
+- Segment to segment: the world bounding boxes of segments do not overlap each other; `center = localCenter + origin`; the `enter` segment's start equals the previous segment's end pose and is not earlier than that segment's stop time; the camera pose is continuous for an instant around `cutAt`.
+- Typesetting flows forward: most lines (≥ 60%) fall “below” in the previous line's coordinate system; at least `turnEvery` lines separate two turns.
+- Turn frequency: under default dynamics, turns are no fewer than 15% of lines, and turns also occur mid-line (not only at punctuation, within the same cue). This is the lower bound after raising the turn probability on 2026-09-18.
+- Layout: no two block AABBs intersect; pinned block positions are unchanged; hero words form their own block.
+- Pixel golden is only done under a fixed software backend and font; CPU / GPU use tolerances on boundary position, opacity, and threshold.
 
-### 14.2 时间和内容
+### 14.2 Time and content
 
-- 24 / 25 / 30 / 60 / 30000⁄1001 fps；边界前一帧 / 边界帧 / 后一帧。
-- 首尾从句中裁切、连续超短 cue、长停顿、多人接话、原词跨剪口。
-- 同源多 clip、同词两次出现、`sourceItemId` 相同但 `sourceId` 不同。
-- 无词时间的 SRT（`reveal` 降级）、句级译文、缺译、隐藏原文或译文、仅译文。
-- 历史残留不改 SRT；未来块不在 `onset − pre` 之前曝光，onset 前已在入场但不算「在念」；总览不延长输出；上一段在 `enter` 段到达后 `fadeMs` 内淡完。
-- `--no-subs` / `--no-texts` / `--no-audio` / 导出窗口组合。
+- 24 / 25 / 30 / 60 / 30000⁄1001 fps; the frame before a boundary / the boundary frame / the frame after.
+- Trimmed at either end mid-sentence, consecutive very short cues, long pauses, multiple speakers cutting in, an original word crossing a cut point.
+- Multiple clips from the same source, the same word appearing twice, `sourceItemId` identical but `sourceId` different.
+- SRT without word timing (`reveal` degrades), sentence-level translation, missing translation, hidden original or translation, translation only.
+- Historical leftovers do not change SRT; future blocks are not exposed before `onset − pre`, and a block already entering before onset is not counted as “being read aloud” (在念); the overview does not extend output; the previous segment finishes fading within `fadeMs` after the `enter` segment arrives.
+- Combinations of `--no-subs` / `--no-texts` / `--no-audio` / export window.
 
-### 14.3 文字与格式
+### 14.3 Text and format
 
-- 中英混排、CJK 标点、组合字符、emoji、RTL、连字、数字单位、超长单词。
-- 字体 fallback、字体丢失 / 补齐、换字体后缓存失效。
-- 旧 style / caption 读取结果不变；不认识 `execution` 的读取器不陈列、按普通字幕渲染并报诊断；style / context 往返不丢 `seed` 与 `options.daoyazi`。
-- 模板不含 `seed` 与项目词锚；阶段 C 的 `instance.caption` 缺失 / null / 对象各自正确。
+- Mixed Chinese and English, CJK punctuation, combining characters, emoji, RTL, ligatures, numbers with units, very long words.
+- Font fallback, missing / supplemented fonts, cache invalidation after changing the font.
+- Results for old style / caption reads are unchanged; readers that do not recognize `execution` do not list it, render it as an ordinary subtitle, and report a diagnostic; style / context round-trip does not drop `seed` or `options.daoyazi`.
+- Templates do not contain `seed` or project word anchors; for stage C, `instance.caption` missing / null / object each behave correctly.
 
-### 14.4 性能与调度
+### 14.4 Performance and scheduling
 
-- 纯相机运动但 cue 未变时连续重绘；运动结束且无变化时停止空转。
-- 缓存命中后不重复 shaping、不重复上传相同 glyph mask。
-- 1080p / 4K、横竖屏、CPU fallback、无 GPU、预算溢出。
-- 长文稿编译不让全部世界与历史字形永久驻留显存；普通字幕无性能或像素回归。
+- During pure camera motion with unchanged cues, redraw continuously; once motion ends with no changes, stop idling.
+- After a cache hit, do not reshape again or re-upload identical glyph masks.
+- 1080p / 4K, landscape and portrait, CPU fallback, no GPU, budget overflow.
+- Long-script compilation must not keep all world and history glyphs resident in VRAM permanently; ordinary captions show no performance or pixel regression.
 
-建议新增 `core/fixtures/caption-sequence/`：短样片、长文稿、双语、重复片段、快速语音、hero 密集、固定布局冲突各一份，同时记录 normalized plan、选定时刻几何与参考图。原型的 `designs/cuccut/app/model-daoyazi.test.js` 已覆盖确定性、无重叠、seek 一致与 zoom 区间四条不变量，可作为 Rust 测试的对照。
+Suggested new `core/fixtures/caption-sequence/`: one each of a short clip, a long script, bilingual, repeated segments, fast speech, hero-dense, and a fixed-layout conflict. Record the normalized plan, the geometry at selected moments, and reference images for each. The prototype's `designs/cuccut/app/model-daoyazi.test.js` already covers four invariants (determinism, no overlap, consistent seek, and zoom intervals) and can serve as the reference for the Rust tests.
 
-## 15. 原型如何迁移
+## 15. How the prototype migrates
 
-| 原型部分 | 可借鉴 | 生产替换 |
+| Prototype part | Reusable | Production replacement |
 |---|---|---|
-| `designs/cuccut/app/model-daoyazi.js` 的分段 / 分块 / 候选评分 / 相机窗口 | 算法与权重初值、不变量测试 | Rust 实现，接共享投影与 TextEngine 度量 |
-| Canvas `measureText` | 调视觉密度的参考 | 同一 TextEngine 的 shaping 与缓存 |
-| FNV-1a + SplitMix64 | 直接对照 | 同算法、整数域 |
-| 属性面板、试穿、布局编辑态 | 交互与文案 | App / Web 现有字幕样式工作流与共享编辑意图 |
-| 计划检视（plan JSON） | 调试与测试快照 | 不成为作者真相 |
+| Segmentation / chunking / candidate scoring / camera window in `designs/cuccut/app/model-daoyazi.js` | Algorithm and initial weight values, invariant tests | Rust implementation, wired to the shared projection and TextEngine metrics |
+| Canvas `measureText` | Reference for tuning visual density | Shaping and caching in the same TextEngine |
+| FNV-1a + SplitMix64 | Direct comparison | Same algorithms, integer domain |
+| Attribute panel, try-on, layout edit state | Interaction and copy | Existing App / Web caption-style workflow and shared editing intent |
+| Plan inspection (plan JSON) | Debugging and test snapshots | Does not become the source of truth for authoring |
 
-## 16. 推荐首发边界
+## 16. Recommended first-release boundary
 
-首发链路：**选择已有字幕 → 应用倒鸭子 → 调动感和颜色 → 改文稿仍自动跟随 → 原生 / Web 预览 → 正式视频输出**。
+First-release path: **select an existing caption → apply the Daoyazi (倒鸭子) preset → adjust motion and color → edit the script and it still follows automatically → native / Web preview → final video export**.
 
-必要能力：跨句世界、逐词出现、带提前量的正确镜头、输出时间投影、稳定随机、run clip 视口、字体一致性、撤销与共享导出。可延后：实例作用域与固定版式、3D、自由相机、AI 编舞、两轨同时运动、透明视频全格式导出。
+Required capabilities: cross-sentence worlds, per-word appearance, correct lead-in camera shots, output time projection, stable randomness, run clip viewport, font consistency, undo, and shared export. Can be deferred: per-instance scope and fixed layout, 3D, free camera, AI choreography, simultaneous motion on two tracks, and transparent-video export in all formats.
 
-最终守住一句话：用户换的是「字幕的表现形式」，不是进入另一个生成视频的软件。
+The one line to hold to: the user changes “the way captions are presented,” not switches into a different app for generating videos.
 
 ---
 
-## 核对来源
+## Source verification
 
-仓库来源固定于 `17e329814`；引用号沿用原提案。
+Repository source pinned at `17e329814`; reference numbers keep the original proposal's numbering.
 
-- [R1] `core/README.md`；`core/crates/ccut-subtitle-render/src/lib.rs`。
-- [R2] `core/crates/ccut-subtitle-render/src/{document,render_plan,transition}.rs`。
-- [R3] `core/crates/ccut-subtitle-render/src/caption_recipe.rs`：`CaptionRecipeDescriptor`、`layoutTokens`、`caption_recipe_design_descriptor` 对未知 id 返回 `None`。
-- [R4] `docs/changelog/core/2026-09-15-070821.md`：`cueStyles` 与 ASS sidecar 限制。
-- [R5] `core/crates/ccut-editor-core/src/caption_registry.rs`：`payload()` 只写 schema / content / palette / intensity / speed / style，换配方保留其余键；`captionEmphasis` 读写。
-- [R6] `core/crates/ccut-editor-core/src/{style_library,stylepane}.rs`；`ccut-subtitle-render/src/style_sync.rs`。
-- [R7] `core/crates/ccut-timeline-render/src/scene.rs`：`SceneMotion::sample` 六分量插值、`post_concat_mat6`、`GlyphRunUniform.clip`、`GLYPH_RUN_UNIFORM_LIMIT = 1024`、`SCENE_NODE_LIMIT = 4096`。
-- [R8] `core/crates/ccut-render/src/drawop.rs`：`ClipPath` / `PopClip`（v3）。
-- [R9] `core/crates/ccut-timeline/src/schema.rs`；`ccut-subtitle-render/src/host_support.rs`。
-- [R10] `core/crates/ccut-motion/src/{lib,program,value,interpolate}.rs`：`PropertyTrack` segments 不重叠；`InterpolatorSpec::{Linear, Step, Angle, Color}`。
-- [R11] `apps/web/docs/subtitle-tab-redesign.md`。
-- [R12] `core/crates/ccut-editor-core/src/edits.rs`；`AGENTS.md`。
-- [R13] `apps/cuccut/src/assets.rs`：`CAPTION_REGISTRY` / `CAPTION_STYLES` 内嵌画廊资源。
-- [W1] TypeMonkey 产品说明 `https://aescripts.com/typemonkey/`：视觉范式参考。
-- [W2] HarfBuzz clusters 文档 `https://harfbuzz.github.io/clusters.html`。
+- [R1] `core/README.md`; `core/crates/ccut-subtitle-render/src/lib.rs`.
+- [R2] `core/crates/ccut-subtitle-render/src/{document,render_plan,transition}.rs`.
+- [R3] `core/crates/ccut-subtitle-render/src/caption_recipe.rs`: `CaptionRecipeDescriptor`, `layoutTokens`, and `caption_recipe_design_descriptor` returns `None` for unknown ids.
+- [R4] `docs/changelog/core/2026-09-15-070821.md`: `cueStyles` and ASS sidecar limitations.
+- [R5] `core/crates/ccut-editor-core/src/caption_registry.rs`: `payload()` writes only schema / content / palette / intensity / speed / style, and a recipe change keeps the other keys; `captionEmphasis` reads and writes.
+- [R6] `core/crates/ccut-editor-core/src/{style_library,stylepane}.rs`; `ccut-subtitle-render/src/style_sync.rs`.
+- [R7] `core/crates/ccut-timeline-render/src/scene.rs`: `SceneMotion::sample` six-component interpolation, `post_concat_mat6`, `GlyphRunUniform.clip`, `GLYPH_RUN_UNIFORM_LIMIT = 1024`, `SCENE_NODE_LIMIT = 4096`.
+- [R8] `core/crates/ccut-render/src/drawop.rs`: `ClipPath` / `PopClip` (v3).
+- [R9] `core/crates/ccut-timeline/src/schema.rs`; `ccut-subtitle-render/src/host_support.rs`.
+- [R10] `core/crates/ccut-motion/src/{lib,program,value,interpolate}.rs`: `PropertyTrack` segments do not overlap; `InterpolatorSpec::{Linear, Step, Angle, Color}`.
+- [R11] `apps/web/docs/subtitle-tab-redesign.md`.
+- [R12] `core/crates/ccut-editor-core/src/edits.rs`; `AGENTS.md`.
+- [R13] `apps/cuccut/src/assets.rs`: `CAPTION_REGISTRY` / `CAPTION_STYLES` embedded gallery resources.
+- [W1] TypeMonkey product page `https://aescripts.com/typemonkey/`: visual-style reference.
+- [W2] HarfBuzz clusters documentation `https://harfbuzz.github.io/clusters.html`.

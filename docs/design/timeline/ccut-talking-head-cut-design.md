@@ -1,37 +1,37 @@
-> 移植自 CucCut v2；文中的数据模型名（timeline.json、Element、Source / Clip / Cut 等）指 v2 的模型，与 v3 序列、轨道、实例的对应见[元素模型对照](element-model-mapping.md)与[架构设计 §14](../../architecture/architecture-design.md#14-待评审事项)。
+> Ported from CucCut v2. The data model names in this text (timeline.json, Element, Source / Clip / Cut, etc.) refer to the v2 model. For how they map to v3 sequences, tracks and instances, see [Element model mapping](element-model-mapping.md) and [Architecture design §14](../../architecture/architecture-design.md#14-items-pending-review).
 
-# CucCut 剪口播技术方案（原型第 192–197 轮 → 内核 / serve / App v2 / Web）
+# CucCut Talking-Head Cut Technical Plan (Prototype Rounds 192–197 → Kernel / serve / App v2 / Web)
 
-> **状态**：v0.3 实施对账（2026-09-07）。P0 审阅已为 reviewVersion 5；P1 共享语义与 API 23 Web 绑定已接通；**P2 App v2 已按原型第 192–197 轮全部落地**（§14，提交链 `dfccdfc7e` → `ab873450f` → `553421dac` → `e318281e8`）；P3 Web 只落到第 192–193 轮（§13），第 196–197 轮的 Web 缺口登记在 **§15 Web 待补齐台账**。本文早期盘点保留作背景，当前落地与验证边界以 §13–§15 为准。
-> **问题**：[`designs/cuccut`](../../../designs/cuccut/README.md) 第 192–193 轮把「剪口播」画成了一套完整交互——AI / Agent 找口癖、停顿、重复起句写成**建议**，逐条或整批接受 / 忽略；文稿里拖选一段字按 ⌫ 手动剪；已剪的段在文稿与时间轴上都看得见、点一下恢复；每一步可撤销；文稿选区同步画到时间轴并标时码；选区上方浮一条工具条。本方案把它落到真实代码：内核已经有媒体层无损剪切、本地检测器、LLM cleanup flow 与审阅事务，缺的是**建议的持久逐条状态、建议与手动剪并存、两端的剪辑模式 UI、选区同步与 Web 的写路径**。
-> **对标**：Descript 的 script-driven editing（拖选文字即选中时间轴、删字即剪片、Show/Hide deleted）。
-> **关联文档**：
-> - [`docs/design/cli/ccut-edit-domain-design.md`](../cli/ccut-edit-domain-design.md)——两层剪辑模型、`sources[].cuts[]`、三层时间域、`timeline/apply` op 表、`ai/cuts.json` 溯源。本方案不改这些契约，只在其上加建议层与 UI。
-> - [`docs/design/bcf/cuccut-format-spec.md`](../bcf/cuccut-format-spec.md) §18.6 WordSpan（词区间 → 源时间的呼吸垫与帧对齐）、§19 Product Timeline。
-> - [`docs/design/subtitle/ccut-ai-pipeline-design.md`](../subtitle/ccut-ai-pipeline-design.md)——「时间戳永不进 LLM」、指纹与增量语义；cleanup flow 服从同一纪律。
-> - [`docs/design/editor/ccut-editor-interaction-port-design.md`](ccut-editor-interaction-port-design.md)——两薄视图共享 `ccut-editor-core` 厚语义、`SelectionSet`、键表、两视图对拍 fixture。本方案的剪辑模式沿用同一分层。
-> - [`docs/design/architecture/ccut-v2-architecture-redesign.md`](../architecture/ccut-v2-architecture-redesign.md) ADR-3 协议单源、ADR-4 内核常驻优先——决定了审阅写路径必须从 App 子进程改成 `Kernel::dispatch`。
-> - [`docs/design/product/product-design.md`](../product/product-design.md) §9（clean 入口与实验项目）、§12.6「剪口覆盖层」「文稿选区同步到时间轴」、§13.1「改字 / 剪辑两态」、§15.3「找可剪的口」——原型侧权威描述。
+> **Status**: v0.3 implementation reconciliation (2026-09-07). The P0 review is at reviewVersion 5. P1 shared semantics and the API 23 Web binding are wired up. **P2 App v2 has fully landed per prototype rounds 192–197** (§14, commit chain `dfccdfc7e` → `ab873450f` → `553421dac` → `e318281e8`). P3 Web only covers rounds 192–193 (§13); the Web gaps for rounds 196–197 are recorded in the **§15 Web remaining-work ledger**. The early inventory in this document is kept as background. The current landing status and verification boundaries are defined by §13–§15.
+> **Problem**: [`designs/cuccut`](../../../designs/cuccut/README.md) rounds 192–193 drew "talking-head cutting" as a complete interaction. The AI / Agent finds filler words, pauses and repeated sentence openers and presents them as **suggestions**, which can be accepted or ignored one by one or in batch. Select a span of text in the script and press ⌫ to cut it manually. Cut segments stay visible in both the script and the timeline, and a click restores them. Every step can be undone. The script selection is mirrored to the timeline with timecodes. A toolbar floats above the selection. This plan implements that in real code. The kernel already has lossless media-layer cutting, a local detector, an LLM cleanup flow and a review transaction. What is missing is **persistent per-suggestion state, suggestions coexisting with manual cuts, the cut-mode UI on both ends, selection sync, and the Web write path**.
+> **Benchmark**: Descript's script-driven editing (dragging to select text selects the matching timeline range, deleting words cuts the clip, Show/Hide deleted).
+> **Related docs**:
+> - [`docs/design/cli/ccut-edit-domain-design.md`](../cli/ccut-edit-domain-design.md) — the two-layer cut model, `sources[].cuts[]`, the three-layer time domains, the `timeline/apply` op table, and `ai/cuts.json` provenance. This plan does not change these contracts; it only adds the suggestion layer and UI on top of them.
+> - [`docs/design/bcf/cuccut-format-spec.md`](../bcf/cuccut-format-spec.md) §18.6 WordSpan (word span → source time padding and frame alignment), §19 Product Timeline.
+> - [`docs/design/subtitle/ccut-ai-pipeline-design.md`](../subtitle/ccut-ai-pipeline-design.md) — "timestamps never enter the LLM", fingerprints and incremental semantics. The cleanup flow follows the same discipline.
+> - [`docs/design/editor/ccut-editor-interaction-port-design.md`](ccut-editor-interaction-port-design.md) — two thin views share the thick semantics of `ccut-editor-core`, `SelectionSet`, key tables, and two-view comparison fixtures. The cut mode in this plan follows the same layering.
+> - [`docs/design/architecture/ccut-v2-architecture-redesign.md`](../architecture/ccut-v2-architecture-redesign.md) ADR-3 protocol single source, ADR-4 kernel-resident priority. These decide that the review write path must move from the App subprocess to `Kernel::dispatch`.
+> - [`docs/design/product/product-design.md`](../product/product-design.md) §9 (clean entry and experimental project), §12.6 "cut overlay layer" and "script selection synced to the timeline", §13.1 "text edit / cut: two modes", §15.3 "find the cuttable spots". These are the authoritative prototype-side descriptions.
 
 ---
 
-## 目录
+## Contents
 
-本文已按章拆分（2026-09-10）：正文在 [`ccut-talking-head-cut-design/`](ccut-talking-head-cut-design/) 下，一章一个文件，超长的章再按节拆成子目录（子目录的 `README.md` 是该章导言与节目录）。引用写「§N」仍指下表第 N 章；改哪节就编辑哪个文件，新增章节新建文件并在这里加一行，**不要把正文写回本文件**。
+This document has been split by chapter (2026-09-10). The body lives under [`ccut-talking-head-cut-design/`](ccut-talking-head-cut-design/), one chapter per file. Chapters that are too long are split into subdirectories by section; the subdirectory's `README.md` is that chapter's introduction and section table of contents. References written as "§N" still mean chapter N in the table below. Edit whichever file holds the section you change. For a new chapter, create a new file and add a line here. **Do not write the body back into this file.**
 
-- [0. 一页概要](ccut-talking-head-cut-design/00.md)
-- [1. 目标与范围](ccut-talking-head-cut-design/01.md)
-- [2. 现状盘点（2026-09-07，逐文件核实）](ccut-talking-head-cut-design/02.md)
-- [3. 关键裁决](ccut-talking-head-cut-design/03.md)
-- [4. 数据模型](ccut-talking-head-cut-design/04.md)
-- [5. 共享语义：`ccut-editor-core::cut_mode`](ccut-talking-head-cut-design/05.md)
-- [6. 检测流：`cleanup` 的增量语义与词表](ccut-talking-head-cut-design/06.md)
-- [7. 写路径与协议](ccut-talking-head-cut-design/07.md)
-- [8. 视图落地](ccut-talking-head-cut-design/08.md)
-- [9. 播放、试听与导出](ccut-talking-head-cut-design/09.md)
-- [10. 分阶段实施计划](ccut-talking-head-cut-design/10.md)
-- [11. 刻意不做与开放问题](ccut-talking-head-cut-design/11.md)
-- [12. 对既有文档的修订清单](ccut-talking-head-cut-design/12.md)
-- [13. Web 落地对账（2026-09-07）](ccut-talking-head-cut-design/13.md)
-- [14. App v2 落地对账（2026-09-07，第 192–197 轮）](ccut-talking-head-cut-design/14.md)
-- [15. Web 落地台账（第 196–201 轮）](ccut-talking-head-cut-design/15.md)
+- [0. One-page summary](ccut-talking-head-cut-design/00.md)
+- [1. Goals and scope](ccut-talking-head-cut-design/01.md)
+- [2. Current-state inventory (2026-09-07, verified file by file)](ccut-talking-head-cut-design/02.md)
+- [3. Key decisions](ccut-talking-head-cut-design/03.md)
+- [4. Data model](ccut-talking-head-cut-design/04.md)
+- [5. Shared semantics: `ccut-editor-core::cut_mode`](ccut-talking-head-cut-design/05.md)
+- [6. Detection flow: `cleanup` incremental semantics and word lists](ccut-talking-head-cut-design/06.md)
+- [7. Write path and protocol](ccut-talking-head-cut-design/07.md)
+- [8. View implementation](ccut-talking-head-cut-design/08.md)
+- [9. Playback, audition and export](ccut-talking-head-cut-design/09.md)
+- [10. Phased implementation plan](ccut-talking-head-cut-design/10.md)
+- [11. Deliberate exclusions and open questions](ccut-talking-head-cut-design/11.md)
+- [12. Revision checklist for existing docs](ccut-talking-head-cut-design/12.md)
+- [13. Web implementation reconciliation (2026-09-07)](ccut-talking-head-cut-design/13.md)
+- [14. App v2 implementation reconciliation (2026-09-07, rounds 192–197)](ccut-talking-head-cut-design/14.md)
+- [15. Web implementation ledger (rounds 196–201)](ccut-talking-head-cut-design/15.md)

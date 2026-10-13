@@ -1,3 +1,3 @@
-做一条高能量的街机风舞蹈视频，画幅 16:9。
+Make a high-energy, arcade-style dance video in 16:9.
 
-用视频生成能力生成一个跳舞的原创动画角色，角色是{{角色形象}}，再用代码搭出节奏游戏的画面和跟着节拍走的特效。画面文字用{{成片语言}}。
+Use video generation to create an original animated character dancing; the character is {{character design}}. Then build the rhythm game screen and beat-synced effects in code. Use {{video language}} for on-screen text.

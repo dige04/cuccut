@@ -1,57 +1,57 @@
 # skills
 
-「怎么用 CucCut」的说明书（CucCut skill）：教 Agent 何时用 CucCut、怎么启动、每类任务用哪个工具、硬规则与怎么交付。它是入口；CucCut 自带的做法（内置 skill，craft）放在它下面的 [`cuccut/built-in-skills/`](cuccut/built-in-skills/README.md)，那里有全部内置 skill 的索引。设计见 [Agent 能力面设计 §8](../docs/design/agent-surface/agent-surface-design.md#8-cuccut-skill)。
+The manual for “How to use CucCut” (the CucCut skill): it teaches the agent when to use CucCut, how to start it, which tool to use for each kind of task, the hard rules, and how to deliver. It is the entry point. CucCut's built-in approaches (craft) sit beneath it in [`cuccut/built-in-skills/`](cuccut/built-in-skills/README.md), whose README indexes all built-in skills. Design: [Agent capability surface design §8](../docs/design/agent-surface/agent-surface-design.md#8-cuccut-skill).
 
 ```text
 skills/
   cuccut/
-    SKILL.md              入口：何时用与三条底线、启动、能力目录与阅读纪律（含内置 skill 的一句话目录）、编排、硬规则、交付
+    SKILL.md              entry: when to use it and the three bottom lines, startup, capability catalog and reading discipline (including a one-line index of built-in skills), orchestration, hard rules, delivery
     references/
-      start.md            找到 CLI、版本门、status 预检、Runtime 的归属
-      conventions.md      输出与退出码、错误对象、版本冲突、等任务、大结果、时间与 ID
-      catalog/*.md        按任务分的目录页：media、subtitles、editing、voice、music、export、models、system、web（web 只给 CLI 面）
-                          声音参考独立为 voice-language-rates.md、voice-<模型系列>.md，由 voice 与 craft 引用
-      workflows.md        端到端的做法
-      mcp.md              走 MCP 时怎么接、工具名映射、差异
-      craft/              从 built-in-skills/<id>/ 同步来的做法，CLI 面用（生成，不手写）
-    built-in-skills/      内置 skill（craft）的源：一个 skill 一个目录，README.md 是索引；Runtime 从这里加载
+      start.md            finding the CLI, version gate, status preflight, where the Runtime belongs
+      conventions.md      output and exit codes, error objects, version conflicts, waiting for tasks, large results, time and IDs
+      catalog/*.md        task-based catalog pages: media, subtitles, editing, voice, music, export, models, system, web (web gives the CLI surface only)
+                          voice reference is split into voice-language-rates.md and voice-<model-family>.md, referenced by voice and craft
+      workflows.md        end-to-end approaches
+      mcp.md              how to connect via MCP, tool-name mapping, differences
+      craft/              approaches synced from built-in-skills/<id>/, for the CLI surface (generated, not handwritten)
+    built-in-skills/      source of built-in skills (craft): one skill per directory, README.md is the index; the Runtime loads from here
 ```
 
-## 说明书与内置 skill
+## Manual and built-in skills
 
-| | `cuccut/built-in-skills/<id>/` | `cuccut/`（不含 `built-in-skills/`） |
+| | `cuccut/built-in-skills/<id>/` | `cuccut/` (excluding `built-in-skills/`) |
 | --- | --- | --- |
-| 是什么 | craft：一种做法（润色、翻译、分章、剪口播…） | 怎么用 CucCut：机制、目录、硬规则、交付 |
-| 单一来源 | 是 | 是；craft 只引用，不复制正文 |
-| 给谁 | 会话内智能体直接加载；外部 Agent 经同步副本读 | 两种读者，同一份文稿按面渲染 |
+| What it is | craft: one approach (polishing, translation, chaptering, cutting spoken narration…) | How to use CucCut: mechanics, catalog, hard rules, delivery |
+| Single source | Yes | Yes; craft only references it and does not copy the body |
+| For whom | Agents in the session load it directly; external agents read synced copies | Two kinds of readers; the same text is rendered per surface |
 
-Runtime 只把 `cuccut/built-in-skills/` 当内置 skill 目录加载，说明书本身不会被当成 craft 读到；渲染器读说明书时跳过 `built-in-skills/`，它不进任一面的渲染结果，也不随 `cuccut skill install` 装进宿主（外部 Agent 读 `cuccut/references/craft/` 的副本）。SKILL.md 第 1 节的路由与第 3 节末尾的「内置 skill」表用 `{{skill:<id>}}` 指到这些 craft。打包后整个 `skills/` 原样放在 `<resources>/skills/`。
+The Runtime loads only `cuccut/built-in-skills/` as the built-in skill directory, so the manual itself is never read as a craft. When the renderer reads the manual it skips `built-in-skills/`; that directory does not enter either surface's output and is not installed into a host by `cuccut skill install` (external agents read the copies in `cuccut/references/craft/`). The routing in SKILL.md section 1 and the “built-in skills” table at the end of section 3 use `{{skill:<id>}}` to point at these crafts. After packaging, the whole `skills/` directory is placed unchanged at `<resources>/skills/`.
 
-## 一份文稿，两个面
+## One text, two surfaces
 
-同一份正文渲染成两面（[§8.6](../docs/design/agent-surface/agent-surface-design.md#86-一个说明书两个读者)）：
+The same body is rendered into two surfaces ([§8.6](../docs/design/agent-surface/agent-surface-design.md#86-one-manual-two-readers)):
 
-- **CLI 面**：外部 Agent（Claude Code、Codex、Cursor、Gemini CLI 等）经命令行或 MCP 使用。`cuccut/`（除 `built-in-skills/`）随 CLI 与桌面端分发，由 CLI 的安装命令渲染后复制进宿主的 skills 目录。
-- **工具桥面**：CucCut 自己的会话内智能体。Runtime 启动时渲染：SKILL.md 正文是会话指导的「工作方式」，目录页、workflows 与 conventions 成为内置的说明书页（`cuccut-catalog-<页>`、`cuccut-workflows`、`cuccut-conventions`；整页在 `cli` 块里、工具桥面正文为空的页不登记，如 `web`），总在会话的 skill 索引里，按需 `skills_read`。渲染失败时 Runtime 启动失败。
+- **CLI surface**: external agents (Claude Code, Codex, Cursor, Gemini CLI, etc.) use it through the command line or MCP. `cuccut/` (except `built-in-skills/`) ships with the CLI and the desktop app, and the CLI's install command renders it and copies it into the host's skills directory.
+- **Tool-bridge surface**: CucCut's own in-session agent. The Runtime renders it at startup. The body of SKILL.md becomes the “working method” of the session guidance; the catalog pages, workflows and conventions become built-in manual pages (`cuccut-catalog-<page>`, `cuccut-workflows`, `cuccut-conventions`). Pages that sit entirely in a `cli` block and so have an empty tool-bridge body, such as `web`, are not registered. The pages are always in the session's skill index and are read on demand with `skills_read`. If rendering fails, the Runtime fails to start.
 
-## 怎么改：标记法速查
+## How to edit: markup quick reference
 
-- 不写死任一面的命令或工具名，用占位符：
+- Do not hard-code any surface's command or tool name; use placeholders:
 
-  | 写法 | CLI 面 | 工具桥面 |
+  | Syntax | CLI surface | Tool-bridge surface |
   | --- | --- | --- |
   | `{{tool:documents_read}}` | `cuccut documents read` | `documents_read` |
-  | `{{tool:transcribe}}`（一级动词） | `cuccut transcribe` | `transcribe` |
+  | `{{tool:transcribe}}` (top-level verb) | `cuccut transcribe` | `transcribe` |
   | `{{arg:expectedRevision}}` | `--expected-revision` | `expectedRevision` |
-  | `{{skill:polish-transcript}}` | `references/craft/polish-transcript.md` 的链接 | 「`polish-transcript`（用 `skills_read` 读）」；紧跟在「读」后面时是「用 `skills_read` 读 `polish-transcript`」 |
+  | `{{skill:polish-transcript}}` | link to `references/craft/polish-transcript.md` | “`polish-transcript` (read with `skills_read`)”; when it directly follows the word “读” (read), it becomes “用 `skills_read` 读 `polish-transcript`” (“read `polish-transcript` with `skills_read`”) |
 
-  工具名必须在目录里（`spec` 的工具清单），参数必须是同一小节里出现的工具的字段，craft id 必须是 `cuccut/built-in-skills/` 下的目录名。只在会话里有的工具（`downloads_save`）在 CLI 面换成不提工具名的兜底写法（渲染器的 `SESSION_ONLY_TOOLS`）。
-- 只属于一个面的段落用独占一行的 `<!-- surface: cli -->` … `<!-- /surface -->`（或 `agent`）包住，可以包段落、列表项、表格行或代码块，不嵌套；没标的两面都有。找 CLI、`runtime`、版本门、`--yes`、退出码、`--result-file` 与 `.cuccut-out/`、MCP 接法这些 CLI 专属内容，以及元命令（`status`、`help`、`spec`、`version`）只在 `cli` 块里直接写 `cuccut …`；会话审批、编辑器上下文这些只在 `agent` 块里写。
-- 内置 skill 增删、改名或改变用途时，同步 SKILL.md 第 1 节的路由、第 3 节末尾的「内置 skill」表与 [`cuccut/built-in-skills/README.md`](cuccut/built-in-skills/README.md) 的索引（`builtin-skills.test.ts` 核对后两张表的 id）。
-- 硬规则（SKILL.md 第 5 节）两面条数必须相同：一条只属于一个面时，`cli` 块与 `agent` 块各写一条等价的。
-- 生成块 `<!-- generated: <名字> -->` … `<!-- /generated -->` 的内容由同步脚本从目录生成，不手改：`common-ops`（editing.md）、`error-codes`（conventions.md）、`tool-map`（mcp.md）。
-- 页面互相引用用相对链接（`catalog/subtitles.md`、`../conventions.md`），由渲染器按面改写。
-- 共享参考表只在目录页维护一份。craft 用 `skills_read` 读 `cuccut-catalog-<页>`，同步成 CLI 面时改为该页链接，不把数据展开进 craft 附录；其他目录页直接用相对链接引用。模型专属音色表一套模型系列一个文件，并在 `voice.md` 登记入口。
-- 写法按 [§8.7](../docs/design/agent-surface/agent-surface-design.md#87-说明书的写法)：方法（craft、workflows）与机制（conventions、catalog）分层；catalog 页按「何时用 → 前置检查 → 命令与例子 → 结果怎么读 → 常见错误码 → 下一步 → 验收」；workflows 每条按「适用与不适用 → 判断表 → 步骤 → 完成标准」；参数不抄旗标说明，指向帮助或工具说明。
-- SKILL.md 正文不超过 300 行，front matter 的 `description` 不超过 300 个字符。目录页、`workflows.md` 与 `conventions.md` 也带只有 `description` 的 front matter（一句话：讲什么、什么时候读），它是会话 skill 索引里这一页的说明。
-- 全部以中文写作；做法对任意语言的视频与目标语言都适用。
+  Tool names must exist in the catalog (the tool list in `spec`); parameters must be fields of a tool that appears in the same subsection; craft ids must be directory names under `cuccut/built-in-skills/`. Tools that exist only in the session (`downloads_save`) are replaced on the CLI surface with a fallback phrasing that does not name the tool (the renderer's `SESSION_ONLY_TOOLS`).
+- A passage that belongs to only one surface is wrapped in `<!-- surface: cli -->` … `<!-- /surface -->` (or `agent`), each on its own line. It may wrap paragraphs, list items, table rows or code blocks, and it does not nest. Unmarked content appears on both surfaces. CLI-specific content (finding the CLI, `runtime`, the version gate, `--yes`, exit codes, `--result-file` and `.cuccut-out/`, the MCP setup), as well as meta commands (`status`, `help`, `spec`, `version`), is written as `cuccut …` directly, only inside `cli` blocks. In-session approval and editor context are written only inside `agent` blocks.
+- When adding, removing, renaming or changing the purpose of a built-in skill, sync the routing in SKILL.md section 1, the “built-in skills” table at the end of section 3, and the index in [`cuccut/built-in-skills/README.md`](cuccut/built-in-skills/README.md). `builtin-skills.test.ts` checks the skill ids in the last two tables.
+- The hard rules (SKILL.md section 5) must have the same number of entries on both surfaces. When a rule applies to only one surface, write an equivalent entry in each of the `cli` and `agent` blocks.
+- The content of generated blocks `<!-- generated: <name> -->` … `<!-- /generated -->` is produced from the catalog by the sync script and is not edited by hand: `common-ops` (editing.md), `error-codes` (conventions.md), `tool-map` (mcp.md).
+- Pages link to each other with relative links (`catalog/subtitles.md`, `../conventions.md`), which the renderer rewrites per surface.
+- Shared reference tables are maintained in one copy, on the catalog pages only. craft reads `cuccut-catalog-<page>` with `skills_read`; when synced to the CLI surface it becomes a link to that page, and the data is not expanded into the craft appendix. Other catalog pages use relative links directly. Model-specific voice tables use one file per model family, registered as an entry in `voice.md`.
+- Writing style follows [§8.7](../docs/design/agent-surface/agent-surface-design.md#87-how-the-manual-is-written): methods (craft, workflows) are layered apart from mechanisms (conventions, catalog). Catalog pages follow: when to use → preflight checks → commands and examples → how to read results → common error codes → next steps → acceptance. Each workflow entry follows: when it applies and when it does not → decision table → steps → completion criteria. Parameters do not repeat flag descriptions; they point to help or the tool description.
+- The body of SKILL.md is at most 300 lines, and the `description` in its front matter is at most 300 characters. Catalog pages, `workflows.md` and `conventions.md` also carry front matter with only a `description` (one sentence: what the page covers and when to read it), which serves as that page's description in the session's skill index.
+- Write everything in Chinese; the approaches apply to videos in any language and to any target language.

@@ -1,10 +1,10 @@
-/* 时间线里样式宏表达不了的部分：悬停才出现的裁切把手、播放头、吸附线。颜色随明暗主题走（light-dark）。 */
+/* The part of the timeline that style macros cannot express: the trim handles that appear only on hover, the playhead, and the snap lines. Colours follow the light/dark theme (light-dark). */
 
 /*
- * 时间线片段与配音块里不随状态变的部分（原值照抄自原来的样式宏：圆角 sm 即 0.25rem，内边距、间距按 px）。
- * 样式宏一个属性一个原子类，元素上的类越多样式计算越慢；整片入镜一次挂上几千个片段与配音块，不变的这几项合成一个类，
- * 每块少十几个类。随色相、选中、锁定、停用变的底色、边框色与宽、字色、指针、透明度仍在样式宏里，字体由轨继承
- * （timeline.tsx 的 lane）。同一属性只在一处给：这里的规则不分层，会盖过样式宏里同名属性的每一种取值。
+ * The parts of timeline clips and dub blocks that do not change with state (original values copied from the old style macros: radius sm = 0.25rem, padding and gaps in px).
+ * Style macros are one atomic class per property, and the more classes on an element the slower the style calculation. When a whole episode enters the frame, thousands of clips and dub blocks are mounted at once, so these unchanging properties are merged into one class,
+ * leaving about a dozen fewer classes per block. The background, border colour and width, text colour, pointer and opacity that vary with hue, selection, lock or disabled state still live in the style macros, and the font is inherited from the lane
+ * (timeline.tsx's lane). Each property is given in only one place: the rules here are not layered, and they would override every value of the same-named property in the style macros.
  */
 .cc-clip {
   position: absolute;
@@ -18,21 +18,21 @@
   display: flex;
   user-select: none;
 }
-/* 普通片段：标题、时长竖排居中；图标随字色。 */
+/* Ordinary clip: title and duration stacked vertically and centred; the icon follows the text colour. */
 .cc-clip-item {
   flex-direction: column;
   justify-content: center;
   padding-inline: 8px;
   --iconPrimary: currentColor;
 }
-/* 配音块：色条、译文、语速角标横排。 */
+/* Dub block: colour strip, translation, and speech-rate badge in a row. */
 .cc-dub-block {
   align-items: center;
   gap: 6px;
   padding-inline: 10px 8px;
 }
 
-/* 片段两端的裁切热区（原型 min(7, w/3) px），悬停时露出一条细把手。 */
+/* Trim hot zones at the two ends of a clip (prototype min(7, w/3) px); a thin handle appears on hover. */
 .cc-clip-handle {
   position: absolute;
   top: 0;
@@ -87,25 +87,25 @@
   margin-inline-start: -0.75px;
 }
 /*
- * 播放头的小旗（timeline.tsx `PlayheadFlag`）：画在已经吸顶的刻度尺里，竖向滚动时随刻度尺留在上沿；与竖线用同一个取整到
- * 设备像素的横坐标（`playheadX`），尖端（50%）落在 left 上。压在刻度之上，不接指针，点刻度尺照样定位。
+ * The playhead's small flag (timeline.tsx `PlayheadFlag`): drawn in the ruler that is already pinned to the top; when scrolling vertically it stays at the upper edge with the ruler; it uses the same device-pixel-rounded x coordinate as the vertical line
+ * (`playheadX`), with its tip (50%) on left. It sits above the ticks and takes no pointer, so clicking the ruler still seeks.
  */
 .cc-playhead-flag {
   position: absolute;
   top: 0;
-  /* 刻度尺本身不成层叠上下文：5 与左上角（z 4）同场比较，播放头滚到表头底下时小旗压在角上，同竖线压在表头上。 */
+  /* The ruler itself does not form a stacking context: 5 competes with the top-left corner (z 4), so when the playhead scrolls under the header the flag sits over the corner, just as the vertical line sits over the header. */
   z-index: 5;
   width: 12px;
   height: 16px;
   margin-inline-start: -6px;
   pointer-events: none;
-  /* 抓手旗（原型 ui.css `.ph__flag`）：上半是圆角矩形，下半收成指向竖线的三角；圆角留给上沿，clip-path 只切下沿。 */
+  /* Grab flag (prototype ui.css `.ph__flag`): the top half is a rounded rectangle, the bottom half narrows to a triangle pointing at the vertical line; the rounding is left to the upper edge, and clip-path only cuts the lower edge. */
   border-radius: 3px 3px 0 0;
   clip-path: polygon(0 0, 100% 0, 100% 10px, 50% 100%, 0 10px);
   background: var(--primary);
 }
 
-/* 吸附时的参考线。 */
+/* Reference line during snapping. */
 .cc-snapline {
   position: absolute;
   top: 0;
@@ -116,7 +116,7 @@
   border-inline-start: 1px dashed rgb(255 255 255 / 85%);
 }
 
-/* 舞台把手（原型 ui.css .hnd / .rot）：触屏没有悬停，4px 宽的条子点不着，铺一块 20×20 的隐形热区。 */
+/* Stage handles (prototype ui.css .hnd / .rot): touch screens have no hover, and a 4px-wide bar cannot be tapped, so a 20×20 invisible hot zone is laid down. */
 @media (hover: none) {
   .cc-stage-handle::before {
     content: '';
@@ -128,7 +128,7 @@
     transform: translate(-50%, -50%);
   }
 }
-/* 旋转钮悬停放大、按下回缩（样式宏表达不了 :active 的 transform）。 */
+/* The rotate button enlarges on hover and shrinks back on press (style macros cannot express the :active transform). */
 .cc-stage-rotate {
   transition: transform 150ms cubic-bezier(0.45, 0, 0.4, 1);
 }
@@ -140,9 +140,9 @@
   transform: scale(0.96);
 }
 
-/* 字幕列表 cue 卡上边线上的「并入上一条」（原型 ui.css .sbseam）：悬停这张卡、或焦点在卡里时才出，不占布局；
-   外观在 subtitle-panel.tsx 的样式宏里，这里只管出没（样式宏表达不了「父元素悬停时」）。触屏没有悬停，一直显示。
-   悬停认卡与钮本身，不认这一层：卡间 8px 的缝是这一层的上内边距，悬停在缝里不该把下一张的钮叫出来。 */
+/* The “merge into previous” label on the top border of a subtitle-list cue card (prototype ui.css .sbseam): it appears only when the pointer hovers over this card or focus is inside it, and takes no layout space;
+   its appearance lives in the style macros of subtitle-panel.tsx, so here it only controls show/hide (style macros cannot express “when the parent is hovered”). Touch screens have no hover, so it is always shown.
+   Hover identifies the card and the button itself, not this layer: the 8px gap between cards is this layer's top padding, and hovering in the gap should not summon the next card's button. */
 .cc-cue-seam {
   opacity: 0;
   transition: opacity 150ms cubic-bezier(0.45, 0, 0.4, 1);
@@ -157,8 +157,8 @@
   }
 }
 
-/* 时间线剪口带（原型 ui.css .tcut / .tcut__edge）：斜纹空槽 + 两侧各一道实线缝，两缘的命中区悬停 / 拖动中描蓝。
-   颜色是 timeline-seams.tsx 的样式宏给的 S2 token（--cc-cut-*），这里只画样式宏表达不了的渐变与内阴影。 */
+/* Timeline cut band (prototype ui.css .tcut / .tcut__edge): an empty slot with diagonal stripes and a solid seam on each side; the hit areas on the two edges turn blue on hover / while dragging.
+   The colours are the S2 tokens (--cc-cut-*) supplied by timeline-seams.tsx's style macros; here we only paint the gradients and inset shadows that style macros cannot express. */
 .cc-cut-band {
   background-color: color-mix(in srgb, var(--cc-cut-bg) 88%, transparent);
   background-image: repeating-linear-gradient(-45deg, transparent 0 4px, var(--cc-cut-stripe) 4px 5px);
@@ -202,14 +202,14 @@
 .cc-cut-edge[data-edge='end'][data-on] {
   box-shadow: inset -2px 0 0 var(--cc-cut-edge-line);
 }
-/* 拖剪口带的边时整页都是左右箭头，指针离开带也不变。 */
+/* While dragging the edge of a cut band, the whole page shows left/right arrows, and it does not change when the pointer leaves the band. */
 html.cc-col-resize,
 html.cc-col-resize * {
   cursor: col-resize !important;
 }
-/* 转录中的临时字幕行（原型 ui.css `.tpend` / `.tcue__cur` / `.thd__live`，第 220 轮）与文稿面板的实时段落（`.caret`）：
-   还没转录到的那段是斜纹待定带，前缘一道实线；行头一颗呼吸点；最后一段末尾一枚闪烁的光标。颜色由 timeline-live.tsx、
-   transcript-live.tsx 的样式宏给成 token（--cc-live-*），这里只画样式宏表达不了的渐变、内阴影与动画。 */
+/* Temporary subtitle row during transcription (prototype ui.css `.tpend` / `.tcue__cur` / `.thd__live`, round 220) and the live paragraphs of the transcript panel (`.caret`):
+   the segment not yet transcribed is a diagonal-stripe pending band with a solid line on its leading edge; a breathing dot at the row head; a blinking cursor at the end of the last segment. The colours are supplied as tokens (--cc-live-*) by the style macros in timeline-live.tsx and
+   transcript-live.tsx; here we only paint the gradients, inset shadows and animations that style macros cannot express. */
 .cc-live-pending {
   background-color: var(--cc-live-bg);
   background-image: repeating-linear-gradient(-45deg, transparent 0 4px, var(--cc-live-stripe) 4px 5px);
@@ -246,14 +246,14 @@ html.cc-col-resize * {
     animation: none;
   }
 }
-/* 正在重新生成的配音块（设计稿 ui.css `.tdub--queued`）：斜条纹；颜色由 timeline-dub.tsx 的样式宏给成 token。 */
+/* Dub block being regenerated (design draft ui.css `.tdub--queued`): diagonal stripes; the colours are supplied as tokens by the style macros in timeline-dub.tsx. */
 .cc-dub-queued {
   background-image: repeating-linear-gradient(-45deg, var(--cc-dub-stripe) 0 4px, var(--cc-dub-stripe-gap) 4px 8px);
 }
 
 /*
- * 走带的播放键（transport.tsx；原型 ui.css `.tport__play`）：用户定的 36px 正圆 accent 钮，落在 S2 的 32 / 40 两档之间，
- * 样式宏的 Button 只让改宽不让改高；S2 M 档的 pill 圆角只有 16px，放大后不再正圆，所以圆角给 100%。图标与走带其余按钮同为 16px。
+ * The transport's play key (transport.tsx; prototype ui.css `.tport__play`): a user-specified 36px perfect-circle accent button, falling between S2's 32 and 40 sizes,
+ * while the Button of the style macros only lets the width change, not the height. S2's M-size pill radius is only 16px, so once enlarged it is no longer a perfect circle, which is why the radius is 100%. The icon and the other transport buttons are both 16px.
  */
 .cc-transport-play {
   width: 36px;
@@ -264,8 +264,8 @@ html.cc-col-resize * {
 }
 
 /*
- * 竖幅画布上的平台安全区（stage-bar.tsx 的 `SafeAreaOverlay`；原型 ui.css `.safearea`）：盖在画面上、不接指针。
- * 斜纹遮挡区与标签贴在视频上，画面亮度不定，所以和全屏播放器一样不吃明暗主题，用 rgba 的黑与白。
+ * The platform safe area on the portrait canvas (`SafeAreaOverlay` in stage-bar.tsx; prototype ui.css `.safearea`): laid over the picture and takes no pointer.
+ * The diagonal-stripe mask area and the label sit on the video, and the picture's brightness varies, so like the fullscreen player it does not follow the light/dark theme and uses rgba black and white.
  */
 .cc-safearea {
   position: absolute;

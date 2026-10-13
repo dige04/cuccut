@@ -1,37 +1,37 @@
-// `snake-v1` 的 WGSL 实现（元素方案 §7.4）。
+// WGSL implementation of `snake-v1` (element scheme §7.4).
 //
-// 一份源码覆盖 4 种：`snake` / `snake_spin`（solid，strict）、
-// `snake_rainbow` / `snake_spin_rainbow`（hue 环，visual）。
-// CPU 参照是 `src/source/progress/recipes/snake_v1.rs`。
+// One source covers 4 variants: `snake` / `snake_spin` (solid, strict),
+// `snake_rainbow` / `snake_spin_rainbow` (hue ring, visual).
+// The CPU reference is `src/source/progress/recipes/snake_v1.rs`.
 //
-// ## 这里是**逐度循环**，CPU 那边是扫掠并集的闭式
+// ## Here it is **a per-degree loop**; the CPU side uses the closed form of the sweep union
 //
-// P4 把参考实现的 `circleRing()` 收成了闭式（§13 P4 偏离 4）——矢量侧发 360 条
-// 子路径既慢又没必要，圆心间距只有圆半径的十四分之一，叠加场在并集内部早就
-// 饱和。GPU 侧没有这个理由：fragment 本来就要逐点求值，逐度累加正是参考实现的
-// 做法，也是**唯一能逐字用上 `smoothing` 与 `boostSteps` 的写法**（P3/P4 记录
-// 留给 P5 的那两个参数）。两条读法的半覆盖等值线相差约一个像素——累加场在并集
-// 边界附近迅速饱和，这一点已在 P5b 的实测里核对。
+// P4 turned the reference's `circleRing()` into a closed form (§13 P4 deviation 4). The vector side emitting 360
+// sub-paths is both slow and unnecessary: the centre spacing is only a fourteenth of the circle radius, so the superposed field
+// is already saturated deep inside the union. The GPU side has no such reason: the fragment evaluates point by point anyway, and per-degree accumulation is the reference's
+// approach, and also the **only form that can use `smoothing` and `boostSteps` word for word** (the two parameters P3/P4 recorded
+// as left for P5). The half-coverage iso-contours of the two readings differ by about one pixel; the accumulated field
+// saturates quickly near the union boundary, as checked in P5b's measurements.
 //
-// ## 坐标：**v 向上**
+// ## Coordinates: **v up**
 //
-// 参考实现在 y 向下的 `texCoord` 里放圆心，起始角 270° 落在画面**下**方；
-// CPU 参照的 `phi = −(π/2 + a)` 配 `polar` 的"自正上方顺时针"，起点在**上**方。
-// 真相是 CPU，因此这里先做 P5a 偏离 4 的那次 v 翻转。
+// The reference places the circle centre in the y-down `texCoord`, so the start angle of 270° falls at the **bottom** of the picture;
+// the CPU reference's `phi = −(π/2 + a)` with `polar`'s 'clockwise from straight up' starts at the **top**.
+// The CPU is the source of truth, so here we first do the v flip from P5a deviation 4.
 
-/// 配方参数。字段顺序 = Rust 侧 `pack_snake_v1` 的打包顺序。
+/// Recipe parameters. Field order = the packing order of Rust's `pack_snake_v1`.
 struct SnakeRecipe {
-    /// 小圆半径（归一化到内切正方形边长）。
+    /// Small-circle radius (normalised to the side length of the inscribed square).
     dotRadius : f32,
-    /// 小圆的软边带宽。CPU 侧不读，GPU 侧逐字用上。
+    /// Soft-edge band width of the small circles. The CPU side does not read it; the GPU side uses it word for word.
     smoothing : f32,
-    /// 小圆圆心的轨道半径。
+    /// Orbit radius of the small circles' centres.
     orbitRadius : f32,
     startAngleDeg : f32,
     angleIncrementDeg : f32,
-    /// 循环上限（参考实现的 360）。
+    /// Loop upper bound (the reference's 360).
     maxIterations : f32,
-    /// `boostSteps`：圈数少于 `below` 时把 alpha 乘 `gain`。
+    /// `boostSteps`: when the number of circles is below `below`, multiply alpha by `gain`.
     boostBelow0 : f32,
     boostGain0 : f32,
     boostBelow1 : f32,
@@ -42,7 +42,7 @@ struct SnakeRecipe {
     colorKind : f32,
     /// `colorMode.trackColor == "main"` ⇒ 1。
     trackIsMain : f32,
-    /// rainbow 环的旋转速度（°/s）。
+    /// Rotation speed of the rainbow ring (°/s).
     rainbowSpeed : f32,
     _pad0 : f32,
     _pad1 : f32,
@@ -50,13 +50,13 @@ struct SnakeRecipe {
 
 @group(3) @binding(0) var<uniform> u_recipe : SnakeRecipe;
 
-/// 一枚小圆的软边覆盖率。圆心在 `−(cos a, sin a) · orbit`（参考实现的写法：
-/// 它算的是 `length(pos + offset · dist)`）。
+/// Soft-edge coverage of one small circle. Its centre is at `−(cos a, sin a) · orbit` (the reference's form:
+/// it computes `length(pos + offset · dist)`).
 ///
-/// `smoothing = 0.032` 在 324 px 的方盒上有 10 px——那是**造型**不是抗锯齿：
-/// 密集叠加下 `min(Σ, 1)` 会把并集的边界整体往外推两三个像素，而 CPU 参照的
-/// 扫掠并集边界正是 `dotRadius` 本身（§13 P4 偏离 5）。`softEdgePixel` 因此把
-/// 带宽夹到一个像素，边落在同一条线上。
+/// `smoothing = 0.032` is 10 px on the 324 px square box: that is **shaping**, not anti-aliasing:
+/// under dense superposition `min(Σ, 1)` pushes the union's boundary outward by two or three pixels as a whole, whereas the CPU reference's
+/// swept-union boundary is exactly `dotRadius` itself (§13 P4 deviation 5). So `softEdgePixel` clamps
+/// the band width to one pixel, so the edge lies on the same line.
 fn snakeDot(pos : vec2f, angle : f32) -> f32 {
     let offset : vec2f = vec2f(cos(angle), sin(angle));
     let distance : f32 = length(pos + offset * u_recipe.orbitRadius);
@@ -64,12 +64,12 @@ fn snakeDot(pos : vec2f, angle : f32) -> f32 {
     return 1.0 - softEdgePixel(u_recipe.dotRadius, u_recipe.smoothing, pixel, distance);
 }
 
-/// 参考实现的 `circleRing()`：自 `startAngleDeg + offset` 起每 `angleIncrementDeg`
-/// 放一枚小圆，alpha 累加后 `min(·, 1)`。
+/// The reference's `circleRing()`: starting from `startAngleDeg + offset`, one small circle is placed every `angleIncrementDeg`,
+/// with alpha accumulated and then `min(·, 1)`.
 ///
-/// 圈数 `angleTotal = round(一整圈的步数 × progress)`，循环体**画完这一圈才
-/// break**，因此实际圈数是 `angleTotal + 1`，上限 `maxIterations`——CPU 侧的
-/// `dot_count` 是同一条。进度 0 也留一颗圆点。
+/// Number of circles `angleTotal = round(steps per full circle × progress)`; the loop body **finishes drawing this circle before it
+/// breaks**, so the actual count is `angleTotal + 1`, capped at `maxIterations` — the CPU side's
+/// `dot_count` is the same. Progress 0 also keeps one dot.
 fn snakeRing(pos : vec2f, progress : f32, offsetDegrees : f32) -> f32 {
     let increment : f32 = u_recipe.angleIncrementDeg;
     let stepsPerTurn : f32 = 360.0 / abs(increment);
@@ -85,7 +85,7 @@ fn snakeRing(pos : vec2f, progress : f32, offsetDegrees : f32) -> f32 {
             break;
         }
     }
-    // 圆太少时让它更显眼（`boostSteps`）。
+    // Make it more prominent when there are few circles (`boostSteps`).
     if (total < u_recipe.boostBelow0) {
         accumulated = accumulated * u_recipe.boostGain0;
     } else if (total < u_recipe.boostBelow1) {
@@ -94,7 +94,7 @@ fn snakeRing(pos : vec2f, progress : f32, offsetDegrees : f32) -> f32 {
     return min(accumulated, 1.0);
 }
 
-/// hue 取自角度、饱和度取自半径的旋转彩虹（`snake_rainbow` 两种）。
+/// A rotating rainbow whose hue comes from the angle and saturation from the radius (the two `snake_rainbow` variants).
 fn snakeRainbow(uv : vec2f) -> vec3f {
     var transformed : vec2f = uv - 0.5;
     transformed = transformed * rotate2d(radians(u_time.value.x * u_recipe.rainbowSpeed));
@@ -109,13 +109,13 @@ fn snakeRainbow(uv : vec2f) -> vec3f {
     let uv : vec2f = vec2f(in.texCoord.x, 1.0 - in.texCoord.y);
     let pos : vec2f = uv - 0.5;
 
-    // 自转：`offset = −mod(t · speed, 360°)`，底环与进度环同一个偏移。
+    // Self-rotation: `offset = −mod(t · speed, 360°)`; the base ring and the progress ring share the same offset.
     var spin : f32 = 0.0;
     if (u_recipe.spinSpeed != 0.0) {
         spin = -glslMod(u_time.value.x * u_recipe.spinSpeed, 360.0);
     }
 
-    // 底环（进度 1）在下，进度环在上——参考实现的 `mix(bot, top, top.a)`。
+    // The base ring (progress 1) is at the bottom, the progress ring on top — the reference's `mix(bot, top, top.a)`.
     var trackColour : vec4f = u_secondaryColor;
     if (u_recipe.trackIsMain > 0.5) {
         trackColour = u_mainColor;
@@ -126,7 +126,7 @@ fn snakeRainbow(uv : vec2f) -> vec3f {
     let topDistance : f32 = snakeRing(pos, u_progress.value.x, spin);
     var top : vec4f;
     if (u_recipe.colorKind > 0.5) {
-        // 彩虹环**不乘主色的 alpha**（参考实现如此：主色只管底环）。
+        // The rainbow ring **does not multiply by the primary colour's alpha** (as in the reference: the primary colour only governs the base ring).
         top = vec4f(topDistance * snakeRainbow(uv), topDistance);
     } else {
         top = vec4f(topDistance * u_mainColor.rgb, topDistance) * u_mainColor.a;

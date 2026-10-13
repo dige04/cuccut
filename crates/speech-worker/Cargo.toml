@@ -1,6 +1,6 @@
 [package]
 name = "speech-worker"
-description = "CucCut 的字幕与翻译 Worker（架构设计 §7.9、§13.1）：独立进程，用 speech-doc 跑一份转写的翻译；模型调用经 stdio 交回 Runtime，只写 staging"
+description = "CucCut's subtitle and translation Worker (architecture design §7.9, §13.1): a separate process that runs a transcript translation with speech-doc; model calls go back to the Runtime over stdio, and it only writes to staging"
 version.workspace = true
 edition.workspace = true
 license-file.workspace = true

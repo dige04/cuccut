@@ -1,59 +1,59 @@
-> 移植自 CucCut v2；文中的数据模型名（TranscriptDoc 等）指 v2 的模型，与 v3 文档模型的对应见[架构设计 §14](../../architecture/architecture-design.md#14-待评审事项)。
+> Ported from CucCut v2. Data model names in this document (TranscriptDoc, etc.) refer to the v2 models. For how they map to the v3 document model, see [Architecture design §14](../../architecture/architecture-design.md#14-items-pending-review).
 
-# docs/design/subtitle/ — 字幕 AI 管线
+# docs/design/subtitle/ — Subtitle AI pipeline
 
-转录之后的字幕管线：Transcript 数据模型，润色 / 分段 / 分章节 / 翻译 / 对齐各阶段，LLM 交换契约与验收。核心不变量（`words[]` 是唯一真相、`trans` / `transAlign` 两层、翻译对齐先定译文 Cue、本地 Agent 与 Cloud 两条路径同步）见根 [`AGENTS.md`](../../../AGENTS.md)「Transcript 与 AI 管线」。
+The subtitle pipeline that runs after transcription: the Transcript data model; the polish, segmentation, chaptering, translation and alignment stages; the LLM exchange contract and acceptance. Core invariants (`words[]` is the single source of truth, the two layers `trans` / `transAlign`, translation alignment fixes the translated Cue first, and the local Agent and Cloud paths stay in sync) are in the root [`AGENTS.md`](../../../AGENTS.md), under “Transcript and AI pipeline”.
 
-## 总纲与数据模型
+## Overview and data model
 
-| 文件 | 内容与状态 |
+| File | Content and status |
 | --- | --- |
-| [`ccut-ai-pipeline-design.md`](ccut-ai-pipeline-design.md) | **AI 管线总纲**：AI flow、指纹与增量语义、各阶段契约（实现对齐版 v0.4）。正文在 [`ccut-ai-pipeline-design/`](ccut-ai-pipeline-design/) |
-| [`ccut-transcript-v03-design.md`](ccut-transcript-v03-design.md) | Transcript v0.3：`words[]` 真相、句子一等公民、`trans` 句级译文与 `transAlign` 展示覆盖层（已确认，现行数据结构规格） |
-| [`ccut-subtitle-pipeline-implementation.md`](ccut-subtitle-pipeline-implementation.md) | 转录后 segment → polish → translate → align 的实现说明，四个阶段的边界 |
-| [`ccut-file-contract-subtitle-ai-design.md`](ccut-file-contract-subtitle-ai-design.md) | 文件契约管线 v0.3：LLM 交换格式从 JSON 换成 txt / HTML（M0–M4 已实现，是**实现规范**）。正文在 [`ccut-file-contract-subtitle-ai-design/`](ccut-file-contract-subtitle-ai-design/) |
-| [`ccut-incremental-edit-design.md`](ccut-incremental-edit-design.md) | 编辑写路径审计、`patchTranscript` 局部补丁与增量编辑收口 |
-| [`ccut-korean-word-spacing-design.md`](ccut-korean-word-spacing-design.md) | 韩文的词与空格：逐音节分词丢空格的现状、S / W / B / L 四个问题的调用点普查、「贴前」标记与文稿 0.5 的迁移方案（**提案，待裁决，未实施** 2026-09-30） |
-| [`ccut-unspaced-script-segmentation-design.md`](ccut-unspaced-script-segmentation-design.md) | 泰、老挝、缅甸、高棉、藏文的分词：新建文稿用 ICU4X LSTM 按词存，短语内的词缝带「贴前」标记；改写区间锚定旧词、引文 Snap 级；已有文稿不迁移（已实施 2026-10-01） |
+| [`ccut-ai-pipeline-design.md`](ccut-ai-pipeline-design.md) | **AI pipeline overview**: AI flow, fingerprint and incremental semantics, contracts for each stage (implementation-aligned v0.4). Body text is in [`ccut-ai-pipeline-design/`](ccut-ai-pipeline-design/) |
+| [`ccut-transcript-v03-design.md`](ccut-transcript-v03-design.md) | Transcript v0.3: `words[]` as the source of truth, sentences as first-class units, sentence-level translation in `trans` and the display overlay `transAlign` (confirmed; current data structure spec) |
+| [`ccut-subtitle-pipeline-implementation.md`](ccut-subtitle-pipeline-implementation.md) | Implementation notes for the pipeline from post-transcription segment → polish → translate → align, and the boundaries of its four stages |
+| [`ccut-file-contract-subtitle-ai-design.md`](ccut-file-contract-subtitle-ai-design.md) | File contract pipeline v0.3: the LLM exchange format changes from JSON to txt / HTML (M0–M4 implemented; this is the **implementation spec**). Body text is in [`ccut-file-contract-subtitle-ai-design/`](ccut-file-contract-subtitle-ai-design/) |
+| [`ccut-incremental-edit-design.md`](ccut-incremental-edit-design.md) | Audit of the edit write path, `patchTranscript` partial patches, and consolidation of incremental editing |
+| [`ccut-korean-word-spacing-design.md`](ccut-korean-word-spacing-design.md) | Korean words and spacing: current state, where per-syllable segmentation drops spaces; call-site survey for the four problems S / W / B / L; the “attach-to-previous” marker and the migration plan for script 0.5 (**proposal, pending decision, not implemented**, 2026-09-30) |
+| [`ccut-unspaced-script-segmentation-design.md`](ccut-unspaced-script-segmentation-design.md) | Word segmentation for Thai, Lao, Burmese, Khmer and Tibetan: new scripts are stored by word using ICU4X LSTM, and word gaps inside a phrase carry the “attach-to-previous” marker; rewrite ranges anchor to old words, and quotes are at Snap level; existing scripts are not migrated (implemented 2026-10-01) |
 
-## 分段、对齐与译文修复
+## Segmentation, alignment and translation repair
 
-| 文件 | 内容与状态 |
+| File | Content and status |
 | --- | --- |
-| [`ccut-asr-initial-segment-design.md`](ccut-asr-initial-segment-design.md) | ASR segment 初始软分段：可提升投影、`RowSegmentation` 来源标注（已实施 2026-08-26） |
-| [`ccut-alignment-block-subtitle-split-design.md`](ccut-alignment-block-subtitle-split-design.md) | 字幕切分四层分离、`autoBreaks` / `LayoutProfile`、最小单调对齐块、`transDisplay`（已确认，实施记录见 §12） |
-| [`ccut-translation-row-repair-design.md`](ccut-translation-row-repair-design.md) | 译文黏结检测与二次校正：`align-row-deficit` 判据、`--align-density paired` 定向重切（M1–M3、M5 已完成） |
-| [`ccut-lean-llm-carrier-design.md`](ccut-lean-llm-carrier-design.md) | `lines/1` 首尾引用与代码判交叉；M0 基础和实验工具已实施，第二轮（分片提示、联合定位、行归属门、补做轮）在 DeepSeek V4.1 Flash 508 句上 491 / 0 / 17 对 旧载体 378 / 97 / 33、费用约 0.4×；第三轮盲检后加块缝整理 / 块复述拒收两道护栏，provider 直连路径已 opt-in 接入 `ccut translate --align-fusion lines`（默认仍 `rows`，Agent 路径与 §5 状态机待实施）（2026-09-30） |
-| [`ccut-translate-prompt-ab-runbook.md`](ccut-translate-prompt-ab-runbook.md) | 翻译提示词 A/B 验收门（英文），脚本在 `scripts/bench/translate_prompt_ab.py`。它验收的两版提示词升级设计稿已归档在 [`../../archive/subtitle/`](../../archive/subtitle/README.md) |
+| [`ccut-asr-initial-segment-design.md`](ccut-asr-initial-segment-design.md) | Initial soft segmentation of ASR segments: promotable projection, `RowSegmentation` source annotation (implemented 2026-08-26) |
+| [`ccut-alignment-block-subtitle-split-design.md`](ccut-alignment-block-subtitle-split-design.md) | Four-layer separation of subtitle splitting, `autoBreaks` / `LayoutProfile`, minimal monotonic alignment blocks, `transDisplay` (confirmed; implementation record in §12) |
+| [`ccut-translation-row-repair-design.md`](ccut-translation-row-repair-design.md) | Detection of merged translation rows (adjacent sentences glued together) and second-pass correction: `align-row-deficit` criterion, targeted re-splitting with `--align-density paired` (M1–M3 and M5 done) |
+| [`ccut-lean-llm-carrier-design.md`](ccut-lean-llm-carrier-design.md) | Head-and-tail quotation of `lines/1` and cross-check of code; M0 foundation and experiment tools implemented. Round two (sharded prompts, joint localization, line-attribution gate, make-up round) on DeepSeek V4.1 Flash with 508 sentences: 491 / 0 / 17 vs. the old carrier at 378 / 97 / 33, at about 0.4× cost. After a third blind test, two guardrails were added: block-seam cleanup and rejection of block restatement. The direct provider path is opt-in via `ccut translate --align-fusion lines` (default is still `rows`; the Agent path and the §5 state machine are pending) (2026-09-30) |
+| [`ccut-translate-prompt-ab-runbook.md`](ccut-translate-prompt-ab-runbook.md) | Acceptance gate for translation prompt A/B (in English); script at `scripts/bench/translate_prompt_ab.py`. The design draft for the two-version prompt upgrade that it validates is archived in [`../../archive/subtitle/`](../../archive/subtitle/README.md) |
 
-`lines/1` 的[多语言固定基准](../../../scripts/bench/fixtures/lean-carrier-multilingual-2026-09-30/README.md)保存三个真实视频项目的抽样、六种合成源语言、模型回答与离线回放结果。
+The [fixed multilingual baseline for `lines/1`](../../../scripts/bench/fixtures/lean-carrier-multilingual-2026-09-30/README.md) keeps samples from three real video projects, six synthetic source languages, model responses, and offline replay results.
 
-[2026-10-01 多语言验收](../../../scripts/bench/fixtures/lean-carrier-acceptance-2026-10-01/README.md)保存新版固定响应回放、新模型测试、逐句评分和对比图。
+The [2026-10-01 multilingual acceptance](../../../scripts/bench/fixtures/lean-carrier-acceptance-2026-10-01/README.md) keeps the new fixed-response replay, the new model tests, per-sentence scores, and comparison charts.
 
-[915bfef13 多语言复验](../../../scripts/bench/fixtures/lean-carrier-acceptance-2026-10-01-915bfef13/README.md)记录印地文引用修复、泰文分词与模拟预算测试，以及仍未通过的语义和架构检查。
+The [915bfef13 multilingual re-check](../../../scripts/bench/fixtures/lean-carrier-acceptance-2026-10-01-915bfef13/README.md) records the Hindi quotation fix, Thai segmentation and simulated budget tests, and the semantic and architecture checks that still fail.
 
-[9bb2a8f62 多语言验收](../../../scripts/bench/fixtures/lean-carrier-acceptance-2026-10-01-9bb2a8f62/README.md)记录相同阅读预算下的新旧版本对比、润色与翻译回归，以及尚存的语义错误。
+The [9bb2a8f62 multilingual acceptance](../../../scripts/bench/fixtures/lean-carrier-acceptance-2026-10-01-9bb2a8f62/README.md) records the old-vs-new comparison under the same reading budget, polish and translation regressions, and the semantic errors that remain.
 
-**新建验收页要带阅读预算。** 生产里可编辑的句子都有预算，`chunk_hint` 的 `≥k` 与 `¦` 分片都从预算来。不带预算的页只会走「没有预算」的分支，所以那次复验主表里德文、泰文的「切分过粗」大多是这样来的，不代表生产行为。
+**New acceptance pages must carry a reading budget.** In production, every editable sentence has a budget, and both `chunk_hint`'s `≥k` and the `¦` shards are derived from it. A page without a budget only takes the “no budget” branch. That is why the “segmentation too coarse” results for German and Thai in the main table of that re-check mostly came out this way; they do not represent production behaviour.
 
-写法是 `<p>` 上的 `data-budget="整句≤N字"`（目标语是中文、日文、韩文时单位写「字」，其余写「字符」）：
+The syntax is `data-budget="整句≤N字"` on the `<p>` (整句 = whole sentence; 字 = characters, the unit for zh, ja and ko targets; for other targets the unit is 字符, also characters):
 
-- `N` 按生产口径 `reading_budget_duration` 算，即显示秒数 × 目标语 cps（`zh` 9，`ja` / `ko` 13，其余 21），向下取整。
-- 生产的解析器忽略这个属性；`lean_carrier_grade` 读页时（`render`、`render-fix`、`grade` 等子命令都经 `load_page`）会把它复原成 `Sentence.budget`。
-- 合成用例没有真实时长时，用 `syntheticDurationSeconds` 或按参考译文估一个时长，并在验收记录里写明这是假设。
-- 测试 `multilingual_piece_marks_never_cut_inside_a_word` 用同一口径给每个用例加预算。
+- `N` is computed by production's `reading_budget_duration`: displayed seconds × target-language cps (`zh` 9, `ja` / `ko` 13, others 21), rounded down.
+- The production parser ignores this attribute. When `lean_carrier_grade` reads the page (`render`, `render-fix`, `grade` and other subcommands all go through `load_page`), it restores it as `Sentence.budget`.
+- When a synthetic case has no real duration, estimate one with `syntheticDurationSeconds` or from the reference translation, and state in the acceptance record that this is an assumption.
+- The test `multilingual_piece_marks_never_cut_inside_a_word` applies a budget to each case using the same convention.
 
-## Agent 工作流、术语与样式
+## Agent workflow, terminology and style
 
-[多语言润色与翻译用例](../../../scripts/bench/fixtures/subtitle-multilingual-cases/README.md)提供12种源语言、25个场景、50个任务，含参考输出、错误反例、生产路径回归和模型任务导出。
+The [multilingual polish and translation cases](../../../scripts/bench/fixtures/subtitle-multilingual-cases/README.md) cover 12 source languages, 25 scenarios and 50 tasks, with reference outputs, wrong counter-examples, production path regressions, and model task exports.
 
-| 文件 | 内容与状态 |
+| File | Content and status |
 | --- | --- |
-| [`ccut-subtitle-agent-workflow.md`](ccut-subtitle-agent-workflow.md) | 字幕 Agent 阶段编排、对齐策略、worker 与续跑经验（内部开发资料，不复制回 `skills/`） |
-| [`ccut-glossary-design.md`](ccut-glossary-design.md) | 术语库：跨项目专名表，分转录术语表与翻译术语表，按命中编译进 `ai/context.md`；转录选表与自定义提示词（2026-09-20 原型先行，产品规格 [§15.10](../product/product-design/15-glossary.md)） |
-| [`caption-style-model-design.md`](caption-style-model-design.md) | **字幕样式模型**：七个独立维度（字体 / 涂装 / 落位 / 当前词 / 动效 / 强调词 / 排版模式）组合出样式，预设只是取值；每份预设自带当前词样式，KTV 扫色是当前词的一种模式，倒鸭子是排版模式；新正文到 Studio 样式的编译表（提案，原型先行 2026-10-09） |
-| [`ccut-daoyazi-caption-design.md`](ccut-daoyazi-caption-design.md) | 「倒鸭子」跨句动态排版字幕：`CaptionSequencePlan` 复用 `MotionProgram`、`wordAnimation.caption.seed` + `options.daoyazi`（核心与 App v2 已落地 2026-09-17） |
-| [`ccut-daoyazi-caption-style.example.json`](ccut-daoyazi-caption-style.example.json) | 上一篇的示例载荷 |
-| [`ccut-subtitle-style-motion-design.md`](ccut-subtitle-style-motion-design.md) | 31 套字幕/文字设计与 17 个动画原语的行为分析、CucCut 能力差异、共享渲染迁移与验收方案（提案，尚未实施） |
+| [`ccut-subtitle-agent-workflow.md`](ccut-subtitle-agent-workflow.md) | Subtitle Agent stage orchestration, alignment strategy, worker and resume experience (internal development material, not copied back into `skills/`) |
+| [`ccut-glossary-design.md`](ccut-glossary-design.md) | Glossary: a cross-project table of proper nouns, split into a transcription glossary and a translation glossary, compiled into `ai/context.md` on match; transcription term selection and custom prompts (2026-09-20 prototype first; product spec [§15.10](../product/product-design/15-glossary.md)) |
+| [`caption-style-model-design.md`](caption-style-model-design.md) | **Caption style model**: seven independent dimensions (font / finish / placement / current word / motion / emphasis word / layout mode) combine into a style, and presets are just values. Each preset carries its own current-word style; KTV color sweep is one mode of current word, and “Daoyazi” (倒鸭子) is a layout mode. Compilation table from new body text to Studio style (proposal, prototype first, 2026-10-09) |
+| [`ccut-daoyazi-caption-design.md`](ccut-daoyazi-caption-design.md) | “Daoyazi” (倒鸭子) cross-sentence dynamic-layout captions: `CaptionSequencePlan` reuses `MotionProgram`, with `wordAnimation.caption.seed` + `options.daoyazi` (core and App v2 landed 2026-09-17) |
+| [`ccut-daoyazi-caption-style.example.json`](ccut-daoyazi-caption-style.example.json) | Example payload for the document above |
+| [`ccut-subtitle-style-motion-design.md`](ccut-subtitle-style-motion-design.md) | Behaviour analysis of 31 subtitle and text designs and 17 animation primitives, CucCut capability gaps, shared-render migration and acceptance plan (proposal, not yet implemented) |
 
-面向用户的讲解页在 [`../../guide/explainers/`](../../guide/explainers/README.md)；可分发的字幕流程在 [`skills/cuccut`](../../../skills/cuccut/SKILL.md)。
+The user-facing explainer pages are in [`../../guide/explainers/`](../../guide/explainers/README.md). The distributable subtitle workflow is in [`skills/cuccut`](../../../skills/cuccut/SKILL.md).

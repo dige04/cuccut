@@ -3,29 +3,29 @@
   "id": "game-trailer",
   "version": "1.1.0",
   "kind": "example",
-  "title": "原创游戏预告",
-  "summary": "为一款原创游戏做一条开头就抓人的精致预告。",
-  "description": "从世界观、角色到玩法，用几组快速镜头交代一款原创游戏，头两秒就给出钩子，适合发布到社交平台。",
-  "language": "zh-CN",
+  "title": "Original game trailer",
+  "summary": "A polished trailer for an original game that hooks viewers from the start.",
+  "description": "Introduce an original game's world, characters and gameplay in a few quick sequences, with a hook in the first two seconds. Made for posting on social media.",
+  "language": "en",
   "category": "creative-short",
   "fields": [
     {
-      "label": "游戏类型",
-      "hint": "什么类型、什么风格的游戏",
-      "example": "像素风太空探险"
+      "label": "game genre",
+      "hint": "What genre and style of game",
+      "example": "pixel-art space adventure"
     },
     {
-      "label": "成片语言",
-      "hint": "画面文字与旁白用的语言"
+      "label": "video language",
+      "hint": "The language for on-screen text and narration"
     }
   ],
   "author": "CucCut",
   "source": "official",
   "license": "LicenseRef-CucCut-Community-1.0",
   "tags": [
-    "游戏",
-    "预告片",
-    "原创"
+    "game",
+    "trailer",
+    "original"
   ],
   "skills": [
     "video-production"
@@ -39,10 +39,10 @@
   "preview": {
     "file": "preview.mp4",
     "beats": [
-      "两秒钩子",
-      "世界观与角色",
-      "玩法高光",
-      "游戏名与标语"
+      "A two-second hook",
+      "World and characters",
+      "Gameplay highlights",
+      "Game title and tagline"
     ]
   },
   "verification": {

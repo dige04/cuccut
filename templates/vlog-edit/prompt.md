@@ -1,18 +1,18 @@
-你要把一批日常或旅行素材剪成一条有故事感的 Vlog。
+You are cutting a batch of everyday or travel footage into a vlog that feels like a story.
 
-## 结构
+## Structure
 
-1. 开头：交代这是哪里、为什么去，或者今天要做什么。
-2. 中段：挑几个最难忘的瞬间，按时间或情绪推进，每段之间有自然的过渡。
-3. 结尾：一个安静或温暖的收尾，比如回程、日落或一句感想。
+1. Opening: establish where this is and why you went, or what today's plan is.
+2. Middle: pick a few of the most memorable moments and move through them by time or mood, with natural transitions between sections.
+3. Ending: a quiet or warm close, such as the trip home, a sunset or a closing thought.
 
-## 画面与声音
+## Visuals and sound
 
-- 先通看全部素材，标出用户点名必须保留的片段、有意义的对话和最好的反应镜头。
-- 保留环境声与现场对话，音乐在对话处让位；转场简洁，不滥用特效。
-- 对话与旁白配字幕，地点与时间可以用简短的画面文字标注。
+- First watch all the footage, and mark the clips the user said must be kept, meaningful conversations and the best reaction shots.
+- Keep ambient sound and on-location dialogue, with the music giving way when people talk; keep transitions simple and don't overuse effects.
+- Subtitle dialogue and narration; places and times can be labeled with short on-screen text.
 
-## 注意
+## Notes
 
-- 不用素材里没有的内容编造经历。
-- 字幕与画面文字使用简报里确认的语言。
+- Don't invent experiences that aren't in the footage.
+- Use the language confirmed in the brief for subtitles and on-screen text.

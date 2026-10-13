@@ -1,3 +1,3 @@
-做一条围绕{{混剪主题}}、让人印象深刻的混剪，展示你的剪辑与编程能力。
+Make a memorable montage about {{montage theme}} that shows off your editing and coding skills.
 
-我手头的素材：{{手头的素材}}。素材要丰富多样，镜头不要重复；不够时可以生成，也可以使用授权允许的素材。画面包装要精致，声音一直延续到结尾。剪辑的重心放在后半段更强的高潮上。画面文字与旁白用{{成片语言}}。
+The assets I have: {{assets on hand}}. Use rich, varied footage with no repeated shots; if there isn't enough, you can generate more or use material whose license allows it. Make the visual packaging polished, and keep the sound going all the way to the end. Weight the edit toward a stronger climax in the second half. Use {{video language}} for on-screen text and narration.

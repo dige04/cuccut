@@ -3,7 +3,7 @@
   "version": 1,
   "domain": "motion",
   "family": null,
-  "doc": "内部积木：模糊从 blur 收敛到 0。",
+  "doc": "Internal building block: blur converges from blur to 0.",
   "exposedTo": [
     "bcf"
   ],
@@ -12,12 +12,12 @@
       "type": "number",
       "default": 8.0,
       "min": 0.0,
-      "doc": "起始模糊半径（px）"
+      "doc": "Start blur radius (px)"
     },
     "curve": {
       "type": "curve",
       "default": "easeOutCubic",
-      "doc": "时间曲线（规范 §7.6 的封闭名称）"
+      "doc": "Timing curve (closed name set from spec §7.6)"
     }
   },
   "tracks": [

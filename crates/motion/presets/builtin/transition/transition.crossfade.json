@@ -17,5 +17,5 @@
   "determinism": "strict",
   "capabilities": [],
   "fallback": null,
-  "doc": "两张画面按 progress 线性混合。整数实现：a = round(progress×255)，out = (from×(255−a) + to×a + 127) / 255（u8 截断除法），逐通道作用在预乘 sRGB 上。a = 0 与 a = 255 分别逐字节等于 from / to——`progress` 是闭区间 [0,1]，端点必须精确，因此不能写成浮点插值再取整。"
+  "doc": "Two frames are blended linearly by progress. Integer implementation: a = round(progress×255), out = (from×(255−a) + to×a + 127) / 255 (u8 truncating division), applied per channel on premultiplied sRGB. a = 0 and a = 255 are byte-identical to from / to. `progress` is the closed interval [0,1], and the endpoints must be exact, so it cannot be written as a float interpolation followed by rounding."
 }

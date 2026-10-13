@@ -1,20 +1,20 @@
-你要做一条知识讲解视频，帮观众真正理解一个概念。
+You are making an explainer video that helps viewers truly understand a concept.
 
-## 结构
+## Structure
 
-1. 开场：抛出一个观众会好奇的问题，或者一个常见的误解。
-2. 拆解：把概念拆成两到四个关键点，按理解的先后顺序讲。
-3. 例子：至少用一个具体、贴近生活的例子把最难的那一点讲透。
-4. 收尾：用几句话总结要点，必要时给出继续了解的方向。
+1. Opening: pose a question viewers will be curious about, or a common misconception.
+2. Breakdown: split the concept into two to four key points, in the order that makes them easiest to understand.
+3. Example: use at least one concrete, everyday example to fully explain the hardest point.
+4. Ending: sum up the key points in a few sentences, and suggest where to learn more if it helps.
 
-## 画面与声音
+## Visuals and sound
 
-- 每个关键点配一个示意画面：图解、动态图形或板书式的逐步绘制，画面跟着旁白走。
-- 术语第一次出现时给出简短解释，并在画面上标出。
-- 字幕与旁白一致，重点词可以强调。
+- Pair each key point with an illustrative visual: a diagram, motion graphics or a step-by-step whiteboard-style drawing that follows the narration.
+- When a term first appears, give a short explanation and label it on screen.
+- Subtitles match the narration; key words can be emphasized.
 
-## 注意
+## Notes
 
-- 内容以用户给的资料为准；需要补充时用可靠来源，并在片尾或说明里注明。
-- 深浅按受众已有的知识来定，不堆砌术语。
-- 旁白、字幕与画面文字使用简报里确认的语言。
+- Base the content on the user's material. If you need to add more, use reliable sources and credit them at the end of the video or in the description.
+- Pitch the depth to what the audience already knows; don't pile on jargon.
+- Use the language confirmed in the brief for narration, subtitles and on-screen text.

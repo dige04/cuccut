@@ -22,5 +22,5 @@
   "determinism": "strict",
   "capabilities": [],
   "fallback": null,
-  "doc": "第二个输入的 alpha 通道作为遮罩（尺寸必须与输入一致）。invert 时用 1 - alpha。"
+  "doc": "The alpha channel of the second input is the mask (dimensions must match the input). With invert, uses 1 - alpha."
 }

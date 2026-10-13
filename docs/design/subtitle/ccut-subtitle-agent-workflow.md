@@ -1,27 +1,20 @@
-> 移植自 CucCut v2；文中的数据模型名（TranscriptDoc 等）指 v2 的模型，与 v3 文档模型的对应见[架构设计 §14](../../architecture/architecture-design.md#14-待评审事项)。
+> Ported from CucCut v2. Data model names in this text (such as TranscriptDoc) refer to the v2 models. For how they map to the v3 document model, see [Architecture design §14](../../architecture/architecture-design.md#14-items-pending-review).
 
-# ccut 字幕 Agent 工作流内部参考
+# ccut Subtitle Agent Workflow Internal Reference
 
-> 内部开发资料。本文保存从可分发 skill 移出的编排、性能、契约与恢复经验。
-> CLI 返回的 contract、payload、JSON 状态和测试始终优先；不要把这些内部细节
-> 复制回 `skills/`。
-> 模型内容协议已改用 TXT / Markdown / HTML 的文件契约（file-v1），方案见
-> [文件化字幕 AI 管线重设计](ccut-file-contract-subtitle-ai-design.md)，已于 2026-08
-> 单轨化执行（`--contract` 参数与 json 分支已删除）。本文描述的 `json-v0` 工作流
-> 仅作为历史资料与未迁移单轮 kind（polish-retry/segment/segment-index/
-> cleanup/broll）的参考保留（chapters 已于 2026-08 迁到 file-v1 HTML 载体并分页
-> Map/Reduce，见 AI 管线设计 §7）。
+> Internal development material. This document keeps the orchestration, performance, contract and recovery notes that were moved out of the distributable skill.
+> The contract, payloads, JSON state and tests returned by the CLI always take precedence; do not copy these internal details back into `skills/`.
+> The model content protocol has switched to the file contract for TXT / Markdown / HTML (file-v1). The design is in [File-based subtitle AI pipeline redesign](ccut-file-contract-subtitle-ai-design.md), and it went single-track in 2026-08 (the `--contract` parameter and the json branch have been removed). The `json-v0` workflow described here is kept only as historical material and as a reference for the not-yet-migrated single-turn kinds (polish-retry/segment/segment-index/cleanup/broll). (chapters moved to the file-v1 HTML carrier with paged Map/Reduce in 2026-08; see AI pipeline design §7.)
 
-整理来源是 `3992b2d^` 时点的 `skills/ccut-subtitle-studio/SKILL.md` 和
-`references/workflow.md`。需要逐字追溯时可用 `git show 3992b2d^:<path>`。
+This was compiled from `skills/ccut-subtitle-studio/SKILL.md` and `references/workflow.md` as of the `3992b2d^` point. For verbatim tracing, use `git show 3992b2d^:<path>`.
 
-相关资料：[Studio Web 实现](ccut-studio-web-implementation.md)、
-[AI 管线设计](ccut-ai-pipeline-design.md)、
-[字幕管线实现](ccut-subtitle-pipeline-implementation.md)。
+Related material: [Studio Web implementation](ccut-studio-web-implementation.md),
+[AI pipeline design](ccut-ai-pipeline-design.md),
+[Subtitle pipeline implementation](ccut-subtitle-pipeline-implementation.md).
 
-## 1. 项目现场
+## 1. Project Layout
 
-典型项目：
+Typical project:
 
 ```text
 <name>.ccut/
@@ -43,21 +36,19 @@
   .ccut/history/
 ```
 
-关键所有权：
+Key ownership rules:
 
-- `transcript.json` 只能经 CLI/flow/Studio apply 写。
-- 确定性的 Transcript 检索与替换优先使用 `ccut transcript find/replace`；用
-  `find.total` 作为 `replace --expect`，正文与说话人显示名同时改时使用
-  `--scope all`。不得为了字面检索或替换启动浏览器编辑。
-- AI 中间结果与阶段 stamp 用于续跑，不以“文件存在”单独判断 fresh。
-- `studio/data.json` 是派生投影；`studio/edits.json` 是尚未应用的页面覆盖层。
-- Studio 页面代码保留在 skill 中，由共享 `ccut serve` 实时提供，不属于项目包。
-- 一个项目同时只跑一个 flow。
+- `transcript.json` may only be written through CLI/flow/Studio apply.
+- Deterministic transcript search and replacement should use `ccut transcript find/replace` first. Use `find.total` as the `replace --expect` value, and use `--scope all` when both body text and speaker display names change. Do not launch a browser editor for literal search or replacement.
+- AI intermediate results and stage stamps are used for resuming. Freshness is never judged by "file exists" alone.
+- `studio/data.json` is a derived projection; `studio/edits.json` is the unapplied page overlay.
+- Studio page code stays in the skill and is served live by the shared `ccut serve`; it is not part of the project package.
+- Only one flow runs per project at a time.
 
-开始前：
+Before starting:
 
 ```bash
-<repo>/scripts/dev/prepare-ccut.sh          # 源码更新后、任务计时前执行
+<repo>/scripts/dev/prepare-ccut.sh          # run after source updates, before timing the task
 CCUT=$(<repo>/scripts/dev/prepare-ccut.sh --check)
 $CCUT --json doctor --quick
 $CCUT --json model list
@@ -65,28 +56,19 @@ $CCUT --json project show $PROJ
 $CCUT --json check $PROJ --lang <lang>
 ```
 
-`prepare-ccut.sh` 在源码更新后预构建并核对 commit/target/profile；媒体阶段只使用
-已核对的 release binary。`ccut` 是薄客户端，命令都在同级 `ccut-serve`（Runtime）里执行，
-脚本同时构建并核对这两只；机器上已有别的 Runtime 在跑时 `ccut` 会用它（commit 不同时
-stderr 提示一句），要计时本次构建就先 `$CCUT serve --stop`，下一条命令会拉起同级的新 Runtime。只诊断在线视频下载时改用 `doctor --url-only`，不加载
-推理运行时或模型缓存。常规 `doctor --quick` 只检查模型就绪状态，不执行权重深度
-哈希或模型推理；深度完整性检查仍使用无参数 `doctor`。
+`prepare-ccut.sh` pre-builds and verifies the commit/target/profile after source updates; the media stages use only the verified release binary. `ccut` is a thin client: the commands all run in the sibling `ccut-serve` (Runtime), and the script builds and verifies both binaries together. If another Runtime is already running on the machine, `ccut` uses it (when the commit differs, stderr prints a one-line notice). To time this build, run `$CCUT serve --stop` first; the next command starts a new sibling Runtime. To diagnose only online video downloads, use `doctor --url-only`, which does not load the inference runtime or the model cache. A regular `doctor --quick` only checks model readiness; it does not run deep weight hashing or model inference. The deep integrity check still uses the no-argument `doctor`.
 
-Windows URL 输入先运行 skill 的 `prepare-url-deps.ps1 -Mode Plan`。缺依赖时只展示一次
-汇总计划并取得明确授权，再以 `-Mode Install -Confirmed` 执行；拒绝授权就停止。创建
-共享项目后，先幂等执行 `serve --background`，从 `serve --status` 读取实际 URL 并确认
-项目页 HTTP 200。模型未就绪时先独立运行 `model download <id> --jsonl`，完成后再次
-确保 preview，再启动 `auto`；task 续接与最终交付前也重复同一 preview 自愈检查。
+For Windows URL input, first run the skill's `prepare-url-deps.ps1 -Mode Plan`. If dependencies are missing, show the summary plan once and get explicit authorization, then run `-Mode Install -Confirmed`; if authorization is refused, stop. After creating the shared project, first run `serve --background` idempotently, read the actual URL from `serve --status`, and confirm the project page returns HTTP 200. If the model is not ready, first run `model download <id> --jsonl` on its own; after it finishes, ensure the preview again, then start `auto`. Before resuming a task and before final delivery, repeat the same preview self-heal check.
 
-## 2. 转录与直播
+## 2. Transcription and Live Preview
 
-普通转录：
+Regular transcription:
 
 ```bash
 $CCUT transcribe <media> --project $PROJ
 ```
 
-页面直播：
+Live preview in the page:
 
 ```bash
 $CCUT transcribe <media> --project $PROJ --jsonl \
@@ -97,94 +79,64 @@ $CCUT studio sync $PROJ \
   --phase transcribing
 ```
 
-JSONL 事件包括：
+JSONL events include:
 
-- `progress`：模型、下载、解码、VAD、识别、精修与写入阶段。
-- `segment`：已识别的临时文本和时间。
-- `language`：语言检测。
-- `done`：正式 transcript 已提交。
+- `progress`: model, download, decode, VAD, recognition, refinement and write stages.
+- `segment`: recognized interim text and timing.
+- `language`: language detection.
+- `done`: the formal transcript has been committed.
 
-首次模型下载的 progress 可带文件字节、已续传字节、组件阶段、model/repo/path；常规
-JSONL 每秒最多一次，边界事件立即发送。stdout 消费者断开会协作式取消而非 panic，
-partial 保留供下一次显式下载续传。`auto`/`transcribe` 仍兼容自动准备模型，但 Agent
-工作流用独立下载避免首次约 1.62 GB 冷启动与转录共用一个不透明超时窗口。
+Progress for a first-time model download can carry file bytes, resumed bytes, the component stage, and model/repo/path. Regular JSONL output emits at most once per second; boundary events are sent immediately. When a stdout consumer disconnects, the run is cancelled cooperatively rather than panicking, and the partial is kept so that a later explicit download can resume it. `auto`/`transcribe` still prepare the model automatically for compatibility, but the Agent workflow uses a separate download so that the first-time ~1.62 GB cold start does not share one opaque timeout window with transcription.
 
-直播 sync 原先按约 5 秒节拍执行；这是 UI 刷新策略，不属于 transcript 语义。
-正式写入完成后，CLI 提交钩子会刷新 Studio，正式 Cue 替换 live Cue。
+The live sync used to run on a cadence of about 5 seconds; this is a UI refresh policy and is not part of transcript semantics.
+After the formal write completes, the CLI commit hook refreshes Studio, and the formal Cues replace the live Cues.
 
-重转录会覆盖现有 transcript，必须使用显式确认参数，并先保留可恢复现场。
+Re-transcription overwrites the existing transcript. It must use the explicit confirmation flag, and a recoverable state must be preserved first.
 
-## 3. 阶段依赖与默认链
+## 3. Stage Dependencies and Default Chain
 
-内部依赖图：
+Internal dependency graph:
 
 ```text
 transcribe
-  → polish（同一结果派生 paragraph）
+  → polish (the same result derives paragraph)
   → translate
-  → 对齐候选过滤
-  → 批量 LLM 对齐
-  → check 残余热点
-  → 定向 refine-align
+  → alignment candidate filtering
+  → batch LLM alignment
+  → check residual hotspots
+  → targeted refine-align
 ```
 
-性能结论：
+Performance conclusions:
 
-- 首次 polish 已从通过校验的 paragraph/sentence 结果派生 `paraBreaks` 与
-  segment stamp；普通翻译任务不应预先再跑 standalone segment。
-- translate 的硬前置是 `polish=fresh`。`segment=stale` 可能只是 polish 改词后的
-  正常状态，不应因此重复分段。
-- 页面文本编辑 apply 后，使用 `auto --polish` 明确重新验证润色前置。
-- chapters 只在用户要求导航章节时运行，不替代 paragraph。
-- 默认 translate 增量处理缺失或源文变化的句；`--force` 才全量重翻。
+- After the first polish, `paraBreaks` and segment stamps are derived from the paragraph/sentence results that passed validation. Ordinary translation tasks should not run a standalone segment beforehand.
+- The hard prerequisite for translate is `polish=fresh`. `segment=stale` may simply be the normal state after polish changed wording, and should not by itself trigger re-segmenting.
+- After a page text edit is applied, use `auto --polish` to explicitly re-validate the polish prerequisite.
+- chapters run only when the user asks for chapter navigation; they do not replace paragraph.
+- By default, translate processes incrementally only the sentences that are missing or whose source changed; only `--force` re-translates everything.
 
-默认链：
+Default chain:
 
 ```bash
 rm -f $PROJ/studio/worker_stop
 $CCUT --json auto $PROJ --polish --lang zh &
 ```
 
-普通链路直接把所有长句批量交给 many-to-one LLM，首轮完成拆分与对齐；
-`refine-align` 只处理 check 后仍残留的顽固句，不是固定第二阶段。兼容参数
-`--align-local` 已弃用，即使传入也不会绕过长句 LLM。显式全量
-`--align-only --yes` 仍保留给对齐实验。
+The ordinary pipeline sends all long sentences in one batch to the many-to-one LLM, completing splitting and alignment in the first pass. `refine-align` only handles the stubborn sentences that remain after check; it is not a fixed second stage. The compatibility flag `--align-local` is deprecated; even if passed, it does not bypass the long-sentence LLM. The explicit full run `--align-only --yes` is still kept for alignment experiments.
 
-## 4. 对齐内部策略
+## 4. Alignment Internal Strategy
 
 ### 4.1 many-to-one
 
-**缺省载体：块对齐边（`align-edges/1`，对齐块设计 M3）。** 引擎先过滤无需拆分的
-句；translate 融合草稿（`<p>` 内 `<span data-src>` 块标注）先走确定性块核，落不了
-的句再进 dedicated 轮。dedicated 载荷是一张 HTML 表：`td.src` 是带 `[N]` 序号的
-句内源词，`td.tgt` 是完整自然译句；模型只把 `td.tgt` 改成
-`<span data-src="4-7">因为我病了，</span><span data-src="1 2 3">所以没去。</span>`
-——最小自然语义块按译文自身顺序，`data-src` 列源词序号（可乱序、可不连续、可空，
-一句内每序号至多一块）。它不切源、不切译、不解决交叉。之后全是代码：块 → 软边
-（0.75）+ 数字/URL/原样 Latin/术语硬边 → 安全边界（`leftMax < rightMin`）→
-最小单调块 → 双语 DP → `correspondence: block` + `blocks[]`。语序交叉自动落进同一
-块（`因为我病了，所以没去。` 整句一块仍是块级对应）；某块超 hard 才发一次
-`align-rewrite/1` 窄任务（同形表，`data-over-hard` 指出超限块与源词序号区间；模型
-按源语小句顺序改写整句并同时标 span；验收 ±max(25%,4) 阅读单位、锁定术语与数字/
-URL/Latin 锚不得丢、目标 AutoCorrect、改写文本上重跑块核必须成立 ⇒ 写
-`transDisplay{basis:"monotonic-rewrite"}` + `text_basis: display`，`trans` 不动；改写轮
-无修复），再不行整句对应（`correspondence: sentence`）。首轮失败句共享一次全局修复
-（问题码：`align-edge-ordinal` / `align-edge-text` / `missing-id` …），预算耗尽先试
-纯锚点块对齐，最后才是确定性目标语切分兜底。提交期 lint 与引擎共用
-`parse_align_edges` 一份校验器；`ccut translate --align-carrier table` 切回下面的
-两列切分表作审阅/修复载体（自报 `data-crossing` 落整句对应，`data-reordered` 改写
-落 `transDisplay{basis:"table-reorder"}`）。
+**Default carrier: block alignment edges (`align-edges/1`, alignment block design M3).** The engine first filters out sentences that need no splitting. For the fused translation draft (`<span data-src>` block annotations inside `<p>`), it first tries the deterministic block kernel; sentences the kernel cannot resolve go to a dedicated round. The dedicated payload is an HTML table: `td.src` is the in-sentence source words with `[N]` ordinals, and `td.tgt` is the complete, natural translated sentence. The model only changes `td.tgt` into `<span data-src="4-7">因为我病了，</span><span data-src="1 2 3">所以没去。</span>` (“I got sick, so I didn't go.”). The minimal natural semantic blocks follow the target's own order, and `data-src` lists source word ordinals (they may be out of order, non-contiguous, or empty; each ordinal appears in at most one block per sentence). It does not split the source, does not split the target, and does not resolve crossings. Everything after that is code: blocks → soft edges (0.75) + hard edges for numbers/URLs/verbatim Latin/terms → safe boundary (`leftMax < rightMin`) → minimal monotone blocks → bilingual DP → `correspondence: block` + `blocks[]`. Word-order crossings fall into the same block automatically (a whole sentence such as `因为我病了，所以没去。` in one block is still block-level correspondence). If a block exceeds the hard limit, one narrow `align-rewrite/1` task is issued. It uses the same table shape, with `data-over-hard` marking the over-limit block and its source word ordinal range; the model rewrites the whole sentence following the source clause order and marks spans at the same time. Acceptance requires ±max(25%,4) reading units, locked terms and numbers/URLs/Latin anchors must not be lost, the target must pass AutoCorrect, and the block kernel must hold when rerun on the rewritten text ⇒ write `transDisplay{basis:"monotonic-rewrite"}` + `text_basis: display`, with `trans` unchanged. The rewrite round has no repair. If that still fails, fall back to sentence-level correspondence (`correspondence: sentence`). Sentences that fail in the first round share one global repair (issue codes: `align-edge-ordinal` / `align-edge-text` / `missing-id` …). When the budget is exhausted, first try pure anchor block alignment; the deterministic target-language split is the final fallback. The commit-time lint and the engine share one validator, `parse_align_edges`. `ccut translate --align-carrier table` switches back to the two-column split table below as the review/repair carrier (self-reported `data-crossing` falls back to sentence-level correspondence; `data-reordered` rewrites land in `transDisplay{basis:"table-reorder"}`).
 
-**审阅/修复载体：两列切分表（`align-table/1`）。** 需要 LLM 的句按序连续分批，页数取三条约束的最大值：
+**Review/repair carrier: two-column split table (`align-table/1`).** Sentences that need the LLM are batched in consecutive order. The page count is the maximum of three constraints:
 
-- `atomize::word_count`：Latin 按词、CJK 按字、依附标点不单算；执行器预算目前
-  都是 2000 词并带 10% slack；
-- 每页最多 40 个待对齐项，防止许多短句堆进一个超长人工任务；
-- 每页 16000 的确定性复杂度预算，近似 HTML 正文、建议片数、术语和双语锚点成本。
+- `atomize::word_count`: Latin is counted by words, CJK by characters, and attached punctuation is not counted separately. The executor budget is currently 2000 words, with 10% slack;
+- at most 40 pending items per page, so that many short sentences do not pile into one overlong manual task;
+- a deterministic complexity budget of 16000 per page, approximating HTML body text, suggested piece count, terms and bilingual anchor cost.
 
-页界再按复杂度均衡且保持句序连续；`CCUT_LLM_PAGE_WORDS` 只覆盖第一条词数约束。
-全量、`--align-only`、`--sentences` 定点修复以及唯一的全局修复轮共用这套算法，
-worker 槽位不改变页形。每项包含：
+Page boundaries are then balanced by complexity while keeping sentence order continuous. `CCUT_LLM_PAGE_WORDS` only overrides the first word-count constraint. The full run, `--align-only`, the `--sentences` targeted repair, and the single global repair round all share this algorithm; the worker slot count does not change the page shape. Each item contains:
 
 ```json
 {
@@ -213,84 +165,42 @@ worker 槽位不改变页形。每项包含：
 }
 ```
 
-`lengthPlan` 同时分析源语、目标语长度：英文等空格分词语言以词数为主；中文、日文
-和泰文以阅读字符为主；韩文以 eojeol（空格词组）为语义单位，并另受显示字符 hard
-约束。目标块数综合两侧 fit/soft 后给出 min/max/recommended，
-每侧另给每片建议范围。范围只指导均衡，不能凌驾于完整短语、语序交叉和双语语义。
-source 中可注入停顿提示：
+`lengthPlan` analyzes source and target length together. For space-tokenized languages such as English, word count is primary. For Chinese, Japanese and Thai, reading characters are primary. For Korean, eojeol (space-separated word groups) is the semantic unit, and it is additionally bound by the display-character hard limit. After combining the fit/soft limits of both sides, the target block count gives min/max/recommended, and each side additionally gives a suggested range per piece. The ranges only guide balancing; they cannot override complete phrases, word-order crossings, and bilingual meaning.
+Pause hints may be injected into the source:
 
-| 标记 | 词间 gap |
+| Marker | Gap between words |
 | --- | --- |
 | `⏸` | ≥ 0.25s |
 | `⏸⏸` | ≥ 0.6s |
 | `⏸⏸⏸` | ≥ 1.2s |
 
-模型先审阅确定性草稿：草稿已满足交付约束且语义映射正确时只返回
-`{"key":"…","useDraft":true}`；需要调整时从 `sourceBreakCandidates` 选择有序
-`sourceBreaks`，并只在 target 插入 ` | `：
+The model first reviews the deterministic draft. When the draft already meets the delivery constraints and the semantic mapping is correct, it returns only `{"key":"…","useDraft":true}`. When adjustment is needed, it selects an ordered `sourceBreaks` from `sourceBreakCandidates` and inserts ` | ` only in the target:
 
-- 两侧段数相同。
-- source 不由模型重抄；切点只能是程序给出的完整词边界 id。
-- target 逐字覆盖完整译句。
-- 严格按 target-first 两阶段执行：先仅按目标语自然度、术语与 fit/hard 预算确定并
-  冻结译文片，再把固定译文片映射到连续 source 词区间。source 的停顿/小句提示只服务
-  第二阶段映射，不能反向移动译文切点。
-- 非空 `data-target-frozen` 表示融合目标片已经单独通过验收、仅源锚失败；worker 必须逐字
-  保留 `draftTarget` 及全部分隔符，只返回新的 `sourceBreaks`。此类句豁免
-  `pieceCount.min`：既然译文片不可改动，就不会被要求"再加一刀"。
-- 源跨度超过单行预算或约 4s 时，只有目标片自身已有完整小句/并列动作缝才继续拆；
-  完整并列动作可用顿号缝，普通名词列表不能仅为对称而拆。
-- 语义完整优先；在语义允许时靠近双侧建议长度并满足目标语 hard 预算。
-- 单行宽度（fit）是硬约束，不是长度偏好。片超出单行视觉宽度且存在**自由缝**时
-  必须在该缝切开，`draftBlockers` 会连同切点两侧的文本一起给出。自由缝的判据
-  四条同时成立：切开后两侧都不再超 fit、两侧都不是闪现碎片、不触发任何客观
-  阻塞缝判据，且缝本身由原文的标点或**原文里真实存在的空白**背书——CJK 与
-  拉丁文交界处渲染时补出的空格不是缝（「担心 | AI 会抢走…」切的是动词和它的
-  宾语从句）。不存在自由缝的超 fit 片保持整片：那是译文改写要解决的问题，强切
-  只会把超行换成悬垂尾。
-- 裸尾片（无标点收尾）不得落在仍需后续成分的尾形上。判据是形态类而不是封闭
-  词表：处置式（把/将 + NP 后无谓语）、及物动词 + 趋向/结果补语（到/掉/出/成）
-  后缺宾、未闭合的方位框架（在/从/对… + 上/里/中/下/内/间）、兼语式（让/使/叫
-  + NP 后无谓语）、光动词（来/去 + 单音节重叠动词）缺宾、系词「是」缺表语；
-  另含结构助词「得」、副词（如何/只是/同时/预先）、助动词「可以」、待中心语的
-  量词短语（一系列/一块）、光动词 + 「了」（采用了/内置了/提供了）。「剩余的
-  35% 得 | 支撑…」「输出质量在数学上 | 与…相同」一律回炉；切点后移一到两字或
-  整片保留。成词陷阱（「心得」「以上」「即将」「把握」这类）走白名单豁免。
-  语境相关的光动词缺宾（知道/占用/生成）只记 advisory。
-- 不得切在并列连词 `和`/`及`/`与` 之前（「它们是 KV 缓存 | 和 PagedAttention」）；
-  只有前片以标点收尾时并列连词才可作片首。这是「片尾悬垂连词」的对称面。
-  对称的另一半同样禁止：不得切在**第二个并列项之后**而把定中结构的中心语甩到
-  下一片（「Key 和 Value | 矩阵」）。
-- 退化配对行：≥8 显示单位的译文片必须至少配 3 个源词；源词不够分配（或源区间
-  有 ≥2 词且宽度已达译文片 40%）时豁免，否则让相邻短语共享一片，不把源侧切成
-  碎屑；单词区间不吃宽度豁免，高亮按词推进只有一步。
-- 停顿是参考，不是强制切点。
+- Both sides have the same number of pieces.
+- The model does not retype the source; break points can only be the complete word-boundary ids provided by the program.
+- The target covers the complete translated sentence verbatim.
+- Strictly follow the target-first two-stage process. First, based only on target-language naturalness, terms, and fit/hard budgets, determine and freeze the target pieces. Then map the fixed target pieces onto contiguous source word ranges. Source pause and clause hints serve only the second-stage mapping and must not move the target break points.
+- A non-empty `data-target-frozen` means the fused target pieces have already passed acceptance individually and only the source anchor failed. The worker must keep `draftTarget` and all separators verbatim, and return only the new `sourceBreaks`. Such sentences are exempt from `pieceCount.min`, since the target pieces cannot change and will not be asked to "add one more cut".
+- When the source span exceeds the single-line budget or about 4s, split further only if the target piece itself already has a complete clause or parallel-action seam. A complete parallel action may use a 顿号 (、) seam; ordinary noun lists must not be split just for symmetry.
+- Semantic completeness comes first. Where meaning allows, stay close to the suggested lengths on both sides and satisfy the target-language hard budget.
+- Single-line width (fit) is a hard constraint, not a length preference. When a piece exceeds the single-line visual width and a **free seam** exists, it must be cut at that seam. `draftBlockers` provides the text on both sides of the cut point together. A free seam must meet four criteria at the same time: after the cut, neither side exceeds fit; neither side is a flash fragment; no objective blocking-seam criterion is triggered; and the seam itself is backed by punctuation in the original or by **real whitespace present in the original text**. A space that rendering inserts at a CJK/Latin boundary is not a seam (“担心 | AI 会抢走…” (“worry | AI will take away…”) cuts between a verb and its object clause). A piece over fit with no free seam stays whole. That is a problem for the translation rewrite to solve; forced cutting would only turn the overlong line into a dangling tail.
+- A bare tail piece (one ending without punctuation) must not fall on a tail shape that still needs following constituents. The criterion is morphological, not a closed word list: the disposal construction (把/将 + NP with no predicate after it); a transitive verb + directional or resultative complement (到/掉/出/成) missing its object; an unclosed locative frame (在/从/对… + 上/里/中/下/内/间); the pivotal construction (让/使/叫 + NP with no predicate after it); a light verb (来/去 + monosyllabic reduplicated verb) missing its object; the copula “是” missing its predicate. It also covers the structural particle “得”, adverbs (如何/只是/同时/预先), the auxiliary “可以”, measure-word phrases awaiting a head noun (一系列/一块), and a light verb + “了” (采用了/内置了/提供了). “剩余的 35% 得 | 支撑…” and “输出质量在数学上 | 与…相同” (“the remaining 35% must | support…” and “output quality mathematically | is the same as…”) are always sent back for rework. Move the cut point one to two characters later, or keep the whole piece. Word-formation traps (such as “心得”, “以上”, “即将”, “把握”) are exempted through a whitelist. Light verbs missing an object that depends on context (知道/占用/生成) are recorded only as advisory.
+- Must not cut before the coordinating conjunctions `和`/`及`/`与`, e.g. “它们是 KV 缓存 | 和 PagedAttention” (“they are KV cache | and PagedAttention”). A coordinating conjunction may begin a piece only if the preceding piece ends in punctuation. This is the mirror of the "dangling conjunction at piece end" rule. The other half of the symmetry is equally forbidden: must not cut **after the second coordinated item**, which would push the head noun of a modifier structure onto the next piece (“Key 和 Value | 矩阵” (“Key and Value | matrix”)).
+- Degenerate pairing rows: a target piece of ≥8 display units must be paired with at least 3 source words. The exemption applies when there are not enough source words to allocate, or when the source range has ≥2 words and its width has already reached 40% of the target piece. Otherwise, let adjacent phrases share a piece rather than chopping the source side into crumbs. Single-word ranges get no width exemption, since word-by-word highlighting then advances only one step.
+- Pauses are a reference, not a forced break point.
 
-程序把 source 片回锚连续词区间并派生展示时间。批内通过的句立即收下；所有首轮
-批次的失败句合并后共享一个全局修复轮，仍不合格才确定性兜底。按当前复杂度预算，
-约 120–130 个典型待切句通常是 5 个首轮调用，修复轮只重发失败集合并沿同一规则
-扇出，不会整篇重发。
+The program anchors the source pieces back onto contiguous word ranges and derives display timing. Sentences that pass within a batch are accepted immediately. The sentences that fail across all first-round batches are merged and share one global repair round; only those still failing fall back to the deterministic split. Under the current complexity budget, about 120–130 typical sentences awaiting splitting usually take 5 first-round calls. The repair round only resends the failing set and fans out under the same rules, so the whole document is never resent.
 
-修复调用只用于不可交付的结构错误：未知或重复 key、非法源词边界、双侧片数不等、
-源词或译文未完整覆盖、空片、无效区间、目标片超过 hard、未完成中文数量短语、
-裸尾片落在不可停顿的弱尾形上、并列连词起首、退化配对行、
-冻结目标片漂移，以及存在目标语自然缝的双语源行过密。目标片因 hard 被确定性续拆后，若比例源锚会落进绑定短语则直接改为 independent，
-不为机械重锚再耗一次调用。soft 超限和仅由自然语序交叉造成的片长不均仍记 advisory，
-不会单独触发昂贵返工。
+Repair calls are used only for undeliverable structural errors: unknown or duplicate keys, illegal source word boundaries, unequal piece counts on the two sides, source words or target not fully covered, empty pieces, invalid ranges, target pieces exceeding hard, unfinished Chinese numeral-measure phrases, bare tail pieces falling on a weak, non-pausable tail shape, pieces starting with a coordinating conjunction, degenerate pairing rows, drift in frozen target pieces, and bilingual source lines that are too dense where natural target-language seams exist. If a target piece is deterministically re-split because of hard, and the proportional source anchor would then fall inside a bound phrase, it is changed directly to independent, without spending another call on mechanical re-anchoring. Soft overruns and piece-length imbalance caused solely by natural word-order crossings are still recorded as advisory and do not on their own trigger expensive rework.
 
-### 4.2 其他模式
+### 4.2 Other modes
 
-- `independent`：目标语独立切行，零 LLM，适合单语自然排版。
-- `many-to-one`：所有源语或目标语超长句进入批量 LLM。
+- `independent`: the target language is cut into lines independently, with zero LLM calls; suits natural single-language layout.
+- `many-to-one`: all over-long source or target sentences go into the batch LLM.
 
-翻译 Cue 与 transcript/subtitle 的源 Cue 完全独立。两种模式都从 Sentence 的词序列
-与词时间窗派生目标 Cue；源 Cue 只服务原文流，不能参与翻译对齐或失效判断
-（编辑器原文列的只读展示分组除外，见 Transcript v0.3 §5.2）。`breaks` 改变后
-译文片文本、词跨度和指纹必须保持不变。历史 `one-to-one` 模式
-因依赖源 Cue 已停用。本地 Agent task 与 Cloud Model/provider 共用这一契约；任一侧的
-prompt、schema 或验收变化必须同步另一侧并以同一回归夹具验证。
+Translation Cues are fully independent of the source Cues of the transcript/subtitle. Both modes derive target Cues from the word sequence and word time windows of the Sentence; source Cues only serve the original-text stream and may not take part in translation alignment or invalidation decisions (except for the read-only display grouping of the editor's source-text column, see Transcript v0.3 §5.2). After `breaks` changes, the translated segment text, word spans and fingerprints must remain unchanged. The historical `one-to-one` mode has been deprecated because it depends on source Cues. The local Agent task and the Cloud Model/provider share this contract; any change to the prompt, schema or acceptance on either side must be synchronized to the other side and verified with the same regression fixture.
 
-模式按句保存，可定向重跑：
+Modes are saved per sentence and can be re-run in a targeted way:
 
 ```bash
 $CCUT --json translate $PROJ \
@@ -300,15 +210,15 @@ $CCUT --json translate $PROJ \
   --align-mode many-to-one
 ```
 
-全量 `--align-only` 需要显式确认，一般只用于对齐实验。
+A full `--align-only` run requires explicit confirmation and is generally used only for alignment experiments.
 
-需要修正完整译句时省略 `--align-only`：
+To fix a complete translated sentence, omit `--align-only`:
 
 ```bash
 $CCUT --json translate $PROJ --lang zh --sentences s-a,s-b
 ```
 
-该命令只重翻并重新对齐显式句集，其他 fresh 译句保持不变。
+This command only re-translates and re-aligns the explicit sentence set; other fresh translated sentences remain unchanged.
 
 ## 5. refine-align
 
@@ -316,80 +226,45 @@ $CCUT --json translate $PROJ --lang zh --sentences s-a,s-b
 $CCUT refine-align $PROJ --lang <lang>
 ```
 
-它优先读取 check 的全量 `warnings[].allItems` / `allSentences` / `allPieces`，
-而不是只复制人类可读摘要或 `check.next` 里的截断修复命令：
+It reads the full `warnings[].allItems` / `allSentences` / `allPieces` from check first, rather than copying only the human-readable summary or the truncated repair command in `check.next`:
 
 - `align-overfit`
 - `align-stale`
-- `translation-overflow` 所属句
+- sentences belonging to `translation-overflow`
 - `align-source-ceiling` / `align-source-fragment`
 - `align-source-seam` / `align-target-seam`
 - `align-paired-density` / `align-bilingual-anchor` / `align-degraded-fallback`
-- `align-row-deficit`（译文黏结：一条译文压住多条源行且驻留超限）
-  （只保证整句对应的条目与引擎放行口径一致，不报锚点错位，改由 `infos[]` 的
-  `align-sentence-level` 列出；`align-weak-block` / `align-display-rewrite` 与
-  `alignMetrics[lang]` 同为结构事实，不产生 fix、不进热点）
+- `align-row-deficit` (translation sticking: one translated line covers multiple source lines and its dwell exceeds the limit)
+  (It only guarantees that sentence-level entries match the engine's acceptance criteria; it does not report anchor misalignment, which is instead listed by `align-sentence-level` in `infos[]`. `align-weak-block` / `align-display-rewrite` are, together with `alignMetrics[lang]`, structural facts that produce no fix and do not enter hotspots.)
 
-默认把全量热点组成一次定向任务，只跑一轮 LLM；显式 `refine-align` 仅当这一轮
-空转（仍失败的句源几何与入轮逐字相同）或被扇出上限截断时，再把**这些 no-op /
-deferred 句**补发至多一轮，不再重发已改变几何却仍顽固的句（`rounds` 因此可能是
-0/1/2）。`auto` 的收尾没有额外续轮，并把内部 repair 预算设为 0，避免在主 align
-之后重置全阶段预算。结束时写
-`studio/worker_stop`，用于区分“阶段间队列暂空”和“整条链结束”。
+By default, the full set of hotspots is grouped into one targeted task that runs a single LLM round. An explicit `refine-align` only re-dispatches these **no-op / deferred sentences** for at most one more round when that round is idle (the source geometry of sentences still failing is identical to what entered the round) or when it is truncated by the fan-out cap. It does not resend sentences whose geometry has changed but still resist (so `rounds` may be 0, 1 or 2). The `auto` wrap-up has no extra follow-up round and sets the internal repair budget to 0, to avoid resetting the budget for all stages after the main align. On finish, it writes `studio/worker_stop`, which distinguishes "the queue is briefly empty between stages" from "the whole chain has ended".
 
-输出：
+Output:
 
-- `status=clean`：可结束。
-- `status=residual`：`remaining[]` 是仍无法合法 recut 的句。
+- `status=clean`: may finish.
+- `status=residual`: `remaining[]` lists sentences that still cannot be legally recut.
 
-对 residual 不重复相同 recut。可选：
+Do not repeat the same recut for residuals. Options:
 
-1. 通过 Studio sentence rewrite 缩短译文。
-2. apply 后只重对齐该句。
-3. 无法消除时作为已知残留报告。
+1. Shorten the translation through Studio sentence rewrite.
+2. After applying, re-align only that sentence.
+3. If it cannot be eliminated, report it as a known residual.
 
 ## 6. Agent claim/submit
 
-flow 使用 `--llm agent` 时阻塞等待应答。首批请求挂出后先查看队列规模：
+When a flow uses `--llm agent`, it blocks waiting for answers. After the first batch of requests is posted, check the queue size first:
 
 ```bash
 $CCUT --json task status $PROJ
 ```
 
-worker 一律按需拉起：启动 producer 时只随之起**一个**无 kind 过滤的 catch-all
-worker（媒体处理与串行 analysis/polish/translate-brief 阶段只需要它），不提前养
-任何额外 worker——空转 worker 占着一整个模型会话，成本远高于一次晚起的启动开销。
-调用挂出后的 `batch-dispatch.workerPlan` 与 `task status` 中的 `workerPlans[]` 按
-`task + kind` 给出 `execution`、`suggestedWorkers`、`claimKinds`、
-`recommendedEffort`、`poolKey` 和 `maxLeaseSec`。`recommendedEffort` 对 align（含
-同 kind 的全局 repair）为 `high`，其余阶段为 `medium`；编排者应按这个提示选择
-worker 推理档位，旧 worker 忽略该字段仍可正常认领。并行阶段建议数为
-`min(上限, pendingCount)`，上限默认 3、可由
-`CCUT_LLM_MAX_WORKERS` 覆盖（0 表示按 `pendingCount` 全开）；未显式覆盖且同 task
-已交付调用的 worker 时长中位数（`observedWorkerSec`）≥ 90 s 时，上限自动放大为
-`ceil(pendingCount/2)` 并夹在 3..16——agent 会话每页数分钟的慢 worker 池不再被
-钉在 3 路。plan 里的 `maxWorkers` 是当前生效上限（不限时 `null`），
-`expectedWaves = ceil(pendingCount/suggestedWorkers)` 是按建议数起 worker 的预计波次数；
-串行阶段恒为 1。
-`suggestedWorkers` 是按实际待办算出的**上限提示**，不是必须凑满的下限：编排者看到
-并行批次后把在跑的 worker 补到 `min(pendingCount, 可用槽数)`，没有待办就不补。
-长视频 translate 与 align 通常会把建议数吃满——批次之间互相独立，worker 明显少于
-批数时墙钟由排队而非应答时间决定。阶段边界不需要提前备人：worker 用 `submit --next`
-在同一会话内直接续认领下一批（含 align 与全局修复调用）；claim 超时且队列为空即
-退出，不做常驻热备，下一个并行批次出现时重新拉起。worker 在整条 flow 内可持续复用，
-但每次必须按 `claimKinds` 显式重新分配，仍以 `worker_stop` 作为退出信号。
+Workers are always started on demand. When starting the producer, start only **one** catch-all worker with no kind filter (media processing and the serial analysis/polish/translate-brief stages only need that one). Do not pre-start any extra workers: an idle worker occupies an entire model session, and its cost far exceeds the overhead of starting a worker a little later. After calls are posted, `batch-dispatch.workerPlan` and `workerPlans[]` in `task status` give, per `task + kind`, `execution`, `suggestedWorkers`, `claimKinds`, `recommendedEffort`, `poolKey` and `maxLeaseSec`. `recommendedEffort` is `high` for align (including the global repair of the same kind) and `medium` for the other stages. The orchestrator should choose the worker's reasoning tier according to this hint; old workers ignore the field and can still claim normally. The suggested worker count for parallel stages is `min(cap, pendingCount)`, where the cap defaults to 3 and can be overridden by `CCUT_LLM_MAX_WORKERS` (0 means open all according to `pendingCount`). When it is not explicitly overridden and the median worker duration of delivered calls for the same task (`observedWorkerSec`) is ≥ 90 s, the cap is automatically raised to `ceil(pendingCount/2)` and clamped to 3..16, so a pool of slow agent-session workers taking minutes per page is no longer pinned to 3 lanes. `maxWorkers` in the plan is the currently effective cap (`null` when unlimited), and `expectedWaves = ceil(pendingCount/suggestedWorkers)` is the expected number of waves when workers are started at the suggested count. Serial stages are always 1.
 
-编排端实际可用槽数不等于默认 3 时，起 `ccut` 前先
-`export CCUT_LLM_MAX_WORKERS=<真实槽数>`：该值决定 `suggestedWorkers` 和实际
-并发消费上限，但不改变分页形状。translate 默认（`--align-fusion rows`）按
-800 源文词预算（+10% slack）形成页面，`ceil(源文词数/880)`；`--align-fusion
-on|off` 回退到 2000 词预算（`/2200`），详见 AI 管线设计 §8.6.1/§10.4。align 的预计页数取
-`ceil(源文词数/2200)`、`ceil(待对齐项/40)` 与
-`ceil(复杂度总成本/16000)` 的最大值——这一档不随 `--align-fusion` 取值改变。
-编排者应以实际 `workerPlans[]` 为准，真实
-槽数取 `min(预计页数, 能同时跑的 worker 会话数)`。
+`suggestedWorkers` is a **ceiling hint** computed from the actual pending work, not a minimum that must be filled. After seeing a parallel batch, the orchestrator tops up running workers to `min(pendingCount, available slots)`, and does not top up when there is no pending work. Long-video translate and align usually fill the suggested count, since batches are independent of each other. When there are clearly fewer workers than batches, wall-clock time is determined by queueing rather than response time. Stage boundaries do not need people staged in advance: a worker uses `submit --next` to claim the next batch directly within the same session (including align and global repair calls). When a claim times out and the queue is empty, the worker exits; there is no standby hot spare. It is started again when the next parallel batch appears. A worker can be reused throughout the whole flow, but each time it must be explicitly reassigned according to `claimKinds`, and `worker_stop` remains the exit signal.
 
-认领：
+When the orchestrator's actual available slot count is not the default 3, run `export CCUT_LLM_MAX_WORKERS=<actual slot count>` before starting `ccut`. This value determines `suggestedWorkers` and the actual concurrent consumption cap, but does not change the paging shape. By default, translate (`--align-fusion rows`) forms pages on an 800 source-word budget (+10% slack), i.e. `ceil(source words/880)`. `--align-fusion on|off` falls back to a 2000-word budget (`/2200`); see AI pipeline design §8.6.1/§10.4. The expected page count for align is the maximum of `ceil(source words/2200)`, `ceil(items to align/40)` and `ceil(total complexity cost/16000)`, and this tier does not change with the `--align-fusion` value. The orchestrator should go by the actual `workerPlans[]`; the real slot count is `min(expected pages, number of worker sessions that can run at the same time)`.
+
+Claim:
 
 ```bash
 $CCUT --json task claim $PROJ \
@@ -397,7 +272,7 @@ $CCUT --json task claim $PROJ \
   --timeout 240
 ```
 
-典型返回：
+Typical return:
 
 ```json
 {
@@ -412,7 +287,7 @@ $CCUT --json task claim $PROJ \
 }
 ```
 
-作答后：
+After answering:
 
 ```bash
 $CCUT --json task submit $PROJ \
@@ -423,121 +298,107 @@ $CCUT --json task submit $PROJ \
   --next
 ```
 
-要点：
+Key points:
 
-- 首次遇到 kind 时读取 contract；每次读取 payload。
-- contract 是本次答案 shape 的权威来源。
-- `--task` 防止不同 task 下相同 callId 撞名。
-- 答案文件放临时目录，不放仓库或项目根。
-- submit 省略 `--worker` 时按本次租约的持有者记账，`--next` 也用这个 id 续认领；
-  不要为了省事传一个跟 claim 不一致的 id，否则续认领会落到别的 worker 身上。
-- rejected 后按 `problems` 修正，同租约重交；历史上同一调用最多允许 3 次。
-- `--next` 合并 submit 与下一次认领，并给依赖请求约 2 秒落盘窗；返回 empty 时看
-  同一应答里的 `producerState`/`activeTasks`：`alive` 说明 producer 仍在跑（阶段间
-  串行段或引擎计算），再做一次有界 `claim --timeout 300` 保活，避免下一波次冷启动；
-  `gone` 说明登记过的 producer 已全部退出，不会再挂出调用，直接退出；`unstarted`
-  说明项目里还没有任何 producer 记录——flow 多半仍在下载或转录，第一波 AI 调用尚未
-  派发，与 t=0 起跑的基线 worker 同处正常空档，继续有界等待。`producerAlive` 是
-  `producerState == "alive"` 的兼容布尔，它的 `false` 同时覆盖 `gone` 与 `unstarted`，
-  不能单独用作退出判据。
-- worker 崩溃后重新 claim；租约和幂等性由 CLI 管理。
+- On first encountering a kind, read the contract; read the payload every time.
+- The contract is the authoritative source for the shape of this answer.
+- `--task` prevents identical callIds under different tasks from colliding.
+- Put answer files in a temporary directory, not in the repository or project root.
+- When submit omits `--worker`, it is booked to the holder of this lease, and `--next` also uses this id to continue claiming. Do not pass an id that differs from the claim to save effort, or the continued claim will land on another worker.
+- After a rejection, correct according to `problems` and resubmit under the same lease. Historically, a single call was allowed at most 3 attempts.
+- `--next` merges submit with the next claim and allows a window of about 2 seconds for dependent requests to be flushed to disk. When it returns empty, check `producerState` / `activeTasks` in the same response. `alive` means the producer is still running (a serial segment between stages, or engine computation), so make one bounded `claim --timeout 300` to keep alive and avoid a cold start for the next wave. `gone` means all registered producers have exited and no more calls will be posted, so exit directly. `unstarted` means the project has no producer record yet; the flow is probably still downloading or transcribing, and the first wave of AI calls has not been dispatched. This is normal dead time alongside the baseline worker started at t=0, so keep waiting boundedly. `producerAlive` is the compatibility boolean for `producerState == "alive"`; its `false` covers both `gone` and `unstarted`, so it must not be used alone as an exit criterion.
+- After a worker crashes, claim again; the CLI manages leases and idempotency.
 
-租约按 payload 大小分档：短载荷 600 秒、中载荷 900 秒、长载荷 1800 秒。认领后
-应连续完成读取、作答和提交，避免把无关工作插入租约窗口。
+Leases are tiered by payload size: 600 seconds for short payloads, 900 seconds for medium, 1800 seconds for long. After claiming, read, answer and submit continuously, and do not insert unrelated work into the lease window.
 
-历史答案 shape：
+Historical answer shapes:
 
-| kind | 形状与关键约束 |
+| kind | Shape and key constraints |
 | --- | --- |
-| `analysis` / `brief` | `summary`、`terms[]`、`namedEntities[]` |
-| `polish` | `paragraphs[].sentences[]`；拼接完整覆盖输入，句边界语义完整 |
+| `analysis` / `brief` | `summary`, `terms[]`, `namedEntities[]` |
+| `polish` | `paragraphs[].sentences[]`; the concatenation fully covers the input, and sentence boundaries are semantically complete |
 | `polish-retry` | `sentences[].startWordIndex/correctedText` |
-| `segment` | `paragraphs[]`；逐字保留，只调整标点和边界 |
+| `segment` | `paragraphs[]`; preserve characters verbatim, only adjust punctuation and boundaries |
 | `segment-index` | `paragraphs[].startWordIndex/endWordIndex` |
-| `chapters` | NDJSON `{title,startSeg}`（历史；现为 file-v1 HTML `<h2>` + 概要 + `<p id>` 首段锚，见 AI 管线设计 §7） |
-| `translate` | `translations{sentenceId:text}`；每个请求句恰好一次 |
-| `align` | `sentences[].key/sourceBreaks/target`；源侧选候选 id，目标侧仅插 ` | ` |
+| `chapters` | NDJSON `{title,startSeg}` (historical; now file-v1 HTML `<h2>` + summary + `<p id>` first-paragraph anchor, see AI pipeline design §7) |
+| `translate` | `translations{sentenceId:text}`; each requested sentence exactly once |
+| `align` | `sentences[].key/sourceBreaks/target`; the source side selects candidate ids, the target side only inserts ` | ` |
 
-运行时 contract 可能演进，表格只用于理解历史设计，不能替代读取 contract。
+The runtime contract may evolve. The table is only for understanding the historical design and cannot replace reading the contract.
 
-## 7. Worker 失联恢复
+## 7. Worker disconnect recovery
 
-长回答期间 worker 可能失联。可同时运行：
+A worker may lose contact during a long answer. You can run the following at the same time:
 
 ```bash
 $CCUT task watch $PROJ
 ```
 
-观察到 pending 调用长时间没有 claim 活动时，watch 历史上以 exit 3 唤醒编排者。
+When pending calls are observed with no claim activity for a long time, watch has historically woken the orchestrator with exit 3.
 
-恢复顺序：
+Recovery order:
 
-1. 若已有完成答案，重新 claim 后立即 submit。
-2. 若无答案，编排者读取 contract/payload 后作答。
-3. 需要继续批量处理时重建持久 worker。
-4. 处理完重新启动 watch。
+1. If a completed answer already exists, re-claim and submit it immediately.
+2. If there is no answer, the orchestrator reads the contract/payload and answers.
+3. When batch processing needs to continue, rebuild persistent workers.
+4. After processing, restart watch.
 
-旧实践使用 `<task>-<callId>.json` 命名答案，避免跨 task 覆盖。认领后应尽快完成
-作答和提交，不在租约中间穿插无关工作。
+Legacy practice names answer files `<task>-<callId>.json` to avoid overwriting across tasks. After claiming, complete answering and submission as quickly as possible, and do not interleave unrelated work in the middle of a lease.
 
-质量经验：
+Quality notes:
 
-- polish 句边界保持一个完整问句或陈述句。
-- translate 译句自然、简洁、术语一致，产品名保留原文。
-- align 切在标点和语义缝，片长尽量均衡。
-- 自产 JSON 字符串注意引号转义；要求逐字抄回的字段不得改写引号。
+- polish sentence boundaries keep one complete question or statement.
+- translate: translations are natural, concise and terminology-consistent; product names stay in the original.
+- align: cut at punctuation and semantic seams, and keep segment lengths as balanced as possible.
+- Watch quote escaping in self-produced JSON strings; fields that must be copied back verbatim must not have their quotes rewritten.
 
-## 8. 进度提交
+## 8. Progress commits
 
-LLM 阶段：
+LLM stages:
 
-- flow 启动时创建 `studio/progress.json`。
-- task 派发/submit 分别刷新模型调用分母/分子；`callsDone` / `callsTotal` 可直接显示
-  `x/y`。
-- `flow` / `lang` / `taskId` 标识当前外部 flow，失败时 `error` 保留可见错误；这些
-  均为可选增量字段，旧消费者应宽容解码。
-- translate 先批量挂出全部页面；任一页面结果就绪并通过校验后立即 checkpoint，先
-  刷新 `studio/data.json`，再推进 progress，不等待同批其他页面，也不改变逐页提交
-  约束。失败页面独立进入下一轮重试。
-- data/progress 都带 `contentFingerprint`。
-- 指纹不一致时页面显示 syncing，不显示完成。
-- Studio 约每秒轮询 progress，所以调用计数与阶段变化可以实时出现。
+- The flow creates `studio/progress.json` on start.
+- Task dispatch / submit refresh the model-call denominator / numerator respectively; `callsDone` / `callsTotal` can be shown directly as `x/y`.
+- `flow` / `lang` / `taskId` identify the current external flow; on failure, `error` keeps the visible error. These are all optional incremental fields, and old consumers should decode them tolerantly.
+- translate posts all pages in one batch first. As soon as any page's result is ready and passes validation, it checkpoints immediately: it first refreshes `studio/data.json`, then advances progress. It does not wait for the other pages in the same batch, and it does not change the per-page submission constraint. Failed pages independently enter the next retry round.
+- data and progress both carry `contentFingerprint`.
+- When fingerprints disagree, the page shows syncing, not complete.
+- Studio polls progress about once per second, so call counts and stage changes can appear in real time.
 
-转录仍走 JSONL + `studio sync --live-jsonl`。
+Transcription still goes through JSONL + `studio sync --live-jsonl`.
 
-内容投影成功是阶段前进的提交门。不能先报完成、后写正文。
+Successful content projection is the commit gate for stage advancement. Do not report completion before the body text has been written.
 
-## 9. 交付门
+## 9. Delivery gates
 
 ```bash
 $CCUT --json project show $PROJ
 $CCUT --json check $PROJ --lang <lang>
 ```
 
-历史判断：
+Historical rules:
 
-- 润色交付要求 `polish=fresh`。
-- 翻译交付要求 polish 与目标语言翻译 fresh。
-- 翻译与 `align-edges` 的 Agent submit 是不可穿透硬门：只有结构与内容质量都通过的答案才会结算；目标脚本错误、占位、源文复制、异常短译和批次短串塌缩不能靠 lint 次数 force-through。hedge 采用首个完整质量门通过者，而不是首个写出 HTML 者。
-- 翻译载体的 `data-validator` 属于应答复用键的一部分；校验器版本变化后不得人工搬运旧 response 绕过自动失效。
-- `segment=stale` 不必在 polish 后机械重跑。
-- `chapters=never` 只表示没有章节导航。
-- blockers 必须消除；warnings 要报告影响。
+- Polish delivery requires `polish=fresh`.
+- Translation delivery requires polish and the target-language translation to be fresh.
+- Agent submits for translation and `align-edges` are impenetrable hard gates: only answers that pass both structure and content quality are settled. Target-script errors, placeholders, source-text copying, abnormally short translations and batch short-line collapse cannot be forced through by lint count. For hedging, the first candidate to pass the full quality gate is adopted, not the first one to write out HTML.
+- The `data-validator` of the translation carrier is part of the response reuse key. After a validator version change, old responses must not be manually moved over to bypass automatic invalidation.
+- `segment=stale` does not need to be mechanically re-run after polish.
+- `chapters=never` only means there is no chapter navigation.
+- Blockers must be eliminated; warnings must be reported with their impact.
 
-check 常见项：
+Common check items:
 
-| 诊断 | 动作 |
+| Diagnostic | Action |
 | --- | --- |
-| `translation-stale` | 增量重跑 translate |
-| `align-stale` | 定向 align-only |
-| `align-overfit` | 定向重切 |
-| `align-source-fragment` | 定向重切（译文片挂在一两个源词的碎渣上） |
-| `polish-fallback` | **blocker**：`ai/polish.json` 里 `fallback: true` 的句在润色时被引擎退回原文（整页/单句校验未通过后保留原词），实际未经润色；`polish=fresh` 不代表这些句润过。按 `fix`（`ccut polish <project> --paragraphs <p-…>`，已进 `next[]`）定向重润，修好即消失 |
-| `polish-false-sentence-end` | 句末标点落在悬垂词上（假句末；合法的英语 wh 前置宾语 + 介词悬置除外）；只报不自动修，必要时按 `fix` 定向重润色 |
-| `translation-overflow` | 重切或改写译文 |
-| 孤儿键 | 核对是否由文本回写产生并报告 |
+| `translation-stale` | Incrementally re-run translate |
+| `align-stale` | Targeted align-only |
+| `align-overfit` | Targeted re-cut |
+| `align-source-fragment` | Targeted re-cut (the translated segment sits on a fragment of one or two source words) |
+| `polish-fallback` | **blocker**: sentences with `fallback: true` in `ai/polish.json` were reverted by the engine to the original text during polishing (the original words were kept after the whole-page/single-sentence validation failed), so they were not actually polished; `polish=fresh` does not mean these sentences were polished. Follow `fix` (`ccut polish <project> --paragraphs <p-…>`, already in `next[]`) to re-polish them in a targeted way; once fixed, it disappears |
+| `polish-false-sentence-end` | Sentence-final punctuation falls on a dangling word (a false sentence end; the legitimate English wh-fronted object plus stranded preposition is excepted). Report only, no automatic fix; if necessary, re-polish in a targeted way per `fix` |
+| `translation-overflow` | Re-cut or rewrite the translation |
+| orphan keys | Check whether they were produced by text write-back, and report |
 
-导出只有在用户明确要求时执行：
+Export is performed only when the user explicitly asks for it:
 
 ```bash
 $CCUT --json export $PROJ \
@@ -546,43 +407,40 @@ $CCUT --json export $PROJ \
   --lang <lang>
 ```
 
-无人值守 provider 模式使用：
+Unattended provider mode uses:
 
 ```text
 --llm provider:<vendor>/<model>
 CCUT_API_KEY_<VENDOR>
 ```
 
-它绕过 Agent claim/submit，适合明确要求的自动化运行，但失去逐调用人工质量控制。
+It bypasses Agent claim/submit. It suits explicitly requested automated runs, but loses per-call manual quality control.
 
-## 10. 断点续跑
+## 10. Resuming interrupted runs
 
-决策：
+Decisions:
 
-1. 项目不存在：新建。
-2. transcript 缺失但 live JSONL 存在：转录被打断；ASR 推理仍从头重跑，但有效的
-   模型 `.part` 会按 sidecar 身份校验并从文件中点续传。
-3. 翻译中断：先验证 polish fresh，再增量 translate。
-4. pendingCalls 存在：先确认原 flow 是否仍活着；活着则恢复 worker，已退出则重启
-   对应 flow，复用已提交结果。
-5. `studio/edits.json` 有未应用编辑：先 apply。
-6. 用户要求重来：明确会丢弃哪些结果，再使用显式覆盖选项。
+1. Project does not exist: create it.
+2. Transcript missing but live JSONL exists: transcription was interrupted; ASR inference still reruns from the start, but valid model `.part` files are verified against their sidecar identity and resumed from the middle of the file.
+3. Translation interrupted: verify that polish is fresh first, then translate incrementally.
+4. pendingCalls exist: first check whether the original flow is still alive; if it is, resume the worker; if it has exited, restart the corresponding flow and reuse the committed results.
+5. `studio/edits.json` has unapplied edits: apply them first.
+6. The user asks to start over: state explicitly which results will be discarded, then use the explicit override option.
 
-不要仅凭某个产物文件存在或翻译覆盖数判断阶段完成；以 stage fingerprint、
-`project show` 和 `check` 为证据。
+Do not judge a stage complete merely because an artifact file exists or because of the translation coverage count; use the stage fingerprint, `project show` and `check` as evidence.
 
-## 11. CucCut 老项目升级
+## 11. Upgrading old CucCut projects
 
 ```bash
 $CCUT --json upgrade-cuccut <id> [--root <CucCut 数据根>]
 ```
 
-原位升级语义：
+In-place upgrade semantics:
 
-- words、speakers、chapters、breaks、paraBreaks 尽量保留。
-- 导入端展示片归并为 ccut 句级 `trans`，源跨度写入 `transAlign`。
-- 两端指纹体系不互认，因此不继承旧 `transSrc` 和 stage stamps。
-- 原媒体存在时保持相对或外部引用且不复制；否则从项目内音频缓存生成 `media/main.m4a`。
-- 旧 JSON/JSONL 在新文件全部写成后移入项目 `archive/`；可用 `--dry-run` 先审查损失。
+- words, speakers, chapters, breaks and paraBreaks are kept where possible.
+- Import-side display segments are merged into ccut sentence-level `trans`; the source spans are written to `transAlign`.
+- The two sides' fingerprint schemes do not recognize each other, so the old `transSrc` and stage stamps are not inherited.
+- If the original media exists, it stays as a relative or external reference and is not copied; otherwise `media/main.m4a` is generated from the project's audio cache.
+- Old JSON/JSONL files are moved into the project's `archive/` once all the new files are written; use `--dry-run` first to review the loss.
 
-升级会生成 Studio 投影并登记项目；随后按普通项目运行 `studio sync` 与检查。
+The upgrade generates the Studio projection and registers the project; then the project is run through `studio sync` and checks like any ordinary project.

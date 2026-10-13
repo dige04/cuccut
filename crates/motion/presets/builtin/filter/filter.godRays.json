@@ -9,42 +9,42 @@
       "default": 0.5,
       "min": -1,
       "max": 2,
-      "doc": "光源 x，画布宽度的比例；可以在画面外"
+      "doc": "Light source x, as a fraction of canvas width; may lie outside the frame"
     },
     "cy": {
       "type": "number",
       "default": 0.0,
       "min": -1,
       "max": 2,
-      "doc": "光源 y，画布高度的比例；缺省在上边缘（天窗），可以在画面外"
+      "doc": "Light source y, as a fraction of canvas height; defaults to the top edge (a skylight); may lie outside the frame"
     },
     "threshold": {
       "type": "number",
       "default": 0.6,
       "min": 0,
       "max": 1,
-      "doc": "亮通门槛：预乘 RGB 最大分量（0..1）超过它的像素才发光，权重 (m − t)/(1 − t)"
+      "doc": "Bright-pass threshold: only pixels whose premultiplied RGB max component m (0..1) exceeds it glow, with weight (m − t)/(1 − t)"
     },
     "length": {
       "type": "number",
       "default": 0.5,
       "min": 0,
       "max": 0.95,
-      "doc": "光柱长度：每个像素朝光源回溯的比例；越大光柱拖得越长"
+      "doc": "Shaft length: the fraction each pixel traces back toward the light source; larger values give longer shafts"
     },
     "intensity": {
       "type": "number",
       "default": 1.5,
       "min": 0,
       "max": 8,
-      "doc": "光柱加回原图的倍数（加法）；0 = 原样不动"
+      "doc": "Multiple of the shafts added back onto the source image (additive); 0 = no change"
     },
     "decay": {
       "type": "number",
       "default": 0.6,
       "min": 0,
       "max": 1,
-      "doc": "衰减：沿光柱越远越暗，最远处的权重是 1 − decay；0 = 整条等亮"
+      "doc": "Decay: the further along the shaft, the darker; the furthest point has weight 1 − decay; 0 = the whole shaft is equally bright"
     },
     "tint": {
       "type": "color",
@@ -54,7 +54,7 @@
         1,
         1
       ],
-      "doc": "光柱色调，写颜色字符串（金色光写 \"#ffd98a\"），RGB 与 alpha 乘在光柱上；缺省白色"
+      "doc": "Shaft tint, set as a colour string (for gold light, use \"#ffd98a\"); RGB and alpha multiply the shafts; defaults to white"
     }
   },
   "color": {
@@ -70,5 +70,5 @@
   "determinism": "strict",
   "capabilities": [],
   "fallback": null,
-  "doc": "体积光 / 光柱：① 亮通——预乘 RGB 最大分量 m，整像素乘 w = clamp((m − threshold)/(1 − threshold), 0, 1)，同时 2×2 平均降到半分辨率；② 以光源 (cx·W, cy·H) 为中心做与 filter.radialBlur 相同的三遍对数步长缩放取样（每遍 8 个，σ = −ln(1 − length)），权重按 (1 − decay)^{o/σ} 衰减、各遍归一；③ 双线性上采样回原分辨率，RGB × tint.rgb × intensity、alpha × tint.a × intensity 加到原图，结果夹到 alpha ≥ RGB。像素收到的光来自「像素 → 光源」连线上的亮部，所以亮物体朝背离光源的方向拖出光柱。f32 四则运算，超越函数只在像素循环前用 libm 算权重表。intensity = 0 或 length = 0 逐字节恒等；亮部挂在全幅 Group 上，光柱不会被别的元素盒裁掉。"
+  "doc": "Volumetric light / god rays: ① bright-pass: premultiplied RGB max component m, per-pixel weight w = clamp((m − threshold)/(1 − threshold), 0, 1), with a 2×2 average down to half resolution; ② radial sampling centred on the light source (cx·W, cy·H), using the same three-pass log-step zoom as filter.radialBlur (8 per pass, σ = −ln(1 − length)), with weights attenuated by (1 − decay)^{o/σ} and normalized per pass; ③ bilinear upsample back to full resolution, with RGB × tint.rgb × intensity and alpha × tint.a × intensity added onto the source, result clamped to alpha ≥ RGB. A pixel receives light from the bright parts along the “pixel → light source” line, so bright objects drag shafts away from the light. f32 arithmetic; transcendental functions are used only through libm to precompute the weight table before the pixel loop. intensity = 0 or length = 0 is byte-identical to the source; bright parts are attached to the full-frame Group, so shafts are not clipped by other element boxes."
 }

@@ -3,43 +3,43 @@
   "id": "knowledge-explainer",
   "version": "1.1.0",
   "kind": "scene",
-  "title": "知识讲解",
-  "summary": "把一份文档、一套幻灯片或一个话题讲成好懂的视频。",
-  "description": "用清楚的解释和具体的例子帮观众理解一个概念。把你的资料组织成一条视觉叙事，讲解深浅按受众已有的知识来定。",
-  "language": "zh-CN",
+  "title": "Concept explainer",
+  "summary": "Turn a document, a slide deck or a topic into an easy-to-follow video.",
+  "description": "Help viewers understand a concept with clear explanations and concrete examples. Your material is shaped into a visual story, pitched to what the audience already knows.",
+  "language": "en",
   "category": "explainer",
   "ratio": "16:9",
   "durationSeconds": 90,
-  "brief": "根据{{资料}}，给{{受众}}讲清楚{{主题}}，看完能{{看完能做到什么}}。",
+  "brief": "Using {{source material}}, explain {{topic}} to {{audience}} so that afterwards they can {{learning goal}}.",
   "fields": [
     {
-      "label": "资料",
-      "hint": "附上的文档、幻灯片或链接；没有可以写「公开资料」",
-      "example": "这份讲义"
+      "label": "source material",
+      "hint": "Attached documents, slides or links; if you have none, write \"public sources\"",
+      "example": "these lecture notes"
     },
     {
-      "label": "受众",
-      "hint": "谁来看、已经知道多少",
-      "example": "高中生"
+      "label": "audience",
+      "hint": "Who is watching and how much they already know",
+      "example": "high school students"
     },
     {
-      "label": "主题",
-      "hint": "要讲清楚的概念或话题",
-      "example": "光合作用"
+      "label": "topic",
+      "hint": "The concept or topic to explain",
+      "example": "photosynthesis"
     },
     {
-      "label": "看完能做到什么",
-      "hint": "希望观众看完记住或会做的事",
-      "example": "说出光反应和暗反应各做了什么"
+      "label": "learning goal",
+      "hint": "What viewers should remember or be able to do afterwards",
+      "example": "describe what the light and dark reactions each do"
     }
   ],
   "author": "CucCut",
   "source": "official",
   "license": "LicenseRef-CucCut-Community-1.0",
   "tags": [
-    "科普",
-    "讲解",
-    "教育"
+    "popular science",
+    "explainer",
+    "education"
   ],
   "skills": [
     "video-production",
@@ -54,10 +54,10 @@
   "preview": {
     "file": "preview.mp4",
     "beats": [
-      "抛出一个问题",
-      "拆开关键概念",
-      "用具体例子讲透",
-      "总结要点"
+      "Pose a question",
+      "Break down the key ideas",
+      "Make it click with an example",
+      "Sum up the key points"
     ]
   },
   "verification": {

@@ -1,61 +1,61 @@
-// `frame-v1` 的 WGSL 实现（元素方案 §7.4）。
+// WGSL implementation of `frame-v1` (element scheme §7.4).
 //
-// 一份源码覆盖 6 种：`border` / `reverse_border`（solid，strict）、
-// `rainbow_border` / `reverse_rainbow_border`（hue 循环，visual）、
-// `strobe_border` / `reverse_strobe_border`（频闪，visual）。差别全在配方的
-// `fill` / `background` / `colorMode` 三项里。
-// CPU 参照是 `src/source/progress/recipes/frame_v1.rs`。
+// One source covers 6 variants: `border` / `reverse_border` (solid, strict),
+// `rainbow_border` / `reverse_rainbow_border` (hue cycle, visual),
+// `strobe_border` / `reverse_strobe_border` (strobe, visual). The differences all lie in the recipe's
+// `fill` / `background` / `colorMode` three fields.
+// The CPU reference is `src/source/progress/recipes/frame_v1.rs`.
 //
-// ## 坐标：**v 向上**
+// ## Coordinates: **v up**
 //
-// 参考实现的四个 box 注释写着 "BL to BR" / "BL to TL"——它假设 `uv` 原点在
-// **左下**。§8.1 冻结的 `texCoord` 原点在左上，因此这里先做 P5a 偏离 4 的那一次
-// 翻转，再按参考实现摆四条边；CPU 参照的 `Edge::{Bottom,Top,Left,Right}` 与
-// 翻转后的四个 box 逐条对应。
+// The reference implementation's four box comments read 'BL to BR' / 'BL to TL', which assume the `uv` origin is at
+// **bottom-left**. The `texCoord` origin frozen by §8.1 is top-left, so here we first do the flip from P5a deviation 4,
+// then lay out the four edges as the reference does. The CPU reference's `Edge::{Bottom,Top,Left,Right}` correspond one to one with
+// the four boxes after the flip.
 //
-// ## 边框粗细
+// ## Border thickness
 //
-// `barSize = borderSize · sourceAspect.yx` 绕这一圈就是为了让横竖两条边在像素上
-// **一样粗**（都等于 `borderSize · max(w, h)`）。CPU 侧直接用这个结论，
-// 这里逐字照抄那条换算——它同时决定了 SDF 的各向异性 smoothing 带宽。
+// `barSize = borderSize · sourceAspect.yx` goes around this circle to make the horizontal and vertical edges
+// **equally thick** in pixels (both equal `borderSize · max(w, h)`). The CPU side uses this conclusion directly,
+// and here we copy that conversion word for word; it also determines the anisotropic smoothing band width of the SDF.
 
-/// 配方参数。字段顺序 = Rust 侧 `pack_frame_v1` 的打包顺序。
+/// Recipe parameters. Field order = the packing order of Rust's `pack_frame_v1`.
 struct FrameRecipe {
     borderSize : f32,
-    /// SDF 软边带宽（归一化）。CPU 侧不读（矢量边由光栅器抗锯齿），GPU 侧用上。
+    /// SDF soft-edge band width (normalised). The CPU side does not read it (vector edges are anti-aliased by the rasteriser); the GPU side uses it.
     smoothing : f32,
     /// `fill`：0 = `forward`，1 = `reverse`。
     reverse : f32,
-    /// `background`：底框画不画。
+    /// `background`: whether the base frame is drawn.
     background : f32,
     /// `colorMode.kind`：0 = solid、1 = rainbow、2 = strobe。
     colorKind : f32,
-    /// rainbow 的 hue 循环速度。
+    /// Hue-cycle speed for rainbow.
     hueSpeed : f32,
-    /// 混色量 `mixBias + (sin(t)·0.5 + 0.5) · mixGain`。
+    /// Mix amount `mixBias + (sin(t)·0.5 + 0.5) · mixGain`.
     mixBias : f32,
     mixGain : f32,
-    /// strobe 的频闪速度。
+    /// Strobe speed for strobe.
     strobeSpeed : f32,
     _pad0 : f32,
     _pad1 : f32,
     _pad2 : f32,
-    /// rainbow 的四角基色。
+    /// The four corner base colours for rainbow.
     corners : array<vec4f, 4>,
 }
 
 @group(3) @binding(0) var<uniform> u_recipe : FrameRecipe;
 
-/// 中心在原点、半边长 `b` 的矩形 SDF 软边（1 = 内部）。
+/// SDF soft edge of a rectangle centred at the origin with half-side `b` (1 = inside).
 ///
-/// 过渡带**对称地**骑在 `sdBox == 0` 这条边上（`softEdge`），不是参考实现那条
-/// 单侧的 `smoothstep(0, smoothing, d)`——单侧读法会把每条边加宽半个带宽
-/// （480 px 宽的框上是 1.5 px），而 CPU 参照画的是精确矩形。
+/// The transition band rides **symmetrically** on the edge where `sdBox == 0` (`softEdge`), not the reference's
+/// one-sided `smoothstep(0, smoothing, d)`: the one-sided reading would widen each edge by half a band width
+/// (1.5 px on a 480 px-wide frame), whereas the CPU reference draws an exact rectangle.
 fn frameBar(pos : vec2f, size : vec2f) -> f32 {
     return 1.0 - softEdge(0.0, u_recipe.smoothing, sdBox(pos, size));
 }
 
-/// 底框：四条整边的并集（`clamp(b1+b2+b3+b4, 0, 1)` 就是并集）。
+/// Base frame: the union of the four full edges (`clamp(b1+b2+b3+b4, 0, 1)` is the union).
 fn backgroundFrame(uv : vec2f, size : vec2f) -> f32 {
     let b1 : f32 = frameBar(uv, vec2f(1.0, size.y));
     let b2 : f32 = frameBar(uv, vec2f(size.x, 1.0));
@@ -64,8 +64,8 @@ fn backgroundFrame(uv : vec2f, size : vec2f) -> f32 {
     return clamp(b1 + b2 + b3 + b4, 0.0, 1.0);
 }
 
-/// `fill: "forward"`：周长按 `w : h` 分成两段，两条臂**同时从左下角出发**，
-/// `progress == 1` 时在右上角会合。
+/// `fill: "forward"`: the perimeter is split into two segments by `w : h`; the two arms **start from the bottom-left corner together**,
+/// and meet at the top-right corner when `progress == 1`.
 fn forwardFrame(uv : vec2f, size : vec2f) -> f32 {
     let span : f32 = u_srcRes.value.x + u_srcRes.value.y;
     let across : f32 = u_srcRes.value.x / span;
@@ -89,8 +89,8 @@ fn forwardFrame(uv : vec2f, size : vec2f) -> f32 {
     return clamp(b1 + b2 + b3 + b4, 0.0, 1.0);
 }
 
-/// `fill: "reverse"`：用 `1 − progress` 当长度，从左下与右上两个角各伸出一个
-/// L 形。这一支**没有**周长归一化，如实照搬。满进度时整圈消失。
+/// `fill: "reverse"`: uses `1 − progress` as the length, and from the bottom-left and top-right corners each extends out an
+/// L shape. This branch has **no** perimeter normalisation; it is copied as-is. At full progress the whole ring disappears.
 fn reverseFrame(uv : vec2f, size : vec2f) -> f32 {
     let reach : f32 = 1.0 - u_progress.value.x;
     if (!(reach > 0.0)) {
@@ -104,27 +104,27 @@ fn reverseFrame(uv : vec2f, size : vec2f) -> f32 {
     return clamp(bars, 0.0, 1.0);
 }
 
-/// `sin(u_time) · 0.5 + 0.5` 再线性映到 `[mixBias, mixBias + mixGain]`。
+/// `sin(u_time) · 0.5 + 0.5`, then linearly mapped to `[mixBias, mixBias + mixGain]`.
 fn frameMixAmount() -> f32 {
     return u_recipe.mixBias + (sin(u_time.value.x) * 0.5 + 0.5) * u_recipe.mixGain;
 }
 
-/// hue 沿 `sin(u_time) · hueSpeed` 循环的一枚角色。
+/// A role whose hue cycles along `sin(u_time) · hueSpeed`.
 fn hueCycled(colour : vec4f) -> vec4f {
     var hsv : vec4f = rgbToHsv(colour);
     hsv.r = hsv.r + sin(u_time.value.x) * u_recipe.hueSpeed;
     return hsvToRgb(hsv);
 }
 
-/// 进度框的颜色。`dist` 是覆盖率，返回值已经是 premultiplied 形态。
+/// Colour of the progress frame. `dist` is the coverage; the return value is already in premultiplied form.
 fn frameProgressColour(uv : vec2f, dist : f32) -> vec4f {
     if (u_recipe.colorKind < 0.5) {
-        // solid：主色 × 覆盖率。
+        // solid: primary colour × coverage.
         return vec4f(dist * u_mainColor.rgb, dist) * u_mainColor.a;
     }
     var gradient : vec4f;
     if (u_recipe.colorKind < 1.5) {
-        // rainbow：四角基色各走一趟 hue 循环，再按 uv 双线性。
+        // rainbow: each of the four corner base colours goes through one hue cycle, then bilinear by uv.
         gradient = fourCornerGradient(
             uv,
             hueCycled(u_recipe.corners[0]),
@@ -133,7 +133,7 @@ fn frameProgressColour(uv : vec2f, dist : f32) -> vec4f {
             hueCycled(u_recipe.corners[3])
         );
     } else {
-        // strobe：两枚元素色轮流，**采样点是常数** `(s, −s)`，因此整框同色。
+        // strobe: two element colours alternate; **the sample point is constant** `(s, −s)`, so the whole frame is one colour.
         let s : f32 = sin(u_time.value.x * u_recipe.strobeSpeed) * 0.5 + 0.5;
         gradient = fourCornerGradient(
             vec2f(s, -s),
@@ -151,7 +151,7 @@ fn frameProgressColour(uv : vec2f, dist : f32) -> vec4f {
 @fragment fn fragmentMain(in : VertexOutput) -> @location(0) vec4f {
     DiscardProgressClip(in.texCoord);
 
-    // 见文件头：参考实现的四个 box 摆在 v 向上的坐标里。
+    // See the file header: the reference implementation's four boxes are laid out in v-up coordinates.
     let uv : vec2f = vec2f(in.texCoord.x, 1.0 - in.texCoord.y);
     let aspect : vec2f = u_srcRes.value / min(u_srcRes.value.x, u_srcRes.value.y);
     let size : vec2f = vec2f(u_recipe.borderSize) * aspect.yx;
@@ -170,7 +170,7 @@ fn frameProgressColour(uv : vec2f, dist : f32) -> vec4f {
         backgroundColour = vec4f(distance * u_secondaryColor.rgb, distance) * u_secondaryColor.a;
     }
 
-    // `mask(bg, prog)` = `mix(bg, prog, prog.a)`，正是 premultiplied 的
-    // source-over：CPU 侧就是"先画底框、再画进度框"。
+    // `mask(bg, prog)` = `mix(bg, prog, prog.a)`, which is exactly the premultiplied
+    // source-over: on the CPU side it is “draw the base frame first, then the progress frame”.
     return alphaOver(progressColour, backgroundColour) * u_colourMultiplier;
 }

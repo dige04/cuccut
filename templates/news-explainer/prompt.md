@@ -1,3 +1,3 @@
-查一下近期关于{{新闻领域}}的新闻，挑一个话题，做一条节奏快、适合发布到视频平台的讲解，多用梗和梗图，梗图可以搜索。
+Look up recent news about {{news category}}, pick a story, and make a fast-paced explainer ready to post on video platforms. Use plenty of memes and meme images; you can search for the images.
 
-优先选择授权允许使用的素材，并注明来源；事实部分要核对清楚。旁白与字幕用{{成片语言}}。画幅 16:9，约 90 秒。不需要我提供素材，直接开始。
+Prefer material whose license allows it, and credit the sources; check the facts carefully. Use {{video language}} for narration and subtitles. Make it 16:9 and about 90 seconds long. You don't need any assets from me; just get started.

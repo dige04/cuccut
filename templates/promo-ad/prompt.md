@@ -1,19 +1,19 @@
-你要做一条推广短片，让看到它的人愿意采取一个具体的行动。
+You are making a short promo that gets the people who see it to take one specific action.
 
-## 结构
+## Structure
 
-1. 开头两三秒：用一个画面或一句话直接击中受众关心的问题，不先放品牌标志。
-2. 中段：展示两到三个真实卖点，每个卖点配一个看得见的证明，例如使用场景、前后对比或细节特写。
-3. 结尾：只给一个行动号召（购买、报名或咨询其中之一），品牌名与获取方式停留足够阅读的时间。
+1. First two or three seconds: go straight at the problem the audience cares about with one image or one line. Don't open with the brand logo.
+2. Middle: show two or three real selling points, each backed by visible proof, such as a use scene, a before-and-after comparison or a detail close-up.
+3. Ending: give only one call to action (buy, sign up or get in touch), and keep the brand name and how to get it on screen long enough to read.
 
-## 画面与声音
+## Visuals and sound
 
-- 画面优先使用用户提供的产品素材；不够时再生成或用动态图形补足，风格与品牌保持一致。
-- 每个镜头都配字幕；旁白简短有力，音乐情绪贴合投放场景，旁白出现时适当压低音乐。
-- 关键文字放在安全区内，避开发布平台界面会遮挡的边缘。
+- Use the product assets the user provided first; if they're not enough, fill in with generated visuals or motion graphics in a style consistent with the brand.
+- Subtitle every shot. Keep narration short and punchy, match the music's mood to where the ad will run, and bring the music down when narration plays.
+- Keep key text inside the safe area, away from edges the platform's interface will cover.
 
-## 注意
+## Notes
 
-- 卖点、价格与数据只用简报里给出的事实，不编造功效、用户评价或优惠。
-- 不使用未经授权的第三方商标、音乐或人物形象。
-- 旁白、字幕与画面文字使用简报里确认的语言。
+- For selling points, prices and data, use only the facts given in the brief. Don't invent effects, customer reviews or discounts.
+- Don't use third-party trademarks, music or likenesses without authorization.
+- Use the language confirmed in the brief for narration, subtitles and on-screen text.

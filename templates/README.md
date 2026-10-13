@@ -1,18 +1,33 @@
 # templates
 
-随应用分发的内置创作模板：Home 起始页「模板」入口里的视频制作模板，由 Runtime 加载后提供给界面。一个模板一个目录，目录名就是模板 `id`。格式与使用语义以[模板包规范](../docs/spec/template-spec.md)为准。
+Built-in creative templates that ship with the app: the video templates behind the "Templates" entry on the Home start
+page, loaded by the Runtime and served to the UI. One template per directory; the directory name is the template `id`.
+The format and how templates are used are defined by the [template package spec](../docs/spec/template-spec.md).
 
-两类模板：
+Two kinds of template:
 
-- `scene`（场景模板）：给创作方向和默认画幅、时长；选用后智能体先和用户确认简报再制作。
-- `example`（作品示例）：一条完整的提示词，选用即放进输入框。
+- `scene` (scene template): gives a creative direction plus a default aspect ratio and duration; once picked, the agent
+  first confirms the brief with the user, then makes the video.
+- `example` (example work): one complete prompt, placed in the input box when picked.
 
-## 新增一个模板
+The base language of the built-in templates is English: `template.json` and `prompt.md` are written in English
+(`"language": "en"`), and every other shipped language, Simplified Chinese included, is a translation under `locales/`.
 
-1. 新建 `templates/<id>/`，`id` 用 kebab-case，不与已有目录重名。
-2. 写 `template.json`（字段见规范 §3，JSON 两空格缩进）与 `prompt.md`（写法见规范 §2.2）。
-3. 有封面、预览视频或素材时，按规范 §2.1 放进 `cover.*`、`preview.*` 或 `assets/`，并在清单里登记。
-4. 用真实的智能体按模板做一条视频：把成片按规范 §3.3 的命令压成 `preview.mp4`（≤ 2 MiB）与 `cover.jpg`（≤ 150 KiB），在清单里写验证记录 `verification`（规范 §3.5）。验证用的公开素材只记来源与许可，不放进模板目录。
-5. 给原文以外的每种出货语言写译文：`locales/<语言小写>.json` 与 `.md`（规范 §3.6），格式可以照 `step-tutorial/locales/en.*`（场景模板）与 `ai-news-take/locales/en.*`（作品示例）。改了原文时同步改各个译文。
-6. 运行 `npm test -- packages/protocol`，`template.test.ts` 会校验这里的全部模板与译文；只查一种语言的译文时用 `npx vitest run packages/protocol/src/template.test.ts -t ' · ja：'`。
-7. 提交前按规范 §4.2、§4.3 人工审阅：不带密钥与机器路径，不写真实品牌与他人作品名，不把某种语言设为成片的默认语言。
+## Adding a template
+
+1. Create `templates/<id>/`; the `id` is kebab-case and must not clash with an existing directory.
+2. Write `template.json` (fields in spec §3, JSON with two-space indentation) and `prompt.md` (how to write it in spec
+   §2.2), in English.
+3. If there is a cover, a preview video or assets, put them in `cover.*`, `preview.*` or `assets/` as in spec §2.1, and
+   register them in the manifest.
+4. Make one video from the template with a real agent: compress the finished video into `preview.mp4` (≤ 2 MiB) and
+   `cover.jpg` (≤ 150 KiB) with the commands in spec §3.3, and write the verification record `verification` in the
+   manifest (spec §3.5). Public materials used for verification are recorded only by source and license; they do not go
+   into the template directory.
+5. Write a translation for every shipped language other than the base: `locales/<lowercase language>.json` and `.md`
+   (spec §3.6). For the format, follow `step-tutorial/locales/zh-hans.*` (scene template) and
+   `ai-news-take/locales/zh-hans.*` (example work). When you change the base text, update every translation to match.
+6. Run `npm test -- packages/protocol`; `template.test.ts` validates every template and translation here. To check the
+   translations of a single language, use `npx vitest run packages/protocol/src/template.test.ts -t ' · ja：'`.
+7. Before committing, review by hand as in spec §4.2 and §4.3: no secrets or machine paths, no real brand names or names
+   of other people's works, and no language set as the default language of the finished video.

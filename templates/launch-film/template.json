@@ -3,43 +3,43 @@
   "id": "launch-film",
   "version": "1.1.0",
   "kind": "scene",
-  "title": "新品发布片",
-  "summary": "用一场揭晓和一个明确的下一步介绍新产品。",
-  "description": "从引人好奇的开场推进到产品揭晓，再讲两三项具体的好处，最后停在一个好记的品牌画面和一个给观众的下一步。",
-  "language": "zh-CN",
+  "title": "Product launch film",
+  "summary": "Introduce a new product with a reveal and a clear next step.",
+  "description": "Move from an intriguing opening to the product reveal, cover two or three concrete benefits, and end on a memorable brand shot with a next step for viewers.",
+  "language": "en",
   "category": "product-launch",
   "ratio": "16:9",
   "durationSeconds": 45,
-  "brief": "我们{{发布时间}}发布{{新产品}}，做一条发布片，突出{{主打的好处}}，结尾引导观众{{下一步}}。",
+  "brief": "We're launching {{new product}} {{launch timing}}. Make a launch film that highlights {{key benefits}} and ends by prompting viewers to {{next step}}.",
   "fields": [
     {
-      "label": "发布时间",
-      "hint": "什么时候上市或发布",
-      "example": "下个月"
+      "label": "launch timing",
+      "hint": "When it goes on sale or launches",
+      "example": "next month"
     },
     {
-      "label": "新产品",
-      "hint": "产品是什么，有名字就写上",
-      "example": "一款智能台灯"
+      "label": "new product",
+      "hint": "What the product is; include its name if it has one",
+      "example": "a smart desk lamp"
     },
     {
-      "label": "主打的好处",
-      "hint": "两三项最想让观众记住的好处",
-      "example": "自动调光和专注模式"
+      "label": "key benefits",
+      "hint": "The two or three benefits you most want viewers to remember",
+      "example": "auto-dimming and focus mode"
     },
     {
-      "label": "下一步",
-      "hint": "看完希望观众做什么",
-      "example": "预约首发"
+      "label": "next step",
+      "hint": "What you want viewers to do afterwards",
+      "example": "reserve one for launch day"
     }
   ],
   "author": "CucCut",
   "source": "official",
   "license": "LicenseRef-CucCut-Community-1.0",
   "tags": [
-    "发布",
-    "新品",
-    "品牌"
+    "launch",
+    "new product",
+    "brand"
   ],
   "skills": [
     "video-production"
@@ -53,10 +53,10 @@
   "preview": {
     "file": "preview.mp4",
     "beats": [
-      "引人好奇的开场",
-      "产品揭晓",
-      "两三项具体好处",
-      "品牌画面与下一步"
+      "An intriguing opening",
+      "The product reveal",
+      "Two or three concrete benefits",
+      "Brand shot and next step"
     ]
   },
   "verification": {

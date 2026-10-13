@@ -1,9 +1,9 @@
-/* 网页标签里样式宏表达不了的部分：地址栏静止时网址居中（原型 home-workspace.css `.home-browser__address.is-resting input`）。 */
+/* The part of the tab styling that style macros cannot express: while the address bar is at rest, the URL is centred (prototype home-workspace.css `.home-browser__address.is-resting input`). */
 .cc-web-address.is-resting input {
   text-align: center;
 }
 
-/* 新标签页起始页的「工具」卡片网格（原型 home-workspace.css `.home-browser__tool-grid`）：自适应列数的网格写在这里。 */
+/* The grid of “tool” cards on the new-tab start page (prototype home-workspace.css `.home-browser__tool-grid`): the adaptive-column grid is written here. */
 .cc-web-tools {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));

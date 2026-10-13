@@ -18,5 +18,5 @@
     { "prop": "scale", "factor": 1.0, "a": 0.7, "b": 0.3, "scaleBy": "none" }
   ],
   "determinism": "strict",
-  "doc": "字幕入场姿态：从 0.7× 弹到 1×（曲线 y2 = 1.62 会过冲，姿态不夹）。"
+  "doc": "Caption entrance pose: pops from 0.7× to 1× (the curve y2 = 1.62 overshoots; the pose is not clamped)."
 }

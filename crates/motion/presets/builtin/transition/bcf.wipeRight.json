@@ -6,7 +6,7 @@
   "order": 7,
   "prop": null,
   "ease": "easeInOutSine",
-  "doc": "擦除边由左向右扫过。边在 x = p·W；离场 clip 保留边右侧、入场 clip 保留边左侧。与 wipeLeft 逐项镜像。",
+  "doc": "The wipe edge sweeps from left to right. The edge is at x = p·W; the outgoing clip keeps the area right of the edge, and the incoming clip keeps the area left of it. Mirrors wipeLeft item by item.",
   "out": {
     "channels": [
       {

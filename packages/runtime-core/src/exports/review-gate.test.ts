@@ -38,6 +38,8 @@ async function rejection(promise: Promise<unknown>): Promise<RpcError> {
 }
 
 const finished: ExportSettings = { kind: 'video', format: 'mp4' };
+/** A finished-video `exports.create` that passes the gate freezes and preflights for real (seconds each on a busy machine). */
+const EXPORTS_TIMEOUT_MS = 60_000;
 
 describe.skipIf(!engine || !ffmpeg)('review gate in exports.create (real engine)', () => {
   let dir: string;
@@ -118,7 +120,7 @@ describe.skipIf(!engine || !ffmpeg)('review gate in exports.create (real engine)
     expect(await client.request('exports.list', { videoId })).toEqual({ jobs: [] });
     // Nothing was written either: the gate only measures.
     await expect(fs.stat(path.join(project.path, '.cuccut-out', 'reviews', `${videoId}.json`))).rejects.toThrow();
-  });
+  }, EXPORTS_TIMEOUT_MS);
 
   it('never stops a preview, or an export that is not the finished video', async () => {
     const videoId = await placeholderVideo();
@@ -127,7 +129,7 @@ describe.skipIf(!engine || !ffmpeg)('review gate in exports.create (real engine)
     const subtitles = await rejection(client.request('exports.create', { videoId, settings: { kind: 'subtitles', format: 'srt' } }));
     expect(subtitles.details).toMatchObject({ code: 'EXPORT_SOURCE_NOT_FOUND' });
     expect(await notGated(videoId, { kind: 'portable', format: 'cuccut' })).toEqual(expect.any(String));
-  });
+  }, EXPORTS_TIMEOUT_MS);
 
   it('lets a finding the user let stand through, and holds it again once the waiver is undone', async () => {
     const videoId = await placeholderVideo();
@@ -136,7 +138,7 @@ describe.skipIf(!engine || !ffmpeg)('review gate in exports.create (real engine)
     await client.request('review.unwaive', { videoId, id: 'placeholders' });
     const refused = await rejection(client.request('exports.create', { videoId, settings: finished }));
     expect(refused.details).toMatchObject({ code: 'REVIEW_BLOCKED' });
-  });
+  }, EXPORTS_TIMEOUT_MS);
 
   it('does not stop anything with review.gate off, and a lowered severity no longer blocks', async () => {
     const videoId = await placeholderVideo();
@@ -147,5 +149,5 @@ describe.skipIf(!engine || !ffmpeg)('review gate in exports.create (real engine)
 
     await client.request('review.severity', { videoId, id: 'placeholders', severity: 'suggestion', reason: 'Rough cut for the team' });
     await notGated(videoId, finished);
-  });
+  }, EXPORTS_TIMEOUT_MS);
 });

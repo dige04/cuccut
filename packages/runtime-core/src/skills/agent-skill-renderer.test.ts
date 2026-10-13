@@ -444,6 +444,7 @@ describe('仓库里的说明书', () => {
       'cuccut-catalog-media',
       'cuccut-catalog-models',
       'cuccut-catalog-music',
+      'cuccut-catalog-review',
       'cuccut-catalog-subtitles',
       'cuccut-catalog-system',
       'cuccut-catalog-voice-gemini-tts',

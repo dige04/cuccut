@@ -59,7 +59,7 @@ const en = {
   /** Notes on judged answers. `kind` is the evidence kind the question declares. */
   notReached: 'The review didn’t reach this question.',
   evidenceMissing: 'Answered “holds” with nothing to look at.',
-  evidenceInvalid: (p: { kind: string }) => {
+  evidenceInvalid: (p: { kind: string }): string => {
     switch (p.kind) {
       case 'timestamp':
         return 'Answered “holds”, but the evidence isn’t a time inside the video.';

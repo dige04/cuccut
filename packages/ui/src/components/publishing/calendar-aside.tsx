@@ -37,6 +37,7 @@ export function CalendarAside({
   startAction,
   onSelection,
   onFindTimes,
+  onBatch,
   onClearFilters,
   ...actions
 }: EntryActions & {
@@ -55,6 +56,8 @@ export function CalendarAside({
   startAction: ReactNode;
   onSelection: (ids: Id[]) => void;
   onFindTimes: () => void;
+  /** Opens the batch dialog on the selection (review each, reserve, send together). */
+  onBatch: () => void;
   onClearFilters: () => void;
 }) {
   const locale = intlLocale();
@@ -143,6 +146,9 @@ export function CalendarAside({
             <div className="flex flex-wrap gap-2">
               <Button type="button" size="sm" disabled={finding} onClick={onFindTimes}>
                 {finding ? PC.calendar.findingTimes : PC.calendar.findTimes}
+              </Button>
+              <Button type="button" size="sm" variant="outline" disabled={finding} onClick={onBatch}>
+                {PC.batch.prepare(selection.length)}
               </Button>
               <Button type="button" size="sm" variant="ghost" disabled={finding} onClick={() => onSelection([])}>
                 {PC.calendar.clearSelection}

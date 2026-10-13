@@ -51,6 +51,7 @@ import OpenIn from '@react-spectrum/s2/icons/OpenIn';
 import Preview from '@react-spectrum/s2/icons/Preview';
 import Redo from '@react-spectrum/s2/icons/Redo';
 import Revert from '@react-spectrum/s2/icons/Revert';
+import Send from '@react-spectrum/s2/icons/Send';
 import Shapes from '@react-spectrum/s2/icons/Shapes';
 import Star from '@react-spectrum/s2/icons/Star';
 import StarFilled from '@react-spectrum/s2/icons/StarFilled';
@@ -75,6 +76,7 @@ import {
 } from '../../model/space.ts';
 import type { SpaceTranscribeAction } from '../../model/tool-targets.ts';
 import { useEntryThumbnail } from '../use-entry-thumbnail.ts';
+import { PC } from '../publishing/publishing-copy.ts';
 import { SPACE_COPY as COPY } from './space-copy.ts';
 
 /**
@@ -99,6 +101,8 @@ export type EntryAction =
   | 'restore'
   | 'purge'
   | 'clear'
+  /** Opens the video's publication, preparing one when it has none (design m2-publishing §6.3). */
+  | 'publish'
   /** Filters, by source, to the shorts cut from this video (the “N 支短视频” on cards and rows). */
   | 'shorts';
 
@@ -405,6 +409,12 @@ function entryMenu(
           </MenuItem>
         ) : null}
         {isVideo && transcribe && transcribe !== 'retry' ? transcribeItem(transcribe) : null}
+        {isVideo && !failed && entry.status !== 'generating' ? (
+          <MenuItem id="publish" textValue={PC.entry.prepare}>
+            <Send />
+            <Text>{PC.entry.prepare}</Text>
+          </MenuItem>
+        ) : null}
         {trashed ? null : (
           <MenuItem id="continue" textValue={COPY.continue}>
             <Chat />

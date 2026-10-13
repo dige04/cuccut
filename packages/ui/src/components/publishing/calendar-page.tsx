@@ -37,13 +37,15 @@ import { CalendarAside } from './calendar-aside.tsx';
 import { CalendarEmpty, CalendarGrid } from './calendar-grid.tsx';
 import { CalendarMoveDialog } from './calendar-move-dialog.tsx';
 import { CalendarToolbar } from './calendar-toolbar.tsx';
+import { CalendarTransfer } from './calendar-transfer.tsx';
 import { PublicationDialog } from './publication-dialog.tsx';
 import { PC } from './publishing-copy.ts';
+import { openBatchDialog } from './publishing-launch.ts';
 import { useCalendarMove } from './use-calendar-move.ts';
 
 type CalendarRoute = Extract<Route, { tab: 'calendar' }>;
 
-/** Settings → Publishing (the section itself lands with the settings step; the link already points there). */
+/** Settings → Publishing. */
 export const PUBLISHING_SETTINGS_HREF = '/settings/publishing';
 
 /** Days "Find publishing times" looks ahead. */
@@ -222,10 +224,13 @@ export function CalendarPage({ route }: { route: CalendarRoute }) {
           </>
         }
         actions={
-          <span title={timezoneLabel(timezone)} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Clock3 aria-hidden className="size-3.5" />
-            {PC.calendar.timezone(timezoneCity(timezone))}
-          </span>
+          <div className="flex flex-col items-end gap-2">
+            <CalendarTransfer onImported={(day) => day && goTo(day)} />
+            <span title={timezoneLabel(timezone)} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Clock3 aria-hidden className="size-3.5" />
+              {PC.calendar.timezone(timezoneCity(timezone))}
+            </span>
+          </div>
         }
       />
 
@@ -407,6 +412,10 @@ export function CalendarPage({ route }: { route: CalendarRoute }) {
             busy={busy}
             onSelection={setSelection}
             onFindTimes={() => void findTimes()}
+            onBatch={() => {
+              openBatchDialog({ kind: 'publications', publicationIds: liveSelection });
+              setSelection([]);
+            }}
             onClearFilters={clearFilters}
             onOpen={open}
             onMove={startMove}

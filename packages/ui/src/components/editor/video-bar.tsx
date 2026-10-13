@@ -31,6 +31,7 @@ import Keyboard from "@react-spectrum/s2/icons/Keyboard";
 import OpenIn from "@react-spectrum/s2/icons/OpenIn";
 import Redo from "@react-spectrum/s2/icons/Redo";
 import Rename from "@react-spectrum/s2/icons/Rename";
+import Send from "@react-spectrum/s2/icons/Send";
 import Settings from "@react-spectrum/s2/icons/Settings";
 import Undo from "@react-spectrum/s2/icons/Undo";
 import { style } from "@react-spectrum/s2/style" with { type: "macro" };
@@ -49,6 +50,8 @@ import { useEditor } from "../../state/editor-store.ts";
 import { canEdit, useVideo, type OpenVideo } from "../../state/video-store.ts";
 import { useShell } from "../../state/shell-store.ts";
 import { ExportButton } from "../export/export-button.tsx";
+import { publishVideo } from "../publishing/publishing-launch.ts";
+import { PC } from "../publishing/publishing-copy.ts";
 import { NameDialog } from "../name-dialog.tsx";
 import { TaskPill } from "../task-pill.tsx";
 import { useNow } from "../use-now.ts";
@@ -277,6 +280,11 @@ function HeaderActions({
     else if (key === "rename") onRename();
     else if (key === "details") onInfo();
     else if (key === "shortcuts") useEditor.getState().setShortcutsOpen(true);
+    else if (key === "publish") {
+      // "Publish…" (design m2-publishing §2.1 flow 1): the video's latest publication, or a new one, in the publication dialog.
+      if (video.videoId) void publishVideo(runtime, video.videoId);
+      else ToastQueue.negative(PC.entry.noVideo, { timeout: 5000 });
+    }
   };
   const onMore = (key: string, ref: VideoRef | null) => {
     if (key === "close") return closeVideo();
@@ -322,6 +330,12 @@ function HeaderActions({
             <MenuItem id="details" textValue={VB.details}>
               <InfoCircle />
               <Text slot="label">{VB.details}</Text>
+            </MenuItem>
+          </MenuSection>
+          <MenuSection>
+            <MenuItem id="publish" textValue={PC.entry.publish}>
+              <Send />
+              <Text slot="label">{PC.entry.publish}</Text>
             </MenuItem>
           </MenuSection>
           <MenuSection>

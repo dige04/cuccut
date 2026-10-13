@@ -12,7 +12,7 @@ describe('设置分组', () => {
   it('Agent 自成一组，在偏好设置之后、应用之前，含两个独立条目', () => {
     expect(SETTINGS_GROUPS.map((g) => g.id)).toEqual(['preferences', 'agents', 'app']);
     expect(SETTINGS_GROUPS.find((g) => g.id === 'agents')).toMatchObject({ label: 'Agent', keys: ['agent', 'skills'] });
-    expect(SETTINGS_GROUPS.find((g) => g.id === 'app')?.keys).toEqual(['glossary', 'privacy', 'diagnostics', 'about']);
+    expect(SETTINGS_GROUPS.find((g) => g.id === 'app')?.keys).toEqual(['publishing', 'glossary', 'privacy', 'diagnostics', 'about']);
   });
 
   it('每个分节恰好属于一组，且都有标签', () => {
@@ -31,6 +31,12 @@ describe('设置分组', () => {
 
   it('skills 是独立分节', () => {
     expect(isSettingsSection('skills')).toBe(true);
+  });
+
+  it('publishing 是应用组里的第一个分节', () => {
+    expect(isSettingsSection('publishing')).toBe(true);
+    expect(SETTINGS_GROUPS.find((g) => g.id === 'app')?.keys[0]).toBe('publishing');
+    expect(SETTINGS_SECTION_INFO.find((s) => s.key === 'publishing')?.label).toBe('Publishing');
   });
 });
 

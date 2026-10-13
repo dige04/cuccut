@@ -1,4 +1,13 @@
-import type { Publication, PublicationDetail, PublicationRow, PublicationRowDestination, PublishingAccount, PublishingConnection } from '@cuccut/protocol';
+import {
+  PUBLISHING_SETTINGS_DEFAULTS,
+  type Publication,
+  type PublicationDetail,
+  type PublicationRow,
+  type PublicationRowDestination,
+  type PublishingAccount,
+  type PublishingConnection,
+  type PublishingSettings,
+} from '@cuccut/protocol';
 import { publicationSchema, publishingAccountSchema, publishingConnectionSchema } from '@cuccut/protocol/schemas';
 
 /** Record builders for the publishing UI tests. */
@@ -69,4 +78,8 @@ export function account(overrides: Partial<PublishingAccount> & Pick<PublishingA
     name: overrides.id,
     ...overrides,
   }) as PublishingAccount;
+}
+
+export function settings(overrides: Partial<PublishingSettings> = {}): PublishingSettings {
+  return { ...PUBLISHING_SETTINGS_DEFAULTS, slots: [], defaultAccountIds: [], timezone: 'UTC', revision: 3, ...overrides };
 }

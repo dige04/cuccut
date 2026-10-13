@@ -38,6 +38,7 @@ const routes: Route[] = [
   { tab: 'settings', section: 'agent' },
   { tab: 'settings', section: 'skills' },
   { tab: 'settings', section: 'privacy' },
+  { tab: 'settings', section: 'publishing' },
   { tab: 'models', category: 'asr' },
   { tab: 'models', category: 'tts', page: 'voices' },
   { tab: 'tasks' },

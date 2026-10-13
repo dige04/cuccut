@@ -90,6 +90,8 @@ import { createBlankVideo } from '../start/blank-video.ts';
 import { openHome } from '../start/open-home.ts';
 import { useNow } from '../use-now.ts';
 import { SpaceVideoInfo } from '../video-info-dialog.tsx';
+import { PC } from '../publishing/publishing-copy.ts';
+import { publishVideo } from '../publishing/publishing-launch.ts';
 import { SPACE_COPY as COPY } from './space-copy.ts';
 import { SpaceDialogs, type SpaceDialogState } from './space-dialogs.tsx';
 import { KIND_LUCIDE, SpaceGrid, SpaceTable, type EntryAction } from './space-list.tsx';
@@ -496,6 +498,11 @@ function SpaceMain({ category, projectId, from }: { category: SpaceCategory; pro
     else if (action === 'purge') setDialog({ kind: 'purge', entry });
     else if (action === 'clear') purgeNow(entry);
     else if (action === 'shorts') showShorts(entry);
+    else if (action === 'publish') {
+      const videoId = videoIdOf(entry);
+      if (videoId) void publishVideo(runtime, videoId);
+      else ToastQueue.negative(PC.entry.noVideo, { timeout: 5000 });
+    }
   };
 
   const viewerActions: ViewerActions = {

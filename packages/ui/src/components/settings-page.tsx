@@ -18,6 +18,7 @@ import {
   MessageSquareText,
   Music,
   Puzzle,
+  Send,
   Server,
   SlidersHorizontal,
   Split,
@@ -30,6 +31,7 @@ import { Button as CcButton } from '../cc/ui/button.tsx';
 import { HELP_COPY, revealLabel } from '../copy.ts';
 import { shortenPath } from '../model/format.ts';
 import { bundleCategory, isBundleInstalled } from '../model/models-local.ts';
+import { publishingRailSummary } from '../model/publishing-settings.ts';
 import {
   MODEL_CATEGORY_INFO,
   SETTINGS_GROUPS,
@@ -46,9 +48,11 @@ import { useGrants } from '../state/grants-store.ts';
 import { useHelp } from '../state/help-store.ts';
 import { useLibrary } from '../state/library-store.ts';
 import { useModels } from '../state/models-store.ts';
+import { usePublishing } from '../state/publishing-store.ts';
 import { useShell, type SettingsSection } from '../state/shell-store.ts';
 import { useSkills } from '../state/skills-store.ts';
 import { ModelSettings } from './models-page.tsx';
+import { PC } from './publishing/publishing-copy.ts';
 import { UpdateStatus } from './app-update/update-status.tsx';
 import { RuntimeCard } from './services/runtime-card.tsx';
 import { S } from './shell-copy.ts';
@@ -62,6 +66,7 @@ import { GeneralSettings } from './settings/general-settings.tsx';
 import { M as GENERAL } from './settings/general-settings-copy.ts';
 import { GLOSSARY_COPY } from './settings/glossary-copy.ts';
 import { GlossarySettings } from './settings/glossary-settings.tsx';
+import { OpenCalendarLink, PublishingSettings } from './settings/publishing-settings.tsx';
 import { ResourceCapacity } from './settings/resource-capacity.tsx';
 import { KeyCombo, Panel, PanelHeading, RowList, SettingsGroup, SettingsRow } from './settings/settings-ui.tsx';
 import { W } from './settings/workspace-copy.ts';
@@ -73,6 +78,7 @@ const SECTION_ICON: Record<SettingsSection, LucideIcon> = {
   fonts: Type,
   agent: Bot,
   skills: Puzzle,
+  publishing: Send,
   glossary: BookA,
   privacy: Lock,
   diagnostics: Activity,
@@ -149,6 +155,10 @@ export function SettingsPage({ section = 'general', model, platform }: {
         ) : section === 'skills' ? (
           <Section title={labelOf('skills')} blurb={SKILLS_COPY.lede}>
             <AgentSkills />
+          </Section>
+        ) : section === 'publishing' ? (
+          <Section title={labelOf('publishing')} blurb={PC.settings.blurb} actions={<OpenCalendarLink />}>
+            <PublishingSettings />
           </Section>
         ) : section === 'glossary' ? (
           <Section title={labelOf('glossary')} blurb={GLOSSARY_COPY.list.lede}>
@@ -286,6 +296,7 @@ function useRailSummaries(web: boolean): RailSummaries {
   const grants = useGrants((s) => (s.ready ? s.grants.filter((g) => g.state === 'active').length : null));
   const app = useAppUpdate((s) => s.snapshot?.current?.version ?? null);
   const installed = useModels(useShallow(installedCounts));
+  const publishing = usePublishing((s) => publishingRailSummary(s.ready, s.accounts));
   const provider = useModels(textProvider);
 
   useEffect(() => {
@@ -301,6 +312,7 @@ function useRailSummaries(web: boolean): RailSummaries {
     fonts: W.fontsSummary,
     agent: agent ? agent.name : drivers === null || checking.length ? W.checking : W.noAgent,
     skills: skills === null ? W.checking : skills < 0 ? W.loadFailed : W.skillCount(skills),
+    publishing: publishing ?? W.checking,
     glossary: web ? W.desktopOnly : glossaries === null ? W.checking : W.glossaryCount(glossaries),
     // Grants and agent permissions are changed only in the desktop app (a browser has no `grants` topic).
     privacy: web ? W.desktopOnly : grants === null ? W.checking : W.grantCount(grants),

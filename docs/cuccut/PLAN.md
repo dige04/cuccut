@@ -12,10 +12,20 @@ a workspace settings shell.
 | # | Milestone | Status |
 |---|---|---|
 | M0 | Foundation: theme pipeline (palette remap, dark only, Figtree, S2 shim), Tailwind + agentcut-style primitives in `packages/ui/src/cc`, product identity (`@cuccut/*` packages, `CUCCUT_*` env, `~/.cuccut`, `com.cuccut.app`), QC screenshot tool | done |
-| M1 | Shell and screens in agentcut's layout: page chrome (glass nav bar, back headers, ambient background), home landing, session/editor layout, settings shell, library/tasks/tools pages, S2 control styling, chat thread | done (follow-ups: one yellow primary per view, "Space" → "Library" in remaining copy, recent-row actions) |
+| M1 | Shell and screens in agentcut's layout: page chrome (glass nav bar, back headers, ambient background), home landing, session/editor layout, settings shell, library/tasks/tools pages, S2 control styling, chat thread | done (follow-ups done: one yellow action per view, "Library" wording in all locales, Recent-row actions, inspector placement) |
 | M2 | Modules: profile + onboarding interview + rules in agent instructions, clip a long video (scored candidates), packs, review gate before delivery, publishing calendar | planned |
 | M3 | Vietnamese: filler words and pauses for `vi` (done), agent-facing text in English (done), copy QA, remaining Chinese code comments | in progress |
-| M4 | QC: typecheck, tests, packaged app (`npm run package:mac -- --local`) installed and exercised in a clean macOS VM (tart on the SSD) | planned |
+| M4 | QC: typecheck, tests, packaged app (`npm run package:mac -- --local`) installed and exercised in a clean macOS VM (tart on the SSD) | first pass done (see below) |
+
+## QC record
+
+- 2026-10-13, local package `CucCut-3.4.1-aarch64-apple-darwin-local` (zip + DMG, ad-hoc signed) built from
+  756187b. Installed from the DMG into a clean macOS 26.3 VM (tart `cuccut-qc`, fresh user data) and driven through
+  CDP: landing, Settings, Library, Tools, Background tasks, Services and "Clip a long video" render with no console
+  errors. The runtime starts from the bundle. A fresh install asks to connect a coding agent before clipping. Switching to
+  Vietnamese works without a restart.
+- Not covered yet: native window chrome in pixels (macOS blocks screen capture over SSH without Screen Recording
+  permission), agent sessions (no signed-in agent in the VM), exporting a real video in the packaged app.
 
 ## Decisions
 

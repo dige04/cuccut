@@ -308,15 +308,15 @@ function makeCode(name: string, films: string[], mediaPath?: string): string {
   return dir;
 }
 
-describe('时间换算', () => {
-  test('落在两帧正中间时取早的那一帧', () => {
+describe('time conversion', () => {
+  test('when landing exactly halfway between two frames, takes the earlier frame', () => {
     const fps = { num: 30, den: 1 };
     // 50 000 µs is exactly 1.5 frames.
     assert.equal(frameAt(50_000n, fps), 1);
     assert.equal(frameAt(50_001n, fps), 2);
     assert.equal(frameAt(16_666n, fps), 0);
   });
-  test('十进制秒按最短写法读成精确的十进制分数', () => {
+  test('decimal seconds are read as an exact decimal fraction in their shortest form', () => {
     assert.deepEqual(decimal(0.1), { num: 1n, den: 10n });
     assert.deepEqual(decimal(1.25), { num: 125n, den: 100n });
     assert.equal(decimalText(1e-7), '0.0000001');
@@ -325,8 +325,8 @@ describe('时间换算', () => {
   });
 });
 
-describe('旧项目元数据与字幕投影兼容', () => {
-  test('超过 200 个 Unicode 字符的标题截短显示，报告保留原标题', () => {
+describe('legacy project metadata and subtitle projection are compatible', () => {
+  test('titles over 200 Unicode characters are truncated for display; the report keeps the original title', () => {
     const dir = mkdtempSync(path.join(root, 'long-title-'));
     const title = '🎬'.repeat(199) + '影片';
     writeFileSync(path.join(dir, 'project.json'), JSON.stringify({ formatVersion: 3, title }));
@@ -364,23 +364,23 @@ describe('旧项目元数据与字幕投影兼容', () => {
     { id: 'q2', start: 0.8, end: 1.5, words: [{ id: 'w3' }, { id: 'w4' }] },
   ];
 
-  test('只存 cueIds 的句子从字幕行恢复完整词范围与分段', () => {
+  test('sentences that store only cueIds restore the full word range and segments from subtitle lines', () => {
     const { body, report } = project([{ id: 's1', cueIds: ['q1', 'q2'], paraStart: true }], cues);
     assert.deepEqual(body.sentences, [{ id: 's1', first: 'w1', last: 'w4', paragraphStart: true }]);
     assert.ok(!report.warnings.some((w) => w.includes('投影过期')));
   });
 
-  test('已有 sourceWordIds 优先，非连续成员保持显式列表', () => {
+  test('existing sourceWordIds take priority; non-contiguous members stay as an explicit list', () => {
     const { body } = project([{ id: 's1', sourceWordIds: ['w1', 'w3'], cueIds: ['q1', 'q2'] }], cues);
     assert.deepEqual(body.sentences, [{ id: 's1', wordIds: ['w1', 'w3'] }]);
   });
 
-  test('不能仅凭首尾和数量把乱序成员改写成连续范围', () => {
+  test('out-of-order members cannot be rewritten into a contiguous range based only on first, last and count', () => {
     const { body } = project([{ id: 's1', sourceWordIds: ['w1', 'w3', 'w2', 'w4'] }], cues);
     assert.deepEqual(body.sentences, [{ id: 's1', wordIds: ['w1', 'w3', 'w2', 'w4'] }]);
   });
 
-  test('缺失字幕行、词引用或失效词都放弃句子投影并报告，原文词仍保留', () => {
+  test('missing subtitle lines, word references or invalid words abandon the sentence projection and report it; the source words are still kept', () => {
     for (const sentence of [{ id: 's1' }, { id: 's1', cueIds: ['q1', 'missing'] }, { id: 's1', sourceWordIds: ['gone'] }]) {
       const { body, content, report } = project([sentence], cues);
       assert.equal(body.sentences, null);
@@ -390,12 +390,12 @@ describe('旧项目元数据与字幕投影兼容', () => {
     }
   });
 
-  test('没有词的字幕行不生成空范围', () => {
+  test('subtitle lines with no words do not generate an empty range', () => {
     const { content } = project([], [{ id: 'empty', start: 0, end: 1 }]);
     assert.ok(!content.documents.some((d) => d.ref === 'caption:source'));
   });
 
-  test('手工与自动换行、启用的分段、阶段指纹和贴前标记写入正式字段', () => {
+  test('manual and automatic line breaks, enabled segments, stage fingerprints and pre-attached markers are written to formal fields', () => {
     const { body } = project([], []);
     assert.deepEqual(body.userBreaks, { w2: 'no-break' });
     assert.deepEqual(body.autoBreaks, { default: { w2: 'break' }, wide: { w3: 'no-break' } });
@@ -406,7 +406,7 @@ describe('旧项目元数据与字幕投影兼容', () => {
   });
 });
 
-describe('计划（不经过引擎）', { skip: noMedia }, () => {
+describe('plan (bypassing the engine)', { skip: noMedia }, () => {
   let content: VideoContent;
   let report: ProjectReport;
   const byId = (id: string): Obj => {
@@ -422,7 +422,7 @@ describe('计划（不经过引擎）', { skip: noMedia }, () => {
     report = plan.report;
   });
 
-  test('主轨按剪口拆成两段 a-roll，铺满画布、contain，背景色在实例上', () => {
+  test('the main track is split at the cut into two a-roll segments, fills the canvas, contain, background color on the instance', () => {
     const pieces = ['c1#1', 'c1#2'].map((id) => byId(id).item);
     for (const piece of pieces) {
       assert.equal(piece.type, 'video');
@@ -435,7 +435,7 @@ describe('计划（不经过引擎）', { skip: noMedia }, () => {
     assert.equal(content.background, undefined);
   });
 
-  test('几何、效果、遮罩、动画原样带过来，超出范围的夹进去', () => {
+  test('geometry, effects, masks and animation carry over as is; out-of-range values are clamped', () => {
     const image = byId('i1');
     assert.deepEqual(image.item.place, { x: 30, y: 40, w: 20, radius: 8, opacity: 1 });
     assert.deepEqual(image.item.fx, { blur: 4 });
@@ -446,7 +446,7 @@ describe('计划（不经过引擎）', { skip: noMedia }, () => {
     assert.deepEqual(image.item.extensions, { 'cuccut.import': { sourceId: 'i1' } });
   });
 
-  test('关键帧：秒落到帧上（重合的只留前一个），百分比保留，未知缓动按线性', () => {
+  test('keyframes: seconds snap to frames (coincident ones keep only the earlier), percentages are kept, unknown easing is linear', () => {
     const keyframes = Object.fromEntries((byId('i1').keyframes as Obj[]).map((k) => [k.property, k.keyframes]));
     assert.deepEqual(keyframes.x, [
       { localFrame: 0, value: 30 },
@@ -461,7 +461,7 @@ describe('计划（不经过引擎）', { skip: noMedia }, () => {
     assert.equal(report.dropped['关键帧缓动'], 1);
   });
 
-  test('词锚点写成 speech-anchor，跨过剪口求成片时刻；求不出的不导入', () => {
+  test('word anchors are written as speech-anchor, the export time is computed across cuts; anchors that cannot be computed are not imported', () => {
     const text = byId('t1').item;
     assert.equal(text.followPolicy.kind, 'speech-anchor');
     assert.deepEqual(text.followPolicy.start, { kind: 'word', speechRef: { document: 'speech' }, wordId: 'w2', edge: 'start' });
@@ -475,14 +475,14 @@ describe('计划（不经过引擎）', { skip: noMedia }, () => {
     assert.deepEqual(report.anchors, { resolved: 1, unresolved: 1 });
   });
 
-  test('隐藏、不设终点的元素：停用、到序列末尾、不跟剪口', () => {
+  test('hidden elements with no end point: disabled, run to the end of the sequence, do not follow cuts', () => {
     const hidden = byId('t2').item;
     assert.equal(hidden.enabled, false);
     assert.equal(hidden.untilSequenceEnd, true);
     assert.equal(hidden.followPolicy.kind, 'sequence-fixed');
   });
 
-  test('每种元素都落到同名的实例类型', () => {
+  test('every element type maps to the instance type of the same name', () => {
     const types = Object.fromEntries(content.items.map((i) => [i.sourceId, i.item.type]));
     assert.deepEqual(
       ['sh1', 'st1', 'vz1', 'pg1', 'd1', 'ph1', 'cf1', 'wb1', 'n1', 'v1', 'a1', 'a2'].map((id) => types[id]),
@@ -493,7 +493,7 @@ describe('计划（不经过引擎）', { skip: noMedia }, () => {
     assert.equal(byId('wb1').item.assetRef != null, true);
   });
 
-  test('Lottie 贴纸：素材按 Lottie 登记，`loop` 与 `fillOverrides` 原样带过来，取源起点报出来', () => {
+  test('Lottie stickers: the media is registered as Lottie, `loop` and `fillOverrides` carry over as is, the source start point is reported', () => {
     const lottie = byId('st2').item;
     assert.equal(lottie.type, 'sticker');
     assert.ok(lottie.assetRef, 'Lottie 贴纸指向素材');
@@ -503,7 +503,7 @@ describe('计划（不经过引擎）', { skip: noMedia }, () => {
     assert.equal(report.dropped['Lottie 贴纸'], undefined);
   });
 
-  test('声音：线性音量夹进 [0, 4]，音量关键帧成包络，静音与淡入照旧', () => {
+  test('audio: linear volume is clamped to [0, 4], volume keyframes become an envelope, mute and fade-in unchanged', () => {
     const bed = byId('a1').item;
     assert.equal(bed.mix.volume, 0.8);
     assert.deepEqual(bed.mix.fadeIn, { ticks: '1', timescale: 5 });
@@ -517,7 +517,7 @@ describe('计划（不经过引擎）', { skip: noMedia }, () => {
     assert.equal(byId('a2').item.role, 'dub');
   });
 
-  test('转场只来自视频元素，长度夹进 [0.1, 2] 秒', () => {
+  test('transitions come only from video elements; length is clamped to [0.1, 2] seconds', () => {
     assert.deepEqual(byId('v1').transitions, [
       { side: 'in', kind: 'dissolve', duration: '0.5' },
       { side: 'out', kind: 'iris', duration: '2' },
@@ -525,14 +525,14 @@ describe('计划（不经过引擎）', { skip: noMedia }, () => {
     assert.equal(report.clamped['转场长度'], 1);
   });
 
-  test('闪避按触发、深度与起落归并；深度夹进 [0, 60]', () => {
+  test('ducking is merged by trigger, depth and attack/release; depth is clamped to [0, 60]', () => {
     assert.deepEqual(content.ducking, [
       { trigger: { kind: 'speech' }, depth: 12, attack: '0.1', release: '0.3', targetSourceIds: ['a1'] },
       { trigger: { kind: 'tracks', legacyTrack: 'bed1' }, depth: 60, targetSourceIds: ['a2'] },
     ]);
   });
 
-  test('剪口集合：每个源一份，精确刻度，作用实例是这个源的音视频实例', () => {
+  test('cut sets: one per source, exact scale, the target instances are the audio and video instances of that source', () => {
     const main = content.cutSets?.find((s) => s.ref === 'cut-set:main');
     assert.deepEqual(main?.body.cuts, [{ id: 'k1', t0: '5', t1: '7' }]);
     assert.equal(main?.body.timescale, 10);
@@ -542,11 +542,11 @@ describe('计划（不经过引擎）', { skip: noMedia }, () => {
     assert.deepEqual(bed?.scopeSourceIds, ['a1', 'a2']);
   });
 
-  test('模板层原样带过来', () => {
+  test('template layers carry over as is', () => {
     assert.deepEqual(content.template, { id: 'tpl_1', name: '片头条', layers: [] });
   });
 
-  test('设计字幕的强调（captionEmphasis）随字幕样式原样带过来，键是转写里的词 ID', () => {
+  test('designed subtitle emphasis (captionEmphasis) carries over with the subtitle style as is; the keys are the word IDs in the transcription', () => {
     // Another copy with subtitles is placed separately (not in ccutRoot: the group that goes through the engine only imports two projects).
     const dir = path.join(root, 'captioned', 'fixture.ccut');
     cpSync(path.join(ccutRoot, 'fixture.ccut'), dir, { recursive: true });
@@ -600,7 +600,7 @@ describe('计划（不经过引擎）', { skip: noMedia }, () => {
     );
   });
 
-  test('外部项目：dB 换成线性倍数，音量关键帧成包络（缓动从一段的起点挪到终点），轨道静音带过来', () => {
+  test('external projects: dB is converted to linear multipliers, volume keyframes become an envelope (easing moves from a segment\'s start to its end), track mute carries over', () => {
     const plan = planExternalProject(makeExternal(), new Set());
     assert.ok(plan);
     const external = planContent(plan, dryAssets(plan));
@@ -618,7 +618,7 @@ describe('计划（不经过引擎）', { skip: noMedia }, () => {
     assert.equal(external.tracks[0].muted, true);
   });
 
-  test('外部项目的代码合成没有预渲染替身：不导入，代码包不登记，只放合成的轨道不建，按丢掉的报告', () => {
+  test('external project code compositions have no pre-rendered stand-in: not imported, the code package is not registered, tracks that only hold the composition are not created, reported as dropped', () => {
     const plan = planExternalProject(makeExternal(), new Set());
     assert.ok(plan);
     const external = planContent(plan, dryAssets(plan));
@@ -640,7 +640,7 @@ describe('计划（不经过引擎）', { skip: noMedia }, () => {
     assert.deepEqual(plan.report.notApplicable, {});
   });
 
-  test('外部项目的字幕动画预设不带过来：样式里没有 animationPresetId，按丢掉的报告，每个预设一条警告', () => {
+  test('external project subtitle animation presets do not carry over: no animationPresetId in the style, reported as dropped, one warning per preset', () => {
     const dir = path.join(root, 'external-captions', 'ext-project');
     mkdirSync(dir, { recursive: true });
     const line = (id: string, from: number, text: string, preset: string): Obj => ({
@@ -690,7 +690,7 @@ describe('计划（不经过引擎）', { skip: noMedia }, () => {
   });
 });
 
-describe('经过引擎写入与核对', { skip: noEngine }, () => {
+describe('written and verified through the engine', { skip: noEngine }, () => {
   const out = path.join(root, 'videos');
   const env = { ...process.env, CUCCUT_HOME: home, HOME: home };
   let report: { projects: ProjectReport[] };
@@ -751,25 +751,25 @@ describe('经过引擎写入与核对', { skip: noEngine }, () => {
     return existsSync(file) ? readFileSync(file, 'utf8') : '';
   }
 
-  test('两个项目都导入，没有失败项', () => {
+  test('both projects import with no failed items', () => {
     assert.equal(report.projects.length, 2);
     for (const r of report.projects) assert.deepEqual(r.failed, [], r.source);
     assert.equal(snapshot.schemaVersion, 3);
   });
 
-  test('引擎没有退回任何字段：丢掉与夹住的都是计划时就定下的', () => {
+  test('the engine rolls back no fields: what was dropped and clamped was decided at planning time', () => {
     const imported = report.projects.find((r) => r.kind === 'timeline') as ProjectReport;
     assert.deepEqual(imported.dropped, { 贴纸的取源起点与速度: 1, 关键帧缓动: 1, '关键帧（落到同一帧）': 1 });
     assert.deepEqual(imported.clamped, { 'place.opacity': 1, '关键帧 opacity': 1, 转场长度: 1, 闪避深度: 1, volume: 1 });
   });
 
-  test('核对脚本通过', () => {
+  test('verification script passes', () => {
     assert.equal(verified.status, 0, verified.output);
     assert.match(verified.output, /视频 2 部/);
     assert.match(verified.output, /没有发现问题/);
   });
 
-  test('核对不能把未写出的视频与导入时缺失的素材报告成成功', () => {
+  test('verification must not report an unwritten video or media missing at import time as a success', () => {
     const empty = path.join(root, 'incomplete-import');
     mkdirSync(empty);
     writeFileSync(
@@ -792,7 +792,7 @@ describe('经过引擎写入与核对', { skip: noEngine }, () => {
     assert.doesNotMatch(check.stdout, /没有发现问题/);
   });
 
-  test('长标题与超过标签上限的素材文件名可以重复导入，版本与内容不变', () => {
+  test('long titles and media file names over the label limit can be imported again; version and content are unchanged', () => {
     const source = path.join(root, 'long-metadata.ccut');
     mkdirSync(source);
     const file = path.join(media, 'a'.repeat(205) + '.mp4');
@@ -818,7 +818,7 @@ describe('经过引擎写入与核对', { skip: noEngine }, () => {
     }
   });
 
-  test('实例的字段经引擎校验后原样留下', () => {
+  test('instance fields are left as is after engine validation', () => {
     const image = item('i1');
     assert.deepEqual(image.place, { x: 30, y: 40, w: 20, radius: 8, opacity: 1 });
     assert.deepEqual(image.fx, { blur: 4 });
@@ -841,14 +841,14 @@ describe('经过引擎写入与核对', { skip: noEngine }, () => {
     );
   });
 
-  test('词锚点指向转写文档的当前版本', () => {
+  test('word anchors point to the current version of the transcription document', () => {
     const speech = Object.values(snapshot.documents as Record<string, Obj>).find((d) => d.kind === 'speech');
     const policy = item('t1').followPolicy;
     assert.equal(policy.kind, 'speech-anchor');
     assert.deepEqual(policy.start.speechRef, { id: speech?.id, revision: speech?.currentRevision });
   });
 
-  test('经过引擎读回的转写保留正式换行、分段与阶段字段', async () => {
+  test('transcription read back through the engine keeps formal line breaks, segments and stage fields', async () => {
     const speech = Object.values(snapshot.documents as Record<string, Obj>).find((d) => d.kind === 'speech');
     assert.ok(speech);
     const { body } = await host.request<{ body: Obj }>('documents.read', { videoId, documentId: speech.id });
@@ -858,7 +858,7 @@ describe('经过引擎写入与核对', { skip: noEngine }, () => {
     assert.deepEqual(body.stages, { asr: 'fixture-fingerprint' });
   });
 
-  test('没有启用字幕实例时，字幕导出仍沿字幕、译文、转写找到源素材', async () => {
+  test('when no subtitle instance is enabled, subtitle export still finds the source media through subtitles, translations and transcription', async () => {
     const source = Object.values(snapshot.documents as Record<string, Obj>).find((d) => d.kind === 'speech');
     assert.ok(source?.sourceAssetId);
     const { snapshot: current } = await host.request<{ snapshot: Obj }>('videos.snapshot', { videoId });
@@ -883,7 +883,7 @@ describe('经过引擎写入与核对', { skip: noEngine }, () => {
     assert.equal(plan.parts[0].plans[0].entries[0].end, 0.3);
   });
 
-  test('关键帧、转场、闪避、模板层写在序列上', () => {
+  test('keyframes, transitions, ducking and template layers are written on the sequence', () => {
     const header = sequence.header ?? sequence;
     const bindings = (header.animationBindings as Obj[]).filter((b) => b.targetId === item('i1').id);
     assert.deepEqual(bindings.map((b) => b.propertyPath).sort(), ['opacity', 'rot', 'x']);
@@ -903,7 +903,7 @@ describe('经过引擎写入与核对', { skip: noEngine }, () => {
     );
   });
 
-  test('剪口集合的作用实例换成了实例 ID', async () => {
+  test('cut set target instances are replaced with instance IDs', async () => {
     const sets = Object.values(snapshot.documents as Record<string, Obj>).filter((d) => d.kind === 'cut-set');
     assert.equal(sets.length, 2);
     for (const doc of sets) {
@@ -937,7 +937,7 @@ function addNarration(dir: string): void {
   );
 }
 
-describe('代码项目：预渲染替身', { skip: noMedia }, () => {
+describe('code projects: pre-rendered stand-in', { skip: noMedia }, () => {
   const plan = (dir: string): { content: VideoContent; report: ProjectReport; assets: string[] } => {
     const planned = planBcutProject(dir, new Set());
     assert.ok(planned);
@@ -947,7 +947,7 @@ describe('代码项目：预渲染替身', { skip: noMedia }, () => {
     if (!existsSync(path.join(media, 'clip.mp4'))) makeMedia();
   });
 
-  test('找成片：只有一个视频就是它；有几个时取文件名等于合成 ID 的；都不是就不认', () => {
+  test('finding the rendered output: if there is only one video, that is it; if there are several, take the one whose file name equals the composition ID; if neither, it is not recognized', () => {
     const single = makeCode('single', ['single.mp4']);
     assert.equal(discoverFilm(single, 'comp-a'), path.join(single, 'single.mp4'));
     const named = makeCode('named', ['out/draft.mp4', 'out/comp-a.mp4', 'out/comp-a-v1.mp4']);
@@ -959,7 +959,7 @@ describe('代码项目：预渲染替身', { skip: noMedia }, () => {
     assert.equal(discoverFilm(hidden, 'comp-a'), null);
   });
 
-  test('没记渲染结果时用找到的成片：合成实例带预渲染替身，成片按渲染结果登记', () => {
+  test('when no render result was recorded, use the found output: the composition instance carries a pre-rendered stand-in, the output is registered as a render result', () => {
     const dir = makeCode('found', ['out/draft.mp4', 'out/comp-a.mp4']);
     const { content, report, assets } = plan(dir);
     assert.deepEqual(assets.sort(), ['bundle', 'main']);
@@ -971,7 +971,7 @@ describe('代码项目：预渲染替身', { skip: noMedia }, () => {
     assert.ok(report.warnings.some((w) => w.includes(path.join('out', 'comp-a.mp4'))));
   });
 
-  test('找不到成片的合成不导入，代码包不登记，报告里按项目与合成列出', () => {
+  test('compositions without a found output are not imported, the code package is not registered, and the report lists them by project and composition', () => {
     for (const [name, films, mediaPath] of [
       ['no-film', [], undefined],
       ['ambiguous-film', ['out/draft.mp4', 'out/final.mp4'], undefined],
@@ -988,7 +988,7 @@ describe('代码项目：预渲染替身', { skip: noMedia }, () => {
     }
   });
 
-  test('认领合成口播的配音（bcfClip）与合成归进一个音画联动组，替身的声音关掉；没认领的音频不进组', () => {
+  test('a voiceover claimed by the composition\'s narration (bcfClip) and the composition are grouped into one audio-video linked group, and the stand-in\'s sound is turned off; unclaimed audio is not put in the group', () => {
     const dir = makeCode('narrated', ['out/comp-a.mp4']);
     addNarration(dir);
     const { content, report } = plan(dir);
@@ -1015,7 +1015,7 @@ describe('代码项目：预渲染替身', { skip: noMedia }, () => {
     assert.equal(report.written['归进音画联动组的配音（bcfClip）'], 2);
   });
 
-  test('认领的合成没有导入时配音按普通音频导入，认领计入「不适用」', () => {
+  test('when a claimed composition was not imported, the voiceover imports as ordinary audio, and the claim counts as \'not applicable\'', () => {
     const dir = makeCode('narrated-no-film', []);
     addNarration(dir);
     const { content, report } = plan(dir);
@@ -1025,7 +1025,7 @@ describe('代码项目：预渲染替身', { skip: noMedia }, () => {
   });
 });
 
-describe('代码项目经过引擎', { skip: noEngine }, () => {
+describe('code projects go through the engine', { skip: noEngine }, () => {
   const out = path.join(root, 'code-videos');
   const env = { ...process.env, CUCCUT_HOME: home, HOME: home };
   let report: { projects: ProjectReport[] };
@@ -1060,7 +1060,7 @@ describe('代码项目经过引擎', { skip: noEngine }, () => {
     verified = { status: check.status, output: check.stdout + check.stderr };
   });
 
-  test('有成片的导入成带替身的合成；只有无替身合成的项目导入成空视频', () => {
+  test('compositions with a rendered output import as compositions with a stand-in; projects with only stand-in-less compositions import as an empty video', () => {
     const byName = (name: string): ProjectReport => {
       const found = report.projects.find((r) => r.name === name);
       assert.ok(found, name);
@@ -1081,7 +1081,7 @@ describe('代码项目经过引擎', { skip: noEngine }, () => {
     assert.equal(narrated.written['归进音画联动组的配音（bcfClip）'], 2);
   });
 
-  test('核对脚本通过', () => {
+  test('verification script passes', () => {
     assert.equal(verified.status, 0, verified.output);
     assert.match(verified.output, /视频 3 部/);
   });

@@ -11,16 +11,16 @@ fn serde_f64(literal: &str) -> f64 {
     serde_json::from_str::<Value>(literal)
         .ok()
         .and_then(|value| value.as_f64())
-        .unwrap_or_else(|| panic!("{literal} 不是 JSON 数"))
+        .unwrap_or_else(|| panic!("{literal} is not a JSON number"))
 }
 
 fn assert_correctly_rounded(literal: &str, context: &str) {
-    let exact: f64 = literal.parse().expect("std 能读的十进制");
+    let exact: f64 = literal.parse().expect("decimal that std can read");
     assert_eq!(
         serde_f64(literal).to_bits(),
         exact.to_bits(),
-        "{context}：serde_json 把 {literal} 读成了 {}，正确舍入是 {exact:?}。\
-         检查 core/Cargo.toml 的 serde_json 是否还开着 float_roundtrip",
+        "{context}: serde_json read {literal} as {}, the correctly rounded value is {exact:?}. \
+         Check whether serde_json in core/Cargo.toml still enables float_roundtrip",
         serde_f64(literal)
     );
 }
@@ -29,11 +29,11 @@ fn assert_correctly_rounded(literal: &str, context: &str) {
 #[test]
 fn frame_snapped_seconds_read_as_correctly_rounded_doubles() {
     for (literal, frame) in [
-        ("0.23333333333333334", "30fps 第 7 帧"),
-        ("0.11666666666666667", "60fps 第 7 帧"),
-        ("0.20833333333333334", "24fps 第 5 帧"),
-        ("0.10010000000000001", "29.97fps 第 3 帧"),
-        ("0.37537499999999996", "23.976fps 第 9 帧"),
+        ("0.23333333333333334", "30fps frame 7"),
+        ("0.11666666666666667", "60fps frame 7"),
+        ("0.20833333333333334", "24fps frame 5"),
+        ("0.10010000000000001", "29.97fps frame 3"),
+        ("0.37537499999999996", "23.976fps frame 9"),
     ] {
         assert_correctly_rounded(literal, frame);
     }
@@ -46,7 +46,7 @@ fn every_builtin_preset_float_reads_as_the_correctly_rounded_double() {
     json_files(&root, &mut files);
     let mut floats = 0;
     for file in &files {
-        let text = std::fs::read_to_string(file).expect("读 preset");
+        let text = std::fs::read_to_string(file).expect("read preset");
         for (line, literal) in number_literals(&text) {
             if literal.contains(['.', 'e', 'E']) {
                 floats += 1;
@@ -58,14 +58,14 @@ fn every_builtin_preset_float_reads_as_the_correctly_rounded_double() {
     // The `0.9659258262890683` of `timeline.loop.elSway3d` is the only built-in constant the fast path misreads.
     assert!(
         files.len() > 300 && floats > 3000,
-        "只扫到 {} 个文件、{floats} 个浮点字面量，目录找错了？",
+        "only scanned {} files and {floats} float literals, wrong directory?",
         files.len()
     );
 }
 
 fn json_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    for entry in std::fs::read_dir(dir).expect("preset 目录") {
-        let path = entry.expect("目录项").path();
+    for entry in std::fs::read_dir(dir).expect("preset directory") {
+        let path = entry.expect("directory entry").path();
         if path.is_dir() {
             json_files(&path, out);
         } else if path.extension().is_some_and(|ext| ext == "json") {

@@ -76,11 +76,11 @@ fn check_and_write(audio: &TtsAudio, name: &str) -> PathBuf {
         clipped_ratio * 100.0,
         path.display()
     );
-    assert!((0.5..=20.0).contains(&seconds), "{name}: {seconds:.2} s 不在 0.5–20 s 内");
-    assert!(peak > 0.01, "{name}: 峰值 {peak} 像静音");
-    assert!(rms > 0.003, "{name}: RMS {rms} 像静音");
-    assert!(clipped_ratio < 0.001, "{name}: {clipped} 个样本削波");
-    assert!(audio.samples.iter().all(|s| s.is_finite()), "{name}: 有 NaN / Inf");
+    assert!((0.5..=20.0).contains(&seconds), "{name}: {seconds:.2} s is outside 0.5–20 s");
+    assert!(peak > 0.01, "{name}: peak {peak} looks silent");
+    assert!(rms > 0.003, "{name}: RMS {rms} looks silent");
+    assert!(clipped_ratio < 0.001, "{name}: {clipped} samples clipped");
+    assert!(audio.samples.iter().all(|s| s.is_finite()), "{name}: contains NaN / Inf");
     path
 }
 
@@ -98,7 +98,7 @@ fn builtin_voices_speak_chinese_with_a_reading_and_english() {
         },
     )
     .expect("load GPT-SoVITS");
-    println!("加载 {:.2} s", started.elapsed().as_secs_f32());
+    println!("loaded in {:.2} s", started.elapsed().as_secs_f32());
     assert_eq!(engine.kind(), TtsEngineKind::GptSovits);
     assert_eq!(engine.sample_rate(), 32_000);
     assert!(engine.preset_speakers().contains(&"zh-female".to_owned()));
@@ -116,7 +116,7 @@ fn builtin_voices_speak_chinese_with_a_reading_and_english() {
         let started = Instant::now();
         let audio = engine.synthesize(&request, &mut |_| true).expect("synthesize");
         println!(
-            "{lang}: 合成 {:.2} s，未按注记念的读音 {:?}",
+            "{lang}: synthesized in {:.2} s, readings not applied {:?}",
             started.elapsed().as_secs_f32(),
             audio.readings_dropped
         );

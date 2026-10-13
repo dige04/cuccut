@@ -52,12 +52,12 @@ fn golden_files() -> Vec<(PathBuf, GoldenFile)> {
     let entries = std::fs::read_dir(&root)
         .unwrap_or_else(|error| panic!("读取 {} 失败：{error}", root.display()));
     for entry in entries {
-        let entry = entry.expect("目录项");
-        if !entry.file_type().expect("文件类型").is_dir() {
+        let entry = entry.expect("directory entry");
+        if !entry.file_type().expect("file type").is_dir() {
             continue;
         }
-        for file in std::fs::read_dir(entry.path()).expect("读取项目目录") {
-            let path = file.expect("目录项").path();
+        for file in std::fs::read_dir(entry.path()).expect("read project directory") {
+            let path = file.expect("directory entry").path();
             if path.extension().and_then(|ext| ext.to_str()) == Some("json") {
                 paths.push(path);
             }
@@ -87,7 +87,7 @@ fn load_project(project: &str) -> TranscriptDoc {
         .unwrap_or_else(|error| panic!("读取 {} 失败：{error}", path.display()));
     let doc: TranscriptDoc = serde_json::from_str(&text)
         .unwrap_or_else(|error| panic!("{} 反序列化失败：{error}", path.display()));
-    doc.validate().expect("transcript 自检");
+    doc.validate().expect("transcript self-check");
     doc
 }
 
@@ -200,7 +200,7 @@ fn golden_files_parse_and_match_derived_sentences() {
         for case in &file.cases {
             total += 1;
             for tag in &case.tags {
-                *tag_counts.get_mut(tag.as_str()).expect("已知 tag") += 1;
+                *tag_counts.get_mut(tag.as_str()).expect("known tag") += 1;
             }
             let sentence = by_id.get(case.sentence_id.as_str()).unwrap_or_else(|| {
                 panic!(

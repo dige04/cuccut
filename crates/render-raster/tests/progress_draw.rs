@@ -61,7 +61,7 @@ fn params() -> ProgressParams {
 }
 
 fn record(recipe: &CatalogueRecipe, progress: f64, time: f64) -> Value {
-    let aspect = recipe.progress().expect("progress 配方").aspect;
+    let aspect = recipe.progress().expect("progress recipe").aspect;
     let mut builder = FrameBuilder::default();
     let pushed = progress_frame(
         &mut builder,
@@ -73,7 +73,7 @@ fn record(recipe: &CatalogueRecipe, progress: f64, time: f64) -> Value {
         [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
     );
     let frame = builder.finish();
-    assert_eq!(pushed, frame.ops.len(), "返回条数必须等于实际压入条数");
+    assert_eq!(pushed, frame.ops.len(), "the return count must equal the number of ops actually pushed");
     json!({
         "progress": progress,
         "t": time,
@@ -135,7 +135,7 @@ fn expected_json() -> Value {
 }
 
 fn pretty(value: &Value) -> Vec<u8> {
-    let mut bytes = serde_json::to_vec_pretty(value).expect("序列化夹具");
+    let mut bytes = serde_json::to_vec_pretty(value).expect("serialize fixture");
     bytes.push(b'\n');
     bytes
 }
@@ -146,7 +146,7 @@ fn pretty(value: &Value) -> Vec<u8> {
 #[ignore]
 fn write_progress_draw_fixture() {
     let dir = fixture_dir();
-    std::fs::create_dir_all(&dir).expect("建夹具目录");
+    std::fs::create_dir_all(&dir).expect("create fixture directory");
     std::fs::write(dir.join("cases.json"), pretty(&cases_json())).unwrap();
     std::fs::write(dir.join("expected-draw.json"), pretty(&expected_json())).unwrap();
 }
@@ -160,8 +160,8 @@ fn the_progress_fixtures_are_up_to_date() {
         ("expected-draw.json", pretty(&expected_json())),
     ] {
         let actual = std::fs::read(dir.join(name))
-            .unwrap_or_else(|e| panic!("{name} 缺失（跑 --ignored）：{e}"));
-        assert_eq!(actual, expected, "{name} 与生成器不一致");
+            .unwrap_or_else(|e| panic!("{name} is missing (run with --ignored): {e}"));
+        assert_eq!(actual, expected, "{name} does not match the generator");
     }
 }
 
@@ -178,7 +178,7 @@ fn every_style_is_live_in_the_golden() {
         let samples = style["samples"].as_array().unwrap();
         assert!(
             samples[2]["ops"].as_u64().unwrap() > 0,
-            "{id} @ progress=0.5 必须画出东西"
+            "{id} @ progress=0.5 must draw something"
         );
     }
 }
@@ -197,7 +197,7 @@ fn every_step_changes_the_instruction_stream() {
             let print = entry["fingerprint"].as_str().unwrap().to_owned();
             assert!(
                 !seen.contains(&print),
-                "{} 在 progress={step} 的画面与之前某一步逐字节相同",
+                "{} at progress={step} is byte-identical to an earlier step",
                 recipe.qualified_id()
             );
             seen.push(print);

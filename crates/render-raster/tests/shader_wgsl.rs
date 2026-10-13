@@ -45,12 +45,12 @@ fn uniform_declarations(source: &str, group: u32) -> Vec<(u32, String)> {
 fn every_registered_shader_passes_naga_validation() {
     assert!(
         !SHADER_SOURCES.is_empty(),
-        "登记表为空说明 include_str! 的路径断了"
+        "the registry is empty, so the include_str! path is broken"
     );
     for source in SHADER_SOURCES {
         let wgsl = source.assemble();
         if let Err(error) = render_raster::validate_wgsl(&wgsl) {
-            panic!("{} 没通过 naga 校验：{error:#}", source.label());
+            panic!("{} failed naga validation: {error:#}", source.label());
         }
     }
 }
@@ -99,14 +99,14 @@ fn every_registered_shader_translates_to_glsl_es_300() {
             match writer {
                 Ok(mut writer) => {
                     writer.write().unwrap_or_else(|error| {
-                        panic!("{} 的 {entry} 打不到 GLSL ES 300：{error}", source.label())
+                        panic!("{} {entry} cannot be lowered to GLSL ES 300: {error}", source.label())
                     });
                 }
-                Err(error) => panic!("{} 的 {entry} 建不起 GLSL writer：{error}", source.label()),
+                Err(error) => panic!("{} {entry}: cannot create GLSL writer: {error}", source.label()),
             }
             assert!(
                 out.contains("#version 300 es"),
-                "{} 的 {entry} 没落到 ES 300",
+                "{} {entry} did not lower to ES 300",
                 source.label()
             );
         }
@@ -123,14 +123,14 @@ fn the_wgsl_group1_declarations_match_the_frozen_tables() {
         .iter()
         .map(|(binding, name)| (*binding, (*name).to_owned()))
         .collect();
-    assert_eq!(visualizer, expected, "visualizer 的 @group(1) 顺序");
+    assert_eq!(visualizer, expected, "visualizer @group(1) order");
 
     let progress = uniform_declarations(ShaderDomain::Progress.prelude(), 1);
     let expected: Vec<(u32, String)> = ProgressUniforms::BINDINGS
         .iter()
         .map(|(binding, name)| (*binding, (*name).to_owned()))
         .collect();
-    assert_eq!(progress, expected, "progress 的 @group(1) 顺序");
+    assert_eq!(progress, expected, "progress @group(1) order");
 }
 
 /// §8.1 `@group(0)`: two transform uniforms, visible to the vertex stage.
@@ -144,7 +144,7 @@ fn both_preludes_declare_the_same_group0() {
                 (0, "u_transform".to_owned()),
                 (1, "u_texTransform".to_owned())
             ],
-            "{domain} 的 @group(0)"
+            "{domain} @group(0)"
         );
     }
 }
@@ -160,14 +160,14 @@ fn the_wgsl_audio_rows_agree_with_the_frozen_constants() {
             "const AUDIO_ROW_TIME : f32 = {}.0;",
             AUDIO_TEXTURE_ROW_TIME
         )),
-        "时域行号与 AUDIO_TEXTURE_ROW_TIME 不一致"
+        "time-domain row number does not match AUDIO_TEXTURE_ROW_TIME"
     );
     assert!(
         prelude.contains(&format!(
             "const AUDIO_ROW_FREQ : f32 = {}.0;",
             AUDIO_TEXTURE_ROW_FREQ
         )),
-        "频域行号与 AUDIO_TEXTURE_ROW_FREQ 不一致"
+        "frequency-domain row number does not match AUDIO_TEXTURE_ROW_FREQ"
     );
     // The two sampling helpers each read their own row; they must not be swapped.
     assert!(prelude.contains("fn sampleTemporal") && prelude.contains("vec2f(x, AUDIO_ROW_TIME)"));
@@ -192,7 +192,7 @@ fn the_easing_codes_agree_between_rust_and_wgsl() {
     let dispatch = COMMON_WGSL
         .split("fn applyEasing")
         .nth(1)
-        .expect("common.wgsl 必须有 applyEasing");
+        .expect("common.wgsl must define applyEasing");
     for (threshold, easing) in [
         ("code < 0.5", "return x;"),
         ("code < 1.5", "easeOutQuad"),
@@ -202,10 +202,10 @@ fn the_easing_codes_agree_between_rust_and_wgsl() {
         let tail = dispatch[head..].find(easing);
         assert!(
             tail.is_some() && tail.unwrap() < 60,
-            "{threshold} 的分派臂错位"
+            "the {threshold} dispatch arm is misaligned"
         );
     }
-    assert!(dispatch.contains("return easeOutCubic(x);"), "兜底臂");
+    assert!(dispatch.contains("return easeOutCubic(x);"), "fallback arm");
 }
 
 /// Does not use WGSL's built-in `smoothstep`: `edge0 > edge1` is undefined behavior in the spec, whereas `gapCurve` is exactly a falling ramp (the CPU reference is defined for both directions).
@@ -213,7 +213,7 @@ fn the_easing_codes_agree_between_rust_and_wgsl() {
 fn the_shaders_use_the_explicit_ramp_instead_of_the_builtin_smoothstep() {
     assert!(
         COMMON_WGSL.contains("fn ramp(edge0"),
-        "common.wgsl 必须自带 ramp"
+        "common.wgsl must include its own ramp"
     );
     for source in SHADER_SOURCES {
         // A `smoothstep(...)` appearing in a comment is explaining the reference implementation, not a call.
@@ -225,7 +225,7 @@ fn the_shaders_use_the_explicit_ramp_instead_of_the_builtin_smoothstep() {
             .join("\n");
         assert!(
             !code.contains("smoothstep("),
-            "{} 用了内建 smoothstep，下降斜坡在规范里未定义",
+            "{} uses the built-in smoothstep; the falling ramp is undefined in the spec",
             source.label()
         );
     }

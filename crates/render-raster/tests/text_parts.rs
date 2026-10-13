@@ -137,7 +137,7 @@ fn every_part_owns_at_least_one_glyph_across_scripts() {
             .expect("part motion")
             .map;
         let shaped = engine.shape(text, "", 64.0, 400);
-        assert!(!shaped.glyphs.is_empty(), "{text}: shaping 产出为空");
+        assert!(!shaped.glyphs.is_empty(), "{text}: shaping produced no output");
         let mut hit = vec![false; map.len()];
         for glyph in &shaped.glyphs {
             let part = map.part_of(glyph.cluster.start).unwrap_or_else(|| {

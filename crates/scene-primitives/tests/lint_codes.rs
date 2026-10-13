@@ -488,7 +488,7 @@ fn element_id_rules_guard_the_addressing_of_stage_edits() {
 }
 
 #[test]
-#[ignore = "读 v2 的 BCF 规范 docs/design/bcf/cuccut-format-spec/16.md：v3 不用 BCF，没有带来这份规范"]
+#[ignore = "reads the v2 BCF spec docs/design/bcf/cuccut-format-spec/16.md: v3 does not use BCF, so this spec was not carried over"]
 fn every_declared_rule_appears_in_the_spec_section_sixteen_table() {
     // `schema` / `resolve-error` are two **structural-layer** fallback codes: spec §16's prose (not the table) describes them. All the others must be greppable.
     const STRUCTURAL: &[&str] = &["schema", "resolve-error"];
@@ -847,7 +847,7 @@ fn flow_preset_ops_do_not_see_project_presets() {
     let err = scene_primitives::Resolver::new(doc.clone(), None)
         .and_then(|mut r| r.resolve())
         .err()
-        .expect("resolve 应当拒绝");
+        .expect("resolve should reject");
     assert!(err.to_string().starts_with("preset-unknown"), "{err}");
     let unknown: Vec<_> = lint(&doc)
         .into_iter()

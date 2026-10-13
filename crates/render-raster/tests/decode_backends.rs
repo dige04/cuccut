@@ -152,7 +152,7 @@ fn backend_for(dir: &Path, src: &str) -> Option<&'static str> {
     let ir = resolver.resolve().unwrap();
     let mut media = MediaStore::new(assets, ir.fps);
     // Actually decode one frame: the backend is only determined when the decoder is opened.
-    media.video_frame("clip", 0.2).expect("取帧");
+    media.video_frame("clip", 0.2).expect("decode a frame");
     media.video_backend("clip")
 }
 
@@ -170,12 +170,12 @@ fn an_mp4_decodes_natively_while_a_webm_falls_back_to_ffmpeg() {
     assert_eq!(
         backend_for(dir.path(), "assets/clip.mp4"),
         Some(expected_mp4),
-        "MP4 应走 {expected_mp4}"
+        "MP4 should use {expected_mp4}"
     );
     assert_eq!(
         backend_for(dir.path(), "assets/clip.webm"),
         Some(render_raster::media::FFMPEG_BACKEND),
-        "WebM 平台解码器打不开，必须回落 ffmpeg"
+        "WebM: the platform decoder cannot open it, so it must fall back to ffmpeg"
     );
 }
 
@@ -192,7 +192,7 @@ fn both_backends_agree_on_what_the_frame_looks_like() {
         resolver.set_host_inputs(assets.inputs.clone());
         let ir = resolver.resolve().unwrap();
         let mut media = MediaStore::new(assets, ir.fps);
-        let pixmap = media.video_frame("clip", 0.2).expect("取帧");
+        let pixmap = media.video_frame("clip", 0.2).expect("decode a frame");
         let mut totals = [0_u64; 3];
         for pixel in pixmap.data().chunks_exact(4) {
             totals[0] += u64::from(pixel[0]);
@@ -208,7 +208,7 @@ fn both_backends_agree_on_what_the_frame_looks_like() {
         let delta = native[channel].abs_diff(fallback[channel]);
         assert!(
             delta <= 12,
-            "通道 {channel} 的整幅平均值差 {delta}（原生 {:?} vs ffmpeg {:?}）",
+            "channel {channel} whole-frame average differs by {delta} (native {:?} vs ffmpeg {:?})",
             native,
             fallback
         );
@@ -226,29 +226,29 @@ fn rotated_video_uses_display_geometry_on_native_and_ffmpeg_paths() {
     };
     let rotated = assets_dir.join("rotated.mp4");
     if !rotated.exists() {
-        eprintln!("跳过：这台机器的 ffmpeg 不支持 -display_rotation 夹具");
+        eprintln!("skipping: this machine's ffmpeg does not support the -display_rotation fixture");
         return;
     }
 
     let (natural_width, natural_height, _, _) =
-        render_raster::assets::probe_media(&rotated, true).expect("探测旋转 MP4");
+        render_raster::assets::probe_media(&rotated, true).expect("probe rotated MP4");
     assert_eq!(
         (natural_width, natural_height),
         (160, 90),
-        "公开 probe_media 仍保持 natural 编码尺寸口径"
+        "public probe_media still reports the natural encoded size"
     );
 
     let doc = video_doc("assets/rotated.mp4");
-    let loaded = load_assets(&doc, dir.path()).expect("加载旋转视频");
-    let info = loaded.videos.get("clip").expect("视频资源");
+    let loaded = load_assets(&doc, dir.path()).expect("load rotated video");
+    let info = loaded.videos.get("clip").expect("video asset");
     assert_eq!(
         (info.width, info.height),
         (90, 160),
-        "渲染资源必须使用摆正后的 display 尺寸"
+        "render asset must use the upright display size"
     );
 
     let mut preferred = MediaStore::new(Arc::new(loaded), 25.0);
-    let frame = preferred.video_frame("clip", 0.2).expect("首选路径取帧");
+    let frame = preferred.video_frame("clip", 0.2).expect("decode a frame on the preferred path");
     assert_eq!((frame.width(), frame.height()), (90, 160));
     let expected = if media_native::available() {
         media_native::backend()
@@ -258,14 +258,14 @@ fn rotated_video_uses_display_geometry_on_native_and_ffmpeg_paths() {
     assert_eq!(preferred.video_backend("clip"), Some(expected));
 
     // Naming the decoder explicitly makes VideoReader skip the native backend. This is the same selection mechanism that already sends alpha WebM to ffmpeg, and naming H.264 is only to force that path in the test.
-    let mut fallback_assets = load_assets(&doc, dir.path()).expect("重新加载旋转视频");
+    let mut fallback_assets = load_assets(&doc, dir.path()).expect("reload rotated video");
     fallback_assets
         .videos
         .get_mut("clip")
-        .expect("视频资源")
+        .expect("video asset")
         .decoder = Some("h264".to_owned());
     let mut fallback = MediaStore::new(Arc::new(fallback_assets), 25.0);
-    let frame = fallback.video_frame("clip", 0.2).expect("ffmpeg 路径取帧");
+    let frame = fallback.video_frame("clip", 0.2).expect("decode a frame on the ffmpeg path");
     assert_eq!((frame.width(), frame.height()), (90, 160));
     assert_eq!(
         fallback.video_backend("clip"),
@@ -298,8 +298,8 @@ fn mix(doc: Value, dir: &Path) -> audio::AudioMix {
     resolver.set_host_inputs(assets.inputs.clone());
     let ir = resolver.resolve().unwrap();
     audio::mix_audio_reported(&ir, &assets)
-        .expect("混音")
-        .expect("有 audio clip")
+        .expect("mix audio")
+        .expect("has an audio clip")
 }
 
 #[test]
@@ -417,7 +417,7 @@ fn mix_chain_streamed_matches_memory_and_muted_track_is_silent() {
         memory.pcm
     );
     assert_eq!(streamed.master, memory.master);
-    let master = memory.master.expect("写了 audio.master");
+    let master = memory.master.expect("wrote audio.master");
     assert!(master.true_peak <= -1.5 + 1e-6, "{master:?}");
     assert!((master.lufs + 18.0).abs() < 1.0, "{master:?}");
 
@@ -431,7 +431,7 @@ fn mix_chain_streamed_matches_memory_and_muted_track_is_silent() {
 
     // A muted track is bit-for-bit identical to deleting that track.
     let (muted_ir, assets) = resolved(doc(true, true));
-    assert_eq!(muted_ir.audio_clips.len(), 2, "编译保留静音轨的 clip");
+    assert_eq!(muted_ir.audio_clips.len(), 2, "compilation keeps the clip on the muted track");
     let muted = audio::mix_audio_reported(&muted_ir, &assets)
         .unwrap()
         .unwrap();
@@ -500,23 +500,23 @@ fn constant_rate_audio_uses_symphonia_and_rate_changed_audio_uses_ffmpeg() {
                 .map(|record| record.backend)
                 .collect::<Vec<_>>(),
             vec![expected],
-            "rate={rate} 应走 {expected}"
+            "rate={rate} should use {expected}"
         );
         // The mix-length contract is independent of the backend: for the whole film, 1 second × 48 kHz × stereo × f32.
         assert_eq!(
             mix.pcm.len(),
             audio::SAMPLE_RATE as usize * 2 * 4,
-            "rate={rate} 的 PCM 长度"
+            "PCM length for rate={rate}"
         );
         measured.push(middle_rms(&to_samples(&mix.pcm)));
     }
     // Variable speed changes the **timeline**, not the level: the same sine should have the same RMS at 1× and 2×.
     // This pins down “the backend changed but the sound did not”, without relying on the absolute amplitude of the lavfi sine.
     let (constant, stretched) = (measured[0], measured[1]);
-    assert!(constant > 0.02, "常速 RMS {constant:.4} 异常（几乎静音）");
+    assert!(constant > 0.02, "constant-speed RMS {constant:.4} is abnormal (almost silent)");
     assert!(
         (constant - stretched).abs() < constant * 0.15,
-        "Symphonia 路径 RMS {constant:.4} 与 ffmpeg atempo 路径 {stretched:.4} 差得太多"
+        "Symphonia path RMS {constant:.4} differs too much from ffmpeg atempo path {stretched:.4}"
     );
 }
 
@@ -559,20 +559,20 @@ fn symphonia_matches_ffmpeg(channels: u16) {
         .args(["-f", "f32le", "-ac", "2", "-ar", "48000", "-"])
         .stderr(Stdio::null())
         .output()
-        .expect("ffmpeg 参照解码");
+        .expect("ffmpeg reference decode");
     assert!(reference.status.success());
     let theirs = to_samples(&reference.stdout);
     // Both sides are 1 second of 48 kHz stereo. The mix side is zero-padded to the full film length, and the reference side is exactly the length given by -t.
     assert_eq!(
         theirs.len(),
         audio::SAMPLE_RATE as usize * 2,
-        "参照 PCM 应是 1 秒立体声"
+        "reference PCM should be 1 second of stereo"
     );
-    assert_eq!(ours.len(), theirs.len(), "两条路径的样本数必须一致");
+    assert_eq!(ours.len(), theirs.len(), "both paths must produce the same number of samples");
     let (ours_rms, theirs_rms) = (middle_rms(&ours), middle_rms(&theirs));
     assert!(
         (ours_rms - theirs_rms).abs() < theirs_rms * 0.02,
-        "Symphonia RMS {ours_rms:.5} 与 ffmpeg RMS {theirs_rms:.5} 相差超过 2%"
+        "Symphonia RMS {ours_rms:.5} and ffmpeg RMS {theirs_rms:.5} differ by more than 2%"
     );
     // Maximum per-sample deviation: the interpolation kernels for 44.1 → 48 differ, but on the same 440 Hz sine they should not differ by much.
     let worst = ours
@@ -582,8 +582,8 @@ fn symphonia_matches_ffmpeg(channels: u16) {
         .fold(0.0_f64, f64::max);
     assert!(
         worst < 0.05,
-        "逐样最大偏差 {worst:.5} 过大（满幅 1.0，正弦幅度约 {:.3}）",
+        "per-sample max deviation {worst:.5} is too large (full scale 1.0, sine amplitude about {:.3})",
         theirs_rms * std::f64::consts::SQRT_2
     );
-    println!("symphonia rms={ours_rms:.5} ffmpeg rms={theirs_rms:.5} 逐样最大偏差={worst:.5}");
+    println!("symphonia rms={ours_rms:.5} ffmpeg rms={theirs_rms:.5} max per-sample deviation={worst:.5}");
 }

@@ -68,12 +68,12 @@ fn params() -> VisualizerParams {
 fn track() -> VizTrack {
     // The generator and the consumer share the same fixture bytes: `sweep-48k-mono.bcs1` is written to disk by `write_visualizer_fixtures` in `visualizer_source.rs`, and guarded byte for byte.
     let bytes = std::fs::read(fixture_dir().join("sweep-48k-mono.bcs1"))
-        .expect("sweep-48k-mono.bcs1 缺失（先跑 visualizer_source 的 --ignored）");
-    VizTrack::derive(&bytes, PARAMS).expect("派生 sweep 轨")
+        .expect("sweep-48k-mono.bcs1 is missing (run visualizer_source with --ignored first)");
+    VizTrack::derive(&bytes, PARAMS).expect("derive sweep track")
 }
 
 fn record(recipe: &CatalogueRecipe, viz: &VizFrame, time: f64) -> Value {
-    let aspect = recipe.visualizer().expect("visualizer 配方").aspect;
+    let aspect = recipe.visualizer().expect("visualizer recipe").aspect;
     let mut builder = FrameBuilder::default();
     let pushed = visualizer_frame(
         &mut builder,
@@ -102,7 +102,7 @@ fn expected_json() -> Value {
             let samples = INSTANTS
                 .iter()
                 .map(|instant| {
-                    let viz = track.sample(*instant).expect("轨非空");
+                    let viz = track.sample(*instant).expect("track is non-empty");
                     // The instant is both the coordinate for **fetching frames** and the element-local instant: `ribbons-v1` reads the latter.
                     let mut entry = record(recipe, viz, *instant);
                     entry["t"] = json!(instant);
@@ -140,7 +140,7 @@ fn expected_json() -> Value {
 }
 
 fn pretty(value: &Value) -> Vec<u8> {
-    let mut bytes = serde_json::to_vec_pretty(value).expect("序列化夹具");
+    let mut bytes = serde_json::to_vec_pretty(value).expect("serialize fixture");
     bytes.push(b'\n');
     bytes
 }
@@ -211,7 +211,7 @@ fn the_polyline_density_is_frozen_by_the_manifest() {
         let bare = id.strip_prefix("visualizer.").unwrap();
         let recipe = motion::preset_registry::timeline_visualizer(bare).unwrap();
         let body = recipe.visualizer().unwrap();
-        let declared = body.recipe.integer("samples").expect("折线类必填 samples") as usize;
+        let declared = body.recipe.integer("samples").expect("polyline kind requires samples") as usize;
         assert_eq!(style["samples"].as_u64().unwrap() as usize, declared);
         let mut builder = FrameBuilder::default();
         visualizer_frame(

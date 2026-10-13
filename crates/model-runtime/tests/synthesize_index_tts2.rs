@@ -85,11 +85,11 @@ fn check_and_write(audio: &TtsAudio, name: &str) -> PathBuf {
         clipped * 100.0,
         path.display()
     );
-    assert!((0.5..=20.0).contains(&seconds), "{name}: {seconds:.2} s 不在 0.5–20 s 内");
-    assert!(peak > 0.01, "{name}: 峰值 {peak} 像静音");
-    assert!(rms > 0.003, "{name}: RMS {rms} 像静音");
-    assert!(clipped < 0.001, "{name}: {:.3}% 的样本削波", clipped * 100.0);
-    assert!(audio.samples.iter().all(|s| s.is_finite()), "{name}: 有 NaN / Inf");
+    assert!((0.5..=20.0).contains(&seconds), "{name}: {seconds:.2} s is outside 0.5–20 s");
+    assert!(peak > 0.01, "{name}: peak {peak} looks silent");
+    assert!(rms > 0.003, "{name}: RMS {rms} looks silent");
+    assert!(clipped < 0.001, "{name}: {:.3}% of samples clipped", clipped * 100.0);
+    assert!(audio.samples.iter().all(|s| s.is_finite()), "{name}: contains NaN / Inf");
     path
 }
 
@@ -113,10 +113,10 @@ fn load(kind: TtsEngineKind) -> Box<dyn TtsEngine> {
         },
     )
     .expect("load IndexTTS");
-    println!("{}: 加载 {:.2} s", kind.as_str(), started.elapsed().as_secs_f32());
+    println!("{}: loaded in {:.2} s", kind.as_str(), started.elapsed().as_secs_f32());
     assert_eq!(engine.kind(), kind);
     assert_eq!(engine.sample_rate(), 22_050);
-    assert!(engine.preset_speakers().contains(&"zh-female".to_owned()), "内置音色当预置说话人");
+    assert!(engine.preset_speakers().contains(&"zh-female".to_owned()), "built-in voice should be a preset speaker");
     engine
 }
 
@@ -135,7 +135,7 @@ fn speak_audio(engine: &mut dyn TtsEngine, request: &TtsRequest, name: &str) -> 
             true
         })
         .expect("synthesize");
-    println!("{name}: 合成 {:.2} s，{chunks} 段", started.elapsed().as_secs_f32());
+    println!("{name}: synthesized in {:.2} s, {chunks} chunks", started.elapsed().as_secs_f32());
     assert!(chunks >= 1);
     check_and_write(&audio, name);
     audio
@@ -171,7 +171,7 @@ fn synthesize_set(engine: &mut dyn TtsEngine, label: &str) {
     let audio = speak_audio(engine, &request, &format!("{label}-reading-hang2-zh"));
     assert!(
         audio.readings_dropped.is_empty(),
-        "{label}: 注音被丢了：{:?}",
+        "{label}: pronunciation annotation dropped: {:?}",
         audio.readings_dropped
     );
 }
@@ -196,8 +196,8 @@ fn index_tts25_speaks_with_builtin_voices_an_emotion_preset_and_a_speed_knob() {
     let normal = speak(engine.as_mut(), &request, "index-tts2.5-speed-1.0-zh");
     request.speed = Some(1.4);
     let fast = speak(engine.as_mut(), &request, "index-tts2.5-speed-1.4-zh");
-    println!("语速 1.0 → {normal:.2} s，1.4 → {fast:.2} s");
-    assert!(fast < normal * 0.9, "1.4 倍语速没有变短：{normal:.2} s → {fast:.2} s");
+    println!("speech rate 1.0 → {normal:.2} s, 1.4 → {fast:.2} s");
+    assert!(fast < normal * 0.9, "1.4x speech rate did not shorten: {normal:.2} s → {fast:.2} s");
 
     // An out-of-range speech rate is rejected before the reference audio is loaded.
     request.speed = Some(3.0);

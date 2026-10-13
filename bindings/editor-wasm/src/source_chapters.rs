@@ -218,5 +218,5 @@ pub fn source_chapters(input: &[u8]) -> Result<String, EntryError> {
         rows,
         summary,
     };
-    Ok(serde_json::to_string(&output).expect("来源章节总能序列化"))
+    Ok(serde_json::to_string(&output).expect("source chapters always serialize"))
 }

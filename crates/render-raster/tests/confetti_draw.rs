@@ -64,14 +64,14 @@ fn hex(color: &str) -> [f32; 4] {
 
 /// Recipe defaults with a fixed seed: `colors` / `shapes` use the recipe's own values, and all multipliers are 1.
 fn params(recipe: &CatalogueRecipe) -> ConfettiParams {
-    let body = recipe.confetti().expect("confetti 配方");
+    let body = recipe.confetti().expect("confetti recipe");
     ConfettiParams {
         seed: SEED,
         colors: body.palette.iter().map(|c| hex(c)).collect(),
         shapes: body
             .shapes
             .iter()
-            .map(|s| ConfettiShape::parse(s).expect("配方形状已在注册表解析期校验"))
+            .map(|s| ConfettiShape::parse(s).expect("recipe shape was validated when the registry was parsed"))
             .collect(),
         pixel_scale: PIXEL_SCALE,
         ..ConfettiParams::default()
@@ -90,7 +90,7 @@ fn record(recipe: &CatalogueRecipe, time: f64) -> Value {
         [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
     );
     let frame = builder.finish();
-    assert_eq!(pushed, frame.ops.len(), "返回条数必须等于实际压入条数");
+    assert_eq!(pushed, frame.ops.len(), "returned count must equal the number of ops actually pushed");
     json!({
         "t": time,
         "ops": frame.ops.len(),
@@ -149,7 +149,7 @@ fn pretty(value: &Value) -> Vec<u8> {
 #[ignore]
 fn write_confetti_draw_fixture() {
     let dir = fixture_dir();
-    std::fs::create_dir_all(&dir).expect("建夹具目录");
+    std::fs::create_dir_all(&dir).expect("create fixture directory");
     std::fs::write(dir.join("cases.json"), pretty(&cases_json())).unwrap();
     std::fs::write(dir.join("expected-draw.json"), pretty(&expected_json())).unwrap();
 }
@@ -163,8 +163,8 @@ fn the_confetti_fixtures_are_up_to_date() {
         ("expected-draw.json", pretty(&expected_json())),
     ] {
         let actual = std::fs::read(dir.join(name))
-            .unwrap_or_else(|e| panic!("{name} 缺失（跑 --ignored）：{e}"));
-        assert_eq!(actual, expected, "{name} 与生成器不一致");
+            .unwrap_or_else(|e| panic!("{name} is missing (run with --ignored): {e}"));
+        assert_eq!(actual, expected, "{name} does not match the generator");
     }
 }
 
@@ -181,21 +181,21 @@ fn every_style_is_live_at_the_tile_frame() {
         let ops = entry["ops"].as_u64().unwrap();
         assert!(
             ops >= TILE_MIN_ALIVE + 2,
-            "{} @ t={TILE_FRAME} 只有 {} 颗粒子，磁贴上认不出款",
+            "{} @ t={TILE_FRAME} has only {} particles, too few to recognize the style on the tile",
             recipe.qualified_id(),
             ops.saturating_sub(2),
         );
         let shapes = recipe.confetti().unwrap().shapes.len() as u64;
         assert!(
             entry["paths"].as_u64().unwrap() <= shapes + 1,
-            "{} 的路径没有按形状去重",
+            "{} paths are not deduplicated by shape",
             recipe.qualified_id()
         );
         let body = recipe.confetti().unwrap();
         let max_alive = body.recipe.integer("maxAlive").unwrap();
         assert!(
             ops - 2 <= max_alive,
-            "{} 超过 maxAlive",
+            "{} exceeds maxAlive",
             recipe.qualified_id()
         );
     }
@@ -215,7 +215,7 @@ fn negative_time_and_finished_bursts_push_nothing() {
             element_box(),
             [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
         );
-        assert_eq!(pushed, 0, "{} 在 t<0 不得画", recipe.qualified_id());
+        assert_eq!(pushed, 0, "{} must not draw at t<0", recipe.qualified_id());
         assert!(builder.finish().ops.is_empty());
     }
     // Single burst: after the user overrides interval = 0, t = 12 s must be an empty frame.
@@ -245,7 +245,7 @@ fn sampling_is_order_independent_and_seeded() {
         let forward: Vec<Value> = TIMES.iter().map(|t| record(recipe, *t)).collect();
         let backward: Vec<Value> = TIMES.iter().rev().map(|t| record(recipe, *t)).collect();
         for (a, b) in forward.iter().zip(backward.iter().rev()) {
-            assert_eq!(a, b, "{} 乱序采样漂移", recipe.qualified_id());
+            assert_eq!(a, b, "{} drifts under out-of-order sampling", recipe.qualified_id());
         }
         let mut other = params(recipe);
         other.seed = SEED + 1;
@@ -263,7 +263,7 @@ fn sampling_is_order_independent_and_seeded() {
         assert_ne!(
             reseeded,
             forward[2]["fingerprint"].as_str().unwrap(),
-            "{} 换种子必须换画面",
+            "{} must change the picture when the seed changes",
             recipe.qualified_id()
         );
     }
@@ -290,7 +290,7 @@ fn settle_empties_the_frame_before_the_element_ends() {
         element_box(),
         [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
     );
-    assert_eq!(at_end, 0, "片尾必须清空");
+    assert_eq!(at_end, 0, "the end of the clip must be cleared");
     let mut builder = FrameBuilder::default();
     let mid = confetti_frame(
         &mut builder,
@@ -301,7 +301,7 @@ fn settle_empties_the_frame_before_the_element_ends() {
         element_box(),
         [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
     );
-    assert!(mid > 0, "settle 之前照常发射");
+    assert!(mid > 0, "emission before settle proceeds as usual");
 }
 
 // ---------------------------------------------------------------------------
@@ -322,7 +322,7 @@ fn drag_never_pins_particles_to_a_frontier_inside_the_frame() {
         let speed = p.array("speedPx").map_or(0.0, |a| {
             a.iter().filter_map(Value::as_f64).fold(0.0, f64::max)
         });
-        let emitters = p.array("emitters").expect("配方必须有发射器");
+        let emitters = p.array("emitters").expect("recipe must have emitters");
         let widest = |key: &str| {
             emitters
                 .iter()
@@ -351,9 +351,9 @@ fn drag_never_pins_particles_to_a_frontier_inside_the_frame() {
             let gap = (100.0 - spread).max(0.0) / 100.0 * REF_SHORT;
             assert!(
                 speed / drag >= gap,
-                "{} 的 {axis}={drag} 把位移钉在 {:.0} 参考 px，\
-                 而发射带只铺了这一轴的 {spread:.0}%，还差 {gap:.0} px 要靠飞行——\
-                 画面会留一道永远不动的锋面",
+                "{} has {axis}={drag}, which pins displacement at {:.0} reference px, \
+                 while the emission band covers only {spread:.0}% of this axis, leaving {gap:.0} px to be covered by flight; \
+                 the frame would keep a front that never moves",
                 recipe.qualified_id(),
                 speed / drag,
             );
@@ -369,7 +369,7 @@ fn styles_seeded_across_the_frame_reach_both_edges() {
     let mut checked = 0;
     for recipe in timeline_confettis() {
         let body = recipe.confetti().unwrap();
-        let emitters = body.recipe.array("emitters").expect("配方必须有发射器");
+        let emitters = body.recipe.array("emitters").expect("recipe must have emitters");
         // Top and bottom edges of the emitter band (percent of the element box).
         let (mut top, mut bottom) = (f64::MAX, f64::MIN);
         for e in emitters {
@@ -388,15 +388,15 @@ fn styles_seeded_across_the_frame_reach_both_edges() {
         let hits = |lo: f64, hi: f64| particles.iter().filter(|q| q.y >= lo && q.y < hi).count();
         assert!(
             hits(0.0, band) > 0,
-            "{} 稳态时画面顶部一成是空的（发射带 {top:.0}%–{bottom:.0}%）",
+            "{} has an empty top tenth of the frame at steady state (emission band {top:.0}%–{bottom:.0}%)",
             recipe.qualified_id(),
         );
         assert!(
             hits(CANVAS.1 - band, CANVAS.1) > 0,
-            "{} 稳态时画面底部一成是空的（发射带 {top:.0}%–{bottom:.0}%），\
-             这就是「只铺满了一半」",
+            "{} has an empty bottom tenth of the frame at steady state (emission band {top:.0}%–{bottom:.0}%),\
+             this is the “only fills half” problem",
             recipe.qualified_id(),
         );
     }
-    assert!(checked >= 5, "应有至少 5 款从上半段起跑，实得 {checked}");
+    assert!(checked >= 5, "at least 5 styles should start in the upper half, found {checked}");
 }

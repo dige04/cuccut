@@ -13,7 +13,7 @@ fn golden_ir() -> scene_primitives::Ir {
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/launch-golden/launch.ccut.json"
     );
-    let text = std::fs::read_to_string(path).expect("读取 golden JSON");
+    let text = std::fs::read_to_string(path).expect("read golden JSON");
     let doc: Value = serde_json::from_str(&text).unwrap();
     scene_primitives::Resolver::new(doc, None)
         .unwrap()
@@ -104,10 +104,10 @@ fn region_captions_draw_inside_the_rect_growing_up() {
     let boxes = ir.caption_clips[0].items[0].lines["zh"]
         .boxes
         .as_ref()
-        .expect("core 已排定行盒");
-    assert!(boxes.len() > 1, "长行应在 400px 宽的 region 内换行");
+        .expect("core has already laid out the line boxes");
+    assert!(boxes.len() > 1, "a long line should wrap within the 400px-wide region");
     for b in boxes {
-        assert!(b.w <= 400.0 + 1e-6, "行宽 {} 超出 region", b.w);
+        assert!(b.w <= 400.0 + 1e-6, "line width {} exceeds the region", b.w);
         assert!(b.x >= 200.0 - 1e-6 && b.x + b.w <= 600.0 + 1e-6);
         assert!(b.y >= 300.0 - 1e-6 && b.y + b.h <= 600.0 + 1e-6);
     }
@@ -122,10 +122,10 @@ fn region_captions_draw_inside_the_rect_growing_up() {
             glyph_xs.push((tf[4], tf[5]));
         }
     }
-    assert!(!glyph_xs.is_empty(), "字幕应记录字形");
+    assert!(!glyph_xs.is_empty(), "subtitles should record glyphs");
     for (x, y) in glyph_xs {
-        assert!((199.0..=601.0).contains(&x), "字形 x={x} 越出 region");
-        assert!((299.0..=601.0).contains(&y), "字形基线 y={y} 越出 region");
+        assert!((199.0..=601.0).contains(&x), "glyph x={x} is outside the region");
+        assert!((299.0..=601.0).contains(&y), "glyph baseline y={y} is outside the region");
     }
 }
 
@@ -155,7 +155,7 @@ fn caption_lane_exit_overrides_block_fade() {
                 .ops
                 .iter()
                 .any(|op| matches!(op, DrawOp::FillPath { .. })),
-            "t={t} 应画出字幕"
+            "t={t} should draw the subtitle"
         );
         frame
             .ops
@@ -171,12 +171,12 @@ fn caption_lane_exit_overrides_block_fade() {
     assert!(alpha_at(doc(short.clone()), 1.9) > 0.999);
     // 0.02 s before until: the short exit is halfway done
     let mid = alpha_at(doc(short), 1.98);
-    assert!(mid > 0.05 && mid < 0.95, "fadeOut 0.04 中点不透明度 {mid}");
+    assert!(mid > 0.05 && mid < 0.95, "fadeOut 0.04 midpoint opacity {mid}");
     // No exit declared: fades out as a whole per the clip's fade (0.18 s), already darkened 0.1 s before until
     let dim = alpha_at(doc(Value::Null), 1.9);
     assert!(
         dim < 0.9,
-        "缺省 fade 下 until 前 0.1 秒应已变暗，得到 {dim}"
+        "with the default fade, 0.1 s before until should already be dimmed; got {dim}"
     );
 }
 
@@ -236,16 +236,16 @@ fn element_mask_records_a_matte_and_hides_its_source() {
         .iter()
         .filter(|op| matches!(op, DrawOp::FillRect { .. }))
         .count();
-    assert_eq!(fills, 2, "红盒一次、遮罩源一次；源不再在正常流里画第二遍");
+    assert_eq!(fills, 2, "the red box once, the mask source once; the source is no longer drawn a second time in the normal flow");
 
     let assets = Arc::new(LoadedAssets::default());
     let mut media = MediaStore::new(assets, ir.fps);
     let pixmap = renderer.draw(&ir, &mut engine, &mut media, 1.0).unwrap();
-    assert_eq!(pixel(&pixmap, 50, 50), [255, 255, 255, 255], "遮罩外是背景");
+    assert_eq!(pixel(&pixmap, 50, 50), [255, 255, 255, 255], "outside the mask is the background");
     assert_eq!(
         pixel(&pixmap, 200, 100),
         [255, 0, 0, 255],
-        "遮罩内是红盒而不是蓝色源"
+        "inside the mask is the red box, not the blue source"
     );
     assert_eq!(pixel(&pixmap, 149, 100), [255, 255, 255, 255]);
 }
@@ -277,10 +277,10 @@ fn gradient_background_fills_with_a_paint_side_table() {
     let pixmap = renderer.draw(&ir, &mut engine, &mut media, 1.0).unwrap();
     let left = pixel(&pixmap, 2, 100);
     let right = pixel(&pixmap, 397, 100);
-    assert!(left[0] < 20, "左端接近黑 {left:?}");
-    assert!(right[0] > 235, "右端接近白 {right:?}");
+    assert!(left[0] < 20, "left end is near black {left:?}");
+    assert!(right[0] > 235, "right end is near white {right:?}");
     let mid = pixel(&pixmap, 200, 100);
-    assert!((100..=160).contains(&mid[0]), "中点在中灰 {mid:?}");
+    assert!((100..=160).contains(&mid[0]), "midpoint is mid-gray {mid:?}");
 }
 
 /// `style.border` (§6.3): an even-odd fill of a ring just inside the box, following the rounded corners; without a background, the picture below shows through the middle.
@@ -302,7 +302,7 @@ fn border_paints_an_inner_ring_that_follows_the_radius() {
         .iter()
         .filter(|op| matches!(op, DrawOp::FillPathPaint { even_odd: true, .. }))
         .count();
-    assert_eq!(rings, 2, "两个盒子各一圈");
+    assert_eq!(rings, 2, "one ring per box");
     assert!(
         frame
             .paints
@@ -312,34 +312,34 @@ fn border_paints_an_inner_ring_that_follows_the_radius() {
     let assets = Arc::new(LoadedAssets::default());
     let mut media = MediaStore::new(assets, ir.fps);
     let pixmap = renderer.draw(&ir, &mut engine, &mut media, 1.0).unwrap();
-    assert_eq!(pixel(&pixmap, 104, 100), [255, 0, 0, 255], "左边的圈");
-    assert_eq!(pixel(&pixmap, 200, 145), [255, 0, 0, 255], "下边的圈");
+    assert_eq!(pixel(&pixmap, 104, 100), [255, 0, 0, 255], "the left ring");
+    assert_eq!(pixel(&pixmap, 200, 145), [255, 0, 0, 255], "the bottom ring");
     assert_eq!(
         pixel(&pixmap, 115, 100),
         [255, 255, 255, 255],
-        "圈内侧透出底色"
+        "the inside of the ring shows the background"
     );
     assert_eq!(
         pixel(&pixmap, 200, 100),
         [255, 255, 255, 255],
-        "没有背景：中间是空的"
+        "no background: the middle is empty"
     );
     assert_eq!(
         pixel(&pixmap, 101, 51),
         [255, 255, 255, 255],
-        "圆角把盒角切掉"
+        "the rounded corners cut off the box corners"
     );
     assert_eq!(
         pixel(&pixmap, 321, 51),
         [0, 0, 0, 255],
-        "没有圆角：盒角是尖的"
+        "no rounded corners: the box corners are sharp"
     );
     assert_eq!(
         pixel(&pixmap, 350, 80),
         [0, 0, 255, 255],
-        "描边画在背景之上、只占内侧一圈"
+        "the stroke is drawn above the background and only takes up the inner ring"
     );
-    assert_eq!(pixel(&pixmap, 316, 80), [255, 255, 255, 255], "不向外扩");
+    assert_eq!(pixel(&pixmap, 316, 80), [255, 255, 255, 255], "does not expand outward");
 }
 
 /// `skewX` (§6.4) is an affine transform: a positive angle pushes the bottom edge of the box to the right and the top edge to the left (CSS convention).
@@ -360,17 +360,17 @@ fn skew_x_channel_shears_the_box() {
     assert_eq!(
         pixel(&pixmap, 260, 140),
         [0, 0, 0, 255],
-        "底部右侧被推进盒内"
+        "bottom-right is pushed into the box"
     );
     assert_eq!(
         pixel(&pixmap, 260, 60),
         [255, 255, 255, 255],
-        "顶部右侧空出"
+        "top-right is left empty"
     );
     assert_eq!(
         pixel(&pixmap, 140, 60),
         [0, 0, 0, 255],
-        "顶部左侧被推进盒内"
+        "top-left is pushed into the box"
     );
 }
 

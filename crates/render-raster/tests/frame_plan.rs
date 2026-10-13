@@ -144,7 +144,7 @@ fn launch_ir() -> Ir {
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/launch-golden/launch.ccut.json"
     );
-    let text = std::fs::read_to_string(path).expect("读取 golden JSON");
+    let text = std::fs::read_to_string(path).expect("read golden JSON");
     let doc: Value = serde_json::from_str(&text).unwrap();
     Resolver::new(doc, None).unwrap().resolve().unwrap()
 }
@@ -155,15 +155,15 @@ fn assert_every_frame_folds(ir: &mut Ir, times: &[f64], label: &str) {
     let planner = FramePlanner::cpu(ir).unwrap();
     assert!(
         planner.topology().is_empty(),
-        "{label}: 没有 effect 的文档不该产生离屏 surface 拓扑"
+        "{label}: a document without effects should not produce an off-screen surface topology"
     );
     let mut fingerprints = Vec::new();
     for t in times {
         let plan = planner.plan(&renderer, ir, &mut engine, *t);
-        assert_eq!(plan.passes.len(), 1, "{label} @ {t}: 应当只有一个 pass");
+        assert_eq!(plan.passes.len(), 1, "{label} @ {t}: there should be exactly one pass");
         assert!(
             matches!(&plan.passes[0], RenderPass::Draw { target, .. } if *target == plan.output),
-            "{label} @ {t}: 唯一的 pass 必须是写输出 surface 的 Draw"
+            "{label} @ {t}: the only pass must be a Draw that writes the output surface"
         );
         assert!(plan.is_folded(), "{label} @ {t}");
         plan.validate().unwrap();
@@ -171,7 +171,7 @@ fn assert_every_frame_folds(ir: &mut Ir, times: &[f64], label: &str) {
     }
     assert!(
         fingerprints.iter().any(|fp| *fp != fingerprints[0]),
-        "{label}: 采样时刻里应当至少有两帧不同"
+        "{label}: at least two of the sampled frames should differ"
     );
 }
 
@@ -210,7 +210,7 @@ fn frame_fingerprint_is_in_bijection_with_the_drawop_fingerprint() {
             assert_eq!(
                 left_primitive == right_primitive,
                 left_frame == right_frame,
-                "DrawOp 指纹与帧指纹的相等关系必须一致"
+                "DrawOp fingerprint equality must match frame fingerprint equality"
             );
         }
     }
@@ -421,10 +421,10 @@ fn composite_pass_blends_two_surfaces_and_reuses_cached_inputs() {
     let second = execute_plan(&plan, &mut executor, &mut empty_media(), Some(&cache))
         .unwrap()
         .take();
-    assert_eq!(first, second, "缓存命中与否输出必须相同");
+    assert_eq!(first, second, "output must be identical whether or not the cache hits");
     assert!(
         cache.hits() >= 3,
-        "第二次执行应当全部命中：{}",
+        "the second run should hit the cache every time: {}",
         cache.hits()
     );
     // The opaque blue layer sits on top
@@ -440,7 +440,7 @@ fn preflight_rejects_a_canvas_larger_than_the_backend_can_hold() {
     });
     let ir = Resolver::new(doc, None).unwrap().resolve().unwrap();
     let error = match FramePlanner::cpu(&ir) {
-        Ok(_) => panic!("超大画布必须在 preflight 被拒"),
+        Ok(_) => panic!("an oversized canvas must be rejected in preflight"),
         Err(error) => error,
     };
     assert!(
@@ -644,7 +644,7 @@ fn both_transition_inputs_enter_the_surface_fingerprint() {
         plan.frame_fingerprint().unwrap()
     };
     let base = build(0.5, false, 1);
-    assert_ne!(base, build(0.75, false, 1), "progress 必须进指纹");
-    assert_ne!(base, build(0.5, true, 1), "两侧互换必须换指纹");
-    assert_ne!(base, build(0.5, false, 2), "效果版本必须进指纹");
+    assert_ne!(base, build(0.75, false, 1), "progress must be part of the fingerprint");
+    assert_ne!(base, build(0.5, true, 1), "swapping the two sides must change the fingerprint");
+    assert_ne!(base, build(0.5, false, 2), "the effect version must be part of the fingerprint");
 }

@@ -41,11 +41,11 @@ fn updating() -> bool {
 
 fn assert_golden(name: &str, actual: &Value) {
     let path = fixture_dir().join(name);
-    let mut text = serde_json::to_string_pretty(actual).expect("序列化 golden");
+    let mut text = serde_json::to_string_pretty(actual).expect("serialize golden");
     text.push('\n');
     if updating() {
-        std::fs::create_dir_all(fixture_dir()).expect("创建 fixtures/motion");
-        std::fs::write(&path, &text).expect("写入 golden");
+        std::fs::create_dir_all(fixture_dir()).expect("create fixtures/motion");
+        std::fs::write(&path, &text).expect("write golden");
         return;
     }
     let expected = std::fs::read_to_string(&path).unwrap_or_else(|error| {
@@ -220,7 +220,7 @@ fn ir_json(ir: &Ir) -> Value {
 }
 
 fn resolve_document(doc: Value, inputs: Option<HostInputs>) -> Ir {
-    let mut resolver = Resolver::new(doc, None).expect("构造 Resolver");
+    let mut resolver = Resolver::new(doc, None).expect("construct Resolver");
     if let Some(inputs) = inputs {
         resolver.set_host_inputs(inputs);
     }
@@ -251,13 +251,13 @@ fn resolve_document(doc: Value, inputs: Option<HostInputs>) -> Ir {
 
 fn media_demo_doc() -> Value {
     let path = fixture_root().join("media-demo.ccut.json");
-    serde_json::from_slice(&std::fs::read(&path).expect("读取 media-demo.ccut.json")).unwrap()
+    serde_json::from_slice(&std::fs::read(&path).expect("read media-demo.ccut.json")).unwrap()
 }
 
 /// `tests/fixtures/launch-golden/launch.ccut.json` is a fixture tracked in the repository.
 fn launch_doc() -> Value {
     let path = fixture_root().join("launch-golden/launch.ccut.json");
-    serde_json::from_slice(&std::fs::read(&path).expect("读取 launch.ccut.json")).unwrap()
+    serde_json::from_slice(&std::fs::read(&path).expect("read launch.ccut.json")).unwrap()
 }
 
 // The "path" / "note" / "generator" entries in the two goldens record the v2 location and command; they are cross-checked byte for byte against the fixture, so they are kept as originally written. The fixture is in fact read from this crate's `tests/fixtures/`.

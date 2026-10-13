@@ -172,7 +172,7 @@ pub fn stage_box(input: &[u8]) -> Result<String, EntryError> {
         &geometry(&request.item, &Props::of(&request.item), request.asset.as_ref()),
         (request.canvas.width, request.canvas.height),
     );
-    Ok(serde_json::to_string(&output(b)).expect("框总能序列化"))
+    Ok(serde_json::to_string(&output(b)).expect("frame always serializes"))
 }
 
 /// `{ item, asset?, canvas, pose }` → the `place` fields to write (`x` / `y` / `w` / `scaleY` / `rot`, only those that changed).
@@ -190,11 +190,11 @@ pub fn stage_place(input: &[u8]) -> Result<String, EntryError> {
         pose,
         (request.canvas.width, request.canvas.height),
     );
-    Ok(serde_json::to_string(&change).expect("字段总能序列化"))
+    Ok(serde_json::to_string(&change).expect("field always serializes"))
 }
 
 /// `{ type }` → the default placement `{ x, y, w }` for this kind.
 pub fn place_default(input: &[u8]) -> Result<String, EntryError> {
     let request: DefaultsRequest = serde_json::from_slice(input).map_err(invalid_input)?;
-    Ok(serde_json::to_string(&place_defaults(request.kind)).expect("落位总能序列化"))
+    Ok(serde_json::to_string(&place_defaults(request.kind)).expect("placement defaults always serialize"))
 }

@@ -477,7 +477,7 @@ const REWINDOW_EPSILON: f64 = 1e-6;
 /// Maps the keyframes onto the new window (shared by following and splitting). Rules:
 ///
 /// - **Seconds notation** follows the content: times are converted per [`Rewindow`]; frames that fall before the new window are dropped, and a sampled-value frame is added at 0; frames that fall after the new window (or that already had no effect beyond the old element's end) are dropped, and a sampled-value frame is added at the new end (using the next frame's easing), so the visible part of the animation stays as it was.
-/// - **Percentage notation** stays as is while the element is still one piece (it scales with the new duration, “follows the crop / cut” 随裁剪 / 剪口走); when the element has been split into several pieces, times are converted the same way as seconds notation and then folded back into this piece's percentage, so the two halves stay continuous at the seam.
+/// - **Percentage notation** stays as is while the element is still one piece (it scales with the new duration, “follows the crop / cut”); when the element has been split into several pieces, times are converted the same way as seconds notation and then folded back into this piece's percentage, so the two halves stay continuous at the seam.
 /// - Sampled values are clamped back into the property's value range; where frames coincide after conversion, only the later frame's value is kept, which keeps the times strictly increasing.
 pub fn rewindow(keyframes: &Keyframes, window: Rewindow) -> Keyframes {
     if window.is_identity() {

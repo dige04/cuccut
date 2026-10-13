@@ -1166,7 +1166,7 @@ fn parity_fixture_is_current() {
         std::fs::write(fixture_path(), &text).unwrap();
         return;
     }
-    let stored = std::fs::read_to_string(fixture_path()).expect("没有夹具：CUCCUT_UPDATE_PARITY=1 重写");
+    let stored = std::fs::read_to_string(fixture_path()).expect("no fixture: rewrite with CUCCUT_UPDATE_PARITY=1");
     let stored: Value = serde_json::from_str(&stored).unwrap();
     for (now, before) in fixture["scenes"]
         .as_array()

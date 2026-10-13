@@ -298,9 +298,9 @@ fn a_backend_that_cannot_run_the_effect_falls_back_to_motion() {
         .fallbacks
         .iter()
         .find(|record| record.reason.starts_with("transition-fallback-applied"))
-        .expect("应当记一条转场降级");
+        .expect("should record one transition downgrade");
     assert_eq!(record.applied_preset.as_deref(), Some("crossfade"));
-    assert!(record.applied.is_none(), "转场的落点不是另一条效果");
+    assert!(record.applied.is_none(), "the transition target is not another effect");
     // "A degradation is available" is not a hard error: the whole timeline still renders as usual.
     assert!(planner.report().is_ok());
 

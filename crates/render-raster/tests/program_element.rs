@@ -69,7 +69,7 @@ fn build_with(doc: Value, assets: Arc<LoadedAssets>) -> Harness {
         .filter(|d| d.severity == scene_primitives::lint::Severity::Error)
         .map(|d| format!("{} {} {}", d.rule, d.pointer, d.message))
         .collect();
-    assert!(errors.is_empty(), "文档应当零 lint 错误：{errors:?}");
+    assert!(errors.is_empty(), "document should have zero lint errors: {errors:?}");
 
     let mut resolver = scene_primitives::Resolver::new(doc, None).unwrap();
     resolver.set_host_inputs(assets.inputs.clone());
@@ -99,7 +99,7 @@ impl Harness {
                 _ => None,
             })
             .collect();
-        assert_eq!(hits.len(), 1, "t={t} 应恰有一个 DrawMedia");
+        assert_eq!(hits.len(), 1, "t={t} should have exactly one DrawMedia");
         hits[0]
     }
 
@@ -114,7 +114,7 @@ impl Harness {
                 &mut self.media,
                 t,
             )
-            .expect("渲染");
+            .expect("render");
         let p = pm.pixel(x, y).unwrap();
         (p.red(), p.green(), p.blue(), p.alpha())
     }
@@ -122,7 +122,7 @@ impl Harness {
     /// Reads back the frame number drawn by `frames.tsx`.
     fn drawn_frame(&mut self, t: f64) -> u32 {
         let (r, g, b, a) = self.pixel_at(t, 8, 4);
-        assert_eq!((b, a), (7, 255), "t={t} 不是帧号程序的底色");
+        assert_eq!((b, a), (7, 255), "t={t} is not the background color of the frame-number program");
         u32::from(r) + 256 * u32::from(g)
     }
 
@@ -131,7 +131,7 @@ impl Harness {
         let plan = self
             .planner
             .plan(&self.renderer, &self.ir, &mut self.engine, t);
-        plan.frame_fingerprints().expect("指纹").0
+        plan.frame_fingerprints().expect("fingerprint").0
     }
 }
 
@@ -170,10 +170,10 @@ fn the_export_frame_cache_keys_on_the_program_frame() {
     let mut h = build(doc);
     for k in 0..29u32 {
         let (a, b) = (f64::from(2 * k) / 60.0, f64::from(2 * k + 1) / 60.0);
-        assert_eq!(h.fingerprint(a), h.fingerprint(b), "k={k} 同一程序帧");
+        assert_eq!(h.fingerprint(a), h.fingerprint(b), "k={k} same program frame");
         assert_eq!(h.drawn_frame(b), k);
         let next = f64::from(2 * k + 2) / 60.0;
-        assert_ne!(h.fingerprint(a), h.fingerprint(next), "k={k} 相邻程序帧");
+        assert_ne!(h.fingerprint(a), h.fingerprint(next), "k={k} adjacent program frame");
     }
 }
 
@@ -222,7 +222,7 @@ fn sprite_doc(files: Value, props: Value) -> Value {
 fn modules_files_and_html_boxes_render() {
     let mut h = build(sprite_doc(json!(["dot.svg"]), json!({})));
     assert_eq!(h.pixel_at(0.0, 4, 8), (0xe0, 0x20, 0x20, 255), "dot.svg");
-    assert_eq!(h.pixel_at(0.0, 24, 8), (0xf0, 0xd0, 0x00, 255), "HTML 盒子");
+    assert_eq!(h.pixel_at(0.0, 24, 8), (0xf0, 0xd0, 0x00, 255), "HTML box");
 }
 
 /// `asset()` references a file outside `files`: the first-frame probe at load time reports `program-file-missing`, without reading from disk (the file is actually in the fixture directory).
@@ -230,7 +230,7 @@ fn modules_files_and_html_boxes_render() {
 fn a_file_outside_files_is_reported_not_read() {
     let doc = sprite_doc(json!([]), json!({}));
     let Err(err) = load_assets(&doc, &fixture_dir()) else {
-        panic!("应当报错");
+        panic!("should report an error");
     };
     let text = format!("{err:#}");
     assert!(text.starts_with("program-file-missing"), "{text}");
@@ -245,7 +245,7 @@ fn a_file_outside_files_is_reported_not_read() {
 fn an_asset_path_escaping_the_document_directory_is_program_path_escape() {
     let doc = sprite_doc(json!(["dot.svg"]), json!({ "src": "../program/dot.svg" }));
     let Err(err) = load_assets(&doc, &fixture_dir()) else {
-        panic!("应当报错");
+        panic!("should report an error");
     };
     let text = format!("{err:#}");
     assert!(text.starts_with("program-path-escape: "), "{text}");
@@ -256,7 +256,7 @@ fn an_asset_path_escaping_the_document_directory_is_program_path_escape() {
         "the document's directory",
         "project root",
     ] {
-        assert!(text.contains(needle), "缺 {needle}：{text}");
+        assert!(text.contains(needle), "missing {needle}: {text}");
     }
 }
 
@@ -317,7 +317,7 @@ fn backdrop_filter_blurs_what_is_behind_inside_its_root() {
     let hi = *inside.iter().max().unwrap();
     assert!(
         hi - lo < 24 && lo > 90 && hi < 170,
-        "盒子里应是灰：{inside:?}"
+        "the box should be gray: {inside:?}"
     );
     // Right half: the parent is its own backdrop root and nothing was drawn inside it before the box, so the stripes are not blurred
     assert_eq!(h.pixel_at(0.0, 40, 16), white);
@@ -421,7 +421,7 @@ fn an_unknown_font_family_falls_back_and_is_reported() {
     let pm = h
         .planner
         .render(&h.renderer, &h.ir, &mut h.engine, &mut h.media, 0.0)
-        .expect("渲染");
+        .expect("render");
     let lit = pm.pixels().iter().filter(|p| p.red() > 128).count();
-    assert!(lit > 40, "文字应当画出来，亮像素只有 {lit} 个");
+    assert!(lit > 40, "text should be drawn; only {lit} bright pixels");
 }

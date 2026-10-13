@@ -187,5 +187,5 @@ pub fn element_presets(_input: &[u8]) -> Result<String, EntryError> {
             .filter_map(|recipe| recipe.confetti().map(|body| confetti(recipe, body)))
             .collect::<Result<_, _>>()?,
     };
-    Ok(serde_json::to_string(&presets).expect("目录总能序列化"))
+    Ok(serde_json::to_string(&presets).expect("catalog always serializes"))
 }

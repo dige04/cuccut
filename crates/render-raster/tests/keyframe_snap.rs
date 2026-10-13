@@ -92,7 +92,7 @@ fn store_with_decoder(dir: &Path, decoder: Option<&str>) -> MediaStore {
 fn frame(media: &mut MediaStore, time: f64) -> Vec<u8> {
     media
         .video_frame("clip", time)
-        .expect("取帧")
+        .expect("get frame")
         .data()
         .to_vec()
 }
@@ -120,7 +120,7 @@ fn snapping_lands_on_the_preceding_keyframe_and_releases_exactly() {
     } else {
         exact_frame(dir.path(), 3.5)
     };
-    assert_eq!(snapped, expected, "拖动中 t=3.5 应落在它之前的关键帧上");
+    assert_eq!(snapped, expected, "while dragging, t=3.5 should land on the keyframe before it");
     // The native stream reuses the approximate frame within the same GOP; the ffmpeg backend does not snap and keeps fetching exact frames.
     let expected_next = if native {
         snapped
@@ -129,14 +129,14 @@ fn snapping_lands_on_the_preceding_keyframe_and_releases_exactly() {
     };
     assert!(
         frame(&mut media, 3.8) == expected_next,
-        "同一 GOP 内的后续帧应遵守后端的吸附能力"
+        "later frames within the same GOP should respect the backend's snapping capability"
     );
     // Release: the exact path must give the same frame as one that was never snapped.
     media.set_keyframe_snap(false);
     assert_eq!(
         frame(&mut media, 3.8),
         exact_frame(dir.path(), 3.8),
-        "松手后的精确帧必须与从未吸附过一致"
+        "the exact frame after release must match one that was never snapped"
     );
     // Afterwards, sequential advance (playback) is also unaffected.
     let step = 1.0 / PLAN_FPS;
@@ -158,10 +158,10 @@ fn snapping_backwards_and_far_forward_stays_consistent() {
     media.set_keyframe_snap(true);
     let back = frame(&mut media, 1.4);
     let expected_back = exact_frame(dir.path(), if native { 1.0 } else { 1.4 });
-    assert_eq!(back, expected_back, "向后拖应落在 1.0 s 的关键帧");
+    assert_eq!(back, expected_back, "a backward drag should land on the 1.0 s keyframe");
     let far = frame(&mut media, 5.9);
     let expected_far = exact_frame(dir.path(), if native { 5.0 } else { 5.9 });
-    assert_eq!(far, expected_far, "远跳应落在 5.0 s 的关键帧");
+    assert_eq!(far, expected_far, "a long jump should land on the 5.0 s keyframe");
     media.set_keyframe_snap(false);
     assert_eq!(frame(&mut media, 2.3), exact_frame(dir.path(), 2.3));
 }
@@ -188,7 +188,7 @@ fn ffmpeg_keyframe_snap_keeps_exact_frames_within_the_same_gop() {
     let expected_next = exact(3.8);
     assert!(
         expected_start != expected_next,
-        "夹具在两个时刻必须是不同画面"
+        "the fixture must show different pictures at the two times"
     );
     let mut media = store_with_decoder(dir.path(), Some("h264"));
     frame(&mut media, 0.0);

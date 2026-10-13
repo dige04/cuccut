@@ -77,13 +77,13 @@ fn store(dir: &Path, random_access: bool) -> MediaStore {
 /// With `random_access = false`, the intermediate frames are all drained; that is the path export takes.
 fn frames_after_jump(dir: &Path, random_access: bool, times: &[f64]) -> Vec<Vec<u8>> {
     let mut media = store(dir, random_access);
-    media.video_frame("clip", 0.0).expect("首帧");
+    media.video_frame("clip", 0.0).expect("first frame");
     times
         .iter()
         .map(|time| {
             media
                 .video_frame("clip", *time)
-                .expect("取帧")
+                .expect("fetch frame")
                 .data()
                 .to_vec()
         })
@@ -109,7 +109,7 @@ fn a_far_forward_jump_lands_on_the_same_frame_as_draining() {
     for (index, time) in times.iter().enumerate() {
         assert_eq!(
             drained[index], jumped[index],
-            "t={time:.4} 的帧在抽干路径与重开路径上不一致"
+            "t={time:.4} frame differs between the drained path and the reopened path"
         );
     }
 }
@@ -123,7 +123,7 @@ fn a_jump_past_the_end_freezes_on_the_same_last_frame() {
     let times = [f64::from(DURATION_SECONDS) + 3.0];
     let drained = frames_after_jump(dir.path(), false, &times);
     let jumped = frames_after_jump(dir.path(), true, &times);
-    assert_eq!(drained[0], jumped[0], "片尾冻结帧应当一致");
+    assert_eq!(drained[0], jumped[0], "the trailing frozen frame should match");
 }
 
 /// After playback runs to the end, continuing to advance frame by frame (a clip or project is longer than the video stream by tens of milliseconds): every frame freezes on the same last frame, and returning to the middle of the clip decodes as usual.
@@ -139,7 +139,7 @@ fn stepping_past_the_end_keeps_the_frozen_last_frame() {
     let last = frames_after_jump(dir.path(), false, &[end + 3.0]).remove(0);
     for random_access in [false, true] {
         let mut media = store(dir.path(), random_access);
-        media.video_frame("clip", 0.0).expect("首帧");
+        media.video_frame("clip", 0.0).expect("first frame");
         for tick in -4..8 {
             let time = end + f64::from(tick) * step;
             let frame = media.video_frame("clip", time).unwrap_or_else(|error| {
@@ -149,12 +149,12 @@ fn stepping_past_the_end_keeps_the_frozen_last_frame() {
                 assert_eq!(
                     frame.data(),
                     last.as_slice(),
-                    "random_access={random_access} t={time:.4} 应冻结在末帧"
+                    "random_access={random_access} t={time:.4} should freeze on the last frame"
                 );
             }
         }
-        let inside = media.video_frame("clip", 1.0).expect("回到片内");
-        assert_ne!(inside.data(), last.as_slice(), "回到片内不能还冻结在末帧");
+        let inside = media.video_frame("clip", 1.0).expect("return inside the clip");
+        assert_ne!(inside.data(), last.as_slice(), "returning inside the clip must not still freeze on the last frame");
     }
 }
 
@@ -175,7 +175,7 @@ fn a_first_request_past_the_end_freezes_on_the_last_frame() {
             assert_eq!(
                 frame.data(),
                 last.as_slice(),
-                "random_access={random_access} t={time:.4} 应冻结在末帧"
+                "random_access={random_access} t={time:.4} should freeze on the last frame"
             );
         }
     }
@@ -190,8 +190,8 @@ fn random_access_is_off_by_default() {
     let doc = video_doc();
     let assets = Arc::new(load_assets(&doc, dir.path()).expect("load_assets"));
     let mut default_store = MediaStore::new(assets, PLAN_FPS);
-    default_store.video_frame("clip", 0.0).expect("首帧");
-    let default_frame = default_store.video_frame("clip", 4.0).expect("取帧");
+    default_store.video_frame("clip", 0.0).expect("first frame");
+    let default_frame = default_store.video_frame("clip", 4.0).expect("fetch frame");
     let drained = frames_after_jump(dir.path(), false, &[4.0]);
     assert_eq!(default_frame.data(), drained[0].as_slice());
 }

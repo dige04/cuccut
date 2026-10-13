@@ -17,7 +17,7 @@ fn ff(args: &[&str]) {
         .args(["-y", "-loglevel", "error"])
         .args(args)
         .status()
-        .expect("需要 PATH 中有 ffmpeg");
+        .expect("ffmpeg must be on PATH");
     assert!(st.success(), "ffmpeg {args:?}");
 }
 
@@ -32,7 +32,7 @@ fn find_font() -> PathBuf {
             return PathBuf::from(c);
         }
     }
-    panic!("找不到系统字体");
+    panic!("no system font found");
 }
 
 /// Generate the one-off test asset directory (idempotent within the process)
@@ -158,14 +158,14 @@ fn build() -> (
         !scene_primitives::lint::lint(&doc)
             .iter()
             .any(|d| d.severity == scene_primitives::lint::Severity::Error),
-        "demo doc 应通过 lint"
+        "demo doc should pass lint"
     );
     let assets = Arc::new(load_assets(&doc, &dir).expect("load_assets"));
     let mut r = scene_primitives::Resolver::new(doc, None).unwrap();
     r.set_host_inputs(assets.inputs.clone());
     let mut ir = r.resolve().unwrap();
     let mut engine = TextEngine::with_document_fonts(&assets.fonts);
-    assert!(engine.strict, "有 font 资产 ⇒ strict 模式");
+    assert!(engine.strict, "a font asset is present ⇒ strict mode");
     let renderer = FrameRenderer::new(&mut ir, &mut engine).unwrap();
     (ir, assets, engine, renderer)
 }
@@ -179,7 +179,7 @@ fn drawops_are_byte_deterministic() {
     for t in [1.0, 4.5] {
         let a = drawop::encode(&renderer.record(&ir, &mut e1, t));
         let b = drawop::encode(&renderer.record(&ir, &mut e2, t));
-        assert_eq!(a, b, "t={t} 两次录制字节不一致");
+        assert_eq!(a, b, "t={t} two recordings differ in bytes");
         assert_eq!(drawop::fnv1a64(&a), drawop::fnv1a64(&b));
     }
     // Different frame fingerprints should differ (the video media time is changing)
@@ -202,12 +202,12 @@ fn media_rasterizes() {
     let (r, g, b) = px(&pm, 200, 200); // Inside the card
     assert!(
         (r as i32 - 0x3a).abs() < 8 && (g as i32 - 0x6e).abs() < 8 && (b as i32 - 0xa5).abs() < 8,
-        "卡片像素 {r:02x}{g:02x}{b:02x} ≠ 3a6ea5"
+        "card pixel {r:02x}{g:02x}{b:02x} ≠ 3a6ea5"
     );
     let (r2, g2, _b2) = px(&pm, 650, 150); // Inside the svg logo's rounded rectangle, #e8906a
     assert!(
         (r2 as i32 - 0xe8).abs() < 8 && (g2 as i32 - 0x90).abs() < 8,
-        "svg 像素不符"
+        "svg pixel mismatch"
     );
 
     // t=4.5: the testsrc video fills the frame, so the center cannot equal the background color #101014
@@ -215,7 +215,7 @@ fn media_rasterizes() {
     let (r3, g3, b3) = px(&pm2, 480, 270);
     assert!(
         !(r3 == 0x10 && g3 == 0x10 && b3 == 0x14),
-        "t=4.5 中心仍是背景色，视频未画出"
+        "t=4.5 center is still the background color; the video was not drawn"
     );
 }
 
@@ -224,12 +224,12 @@ fn audio_mix_duck() {
     let (ir, assets, _e, _r) = build();
     let bytes = render_raster::audio::mix_audio(&ir, &assets)
         .unwrap()
-        .expect("有 audio clip");
+        .expect("an audio clip is required");
     let sr = render_raster::audio::SAMPLE_RATE as f64;
     assert_eq!(
         bytes.len(),
         (ir.total * sr).round() as usize * 2 * 4,
-        "PCM 长度"
+        "PCM length"
     );
     let samples: Vec<f32> = bytes
         .chunks_exact(4)
@@ -247,13 +247,13 @@ fn audio_mix_duck() {
     let duck = rms(4.3, 4.7); // vol 0.3
     assert!(
         loud > 0.02,
-        "响段 RMS {loud:.4} 异常（lavfi sine 幅度约 1/8 满幅）"
+        "loud-segment RMS {loud:.4} is off (lavfi sine amplitude is about 1/8 of full scale)"
     );
     assert!(
         duck < loud * 0.55,
-        "闪避未生效: loud {loud:.3} duck {duck:.3}"
+        "ducking had no effect: loud {loud:.3} duck {duck:.3}"
     );
-    assert!(samples.iter().all(|s| s.abs() <= 1.0), "混音溢出");
+    assert!(samples.iter().all(|s| s.abs() <= 1.0), "mix overflow");
 }
 
 #[test]
@@ -262,10 +262,10 @@ fn hash_mismatch_rejected() {
     let mut doc = demo_doc();
     doc["assets"]["card"]["hash"] = json!(format!("sha256-{}", "0".repeat(64)));
     let err = match load_assets(&doc, &dir) {
-        Ok(_) => panic!("坏 hash 应被拒绝"),
+        Ok(_) => panic!("a bad hash should be rejected"),
         Err(e) => format!("{e:#}"),
     };
-    assert!(err.contains("hash"), "应报 hash 不符: {err}");
+    assert!(err.contains("hash"), "should report a hash mismatch: {err}");
 }
 
 #[test]
@@ -276,6 +276,6 @@ fn strict_fonts_shape() {
     let line = engine.shape("Hello 123", "", 32.0, 400);
     assert!(
         line.width > 0.0 && !line.glyphs.is_empty(),
-        "strict 引擎应能 shaping"
+        "strict engine should be able to shape"
     );
 }

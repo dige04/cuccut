@@ -74,11 +74,11 @@ process.stdout.write(JSON.stringify(editOrigins(ir.visualClips[0].tree)));
         "预览壳 resolve.js 跑不起来：{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    Some(serde_json::from_slice(&output.stdout).expect("editOrigins 输出不是 JSON"))
+    Some(serde_json::from_slice(&output.stdout).expect("editOrigins output is not JSON"))
 }
 
 #[test]
-#[ignore = "用 node 对拍 v2 预览壳 core/runtime/preview/resolve.js：v3 不移植该预览壳（BCF 不在 v3）"]
+#[ignore = "cross-checks the v2 preview shell core/runtime/preview/resolve.js with node: v3 does not port this preview shell (BCF is not in v3)"]
 fn the_preview_shell_mirrors_the_rust_origin_table() {
     let doc = doc();
     let rust = rust_origins(&doc);

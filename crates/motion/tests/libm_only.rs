@@ -39,8 +39,8 @@ fn std_calls(line: &str) -> Vec<&'static str> {
 }
 
 fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    for entry in fs::read_dir(dir).expect("源码目录") {
-        let path = entry.expect("目录项").path();
+    for entry in fs::read_dir(dir).expect("source directory") {
+        let path = entry.expect("directory entry").path();
         if path.is_dir() {
             rust_files(&path, out);
         } else if path.extension().is_some_and(|ext| ext == "rs") {
@@ -71,7 +71,7 @@ fn motion_sampling_calls_transcendental_functions_through_libm_only() {
     let mut hits = Vec::new();
     let mut libm_calls = 0;
     for file in &files {
-        let text = fs::read_to_string(file).expect("读源码");
+        let text = fs::read_to_string(file).expect("read source");
         for (index, line) in text.lines().enumerate() {
             if line.trim_start().starts_with("//") {
                 continue;

@@ -9,7 +9,7 @@ use video_model::VideoSnapshot;
 
 fn fixture() -> VideoSnapshot {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/video.json");
-    serde_json::from_str(&std::fs::read_to_string(path).expect("读夹具")).expect("夹具是完整的视频快照")
+    serde_json::from_str(&std::fs::read_to_string(path).expect("read fixture")).expect("fixture is a complete video snapshot")
 }
 
 fn size(geometry: OutputGeometry) -> (u32, u32, bool) {
@@ -78,14 +78,14 @@ fn output_size_with_both_sides_fits_the_canvas_inside_black_bars() {
 }
 
 fn seconds(num: i128, den: i128) -> Ratio {
-    Ratio::new(num, den).expect("有理数")
+    Ratio::new(num, den).expect("rational number")
 }
 
 #[test]
 fn range_lists_layers_partners_transitions_and_assets() {
     let video = fixture();
     // [2, 3.5) s is frames 60 to 104: the cross-dissolve window (75..105) is inside it, so both sides are frozen; the portrait clip ends before frame 60.
-    let plan = plan_video(VideoView::from(&video), "seq_main", Some((seconds(2, 1), seconds(7, 2)))).expect("概览");
+    let plan = plan_video(VideoView::from(&video), "seq_main", Some((seconds(2, 1), seconds(7, 2)))).expect("overview");
     let ids: Vec<&str> = plan.layers.iter().map(|l| l.item_id.as_str()).collect();
     assert_eq!(ids, ["item_land_a", "item_land_b", "item_logo"]);
     assert!(plan.layers.iter().all(|l| l.transition.is_none()));
@@ -101,22 +101,22 @@ fn range_lists_layers_partners_transitions_and_assets() {
 #[test]
 fn lottie_stickers_freeze_the_asset_named_in_their_parameters() {
     // The logo image is replaced by a sticker asset that references a Lottie asset: the layer is a generator carrying no asset, but export still freezes it (frame rasterization reads from bytes).
-    let mut json: serde_json::Value = serde_json::to_value(fixture()).expect("夹具能序列化");
+    let mut json: serde_json::Value = serde_json::to_value(fixture()).expect("fixture can be serialized");
     let mut lottie = json["assets"]["asset_logo"].clone();
     lottie["id"] = "asset_lottie".into();
     lottie["kind"] = "lottie".into();
     lottie["revisions"]["rev_1"]["mediaType"] = "application/json".into();
     json["assets"]["asset_lottie"] = lottie;
-    let items = json["sequences"]["seq_main"]["items"].as_array_mut().expect("实例");
+    let items = json["sequences"]["seq_main"]["items"].as_array_mut().expect("items");
     let logo = items.iter_mut().find(|item| item["id"] == "item_logo").expect("logo");
     logo["type"] = "sticker".into();
     logo["assetRef"] = serde_json::json!({ "id": "asset_lottie", "revision": "rev_1" });
     logo["sticker"] = serde_json::json!({ "source": "asset", "loop": "once" });
-    logo.as_object_mut().expect("对象").remove("fit");
-    let video: VideoSnapshot = serde_json::from_value(json).expect("改过的夹具仍是完整的快照");
-    let plan = plan_video(VideoView::from(&video), "seq_main", Some((seconds(2, 1), seconds(7, 2)))).expect("概览");
-    let logo = plan.layers.iter().find(|l| l.item_id == "item_logo").expect("贴纸层");
-    assert!(logo.asset.is_none(), "Lottie 贴纸是生成器层");
+    logo.as_object_mut().expect("object").remove("fit");
+    let video: VideoSnapshot = serde_json::from_value(json).expect("modified fixture is still a complete snapshot");
+    let plan = plan_video(VideoView::from(&video), "seq_main", Some((seconds(2, 1), seconds(7, 2)))).expect("overview");
+    let logo = plan.layers.iter().find(|l| l.item_id == "item_logo").expect("sticker layer");
+    assert!(logo.asset.is_none(), "Lottie sticker is a generator layer");
     let assets: Vec<&str> = plan.assets.iter().map(|a| a.id.as_str()).collect();
     assert_eq!(assets, ["asset_land", "asset_lottie"]);
 }
@@ -124,14 +124,14 @@ fn lottie_stickers_freeze_the_asset_named_in_their_parameters() {
 #[test]
 fn whole_sequence_lists_unsupported_transitions_and_caption_documents() {
     let video = fixture();
-    let plan = plan_video(VideoView::from(&video), "seq_main", None).expect("概览");
+    let plan = plan_video(VideoView::from(&video), "seq_main", None).expect("overview");
     let ids: Vec<&str> = plan.layers.iter().map(|l| l.item_id.as_str()).collect();
     // Disabled instances and instances on hidden tracks do not appear. Captions, text, shapes, generators and code packages are all included.
     assert!(!ids.contains(&"item_disabled") && !ids.contains(&"item_hidden"));
     for id in ["item_title", "item_badge", "item_meter", "item_bundle", "item_caption", "item_note"] {
         assert!(ids.contains(&id), "{id} 在概览里");
     }
-    let spin = plan.transitions.iter().find(|t| t.id == "tr_talk_out").expect("出场转场");
+    let spin = plan.transitions.iter().find(|t| t.id == "tr_talk_out").expect("exit transition");
     assert_eq!(spin.unsupported.as_deref(), Some("unknown-kind"));
     assert_eq!(plan.documents, ["doc_caption", "doc_caption_style", "doc_note"]);
 }

@@ -63,7 +63,7 @@ fn candle_dequantization_matches_mlx_for_4bit_and_8bit() {
         for (index, (actual, reference)) in actual.iter().zip(reference.iter()).enumerate() {
             assert!(
                 (actual - reference).abs() < 2e-3,
-                "bits={bits} 元素 {index} 不一致：candle={actual} mlx={reference}"
+                "bits={bits} element {index} mismatch: candle={actual} mlx={reference}"
             );
         }
     }
@@ -91,7 +91,7 @@ fn candle_rope_matches_mlx_fast_rope() {
         for (index, (actual, reference)) in actual.iter().zip(reference.iter()).enumerate() {
             assert!(
                 (actual - reference).abs() < 1e-4,
-                "offset={offset} 元素 {index} 不一致：candle={actual} mlx={reference}"
+                "offset={offset} element {index} mismatch: candle={actual} mlx={reference}"
             );
         }
     }
@@ -121,10 +121,10 @@ fn candle_qwen3_transcription_matches_mlx() {
 
     let mlx_text = {
         let _guard = MLX_LOCK.lock().unwrap();
-        let mut model = mlx::qwen3::Qwen3Asr::load(config, &weights, tokenizer()).expect("加载 mlx Qwen3");
+        let mut model = mlx::qwen3::Qwen3Asr::load(config, &weights, tokenizer()).expect("load mlx Qwen3");
         model.recognize(&audio, &request).unwrap().text
     };
-    let mut model = candle::Qwen3Asr::load(config, &weights, tokenizer(), &candle_core::Device::Cpu).expect("加载 candle Qwen3");
+    let mut model = candle::Qwen3Asr::load(config, &weights, tokenizer(), &candle_core::Device::Cpu).expect("load candle Qwen3");
     let candle_text = model.recognize(&audio, &request).unwrap().text;
     assert_eq!(
         normalize(&candle_text),
@@ -151,7 +151,7 @@ fn candle_silero_probabilities_match_mlx() {
     let candle_probabilities = vad.process_chunks(&samples).unwrap();
     assert_eq!(mlx_probabilities.len(), candle_probabilities.len());
     for (index, (mlx, candle)) in mlx_probabilities.iter().zip(candle_probabilities.iter()).enumerate() {
-        assert!((mlx - candle).abs() < 0.02, "块 {index} 概率不一致：candle={candle} mlx={mlx}");
+        assert!((mlx - candle).abs() < 0.02, "block {index} probability mismatch: candle={candle} mlx={mlx}");
     }
 }
 
@@ -177,14 +177,14 @@ fn candle_aligner_timestamps_match_mlx() {
         assert_eq!(mlx.text, candle.text);
         assert!(
             (mlx.start - candle.start).abs() <= 0.08 + 1e-6,
-            "词 {} 起点不一致：candle={} mlx={}",
+            "word {} start mismatch: candle={} mlx={}",
             mlx.text,
             candle.start,
             mlx.start
         );
         assert!(
             (mlx.end - candle.end).abs() <= 0.08 + 1e-6,
-            "词 {} 终点不一致：candle={} mlx={}",
+            "word {} end mismatch: candle={} mlx={}",
             mlx.text,
             candle.end,
             mlx.end
@@ -203,10 +203,10 @@ fn candle_moss_transcription_matches_mlx() {
 
     let mlx_result = {
         let _guard = MLX_LOCK.lock().unwrap();
-        let mut model = mlx::moss::MossTranscribeDiarize::load_with_preference(&files, "quality").expect("加载 mlx MOSS");
+        let mut model = mlx::moss::MossTranscribeDiarize::load_with_preference(&files, "quality").expect("load mlx MOSS");
         model.transcribe_diarized(&audio, None).unwrap()
     };
-    let mut model = candle::MossTranscribeDiarize::load(&files, &candle_core::Device::Cpu).expect("加载 candle MOSS");
+    let mut model = candle::MossTranscribeDiarize::load(&files, &candle_core::Device::Cpu).expect("load candle MOSS");
     let candle_result = model.transcribe_diarized(&audio, None).unwrap();
 
     assert_eq!(
@@ -220,7 +220,7 @@ fn candle_moss_transcription_matches_mlx() {
     for (mlx, candle) in mlx_result.rows.iter().zip(candle_result.rows.iter()) {
         assert!(
             (mlx.start - candle.start).abs() <= 0.5 && (mlx.end - candle.end).abs() <= 0.5,
-            "行时间不一致：candle=[{}, {}] mlx=[{}, {}]",
+            "row time mismatch: candle=[{}, {}] mlx=[{}, {}]",
             candle.start,
             candle.end,
             mlx.start,
@@ -278,7 +278,7 @@ fn candle_pyannote_classes_match_mlx() {
                 .zip(candle_probabilities[local].iter())
                 .map(|(left, right)| (left - right).abs())
                 .fold(0.0_f32, f32::max);
-            assert!(worst <= 1e-2, "窗口 {window} 说话人 {local} 概率最大偏差 {worst}");
+            assert!(worst <= 1e-2, "window {window} speaker {local} max probability deviation {worst}");
 
             let mlx_track = binarize_speaker_track(&mlx_probabilities[local]);
             let candle_track = binarize_speaker_track(&candle_probabilities[local]);
@@ -290,7 +290,7 @@ fn candle_pyannote_classes_match_mlx() {
             // When probabilities sit near onset/offset, binarization may flip; keep the 1% tolerance.
             assert!(
                 mismatched * 100 <= FRAMES_PER_WINDOW,
-                "窗口 {window} 说话人 {local} 有 {mismatched}/{FRAMES_PER_WINDOW} 帧活跃状态不一致"
+                "window {window} speaker {local} has {mismatched}/{FRAMES_PER_WINDOW} frames with mismatched activity state"
             );
         }
 
@@ -302,7 +302,7 @@ fn candle_pyannote_classes_match_mlx() {
             .count();
         assert!(
             mismatched * 100 <= FRAMES_PER_WINDOW,
-            "窗口 {window} 有 {mismatched}/{FRAMES_PER_WINDOW} 帧 argmax 类别不一致"
+            "window {window} has {mismatched}/{FRAMES_PER_WINDOW} frames with mismatched argmax class"
         );
     }
 }
@@ -329,13 +329,13 @@ fn candle_wespeaker_embedding_matches_mlx() {
         assert_eq!(mlx.len(), EMBEDDING_DIM);
         assert_eq!(candle.len(), EMBEDDING_DIM);
         let distance = cosine_distance(&mlx, &candle);
-        assert!(distance < 1e-3, "{name}: 两个后端的嵌入余弦距离 {distance:.6} 过大");
+        assert!(distance < 1e-3, "{name}: embedding cosine distance between the two backends {distance:.6} is too large");
         let worst = mlx
             .iter()
             .zip(&candle)
             .map(|(left, right)| (left - right).abs())
             .fold(0.0_f32, f32::max);
-        assert!(worst < 5e-3, "{name}: 逐维最大差值 {worst:.6} 过大");
+        assert!(worst < 5e-3, "{name}: max per-dimension difference {worst:.6} is too large");
     }
 }
 
@@ -350,12 +350,12 @@ fn audio(name: &str) -> Vec<f32> {
 /// Resolves a component's files from `<models-root>/<repo>/.ccut-manifest.json`; returns `None` and prints the reason if the weights are absent.
 fn verified(repo: &str, family: &str, component: &'static str) -> Option<VerifiedFiles> {
     let Some(root) = std::env::var_os("CUCCUT_TEST_MODELS_DIR") else {
-        println!("跳过：没设 CUCCUT_TEST_MODELS_DIR");
+        println!("skipped: CUCCUT_TEST_MODELS_DIR is not set");
         return None;
     };
     let dir = PathBuf::from(root).join(repo);
     let Ok(bytes) = std::fs::read(dir.join(".ccut-manifest.json")) else {
-        println!("跳过：{} 没有 .ccut-manifest.json（权重没装好）", dir.display());
+        println!("skipped: {} has no .ccut-manifest.json (weights not installed)", dir.display());
         return None;
     };
     let manifest: Value = serde_json::from_slice(&bytes).expect("manifest JSON");

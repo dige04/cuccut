@@ -46,22 +46,22 @@ fn frame_digest(pixmap: &tiny_skia::Pixmap) -> String {
 #[ignore]
 fn write_animated_fixtures() {
     let dir = fixture_dir();
-    std::fs::create_dir_all(&dir).expect("建夹具目录");
+    std::fs::create_dir_all(&dir).expect("create fixture directory");
     for (name, bytes) in fixture_gen::fixtures() {
-        std::fs::write(dir.join(&name), &bytes).expect("写夹具");
+        std::fs::write(dir.join(&name), &bytes).expect("write fixture");
     }
     // golden: per-frame PNGs + one sample table
     for (name, _) in fixture_gen::fixtures() {
         let src = load(&name);
         let stem = name.rsplit_once('.').map(|(s, _)| s).unwrap_or(&name);
         let golden = dir.join(stem);
-        std::fs::create_dir_all(&golden).expect("建 golden 目录");
+        std::fs::create_dir_all(&golden).expect("create golden directory");
         for i in 0..src.frame_count() {
-            let png = src.frame(i).expect("帧").encode_png().expect("编码 PNG");
-            std::fs::write(golden.join(format!("frame-{i}.png")), png).expect("写 golden 帧");
+            let png = src.frame(i).expect("frame").encode_png().expect("encode PNG");
+            std::fs::write(golden.join(format!("frame-{i}.png")), png).expect("write golden frame");
         }
     }
-    std::fs::write(dir.join("expected.json"), expected_json()).expect("写 expected.json");
+    std::fs::write(dir.join("expected.json"), expected_json()).expect("write expected.json");
 }
 
 /// The generator and the committed fixtures must match (same gate as `gen_preview_presets`).
@@ -79,7 +79,7 @@ fn animated_fixtures_are_up_to_date() {
     assert_eq!(
         std::fs::read_to_string(dir.join("expected.json")).expect("expected.json"),
         expected_json(),
-        "expected.json 与当前解码结果不一致"
+        "expected.json does not match the current decode result"
     );
 }
 
@@ -127,7 +127,7 @@ fn expected_json() -> String {
         points.dedup();
         for (i, ms) in points.iter().enumerate() {
             let frame = src.sample(MediaTime::from_millis(*ms)).expect("sample");
-            let px = frame.pixmap.pixel(0, 0).expect("像素");
+            let px = frame.pixmap.pixel(0, 0).expect("pixel");
             out.push_str(&format!(
                 "      {{ \"ms\": {ms}, \"index\": {}, \"startMs\": {}, \"topLeft\": [{}, {}, {}, {}] }}{}\n",
                 frame.index,

@@ -1689,7 +1689,7 @@ mod tests {
                 "reverse_border",
                 "rainbow_border",
                 "reverse_rainbow_border",
-                // The spelling is `strobe` (频闪, stroboscopic flashing).
+                // The spelling is `strobe` (stroboscopic flashing).
                 "strobe_border",
                 "reverse_strobe_border",
                 "snake",

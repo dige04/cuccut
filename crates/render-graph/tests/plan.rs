@@ -131,7 +131,7 @@ fn cover_crops_the_source_around_its_center() {
         .find(|layer| layer.item_id == "item_port")
         .expect("portrait clip is on screen");
     // 1080×1920 filling 1920×1080: width aligns, and the middle part is taken with height (1080/1920)².
-    let [u0, v0, u1, v1] = port.source_rect.expect("视频有取源区域");
+    let [u0, v0, u1, v1] = port.source_rect.expect("video has a source region");
     let kept = (1080.0f64 / 1920.0).powi(2);
     assert_eq!((u0, u1), (0.0, 1.0));
     assert!((v0 - (1.0 - kept) / 2.0).abs() < 1e-12 && (v1 - (1.0 + kept) / 2.0).abs() < 1e-12);
@@ -157,7 +157,7 @@ fn audio_starts_and_ends_on_samples_not_frames() {
         .voices
         .iter()
         .find(|voice| voice.item_id == "item_music")
-        .expect("音乐已经开始");
+        .expect("music has started");
     assert_eq!(music.source, VoiceSource::Audio);
     assert_eq!(music.gain_db, db(0.5));
     assert!((music.source_seconds - (0.50003 - 0.5 - 1.0 / 48000.0)).abs() < 1e-12);
@@ -187,7 +187,7 @@ fn fades_ramp_the_gain_linearly_in_amplitude() {
             .iter()
             .find(|voice| voice.item_id == "item_music")
             .map(|voice| voice.gain_db)
-            .expect("音乐在响")
+            .expect("music is playing")
     };
     // Music starts at 0.5 + 1/48000 s and sounds for 3 s. At half of the fade-in the amplitude is 0.5 (−6.02 dB); in the middle only the volume applies (0.5×); when 0.25 s of fade-out remains it is half again.
     // The interactive entry point uses microsecond approximations, so the comparison is only to the nearest thousandth of a dB.
@@ -353,7 +353,7 @@ fn flips_mirror_the_content_in_place() {
         .layers
         .into_iter()
         .find(|l| l.item_id == "item_mirror")
-        .expect("镜像图片在画面上");
+        .expect("mirrored image is on screen");
     // Width 20% = 384; with a 640×360 source the height is 216. The center is at (576, 540), and u runs from right to left.
     assert_eq!(mirror.matrix, [-384.0, 0.0, 0.0, 216.0, 768.0, 432.0]);
 }
@@ -409,13 +409,13 @@ fn transitions_carry_both_sides_at_the_midpoint() {
     let mid = plan(&video, 3.0);
     // The layer list itself is still the hard-cut result: a backend that does not recognize `transition` still draws the incoming side as before.
     assert_eq!(layer_ids(&mid), ["item_land_b", "item_logo"]);
-    let tr = mid.layers[0].transition.as_ref().expect("在转场里");
+    let tr = mid.layers[0].transition.as_ref().expect("inside the transition");
     assert_eq!(
         (tr.id.as_str(), tr.kind.as_str(), tr.role),
         ("tr_land", "dissolve", TransitionRole::Incoming)
     );
     assert_eq!((tr.progress, tr.eased), (0.5, 0.5));
-    let partner = tr.partner.as_ref().expect("另一侧");
+    let partner = tr.partner.as_ref().expect("the other side");
     assert_eq!(partner.item_id, "item_land_a");
     // The outgoing side keeps taking source after its own end: sourceIn 1 s + 3 s.
     assert_eq!(partner.source_seconds, Some(4.0));
@@ -524,7 +524,7 @@ fn ducking_lowers_the_target_and_keeps_the_unducked_gain() {
             .voices
             .into_iter()
             .find(|v| v.item_id == "item_hidden")
-            .expect("隐藏轨道照样发声")
+            .expect("hidden track still makes sound")
     };
     // Music (A1) sounds from 0.5 + 1/48000 s to 3.5 + 1/48000 s. The rule lowers it 12 dB, with attack 0.25 s and release 0.5 s.
     // The ramp is linear in gain: the gain at the midpoint is the average of 1 and 10^(−12/20), about −4.07 dB (not half of the dB value, −6).
@@ -551,7 +551,7 @@ fn ducking_lowers_the_target_and_keeps_the_unducked_gain() {
     let last = knots.last().unwrap();
     assert!((first.0 - (start - 0.25)).abs() < 1e-12 && first.1 == 0.0);
     assert!((last.0 - (start + 3.5)).abs() < 1e-12 && last.1 == 0.0);
-    let top = knots.iter().find(|k| (k.0 - start).abs() < 1e-12).expect("触发开始处有折点");
+    let top = knots.iter().find(|k| (k.0 - start).abs() < 1e-12).expect("trigger start has a knot");
     assert!((top.1 - 12.0).abs() < 1e-9);
     assert!(knots.windows(2).all(|w| w[1].0 - w[0].0 <= 0.02 + 1e-9 || w[0].1 == w[1].1));
     for (t, db) in &knots {
@@ -608,7 +608,7 @@ fn new_element_kinds_are_generators_or_reported_never_blank() {
             { "id": "tpl_off", "on": false, "box": { "x": 0, "y": 0, "w": 10, "h": 10 }, "kind": "text", "text": "x", "color": "#FFFFFF" },
         ],
     });
-    let video: VideoSnapshot = serde_json::from_value(value).expect("视频快照");
+    let video: VideoSnapshot = serde_json::from_value(value).expect("video snapshot");
     let plan = plan(&video, 0.5);
     let kind = |id: &str| {
         let l = layer(&plan, id);
@@ -655,12 +655,12 @@ fn golden_plans_match() {
     }
     let path = fixture_path("plan-golden.txt");
     if std::env::var_os("UPDATE_GOLDEN").is_some() {
-        std::fs::write(&path, &lines).expect("写金标准");
+        std::fs::write(&path, &lines).expect("write golden file");
         return;
     }
-    let golden = std::fs::read_to_string(&path).expect("读金标准（第一次先用 UPDATE_GOLDEN=1 生成）");
+    let golden = std::fs::read_to_string(&path).expect("read golden file (generate it first with UPDATE_GOLDEN=1)");
     assert!(
         golden == lines,
-        "计划与金标准不一致；规则确实改了就用 UPDATE_GOLDEN=1 重新生成并审阅差异"
+        "plan does not match the golden file; if the rules really changed, regenerate with UPDATE_GOLDEN=1 and review the diff"
     );
 }

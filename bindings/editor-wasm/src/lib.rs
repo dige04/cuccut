@@ -93,7 +93,7 @@ pub fn speech_sentences(input: &[u8]) -> Result<String, EntryError> {
             })
             .collect(),
     };
-    Ok(serde_json::to_string(&output).expect("句子总能序列化"))
+    Ok(serde_json::to_string(&output).expect("sentences always serialize"))
 }
 
 /// The input cannot be read (it is not the agreed JSON shape).
@@ -107,7 +107,7 @@ pub(crate) fn invalid_input(error: serde_json::Error) -> EntryError {
 fn finish(result: Result<String, EntryError>) -> u32 {
     let (status, bytes) = match result {
         Ok(json) => (0, json.into_bytes()),
-        Err(error) => (1, serde_json::to_vec(&error).expect("错误总能序列化")),
+        Err(error) => (1, serde_json::to_vec(&error).expect("errors always serialize")),
     };
     OUTPUT.with_borrow_mut(|output| *output = bytes);
     status

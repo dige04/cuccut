@@ -299,7 +299,7 @@ mod tests {
             ..Default::default()
         };
         let mut logits = vec![3.0f32, 2.0, -1.0];
-        // token 0 已生成：3/2 = 1.5 < 2.0 → 选 1
+        // token 0 already generated: 3/2 = 1.5 < 2.0 → pick 1
         let t = sample_token(&mut logits, &config, &[0, 0], None, 99, &mut Rng::new(1));
         assert_eq!(t, 1);
         assert_eq!(logits[0], 1.5);

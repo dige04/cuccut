@@ -12,7 +12,7 @@ fn golden_doc() -> Value {
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/launch-golden/launch.ccut.json"
     );
-    let data = std::fs::read_to_string(path).expect("读取 golden JSON");
+    let data = std::fs::read_to_string(path).expect("read golden JSON");
     serde_json::from_str(&data).unwrap()
 }
 

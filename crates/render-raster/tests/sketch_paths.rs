@@ -151,7 +151,7 @@ fn fill_only_fill_and_stroke_and_draw_order() {
         ["fill", "clip", "stroke", "popClip", "stroke"]
     );
     let data = both.pixels(0.0);
-    assert_eq!(px(&data, 40, 80), [0, 0, 0, 255], "描边压在填充之上");
+    assert_eq!(px(&data, 40, 80), [0, 0, 0, 255], "the stroke is drawn over the fill");
 }
 
 #[test]
@@ -163,7 +163,7 @@ fn path_draw_only_gates_the_stroke_not_the_fill() {
             "animate": {"keyframes": [{"prop": "pathDraw", "frames": [{"t": 0, "v": 0}, {"t": 2, "v": 1}]}]}
         })]),
     ));
-    assert_eq!(kinds(&stage.ops(0.0)), ["fill"], "进度 0：只有填充");
+    assert_eq!(kinds(&stage.ops(0.0)), ["fill"], "progress 0: only the fill");
     assert_eq!(kinds(&stage.ops(1.0)), ["fill", "stroke"]);
 }
 
@@ -197,7 +197,7 @@ fn even_odd_punches_the_inner_ring() {
     ));
     assert_eq!(kinds(&even_odd.ops(0.0)), ["fillPaint"]);
     let data = even_odd.pixels(0.0);
-    assert_eq!(px(&data, 120, 80), [255, 255, 255, 255], "内环被镂空");
+    assert_eq!(px(&data, 120, 80), [255, 255, 255, 255], "the inner ring is cut out");
     assert_eq!(px(&data, 40, 80), [0, 0, 255, 255]);
 }
 
@@ -212,8 +212,8 @@ fn dash_cuts_the_stroke_and_butt_caps_leave_clean_gaps() {
     ));
     assert_eq!(kinds(&stage.ops(0.0)), ["strokePaint"]);
     let data = stage.pixels(0.0);
-    assert_eq!(px(&data, 30, 80), [0, 0, 0, 255], "第一段实线 20..40");
-    assert_eq!(px(&data, 50, 80), [255, 255, 255, 255], "第一段空白 40..60");
+    assert_eq!(px(&data, 30, 80), [0, 0, 0, 255], "first solid segment 20..40");
+    assert_eq!(px(&data, 50, 80), [255, 255, 255, 255], "first gap 40..60");
     assert_eq!(px(&data, 70, 80), [0, 0, 0, 255]);
 }
 
@@ -229,7 +229,7 @@ fn unknown_path_style_values_are_schema_errors() {
         let error = Resolver::new(doc(json!({}), svg(vec![bad.clone()])), None)
             .and_then(|mut r| r.resolve())
             .err()
-            .unwrap_or_else(|| panic!("应当报错：{bad}"));
+            .unwrap_or_else(|| panic!("should report an error: {bad}"));
         assert!(error.to_string().starts_with("schema:"), "{error}");
     }
 }
@@ -259,7 +259,7 @@ fn static_textures_are_byte_identical_across_time_and_sampling_order() {
         // Out of order, and with a new renderer instance (no cache available), same result
         let mut shuffled = Stage::new(textured(finish));
         for t in [3.2, 0.0, 2.5, 0.01] {
-            assert_eq!(shuffled.bytes(t), reference, "{finish} 乱序 @ {t}");
+            assert_eq!(shuffled.bytes(t), reference, "{finish} out of order @ {t}");
         }
     }
 }
@@ -298,8 +298,8 @@ fn texture_geometry_rides_the_rigid_transform() {
     ]})));
     let a = stage.renderer.record(&stage.ir, &mut stage.engine, 0.0);
     let b = stage.renderer.record(&stage.ir, &mut stage.engine, 1.5);
-    assert_eq!(a.paths, b.paths, "路径侧表（含纹理几何）不随变换变化");
-    assert!(encode(&a) != encode(&b), "变换确实在动");
+    assert_eq!(a.paths, b.paths, "the path side table (including texture geometry) does not change with the transform");
+    assert!(encode(&a) != encode(&b), "the transform does move things");
 }
 
 #[test]
@@ -319,7 +319,7 @@ fn background_texture_covers_the_canvas() {
         .flat_map(|y| (0..W).map(move |x| (x, y)))
         .filter(|&(x, y)| px(&data, x, y) != [0xfb, 0xf3, 0xe2, 255])
         .count();
-    assert!(speckled > 50, "纸面应当有颗粒（{speckled}）");
+    assert!(speckled > 50, "paper should have grain ({speckled})");
 }
 
 /// Raster cache for the paper background (`FrameOps::static_prefix`): the recorder only sets the hint for documents with a texture. For frames with the hint set, whether first (a miss: render and store one picture) or later (a hit: copy the cache), the result is pixel-identical to replaying from scratch without the hint, while moving elements on the paper still change frame by frame. Layered plans are likewise consistent.
@@ -345,14 +345,14 @@ fn background_texture_raster_cache_is_pixel_exact() {
         mover,
     ));
     let mut reference = paper.renderer.record(&paper.ir, &mut paper.engine, 0.0);
-    let hint = reference.static_prefix.expect("有纹理的文档应带前缀提示");
+    let hint = reference.static_prefix.expect("a textured document should carry a prefix hint");
     assert!(
         matches!(reference.ops[0], DrawOp::Clear { .. }),
-        "前缀从 Clear 开始"
+        "the prefix starts at Clear"
     );
     assert!(
         matches!(reference.ops[hint.ops - 1], DrawOp::PopClip),
-        "前缀止于纹理的 PopClip"
+        "the prefix ends at the texture's PopClip"
     );
     reference.static_prefix = None;
     let mut media = MediaStore::new(Arc::new(LoadedAssets::default()), paper.ir.fps);
@@ -361,25 +361,25 @@ fn background_texture_raster_cache_is_pixel_exact() {
     let mut frames = Vec::new();
     for t in [0.0, 0.0, 1.5, 3.0] {
         let frame = paper.renderer.record(&paper.ir, &mut paper.engine, t);
-        assert_eq!(frame.static_prefix, Some(hint), "提示与时间无关");
+        assert_eq!(frame.static_prefix, Some(hint), "the hint is independent of time");
         let cached = render_raster::raster::rasterize(&frame, W, 160, &mut media).unwrap();
         let mut uncached = frame;
         uncached.static_prefix = None;
         let replay = render_raster::raster::rasterize(&uncached, W, 160, &mut media).unwrap();
         assert!(
             cached.data() == replay.data(),
-            "t={t}：缓存与重放逐像素相同"
+            "t={t}: cache and replay are pixel-identical"
         );
         assert!(
             paper.pixels(t) == cached.data(),
-            "t={t}：分层计划与平坦光栅一致"
+            "t={t}: layered plan matches the flat raster"
         );
         frames.push(cached);
     }
     assert!(frames[0].data() == expected.data() && frames[1].data() == expected.data());
     assert!(
         frames[2].data() != frames[3].data(),
-        "纸面上的元素仍逐帧移动"
+        "elements on the paper still move every frame"
     );
 }
 
@@ -400,7 +400,7 @@ fn clip_path_shape_path_clips_to_the_polygon() {
     ));
     let data = stage.pixels(0.0);
     assert_eq!(px(&data, 20, 10), [255, 0, 0, 255]);
-    assert_eq!(px(&data, 190, 90), [255, 255, 255, 255], "右下角被裁掉");
+    assert_eq!(px(&data, 190, 90), [255, 255, 255, 255], "bottom-right corner is clipped");
 }
 
 #[test]
@@ -443,13 +443,13 @@ fn numeric_anchor_is_a_box_fraction_and_matches_the_named_anchors() {
     assert_eq!(bytes(json!([0.5, 0.5])), bytes(json!("center")));
     assert!(
         bytes(json!([0.0, 0.5])) != bytes(json!("center")),
-        "关节在左端"
+        "the joint is at the left end"
     );
 
     let error = Resolver::new(bar(json!([0.5])), None)
         .and_then(|mut r| r.resolve())
         .err()
-        .expect("anchor 数组必须是两项");
+        .expect("anchor array must have two items");
     assert!(error.to_string().starts_with("schema:"), "{error}");
 }
 
@@ -486,7 +486,7 @@ fn cadence_holds_frames_on_the_absolute_project_grid() {
     for k in 1..5 {
         assert_eq!(stage.bytes(1.0 + f64::from(k) / 60.0), hold, "k={k}");
     }
-    assert!(stage.bytes(1.0 + 5.0 / 60.0) != hold, "下一个绘制帧");
+    assert!(stage.bytes(1.0 + 5.0 / 60.0) != hold, "the next drawn frame");
 
     // Independent of output frame rate: timestamps at 24, 30 and 60 fps fall in the same cell ⇒ same frame
     for fps in [24.0, 30.0, 60.0] {
@@ -513,7 +513,7 @@ fn cadence_overrides_cascade_meta_clip_node() {
     let smooth = |stage: &mut Stage| stage.bytes(1.0) != stage.bytes(1.0 + 1.0 / 60.0);
 
     let mut none = Stage::new(slider(json!({}), json!({}), json!({})));
-    assert!(smooth(&mut none), "没有 cadence：逐帧都在动");
+    assert!(smooth(&mut none), "no cadence: moves every frame");
 
     let mut meta = Stage::new(slider(
         json!({"cadence": {"fps": 12}}),
@@ -527,10 +527,10 @@ fn cadence_overrides_cascade_meta_clip_node() {
         json!({"cadence": "none"}),
         json!({}),
     ));
-    assert!(smooth(&mut clip_off), "clip 级 none 退出域");
+    assert!(smooth(&mut clip_off), "clip-level none exits the domain");
 
     let mut node_on = Stage::new(slider(json!({}), json!({}), json!({"cadence": {"fps": 8}})));
-    assert!(!smooth(&mut node_on), "节点级进入域");
+    assert!(!smooth(&mut node_on), "node-level enters the domain");
     assert!(node_on.bytes(1.0) != node_on.bytes(1.0 + 1.0 / 8.0));
 
     let mut node_off = Stage::new(slider(
@@ -538,7 +538,7 @@ fn cadence_overrides_cascade_meta_clip_node() {
         json!({}),
         json!({"cadence": "none"}),
     ));
-    assert!(smooth(&mut node_off), "节点级 none 退出域");
+    assert!(smooth(&mut node_off), "node-level none exits the domain");
 }
 
 #[test]
@@ -554,7 +554,7 @@ fn cadence_never_samples_before_the_clip_starts() {
     });
     let mut stage = Stage::new(document);
     assert_eq!(stage.bytes(0.30), stage.bytes(0.32));
-    assert!(stage.bytes(0.32) != stage.bytes(0.34), "0.333 起进入下一格");
+    assert!(stage.bytes(0.32) != stage.bytes(0.34), "from 0.333 on, enters the next cell");
 }
 
 #[test]

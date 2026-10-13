@@ -14,7 +14,7 @@ use video_model::{DocumentRecord, VideoSnapshot};
 /// The fixture video replaced by its own tracks and instances: 30 fps. `asset_a` and `asset_b` are assets with audio; `asset_mute` has no audio stream.
 fn video(items: Value) -> VideoSnapshot {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/video.json");
-    let mut value: Value = serde_json::from_str(&std::fs::read_to_string(path).expect("读夹具")).expect("JSON");
+    let mut value: Value = serde_json::from_str(&std::fs::read_to_string(path).expect("read fixture")).expect("JSON");
     let asset = |id: &str, audio: bool| {
         let mut revision = json!({
             "revision": "r1", "contentHash": format!("sha256:{id}"), "byteLength": 10, "mediaType": "video/mp4",
@@ -40,7 +40,7 @@ fn video(items: Value) -> VideoSnapshot {
         track("s1", 0, "subtitle", false),
     ]);
     sequence["items"] = items;
-    serde_json::from_value(value).expect("视频快照")
+    serde_json::from_value(value).expect("video snapshot")
 }
 
 fn base(id: &str, track: &str) -> Value {
@@ -48,7 +48,7 @@ fn base(id: &str, track: &str) -> Value {
 }
 
 fn merge(mut a: Value, b: Value) -> Value {
-    for (k, v) in b.as_object().expect("对象") {
+    for (k, v) in b.as_object().expect("object") {
         a[k] = v.clone();
     }
     a
@@ -78,7 +78,7 @@ fn near(actual: f64, expected: f64) {
 }
 
 fn seconds(n: i128) -> Ratio {
-    Ratio::from_int(n).expect("整数")
+    Ratio::from_int(n).expect("integer")
 }
 
 #[test]
@@ -108,7 +108,7 @@ fn audio_plan_follows_cuts_speed_mute_gain_and_fades() {
         muted_track,
         muted_mix,
     ]));
-    let plan = plan_audio(VideoView::from(&video), "seq_main", None).expect("计划");
+    let plan = plan_audio(VideoView::from(&video), "seq_main", None).expect("plan");
 
     // Whole sequence: the visual tail is 150 frames = 5 seconds; the music sounds for 3 seconds starting at 0.5 s + 1/48000, which is shorter than that.
     assert_eq!(plan.range.start_seconds, 0.0);
@@ -129,7 +129,7 @@ fn audio_plan_follows_cuts_speed_mute_gain_and_fades() {
     assert_eq!(music.gain_db, 0.0);
     assert!(!music.envelope.is_empty() && music.envelope.iter().all(|k| k.1 == 0.7));
     near(music.gain_db_at(music.start + 1.0), db(0.7));
-    let (fade_in, fade_out) = (music.fade_in.expect("淡入"), music.fade_out.expect("淡出"));
+    let (fade_in, fade_out) = (music.fade_in.expect("fade-in"), music.fade_out.expect("fade-out"));
     for (fade, expected) in [(fade_in, (start, start + 0.5)), (fade_out, (start + 2.0, start + 3.0))] {
         let AudioFade { start, end } = fade;
         near(start, expected.0);
@@ -146,7 +146,7 @@ fn audio_plan_clips_to_the_range_and_rejects_empty_ranges() {
         clip("second", "v1", "asset_a", 60, 60, 4, (2, 1))
     ]));
     let range = Some((Ratio::new(3, 2).unwrap(), Ratio::new(5, 2).unwrap()));
-    let plan = plan_audio(VideoView::from(&video), "seq_main", range).expect("计划");
+    let plan = plan_audio(VideoView::from(&video), "seq_main", range).expect("plan");
     assert_eq!(plan.range.duration_seconds, 1.0);
     let pieces: Vec<(f64, f64, f64)> = plan.segments.iter().map(|s| (s.start, s.end, s.source_start)).collect();
     // The first segment takes half a second from source 11.5 s; the second segment takes half a second from its start (source 4 s), at 2× speed.
@@ -161,10 +161,10 @@ fn audio_plan_clips_to_the_range_and_rejects_empty_ranges() {
 /// Frame-plan fixture (the transition `tr_land` with an audio crossfade, the ducking rule that lowers `item_hidden`). Adds an audio stream to `asset_land`, then modifies it per `edit`.
 fn frame_fixture(edit: impl FnOnce(&mut Value)) -> VideoSnapshot {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/video.json");
-    let mut value: Value = serde_json::from_str(&std::fs::read_to_string(path).expect("读夹具")).expect("JSON");
+    let mut value: Value = serde_json::from_str(&std::fs::read_to_string(path).expect("read fixture")).expect("JSON");
     value["assets"]["asset_land"]["revisions"]["rev_1"]["audio"] = json!({ "sampleRate": 48000, "channels": 2 });
     edit(&mut value);
-    serde_json::from_value(value).expect("视频快照")
+    serde_json::from_value(value).expect("video snapshot")
 }
 
 /// Checked moment by moment across the range: each sound in the per-frame plan (except frozen frames, which are silent) falls exactly within one segment of the interval plan, with the same source time and gain (amplitude). The interval plan has no extra sounds.
@@ -178,9 +178,9 @@ fn assert_matches_frame_plan_with_speech(video: &VideoSnapshot, plan: &AudioPlan
     let (first, last) = ((start * 600.0).round() as i128, (end * 600.0).round() as i128);
     let mut compared = 0;
     for n in first..last {
-        let t = Ratio::new(n, 600).expect("时刻");
+        let t = Ratio::new(n, 600).expect("time");
         let rel = t.to_f64() - start;
-        let frame = plan_frame_with_speech(VideoView::from(video), "seq_main", t, speech).expect("帧计划");
+        let frame = plan_frame_with_speech(VideoView::from(video), "seq_main", t, speech).expect("frame plan");
         let voices: Vec<_> = frame.voices.iter().filter(|v| v.source_rate != 0.0).collect();
         let covering: Vec<_> = plan
             .segments
@@ -227,7 +227,7 @@ fn assert_matches_frame_plan_with_speech(video: &VideoSnapshot, plan: &AudioPlan
 fn audio_plan_matches_the_frame_plan_with_crossfades_and_ducking() {
     // Fixture as-is: the 30-frame centered tr_land crossfades within [2.5, 3.5); the music ducks item_hidden on a hidden track.
     let video = frame_fixture(|_| {});
-    let plan = plan_audio(VideoView::from(&video), "seq_main", None).expect("计划");
+    let plan = plan_audio(VideoView::from(&video), "seq_main", None).expect("plan");
     assert_matches_frame_plan(&video, &plan);
     let find = |item: &str, handle: bool| plan.segments.iter().find(|s| s.item_id == item && s.handle == handle).expect(item);
     // The outgoing side: its own segment has a cos curve; after the cut point it uses handles (from source 4 s, without a fade).
@@ -275,7 +275,7 @@ fn audio_plan_matches_the_frame_plan_with_crossfades_and_ducking() {
         "seq_main",
         Some((Ratio::new(2, 1).unwrap(), Ratio::new(9, 2).unwrap())),
     )
-    .expect("计划");
+    .expect("plan");
     assert_matches_frame_plan(&video, &plan);
     let tail = plan.segments.iter().find(|s| s.item_id == "item_land_a" && s.handle).unwrap();
     assert_eq!((tail.start, tail.end, tail.gain_db, tail.fade_out), (1.0, 1.5, db(0.8), None));
@@ -289,7 +289,7 @@ fn audio_plan_matches_the_frame_plan_with_crossfades_and_ducking() {
             }
         }
     });
-    let plan = plan_audio(VideoView::from(&video), "seq_main", None).expect("计划");
+    let plan = plan_audio(VideoView::from(&video), "seq_main", None).expect("plan");
     assert_matches_frame_plan(&video, &plan);
     assert!(plan.segments.iter().all(|s| s.item_id != "item_land_b"));
     let video = frame_fixture(|v| {
@@ -297,7 +297,7 @@ fn audio_plan_matches_the_frame_plan_with_crossfades_and_ducking() {
             tr["audioCrossfade"] = json!(false);
         }
     });
-    let plan = plan_audio(VideoView::from(&video), "seq_main", None).expect("计划");
+    let plan = plan_audio(VideoView::from(&video), "seq_main", None).expect("plan");
     assert_matches_frame_plan(&video, &plan);
     assert!(plan.segments.iter().all(|s| s.crossfades.is_empty() && !s.handle));
 }
@@ -323,7 +323,7 @@ fn volume_envelopes_replace_volume_in_both_plans() {
             }
         }
     });
-    let plan = plan_audio(VideoView::from(&video), "seq_main", None).expect("计划");
+    let plan = plan_audio(VideoView::from(&video), "seq_main", None).expect("plan");
     assert_matches_frame_plan(&video, &plan);
     let find = |plan: &AudioPlan, item: &str, handle: bool| {
         plan.segments
@@ -359,7 +359,7 @@ fn volume_envelopes_replace_volume_in_both_plans() {
         "seq_main",
         Some((Ratio::new(3, 2).unwrap(), Ratio::new(9, 2).unwrap())),
     )
-    .expect("计划");
+    .expect("plan");
     assert_matches_frame_plan(&video, &plan);
     let own = find(&plan, "item_land_a", false);
     assert!(own.envelope[0].0 <= own.start);
@@ -395,7 +395,7 @@ fn speech_ducking_follows_the_effective_word_stream() {
         .get_mut("seq_main")
         .unwrap()
         .ducking
-        .push(serde_json::from_value(rule).expect("闪避规则"));
+        .push(serde_json::from_value(rule).expect("ducking rule"));
 
     // Effective word stream: w3 is inside the cut source [2, 4); w4 at 2× speed lands at sequence [2.5, 3). Another document's asset is not on the timeline, so it is skipped. Caption documents do not count.
     let word = |id: &str, start: i64, end: i64| json!({ "id": id, "start": start, "end": end, "text": id });
@@ -414,21 +414,21 @@ fn speech_ducking_follows_the_effective_word_stream() {
         "seq_main",
         &[(&doc, &speech), (&other, &elsewhere), (&cap, &captions)],
     )
-    .expect("词流");
+    .expect("word stream");
     assert_eq!(activity, [(0.0, 0.4), (0.4, 0.9), (2.5, 3.0)]);
     // Split by speaker: the same word stream, counting only words that have a `speaker`.
     let mut attributed = speech.clone();
     attributed["words"][0]["speaker"] = json!("spk_a");
     attributed["words"][1]["speaker"] = json!("spk_b");
     attributed["words"][3]["speaker"] = json!("spk_a");
-    let speakers = speaker_activity(VideoView::from(&video), "seq_main", &[(&doc, &attributed), (&cap, &captions)]).expect("说话人");
+    let speakers = speaker_activity(VideoView::from(&video), "seq_main", &[(&doc, &attributed), (&cap, &captions)]).expect("speaker activity");
     assert_eq!(speakers.len(), 2);
     assert_eq!(speakers["spk_a"], [(0.0, 0.4), (2.5, 3.0)]);
     assert_eq!(speakers["spk_b"], [(0.4, 0.9)]);
 
     // Applying the v2 curve: [0, 0.9] and [2.5, 3] are 1.6 s apart (> 0.5 s), so they are two segments. Only the target is lowered.
-    let plan = plan_audio_with_speech(VideoView::from(&video), "seq_main", None, &activity).expect("计划");
-    let ducked = plan.segments.iter().find(|s| s.item_id == "music").expect("音乐");
+    let plan = plan_audio_with_speech(VideoView::from(&video), "seq_main", None, &activity).expect("plan");
+    let ducked = plan.segments.iter().find(|s| s.item_id == "music").expect("music");
     near(ducked.gain_db_at(0.5), -10.0);
     near(ducked.gain_db_at(1.7), 0.0);
     near(ducked.gain_db_at(2.75), -10.0);
@@ -439,7 +439,7 @@ fn speech_ducking_follows_the_effective_word_stream() {
     assert_matches_frame_plan_with_speech(&video, &plan, Some(&activity));
 
     // Empty word stream: no ducking, and it reports `DUCK_NO_SPEECH`; consistent with the per-frame plan.
-    let plan = plan_audio(VideoView::from(&video), "seq_main", None).expect("计划");
+    let plan = plan_audio(VideoView::from(&video), "seq_main", None).expect("plan");
     assert!(plan.segments.iter().all(|s| s.ducking.is_empty()));
     let codes: Vec<(&str, &str)> = plan.notes.iter().map(|n| (n.code.as_str(), n.item_id.as_str())).collect();
     assert_eq!(codes, [("DUCK_NO_SPEECH", "music")]);
@@ -458,7 +458,7 @@ fn crossfade_handles_past_the_source_are_reported() {
         }
         v["assets"]["asset_land"]["revisions"]["rev_1"]["duration"] = json!({ "ticks": "4", "timescale": 1 });
     });
-    let plan = plan_audio(VideoView::from(&video), "seq_main", None).expect("计划");
+    let plan = plan_audio(VideoView::from(&video), "seq_main", None).expect("plan");
     let head = plan.segments.iter().find(|s| s.item_id == "item_land_b" && s.handle).unwrap();
     assert_eq!((head.start, head.end, head.source_start), (2.75, 3.0, 0.0));
     let codes: Vec<_> = plan
@@ -484,7 +484,7 @@ fn record(id: &str, kind: &str, source_asset: Option<&str>) -> DocumentRecord {
         "id": id, "kind": kind, "name": id, "currentRevision": "d1", "revisions": {},
         "sourceAssetId": source_asset,
     }))
-    .expect("文档头")
+    .expect("document header")
 }
 
 fn caption_item(id: &str, document: &str, from: i64, frames: i64, scopes: &[&str]) -> Value {
@@ -523,7 +523,7 @@ fn caption_cues_follow_cuts_speed_and_repeated_sources() {
         &[],
         None,
     )
-    .expect("投影");
+    .expect("projection");
     assert_eq!(plan.scope.basis, "caption-items");
     let placed: Vec<(&str, f64, f64, bool)> = plan.entries.iter().map(|e| (e.key.as_str(), e.start, e.end, e.clipped)).collect();
     assert_eq!(
@@ -564,7 +564,7 @@ fn overlapping_scopes_project_once_like_the_frame_plan() {
         &[],
         None,
     )
-    .expect("投影");
+    .expect("projection");
     assert_eq!(plan.scope.basis, "asset-items");
     let placed: Vec<(&str, f64, f64)> = plan.entries.iter().map(|e| (e.key.as_str(), e.start, e.end)).collect();
     assert_eq!(placed, [("audio:c1", 0.0, 2.0)]);
@@ -597,7 +597,7 @@ fn speech_words_drop_cut_words_and_keep_timing_quality() {
         &[],
         None,
     )
-    .expect("投影");
+    .expect("projection");
     assert_eq!(plan.unit, "speech");
     type Word<'a> = (&'a str, f64, f64, bool, Option<&'a str>, bool);
     let words: Vec<Word> = plan
@@ -635,7 +635,7 @@ fn speech_words_drop_cut_words_and_keep_timing_quality() {
         &[],
         range,
     )
-    .expect("投影");
+    .expect("projection");
     let ids: Vec<(&str, f64)> = ranged.entries.iter().map(|e| (e.id.as_str(), e.start)).collect();
     assert_eq!(ids, [("w4", 0.1), ("w6", 0.5)]);
 }
@@ -660,7 +660,7 @@ fn zero_duration_words_take_a_slot_from_the_following_gap() {
         &[],
         None,
     )
-    .expect("投影");
+    .expect("projection");
     let words: Vec<(&str, f64, f64)> = plan.entries.iter().map(|e| (e.id.as_str(), e.start, e.end)).collect();
     assert_eq!(
         words,
@@ -690,7 +690,7 @@ fn sequence_clock_and_missing_scope_are_explicit() {
         &[],
         None,
     )
-    .expect("投影");
+    .expect("projection");
     assert_eq!(plan.scope.basis, "sequence");
     let placed: Vec<(&str, f64, f64)> = plan.entries.iter().map(|e| (e.key.as_str(), e.start, e.end)).collect();
     assert_eq!(placed, [("c1", 0.5, 1.5)]);

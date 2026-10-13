@@ -117,7 +117,7 @@ struct NoMedia;
 
 impl FrameMedia for NoMedia {
     fn frame(&mut self, id: &str, _media_ms: i64) -> Result<Arc<Pixmap>> {
-        bail!("conformance 的指令流不该引用媒体 {id}")
+        bail!("the conformance instruction stream should not reference media {id}")
     }
 }
 
@@ -134,8 +134,8 @@ fn progress_params() -> ProgressParams {
 /// The GPU render target is only the quad's own picture (`QuadTarget::from_box` takes the inscribed
 /// square), so the CPU reference must be rasterized into the **same box**, otherwise two images of different sizes would be compared. Positions are always reset to zero: compositing is the caller's job.
 fn progress_box(style: &str) -> DrawBox {
-    let recipe = timeline_progress(style).expect("样式已登记");
-    match recipe.progress().expect("progress 配方").aspect {
+    let recipe = timeline_progress(style).expect("style is registered");
+    match recipe.progress().expect("progress recipe").aspect {
         motion::preset_registry::ProgressAspect::Square => SQUARE_BOX,
         motion::preset_registry::ProgressAspect::Frame => FRAME_BOX,
         motion::preset_registry::ProgressAspect::Bar => PROGRESS_BOX,
@@ -143,7 +143,7 @@ fn progress_box(style: &str) -> DrawBox {
 }
 
 fn cpu_progress(style: &str, progress: f64, time: f64) -> Pixmap {
-    let recipe = timeline_progress(style).expect("样式已登记");
+    let recipe = timeline_progress(style).expect("style is registered");
     let bbox = progress_box(style);
     let mut builder = FrameBuilder::default();
     progress_frame(
@@ -161,11 +161,11 @@ fn cpu_progress(style: &str, progress: f64, time: f64) -> Pixmap {
         bbox.h as u32,
         &mut NoMedia,
     )
-    .expect("CPU 参照光栅化")
+    .expect("CPU reference rasterization")
 }
 
 fn progress_quad(style: &str, progress: f64, time: f64) -> ShaderQuad {
-    let recipe = timeline_progress(style).expect("样式已登记");
+    let recipe = timeline_progress(style).expect("style is registered");
     ShaderQuad::progress(
         recipe,
         &progress_params(),
@@ -174,7 +174,7 @@ fn progress_quad(style: &str, progress: f64, time: f64) -> ShaderQuad {
         progress_box(style),
         (PROGRESS_BOX.w, PROGRESS_BOX.h),
     )
-    .unwrap_or_else(|error| panic!("{style} 建 quad 失败：{error}"))
+    .unwrap_or_else(|error| panic!("{style} failed to build the quad: {error}"))
 }
 
 // ── Comparison: the algorithm is consolidated in `render_raster::imgcmp` (WP5b); this file keeps only the decision thresholds
@@ -183,7 +183,7 @@ fn progress_quad(style: &str, progress: f64, time: f64) -> ShaderQuad {
 /// Thin wrapper: the two images here are always the same size (the CPU reference and the GPU render are drawn into the same box),
 /// so `imgcmp::compare`'s size error degrades to `expect`. If it actually fires, the precondition of this test is broken, and it is worth crashing outright rather than silently skipping.
 fn compare(cpu: &Pixmap, gpu: &Pixmap) -> Comparison {
-    imgcmp::compare(cpu, gpu).expect("两侧尺寸必须一致")
+    imgcmp::compare(cpu, gpu).expect("both sides must have the same size")
 }
 
 fn executor() -> Option<GpuExecutor> {
@@ -200,7 +200,7 @@ fn executor() -> Option<GpuExecutor> {
             // On machines without a GPU this test is **skipped rather than failed** (§8.7: CI runs GPU conformance only on fixed
             // runners, and a failure does not block the CPU path).
             let report = GpuBackendReport::default();
-            println!("跳过 GPU conformance：{error}；报告 {:?}", report.records);
+            println!("skipping GPU conformance: {error}; report {:?}", report.records);
             None
         }
     }
@@ -218,17 +218,17 @@ fn assert_within_budget(label: &str, measured: Comparison, ssim_floor: f64) {
     // The criterion rests on **downsampled** SSIM; the full-resolution number is only printed, see the file header.
     assert!(
         measured.ssim_downsampled >= ssim_floor,
-        "{label}: 4× 降采样 SSIM {:.6} < {ssim_floor}",
+        "{label}: 4× downsampled SSIM {:.6} < {ssim_floor}",
         measured.ssim_downsampled
     );
     assert!(
         measured.flat_max_deviation <= FLAT_CHANNEL_BUDGET,
-        "{label}: 平坦区逐通道偏差 {}/255 > {FLAT_CHANNEL_BUDGET}/255",
+        "{label}: per-channel deviation in flat regions {}/255 > {FLAT_CHANNEL_BUDGET}/255",
         measured.flat_max_deviation
     );
     assert!(
         measured.edge_share <= EDGE_PIXEL_SHARE,
-        "{label}: 过渡带占比 {:.3}% > {:.1}%（疑似整幅画偏了，不是边缘）",
+        "{label}: transition-band share {:.3}% > {:.1}% (the whole picture may be offset, not just the edges)",
         measured.edge_share * 100.0,
         EDGE_PIXEL_SHARE * 100.0
     );
@@ -246,7 +246,7 @@ fn assert_visual(label: &str, measured: Comparison) {
     );
     assert!(
         measured.ssim_downsampled >= SSIM_FLOOR_VISUAL,
-        "{label}: 4× 降采样 SSIM {:.6} < {SSIM_FLOOR_VISUAL}",
+        "{label}: 4× downsampled SSIM {:.6} < {SSIM_FLOOR_VISUAL}",
         measured.ssim_downsampled
     );
 }
@@ -263,16 +263,16 @@ fn is_strict(determinism: motion::preset_registry::Determinism) -> bool {
 #[test]
 fn the_pixel_aligned_progress_bar_matches_byte_for_byte() {
     let Some(mut gpu) = executor() else { return };
-    println!("progress.normal（bar-v1，像素边界对齐）：");
+    println!("progress.normal (bar-v1, pixel-boundary aligned):");
     for (progress, time) in PROGRESS_VALUES.into_iter().zip(PROGRESS_TIMES) {
         let quad = progress_quad("normal", progress, time);
-        let rendered = gpu.render_quad(&quad).expect("GPU 渲染");
+        let rendered = gpu.render_quad(&quad).expect("GPU render");
         let reference = cpu_progress("normal", progress, time);
         let measured = compare(&reference, &rendered);
         assert_within_budget(&format!("progress={progress}"), measured, SSIM_FLOOR_STRICT);
         assert_eq!(
             measured.max_deviation, 0,
-            "progress={progress}: 像素边界对齐时应当逐字节相同"
+            "progress={progress}: output must be byte-identical when pixel boundaries align"
         );
     }
 }
@@ -282,16 +282,16 @@ fn the_pixel_aligned_progress_bar_matches_byte_for_byte() {
 fn every_progress_style_matches_the_cpu_reference() {
     let Some(mut gpu) = executor() else { return };
     for recipe in motion::preset_registry::timeline_progresses() {
-        let body = recipe.progress().expect("progress 配方");
+        let body = recipe.progress().expect("progress recipe");
         println!(
-            "progress.{}（{}，{}）：",
+            "progress.{} ({}, {}):",
             recipe.id,
             body.recipe.algorithm.name(),
             body.determinism.name()
         );
         for (progress, time) in PROGRESS_VALUES.into_iter().zip(PROGRESS_TIMES) {
             let quad = progress_quad(&recipe.id, progress, time);
-            let rendered = gpu.render_quad(&quad).expect("GPU 渲染");
+            let rendered = gpu.render_quad(&quad).expect("GPU render");
             let reference = cpu_progress(&recipe.id, progress, time);
             let measured = compare(&reference, &rendered);
             let label = format!("progress={progress}");
@@ -312,12 +312,12 @@ fn every_progress_style_matches_the_cpu_reference() {
 #[test]
 fn the_supersampled_rounded_bar_reports_its_own_distribution() {
     let Some(mut gpu) = executor() else { return };
-    println!("progress.rounded（bar-v1）{SUPERSAMPLE}× 超采样：");
+    println!("progress.rounded (bar-v1) {SUPERSAMPLE}× supersampled:");
     for (progress, time) in PROGRESS_VALUES.into_iter().zip(PROGRESS_TIMES) {
         let quad = progress_quad("rounded", progress, time);
         let rendered = gpu
             .render_quad_at(&quad, SUPERSAMPLE)
-            .expect("GPU 超采样渲染");
+            .expect("GPU supersampled render");
         let reference = cpu_progress("rounded", progress, time);
         assert_within_budget(
             &format!("progress={progress}"),
@@ -338,7 +338,7 @@ fn shuffled_instants_render_the_same_bytes_as_sorted_ones() {
     let Some(mut gpu) = executor() else { return };
     let render = |gpu: &mut GpuExecutor, index: usize| -> Vec<u8> {
         let quad = progress_quad("normal", PROGRESS_VALUES[index], PROGRESS_TIMES[index]);
-        gpu.render_quad(&quad).expect("GPU 渲染").data().to_vec()
+        gpu.render_quad(&quad).expect("GPU render").data().to_vec()
     };
     let sorted: Vec<Vec<u8>> = (0..PROGRESS_VALUES.len())
         .map(|index| render(&mut gpu, index))
@@ -352,7 +352,7 @@ fn shuffled_instants_render_the_same_bytes_as_sorted_ones() {
     for (index, progress) in PROGRESS_VALUES.iter().enumerate() {
         assert_eq!(
             sorted[index], shuffled[index],
-            "progress={progress} 的乱序结果不同"
+            "progress={progress} results differ in shuffled order"
         );
     }
     // The permutation must be a **real permutation** (not the identity), otherwise this test checks nothing.
@@ -382,12 +382,12 @@ fn a_missing_shader_falls_back_instead_of_rendering_nothing() {
     for style in ["zz_not_a_style", "bars"] {
         assert!(
             shader_for(ShaderDomain::Visualizer, style).is_none(),
-            "{style} 不该有源码"
+            "{style} should have no shader source"
         );
         report.push(
             Some((ShaderDomain::Visualizer, style.to_owned())),
             GpuFallbackReason::ShaderMissing,
-            format!("visualizer 样式 \"{style}\" 没有 WGSL 实现"),
+            format!("visualizer style \"{style}\" has no WGSL implementation"),
         );
     }
     assert_eq!(report.records.len(), 2);
@@ -397,7 +397,7 @@ fn a_missing_shader_falls_back_instead_of_rendering_nothing() {
     for recipe in motion::preset_registry::timeline_visualizers() {
         assert!(
             shader_for(ShaderDomain::Visualizer, &recipe.id).is_none(),
-            "visualizer.{} 是 CPU 矢量配方，不该有源码",
+            "visualizer.{} is a CPU vector recipe and should have no shader source",
             recipe.id
         );
     }
@@ -415,7 +415,7 @@ fn a_missing_shader_falls_back_instead_of_rendering_nothing() {
 /// cargo test -p ccut-render --features gpu --test gpu_conformance -- --ignored --nocapture profile
 /// ```
 #[test]
-#[ignore = "诊断用，不进常规验收"]
+#[ignore = "diagnostic only, not part of regular acceptance"]
 fn print_a_scanline_profile() {
     let Some(mut gpu) = executor() else { return };
     let (progress, time) = (PROGRESS_VALUES[2], PROGRESS_TIMES[2]);
@@ -443,7 +443,7 @@ fn print_a_scanline_profile() {
     }
     let w = reference.width() as usize;
     let row = (reference.height() / 2) as usize;
-    println!("x  cpu.a gpu.a   （盒宽 {w}，中线 y={row}）");
+    println!("x  cpu.a gpu.a   (box width {w}, midline y={row})");
     for x in 0..60 {
         let base = (row * w + x) * 4;
         println!(
@@ -464,13 +464,13 @@ fn print_a_scanline_profile() {
 ///     --test gpu_conformance -- --ignored --nocapture diff_map
 /// ```
 #[test]
-#[ignore = "诊断用，不进常规验收"]
+#[ignore = "diagnostic only, not part of regular acceptance"]
 fn print_a_diff_map() {
     let Some(mut gpu) = executor() else { return };
     let style = std::env::var("CCUT_DIFF_STYLE").unwrap_or_else(|_| "normal".to_owned());
     let (progress, time) = (PROGRESS_VALUES[2], PROGRESS_TIMES[2]);
     let quad = progress_quad(&style, progress, time);
-    let rendered = gpu.render_quad(&quad).expect("GPU 渲染");
+    let rendered = gpu.render_quad(&quad).expect("GPU render");
     let reference = cpu_progress(&style, progress, time);
     let (w, h) = (reference.width() as usize, reference.height() as usize);
     let cell = (w / 60).max(1);

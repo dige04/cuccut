@@ -617,7 +617,7 @@ fn unsupported_part_channels_are_rejected() {
         .unwrap()
         .resolve()
         .err()
-        .expect("part 上的 rotation 应被拒绝")
+        .expect("rotation on a part should be rejected")
         .to_string();
     assert!(error.contains("motion-unsupported"), "{error}");
     assert!(error.contains("rotation"), "{error}");

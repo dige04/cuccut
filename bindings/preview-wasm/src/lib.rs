@@ -278,13 +278,13 @@ pub fn plan(seconds: f64) -> Result<String, PlanError> {
         let (video, sequence_id) = video.as_ref().ok_or_else(|| failure("NO_VIDEO", "还没有送进视频"))?;
         let speech = speech_of(video, sequence_id, speech_documents, speech)?;
         let plan = plan_interactive_with_speech(video.view(), sequence_id, seconds, Some(speech))?;
-        Ok(serde_json::to_string(&plan).expect("计划总能序列化"))
+        Ok(serde_json::to_string(&plan).expect("plan always serializes"))
     })
 }
 
 /// Font file names to inject (JSON).
 pub fn font_files() -> String {
-    serde_json::to_string(frame_render::BUNDLED_FONT_FILES).expect("字符串数组总能序列化")
+    serde_json::to_string(frame_render::BUNDLED_FONT_FILES).expect("string array always serializes")
 }
 
 /// Inject a font: first inject the built-in batch in the order of [`font_files`]; afterwards the host sends the one face of a local font that matches the missing font families and faces reported by `render` (with the same resolution and extraction as export). An already-built renderer picks it up, and the next frame re-typesets with the new font library.
@@ -518,7 +518,7 @@ pub fn measure_text(input: &[u8]) -> Result<String, PlanError> {
                 .map_err(|error| failure(&error.code, error.message))?,
             );
         }
-        let renderer = renderers.last_mut().expect("至少有一台");
+        let renderer = renderers.last_mut().expect("at least one renderer");
         let measured = renderer.measure_text(
             &input.text,
             &style,
@@ -544,7 +544,7 @@ fn frame_bytes(state: &State) -> &[u8] {
 fn finish(result: Result<Vec<u8>, PlanError>) -> u32 {
     let (status, bytes) = match result {
         Ok(bytes) => (0, bytes),
-        Err(error) => (1, serde_json::to_vec(&error).expect("错误总能序列化")),
+        Err(error) => (1, serde_json::to_vec(&error).expect("errors always serialize")),
     };
     STATE.with_borrow_mut(|state| state.output = bytes);
     status

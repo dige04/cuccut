@@ -35,8 +35,8 @@ fn fixture(path: &str) -> PathBuf {
 }
 
 fn read_json(path: &Path) -> Value {
-    serde_json::from_slice(&std::fs::read(path).unwrap_or_else(|e| panic!("读 {path:?}: {e}")))
-        .unwrap_or_else(|e| panic!("解析 {path:?}: {e}"))
+    serde_json::from_slice(&std::fs::read(path).unwrap_or_else(|e| panic!("read {path:?}: {e}")))
+        .unwrap_or_else(|e| panic!("parse {path:?}: {e}"))
 }
 
 fn updating() -> bool {
@@ -45,9 +45,9 @@ fn updating() -> bool {
 
 /// Writing goldens to disk: stable key order (`serde_json`'s `preserve_order` is not enabled ⇒ objects are sorted by `BTreeMap`), two-space indentation, and a trailing newline, so output is byte-comparable.
 fn write_golden(path: &Path, value: &Value) {
-    let mut text = serde_json::to_string_pretty(value).expect("序列化 golden");
+    let mut text = serde_json::to_string_pretty(value).expect("serialize golden");
     text.push('\n');
-    std::fs::write(path, text).unwrap_or_else(|e| panic!("写 {path:?}: {e}"));
+    std::fs::write(path, text).unwrap_or_else(|e| panic!("write {path:?}: {e}"));
 }
 
 fn assert_or_update(path: &Path, actual: Value) {
@@ -63,8 +63,8 @@ fn assert_or_update(path: &Path, actual: Value) {
             serde_json::to_string_pretty(&actual).unwrap(),
         );
         panic!(
-            "{path:?} 与当前实现不一致。\n期望：\n{a}\n实际：\n{b}\n\
-             若这是有意的语义变化，用 CCUT_UPDATE_GOLDEN=1 重生成并在提交里说明。"
+            "{path:?} does not match the current implementation.\nExpected:\n{a}\nActual:\n{b}\n\
+             If this is an intended semantic change, regenerate with CCUT_UPDATE_GOLDEN=1 and explain it in the commit."
         );
     }
 }
@@ -73,7 +73,7 @@ fn assert_or_update(path: &Path, actual: Value) {
 /// Lottie document).
 fn corpus_files(dir: &Path) -> Vec<PathBuf> {
     let mut files: Vec<PathBuf> = std::fs::read_dir(dir)
-        .expect("读语料目录")
+        .expect("read corpus directory")
         .filter_map(|entry| entry.ok().map(|e| e.path()))
         .filter(|path| {
             path.extension().and_then(|e| e.to_str()) == Some("json")
@@ -151,7 +151,7 @@ fn record_fingerprint(lottie: &Lottie, ms: i64) -> Result<(u64, usize, usize, us
 #[test]
 fn the_refined_subset_classifies_the_whole_corpus_the_way_the_census_promised() {
     let Some(dir) = corpus_dir() else {
-        eprintln!("跳过：未设 CCUT_LOTTIE_CORPUS（语料不在仓库里，见 fixtures/lottie/README.md）");
+        eprintln!("skipped: CCUT_LOTTIE_CORPUS is not set (the corpus is not in the repository, see fixtures/lottie/README.md)");
         return;
     };
     let mut renderable = Vec::new();
@@ -159,7 +159,7 @@ fn the_refined_subset_classifies_the_whole_corpus_the_way_the_census_promised() 
     let mut incomplete = Vec::new();
     for path in corpus_files(&dir) {
         let name = path.file_name().unwrap().to_string_lossy().to_string();
-        let bytes = std::fs::read(&path).expect("读语料文件");
+        let bytes = std::fs::read(&path).expect("read corpus file");
         match Lottie::parse("corpus", &name, &bytes) {
             Ok(mut lottie) => {
                 if let Err(reason) = attach(&mut lottie) {
@@ -188,7 +188,7 @@ fn the_refined_subset_classifies_the_whole_corpus_the_way_the_census_promised() 
                 assert!(
                     message.contains("lottie-unsupported-feature")
                         || message.contains("lottie-parse"),
-                    "被拦下的文件必须给出可归类的诊断码，{name} 报的是：{message}"
+                    "a rejected file must give a classifiable diagnostic code; {name} reported: {message}"
                 );
                 blocked.push(json!({
                     "file": name,
@@ -201,7 +201,7 @@ fn the_refined_subset_classifies_the_whole_corpus_the_way_the_census_promised() 
     let total = renderable.len() + blocked.len() + incomplete.len();
     assert!(
         total >= 50,
-        "语料太小（{total} 个），普查规程要求 50–100 个"
+        "corpus too small ({total} files); the census procedure requires 50–100"
     );
     assert_or_update(
         &fixture(GOLDEN_COVERAGE),
@@ -247,19 +247,19 @@ fn classify(message: &str) -> &'static str {
 #[test]
 fn the_twelve_golden_files_keep_their_draw_op_fingerprints() {
     let Some(dir) = corpus_dir() else {
-        eprintln!("跳过：未设 CCUT_LOTTIE_CORPUS");
+        eprintln!("skipped: CCUT_LOTTIE_CORPUS is not set");
         return;
     };
     let list = read_json(&fixture(GOLDEN_LIST));
-    let entries = list.as_array().expect("golden-corpus.json 是数组");
+    let entries = list.as_array().expect("golden-corpus.json is an array");
     let mut files = Vec::new();
     for entry in entries {
-        let name = entry["file"].as_str().expect("golden 条目缺 file");
+        let name = entry["file"].as_str().expect("golden entry is missing file");
         let path = dir.join(name);
-        assert!(path.is_file(), "golden 素材 {name} 不在语料目录里");
-        let bytes = std::fs::read(&path).expect("读 golden 素材");
+        assert!(path.is_file(), "golden asset {name} is not in the corpus directory");
+        let bytes = std::fs::read(&path).expect("read golden asset");
         let mut lottie = Lottie::parse("golden", name, &bytes)
-            .unwrap_or_else(|e| panic!("golden 素材 {name} 必须落在子集内：{e:#}"));
+            .unwrap_or_else(|e| panic!("golden asset {name} must fall within the subset: {e:#}"));
         // Missing external sub-assets do not affect the DrawOp fingerprint: images enter the instruction stream only by asset name
         let _ = attach(&mut lottie);
         let meta = lottie.metadata().clone();
@@ -267,7 +267,7 @@ fn the_twelve_golden_files_keep_their_draw_op_fingerprints() {
             .into_iter()
             .map(|ms| {
                 let (fingerprint, ops, paths, paints) = record_fingerprint(&lottie, ms)
-                    .unwrap_or_else(|e| panic!("golden 素材 {name} 在 {ms}ms 录制失败：{e}"));
+                    .unwrap_or_else(|e| panic!("golden asset {name} failed to record at {ms}ms: {e}"));
                 json!({
                     "ms": ms,
                     "ops": ops,
@@ -302,7 +302,7 @@ fn the_twelve_golden_files_keep_their_draw_op_fingerprints() {
 #[test]
 fn recording_a_golden_file_is_byte_stable_and_order_independent() {
     let Some(dir) = corpus_dir() else {
-        eprintln!("跳过：未设 CCUT_LOTTIE_CORPUS");
+        eprintln!("skipped: CCUT_LOTTIE_CORPUS is not set");
         return;
     };
     let list = read_json(&fixture(GOLDEN_LIST));
@@ -327,7 +327,7 @@ fn recording_a_golden_file_is_byte_stable_and_order_independent() {
         assert_eq!(
             forward,
             backward.into_iter().rev().collect::<Vec<_>>(),
-            "{name}：乱序录制必须逐位等于顺序录制"
+            "{name}: out-of-order recording must match in-order recording bit for bit"
         );
     }
 }

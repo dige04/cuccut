@@ -335,7 +335,7 @@ pub fn speaker_proposal(input: &[u8]) -> Result<String, EntryError> {
         relabeled: report.relabeled,
         translations_split,
     };
-    Ok(serde_json::to_string(&output).expect("提案总能序列化"))
+    Ok(serde_json::to_string(&output).expect("proposal always serializes"))
 }
 
 /// Preview clips: pick several sentences evenly from this speaker's sentences, preferring ones that are not too short.
@@ -406,17 +406,17 @@ pub fn apply_speakers(input: &[u8]) -> Result<String, EntryError> {
             language: before.language.clone(),
             ..after.clone()
         };
-        let before = serde_json::to_value(before).expect("译文总能序列化");
-        let after = serde_json::to_value(&after).expect("译文总能序列化");
+        let before = serde_json::to_value(before).expect("translations always serialize");
+        let after = serde_json::to_value(&after).expect("translations always serialize");
         translations.push((before != after).then_some(after));
     }
     let output = ApplyOutput {
-        speech: serde_json::to_value(&written.speech).expect("正文总能序列化"),
+        speech: serde_json::to_value(&written.speech).expect("speech always serializes"),
         translations,
         relabeled: report.relabeled,
         translations_split,
         sentences_split: report.sentences_split.len(),
         dropped: written.report.dropped,
     };
-    Ok(serde_json::to_string(&output).expect("结果总能序列化"))
+    Ok(serde_json::to_string(&output).expect("result always serializes"))
 }

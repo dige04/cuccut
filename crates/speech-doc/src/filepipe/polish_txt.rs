@@ -396,11 +396,11 @@ fn context_after(
 ///
 /// ```text
 /// <<<CONTEXT-BEFORE 只读，勿修改>>>
-/// …上一页尾部…
+/// …tail of previous page…
 /// <<<EDIT-BEGIN>>>
-/// …本页核心区，段落之间留一个空行…
+/// …core region of this page, one blank line between paragraphs…
 /// <<<EDIT-END>>>
-/// …下一页头部…
+/// …head of next page…
 /// <<<CONTEXT-AFTER 只读，勿修改>>>
 /// ```
 ///
@@ -2850,7 +2850,7 @@ mod tests {
                 .warnings
                 .iter()
                 .any(|w| w.code == WarningCode::ContentIgnored && w.detail.contains("read-only context-before zone")),
-            "应记 ContentIgnored 警告：{:?}",
+            "expected a ContentIgnored warning: {:?}",
             parsed.diagnostics.warnings
         );
         assert!(!parsed.paragraphs.is_empty(), "the core region is still parsed as usual");

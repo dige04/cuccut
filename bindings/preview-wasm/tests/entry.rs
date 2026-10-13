@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 
 fn video() -> Value {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../crates/render-graph/tests/fixtures/video.json");
-    serde_json::from_str(&std::fs::read_to_string(path).expect("读夹具视频")).unwrap()
+    serde_json::from_str(&std::fs::read_to_string(path).expect("read the fixture video")).unwrap()
 }
 
 fn output() -> Value {
@@ -138,7 +138,7 @@ fn speech_ducking_follows_the_transcripts_sent_in() {
             .iter()
             .find(|v| v["itemId"] == "item_music")
             .cloned();
-        voice.expect("音乐在响")["gainDb"].as_f64().unwrap()
+        voice.expect("music track is playing")["gainDb"].as_f64().unwrap()
     };
     let before = music_gain(1.5);
 

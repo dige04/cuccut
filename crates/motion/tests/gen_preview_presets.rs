@@ -38,7 +38,7 @@ fn render() -> String {
         assert_eq!(
             doc.get("id").and_then(Value::as_str),
             Some(id),
-            "{path:?}: 文件名与 manifest id 不一致"
+            "{path:?}: file name does not match manifest id"
         );
         presets.insert(id.to_owned(), doc);
     }
@@ -83,12 +83,12 @@ fn emit_preview_presets_json() {
 fn preview_presets_json_is_up_to_date() {
     let path = target_path();
     let on_disk = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("{path:?}: {e}（先跑 --ignored emit_preview_presets_json）"));
+        .unwrap_or_else(|e| panic!("{path:?}: {e} (run --ignored emit_preview_presets_json first)"));
     assert_eq!(
         on_disk,
         render(),
-        "vendor/presets.json 与 core/presets/builtin/motion 不同步；\
-         跑 `cargo test -p motion --test gen_preview_presets -- --ignored`"
+        "vendor/presets.json is out of sync with core/presets/builtin/motion; \
+         run `cargo test -p motion --test gen_preview_presets -- --ignored`"
     );
 }
 
@@ -109,12 +109,12 @@ fn the_generated_registry_declares_which_recipes_the_preview_can_expand() {
     assert_eq!(
         ops_bodied,
         vec!["motion.drift", "motion.seededJitter", "motion.shake"],
-        "ops 体配方名单变了：同步 preview/core.js 的提示与作者文档"
+        "ops body recipe list changed: sync the hints and author docs in preview/core.js"
     );
     for (_, doc) in presets {
         assert!(
             doc.get("tracks").is_some() || doc.get("compose").is_some() || doc.get("ops").is_some(),
-            "{doc:?} 没有可展开的体"
+            "{doc:?} has no expandable body"
         );
     }
 }

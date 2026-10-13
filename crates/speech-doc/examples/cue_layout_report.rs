@@ -1,8 +1,8 @@
 //! Reports the `autoBreaks` layout quality of **any saved transcript** (plan M6.1b item 4).
 //!
 //! ```text
-//! cargo run -p ccut-flow-core --example cue_layout_report -- <标签> <transcript.json> [<标签> <transcript.json> …]
-//! cargo run -p ccut-flow-core --example cue_layout_report -- --optimize <标签> <transcript.json>
+//! cargo run -p ccut-flow-core --example cue_layout_report -- <label> <transcript.json> [<label> <transcript.json> …]
+//! cargo run -p ccut-flow-core --example cue_layout_report -- --optimize <label> <transcript.json>
 //! ```
 //!
 //! Metrics use **exactly the same basis** as `segment_local_f1 firstscreen` (cue count, longest CPL, over-wide, over 20 CPS, peak CPS, seam count, dangling-seam rate). The only difference: that example runs SaT in-process and builds its own input, while this one only reads files, so it can measure the real output of the three **CLI** paths `ccut segment --boundary-scorer off | local | hybrid`. **No models are loaded.**

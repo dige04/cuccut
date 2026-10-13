@@ -67,7 +67,7 @@ impl FrameMedia for DemoMedia {
         self.frames
             .get(id)
             .cloned()
-            .ok_or_else(|| anyhow!("测试媒体源没有资源 \"{id}\""))
+            .ok_or_else(|| anyhow!("test media source has no resource \"{id}\""))
     }
 }
 
@@ -75,14 +75,14 @@ impl FrameMedia for DemoMedia {
 ///
 /// All opaque (alpha=255), so premultiplied and straight values are the same and construction itself introduces no extra color semantics.
 fn gradient(width: u32, height: u32, seed: u32) -> Arc<Pixmap> {
-    let mut pixmap = Pixmap::new(width, height).expect("尺寸非零");
+    let mut pixmap = Pixmap::new(width, height).expect("size must be non-zero");
     for (index, pixel) in pixmap.pixels_mut().iter_mut().enumerate() {
         let x = index as u32 % width;
         let y = index as u32 / width;
         let r = (x * 255 / width) as u8;
         let g = (y * 255 / height) as u8;
         let b = (seed.wrapping_mul(83) as u8) ^ ((x ^ y) as u8);
-        *pixel = PremultipliedColorU8::from_rgba(r, g, b, 255).expect("alpha=255 恒合法");
+        *pixel = PremultipliedColorU8::from_rgba(r, g, b, 255).expect("alpha=255 is always valid");
     }
     Arc::new(pixmap)
 }
@@ -101,7 +101,7 @@ fn gradient(width: u32, height: u32, seed: u32) -> Arc<Pixmap> {
 /// - Orchestration segment per frame ≈ 0.017 ms, ratio **1.016–1.025**. This 2% is **systematic**, not noise: the plan path builds a `FramePlan` with more work (surfaces and passes as two Vecs), runs `is_folded` and `validate` once more, and its fingerprints pass through one more `BTreeMap` layer. A threshold of 1.05 leaves more than double the margin above the systematic baseline to absorb CI noise. Sensitivity measured: injecting one extra `frame_fingerprint()` into the plan leg (i.e. "encode the instruction stream once more per frame") gives a ratio of **1.327**, far above the threshold.
 /// - End-to-end per frame ≈ 3.6 ms (media genuinely takes part in resampling; previously, with an empty `MediaStore` returning early, it was only 0.017 ms and neither side actually rasterized), ratio **0.997–1.005**, so threshold 1.03. In the same injection experiment this leg only moved to 1.005. It cannot detect a regression in the orchestration segment, which is exactly why the leg above must be kept.
 #[test]
-#[ignore = "墙钟微基准；手动跑 --release"]
+#[ignore = "wall-clock micro-benchmark; run manually with --release"]
 fn folded_plan_orchestration_and_execution_stay_within_budget() {
     let mut ir = media_demo_ir();
     let mut engine = TextEngine::new();
@@ -119,19 +119,19 @@ fn folded_plan_orchestration_and_execution_stay_within_budget() {
         let ops = renderer.record(&ir, &mut engine, *t);
         let direct =
             render_raster::rasterize_with_media(&ops, renderer.width, renderer.height, &mut media)
-                .expect("baseline 路径必须完成光栅化");
+                .expect("the baseline path must finish rasterizing");
         let plan = planner.plan(&renderer, &ir, &mut engine, *t);
         let planned =
-            execute_plan(&plan, &mut executor, &mut media, None).expect("计划路径必须完成光栅化");
+            execute_plan(&plan, &mut executor, &mut media, None).expect("the plan path must finish rasterizing");
         assert_eq!(
             direct.data(),
             planned.data(),
-            "t={t:.4}s：折叠计划与直接光栅化必须逐字节相同"
+            "t={t:.4}s: the folded plan and direct rasterization must match byte for byte"
         );
     }
     assert!(
         media.hits > 0,
-        "整片一次 DrawMedia 都没有 ⇒ 分母里没有媒体光栅化，守卫是空转的"
+        "no DrawMedia at all in the clip ⇒ no media rasterization in the denominator, so the guard is a no-op"
     );
 
     // The two legs **alternate order** within each round: frequency and thermal drift of the machine is monotonic within one measurement, so a leg that always runs second would be systematically penalized (measured to push the end-to-end ratio up to 1.11).
@@ -201,15 +201,15 @@ fn folded_plan_orchestration_and_execution_stay_within_budget() {
     let orchestration = plan_only / record_only;
     let end_to_end = plan_full / record_full;
     println!(
-        "{total_frames} 帧 · 编排段 record {record_only:.4}s vs plan {plan_only:.4}s（{orchestration:.4}×）\
-         · 端到端 {record_full:.4}s vs {plan_full:.4}s（{end_to_end:.4}×）"
+        "{total_frames} frames · orchestration record {record_only:.4}s vs plan {plan_only:.4}s ({orchestration:.4}×)\
+         · end-to-end {record_full:.4}s vs {plan_full:.4}s ({end_to_end:.4}×)"
     );
     assert!(
         orchestration <= 1.05,
-        "编排段开销超过 5%：record+fingerprint {record_only:.4}s vs plan+fingerprint {plan_only:.4}s（{orchestration:.4}×）"
+        "orchestration overhead exceeds 5%: record+fingerprint {record_only:.4}s vs plan+fingerprint {plan_only:.4}s ({orchestration:.4}×)"
     );
     assert!(
         end_to_end <= 1.03,
-        "端到端开销超过 3%：record+rasterize {record_full:.4}s vs plan+execute {plan_full:.4}s（{end_to_end:.4}×）"
+        "end-to-end overhead exceeds 3%: record+rasterize {record_full:.4}s vs plan+execute {plan_full:.4}s ({end_to_end:.4}×)"
     );
 }

@@ -54,7 +54,7 @@ fn unsupported_path_commands_are_errors_with_a_pointer() {
     let hit = diagnostics
         .iter()
         .find(|d| d.rule == "path-command-unsupported")
-        .expect("应报 path-command-unsupported");
+        .expect("should report path-command-unsupported");
     assert_eq!(hit.severity, Severity::Error);
     assert!(hit.pointer.ends_with("/children/0/d"), "{}", hit.pointer);
     assert!(hit.message.contains('R') && hit.message.contains('X'));

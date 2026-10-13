@@ -292,7 +292,7 @@ fn boxed_captions_sit_in_their_box() {
                 }
             }
         }
-        b.expect("画出了字")
+        b.expect("glyphs were painted")
     };
     // Top-aligned sticks to the top of the box, bottom-aligned to the bottom, and centered on the box center (y 15). All are inside the box and horizontally centered.
     let top = bounds(&frame_with("AB", boxed("top", json!({}))));
@@ -345,7 +345,7 @@ fn boxed_caption_alignment_hugs_the_box_edges() {
             .filter(|&(x, y)| pick(px(frame, x, y)))
             .map(|(x, _)| x)
             .collect();
-        (*xs.iter().min().expect("画出来了"), *xs.iter().max().unwrap())
+        (*xs.iter().min().expect("was painted"), *xs.iter().max().unwrap())
     };
     let plate = |p: [u8; 4]| p[2] > 200 && p[1] < 60;
     let (left, center, right) = (frame("left"), frame("center"), frame("right"));
@@ -396,7 +396,7 @@ fn boxed_reveal_shows_words_as_they_are_reached() {
     let text = "AA BB CC";
     let phases: Vec<Vec<u8>> = [0.5, 1.5, 2.5].iter().map(|&t| frame(text, Some("reveal"), t)).collect();
     let counts: Vec<usize> = phases.iter().map(|f| centroid(f, greenish).0).collect();
-    let edges: Vec<u32> = phases.iter().map(|f| right_edge(f).expect("念到的词画出来了")).collect();
+    let edges: Vec<u32> = phases.iter().map(|f| right_edge(f).expect("spoken word was painted")).collect();
     // One, two, then three words: more and more characters appear, each word further right (the line is laid out centered in the box, and unspoken words still hold their space).
     assert!(counts[0] > 10 && counts[0] < counts[1] && counts[1] < counts[2], "{counts:?}");
     assert!(edges[0] < edges[1] && edges[1] < edges[2], "{edges:?}");
@@ -612,7 +612,7 @@ fn cut_and_hidden_words_leave_the_caption_line() {
             seconds,
             &mut Media::default(),
         );
-        let (x0, _, x1, _) = painted_bounds(&frame).expect("字幕画出来了");
+        let (x0, _, x1, _) = painted_bounds(&frame).expect("captions were painted");
         f64::from(x1 - x0)
     };
     let whole = || vec![clip_at("clip", 0, 60, 10.0), caption("cap", "doc", Some("style"), 60, &["clip"])];
@@ -769,7 +769,7 @@ fn bottom_template_strips_lift_captions_without_drawing_the_template_twice() {
         (0..H)
             .rev()
             .find(|&y| (0..W).any(|x| whiteish(px(frame, x, y))))
-            .expect("字幕画出来了")
+            .expect("captions were painted")
     };
     let strip_top = (f64::from(H) * 0.8) as u32;
     // Transparent bar: only to see where the caption sits.

@@ -37,7 +37,7 @@ pub fn stripes_gif(colours: [[u8; 3]; 4], delays_cs: [u16; 4], repeat: gif::Repe
     let palette: Vec<u8> = colours.iter().flatten().copied().collect();
     let mut out = Vec::new();
     {
-        let mut enc = gif::Encoder::new(&mut out, W, H, &palette).expect("GIF 编码器");
+        let mut enc = gif::Encoder::new(&mut out, W, H, &palette).expect("GIF encoder");
         enc.set_repeat(repeat).expect("loop count");
         for (i, delay) in delays_cs.iter().enumerate() {
             let mut frame = gif::Frame {
@@ -49,7 +49,7 @@ pub fn stripes_gif(colours: [[u8; 3]; 4], delays_cs: [u16; 4], repeat: gif::Repe
                 ..Default::default()
             };
             frame.make_lzw_pre_encoded();
-            enc.write_lzw_pre_encoded_frame(&frame).expect("写帧");
+            enc.write_lzw_pre_encoded_frame(&frame).expect("write frame");
         }
     }
     out
@@ -68,12 +68,12 @@ pub fn disposal_gif() -> Vec<u8> {
     ];
     let mut out = Vec::new();
     {
-        let mut enc = gif::Encoder::new(&mut out, W, H, &palette).expect("GIF 编码器");
+        let mut enc = gif::Encoder::new(&mut out, W, H, &palette).expect("GIF encoder");
         enc.set_repeat(gif::Repeat::Finite(2)).expect("loop count");
         let mut push = |frame: gif::Frame<'static>| {
             let mut frame = frame;
             frame.make_lzw_pre_encoded();
-            enc.write_lzw_pre_encoded_frame(&frame).expect("写帧");
+            enc.write_lzw_pre_encoded_frame(&frame).expect("write frame");
         };
         push(gif::Frame {
             width: W,
@@ -124,7 +124,7 @@ pub fn pulse_apng() -> Vec<u8> {
         enc.set_color(png::ColorType::Rgba);
         enc.set_depth(png::BitDepth::Eight);
         enc.set_animated(COLOURS.len() as u32, 1).expect("acTL");
-        let mut writer = enc.write_header().expect("PNG 头");
+        let mut writer = enc.write_header().expect("PNG header");
         for (colour, (num, den)) in COLOURS.iter().zip(DELAYS) {
             writer.set_frame_delay(num, den).expect("fcTL delay");
             writer
@@ -137,9 +137,9 @@ pub fn pulse_apng() -> Vec<u8> {
                 .cycle()
                 .take((W * H) as usize * 4)
                 .collect();
-            writer.write_image_data(&data).expect("写帧");
+            writer.write_image_data(&data).expect("write frame");
         }
-        writer.finish().expect("收尾");
+        writer.finish().expect("finish");
     }
     out
 }
@@ -151,11 +151,11 @@ pub fn static_png() -> Vec<u8> {
         let mut enc = png::Encoder::new(Cursor::new(&mut out), W as u32, H as u32);
         enc.set_color(png::ColorType::Rgba);
         enc.set_depth(png::BitDepth::Eight);
-        let mut writer = enc.write_header().expect("PNG 头");
+        let mut writer = enc.write_header().expect("PNG header");
         writer
             .write_image_data(&vec![0x80u8; (W * H) as usize * 4])
-            .expect("写图");
-        writer.finish().expect("收尾");
+            .expect("write image");
+        writer.finish().expect("finish");
     }
     out
 }
@@ -194,10 +194,10 @@ pub fn wave_webp() -> Vec<u8> {
         let mut still = Vec::new();
         image::codecs::webp::WebPEncoder::new_lossless(&mut still)
             .encode(&rgba, W as u32, H as u32, image::ExtendedColorType::Rgba8)
-            .expect("无损 WebP 编码");
+            .expect("lossless WebP encoding");
         // After "RIFF" + size + "WEBP" comes a single VP8L sub-chunk; the whole chunk is moved into ANMF
         let vp8l = &still[12..];
-        assert_eq!(&vp8l[..4], b"VP8L", "静态 WebP 应当只有一个 VP8L 子块");
+        assert_eq!(&vp8l[..4], b"VP8L", "a static WebP should have only one VP8L sub-chunk");
 
         let mut anmf = Vec::new();
         anmf.extend_from_slice(&u24(0)); // frame_x (in units of 2 pixels)

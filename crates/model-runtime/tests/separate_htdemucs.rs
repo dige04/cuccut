@@ -26,12 +26,12 @@ const REPO: &str = "aufklarer/HTDemucs-FT-MLX";
 /// Builds and validates the file manifest from `<models-root>/<repo>/.ccut-manifest.json`; returns `None` and prints the reason if the weights are absent.
 fn verified() -> Option<VerifiedFiles> {
     let Some(root) = std::env::var_os("CUCCUT_TEST_MODELS_DIR") else {
-        println!("跳过：没设 CUCCUT_TEST_MODELS_DIR");
+        println!("skipped: CUCCUT_TEST_MODELS_DIR is not set");
         return None;
     };
     let dir = PathBuf::from(root).join(REPO);
     let Ok(bytes) = std::fs::read(dir.join(".ccut-manifest.json")) else {
-        println!("跳过：{} 没有 .ccut-manifest.json（权重没装好）", dir.display());
+        println!("skipped: {} has no .ccut-manifest.json (weights not installed)", dir.display());
         return None;
     };
     let manifest: Value = serde_json::from_slice(&bytes).expect("manifest JSON");
@@ -62,7 +62,7 @@ fn load_mlx() -> Option<Box<dyn Separator>> {
     let files = verified()?;
     let started = Instant::now();
     let separator = separate::load_separator(&files).expect("load HTDemucs");
-    println!("HTDemucs-FT（MLX）: 加载 {:.2} s", started.elapsed().as_secs_f32());
+    println!("HTDemucs-FT (MLX): loaded in {:.2} s", started.elapsed().as_secs_f32());
     Some(separator)
 }
 
@@ -70,13 +70,13 @@ fn load_mlx() -> Option<Box<dyn Separator>> {
 fn load_candle() -> Option<Box<dyn Separator>> {
     let device = model_runtime::backend::candle::default_device();
     if std::env::var("CUCCUT_REQUIRE_CUDA").ok().as_deref() == Some("1") {
-        assert!(device.is_cuda(), "CUCCUT_REQUIRE_CUDA=1 时禁止静默回退 CPU");
+        assert!(device.is_cuda(), "CUCCUT_REQUIRE_CUDA=1 forbids silent fallback to CPU");
     }
     let files = verified()?;
     let started = Instant::now();
     let label = model_runtime::backend::candle::device_label(&device);
     let separator = separate::load_candle_separator(&files, device).expect("load HTDemucs");
-    println!("HTDemucs-FT（candle {label}）: 加载 {:.2} s", started.elapsed().as_secs_f32());
+    println!("HTDemucs-FT (candle {label}): loaded in {:.2} s", started.elapsed().as_secs_f32());
     Some(separator)
 }
 
@@ -135,7 +135,7 @@ macro_rules! separation_tests {
                         }
                         true
                     })
-                    .expect("分离");
+                    .expect("separate");
                 assert!(windows_seen > 0);
                 let expected_len = (96_000.0 * 44_100.0 / 48_000.0_f64).round() as usize;
                 for stem in [&stems.vocals, &stems.drums, &stems.bass, &stems.other] {
@@ -151,10 +151,10 @@ macro_rules! separation_tests {
                     .collect();
                 let energy: f32 = resampled_left.iter().map(|v| v * v).sum();
                 let residual: f32 = sum.iter().zip(&resampled_left).map(|(a, b)| (a - b) * (a - b)).sum();
-                assert!(residual / energy < 0.5, "残差能量比 {}", residual / energy);
+                assert!(residual / energy < 0.5, "residual energy ratio {}", residual / energy);
 
                 // Cancellation: the first callback returning false must produce an error.
-                let err = separator.separate(&mix, &mut |_| false).expect_err("取消应报错");
+                let err = separator.separate(&mix, &mut |_| false).expect_err("cancellation should return an error");
                 assert!(err.to_string().contains("取消"), "{err}");
             }
 
@@ -180,20 +180,20 @@ macro_rules! separation_tests {
                     sample_rate: 44_100,
                 };
                 let started = Instant::now();
-                let stems = separator.separate(&mix, &mut |_| true).expect("分离");
+                let stems = separator.separate(&mix, &mut |_| true).expect("separate");
                 let seconds = mix.duration_seconds();
-                println!("{seconds:.2} s 的混音分离用了 {:.2} s", started.elapsed().as_secs_f32());
+                println!("{seconds:.2} s mix separated in {:.2} s", started.elapsed().as_secs_f32());
                 let vocals = stems.vocals.to_mono();
                 let background = stems.background().to_mono();
                 let vs = correlation(&vocals, &speech);
                 let vt = correlation(&vocals, &tone);
                 let bt = correlation(&background, &tone);
                 let bs = correlation(&background, &speech);
-                println!("相关：人声~语音 {vs:.3}，人声~低音 {vt:.3}，背景~低音 {bt:.3}，背景~语音 {bs:.3}");
-                assert!(vs > 0.95, "人声应跟语音走：{vs:.3}");
-                assert!(bt > 0.95, "背景应跟低音走：{bt:.3}");
-                assert!(vt.abs() < 0.1, "人声里不该有低音：{vt:.3}");
-                assert!(bs.abs() < 0.1, "背景里不该有语音：{bs:.3}");
+                println!("correlations: vocals~speech {vs:.3}, vocals~bass {vt:.3}, background~bass {bt:.3}, background~speech {bs:.3}");
+                assert!(vs > 0.95, "vocals should follow speech: {vs:.3}");
+                assert!(bt > 0.95, "background should follow bass: {bt:.3}");
+                assert!(vt.abs() < 0.1, "vocals should not contain bass: {vt:.3}");
+                assert!(bs.abs() < 0.1, "background should not contain speech: {bs:.3}");
             }
 
             /// The self-check sample (the same 16 kHz English speech, mono, upsampled to 44.1 kHz) contains only vocals: vocal RMS must be at least 2× the background. This is the same threshold `models.test` uses to judge separation model packs (Model Worker protocol spec §4.3).
@@ -209,16 +209,16 @@ macro_rules! separation_tests {
                     right: speech,
                     sample_rate: 44_100,
                 };
-                let stems = separator.separate(&mix, &mut |_| true).expect("分离");
+                let stems = separator.separate(&mix, &mut |_| true).expect("separate");
                 let rms = |x: &[f32]| (x.iter().map(|v| f64::from(*v) * f64::from(*v)).sum::<f64>() / x.len().max(1) as f64).sqrt();
                 let vocals = rms(&stems.vocals.to_mono());
                 let background = rms(&stems.background().to_mono());
                 let db = 20.0 * (vocals / background.max(1e-12)).log10();
-                println!("纯语音：人声 RMS {vocals:.4}，背景 RMS {background:.4}，人声比背景高 {db:.1} dB");
-                assert!(vocals >= 0.001, "人声不该是静音：{vocals:.4}");
+                println!("speech only: vocals RMS {vocals:.4}, background RMS {background:.4}, vocals {db:.1} dB above background");
+                assert!(vocals >= 0.001, "vocals should not be silent: {vocals:.4}");
                 assert!(
                     vocals >= 2.0 * background,
-                    "人声应明显高于背景：{vocals:.4} vs {background:.4}"
+                    "vocals should be clearly above background: {vocals:.4} vs {background:.4}"
                 );
             }
         }
@@ -265,17 +265,17 @@ fn candle_matches_mlx_on_speech_over_bass() {
         sample_rate: 44_100,
     };
     let started = Instant::now();
-    let reference = mlx.separate(&mix, &mut |_| true).expect("MLX 分离");
+    let reference = mlx.separate(&mix, &mut |_| true).expect("MLX separation");
     let mlx_seconds = started.elapsed().as_secs_f32();
     let started = Instant::now();
-    let estimate = candle.separate(&mix, &mut |_| true).expect("candle 分离");
+    let estimate = candle.separate(&mix, &mut |_| true).expect("candle separation");
     let candle_seconds = started.elapsed().as_secs_f32();
     let vocals = sdr(&reference.vocals.to_mono(), &estimate.vocals.to_mono());
     let background = sdr(&reference.background().to_mono(), &estimate.background().to_mono());
     println!(
-        "{:.2} s 的混音：MLX {mlx_seconds:.2} s，candle {candle_seconds:.2} s；candle 对 MLX 的 SDR：人声 {vocals:.1} dB，背景 {background:.1} dB",
+        "{:.2} s mix: MLX {mlx_seconds:.2} s, candle {candle_seconds:.2} s; candle vs MLX SDR: vocals {vocals:.1} dB, background {background:.1} dB",
         mix.duration_seconds()
     );
-    assert!(vocals > 40.0, "人声与 MLX 差得太多：{vocals:.1} dB");
-    assert!(background > 40.0, "背景与 MLX 差得太多：{background:.1} dB");
+    assert!(vocals > 40.0, "vocals differ too much from MLX: {vocals:.1} dB");
+    assert!(background > 40.0, "background differs too much from MLX: {background:.1} dB");
 }

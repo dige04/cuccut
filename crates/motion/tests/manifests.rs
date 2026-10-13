@@ -351,7 +351,7 @@ fn every_sticker_template_is_a_stack_of_coloured_outlines() {
         // Stickers have no drawing algorithm: they are output directly as vectors, unlike visualizer / progress, which need a kernel name.
         assert!(recipe.recipe().is_none(), "{id}");
         assert!(recipe.shape().is_none(), "{id}");
-        let body = recipe.sticker().expect("sticker 目录只装 sticker 配方");
+        let body = recipe.sticker().expect("the sticker directory only holds sticker recipes");
         assert!(!body.layers.is_empty(), "{id}");
         for layer in &body.layers {
             assert!(
@@ -407,7 +407,7 @@ fn the_sticker_catalogue_actually_uses_more_than_one_layer() {
         .iter()
         .filter(|recipe| recipe.sticker().expect("sticker body").layers.len() > 1)
         .count();
-    assert!(multi >= 6, "多层模板只有 {multi} 份");
+    assert!(multi >= 6, "only {multi} multi-layer templates");
 }
 
 /// Self-verifying invariants of sticker geometry (originally in `every_sticker_recipe_has_geometry` in `gen_element_sticker_paths.rs`; after the two generated outputs for Swift and `designs/cuccut-mac` were taken offline along with the old Mac surface and the generator was removed entirely, these registry assertions that do not depend on generated output were moved here and continue to guard it).
@@ -417,7 +417,7 @@ fn every_sticker_layer_is_well_formed() {
 
     for recipe in timeline_stickers() {
         let layers = &recipe.sticker().expect("sticker body").layers;
-        assert!(!layers.is_empty(), "{} 一层都没有", recipe.id);
+        assert!(!layers.is_empty(), "{} has no layers at all", recipe.id);
         for layer in layers {
             // The first segment of each layer must be `move` (validated at parse time), so consumers need not defend against it.
             assert!(

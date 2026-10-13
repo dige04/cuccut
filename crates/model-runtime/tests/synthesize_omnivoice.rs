@@ -35,12 +35,12 @@ fn output_dir() -> PathBuf {
 /// Builds and validates the file manifest from `<models-root>/<repo>/.ccut-manifest.json`; returns `None` and prints the reason if the weights are absent.
 fn verified(repo: &str, family: &str, component: &'static str) -> Option<VerifiedFiles> {
     let Some(root) = std::env::var_os("CUCCUT_TEST_MODELS_DIR") else {
-        println!("跳过：没设 CUCCUT_TEST_MODELS_DIR");
+        println!("skipped: CUCCUT_TEST_MODELS_DIR is not set");
         return None;
     };
     let dir = PathBuf::from(root).join(repo);
     let Ok(bytes) = std::fs::read(dir.join(".ccut-manifest.json")) else {
-        println!("跳过：{} 没有 .ccut-manifest.json（权重没装好）", dir.display());
+        println!("skipped: {} has no .ccut-manifest.json (weights not installed)", dir.display());
         return None;
     };
     let manifest: Value = serde_json::from_slice(&bytes).expect("manifest JSON");
@@ -75,17 +75,17 @@ fn check_and_write(audio: &TtsAudio, name: &str) -> f32 {
     let path = output_dir().join(format!("{name}.wav"));
     wav::write_wav_pcm16(&path, &audio.samples, audio.sample_rate).expect("write wav");
     println!("{name}: {seconds:.2} s, peak {peak:.3}, rms {rms:.4} → {}", path.display());
-    assert!((0.5..=20.0).contains(&seconds), "{name}: {seconds:.2} s 不在 0.5–20 s 内");
-    assert!(peak > 0.01, "{name}: 峰值 {peak} 像静音");
-    assert!(rms > 0.003, "{name}: RMS {rms} 像静音");
-    assert!(audio.samples.iter().all(|s| s.is_finite()), "{name}: 有 NaN / Inf");
+    assert!((0.5..=20.0).contains(&seconds), "{name}: {seconds:.2} s is outside 0.5–20 s");
+    assert!(peak > 0.01, "{name}: peak {peak} looks silent");
+    assert!(rms > 0.003, "{name}: RMS {rms} looks silent");
+    assert!(audio.samples.iter().all(|s| s.is_finite()), "{name}: contains NaN / Inf");
     seconds
 }
 
 fn synthesize_one(engine: &mut dyn TtsEngine, request: &TtsRequest, name: &str) -> f32 {
     let started = Instant::now();
     let audio = engine.synthesize(request, &mut |_| true).expect("synthesize");
-    println!("{name}: 合成 {:.2} s", started.elapsed().as_secs_f32());
+    println!("{name}: synthesized in {:.2} s", started.elapsed().as_secs_f32());
     check_and_write(&audio, name)
 }
 
@@ -105,7 +105,7 @@ fn omnivoice_speaks_chinese_and_english_designs_a_voice_and_meets_a_target_durat
         },
     )
     .expect("load OmniVoice");
-    println!("OmniVoice: 加载 {:.2} s", started.elapsed().as_secs_f32());
+    println!("OmniVoice: loaded in {:.2} s", started.elapsed().as_secs_f32());
     assert_eq!(engine.kind(), TtsEngineKind::OmniVoice);
     assert_eq!(engine.sample_rate(), SAMPLE_RATE);
 
@@ -133,5 +133,5 @@ fn omnivoice_speaks_chinese_and_english_designs_a_voice_and_meets_a_target_durat
     request.target_duration_seconds = Some(target);
     request.sampling.seed = Some(7);
     let seconds = synthesize_one(engine.as_mut(), &request, "omnivoice-duration-6s-zh");
-    assert!((f64::from(seconds) - target).abs() <= 1.0, "目标 {target} s，实际 {seconds:.2} s");
+    assert!((f64::from(seconds) - target).abs() <= 1.0, "target {target} s, actual {seconds:.2} s");
 }

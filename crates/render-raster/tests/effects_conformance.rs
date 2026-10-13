@@ -116,7 +116,7 @@ fn uniforms_from_json(object: &Map<String, Value>) -> UniformMap {
         .collect()
 }
 
-/// `(id, version, [(case, uniforms JSON)])`。
+/// `(id, version, [(case, uniforms JSON)])`.
 fn cases() -> Vec<(&'static str, u32, Vec<(&'static str, Value)>)> {
     // The `length` parameter is a **fraction of the canvas's short side**: with a 48 px short side, 3/48 = 3 px.
     vec![
@@ -318,7 +318,7 @@ fn every_strict_manifest_has_a_cpu_reference_kernel() {
         }
         assert!(
             kernel_is_implemented(&manifest.kernel),
-            "{} 声明 strict，但内核 {} 没有 CPU reference 实现",
+            "{} declares strict, but kernel {} has no CPU reference implementation",
             manifest.qualified(),
             manifest.kernel
         );
@@ -330,9 +330,9 @@ fn every_conformance_case_names_a_registered_effect() {
     for (id, version, list) in cases() {
         assert!(
             builtin_registry().get(id, version).is_some(),
-            "conformance 引用了未注册的 {id}@{version}"
+            "conformance references unregistered {id}@{version}"
         );
-        assert!(!list.is_empty(), "{id}@{version} 没有 case");
+        assert!(!list.is_empty(), "{id}@{version} has no case");
     }
 }
 
@@ -353,7 +353,7 @@ fn every_pixel_effect_is_covered_by_conformance() {
         }
         assert!(
             covered.contains(&manifest.qualified()),
-            "{} 没有 conformance case",
+            "{} has no conformance case",
             manifest.qualified()
         );
     }
@@ -398,7 +398,7 @@ fn cpu_reference_output_matches_the_conformance_fixtures() {
             }
             let expected = Pixmap::decode_png(&std::fs::read(&png).unwrap_or_else(|error| {
                 panic!(
-                    "读取 {} 失败：{error}；用 CCUT_UPDATE_GOLDEN=1 重生成",
+                    "failed to read {}: {error}; regenerate with CCUT_UPDATE_GOLDEN=1",
                     png.display()
                 )
             }))
@@ -406,7 +406,7 @@ fn cpu_reference_output_matches_the_conformance_fixtures() {
             assert_eq!(
                 expected.data(),
                 output.data(),
-                "{}/{case}: CPU reference 输出与 conformance 夹具不一致（指纹 {fingerprint}）",
+                "{}/{case}: CPU reference output does not match the conformance fixture (fingerprint {fingerprint})",
                 manifest.qualified()
             );
         }
@@ -423,8 +423,8 @@ fn cpu_reference_output_matches_the_conformance_fixtures() {
                 std::fs::write(&path, &text).unwrap();
             } else {
                 let stored = std::fs::read_to_string(&path)
-                    .unwrap_or_else(|error| panic!("读取 {} 失败：{error}", path.display()));
-                assert_eq!(stored, text, "{} 与当前 case 表不一致", path.display());
+                    .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+                assert_eq!(stored, text, "{} does not match the current case table", path.display());
             }
         }
     }
@@ -485,7 +485,7 @@ fn the_bounded_blur_equals_the_full_frame_blur() {
         assert_eq!(
             bounded.data(),
             full.data(),
-            "radius={radius}: 包围盒模糊与整幅模糊不一致"
+            "radius={radius}: bounding-box blur and whole-frame blur differ"
         );
     }
 }
@@ -529,24 +529,24 @@ fn a_windowed_alpha_bbox_matches_the_full_frame_scan() {
     const TALL: usize = 180;
     for seed in [1_u64, 7, 4242] {
         let (data, rows, cols) = sparse_frame(seed);
-        let full = render_raster::effects::alpha_bbox(&data, WIDE, TALL).expect("内容非空");
+        let full = render_raster::effects::alpha_bbox(&data, WIDE, TALL).expect("content is not empty");
         for (label, window) in [
             (
-                "整幅窗口",
+                "full-frame window",
                 render_raster::effects::ContentBox {
                     rows: 0..TALL,
                     cols: 0..WIDE,
                 },
             ),
             (
-                "贴身超集",
+                "tight superset",
                 render_raster::effects::ContentBox {
                     rows: rows.start..rows.end,
                     cols: cols.start..cols.end,
                 },
             ),
             (
-                "外扩超集（越界由实现夹到画布）",
+                "expanded superset (out-of-bounds parts are clamped to the canvas by the implementation)",
                 render_raster::effects::ContentBox {
                     rows: rows.start.saturating_sub(9)..rows.end + 400,
                     cols: cols.start.saturating_sub(31)..cols.end + 400,
@@ -557,7 +557,7 @@ fn a_windowed_alpha_bbox_matches_the_full_frame_scan() {
                 render_raster::effects::alpha_bbox_within(&data, WIDE, TALL, &window).expect(label);
             assert_eq!(
                 windowed, full,
-                "seed={seed} {label}: 窗口扫描与全帧扫描分叉"
+                "seed={seed} {label}: windowed scan diverges from the full-frame scan"
             );
         }
     }
@@ -603,7 +603,7 @@ fn the_windowed_blur_path_equals_the_full_frame_blur_path() {
             render_raster::effects::box_blur_premul_u8(&mut full, WIDE as u32, TALL as u32, radius);
             assert_eq!(
                 windowed, full,
-                "seed={seed} radius={radius}: 窗口路径与整幅路径分叉"
+                "seed={seed} radius={radius}: windowed path diverges from the full-frame path"
             );
         }
     }
@@ -674,7 +674,7 @@ fn every_surface_transition_is_covered_by_conformance() {
     for manifest in builtin_registry().in_domain(EffectDomain::Transition) {
         assert!(
             covered.contains(&manifest.qualified()),
-            "{} 没有 conformance case",
+            "{} has no conformance case",
             manifest.qualified()
         );
     }
@@ -718,7 +718,7 @@ fn monotonic_progress_yields_distinct_frames() {
             let output = run_transition(id, version, &uniforms, *progress);
             let hash = fnv1a64(output.data());
             if let Some(previous) = seen.insert(hash, *progress) {
-                panic!("{id}@{version}: progress {previous} 与 {progress} 输出相同");
+                panic!("{id}@{version}: progress {previous} and {progress} produce the same output");
             }
         }
     }
@@ -746,7 +746,7 @@ fn transitions_are_seek_safe() {
                 .data()
                 .to_vec();
         }
-        assert_eq!(sorted, out, "{id}@{version}: 乱序采样与顺序采样不一致");
+        assert_eq!(sorted, out, "{id}@{version}: out-of-order sampling differs from sequential sampling");
     }
 }
 
@@ -814,7 +814,7 @@ fn surface_transition_output_matches_the_conformance_fixtures() {
             }
             let stored = Pixmap::decode_png(&std::fs::read(&png).unwrap_or_else(|error| {
                 panic!(
-                    "读取 {} 失败：{error}；用 CCUT_UPDATE_GOLDEN=1 重生成",
+                    "failed to read {}: {error}; regenerate with CCUT_UPDATE_GOLDEN=1",
                     png.display()
                 )
             }))
@@ -822,7 +822,7 @@ fn surface_transition_output_matches_the_conformance_fixtures() {
             assert_eq!(
                 stored.data(),
                 output.data(),
-                "{}/{case}: CPU reference 与 conformance 夹具不一致（指纹 {fingerprint}）",
+                "{}/{case}: CPU reference does not match the conformance fixture (fingerprint {fingerprint})",
                 manifest.qualified()
             );
         }
@@ -842,8 +842,8 @@ fn surface_transition_output_matches_the_conformance_fixtures() {
                 std::fs::write(&path, &text).unwrap();
             } else {
                 let stored = std::fs::read_to_string(&path)
-                    .unwrap_or_else(|error| panic!("读取 {} 失败：{error}", path.display()));
-                assert_eq!(stored, text, "{} 与当前 case 表不一致", path.display());
+                    .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+                assert_eq!(stored, text, "{} does not match the current case table", path.display());
             }
         }
     }

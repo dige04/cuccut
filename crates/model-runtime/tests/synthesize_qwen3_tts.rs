@@ -82,16 +82,16 @@ fn check_and_write(audio: &TtsAudio, name: &str) -> PathBuf {
         clipped_ratio * 100.0,
         path.display()
     );
-    assert!((0.5..=20.0).contains(&seconds), "{name}: {seconds:.2} s 不在 0.5–20 s 内");
-    assert!(peak > 0.01, "{name}: 峰值 {peak} 像静音");
-    assert!(rms > 0.003, "{name}: RMS {rms} 像静音");
+    assert!((0.5..=20.0).contains(&seconds), "{name}: {seconds:.2} s is outside 0.5–20 s");
+    assert!(peak > 0.01, "{name}: peak {peak} looks silent");
+    assert!(rms > 0.003, "{name}: RMS {rms} looks silent");
     // Peak limited to −1 dBFS (`synthesize::loudness`): no sample is driven to full scale any more.
     assert!(
         peak <= synthesize::loudness::PEAK_CEILING + 1e-6,
-        "{name}: 峰值 {peak} 超过 −1 dBFS"
+        "{name}: peak {peak} exceeds −1 dBFS"
     );
-    assert!(clipped_ratio < 0.001, "{name}: {clipped} 个样本削波");
-    assert!(audio.samples.iter().all(|s| s.is_finite()), "{name}: 有 NaN / Inf");
+    assert!(clipped_ratio < 0.001, "{name}: {clipped} samples clipped");
+    assert!(audio.samples.iter().all(|s| s.is_finite()), "{name}: contains NaN / Inf");
     path
 }
 
@@ -109,7 +109,7 @@ fn synthesize_pair(model_repo: &str, voice: VoiceSpec, label: &str) {
     )
     .expect("load Qwen3-TTS");
     println!(
-        "{label}: 加载 {:.2} s，预置说话人 {:?}",
+        "{label}: loaded in {:.2} s, preset speakers {:?}",
         started.elapsed().as_secs_f32(),
         engine.preset_speakers()
     );
@@ -122,7 +122,7 @@ fn synthesize_pair(model_repo: &str, voice: VoiceSpec, label: &str) {
         request.sampling.seed = Some(7);
         let started = Instant::now();
         let audio = engine.synthesize(&request, &mut |_| true).expect("synthesize");
-        println!("{label}-{lang}: 合成 {:.2} s", started.elapsed().as_secs_f32());
+        println!("{label}-{lang}: synthesized in {:.2} s", started.elapsed().as_secs_f32());
         check_and_write(&audio, &format!("qwen3-tts-{label}-{lang}"));
     }
 }
@@ -256,11 +256,11 @@ fn base_builtin_voice_levels_with_and_without_the_transcript() {
 // | e | 1.7B CustomVoice 8-bit Vivian + tone instruction | whole text in one call | default, seed 7 |
 // | f | 0.6B Base, built-in voice zh-female (recording + transcript, ICL) | whole text in one call | default, seed 7 |
 //
-// CUCCUT_TEST_MODELS_DIR=<models-root> CUCCUT_TEST_OUTPUT_DIR=<仓库外目录> \
-//   CUCCUT_TTS_EXP_SCRIPT=<台词.txt> CUCCUT_TTS_EXP_INSTRUCT=<语气说明.txt> [CUCCUT_TTS_EXP_ROWS=abcdef] \
+// CUCCUT_TEST_MODELS_DIR=<models-root> CUCCUT_TEST_OUTPUT_DIR=<directory outside the repo> \
+//   CUCCUT_TTS_EXP_SCRIPT=<script.txt> CUCCUT_TTS_EXP_INSTRUCT=<instruct.txt> [CUCCUT_TTS_EXP_ROWS=abcdef] \
 //   cargo test -p model-runtime --test synthesize_qwen3_tts long_narration_seam_experiment -- --ignored --test-threads=1 --nocapture
 //
-// Each row writes `seam-exp-<行>.wav` and `seam-exp-<行>.segments.json` (`[{start, end, text}]`: for whole-text calls, the chunks reported by the engine; for per-sentence calls, each sentence's position in the concatenated result). Rows c and d also write per-sentence `seam-exp-<行>-<NN>.wav` files, and assemble the full file with 0.3 s of silence between sentences.
+// Each row writes `seam-exp-<row>.wav` and `seam-exp-<row>.segments.json` (`[{start, end, text}]`: for whole-text calls, the chunks reported by the engine; for per-sentence calls, each sentence's position in the concatenated result). Rows c and d also write per-sentence `seam-exp-<row>-<NN>.wav` files, and assemble the full file with 0.3 s of silence between sentences.
 
 /// Silence (seconds) inserted between sentences when concatenating per sentence.
 const SENTENCE_GAP_SECONDS: f32 = 0.3;
@@ -301,7 +301,7 @@ fn report(name: &str, audio: &TtsAudio, elapsed: f32, units: usize) {
     let path = output_dir().join(format!("{name}.wav"));
     wav::write_wav_pcm16(&path, &audio.samples, audio.sample_rate).expect("write wav");
     println!(
-        "{name}: {seconds:.2} s，{:.3} s/字，合成 {elapsed:.1} s（RTF {:.2}）→ {}",
+        "{name}: {seconds:.2} s, {:.3} s/char, synthesized in {elapsed:.1} s (RTF {:.2}) → {}",
         seconds / units as f32,
         elapsed / seconds,
         path.display()
@@ -322,11 +322,11 @@ fn whole_passage(engine: &mut Box<dyn synthesize::TtsEngine>, name: &str, reques
         })
         .expect("synthesize");
     let elapsed = started.elapsed().as_secs_f32();
-    assert_eq!(ends.len(), chunks.len(), "{name}: 每块报一次 ChunkFinished");
+    assert_eq!(ends.len(), chunks.len(), "{name}: each chunk should report ChunkFinished once");
     let total = audio.samples.len() as f64 / f64::from(audio.sample_rate);
     assert!(
         (ends.last().unwrap() - total).abs() < 1e-6,
-        "{name}: 最后一次 ChunkFinished 应等于总时长"
+        "{name}: last ChunkFinished should equal the total duration"
     );
     let mut start = 0.0;
     let segments: Vec<(f64, f64, String)> = ends
@@ -384,7 +384,7 @@ fn long_narration_seam_experiment() {
     let chunks = synthesize::text::chunk(&script, synthesize::text::DEFAULT_MAX_UNITS);
     let sentences = synthesize::text::split_sentences(&script);
     println!(
-        "台词 {units} 字；引擎切 {} 块（{:?} 字）；按句 {} 句",
+        "script {units} chars; engine split it into {} chunks ({:?} chars); per sentence {} sentences",
         chunks.len(),
         chunks.iter().map(|c| synthesize::text::count_units(c)).collect::<Vec<_>>(),
         sentences.len()

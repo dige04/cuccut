@@ -170,5 +170,5 @@ pub fn engine_ranges(_input: &[u8]) -> Result<String, EntryError> {
             origin: range(CONFETTI_ORIGIN_RANGE),
         },
     };
-    Ok(serde_json::to_string(&ranges).expect("区间总能序列化"))
+    Ok(serde_json::to_string(&ranges).expect("ranges always serialize"))
 }

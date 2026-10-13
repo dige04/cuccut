@@ -99,7 +99,7 @@ impl Harness {
             self.ir.h as u32,
             &mut self.media,
         )
-        .expect("光栅化");
+        .expect("rasterize");
         let p = pm.pixel(1, 1).unwrap();
         (p.red(), p.green(), p.blue(), p.alpha())
     }

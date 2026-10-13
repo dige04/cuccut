@@ -41,9 +41,9 @@ const CASES: [&str; 8] = [
 
 fn load_case(name: &str) -> Lottie {
     let path = fixtures().join("cases").join(name);
-    let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("读 {path:?}: {e}"));
+    let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path:?}: {e}"));
     let mut lottie = Lottie::parse("case", name, &bytes)
-        .unwrap_or_else(|e| panic!("夹具 {name} 必须落在子集内：{e:#}"));
+        .unwrap_or_else(|e| panic!("fixture {name} must fall within the subset: {e:#}"));
     let loaded: Vec<_> = lottie
         .image_requirements()
         .iter()
@@ -51,9 +51,9 @@ fn load_case(name: &str) -> Lottie {
             let bytes = requirement
                 .embedded
                 .clone()
-                .unwrap_or_else(|| panic!("夹具 {name} 的子资源必须内嵌"));
+                .unwrap_or_else(|| panic!("fixture {name}'s sub-resource must be embedded"));
             let pixmap = render_raster::assets::decode_image_bytes(&requirement.id, &bytes)
-                .unwrap_or_else(|e| panic!("夹具 {name} 子资源解码：{e:#}"));
+                .unwrap_or_else(|e| panic!("fixture {name} sub-resource decode: {e:#}"));
             (requirement.asset_name.clone(), bytes, Arc::new(pixmap))
         })
         .collect();
@@ -271,26 +271,26 @@ fn every_handwritten_case_keeps_its_draw_ops_byte_for_byte() {
     if updating() {
         let mut text = serde_json::to_string_pretty(&actual).unwrap();
         text.push('\n');
-        std::fs::write(&golden_path, text).expect("写 golden");
+        std::fs::write(&golden_path, text).expect("write golden");
         return;
     }
     let expected: Value =
-        serde_json::from_slice(&std::fs::read(&golden_path).expect("读 golden")).expect("解析");
+        serde_json::from_slice(&std::fs::read(&golden_path).expect("read golden")).expect("parse");
     if expected != actual {
         let expected_cases = expected["cases"].as_array().cloned().unwrap_or_default();
         let actual_cases = actual["cases"].as_array().cloned().unwrap_or_default();
         for (want, got) in expected_cases.iter().zip(actual_cases.iter()) {
             if want != got {
                 panic!(
-                    "夹具 {} 的指令流变了。\n期望：\n{}\n实际：\n{}\n\
-                     若这是有意的语义变化，用 CCUT_UPDATE_GOLDEN=1 重生成并在提交里说明。",
+                    "fixture {} instruction stream changed.\nexpected:\n{}\nactual:\n{}\n\
+                     if this semantic change is intended, regenerate with CCUT_UPDATE_GOLDEN=1 and say so in the commit.",
                     want["file"],
                     serde_json::to_string_pretty(want).unwrap(),
                     serde_json::to_string_pretty(got).unwrap()
                 );
             }
         }
-        panic!("cases-golden.json 与当前实现不一致（条目数或表头变了）");
+        panic!("cases-golden.json does not match the current implementation (entry count or header changed)");
     }
 }
 
@@ -312,13 +312,13 @@ fn recording_a_case_twice_gives_identical_bytes_and_survives_shuffling() {
         assert_eq!(
             forward,
             backward.into_iter().rev().collect::<Vec<_>>(),
-            "{name}：乱序录制必须逐字节等于顺序录制"
+            "{name}: out-of-order recording must match in-order recording byte for byte"
         );
         // Record twice at the same time
         assert_eq!(
             drawop::encode(&record(&lottie, total / 3)),
             drawop::encode(&record(&lottie, total / 3)),
-            "{name}：同帧两次录制必须逐字节相同"
+            "{name}: two recordings of the same frame must be byte-identical"
         );
     }
 }
@@ -332,14 +332,14 @@ fn every_case_rasterises_without_touching_the_stacks() {
             let ms = total * k / 4;
             let frame = lottie
                 .sample(MediaTime::from_millis(ms))
-                .unwrap_or_else(|e| panic!("{name} 在 {ms}ms 光栅化失败：{e:#}"));
+                .unwrap_or_else(|e| panic!("{name} failed to rasterize at {ms}ms: {e:#}"));
             assert_eq!(
                 (frame.pixmap.width(), frame.pixmap.height()),
                 (lottie.metadata().width, lottie.metadata().height)
             );
             assert!(
                 frame.pixmap.data().iter().any(|b| *b != 0),
-                "{name} 在 {ms}ms 画出了一张全空的图"
+                "{name} drew a fully empty image at {ms}ms"
             );
         }
     }
@@ -353,7 +353,7 @@ fn the_new_v4_primitives_only_show_up_where_the_case_needs_them() {
             .paints
             .iter()
             .any(|p| !matches!(p, PaintData::Solid(_))),
-        "渐变夹具必须发出渐变 paint"
+        "the gradient fixture must emit a gradient paint"
     );
     assert_eq!(drawop::required_version(&gradients), 4);
 
@@ -369,7 +369,7 @@ fn the_new_v4_primitives_only_show_up_where_the_case_needs_them() {
     assert_eq!(
         modes,
         vec![0, 1, 0],
-        "alpha / 反相 alpha / 半透明遮罩各一次"
+        "alpha / inverted alpha / translucent mask, once each"
     );
     assert_eq!(
         mattes
@@ -378,7 +378,7 @@ fn the_new_v4_primitives_only_show_up_where_the_case_needs_them() {
             .filter(|op| matches!(op, DrawOp::ClipPath { .. }))
             .count(),
         2,
-        "根画幅 + 满不透明 add 遮罩的裁剪快路径"
+        "root frame + fully opaque add mask clip fast path"
     );
 
     let dashed = record(&load_case("dash-caps.json"), 0);
@@ -391,7 +391,7 @@ fn the_new_v4_primitives_only_show_up_where_the_case_needs_them() {
             } => Some((*path, *cap, *join)),
             _ => None,
         })
-        .expect("虚线夹具必须发出描边");
+        .expect("the dashed fixture must emit a stroke");
     assert_eq!((stroke.1, stroke.2), (0, 0), "lc=1/lj=1 ⇒ butt / miter");
     // Perimeter (80+40)*2 = 240; 10 on, 6 off ⇒ 15 segments, one move per segment
     let moves = dashed.paths[stroke.0 as usize]
@@ -399,7 +399,7 @@ fn the_new_v4_primitives_only_show_up_where_the_case_needs_them() {
         .iter()
         .filter(|seg| seg.verb == 0)
         .count();
-    assert_eq!(moves, 15, "虚线必须把闭合路径切成 15 段");
+    assert_eq!(moves, 15, "the dash must split the closed path into 15 segments");
 }
 
 #[test]
@@ -417,7 +417,7 @@ fn the_keyframe_dialects_actually_animate() {
     assert_eq!(
         unique.len(),
         fingerprints.len(),
-        "四个时刻必须各不相同——相同就说明动画又被判成了常量"
+        "the four moments must all differ; if they match, the animation was classified as constant again"
     );
 
     // Opacity of all off-screen layers in this frame (a layer is only given its own offscreen buffer when its alpha < 1)
@@ -438,14 +438,14 @@ fn the_keyframe_dialects_actually_animate() {
     // Layer missing the `a` flag: opacity 100 → 20. Starts fully opaque (no offscreen layer), last frame ~0.23
     assert!(
         !start.iter().any(|o| *o < 0.29),
-        "起点该层满不透明、不该起离屏层，实际 {start:?}"
+        "the start layer should be fully opaque with no offscreen layer, actual {start:?}"
     );
-    assert!(near(&finish, 0.227), "末帧应当 ~0.23，实际 {finish:?}");
+    assert!(near(&finish, 0.227), "last frame should be ~0.23, actual {finish:?}");
     // Old format `{s, e, t}`: opacity 30 → 100. Start 0.3; frozen at 100 after the terminator (no offscreen layer)
-    assert!(near(&start, 0.3), "老格式起值 30%，实际 {start:?}");
+    assert!(near(&start, 0.3), "legacy format start value 30%, actual {start:?}");
     assert!(
         !near(&finish, 0.3),
-        "老格式末端应当冻结在前一帧的 `e`（100%），实际 {finish:?}"
+        "the legacy format end should freeze at the previous frame's `e` (100%), actual {finish:?}"
     );
     // And this layer is **still drawn** — the pitfall that was hit was the end value dropping to zero, so the whole layer was skipped by the alpha <= 0 check
     assert!(
@@ -453,7 +453,7 @@ fn the_keyframe_dialects_actually_animate() {
             .ops
             .iter()
             .any(|op| matches!(op, DrawOp::StrokePathPaint { .. })),
-        "老格式图层在末端必须仍然出画"
+        "the legacy format layer must still be visible at the end"
     );
 
     // Precomp with st ≠ 0: its internal keyframes are written on the internal timeline and only animate correctly when aligned by st
@@ -465,13 +465,13 @@ fn the_keyframe_dialects_actually_animate() {
             .data()
             .to_vec()
     };
-    assert_ne!(pixels(0), pixels(total / 3), "画面必须在动");
+    assert_ne!(pixels(0), pixels(total / 3), "the frame must change over time");
 }
 
 // ── Diagnostic path for smoke samples ─────────────────────────────
 
 fn sample_bytes(name: &str) -> Vec<u8> {
-    std::fs::read(fixtures().join("samples").join(name)).expect("读冒烟样本")
+    std::fs::read(fixtures().join("samples").join(name)).expect("read smoke sample")
 }
 
 #[test]
@@ -481,15 +481,15 @@ fn shapes_only_renders_clean() {
         "shapes-only.json",
         &sample_bytes("shapes-only.json"),
     )
-    .expect("shapes-only 必须落在子集内");
-    assert!(lottie.diagnostics().is_empty(), "不该有任何诊断");
+    .expect("shapes-only must fall within the subset");
+    assert!(lottie.diagnostics().is_empty(), "there should be no diagnostics");
     let frame = record(&lottie, 0);
     assert!(
         frame
             .ops
             .iter()
             .any(|op| matches!(op, DrawOp::FillPathPaint { .. })),
-        "必须画出东西"
+        "must draw something"
     );
 }
 
@@ -497,22 +497,22 @@ fn shapes_only_renders_clean() {
 fn the_gradient_matte_precomp_sample_renders_and_warns_about_nothing_unexpected() {
     let name = "gradient-matte-precomp.json";
     let lottie = Lottie::parse("smoke", name, &sample_bytes(name))
-        .unwrap_or_else(|e| panic!("{name} 应当落在子集内（渐变/遮罩/预合成都支持）：{e:#}"));
+        .unwrap_or_else(|e| panic!("{name} should fall within the subset (gradients, masks and precomps are supported): {e:#}"));
     // It deliberately contains gradients, track mattes, layer masks, precomps, time remapping, non-normal blend modes and markers
     let frame = record(&lottie, 0);
     assert!(frame.ops.iter().any(|op| matches!(op, DrawOp::PushMatte)));
-    assert!(!lottie.markers().is_empty(), "markers 必须被读出来");
+    assert!(!lottie.markers().is_empty(), "markers must be read out");
 }
 
 #[test]
 fn the_text_effects_expression_sample_fails_fast_with_the_documented_code() {
     let name = "text-effects-expression.json";
     let error = Lottie::parse("smoke", name, &sample_bytes(name))
-        .expect_err("文字 / 效果 / 表达式样本必须被拦下")
+        .expect_err("text / effect / expression samples must be rejected")
         .to_string();
     assert!(
         error.contains(render_raster::source::LOTTIE_RULE),
-        "必须带诊断码 lottie-unsupported-feature，实际：{error}"
+        "must carry diagnostic code lottie-unsupported-feature, actual: {error}"
     );
 }
 
@@ -531,7 +531,7 @@ fn an_expression_control_group_warns_but_still_renders() {
                  "o": {"a": 0, "k": 100}}]}]}]
     });
     let lottie =
-        Lottie::parse("warn", "warn.json", &serde_json::to_vec(&doc).unwrap()).expect("应当渲染");
+        Lottie::parse("warn", "warn.json", &serde_json::to_vec(&doc).unwrap()).expect("should render");
     assert_eq!(lottie.diagnostics().len(), 1);
     assert_eq!(
         lottie.diagnostics()[0].rule,
@@ -542,7 +542,7 @@ fn an_expression_control_group_warns_but_still_renders() {
             .ops
             .iter()
             .any(|op| matches!(op, DrawOp::FillPathPaint { .. })),
-        "warn 不阻止渲染"
+        "warn does not block rendering"
     );
 }
 
@@ -576,21 +576,21 @@ fn render_bcf(fit: &str, t: f64) -> (tiny_skia::Pixmap, Vec<String>) {
         .filter(|d| d.severity == scene_primitives::lint::Severity::Error)
         .map(|d| format!("{} {} {}", d.rule, d.pointer, d.message))
         .collect();
-    assert!(errors.is_empty(), "lint 不该报错：{errors:?}");
+    assert!(errors.is_empty(), "lint should not report errors: {errors:?}");
 
-    let assets = render_raster::load_assets(&doc, &base).expect("加载 lottie 资产");
+    let assets = render_raster::load_assets(&doc, &base).expect("load lottie assets");
     let assets = Arc::new(assets);
     let mut resolver = scene_primitives::Resolver::new(doc, None).unwrap();
     resolver.set_host_inputs(assets.inputs.clone());
     let mut ir = resolver.resolve().expect("resolve");
     let mut engine = TextEngine::with_document_fonts(&assets.fonts);
     let renderer =
-        FrameRenderer::new_with_assets(&mut ir, &mut engine, &assets).expect("装配矢量源");
+        FrameRenderer::new_with_assets(&mut ir, &mut engine, &assets).expect("assemble the vector source");
     let planner = FramePlanner::cpu_with_assets(&ir, &assets).expect("preflight");
     let mut media = MediaStore::new(assets.clone(), ir.fps);
     let pixmap = planner
         .render(&renderer, &ir, &mut engine, &mut media, t)
-        .expect("渲染");
+        .expect("render");
     let warnings = planner
         .report()
         .diagnostics
@@ -603,13 +603,13 @@ fn render_bcf(fit: &str, t: f64) -> (tiny_skia::Pixmap, Vec<String>) {
 #[test]
 fn a_lottie_element_renders_inside_its_box_and_scales_with_it() {
     let (pixmap, warnings) = render_bcf("contain", 0.0);
-    assert!(warnings.is_empty(), "干净夹具不该有诊断：{warnings:?}");
+    assert!(warnings.is_empty(), "a clean fixture should have no diagnostics: {warnings:?}");
     let at = |x: u32, y: u32| -> [u8; 4] {
         let i = ((y * pixmap.width() + x) * 4) as usize;
         pixmap.data()[i..i + 4].try_into().unwrap()
     };
     // The box is [40,20]–[120,100]; outside the box must still be the background colour (black, opaque)
-    assert_eq!(at(5, 5), [0, 0, 0, 255], "盒外不该被画到");
+    assert_eq!(at(5, 5), [0, 0, 0, 255], "nothing outside the box should be drawn");
     assert_eq!(at(150, 110), [0, 0, 0, 255]);
     // There should be non-background pixels inside the box
     let mut painted = 0;
@@ -620,7 +620,7 @@ fn a_lottie_element_renders_inside_its_box_and_scales_with_it() {
             }
         }
     }
-    assert!(painted > 200, "盒内应当画出内容，实际只有 {painted} 像素");
+    assert!(painted > 200, "content should be drawn inside the box, only {painted} pixels");
 }
 
 #[test]
@@ -632,8 +632,8 @@ fn cover_fit_clips_the_overflow_back_to_the_element_box() {
     };
     // The asset is 120×90 and the box is 80×80 ⇒ cover overflows horizontally and must be clipped back to the box
     for y in [21u32, 60, 98] {
-        assert_eq!(at(38, y), [0, 0, 0, 255], "盒左侧越界");
-        assert_eq!(at(122, y), [0, 0, 0, 255], "盒右侧越界");
+        assert_eq!(at(38, y), [0, 0, 0, 255], "left of the box is out of bounds");
+        assert_eq!(at(122, y), [0, 0, 0, 255], "right of the box is out of bounds");
     }
 }
 
@@ -642,30 +642,30 @@ fn the_element_freezes_and_loops_like_an_animated_image() {
     // loop: true ⇒ a 1 s composition plays exactly once through in a 1 s clip; t=0 and t=0.99 should differ
     let (a, _) = render_bcf("contain", 0.0);
     let (b, _) = render_bcf("contain", 0.9);
-    assert_ne!(a.data(), b.data(), "带旋转关键帧的素材应当逐帧变化");
+    assert_ne!(a.data(), b.data(), "the asset with rotation keyframes should change frame by frame");
     // Two renders within the same frame window are byte-identical (10 fps ⇒ one frame per 100 ms)
     // Quantization uses the **asset's** frame table (30 fps ⇒ one frame per 33 ms), not the project fps
     let (c, _) = render_bcf("contain", 0.41);
     let (d, _) = render_bcf("contain", 0.42);
-    assert_eq!(c.data(), d.data(), "同一素材帧窗口必须逐字节相同");
+    assert_eq!(c.data(), d.data(), "the same asset frame window must be byte-identical");
     let (e, _) = render_bcf("contain", 0.44);
-    assert_ne!(c.data(), e.data(), "跨素材帧边界必须变");
+    assert_ne!(c.data(), e.data(), "frame boundaries across assets must change");
 }
 
 #[test]
 fn a_renderer_without_the_vector_sources_refuses_to_assemble() {
     let doc = bcf_document("contain");
-    let assets = render_raster::load_assets(&doc, &fixtures()).expect("加载");
+    let assets = render_raster::load_assets(&doc, &fixtures()).expect("load");
     let mut resolver = scene_primitives::Resolver::new(doc, None).unwrap();
     resolver.set_host_inputs(assets.inputs.clone());
     let mut ir = resolver.resolve().unwrap();
     let mut engine = TextEngine::with_document_fonts(&[]);
     let error = match FrameRenderer::new_with_assets(&mut ir, &mut engine, &LoadedAssets::default())
     {
-        Ok(_) => panic!("没装矢量源必须在装配期就炸，而不是画出一片空白"),
+        Ok(_) => panic!("without a vector source it must fail at assembly time, not draw a blank image"),
         Err(error) => error.to_string(),
     };
-    assert!(error.contains("lottie-source-missing"), "实际：{error}");
+    assert!(error.contains("lottie-source-missing"), "actual: {error}");
 }
 
 #[test]
@@ -679,7 +679,7 @@ fn the_asset_type_and_element_type_must_agree() {
         .collect();
     assert!(
         !errors.is_empty(),
-        "lottie 元素指向 image 资产必须是 lint error"
+        "a lottie element pointing at an image asset must be a lint error"
     );
 }
 
@@ -694,6 +694,6 @@ fn a_lottie_element_has_no_audio_track() {
         .collect();
     assert!(
         errors.iter().any(|m| m.contains("withAudio")),
-        "实际：{errors:?}"
+        "actual: {errors:?}"
     );
 }

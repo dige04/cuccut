@@ -216,7 +216,7 @@ pub fn video(items: Vec<Value>, assets: Vec<(String, Value)>, sequence: Value) -
         "fonts": {}, "documents": {}, "localizationSets": {}, "canvasVariants": {}, "syncGroups": {},
         "protections": {}, "checkpoints": {}, "links": []
     });
-    serde_json::from_value(value).expect("测试视频是完整的快照")
+    serde_json::from_value(value).expect("test video is a complete snapshot")
 }
 
 /// Supplies picture and waveform spectra by instance ID, asset bytes by asset ID, and asset spectra by `asset ID@version`.
@@ -305,7 +305,7 @@ pub fn renderer(skip: bool, documents: Documents) -> FrameRenderer {
 }
 
 pub fn plan(video: &VideoSnapshot, seconds: f64) -> FramePlan {
-    plan_interactive(VideoView::from(video), "seq", seconds).expect("求计划")
+    plan_interactive(VideoView::from(video), "seq", seconds).expect("compute the plan")
 }
 
 /// Draws the frame at `seconds`.

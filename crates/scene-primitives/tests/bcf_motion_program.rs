@@ -72,7 +72,7 @@ fn to_ir(channel: &Channel) -> ChannelIr {
 fn resolve(path: &str) -> Option<Ir> {
     let file = fixture_root().join(path);
     let doc: Value = serde_json::from_slice(&std::fs::read(&file).ok()?).ok()?;
-    let mut resolver = Resolver::new(doc, None).expect("构造 Resolver");
+    let mut resolver = Resolver::new(doc, None).expect("construct Resolver");
     resolver.set_host_inputs(media_demo_inputs());
     Some(resolver.resolve().expect("resolve"))
 }
@@ -128,9 +128,9 @@ fn two_scenes_with_transition(preset: &str) -> Value {
 #[test]
 fn unknown_transitions_keep_their_diagnostic_string() {
     let mut resolver =
-        Resolver::new(two_scenes_with_transition("notATransition"), None).expect("构造 Resolver");
+        Resolver::new(two_scenes_with_transition("notATransition"), None).expect("construct Resolver");
     let error = match resolver.resolve() {
-        Ok(_) => panic!("notATransition 应当报错"),
+        Ok(_) => panic!("notATransition should return an error"),
         Err(error) => error,
     };
     assert_eq!(error.to_string(), "transition-unknown: \"notATransition\"");
@@ -153,7 +153,7 @@ fn the_whole_spec_section_nine_vocabulary_resolves() {
     ];
     for (preset, out_props, in_props) in expected {
         let mut resolver =
-            Resolver::new(two_scenes_with_transition(preset), None).expect("构造 Resolver");
+            Resolver::new(two_scenes_with_transition(preset), None).expect("construct Resolver");
         let ir = resolver
             .resolve()
             .unwrap_or_else(|error| panic!("{preset}: {error}"));

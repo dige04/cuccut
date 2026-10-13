@@ -44,13 +44,13 @@ fn frame(index: usize) -> Vec<u8> {
 }
 
 fn assert_playable(out: &Path) {
-    assert!(out.is_file(), "产物应当存在");
-    let probe = media_probe::probe(out).expect("探测产物");
+    assert!(out.is_file(), "output file should exist");
+    let probe = media_probe::probe(out).expect("probe the output");
     assert_eq!(probe.dimensions(), Some((WIDTH, HEIGHT)));
-    let duration = probe.positive_duration().expect("产物应当有时长");
+    let duration = probe.positive_duration().expect("output should have a duration");
     assert!(
         (duration - SECONDS).abs() <= 0.1,
-        "时长应当在 ±0.1s 内：{duration}"
+        "duration should be within ±0.1s: {duration}"
     );
 }
 
@@ -62,7 +62,7 @@ fn the_writer_picks_the_platform_backend_when_one_exists() {
         Ok(writer) => writer,
         // Neither a native encoder nor ffmpeg is available: skip, per repository convention.
         Err(_) => {
-            eprintln!("跳过：本机既无原生编码器也无 ffmpeg");
+            eprintln!("skipping: this machine has neither a native encoder nor ffmpeg");
             return;
         }
     };
@@ -71,31 +71,31 @@ fn the_writer_picks_the_platform_backend_when_one_exists() {
         assert_eq!(
             backend,
             media_native::encode_backend(),
-            "有原生后端时不该回落 ffmpeg"
+            "should not fall back to ffmpeg when a native backend exists"
         );
     } else {
-        assert_eq!(backend, "ffmpeg", "没有原生后端时只能是 ffmpeg");
+        assert_eq!(backend, "ffmpeg", "without a native backend it must be ffmpeg");
     }
     for index in 0..FRAMES {
-        writer.write_frame(&frame(index)).expect("写帧");
+        writer.write_frame(&frame(index)).expect("write frame");
     }
-    writer.finish().expect("收尾");
+    writer.finish().expect("finish writing");
     assert_playable(&out);
 }
 
 #[test]
 fn the_ffmpeg_fallback_still_writes_a_conforming_mp4() {
     if !ffmpeg_available() {
-        eprintln!("跳过：本机没有 ffmpeg");
+        eprintln!("skipping: this machine has no ffmpeg");
         return;
     }
     let dir = tempfile::tempdir().unwrap();
     let out = dir.path().join("ffmpeg.mp4");
-    let mut writer = FfmpegWriter::new(&out, WIDTH, HEIGHT, FPS, None).expect("启动 ffmpeg 写入器");
+    let mut writer = FfmpegWriter::new(&out, WIDTH, HEIGHT, FPS, None).expect("start the ffmpeg writer");
     for index in 0..FRAMES {
-        writer.write_frame(&frame(index)).expect("写帧");
+        writer.write_frame(&frame(index)).expect("write frame");
     }
-    writer.finish().expect("收尾");
+    writer.finish().expect("finish writing");
     assert_playable(&out);
 }
 
@@ -109,6 +109,6 @@ fn the_backend_label_is_one_of_the_three_known_values() {
     };
     assert!(
         matches!(backend, "avfoundation" | "media-foundation" | "ffmpeg"),
-        "未知的编码后端标识：{backend}"
+        "unknown encode backend identifier: {backend}"
     );
 }

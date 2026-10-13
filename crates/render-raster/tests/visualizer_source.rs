@@ -85,7 +85,7 @@ fn synth_spectrum(frames: usize) -> Vec<u8> {
         &bcs1::Bcs1Header::new(bcs1::SpectrumBackend::Symphonia, frames as u32, hash),
         &payload,
     )
-    .expect("合成 BCS1 必须自洽")
+    .expect("synthesized BCS1 must be self-consistent")
 }
 
 /// Four sets of element parameters: covering the canonical identity window, the newly created default window, the bicubic all-bins window, and gain amplification.
@@ -230,8 +230,8 @@ fn expected_json() -> Value {
             let samples = INSTANTS
                 .iter()
                 .map(|instant| {
-                    let index = track.frame_index_at(*instant).expect("轨非空");
-                    let frame = track.sample(*instant).expect("轨非空");
+                    let index = track.frame_index_at(*instant).expect("track is non-empty");
+                    let frame = track.sample(*instant).expect("track is non-empty");
                     json!({
                         "t": instant,
                         "index": index,
@@ -260,7 +260,7 @@ fn expected_json() -> Value {
 }
 
 fn pretty(value: &Value) -> Vec<u8> {
-    let mut bytes = serde_json::to_vec_pretty(value).expect("序列化夹具");
+    let mut bytes = serde_json::to_vec_pretty(value).expect("serialize fixture");
     bytes.push(b'\n');
     bytes
 }
@@ -271,7 +271,7 @@ fn pretty(value: &Value) -> Vec<u8> {
 #[ignore]
 fn write_visualizer_fixtures() {
     let dir = fixture_dir();
-    std::fs::create_dir_all(&dir).expect("建夹具目录");
+    std::fs::create_dir_all(&dir).expect("create fixture directory");
     std::fs::write(
         dir.join("sweep-48k-mono.bcs1"),
         synth_spectrum(SWEEP_FRAMES),
@@ -350,7 +350,7 @@ fn shuffled_sampling_equals_sorted_sampling() {
     let read = |index: usize| -> (usize, String, String) {
         let instant = INSTANTS[index % INSTANTS.len()];
         let (_, _, track) = &all[index / INSTANTS.len()];
-        let frame = track.sample(instant).expect("轨非空");
+        let frame = track.sample(instant).expect("track is non-empty");
         (
             track.frame_index_at(instant).unwrap(),
             row_digest(&frame.time),

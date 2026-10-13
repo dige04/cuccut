@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { RpcError } from '@cuccut/protocol';
+import { describe, expect, it, vi } from 'vitest';
+import { RpcError, setLocale } from '@cuccut/protocol';
 import { explainExportError, exportErrorCode } from './export-rejection.ts';
 
 describe('导出被拒', () => {
@@ -130,5 +130,41 @@ describe('导出被拒', () => {
       hint: null,
       remedy: null,
     });
+  });
+
+  it('the review gate refused a delivery: one item per open critical finding, and the way into the review', () => {
+    vi.stubEnv('CUCCUT_LOCALE', 'en');
+    setLocale('en');
+    try {
+      const error = new RpcError('conflict', '1 critical finding is open', {
+        code: 'REVIEW_BLOCKED',
+        videoId: 'vid_1',
+        sequenceId: 'seq_1',
+        findings: [
+          { id: 'placeholders', metric: 'items.placeholders', value: 2, limit: { max: 0 }, fix: 'Fill or remove the placeholder boxes before delivering.' },
+          { id: 'short', metric: 'video.durationSec', value: 4.5, limit: { min: 6 }, fix: '' },
+        ],
+        remedy: 'Fix what is listed',
+      });
+      const problem = explainExportError(error, { kind: 'video', stage: 'rejected' });
+      expect(exportErrorCode(error)).toBe('REVIEW_BLOCKED');
+      expect(problem).toMatchObject({
+        code: 'REVIEW_BLOCKED',
+        title: 'This video doesn’t meet your standard yet',
+        items: ['Placeholder boxes is 2. Fill or remove the placeholder boxes before delivering.', 'Length is 4.5 s.'],
+        hint: 'Fix what’s listed, or open the review and let a finding stand with a reason.',
+        remedy: { kind: 'open-review' },
+      });
+    } finally {
+      vi.unstubAllEnvs();
+      setLocale('zh-Hans');
+    }
+  });
+
+  it('the review gate refusal reads in every language, keyed by code', () => {
+    const problem = explainExportError(new RpcError('conflict', 'x', { code: 'REVIEW_BLOCKED', findings: [{ id: 'odd' }] }), { kind: 'video', stage: 'rejected' });
+    expect(problem.remedy).toEqual({ kind: 'open-review' });
+    expect(problem.items).toEqual(['odd']);
+    expect(problem.title).not.toBe('导出没有开始');
   });
 });

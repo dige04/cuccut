@@ -1,16 +1,18 @@
 import type { ExportSettings, Id } from '@cuccut/protocol';
 import { Button } from '@react-spectrum/s2';
-import type { ExportProblem } from '../../model/export-rejection.ts';
+import { EXPORT_REJECTION_COPY, type ExportProblem } from '../../model/export-rejection.ts';
 import { useExportPlaces } from '../../state/export-store.ts';
 import { EXPORT_COPY } from './export-copy.ts';
 import { ProblemAlert, usePickDir } from './export-parts.tsx';
+import { openReview } from '../review/review-dialog.tsx';
 
 /**
  * The step the UI can take directly after a rejection or failure (architecture design §9.11 rejection codes, Runtime export-service.ts `details`):
  * - The output has content that cannot be rendered: resubmit with `onUnsupported: 'skip'` (one warning recorded per item);
  * - The portable bundle has assets that cannot be read: resubmit with `missingAssets: 'skip'` (the list honestly marks them as missing);
  * - The location cannot be written, a name conflicts, there is not enough space, or saving failed: export again to another folder;
- * - Several documents can be exported: pick one and export again.
+ * - Several documents can be exported: pick one and export again;
+ * - The review gate refused a delivery (`REVIEW_BLOCKED`): open the video's review, where a finding is fixed or let stand with a reason.
  */
 export function RemedyButtons({
   problem,
@@ -18,12 +20,15 @@ export function RemedyButtons({
   videoId,
   busy,
   onSubmit,
+  onLeave,
 }: {
   problem: ExportProblem;
   settings: ExportSettings;
   videoId: Id;
   busy: boolean;
   onSubmit: (settings: ExportSettings, dir?: string | null) => void;
+  /** The remedy happens elsewhere (the review dialog): close the export panel first. */
+  onLeave?: () => void;
 }) {
   const pickDir = usePickDir();
   const setDir = useExportPlaces((s) => s.setDir);
@@ -57,6 +62,18 @@ export function RemedyButtons({
           {EXPORT_COPY.pickDirAndRetry}
         </Button>
       );
+    case 'open-review':
+      return (
+        <Button
+          variant="secondary"
+          size="S"
+          onPress={() => {
+            onLeave?.();
+            openReview(videoId);
+          }}>
+          {EXPORT_REJECTION_COPY.openReview}
+        </Button>
+      );
     case 'choose-document':
       if (settings.kind !== 'subtitles' && settings.kind !== 'transcript') return null;
       return (
@@ -78,18 +95,24 @@ export function RejectedAlert({
   videoId,
   busy,
   onSubmit,
+  onLeave,
 }: {
   problem: ExportProblem | null;
   settings: ExportSettings | null;
   videoId: Id;
   busy: boolean;
   onSubmit: (settings: ExportSettings, dir?: string | null) => void;
+  onLeave?: () => void;
 }) {
   if (!problem) return null;
   return (
     <ProblemAlert
       problem={problem}
-      actions={settings && problem.remedy ? <RemedyButtons problem={problem} settings={settings} videoId={videoId} busy={busy} onSubmit={onSubmit} /> : null}
+      actions={
+        settings && problem.remedy ? (
+          <RemedyButtons problem={problem} settings={settings} videoId={videoId} busy={busy} onSubmit={onSubmit} {...(onLeave ? { onLeave } : {})} />
+        ) : null
+      }
     />
   );
 }

@@ -29,6 +29,7 @@ export const ja: ExportRejectionMessages = {
     EXPORT_PUBLISH_FAILED: 'ファイルを書き出し先に保存できませんでした',
     EXPORT_PARTIALLY_PUBLISHED: '一部のファイルだけが保存されました',
     RESOURCE_ADMISSION_UNSATISFIABLE: 'このコンピュータにはこの書き出しに必要なリソースが足りません',
+    REVIEW_BLOCKED: 'This video doesn’t meet your standard yet',
   },
   resources: {
     memory: 'メモリ',
@@ -47,4 +48,7 @@ export const ja: ExportRejectionMessages = {
   space: (required: string, available: string) => `約 ${required} 必要ですが、残りは ${available} だけです`,
   notEnough: (resource: string) => `不足：${resource}`,
   resourceHint: '短い範囲を書き出すか低い解像度を選んでから、もう一度試してください。',
+  reviewHint: 'Fix what’s listed, or open the review and let a finding stand with a reason.',
+  reviewItem: (said, fix) => (fix ? `${said}. ${fix}` : `${said}.`),
+  openReview: 'Open the review',
 };

@@ -18,6 +18,14 @@ import {
   type MediaHandle,
   type MediaTarget,
   type Project,
+  type ReviewCheckOutcome,
+  type ReviewCriteriaSetResult,
+  type ReviewCriteriaView,
+  type ReviewDecisionResult,
+  type ReviewMetric,
+  type ReviewResult,
+  type ReviewSeverity,
+  type ReviewStandard,
   type SpaceEntry,
   type SubtitleTrack,
   type SkillSendRef,
@@ -36,6 +44,7 @@ import { useGrants } from '../state/grants-store.ts';
 import { useJobs } from '../state/jobs-store.ts';
 import { libraryFeed } from '../state/library-feed.ts';
 import { useModels } from '../state/models-store.ts';
+import { useReview, wantsFull } from '../state/review-store.ts';
 import { useSettings } from '../state/settings-store.ts';
 import { useSpace } from '../state/space-store.ts';
 import { useTasks } from '../state/tasks-store.ts';
@@ -116,6 +125,17 @@ export class RuntimeSession {
       this.client.subscribe<import('@cuccut/protocol').GrantsSnapshot, import('@cuccut/protocol').GrantsEvent>('grants', {
         snapshot: (snapshot) => useGrants.getState().replace(snapshot),
         event: (event) => useGrants.getState().apply(event),
+      }),
+      // The review gate (docs/cuccut/m2-review-gate.md §4.5): the user's standard and one summary per reviewed video. A video whose full
+      // result was asked for (the review dialog) reloads it when a newer one is written (a run, a decision, an agent's answers).
+      this.client.subscribeReview({
+        snapshot: (snapshot) => useReview.getState().replace(snapshot),
+        event: (event) => {
+          useReview.getState().apply(event);
+          if (event.type === 'result' && wantsFull(useReview.getState(), event.videoId, event.summary)) {
+            void this.reviewGet(event.videoId).catch(() => {});
+          }
+        },
       }),
     );
     void this.client.connect().catch(() => {});
@@ -784,6 +804,77 @@ export class RuntimeSession {
   async revokeWebSession(sessionId: string): Promise<import('@cuccut/protocol').WebSession[]> {
     const { sessions } = await this.client.request('services.web.revokeSession', { sessionId });
     return sessions;
+  }
+
+  // ---- Review gate before delivery (docs/cuccut/m2-review-gate.md §4.5, §6): the same `review.*` calls the agent tools make. ----
+
+  /** The closed metric catalogue a standard may hold a video to. */
+  async reviewCatalogue(): Promise<ReviewMetric[]> {
+    const { metrics } = await this.client.request('review.catalogue', {});
+    return metrics;
+  }
+
+  /** The standard active for a video (with its decisions), or for any video; also the user's own standard and lint's warnings. */
+  async reviewCriteria(videoId?: Id): Promise<ReviewCriteriaView> {
+    return this.client.request('review.criteria.get', videoId === undefined ? {} : { videoId });
+  }
+
+  /** Replaces the user's standard; lint errors refuse it (`REVIEW_CRITERIA_INVALID`), warnings come back. Desktop only. */
+  async setReviewCriteria(standard: ReviewStandard, expectedRevision?: number): Promise<ReviewCriteriaSetResult> {
+    return this.client.request('review.criteria.set', { standard, ...(expectedRevision !== undefined ? { expectedRevision } : {}) });
+  }
+
+  /** The project tier only, nothing written: what the export note reads (`blocks` is what an export would stop on). */
+  async reviewCheck(videoId: Id, sequenceId?: Id): Promise<ReviewCheckOutcome> {
+    return this.client.request('review.check', { videoId, ...(sequenceId ? { sequenceId } : {}) });
+  }
+
+  /** Holds the video to its standard and writes the result (never a revision); the review store holds it. */
+  async reviewRun(videoId: Id, sequenceId?: Id): Promise<ReviewResult> {
+    const { result } = await this.client.request('review.run', { videoId, ...(sequenceId ? { sequenceId } : {}) });
+    useReview.getState().setFull(videoId, result);
+    return result;
+  }
+
+  /** The stored result (null: not checked yet); the review store holds it and keeps it fresh from the topic. */
+  async reviewGet(videoId: Id): Promise<ReviewResult | null> {
+    const { result } = await this.client.request('review.get', { videoId });
+    useReview.getState().setFull(videoId, result);
+    return result;
+  }
+
+  /** Lets a finding stand with a reason: an ordinary, undoable edit of the video, queued with the editor's edits. */
+  async reviewWaive(videoId: Id, id: string, reason: string): Promise<ReviewDecisionResult> {
+    return this.#decide(videoId, (expected, commandId) =>
+      this.client.request('review.waive', { videoId, id, reason, commandId, ...(expected ? { expectedRevision: expected } : {}) }),
+    );
+  }
+
+  /** Holds a finding to the standard again (removes its waiver): an undoable edit, like `reviewWaive`. */
+  async reviewUnwaive(videoId: Id, id: string): Promise<ReviewDecisionResult> {
+    return this.#decide(videoId, (expected, commandId) =>
+      this.client.request('review.unwaive', { videoId, id, commandId, ...(expected ? { expectedRevision: expected } : {}) }),
+    );
+  }
+
+  /** What a finding is worth on this video; null gives back the standard's severity. Lowering it needs `reason`. */
+  async reviewSeverity(videoId: Id, id: string, severity: ReviewSeverity | null, reason?: string): Promise<ReviewDecisionResult> {
+    return this.#decide(videoId, (expected, commandId) =>
+      this.client.request('review.severity', {
+        videoId,
+        id,
+        severity,
+        commandId,
+        ...(reason ? { reason } : {}),
+        ...(expected ? { expectedRevision: expected } : {}),
+      }),
+    );
+  }
+
+  async #decide(videoId: Id, send: (expected: string | undefined, commandId: Id) => Promise<ReviewDecisionResult>): Promise<ReviewDecisionResult> {
+    const decided = await this.videos.decide(videoId, send);
+    useReview.getState().setFull(videoId, decided.result);
+    return decided;
   }
 
   // ---- Export (architecture design §9.11, §9.13): one export is one Job; progress goes through the jobs topic into jobs-store, and cancellation uses cancelJob. ----

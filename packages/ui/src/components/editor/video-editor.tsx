@@ -35,6 +35,7 @@ import { InspectorColumn } from './inspector-column.tsx';
 import { usePaneActive } from './use-pane-active.ts';
 import { useSessionSlotFilled } from '../../cc/components/session-slots.tsx';
 import { VideoSettingsDialog } from './video-settings.tsx';
+import { ReviewDialog } from '../review/review-dialog.tsx';
 import { ShortcutSheet } from './shortcut-sheet.tsx';
 import {
   arrangeSelection,
@@ -216,6 +217,7 @@ export function VideoEditor() {
             <InspectorColumn sequence={shown} assets={snapshot.assets} documents={snapshot.documents} active={active} />
             {video.videoId ? <SoundtrackBed videoId={video.videoId} sequence={sequence} assets={snapshot.assets} /> : null}
             <VideoSettingsDialog sequence={shown} assets={snapshot.assets} />
+            {video.videoId ? <ReviewDialog videoId={video.videoId} sequenceId={sequence.id} /> : null}
           </div>
         ) : video.status === 'error' ? (
           <div className={centered}>

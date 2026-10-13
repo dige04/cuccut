@@ -16,6 +16,7 @@ import { pl } from './export-rejection.pl.ts';
 import { tr } from './export-rejection.tr.ts';
 import { vi } from './export-rejection.vi.ts';
 import { refIn, remedyText } from './localized-text.ts';
+import { findingLine } from './review.ts';
 
 /** Copy for export rejection or failure (English is the source of keys and types; translations are in `export-rejection.zh-Hans.ts`). The Runtime's own wording does not pass through here. */
 const en = {
@@ -47,6 +48,7 @@ const en = {
     EXPORT_PUBLISH_FAILED: 'The files couldn’t be saved to the export location',
     EXPORT_PARTIALLY_PUBLISHED: 'Only some files were saved',
     RESOURCE_ADMISSION_UNSATISFIABLE: 'This computer doesn’t have enough resources for this export',
+    REVIEW_BLOCKED: 'This video doesn’t meet your standard yet',
   } as Record<string, string>,
   resources: {
     memory: 'Memory',
@@ -65,9 +67,13 @@ const en = {
   space: (required: string, available: string) => `Needs about ${required}; only ${available} left`,
   notEnough: (resource: string) => `Not enough: ${resource}`,
   resourceHint: 'Export a shorter range or choose a lower resolution, then try again.',
+  reviewHint: 'Fix what’s listed, or open the review and let a finding stand with a reason.',
+  reviewItem: (said: string, fix: string) => (fix ? `${said}. ${fix}` : `${said}.`),
+  openReview: 'Open the review',
 };
 export type ExportRejectionMessages = typeof en;
-const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
+export const EXPORT_REJECTION_COPY = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });
+const M = EXPORT_REJECTION_COPY;
 
 /**
  * What the UI says and can do when an export is rejected or fails (the preflight and failure codes in architecture design §9.11, and the Runtime's export-service.ts).
@@ -87,7 +93,9 @@ export type ExportRemedy =
   /** Choose a different export location. */
   | { kind: 'pick-dir' }
   /** Several documents can be exported: choose one. */
-  | { kind: 'choose-document'; candidates: { documentId: Id; name: string; language: string | null }[] };
+  | { kind: 'choose-document'; candidates: { documentId: Id; name: string; language: string | null }[] }
+  /** The review gate refused a delivery (docs/cuccut/m2-review-gate.md §2.2): open the video's review, to fix or let a finding stand. */
+  | { kind: 'open-review' };
 
 export interface ExportProblem {
   code: string | null;
@@ -214,6 +222,15 @@ export function explainExportError(error: ErrorLike | unknown, ctx: ExplainConte
       return { ...base, items: text(details.path) ? [details.path as string] : failed, remedy: { kind: 'pick-dir' } };
     case 'EXPORT_PUBLISH_FAILED':
       return { ...base, remedy: { kind: 'pick-dir' } };
+    case 'REVIEW_BLOCKED': {
+      // One item per open critical finding, "<said>. <fix>" in the reader's words; the limit is structured, so the UI phrases it.
+      const items = list(details.findings).flatMap((f) => {
+        if (typeof f.metric !== 'string' || (typeof f.value !== 'number' && typeof f.value !== 'boolean')) return text(f.id) ? [f.id as string] : [];
+        const { said } = findingLine({ metric: f.metric, value: f.value, limit: record(f.limit) });
+        return [M.reviewItem(said, text(f.fix) ?? '')];
+      });
+      return { ...base, items, hint: M.reviewHint, remedy: { kind: 'open-review' } };
+    }
     case 'RESOURCE_ADMISSION_UNSATISFIABLE': {
       const dims = Array.isArray(details.dimensions) ? (details.dimensions as unknown[]).filter((d): d is string => typeof d === 'string') : [];
       return { ...base, items: dims.map((d) => M.notEnough(RESOURCE_LABEL[d] ?? d)), hint: hint ?? M.resourceHint };

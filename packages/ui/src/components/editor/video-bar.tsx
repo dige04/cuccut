@@ -54,6 +54,9 @@ import { TaskPill } from "../task-pill.tsx";
 import { useNow } from "../use-now.ts";
 import { useEditorActions } from "./editor-context.tsx";
 import { openVideoSettings } from "./video-settings.tsx";
+import { openReview } from "../review/review-dialog.tsx";
+import { ShieldCheckIcon } from "../review/review-icon.tsx";
+import { REVIEW_COPY } from "../review/review-copy.ts";
 import { EditorVideoInfo } from "./video-info.tsx";
 import { EDITOR_COPY as E } from "./editor-copy.ts";
 import { EDITOR_LAYOUT_COPY as L } from "./editor-layout-copy.ts";
@@ -276,6 +279,7 @@ function HeaderActions({
     if (key === "settings") openVideoSettings();
     else if (key === "rename") onRename();
     else if (key === "details") onInfo();
+    else if (key === "review" && video.videoId) openReview(video.videoId);
     else if (key === "shortcuts") useEditor.getState().setShortcutsOpen(true);
   };
   const onMore = (key: string, ref: VideoRef | null) => {
@@ -301,12 +305,12 @@ function HeaderActions({
           <Settings />
           <Text>{L.videoMenu}</Text>
         </ActionButton>
-        {/* Settings need the video's sequence and renaming an editable video; shortcuts and details are always there. */}
+        {/* Settings and the review need the video's sequence and renaming an editable video; shortcuts and details are always there. */}
         <Menu
           aria-label={L.videoMenu}
           onAction={(key) => onVideoMenu(String(key))}
           disabledKeys={[
-            ...(sequence ? [] : ["settings"]),
+            ...(sequence ? [] : ["settings", "review"]),
             ...(editable ? [] : ["rename"]),
           ]}
         >
@@ -322,6 +326,10 @@ function HeaderActions({
             <MenuItem id="details" textValue={VB.details}>
               <InfoCircle />
               <Text slot="label">{VB.details}</Text>
+            </MenuItem>
+            <MenuItem id="review" textValue={REVIEW_COPY.menuItem}>
+              <ShieldCheckIcon />
+              <Text slot="label">{REVIEW_COPY.menuItem}</Text>
             </MenuItem>
           </MenuSection>
           <MenuSection>

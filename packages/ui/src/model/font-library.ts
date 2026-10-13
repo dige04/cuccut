@@ -614,7 +614,7 @@ export function exportFontFallbacks(warnings: readonly JobWarning[]): string | n
 
 /**
  * The other reminders in the export result: drop `FONT_NOT_DOWNLOADED` (listed separately above), and also drop the missing-font notice the render kernel reports for the same family
- * (`EXPORT_RENDER_NOTE`, “…字体 "X" 在当前字体库中不可用…” (…font "X" is not available in the current font library…)), so a family is not mentioned twice. Missing-font notices for other families are kept.
+ * (`EXPORT_RENDER_NOTE`, “…font "X" is not available in the current font library…”; warnings saved by earlier versions carry the Chinese “…字体 "X" 在当前字体库中不可用…”), so a family is not mentioned twice. Missing-font notices for other families are kept.
  */
 export function exportOtherWarnings(warnings: readonly JobWarning[]): JobWarning[] {
   const covered = new Set(warnings.flatMap((w) => (w.code === 'FONT_NOT_DOWNLOADED' && w.font ? [familyKey(w.font.family)] : [])));
@@ -622,7 +622,7 @@ export function exportOtherWarnings(warnings: readonly JobWarning[]): JobWarning
     if (w.code === 'FONT_NOT_DOWNLOADED') return false;
     if (w.code !== 'EXPORT_RENDER_NOTE' || !w.detail) return true;
     // i18n-ignore: matches the verbatim text reported by the render kernel (data, not UI copy)
-    const family = /字体 "((?:[^"\\]|\\.)*)" 在当前字体库中不可用/.exec(w.detail)?.[1];
+    const family = /(?:font|字体) "((?:[^"\\]|\\.)*)" (?:is not available in the current font library|在当前字体库中不可用)/.exec(w.detail)?.[1];
     return family === undefined || !covered.has(familyKey(family.replace(/\\(.)/g, '$1')));
   });
 }

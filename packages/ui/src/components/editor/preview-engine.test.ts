@@ -184,7 +184,7 @@ test('声波要的素材频谱：在算时不报占位提示，算好了送进�
     render: () => {
       renders++;
       const spectra = [music, huge].filter((asset) => !heard.has(asset.id)).map((asset) => ({ itemId: 'viz', asset }));
-      const warnings = spectra.length ? [{ code: 'EXPORT_RENDER_NOTE', detail: 'viz：元素 viz 没有注入频谱轨，已画占位块' }] : [];
+      const warnings = spectra.length ? [{ code: 'EXPORT_RENDER_NOTE', detail: 'viz: element viz has no injected spectrum track; drew a placeholder block' }] : [];
       return { plan, warnings, skipped: [], spectra };
     },
     frame: () => new Uint8ClampedArray(960 * 540 * 4),
@@ -241,8 +241,8 @@ test('写了 speaker 的声波：转写还在取时不报「没有转写」，�
     render: () => {
       const detail =
         speech.length === 0
-          ? 'viz：视频里没有转写，听不出说话人 spk_a 什么时候说话，声波按无声画'
-          : 'viz：转写里没有说话人 spk_a 在这条序列上说的话，声波按无声画';
+          ? "viz: the video has no transcript, so the speaker spk_a's speaking times are unknown; the audio visualizer is drawn as silent"
+          : 'viz: the transcript has no speech by speaker spk_a on this sequence; the audio visualizer is drawn as silent';
       return { plan, warnings: [{ code: 'EXPORT_RENDER_NOTE', detail }], skipped: [], spectra: [] };
     },
     frame: () => new Uint8ClampedArray(960 * 540 * 4),
@@ -272,7 +272,7 @@ test('写了 speaker 的声波：转写还在取时不报「没有转写」，�
   notify();
   await new Promise((resolve) => setTimeout(resolve, 10));
   expect(speech).toEqual([{ documentId: 'doc_a', body: bodies.doc_a }]);
-  expect(seen.at(-1)).toEqual({ kind: 'ready', problems: ['viz：转写里没有说话人 spk_a 在这条序列上说的话，声波按无声画'] });
+  expect(seen.at(-1)).toEqual({ kind: 'ready', problems: ['viz: the transcript has no speech by speaker spk_a on this sequence; the audio visualizer is drawn as silent'] });
   engine.dispose();
 });
 
@@ -333,7 +333,7 @@ test('本机字体：报缺的族里排字点了名的 face 向宿主要一次�
   const plan = { canvas: { width: 1920, height: 1080, background: '#000000', backgroundAlpha: 1 }, layers, voices: [] };
   const note = (family: string) => ({
     code: 'EXPORT_RENDER_NOTE',
-    detail: `title：字体 "${family}" 在当前字体库中不可用，将使用 Noto Sans SC fallback`,
+    detail: `title: font "${family}" is not available in the current font library; falling back to Noto Sans SC`,
   });
   const face = (family: string, weight = 400) => ({ family, weight, italic: false });
   const injected: string[] = [];
@@ -717,7 +717,7 @@ test('转录中的临时字幕：叠进送给计划器的序列，文档不向 R
     render: () => ({
       plan,
       captionHits: [hit],
-      warnings: [{ code: 'EXPORT_RENDER_NOTE', detail: 'cc-live-caption：字体换成了回退字体' }],
+      warnings: [{ code: 'EXPORT_RENDER_NOTE', detail: 'cc-live-caption: font substituted with a fallback font' }],
       skipped: [],
       spectra: [],
     }),

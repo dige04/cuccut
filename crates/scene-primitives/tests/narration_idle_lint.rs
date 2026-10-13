@@ -63,7 +63,7 @@ fn lint_narration_idle_reports_the_gap_inside_a_narration_clip() {
     assert_eq!(d.pointer, "/clips/vo-s");
     assert!(
         d.message.contains("\"vo-s\"")
-            && d.message.contains("场景 \"s\"")
+            && d.message.contains("scene \"s\"")
             && d.message.contains("2.00–11.00s"),
         "{}",
         d.message
@@ -129,7 +129,7 @@ fn lint_narration_idle_caps_reports_and_gives_the_total_in_the_last_one() {
     assert_eq!(found.len(), 8);
     let with_total: Vec<_> = found
         .iter()
-        .filter(|d| d.message.contains("全片共 10 处这样的空档"))
+        .filter(|d| d.message.contains("the film has 10 such gaps in total"))
         .collect();
     assert_eq!(with_total.len(), 1, "{found:#?}");
 }

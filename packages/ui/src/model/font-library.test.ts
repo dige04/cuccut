@@ -330,12 +330,19 @@ describe('字体库', () => {
     // Other reminders: the kernel's missing-font notices for families already listed are not repeated; other families are kept as they are.
     const note = (family: string) => ({
       code: 'EXPORT_RENDER_NOTE',
+      detail: `item_a: font "${family}" is not available in the current font library; falling back to Noto Sans SC`,
+    });
+    // Warnings saved by earlier versions carry the kernel's former Chinese wording.
+    const legacyNote = (family: string) => ({
+      code: 'EXPORT_RENDER_NOTE',
       detail: `item_a：字体 "${family}" 在当前字体库中不可用，将使用 Noto Sans SC fallback`,
     });
     expect(
       exportOtherWarnings([
         { code: 'FONT_NOT_DOWNLOADED', detail: '…', font: font('Long Cang', 400, '自动下载已关闭') },
+        { code: 'FONT_NOT_DOWNLOADED', detail: '…', font: font('Lobster', 400, '自动下载已关闭') },
         note('Long Cang'),
+        legacyNote('Lobster'),
         note('Nowhere Sans'),
         { code: 'EXPORT_SIZE_ADJUSTED', detail: 'x' },
       ]).map((w) => w.detail),

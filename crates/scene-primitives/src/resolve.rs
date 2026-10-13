@@ -1016,7 +1016,7 @@ impl BgGradient {
                     bail!(
                         "schema: style.background does not accept the CSS gradient string \"{trimmed}\"; \
                          write the object form {{ kind: \"linear\", angle, stops: [{{ at, color }}] }} or \
-                         {{ kind: \"radial\", cx, cy, r, stops }}（§6.3）"
+                         {{ kind: \"radial\", cx, cy, r, stops }} (§6.3)"
                     );
                 }
                 if Rgba::parse(trimmed).is_none() {

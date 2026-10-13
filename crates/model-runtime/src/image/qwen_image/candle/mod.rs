@@ -202,7 +202,7 @@ impl QwenImage {
             compute,
             cancel,
         )?;
-        trace!("[text] {:?}，{:.1}s", condition.dims(), t0.elapsed().as_secs_f64());
+        trace!("[text] {:?}, {:.1}s", condition.dims(), t0.elapsed().as_secs_f64());
         mem("after text");
         check(cancel)?;
 

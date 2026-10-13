@@ -3,7 +3,7 @@
   "tracks": [
     {
       "analysisRate": 60,
-      "fingerprint": "sha256-cfdf5d048f2139cc05e828f8e80176ca75eb41a3862b60c07065e0e862b88e45",
+      "fingerprint": "sha256-f6bda8538c5567255b7dff34bc94a966abe6ff1c146df5506efb5ea5b0bde13b",
       "frameCount": 12,
       "freqBins": 512,
       "params": "canonical",
@@ -94,7 +94,7 @@
     },
     {
       "analysisRate": 60,
-      "fingerprint": "sha256-7f06e28b52beb2d67948f1bd9f7b077438c84ca483e356c6d258d40fb228d396",
+      "fingerprint": "sha256-78806b379c31bf0db0041d36da570d5a400f69377cf4e7c73f76408d8fb3413c",
       "frameCount": 12,
       "freqBins": 512,
       "params": "default",
@@ -185,7 +185,7 @@
     },
     {
       "analysisRate": 60,
-      "fingerprint": "sha256-cb891fad91d59f68703875476f654d1a0b6e6dbca1498335e7a007e0ac64781e",
+      "fingerprint": "sha256-c4051778e2cc660f203ce5d9a9b69def885f5b53fc4de86b06a9f1c7b2d56d1b",
       "frameCount": 12,
       "freqBins": 512,
       "params": "bicubic",
@@ -276,7 +276,7 @@
     },
     {
       "analysisRate": 60,
-      "fingerprint": "sha256-15f18edd40269a503682b2dfc27214a21070a860d54118e0a1caf822f3ed6ed9",
+      "fingerprint": "sha256-a219fb9ea1f5fa07d8e075288e330dadd2adcbbb60210bcd7877933a9b74a4b4",
       "frameCount": 12,
       "freqBins": 512,
       "params": "hot",
@@ -367,7 +367,7 @@
     },
     {
       "analysisRate": 60,
-      "fingerprint": "sha256-f4d9856500ad7eaf581decc30f9d2fe0cf23a010147575e0f50df53e396c7e73",
+      "fingerprint": "sha256-b56330a2e1558ecdd29eaf9d77ed2ca9ed7e0f242313a5272384fe9a82ee5d6d",
       "frameCount": 180,
       "freqBins": 512,
       "params": "canonical",
@@ -458,7 +458,7 @@
     },
     {
       "analysisRate": 60,
-      "fingerprint": "sha256-b718bfd17940eca16f8cc1571f3b3a206d3fa2df54d13e0116f9e0e94801746c",
+      "fingerprint": "sha256-9e0dd0a54e44856839289dbf9afbf5895c0956f16be00517261df94fe74804c8",
       "frameCount": 180,
       "freqBins": 512,
       "params": "default",
@@ -549,7 +549,7 @@
     },
     {
       "analysisRate": 60,
-      "fingerprint": "sha256-1ae4ea73ad3b7ec652eab4f4929db1855a6aacda719d0cb4194704f1c31aa95c",
+      "fingerprint": "sha256-b0d5bf2c43531438ee055db27ad5dfdac907798fccb016dfe2f0f392c9f286b8",
       "frameCount": 180,
       "freqBins": 512,
       "params": "bicubic",
@@ -640,7 +640,7 @@
     },
     {
       "analysisRate": 60,
-      "fingerprint": "sha256-8e44b48b0f553686873d64142f0c27431fd9ca5e124ade0e656f3aed85203f57",
+      "fingerprint": "sha256-54e06c87b61dc3555f5a6764ced4e879481014f05227966e4c6404d987e62e35",
       "frameCount": 180,
       "freqBins": 512,
       "params": "hot",

@@ -178,7 +178,7 @@ fn rasterize_reports_unbalanced_layers() {
         render_raster::raster::rasterize(&pop, 2, 2, &mut empty_media())
             .unwrap_err()
             .to_string()
-            .contains("no matching PushMatte")
+            .contains("PopLayer has no matching PushLayer")
     );
 
     let push = FrameOps {

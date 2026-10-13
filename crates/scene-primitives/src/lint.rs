@@ -1286,7 +1286,7 @@ fn lint_preset_vocabulary(doc: &Value, out: &mut Vec<Diagnostic>) {
             format!(
                 "the film uses {} entrance/emphasis presets ({}), above the suggested {PRESET_SPRAWL_THRESHOLD}, which makes it feel fragmented (§7.4)",
                 names.len(),
-                names.join("、")
+                names.join(", ")
             )
         );
     }
@@ -1894,14 +1894,14 @@ pub(crate) fn lint_effects(
 
 /// Spec §16 / ADR-M13: 0.1 documents using "experimental" fields emit info. After upgrading to `ccut: "0.2"` these fields become formal, and this rule goes silent.
 const EXPERIMENTAL_FIELDS: &[(&str, &str)] = &[
-    ("/animate/flow", "animate.flow（§7.5）"),
-    ("/animate/parts", "animate.parts（§7.9）"),
-    ("/split", "split（§7.9）"),
-    ("/effects", "effects（§6.6）"),
-    ("/style/blendMode", "style.blendMode（§6.6）"),
-    ("/states", "states（§7.9）"),
-    ("/constraints", "constraints（§7.9）"),
-    ("/layoutStates", "layoutStates（§7.9）"),
+    ("/animate/flow", "animate.flow (§7.5)"),
+    ("/animate/parts", "animate.parts (§7.9)"),
+    ("/split", "split (§7.9)"),
+    ("/effects", "effects (§6.6)"),
+    ("/style/blendMode", "style.blendMode (§6.6)"),
+    ("/states", "states (§7.9)"),
+    ("/constraints", "constraints (§7.9)"),
+    ("/layoutStates", "layoutStates (§7.9)"),
 ];
 
 /// Executable content keys that must never appear in a document (spec §16 `motion-shader-inline`, ADR-M07). BCF is pure data: there is no shader source, no script, and no expression language.

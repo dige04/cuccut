@@ -1000,8 +1000,8 @@ fn recover_fences(
             }
             let start = strip_readonly_prefix(lines, before_at + 1, limit, expected_before)?;
             notes.push(format!(
-                "缺 `{FENCE_EDIT_BEGIN}`：按 `{FENCE_CONTEXT_BEFORE}` 之后的只读上文区剥离，\
-                 核心区从第 {} 行起",
+                "missing `{FENCE_EDIT_BEGIN}`: stripped the read-only leading region after \
+                 `{FENCE_CONTEXT_BEFORE}`; the core region starts at line {}",
                 start + 1
             ));
             (start, before_at + 1..start)
@@ -1012,14 +1012,14 @@ fn recover_fences(
         (Some(end), Some(after)) if after > end => (end, end + 1..after, after + 1),
         (Some(end), _) => {
             notes.push(format!(
-                "缺 `{FENCE_CONTEXT_AFTER}`：核心区在 `{FENCE_EDIT_END}` 处收尾"
+                "missing `{FENCE_CONTEXT_AFTER}`: the core region ends at `{FENCE_EDIT_END}`"
             ));
             (end, end..end, end + 1)
         }
         (None, Some(after)) if after > core_start => {
             notes.push(format!(
-                "缺 `{FENCE_EDIT_END}`：以 `{FENCE_CONTEXT_AFTER}` 为核心区终点，\
-                 只读下文区按空处理"
+                "missing `{FENCE_EDIT_END}`: the core region ends at `{FENCE_CONTEXT_AFTER}`; \
+                 the read-only trailing region is treated as empty"
             ));
             (after, after..after, after + 1)
         }
@@ -1029,7 +1029,7 @@ fn recover_fences(
                 return None;
             }
             notes.push(format!(
-                "缺 `{FENCE_EDIT_END}` 与 `{FENCE_CONTEXT_AFTER}`：核心区取到文末"
+                "missing `{FENCE_EDIT_END}` and `{FENCE_CONTEXT_AFTER}`: the core region runs to the end of the file"
             ));
             (lines.len(), lines.len()..lines.len(), lines.len())
         }
@@ -1048,7 +1048,7 @@ fn recover_fences(
     }
     if begin_at.is_some() && before_at.is_none() {
         notes.push(format!(
-            "缺 `{FENCE_CONTEXT_BEFORE}`：`{FENCE_EDIT_BEGIN}` 之前的行按只读上文区处理"
+            "missing `{FENCE_CONTEXT_BEFORE}`: lines before `{FENCE_EDIT_BEGIN}` are treated as the read-only leading region"
         ));
     }
     Some((
@@ -1818,7 +1818,7 @@ pub fn parse_punct_repair_page(payload: &str, answer: &str) -> PunctRepairParsed
             diagnostics.push_warning(Warning {
                 code: WarningCode::PunctuationNormalized,
                 scope: scope.clone(),
-                detail: format!("句 {id} 的冲突相邻标点已代码归一"),
+                detail: format!("sentence {id}: conflicting adjacent punctuation was normalized in code"),
             });
         }
         if text.split_whitespace().next().is_none() {

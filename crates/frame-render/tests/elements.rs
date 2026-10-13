@@ -1070,7 +1070,7 @@ fn unreadable_gifs_are_refused() {
 #[test]
 fn text_in_a_missing_family_is_reported_on_every_frame_until_its_font_arrives() {
     let video = marker_title();
-    let note = "title：字体 \"Permanent Marker\" 在当前字体库中不可用，将使用 Noto Sans SC fallback";
+    let note = "title: font \"Permanent Marker\" is not available in the current font library; falling back to Noto Sans SC";
     let mut renderer = fallback_only_renderer();
     let fallback = render_with(&mut renderer, &video, 0.5, &mut Media::default());
     assert_eq!(renderer.missing_fonts(), vec!["Permanent Marker".to_string()]);

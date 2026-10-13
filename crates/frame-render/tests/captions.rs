@@ -810,7 +810,7 @@ fn caption_font_notes_stand_on_every_frame() {
         ),
     ];
     let video = video(vec![caption("cap", "doc", Some("style"), 60, &[])], vec![], json!({}));
-    let note = "cap：字体 \"Nowhere Sans\" 在当前字体库中不可用，将使用 Noto Sans SC fallback";
+    let note = "cap: font \"Nowhere Sans\" is not available in the current font library; falling back to Noto Sans SC";
     let mut renderer = renderer(false, Documents::new(documents));
     // Preview clears the reports on every frame. The missing-font hint for captions is shown on every frame (previously it was reported only on the frame that compiled).
     for seconds in [0.5, 1.0, 1.5] {

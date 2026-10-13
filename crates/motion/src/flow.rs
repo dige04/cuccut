@@ -36,13 +36,13 @@ fn invalid(detail: impl Into<String>) -> MotionError {
 fn object<'a>(value: &'a Value, path: &str) -> Result<&'a Map<String, Value>, MotionError> {
     value
         .as_object()
-        .ok_or_else(|| invalid(format!("{path} 不是对象")))
+        .ok_or_else(|| invalid(format!("{path} is not an object")))
 }
 
 fn number(map: &Map<String, Value>, key: &str, path: &str) -> Result<f64, MotionError> {
     map.get(key)
         .and_then(Value::as_f64)
-        .ok_or_else(|| invalid(format!("{path}.{key} 缺失或不是数字")))
+        .ok_or_else(|| invalid(format!("{path}.{key} is missing or not a number")))
 }
 
 fn optional_number(map: &Map<String, Value>, key: &str, fallback: f64) -> f64 {
@@ -64,7 +64,7 @@ fn check_keys(
         }
         // The easing is called `ease` in keyframe frames and `curve` in flow ops. Going by the frame syntax is the most common case.
         let ease_hint = if matches!(key.as_str(), "ease" | "easing") && own.contains(&"curve") {
-            "；缓动键叫 curve（keyframes 的帧里才叫 ease）"
+            " (the easing key is \"curve\" in flow ops; \"ease\" is only valid in keyframes frames)"
         } else {
             ""
         };
@@ -75,7 +75,7 @@ fn check_keys(
             .collect::<Vec<_>>()
             .join(" / ");
         return Err(invalid(format!(
-            "{path}: \"{op}\" 不接受键 \"{key}\"{ease_hint}；可用键：{accepted}（§7.5）"
+            "{path}: \"{op}\" does not accept key \"{key}\"{ease_hint}; accepted keys: {accepted} (§7.5)"
         )));
     }
     Ok(())
@@ -91,7 +91,7 @@ fn parse_target(map: &Map<String, Value>, path: &str) -> Result<TargetId, Motion
             Err(MotionError::Unsupported("flow-target-cross-element"))
         }
         Some(other) => Err(invalid(format!(
-            "{path}.target {other} 只能是 \"self\" 或 \"#id\""
+            "{path}.target {other} must be \"self\" or \"#id\""
         ))),
     }
 }
@@ -100,10 +100,10 @@ fn parse_property(map: &Map<String, Value>, path: &str) -> Result<PropertyId, Mo
     let prop = map
         .get("prop")
         .and_then(Value::as_str)
-        .ok_or_else(|| invalid(format!("{path}.prop 缺失")))?;
+        .ok_or_else(|| invalid(format!("{path}.prop is missing")))?;
     if !crate::value::is_animatable(prop) {
         return Err(invalid(format!(
-            "{path}.prop \"{prop}\" 不在可动画属性 allowlist{}（§6.4）",
+            "{path}.prop \"{prop}\" is not in the animatable property allowlist{} (§6.4)",
             crate::value::not_animatable_hint(prop)
         )));
     }
@@ -122,10 +122,10 @@ fn parse_composite(
             "add" => Ok(CompositeMode::Add),
             "multiply" => Ok(CompositeMode::Multiply),
             other => Err(invalid(format!(
-                "{path}.composite \"{other}\" 不在封闭枚举"
+                "{path}.composite \"{other}\" is not in the closed enum"
             ))),
         },
-        Some(other) => Err(invalid(format!("{path}.composite {other} 不是字符串"))),
+        Some(other) => Err(invalid(format!("{path}.composite {other} is not a string"))),
     }
 }
 
@@ -140,7 +140,7 @@ pub fn parse_curve(value: Option<&Value>, path: &str) -> Result<CurveSpec, Motio
     if let Some(name) = value.as_str() {
         return EaseId::parse(name).map(CurveSpec::Named).ok_or_else(|| {
             invalid(format!(
-                "{path}.curve \"{name}\" 不在封闭 easing 枚举（附录 A）"
+                "{path}.curve \"{name}\" is not in the closed easing enum (Appendix A)"
             ))
         });
     }
@@ -148,7 +148,7 @@ pub fn parse_curve(value: Option<&Value>, path: &str) -> Result<CurveSpec, Motio
     let kind = map
         .get("type")
         .and_then(Value::as_str)
-        .ok_or_else(|| invalid(format!("{path}.curve 缺 \"type\"")))?;
+        .ok_or_else(|| invalid(format!("{path}.curve is missing \"type\"")))?;
     match kind {
         "cubicBezier" => Ok(CurveSpec::CubicBezier {
             x1: number(map, "x1", path)?,
@@ -162,7 +162,9 @@ pub fn parse_curve(value: Option<&Value>, path: &str) -> Result<CurveSpec, Motio
                 None | Some("end") => StepPosition::End,
                 Some("start") => StepPosition::Start,
                 Some(other) => {
-                    return Err(invalid(format!("{path}.curve.position \"{other}\" 未知")));
+                    return Err(invalid(format!(
+                        "{path}.curve.position \"{other}\" is unknown"
+                    )));
                 }
             },
         }),
@@ -171,7 +173,7 @@ pub fn parse_curve(value: Option<&Value>, path: &str) -> Result<CurveSpec, Motio
             damping: optional_number(map, "damping", 0.82),
         }),
         other => Err(invalid(format!(
-            "{path}.curve.type \"{other}\" 未知（§7.6）"
+            "{path}.curve.type \"{other}\" is unknown (§7.6)"
         ))),
     }
 }
@@ -185,7 +187,7 @@ fn parse_interpolator(
         Some(Value::String(name)) if name == "linear" => Ok(InterpolatorSpec::Linear),
         Some(Value::String(name)) if name == "step" => Ok(InterpolatorSpec::Step),
         Some(other) => Err(invalid(format!(
-            "{path}.interpolate {other} 阶段 3 只支持 \"linear\" / \"step\""
+            "{path}.interpolate {other}: stage 3 only supports \"linear\" / \"step\""
         ))),
     }
 }
@@ -203,7 +205,7 @@ pub fn parse_parts(parts: &Value, ctx: &FlowParseCtx) -> Result<MotionGraph, Mot
     let map = object(parts, "/animate/parts")?;
     if map.contains_key("target") {
         return Err(invalid(
-            "/animate/parts: target 由 part 集合隐含，不得显式声明（§7.9）",
+            "/animate/parts: target is implied by the part set and must not be declared explicitly (§7.9)",
         ));
     }
     let root = parse_op(parts, "/animate/parts", ctx)?;
@@ -211,7 +213,7 @@ pub fn parse_parts(parts: &Value, ctx: &FlowParseCtx) -> Result<MotionGraph, Mot
     // would expand all parts again for each part, producing n² duplicate tracks.
     if count_staggers(&root) > 1 || (count_staggers(&root) == 1 && !root_is_stagger(&root)) {
         return Err(invalid(
-            "/animate/parts: parts 级联的 stagger 只能出现在根上（§7.9）",
+            "/animate/parts: a stagger in the parts cascade may only appear at the root (§7.9)",
         ));
     }
     let root = if root_is_stagger(&root) {
@@ -261,7 +263,7 @@ fn parse_items(
     let items = map
         .get("items")
         .and_then(Value::as_array)
-        .ok_or_else(|| invalid(format!("{path}.items 缺失或不是数组")))?;
+        .ok_or_else(|| invalid(format!("{path}.items is missing or not an array")))?;
     items
         .iter()
         .enumerate()
@@ -276,7 +278,7 @@ fn parse_item(
 ) -> Result<MotionOp, MotionError> {
     let item = map
         .get("item")
-        .ok_or_else(|| invalid(format!("{path}.item 缺失")))?;
+        .ok_or_else(|| invalid(format!("{path}.item is missing")))?;
     parse_op(item, &format!("{path}/item"), ctx)
 }
 
@@ -286,7 +288,7 @@ fn wrap_at(map: &Map<String, Value>, path: &str, op: MotionOp) -> Result<MotionO
         Some(value) => {
             let at = value.as_f64().ok_or_else(|| {
                 invalid(format!(
-                    "{path}.at 必须在解析前被求值成绝对秒（TimeExpr / clip.start / clip.end 由 ccut-core 解开）"
+                    "{path}.at must be evaluated to absolute seconds before parsing (TimeExpr / clip.start / clip.end are resolved by ccut-core)"
                 ))
             })?;
             Ok(MotionOp::At {
@@ -302,7 +304,7 @@ fn parse_op(value: &Value, path: &str, ctx: &FlowParseCtx) -> Result<MotionOp, M
     let op = map
         .get("op")
         .and_then(Value::as_str)
-        .ok_or_else(|| invalid(format!("{path}.op 缺失")))?;
+        .ok_or_else(|| invalid(format!("{path}.op is missing")))?;
     let node = match op {
         "set" => {
             check_keys(map, &["prop", "v", "composite"], path, op)?;
@@ -313,7 +315,7 @@ fn parse_op(value: &Value, path: &str, ctx: &FlowParseCtx) -> Result<MotionOp, M
                 value: map
                     .get("v")
                     .cloned()
-                    .ok_or_else(|| invalid(format!("{path}.v 缺失")))?,
+                    .ok_or_else(|| invalid(format!("{path}.v is missing")))?,
                 property,
                 composite,
             }
@@ -343,14 +345,15 @@ fn parse_op(value: &Value, path: &str, ctx: &FlowParseCtx) -> Result<MotionOp, M
             let composite = parse_composite(map, property.as_str(), path)?;
             MotionOp::Tween {
                 target: parse_target(map, path)?,
-                from: map
-                    .get("from")
-                    .cloned()
-                    .ok_or_else(|| invalid(format!("{path}.from 缺失（不支持「取当前值」）")))?,
+                from: map.get("from").cloned().ok_or_else(|| {
+                    invalid(format!(
+                        "{path}.from is missing (reading the current value is not supported)"
+                    ))
+                })?,
                 to: map
                     .get("to")
                     .cloned()
-                    .ok_or_else(|| invalid(format!("{path}.to 缺失")))?,
+                    .ok_or_else(|| invalid(format!("{path}.to is missing")))?,
                 dur: number(map, "dur", path)?,
                 curve: parse_curve(map.get("curve"), path)?,
                 interpolator: parse_interpolator(map, path)?,
@@ -365,7 +368,7 @@ fn parse_op(value: &Value, path: &str, ctx: &FlowParseCtx) -> Result<MotionOp, M
                 id: map
                     .get("preset")
                     .and_then(Value::as_str)
-                    .ok_or_else(|| invalid(format!("{path}.preset 缺失")))?
+                    .ok_or_else(|| invalid(format!("{path}.preset is missing")))?
                     .to_owned(),
                 version: map
                     .get("presetVersion")
@@ -392,7 +395,9 @@ fn parse_op(value: &Value, path: &str, ctx: &FlowParseCtx) -> Result<MotionOp, M
             let has_targets = map.contains_key("targets");
             let has_parts = map.get("parts").is_some_and(|v| v != &Value::Bool(false));
             if has_targets && has_parts {
-                return Err(invalid(format!("{path}: targets 与 parts 互斥（§7.5）")));
+                return Err(invalid(format!(
+                    "{path}: targets and parts are mutually exclusive (§7.5)"
+                )));
             }
             if has_targets {
                 // Cross-element target tables likewise fall within the stage 3 not-implemented scope.
@@ -400,12 +405,12 @@ fn parse_op(value: &Value, path: &str, ctx: &FlowParseCtx) -> Result<MotionOp, M
             }
             if !has_parts {
                 return Err(invalid(format!(
-                    "{path}: stagger 需要 targets 或 parts: true（§7.5）"
+                    "{path}: stagger requires targets or parts: true (§7.5)"
                 )));
             }
             if ctx.part_count == 0 {
                 return Err(invalid(format!(
-                    "{path}: parts: true 只能出现在 animate.parts 里（§7.9）"
+                    "{path}: parts: true may only appear inside animate.parts (§7.9)"
                 )));
             }
             MotionOp::Stagger {
@@ -414,7 +419,9 @@ fn parse_op(value: &Value, path: &str, ctx: &FlowParseCtx) -> Result<MotionOp, M
                 order: match map.get("order").and_then(Value::as_str) {
                     None => StaggerFrom::Start,
                     Some(name) => StaggerFrom::parse(name).ok_or_else(|| {
-                        invalid(format!("{path}.order \"{name}\" 不在 start|end|center"))
+                        invalid(format!(
+                            "{path}.order \"{name}\" is not one of start|end|center"
+                        ))
                     })?,
                 },
                 targets: part_targets(ctx.part_count),
@@ -431,21 +438,21 @@ fn parse_op(value: &Value, path: &str, ctx: &FlowParseCtx) -> Result<MotionOp, M
             check_keys(map, &["count", "until", "mode", "item"], path, op)?;
             let end = match (map.get("count"), map.get("until")) {
                 (Some(_), Some(_)) => {
-                    return Err(invalid(format!("{path}: count 与 until 互斥（§7.5）")));
+                    return Err(invalid(format!("{path}: count and until are mutually exclusive (§7.5)")));
                 }
                 (Some(count), None) => RepeatEnd::Count(
                     count
                         .as_u64()
-                        .ok_or_else(|| invalid(format!("{path}.count 不是非负整数")))?
+                        .ok_or_else(|| invalid(format!("{path}.count is not a non-negative integer")))?
                         as u32,
                 ),
                 (None, Some(until)) => RepeatEnd::Until(until.as_f64().ok_or_else(|| {
                     invalid(format!(
-                        "{path}.until 必须在解析前被求值成绝对秒（clip.end 由 ccut-core 解开）"
+                        "{path}.until must be evaluated to absolute seconds before parsing (clip.end is resolved by ccut-core)"
                     ))
                 })?),
                 (None, None) => {
-                    return Err(invalid(format!("{path}: 需要 count 或 until（§7.5）")));
+                    return Err(invalid(format!("{path}: requires count or until (§7.5)")));
                 }
             };
             MotionOp::Repeat {
@@ -454,7 +461,9 @@ fn parse_op(value: &Value, path: &str, ctx: &FlowParseCtx) -> Result<MotionOp, M
                     None | Some("loop") => RepeatMode::Loop,
                     Some("yoyo") => RepeatMode::Yoyo,
                     Some(other) => {
-                        return Err(invalid(format!("{path}.mode \"{other}\" 不在 loop|yoyo")));
+                        return Err(invalid(format!(
+                            "{path}.mode \"{other}\" is not one of loop|yoyo"
+                        )));
                     }
                 },
                 child: Box::new(parse_item(map, path, ctx)?),
@@ -481,7 +490,9 @@ fn parse_op(value: &Value, path: &str, ctx: &FlowParseCtx) -> Result<MotionOp, M
                 None | Some("sine") => WaveKind::Sine,
                 Some("dip") => WaveKind::Dip,
                 Some(other) => {
-                    return Err(invalid(format!("{path}.wave \"{other}\" 不在 sine|dip")));
+                    return Err(invalid(format!(
+                        "{path}.wave \"{other}\" is not one of sine|dip"
+                    )));
                 }
             };
             MotionOp::Oscillate {
@@ -521,9 +532,9 @@ fn parse_op(value: &Value, path: &str, ctx: &FlowParseCtx) -> Result<MotionOp, M
                 seed: map
                     .get("seed")
                     .map(|value| {
-                        value
-                            .as_u64()
-                            .ok_or_else(|| invalid(format!("{path}.seed 不是非负整数")))
+                        value.as_u64().ok_or_else(|| {
+                            invalid(format!("{path}.seed is not a non-negative integer"))
+                        })
                     })
                     .transpose()?
                     .unwrap_or(ctx.default_seed),
@@ -552,31 +563,33 @@ fn parse_op(value: &Value, path: &str, ctx: &FlowParseCtx) -> Result<MotionOp, M
                 .get("values")
                 .and_then(Value::as_array)
                 .filter(|values| !values.is_empty())
-                .ok_or_else(|| invalid(format!("{path}.values 缺失或是空数组")))?
+                .ok_or_else(|| invalid(format!("{path}.values is missing or an empty array")))?
                 .iter()
                 .enumerate()
                 .map(|(index, value)| {
                     value
                         .as_f64()
                         .filter(|number| number.is_finite())
-                        .ok_or_else(|| invalid(format!("{path}.values[{index}] 不是有限数字")))
+                        .ok_or_else(|| {
+                            invalid(format!("{path}.values[{index}] is not a finite number"))
+                        })
                 })
                 .collect::<Result<Vec<f64>, _>>()?;
             let fps = number(map, "fps", path)?;
             if !(fps > 0.0 && fps.is_finite()) {
-                return Err(invalid(format!("{path}.fps 须 > 0")));
+                return Err(invalid(format!("{path}.fps must be > 0")));
             }
             let from = optional_number(map, "from", 0.0);
             let smooth = optional_number(map, "smooth", 0.0);
             if !(from >= 0.0 && smooth >= 0.0) {
-                return Err(invalid(format!("{path}.from / smooth 须 ≥ 0")));
+                return Err(invalid(format!("{path}.from / smooth must be ≥ 0")));
             }
             let values = smooth_samples(&values, fps, smooth);
             sampled_op(target, property, composite, &values, fps, from, path)?
         }
         other => {
             return Err(invalid(format!(
-                "{path}.op \"{other}\" 不在封闭操作符枚举（§7.5）"
+                "{path}.op \"{other}\" is not in the closed operator enum (§7.5)"
             )));
         }
     };
@@ -634,7 +647,7 @@ fn sampled_op(
     let span = last as f64 / fps;
     if from > span + 1e-9 {
         return Err(invalid(format!(
-            "{path}.from = {from} 超出采样序列的长度 {span:.3}s"
+            "{path}.from = {from} exceeds the sample sequence length {span:.3}s"
         )));
     }
     let first = sample_at(values, fps, from);
@@ -673,14 +686,14 @@ fn sampled_op(
 fn amplitude(map: &Map<String, Value>, path: &str) -> Result<Value, MotionError> {
     let value = map
         .get("amplitude")
-        .ok_or_else(|| invalid(format!("{path}.amplitude 缺失")))?;
+        .ok_or_else(|| invalid(format!("{path}.amplitude is missing")))?;
     if value.as_f64().is_some()
         || crate::preset_registry::manifest::parse_length_value(value).is_some()
     {
         return Ok(value.clone());
     }
     Err(invalid(format!(
-        "{path}.amplitude {value} 既不是数字也不是相对长度（§7.8）"
+        "{path}.amplitude {value} is neither a number nor a relative length (§7.8)"
     )))
 }
 

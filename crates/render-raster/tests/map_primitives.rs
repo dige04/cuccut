@@ -92,7 +92,7 @@ fn camera_payload_and_asset_cache_policy_are_explicit() {
             .err()
             .unwrap()
             .to_string()
-            .contains("缺少 camera")
+            .contains("is missing camera configuration")
     );
     let document = json!({"variables":[{"id":"tile","type":"asset","default":{"src":"tile.png"}}],
         "assets":{"tile":{"type":"image","var":"tile","cache":"bounded"}}});

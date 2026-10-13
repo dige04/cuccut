@@ -564,7 +564,7 @@ fn effect_param_channels_are_checked_against_the_effect_stack() {
 
     let color = with("effects[1].color");
     assert!(
-        color.iter().any(|(_, m)| m.contains("不是数值")),
+        color.iter().any(|(_, m)| m.contains("is not a number")),
         "{color:?}"
     );
 
@@ -650,7 +650,7 @@ fn program_paths_escaping_the_document_directory_are_flagged_where_they_are() {
     );
     assert!(escaped.iter().all(|(s, _, _)| *s == Severity::Error));
     let (_, _, src) = &escaped[3];
-    for needle in ["\"../film/X.tsx\"", "文档所在目录", "项目根", "模块旁边"] {
+    for needle in ["\"../film/X.tsx\"", "the document's directory", "project root", "next to the module"] {
         assert!(src.contains(needle), "消息缺 {needle}：{src}");
     }
     assert!(escaped[0].2.contains("files[1]"), "{:?}", escaped[0]);
@@ -722,7 +722,7 @@ fn clip_root_style_xy_warns_because_the_root_is_laid_out_at_the_origin() {
     let (severity, pointer, message) = &hits[0];
     assert_eq!(*severity, Severity::Warn);
     assert_eq!(pointer, "/tracks/0/clips/0/element/style/x");
-    for needle in ["\"c\"", "x=160", "y=460", "画布原点", "Box"] {
+    for needle in ["\"c\"", "x=160", "y=460", "canvas origin", "Box"] {
         assert!(message.contains(needle), "缺 {needle}：{message}");
     }
     let only_y = with_root(json!({"fontSize": 40, "y": "25%"}));

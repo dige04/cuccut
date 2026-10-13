@@ -323,9 +323,11 @@ fn uniform_from_json(
 
 /// Parses one manifest source text. The caller computes `source_hash` over the original text.
 pub fn parse_manifest(source: &str, source_hash: u64) -> Result<EffectManifest, MotionError> {
-    let value: Value =
-        serde_json::from_str(source).map_err(|error| invalid(format!("JSON parse failed: {error}")))?;
-    let object = value.as_object().ok_or_else(|| invalid("top level must be an object"))?;
+    let value: Value = serde_json::from_str(source)
+        .map_err(|error| invalid(format!("JSON parse failed: {error}")))?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| invalid("top level must be an object"))?;
     closed_keys(object, MANIFEST_KEYS, "effect manifest")?;
 
     let id = object
@@ -343,30 +345,30 @@ pub fn parse_manifest(source: &str, source_hash: u64) -> Result<EffectManifest, 
     let domain_text = object
         .get("domain")
         .and_then(Value::as_str)
-        .ok_or_else(|| invalid(format!("{id} 缺 domain")))?;
+        .ok_or_else(|| invalid(format!("{id} is missing domain")))?;
     let domain = EffectDomain::parse(domain_text)
-        .ok_or_else(|| invalid(format!("{id} 的 domain {domain_text} 未知")))?;
+        .ok_or_else(|| invalid(format!("{id} has unknown domain {domain_text}")))?;
     let inputs = object
         .get("inputs")
         .and_then(Value::as_u64)
-        .ok_or_else(|| invalid(format!("{id} 缺 inputs")))? as u8;
+        .ok_or_else(|| invalid(format!("{id} is missing inputs")))? as u8;
 
     let mut params = BTreeMap::new();
     if let Some(raw) = object.get("params") {
         let raw = raw
             .as_object()
-            .ok_or_else(|| invalid(format!("{id} 的 params 必须是对象")))?;
+            .ok_or_else(|| invalid(format!("{id} params must be an object")))?;
         for (key, spec) in raw {
-            let spec = spec
-                .as_object()
-                .ok_or_else(|| invalid(format!("{id}.{key} 的参数定义必须是对象")))?;
+            let spec = spec.as_object().ok_or_else(|| {
+                invalid(format!("{id}.{key} parameter definition must be an object"))
+            })?;
             closed_keys(spec, PARAM_KEYS, &format!("{id}.{key}"))?;
             let kind_text = spec
                 .get("type")
                 .and_then(Value::as_str)
-                .ok_or_else(|| invalid(format!("{id}.{key} 缺 type")))?;
+                .ok_or_else(|| invalid(format!("{id}.{key} is missing type")))?;
             let kind = ParamKind::parse(kind_text)
-                .ok_or_else(|| invalid(format!("{id}.{key} 的 type {kind_text} 未知")))?;
+                .ok_or_else(|| invalid(format!("{id}.{key} has unknown type {kind_text}")))?;
             let default = match spec.get("default") {
                 Some(Value::Null) | None => None,
                 Some(value) => Some(uniform_from_json(kind, value, &format!("{id}.{key}"))?),
@@ -383,7 +385,7 @@ pub fn parse_manifest(source: &str, source_hash: u64) -> Result<EffectManifest, 
                 })
                 .unwrap_or_default();
             if kind == ParamKind::Enum && options.is_empty() {
-                return Err(invalid(format!("{id}.{key} 是 enum 但没有 options")));
+                return Err(invalid(format!("{id}.{key} is an enum but has no options")));
             }
             params.insert(
                 key.clone(),
@@ -406,7 +408,7 @@ pub fn parse_manifest(source: &str, source_hash: u64) -> Result<EffectManifest, 
     let color_object = object
         .get("color")
         .and_then(Value::as_object)
-        .ok_or_else(|| invalid(format!("{id} 缺 color")))?;
+        .ok_or_else(|| invalid(format!("{id} is missing color")))?;
     closed_keys(
         color_object,
         &["colorSpace", "precision"],
@@ -415,25 +417,25 @@ pub fn parse_manifest(source: &str, source_hash: u64) -> Result<EffectManifest, 
     let space_text = color_object
         .get("colorSpace")
         .and_then(Value::as_str)
-        .ok_or_else(|| invalid(format!("{id} 缺 color.colorSpace")))?;
+        .ok_or_else(|| invalid(format!("{id} is missing color.colorSpace")))?;
     let precision_text = color_object
         .get("precision")
         .and_then(Value::as_str)
-        .ok_or_else(|| invalid(format!("{id} 缺 color.precision")))?;
+        .ok_or_else(|| invalid(format!("{id} is missing color.precision")))?;
     let color = ColorContract {
         space: ColorSpace::parse(space_text)
-            .ok_or_else(|| invalid(format!("{id} 的 colorSpace {space_text} 未知")))?,
+            .ok_or_else(|| invalid(format!("{id} has unknown colorSpace {space_text}")))?,
         precision: Precision::parse(precision_text)
-            .ok_or_else(|| invalid(format!("{id} 的 precision {precision_text} 未知")))?,
+            .ok_or_else(|| invalid(format!("{id} has unknown precision {precision_text}")))?,
     };
 
     let kernel = object
         .get("kernel")
         .and_then(Value::as_str)
-        .ok_or_else(|| invalid(format!("{id} 缺 kernel")))?
+        .ok_or_else(|| invalid(format!("{id} is missing kernel")))?
         .to_owned();
     if kernel.is_empty() {
-        return Err(invalid(format!("{id} 的 kernel 不能为空")));
+        return Err(invalid(format!("{id} kernel must not be empty")));
     }
     let origin = closed_value(object, "origin", ORIGINS, &id)?.to_owned();
     let alpha = closed_value(object, "alpha", ALPHAS, &id)?.to_owned();
@@ -444,9 +446,9 @@ pub fn parse_manifest(source: &str, source_hash: u64) -> Result<EffectManifest, 
     let determinism_text = object
         .get("determinism")
         .and_then(Value::as_str)
-        .ok_or_else(|| invalid(format!("{id} 缺 determinism")))?;
+        .ok_or_else(|| invalid(format!("{id} is missing determinism")))?;
     let determinism = Determinism::parse(determinism_text)
-        .ok_or_else(|| invalid(format!("{id} 的 determinism {determinism_text} 未知")))?;
+        .ok_or_else(|| invalid(format!("{id} has unknown determinism {determinism_text}")))?;
 
     let capabilities: Vec<String> = object
         .get("capabilities")
@@ -461,18 +463,18 @@ pub fn parse_manifest(source: &str, source_hash: u64) -> Result<EffectManifest, 
         .unwrap_or_default();
     if determinism == Determinism::Strict && !capabilities.is_empty() {
         return Err(invalid(format!(
-            "{id} 声明 strict 却要求后端能力 {capabilities:?}"
+            "{id} declares strict but requires backend capabilities {capabilities:?}"
         )));
     }
 
     let fallback = match object.get("fallback") {
         None | Some(Value::Null) => None,
         Some(Value::String(text)) => Some(parse_effect_ref(text, &id)?),
-        Some(_) => return Err(invalid(format!("{id} 的 fallback 必须是 \"id@version\""))),
+        Some(_) => return Err(invalid(format!("{id} fallback must be \"id@version\""))),
     };
     if determinism != Determinism::Strict && fallback.is_none() {
         return Err(invalid(format!(
-            "{id} 是 {determinism_text} 等级，必须声明 fallback"
+            "{id} has determinism {determinism_text} and must declare a fallback"
         )));
     }
 
@@ -480,10 +482,10 @@ pub fn parse_manifest(source: &str, source_hash: u64) -> Result<EffectManifest, 
     if let Some(list) = object.get("blendModes") {
         let list = list
             .as_array()
-            .ok_or_else(|| invalid(format!("{id} 的 blendModes 必须是数组")))?;
+            .ok_or_else(|| invalid(format!("{id} blendModes must be an array")))?;
         if list.len() != BlendMode::ALL.len() {
             return Err(invalid(format!(
-                "{id} 的 blendModes 有 {} 项，BlendMode 有 {}",
+                "{id} blendModes has {} entries, but BlendMode has {}",
                 list.len(),
                 BlendMode::ALL.len()
             )));
@@ -491,10 +493,10 @@ pub fn parse_manifest(source: &str, source_hash: u64) -> Result<EffectManifest, 
         for (index, item) in list.iter().enumerate() {
             let name = item
                 .as_str()
-                .ok_or_else(|| invalid(format!("{id} 的 blendModes[{index}] 不是字符串")))?;
+                .ok_or_else(|| invalid(format!("{id} blendModes[{index}] is not a string")))?;
             if BlendMode::ALL[index].as_str() != name {
                 return Err(invalid(format!(
-                    "{id} 的 blendModes[{index}] = {name}，BlendMode 是 {}",
+                    "{id} blendModes[{index}] = {name}, but BlendMode is {}",
                     BlendMode::ALL[index].as_str()
                 )));
             }
@@ -525,9 +527,9 @@ pub fn parse_manifest(source: &str, source_hash: u64) -> Result<EffectManifest, 
 fn parse_effect_ref(text: &str, id: &str) -> Result<EffectRef, MotionError> {
     let (name, version) = text
         .rsplit_once('@')
-        .ok_or_else(|| invalid(format!("{id} 的 fallback {text} 缺 @version")))?;
+        .ok_or_else(|| invalid(format!("{id} fallback {text} is missing @version")))?;
     let version: u32 = version
         .parse()
-        .map_err(|_| invalid(format!("{id} 的 fallback {text} 版本非法")))?;
+        .map_err(|_| invalid(format!("{id} fallback {text} has an invalid version")))?;
     Ok(EffectRef::new(name, version))
 }

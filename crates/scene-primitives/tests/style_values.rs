@@ -49,11 +49,11 @@ fn css_gradient_string_is_a_schema_error_not_a_silent_no_op() {
                   "background": "linear-gradient(160deg, #1050e0, #c080ff)"}
     }]));
     assert!(
-        has_code(&doc, "schema", "CSS 渐变字串"),
+        has_code(&doc, "schema", "CSS gradient string"),
         "{:?}",
         codes(&doc)
     );
-    assert!(resolve_err(&doc).contains("CSS 渐变字串"));
+    assert!(resolve_err(&doc).contains("CSS gradient string"));
 }
 
 #[test]
@@ -153,7 +153,7 @@ fn shadow_string_or_unknown_key_is_a_schema_error() {
         "style": {"width": 10, "height": 10, "shadow": "0 16px 34px rgba(0,0,0,.2)"}
     }]));
     assert!(
-        has_code(&doc, "schema", "style.shadow 必须是对象"),
+        has_code(&doc, "schema", "style.shadow must be an object"),
         "{:?}",
         codes(&doc)
     );
@@ -179,7 +179,7 @@ fn border_object_resolves_and_css_shorthand_is_a_schema_error() {
         "style": {"width": 10, "height": 10, "border": "2px solid #000"}
     }]));
     assert!(
-        has_code(&css, "schema", "style.border 必须是对象"),
+        has_code(&css, "schema", "style.border must be an object"),
         "{:?}",
         codes(&css)
     );
@@ -263,7 +263,7 @@ fn element_mask_parses_and_links_its_source() {
 fn mask_source_unknown_when_missing_or_ancestor() {
     let doc = masked_pair(json!({"source": "#nope"}), Value::Null);
     assert!(
-        has_code(&doc, "mask-source-unknown", "找不到"),
+        has_code(&doc, "mask-source-unknown", "is not found"),
         "{:?}",
         codes(&doc)
     );
@@ -271,7 +271,7 @@ fn mask_source_unknown_when_missing_or_ancestor() {
     // Points to its own ancestor (stage)
     let doc = masked_pair(json!({"source": "#stage"}), Value::Null);
     assert!(
-        has_code(&doc, "mask-source-unknown", "祖先或后代"),
+        has_code(&doc, "mask-source-unknown", "an ancestor or a descendant"),
         "{:?}",
         codes(&doc)
     );

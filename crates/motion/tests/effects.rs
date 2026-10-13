@@ -160,7 +160,7 @@ fn resolve_uniforms_fills_defaults_clamps_and_rejects_unknown_params() {
         .resolve_uniforms(&UniformMap::new().with("shape", UniformValue::Text("blob".into())))
         .unwrap_err()
         .to_string();
-    assert!(error.contains("不在闭集"), "{error}");
+    assert!(error.contains("not in the closed set"), "{error}");
 }
 
 #[test]
@@ -179,7 +179,7 @@ fn parse_rejects_unknown_keys_bad_enums_and_unbacked_non_strict() {
         parse_manifest(&extra_key, 0)
             .unwrap_err()
             .to_string()
-            .contains("未知键")
+            .contains("has unknown key")
     );
 
     let bad_origin = good.replace("\"top-left\"", "\"bottom-left\"");
@@ -190,7 +190,7 @@ fn parse_rejects_unknown_keys_bad_enums_and_unbacked_non_strict() {
         parse_manifest(&visual, 0)
             .unwrap_err()
             .to_string()
-            .contains("必须声明 fallback")
+            .contains("must declare a fallback")
     );
 
     let strict_with_caps = good.replace("\"capabilities\": []", "\"capabilities\": [\"gpu\"]");

@@ -109,7 +109,7 @@ fn a_missing_asset_spectrum_is_reported_until_it_arrives() {
         renderer
             .warnings()
             .iter()
-            .any(|w| w.code == RENDER_NOTE && w.detail.starts_with("g："))
+            .any(|w| w.code == RENDER_NOTE && w.detail.starts_with("g: "))
     );
     // The missing-spectrum report still appears on a cache hit.
     renderer.clear_reports();

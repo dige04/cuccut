@@ -100,9 +100,9 @@ fn lint_variable_and_asset_var_rules() {
             .any(|d| d.rule == "asset-media-outside-project"),
         "{msgs:?}"
     );
-    assert!(msgs.iter().any(|m| m.contains("互斥")), "{msgs:?}");
-    assert!(msgs.iter().any(|m| m.contains("须为 asset")), "{msgs:?}");
-    assert!(msgs.iter().any(|m| m.contains("未声明")), "{msgs:?}");
+    assert!(msgs.iter().any(|m| m.contains("mutually exclusive")), "{msgs:?}");
+    assert!(msgs.iter().any(|m| m.contains("it must be asset")), "{msgs:?}");
+    assert!(msgs.iter().any(|m| m.contains("undeclared")), "{msgs:?}");
 }
 
 #[test]

@@ -417,7 +417,7 @@ fn clip_path_shape_path_is_static_only() {
         }),
     ));
     assert!(
-        diagnostics.iter().any(|d| d.message.contains("静态")),
+        diagnostics.iter().any(|d| d.message.contains("can only be set on a static style.clipPath")),
         "{:?}",
         diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>()
     );

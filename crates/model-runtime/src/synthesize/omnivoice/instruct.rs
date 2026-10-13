@@ -203,7 +203,7 @@ pub fn resolve_instruct(instruct: Option<&str>, use_zh: bool) -> Result<Option<S
              separate Chinese terms with a full-width comma (e.g. '男，河南话').",
             lines.join("\n"),
             valid_english().join(", "),
-            valid_chinese().join("，"),
+            valid_chinese().join(", "),
         );
     }
 
@@ -237,7 +237,7 @@ pub fn resolve_instruct(instruct: Option<&str>, use_zh: bool) -> Result<Option<S
     if !conflicts.is_empty() {
         bail!(
             "instruct has several terms in the same category: {}. Each of gender, age, pitch, style, accent and dialect allows at most one.",
-            conflicts.join("；")
+            conflicts.join("; ")
         );
     }
     let separator = if normalised.iter().any(|n| has_cjk(n)) { "，" } else { ", " };
@@ -374,7 +374,7 @@ mod tests {
         assert!(err.contains("'low pich' → 'low pich' (unsupported; did you mean 'low pitch'?)"), "{err}");
         assert!(err.contains("'robot' → 'robot' (unsupported)"), "{err}");
         assert!(err.contains("american accent, australian accent"), "{err}");
-        assert!(err.contains("东北话，中年"), "{err}");
+        assert!(err.contains("东北话, 中年"), "{err}");
     }
 
     #[test]

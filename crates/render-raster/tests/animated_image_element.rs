@@ -316,7 +316,7 @@ fn an_animated_image_refuses_audio_fields() {
     let doc = doc(element(json!({ "withAudio": true, "volume": 0.5 })));
     let messages: Vec<String> = scene_primitives::lint::lint(&doc)
         .iter()
-        .filter(|d| d.message.contains("没有音轨"))
+        .filter(|d| d.message.contains("has no audio track"))
         .map(|d| d.pointer.clone())
         .collect();
     assert_eq!(

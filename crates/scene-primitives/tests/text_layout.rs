@@ -66,14 +66,14 @@ fn text_count_format_is_a_closed_schema() {
     );
     assert!(counter(json!({"decimals":2,"suffix":"%","pad":5})).is_ok());
     for (format, needle) in [
-        (json!({"sign":"-"}), "未知键 `sign`"),
+        (json!({"sign":"-"}), "unknown key `sign`"),
         (json!({"grouping":"no"}), "format.grouping"),
         (json!({"pad":-1}), "format.pad"),
         (json!({"pad":2.5}), "format.pad"),
         (json!({"pad":21}), "format.pad"),
         (json!({"negativePrefix":7}), "format.negativePrefix"),
         (json!({"decimals":"2"}), "format.decimals"),
-        (json!("0,0"), "必须是对象"),
+        (json!("0,0"), "must be an object"),
     ] {
         let error = match counter(format.clone()) {
             Ok(_) => panic!("{format} 应当被拒"),

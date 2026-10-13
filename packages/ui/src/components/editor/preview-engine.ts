@@ -163,7 +163,7 @@ const HOLD_PLAYING_MS = 250;
 const HOLD_PAUSED_MS = 1000;
 /** Hint for a waveform with `speaker` set, when there is no transcript or the transcript has no such speaker (reported by the kernel; see frame-render). */
 // i18n-ignore: matches the hint text as reported by the render kernel (frame-render); update here whenever the kernel text changes
-const SPEAKER_NOTE = /：(视频里没有转写，听不出说话人|转写里没有说话人) /;
+const SPEAKER_NOTE = /: (the video has no transcript, so the speaker|the transcript has no speech by speaker) /;
 /**
  * How long after the last seek while stopped, with no further seek, before it counts as stopped. In the meantime, a video still seeking uses its previous picture (without waiting for the seek to land); consecutive seeks (dragging the playhead,
  * holding a frame-step) are drawn at playback resolution. Neither is the exact frame; once stopped, it is drawn at original size.
@@ -899,13 +899,13 @@ export class PreviewEngine {
     this.#stats.size = { width, height };
     // Families whose local fonts are still being fetched do not report missing fonts (if they can't be fetched, the next frame reports them, consistent with export).
     // i18n-ignore: matches the missing-font hint text as reported by the render kernel
-    const loadingFonts = [...this.#fontsLoading.keys()].map((family) => `字体 ${JSON.stringify(family)} `);
+    const loadingFonts = [...this.#fontsLoading.keys()].map((family) => `font ${JSON.stringify(family)} `);
     const problems = [
       ...new Set([
         ...rendered.skipped.filter((item) => !pending.has(item.itemId)).map((item) => item.message),
         // The kernel's hints begin with “instance ID:”; waveforms whose spectrum is still being fetched are not reported.
         ...rendered.warnings
-          .filter((warning) => !pending.has(warning.detail.split('：')[0]!)) // i18n-ignore: the “instance ID:” separator in kernel hints
+          .filter((warning) => !pending.has(warning.detail.split(': ')[0]!)) // i18n-ignore: the “instance ID: ” separator in kernel hints
           .filter((warning) => !loadingFonts.some((prefix) => warning.detail.includes(prefix)))
           // Transcript still being fetched: don't say there is no transcript yet.
           .filter((warning) => !(this.#speechLoading && SPEAKER_NOTE.test(warning.detail)))

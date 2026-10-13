@@ -806,7 +806,12 @@ fn check_over_hard(
             CutAdvice::MidwordOnly => fixable.push(format!(
                 "{label}，片内无合法切点，需连同相邻片一起在词边界处重切"
             )),
-            CutAdvice::None => uncuttable.push(label),
+            CutAdvice::None => uncuttable.push(format!(
+                "piece {} is {} units, over the hard limit {}",
+                index + 1,
+                width,
+                params.hard
+            )),
         }
     }
 
@@ -823,7 +828,7 @@ fn check_over_hard(
             WarningCode::AlignOverHardUncuttable,
             sid,
             format!(
-                "{}，且译文无合法切点：提交期放行，引擎按 hard 机械硬切",
+                "{}; the translation has no legal cut point either: accepted at submit time, and the engine hard-cuts mechanically at the hard limit",
                 uncuttable.join("；")
             ),
         ));
@@ -1086,7 +1091,7 @@ fn check_context(input: &AlignTableInput, contexts: &[&Element], diagnostics: &m
         if !contexts.is_empty() {
             diagnostics.push_warning(Warning::document(
                 WarningCode::ContentIgnored,
-                "输出里出现了协议外的只读上下文分组",
+                "output contains a read-only context group outside the protocol",
             ));
         }
         return;
@@ -1094,7 +1099,7 @@ fn check_context(input: &AlignTableInput, contexts: &[&Element], diagnostics: &m
     if contexts.is_empty() {
         diagnostics.push_warning(Warning::document(
             WarningCode::ContentIgnored,
-            "输出未回显只读上下文行",
+            "output did not echo the read-only context rows",
         ));
         return;
     }
@@ -1970,7 +1975,7 @@ mod tests {
             .iter()
             .find(|w| w.code == WarningCode::AlignOverHardUncuttable)
             .expect("uncuttable warning");
-        assert!(warning.detail.contains("第 1 片"), "{}", warning.detail);
+        assert!(warning.detail.contains("piece 1 is"), "{}", warning.detail);
         assert!(
             !parsed.diagnostics.has_problems(),
             "{:?}",

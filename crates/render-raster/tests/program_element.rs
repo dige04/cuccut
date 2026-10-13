@@ -253,8 +253,8 @@ fn an_asset_path_escaping_the_document_directory_is_program_path_escape() {
         "asset \"prog\"",
         "asset()",
         "\"../program/dot.svg\"",
-        "文档所在目录",
-        "项目根",
+        "the document's directory",
+        "project root",
     ] {
         assert!(text.contains(needle), "缺 {needle}：{text}");
     }

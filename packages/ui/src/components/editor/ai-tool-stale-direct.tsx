@@ -15,7 +15,7 @@ import { TRANSLATE_COPY as T } from './translate-copy.ts';
 import { useDocumentBody } from './use-document-body.ts';
 
 /*
- * Refresh stale translations, “Use › Call model directly” (product design §5.10 「直接调模型」 and 「逐句与过期译文」): does not go through `ai-tool`; the `translate` flow refreshes the selected translation in place, without naming sentences; the Runtime picks the stale ones, the ones whose source was edited, and the ones with no translation yet. It is the same refresh and the same run state as the subtitle panel's AI button “retranslate these N sentences with the model API” (`useTranslateRun.refreshes`), and the two places see each other.
+ * Refresh stale translations, “Use › Call model directly” (product design §5.10 “直接调模型” (call the model directly) and “逐句与过期译文” (sentence-by-sentence and stale translations)): does not go through `ai-tool`; the `translate` flow refreshes the selected translation in place, without naming sentences; the Runtime picks the stale ones, the ones whose source was edited, and the ones with no translation yet. It is the same refresh and the same run state as the subtitle panel's AI button “retranslate these N sentences with the model API” (`useTranslateRun.refreshes`), and the two places see each other.
  * This path carries no prompt, attachments or Skill, and the parameters page shows no prompt box. Sentences whose source was cut must be retranslated against the cut source, which the Runtime cannot tell, so those can only be handed to an Agent.
  */
 
@@ -71,7 +71,7 @@ export function useStaleDirect(documents: Record<Id, DocumentRecord>, preset: Ai
   };
 }
 
-/** Splits the number of sentences to retranslate into 「N 过期」 · “N stale · N untranslated” (the short counts of the subtitle panel's stats bar); zero counts are omitted. */
+/** Splits the number of sentences to retranslate into “N 过期” (N stale) · “N stale · N untranslated” (the short counts of the subtitle panel's stats bar); zero counts are omitted. */
 export function refreshParts(counts: { stale: number; untranslated: number }): string {
   return [counts.stale ? T.staleShort(counts.stale) : '', counts.untranslated ? T.untranslatedShort(counts.untranslated) : ''].filter(Boolean).join(' · ');
 }

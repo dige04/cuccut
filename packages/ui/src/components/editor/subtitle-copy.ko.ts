@@ -13,7 +13,7 @@ export const koSubtitle: SubtitleMessages = {
   pickTranscribe: '전사 후 생성',
   pickReuse: '기존 전사본으로 생성 · 다시 인식하지 않음',
 
-  // 转录中（LiveHead）
+  // Transcribing (LiveHead)
   liveTitle: '전사 중',
   submitting: '전사 제출 중',
   writing: '자막 생성 중',
@@ -29,7 +29,7 @@ export const koSubtitle: SubtitleMessages = {
   cancelled: '전사를 취소했습니다',
   cancelFailed: (message: string) => `전사를 취소하지 못했습니다: ${message}`,
 
-  // 结果与问题
+  // Results and issues
   generated: (count: number, from: string, to: string) => `자막 ${count}개 생성됨 · ${from} → ${to}`,
   created: (count: number) => `자막 ${count}개 생성됨`,
   createdShelved: (count: number) =>
@@ -59,7 +59,7 @@ export const koSubtitle: SubtitleMessages = {
     `${message ? `${message}. ` : ''}인식 결과는 아직 남아 있으며, 백그라운드 작업에서 영상에 다시 쓸 수 있습니다. 그 뒤에는 “자막 생성”이 그대로 사용합니다.`,
   decide: '백그라운드 작업에서 처리',
 
-  // 轨条与样式入口卡
+  // Track bar and style entry card
   onScreen: '화면에 표시 중',
   defaultStyle: '기본 스타일',
   styleEntry: (n: number) => (n ? `스타일 편집 · 화면의 자막 트랙 ${n}개` : '스타일 편집'),
@@ -88,7 +88,7 @@ export const koSubtitle: SubtitleMessages = {
   flipped: (translationFirst: boolean) =>
     `뒤집음 · ${translationFirst ? '번역이 위, 원문이 아래' : '원문이 위, 번역이 아래'}`,
 
-  // 列表
+  // List
   stats: (cues: number, sentences: number) => `자막 ${cues}개 · ${sentences}문장`,
   seam: '이전 자막에 합치기',
   seamSpeaker: '화자가 다름 · 합칠 수 없음',
@@ -155,7 +155,7 @@ export const koNotConfigured: NotConfiguredMessages = {
 };
 
 export const koCaptionStyle: CaptionStyleMessages = {
-  // 画廊
+  // Gallery
   title: '자막 스타일',
   back: '자막으로 돌아가기',
   open: '스타일 변경',
@@ -171,7 +171,7 @@ export const koCaptionStyle: CaptionStyleMessages = {
   foreign: (schema: string) => `이 자막 스타일은 ${schema} 형식이라 갤러리에서 적용할 수 없습니다.`,
   readOnly: '지금은 이 영상을 바꿀 수 없어 스타일 카드는 보기만 할 수 있습니다.',
 
-  // 属性页
+  // Properties page
   lineSwitch: '편집할 줄',
   original: '원문',
   translation: '번역',

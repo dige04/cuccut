@@ -195,7 +195,7 @@ export const de: ModelsMessages = {
   byCapability: "Nach Funktion",
   byModel: "Nach Modell",
   byAccount: "Nach Konto",
-  // ---- 管理桶 `cuccut models …`（admin/models.ts） ----
+  // ---- Admin bucket `cuccut models …` (admin/models.ts) ----
   usageRepair: "Verwendung: cuccut models repair <bundleId> [--yes]",
   usageCancel: "Verwendung: cuccut models cancel <bundleId> [--discard]",
   usageConfigure: "Verwendung: cuccut models configure <providerId> [--enable|--disable] [--key-stdin] [--endpoint <url>] …",

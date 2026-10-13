@@ -1,7 +1,7 @@
 import type { TextNotConfiguredMessages, TranslateMessages } from './translate-copy.ts';
 
 export const trTranslate: TranslateMessages = {
-  // 设置页（TranslateFlow）
+  // Settings page (TranslateFlow)
   title: "Yeni dile çevir",
   back: "Altyazı kısmına dön",
   target: "Hedef dil",
@@ -42,7 +42,7 @@ export const trTranslate: TranslateMessages = {
   readOnly: "Video salt okunur; çevrilemez.",
   allTaken: "Tüm yaygın dillerin çevirisi var.",
 
-  // 运行态
+  // Running state
   submitting: "Çeviri gönderiliyor",
   queued: "Sırada",
   running: (from, to) => `Çevriliyor · ${from} → ${to}`,
@@ -56,7 +56,7 @@ export const trTranslate: TranslateMessages = {
   agentSession: "Bir Agent oturumu çeviriyor. Durdurmak için oturumu durdurun.",
   chipTip: (step) => `Çevriliyor · ${step}`,
 
-  // 问题
+  // Issues
   notConfigured: (reason) => `Henüz çevrilemiyor · ${reason}`,
   submitFailed: "Çeviri başlatılamadı",
   failed: "Çeviri başarısız",
@@ -75,7 +75,7 @@ export const trTranslate: TranslateMessages = {
   offTimeline: "Zaman çizelgesinde bu medyayı kullanan klip yok; altyazılar ekrana konamaz. Çeviri videoda kaydedildi; karşılaştırma listesinde “Ekrana yerleştir” tıklayın.",
   badDocument: "Çeviri veya döküm biçimi tanınmıyor; altyazılara bölünemez.",
 
-  // 回执
+  // Receipt
   applied: (language, count) => `Uygulandı · ${language} diline çevrildi · ${count} altyazı`,
   appliedNote: (bilingual) => bilingual ? 'Özgün metin ve çeviri birlikte görünür.' : 'Yalnızca çeviri görünür; özgün metin ekrandan alındı (silinmedi, şeritten geri koyabilirsiniz).',
   undo: "Geri al",
@@ -84,14 +84,14 @@ export const trTranslate: TranslateMessages = {
   undoneNote: "Özgün metne dokunulmadı; çeviri videoda kalır. Karşılaştırma listesinden tekrar “Ekrana yerleştir” kullanabilirsiniz.",
   undoFailed: "Geri alınamadı: bu adımdan sonra video değişti. Düzenleyicide geri alın.",
 
-  // 放到画面上
+  // Put on screen
   place: "Ekrandaki konum",
   placing: "Ekrana yerleştiriliyor",
   unnamed: "Çeviri",
   placed: (language, count) => `${language} çevirisi ekrana yerleştirildi · ${count} altyazı`,
   notPlaced: "Bu çeviri henüz görüntüde değil.",
 
-  // 对照条与列表
+  // Comparison bar and list
   list: "Liste",
   modes: { src: "Yalnızca orijinal", bi: "Orijinal + çeviri", trans: "Yalnızca çeviri" },
   compareLanguage: "Karşılaştırılacak çeviri",

@@ -149,7 +149,7 @@ const prompt = style({
 const fieldList = style({ display: 'flex', flexDirection: 'column', gap: '[6px]', margin: 0, padding: 0, listStyleType: 'none' });
 const fieldItem = style({ display: 'flex', alignItems: 'baseline', gap: 8, font: 'ui-sm', lineHeight: '[1.5]' });
 const fieldHint = style({ minWidth: 0, color: 'gray-700' });
-// Placeholder marker: same look as the S2 placeholder token in the input box (dashed outline). The prompt preview and “需要你补充” share it (prototype `.pslot-mark`).
+// Placeholder marker: same look as the S2 placeholder token in the input box (dashed outline). The prompt preview and “需要你补充” (needs your input) share it (prototype `.pslot-mark`).
 // Draw the dashed line with outline: the S2 macro drops per-side border styles, while outline goes all the way round and is unaffected.
 const slotMark = style({
   display: 'inline',

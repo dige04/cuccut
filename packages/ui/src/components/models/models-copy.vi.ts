@@ -16,7 +16,7 @@ export const vi: ModelsMessages = {
   local: {
     defaultLabel: "Mô hình mặc định",
     defaultDesc: "Được chọn sẵn cho video mới và dùng khi chép lời từ dòng lệnh.",
-    // 设计稿说「命令行音源分离使用它」；v3 还没有单独的分离命令，如实写配音的用处。
+    // The design draft says “命令行音源分离使用它” (the command-line audio separation uses it); v3 has no separate separation command yet, so the copy honestly states what dubbing is for.
     separateDefaultDesc: "Dùng để tách âm thanh nền cho lồng tiếng bản dịch khi không chỉ định mô hình, và cho lồng tiếng từ dòng lệnh.",
     auto: "Tự động",
     autoUses: (id) => `Tự động hiện dùng ${id}.`,

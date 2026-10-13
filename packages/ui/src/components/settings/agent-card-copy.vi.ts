@@ -6,7 +6,7 @@ import type { AgentCardMessages } from './agent-card-copy.ts';
 export const vi: AgentCardMessages = {
   runFailed: (message: string) => `Không chạy được: ${message}`,
   stopFailed: (message: string) => `Không dừng được: ${message}`,
-  /** 复制按钮与「已复制」提示里的那个名词。 */
+  /** The noun in the copy button and the “Copied” hint. */
   loginCommand: "lệnh đăng nhập",
   installCommand: "lệnh cài đặt",
   upgradeCommand: "lệnh nâng cấp",
@@ -74,7 +74,7 @@ export const vi: AgentCardMessages = {
   setDefault: "Đặt làm mặc định",
   runChecks: "Chạy kiểm tra",
 
-  /** 升级说明的最后一句：认出了来源就点名，否则请用户用当初的方式。 */
+  /** The last sentence of the upgrade notes: name the source if it was recognized, otherwise ask the user to use the original method. */
   sourceKnown: (label: string) =>
     `Bản này được cài bằng “${label}”, nên hãy nâng cấp theo cùng cách. Các cách khác không cập nhật được bản này; chúng chỉ cài thêm bản khác.`,
   sourceUnknown: "Nâng cấp theo cách bạn đã cài.",
@@ -92,7 +92,7 @@ export const vi: AgentCardMessages = {
     `${name} là trợ lý AI dòng lệnh được cài trên máy tính của bạn, đăng nhập bằng ${plan} mà bạn đã có. CucCut chỉ gọi nó: không thu thêm phí và không cần nhập khóa API trong CucCut.`,
   stepInstall: "Cài trên máy tính này",
   stepInstallOfficial: "Cài trên máy tính này theo hướng dẫn chính thức",
-  /** `command` 是排成代码样式的命令名。 */
+  /** `command` is the command name, set in code style. */
   installOfficialBody: (command: ReactNode): ReactNode =>
     createElement(Fragment, null, "Cài theo hướng dẫn chính thức. Sau khi cài, ", command, " phải chạy được trong terminal."),
   stepLogin: "Đăng nhập tài khoản của bạn",

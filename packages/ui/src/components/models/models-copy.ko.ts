@@ -16,7 +16,7 @@ export const ko: ModelsMessages = {
   local: {
     defaultLabel: '기본 모델',
     defaultDesc: '새 영상에서 미리 선택되며, 명령줄 전사에도 쓰입니다.',
-    // 设计稿说「命令行音源分离使用它」；v3 还没有单独的分离命令，如实写配音的用处。
+    // The design draft says “命令行音源分离使用它” (the command-line source separation uses it); v3 has no separate separation command yet, so this honestly states the dubbing use.
     separateDefaultDesc: '모델을 지정하지 않으면 번역 더빙의 배경음을 분리할 때 쓰이며, 명령줄 더빙에도 쓰입니다.',
     auto: '자동 선택',
     autoUses: (id: string) => `자동 선택은 지금 ${id}을(를) 사용합니다.`,

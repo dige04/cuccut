@@ -42,7 +42,7 @@ const noticeIcon = iconStyle({ size: 'S' });
 /** Everything needed when this video is handed to an Agent: which conversation it goes to, and which Agent · model · effort and access mode (shared by the “Use” and “Conversation” rows of the parameters page and by the prompt box). */
 export interface ToolHandoff {
   ref: VideoRef | null;
-  /** The guidance shown when no Agent is available (the 「用」 row and the card at the top of the list page). */
+  /** The guidance shown when no Agent is available (the “用” (Use) row and the card at the top of the list page). */
   guide: GateGuide | null;
   options: SessionOption[];
   /** The selected item; null when the video is not in any project or conversation. */
@@ -213,7 +213,7 @@ export interface DirectPrompt {
 /**
  * The prompt box and main button on the parameters page (prototype tool-prompt.jsx, product design §5.10 paragraphs 3 and 4): pre-filled with a template (if it has not been edited, it follows the range and checkbox options; once edited, “Restore default” appears), with this tool's built-in skill attached by default (marked “this tool's method”; if removed, a line under the box explains and offers to add it back),
  * “+ › Use Skill” attaches others (appended after, not duplicated if already attached; re-adding the built-in one is also appended, like prototype `addSkill`), and each can be removed individually;
- * the bottom bar holds the access mode and “Agent family · model” (the same as the 「用」 row). Pressing it hands off according to the “Conversation” row; attached skills are sent together in order (`conversations.send`'s `skills`), and `onDone` returns to the list. Tools given `onHandedOff` (finding cut points, refreshing stale translations) do not switch to the conversation; they draw their progress in place.
+ * the bottom bar holds the access mode and “Agent family · model” (the same as the “用” (Use) row). Pressing it hands off according to the “Conversation” row; attached skills are sent together in order (`conversations.send`'s `skills`), and `onDone` returns to the list. Tools given `onHandedOff` (finding cut points, refreshing stale translations) do not switch to the conversation; they draw their progress in place.
  * When “Use” is set to call a model directly (`direct`): the bottom bar becomes the text-model picker; under the box, two lines say that the attached skills are used as the system prompt and what context is sent to the model; the main button states this tool's action,
  * and pressing it has the tool page submit the `ai-tool` flow, staying in place to show progress and results.
  */

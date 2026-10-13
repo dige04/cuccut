@@ -20,7 +20,7 @@ export const ko: AiToolsMessages = {
   shortsHint: '새 세션을 열어 그곳에서 구간을 찾고 영상을 만듭니다. 원본 영상과 타임라인은 그대로입니다.',
   back: '뒤로',
 
-  // 设置态
+  // Settings state
   who: '사용',
   whoAgent: 'Agent에게 맡기기',
   whoModel: '모델 직접 호출',
@@ -34,7 +34,7 @@ export const ko: AiToolsMessages = {
   noConversation: '이 영상은 어떤 프로젝트나 세션에도 속하지 않아 Agent에게 맡길 수 없습니다.',
   createFailed: (message: string) => `세션을 만들지 못했습니다: ${message}`,
 
-  // 勾选项与自定义
+  // Checkboxes and custom
   prePolish: '먼저 다듬기(자동 문단 나누기)',
   prePolishOn: '챕터를 문단 단위로 묶습니다',
   prePolishOff: '다듬지 않은 전사본은 문단이 1개뿐이라 챕터가 거칠게 나뉩니다',
@@ -50,7 +50,7 @@ export const ko: AiToolsMessages = {
   retranscribeModel: '음성 모델은 Agent가 이 컴퓨터에 설치된 모델 중에서 고릅니다. 직접 정하려면 아래 지시에 적으세요.',
   retranscribeSpeakers: '전사 후 화자 식별',
 
-  // 写作与发布
+  // Writing and publishing
   platform: '게시할 곳',
   platformPlaceholder: '게시할 플랫폼(선택 사항). 그 플랫폼의 규칙에 맞춰 쓰고 확인하도록 알려 드립니다',
   titleCount: '후보 수',
@@ -62,7 +62,7 @@ export const ko: AiToolsMessages = {
   coverRatioProject: '영상 캔버스와 같게',
   coverText: '표지 텍스트',
 
-  // 还做不了的
+  // Things it still can't do
   soon: '곧 제공',
   chaptersPolishFirst: '먼저 다듬고 문단을 나눈 뒤 챕터를 생성하세요',
 

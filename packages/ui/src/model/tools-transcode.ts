@@ -117,7 +117,7 @@ export function codecName(codec: string): string {
 // ---- Choose files ----
 
 /**
- * Each list item is either the absolute path of a local file, or a Space entry (architecture design §7.9 「Space 条目作输入」, Space entries as input). In the form, an entry is stored as `space:<entryId>`, so sorting, de-duplication and dragging all treat it as one kind of string; on submit it becomes `{ entryId }`, which the Runtime turns into a file path. The list in the draft is not written to disk.
+ * Each list item is either the absolute path of a local file, or a Space entry (architecture design §7.9 “Space 条目作输入”, Space entries as input). In the form, an entry is stored as `space:<entryId>`, so sorting, de-duplication and dragging all treat it as one kind of string; on submit it becomes `{ entryId }`, which the Runtime turns into a file path. The list in the draft is not written to disk.
  */
 const SPACE_INPUT = 'space:';
 
@@ -380,7 +380,7 @@ function qualityName(crf: number, codec: TranscodeCodec): string {
 }
 
 /**
- * The settings line under the record card title (design mockup `jobMeta`): 「压缩 · ≤720p · H.264 · 均衡（CRF 26）」 (compress · ≤720p · H.264 · balanced (CRF 26)), 「合并 3 段 · H.264 · 高画质（CRF 22）」 (merge 3 segments · H.264 · high quality (CRF 22)).
+ * The settings line under the record card title (design mockup `jobMeta`): “压缩 · ≤720p · H.264 · 均衡（CRF 26）” (compress · ≤720p · H.264 · balanced (CRF 26)), “合并 3 段 · H.264 · 高画质（CRF 22）” (merge 3 segments · H.264 · high quality (CRF 22)).
  * When a merge has been decided as stream copy, resolution, codec and quality do not apply, and only “merge 3 segments · stream copy” is written.
  */
 export function transcodeMeta(job: Pick<JobRecord, 'pipeline'>): string {
@@ -523,7 +523,7 @@ function mergeMode(job: Pick<JobRecord, 'pipeline'>): { mode: TranscodeSummary['
 }
 
 /**
- * One sentence on how the merge was joined: stream copy (no re-encode), or re-encode and the reason (the Runtime's `reason`, for example 「分辨率不一致（1920x1080 / 1280x720）」 (resolutions differ (1920x1080 / 1280x720))). Not written for compress. If the read-input step has already decided before completion, that is written out too.
+ * One sentence on how the merge was joined: stream copy (no re-encode), or re-encode and the reason (the Runtime's `reason`, for example “分辨率不一致（1920x1080 / 1280x720）” (resolutions differ (1920x1080 / 1280x720))). Not written for compress. If the read-input step has already decided before completion, that is written out too.
  */
 export function mergeModeLine(job: Pick<JobRecord, 'pipeline'>): { mode: TranscodeSummary['mode']; text: string } | null {
   const decided = mergeMode(job);

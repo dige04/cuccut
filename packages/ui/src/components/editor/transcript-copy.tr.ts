@@ -30,7 +30,7 @@ export const trTranscript: TranscriptMessages = {
   cutWordTitle: "Zaman çizelgesinden kes",
   partialWordTitle: "Kesim bu sözcüğün içinde; yalnızca bir kısmı zaman çizelgesinde kaldı",
 
-  // 选区条
+  // Selection bar
   selected: (count, seconds) => seconds === null ? `${count} sözcük seçildi` : `${count} sözcük seçildi · ${secondsLabel(seconds)}`,
   cut: "Kes",
   restore: "Geri yükle",
@@ -40,7 +40,7 @@ export const trTranscript: TranscriptMessages = {
   aiFind: "Kesim bul",
   aiFindHint: "Veya önce dolgu sözcüklerini ve duraklamaları AI bulsun",
 
-  // 结果
+  // Results
   cutDone: (seconds, ranges) => ranges > 1 ? `${secondsLabel(seconds)} kesildi · ${ranges} aralık` : `${secondsLabel(seconds)} kesildi`,
   cutNothing: "Seçilen sözcükler artık zaman çizelgesinde değil; kesilecek bir şey yok.",
   cutTooShort: "Seçim bir kareden kısa; kesilemez.",
@@ -57,7 +57,7 @@ export const trTranscript: TranscriptMessages = {
   gotoCaptions: "Altyazıları aç",
   undo: "Geri al",
 
-  // 时间线剪口
+  // Timeline cut seams
   seamLabel: (seconds) => `${secondsLabel(seconds)} kesildi · geri yüklemek için tıklayın`,
   liveCopy: "Şimdiye kadar dökülen kısmı kopyala",
   liveCopied: "Şimdiye kadar dökülen kısım kopyalandı · yazıya dökme sürüyor",
@@ -69,7 +69,7 @@ export const trTranscript: TranscriptMessages = {
 };
 
 export const trTranscriptTools: TranscriptToolsMessages = {
-  // 查找替换
+  // Find and replace
   findTip: "Bul ve değiştir · ⌘F",
   findLabel: "Bul ve değiştir",
   findPlaceholder: "Dökümde bul",
@@ -79,7 +79,7 @@ export const trTranscriptTools: TranscriptToolsMessages = {
   replaceDone: (count) => `${count} eşleşme değiştirildi · video ve ses değişmedi`,
   replaceNothing: "Değiştirilecek eşleşme yok",
 
-  // 复制
+  // Copy
   copyMenu: "Dökümü kopyala",
   copyAllHead: (lang) => `Tümünü kopyala · ${lang}`,
   copyText: "Metni kopyala",
@@ -101,7 +101,7 @@ export const trTranscriptTools: TranscriptToolsMessages = {
   copySelection: "Kopyala",
   copySelectionTip: "Seçilen metni kopyala · ⌘C",
 
-  // 语言视图（设计稿 `langShort` 与「文稿语言」菜单）
+  // Language view (design draft `langShort` and the “文稿语言” (transcript language) menu)
   langLabel: "Döküm dili",
   langSource: "Özgün",
   langTranslation: "Çeviri",
@@ -115,7 +115,7 @@ export const trTranscriptTools: TranscriptToolsMessages = {
   translationOnly: "Yalnızca çeviriye bakarken düzenleme veya kesim yapılamaz; kaynağa veya yan yana görünüme dönün.",
   noParagraphTranslation: "Bu paragrafın çevirisi yok",
 
-  // 段落行（设计稿 `ParaRow`）
+  // Paragraph row (design draft `ParaRow`)
   paraMenu: "Bu paragraf…",
   moveUp: "Önceki bölüme taşı",
   moveDown: "Sonraki bölüme taşı",
@@ -131,7 +131,7 @@ export const trTranscriptTools: TranscriptToolsMessages = {
   cutPara: "Bu paragrafı kes",
   cutParaHint: "Video, ses ve altyazıyı birlikte keser; geri yüklenebilir",
 
-  // 章节头「这一章…」
+  // Chapter heading “这一章…” (this chapter…)
   chapterMenu: "Bu bölüm…",
   renameChapter: "Yeniden adlandır…",
   cutChapter: "Bu bölümü kes",

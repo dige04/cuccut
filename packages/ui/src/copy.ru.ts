@@ -6,20 +6,20 @@ import type { CopyMessages } from './copy.ts';
 
 
 export const ru: CopyMessages = {
-  /** 打开系统的文件管理器并选中目标。所有平台同一个说法，不写某个平台专有的文件管理器名字（docs/glossary.md）。 */
+  /** Open the system file manager and select the target. Use the same wording on all platforms; do not write a platform-specific file manager name (docs/glossary.md). */
   reveal: "Показать в папке",
   untitled: "Новая сессия",
-  /** 用户消息上方已发送的图片（原型 agent-thread.jsx `UserMsg`）。 */
+  /** Images already sent above the user message (prototype agent-thread.jsx `UserMsg`). */
   sentAttachments: "Отправленные файлы",
-  /** 任务在跑时切换访问模式的提示（原型 model-agent.js `modeToast` 的运行中分支）。 */
+  /** Toast shown when switching access mode while a task is running (the running branch of the prototype's model-agent.js `modeToast`). */
   accessModeToast: (label: string) => `Следующий ход будет выполнен в режиме «${label}». Текущий ход сохранит прежний режим доступа.`,
-  /** composer 脚注（原型 model-agent.js `composerFoot`）：在哪儿跑、用谁的订阅（空串表示没有账号名）、这一档会不会问你、快捷键。 */
+  /** Composer footnote (prototype model-agent.js `composerFoot`): where it runs, whose subscription is used (an empty string means there is no account name), whether this tier asks you, and the shortcut. */
   composerFoot: (name: string, account: string, foot: string) =>
     `Работает через ${name} на этом компьютере, ${account ? `с вашей подпиской ${account}` : "с вашей подпиской"}. ${foot} Enter — отправить, Shift+Enter — новая строка, @ — ссылка, / — команды.`,
 
   /**
-   * 访问模式（架构设计 §3.12，原型 data.js `agent.modes`）。原型只画四档；「先给方案」是协议里独立的一档，
-   * 输入框下拉只在会话已经处在这一档时列出它（例如经 CLI 切过去的）。
+   * Access modes (architecture design §3.12, prototype data.js `agent.modes`). The prototype draws only four tiers; “先给方案” (Plan first) is a separate tier in the protocol,
+   * and the input dropdown lists it only when the session is already in this tier (for example, one switched to via the CLI).
    */
   accessModeLabel: {
     plan: "Сначала план",
@@ -42,7 +42,7 @@ export const ru: CopyMessages = {
     stopped: "Остановлено",
     failed: "Ошибка",
   },
-  /** composer 脚注的中段：这一档到底会不会问你（原型 model-agent.js `modeFoot`）。 */
+  /** Middle part of the composer footnote: whether this tier asks you at all (prototype model-agent.js `modeFoot`). */
   accessModeFoot: {
     plan: "Только планирует и не меняет видео.",
     ask: "Спрашивает перед каждой записью в видео.",
@@ -50,11 +50,11 @@ export const ru: CopyMessages = {
     auto: "Обычные действия разрешены автоматически; рискованные требуют вопроса.",
     fullAccess: "Записывает в видео без вопроса каждый раз.",
   },
-  /** 模型定位（原型 model-agent-setup.js `TIERS`）。 */
+  /** Model tiers (prototype model-agent-setup.js `TIERS`). */
   modelTierLabel: { balanced: "Рекомендуется", max: "Самая мощная", fast: "Самая быстрая" },
   /**
-   * 推理强度（原型 data.js `agent.efforts`）：原生 id → 名字与代价。原型的 `mid` 在 Claude 与 Codex 里叫 `medium`。
-   * 原型给「中」的副文案是「默认」：这里改成标在模型自己的默认强度那一行（见 agent-choice.ts `effortRows`）。
+   * Reasoning effort (prototype data.js `agent.efforts`): native id → name and cost. The prototype's `mid` is called `medium` in Claude and Codex.
+   * The prototype's subtitle for “中” (medium) is “默认” (default); here it is placed on the row of the model's own default strength (see `effortRows` in agent-choice.ts).
    */
   effort: {
     low: { label: "Низкий", sub: "Быстро, подходит для небольших правок" },
@@ -73,11 +73,11 @@ export const ru: CopyMessages = {
     localAccount: "Этот компьютер",
     settings: "Настройки › Агенты…",
     settingsSub: "Агент для программирования · Подписка · Политика одобрений",
-    /** 会话有任务后 Agent 固定（架构设计 §3.11：原生会话不能跨 Agent 续）。 */
+    /** The agent is fixed once the session has a task (architecture design §3.11: a native session cannot be continued across agents). */
     locked: "Эта сессия уже началась, поэтому сменить агента нельзя. Для смены начните новую сессию.",
     detecting: "Обнаружение агентов…",
   },
-  /** Agent 用不了时第一级那一行的副文案（原型 model-agent.js `providerRows`，状态词取 model-agent-setup.js `badge`）。 */
+  /** Subtitle of the first-level row when the agent is unavailable (prototype model-agent.js `providerRows`; the status word comes from model-agent-setup.js `badge`). */
   driverStateReason: {
     disabled: "Отключён в настройках",
     'not-installed': "Не установлен",
@@ -85,7 +85,7 @@ export const ru: CopyMessages = {
     outdated: "Устаревшая версия · Проверьте настройки",
     error: "Не запускается · Проверьте настройки",
   },
-  /** 斜杠命令的名字与说明，键是去掉 `/` 的命令名（`SLASH_COMMANDS`）。 */
+  /** Names and descriptions of slash commands; the key is the command name without the `/` (`SLASH_COMMANDS`). */
   slash: {
     polish: { label: "Отредактировать расшифровку", sub: "Исправить опечатки, добавить пунктуацию, разбить на абзацы" },
     chapters: { label: "Создать главы", sub: "Разделить по темам и добавить заголовки" },
@@ -109,16 +109,16 @@ export const ru: CopyMessages = {
     filesMessage: (paths) => `Файлы и папки:\n${paths.map(path => JSON.stringify(path)).join('\n')}`,
     pickFailed: (message) => `Не удалось выбрать файлы: ${message}`,
     webFilesUnsupported: 'Добавляйте локальные файлы и папки в CucCut для компьютера. Загрузка в Web-клиенте пока недоступна.',
-    /** 原型是「引用章节或文件」；章节、说话人这类数据 Runtime 还没有，只列视频与文件。 */
+    /** The prototype is “reference a chapter or file”; the Runtime does not yet have data such as chapters and speakers, so only videos and files are listed. */
     mention: "Сослаться на видео или файл",
     slash: "Использовать инструмент",
-    /** 「+」菜单的两组：附件类在上，引用与命令在下（原型 composer-insert-menu.jsx）。 */
+    /** The two groups of the “+” menu: attachment types on top, references and commands below (prototype composer-insert-menu.jsx). */
     attachSection: 'Добавить',
     referSection: "Ссылки и команды",
     imagesUnsupported: (driverName: string) => `${driverName} не принимает изображения`,
     noMentionCandidates: "Здесь пока нет видео или файлов для ссылки",
   },
-  /** 输入框「+ › 使用 Skill」、输入框上的 skill 标记与会话消息上的标记（产品设计 §3.2.3、§6.9；原型 composer-insert-menu.jsx）。 */
+  /** The input box's “+ › Use Skill”, the skill marker in the input box, and the marker on session messages (product design §3.2.3, §6.9; prototype composer-insert-menu.jsx). */
   skill: {
     use: "Использовать Skill",
     manage: "Управлять Skills…",
@@ -128,18 +128,18 @@ export const ru: CopyMessages = {
     token: (name: string) => `Skill: ${name}`,
     remove: (name: string) => `Убрать Skill: ${name}`,
   },
-  /** 附图（原型 agent-thread.jsx `composerImageFiles` 与 `addImages`）。 */
+  /** Attached images (prototype agent-thread.jsx `composerImageFiles` and `addImages`). */
   attachment: {
     tooLarge: `Выберите изображения размером не более ${MAX_ATTACHMENT_BYTES / 1024 / 1024} MiB`,
     tooMany: `Можно прикрепить до ${MAX_ATTACHMENTS_PER_MESSAGE} ${pluralForm('ru', MAX_ATTACHMENTS_PER_MESSAGE, { one: 'изображения', few: 'изображений', many: 'изображений', other: 'изображения' })}`,
-    /** 原型只收 image/*；协议只收这四种（limits.ts），多出来的一句。 */
+    /** The prototype accepts only image/*; the protocol accepts only these four types (limits.ts), so this sentence is an extra one not in the prototype. */
     badType: "Можно прикрепить только PNG, JPEG, GIF или WebP",
     uploadFailed: (message: string) => `Не удалось загрузить изображение: ${message}`,
     httpFailed: (status: number) => `Ошибка загрузки (HTTP ${status})`,
     networkFailed: "Ошибка загрузки: Runtime недоступен",
     uploading: "Загрузка изображений…",
   },
-  /** 忙时排队（会话有任务在跑时发的话）。 */
+  /** Queued while busy (messages sent while the session has a task running). */
   queue: {
     title: (count: number) => `В очереди на отправку · ${count}`,
     images: (count: number) => `${count} ${pluralForm('ru', count, {one: "изображение", few: "изображения", many: "изображений", other: "изображения"})}`,
@@ -154,7 +154,7 @@ export const ru: CopyMessages = {
     failed: (message: string) => `Не удалось отправить сообщение из очереди: ${message}`,
     busyPlaceholder: "Агент работает. Новые сообщения помещаются в очередь до завершения текущего хода",
   },
-  /** 任务失败后的恢复区（原型 agent-thread.jsx `ErrorMsg`）。 */
+  /** Recovery area after a task fails (prototype agent-thread.jsx `ErrorMsg`). */
   recovery: {
     authTitle: (name: string) => `${name} требует входа заново`,
     authBody: (name: string) =>
@@ -172,7 +172,7 @@ export const ru: CopyMessages = {
     nothingToResend: "Не удалось найти сообщение этого хода для повторной отправки",
     resendFailed: (message: string) => `Не удалось отправить снова: ${message}`,
   },
-  /** 审批卡（原型 agent-thread.jsx `PermissionMsg`，自动允许的那一行取 model-agent.js `autoAllowLabel`）。 */
+  /** Approval card (prototype agent-thread.jsx `PermissionMsg`; the auto-allow row takes its label from model-agent.js `autoAllowLabel`). */
   approval: {
     title: {
       command: "Агент хочет выполнить команду",
@@ -196,7 +196,7 @@ export const ru: CopyMessages = {
     copyInput: "Скопировать описание входных данных",
     failed: (message: string) => `Не удалось отправить: ${message}`,
   },
-  /** 变更卡的撤销与恢复（原型 agent-thread.jsx `ReceiptMsg`）。 */
+  /** Undo and restore on the change card (prototype agent-thread.jsx `ReceiptMsg`). */
   change: {
     undone: "Отменено · Изменения убраны",
     undo: "Отменить",
@@ -204,7 +204,7 @@ export const ru: CopyMessages = {
     openVideo: "Открыть видео",
     confirmTitle: "Отменить этот шаг?",
     /**
-     * 「恢复」只在这一笔还是你最近一次撤销、之后你没再改这个视频时才有（见 change-card.tsx），不说「随时」。
+     * “恢复” (Restore) appears only while this change is still your most recent undo and you have not edited this video since (see change-card.tsx); it does not say “随时” (anytime).
      */
     confirmBody: "Изменения, внесённые этим шагом в видео, будут удалены. Пока вы снова не отредактируете видео, их можно вернуть через «Восстановить».",
     cancel: "Отмена",
@@ -215,9 +215,9 @@ export const ru: CopyMessages = {
     restoreFailed: (message: string) => `Не удалось восстановить: ${message}`,
   },
   /**
-   * 空会话（原型 agent-thread.jsx `AgentThread` 的空态，建议取 data.js `agent.chips`）。
-   * 原型说明句里的「@ 可以引用章节、说话人、译文」「写入之前一定先问你」「把视频拖进来」这里还做不到
-   * （@ 只列视频与文件；问不问看访问模式；会话里不能拖入视频），只留做得到的部分。
+   * Empty session (the empty state of prototype agent-thread.jsx `AgentThread`; suggestions come from data.js `agent.chips`).
+   * The prototype's explanatory sentences, “@ 可以引用章节、说话人、译文” (@ can reference chapters, speakers, translations), “写入之前一定先问你” (always ask before writing), and “把视频拖进来” (drag a video in), are not yet possible here
+   * (@ lists only videos and files; whether it asks depends on the access mode; videos cannot be dragged into a session), so only the parts that work are kept.
    */
   threadEmpty: {
     greetVideo: (name: string) => `Что сделать с видео «${name}»?`,
@@ -238,7 +238,7 @@ export const ru: CopyMessages = {
       "Экспортируй двуязычный SRT и MP4 со встроенными субтитрами",
     ],
   },
-  /** 产物卡（原型 home-session.jsx `SessionArtifactCard`、`SessionMoviePreview`、`SessionMessageArtifacts`）。 */
+  /** Artifact cards (prototype home-session.jsx `SessionArtifactCard`, `SessionMoviePreview`, `SessionMessageArtifacts`). */
   output: {
     playVideo: (name: string) => `Воспроизвести видео «${name}»`,
     noThumbnail: "Нет миниатюры",
@@ -251,8 +251,8 @@ export const ru: CopyMessages = {
     messageOutputs: "Результаты сообщения",
   },
   /**
-   * 线程里的视频卡与下载卡（产品设计 §3.2.2、§6.5；原型 home-session.jsx `SessionArtifactCard`、agent-cards.jsx `JobRow` / `DownloadCard`）。
-   * 状态词与 Space 的视频状态同一套说法。
+   * Video cards and download cards in the thread (product design §3.2.2, §6.5; prototype home-session.jsx `SessionArtifactCard`, agent-cards.jsx `JobRow` / `DownloadCard`).
+   * Status words use the same wording as the video status in Space.
    */
   videoCard: {
     agentTranslating: 'Агент переводит по предложениям',
@@ -292,7 +292,7 @@ export const ru: CopyMessages = {
     openFailed: (message: string) => `Не удалось открыть: ${message}`,
     retryFailed: (message: string) => `Не удалось повторить: ${message}`,
   },
-  /** Home 起始页（产品设计 §3.2.1；原型 page-new.jsx Home、new-agent.jsx）。 */
+  /** Home start page (product design §3.2.1; prototype page-new.jsx Home, new-agent.jsx). */
   home: {
     templates: "Шаблоны видео",
     quickStart: "Быстрый старт",
@@ -300,7 +300,7 @@ export const ru: CopyMessages = {
     blankVideoTip: "Без расшифровки и очереди — сразу в редактор",
     blankVideoCreated: "Пустое видео создано",
     blankVideoFailed: (message: string) => `Не удалось создать пустое видео: ${message}`,
-    /** 没选项目时新建空白视频，先建一个这样命名的项目。 */
+    /** When no project is selected, a new blank video first creates a project with this name. */
     blankVideoProject: "Пустое видео",
     removeTemplate: "Убрать шаблон",
     templateToken: (title: string) => `Шаблон: ${title}`,
@@ -353,7 +353,7 @@ export const ru: CopyMessages = {
     addDocument: "PDF или документ",
     addImage: "Изображение",
     recentVideos: "Недавние видео",
-    /** 选了最近的视频，原先挂着的视频或音频素材让出位置（一句话只对一条视频说）。 */
+    /** When a recent video is picked, the video or audio material that was attached before gives way (the sentence applies to one video only). */
     recentReplaced: (title: string, removed: string) => `Теперь работаем с видео «${title}»; убрано видео «${removed}»`,
     removeMaterial: (name: string) => `Убрать материал: ${name}`,
     materialsFull: (max: number, rejected: number) => `За один раз можно добавить до ${max} ${pluralForm('ru', max, { one: 'материала', few: 'материалов', many: 'материалов', other: 'материала' })}; ${rejected} не добавлено`,
@@ -368,8 +368,8 @@ export const ru: CopyMessages = {
     enableFailed: (message: string) => `Не удалось включить: ${message}`,
   },
   /**
-   * 起始页「快捷开始」的四条（原型 model-newproject.js `STARTERS`）：处理已有视频或音频的常见事，点一下把这句话放进输入框。
-   * 措辞不带「动画」「讲解」「图表」这类词，免得被当成某一类制作。`needs` 是提示里「再把什么拖进输入框」。
+   * The four “Quick start” entries on the start page (prototype model-newproject.js `STARTERS`): common tasks for existing videos or audio; one click puts the sentence into the input box.
+   * The wording avoids words such as “动画” (animation), “讲解” (explainer) and “图表” (chart), so it is not taken for one particular kind of production. `needs` is the hint for “再把什么拖进输入框” (what else to drag into the input box).
    */
   homeStarter: {
     sub: { title: "Добавить субтитры", needs: "видеоматериал", link: "ссылку на видео", prompt: "Добавьте субтитры к этому видео." },
@@ -383,7 +383,7 @@ export const ru: CopyMessages = {
     a2v: { title: "Видео из аудио", needs: "аудиофайл", link: "ссылку", prompt: "Преврати это аудио в видео с фоном, волной и субтитрами." },
     tip: (needs: string, link: string) => `Заполняет запрос. Затем перетащите ${needs} в поле сообщения или вставьте ${link}`,
   },
-  /** 模板分类的显示名（模板包规范 §3.2；键是协议的一部分）。认不出的键由 model/home-templates.ts 兜底按键名显示。 */
+  /** Display names of template categories (template pack spec §3.2; the keys are part of the protocol). Unrecognized keys fall back to showing the key name, handled in model/home-templates.ts. */
   templateCategory: {
     all: "Все",
     marketing: "Маркетинг",
@@ -394,12 +394,12 @@ export const ru: CopyMessages = {
     'creative-short': "Творческое короткое видео",
     'motion-design': "Моушн-дизайн",
   },
-  /** 两类模板（规范 §1.2）。 */
+  /** The two kinds of templates (spec §1.2). */
   templateKind: { all: "Все", scene: "Шаблоны сцен", example: "Примеры" },
   templateSource: { all: "Все источники", builtin: "Встроенные", user: "Мои", community: "Сообщество" },
-  /** 模板自带素材的种类（规范 §3.4）。 */
+  /** Kinds of assets bundled with a template (spec §3.4). */
   templateAsset: { image: "Изображение", svg: "SVG", audio: "Аудио", video: "Видео" },
-  /** 模板的画幅与时长文案（原型 model-home-templates.js `spec`、`specLine`）。 */
+  /** Aspect ratio and duration copy for templates (prototype model-home-templates.js `spec`, `specLine`). */
   templateSpec: {
     allAuto: "Соотношение сторон и длительность автоматически",
     ratioAuto: "Соотношение сторон автоматически",
@@ -407,7 +407,7 @@ export const ru: CopyMessages = {
     sceneDefault: (spec: string) => `${spec} по умолчанию; чтобы изменить, напишите об этом в сообщении`,
     exampleAuto: "Соотношение сторон и длительность автоматически; агент определит по содержимому",
   },
-  /** 起始页的创建项目对话框（原型 new-agent.jsx `CreateProjectDialog`）。 */
+  /** The create-project dialog on the start page (prototype new-agent.jsx `CreateProjectDialog`). */
   createProject: {
     title: "Создать проект",
     close: "Закрыть создание проекта",
@@ -420,7 +420,7 @@ export const ru: CopyMessages = {
     created: (name: string) => `Создан проект «${name}»`,
     failed: (message: string) => `Не удалось создать проект: ${message}`,
   },
-  /** 任务种类的名字（原型 page-tasks.jsx `KIND`）。Agent 会话里的任务原型没有单列，叫「Agent 任务」。 */
+  /** Names of task kinds (prototype page-tasks.jsx `KIND`). The prototype does not list tasks inside agent sessions separately; they are called “Agent 任务” (Agent task). */
   taskKind: {
     agent: "Задача агента",
     transcribe: "Расшифровать",
@@ -441,7 +441,7 @@ export const ru: CopyMessages = {
     agentTranslate: "Перевести",
     legacyImport: "Импортировать прежние проекты",
   },
-  /** Job 的阶段（`JobPhase`）：列表与胶囊念「识别中 · 45%」。 */
+  /** Job phases (`JobPhase`): the list and the capsule read “识别中 · 45%” (recognizing · 45%). */
   jobPhase: {
     queued: "В очереди",
     starting: "Запуск",
@@ -462,7 +462,7 @@ export const ru: CopyMessages = {
     applying: "Запись в видео",
     done: "Готово",
   },
-  /** 后台任务页、详情与侧栏。 */
+  /** Background task page, details and sidebar. */
   taskView: {
     queued: "В очереди",
     running: "Выполняется",
@@ -533,7 +533,7 @@ export const ru: CopyMessages = {
     documentName: "Расшифровка",
     stopFailed: (message: string) => `Не удалось остановить: ${message}`,
     cancelFailed: (message: string) => `Не удалось отменить: ${message}`,
-    /** 对账（`jobs.reconcile`）：重启后结果不明、中断或没有写进视频的任务，由用户决定。 */
+    /** Reconciliation (`jobs.reconcile`): after a restart, tasks whose result is unknown, that were interrupted, or that were never written to the video are left for the user to decide. */
     reconcileRetry: "Повторить попытку",
     reconcileDiscard: "Отбросить результат",
     reconcileApply: "Записать в видео снова",
@@ -549,7 +549,7 @@ export const ru: CopyMessages = {
     remedyNode: "Посмотреть удалённые узлы",
     remedyAgent: "Открыть настройки агента",
   },
-  /** 任务胶囊与悬停卡（原型 task-pill.jsx、model-task-pill.js）。 */
+  /** Task capsule and hover card (prototype task-pill.jsx, model-task-pill.js). */
   taskPill: {
     count: (n: number) => `${n} ${pluralForm('ru', n, {one: "фоновая задача", few: "фоновые задачи", many: "фоновых задач", other: "фоновой задачи"})}`,
     all: "Все задачи",
@@ -559,12 +559,12 @@ export const ru: CopyMessages = {
     startedAt: (ago: string) => `Началось ${ago}`,
   },
   /**
-   * 功能区的「项目文件」标签（原型 home-workspace.jsx `WorkspaceFiles` 的 `__browse__` 分支）。
-   * 原型没有的状态（读取中、读不了、目录为空、只列出一部分）按同样口吻补上。
+   * The “项目文件” (Project files) tab in the feature area (the `__browse__` branch of prototype home-workspace.jsx `WorkspaceFiles`).
+   * States the prototype does not have (loading, unable to read, empty folder, only part listed) are added in the same tone.
    */
   projectFiles: {
     region: "Файлы проекта",
-    /** 不属于项目的会话：根目录是它自己的工作目录。 */
+    /** Sessions that do not belong to a project: the root directory is the session's own working directory. */
     scratchRoot: "Папка сессии",
     searchLabel: "Найти файлы проекта",
     searchPlaceholder: "Найти файлы или видео",
@@ -582,8 +582,8 @@ export const ru: CopyMessages = {
     inRoot: "Корень проекта",
   },
   /**
-   * 功能区的网页标签（原型 home-browser.jsx `WorkspaceBrowser`）。原型用 iframe；这里是宿主的独立网页视图（架构设计 §12.10），
-   * 所以底部那句改成说明隔离；被拒绝的地址（本机地址、非 http/https）、网页进程退出与「这个环境不能内嵌网页」是原型没有的状态。
+   * The web tab in the feature area (prototype home-browser.jsx `WorkspaceBrowser`). The prototype uses an iframe; here it is the host's separate web view (architecture design §12.10),
+   * so the sentence at the bottom is changed to explain isolation; rejected addresses (local addresses, non-http/https), the web process exiting, and “这个环境不能内嵌网页” (this environment cannot embed web pages) are states the prototype does not have.
    */
   webTab: {
     back: "Назад",
@@ -640,10 +640,10 @@ export const ru: CopyMessages = {
     newPageHint: 'Напишите страницу здесь или попросите агента её изменить.',
     newPageFailed: 'Не удалось создать веб-страницу',
   },
-  /** 时间线的剪贴板、右键菜单与带撤销的提示（原型 editor-keys.jsx、timeline-menu.jsx；原型说「元素」，这里是「片段」）。 */
+  /** Timeline clipboard, context menu and toasts with undo (prototype editor-keys.jsx, timeline-menu.jsx; the prototype says “元素” (element), here it is “片段” (clip)). */
   timelineEdit: {
     undo: "Отменить",
-    /** `verb` 是本目录里的动作名（`copy`、`cutItem`、`remove`、`duplicate`）。 */
+    /** `verb` is the action name within this directory (`copy`, `cutItem`, `remove`, `duplicate`). */
     pick: (verb: string) => `Выберите клипы для действия: ${verb.toLowerCase()}`,
     copied: (n: number) => `Скопировано ${n} ${pluralForm('ru', n, {one: "клип", few: "клипа", many: "клипов", other: "клипа"})}`,
     cut: (n: number) => `Вырезано ${n} ${pluralForm('ru', n, {one: "клип", few: "клипа", many: "клипов", other: "клипа"})}`,
@@ -667,7 +667,7 @@ export const ru: CopyMessages = {
     enableHint: "Снова в кадре и экспорте",
     remove: "Удалить",
   },
-  /** 走带的缩放菜单（原型 data.js `zoomMenu` 与 timeline.jsx 的 Transport）。 */
+  /** Zoom menu of the transport (prototype data.js `zoomMenu` and the Transport in timeline.jsx). */
   timelineZoom: {
     menu: "Масштабирование",
     tip: "Параметры масштаба",
@@ -682,8 +682,8 @@ export const ru: CopyMessages = {
     noSelection: "Сначала выберите клипы на таймлайне",
   },
   /**
-   * 编辑器快捷键清单（原型 editor-keys.jsx 的 SHEET）：只列这里真有的键。
-   * 键里的 ⌘ 在 Windows 与 Linux 上换成 Ctrl+（见 shortcut-sheet）。
+   * Editor shortcut list (SHEET in prototype editor-keys.jsx): only keys that actually exist here are listed.
+   * The ⌘ in key labels becomes Ctrl+ on Windows and Linux (see shortcut-sheet).
    */
   shortcutSheet: {
     title: "Сочетания клавиш",
@@ -715,7 +715,7 @@ export const ru: CopyMessages = {
       ["Открыть список сочетаний редактора", "?"],
     ] as [string, string][],
   },
-  /** Home 功能区：标签条、加号菜单、视图控件、会话列与单文件标签（原型 home-workspace.jsx、shell.jsx）。 */
+  /** Home feature area: tab bar, plus menu, view controls, session column and single-file tab (prototype home-workspace.jsx, shell.jsx). */
   workspace: {
     tablist: "Вкладки рабочего пространства",
     tablistHint: "Перетащите вкладки для изменения порядка или нажмите Alt + Shift + Left/Right Arrow.",
@@ -727,7 +727,7 @@ export const ru: CopyMessages = {
     viewGroup: "Вид рабочего пространства",
     resize: "Изменить ширину колонки сессии",
     conversation: "Сессия",
-    /** 窄窗口里会话标签的提示与读屏名称（产品设计 §3.3）：`status` 是进行中 / 等待批准，没有时省掉。 */
+    /** Tooltip and screen-reader names for session tabs in a narrow window (product design §3.3): `status` is in progress or awaiting approval; omitted when there is none. */
     conversationTabTip: (title: string, status: string | null) =>
       `Сессия «${title}»${status ? ` · ${status}` : ""} · Закреплена первой; нельзя переместить или закрыть`,
     conversationTabLabel: (title: string, status: string | null) => `Сессия «${title}»${status ? `, ${status}` : ""}, закреплена первой`,
@@ -737,7 +737,7 @@ export const ru: CopyMessages = {
     fileMissing: "Файл перемещён или удалён",
     filesNoConversation: "После создания сессии здесь появятся файлы её папки.",
   },
-  /** 舞台上的对象：选中框、把手、旋转钮、多选统一框与就地改字（原型 stage-objects.jsx、stage-marquee.jsx）。 */
+  /** Objects on the stage: selection box, handles, rotate knob, unified multi-select box and in-place text editing (prototype stage-objects.jsx, stage-marquee.jsx). */
   stage: {
     label: "Объекты на холсте",
     textEditor: "Редактировать текст",
@@ -756,9 +756,8 @@ export const ru: CopyMessages = {
     undo: 'Отменить',
   },
   /**
-   * 四项服务的目录与起停用词（原型 model-services.js `SERVICES`）；远端算力沿用「共享」。顺序就是侧栏与总览的顺序。
-   * 模型接口服务在原型里是 Web 服务页里的一节（page-services-api.jsx `ApiSection`）；Runtime 把它做成独立的服务（自己的端口、
-   * 令牌与开关，架构设计 §4.8），这里排在 Web 服务后面。
+   * Catalog and start/stop verbs for the four services (prototype model-services.js `SERVICES`); remote compute keeps the wording “共享” (shared). The order is the order in the sidebar and overview.
+   * In the prototype, the model API service is a section of the Web service page (page-services-api.jsx `ApiSection`); the Runtime makes it a separate service (with its own port, token and switch, architecture design §4.8), so it is listed after the Web service here.
    */
   service: {
     mcp: {
@@ -798,7 +797,7 @@ export const ru: CopyMessages = {
       stopping: "Остановка…",
     },
   },
-  /** 服务的状态词（原型 model-services.js `stateLabel`）；`unavailable` 是这个版本的 Runtime 没有提供的服务。 */
+  /** Status words for services (prototype model-services.js `stateLabel`); `unavailable` is a service this version of the Runtime does not provide. */
   serviceState: {
     share: { starting: "Запуск общего доступа…", stopping: "Остановка общего доступа…", error: "Общий доступ неожиданно остановлен", on: "Общий доступ включён", off: "Общий доступ выключен" },
     service: { starting: "Запуск…", stopping: "Остановка…", error: "Не удалось запустить", on: "Работает", off: "Не начато" },
@@ -812,21 +811,21 @@ export const ru: CopyMessages = {
     errors: (n: number) => `${n} ${pluralForm('ru', n, {one: "ошибка", few: "ошибки", many: "ошибок", other: "ошибки"})}`,
     running: (n: number) => `${n} выполняется`,
     open: (name: string) => `Открыть ${name}`,
-    /** `verb` 是服务自己的启动词（`service.*.start`）。 */
+    /** `verb` is the service's own start verb (`service.*.start`). */
     restart: (verb: string) => `Повторить: ${verb}`,
     railAlert: (text: string) => `Сервисы, ${text}`,
     railApprovals: (n: number) => `Сервисы, ${n} ${pluralForm('ru', n, {one: "запрос", few: "запроса", many: "запросов", other: "запроса"})} — ожидается ваше одобрение`,
     loading: "Загрузка статуса…",
     disconnected: "Нет подключения к CucCut Runtime",
     failed: (message: string) => `Не получилось: ${message}`,
-    /** Runtime 列出了、但这个版本没有提供的服务（`available: false`）：总览行与详情页说清楚为什么不能起停。 */
+    /** Services the Runtime lists but this version does not provide (`available: false`): the overview row and detail page explain clearly why they cannot be started or stopped. */
     unavailableDetail: "Эта версия CucCut Runtime пока не предоставляет этот сервис",
     unavailableTitle: (name: string) => `${name} пока недоступен`,
     notRunning: "Сервис не работает. Сначала запустите его",
     mcpRelated: "Хотите научить Claude Code или Codex в терминале работать с CucCut? Установите для них Skill CucCut — сервис не нужен. См.",
     mcpRelatedLink: "Настройки › Skills",
   },
-  /** CucCut Runtime 卡（原服务页的一张卡，现在给设置 › 诊断复用）。 */
+  /** CucCut Runtime card (one card from the original services page, now reused in 设置 › 诊断 (Settings › Diagnostics)). */
   runtimeCard: {
     name: "CucCut Runtime",
     version: "Версия",
@@ -835,7 +834,7 @@ export const ru: CopyMessages = {
     startedAt: "Начало",
     home: "Папка данных",
   },
-  /** 远端算力页（原型 page-shell.jsx RemotePage）。这个版本只能共享转录，其他几类任务画成禁用并说明原因。 */
+  /** Remote compute page (prototype page-shell.jsx RemotePage). This version can only share transcription; the other task types are drawn as disabled, with the reason stated. */
   remote: {
     title: "Удалённые вычисления",
     tabsLabel: "Разделы удалённых вычислений",
@@ -923,7 +922,7 @@ export const ru: CopyMessages = {
     unpairTitle: (name: string) => `Удалить сопряжение с устройством «${name}»?`,
     unpairBody: "Этот компьютер больше не появится в списке моделей расшифровки. Сопряжение можно повторить в любой момент.",
     unpairDone: "Сопряжение удалено",
-    /** 节点卡上「为什么用不了」：按 `PairedNode.problem` 拼（没有诊断方法，不叫「诊断」）。 */
+    /** “为什么用不了” (why it cannot be used) on the node card: assembled from `PairedNode.problem` (there is no diagnosis method, so it is not called “诊断”). */
     problem: {
       unreachable: "Компьютер недоступен. Убедитесь, что на нём открыт CucCut с «Общим доступом к этому Mac» и оба компьютера в одной локальной сети.",
       version: "Версии CucCut на компьютерах несовместимы. Обновите обе до последней версии.",
@@ -956,7 +955,7 @@ export const ru: CopyMessages = {
     },
     pairFailed: (message: string) => `Сопряжение не удалось: ${message}`,
   },
-  /** 「提供给其他电脑的任务」的名字（键见 `REMOTE_TASK_COPY`）。`noun` 是缺模型提示里的那类模型。 */
+  /** Name of “提供给其他电脑的任务” (tasks offered to other computers) (keys in `REMOTE_TASK_COPY`). `noun` is the kind of model named in the missing-model hint. */
   remoteTask: {
     asr: { name: "Расшифровка", noun: "модель расшифровки" },
     tts: { name: "Озвучка", noun: "модель озвучки" },
@@ -965,7 +964,7 @@ export const ru: CopyMessages = {
     download: { name: "Скачивание видео", noun: null },
     export: { name: "Экспорт видео", noun: null },
   },
-  /** 帮助中心（原型 help-center.jsx）：外框、分类、搜索、快速上手、快捷键页与入口。 */
+  /** Help center (prototype help-center.jsx): frame, categories, search, quick start, shortcuts page and entry points. */
   help: {
     title: "Центр справки",
     subtitle: "Находите ответы в любой момент и приступайте к работе",
@@ -1017,14 +1016,14 @@ export const ru: CopyMessages = {
     entryLabel: "Центр справки",
     settingsEntry: "Справка",
   },
-  /** 编辑器预览的监听音量与全屏（快捷键 ↑/↓、M、F；原型 editor-keys.jsx 借全屏播放器的键）。只是这个窗口听到、看到的，不进视频。 */
+  /** Preview listening volume and fullscreen in the editor (shortcuts ↑/↓, M, F; the prototype editor-keys.jsx borrows the fullscreen player's keys). Only what this window hears and sees; it is not written into the video. */
   previewKeys: {
     volume: (volume: number) => `Громкость предпросмотра ${volume}`,
     muted: "Звук предпросмотра выключен",
     unmuted: (volume: number) => `Звук предпросмотра включён · Громкость ${volume}`,
     fullscreenFailed: "Не удалось открыть полноэкранный предпросмотр",
   },
-  /** 画布浮动工具条与多选页（原型 stage-toolbar.jsx、stage-toolbar-menu.jsx、panel-elements.jsx MultiSelectPanel）。 */
+  /** Floating canvas toolbar and multi-select panel (prototype stage-toolbar.jsx, stage-toolbar-menu.jsx, panel-elements.jsx MultiSelectPanel). */
   stageToolbar: {
     label: "Панель клипа",
     more: "Ещё",
@@ -1061,7 +1060,7 @@ export const ru: CopyMessages = {
     dragNote: "Перетащите один из них на холсте для перемещения вместе. Выберите один клип для изменения его свойств.",
     hint: "Выравнивание, распределение, копирование и удаление каждое считаются одним шагом отмены.",
   },
-  /** @ 补全分组（设计稿 model-agent.js `mentionItems` 的本视频一组）：打开的视频里的章节与说话人在前。 */
+  /** @ completion group (the “this video” group of `mentionItems` in the design draft's model-agent.js): chapters and speakers in the open video come first. */
   mentionGroups: {
     video: "Это видео",
     files: "Видео и файлы",

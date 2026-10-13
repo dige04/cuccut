@@ -2,7 +2,7 @@ import type { DubOriginalAudio } from '@cuccut/protocol';
 import type { DubMessages, DubRegenMessages, TimelineDubMessages } from './dub-copy.ts';
 
 export const koDub: DubMessages = {
-  // 设置页
+  // Settings page
   title: '번역 더빙',
   back: '뒤로',
   web: '번역 더빙은 데스크톱 앱에서 사용할 수 있습니다',
@@ -96,7 +96,7 @@ export const koDub: DubMessages = {
   busy: '이 영상은 이미 더빙이 진행 중입니다. 끝난 뒤 다음 더빙을 시작하세요.',
   readOnly: '영상이 읽기 전용이어서 더빙할 수 없습니다.',
 
-  // 运行态
+  // Running state
   submitting: '더빙 제출 중',
   queued: '대기 중',
   running: (language: string) => `더빙 중 · ${language}`,
@@ -110,7 +110,7 @@ export const koDub: DubMessages = {
   liveNote: '완료되면 Runtime이 바로 타임라인에 쓰며 언제든 실행 취소할 수 있습니다. 이 페이지를 떠나도 됩니다.',
   foreign: '이 더빙은 여기서 시작하지 않았습니다. 끝나면 타임라인에서 확인하고, 실행 취소는 편집기의 실행 취소를 사용하세요.',
 
-  // 授权
+  // Authorization
   grantTitle: (recipient: string) => `전사본을 ${recipient}에 보낼 허가가 아직 없습니다`,
   grantBody:
     '더빙은 합성할 번역(번역이 없는 부분은 원문)을 공급자에게 보냅니다. 이 영상으로 한정된 허가를 발급하면 계속 진행하며, 허가가 없으면 아무것도 보내지 않습니다.',
@@ -126,7 +126,7 @@ export const koDub: DubMessages = {
   grantNext: '번역과 합성에 서로 다른 공급자를 쓰면 각각 허가가 필요합니다.',
   commands: '명령줄',
 
-  // 问题
+  // Issues
   notConfigured: '아직 더빙을 사용할 수 없습니다',
   submitFailed: '더빙을 시작하지 못했습니다',
   failed: '더빙 실패',
@@ -143,7 +143,7 @@ export const koDub: DubMessages = {
   stoppedAt: (synthesized: number, remaining: number) => `문장 ${synthesized}개를 합성한 뒤 멈췄습니다. ${remaining}개 남음`,
   dismiss: '확인',
 
-  // 收据
+  // Receipt
   doneTitle: (language: string) => `${language} 더빙 완료`,
   doneToast: (language: string, placed: number) => `${language} 더빙 완료 · 문장 ${placed}개를 타임라인에 배치`,
   placed: (placed: number, total: number) => `문장 ${placed} / ${total}개를 타임라인에 배치`,
@@ -211,7 +211,7 @@ export const koTimelineDub: TimelineDubMessages = {
 };
 
 export const koDubRegen: DubRegenMessages = {
-  // ---- 行头 ⋯ ----
+  // ---- Row header ⋯ ----
   headMenu: (label: string) => `“${label}” 트랙`,
   headLine: (c: { total: number; fast: number; muted: number; failed: number; queued: number }) =>
     [
@@ -242,19 +242,19 @@ export const koDubRegen: DubRegenMessages = {
   redubHint: '번역 더빙 열기: 언어나 목소리를 바꿔 그룹 전체를 다시 만듭니다',
   readOnly: '영상이 읽기 전용입니다',
 
-  // ---- 块菜单 ----
+  // ---- Block menu ----
   regenBlocks: (n: number) => `${n > 1 ? `이 문장 ${n}개` : '이 문장'} 다시 생성`,
   regenBlocksHint: '같은 번역과 목소리로 다시 합성 · 새 시드 · 이전 테이크는 유지',
   retext: '번역 수정 후 다시 더빙…',
   retextHint: '먼저 길이를 확인하고 번역을 수정한 뒤 이 문장들만 다시 더빙합니다',
   inQueue: '다시 생성 중인 문장이 있습니다',
 
-  // ---- 块 ----
+  // ---- Block ----
   queued: '다시 생성 중…',
   queuedTip: (text: string) => `${text} · 다시 생성 중`,
   version: (k: number, seed: number | null) => (seed === null ? `테이크 ${k}` : `테이크 ${k} · 시드 ${seed}`),
 
-  // ---- 提交与收尾 ----
+  // ---- Submit and wrap-up ----
   submitted: (n: number) => `더빙 문장 ${n}개 다시 생성을 시작했습니다`,
   submitFailed: (message: string) => `다시 생성을 시작하지 못했습니다: ${message}`,
   grantRefused: (recipient: string) =>
@@ -276,7 +276,7 @@ export const koDubRegen: DubRegenMessages = {
   undo: '실행 취소',
   undoMissing: '이번 다시 생성이 기록한 편집을 찾지 못했습니다. 편집기의 실행 취소를 사용하세요',
 
-  // ---- 改译文并重配 ----
+  // ---- Edit translation and redub ----
   fitTitle: (n: number) => `번역 수정 후 문장 ${n}개 다시 더빙`,
   fitIntro:
     '음성으로 읽힐 번역 문장을 수정합니다(수정한 문장은 검토됨으로 표시). 이 번역으로 만든 자막은 다시 나누지 않습니다. 각 문장은 새 시드로 다시 합성되며 이전 테이크는 유지됩니다.',
@@ -291,7 +291,7 @@ export const koDubRegen: DubRegenMessages = {
   fitSubmit: (n: number, changed: number) => (changed ? `${changed}개 수정 후 문장 ${n}개 다시 더빙` : `문장 ${n}개 다시 더빙`),
   fitBusy: '제출 중…',
 
-  // ---- 属性页的版本 ----
+  // ---- Takes on the properties page ----
   takesTitle: '테이크',
   takesAside: (n: number) => `테이크 ${n}개`,
   takeCurrent: '현재',

@@ -34,7 +34,7 @@ const title = style({ font: 'ui-sm', fontWeight: 'bold', color: 'gray-900' });
 const body = style({ marginTop: 2, marginBottom: 0, font: 'ui-sm', color: 'gray-700' });
 
 /**
- * “Image generation with Codex” (設計稿 design mockup settings-agent-provider.jsx:103-119): placed under the Codex card header, shown only when Codex has been found.
+ * “Image generation with Codex” (design mockup settings-agent-provider.jsx:103-119): placed under the Codex card header, shown only when Codex has been found.
  * The toggle is the image-generation agent provider `agent:codex` (`models.configure`). Whether it can be turned on is decided by the model service’s view.
  * It is probed once when this row appears (and probed again after Codex is re-detected, upgraded or logged in). Until it has been probed, the toggle cannot be switched.
  * Once turned on, it is not selected automatically (image generation has no factory default). To make it the default, set it under Models › 图像生成 (Image generation). In the browser the toggle is greyed out (`models.configure` is not on the web allowlist).

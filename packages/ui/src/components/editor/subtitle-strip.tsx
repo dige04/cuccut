@@ -158,7 +158,7 @@ const link = style({
   outlineColor: 'focus-ring',
   outlineWidth: 2,
 });
-/** The language being translated (the “翻译中” candidate in prototype model-sublist.js): not yet on a track, just a chip with progress. */
+/** The language being translated (the “翻译中” (translating) candidate in prototype model-sublist.js): not yet on a track, just a chip with progress. */
 const runningChip = style({
   display: 'inline-flex',
   alignItems: 'center',

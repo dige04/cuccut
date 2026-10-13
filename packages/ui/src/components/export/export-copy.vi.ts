@@ -7,7 +7,7 @@ export const vi: ExportMessages = {
   buttonBusyTitle: "Đang xuất · mở ra để xem tiến độ hoặc hủy",
   tabsLabel: "Nội dung xuất",
 
-  // ---- 通用 ----
+  // ---- General ----
   cancel: "Hủy",
   close: "Đóng",
   done: "Xong",
@@ -34,7 +34,7 @@ export const vi: ExportMessages = {
   submitting: "Đang gửi…",
   notOpen: "Video chưa mở đầy đủ nên chưa xuất được",
 
-  // ---- 运行态 ----
+  // ---- Running state ----
   running: "Đang xuất",
   queued: "Đang chờ xuất",
   cancelling: "Đang hủy…",
@@ -47,7 +47,7 @@ export const vi: ExportMessages = {
   cancelFailed: (message) => `Không hủy được: ${message}`,
   plannedFiles: (first, n) => `${first} và ${n - 1} mục khác`,
 
-  // ---- 完成 / 取消 / 失败 ----
+  // ---- Done / Cancelled / Failed ----
   exported: "Đã xuất",
   exportedToast: (name) => `Đã xuất xong · ${name}`,
   failedToast: (title) => `Xuất thất bại · ${title}`,
@@ -65,7 +65,7 @@ export const vi: ExportMessages = {
   skipMissing: "Bỏ tư liệu thiếu và xuất lại",
   useDocument: (name) => `Dùng “${name}”`,
 
-  // ---- 范围（export-range.jsx）----
+  // ---- Range (export-range.jsx) ----
   range: "Phạm vi",
   rangeChapters: "Chương",
   rangeClips: "Các đoạn",
@@ -88,7 +88,7 @@ export const vi: ExportMessages = {
   eachNote: "Mỗi phần một tệp",
   mergeBlocked: "Chưa ghép được phần không liền kề thành một tệp; mỗi phần xuất riêng",
 
-  // ---- 视频页 ----
+  // ---- Video page ----
   quality: "Chất lượng và kích thước",
   resolution: "Độ phân giải",
   sourceResolution: "Độ phân giải gốc",
@@ -114,7 +114,7 @@ export const vi: ExportMessages = {
   captionsBurned: "Đã ghi phụ đề vào hình",
   captionsNotBurned: "Chưa ghi phụ đề vào hình",
 
-  // ---- 音频页 ----
+  // ---- Audio page ----
   soundLanes: "Nội dung âm thanh",
   quick: "Chọn nhanh",
   musicOnly: "Chỉ nhạc",
@@ -133,7 +133,7 @@ export const vi: ExportMessages = {
   monoNoteLossless: "Mono · nửa kích thước · đủ cho video chỉ lời nói",
   monoNoteLossy: "Mono giữ tốc độ bit; toàn bộ cho một kênh nên giọng rõ hơn",
   exportAudio: (format) => `Xuất ${format}`,
-  // 人声分几份（设计稿 export-audio.jsx）：这一版只能按配音组分
+  // How many parts the vocals are split into (design draft export-audio.jsx): this version can only split by dub group.
   voiceSplit: "Tệp giọng",
   splitOne: "Trộn thành một",
   splitEach: "Mỗi lồng tiếng một tệp",
@@ -149,14 +149,14 @@ export const vi: ExportMessages = {
   eachPartial: (done, left, reason) => `Đã gửi ${done}; ${left} còn lại chưa xuất: ${reason}`,
   exportAudioEach: (n, format) => `Xuất ${n} tệp ${format}`,
 
-  // ---- 响度（export-loudness.jsx）----
+  // ---- Loudness (export-loudness.jsx) ----
   loudness: "Độ to",
   loudnessSwitch: "Chuẩn hóa độ lớn",
   loudnessTarget: "Mục tiêu",
   truePeak: "Trần đỉnh",
   defaultMark: "Mặc định",
 
-  // ---- 字幕页 ----
+  // ---- Subtitle page ----
   subtitleLanes: "Rãnh",
   subtitlesWhat: (labels) => labels.length === 2 ? `${labels.join(' + ')} song ngữ` : labels.join(' + '),
   hiddenOnTimeline: "Tắt trên dòng thời gian",
@@ -169,7 +169,7 @@ export const vi: ExportMessages = {
   pickOne: "Bật ít nhất một",
   exportSubtitles: "Xuất phụ đề",
 
-  // ---- 文稿页 ----
+  // ---- Transcript page ----
   language: "Ngôn ngữ",
   original: "Bản gốc",
   translation: "Bản dịch",
@@ -197,7 +197,7 @@ export const vi: ExportMessages = {
   noTranscriptSub: "Chép lời trước hoặc thêm rãnh phụ đề",
   exportTranscript: "Xuất bản chép lời",
 
-  // ---- 工程页 ----
+  // ---- Project page ----
   editors: "Xuất sang trình chỉnh sửa",
   xmemlName: 'Premiere Pro / DaVinci Resolve',
   xmemlMeta: "FCP7 XML(.xml)",

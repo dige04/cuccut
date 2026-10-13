@@ -50,7 +50,7 @@ pub const LANGUAGE_BEIJING_DIALECT: i32 = 2074;
 pub const SAMPLES_PER_FRAME: usize = 1920;
 /// Output sample rate.
 pub const SAMPLE_RATE: u32 = 24_000;
-/// 每帧 codebook 数（1 个 Talker + 15 个 Code Predictor）。
+/// Number of codebooks per frame (1 Talker + 15 Code Predictor).
 pub const NUM_CODEBOOKS: usize = 16;
 
 /// Language name (full name or ISO abbreviation, case-insensitive) → codec language id. Returns `None` if unknown.

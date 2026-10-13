@@ -5,7 +5,7 @@ export const ko: SpeakersMessages = {
   back: '뒤로',
   background: '백그라운드에서 실행 중',
 
-  // 设置
+  // Settings
   cardTitle: '누가 말하는지 구분',
   cardBody: '성문으로 화자를 다시 식별하고 자막과 전사본에 이름을 붙입니다. 결과를 먼저 검토하며, 적용하기 전에는 아무것도 바뀌지 않습니다.',
   who: '사용',
@@ -29,7 +29,7 @@ export const ko: SpeakersMessages = {
   web: '브라우저에서는 화자를 식별할 수 없습니다',
   webBody: '화자 식별은 이 컴퓨터의 기기 내 성문 모델을 사용합니다. CucCut 데스크톱 앱을 사용하세요.',
 
-  // 运行
+  // Running
   submitting: '제출 중…',
   queued: '대기 중…',
   running: '화자를 식별하는 중…',
@@ -39,7 +39,7 @@ export const ko: SpeakersMessages = {
   cancelled: '화자 식별을 취소했습니다',
   cancelFailed: (message: string) => `취소하지 못했습니다: ${message}`,
 
-  // 确认
+  // Confirm
   found: (n: number) => `화자 ${n}명을 찾았습니다. 샘플을 들어 보고 누가 누구인지 확인한 뒤, 이름을 클릭해 바꾸고 적용하세요.`,
   same: '화자 경계가 현재 라벨과 같습니다. 적용하면 이름만 바뀝니다.',
   newSpeaker: '새 화자',
@@ -55,7 +55,7 @@ export const ko: SpeakersMessages = {
   applyHint: '적용한 뒤에도 언제든 실행 취소할 수 있습니다.',
   discard: '이 결과 폐기',
 
-  // 收据
+  // Receipt
   engine: '기기 내 성문 모델',
   undoneReceipt: '실행 취소됨 · 화자 라벨을 복원했습니다',
   undo: '실행 취소',
@@ -71,7 +71,7 @@ export const ko: SpeakersMessages = {
   undoFailed: '실행 취소하지 못했습니다',
   redoFailed: '다시 실행하지 못했습니다',
 
-  // 问题
+  // Issues
   failed: '화자 식별 실패',
   interrupted: '화자 식별이 중단되었습니다',
   submitFailed: '화자 식별을 시작하지 못했습니다',

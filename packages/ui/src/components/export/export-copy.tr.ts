@@ -7,7 +7,7 @@ export const tr: ExportMessages = {
   buttonBusyTitle: "Dışa aktarılıyor · ilerlemeyi görmek veya iptal etmek için açın",
   tabsLabel: "Dışa aktarılacak içerik",
 
-  // ---- 通用 ----
+  // ---- General ----
   cancel: "İptal",
   close: "Kapat",
   done: "Tamamlandı",
@@ -34,7 +34,7 @@ export const tr: ExportMessages = {
   submitting: "Gönderiliyor…",
   notOpen: "Video henüz tam açık değil; dışa aktarılamaz",
 
-  // ---- 运行态 ----
+  // ---- Running state ----
   running: "Dışa aktarılıyor",
   queued: "Dışa aktarma için sırada",
   cancelling: "İptal ediliyor…",
@@ -47,7 +47,7 @@ export const tr: ExportMessages = {
   cancelFailed: (message) => `İptal edilemedi: ${message}`,
   plannedFiles: (first, n) => `${first} ve ${n - 1} tane daha`,
 
-  // ---- 完成 / 取消 / 失败 ----
+  // ---- Done / Cancelled / Failed ----
   exported: "Dışa aktarıldı",
   exportedToast: (name) => `Dışa aktarma tamamlandı · ${name}`,
   failedToast: (title) => `Dışa aktarma başarısız · ${title}`,
@@ -65,7 +65,7 @@ export const tr: ExportMessages = {
   skipMissing: "Eksik medyayı atla ve yeniden dışa aktar",
   useDocument: (name) => `Kullan: “${name}”`,
 
-  // ---- 范围（export-range.jsx）----
+  // ---- Range (export-range.jsx) ----
   range: "Aralık",
   rangeChapters: "Bölümler",
   rangeClips: "Klipler",
@@ -88,7 +88,7 @@ export const tr: ExportMessages = {
   eachNote: "Parça başına dosya",
   mergeBlocked: "Bitişik olmayan parçaları tek dosyada birleştirmek bu sürümde yok; her parça ayrı dışa aktarılır",
 
-  // ---- 视频页 ----
+  // ---- Video page ----
   quality: "Kalite ve boyut",
   resolution: "Çözünürlük",
   sourceResolution: "Özgün çözünürlük",
@@ -114,7 +114,7 @@ export const tr: ExportMessages = {
   captionsBurned: "Altyazılar gömüldü",
   captionsNotBurned: "Altyazılar gömülmedi",
 
-  // ---- 音频页 ----
+  // ---- Audio page ----
   soundLanes: "Ses içeriği",
   quick: "Hızlı seçim",
   musicOnly: "Yalnızca müzik",
@@ -133,7 +133,7 @@ export const tr: ExportMessages = {
   monoNoteLossless: "Mono · yarı boyut · yalnızca konuşma videolarına yeterli",
   monoNoteLossy: "Mono bit hızını korur; tüm bit hızı tek kanala gider, sesler daha temiz olur",
   exportAudio: (format) => `${format} dışa aktar`,
-  // 人声分几份（设计稿 export-audio.jsx）：这一版只能按配音组分
+  // How many parts the vocals are split into (design draft export-audio.jsx): this version can only split by dub group.
   voiceSplit: "Ses dosyaları",
   splitOne: "Tek dosyada karıştır",
   splitEach: "Dublaj başına bir dosya",
@@ -149,14 +149,14 @@ export const tr: ExportMessages = {
   eachPartial: (done, left, reason) => `${done} gönderildi; kalan ${left} dışa aktarılmadı: ${reason}`,
   exportAudioEach: (n, format) => `${n} ${format} dosyası dışa aktar`,
 
-  // ---- 响度（export-loudness.jsx）----
+  // ---- Loudness (export-loudness.jsx) ----
   loudness: "Ses yüksekliği",
   loudnessSwitch: "Ses yüksekliğini normalleştir",
   loudnessTarget: "Hedef",
   truePeak: "Tepe sınırı",
   defaultMark: "Varsayılan",
 
-  // ---- 字幕页 ----
+  // ---- Subtitle page ----
   subtitleLanes: "İzler",
   subtitlesWhat: (labels) => labels.length === 2 ? `${labels.join(' + ')} iki dilli` : labels.join(' + '),
   hiddenOnTimeline: "Zaman çizelgesinde devre dışı",
@@ -169,7 +169,7 @@ export const tr: ExportMessages = {
   pickOne: "En az birini açın",
   exportSubtitles: "Altyazıları dışa aktar",
 
-  // ---- 文稿页 ----
+  // ---- Transcript page ----
   language: "Dil",
   original: "Özgün",
   translation: "Çeviri",
@@ -197,7 +197,7 @@ export const tr: ExportMessages = {
   noTranscriptSub: "Önce yazıya dökün veya zaman çizelgesine altyazı izi ekleyin",
   exportTranscript: "Dökümü dışa aktar",
 
-  // ---- 工程页 ----
+  // ---- Project page ----
   editors: "Düzenleyiciye dışa aktar",
   xmemlName: 'Premiere Pro / DaVinci Resolve',
   xmemlMeta: "FCP7 XML(.xml)",

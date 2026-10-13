@@ -41,7 +41,7 @@ export function useTemplatePrompt(template: Pick<HomeTemplate, 'id' | 'version' 
     return () => {
       cancelled = true;
     };
-    // `template` only takes effect through `key`: the same id@版本:语言 is not fetched again.
+    // `template` only takes effect through `key`: the same id@版本:语言 (id@version:language) is not fetched again.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runtime, key, connected, attempt]);
 

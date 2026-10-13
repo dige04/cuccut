@@ -3,7 +3,7 @@ import type { ModelsInstallMessages } from './models-install-copy.ts';
 const KEEP = '이미 다운로드한 부분은 유지되며, 다음 다운로드는 중단된 곳부터 이어집니다.';
 
 export const ko: ModelsInstallMessages = {
-  // ---- 确认对话框 ----
+  // ---- Confirmation dialog ----
   planSize: (size) => `${size} 다운로드`,
   planSizeEstimate: (size) => `약 ${size}(일부 파일 크기를 알 수 없어 등록된 추정치 사용)`,
   amountEstimate: (size) => `약 ${size}`,
@@ -14,14 +14,14 @@ export const ko: ModelsInstallMessages = {
   lineKeep: '이미 설치됨 · 그대로 둠',
   lineSize: (size, count) => `${size} · 파일 ${count}개`,
   lineUnknown: (count) => `크기 알 수 없음 · 파일 ${count}개`,
-  // ---- 进度 ----
+  // ---- Progress ----
   queued: '다운로드 대기 중',
   downloading: (amount) => `다운로드 중 ${amount}`,
   downloadingUnknown: (amount) => `다운로드 중 · ${amount} 받음`,
   verifying: '검증 및 반영 중',
   pausedKept: (amount) => `일시 중지됨 · ${amount} 보존됨, 다시 시작하면 중단된 곳부터 이어집니다`,
   paused: '일시 중지됨',
-  // ---- 失败与补救 ----
+  // ---- Failures and remedies ----
   remedyNoSpace: (need, have) =>
     `${need !== null && have !== null ? `${need} 공간이 필요한데 ${have}만 남아 있습니다. ` : ''}디스크 공간을 확보한 뒤 다시 다운로드하세요. ${KEEP}`,
   remedyNetwork: `네트워크를 확인한 뒤 다시 다운로드하세요. ${KEEP} 기본 소스에 연결할 수 없으면 설정 › 일반의 “모델 다운로드 소스”에서 미러로 바꾸세요.`,
@@ -38,7 +38,7 @@ export const ko: ModelsInstallMessages = {
     '지금은 이 모델 패키지를 사용할 수 없습니다(설치가 완료되지 않았거나, 꺼져 있거나, 이 컴퓨터에서 지원하지 않음). 먼저 복구하거나 다시 켜세요.',
   remedyInstallFailed: `다시 다운로드해 보세요. ${KEEP}`,
   problemText: (message, remedy) => (/[.!?。！？]$/.test(message) ? `${message} ${remedy}` : `${message}. ${remedy}`),
-  // ---- 删除 ----
+  // ---- Delete ----
   removalBody: (unknown, frees, kept) =>
     [
       unknown ? '이 모델 패키지만 쓰는 파일을 삭제합니다.' : frees !== null ? `약 ${frees}의 공간이 확보됩니다.` : null,

@@ -25,7 +25,7 @@ export const ko: VoicesMessages = {
     foot:
       '목소리 = 참조 녹음 + 녹음 내용 + 동의 진술. 참조 녹음은 이 컴퓨터에 남습니다. 내보낸 목소리 팩(이름.bcvoice)에는 녹음이 들어 있어 다른 사람에게 보내 가져오게 할 수 있지만, 복제는 함께 옮겨지지 않습니다. ' +
       '본인 목소리인지 밝히지 않은 목소리는 어떤 제3자에게도 업로드하지 않습니다.',
-    // 一行
+    // One line
     play: (name: string) => `${name} 미리 듣기`,
     stop: (name: string) => `${name} 미리 듣기 중지`,
     playFailed: (text: string) => `미리 듣지 못했습니다: ${text}`,
@@ -40,7 +40,7 @@ export const ko: VoicesMessages = {
     cloning: (label: string) => `${label}에 업로드해 복제하는 중…`,
     cloneFailed: (label: string, text: string) => `${label}에서 한 지난 복제가 성공하지 못했습니다: ${text}`,
     loadingMeta: '불러오는 중…',
-    // 新建与编辑
+    // Create and edit
     createTitle: '새 목소리',
     editTitle: (name: string) => `“${name}” 편집`,
     referenceFile: (file: string) => `참조 녹음: ${file}`,
@@ -58,7 +58,7 @@ export const ko: VoicesMessages = {
     saved: (name: string) => `“${name}” 목소리를 저장했습니다 · 음성 생성과 더빙에서 쓸 수 있습니다`,
     updated: (name: string) => `“${name}” 목소리를 저장했습니다`,
     unchanged: '변경 사항 없음',
-    // 克隆
+    // Clone
     uploadTitle: (label: string) => `${label}에 업로드할까요?`,
     upload: '업로드',
     cloneStarted: (label: string) => `${label}에 업로드하는 중 · 진행 상황은 백그라운드 작업에 있습니다`,
@@ -70,7 +70,7 @@ export const ko: VoicesMessages = {
     cloneRemoved: (label: string) => `${label}에서 복제를 삭제했습니다`,
     cloneGoneRemote: (label: string) => `${label}에 이 복제가 더 이상 없어 이 컴퓨터의 기록도 지웠습니다`,
     cloneRemoveFailed: (text: string) => `복제를 삭제하지 못했습니다: ${text}`,
-    // 导出
+    // Export
     exportTitle: '목소리 팩 내보내기',
     exportButton: '내보내기',
     exported: (path: string) => `${path}에 내보냈습니다`,
@@ -78,7 +78,7 @@ export const ko: VoicesMessages = {
     exportExists: 'CucCut은 기존 파일을 덮어쓰지 않습니다. 다른 이름이나 위치를 골라 다시 내보내세요.',
     exportFailedExists: (text: string) =>
       `내보내지 못했습니다: ${text}. CucCut은 기존 파일을 덮어쓰지 않습니다. 다른 이름이나 위치를 골라 다시 내보내세요.`,
-    // 删除
+    // Delete
     deleteTitle: (name: string) => `“${name}” 목소리를 삭제할까요?`,
     deleteConfirm: '삭제',
     deleted: (name: string) => `“${name}” 목소리를 삭제했습니다`,

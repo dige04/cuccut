@@ -1,7 +1,7 @@
 import type { TextNotConfiguredMessages, TranslateMessages } from './translate-copy.ts';
 
 export const koTranslate: TranslateMessages = {
-  // 设置页（TranslateFlow）
+  // Settings page (TranslateFlow)
   title: '새 언어로 번역',
   back: '자막으로 돌아가기',
   target: '대상 언어',
@@ -46,7 +46,7 @@ export const koTranslate: TranslateMessages = {
   readOnly: '영상이 읽기 전용이라 번역할 수 없습니다.',
   allTaken: '자주 쓰는 언어는 모두 이미 번역이 있습니다.',
 
-  // 运行态
+  // Running state
   submitting: '번역 제출 중',
   queued: '대기 중',
   running: (from: string, to: string) => `번역 중 · ${from} → ${to}`,
@@ -60,7 +60,7 @@ export const koTranslate: TranslateMessages = {
   agentSession: 'Agent 세션이 번역 중입니다. 멈추려면 그 세션을 중지하세요.',
   chipTip: (step: string) => `번역 중 · ${step}`,
 
-  // 问题
+  // Problems
   notConfigured: (reason: string) => `아직 번역할 수 없음 · ${reason}`,
   submitFailed: '번역을 시작하지 못했습니다',
   failed: '번역 실패',
@@ -81,7 +81,7 @@ export const koTranslate: TranslateMessages = {
     '타임라인에 이 소재를 쓰는 클립이 없어 자막을 화면에 배치할 수 없습니다. 번역은 영상에 저장되어 있으니 비교 목록에서 “화면에 배치”를 클릭하세요.',
   badDocument: '번역이나 전사본의 형식을 인식할 수 없어 자막으로 나눌 수 없습니다.',
 
-  // 回执
+  // Receipt
   applied: (language: string, count: number) => `적용됨 · ${language}(으)로 번역 · 자막 ${count}개`,
   appliedNote: (bilingual: boolean): string =>
     bilingual
@@ -93,14 +93,14 @@ export const koTranslate: TranslateMessages = {
   undoneNote: '원문은 건드리지 않았습니다. 번역은 영상에 남아 있으며, 비교 목록에서 다시 “화면에 배치”할 수 있습니다.',
   undoFailed: '실행 취소하지 못했습니다. 이 단계 이후 영상이 바뀌었습니다. 편집기에서 실행 취소하세요.',
 
-  // 放到画面上
+  // Put on screen
   place: '화면에 배치',
   placing: '화면에 배치하는 중',
   unnamed: '번역',
   placed: (language: string, count: number) => `${language} 번역을 화면에 배치했습니다 · 자막 ${count}개`,
   notPlaced: '이 번역은 아직 화면에 없습니다.',
 
-  // 对照条与列表
+  // Comparison bar and list
   list: '목록',
   modes: { src: '원문만', bi: '원문 + 번역', trans: '번역만' },
   compareLanguage: '비교할 번역',

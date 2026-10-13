@@ -27,7 +27,7 @@ import { RuntimeStorageLibrary as SL } from '@cuccut/protocol/messages/runtime-s
  *
  * - The identifier is `format: cuccut.glossary` in the front matter, independent of the file extension. `version` is 1 for now, and higher versions are rejected.
  * - Values may be written as JSON strings (in double quotes). When written out, the name is always a JSON string.
- * - In cells, write `|` and `\` as `\|` and `\\`. Separators inside mishearings, `,`, `，` and `、` themselves, are written as `\,` and so on.
+ * - In cells, write `|` and `\\` as `\\|` and `\\\\`. Separators inside mishearings, `,`, `，` and `、` themselves, are written as `\\,` and so on.
  * - Header matching is case-insensitive, and the number of columns must match exactly. A title and explanatory text may come before the table, but the body may contain only one table.
  */
 

@@ -5,7 +5,7 @@ export const ko: SpaceMessages = {
   searchPlaceholder: '이름, 파일 또는 영상 속 말 검색',
   searchLabel: '라이브러리 검색',
 
-  // 列表与菜单
+  // List and menu
   openVideo: '영상 열기',
   viewInfo: '정보 보기',
   viewInfoFiles: '정보 및 파일 보기',
@@ -36,7 +36,7 @@ export const ko: SpaceMessages = {
   noValue: '—',
   favorited: '즐겨찾기됨',
 
-  // 工具条
+  // Toolbar
   statusPicker: '상태',
   refreshMenu: '새로 고침',
   rescan: '프로젝트 폴더 다시 스캔',
@@ -49,7 +49,7 @@ export const ko: SpaceMessages = {
       ? `인덱스를 다시 만들었습니다 · 항목 ${entries}개 · 영상 ${pending}개의 콘텐츠 인덱스는 백그라운드에서 계속 업데이트 중`
       : `인덱스를 다시 만들었습니다 · 항목 ${entries}개`,
 
-  // 新建
+  // New
   newLabel: '새로 만들기',
   newBlank: '빈 영상 만들기',
   newBlankHint: '전사나 대기 없이 바로 열리는 16:9 빈 영상',
@@ -72,7 +72,7 @@ export const ko: SpaceMessages = {
   createdFromFile: (name: string) => `“${name}” 영상을 만들고 소재를 배치했습니다`,
   createdEmpty: (reason: string) => `영상은 만들었지만 소재를 배치하지 못했습니다: ${reason}`,
 
-  // 导入框（原型 SpaceImport）
+  // Import dialog (prototype SpaceImport)
   importTitle: '소재 가져오기',
   importProject: '가져올 프로젝트',
   importHint:
@@ -81,7 +81,7 @@ export const ko: SpaceMessages = {
   importNoProject: '아직 프로젝트가 없습니다. 먼저 Home에서 프로젝트 폴더를 여세요.',
   importing: '가져오는 중',
 
-  // 查看框
+  // Viewer dialog
   factSource: '출처',
   factFile: '파일',
   factMeasure: '길이 또는 크기',
@@ -99,7 +99,7 @@ export const ko: SpaceMessages = {
   version: (frozen: string, current: string | null) =>
     current && current !== frozen ? `영상 버전 ${frozen}, 현재 영상은 ${current}` : `영상 버전 ${frozen}`,
   missingTitle: '이 파일을 찾을 수 없습니다',
-  // 卡片角标与列表缩略图的读屏说明（原型 sp-prev__flag）
+  // Screen-reader text for the card badge and list thumbnail (prototype sp-prev__flag)
   missingFile: '파일을 찾을 수 없음',
   missingBody: '항목은 그대로 있습니다. 파일이 돌아오면 상태가 복구됩니다.',
   failedTitle: '생성 실패',
@@ -109,7 +109,7 @@ export const ko: SpaceMessages = {
   reexport: '원본 영상에서 다시 내보내기',
   noPreviewVideo: '영상은 편집기에서 열립니다.',
 
-  // 能力（origin.capability）
+  // Capability (origin.capability)
   capability: {
     synthesizeSpeech: '더빙',
     generateImage: '이미지 생성',
@@ -119,7 +119,7 @@ export const ko: SpaceMessages = {
     'videos-derive': '쇼츠로 만들기',
   },
 
-  // 动作的结果
+  // Action results
   trashed: (name: string) => `휴지통으로 이동함 · ${name}`,
   undo: '실행 취소',
   restored: (name: string) => `복원함 · ${name}`,
@@ -133,13 +133,13 @@ export const ko: SpaceMessages = {
   sourceGone: '원본 영상이 지금 어떤 프로젝트나 세션 폴더에도 없어 열 수 없습니다',
   failed: (what: string, reason: string) => `${what} 실패: ${reason}`,
 
-  // 删除视频（产品设计 §4.9）
+  // Delete video (product design §4.9)
   trashVideoTitle: '이 영상을 삭제할까요?',
   trashVideoBody: '영상 폴더 전체가 프로젝트의 휴지통으로 이동하며 복원할 수 있습니다. 연결된 원본 소재는 그대로 남습니다.',
   trashVideoRelated: (n: number) => `이 영상에서 내보내거나 생성한 항목 ${n}개는 라이브러리에 남으며 영상과 함께 삭제되지 않습니다:`,
   trashVideoConfirm: '영상 삭제',
 
-  // 彻底删除
+  // Delete permanently
   purgeTitle: '영구 삭제할까요?',
   purgeBody: (name: string) =>
     `“${name}” 항목이 디스크에서 삭제되며 복원할 수 없습니다. 영상이나 실행 중인 작업이 아직 사용 중이면 아무것도 삭제하지 않고 무엇이 사용 중인지 알려 줍니다.`,
@@ -150,14 +150,14 @@ export const ko: SpaceMessages = {
   blockedBody: (name: string) => `“${name}” 항목이 아직 사용 중이어서 아무것도 삭제하지 않았습니다:`,
   gotIt: '확인',
 
-  // 改名
+  // Rename
   renameTitle: '이름 변경',
   renameLabel: '표시 이름',
   renameHint: (fileName: string) =>
     `라이브러리에 표시되는 이름만 바뀌며 파일 자체는 그대로입니다. 비워 두면 원래 이름(“${fileName}”)으로 돌아갑니다.`,
   save: '저장',
 
-  // 来源视频改过（产品设计 §4.6）
+  // Source video changed (product design §4.6)
   changedDialogTitle: '원본 영상이 변경되었습니다',
   changedDialogBody: (frozen: string | null, current: string | null) =>
     `이 결과물은 영상 버전 ${frozen ?? '(알 수 없음)'}에 해당하며, 현재 영상은 ${current ?? '(알 수 없음)'}입니다. 현재 작업본이 열립니다.`,
@@ -166,7 +166,7 @@ export const ko: SpaceMessages = {
   changedFromFrozenReason:
     '이 내보내기를 만든 버전에서 이어서 작업하는 기능은 아직 없습니다(Runtime에 특정 버전으로 돌아가는 명령이 없음). 현재 작업본을 열고 기록에서 그 버전을 볼 수 있습니다.',
 
-  // 内容命中（架构设计 §5.11）
+  // Content hits (architecture design §5.11)
   hitsTitle: '영상 속 말',
   hitsCount: (n: number) => `일치 ${n}건`,
   hitsSearching: '콘텐츠 인덱스 검색 중',
@@ -175,7 +175,7 @@ export const ko: SpaceMessages = {
   hitUnopenable: '이 영상은 지금 어떤 프로젝트나 세션 폴더에도 없거나 휴지통에 있어 열 수 없습니다',
   hitSourceClock: '타임라인이 아닌 소재 안에 있는 내용입니다. 영상을 열고 직접 찾아보세요',
   hitStale: '인덱스를 만든 뒤 영상이 변경되어 위치가 정확하지 않을 수 있습니다',
-  // 内容命中的过滤与分组（设计稿 page-projects.jsx HitGroup；种类、说话人是合同 space.search 的筛选）
+  // Filtering and grouping of content hits (design draft page-projects.jsx HitGroup; kind and speaker are the filters of contract space.search)
   hitsGrouped: (n: number, videos: number) => `일치 ${n}건 · 영상 ${videos}개`,
   hitKind: '문서 유형',
   hitKindAll: '모든 유형',
@@ -185,7 +185,7 @@ export const ko: SpaceMessages = {
   hitsNoneFiltered: '이 유형이나 화자에 일치하는 항목이 없습니다. 다른 것을 선택해 보세요.',
   hitsMore: (n: number) => `${n}건 더 보기`,
 
-  // 页面里的其余文字
+  // Other text on the page
   cancel: '취소',
   openForEdit: '열어서 편집',
   newVideo: '새 영상',

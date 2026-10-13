@@ -36,6 +36,7 @@ const suggestions = style({ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop
  * Empty session (prototype agent-thread.jsx `AgentThread` empty state :461-475): a session that exists but has no messages yet. The start page for new sessions (start-page.tsx) has its own version, which is not here. When the editor has open the video that this session's source refers to, the greeting includes the video's name, and the suggestions switch to the editor group (the prototype picks `agent.chips.editor` / `agent.chips.home` by `cur.project`). Clicking a suggestion writes it into this session's draft (replacing the existing draft, same as the prototype's `patch({draft})`) and puts the cursor at the end of the input box.
  *
  * The prototype uses `MessageSuggestionList aria-label="试着问问"` (“试着问问”, Try asking). S2 AI's MessageSuggestionList requires a `title` and renders it as a visible h3, but the prototype shows no title, so here a group with `aria-label` wraps MessageSuggestion, laid out the same way (wrapping, gap 8).
+ *
  * `folderOf`: the id of another session that shares the working directory with this one; the source is recognised by it.
  */
 export function ThreadEmpty({ conversationId, projectId, folderOf }: { conversationId: Id; projectId: Id | null; folderOf?: Id }) {

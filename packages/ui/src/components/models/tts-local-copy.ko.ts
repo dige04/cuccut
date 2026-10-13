@@ -2,23 +2,23 @@ import type { TtsLocalMessages } from './tts-local-copy.ts';
 
 export const ko: TtsLocalMessages = {
   ttsLocal: {
-    // 默认模型（语音合成没有出厂默认，菜单里没有「自动选择」）
+    // Default model (speech synthesis has no factory default, so the menu has no “自动选择” (auto-select))
     unset: '설정 안 됨',
     defaultDesc: '새 합성 작업에 미리 선택됩니다. 기본값이 없으면 매번 모델을 직접 고르며, 직접 고른 모델이 항상 우선합니다.',
     cloudDefault: (name: string) =>
       `기본값은 클라우드 모델(${name})입니다. 설정 › 클라우드 모델에서 바꾸세요. 로컬 모델을 선택하면 그 모델로 바뀝니다.`,
     noInstalled: '아직 설치된 음성 합성 모델이 없습니다. 먼저 아래에서 하나를 다운로드하세요.',
-    // 行
+    // Row
     audition: '미리 듣기',
     hideAudition: '미리 듣기 숨기기',
     engine: '엔진',
     license: '라이선스',
     components: '구성 요소',
-    // 下载前的许可确认（设计稿 withModelLicense）
+    // License confirmation before download (design draft withModelLicense)
     licenseTitle: '라이선스',
     licenseUse: '이 모델로 만든 음성은 비상업적 콘텐츠에만 쓸 수 있습니다. 상업적으로 쓸 영상에는 다른 음성 모델을 고르세요.',
     licenseConfirm: (size: string) => `확인하고 ${size} 다운로드`,
-    // 试听面板
+    // Preview panel
     voice: '목소리',
     tone: '어조',
     say: '말할 내용',
@@ -68,7 +68,7 @@ export const ko: TtsLocalMessages = {
     audioFailed: (message: string) => `오디오를 불러오지 못했습니다: ${message}`,
     downloadFailed: (message: string) => `다운로드하지 못했습니다: ${message}`,
     fileName: (name: string) => `${name.replace(/[^\w.-]+/g, '-')}-미리듣기.wav`,
-    // 「我的声音」那一侧：`name` 是发起克隆的那只本地模型的名字
+    // The “我的声音” (my voice) side: `name` is the name of the local model that started the clone
     handoffFrom: (name: string) => `“${name}” 미리 듣기에서 왔습니다 · 녹음하거나 영상에서 가져오세요. 저장하면 다시 돌아갑니다`,
     handoffSaved: (name: string) => `저장됨 · “${name}” 미리 듣기로 돌아가면 이 목소리가 선택되어 있습니다`,
     handoffBack: '돌아가서 사용',

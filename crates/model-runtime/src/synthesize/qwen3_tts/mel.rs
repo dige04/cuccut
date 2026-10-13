@@ -20,7 +20,7 @@ pub const N_MELS: usize = 128;
 const F_MIN: f32 = 0.0;
 const F_MAX: f32 = 12_000.0;
 
-/// 行主序 `[frames, N_MELS]` 的 log-mel。
+/// Log-mel in row-major `[frames, N_MELS]` layout.
 pub struct LogMel {
     pub frames: usize,
     pub data: Vec<f32>,

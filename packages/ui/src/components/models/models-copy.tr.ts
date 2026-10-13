@@ -16,7 +16,7 @@ export const tr: ModelsMessages = {
   local: {
     defaultLabel: "Varsayılan model",
     defaultDesc: "Yeni videolarda önceden seçilir ve komut satırından yazıya dökmede kullanılır.",
-    // 设计稿说「命令行音源分离使用它」；v3 还没有单独的分离命令，如实写配音的用处。
+    // The design draft says “命令行音源分离使用它” (the command-line audio separation uses it); v3 has no separate separation command yet, so the copy honestly states what dubbing is for.
     separateDefaultDesc: "Model belirtilmediğinde çeviri dublajının arka plan sesini ayırmada ve komut satırından dublajda kullanılır.",
     auto: "Otomatik",
     autoUses: (id) => `Otomatik seçim şu anda ${id} kullanıyor.`,

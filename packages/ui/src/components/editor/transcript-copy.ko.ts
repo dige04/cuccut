@@ -29,7 +29,7 @@ export const koTranscript: TranscriptMessages = {
   cutWordTitle: '타임라인에서 잘라냄',
   partialWordTitle: '이 단어 안에 컷이 있어 일부만 타임라인에 남아 있습니다',
 
-  // 选区条
+  // Selection bar
   selected: (count: number, seconds: number | null) =>
     seconds === null ? `단어 ${count}개 선택됨` : `단어 ${count}개 선택됨 · ${secondsLabel(seconds)}`,
   cut: '잘라내기',
@@ -40,7 +40,7 @@ export const koTranscript: TranscriptMessages = {
   aiFind: '컷 찾기',
   aiFindHint: '또는 AI가 먼저 군더더기 말과 쉼을 찾게 하세요',
 
-  // 结果
+  // Results
   cutDone: (seconds: number, ranges: number) =>
     ranges > 1 ? `${secondsLabel(seconds)} 잘라냄 · 구간 ${ranges}개` : `${secondsLabel(seconds)} 잘라냄`,
   cutNothing: '선택한 단어가 더 이상 타임라인에 없어 잘라낼 것이 없습니다.',
@@ -58,7 +58,7 @@ export const koTranscript: TranscriptMessages = {
   gotoCaptions: '자막 열기',
   undo: '실행 취소',
 
-  // 时间线剪口
+  // Timeline cut point
   seamLabel: (seconds: number) => `${secondsLabel(seconds)} 잘라냄 · 클릭해 복원`,
   liveCopy: '지금까지 전사된 부분 복사',
   liveCopied: '지금까지 전사된 부분을 복사했습니다 · 전사가 계속 진행 중입니다',
@@ -70,7 +70,7 @@ export const koTranscript: TranscriptMessages = {
 };
 
 export const koTranscriptTools: TranscriptToolsMessages = {
-  // 查找替换
+  // Find and replace
   findTip: '찾기 및 바꾸기 · ⌘F',
   findLabel: '찾기 및 바꾸기',
   findPlaceholder: '전사본에서 찾기',
@@ -79,7 +79,7 @@ export const koTranscriptTools: TranscriptToolsMessages = {
   replaceDone: (count: number) => `일치 항목 ${count}개를 바꿨습니다 · 영상과 오디오는 그대로`,
   replaceNothing: '바꿀 일치 항목이 없습니다',
 
-  // 复制
+  // Copy
   copyMenu: '전사본 복사',
   copyAllHead: (lang: string) => `전체 복사 · ${lang}`,
   copyText: '텍스트 복사',
@@ -101,7 +101,7 @@ export const koTranscriptTools: TranscriptToolsMessages = {
   copySelection: '복사',
   copySelectionTip: '선택한 텍스트 복사 · ⌘C',
 
-  // 语言视图（设计稿 `langShort` 与「文稿语言」菜单）
+  // Language view (design draft `langShort` and the “文稿语言” (transcript language) menu)
   langLabel: '전사본 언어',
   langSource: '원문',
   langTranslation: '번역',
@@ -115,7 +115,7 @@ export const koTranscriptTools: TranscriptToolsMessages = {
   translationOnly: '번역만 보는 동안에는 편집하거나 잘라낼 수 없습니다. 편집하려면 원문이나 나란히 보기로 전환하세요.',
   noParagraphTranslation: '이 단락에는 번역이 없습니다',
 
-  // 段落行（设计稿 `ParaRow`）
+  // Paragraph row (design draft `ParaRow`)
   paraMenu: '이 단락…',
   moveUp: '이전 챕터로 이동',
   moveDown: '다음 챕터로 이동',
@@ -130,7 +130,7 @@ export const koTranscriptTools: TranscriptToolsMessages = {
   cutPara: '이 단락 잘라내기',
   cutParaHint: '영상, 오디오, 자막을 함께 잘라내며 복원할 수 있습니다',
 
-  // 章节头「这一章…」
+  // Section header “这一章…” (This chapter…)
   chapterMenu: '이 챕터…',
   renameChapter: '이름 변경…',
   cutChapter: '이 챕터 잘라내기',

@@ -5,14 +5,14 @@ import type { AgentMessages } from './agent-copy.ts';
 
 
 export const vi: AgentMessages = {
-  /** 页标题（设计稿 page-settings-agent.jsx 的 h1）。 */
+  /** Page title (the h1 in the design draft page-settings-agent.jsx). */
   pageTitle: "Nhà cung cấp Agent",
-  /** 页标题下三条事实那一列的无障碍名。 */
+  /** Accessible name of the column of three facts under the page title. */
   factsLabel: "Cách Agent hoạt động",
-  /** 隐私页里「Agent 权限」小标题（page-settings.jsx 的 `setpage__perm`）。 */
+  /** The “Agent permissions” subheading on the privacy page (`setpage__perm` in page-settings.jsx). */
   permissionsTitle: "Quyền của Agent",
   lede: "Agent là trợ lý AI lập trình được cài trên máy tính của bạn, như Claude Code hoặc Codex. CucCut gọi trực tiếp, nên một câu có thể hoàn tất chép lời, dịch và chỉnh sửa.",
-  /** 三条事实（page-settings-agent.jsx:12-16）。 */
+  /** The three facts (page-settings-agent.jsx:12-16). */
   facts: [
     { key: "cli", title: "Dùng những gì bạn đã có", body: "CucCut gọi Agent dòng lệnh trên máy tính này thay vì cài Agent riêng." },
     { key: "plan", title: "Dùng gói đăng ký của bạn", body: "Không trả thêm cho CucCut và không cần điền khóa API." },
@@ -22,10 +22,10 @@ export const vi: AgentMessages = {
   providersHeading: "Agent trên máy tính này",
   providersHint:
     "CucCut tìm những Agent đã cài. Chỉ cần một Agent hoạt động; không cần tất cả. Nếu chưa biết chọn gì, hãy chọn Claude Code hoặc Codex. Agent tích hợp chỉ có thể tắt; Agent bạn thêm có thể xóa.",
-  /** 列表底下那一行：几时检查过、内置几家、添加了几家、检测到几家（page-settings-agent.jsx 的 `agset-meta`）。 */
+  /** The line under the list: when it was last checked, how many providers are built in, how many have been added, and how many were detected (`agset-meta` in page-settings-agent.jsx). */
   providersMeta: (checked: string | null, builtin: number, added: number, found: number) =>
     `${checked ? `Đã kiểm tra ${checked} · ` : ""}CucCut có ${builtin} Agent tích hợp${added ? `, bạn đã thêm ${added}` : ""}; ${found} được phát hiện trên máy tính này`,
-  /** 状态区的无障碍名。 */
+  /** Accessible name of the status area. */
   statusLabel: "Trạng thái Agent",
   scanDone: (n: number) => (n ? `Kiểm tra xong · ${n} Agent trên máy tính này` : "Kiểm tra xong · Không tìm thấy Agent đã cài"),
   scanFailed: (message: string) => `Không kiểm tra lại được: ${message}`,
@@ -40,7 +40,7 @@ export const vi: AgentMessages = {
   goCloudModels: "Đi đến mô hình đám mây",
   goSkills: "Đi đến Skills",
 
-  /** 「更多」折叠段（page-settings-agent.jsx）：没检测到的四家 ACP 智能体收在这里。 */
+  /** The collapsed “More” section (page-settings-agent.jsx): the four ACP agents that were not detected are kept here. */
   moreProviders: {
     title: (count: number) => `Agent khác được hỗ trợ · ${count}`,
     sub: (names: string) => `${names} · Không phát hiện trên máy tính này`,
@@ -48,17 +48,17 @@ export const vi: AgentMessages = {
     collapse: "Ẩn",
   },
 
-  /** 「没有逐次询问的通道」的那几家（data.js 的 `FULL_ONLY`）：`capabilities.approvals` 为 false。 */
+  /** The agents in the “channels without a prompt for each action” group (`FULL_ONLY` in data.js): `capabilities.approvals` is false. */
   fullAccessOnly:
     "Agent không thể hỏi phê duyệt từng bước, nên CucCut chỉ có thể chạy trong chế độ Toàn quyền: Agent sẽ không hỏi trước khi chạy lệnh hoặc thay đổi tệp.",
 
-  /** `tested` 为 false 的 Agent：能开会话，但没在 CucCut 里真机跑通过完整会话。 */
+  /** An agent with `tested` set to false: it can open a session, but a full session has not been run end to end in CucCut on a real machine. */
   untested: {
     badge: "Chưa được kiểm thử trong CucCut",
     body: "Agent này chưa hoàn tất một phiên đầy đủ trong CucCut trên máy thật. Phát hiện, đăng nhập và danh sách mô hình hoạt động như thường; nếu có lỗi trong phiên, hãy xem tài liệu riêng của nó.",
   },
 
-  /** 添加更多 Agent（settings-agent-catalog.jsx，产品设计 §7.6）。 */
+  /** Add more agents (settings-agent-catalog.jsx, product design §7.6). */
   catalog: {
     heading: "Thêm Agent",
     hint: "Có thể thêm Agent dòng lệnh khác hỗ trợ ACP (Agent Client Protocol). CucCut chưa kiểm chứng từng Agent; khả năng hoạt động phụ thuộc kết quả kiểm tra.",
@@ -78,7 +78,7 @@ export const vi: AgentMessages = {
       "Không thể thêm hoặc xóa Agent trong trình duyệt vì thao tác này quyết định lệnh chạy trên máy tính này. Hãy dùng ứng dụng CucCut trên máy tính.",
   },
 
-  /** 自定义命令对话框（settings-agent-catalog.jsx 的 `AgentCustomDialog`）。 */
+  /** Custom command dialog (`AgentCustomDialog` in settings-agent-catalog.jsx). */
   customDialog: {
     title: "Thêm Agent bằng lệnh tùy chỉnh",
     lede: "Nhập lệnh khởi động Agent ở chế độ ACP trong terminal. CucCut khởi động trực tiếp chương trình, không qua terminal.",
@@ -100,7 +100,7 @@ export const vi: AgentMessages = {
     exists: (id: string) => `Một Agent đã dùng “${id}”. Hãy chọn id khác.`,
   },
 
-  /** 用户添加的那一家的卡片（settings-agent-provider.jsx 的 `AddedInstallPanel` 与详情）。 */
+  /** The card for an agent the user added (`AddedInstallPanel` and the details in settings-agent-provider.jsx). */
   added: {
     chip: "Do bạn thêm",
     detect: "Kiểm tra",
@@ -138,15 +138,15 @@ export const vi: AgentMessages = {
   },
 
   /**
-   * 「用 Codex 画图」那一行（settings-agent-provider.jsx:103-119）。设计稿说打开后「图片 Tab、工具页与 ccut image 里多一只
-   * 「Codex 画图」」；现在出现它的地方是 `ccut image` 与会话里 Agent 的生图工具，菜单里的名字是 Provider 自己的「Codex」，照实写。
+   * The 「用 Codex 画图」 (Draw with Codex) row (settings-agent-provider.jsx:103-119). The design draft says that once it is turned on, the Image tab, the tools page and `ccut image` each gain one more 「Codex 画图」.
+   * Right now it appears in `ccut image` and in the agent's image-generation tool within a session. The name in the menu is the provider's own “Codex”, so it is written as is.
    */
   codexImage: {
     title: "Vẽ bằng Codex",
     body: "Không cần khóa; dùng gói đăng ký Codex của bạn. Mỗi lần một ảnh, bỏ qua kích thước và chất lượng, chậm hơn API 5–10 lần. Khi bật, ccut image và Agent trong phiên đều có thể chọn (tên “Codex”). Không được tự chọn cho bạn; để dùng mặc định, đặt làm mặc định trong Mô hình › Tạo hình ảnh › Mô hình đám mây.",
     checking: "Đang kiểm tra Codex trên máy tính này có thể vẽ không…",
     on: "Bật",
-    /** 补在 Provider 给的原因后面的句号（原因已经以句号结尾就不补）。 */
+    /** The full stop added after the reason the provider gives (not added if the reason already ends with one). */
     period: ".",
     probeFailed: "Không kiểm tra được khả năng vẽ của Codex · Nhấp “Kiểm tra lại” để thử lại.",
     outdated: "Codex quá cũ · Nâng cấp Codex CLI rồi bật tùy chọn này",
@@ -160,7 +160,7 @@ export const vi: AgentMessages = {
       enabled ? `Không bật Vẽ bằng Codex được: ${message}` : `Không tắt Vẽ bằng Codex được: ${message}`,
   },
 
-  /** 常见问题（page-settings-agent.jsx:142-157）。`link` 是答案下面那颗按钮。 */
+  /** Frequently asked questions (page-settings-agent.jsx:142-157). `link` is the button below each answer. */
   faq: [
     {
       key: "cost",
@@ -186,13 +186,13 @@ export const vi: AgentMessages = {
     },
   ] as readonly { key: string; title: string; body: string; link?: "models" | "skills" }[],
 
-  // ---- Agent 权限（设置 › 隐私与权限；page-settings-agent.jsx:166-185） ----
+  // ---- Agent permissions (Settings › Privacy & Permissions; page-settings-agent.jsx:166-185) ----
   permissionsHeading: "Bạn quyết định khi nào Agent hỏi trước",
   policyHeading: "Ít hỏi lặp lại hơn",
   policyHint: "Các quy tắc này tự động cho phép hành động phù hợp; chế độ truy cập cũng ảnh hưởng việc hỏi trước.",
   /**
-   * 三条放行策略的文案。设计稿页面渲染的是 page-settings-agent.jsx:20-24 的 `policyCopy`（:158 取它），
-   * data.js `agent.policy` 里的 label / desc 不上屏，只提供键与默认值。
+   * Copy for the three allow policies. The design-draft page renders `policyCopy` from page-settings-agent.jsx:20-24 (line 158 takes it).
+   * The label and desc in `agent.policy` in data.js do not appear on screen; they only provide the keys and default values.
    */
   policy: {
     read: { label: "Đọc nội dung video", desc: "Cho phép trợ lý xem bản chép lời và cài đặt video mà không hỏi mỗi lần." },
@@ -205,11 +205,11 @@ export const vi: AgentMessages = {
   saveFailed: (message: string) => `Không lưu được: ${message}`,
   ruleRemoved: (rule: string) => `Đã xóa quy tắc ${rule}`,
   ruleRemoveFailed: (message: string) => `Không xóa quy tắc được: ${message}`,
-  /** 访问模式那一行的说明：首次默认是哪一档、最近选的是哪一档。 */
+  /** The description line for the access mode: which level is the default the first time, and which level was chosen most recently. */
   modeHint: (firstDefault: string, last: string | null) =>
     `Chọn chế độ truy cập bên dưới ô nhập của từng phiên. Lần đầu mặc định là “${firstDefault}”; sau đó phiên mới giữ lựa chọn gần nhất của bạn${last ? ` (hiện tại “${last}”)` : ""}.`,
 
-  // ---- 高级（page-settings-agent.jsx:167-183） ----
+  // ---- Advanced (page-settings-agent.jsx:167-183) ----
   advancedHeading: "Nâng cao và khắc phục sự cố",
   advancedHint: "Không cần thay đổi gì ở đây khi kết nối hoạt động.",
   modelAutoUpdate: {
@@ -224,14 +224,14 @@ export const vi: AgentMessages = {
   techEmpty: "Chưa có kết quả kiểm tra.",
   techNotInstalled: "· Chưa cài",
   techNoModels: "Không báo danh sách mô hình",
-  /** 复制按钮与「已复制」提示里的那个名词。 */
+  /** The noun in the copy button and the “Copied” hint. */
   pathLabel: "đường dẫn",
   diagnosticsLabel: "chẩn đoán",
   copyDiagnostics: "Sao chép chẩn đoán",
   locateTitle: "Đặt vị trí Agent thủ công",
   locateSubtitle: "Dùng khi phát hiện tự động không tìm thấy",
 
-  /** 命令块、应用内运行与手动指定位置（agent-command-block.tsx）。 */
+  /** Command block, in-app run and manually specified location (agent-command-block.tsx). */
   command: {
     copied: (label: string) => `Đã sao chép ${label}`,
     copyFailed: "Không sao chép được. Hãy chọn văn bản và tự sao chép.",
@@ -266,7 +266,7 @@ export const vi: AgentMessages = {
     restoreAuto: "Dùng tìm tự động",
   },
 
-  // ---- Skills（产品设计 §6.9；原型 settings-agent-skills.jsx、settings-agent-skill-detail.jsx） ----
+  // ---- Skills (product design §6.9; prototypes settings-agent-skills.jsx and settings-agent-skill-detail.jsx) ----
   skills: {
     lede: "Skill là thư mục (SKILL.md và tệp tham khảo tùy chọn) hướng dẫn Agent trong CucCut làm việc theo cách nhất định. Khi bật, Agent tự dùng Skill khi thấy phù hợp với tác vụ; khi tắt, Skill chỉ được dùng khi bạn chọn từ “+” trong ô nhập. Bật, tắt, thêm hoặc xóa Skill có hiệu lực từ phiên Agent mới tiếp theo.",
     search: "Tìm Skill",
@@ -298,7 +298,7 @@ export const vi: AgentMessages = {
     diagnosticsTitle: (count: number) => `${count} thư mục không tải được`,
     diagnosticsHint: "Những thư mục này không phải Skill dùng được nên đã bị bỏ qua. Hãy sửa rồi quay lại trang này để tải lại.",
     diagnosticCode: { invalid: "Định dạng không hợp lệ", 'duplicate-id': "Trùng tên", 'builtin-conflict': "Trùng tên với Skill tích hợp" } as Record<string, string>,
-    /** 没能加载的那一行：文件夹 · 原因：第一条问题。 */
+    /** The row for a skill that failed to load: folder · reason: the first problem. */
     diagnosticLine: (dir: string, reason: string, issue: string) => `${dir} · ${reason}: ${issue}`,
     externalTitle: "Dùng CucCut từ Agent trong terminal hoặc ứng dụng khác",
     externalBody:

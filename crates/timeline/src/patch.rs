@@ -21,7 +21,7 @@
 //!     "update": {
 //!       "<trackId>": {
 //!         "kind"?, "name"?, "hidden"?, "muted"?, "locked"?,                  // field-level merge; null deletes an optional field
-//!         "elements": { "update": { "<elId>": { 字段: 值 | null } }, "splices": [ … ] }   // same shape as clips; the element key is `elements`
+//!         "elements": { "update": { "<elId>": { field: value | null } }, "splices": [ … ] }   // same shape as clips; the element key is `elements`
 //!       }
 //!     },
 //!     "splices": [ { "first","last","tracks":[Track] } | { "after","tracks":[Track] } ]

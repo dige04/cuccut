@@ -2,7 +2,7 @@ import type { DubOriginalAudio } from '@cuccut/protocol';
 import type { DubMessages, DubRegenMessages, TimelineDubMessages } from './dub-copy.ts';
 
 export const viDub: DubMessages = {
-  // 设置页
+  // Settings page
   title: "Lồng tiếng bản dịch",
   back: "Trở lại",
   web: "Lồng tiếng bản dịch cần ứng dụng máy tính",
@@ -88,7 +88,7 @@ export const viDub: DubMessages = {
   busy: "Video này đang có lồng tiếng; chờ xong trước khi bắt đầu khác.",
   readOnly: "Video chỉ đọc nên không lồng tiếng được.",
 
-  // 运行态
+  // Running state
   submitting: "Đang gửi lồng tiếng",
   queued: "Đang chờ",
   running: (language) => `Đang đọc · ${language}`,
@@ -100,7 +100,7 @@ export const viDub: DubMessages = {
   liveNote: "Khi xong, Runtime ghi thẳng vào dòng thời gian, có thể hoàn tác bất cứ lúc nào. Bạn có thể rời trang.",
   foreign: "Lồng tiếng này không bắt đầu tại đây. Khi xong, kiểm tra dòng thời gian; hoàn tác bằng Hoàn tác của trình chỉnh sửa.",
 
-  // 授权
+  // Authorization
   grantTitle: (recipient) => `Chưa có quyền gửi bản chép lời đến ${recipient}`,
   grantBody: "Lồng tiếng gửi bản dịch để tổng hợp (và bản gốc ở chỗ thiếu bản dịch) cho nhà cung cấp. Cấp quyền chỉ cho video này để tiếp tục; không gửi gì nếu thiếu quyền.",
   grantAction: "Cấp quyền và bắt đầu",
@@ -115,7 +115,7 @@ export const viDub: DubMessages = {
   grantNext: "Khi dịch và tổng hợp dùng nhà cung cấp khác nhau, mỗi bên cần quyền riêng.",
   commands: "Dòng lệnh",
 
-  // 问题
+  // Problems
   notConfigured: "Lồng tiếng chưa khả dụng",
   submitFailed: "Không bắt đầu lồng tiếng được",
   failed: "Lồng tiếng thất bại",
@@ -130,7 +130,7 @@ export const viDub: DubMessages = {
   stoppedAt: (synthesized, remaining) => `Dừng sau khi tổng hợp ${synthesized} câu; còn ${remaining} câu`,
   dismiss: "OK",
 
-  // 收据
+  // Receipt
   doneTitle: (language) => `Đã đọc bằng ${language}`,
   doneToast: (language, placed) => `Đã đọc bằng ${language} · đặt ${placed} câu lên dòng thời gian`,
   placed: (placed, total) => `Đặt ${placed} / ${total} câu lên dòng thời gian`,
@@ -186,7 +186,7 @@ export const viTimelineDub: TimelineDubMessages = {
 };
 
 export const viDubRegen: DubRegenMessages = {
-  // ---- 行头 ⋯ ----
+  // ---- Row header ⋯ ----
   headMenu: (label) => `Rãnh “${label}”`,
   headLine: (c) => [`${c.total} câu`, c.failed ? `${c.failed} chưa tổng hợp` : '', c.fast ? `${c.fast} quá nhanh` : '', c.muted ? `${c.muted} tắt tiếng` : '', c.queued ? `${c.queued} đang tạo lại` : ''].filter(Boolean).join(' · '),
   listenDub: "Nghe lồng tiếng",
@@ -204,19 +204,19 @@ export const viDubRegen: DubRegenMessages = {
   redubHint: "Mở Lồng tiếng bản dịch: đổi ngôn ngữ hoặc giọng rồi làm lại toàn nhóm",
   readOnly: "Video chỉ đọc",
 
-  // ---- 块菜单 ----
+  // ---- Block menu ----
   regenBlocks: (n) => n > 1 ? `Tạo lại ${n} câu này` : 'Tạo lại câu này',
   regenBlocksHint: "Tổng hợp lại cùng bản dịch và giọng · seed mới · giữ lần cũ",
   retext: "Sửa bản dịch và đọc lại…",
   retextHint: "Kiểm tra độ dài và sửa bản dịch trước rồi chỉ đọc lại câu này",
   inQueue: "Một số câu đang tạo lại",
 
-  // ---- 块 ----
+  // ---- Block ----
   queued: "Đang tạo lại…",
   queuedTip: (text) => `${text} · đang tạo lại`,
   version: (k, seed) => seed === null ? `Lần thu ${k}` : `Lần thu ${k} · seed ${seed}`,
 
-  // ---- 提交与收尾 ----
+  // ---- Submit and wrap-up ----
   submitted: (n) => `Đã bắt đầu tạo lại ${n} câu lồng tiếng`,
   submitFailed: (message) => `Không bắt đầu tạo lại được: ${message}`,
   grantRefused: (recipient) => `Tạo lại gửi bản dịch đến ${recipient}, chưa có quyền. Cấp quyền trong Cài đặt hoặc bắt đầu lại từ Lồng tiếng bản dịch.`,
@@ -229,7 +229,7 @@ export const viDubRegen: DubRegenMessages = {
   undo: "Hoàn tác",
   undoMissing: "Không tìm thấy chỉnh sửa do tạo lại ghi; dùng Hoàn tác của trình chỉnh sửa",
 
-  // ---- 改译文并重配 ----
+  // ---- Edit translation and redub ----
   fitTitle: (n) => `Sửa bản dịch và đọc lại ${n} câu`,
   fitIntro: "Bạn sửa câu dịch được đọc (câu sửa đánh dấu đã xem); phụ đề tạo từ đó không tách lại. Mỗi câu tổng hợp với seed mới, giữ lần cũ.",
   fitDub: (seconds, rate) => `Lồng tiếng ${seconds.toFixed(1).replace('.', ',')} giây${rate ? ` · ${rate}` : ''}`,
@@ -243,7 +243,7 @@ export const viDubRegen: DubRegenMessages = {
   fitSubmit: (n, changed) => changed ? `Sửa ${changed} và đọc lại ${n} câu` : `Đọc lại ${n} câu`,
   fitBusy: "Đang gửi…",
 
-  // ---- 属性页的版本 ----
+  // ---- Version on the properties page ----
   takesTitle: "Lần thu",
   takesAside: (n) => `${n} lần thu`,
   takeCurrent: "Hiện tại",

@@ -21,7 +21,7 @@ export const ko: LocalModelsMessages = {
     componentLine: (state: 'installed' | 'missing', size: string | null) => (state === 'installed' ? `설치됨${size ? ` · ${size}` : ''}` : `없음${size ? ` · ${size}` : ''}`),
     sharedWith: (ids: string[]) => `${ids.join(', ')}와(과) 공유`,
     noComponents: '이 Runtime은 구성 요소 세부 정보를 보고하지 않았습니다.',
-    // 确认对话框
+    // Confirmation dialog
     installTitle: (id: string) => `${id} 다운로드`,
     repairTitle: (id: string) => `“${id}” 모델을 복구할까요?`,
     completeTitle: (id: string) => `${id} 보완`,
@@ -39,7 +39,7 @@ export const ko: LocalModelsMessages = {
     cancel: '취소',
     close: '닫기',
     started: (id: string) => `${id} 다운로드 중 · 진행 상황은 이 행과 백그라운드 작업에 표시됩니다`,
-    // 停下与删除
+    // Stop and delete
     paused: (id: string) => `${id} 일시정지됨 · 이미 받은 부분은 남겨 둡니다`,
     discardTitle: (id: string) => `${id}의 다운로드된 부분을 폐기할까요?`,
     discardBody: '다음 다운로드는 처음부터 시작합니다. 다른 모델 패키지가 다운로드 중인 파일과 공유 구성 요소는 삭제하지 않습니다.',

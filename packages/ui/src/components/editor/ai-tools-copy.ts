@@ -122,7 +122,7 @@ const en = {
   agentCardNew: (agent: string) => `Starts a new session with this video as context; runs in ${agent} on this computer and asks before writing →`,
   stateChapters: (count: number) => (count === 1 ? '1 chapter' : `${count} chapters`),
 
-  // Calling a model directly (product design §5.10 「直接调模型」, prototype tool-prompt.jsx, model-ai-prompt.js `contextPack` / `contextLine` / `hint`)
+  // Calling a model directly (product design §5.10 “直接调模型” (call the model directly), prototype tool-prompt.jsx, model-ai-prompt.js `contextPack` / `contextLine` / `hint`)
   /** The reason, for each tool that cannot call a model directly and can only be handed to the Agent, shown on the “Use” row. */
   whyRetranscribe: 'Needs a speech model, and the Runtime’s transcription adds a whole new transcript instead of replacing a range, so only the Agent can do it',
   whyCleanup: 'Finding cuts means weighing each spot in context, so only the Agent can do it',

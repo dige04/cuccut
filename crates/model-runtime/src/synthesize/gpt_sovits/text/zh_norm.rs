@@ -1,4 +1,4 @@
-//! Chinese text normalization: replicates `TextNormalizer.normalize` from upstream `text/zh_normalization` (originally from PaddleSpeech), including `num.py`, `chronology.py`, `phonecode.py` and `quantifier.py`. Known quirks of upstream are copied as they are (the temperature unit is always 「度」, and the second 「半」 in a time range looks at the first minute).
+//! Chinese text normalization: replicates `TextNormalizer.normalize` from upstream `text/zh_normalization` (originally from PaddleSpeech), including `num.py`, `chronology.py`, `phonecode.py` and `quantifier.py`. Known quirks of upstream are copied as they are (the temperature unit is always “度”, and the second “半” in a time range looks at the first minute).
 
 use std::cell::Cell;
 use std::sync::LazyLock;
@@ -322,7 +322,7 @@ fn replace_phone(caps: &Captures) -> String {
 
 static RE_TEMPERATURE: LazyLock<Regex> = LazyLock::new(|| regex(r"(-?)(\d+(\.\d+)?)(°C|℃|度|摄氏度)"));
 fn replace_temperature(caps: &Captures) -> String {
-    // Upstream takes group(3) (the decimal part), so the unit is always 「度」
+    // Upstream takes group(3) (the decimal part), so the unit is always “度”
     format!("{}{}度", sign(caps, 1, "零下"), num2str(group(caps, 2)))
 }
 

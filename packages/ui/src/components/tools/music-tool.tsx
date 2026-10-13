@@ -74,7 +74,7 @@ import { usePreset, useRerun } from './video-tool-parts.tsx';
 
 const chips = style({ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, minWidth: 0 });
 const slider = style({ flexGrow: 1, minWidth: 160 });
-/** The slider's built-in readout is localized, e.g. 「30 秒 / 30 sec」. The maximum does not snap to the 5-second step; it follows the target plus “20% more”, e.g. 36, and must display that value exactly. */
+/** The slider's built-in readout is localized, e.g. “30 秒 / 30 sec”. The maximum does not snap to the 5-second step; it follows the target plus “20% more”, e.g. 36, and must display that value exactly. */
 const SECONDS: Intl.NumberFormatOptions = { style: 'unit', unit: 'second', unitDisplay: 'short' };
 const seedField = style({ width: 140 });
 const card = style({

@@ -728,7 +728,7 @@ export class ModelInstallService {
   }
 
   /**
-   * After installing, completing or repairing, Workers that are already loaded still have the old components: this model bundle's own (the optional components just added and the bad files replaced were not read), and the recognition bundles that use this “speaker diarization” bundle (which lack its components). Idle ones are unloaded first, and the next task loads them with the new components. Running tasks are not interrupted (they finish with the components they started with; those missing “说话人区分” report `diarization-unavailable`), and once idle they unload on timeout as usual.
+   * After installing, completing or repairing, Workers that are already loaded still have the old components: this model bundle's own (the optional components just added and the bad files replaced were not read), and the recognition bundles that use this “speaker diarization” bundle (which lack its components). Idle ones are unloaded first, and the next task loads them with the new components. Running tasks are not interrupted (they finish with the components they started with; those missing “说话人区分” (speaker diarization) report `diarization-unavailable`), and once idle they unload on timeout as usual.
    */
   #reloadAfterInstall(bundleId: string): void {
     for (const id of [bundleId, ...this.#catalog.diarizationUsers(bundleId)]) {

@@ -39,7 +39,7 @@ const text = style({ flexGrow: 1, minWidth: 0, overflow: 'hidden', textOverflow:
 
 /**
  * A strip at the top of the child-video editor's content area (prototype shorts-source.jsx `ShortsChildBanner`, product design §5.10): which video it was cut from, the cell for adjusting the cut's start and end in the script, and
- * “back to source”. On desktop the result page from that round still exists, and “回到原片” lands the right side on the result page in the AI Tools tab. The web has no AI Tools tab, so it only goes back to the source video.
+ * “back to source”. On desktop the result page from that round still exists, and “回到原片” (back to source) lands the right side on the result page in the AI Tools tab. The web has no AI Tools tab, so it only goes back to the source video.
  * When the source video is no longer in the video library (deleted), “回到原片” is not offered. When the video is not a child video (no derived source document), nothing is drawn.
  *
  * The cell depends on where the right column is (`cutEntryAction`). When the script is not open (or its panel is collapsed) it is “adjust in script”: switch to the script, open the cut, scroll to the cut seam in front of the clip, and

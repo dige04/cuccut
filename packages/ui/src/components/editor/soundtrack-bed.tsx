@@ -11,7 +11,7 @@ import { AI_TOOLS_COPY as C } from './ai-tools-copy.ts';
 import { useEditorActions } from './editor-context.tsx';
 
 /**
- * Once “generate soundtrack” finishes, the result is added directly to this video's music track (product design §2.7 “生成配乐”, architecture design §7.9 “laying down the generated soundtrack”). The Runtime only imports the result as an asset.
+ * Once “generate soundtrack” finishes, the result is added directly to this video's music track (product design §2.7 “生成配乐” (generate soundtrack), architecture design §7.9 “laying down the generated soundtrack”). The Runtime only imports the result as an asset.
  * Laying it on the timeline is an edit the UI commits in the editor: it is looped to fill the actual generated duration, with cross-faded seams and a fade-out at the end (music-bed.ts).
  * If the video is open when the task completes, it is laid down right away; if not, it is laid down the next time the video is opened. A video keeps only one soundtrack bed: generating another one replaces the previous bed (in the same transaction). Tasks already laid down are recorded
  * on this machine (soundtrack-store.ts) and marked in the instance's extension. If the asset is already on the timeline it is not laid down again. If it cannot be laid down, the editor shows one unified notice and does not retry. The toast states how it was laid, and it can be undone in one step.

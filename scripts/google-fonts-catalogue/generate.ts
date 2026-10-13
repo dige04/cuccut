@@ -1,4 +1,4 @@
-// 生成随 Runtime 发布的 Google Fonts 字体目录（`packages/runtime-core/src/fonts/google-fonts-catalogue.json`）。用法见同目录的 README.md。
+// Generates the Google Fonts catalogue that ships with the Runtime (`packages/runtime-core/src/fonts/google-fonts-catalogue.json`). For usage, see README.md in the same directory.
 //
 //   node scripts/google-fonts-catalogue/generate.ts [--metadata <文件>] [--licences <文件>] [--out <文件>]
 

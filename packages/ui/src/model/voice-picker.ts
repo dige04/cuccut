@@ -52,7 +52,7 @@ const M = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es,
 
 /**
  * Groups for the shared voice picker (design mockup voice-picker.jsx; model-cloud-tts.js `pickerGroups` / `valueLine`). Under a cloud model, the groups are:
- * Default · 「我的声音」(My voices; greyed out according to this provider's clone status, with “Clone new voice…” at the end) · this provider's voices · a manually entered voice ID · a temporary reference clip.
+ * Default · “我的声音” (My voices; greyed out according to this provider's clone status, with “Clone new voice…” at the end) · this provider's voices · a manually entered voice ID · a temporary reference clip.
  * “Clone new voice…” only goes to 设置 › 模型 › 语音合成 › 我的声音 (Settings › Models › Speech synthesis › My voices), where cloning is created. “Temporary reference clip”: this version's synthesis API does not accept a temporary reference audio, so it is greyed out with the reason.
  */
 

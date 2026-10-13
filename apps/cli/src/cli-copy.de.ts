@@ -3,7 +3,7 @@ import type { CliMessages } from './cli-copy.ts';
 
 
 export const de: CliMessages = {
-  // 一屏帮助（Agent 面设计 §5.7）
+  // One-screen help (Agent surface design §5.7)
   helpTagline:
     "cuccut — Videos mit CucCut transkribieren, übersetzen, bearbeiten, vertonen und exportieren. Führen Sie zuerst `cuccut status` aus, um die Möglichkeiten dieses Computers zu prüfen.",
   helpFlows: "Abläufe (geben einen Auftrag zurück; warten standardmäßig auf dessen Abschluss)",
@@ -32,7 +32,7 @@ export const de: CliMessages = {
   helpExamples: "Beispiele",
   helpCommonFlags: "Allgemeine Flags",
 
-  // 输出
+  // Output
   nextLabel: "weiter",
   errorLabel: "Fehler",
   runtimeStartedNote: "(eine CucCut-Runtime wurde im Hintergrund gestartet; sie beendet sich bei Inaktivität selbst)",
@@ -41,7 +41,7 @@ export const de: CliMessages = {
   resultFileWritten:
     "Das vollständige Ergebnis steht wie mit --result-file angefordert in der Datei unter path (JSON). coverage enthält die Schlüssel der obersten Ebene und die Array-Längen, summary die kurzen Felder.",
 
-  // 参数
+  // Arguments
   unknownCommand: (command: string) => `Unbekannter Befehl: ${command}. Führen Sie cuccut --help aus, um die Befehle anzuzeigen.`,
   unknownFlag: (flag: string, command: string) => `Unbekanntes Flag ${flag} für cuccut ${command}. Siehe cuccut help ${command}.`,
   missingValue: (flag: string) => `${flag} benötigt einen Wert.`,
@@ -74,7 +74,7 @@ export const de: CliMessages = {
     `Die Installation des lokalen Modells ${bundleId} lädt ${size} von ${source} herunter; nichts wurde heruntergeladen. Teilen Sie dem Benutzer die Größe mit und führen Sie den Befehl mit --yes erneut aus, sobald er zugestimmt hat.`,
   sizeEstimated: " (geschätzt)",
 
-  // 元命令的帮助（§4.5）
+  // Help for meta-commands (§4.5)
   metaHelp: {
     help: "cuccut help [<command>]\n\nOhne Befehl: Übersicht auf einer Bildschirmseite. Mit Befehl (`help videos`, `help videos inspect`, `help runtime`): Parameter, Wirkung und Beispiele. Verwendet den Katalog einer laufenden Runtime, andernfalls den Offline-Katalog; startet niemals eine Runtime.",
     spec: "cuccut spec [<name>]\n\nDer maschinenlesbare Katalog als reines JSON (ohne Hülle) mit seiner Schnittstellenversion. <name> ist ein Werkzeugname (videos_inspect), ein Name mit Punkt (videos.inspect), ein Befehl (videos inspect) oder edits.<operation> für einen Vorgang von edits apply. Verwendet den Katalog einer laufenden Runtime, andernfalls den Offline-Katalog; startet niemals eine Runtime.",
@@ -96,7 +96,7 @@ export const de: CliMessages = {
     ].join("\n"),
   } as Record<"help" | "spec" | "version" | "status" | "runtime", string>,
 
-  // Runtime 的归属（§5.6）
+  // Runtime ownership (§5.6)
   runtimeNotRunning: (home: string) => `Keine CucCut-Runtime läuft für ${home}, und --no-start wurde angegeben.`,
   runtimeNoEntry:
     "Keine CucCut-Runtime läuft und keine konnte gestartet werden: Installieren Sie die CucCut-App, führen Sie den Befehl aus dem Repository aus oder setzen Sie CUCCUT_RUNTIME_ENTRY auf den Runtime-Einstiegspunkt.",
@@ -110,7 +110,7 @@ export const de: CliMessages = {
   interfaceMismatch: (cli: string, runtime: string, update: "cli" | "runtime") =>
     `Diese CLI verwendet Werkzeugschnittstellenversion ${cli}, die Runtime verwendet ${runtime}. ${update === "cli" ? "Aktualisieren Sie die CLI." : "Aktualisieren Sie die CucCut-App (oder starten Sie die Runtime aus demselben Checkout wie die CLI neu)."}`,
 
-  // 任务（§5.4）
+  // Tasks (§5.4)
   jobCancelling: (jobId: string) => `Abbrechen: ${jobId}… (drücken Sie erneut Ctrl-C, um das Warten sofort zu beenden)`,
   jobCancelFailed: (reason: string) => `Der Auftrag ließ sich nicht abbrechen: ${reason}`,
   jobEnded: (state: string) => `Der Auftrag wurde beendet: ${state}.`,
@@ -118,6 +118,6 @@ export const de: CliMessages = {
     "cuccut status --full listet alle Anbieter und Modelle für jede Funktion auf; für eine einzelne Funktion führen Sie cuccut models capabilities --capability <capability> aus, für Paketdetails cuccut models list.",
   waitTimeout: (seconds: number, jobId: string) => `Warten beendet nach ${seconds} s; Auftrag ${jobId} läuft weiter.`,
 
-  // 管理桶（admin/context.ts）
+  // Admin bucket (admin/context.ts)
   noRuntimeClient: "Dieser Befehl verbindet sich nicht mit der Runtime",
 };

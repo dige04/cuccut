@@ -83,7 +83,7 @@ export type ToolId =
 
 /**
  * Display name of each cell (prototype `ITEM`). For icon buttons, the name is the hover tooltip.
- * The prototype writes “copy” as “copy”, which means making another copy (⌘D); here “复制” already means putting it on the clipboard with ⌘C, so it is written as “duplicate”, the wording used on the prototype's multi-select page.
+ * The prototype writes “copy” as “copy”, which means making another copy (⌘D); here “复制” (copy) already means putting it on the clipboard with ⌘C, so it is written as “duplicate”, the wording used on the prototype's multi-select page.
  */
 export const TOOL_LABEL: Record<ToolId, string> = live(() => M.toolLabel);
 

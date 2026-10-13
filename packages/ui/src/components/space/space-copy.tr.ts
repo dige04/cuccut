@@ -5,7 +5,7 @@ export const tr: SpaceMessages = {
   searchPlaceholder: "Adlarda, dosyalarda veya videolarda söylenenlerde ara",
   searchLabel: "Kitaplık’ta ara",
 
-  // 列表与菜单
+  // List and menu
   openVideo: "Video aç",
   viewInfo: "Bilgileri gör",
   viewInfoFiles: "Bilgileri ve dosyaları gör",
@@ -36,7 +36,7 @@ export const tr: SpaceMessages = {
   noValue: '—',
   favorited: "Favorilere eklendi",
 
-  // 工具条
+  // Toolbar
   statusPicker: "Durum",
   refreshMenu: "Yenile",
   rescan: "Proje klasörlerini yeniden tara",
@@ -46,7 +46,7 @@ export const tr: SpaceMessages = {
   scanning: "Proje klasörleri taranıyor",
   rebuilt: (entries,pending) => pending > 0 ? `Dizin yeniden oluşturuldu · ${entries} öğe · ${pending} videonun içerik dizini arka planda güncelleniyor` : `Dizin yeniden oluşturuldu · ${entries} öğe`,
 
-  // 新建
+  // New
   newLabel: "Yeni",
   newBlank: "Yeni boş video",
   newBlankHint: "Yazıya dökme veya sıra olmadan hemen açılan 16:9 boş video",
@@ -69,7 +69,7 @@ export const tr: SpaceMessages = {
   createdFromFile: (name) => `${name} adlı video oluşturuldu ve medya yerleştirildi`,
   createdEmpty: (reason) => `Video oluşturuldu, ancak medya yerleştirilmedi: ${reason}`,
 
-  // 导入框（原型 SpaceImport）
+  // Import dialog (prototype SpaceImport)
   importTitle: "Medya içe aktar",
   importProject: "Projeye içe aktar",
   importHint: "Video, ses veya görsel seçin. Proje klasöründeki dosyalar yerinde kaydedilir; dışındaki dosyalar projenin imports/ klasörüne kopyalanır, özgün dosyalar yerinde kalır. Hiçbir videoya ekleme yapılmaz.",
@@ -77,7 +77,7 @@ export const tr: SpaceMessages = {
   importNoProject: "Henüz proje yok; önce Home’da proje klasörü açın.",
   importing: "İçe aktarılıyor",
 
-  // 查看框
+  // Viewer dialog
   factSource: "Kaynak",
   factFile: "Dosya",
   factMeasure: "Süre veya boyutlar",
@@ -94,7 +94,7 @@ export const tr: SpaceMessages = {
   continueBlocked: (reason) => `Oturumda devam et: ${reason}`,
   version: (frozen,current) => current && current !== frozen ? `Video sürümü ${frozen}; video şimdi ${current}` : `Video sürümü ${frozen}`,
   missingTitle: "Bu dosya bulunamıyor",
-  // 卡片角标与列表缩略图的读屏说明（原型 sp-prev__flag）
+  // Screen-reader text for the card badge and list thumbnail (prototype sp-prev__flag)
   missingFile: "Dosya bulunamadı",
   missingBody: "Öğe hâlâ burada. Dosya geri geldiğinde durumu düzelir.",
   failedTitle: "Oluşturma başarısız",
@@ -104,7 +104,7 @@ export const tr: SpaceMessages = {
   reexport: "Kaynak videodan yeniden dışa aktar",
   noPreviewVideo: "Videolar düzenleyicide açılır.",
 
-  // 能力（origin.capability）
+  // Capability (origin.capability)
   capability: {
     synthesizeSpeech: "Dublaj",
     generateImage: "Görsel oluştur",
@@ -114,7 +114,7 @@ export const tr: SpaceMessages = {
     'videos-derive': 'Kısa videolara böl',
   },
 
-  // 动作的结果
+  // Action results
   trashed: (name) => `Çöp sepetine taşındı · ${name}`,
   undo: "Geri al",
   restored: (name) => `Geri yüklendi · ${name}`,
@@ -125,13 +125,13 @@ export const tr: SpaceMessages = {
   sourceGone: "Kaynak video şu anda hiçbir proje veya oturum klasöründe değil; açılamaz",
   failed: (what,reason) => `${what} başarısız: ${reason}`,
 
-  // 删除视频（产品设计 §4.9）
+  // Delete video (product design §4.9)
   trashVideoTitle: "Bu video silinsin mi?",
   trashVideoBody: "Video klasörünün tamamı projenin Çöp sepetine taşınır ve geri yüklenebilir. Bağlı özgün medyalar yerinde kalır.",
   trashVideoRelated: (n) => `Bu videodan dışa aktarılan veya oluşturulan ${n} öğe Kitaplık’ta kalır; videoyla birlikte silinmez:`,
   trashVideoConfirm: "Videoyu sil",
 
-  // 彻底删除
+  // Delete permanently
   purgeTitle: "Kalıcı silinsin mi?",
   purgeBody: (name) => `${name} adlı öğe diskten silinir ve geri yüklenemez. Bir video veya çalışan görev hâlâ kullanıyorsa silinmez; neyin kullandığı gösterilir.`,
   purgeVideoBody: (name) => `${name} adlı videonun tüm klasörü diskten silinir ve geri yüklenemez. Bağlı özgün medyalar etkilenmez.`,
@@ -140,20 +140,20 @@ export const tr: SpaceMessages = {
   blockedBody: (name) => `${name} hâlâ kullanımda; hiçbir şey silinmedi:`,
   gotIt: "Anladım",
 
-  // 改名
+  // Rename
   renameTitle: "Yeniden adlandır",
   renameLabel: "Görünen ad",
   renameHint: (fileName) => `Yalnızca Kitaplık’ta görünen adı değiştirir; dosya aynı kalır. ${fileName} adına dönmek için boş bırakın.`,
   save: "Kaydet",
 
-  // 来源视频改过（产品设计 §4.6）
+  // Source video changed (product design §4.6)
   changedDialogTitle: "Kaynak video değişti",
   changedDialogBody: (frozen,current) => `Bu sonuç video sürümü ${frozen ?? '(bilinmiyor)'} için geçerlidir; video şimdi ${current ?? '(bilinmiyor)'}. Geçerli çalışma kopyası açılır.`,
   changedOpenCurrent: "Geçerli çalışma kopyasını aç",
   changedFromFrozen: "O sürümden devam et",
   changedFromFrozenReason: "Dışa aktarmanın yapıldığı sürümden devam etmek henüz mümkün değil (Runtime sürüme dönme komutu sunmuyor). Geçerli çalışma kopyasını açıp o sürümü Geçmişte görebilirsiniz.",
 
-  // 内容命中（架构设计 §5.11）
+  // Content hits (architecture design §5.11)
   hitsTitle: "Videolarda söylenenler",
   hitsCount: (n) => `${n} eşleşme`,
   hitsSearching: "İçerik dizininde aranıyor",
@@ -162,7 +162,7 @@ export const tr: SpaceMessages = {
   hitUnopenable: "Bu video şu anda hiçbir proje veya oturum klasöründe değil ya da Çöp sepetinde; açılamaz",
   hitSourceClock: "Bu içerik medyada, zaman çizelgesinde değil; videoyu açıp arayın",
   hitStale: "Video dizinlendikten sonra değişti; konum doğru olmayabilir",
-  // 内容命中的过滤与分组（设计稿 page-projects.jsx HitGroup；种类、说话人是合同 space.search 的筛选）
+  // Filtering and grouping of content hits (design draft page-projects.jsx HitGroup; kind and speaker are the filters of contract space.search)
   hitsGrouped: (n,videos) => `${n} eşleşme · ${videos} video`,
   hitKind: "Belge türü",
   hitKindAll: "Tüm türler",
@@ -172,7 +172,7 @@ export const tr: SpaceMessages = {
   hitsNoneFiltered: "Bu tür veya konuşmacıyla eşleşme yok. Başka birini deneyin.",
   hitsMore: (n) => `${n} tane daha göster`,
 
-  // 页面里的其余文字
+  // Other text on the page
   cancel: "İptal",
   openForEdit: "Düzenlemek için aç",
   newVideo: "Yeni video",

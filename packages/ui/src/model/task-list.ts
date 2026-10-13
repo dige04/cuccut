@@ -228,7 +228,7 @@ export function jobRow(job: JobRecord, ctx: TaskContext): TaskRow {
       : running
         ? { label: pct == null ? phase! : `${phase} · ${pct}%`, tone: 'accent' as const }
         : JOB_ENDED[job.state as keyof typeof JOB_ENDED];
-  // The transcription pipeline shows “转录” and draws the transcription icon: it is the same kind as the row combined with it during its transcription (`taskRows`), so nothing jumps before or after.
+  // The transcription pipeline shows “转录” (transcribe) and draws the transcription icon: it is the same kind as the row combined with it during its transcription (`taskRows`), so nothing jumps before or after.
   const kind: TaskKind = isTranscribePipeline(job) ? 'transcribe' : job.kind;
   return {
     id: job.jobId,

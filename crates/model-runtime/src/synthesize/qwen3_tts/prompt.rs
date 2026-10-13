@@ -40,7 +40,7 @@ pub fn role_tokens() -> [i32; 3] {
     [IM_START, ASSISTANT, NEWLINE]
 }
 
-/// codec 前缀：`[think, think_bos, lang, think_eos, (spk)?, pad, bos]`。
+/// Codec prefix: `[think, think_bos, lang, think_eos, (spk)?, pad, bos]`.
 pub fn codec_prefix(language_id: i32, speaker_token: Option<i32>) -> Vec<i32> {
     let mut prefix = vec![CODEC_THINK, CODEC_THINK_BOS, language_id, CODEC_THINK_EOS];
     if let Some(spk) = speaker_token {

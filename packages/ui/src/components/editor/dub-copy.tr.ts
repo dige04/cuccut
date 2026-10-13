@@ -2,7 +2,7 @@ import type { DubOriginalAudio } from '@cuccut/protocol';
 import type { DubMessages, DubRegenMessages, TimelineDubMessages } from './dub-copy.ts';
 
 export const trDub: DubMessages = {
-  // 设置页
+  // Settings page
   title: "Çeviri dublajı",
   back: "Geri",
   web: "Çeviri dublajı masaüstü uygulaması gerektirir",
@@ -88,7 +88,7 @@ export const trDub: DubMessages = {
   busy: "Bu videoda dublaj zaten sürüyor; yenisini başlatmadan önce bitmesini bekleyin.",
   readOnly: "Video salt okunur; dublaj yapılamaz.",
 
-  // 运行态
+  // Running state
   submitting: "Dublaj gönderiliyor",
   queued: "Sırada",
   running: (language) => `Seslendiriliyor · ${language}`,
@@ -100,7 +100,7 @@ export const trDub: DubMessages = {
   liveNote: "Bitince Runtime doğrudan zaman çizelgesine yazar; her zaman geri alabilirsiniz. Bu sayfadan ayrılabilirsiniz.",
   foreign: "Bu dublaj buradan başlatılmadı. Bitince zaman çizelgesini denetleyin; düzenleyicinin Geri al düğmesiyle geri alın.",
 
-  // 授权
+  // Authorization
   grantTitle: (recipient) => `Dökümü ${recipient} alıcısına göndermek için henüz izin yok`,
   grantBody: "Dublaj sentezlenecek çeviriyi (ve çeviri olmayan yerde özgün metni) sağlayıcıya gönderir. Devam etmek için yalnızca bu video kapsamında izin verin; izinsiz veri gönderilmez.",
   grantAction: "İzin ver ve başlat",
@@ -115,7 +115,7 @@ export const trDub: DubMessages = {
   grantNext: "Çeviri ve sentez farklı sağlayıcılardaysa her biri ayrı izin gerektirir.",
   commands: "Komut satırı",
 
-  // 问题
+  // Issues
   notConfigured: "Dublaj henüz kullanılamıyor",
   submitFailed: "Dublaj başlatılamadı",
   failed: "Dublaj başarısız",
@@ -130,7 +130,7 @@ export const trDub: DubMessages = {
   stoppedAt: (synthesized, remaining) => `${synthesized} cümle sentezlendikten sonra durdu; ${remaining} kaldı`,
   dismiss: "Tamam",
 
-  // 收据
+  // Receipt
   doneTitle: (language) => `${language} dilinde seslendirildi`,
   doneToast: (language, placed) => `${language} dilinde seslendirildi · ${placed} cümle zaman çizelgesine yerleştirildi`,
   placed: (placed, total) => `${placed} / ${total} cümle zaman çizelgesine yerleştirildi`,
@@ -186,7 +186,7 @@ export const trTimelineDub: TimelineDubMessages = {
 };
 
 export const trDubRegen: DubRegenMessages = {
-  // ---- 行头 ⋯ ----
+  // ---- Row header ⋯ ----
   headMenu: (label) => `“${label}” izi`,
   headLine: (c) => [`${c.total} cümle`, c.failed ? `${c.failed} sentezlenmedi` : '', c.fast ? `${c.fast} çok hızlı` : '', c.muted ? `${c.muted} sessiz` : '', c.queued ? `${c.queued} yeniden oluşturuluyor` : ''].filter(Boolean).join(' · '),
   listenDub: "Dublajı dinle",
@@ -204,19 +204,19 @@ export const trDubRegen: DubRegenMessages = {
   redubHint: "Çeviri dublajı açar: dili veya sesi değiştirip tüm grubu yeniden yapın",
   readOnly: "Video salt okunur",
 
-  // ---- 块菜单 ----
+  // ---- Block menu ----
   regenBlocks: (n) => n > 1 ? `Bu ${n} cümleyi yeniden oluştur` : 'Bu cümleyi yeniden oluştur',
   regenBlocksHint: "Aynı çeviri ve sesi yeniden sentezle · yeni tohum · eski kayıt korunur",
   retext: "Çeviriyi düzenle ve yeniden seslendir…",
   retextHint: "Önce süreleri kontrol edip çeviriyi düzenleyin, sonra yalnızca bu cümleleri seslendirin",
   inQueue: "Bazı cümleler yeniden oluşturuluyor",
 
-  // ---- 块 ----
+  // ---- Block ----
   queued: "Yeniden oluşturuluyor…",
   queuedTip: (text) => `${text} · yeniden oluşturuluyor`,
   version: (k, seed) => seed === null ? `Kayıt ${k}` : `Kayıt ${k} · tohum ${seed}`,
 
-  // ---- 提交与收尾 ----
+  // ---- Submit and wrap-up ----
   submitted: (n) => `${n} dublaj cümlesinin yeniden oluşturulması başladı`,
   submitFailed: (message) => `Yeniden oluşturma başlatılamadı: ${message}`,
   grantRefused: (recipient) => `Yeniden oluşturma çeviriyi ${recipient} alıcısına gönderir; henüz izin yok. Ayarlar kısmında izin verin veya Çeviri dublajı içinden yeniden başlayın.`,
@@ -229,7 +229,7 @@ export const trDubRegen: DubRegenMessages = {
   undo: "Geri al",
   undoMissing: "Bu yeniden oluşturmanın düzenlemesi bulunamadı; düzenleyicinin Geri al düğmesini kullanın",
 
-  // ---- 改译文并重配 ----
+  // ---- Edit translation and redub ----
   fitTitle: (n) => `Çeviriyi düzenle ve ${n} cümleyi yeniden seslendir`,
   fitIntro: "Okunacak çevrilmiş cümleyi düzenliyorsunuz (düzenlenenler gözden geçirildi işaretlenir); altyazılar yeniden bölünmez. Her cümle yeni tohumla sentezlenir, eski kayıt korunur.",
   fitDub: (seconds, rate) => `Dublaj ${seconds.toFixed(1).replace('.', ',')} sn${rate ? ` · ${rate}` : ''}`,
@@ -243,7 +243,7 @@ export const trDubRegen: DubRegenMessages = {
   fitSubmit: (n, changed) => changed ? `${changed} düzenle ve ${n} cümleyi seslendir` : `${n} cümleyi seslendir`,
   fitBusy: "Gönderiliyor…",
 
-  // ---- 属性页的版本 ----
+  // ---- Takes on the properties page ----
   takesTitle: "Kayıtlar",
   takesAside: (n) => `${n} kayıt`,
   takeCurrent: "Mevcut",

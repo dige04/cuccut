@@ -7,7 +7,7 @@ import { useEditor, type PanelTab } from '../../state/editor-store.ts';
 
 /** Context carried when another panel navigates here: which translation a stale-translation refresh comes from, and the language a translate-and-dub pairs with. */
 export interface AiToolPreset {
-  /** The translation's language name (e.g. 「英语」, English). */
+  /** The translation's language name (e.g. “英语”, English). */
   language?: string | null;
   /** Refresh stale translations: which translation it comes from (the subtitle panel's translation list); when calling the model directly, it refreshes that one by default. */
   translationId?: Id | null;

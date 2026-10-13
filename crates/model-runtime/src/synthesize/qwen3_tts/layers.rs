@@ -143,7 +143,7 @@ impl Embedding {
         })
     }
 
-    /// `ids` 形状 `[B, S]`（Int32）→ `[B, S, D]`。
+    /// `ids` of shape `[B, S]` (Int32) → `[B, S, D]`.
     pub fn forward(&self, ids: &Array) -> Array {
         self.weight.index(ids)
     }
@@ -172,7 +172,7 @@ impl SwigluMlp {
     }
 }
 
-/// 单层的 KV cache：`[B, KV, T, D]`。
+/// KV cache of a single layer: `[B, KV, T, D]`.
 #[derive(Clone)]
 pub struct KvCache {
     pub keys: Array,
@@ -185,7 +185,7 @@ impl KvCache {
     }
 }
 
-/// Qwen3 风格 GQA 注意力：q/k RMSNorm → RoPE（非 traditional）→ KV cache 拼接 → SDPA。
+/// Qwen3-style GQA attention: q/k RMSNorm → RoPE (non-traditional) → KV cache concatenation → SDPA.
 pub struct Attention {
     num_heads: i32,
     num_kv_heads: i32,

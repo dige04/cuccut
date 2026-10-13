@@ -20,7 +20,7 @@ function exportKindLabel(kind: string): string {
   }
 }
 
-/** 从链接导入的摘要结尾：下载之后做什么。 */
+/** The end of the summary for an imported link: what to do after downloading. */
 function linkImportAfter(p: { target: string; name: string | null; transcribe: boolean; language: string | null; provider: string | null; model: string | null; captions: boolean }): string {
   const recognition = `${p.language ? `, lingua ${p.language}` : ''}${p.provider ? ` (${p.provider}${p.model ? ` ${p.model}` : ''})` : ''}`;
   if (p.target === 'create') {
@@ -39,9 +39,9 @@ function plural(count: number, one: string, many: string): string {
 export const it: RcAgentToolsMessages = {
   instructionsNotSet: 'Le istruzioni della sessione non sono state impostate: l’ordine di assemblaggio del Runtime è errato',
 
-  /** 列表里各项之间的分隔。 */
+  /** Separator between items in a list. */
   listSeparator: ', ',
-  /** 几段说明之间的分隔。 */
+  /** Separator between several explanatory paragraphs. */
   clauseSeparator: '; ',
 
   createVideoSummary: (p: { name: string }) => `Crea il video «${p.name}»`,
@@ -52,24 +52,24 @@ export const it: RcAgentToolsMessages = {
     `${p.label} (${plural(p.count, 'operazione', 'operazioni')}: ${p.types})`,
   captionsSummary: (p: { documentId: string; bilingual: boolean }) =>
     `Aggiungi un livello di sottotitoli ${p.bilingual ? 'bilingue ' : ''}per il documento ${p.documentId}`,
-  /** 建立字幕层这笔修改在视频历史与撤销里的说明。 */
+  /** Description, in video history and undo, of the edit that creates the subtitle layer. */
   captionsLabel: 'Aggiungi livello di sottotitoli',
   undoSummary: (p: { transactionId: string }) => `Annulla la modifica ${p.transactionId}`,
   undoLatestSummary: 'Annulla l’ultima modifica',
   deleteVideoSummary: (p: { name: string; path: string; days: number }) =>
     `Elimina il video «${p.name}» (${p.path}): spostalo nel Cestino, da cui puoi ripristinarlo nella Libreria per ${plural(p.days, 'giorno', 'giorni')}. I file originali dei materiali collegati restano dove sono`,
   importPackageSummary: (p: { file: string }) => `Apri il pacchetto portatile ${p.file}`,
-  /** 打开便携包时给了 name、改视频名这笔修改在视频历史里的说明。 */
+  /** Description, in video history, of the edit that renames the video when a portable package is opened with a name given. */
   renameVideoLabel: 'Rinomina video',
   putDocumentSummary: (p: { documentId: string }) => `Scrivi una nuova versione del documento ${p.documentId}`,
   newDocumentSummary: (p: { kind: string }) => `Crea un documento (${p.kind})`,
-  /** 写文档这笔修改在视频历史与撤销里的说明（智能体没有给 label 时）。 */
+  /** Description, in video history and undo, of the document-writing edit (used when the agent gives no label). */
   updateDocumentLabel: (p: { name: string }) => `Aggiorna il documento «${p.name}»`,
   newDocumentLabel: (p: { name: string }) => `Crea il documento «${p.name}»`,
-  /** 新建译文没有给名字时，说明里用的名字。 */
+  /** Name used in the description when a new translation is created without a name. */
   translationDocumentName: (p: { language: string }) => `${p.language} — traduzione`,
   importAssetSummary: (p: { name: string; place: boolean }) => `Importa il materiale ${p.name}${p.place ? ' e aggiungilo alla timeline' : ''}`,
-  /** 导入素材这笔修改在视频历史与撤销里的说明。 */
+  /** Description, in video history and undo, of the edit that imports media. */
   importAssetLabel: (p: { name: string; place: boolean }) => `Importa ${p.name}${p.place ? ' e aggiungilo alla timeline' : ''}`,
   replaceCompositionSummary: (p: { name: string; clip: string }) => `Importa ${p.name} e sostituisci la clip ${p.clip} nella timeline`,
   replaceCompositionLabel: (p: { name: string }) => `Sostituisci la grafica animata con ${p.name}`,

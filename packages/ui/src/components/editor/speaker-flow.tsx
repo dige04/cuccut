@@ -243,7 +243,7 @@ export function SpeakerFlow({
     );
   }
 
-  // “back” on the receipt page, like “done”, returns to the settings page (the prompt is still there). “返回” on the settings page is what goes back to the list.
+  // “back” on the receipt page, like “done”, returns to the settings page (the prompt is still there). “返回” (back) on the settings page is what goes back to the list.
   const showsReceipt = !run && !proposal && !!receipt;
   return (
     <>

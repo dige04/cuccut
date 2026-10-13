@@ -14,7 +14,7 @@ export const trSubtitle: SubtitleMessages = {
   pickTranscribe: "Yazıya dök ve oluştur",
   pickReuse: "Mevcut dökümden oluştur · yeniden tanıma yapılmaz",
 
-  // 转录中（LiveHead）
+  // Transcribing (LiveHead)
   liveTitle: "Yazıya dökülüyor",
   submitting: "Yazıya dökme isteği gönderiliyor",
   writing: "Altyazılar oluşturuluyor",
@@ -31,7 +31,7 @@ export const trSubtitle: SubtitleMessages = {
   cancelled: "Transkripsiyon iptal edildi",
   cancelFailed: (message) => `Yazıya dökme iptal edilemedi: ${message}`,
 
-  // 结果与问题
+  // Results and issues
   generated: (count,from,to) => `${count} altyazı oluşturuldu · ${from} → ${to}`,
   created: (count) => `${count} altyazı oluşturuldu`,
 
@@ -60,7 +60,7 @@ export const trSubtitle: SubtitleMessages = {
   unapplied: (message) => `${message ? `${message}. ` : ''}Tanıma sonucu hâlâ kullanılabilir; Arka plan görevlerinden videoya yeniden yazabilirsiniz. Ardından “Altyazı oluştur” bu sonucu doğrudan kullanır.`,
   decide: "Arka plan görevleri kısmında çöz",
 
-  // 轨条与样式入口卡
+  // Track bar and style entry card
   onScreen: "Ekranda",
   defaultStyle: "Varsayılan stil",
   styleEntry: (n) => n ? `Stili düzenle · ekranda ${n} altyazı izi` : 'Stili düzenle',
@@ -88,7 +88,7 @@ export const trSubtitle: SubtitleMessages = {
   flipOff: "Yalnızca özgün metin ve çeviri aynı stili paylaşıp ekranda birlikte görünüyorsa yerlerini değiştirebilirsiniz; henüz böyle bir çift yok",
   flipped: (translationFirst) => `Yerleri değiştirildi · ${translationFirst ? 'çeviri üstte, özgün metin altta' : 'özgün metin üstte, çeviri altta'}`,
 
-  // 列表
+  // List
   stats: (cues,sentences) => `${cues} altyazı · ${sentences} cümle`,
   seam: "Merge up",
   seamSpeaker: "Farklı konuşmacılar · birleştirilemez",
@@ -155,7 +155,7 @@ export const trNotConfigured: NotConfiguredMessages = {
 };
 
 export const trCaptionStyle: CaptionStyleMessages = {
-  // 画廊
+  // Gallery
   title: "Altyazı stilleri",
   back: "Altyazılara dön",
   open: "Stili değiştir",
@@ -171,7 +171,7 @@ export const trCaptionStyle: CaptionStyleMessages = {
   foreign: (schema) => `Bu altyazı stilinin biçimi: ${schema}; galeri bu biçime uygulanamaz.`,
   readOnly: "Bu video şu anda değiştirilemiyor; stil kartları yalnızca görüntülenebilir.",
 
-  // 属性页
+  // Properties page
   lineSwitch: "Düzenlenecek satır",
   original: "Özgün",
   translation: "Çeviri",

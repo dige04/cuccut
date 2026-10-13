@@ -26,7 +26,7 @@ import { M } from './transcribe-setup-copy.ts';
  *
  * The defaults equal setting nothing: when no model is picked, `provider` / `model` are not sent (the Runtime picks by the user's default, then the factory default; if neither exists, it still rejects with
  * `CAPABILITY_NOT_CONFIGURED` and gives a next step); when the language is automatic, `language` is not sent; the glossary is never sent explicitly, and the Runtime reads the ones enabled for the video
- * (`glossaries.transcribe` from `library.getVideoSelection`). So leaving the settings alone and pressing 「生成字幕」 directly behaves exactly as before.
+ * (`glossaries.transcribe` from `library.getVideoSelection`). So leaving the settings alone and pressing “生成字幕” (Generate subtitles) directly behaves exactly as before.
  */
 
 /** The limit on the hint (prompt + terms), the same as `hint` in `models.transcribe` (the Runtime's `TRANSCRIBE_HINT_MAX_CHARS`). */

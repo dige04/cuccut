@@ -54,7 +54,7 @@ import { useToolStatus } from './use-tool-status.ts';
 import { usePreset, useRerun } from './video-tool-parts.tsx';
 
 /*
- * Design mockup tool-tts.jsx `TtsToolPage` (672-785): text, model (local and cloud, the unified “model” row of product design §2.7), voice (voice / style / rate), language and details; generation records on the right. The text to speak can be typed directly, or chosen from a document or subtitle in Space (`material`; the Runtime reads out the text; architecture design §7.9, “Space 条目作输入”); entries brought from the Space viewer are pre-selected.
+ * Design mockup tool-tts.jsx `TtsToolPage` (672-785): text, model (local and cloud, the unified “model” row of product design §2.7), voice (voice / style / rate), language and details; generation records on the right. The text to speak can be typed directly, or chosen from a document or subtitle in Space (`material`; the Runtime reads out the text; architecture design §7.9, “Space 条目作输入” (Space entries as input)); entries brought from the Space viewer are pre-selected.
  */
 
 const textFoot = style({ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 });

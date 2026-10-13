@@ -7,7 +7,7 @@ export const ko: ExportMessages = {
   buttonBusyTitle: '내보내는 중 · 열어서 진행 상황을 보거나 취소',
   tabsLabel: '내보낼 항목',
 
-  // ---- 通用 ----
+  // ---- General ----
   cancel: '취소',
   close: '닫기',
   done: '완료',
@@ -34,7 +34,7 @@ export const ko: ExportMessages = {
   submitting: '제출하는 중…',
   notOpen: '영상이 아직 완전히 열리지 않아 내보낼 수 없습니다',
 
-  // ---- 运行态 ----
+  // ---- Running state ----
   running: '내보내는 중',
   queued: '내보내기 대기 중',
   cancelling: '취소하는 중…',
@@ -47,7 +47,7 @@ export const ko: ExportMessages = {
   cancelFailed: (message: string) => `취소하지 못했습니다: ${message}`,
   plannedFiles: (first: string, n: number) => `${first} 외 ${n - 1}개`,
 
-  // ---- 完成 / 取消 / 失败 ----
+  // ---- Done / cancelled / failed ----
   exported: '내보냄',
   exportedToast: (name: string) => `내보내기 완료 · ${name}`,
   failedToast: (title: string) => `내보내기 실패 · ${title}`,
@@ -65,7 +65,7 @@ export const ko: ExportMessages = {
   skipMissing: '없는 소재를 건너뛰고 다시 내보내기',
   useDocument: (name: string) => `“${name}” 사용`,
 
-  // ---- 范围（export-range.jsx）----
+  // ---- Range (export-range.jsx) ----
   range: '범위',
   rangeChapters: '챕터',
   rangeClips: '클립',
@@ -88,7 +88,7 @@ export const ko: ExportMessages = {
   eachNote: '부분마다 파일 하나',
   mergeBlocked: '이 버전에서는 아직 인접하지 않은 부분을 파일 하나로 합칠 수 없습니다. 부분마다 파일 하나로 내보냅니다',
 
-  // ---- 视频页 ----
+  // ---- Video page ----
   quality: '화질 및 크기',
   resolution: '해상도',
   sourceResolution: '원본 해상도',
@@ -114,7 +114,7 @@ export const ko: ExportMessages = {
   captionsBurned: '자막 입힘',
   captionsNotBurned: '자막 입히지 않음',
 
-  // ---- 音频页 ----
+  // ---- Audio page ----
   soundLanes: '소리에 들어갈 것',
   quick: '빠른 선택',
   musicOnly: '음악만',
@@ -133,7 +133,7 @@ export const ko: ExportMessages = {
   monoNoteLossless: '모노 · 크기 절반 · 말소리만 있는 영상에는 충분합니다',
   monoNoteLossy: '모노도 비트레이트는 그대로 · 비트레이트 전체가 한 채널에 쓰여 목소리가 더 깨끗합니다',
   exportAudio: (format: string) => `${format} 내보내기`,
-  // 人声分几份（设计稿 export-audio.jsx）：这一版只能按配音组分
+  // How many parts the vocals are split into (design draft export-audio.jsx): this version can only split by dub group
   voiceSplit: '음성 파일',
   splitOne: '하나로 섞기',
   splitEach: '더빙마다 하나',
@@ -149,14 +149,14 @@ export const ko: ExportMessages = {
   eachPartial: (done: number, left: number, reason: string) => `${done}건을 제출했지만 나머지 ${left}건은 내보내지 못했습니다: ${reason}`,
   exportAudioEach: (n: number, format: string) => `${format} 파일 ${n}개 내보내기`,
 
-  // ---- 响度（export-loudness.jsx）----
+  // ---- Loudness (export-loudness.jsx) ----
   loudness: '음량',
   loudnessSwitch: '음량 정규화',
   loudnessTarget: '목표',
   truePeak: '피크 상한',
   defaultMark: '기본값',
 
-  // ---- 字幕页 ----
+  // ---- Subtitle page ----
   subtitleLanes: '내보낼 트랙',
   subtitlesWhat: (labels: readonly string[]) => `${labels.join(' + ')}${labels.length === 2 ? ' 이중 언어' : ''}`,
   hiddenOnTimeline: '타임라인에서 꺼짐',
@@ -169,7 +169,7 @@ export const ko: ExportMessages = {
   pickOne: '하나 이상 켜세요',
   exportSubtitles: '자막 내보내기',
 
-  // ---- 文稿页 ----
+  // ---- Transcript page ----
   language: '언어',
   original: '원문',
   translation: '번역',
@@ -197,7 +197,7 @@ export const ko: ExportMessages = {
   noTranscriptSub: '먼저 전사하거나 타임라인에 자막 트랙을 추가하세요',
   exportTranscript: '전사본 내보내기',
 
-  // ---- 工程页 ----
+  // ---- Project page ----
   editors: '편집 프로그램으로 내보내기',
   xmemlName: 'Premiere Pro / DaVinci Resolve',
   xmemlMeta: 'FCP7 XML(.xml)',

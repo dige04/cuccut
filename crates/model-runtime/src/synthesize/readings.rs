@@ -289,7 +289,7 @@ pub fn annotate(text: &str, options: AnnotateOptions) -> Annotated {
     annotated
 }
 
-// ---------------------------------------------------------------- 包装层
+// ---------------------------------------------------------------- Wrapper layer
 
 /// The wrapper returned by [`crate::synthesize::load`]: the single resolution point for annotations, through which every engine synthesizes. Without annotations it passes the request through unchanged; with annotations it asks the inner engine for the rendered result ([`TtsEngine::render_readings`]), swaps the rendered text into a copy of the request and synthesizes that. Readings that could not be read as annotated are written into [`TtsAudio::readings_dropped`]: engines that do not accept readings report this honestly here rather than silently dropping it.
 pub struct Annotating {
@@ -339,7 +339,7 @@ impl TtsEngine for Annotating {
     }
 }
 
-// ---------------------------------------------------------------- 内嵌表
+// ---------------------------------------------------------------- Embedded tables
 
 struct Heteronym {
     default: String,

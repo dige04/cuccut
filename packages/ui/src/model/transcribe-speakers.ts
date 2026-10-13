@@ -57,7 +57,7 @@ export interface SpeakerSwitch {
   step: boolean;
 }
 
-/** The 「说话人区分」 model pack this model needs after transcription; null when the model separates speakers itself or does not separate them. */
+/** The “说话人区分” (speaker diarization) model pack this model needs after transcription; null when the model separates speakers itself or does not separate them. */
 export function speakerPackId(info: TranscribeModelInfo | null | undefined): string | null {
   if (!info || info.speakers === 'native') return null;
   return info.diarizationPack ?? null;
@@ -69,7 +69,7 @@ export function speakerPackInstalled(info: TranscribeModelInfo | null | undefine
 }
 
 /**
- * The toggle's current state. `pick`: the value the user set by hand, null if never set; `installed`: whether 「说话人区分」 is installed (`speakerPackInstalled`).
+ * The toggle's current state. `pick`: the value the user set by hand, null if never set; `installed`: whether “说话人区分” (speaker diarization) is installed (`speakerPackInstalled`).
  * Only models whose description has `diarizationPack`, or that already have `speakers: 'pack'`, can be toggled.
  */
 export function speakerSwitch(info: TranscribeModelInfo | null | undefined, pick: boolean | null, installed: boolean): SpeakerSwitch {
@@ -81,7 +81,7 @@ export function speakerSwitch(info: TranscribeModelInfo | null | undefined, pick
   return { kind, on, locked: false, missing: on && !installed, step: on };
 }
 
-/** The 「说话人区分」 line: name and size (the total of the download job; when absent, computed from the missing components, the same figure as the settings page; not written when nothing is known). */
+/** The “说话人区分” (speaker diarization) line: name and size (the total of the download job; when absent, computed from the missing components, the same figure as the settings page; not written when nothing is known). */
 export interface SpeakerPackFacts {
   name: string;
   size: string | null;
@@ -120,7 +120,7 @@ export function transcribeJobOf(parentJobId: Id, jobs: readonly JobRecord[]): Jo
 }
 
 /**
- * Whether the step list of this transcription should list 「识别说话人」 separately: only when `diarize: true` and it is done by the 「说话人区分」 model pack (not listed separately when the model separates speakers itself).
+ * Whether the step list of this transcription should list “识别说话人” (identify speakers) separately: only when `diarize: true` and it is done by the “说话人区分” (speaker diarization) model pack (not listed separately when the model separates speakers itself).
  * The model used is the one recorded by the transcription job; before submission, it uses the frozen parameters, and then the effective default. When the model cannot be identified, it is not listed separately.
  */
 export function diarizeStepOf(job: JobRecord, jobs: readonly JobRecord[], view: ModelCapabilitiesView | null): boolean {

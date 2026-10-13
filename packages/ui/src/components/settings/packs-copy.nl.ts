@@ -72,8 +72,8 @@ export const nl: PacksMessages = {
     replace: 'Installeren en de mijne vervangen',
     replaceHint: 'Je eigen sjablonen en vaardigheden met dezelfde id’s gaan eerst naar de prullenbak.',
     replacedToast: (name: string, n: number) =>
-      `Installed ${name}. ${n === 1 ? '1 template or skill of yours' : `${n} templates and skills of yours`} went to the trash.`,
-    replacedRestored: 'Yours are back, and the pack’s copies are gone.',
+      `${name} geïnstalleerd. ${n === 1 ? '1 van je sjablonen of vaardigheden is' : `${n} van je sjablonen en vaardigheden zijn`} naar de prullenbak gegaan.`,
+    replacedRestored: 'Je eigen versies zijn terug en de kopieën van het pack zijn verwijderd.',
     cancel: 'Annuleren',
   },
   libraryKind: {
@@ -209,7 +209,7 @@ export const nl: PacksMessages = {
     webExamples: 'Referentievideo’s worden toegevoegd en gewijzigd in de desktopapp.',
     dialogTitle: 'Stijlgids',
     dialogLede: 'De stijlgids van welk pack agents volgen voor de video’s in dit project.',
-    dialogLedeNoProject: 'Which pack’s style guide agents follow for this video.',
+    dialogLedeNoProject: 'De stijlgids van welk pack agents voor deze video volgen.',
     choiceLabel: 'Stijlgids',
     checking: 'Bezig met nagaan welke gids geldt…',
     noProject: 'Deze video hoort niet bij een project, dus de stijl wordt apart bepaald.',

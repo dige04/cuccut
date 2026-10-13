@@ -19,8 +19,8 @@ export const zhHant: ReviewMessages = {
   asking: '提問中…',
   askingNote: 'agent 正在影片的對話中回答問題。',
   openConversation: '開啟對話',
-  askAgain: 'Ask again',
-  stopWaiting: 'Stop waiting',
+  askAgain: '再問一次',
+  stopWaiting: '停止等待',
   notChecked: '這支影片尚未檢查。',
   verdict: {
     passed: '符合所有被要求的項目。',
@@ -30,7 +30,7 @@ export const zhHant: ReviewMessages = {
   },
   readFrom: (fromExport: boolean, answers: boolean) =>
     `讀取自專案${fromExport ? (answers ? '、上次匯出' : '和上次匯出') : ''}${answers ? '與回答' : ''}。`,
-  letStandCount: (n: number) => (n === 1 ? '1 finding is let stand with a reason.' : `${n} findings are let stand with a reason.`),
+  letStandCount: (n: number) => (n === 1 ? '1 項發現因有理由而予以保留。' : `${n} 項發現因有理由而予以保留。`),
   staleProject: '影片在檢查後已有變動。',
   staleExport: (revision: string) => `上次匯出是由版本 ${revision} 製作的；之後影片已有變動。`,
   staleAnswers: '回答是在最後一次變動之前給出的。',

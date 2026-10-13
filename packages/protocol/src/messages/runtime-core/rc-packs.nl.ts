@@ -16,7 +16,7 @@ export const nl: RcPacksMessages = {
   styleTooLong: (p: { length: number; limit: number }) => `De stijlgids is ${p.length} tekens lang; hij bevat maximaal ${p.limit}`,
   previewExpired: 'Dit voorbeeld is meer dan 30 minuten oud. Lees het opnieuw',
   restoreConflict: (p: { id: string }) => `“${p.id}” is in de tussentijd opnieuw geïnstalleerd, dus de verwijderde kopie kan niet terugkomen`,
-  restoreReplacedConflict: (p: { id: string }) => `"${p.id}" changed after the install, so your earlier copy can't come back over it`,
+  restoreReplacedConflict: (p: { id: string }) => `“${p.id}” is na de installatie gewijzigd, dus je eerdere kopie kan er niet overheen terugkomen`,
   trashExpired: 'Het verwijderde pack wordt niet meer bewaard, dus het kan niet terugkomen',
   exportTargetNotEmpty: 'Die map bevat andere bestanden. Kies een lege map',
   styleChanged: 'De stijlgids is gewijzigd sinds je hem opende. Open hem opnieuw en doe je wijziging opnieuw',

@@ -30,7 +30,7 @@ export const it: ReviewMessages = {
   },
   readFrom: (fromExport: boolean, answers: boolean) =>
     `Letto dal progetto${fromExport ? (answers ? ', dall’ultima esportazione' : ' e dall’ultima esportazione') : ''}${answers ? ' e dalle risposte' : ''}.`,
-  letStandCount: (n: number) => (n === 1 ? '1 finding is let stand with a reason.' : `${n} findings are let stand with a reason.`),
+  letStandCount: (n: number) => (n === 1 ? '1 punto è lasciato valido con una motivazione.' : `${n} punti sono lasciati validi con una motivazione.`),
   staleProject: 'Il video è cambiato dall’ultimo controllo.',
   staleExport: (revision: string) => `L’ultima esportazione è stata fatta dalla versione ${revision}; il video è cambiato da allora.`,
   staleAnswers: 'Le risposte sono state date prima dell’ultima modifica.',

@@ -4,7 +4,7 @@ import { pluralForm } from '@cuccut/protocol';
 import type { AgentSkillsMessages } from './agent-skills.ts';
 
 export const de: AgentSkillsMessages = {
-  origin: { builtin: "Eingebaut", personal: "Meine", 'third-party': "Drittanbieter", pack: 'Packs' } as Record<SkillOrigin, string>, fromPack: (name: string) => `From the pack ${name}`,
+  origin: { builtin: "Eingebaut", personal: "Meine", 'third-party': "Drittanbieter", pack: 'Packs' } as Record<SkillOrigin, string>, fromPack: (name: string) => `Aus dem Pack ${name}`,
   all: "Alle",
   commit: (sha: string) => ` (${sha})`,
   bytes: (n: number) => (pluralForm('de', n, { one: "1 Byte", other: `${n} Bytes` })),

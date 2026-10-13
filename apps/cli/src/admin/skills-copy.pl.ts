@@ -21,7 +21,7 @@ export const pl: SkillsMessages = {
   installed: (target, files, linkTo) => pluralForm('pl', files, { one: `Skill CucCut zainstalowano w ${target} (${files} plik${linkTo ? `, dowiązanie do ${linkTo}` : ''})`, few: `Skill CucCut zainstalowano w ${target} (${files} pliki${linkTo ? `, dowiązanie do ${linkTo}` : ''})`, many: `Skill CucCut zainstalowano w ${target} (${files} plików${linkTo ? `, dowiązanie do ${linkTo}` : ''})`, other: `Skill CucCut zainstalowano w ${target} (${files} pliku${linkTo ? `, dowiązanie do ${linkTo}` : ''})` }),
   takesEffect: (host) => (host ? `Działa w nowej sesji ${host}` : "Działa w nowej sesji"),
   pathEscapes: (path) => `Ścieżka w Skill CucCut wykracza poza folder: ${path}`,
-  sourceLine: (dir) => `Źródło    ${dir ?? "not found (CucCut isn't installed and this isn't the repository; you can set CUCCUT_AGENT_SKILLS_DIR)"}`,
+  sourceLine: (dir) => `Źródło    ${dir ?? "Nie znaleziono (CucCut nie jest zainstalowany i to nie jest repozytorium; można ustawić CUCCUT_AGENT_SKILLS_DIR)"}`,
   notInstalled: "Nie zainstalowano",
   linkState: (target) => `Dowiązanie → ${target}`,
   installedFolder: "Zainstalowane (folder)",

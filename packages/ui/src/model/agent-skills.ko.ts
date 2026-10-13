@@ -1,7 +1,7 @@
 import type { AgentSkillsMessages } from './agent-skills.ts';
 
 export const ko: AgentSkillsMessages = {
-  origin: { builtin: '내장', personal: '내 Skill', 'third-party': '서드파티', pack: 'Packs' }, fromPack: (name: string) => `From the pack ${name}`,
+  origin: { builtin: '내장', personal: '내 Skill', 'third-party': '서드파티', pack: 'Packs' }, fromPack: (name: string) => `${name} 팩에서`,
   all: '전체',
   commit: (sha: string) => `(${sha})`,
   bytes: (n: number) => `${n}바이트`,

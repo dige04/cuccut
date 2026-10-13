@@ -72,8 +72,8 @@ export const fr: PacksMessages = {
     replace: 'Installer et remplacer les miens',
     replaceHint: 'Vos propres modèles et compétences portant les mêmes identifiants iront d’abord à la corbeille.',
     replacedToast: (name: string, n: number) =>
-      `Installed ${name}. ${n === 1 ? '1 template or skill of yours' : `${n} templates and skills of yours`} went to the trash.`,
-    replacedRestored: 'Yours are back, and the pack’s copies are gone.',
+      `${name} installé. ${n === 1 ? '1 modèle ou compétence à vous' : `${n} modèles et compétences à vous`} mis à la corbeille.`,
+    replacedRestored: 'Vos modèles et compétences sont de retour, et les copies du pack ont disparu.',
     cancel: 'Annuler',
   },
   libraryKind: {
@@ -209,7 +209,7 @@ export const fr: PacksMessages = {
     webExamples: 'Les vidéos de référence s’ajoutent et se modifient dans l’application de bureau.',
     dialogTitle: 'Guide de style',
     dialogLede: 'Le guide de style de quel pack les agents suivent pour les vidéos de ce projet.',
-    dialogLedeNoProject: 'Which pack’s style guide agents follow for this video.',
+    dialogLedeNoProject: 'Le guide de style de quel pack les agents suivent pour cette vidéo.',
     choiceLabel: 'Guide de style',
     checking: 'Vérification du guide applicable…',
     noProject: "Cette vidéo n'appartient à aucun projet ; son style est donc décidé seul.",

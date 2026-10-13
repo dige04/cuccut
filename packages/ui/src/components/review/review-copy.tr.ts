@@ -30,7 +30,7 @@ export const tr: ReviewMessages = {
   },
   readFrom: (fromExport: boolean, answers: boolean) =>
     `Projeden okundu${fromExport ? (answers ? ', son dışa aktarmadan' : ' ve son dışa aktarmadan') : ''}${answers ? ' ve yanıtlardan' : ''}.`,
-  letStandCount: (n: number) => (n === 1 ? '1 finding is let stand with a reason.' : `${n} findings are let stand with a reason.`),
+  letStandCount: (n: number) => (n === 1 ? '1 bulgu gerekçesiyle olduğu gibi bırakıldı.' : `${n} bulgu gerekçesiyle olduğu gibi bırakıldı.`),
   staleProject: 'Video kontrol edildikten sonra değişti.',
   staleExport: (revision: string) => `Son dışa aktarma ${revision} sürümünden yapıldı; o zamandan beri video değişti.`,
   staleAnswers: 'Yanıtlar son değişiklikten önce verildi.',

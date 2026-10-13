@@ -43,8 +43,8 @@ export const ja: RcPublishingMessages = {
   renderFailed: 'この公開内容の書き出しが完了しませんでした。もう一度レンダリングして固定してください。',
   renderCancelled: 'この公開内容の書き出しはキャンセルされました。準備ができたら、もう一度レンダリングして固定してください。',
   videoNotFound: 'この動画はこのコンピューターにありません。プロジェクトを開いてから、もう一度お試しください。',
-  sequenceNotFound: "This video has no such sequence. Leave the sequence out to publish the video's main sequence.",
-  sequenceOneVideo: 'Choose a sequence only when preparing one video.',
+  sequenceNotFound: 'この動画にはそのシーケンスがありません。シーケンスを指定しないと、動画のメインシーケンスを公開します。',
+  sequenceOneVideo: 'シーケンスを選べるのは、1 本の動画を準備するときだけです。',
   // Settings, connections and accounts.
   accountNotFound: 'このアカウントはもう存在しません。公開設定を再読み込みして、もう一度お試しください。',
   connectionNotFound: 'この接続はもう存在しません。公開設定を再読み込みして、もう一度お試しください。',
@@ -58,7 +58,7 @@ export const ja: RcPublishingMessages = {
   linkCanonical: 'ほかのアカウントがこのアカウントにリンクされています。代わりに、もう一方の経路をこのアカウントにリンクしてください。',
   // Copy proposals.
   proposalReason: '動画、その文字起こし、あなたの文章ガイドラインに基づく下書きです。適用する前に確認してください。',
-  proposalUnreadable: "The text model's answer couldn't be read. Try Propose text again, or write the text yourself.",
+  proposalUnreadable: 'テキストモデルの回答を読み取れませんでした。「テキストを提案」をもう一度試すか、自分で文章を書いてください。',
   /** The name the publishing service opens a video under (shown as the video's opener). */
   principalName: 'CucCut の公開',
   // Calendar transfer and cleanup.

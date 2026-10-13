@@ -19,8 +19,8 @@ export const es: ReviewMessages = {
   asking: 'Preguntando…',
   askingNote: 'Un agente está respondiendo las preguntas en la conversación del vídeo.',
   openConversation: 'Abrir la conversación',
-  askAgain: 'Ask again',
-  stopWaiting: 'Stop waiting',
+  askAgain: 'Volver a preguntar',
+  stopWaiting: 'Dejar de esperar',
   notChecked: 'Este vídeo aún no se ha revisado.',
   verdict: {
     passed: 'Cumple con todo lo que se le pide.',
@@ -30,7 +30,7 @@ export const es: ReviewMessages = {
   },
   readFrom: (fromExport: boolean, answers: boolean) =>
     `Leído del proyecto${fromExport ? (answers ? ', la última exportación' : ' y la última exportación') : ''}${answers ? ' y las respuestas' : ''}.`,
-  letStandCount: (n: number) => (n === 1 ? '1 finding is let stand with a reason.' : `${n} findings are let stand with a reason.`),
+  letStandCount: (n: number) => (n === 1 ? '1 hallazgo se deja en pie con un motivo.' : `${n} hallazgos se dejan en pie con un motivo.`),
   staleProject: 'El vídeo ha cambiado desde que se revisó.',
   staleExport: (revision: string) => `La última exportación se hizo con la versión ${revision}; el vídeo ha cambiado desde entonces.`,
   staleAnswers: 'Las respuestas se dieron antes del último cambio.',

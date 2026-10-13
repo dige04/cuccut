@@ -1,7 +1,7 @@
 import type { AgentSkillsMessages } from './agent-skills.ts';
 
 export const zhHans: AgentSkillsMessages = {
-  origin: { builtin: '内置', personal: '我的', 'third-party': '第三方', pack: 'Packs' }, fromPack: (name: string) => `From the pack ${name}`,
+  origin: { builtin: '内置', personal: '我的', 'third-party': '第三方', pack: 'Packs' }, fromPack: (name: string) => `来自包 ${name}`,
   all: '全部',
   commit: (sha: string) => `（${sha}）`,
   bytes: (n: number) => `${n} 字节`,

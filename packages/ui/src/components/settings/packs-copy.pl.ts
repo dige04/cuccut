@@ -72,8 +72,8 @@ export const pl: PacksMessages = {
     replace: 'Zainstaluj i zastąp moje',
     replaceHint: 'Twoje własne szablony i umiejętności o tych samych id trafią najpierw do kosza.',
     replacedToast: (name: string, n: number) =>
-      `Installed ${name}. ${n === 1 ? '1 template or skill of yours' : `${n} templates and skills of yours`} went to the trash.`,
-    replacedRestored: 'Yours are back, and the pack’s copies are gone.',
+      `Zainstalowano ${name}. Do kosza przeniesiono ${n === 1 ? '1 Twój szablon lub umiejętność' : `Twoje szablony i umiejętności (${n})`}.`,
+    replacedRestored: 'Twoje wróciły, a kopie z pakietu zniknęły.',
     cancel: 'Anuluj',
   },
   libraryKind: {
@@ -209,7 +209,7 @@ export const pl: PacksMessages = {
     webExamples: 'Filmy referencyjne dodaje się i zmienia w aplikacji desktopowej.',
     dialogTitle: 'Przewodnik stylu',
     dialogLede: 'Przewodnik stylu którego pakietu agenci stosują do filmów w tym projekcie.',
-    dialogLedeNoProject: 'Which pack’s style guide agents follow for this video.',
+    dialogLedeNoProject: 'Którego pakietu przewodnik stylu agenci stosują do tego wideo.',
     choiceLabel: 'Przewodnik stylu',
     checking: 'Sprawdzanie, który przewodnik obowiązuje…',
     noProject: 'Ten film nie należy do projektu, więc styl jest ustalany samodzielnie.',

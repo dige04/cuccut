@@ -43,8 +43,8 @@ export const ko: RcPublishingMessages = {
   renderFailed: '이 게시물의 내보내기가 완료되지 않았습니다. 다시 렌더링하고 고정하세요.',
   renderCancelled: '이 게시물의 내보내기가 취소되었습니다. 준비되면 다시 렌더링하고 고정하세요.',
   videoNotFound: '이 동영상은 이 컴퓨터에 없습니다. 프로젝트를 연 다음 다시 시도하세요.',
-  sequenceNotFound: "This video has no such sequence. Leave the sequence out to publish the video's main sequence.",
-  sequenceOneVideo: 'Choose a sequence only when preparing one video.',
+  sequenceNotFound: "이 동영상에는 그런 시퀀스가 없습니다. 시퀀스를 비워 두면 동영상의 기본 시퀀스를 게시합니다.",
+  sequenceOneVideo: '시퀀스는 동영상 하나를 준비할 때만 고르세요.',
   // Settings, connections and accounts.
   accountNotFound: '이 계정은 더 이상 존재하지 않습니다. 게시 설정을 다시 불러온 후 다시 시도하세요.',
   connectionNotFound: '이 연결은 더 이상 존재하지 않습니다. 게시 설정을 다시 불러온 후 다시 시도하세요.',
@@ -58,7 +58,7 @@ export const ko: RcPublishingMessages = {
   linkCanonical: '다른 계정이 이 계정에 연결되어 있습니다. 대신 다른 경로를 이 계정에 연결하세요.',
   // Copy proposals.
   proposalReason: '동영상, 대본 및 작성 가이드를 바탕으로 한 초안입니다. 적용하기 전에 검토하세요.',
-  proposalUnreadable: "The text model's answer couldn't be read. Try Propose text again, or write the text yourself.",
+  proposalUnreadable: "텍스트 모델의 답변을 읽을 수 없었습니다. 텍스트 제안을 다시 시도하거나 직접 텍스트를 쓰세요.",
   /** The name the publishing service opens a video under (shown as the video's opener). */
   principalName: 'CucCut 게시',
   // Calendar transfer and cleanup.

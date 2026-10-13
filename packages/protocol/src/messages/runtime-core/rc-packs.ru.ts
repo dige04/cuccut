@@ -16,7 +16,7 @@ export const ru: RcPacksMessages = {
   styleTooLong: (p: { length: number; limit: number }) => `Гид по стилю длиной ${p.length} символов; максимум ${p.limit}`,
   previewExpired: 'Этот предпросмотр старше 30 минут. Прочитайте пак заново',
   restoreConflict: (p: { id: string }) => `«${p.id}» за это время был установлен снова, поэтому удалённая копия не может вернуться`,
-  restoreReplacedConflict: (p: { id: string }) => `"${p.id}" changed after the install, so your earlier copy can't come back over it`,
+  restoreReplacedConflict: (p: { id: string }) => `"${p.id}" изменился после установки, поэтому ваша прежняя копия не может вернуться поверх него`,
   trashExpired: 'Удалённый пак больше не хранится, поэтому он не может вернуться',
   exportTargetNotEmpty: 'В этой папке есть другие файлы. Выберите пустую папку',
   styleChanged: 'Гид по стилю изменился с тех пор, как вы его открыли. Откройте его заново и повторите изменение',

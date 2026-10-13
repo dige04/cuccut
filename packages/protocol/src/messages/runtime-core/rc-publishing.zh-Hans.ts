@@ -43,8 +43,8 @@ export const zhHans: RcPublishingMessages = {
   renderFailed: '此发布的导出未能完成。请重新渲染并固定。',
   renderCancelled: '此发布的导出已取消。准备好后请重新渲染并固定。',
   videoNotFound: '这台电脑上找不到此视频。请打开其项目后重试。',
-  sequenceNotFound: "This video has no such sequence. Leave the sequence out to publish the video's main sequence.",
-  sequenceOneVideo: 'Choose a sequence only when preparing one video.',
+  sequenceNotFound: "此视频没有这个序列。若要发布视频的主序列，请不要指定序列。",
+  sequenceOneVideo: '仅在准备一个视频时才选择序列。',
   // Settings, connections and accounts.
   accountNotFound: '此账号已不存在。请重新加载发布设置后再试。',
   connectionNotFound: '此连接已不存在。请重新加载发布设置后再试。',
@@ -58,7 +58,7 @@ export const zhHans: RcPublishingMessages = {
   linkCanonical: '其他账号已关联到此账号。请改为将另一渠道关联到此账号。',
   // Copy proposals.
   proposalReason: '基于视频、转录文本和您的写作指南生成的草稿。应用前请先检查。',
-  proposalUnreadable: "The text model's answer couldn't be read. Try Propose text again, or write the text yourself.",
+  proposalUnreadable: "无法读取文本模型的回复。请重试“生成文案建议”，或自行撰写文案。",
   /** The name the publishing service opens a video under (shown as the video's opener). */
   principalName: 'CucCut 发布',
   // Calendar transfer and cleanup.

@@ -43,8 +43,8 @@ export const nl: RcPublishingMessages = {
   renderFailed: 'De export voor deze publicatie is niet voltooid. Render en zet hem opnieuw vast.',
   renderCancelled: 'De export voor deze publicatie is geannuleerd. Render en zet hem opnieuw vast wanneer je er klaar voor bent.',
   videoNotFound: 'Deze video staat niet op deze computer. Open het project en probeer het opnieuw.',
-  sequenceNotFound: "This video has no such sequence. Leave the sequence out to publish the video's main sequence.",
-  sequenceOneVideo: 'Choose a sequence only when preparing one video.',
+  sequenceNotFound: "Deze video heeft geen zodanige reeks. Laat de reeks weg om de hoofdreeks van de video te publiceren.",
+  sequenceOneVideo: 'Kies alleen een reeks wanneer je één video voorbereidt.',
   // Settings, connections and accounts.
   accountNotFound: 'Dit account bestaat niet meer. Laad de publicatie-instellingen opnieuw en probeer het nog eens.',
   connectionNotFound: 'Deze verbinding bestaat niet meer. Laad de publicatie-instellingen opnieuw en probeer het nog eens.',
@@ -58,7 +58,7 @@ export const nl: RcPublishingMessages = {
   linkCanonical: 'Andere accounts zijn aan dit account gekoppeld. Koppel in plaats daarvan de andere route aan dit account.',
   // Copy proposals.
   proposalReason: 'Concept gebaseerd op de video, het transcript en je schrijfrichtlijnen. Controleer het voordat je het toepast.',
-  proposalUnreadable: "The text model's answer couldn't be read. Try Propose text again, or write the text yourself.",
+  proposalUnreadable: "Het antwoord van het tekstmodel kon niet worden gelezen. Probeer Tekst voorstellen opnieuw, of schrijf de tekst zelf.",
   /** The name the publishing service opens a video under (shown as the video's opener). */
   principalName: 'CucCut-publiceren',
   // Calendar transfer and cleanup.

@@ -16,7 +16,7 @@ export const ja: RcPacksMessages = {
   styleTooLong: (p: { length: number; limit: number }) => `スタイルガイドは ${p.length} 文字あります。上限は ${p.limit} 文字です`,
   previewExpired: 'このプレビューは 30 分以上前のものです。もう一度読み込んでください',
   restoreConflict: (p: { id: string }) => `「${p.id}」がその間に再インストールされたため、削除されたコピーは元に戻せません`,
-  restoreReplacedConflict: (p: { id: string }) => `"${p.id}" changed after the install, so your earlier copy can't come back over it`,
+  restoreReplacedConflict: (p: { id: string }) => `「${p.id}」はインストール後に変更されているため、以前のコピーで上書きして戻すことはできません`,
   trashExpired: '削除されたパックはもう保持されていないため、元に戻せません',
   exportTargetNotEmpty: 'そのフォルダーには他のファイルがあります。空のフォルダーを選んでください',
   styleChanged: '開いた後にスタイルガイドが変更されています。もう一度開いて、変更をやり直してください',

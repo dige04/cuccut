@@ -16,7 +16,7 @@ export const de: RcPacksMessages = {
   styleTooLong: (p: { length: number; limit: number }) => `Der Stilleitfaden ist ${p.length} Zeichen lang; er fasst höchstens ${p.limit}`,
   previewExpired: 'Diese Vorschau ist älter als 30 Minuten. Lies sie erneut',
   restoreConflict: (p: { id: string }) => `„${p.id}“ wurde inzwischen erneut installiert, daher kann die gelöschte Kopie nicht zurückkommen`,
-  restoreReplacedConflict: (p: { id: string }) => `"${p.id}" changed after the install, so your earlier copy can't come back over it`,
+  restoreReplacedConflict: (p: { id: string }) => `"${p.id}" wurde seit der Installation geändert, daher kann deine frühere Kopie nicht mehr darüber zurückkommen`,
   trashExpired: 'Das gelöschte Pack wird nicht mehr aufbewahrt und kann daher nicht zurückkommen',
   exportTargetNotEmpty: 'In diesem Ordner liegen andere Dateien. Wähle einen leeren Ordner',
   styleChanged: 'Der Stilleitfaden wurde seit dem Öffnen geändert. Öffne ihn erneut und wiederhole deine Änderung',

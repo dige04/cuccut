@@ -43,8 +43,8 @@ export const ru: RcPublishingMessages = {
   renderFailed: 'Экспорт для этой публикации не завершился. Отрендерите и закрепите его заново.',
   renderCancelled: 'Экспорт для этой публикации отменён. Отрендерите и закрепите его заново, когда будете готовы.',
   videoNotFound: 'Этого видео нет на этом компьютере. Откройте его проект и попробуйте снова.',
-  sequenceNotFound: "This video has no such sequence. Leave the sequence out to publish the video's main sequence.",
-  sequenceOneVideo: 'Choose a sequence only when preparing one video.',
+  sequenceNotFound: "В этом видео нет такой последовательности. Уберите последовательность, чтобы опубликовать основную последовательность видео.",
+  sequenceOneVideo: 'Выбирайте последовательность, только когда готовите одно видео.',
   // Settings, connections and accounts.
   accountNotFound: 'Этого аккаунта больше нет. Перезагрузите настройки публикации и попробуйте снова.',
   connectionNotFound: 'Этого подключения больше нет. Перезагрузите настройки публикации и попробуйте снова.',
@@ -58,7 +58,7 @@ export const ru: RcPublishingMessages = {
   linkCanonical: 'С этим аккаунтом связаны другие аккаунты. Вместо этого свяжите другой маршрут с этим аккаунтом.',
   // Copy proposals.
   proposalReason: 'Черновик на основе видео, его транскрипции и ваших рекомендаций по тексту. Проверьте его перед применением.',
-  proposalUnreadable: "The text model's answer couldn't be read. Try Propose text again, or write the text yourself.",
+  proposalUnreadable: "Не удалось прочитать ответ текстовой модели. Попробуйте «Предложить текст» ещё раз или напишите текст сами.",
   /** The name the publishing service opens a video under (shown as the video's opener). */
   principalName: 'Публикация CucCut',
   // Calendar transfer and cleanup.

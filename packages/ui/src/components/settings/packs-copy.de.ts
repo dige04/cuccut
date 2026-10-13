@@ -72,8 +72,8 @@ export const de: PacksMessages = {
     replace: 'Installieren und meine ersetzen',
     replaceHint: 'Deine eigenen Vorlagen und Skills mit denselben IDs werden zuerst in den Papierkorb verschoben.',
     replacedToast: (name: string, n: number) =>
-      `Installed ${name}. ${n === 1 ? '1 template or skill of yours' : `${n} templates and skills of yours`} went to the trash.`,
-    replacedRestored: 'Yours are back, and the pack’s copies are gone.',
+      `${name} installiert. ${n === 1 ? '1 Vorlage oder Skill von dir landete' : `${n} Vorlagen und Skills von dir landeten`} im Papierkorb.`,
+    replacedRestored: 'Deine sind zurück, und die Kopien des Packs sind entfernt.',
     cancel: 'Abbrechen',
   },
   libraryKind: {
@@ -209,7 +209,7 @@ export const de: PacksMessages = {
     webExamples: 'Referenzvideos werden in der Desktop-App hinzugefügt und geändert.',
     dialogTitle: 'Stilleitfaden',
     dialogLede: 'Welchen Stilleitfaden welches Packs Agenten für die Videos dieses Projekts befolgen.',
-    dialogLedeNoProject: 'Which pack’s style guide agents follow for this video.',
+    dialogLedeNoProject: 'Welchen Stilleitfaden welches Packs Agenten für dieses Video befolgen.',
     choiceLabel: 'Stilleitfaden',
     checking: 'Es wird geprüft, welcher Leitfaden gilt…',
     noProject: 'Dieses Video gehört zu keinem Projekt, daher wird der Stil eigenständig bestimmt.',

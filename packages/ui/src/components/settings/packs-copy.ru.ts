@@ -72,8 +72,8 @@ export const ru: PacksMessages = {
     replace: 'Установить и заменить мои',
     replaceHint: 'Ваши шаблоны и навыки с теми же id сначала переместятся в корзину.',
     replacedToast: (name: string, n: number) =>
-      `Installed ${name}. ${n === 1 ? '1 template or skill of yours' : `${n} templates and skills of yours`} went to the trash.`,
-    replacedRestored: 'Yours are back, and the pack’s copies are gone.',
+      `Установлено: ${name}. В корзину перемещено: ${n === 1 ? '1 ваш шаблон или навык' : `ваших шаблонов и навыков: ${n}`}.`,
+    replacedRestored: 'Ваши копии вернулись, а копии пака удалены.',
     cancel: 'Отмена',
   },
   libraryKind: {
@@ -209,7 +209,7 @@ export const ru: PacksMessages = {
     webExamples: 'Справочные видео добавляются и изменяются в приложении для рабочего стола.',
     dialogTitle: 'Гид по стилю',
     dialogLede: 'Гид по стилю какого пака агенты используют для видео в этом проекте.',
-    dialogLedeNoProject: 'Which pack’s style guide agents follow for this video.',
+    dialogLedeNoProject: 'Гид по стилю какого пака агенты используют для этого видео.',
     choiceLabel: 'Гид по стилю',
     checking: 'Проверяем, какой гид применяется…',
     noProject: 'Это видео не входит в проект, поэтому стиль выбирается самостоятельно.',

@@ -43,8 +43,8 @@ export const it: RcPublishingMessages = {
   renderFailed: 'L’esportazione di questa pubblicazione non è terminata. Esegui di nuovo il rendering e fissala.',
   renderCancelled: 'L’esportazione di questa pubblicazione è stata annullata. Esegui di nuovo il rendering e fissala quando sei pronto.',
   videoNotFound: 'Questo video non è su questo computer. Apri il suo progetto e riprova.',
-  sequenceNotFound: "This video has no such sequence. Leave the sequence out to publish the video's main sequence.",
-  sequenceOneVideo: 'Choose a sequence only when preparing one video.',
+  sequenceNotFound: "Questo video non ha una sequenza così. Ometti la sequenza per pubblicare la sequenza principale del video.",
+  sequenceOneVideo: 'Scegli una sequenza solo quando prepari un video.',
   // Settings, connections and accounts.
   accountNotFound: 'Questo account non esiste più. Ricarica le impostazioni di pubblicazione e riprova.',
   connectionNotFound: 'Questa connessione non esiste più. Ricarica le impostazioni di pubblicazione e riprova.',
@@ -58,7 +58,7 @@ export const it: RcPublishingMessages = {
   linkCanonical: 'Altri account sono collegati a questo. Collega invece l’altro percorso a questo account.',
   // Copy proposals.
   proposalReason: 'Bozza basata sul video, sulla sua trascrizione e sulle tue linee guida di scrittura. Rivedila prima di applicarla.',
-  proposalUnreadable: "The text model's answer couldn't be read. Try Propose text again, or write the text yourself.",
+  proposalUnreadable: "La risposta del modello di testo non si è potuta leggere. Riprova con Proponi testo, oppure scrivi il testo tu.",
   /** The name the publishing service opens a video under (shown as the video's opener). */
   principalName: 'Pubblicazione CucCut',
   // Calendar transfer and cleanup.

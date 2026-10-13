@@ -69,8 +69,8 @@ export const zhHans: PacksMessages = {
     replace: '安装并替换我的版本',
     replaceHint: '你自己的同 ID 模板和技能会先移到回收站。',
     replacedToast: (name: string, n: number) =>
-      `Installed ${name}. ${n === 1 ? '1 template or skill of yours' : `${n} templates and skills of yours`} went to the trash.`,
-    replacedRestored: 'Yours are back, and the pack’s copies are gone.',
+      `已安装 ${name}。你的 ${n === 1 ? '1 个模板或技能' : `${n} 个模板和技能`} 已移到回收站。`,
+    replacedRestored: '你的副本已恢复，包中的副本已删除。',
     cancel: '取消',
   },
   libraryKind: {
@@ -206,7 +206,7 @@ export const zhHans: PacksMessages = {
     webExamples: '参考视频在桌面应用中添加和修改。',
     dialogTitle: '风格指南',
     dialogLede: '智能体在此项目中为视频遵循哪个包的风格指南。',
-    dialogLedeNoProject: 'Which pack’s style guide agents follow for this video.',
+    dialogLedeNoProject: '智能体在此视频中遵循哪个包的风格指南。',
     choiceLabel: '风格指南',
     checking: '正在检查适用的指南…',
     noProject: '此视频不属于任何项目，因此风格独立决定。',

@@ -2,7 +2,7 @@ import { pluralForm } from '@cuccut/protocol';
 import type { AgentSkillsMessages } from './agent-skills.ts';
 
 export const ru: AgentSkillsMessages = {
-  origin: { builtin: "Встроенный", personal: "Мои", 'third-party': "Сторонний", pack: 'Packs' }, fromPack: (name: string) => `From the pack ${name}`,
+  origin: { builtin: "Встроенный", personal: "Мои", 'third-party': "Сторонний", pack: 'Packs' }, fromPack: (name: string) => `Из пака ${name}`,
   all: "Все",
   commit: (sha: string) => ` (${sha})`,
   bytes: (n: number) => pluralForm('ru', n, { one: `${n} байт`, few: `${n} байта`, many: `${n} байтов`, other: `${n} байта` }),

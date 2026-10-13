@@ -19,8 +19,8 @@ export const zhHans: ReviewMessages = {
   asking: '正在提问…',
   askingNote: '智能体正在视频的对话中回答问题。',
   openConversation: '打开对话',
-  askAgain: 'Ask again',
-  stopWaiting: 'Stop waiting',
+  askAgain: '再问一次',
+  stopWaiting: '停止等待',
   notChecked: '此视频尚未检查。',
   verdict: {
     passed: '它符合所有被问到的要求。',
@@ -30,7 +30,7 @@ export const zhHans: ReviewMessages = {
   },
   readFrom: (fromExport: boolean, answers: boolean) =>
     `读取自项目${fromExport ? (answers ? '、最近一次导出' : ' 和最近一次导出') : ''}${answers ? ' 以及回答' : ''}。`,
-  letStandCount: (n: number) => (n === 1 ? '1 finding is let stand with a reason.' : `${n} findings are let stand with a reason.`),
+  letStandCount: (n: number) => (n === 1 ? '1 项检查结果已附理由保留通过。' : `${n} 项检查结果已附理由保留通过。`),
   staleProject: '自检查以来视频已有改动。',
   staleExport: (revision: string) => `最近一次导出基于版本 ${revision} 制作；此后视频已有改动。`,
   staleAnswers: '这些回答是在最近一次改动之前给出的。',

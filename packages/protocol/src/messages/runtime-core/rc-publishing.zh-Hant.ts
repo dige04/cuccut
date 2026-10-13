@@ -43,8 +43,8 @@ export const zhHant: RcPublishingMessages = {
   renderFailed: '此發布的匯出未能完成。請重新算繪並釘選。',
   renderCancelled: '此發布的匯出已取消。準備好後請重新算繪並釘選。',
   videoNotFound: '這台電腦上找不到此影片。請開啟其專案後重試。',
-  sequenceNotFound: "This video has no such sequence. Leave the sequence out to publish the video's main sequence.",
-  sequenceOneVideo: 'Choose a sequence only when preparing one video.',
+  sequenceNotFound: "這支影片沒有此序列。若要發布影片的主序列，請省略序列。",
+  sequenceOneVideo: '只有在準備單一影片時才選擇序列。',
   // Settings, connections and accounts.
   accountNotFound: '此帳號已不存在。請重新載入發布設定後再試。',
   connectionNotFound: '此連線已不存在。請重新載入發布設定後再試。',
@@ -58,7 +58,7 @@ export const zhHant: RcPublishingMessages = {
   linkCanonical: '其他帳號已關聯到此帳號。請改為將另一管道關聯到此帳號。',
   // Copy proposals.
   proposalReason: '根據影片、逐字稿和您的寫作指南產生的草稿。套用前請先檢查。',
-  proposalUnreadable: "The text model's answer couldn't be read. Try Propose text again, or write the text yourself.",
+  proposalUnreadable: "無法讀取文字模型的回答。請再試一次「產生文案建議」，或自行撰寫文案。",
   /** The name the publishing service opens a video under (shown as the video's opener). */
   principalName: 'CucCut 發布',
   // Calendar transfer and cleanup.

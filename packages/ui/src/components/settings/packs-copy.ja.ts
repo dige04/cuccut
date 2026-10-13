@@ -72,8 +72,8 @@ export const ja: PacksMessages = {
     replace: 'インストールして自分のものを置き換える',
     replaceHint: '同じ ID を持つ自分のテンプレートとスキルは、先にゴミ箱へ移動されます。',
     replacedToast: (name: string, n: number) =>
-      `Installed ${name}. ${n === 1 ? '1 template or skill of yours' : `${n} templates and skills of yours`} went to the trash.`,
-    replacedRestored: 'Yours are back, and the pack’s copies are gone.',
+      `${name} をインストールしました。${n === 1 ? 'あなたのテンプレートまたはスキル 1 件' : `あなたのテンプレートとスキル ${n} 件`}はゴミ箱へ移動しました。`,
+    replacedRestored: 'あなたのものが戻り、パックのコピーは削除されました。',
     cancel: 'キャンセル',
   },
   libraryKind: {
@@ -209,7 +209,7 @@ export const ja: PacksMessages = {
     webExamples: '参照動画の追加と変更はデスクトップアプリで行います。',
     dialogTitle: 'スタイルガイド',
     dialogLede: 'このプロジェクトの動画で、エージェントがどのパックのスタイルガイドに従うかを選びます。',
-    dialogLedeNoProject: 'Which pack’s style guide agents follow for this video.',
+    dialogLedeNoProject: 'この動画でエージェントが従うスタイルガイドを、どのパックのものにするかを選びます。',
     choiceLabel: 'スタイルガイド',
     checking: '適用されるガイドを確認しています…',
     noProject: 'この動画はプロジェクトに属していないため、スタイルは単独で決まります。',

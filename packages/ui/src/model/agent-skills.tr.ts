@@ -1,7 +1,7 @@
 import type { AgentSkillsMessages } from './agent-skills.ts';
 
 export const tr: AgentSkillsMessages = {
-  origin: { builtin: "Yerleşik", personal: "Benim", 'third-party': "Üçüncü taraf", pack: 'Packs' }, fromPack: (name: string) => `From the pack ${name}`,
+  origin: { builtin: "Yerleşik", personal: "Benim", 'third-party': "Üçüncü taraf", pack: 'Packs' }, fromPack: (name: string) => `${name} paketinden`,
   all: "Hepsi",
   commit: (sha: string) => ` (${sha})`,
   bytes: (n) => `${n} bayt`,

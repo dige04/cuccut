@@ -43,8 +43,8 @@ export const tr: RcPublishingMessages = {
   renderFailed: 'Bu yayının dışa aktarması tamamlanamadı. Yeniden işleyip sabitleyin.',
   renderCancelled: 'Bu yayının dışa aktarması iptal edildi. Hazır olduğunuzda yeniden işleyip sabitleyin.',
   videoNotFound: 'Bu video bu bilgisayarda değil. Projesini açıp tekrar deneyin.',
-  sequenceNotFound: "This video has no such sequence. Leave the sequence out to publish the video's main sequence.",
-  sequenceOneVideo: 'Choose a sequence only when preparing one video.',
+  sequenceNotFound: "Bu videonun böyle bir dizisi yok. Videonun ana dizisini yayınlamak için diziyi dışarıda bırakın.",
+  sequenceOneVideo: 'Dizi yalnızca tek bir video hazırlanırken seçilir.',
   // Settings, connections and accounts.
   accountNotFound: 'Bu hesap artık mevcut değil. Yayınlama ayarlarını yeniden yükleyip tekrar deneyin.',
   connectionNotFound: 'Bu bağlantı artık mevcut değil. Yayınlama ayarlarını yeniden yükleyip tekrar deneyin.',
@@ -58,7 +58,7 @@ export const tr: RcPublishingMessages = {
   linkCanonical: 'Diğer hesaplar buna bağlı. Bunun yerine diğer rotayı bu hesaba bağlayın.',
   // Copy proposals.
   proposalReason: 'Video, dökümü ve yazım yönergelerinize dayalı taslak. Uygulamadan önce gözden geçirin.',
-  proposalUnreadable: "The text model's answer couldn't be read. Try Propose text again, or write the text yourself.",
+  proposalUnreadable: "Metin modelinin yanıtı okunamadı. Metin öner’i yeniden deneyin ya da metni kendiniz yazın.",
   /** The name the publishing service opens a video under (shown as the video's opener). */
   principalName: 'CucCut yayınlama',
   // Calendar transfer and cleanup.

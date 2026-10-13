@@ -16,7 +16,7 @@ export const zhHans: RcPacksMessages = {
   styleTooLong: (p: { length: number; limit: number }) => `风格指南长 ${p.length} 个字符，最多只能有 ${p.limit} 个`,
   previewExpired: '此预览已超过 30 分钟。请重新读取',
   restoreConflict: (p: { id: string }) => `“${p.id}”在此期间已被重新安装，因此已删除的副本无法恢复`,
-  restoreReplacedConflict: (p: { id: string }) => `"${p.id}" changed after the install, so your earlier copy can't come back over it`,
+  restoreReplacedConflict: (p: { id: string }) => `“${p.id}”在安装后已有变化，因此你之前的副本无法覆盖回来`,
   trashExpired: '已删除的包不再保留，因此无法恢复',
   exportTargetNotEmpty: '该文件夹中有其他文件。请选择一个空文件夹',
   styleChanged: '自你打开后，风格指南已被修改。请重新打开并重做你的修改',

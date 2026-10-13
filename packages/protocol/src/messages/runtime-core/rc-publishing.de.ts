@@ -43,8 +43,8 @@ export const de: RcPublishingMessages = {
   renderFailed: 'Der Export für diese Veröffentlichung wurde nicht abgeschlossen. Rendere und hefte ihn erneut an.',
   renderCancelled: 'Der Export für diese Veröffentlichung wurde abgebrochen. Rendere und hefte ihn erneut an, wenn du bereit bist.',
   videoNotFound: 'Dieses Video befindet sich nicht auf diesem Computer. Öffne sein Projekt und versuche es dann erneut.',
-  sequenceNotFound: "This video has no such sequence. Leave the sequence out to publish the video's main sequence.",
-  sequenceOneVideo: 'Choose a sequence only when preparing one video.',
+  sequenceNotFound: "Dieses Video hat keine solche Sequenz. Lass die Sequenz weg, um die Hauptsequenz des Videos zu veröffentlichen.",
+  sequenceOneVideo: 'Wähle eine Sequenz nur, wenn du ein einzelnes Video vorbereitest.',
   // Settings, connections and accounts.
   accountNotFound: 'Dieses Konto existiert nicht mehr. Lade die Veröffentlichungseinstellungen neu und versuche es erneut.',
   connectionNotFound: 'Diese Verbindung existiert nicht mehr. Lade die Veröffentlichungseinstellungen neu und versuche es erneut.',
@@ -58,7 +58,7 @@ export const de: RcPublishingMessages = {
   linkCanonical: 'Andere Konten sind mit diesem verknüpft. Verknüpfe stattdessen den anderen Weg mit diesem Konto.',
   // Copy proposals.
   proposalReason: 'Entwurf auf Grundlage des Videos, seines Transkripts und deiner Schreibrichtlinien. Prüfe ihn, bevor du ihn übernimmst.',
-  proposalUnreadable: "The text model's answer couldn't be read. Try Propose text again, or write the text yourself.",
+  proposalUnreadable: "Die Antwort des Textmodells konnte nicht gelesen werden. Versuche es mit „Text vorschlagen“ erneut oder schreibe den Text selbst.",
   /** The name the publishing service opens a video under (shown as the video's opener). */
   principalName: 'CucCut-Veröffentlichung',
   // Calendar transfer and cleanup.

@@ -72,8 +72,8 @@ export const tr: PacksMessages = {
     replace: 'Kur ve benimkileri değiştir',
     replaceHint: 'Aynı kimliklere sahip kendi şablon ve becerileriniz önce çöp kutusuna gider.',
     replacedToast: (name: string, n: number) =>
-      `Installed ${name}. ${n === 1 ? '1 template or skill of yours' : `${n} templates and skills of yours`} went to the trash.`,
-    replacedRestored: 'Yours are back, and the pack’s copies are gone.',
+      `${name} kuruldu. ${n === 1 ? '1 şablonunuz ya da becerisi' : `${n} şablonunuz ve beceriniz`} çöp kutusuna taşındı.`,
+    replacedRestored: 'Sizinkiler geri geldi, paketin kopyaları ise silindi.',
     cancel: 'İptal',
   },
   libraryKind: {
@@ -209,7 +209,7 @@ export const tr: PacksMessages = {
     webExamples: 'Referans videolar masaüstü uygulamasında eklenir ve değiştirilir.',
     dialogTitle: 'Stil rehberi',
     dialogLede: 'Bu projedeki videolar için ajanların hangi paketin stil rehberini izleyeceği.',
-    dialogLedeNoProject: 'Which pack’s style guide agents follow for this video.',
+    dialogLedeNoProject: 'Bu video için ajanların hangi paketin stil rehberini izleyeceği.',
     choiceLabel: 'Stil rehberi',
     checking: 'Hangi rehberin geçerli olduğu kontrol ediliyor…',
     noProject: 'Bu video bir projede değil, bu yüzden stil kendi başına belirlenir.',

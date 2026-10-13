@@ -72,8 +72,8 @@ export const es: PacksMessages = {
     replace: 'Instalar y reemplazar los míos',
     replaceHint: 'Tus plantillas y habilidades propias con los mismos ids irán antes a la papelera.',
     replacedToast: (name: string, n: number) =>
-      `Installed ${name}. ${n === 1 ? '1 template or skill of yours' : `${n} templates and skills of yours`} went to the trash.`,
-    replacedRestored: 'Yours are back, and the pack’s copies are gone.',
+      `Se instaló ${name}. ${n === 1 ? '1 plantilla o habilidad tuya' : `${n} plantillas y habilidades tuyas`} fue a la papelera.`,
+    replacedRestored: 'Los tuyos han vuelto, y las copias del pack han desaparecido.',
     cancel: 'Cancelar',
   },
   libraryKind: {
@@ -209,7 +209,7 @@ export const es: PacksMessages = {
     webExamples: 'Los vídeos de referencia se añaden y cambian en la aplicación de escritorio.',
     dialogTitle: 'Guía de estilo',
     dialogLede: 'Qué guía de estilo de qué pack siguen los agentes para los vídeos de este proyecto.',
-    dialogLedeNoProject: 'Which pack’s style guide agents follow for this video.',
+    dialogLedeNoProject: 'Qué guía de estilo de qué pack siguen los agentes para este vídeo.',
     choiceLabel: 'Guía de estilo',
     checking: 'Comprobando qué guía se aplica…',
     noProject: 'Este vídeo no está en un proyecto, así que el estilo se decide por sí mismo.',

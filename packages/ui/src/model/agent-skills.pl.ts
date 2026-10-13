@@ -2,7 +2,7 @@ import { pluralForm } from '@cuccut/protocol';
 import type { AgentSkillsMessages } from './agent-skills.ts';
 
 export const pl: AgentSkillsMessages = {
-  origin: { builtin: "Wbudowany", personal: "Moje", 'third-party': "Zewnętrzny", pack: 'Packs' }, fromPack: (name: string) => `From the pack ${name}`,
+  origin: { builtin: "Wbudowany", personal: "Moje", 'third-party': "Zewnętrzny", pack: 'Packs' }, fromPack: (name: string) => `Z pakietu ${name}`,
   all: "Wszystko",
   commit: (sha: string) => ` (${sha})`,
   bytes: (n: number) => pluralForm('pl', n, { one: `${n} bajt`, few: `${n} bajty`, many: `${n} bajtów`, other: `${n} bajtu` }),
@@ -15,7 +15,7 @@ export const pl: AgentSkillsMessages = {
     read: "otworzyć plik",
     send: "wysłać",
   },
-  exists: (id: string | null) => `Skill o nazwie „${id ?? 'this'}” już istnieje i nie zostanie nadpisany. Najpierw usuń poprzedni lub zmień nazwę folderu i dodaj ponownie.`,
+  exists: (id: string | null) => `Skill o nazwie „${id ?? 'ten'}” już istnieje i nie zostanie nadpisany. Najpierw usuń poprzedni lub zmień nazwę folderu i dodaj ponownie.`,
   invalid: (issue: string) => `Ten Skill jest nieprawidłowy: ${issue}. Folder główny wymaga SKILL.md zaczynającego się od name i description.`,
   tooLarge: (files: number, total: string, skillFile: string) => `Ten Skill jest zbyt duży: maksymalna liczba plików – ${files}, łączny rozmiar – ${total}, a sam SKILL.md – najwyżej ${skillFile}.`,
   githubNotFound: "Nie znaleziono repozytorium, gałęzi lub folderu na GitHub (mogą być prywatne). Sprawdź adres.",

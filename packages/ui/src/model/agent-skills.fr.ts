@@ -4,7 +4,7 @@ import type { SkillAction } from './agent-skills.ts';
 import type { AgentSkillsMessages } from './agent-skills.ts';
 
 export const fr: AgentSkillsMessages = {
-  origin: { builtin: "Intégré", personal: "Les miens", 'third-party': "Tiers", pack: 'Packs' } as Record<SkillOrigin, string>, fromPack: (name: string) => `From the pack ${name}`,
+  origin: { builtin: "Intégré", personal: "Les miens", 'third-party': "Tiers", pack: 'Packs' } as Record<SkillOrigin, string>, fromPack: (name: string) => `Issu du pack ${name}`,
   all: "Tout",
   commit: (sha: string) => ` (${sha})`,
   bytes: (n: number) => (pluralForm('fr', n, { one: `${n} octet`, other: `${n} octets` })),

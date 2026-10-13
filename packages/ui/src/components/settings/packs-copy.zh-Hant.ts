@@ -69,8 +69,8 @@ export const zhHant: PacksMessages = {
     replace: '安裝並取代我的版本',
     replaceHint: '你自己的同 ID 範本和技能會先移到垃圾桶。',
     replacedToast: (name: string, n: number) =>
-      `Installed ${name}. ${n === 1 ? '1 template or skill of yours' : `${n} templates and skills of yours`} went to the trash.`,
-    replacedRestored: 'Yours are back, and the pack’s copies are gone.',
+      `已安裝 ${name}。你的 ${n === 1 ? '1 個範本或技能' : `${n} 個範本和技能`}已移到垃圾桶。`,
+    replacedRestored: '你的內容已復原，套件的副本已刪除。',
     cancel: '取消',
   },
   libraryKind: {
@@ -206,7 +206,7 @@ export const zhHant: PacksMessages = {
     webExamples: '參考影片在桌面應用程式中新增和修改。',
     dialogTitle: '風格指南',
     dialogLede: '智慧代理在此專案中為影片遵循哪個套件的風格指南。',
-    dialogLedeNoProject: 'Which pack’s style guide agents follow for this video.',
+    dialogLedeNoProject: '智慧代理為此影片遵循哪個套件的風格指南。',
     choiceLabel: '風格指南',
     checking: '正在檢查適用的指南…',
     noProject: '此影片不屬於任何專案，因此風格獨立決定。',

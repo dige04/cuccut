@@ -21,7 +21,7 @@ export const ru: SkillsMessages = {
   installed: (target, files, linkTo) => pluralForm('ru', files, { one: `Skill CucCut установлен в ${target} (${files} файл${linkTo ? `, ссылка на ${linkTo}` : ''})`, few: `Skill CucCut установлен в ${target} (${files} файла${linkTo ? `, ссылка на ${linkTo}` : ''})`, many: `Skill CucCut установлен в ${target} (${files} файлов${linkTo ? `, ссылка на ${linkTo}` : ''})`, other: `Skill CucCut установлен в ${target} (${files} файла${linkTo ? `, ссылка на ${linkTo}` : ''})` }),
   takesEffect: (host) => (host ? `Применяется в новой сессии ${host}` : "Применяется в новой сессии"),
   pathEscapes: (path) => `Путь в Skill CucCut указывает за пределы папки: ${path}`,
-  sourceLine: (dir) => `Источник  ${dir ?? "not found (CucCut isn't installed and this isn't the repository; you can set CUCCUT_AGENT_SKILLS_DIR)"}`,
+  sourceLine: (dir) => `Источник  ${dir ?? "не найден (CucCut не установлен, и это не репозиторий; можно задать CUCCUT_AGENT_SKILLS_DIR)"}`,
   notInstalled: "Не установлен",
   linkState: (target) => `Ссылка → ${target}`,
   installedFolder: "Установлено (папка)",

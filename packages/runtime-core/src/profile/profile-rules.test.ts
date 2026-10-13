@@ -57,8 +57,8 @@ describe('validateRule', () => {
         'rcProfile.required',
         'rcProfile.needInstructionOrTemplate',
       ]);
-      // Readable as "Field: problem".
-      for (const p of check.problems) expect(p.text).toMatch(/^.+: .+$/);
+      // Readable as "Field: problem" (CJK locales use a full-width colon).
+      for (const p of check.problems) expect(p.text).toMatch(/^.+(: |：).+$/);
     }
     expect(validateRule({ name: 'n', when: 'w', templateId: 'quote-card' }, context()).ok).toBe(true);
   });

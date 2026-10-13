@@ -135,7 +135,9 @@ describe('CodexDriver（假 codex）', () => {
     const started = Date.now();
     expect(await slow.probe()).toMatchObject({ state: 'ready', models: [] });
     expect(Date.now() - started).toBeLessThan(4_000);
-    await until(() => fake.log().some((e) => e.kind === 'catalog-exit'));
+    // The limit covers the whole process, start-up included: a slow start gives up before `model/list` is sent, and
+    // the fake then records a plain `exit`. Either way the temporary process has to be closed.
+    await until(() => fake.log().some((e) => e.kind === 'catalog-exit' || e.kind === 'exit'));
   });
 
   it('探测：只列可见模型，未知的说明不臆测定位', async () => {

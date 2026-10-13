@@ -80,10 +80,10 @@ describe('工具目录', () => {
   });
 
   it('输入来源与结果从声明派生：转录三选一（链接由从链接导入执行）、翻译字幕的文件输入得到产物', () => {
-    expect(inputOptions('transcribe').map((o) => o.label)).toEqual(['本机文件', 'Space', '链接']);
+    expect(inputOptions('transcribe').map((o) => o.label)).toEqual(['本机文件', '资料库', '链接']);
     expect(inputOptions('transcribe').map((o) => o.via)).toEqual([null, null, 'link-import']);
     expect(inputOptions('translate-subtitles').map((o) => [o.key, o.label, o.output])).toEqual([
-      ['space', 'Space', 'artifact'],
+      ['space', '资料库', 'artifact'],
       ['file', '本机字幕文件', 'artifact'],
     ]);
     expect(inputOptions('translate-subtitles')[0]!.needs).toBe('transcript');
@@ -99,11 +99,11 @@ describe('工具目录', () => {
     expect(outputOf('translate-subtitles', 'file')).toBe('artifact');
     expect(outputOf('dub', 'file')).toBeNull();
     expect(inputOptions('nope')).toEqual([]);
-    expect(resultLine('transcribe')).toBe('结果：Space 里的文档与字幕条目；也可以新建视频；选可编辑的视频时写进它');
-    expect(resultLine('translate-subtitles')).toBe('结果：Space 里的字幕条目；选可编辑的视频时写进它');
+    expect(resultLine('transcribe')).toBe('结果：资料库里的文档与字幕条目；也可以新建视频；选可编辑的视频时写进它');
+    expect(resultLine('translate-subtitles')).toBe('结果：资料库里的字幕条目；选可编辑的视频时写进它');
     expect(resultLine('dub')).toBe('结果：写进你选的视频');
-    expect(resultLine('synthesize-speech')).toBe('结果：Space 里的音频条目');
-    expect(resultLine('extract-audio')).toBe('结果：Space 里的音频条目');
+    expect(resultLine('synthesize-speech')).toBe('结果：资料库里的音频条目');
+    expect(resultLine('extract-audio')).toBe('结果：资料库里的音频条目');
     expect(artifactText([])).toBe('产物条目');
     expect(resultLine('nope')).toBe('');
   });

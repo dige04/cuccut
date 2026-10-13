@@ -56,5 +56,6 @@ export const ru: LandingMessages = {
     more: (count) => `Показать ещё ${count}`,
     less: 'Показать меньше',
     pinned: 'Закреплено',
+    archiveProject: 'Архивировать проект',
   },
 };

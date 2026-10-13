@@ -121,6 +121,7 @@ export function TaskRecovery({ item, conversationId }: { item: Task; conversatio
     </ActionButton>
   );
 
+  // The recovery actions stay neutral: the composer's Send below is the thread's one yellow.
   if (item.errorCode === 'AGENT_AUTH_REQUIRED') {
     return (
       <div className={box} role="group" aria-label={RECOVERY_COPY.authTitle(name)}>
@@ -128,7 +129,7 @@ export function TaskRecovery({ item, conversationId }: { item: Task; conversatio
         <p className={body}>{RECOVERY_COPY.authBody(name)}</p>
         <div className={acts}>
           {driver ? (
-            <Button variant="accent" size="S" onPress={() => void openLogin()}>
+            <Button variant="secondary" size="S" onPress={() => void openLogin()}>
               {RECOVERY_COPY.openLogin}
             </Button>
           ) : null}
@@ -149,7 +150,7 @@ export function TaskRecovery({ item, conversationId }: { item: Task; conversatio
         <p className={body}>{RECOVERY_COPY.modelBody}</p>
         <div className={acts}>
           <MenuTrigger>
-            <Button variant="accent" size="S" isPending={pending}>
+            <Button variant="secondary" size="S" isPending={pending}>
               {RECOVERY_COPY.pickModel}
             </Button>
             <Menu

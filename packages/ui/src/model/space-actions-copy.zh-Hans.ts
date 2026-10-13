@@ -37,7 +37,7 @@ export const zhHans: SpaceActionsMessages = {
   notImported: (count: number) => `${count} 个没有导入`,
   references: (names: readonly string[], total: number) => {
     const quoted = names.map((name) => `「${name}」`).join('');
-    return total > 2 ? `Space 条目 ${quoted}等 ${total} 个` : `Space 条目 ${quoted}`;
+    return total > 2 ? `资料库条目 ${quoted}等 ${total} 个` : `资料库条目 ${quoted}`;
   },
   referenceOutput: '产物',
 };

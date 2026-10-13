@@ -34,7 +34,10 @@ const actions = style({ display: 'flex', flexWrap: 'wrap', justifyContent: 'end'
 /** Runtime 拒绝时把它的说明念出来。 */
 export const toastError = (error: unknown) => ToastQueue.negative(fontError(error).message, { timeout: 5000 });
 
-export function FontDetail({ row: f, onBack, onPick }: { row: FontRow; onBack(): void; onPick(): void }) {
+/**
+ * `inline`：在属性栏里就地展开（和编辑器的「导出」同屏），「用这个字体」退成中性按钮；在弹层里它是那一层唯一的主按钮。
+ */
+export function FontDetail({ row: f, onBack, onPick, inline = false }: { row: FontRow; onBack(): void; onPick(): void; inline?: boolean }) {
   const { client } = useRuntime();
   const sample = useFontLibrary((s) => s.samples[familyKey(f.family)]);
   useEffect(() => void requestSample(client, f.family), [client, f.family]);
@@ -89,7 +92,7 @@ export function FontDetail({ row: f, onBack, onPick }: { row: FontRow; onBack():
             {FC.deleteDownloaded}
           </Button>
         ) : null}
-        <Button variant="accent" size="S" onPress={onPick}>
+        <Button variant={inline ? 'secondary' : 'accent'} size="S" onPress={onPick}>
           {FC.useThis}
         </Button>
       </div>

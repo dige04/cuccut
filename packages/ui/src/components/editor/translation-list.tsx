@@ -422,7 +422,7 @@ export function TranslationList({
           <span className={placeText}>{C.notPlaced}</span>
           <Button
             size="S"
-            variant="accent"
+            variant="secondary"
             isDisabled={!editable}
             isPending={placing}
             onPress={() => {

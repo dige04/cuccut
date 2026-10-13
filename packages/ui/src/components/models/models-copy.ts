@@ -311,7 +311,7 @@ const en = {
     result: 'Test result',
     resultNote: 'The result is only shown here and isn’t added to the video.',
     /** 文本的测试结果和别的文本生成一样列进 Space（runtime-core space/space-derive.ts）。 */
-    textResultNote: 'The reply isn’t added to the video; like other generated text, it’s saved as a document in Space.',
+    textResultNote: 'The reply isn’t added to the video; like other generated text, it’s saved as a document in Library.',
     start: 'Start test',
     retry: 'Test again',
     testing: 'Testing…',

@@ -278,6 +278,7 @@ export function FontLibraryList({ value, onPick, inline = false }: { value: stri
           row={liveRow(detailRow, live.get(familyKey(detail)))}
           onBack={() => setDetail(null)}
           onPick={() => pick(detailRow.family)}
+          inline={inline}
         />
       </div>
     );

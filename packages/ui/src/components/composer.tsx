@@ -248,6 +248,11 @@ export interface ComposerProps {
   start?: ComposerStart;
   /** AI 工具参数页的提示词框（原型 tool-prompt.jsx）才传；正文由工具页持有，不进会话草稿。 */
   tool?: ComposerTool;
+  /**
+   * Send is neutral instead of yellow: the composer shares the view with the video editor, whose Export is the view's
+   * one tinted action (docs/cuccut/AGENTCUT-DESIGN.md, "Render is the primary action").
+   */
+  quietSend?: boolean;
 }
 
 /**
@@ -308,7 +313,7 @@ export interface ComposerStart {
  */
 export function Composer(props: ComposerProps) {
   const { draftKey, driverId, model, effort, lockedTo, onAgentChange, accessMode, onAccessModeChange } = props;
-  const { busy, queueWhileBusy, stopping, placeholder, autoFocus, mentionScope, onSend, beforeSend, onStop, reference, queue, start, tool } = props;
+  const { busy, queueWhileBusy, stopping, placeholder, autoFocus, mentionScope, onSend, beforeSend, onStop, reference, queue, start, tool, quietSend } = props;
   const spaceReferences = props.spaceReferences?.items.length ? props.spaceReferences : null;
   const slideAnnotations = props.slideAnnotations?.items.length ? props.slideAnnotations : null;
   const designAnnotations = props.designAnnotations?.items.length ? props.designAnnotations : null;
@@ -644,8 +649,9 @@ export function Composer(props: ComposerProps) {
     ];
   };
 
-  // agentcut's PromptComposer: Send is the one yellow capsule of the view; while a run is going, a neutral Stop sits
-  // before it, and Send stays only when a message can be queued. Narrow composers keep the icons and drop the words.
+  // agentcut's PromptComposer: Send is the one yellow capsule of the view (neutral beside the video editor, whose Export
+  // is the primary); while a run is going, a neutral Stop sits before it, and Send stays only when a message can be
+  // queued. Narrow composers keep the icons and drop the words.
   const stopLabel = stopping ? S.composer.stopping : S.composer.stop;
   // While a run is going the message waits its turn: agentcut names that button "Queue".
   const sendLabel = busy ? COMPOSER_COPY.queue : S.composer.send;
@@ -665,7 +671,7 @@ export function Composer(props: ComposerProps) {
       ) : null}
       {!busy || queueWhileBusy ? (
         <Button
-          variant="accent"
+          variant={quietSend ? 'secondary' : 'accent'}
           size="M"
           UNSAFE_className="cc-composer-send"
           isDisabled={!canSend && !waitsForText}
@@ -1053,7 +1059,8 @@ export function Composer(props: ComposerProps) {
         <>
           {tool.notice}
           {tool.context?.({ count: images.length, images: images.filter((i) => i.file.type.startsWith('image/')).length })}
-          <Button variant="accent" styles={toolCta} isDisabled={!canSend} isPending={sending} onPress={() => void send()}>
+          {/* The tool page sits in the editor's side panel, beside Export (the view's one tinted action): neutral. */}
+          <Button variant="secondary" styles={toolCta} isDisabled={!canSend} isPending={sending} onPress={() => void send()}>
             {tool.cta}
           </Button>
           <p className={toolHint}>{tool.hint}</p>

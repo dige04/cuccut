@@ -276,7 +276,6 @@ export const fr: CopyMessages = {
   },
 
   home: {
-    title: "Quelle vidéo voulez-vous créer ?",
     templates: "Modèles de vidéo",
     quickStart: "Démarrage rapide",
     blankVideo: "Nouvelle vidéo vide",
@@ -704,7 +703,7 @@ export const fr: CopyMessages = {
       `Session « ${title} »${status ? ` · ${status}` : ""} · épinglée en tête, non déplaçable ni fermable`,
     conversationTabLabel: (title: string, status: string | null) => `Session « ${title} »${status ? `, ${status}` : ""}, épinglée en tête`,
     opening: "Ouverture de la vidéo…",
-    showInSpace: "Afficher dans Space",
+    showInSpace: "Afficher dans la Bibliothèque",
     reveal: "Afficher dans le dossier",
     fileMissing: "Fichier déplacé ou supprimé",
     filesNoConversation: "Les fichiers du dossier apparaissent après création de la session.",

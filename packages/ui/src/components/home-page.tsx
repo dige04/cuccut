@@ -12,6 +12,7 @@ import {
   EDITOR_MIN_WIDTH,
   PANE_MIN_WIDTH,
   dockFor,
+  inspectorBeside,
   isNarrow,
   itemKey,
   workspaceKey,
@@ -40,7 +41,8 @@ const INSPECTOR_WIDTH = 340;
 /**
  * Home: the landing page while nothing is open; otherwise the session layout (agentcut editor frame). A glass header
  * runs across the top; under it, 16px apart, an optional sessions drawer on the left, the open tab (video editor,
- * file, web page) in the centre, and on the right the conversation with the selection inspector under it.
+ * file, web page) in the centre, and on the right the conversation with the selection inspector beside it when the editor
+ * still keeps its minimum width (otherwise under it).
  * With no tab on screen the conversation takes the centre at a reading width (agentcut /chat).
  * Narrow windows and full view keep one strip of tabs in the header (the session is its first tab) and show either the
  * session or one tab; the side not shown stays mounted (draft, scroll position, editor state).
@@ -91,6 +93,10 @@ function HomeSession({ conversationId, projectId, pane }: {
   const inspectorSlot = docked || (conversationHidden && contentWidth >= EDITOR_MIN_WIDTH + INSPECTOR_WIDTH + 16);
   // The right column: beside the open tab (docked); alone in a single strip only when the inspector has something.
   const columnHidden = conversationHidden && !(inspectorSlot && inspectorFilled);
+  // Docked, the inspector is a column beside the conversation when the editor still fits; otherwise it stacks under it.
+  const beside = docked && inspectorBeside(contentWidth, dockWidth);
+  // The video editor beside the session owns the view's one tinted action (Export): Send goes neutral there.
+  const quietSend = docked && pane?.kind === 'video';
 
   // The content area is narrow when it cannot fit the narrowest session column beside the editor. The first measure
   // only records the mode (a deep link in a narrow window still shows its tab); later, switching from side by side to
@@ -115,9 +121,9 @@ function HomeSession({ conversationId, projectId, pane }: {
 
   const draft = !conversationId;
   const conversation = conversationId ? (
-    <ConversationView key={conversationId} conversationId={conversationId} />
+    <ConversationView key={conversationId} conversationId={conversationId} quietSend={quietSend} />
   ) : (
-    <StartPage key={projectId ?? 'none'} projectId={projectId} />
+    <StartPage key={projectId ?? 'none'} projectId={projectId} quietSend={quietSend} />
   );
 
   return (
@@ -128,34 +134,49 @@ function HomeSession({ conversationId, projectId, pane }: {
         <div ref={setContentElement} className="relative flex min-h-0 min-w-0 flex-1 gap-4">
           <WorkspacePanes conversationId={conversationId} book={book} tabs={tabs} active={pane ? itemKey(pane) : null} visible={visible} />
           <DockSeam key={book} column={columnRef} width={dockWidth} contentWidth={contentWidth} enabled={docked} />
+          {/* The right side: the conversation column and the open pane's inspector. Docked with room to spare (inspectorBeside) the
+              inspector is a column of its own beside the conversation, which keeps its full height and its own scroll;
+              narrower, it stacks under the conversation. The seam resizes the conversation column only. */}
           <div
-            ref={columnRef}
             className={cn(
-              'flex min-h-0 flex-col gap-4',
-              docked ? 'max-w-[calc(100%-20rem)] min-w-80 shrink-0' : conversationHidden ? 'w-[340px] shrink-0' : 'min-w-0 flex-1 items-center',
+              'box-border flex min-h-0 flex-col gap-4',
+              docked ? cn('max-w-[calc(100%-20rem)] shrink-0', beside && 'flex-row') : conversationHidden ? 'w-[340px] shrink-0' : 'min-w-0 flex-1',
               columnHidden && 'hidden',
             )}
-            style={docked ? { width: dockWidth } : undefined}>
-            <section
+            style={docked && !beside ? { width: dockWidth } : undefined}>
+            <div
+              ref={columnRef}
               className={cn(
-                'flex min-h-0 w-full flex-1 flex-col',
-                docked ? cn(card, 'min-h-64') : draft ? 'cc-scroll overflow-y-auto' : 'max-w-3xl',
-                docked && draft && 'cc-scroll overflow-y-auto',
+                'box-border flex min-h-0 flex-col',
+                docked ? (beside ? 'min-w-80' : 'min-w-0 flex-1') : 'min-w-0 flex-1 items-center',
                 conversationHidden && 'hidden',
               )}
-              data-home-conversation
-              {...(single
-                ? { id: workspacePanelId(CONVERSATION_TAB), role: 'tabpanel', 'aria-labelledby': workspaceTabId(CONVERSATION_TAB) }
-                : { 'aria-label': WORKSPACE_COPY.conversation })}>
-              {conversation}
-            </section>
+              style={beside ? { width: dockWidth } : undefined}>
+              <section
+                className={cn(
+                  'flex min-h-0 w-full flex-1 flex-col',
+                  docked ? cn(card, 'min-h-64') : draft ? 'cc-scroll overflow-y-auto' : 'max-w-3xl',
+                  docked && draft && 'cc-scroll overflow-y-auto',
+                )}
+                data-home-conversation
+                {...(single
+                  ? { id: workspacePanelId(CONVERSATION_TAB), role: 'tabpanel', 'aria-labelledby': workspaceTabId(CONVERSATION_TAB) }
+                  : { 'aria-label': WORKSPACE_COPY.conversation })}>
+                {conversation}
+              </section>
+            </div>
             {/* The open pane's selection inspector portals here (agentcut: the right column is about the selection); the
                 pane brings its own cards. Empty, it takes no room. */}
             {inspectorSlot ? (
               <section
                 ref={setInspectorElement}
                 aria-label={SESSION_COPY.inspector}
-                className={cn('flex min-h-0 w-full shrink-0 flex-col', conversationHidden ? 'max-h-full' : 'max-h-[40%]', !inspectorFilled && 'hidden')}>
+                className={cn(
+                  'box-border flex min-h-0 shrink-0 flex-col',
+                  conversationHidden || beside ? 'max-h-full' : 'max-h-[40%]',
+                  beside && 'w-[280px]',
+                  !inspectorFilled && 'hidden',
+                )}>
                 <SessionSlot name="inspector" className="cc-scroll flex max-h-full min-h-0 flex-col gap-3 overflow-y-auto empty:hidden" />
               </section>
             ) : null}

@@ -250,7 +250,7 @@ export const tr: ModelsMessages = {
     result: "Deneme sonucu",
     resultNote: "Sonuç yalnızca burada gösterilir; videoya eklenmez.",
 
-    textResultNote: "Yanıt videoya eklenmez; diğer oluşturulan metinler gibi Space içinde belge olarak kaydedilir.",
+    textResultNote: "Yanıt videoya eklenmez; diğer oluşturulan metinler gibi Kitaplık içinde belge olarak kaydedilir.",
     start: "Testi başlat",
     retry: "Tekrar test edin",
     testing: "Test ediliyor…",

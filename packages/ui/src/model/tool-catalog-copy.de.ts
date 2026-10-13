@@ -5,13 +5,13 @@ import type { ToolCatalogMessages } from './tool-catalog-copy.ts';
 export const de: ToolCatalogMessages = {
   inputLabels: {
     file: "Lokale Datei",
-    space: "Space",
+    space: "Bibliothek",
     link: "Link",
     text: "Text",
-    video: "Video in Space",
+    video: "Video in der Bibliothek",
     document: "Dokument",
   },
-  outputLabels: { video: "Video", artifact: "Eintrag in Space" },
+  outputLabels: { video: "Video", artifact: "Eintrag in der Bibliothek" },
   artifactLabels: { audio: "Audio", image: "Bild", doc: "Dokument", final: "Videodatei", subtitle: "Untertitel" },
   tools: {
     transcribe: {
@@ -28,11 +28,11 @@ export const de: ToolCatalogMessages = {
     },
     'synthesize-speech': {
       name: "Sprache erzeugen",
-      desc: "Text oder Dokumente und Untertitel in Space vorlesen; mit einer voreingestellten Stimme, einer geklonten Aufnahme oder einer beschriebenen Stimme",
+      desc: "Text oder Dokumente und Untertitel in der Bibliothek vorlesen; mit einer voreingestellten Stimme, einer geklonten Aufnahme oder einer beschriebenen Stimme",
     },
     'generate-text': {
       name: "Text erzeugen",
-      desc: "Den Bedarf beschreiben und ein Textmodell direkt für Texte, Skripte oder Zusammenfassungen aufrufen; Dokumente oder Untertitel in Space können als Material angehängt werden",
+      desc: "Den Bedarf beschreiben und ein Textmodell direkt für Texte, Skripte oder Zusammenfassungen aufrufen; Dokumente oder Untertitel in der Bibliothek können als Material angehängt werden",
     },
     'generate-image': {
       name: "Bild erzeugen",
@@ -62,7 +62,7 @@ export const de: ToolCatalogMessages = {
   groups: {
     speech: {
       label: "Sprache & Untertitel",
-      desc: "Transkribieren, Untertitel übersetzen, Vertonungen hinzufügen und Text vorlesen. Ergebnisse sind Dokument-, Untertitel- und Audioeinträge; bei Auswahl eines bearbeitbaren Videos in Space wird hineingeschrieben.",
+      desc: "Transkribieren, Untertitel übersetzen, Vertonungen hinzufügen und Text vorlesen. Ergebnisse sind Dokument-, Untertitel- und Audioeinträge; bei Auswahl eines bearbeitbaren Videos in der Bibliothek wird hineingeschrieben.",
     },
     'text-image': { label: "Text & Bilder", desc: "Text- und Bildmodelle direkt aufrufen. Ergebnisse sind Dokument- und Bildeinträge." },
     music: { label: 'Musik', desc: 'Songs und Hintergrundmusik mit einem lokalen Musikmodell erzeugen. Ergebnisse sind Audio-Elemente.' },
@@ -74,7 +74,7 @@ export const de: ToolCatalogMessages = {
 
   artifactItems: (artifacts: readonly Artifact[]) => (artifacts.length ? `${artifacts.map((a) => ARTIFACT_NOUN[a]).join(" und ")} Einträge` : "Ergebniseinträge"),
   resultWritesVideo: "Ergebnis: in das ausgewählte Video geschrieben",
-  resultInSpace: (items: string) => `Ergebnis: ${items} in Space`,
+  resultInSpace: (items: string) => `Ergebnis: ${items} in der Bibliothek`,
   resultAlsoCreate: "kann auch ein neues Video erstellen",
   resultWritesEditable: "schreibt bei Auswahl eines bearbeitbaren Videos hinein",
   joinResult: (parts: readonly string[]) => parts.join("; "),

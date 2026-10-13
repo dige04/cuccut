@@ -249,7 +249,6 @@ export const ko: CopyMessages = {
     retryFailed: (message: string) => `다시 시도하지 못했습니다: ${message}`,
   },
   home: {
-    title: '어떤 영상을 만들까요?',
     templates: '영상 제작 템플릿',
     quickStart: '빠른 시작',
     blankVideo: '새 빈 영상',
@@ -654,7 +653,7 @@ export const ko: CopyMessages = {
       `세션 “${title}”${status ? ` · ${status}` : ''} · 맨 앞에 고정되어 옮기거나 닫을 수 없음`,
     conversationTabLabel: (title: string, status: string | null) => `세션 “${title}”${status ? `, ${status}` : ''}, 맨 앞에 고정됨`,
     opening: '영상을 여는 중…',
-    showInSpace: 'Space에서 보기',
+    showInSpace: '라이브러리에서 보기',
     reveal: '폴더에서 보기',
     fileMissing: '파일이 이동되었거나 삭제되었습니다',
     filesNoConversation: '세션이 만들어지면 세션 폴더의 파일이 여기에 표시됩니다.',

@@ -48,5 +48,6 @@ export const nl: LandingMessages = {
     more: (count) => `Nog ${count} tonen`,
     less: 'Minder tonen',
     pinned: 'Vastgezet',
+    archiveProject: 'Project archiveren',
   },
 };

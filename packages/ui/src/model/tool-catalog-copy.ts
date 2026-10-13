@@ -23,13 +23,13 @@ const ARTIFACT_NOUN: Record<Artifact, string> = { audio: 'audio', image: 'image'
 const en = {
   inputLabels: {
     file: 'Local file',
-    space: 'Space',
+    space: 'Library',
     link: 'Link',
     text: 'Text',
-    video: 'Video in Space',
+    video: 'Video in Library',
     document: 'Document',
   },
-  outputLabels: { video: 'Video', artifact: 'Item in Space' },
+  outputLabels: { video: 'Video', artifact: 'Item in Library' },
   artifactLabels: { audio: 'Audio', image: 'Image', doc: 'Document', final: 'Video file', subtitle: 'Subtitles' },
   tools: {
     transcribe: {
@@ -46,11 +46,11 @@ const en = {
     },
     'synthesize-speech': {
       name: 'Generate speech',
-      desc: 'Read text, or documents and subtitles in Space, aloud; use a preset voice, clone a recording or describe a voice',
+      desc: 'Read text, or documents and subtitles in Library, aloud; use a preset voice, clone a recording or describe a voice',
     },
     'generate-text': {
       name: 'Generate text',
-      desc: 'Describe what you need and call a text model directly for copy, scripts or summaries; you can attach documents or subtitles in Space as material',
+      desc: 'Describe what you need and call a text model directly for copy, scripts or summaries; you can attach documents or subtitles in Library as material',
     },
     'generate-image': {
       name: 'Generate image',
@@ -80,7 +80,7 @@ const en = {
   groups: {
     speech: {
       label: 'Speech & subtitles',
-      desc: 'Transcribe, translate subtitles, add voice-overs and read text aloud. Results are document, subtitle and audio items; choosing an editable video in Space writes into it.',
+      desc: 'Transcribe, translate subtitles, add voice-overs and read text aloud. Results are document, subtitle and audio items; choosing an editable video in Library writes into it.',
     },
     'text-image': { label: 'Text & images', desc: 'Call text and image models directly. Results are document and image items.' },
     music: { label: 'Music', desc: 'Generate songs and background music with a local music model. Results are audio items.' },
@@ -92,7 +92,7 @@ const en = {
   /** 产出条目的说法：「文档与字幕条目」「音频条目」。 */
   artifactItems: (artifacts: readonly Artifact[]) => (artifacts.length ? `${artifacts.map((a) => ARTIFACT_NOUN[a]).join(' and ')} items` : 'output items'),
   resultWritesVideo: 'Result: written into the video you choose',
-  resultInSpace: (items: string) => `Result: ${items} in Space`,
+  resultInSpace: (items: string) => `Result: ${items} in Library`,
   resultAlsoCreate: 'can also create a new video',
   resultWritesEditable: 'writes into an editable video when you choose one',
   joinResult: (parts: readonly string[]) => parts.join('; '),

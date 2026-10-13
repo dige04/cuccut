@@ -48,5 +48,6 @@ export const vi: LandingMessages = {
     more: (count) => `Xem thêm ${count}`,
     less: 'Thu gọn',
     pinned: 'Đã ghim',
+    archiveProject: 'Lưu trữ dự án',
   },
 };

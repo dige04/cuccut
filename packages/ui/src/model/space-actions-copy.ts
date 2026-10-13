@@ -53,7 +53,7 @@ const en = {
   /** 随消息带上的条目：`names` 是前两个名字，`total` 是总数。 */
   references: (names: readonly string[], total: number) => {
     const quoted = names.map((name) => `“${name}”`).join(', ');
-    return total > names.length ? `Space items ${quoted} and ${total - names.length} more` : `Space ${total === 1 ? 'item' : 'items'} ${quoted}`;
+    return total > names.length ? `Library items ${quoted} and ${total - names.length} more` : `Library ${total === 1 ? 'item' : 'items'} ${quoted}`;
   },
   referenceOutput: 'Output',
 };

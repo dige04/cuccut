@@ -435,7 +435,7 @@ function DubSetupPage({
             <Content>
               {GATE_COPY.ttsBody}
               <div className={alertActions}>
-                <Button size="S" variant="accent" onPress={toTts}>
+                <Button size="S" variant="secondary" onPress={toTts}>
                   {C.goTts}
                 </Button>
               </div>
@@ -571,7 +571,7 @@ function DubSetupPage({
                 <Content>
                   {GATE_COPY.textBody}
                   <div className={alertActions}>
-                    <Button size="S" variant="accent" onPress={toLlm}>
+                    <Button size="S" variant="secondary" onPress={toLlm}>
                       {C.goLlm}
                     </Button>
                   </div>
@@ -605,7 +605,7 @@ function DubSetupPage({
       </div>
       <div className={footer}>
         <Button
-          variant="accent"
+          variant="secondary"
           styles={field}
           isDisabled={!language || busy || !editable}
           isPending={submitting || !!sepWait}

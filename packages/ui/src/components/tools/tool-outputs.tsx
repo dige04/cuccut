@@ -139,7 +139,7 @@ function NewMovieFrom({ entry, label }: { entry: SpaceEntry; label: string }) {
       <span className={detail}>{OUTPUT_COPY.newMovieNote}</span>
       <ProjectPicker value={projectId} onChange={setProjectId} />
       <div className={acts}>
-        <Button variant="accent" size="S" isDisabled={!projectId} isPending={busy} onPress={go}>
+        <Button variant="secondary" size="S" isDisabled={!projectId} isPending={busy} onPress={go}>
           {OUTPUT_COPY.newMovieGo}
         </Button>
         <ActionButton isQuiet size="S" onPress={() => setOpen(false)}>
@@ -150,17 +150,22 @@ function NewMovieFrom({ entry, label }: { entry: SpaceEntry; label: string }) {
   );
 }
 
-/** 产物行；`fromTool` 是产出它的工具（写进视频的结果按它给下一步）；`compact` 是记录卡里的窄版。 */
+/**
+ * 产物行；`fromTool` 是产出它的工具（写进视频的结果按它给下一步）；`compact` 是记录卡里的窄版。
+ * `primary`: this row's "Open in editor" is the view's one yellow; rows are repeated, so it defaults to neutral.
+ */
 export function ToolOutputRow({
   entry,
   fromTool,
   compact = false,
   panel = false,
+  primary = false,
 }: {
   entry: SpaceEntry;
   fromTool?: ToolId | null;
   compact?: boolean;
   panel?: boolean;
+  primary?: boolean;
 }) {
   const actions = useOutputActions();
   const movie = entry.kind === 'video';
@@ -190,7 +195,7 @@ export function ToolOutputRow({
       </div>
       <div className={acts}>
         {open ? (
-          <Button variant="accent" size="S" onPress={() => actions.openMovie(entry)}>
+          <Button variant={primary ? 'accent' : 'secondary'} size="S" onPress={() => actions.openMovie(entry)}>
             {open.label}
           </Button>
         ) : null}
@@ -237,22 +242,26 @@ export function ToolOutputs({
   fromTool,
   saveDir,
   panel = false,
+  primaryOpen = false,
 }: {
   entries: readonly SpaceEntry[];
   fromTool?: ToolId | null;
   saveDir?: string | null;
   /** In a page column of panels (task details): the heading and 24px cards match the other sections. */
   panel?: boolean;
+  /** The first video's "Open in editor" is the view's one yellow (a run's result page); otherwise every row stays neutral. */
+  primaryOpen?: boolean;
 }) {
   if (!entries.length) return null;
+  const firstVideo = primaryOpen ? entries.findIndex((e) => e.kind === 'video') : -1;
   return (
     <div className={list}>
       <div className={listHead}>
         <h3 className={listTitle({ isPanel: panel })}>{OUTPUT_COPY.title}</h3>
         {saveDir ? <span className={detail}>{OUTPUT_COPY.savedIn(saveDirLabel(saveDir))}</span> : null}
       </div>
-      {entries.map((e) => (
-        <ToolOutputRow key={e.id} entry={e} fromTool={fromTool} panel={panel} />
+      {entries.map((e, i) => (
+        <ToolOutputRow key={e.id} entry={e} fromTool={fromTool} panel={panel} primary={i === firstVideo} />
       ))}
     </div>
   );

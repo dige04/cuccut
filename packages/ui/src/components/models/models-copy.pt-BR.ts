@@ -291,7 +291,7 @@ export const ptBR: ModelsMessages = {
     result: "Resultado do teste",
     resultNote: "Resultado mostrado só aqui, sem adicionar ao vídeo.",
 
-    textResultNote: "Resposta não adicionada ao vídeo; salva como documento no Space, como outros textos.",
+    textResultNote: "Resposta não adicionada ao vídeo; salva como documento na Biblioteca, como outros textos.",
     start: "Iniciar teste",
     retry: "Teste novamente",
     testing: "Testando…",

@@ -1,13 +1,13 @@
 import type { VideoBarMessages } from './video-bar-copy.ts';
 
 export const ko: VideoBarMessages = {
-  closeToSpace: '영상 닫기 · Space로 돌아가기',
+  closeToSpace: '영상 닫기 · 라이브러리로 돌아가기',
   closeToHome: '영상 닫기 · Home으로 돌아가기',
   untitled: '영상',
   rename: '영상 이름 변경',
   details: '영상 정보',
   actions: '영상 동작',
-  showInSpace: 'Space에서 보기',
+  showInSpace: '라이브러리에서 보기',
   revealVideoFolder: '영상 폴더 보기',
   close: '영상 닫기',
   nameLabel: '이름',

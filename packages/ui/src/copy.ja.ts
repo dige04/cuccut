@@ -249,7 +249,6 @@ export const ja: CopyMessages = {
     retryFailed: (message: string) => `再試行できませんでした：${message}`,
   },
   home: {
-    title: 'どんな動画を作りますか？',
     templates: '動画作成テンプレート',
     quickStart: 'クイックスタート',
     blankVideo: '新しい空の動画',
@@ -653,7 +652,7 @@ export const ja: CopyMessages = {
       `セッション「${title}」${status ? ` · ${status}` : ''} · 先頭に固定。移動や閉じることはできません`,
     conversationTabLabel: (title: string, status: string | null) => `セッション「${title}」${status ? `、${status}` : ''}、先頭に固定`,
     opening: '動画を開いています…',
-    showInSpace: 'Space で表示',
+    showInSpace: 'ライブラリで表示',
     reveal: 'フォルダで表示',
     fileMissing: 'ファイルは移動または削除されました',
     filesNoConversation: 'セッションが作成されると、そのフォルダ内のファイルがここに表示されます。',

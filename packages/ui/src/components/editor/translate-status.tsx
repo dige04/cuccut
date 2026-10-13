@@ -218,7 +218,7 @@ export function TranslateProblemAlert({ videoId, problem }: { videoId: Id; probl
           {problem.retry?.note ? <div className={alertNote}>{problem.retry.note === 'charges' ? C.retryCharges : C.retryFree}</div> : null}
           <div className={alertActions}>
             {problem.retry ? (
-              <Button size="S" variant="accent" isDisabled={busy} onPress={() => void retryTranslate(videoId)}>
+              <Button size="S" variant="secondary" isDisabled={busy} onPress={() => void retryTranslate(videoId)}>
                 {C.retry}
               </Button>
             ) : null}

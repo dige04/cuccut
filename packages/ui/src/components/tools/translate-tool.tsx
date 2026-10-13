@@ -137,7 +137,7 @@ export function TranslateTool() {
     <ToolFrame
       tool="translate-subtitles"
       title={TRANSLATE_COPY.title}
-      bar={<SubmitBar why={why} label={TRANSLATE_COPY.submit} busy={starter.busy} onPress={start} />}
+      bar={<SubmitBar why={why} label={TRANSLATE_COPY.submit} busy={starter.busy} onPress={start} yields={!!starter.asking} />}
       onKeyDown={submitOnModEnter(start)}>
       <p className={lede}>{space && !subtitleEntry ? TRANSLATE_COPY.ledeVideo : TRANSLATE_COPY.ledeFile}</p>
       <ToolSourceSwitch tool="translate-subtitles" value={draft.source} onChange={(source) => patch({ source })} />

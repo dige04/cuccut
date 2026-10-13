@@ -430,8 +430,9 @@ export function AgentProviderCard({
             <div className={problemTitle}>{problem.title}</div>
             <p className={problemBody}>{problem.body}</p>
           </div>
+          {/* Every provider card can carry a problem: the strip's action stays neutral, the page's one yellow is the overview. */}
           <Button
-            variant="accent"
+            variant="secondary"
             size="S"
             styles={problemAction}
             isDisabled={web || (problem.action !== 'login' && disabled) || (problem.action === 'upgrade' && setupRunning)}
@@ -452,7 +453,7 @@ export function AgentProviderCard({
             </p>
           </div>
           {gate.latest ? (
-            <Button variant="accent" size="S" styles={problemAction} isDisabled={disabled || setupRunning} onPress={() => act('upgrade')}>
+            <Button variant="secondary" size="S" styles={problemAction} isDisabled={disabled || setupRunning} onPress={() => act('upgrade')}>
               {CARD_COPY.upgradeTo(gate.latest)}
             </Button>
           ) : null}

@@ -14,6 +14,6 @@ export const it: SpaceActionsMessages = {
   importFailed: (error: string) => `Non importato: ${error}`,
   imported: (count: number) => pluralForm('it', count, { one: `${count} materiale importato`, other: `${count} materiali importati` }),
   copiedAll: 'copiati in imports/ del progetto', copiedSome: (count: number) => pluralForm('it', count, { one: `${count} copiato in imports/ del progetto`, other: `${count} copiati in imports/ del progetto` }), notImported: (count: number) => pluralForm('it', count, { one: `${count} non importato`, other: `${count} non importati` }),
-  references: (names: readonly string[], total: number) => { const quoted = names.map((name) => `«${name}»`).join(', '); return total > names.length ? `Voci dello Space ${quoted} e altre ${total - names.length}` : `${pluralForm('it', total, { one: 'Voce dello Space', other: 'Voci dello Space' })} ${quoted}`; },
+  references: (names: readonly string[], total: number) => { const quoted = names.map((name) => `«${name}»`).join(', '); return total > names.length ? `Voci della Libreria ${quoted} e altre ${total - names.length}` : `${pluralForm('it', total, { one: 'Voce della Libreria', other: 'Voci della Libreria' })} ${quoted}`; },
   referenceOutput: 'Risultato',
 };

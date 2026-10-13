@@ -250,7 +250,6 @@ export const zhHans: CopyMessages = {
     retryFailed: (message: string) => `没能重试：${message}`,
   },
   home: {
-    title: '想做个什么视频？',
     templates: '视频创作模板',
     quickStart: '快捷开始',
     blankVideo: '新建空白视频',
@@ -652,7 +651,7 @@ export const zhHans: CopyMessages = {
       `会话「${title}」${status ? ` · ${status}` : ''} · 固定在第一位，不能拖动或关闭`,
     conversationTabLabel: (title: string, status: string | null) => `会话「${title}」${status ? `，${status}` : ''}，固定在第一位`,
     opening: '正在打开视频…',
-    showInSpace: '在 Space 中显示',
+    showInSpace: '在资料库中显示',
     reveal: '在文件夹中显示',
     fileMissing: '文件已移走或删除',
     filesNoConversation: '会话建好之后，这里列出它所在目录里的文件。',

@@ -37,7 +37,7 @@ export const ko: SpaceActionsMessages = {
   notImported: (count: number) => `${count}개는 가져오지 못함`,
   references: (names: readonly string[], total: number) => {
     const quoted = names.map((name) => `“${name}”`).join(', ');
-    return total > names.length ? `Space 항목 ${quoted} 외 ${total - names.length}개` : `Space 항목 ${quoted}`;
+    return total > names.length ? `라이브러리 항목 ${quoted} 외 ${total - names.length}개` : `라이브러리 항목 ${quoted}`;
   },
   referenceOutput: '결과물',
 };

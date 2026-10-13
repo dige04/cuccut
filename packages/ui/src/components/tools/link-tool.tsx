@@ -117,7 +117,7 @@ export function LinkTool() {
     starter.start(request, meta, key);
   };
   return <ToolFrame tool="link-import" title={LINK_TOOL_COPY.title}
-    bar={<SubmitBar why={why} label={draft.transcribe ? LINK_TOOL_COPY.submitTranscribe : LINK_TOOL_COPY.submit} busy={starter.busy} onPress={start} />}
+    bar={<SubmitBar why={why} label={draft.transcribe ? LINK_TOOL_COPY.submitTranscribe : LINK_TOOL_COPY.submit} busy={starter.busy} onPress={start} yields={!!starter.asking || !downloader.ready} />}
     onKeyDown={submitOnModEnter(start)}>
     <p className={lede}>{LINK_TOOL_COPY.lede}</p>
     <Section>

@@ -37,7 +37,7 @@ export const ja: SpaceActionsMessages = {
   notImported: (count: number) => `${count} 個は読み込まれませんでした`,
   references: (names: readonly string[], total: number) => {
     const quoted = names.map((name) => `「${name}」`).join('、');
-    return total > names.length ? `Space の項目${quoted}ほか ${total - names.length} 件` : `Space の項目${quoted}`;
+    return total > names.length ? `ライブラリの項目${quoted}ほか ${total - names.length} 件` : `ライブラリの項目${quoted}`;
   },
   referenceOutput: '生成物',
 };

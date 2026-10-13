@@ -1,13 +1,13 @@
 import type { VideoBarMessages } from './video-bar-copy.ts';
 
 export const pl: VideoBarMessages = {
-  closeToSpace: "Zamknij wideo · wróć do Space",
+  closeToSpace: "Zamknij wideo · wróć do Biblioteki",
   closeToHome: "Zamknij wideo · wróć do Home",
   untitled: "Wideo",
   rename: "Zmień nazwę wideo",
   details: "Szczegóły wideo",
   actions: "Działania wideo",
-  showInSpace: "Pokaż w Space",
+  showInSpace: "Pokaż w Bibliotece",
   revealVideoFolder: "Pokaż folder wideo",
   close: "Zamknij wideo",
   nameLabel: "Nazwa",

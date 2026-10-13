@@ -59,7 +59,12 @@ export function ToolRunPanel({ job, tool }: { job: JobRecord; tool: VideoToolId 
       {stopped && !assets && retry.asking ? <GrantCard items={retry.asking} onAgree={retry.agree} busy={retry.busy} /> : null}
       <div className={buttons}>
         {stopped && !assets ? (
-          <Button variant="accent" size="S" isPending={retry.busy && !retry.asking} isDisabled={!!retry.asking} onPress={retry.retry}>
+          <Button
+            variant={retry.asking ? 'secondary' : 'accent'}
+            size="S"
+            isPending={retry.busy && !retry.asking}
+            isDisabled={!!retry.asking}
+            onPress={retry.retry}>
             {RUN_COPY.retry}
           </Button>
         ) : null}

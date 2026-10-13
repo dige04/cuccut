@@ -275,7 +275,7 @@ export const ja: ModelsMessages = {
     failed: 'テスト失敗',
     result: 'テスト結果',
     resultNote: '結果はここに表示されるだけで、動画には追加されません。',
-    textResultNote: '応答は動画には追加されず、ほかの生成テキストと同じく Space にドキュメントとして保存されます。',
+    textResultNote: '応答は動画には追加されず、ほかの生成テキストと同じくライブラリにドキュメントとして保存されます。',
     start: 'テストを開始',
     retry: '再テスト',
     testing: 'テスト中…',

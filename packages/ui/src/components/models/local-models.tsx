@@ -591,12 +591,13 @@ function BundleRow({
   // 引擎没找到时模型不可用（`available: false`，原因写在模型的 detail 里）：不给试听，原因照实写在行上。
   const canTryMusic = !!music && music.available !== false && isBundleInstalled(bundle) && bundle.state !== 'error';
   const musicWhy = music && music.available === false && isBundleInstalled(bundle) ? (localizeText(music.detail, music.detailRef) ?? null) : null;
+  // One row of many: every button here stays neutral (one yellow per view).
   const buttons: ReactNode[] = [];
   if (canAudition || canTryMusic) {
     buttons.push(
       <Button
         key="quick"
-        variant={quickOpen ? 'secondary' : 'accent'}
+        variant="secondary"
         size="S"
         aria-expanded={quickOpen}
         onPress={() => onQuick(!quickOpen)}>
@@ -606,7 +607,7 @@ function BundleRow({
   }
   if (canTryImage) {
     buttons.push(
-      <Button key="try" variant="accent" size="S" onPress={() => setTrying(true)}>
+      <Button key="try" variant="secondary" size="S" onPress={() => setTrying(true)}>
         {IMAGE.tryButton}
       </Button>,
     );
@@ -637,7 +638,7 @@ function BundleRow({
   // （设计稿 settings-local.jsx 的 `half`）。
   if (actions.complete) {
     buttons.push(
-      <Button key="complete" variant="accent" size="S" isDisabled={web} onPress={() => onInstall('complete')}>
+      <Button key="complete" variant="secondary" size="S" isDisabled={web} onPress={() => onInstall('complete')}>
         <DownloadIcon />
         <Text>{needSize ? INSTALL.completeSize(needSize) : INSTALL.complete}</Text>
       </Button>,
@@ -653,7 +654,7 @@ function BundleRow({
   }
   if (actions.resume) {
     buttons.push(
-      <Button key="resume" variant="accent" size="S" isDisabled={web} onPress={() => onInstall(ownFiles ? 'complete' : 'install')}>
+      <Button key="resume" variant="secondary" size="S" isDisabled={web} onPress={() => onInstall(ownFiles ? 'complete' : 'install')}>
         <DownloadIcon />
         <Text>{INSTALL.resume}</Text>
       </Button>,

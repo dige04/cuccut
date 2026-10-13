@@ -136,7 +136,7 @@ export function RemoteNodes() {
                 <span className={nodeMeta}>{hostPort(node.host, node.port)}</span>
               </span>
               <Button
-                variant="accent"
+                variant="secondary"
                 size="S"
                 isDisabled={!connected}
                 aria-label={REMOTE_COPY.pairLabel(node.name)}

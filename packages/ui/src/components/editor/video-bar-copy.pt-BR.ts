@@ -1,13 +1,13 @@
 import type { VideoBarMessages } from './video-bar-copy.ts';
 
 export const ptBR: VideoBarMessages = {
-  closeToSpace: "Fechar vídeo · voltar ao Space",
+  closeToSpace: "Fechar vídeo · voltar à Biblioteca",
   closeToHome: "Fechar vídeo · voltar ao Home",
   untitled: "Vídeo",
   rename: "Renomear vídeo",
   details: "Detalhes do vídeo",
   actions: "Ações do vídeo",
-  showInSpace: "Mostrar no Space",
+  showInSpace: "Mostrar na Biblioteca",
   revealVideoFolder: "Mostrar pasta do vídeo",
   close: "Fechar vídeo",
   nameLabel: "Nome",

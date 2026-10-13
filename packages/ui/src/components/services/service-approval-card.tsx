@@ -45,14 +45,15 @@ export function ServiceApprovals({ serviceId }: { serviceId: ServiceApproval['se
   const live = liveApprovals(approvals, serviceId, now);
   return (
     <>
-      {live.map((a) => (
-        <ApprovalCard key={a.approvalId} approval={a} secondsLeft={approvalSecondsLeft(a, now)} />
+      {/* Several requests can wait at once: only the first card's Allow is yellow (one yellow per view). */}
+      {live.map((a, i) => (
+        <ApprovalCard key={a.approvalId} approval={a} secondsLeft={approvalSecondsLeft(a, now)} primary={i === 0} />
       ))}
     </>
   );
 }
 
-function ApprovalCard({ approval, secondsLeft }: { approval: ServiceApproval; secondsLeft: number }) {
+function ApprovalCard({ approval, secondsLeft, primary }: { approval: ServiceApproval; secondsLeft: number; primary: boolean }) {
   const runtime = useRuntime();
   const connected = useConnection((s) => s.state.status === 'connected');
   const pending = useTasks((s) => s.approvals);
@@ -102,12 +103,12 @@ function ApprovalCard({ approval, secondsLeft }: { approval: ServiceApproval; se
             <Button variant="secondary" size="S" isDisabled={!connected || busy} onPress={() => respond('allow', { persist: true })}>
               {APPROVAL_CARD_COPY.allowPersist}
             </Button>
-            <Button variant="accent" size="S" isDisabled={!connected || busy} onPress={() => respond('allow', { persist: false })}>
+            <Button variant={primary ? 'accent' : 'secondary'} size="S" isDisabled={!connected || busy} onPress={() => respond('allow', { persist: false })}>
               {APPROVAL_CARD_COPY.allowOnce}
             </Button>
           </>
         ) : (
-          <Button variant="accent" size="S" isDisabled={!connected || busy} onPress={() => respond('allow')}>
+          <Button variant={primary ? 'accent' : 'secondary'} size="S" isDisabled={!connected || busy} onPress={() => respond('allow')}>
             {APPROVAL_CARD_COPY.allow}
           </Button>
         )}

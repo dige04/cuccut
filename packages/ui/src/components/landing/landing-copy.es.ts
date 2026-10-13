@@ -48,5 +48,6 @@ export const es: LandingMessages = {
     more: (count) => `Mostrar ${count} más`,
     less: 'Mostrar menos',
     pinned: 'Fijado',
+    archiveProject: 'Archivar proyecto',
   },
 };

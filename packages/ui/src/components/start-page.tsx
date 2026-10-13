@@ -68,7 +68,12 @@ import { focusPromptEnd } from './use-prompt-value.ts';
  * `layout`: `page` sits inside a page that scrolls as a whole (the landing page); `column` scrolls on its own (the
  * session layout's conversation column, which may be narrow — the grids follow the container's width, not the window's).
  */
-export function StartPage({ projectId: routeProjectId, layout = 'column' }: { projectId: string | null; layout?: 'page' | 'column' }) {
+export function StartPage({ projectId: routeProjectId, layout = 'column', quietSend = false }: {
+  projectId: string | null;
+  layout?: 'page' | 'column';
+  /** The video editor beside the start page holds the view's one tinted action (Export): Send goes neutral. */
+  quietSend?: boolean;
+}) {
   const runtime = useRuntime();
   const projects = useDirectory((s) => s.projects);
   const pickable = projects.filter((p) => !p.archived).sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
@@ -370,6 +375,7 @@ export function StartPage({ projectId: routeProjectId, layout = 'column' }: { pr
                   {LANDING_COPY.composerLabel}
                 </div>
                 <Composer
+                  quietSend={quietSend}
                   draftKey={draftKey}
                   driverId={driverId}
                   model={model}

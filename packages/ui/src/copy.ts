@@ -308,7 +308,6 @@ const en = {
   },
   /** Home 起始页（产品设计 §3.2.1；原型 page-new.jsx Home、new-agent.jsx）。 */
   home: {
-    title: 'What video do you want to make?',
     templates: 'Video templates',
     quickStart: 'Quick start',
     blankVideo: 'New blank video',
@@ -749,7 +748,7 @@ const en = {
       `Session “${title}”${status ? ` · ${status}` : ''} · Pinned first; can't be moved or closed`,
     conversationTabLabel: (title: string, status: string | null) => `Session “${title}”${status ? `, ${status}` : ''}, pinned first`,
     opening: 'Opening video…',
-    showInSpace: 'Show in Space',
+    showInSpace: 'Show in Library',
     reveal: 'Show in Folder',
     fileMissing: 'The file was moved or deleted',
     filesNoConversation: 'Once the session is created, files in its folder are listed here.',

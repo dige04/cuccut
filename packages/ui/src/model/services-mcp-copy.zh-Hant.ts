@@ -49,7 +49,7 @@ export const zhHant: ServicesMcpMessages = {
     jobs_cancel: '取消任務',
     jobs_retry: '重新執行失敗的流程',
     export: '匯出',
-    space_list: '列出 Space 中的項目',
+    space_list: '列出資料庫中的項目',
     space_search: '跨影片搜尋逐字稿',
     projects_list: '列出專案',
     skills_list: '列出 Skill',

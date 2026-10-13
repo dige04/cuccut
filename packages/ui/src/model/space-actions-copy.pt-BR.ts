@@ -14,6 +14,6 @@ export const ptBR: SpaceActionsMessages = {
   importFailed: (error: string) => `Não importado: ${error}`,
   imported: (count: number) => pluralForm('pt-BR', count, { one: `${count} mídia importada`, other: `${count} mídias importadas` }),
   copiedAll: 'copiados para imports/ do projeto', copiedSome: (count: number) => pluralForm('pt-BR', count, { one: `${count} copiado para imports/ do projeto`, other: `${count} copiados para imports/ do projeto` }), notImported: (count: number) => pluralForm('pt-BR', count, { one: `${count} não importado`, other: `${count} não importados` }),
-  references: (names: readonly string[], total: number) => { const quoted = names.map((name) => `“${name}”`).join(', '); return total > names.length ? `Itens do Space ${quoted} e mais ${total - names.length}` : `${pluralForm('pt-BR', total, { one: 'Item do Space', other: 'Itens do Space' })} ${quoted}`; },
+  references: (names: readonly string[], total: number) => { const quoted = names.map((name) => `“${name}”`).join(', '); return total > names.length ? `Itens da Biblioteca ${quoted} e mais ${total - names.length}` : `${pluralForm('pt-BR', total, { one: 'Item da Biblioteca', other: 'Itens da Biblioteca' })} ${quoted}`; },
   referenceOutput: 'Resultado',
 };

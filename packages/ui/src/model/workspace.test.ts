@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { SpaceEntry } from '@cuccut/protocol';
 import {
+  inspectorBeside,
   CONVERSATION_TAB,
   DOCK_DEFAULT,
   EDITOR_MIN_WIDTH,
@@ -12,7 +13,6 @@ import {
   dragTarget,
   entryOfTarget,
   fullViewEntry,
-  homeBarBounds,
   isNarrow,
   isVideoReferenced,
   itemKey,
@@ -24,7 +24,6 @@ import {
   restoreKey,
   resizeSplit,
   safeUrl,
-  summaryInHead,
   tabKeyIndex,
   tabsButton,
   targetKey,
@@ -228,39 +227,6 @@ describe('标签条的键盘与拖动', () => {
   });
 });
 
-describe('Home 标题栏的分界', () => {
-  const base = {
-    origin: 0,
-    width: 1400,
-    navRight: 180,
-    content: { left: 300, right: 1300 },
-    conversationRight: 680,
-    controlsLeft: 1260,
-    hasPane: true,
-    single: false,
-  };
-
-  it('右侧显示着时对齐会话列的缝；标签条与会话头的右端让开量出来的按钮组左缘 4px', () => {
-    expect(homeBarBounds(base)).toEqual({ left: 300, split: 680, right: 144 });
-    expect(homeBarBounds({ ...base, hasPane: false, conversationRight: null })).toEqual({ left: 300, split: 1256, right: 144 });
-    // 按钮组变宽，右端跟着让开。
-    expect(homeBarBounds({ ...base, hasPane: false, conversationRight: null, controlsLeft: 1180 })).toEqual({ left: 300, split: 1176, right: 224 });
-  });
-
-  it('按钮组在内容区右缘之外或没有按钮时，排到内容区右缘', () => {
-    expect(homeBarBounds({ ...base, controlsLeft: 1340 })?.right).toBe(100);
-    expect(homeBarBounds({ ...base, controlsLeft: null })?.right).toBe(100);
-  });
-
-  it('单条标签条时标签条从左缘开始；会话列还没量到时先给个估计；离后退前进至少 12', () => {
-    expect(homeBarBounds({ ...base, single: true })).toEqual({ left: 300, split: 300, right: 144 });
-    expect(homeBarBounds({ ...base, single: true, hasPane: false, conversationRight: null })).toEqual({ left: 300, split: 300, right: 144 });
-    expect(homeBarBounds({ ...base, conversationRight: null })?.split).toBe(540);
-    expect(homeBarBounds({ ...base, content: { left: 100, right: 1300 } })?.left).toBe(192);
-    expect(homeBarBounds({ ...base, content: null })).toBeNull();
-  });
-});
-
 describe('工作区视图', () => {
   const view = (hidden: boolean, full: boolean) => ({ hidden, full });
 
@@ -301,13 +267,6 @@ describe('工作区视图', () => {
     expect(tabsButton({ count: 9, visible: false, full: false }).badge).toBe('9');
     expect(tabsButton({ count: 10, visible: false, full: false }).badge).toBe('9+');
   });
-
-  it('会话摘要只在分屏可见时挂进会话头', () => {
-    expect(summaryInHead({ visible: true, single: false, count: 1 })).toBe(true);
-    expect(summaryInHead({ visible: false, single: false, count: 1 })).toBe(false);
-    expect(summaryInHead({ visible: true, single: true, count: 1 })).toBe(false);
-    expect(summaryInHead({ visible: true, single: false, count: 0 })).toBe(false);
-  });
 });
 
 describe('地址栏输入', () => {
@@ -316,5 +275,18 @@ describe('地址栏输入', () => {
     expect(safeUrl('localhost:3000')).toBe('http://localhost:3000/');
     expect(safeUrl('javascript:alert(1)')).toBeNull();
     expect(safeUrl('https://u:p@example.com')).toBeNull();
+  });
+});
+
+describe('inspector beside the docked conversation', () => {
+  it('sits beside only when the editor keeps its minimum width', () => {
+    // 1280 window: 1248 content, 380 dock -> 1248 - 380 - 312 = 556 < 695.
+    expect(inspectorBeside(1248, 380)).toBe(false);
+    // 1600 window: 1568 content -> 876 left for the editor.
+    expect(inspectorBeside(1568, 380)).toBe(true);
+    // A wider conversation column takes the room back.
+    expect(inspectorBeside(1568, 600)).toBe(false);
+    expect(inspectorBeside(0, 380)).toBe(false);
+    expect(inspectorBeside(Number.NaN, 380)).toBe(false);
   });
 });

@@ -5,13 +5,13 @@ const artifactLabels = { audio: '오디오', image: '이미지', doc: '문서', 
 export const ko: ToolCatalogMessages = {
   inputLabels: {
     file: '로컬 파일',
-    space: 'Space',
+    space: '라이브러리',
     link: '링크',
     text: '텍스트',
-    video: 'Space의 영상',
+    video: '라이브러리의 영상',
     document: '문서',
   },
-  outputLabels: { video: '영상', artifact: 'Space 항목' },
+  outputLabels: { video: '영상', artifact: '라이브러리 항목' },
   artifactLabels,
   tools: {
     transcribe: {
@@ -25,11 +25,11 @@ export const ko: ToolCatalogMessages = {
     dub: { name: '번역 더빙', desc: '전사된 영상에 번역으로 새 더빙을 입힙니다. 원래 오디오는 줄이거나 음소거하거나 그대로 둘 수 있습니다' },
     'synthesize-speech': {
       name: '음성 생성',
-      desc: '텍스트나 Space의 문서·자막을 소리 내어 읽습니다. 프리셋 목소리를 쓰거나 녹음을 복제하거나 목소리를 설명할 수 있습니다',
+      desc: '텍스트나 라이브러리의 문서·자막을 소리 내어 읽습니다. 프리셋 목소리를 쓰거나 녹음을 복제하거나 목소리를 설명할 수 있습니다',
     },
     'generate-text': {
       name: '텍스트 생성',
-      desc: '필요한 내용을 설명하면 텍스트 모델을 직접 호출해 문구, 대본, 요약을 만듭니다. Space의 문서나 자막을 자료로 첨부할 수 있습니다',
+      desc: '필요한 내용을 설명하면 텍스트 모델을 직접 호출해 문구, 대본, 요약을 만듭니다. 라이브러리의 문서나 자막을 자료로 첨부할 수 있습니다',
     },
     'generate-image': {
       name: '이미지 생성',
@@ -50,7 +50,7 @@ export const ko: ToolCatalogMessages = {
   groups: {
     speech: {
       label: '음성과 자막',
-      desc: '전사, 자막 번역, 더빙 추가, 텍스트 읽기. 결과는 문서, 자막, 오디오 항목이며, Space에서 편집 가능한 영상을 선택하면 그 영상에 기록합니다.',
+      desc: '전사, 자막 번역, 더빙 추가, 텍스트 읽기. 결과는 문서, 자막, 오디오 항목이며, 라이브러리에서 편집 가능한 영상을 선택하면 그 영상에 기록합니다.',
     },
     'text-image': { label: '텍스트와 이미지', desc: '텍스트 모델과 이미지 모델을 직접 호출합니다. 결과는 문서와 이미지 항목입니다.' },
     music: { label: '음악', desc: '로컬 음악 모델로 노래와 배경음악을 생성합니다. 결과는 오디오 항목입니다.' },
@@ -61,7 +61,7 @@ export const ko: ToolCatalogMessages = {
   },
   artifactItems: (artifacts) => `${artifacts.map((a) => artifactLabels[a]).join(', ') || '결과물'} 항목`,
   resultWritesVideo: '결과: 선택한 영상에 기록',
-  resultInSpace: (items) => `결과: Space의 ${items}`,
+  resultInSpace: (items) => `결과: 라이브러리의 ${items}`,
   resultAlsoCreate: '새 영상도 만들 수 있음',
   resultWritesEditable: '편집 가능한 영상을 선택하면 그 영상에 기록',
   joinResult: (parts) => parts.join(' · '),

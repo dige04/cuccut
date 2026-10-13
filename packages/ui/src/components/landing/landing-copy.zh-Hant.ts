@@ -47,5 +47,6 @@ export const zhHant: LandingMessages = {
     more: (count) => `再顯示 ${count} 個`,
     less: '收合',
     pinned: '已釘選',
+    archiveProject: '封存專案',
   },
 };

@@ -1,16 +1,35 @@
 import { useId, useMemo, useState } from 'react';
 import type { Conversation, Project } from '@cuccut/protocol';
-import { CircleAlert, CircleCheck, Clock, Folder, Loader2, MessageSquare, Pin, Search, type LucideIcon } from 'lucide-react';
+import {
+  Archive,
+  CircleAlert,
+  CircleCheck,
+  Clock,
+  Folder,
+  Loader2,
+  MessageSquare,
+  MoreHorizontal,
+  Pencil,
+  Pin,
+  PinOff,
+  Search,
+  type LucideIcon,
+} from 'lucide-react';
 import { cn } from 'cn';
 import { untitled } from '../../copy.ts';
 import { agoLabel } from '../../model/format.ts';
 import { buildSidebar, conversationStatus, sessionStatus, type ProjectRow, type SessionStatus } from '../../model/sidebar.ts';
 import { RouteLink } from '../../cc/components/page-chrome.tsx';
 import { Button } from '../../cc/ui/button.tsx';
+import { ContextMenuItem, ContextMenuSeparator, Menu, MenuContent, MenuTrigger } from '../../cc/ui/context-menu.tsx';
 import { Input } from '../../cc/ui/input.tsx';
 import { useDirectory } from '../../state/directory-store.ts';
 import type { Route } from '../../state/shell-store.ts';
+import { NameDialog } from '../name-dialog.tsx';
+import type { RowActions } from '../row-actions.ts';
+import { S } from '../shell-copy.ts';
 import { useNow } from '../use-now.ts';
+import { useRowActions } from '../use-row-actions.ts';
 import { LANDING_COPY } from './landing-copy.ts';
 import { LandingSection } from './landing-section.tsx';
 
@@ -31,6 +50,8 @@ interface RecentItem {
   /** What sits on the second line besides the time: "Project · 3 sessions". */
   meta: string | null;
   status: { tone: SessionStatus | 'stopping'; label: string } | null;
+  /** What the row's ⋯ menu acts on. */
+  target: { kind: 'project'; project: Project } | { kind: 'session'; conversation: Conversation };
 }
 
 function projectItem(row: ProjectRow): RecentItem {
@@ -46,6 +67,7 @@ function projectItem(row: ProjectRow): RecentItem {
     Icon: Folder,
     meta: [LANDING_COPY.recent.project, sessions ? LANDING_COPY.recent.sessions(sessions) : null].filter(Boolean).join(' · '),
     status: top && row.summary ? { tone: top, label: row.summary } : null,
+    target: { kind: 'project', project },
   };
 }
 
@@ -61,6 +83,7 @@ function sessionItem(conversation: Conversation): RecentItem {
     Icon: MessageSquare,
     meta: null,
     status: status && tone ? { tone, label: status.label } : null,
+    target: { kind: 'session', conversation },
   };
 }
 
@@ -96,40 +119,104 @@ function StatusChip({ tone, label }: { tone: SessionStatus | 'stopping'; label: 
   );
 }
 
-function RecentRow({ item, now }: { item: RecentItem; now: number }) {
+/**
+ * The row's ⋯ menu (agentcut `ProjectActions`): pin or unpin, rename, archive. It shows on hover or focus (always on
+ * touch screens) and runs the same commands as the sessions drawer, so archiving acts at once and offers Undo.
+ */
+function RowMenu({ item, actions }: { item: RecentItem; actions: RowActions }) {
+  const [renaming, setRenaming] = useState(false);
+  const { target } = item;
+  const project = target.kind === 'project';
+  return (
+    <>
+      <Menu>
+        <MenuTrigger
+          render={
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={project ? S.sidebarRows.projectActions(item.title) : S.sidebarRows.rowActions(item.title)}
+              className="text-muted-foreground opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100 aria-expanded:opacity-100 motion-reduce:transition-none pointer-coarse:opacity-100"
+            />
+          }>
+          <MoreHorizontal aria-hidden className="size-4" />
+        </MenuTrigger>
+        <MenuContent data-cc="" align="end" className="w-56 max-w-[calc(100vw-2rem)]">
+          <ContextMenuItem
+            className="min-h-10"
+            onClick={() => (target.kind === 'project' ? actions.toggleProjectPin(target.project) : actions.togglePin(target.conversation))}>
+            {item.pinned ? <PinOff aria-hidden strokeWidth={1.5} /> : <Pin aria-hidden strokeWidth={1.5} />}
+            {item.pinned ? S.common.unpin : S.common.pin}
+          </ContextMenuItem>
+          <ContextMenuItem className="min-h-10" onClick={() => setRenaming(true)}>
+            <Pencil aria-hidden strokeWidth={1.5} />
+            {S.common.renameEllipsis}
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem
+            className="min-h-10"
+            onClick={() => (target.kind === 'project' ? actions.archiveProject(target.project) : actions.archive(target.conversation))}>
+            <Archive aria-hidden strokeWidth={1.5} />
+            {project ? LANDING_COPY.recent.archiveProject : S.sidebarRows.archive}
+          </ContextMenuItem>
+        </MenuContent>
+      </Menu>
+      {renaming ? (
+        <NameDialog
+          title={project ? S.sidebar.renameProjectTitle : S.conversationHeader.renameTitle}
+          label={S.common.name}
+          initial={item.title}
+          description={project ? S.sidebar.renameProjectHint : undefined}
+          submitLabel={S.common.save}
+          onClose={() => setRenaming(false)}
+          onSubmit={async (name) => {
+            await (target.kind === 'project' ? actions.renameProject(target.project, name) : actions.rename(target.conversation, name));
+            setRenaming(false);
+          }}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function RecentRow({ item, now, actions }: { item: RecentItem; now: number; actions: RowActions }) {
   const { Icon } = item;
   const ago = agoLabel(item.at, now);
   return (
     <li>
-      <RouteLink
-        route={item.route}
-        className="group flex items-center gap-3 rounded-2xl px-2 py-2 outline-none transition-colors duration-150 hover:bg-white/[0.04] focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none sm:gap-4">
-        <span
-          aria-hidden
-          className="flex aspect-video w-16 shrink-0 items-center justify-center rounded-lg bg-muted/60 outline-1 -outline-offset-1 outline-white/10 sm:w-20">
-          <Icon aria-hidden strokeWidth={1.5} className="size-5 text-muted-foreground" />
-        </span>
-        <span className="flex min-w-0 flex-1 flex-col gap-1">
-          <span className="flex min-w-0 items-center gap-1.5">
-            <span title={item.title} className="truncate text-sm font-medium text-foreground">
-              {item.title}
+      {/* The fill sits inside the item, so the list's dividers stay straight under the rounded hover. */}
+      <div className="group flex items-center gap-1 rounded-2xl pr-1 transition-colors duration-150 focus-within:bg-white/[0.04] hover:bg-white/[0.04] motion-reduce:transition-none sm:gap-2">
+        <RouteLink
+          route={item.route}
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl px-2 py-2 outline-none focus-visible:ring-2 focus-visible:ring-ring sm:gap-4">
+          <span
+            aria-hidden
+            className="flex aspect-video w-16 shrink-0 items-center justify-center rounded-lg bg-muted/60 outline-1 -outline-offset-1 outline-white/10 sm:w-20">
+            <Icon aria-hidden strokeWidth={1.5} className="size-5 text-muted-foreground" />
+          </span>
+          <span className="flex min-w-0 flex-1 flex-col gap-1">
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span title={item.title} className="truncate text-sm font-medium text-foreground">
+                {item.title}
+              </span>
+              {item.pinned ? (
+                <Pin aria-label={LANDING_COPY.recent.pinned} className="size-3.5 shrink-0 text-muted-foreground" />
+              ) : null}
             </span>
-            {item.pinned ? (
-              <Pin aria-label={LANDING_COPY.recent.pinned} className="size-3.5 shrink-0 text-muted-foreground" />
-            ) : null}
+            <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-relaxed text-muted-foreground">
+              {item.meta ? (
+                <>
+                  <span className="truncate">{item.meta}</span>
+                  <span aria-hidden>·</span>
+                </>
+              ) : null}
+              <span>{ago}</span>
+            </span>
           </span>
-          <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-relaxed text-muted-foreground">
-            {item.meta ? (
-              <>
-                <span className="truncate">{item.meta}</span>
-                <span aria-hidden>·</span>
-              </>
-            ) : null}
-            <span>{ago}</span>
-          </span>
-        </span>
-        {item.status ? <StatusChip tone={item.status.tone} label={item.status.label} /> : null}
-      </RouteLink>
+          {item.status ? <StatusChip tone={item.status.tone} label={item.status.label} /> : null}
+        </RouteLink>
+        <RowMenu item={item} actions={actions} />
+      </div>
     </li>
   );
 }
@@ -145,6 +232,7 @@ export function RecentList() {
   const conversations = useDirectory((s) => s.conversations);
   const ready = useDirectory((s) => s.ready);
   const now = useNow(60_000);
+  const actions = useRowActions();
   const [query, setQuery] = useState('');
   const [all, setAll] = useState(false);
 
@@ -182,7 +270,7 @@ export function RecentList() {
       {shown.length ? (
         <ul aria-label={LANDING_COPY.recent.list} className="flex flex-col divide-y divide-border/50 border-y border-border/70 py-1">
           {shown.map((item) => (
-            <RecentRow key={item.key} item={item} now={now} />
+            <RecentRow key={item.key} item={item} now={now} actions={actions} />
           ))}
         </ul>
       ) : null}

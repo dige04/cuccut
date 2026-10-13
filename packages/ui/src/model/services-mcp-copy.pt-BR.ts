@@ -50,7 +50,7 @@ export const ptBR: ServicesMcpMessages = {
     jobs_cancel: "Cancelar tarefa",
     jobs_retry: "Repetir fluxo falho",
     export: "Exportar",
-    space_list: "Listar itens do Space",
+    space_list: "Listar itens da Biblioteca",
     space_search: "Buscar transcrições de todos os vídeos",
     projects_list: "Listar projetos",
     skills_list: "Listar Skills",

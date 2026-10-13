@@ -342,7 +342,7 @@ export function AiToolsList({ videoId, sequence, documents }: { videoId: Id; seq
           <div className={emptyCard}>
             <span className={name}>{C.noTranscriptTitle}</span>
             <span>{C.noTranscriptBody}</span>
-            <Button size="S" variant="accent" onPress={() => useEditor.getState().showPanel('transcript')}>
+            <Button size="S" variant="secondary" onPress={() => useEditor.getState().showPanel('transcript')}>
               {C.goTranscribe}
             </Button>
           </div>

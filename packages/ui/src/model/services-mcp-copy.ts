@@ -64,7 +64,7 @@ const en = {
     jobs_cancel: 'Cancel task',
     jobs_retry: 'Retry failed pipeline',
     export: 'Export',
-    space_list: 'List items in Space',
+    space_list: 'List items in Library',
     space_search: 'Search transcripts across videos',
     projects_list: 'List projects',
     skills_list: 'List skills',

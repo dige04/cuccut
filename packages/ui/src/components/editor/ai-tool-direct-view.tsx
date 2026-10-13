@@ -198,7 +198,7 @@ export function DirectModelGate({ model, body = C.modelGateBody }: { model: Dire
         <Content>
           {body}
           <div className={alertActions}>
-            <Button size="S" variant="accent" onPress={() => go({ tab: 'models', category: 'llm', page: 'cloud' })}>
+            <Button size="S" variant="secondary" onPress={() => go({ tab: 'models', category: 'llm', page: 'cloud' })}>
               {GATE_COPY.goConnect}
             </Button>
           </div>
@@ -292,7 +292,7 @@ export function DirectResultView({ runKey: key, result, model }: { runKey: strin
       <pre className={output}>{result.summary.text}</pre>
       {skipped ? <p className={note}>{C.resultSkipped(skipped)}</p> : null}
       <div className={actions}>
-        <Button size="S" variant="accent" onPress={() => void copy()}>
+        <Button size="S" variant="secondary" onPress={() => void copy()}>
           {copied ? <CheckmarkCircle /> : <Copy />}
           <Text>{copied ? C.copied : C.copy}</Text>
         </Button>
@@ -339,12 +339,12 @@ export function DirectProblem({ runKey: key, problem }: { runKey: string; proble
         {problem.remedy?.hint || problem.message ? <div>{problem.remedy?.hint || problem.message}</div> : null}
         <div className={alertActions}>
           {problem.remedy ? (
-            <Button size="S" variant="accent" onPress={() => go(problem.remedy!.target)}>
+            <Button size="S" variant="secondary" onPress={() => go(problem.remedy!.target)}>
               {problem.remedy.label}
             </Button>
           ) : null}
           {problem.retryJobId ? (
-            <Button size="S" variant={problem.remedy ? 'secondary' : 'accent'} isDisabled={busy} onPress={() => void retryAiTool(key)}>
+            <Button size="S" variant="secondary" isDisabled={busy} onPress={() => void retryAiTool(key)}>
               {C.retry}
             </Button>
           ) : null}

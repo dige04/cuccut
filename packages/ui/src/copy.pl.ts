@@ -294,7 +294,6 @@ export const pl: CopyMessages = {
   },
   /** Home 起始页（产品设计 §3.2.1；原型 page-new.jsx Home、new-agent.jsx）。 */
   home: {
-    title: "Jakie wideo chcesz stworzyć?",
     templates: "Szablony wideo",
     quickStart: "Szybki start",
     blankVideo: "Nowe puste wideo",
@@ -733,7 +732,7 @@ export const pl: CopyMessages = {
       `Sesja „${title}”${status ? ` · ${status}` : ""} · Przypięta jako pierwsza; nie można przenieść ani zamknąć`,
     conversationTabLabel: (title: string, status: string | null) => `Sesja „${title}”${status ? `, ${status}` : ""}, przypięta jako pierwsza`,
     opening: "Otwieranie wideo…",
-    showInSpace: "Pokaż w Space",
+    showInSpace: "Pokaż w Bibliotece",
     reveal: "Pokaż w folderze",
     fileMissing: "Plik przeniesiono lub usunięto",
     filesNoConversation: "Po utworzeniu sesji pojawią się tu pliki z jej folderu.",

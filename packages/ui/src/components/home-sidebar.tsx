@@ -20,20 +20,20 @@ import FolderOpen from '@react-spectrum/s2/icons/FolderOpen';
 import More from '@react-spectrum/s2/icons/More';
 import { style } from '@react-spectrum/s2/style' with { type: 'macro' };
 import { S } from './shell-copy.ts';
-import { untitled } from '../copy.ts';
 import { shortenPath } from '../model/format.ts';
 import { buildSidebar, type ProjectRow } from '../model/sidebar.ts';
 import { useRuntime } from '../runtime/context.tsx';
 import { useConnection } from '../state/connection-store.ts';
 import { useDirectory } from '../state/directory-store.ts';
-import { HOME, hrefFor, useShell } from '../state/shell-store.ts';
-import { conversationItem, ProjectItem, type ConversationRowActions } from './home-sidebar-rows.tsx';
+import { hrefFor, useShell } from '../state/shell-store.ts';
+import { conversationItem, ProjectItem } from './home-sidebar-rows.tsx';
 import { NameDialog } from './name-dialog.tsx';
 import { Plus } from 'lucide-react';
 import { cn } from 'cn';
 import { Button } from '../cc/ui/button.tsx';
 import { SESSION_COPY } from './session/session-copy.ts';
 import { useNow } from './use-now.ts';
+import { useRowActions } from './use-row-actions.ts';
 
 const head = style({ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0, width: 'full', height: 24, marginY: -4 });
 const headLabel = style({ display: 'flex', alignItems: 'center', gap: 4, font: 'ui-sm', fontWeight: 'normal', color: 'gray-600' });
@@ -108,34 +108,15 @@ export function HomeSidebar({ className }: { className?: string }) {
     }
   };
 
-  const fail = (error: Error) => ToastQueue.negative(error.message, { timeout: 5000 });
+  const actions = useRowActions();
   const onProjectAction = (project: Project, key: string) => {
     if (key === 'new') go({ tab: 'home', conversationId: null, projectId: project.id });
-    else if (key === 'pin') runtime.updateProject(project.id, { pinned: !project.pinned }).catch(fail);
+    else if (key === 'pin') actions.toggleProjectPin(project);
     else if (key === 'rename') setDialog({ kind: 'rename-project', project });
     else if (key === 'space') go({ tab: 'space', category: 'all', projectId: project.id });
     else if (key === 'reveal') void runtime.host.revealPath(project.path);
   };
 
-  const actions: ConversationRowActions = {
-    togglePin: (conversation) => runtime.updateConversation(conversation.id, { pinned: !conversation.pinned }).catch(fail),
-    archive: (conversation) => {
-      const title = conversation.title || untitled();
-      runtime
-        .updateConversation(conversation.id, { archived: true })
-        .then(() => {
-          const current = useShell.getState().route;
-          if (current.tab === 'home' && current.conversationId === conversation.id) go(HOME);
-          ToastQueue.neutral(S.sidebar.archived(title), {
-            timeout: 5000,
-            actionLabel: S.sidebar.undo,
-            onAction: () => void runtime.updateConversation(conversation.id, { archived: false }).catch(fail),
-            shouldCloseOnAction: true,
-          });
-        })
-        .catch(fail);
-    },
-  };
   const projectName = (c: Conversation) => projects.find((p) => p.id === c.projectId)?.name ?? null;
   const conversationRow = (conversation: Conversation, key: string, pinned = false) =>
     conversationItem(conversation, key, { now, projectName: projectName(conversation), pinned, actions });
@@ -255,7 +236,7 @@ export function HomeSidebar({ className }: { className?: string }) {
           submitLabel={S.common.save}
           onClose={() => setDialog(null)}
           onSubmit={async (name) => {
-            await runtime.updateProject(dialog.project.id, { name });
+            await actions.renameProject(dialog.project, name);
             setDialog(null);
           }}
         />

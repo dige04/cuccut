@@ -42,8 +42,19 @@ const centered = style({
   color: 'gray-600',
 });
 
-/** `autoFocus`：挂上时把光标放进输入框；编辑器右下角默认展开的悬浮会话不抢焦点。 */
-export function ConversationView({ conversationId, autoFocus = true }: { conversationId: string; autoFocus?: boolean }) {
+/**
+ * `autoFocus`：挂上时把光标放进输入框；编辑器右下角默认展开的悬浮会话不抢焦点。
+ * `quietSend`：旁边开着标签（视频编辑器的「导出」是那一屏唯一的黄色主按钮），发送按钮用中性色。
+ */
+export function ConversationView({
+  conversationId,
+  autoFocus = true,
+  quietSend = false,
+}: {
+  conversationId: string;
+  autoFocus?: boolean;
+  quietSend?: boolean;
+}) {
   const runtime = useRuntime();
   const meta = useConversationMeta(conversationId);
   // 会话没切过访问模式时跟着设置里的默认走（§3.12），设置还没到就按协议的默认。
@@ -160,6 +171,7 @@ export function ConversationView({ conversationId, autoFocus = true }: { convers
         }
         busy={busy}
         queueWhileBusy
+        quietSend={quietSend}
         stopping={meta.activity === 'stopping'}
         placeholder={busy ? QUEUE_COPY.busyPlaceholder : S.conversationView.placeholder}
         autoFocus={autoFocus}

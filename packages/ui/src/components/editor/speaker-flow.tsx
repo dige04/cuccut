@@ -413,7 +413,7 @@ function SetupView({
       </div>
       {agent ? null : (
         <div className={footer}>
-          <Button variant="accent" styles={field} isDisabled={blocked} onPress={() => void start()}>
+          <Button variant="secondary" styles={field} isDisabled={blocked} onPress={() => void start()}>
             {C.start}
           </Button>
           <p className={hint}>{C.startHint}</p>
@@ -446,7 +446,7 @@ function ProblemAlert({ videoId, problem }: { videoId: Id; problem: SpeakersProb
         {problem.message ? <div>{problem.message}</div> : null}
         <div className={alertActions}>
           {problem.retryJobId ? (
-            <Button size="S" variant="accent" isDisabled={busy} onPress={() => void retrySpeakers(videoId)}>
+            <Button size="S" variant="secondary" isDisabled={busy} onPress={() => void retrySpeakers(videoId)}>
               {C.retry}
             </Button>
           ) : null}
@@ -597,7 +597,7 @@ function ConfirmView({
       </div>
       <div className={footer}>
         <Button
-          variant="accent"
+          variant="secondary"
           styles={field}
           isDisabled={!editable || invalid}
           isPending={applying}

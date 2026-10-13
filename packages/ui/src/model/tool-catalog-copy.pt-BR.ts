@@ -6,13 +6,13 @@ const ARTIFACT_NOUN: Record<Artifact, string> = { audio: 'áudio', image: 'image
 export const ptBR: ToolCatalogMessages = {
   inputLabels: {
     file: "Arquivo local",
-    space: "Space",
+    space: "Biblioteca",
     link: "Link",
     text: "Texto",
-    video: "Vídeo no Space",
+    video: "Vídeo na Biblioteca",
     document: "Documento",
   },
-  outputLabels: { video: "Vídeo", artifact: "Item no Space" },
+  outputLabels: { video: "Vídeo", artifact: "Item na Biblioteca" },
   artifactLabels: { audio: "Áudio", image: "Imagem", doc: "Documento", final: "Arquivo de vídeo", subtitle: "Legendas" },
   tools: {
     transcribe: {
@@ -33,7 +33,7 @@ export const ptBR: ToolCatalogMessages = {
     },
     'generate-text': {
       name: "Geração de texto",
-      desc: "Chama texto direto para roteiro, resumo ou conteúdo; documentos e legendas Space como material",
+      desc: "Chama texto direto para roteiro, resumo ou conteúdo; documentos e legendas da Biblioteca como material",
     },
     'generate-image': {
       name: "Gerar imagem",
@@ -75,7 +75,7 @@ export const ptBR: ToolCatalogMessages = {
 
   artifactItems: (artifacts) => artifacts.length ? `itens de ${new Intl.ListFormat('pt-BR', { type: 'conjunction' }).format(artifacts.map((a) => ARTIFACT_NOUN[a]))}` : 'itens de resultado',
   resultWritesVideo: "Resultado: gravado no vídeo escolhido",
-  resultInSpace: (items: string) => `Resultado: ${items} no Space`,
+  resultInSpace: (items: string) => `Resultado: ${items} na Biblioteca`,
   resultAlsoCreate: "também pode criar vídeo",
   resultWritesEditable: "grava em vídeo editável quando escolhido",
   joinResult: (parts: readonly string[]) => parts.join("; "),

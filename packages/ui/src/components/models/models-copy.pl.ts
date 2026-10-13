@@ -251,7 +251,7 @@ export const pl: ModelsMessages = {
     result: "Wynik testu",
     resultNote: "Wynik jest tylko tutaj i nie trafia do wideo.",
 
-    textResultNote: "Odpowiedź nie trafia do wideo; jak inny wygenerowany tekst, zostaje zapisana jako dokument w Space.",
+    textResultNote: "Odpowiedź nie trafia do wideo; jak inny wygenerowany tekst, zostaje zapisana jako dokument w Bibliotece.",
     start: "Rozpocznij test",
     retry: "Przetestuj ponownie",
     testing: "Testowanie…",

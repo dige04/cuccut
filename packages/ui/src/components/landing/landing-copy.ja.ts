@@ -48,5 +48,6 @@ export const ja: LandingMessages = {
     more: (count) => `さらに ${count} 件表示`,
     less: '表示を減らす',
     pinned: 'ピン留め',
+    archiveProject: 'プロジェクトをアーカイブ',
   },
 };

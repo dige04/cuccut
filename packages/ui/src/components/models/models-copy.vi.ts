@@ -250,7 +250,7 @@ export const vi: ModelsMessages = {
     result: "Kết quả thử",
     resultNote: "Kết quả chỉ hiển thị tại đây, không thêm vào video.",
 
-    textResultNote: "Câu trả lời không thêm vào video; như văn bản được tạo khác, được lưu thành tài liệu trong Space.",
+    textResultNote: "Câu trả lời không thêm vào video; như văn bản được tạo khác, được lưu thành tài liệu trong Thư viện.",
     start: "Bắt đầu kiểm tra",
     retry: "Kiểm tra lại",
     testing: "Đang kiểm tra…",

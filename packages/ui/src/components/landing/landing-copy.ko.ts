@@ -48,5 +48,6 @@ export const ko: LandingMessages = {
     more: (count) => `${count}개 더 보기`,
     less: '간단히 보기',
     pinned: '고정됨',
+    archiveProject: '프로젝트 보관',
   },
 };

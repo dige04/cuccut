@@ -212,10 +212,11 @@ function Recovery({ job, issue, run }: { job: JobRecord; issue: LinkIssue; run: 
         </div>
       ) : null}
       <div className={row}>
+        {/* One yellow: the first remedy, unless the downloader card is showing and still needs its own fix. */}
         {buttons.map((action, i) => (
           <Button
             key={action}
-            variant={i === 0 && !(toolsFirst && action === 'retry' && !downloader.ready) ? 'accent' : 'secondary'}
+            variant={i === 0 && !(showTools && !downloader.ready) ? 'accent' : 'secondary'}
             size="M"
             isPending={action === 'retry' && retrying}
             isDisabled={(action === 'retry' && toolsFirst && !downloader.ready) || downloader.installing}

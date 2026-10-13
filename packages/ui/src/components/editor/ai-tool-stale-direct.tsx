@@ -142,7 +142,7 @@ export function StaleDirectStart({
       <div ref={gate}>
         <DirectModelGate model={model} body={C.staleGateBody} />
       </div>
-      <Button variant="accent" styles={cta} isDisabled={!record || !todo} isPending={sending} onPress={() => void start()}>
+      <Button variant="secondary" styles={cta} isDisabled={!record || !todo} isPending={sending} onPress={() => void start()}>
         {C.ctaStale(todo)}
       </Button>
       <p className={note}>{C.modelHint(model.name, true, model.local)}</p>

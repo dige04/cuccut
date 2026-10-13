@@ -455,7 +455,7 @@ export function TtsQuickTest({ bundleId, name, model, cloneNames, notice = null,
             <Text>{COPY.again}</Text>
           </Button>
         ) : (
-          <Button variant="accent" size="S" onPress={() => void submit()}>
+          <Button variant="secondary" size="S" onPress={() => void submit()}>
             <PlayIcon />
             <Text>{COPY.generate}</Text>
           </Button>

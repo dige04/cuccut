@@ -5,20 +5,20 @@ const artifactLabels = { audio: 'Audio', image: 'Obraz', doc: 'Dokument', final:
 export const pl: ToolCatalogMessages = {
   inputLabels: {
     file: "Plik lokalny",
-    space: "Space",
+    space: "Biblioteka",
     link: "Link",
     text: "Tekst",
-    video: "Wideo w Space",
+    video: "Wideo w Bibliotece",
     document: "Dokument",
   },
-  outputLabels: { video: "Wideo", artifact: "Element w Space" },
+  outputLabels: { video: "Wideo", artifact: "Element w Bibliotece" },
   artifactLabels,
   tools: {
     transcribe: { name: "Transkrybuj", desc: "Przekształć plik wideo lub audio w transkrypcję i napisy; dla edytowalnego wideo zapisuje je w nim i dodaje warstwę napisów" },
     'translate-subtitles': { name: "Przetłumacz napisy", desc: "Przetłumacz napisy na inny język; dla transkrybowanego wideo dodaje tłumaczenie i warstwę napisów z oboma językami, zachowując oryginał" },
     dub: { name: "Tłumaczony dubbing", desc: "Dodaj nowy dubbing transkrybowanego wideo z tłumaczenia; oryginalne audio można przyciszyć, wyciszyć lub zachować" },
-    'synthesize-speech': { name: "Generuj mowę", desc: "Odczytaj na głos tekst, dokumenty i napisy Space; użyj gotowego głosu, sklonuj nagranie lub opisz głos" },
-    'generate-text': { name: "Generuj tekst", desc: "Opisz potrzebę i wywołaj bezpośrednio model tekstowy dla tekstów, scenariuszy lub podsumowań; dokumenty i napisy Space można załączyć jako materiały" },
+    'synthesize-speech': { name: "Generuj mowę", desc: "Odczytaj na głos tekst, dokumenty i napisy Biblioteki; użyj gotowego głosu, sklonuj nagranie lub opisz głos" },
+    'generate-text': { name: "Generuj tekst", desc: "Opisz potrzebę i wywołaj bezpośrednio model tekstowy dla tekstów, scenariuszy lub podsumowań; dokumenty i napisy Biblioteki można załączyć jako materiały" },
     'generate-image': { name: "Generuj obraz", desc: "Opisz obraz i narysuj modelem w chmurze lub lokalnym; obrazy referencyjne, proporcje i liczba są opcjonalne" },
     'generate-music': { name: 'Wygeneruj muzykę', desc: 'Opisz styl i opcjonalnie tekst, a lokalny model muzyczny skomponuje piosenkę lub utwór instrumentalny; czas trwania i seed są opcjonalne' },
     'link-import': { name: "Pobierz wideo", desc: "Wklej link, aby pobrać wideo na komputer; można użyć cookie przeglądarki i transkrybować pobrane wideo na transkrypcję i napisy" },
@@ -32,7 +32,7 @@ export const pl: ToolCatalogMessages = {
   groups: {
     speech: {
       label: "Mowa i napisy",
-      desc: "Transkrybuj, tłumacz napisy, dodawaj dubbing i czytaj na głos. Wyniki to dokumenty, napisy i audio; wybór edytowalnego wideo w Space zapisuje w nim.",
+      desc: "Transkrybuj, tłumacz napisy, dodawaj dubbing i czytaj na głos. Wyniki to dokumenty, napisy i audio; wybór edytowalnego wideo w Bibliotece zapisuje w nim.",
     },
     'text-image': { label: "Tekst i obrazy", desc: "Wywołuj bezpośrednio modele tekstowe i obrazów. Wyniki to dokumenty i obrazy." },
     music: { label: 'Muzyka', desc: 'Generuj piosenki i muzykę w tle lokalnym modelem muzycznym. Wyniki to elementy audio.' },
@@ -43,7 +43,7 @@ export const pl: ToolCatalogMessages = {
   },
   artifactItems: (artifacts) => artifacts.length ? `${artifacts.map(a => artifactLabels[a]).join(' / ')} – elementy` : 'wyniki',
   resultWritesVideo: "Wynik: zapisany w wybranym wideo",
-  resultInSpace: (items) => `Wynik: ${items} w Space`,
+  resultInSpace: (items) => `Wynik: ${items} w Bibliotece`,
   resultAlsoCreate: "może też utworzyć nowe wideo",
   resultWritesEditable: "zapisuje w edytowalnym wideo po wybraniu",
   joinResult: (parts) => parts.join("; "),

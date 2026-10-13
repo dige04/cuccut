@@ -126,9 +126,9 @@ describe('从文件新建视频', () => {
 
 describe('随消息带上的条目', () => {
   it('最多写出两个名字', () => {
-    expect(referencesText([{ name: '成片' }])).toBe('Space 条目 「成片」');
-    expect(referencesText([{ name: 'a' }, { name: 'b' }])).toBe('Space 条目 「a」「b」');
-    expect(referencesText([{ name: 'a' }, { name: 'b' }, { name: 'c' }])).toBe('Space 条目 「a」「b」等 3 个');
+    expect(referencesText([{ name: '成片' }])).toBe('资料库条目 「成片」');
+    expect(referencesText([{ name: 'a' }, { name: 'b' }])).toBe('资料库条目 「a」「b」');
+    expect(referencesText([{ name: 'a' }, { name: 'b' }, { name: 'c' }])).toBe('资料库条目 「a」「b」等 3 个');
   });
 
   it('说明写类型与位置', () => {

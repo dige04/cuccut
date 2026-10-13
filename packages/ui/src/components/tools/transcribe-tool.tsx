@@ -208,7 +208,7 @@ export function TranscribeTool() {
     <ToolFrame
       tool="transcribe"
       title={TRANSCRIBE_COPY.title}
-      bar={<SubmitBar why={why} label={label} busy={starter.busy} onPress={start} />}
+      bar={<SubmitBar why={why} label={label} busy={starter.busy} onPress={start} yields={!!starter.asking} />}
       onKeyDown={submitOnModEnter(start)}>
       <p className={lede}>{TRANSCRIBE_TOOL_COPY.lede}</p>
       <ToolSourceSwitch tool="transcribe" value={draft.source} onChange={(source) => patch({ source })} />

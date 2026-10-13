@@ -244,6 +244,7 @@ export function VideoQuickChat() {
           accessMode={draftMode ?? defaultMode ?? DEFAULT_AGENT_MODE}
           onAccessModeChange={(accessMode) => useShell.getState().setDraftAccessMode(draftKey, accessMode)}
           busy={false}
+          quietSend
           placeholder={COPY.placeholder}
           autoFocus={opened}
           reference={editor.reference}

@@ -221,7 +221,7 @@ export function ImageGenPane({ videoId, sequence, assets }: { videoId: Id; seque
             body={C.noModelBody}
             actions={
               <>
-                <Button variant="accent" size="S" onPress={toConnect}>
+                <Button variant="secondary" size="S" onPress={toConnect}>
                   {C.connect}
                 </Button>
                 <Button variant="secondary" size="S" onPress={toLocal}>
@@ -291,7 +291,7 @@ export function ImageGenPane({ videoId, sequence, assets }: { videoId: Id; seque
         <span className={goStatus({ isBad: status.bad })} role="status" aria-live="polite">
           {editable ? status.text : C.readOnly}
         </span>
-        <Button variant="accent" size="S" isDisabled={!option?.usable || !editable} isPending={submitting} onPress={generate}>
+        <Button variant="secondary" size="S" isDisabled={!option?.usable || !editable} isPending={submitting} onPress={generate}>
           <ImageIcon />
           <Text>{IMAGE_COPY.submit}</Text>
         </Button>

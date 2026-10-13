@@ -5,13 +5,13 @@ import type { ToolCatalogMessages } from './tool-catalog-copy.ts';
 export const nl: ToolCatalogMessages = {
   inputLabels: {
     file: "Lokaal bestand",
-    space: "Space",
+    space: "Bibliotheek",
     link: "Link",
     text: "Tekst",
-    video: "Video in Space",
+    video: "Video in de Bibliotheek",
     document: "Document",
   },
-  outputLabels: { video: "Video", artifact: "Item in Space" },
+  outputLabels: { video: "Video", artifact: "Item in de Bibliotheek" },
   artifactLabels: { audio: "Audio", image: "Afbeelding", doc: "Document", final: "Videobestand", subtitle: "Ondertitels" },
   tools: {
     transcribe: {
@@ -28,11 +28,11 @@ export const nl: ToolCatalogMessages = {
     },
     'synthesize-speech': {
       name: "Spraak genereren",
-      desc: "Tekst, documenten of ondertitels in Space voorlezen; gebruik een vooringestelde stem, kloon een opname of beschrijf een stem",
+      desc: "Tekst, documenten of ondertitels in de Bibliotheek voorlezen; gebruik een vooringestelde stem, kloon een opname of beschrijf een stem",
     },
     'generate-text': {
       name: "Tekst genereren",
-      desc: "Beschrijf wat je nodig hebt en roep rechtstreeks een tekstmodel aan voor teksten, scripts of samenvattingen; je kunt documenten of ondertitels in Space toevoegen als media",
+      desc: "Beschrijf wat je nodig hebt en roep rechtstreeks een tekstmodel aan voor teksten, scripts of samenvattingen; je kunt documenten of ondertitels in de Bibliotheek toevoegen als media",
     },
     'generate-image': {
       name: "Afbeelding genereren",
@@ -62,7 +62,7 @@ export const nl: ToolCatalogMessages = {
   groups: {
     speech: {
       label: "Spraak & ondertitels",
-      desc: "Transcriberen, ondertitels vertalen, nasynchronisatie toevoegen en tekst voorlezen. Resultaten zijn document-, ondertitel- en audio-items; als je een bewerkbare video in Space kiest, wordt erin geschreven.",
+      desc: "Transcriberen, ondertitels vertalen, nasynchronisatie toevoegen en tekst voorlezen. Resultaten zijn document-, ondertitel- en audio-items; als je een bewerkbare video in de Bibliotheek kiest, wordt erin geschreven.",
     },
     'text-image': { label: "Tekst & afbeeldingen", desc: "Tekst- en afbeeldingsmodellen rechtstreeks aanroepen. Resultaten zijn document- en afbeeldingsitems." },
     music: { label: 'Muziek', desc: 'Liedjes en achtergrondmuziek genereren met een lokaal muziekmodel. Resultaten zijn audio-items.' },
@@ -74,7 +74,7 @@ export const nl: ToolCatalogMessages = {
 
   artifactItems: (artifacts: readonly Artifact[]) => (artifacts.length ? `${artifacts.map((a) => ARTIFACT_NOUN[a]).join(" en ")} items` : "uitvoeritems"),
   resultWritesVideo: "Resultaat: geschreven in de video die je kiest",
-  resultInSpace: (items: string) => `Resultaat: ${items} in Space`,
+  resultInSpace: (items: string) => `Resultaat: ${items} in de Bibliotheek`,
   resultAlsoCreate: "kan ook een nieuwe video maken",
   resultWritesEditable: "schrijft in een bewerkbare video als je er een kiest",
   joinResult: (parts: readonly string[]) => parts.join("; "),

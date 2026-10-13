@@ -48,5 +48,6 @@ export const ptBR: LandingMessages = {
     more: (count) => `Mostrar mais ${count}`,
     less: 'Mostrar menos',
     pinned: 'Fixado',
+    archiveProject: 'Arquivar projeto',
   },
 };

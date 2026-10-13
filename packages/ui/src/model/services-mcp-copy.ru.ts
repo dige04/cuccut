@@ -49,7 +49,7 @@ export const ru: ServicesMcpMessages = {
     jobs_cancel: "Отменить задачу",
     jobs_retry: "Повторить неудачный пайплайн",
     export: "Экспорт",
-    space_list: "Показать элементы Space",
+    space_list: "Показать элементы Библиотеки",
     space_search: "Поиск по расшифровкам видео",
     projects_list: "Список проектов",
     skills_list: "Показать Skills",

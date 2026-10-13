@@ -16,13 +16,13 @@ import { vi } from './video-bar-copy.vi.ts';
 
 /** 视频栏（名称、保存状态、版本与历史）的文案。译文在 `video-bar-copy.zh-Hans.ts`。 */
 const en = {
-  closeToSpace: 'Close video · back to Space',
+  closeToSpace: 'Close video · back to Library',
   closeToHome: 'Close video · back to Home',
   untitled: 'Video',
   rename: 'Rename video',
   details: 'Video details',
   actions: 'Video actions',
-  showInSpace: 'Show in Space',
+  showInSpace: 'Show in Library',
   revealVideoFolder: 'Show Video Folder',
   close: 'Close video',
   nameLabel: 'Name',

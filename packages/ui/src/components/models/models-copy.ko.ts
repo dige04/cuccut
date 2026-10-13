@@ -277,7 +277,7 @@ export const ko: ModelsMessages = {
     failed: '테스트 실패',
     result: '테스트 결과',
     resultNote: '결과는 여기에서만 보이며 영상에는 추가되지 않습니다.',
-    textResultNote: '응답은 영상에 추가되지 않으며, 다른 생성 텍스트처럼 Space에 문서로 저장됩니다.',
+    textResultNote: '응답은 영상에 추가되지 않으며, 다른 생성 텍스트처럼 라이브러리에 문서로 저장됩니다.',
     start: '테스트 시작',
     retry: '다시 테스트',
     testing: '테스트하는 중…',

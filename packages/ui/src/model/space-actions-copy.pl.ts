@@ -36,6 +36,6 @@ export const pl: SpaceActionsMessages = {
   copiedAll: "skopiowano do imports/ projektu",
   copiedSome: (count: number) => `${count} skopiowano do imports/ projektu`,
   notImported: (count: number) => `${count} nie zaimportowano`,
-  references: (names: readonly string[], total: number) => { const quoted = names.map(name => `„${name}”`).join(', '); return total > names.length ? `Elementy Space: ${quoted} i jeszcze ${total - names.length}` : `${total === 1 ? 'Element' : 'Elementy'} Space: ${quoted}`; },
+  references: (names: readonly string[], total: number) => { const quoted = names.map(name => `„${name}”`).join(', '); return total > names.length ? `Elementy Biblioteki: ${quoted} i jeszcze ${total - names.length}` : `${total === 1 ? 'Element' : 'Elementy'} Biblioteki: ${quoted}`; },
   referenceOutput: "Wynik",
 };

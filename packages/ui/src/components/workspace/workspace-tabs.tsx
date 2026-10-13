@@ -6,7 +6,7 @@ import { Film, FileText, Folder, Globe, LayoutTemplate, MessageSquare, Palette, 
 import { cn } from 'cn';
 import { Focusable, VisuallyHidden } from 'react-aria-components';
 import { WORKSPACE_COPY } from '../../copy.ts';
-import { TAB_PREVIEW_DELAY_MS, tabPreviewSubtitle } from '../../model/shell-peek.ts';
+import { TAB_PREVIEW_DELAY_MS, tabPreviewSubtitle } from '../../model/tab-preview.ts';
 import {
   CONVERSATION_TAB,
   closeTab,

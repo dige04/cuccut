@@ -305,7 +305,12 @@ export function ToolRunView({ job, tool, onBack }: { job: JobRecord; tool: Video
           </> : null}
           {retry.asking ? <GrantCard items={retry.asking} onAgree={retry.agree} busy={retry.busy} /> : null}
           <div className={buttons}>
-            <Button variant="accent" isPending={retry.busy && !retry.asking} isDisabled={!!retry.asking} onPress={retry.retry}>
+            {/* The grant card's Agree, or the downloader's fix, is the yellow while Retry cannot go yet. */}
+            <Button
+              variant={retry.asking || (downloadIssue && !downloader.ready) ? 'secondary' : 'accent'}
+              isPending={retry.busy && !retry.asking}
+              isDisabled={!!retry.asking}
+              onPress={retry.retry}>
               {RUN_COPY.retry}
             </Button>
           </div>
@@ -325,7 +330,7 @@ export function ToolRunView({ job, tool, onBack }: { job: JobRecord; tool: Video
           </ul>
           <SwitchActions job={job} entry={entry} />
           {intoMovie && !entry ? <span className={detail}>{RUN_COPY.noVideo}</span> : null}
-          <ToolOutputs entries={intoMovie && entry ? [entry, ...outputs] : outputs} fromTool={fromTool} saveDir={intoMovie ? null : outputsDir(outputs)} />
+          <ToolOutputs entries={intoMovie && entry ? [entry, ...outputs] : outputs} fromTool={fromTool} saveDir={intoMovie ? null : outputsDir(outputs)} primaryOpen />
           {!intoMovie && !outputs.length ? <span className={detail}>{RUN_COPY.noOutputs}</span> : null}
         </div>
       ) : null}
@@ -440,7 +445,11 @@ function AmbiguousAssets({ job, ids, title }: { job: JobRecord; ids: readonly Id
       </RadioGroup>
       {starter.asking ? <GrantCard items={starter.asking} onAgree={starter.agree} busy={starter.busy} /> : null}
       <div className={buttons}>
-        <Button variant="accent" isDisabled={!request || !!starter.asking} isPending={starter.busy && !starter.asking} onPress={start}>
+        <Button
+          variant={starter.asking ? 'secondary' : 'accent'}
+          isDisabled={!request || !!starter.asking}
+          isPending={starter.busy && !starter.asking}
+          onPress={start}>
           {RUN_COPY.useAsset}
         </Button>
       </div>

@@ -103,7 +103,7 @@ export function AiToolAgentRun({ videoId, tool, run, onBack }: { videoId: Id; to
               <Content>
                 {C.agentWaitingBody}
                 <div className={alertActions}>
-                  <Button size="S" variant="accent" onPress={open}>
+                  <Button size="S" variant="secondary" onPress={open}>
                     {C.agentApprove}
                   </Button>
                 </div>
@@ -120,7 +120,7 @@ export function AiToolAgentRun({ videoId, tool, run, onBack }: { videoId: Id; to
             <Button size="S" variant="secondary" onPress={open}>
               {C.openSession}
             </Button>
-            <Button size="S" variant={done ? 'accent' : 'secondary'} fillStyle={done ? 'fill' : 'outline'} onPress={reset}>
+            <Button size="S" variant="secondary" fillStyle={done ? 'fill' : 'outline'} onPress={reset}>
               {done ? C.done : C.resetSetup}
             </Button>
           </div>

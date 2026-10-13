@@ -21,7 +21,7 @@ export const es: SpaceActionsMessages = {
  notImported: (count) => `${count} sin importar`,
  references: (names, total) => {
  const quoted = names.map((name) => `«${name}»`).join(', ');
- return total > names.length ? `Elementos de Space ${quoted} y ${total - names.length} más` : `${pluralForm('es', total, { one: 'Elemento', other: 'Elementos' })} de Space ${quoted}`;
+ return total > names.length ? `Elementos de la Biblioteca ${quoted} y ${total - names.length} más` : `${pluralForm('es', total, { one: 'Elemento', other: 'Elementos' })} de la Biblioteca ${quoted}`;
  },
  referenceOutput: 'Resultado',
 };

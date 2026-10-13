@@ -19,7 +19,7 @@ export const es: ServicesMcpMessages = {
  videos_history: 'Ver historial de cambios', documents_put: 'Escribir documento', assets_import: 'Importar materiales', compositions_import: 'Importar gráfico animado', compositions_preview: 'Previsualizar gráfico animado', assets_prune: 'Limpiar materiales sin usar', chapters_adopt: 'Usar capítulos de origen', edits_ops: 'Ver operaciones de edición',
  models_capabilities: 'Ver capacidades de modelos', models_list: 'Listar paquetes de modelos locales', transcribe: 'Transcribir', translate: 'Traducir', dub: 'Traducir y doblar',
  speak: 'Sintetizar voz', image: 'Generar imagen', jobs_inspect: 'Consultar tareas', jobs_wait: 'Esperar tarea', jobs_list: 'Listar tareas', jobs_cancel: 'Cancelar tarea',
- jobs_retry: 'Reintentar flujo fallido', export: 'Exportar', space_list: 'Listar elementos de Space', space_search: 'Buscar transcripciones en varios vídeos',
+ jobs_retry: 'Reintentar flujo fallido', export: 'Exportar', space_list: 'Listar elementos de la Biblioteca', space_search: 'Buscar transcripciones en varios vídeos',
  projects_list: 'Listar proyectos', skills_list: 'Listar skills', skills_read: 'Leer skill', library_list: 'Listar biblioteca', library_show: 'Ver elemento de biblioteca', download: 'Descargar desde enlace',
  },
  gates: { answer: 'Responde directamente', auto: "Se ejecuta directamente", ask: 'Pregunta antes de llamar', hidden: 'No se ofrece con acceso de solo lectura' },

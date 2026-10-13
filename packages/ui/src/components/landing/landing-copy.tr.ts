@@ -48,5 +48,6 @@ export const tr: LandingMessages = {
     more: (count) => `${count} tane daha göster`,
     less: 'Daha az göster',
     pinned: 'Sabitlendi',
+    archiveProject: 'Projeyi arşivle',
   },
 };

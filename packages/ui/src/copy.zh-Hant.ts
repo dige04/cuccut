@@ -241,7 +241,6 @@ export const zhHant: CopyMessages = {
     retryFailed: (message: string) => `無法重試：${message}`,
   },
   home: {
-    title: '想做什麼樣的影片？',
     templates: '影片創作範本',
     quickStart: '快速開始',
     blankVideo: '新增空白影片',
@@ -639,7 +638,7 @@ export const zhHant: CopyMessages = {
       `對話「${title}」${status ? ` · ${status}` : ''} · 固定在第一個，無法移動或關閉`,
     conversationTabLabel: (title: string, status: string | null) => `對話「${title}」${status ? `，${status}` : ''}，固定在第一個`,
     opening: '正在開啟影片…',
-    showInSpace: '在 Space 中顯示',
+    showInSpace: '在資料庫中顯示',
     reveal: '在資料夾中顯示',
     fileMissing: '檔案已被移動或刪除',
     filesNoConversation: '對話建立後，這裡會列出它所在資料夾中的檔案。',

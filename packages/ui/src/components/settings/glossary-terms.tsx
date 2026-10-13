@@ -195,8 +195,9 @@ export function BulkAdd({ kind, isDisabled, onAdd }: { kind: GlossaryKind; isDis
         </div>
       ) : null}
       <div className={acts}>
+        {/* The quick-add row above keeps the page's one yellow. */}
         <Button
-          variant="accent"
+          variant="secondary"
           size="S"
           isDisabled={!parsed.terms.length || isDisabled}
           onPress={() => void onAdd(parsed.terms).then((ok) => ok && close())}>
@@ -392,7 +393,7 @@ function TermEditor({
         </div>
       ) : null}
       <div className={acts}>
-        <Button variant="accent" size="S" isDisabled={!ready} onPress={save}>
+        <Button variant="secondary" size="S" isDisabled={!ready} onPress={save}>
           {T().save}
         </Button>
         <Button variant="secondary" size="S" onPress={onCancel}>

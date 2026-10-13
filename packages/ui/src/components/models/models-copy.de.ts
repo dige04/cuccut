@@ -290,7 +290,7 @@ export const de: ModelsMessages = {
     result: "Testergebnis",
     resultNote: "Das Ergebnis wird nur hier angezeigt und nicht ins Video eingefügt.",
 
-    textResultNote: "Die Antwort wird nicht ins Video eingefügt; wie anderer erzeugter Text wird sie als Dokument in Space gespeichert.",
+    textResultNote: "Die Antwort wird nicht ins Video eingefügt; wie anderer erzeugter Text wird sie als Dokument in der Bibliothek gespeichert.",
     start: "Test starten",
     retry: "Testen Sie noch einmal",
     testing: "Wird getestet…",

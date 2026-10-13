@@ -1,13 +1,13 @@
 import type { VideoBarMessages } from './video-bar-copy.ts';
 
 export const zhHant: VideoBarMessages = {
-  closeToSpace: '關閉影片 · 回到 Space',
+  closeToSpace: '關閉影片 · 回到資料庫',
   closeToHome: '關閉影片 · 回到 Home',
   untitled: '影片',
   rename: '重新命名影片',
   details: '影片詳細資訊',
   actions: '影片操作',
-  showInSpace: '在 Space 中顯示',
+  showInSpace: '在資料庫中顯示',
   revealVideoFolder: '顯示影片資料夾',
   close: '關閉影片',
   nameLabel: '名稱',

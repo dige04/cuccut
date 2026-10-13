@@ -36,6 +36,6 @@ export const ru: SpaceActionsMessages = {
   copiedAll: "скопировано в imports/ проекта",
   copiedSome: (count: number) => `${count} скопировано в imports/ проекта`,
   notImported: (count: number) => `${count} не импортировано`,
-  references: (names: readonly string[], total: number) => { const quoted = names.map(name => `«${name}»`).join(', '); return total > names.length ? `Элементы Space: ${quoted} и ещё ${total - names.length}` : `${total === 1 ? 'Элемент' : 'Элементы'} Space: ${quoted}`; },
+  references: (names: readonly string[], total: number) => { const quoted = names.map(name => `«${name}»`).join(', '); return total > names.length ? `Элементы Библиотеки: ${quoted} и ещё ${total - names.length}` : `${total === 1 ? 'Элемент' : 'Элементы'} Библиотеки: ${quoted}`; },
   referenceOutput: "Результат",
 };

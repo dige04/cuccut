@@ -993,11 +993,11 @@ export function TranscriptPanel({
           <h3 className={emptyTitle}>{C.emptyTitle}</h3>
           <p className={emptyText}>{text}</p>
           {candidates.length ? (
-            <Button variant="accent" onPress={() => useEditor.getState().showPanel('subtitle')}>
+            <Button variant="secondary" onPress={() => useEditor.getState().showPanel('subtitle')}>
               {C.gotoSubtitle}
             </Button>
           ) : (
-            <Button variant="accent" onPress={() => useEditor.getState().showPanel('video')}>
+            <Button variant="secondary" onPress={() => useEditor.getState().showPanel('video')}>
               {C.addMedia}
             </Button>
           )}
@@ -1158,7 +1158,7 @@ export function TranscriptPanel({
                   <Text>{C.restore}</Text>
                 </Button>
               ) : null}
-              <Button variant="accent" size="S" isDisabled={!editable || !plan?.ok} onPress={cut}>
+              <Button variant="secondary" size="S" isDisabled={!editable || !plan?.ok} onPress={cut}>
                 <Cut />
                 <Text>
                   {C.cut}

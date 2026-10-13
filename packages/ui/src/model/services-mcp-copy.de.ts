@@ -50,7 +50,7 @@ export const de: ServicesMcpMessages = {
     jobs_cancel: "Aufgabe abbrechen",
     jobs_retry: "Fehlgeschlagene Pipeline erneut versuchen",
     export: "Exportieren",
-    space_list: "Space-Einträge auflisten",
+    space_list: "Bibliothekseinträge auflisten",
     space_search: "Transkripte videoübergreifend durchsuchen",
     projects_list: "Projekte auflisten",
     skills_list: "Skills auflisten",

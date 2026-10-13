@@ -654,7 +654,8 @@ svg[role='img'][viewBox='0 0 20 20']:not(
   border-radius: 999px;
 }
 
-/* Stop and Send: 36px capsules; Send carries the view's one yellow tint (theme/cuccut.css accent rule). */
+/* Stop and Send: 36px capsules; Send carries the view's one yellow tint (theme/cuccut.css accent rule), except beside the
+   video editor, whose Export holds it (Composer `quietSend`). */
 .cc-composer-send.cc-btn {
   height: 36px;
   min-height: 36px;

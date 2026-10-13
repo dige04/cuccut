@@ -69,7 +69,8 @@ export function LocalDownloadGate({
                 {label}
               </span>
             ) : (
-              <Button variant="accent" size="S" onPress={() => setInstalling(inlineInstallMode(bundle, bundles))}>
+              // Neutral: the form's own submit is the view's one yellow.
+              <Button variant="secondary" size="S" onPress={() => setInstalling(inlineInstallMode(bundle, bundles))}>
                 <Download />
                 <Text>
                   {view.state === 'paused' ? GATE_COPY.resume : view.size ? GATE_COPY.downloadSize(view.size) : GATE_COPY.downloadButton}

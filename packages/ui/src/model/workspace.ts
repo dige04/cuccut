@@ -238,6 +238,18 @@ export function resizeSplit(conversationWidth: number, contentWidth: number): { 
 /** 编辑器最小宽度：工具栏 68 + 缝 7 + 面板 300 + 预览 320。 */
 export const EDITOR_MIN_WIDTH = 695;
 
+/** Width of the selection inspector when it sits as a column of its own beside the docked conversation. */
+export const INSPECTOR_SIDE_WIDTH = 280;
+
+/**
+ * Whether the docked layout can put the selection inspector beside the conversation (a column of its own, 16px gaps)
+ * and still leave the open tab its minimum editor width; otherwise the inspector stacks under the conversation.
+ */
+export function inspectorBeside(contentWidth: number, dock: number): boolean {
+  if (!Number.isFinite(contentWidth) || contentWidth <= 0) return false;
+  return contentWidth - dockFor(contentWidth, dock) - 16 - INSPECTOR_SIDE_WIDTH - 16 >= EDITOR_MIN_WIDTH;
+}
+
 /**
  * 窄模式只由容器宽度决定，不能随拖宽的会话列切换，否则拖动会在收起阈值前中断。
  * 原型用 960px 近似；应用按最窄会话 320 + 实际编辑器 695 预留（product-design §3.3）。
@@ -349,49 +361,4 @@ export function tabsButton({ count, visible, full }: { count: number; visible: b
   if (full) return { action: 'split', glyph: 'hide-tabs', listed: false };
   if (visible) return { action: 'hide', glyph: 'hide-tabs', listed: false };
   return { action: 'show', glyph: 'count', badge: count > 9 ? '9+' : String(count), listed: true };
-}
-
-/** 分屏显示着时会话摘要跟着会话列，挂在会话头的 ··· 之后；收起、完整视图与窄窗口时它是右侧按钮组的第一个。 */
-export function summaryInHead({ visible, single, count }: { visible: boolean; single: boolean; count: number }): boolean {
-  return visible && !single && count > 0;
-}
-
-export interface HomeBarInput {
-  /** 标题栏左缘。 */
-  origin: number;
-  /** 标题栏宽度。 */
-  width: number;
-  /** 后退前进那组按钮的右缘。 */
-  navRight: number;
-  /** Home 内容区（会话侧栏右边）的左右缘；还没量到时为 null。 */
-  content: { left: number; right: number } | null;
-  /** 会话列的右缘；会话列不在旁边（完整视图、窄窗口）时为 null。 */
-  conversationRight: number | null;
-  /** 右侧视图按钮组的左缘；按钮组是空的（宽度为 0）时为 null。 */
-  controlsLeft: number | null;
-  /** 右侧区域正显示着。 */
-  hasPane: boolean;
-  /** 单条标签条：窄窗口或完整视图。 */
-  single: boolean;
-}
-
-/**
- * Home 标题栏的分界：会话头从内容区左缘（至少离开后退前进 12px）排到 `split`，标签条从 `split` 排到离右缘 `right` 处。
- * 右侧显示着时 `split` 对齐会话列的缝；单条标签条（会话是标签条的第一格）时标签条从左缘开始；
- * 没有右侧区域时会话头排到按钮组左缘前 4px，··· 与按钮组读作一组。按钮组的宽度随按钮数变化，所以量它的实际左缘。
- */
-export function homeBarBounds(input: HomeBarInput): { left: number; split: number; right: number } | null {
-  const { origin, width, navRight, content, conversationRight, controlsLeft, hasPane, single } = input;
-  if (!content) return null;
-  const left = Math.max(content.left - origin, navRight - origin + 12);
-  const end = Math.min(content.right - origin, (controlsLeft === null ? origin + width : controlsLeft) - origin - 4);
-  const split = single
-    ? left
-    : hasPane
-      ? conversationRight === null
-        ? // 会话列刚出现、还没量到：先粗排，量到后对齐。
-          left + Math.min(240, (end - left) * 0.4)
-        : conversationRight - origin
-      : end;
-  return { left: Math.round(left), split: Math.round(Math.max(left, split)), right: Math.round(Math.max(8, width - end)) };
 }

@@ -49,7 +49,7 @@ export const ja: ServicesMcpMessages = {
     jobs_cancel: 'タスクをキャンセル',
     jobs_retry: '失敗したパイプラインを再試行',
     export: '書き出す',
-    space_list: 'Space の項目を一覧表示',
+    space_list: 'ライブラリの項目を一覧表示',
     space_search: '動画をまたいで文字起こしを検索',
     projects_list: 'プロジェクトを一覧表示',
     skills_list: 'Skill を一覧表示',

@@ -291,7 +291,7 @@ export const fr: ModelsMessages = {
     result: "Résultat du test",
     resultNote: "Résultat affiché ici uniquement, sans ajout à la vidéo.",
 
-    textResultNote: "Réponse non ajoutée à la vidéo ; comme les textes générés, enregistrée en document dans Space.",
+    textResultNote: "Réponse non ajoutée à la vidéo ; comme les textes générés, enregistrée en document dans la Bibliothèque.",
     start: "Démarrer l'essai",
     retry: "Testez à nouveau",
     testing: "Test en cours…",

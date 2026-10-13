@@ -67,6 +67,7 @@ const en = {
     more: (count: number) => `Show ${count} more`,
     less: 'Show fewer',
     pinned: 'Pinned',
+    archiveProject: 'Archive project',
   },
 };
 

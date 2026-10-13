@@ -5,13 +5,13 @@ const artifactLabels = { audio: '音訊', image: '圖片', doc: '文件', final:
 export const zhHant: ToolCatalogMessages = {
   inputLabels: {
     file: '本機檔案',
-    space: 'Space',
+    space: '資料庫',
     link: '連結',
     text: '文字',
-    video: 'Space 中的影片',
+    video: '資料庫中的影片',
     document: '文件',
   },
-  outputLabels: { video: '影片', artifact: 'Space 中的項目' },
+  outputLabels: { video: '影片', artifact: '資料庫中的項目' },
   artifactLabels,
   tools: {
     transcribe: { name: '轉錄', desc: '將影片或音訊檔轉成逐字稿和字幕；選擇可編輯的影片時會寫入其中，並新增字幕層' },
@@ -22,11 +22,11 @@ export const zhHant: ToolCatalogMessages = {
     dub: { name: '翻譯配音', desc: '依譯文為已轉錄的影片加上新的配音；原始音訊可以壓低、靜音或保留' },
     'synthesize-speech': {
       name: '生成語音',
-      desc: '朗讀文字，或 Space 中的文件與字幕；可使用內建音色、克隆一段錄音或描述一種音色',
+      desc: '朗讀文字，或資料庫中的文件與字幕；可使用內建音色、克隆一段錄音或描述一種音色',
     },
     'generate-text': {
       name: '生成文字',
-      desc: '描述你的需求，直接呼叫文字模型生成文案、腳本或摘要；可以附上 Space 中的文件或字幕作為參考資料',
+      desc: '描述你的需求，直接呼叫文字模型生成文案、腳本或摘要；可以附上資料庫中的文件或字幕作為參考資料',
     },
     'generate-image': { name: '生成圖片', desc: '描述一個畫面，用雲端或本機影像模型畫出來；參考圖、長寬比和張數皆可選' },
     'generate-music': { name: '生成音樂', desc: '寫下風格與可選的歌詞，用本機音樂模型生成歌曲或純音樂；時長與種子可選' },
@@ -44,7 +44,7 @@ export const zhHant: ToolCatalogMessages = {
   groups: {
     speech: {
       label: '語音與字幕',
-      desc: '轉錄、翻譯字幕、加上配音及朗讀文字。結果是文件、字幕與音訊項目；選擇 Space 中可編輯的影片時會寫入其中。',
+      desc: '轉錄、翻譯字幕、加上配音及朗讀文字。結果是文件、字幕與音訊項目；選擇資料庫中可編輯的影片時會寫入其中。',
     },
     'text-image': { label: '文字與圖片', desc: '直接呼叫文字模型與影像模型。結果是文件與圖片項目。' },
     music: { label: '音樂', desc: '用本機音樂模型生成歌曲與配樂。結果是音訊條目。' },
@@ -55,7 +55,7 @@ export const zhHant: ToolCatalogMessages = {
   },
   artifactItems: (artifacts) => `${artifacts.map((a) => artifactLabels[a]).join('與') || '產出'}項目`,
   resultWritesVideo: '結果：寫入你選擇的影片',
-  resultInSpace: (items) => `結果：Space 中的${items}`,
+  resultInSpace: (items) => `結果：資料庫中的${items}`,
   resultAlsoCreate: '也可以建立新影片',
   resultWritesEditable: '選擇可編輯的影片時會寫入其中',
   joinResult: (parts) => parts.join('；'),

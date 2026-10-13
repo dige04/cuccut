@@ -1,11 +1,11 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { tabPreviewPosition } from '../../model/shell-peek.ts';
+import { tabPreviewPosition } from '../../model/tab-preview.ts';
 import { useWorkspaceOverlay } from './workspace-overlay.ts';
 
 /*
  * The hover card (agentcut popover surface: solid, 16px corners, hairline, raised shadow). Width 280, the same as
- * model/shell-peek.ts `TAB_PREVIEW_WIDTH`. It hangs off <body>, outside the S2 provider, so it sets its own font.
+ * model/tab-preview.ts `TAB_PREVIEW_WIDTH`. It hangs off <body>, outside the S2 provider, so it sets its own font.
  */
 const card =
   'pointer-events-none fixed z-[60] box-border w-[280px] overflow-hidden rounded-2xl border border-white/10 bg-popover p-1.5 font-sans text-sm text-foreground shadow-(--glass-shadow-raised)';

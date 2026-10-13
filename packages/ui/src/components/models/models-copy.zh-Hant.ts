@@ -269,7 +269,7 @@ export const zhHant: ModelsMessages = {
     failed: '測試失敗',
     result: '測試結果',
     resultNote: '結果只會顯示在這裡，不會加入影片。',
-    textResultNote: '回覆不會加入影片；和其他生成的文字一樣，會儲存為 Space 中的一份文件。',
+    textResultNote: '回覆不會加入影片；和其他生成的文字一樣，會儲存為資料庫中的一份文件。',
     start: '開始測試',
     retry: '再測試一次',
     testing: '測試中…',

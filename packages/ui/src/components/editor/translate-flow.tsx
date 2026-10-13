@@ -309,7 +309,7 @@ export function TranslateFlow({
             <Content>
               {C.notConfiguredBody}
               <div className={alertActions}>
-                <Button size="S" variant="accent" onPress={toModels}>
+                <Button size="S" variant="secondary" onPress={toModels}>
                   {C.goModels}
                 </Button>
               </div>
@@ -350,7 +350,7 @@ export function TranslateFlow({
         <p className={hint}>{C.bilingualHint}</p>
       </div>
       <div className={footer}>
-        <Button variant="accent" styles={field} isDisabled={!target || busy || !editable} isPending={submitting} onPress={() => void start()}>
+        <Button variant="secondary" styles={field} isDisabled={!target || busy || !editable} isPending={submitting} onPress={() => void start()}>
           {targetLabel ? C.cta(targetLabel) : C.cta('…')}
         </Button>
         <p className={hint}>{busy ? C.busy : !editable ? C.readOnly : C.ctaHint}</p>

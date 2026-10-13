@@ -294,7 +294,6 @@ export const ru: CopyMessages = {
   },
   /** Home 起始页（产品设计 §3.2.1；原型 page-new.jsx Home、new-agent.jsx）。 */
   home: {
-    title: "Какое видео вы хотите создать?",
     templates: "Шаблоны видео",
     quickStart: "Быстрый старт",
     blankVideo: "Новое пустое видео",
@@ -733,7 +732,7 @@ export const ru: CopyMessages = {
       `Сессия «${title}»${status ? ` · ${status}` : ""} · Закреплена первой; нельзя переместить или закрыть`,
     conversationTabLabel: (title: string, status: string | null) => `Сессия «${title}»${status ? `, ${status}` : ""}, закреплена первой`,
     opening: "Открытие видео…",
-    showInSpace: "Показать в Space",
+    showInSpace: "Показать в Библиотеке",
     reveal: "Показать в папке",
     fileMissing: "Файл перемещён или удалён",
     filesNoConversation: "После создания сессии здесь появятся файлы её папки.",

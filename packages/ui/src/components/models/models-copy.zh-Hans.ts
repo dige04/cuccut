@@ -250,7 +250,7 @@ export const zhHans: ModelsMessages = {
     result: '测试结果',
     resultNote: '结果只在这里看，不进视频。',
     /** 文本的测试结果和别的文本生成一样列进 Space（runtime-core space/space-derive.ts）。 */
-    textResultNote: '回复不进视频，和别的文本生成一样存成 Space 里的一份文档。',
+    textResultNote: '回复不进视频，和别的文本生成一样存成资料库里的一份文档。',
     start: '开始测试',
     retry: '重新测试',
     testing: '测试中…',

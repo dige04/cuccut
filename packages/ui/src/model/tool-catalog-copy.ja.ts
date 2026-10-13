@@ -5,13 +5,13 @@ const artifactLabels = { audio: '音声', image: '画像', doc: 'ドキュメン
 export const ja: ToolCatalogMessages = {
   inputLabels: {
     file: 'ローカルファイル',
-    space: 'Space',
+    space: 'ライブラリ',
     link: 'リンク',
     text: 'テキスト',
-    video: 'Space の動画',
+    video: 'ライブラリの動画',
     document: 'ドキュメント',
   },
-  outputLabels: { video: '動画', artifact: 'Space の項目' },
+  outputLabels: { video: '動画', artifact: 'ライブラリの項目' },
   artifactLabels,
   tools: {
     transcribe: {
@@ -28,11 +28,11 @@ export const ja: ToolCatalogMessages = {
     },
     'synthesize-speech': {
       name: '音声を生成',
-      desc: 'テキストや、Space のドキュメントと字幕を読み上げます。プリセットの声を使うか、録音をクローンするか、声を説明して作ります',
+      desc: 'テキストや、ライブラリのドキュメントと字幕を読み上げます。プリセットの声を使うか、録音をクローンするか、声を説明して作ります',
     },
     'generate-text': {
       name: 'テキストを生成',
-      desc: '必要な内容を書くと、テキストモデルを直接呼び出してコピー、台本、要約を作ります。Space のドキュメントや字幕を資料として添付できます',
+      desc: '必要な内容を書くと、テキストモデルを直接呼び出してコピー、台本、要約を作ります。ライブラリのドキュメントや字幕を資料として添付できます',
     },
     'generate-image': {
       name: '画像を生成',
@@ -62,7 +62,7 @@ export const ja: ToolCatalogMessages = {
   groups: {
     speech: {
       label: '音声と字幕',
-      desc: '文字起こし、字幕の翻訳、吹き替えの追加、テキストの読み上げ。結果はドキュメント、字幕、音声の項目です。Space で編集可能な動画を選ぶとそこに書き込みます。',
+      desc: '文字起こし、字幕の翻訳、吹き替えの追加、テキストの読み上げ。結果はドキュメント、字幕、音声の項目です。ライブラリで編集可能な動画を選ぶとそこに書き込みます。',
     },
     'text-image': { label: 'テキストと画像', desc: 'テキストモデルと画像モデルを直接呼び出します。結果はドキュメントと画像の項目です。' },
     music: { label: '音楽', desc: 'ローカルの音楽モデルで楽曲やBGMを生成します。結果は音声アイテムです。' },
@@ -73,7 +73,7 @@ export const ja: ToolCatalogMessages = {
   },
   artifactItems: (artifacts) => `${artifacts.map((a) => artifactLabels[a]).join('と') || '生成物'}の項目`,
   resultWritesVideo: '結果：選んだ動画に書き込みます',
-  resultInSpace: (items) => `結果：Space の${items}`,
+  resultInSpace: (items) => `結果：ライブラリの${items}`,
   resultAlsoCreate: '新しい動画も作成できます',
   resultWritesEditable: '編集可能な動画を選ぶとそこに書き込みます',
   joinResult: (parts) => parts.join('。'),

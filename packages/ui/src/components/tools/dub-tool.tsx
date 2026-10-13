@@ -123,7 +123,7 @@ export function DubTool() {
     <ToolFrame
       tool="dub"
       title={DUB_COPY.title}
-      bar={<SubmitBar why={why} label={DUB_COPY.submit} busy={starter.busy} onPress={start} />}
+      bar={<SubmitBar why={why} label={DUB_COPY.submit} busy={starter.busy} onPress={start} yields={!!starter.asking} />}
       onKeyDown={submitOnModEnter(start)}>
       <p className={lede}>{DUB_COPY.lede}</p>
       <SpacePicker tool="dub" data={data} value={entryId} onChange={(id) => patch({ entryId: id, translation: null })} />

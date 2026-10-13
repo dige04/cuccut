@@ -64,20 +64,20 @@ export function SubtitleEmpty({
   let primary;
   if (!candidates.length) {
     primary = (
-      <Button variant="accent" onPress={() => useEditor.getState().showPanel('video')}>
+      <Button variant="secondary" onPress={() => useEditor.getState().showPanel('video')}>
         {C.addMedia}
       </Button>
     );
   } else if (only) {
     primary = (
-      <Button variant="accent" isDisabled={disabled} onPress={() => run(only)}>
+      <Button variant="secondary" isDisabled={disabled} onPress={() => run(only)}>
         {C.generate}
       </Button>
     );
   } else {
     primary = (
       <MenuTrigger>
-        <Button variant="accent" isDisabled={disabled}>
+        <Button variant="secondary" isDisabled={disabled}>
           {C.generate}
         </Button>
         <Menu

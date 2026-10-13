@@ -29,12 +29,27 @@ export function firstWhy(block: string | null | undefined, ...reasons: (string |
   return null;
 }
 
-/** 页头：现状一句（按不了时写第一条原因，变橙）与主按钮。 */
-export function SubmitBar({ why, label, busy, onPress }: { why: string | null; label: string; busy: boolean; onPress: () => void }) {
+/**
+ * 页头：现状一句（按不了时写第一条原因，变橙）与主按钮。`yields`: another action on the page (a grant card's Agree) holds
+ * the view's one yellow for now, so the submit turns neutral.
+ */
+export function SubmitBar({
+  why,
+  label,
+  busy,
+  onPress,
+  yields = false,
+}: {
+  why: string | null;
+  label: string;
+  busy: boolean;
+  onPress: () => void;
+  yields?: boolean;
+}) {
   return (
     <>
       <BarStatus text={why ?? FORM_COPY.ready} bad={!!why} />
-      <Button variant="accent" isDisabled={!!why} isPending={busy} onPress={onPress}>
+      <Button variant={yields ? 'secondary' : 'accent'} isDisabled={!!why} isPending={busy} onPress={onPress}>
         {label}
       </Button>
     </>

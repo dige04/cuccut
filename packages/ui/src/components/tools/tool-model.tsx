@@ -122,6 +122,7 @@ export function ModelLine<M>({
 /**
  * 选中的模型不能用时的门卡（设计稿 image-gen.jsx `EngineGate` 的云端分支）：没连上的说「先连接 X」、给「去连接」，
  * 有能用的另一只时给「换用可用的 …」。本机模型的门卡（下载、平台不可用）在 local-model-gate.tsx。
+ * The gate's buttons stay neutral: the form's own submit is the view's one yellow.
  */
 export function ModelGate<M>({
   selected,
@@ -152,7 +153,7 @@ export function ModelGate<M>({
         body={body}
         actions={
           <>
-            <Button variant="accent" size="S" onPress={onConnect}>
+            <Button variant="secondary" size="S" onPress={onConnect}>
               {GATE_COPY.goConnect}
             </Button>
             {switchButton}

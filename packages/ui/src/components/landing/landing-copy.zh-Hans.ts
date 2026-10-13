@@ -47,5 +47,6 @@ export const zhHans: LandingMessages = {
     more: (count) => `再显示 ${count} 个`,
     less: '收起',
     pinned: '已置顶',
+    archiveProject: '归档项目',
   },
 };

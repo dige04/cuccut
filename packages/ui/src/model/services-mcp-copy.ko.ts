@@ -49,7 +49,7 @@ export const ko: ServicesMcpMessages = {
     jobs_cancel: '작업 취소',
     jobs_retry: '실패한 파이프라인 다시 시도',
     export: '내보내기',
-    space_list: 'Space 항목 목록',
+    space_list: '라이브러리 항목 목록',
     space_search: '여러 영상의 전사본 검색',
     projects_list: '프로젝트 목록',
     skills_list: 'Skill 목록',

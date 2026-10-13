@@ -226,7 +226,7 @@ export function DubAskCard({ videoId, ask, videoName, flush = false }: { videoId
           {ask.granted.length ? <div className={alertNote}>{C.grantNext}</div> : null}
           {ask.error ? <div className={alertError}>{ask.error}</div> : null}
           <div className={alertActions}>
-            <Button size="S" variant="accent" isPending={granting} onPress={() => setConfirming(true)}>
+            <Button size="S" variant="secondary" isPending={granting} onPress={() => setConfirming(true)}>
               {ask.resume.kind === 'retry' ? C.grantRetryAction : C.grantAction}
             </Button>
             <Button size="S" variant="secondary" fillStyle="outline" isDisabled={granting} onPress={() => dismissAsk(videoId)}>
@@ -332,7 +332,7 @@ export function DubProblemAlert({
           {problem.retry ? <div className={alertNote}>{C.retryFrozen}</div> : null}
           <div className={alertActions}>
             {problem.retry ? (
-              <Button size="S" variant="accent" isDisabled={busy} onPress={() => void retryDub(videoId)}>
+              <Button size="S" variant="secondary" isDisabled={busy} onPress={() => void retryDub(videoId)}>
                 {C.retry}
               </Button>
             ) : null}

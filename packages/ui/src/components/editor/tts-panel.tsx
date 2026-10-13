@@ -252,7 +252,7 @@ export function TtsPanel({ videoId, page, sequence, assets }: { videoId: Id; pag
             title={TTS_COPY.noModel}
             body={TTS_COPY.noModelBody}
             actions={
-              <Button variant="accent" size="S" onPress={toConnect}>
+              <Button variant="secondary" size="S" onPress={toConnect}>
                 {TTS_COPY.goConnect}
               </Button>
             }
@@ -262,7 +262,7 @@ export function TtsPanel({ videoId, page, sequence, assets }: { videoId: Id; pag
         {option ? <VoiceRows key={option.key} draft={draft} option={option} voices={myVoices} setDraft={setDraft} /> : null}
       </div>
       <div className={footer}>
-        <Button variant="accent" styles={field} isDisabled={!option?.usable || !editable} isPending={submitting} onPress={generate}>
+        <Button variant="secondary" styles={field} isDisabled={!option?.usable || !editable} isPending={submitting} onPress={generate}>
           {clone ? C.cloneCta : C.cta}
         </Button>
         <p className={status({ isBad: bar.bad })} role="status" aria-live="polite">
@@ -427,7 +427,7 @@ function DoneView({
       )}
       <p className={hint}>{asset ? C.inLibrary(asset.name) : C.importing}</p>
       <div className={actions}>
-        <Button variant="accent" size="S" isDisabled={!placeable || !editable} onPress={add}>
+        <Button variant="secondary" size="S" isDisabled={!placeable || !editable} onPress={add}>
           <Add />
           <Text>{C.add}</Text>
         </Button>

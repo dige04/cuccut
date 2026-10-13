@@ -40,7 +40,7 @@ export const fr: SpaceActionsMessages = {
 
   references: (names: readonly string[], total: number) => {
     const quoted = names.map((name) => `« ${name} »`).join(", ");
-    return total > names.length ? `Éléments Space ${quoted} et ${total - names.length} de plus` : `Space ${pluralForm('fr', total, { one: "élément", other: "éléments" })} ${quoted}`;
+    return total > names.length ? `Éléments de la Bibliothèque ${quoted} et ${total - names.length} de plus` : `${pluralForm('fr', total, { one: "élément de la Bibliothèque", other: "éléments de la Bibliothèque" })} ${quoted}`;
   },
   referenceOutput: "Résultat",
 };

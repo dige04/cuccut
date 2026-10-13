@@ -46,6 +46,10 @@ const routes: Route[] = [
   { tab: 'tools', tool: 'translate-subtitles' },
   { tab: 'services' },
   { tab: 'services', service: 'runtime' },
+  { tab: 'calendar' },
+  { tab: 'calendar', projectId: 'p1', view: 'week', day: '2026-10-14', publicationId: 'pub 1' },
+  { tab: 'calendar', view: 'agenda' },
+  { tab: 'calendar', publicationId: 'pub_2' },
 ];
 
 describe('界面内链接', () => {
@@ -72,6 +76,16 @@ describe('界面内链接', () => {
     expect(parseHref('/space/bogus')).toEqual({ tab: 'space', category: 'all', projectId: null });
     expect(parseHref('/settings/bogus')).toEqual({ tab: 'settings', section: 'general' });
     expect(parseHref('/tools/bogus')).toEqual({ tab: 'tools' });
+  });
+
+  it('publication calendar links: query values are kept, unreadable ones are left out', () => {
+    expect(hrefFor({ tab: 'calendar' })).toBe('/calendar');
+    expect(hrefFor({ tab: 'calendar', projectId: 'p1', view: 'month', day: '2026-10-01', publicationId: 'x' })).toBe(
+      '/calendar?projectId=p1&view=month&day=2026-10-01&publication=x',
+    );
+    expect(parseHref('/calendar?view=year&day=2026-02-30&projectId=p1')).toEqual({ tab: 'calendar', projectId: 'p1' });
+    expect(parseHref('/calendar?publication=pub_1')).toEqual({ tab: 'calendar', publicationId: 'pub_1' });
+    expect(hasSidebar({ tab: 'calendar' })).toBe(false);
   });
 
   it('旧链接迁移：设置里的模型页去模型页签，工具里的远端算力去服务', () => {

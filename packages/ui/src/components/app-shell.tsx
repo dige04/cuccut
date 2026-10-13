@@ -9,6 +9,7 @@ import { useHelp } from '../state/help-store.ts';
 import { HOME, hasSidebar, routeVideo, useShell } from '../state/shell-store.ts';
 import { useVideo } from '../state/video-store.ts';
 import { AppUpdateHost } from './app-update/app-update-host.tsx';
+import { CalendarPage } from './publishing/calendar-page.tsx';
 import { LegacyImportHost } from './legacy-import/legacy-import-host.tsx';
 import { ConnectionBanner } from './connection-banner.tsx';
 import { HelpCenter } from './help/help-center.tsx';
@@ -86,6 +87,8 @@ export function AppShell({ platform }: { platform: string }) {
             <HomePage conversationId={route.conversationId} projectId={route.projectId} pane={route.pane ?? null} platform={platform} />
           ) : route.tab === 'space' ? (
             <SpacePage category={route.category} projectId={route.projectId} video={route.video ?? null} from={route.from ?? null} />
+          ) : route.tab === 'calendar' ? (
+            <CalendarPage route={route} />
           ) : route.tab === 'tasks' ? (
             <TasksPage taskId={route.taskId} />
           ) : route.tab === 'services' ? (

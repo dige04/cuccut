@@ -39,6 +39,16 @@ describe('publication draft', () => {
     expect(s.draft!.label).toBe('Launch clip');
   });
 
+  it('Undo of Discard brings the draft back, but not onto a newer saved version', () => {
+    const edited = run(loaded(), { type: 'edit', patch: { label: 'New name' } });
+    const discarded = run(edited, { type: 'discard' });
+    const restored = run(discarded, { type: 'restore', draft: edited.draft!, revision: 1 });
+    expect(restored.draft!.label).toBe('New name');
+    expect(isDirty(restored)).toBe(true);
+    const newer = run(discarded, { type: 'external', publication: detail({ revision: 2 }) });
+    expect(run(newer, { type: 'restore', draft: edited.draft!, revision: 1 }).draft!.label).toBe('Launch clip');
+  });
+
   it('saves only the changed fields and parses typed hashtags', () => {
     const s = run(loaded(), { type: 'edit', patch: { text: { hashtags: '#one  two #two' } } });
     expect(toUpdateParams(s)).toEqual({

@@ -350,3 +350,74 @@ export function moveDialogStart(
 export function undoRecord(undo: MoveUndo, revision: number): CalendarUndo {
   return { ...undo, revision };
 }
+
+// ---- Page state ----
+
+/** One publication's destinations on `day`, earliest first (the aside's "Selected day", which is not paginated). */
+export function entriesOn(rows: readonly PublicationRow[], day: string, timezone: string, filters: CalendarFilters): CalendarEntry[] {
+  const entries: CalendarEntry[] = [];
+  for (const row of filterRows(rows, filters)) {
+    const destinations = shownDestinations(row, filters.accountId)
+      .filter((d) => dayOf(d, timezone) === day)
+      .sort((a, b) => Date.parse(a.at!) - Date.parse(b.at!));
+    if (destinations.length) entries.push({ row, destinations, time: calendarTime(destinations[0]!.at!, timezone) });
+  }
+  return entries.sort((a, b) => Date.parse(a.destinations[0]!.at!) - Date.parse(b.destinations[0]!.at!));
+}
+
+/** The destinations of an Unscheduled entry: the shown ones without a time. */
+export function untimedDestinations(row: PublicationRow, accountId: Id | ''): PublicationRowDestination[] {
+  return shownDestinations(row, accountId).filter((d) => !d.at);
+}
+
+/** Where the calendar is scoped: every project, one project, a project not on this computer, or not known yet (the directory is loading). */
+export type CalendarScope =
+  | { kind: 'all' }
+  | { kind: 'project'; projectId: Id; name: string }
+  | { kind: 'missing'; projectId: Id }
+  | { kind: 'loading'; projectId: Id };
+
+export function calendarScope(
+  projectId: Id | undefined,
+  directory: { ready: boolean; projects: readonly { id: Id; name: string }[] },
+): CalendarScope {
+  if (!projectId) return { kind: 'all' };
+  const project = directory.projects.find((p) => p.id === projectId);
+  if (project) return { kind: 'project', projectId, name: project.name };
+  return directory.ready ? { kind: 'missing', projectId } : { kind: 'loading', projectId };
+}
+
+/** The first day "Find publishing times" looks at: the shown period's first day, but never before today. */
+export function slotSearchStart(anchor: string, today: string): string {
+  return anchor > today ? anchor : today;
+}
+
+/** What a dragged calendar entry carries (`CALENDAR_DRAG_TYPE`). */
+export interface CalendarDrag {
+  publicationId: Id;
+  revision: number;
+  destinationIds: Id[];
+}
+
+export function encodeDrag(drag: CalendarDrag): string {
+  return JSON.stringify(drag);
+}
+
+/** Reads a dragged entry; anything else (a file, text from another app, a malformed payload) is null. */
+export function parseDrag(text: string): CalendarDrag | null {
+  try {
+    const value = JSON.parse(text) as Partial<CalendarDrag>;
+    if (
+      typeof value.publicationId === 'string' &&
+      typeof value.revision === 'number' &&
+      Array.isArray(value.destinationIds) &&
+      value.destinationIds.length > 0 &&
+      value.destinationIds.every((id) => typeof id === 'string')
+    ) {
+      return { publicationId: value.publicationId, revision: value.revision, destinationIds: value.destinationIds };
+    }
+  } catch {
+    // Not a calendar entry.
+  }
+  return null;
+}

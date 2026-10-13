@@ -2,14 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { PC } from '../components/publishing/publishing-copy.ts';
 import {
   calendarModel,
+  calendarScope,
   canDrag,
+  encodeDrag,
+  entriesOn,
   filterRows,
   moveBlock,
   moveDialogStart,
   NO_FILTERS,
+  parseDrag,
   planMove,
   revealAnchor,
+  slotSearchStart,
   undoRecord,
+  untimedDestinations,
   type CalendarModelInput,
 } from './publishing-calendar.ts';
 import { account, connection, row, rowDestination } from './publishing-test-fixtures.ts';
@@ -152,5 +158,47 @@ describe('moving on the calendar', () => {
     expect(planMove(r, ['t'], '2026-10-16', NY, context)).toEqual({ kind: 'noop' });
     expect(planMove(r, ['t'], '2026-03-08', NY, { ...context, time: '02:30' })).toMatchObject({ kind: 'error', code: 'LOCAL_TIME_GAP' });
     expect(planMove(r, ['missing'], '2026-10-20', NY, context)).toEqual({ kind: 'blocked', reason: PC.move.missing });
+  });
+});
+
+describe('calendar page state', () => {
+  it('lists the selected day’s publications across pages, earliest first, with the filters applied', () => {
+    const rows = [
+      row({ id: 'b', destinations: [at('b_d', '2026-10-16T20:00:00.000Z')] }),
+      row({ id: 'a', destinations: [at('a_d', '2026-10-16T14:00:00.000Z'), at('a_t', '2026-10-17T14:00:00.000Z', { accountId: 'acc_tt', format: 'tiktok-video' })] }),
+      row({ id: 'gone', archived: true, destinations: [at('g_d', '2026-10-16T15:00:00.000Z')] }),
+    ];
+    expect(entriesOn(rows, '2026-10-16', NY, NO_FILTERS).map((e) => [e.row.id, e.time, e.destinations.map((d) => d.id)])).toEqual([
+      ['a', '10:00', ['a_d']],
+      ['b', '16:00', ['b_d']],
+    ]);
+    expect(entriesOn(rows, '2026-10-16', NY, { accountId: 'acc_tt', status: '' })).toEqual([]);
+  });
+
+  it('shows the destinations without a time in Unscheduled', () => {
+    const r = row({ id: 'u', destinations: [at('timed', '2026-10-16T14:00:00.000Z'), at('open', null), at('tt', null, { accountId: 'acc_tt' })] });
+    expect(untimedDestinations(r, '').map((d) => d.id)).toEqual(['open', 'tt']);
+    expect(untimedDestinations(r, 'acc_tt').map((d) => d.id)).toEqual(['tt']);
+  });
+
+  it('scopes to a project once the directory knows it, and tells a missing project from one still loading', () => {
+    const projects = [{ id: 'p1', name: 'Launch' }];
+    expect(calendarScope(undefined, { ready: false, projects: [] })).toEqual({ kind: 'all' });
+    expect(calendarScope('p1', { ready: true, projects })).toEqual({ kind: 'project', projectId: 'p1', name: 'Launch' });
+    expect(calendarScope('p2', { ready: false, projects })).toEqual({ kind: 'loading', projectId: 'p2' });
+    expect(calendarScope('p2', { ready: true, projects })).toEqual({ kind: 'missing', projectId: 'p2' });
+  });
+
+  it('never looks for slots before today', () => {
+    expect(slotSearchStart('2026-09-28', '2026-10-14')).toBe('2026-10-14');
+    expect(slotSearchStart('2026-11-30', '2026-10-14')).toBe('2026-11-30');
+  });
+
+  it('reads back only calendar drags', () => {
+    const drag = { publicationId: 'p', revision: 3, destinationIds: ['d1', 'd2'] };
+    expect(parseDrag(encodeDrag(drag))).toEqual(drag);
+    expect(parseDrag('not json')).toBeNull();
+    expect(parseDrag(JSON.stringify({ publicationId: 'p', revision: 3, destinationIds: [] }))).toBeNull();
+    expect(parseDrag(JSON.stringify({ publicationId: 'p', revision: '3', destinationIds: ['d'] }))).toBeNull();
   });
 });

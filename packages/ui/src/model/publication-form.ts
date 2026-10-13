@@ -95,6 +95,8 @@ export type FormAction =
     }
   | { type: 'resetDestinationText'; accountId: Id }
   | { type: 'discard' }
+  /** Undo of Discard: the discarded draft comes back (kept only while the saved version is the one it was edited from). */
+  | { type: 'restore'; draft: PublicationDraft; revision: number }
   /** A save was refused because the publication changed: keep the draft and hold the saved version. */
   | { type: 'conflict'; current: Publication }
   | { type: 'review'; checked: boolean };
@@ -251,6 +253,8 @@ export function formReducer(state: FormState, action: FormAction): FormState {
       return { ...state, conflict: action.current };
     case 'discard':
       return state.saved ? { ...state, draft: draftOf(state.saved) } : state;
+    case 'restore':
+      return state.saved && state.saved.revision === action.revision ? { ...state, draft: action.draft } : state;
     case 'review':
       return { ...state, reviewed: action.checked && state.saved ? { revision: state.saved.revision, exportId: state.saved.exportId } : null };
     default:

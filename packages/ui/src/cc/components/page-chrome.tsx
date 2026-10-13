@@ -1,5 +1,5 @@
 import type { ComponentType, MouseEvent, ReactNode } from 'react';
-import { ArrowLeft, Clock, Library, Radio, Settings, Wrench, type LucideIcon } from 'lucide-react';
+import { ArrowLeft, CalendarDays, Clock, Library, Radio, Settings, Wrench, type LucideIcon } from 'lucide-react';
 import { cn } from 'cn';
 import { S } from '../../components/shell-copy.ts';
 import { useServicesAlert } from '../../components/services/use-share-status.ts';
@@ -59,6 +59,7 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { tab: 'space', label: () => CHROME_COPY.library, Icon: Library },
+  { tab: 'calendar', label: () => CHROME_COPY.calendar, Icon: CalendarDays },
   { tab: 'tools', label: () => S.common.tools, Icon: Wrench },
   { tab: 'tasks', label: () => S.common.tasks, Icon: Clock },
   { tab: 'services', label: () => S.common.services, Icon: Radio },

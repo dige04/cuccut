@@ -304,7 +304,7 @@ function existsError(id: string, target: string): RpcError {
 }
 
 function sourceLabel(source: SkillSource): string {
-  return source.kind === 'local' ? source.path : source.url;
+  return source.kind === 'local' ? source.path : source.kind === 'github' ? source.url : source.packId;
 }
 
 function within(parent: string, child: string): boolean {

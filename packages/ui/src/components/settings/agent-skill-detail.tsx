@@ -22,7 +22,7 @@ import FileText from '@react-spectrum/s2/icons/FileText';
 import FolderOpen from '@react-spectrum/s2/icons/FolderOpen';
 import { style } from '@react-spectrum/s2/style' with { type: 'macro' };
 import { revealLabel } from '../../copy.ts';
-import { fileSizeLabel, SKILL_ORIGIN_LABEL, skillBody, skillErrorMessage, skillSourceLine } from '../../model/agent-skills.ts';
+import { fileSizeLabel, skillBody, skillErrorMessage, skillOriginLabel, skillSourceLine } from '../../model/agent-skills.ts';
 import { useRuntime } from '../../runtime/context.tsx';
 import { getSkill, readSkillFile } from '../../runtime/skill-commands.ts';
 import { remarkPlugins } from '../thread/remark-plugins.ts';
@@ -234,7 +234,7 @@ function SkillInfo({
     <div className={body}>
       <div className={head}>
         <Badge variant="neutral" size="S" fillStyle="subtle">
-          {SKILL_ORIGIN_LABEL[skill.origin]}
+          {skillOriginLabel(skill)}
         </Badge>
         <span className={spacer} />
         <Switch aria-label={SKILLS_COPY.enable(skill.name)} isSelected={skill.enabled} onChange={onToggle} />

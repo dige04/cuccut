@@ -472,6 +472,12 @@ describe('Web 服务', () => {
     // Usage (§6.10) is in the default set: read-only, and contains no keys.
     expect((await page.request('models.usage', { period: '7d' })).totals.calls).toBe(0);
     expect(Array.isArray((await page.request('skills.list', {})).skills)).toBe(true);
+    // Packs (pack spec §8): the list and the pack page are readable; inspect, install, remove and restore are not.
+    expect(await page.request('packs.list', {})).toEqual({ packs: [], diagnostics: [] });
+    expect(details(await page.request('packs.get', { id: 'news-desk' }).catch((e: unknown) => e))).toMatchObject({
+      code: 'not-found',
+      details: { code: 'PACK_NOT_FOUND' },
+    });
     const refused: [string, unknown][] = [
       ['settings.set', { patch: {} }],
       ['models.configure', { providerId: 'openai', enabled: true }],
@@ -515,6 +521,11 @@ describe('Web 服务', () => {
       ['skills.add', { path: '/tmp/x-skill' }],
       ['skills.importGithub', { url: 'o/r' }],
       ['skills.remove', { id: 'x' }],
+      ['packs.inspect', { source: '/tmp/x-pack' }],
+      ['packs.install', { source: '/tmp/x-pack' }],
+      ['packs.install', { token: 'abcdefgh12345678' }],
+      ['packs.remove', { id: 'news-desk' }],
+      ['packs.restore', { trashId: 'abcdefgh12345678' }],
     ];
     let forbidden = 0;
     for (const [method, params] of refused) {
@@ -606,6 +617,8 @@ describe('Web 服务', () => {
     expect((await page.request('projects.list', {})).projects).toEqual([]);
     // Usage is also in the read-only set.
     expect((await page.request('models.usage', { period: 'all' })).byProvider).toEqual([]);
+    // The installed packs are a read too.
+    expect((await page.request('packs.list', {})).packs).toEqual([]);
     expect(details(await page.request('projects.create', { name: '只读' }).catch((e: unknown) => e))).toMatchObject({
       code: 'forbidden',
       details: { code: 'WEB_READ_ONLY', method: 'projects.create' },

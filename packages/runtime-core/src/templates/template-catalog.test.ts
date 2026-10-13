@@ -309,6 +309,28 @@ describe('两个来源合在一起', () => {
     ]);
   });
 
+  it('pack provenance: a user template a pack brought names the pack; built-in templates and the user’s own do not', async () => {
+    const asked: string[] = [];
+    const catalog = new TemplateCatalog({
+      builtinDir: builtin,
+      userDir: user,
+      packOwner: async () => {
+        asked.push('scan');
+        return (kind, id) => (kind === 'template' && (id === 'my-own' || id === 'shared-id') ? { id: 'news-desk', name: 'News desk' } : null);
+      },
+    });
+    const { templates } = await catalog.list();
+    expect(templates.map((t) => [t.manifest.id, t.origin, t.pack])).toEqual([
+      ['shared-id', 'builtin', null],
+      ['my-own', 'user', { id: 'news-desk', name: 'News desk' }],
+    ]);
+    // One read of the pack records per list.
+    expect(asked).toEqual(['scan']);
+    expect((await catalog.get('my-own')).template.pack).toEqual({ id: 'news-desk', name: 'News desk' });
+    expect(await catalog.packOf('shared-id', 'builtin')).toBeNull();
+    expect((await new TemplateCatalog({ builtinDir: builtin, userDir: user }).list()).templates.every((t) => t.pack === null)).toBe(true);
+  });
+
   it('不缓存：用户放进新模板、删掉模板之后再列一次就变了', async () => {
     const catalog = new TemplateCatalog({ builtinDir: builtin, userDir: user });
     expect((await catalog.list()).templates).toHaveLength(2);

@@ -16,7 +16,9 @@ import { vi } from './agent-skills.vi.ts';
 
 /** Copy for Skills settings and errors (the English is the source of keys and types; translations are in `agent-skills.zh-Hans.ts`). */
 const en = {
-  origin: { builtin: 'Built-in', personal: 'Mine', 'third-party': 'Third-party' } as Record<SkillOrigin, string>,
+  origin: { builtin: 'Built-in', personal: 'Mine', 'third-party': 'Third-party', pack: 'Packs' } as Record<SkillOrigin, string>,
+  /** The origin of a skill a pack installed (pack design §2.6). */
+  fromPack: (name: string) => `From the pack ${name}`,
   all: 'All',
   commit: (sha: string) => ` (${sha})`,
   bytes: (n: number) => (n === 1 ? '1 byte' : `${n} bytes`),
@@ -62,16 +64,16 @@ export type SkillTab = 'all' | SkillOrigin;
 
 export const SKILL_ORIGIN_LABEL: Readonly<Record<SkillOrigin, string>> = live(() => M.origin);
 
-export const SKILL_TABS: readonly { key: SkillTab; label: string }[] = (['all', 'builtin', 'personal', 'third-party'] as const).map((key) => ({
+export const SKILL_TABS: readonly { key: SkillTab; label: string }[] = (['all', 'builtin', 'personal', 'third-party', 'pack'] as const).map((key) => ({
   key,
   get label() {
     return key === 'all' ? M.all : M.origin[key];
   },
 }));
 
-const ORIGIN_ORDER: Readonly<Record<SkillOrigin, number>> = { builtin: 0, personal: 1, 'third-party': 2 };
+const ORIGIN_ORDER: Readonly<Record<SkillOrigin, number>> = { builtin: 0, personal: 1, 'third-party': 2, pack: 3 };
 
-/** The order from `skills.list` is not a contract: sort by source (built-in, mine, third-party), then by name; ties are broken by id. */
+/** The order from `skills.list` is not a contract: sort by source (built-in, mine, third-party, packs), then by name; ties are broken by id. */
 export function sortSkills(list: readonly SkillSummary[]): SkillSummary[] {
   return [...list].sort(
     (a, b) => ORIGIN_ORDER[a.origin] - ORIGIN_ORDER[b.origin] || a.name.localeCompare(b.name) || a.id.localeCompare(b.id),
@@ -94,6 +96,7 @@ export function countSkills(list: readonly SkillSummary[], query: string): Recor
     builtin: rows.filter((s) => s.origin === 'builtin').length,
     personal: rows.filter((s) => s.origin === 'personal').length,
     'third-party': rows.filter((s) => s.origin === 'third-party').length,
+    pack: rows.filter((s) => s.origin === 'pack').length,
   };
 }
 
@@ -122,15 +125,29 @@ export function skillMenuItems(list: readonly SkillSummary[]): SkillMenuItem[] {
   return [...rows.filter((s) => s.enabled), ...rows.filter((s) => !s.enabled)];
 }
 
-/** The one line at the bottom of a card: source · version. */
-export function skillMetaLine(skill: Pick<SkillSummary, 'origin' | 'version'>): string {
-  return [SKILL_ORIGIN_LABEL[skill.origin], skill.version ? `v${skill.version}` : null].filter(Boolean).join(' · ');
+/** "From the pack X": the origin label of anything a pack installed (skills here, templates in `home-templates.ts`). */
+export function packOriginLabel(name: string): string {
+  return M.fromPack(name);
 }
 
-/** The source in details: a local folder path, or a GitHub address@ref (commit shortened to the first 7 characters). null for built-in skills and skills placed in the directory by the user. */
+/** Where a skill came from, as a label: "From the pack X" for a skill a pack installed, otherwise the origin's name. */
+export function skillOriginLabel(skill: Pick<SkillSummary, 'origin'> & { source?: SkillSource | null }): string {
+  return skill.source?.kind === 'pack' ? M.fromPack(skill.source.packName) : SKILL_ORIGIN_LABEL[skill.origin];
+}
+
+/** The one line at the bottom of a card: source · version. */
+export function skillMetaLine(skill: Pick<SkillSummary, 'origin' | 'version'> & { source?: SkillSource | null }): string {
+  return [skillOriginLabel(skill), skill.version ? `v${skill.version}` : null].filter(Boolean).join(' · ');
+}
+
+/**
+ * The source in details: a local folder path, a GitHub address@ref (commit shortened to the first 7 characters), or the pack and its version. null for built-in skills and
+ * skills placed in the directory by the user.
+ */
 export function skillSourceLine(source: SkillSource | null): string | null {
   if (!source) return null;
   if (source.kind === 'local') return source.path;
+  if (source.kind === 'pack') return `${M.fromPack(source.packName)} · v${source.packVersion}`;
   const commit = source.commit ? M.commit(source.commit.slice(0, 7)) : '';
   return `${source.url}@${source.ref}${commit}`;
 }

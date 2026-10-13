@@ -63,4 +63,18 @@ export const it: RcPacksMessages = {
   githubTruncated: (p: { limit: number }) => `This folder has too many entries for GitHub to list in full; a pack holds at most ${p.limit} files`,
   githubDownloadTooLarge: (p: { what: string; limit: number }) =>
     `${p.what} is larger than ${p.limit} bytes (larger than GitHub listed, or the pack is over its size limit)`,
+
+  // Inspect (pack-inspect)
+  itemInvalid: (p: { path: string; issue: string }) => `${p.path}: ${p.issue}`,
+  skillIdMismatch: (p: { id: string; normalized: string }) => `The skill folder "${p.id}" would be read as "${p.normalized}"; name it with its id`,
+  skillTooLarge: (p: { bytes: number; limit: number }) => `The skill holds ${p.bytes} bytes; a skill holds at most ${p.limit}`,
+  libraryUnreadable: (p: { path: string; issue: string }) => `${p.path} can't go into the library: ${p.issue}`,
+  libraryVoice: (p: { path: string }) => `${p.path} is a voice; a voice needs its owner's consent, which can't travel in a pack`,
+  styleNotText: (p: { file: string }) => `${p.file} isn't UTF-8 text`,
+
+  // Installed packs (pack-registry)
+  recordUnreadable: "This pack folder can't be read, so it isn't listed",
+  recordMissing: (p: { file: string }) => `${p.file} is missing`,
+  recordNotJson: (p: { file: string }) => `${p.file} can't be read as JSON`,
+  recordIdMismatch: (p: { id: string; dir: string }) => `The record names the pack "${p.id}", but its folder is called "${p.dir}"`,
 };

@@ -82,6 +82,11 @@ export const WEB_DEFAULT_METHODS: readonly string[] = [
   'skills.get',
   'skills.readFile',
   'skills.setEnabled',
+  // Packs (pack spec §8): the list and the pack page, listed one by one. Inspect, install, remove and restore (`packs.inspect`, `packs.install`, `packs.remove`,
+  // `packs.restore`) are not exposed: like adding a skill, they write to the Runtime Home from an arbitrary folder or the network, and decide what text every later agent
+  // follows. They are done only in the desktop UI and CLI.
+  'packs.list',
+  'packs.get',
 ];
 
 /** Methods still available under read-only configuration (listed one by one: methods added later are not exposed under read-only by default). */
@@ -135,6 +140,8 @@ export const WEB_READ_METHODS: readonly RpcMethod[] = [
   'skills.list',
   'skills.get',
   'skills.readFile',
+  'packs.list',
+  'packs.get',
 ];
 
 /** Subscribing to these topics requires the matching read method in the allowlist. Other topics (directories, sessions, tasks, Space, videos) are open with the session. */

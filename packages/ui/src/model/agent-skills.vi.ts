@@ -1,7 +1,7 @@
 import type { AgentSkillsMessages } from './agent-skills.ts';
 
 export const vi: AgentSkillsMessages = {
-  origin: { builtin: "Có sẵn", personal: "Của tôi", 'third-party': "Bên thứ ba" },
+  origin: { builtin: "Có sẵn", personal: "Của tôi", 'third-party': "Bên thứ ba", pack: 'Packs' }, fromPack: (name: string) => `From the pack ${name}`,
   all: "Tất cả",
   commit: (sha: string) => ` (${sha})`,
   bytes: (n) => `${n} byte`,

@@ -1,4 +1,5 @@
 import {
+  type PackRef,
   TEMPLATE_ASSET_TYPES,
   TEMPLATE_CATEGORIES,
   templateExampleText,
@@ -19,6 +20,7 @@ import {
   TEMPLATE_SPEC_COPY,
   type TemplateSourceKey,
 } from '../copy.ts';
+import { packOriginLabel } from './agent-skills.ts';
 import { lengthLabel } from './home-brief.ts';
 import { slotLabels } from './prompt-slots.ts';
 
@@ -72,6 +74,8 @@ export interface HomeTemplate {
   /** Preview video (the list's `preview.file`, and the Runtime says the file exists); when null, the carousel shows beats. */
   preview: string | null;
   assets: readonly TemplateAsset[];
+  /** The installed pack it came from (pack design §2.6): the detail says "From the pack X". null for built-in templates and the user's own. */
+  pack: PackRef | null;
 }
 
 /** How many items fit on one page of “All templates”. */
@@ -131,6 +135,7 @@ export function homeTemplateOf(summary: TemplateSummary): HomeTemplate {
     cover: summary.files.cover && m.cover.file ? m.cover.file : null,
     preview: summary.files.preview && m.preview.file ? m.preview.file : null,
     assets: m.assets ?? [],
+    pack: summary.pack ?? null,
   };
 }
 
@@ -241,9 +246,14 @@ export function templateMeta(t: HomeTemplate): string {
 
 /** Source shown in the details: “built-in · scene template · marketing”, “mine · author · example work · motion design”. Built-in ones do not list an author (they are all CucCut). */
 export function templateByline(t: HomeTemplate): string {
-  return [TEMPLATE_SOURCE_LABEL[t.source], t.source === 'builtin' ? null : t.author, TEMPLATE_KIND_LABEL[t.kind], categoryLabel(t.category)]
+  return [templateOriginLabel(t), t.source === 'builtin' ? null : t.author, TEMPLATE_KIND_LABEL[t.kind], categoryLabel(t.category)]
     .filter(Boolean)
     .join(' · ');
+}
+
+/** Where a template came from: "From the pack X" for a template a pack installed, otherwise its source (built-in, mine, community). */
+export function templateOriginLabel(t: Pick<HomeTemplate, 'source' | 'pack'>): string {
+  return t.pack ? packOriginLabel(t.pack.name) : TEMPLATE_SOURCE_LABEL[t.source];
 }
 
 /** Bundled material is counted by kind; kinds with none are not listed. */

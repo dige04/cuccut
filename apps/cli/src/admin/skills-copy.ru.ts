@@ -11,7 +11,7 @@ export const ru: SkillsMessages = {
   takesEffectNextSession: "Применяется со следующей новой сессии агента; текущие сессии не затрагиваются",
   removed: (id, path) => `Удалено: ${id} (${path})`,
   localSource: (path, addedAt) => `локальная папка ${path} (${addedAt})`,
-  remoteSource: (url, ref, commit, importedAt) => `${url} (${ref}@${commit}, ${importedAt})`,
+  packSource: (name, version, installedAt) => `From the pack ${name} v${version} (${installedAt})`, remoteSource: (url, ref, commit, importedAt) => `${url} (${ref}@${commit}, ${importedAt})`,
   changed: (verb, id, name, enabled, path, source) => `${verb} ${id} (${name}, ${enabled ? "вкл." : "выкл."}) → ${path}${source ? `
 Источник: ${source}` : ""}`,
   idFormat: (flag, value) => `${flag} принимает id Skill (строчные буквы, слова через дефис, см. cuccut skills): ${value}`,

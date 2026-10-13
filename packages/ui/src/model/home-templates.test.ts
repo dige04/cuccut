@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { TEMPLATE_CATEGORIES, type TemplateManifest, type TemplateSummary } from '@cuccut/protocol';
+import { packOriginLabel } from './agent-skills.ts';
 import {
   SHELF_DEFAULT,
   SHELF_MAX,
@@ -17,6 +18,7 @@ import {
   templateCategories,
   templateLength,
   templateMeta,
+  templateOriginLabel,
   templateOf,
   templateShelf,
   templateSlotFields,
@@ -31,7 +33,7 @@ const BUILTIN: TemplateSummary[] = fs
   .filter((d) => d.isDirectory() && !d.name.startsWith('.'))
   .map((d) => {
     const manifest = JSON.parse(fs.readFileSync(path.join(TEMPLATES_DIR, d.name, 'template.json'), 'utf8')) as TemplateManifest;
-    return { manifest, origin: 'builtin', languages: [manifest.language], files: { cover: false, preview: false, assets: manifest.assets?.length ?? 0 } };
+    return { manifest, origin: 'builtin', languages: [manifest.language], files: { cover: false, preview: false, assets: manifest.assets?.length ?? 0 }, pack: null };
   });
 
 function summary(patch: Partial<TemplateManifest>, extra: Partial<Omit<TemplateSummary, 'manifest'>> = {}): TemplateSummary {
@@ -58,7 +60,7 @@ function summary(patch: Partial<TemplateManifest>, extra: Partial<Omit<TemplateS
     preview: { beats: ['一', '二', '三'] },
     ...patch,
   };
-  return { manifest, origin: 'user', languages: [manifest.language], files: { cover: false, preview: false, assets: manifest.assets?.length ?? 0 }, ...extra };
+  return { manifest, origin: 'user', languages: [manifest.language], files: { cover: false, preview: false, assets: manifest.assets?.length ?? 0 }, pack: null, ...extra } as TemplateSummary;
 }
 
 const catalog = templateCatalogOf(BUILTIN);
@@ -186,6 +188,16 @@ describe('卡片与详情的文案', () => {
     expect(templateSpecLine(launch)).toBe('画幅与时长自动，由 Agent 按内容决定');
     expect(templateSpecLine({ kind: 'example', ratio: '16:9', length: null })).toBe('16:9 · 时长自动');
     expect(templateByline(homeTemplateOf(summary({ kind: 'example' })))).toBe('我的 · 某人 · 作品示例 · 知识讲解');
+  });
+
+  it('a template a pack brought says which pack in its byline', () => {
+    const fromPack = homeTemplateOf(summary({}, { pack: { id: 'news-desk', name: 'News desk' } }));
+    expect(fromPack.pack).toEqual({ id: 'news-desk', name: 'News desk' });
+    expect(templateOriginLabel(fromPack)).toBe(packOriginLabel('News desk'));
+    expect(templateByline(fromPack)).toBe(`${packOriginLabel('News desk')} · 某人 · 场景模板 · 知识讲解`);
+    const mine = homeTemplateOf(summary({}));
+    expect(mine.pack).toBeNull();
+    expect(templateOriginLabel(mine)).toBe('我的');
   });
 
   it('「需要你补充」按 brief 里出现的顺序列待填项，带清单里的说明；作品示例不列', () => {

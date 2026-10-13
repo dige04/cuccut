@@ -2,7 +2,7 @@ import type { AgentSkillsMessages } from './agent-skills.ts';
 import { pluralForm } from '@cuccut/protocol';
 
 export const it: AgentSkillsMessages = {
-  origin: { builtin: 'Integrata', personal: 'Mia', 'third-party': 'Di terze parti' }, all: 'Tutte', commit: (sha: string) => ` (${sha})`,
+  origin: { builtin: 'Integrata', personal: 'Mia', 'third-party': 'Di terze parti', pack: 'Packs' }, fromPack: (name: string) => `From the pack ${name}`, all: 'Tutte', commit: (sha: string) => ` (${sha})`,
   bytes: (n: number) => `${n} byte`,
   action: { load: 'caricare le skill', toggle: 'cambiare l’interruttore', add: 'aggiungerla', import: 'importarla', remove: 'rimuoverla', read: 'aprire il file', send: 'inviare' },
   exists: (id: string | null) => `Esiste già una skill chiamata «${id ?? 'questa'}» e non verrà sovrascritta. Rimuovi prima quella vecchia o rinomina la cartella e aggiungila di nuovo.`,

@@ -36,6 +36,7 @@ const en = {
   takesEffectNextSession: "Takes effect from the next new agent session; sessions already in progress aren't affected",
   removed: (id: string, path: string) => `Deleted ${id} (${path})`,
   localSource: (path: string, addedAt: string) => `local folder ${path} (${addedAt})`,
+  packSource: (name: string, version: string, installedAt: string) => `From the pack ${name} v${version} (${installedAt})`,
   remoteSource: (url: string, ref: string, commit: string, importedAt: string) => `${url} (${ref}@${commit}, ${importedAt})`,
   changed: (verb: string, id: string, name: string, enabled: boolean, path: string, source: string | null) =>
     `${verb} ${id} (${name}, ${enabled ? 'on' : 'off'}) → ${path}${source ? `\nSource: ${source}` : ''}`,

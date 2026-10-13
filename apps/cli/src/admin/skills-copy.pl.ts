@@ -11,7 +11,7 @@ export const pl: SkillsMessages = {
   takesEffectNextSession: "Działa od kolejnej nowej sesji agenta; trwające sesje bez zmian",
   removed: (id, path) => `Usunięto: ${id} (${path})`,
   localSource: (path, addedAt) => `folder lokalny ${path} (${addedAt})`,
-  remoteSource: (url, ref, commit, importedAt) => `${url} (${ref}@${commit}, ${importedAt})`,
+  packSource: (name, version, installedAt) => `From the pack ${name} v${version} (${installedAt})`, remoteSource: (url, ref, commit, importedAt) => `${url} (${ref}@${commit}, ${importedAt})`,
   changed: (verb, id, name, enabled, path, source) => `${verb} ${id} (${name}, ${enabled ? "wł." : "wył."}) → ${path}${source ? `
 Źródło: ${source}` : ""}`,
   idFormat: (flag, value) => `${flag} przyjmuje id Skill (małe litery, słowa z łącznikami, zobacz cuccut skills): ${value}`,

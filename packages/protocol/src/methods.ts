@@ -172,7 +172,7 @@ import type {
  * - Public requests do not carry `actor` or any trust marker; identity is built by the Runtime from the authenticated connection (§4.2).
  * - Commands that have side effects carry `commandId`; retrying with the same key returns the same result.
  */
-export interface RpcMethods {
+export interface RpcMethods extends PackRpcMethodsHandled {
   'runtime.info': { params: Record<string, never>; result: RuntimeInfo };
   /** Connection, tasks and idle exit (architecture design §2.2): given only to `cli` and `desktop` connections; all others get `forbidden`. */
   'runtime.status': { params: Record<string, never>; result: RuntimeStatus };
@@ -1111,7 +1111,7 @@ export interface RpcMethods {
  * Results that change the list return the full list, as skills do; there is no topic.
  *
  * Install, remove, restore, inspect, export and style editing write to the Runtime Home from arbitrary folders or the network, so like `skills.add` they are not on the Web
- * allowlist. `RpcMethods` takes these entries in once their handlers are wired (pack design step 8).
+ * allowlist. `RpcMethods` takes in the entries that have handlers (`PackRpcMethodsHandled`).
  */
 export interface PackRpcMethods {
   /** Installed packs; folders whose record can't be read become diagnostics. */
@@ -1151,6 +1151,12 @@ export interface PackRpcMethods {
   /** Write a pack folder from the user's own templates, skills, library items, quick actions and an installed pack's style guide, with the `files` index. */
   'packs.export': { params: PackExportParams; result: PackExportResult };
 }
+
+/**
+ * The `packs.*` methods the Runtime handles: listing, the pack page, inspect, install, remove and restore. Style choice and editing, reference files and export join
+ * `RpcMethods` together with their handlers.
+ */
+export type PackRpcMethodsHandled = Pick<PackRpcMethods, 'packs.list' | 'packs.get' | 'packs.inspect' | 'packs.install' | 'packs.remove' | 'packs.restore'>;
 
 /** The location of a file (or video directory): a Space entry, or a relative path in a session working directory or project directory. */
 export type FileTarget = { entryId: Id } | { conversationId: Id; path: string } | { projectId: Id; path: string };

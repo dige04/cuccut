@@ -17,6 +17,7 @@ import { SPACE_PARAM_SCHEMAS } from './space-schemas.ts';
 import { EXTERNAL_TOOL_PARAM_SCHEMAS } from './external-tools-schemas.ts';
 import { TEMPLATE_PARAM_SCHEMAS, templateSendRefSchema } from './template-schemas.ts';
 import { SKILL_PARAM_SCHEMAS, skillSendListSchema, skillSendRefSchema } from './skill-schemas.ts';
+import { PACK_PARAM_SCHEMAS } from './pack-schemas.ts';
 import { FONT_PARAM_SCHEMAS } from './fonts-schemas.ts';
 import { COMPOSITION_PARAM_SCHEMAS } from './code-bundle-schemas.ts';
 import { TOOL_CATALOGUE_PARAM_SCHEMAS } from './tool-catalogue-schemas.ts';
@@ -866,6 +867,13 @@ export const methodParamSchemas = {
   ...TOOL_CATALOGUE_PARAM_SCHEMAS,
   ...TEMPLATE_PARAM_SCHEMAS,
   ...SKILL_PARAM_SCHEMAS,
+  // Packs (pack spec §8): the methods with handlers (`PackRpcMethodsHandled`).
+  'packs.list': PACK_PARAM_SCHEMAS['packs.list'],
+  'packs.get': PACK_PARAM_SCHEMAS['packs.get'],
+  'packs.inspect': PACK_PARAM_SCHEMAS['packs.inspect'],
+  'packs.install': PACK_PARAM_SCHEMAS['packs.install'],
+  'packs.remove': PACK_PARAM_SCHEMAS['packs.remove'],
+  'packs.restore': PACK_PARAM_SCHEMAS['packs.restore'],
   'media.resolve': mediaTarget,
   'media.playback': z
     .object({ url: z.string().min(1).max(8192), playable: z.array(z.enum(PLAYBACK_CODECS)).max(PLAYBACK_CODECS.length).optional() })
@@ -1379,7 +1387,7 @@ export {
   type TemplateTranslationResult,
 } from './template-schemas.ts';
 export { skillSendListSchema, skillSendRefSchema } from './skill-schemas.ts';
-// `packs.*` join `methodParamSchemas` together with their handlers (pack design step 8); until then the gateway answers them `unknown-method`.
+// `packs.*` join `methodParamSchemas` together with their handlers (`PackRpcMethodsHandled`); the gateway answers the others `unknown-method`.
 export {
   PACK_PARAM_SCHEMAS,
   packManifestSchema,

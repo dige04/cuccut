@@ -58,6 +58,10 @@ import { templateMethods } from './templates/template-methods.ts';
 import { skillMethods } from './skills/skill-methods.ts';
 import type { SkillCatalog } from './skills/skill-catalog.ts';
 import type { SkillInstaller } from './skills/skill-installer.ts';
+import { packMethods } from './packs/pack-methods.ts';
+import type { PackInstaller } from './packs/pack-installer.ts';
+import type { PackRegistry } from './packs/pack-registry.ts';
+import type { PackChoicesStore } from '@cuccut/runtime-storage';
 import type { FontService } from './fonts/font-service.ts';
 import { fontMethods } from './fonts/font-methods.ts';
 import type { CompositionService } from './compositions/composition-service.ts';
@@ -118,6 +122,8 @@ export interface HandlerDeps {
   /** Agent skill directory and install action (§3.8, §12.9). */
   skills: SkillCatalog;
   skillInstaller: SkillInstaller;
+  /** Installed packs, their install actions and each project's style choice (pack spec §6–§8). */
+  packs: { registry: PackRegistry; installer: PackInstaller; choices: PackChoicesStore };
   /** Fonts downloaded on demand (§9.1). */
   fonts: FontService;
   /** Import and preview of code compositions (§8, `compositions.*`). A service shared with the tools. */
@@ -199,6 +205,7 @@ export function createHandlers({
   templates,
   skills,
   skillInstaller,
+  packs,
   fonts,
   compositions,
   catalog: toolCatalog,
@@ -548,6 +555,7 @@ export function createHandlers({
       ...externalToolMethods(() => externalTools),
       ...templateMethods({ templates, media, harness, skills, slideAnnotationsOf, designAnnotationsOf, designSystemAnnotationsOf }),
       ...skillMethods({ skills, installer: skillInstaller }),
+      ...packMethods(packs),
       ...catalogMethods(toolCatalog, agentSkillsDir === undefined ? {} : { agentSkillsDir: () => agentSkillsDir }),
       ...toolCatalogueMethods({
         space,

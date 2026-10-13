@@ -11,7 +11,11 @@ import {
   skillErrorCode,
   skillErrorMessage,
   skillMenuItems,
+  packOriginLabel,
+  SKILL_ORIGIN_LABEL,
+  SKILL_TABS,
   skillMetaLine,
+  skillOriginLabel,
   skillSourceLine,
   sortSkills,
 } from './agent-skills.ts';
@@ -55,8 +59,8 @@ describe('列表的排序、搜索与筛选', () => {
   it('按来源筛选，和搜索叠加；计数跟着搜索词走', () => {
     expect(filterSkills(list, '', 'third-party').map((s) => s.id)).toEqual(['chapters']);
     expect(filterSkills(list, 'subtitle', 'builtin')).toEqual([]);
-    expect(countSkills(list, '')).toEqual({ all: 3, builtin: 1, personal: 1, 'third-party': 1 });
-    expect(countSkills(list, '品牌')).toEqual({ all: 1, builtin: 1, personal: 0, 'third-party': 0 });
+    expect(countSkills(list, '')).toEqual({ all: 3, builtin: 1, personal: 1, 'third-party': 1, pack: 0 });
+    expect(countSkills(list, '品牌')).toEqual({ all: 1, builtin: 1, personal: 0, 'third-party': 0, pack: 0 });
   });
 });
 
@@ -104,6 +108,19 @@ describe('卡片与详情的文字', () => {
         importedAt: '2026-10-01T00:00:00Z',
       }),
     ).toBe('https://github.com/o/r/tree/main/skills/x@main（0123456）');
+  });
+
+  it('a skill a pack installed says which pack, on the card, in the badge and as its source', () => {
+    const source = { kind: 'pack', packId: 'news-desk', packName: 'News desk', packVersion: '1.2.0', installedAt: '2026-10-13T08:00:00Z' } as const;
+    const label = packOriginLabel('News desk');
+    expect(label).toContain('News desk');
+    expect(skillOriginLabel({ origin: 'pack', source })).toBe(label);
+    expect(skillOriginLabel({ origin: 'personal', source: null })).toBe(SKILL_ORIGIN_LABEL.personal);
+    expect(skillMetaLine({ origin: 'pack', version: '2.0.0', source })).toBe(`${label} · v2.0.0`);
+    expect(skillSourceLine(source)).toBe(`${label} · v1.2.0`);
+    expect(sortSkills([skill('z', { origin: 'pack', source }), skill('a')]).map((s) => s.id)).toEqual(['a', 'z']);
+    expect(countSkills([skill('z', { origin: 'pack', source })], '')).toMatchObject({ all: 1, pack: 1 });
+    expect(SKILL_TABS.map((t) => t.key)).toEqual(['all', 'builtin', 'personal', 'third-party', 'pack']);
   });
 
   it('SKILL.md 去掉开头的 front matter，没有时原样', () => {

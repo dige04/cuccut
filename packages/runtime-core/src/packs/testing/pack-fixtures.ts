@@ -2,7 +2,14 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PACK_MANIFEST_FILE, type PackFileEntry } from '@cuccut/protocol';
+import { PACK_MANIFEST_FILE, type LibraryName, type PackFileEntry } from '@cuccut/protocol';
+import { SkillPrefsStore } from '@cuccut/runtime-storage';
+import { readLibraryImport } from '@cuccut/runtime-storage/library';
+import { SkillCatalog } from '../../skills/skill-catalog.ts';
+import { TemplateCatalog } from '../../templates/template-catalog.ts';
+import { PackInstaller, type PackInstallStep, type PackLibrary } from '../pack-installer.ts';
+import { PackPreviews } from '../pack-previews.ts';
+import { PackRegistry } from '../pack-registry.ts';
 
 /** For tests: pack folders and a fake static host. */
 
@@ -148,3 +155,98 @@ export async function readFolder(dir: string): Promise<Record<string, Uint8Array
   await walk(dir, '');
   return out;
 }
+
+// ---- A pack world: catalogs, registry, previews and installer over a temporary home ----
+
+/** An in-memory library: imports read the file with the library's own reader (so voices and unknown files fail as they would), entries get `lib_<n>` ids. */
+export class FakePackLibrary implements PackLibrary {
+  readonly entries = new Map<string, { library: LibraryName; id: string; name: string; file: string }>();
+  readonly imports: string[] = [];
+  #next = 0;
+
+  async import(file: string): Promise<{ library: LibraryName; id: string }> {
+    const candidate = await readLibraryImport(file);
+    const id = `lib_${++this.#next}`;
+    this.entries.set(`${candidate.library}:${id}`, { library: candidate.library, id, name: candidate.content.name, file });
+    this.imports.push(file);
+    return { library: candidate.library, id };
+  }
+
+  async remove(library: LibraryName, id: string): Promise<void> {
+    this.entries.delete(`${library}:${id}`);
+  }
+
+  entry(library: LibraryName, id: string): { name: string } | null {
+    const found = this.entries.get(`${library}:${id}`);
+    return found ? { name: found.name } : null;
+  }
+}
+
+export interface PackWorldOptions {
+  now?: () => Date;
+  previewNow?: () => number;
+  onStep?: (step: PackInstallStep) => void | Promise<void>;
+}
+
+/** Template, skill and pack folders under `root`, with built-in catalogs of their own, a fake library and the pack services wired as the Runtime wires them. */
+export async function packWorld(root: string, options: PackWorldOptions = {}) {
+  const builtinTemplates = path.join(root, 'builtin-templates');
+  const builtinSkills = path.join(root, 'builtin-skills');
+  const home = path.join(root, 'home');
+  const templatesDir = path.join(home, 'templates');
+  const skillsDir = path.join(home, 'skills');
+  const packsDir = path.join(home, 'packs');
+  await fs.mkdir(builtinTemplates, { recursive: true });
+  await fs.mkdir(builtinSkills, { recursive: true });
+  const prefs = new SkillPrefsStore(path.join(home, 'store', 'skill-prefs.json'));
+  await prefs.load();
+  const skills = new SkillCatalog({ builtinDir: builtinSkills, userDir: skillsDir, prefs });
+  const library = new FakePackLibrary();
+  const registry = new PackRegistry({ dir: packsDir, templatesDir, skillsDir, library });
+  const templates = new TemplateCatalog({ builtinDir: builtinTemplates, userDir: templatesDir, packOwner: () => registry.owners() });
+  const previews = new PackPreviews({ dir: path.join(packsDir, '.staging'), ...(options.previewNow ? { now: options.previewNow } : {}) });
+  const installer = new PackInstaller({
+    registry,
+    previews,
+    templates,
+    skills,
+    library,
+    source: { offlineStrict: () => false },
+    ...(options.now ? { now: options.now } : {}),
+    ...(options.onStep ? { onStep: options.onStep } : {}),
+  });
+  /** Writes a template directory (default files) into a folder. */
+  const writeTemplate = async (dir: string, id: string, extra: Record<string, unknown> = {}) => {
+    for (const [rel, body] of Object.entries(templateFiles(id, extra))) {
+      await fs.mkdir(path.join(dir, id), { recursive: true });
+      await fs.writeFile(path.join(dir, id, rel), body);
+    }
+    return path.join(dir, id);
+  };
+  /** Writes a skill directory into a folder. */
+  const writeSkillDir = async (dir: string, id: string, body?: string) => {
+    await fs.mkdir(path.join(dir, id), { recursive: true });
+    await fs.writeFile(path.join(dir, id, 'SKILL.md'), skillFile(id, body));
+    return path.join(dir, id);
+  };
+  return {
+    root,
+    home,
+    builtinTemplates,
+    builtinSkills,
+    templatesDir,
+    skillsDir,
+    packsDir,
+    prefs,
+    skills,
+    library,
+    registry,
+    templates,
+    previews,
+    installer,
+    writeTemplate,
+    writeSkillDir,
+  };
+}
+
+export type PackWorld = Awaited<ReturnType<typeof packWorld>>;

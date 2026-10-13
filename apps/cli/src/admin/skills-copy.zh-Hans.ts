@@ -16,7 +16,7 @@ export const zhHans: SkillsMessages = {
   takesEffectNextSession: '从下一个新开始的智能体会话起生效；已在进行的会话不受影响',
   removed: (id, path) => `已删除 ${id}（${path}）`,
   localSource: (path, addedAt) => `本地文件夹 ${path}（${addedAt}）`,
-  remoteSource: (url, ref, commit, importedAt) => `${url}（${ref}@${commit}，${importedAt}）`,
+  packSource: (name, version, installedAt) => `From the pack ${name} v${version} (${installedAt})`, remoteSource: (url, ref, commit, importedAt) => `${url}（${ref}@${commit}，${importedAt}）`,
   changed: (verb, id, name, enabled, path, source) =>
     `${verb} ${id}（${name}，${enabled ? '开着' : '关着'}）→ ${path}${source ? `\n来源：${source}` : ''}`,
   idFormat: (flag, value) => `${flag} 要给 skill id（小写，连字符分隔，见 cuccut skills）：${value}`,

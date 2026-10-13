@@ -5,7 +5,7 @@ export const pl: RcSpaceMessages = {
   tooManyDirEntries: (p) => `Więcej niż ${p.max} elementów folderu; pokazano tylko część`,
   tooManyFiles: (p) => `Więcej niż ${p.max} plików; pokazano tylko część`,
 
-  entryGone: "Tego elementu nie ma już w Space",
+  entryGone: "Tego elementu nie ma już w Bibliotece",
   trashVideoUseDelete: "Aby usunąć wideo, użyj videos.delete",
   restoreVideoUseRestore: "Aby przywrócić usunięte wideo, użyj videos.restore",
   videoDeletedRestoreFirst: "Wideo usunięto. Najpierw przywróć",
@@ -55,7 +55,7 @@ export const pl: RcSpaceMessages = {
   engineUnavailable: "Silnik wideo niedostępny",
   continueFromTrash: "Nie można kontynuować elementów z kosza. Najpierw przywróć",
   conversationCantSee: "Sesja nie widzi elementu. Elementy projektu muszą trafić do sesji tego samego projektu",
-  serviceUsesMcp: "Usługi zewnętrzne korzystają ze Space przez narzędzia MCP",
+  serviceUsesMcp: "Usługi zewnętrzne korzystają z Biblioteki przez narzędzia MCP",
   materialTextOnly: (p) => `Można odczytać tylko tekst dokumentów .txt i .md i napisów .srt i .vtt: ${p.fileName}`,
   materialTooLarge: (p) => `${p.fileName} ma długość ${p.bytes} bajtów, przekracza limit materiału ${p.limit}`,
   afterMaterial: (p) => `Po dodaniu materiału: ${p.reason}`,

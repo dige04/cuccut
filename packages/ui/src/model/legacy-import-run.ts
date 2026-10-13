@@ -85,7 +85,7 @@ const en = {
   actionFailed: (message: string) => `Couldn’t do that: ${message}`,
   undo: 'Undo',
   viewReasons: 'See why',
-  viewInSpace: 'View in Space',
+  viewInSpace: 'View in Library',
   viewProgress: 'View progress',
   close: 'Close',
   retryAll: 'Retry all',

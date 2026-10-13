@@ -39,7 +39,7 @@ export const nl: RcRuntimeMessages = {
   projectFolderNotFound: "Projectmap niet gevonden",
   alreadyRunning: (p: { pid: number }) => `Runtime loopt al (pid ${p.pid})`,
   harnessNotReady: "Harness is nog niet gereed",
-  spaceNotReady: "De Space-catalogus is nog niet gereed",
+  spaceNotReady: "De Bibliotheekcatalogus is nog niet gereed",
   externalToolsNotReady: "De dienst voor externe tools is nog niet gereed",
   externalToolNotRegistered: (p: { name: string }) => `Externe tool ${p.name} is niet geregistreerd`,
   offlineStrictNoDownload: "De strikte offlinemodus downloadt niet van links",

@@ -54,7 +54,7 @@ const en = {
   projectFolderNotFound: 'Project folder not found',
   alreadyRunning: (p: { pid: number }) => `Runtime is already running (pid ${p.pid})`,
   harnessNotReady: "Harness isn't ready yet",
-  spaceNotReady: "The Space catalog isn't ready yet",
+  spaceNotReady: "The Library catalog isn't ready yet",
   externalToolsNotReady: "The external tools service isn't ready yet",
   externalToolNotRegistered: (p: { name: string }) => `External tool ${p.name} isn't registered`,
   offlineStrictNoDownload: "Strict offline mode doesn't download from links",

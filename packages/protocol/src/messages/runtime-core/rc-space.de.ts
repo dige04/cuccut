@@ -6,7 +6,7 @@ export const de: RcSpaceMessages = {
   tooManyDirEntries: (p: { max: number }) => `Mehr als ${p.max} Ordnereinträge; nur ein Teil wird gelistet`,
   tooManyFiles: (p: { max: number }) => `Mehr als ${p.max} Dateien; nur ein Teil wird gelistet`,
 
-  entryGone: "Dieser Eintrag ist nicht mehr in Space vorhanden",
+  entryGone: "Dieser Eintrag ist nicht mehr in der Bibliothek vorhanden",
   trashVideoUseDelete: "Zum Löschen eines Videos videos.delete verwenden",
   restoreVideoUseRestore: "Zum Wiederherstellen eines gelöschten Videos videos.restore verwenden",
   videoDeletedRestoreFirst: "Dieses Video wurde gelöscht. Zuerst wiederherstellen",
@@ -63,7 +63,7 @@ export const de: RcSpaceMessages = {
   continueFromTrash: "Einträge im Papierkorb können nicht fortgesetzt werden. Zuerst wiederherstellen",
   conversationCantSee:
     "Diese Sitzung kann diesen Eintrag nicht sehen. Projekteinträge müssen in eine Sitzung desselben Projekts gehen",
-  serviceUsesMcp: "Externe Dienste greifen über MCP-Werkzeuge auf Space zu",
+  serviceUsesMcp: "Externe Dienste greifen über MCP-Werkzeuge auf die Bibliothek zu",
   materialTextOnly: (p: { fileName: string }) =>
     `Nur Text aus .txt- und .md-Dokumenten sowie .srt- und .vtt-Untertiteln kann gelesen werden: ${p.fileName}`,
   materialTooLarge: (p: { fileName: string; bytes: number; limit: number }) =>

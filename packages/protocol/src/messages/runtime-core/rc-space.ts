@@ -22,7 +22,7 @@ const en = {
   tooManyFiles: (p: { max: number }) => `More than ${p.max} files; only some are listed`,
 
   // Entries
-  entryGone: 'This item is no longer in Space',
+  entryGone: 'This item is no longer in Library',
   trashVideoUseDelete: 'To delete a video, use videos.delete',
   restoreVideoUseRestore: 'To restore a deleted video, use videos.restore',
   videoDeletedRestoreFirst: 'This video was deleted. Restore it first',
@@ -83,7 +83,7 @@ const en = {
   continueFromTrash: "Items in the trash can't be continued. Restore it first",
   conversationCantSee:
     "This session can't see this item. Items that belong to a project must go into a session in the same project",
-  serviceUsesMcp: 'External services access Space through MCP tools',
+  serviceUsesMcp: 'External services access Library through MCP tools',
   materialTextOnly: (p: { fileName: string }) =>
     `Only text from .txt and .md documents and .srt and .vtt subtitles can be read: ${p.fileName}`,
   materialTooLarge: (p: { fileName: string; bytes: number; limit: number }) =>

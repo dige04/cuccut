@@ -35,7 +35,7 @@ export const nl: RcVideoMessages = {
   openElsewhere: "Deze video is geopend in een ander venster of verbinding. Sluit die daar eerst",
   videoBusy: "Deze video heeft nog lopende taken of exports. Annuleer die eerst",
   crossDevice: "De videomap en bronmap staan niet op dezelfde schijf, dus de video kan niet naar de prullenmand worden verplaatst",
-  videoEntryNotFound: "Kan deze video niet vinden (staat niet in Space of Space scant nog)",
+  videoEntryNotFound: "Kan deze video niet vinden (staat niet in de Bibliotheek of de Bibliotheek scant nog)",
   notDeletedVideo: "Dit item is geen verwijderde video",
   restoreRootGone: "Het project of de sessie van deze video is verdwenen, dus die kan niet worden hersteld",
   trashDirGone: "De videomap in de prullenmand is verdwenen",

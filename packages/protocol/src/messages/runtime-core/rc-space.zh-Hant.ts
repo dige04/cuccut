@@ -5,7 +5,7 @@ export const zhHant: RcSpaceMessages = {
   tooManyDirEntries: (p) => `資料夾項目超過 ${p.max} 個，只列出了一部分`,
   tooManyFiles: (p) => `檔案超過 ${p.max} 個，只列出了一部分`,
 
-  entryGone: '這個項目已不在 Space 中',
+  entryGone: '這個項目已不在資料庫中',
   trashVideoUseDelete: '若要刪除影片，請使用 videos.delete',
   restoreVideoUseRestore: '若要回復已刪除的影片，請使用 videos.restore',
   videoDeletedRestoreFirst: '這部影片已刪除。請先回復它',
@@ -56,7 +56,7 @@ export const zhHant: RcSpaceMessages = {
   engineUnavailable: '影片引擎無法使用',
   continueFromTrash: '無法從垃圾桶中的項目繼續。請先回復它',
   conversationCantSee: '這個對話看不到這個項目。屬於專案的項目必須放進同一個專案中的對話',
-  serviceUsesMcp: '外部服務透過 MCP 工具存取 Space',
+  serviceUsesMcp: '外部服務透過 MCP 工具存取資料庫',
   materialTextOnly: (p) => `只能讀取 .txt、.md 文件與 .srt、.vtt 字幕中的文字：${p.fileName}`,
   materialTooLarge: (p) => `${p.fileName} 有 ${p.bytes} 位元組，超過素材的上限 ${p.limit}`,
   afterMaterial: (p) => `加入素材後：${p.reason}`,

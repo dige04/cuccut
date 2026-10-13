@@ -46,7 +46,7 @@ export const ko: RcAgentToolsMessages = {
   undoSummary: (p) => `수정 ${p.transactionId} 실행 취소`,
   undoLatestSummary: '최근 수정 실행 취소',
   deleteVideoSummary: (p) =>
-    `영상 “${p.name}”(${p.path}) 삭제: 휴지통으로 옮기며 ${p.days}일 동안 Space에서 복원할 수 있습니다. 연결된 소재의 원본 파일은 그대로 둡니다`,
+    `영상 “${p.name}”(${p.path}) 삭제: 휴지통으로 옮기며 ${p.days}일 동안 라이브러리에서 복원할 수 있습니다. 연결된 소재의 원본 파일은 그대로 둡니다`,
   importPackageSummary: (p) => `휴대용 패키지 ${p.file} 열기`,
   renameVideoLabel: '영상 이름 변경',
   putDocumentSummary: (p) => `문서 ${p.documentId}의 새 버전 쓰기`,

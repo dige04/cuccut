@@ -3,7 +3,7 @@ import type { SpaceMessages } from './space-copy.ts';
 export const ko: SpaceMessages = {
   help: `사용법:
   cuccut space rescan              소스 폴더를 다시 스캔합니다
-  cuccut space rebuild             소스 폴더와 기록으로 Space 카탈로그를 다시 만듭니다.
+  cuccut space rebuild             소스 폴더와 기록으로 라이브러리 카탈로그를 다시 만듭니다.
                                    콘텐츠 색인은 백그라운드에서 모든 영상을 다시 읽습니다
   cuccut space trash|restore <항목 id>
                                    휴지통으로 옮기기 / 휴지통에서 복원(파일은 건드리지 않음.

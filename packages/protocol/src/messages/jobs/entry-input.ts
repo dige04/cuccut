@@ -16,7 +16,7 @@ import { vi } from './entry-input.vi.ts';
 
 /** Text shown to people for `packages/jobs/src/pipelines/entry-input.ts`. */
 const en = {
-  unresolvedEntry: 'is a Space entry; submit it through pipelines.start so the Runtime replaces it with a file path',
+  unresolvedEntry: 'is a Library entry; submit it through pipelines.start so the Runtime replaces it with a file path',
 };
 
 export type JobsEntryInputMessages = typeof en;

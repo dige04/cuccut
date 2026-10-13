@@ -8,7 +8,7 @@ const daysLabel = (n: number) => pluralForm('it', n, { one: `${n} giorno`, other
 export const it: SpaceMessages = {
   help: `Uso:
   cuccut space rescan              Esegue di nuovo la scansione delle cartelle di origine
-  cuccut space rebuild             Ricostruisce il catalogo dello Space dalle cartelle e dai registri di origine;
+  cuccut space rebuild             Ricostruisce il catalogo della Libreria dalle cartelle e dai registri di origine;
                                    l’indice dei contenuti rilegge tutti i video in background
   cuccut space trash|restore <entry id>
                                    Sposta nel Cestino / ripristina dal Cestino (i file non vengono modificati;

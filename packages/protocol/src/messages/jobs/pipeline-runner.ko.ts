@@ -2,7 +2,7 @@ import type { JobsPipelineRunnerMessages } from './pipeline-runner.ts';
 
 export const ko: JobsPipelineRunnerMessages = {
   unknownPipeline: (p: { name: string }) => `“${p.name}” 파이프라인이 없습니다`,
-  entryTargetUnsupported: '이 Runtime은 Space 항목에서 영상을 열 수 없습니다',
+  entryTargetUnsupported: '이 Runtime은 라이브러리 항목에서 영상을 열 수 없습니다',
   targetMismatch: 'target과 videoId 매개변수가 서로 다른 영상을 가리킵니다',
   noLibrary: '이 Runtime에는 사용자 라이브러리가 없습니다',
   notPipeline: '이 작업은 파이프라인이 아닙니다',

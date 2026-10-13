@@ -3,19 +3,19 @@ import type { JobsToolCatalogueMessages } from './tool-catalogue.ts';
 export const fr: JobsToolCatalogueMessages = {
   transcribeLabel: "Transcrire",
   transcribeDescription:
-    "Transcrit un fichier média local ou une vidéo de Space. Pour une vidéo, écrit une nouvelle transcription et crée un calque de sous-titres ; pour un fichier seul, écrit TXT et SRT à l’emplacement de sauvegarde ou peut créer une vidéo.",
+    "Transcrit un fichier média local ou une vidéo de la Bibliothèque. Pour une vidéo, écrit une nouvelle transcription et crée un calque de sous-titres ; pour un fichier seul, écrit TXT et SRT à l’emplacement de sauvegarde ou peut créer une vidéo.",
   translateSubtitlesLabel: "Traduire les sous-titres",
   translateSubtitlesDescription:
-    "Traduit phrase par phrase une transcription de vidéo dans une autre langue et l’écrit dans la vidéo comme nouvelle traduction. Peut aussi traduire un fichier SRT / VTT (local ou sous-titres de Space) dans un nouveau fichier.",
+    "Traduit phrase par phrase une transcription de vidéo dans une autre langue et l’écrit dans la vidéo comme nouvelle traduction. Peut aussi traduire un fichier SRT / VTT (local ou sous-titres de la Bibliothèque) dans un nouveau fichier.",
   dubLabel: "Doublage traduit",
   dubDescription:
     "Synthétise chaque phrase de la transcription dans la langue cible (traduit d’abord si nécessaire), aligne les horaires et l’écrit dans la vidéo comme nouveau groupe de doublage.",
   synthesizeSpeechLabel: "Générer la voix",
   synthesizeSpeechDescription:
-    "Synthétise de la parole depuis un texte ; résultat audio. Peut aussi lire un document ou des sous-titres de Space (sans codes temporels).",
+    "Synthétise de la parole depuis un texte ; résultat audio. Peut aussi lire un document ou des sous-titres de la Bibliothèque (sans codes temporels).",
   generateTextLabel: "Générer du texte",
   generateTextDescription:
-    "Génère du texte depuis un prompt (avec schéma JSON facultatif) ; résultat texte. Les documents ou sous-titres de Space peuvent être joints comme sources.",
+    "Génère du texte depuis un prompt (avec schéma JSON facultatif) ; résultat texte. Les documents ou sous-titres de la Bibliothèque peuvent être joints comme sources.",
   generateImageLabel: "Générer une image",
   generateImageDescription: "Génère une image depuis une description ; résultat image.",
   generateMusicLabel: 'Générer de la musique',

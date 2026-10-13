@@ -87,7 +87,7 @@ export const nl: LegacyImportRunMessages = {
   actionFailed: (message) => `Dat is niet gelukt: ${message}`,
   undo: 'Ongedaan maken',
   viewReasons: 'Oorzaak bekijken',
-  viewInSpace: 'In Space bekijken',
+  viewInSpace: 'In Bibliotheek bekijken',
   viewProgress: 'Voortgang bekijken',
   close: 'Sluiten',
   retryAll: 'Alles opnieuw proberen',

@@ -5,12 +5,12 @@ export const tr: HelpGuidesMessages = {
     "import": {
       "title": "Video oluştur ve medya içe aktar",
       "short": "Oluştur ve içe aktar",
-      "summary": "Space içinde video oluşturun, sonra medyayı medya kitaplığına ve zaman çizelgesine ekleyin.",
+      "summary": "Home içinde video oluşturun, sonra medyayı medya kitaplığına ve zaman çizelgesine ekleyin.",
       "keywords": "yeni oluştur dosya medya medya kitaplığı içe aktar sürükle bırak ses görsel video",
       "steps": [
         [
           "Video oluştur",
-          "Solda “Space” açın, “Yeni” → “Yeni boş video” tıklayın, projesini seçin, sonra Home içinde en boy oranını seçip “Boş video oluştur” tıklayın. Video veya ses dosyanız varsa “Dosyadan yeni video” tıklayın; Home bu dosyayla açılır ve altyazı ekleme ile yazıya döküp çevirme arasında seçim sunar. Henüz projeniz yoksa önce Home içinde proje klasörü açın veya oturumda ajandan oluşturmasını isteyin."
+          "Home içinde “Video oluştur” altından “Boş tuval” seçin, projesini seçin, sonra en boy oranını seçip “Boş video oluştur” tıklayın. Video veya ses dosyanız varsa “Dosyadan yeni video” tıklayın; Home bu dosyayla açılır ve altyazı ekleme ile yazıya döküp çevirme arasında seçim sunar. Henüz projeniz yoksa önce Home içinde proje klasörü açın veya oturumda ajandan oluşturmasını isteyin."
         ],
         [
           "Medyayı medya kitaplığına içe aktar",
@@ -58,7 +58,7 @@ export const tr: HelpGuidesMessages = {
         ],
         [
           "İz çubuğunda “+ … diline çevir” tıkla",
-          "Sağda “Altyazı” açın, iz çubuğunda “+ … diline çevir” tıklayın, hedef dil ve metin modeli seçin; gerekirse stil ipucu ekleyin veya sözlük işaretleyin, sonra alttaki başlat düğmesine tıklayın. Henüz metin modeli yoksa önce “Modeller › Metin oluşturma” kısmında hizmet bağlayın; çevrimiçi modeller token başına ücretlendirilir."
+          "Sağda “Altyazı” açın, iz çubuğunda “+ … diline çevir” tıklayın, hedef dil ve metin modeli seçin; gerekirse stil ipucu ekleyin veya sözlük işaretleyin, sonra alttaki başlat düğmesine tıklayın. Henüz metin modeli yoksa önce “Ayarlar › Modeller › Metin oluşturma” kısmında hizmet bağlayın; çevrimiçi modeller token başına ücretlendirilir."
         ],
         [
           "Çeviriyi denetle ve iki dilli düzeni ayarla",
@@ -182,7 +182,7 @@ export const tr: HelpGuidesMessages = {
       "steps": [
         [
           "Oturumda / yaz",
-          "Oturum girdisinin başında / yazın (veya “+” altında “Araç kullan” seçin); bu video için araçlar listelenir: Dökümü düzelt, Bölüm oluştur, Konuşmacıları belirle, Yeniden yazıya dök, Kesimleri bul, Altyazıları çevir, Eski çevirileri güncelle, Çeviri dublajı, Özet yaz, Blog yazısı yaz, Başlık öner, Açıklama yaz, Kapak oluştur ve Dışa aktar. Birini seçip ardından gereksinimlerinizi ekleyin ve gönderin; ajan çalışmaya başlar. Space içinden açılan videoda oturum sağ alttadır; bu araçlar web üzerinde yoktur."
+          "Oturum girdisinin başında / yazın (veya “+” altında “Araç kullan” seçin); bu video için araçlar listelenir: Dökümü düzelt, Bölüm oluştur, Konuşmacıları belirle, Yeniden yazıya dök, Kesimleri bul, Altyazıları çevir, Eski çevirileri güncelle, Çeviri dublajı, Özet yaz, Blog yazısı yaz, Başlık öner, Açıklama yaz, Kapak oluştur ve Dışa aktar. Birini seçip ardından gereksinimlerinizi ekleyin ve gönderin; ajan çalışmaya başlar. Kitaplık’tan açılan videoda oturum düzenleyicinin yanındadır; bu araçlar web üzerinde yoktur."
         ],
         [
           "Ya da AI araçları sekmesini aç",
@@ -207,7 +207,7 @@ export const tr: HelpGuidesMessages = {
         ],
         [
           "Oturumda ne istediğini söyle",
-          "Home içinde oturum başlatın veya Space içinde video açın: sağ altta varsayılan açık yüzen oturum vardır, orada konuşun. Küçültülünce sağ altta simge olur; tıklayıp tekrar açın. Kapsamı ve korunacakları açık söyleyin, örneğin: “Bu röportajın altyazılarında yazım hatalarını kontrol et ama konuşma dilini koru.”"
+          "Home içinde oturum başlatın veya Kitaplık’tan video açın: düzenleyici sohbetin yanındadır, orada konuşun. Kapsamı ve korunacakları açık söyleyin, örneğin: “Bu röportajın altyazılarında yazım hatalarını kontrol et ama konuşma dilini koru.”"
         ],
         [
           "Süreci izle ve sonucu denetle",
@@ -247,7 +247,7 @@ export const tr: HelpGuidesMessages = {
       "steps": [
         [
           "Arka plan görevlerini aç",
-          "Soldaki “Arka plan görevleri” düzenleyici, Home işlem hattı, ajan veya komut satırından gelen tüm arka plan görevlerini listeler. Görevin “Ayrıntılar” kısmına tıklayın: başarısızsa kırmızı kutudaki başlık nedenidir."
+          "Üst çubuktaki “Arka plan görevleri” düzenleyici, Home işlem hattı, ajan veya komut satırından gelen tüm arka plan görevlerini listeler. Görevin “Ayrıntılar” kısmına tıklayın: başarısızsa kırmızı kutudaki başlık nedenidir."
         ],
         [
           "Ayrıntılardaki eksiği tamamla",

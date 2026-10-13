@@ -51,7 +51,7 @@ export const ko: LegacyImportRunMessages = {
   actionFailed: (message) => `완료하지 못했습니다: ${message}`,
   undo: '실행 취소',
   viewReasons: '이유 보기',
-  viewInSpace: 'Space에서 보기',
+  viewInSpace: '라이브러리에서 보기',
   viewProgress: '진행 상황 보기',
   close: '닫기',
   retryAll: '모두 다시 시도',

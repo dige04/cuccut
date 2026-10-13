@@ -6,7 +6,7 @@ export const nl: RcSpaceMessages = {
   tooManyDirEntries: (p: { max: number }) => `Meer dan ${p.max} mapitems; slechts een deel wordt getoond`,
   tooManyFiles: (p: { max: number }) => `Meer dan ${p.max} bestanden; slechts een deel wordt getoond`,
 
-  entryGone: "Dit item staat niet meer in Space",
+  entryGone: "Dit item staat niet meer in de Bibliotheek",
   trashVideoUseDelete: "Gebruik videos.delete om een video te verwijderen",
   restoreVideoUseRestore: "Gebruik videos.restore om een verwijderde video te herstellen",
   videoDeletedRestoreFirst: "Deze video is verwijderd. Herstel die eerst",
@@ -63,7 +63,7 @@ export const nl: RcSpaceMessages = {
   continueFromTrash: "Items in de prullenmand kunnen niet worden voortgezet. Herstel het eerst",
   conversationCantSee:
     "Deze sessie kan dit item niet zien. Items die bij een project horen moeten naar een sessie in hetzelfde project",
-  serviceUsesMcp: "Externe diensten benaderen Space via MCP-tools",
+  serviceUsesMcp: "Externe diensten benaderen de Bibliotheek via MCP-tools",
   materialTextOnly: (p: { fileName: string }) =>
     `Alleen tekst uit .txt- en .md-documenten en .srt- en .vtt-ondertitels kan worden gelezen: ${p.fileName}`,
   materialTooLarge: (p: { fileName: string; bytes: number; limit: number }) =>

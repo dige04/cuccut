@@ -39,7 +39,7 @@ export const zhHans: RcRuntimeMessages = {
   projectFolderNotFound: '项目目录不存在',
   alreadyRunning: (p: { pid: number }) => `Runtime 已经在运行（pid ${p.pid}）`,
   harnessNotReady: 'Harness 还没有就绪',
-  spaceNotReady: 'Space 目录还没有就绪',
+  spaceNotReady: '资料库目录还没有就绪',
   externalToolsNotReady: '外部工具服务还没有就绪',
   externalToolNotRegistered: (p: { name: string }) => `没有登记外部工具 ${p.name}`,
   offlineStrictNoDownload: '严格离线模式下不从链接下载',

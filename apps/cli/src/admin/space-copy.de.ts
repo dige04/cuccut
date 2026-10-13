@@ -4,7 +4,7 @@ const entries = (n: number) => pluralForm('de', n, { one: `${n} Eintrag`, other:
 export const de: SpaceMessages = {
  help: `Verwendung:
   cuccut space rescan              Quellordner erneut durchsuchen
-  cuccut space rebuild             Space-Katalog aus Quellordnern und Aufzeichnungen neu aufbauen;
+  cuccut space rebuild             Bibliothekskatalog aus Quellordnern und Aufzeichnungen neu aufbauen;
                                    der Inhaltsindex liest alle Videos im Hintergrund erneut.
   cuccut space trash|restore <entry id>
                                    In den Papierkorb verschieben / daraus wiederherstellen. Dateien bleiben unverändert;

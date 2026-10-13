@@ -16,7 +16,7 @@ export const ptBR: SettingDescriptionMessages = {
   'fonts.autoDownload': 'Baixar automaticamente fontes exigidas pelo layout, ausentes neste computador e presentes no catálogo de fontes (prévia e exportação); quando desativado, usa uma fonte alternativa e mostra um aviso',
   'fonts.cssEndpoint': 'URL base da API CSS de fontes (espelho, https://); null usa https://fonts.googleapis.com',
   'fonts.fileEndpoint': 'URL base dos arquivos de fonte (espelho, https://; arquivos só são obtidos sob esta URL); null usa https://fonts.gstatic.com',
-  'space.trashRetentionDays': 'Dias para manter itens na Lixeira do Space (1–3650): itens sem referências e vídeos excluídos mais antigos são excluídos permanentemente de forma periódica',
+  'space.trashRetentionDays': 'Dias para manter itens na Lixeira da Biblioteca (1–3650): itens sem referências e vídeos excluídos mais antigos são excluídos permanentemente de forma periódica',
   'cache.maxSizeMiB': 'Limite de tamanho do cache da pasta de dados, em MiB (256–1048576): acima dele, os arquivos de cache mais antigos (análise de mídia, cópias de reprodução) são excluídos até chegar a 90%. O índice de busca entre vídeos nunca é excluído',
   'resources.capacity': 'Avançado: capacidade da máquina para agendamento de recursos { memoryMiB, gpuMemoryMiB, cpuThreads }; um item definido como null é detectado automaticamente; null detecta tudo (memória e CPU vêm do sistema, a memória da GPU em Apple silicon é estimada pela memória unificada)',
   'runtime.idleExitMinutes': 'Minutos que um Runtime iniciado pela CLI permanece ocioso antes de sair sozinho (1–1440): sem conexões, tarefas ou serviços externos abertos. O aplicativo de desktop e Runtimes iniciados manualmente não são afetados',

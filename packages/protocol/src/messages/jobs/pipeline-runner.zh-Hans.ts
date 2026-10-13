@@ -2,7 +2,7 @@ import type { JobsPipelineRunnerMessages } from './pipeline-runner.ts';
 
 export const zhHans: JobsPipelineRunnerMessages = {
   unknownPipeline: (p: { name: string }) => `没有固定流程「${p.name}」`,
-  entryTargetUnsupported: '这个 Runtime 不能按 Space 条目打开视频',
+  entryTargetUnsupported: '这个 Runtime 不能按资料库条目打开视频',
   targetMismatch: '参数 target 与 videoId 指的不是同一个视频',
   noLibrary: '这个 Runtime 没有用户库',
   notPipeline: '这个任务不是固定流程',

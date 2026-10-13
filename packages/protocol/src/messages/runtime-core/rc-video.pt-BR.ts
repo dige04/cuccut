@@ -13,7 +13,7 @@ export const ptBR: RcVideoMessages = {
   cantCreateInSession: 'Este Runtime não pode criar vídeos em uma sessão', targetLocationIncomplete: 'O local do vídeo de destino está incompleto', reservedDirOutsideProject: 'A pasta reservada não está nesta pasta de projeto ou sessão', pipelinePrincipalName: 'Fluxo',
   openElsewhere: 'Este vídeo está aberto em outra janela ou conexão. Feche ali primeiro', videoBusy: 'Este vídeo ainda tem tarefas ou exportações em andamento. Cancele primeiro',
   crossDevice: 'A pasta do vídeo e a de origem não estão no mesmo disco, então não é possível mover para a Lixeira',
-  videoEntryNotFound: 'Não é possível encontrar este vídeo (não está no Space ou o Space ainda está verificando)',
+  videoEntryNotFound: 'Não é possível encontrar este vídeo (não está na Biblioteca ou a Biblioteca ainda está verificando)',
   notDeletedVideo: 'Este item não é um vídeo excluído', restoreRootGone: 'O projeto ou sessão deste vídeo não existe mais, então não é possível restaurar', trashDirGone: 'A pasta do vídeo na Lixeira não existe mais',
   sourceRootInTrash: 'Esta pasta de vídeo é uma pasta de projeto ou uma pasta de trabalho de sessão (ou contém uma), então não pode ser movida para a Lixeira',
   sourceRootRemedy: 'No CucCut, remova primeiro o projeto ou sessão que usa esta pasta e depois exclua este vídeo do projeto pai',

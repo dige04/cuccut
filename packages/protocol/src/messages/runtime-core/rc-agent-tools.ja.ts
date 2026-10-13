@@ -46,7 +46,7 @@ export const ja: RcAgentToolsMessages = {
   undoSummary: (p) => `編集 ${p.transactionId} を取り消し`,
   undoLatestSummary: '直前の編集を取り消し',
   deleteVideoSummary: (p) =>
-    `動画「${p.name}」（${p.path}）を削除：ゴミ箱に移動し、${p.days} 日間は Space で復元できます。リンクした素材の元ファイルはそのまま残ります`,
+    `動画「${p.name}」（${p.path}）を削除：ゴミ箱に移動し、${p.days} 日間はライブラリで復元できます。リンクした素材の元ファイルはそのまま残ります`,
   importPackageSummary: (p) => `ポータブルパッケージ ${p.file} を開く`,
   renameVideoLabel: '動画の名前を変更',
   putDocumentSummary: (p) => `ドキュメント ${p.documentId} の新しいバージョンを書き込み`,

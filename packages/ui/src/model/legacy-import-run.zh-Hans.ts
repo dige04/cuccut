@@ -47,7 +47,7 @@ export const zhHans: LegacyImportRunMessages = {
   actionFailed: (message) => `没能完成：${message}`,
   undo: '撤销',
   viewReasons: '查看原因',
-  viewInSpace: '在 Space 中查看',
+  viewInSpace: '在资料库中查看',
   viewProgress: '查看进度',
   close: '关闭',
   retryAll: '全部重试',

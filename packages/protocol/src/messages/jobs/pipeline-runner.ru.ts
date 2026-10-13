@@ -2,7 +2,7 @@ import type { JobsPipelineRunnerMessages } from './pipeline-runner.ts';
 
 export const ru: JobsPipelineRunnerMessages = {
   unknownPipeline: (p: { name: string }) => `Нет пайплайна с именем «${p.name}"`,
-  entryTargetUnsupported: "Этот Runtime не может открыть видео из записей Space",
+  entryTargetUnsupported: "Этот Runtime не может открыть видео из записей библиотеки",
   targetMismatch: "Параметры target и videoId ссылаются на разные видео",
   noLibrary: "У этого Runtime нет пользовательской библиотеки",
   notPipeline: "Эта задача не является пайплайном",

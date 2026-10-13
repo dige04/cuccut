@@ -91,7 +91,7 @@ export const it: LegacyImportRunMessages = {
   actionFailed: (message) => `Impossibile completare l’azione: ${message}`,
   undo: 'Annulla',
   viewReasons: 'Vedi perché',
-  viewInSpace: 'Visualizza nello Space',
+  viewInSpace: 'Visualizza nella Libreria',
   viewProgress: 'Vedi avanzamento',
   close: 'Chiudi',
   retryAll: 'Riprova tutti',

@@ -2,7 +2,7 @@ import type { JobsPipelineRunnerMessages } from './pipeline-runner.ts';
 
 export const ptBR: JobsPipelineRunnerMessages = {
   unknownPipeline: (p: { name: string }) => `Não há fluxo chamado “${p.name}”`,
-  entryTargetUnsupported: "Este Runtime não pode abrir vídeos de entradas do Space",
+  entryTargetUnsupported: "Este Runtime não pode abrir vídeos de entradas da Biblioteca",
   targetMismatch: "Os parâmetros target e videoId referem-se a vídeos diferentes",
   noLibrary: "Este Runtime não tem biblioteca do usuário",
   notPipeline: "Esta tarefa não é um fluxo",

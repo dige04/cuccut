@@ -5,7 +5,7 @@ export const zhHans: RcSpaceMessages = {
   tooManyDirEntries: (p) => `目录项超过 ${p.max} 个，只列出了一部分`,
   tooManyFiles: (p) => `文件超过 ${p.max} 个，只列出了一部分`,
 
-  entryGone: '这个条目已经不在 Space 里了',
+  entryGone: '这个条目已经不在资料库里了',
   trashVideoUseDelete: '删除视频用 videos.delete',
   restoreVideoUseRestore: '恢复删除的视频用 videos.restore',
   videoDeletedRestoreFirst: '这个视频已经删除；先恢复它',
@@ -56,7 +56,7 @@ export const zhHans: RcSpaceMessages = {
   engineUnavailable: '视频引擎不可用',
   continueFromTrash: '回收站里的条目不能拿来继续：先恢复它',
   conversationCantSee: '这个会话看不到这个条目：属于项目的条目要放进同一个项目的会话',
-  serviceUsesMcp: '对外服务经 MCP 工具访问 Space',
+  serviceUsesMcp: '对外服务经 MCP 工具访问资料库',
   materialTextOnly: (p) => `只能读 .txt、.md 文档与 .srt、.vtt 字幕的文字：${p.fileName}`,
   materialTooLarge: (p) => `${p.fileName} 有 ${p.bytes} 字节，超过素材的上限 ${p.limit}`,
   afterMaterial: (p) => `加上素材之后：${p.reason}`,

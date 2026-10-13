@@ -20,7 +20,7 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 const en = {
   help: `Usage:
   cuccut space rescan              Scan the source folders again
-  cuccut space rebuild             Rebuild the Space catalog from the source folders and records;
+  cuccut space rebuild             Rebuild the Library catalog from the source folders and records;
                                    the content index rereads all videos in the background
   cuccut space trash|restore <entry id>
                                    Move to the Trash / restore from the Trash (files aren't touched;

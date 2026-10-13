@@ -3,7 +3,7 @@ import type { SpaceMessages } from './space-copy.ts';
 export const ja: SpaceMessages = {
   help: `使い方：
   cuccut space rescan              ソースフォルダを再スキャン
-  cuccut space rebuild             ソースフォルダと記録から Space のカタログを再構築。
+  cuccut space rebuild             ソースフォルダと記録から ライブラリのカタログを再構築。
                                    コンテンツインデックスはバックグラウンドですべての動画を読み直します
   cuccut space trash|restore <entry id>
                                    ゴミ箱に移動／ゴミ箱から復元（ファイルはそのまま。動画の項目では

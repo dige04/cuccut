@@ -29,7 +29,7 @@ export const ru: RcAgentToolsMessages = {
   captionsLabel: "Добавить слой субтитров",
   undoSummary: (p) => `Отменить правку ${p.transactionId}`,
   undoLatestSummary: "Отменить последнюю правку",
-  deleteVideoSummary: (p) => `Удалить видео «${p.name}" (${p.path}): переместить в корзину, откуда можно восстановить в Space в течение ${pluralForm('ru', p.days, { one: `${p.days} день`, few: `${p.days} дня`, many: `${p.days} дней`, other: `${p.days} дня` })}. Исходные файлы связанных материалов остаются на месте`,
+  deleteVideoSummary: (p) => `Удалить видео «${p.name}" (${p.path}): переместить в корзину, откуда можно восстановить в библиотеке в течение ${pluralForm('ru', p.days, { one: `${p.days} день`, few: `${p.days} дня`, many: `${p.days} дней`, other: `${p.days} дня` })}. Исходные файлы связанных материалов остаются на месте`,
   importPackageSummary: (p) => `Открыть переносимый пакет ${p.file}`,
   renameVideoLabel: "Переименовать видео",
   putDocumentSummary: (p) => `Записать новую версию документа ${p.documentId}`,

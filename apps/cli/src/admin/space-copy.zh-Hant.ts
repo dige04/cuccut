@@ -3,7 +3,7 @@ import type { SpaceMessages } from './space-copy.ts';
 export const zhHant: SpaceMessages = {
   help: `用法：
   cuccut space rescan              重新掃描來源資料夾
-  cuccut space rebuild             從來源資料夾與記錄重建 Space 目錄；
+  cuccut space rebuild             從來源資料夾與記錄重建資料庫目錄；
                                    內容索引會在背景重新讀取所有影片
   cuccut space trash|restore <entry id>
                                    移到垃圾桶／從垃圾桶回復（不動檔案；影片項目會將影片資料夾

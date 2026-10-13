@@ -29,7 +29,7 @@ export const pl: RcAgentToolsMessages = {
   captionsLabel: "Dodaj warstwę napisów",
   undoSummary: (p) => `Cofnij zmianę ${p.transactionId}`,
   undoLatestSummary: "Cofnij ostatnią zmianę",
-  deleteVideoSummary: (p) => `Usuń wideo „${p.name}" (${p.path}): przenieś do kosza, skąd można przywrócić w Space przez ${pluralForm('pl', p.days, { one: `${p.days} dzień`, few: `${p.days} dni`, many: `${p.days} dni`, other: `${p.days} dnia` })}. Oryginalne pliki powiązanych materiałów zostają na miejscu`,
+  deleteVideoSummary: (p) => `Usuń wideo „${p.name}" (${p.path}): przenieś do kosza, skąd można przywrócić w Bibliotece przez ${pluralForm('pl', p.days, { one: `${p.days} dzień`, few: `${p.days} dni`, many: `${p.days} dni`, other: `${p.days} dnia` })}. Oryginalne pliki powiązanych materiałów zostają na miejscu`,
   importPackageSummary: (p) => `Otwórz pakiet przenośny ${p.file}`,
   renameVideoLabel: "Zmień nazwę wideo",
   putDocumentSummary: (p) => `Zapisz nową wersję dokumentu ${p.documentId}`,

@@ -33,7 +33,7 @@ export const zhHans: RcVideoMessages = {
   openElsewhere: '这个视频在别的窗口或连接里开着：先在那里关掉它',
   videoBusy: '这个视频还有进行中的任务或导出：先取消它们',
   crossDevice: '视频目录与来源目录不在同一个磁盘上，不能移进回收站',
-  videoEntryNotFound: '找不到这个视频（Space 里没有它，或还在扫描）',
+  videoEntryNotFound: '找不到这个视频（资料库里没有它，或还在扫描）',
   notDeletedVideo: '这个条目不是删除了的视频',
   restoreRootGone: '这个视频所在的项目或会话已经不在了，无法恢复',
   trashDirGone: '回收站里的视频目录已经不在了',

@@ -6,7 +6,7 @@ const plural = (n: number, one: string, many: string) => `${n} ${pluralForm('fr'
 export const fr: SpaceMessages = {
   help: `Utilisation :
   cuccut space rescan              Analyser à nouveau les dossiers sources
-  cuccut space rebuild             Reconstruire le catalogue Space depuis les dossiers et enregistrements ;
+  cuccut space rebuild             Reconstruire le catalogue de la Bibliothèque depuis les dossiers et enregistrements ;
                                    l’index de contenu relit toutes les vidéos en arrière-plan
   cuccut space trash|restore <entry id>
                                    Placer dans la corbeille / restaurer (fichiers inchangés ;

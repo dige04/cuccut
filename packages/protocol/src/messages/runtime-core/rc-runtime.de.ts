@@ -39,7 +39,7 @@ export const de: RcRuntimeMessages = {
   projectFolderNotFound: "Projektordner nicht gefunden",
   alreadyRunning: (p: { pid: number }) => `Runtime läuft bereits (pid ${p.pid})`,
   harnessNotReady: "Harness ist noch nicht bereit",
-  spaceNotReady: "Der Space-Katalog ist noch nicht bereit",
+  spaceNotReady: "Der Bibliothekskatalog ist noch nicht bereit",
   externalToolsNotReady: "Der Dienst für externe Werkzeuge ist noch nicht bereit",
   externalToolNotRegistered: (p: { name: string }) => `Externes Werkzeug ${p.name} ist nicht registriert`,
   offlineStrictNoDownload: "Der strikte Offlinemodus lädt keine Links herunter",

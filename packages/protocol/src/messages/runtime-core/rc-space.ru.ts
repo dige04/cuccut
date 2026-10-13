@@ -5,7 +5,7 @@ export const ru: RcSpaceMessages = {
   tooManyDirEntries: (p) => `Более ${p.max} элементов папки; показана только часть`,
   tooManyFiles: (p) => `Более ${p.max} файлов; показана только часть`,
 
-  entryGone: "Этого элемента больше нет в Space",
+  entryGone: "Этого элемента больше нет в библиотеке",
   trashVideoUseDelete: "Для удаления видео используйте videos.delete",
   restoreVideoUseRestore: "Для восстановления видео используйте videos.restore",
   videoDeletedRestoreFirst: "Видео удалено. Сначала восстановите",
@@ -55,7 +55,7 @@ export const ru: RcSpaceMessages = {
   engineUnavailable: "Видеодвижок недоступен",
   continueFromTrash: "Элементы корзины нельзя продолжать. Сначала восстановите",
   conversationCantSee: "Сессия не видит элемент. Элементы проекта должны попадать в сессию того же проекта",
-  serviceUsesMcp: "Внешние сервисы обращаются к Space через инструменты MCP",
+  serviceUsesMcp: "Внешние сервисы обращаются к библиотеке через инструменты MCP",
   materialTextOnly: (p) => `Читается только текст документов .txt и .md и субтитров .srt и .vtt: ${p.fileName}`,
   materialTooLarge: (p) => `${p.fileName} — длительность ${p.bytes} байт, превышает лимит материала ${p.limit}`,
   afterMaterial: (p) => `После добавления материала: ${p.reason}`,

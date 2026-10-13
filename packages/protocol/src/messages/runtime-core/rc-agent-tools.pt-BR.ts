@@ -32,7 +32,7 @@ export const ptBR: RcAgentToolsMessages = {
   undoSummary: (p: { transactionId: string }) => `Desfazer edição ${p.transactionId}`,
   undoLatestSummary: "Desfazer a última edição",
   deleteVideoSummary: (p: { name: string; path: string; days: number }) =>
-    `Excluir vídeo “${p.name}" (${p.path}): mover para a Lixeira, restaurável no Space por ${plural(p.days, "dia", "dias")}. Arquivos originais das mídias vinculadas permanecem no local`,
+    `Excluir vídeo “${p.name}" (${p.path}): mover para a Lixeira, restaurável na Biblioteca por ${plural(p.days, "dia", "dias")}. Arquivos originais das mídias vinculadas permanecem no local`,
   importPackageSummary: (p: { file: string }) => `Abrir pacote portátil ${p.file}`,
 
   renameVideoLabel: "Renomear vídeo",

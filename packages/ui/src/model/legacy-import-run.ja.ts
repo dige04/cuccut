@@ -53,7 +53,7 @@ export const ja: LegacyImportRunMessages = {
   actionFailed: (message) => `実行できませんでした：${message}`,
   undo: '取り消す',
   viewReasons: '理由を表示',
-  viewInSpace: 'Space で表示',
+  viewInSpace: 'ライブラリで表示',
   viewProgress: '進行状況を表示',
   close: '閉じる',
   retryAll: 'すべて再試行',

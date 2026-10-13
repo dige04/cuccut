@@ -35,7 +35,7 @@ export const de: RcVideoMessages = {
   openElsewhere: "Dieses Video ist in einem anderen Fenster oder einer anderen Verbindung geöffnet. Dort zuerst schließen",
   videoBusy: "Dieses Video hat noch laufende Aufgaben oder Exporte. Zuerst abbrechen",
   crossDevice: "Videoordner und Quellordner liegen nicht auf derselben Festplatte; Verschieben in den Papierkorb ist daher nicht möglich",
-  videoEntryNotFound: "Dieses Video wurde nicht gefunden (nicht in Space oder Scan läuft noch)",
+  videoEntryNotFound: "Dieses Video wurde nicht gefunden (nicht in der Bibliothek oder Scan läuft noch)",
   notDeletedVideo: "Dieser Eintrag ist kein gelöschtes Video",
   restoreRootGone: "Projekt oder Sitzung dieses Videos ist nicht mehr vorhanden; Wiederherstellung ist daher nicht möglich",
   trashDirGone: "Der Videoordner im Papierkorb ist nicht mehr vorhanden",

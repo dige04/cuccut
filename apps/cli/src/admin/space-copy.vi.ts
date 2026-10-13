@@ -3,7 +3,7 @@ import type { SpaceMessages } from './space-copy.ts';
 export const vi: SpaceMessages = {
 help: `Cách dùng:
   cuccut space rescan              Quét lại thư mục nguồn
-  cuccut space rebuild             Tạo lại danh mục Space từ thư mục nguồn và bản ghi;
+  cuccut space rebuild             Tạo lại danh mục Thư viện từ thư mục nguồn và bản ghi;
                                    chỉ mục nội dung đọc lại mọi video trong nền
   cuccut space trash|restore <entry id>
                                    Chuyển vào / khôi phục từ Thùng rác (không đụng đến tệp;

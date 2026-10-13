@@ -18,19 +18,19 @@ import { vi } from './tool-catalogue.vi.ts';
 const en = {
   transcribeLabel: 'Transcribe',
   transcribeDescription:
-    'Transcribe a local media file or a video in the Space. For a video, writes a new transcript and creates a subtitle layer; for a file only, writes TXT and SRT to the save location, or can create a new video.',
+    'Transcribe a local media file or a video in the Library. For a video, writes a new transcript and creates a subtitle layer; for a file only, writes TXT and SRT to the save location, or can create a new video.',
   translateSubtitlesLabel: 'Translate subtitles',
   translateSubtitlesDescription:
-    "Translate a video's transcript sentence by sentence into another language and write it into the video as a new translation. Can also translate an SRT / VTT subtitle file (a local file or a subtitle item in the Space) into a new subtitle file.",
+    "Translate a video's transcript sentence by sentence into another language and write it into the video as a new translation. Can also translate an SRT / VTT subtitle file (a local file or a subtitle item in the Library) into a new subtitle file.",
   dubLabel: 'Translated voice-over',
   dubDescription:
     'Synthesize speech in the target language sentence by sentence from the transcript (translating first if there is no translation), align the timing, and write it into the video as a new voice-over group.',
   synthesizeSpeechLabel: 'Generate speech',
   synthesizeSpeechDescription:
-    'Synthesize speech from a piece of text; the result is an audio output. Can also read a document or subtitle item in the Space (subtitles without timecodes).',
+    'Synthesize speech from a piece of text; the result is an audio output. Can also read a document or subtitle item in the Library (subtitles without timecodes).',
   generateTextLabel: 'Generate text',
   generateTextDescription:
-    'Generate text from a prompt (optionally following a JSON Schema); the result is a text output. Documents or subtitle items in the Space can be attached as material.',
+    'Generate text from a prompt (optionally following a JSON Schema); the result is a text output. Documents or subtitle items in the Library can be attached as material.',
   generateImageLabel: 'Generate image',
   generateImageDescription: 'Generate an image from a description; the result is an image output.',
   generateMusicLabel: 'Generate music',

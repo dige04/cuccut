@@ -40,7 +40,7 @@ export const ja: RcRuntimeMessages = {
   projectFolderNotFound: 'プロジェクトフォルダが存在しません',
   alreadyRunning: (p: { pid: number }) => `Runtime はすでに実行中です（pid ${p.pid}）`,
   harnessNotReady: 'Harness はまだ準備ができていません',
-  spaceNotReady: 'Space カタログはまだ準備ができていません',
+  spaceNotReady: 'ライブラリカタログはまだ準備ができていません',
   externalToolsNotReady: '外部ツールサービスはまだ準備ができていません',
   externalToolNotRegistered: (p: { name: string }) => `外部ツール ${p.name} は登録されていません`,
   offlineStrictNoDownload: '厳格オフラインモードではリンクからダウンロードしません',

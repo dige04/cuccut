@@ -34,7 +34,7 @@ export const nl: RcAgentToolsMessages = {
   undoSummary: (p: { transactionId: string }) => `Bewerking ongedaan maken: ${p.transactionId}`,
   undoLatestSummary: "Laatste bewerking ongedaan maken",
   deleteVideoSummary: (p: { name: string; path: string; days: number }) =>
-    `Video verwijderen: ‘${p.name}’ (${p.path}): verplaatsen naar de prullenmand; herstellen in Space kan gedurende ${`${p.days} ${pluralForm('nl', p.days, { one: "dag", other: "dagen" })}`}. De oorspronkelijke bestanden van gekoppelde media blijven staan`,
+    `Video verwijderen: ‘${p.name}’ (${p.path}): verplaatsen naar de prullenmand; herstellen in de Bibliotheek kan gedurende ${`${p.days} ${pluralForm('nl', p.days, { one: "dag", other: "dagen" })}`}. De oorspronkelijke bestanden van gekoppelde media blijven staan`,
   importPackageSummary: (p: { file: string }) => `Draagbaar pakket openen: ${p.file}`,
 
   renameVideoLabel: "Video hernoemen",

@@ -2,7 +2,7 @@ import type { JobsPipelineRunnerMessages } from './pipeline-runner.ts';
 
 export const de: JobsPipelineRunnerMessages = {
   unknownPipeline: (p: { name: string }) => `Keine Pipeline mit dem Namen „${p.name}“`,
-  entryTargetUnsupported: "Diese Runtime kann keine Videos aus Space-Einträgen öffnen",
+  entryTargetUnsupported: "Diese Runtime kann keine Videos aus Bibliothekseinträgen öffnen",
   targetMismatch: "Die Parameter target und videoId verweisen auf verschiedene Videos",
   noLibrary: "Diese Runtime hat keine Benutzerbibliothek",
   notPipeline: "Diese Aufgabe ist keine Pipeline",

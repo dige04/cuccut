@@ -73,12 +73,12 @@ const en = {
     import: {
       title: 'Create a video and import assets',
       short: 'Create and import',
-      summary: 'Create a video in Space, then bring assets into the asset library and onto the timeline.',
+      summary: 'Create a video on Home, then bring assets into the asset library and onto the timeline.',
       keywords: 'new create file asset asset library import drag drop audio image import video asset',
       steps: [
         [
           'Create a video',
-          'Open “Space” on the left, click “New” → “New blank video”, choose which project to create it in, then pick an aspect ratio on Home and click “Create blank video”. If you already have a video or audio file, click “New video from file”; Home opens with that file and lets you choose between adding subtitles and transcribing and translating. If you don’t have a project yet, open a project folder in Home first, or ask the Agent in a session to create one for you.',
+          'On Home, under “Create a video”, pick “Blank canvas”, choose which project to create it in, pick an aspect ratio and click “Create blank video”. If you already have a video or audio file, click “New video from file”; Home opens with that file and lets you choose between adding subtitles and transcribing and translating. If you don’t have a project yet, open a project folder in Home first, or ask the Agent in a session to create one for you.',
         ],
         [
           'Import assets into the asset library',
@@ -126,7 +126,7 @@ const en = {
         ],
         [
           'Click “+ Translate to…” on the track bar',
-          'Open “Subtitles” on the right, click “+ Translate to…” on the track bar, choose a target language and a text model, add a style hint or tick a glossary if you need to, then click the start button at the bottom. If no text model is available yet, first connect a service in “Models › Text generation”; online models are billed by token.',
+          'Open “Subtitles” on the right, click “+ Translate to…” on the track bar, choose a target language and a text model, add a style hint or tick a glossary if you need to, then click the start button at the bottom. If no text model is available yet, first connect a service in “Settings › Models › Text generation”; online models are billed by token.',
         ],
         [
           'Check the translation and adjust the bilingual layout',
@@ -244,7 +244,7 @@ const en = {
       steps: [
         [
           'Type / in a session',
-          'Type / at the start of the session input (or choose “Use a tool” under “+”) to list the tools available for this video: Polish transcript, Generate chapters, Identify speakers, Re-transcribe, Find cuts, Translate subtitles, Refresh outdated translations, Translate voice-over, Write a summary, Write a blog post, Suggest titles, Write a description, Make a cover, and Export. Pick one, add your requirements after it, and send it; the Agent starts working. For a video opened from Space, the session is in the lower-right corner; these tools aren’t available on the web.',
+          'Type / at the start of the session input (or choose “Use a tool” under “+”) to list the tools available for this video: Polish transcript, Generate chapters, Identify speakers, Re-transcribe, Find cuts, Translate subtitles, Refresh outdated translations, Translate voice-over, Write a summary, Write a blog post, Suggest titles, Write a description, Make a cover, and Export. Pick one, add your requirements after it, and send it; the Agent starts working. For a video opened from Library, the session sits beside the editor; these tools aren’t available on the web.',
         ],
         [
           'Or open the AI tools tab',
@@ -269,7 +269,7 @@ const en = {
         ],
         [
           'Say what you want in a session',
-          'Start a session in Home, or open a video in Space: a floating session, expanded by default, sits in the lower-right corner, so just talk there. When minimized, it becomes an icon in the lower-right corner; click it to expand it again. Be clear about the scope and what to keep, for example: “Check the subtitles of this interview for typos, but keep the conversational wording.”',
+          'Start a session on Home, or open a video from Library: the editor sits beside the chat, so just talk there. Be clear about the scope and what to keep, for example: “Check the subtitles of this interview for typos, but keep the conversational wording.”',
         ],
         [
           'Watch the process and check the result',
@@ -309,7 +309,7 @@ const en = {
       steps: [
         [
           'Open Background tasks',
-          '“Background tasks” on the left lists every task running in the background, whether it came from the editor, a Home flow, the Agent, or the command line. Click a task’s “Details”: if it failed, the title in the red box is the reason.',
+          '“Background tasks” in the top bar lists every task running in the background, whether it came from the editor, a Home flow, the Agent, or the command line. Click a task’s “Details”: if it failed, the title in the red box is the reason.',
         ],
         [
           'Fill the gap the details point to',
@@ -395,7 +395,7 @@ export function searchGuides(query: string, guides: readonly HelpGuide[] = HELP_
   });
 }
 
-/** Where buttons lead: `new` opens the home page (adding material from the input box's “+” or by drag and drop), `space` goes to Space (to pick a video), `subtitle` opens the editor's subtitle page, `close` only closes help and returns to the video. */
+/** Where buttons lead: `new` opens the home page (adding material from the input box's “+” or by drag and drop), `space` goes to Library (to pick a video), `subtitle` opens the editor's subtitle page, `close` only closes help and returns to the video. */
 export type HelpTarget = 'new' | 'space' | 'agent' | 'models' | 'subtitle' | 'close';
 
 export interface HelpCta {
@@ -408,7 +408,7 @@ export interface HelpCta {
 /**
  * Buttons at the bottom of an article (prototype help-center.jsx's `cta` and `navigate`). Only destinations that can actually be reached here are used:
  * - `new` opens the home page (prototype help-center.jsx `newProject({entry: 'media'})`, with no target); `agent` goes to Settings › Agent provider; `models` goes to the models page.
- * - Actions done in a video (subtitles, styles, back to video): when no video is open, the button changes to “Choose a video” and goes to Space.
+ * - Actions done in a video (subtitles, styles, back to video): when no video is open, the button changes to “Choose a video” and goes to Library.
  * - `style`: subtitle properties exist only after a subtitle segment is selected on the timeline; help cannot open it, so the button changes to “Back to video”.
  */
 export function helpCta(guide: HelpGuide, inVideo: boolean): HelpCta {

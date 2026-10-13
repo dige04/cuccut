@@ -93,7 +93,7 @@ export const ptBR: LegacyImportRunMessages = {
   actionFailed: (message) => `Não foi possível fazer isso: ${message}`,
   undo: 'Desfazer',
   viewReasons: 'Ver motivo',
-  viewInSpace: 'Ver no Space',
+  viewInSpace: 'Ver na Biblioteca',
   viewProgress: 'Ver progresso',
   close: 'Fechar',
   retryAll: 'Tentar todos novamente',

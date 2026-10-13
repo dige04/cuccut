@@ -5,12 +5,12 @@ export const vi: HelpGuidesMessages = {
     "import": {
       "title": "Tạo video và nhập tư liệu",
       "short": "Tạo và nhập",
-      "summary": "Tạo video trong Space rồi đưa tư liệu vào thư viện tư liệu và dòng thời gian.",
+      "summary": "Tạo video trong Home rồi đưa tư liệu vào thư viện tư liệu và dòng thời gian.",
       "keywords": "mới tạo tệp tư liệu thư viện nhập kéo thả âm thanh hình ảnh video",
       "steps": [
         [
           "Tạo video",
-          "Mở “Space” bên trái, nhấp “Mới” → “Video trống mới”, chọn dự án rồi chọn tỷ lệ khung hình trong Home và nhấp “Tạo video trống”. Nếu có tệp video hoặc âm thanh, nhấp “Video mới từ tệp”; Home mở với tệp đó và cho chọn thêm phụ đề hoặc chép lời và dịch. Nếu chưa có dự án, mở thư mục dự án trong Home trước hoặc nhờ Agent tạo trong phiên."
+          "Trong Home, dưới “Tạo video”, chọn “Khung trống”, chọn dự án rồi chọn tỷ lệ khung hình và nhấp “Tạo video trống”. Nếu có tệp video hoặc âm thanh, nhấp “Video mới từ tệp”; Home mở với tệp đó và cho chọn thêm phụ đề hoặc chép lời và dịch. Nếu chưa có dự án, mở thư mục dự án trong Home trước hoặc nhờ Agent tạo trong phiên."
         ],
         [
           "Nhập tư liệu vào thư viện",
@@ -58,7 +58,7 @@ export const vi: HelpGuidesMessages = {
         ],
         [
           "Nhấp “+ Dịch sang…” trên thanh rãnh",
-          "Mở “Phụ đề” bên phải, nhấp “+ Dịch sang…” trên thanh rãnh, chọn ngôn ngữ đích và mô hình văn bản, thêm gợi ý phong cách hoặc chọn bảng thuật ngữ nếu cần rồi nhấp nút bắt đầu phía dưới. Nếu chưa có mô hình văn bản, kết nối dịch vụ trong “Mô hình › Tạo văn bản” trước; mô hình trực tuyến tính phí theo token."
+          "Mở “Phụ đề” bên phải, nhấp “+ Dịch sang…” trên thanh rãnh, chọn ngôn ngữ đích và mô hình văn bản, thêm gợi ý phong cách hoặc chọn bảng thuật ngữ nếu cần rồi nhấp nút bắt đầu phía dưới. Nếu chưa có mô hình văn bản, kết nối dịch vụ trong “Cài đặt › Mô hình › Tạo văn bản” trước; mô hình trực tuyến tính phí theo token."
         ],
         [
           "Kiểm tra bản dịch và chỉnh bố cục song ngữ",
@@ -182,7 +182,7 @@ export const vi: HelpGuidesMessages = {
       "steps": [
         [
           "Gõ / trong phiên",
-          "Gõ / ở đầu ô nhập phiên (hoặc chọn “Dùng công cụ” dưới “+”) để liệt kê công cụ cho video: Trau chuốt bản chép lời, Tạo chương, Nhận dạng người nói, Chép lời lại, Tìm phần có thể cắt, Dịch phụ đề, Cập nhật bản dịch cũ, Dịch lồng tiếng, Viết tóm tắt, Viết bài blog, Gợi ý tiêu đề, Viết mô tả, Tạo bìa và Xuất. Chọn một, thêm yêu cầu phía sau rồi gửi; Agent bắt đầu làm. Với video mở từ Space, phiên nằm góc dưới phải; công cụ này không có trên web."
+          "Gõ / ở đầu ô nhập phiên (hoặc chọn “Dùng công cụ” dưới “+”) để liệt kê công cụ cho video: Trau chuốt bản chép lời, Tạo chương, Nhận dạng người nói, Chép lời lại, Tìm phần có thể cắt, Dịch phụ đề, Cập nhật bản dịch cũ, Dịch lồng tiếng, Viết tóm tắt, Viết bài blog, Gợi ý tiêu đề, Viết mô tả, Tạo bìa và Xuất. Chọn một, thêm yêu cầu phía sau rồi gửi; Agent bắt đầu làm. Với video mở từ Thư viện, phiên nằm cạnh trình chỉnh sửa; công cụ này không có trên web."
         ],
         [
           "Hoặc mở thẻ Công cụ AI",
@@ -207,7 +207,7 @@ export const vi: HelpGuidesMessages = {
         ],
         [
           "Nói yêu cầu trong phiên",
-          "Bắt đầu phiên trong Home hoặc mở video trong Space: phiên nổi mặc định mở nằm góc dưới phải, nói tại đó. Khi thu nhỏ thành biểu tượng góc dưới phải, nhấp để mở lại. Nêu rõ phạm vi và phần cần giữ, ví dụ: “Kiểm tra lỗi chính tả trong phụ đề phỏng vấn này nhưng giữ cách nói trò chuyện.”"
+          "Bắt đầu phiên trong Home hoặc mở video từ Thư viện: trình chỉnh sửa nằm cạnh khung trò chuyện, nói ngay tại đó. Nêu rõ phạm vi và phần cần giữ, ví dụ: “Kiểm tra lỗi chính tả trong phụ đề phỏng vấn này nhưng giữ cách nói trò chuyện.”"
         ],
         [
           "Xem quá trình và kiểm tra kết quả",
@@ -247,7 +247,7 @@ export const vi: HelpGuidesMessages = {
       "steps": [
         [
           "Mở Tác vụ nền",
-          "“Tác vụ nền” bên trái liệt kê mọi tác vụ chạy nền từ trình chỉnh sửa, quy trình Home, Agent hoặc dòng lệnh. Nhấp “Chi tiết” của tác vụ: nếu thất bại, tiêu đề hộp đỏ là lý do."
+          "“Tác vụ nền” ở thanh trên cùng liệt kê mọi tác vụ chạy nền từ trình chỉnh sửa, quy trình Home, Agent hoặc dòng lệnh. Nhấp “Chi tiết” của tác vụ: nếu thất bại, tiêu đề hộp đỏ là lý do."
         ],
         [
           "Bổ sung phần thiếu theo chi tiết",

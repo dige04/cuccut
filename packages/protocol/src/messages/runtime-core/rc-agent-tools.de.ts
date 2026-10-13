@@ -34,7 +34,7 @@ export const de: RcAgentToolsMessages = {
   undoSummary: (p: { transactionId: string }) => `Bearbeitung rückgängig machen: ${p.transactionId}`,
   undoLatestSummary: "Letzte Bearbeitung rückgängig machen",
   deleteVideoSummary: (p: { name: string; path: string; days: number }) =>
-    `Video löschen: „${p.name}“ (${p.path}): in den Papierkorb verschieben; Wiederherstellung in Space möglich für ${`${p.days} ${pluralForm('de', p.days, { one: "Tag", other: "Tage" })}`}. Originaldateien verknüpfter Materialien bleiben an ihrem Speicherort`,
+    `Video löschen: „${p.name}“ (${p.path}): in den Papierkorb verschieben; Wiederherstellung in der Bibliothek möglich für ${`${p.days} ${pluralForm('de', p.days, { one: "Tag", other: "Tage" })}`}. Originaldateien verknüpfter Materialien bleiben an ihrem Speicherort`,
   importPackageSummary: (p: { file: string }) => `Portables Paket öffnen: ${p.file}`,
 
   renameVideoLabel: "Video umbenennen",

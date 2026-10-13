@@ -8,7 +8,7 @@ const daysLabel = (n: number) => pluralForm('pt-BR', n, { one: `${n} dia`, other
 export const ptBR: SpaceMessages = {
   help: `Uso:
   cuccut space rescan              Verificar as pastas de origem novamente
-  cuccut space rebuild             Reconstruir o catálogo do Space pelas pastas e registros de origem;
+  cuccut space rebuild             Reconstruir o catálogo da Biblioteca pelas pastas e registros de origem;
                                    o índice de conteúdo relê todos os vídeos em segundo plano
   cuccut space trash|restore <entry id>
                                    Mover para a Lixeira / restaurar da Lixeira (os arquivos não são alterados;

@@ -20,7 +20,7 @@ export const zhHans: SettingDescriptionMessages = {
   'fonts.autoDownload': '排字用到、本机没有、字体目录里有的字体自动下载（预览与成片导出）；关掉时照回退字体画并提示',
   'fonts.cssEndpoint': '字体 CSS 接口的基址（镜像，https://）；null 为 https://fonts.googleapis.com',
   'fonts.fileEndpoint': '字体文件的基址（镜像，https://，只从它下面取文件）；null 为 https://fonts.gstatic.com',
-  'space.trashRetentionDays': 'Space 回收站的保留天数（1–3650）：超过的、没有引用的条目与删除的视频定期物理删除',
+  'space.trashRetentionDays': '资料库回收站的保留天数（1–3650）：超过的、没有引用的条目与删除的视频定期物理删除',
   'cache.maxSizeMiB': '数据目录里缓存的大小上限，MiB（256–1048576）：超过时从最旧的缓存文件（素材分析、播放用的转码）删起，降到上限的 90%。跨视频检索的索引不删',
   'resources.capacity':
     '高级：资源调度用的机器容量 { memoryMiB, gpuMemoryMiB, cpuThreads }，某项为 null 时自动探测；null 为全部自动（内存与 CPU 取自系统，Apple 芯片的 GPU 内存按统一内存估计）',

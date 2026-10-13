@@ -7,12 +7,12 @@ export const pl: HelpGuidesMessages = {
     import: {
       title: "Utwórz wideo i zaimportuj materiały",
       short: "Tworzenie i import",
-      summary: "Utwórz wideo w Space, a następnie dodaj materiały do biblioteki materiałów i na oś czasu.",
+      summary: "Utwórz wideo w Home, a następnie dodaj materiały do biblioteki materiałów i na oś czasu.",
       keywords: "nowy utwórz plik materiał biblioteka materiałów import przeciągnij upuść audio obraz import wideo materiał",
       steps: [
         [
           "Utwórz wideo",
-          "Otwórz „Space” po lewej, kliknij „Nowe” → „Nowe puste wideo”, wybierz projekt, a następnie proporcje w Home i kliknij „Utwórz puste wideo”. Jeśli masz już plik wideo lub audio, kliknij „Nowe wideo z pliku”; Home otworzy się z tym plikiem i pozwoli wybrać dodanie napisów albo transkrypcję i tłumaczenie. Jeśli nie masz jeszcze projektu, najpierw otwórz folder projektu w Home lub poproś agenta w sesji o utworzenie projektu.",
+          "W Home, pod „Utwórz wideo”, wybierz „Puste płótno”, wybierz projekt, a następnie proporcje i kliknij „Utwórz puste wideo”. Jeśli masz już plik wideo lub audio, kliknij „Nowe wideo z pliku”; Home otworzy się z tym plikiem i pozwoli wybrać dodanie napisów albo transkrypcję i tłumaczenie. Jeśli nie masz jeszcze projektu, najpierw otwórz folder projektu w Home lub poproś agenta w sesji o utworzenie projektu.",
         ],
         [
           "Zaimportuj materiały do biblioteki",
@@ -60,7 +60,7 @@ export const pl: HelpGuidesMessages = {
         ],
         [
           "Kliknij „+ Przetłumacz na…” na pasku ścieżek",
-          "Otwórz „Napisy” po prawej, kliknij „+ Przetłumacz na…” na pasku ścieżek, wybierz język docelowy i model tekstowy, w razie potrzeby dodaj wskazówkę stylu lub zaznacz słownik, a następnie kliknij przycisk uruchomienia na dole. Jeśli model tekstowy nie jest jeszcze dostępny, najpierw połącz usługę w „Modele › Generowanie tekstu”; modele online są rozliczane za tokeny.",
+          "Otwórz „Napisy” po prawej, kliknij „+ Przetłumacz na…” na pasku ścieżek, wybierz język docelowy i model tekstowy, w razie potrzeby dodaj wskazówkę stylu lub zaznacz słownik, a następnie kliknij przycisk uruchomienia na dole. Jeśli model tekstowy nie jest jeszcze dostępny, najpierw połącz usługę w „Ustawienia › Modele › Generowanie tekstu”; modele online są rozliczane za tokeny.",
         ],
         [
           "Sprawdź tłumaczenie i układ dwóch języków",
@@ -178,7 +178,7 @@ export const pl: HelpGuidesMessages = {
       steps: [
         [
           "Wpisz / w sesji",
-          "Wpisz / na początku wiadomości w sesji (lub wybierz „Użyj narzędzia” pod „+”), aby zobaczyć narzędzia dla tego wideo: Popraw transkrypcję, Wygeneruj rozdziały, Rozpoznaj mówców, Transkrybuj ponownie, Znajdź fragmenty do wycięcia, Przetłumacz napisy, Odśwież nieaktualne tłumaczenia, Przetłumacz dubbing, Napisz podsumowanie, Napisz wpis na blog, Zaproponuj tytuły, Napisz opis, Utwórz okładkę i Eksportuj. Wybierz narzędzie, dopisz wymagania i wyślij; agent rozpocznie pracę. Dla wideo otwartego z Space sesja znajduje się w prawym dolnym rogu; te narzędzia nie są dostępne w wersji webowej.",
+          "Wpisz / na początku wiadomości w sesji (lub wybierz „Użyj narzędzia” pod „+”), aby zobaczyć narzędzia dla tego wideo: Popraw transkrypcję, Wygeneruj rozdziały, Rozpoznaj mówców, Transkrybuj ponownie, Znajdź fragmenty do wycięcia, Przetłumacz napisy, Odśwież nieaktualne tłumaczenia, Przetłumacz dubbing, Napisz podsumowanie, Napisz wpis na blog, Zaproponuj tytuły, Napisz opis, Utwórz okładkę i Eksportuj. Wybierz narzędzie, dopisz wymagania i wyślij; agent rozpocznie pracę. Dla wideo otwartego z Biblioteki sesja jest obok edytora; te narzędzia nie są dostępne w wersji webowej.",
         ],
         [
           "Albo otwórz kartę Narzędzia AI",
@@ -203,7 +203,7 @@ export const pl: HelpGuidesMessages = {
         ],
         [
           "Opisz w sesji, czego chcesz",
-          "Rozpocznij sesję w Home albo otwórz wideo w Space: pływająca sesja, domyślnie rozwinięta, jest w prawym dolnym rogu, więc pisz tam. Po zminimalizowaniu staje się ikoną w tym rogu; kliknij, aby znów rozwinąć. Określ zakres i to, co zachować, np.: „Sprawdź literówki w napisach tego wywiadu, ale zachowaj potoczne sformułowania”.",
+          "Rozpocznij sesję w Home albo otwórz wideo z Biblioteki: edytor jest obok czatu, więc pisz tam. Określ zakres i to, co zachować, np.: „Sprawdź literówki w napisach tego wywiadu, ale zachowaj potoczne sformułowania”.",
         ],
         [
           "Obserwuj proces i sprawdź wynik",
@@ -243,7 +243,7 @@ export const pl: HelpGuidesMessages = {
       steps: [
         [
           "Otwórz zadania w tle",
-          "„Zadania w tle” po lewej pokazują wszystko działające w tle: z edytora, przepływu Home, agenta lub wiersza poleceń. Kliknij „Szczegóły” zadania: jeśli się nie powiodło, tytuł czerwonego pola podaje przyczynę.",
+          "„Zadania w tle” w górnym pasku pokazują wszystko działające w tle: z edytora, przepływu Home, agenta lub wiersza poleceń. Kliknij „Szczegóły” zadania: jeśli się nie powiodło, tytuł czerwonego pola podaje przyczynę.",
         ],
         [
           "Uzupełnij brak wskazany w szczegółach",

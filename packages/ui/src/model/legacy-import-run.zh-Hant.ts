@@ -47,7 +47,7 @@ export const zhHant: LegacyImportRunMessages = {
   actionFailed: (message) => `無法完成：${message}`,
   undo: '還原',
   viewReasons: '查看原因',
-  viewInSpace: '在 Space 中檢視',
+  viewInSpace: '在資料庫中檢視',
   viewProgress: '查看進度',
   close: '關閉',
   retryAll: '全部重試',

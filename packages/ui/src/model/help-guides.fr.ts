@@ -9,12 +9,12 @@ export const fr: HelpGuidesMessages = {
     import: {
       title: "Créer une vidéo et importer des médias",
       short: "Créer et importer",
-      summary: "Créez une vidéo dans Space, puis ajoutez des médias à la bibliothèque et à la timeline.",
+      summary: "Créez une vidéo depuis Home, puis ajoutez des médias à la bibliothèque et à la timeline.",
       keywords: "nouveau créer fichier média bibliothèque importer glisser déposer audio image vidéo",
       steps: [
         [
           "Créer une vidéo",
-          "Ouvrez « Space » à gauche, cliquez « Nouveau » → « Nouvelle vidéo vide », choisissez un projet, puis un format sur Home et « Créer une vidéo vide ». Avec un fichier vidéo ou audio, cliquez « Nouvelle vidéo depuis un fichier » ; Home propose sous-titrage ou transcription et traduction. Sans projet, ouvrez d’abord un dossier dans Home ou demandez à l’Agent d’en créer un.",
+          "Sur Home, sous « Créer une vidéo », ouvrez « Toile vierge », choisissez un projet, puis un format et cliquez sur « Créer une vidéo vide ». Avec un fichier vidéo ou audio, cliquez « Nouvelle vidéo depuis un fichier » ; Home propose sous-titrage ou transcription et traduction. Sans projet, ouvrez d’abord un dossier dans Home ou demandez à l’Agent d’en créer un.",
         ],
         [
           "Importer des médias dans la bibliothèque",
@@ -62,7 +62,7 @@ export const fr: HelpGuidesMessages = {
         ],
         [
           "Cliquer « + Traduire en… » sur la barre",
-          "Ouvrez « Sous-titres », cliquez « + Traduire en… », choisissez langue et modèle, ajoutez style ou glossaire au besoin, puis démarrez en bas. Sans modèle, connectez d’abord un service dans « Modèles › Génération de texte » ; facturation au token.",
+          "Ouvrez « Sous-titres », cliquez « + Traduire en… », choisissez langue et modèle, ajoutez style ou glossaire au besoin, puis démarrez en bas. Sans modèle, connectez d’abord un service dans « Réglages › Modèles › Génération de texte » ; facturation au token.",
         ],
         [
           "Vérifier traduction et mise en page bilingue",
@@ -180,7 +180,7 @@ export const fr: HelpGuidesMessages = {
       steps: [
         [
           "Taper / dans une session",
-          "Tapez / au début (ou « Utiliser un outil » sous « + ») : Améliorer la transcription, Générer les chapitres, Identifier les locuteurs, Retranscrire, Trouver les coupes, Traduire les sous-titres, Actualiser les traductions obsolètes, Traduire le doublage, Écrire un résumé, Écrire un article de blog, Proposer des titres, Écrire une description, Créer une couverture, Exporter. Choisissez, ajoutez vos exigences et envoyez ; l’Agent démarre. Pour une vidéo Space, session en bas à droite ; outils indisponibles sur le web.",
+          "Tapez / au début (ou « Utiliser un outil » sous « + ») : Améliorer la transcription, Générer les chapitres, Identifier les locuteurs, Retranscrire, Trouver les coupes, Traduire les sous-titres, Actualiser les traductions obsolètes, Traduire le doublage, Écrire un résumé, Écrire un article de blog, Proposer des titres, Écrire une description, Créer une couverture, Exporter. Choisissez, ajoutez vos exigences et envoyez ; l’Agent démarre. Pour une vidéo ouverte depuis Bibliothèque, session à côté de l’éditeur ; outils indisponibles sur le web.",
         ],
         [
           "Ou ouvrir l’onglet Outils IA",
@@ -205,7 +205,7 @@ export const fr: HelpGuidesMessages = {
         ],
         [
           "Exprimer votre demande en session",
-          "Démarrez dans Home ou ouvrez une vidéo Space : session flottante développée en bas à droite. Minimisée, elle devient une icône ; cliquez pour rouvrir. Précisez portée et contenu à conserver, ex. « Corrigez les fautes de sous-titres de cette interview, mais gardez le ton oral. »",
+          "Démarrez dans Home ou ouvrez une vidéo depuis Bibliothèque : l’éditeur est à côté du chat, parlez-y directement. Précisez portée et contenu à conserver, ex. « Corrigez les fautes de sous-titres de cette interview, mais gardez le ton oral. »",
         ],
         [
           "Suivre le travail et vérifier",

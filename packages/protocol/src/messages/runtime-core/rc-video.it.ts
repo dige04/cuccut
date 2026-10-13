@@ -13,7 +13,7 @@ export const it: RcVideoMessages = {
   cantCreateInSession: 'Questo Runtime non può creare video in una sessione', targetLocationIncomplete: 'La posizione del video di destinazione è incompleta', reservedDirOutsideProject: 'La cartella riservata non è in questa cartella di progetto o sessione', pipelinePrincipalName: 'Flusso',
   openElsewhere: 'Questo video è aperto in un’altra finestra o connessione. Chiudilo prima lì', videoBusy: 'Questo video ha ancora attività o esportazioni in corso. Annullale prima',
   crossDevice: 'La cartella del video e quella di origine non sono sullo stesso disco, quindi non può essere spostata nel Cestino',
-  videoEntryNotFound: 'Impossibile trovare questo video (non è nello Space o lo Space sta ancora eseguendo la scansione)',
+  videoEntryNotFound: 'Impossibile trovare questo video (non è nella Libreria o la Libreria sta ancora eseguendo la scansione)',
   notDeletedVideo: 'Questa voce non è un video eliminato', restoreRootGone: 'Il progetto o la sessione di questo video non esiste più, quindi non può essere ripristinato', trashDirGone: 'La cartella del video nel Cestino non esiste più',
   sourceRootInTrash: 'Questa cartella del video è una cartella di progetto o una cartella di lavoro di sessione (o ne contiene una), quindi non può essere spostata nel Cestino',
   sourceRootRemedy: 'In CucCut, rimuovi prima il progetto o la sessione che usa questa cartella, poi elimina questo video dal progetto padre',

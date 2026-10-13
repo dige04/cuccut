@@ -33,7 +33,7 @@ export const ko: RcVideoMessages = {
   openElsewhere: '이 영상이 다른 창이나 연결에서 열려 있습니다. 먼저 그곳에서 닫으세요',
   videoBusy: '이 영상에 아직 진행 중인 작업이나 내보내기가 있습니다. 먼저 취소하세요',
   crossDevice: '영상 폴더와 소스 폴더가 같은 디스크에 있지 않아 휴지통으로 옮길 수 없습니다',
-  videoEntryNotFound: '이 영상을 찾을 수 없습니다(Space에 없거나 Space가 아직 스캔 중입니다)',
+  videoEntryNotFound: '이 영상을 찾을 수 없습니다(라이브러리에 없거나 라이브러리가 아직 스캔 중입니다)',
   notDeletedVideo: '이 항목은 삭제된 영상이 아닙니다',
   restoreRootGone: '이 영상이 있던 프로젝트나 세션이 더 이상 없어 복원할 수 없습니다',
   trashDirGone: '휴지통에 있던 영상 폴더가 더 이상 없습니다',

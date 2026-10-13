@@ -46,7 +46,7 @@ export const zhHant: RcAgentToolsMessages = {
   undoSummary: (p) => `還原修改 ${p.transactionId}`,
   undoLatestSummary: '還原最近一次修改',
   deleteVideoSummary: (p) =>
-    `刪除影片「${p.name}」（${p.path}）：移到垃圾桶，${p.days} 天內可在 Space 中回復。連結素材的原始檔案保留在原處`,
+    `刪除影片「${p.name}」（${p.path}）：移到垃圾桶，${p.days} 天內可在資料庫中回復。連結素材的原始檔案保留在原處`,
   importPackageSummary: (p) => `開啟可攜式套件 ${p.file}`,
   renameVideoLabel: '重新命名影片',
   putDocumentSummary: (p) => `寫入文件 ${p.documentId} 的新版本`,

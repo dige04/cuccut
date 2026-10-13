@@ -43,7 +43,7 @@ export const zhHans: RcAgentToolsMessages = {
   captionsLabel: '建立字幕层',
   undoSummary: (p) => `撤销修改 ${p.transactionId}`,
   undoLatestSummary: '撤销最近的一笔修改',
-  deleteVideoSummary: (p) => `删除视频「${p.name}」（${p.path}）：移进回收站，${p.days} 天内可以在 Space 里恢复；链接素材的原文件不动`,
+  deleteVideoSummary: (p) => `删除视频「${p.name}」（${p.path}）：移进回收站，${p.days} 天内可以在资料库里恢复；链接素材的原文件不动`,
   importPackageSummary: (p) => `打开便携包 ${p.file}`,
   renameVideoLabel: '改视频名',
   putDocumentSummary: (p) => `写入文档 ${p.documentId} 的新版本`,

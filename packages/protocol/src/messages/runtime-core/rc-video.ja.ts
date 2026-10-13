@@ -33,7 +33,7 @@ export const ja: RcVideoMessages = {
   openElsewhere: 'この動画は別のウインドウまたは接続で開いています。先にそちらで閉じてください',
   videoBusy: 'この動画には実行中のタスクまたは書き出しがあります。先にキャンセルしてください',
   crossDevice: '動画フォルダとソースフォルダが同じディスク上にないため、ゴミ箱に移動できません',
-  videoEntryNotFound: 'この動画が見つかりません（Space にないか、Space がまだスキャン中です）',
+  videoEntryNotFound: 'この動画が見つかりません（ライブラリにないか、ライブラリがまだスキャン中です）',
   notDeletedVideo: 'この項目は削除された動画ではありません',
   restoreRootGone: 'この動画があったプロジェクトまたはセッションはもうないため、復元できません',
   trashDirGone: 'ゴミ箱内の動画フォルダはもうありません',

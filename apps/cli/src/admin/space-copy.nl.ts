@@ -4,7 +4,7 @@ const count = (n: number, one: string, other: string) => `${n} ${pluralForm('nl'
 export const nl: SpaceMessages = {
  help: `Gebruik:
   cuccut space rescan              De bronmappen opnieuw scannen
-  cuccut space rebuild             De Space-catalogus uit bronmappen en records opnieuw opbouwen;
+  cuccut space rebuild             De bibliotheekcatalogus uit bronmappen en records opnieuw opbouwen;
                                    de inhoudsindex leest alle video’s opnieuw op de achtergrond
   cuccut space trash|restore <entry id>
                                    Naar de prullenmand verplaatsen / herstellen (bestanden blijven ongewijzigd;

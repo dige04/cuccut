@@ -5,7 +5,7 @@ export const ja: RcSpaceMessages = {
   tooManyDirEntries: (p) => `フォルダの項目が ${p.max} 個を超えているため、一部のみを表示しています`,
   tooManyFiles: (p) => `ファイルが ${p.max} 個を超えているため、一部のみを表示しています`,
 
-  entryGone: 'この項目はもう Space にありません',
+  entryGone: 'この項目はもうライブラリにありません',
   trashVideoUseDelete: '動画を削除するには videos.delete を使ってください',
   restoreVideoUseRestore: '削除した動画を復元するには videos.restore を使ってください',
   videoDeletedRestoreFirst: 'この動画は削除されています。先に復元してください',
@@ -61,7 +61,7 @@ export const ja: RcSpaceMessages = {
   continueFromTrash: 'ゴミ箱にある項目は続きに使えません。先に復元してください',
   conversationCantSee:
     'このセッションからはこの項目が見えません。プロジェクトに属する項目は、同じプロジェクトのセッションに入れてください',
-  serviceUsesMcp: '外部サービスは MCP ツールを通じて Space にアクセスします',
+  serviceUsesMcp: '外部サービスは MCP ツールを通じて ライブラリにアクセスします',
   materialTextOnly: (p) =>
     `読み取れるのは .txt と .md のドキュメント、.srt と .vtt の字幕のテキストのみです：${p.fileName}`,
   materialTooLarge: (p) => `${p.fileName} は ${p.bytes} バイトで、資料の上限 ${p.limit} を超えています`,

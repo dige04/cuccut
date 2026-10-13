@@ -75,7 +75,7 @@ const en = {
   undoSummary: (p: { transactionId: string }) => `Undo edit ${p.transactionId}`,
   undoLatestSummary: 'Undo the latest edit',
   deleteVideoSummary: (p: { name: string; path: string; days: number }) =>
-    `Delete video "${p.name}" (${p.path}): move it to the Trash, where it can be restored in Space for ${plural(p.days, 'day', 'days')}. Original files of linked assets stay where they are`,
+    `Delete video "${p.name}" (${p.path}): move it to the Trash, where it can be restored in Library for ${plural(p.days, 'day', 'days')}. Original files of linked assets stay where they are`,
   importPackageSummary: (p: { file: string }) => `Open portable package ${p.file}`,
   /** Note in video history for the edit that changes the video name when a portable package is opened with a name given. */
   renameVideoLabel: 'Rename video',

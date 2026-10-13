@@ -39,7 +39,7 @@ export const zhHant: RcRuntimeMessages = {
   projectFolderNotFound: '找不到專案資料夾',
   alreadyRunning: (p: { pid: number }) => `Runtime 已在執行（pid ${p.pid}）`,
   harnessNotReady: 'Harness 尚未就緒',
-  spaceNotReady: 'Space 目錄尚未就緒',
+  spaceNotReady: '資料庫目錄尚未就緒',
   externalToolsNotReady: '外部工具服務尚未就緒',
   externalToolNotRegistered: (p: { name: string }) => `外部工具 ${p.name} 尚未註冊`,
   offlineStrictNoDownload: '嚴格離線模式下不會從連結下載',

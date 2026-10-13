@@ -8,12 +8,12 @@ export const de: HelpGuidesMessages = {
     import: {
       title: "Video erstellen und Materialien importieren",
       short: "Erstellen und importieren",
-      summary: "Video in Space erstellen und Materialien in Materialbibliothek und Zeitleiste übernehmen.",
+      summary: "Video auf Home erstellen und Materialien in Materialbibliothek und Zeitleiste übernehmen.",
       keywords: "neu erstellen Datei Material Materialbibliothek importieren ziehen ablegen Audio Bild Videoimport",
       steps: [
         [
           "Video erstellen",
-          "Links „Space“ öffnen und „Neu“ → „Neues leeres Video“ wählen. Projekt auswählen, dann in Home Seitenverhältnis wählen und auf „Leeres Video erstellen“ klicken. Bei vorhandener Video- oder Audiodatei „Neues Video aus Datei“ wählen; Home öffnet sich mit der Datei und bietet Untertitel oder Transkription mit Übersetzung an. Ohne Projekt zuerst einen Projektordner in Home öffnen oder den Agenten in einer Sitzung mit der Erstellung beauftragen.",
+          "In Home unter „Video erstellen“ „Leere Leinwand“ wählen. Projekt auswählen, dann Seitenverhältnis wählen und auf „Leeres Video erstellen“ klicken. Bei vorhandener Video- oder Audiodatei „Neues Video aus Datei“ wählen; Home öffnet sich mit der Datei und bietet Untertitel oder Transkription mit Übersetzung an. Ohne Projekt zuerst einen Projektordner in Home öffnen oder den Agenten in einer Sitzung mit der Erstellung beauftragen.",
         ],
         [
           "Materialien in Materialbibliothek importieren",
@@ -61,7 +61,7 @@ export const de: HelpGuidesMessages = {
         ],
         [
           "Im Spurenstreifen auf „+ Übersetzen nach…“ klicken",
-          "Rechts „Untertitel“ öffnen und im Streifen „+ Übersetzen nach…“ wählen. Zielsprache und Textmodell auswählen, bei Bedarf Stilhinweis oder Glossar ergänzen und unten starten. Ohne Textmodell zuerst unter „Modelle › Texterzeugung“ einen Dienst verbinden; Onlinemodelle rechnen pro Token ab.",
+          "Rechts „Untertitel“ öffnen und im Streifen „+ Übersetzen nach…“ wählen. Zielsprache und Textmodell auswählen, bei Bedarf Stilhinweis oder Glossar ergänzen und unten starten. Ohne Textmodell zuerst unter „Einstellungen › Modelle › Texterzeugung“ einen Dienst verbinden; Onlinemodelle rechnen pro Token ab.",
         ],
         [
           "Übersetzung prüfen und zweisprachiges Layout anpassen",
@@ -179,7 +179,7 @@ export const de: HelpGuidesMessages = {
       steps: [
         [
           "/ in einer Sitzung eingeben",
-          "/ am Anfang der Sitzungseingabe eingeben (oder „Werkzeug verwenden“ unter „+“ wählen), um Videowerkzeuge anzuzeigen: Transkript überarbeiten, Kapitel erzeugen, Sprecher erkennen, Neu transkribieren, Schnitte finden, Untertitel übersetzen, Veraltete Übersetzungen erneuern, Vertonung übersetzen, Zusammenfassung schreiben, Blogbeitrag schreiben, Titel vorschlagen, Beschreibung schreiben, Titelbild erstellen und Exportieren. Werkzeug wählen, Anforderungen ergänzen und senden; der Agent beginnt. Bei einem aus Space geöffneten Video liegt die Sitzung unten rechts. Im Web sind diese Werkzeuge nicht verfügbar.",
+          "/ am Anfang der Sitzungseingabe eingeben (oder „Werkzeug verwenden“ unter „+“ wählen), um Videowerkzeuge anzuzeigen: Transkript überarbeiten, Kapitel erzeugen, Sprecher erkennen, Neu transkribieren, Schnitte finden, Untertitel übersetzen, Veraltete Übersetzungen erneuern, Vertonung übersetzen, Zusammenfassung schreiben, Blogbeitrag schreiben, Titel vorschlagen, Beschreibung schreiben, Titelbild erstellen und Exportieren. Werkzeug wählen, Anforderungen ergänzen und senden; der Agent beginnt. Bei einem aus der Bibliothek geöffneten Video liegt die Sitzung neben dem Editor. Im Web sind diese Werkzeuge nicht verfügbar.",
         ],
         [
           "Oder den Tab KI-Werkzeuge öffnen",
@@ -204,7 +204,7 @@ export const de: HelpGuidesMessages = {
         ],
         [
           "Wunsch in einer Sitzung beschreiben",
-          "Sitzung in Home starten oder Video in Space öffnen. Eine standardmäßig erweiterte schwebende Sitzung liegt unten rechts; dort schreiben. Minimiert erscheint sie als Symbol unten rechts; zum Erweitern anklicken. Bereich und beizubehaltende Inhalte angeben, etwa: „Untertitel dieses Interviews auf Tippfehler prüfen, aber natürliche Formulierungen beibehalten.“",
+          "Sitzung in Home starten oder Video aus der Bibliothek öffnen. Der Editor liegt neben dem Chat; dort schreiben. Bereich und beizubehaltende Inhalte angeben, etwa: „Untertitel dieses Interviews auf Tippfehler prüfen, aber natürliche Formulierungen beibehalten.“",
         ],
         [
           "Vorgang verfolgen und Ergebnis prüfen",
@@ -244,7 +244,7 @@ export const de: HelpGuidesMessages = {
       steps: [
         [
           "Hintergrundaufgaben öffnen",
-          "„Hintergrundaufgaben“ links enthält alle Hintergrundaufgaben aus Editor, Home-Workflow, Agent oder CLI. Unter „Details“ zeigt bei Fehler der Titel im roten Kasten den Grund.",
+          "„Hintergrundaufgaben“ in der oberen Leiste enthält alle Hintergrundaufgaben aus Editor, Home-Workflow, Agent oder CLI. Unter „Details“ zeigt bei Fehler der Titel im roten Kasten den Grund.",
         ],
         [
           "In Details genannten Mangel beheben",

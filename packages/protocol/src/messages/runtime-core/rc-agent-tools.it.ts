@@ -57,7 +57,7 @@ export const it: RcAgentToolsMessages = {
   undoSummary: (p: { transactionId: string }) => `Annulla la modifica ${p.transactionId}`,
   undoLatestSummary: 'Annulla l’ultima modifica',
   deleteVideoSummary: (p: { name: string; path: string; days: number }) =>
-    `Elimina il video «${p.name}» (${p.path}): spostalo nel Cestino, da cui puoi ripristinarlo nello Space per ${plural(p.days, 'giorno', 'giorni')}. I file originali dei materiali collegati restano dove sono`,
+    `Elimina il video «${p.name}» (${p.path}): spostalo nel Cestino, da cui puoi ripristinarlo nella Libreria per ${plural(p.days, 'giorno', 'giorni')}. I file originali dei materiali collegati restano dove sono`,
   importPackageSummary: (p: { file: string }) => `Apri il pacchetto portatile ${p.file}`,
   /** 打开便携包时给了 name、改视频名这笔修改在视频历史里的说明。 */
   renameVideoLabel: 'Rinomina video',

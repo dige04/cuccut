@@ -52,7 +52,7 @@ const en = {
   openElsewhere: 'This video is open in another window or connection. Close it there first',
   videoBusy: 'This video still has tasks or exports in progress. Cancel them first',
   crossDevice: "The video folder and source folder aren't on the same disk, so it can't be moved to the trash",
-  videoEntryNotFound: "Can't find this video (it isn't in Space, or Space is still scanning)",
+  videoEntryNotFound: "Can't find this video (it isn't in Library, or Library is still scanning)",
   notDeletedVideo: "This item isn't a deleted video",
   restoreRootGone: "The project or session this video was in is gone, so it can't be restored",
   trashDirGone: "The video folder in the trash is gone",

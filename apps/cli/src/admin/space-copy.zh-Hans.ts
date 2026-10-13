@@ -3,7 +3,7 @@ import type { SpaceMessages } from './space-copy.ts';
 export const zhHans: SpaceMessages = {
   help: `用法：
   cuccut space rescan              重新扫描来源目录
-  cuccut space rebuild             从来源目录与记录重建 Space 目录，内容索引在后台重读全部视频
+  cuccut space rebuild             从来源目录与记录重建资料库目录，内容索引在后台重读全部视频
   cuccut space trash|restore <条目 id>
                                    移到回收站 / 从回收站恢复（文件不动；视频条目会把视频目录移进 / 移出回收站）
   cuccut space purge <条目 id>     彻底删除回收站里的条目；还有视频或任务用着它时不删，列出引用

@@ -17,7 +17,7 @@ import { vi } from './pipeline-runner.vi.ts';
 /** `packages/jobs/src/pipelines/pipeline-runner.ts`: errors and sub-task names emitted by the orchestration of fixed flows. */
 const en = {
   unknownPipeline: (p: { name: string }) => `No pipeline named "${p.name}"`,
-  entryTargetUnsupported: "This Runtime can't open videos from Space entries",
+  entryTargetUnsupported: "This Runtime can't open videos from Library entries",
   targetMismatch: 'The target and videoId parameters refer to different videos',
   noLibrary: 'This Runtime has no user library',
   notPipeline: 'This task is not a pipeline',

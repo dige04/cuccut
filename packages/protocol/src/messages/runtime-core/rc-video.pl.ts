@@ -33,7 +33,7 @@ export const pl: RcVideoMessages = {
   openElsewhere: "Wideo jest otwarte w innym oknie lub połączeniu. Najpierw zamknij tam",
   videoBusy: "Dla tego wideo nadal trwają zadania lub eksport. Najpierw anuluj",
   crossDevice: "Folder wideo i źródła są na różnych dyskach; nie można przenieść do kosza",
-  videoEntryNotFound: "Nie można znaleźć wideo (nie ma w Space lub nadal trwa skanowanie)",
+  videoEntryNotFound: "Nie można znaleźć wideo (nie ma w Bibliotece lub nadal trwa skanowanie)",
   notDeletedVideo: "Ten wpis nie jest usuniętym wideo",
   restoreRootGone: "Projekt lub sesja tego wideo nie istnieje, więc przywrócenie niemożliwe",
   trashDirGone: "Folder wideo nie istnieje już w koszu",

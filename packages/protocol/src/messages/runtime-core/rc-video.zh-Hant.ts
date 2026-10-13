@@ -33,7 +33,7 @@ export const zhHant: RcVideoMessages = {
   openElsewhere: '這部影片已在其他視窗或連線中開啟。請先在那裡關閉它',
   videoBusy: '這部影片仍有進行中的任務或匯出。請先取消它們',
   crossDevice: '影片資料夾與來源資料夾不在同一個磁碟上，因此無法移到垃圾桶',
-  videoEntryNotFound: '找不到這部影片（它不在 Space 中，或 Space 仍在掃描）',
+  videoEntryNotFound: '找不到這部影片（它不在資料庫中，或資料庫仍在掃描）',
   notDeletedVideo: '這個項目不是已刪除的影片',
   restoreRootGone: '這部影片所在的專案或對話已不存在，因此無法回復',
   trashDirGone: '垃圾桶中的影片資料夾已不存在',

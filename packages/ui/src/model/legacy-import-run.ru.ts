@@ -60,7 +60,7 @@ export const ru: LegacyImportRunMessages = {
   actionFailed: (message) => `Не удалось выполнить: ${message}`,
   undo: 'Отменить',
   viewReasons: 'Показать причины',
-  viewInSpace: 'Посмотреть в Space',
+  viewInSpace: 'Посмотреть в библиотеке',
   viewProgress: 'Показать прогресс',
   close: 'Закрыть',
   retryAll: 'Повторить для всех',

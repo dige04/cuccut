@@ -2,7 +2,7 @@ import type { JobsPipelineRunnerMessages } from './pipeline-runner.ts';
 
 export const nl: JobsPipelineRunnerMessages = {
   unknownPipeline: (p: { name: string }) => `Geen pipeline met de naam ‘${p.name}’`,
-  entryTargetUnsupported: "Deze Runtime kan geen video’s openen vanuit Space-items",
+  entryTargetUnsupported: "Deze Runtime kan geen video’s openen vanuit Bibliotheek-items",
   targetMismatch: "De parameters target en videoId verwijzen naar verschillende video’s",
   noLibrary: "Deze Runtime heeft geen gebruikersbibliotheek",
   notPipeline: "Deze taak is geen pipeline",

@@ -2,7 +2,7 @@ import type { JobsPipelineRunnerMessages } from './pipeline-runner.ts';
 
 export const ja: JobsPipelineRunnerMessages = {
   unknownPipeline: (p: { name: string }) => `「${p.name}」という固定フローはありません`,
-  entryTargetUnsupported: 'この Runtime では Space の項目から動画を開けません',
+  entryTargetUnsupported: 'この Runtime では ライブラリの項目から動画を開けません',
   targetMismatch: 'パラメータ target と videoId が別々の動画を指しています',
   noLibrary: 'この Runtime にはユーザライブラリがありません',
   notPipeline: 'このタスクは固定フローではありません',

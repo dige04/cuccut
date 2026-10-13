@@ -6,7 +6,7 @@ export const ptBR: RcSpaceMessages = {
   tooManyDirEntries: (p: { max: number }) => `Mais de ${p.max} itens da pasta; só parte é listada`,
   tooManyFiles: (p: { max: number }) => `Mais de ${p.max} arquivos; só parte é listada`,
 
-  entryGone: "Este item não está mais no Space",
+  entryGone: "Este item não está mais na Biblioteca",
   trashVideoUseDelete: "Para excluir vídeo, use videos.delete",
   restoreVideoUseRestore: "Para restaurar vídeo excluído, use videos.restore",
   videoDeletedRestoreFirst: "Este vídeo foi excluído. Restaure primeiro",
@@ -63,7 +63,7 @@ export const ptBR: RcSpaceMessages = {
   continueFromTrash: "Itens na Lixeira não podem ser continuados. Restaure primeiro",
   conversationCantSee:
     "A sessão não pode ver este item. Itens de projeto devem ir a uma sessão do mesmo projeto",
-  serviceUsesMcp: "Serviços externos acessam o Space por ferramentas MCP",
+  serviceUsesMcp: "Serviços externos acessam a Biblioteca por ferramentas MCP",
   materialTextOnly: (p: { fileName: string }) =>
     `Só texto de documentos .txt e .md e legendas .srt e .vtt pode ser lido: ${p.fileName}`,
   materialTooLarge: (p: { fileName: string; bytes: number; limit: number }) =>

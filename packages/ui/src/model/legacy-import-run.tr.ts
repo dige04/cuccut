@@ -53,7 +53,7 @@ export const tr: LegacyImportRunMessages = {
   actionFailed: (message) => `Yapılamadı: ${message}`,
   undo: 'Geri al',
   viewReasons: 'Nedenini göster',
-  viewInSpace: 'Space içinde gör',
+  viewInSpace: 'Kitaplıkta gör',
   viewProgress: 'İlerlemeyi göster',
   close: 'Kapat',
   retryAll: 'Tümünü yeniden dene',

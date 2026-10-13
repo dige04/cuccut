@@ -2,7 +2,7 @@ import type { JobsPipelineRunnerMessages } from './pipeline-runner.ts';
 
 export const pl: JobsPipelineRunnerMessages = {
   unknownPipeline: (p: { name: string }) => `Brak potoku o nazwie „${p.name}"`,
-  entryTargetUnsupported: "Ten Runtime nie może otwierać wideo z wpisów Space",
+  entryTargetUnsupported: "Ten Runtime nie może otwierać wideo z wpisów Biblioteki",
   targetMismatch: "Parametry target i videoId odwołują się do różnych wideo",
   noLibrary: "Ten Runtime nie ma biblioteki użytkownika",
   notPipeline: "To zadanie nie jest potokiem",

@@ -4,7 +4,7 @@ const countEs = (n: number, one: string, other: string) => `${n} ${pluralForm('e
 export const es: SpaceMessages = {
  help: `Uso:
   cuccut space rescan              Explorar de nuevo las carpetas de origen
-  cuccut space rebuild             Reconstruir el catálogo de Space desde las carpetas de origen y los registros;
+  cuccut space rebuild             Reconstruir el catálogo de la Biblioteca desde las carpetas de origen y los registros;
                                    el índice de contenido relee todos los vídeos en segundo plano
   cuccut space trash|restore <entry id>
                                    Mover a la Papelera / restaurar desde ella (no se modifican los archivos;

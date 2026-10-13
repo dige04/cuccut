@@ -93,7 +93,7 @@ export const fr: LegacyImportRunMessages = {
   actionFailed: (message) => `Action impossible : ${message}`,
   undo: 'Annuler',
   viewReasons: 'Voir pourquoi',
-  viewInSpace: 'Voir dans Space',
+  viewInSpace: 'Voir dans la Bibliothèque',
   viewProgress: 'Voir la progression',
   close: 'Fermer',
   retryAll: 'Tout réessayer',

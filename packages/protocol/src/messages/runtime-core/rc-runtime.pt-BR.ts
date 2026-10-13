@@ -39,7 +39,7 @@ export const ptBR: RcRuntimeMessages = {
   projectFolderNotFound: "Pasta do projeto não encontrada",
   alreadyRunning: (p: { pid: number }) => `Runtime já em execução (pid ${p.pid})`,
   harnessNotReady: "Harness ainda não está pronto",
-  spaceNotReady: "O catálogo do Space ainda não está pronto",
+  spaceNotReady: "O catálogo da Biblioteca ainda não está pronto",
   externalToolsNotReady: "O serviço de ferramentas externas ainda não está pronto",
   externalToolNotRegistered: (p: { name: string }) => `Ferramenta externa ${p.name} não registrada`,
   offlineStrictNoDownload: "O modo off-line estrito não baixa links",

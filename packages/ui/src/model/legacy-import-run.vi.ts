@@ -51,7 +51,7 @@ export const vi: LegacyImportRunMessages = {
   actionFailed: (message) => `Không thực hiện được: ${message}`,
   undo: 'Hoàn tác',
   viewReasons: 'Xem lý do',
-  viewInSpace: 'Xem trong Space',
+  viewInSpace: 'Xem trong Thư viện',
   viewProgress: 'Xem tiến độ',
   close: 'Đóng',
   retryAll: 'Thử lại tất cả',

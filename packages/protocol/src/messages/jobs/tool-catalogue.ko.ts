@@ -3,19 +3,19 @@ import type { JobsToolCatalogueMessages } from './tool-catalogue.ts';
 export const ko: JobsToolCatalogueMessages = {
   transcribeLabel: '전사',
   transcribeDescription:
-    '로컬 미디어 파일이나 Space의 영상을 전사합니다. 영상이면 새 전사본을 쓰고 자막 레이어를 만들며, 파일만 있으면 TXT와 SRT를 저장 위치에 쓰거나 새 영상을 만들 수 있습니다.',
+    '로컬 미디어 파일이나 라이브러리의 영상을 전사합니다. 영상이면 새 전사본을 쓰고 자막 레이어를 만들며, 파일만 있으면 TXT와 SRT를 저장 위치에 쓰거나 새 영상을 만들 수 있습니다.',
   translateSubtitlesLabel: '자막 번역',
   translateSubtitlesDescription:
-    '영상의 전사본을 문장별로 다른 언어로 번역해 새 번역으로 영상에 씁니다. SRT / VTT 자막 파일(로컬 파일 또는 Space의 자막 항목)을 새 자막 파일로 번역할 수도 있습니다.',
+    '영상의 전사본을 문장별로 다른 언어로 번역해 새 번역으로 영상에 씁니다. SRT / VTT 자막 파일(로컬 파일 또는 라이브러리의 자막 항목)을 새 자막 파일로 번역할 수도 있습니다.',
   dubLabel: '번역 더빙',
   dubDescription:
     '전사본을 바탕으로 대상 언어의 음성을 문장별로 합성하고(번역본이 없으면 먼저 번역), 타이밍을 맞춰 새 더빙 그룹으로 영상에 씁니다.',
   synthesizeSpeechLabel: '음성 생성',
   synthesizeSpeechDescription:
-    '텍스트로 음성을 합성합니다. 결과는 오디오 결과물입니다. Space의 문서나 자막 항목(타임코드 없는 자막)을 읽을 수도 있습니다.',
+    '텍스트로 음성을 합성합니다. 결과는 오디오 결과물입니다. 라이브러리의 문서나 자막 항목(타임코드 없는 자막)을 읽을 수도 있습니다.',
   generateTextLabel: '텍스트 생성',
   generateTextDescription:
-    '프롬프트로 텍스트를 생성합니다(JSON Schema를 따르게 할 수도 있음). 결과는 텍스트 결과물입니다. Space의 문서나 자막 항목을 자료로 첨부할 수 있습니다.',
+    '프롬프트로 텍스트를 생성합니다(JSON Schema를 따르게 할 수도 있음). 결과는 텍스트 결과물입니다. 라이브러리의 문서나 자막 항목을 자료로 첨부할 수 있습니다.',
   generateImageLabel: '이미지 생성',
   generateImageDescription: '설명으로 이미지를 생성합니다. 결과는 이미지 결과물입니다.',
   generateMusicLabel: '음악 생성',

@@ -3,7 +3,7 @@ import type { SpaceMessages } from './space-copy.ts';
 export const tr: SpaceMessages = {
 help: `Kullanım:
   cuccut space rescan              Kaynak klasörlerini yeniden tara
-  cuccut space rebuild             Space kataloğunu kaynak klasörleri ve kayıtlardan yeniden oluştur;
+  cuccut space rebuild             Kitaplık kataloğunu kaynak klasörleri ve kayıtlardan yeniden oluştur;
                                    içerik dizini tüm videoları arka planda yeniden okur
   cuccut space trash|restore <entry id>
                                    Çöp sepetine taşı / geri yükle (dosyalara dokunulmaz;

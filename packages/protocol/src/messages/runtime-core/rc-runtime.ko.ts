@@ -40,7 +40,7 @@ export const ko: RcRuntimeMessages = {
   projectFolderNotFound: '프로젝트 폴더가 없습니다',
   alreadyRunning: (p: { pid: number }) => `Runtime이 이미 실행 중입니다(pid ${p.pid})`,
   harnessNotReady: 'Harness가 아직 준비되지 않았습니다',
-  spaceNotReady: 'Space 카탈로그가 아직 준비되지 않았습니다',
+  spaceNotReady: '라이브러리 카탈로그가 아직 준비되지 않았습니다',
   externalToolsNotReady: '외부 도구 서비스가 아직 준비되지 않았습니다',
   externalToolNotRegistered: (p: { name: string }) => `외부 도구 ${p.name}이(가) 등록되어 있지 않습니다`,
   offlineStrictNoDownload: '엄격한 오프라인 모드에서는 링크에서 다운로드하지 않습니다',

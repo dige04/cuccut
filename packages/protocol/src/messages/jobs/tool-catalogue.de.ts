@@ -3,19 +3,19 @@ import type { JobsToolCatalogueMessages } from './tool-catalogue.ts';
 export const de: JobsToolCatalogueMessages = {
   transcribeLabel: "Transkribieren",
   transcribeDescription:
-    "Transkribiert eine lokale Mediendatei oder ein Video in Space. Bei einem Video wird ein neues Transkript geschrieben und eine Untertitel-Ebene erstellt; bei einer Datei werden TXT und SRT am Speicherort geschrieben oder ein neues Video erstellt.",
+    "Transkribiert eine lokale Mediendatei oder ein Video in der Bibliothek. Bei einem Video wird ein neues Transkript geschrieben und eine Untertitel-Ebene erstellt; bei einer Datei werden TXT und SRT am Speicherort geschrieben oder ein neues Video erstellt.",
   translateSubtitlesLabel: "Untertitel übersetzen",
   translateSubtitlesDescription:
-    "Übersetzt das Transkript eines Videos Satz für Satz in eine andere Sprache und schreibt es als neue Übersetzung ins Video. Kann auch eine SRT-/VTT-Untertiteldatei (lokale Datei oder Untertiteleintrag in Space) in eine neue Untertiteldatei übersetzen.",
+    "Übersetzt das Transkript eines Videos Satz für Satz in eine andere Sprache und schreibt es als neue Übersetzung ins Video. Kann auch eine SRT-/VTT-Untertiteldatei (lokale Datei oder Untertiteleintrag in der Bibliothek) in eine neue Untertiteldatei übersetzen.",
   dubLabel: "Übersetzte Vertonung",
   dubDescription:
     "Synthetisiert anhand des Transkripts Satz für Satz Sprache in der Zielsprache (übersetzt zuerst, falls keine Übersetzung vorhanden ist), richtet das Timing aus und schreibt sie als neue Vertonungsgruppe ins Video.",
   synthesizeSpeechLabel: "Sprache erzeugen",
   synthesizeSpeechDescription:
-    "Synthetisiert Sprache aus einem Text; das Ergebnis ist ein Audioergebnis. Kann auch ein Dokument oder einen Untertiteleintrag in Space vorlesen (Untertitel ohne Zeitcodes).",
+    "Synthetisiert Sprache aus einem Text; das Ergebnis ist ein Audioergebnis. Kann auch ein Dokument oder einen Untertiteleintrag in der Bibliothek vorlesen (Untertitel ohne Zeitcodes).",
   generateTextLabel: "Text erzeugen",
   generateTextDescription:
-    "Erzeugt Text anhand eines Prompts (optional gemäß einem JSON Schema); das Ergebnis ist ein Textergebnis. Dokumente oder Untertiteleinträge in Space können als Material angehängt werden.",
+    "Erzeugt Text anhand eines Prompts (optional gemäß einem JSON Schema); das Ergebnis ist ein Textergebnis. Dokumente oder Untertiteleinträge in der Bibliothek können als Material angehängt werden.",
   generateImageLabel: "Bild erzeugen",
   generateImageDescription: "Erzeugt ein Bild anhand einer Beschreibung; das Ergebnis ist ein Bildergebnis.",
   generateMusicLabel: 'Musik erzeugen',

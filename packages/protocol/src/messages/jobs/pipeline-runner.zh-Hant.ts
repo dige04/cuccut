@@ -2,7 +2,7 @@ import type { JobsPipelineRunnerMessages } from './pipeline-runner.ts';
 
 export const zhHant: JobsPipelineRunnerMessages = {
   unknownPipeline: (p: { name: string }) => `沒有名為「${p.name}」的固定流程`,
-  entryTargetUnsupported: '這個 Runtime 無法從 Space 條目開啟影片',
+  entryTargetUnsupported: '這個 Runtime 無法從資料庫條目開啟影片',
   targetMismatch: '參數 target 與 videoId 指向不同的影片',
   noLibrary: '這個 Runtime 沒有使用者資料庫',
   notPipeline: '這個任務不是固定流程',

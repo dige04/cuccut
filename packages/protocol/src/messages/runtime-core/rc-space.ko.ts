@@ -5,7 +5,7 @@ export const ko: RcSpaceMessages = {
   tooManyDirEntries: (p) => `폴더 항목이 ${p.max}개를 초과하여 일부만 표시합니다`,
   tooManyFiles: (p) => `파일이 ${p.max}개를 초과하여 일부만 표시합니다`,
 
-  entryGone: '이 항목은 더 이상 Space에 없습니다',
+  entryGone: '이 항목은 더 이상 라이브러리에 없습니다',
   trashVideoUseDelete: '영상을 삭제하려면 videos.delete를 사용하세요',
   restoreVideoUseRestore: '삭제된 영상을 복원하려면 videos.restore를 사용하세요',
   videoDeletedRestoreFirst: '이 영상은 삭제되었습니다. 먼저 복원하세요',
@@ -57,7 +57,7 @@ export const ko: RcSpaceMessages = {
   engineUnavailable: '영상 엔진을 사용할 수 없습니다',
   continueFromTrash: '휴지통에 있는 항목에서는 이어서 작업할 수 없습니다. 먼저 복원하세요',
   conversationCantSee: '이 세션에서는 이 항목을 볼 수 없습니다. 프로젝트에 속한 항목은 같은 프로젝트의 세션에 넣어야 합니다',
-  serviceUsesMcp: '외부 서비스는 MCP 도구로 Space에 접근합니다',
+  serviceUsesMcp: '외부 서비스는 MCP 도구로 라이브러리에 접근합니다',
   materialTextOnly: (p) => `.txt, .md 문서와 .srt, .vtt 자막의 텍스트만 읽을 수 있습니다: ${p.fileName}`,
   materialTooLarge: (p) => `${p.fileName} 파일은 ${p.bytes}바이트로 자료 한도 ${p.limit}바이트를 초과합니다`,
   afterMaterial: (p) => `자료를 추가한 뒤: ${p.reason}`,

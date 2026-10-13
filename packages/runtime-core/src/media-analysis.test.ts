@@ -13,8 +13,8 @@ function floats(values: number[]): Buffer {
   return buffer;
 }
 
-describe('峰值与时间的换算', () => {
-  it('按格取最大绝对振幅；采样可以从任意字节处切开', () => {
+describe('peak and time conversion', () => {
+  it('takes the maximum absolute amplitude per cell; samples can be split at any byte', () => {
     const reducer = new PeakReducer(8, 2);
     const bytes = floats([0.1, -0.5, 0.2, 0, 1.5, 0.25, -0.75, 0.1, 0.3]);
     reducer.push(bytes.subarray(0, 7));
@@ -23,13 +23,13 @@ describe('峰值与时间的换算', () => {
     expect([...reducer.finish()]).toEqual([128, 255, 77]);
   });
 
-  it('超过上限的格丢掉', () => {
+  it('cells over the limit are dropped', () => {
     const reducer = new PeakReducer(1, 1, 2);
     reducer.push(floats([0.5, 0.5, 0.5, 0.5]));
     expect(reducer.finish().length).toBe(2);
   });
 
-  it('长素材降低峰值密度，总格数不超过上限', () => {
+  it('long media lowers peak density so the total cell count stays within the limit', () => {
     expect(peaksRate(null)).toBe(50);
     expect(peaksRate(60)).toBe(50);
     expect(peaksRate(4 * 3600)).toBe(Math.floor(MAX_PEAKS / (4 * 3600)));
@@ -37,7 +37,7 @@ describe('峰值与时间的换算', () => {
     expect(peaksRate(1e9)).toBe(1);
   });
 
-  it('缩略图时间按 0.1 秒取整，留在素材之内', () => {
+  it('thumbnail time is rounded to 0.1 seconds and stays within the media', () => {
     expect(thumbnailMillis(1.234, 10)).toBe(1200);
     expect(thumbnailMillis(1.26, 10)).toBe(1300);
     expect(thumbnailMillis(-3, 10)).toBe(0);
@@ -46,7 +46,7 @@ describe('峰值与时间的换算', () => {
     expect(thumbnailMillis(1, 0.02)).toBe(0);
   });
 
-  it('缓存目录名只接受 sha256 摘要', () => {
+  it('cache directory names accept only sha256 digests', () => {
     expect(cacheKeyOf(`sha256:${'a'.repeat(64)}`)).toBe('a'.repeat(64));
     for (const bad of ['sha256:../../etc', `sha256:${'A'.repeat(64)}`, 'md5:abc', `sha256:${'a'.repeat(64)}/x`])
       expect(() => cacheKeyOf(bad)).toThrow(RpcError);
@@ -63,7 +63,7 @@ const hasFfmpeg = (() => {
 })();
 if (!hasFfmpeg) console.warn('跳过媒体分析的 ffmpeg 测试：没有 ffmpeg');
 
-describe.skipIf(!hasFfmpeg)('媒体分析（真实 ffmpeg）', () => {
+describe.skipIf(!hasFfmpeg)('media analysis (real ffmpeg)', () => {
   let dir: string;
   let root: string;
   let cacheDir: string;
@@ -126,7 +126,7 @@ describe.skipIf(!hasFfmpeg)('媒体分析（真实 ffmpeg）', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('峰值：每秒 50 格，有声的部分约半幅、静音的部分是 0；结果写进按摘要分的缓存', async () => {
+  it('peaks: 50 cells per second, voiced parts about half amplitude, silent parts 0; results are written to a cache keyed by digest', async () => {
     const result = await analysis().peaks({ root, file: 'clip.mov', record: record({ mediaType: 'video/quicktime' }) });
     expect(result.status).toBe('ready');
     const { binsPerSecond, peaks } = result as Extract<MediaPeaks, { status: 'ready' }>;
@@ -140,13 +140,13 @@ describe.skipIf(!hasFfmpeg)('媒体分析（真实 ffmpeg）', () => {
     expect(cached).toEqual(result);
   });
 
-  it('有缓存时不再运行 ffmpeg', async () => {
+  it('does not run ffmpeg again when cached', async () => {
     const broken = analysis({ ffmpeg: async () => ({ command: path.join(dir, 'no-ffmpeg'), env: process.env }) });
     const result = await broken.peaks({ root, file: 'clip.mov', record: record({ mediaType: 'video/quicktime' }) });
     expect(result.status).toBe('ready');
   });
 
-  it('没算完先回 pending，算完之后同一个请求拿到结果', async () => {
+  it('returns pending before the computation finishes; after it finishes, the same request gets the result', async () => {
     const slow = analysis({ peaksWaitMs: 0 });
     const source = { root, file: 'clip.mov', record: record({ mediaType: 'video/quicktime', contentHash: `sha256:${'2'.repeat(64)}` }) };
     expect(await slow.peaks(source)).toEqual({ status: 'pending', retryAfterMs: expect.any(Number) });
@@ -158,12 +158,12 @@ describe.skipIf(!hasFfmpeg)('媒体分析（真实 ffmpeg）', () => {
     throw new Error('峰值一直没有算完');
   });
 
-  it('素材没有声音时直接回 no-audio', async () => {
+  it('returns no-audio directly when the media has no sound', async () => {
     const result = await analysis().peaks({ root, file: 'clip.mov', record: record({ mediaType: 'video/quicktime', audio: undefined }) });
     expect(result).toEqual({ status: 'no-audio' });
   });
 
-  it('缩略图：小 JPEG，时间取整并留在素材之内，写进缓存', async () => {
+  it('thumbnail: small JPEG, time rounded and kept within the media, written to the cache', async () => {
     const thumbnail = await analysis().thumbnail({ root, file: 'clip.mov', record: record({ mediaType: 'video/quicktime' }) }, 9);
     expect(thumbnail.at).toBe(1.9);
     const bytes = Buffer.from(thumbnail.data, 'base64');
@@ -172,7 +172,7 @@ describe.skipIf(!hasFfmpeg)('媒体分析（真实 ffmpeg）', () => {
     expect(await fs.readFile(path.join(cacheDir, '1'.repeat(64), 'thumb-1900.jpg'))).toEqual(bytes);
   });
 
-  it('不是音视频、摘要不对、文件在来源目录之外都拒绝', async () => {
+  it('rejects files that are not audio or video, have a wrong digest, or lie outside the source directory', async () => {
     const run = async (promise: Promise<unknown>) =>
       (
         await promise.then(
@@ -189,7 +189,7 @@ describe.skipIf(!hasFfmpeg)('媒体分析（真实 ffmpeg）', () => {
     expect(await run(a.thumbnail({ root, file: path.join(dir, 'outside.mov'), record: record() }, 0))).toBe('forbidden');
   });
 
-  it('只用媒体类型对应的解复用器：改了扩展名的播放列表不会被读进来', async () => {
+  it('uses only the demuxer matching the media type: a playlist with a changed extension is not read in', async () => {
     const playlist = path.join(root, 'playlist.mp4');
     await fs.writeFile(playlist, `#EXTM3U\n#EXTINF:2,\nfile://${path.join(root, 'clip.mov')}\n`);
     const error = await analysis()
@@ -203,7 +203,7 @@ describe.skipIf(!hasFfmpeg)('媒体分析（真实 ffmpeg）', () => {
   });
 });
 
-describe.skipIf(!hasFfmpeg)('Space 缩略图的取帧（真实 ffmpeg）', () => {
+describe.skipIf(!hasFfmpeg)('Space thumbnail frame extraction (real ffmpeg)', () => {
   let dir: string;
   let root: string;
   let cacheDir: string;
@@ -235,7 +235,7 @@ describe.skipIf(!hasFfmpeg)('Space 缩略图的取帧（真实 ffmpeg）', () =>
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('视频：取 at 秒，缩到 320 宽的 JPEG；比 at 短的视频退回第一帧', async () => {
+  it('video: takes the frame at \'at\' seconds, scaled to a 320-wide JPEG; a video shorter than \'at\' falls back to the first frame', async () => {
     const frame = await analysis().fileFrame({ root, file: 'clip.mp4' }, { at: 1, width: 320 });
     expect(frame).toMatchObject({ mimeType: 'image/jpeg', width: 320, height: 180 });
     expect(imageSize(frame.data)?.dims).toEqual({ width: 320, height: 180 });
@@ -243,7 +243,7 @@ describe.skipIf(!hasFfmpeg)('Space 缩略图的取帧（真实 ffmpeg）', () =>
     expect(short).toMatchObject({ mimeType: 'image/jpeg', width: 320, height: 180 });
   });
 
-  it('图片：带透明的 PNG 输出 PNG，JPEG 输出 JPEG；太高的限在 3 倍宽之内，小图不放大', async () => {
+  it('image: transparent PNG outputs PNG, JPEG outputs JPEG; overly tall images are limited to 3 times the width; small images are not enlarged', async () => {
     const alpha = await analysis().fileFrame({ root, file: 'alpha.png' }, { at: 0, width: 320 });
     expect(alpha).toMatchObject({ mimeType: 'image/png', width: 320, height: 180 });
     expect(alpha.data.subarray(1, 4).toString('latin1')).toBe('PNG');
@@ -260,7 +260,7 @@ describe.skipIf(!hasFfmpeg)('Space 缩略图的取帧（真实 ffmpeg）', () =>
     expect(tiny.width).toBeLessThanOrEqual(63);
   });
 
-  it('按真实路径、大小与修改时间缓存：没变时不再运行 ffmpeg，文件改了重新取', async () => {
+  it('cache keyed by real path, size and modification time: ffmpeg does not run again when unchanged; re-extracts when the file changes', async () => {
     const file = path.join(root, 'changing.png');
     make(['-f', 'lavfi', '-i', 'color=c=blue:s=200x100', '-frames:v', '1'], 'changing.png');
     const first = await analysis().fileFrame({ root, file: 'changing.png' }, { at: 0, width: 320 });
@@ -276,7 +276,7 @@ describe.skipIf(!hasFfmpeg)('Space 缩略图的取帧（真实 ffmpeg）', () =>
     expect(await codeOf(analysis({ ffmpeg: noFfmpeg }).fileFrame({ root, file: 'changing.png' }, { at: 0, width: 320 }))).toBe('internal');
   });
 
-  it('不是画面的文件、改了扩展名的别的格式、来源目录之外的都拒绝', async () => {
+  it('rejects files without picture, other formats with changed extensions, and files outside the source directory', async () => {
     await fs.writeFile(path.join(root, 'notes.txt'), 'hello');
     expect(await codeOf(analysis().fileFrame({ root, file: 'notes.txt' }, { at: 0, width: 320 }))).toBe('forbidden');
     await fs.writeFile(path.join(root, 'vector.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
@@ -289,7 +289,7 @@ describe.skipIf(!hasFfmpeg)('Space 缩略图的取帧（真实 ffmpeg）', () =>
     expect(await codeOf(analysis().fileFrame({ root, file: path.join(dir, 'outside.jpg') }, { at: 0, width: 320 }))).toBe('forbidden');
   });
 
-  it('素材的帧按内容摘要缓存：缓存里有时不去找文件', async () => {
+  it('media frames are cached by content digest: when the cache has it, the file is not looked up', async () => {
     const asset = { contentHash: `sha256:${'4'.repeat(64)}`, mediaType: 'video/mp4', durationSec: 3 };
     let located = 0;
     const locate = async () => {
@@ -304,7 +304,7 @@ describe.skipIf(!hasFfmpeg)('Space 缩略图的取帧（真实 ffmpeg）', () =>
     expect(await codeOf(analysis().assetFrame({ ...asset, mediaType: 'image/png' }, 0, 320, locate))).toBe('forbidden');
   });
 
-  it('给智能体看的帧（videoFrame）：按框缩小、不放大，PNG 或 JPEG，毫秒精度并留在时长之内；按内容摘要另行缓存', async () => {
+  it('frame for agent viewing (videoFrame): scaled down to the box and not enlarged, PNG or JPEG, millisecond precision and within the duration; cached separately by content digest', async () => {
     expect(frameMillis(1.2345, 3)).toBe(1235);
     expect(frameMillis(10, 3)).toBe(2950);
     expect(frameMillis(-1, null)).toBe(0);
@@ -326,7 +326,7 @@ describe.skipIf(!hasFfmpeg)('Space 缩略图的取帧（真实 ffmpeg）', () =>
     ).toBe('forbidden');
   });
 
-  it('imageSize 读 PNG 与 JPEG 的尺寸，别的不认', async () => {
+  it('imageSize reads PNG and JPEG dimensions and recognizes no other formats', async () => {
     expect(imageSize(await fs.readFile(path.join(root, 'alpha.png')))).toEqual({
       mimeType: 'image/png',
       dims: { width: 640, height: 360 },

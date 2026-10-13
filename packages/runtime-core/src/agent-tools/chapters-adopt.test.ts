@@ -66,7 +66,7 @@ const source = {
   ],
 };
 
-describe.skipIf(!engine || !ffmpeg || !editorWasmAvailable())('chapters_adopt（终端目录，真实引擎）', () => {
+describe.skipIf(!engine || !ffmpeg || !editorWasmAvailable())('chapters_adopt (terminal catalog, real engine)', () => {
   let fixtures: string;
   let clip: string;
   let dir: string;
@@ -160,14 +160,14 @@ describe.skipIf(!engine || !ffmpeg || !editorWasmAvailable())('chapters_adopt（
     return { videoId, assetId };
   }
 
-  it('注册：MCP 工具清单与风险，与 edits_apply 同级', async () => {
+  it('registration: MCP tool list and risk, on the same level as edits_apply', async () => {
     expect(TOOL_RISK.chapters_adopt).toBe(TOOL_RISK.edits_apply);
     expect(MCP_SERVICE_TOOL_NAMES).toContainEqual({ name: 'chapters_adopt', title: 'Adopt source chapters', effect: 'mutation' });
     const { tools } = await client.request('catalog.list', {});
     expect(tools.map((t) => t.name)).toContain('chapters_adopt');
   });
 
-  it('来源章节吸附到转写：matched、ambiguous、unanchored；dryRun 不改视频，提交是一笔 setChapters', async () => {
+  it('source chapters snap to the transcript: matched, ambiguous, unanchored; dryRun does not change the video, commit is one setChapters edit', async () => {
     const { videoId, assetId } = await talkVideo({ provenance: { origin: 'link-import', source } });
     const before = video(videoId).revision;
 
@@ -205,7 +205,7 @@ describe.skipIf(!engine || !ffmpeg || !editorWasmAvailable())('chapters_adopt（
     expect(chapters(videoId)).toEqual([{ frame: 0, label: 'Only' }]);
   });
 
-  it('落在剪口里的章节标 offTimeline、记 unanchored，落到剪口之后的片段起点', async () => {
+  it('chapters falling inside a cut are marked offTimeline and recorded as unanchored; chapters falling after a cut snap to the start of the clip after it', async () => {
     const { videoId, assetId } = await talkVideo({ provenance: { origin: 'link-import', source } });
     await ok('edits_apply', {
       video: videoId,
@@ -224,7 +224,7 @@ describe.skipIf(!engine || !ffmpeg || !editorWasmAvailable())('chapters_adopt（
     expect(plan.sourceChapters).toMatchObject({ matched: 1, ambiguous: 1, unanchored: 2 });
   });
 
-  it('显式大纲优先于来源；没有转写时不吸附', async () => {
+  it('an explicit outline takes priority over the source; no snapping without a transcript', async () => {
     const { videoId } = await talkVideo({ transcript: false });
     const plan = await ok('chapters_adopt', { video: videoId, outline: '0:00 开场\n0:09 演示\n0:20 问答', dryRun: true });
     expect(plan.chapters).toEqual([
@@ -236,7 +236,7 @@ describe.skipIf(!engine || !ffmpeg || !editorWasmAvailable())('chapters_adopt（
     expect(plan.notes).toEqual(expect.arrayContaining([expect.stringContaining('has no transcript')]));
   });
 
-  it('拒绝：没有来源章节（NO_SOURCE_CHAPTERS）、素材不在时间线上（ASSET_NOT_PLACED）', async () => {
+  it('rejects: no source chapters (NO_SOURCE_CHAPTERS), media not on the timeline (ASSET_NOT_PLACED)', async () => {
     const plain = await talkVideo({});
     expect(await code('chapters_adopt', { video: plain.videoId })).toBe('NO_SOURCE_CHAPTERS');
     expect(await code('chapters_adopt', { video: plain.videoId, asset: plain.assetId })).toBe('NO_SOURCE_CHAPTERS');

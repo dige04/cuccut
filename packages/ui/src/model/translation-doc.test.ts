@@ -36,9 +36,9 @@ const speech = {
   ],
 };
 
-describe.skipIf(!editorWasmAvailable())('原文的句子与指纹（字幕与翻译核心的规则，经 editor-wasm）', () => {
+describe.skipIf(!editorWasmAvailable())('source sentences and fingerprints (subtitle and translation core rules, via editor-wasm)', () => {
   // The fingerprint is computed by the core over the same body; if the rules change, this test goes red.
-  it('按停顿 ≥ 1.8 秒、换说话人、句末标点断句，分号不断', () => {
+  it('splits sentences at pauses of ≥ 1.8 seconds, speaker changes, and sentence-final punctuation; semicolons do not split', () => {
     const expected = [
       { id: 's-w1', wordIds: ['w1', 'w2', 'w3'], text: 'Hello world; again.', fingerprint: '3:w1:w3:2lr52qv73aau9' },
       { id: 's-w4', wordIds: ['w4', 'w6', 'w7'], text: 'This works fine', fingerprint: '3:w4:w7:3dwdwn9n9zq56' },
@@ -48,25 +48,25 @@ describe.skipIf(!editorWasmAvailable())('原文的句子与指纹（字幕与翻
     expect(speechSentences(speech)).toEqual(expected);
   });
 
-  it('正文里存下的句子不参与', () => {
+  it('sentences stored in the body do not take part', () => {
     const stored = { ...speech, sentences: [{ id: 'S1', first: 'w1', last: 'w10' }] };
     expect(speechSentences(stored)!.map((s) => s.id)).toEqual(['s-w1', 's-w4', 's-w8', 's-w9']);
   });
 
-  it('改了字指纹就变，隐藏的词改了不变', () => {
+  it('fingerprint changes when text is edited, not when hidden words change', () => {
     const edit = (id: string, patch: object) => ({ ...speech, words: speech.words.map((w) => (w.id === id ? { ...w, ...patch } : w)) });
     const fingerprint = (body: unknown) => speechSentences(body)!.find((s) => s.id === 's-w4')!.fingerprint;
     expect(fingerprint(edit('w6', { text: 'worked' }))).not.toBe('3:w4:w7:3dwdwn9n9zq56');
     expect(fingerprint(edit('w5', { text: 'uh' }))).toBe('3:w4:w7:3dwdwn9n9zq56');
   });
 
-  it('不是转写、或转写不合格式（词没有源时间）时 null', () => {
+  it('null when not a transcription, or the transcription is malformed (words lack source times)', () => {
     expect(speechSentences({ schema: 'cuccut.caption/1', cues: [] })).toBeNull();
     expect(speechSentences(null)).toBeNull();
     expect(speechSentences({ schema: 'cuccut.speech/1', words: [{ id: 'x', text: 'a' }] })).toBeNull();
   });
 
-  it('译文的 textHash 是 SHA-256', async () => {
+  it('translation textHash is SHA-256', async () => {
     expect(await sha256Hex('Bonjour le monde.')).toBe('4178c4d4c2fd95163ebbe7eca64d886ca5e6f69a9c1f51d0760ac80207a343e6');
   });
 });
@@ -99,8 +99,8 @@ function translation(units: TranslationUnit[]): TranslationBody {
   };
 }
 
-describe('原文与译文逐句配对', () => {
-  it('按转写的句子次序；原句没了的排在前一个单元后面；新出现的句子列为未翻译', () => {
+describe('source and translation are paired sentence by sentence', () => {
+  it('in transcription sentence order; units whose source sentence is gone are placed after the previous unit; newly appearing sentences are listed as untranslated', () => {
     const sentences = [sentence('s1', '一'), sentence('s3', '三'), sentence('s4', '四', 'fp-new')];
     const body = translation([
       unit('s0', 'zero'),
@@ -121,7 +121,7 @@ describe('原文与译文逐句配对', () => {
     expect(pairStats(rows)).toEqual({ sentences: 3, untranslated: 1, stale: 2, gone: 2 });
   });
 
-  it('状态的先后与 dub.ts 相同：标了过期 > 原句没了 > 原句改过 > 没有译文', () => {
+  it('status precedence matches dub.ts: marked stale > source gone > source edited > no translation', () => {
     expect(unitState(unit('s1', 'x', { status: 'stale' }), null)).toBe('marked-stale');
     expect(unitState(unit('s1', 'x'), null)).toBe('sentence-gone');
     expect(unitState(unit('s1', ''), sentence('s1', '一', 'other'))).toBe('source-changed');
@@ -132,17 +132,17 @@ describe('原文与译文逐句配对', () => {
     expect(unitState(null, sentence('s1', '一'))).toBe('untranslated');
   });
 
-  it('只认 /2 的正文', () => {
+  it('only counts the /2 body', () => {
     expect(readTranslation(translation([unit('s1', 'one')]))?.units).toHaveLength(1);
     expect(readTranslation({ schema: 'cuccut.translation/1', units: [] })).toBeNull();
     expect(readTranslation({ ...translation([]), units: [{ id: 'x' }] })).toBeNull();
   });
 });
 
-describe('就地改一句译文', () => {
+describe('edits one translation sentence in place', () => {
   const sentences = [sentence('s1', '一'), sentence('s2', '二', 'fp-new', ['s2', 's2b']), sentence('s3', '三')];
 
-  it('改 naturalText、重算 textHash、记为 reviewed；文字没变时不写', async () => {
+  it('updates naturalText, recomputes textHash, marks as reviewed; not written when the text is unchanged', async () => {
     const body = translation([unit('s1', 'one'), unit('s2', 'two'), unit('s3', 'three')]);
     const rows = pairRows(sentences, body);
     expect(await editUnit(body, sentences, rows[0]!, ' one ')).toBeNull();
@@ -154,7 +154,7 @@ describe('就地改一句译文', () => {
     expect(result!.body.sourceBasis).toBe(body.sourceBasis);
   });
 
-  it('原句改过的：对着现在的原文改，指纹与词成员换成现在这一句的', async () => {
+  it('source edited: edits against the current source, and fingerprint and word members are replaced with those of the current sentence', async () => {
     const body = translation([unit('s1', 'one'), unit('s2', 'two'), unit('s3', 'three')]);
     const rows = pairRows(sentences, body);
     expect(rows[1]!.state).toBe('source-changed');
@@ -164,7 +164,7 @@ describe('就地改一句译文', () => {
     expect(unitState(result!.unit, sentences[1]!)).toBe('ok');
   });
 
-  it('有字幕显示改写的改改写，自然译文不动', async () => {
+  it('with subtitle display, the rewritten text is edited; natural translation is untouched', async () => {
     const body = translation([unit('s1', 'one', { displayRewrite: { text: 'One', reason: 'width', reviewed: false } })]);
     const rows = pairRows([sentences[0]!], body);
     const result = await editUnit(body, [sentences[0]!], rows[0]!, 'Uno');
@@ -173,7 +173,7 @@ describe('就地改一句译文', () => {
     expect(result!.unit.alignment!.textHash).toBe('sha256:old');
   });
 
-  it('还没有译文的句子新建一个单元，插在前面最近一句的后面；原句没了的不让改', async () => {
+  it('a sentence with no translation yet gets a new unit inserted after the nearest preceding sentence; sentences whose source is gone cannot be edited', async () => {
     const body = translation([unit('s1', 'one'), unit('s0', 'gone'), unit('s3', 'three')]);
     const rows = pairRows(sentences, body);
     const fresh = rows.find((r) => r.key === 's:s2')!;
@@ -187,10 +187,10 @@ describe('就地改一句译文', () => {
   });
 });
 
-describe('标为过期与去掉过期标记', () => {
+describe('marking as stale and clearing the stale mark', () => {
   const sentences = [sentence('s1', '一'), sentence('s2', '二', 'fp-new', ['s2', 's2b']), sentence('s3', '三')];
 
-  it('标为过期只改状态；已经标了的、没有单元的、原句没了的不写', () => {
+  it('marking as stale only changes the status; units already marked, with no unit, or whose source is gone are not written', () => {
     const body = translation([unit('s1', 'one'), unit('s0', 'gone'), unit('s3', 'three', { status: 'stale' })]);
     const rows = pairRows(sentences, body);
     const result = markUnit(body, rows[0]!, true);
@@ -202,7 +202,7 @@ describe('标为过期与去掉过期标记', () => {
     expect(markUnit(body, rows.find((r) => r.key === 't-s0')!, true)).toBeNull();
   });
 
-  it('去掉标记就是认下现在的译文：记为 reviewed；原句改过的换成现在这一句的指纹与词，不再算过期', () => {
+  it('clearing the mark accepts the current translation: marked as reviewed; if the source was edited, fingerprint and words are replaced with the current sentence\'s, and it no longer counts as stale', () => {
     const body = translation([unit('s1', 'one', { status: 'stale' }), unit('s2', 'two', { status: 'stale' }), unit('s3', 'three')]);
     const rows = pairRows(sentences, body);
     const marked = markUnit(body, rows[0]!, false)!;
@@ -218,7 +218,7 @@ describe('标为过期与去掉过期标记', () => {
     expect(markUnit(body, rows[2]!, false)).toBeNull();
   });
 
-  it('批量重译的范围：过期的与还没有译文的', () => {
+  it('batch retranslation scope: stale ones and ones with no translation yet', () => {
     const body = translation([unit('s1', ' '), unit('s3', 'three')]);
     const rows = pairRows([...sentences, sentence('s4', '四')], translation([...body.units, unit('s4', 'four', { status: 'stale' })]));
     expect(rows.filter(needsTranslation).map((r) => r.key)).toEqual(['t-s1', 's:s2', 't-s4']);
@@ -230,11 +230,11 @@ describe('标为过期与去掉过期标记', () => {
  * The UI checks each sentence against the sentences and fingerprints it derives itself, and every one should come out normal, since both sides use the same core rules. The transcript contains a semicolon, pauses of 1.5 and 1.9 seconds,
  * hidden words and a speaker change. The sample is verified by speech-worker.test.ts in packages/jobs against a real Worker (rewritten when `CUCCUT_WRITE_FIXTURES=1`).
  */
-describe.skipIf(!editorWasmAvailable())('Speech Worker 写出的译文在界面里核对', () => {
+describe.skipIf(!editorWasmAvailable())('translations written by the Speech Worker are checked in the UI', () => {
   const translation = readTranslation(workerSample.translation)!;
   const sentences = speechSentences(workerSample.speech)!;
 
-  it('每一句都配上译文，状态正常', () => {
+  it('every sentence has a translation, status is normal', () => {
     expect(translation).not.toBeNull();
     expect(sentences.map((s) => s.id)).toEqual(['s-w1', 's-w11', 's-w17', 's-w21', 's-w25', 's-w28']);
     const rows = pairRows(sentences, translation);
@@ -242,7 +242,7 @@ describe.skipIf(!editorWasmAvailable())('Speech Worker 写出的译文在界面�
     expect(pairStats(rows)).toEqual({ sentences: 6, untranslated: 0, stale: 0, gone: 0 });
   });
 
-  it('改了一句原文的字：只有那一句过期；就地改过译文后又正常', async () => {
+  it('a source sentence\'s text is changed: only that sentence becomes stale; after editing its translation in place it is normal again', async () => {
     const speech = {
       ...workerSample.speech,
       words: workerSample.speech.words.map((w) => (w.id === 'w19' ? { ...w, text: ' mix' } : w)),

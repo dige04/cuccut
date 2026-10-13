@@ -18,8 +18,8 @@ const entry = (id: string, patch: Partial<SpaceEntry> = {}, trashedAt: string | 
   user: { favorite: false, displayName: null, trashedAt },
 });
 
-describe('一次运行的产物', () => {
-  it('按任务 ID 取 Space 条目：不列回收站、占位与视频，按名字排', () => {
+describe('outputs of one run', () => {
+  it('gets Space entries by task ID: excludes trash, placeholders and videos; sorted by name', () => {
     const list = [
       entry('b'),
       entry('a', { kind: 'document', name: 'a.txt' }),
@@ -33,7 +33,7 @@ describe('一次运行的产物', () => {
     expect(entriesOfJob(list, [])).toEqual([]);
   });
 
-  it('第二行写种类、大小、时长与所在目录；都在一个目录时给出它', () => {
+  it('the second line gives kind, size, duration and folder; when all are in one folder, that folder is given', () => {
     const audio = entry('voice', { kind: 'audio', name: 'voice.mp3', size: 1536, media: { durationSec: 75 } });
     expect(outputDetail(audio)).toBe('音频 · 1.5 KB · 1:15 · ~/Movies/CucCut');
     expect(outputsDir([entry('a'), entry('b')])).toBe('/Users/me/Movies/CucCut');
@@ -42,8 +42,8 @@ describe('一次运行的产物', () => {
   });
 });
 
-describe('接着做', () => {
-  it('文稿与字幕：翻译字幕只收字幕，生成语音两样都收；都能以此新建视频', () => {
+describe('continue', () => {
+  it('scripts and subtitles: translated subtitles accept only subtitles, generated speech accepts both; both can create a new video from it', () => {
     expect(followUps({ kind: 'subtitle' }).map((f) => f.id)).toEqual(['translate-subtitles', 'synthesize-speech', 'new-movie']);
     expect(followUps({ kind: 'document' }).map((f) => [f.id, f.kind])).toEqual([
       ['synthesize-speech', 'tool'],
@@ -51,7 +51,7 @@ describe('接着做', () => {
     ]);
   });
 
-  it('媒体文件以此新建视频；写进视频的结果先打开编辑，再按产出它的工具接着做', () => {
+  it('media files create a new video from it; results written into a video open in the editor first, then continue with the tool that produced them', () => {
     expect(followUps({ kind: 'audio' }).map((f) => f.label)).toEqual(['以此新建视频']);
     expect(followUps({ kind: 'image' }).map((f) => f.id)).toEqual(['new-movie']);
     expect(followUps({ kind: 'video' }, 'transcribe').map((f) => f.id)).toEqual(['open-movie', 'translate-subtitles', 'dub']);
@@ -60,7 +60,7 @@ describe('接着做', () => {
     expect(followUps({ kind: 'video' }, 'dub').map((f) => f.id)).toEqual(['open-movie']);
   });
 
-  it('以此新建视频做不了时说原因', () => {
+  it('when creating a new video from it isn\'t possible, states the reason', () => {
     const user = { favorite: false, displayName: null, trashedAt: null };
     expect(newMovieBlock({ kind: 'subtitle', status: null, user }, '/a.srt')).toMatch(/配上视频或音频/);
     expect(newMovieBlock({ kind: 'audio', status: null, user }, '/a.mp3')).toBeNull();
@@ -70,7 +70,7 @@ describe('接着做', () => {
     expect(newMovieBlock({ kind: 'image', status: null, user }, null)).toMatch(/找不到/);
   });
 
-  it('交给 Agent 预填的话按种类给，没有对应时给一句通用的', () => {
+  it('the prefilled message handed to the agent is given per kind; when none matches, a generic sentence is given', () => {
     expect(handoverText({ kind: 'subtitle' })).toContain('翻译');
     expect(handoverText({ kind: 'export' })).toContain('字幕');
     expect(handoverText({ kind: 'package' })).toBe('接着处理这个结果。');

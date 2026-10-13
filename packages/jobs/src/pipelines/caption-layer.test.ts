@@ -91,8 +91,8 @@ function unit(id: string, words: string[], text: string, extra: Partial<CueTrans
   return { id, naturalText: text, alignment: { sourceWordIds: words }, status: 'draft', ...extra };
 }
 
-describe('译文 → 字幕条（与编辑器的 translationCues 相同）', () => {
-  it('时间取原句成员词的时间（素材时钟）；过期与空的单元不出字幕', () => {
+describe('translation → caption cues (same as the editor\'s translationCues)', () => {
+  it('timing taken from the member words of the source sentence (media clock); stale and empty units produce no subtitles', () => {
     const cues = translationCues(speech, [
       unit('t-s-w1', ['w1', 'w2'], 'It is fine today.'),
       unit('t-s-w3', ['w3', 'w4'], "Let's begin."),
@@ -105,7 +105,7 @@ describe('译文 → 字幕条（与编辑器的 translationCues 相同）', () 
     ]);
   });
 
-  it('改写的显示文本优先；没有对齐、一个词也找不到的单元不出', () => {
+  it('a rewritten display text takes priority; a unit with no alignment and no word found produces nothing', () => {
     const cues = translationCues(speech, [
       unit('t-s-w1', ['w1', 'w2'], 'It is fine today.', { displayRewrite: { text: 'Fine today.' } }),
       unit('t-s-w3', ['w3', 'w4'], "Let's begin.", { alignment: null }),
@@ -114,7 +114,7 @@ describe('译文 → 字幕条（与编辑器的 translationCues 相同）', () 
     expect(cues.map((c) => [c.id, c.text])).toEqual([['q-t-s-w1', 'Fine today.']]);
   });
 
-  it('长译文按显示宽度切成几条，时间按宽度插值，不跨出原句', () => {
+  it('a long translation is split into several cues by display width, times interpolated by width, never crossing the source sentence', () => {
     const long = 'This is a rather long translated sentence, which certainly needs to wrap onto more than one caption line.';
     const cues = translationCues(speech, [unit('t-s-w1', ['w1', 'w2'], long)]);
     expect(cues.length).toBeGreaterThan(1);
@@ -125,7 +125,7 @@ describe('译文 → 字幕条（与编辑器的 translationCues 相同）', () 
     expect(cues.map((c) => c.text).join(' ')).toBe(long);
   });
 
-  it('中日韩的译文在全角标点后断开，按全角宽度计；拼回去与原文相同', () => {
+  it('CJK translations break after fullwidth punctuation, measured in fullwidth width; joining back yields the same as the source', () => {
     for (const text of [
       '今天天气非常好，我们一起去公园散步吧，然后在湖边的小餐馆里吃一顿简单的午饭，下午再慢慢走回家休息。',
       '今日はとても良い天気なので、みんなで公園を散歩して、湖のそばの小さなお店で昼ごはんを食べましょう。',
@@ -139,7 +139,7 @@ describe('译文 → 字幕条（与编辑器的 translationCues 相同）', () 
     }
   });
 
-  it('不用空格也没有标点的文字（泰文）按显示宽度硬切', () => {
+  it('text with no spaces and no punctuation (Thai) is hard-split by display width', () => {
     const text = 'สวัสดีครับวันนี้อากาศดีมากเราจะไปเที่ยวทะเลด้วยกันแล้วกินข้าวเที่ยงที่ร้านริมหาดก่อนกลับบ้านตอนเย็น';
     const cues = translationCues(speech, [unit('t-s-w1', ['w1', 'w2'], text)]);
     expect(cues.length).toBeGreaterThan(1);
@@ -148,18 +148,18 @@ describe('译文 → 字幕条（与编辑器的 translationCues 相同）', () 
   });
 });
 
-describe('改一句译文 → 只换字幕里这一句的几条（与编辑器的 retextCaption 相同）', () => {
+describe('editing one sentence\'s translation → only that sentence\'s cues in the subtitles are replaced (same as the editor\'s retextCaption)', () => {
   const units = [unit('t-s-w1', ['w1', 'w2'], 'Fine.'), unit('t-s-w10', ['w3', 'w4'], 'Go.')];
   const body = captionBody(translationCues(speech, units), speech.speakers);
 
-  it('字幕条的归属按边界判：t-s-w1 不吞 t-s-w10', () => {
+  it('cue ownership is decided by boundaries: t-s-w1 does not swallow t-s-w10', () => {
     expect(cueOfUnit('q-t-s-w1', 't-s-w1')).toBe(true);
     expect(cueOfUnit('q-t-s-w1~3', 't-s-w1')).toBe(true);
     expect(cueOfUnit('q-t-s-w10', 't-s-w1')).toBe(false);
     expect(cueOfUnit('q-t-s-w1-2', 't-s-w1')).toBe(false);
   });
 
-  it('原处换掉，别的条（含手改过的字）不动', () => {
+  it('replaced in place; other cues (including hand-edited text) are untouched', () => {
     const edited = { ...body, cues: (body.cues as Array<Record<string, unknown>>).map((c) => (c.id === 'q-t-s-w10' ? { ...c, text: 'Go!!' } : c)) };
     const fresh = translationCues(speech, [unit('t-s-w1', ['w1', 'w2'], 'It is a very fine day today, my friends, a truly lovely one.')]);
     const next = retextCaption(edited, 't-s-w1', fresh, speech.speakers);
@@ -170,14 +170,14 @@ describe('改一句译文 → 只换字幕里这一句的几条（与编辑器�
     expect(next.schema).toBe('cuccut.caption/1');
   });
 
-  it('改成空的就去掉这一句；原来没有的按时间插进去', () => {
+  it('cleared to empty removes that sentence; a sentence that had none is inserted at its time', () => {
     const removed = retextCaption(body, 't-s-w1', [], speech.speakers);
     expect((removed.cues as Array<{ id: string }>).map((c) => c.id)).toEqual(['q-t-s-w10']);
     const back = retextCaption(removed, 't-s-w1', translationCues(speech, [units[0]!]), speech.speakers);
     expect((back.cues as Array<{ id: string }>).map((c) => c.id)).toEqual(['q-t-s-w1', 'q-t-s-w10']);
   });
 
-  it('Worker 的字幕条按单元取出、换成秒，编号与 workerCaptionBody 相同；字幕正文换回自己的刻度', () => {
+  it('Worker caption cues are taken per unit and converted to seconds, numbering same as workerCaptionBody; the caption body is converted back to its own scale', () => {
     const worker = {
       timescale: 48_000,
       cues: [
@@ -209,7 +209,7 @@ const doc = (id: string, kind: string, extra: Partial<DocumentRecord> = {}): Doc
   ...extra,
 });
 
-describe('planCaptionLayer：智能体的 captions_create', () => {
+describe('planCaptionLayer: the agent\'s captions_create', () => {
   const translationBody = (units: unknown[]) => ({
     schema: 'cuccut.translation/2',
     language: 'en',
@@ -252,7 +252,7 @@ describe('planCaptionLayer：智能体的 captions_create', () => {
     return result;
   }
 
-  it('转写：原文字幕层放进空着的字幕轨，没有时新建一条', async () => {
+  it('transcription: the source caption layer goes into an empty subtitle track; if none, a new one is created', async () => {
     const created = await plan(sequence([video('a', 0, 90)]), { kind: 'speech', documentId: 'speech' });
     expect(types(created)).toEqual(['addTrack', 'putDocument', 'insertItems']);
     expect(created).toMatchObject({ cueCount: 2, enabled: true, existing: null });
@@ -264,14 +264,14 @@ describe('planCaptionLayer：智能体的 captions_create', () => {
     expect(free.operations[1]).toMatchObject({ items: [{ trackId: 's1', scopeItemIds: ['a'] }] });
   });
 
-  it('转写已有字幕层：不覆盖，新的一层停用着放上去，existing 指出已有的那层', async () => {
+  it('transcription with an existing caption layer: no overwrite, the new layer is placed disabled, existing points to the existing layer', async () => {
     const seq = sequence([video('a', 0, 90), caption('o1', 's1', 'orig')], tracks);
     const again = await plan(seq, { kind: 'speech', documentId: 'speech' });
     expect(again).toMatchObject({ enabled: false, existing: { documentId: 'orig', itemIds: ['o1'] } });
     expect(again.operations.at(-1)).toMatchObject({ items: [{ enabled: false }] });
   });
 
-  it('译文：按句级对齐切条，新建这门语言的字幕轨；只看译文时拿下配对的原文', async () => {
+  it('translation: cut cues by sentence-level alignment, creating a new subtitle track for this language; when viewing translation only, the paired source is removed', async () => {
     const seq = sequence([video('a', 0, 90), caption('o1', 's1', 'orig')], tracks);
     const created = await plan(seq, translation(false));
     expect(types(created)).toEqual(['addTrack', 'putDocument', 'updateItem', 'insertItems']);
@@ -291,7 +291,7 @@ describe('planCaptionLayer：智能体的 captions_create', () => {
     expect(created.operations[2]).toMatchObject({ type: 'updateItem', itemId: 'o1', enabled: false });
   });
 
-  it('双语：译文与原文共用一份新建的样式，原文留在画面上', async () => {
+  it('bilingual: translation and source share a newly created style, the source stays on screen', async () => {
     const seq = sequence([video('a', 0, 90), caption('o1', 's1', 'orig')], tracks);
     const created = await plan(seq, translation(true));
     expect(types(created)).toEqual(['addTrack', 'putDocument', 'putDocument', 'setCaptionStyle', 'insertItems']);
@@ -308,7 +308,7 @@ describe('planCaptionLayer：智能体的 captions_create', () => {
     expect(created.operations.some((op) => op.type === 'updateItem')).toBe(false);
   });
 
-  it('双语而没有原文字幕层：pairOriginal 时同一笔事务里先给转写建原文的一层，两层共用新建的样式；不给时只建译文', async () => {
+  it('bilingual without a source caption layer: with pairOriginal, the source\'s layer is created first in the same transaction, both layers share the new style; without it, only the translation is created', async () => {
     const seq = sequence([video('a', 0, 90)], tracks);
     const both = await planCaptionLayer(reader(), {
       videoId: 'v',
@@ -372,7 +372,7 @@ describe('planCaptionLayer：智能体的 captions_create', () => {
     expect(dup).not.toHaveProperty('original');
   });
 
-  it('同一份译文已有一层显示着：新的一层停用着放上去，不动配对的原文', async () => {
+  it('the same translation already has a layer shown: the new layer is placed disabled, the paired source is untouched', async () => {
     const seq = sequence(
       [video('a', 0, 90), caption('o1', 's1', 'orig', { enabled: false }), caption('t1', 's2', 'tcap')],
       [...tracks, track('s2', 2, 'subtitle')],
@@ -383,7 +383,7 @@ describe('planCaptionLayer：智能体的 captions_create', () => {
     expect(again.operations.at(-1)).toMatchObject({ items: [{ enabled: false }] });
   });
 
-  it('有没对齐的单元时拒绝（TRANSLATION_UNALIGNED）；素材不在时间线上、没有可显示的字幕条时不建', async () => {
+  it('rejected when there are unaligned units (TRANSLATION_UNALIGNED); not created when the media is not on the timeline or there are no displayable cues', async () => {
     const seq = sequence([video('a', 0, 90)], tracks);
     const unaligned = translationBody([aligned('t-s-w1', ['w1', 'w2'], 'Fine.'), { ...aligned('t-s-w3', [], 'Go.'), alignment: null }]);
     const error = await planCaptionLayer(reader({ trans: unaligned }), {
@@ -408,7 +408,7 @@ describe('planCaptionLayer：智能体的 captions_create', () => {
     expect(empty).toEqual({ reason: 'empty' });
   });
 
-  it('原文与样式同笔提交；译文共用已有样式时不覆盖', async () => {
+  it('source and style committed together; a translation sharing an existing style does not overwrite it', async () => {
     const style = { ...DEFAULT_CAPTION_STYLE_BODY, style: { ...(DEFAULT_CAPTION_STYLE_BODY.style as Record<string, unknown>), punct: false, y: 74, width: 65 } };
     const seq = sequence([video('a', 0, 90)], tracks);
     const made = await planCaptionLayer(reader(), { videoId: 'v', sequence: seq, documents, source: { kind: 'speech', documentId: 'speech' }, captionStyle: style });

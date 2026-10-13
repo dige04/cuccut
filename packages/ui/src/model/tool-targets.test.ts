@@ -80,13 +80,13 @@ function job(patch: Partial<JobRecord>): JobRecord {
   } as JobRecord;
 }
 
-describe('视频选择器的候选行', () => {
-  it('语言写中文名，同一种多份时记 ×N', () => {
+describe('video picker candidate rows', () => {
+  it('language is written as its Chinese name, multiple copies of the same kind are marked ×N', () => {
     expect(langsText(['en', 'en', 'ja'])).toBe('英语 ×2、日语');
     expect(langsText([null])).toBe('未知语言');
   });
 
-  it('标注：文稿 / 译文 / 配音各一枚', () => {
+  it('badges: one each for script / translation / dub', () => {
     const tags = tagsOf([
       doc({
         translations: [{ documentId: 'tr_en', language: 'en', units: 10, staleUnits: 0 }],
@@ -97,7 +97,7 @@ describe('视频选择器的候选行', () => {
     expect(tagsOf([])).toEqual([]);
   });
 
-  it('转录状态从 jobs 推：在跑、在排队、最近一次失败；之后又成功的不算失败', () => {
+  it('transcription status is derived from jobs: running, queued, most recent failure; a failure followed by a later success doesn\'t count', () => {
     expect(transcribeState('vid_1', [job({ state: 'running' })])).toBe('running');
     expect(transcribeState('vid_1', [job({ state: 'queued' })])).toBe('queued');
     expect(transcribeState('vid_1', [job({ kind: 'pipeline', pipeline: { name: 'transcribe' } as JobRecord['pipeline'], state: 'running' })])).toBe('running');
@@ -112,7 +112,7 @@ describe('视频选择器的候选行', () => {
     expect(transcribeState(null, [job({ state: 'running' })])).toBeNull();
   });
 
-  it('置灰原因：转录只拦正在转录的；要文稿的工具按转录状态说明；链接导入都能选', () => {
+  it('greyed-out reasons: transcription only blocks what\'s currently being transcribed; tools needing a script explain by transcription status; link imports are always selectable', () => {
     const none = { documents: [], indexed: true };
     expect(blockReason('transcribe', none, null)).toBeNull();
     expect(blockReason('transcribe', none, 'running')).toBe('正在转录，完成后可以重新转录');
@@ -126,7 +126,7 @@ describe('视频选择器的候选行', () => {
     expect(blockReason('link-import', none, 'running')).toBeNull();
   });
 
-  it('能选的排在前面，同组保持 Runtime 的顺序；按名字搜索；预选', () => {
+  it('selectable ones first, the same group keeps the Runtime order; search by name; preselection', () => {
     const list = [
       candidate({ entryId: 'a', videoId: 'va', name: '片花', documents: [] }),
       candidate({ entryId: 'b', videoId: 'vb', name: '访谈第一集', documents: [doc()] }),
@@ -148,7 +148,7 @@ describe('视频选择器的候选行', () => {
     expect(pick(pickerRows('dub', [list[0]!], []), null)).toBeNull();
   });
 
-  it('转录的候选不列文稿：用有文稿规则的候选补上标注与不覆盖提示', () => {
+  it('transcription candidates don\'t list scripts: candidates with script rules supply the badges and the no-overwrite hint', () => {
     const extra = documentsByEntry([candidate({ entryId: 'b', documents: [doc()] })]);
     const rows = pickerRows('transcribe', [candidate({ entryId: 'b', documents: [] })], [], '', extra);
     expect(rows[0]!.tags.map((t) => t.label)).toEqual(['文稿 · 中文']);
@@ -158,7 +158,7 @@ describe('视频选择器的候选行', () => {
   });
 });
 
-describe('写进已有视频', () => {
+describe('write into an existing video', () => {
   const row = {
     documents: [
       doc({
@@ -172,7 +172,7 @@ describe('写进已有视频', () => {
     ],
   };
 
-  it('不覆盖提示：同语言已有译文或配音时说明会新增一份', () => {
+  it('no-overwrite hint: when a translation or dub already exists in the same language, says a new one will be added', () => {
     expect(duplicateNote('translate-subtitles', row, 'en')).toBe('这个视频已有英语译文。这次会新增一份，原来的保留，用哪一份在编辑器里选。');
     expect(duplicateNote('translate-subtitles', row, 'fr')).toBeNull();
     expect(duplicateNote('dub', row, 'en')).toBe('这个视频已有英语配音。这次会新增一组，原来的保留。');
@@ -181,7 +181,7 @@ describe('写进已有视频', () => {
     expect(duplicateNote('transcribe', null)).toBeNull();
   });
 
-  it('翻译配音可选的译文：同语言多份时加「第 N 份」，标出来源文稿', () => {
+  it('translations selectable for dubbing: with multiple in the same language, adds "第 N 份" and marks the source script', () => {
     const options = translationOptions(row);
     expect(options.map((o) => o.label)).toEqual(['英语译文 第 1 份', '英语译文 第 2 份', '日语译文']);
     expect(options[0]!.sub).toBe('译自中文文稿');
@@ -189,7 +189,7 @@ describe('写进已有视频', () => {
     expect(translationOptions(null)).toEqual([]);
   });
 
-  it('目标语言去掉文稿自己的语言；文稿默认取最近的一份', () => {
+  it('target language excludes the script\'s own language; the script defaults to the most recent one', () => {
     const two = { documents: [doc({ documentId: 'd1', language: 'en' }), doc({ documentId: 'd2', language: 'zh' })] };
     expect(sourceDocument(two)?.documentId).toBe('d2');
     expect(sourceDocument(two, 'd1')?.documentId).toBe('d1');
@@ -198,7 +198,7 @@ describe('写进已有视频', () => {
     expect(targetLangs(['zh-Hans', 'en'], null)).toEqual(['zh-Hans', 'en']);
   });
 
-  it('目标语言的缺省：选过的还能选就用它；原文是英语时译成简体中文，其余译成英语', () => {
+  it('default target language: uses the previous choice if still selectable; when the source is English, translate to Simplified Chinese, otherwise to English', () => {
     expect(defaultTargetLang(['en', 'ja'], 'ja', 'zh')).toBe('ja');
     expect(defaultTargetLang(['en', 'ja'], 'ko', 'zh')).toBe('en');
     expect(defaultTargetLang(['zh-Hans', 'ja'], null, 'en-US')).toBe('zh-Hans');
@@ -207,7 +207,7 @@ describe('写进已有视频', () => {
   });
 });
 
-describe('重新转录的落点（产品设计 §5.11）', () => {
+describe('re-transcribe destination (product design §5.11)', () => {
   const row = {
     documents: [
       doc({
@@ -223,7 +223,7 @@ describe('重新转录的落点（产品设计 §5.11）', () => {
     ],
   };
 
-  it('已有文稿才有落点：新建视频在前（缺省），取代在后', () => {
+  it('destinations exist only when a script exists: create new video first (default), replace after', () => {
     expect(retargetOptions({ documents: [] })).toBeNull();
     expect(retargetOptions(null)).toBeNull();
     expect(retargetOptions(row)!.map((o) => [o.key, o.label])).toEqual([
@@ -233,7 +233,7 @@ describe('重新转录的落点（产品设计 §5.11）', () => {
     expect(newVideoName('访谈第一集')).toBe('访谈第一集 · 重新转录');
   });
 
-  it('影响卡：每种译文一行写句数，配音按语言数组；有译文才写规则；总是写可以撤销', () => {
+  it('impact card: one row per translation with its sentence count, dubs by language array; the rule is written only when translations exist; always says it can be undone', () => {
     const im = replaceImpact(row);
     expect(im.translations).toEqual(['英语 · 62 句', '日语 · 58 句']);
     expect(im.dubs).toEqual(['英语 · 2 组 · 句子译文不变的保留，标可能不一致']);
@@ -245,8 +245,8 @@ describe('重新转录的落点（产品设计 §5.11）', () => {
   });
 });
 
-describe('Space 视频条目的转录动作（产品设计 §4.4）', () => {
-  it('转录中、排队、源文件缺失不给；失败给重试；有文稿重新转录，没有给转录；不知道时不给', () => {
+describe('transcription action for Space video items (product design §4.4)', () => {
+  it('not offered while transcribing, queued, or the source file is missing; failed gives retry; with a script, re-transcribe, without one, transcribe; not offered when unknown', () => {
     expect(spaceTranscribeAction('running', true, false)).toBeNull();
     expect(spaceTranscribeAction('queued', false, false)).toBeNull();
     expect(spaceTranscribeAction(null, true, true)).toBeNull();
@@ -257,7 +257,7 @@ describe('Space 视频条目的转录动作（产品设计 §4.4）', () => {
     expect(spaceTranscribeAction(null, null, false)).toBeNull();
   });
 
-  it('重试带上最近一次失败的转录，流程任务优先；之后又成功过的不算', () => {
+  it('retry carries the most recent failed transcription, with workflow tasks preferred; a failure followed by a later success doesn\'t count', () => {
     const child = job({ jobId: 'child', state: 'failed', updatedAt: '2026-10-03T00:00:00Z' });
     const parent = job({
       jobId: 'parent',

@@ -139,8 +139,8 @@ afterEach(async () => {
   await fs.rm(dir, { recursive: true, force: true });
 });
 
-describe('新会话的默认模型', () => {
-  it('没设过：Claude Code 用 Sonnet、Codex 用第一个 -sol，界面读到的默认就是它', async () => {
+describe('default model for new sessions', () => {
+  it('unset: Claude Code uses Sonnet, Codex uses the first -sol, and the default shown in the UI is that', async () => {
     const h = await open([claude(), codex()]);
     expect(defaultOf(h, 'claude')).toBe('sonnet');
     expect(defaultOf(h, 'codex')).toBe('gpt-6-sol');
@@ -148,7 +148,7 @@ describe('新会话的默认模型', () => {
     expect((await h.createConversation({})).model).toBe('gpt-6-sol');
   });
 
-  it('其余几家：第一个 balanced，再是 Agent 标的默认，再是第一个；模型表为空时不传模型', async () => {
+  it('other providers: the first balanced, then the Agent\'s marked default, then the first; when the model table is empty no model is passed', async () => {
     const pi = new ModelsDriver('pi', [model('a'), model('b', { tier: 'balanced' }), model('c', { isDefault: true })]);
     const kimi = new ModelsDriver('kimi', [model('k1'), model('k2', { isDefault: true })]);
     const grok = new ModelsDriver('grok', [model('g1'), model('g2')]);
@@ -161,12 +161,12 @@ describe('新会话的默认模型', () => {
     expect((await h.createConversation({ driverId: 'gemini' })).model).toBeNull();
   });
 
-  it('会话草稿明确选了「Agent 默认模型」（model: null）：不传模型', async () => {
+  it('session draft explicitly chose \'Agent default model\' (model: null): no model is passed', async () => {
     const h = await open([claude()]);
     expect((await h.createConversation({ driverId: 'claude', model: null })).model).toBeNull();
   });
 
-  it('设置里选「Agent 默认模型」存成 AGENT_DEFAULT_MODEL：视图里是 null，新会话不传模型；改选具体模型照常', async () => {
+  it('choosing \'Agent default model\' in settings saves AGENT_DEFAULT_MODEL: the view shows null, and new sessions pass no model; choosing a specific model as usual works', async () => {
     const h = await open([claude()]);
     const view = await h.configureAgent({ driverId: 'claude', defaultModel: null });
     expect(view.preferences.drivers.claude?.defaultModel).toBe(AGENT_DEFAULT_MODEL);
@@ -181,7 +181,7 @@ describe('新会话的默认模型', () => {
     expect((await h.createConversation({ driverId: 'claude' })).model).toBe('opus');
   });
 
-  it('偏好文件里旧的 null 当作没设过；设过的模型从模型表里消失了：视图原样给出，新会话改用推荐模型', async () => {
+  it('an old null in the preference file is treated as unset; a model that was set but has disappeared from the model table: the view shows it as-is, and new sessions use the recommended model', async () => {
     await fs.mkdir(path.dirname(home.agentPrefsFile), { recursive: true });
     await fs.writeFile(
       home.agentPrefsFile,
@@ -199,7 +199,7 @@ describe('新会话的默认模型', () => {
     expect((await h.createConversation({ driverId: 'claude' })).model).toBe('sonnet');
   });
 
-  it('偏好设置 agent.defaultModel 只用于默认 Agent 且它自己没设过时；AGENT_DEFAULT_MODEL 表示不传模型', async () => {
+  it('the agent.defaultModel preference is used only for the default Agent when it has no setting of its own; AGENT_DEFAULT_MODEL means no model is passed', async () => {
     settings['agent.defaultModel'] = 'gpt-5.6-sol';
     const h = await open([claude(), codex()]);
     expect(defaultOf(h, 'codex')).toBe('gpt-5.6-sol');
@@ -211,7 +211,7 @@ describe('新会话的默认模型', () => {
     expect((await h.createConversation({})).model).toBeNull();
   });
 
-  it('还没用过的会话换 Agent：换成新 Agent 的默认模型（没设过就是推荐模型）', async () => {
+  it('switching Agent on an unused session: uses the new Agent\'s default model (the recommended model when unset)', async () => {
     const h = await open([claude(), codex()]);
     const conversation = await h.createConversation({ driverId: 'claude' });
     expect(conversation.model).toBe('sonnet');

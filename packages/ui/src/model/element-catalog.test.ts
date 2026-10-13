@@ -24,14 +24,14 @@ const boxOf = (key: string, size = canvas) => {
   return { cx, cy, w, h };
 };
 
-describe('元素目录', () => {
-  it('每一类的格数：贴纸 10、彩纸 10、形状 23、进度 14、计时 2、声波 10', () => {
+describe('element catalog', () => {
+  it('cell counts per category: stickers 10, confetti 10, shapes 23, progress 14, timer 2, waveform 10', () => {
     const count = (group: string) => ELEMENT_TILES.filter((tile) => tile.group === group).length;
     expect([count('sticker'), count('confetti'), count('shape'), count('progress'), count('counter'), count('wave')]).toEqual([10, 10, 23, 14, 2, 10]);
     expect(new Set(ELEMENT_TILES.map((tile) => tile.key)).size).toBe(ELEMENT_TILES.length);
   });
 
-  it('贴纸都在模板目录里，形状都画得出来', () => {
+  it('all stickers are in the template catalog, and all shapes can be drawn', () => {
     for (const tile of ELEMENT_TILES) {
       const layer = tile.layer(canvas);
       if (tile.group === 'sticker') {
@@ -43,7 +43,7 @@ describe('元素目录', () => {
     expect(SHAPE_CHOICES.every((choice) => knownShape(choice.key))).toBe(true);
   });
 
-  it('颜色按格子下标取：跳过的箭头也占一格', () => {
+  it('colors are taken by cell index: skipped arrows also occupy a cell', () => {
     expect(layerOf('shape.0.rect')).toMatchObject({ shape: { fill: '#FF4C45', stroke: '#E43A33', strokeWidth: 3 } });
     expect(layerOf('shape.1.rect')).toMatchObject({
       name: '形状 · 圆角矩形',
@@ -53,7 +53,7 @@ describe('元素目录', () => {
     expect(ELEMENT_TILES.some((tile) => tile.key.endsWith('.arrow'))).toBe(false);
   });
 
-  it('默认落位：形状宽 15% 正方，贴纸 18%；进度与声波是种类的缺省框（进度条 80%×5%，声波贴底铺满），不按款式改成方形', () => {
+  it('default placement: shapes 15% wide and square, stickers 18%; progress and waveform use the category\'s default frame (progress bar 80%×5%, waveform along the bottom full width), not changed to square by style', () => {
     expect(layerOf('shape.2.ellipse').place).toEqual({ x: 50, y: 50, w: 15 });
     expect(boxOf('shape.2.ellipse')).toEqual({ cx: 960, cy: 540, w: 288, h: 288 });
     expect(layerOf('sticker.heart').place).toEqual({ x: 50, y: 50, w: 18 });
@@ -70,7 +70,7 @@ describe('元素目录', () => {
     expect(portrait.place).toEqual({ x: 50, y: 85, w: 100 });
   });
 
-  it('进度与声波的样式都画得出来，默认色与 dB 窗取样式自己的；只有条形两款横跨两列', () => {
+  it('all progress and waveform styles can be drawn; default colors and dB windows come from each style; only the two bar styles span two columns', () => {
     expect(PROGRESS_KINDS.map((kind) => kind.key)).toEqual(Object.keys(PROGRESS_STYLES));
     expect(WAVE_KINDS.map((kind) => kind.key)).toEqual(Object.keys(WAVE_STYLES));
     // Palette names are UI copy, and the count follows the recipe (the two rainbow-border styles have none).
@@ -90,7 +90,7 @@ describe('元素目录', () => {
     expect(VISUALIZER_PEEK.every((key) => ELEMENT_TILES.some((tile) => tile.key === key))).toBe(true);
   });
 
-  it('可视化的次序：进度网格（计时两格夹在游走与游走旋转之间），再是声波', () => {
+  it('visualization order: progress grid (the two timer cells sit between the wander and wander-rotate), then waveform', () => {
     const visual = elementSections()
       .find((section) => section.key === 'visualizer')!
       .tiles.map((tile) => tile.key);
@@ -105,7 +105,7 @@ describe('元素目录', () => {
     expect(visual[16]).toBe('wave.bars');
   });
 
-  it('彩纸：十款按配方次序，铺满画面、5 秒，参数是那一款的缺省加一枚随机种子，跟配方走的发射参数不写', () => {
+  it('confetti: ten styles in recipe order, fill the frame, 5 seconds; parameters are that style\'s defaults plus one random seed; emission parameters that follow the recipe are not written', () => {
     const tiles = ELEMENT_TILES.filter((tile) => tile.group === 'confetti');
     expect(tiles.map((tile) => tile.confetti)).toEqual(CONFETTI_STYLES.map((style) => style.key));
     const tile = tiles.find((t) => t.key === 'confetti.hearts-petals')!;
@@ -123,7 +123,7 @@ describe('元素目录', () => {
     expect(normalizeConfetti(values).origin).toBeNull();
   });
 
-  it('计时是带计时读数的文字（宽 28%），长度 10 秒；进度与声波跟着整部片子', () => {
+  it('timer is text with a timing readout (28% wide), 10 seconds long; progress and waveform follow the whole film', () => {
     const counter = ELEMENT_TILES.find((tile) => tile.key === 'counter.countdown')!;
     expect(counter.seconds).toBe(10);
     expect(counter.layer(canvas)).toMatchObject({
@@ -138,7 +138,7 @@ describe('元素目录', () => {
     expect(film.every((group) => group === 'progress' || group === 'wave')).toBe(true);
   });
 
-  it('搜索：按格名或分类名', () => {
+  it('search: by cell name or category name', () => {
     expect(elementSections().map((section) => [section.key, section.tiles.length])).toEqual([
       ['sticker', 10],
       ['dynamic', 10],
@@ -165,13 +165,13 @@ describe('元素目录', () => {
   });
 });
 
-describe('英文界面', () => {
+describe('English interface', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     setLocale('zh-Hans');
   });
 
-  it('格名、色板名、分节与新建实例的名字随语言换（目录先按中文读过一次也一样）', () => {
+  it('cell names, palette names, section titles and new instance names follow the language (same even if the catalog was first read in Chinese)', () => {
     const rounded = ELEMENT_TILES.find((tile) => tile.key === 'shape.1.rect')!;
     expect(rounded.label).toBe('圆角矩形');
     vi.stubEnv('CUCCUT_LOCALE', 'en');

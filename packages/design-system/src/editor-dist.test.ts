@@ -10,7 +10,7 @@ afterAll(async () => {
 });
 
 describe('resolveDesignSystemEditorDist', () => {
-  it('CUCCUT_DESIGN_SYSTEM_EDITOR_DIST 指的目录有 index.html 时用它，没有时 null（不再往别处找）', async () => {
+  it('CUCCUT_DESIGN_SYSTEM_EDITOR_DIST: uses the directory it points to when it has index.html, null otherwise (no further searching elsewhere)', async () => {
     const built = await mkdtemp(path.join(tmpdir(), 'design-system-dist-'));
     roots.push(built);
     await writeFile(path.join(built, 'index.html'), '<!doctype html>');
@@ -20,7 +20,7 @@ describe('resolveDesignSystemEditorDist', () => {
     expect(resolveDesignSystemEditorDist({ CUCCUT_DESIGN_SYSTEM_EDITOR_DIST: empty })).toBeNull();
   });
 
-  it('打包后的应用里是 <resources>/design-system-editor', async () => {
+  it('in the packaged app it is <resources>/design-system-editor', async () => {
     const resources = await mkdtemp(path.join(tmpdir(), 'design-system-resources-'));
     roots.push(resources);
     await mkdir(path.join(resources, 'design-system-editor'));

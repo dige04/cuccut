@@ -21,15 +21,15 @@ import {
 
 /** yt-dlp arguments, progress, failure classification and file names (architecture design §7.9). The process runs only the fake yt-dlp from the tests. */
 
-describe('参数', () => {
-  it('仅使用显式选择的浏览器，解析和下载参数一致', () => {
+describe('arguments', () => {
+  it('uses only the explicitly chosen browser; resolve and download arguments match', () => {
     expect(resolveArgs('https://example.com/v')).not.toContain('--cookies-from-browser');
     for (const args of [resolveArgs('https://example.com/v', 'firefox'), downloadArgs('https://example.com/v', { output: '/tmp/media.%(ext)s', audioOnly: false, subtitleLanguages: [], cookieBrowser: 'firefox' })]) {
       expect(args[args.indexOf('--cookies-from-browser') + 1]).toBe('firefox');
     }
     expect(() => resolveArgs('https://example.com/v', '--exec=id' as never)).toThrow();
   });
-  it('链接在 -- 之后且是最后一个；总是不读配置、不加载插件', () => {
+  it('the URL comes after -- and last; always skips reading config and loading plugins', () => {
     const url = '--exec=touch /tmp/pwned';
     for (const args of [
       resolveArgs(url),
@@ -53,13 +53,13 @@ describe('参数', () => {
     expect(download[download.indexOf('-o') + 1]).toBe('/s/dl/media.%(ext)s');
   });
 
-  it('默认要 MP4：优先 MP4 画面与 M4A 声音、合并成 MP4，没有时退回最好的任意格式', () => {
+  it('defaults to MP4: prefers MP4 video and M4A audio merged into MP4, falling back to the best available format', () => {
     const args = downloadArgs('https://v.example.com/a', { output: '/s/dl/media.%(ext)s', audioOnly: false, subtitleLanguages: [] });
     expect(args[args.indexOf('-f') + 1]).toBe('bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b');
     expect(args[args.indexOf('--merge-output-format') + 1]).toBe('mp4/webm/mkv');
   });
 
-  it('进度行只认自己的前缀；跨流累计，不知道总数时不报', () => {
+  it('progress lines match only their own prefix; progress accumulates across streams and is not reported when the total is unknown', () => {
     expect(parseProgressLine('ccut-progress 100 1000 NA')).toEqual({ downloaded: 100, total: 1000 });
     expect(parseProgressLine('ccut-progress 100 NA 2000.5')).toEqual({ downloaded: 100, total: 2001 });
     expect(parseProgressLine('ccut-progress 100 NA NA')).toEqual({ downloaded: 100, total: null });
@@ -71,7 +71,7 @@ describe('参数', () => {
     expect(tracker.update({ downloaded: 20, total: 200 })).toEqual({ done: 1020, total: 1200 });
   });
 
-  it('失败按错误输出分类，错误详情里的链接已脱敏', () => {
+  it('failures are classified from the error output; URLs in error details are redacted', () => {
     const cases: Array<[string, string]> = [
       ['ERROR: [youtube] x: Sign in to confirm you are not a bot', 'LINK_LOGIN_REQUIRED'],
       ['ERROR: [youtube] x: Private video', 'LINK_LOGIN_REQUIRED'],
@@ -95,7 +95,7 @@ describe('参数', () => {
     expect(failure.message).not.toContain('secret-token');
   });
 
-  it('只有读不到 Cookie 与要求登录才值得换浏览器；都没成功时按有没有要求登录报，带上每个浏览器的结果', () => {
+  it('only cookie-read failures and login-required errors are worth switching browsers; when none succeed, reports based on whether login was required, including each browser\'s result', () => {
     const cookies = classifyFailure('ERROR: could not copy Chrome cookie database', 1);
     const login = classifyFailure('ERROR: [youtube] x: Sign in to confirm you are not a bot', 1);
     expect([cookies, login].every(worthAnotherCookieBrowser)).toBe(true);
@@ -109,7 +109,7 @@ describe('参数', () => {
     expect(cookieAttemptsFailure([{ browser: 'chrome', error: cookies }, { browser: 'edge', error: cookies }]).code).toBe('LINK_COOKIES_UNAVAILABLE');
   });
 
-  it('文件名：去掉路径与保留字符、不以点或 - 开头；空格与单引号保留', () => {
+  it('file names: strip paths and reserved characters, do not start with a dot or -; spaces and single quotes are kept', () => {
     expect(sanitizeFileName(`-rf "Fake clip": one/two  it's <ok>`)).toBe(`rf Fake clip one two it's ok`);
     expect(sanitizeFileName('../../etc/passwd')).toBe('etc passwd');
     expect(sanitizeFileName('a\u0000b\nc')).toBe('a b c');
@@ -118,7 +118,7 @@ describe('参数', () => {
     expect([...sanitizeFileName('长'.repeat(300))]).toHaveLength(120);
   });
 
-  it('元数据：播放列表与直播拒绝', () => {
+  it('metadata: playlists and live streams are rejected', () => {
     expect(parseMetadata(JSON.stringify({ id: 'a', title: ' T ', duration: 3, extractor_key: 'Generic' }))).toMatchObject({
       title: 'T',
       mediaId: 'a',
@@ -130,7 +130,7 @@ describe('参数', () => {
     expect(() => parseMetadata('not json')).toThrow(expect.objectContaining({ code: 'LINK_DOWNLOAD_FAILED' }));
   });
 
-  it('元数据：简介去掉首尾空白、最多 20000 个字符；没有简介与章节时 null', () => {
+  it('metadata: description is trimmed to at most 20000 characters; null when there is no description and no chapters', () => {
     const bare = parseMetadata(JSON.stringify({ id: 'a', title: 'T', description: '   ', chapters: [] }));
     expect(bare).toMatchObject({ description: null, chapters: null });
     expect(parseMetadata(JSON.stringify({ id: 'a' }))).toMatchObject({ description: null, chapters: null });
@@ -139,7 +139,7 @@ describe('参数', () => {
     expect(parseMetadata(JSON.stringify({ id: 'a', description: ' Line one\n0:00 Intro \n' })).description).toBe('Line one\n0:00 Intro');
   });
 
-  it('元数据：平台章节丢掉非有限或负的起点与空标题，按起点排序、同起点去重，标题截到 160 个字符', () => {
+  it('metadata: platform chapters drop non-finite or negative start times and empty titles, sort by start, dedupe equal starts, and truncate titles to 160 characters', () => {
     const meta = parseMetadata(
       JSON.stringify({
         id: 'a',
@@ -171,7 +171,7 @@ describe('参数', () => {
   });
 });
 
-describe('执行（假 yt-dlp）', () => {
+describe('execution (fake yt-dlp)', () => {
   let dir: string;
   let fake: FakeYtDlp;
 
@@ -184,7 +184,7 @@ describe('执行（假 yt-dlp）', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('参数原样传到进程（不经 shell），以 - 开头的链接不会被当成选项', async () => {
+  it('arguments are passed to the process unchanged (no shell), and a URL starting with - is not treated as an option', async () => {
     const signal = new AbortController().signal;
     const run = await runYtDlp(
       { ...fake.nodeTool, env: { ...fake.nodeTool.env, PATH: path.join(dir, 'empty') } },
@@ -200,13 +200,13 @@ describe('执行（假 yt-dlp）', () => {
     expect(calls.at(-1)!.argv!.at(-1)).toBe('https://v.example.com/a b"c');
   });
 
-  it('找不到可执行文件时是 TOOL_NOT_INSTALLED', async () => {
+  it('a missing executable is TOOL_NOT_INSTALLED', async () => {
     await expect(
       runYtDlp({ command: path.join(dir, 'missing', 'yt-dlp') }, ['--version'], { signal: new AbortController().signal }),
     ).rejects.toMatchObject({ code: 'TOOL_NOT_INSTALLED' });
   });
 
-  it('Windows：中止时用 taskkill /T /F 结束整棵进程树（合并时的 ffmpeg 一起结束）', async () => {
+  it('Windows: abort ends the whole process tree with taskkill /T /F (the ffmpeg used for merging is ended too)', async () => {
     const calls: { command: string; args: readonly string[]; options: SpawnOptions }[] = [];
     const child = Object.assign(new EventEmitter(), { pid: 91, stdout: new PassThrough(), stderr: new PassThrough(), kill: () => true }) as unknown as ChildProcess;
     const spawnFn = (command: string, args: readonly string[], options: SpawnOptions) => {

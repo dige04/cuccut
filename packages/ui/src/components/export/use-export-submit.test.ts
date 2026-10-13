@@ -21,14 +21,14 @@ vi.mock('../../state/export-store.ts', () => ({ useExportPlaces: (select: (s: un
 const env = { videoId: 'vid_test', videoName: '访谈', documents: {}, sequence: { tracks: {}, items: {} }, sourceDir: '/source' } as unknown as ExportEnv;
 const settings: ExportSettings = { kind: 'video', format: 'mp4', burnCaptions: false };
 
-describe('导出提交前确认文件', () => {
+describe('confirm the file before submitting the export', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.pickSavePath.mockResolvedValue('/chosen/改名.mp4');
     mocks.pickDirectory.mockResolvedValue('/chosen');
     mocks.createExport.mockResolvedValue('job_test');
   });
-  it('保存窗口确认前不建任务；重复点击只打开一次窗口', async () => {
+  it('no task created before the save window is confirmed; repeated clicks open the window only once', async () => {
     let confirm!: (file: string | null) => void;
     mocks.pickSavePath.mockImplementation(() => new Promise((resolve) => { confirm = resolve; }));
     const started = vi.fn();
@@ -43,7 +43,7 @@ describe('导出提交前确认文件', () => {
       destination: { dir: '/chosen', fileName: '改名.mp4', overwrite: true } });
     expect(started).toHaveBeenCalledExactlyOnceWith('job_test', 'video');
   });
-  it('取消或保存窗口失败不建任务，随后仍可再次导出', async () => {
+  it('cancelling or failing the save window creates no task, and export can still be retried afterward', async () => {
     const submitter = useExportSubmit(env, vi.fn());
     mocks.pickSavePath.mockResolvedValueOnce(null).mockRejectedValueOnce(new Error('dialog failed'));
     await submitter.submit(settings);
@@ -53,7 +53,7 @@ describe('导出提交前确认文件', () => {
     await submitter.submit(settings);
     expect(mocks.createExport).toHaveBeenCalledTimes(1);
   });
-  it('多任务共享选定目录，保留各文件名，取消目录选择时不建任务', async () => {
+  it('multiple tasks share the chosen directory and keep each file name; cancelling the directory choice creates no task', async () => {
     const submitter = useExportSubmit(env, vi.fn());
     const parts = [{ settings, fileName: 'one.mp4' }, { settings, fileName: 'two.mp4' }];
     mocks.pickDirectory.mockResolvedValueOnce(null);

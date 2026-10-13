@@ -85,7 +85,7 @@ const op = <T extends EditOperation['type']>(plan: AssetReplacePlan, type: T) =>
   ok(plan).operations.find((o): o is Extract<EditOperation, { type: T }> => o.type === type);
 
 describe('planAssetReplace', () => {
-  it('新素材从 0 秒起；够长时片段长度不变，摆位、裁剪、样式照抄（设计稿「直接替换」）', () => {
+  it('new media starts at 0 seconds; if long enough, the clip length stays the same, placement, cropping and styling are copied over (design \'direct replace\')', () => {
     const seq = sequence([clip('v', 'v1', 'old', 10, 20, 30, 2)]);
     const plan = ok(planAssetReplace({ sequence: seq, asset: asset('old', 'video', 100), source: { from: 'library', asset: asset('new', 'video', 24) } }));
     expect(plan.replaced).toEqual([expect.objectContaining({ itemId: 'v', start: 10, end: 20, newStart: 10, newEnd: 20, delta: 0, aligned: false })]);
@@ -115,7 +115,7 @@ describe('planAssetReplace', () => {
     expect(longer.replaced[0]!.delta).toBe(0);
   });
 
-  it('新素材不够长：片段变短（按速度换算），这条轨道只有它时轨道跟着变短', () => {
+  it('new media not long enough: clip gets shorter (converted by speed), and when it is the only clip on the track, the track shrinks with it', () => {
     const seq = sequence([clip('v', 'v1', 'old', 10, 20, 30, 2)]);
     const plan = ok(planAssetReplace({ sequence: seq, asset: asset('old', 'video', 100), source: { from: 'library', asset: asset('new', 'video', 6) } }));
     // Design spec: dur 6, speed 2 → new length 3 s, end point 13, 7 s shorter.
@@ -125,7 +125,7 @@ describe('planAssetReplace', () => {
     expect(describeReplace(plan)).toBe('片段会变短 7.0 秒，这条轨道跟着变短。');
   });
 
-  it('同轨 ripple：变短把后面的片段往前拉；别的轨道不动（设计稿「同轨 ripple」）', () => {
+  it('same-track ripple: shortening pulls later clips forward; other tracks do not move (design \'same-track ripple\')', () => {
     const seq = sequence(lane());
     const plan = ok(planAssetReplace({ sequence: seq, asset: asset('main', 'video', 206), source: { from: 'library', asset: asset('x', 'video', 7.2) } }));
     expect(plan.replaced[0]).toMatchObject({ itemId: 'b', start: 28, end: 45.2, newEnd: 35.2, delta: expect.closeTo(-10, 6) });
@@ -139,7 +139,7 @@ describe('planAssetReplace', () => {
     expect(describeReplace(broll)).toBe('片段会变短 6.0 秒，这条轨道跟着变短。');
   });
 
-  it('一个素材用了几段：一起换，各段从 0 秒起，前面变短的累计挪后面的起点', () => {
+  it('one media used in several clips: all replaced together, each segment starts at 0 seconds, and shortening earlier segments shifts later start points', () => {
     const seq = sequence([
       clip('a', 'v1', 'main', 0, 28),
       clip('b', 'v1', 'main', 28, 45.2, 28),
@@ -160,7 +160,7 @@ describe('planAssetReplace', () => {
     expect(plan.operations.map((o) => o.type)).toEqual(['deleteItems', 'moveItems', 'insertItems']);
   });
 
-  it('只换一段（画布工具条的 itemId）：用同一素材的别的片段不换，同轨在它后面的照样跟着挪', () => {
+  it('replace only one clip (itemId from the canvas toolbar): other clips using the same media are not replaced, and same-track clips after it still move along', () => {
     const seq = sequence([
       clip('a', 'v1', 'main', 0, 28),
       clip('b', 'v1', 'main', 28, 45.2, 28),
@@ -181,7 +181,7 @@ describe('planAssetReplace', () => {
     expect(refused).toEqual({ ok: false, reason: '这一段锁着，先解锁再换。' });
   });
 
-  it('按原素材时间对齐：原来取用的那一段放得下就照旧，放不下按普通替换（设计稿「同源成片」）', () => {
+  it('align by original media time: if the originally used segment still fits, keep it; if not, use plain replace (design \'same-source cut\')', () => {
     const seq = sequence(lane());
     const covered = ok(
       planAssetReplace({ sequence: seq, asset: asset('main', 'video', 206), source: { from: 'library', asset: asset('x', 'video', 50) }, align: true }),
@@ -199,7 +199,7 @@ describe('planAssetReplace', () => {
     expect((op(partial, 'insertItems')!.items[0] as VideoItem).timeMap).toMatchObject({ sourceIn: { ticks: '0' } });
   });
 
-  it('拒绝的只有真问题：类别不同、同一个素材、没用到、都锁着、新素材不到一帧', () => {
+  it('only real problems are rejected: different category, same media, not used, all locked, new media shorter than one frame', () => {
     const seq = sequence(lane());
     const base = { sequence: seq, asset: asset('main', 'video', 206) };
     expect(planAssetReplace({ ...base, source: { from: 'library', asset: asset('song', 'audio', 30) } })).toEqual({
@@ -219,7 +219,7 @@ describe('planAssetReplace', () => {
     expect(planAssetReplace({ ...base, sequence: locked, source: { from: 'library', asset: asset('x', 'video', 9) } }).ok).toBe(false);
   });
 
-  it('锁着的片段与锁着的轨道保持原样；同轨的波纹到锁着的片段为止', () => {
+  it('locked clips and locked tracks stay as they are; same-track ripple stops at a locked clip', () => {
     const items = [
       clip('a', 'v1', 'main', 0, 10),
       { ...clip('b', 'v1', 'other', 10, 20), locked: true },
@@ -238,7 +238,7 @@ describe('planAssetReplace', () => {
     expect(op(plan, 'moveItems')).toBeUndefined();
   });
 
-  it('本地文件：同一笔事务里先导入，写回的实例引用导入的 ref；时长未知先保留原时长（设计稿 keep）', () => {
+  it('local file: imported first within the same transaction, written-back instance references the imported ref; if duration is unknown, keep the original duration first (design \'keep\')', () => {
     const seq = sequence(lane());
     const plan = ok(
       planAssetReplace({
@@ -259,7 +259,7 @@ describe('planAssetReplace', () => {
     ).toBe(false);
   });
 
-  it('片段名还是旧素材名（放上来时的默认名）就跟着换成新素材名；改过名的保留', () => {
+  it('if the clip name is still the old media name (the default name when placed), change it to the new media name; renamed clips keep their name', () => {
     const named = { ...clip('x', 'v1', 'old', 0, 10), name: 'old.mp4' };
     const renamed = { ...clip('y', 'v1', 'old', 10, 20), name: '开场' };
     const seq = sequence([named, renamed]);
@@ -277,7 +277,7 @@ describe('planAssetReplace', () => {
     expect(op(fromFile, 'insertItems')!.items.map((item) => item.name)).toEqual(['new.mov', '开场']);
   });
 
-  it('音频：变短整帧，淡入淡出收进新长度，包络去掉超出的点，同轨后面的音频按帧挪', () => {
+  it('audio: shortening cuts whole frames, fade in/out fits the new length, envelope points beyond it are removed, same-track audio after it shifts by frames', () => {
     const voice = (id: string, assetId: string, fromFrame: number, samples: number): AudioItem => ({
       id,
       trackId: 'a1',
@@ -316,7 +316,7 @@ describe('planAssetReplace', () => {
     expect(op(plan, 'moveItems')!.moves).toEqual([{ itemId: 'n', offset: { unit: 'frames', value: -75 } }]);
   });
 
-  it('删了再写回会丢掉的关联照实数出来：转场、按它投影的字幕、指着它的闪避', () => {
+  it('links that deleting and writing back would lose are counted precisely: transitions, subtitles projected from it, ducking pointing at it', () => {
     const items: SequenceItem[] = [
       ...lane(),
       {

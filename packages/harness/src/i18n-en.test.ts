@@ -4,7 +4,7 @@ import { HarnessRuns } from '@cuccut/protocol/messages/harness';
 import { DriverRegistry } from './agent-manager.ts';
 
 /** When the UI language is English, the Harness messages written for people, errors and session notices are in English, with message refs (they can be regenerated after the UI language changes). */
-describe('harness 的英文文案', () => {
+describe('harness English copy', () => {
   beforeEach(() => {
     vi.stubEnv('CUCCUT_LOCALE', 'en');
     setLocale('en');
@@ -14,7 +14,7 @@ describe('harness 的英文文案', () => {
     setLocale('zh-Hans');
   });
 
-  it('没有注册的 Agent：英文错误带引用', () => {
+  it('unregistered Agent: English error includes a reference', () => {
     let caught: unknown;
     try {
       new DriverRegistry().get('nope');
@@ -26,7 +26,7 @@ describe('harness 的英文文案', () => {
     expect((caught as RpcError).messageRef?.key).toBe('harnessAgents.noDriver');
   });
 
-  it('模式切换提示：模式名作为参数，切回中文后按引用重新生成', () => {
+  it('mode switch hint: the mode name is passed as a parameter, and after switching back to Chinese it is regenerated from the reference', () => {
     const text = HarnessRuns.modeChanged({ to: agentModeLabel('fullAccess'), from: agentModeLabel('auto') });
     expect(text.text).toContain('"Full access"');
     expect(text.text).not.toMatch(/[一-龥]/);

@@ -62,8 +62,8 @@ const plan = (patch: Partial<ModelInstallPlan> = {}): ModelInstallPlan => ({
   ...patch,
 });
 
-describe('models 的输出', () => {
-  it('字节数与进度：总量未知时不给百分比', () => {
+describe('models output', () => {
+  it('bytes and progress: no percentage when the total is unknown', () => {
     expect(formatBytes(512)).toBe('512 B');
     expect(formatBytes(1536)).toBe('1.5 KB');
     expect(formatBytes(700 * 1024 * 1024)).toBe('700.0 MB');
@@ -73,7 +73,7 @@ describe('models 的输出', () => {
     expect(formatByteProgress(10, null)).not.toContain('%');
   });
 
-  it('模型包：状态、组件（共用）、安装进度（暂停时提示续传）与最近一次检查', () => {
+  it('model pack: status, components (shared), install progress (hints at resuming when paused) and last check', () => {
     const lines = formatBundleLines({
       ...base,
       state: 'not-installed',
@@ -101,7 +101,7 @@ describe('models 的输出', () => {
     expect(formatBundleLines(base)).toHaveLength(1);
   });
 
-  it('检查没通过：带上结论的代码；文件坏了提示修复，内存不够提示关程序', () => {
+  it('check failed: includes the code of the conclusion; a broken file hints at repair, insufficient memory hints at closing programs', () => {
     const failed = (code: string) =>
       formatBundleLines({
         ...base,
@@ -119,7 +119,7 @@ describe('models 的输出', () => {
     expect(passed[1]).toBe('  检查：通过  2026-10-03T00:00:00Z  ok');
   });
 
-  it('安装计划：要下载的、保留的、来源、续传与可用空间；大小未知时给估计', () => {
+  it('install plan: items to download, items kept, source, resume and available space; gives an estimate when the size is unknown', () => {
     expect(formatInstallPlan(plan({ resumedBytes: 1024 * 1024, availableBytes: 100 }), 'install')).toEqual([
       '安装 qwen3-asr-0.6b@mlx-4bit，来源 https://huggingface.co',
       '  asr  o/asr  下载 2 个文件，700.0 MB',
@@ -141,7 +141,7 @@ describe('models 的输出', () => {
     expect(formatInstallPlan(plan({ upToDate: true }), 'repair')).toEqual(['qwen3-asr-0.6b@mlx-4bit 的文件都完好，不用修复']);
   });
 
-  it('安装失败：磁盘空间不足、带着字节数时先说要多少、剩多少，再给 Runtime 的补救', () => {
+  it('install failure: insufficient disk space; when byte counts are given, first states how much is needed and how much is left, then the Runtime remedy', () => {
     const remedy = '模型目录所在的磁盘空间不足：清理出足够的空间后再安装';
     const details = { requiredBytes: 2 * 1024 ** 3, availableBytes: 512 * 1024 ** 2, remedy };
     expect(installFailureLines({ code: 'MODEL_DOWNLOAD_NO_SPACE', message: '模型目录所在的磁盘空间不足', details })).toEqual([
@@ -157,7 +157,7 @@ describe('models 的输出', () => {
     expect(installFailureLines(null)).toEqual([]);
   });
 
-  it('remove 按 ID 区分在线服务与模型包', () => {
+  it('remove distinguishes online services from model packs by ID', () => {
     expect(removeTarget('custom:my-llm')).toBe('provider');
     expect(removeTarget('qwen3-asr-0.6b@mlx-4bit')).toBe('bundle');
     // Online providers in the directory can also be removed (§6.8).
@@ -165,7 +165,7 @@ describe('models 的输出', () => {
     expect(removeTarget('qwen3-asr-0.6b@mlx-4bit', ['openai', 'anthropic'])).toBe('bundle');
   });
 
-  it('删除的结果：删了什么、为什么保留', () => {
+  it('delete result: what was deleted and why something was kept', () => {
     expect(
       formatRemoveResult({
         removed: ['o/asr'],
@@ -209,7 +209,7 @@ describe('models dir', () => {
     move: { requiredBytes: 2 * 1024 ** 3, sameVolume: false, fits: false },
   };
 
-  it('当前目录、来源与用量', () => {
+  it('current directory, source and usage', () => {
     expect(formatModelsDir(info)).toEqual([
       '/Volumes/Disk/models',
       '  来源：设置里选的文件夹',
@@ -226,7 +226,7 @@ describe('models dir', () => {
     ]);
   });
 
-  it('更改前的说明与问题', () => {
+  it('notice and questions before a change', () => {
     expect(formatDirInspection(inspection)).toEqual([
       '发现 2 个已下载的模型（512.0 MB），可以直接使用',
       '所在磁盘可用 1.0 GB',
@@ -237,7 +237,7 @@ describe('models dir', () => {
     expect(dirProblem({ ...inspection, problem: 'missing' })).toContain('不存在');
   });
 
-  it('环境变量指定的目录：先以 MODELS_DIR_ENV_LOCKED 失败，不查看新位置', async () => {
+  it('directory set by environment variable: fails first with MODELS_DIR_ENV_LOCKED, does not check the new location', async () => {
     const calls: string[] = [];
     const api = (source: ModelsDirInfo['source']) => ({
       getDir: async () => (calls.push('getDir'), { ...info, source }),
@@ -254,7 +254,7 @@ describe('models dir', () => {
     expect(calls).toEqual(['getDir', 'inspectDir /Volumes/Other/models']);
   });
 
-  it('移动还是只切换：当前目录里有模型时要选', () => {
+  it('move or just switch: choose when the current directory has models', () => {
     expect(dirMode({}, inspection)).toBeNull();
     expect(dirMode({}, { ...inspection, current: { repos: [], bundleIds: [], bytes: 0 } })).toBe('switch');
     expect(dirMode({ move: true }, inspection)).toBe('move');
@@ -263,7 +263,7 @@ describe('models dir', () => {
   });
 });
 
-describe('服务商的账号（§6.8）', () => {
+describe('provider accounts (§6.8)', () => {
   const account = (patch: Partial<ProviderAccountView>): ProviderAccountView => ({
     accountId: 'main',
     label: null,
@@ -280,7 +280,7 @@ describe('服务商的账号（§6.8）', () => {
     account({ accountId: 'e5f6a7b8', label: '工作', masked: 'sk-…7777' }),
   ];
 
-  it('一个账号一行：先后、名字或掩码、开关、状态、地区；标出当前使用的；没有账号时给出添加命令', () => {
+  it('one account per line: order, name or mask, switch, status, region; marks the one in use; gives the add command when there are no accounts', () => {
     const lines = formatAccountLines(accounts, '');
     expect(lines[0]).toBe('1. main  sk-…1234  已停用  密钥无效');
     expect(lines[1]).toBe('2. a1b2c3d4  工作  sk-…9999  已启用  正常  地区 cn  当前使用');
@@ -288,7 +288,7 @@ describe('服务商的账号（§6.8）', () => {
     expect(formatAccountLines([])[0]).toContain('cuccut models accounts add');
   });
 
-  it('按 accountId 或唯一的名字找账号；重名或没有时报错；use 把它排到最前', () => {
+  it('finds an account by accountId or unique name; errors on duplicate or missing names; use moves it to the front', () => {
     expect(findAccount(accounts, 'e5f6a7b8').masked).toBe('sk-…7777');
     expect(() => findAccount(accounts, '工作')).toThrow(/2 个账号/);
     expect(() => findAccount(accounts, 'nope')).toThrow(/没有这个账号/);
@@ -296,7 +296,7 @@ describe('服务商的账号（§6.8）', () => {
   });
 });
 
-describe('用量（§6.10）', () => {
+describe('usage (§6.10)', () => {
   const report = (patch: Partial<UsageReport> = {}): UsageReport => ({
     period: { from: '2026-09-07T00:00:00.000Z', to: '2026-10-06T12:00:00.000Z' },
     totals: { calls: 0, failed: 0, units: {}, cost: { estimated: [], reported: [], unknownCalls: 0 } },
@@ -308,7 +308,7 @@ describe('用量（§6.10）', () => {
     ...patch,
   });
 
-  it('金额：一种币种一项，不换算', () => {
+  it('amounts: one entry per currency, no conversion', () => {
     expect(formatMoney([])).toBeNull();
     expect(
       formatMoney([
@@ -318,14 +318,14 @@ describe('用量（§6.10）', () => {
     ).toBe('$2.649 + 2.40 CNY');
   });
 
-  it('没有调用时一句说明', () => {
+  it('one-sentence note when there are no calls', () => {
     expect(formatUsageReport(report(), '30d')).toEqual([
       '用量（最近 30 天：2026-09-07T00:00:00.000Z 至 2026-10-06T12:00:00.000Z）',
       '  还没有调用',
     ]);
   });
 
-  it('估算、报告与未知分开写；按服务商拆分带份额与金额来源', () => {
+  it('estimates, reports and unknowns are written separately; split by provider with shares and amount sources', () => {
     const lines = formatUsageReport(
       report({
         totals: {
@@ -363,13 +363,13 @@ describe('用量（§6.10）', () => {
   });
 });
 
-describe('英文', () => {
+describe('English', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     setLocale('zh-Hans');
   });
 
-  it('安装计划、提问与用量期间是英文', () => {
+  it('install plan, questions and usage period are in English', () => {
     vi.stubEnv('CUCCUT_LOCALE', 'en');
     setLocale('en');
     expect(installPrompt(plan(), 'repair')).toBe('Repair and download 700.0 MB? [y/N] ');

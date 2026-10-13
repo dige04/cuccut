@@ -24,7 +24,7 @@ const playable = {
   items: [{ id: 'title', type: 'text', enabled: true, trackId: 't', span: { fromFrame: 0, durationFrames: 300 } }],
 } as unknown as Sequence;
 
-test('渲染内核一直没载入完：过了门槛打一条开发日志，报告点名卡在载入内核', async () => {
+test('render kernel never finishes loading: past the threshold, write one dev log, and the report names the stall at loading the kernel', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
   const engine = new PreviewEngine({ onTime: () => {}, onEnded: () => {} }, () => new Promise<RenderPlanner>(() => {}));
@@ -40,7 +40,7 @@ test('渲染内核一直没载入完：过了门槛打一条开发日志，报�
   expect(warn).toHaveBeenCalledTimes(1);
 });
 
-test('播放的 tick 里抛了意外的错：打出来、接着排下一帧，之后好了照常画', async () => {
+test('an unexpected error thrown in the playback tick: log it, schedule the next frame, and draw normally once recovered', async () => {
   let callbacks: FrameRequestCallback[] = [];
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => callbacks.push(callback));
   let now = 0;
@@ -126,7 +126,7 @@ function stubPlanner(layers: unknown[] = []) {
   return { planner, setVideo };
 }
 
-test('卡住时通知订阅者；重试不等卡住的那次载入、重新载入，之前那次迟到的结果不收', async () => {
+test('subscribers are notified when stalled; retry does not wait for the stalled load, reloads, and the earlier late result is discarded', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   const loads: { fresh: boolean; resolve(planner: RenderPlanner): void }[] = [];
@@ -159,7 +159,7 @@ test('卡住时通知订阅者；重试不等卡住的那次载入、重新载�
   engine.dispose();
 });
 
-test('素材地址一直没到（页面上没有元素）：画面是空的、状态照常，满门槛报在等这个素材', async () => {
+test('asset URL never arrives (no element on the page): the frame is empty and status is normal; past the threshold, report waiting on this asset', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   // Node has none of these element classes: the engine only uses them for instanceof.
@@ -183,7 +183,7 @@ test('素材地址一直没到（页面上没有元素）：画面是空的、�
   });
 });
 
-test('媒体在等兼容副本：画面不算出来过；进度不动满门槛报卡在转换，不知道进度不报；媒体齐了才算出来，重试与换视频从头算', async () => {
+test('media waiting on a compatible copy: the frame is not counted as rendered; if progress does not move, past the threshold report stalled in conversion, and do not report when progress is unknown; a frame counts as rendered only once all media is ready; retry and switching video start counting from scratch', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   vi.stubGlobal('HTMLVideoElement', class {});

@@ -26,15 +26,15 @@ afterAll(async () => {
   await Promise.all(roots.map(r => rm(r, { recursive: true, force: true })));
 });
 
-describe('路径和小工具', () => {
-  it('isProjectPath 只放行 project/ 下的普通相对路径', () => {
+describe('path and helpers', () => {
+  it('isProjectPath allows only plain relative paths under project/', () => {
     expect(isProjectPath('project/slides/s01.html')).toBe(true);
     for (const bad of ['deck.json', 'project/../x', 'project//x', 'project/./x', 'project/a\\b', 'project/', '_blob/abc', '/project/x']) {
       expect(isProjectPath(bad), bad).toBe(false);
     }
   });
 
-  it('deckFileOf 只认 deck.json、slides/<名>.html 与 ds/**', () => {
+  it('deckFileOf recognizes only deck.json, slides/<name>.html and ds/**', () => {
     expect(deckFileOf('project/deck.json')).toBe('deck.json');
     expect(deckFileOf('project/slides/s01.html')).toBe('slides/s01.html');
     expect(deckFileOf('project/ds/brand/tokens.css')).toBe('ds/brand/tokens.css');
@@ -44,13 +44,13 @@ describe('路径和小工具', () => {
     expect(isDeckFile('slides/.s01.html.tmp')).toBe(false);
   });
 
-  it('isIgnoredWatchPath 跳过任何一段以 . 开头的路径', () => {
+  it('isIgnoredWatchPath skips any path segment starting with .', () => {
     expect(isIgnoredWatchPath('slides/.!40826!plan.html')).toBe(true);
     expect(isIgnoredWatchPath('.git/index')).toBe(true);
     expect(isIgnoredWatchPath('slides/s01.html')).toBe(false);
   });
 
-  it('contentTypeOf 按扩展名，未知的用 octet-stream；素材扩展名按类型取', () => {
+  it('contentTypeOf by extension, unknown uses octet-stream; asset extensions map to types', () => {
     expect(contentTypeOf('project/deck.json')).toBe('application/json');
     expect(contentTypeOf('a.HTML')).toBe('text/html');
     expect(contentTypeOf('noext')).toBe('application/octet-stream');
@@ -59,7 +59,7 @@ describe('路径和小工具', () => {
     expect(assetExtensionOf('application/x-unknown')).toBe('bin');
   });
 
-  it('versionOf 只由内容决定', () => {
+  it('versionOf determined only by content', () => {
     const a = { 'project/a': { sha256: '1', size: 1, contentType: 'x' } };
     expect(versionOf(a)).toBe(versionOf({ ...a }));
     expect(versionOf(a)).not.toBe(versionOf({ 'project/a': { sha256: '2', size: 1, contentType: 'x' } }));
@@ -82,7 +82,7 @@ describe('DeckStore', () => {
     store = new DeckStore(root);
   });
 
-  it('listing 只列 deck.json、slides/*.html、ds/**，键带 project/ 前缀，带 sha 和类型', async () => {
+  it('listing includes only deck.json, slides/*.html, ds/**, keys prefixed with project/, with sha and type', async () => {
     await mkdir(path.join(root, 'ds/brand'), { recursive: true });
     await writeFile(path.join(root, 'ds/brand/tokens.css'), ':root{}');
     const listing = await store.listing();
@@ -91,13 +91,13 @@ describe('DeckStore', () => {
     expect(listing.ver).toBe(versionOf(listing.files));
   });
 
-  it('readProjectFile 去掉 project/ 前缀读磁盘；清单外的文件读不到', async () => {
+  it('readProjectFile strips the project/ prefix and reads from disk; files outside the listing unreadable', async () => {
     expect(Buffer.from((await store.readProjectFile('project/deck.json'))!).toString()).toBe('{}');
     expect(await store.readProjectFile('project/notes.md')).toBe(null);
     expect(await store.readProjectFile('project/assets/index.json')).toBe(null);
   });
 
-  it('publish 原子地写回 deck 目录、返回 sha 和新版本，并记进 ownWrites；不留临时文件', async () => {
+  it('publish atomically writes back to the deck directory, returns sha and new version, records in ownWrites; no temp file left', async () => {
     const before = await store.listing();
     const outcome = await store.publish({ 'project/slides/s02.html': write('<section id="s02"></section>') });
     expect(outcome.status).toBe(200);
@@ -111,7 +111,7 @@ describe('DeckStore', () => {
     expect((await readdir(path.join(root, 'slides'))).filter(n => n.endsWith('.tmp'))).toEqual([]);
   });
 
-  it('ifMatch 对得上才写；对不上整批拒绝（409），一个文件都不动', async () => {
+  it('ifMatch writes only on match; on mismatch the whole batch is rejected (409), no file changed', async () => {
     const current = sha256('<section></section>');
     const ok = await store.publish({ 'project/slides/s01.html': write('<section>v2</section>', current) });
     expect(ok.status).toBe(200);
@@ -129,13 +129,13 @@ describe('DeckStore', () => {
     expect(await store.readProjectFile('project/slides/new.html')).toBe(null);
   });
 
-  it('ifMatch 指向不存在的文件时 actual 为 null', async () => {
+  it('ifMatch pointing to a nonexistent file: actual is null', async () => {
     const outcome = await store.publish({ 'project/slides/x.html': write('x', sha256('whatever')) });
     expect(outcome.status).toBe(409);
     expect((outcome.body as ConflictError).paths[0]!.actual).toBe(null);
   });
 
-  it('ifMatch 为 null 只建新文件：不存在时写入，已存在时 409（expected 为 null）', async () => {
+  it('ifMatch null only creates new files: writes when missing, 409 when present (expected null)', async () => {
     const created = await store.publish({ 'project/slides/new.html': { base64: b64('<section>new</section>'), contentType: 'text/html', ifMatch: null } });
     expect(created.status).toBe(200);
     expect(await readFile(path.join(root, 'slides/new.html'), 'utf8')).toBe('<section>new</section>');
@@ -146,7 +146,7 @@ describe('DeckStore', () => {
     expect(await readFile(path.join(root, 'slides/new.html'), 'utf8')).toBe('<section>new</section>');
   });
 
-  it('删除：{delete:true} 和 null 都删，ownWrites 记为空串', async () => {
+  it('delete: both {delete:true} and null delete; ownWrites records an empty string', async () => {
     const outcome = await store.publish({
       'project/slides/s01.html': { delete: true, ifMatch: sha256('<section></section>') },
       'project/deck.json': null,
@@ -156,7 +156,7 @@ describe('DeckStore', () => {
     expect(store.ownWrites.get('project/slides/s01.html')).toBe('');
   });
 
-  it('清单外的路径一律拒绝（400 read_only_path），磁盘上不动', async () => {
+  it('paths outside the listing always rejected (400 read_only_path), disk untouched', async () => {
     for (const p of ['deck.json', 'project/../escape.html', '_blob/x', 'project/notes.md', 'project/assets/index.json', 'project/slides/a/b.html']) {
       const outcome = await store.publish({ [p]: write('x') });
       expect(outcome.status, p).toBe(400);
@@ -165,7 +165,7 @@ describe('DeckStore', () => {
     expect(await readFile(path.join(root, 'notes.md'), 'utf8')).toBe('智能体的草稿，编辑器看不到');
   });
 
-  it('符号链接（可能指到 deck 外）不进清单、读不到、不能写', async () => {
+  it('symlinks (may point outside the deck) not in the listing, unreadable, not writable', async () => {
     const outside = await tempDeck({ 'secret.html': '<section>secret</section>', 'dir/x.css': 'x' });
     await symlink(path.join(outside, 'secret.html'), path.join(root, 'slides/leak.html'));
     await symlink(path.join(outside, 'dir'), path.join(root, 'ds'));
@@ -180,7 +180,7 @@ describe('DeckStore', () => {
     expect(await readdir(path.join(outside, 'dir'))).toEqual(['x.css']);
   });
 
-  it('并发发布按顺序执行：同一个 ifMatch 只有第一次成功', async () => {
+  it('concurrent publishes run in order: with the same ifMatch only the first succeeds', async () => {
     const current = sha256('<section></section>');
     const [a, b] = await Promise.all([
       store.publish({ 'project/slides/s01.html': write('A', current) }),
@@ -191,7 +191,7 @@ describe('DeckStore', () => {
     expect(await readFile(path.join(root, 'slides/s01.html'), 'utf8')).toBe('A');
   });
 
-  it('putBlob 按内容寻址写进 assets/<id>.<ext>，记录 Content-Type；getBlob 拒绝非法 id', async () => {
+  it('putBlob writes content-addressed to assets/<id>.<ext>, records Content-Type; getBlob rejects invalid ids', async () => {
     const bytes = new Uint8Array([1, 2, 3]);
     const result = await store.putBlob(bytes, 'image/png');
     expect(result.id).toBe(sha256(bytes).slice(0, 32));
@@ -207,7 +207,7 @@ describe('DeckStore', () => {
     expect(await store.getBlob('0'.repeat(32))).toBe(null);
   });
 
-  it('同一份素材再传一次不重复存；没有 index.json 时按扩展名给类型', async () => {
+  it('uploading the same asset again is not stored twice; type given by extension when there is no index.json', async () => {
     const bytes = new Uint8Array([4, 5]);
     const first = await store.putBlob(bytes, 'image/webp');
     const again = await store.putBlob(bytes, 'image/webp');
@@ -217,7 +217,7 @@ describe('DeckStore', () => {
     expect((await store.getBlob(first.id))!.contentType).toBe('image/webp');
   });
 
-  it('externalChanges：自己写的不算，外部改的、外部删的都算；清单外的路径忽略', async () => {
+  it('externalChanges: own writes don\'t count; externally changed and externally deleted do count; paths outside the listing ignored', async () => {
     await store.publish({ 'project/slides/s01.html': write('mine') });
     expect(await store.externalChanges(['project/slides/s01.html'])).toEqual([]);
     await writeFile(path.join(root, 'slides/s01.html'), 'theirs');
@@ -228,7 +228,7 @@ describe('DeckStore', () => {
     ]);
   });
 
-  it('externalChanges：与调用方已知的内容一致的也不算，查过的路径记成当前内容', async () => {
+  it('externalChanges: content matching the caller\'s known content doesn\'t count either; checked paths recorded as current content', async () => {
     const seen = new Map(Object.entries((await store.listing()).files).map(([p, f]) => [p, f.sha256] as [string, string]));
     expect(await store.externalChanges(['project/deck.json', 'project/slides/s01.html'], seen)).toEqual([]);
     await writeFile(path.join(root, 'slides/s01.html'), 'theirs');
@@ -238,7 +238,7 @@ describe('DeckStore', () => {
     expect(await store.externalChanges(['project/deck.json'], seen)).toEqual(['project/deck.json']);
   });
 
-  it('watchExternalEdits：外部改 slide 去抖后回调一次；编辑器自己保存的不回调', async () => {
+  it('watchExternalEdits: external slide edit calls back once after debounce; editor\'s own saves don\'t call back', async () => {
     const events: DeckChangeEvent[] = [];
     const stop = watchExternalEdits(store, event => events.push(event));
     try {
@@ -255,7 +255,7 @@ describe('DeckStore', () => {
     }
   });
 
-  it('watchExternalEdits：原子替换 slide 后仍能收到下一次修改', async () => {
+  it('watchExternalEdits: still receives the next change after a slide is atomically replaced', async () => {
     const events: DeckChangeEvent[] = [];
     const stop = watchExternalEdits(store, event => events.push(event));
     try {
@@ -274,7 +274,7 @@ describe('DeckStore', () => {
     }
   });
 
-  it('watchExternalEdits：新建嵌套 ds 目录时不漏初次文件，之后的修改继续通知', async () => {
+  it('watchExternalEdits: creating a nested ds directory doesn\'t miss initial files; later changes still notified', async () => {
     const events: DeckChangeEvent[] = [];
     const stop = watchExternalEdits(store, event => events.push(event));
     try {
@@ -293,7 +293,7 @@ describe('DeckStore', () => {
     }
   });
 
-  it('watchExternalEdits：删除重建 slides 目录后继续监听，旧文件删除也通知', async () => {
+  it('watchExternalEdits: keeps watching after the slides directory is deleted and recreated; deletion of old files also notified', async () => {
     const events: DeckChangeEvent[] = [];
     const stop = watchExternalEdits(store, event => events.push(event));
     try {
@@ -313,7 +313,7 @@ describe('DeckStore', () => {
     }
   });
 
-  it.each(['slides', 'ds/brand'])('watchExternalEdits：%s 重建时复用 inode 也能监听后续修改', async folder => {
+  it.each(['slides', 'ds/brand'])('watchExternalEdits: %s recreation reuses the inode, still watches later changes', async folder => {
     const file = path.join(root, folder, 's01.html');
     await mkdir(path.dirname(file), { recursive: true });
     await writeFile(file, 'initial');

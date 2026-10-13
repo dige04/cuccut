@@ -213,7 +213,7 @@ function alive(pid: number): boolean {
   }
 }
 
-describe('JobManager（假 Model Worker）', () => {
+describe('JobManager (fake Model Worker)', () => {
   let dir: string;
   let paths: { jobsFile: string; stagingDir: string; artifactsDir: string; diagnosticsDir: string };
   let catalog: ModelCatalog;
@@ -298,7 +298,7 @@ describe('JobManager（假 Model Worker）', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('首次 GPU 内核编译超过 5 秒：Intel Mac 等握手完成，其他平台保留原期限', async () => {
+  it('first GPU kernel compilation takes over 5 seconds: on Intel Mac, wait for the handshake to complete; other platforms keep the original deadline', async () => {
     await start({ control: { helloDelayMs: 5500 } });
     const job = await run();
     if (process.platform === 'darwin' && process.arch === 'x64') {
@@ -310,7 +310,7 @@ describe('JobManager（假 Model Worker）', () => {
     }
   }, 15_000);
 
-  it('完成：写出 speech 文档、发布原始结果、删除 staging，主题事件有序', async () => {
+  it('completion: writes the speech document, publishes the raw result, deletes staging, topic events are in order', async () => {
     await start();
     const job = await run();
     expect(job).toMatchObject({
@@ -394,7 +394,7 @@ describe('JobManager（假 Model Worker）', () => {
     expect(manager.list('other')).toEqual([]);
   });
 
-  it('说话人区分：不给 diarize 时按模型，装了「说话人区分」模型包就区分，说话人进 speech 文档；显式关掉不区分', async () => {
+  it('speaker diarization: without a diarize setting, follows the model; if the \'speaker diarization\' model pack is installed, diarization happens and speakers go into the speech document; explicitly turned off means no diarization', async () => {
     await start();
     // Each task waits until it finishes before the next one is submitted, so the last applied one is its speech document.
     const lastSpeech = () => {
@@ -436,7 +436,7 @@ describe('JobManager（假 Model Worker）', () => {
     expect(lastSpeech().speakers).toEqual([]);
   });
 
-  it('模型不收识别提示：照常转写，提示不交给模型，任务从排队到结束都带 hint-ignored 提醒', async () => {
+  it('model does not accept recognition hints: transcription proceeds as usual, the hint is not passed to the model, and the task carries a hint-ignored warning from queueing to completion', async () => {
     await start();
     const { jobId } = await submit('fake-moss@cpu', { hint: '人名：山田', diarize: false });
     const queued = manager.inspect(jobId).warnings;
@@ -451,7 +451,7 @@ describe('JobManager（假 Model Worker）', () => {
     expect(manager.inspect(plain)).toMatchObject({ state: 'completed', inputHash: job.inputHash, warnings: [] });
   });
 
-  it('相同输入的在途任务去重；commandId 去重；输入不同就是新任务', async () => {
+  it('in-flight tasks with the same input are deduplicated; commandId is deduplicated; different input is a new task', async () => {
     await start();
     const first = await submit('fake@cpu#slow');
     expect(await submit('fake@cpu#slow')).toEqual(first);
@@ -464,7 +464,7 @@ describe('JobManager（假 Model Worker）', () => {
     expect(videos.leases).toBe(0);
   });
 
-  it('提交时的校验：不认识的模型包、不可用的模型包、非法的语言标签', async () => {
+  it('validation at submission: unknown model pack, unavailable model pack, invalid language tag', async () => {
     await start();
     await expect(submit('nope')).rejects.toMatchObject({ code: 'not-found' });
     await expect(submit('fake@cpu', { language: { mode: 'assert', tag: '???' } })).rejects.toMatchObject({ code: 'invalid-request' });
@@ -484,7 +484,7 @@ describe('JobManager（假 Model Worker）', () => {
     expect(manager.list()).toEqual([]);
   });
 
-  it('取消：Worker 在分段边界停下并确认，进程与模型留着，下一个任务直接用', async () => {
+  it('cancel: the Worker stops at a segment boundary and confirms; the process and model stay loaded, and the next task uses them directly', async () => {
     await start();
     const { jobId } = await submit('fake@cpu#slow');
     await until(() => manager.inspect(jobId).progress);
@@ -500,7 +500,7 @@ describe('JobManager（假 Model Worker）', () => {
     expect(await manager.cancel(jobId)).toEqual({ state: 'cancelled' });
   });
 
-  it('取消：Worker 确认后不停，期限到了结束进程；下一个任务按需起新进程', async () => {
+  it('cancel: the Worker confirms but does not stop; when the deadline passes the process is ended, and the next task starts a new process on demand', async () => {
     await start();
     const bundle = 'fake@cpu#hang-on-cancel,slow';
     const { jobId } = await submit(bundle);
@@ -519,7 +519,7 @@ describe('JobManager（假 Model Worker）', () => {
     expect(provider.workerPid(bundle)).not.toBe(pid);
   }, 30_000);
 
-  it('取消发生在加载模型时：任务立即取消，加载在后台完成', async () => {
+  it('cancel during model loading: the task is cancelled immediately, and loading completes in the background', async () => {
     await start();
     const { jobId } = await submit('fake@cpu#slow-load');
     await until(() => manager.inspect(jobId).phase === 'loading');
@@ -530,7 +530,7 @@ describe('JobManager（假 Model Worker）', () => {
     expect(provider.workerPid('fake@cpu#slow-load')).not.toBeNull();
   });
 
-  it('崩溃一次：标为中断，自动重试，以 attempt 2 完成', async () => {
+  it('crashes once: marked interrupted, automatically retried, completes as attempt 2', async () => {
     await start();
     const job = await run('fake@cpu#crash-once');
     expect(job).toMatchObject({ state: 'completed', attempt: 2, error: null, result: { documentId: 'doc_speech' } });
@@ -540,7 +540,7 @@ describe('JobManager（假 Model Worker）', () => {
     expect(interrupted).toMatchObject({ attempt: 1, error: { code: 'MODEL_WORKER_CRASHED' } });
   });
 
-  it('反复崩溃：两次尝试后 MODEL_WORKER_CRASHED；默认 5 分钟内第 3 次崩溃停用模型包，enable 恢复', async () => {
+  it('repeated crashes: MODEL_WORKER_CRASHED after two attempts; by default the 3rd crash within 5 minutes disables the model pack, and enable restores it', async () => {
     // The default limit and window count crashes, not tasks: the first task retries automatically once, so it uses two.
     await start();
     const first = await run('fake@cpu#crash-on-run');
@@ -562,7 +562,7 @@ describe('JobManager（假 Model Worker）', () => {
     expect(third.attempt).toBe(2);
   });
 
-  it('崩溃窗口：窗口之外的崩溃不累计，模型包不停用', async () => {
+  it('crash window: crashes outside the window do not accumulate, and the model pack is not disabled', async () => {
     await start({ crashWindowMs: 1_000 });
     const first = await run('fake@cpu#crash-on-run');
     expect(first).toMatchObject({ state: 'failed', attempt: 2, error: { code: 'MODEL_WORKER_CRASHED' } });
@@ -574,7 +574,7 @@ describe('JobManager（假 Model Worker）', () => {
     expect((await submit('fake@cpu#crash-on-run')).jobId).toMatch(/^job_/);
   });
 
-  it('输出不合合同：MODEL_OUTPUT_INVALID，不重试，原始结果留在诊断目录', async () => {
+  it('output violates the contract: MODEL_OUTPUT_INVALID, not retried, raw result kept in the diagnostics directory', async () => {
     await start();
     const job = await run('fake@cpu#invalid-output');
     expect(job).toMatchObject({ state: 'failed', attempt: 1, error: { code: 'MODEL_OUTPUT_INVALID' }, result: null });
@@ -586,7 +586,7 @@ describe('JobManager（假 Model Worker）', () => {
     expect(videos.applied).toEqual([]);
   });
 
-  it('加载失败：MODEL_LOAD_FAILED，不重试，模型包记为未安装', async () => {
+  it('load failure: MODEL_LOAD_FAILED, not retried, the model pack is recorded as not installed', async () => {
     await start();
     const job = await run('fake@cpu#load-fail:MODEL_NOT_INSTALLED');
     expect(job).toMatchObject({
@@ -598,7 +598,7 @@ describe('JobManager（假 Model Worker）', () => {
     expect(provider.workerPid('fake@cpu#load-fail:MODEL_NOT_INSTALLED')).toBeNull();
   });
 
-  it('Worker 没列出 asr 的 family 或不声明 transcribe：capability-missing，不发 model.load，模型包不停用', async () => {
+  it('Worker does not list the asr family or does not declare transcribe: capability-missing, no model.load is sent, and the model pack is not disabled', async () => {
     for (const control of [{ transcribeFamilies: ['whisper-coreml'] }, { capabilities: ['synthesize'] }]) {
       await manager?.shutdown();
       await start({ control });
@@ -616,7 +616,7 @@ describe('JobManager（假 Model Worker）', () => {
     }
   });
 
-  it('空闲卸载：idleMs 之后 model.unload 并关闭进程', async () => {
+  it('idle unload: after idleMs, model.unload is sent and the process is closed', async () => {
     // Publishing the result and writing to disk may take longer than 200 ms. Leave time to check the alive state after completion, then verify the idle exit.
     await start({ idleMs: 1000 });
     await run();
@@ -630,7 +630,7 @@ describe('JobManager（假 Model Worker）', () => {
     expect((await run()).state).toBe('completed');
   });
 
-  it('没有语音：完成但不写文档，结果种类记在 warnings', async () => {
+  it('no speech: completes without writing a document, and the result kind is recorded in warnings', async () => {
     await start();
     const job = await run('fake@cpu#no-speech');
     expect(job).toMatchObject({ state: 'completed', result: { documentId: null }, warnings: [{ code: 'no-speech' }] });
@@ -638,7 +638,7 @@ describe('JobManager（假 Model Worker）', () => {
     expect(videos.applied).toEqual([]);
   });
 
-  it('素材在转写期间换了内容：STALE_JOB_INPUT，保留产物，不写文档', async () => {
+  it('media changed during transcription: STALE_JOB_INPUT, artifact kept, no document written', async () => {
     await start();
     const { jobId } = await submit('fake@cpu#slow');
     await until(() => manager.inspect(jobId).progress);
@@ -650,7 +650,7 @@ describe('JobManager（假 Model Worker）', () => {
     expect(videos.applied).toEqual([]);
   }, 15_000);
 
-  it('启动对账：上次运行中的任务标为中断，不属于在途任务的 staging 目录删除', async () => {
+  it('startup reconciliation: tasks running at last run are marked interrupted, and staging directories that do not belong to in-flight tasks are deleted', async () => {
     const record = (jobId: string, state: JobState): JobRecord => ({
       jobId,
       kind: 'transcribe',
@@ -712,7 +712,7 @@ describe('JobManager（假 Model Worker）', () => {
     expect(jobs.map((j) => j.record.state)).toEqual(['interrupted', 'completed']);
   });
 
-  it('产物引用：账本里任何状态的任务的结果、输出与冻结的规格里出现的产物 id 都算', async () => {
+  it('artifact references: artifact ids appearing in results, outputs and frozen specs of tasks in any state in the ledger all count', async () => {
     const result = `sha256:${'a'.repeat(64)}`;
     const output = `sha256:${'b'.repeat(64)}`;
     const inSpec = `sha256:${'c'.repeat(64)}`;
@@ -757,7 +757,7 @@ describe('JobManager（假 Model Worker）', () => {
     expect([...manager.referencedArtifactIds()].sort()).toEqual([result, output, inSpec]);
   });
 
-  it('停止：在途任务标为中断，Worker 进程退出', async () => {
+  it('stop: in-flight tasks marked interrupted, and the Worker process exits', async () => {
     await start();
     const { jobId } = await submit('fake@cpu#slow');
     const queued = await submit('fake@cpu#slow', { hint: 'another' });
@@ -771,7 +771,7 @@ describe('JobManager（假 Model Worker）', () => {
     await expect(submit()).rejects.toMatchObject({ code: 'busy' });
   });
 
-  describe('实时段落（job.segments）', () => {
+  describe('live segments (job.segments)', () => {
     type Update = { jobId: string; from: number; segments: Array<{ start: number; end: number; text: string }> };
     let updates: Update[];
     const listen = () => {
@@ -779,7 +779,7 @@ describe('JobManager（假 Model Worker）', () => {
       manager.onSegments((update) => updates.push(update));
     };
 
-    it('逐段通知，from 递增，tick 换成秒；在跑时进快照，完成后快照不再带', async () => {
+    it('notifies per segment, from increments, tick converted to seconds; included in the snapshot while running, and not included once completed', async () => {
       await start();
       listen();
       const { jobId } = await submit();
@@ -793,7 +793,7 @@ describe('JobManager（假 Model Worker）', () => {
       expect(manager.snapshot()).not.toHaveProperty('liveSegments');
     });
 
-    it('在跑时快照带着到目前为止的全部段落；取消后丢掉', async () => {
+    it('while running, the snapshot includes all segments so far; dropped after cancel', async () => {
       await start();
       listen();
       const { jobId } = await submit('fake@cpu#slow');
@@ -809,7 +809,7 @@ describe('JobManager（假 Model Worker）', () => {
       expect(manager.snapshot()).not.toHaveProperty('liveSegments');
     });
 
-    it('崩溃后自动重试：中断时丢掉，新一次尝试从 from 0 重来', async () => {
+    it('automatic retry after crash: segments are dropped on interruption, and the new attempt starts again from from 0', async () => {
       await start();
       listen();
       const atInterrupt: unknown[] = [];
@@ -824,7 +824,7 @@ describe('JobManager（假 Model Worker）', () => {
       expect(manager.snapshot()).not.toHaveProperty('liveSegments');
     });
 
-    it('空白文字与不合法的时间丢掉；任务失败后迟到的段落不再收', async () => {
+    it('blank text and invalid times are dropped; segments arriving late after the task fails are no longer accepted', async () => {
       const remote = new FakeNodeProvider(() => provider);
       await start({ remote, resolveNode: (node) => (node === 'studio' ? 'node_a' : null) });
       listen();
@@ -857,7 +857,7 @@ describe('JobManager（假 Model Worker）', () => {
     });
   });
 
-  describe('远端节点（node 参数）', () => {
+  describe('remote node (node parameter)', () => {
     const resolveNode = (node: string) => (node === 'studio' || node === 'node_a' ? 'node_a' : null);
     let remote: FakeNodeProvider;
     const startRemote = () => {
@@ -865,7 +865,7 @@ describe('JobManager（假 Model Worker）', () => {
       return start({ remote, resolveNode });
     };
 
-    it('不看本机模型目录：providerId 为 node:<nodeId>，结果照常校验、发布、应用', async () => {
+    it('does not look at the local model directory: providerId is node:<nodeId>, and the result is validated, published and applied as usual', async () => {
       await startRemote();
       // On the node, the Worker crashed and was retried: the result is backfilled with the node's attempt sequence number 2.
       remote.next = async (run, sink, signal) => {
@@ -893,7 +893,7 @@ describe('JobManager（假 Model Worker）', () => {
       expect(await exists(stagingOf(jobId))).toBe(false);
     });
 
-    it('结果的 runGeneration 仍然严格校验：Provider 不说明时按本机的尝试序号', async () => {
+    it('the result\'s runGeneration is still strictly validated: when the provider does not specify it, the local attempt number is used', async () => {
       await startRemote();
       remote.next = (run, sink, signal) => provider.transcribe({ ...run, bundleId: 'fake@cpu', runGeneration: 2 }, sink, signal);
       const { jobId } = await submit(undefined, { node: 'studio' });
@@ -901,7 +901,7 @@ describe('JobManager（假 Model Worker）', () => {
       expect(manager.inspect(jobId)).toMatchObject({ state: 'failed', error: { code: 'MODEL_OUTPUT_INVALID' } });
     });
 
-    it('不认识的节点 not-found；没有发起端时 node 参数一律 not-found', async () => {
+    it('unknown node: not-found; without an initiating side, the node parameter always gives not-found', async () => {
       await startRemote();
       await expect(submit(undefined, { node: 'nowhere' })).rejects.toMatchObject({ code: 'not-found' });
       await manager.shutdown();
@@ -909,7 +909,7 @@ describe('JobManager（假 Model Worker）', () => {
       await expect(submit(undefined, { node: 'studio' })).rejects.toMatchObject({ code: 'not-found' });
     });
 
-    it('输入哈希含节点：同一素材的本机任务与远端任务是两个任务；远端不占本机模型包的队列', async () => {
+    it('the input hash includes the node: a local task and a remote task on the same media are two tasks; remote tasks do not occupy the local model pack\'s queue', async () => {
       await startRemote();
       let release!: () => void;
       const gate = new Promise<void>((resolve) => (release = resolve));
@@ -930,7 +930,7 @@ describe('JobManager（假 Model Worker）', () => {
       expect(manager.inspect(remoteJob.jobId).state).toBe('completed');
     });
 
-    it('同一个节点的远端任务一个一个交（每个节点一个队列）', async () => {
+    it('remote tasks for the same node are handed over one at a time (one queue per node)', async () => {
       await startRemote();
       let inFlight = 0;
       let peak = 0;
@@ -949,7 +949,7 @@ describe('JobManager（假 Model Worker）', () => {
       expect(jobs.map(({ jobId }) => manager.inspect(jobId).state)).toEqual(['completed', 'completed', 'completed']);
     });
 
-    it('失败归一化：拒绝与失联不重试；节点上的失败保留节点的错误码并记下节点', async () => {
+    it('failure normalization: rejections and disconnections are not retried; a failure on a node keeps the node\'s error code and records the node', async () => {
       await startRemote();
       const cases: Array<[ProviderFailure, object]> = [
         [
@@ -982,7 +982,7 @@ describe('JobManager（假 Model Worker）', () => {
       expect(videos.leases).toBe(0);
     });
 
-    it('取消：Provider 的取消警告进任务记录', async () => {
+    it('cancel: the provider\'s cancellation warning goes into the task record', async () => {
       await startRemote();
       remote.next = (_run, _sink, signal) =>
         new Promise((resolve) => {
@@ -998,7 +998,7 @@ describe('JobManager（假 Model Worker）', () => {
     });
   });
 
-  describe('外部文件任务（节点）', () => {
+  describe('external file task (node)', () => {
     const NODE = { kind: 'node', id: 'client-a' } as const;
     const fileRequest = async (extra: Partial<FileTranscribeRequest> = {}): Promise<FileTranscribeRequest> => {
       const file = path.join(dir, 'remote-input');
@@ -1012,7 +1012,7 @@ describe('JobManager（假 Model Worker）', () => {
       };
     };
 
-    it('完成：结果交到指定文件，不发布产物、不碰视频；记录里没有视频', async () => {
+    it('completion: the result goes to the specified file, no artifact is published and the video is untouched; the record has no video', async () => {
       await start();
       const outputs: FileJobOutput[] = [];
       const languages: string[] = [];
@@ -1055,7 +1055,7 @@ describe('JobManager（假 Model Worker）', () => {
       expect(manager.list().map((j) => j.submitter.kind)).toEqual(['node', 'node']);
     });
 
-    it('提交时的校验', async () => {
+    it('validation at submission', async () => {
       await start();
       await expect(manager.submitFile(await fileRequest({ file: 'relative' }), NODE)).rejects.toMatchObject({ code: 'invalid-request' });
       await expect(manager.submitFile(await fileRequest({ resultFile: 'out.json' }), NODE)).rejects.toMatchObject({
@@ -1073,7 +1073,7 @@ describe('JobManager（假 Model Worker）', () => {
       await manager.settled(jobId);
     });
 
-    it('崩溃一次：先通知重试再标中断，以 attempt 2 完成', async () => {
+    it('crashes once: notifies retry first, then marks interrupted, completes as attempt 2', async () => {
       await start();
       const retries: number[] = [];
       const seen: string[] = [];
@@ -1090,7 +1090,7 @@ describe('JobManager（假 Model Worker）', () => {
       expect(seen.indexOf('retrying:2')).toBeLessThan(seen.indexOf('interrupted:1'));
     });
 
-    it('与视频任务共用一个队列：同一个模型包按到达顺序一次一个', async () => {
+    it('shares one queue with video tasks: the same model pack handles one at a time in arrival order', async () => {
       await start();
       const first = await submit('fake@cpu#slow-load');
       const remote = await manager.submitFile(await fileRequest({ bundleId: 'fake@cpu#slow-load' }), NODE);
@@ -1104,7 +1104,7 @@ describe('JobManager（假 Model Worker）', () => {
       expect(videos.applied).toHaveLength(2);
     });
 
-    it('输出不合合同：诊断目录里不留原始结果（可能含转写文字）', async () => {
+    it('output violates the contract: no raw result is kept in the diagnostics directory (it may contain transcribed text)', async () => {
       await start();
       const { jobId } = await manager.submitFile(await fileRequest({ bundleId: 'fake@cpu#invalid-output' }), NODE);
       await manager.settled(jobId);
@@ -1113,7 +1113,7 @@ describe('JobManager（假 Model Worker）', () => {
       expect(await exists(path.join(paths.diagnosticsDir, jobId, 'result.json'))).toBe(false);
     });
 
-    it('停止与重启：在途的外部文件任务标为中断', async () => {
+    it('stop and restart: in-flight external file tasks are marked interrupted', async () => {
       await start();
       const { jobId } = await manager.submitFile(await fileRequest({ bundleId: 'fake@cpu#slow' }), NODE);
       await until(() => manager.inspect(jobId).state === 'running');

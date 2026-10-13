@@ -40,15 +40,15 @@ function enumValues(prop: Record<string, unknown>): unknown[] {
   return values;
 }
 
-describe('工具目录项', () => {
-  it('没有重名的工具', () => {
+describe('tool catalog entries', () => {
+  it('no duplicate tool names', () => {
     const names = entries.map((e) => e.name);
     expect(new Set(names).size).toBe(names.length);
   });
 
   for (const { name, info, schema, json } of entries) {
     describe(name, () => {
-      it('effect、surfaces 写全，effect 与 annotations 一致', () => {
+      it('effect and surfaces fully specified; effect and annotations match', () => {
         expect(TOOL_EFFECTS).toContain(info.effect);
         expect(info.surfaces.length).toBeGreaterThan(0);
         expect(new Set(info.surfaces).size).toBe(info.surfaces.length);
@@ -58,7 +58,7 @@ describe('工具目录项', () => {
         if (info.effect === 'destructive') expect(info.annotations?.destructiveHint).toBe(true);
       });
 
-      it('description 第一句是一行摘要', () => {
+      it('the first sentence of description is a one-line summary', () => {
         const first = info.description.split('\n')[0]!;
         // Same rule as the CLI's `summaryOf`: a full stop followed by a letter (`video.db`) does not end the sentence.
         const sentence = /^.*?[.!?](?=\s|$)/.exec(first)?.[0];
@@ -67,7 +67,7 @@ describe('工具目录项', () => {
         expect(info.title.trim()).not.toBe('');
       });
 
-      it('每个字段有 description，枚举值都写进说明', () => {
+      it('every field has a description, and enum values are all listed in it', () => {
         for (const [field, prop] of Object.entries(json.properties ?? {})) {
           const text = prop.description;
           expect(typeof text === 'string' && text.length > 0, `${name}.${field} 没有 description`).toBe(true);
@@ -77,7 +77,7 @@ describe('工具目录项', () => {
         }
       });
 
-      it('examples 有一到三个，每个都通过 schema', () => {
+      it('one to three examples, each passing the schema', () => {
         expect(info.examples.length).toBeGreaterThanOrEqual(1);
         expect(info.examples.length).toBeLessThanOrEqual(3);
         for (const example of info.examples) {
@@ -87,7 +87,7 @@ describe('工具目录项', () => {
         }
       });
 
-      it('positional 指向 schema 里的字段', () => {
+      it('positional points to a field in the schema', () => {
         if (info.positional === undefined) return;
         expect(Object.keys(json.properties ?? {})).toContain(info.positional);
       });
@@ -95,17 +95,17 @@ describe('工具目录项', () => {
   }
 });
 
-describe('MCP 服务的开放清单', () => {
+describe('the MCP service\'s exposed tool list', () => {
   const sorted = <T extends { name: string }>(list: readonly T[]) => [...list].sort((a, b) => a.name.localeCompare(b.name));
 
-  it('由目录的 surfaces 推出，与协议常量 MCP_SERVICE_TOOL_NAMES 一致（名字、标题、效果）', () => {
+  it('derived from the catalog\'s surfaces, matching the protocol constant MCP_SERVICE_TOOL_NAMES (name, title, effect)', () => {
     const derived = entries
       .filter((e) => serviceToolExposed(e.info, 'auto'))
       .map((e) => ({ name: e.name, title: e.info.title, effect: e.info.effect }));
     expect(sorted(derived)).toEqual(sorted(MCP_SERVICE_TOOL_NAMES));
   });
 
-  it('read 等级只露只读的工具；ask 与 auto 露出全部 mcp 面的工具', () => {
+  it('the read level exposes only read-only tools; ask and auto expose all tools on the MCP surface', () => {
     const exposed = (level: 'read' | 'ask' | 'auto') =>
       entries
         .filter((e) => serviceToolExposed(e.info, level))

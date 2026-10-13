@@ -233,8 +233,8 @@ afterEach(async () => {
   await fs.rm(dir, { recursive: true, force: true });
 });
 
-describe('添加智能体', () => {
-  it('存进 agent-providers.json、注册成 Driver；视图里标为 custom，环境变量只给名字', async () => {
+describe('add agent', () => {
+  it('saved to agent-providers.json and registered as a Driver; the view marks it as custom, and environment variables give only names', async () => {
     const h = await open([new FakeDriver('codex')]);
     const view = await h.addProvider({
       ...pinned,
@@ -271,7 +271,7 @@ describe('添加智能体', () => {
     expect((await rejection(h.addProvider({ ...pinned, id: 'codex' }))).code).toBe('invalid-request');
   });
 
-  it('重启后从存储载入，探测缓存里它的条目照常认得', async () => {
+  it('after restart it loads from storage, and its entry in the probe cache is still recognized', async () => {
     let h = await open([new FakeDriver('codex')]);
     await h.addProvider(pinned);
     await until(() => h.agentsSnapshot().drivers.some((d) => d.id === 'gemini-pinned'));
@@ -286,8 +286,8 @@ describe('添加智能体', () => {
   });
 });
 
-describe('移除智能体', () => {
-  it('清掉偏好、探测缓存与指向它的默认 Agent；进行中的任务失败，之后发送以 driver-unavailable 拒绝', async () => {
+describe('remove agent', () => {
+  it('clears its preference, probe cache and any default Agent pointing to it; running tasks fail, and later sends are rejected with driver-unavailable', async () => {
     const h = await open([new FakeDriver('codex')]);
     await h.addProvider(pinned);
     await until(() => h.agentsSnapshot().drivers.some((d) => d.id === 'gemini-pinned'));
@@ -334,7 +334,7 @@ describe('移除智能体', () => {
     expect(reopened.getConversation(conversation.id).conversation.activeTaskId).toBeNull();
   });
 
-  it('内置的不能移除；没有的为 not-found；未注册的 id 不能设为默认', async () => {
+  it('built-in agents cannot be removed; a missing one gives not-found; an unregistered id cannot be set as default', async () => {
     const h = await open([new FakeDriver('codex')]);
     const builtin = await rejection(h.removeProvider('codex'));
     expect(builtin.code).toBe('invalid-request');
@@ -345,7 +345,7 @@ describe('移除智能体', () => {
   });
 });
 
-describe('没有逐次审批通道的 Driver 只能 fullAccess', () => {
+describe('a Driver without a per-call approval channel can only use fullAccess', () => {
   async function fullOnly(): Promise<{ h: Harness; conversationId: Id }> {
     const h = await open([new FakeDriver('codex'), new FakeDriver('pi', { name: 'Pi', approvals: false })]);
     await h.agents();
@@ -353,7 +353,7 @@ describe('没有逐次审批通道的 Driver 只能 fullAccess', () => {
     return { h, conversationId: conversation.id };
   }
 
-  it('发送时模式不是 fullAccess：以 AGENT_ACCESS_MODE_UNSUPPORTED 拒绝，不建任务、不改会话的模式', async () => {
+  it('send with a mode other than fullAccess is rejected with AGENT_ACCESS_MODE_UNSUPPORTED, without creating a task or changing the session\'s mode', async () => {
     const { h, conversationId } = await fullOnly();
     // Default mode (auto).
     const byDefault = await rejection(() => h.send({ conversationId, text: 'a', commandId: newId('cmd') }));
@@ -388,7 +388,7 @@ describe('没有逐次审批通道的 Driver 只能 fullAccess', () => {
     expect(h.getConversation(conversationId).conversation.activeTaskId).not.toBeNull();
   });
 
-  it('建会话与切换模式时显式给出别的模式同样拒绝；fullAccess 与跟随设置可以', async () => {
+  it('explicitly giving another mode when creating a session or switching mode is rejected the same way; fullAccess and follow-settings are allowed', async () => {
     const { h, conversationId } = await fullOnly();
     expect((await rejection(h.createConversation({ driverId: 'pi', accessMode: 'ask' }))).details).toMatchObject({
       code: 'AGENT_ACCESS_MODE_UNSUPPORTED',

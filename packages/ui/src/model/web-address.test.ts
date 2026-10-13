@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { DEVICE_PRESETS, deviceFrame, WEB_ZOOM_STEPS, displayUrl, resolveAddress, webShortcut, zoomStep } from './web-address.ts';
 
-describe('网页标签的地址栏', () => {
-  it('像网址的按网址打开，补上协议', () => {
+describe('web tab address bar', () => {
+  it('URL-like input opens as a URL, with the protocol added', () => {
     expect(resolveAddress('example.com')).toBe('https://example.com/');
     expect(resolveAddress('  example.com/a?b=1  ')).toBe('https://example.com/a?b=1');
     expect(resolveAddress('http://example.com')).toBe('http://example.com/');
@@ -11,26 +11,26 @@ describe('网页标签的地址栏', () => {
     expect(resolveAddress('example.com:8443')).toBe('https://example.com:8443/');
   });
 
-  it('不合规矩的网址返回 null：非 http/https、带账号密码', () => {
+  it('invalid URLs return null: non-http/https, or containing credentials', () => {
     expect(resolveAddress('file:///etc/passwd')).toBeNull();
     expect(resolveAddress('javascript:alert(1)')).toBeNull();
     expect(resolveAddress('https://user:pw@example.com')).toBeNull();
     expect(resolveAddress('   ')).toBeNull();
   });
 
-  it('其余当搜索词，走 Google', () => {
+  it('everything else is treated as a search term and goes to Google', () => {
     expect(resolveAddress('剪辑 教程')).toBe('https://www.google.com/search?q=%E5%89%AA%E8%BE%91%20%E6%95%99%E7%A8%8B');
     expect(resolveAddress('react hooks')).toBe('https://www.google.com/search?q=react%20hooks');
   });
 
-  it('静止时显示的网址不带协议，根路径省略', () => {
+  it('the URL shown at rest omits the protocol and the root path', () => {
     expect(displayUrl('https://example.com/')).toBe('example.com');
     expect(displayUrl('https://example.com:8443/a/b?q=1#top')).toBe('example.com:8443/a/b?q=1#top');
     expect(displayUrl('')).toBe('');
   });
 });
 
-describe('网页标签的快捷键', () => {
+describe('web tab shortcuts', () => {
   const key = (over: Partial<Parameters<typeof webShortcut>[0]>) => ({
     key: 'l',
     code: 'KeyL',
@@ -41,7 +41,7 @@ describe('网页标签的快捷键', () => {
     ...over,
   });
 
-  it('macOS 用 ⌘，其它平台用 Ctrl；按物理键判断', () => {
+  it('macOS uses ⌘, other platforms use Ctrl; judged by physical key', () => {
     expect(webShortcut(key({ metaKey: true }), true)).toBe('focus-address');
     expect(webShortcut(key({ metaKey: true, key: 'r', code: 'KeyR' }), true)).toBe('reload');
     expect(webShortcut(key({ metaKey: true, shiftKey: true, code: 'KeyR' }), true)).toBe('force-reload');
@@ -55,8 +55,8 @@ describe('网页标签的快捷键', () => {
   });
 });
 
-describe('网页缩放', () => {
-  it('一档一档放大缩小，到头不动', () => {
+describe('web page zoom', () => {
+  it('zooms in and out one step at a time, and stops at the limits', () => {
     expect(zoomStep(100, 1)).toBe(110);
     expect(zoomStep(100, -1)).toBe(90);
     expect(zoomStep(200, 1)).toBe(200);
@@ -68,7 +68,7 @@ describe('网页缩放', () => {
   });
 });
 
-it('设备视口等比适配当前面板，不超出原生视图边界', () => {
+it('device viewport scales proportionally to fit the current panel, without exceeding the native view bounds', () => {
   expect(deviceFrame(DEVICE_PRESETS.phone, { width: 422, height: 876 })).toEqual(DEVICE_PRESETS.phone);
   const frame = deviceFrame({ width: 1440, height: 900 }, { width: 752, height: 482 });
   expect(frame).toEqual({ width: 720, height: 450 });

@@ -52,26 +52,26 @@ function fakeSession(fail?: { method: string; error: Error }) {
   return { session, calls };
 }
 
-describe('密钥对话框', () => {
-  it('保存：带密钥启用并验证一次', async () => {
+describe('key dialog', () => {
+  it('save: enable with the key and verify once', async () => {
     const { session, calls } = fakeSession();
     await saveProviderKey(session, 'openai', ' sk-test-123 ');
     expect(calls).toEqual([['models.configure', { providerId: 'openai', enabled: true, verify: true, credential: 'sk-test-123' }]]);
   });
 
-  it('自建的不填密钥也能保存：只启用并验证地址', async () => {
+  it('a self-hosted one can be saved without a key: only enable and verify the address', async () => {
     const { session, calls } = fakeSession();
     await saveProviderKey(session, 'custom:box', '');
     expect(calls).toEqual([['models.configure', { providerId: 'custom:box', enabled: true, verify: true }]]);
   });
 
-  it('验证不过：错误原样抛出，对话框据此留着并写原因', async () => {
+  it('verification fails: the error is rethrown as is, the dialog stays open and writes the reason', async () => {
     const error = new RpcError('conflict', '验证没有通过：401 · 密钥无效', { code: 'PROVIDER_AUTH', providerId: 'openai' });
     const { session } = fakeSession({ method: 'models.configure', error });
     await expect(saveProviderKey(session, 'openai', 'sk-bad')).rejects.toThrow('验证没有通过');
   });
 
-  it('移除：内置的清掉密钥并停用，自建的删掉', async () => {
+  it('remove: built-in ones have the key cleared and are disabled, self-hosted ones are deleted', async () => {
     const { session, calls } = fakeSession();
     await disconnectProvider(session, 'openai');
     await disconnectProvider(session, 'custom:box');
@@ -82,8 +82,8 @@ describe('密钥对话框', () => {
   });
 });
 
-describe('自建服务商与模型', () => {
-  it('添加服务商：登记名字、地址与第一只模型，返回新 ID', async () => {
+describe('self-hosted providers and models', () => {
+  it('add provider: register name, address and first model, return new ID', async () => {
     const { session, calls } = fakeSession();
     const id = await addCustomProvider(session, fixtureView(), {
       name: 'Image Box',
@@ -101,7 +101,7 @@ describe('自建服务商与模型', () => {
     ]);
   });
 
-  it('添加模型：原有声明一起带上', async () => {
+  it('add model: existing declarations carried along', async () => {
     const { session, calls } = fakeSession();
     await addProviderModel(session, fixtureView(), 'custom:asr-box', { modelId: 'tts-x', capability: 'synthesizeSpeech', voices: ['a'] });
     const [, params] = calls[0] as [string, { models: { modelId: string }[] }];
@@ -109,8 +109,8 @@ describe('自建服务商与模型', () => {
   });
 });
 
-describe('默认模型', () => {
-  it('云端：选模型 = 设默认；「每次选择」= 清掉', async () => {
+describe('default model', () => {
+  it('cloud: choosing a model = set as default; "choose each time" = clear', async () => {
     const { session, calls } = fakeSession();
     await chooseCloudDefault(session, 'generateImage', 'agent:codex/image-gen');
     await chooseCloudDefault(session, 'synthesizeSpeech', 'none');
@@ -120,7 +120,7 @@ describe('默认模型', () => {
     ]);
   });
 
-  it('本地：停用过的模型包先重新启用再设默认；好好的不调 enable', async () => {
+  it('local: a previously disabled model pack is re-enabled before being set as default; a healthy one does not call enable', async () => {
     const { session, calls } = fakeSession();
     const bundles = [bundle('a@mlx', { state: 'error', reason: 'resource' }), bundle('b@mlx')];
     await chooseLocalDefault(session, 'a@mlx', bundles);
@@ -135,8 +135,8 @@ describe('默认模型', () => {
   });
 });
 
-describe('文本生成的参数', () => {
-  it('推理强度：选一档交那一档，「自动」交 null', async () => {
+describe('text generation parameters', () => {
+  it('reasoning effort: choosing a level passes that level; "auto" passes null', async () => {
     const { session, calls } = fakeSession();
     await setTextEffort(session, 'high');
     await setTextEffort(session, 'auto');
@@ -146,21 +146,21 @@ describe('文本生成的参数', () => {
     ]);
   });
 
-  it('并发请求数：夹在 1–32；不是数时不提交', async () => {
+  it('concurrent requests: clamped to 1–32; not submitted when not a number', async () => {
     const { session, calls } = fakeSession();
     expect(await setTextConcurrency(session, 40)).toBe(true);
     expect(await setTextConcurrency(session, Number.NaN)).toBe(false);
     expect(calls).toEqual([['models.setCapabilityParameters', { capability: 'generateText', concurrency: 32 }]]);
   });
 
-  it('Runtime 拒绝时原样抛出', async () => {
+  it('rethrown as is when Runtime rejects', async () => {
     const { session } = fakeSession({ method: 'models.setCapabilityParameters', error: new Error('写不进去') });
     await expect(setTextEffort(session, 'low')).rejects.toThrow('写不进去');
   });
 });
 
-describe('测试对话框', () => {
-  it('合成与生图各提交一个任务（带 commandId），不导入视频', async () => {
+describe('test dialog', () => {
+  it('synthesis and image generation each submit one task (with commandId), no video imported', async () => {
     const { session, calls } = fakeSession();
     expect(await startProbe(session, 'synthesizeSpeech', 'openai', speechModel('gpt-4o-mini-tts', ['alloy']))).toBe('job_9');
     expect(await startProbe(session, 'generateImage', 'openai', imageModel('gpt-image-1'))).toBe('job_9');
@@ -173,7 +173,7 @@ describe('测试对话框', () => {
     expect(calls[1]![1]).toMatchObject({ provider: 'openai', model: 'gpt-image-1', count: 1 });
   });
 
-  it('文本生成：一条「Reply with OK.」，带 commandId，不给输出上限与推理强度', async () => {
+  it('text generation: one "Reply with OK.", with commandId, no output limit or reasoning effort given', async () => {
     const { session, calls } = fakeSession();
     expect(await startProbe(session, 'generateText', 'openai', textModel('gpt-5-mini'))).toBe('job_9');
     expect(calls).toHaveLength(1);
@@ -185,13 +185,13 @@ describe('测试对话框', () => {
     expect(params).not.toHaveProperty('maxOutputTokens');
   });
 
-  it('语音识别不提交任务', async () => {
+  it('speech recognition submits no task', async () => {
     const { session, calls } = fakeSession();
     await expect(startProbe(session, 'transcribe', 'openai', imageModel('whisper-1'))).rejects.toThrow();
     expect(calls).toEqual([]);
   });
 
-  it('结果的受限地址', async () => {
+  it('restricted addresses for results', async () => {
     const { session, calls } = fakeSession();
     const url = await probeMediaUrl(session, {
       artifactId: 'sha256:aa',

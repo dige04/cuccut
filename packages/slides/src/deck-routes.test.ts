@@ -25,12 +25,12 @@ afterAll(async () => {
 const INLINE = '(()=>{window.boot=1})();';
 const INDEX = `<!doctype html><html><head><script>${INLINE}</script></head><body><div id="root"></div><script type="module" src="./assets/index-abc.js"></script></body></html>`;
 
-describe('CSP 小工具', () => {
-  it('inlineScriptHashes 只算内联脚本', () => {
+describe('CSP helper', () => {
+  it('inlineScriptHashes hashes only inline scripts', () => {
     expect(inlineScriptHashes(INDEX)).toEqual([`sha256-${Buffer.from(sha256(INLINE), 'hex').toString('base64')}`]);
   });
 
-  it('editorCsp 带上哈希；给了 frameAncestors 才限制嵌入', () => {
+  it('editorCsp includes hashes; framing restricted only when frameAncestors is given', () => {
     const csp = editorCsp(['sha256-x']);
     expect(csp).toContain("script-src 'self' 'sha256-x'");
     expect(csp).toContain('https://fonts.gstatic.com');
@@ -39,7 +39,7 @@ describe('CSP 小工具', () => {
   });
 });
 
-describe('SlidesServer 路由', () => {
+describe('SlidesServer routes', () => {
   let dist: string | null;
   let deckDir: string;
   let server: SlidesServer;
@@ -78,13 +78,13 @@ describe('SlidesServer 路由', () => {
   const publish = (files: unknown, init: RequestInit = {}) =>
     fetch(at('__deck/publish'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ files }), ...init });
 
-  it('同一个目录复用 grant；别的前缀不处理', async () => {
+  it('same directory reuses grant; other prefixes not handled', async () => {
     expect(await server.open(deckDir)).toBe(grant);
     expect(grant).toMatch(/^[A-Za-z0-9_-]{32}$/);
     expect((await fetch(`${base}/media/x`)).status).toBe(418);
   });
 
-  it('编辑器页面：缺 / 时重定向；带 CSP 与内联脚本哈希；静态资源可取，node/ 不给', async () => {
+  it('editor page: redirects when / is missing; carries CSP and inline script hashes; static assets fetchable, node/ not served', async () => {
     const redirect = await fetch(`${base}/slides/${grant}?x=1`, { redirect: 'manual' });
     expect(redirect.status).toBe(308);
     expect(redirect.headers.get('location')).toBe(`/slides/${grant}/?x=1`);
@@ -102,7 +102,7 @@ describe('SlidesServer 路由', () => {
     }
   });
 
-  it('没构建编辑器时页面回 503；未知 grant 404', async () => {
+  it('page returns 503 when editor not built; unknown grant 404', async () => {
     const saved = dist;
     dist = null;
     try {
@@ -113,7 +113,7 @@ describe('SlidesServer 路由', () => {
     expect((await fetch(`${base}/slides/${'x'.repeat(32)}/`)).status).toBe(404);
   });
 
-  it('清单与 deck 文件；清单外的读不到', async () => {
+  it('manifest and deck files; files outside the manifest unreadable', async () => {
     const listing = (await (await fetch(at('_files.json'))).json()) as FileListing;
     expect(Object.keys(listing.files)).toEqual(['project/deck.json', 'project/slides/s01.html']);
     const slide = await fetch(at('project/slides/s01.html'));
@@ -122,7 +122,7 @@ describe('SlidesServer 路由', () => {
     expect((await fetch(at('project/notes.md'))).status).toBe(404);
   });
 
-  it('发布写回磁盘；冲突 409；格式错 400；不是 JSON 415', async () => {
+  it('publish writes back to disk; conflict 409; format error 400; not JSON 415', async () => {
     const ok = await publish({ 'project/slides/s01.html': { base64: Buffer.from('<section>v2</section>').toString('base64'), contentType: 'text/html' } });
     expect(ok.status).toBe(200);
     expect(((await ok.json()) as PublishResult).shas).toEqual({ 'project/slides/s01.html': sha256('<section>v2</section>') });
@@ -139,7 +139,7 @@ describe('SlidesServer 路由', () => {
     expect((await fetch(at('__deck/publish'))).status).toBe(405);
   });
 
-  it('只读与跨源的写请求被拒（not_writer），磁盘不动', async () => {
+  it('read-only and cross-origin write requests rejected (not_writer), disk untouched', async () => {
     const body = { 'project/slides/s01.html': null };
     const crossOrigin = await publish(body, { headers: { 'Content-Type': 'application/json', Origin: 'https://evil.example' } });
     expect(crossOrigin.status).toBe(403);
@@ -153,7 +153,7 @@ describe('SlidesServer 路由', () => {
     expect(await readOnly.json()).toMatchObject({ code: 'not_writer' });
   });
 
-  it('上传素材后在 /slides/<grant>/_blob/<id> 与根级 /_blob/<id> 都能取到', async () => {
+  it('after uploading an asset, it is fetchable at both /slides/<grant>/_blob/<id> and root-level /_blob/<id>', async () => {
     const res = await fetch(at('__deck/assets'), { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: new Uint8Array([1, 2, 3]) });
     const uploaded = (await res.json()) as UploadResult;
     expect(uploaded.url).toBe(`/_blob/${uploaded.id}`);
@@ -167,7 +167,7 @@ describe('SlidesServer 路由', () => {
     expect((await fetch(at('__deck/assets'), { method: 'POST', body: '' })).status).toBe(400);
   });
 
-  it('外部改动经 SSE 推给编辑器；编辑器自己的保存不推', async () => {
+  it('external changes pushed to the editor via SSE; the editor\'s own saves not pushed', async () => {
     const controller = new AbortController();
     const res = await fetch(at('__deck/events'), { signal: controller.signal });
     expect(res.headers.get('content-type')).toContain('text/event-stream');
@@ -204,7 +204,7 @@ describe('SlidesServer 路由', () => {
     }
   });
 
-  it('符号链接的编辑器文件不给', async () => {
+  it('symlinked editor file not served', async () => {
     const outside = await tempDir({ 'secret.txt': 'x' });
     await symlink(path.join(outside, 'secret.txt'), path.join(dist!, 'leak.txt'));
     expect((await fetch(at('leak.txt'))).status).toBe(404);

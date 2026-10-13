@@ -12,12 +12,12 @@ const ctx: TaskContext = {
 };
 
 describe('jobPercent', () => {
-  it('总量已知时按 done/total 向下取整，夹在 0–100', () => {
+  it('floors done/total to a percentage when the total is known, clamped to 0–100', () => {
     expect(jobPercent({ progress: { done: 45, total: 100, unit: 'seconds' } })).toBe(45);
     expect(jobPercent({ progress: { done: 99.9, total: 100, unit: 'seconds' } })).toBe(99);
     expect(jobPercent({ progress: { done: 120, total: 100, unit: 'seconds' } })).toBe(100);
   });
-  it('总量未知、为 0 或没有进度时为 null（不伪造百分比）', () => {
+  it('null when the total is unknown, 0, or there is no progress (no fake percentage)', () => {
     expect(jobPercent({ progress: { done: 3, total: null, unit: 'segments' } })).toBeNull();
     expect(jobPercent({ progress: { done: 0, total: 0, unit: 'outputs' } })).toBeNull();
     expect(jobPercent({ progress: null })).toBeNull();
@@ -25,7 +25,7 @@ describe('jobPercent', () => {
 });
 
 describe('runsOnLabel', () => {
-  it('本机、远端节点、本机的智能体、云端', () => {
+  it('local, remote node, local agent, cloud', () => {
     expect(runsOnLabel('local')).toBe('本机');
     expect(runsOnLabel('node:studio')).toBe('远端节点');
     expect(runsOnLabel('agent:codex')).toBe('本机 · Codex');
@@ -35,14 +35,14 @@ describe('runsOnLabel', () => {
 });
 
 describe('clip', () => {
-  it('按码点截断并补省略号', () => {
+  it('truncates by code point and appends an ellipsis', () => {
     expect(clip('  一只橘猫  ', 40)).toBe('一只橘猫');
     expect(clip('一二三四五', 3)).toBe('一二三…');
   });
 });
 
 describe('jobRow', () => {
-  it('在跑的转录：阶段 · 百分比、确定进度、取消动作；打开的视频给出标题', () => {
+  it('running transcription: stage · percentage, determinate progress, cancel action; an open video gives the title', () => {
     const row = jobRow(job({ jobId: 'j1', progress: { done: 45, total: 100, unit: 'seconds' } }), ctx);
     expect(row).toMatchObject({
       kind: 'transcribe',
@@ -60,25 +60,25 @@ describe('jobRow', () => {
     });
   });
 
-  it('总量未知时只念阶段，进度条转圈', () => {
+  it('unknown total only reads the stage, progress bar spins', () => {
     const row = jobRow(job({ jobId: 'j1', phase: 'loading', progress: { done: 0, total: null, unit: 'seconds' } }), ctx);
     expect(row.label).toBe('加载模型');
     expect(row.progress).toBe('indet');
   });
 
-  it('排队：念「排队中」、转圈、可取消；开始时间用提交时间', () => {
+  it('queued: reads "排队中", spins, cancellable; start time uses the submit time', () => {
     const row = jobRow(job({ jobId: 'j2', state: 'queued', phase: 'queued', startedAt: null, createdAt: '2026-10-01T08:00:00Z' }), ctx);
     expect(row).toMatchObject({ label: '排队中', tone: 'info', queued: true, progress: 'indet', startedAt: '2026-10-01T08:00:00Z' });
     expect(row.action).toEqual({ type: 'cancel', jobId: 'j2' });
   });
 
-  it('排队在等资源：详情那一行写 Runtime 记着的原因', () => {
+  it('queued waiting for resources: the detail line gives the reason the Runtime recorded', () => {
     const wait = { reason: 'resources' as const, dimensions: ['memory' as const], detail: '等待资源：内存不够', since: '2026-10-01T08:00:00Z' };
     expect(jobRow(job({ jobId: 'j3', state: 'queued', phase: 'queued', startedAt: null, wait }), ctx).phase).toBe('等待资源：内存不够');
     expect(jobRow(job({ jobId: 'j4', state: 'queued', phase: 'queued', startedAt: null }), ctx).phase).toBeNull();
   });
 
-  it('结束了的：已完成 / 失败 / 已取消 / 已中断，不再有动作与进度条', () => {
+  it('finished: completed / failed / cancelled / interrupted, no actions or progress bar', () => {
     const states = ['completed', 'failed', 'cancelled', 'interrupted'] as const;
     const rows = states.map((state) => jobRow(job({ jobId: state, state, phase: 'done', endedAt: '2026-10-01T09:10:00Z' }), ctx));
     expect(rows.map((r) => [r.label, r.tone])).toEqual([
@@ -90,13 +90,13 @@ describe('jobRow', () => {
     expect(rows.every((r) => r.action === null && r.progress === null && !r.live)).toBe(true);
   });
 
-  it('崩溃后正在自动重跑的（interrupted、没有 endedAt）仍在进行：可以取消、不确定进度', () => {
+  it('auto-rerunning after a crash (interrupted, no endedAt) still counts as in progress: cancellable, indeterminate progress', () => {
     const row = jobRow(job({ jobId: 'r', state: 'interrupted', phase: 'transcribing', endedAt: null }), ctx);
     expect(row).toMatchObject({ label: '出错后自动重试', tone: 'accent', live: true, progress: 'indet' });
     expect(row.action).toEqual({ type: 'cancel', jobId: 'r' });
   });
 
-  it('来源 chip：智能体 →「Agent」并指回会话；连接 →「命令行」；system 与 node 不显示', () => {
+  it('source chip: agent → "Agent" and links back to the session; connection → "命令行"; system and node are not shown', () => {
     const agent = jobRow(job({ jobId: 'j', submitter: { kind: 'agent', id: 'c2', taskId: 't9' }, videoId: null }), ctx);
     expect(agent).toMatchObject({ chip: 'agent', conversationId: 'c2', projectId: 'p1' });
     expect(jobRow(job({ jobId: 'j', submitter: { kind: 'connection', id: 'x' } }), ctx).chip).toBe('cli');
@@ -104,7 +104,7 @@ describe('jobRow', () => {
     expect(jobRow(job({ jobId: 'j', submitter: { kind: 'node', id: 'peer' } }), ctx).chip).toBeNull();
   });
 
-  it('生成任务的标题取提示词或原文的前 40 个字；不在打开的视频里的转录只念种类', () => {
+  it('generation task titles use the first 40 characters of the prompt or source text; transcription not in the open video only reads its kind', () => {
     const prompt = '一只橘猫趴在老城区的窗台上晒太阳，窗外是层层叠叠的灰瓦屋顶，水彩风格，暖色调，笔触松弛，留白多一些';
     const image = jobRow(
       job({
@@ -127,7 +127,7 @@ describe('jobRow', () => {
     expect(jobRow(job({ jobId: 't', videoId: 'other' }), ctx).title).toBe('转录');
   });
 
-  it('导出：标题念种类与格式加视频名，位置是导出目录，阶段按种类说', () => {
+  it('export: the title reads the kind and format plus the video name, the location is the export folder, the stage is described by kind', () => {
     const row = jobRow(
       job({
         jobId: 'x1',
@@ -154,7 +154,7 @@ describe('jobRow', () => {
     });
   });
 
-  it('从链接导入：标题写解析出的视频标题，还没解析时写网站', () => {
+  it('import from link: the title is the parsed video title, or the site before parsing', () => {
     const pipeline = {
       name: 'link-import',
       params: { url: 'https://www.youtube.com/watch?v=abc', host: 'youtube.com' },
@@ -170,7 +170,7 @@ describe('jobRow', () => {
     expect(jobRow(done, ctx).title).toBe('从链接导入 · 访谈第一集');
   });
 
-  it('从链接导入与工具、字体任务在本机跑：位置写工具与版本 · 本机，不念「云端」；导入的阶段按流程的说法', () => {
+  it('link import and tool and font tasks run locally: the location is the tool and version · local, never reads "云端"; import stages use the workflow\'s wording', () => {
     const pipeline = {
       name: 'link-import',
       params: { url: 'https://www.youtube.com/watch?v=abc', host: 'youtube.com' },
@@ -194,8 +194,8 @@ describe('jobRow', () => {
   });
 });
 
-describe('jobRow：智能体自己翻译', () => {
-  it('标题是「翻译 · 视频 · 语言」，在哪只写本机 · Driver，阶段是逐句翻译，进度转圈，不给取消；能打开会话', () => {
+describe('jobRow: the agent translates itself', () => {
+  it('title is "翻译 · 视频 · 语言", location only reads local · Driver, stage is sentence-by-sentence translation, progress spins, no cancel; can open the session', () => {
     const row = jobRow(
       job({
         jobId: 'at1',
@@ -226,7 +226,7 @@ describe('jobRow：智能体自己翻译', () => {
 });
 
 describe('agentRow', () => {
-  it('在跑：沿用任务状态的字，转圈，可以停止', () => {
+  it('running: reuses the task status word, spins, can be stopped', () => {
     const row = agentRow(task({ taskId: 't1', projectId: 'p1', conversationTitle: '剪口播' }), ctx);
     expect(row).toMatchObject({
       kind: 'agent',
@@ -240,17 +240,17 @@ describe('agentRow', () => {
     });
   });
 
-  it('会话在等批准：念「需要你确认」，不画进度条', () => {
+  it('session awaiting approval: reads "需要你确认", no progress bar', () => {
     const row = agentRow(task({ taskId: 't2', conversationId: 'c2' }), ctx);
     expect(row).toMatchObject({ waiting: true, label: '需要你确认', tone: 'notice', progress: null, live: true });
   });
 
-  it('正在停止仍算进行中但不能再停；会话标题与目标相同时只写项目', () => {
+  it('stopping still counts as in progress but cannot be stopped again; when the session title matches the goal, only the project is written', () => {
     const row = agentRow(task({ taskId: 't3', status: 'stopping', goal: '剪口播', conversationTitle: '剪口播' }), ctx);
     expect(row).toMatchObject({ live: true, label: '正在停止', action: null, where: '不属于任何项目' });
   });
 
-  it('结束了的：已完成 / 已停止 / 失败', () => {
+  it('finished: completed / stopped / failed', () => {
     const tones = (['completed', 'stopped', 'failed'] as const).map((status) => agentRow(task({ taskId: status, status }), ctx));
     expect(tones.map((r) => [r.label, r.tone, r.live])).toEqual([
       ['已完成', 'positive', false],
@@ -261,7 +261,7 @@ describe('agentRow', () => {
 });
 
 describe('taskRows / taskGroups', () => {
-  it('Agent 任务与 Job 合成一张表，后起的在前；进行中含排队与正在停止', () => {
+  it('agent tasks and jobs are merged into one table, later ones first; in progress includes queued and stopping', () => {
     const rows = taskRows(
       [task({ taskId: 'a', status: 'completed', startedAt: '2026-10-01T08:00:00Z' }), task({ taskId: 'c', status: 'stopping', startedAt: '2026-10-01T10:00:00Z' })],
       [
@@ -277,7 +277,7 @@ describe('taskRows / taskGroups', () => {
     expect([active.label, history.label]).toEqual(['进行中', '历史']);
   });
 
-  it('固定流程的步骤折叠在父任务下，不单独成行；流程提交的、还在跑的转录与它合成一行', () => {
+  it('fixed-workflow steps are folded under the parent task and get no row of their own; a running transcription submitted by the workflow merges into one row with it', () => {
     const jobs = [
       job({ jobId: 'parent', kind: 'pipeline' }),
       job({ jobId: 'step', kind: 'pipeline-step', parentJobId: 'parent' }),
@@ -291,7 +291,7 @@ describe('taskRows / taskGroups', () => {
     ).toEqual(['asr', 'parent']);
   });
 
-  it('转录流程（重新转录）：与它的转写合成一行，念转录的标题、阶段与转写的进度，不念「流程」与按步骤数的 50%', () => {
+  it('transcription workflow (re-transcribe): merged into one row with its transcript, reads the transcription\'s title, stage and the transcript\'s progress, not "流程" or a 50% based on step count', () => {
     const replace = { documentId: 'd1', revision: '1', fingerprint: 'f', translations: 'carry' };
     const steps = [
       { name: 'target', label: '目标', status: 'skipped' as const, jobId: null, attempts: 0, output: null },
@@ -344,7 +344,7 @@ describe('taskRows / taskGroups', () => {
     expect(jobRow(parent, { ...ctx, video: null })).toMatchObject({ title: '转录', kindText: '转录' });
   });
 
-  it('从链接导入走到转录：与它的转录合成一行，沿用导入的 ID、标题与取消，念转录的阶段、进度与模型 · 本机', () => {
+  it('link import that reaches transcription: merged into one row with its transcription, keeps the import\'s ID, title and cancel, reads the transcription\'s stage, progress and model · local', () => {
     const pipeline = { name: 'link-import', params: { host: 'youtube.com' }, steps: [], current: 0, stoppedAt: null, summary: null };
     const parent = job({ jobId: 'imp', kind: 'pipeline', providerId: 'yt-dlp', modelId: '2026.08.19', phase: 'transcribing', pipeline });
     const asr = job({
@@ -381,7 +381,7 @@ describe('taskRows / taskGroups', () => {
     expect(ended.map((r) => r.id).sort()).toEqual(['asr', 'imp']);
   });
 
-  it('从链接导入建字幕层那一步念「生成字幕」，不念导入视频', () => {
+  it('the link import step that creates the subtitle layer reads "生成字幕", not the imported video', () => {
     const steps = [
       { name: 'import', label: '导入', status: 'completed' as const, jobId: null, attempts: 1, output: null },
       { name: 'captions', label: '字幕层', status: 'running' as const, jobId: null, attempts: 1, output: null },

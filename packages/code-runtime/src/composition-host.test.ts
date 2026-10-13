@@ -20,22 +20,22 @@ const inspect = async (name: string, options: Parameters<typeof inspectBundle>[1
 };
 
 describe('resolveElectronBinary', () => {
-  it('CUCCUT_ELECTRON 优先', () => {
+  it('CUCCUT_ELECTRON takes precedence', () => {
     expect(resolveElectronBinary({ CUCCUT_ELECTRON: '/opt/electron' })).toBe('/opt/electron');
   });
 
-  it('宿主以 `--composition-host <脚本>` 两个独立参数拉起（打包后的主进程入口靠它认出宿主）', () => {
+  it('host is launched with `--composition-host <script>` as two separate arguments (the packaged main-process entry relies on this to recognize the host)', () => {
     expect(hostSpawnArgs('/c/cuccut-composition-host/host-0.cjs')).toEqual(['--composition-host', '/c/cuccut-composition-host/host-0.cjs']);
   });
 
-  it('没有 Electron 时 start 抛 COMPOSITION_HOST_UNAVAILABLE', async () => {
+  it('start throws COMPOSITION_HOST_UNAVAILABLE without Electron', async () => {
     const error = await CompositionHost.start({ electron: null }).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(CodeBundleError);
     expect((error as CodeBundleError).code).toBe('COMPOSITION_HOST_UNAVAILABLE');
   });
 });
 
-describe.skipIf(!electron)('CompositionHost（Electron 离屏）', { timeout: 120_000 }, () => {
+describe.skipIf(!electron)('CompositionHost (Electron offscreen)', { timeout: 120_000 }, () => {
   let host: CompositionHost;
   const logs: string[] = [];
 
@@ -51,7 +51,7 @@ describe.skipIf(!electron)('CompositionHost（Electron 离屏）', { timeout: 12
 
   const at = (bundle: InspectedBundle, seconds: number) => frameTicketAt(bundle, { seconds });
 
-  it('hyperframes/1：同一时刻两次取帧相同，不同时刻不同，越界被夹到末尾', async () => {
+  it('hyperframes/1: two frame fetches at the same time are identical, different at different times, out-of-range is clamped to the end', async () => {
     const bundle = await inspect('hyperframes-basic', { manifest: { alpha: true } });
     const session = await host.open(bundle);
     try {
@@ -76,7 +76,7 @@ describe.skipIf(!electron)('CompositionHost（Electron 离屏）', { timeout: 12
     }
   });
 
-  it('精确的帧序号票据：localTime = k × den / num', async () => {
+  it('exact frame-index ticket: localTime = k × den / num', async () => {
     const bundle = await inspect('hyperframes-basic');
     const session = await host.open(bundle);
     try {
@@ -92,14 +92,14 @@ describe.skipIf(!electron)('CompositionHost（Electron 离屏）', { timeout: 12
     }
   });
 
-  it('没有根元素 → COMPOSITION_ROOT_MISSING', async () => {
+  it('no root element → COMPOSITION_ROOT_MISSING', async () => {
     const bundle = await inspect('root-missing', { manifest: { width: 1280, height: 720, fps: 30, durationFrames: 60 } });
     const error = await host.open(bundle).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(CodeBundleError);
     expect((error as CodeBundleError).code).toBe('COMPOSITION_ROOT_MISSING');
   });
 
-  it('清单与页面不一致 → COMPOSITION_INTRINSIC_MISMATCH', async () => {
+  it('manifest and page mismatch → COMPOSITION_INTRINSIC_MISMATCH', async () => {
     const bundle = await inspect('hyperframes-basic', { manifest: { width: 640, height: 360 } });
     const error = await host.open(bundle).catch((e: unknown) => e);
     expect((error as CodeBundleError).code).toBe('COMPOSITION_INTRINSIC_MISMATCH');
@@ -109,7 +109,7 @@ describe.skipIf(!electron)('CompositionHost（Electron 离屏）', { timeout: 12
     ]);
   });
 
-  it('cuccut/1：原生合同可以取帧', async () => {
+  it('cuccut/1: native contract can fetch frames', async () => {
     const bundle = await inspect('cuccut-native', { manifest: { alpha: true } });
     expect(bundle.manifest.runtime).toMatchObject({ contract: 'cuccut/1' });
     const session = await host.open(bundle);
@@ -125,7 +125,7 @@ describe.skipIf(!electron)('CompositionHost（Electron 离屏）', { timeout: 12
     }
   });
 
-  it('运行期网络请求被拦截并记录', async () => {
+  it('runtime network requests are blocked and recorded', async () => {
     const bundle = await inspect('network-runtime');
     const session = await host.open(bundle);
     try {
@@ -136,7 +136,7 @@ describe.skipIf(!electron)('CompositionHost（Electron 离屏）', { timeout: 12
     }
   });
 
-  it('打开 motion-graphics 的 build-bundle.mjs 产出的包并取帧', async () => {
+  it('opens a bundle produced by motion-graphics\' build-bundle.mjs and fetches frames', async () => {
     const out = fs.mkdtempSync(path.join(os.tmpdir(), 'cuccut-mg-host-'));
     tmpDirs.push(out);
     const html = path.join(repo, 'skills/cuccut/built-in-skills/motion-graphics/exemplars/lower-third/16x9.html');

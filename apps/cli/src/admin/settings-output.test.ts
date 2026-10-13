@@ -7,8 +7,8 @@ const view = (patch: Partial<SettingsSnapshot['settings']> = {}): SettingsSnapsh
   defaults: { ...SETTING_DEFAULTS },
 });
 
-describe('cuccut settings 的参数', () => {
-  it('list、get、set、reset', () => {
+describe('cuccut settings arguments', () => {
+  it('list, get, set, reset', () => {
     expect(parseSettingsArgs([])).toEqual({ kind: 'list' });
     expect(parseSettingsArgs(['get', 'offline.strict'])).toEqual({ kind: 'get', key: 'offline.strict' });
     expect(parseSettingsArgs(['set', 'offline.strict', 'true'])).toEqual({ kind: 'set', key: 'offline.strict', value: true });
@@ -20,7 +20,7 @@ describe('cuccut settings 的参数', () => {
     expect(parseSettingsArgs(['reset', 'captions.maxLineLength'])).toEqual({ kind: 'reset', key: 'captions.maxLineLength' });
   });
 
-  it('不认识的键与缺参数给出用法', () => {
+  it('unknown key and missing arguments show usage', () => {
     expect(() => parseSettingsArgs(['get', 'openai.apiKey'])).toThrow(/不认识的设置项：openai\.apiKey/);
     expect(() => parseSettingsArgs(['set', 'offline.strict'])).toThrow(/用法/);
     expect(() => parseSettingsArgs(['set', 'offline.strict', 'true', 'extra'])).toThrow(/用法/);
@@ -28,7 +28,7 @@ describe('cuccut settings 的参数', () => {
     expect(() => parseSettingsArgs(['delete', 'offline.strict'])).toThrow(/用法/);
   });
 
-  it('值按 JSON 解析，解析不了就当作字符串', () => {
+  it('values are parsed as JSON; if parsing fails, they are treated as strings', () => {
     expect(parseSettingValue('20')).toBe(20);
     expect(parseSettingValue('false')).toBe(false);
     expect(parseSettingValue('null')).toBeNull();
@@ -38,8 +38,8 @@ describe('cuccut settings 的参数', () => {
   });
 });
 
-describe('cuccut settings 的输出', () => {
-  it('列出全部键：当前值、是否默认与说明', () => {
+describe('cuccut settings output', () => {
+  it('lists all keys: current value, whether default, and description', () => {
     const lines = formatSettings(view({ 'offline.strict': true, 'captions.maxLineLength': { other: 40, cjk: 18 } }));
     expect(lines).toHaveLength(SETTING_KEYS.length * 2);
     const width = Math.max(...SETTING_KEYS.map((k) => k.length));
@@ -50,7 +50,7 @@ describe('cuccut settings 的输出', () => {
     expect(lines).toContain(`${'agent.defaultAccessMode'.padEnd(width)}  "auto"  默认`);
   });
 
-  it('单个键的一行与取值', () => {
+  it('one line for a single key and its value', () => {
     expect(formatSettingLine(view({ 'agent.defaultAccessMode': 'fullAccess' }), 'agent.defaultAccessMode')).toBe(
       'agent.defaultAccessMode  "fullAccess"  已修改（默认 "auto"）',
     );

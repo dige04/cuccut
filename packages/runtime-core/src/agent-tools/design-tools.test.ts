@@ -107,7 +107,7 @@ function tools(scope: ToolScope) {
 }
 
 describe('design_check', () => {
-  it('合格的设计稿：problems 为 0，记一张卡片（来源目录 + 相对路径），结果写明不渲染', async () => {
+  it('valid design: problems is 0, records one card (source directory + relative path), result states it is not rendered', async () => {
     await writeCanvas('designs/poster');
     const { scope, recorded } = fakeScope();
     const result = (await tools(scope).dispatch('design_check', { path: './designs/poster/' }, principal)) as Record<string, unknown>;
@@ -118,7 +118,7 @@ describe('design_check', () => {
     expect(toolRisk({ tool: 'design_check' } as ToolConfirmation)).toBe('read');
   });
 
-  it('有问题时列出 issues，不记卡片；canvas.json 缺失也照样校验', async () => {
+  it('when there are problems, issues are listed and no card is recorded; canvas.json missing is still validated', async () => {
     await writeCanvas('poster', { 'Extra.dc.html': BOARD.replace('{{accent}}', '{{ a + b }}') });
     const { scope, recorded } = fakeScope();
     const result = (await tools(scope).dispatch('design_check', { path: 'poster' }, principal)) as { problems: number; issues: { file: string; message: string }[] };
@@ -133,7 +133,7 @@ describe('design_check', () => {
     expect(recorded).toEqual([]);
   });
 
-  it('设计稿要在工作目录里', async () => {
+  it('design must be inside the working directory', async () => {
     const set = tools(fakeScope().scope);
     expect(await rejected(set.dispatch('design_check', { path: '../elsewhere' }, principal))).toBe('PATH_OUTSIDE_WORKSPACE');
     expect(await rejected(set.dispatch('design_check', { path: tmp }, principal))).toBe('PATH_OUTSIDE_WORKSPACE');
@@ -143,7 +143,7 @@ describe('design_check', () => {
 });
 
 describe('design_import_asset', () => {
-  it('图片与字体拷进设计稿的 assets/，返回 /_blob/<id>；同一份只存一份；风险 edit，确认之后才写', async () => {
+  it('images and fonts copied into the design\'s assets/, returns /_blob/<id>; the same file is stored once; risk edit, written only after confirmation', async () => {
     const canvas = await writeCanvas('poster');
     await fs.mkdir(path.join(root, 'images'));
     await fs.writeFile(path.join(root, 'images', 'hero.jpg'), 'jpg-bytes');
@@ -164,7 +164,7 @@ describe('design_import_asset', () => {
     expect((await fs.readdir(path.join(canvas, 'assets'))).filter((name) => name !== 'index.json').sort()).toHaveLength(2);
   });
 
-  it('只收工作目录里的普通图片与字体；目录要先是设计稿；规划模式只读；检查不过的不生成审批', async () => {
+  it('only regular images and fonts in the working directory are accepted; the directory must already be a design; plan mode is read-only; checks that fail generate no approval', async () => {
     await writeCanvas('poster');
     await fs.mkdir(path.join(root, 'plain'));
     await fs.writeFile(path.join(root, 'styles.css'), 'a{}');

@@ -112,7 +112,7 @@ interface InitiatorSide {
 /** Job records from the topic events (`job.updated`), in arrival order. */
 const jobUpdates = (events: JobsEvent[]): JobRecord[] => events.flatMap((e) => (e.type === 'job.updated' ? [e.job] : []));
 
-describe.skipIf(!engine || !ffmpeg || !appleSilicon)('局域网能力共享：两台 Runtime', () => {
+describe.skipIf(!engine || !ffmpeg || !appleSilicon)('LAN capability sharing: two Runtimes', () => {
   let fixtures: string;
   let audio: string;
   const cleanups: Array<() => Promise<unknown>> = [];
@@ -248,7 +248,7 @@ describe.skipIf(!engine || !ffmpeg || !appleSilicon)('局域网能力共享：�
     return entries.filter((e) => e.actor.kind === 'system').length;
   }
 
-  it('a. 配对与列表：经网关配对，列表带健康；错的配对码 REMOTE_NODE_REJECTED / pairing-code-invalid；发现排除自己', async () => {
+  it('a. pairing and listing: paired via gateway, list includes health; wrong pairing code REMOTE_NODE_REJECTED / pairing-code-invalid; discovery excludes self', async () => {
     const a = await startNode();
     const b = await startInitiator();
     const proxy = await proxyTo(a);
@@ -307,7 +307,7 @@ describe.skipIf(!engine || !ffmpeg || !appleSilicon)('局域网能力共享：�
     });
   });
 
-  it('b. 用节点转写：B 没有模型与 Worker，视频里多一份 system 写的 speech 文档；A 不留任何东西', async () => {
+  it('b. transcribe using a node: B has no model or Worker, the video gains one speech document written by system; A keeps nothing', async () => {
     const a = await startNode();
     const b = await startInitiator();
     const proxy = await proxyTo(a);
@@ -358,7 +358,7 @@ describe.skipIf(!engine || !ffmpeg || !appleSilicon)('局域网能力共享：�
     expect(probe.status).toBe(404);
   });
 
-  it('c. 节点在任务中途失联：REMOTE_NODE_LOST（stream-lost），attempt 1，B 的 staging 清空，视频不变', async () => {
+  it('c. node lost midway through task: REMOTE_NODE_LOST (stream-lost), attempt 1, B\'s staging cleared, video unchanged', async () => {
     const a = await startNode({ faults: ['slow'] });
     const b = await startInitiator();
     const proxy = await proxyTo(a);
@@ -378,7 +378,7 @@ describe.skipIf(!engine || !ffmpeg || !appleSilicon)('局域网能力共享：�
     expect(await speechDocuments(b)).toBe(before);
   });
 
-  it('d. 事件流断一次而节点还在：带 since 续上，照常完成，进度不倒退', async () => {
+  it('d. event stream drops once but node still there: resumes with since, completes as usual, progress never goes backwards', async () => {
     const a = await startNode({ faults: ['slow'] });
     const b = await startInitiator();
     const proxy = await proxyTo(a);
@@ -397,7 +397,7 @@ describe.skipIf(!engine || !ffmpeg || !appleSilicon)('局域网能力共享：�
     expect(done.at(-1)).toBe(20);
   });
 
-  it('e. B 中途取消：B cancelled；A 的任务取消并删除；A 的 Worker 之后照常可用', async () => {
+  it('e. B cancelled midway: B cancelled; A\'s task cancelled and deleted; A\'s Worker still available afterward', async () => {
     const a = await startNode({ faults: ['slow'] });
     const b = await startInitiator();
     const proxy = await proxyTo(a);
@@ -417,7 +417,7 @@ describe.skipIf(!engine || !ffmpeg || !appleSilicon)('局域网能力共享：�
     expect(await settled(b, next.jobId)).toMatchObject({ state: 'completed' });
   });
 
-  it('f. A 吊销 B：下一次转写 REMOTE_NODE_REJECTED / unpaired，列表显示 unpaired', async () => {
+  it('f. A revokes B: next transcription REMOTE_NODE_REJECTED / unpaired, list shows unpaired', async () => {
     const a = await startNode();
     const b = await startInitiator();
     const proxy = await proxyTo(a);
@@ -433,7 +433,7 @@ describe.skipIf(!engine || !ffmpeg || !appleSilicon)('局域网能力共享：�
     expect((await b.client.request('nodes.list', {})).nodes[0]).toMatchObject({ problem: 'unpaired', health: expect.any(Object) });
   });
 
-  it('g. 模型包没有装在 A 上：REMOTE_NODE_REJECTED / model-not-ready', async () => {
+  it('g. model pack not installed on A: REMOTE_NODE_REJECTED / model-not-ready', async () => {
     const a = await startNode({ models: false });
     const b = await startInitiator();
     const proxy = await proxyTo(a);
@@ -447,7 +447,7 @@ describe.skipIf(!engine || !ffmpeg || !appleSilicon)('局域网能力共享：�
     expect((await a.client.request('jobs.list', {})).jobs).toEqual([]);
   });
 
-  it('h. A 上 Worker 崩溃一次：节点自己重试后完成；崩两次：节点的 MODEL_WORKER_CRASHED，带 details.node，B 的 attempt 1', async () => {
+  it('h. Worker on A crashes once: node retries itself and completes; crashes twice: node\'s MODEL_WORKER_CRASHED, with details.node, B\'s attempt 1', async () => {
     const once = await startNode({ faults: ['crash-once'] });
     const b = await startInitiator();
     const proxyOnce = await proxyTo(once);
@@ -468,7 +468,7 @@ describe.skipIf(!engine || !ffmpeg || !appleSilicon)('局域网能力共享：�
     });
   });
 
-  it('i. 同一素材的本机任务与远端任务是两个任务，都完成', async () => {
+  it('i. local and remote tasks for the same media are two tasks, both complete', async () => {
     const a = await startNode({ faults: ['slow'] });
     const b = await startInitiator({ local: true });
     const proxy = await proxyTo(a);
@@ -483,7 +483,7 @@ describe.skipIf(!engine || !ffmpeg || !appleSilicon)('局域网能力共享：�
     expect(r.result!.documentId).not.toBe(l.result!.documentId);
   });
 
-  it('j. 令牌只在 nodes.json 与 Authorization 头里：日志、任务账本、jobs 事件、网关结果里都没有', async () => {
+  it('j. token only in nodes.json and the Authorization header: absent from logs, task ledger, jobs events, gateway results', async () => {
     const a = await startNode();
     const b = await startInitiator();
     const proxy = await proxyTo(a);
@@ -522,7 +522,7 @@ describe.skipIf(!engine || !ffmpeg || !appleSilicon)('局域网能力共享：�
     expect(haystacks.bLog).toContain('Remote job completed');
   });
 
-  it('k. A 关闭了转写的共享：B 的转写 REMOTE_NODE_REJECTED / capability-disabled，说明带补救，A 上不建任务；打开后照常完成', async () => {
+  it('k. A turned off transcription sharing: B\'s transcription REMOTE_NODE_REJECTED / capability-disabled, with remedy explained, no task created on A; completes as usual after turning on', async () => {
     const a = await startNode();
     const b = await startInitiator();
     const proxy = await proxyTo(a);

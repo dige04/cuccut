@@ -19,7 +19,7 @@ describe('jsonl-file', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('不在的文件读出 null；追加时先写文件头，之后只追加', async () => {
+  it('missing file reads as null; append writes the header first, then only appends', async () => {
     expect(await readJsonl(file)).toBeNull();
     await appendJsonl(file, ['{"a":1}'], { header: HEADER });
     await appendJsonl(file, ['{"a":2}', '{"a":3}'], { header: HEADER });
@@ -28,7 +28,7 @@ describe('jsonl-file', () => {
     expect(read).toMatchObject({ header: HEADER, rows: [{ a: 1 }, { a: 2 }, { a: 3 }], skipped: 0, truncatedTail: false, lines: 3 });
   });
 
-  it('末尾的残行跳过、不算坏行；之后追加先补换行，新行不接在残行后面', async () => {
+  it('trailing partial line skipped, not counted as a bad line; a later append adds a newline first so new lines don\'t join the partial line', async () => {
     await appendJsonl(file, ['{"a":1}'], { header: HEADER });
     await fs.appendFile(file, '{"a":2,"b"');
     expect(await readJsonl(file)).toMatchObject({ rows: [{ a: 1 }], skipped: 0, truncatedTail: true, lines: 2 });
@@ -37,7 +37,7 @@ describe('jsonl-file', () => {
     expect(await readJsonl(file)).toMatchObject({ rows: [{ a: 1 }, { a: 3 }], skipped: 1, truncatedTail: false });
   });
 
-  it('第一行认不出时整个文件算坏的；空文件不算', async () => {
+  it('if the first line is unrecognized, the whole file is bad; empty file is not', async () => {
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, '');
     expect(await readJsonl(file)).toMatchObject({ header: null, rows: [], lines: 0 });
@@ -51,7 +51,7 @@ describe('jsonl-file', () => {
     expect(await readJsonl(file)).toBeNull();
   });
 
-  it('压缩：原子替换成文件头加这些行，不留临时文件', async () => {
+  it('compaction: atomically replaced with the header plus these lines, no temp file left', async () => {
     await appendJsonl(file, ['{"a":1}', '{"a":2}'], { header: HEADER });
     const bytes = await compactJsonl(file, ['{"a":9}'], { header: HEADER });
     const text = await fs.readFile(file, 'utf8');
@@ -60,7 +60,7 @@ describe('jsonl-file', () => {
     expect(await fs.readdir(path.dirname(file))).toEqual(['ledger.jsonl']);
   });
 
-  it('durable: false：追加与压缩都不 fsync，内容与缺省时相同', async () => {
+  it('durable: false: appends and compaction do not fsync, content same as the default', async () => {
     const probe = await fs.open(path.join(dir, 'probe'), 'w');
     const proto = Object.getPrototypeOf(probe) as { sync: () => Promise<void> };
     await probe.close();

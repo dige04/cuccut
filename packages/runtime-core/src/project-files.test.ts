@@ -25,7 +25,7 @@ async function write(file: string, content = 'x'): Promise<void> {
   await fs.writeFile(file, content);
 }
 
-describe('项目文件浏览（projects.files.list）', () => {
+describe('project file browsing (projects.files.list)', () => {
   let dir: string;
   let root: string;
 
@@ -50,7 +50,7 @@ describe('项目文件浏览（projects.files.list）', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('列一层：目录在前，名字按数字排序，跳过隐藏与依赖目录，认出视频目录与文件类型', async () => {
+  it('list one level: directories first, names sorted numerically, hidden and dependency directories skipped, video directories and file types recognized', async () => {
     const result = await listProjectFiles(root, {});
     expect(result.root).toBe(root);
     expect(result.truncated).toBe(false);
@@ -64,7 +64,7 @@ describe('项目文件浏览（projects.files.list）', () => {
     expect(byPath['notes.md']?.modifiedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
-  it('列子目录：路径相对根目录，用 / 分隔', async () => {
+  it('list subdirectory: path relative to root, separated by /', async () => {
     const result = await listProjectFiles(root, { dir: 'assets' });
     expect(result.entries.map((e) => e.path)).toEqual(['assets/deep', 'assets/logo.png']);
     const deeper = await listProjectFiles(root, { dir: 'assets/deep/' });
@@ -73,7 +73,7 @@ describe('项目文件浏览（projects.files.list）', () => {
     expect((await listProjectFiles(root, { dir: 'assets/../assets' })).entries).toHaveLength(2);
   });
 
-  it('目录越界、隐藏目录、绝对路径、不是目录：拒绝', async () => {
+  it('dir escapes, hidden directory, absolute path, not a directory: rejected', async () => {
     expect((await rejection(listProjectFiles(root, { dir: '..' }))).code).toBe('invalid-request');
     expect((await rejection(listProjectFiles(root, { dir: '../outside' }))).code).toBe('invalid-request');
     expect((await rejection(listProjectFiles(root, { dir: path.join(dir, 'outside') }))).code).toBe('invalid-request');
@@ -84,7 +84,7 @@ describe('项目文件浏览（projects.files.list）', () => {
     expect((await rejection(listProjectFiles(path.join(dir, 'gone'), {}))).code).toBe('not-found');
   });
 
-  it('符号链接：指出根目录的、悬空的不列；指向根目录里的照常列出；指出根目录的目录链接不能进入', async () => {
+  it('symbolic link: pointing out of root and dangling not listed; pointing inside root listed normally; directory link pointing out of root cannot be entered', async () => {
     await fs.symlink(path.join(dir, 'outside', 'secret-clip.txt'), path.join(root, 'leak.txt'));
     await fs.symlink(path.join(dir, 'outside'), path.join(root, 'leak-dir'));
     await fs.symlink(path.join(root, 'missing.txt'), path.join(root, 'dangling.txt'));
@@ -111,7 +111,7 @@ describe('项目文件浏览（projects.files.list）', () => {
     expect((await listProjectFiles(root, { query: 'leak' })).entries).toEqual([]);
   });
 
-  it('查找：在 dir 下递归按名字匹配，完全相同 > 开头相同 > 包含，再按深度；不进入视频目录与隐藏目录', async () => {
+  it('find: recursive name match under dir, exact match > prefix match > contains, then by depth; does not enter video directories or hidden directories', async () => {
     const result = await listProjectFiles(root, { query: ' CLIP ' });
     expect(result.entries.map((e) => e.path)).toEqual(['clip 9.mp4', 'clip 10.mp4', 'assets/deep/clip-logo.svg']);
     expect(result.truncated).toBe(false);
@@ -132,7 +132,7 @@ describe('项目文件浏览（projects.files.list）', () => {
     expect((await listProjectFiles(root, { query: '   ' })).entries).toHaveLength(6);
   });
 
-  it('幻灯片目录：含合法 deck.json 的目录是一项 slides，修改时间取 deck.json；查找时不进入', async () => {
+  it('slide directory: a directory containing a valid deck.json is one slides item, modified time taken from deck.json; not entered during find', async () => {
     await write(path.join(root, 'talk', 'deck.json'), JSON.stringify({ v: 4, title: 'Talk', order: ['s1'] }));
     await write(path.join(root, 'talk', 'slides', 'clip-s1.html'), '<slide></slide>');
     const listed = await listProjectFiles(root, {});
@@ -144,7 +144,7 @@ describe('项目文件浏览（projects.files.list）', () => {
     expect((await listProjectFiles(root, { query: 'talk' })).entries).toMatchObject([{ path: 'talk', kind: 'slides' }]);
   });
 
-  it('设计稿目录：含合法 canvas.json 的目录是一项 design，修改时间取 canvas.json；查找时不进入', async () => {
+  it('design directory: a directory containing a valid canvas.json is one design item, modified time taken from canvas.json; not entered during find', async () => {
     const boards = { 'Main.dc.html': { x: 0, y: 0, w: 880, h: 560 } };
     await write(path.join(root, 'poster', 'canvas.json'), JSON.stringify({ v: 3, title: 'Poster', boards, order: ['Main.dc.html'] }));
     await write(path.join(root, 'poster', 'screens', 'clip-Main.dc.html'), '<x-dc></x-dc>');
@@ -159,7 +159,7 @@ describe('项目文件浏览（projects.files.list）', () => {
     expect((await listProjectFiles(root, { query: 'poster' })).entries).toMatchObject([{ path: 'poster', kind: 'design' }]);
   });
 
-  it('设计系统目录：含合法 design-system.json 的目录是一项 design-system，修改时间取 design-system.json；查找时不进入', async () => {
+  it('design system directory: a directory containing a valid design-system.json is one design-system item, modified time taken from design-system.json; not entered during find', async () => {
     await write(path.join(root, 'brand', 'design-system.json'), JSON.stringify({ v: 3, layout: 'files', createdOnFiles: { v: 1, at: '2026-10-11T00:00:00Z' }, title: 'Brand' }));
     await write(path.join(root, 'brand', 'assets', 'Logos', 'clip-mark.svg'), '<svg/>');
     // A design-system.json that is not v3 files is not a design system, so the directory is still entered.
@@ -173,7 +173,7 @@ describe('项目文件浏览（projects.files.list）', () => {
     expect((await listProjectFiles(root, { query: 'brand' })).entries).toMatchObject([{ path: 'brand', kind: 'design-system' }]);
   });
 
-  it('截断：超过 limit、看过的目录项或候选超过上限时标出 truncated', async () => {
+  it('truncation: beyond limit, viewed directory entries or candidates above the cap are marked truncated', async () => {
     const listed = await listProjectFiles(root, { limit: 2 });
     expect(listed.entries.map((e) => e.path)).toEqual(['assets', 'Intro.video']);
     expect(listed.truncated).toBe(true);
@@ -206,7 +206,7 @@ class IdleDriver implements AgentDriver {
   }
 }
 
-describe('项目文件浏览经网关（端到端）', () => {
+describe('project file browsing via gateway (end to end)', () => {
   let dir: string;
   let runtime: RunningRuntime;
   let client: CucCutClient;
@@ -231,7 +231,7 @@ describe('项目文件浏览经网关（端到端）', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('项目会话列项目目录，无项目会话列工作目录；参数严格校验；列出的路径能交给 media.resolve', async () => {
+  it('project session lists project directory, session without project lists working directory; parameters strictly validated; listed paths can be passed to media.resolve', async () => {
     const projectDir = path.join(dir, 'proj');
     await write(path.join(projectDir, 'scenes', 'a.mp4'), 'aaaa');
     await write(path.join(projectDir, 'readme.md'));

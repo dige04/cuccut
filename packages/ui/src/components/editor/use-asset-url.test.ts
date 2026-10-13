@@ -33,7 +33,7 @@ function firstRender(cache: MediaUrlCache, videoId: Id | null, assets: VersionRe
 }
 
 describe('useAssetUrl', () => {
-  it('缓存里有新鲜的地址：第一次渲染就给出，不等 effect', async () => {
+  it('a fresh address is in the cache: it is provided on the first render, not waiting for an effect', async () => {
     const resolve = vi.fn(async () => granted);
     const cache = new MediaUrlCache(resolve);
     await cache.get('vid1', { id: 'asset_a', revision: '1' });
@@ -46,7 +46,7 @@ describe('useAssetUrl', () => {
     expect(resolve).toHaveBeenCalledTimes(1);
   });
 
-  it('别的素材、别的版本、没有视频：第一次渲染不借用别人的地址', async () => {
+  it('other asset, other version, no video: the first render does not borrow someone else\'s address', async () => {
     const cache = new MediaUrlCache(async () => granted);
     await cache.get('vid1', { id: 'asset_a', revision: '1' });
     expect(firstRender(cache, 'vid1', [{ id: 'asset_b', revision: '1' }])).toContain('data-url=""');

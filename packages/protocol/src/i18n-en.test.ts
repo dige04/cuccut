@@ -8,7 +8,7 @@ import { SETTING_DESCRIPTIONS, settingDescription } from './settings.ts';
 import { templatePathProblem } from './template.ts';
 
 /** When the interface language is English, the text the protocol layer shows people (settings descriptions, mode names, validation errors) is generated in English; after switching back to Chinese, it is generated as before. */
-describe('protocol 的英文文案', () => {
+describe('protocol English copy', () => {
   beforeEach(() => {
     vi.stubEnv('CUCCUT_LOCALE', 'en');
     setLocale('en');
@@ -18,7 +18,7 @@ describe('protocol 的英文文案', () => {
     setLocale('zh-Hans');
   });
 
-  it('设置说明在读取时按当前语言', () => {
+  it('settings descriptions follow the current language when read', () => {
     expect(settingDescription('updates.autoCheck')).toBe('Check for app updates automatically');
     expect(SETTING_DESCRIPTIONS['ui.language']).not.toMatch(/[一-龥]/);
     vi.unstubAllEnvs();
@@ -26,7 +26,7 @@ describe('protocol 的英文文案', () => {
     expect(settingDescription('updates.autoCheck')).toBe('自动检查应用更新');
   });
 
-  it('模式名与数据种类带消息引用', () => {
+  it('mode names and data kinds include the message reference', () => {
     const label = agentModeLabel('fullAccess');
     expect(label.text).toBe('Full access');
     expect(label.key).toMatch(/^protocolLabels\./);
@@ -34,7 +34,7 @@ describe('protocol 的英文文案', () => {
     expect(grantDataKindLabel('transcript').text).not.toMatch(/[一-龥]/);
   });
 
-  it('校验错误按当前语言', () => {
+  it('validation errors follow the current language', () => {
     expect(templatePathProblem('')).toBe('Path is empty');
     let caught: unknown;
     try {

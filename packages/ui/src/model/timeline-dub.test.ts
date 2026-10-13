@@ -120,21 +120,21 @@ const plan = {
   extensions: { 'cuccut.dub': { mutedItemIds: ['orig'] } },
 };
 
-describe('认配音块与组', () => {
-  it('只有带 groupId 的音频算配音块，分离出来的背景不算', () => {
+describe('recognizes dub blocks and groups', () => {
+  it('only audio with a groupId counts as a dub block; the separated background does not', () => {
     expect(dubMark(seq.items[1]!)).toEqual({ groupId: 'g1', language: 'en', unitId: 'u2' });
     expect(dubMark(seq.items[3]!)).toBeNull();
     expect(dubMark(seq.items[0]!)).toBeNull();
   });
 
-  it('组里的块按时间先后；只放这一组的轨道才写「配音 · 语言」', () => {
+  it('blocks in a group are ordered by time; only a track holding just this group is labeled "配音 · 语言"', () => {
     expect(dubGroups(seq)).toEqual([{ groupId: 'g1', language: 'en', itemIds: ['d1', 'd2', 'd3'], trackIds: ['a-dub'] }]);
     expect(dubTrackGroup(seq, 'a-dub')?.groupId).toBe('g1');
     expect(dubTrackGroup(seq, 'a-orig')).toBeNull();
     expect(dubTrackGroup(seq, 'empty')).toBeNull();
   });
 
-  it('只放一组分离出的同一种分轨的轨道才认作「背景声」「人声」行，语言取这组配音的', () => {
+  it('only a track holding one group\'s separated stem of a single type is recognized as a "背景声" or "人声" row; the language comes from that dub group', () => {
     const stem = (s: string, groupId = 'g1') => ({ extensions: { 'cuccut.dub': { groupId, stem: s } } });
     const sep = sequence(
       [
@@ -156,7 +156,7 @@ describe('认配音块与组', () => {
     expect(stemTrackOf(sep, 'empty')).toBeNull();
   });
 
-  it('配音计划按当前版本概要里的 groupId 认', () => {
+  it('the dub plan is recognized by the groupId in the current version summary', () => {
     const record = (id: string, kind: string, groupId: string) =>
       ({
         id,
@@ -171,15 +171,15 @@ describe('认配音块与组', () => {
   });
 });
 
-describe('计划、说话人与语速', () => {
-  it('计划单元按译文单元认，旧的退回 d-<unitId>', () => {
+describe('plan, speakers and speaking rate', () => {
+  it('plan units are matched by translation unit; old ones fall back to d-<unitId>', () => {
     const units = planUnits({ units: [unit('u1', 's-w1', 'Hello.'), { id: 'd-u9', script: { text: 'Old.' }, sourceSentenceIds: ['s-w4'] }, 'junk'] });
     expect(units.get('u1')).toEqual({ unitId: 'u1', text: 'Hello.', sentenceId: 's-w1', speechId: 'speech1', status: 'ready' });
     expect(units.get('u9')).toMatchObject({ text: 'Old.', sentenceId: 's-w4', speechId: null });
     expect(planUnits(null).size).toBe(0);
   });
 
-  it('句子的说话人取第一个没隐藏的词的；次序跟转写', () => {
+  it('a sentence\'s speaker is taken from its first unhidden word; order follows the transcript', () => {
     const index = sentenceSpeakers(speech)!;
     expect(index.order).toEqual(['S1', 'S2']);
     expect(index.bySentence.get('s-w1')).toBe('S1');
@@ -187,19 +187,19 @@ describe('计划、说话人与语速', () => {
     expect(sentenceSpeakers({ schema: 'cuccut.caption/1' })).toBeNull();
   });
 
-  it('色相按说话人次序轮转', () => {
+  it('hue cycles through speakers in order', () => {
     expect(speakerHue(0)).toBe('blue');
     expect(speakerHue(1)).toBe('green');
     expect(speakerHue(6)).toBe('blue');
   });
 
-  it('语速 = 合成时对齐加的速 × 实例的变速', () => {
+  it('speaking rate = alignment speed-up during synthesis × the instance\'s time-stretch', () => {
     expect(dubTempo(seq.items[2] as AudioItem, assets)).toBe(1);
     expect(dubTempo(seq.items[1] as AudioItem, assets)).toBe(1.25);
     expect(dubTempo(seq.items[1] as AudioItem, {})).toBe(1);
   });
 
-  it('每块的外观：说话人色相、译文、语速、过快、静音、手动', () => {
+  it('each block\'s appearance: speaker hue, translation, rate, too fast, muted, manual', () => {
     const blocks = dubBlocks(seq, { assets, plans: new Map([['g1', plan]]), speeches: new Map([['speech1', speech]]) });
     expect([...blocks.keys()]).toEqual(['d1', 'd2', 'd3']);
     expect(blocks.get('d1')).toMatchObject({
@@ -221,22 +221,22 @@ describe('计划、说话人与语速', () => {
     expect(trackCounts(blocks.values(), [], new Set())).toEqual({ total: 3, fast: 1, muted: 1, failed: 0, queued: 0 });
   });
 
-  it('计划与转写还没取到：块照画，色相取第一档、文字留给片段名', () => {
+  it('plan and transcript not yet loaded: the block is still drawn, hue uses the first tier, text is left to the clip name', () => {
     const blocks = dubBlocks(seq, { assets: {}, plans: new Map(), speeches: new Map() });
     expect(blocks.get('d2')).toMatchObject({ text: null, speakerId: null, hue: 'blue', rate: 1, fast: false });
   });
 });
 
-describe('拖右缘改语速', () => {
+describe('dragging the right edge changes the rate', () => {
   const d1 = seq.items[2] as AudioItem; // 1–4 seconds; d2 after it starts at 5 seconds
   const d3 = seq.items[4] as AudioItem; // 9–10.5 seconds, 1.2×, nothing after it
 
-  it('到同轨下一件起点还有多少空', () => {
+  it('how much gap until the start of the next item on the same track', () => {
     expect(roomAfter(seq, d1)).toBeCloseTo(4);
     expect(roomAfter(seq, d3)).toBeNull();
   });
 
-  it('拉短变快、拉长变慢，取到两位小数并约分', () => {
+  it('shortening speeds up, lengthening slows down, rounded to two decimals and reduced', () => {
     expect(stretchSpeed(d1, 2.4, 4)).toMatchObject({ rate: { num: 5, den: 4 }, speed: 1.25, clamped: false });
     expect(stretchSpeed(d1, 2.4, 4).seconds).toBeCloseTo(2.4);
     expect(stretchSpeed(d1, 3.75, 4)).toMatchObject({ rate: { num: 4, den: 5 }, speed: 0.8 });
@@ -244,7 +244,7 @@ describe('拖右缘改语速', () => {
     expect(stretchSpeed(d3, 1, null)).toMatchObject({ rate: { num: 9, den: 5 }, speed: 1.8 });
   });
 
-  it('拉长不能盖住下一件：速率往上取一档，宁可短一点', () => {
+  it('lengthening cannot cover the next item: the rate rounds up one step, preferring shorter', () => {
     const s = stretchSpeed(d1, 10, 4);
     // Source 3 seconds, gap 4 seconds → slowest 0.75×, exactly 4 seconds
     expect(s).toMatchObject({ speed: 0.75, clamped: true });
@@ -255,32 +255,32 @@ describe('拖右缘改语速', () => {
     expect(t.seconds).toBeLessThanOrEqual(3.7);
   });
 
-  it('夹在合同的 0.1–10 之内', () => {
+  it('clamped to the contract\'s 0.1–10 range', () => {
     expect(stretchSpeed(d1, 0.01, 4)).toMatchObject({ speed: 10, clamped: true });
     expect(stretchSpeed(d1, 1000, null)).toMatchObject({ speed: 0.1, rate: { num: 1, den: 10 }, clamped: true });
     // The gap is too small; even the fastest rate cannot fit it: keep as is
     expect(stretchSpeed(d1, 1, 0.1)).toMatchObject({ speed: 1, seconds: 3, clamped: true });
   });
 
-  it('速率没变就不提交', () => {
+  it('no commit when the rate is unchanged', () => {
     expect(stretchChanged(d1, stretchSpeed(d1, 3, 4))).toBe(false);
     expect(stretchChanged(d1, stretchSpeed(d1, 2, 4))).toBe(true);
   });
 });
 
-describe('菜单操作', () => {
+describe('menu actions', () => {
   const blocks = dubBlocks(seq, { assets, plans: new Map(), speeches: new Map() });
 
-  it('选区里的配音块，别的实例不管', () => {
+  it('dub blocks in the selection only; other instances are untouched', () => {
     expect(selectedBlocks(['orig', 'd2', 'd1'], blocks).map((b) => b.itemId)).toEqual(['d2', 'd1']);
   });
 
-  it('静音只发状态真的要变的那几件', () => {
+  it('mute dispatches only the items whose state actually changes', () => {
     expect(muteOperations(seq, ['d1', 'd2'], true)).toEqual([{ type: 'setAudioMix', sequenceId: 'seq', itemId: 'd2', muted: true }]);
     expect(muteOperations(seq, ['d1', 'd2'], false)).toEqual([{ type: 'setAudioMix', sequenceId: 'seq', itemId: 'd1', muted: false }]);
   });
 
-  it('锁着的（实例或轨道）不能改：整组里有一件锁着就不能移除', () => {
+  it('locked (instance or track) cannot be changed: if one item in the group is locked, the whole group cannot be removed', () => {
     expect(anyLocked(seq, ['d1', 'd2'])).toBe(false);
     expect(groupLocked(seq, 'g1')).toBe(false);
     const itemLocked = sequence(seq.items.map((item) => (item.id === 'd2' ? { ...item, locked: true } : item)));

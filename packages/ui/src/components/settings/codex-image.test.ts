@@ -19,7 +19,7 @@ function provider(patch: Partial<ProviderCapabilityView> = {}, enabled = false):
 const codex = { id: 'codex', state: 'ready' } as const;
 
 describe('codexImageProvider', () => {
-  it('从图片生成的能力视图里取 agent:codex，没有时为 null', () => {
+  it('gets agent:codex from the image-generation capability view, null when absent', () => {
     const view = { generateImage: { default: null, effective: null, providers: [provider()] } } as unknown as ModelCapabilitiesView;
     expect(codexImageProvider(view)?.providerId).toBe('agent:codex');
     expect(codexImageProvider({ generateImage: { default: null, effective: null, providers: [] } } as unknown as ModelCapabilitiesView)).toBeNull();
@@ -28,56 +28,56 @@ describe('codexImageProvider', () => {
 });
 
 describe('codexImageRow', () => {
-  it('Codex 没装、不是 Codex、Runtime 没带这个 Provider 时不显示', () => {
+  it('hidden when Codex is not installed, is not Codex, or the Runtime does not include this provider', () => {
     expect(codexImageRow(provider(), { id: 'codex', state: 'not-installed' }, 'done')).toBeNull();
     expect(codexImageRow(provider(), { id: 'claude', state: 'ready' }, 'done')).toBeNull();
     expect(codexImageRow(null, codex, 'done')).toBeNull();
   });
 
-  it('没启用也没探测过：只知道「没有启用」，先不让拨', () => {
+  it('not enabled and not probed: only knows \'not enabled\', and the toggle is not allowed yet', () => {
     expect(codexImageRow(provider(), codex, 'pending')).toEqual({ enabled: false, ready: false, canEnable: false, checking: true, why: null });
   });
 
-  it('探测过、只差没启用：可以打开', () => {
+  it('probed, only missing enablement: can be turned on', () => {
     expect(codexImageRow(provider(), codex, 'done')).toEqual({ enabled: false, ready: false, canEnable: true, checking: false, why: null });
   });
 
-  it('探测失败：不说能打开，给一句怎么办', () => {
+  it('probe failed: does not say it can be turned on, gives one line on what to do', () => {
     const row = codexImageRow(provider(), codex, 'failed');
     expect(row?.canEnable).toBe(false);
     expect(row?.checking).toBe(false);
     expect(row?.why).toContain('重新检测');
   });
 
-  it('没登录：不能打开，说要登录', () => {
+  it('not logged in: cannot be turned on, says login is required', () => {
     const row = codexImageRow(provider({ unavailableReason: 'signed-out', detail: '没有登录' }), { id: 'codex', state: 'signed-out' }, 'done');
     expect(row).toMatchObject({ enabled: false, canEnable: false, checking: false });
     expect(row?.why).toContain('登录');
   });
 
-  it('版本太旧：原因整句用 Provider 的 detail（最低版本在里面，界面不写死）', () => {
+  it('version too old: the reason sentence uses the provider\'s detail (the minimum version is in it, not hard-coded in the UI)', () => {
     const detail = 'Codex 的版本是 0.150.0，至少要 0.158.0：升级 Codex CLI（例如 npm install -g @openai/codex@latest），然后重新检查';
     const row = codexImageRow(provider({ unavailableReason: 'outdated', detail }), codex, 'done');
     expect(row?.canEnable).toBe(false);
     expect(row?.why).toBe(`${detail}。`);
   });
 
-  it('其他不可用：带上 detail', () => {
+  it('other unavailable: includes the detail', () => {
     const row = codexImageRow(provider({ unavailableReason: 'unsupported', detail: '没有拿到 Codex 的状态' }), codex, 'done');
     expect(row?.why).toBe('Codex 现在画不了图 · 没有拿到 Codex 的状态。');
   });
 
-  it('开着且能用：已打开', () => {
+  it('on and usable: shows opened', () => {
     const row = codexImageRow(provider({ available: true, unavailableReason: undefined, detail: undefined }, true), codex, 'pending');
     expect(row).toEqual({ enabled: true, ready: true, canEnable: true, checking: false, why: null });
   });
 
-  it('能用但没开：可以打开，没有「已打开」', () => {
+  it('usable but off: can be turned on, no \'opened\' label', () => {
     const row = codexImageRow(provider({ available: true, unavailableReason: undefined }, false), codex, 'pending');
     expect(row).toMatchObject({ enabled: false, ready: false, canEnable: true, why: null });
   });
 
-  it('开着却画不了（后来退出登录）：原因照说，开关仍是开着的（让用户关得掉）', () => {
+  it('on but cannot render (logged out later): the reason is still shown, and the switch stays on so the user can turn it off', () => {
     const row = codexImageRow(provider({ unavailableReason: 'signed-out', detail: '没有登录' }, true), { id: 'codex', state: 'signed-out' }, 'pending');
     expect(row).toMatchObject({ enabled: true, ready: false, canEnable: false, checking: false });
     expect(row?.why).toContain('登录');
@@ -85,7 +85,7 @@ describe('codexImageRow', () => {
 });
 
 describe('codexImageToast', () => {
-  it('打开与关闭各一句', () => {
+  it('one sentence each for turning on and off', () => {
     expect(codexImageToast(true)).toContain('已打开 Codex 画图');
     expect(codexImageToast(false)).toBe('已关闭 Codex 画图');
   });

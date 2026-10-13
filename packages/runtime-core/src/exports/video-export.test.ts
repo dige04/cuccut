@@ -52,8 +52,8 @@ if (!ffmpeg) console.warn('跳过成片导出端到端测试：没有 ffmpeg / f
 const TERMINAL = new Set(['completed', 'failed', 'cancelled', 'interrupted']);
 const SAMPLE_RATE = 48000;
 
-describe('成片的输出尺寸与校验', () => {
-  it('Worker 的输入：画面的位置随输出带上；计划里有说话人的区间时原样带上，没有时不写', () => {
+describe('final video output size and verification', () => {
+  it('Worker input: frame position is carried with the output; speaker ranges in the plan are carried over as-is and are not written when there are none', () => {
     const range = { start: { ticks: '0', timescale: 1 }, end: { ticks: '1', timescale: 1 } };
     const plan = { sequenceId: 'seq', document: {}, documents: [], parts: [{ video: { range } }] } as unknown as VideoPlanResult;
     const output: VideoOutput = {
@@ -86,7 +86,7 @@ describe('成片的输出尺寸与校验', () => {
     expect(input({ ...plan, speakers }).speakers).toEqual(speakers);
   });
 
-  it('流、帧数（差一帧以内）、尺寸、帧率、编码与声音的时长', () => {
+  it('streams, frame count (within one frame), size, frame rate, encoding and audio duration', () => {
     const output: VideoOutput = {
       format: 'mp4',
       codec: 'h264',
@@ -194,7 +194,7 @@ function probe(file: string): {
   return JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-show_streams', '-of', 'json', file]).toString()) as ReturnType<typeof probe>;
 }
 
-describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Render Worker + ffmpeg）', () => {
+describe.skipIf(!engine || !worker || !ffmpeg)('final video export (real engine + Render Worker + ffmpeg)', () => {
   let fixtures: string;
   let dir: string;
   let runtime: RunningRuntime;
@@ -398,7 +398,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
     ['VP9/Opus WebM', 'libvpx-vp9', 'libopus', 'webm', 'vp9', 'opus'],
     ['VP8/Vorbis WebM', 'libvpx', 'libvorbis', 'webm', 'vp8', 'vorbis'],
     ['AV1/AAC MP4', 'libaom-av1', 'aac', 'mp4', 'av1', 'aac'],
-  ])('默认 MP4 配置导出 %s 源素材，保留画面、声音、尺寸与源文件', async (_label, videoEncoder, audioEncoder, extension, videoCodec, audioCodec) => {
+  ])('default MP4 config exports %s source media, keeping picture, sound, size and source file', async (_label, videoEncoder, audioEncoder, extension, videoCodec, audioCodec) => {
     const videoId = await newVideo('兼容编码');
     const source = path.join(project.path, `source with spaces.${extension}`);
     execFileSync('ffmpeg', [
@@ -436,7 +436,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
   }, 120_000);
 
   // Two exports: alone, about 7 seconds. When the whole suite runs together the machine is busy, so leave a margin.
-  it('视频 + 图片 + 交叉淡化 + 声音：MP4，流、帧数、颜色与声音都对（A11）', async () => {
+  it('video + image + crossfade + sound: MP4, streams, frame count, color and sound all correct (A11)', async () => {
     const { videoId } = await cutVideo();
     const { fps } = video(videoId);
     const rate = fps.num / fps.den;
@@ -520,7 +520,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
     }
   }, 60_000);
 
-  it('内部检查的三段预览正常渲染、校验与发布，用途保留在快照和任务记录', async () => {
+  it('the three-part preview of internal inspection renders, verifies and publishes normally, with its purpose kept in the snapshot and task record', async () => {
     const { videoId } = await cutVideo();
     const job = await exportOnce({
       videoId,
@@ -550,7 +550,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
   }, 60_000);
 
   // The master runs inside the Worker in a debug build, so it is slower than the other cases.
-  it('声音的响度母带：成片的声音做到目标响度与真峰值，实测写进校验', async () => {
+  it('audio loudness mastering: the final video\'s audio reaches the target loudness and true peak, measured values are recorded in the verification', async () => {
     const { videoId } = await cutVideo();
     const job = await exportOnce({
       videoId,
@@ -563,7 +563,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
     expect(job.warnings.map((w) => w.code)).not.toContain('LOUDNESS_NOT_MEASURABLE');
   }, 60_000);
 
-  it('冻结：导出途中删掉所有实例，成片仍是提交时的版本（AT-25）', async () => {
+  it('freeze: all instances deleted during export, the final video is still the version at submission (AT-25)', async () => {
     const { videoId } = await cutVideo();
     const before = video(videoId);
     const { jobId } = await client.request('exports.create', { videoId, settings: { kind: 'video', format: 'mp4' } });
@@ -579,7 +579,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
     expect(empty.details).toMatchObject({ code: 'EXPORT_RANGE_EMPTY' });
   });
 
-  it('取消：停下 Worker 与 ffmpeg，清掉 staging，不留半个文件（AT-26）', async () => {
+  it('cancel: stops the Worker and ffmpeg, clears staging, leaves no partial file (AT-26)', async () => {
     const videoId = await newVideo('长片');
     const long = await fixture('long.mp4');
     const { sequenceId } = video(videoId);
@@ -602,7 +602,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
   });
 
   it.skipIf(process.platform === 'win32')(
-    'Worker 崩溃（被 SIGKILL）：任务失败，staging 清掉，它启动的 ffmpeg 随进程组一起停下',
+    'Worker crash (SIGKILL): task fails, staging is cleared, and the ffmpeg it started stops with its process group',
     async () => {
       // Native encoding and decoding don't start ffmpeg subprocesses. Native is turned off here (`CUCCUT_EXPORT_NATIVE=0`), so the Worker takes the ffmpeg fallback.
       // What is tested is that the subprocesses on the fallback path are reaped along with the process group. The Worker inherits this process's environment.
@@ -664,7 +664,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
     },
   );
 
-  it.skipIf(process.platform === 'win32')('Worker 在提交之后不见了：任务失败，错误指向 Render Worker 而不是叫人装 ffmpeg', async () => {
+  it.skipIf(process.platform === 'win32')('Worker disappears after submission: task fails, and the error points to the Render Worker instead of telling the user to install ffmpeg', async () => {
     // Preflight runs the real Worker and then deletes it, so starting it after the job begins finds nothing (as if the build output were cleared while the job was queued).
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-worker-gone-'));
     const script = path.join(tmp, 'export-worker');
@@ -686,7 +686,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
     expect(JSON.stringify(failed.error)).not.toContain('安装 ffmpeg');
   });
 
-  it('图形与文字：按预览的几何画出来，字体随渲染内核发布（T35）', async () => {
+  it('graphics and text: drawn with the preview\'s geometry, fonts ship with the render core (T35)', async () => {
     const videoId = await newVideo('图文');
     const { sequenceId } = video(videoId);
     const track = await overlayTrack(videoId);
@@ -733,7 +733,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
     expect(pixel(frame, 320, 310, 10)[1]).toBeLessThan(40);
   });
 
-  it('本机字体：内置字体之外的族在本机找到的 face 冻结进快照、画进成片，变了以 FONT_MISSING 失败；预览拿得到同一个 face；找不到的照回退字体画并警告', async () => {
+  it('local fonts: faces found locally for families outside the built-in fonts are frozen into the snapshot and drawn into the final video; if they change, it fails with FONT_MISSING; the preview gets the same face; families not found are drawn with the fallback font and a warning', async () => {
     // The local font library scans only this temp directory (a test hook that the engine and Render Worker take at startup), so the test doesn't depend on what fonts this machine has installed.
     const fonts = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-fonts-'));
     const previous = process.env.CUCCUT_FONT_DIRS;
@@ -852,7 +852,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
     await expect(client.request('fonts.resolve', { faces: [] })).rejects.toThrow();
   });
 
-  it('按需下载的字体：目录里有、本机没有的族在导出任务里下载、冻结、画进成片；关了自动下载时照回退字体画并说明原因', async () => {
+  it('on-demand fonts: families listed in the catalog but absent locally are downloaded, frozen and drawn into the final video in the export task; with auto-download off, they are drawn with the fallback font and the reason is explained', async () => {
     // The local font library is an empty temp directory. The font service is a local fake that serves the probe font ColrProbe (the font directory is injected, and it holds only this one family).
     const systemFonts = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-fonts-'));
     const previous = process.env.CUCCUT_FONT_DIRS;
@@ -979,7 +979,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
     expect(requests).toHaveLength(2);
   });
 
-  it('导出还在等字体下载时取消：任务记为取消，下载停下、不留半个文件，族不卡在下载中，之后可以再下载', async () => {
+  it('cancel while export is still waiting for font downloads: task is recorded as cancelled, the download stops, no partial file is left, the family is not stuck in downloading, and it can be downloaded again later', async () => {
     const systemFonts = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-fonts-'));
     const previous = process.env.CUCCUT_FONT_DIRS;
     process.env.CUCCUT_FONT_DIRS = systemFonts;
@@ -1072,7 +1072,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
     expect(await status()).toMatchObject({ state: 'downloaded', job: null, error: null });
   });
 
-  it('只给字幕用的字体：字幕不烧进画面时导出不下载它，烧进画面时下载', async () => {
+  it('fonts used only for subtitles: export does not download them when subtitles are not burned into the picture, and downloads them when burned in', async () => {
     const systemFonts = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-fonts-'));
     const previous = process.env.CUCCUT_FONT_DIRS;
     process.env.CUCCUT_FONT_DIRS = systemFonts;
@@ -1140,7 +1140,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
     expect((await client.request('fonts.downloaded', {})).faces).toMatchObject([{ family: 'ColrProbe' }]);
   });
 
-  it('视频用到的字体只看文字与字幕：没有素材、素材文件不见了或变了，fonts.usage 照样给出清单', async () => {
+  it('fonts used by the video are determined only from text and subtitles: with no media, a media file missing or changed, fonts.usage still returns the list', async () => {
     const videoId = await newVideo('缺素材');
     const textTrack = await overlayTrack(videoId);
     await edit(videoId, [
@@ -1182,7 +1182,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
     expect(await families()).toEqual(textOnly);
   });
 
-  it('字幕：缺省烧进画面（锚点在画布 86% 高处），burnCaptions: false 时不画', async () => {
+  it('subtitles: burned into the picture by default (anchored at 86% of the canvas height), not drawn when burnCaptions: false', async () => {
     const videoId = await newVideo('字幕');
     const { sequenceId } = video(videoId);
     const caption = {
@@ -1227,7 +1227,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
     expect(await families(false)).toEqual([]);
   });
 
-  it('SVG 图片按矢量光栅画进成片', async () => {
+  it('SVG images are drawn into the final video as vector rasters', async () => {
     const videoId = await newVideo('带矢量图');
     const red = await fixture('red.mp4');
     const svg = await fixture('logo.svg');
@@ -1249,7 +1249,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
     expect(b).toBeLessThan(80);
   });
 
-  it('声波：导出从冻结的声音文件算频谱，跟着声音动；范围外的声音也冻结', async () => {
+  it('waveform: export computes the spectrum from the frozen audio file and moves with the sound; audio outside the range is also frozen', async () => {
     const videoId = await newVideo('声波');
     const tone = await fixture('tone.wav');
     const hum = await fixture('hum.wav');
@@ -1293,7 +1293,7 @@ describe.skipIf(!engine || !worker || !ffmpeg)('成片导出（真实引擎 + Re
     expect(loud, `${quiet} → ${loud}`).toBeGreaterThan(quiet + 200);
   }, 60_000);
 
-  it('画不出来的内容：默认拒绝并逐项列出，不建任务；skip 时跳过并逐项警告（T35）', async () => {
+  it('content that cannot be drawn: rejected by default and listed item by item, no task created; with skip, it is skipped and warned item by item (T35)', async () => {
     const videoId = await newVideo('带坏矢量图');
     const red = await fixture('red.mp4');
     const svg = await fixture('broken.svg');

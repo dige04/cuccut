@@ -59,15 +59,15 @@ function deps(
 
 const byId = <T extends { id: string }>(list: T[], id: string) => list.find((t) => t.id === id)!;
 
-describe('工具的可用性', () => {
-  it('能力都配置了、外部工具都在：全部可用，没有限制', async () => {
+describe('tool availability', () => {
+  it('all capabilities configured and external tools present: all available, no restrictions', async () => {
     const statuses = await toolStatuses(TOOL_CATALOGUE, deps());
     expect(statuses.map((s) => [s.id, s.available, s.problems.length, s.limitations.length])).toEqual(
       TOOL_CATALOGUE.map((t) => [t.id, true, 0, 0]),
     );
   });
 
-  it('能力没有配置：用到的工具不可用，原因沿用 CAPABILITY_NOT_CONFIGURED；只是可选的进限制；同一种能力只判断一次', async () => {
+  it('capability not configured: tools that use it are unavailable, with reason CAPABILITY_NOT_CONFIGURED; merely optional ones are restricted; the same capability is checked only once', async () => {
     const d = deps({ missing: ['generateText', 'transcribe'] });
     const statuses = await toolStatuses(TOOL_CATALOGUE, d);
     expect(byId(statuses, 'translate-subtitles')).toMatchObject({
@@ -85,7 +85,7 @@ describe('工具的可用性', () => {
     expect(d.asked.filter((c) => c === 'generateText')).toHaveLength(1);
   });
 
-  it('外部工具没装、版本旧、没同意、没登记：分别沿用 TOOL_* 错误码与补救', async () => {
+  it('external tool not installed, too old, not consented, or not registered: each keeps its TOOL_* error code and remedy', async () => {
     const tools = [
       external('ffmpeg', { state: 'missing', path: null, remedy: '在设置里下载 ffmpeg' }),
       external('yt-dlp', { consentRequired: true, consent: null }),
@@ -119,7 +119,7 @@ describe('工具的可用性', () => {
     expect(byId(outdated, 'link-import').problems).toEqual([expect.objectContaining({ code: 'TOOL_UNAVAILABLE', tool: 'yt-dlp' })]);
   });
 
-  it('严格离线：从链接导入不可用，只在某些输入下联网的工具只是受限', async () => {
+  it('strict offline: importing from a link is unavailable; tools that go online only for some inputs are merely restricted', async () => {
     const statuses = await toolStatuses(TOOL_CATALOGUE, deps({ offline: true }));
     expect(byId(statuses, 'link-import')).toMatchObject({ available: false, problems: [{ code: 'OFFLINE_STRICT' }] });
     expect(byId(statuses, 'transcribe')).toMatchObject({ available: true, limitations: [] });
@@ -131,7 +131,7 @@ describe('工具的可用性', () => {
     expect(byId(statuses, 'generate-text').available).toBe(true);
   });
 
-  it('选择能力时只把 RpcError 当作不可用', async () => {
+  it('when selecting a capability, only RpcError is treated as unavailable', async () => {
     await expect(capabilityError(async () => 'ok')).resolves.toBeNull();
     const refused = notConfigured('generateImage');
     await expect(

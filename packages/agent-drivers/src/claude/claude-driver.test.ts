@@ -14,7 +14,7 @@ import { ClaudeSession } from './claude-session.ts';
  * It never starts the real claude on this machine.
  */
 
-describe('ClaudeDriver 探测（假 claude）', () => {
+describe('ClaudeDriver probe (fake claude)', () => {
   let dir: string;
   let cli: FakeClaudeCli;
   let fake: FakeClaude;
@@ -33,7 +33,7 @@ describe('ClaudeDriver 探测（假 claude）', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('按优先级给出状态：没装、出错、太旧、没登录、可用', async () => {
+  it('reports status by priority: not installed, error, too old, signed out, ready', async () => {
     cli.scenario({ installed: false });
     expect(await driver.probe()).toMatchObject({ state: 'not-installed', status: 'unavailable', unavailableReason: 'not-installed', version: null });
 
@@ -71,18 +71,18 @@ describe('ClaudeDriver 探测（假 claude）', () => {
     expect(cli.calls()).toContainEqual(['auth', 'status']);
   });
 
-  it('旧版本没有 auth status：不挡着，账号未知', async () => {
+  it('old version without auth status: not blocked, account unknown', async () => {
     cli.scenario({ auth: null });
     expect(await driver.probe()).toMatchObject({ state: 'ready', account: null });
   });
 
-  it('指定的可执行文件不存在：没装，不再到别处找', async () => {
+  it('the specified executable does not exist: not installed, does not search elsewhere', async () => {
     const missing = path.join(dir, 'nope', 'claude');
     expect(await driver.probe({ executable: missing })).toMatchObject({ state: 'not-installed', executable: missing });
     expect((await driver.probe({ executable: missing })).detail).toContain(missing);
   });
 
-  it('模型表来自 supportedModels()：default 行不单列，它指向的标为默认；tier、强度；问完就关；同一个 claude 不重问', async () => {
+  it('model table comes from supportedModels(): the default row is not listed separately, the model it points to is marked as default; tier, effort; closes after the query; the same claude is not queried again', async () => {
     const probe = await driver.probe();
     expect(probe.models.map((m) => [m.id, m.label, m.tier, m.isDefault])).toEqual([
       ['opus', 'Opus 5.5', 'max', true],
@@ -113,7 +113,7 @@ describe('ClaudeDriver 探测（假 claude）', () => {
     expect(fake.queries).toHaveLength(1);
   });
 
-  it('模型表不设时效：过多久都不重问；换了版本、改了 settings.json 或重新检测才重问', async () => {
+  it('model table has no expiry: never re-queried however long passes; re-queried only after a version change, a settings.json change or re-detection', async () => {
     await driver.probe();
     expect(fake.queries).toHaveLength(1);
 
@@ -140,7 +140,7 @@ describe('ClaudeDriver 探测（假 claude）', () => {
     expect(fake.queries).toHaveLength(4);
   });
 
-  it('拿不到模型表时退回内置的精简表，且不缓存失败', async () => {
+  it('when the model table cannot be fetched, falls back to the built-in reduced table, and the failure is not cached', async () => {
     let calls = 0;
     const failing = new ClaudeDriver(silentLogger, {
       locate: cli.locate,
@@ -159,7 +159,7 @@ describe('ClaudeDriver 探测（假 claude）', () => {
     expect(calls).toBe(2);
   });
 
-  it('configModel 读 settings.json 的 model，并标出它在不在模型表里', async () => {
+  it('configModel reads model from settings.json and marks whether it is in the model table', async () => {
     expect(await driver.probe()).toMatchObject({ configModel: null, configModelKnown: null });
     await fs.writeFile(settingsFile, JSON.stringify({ model: 'sonnet' }));
     expect(await driver.probe()).toMatchObject({ configModel: 'sonnet', configModelKnown: true });
@@ -171,7 +171,7 @@ describe('ClaudeDriver 探测（假 claude）', () => {
     expect(await driver.probe()).toMatchObject({ configModel: null, configModelKnown: null });
   });
 
-  it('settings.json 的 env 里指定的模型并进模型表：已有的不重复，档位按名字或按替代的那一档；configModelKnown 仍比 CLI 的表', async () => {
+  it('models specified in settings.json env are merged into the model table: existing ones are not duplicated, tiers are matched by name or by the tier they replace; configModelKnown still checks against the CLI table', async () => {
     await fs.writeFile(
       settingsFile,
       JSON.stringify({
@@ -206,7 +206,7 @@ describe('ClaudeDriver 探测（假 claude）', () => {
     expect(probe).toMatchObject({ configModel: 'gateway-main', configModelKnown: false });
   });
 
-  it('createSession：找不到 claude 时报 driver-unavailable；找到时不立即起进程', async () => {
+  it('createSession: reports driver-unavailable when claude is not found; does not start a process immediately when found', async () => {
     cli.scenario({ installed: false });
     await expect(
       driver.createSession({ cwd: dir, accessMode: 'ask', model: null, effort: null, resume: null }),
@@ -219,13 +219,13 @@ describe('ClaudeDriver 探测（假 claude）', () => {
   });
 });
 
-describe('Claude 的版本与账号描述', () => {
-  it('解析 --version', () => {
+describe('Claude version and account description', () => {
+  it('parses --version', () => {
     expect(parseClaudeVersion('2.1.284 (Claude Code)\n')).toBe('2.1.284');
     expect(parseClaudeVersion('nonsense')).toBeNull();
   });
 
-  it('按登录方式给出账号描述', () => {
+  it('gives an account description by sign-in method', () => {
     expect(describeClaudeAccount({ authMethod: 'claude.ai', subscriptionType: 'pro' })).toBe('Claude Pro 订阅');
     expect(describeClaudeAccount({ authMethod: 'claude.ai', subscriptionType: 'max' })).toBe('Claude Max 订阅');
     expect(describeClaudeAccount({ authMethod: 'claude.ai' })).toBe('Claude 账号');
@@ -235,8 +235,8 @@ describe('Claude 的版本与账号描述', () => {
   });
 });
 
-describe('Windows 上找 claude（纯函数；未在 Windows 上验证）', () => {
-  it('文件名与常见位置：claude.exe 与 npm 的 claude.cmd；其他平台不变', () => {
+describe('finding claude on Windows (pure function; not verified on Windows)', () => {
+  it('file names and common locations: claude.exe and npm\'s claude.cmd; other platforms unchanged', () => {
     expect(claudeSearch('win32', { APPDATA: 'C:\\Users\\me\\AppData\\Roaming' }, 'C:\\Users\\me')).toEqual({
       names: ['claude.exe', 'claude.cmd'],
       locations: ['C:\\Users\\me\\.local\\bin\\claude.exe', 'C:\\Users\\me\\AppData\\Roaming\\npm\\claude.cmd'],
@@ -248,7 +248,7 @@ describe('Windows 上找 claude（纯函数；未在 Windows 上验证）', () =
     });
   });
 
-  it('从 npm cmd-shim 里读出真正启动的文件，跳过 node.exe', () => {
+  it('reads the file actually launched from the npm cmd-shim, skipping node.exe', () => {
     const js = [
       '@ECHO off',
       'GOTO start',
@@ -273,7 +273,7 @@ describe('Windows 上找 claude（纯函数；未在 Windows 上验证）', () =
     expect(parseCmdShimTarget('@ECHO off\r\nclaude %*', 'C:\\npm')).toBeNull();
   });
 
-  it('.js 入口交给 node 跑，其余直接跑', () => {
+  it('.js entry is run by node, others run directly', () => {
     expect(claudeExec('C:\\npm\\node_modules\\@anthropic-ai\\claude-code\\cli.js')).toEqual({
       file: 'node',
       args: ['C:\\npm\\node_modules\\@anthropic-ai\\claude-code\\cli.js'],

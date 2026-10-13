@@ -84,7 +84,7 @@ function tools(scope: ToolScope) {
 }
 
 describe('design_system_check', () => {
-  it('合格的设计系统：problems 为 0，记一张卡片（来源目录 + 相对路径）；风险 read', async () => {
+  it('valid design system: problems is 0, records one card (source directory + relative path); risk read', async () => {
     await writeSystem('brand/acme');
     const { scope, recorded } = fakeScope();
     const result = (await tools(scope).dispatch('design_system_check', { path: './brand/acme/' }, principal)) as Record<string, unknown>;
@@ -96,7 +96,7 @@ describe('design_system_check', () => {
     expect(toolRisk({ tool: 'design_system_check' } as ToolConfirmation)).toBe('read');
   });
 
-  it('有问题时列出 issues，不记卡片；design-system.json 缺失也照样校验；说明另列，不挡卡片', async () => {
+  it('when there are problems, issues are listed and no card is recorded; design-system.json missing is still validated; notes listed separately and do not block the card', async () => {
     await writeSystem('acme', { 'package.json': '{}' });
     const { scope, recorded } = fakeScope();
     const set = tools(scope);
@@ -116,7 +116,7 @@ describe('design_system_check', () => {
     expect(recorded).toEqual([{ target: { conversationId: 'conv_1', path: 'noted' }, title: 'Acme' }]);
   });
 
-  it('设计系统要在工作目录里', async () => {
+  it('design system must be inside the working directory', async () => {
     const set = tools(fakeScope().scope);
     expect(await rejected(set.dispatch('design_system_check', { path: '../elsewhere' }, principal))).toBe('PATH_OUTSIDE_WORKSPACE');
     expect(await rejected(set.dispatch('design_system_check', { path: tmp }, principal))).toBe('PATH_OUTSIDE_WORKSPACE');
@@ -126,7 +126,7 @@ describe('design_system_check', () => {
 });
 
 describe('design_system_import_asset', () => {
-  it('素材拷进 _blobs/（不进 assets/），返回 /_blob/<id> 与索引记录；给了组时记录进 assetGroups；风险 edit，确认之后才写', async () => {
+  it('assets copied into _blobs/ (not assets/), returns /_blob/<id> and index record; when a group is given, recorded in assetGroups; risk edit, written only after confirmation', async () => {
     const system = await writeSystem('acme');
     await fs.mkdir(path.join(root, 'brand'));
     await fs.writeFile(path.join(root, 'brand', 'logo.png'), 'png-bytes');
@@ -168,7 +168,7 @@ describe('design_system_import_asset', () => {
     expect(svg).toMatchObject({ restoredAs: 'assets/mark.svg', contentType: 'image/svg+xml' });
   });
 
-  it('新建的设计系统：空目录先导入素材，索引最后写，按返回的记录写进去之后 design_system_check 认得这些素材', async () => {
+  it('new design system: import assets into the empty directory first, index written last; after writing the returned records, design_system_check recognizes these assets', async () => {
     const system = path.join(root, 'acme');
     await fs.mkdir(system);
     await fs.writeFile(path.join(root, 'logo.png'), 'png-bytes');
@@ -186,7 +186,7 @@ describe('design_system_import_asset', () => {
     expect(recorded).toHaveLength(1);
   });
 
-  it('大小上限：SVG 2 MiB，其余 20 MiB；类型不在允许的集合里的不收；组名不合规则的不收；都不生成审批', async () => {
+  it('size limits: SVG 2 MiB, others 20 MiB; types outside the allowed set are not accepted; group names not meeting the rules are not accepted; none generate an approval', async () => {
     await writeSystem('acme');
     await sparse(path.join(root, 'big.svg'), 2 * 1024 * 1024 + 1);
     await sparse(path.join(root, 'ok.svg'), 2 * 1024 * 1024);
@@ -210,7 +210,7 @@ describe('design_system_import_asset', () => {
     expect(ok).toMatchObject({ bytes: 2 * 1024 * 1024, contentType: 'image/svg+xml' });
   });
 
-  it('只收工作目录里的普通文件；design-system.json 不是索引的目录不收；规划模式只读', async () => {
+  it('only regular files in the working directory are accepted; a directory whose index lacks design-system.json is not accepted; plan mode is read-only', async () => {
     await writeSystem('acme');
     await fs.mkdir(path.join(root, 'plain'));
     await fs.writeFile(path.join(root, 'plain', 'design-system.json'), JSON.stringify({ title: 'Plain' }));

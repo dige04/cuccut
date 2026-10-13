@@ -177,8 +177,8 @@ const cards = (items: TimelineItem[], jobs: JobRecord[], entries: SpaceEntry[] =
   );
 };
 
-describe('threadCards：放置', () => {
-  it('内部检查导出在任何状态都不进卡或产物；正式的 1 秒分段与旧记录仍显示', () => {
+describe('threadCards: placement', () => {
+  it('internal check exports never enter cards or outputs in any state; formal 1-second segments and legacy records still display', () => {
     const items = [user('u1', 't1'), tool('c1', 't1', 'cuccut.export'), reply('a1', 't1')];
     const preview = (state: JobRecord['state']) => job({
       kind: 'export', state,
@@ -198,7 +198,7 @@ describe('threadCards：放置', () => {
     expect(foldRows(rows).earlier.map((r) => r.jobId)).toEqual([delivered.jobId]);
   });
 
-  it('一轮一部视频一张卡，挂在这一轮最后一个引用它的块后面', () => {
+  it('one card per video per turn, attached after the last block in that turn that references it', () => {
     const items = [
       user('u1', 't1'),
       tool('c1', 't1'),
@@ -211,7 +211,7 @@ describe('threadCards：放置', () => {
     expect(cards(items, [])).toEqual({ 'steps/c2': ['video:mov_1[]'] });
   });
 
-  it('新建视频的记录挂在它前面最近的一块后面；之后的转录 Job 把卡挪到这个任务最后一组步骤', () => {
+  it('a record for a newly created video attaches after the nearest preceding block; a later transcription Job moves the card to the task\'s last group of steps', () => {
     const t = job({ videoId: 'mov_2' });
     const items = [
       user('u1', 't1'),
@@ -226,14 +226,14 @@ describe('threadCards：放置', () => {
     expect(cards(items, [])).toEqual({ 'steps/c1': ['video:mov_2[]'] });
   });
 
-  it('别的会话、用户自己提交的 Job 不进卡；流程的步骤不单独成行', () => {
+  it('jobs from other sessions and jobs the user submitted themselves do not enter the card; pipeline steps do not get their own row', () => {
     const other = job({ submitter: { kind: 'agent', id: 'conv_2', taskId: 't1' } });
     const mine = job({ submitter: { kind: 'connection', id: 'app' } });
     const items = [user('u1', 't1'), tool('c1', 't1'), reply('a1', 't1')];
     expect(cards(items, [other, mine])).toEqual({});
   });
 
-  it('下载卡：父任务还没有视频时一张；视频建出来后同一位置换成视频卡，流程提交的转录成为一行', () => {
+  it('download card: one while the parent task has no video yet; once the video is created, the same position is replaced by a video card, and the transcription submitted by the pipeline becomes a row', () => {
     const items = [user('u1', 't1'), tool('c1', 't1', 'cuccut.download'), reply('a1', 't1')];
     const parent = linkJob();
     const dl = job({
@@ -249,7 +249,7 @@ describe('threadCards：放置', () => {
     expect(cards(items, [withVideo, dl, tr])).toEqual({ 'steps/c1': [`video:mov_9[${parent.jobId},${tr.jobId}]`] });
   });
 
-  it('同一个位置的几张卡按第一次引用的先后', () => {
+  it('several cards at the same position are ordered by first reference', () => {
     const items = [user('u1', 't1'), change('x1', 'mov_b', 't1'), change('x2', 'mov_a', 't1'), tool('c1', 't1'), reply('a1', 't1')];
     const a = job({ videoId: 'mov_a' });
     const b = job({ videoId: 'mov_b' });
@@ -257,8 +257,8 @@ describe('threadCards：放置', () => {
   });
 });
 
-describe('threadCards：一条会话一部视频一张卡（产品设计 §3.2.2）', () => {
-  it('后面的回合再引用时卡挪到最新的引用，前面的回合不再有它', () => {
+describe('threadCards: one card per video per conversation (product design §3.2.2)', () => {
+  it('when a later turn references it again, the card moves to the latest reference; earlier turns no longer have it', () => {
     const items = [
       user('u1', 't1', 10),
       change('x1', 'mov_1', 't1'),
@@ -277,7 +277,7 @@ describe('threadCards：一条会话一部视频一张卡（产品设计 §3.2.2
   // The first round's task submitted a transcription and the second round is just chat: whether the card follows over depends on whether the transcription had finished when the second round started.
   const twoTurns = [user('u1', 't1', 10), tool('c1', 't1'), reply('a1', 't1'), user('u2', 't2', 20), reply('a2', 't2')];
 
-  it('转录在下一条用户消息时还在跑：卡挂到最新一轮的最后一块；排队中同样算没结束', () => {
+  it('transcription still running at the next user message: the card attaches to the last block of the latest turn; queued counts as not finished either', () => {
     const running = job({ state: 'running' });
     expect(cards(twoTurns, [running])).toEqual({ a2: [`video:mov_1[${running.jobId}]`] });
     const queued = job({ state: 'queued', startedAt: null });
@@ -286,20 +286,20 @@ describe('threadCards：一条会话一部视频一张卡（产品设计 §3.2.2
     expect(cards(twoTurns.slice(0, 4), [running])).toEqual({ u2: [`video:mov_1[${running.jobId}]`] });
   });
 
-  it('转录在下一条用户消息之前已经结束：卡留在原处；失败、取消同样按结束时刻算', () => {
+  it('transcription finished before the next user message: the card stays where it is; failed and cancelled are counted by their end time too', () => {
     const done = job({ state: 'completed', endedAt: at(15) });
     expect(cards(twoTurns, [done])).toEqual({ 'steps/c1': [`video:mov_1[${done.jobId}]`] });
     const failed = job({ state: 'failed', endedAt: at(18) });
     expect(cards(twoTurns, [failed])).toEqual({ 'steps/c1': [`video:mov_1[${failed.jobId}]`] });
   });
 
-  it('智能体自己翻译进卡上做一行，在跑时卡跟到最新一轮', () => {
+  it('agent\'s own translation makes a row on the card; while running, the card follows the latest turn', () => {
     const transcribed = job({ state: 'completed', endedAt: at(15) });
     const translating = agentTranslateJob();
     expect(cards(twoTurns, [transcribed, translating])).toEqual({ a2: [`video:mov_1[${transcribed.jobId},${translating.jobId}]`] });
   });
 
-  it('转录在第二轮里结束：第三轮开始后卡仍在第二轮，不挪回去；一直在跑就一直跟到最新一轮', () => {
+  it('transcription finished in the second turn: after the third turn starts the card stays in the second turn and does not move back; if still running all along, it follows to the latest turn', () => {
     const three = [...twoTurns, user('u3', 't3', 30), reply('a3', 't3')];
     const ended = job({ state: 'completed', endedAt: at(25) });
     expect(cards(three, [ended])).toEqual({ a2: [`video:mov_1[${ended.jobId}]`] });
@@ -307,18 +307,18 @@ describe('threadCards：一条会话一部视频一张卡（产品设计 §3.2.2
     expect(cards(three, [running])).toEqual({ a3: [`video:mov_1[${running.jobId}]`] });
   });
 
-  it('还在跑的活在它被引用的那一轮里不挪：卡留在最后的引用后面', () => {
+  it('running work does not move within the turn that references it: the card stays after the last reference', () => {
     const running = job();
     expect(cards(twoTurns.slice(0, 3), [running])).toEqual({ 'steps/c1': [`video:mov_1[${running.jobId}]`] });
   });
 
-  it('第一轮的转录还在跑、第二轮中间又引用了它：仍是一张，挂在第二轮的最后一块', () => {
+  it('turn one\'s transcription still running and it is referenced again mid-turn two: still one card, attached to the last block of turn two', () => {
     const running = job();
     const items = [...twoTurns.slice(0, 4), change('x2', 'mov_1', 't2'), reply('a2', 't2')];
     expect(cards(items, [running])).toEqual({ a2: [`video:mov_1[${running.jobId}]`] });
   });
 
-  it('卡上是整条会话在这部视频上的活：前面回合结束的收进「之前的 N 项」', () => {
+  it('the card shows all of the conversation\'s work on this video: work from earlier turns that has ended is collapsed into \'N earlier items\'', () => {
     const items = [
       user('u1', 't1', 10),
       tool('c1', 't1'),
@@ -337,7 +337,7 @@ describe('threadCards：一条会话一部视频一张卡（产品设计 §3.2.2
   });
 });
 
-describe('threadCards：随第一句话带进来的视频（产品设计 §3.2.2、§5.1）', () => {
+describe('threadCards: video brought in with the first message (product design §3.2.2, §5.1)', () => {
   const opened = (id: string, taskId: string, sent: number, videoId = 'mov_1'): TimelineItem => ({
     kind: 'user-message',
     id,
@@ -347,30 +347,30 @@ describe('threadCards：随第一句话带进来的视频（产品设计 §3.2.2
     context: { videoId, videoName: '访谈第一集', videoPath: 'videos/访谈第一集', revision: '3', selection: [], playheadSeconds: 0 },
   });
 
-  it('第一条消息带着编辑器状态：视频卡挂在这条消息后面，名字取消息里的', () => {
+  it('the first message carries editor state: the video card attaches after this message, named from the message', () => {
     const items = [opened('u1', 't1', 10), reply('a1', 't1')];
     expect(cards(items, [])).toEqual({ u1: ['video:mov_1[]'] });
     const card = [...threadCards({ blocks: buildThread(items), items, jobs: [], conversationId: CONV, entries: [] }).values()][0]![0]!;
     expect(card.kind === 'video' ? card.video : null).toMatchObject({ name: '访谈第一集', at: at(10) });
   });
 
-  it('智能体后来改了这部视频：仍是一张卡，挪到最后的引用', () => {
+  it('agent later edited this video: still one card, moved to the last reference', () => {
     expect(cards([opened('u1', 't1', 10), change('x1', 'mov_1', 't1'), reply('a1', 't1')], [])).toEqual({ 'steps/change/x1': ['video:mov_1[]'] });
   });
 
-  it('只认第一条：之后的消息带着编辑器状态不出卡，也不挪卡', () => {
+  it('only the first counts: later messages carrying editor state produce no card and do not move it', () => {
     expect(cards([user('u1', 't1', 10), reply('a1', 't1'), opened('u2', 't2', 20), reply('a2', 't2')], [])).toEqual({});
     expect(cards([opened('u1', 't1', 10), reply('a1', 't1'), opened('u2', 't2', 20), reply('a2', 't2')], [])).toEqual({ u1: ['video:mov_1[]'] });
   });
 
-  it('会话摘要的产物里也列这部视频', () => {
+  it('the conversation summary\'s outputs also list this video', () => {
     const outputs = conversationOutputs({ id: CONV, projectId: 'p1' }, [opened('u1', 't1', 10), reply('a1', 't1')], [], Infinity, []);
     expect(outputs.map((o) => [o.kind, o.id, o.name])).toEqual([['video', 'mov_1', '访谈第一集']]);
   });
 });
 
-describe('videoOutput（经 threadCards）', () => {
-  it('流程新建的视频按 Space 条目的 ref.videoId 找名字与位置；找不到时位置为 null', () => {
+describe('videoOutput (via threadCards)', () => {
+  it('a video created by a pipeline finds its name and position by the Space entry\'s ref.videoId; position is null when not found', () => {
     const items = [user('u1', 't1'), tool('c1', 't1'), reply('a1', 't1')];
     const tr = job({ videoId: 'mov_9' });
     const entry = {
@@ -397,7 +397,7 @@ describe('videoOutput（经 threadCards）', () => {
 });
 
 describe('videoStatus', () => {
-  it('在跑的转录优先，带百分比；排队；有文稿是已转录；失败过是失败；不知道时不显示', () => {
+  it('running transcription first, with percentage; queued; has a transcript is transcribed; has failed is failed; not shown when unknown', () => {
     expect(videoStatus('mov_1', [job({ progress: { done: 45, total: 100, unit: 'seconds' } })], false)?.text).toBe('转录中 · 45%');
     expect(videoStatus('mov_1', [job({ progress: { done: 3, total: null, unit: 'segments' } })], false)?.text).toBe('转录中');
     expect(videoStatus('mov_1', [job({ state: 'queued' })], false)?.text).toBe('排队中');
@@ -411,7 +411,7 @@ describe('videoStatus', () => {
     expect(videoStatus('mov_1', [job({ kind: 'export' })], false)).toBeNull();
   });
 
-  it('转录没在跑、有翻译在跑时是翻译中：只有一件翻译流程时带百分比；智能体自己翻译没有百分比', () => {
+  it('when no transcription is running and a translation is, it is translating: percentage only when there is a single translation pipeline; agent\'s own translation has no percentage', () => {
     const done = job({ state: 'completed', result: { documentId: 'doc_1', artifactId: 'art_doc' } });
     const pipeline = translateJob();
     expect(videoStatus('mov_1', [done, pipeline], false)).toEqual({ key: 'translating', text: '翻译中 · 5%' });
@@ -434,7 +434,7 @@ describe('videoStatus', () => {
 describe('jobRowView', () => {
   const now = Date.parse(at(0)) + 90_000;
 
-  it('转录在跑：阶段与按秒的计数、百分比、已用时长、能取消；没有「预计还要」', () => {
+  it('transcription running: stage and per-second count, percentage, elapsed time, can cancel; no \'estimated remaining\'', () => {
     const j = job({ progress: { done: 62, total: 206, unit: 'seconds' }, startedAt: at(0) });
     const row = jobRowView(j, [j], now);
     expect(row).toMatchObject({
@@ -449,7 +449,7 @@ describe('jobRowView', () => {
     expect(row.line).toContain('已识别 1:02 / 3:26');
   });
 
-  it('没有总量时不写百分比；按片段计数', () => {
+  it('no percentage without a total; counted by segments', () => {
     const j = job({ progress: { done: 12, total: null, unit: 'segments' } });
     const row = jobRowView(j, [j], now);
     expect(row.pct).toBeNull();
@@ -457,14 +457,14 @@ describe('jobRowView', () => {
     expect(row.line).toContain('已识别 12 段');
   });
 
-  it('同一部视频之前转录过的叫重新转录', () => {
+  it('a video previously transcribed is called re-transcribe', () => {
     const old = job({ state: 'completed', endedAt: at(1) });
     const again = job();
     expect(jobRowView(again, [old, again], now).name).toBe('重新转录');
     expect(jobRowView(old, [old, again], now).name).toBe('转录');
   });
 
-  it('完成写结果事实与警告，不给取消', () => {
+  it('completed shows result facts and warnings, no cancel', () => {
     const j = job({
       state: 'completed',
       endedAt: at(9),
@@ -481,7 +481,7 @@ describe('jobRowView', () => {
     });
   });
 
-  it('失败写原因，有确定去处时给补救；中断的转录能重试，失败的不能', () => {
+  it('failed shows the reason, with a remedy when there is a clear destination; interrupted transcription can be retried, failed cannot', () => {
     const failed = job({
       state: 'failed',
       endedAt: at(9),
@@ -501,7 +501,7 @@ describe('jobRowView', () => {
     expect(jobRowView(retrying, [retrying], now)).toMatchObject({ state: 'running', canRetry: false, canCancel: false });
   });
 
-  it('智能体自己翻译：一行「翻译 · 语言」，不确定的进度、写一共多少句，不给取消；完成写语言', () => {
+  it('agent\'s own translation: one row \'translation · language\', indeterminate progress, writes the total sentence count, no cancel; completed shows the language', () => {
     const j = agentTranslateJob({ startedAt: at(0) });
     expect(jobRowView(j, [j], now)).toMatchObject({
       kind: 'translate',
@@ -519,17 +519,17 @@ describe('jobRowView', () => {
     expect(jobRowView(stopped, [stopped], now)).toMatchObject({ state: 'interrupted', canRetry: false });
   });
 
-  it('翻译流程在跑：步骤与百分比，能取消', () => {
+  it('translation pipeline running: steps and percentage, can cancel', () => {
     const j = translateJob();
     expect(jobRowView(j, [j], now)).toMatchObject({ kind: 'translate', name: '翻译 · en', tail: '5%', pct: 5, line: '翻译', canCancel: true });
   });
 
-  it('取消写已取消，没有按钮', () => {
+  it('cancelled shows \'cancelled\', no button', () => {
     const j = job({ state: 'cancelled', endedAt: at(9) });
     expect(jobRowView(j, [j], now)).toMatchObject({ tail: '已取消', canCancel: false, canRetry: false, remedy: null, error: null });
   });
 
-  it('导出完成列文件，成片能播放，便携包不能', () => {
+  it('export completed lists files; the final video can play, the portable package cannot', () => {
     const j = job({
       kind: 'export',
       state: 'completed',
@@ -563,7 +563,7 @@ describe('jobRowView', () => {
     expect(row.playable).toEqual({ [row.files[0]!.key]: 'art_1' });
   });
 
-  it('只有成片和音频能播放：字幕与浏览器放不了的 AVI 只在文件夹中显示（产品设计 §3.2.2）', () => {
+  it('only the final video and audio can play: subtitles and AVI files the browser cannot play are only shown in the folder (product design §3.2.2)', () => {
     const out = (artifactId: string, path: string, media: object) => ({ artifactId, path, byteLength: 1000, media });
     const j = job({
       kind: 'export',
@@ -592,13 +592,13 @@ describe('jobRowView', () => {
   });
 });
 
-describe('foldRows / needsAction（产品设计 §3.2.2「之前的 N 项」）', () => {
+describe('foldRows / needsAction (product design §3.2.2 \'N earlier items\')', () => {
   type R = { id: string; state: JobRowView['state']; remedy: JobRowView['remedy']; canRetry: boolean };
   const fix = { label: '去设置', hint: '', target: { tab: 'models' } } as unknown as JobRowView['remedy'];
   const row = (id: string, state: R['state'], extra: Partial<R> = {}): R => ({ id, state, remedy: null, canRetry: false, ...extra });
   const ids = (f: { shown: R[]; earlier: R[] }) => [f.shown.map((r) => r.id), f.earlier.map((r) => r.id)];
 
-  it('有活在跑或排队：只摊开进行中的（按原先后），已结束的新的在前收起', () => {
+  it('when work is running or queued: only the in-progress items are expanded (in original order); finished ones, newest first, are collapsed', () => {
     expect(ids(foldRows([row('a', 'done'), row('b', 'cancelled'), row('c', 'done'), row('d', 'failed'), row('e', 'running')]))).toEqual([
       ['e'],
       ['d', 'c', 'b', 'a'],
@@ -609,14 +609,14 @@ describe('foldRows / needsAction（产品设计 §3.2.2「之前的 N 项」）'
     ]);
   });
 
-  it('都结束了只摊开最后一件；只有一件时没有收起的', () => {
+  it('when all are finished, only the last one is expanded; with a single item there is nothing collapsed', () => {
     expect(ids(foldRows([row('a', 'failed'), row('b', 'done'), row('c', 'cancelled')]))).toEqual([['c'], ['b', 'a']]);
     expect(ids(foldRows([row('a', 'done')]))).toEqual([['a'], []]);
     expect(ids(foldRows([row('a', 'running')]))).toEqual([['a'], []]);
     expect(foldRows([])).toEqual({ shown: [], earlier: [], pending: 0 });
   });
 
-  it('pending 只数收起里失败或中断、且有补救或重试的；摊开着的不算', () => {
+  it('pending counts only collapsed items that failed or were interrupted and have a remedy or retry; expanded ones do not count', () => {
     const f = foldRows([
       row('a', 'failed', { remedy: fix }),
       row('b', 'interrupted', { canRetry: true }),
@@ -632,7 +632,7 @@ describe('foldRows / needsAction（产品设计 §3.2.2「之前的 N 项」）'
     expect(needsAction(row('x', 'cancelled', { canRetry: true }))).toBe(false);
   });
 
-  it('接在 cardRows 与 jobRowView 后面：之前一件转录失败可去设置、收起了，卡上带出 pending', () => {
+  it('follows cardRows and jobRowView: a previous transcription failure that can be fixed in settings is collapsed, and the card surfaces pending', () => {
     const failed = job({
       state: 'failed',
       endedAt: at(9),
@@ -647,7 +647,7 @@ describe('foldRows / needsAction（产品设计 §3.2.2「之前的 N 项」）'
 });
 
 describe('cardRows', () => {
-  it('从链接导入的父任务：流程的转录出来后不再占一行，完成后不列，失败时留着', () => {
+  it('parent task imported from a link: the pipeline\'s transcription no longer takes a row once it is out, is not listed when complete, and stays on failure', () => {
     const parent = linkJob({ videoId: 'mov_9' });
     const tr = job({ videoId: 'mov_9', submitter: { kind: 'pipeline', id: parent.jobId } });
     expect(cardRows([parent.jobId], [parent]).map((j) => j.jobId)).toEqual([parent.jobId]);
@@ -658,7 +658,7 @@ describe('cardRows', () => {
   });
 });
 
-describe('转录用的模型与参数（产品设计 §3.2.2「转录与重新转录另写一行」）', () => {
+describe('transcription model and parameters (product design §3.2.2 \'transcription and re-transcription get separate rows\')', () => {
   const words = { auto: '自动检测', speakers: '识别说话人' };
   const view = {
     transcribe: {
@@ -674,7 +674,7 @@ describe('转录用的模型与参数（产品设计 §3.2.2「转录与重新�
     return f ? asrLine(f, asrModelName(view, bundles, f.providerId, f.modelId), words) : null;
   };
 
-  it('模型名 · 本机或云端 · 语言 · 识别说话人；在跑与结束后都写，自动检测照转录工具的说法', () => {
+  it('model name · local or cloud · language · speaker identification; written both while running and after it ends; auto-detect follows the transcription tool\'s wording', () => {
     const run = job({
       providerId: 'local',
       modelId: 'moss-transcribe',
@@ -700,7 +700,7 @@ describe('转录用的模型与参数（产品设计 §3.2.2「转录与重新�
     );
   });
 
-  it('模型不能区分说话人（报了警告）时不写识别说话人；之前的记录没写语言时这一段不写', () => {
+  it('speaker identification is not written when the model cannot distinguish speakers (a warning was reported); this segment is not written when an earlier record has no language', () => {
     const asked = job({
       modelId: 'moss-transcribe',
       state: 'completed',
@@ -712,12 +712,12 @@ describe('转录用的模型与参数（产品设计 §3.2.2「转录与重新�
     expect(line(job({ modelId: 'moss-transcribe' }))).toBe('MOSS Transcribe · 本机');
   });
 
-  it('不是转录的没有这一行', () => {
+  it('non-transcription items have no such row', () => {
     expect(asrFacts(job({ kind: 'export' }), [])).toBeNull();
     expect(jobRowView(job({ kind: 'export' }), [], 0).asr).toBeNull();
   });
 
-  it('转录流程：父任务那一行取它提交的转录 Job；还没提交时取冻结的参数；从链接导入的转录记录旧时退回父任务的参数', () => {
+  it('transcription pipeline: the parent task\'s row takes the transcription Job it submitted; before submission it takes the frozen parameters; for an old record imported from a link, it falls back to the parent task\'s parameters', () => {
     const parent = job({
       kind: 'pipeline',
       providerId: 'local',
@@ -744,7 +744,7 @@ describe('转录用的模型与参数（产品设计 §3.2.2「转录与重新�
     expect(line(old, [link, old])).toBe('MOSS Transcribe · 本机 · 自动检测');
   });
 
-  it('转录流程的父任务与它提交的转录 Job 只占一行：转录做完、流程还在建字幕层或之后失败时父任务那一行留着', () => {
+  it('a transcription pipeline\'s parent task and the transcription Job it submitted take only one row: when transcription is done but the pipeline fails while building the subtitle layer or later, the parent task\'s row stays', () => {
     const parent = job({
       kind: 'pipeline',
       pipeline: { name: 'transcribe', params: { videoId: 'mov_1' }, steps: [], current: 0, stoppedAt: null, summary: null },
@@ -767,7 +767,7 @@ describe('转录用的模型与参数（产品设计 §3.2.2「转录与重新�
 describe('downloadCardView', () => {
   const now = Date.parse(at(0)) + 10_000;
 
-  it('下载中：站点、链接、字节与百分比、能取消', () => {
+  it('downloading: site, link, bytes and percentage, can cancel', () => {
     const parent = linkJob({ startedAt: at(0) });
     const dl = job({
       jobId: 'job_dl',
@@ -789,7 +789,7 @@ describe('downloadCardView', () => {
     expect(view.elapsed).toBe('已用 0:10');
   });
 
-  it('失败写原因，固定流程不给重试', () => {
+  it('failed shows the reason; fixed pipelines offer no retry', () => {
     const parent = linkJob({
       state: 'failed',
       endedAt: at(9),
@@ -801,7 +801,7 @@ describe('downloadCardView', () => {
     expect(view).toMatchObject({ canRetry: false, canCancel: false, pct: null });
   });
 
-  it('只下载不建视频：完成写落地的文件', () => {
+  it('download only, no video created: completed writes the saved file', () => {
     const parent = linkJob({ state: 'completed', endedAt: at(9) });
     parent.pipeline = {
       ...parent.pipeline!,
@@ -826,8 +826,8 @@ describe('downloadCardView', () => {
   });
 });
 
-describe('会话里的视频活（产物弹层）', () => {
-  it('列整条会话归这部视频的活，含流程提交的；别的会话的不列', () => {
+describe('video work in the conversation (outputs popover)', () => {
+  it('lists all of the conversation\'s work on this video, including that submitted by pipelines; other conversations\' work is not listed', () => {
     const parent = linkJob({ videoId: 'mov_9', submitter: { kind: 'agent', id: CONV, taskId: 't1' } });
     const tr = job({ videoId: 'mov_9', submitter: { kind: 'pipeline', id: parent.jobId } });
     const ex = job({ kind: 'export', videoId: 'mov_9', submitter: { kind: 'agent', id: CONV, taskId: 't2' } });

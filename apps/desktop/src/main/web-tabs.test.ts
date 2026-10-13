@@ -34,8 +34,8 @@ beforeEach(() => {
   installWebTabs({ appOrigins: ['http://localhost:5173'] });
 });
 
-describe('原生浏览器能力', () => {
-  it('原生文档就绪前不调用设备模拟或查找清理，跨页导航后重新等待就绪', () => {
+describe('native browser capabilities', () => {
+  it('device emulation or find cleanup is not called before the native document is ready; after cross-page navigation, waits for readiness again', () => {
     const id = invoke('create'), wc = env.views[0].webContents;
     send('viewport', id, null); send('find-stop', id);
     send('bounds', id, { x: 0, y: 0, width: 390, height: 844 });
@@ -49,7 +49,7 @@ describe('原生浏览器能力', () => {
     expect(wc.enableDeviceEmulation).toHaveBeenCalledOnce();
     wc.emit('dom-ready'); expect(wc.enableDeviceEmulation).toHaveBeenCalledTimes(2);
   });
-  it('查找只接受当前请求的结果；停止后忽略在途结果', () => {
+  it('find accepts only results for the current request; after stop, in-flight results are ignored', () => {
     const id = invoke('create'), wc = env.views[0].webContents;
     wc.emit('dom-ready');
     send('find', id, { query: '字幕' });
@@ -64,7 +64,7 @@ describe('原生浏览器能力', () => {
     wc.emit('found-in-page', {}, { requestId: 2, activeMatchOrdinal: 2, matches: 3 });
     expect(env.owner.webContents.send.mock.lastCall[1].find.matches).toBe(0);
   });
-  it('真实忽略缓存刷新、视口模拟、原生网页快捷键；子框架不能控制视图', () => {
+  it('really ignores cache refresh, viewport emulation and native web shortcuts; child frames cannot control the view', () => {
     const id = invoke('create'), wc = env.views[0].webContents;
     wc.emit('dom-ready');
     send('reload', id, true); expect(wc.reloadIgnoringCache).toHaveBeenCalledOnce();
@@ -79,7 +79,7 @@ describe('原生浏览器能力', () => {
     env.listeners.get('cuccut:web-reload')!({ sender: env.owner.webContents, senderFrame: { parent: {} } }, id, true);
     expect(wc.reloadIgnoringCache).toHaveBeenCalledOnce();
   });
-  it('弹窗和权限拒绝有状态提示，关闭标签销毁原生视图', () => {
+  it('popups and permission denials show a status hint; closing a tab destroys the native view', () => {
     const id = invoke('create'), wc = env.views[0].webContents;
     wc.emit('dom-ready');
     expect(wc.setWindowOpenHandler.mock.lastCall[0]({ url: 'https://example.org/' })).toEqual({ action: 'deny' });
@@ -90,7 +90,7 @@ describe('原生浏览器能力', () => {
     expect(env.owner.webContents.send.mock.lastCall[1].notice.kind).toBe('permission');
     send('destroy', id); expect(wc.close).toHaveBeenCalledOnce();
   });
-  it('跨平台输入和尺寸参数严格校验', () => {
+  it('cross-platform input and size parameters are strictly validated', () => {
     expect(parseDeviceSize({ width: Infinity, height: 400 })).toBeNull();
     expect(parseFindRequest({ query: 'x'.repeat(4097) })).toBeNull();
     expect(nativeWebShortcut({ key: 'r', meta: false, control: true, alt: false, shift: true }, false)).toBe('force-reload');

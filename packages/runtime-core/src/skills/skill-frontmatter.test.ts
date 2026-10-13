@@ -7,8 +7,8 @@ function fields(text: string): Record<string, string> {
   return Object.fromEntries(result.fields);
 }
 
-describe('SKILL.md 的 front matter', () => {
-  it('读顶层的 key: value，正文在结束的 --- 之后', () => {
+describe('SKILL.md front matter', () => {
+  it('reads top-level key: value; body starts after the closing ---', () => {
     const result = parseSkillFrontmatter('---\nname: caption-layout\ndescription: 字幕排版规范 # 注释\nversion: 1.2.0\n---\n\n# 正文\n');
     expect(result).toEqual({
       ok: true,
@@ -21,7 +21,7 @@ describe('SKILL.md 的 front matter', () => {
     });
   });
 
-  it('引号、块纯量与多行纯量', () => {
+  it('quotes, block scalars and multi-line scalars', () => {
     expect(
       fields(
         [
@@ -51,20 +51,20 @@ describe('SKILL.md 的 front matter', () => {
     });
   });
 
-  it('嵌套的映射与列表跳过，值为空串；不影响后面的键', () => {
+  it('nested mappings and lists are skipped, value is an empty string; does not affect later keys', () => {
     expect(
       fields('---\nname: x\nmetadata:\n  author: someone\n  tags: [a, b]\nallowed-tools:\n  - Read\n  - Grep\ndescription: d\n---\n'),
     ).toEqual({ name: 'x', metadata: '', 'allowed-tools': '', description: 'd' });
   });
 
-  it('不以 --- 开头、没有结束、顶层有看不懂的行时不合规', () => {
+  it('non-compliant when it does not start with ---, has no end, or has unreadable top-level lines', () => {
     expect(parseSkillFrontmatter('# 没有 front matter\n').ok).toBe(false);
     expect(parseSkillFrontmatter('---\nname: x\n').ok).toBe(false);
     expect(parseSkillFrontmatter('---\nname: x\n- stray\n---\n').ok).toBe(false);
     expect(parseSkillFrontmatter('﻿---\nname: x\n---\n').ok).toBe(true);
   });
 
-  it('名字与描述按原样，不假定语言', () => {
+  it('name and description kept as is, no language assumed', () => {
     expect(fields('---\nname: 字幕排版\ndescription: Règles de sous-titrage — 日本語も\n---\n')).toEqual({
       name: '字幕排版',
       description: 'Règles de sous-titrage — 日本語も',

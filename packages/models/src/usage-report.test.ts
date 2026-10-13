@@ -50,7 +50,7 @@ const RECORDS: UsageRecord[] = [
 ];
 
 describe('buildUsageReport', () => {
-  it('时段按本机日期：today 从零点起，7d / 30d 含今天，all 从最早一条起', () => {
+  it('time ranges by local date: today starts at midnight, 7d / 30d include today, all starts from the earliest entry', () => {
     expect(periodStart('today', NOW)).toEqual(new Date(2026, 9, 6));
     expect(periodStart('7d', NOW)).toEqual(new Date(2026, 8, 30));
     expect(periodStart('30d', NOW)).toEqual(new Date(2026, 8, 7));
@@ -61,7 +61,7 @@ describe('buildUsageReport', () => {
     expect(buildUsageReport([], { period: 'all', now: NOW }).period).toEqual({ from: NOW.toISOString(), to: NOW.toISOString() });
   });
 
-  it('30 天：合计、三种金额分开、币种不换算、未知计数', () => {
+  it('30 days: totals, three kinds of amounts kept separate, currencies not converted, unknown counts', () => {
     const report = buildUsageReport(RECORDS, { period: '30d', now: NOW, price });
     expect(report.totals).toEqual({
       calls: 7,
@@ -85,7 +85,7 @@ describe('buildUsageReport', () => {
     });
   });
 
-  it('分组：服务商、能力、模型、账号；每行的金额来源', () => {
+  it('grouping: provider, capability, model, account; amount source of each row', () => {
     const report = buildUsageReport(RECORDS, {
       period: '7d',
       now: NOW,
@@ -121,7 +121,7 @@ describe('buildUsageReport', () => {
     });
   });
 
-  it('只看一家服务商；today 只有今天', () => {
+  it('only one provider; today only includes today', () => {
     const report = buildUsageReport(RECORDS, { period: '30d', providerId: 'qwen', now: NOW, price });
     expect(report.totals).toMatchObject({
       calls: 1,

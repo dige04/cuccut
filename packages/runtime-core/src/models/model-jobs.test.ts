@@ -62,7 +62,7 @@ async function installSyntheticModels(modelsDir: string): Promise<void> {
   }
 }
 
-describe('模型与任务方法（不需要引擎）', () => {
+describe('model and task methods (no engine needed)', () => {
   let dir: string;
   let runtime: RunningRuntime;
   let client: CucCutClient;
@@ -73,7 +73,7 @@ describe('模型与任务方法（不需要引擎）', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('没有 Model Worker 时模型包显示不可用，提交转写被拒绝', async () => {
+  it('without a Model Worker the model pack shows unavailable, submitting transcription is rejected', async () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-models-'));
     const home = resolveRuntimeHome({ CUCCUT_HOME: dir });
     await installSyntheticModels(home.modelsDir);
@@ -106,7 +106,7 @@ describe('模型与任务方法（不需要引擎）', () => {
   });
 });
 
-describe.skipIf(!engine || !ffmpeg)('转写（真实引擎 + 假 Model Worker）', () => {
+describe.skipIf(!engine || !ffmpeg)('transcription (real engine + fake Model Worker)', () => {
   let fixtures: string;
   let audio: string;
   let dir: string;
@@ -165,7 +165,7 @@ describe.skipIf(!engine || !ffmpeg)('转写（真实引擎 + 假 Model Worker）
     return { videoId, assetId: imported.receipt.refs!.voice! };
   }
 
-  it('转写一段录音：任务主题从排队到完成，视频里多一份 system 写入的 speech 文档', async () => {
+  it('transcribe a recording: task topic goes from queued to done, the video gains one speech document written by system', async () => {
     let jobs: JobsSnapshot | null = null;
     const live: Array<{ from: number; texts: string[] }> = [];
     client.subscribeJobs({
@@ -233,7 +233,7 @@ describe.skipIf(!engine || !ffmpeg)('转写（真实引擎 + 假 Model Worker）
     expect(content2.document).toMatchObject({ kind: 'speech', sourceAssetId: assetId });
   });
 
-  it('任务进行中关闭视频：任务持有视频，完成后才真正关闭', async () => {
+  it('closing the video while a task is running: the task holds the video, it only truly closes after completion', async () => {
     const { videoId, assetId } = await videoWithAudio();
     const { jobId } = await client.request('models.transcribe', { videoId, assetId });
     expect(await client.request('videos.close', { videoId })).toEqual({ closed: false });

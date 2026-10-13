@@ -96,15 +96,15 @@ function expectIssue(result: DesignSystemCheckResult, file: string, message: str
   expect(matches, `${file}: ${String(message)}\n${JSON.stringify(result.issues, null, 1)}`).not.toHaveLength(0);
 }
 
-describe('checkDesignSystem：通过的', () => {
-  it('完整的基础系统零问题、零说明；生成物列进 notChecked', async () => {
+describe('checkDesignSystem: passing', () => {
+  it('a complete base system has zero issues and zero notes; generated outputs are listed in notChecked', async () => {
     const result = await check();
     expect(result.issues).toEqual([]);
     expect(result.notes).toEqual([]);
     expect(result).toMatchObject({ title: 'Acme', namespace: 'Acme', notChecked: [...DESIGN_SYSTEM_NOT_CHECKED] });
   });
 
-  it('刚建好的空系统（只有标记、title 与 namespace）零问题', async () => {
+  it('a newly created empty system (only marker, title and namespace) has zero issues', async () => {
     const dir = await materialize({
       'design-system.json': JSON.stringify({ v: 3, layout: 'files', createdOnFiles: { v: 1, at: '2026-01-01T00:00:00.000Z' }, title: 'Acme', namespace: 'Acme' }),
     });
@@ -113,7 +113,7 @@ describe('checkDesignSystem：通过的', () => {
     expect(result.notes).toEqual([]);
   });
 
-  it('design-system skill 自带的 demo（references/demo.json 的文件）零问题', async () => {
+  it('the demo bundled with the design-system skill (files from references/demo.json) has zero issues', async () => {
     const demoFile = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../skills/cuccut/built-in-skills/design-system/references/demo.json');
     const demo = JSON.parse(await readFile(demoFile, 'utf8')) as { content: { files: Record<string, string> } };
     const dir = await materialize({
@@ -135,7 +135,7 @@ describe('checkDesignSystem：通过的', () => {
     expect(result.notes).toEqual([]);
   });
 
-  it('导出的系统：素材按 assets/<组>/<名字> 是文件，索引里的记录原样保留、没有 _blobs/：零问题，一条汇总说明', async () => {
+  it('exported system: assets as assets/<group>/<name> files, index records kept as is, no _blobs/: zero issues, one summary note', async () => {
     const result = await check(
       { 'assets/Icons/cup.svg': '<svg/>', 'assets/Icons/bag.svg': '<svg/>' },
       {
@@ -158,7 +158,7 @@ describe('checkDesignSystem：通过的', () => {
     expect(result.notes[0]).toMatchObject({ file: 'design-system.json', message: expect.stringContaining('2 asset records point at a path that is a file') });
   });
 
-  it('上传在 _blobs/ 里的记录还原成文件：字体也算在系统里', async () => {
+  it('uploads in _blobs/ are restored to files: fonts count as part of the system too', async () => {
     const result = await check(
       { 'fonts/Inter.woff2': null, [`${BLOBS_DIR}/${BLOB}.woff2`]: WOFF2, [`${BLOBS_DIR}/index.json`]: '{}' },
       { blobs: { 'fonts/Inter.woff2': { name: 'fonts/Inter.woff2', blob: BLOB, size: WOFF2.length, type: 'font/woff2' } } },
@@ -166,7 +166,7 @@ describe('checkDesignSystem：通过的', () => {
     expect(result.issues).toEqual([]);
   });
 
-  it('索引缺 libraries / groups / assetGroups / blobs / sections / docs 时按空读；分组缺 name 时从键解出；groups 的键可以不在 assetGroups 里', async () => {
+  it('missing libraries / groups / assetGroups / blobs / sections / docs in the index are read as empty; a group missing name is derived from its key; groups keys need not exist in assetGroups', async () => {
     const result = await check(
       { 'assets/My Icons/cup.svg': '<svg/>' },
       {
@@ -182,7 +182,7 @@ describe('checkDesignSystem：通过的', () => {
     expect(decodeIndexKey(encodeIndexKey('My Icons'))).toBe('My Icons');
   });
 
-  it('tokens.json 里不是 token 族的键记成说明，不算问题', async () => {
+  it('keys in tokens.json that are not token families are recorded as notes, not issues', async () => {
     const result = await check({ 'tokens.json': JSON.stringify({ ...TOKENS, meta: { source: 'sync' } }) });
     expect(result.issues).toEqual([]);
     expect(result.notes).toEqual([{ file: 'tokens.json', message: expect.stringContaining('"meta" is not a token family') }]);
@@ -269,18 +269,18 @@ const CASES: [string, Record<string, Content>, Record<string, unknown>, string, 
   ['tokens.json 是名字到值的映射', { 'tokens.json': JSON.stringify({ ...TOKENS, color: { ink: '#111111' } }) }, {}, 'tokens.json', 'name-to-value map'],
 ];
 
-describe('checkDesignSystem：每一类问题', () => {
+describe('checkDesignSystem: each kind of issue', () => {
   it.each(CASES)('%s', async (_name, files, index, file, message) => {
     expectIssue(await check(files, index), file, message);
   });
 
-  it('符号链接', async () => {
+  it('symlink', async () => {
     const dir = await materialize({ 'design-system.json': JSON.stringify(BASE_INDEX), ...BASE_FILES });
     await symlink(path.join(dir, 'README.md'), path.join(dir, 'Link.md'));
     expectIssue(await checkDesignSystem(dir), 'Link.md', 'is a symbolic link');
   });
 
-  it('记录指向的上传不在 _blobs/、路径上也没有文件：带 ASSET_RECORD_MISSING_UPLOAD', async () => {
+  it('record points to an upload that is not in _blobs/ and has no file at the path: with ASSET_RECORD_MISSING_UPLOAD', async () => {
     const result = await check(
       {},
       { assetGroups: { Logos: { name: 'Logos', files: { 'gone.svg': { name: 'gone.svg', blob: BLOB, size: 6, type: 'image/svg+xml' } } } } },
@@ -293,12 +293,12 @@ describe('checkDesignSystem：每一类问题', () => {
     expect(other.issues.every(i => i.code === undefined)).toBe(true);
   });
 
-  it('自有文件超过 1,008 个', async () => {
+  it('own files exceed 1,008', async () => {
     const files = Object.fromEntries(Array.from({ length: DESIGN_SYSTEM_LIMITS.ownFiles }, (_, i) => [`parts/p${String(i).padStart(4, '0')}.css`, 'a{}']));
     expectIssue(await check(files), '.', `a design system holds at most ${DESIGN_SYSTEM_LIMITS.ownFiles}`);
   });
 
-  it('合计超过 256 MiB（_blobs/ 不算）', async () => {
+  it('total exceeds 256 MiB (_blobs/ not counted)', async () => {
     const files = Object.fromEntries(Array.from({ length: 18 }, (_, i) => [`assets/Big/p${i}.png`, { sparse: 15 * 1024 * 1024 }]));
     const result = await check({ ...files, [`${BLOBS_DIR}/${BLOB}.png`]: { sparse: 20 * 1024 * 1024 } });
     expectIssue(result, '.', 'add up to');

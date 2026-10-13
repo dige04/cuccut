@@ -2,13 +2,13 @@ import { setLocale } from '@cuccut/protocol';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BAKE_POLICIES, EXPORT_COPY, PLANNED_PROJECT_TARGETS } from './export-copy.ts';
 
-describe('导出弹层文案', () => {
+describe('export dialog copy', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     setLocale('zh-Hans');
   });
 
-  it('英文界面读英文目录', () => {
+  it('English UI reads the English catalog', () => {
     vi.stubEnv('CUCCUT_LOCALE', 'en');
     setLocale('en');
     expect(EXPORT_COPY.title).toBe('Export');
@@ -23,7 +23,7 @@ describe('导出弹层文案', () => {
     expect(BAKE_POLICIES[2]!.label).toBe('Don’t convert, just drop them');
   });
 
-  it('中文界面照旧读原文', () => {
+  it('Chinese UI still reads the original text', () => {
     setLocale('zh-Hans');
     expect(EXPORT_COPY.title).toBe('导出');
     expect(EXPORT_COPY.moreItems(3)).toBe('还有 3 项');

@@ -53,7 +53,7 @@ const view: TaskContractView = {
 };
 
 describe('cuccut tasks', () => {
-  it('参数：contract 可带修订号，history，list 要会话', () => {
+  it('arguments: contract may take a revision number, history, list requires a session', () => {
     expect(parseTasksArgs(['contract', 'task_1'], {})).toEqual({ kind: 'contract', taskId: 'task_1' });
     expect(parseTasksArgs(['contract', 'task_1'], { revision: '2' })).toEqual({ kind: 'contract', taskId: 'task_1', revision: 2 });
     expect(parseTasksArgs(['history', 'task_1'], {})).toEqual({ kind: 'history', taskId: 'task_1' });
@@ -64,7 +64,7 @@ describe('cuccut tasks', () => {
     expect(() => parseTasksArgs(['update', 'task_1'], {})).toThrow('用法');
   });
 
-  it('合同：全部字段、预算用量、保护与检查结果', () => {
+  it('contract: all fields, budget usage, guards and check results', () => {
     const lines = formatContract(view, [
       {
         resultId: 'chk_1',
@@ -84,7 +84,7 @@ describe('cuccut tasks', () => {
     expect(lines.some((l) => l.startsWith('访问模式：'))).toBe(true);
   });
 
-  it('没有预算策略、没有保护与检查', () => {
+  it('no budget policy, no guards and no checks', () => {
     const lines = formatContract({
       contract: contract({ protectedRefs: [], acceptanceChecks: [], constraints: [], budgetPolicyRef: null }),
       latestRevision: 2,
@@ -94,7 +94,7 @@ describe('cuccut tasks', () => {
     expect(lines).toEqual(expect.arrayContaining(['预算：不限（只受各授权的预算约束）', '约束：无', '不要改动：无', '验收检查：无']));
   });
 
-  it('修订历史与会话的任务列表', () => {
+  it('revision history and the session\'s task list', () => {
     expect(formatContractHistory([contract({ revision: 1, change: { by: 'runtime', reason: 'created', fields: [], at: 't' } })])).toEqual([
       expect.stringContaining('修订 1  Runtime 默认建立，t'),
     ]);

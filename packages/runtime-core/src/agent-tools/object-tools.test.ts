@@ -59,7 +59,7 @@ async function header(file: string, length: number): Promise<Buffer> {
   }
 }
 
-describe.skipIf(!engine || !ffmpeg)('对象的读写工具（终端目录，真实引擎）', () => {
+describe.skipIf(!engine || !ffmpeg)('object read/write tools (terminal directory, real engine)', () => {
   let fixtures: string;
   let clip: string;
   let dir: string;
@@ -134,7 +134,7 @@ describe.skipIf(!engine || !ffmpeg)('对象的读写工具（终端目录，真�
     return { videoId: created.videoId, assetId: imported.assetId, itemId: imported.itemId };
   }
 
-  it('风险与效果：写入的两件 sugar 与 edits_apply 同级，取帧与查询只读', async () => {
+  it('risk and effect: the two sugar writes are at the same level as edits_apply, frame fetch and query read-only', async () => {
     expect(TOOL_RISK.documents_put).toBe(TOOL_RISK.edits_apply);
     expect(TOOL_RISK.assets_import).toBe(TOOL_RISK.edits_apply);
     expect(TOOL_RISK.videos_import_package).toBe(TOOL_RISK.videos_create);
@@ -146,7 +146,7 @@ describe.skipIf(!engine || !ffmpeg)('对象的读写工具（终端目录，真�
     );
   });
 
-  it('assets_import 编译成 importAsset + addItem（一笔）；不给 place 只登记；at 放到那一秒', async () => {
+  it('assets_import compiles to importAsset + addItem (one step); without place only registers; at places at that second', async () => {
     const created = await ok('videos_create', { name: '导入' });
     const videoId = created.videoId as Id;
     const placed = await ok('assets_import', { video: videoId, path: 'media/clip.mp4', place: {} });
@@ -176,7 +176,7 @@ describe.skipIf(!engine || !ffmpeg)('对象的读写工具（终端目录，真�
     expect(await code('assets_import', { video: videoId, path: 'media/clip.mp4', revision: '1' })).toBeDefined();
   });
 
-  it('videos_frames：时刻 → 最上层的视频片段 → 素材帧，写进 cwd 的 .cuccut-out/frames/<videoId>/', async () => {
+  it('videos_frames: time → topmost video clip → media frame, written to cwd\'s .cuccut-out/frames/<videoId>/', async () => {
     const { videoId, assetId, itemId } = await placedVideo('取帧');
     const frames = await ok('videos_frames', { video: videoId, at: ['0.5', '1', '3'] });
     const framesDir = path.join(project.path, '.cuccut-out', 'frames', videoId);
@@ -226,7 +226,7 @@ describe.skipIf(!engine || !ffmpeg)('对象的读写工具（终端目录，真�
     expect(await code('videos_frames', { video: videoId, at: Array.from({ length: 25 }, (_, i) => String(i)) })).toBe('INVALID_ARGUMENTS');
   });
 
-  it('documents_put 编译成 putDocument：新建、替换（kind 不变）、相同正文不产生新版本；参数不全时拒绝', async () => {
+  it('documents_put compiles to putDocument: create, replace (kind unchanged), identical body creates no new version; rejected when parameters incomplete', async () => {
     const { videoId, assetId } = await placedVideo('文档');
     const created = await ok('documents_put', {
       video: videoId,
@@ -264,7 +264,7 @@ describe.skipIf(!engine || !ffmpeg)('对象的读写工具（终端目录，真�
   });
 
   it.skipIf(!editorWasmAvailable())(
-    '翻译的路径：documents_read → documents_put（alignment 为 null，Runtime 补上）→ captions_create',
+    'translation path: documents_read → documents_put (alignment null, filled by Runtime) → captions_create',
     async () => {
       const { videoId, assetId } = await placedVideo('翻译');
       const speech = await ok('documents_put', {
@@ -309,7 +309,7 @@ describe.skipIf(!engine || !ffmpeg)('对象的读写工具（终端目录，真�
     },
   );
 
-  it('videos_history：最近的修改在前，带撤销状态与检查点；limit 截断', async () => {
+  it('videos_history: most recent change first, with undo status and checkpoints; limit truncates', async () => {
     const { videoId } = await placedVideo('历史');
     const inspected = await ok('videos_inspect', { video: videoId });
     await ok('edits_apply', {
@@ -326,7 +326,7 @@ describe.skipIf(!engine || !ffmpeg)('对象的读写工具（终端目录，真�
     expect((await ok('videos_history', { video: videoId, limit: 1 })).entries).toHaveLength(1);
   });
 
-  it('edits_ops：按操作族列出全部操作的说明、JSON Schema 与示例；op 只看一个', async () => {
+  it('edits_ops: lists descriptions, JSON Schema and examples of all operations by family; op shows one', async () => {
     const all = await ok('edits_ops', {});
     const listed = all.families.flatMap((f: Loose) => f.operations.map((o: Loose) => o.type));
     expect([...listed].sort()).toEqual([...OPERATION_TYPES].sort());
@@ -337,7 +337,7 @@ describe.skipIf(!engine || !ffmpeg)('对象的读写工具（终端目录，真�
     expect(await code('edits_ops', { op: 'noSuchOp' })).toBe('INVALID_ARGUMENTS');
   });
 
-  it('videos_import_package：便携包打开成新视频；name 定目录名与视频名，不给时用包里的', async () => {
+  it('videos_import_package: portable package opened as new video; name sets the directory and video name, otherwise the package\'s name is used', async () => {
     const { videoId } = await placedVideo('原片');
     const { jobId } = await client.request('exports.create', { videoId, settings: { kind: 'portable' }, commandId: newId('cmd') });
     const job = await until(async () => {
@@ -362,7 +362,7 @@ describe.skipIf(!engine || !ffmpeg)('对象的读写工具（终端目录，真�
   });
 });
 
-describe.skipIf(!engine || !ffmpeg)('对象的读写工具：会话里的智能体（真实引擎）', () => {
+describe.skipIf(!engine || !ffmpeg)('object read/write tools: agent in session (real engine)', () => {
   let fixtures: string;
   let dir: string;
   let runtime: RunningRuntime;
@@ -410,7 +410,7 @@ describe.skipIf(!engine || !ffmpeg)('对象的读写工具：会话里的智能�
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('规划模式：videos_frames 与查询照常，documents_put 与 assets_import 拒绝（PLAN_ONLY）', async () => {
+  it('plan mode: videos_frames and queries as usual, documents_put and assets_import rejected (PLAN_ONLY)', async () => {
     const opened = await client.request('videos.create', { projectId: project.id, name: '样片' });
     const videoId = opened.ref.videoId;
     await client.request('edits.apply', {

@@ -38,8 +38,8 @@ function admitted(
 
 const noModels = path.join(os.tmpdir(), 'cuccut-no-such-models-dir');
 
-describe('Model Worker 的需求', () => {
-  it('GPU 上的常驻量计 GPU 内存，CPU 上的计内存；都是加 1 GiB，至少固定值；不知道时用固定值', () => {
+describe('Model Worker requirements', () => {
+  it('resident amount counts GPU memory on a GPU and system memory on CPU; either way add 1 GiB, at least the fixed value; use the fixed value when unknown', () => {
     expect(MODEL_WORKER_DEMAND).toEqual({ memory: 1 * GiB, gpuMemory: 2 * GiB, cpuThreads: 2 });
     expect(modelWorkerDemand(null)).toEqual(MODEL_WORKER_DEMAND);
     expect(modelWorkerDemand({ bytes: 0.5 * GiB, pool: 'gpuMemory' })).toEqual(MODEL_WORKER_DEMAND);
@@ -53,7 +53,7 @@ describe('Model Worker 的需求', () => {
     expect(localTranscribeResources('a@mlx').holder.demand).toEqual(MODEL_WORKER_DEMAND);
   });
 
-  it('Apple Silicon：识别与分离模型包按权重估计（分离按文件的两倍），8 GiB 的 Mac 也放得下；合成模型包仍是原来的固定需求', async () => {
+  it('Apple Silicon: recognition and separation bundles are estimated from weights (separation at twice the file size), so an 8 GiB Mac can fit them; synthesis bundles keep their original fixed requirement', async () => {
     // The model catalog is empty: the optional components are not installed.
     const catalog = new ModelCatalog({ root: noModels, platform: 'darwin', arch: 'arm64' });
     for (const def of catalog.definitions()) {
@@ -81,7 +81,7 @@ describe('Model Worker 的需求', () => {
     expect(localTranscribeResources('qwen3-asr-1.7b@mlx-8bit', large).holder.demand.gpuMemory).toBeGreaterThan(3.2 * GiB);
   });
 
-  it('candle：CPU 上按参数个数 × 4 计在内存，CUDA 上按 × 2 计在 GPU 内存；16 GiB 的机器放得下 0.6B 与 MOSS', async () => {
+  it('candle: on CPU, parameter count × 4 counts as memory; on CUDA, × 2 counts as GPU memory; a 16 GiB machine fits 0.6B and MOSS', async () => {
     const catalog = new ModelCatalog({ root: noModels, platform: 'linux', arch: 'x64' });
     const cpu = (await catalog.workerFootprint('qwen3-asr-0.6b@candle'))!;
     // Qwen3-ASR 0.6B and Silero: about 780 million parameters, about 3.1 GB at f32 (measured about 3.7 GiB after loading, including decode buffers).
@@ -105,7 +105,7 @@ describe('Model Worker 的需求', () => {
     expect((await catalog.status('qwen3-asr-0.6b@candle'))!.device).toBe('cuda');
   });
 
-  it('GGML：Whisper 权重按存储字节、加 candle 上的 VAD；CPU 上计在内存，CUDA 或 Vulkan 上计在 GPU 内存；8 GiB 的机器放得下', async () => {
+  it('GGML: Whisper weights count by stored bytes, plus the VAD on candle; on CPU they count as memory, on CUDA or Vulkan as GPU memory; an 8 GiB machine fits it', async () => {
     const catalog = new ModelCatalog({ root: noModels, platform: 'win32', arch: 'x64' });
     for (const [bundleId, mib] of [
       ['whisper-large-v3@ggml', 1031],
@@ -124,7 +124,7 @@ describe('Model Worker 的需求', () => {
     expect((await catalog.status('whisper-large-v3-turbo@ggml'))!.device).toBe('cuda');
   });
 
-  it('文生图按登记的峰值计 Model Worker（至少固定需求），不按约 10 GB 的权重；8 GiB 的 Mac 也放得下', () => {
+  it('text-to-image counts the Model Worker at its registered peak (at least the fixed requirement), not the roughly 10 GB of weights; an 8 GiB Mac fits it', () => {
     const def = IMAGE_BUNDLES[0]!;
     const catalog = new ModelCatalog({ root: noModels, platform: 'darwin', arch: 'arm64' });
     const resources = localImageResources(def.bundleId, catalog.imagePeak(def.bundleId));
@@ -151,7 +151,7 @@ describe('Model Worker 的需求', () => {
     }
   });
 
-  it('candle 的文生图在 CPU 上按峰值计内存、不占 GPU 内存，在 CUDA 上计 GPU 内存；16 GiB 的机器放得下，8 GiB 的后台放不下', () => {
+  it('candle text-to-image counts peak memory on CPU without using GPU memory, and GPU memory on CUDA; a 16 GiB machine fits it, while an 8 GiB background one does not', () => {
     const candle = IMAGE_BUNDLES.find((b) => b.backend === 'candle')!;
     const catalog = new ModelCatalog({ root: noModels, platform: 'win32', arch: 'x64' });
     const cpu = localImageResources(candle.bundleId, catalog.imagePeak(candle.bundleId));

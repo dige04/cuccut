@@ -27,7 +27,7 @@ describe('ApprovalService', () => {
     vi.useRealTimers();
   });
 
-  it('查表：会话按模式，对外服务按等级', () => {
+  it('lookup table: sessions by mode, external services by level', () => {
     const approvals = new ApprovalService();
     expect(approvals.decide({ kind: 'mode', mode: 'autoAcceptEdits' }, 'edit')).toBe('allow');
     expect(approvals.decide({ kind: 'mode', mode: 'autoAcceptEdits' }, 'command')).toBe('ask');
@@ -38,7 +38,7 @@ describe('ApprovalService', () => {
     expect(approvals.decide({ kind: 'service', level: 'read' }, 'read')).toBe('allow');
   });
 
-  it('待处理、允许（含 forSession）与拒绝；结束时先同步调用 onSettled，再通知；处理过的再处理是 already-resolved', async () => {
+  it('pending, allow (including forSession) and deny; on settling, onSettled is called synchronously first, then notify; handling an already handled one again gives already-resolved', async () => {
     const approvals = new ApprovalService();
     const events: ApprovalServiceEvent[] = [];
     approvals.subscribe((event) => events.push(event));
@@ -67,7 +67,7 @@ describe('ApprovalService', () => {
     expect(approvals.respond('missing', 'allow')).toEqual({ status: 'already-resolved' });
   });
 
-  it('带外发授权的审批（§12.5）：列出要授权的数据；允许时带回选择（默认只这一次）；不能「这个任务里不再问」；不涉及外发的不收选择', async () => {
+  it('approval with outbound-sharing authorization (§12.5): lists the data to authorize; allow returns the choice (default is this time only); \'don\'t ask again in this task\' is not offered; approvals without outbound sharing take no choice', async () => {
     const approvals = new ApprovalService();
     const grants = [
       {
@@ -107,7 +107,7 @@ describe('ApprovalService', () => {
     expect(approvals.get('local')?.grants).toBeUndefined();
   });
 
-  it('会话审批没有时限；服务审批到时按 timeout 结束', async () => {
+  it('session approvals have no time limit; service approvals end with timeout when due', async () => {
     vi.useFakeTimers();
     const approvals = new ApprovalService();
     const conv = approvals.request(input());
@@ -120,7 +120,7 @@ describe('ApprovalService', () => {
     expect(approvals.pending().map((a) => a.approvalId)).toEqual([conv.approvalId]);
   });
 
-  it('取消：单条、按条件、中止信号；已中止的信号直接取消，不进列表', async () => {
+  it('cancel: a single item, by condition, or by abort signal; an already aborted signal cancels directly and is not added to the list', async () => {
     const approvals = new ApprovalService();
     const one = approvals.request(input());
     const svcA = approvals.request(input({ subject: service, timeoutMs: 1000 }));
@@ -147,7 +147,7 @@ describe('ApprovalService', () => {
     expect(approvals.pending()).toEqual([]);
   });
 
-  it('onSettled 或订阅方出错不影响结局', async () => {
+  it('an error in onSettled or a subscriber does not affect the outcome', async () => {
     const approvals = new ApprovalService();
     approvals.subscribe(() => {
       throw new Error('listener');

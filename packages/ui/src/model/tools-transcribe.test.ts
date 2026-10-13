@@ -10,8 +10,8 @@ import {
   transcribeStatus,
 } from './tools-transcribe.ts';
 
-describe('转录工具', () => {
-  it('认视频与音频文件', () => {
+describe('transcription tool', () => {
+  it('recognizes video and audio files', () => {
     expect(isTranscribable('访谈.MP4')).toBe(true);
     expect(isTranscribable('podcast.m4a')).toBe(true);
     expect(isTranscribable('cover.png')).toBe(false);
@@ -20,7 +20,7 @@ describe('转录工具', () => {
     expect(baseName('C:\\clips\\a.wav')).toBe('a.wav');
   });
 
-  it('本地列本机的模型包，云端列在线服务商的全部模型（没连上的标未连接）', () => {
+  it('local lists installed model packs, cloud lists all models of online providers (unconnected ones marked not connected)', () => {
     const view = fixtureView();
     expect(transcribeOptions(view, 'local').map((o) => o.key)).toEqual(['local/qwen3-asr-0.6b@mlx-4bit']);
     const cloud = transcribeOptions(view, 'cloud');
@@ -34,7 +34,7 @@ describe('转录工具', () => {
     expect(transcribeOptionLabel(cloud[0]!, 'cloud')).toBe('OpenAI · gpt-4o-transcribe');
   });
 
-  it('没装好的本地模型标未安装', () => {
+  it('local models not properly installed are marked not installed', () => {
     const view = fixtureView();
     view.transcribe.providers[0]!.models.push(transcribeModel('whisper-large-v3@mlx', { available: false, unavailableReason: 'not-installed' }));
     const local = transcribeOptions(view, 'local');
@@ -43,7 +43,7 @@ describe('转录工具', () => {
     expect(transcribeStatus(local[0]!, 'local')).toBe('已安装 · 在本机识别');
   });
 
-  it('进页时落在生效默认值那一边；换方式时落到那边第一只能用的、语言回自动', () => {
+  it('on page open lands on the side of the effective default; when switching mode, lands on the first usable option on that side, language reverts to auto', () => {
     const view = fixtureView();
     expect(initialTranscribe(view, null)).toEqual({ mode: 'local', model: 'local/qwen3-asr-0.6b@mlx-4bit' });
     view.transcribe.effective = { providerId: 'custom:asr-box', modelId: 'whisper-large', source: 'user-default' };
@@ -52,7 +52,7 @@ describe('转录工具', () => {
     expect(switchMode(view, 'cloud')).toEqual({ mode: 'cloud', model: 'custom:asr-box/whisper-large', language: '' });
   });
 
-  it('云端的现状句', () => {
+  it('cloud status sentence', () => {
     const cloud = transcribeOptions(fixtureView(), 'cloud');
     expect(transcribeStatus(cloud[0]!, 'cloud')).toBe('已连接 · OpenAI · 联网转录');
     expect(transcribeStatus(cloud[3]!, 'cloud')).toBe('未连接 · Google Gemini · 联网转录');

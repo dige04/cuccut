@@ -15,8 +15,8 @@ import { decodeText, excerptOf, subtitleDialogue } from './space-thumbnails.ts';
  * Thumbnails of Space entries (`space.thumbnail`). Text summaries and subtitle lines are pure functions. The rest is end-to-end, with a real engine-host and ffmpeg. A video's cover is taken while the video is closed (the engine's read-only query finds the asset file). The rendered cut needs the Render Worker. Whichever is missing, the corresponding part is skipped.
  */
 
-describe('文字摘要', () => {
-  it('UTF-8 去掉 BOM；带 BOM 的 UTF-16 也认；有 NUL 或不是 UTF-8 的不猜', () => {
+describe('text summary', () => {
+  it('UTF-8 strips BOM; UTF-16 with BOM is also recognized; content with NUL or not UTF-8 is not guessed', () => {
     expect(decodeText(Buffer.from('﻿你好', 'utf8'), true)).toBe('你好');
     expect(decodeText(Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from('字幕', 'utf16le')]), true)).toBe('字幕');
     const be = Buffer.from('ab', 'utf16le').swap16();
@@ -29,7 +29,7 @@ describe('文字摘要', () => {
     expect(decodeText(cut, true)).toBeNull();
   });
 
-  it('摘要统一换行、去掉首尾空白，截在字符边界上', () => {
+  it('summary normalizes line breaks, trims surrounding whitespace, and truncates at a character boundary', () => {
     expect(excerptOf('  a\r\nb\rc  \n')).toBe('a\nb\nc');
     const long = '剪'.repeat(1000);
     const excerpt = excerptOf(long);
@@ -39,7 +39,7 @@ describe('文字摘要', () => {
     expect(excerptOf(`x${'😀'.repeat(600)}`)).toBe(`x${'😀'.repeat(Math.floor((SPACE_EXCERPT_MAX_BYTES - 1) / 4))}`);
   });
 
-  it('SRT 与 WebVTT 只留台词：序号、标识、时间码、头部、注释与标签都去掉', () => {
+  it('SRT and WebVTT keep only dialogue: index numbers, identifiers, timecodes, headers, comments and tags are removed', () => {
     const srt =
       '1\r\n00:00:01,000 --> 00:00:02,000\r\n<i>大家好</i>\r\n\r\n2\r\n00:00:02,500 --> 00:00:03,000\r\n{\\an8}今天讲剪辑\r\n第二行\r\n';
     expect(subtitleDialogue(srt, 'srt')).toBe('大家好\n今天讲剪辑\n第二行');
@@ -62,7 +62,7 @@ describe('文字摘要', () => {
     expect(subtitleDialogue(vtt, 'vtt')).toBe('欢迎 & 再见\nHello world');
   });
 
-  it('ASS / SSA 只取对白行的文字字段（按 Format 行找位置）', () => {
+  it('ASS / SSA takes only the text field of dialogue lines (located by the Format line)', () => {
     const ass = [
       '[Script Info]',
       'Title: 测试',
@@ -93,7 +93,7 @@ if (!engine || !ffmpeg) console.warn('跳过 Space 缩略图的端到端测试�
 
 const TERMINAL = new Set(['completed', 'failed', 'cancelled', 'interrupted']);
 
-describe.skipIf(!engine || !ffmpeg)('Space 缩略图（真实引擎 + ffmpeg）', () => {
+describe.skipIf(!engine || !ffmpeg)('Space thumbnails (real engine + ffmpeg)', () => {
   let fixtures: string;
   let clip: string;
   let dir: string;
@@ -165,7 +165,7 @@ describe.skipIf(!engine || !ffmpeg)('Space 缩略图（真实引擎 + ffmpeg）'
     expect(bytes.subarray(0, 2)).toEqual(mimeType === 'image/png' ? Buffer.from([0x89, 0x50]) : Buffer.from([0xff, 0xd8]));
   }
 
-  it('来源目录里的文件：视频与图片取一帧，文档与字幕取开头的文字，别的没有', async () => {
+  it('files in the source directory: videos and images take one frame, documents and subtitles take the opening text, others have none', async () => {
     const at = (name: string) => path.join(project.path, name);
     await fs.copyFile(clip, at('素材.mp4'));
     ffmpegTo(at('透明.png'), ['-f', 'lavfi', '-i', 'color=c=red@0.5:s=960x720,format=rgba', '-frames:v', '1']);
@@ -206,7 +206,7 @@ describe.skipIf(!engine || !ffmpeg)('Space 缩略图（真实引擎 + ffmpeg）'
     expect(all).not.toContain(dir);
   });
 
-  it('视频条目：关着的视频取工作稿的封面（复制进来的与链接的素材都行），没有片段的没有；不存在的条目是 not-found', async () => {
+  it('video entry: a closed video takes the cover from its working draft (both copied and linked media work), none without clips; a nonexistent entry is not-found', async () => {
     const make = async (name: string, storage: 'managed' | 'linked' | null) => {
       const created = await client.request('videos.create', { projectId: project.id, name });
       if (storage) {
@@ -263,7 +263,7 @@ describe.skipIf(!engine || !ffmpeg)('Space 缩略图（真实引擎 + ffmpeg）'
   });
 
   it.skipIf(!worker)(
-    '成片：取 1 秒与时长 10% 中较早的一帧',
+    'final export: takes the earlier of 1 second and 10% of the duration as the frame',
     async () => {
       const created = await client.request('videos.create', { projectId: project.id, name: '成片' });
       const videoId = created.ref.videoId;

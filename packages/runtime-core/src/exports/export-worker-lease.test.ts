@@ -70,7 +70,7 @@ async function until<T>(read: () => T | null | undefined | false | Promise<T | n
   }
 }
 
-describe.skipIf(process.platform === 'win32')('成片导出：进程组退出之后才归还租约', () => {
+describe.skipIf(process.platform === 'win32')('video export: lease released only after the process group exits', () => {
   let dir: string;
   let workerScript: string;
   let scheduler: ResourceScheduler;
@@ -213,14 +213,14 @@ describe.skipIf(process.platform === 'win32')('成片导出：进程组退出之
     return done;
   }
 
-  it('Worker 被强杀：任务失败；它留下的 ffmpeg 随组被杀掉，组退出之后才归还租约', async () => {
+  it('Worker killed by force: task fails; ffmpeg it left behind is killed with the group, lease released only after the group exits', async () => {
     const { jobId, pids: started } = await startRender();
     realKill(started.worker, 'SIGKILL');
     const done = await expectLeaseHeldUntilGroupGone(jobId, started);
     expect(done.state).toBe('failed');
   });
 
-  it('取消：Worker 自己退出但没停下 ffmpeg；组被杀掉、退出之后才归还租约', async () => {
+  it('cancel: Worker exits by itself but ffmpeg not stopped; group killed, lease released only after exit', async () => {
     const { jobId, pids: started } = await startRender();
     // Do not wait for `cancel` to take effect: it waits for the task to end, and the task waits for the gate to open.
     const cancelled = jobs.cancel(jobId);

@@ -61,14 +61,14 @@ const command: TimelineItem = {
 describe('applyConversationEvent', () => {
   const base: ConversationSnapshot = { conversation, items: [message, command] };
 
-  it('追加文字只换掉变化的条目，其余保持同一引用', () => {
+  it('appending text replaces only the changed entries; the rest keep the same reference', () => {
     const next = applyConversationEvent(base, { type: 'item.append', itemId: 'm1', field: 'text', delta: '好' })!;
     expect(next.items[0]).toMatchObject({ text: '你好' });
     expect(next.items[1]).toBe(command);
     expect(base.items[0]).toMatchObject({ text: '你' });
   });
 
-  it('输出超过上限时只保留结尾', () => {
+  it('when output exceeds the limit, only the end is kept', () => {
     const next = applyConversationEvent(base, {
       type: 'item.append',
       itemId: 'c1',
@@ -80,12 +80,12 @@ describe('applyConversationEvent', () => {
     expect(item.kind === 'tool-call' && item.output.length).toBe(OUTPUT_LIMIT + 2);
   });
 
-  it('未知条目的增量与字段不匹配的增量都忽略', () => {
+  it('deltas for unknown entries and deltas with mismatched fields are both ignored', () => {
     expect(applyConversationEvent(base, { type: 'item.append', itemId: 'nope', field: 'text', delta: 'x' })).toBe(base);
     expect(applyConversationEvent(base, { type: 'item.append', itemId: 'm1', field: 'output', delta: 'x' })).toBe(base);
   });
 
-  it('upsert 替换同 ID 的条目，新条目追加在最后', () => {
+  it('upsert replaces the entry with the same ID; new entries are appended at the end', () => {
     const replaced = applyConversationEvent(base, { type: 'item.upsert', item: { ...command, status: 'completed' } })!;
     expect(replaced.items).toHaveLength(2);
     expect(replaced.items[1]).toMatchObject({ status: 'completed' });
@@ -93,13 +93,13 @@ describe('applyConversationEvent', () => {
     expect(added.items.map((i) => i.id)).toEqual(['m1', 'c1', 'm2']);
   });
 
-  it('会话删除时返回 null', () => {
+  it('returns null when the session is deleted', () => {
     expect(applyConversationEvent(base, { type: 'conversation.removed' })).toBeNull();
   });
 });
 
 describe('applyDirectoryEvent', () => {
-  it('upsert 与删除会话', () => {
+  it('upsert and delete session', () => {
     const empty = { projects: [], conversations: [] };
     const added = applyDirectoryEvent(empty, { type: 'conversation.upsert', conversation });
     expect(added.conversations).toEqual([conversation]);
@@ -113,7 +113,7 @@ describe('applyDirectoryEvent', () => {
 describe('applyJobsEvent', () => {
   const job = (jobId: string, state: JobRecord['state']) => ({ jobId, state }) as JobRecord;
 
-  it('同 ID 的记录原位替换，新任务放在最前面', () => {
+  it('records with the same ID are replaced in place; new tasks go at the front', () => {
     const first = job('job_1', 'queued');
     const other = job('job_0', 'completed');
     const state = { jobs: [first, other] };
@@ -128,12 +128,12 @@ describe('applyJobsEvent', () => {
     expect(added.jobs.map((j) => j.jobId)).toEqual(['job_2', 'job_1', 'job_0']);
   });
 
-  describe('实时段落', () => {
+  describe('live segments', () => {
     const seg = (n: number, text = `段 ${n}`) => ({ start: n, end: n + 0.5, text });
     const segments = (jobId: string, from: number, list: Array<ReturnType<typeof seg>>) =>
       ({ type: 'job.segments', jobId, from, segments: list }) as const;
 
-    it('从 from 起写入：接在后面是追加，已有的序号原位替换、其后的保留', () => {
+    it('writing from `from`: appends when placed after; existing indices are replaced in place, and those after are kept', () => {
       const state = { jobs: [job('job_1', 'running')] };
       const one = applyJobsEvent(state, segments('job_1', 0, [seg(0)]));
       expect(one.liveSegments).toEqual({ job_1: [seg(0)] });
@@ -148,14 +148,14 @@ describe('applyJobsEvent', () => {
       expect(other.liveSegments!.job_1).toBe(replaced.liveSegments!.job_1);
     });
 
-    it('from 越过已有的段数（中间缺了）时整条忽略，原样返回', () => {
+    it('when from skips past existing segment count (a gap in between), the whole update is ignored and returned as is', () => {
       const state = applyJobsEvent({ jobs: [job('job_1', 'running')] }, segments('job_1', 0, [seg(0)]));
       expect(applyJobsEvent(state, segments('job_1', 2, [seg(2)]))).toBe(state);
       const empty = { jobs: [job('job_1', 'running')] };
       expect(applyJobsEvent(empty, segments('job_1', 1, [seg(1)]))).toBe(empty);
     });
 
-    it('任务还在跑时段落随记录更新保留；不再是 running 时丢掉，没有段落时不带 liveSegments', () => {
+    it('segments are kept with record updates while the task is still running; dropped when no longer running; liveSegments is omitted when there are no segments', () => {
       let state = applyJobsEvent({ jobs: [job('job_1', 'running'), job('job_2', 'running')] }, segments('job_1', 0, [seg(0)]));
       state = applyJobsEvent(state, segments('job_2', 0, [seg(5)]));
       const progressed = applyJobsEvent(state, { type: 'job.updated', job: job('job_1', 'running') });
@@ -186,7 +186,7 @@ describe('applyTasksEvent', () => {
     expiresAt: '2026-01-01T00:00:50.000Z',
   });
 
-  it('审批出现时追加、结束时去掉；任务行不受影响', () => {
+  it('approvals are added when they appear and removed when they end; task rows are unaffected', () => {
     const state: TasksSnapshot = { tasks: [], approvals: [] };
     const one = applyTasksEvent(state, { type: 'approval.upsert', approval: approval('a1') });
     const two = applyTasksEvent(one, { type: 'approval.upsert', approval: approval('a2') });
@@ -196,7 +196,7 @@ describe('applyTasksEvent', () => {
     expect(removed.tasks).toBe(state.tasks);
   });
 
-  it('只认任务的旧镜像（没有 approvals）照样能套用审批事件与任务事件', () => {
+  it('old task mirror (without approvals) still applies approval and task events', () => {
     const legacy: TasksSnapshot = { tasks: [] };
     const next = applyTasksEvent(legacy, { type: 'approval.upsert', approval: approval('a1') });
     expect(next.approvals).toHaveLength(1);
@@ -206,7 +206,7 @@ describe('applyTasksEvent', () => {
 });
 
 describe('applySettingsEvent', () => {
-  it('只换变了的键，默认值与其他键不变', () => {
+  it('only changed keys are replaced; default values and other keys stay the same', () => {
     const state = { settings: { ...SETTING_DEFAULTS }, defaults: { ...SETTING_DEFAULTS } };
     const next = applySettingsEvent(state, { type: 'settings.updated', changed: { 'offline.strict': true } });
     expect(next.settings['offline.strict']).toBe(true);
@@ -247,7 +247,7 @@ describe('applyModelsEvent', () => {
   const bundle: ModelBundleStatus = { bundleId: 'b1', capability: 'transcribe', backend: 'mlx', device: 'metal', state: 'not-installed' };
   const state: ModelsSnapshot = { capabilities: { marker: 1 } as never, bundles: [bundle] };
 
-  it('能力视图整个替换；模型包按 bundleId 替换或追加，不改原状态', () => {
+  it('capability view is replaced as a whole; model bundles are replaced or appended by bundleId without changing the original state', () => {
     const replaced = applyModelsEvent(state, { type: 'capabilities.updated', capabilities: { marker: 2 } as never });
     expect(replaced).toEqual({ capabilities: { marker: 2 }, bundles: [bundle] });
     const downloading = { ...bundle, state: 'downloading' as const };
@@ -275,7 +275,7 @@ describe('applyAgentSetupEvent', () => {
     error: null,
   };
 
-  it('新的一次放在最前面，同 ID 原位替换', () => {
+  it('new run goes at the front; same ID is replaced in place', () => {
     const older = { ...run, runId: 'setup_0', state: 'completed' as const };
     const state = applyAgentSetupEvent({ runs: [older] }, { type: 'setup.updated', run });
     expect(state.runs.map((r) => r.runId)).toEqual(['setup_1', 'setup_0']);
@@ -284,7 +284,7 @@ describe('applyAgentSetupEvent', () => {
     expect(done.runs[1]).toBe(older);
   });
 
-  it('输出追加，超过上限时丢掉最早的并记数；未知 runId 忽略', () => {
+  it('output is appended; when over the limit the oldest is dropped and counted; unknown runId is ignored', () => {
     const state = { runs: [run] };
     const lines = Array.from({ length: AGENT_SETUP_OUTPUT_LINES }, (_, i) => `line ${i}`);
     const next = applyAgentSetupEvent(state, { type: 'setup.output', runId: 'setup_1', lines });

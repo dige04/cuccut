@@ -43,8 +43,8 @@ function later(fake: FakeClient, ...records: Parameters<typeof jobRecord>[0][]):
   }, 5);
 }
 
-describe('runTool：等任务（Agent 面设计 §5.2、§5.4）', () => {
-  it('任务失败按错误码给退出码：要用户做事的 2，其余 1；待对账（needs-reconciliation）按失败算', async () => {
+describe('runTool: waits for the task (Agent surface design §5.2, §5.4)', () => {
+  it('task failure gives an exit code by error code: 2 when the user must act, otherwise 1; needs-reconciliation counts as a failure', async () => {
     const cases = [
       { state: 'failed', error: { code: 'TOOL_CONSENT_REQUIRED', message: '要同意' }, exit: 2, code: 'TOOL_CONSENT_REQUIRED' },
       { state: 'failed', error: { code: 'MEDIA_DECODE_FAILED', message: '解不开' }, exit: 1, code: 'MEDIA_DECODE_FAILED' },
@@ -67,7 +67,7 @@ describe('runTool：等任务（Agent 面设计 §5.2、§5.4）', () => {
     }
   });
 
-  it('完成：JSON 信封里 next 只在顶层出现一次', async () => {
+  it('completed: next appears only once, at the top level of the JSON envelope', async () => {
     const { fake, run, envelope } = setup(command('transcode'), { files: ['a.mp4'] });
     fake.tools.transcode = () => {
       later(fake, { jobId: 'job_1', state: 'completed' });
@@ -82,7 +82,7 @@ describe('runTool：等任务（Agent 面设计 §5.2、§5.4）', () => {
     expect(body.result.job.state).toBe('completed');
   });
 
-  it('完成：提交回执里的 state 换成终态，与 job.state 一致', async () => {
+  it('completed: the state in the submit receipt becomes the terminal state, matching job.state', async () => {
     const { fake, run, envelope } = setup(command('transcode'), { files: ['a.mp4'] });
     fake.tools.transcode = () => {
       later(fake, { jobId: 'job_1', state: 'completed' });
@@ -96,7 +96,7 @@ describe('runTool：等任务（Agent 面设计 §5.2、§5.4）', () => {
     expect(body.result.kind).toBe('transcode');
   });
 
-  it('--timeout 到时：WAIT_TIMEOUT，退出码 1，任务继续，next 是 cuccut jobs wait', async () => {
+  it('--timeout reached: WAIT_TIMEOUT, exit code 1, the task continues, next is cuccut jobs wait', async () => {
     const { fake, run, envelope } = setup(command('transcode'), { files: ['a.mp4'] }, { timeout: 0.05 });
     fake.tools.transcode = () => {
       later(fake, { jobId: 'job_1', state: 'running' });
@@ -107,7 +107,7 @@ describe('runTool：等任务（Agent 面设计 §5.2、§5.4）', () => {
     expect(fake.calls.map((call) => call.method)).not.toContain('jobs.cancel');
   });
 
-  it('jobs retry：只认结果里 attempt 之后的记录，之前那次的失败不算', async () => {
+  it('jobs retry: only counts records after the attempt in the result; the failure of the earlier attempt does not count', async () => {
     const { fake, run, envelope } = setup(command('jobs', 'retry'), { jobId: 'job_9' });
     fake.tools.jobs_retry = () => {
       setTimeout(() => {
@@ -122,8 +122,8 @@ describe('runTool：等任务（Agent 面设计 §5.2、§5.4）', () => {
   });
 });
 
-describe('runTool：jobs wait 不调 jobs_wait，与默认等待同一条路径', () => {
-  it('等到完成：退出码 0，带 job；不调 jobs_wait', async () => {
+describe('runTool: jobs wait does not call jobs_wait, it takes the same path as the default wait', () => {
+  it('waits until completed: exit code 0, with job; does not call jobs_wait', async () => {
     const { fake, run, envelope } = setup(command('jobs', 'wait'), { jobId: 'job_1' });
     fake.tools.jobs_inspect = () => ({ ok: true, result: { jobId: 'job_1', state: 'completed' } });
     fake.methods['jobs.inspect'] = () => {
@@ -135,7 +135,7 @@ describe('runTool：jobs wait 不调 jobs_wait，与默认等待同一条路径'
     expect(fake.toolCalls()).not.toContain('jobs_wait');
   });
 
-  it('已经失败的：按错误码给退出码（要授权是 2）', async () => {
+  it('already failed: exit code by error code (needing authorization is 2)', async () => {
     const { fake, run, envelope } = setup(command('jobs', 'wait'), { jobId: 'job_1' });
     fake.tools.jobs_inspect = () => ({ ok: true, result: { jobId: 'job_1', state: 'failed' } });
     fake.methods['jobs.inspect'] = () =>
@@ -144,7 +144,7 @@ describe('runTool：jobs wait 不调 jobs_wait，与默认等待同一条路径'
     expect(envelope().error.code).toBe('GRANT_REQUIRED');
   });
 
-  it('--timeout（或 --timeout-sec）到时 WAIT_TIMEOUT，退出码 1', async () => {
+  it('--timeout (or --timeout-sec) reached: WAIT_TIMEOUT, exit code 1', async () => {
     const { fake, run, envelope } = setup(command('jobs', 'wait'), { jobId: 'job_1' }, { timeout: 0.05 });
     fake.tools.jobs_inspect = () => ({ ok: true, result: { jobId: 'job_1', state: 'running' } });
     fake.methods['jobs.inspect'] = () => jobRecord({ jobId: 'job_1', state: 'running' });
@@ -152,7 +152,7 @@ describe('runTool：jobs wait 不调 jobs_wait，与默认等待同一条路径'
     expect(envelope().error).toMatchObject({ code: 'WAIT_TIMEOUT', next: 'cuccut jobs wait job_1' });
   });
 
-  it('看不到的任务：jobs_inspect 的错误原样给出', async () => {
+  it('task not visible: the jobs_inspect error is given as is', async () => {
     const { fake, run, envelope } = setup(command('jobs', 'wait'), { jobId: 'job_x' });
     fake.tools.jobs_inspect = () => ({ ok: false, error: { code: 'JOB_NOT_FOUND', message: '没有这个任务' } });
     expect(await run()).toBe(1);
@@ -161,7 +161,7 @@ describe('runTool：jobs wait 不调 jobs_wait，与默认等待同一条路径'
   });
 });
 
-describe('runTool：models install 先报大小（§4.3）', () => {
+describe('runTool: models install reports the size first (§4.3)', () => {
   const plan = (overrides: Partial<ModelInstallResult['plan']> = {}): ModelInstallResult['plan'] =>
     ({
       bundleId: 'qwen3-asr-0.6b@candle',
@@ -175,7 +175,7 @@ describe('runTool：models install 先报大小（§4.3）', () => {
       ...overrides,
     }) as ModelInstallResult['plan'];
 
-  it('没有 --yes：只取计划，不下载；CONFIRMATION_REQUIRED（退出码 4）带包名、大小与 next', async () => {
+  it('no --yes: only fetches the plan, does not download; CONFIRMATION_REQUIRED (exit code 4) with package name, size and next', async () => {
     const { fake, run, envelope } = setup(command('models', 'install'), {});
     fake.methods['models.install'] = (params) => ({ plan: plan({ bundleId: params.bundleId as string }), jobId: null });
     expect(await run()).toBe(4);
@@ -186,7 +186,7 @@ describe('runTool：models install 先报大小（§4.3）', () => {
     expect(fake.calls).toEqual([{ method: 'models.install', params: { bundleId: defaultTranscribeBundle() } }]);
   });
 
-  it('已经装好或正在下载：照常调用工具（它不会再下载）；有 --yes 时不另取计划', async () => {
+  it('already installed or downloading: calls the tool as usual (it does not download again); with --yes, no separate plan is fetched', async () => {
     const upToDate = setup(command('models', 'install'), { bundleId: 'b' });
     upToDate.fake.methods['models.install'] = () => ({ plan: plan({ bundleId: 'b', upToDate: true }), jobId: null });
     upToDate.fake.tools.models_install = () => ({ ok: true, result: { jobId: null, bundleId: 'b' } });
@@ -199,7 +199,7 @@ describe('runTool：models install 先报大小（§4.3）', () => {
     expect(confirmed.fake.calls.map((call) => call.method)).toEqual(['catalog.call']);
   });
 
-  it('默认的转写模型包与 @cuccut/models 相同', () => {
+  it('the default transcription model pack is the same as @cuccut/models', () => {
     for (const [platform, arch] of [
       ['darwin', 'arm64'],
       ['darwin', 'x64'],
@@ -211,8 +211,8 @@ describe('runTool：models install 先报大小（§4.3）', () => {
   });
 });
 
-describe('大结果落盘（§5.5）', () => {
-  it('写明覆盖范围与继续读取的参数：顶层键、数组条数、文件、建议的 --max-bytes 与分页旗标', () => {
+describe('large results are written to disk (§5.5)', () => {
+  it('states the coverage and the arguments to keep reading: top-level keys, array length, file, suggested --max-bytes and paging flags', () => {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'cuccut-cli-spill-'));
     dirs.push(cwd);
     const result = {

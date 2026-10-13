@@ -29,8 +29,8 @@ function opaque(picture: ThumbPicture, index = 0): number {
   return count;
 }
 
-describe('缩略图的场景', () => {
-  it('摆成的序列：每层一条轨道、从 0 开始、上下次序按数组，去掉延迟与动画', () => {
+describe('thumbnail scenes', () => {
+  it('arranged sequence: one track per layer, starting at 0, stacking order follows the array, with delays and animations removed', () => {
     const sequence = thumbSequence({
       canvas: { width: 160.4, height: 90 },
       layers: [
@@ -50,7 +50,7 @@ describe('缩略图的场景', () => {
     expect(sequence.items[0]).not.toHaveProperty('animate');
   });
 
-  it('Lottie 文件头：时长与尺寸，读不懂时为 null', () => {
+  it('Lottie file header: duration and size, null when unreadable', () => {
     expect(lottieMeta(new TextEncoder().encode('{"ip":0,"op":60,"fr":30,"w":200,"h":100}'))).toEqual({
       seconds: 2,
       width: 200,
@@ -61,13 +61,13 @@ describe('缩略图的场景', () => {
   });
 });
 
-describe.skipIf(!built)('缩略图由渲染内核画', () => {
+describe.skipIf(!built)('thumbnails are drawn by the render kernel', () => {
   beforeAll(async () => {
     planner = await RenderPlanner.instantiate(readFileSync(wasm));
     planner.addFonts(planner.fontFiles().map((file) => new Uint8Array(readFileSync(`${fonts}${file}`))));
   });
 
-  it('元素格：每一格都画出东西，框缩到格子里居中', () => {
+  it('element cells: each cell draws something, the box shrinks and centers in the cell', () => {
     for (const tile of ELEMENT_TILES) {
       if (tile.confetti) continue;
       const picture = layerThumb(planner, tile.layer(canvas), canvas, 200, 120);
@@ -85,14 +85,14 @@ describe.skipIf(!built)('缩略图由渲染内核画', () => {
     }
   });
 
-  it('声波格用假频谱画：各款都不报没有频谱，画出来的款与款不同', () => {
+  it('waveform cells draw with a fake spectrum: no style reports missing spectrum, and the styles draw differently from each other', () => {
     const waves = ELEMENT_TILES.filter((t) => t.group === 'wave').map((tile) => layerThumb(planner, tile.layer(canvas), canvas, 200, 120));
     expect(waves.length).toBeGreaterThan(3);
     for (const picture of waves) expect(picture.problems).toEqual([]);
     expect(new Set(waves.map((picture) => opaque(picture))).size).toBeGreaterThan(waves.length / 2);
   });
 
-  it('彩纸格：同一刻恒得同一幅，往后播画面会变', () => {
+  it('confetti cell: the same moment always gives the same image; the picture changes as playback goes on', () => {
     const a = confettiThumb(planner, 'rainbow-paper', 4.5, 160, 160);
     const b = confettiThumb(planner, 'rainbow-paper', 4.5, 160, 160);
     const c = confettiThumb(planner, 'rainbow-paper', 6, 160, 160);
@@ -101,7 +101,7 @@ describe.skipIf(!built)('缩略图由渲染内核画', () => {
     expect(c.blits[0]!.image.data).not.toEqual(a.blits[0]!.image.data);
   });
 
-  it('字幕样式卡：双语两行上下排，太长时整体缩进格子，不折行', () => {
+  it('subtitle style card: bilingual two lines stacked, when too long the whole thing scales down into the cell, no wrapping', () => {
     const one = captionThumb(planner, {}, ['original'], 26, 320, 132);
     const two = captionThumb(planner, {}, ['original', 'translation'], 26, 320, 132);
     const single = opaqueBounds(one.blits[0]!.image)!;
@@ -115,7 +115,7 @@ describe.skipIf(!built)('缩略图由渲染内核画', () => {
     expect(huge.height).toBeLessThan(single.height * 2.5);
   });
 
-  it('字幕样式卡动起来：原文一拍一个词、念完停一拍，逐词动画照样式自己的；字号按不动时量', () => {
+  it('subtitle style card animated: source text one word per beat, a beat of pause after reading; word-by-word animation follows the style\'s own; font size measured in the static state', () => {
     const sample = captionSample(planner, {}, ['original'], 26, 320, 132);
     // English source with three words: one cycle of four beats.
     expect(sample.period).toBeCloseTo(4 * CAPTION_BEAT);
@@ -140,7 +140,7 @@ describe.skipIf(!built)('缩略图由渲染内核画', () => {
     expect(scale({}, 120) / scale({}, 26)).toBeLessThan(120 / 26);
   });
 
-  it('品牌库的 Lottie 贴纸：停在正中那一帧，播起来画面会变', () => {
+  it('brand library Lottie sticker: stops on the middle frame; when played, the picture changes', () => {
     const bytes = new Uint8Array(readFileSync(lottie));
     const still = lottieThumb(planner, 'file://shapes.json', bytes, 0, 120, 120);
     expect(still.problems).toEqual([]);
@@ -149,7 +149,7 @@ describe.skipIf(!built)('缩略图由渲染内核画', () => {
     expect(later.blits[0]!.image.data).not.toEqual(still.blits[0]!.image.data);
   });
 
-  it('文字预设卡：字样卡一行一块，场景卡整帧裁到包围盒', () => {
+  it('text preset card: font-sample cards one row per block, scene cards crop the whole frame to the bounding box', () => {
     const stack = TEXT_PRESETS.find((preset) => preset.layout === 'stack')!;
     const rows = stack.layers.filter((layer) => layer.kind === 'text').length;
     const picture = presetThumb(planner, stack, { num: 30, den: 1 }, 2, 360, 200);

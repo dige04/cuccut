@@ -84,9 +84,9 @@ const documents: Record<string, DocumentRecord> = {
   en: doc('en', 'caption', { sourceDocumentId: 'trans', language: 'en' }),
 };
 
-describe('控件的收起判据', () => {
+describe('criteria for hiding the controls', () => {
   const idle = { playing: true, hovering: false, holding: false, idleMs: IDLE_MS };
-  it('只有在播、不在条上、没按住、空闲满 3 秒才收', () => {
+  it('hides only when playing, not over the bar, not held, and idle for 3 seconds', () => {
     expect(chromeHidden(idle)).toBe(true);
     expect(chromeHidden({ ...idle, idleMs: IDLE_MS - 1 })).toBe(false);
     expect(chromeHidden({ ...idle, playing: false })).toBe(false);
@@ -94,7 +94,7 @@ describe('控件的收起判据', () => {
     expect(chromeHidden({ ...idle, holding: true })).toBe(false);
   });
 
-  it('拖着进度条、开着弹层、拖着音量都算按住', () => {
+  it('dragging the progress bar, an open popover, or dragging the volume all count as held', () => {
     const none = { scrubbing: false, popup: false, volumeDragging: false };
     expect(holdingVisible(none)).toBe(false);
     expect(holdingVisible({ ...none, scrubbing: true })).toBe(true);
@@ -103,15 +103,15 @@ describe('控件的收起判据', () => {
   });
 });
 
-describe('进度与跳转', () => {
-  it('比例夹在 0–1，时长为 0 时恒 0', () => {
+describe('progress and seeking', () => {
+  it('ratio is clamped to 0–1; always 0 when the duration is 0', () => {
     expect(seekFraction(5, 10)).toBe(0.5);
     expect(seekFraction(15, 10)).toBe(1);
     expect(seekFraction(-1, 10)).toBe(0);
     expect(seekFraction(3, 0)).toBe(0);
   });
 
-  it('横坐标换成秒，夹在 [0, 时长]', () => {
+  it('x position converted to seconds, clamped to [0, duration]', () => {
     const rect = { left: 100, width: 200 };
     expect(timeAt(200, rect, 60)).toBe(30);
     expect(timeAt(0, rect, 60)).toBe(0);
@@ -119,7 +119,7 @@ describe('进度与跳转', () => {
     expect(timeAt(200, { left: 0, width: 0 }, 60)).toBe(0);
   });
 
-  it('步进夹在 [0, 时长]；0–9 是时长的 0%–90%', () => {
+  it('step is clamped to [0, duration]; 0–9 are 0%–90% of the duration', () => {
     expect(stepTime(3, -5, 60)).toBe(0);
     expect(stepTime(58, 5, 60)).toBe(60);
     expect(stepTime(10, 10, 60)).toBe(20);
@@ -129,25 +129,25 @@ describe('进度与跳转', () => {
     expect(percentTime(5, 0)).toBe(0);
   });
 
-  it('章节刻痕不画首章的 0，也不画片尾及以后的', () => {
+  it('chapter ticks skip the first chapter\'s 0 and any at or after the end credits', () => {
     expect(chapterTicks([{ start: 0 }, { start: 15 }, { start: 30 }, { start: 60 }], 60)).toEqual([0.25, 0.5]);
     expect(chapterTicks([{ start: 15 }], 0)).toEqual([]);
   });
 
-  it('预览格宽 160 按画布比例，竖片高不超过 120', () => {
+  it('preview cell width 160 follows the canvas ratio; portrait height is at most 120', () => {
     expect(previewSize({ width: 1920, height: 1080 })).toEqual({ width: 160, height: 90 });
     expect(previewSize({ width: 1080, height: 1920 })).toEqual({ width: 68, height: 120 });
   });
 });
 
-describe('悬停气泡的那一格画面', () => {
+describe('frame of the cell under the hover bubble', () => {
   const assets = {
     movie: { revisions: { '1': { video: { displayWidth: 1920 } } } },
     cover: { revisions: { '1': { video: { displayWidth: 1920 } } } },
     sound: { revisions: { '1': {} } },
   } as unknown as Record<string, AssetRecord>;
 
-  it('取这一刻最上层、启用着、轨道可见、有画面的视频片段，换到素材的源时间', () => {
+  it('takes the topmost enabled video clip at this moment on a visible track with picture, mapped to the source time of the media', () => {
     const seq = sequence(
       [track('v1', 1, 'visual'), track('v2', 2, 'visual'), track('v3', 3, 'visual', { visible: false })],
       [
@@ -163,19 +163,19 @@ describe('悬停气泡的那一格画面', () => {
     expect(seekFrame(seq, assets, 120)).toBeNull();
   });
 
-  it('取整落到片段开头之前时从片段开头取', () => {
+  it('when the rounded time falls before the clip start, takes the frame from the clip start', () => {
     const seq = sequence([track('v1', 1, 'visual')], [clip('a', 'v1', 0, 15, 'movie'), clip('b', 'v1', 15, 2985, 'movie', linear(40))]);
     expect(seekFrame(seq, assets, 0.9)).toEqual({ asset: { id: 'movie', revision: '1' }, at: 40 });
   });
 
-  it('素材没有画面时不取', () => {
+  it('takes no frame when the media has no picture', () => {
     const seq = sequence([track('v1', 1, 'visual')], [clip('a', 'v1', 0, 300, 'sound')]);
     expect(seekFrame(seq, assets, 1)).toBeNull();
   });
 });
 
-describe('字幕四档', () => {
-  it('档位按实有的字幕生成，默认能露的都露', () => {
+describe('four subtitle tiers', () => {
+  it('tiers are built from the subtitles that exist; by default, everything that can show is shown', () => {
     expect(captionModes(true, true)).toEqual(['off', 'source', 'trans', 'both']);
     expect(captionModes(true, false)).toEqual(['off', 'source']);
     expect(captionModes(false, true)).toEqual(['off', 'trans']);
@@ -186,7 +186,7 @@ describe('字幕四档', () => {
     expect(defaultCaptionMode(false, false)).toBe('off');
   });
 
-  it('选过的档不在了回到默认档；C 轮转，不在表里时从表头开始', () => {
+  it('a selected tier that no longer exists falls back to the default; C cycles, and when not in the table starts from the top', () => {
     expect(effectiveCaptionMode(null, true, true)).toBe('both');
     expect(effectiveCaptionMode('source', true, true)).toBe('source');
     expect(effectiveCaptionMode('both', true, false)).toBe('source');
@@ -196,7 +196,7 @@ describe('字幕四档', () => {
     expect(cycleCaptionMode('off', false, false)).toBe('off');
   });
 
-  it('只看画面上的：拿下的与轨道停用的不算', () => {
+  it('only counts what is on screen: removed items and items on disabled tracks do not count', () => {
     const tracks = [track('s1', 1, 'subtitle'), track('s2', 2, 'subtitle'), track('s3', 3, 'subtitle', { visible: false })];
     expect(captionAvailability(sequence(tracks, [caption('a', 's1', 'orig'), caption('b', 's2', 'en')]), documents)).toEqual({
       hasSource: true,
@@ -207,7 +207,7 @@ describe('字幕四档', () => {
     ).toEqual({ hasSource: false, hasTranslation: false });
   });
 
-  it('按档位停用不该露的字幕，从不放回拿下的；没有要停的时原样返回', () => {
+  it('disables subtitles that should not show for the tier, never restoring removed ones; returns the input unchanged when nothing needs disabling', () => {
     const tracks = [track('s1', 1, 'subtitle'), track('s2', 2, 'subtitle')];
     const seq = sequence(tracks, [caption('a', 's1', 'orig'), caption('b', 's2', 'en'), caption('c', 's2', 'en', { enabled: false })]);
     const enabled = (s: Sequence) => s.items.map((item) => [item.id, item.enabled]);
@@ -218,11 +218,11 @@ describe('字幕四档', () => {
   });
 });
 
-describe('键盘', () => {
+describe('keyboard', () => {
   const key = (k: string, extra: Partial<KeyboardEvent> = {}) =>
     resolvePlayerKey({ key: k, code: '', shiftKey: false, altKey: false, ctrlKey: false, metaKey: false, ...extra });
 
-  it('⌘ / Ctrl / ⌥ 一律不接，⇧ 只改左右键', () => {
+  it('⌘ / Ctrl / ⌥ are never handled; ⇧ only changes the left and right keys', () => {
     expect(key(' ', { metaKey: true })).toBeNull();
     expect(key('k', { ctrlKey: true })).toBeNull();
     expect(key('ArrowLeft', { altKey: true })).toBeNull();
@@ -231,19 +231,19 @@ describe('键盘', () => {
     expect(key('K', { shiftKey: true })).toEqual({ action: 'play' });
   });
 
-  it('数字带上是几；字母认不出字符时按物理键位', () => {
+  it('digits use their own value; letters fall back to the physical key when the character is not recognized', () => {
     expect(key('7')).toEqual({ action: 'percent', digit: 7 });
     expect(key('Process', { code: 'KeyM' })).toEqual({ action: 'mute' });
     expect(key('x')).toBeNull();
   });
 
-  it('键表上每一行按下去都是这一行的动作', () => {
+  it('pressing each row of the key table performs that row\'s action', () => {
     for (const row of PLAYER_KEYS) {
       expect(key(row.probe.key, row.probe)?.action, row.keys).toBe(row.action);
     }
   });
 
-  it('接得住的动作都在键表上', () => {
+  it('every handled action is in the key table', () => {
     const listed = new Set<PlayerAction>(PLAYER_KEYS.flatMap((row) => [row.action, ...(row.also ?? [])]));
     const keys = [' ', 'Escape', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', '?', ...'0123456789', ...'abcdefghijklmnopqrstuvwxyz'];
     for (const k of keys)

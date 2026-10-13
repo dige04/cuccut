@@ -112,8 +112,8 @@ function planUnit(unitId: string, status: string, own: Record<string, unknown> =
   };
 }
 
-describe('版本', () => {
-  it('旧计划：放上的那一句补成第 1 版（视图，不改计划）；没合成的没有版本', () => {
+describe('versions', () => {
+  it('old plan: the placed sentence is filled in as version 1 (view only, plan unchanged); unsynthesized ones have no versions', () => {
     const units = planTakes({
       units: [
         planUnit('u1', 'ready', { artifactId: 'art_old', fit: 'tempo', tempo: 1.2 }, { actualSamples: '96000', sampleRate: 48000 }),
@@ -133,7 +133,7 @@ describe('版本', () => {
     expect(units.get('u3')).toMatchObject({ take: null, overflowSeconds: 0.8 });
   });
 
-  it('重配过：当前版本、归档与块提示（只有多于一版时写，种子没有时只写版号）', () => {
+  it('reconfigured: current version, archive and block hint (written only when there is more than one version; when no seed exists, only the version number)', () => {
     const units = planTakes({
       units: [planUnit('u1', 'ready', { take: 2, seed: 1002, takes: [take(1), take(2), take(3, { samples: null, fit: null, overflowSeconds: 0.5 })] })],
     });
@@ -151,11 +151,11 @@ describe('版本', () => {
   });
 });
 
-describe('排队与候选', () => {
+describe('queue and candidates', () => {
   const job = (id: string, state: JobRecord['state'], regroup: unknown, videoId = 'v1') =>
     ({ jobId: id, kind: 'pipeline', state, endedAt: null, videoId, pipeline: { name: 'dub', params: { regroup } } }) as unknown as JobRecord;
 
-  it('在跑的句级重配：只认这个视频、还没结束、带 regroup 的配音流程；键排好序，句子不变时不变', () => {
+  it('running sentence-level reconfigure: only matches this video, not yet finished, dub flow with regroup; keys are sorted, unchanged when sentences are unchanged', () => {
     const jobs = [
       job('j1', 'running', { groupId: 'g1', units: ['u2', 'u1'], seed: 7, planDocumentId: 'p', trackId: 't' }),
       job('j2', 'queued', { groupId: 'g2', units: ['u9'], seed: null }),
@@ -174,7 +174,7 @@ describe('排队与候选', () => {
     expect(queuedSet('').size).toBe(0);
   });
 
-  it('块级管理（设计稿 model-dub.test.js「块级管理」）：没合成的句、候选与行头计数', () => {
+  it('block-level management (design file model-dub.test.js \'block-level management\'): unsynthesized sentences, candidate and row-header counts', () => {
     const seq = sequence(
       [
         audio('d1', 'a-dub', 1, 2, dub('g1', 'u1')),
@@ -218,7 +218,7 @@ describe('排队与候选', () => {
     expect(planUnitOrder(null).size).toBe(0);
   });
 
-  it('时间线的块叠上排队与版本：没变的块原样返回', () => {
+  it('timeline blocks overlay queue and versions: unchanged blocks are returned as is', () => {
     const base = (itemId: string, unitId: string | null, groupId = 'g1') =>
       ({
         itemId,
@@ -255,7 +255,7 @@ describe('排队与候选', () => {
   });
 });
 
-describe('切换版本', () => {
+describe('switch version', () => {
   const seq = sequence(
     [
       audio('d1', 'a-dub', 1, 2, {
@@ -286,7 +286,7 @@ describe('切换版本', () => {
   };
   const assets = { asset_t1: asset('asset_t1', { artifactId: 'art_1' }), asset_t2: asset('asset_t2', { artifactId: 'art_2' }) };
 
-  it('切回第 1 版：删掉这句的实例、用那一版的素材放回原处、写计划的新版本（被换下的那一版补记素材）', () => {
+  it('switch back to version 1: delete this sentence\'s instance, put that version\'s media back in place, write a new plan version (the replaced version\'s media is recorded afterward)', () => {
     const ops = switchTakeOperations({ sequence: seq, item: seq.items[0] as AudioItem, record, body, unitId: 'u1', k: 1, assets })!;
     expect(ops.map((o) => o.type)).toEqual(['deleteItems', 'insertItems', 'putDocument']);
     expect(ops[0]).toEqual({ type: 'deleteItems', sequenceId: 'seq', itemIds: ['d1'] });
@@ -321,7 +321,7 @@ describe('切换版本', () => {
     expect((body.units[0]!.extensions['cuccut.dub'] as unknown as { take: number }).take).toBe(2);
   });
 
-  it('素材没记下时按产物找；当前版本、没放上过的版本、找不到素材时不能切', () => {
+  it('when media isn\'t recorded, look up by artifact; cannot switch to the current version, a version never placed, or when media cannot be found', () => {
     expect(assetOfArtifact(assets, 'art_2')).toEqual({ id: 'asset_t2', revision: '1' });
     expect(assetOfArtifact(assets, 'nope')).toBeNull();
     const back = switchTakeOperations({ sequence: seq, item: seq.items[0] as AudioItem, record, body, unitId: 'u1', k: 2, assets });
@@ -337,7 +337,7 @@ describe('切换版本', () => {
   });
 });
 
-describe('听配音 / 听原声 / 两者都听', () => {
+describe('listen to dub / listen to original / listen to both', () => {
   const duckRule = (enabled: boolean): DuckingRule =>
     ({
       id: 'r1',
@@ -360,7 +360,7 @@ describe('听配音 / 听原声 / 两者都听', () => {
     sourceGroup('gJa', { originalDialoguePolicy: 'mute', extensions: { 'cuccut.dub': { mutedItemIds: ['orig'] } } }),
   ];
 
-  it('从轨道、静音与闪避反推在听什么', () => {
+  it('infers what is being heard from tracks, mute and ducking', () => {
     expect(sourceOf(sequence(items(), tracks(), [duckRule(true)]), groups[0]!)).toBe('dub');
     expect(sourceOf(sequence(items(), tracks(), [duckRule(false)]), groups[0]!)).toBe('both');
     const off = tracks().map((t) => (t.id === 'a-en' ? { ...t, muted: true } : t));
@@ -372,7 +372,7 @@ describe('听配音 / 听原声 / 两者都听', () => {
     expect(canListenDub(sourceGroup('g', { originalDialoguePolicy: 'keep' }))).toBe(false);
   });
 
-  it('听配音（duck 组）：这组的配音与背景声开、别的语言关、闪避打开、别组静音过的原声恢复', () => {
+  it('listen to dub (duck group): this group\'s dub and background sound on, other languages off, ducking on, original sound muted by other groups restored', () => {
     const seq = sequence(items(true), tracks(), [duckRule(false)]);
     expect(switchSourceOperations(seq, groups, 'gEn', 'dub')).toEqual([
       { type: 'updateTrack', sequenceId: 'seq', trackId: 'a-ja', muted: true },
@@ -381,7 +381,7 @@ describe('听配音 / 听原声 / 两者都听', () => {
     ]);
   });
 
-  it('听原声：所有配音与背景声关、原声恢复、闪避关掉；两者都听：背景声关、这组配音开', () => {
+  it('listen to original: all dubs and background sound off, original sound restored, ducking off; listen to both: background sound off, this group\'s dub on', () => {
     const seq = sequence(items(true), tracks(), [duckRule(true)]);
     expect(switchSourceOperations(seq, groups, 'gEn', 'original')).toEqual([
       { type: 'updateTrack', sequenceId: 'seq', trackId: 'a-en', muted: true },
@@ -398,7 +398,7 @@ describe('听配音 / 听原声 / 两者都听', () => {
     ]);
   });
 
-  it('听配音（mute 组）：静音它记下的原声、开它的配音轨；和别的实例共用的轨道逐件改', () => {
+  it('listen to dub (mute group): mute the original sound it recorded, turn on its dub track; tracks shared with other instances are changed item by item', () => {
     const shared = [track('a-orig', 0), track('a-mix', 1, true)];
     const seq = sequence(
       [
@@ -421,7 +421,7 @@ describe('听配音 / 听原声 / 两者都听', () => {
     expect(switchSourceOperations(done, groups, 'gJa', 'dub')).toEqual([]);
   });
 
-  it('分离过的 duck 组：原声实例静音、换成背景声与人声两轨，闪避压人声轨；听原声恢复原声、两轨都关，听配音再换回去', () => {
+  it('separated duck group: the original-sound instance is muted and replaced by background and vocal tracks, with ducking pressing the vocal track; listen to original restores the original, both tracks off; listen to dub switches back', () => {
     const vocalsRule = (enabled: boolean) => ({ ...duckRule(enabled), target: { trackIds: ['a-voc'] } }) as DuckingRule;
     const sepTracks = [track('a-orig', 0), track('a-en', 1), track('a-bed', 2), track('a-voc', 3)];
     const sepItems = (origMuted: boolean) => [
@@ -456,8 +456,8 @@ describe('听配音 / 听原声 / 两者都听', () => {
   });
 });
 
-describe('改译文', () => {
-  it('改 naturalText（有字幕改写的单元改写不动）、记为 reviewed、换 textHash；没变或空的不改', async () => {
+describe('edit translation', () => {
+  it('edits naturalText (units rewritten by subtitle rewriting are left alone), marks as reviewed, changes textHash; unchanged or empty values are not edited', async () => {
     const hash = await textHash('Hello.');
     const body: TranslationBody = {
       schema: 'cuccut.translation/2',

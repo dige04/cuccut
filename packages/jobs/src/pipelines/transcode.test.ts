@@ -29,8 +29,8 @@ if (!hasFfmpeg) console.warn('跳过文件转码的测试：没有 ffmpeg');
 const ffmpeg = async () => ({ command: 'ffmpeg', env: process.env });
 const ffprobe = async () => ({ command: 'ffprobe', env: process.env });
 
-describe('转码参数', () => {
-  it('补上默认值；不合的参数拒绝', () => {
+describe('transcode parameters', () => {
+  it('fills in defaults; invalid parameters are rejected', () => {
     expect(parseTranscodeParams({ inputs: ['/a.mp4'], action: 'compress' })).toEqual({
       inputs: ['/a.mp4'],
       action: 'compress',
@@ -57,7 +57,7 @@ describe('转码参数', () => {
     }
   });
 
-  it('提取音频：AAC、MP3、Opus、FLAC 流复制进对应的容器，其余重新编码为 AAC 并说明原因', () => {
+  it('audio extraction: AAC, MP3, Opus, FLAC streams are stream-copied into the matching container, others re-encoded to AAC with a stated reason', () => {
     const audio = (codec: string) => ({ codec, sampleRate: 48000, channels: 2 });
     expect(parseTranscodeParams({ inputs: ['/a.mov', '/b.mov'], action: 'extract-audio' })).toMatchObject({ action: 'extract-audio' });
     expect(extractAudioDecision(audio('aac'))).toEqual({ copy: true, ext: '.m4a', mediaType: 'audio/mp4', reason: null });
@@ -73,7 +73,7 @@ describe('转码参数', () => {
     expect(outputName('merge', 'a', undefined)).toEqual({ name: 'a-merged', ext: '.mp4', mediaType: 'video/mp4' });
   });
 
-  it('只有编码参数都一致时才流复制', () => {
+  it('stream-copy only when the encoding parameters all match', () => {
     const clip = {
       durationSec: 2,
       formatName: 'mov,mp4',
@@ -95,7 +95,7 @@ describe('转码参数', () => {
   });
 });
 
-describe.skipIf(!hasFfmpeg)('文件转码（真实 ffmpeg）', () => {
+describe.skipIf(!hasFfmpeg)('file transcoding (real ffmpeg)', () => {
   let clips: string;
   let dir: string;
   let jobs: JobManager;
@@ -178,7 +178,7 @@ describe.skipIf(!hasFfmpeg)('文件转码（真实 ffmpeg）', () => {
   const summaryOf = (record: JobRecord) => record.pipeline!.summary as unknown as TranscodeSummary;
   const outFiles = async () => (await fs.readdir(path.join(dir, 'out'))).sort();
 
-  it('压缩：编码与高度符合要求，结果报告 ffmpeg 的版本与参数摘要', async () => {
+  it('compression: encoding and height meet requirements; the result reports ffmpeg\'s version and a parameter summary', async () => {
     const record = await transcode({ inputs: [clipA], action: 'compress', maxHeight: 180 });
     expect(record).toMatchObject({ state: 'completed', providerId: 'ffmpeg', videoId: null });
     expect(record.pipeline!.steps.map((s) => s.status)).toEqual(['completed', 'completed', 'completed', 'completed']);
@@ -209,14 +209,14 @@ describe.skipIf(!hasFfmpeg)('文件转码（真实 ffmpeg）', () => {
     expect(encode.progress).toMatchObject({ unit: 'seconds', total: expect.closeTo(2, 1) });
   }, 60_000);
 
-  it('压缩为 HEVC', async () => {
+  it('compress to HEVC', async () => {
     const record = await transcode({ inputs: [clipA], action: 'compress', codec: 'hevc', crf: 30 });
     expect(record.state).toBe('completed');
     const probed = await probeMedia(ffprobe, summaryOf(record).files[0]!);
     expect(probed.video).toMatchObject({ codec: 'hevc', width: 640, height: 360 });
   }, 60_000);
 
-  it('编码参数一致的片段按顺序流复制合并', async () => {
+  it('clips with matching encoding parameters are stream-copied and merged in order', async () => {
     const record = await transcode({ inputs: [clipA, clipB], action: 'merge' });
     expect(record.state).toBe('completed');
     const summary = summaryOf(record);
@@ -228,7 +228,7 @@ describe.skipIf(!hasFfmpeg)('文件转码（真实 ffmpeg）', () => {
     expect(probed.video).toMatchObject({ codec: 'h264', width: 640, height: 360 });
   }, 60_000);
 
-  it('参数不一致的片段重新编码，结果说明原因', async () => {
+  it('clips with mismatched parameters are re-encoded, the result states the reason', async () => {
     const record = await transcode({ inputs: [clipA, clipC], action: 'merge' });
     expect(record.state).toBe('completed');
     const summary = summaryOf(record);
@@ -241,7 +241,7 @@ describe.skipIf(!hasFfmpeg)('文件转码（真实 ffmpeg）', () => {
     expect(probed.audio).toMatchObject({ codec: 'aac', channels: 2 });
   }, 60_000);
 
-  it('不覆盖已有的文件：重名时加序号；不在同一个文件系统时同样不覆盖、不留临时文件', async () => {
+  it('existing files are not overwritten: name clash adds a number; on a different filesystem likewise not overwritten, no temporary file left behind', async () => {
     await fs.writeFile(path.join(dir, 'out', 'a-compressed.mp4'), 'mine');
     const first = await transcode({ inputs: [clipA], action: 'compress' });
     expect(summaryOf(first).files).toEqual([path.join(dir, 'out', 'a-compressed-2.mp4')]);
@@ -257,7 +257,7 @@ describe.skipIf(!hasFfmpeg)('文件转码（真实 ffmpeg）', () => {
     expect((await probeMedia(ffprobe, path.join(dir, 'out', 'a-compressed-3.mp4'))).video?.codec).toBe('h264');
   }, 60_000);
 
-  it('没有指定输出目录时写在保存位置（不存在时创建），提交时冻结', async () => {
+  it('without an output directory, written to the save location (created if absent), frozen at submission', async () => {
     const source = path.join(dir, 'src.mp4');
     await fs.copyFile(clipA, source);
     const { jobId } = await runner.start(
@@ -270,7 +270,7 @@ describe.skipIf(!hasFfmpeg)('文件转码（真实 ffmpeg）', () => {
     await expect(fs.stat(path.join(dir, 'src-compressed.mp4'))).rejects.toThrow();
   }, 60_000);
 
-  it('取消时杀掉 ffmpeg，输出目录与 staging 里都不留下半成品', async () => {
+  it('on cancel, ffmpeg is killed; no half-finished output left in the output directory or staging', async () => {
     const long = makeClip('long.mp4', { size: '1280x720', rate: 30, seconds: 30 });
     const { jobId } = await runner.start(
       { pipeline: 'transcode', params: { inputs: [long], action: 'compress', codec: 'hevc', outDir: path.join(dir, 'out') } },
@@ -293,7 +293,7 @@ describe.skipIf(!hasFfmpeg)('文件转码（真实 ffmpeg）', () => {
     await expect(fs.stat(path.join(dir, 'home', 'staging', 'pipelines', jobId))).rejects.toThrow();
   }, 120_000);
 
-  it('提取音频：AAC 音轨流复制成 .m4a，去掉画面；只校验时长与音频轨', async () => {
+  it('audio extraction: AAC track stream-copied to .m4a, video dropped; only duration and audio track are verified', async () => {
     const record = await transcode({ inputs: [clipA], action: 'extract-audio' });
     expect(record.state).toBe('completed');
     const summary = summaryOf(record);
@@ -312,7 +312,7 @@ describe.skipIf(!hasFfmpeg)('文件转码（真实 ffmpeg）', () => {
     expect(summaryOf(again).files).toEqual([path.join(dir, 'out', 'a-2.m4a')]);
   }, 60_000);
 
-  it('提取音频：放不进常见容器的编码重新编码为 AAC 并说明原因；没有音频轨的输入以 TRANSCODE_NO_AUDIO 失败', async () => {
+  it('audio extraction: codecs that don\'t fit common containers are re-encoded to AAC with a stated reason; input with no audio track fails with TRANSCODE_NO_AUDIO', async () => {
     const pcm = path.join(clips, 'pcm.mov');
     execFileSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000:duration=1', '-c:a', 'pcm_s16le', '-y', pcm]);
     const record = await transcode({ inputs: [pcm], action: 'extract-audio' });
@@ -331,7 +331,7 @@ describe.skipIf(!hasFfmpeg)('文件转码（真实 ffmpeg）', () => {
     });
   }, 60_000);
 
-  it('输入读不出来时停在读取这一步', async () => {
+  it('when the input cannot be read, stops at the read step', async () => {
     const bogus = path.join(dir, 'bogus.mp4');
     await fs.writeFile(bogus, 'not a video');
     const record = await transcode({ inputs: [bogus], action: 'compress' });
@@ -344,8 +344,8 @@ describe.skipIf(!hasFfmpeg)('文件转码（真实 ffmpeg）', () => {
   }, 60_000);
 });
 
-describe('保存位置不能写入', () => {
-  it('输出目录是个文件：启动时以 OUTPUT_DESTINATION_UNAVAILABLE 拒绝，不建任务', async () => {
+describe('save location cannot be written', () => {
+  it('output directory is a file: rejected at start with OUTPUT_DESTINATION_UNAVAILABLE, no task created', async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-transcode-dest-'));
     try {
       const jobs = testJobManager(dir);
@@ -374,8 +374,8 @@ describe('保存位置不能写入', () => {
   });
 });
 
-describe('没有 ffmpeg 时', () => {
-  it('启动时以 MEDIA_TOOL_UNAVAILABLE 拒绝，不建任务', async () => {
+describe('when there is no ffmpeg', () => {
+  it('rejected at start with MEDIA_TOOL_UNAVAILABLE, no task created', async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-transcode-missing-'));
     try {
       const jobs = testJobManager(dir);

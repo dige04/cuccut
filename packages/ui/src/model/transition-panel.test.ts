@@ -33,8 +33,8 @@ const pair: Transition = {
   placement: 'end-at-cut',
 };
 
-describe('转场一节', () => {
-  it('两条边：进入看 rightItemId，离开看 leftItemId；邻居要同轨首尾相接', () => {
+describe('transition section', () => {
+  it('two edges: entering checks rightItemId, leaving checks leftItemId; neighbors must abut on the same track', () => {
     const seq = sequence([a, b, c], [pair]);
     expect(slotTransition(seq, 'b', 'in')).toBe(pair);
     expect(slotTransition(seq, 'a', 'out')).toBe(pair);
@@ -44,7 +44,7 @@ describe('转场一节', () => {
     expect(slotNeighbor(seq, c, 'in')).toBeUndefined();
   });
 
-  it('读出这条边：种类、方向、时长（秒）、缓动、是否衔接', () => {
+  it('reads the edge: kind, direction, duration (seconds), easing, whether it abuts', () => {
     expect(slotState(sequence([a, b], [pair]), b, 'in')).toEqual({
       kind: 'wipe',
       direction: 'up',
@@ -61,7 +61,7 @@ describe('转场一节', () => {
     expect(slotState(sequence([a, b], [{ ...pair, kind: 'iris' }]), b, 'in')).toMatchObject({ kind: 'none', unknownKind: 'iris' });
   });
 
-  it('两侧：沿用已有的 placement；参数只带这种要的；两侧都有声音才交叉淡化', () => {
+  it('both sides: keep the existing placement; parameters include only what this kind needs; cross-fade only when both sides have audio', () => {
     const seq = sequence([a, b], [pair]);
     const state = slotState(seq, b, 'in');
     expect(slotOperations(seq, b, 'in', { ...state, kind: 'dissolve', audioCrossfade: true })).toEqual([
@@ -87,7 +87,7 @@ describe('转场一节', () => {
     expect(slotOperations(mixed, image, 'in', { ...state, audioCrossfade: true })[0]).not.toHaveProperty('audioCrossfade');
   });
 
-  it('单侧：只给这一侧，居中，不交叉淡化；擦除没有参数（旧稿里的方向不再写回）', () => {
+  it('one side: only that side, centered, no cross-fade; wipe has no parameters (a direction from an older draft is no longer written back)', () => {
     const seq = sequence([a, b], [pair]);
     const state = slotState(seq, a, 'out');
     expect(slotOperations(seq, a, 'out', { ...state, joined: false, seconds: 1.25, audioCrossfade: true })).toEqual([
@@ -104,7 +104,7 @@ describe('转场一节', () => {
     ]);
   });
 
-  it('选「无」删掉已有的；本来就没有时什么也不做', () => {
+  it('choosing \'none\' removes the existing one; does nothing when there is none', () => {
     const seq = sequence([a, b], [pair]);
     expect(slotOperations(seq, b, 'in', { ...slotState(seq, b, 'in'), kind: 'none' })).toEqual([
       { type: 'removeTransition', sequenceId: 'seq', transitionId: 't1' },
@@ -112,7 +112,7 @@ describe('转场一节', () => {
     expect(slotOperations(seq, b, 'out', { ...slotState(seq, b, 'out'), kind: 'none' })).toEqual([]);
   });
 
-  it('时长范围：滑杆到 min(2, 片段长 / 2)，精确输入到片段长（不超过 10 秒）', () => {
+  it('duration range: slider up to min(2, clip length / 2), exact input up to clip length (not over 10 seconds)', () => {
     expect(durationLimits(visual('x', 'v1', 0, 600), fps)).toEqual({ min: 0.1, max: 2, hardMax: 10 });
     expect(durationLimits(visual('x', 'v1', 0, 30), fps)).toEqual({ min: 0.1, max: 0.5, hardMax: 1 });
     expect(durationLimits(visual('x', 'v1', 0, 2), fps).max).toBeCloseTo(1 / 30, 9);

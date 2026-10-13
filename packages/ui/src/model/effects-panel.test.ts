@@ -14,8 +14,8 @@ import {
 
 const blurred: Fx = { blur: 4 };
 
-describe('效果', () => {
-  it('四张卡只给有 fx 的片段：视觉媒体与合成；文字、图形、声音没有', () => {
+describe('effects', () => {
+  it('four cards are shown only for clips with fx: visual media and compositions; text, graphics and sound have none', () => {
     expect(effectKindsFor({ type: 'video' } as SequenceItem)).toEqual(['color-adjust', 'gaussian-blur', 'drop-shadow', 'stroke']);
     expect(effectKindsFor({ type: 'composition' } as SequenceItem)).toEqual(['color-adjust', 'gaussian-blur', 'drop-shadow', 'stroke']);
     expect(effectKindsFor({ type: 'text' } as SequenceItem)).toEqual([]);
@@ -23,7 +23,7 @@ describe('效果', () => {
     expect(effectKindsFor({ type: 'audio' } as SequenceItem)).toEqual([]);
   });
 
-  it('改一张卡：数值合并进它管的字段；还关着就按缺省值打开，别的字段不动', () => {
+  it('edit one card: values merge into the fields it manages; if still off, it is turned on with default values, other fields untouched', () => {
     expect(withEffect(blurred, 'gaussian-blur', { radius: 9 })).toEqual({ blur: 9 });
     expect(withEffect({ grayscale: 1 }, 'drop-shadow', { opacity: 0.8 })).toEqual({
       grayscale: 1,
@@ -39,7 +39,7 @@ describe('效果', () => {
     });
   });
 
-  it('开关：关上去掉它管的字段（再打开回到缺省值）；已开着的不动', () => {
+  it('toggle: turning off removes the fields it manages (turning back on returns to defaults); already-on is unchanged', () => {
     expect(toggleEffect(blurred, 'gaussian-blur', false)).toEqual({});
     expect(toggleEffect({}, 'gaussian-blur', true)).toEqual({ blur: 8 });
     expect(toggleEffect(blurred, 'gaussian-blur', true)).toEqual(blurred);
@@ -48,7 +48,7 @@ describe('效果', () => {
     expect(toggleEffect(tinted, 'color-adjust', false)).toEqual({ blur: 2 });
   });
 
-  it('读数：缺的用这种效果的缺省值', () => {
+  it('readout: missing values use the effect\'s default', () => {
     expect(effectNumber(blurred, 'gaussian-blur', 'radius')).toBe(4);
     expect(effectNumber({}, 'gaussian-blur', 'radius')).toBe(8);
     expect(effectNumber(undefined, 'color-adjust', 'brightness')).toBe(0);
@@ -56,7 +56,7 @@ describe('效果', () => {
     expect(effectNumber(undefined, 'drop-shadow', 'offsetY')).toBe(8);
   });
 
-  it('页上没有控件的字段原样留着：重置不动它，并列出确实生效的那几项', () => {
+  it('fields with no control on the page are kept as is: reset does not touch them, and the ones actually in effect are listed', () => {
     const fx: Fx = { blur: 4, grayscale: 1, filterPreset: 'none', exposure: 0 };
     expect(resetEffects(fx)).toEqual({ grayscale: 1, filterPreset: 'none', exposure: 0 });
     expect(unknownKinds(fx)).toEqual(['灰度']);
@@ -64,7 +64,7 @@ describe('效果', () => {
     expect(hasKnownEffects(fx)).toBe(true);
   });
 
-  it('提交：整份 fx 替换；什么都没有时写 null', () => {
+  it('commit: replaces the whole fx; writes null when there is nothing', () => {
     expect(setEffectsOperation('seq', 'item', { blur: 3 })).toEqual({
       type: 'setEffects',
       sequenceId: 'seq',

@@ -35,8 +35,8 @@ function grant(patch: Partial<Grant> = {}): Grant {
   };
 }
 
-describe('cuccut grants 的参数', () => {
-  it('list：默认只看有效的；可以按服务商、视频过滤，--include-ended 也列出结束的', () => {
+describe('cuccut grants arguments', () => {
+  it('list: shows only active grants by default; can filter by provider and video; --include-ended also lists ended ones', () => {
     expect(parseGrantsArgs([], {})).toEqual({ kind: 'list', params: {} });
     expect(parseGrantsArgs(['list'], { recipient: 'openai', video: 'vid_1', includeEnded: true })).toEqual({
       kind: 'list',
@@ -44,7 +44,7 @@ describe('cuccut grants 的参数', () => {
     });
   });
 
-  it('create：接收方、数据种类与用途必填；有金额上限时是 estimate-cap，否则按次计金额未知', () => {
+  it('create: recipient, data kind and purpose are required; with an amount cap it is estimate-cap, otherwise the per-call amount is unknown', () => {
     expect(parseGrantsArgs(['create'], { recipient: 'openai', data: 'audio,transcript', purpose: '转写' })).toEqual({
       kind: 'create',
       params: {
@@ -88,7 +88,7 @@ describe('cuccut grants 的参数', () => {
     expect(() => parseGrantsArgs(['create'], { recipient: 'openai', data: 'audio', purpose: 'x', maxCalls: '0' })).toThrow(/--max-calls/);
   });
 
-  it('update：给出的字段替换；none 清除上限与到期；接收方不能改；什么都不给是错', () => {
+  it('update: given fields replace the old ones; none clears the cap and expiry; recipient cannot be changed; giving nothing is an error', () => {
     expect(parseGrantsArgs(['update', 'grt_1'], { maxCalls: 'none', budget: 'none', expires: 'none', video: 'all' })).toEqual({
       kind: 'update',
       params: { grantId: 'grt_1', maxCalls: null, budgetCap: null, expiresAt: null, scope: { videoId: null } },
@@ -102,7 +102,7 @@ describe('cuccut grants 的参数', () => {
     expect(() => parseGrantsArgs(['update'], { data: 'audio' })).toThrow(/用法/);
   });
 
-  it('revoke / usage 要授权 id', () => {
+  it('revoke / usage require a grant id', () => {
     expect(parseGrantsArgs(['revoke', 'grt_1'], {})).toEqual({ kind: 'revoke', grantId: 'grt_1' });
     expect(parseGrantsArgs(['usage', 'grt_1'], {})).toEqual({ kind: 'usage', grantId: 'grt_1' });
     expect(() => parseGrantsArgs(['revoke'], {})).toThrow(/用法/);
@@ -110,8 +110,8 @@ describe('cuccut grants 的参数', () => {
   });
 });
 
-describe('cuccut approvals allow 的授权选择', () => {
-  it('不给 --persist 时不带（只这一次）；给了时带范围与上限；范围与上限离开 --persist 是错', () => {
+describe('cuccut approvals allow grant choices', () => {
+  it('without --persist, no scope or cap is sent (this time only); with it, scope and cap are sent; scope and cap without --persist is an error', () => {
     expect(parseApprovalGrantChoice({})).toBeUndefined();
     expect(parseApprovalGrantChoice({ persist: true })).toEqual({ persist: true });
     expect(parseApprovalGrantChoice({ persist: true, scope: 'all', maxCalls: '5', budget: '3', currency: 'EUR' })).toEqual({
@@ -125,8 +125,8 @@ describe('cuccut approvals allow 的授权选择', () => {
   });
 });
 
-describe('cuccut grants 的输出', () => {
-  it('没有授权时说明后果；一条一行：状态、接收方、数据、范围、用量与来源', () => {
+describe('cuccut grants output', () => {
+  it('without grants, explains the consequence; one per line: status, recipient, data, scope, usage and source', () => {
     expect(formatGrants([])[0]).toMatch(/没有授权/);
     const [line] = formatGrants([
       grant({ maxCalls: 10, usage: { calls: 3, reservedCalls: 1, amount: null, reservedAmount: null, unknownCostCalls: 3 } }),
@@ -143,7 +143,7 @@ describe('cuccut grants 的输出', () => {
     expect(scoped).toContain('视频 vid_1，只限任务 tsk_1，只这一次');
   });
 
-  it('有金额上限时显示金额用量', () => {
+  it('shows amount usage when there is an amount cap', () => {
     expect(
       usageLabel(
         grant({
@@ -155,7 +155,7 @@ describe('cuccut grants 的输出', () => {
     ).toBe('2+1 预留 次，0.4+0.2 预留/5 USD');
   });
 
-  it('撤销如实列出已经交出的与还在执行的', () => {
+  it('revoke honestly lists what has already been handed over and what is still running', () => {
     const result: GrantRevokeResult = {
       grant: grant({ state: 'revoked' }),
       alreadySent: { calls: 4, amount: null, unknownCostCalls: 4 },
@@ -169,7 +169,7 @@ describe('cuccut grants 的输出', () => {
     expect(lines[3]).toContain('无法');
   });
 
-  it('用量报告列出用过它的任务的预留与结算', () => {
+  it('usage report lists the reservations and settlements of tasks that used it', () => {
     const lines = formatUsage({
       grant: grant(),
       jobs: [
@@ -187,7 +187,7 @@ describe('cuccut grants 的输出', () => {
     expect(formatUsage({ grant: grant(), jobs: [] })[1]).toMatch(/还没有任务/);
   });
 
-  it('审批里要授权的外发：接收方、数据、用途、估算与原因', () => {
+  it('outbound transfer to authorize in an approval: recipient, data, purpose, estimate and reason', () => {
     const approval = {
       grants: [
         {

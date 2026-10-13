@@ -43,8 +43,8 @@ if (!hasFfprobe) console.warn('跳过从链接导入的下载测试：没有 ffp
 
 const SECRET = 'secret-token-123';
 
-describe('从链接导入的参数', () => {
-  it('校验并规范化；以 - 开头、本地地址、多余的键与不支持的 Cookie 浏览器都拒绝', () => {
+describe('link import parameters', () => {
+  it('validated and normalized; a leading -, local addresses, extra keys and unsupported cookie browsers are all rejected', () => {
     expect(parseLinkImportParams({ url: `https://video.example.com/watch?v=abc&token=${SECRET}`, projectId: 'prj_1' })).toMatchObject({
       url: 'https://video.example.com/watch?v=abc',
       raw: `https://video.example.com/watch?v=abc&token=${SECRET}`,
@@ -75,7 +75,7 @@ describe('从链接导入的参数', () => {
     }
   });
 
-  it('新建视频的目标：在项目或会话里；不收 media，不能与 videoId、别的项目或会话同时给；转写可以只给新建', () => {
+  it('new video target: in a project or session; does not accept media, cannot be combined with videoId or another project or session; transcription may be given only with new', () => {
     const url = 'https://video.example.com/a';
     expect(parseLinkImportParams({ url, target: { create: { projectId: 'prj_1', name: '新视频' } }, transcribe: true })).toMatchObject({
       create: { projectId: 'prj_1', name: '新视频' },
@@ -111,7 +111,7 @@ describe('从链接导入的参数', () => {
   });
 });
 
-describe.skipIf(!hasFfprobe)('从链接导入（假 yt-dlp）', () => {
+describe.skipIf(!hasFfprobe)('link import (fake yt-dlp)', () => {
   let dir: string;
   let jobs: JobManager;
   let runner: PipelineRunner;
@@ -272,7 +272,7 @@ describe.skipIf(!hasFfprobe)('从链接导入（假 yt-dlp）', () => {
 
   const stagingOf = (jobId: string) => path.join(dir, 'staging', 'pipelines', jobId);
 
-  it('无视频目标时直接转录，TXT/SRT 与媒体同目录，项目只保留归属', async () => {
+  it('without a video target, transcribe directly; TXT/SRT live in the same directory as the media; the project only keeps ownership', async () => {
     const { jobId } = await start({ url: 'https://video.example.com/a', projectId: 'prj_1', transcribe: true, cookieBrowser: 'firefox' });
     const parent = await finished(jobId);
     expect(parent.state).toBe('completed');
@@ -289,7 +289,7 @@ describe.skipIf(!hasFfprobe)('从链接导入（假 yt-dlp）', () => {
     for (const call of calls.filter((c) => c.argv?.includes('--cookies-from-browser'))) expect(call.argv![call.argv!.indexOf('--cookies-from-browser') + 1]).toBe('firefox');
   });
 
-  it('下载、校验、发布到下载目录并导入视频；链接在记录与来源里都已脱敏，原始链接只在下载时用', async () => {
+  it('download, validate, publish to the download directory and import as video; the link is redacted in records and sources, the raw link is used only during download', async () => {
     const raw = `https://video.example.com/watch?v=abc&token=${SECRET}#t=3`;
     const { jobId } = await start({ url: raw, videoId: 'vid_1', subtitleLanguages: ['en'], transcribe: true });
     // After submission, the original link exists only in the 0600 staging file.
@@ -364,7 +364,7 @@ describe.skipIf(!hasFfprobe)('从链接导入（假 yt-dlp）', () => {
     await expect(fs.stat(stagingOf(jobId))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
-  it('导入已有的视频：时间线还空着时同一笔事务放上主轨（对外服务先新建再下载进去），已经有片段时只导入素材', async () => {
+  it('import an existing video: when the timeline is empty, the same transaction places it on the main track (the external service creates first, then downloads into it); when clips already exist, only the media is imported', async () => {
     const empty = await finished((await start({ url: 'https://video.example.com/watch?v=abc', videoId: 'vid_empty' })).jobId);
     expect(empty).toMatchObject({ state: 'completed', videoId: 'vid_empty' });
     expect(created).toEqual([]);
@@ -379,7 +379,7 @@ describe.skipIf(!hasFfprobe)('从链接导入（假 yt-dlp）', () => {
     expect(applied[1]!.request.operations).toEqual([expect.objectContaining({ type: 'importAsset', ref: 'link' })]);
   });
 
-  it('新建视频：发布之后在项目里新建（名字取页面标题），同一笔事务导入并放上主轨；之后失败时重试不再新建', async () => {
+  it('new video: after publishing, a new one is created in the project (named from the page title), the same transaction imports and places it on the main track; a later failure, retry does not create again', async () => {
     transcribeState = 'failed';
     const { jobId } = await start({
       url: 'https://video.example.com/watch?v=abc',
@@ -429,7 +429,7 @@ describe.skipIf(!hasFfprobe)('从链接导入（假 yt-dlp）', () => {
     expect(leases).toBe(0);
   });
 
-  it('转写的参数：语言、提示、说话人与选定的服务带进转写；打开 captions 时转写之后建字幕层（同转录流程那一步）', async () => {
+  it('transcription parameters: language, hints, speakers and the chosen service are carried into the transcription; when captions is on, the caption layer is built after transcription (same as that step in the transcription flow)', async () => {
     speechDocumentId = 'doc_speech';
     newDocuments.doc_speech = {
       id: 'doc_speech',
@@ -480,7 +480,7 @@ describe.skipIf(!hasFfprobe)('从链接导入（假 yt-dlp）', () => {
     });
   });
 
-  it('转写的参数只与 transcribe 一起给；没有视频目标时不收 diarize 与 captions', () => {
+  it('transcription parameters are given only together with transcribe; without a video target, diarize and captions are not accepted', () => {
     const url = 'https://video.example.com/a';
     expect(() => parseLinkImportParams({ url, language: 'en' })).toThrow(/language/);
     expect(() => parseLinkImportParams({ url, transcribe: true, captions: true })).toThrow(/captions/);
@@ -492,7 +492,7 @@ describe.skipIf(!hasFfprobe)('从链接导入（假 yt-dlp）', () => {
     });
   });
 
-  it('新建视频在会话的来源目录里（不属于项目的会话）：下载目录照常，新建与导入同项目时一样', async () => {
+  it('new video in the session\'s source directory (session not belonging to a project): download directory as usual, creation and import the same as for a project', async () => {
     const { jobId } = await start({
       url: 'https://video.example.com/watch?v=abc',
       target: { create: { conversationId: 'conv_1', name: '会话里的视频' } },
@@ -517,7 +517,7 @@ describe.skipIf(!hasFfprobe)('从链接导入（假 yt-dlp）', () => {
     ]);
   });
 
-  it('只下载之后按产物导入：产物找得到下载目录里的文件（内容核对过），来源与流程自己导入的相同；改过的文件不认', async () => {
+  it('download-only then import by artifact: the artifact is found as a file in the download directory (content verified), the source and flow the same as its own import; a modified file is not recognized', async () => {
     const { jobId } = await start({ url: 'https://video.example.com/watch?v=abc', conversationId: 'conv_1', transcribe: true });
     const parent = await finished(jobId);
     expect(parent.state).toBe('completed');
@@ -558,7 +558,7 @@ describe.skipIf(!hasFfprobe)('从链接导入（假 yt-dlp）', () => {
     expect(await locateArtifact(jobs.artifacts, media!.artifactId, media!)).toBeNull();
   });
 
-  it('同名文件不覆盖；没有视频时只下载', async () => {
+  it('same-named file is not overwritten; without a video, download only', async () => {
     await fs.mkdir(downloads(), { recursive: true });
     await fs.writeFile(path.join(downloads(), `rf Fake clip one two it's ok.wav`), 'old');
     const parent = await finished((await start({ url: 'https://video.example.com/watch?v=abc', projectId: 'prj_1' })).jobId);
@@ -570,7 +570,7 @@ describe.skipIf(!hasFfprobe)('从链接导入（假 yt-dlp）', () => {
     expect(applied).toEqual([]);
   });
 
-  it('解析到内网地址的主机、本地地址在提交时拒绝，不留下原始链接', async () => {
+  it('a host resolving to an internal address, local address rejected at submission, no raw link left behind', async () => {
     await expect(start({ url: `https://evil.example.com/a?token=${SECRET}` })).rejects.toMatchObject({
       code: 'invalid-request',
       details: { code: 'LINK_PRIVATE_ADDRESS' },
@@ -581,7 +581,7 @@ describe.skipIf(!hasFfprobe)('从链接导入（假 yt-dlp）', () => {
     expect(await fake.calls()).toEqual([]);
   });
 
-  it('浏览器 Cookie 按顺序逐个试：读不到或要求登录换下一个，用上的那个记在结果里、下载沿用它', async () => {
+  it('browser cookies tried in order one by one: unreadable or login-required moves to the next; the one used is recorded in the result, download reuses it', async () => {
     const parent = await finished((await start({ url: 'https://video.example.com/members', cookieBrowsers: ['chrome', 'safari', 'firefox', 'edge'] })).jobId);
     expect(parent.state).toBe('completed');
     expect(parent.pipeline!.params.cookieBrowsers).toEqual(['chrome', 'safari', 'firefox', 'edge']);
@@ -590,7 +590,7 @@ describe.skipIf(!hasFfprobe)('从链接导入（假 yt-dlp）', () => {
     expect(used).toEqual([['resolve', 'chrome'], ['resolve', 'safari'], ['resolve', 'firefox'], ['download', 'firefox']]);
   });
 
-  it('浏览器都没成功时一次失败带上每个浏览器的结果；网络错误不换浏览器；旧的单个 cookieBrowser 照样能用', async () => {
+  it('when no browser succeeds, one failure carrying each browser\'s result; network errors don\'t switch browsers; the old single cookieBrowser still works', async () => {
     const failed = await finished((await start({ url: 'https://video.example.com/members', cookieBrowsers: ['chrome', 'edge'] })).jobId);
     expect(failed).toMatchObject({ state: 'failed', error: { code: 'LINK_LOGIN_REQUIRED' } });
     expect(failed.error!.message).toBe('试了 2 个浏览器的 Cookie 都没成功（Chrome：读不到 Cookie；Edge：网站仍要求登录）');
@@ -604,7 +604,7 @@ describe.skipIf(!hasFfprobe)('从链接导入（假 yt-dlp）', () => {
     expect(single.pipeline!.params.cookieBrowsers).toEqual(['firefox']);
   });
 
-  it('失败分类：要登录、不支持、播放列表、磁盘满', async () => {
+  it('failure classification: login required, unsupported, playlist, disk full', async () => {
     const cases: Array<[string, string]> = [
       ['/login', 'LINK_LOGIN_REQUIRED'],
       ['/unsupported', 'LINK_UNSUPPORTED'],
@@ -619,7 +619,7 @@ describe.skipIf(!hasFfprobe)('从链接导入（假 yt-dlp）', () => {
     }
   });
 
-  it('取消杀掉整个进程组并删掉 staging；之后的重试从头下载', async () => {
+  it('cancel kills the whole process group and deletes staging; later retry downloads from scratch', async () => {
     const { jobId } = await start({ url: 'https://video.example.com/slow' });
     // Both pids count only when they read as positive integers: while the file is not yet written it must not be taken as 0 (`kill(0, 0)` always succeeds).
     let pids: number[] = [];
@@ -635,7 +635,7 @@ describe.skipIf(!hasFfprobe)('从链接导入（假 yt-dlp）', () => {
     await expect(fs.readdir(downloads())).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
-  it('网络中断失败时保留 staging，重试接着 .part 续传', async () => {
+  it('on a network interruption failure, staging is kept, retry resumes from .part', async () => {
     const { jobId } = await start({ url: `https://video.example.com/flaky?token=${SECRET}` });
     const failed = await finished(jobId);
     expect(failed.state).toBe('failed');
@@ -651,7 +651,7 @@ describe.skipIf(!hasFfprobe)('从链接导入（假 yt-dlp）', () => {
     await expect(fs.stat(sourcesFile)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
-  it('撤回同意之后重试被拒绝；严格离线时不启动', async () => {
+  it('retry after consent is withdrawn is rejected; not started under strict offline', async () => {
     const { jobId } = await start({ url: 'https://video.example.com/flaky' });
     expect((await finished(jobId)).state).toBe('failed');
     consented = false;

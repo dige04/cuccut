@@ -7,7 +7,7 @@ function result(segments: AsrResult['segments']): AsrResult {
 }
 
 describe('speechWords', () => {
-  it('说话人区分给词标了说话人时按词，没标的词取段的，没有说话人的不写', () => {
+  it('speaker diarization: words use their own speaker when tagged, untagged words take the segment\'s speaker, and nothing is written when there is no speaker', () => {
     const words = speechWords(
       result([
         {

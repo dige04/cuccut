@@ -9,23 +9,23 @@ const entry = (over: Partial<SpaceEntry>): SpaceEntry => ({
   user: { favorite: false, displayName: null, trashedAt: null }, ...over,
 });
 
-describe('Markdown 文章里的相对图片', () => {
+describe('relative images in a Markdown article', () => {
   it.each([
     ['talk.blog.at-12500ms.png', 'talk.blog.at-12500ms.png'],
     ['./img/a%20b.png', 'img/a b.png'],
     ['../shared/c.png?x=1#y', '../shared/c.png'],
-  ])('%s 是相对路径', (src, expected) => {
+  ])('%s is a relative path', (src, expected) => {
     expect(relativeImagePath(src)).toBe(expected);
   });
 
   it.each(['https://example.com/a.png', '//example.com/a.png', 'data:image/png;base64,AAAA', 'file:///tmp/a.png', '/etc/a.png',
-    'C:\\img\\a.png', '\\\\server\\share\\a.png', '', 'bad%ZZ.png'])('不把 %s 当相对路径', (src) => {
+    'C:\\img\\a.png', '\\\\server\\share\\a.png', '', 'bad%ZZ.png'])('does not treat %s as a relative path', (src) => {
     expect(relativeImagePath(src)).toBeNull();
   });
 
   const context = (entries: SpaceEntry[] = [], desktop = true) => ({ entries, dirs, desktop });
 
-  it('会话、项目与本机文章：同一个定位方式下的相邻路径', () => {
+  it('session, project and local article: adjacent paths under the same locator', () => {
     expect(siblingMediaTarget({ conversationId: 'c1', path: 'out/post.md' }, 'a.png', context())).toEqual({ conversationId: 'c1', path: 'out/a.png' });
     expect(siblingMediaTarget({ projectId: 'p1', path: 'post.md' }, './img/a.png', context())).toEqual({ projectId: 'p1', path: 'img/a.png' });
     expect(siblingMediaTarget({ localPath: '/Volumes/SSD/Downie/talk.blog.zh-CN.md' }, 'talk.blog.at-12500ms.png', context()))
@@ -35,7 +35,7 @@ describe('Markdown 文章里的相对图片', () => {
     expect(siblingMediaTarget({ conversationId: 'c1', attachmentId: 'att' }, 'a.png', context())).toBeNull();
   });
 
-  it('Space 条目：按来源目录拼；来源目录之外的先找登记过的相邻条目，桌面端再退回本机路径，浏览器取不到', () => {
+  it('Space item: joined from the source directory; outside the source directory, first look for registered adjacent items, then on desktop fall back to the local path, which the browser cannot fetch', () => {
     const inProject = entry({ source: { projectId: 'p1', conversationId: null }, relPath: 'notes/post.md' });
     expect(siblingMediaTarget({ entryId: 'e1' }, 'a.png', context([inProject]))).toEqual({ projectId: 'p1', path: 'notes/a.png' });
     const inConversation = entry({ source: { projectId: null, conversationId: 'c1' } });

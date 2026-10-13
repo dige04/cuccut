@@ -118,7 +118,7 @@ async function readArtifact(side: Side, artifactId: string): Promise<{ text: str
   return { text: await response.text(), mimeType: handle.mimeType };
 }
 
-describe('文本生成（经网关）', () => {
+describe('text generation (via gateway)', () => {
   let side: Side | undefined;
   let openai: FakeProviderServer | undefined;
   let google: FakeProviderServer | undefined;
@@ -130,7 +130,7 @@ describe('文本生成（经网关）', () => {
     side = openai = google = undefined;
   });
 
-  it('什么都没配置：能力视图列出所有内置文本服务商，没有出厂默认；提交与进程内调用都以 CAPABILITY_NOT_CONFIGURED 拒绝', async () => {
+  it('nothing configured: capability view lists all built-in text providers, no factory default; submit and in-process calls both rejected with CAPABILITY_NOT_CONFIGURED', async () => {
     side = await startSide({});
     const { capabilities } = await side.client.request('models.capabilities', {});
     expect(capabilities.generateText).toMatchObject({ default: null, effective: null, parameters: { effort: null, concurrency: 4 } });
@@ -174,7 +174,7 @@ describe('文本生成（经网关）', () => {
     expect(await side.client.request('jobs.list', {})).toEqual({ jobs: [] });
   });
 
-  it('OpenAI 是默认值：任务完成，全文是产物（openHandle 读回），结果带预览；commandId 幂等；密钥不出现在任何记录里', async () => {
+  it('OpenAI is default: task completes, full text is the artifact (read back by openHandle), result carries preview; commandId idempotent; key appears in no record', async () => {
     openai = await startFakeProviderServer(fakeOpenAiHandler('Hello from the fake model.'));
     side = await startSide({ openai });
     await side.client.request('models.configure', { providerId: 'openai', enabled: true, credential: OPENAI_KEY });
@@ -220,7 +220,7 @@ describe('文本生成（经网关）', () => {
     await expectNoSecret(side, OPENAI_KEY);
   });
 
-  it('Google 结构化输出：发布校验过的 JSON；不合 schema 时 MODEL_OUTPUT_INVALID，密钥不在错误里', async () => {
+  it('Google structured output: publishes validated JSON; when not matching schema MODEL_OUTPUT_INVALID, key not in the error', async () => {
     let reply = '{"title":"Hi"}';
     const handler: FakeHandler = (request, server) =>
       request.path.endsWith(':generateContent') ? fakeGoogleHandler(reply)(request, server) : fakeGoogleHandler()(request, server);
@@ -247,7 +247,7 @@ describe('文本生成（经网关）', () => {
     await expectNoSecret(side, GOOGLE_KEY);
   });
 
-  it('上下文过长与认证失败按封闭的错误码；进程内调用得到同样的错误码与计数', async () => {
+  it('context too long and auth failure use a closed set of error codes; in-process calls get the same error codes and counts', async () => {
     let mode: 'too-long' | 'auth' | 'ok' = 'too-long';
     openai = await startFakeProviderServer((request) => {
       if (mode === 'too-long') return { status: 400, json: { error: { code: 'context_length_exceeded', message: 'too long' } } };
@@ -283,7 +283,7 @@ describe('文本生成（经网关）', () => {
     await expectNoSecret(side, OPENAI_KEY);
   });
 
-  it('能力参数：默认推理强度进冻结的参数；并发上限可改、可恢复出厂值', async () => {
+  it('capability parameters: default reasoning intensity goes into frozen parameters; concurrency limit can be changed and restored to factory value', async () => {
     openai = await startFakeProviderServer(fakeOpenAiHandler('ok'));
     side = await startSide({ openai });
     await side.client.request('models.configure', { providerId: 'openai', enabled: true, credential: OPENAI_KEY });
@@ -309,7 +309,7 @@ describe('文本生成（经网关）', () => {
     expect(invalid).toMatchObject({ code: 'invalid-request' });
   });
 
-  it('refreshProvider：成功时标注不在列表里的模型；指向它的默认值变成过时的，提交以 CAPABILITY_NOT_CONFIGURED 拒绝；失败时照旧用内置列表', async () => {
+  it('refreshProvider: on success marks models not in the list; default values pointing to it become stale, submit rejected with CAPABILITY_NOT_CONFIGURED; on failure the built-in list is still used', async () => {
     let fail = false;
     openai = await startFakeProviderServer((request) => {
       if (request.method === 'GET' && request.path === '/v1/models') {
@@ -347,7 +347,7 @@ describe('文本生成（经网关）', () => {
     await expectNoSecret(side, OPENAI_KEY);
   });
 
-  it('停用默认的 Provider：默认值保留但不可用，提交以 CAPABILITY_NOT_CONFIGURED 拒绝', async () => {
+  it('disabling the default Provider: default kept but unavailable, submit rejected with CAPABILITY_NOT_CONFIGURED', async () => {
     openai = await startFakeProviderServer(fakeOpenAiHandler());
     side = await startSide({ openai });
     await side.client.request('models.configure', { providerId: 'openai', enabled: true, credential: OPENAI_KEY });

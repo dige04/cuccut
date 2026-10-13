@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { ProviderFailure } from '@cuccut/models';
 import { checkFacts, providerCheckCode } from './model-install-service.ts';
 
-describe('检查没通过：Worker 的失败按原因分类', () => {
-  it('加载时文件缺失或损坏是模型文件的问题，资源不足是内存不够，响应不合协议是输出不对，其余是 Worker 的问题', () => {
+describe('check failed: the Worker\'s failures classified by cause', () => {
+  it('failing to load because a file is missing or corrupt is a model file problem, insufficient resources is not enough memory, a response that violates the protocol is wrong output, the rest are Worker problems', () => {
     const load = (reason: string) => new ProviderFailure('load-failed', '模型包加载失败', { reason, workerCode: 'X' });
     expect(providerCheckCode(load('not-installed'))).toBe('MODEL_FILES_DAMAGED');
     expect(providerCheckCode(load('resource'))).toBe('MODEL_OUT_OF_MEMORY');
@@ -14,7 +14,7 @@ describe('检查没通过：Worker 的失败按原因分类', () => {
     expect(providerCheckCode(new ProviderFailure('unavailable', '模型包已停用'))).toBe('MODEL_WORKER_FAILED');
   });
 
-  it('技术细节：key: value 一行一条，常用的在前；不放 stderr、staging 与本机绝对路径；对象写成 JSON，过长截断', () => {
+  it('technical details: one key: value per line, common ones first; no stderr, staging or local absolute paths; objects written as JSON, long ones truncated', () => {
     const facts = checkFacts({
       stderrTail: 'panic at /Users/someone/model.rs',
       staging: '/private/tmp/staging',

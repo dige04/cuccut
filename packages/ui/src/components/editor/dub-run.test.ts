@@ -185,8 +185,8 @@ beforeEach(() => {
 });
 afterEach(() => resetDub());
 
-describe('开始配音与授权', () => {
-  it('走真的会话：第一次被 GRANT_REQUIRED 拒绝 → 询问；确认后 grants.create 的形状对，再提交同一份 dub 参数', async () => {
+describe('start dubbing and grants', () => {
+  it('real session: first rejected with GRANT_REQUIRED leads to a prompt; after confirmation, grants.create has the right shape, then the same dub parameters are submitted again', async () => {
     const session = new RuntimeSession({} as HostBridge);
     const calls: Array<[string, unknown]> = [];
     let starts = 0;
@@ -235,7 +235,7 @@ describe('开始配音与授权', () => {
     expect(useDubRun.getState().runs.vid).toMatchObject({ jobId: 'p1', status: 'running' });
   });
 
-  it('翻译与合成交给不同服务商：连着问两轮；同一接收方发过还被拒时报错，不循环', async () => {
+  it('translation and synthesis handled by different providers: asks twice in a row; when the same recipient is rejected again after being sent, report an error without looping', async () => {
     const { deps } = fake();
     const answers = [refused('elevenlabs'), refused('openai'), refused('openai')];
     deps.runtime.startDub = vi.fn(async () => {
@@ -252,7 +252,7 @@ describe('开始配音与授权', () => {
     expect(deps.runtime.startDub).toHaveBeenCalledTimes(3);
   });
 
-  it('发放失败：留在询问上写明原因，不重新提交', async () => {
+  it('grant issuance fails: stays on the prompt with the reason written, no resubmit', async () => {
     const { deps } = fake();
     deps.runtime.startDub = vi.fn(async () => {
       throw refused('elevenlabs');
@@ -267,7 +267,7 @@ describe('开始配音与授权', () => {
     expect(deps.runtime.startDub).toHaveBeenCalledTimes(1);
   });
 
-  it('没有配置语音合成：就地给提示与去模型页的路', async () => {
+  it('no speech synthesis configured: shows a hint in place and the route to the models page', async () => {
     const { deps } = fake();
     deps.runtime.startDub = vi.fn(async () => {
       throw new RpcError('conflict', '没有可用的语音合成', {
@@ -288,8 +288,8 @@ describe('开始配音与授权', () => {
   });
 });
 
-describe('收尾', () => {
-  it('完成：读摘要留收据，提示带撤销；同一个视频同时只配一次', async () => {
+describe('wrap-up', () => {
+  it('completed: read the summary and keep a receipt, notice with undo; the same video is dubbed only once at a time', async () => {
     const { deps, toasts } = fake();
     bindDub(deps);
     expect(await startDub(params, intent)).toBe('p1');
@@ -305,7 +305,7 @@ describe('收尾', () => {
     expect(toasts).toEqual([['positive', '已配成英语 · 2 句放上时间线', true]]);
   });
 
-  it('合成失败：给逐句事实、补救与「重试」（已合成的复用）；重试被授权拒绝时同样询问，不发就留着重试', async () => {
+  it('synthesis fails: give per-line facts, remedies and "retry" (reuse already synthesized lines); when the retry is rejected for grant, also prompt, and if not sent, keep it for retry', async () => {
     const { deps } = fake();
     bindDub(deps);
     await startDub(params, intent);
@@ -337,7 +337,7 @@ describe('收尾', () => {
     expect(useDubRun.getState().problems.vid?.retry).toMatchObject({ jobId: 'p1', note: 'partial' });
   });
 
-  it('跑到一半授权被撤销：失败的任务也出询问，确认后发授权并重试同一个任务', async () => {
+  it('grant revoked midway: the failed task also prompts, and after confirmation sends the grant and retries the same task', async () => {
     const { deps } = fake();
     bindDub(deps);
     await startDub(params, intent);
@@ -354,7 +354,7 @@ describe('收尾', () => {
     expect(useDubRun.getState().runs.vid).toMatchObject({ status: 'running', retriedAt: 'u1' });
   });
 
-  it('取消：不留问题，给一句提示', async () => {
+  it('cancel: leaves no issue, shows one line of notice', async () => {
     const { deps, toasts } = fake();
     bindDub(deps);
     await startDub(params, intent);
@@ -367,7 +367,7 @@ describe('收尾', () => {
   });
 });
 
-describe('撤销这组配音', () => {
+describe('undo this dub set', () => {
   async function completed(deps: DubDeps) {
     bindDub(deps);
     await startDub(params, intent);
@@ -377,7 +377,7 @@ describe('撤销这组配音', () => {
     await flush();
   }
 
-  it('撤掉应用配音的那一笔（配音计划最早版本的 createdBy）', async () => {
+  it('revert the entry that applied the dub (createdBy of the earliest version of the dub plan)', async () => {
     const { deps, applied } = fake();
     await completed(deps);
     await undoDub('vid');
@@ -386,7 +386,7 @@ describe('撤销这组配音', () => {
     expect(useDubRun.getState().receipts.vid).toMatchObject({ undone: 'full', undoing: false });
   });
 
-  it('撤不了那一笔（之后又改过）：一笔事务删掉这一组的实例、恢复这次静音的，清掉撤销失败的错误', async () => {
+  it('when that entry cannot be reverted (edited afterward): one transaction deletes this set\'s instances, restores the mutes from this run, and clears the undo-failed error', async () => {
     const { deps, applied } = fake();
     deps.runtime.videos.undo = vi.fn(async () => {
       useVideo.getState().update({ commandError: { message: '之后又改过', code: 'UNDO_CONFLICT' } });
@@ -406,11 +406,11 @@ describe('撤销这组配音', () => {
   });
 });
 
-describe('先下载分离模型再开始', () => {
+describe('download the separation model first, then start', () => {
   const install = (state: JobRecord['state'], jobId = 'inst1'): JobRecord => ({ ...job(state), jobId, kind: 'modelInstall', videoId: null });
   const separated: DubParams = { ...params, separateBackground: true };
 
-  it('下载任务完成就用同一份参数开始；还在下时不动', async () => {
+  it('start with the same parameters once the download task completes; do nothing while still downloading', async () => {
     const { deps } = fake();
     bindDub(deps);
     awaitDubInstall('inst1', separated, intent);
@@ -426,7 +426,7 @@ describe('先下载分离模型再开始', () => {
     expect(useDubRun.getState().runs.vid?.jobId).toBe('p1');
   });
 
-  it('下载失败或取消：不开始，提示一句（取消不报错）', async () => {
+  it('download fails or is cancelled: does not start, shows one line (cancel is not reported as an error)', async () => {
     const { deps, toasts } = fake();
     bindDub(deps);
     awaitDubInstall('inst1', separated, intent);

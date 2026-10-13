@@ -12,8 +12,8 @@ import {
 
 const host = (raw: string) => new URL(raw).hostname;
 
-describe('网页标签的地址规则', () => {
-  it('回环地址：各种写法都认得出', () => {
+describe('web tab address rules', () => {
+  it('loopback addresses: all notations are recognized', () => {
     for (const raw of [
       'http://localhost:3000',
       'http://LOCALHOST./',
@@ -37,7 +37,7 @@ describe('网页标签的地址规则', () => {
     }
   });
 
-  it('只允许 http/https；拒绝回环地址与应用自己的页面；去掉账号密码', () => {
+  it('allows only http/https; rejects loopback addresses and the app\'s own pages; strips username and password', () => {
     expect(checkWebUrl('https://example.com/a?b#c')).toEqual({ ok: true, url: 'https://example.com/a?b#c' });
     expect(checkWebUrl('https://user:pass@example.com/')).toEqual({ ok: true, url: 'https://example.com/' });
     expect(checkWebUrl('file:///etc/passwd')).toEqual({ ok: false, reason: 'scheme' });
@@ -54,7 +54,7 @@ describe('网页标签的地址规则', () => {
     expect(checkWebUrl('http://localhost:3000/', { allowLoopback: true })).toEqual({ ok: true, url: 'http://localhost:3000/' });
   });
 
-  it('分区里的请求：网络请求按地址规则判；data/blob/about 放行；file 与其它协议拦下', () => {
+  it('requests in the partition: network requests are judged by the address rules; data/blob/about are allowed; file and other protocols are blocked', () => {
     expect(isRequestAllowed('https://example.com/a.js')).toBe(true);
     expect(isRequestAllowed('http://127.0.0.1:7777/rpc')).toBe(false);
     expect(isRequestAllowed('ws://localhost:7777/')).toBe(false);
@@ -70,8 +70,8 @@ describe('网页标签的地址规则', () => {
   });
 });
 
-describe('网页标签的参数校验', () => {
-  it('缩放收进 50–200', () => {
+describe('web tab parameter validation', () => {
+  it('zoom is clamped to 50–200', () => {
     expect(clampZoom(125)).toBe(125);
     expect(clampZoom(10)).toBe(50);
     expect(clampZoom(500)).toBe(200);
@@ -80,7 +80,7 @@ describe('网页标签的参数校验', () => {
     expect(clampZoom('100')).toBeNull();
   });
 
-  it('矩形：取整，拒绝负宽高、非有限数与缺字段', () => {
+  it('rectangle: rounds values, rejects negative width/height, non-finite numbers and missing fields', () => {
     expect(parseBounds({ x: 10.4, y: 20.6, width: 300.5, height: 200.2 })).toEqual({ x: 10, y: 21, width: 301, height: 200 });
     expect(parseBounds({ x: 0, y: 0, width: -1, height: 10 })).toBeNull();
     expect(parseBounds({ x: 0, y: 0, width: Infinity, height: 10 })).toBeNull();
@@ -89,14 +89,14 @@ describe('网页标签的参数校验', () => {
     expect(parseBounds(null)).toBeNull();
   });
 
-  it('标签 id 的外形', () => {
+  it('tab id format', () => {
     expect(isWebTabId('web_1_abc')).toBe(true);
     expect(isWebTabId('web_')).toBe(false);
     expect(isWebTabId('../x')).toBe(false);
     expect(isWebTabId(1)).toBe(false);
   });
 
-  it('User-Agent 去掉应用名与 Electron', () => {
+  it('User-Agent drops the app name and Electron', () => {
     const ua =
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) @cuccut/desktop/0.1.0 Chrome/140.0.7339.0 Electron/44.5.1 Safari/537.36';
     expect(browserUserAgent(ua)).toBe(
@@ -104,7 +104,7 @@ describe('网页标签的参数校验', () => {
     );
   });
 
-  it('弹窗节流：同一标签一秒内只放一次', () => {
+  it('popup throttling: the same tab allows only one within a second', () => {
     const gate = new OpenThrottle(1000);
     expect(gate.allow('a', 0)).toBe(true);
     expect(gate.allow('a', 500)).toBe(false);

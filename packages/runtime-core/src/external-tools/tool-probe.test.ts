@@ -6,7 +6,7 @@ import { envValue, findOnPath, pathExtensions, windowsScriptKind } from './tool-
 
 /** Finds a tool on PATH. On Windows, PATHEXT is checked against the injected platform in a temp directory (directory separators still follow the local machine). No file is executed. */
 
-describe('在 PATH 里找工具', () => {
+describe('finds tools on PATH', () => {
   let dir: string;
   beforeEach(async () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-tool-probe-'));
@@ -22,7 +22,7 @@ describe('在 PATH 里找工具', () => {
     return file;
   }
 
-  it('Windows：同一个目录里按 PATHEXT 的顺序补扩展名，原名最后', async () => {
+  it('Windows: appends extensions in PATHEXT order within the same directory, with the bare name last', async () => {
     const cmd = await touch('a', 'yt-dlp.cmd');
     const exe = await touch('a', 'yt-dlp.exe');
     await touch('a', 'yt-dlp');
@@ -35,7 +35,7 @@ describe('在 PATH 里找工具', () => {
     expect(await findOnPath('yt-dlp.cmd', searchPath, 'win32')).toBe(cmd);
   });
 
-  it('Windows：前面目录里的 .cmd 挡住后面目录里的 .exe（和命令行一样）；只有原名时找到原名', async () => {
+  it('Windows: a .cmd in an earlier directory shadows a .exe in a later one (as on the command line); with only a bare name, the bare name is found', async () => {
     const cmd = await touch('a', 'yt-dlp.cmd');
     await touch('b', 'yt-dlp.exe');
     const bare = await touch('c', 'tool');
@@ -44,14 +44,14 @@ describe('在 PATH 里找工具', () => {
     expect(await findOnPath('tool', searchPath, 'win32', null)).toBe(bare);
   });
 
-  it('其他系统不补扩展名', async () => {
+  it('other systems do not append extensions', async () => {
     await touch('a', 'yt-dlp.exe');
     const plain = await touch('b', 'yt-dlp');
     const searchPath = [path.join(dir, 'a'), path.join(dir, 'b')].join(path.delimiter);
     expect(await findOnPath('yt-dlp', searchPath, 'darwin', '.EXE')).toBe(plain);
   });
 
-  it('PATHEXT 的拆分、大小写不敏感的环境变量、Windows 上不能直接执行的文件', () => {
+  it('PATHEXT splitting, case-insensitive environment variables, files on Windows that cannot be executed directly', () => {
     expect(pathExtensions('.COM;.EXE;;exe;.Cmd;.EXE')).toEqual(['.com', '.exe', '.cmd']);
     expect(pathExtensions('')).toEqual(['.com', '.exe', '.bat', '.cmd']);
     expect(envValue({ PathExt: '.EXE' }, 'PATHEXT')).toBe('.EXE');

@@ -18,7 +18,7 @@ function fakeLink() {
 }
 
 describe('createDownloadsBridge', () => {
-  it('save 把文件发给父窗口，父窗口存好后兑现', async () => {
+  it('save sends the file to the parent window and resolves once the parent has saved it', async () => {
     const parent = fakeLink();
     const downloads = createDownloadsBridge(parent.link, () => 's1');
     const data = new Uint8Array([60, 104, 49, 62]).buffer;
@@ -30,7 +30,7 @@ describe('createDownloadsBridge', () => {
     await expect(done).resolves.toBeUndefined();
   });
 
-  it('取消与没存成都拒绝，错误带运行时认的 code', async () => {
+  it('cancel and failed save both reject, with errors carrying the code the runtime recognizes', async () => {
     const parent = fakeLink();
     let n = 0;
     const downloads = createDownloadsBridge(parent.link, () => `s${++n}`);
@@ -42,7 +42,7 @@ describe('createDownloadsBridge', () => {
     await expect(failed).rejects.toMatchObject({ code: 'failed' });
   });
 
-  it('dispose 停止收消息，等着的按没存成拒绝', async () => {
+  it('dispose stops receiving messages, and pending saves reject as not saved', async () => {
     const parent = fakeLink();
     const downloads = createDownloadsBridge(parent.link, () => 's1');
     const waiting = downloads.capability.save({ filename: 'a.zip', data: new ArrayBuffer(1) });

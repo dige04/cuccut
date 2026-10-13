@@ -57,8 +57,8 @@ function summary(clones: LibraryEntrySummary['clones'] = []): LibraryEntrySummar
   return { library: 'voices', id: 'voc_1', version: 3, contentHash: 'sha256:3', name: '主播', kind: 'voice', updatedAt: '', consentDeclared: true, clones };
 }
 
-describe('新建与编辑', () => {
-  it('从文件新建：library.put 带 source.path 与 commandId', async () => {
+describe('create and edit', () => {
+  it('create from file: library.put with source.path and commandId', async () => {
     const { session, calls } = fakeSession({ 'library.put': () => ({ entry: entry(1), created: true, changed: true }) });
     await createVoice(session, { name: '主播', language: 'zh-CN', transcript: '', consent: false }, '/tmp/ref.wav');
     expect(calls[0]![0]).toBe('library.put');
@@ -71,7 +71,7 @@ describe('新建与编辑', () => {
     expect(calls[0]![1]).not.toHaveProperty('id');
   });
 
-  it('编辑：带版本号、不带文件；勾着声明时交回原话', async () => {
+  it('edit: with version number, no file; when the declaration box is ticked, return the original declaration', async () => {
     const { session, calls } = fakeSession({ 'library.put': () => ({ entry: entry(4), created: false, changed: true }) });
     const outcome = await saveVoice(session, { name: '新名字', language: 'zh-CN', transcript: '大家好', consent: true }, entry());
     expect(outcome).toMatchObject({ kind: 'saved', changed: true });
@@ -79,7 +79,7 @@ describe('新建与编辑', () => {
     expect(calls[0]![1]).not.toHaveProperty('source');
   });
 
-  it('别处先改了：取回最新的一版交回去，不拿新版本号自动重试', async () => {
+  it('changed elsewhere first: fetch the latest version and hand it back, no automatic retry with the new version number', async () => {
     const { session, calls } = fakeSession({
       'library.put': () => {
         throw new RpcError('conflict', '条目已经被别处修改', { code: 'LIBRARY_VERSION_CONFLICT' });
@@ -92,7 +92,7 @@ describe('新建与编辑', () => {
     expect(calls.map(([m]) => m)).toEqual(['library.put', 'library.get']);
   });
 
-  it('别的拒绝原样抛出', async () => {
+  it('other rejections are rethrown as is', async () => {
     const error = new RpcError('invalid-request', 'name 超过 200 个字符', { code: 'LIBRARY_FORMAT_INVALID' });
     const { session } = fakeSession({
       'library.put': () => {
@@ -103,14 +103,14 @@ describe('新建与编辑', () => {
   });
 });
 
-describe('删除：先删克隆，删不掉不删音色', () => {
-  it('没有克隆：直接删条目', async () => {
+describe('delete: delete clones first; if they cannot be deleted, do not delete the voice', () => {
+  it('no clones: delete the entry directly', async () => {
     const { session, calls } = fakeSession({ 'library.remove': () => ({ removed: true }) });
     expect(await deleteVoice(session, summary())).toEqual({ kind: 'deleted', clones: [] });
     expect(calls).toEqual([['library.remove', { library: 'voices', id: 'voc_1' }]]);
   });
 
-  it('有克隆（有效与过期的都删）：先逐个删远端，再删条目', async () => {
+  it('with clones (both valid and expired ones deleted): delete each remote first, then the entry', async () => {
     const { session, calls } = fakeSession({
       'library.removeVoiceClone': (p) => ({ removed: true, remote: p.providerId === 'elevenlabs' ? 'deleted' : 'not-found' }),
       'library.remove': () => ({ removed: true }),
@@ -133,7 +133,7 @@ describe('删除：先删克隆，删不掉不删音色', () => {
     ]);
   });
 
-  it('远端删不掉：停下，不删条目，带回 Provider 的说法', async () => {
+  it('remote cannot be deleted: stop, do not delete the entry, return the provider\'s message', async () => {
     const { session, calls } = fakeSession({
       'library.removeVoiceClone': () => {
         throw new RpcError('conflict', 'ElevenLabs 上的克隆没有删掉，记录保留：网络不通', { code: 'PROVIDER_UNAVAILABLE', id: 'voc_1' });
@@ -146,7 +146,7 @@ describe('删除：先删克隆，删不掉不删音色', () => {
     expect(calls.map(([m]) => m)).not.toContain('library.remove');
   });
 
-  it('用户选了只删本机的：克隆记录只在本机清掉，再删条目', async () => {
+  it('user chose to delete locally only: clone records are cleared only locally, then the entry is deleted', async () => {
     const { session, calls } = fakeSession({
       'library.removeVoiceClone': () => ({ removed: true, remote: 'skipped' }),
       'library.remove': () => ({ removed: true }),
@@ -158,7 +158,7 @@ describe('删除：先删克隆，删不掉不删音色', () => {
     ]);
   });
 
-  it('克隆记录已经没有了（别处刚删）：当作删掉了，接着删条目', async () => {
+  it('clone record already gone (just deleted elsewhere): treated as deleted, then the entry is deleted', async () => {
     const { session, calls } = fakeSession({
       'library.removeVoiceClone': () => {
         throw new RpcError('not-found', '这个音色在这个 Provider 上没有克隆');
@@ -170,8 +170,8 @@ describe('删除：先删克隆，删不掉不删音色', () => {
   });
 });
 
-describe('导入导出、克隆与试听', () => {
-  it('导入音色包与导出：路径原样交给 Runtime；目标已存在的拒绝原样抛出', async () => {
+describe('import/export, cloning and preview', () => {
+  it('importing voice packs and exporting: paths passed to Runtime as is; rejected as is when the target already exists', async () => {
     const exists = new RpcError('conflict', '目标文件已存在：/tmp/主播.bcvoice');
     const { session, calls } = fakeSession({
       'library.import': () => ({ entry: entry(1) }),
@@ -185,7 +185,7 @@ describe('导入导出、克隆与试听', () => {
     expect(calls[1]).toEqual(['library.export', { entry: { library: 'voices', id: 'voc_1' }, path: '/tmp/主播.bcvoice' }]);
   });
 
-  it('建克隆提交一个任务（带 commandId）；删克隆默认请求远端', async () => {
+  it('creating a clone submits one task (with commandId); deleting a clone requests the remote by default', async () => {
     const { session, calls } = fakeSession({
       'library.createVoiceClone': () => ({ jobId: 'job_9' }),
       'library.removeVoiceClone': () => ({ removed: true, remote: 'deleted' }),
@@ -197,7 +197,7 @@ describe('导入导出、克隆与试听', () => {
     expect(calls[1]).toEqual(['library.removeVoiceClone', { id: 'voc_1', providerId: 'elevenlabs' }]);
   });
 
-  it('建克隆被拒（没有声明、没有授权……）原样抛出', async () => {
+  it('creating a clone rejected (no declaration, no grant, ...) is rethrown as is', async () => {
     const error = new RpcError('forbidden', '把音频交给 ElevenLabs 需要用户授权', { code: 'GRANT_REQUIRED' });
     const { session } = fakeSession({
       'library.createVoiceClone': () => {
@@ -207,7 +207,7 @@ describe('导入导出、克隆与试听', () => {
     await expect(cloneVoice(session, summary(), 'elevenlabs')).rejects.toBe(error);
   });
 
-  it('试听：手里的地址没到期就接着用，快到期了重新要', async () => {
+  it('preview: keep using the address in hand while it has not expired, request a new one when it is close to expiry', async () => {
     const now = Date.parse('2026-10-03T08:00:00.000Z');
     const fresh: MediaHandle = { url: 'http://127.0.0.1/m/2', mimeType: 'audio/wav', size: 1000, fileName: 'ref.wav', expiresAt: '2026-10-03T09:00:00.000Z' };
     const { session, calls } = fakeSession({ 'library.openHandle': () => fresh });

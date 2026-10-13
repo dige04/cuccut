@@ -66,7 +66,7 @@ const TOOLS: FakePiTool[] = [
   },
 ];
 
-describe('PiSession（假 pi）', () => {
+describe('PiSession (fake pi)', () => {
   let dir: string;
   let cwd: string;
   let fake: FakePi;
@@ -105,7 +105,7 @@ describe('PiSession（假 pi）', () => {
     effort,
   });
 
-  it('一轮：多次模型调用合成一个回合；文字与思考按增量到达；工具映射成命令、文件修改（unified diff）与 MCP', async () => {
+  it('a turn: multiple model calls are merged into one turn; text and thinking arrive as deltas; tools map to commands, file changes (unified diff) and MCP', async () => {
     const { session, events, completed, items } = await start({ turn: { tools: TOOLS, thinking: 'hmm…', reply: 'All done.' } });
     expect(session.capabilities).toEqual({ steer: true, approvals: false, resume: true, images: true });
     const { turnId } = await session.startTurn({ text: 'do it' }, settings());
@@ -148,7 +148,7 @@ describe('PiSession（假 pi）', () => {
     expect(handle).toMatchObject({ driverId: 'pi', data: { sessionFile: expect.stringContaining(fake.sessionsDir) } });
   });
 
-  it('开发者指令与 CucCut 的 MCP 服务：写成临时文件交给 --append-system-prompt 与 --extension，关会话后删掉', async () => {
+  it('developer instructions and CucCut\'s MCP server: written to temporary files passed to --append-system-prompt and --extension, deleted after the session closes', async () => {
     const { session, warnings } = await start(
       {},
       {
@@ -174,7 +174,7 @@ describe('PiSession（假 pi）', () => {
     await expect(fs.stat(extensionFile)).rejects.toThrow();
   });
 
-  it('不是完全访问：照常运行，但提示一次 pi 不会先问', async () => {
+  it('not full access: runs as usual, but notes once that pi will not ask first', async () => {
     const { session, completed, warnings } = await start({}, { accessMode: 'ask' });
     await until(() => warnings().length > 0);
     expect(warnings()).toEqual(['Pi 没有逐次询问的通道，CucCut 只能让它在「完全访问」模式下运行：执行命令和修改文件之前不会先问你。']);
@@ -184,7 +184,7 @@ describe('PiSession（假 pi）', () => {
     expect(warnings()).toHaveLength(1);
   });
 
-  it('每一轮的模型与推理强度：变了才发 set_model / set_thinking_level', async () => {
+  it('model and reasoning effort per turn: set_model / set_thinking_level are sent only when changed', async () => {
     const { session, completed } = await start();
     let { turnId } = await session.startTurn({ text: 'a' }, settings('fullAccess', 'anthropic/claude-sonnet-5', 'high'));
     await completed(turnId);
@@ -199,7 +199,7 @@ describe('PiSession（假 pi）', () => {
     });
   });
 
-  it('图片：模型收图片时 base64 随 prompt 发，不收时附上本机路径', async () => {
+  it('images: when the model accepts images, base64 is sent with the prompt; otherwise the local path is attached', async () => {
     const image = path.join(dir, 'a.png');
     await fs.writeFile(image, Buffer.from([1, 2, 3]));
     const { session, completed } = await start();
@@ -216,7 +216,7 @@ describe('PiSession（假 pi）', () => {
     expect(second.message).toBe(`look\n\n[图片：${image}]`);
   });
 
-  it('steer：回合进行中发 steer；旧版回 Unknown command 时报 unavailable；中断：清队列、abort，回合记为 interrupted', async () => {
+  it('steer: sends steer while a turn is in progress; reports unavailable when an older version replies Unknown command; interrupt: clears the queue, aborts, the turn is recorded as interrupted', async () => {
     const { session, completed, items } = await start({ turn: { hang: true } });
     const { turnId } = await session.startTurn({ text: 'go' }, settings());
     await until(() => fake.commands('prompt').length && items().some((i) => i.kind === 'agent-message'));
@@ -244,7 +244,7 @@ describe('PiSession（假 pi）', () => {
     expect((await old.completed(second.turnId)).outcome).toBe('interrupted');
   });
 
-  it('进程在回合中异常退出：开着的条目收掉，发 session.exited（带 stderr），不再报 turn.completed', async () => {
+  it('process exits unexpectedly during a turn: open entries are closed, session.exited is sent (with stderr), turn.completed is no longer reported', async () => {
     const { session, events } = await start({ turn: { exitMidTurn: true } });
     await session.startTurn({ text: 'go' }, settings());
     const exited = await until(() => events.find((e) => e.type === 'session.exited'));
@@ -255,7 +255,7 @@ describe('PiSession（假 pi）', () => {
     await expect(session.startTurn({ text: 'again' }, settings())).rejects.toThrow('已关闭');
   });
 
-  it('失败：prompt 被拒（没有 API 密钥）记 AGENT_AUTH_REQUIRED；模型调用出错取 errorMessage', async () => {
+  it('failure: prompt rejected (no API key) records AGENT_AUTH_REQUIRED; a model call error takes errorMessage', async () => {
     const a = await start({ turn: { promptError: 'No API key found for anthropic. Use /login or set an API key environment variable.' } });
     const first = await a.session.startTurn({ text: 'x' }, settings());
     expect(await a.completed(first.turnId)).toMatchObject({ outcome: 'failed', errorCode: 'AGENT_AUTH_REQUIRED' });
@@ -265,13 +265,13 @@ describe('PiSession（假 pi）', () => {
     expect(await b.completed(second.turnId)).toMatchObject({ outcome: 'failed', error: '529 overloaded', errorCode: null });
   });
 
-  it('旧版没有 agent_settled：agent_end 之后没有动静就收尾', async () => {
+  it('older versions without agent_settled: the turn ends if nothing happens after agent_end', async () => {
     const { session, completed } = await start({ settled: false });
     const { turnId } = await session.startTurn({ text: 'x' }, settings());
     expect((await completed(turnId)).outcome).toBe('completed');
   });
 
-  it('扩展来问（confirm）：立即答 cancelled，提示一次', async () => {
+  it('extension asks (confirm): answers cancelled immediately, notifies once', async () => {
     const { session, completed, warnings } = await start({ turn: { ask: true, reply: 'ok' } });
     const { turnId } = await session.startTurn({ text: 'x' }, settings());
     await completed(turnId);
@@ -279,7 +279,7 @@ describe('PiSession（假 pi）', () => {
     expect(warnings().some((w) => w.includes('Allow?'))).toBe(true);
   });
 
-  it('恢复：会话文件在就 --session 接着用；不在就新建并如实提示', async () => {
+  it('resume: continues with --session if the session file exists; otherwise creates a new one and reports that honestly', async () => {
     const first = await start();
     const { turnId } = await first.session.startTurn({ text: 'x' }, settings());
     await first.completed(turnId);
@@ -308,7 +308,7 @@ describe('PiSession（假 pi）', () => {
     ).not.toContain('--session');
   });
 
-  it('受限的一次性调用：不支持', async () => {
+  it('restricted one-off calls: not supported', async () => {
     await expect(
       driver.createSession({ cwd, accessMode: 'fullAccess', model: null, effort: null, resume: null, confinement: 'cwd-write-only' }),
     ).rejects.toThrow('不支持受限');

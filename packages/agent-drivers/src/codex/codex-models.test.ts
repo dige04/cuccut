@@ -18,8 +18,8 @@ const model = (id: string, patch: Partial<CodexModel> = {}): CodexModel => ({
   ...patch,
 });
 
-describe('Codex 模型表', () => {
-  it('toDriverModel：显示名、说明、默认、强度与默认强度原样转述', () => {
+describe('Codex model table', () => {
+  it('toDriverModel: display name, description, default, efforts and default effort are passed through as is', () => {
     expect(
       toDriverModel(
         model('gpt-6.1-sol', {
@@ -47,7 +47,7 @@ describe('Codex 模型表', () => {
     });
   });
 
-  it('toDriverModel：缺字段时退回 id 与 null', () => {
+  it('toDriverModel: falls back to id and null when fields are missing', () => {
     const raw = { id: 'weird', hidden: false } as unknown as CodexModel;
     expect(toDriverModel(raw)).toEqual({
       id: 'weird',
@@ -60,7 +60,7 @@ describe('Codex 模型表', () => {
     });
   });
 
-  it('inferTier：家族后缀优先，其次看说明，推不出来为 null', () => {
+  it('inferTier: family suffix first, then the description, null when it cannot be inferred', () => {
     expect(inferTier('gpt-6-astra', null)).toBe('max');
     expect(inferTier('gpt-6-sol', null)).toBe('balanced');
     expect(inferTier('gpt-5.6-luna', null)).toBe('fast');
@@ -72,15 +72,15 @@ describe('Codex 模型表', () => {
     expect(inferTier('gpt-5.6-terra', null)).toBeNull();
   });
 
-  it('toCatalog：隐藏模型不进 models，但进 all；没有 id 的条目丢掉', () => {
+  it('toCatalog: hidden models are not in models but are in all; entries without an id are dropped', () => {
     const catalog = toCatalog([model('a'), model('secret', { hidden: true }), { hidden: false } as unknown as CodexModel]);
     expect(catalog.models.map((m) => m.id)).toEqual(['a']);
     expect(catalog.all).toEqual(['a', 'secret']);
   });
 });
 
-describe('Codex 配置里的模型', () => {
-  it('parseTopLevelModel：只认第一个表头之前的 model', () => {
+describe('models in Codex config', () => {
+  it('parseTopLevelModel: only recognizes model before the first table header', () => {
     expect(parseTopLevelModel('model = "gpt-6.1-sol"\n')).toBe('gpt-6.1-sol');
     expect(parseTopLevelModel(`# comment\napproval_policy = "untrusted"\nmodel='gpt-5.5'  # 注释\n`)).toBe('gpt-5.5');
     expect(parseTopLevelModel('model_reasoning_effort = "high"\nmodel = "x"\n')).toBe('x');
@@ -91,7 +91,7 @@ describe('Codex 配置里的模型', () => {
     expect(parseTopLevelModel('model = gpt-5\n')).toBeNull();
   });
 
-  it('readCodexConfigModel：读 CODEX_HOME 下的 config.toml；没有文件为 null', async () => {
+  it('readCodexConfigModel: reads config.toml under CODEX_HOME; null when there is no file', async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-codex-config-'));
     try {
       const env = { CODEX_HOME: dir };

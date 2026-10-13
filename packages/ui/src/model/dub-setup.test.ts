@@ -58,8 +58,8 @@ const entry = (id: string, extra: Partial<LibraryEntrySummary> = {}): LibraryEnt
   ...extra,
 });
 
-describe('配成哪种语言', () => {
-  it('先列已有译文，再列先翻译的语言；已有译文的语言不再列，和原文同一种的不能选', () => {
+describe('which language to set up', () => {
+  it('lists existing translations first, then languages to translate first; languages with existing translations are not listed again, and the same language as the source cannot be selected', () => {
     const options = dubLanguageOptions('zh', [doc('t-en', 'translation', { language: 'en', name: '英文译文' })]);
     expect(options[0]).toMatchObject({ key: 'doc:t-en', language: 'en', translationId: 't-en', disabled: null });
     expect(options.some((o) => o.key === 'lang:en')).toBe(false);
@@ -67,7 +67,7 @@ describe('配成哪种语言', () => {
     expect(options.find((o) => o.key === 'lang:ja')).toMatchObject({ translationId: null, disabled: null });
   });
 
-  it('默认用第一份已有译文；没有时中文配英语、别的配简体中文', () => {
+  it('defaults to the first existing translation; otherwise Chinese pairs with English, and others pair with Simplified Chinese', () => {
     expect(defaultDubLanguage(dubLanguageOptions('zh', [doc('t-ja', 'translation', { language: 'ja' })]), 'zh')).toBe('doc:t-ja');
     expect(defaultDubLanguage(dubLanguageOptions('zh-CN', []), 'zh-CN')).toBe('lang:en');
     expect(defaultDubLanguage(dubLanguageOptions('en', []), 'en')).toBe('lang:zh-Hans');
@@ -89,7 +89,7 @@ describe('dubParams', () => {
     separateBackground: false,
   };
 
-  it('先翻译：带原文、目标语言、风格与文本模型；duck 带取整的 duckDb；分离关着时不传', () => {
+  it('translate first: passes source, target language, style and text model; duck includes the rounded duckDb; not passed when separation is off', () => {
     expect(dubParams(setup)).toEqual({
       videoId: 'v1',
       provider: 'openai',
@@ -104,14 +104,14 @@ describe('dubParams', () => {
     });
   });
 
-  it('用已有译文：只给 translationId，不给目标语言、原文、风格与文本模型', () => {
+  it('use existing translation: only translationId is passed, not target language, source, style or text model', () => {
     const params = dubParams({ ...setup, translationId: 't-en', voice: ' nova ', originalAudio: 'mute' });
     expect(params).toEqual({ videoId: 'v1', provider: 'openai', model: 'tts-1', voice: 'nova', originalAudio: 'mute', translationId: 't-en' });
     expect(params).not.toHaveProperty('separateBackground');
     expect(params).not.toHaveProperty('duckDb');
   });
 
-  it('分离打开时传 separateBackground: true（与 CLI 的 --separate-background 相同）', () => {
+  it('passes separateBackground: true when separation is on (same as the CLI\'s --separate-background)', () => {
     expect(dubParams({ ...setup, separateBackground: true, originalAudio: 'mute' })).toMatchObject({
       originalAudio: 'mute',
       separateBackground: true,
@@ -119,7 +119,7 @@ describe('dubParams', () => {
     expect(dubParams({ ...setup, separateBackground: true })).toMatchObject({ originalAudio: 'duck', separateBackground: true });
   });
 
-  it('默认模型时不传 provider/model；duckDb 夹在 1–60', () => {
+  it('provider/model are not passed for the default model; duckDb is clamped to 1–60', () => {
     const params = dubParams({ ...setup, voiceModel: null, textModel: null, style: '', duckDb: 99 });
     expect(params).toEqual({ videoId: 'v1', originalAudio: 'duck', duckDb: 60, documentId: 'speech', targetLanguage: 'en' });
     expect(clampDuckDb(0)).toBe(1);
@@ -127,7 +127,7 @@ describe('dubParams', () => {
   });
 });
 
-describe('说话人与音色', () => {
+describe('speakers and voices', () => {
   const body = {
     schema: 'cuccut.speech/1',
     speakers: [
@@ -143,7 +143,7 @@ describe('说话人与音色', () => {
     ],
   };
 
-  it('按转写的次序列出说的话的说话人与句数，没登记名字的照写 ID', () => {
+  it('lists speakers and their sentence counts in transcript order; unregistered names are shown as IDs', () => {
     expect(speechSpeakers(body)).toEqual([
       { speakerId: 'S1', name: '主持人', sentences: 1 },
       { speakerId: 'S2', name: '嘉宾', sentences: 2 },
@@ -152,7 +152,7 @@ describe('说话人与音色', () => {
     expect(speechSpeakers({ schema: 'cuccut.caption/1' })).toEqual([]);
   });
 
-  it('生效的音色：绑定 → 参数 voice → 模型默认；别家服务商的预置绑定不用；库里音色用不上时写原因', () => {
+  it('effective voice: binding → voice parameter → model default; another provider\'s preset binding is not used; when a library voice cannot be used, the reason is given', () => {
     const library = [entry('a'), entry('b', { consentDeclared: false })];
     const rows = speakerRows({
       speakers: speechSpeakers(body),
@@ -187,7 +187,7 @@ describe('说话人与音色', () => {
     expect(withVoice[0]).toMatchObject({ effective: { label: '声音 a', source: 'params' }, warning: '还没在 OpenAI 上克隆' });
   });
 
-  it('参数音色的下拉里库里用不上的不能选；绑定的下拉可以先绑上', () => {
+  it('in the voice parameter dropdown, library voices that cannot be used cannot be selected; the binding dropdown can bind first', () => {
     const library = [entry('a'), entry('c', { clones: [{ providerId: 'elevenlabs', state: 'stale' }] })];
     const params = voiceChoices({ info: info(), providerId: 'elevenlabs', providerLabel: 'ElevenLabs', library, defaultLabel: '模型默认', forParams: true });
     expect(params.map((c) => [c.key, c.disabled])).toEqual([
@@ -202,7 +202,7 @@ describe('说话人与音色', () => {
     expect(binding.find((c) => c.key === 'preset:nova')).toMatchObject({ voice: 'nova', providerId: 'elevenlabs' });
   });
 
-  it('改绑定：原位换掉、去掉或追加；库里音色不带 providerId', () => {
+  it('editing a binding: replace in place, remove, or append; library voices do not carry providerId', () => {
     const bindings = [
       { documentId: 'speech', speakerId: 'S1', voice: 'nova', providerId: 'openai' },
       { documentId: 'other', speakerId: 'S1', voice: 'alloy' },
@@ -219,7 +219,7 @@ describe('说话人与音色', () => {
   });
 });
 
-describe('授权', () => {
+describe('grants', () => {
   const refusal = new RpcError('forbidden', '没有授权把文稿与译文交给 OpenAI', {
     code: 'GRANT_REQUIRED',
     recipient: 'openai',
@@ -228,7 +228,7 @@ describe('授权', () => {
     remedy: { action: 'create-grant', hint: '发放一条外发授权后重试', commands: ['cuccut grants create --recipient openai'] },
   });
 
-  it('读出 GRANT_REQUIRED 的接收方、数据种类、视频与补救；别的拒绝不算', () => {
+  it('reads the recipient, data kind, video and remedy from GRANT_REQUIRED; other rejections do not count', () => {
     expect(grantRefusal(refusal)).toEqual({
       code: 'GRANT_REQUIRED',
       message: '没有授权把文稿与译文交给 OpenAI',
@@ -250,7 +250,7 @@ describe('授权', () => {
     );
   });
 
-  it('发放的那条：transcript、照拒绝的接收方、只限这个视频、用途、按次计不设金额上限', () => {
+  it('the issued grant: transcript, the recipient as rejected, limited to this video, the purpose, counted per use with no amount cap', () => {
     const parsed = grantRefusal(refusal)!;
     const purpose = grantPurpose('en', '访谈');
     expect(purpose).toBe('翻译配音：把「访谈」配成英语');
@@ -267,7 +267,7 @@ describe('授权', () => {
     expect(grantRequest({ ...parsed, videoId: null }, 'v2', 'x').scope).toEqual({ videoId: 'v2' });
   });
 
-  it('确认框写清外发什么、给谁、限哪个视频、用途；同一接收方同一组数据算同一次拒绝', () => {
+  it('the confirmation dialog states what is sent, to whom, for which video and the purpose; the same recipient with the same data set counts as one rejection', () => {
     const facts = grantFacts(grantRefusal(refusal)!, new Map([['openai', 'OpenAI']]), '访谈', '翻译配音');
     expect(facts.map(([label]) => label)).toEqual(['外发什么', '交给谁', '范围', '用途', '预算', '撤销']);
     expect(facts[2]![1]).toBe('只限视频「访谈」');

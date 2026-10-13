@@ -64,8 +64,8 @@ afterEach(async () => {
   await fs.rm(dir, { recursive: true, force: true });
 });
 
-describe('项目标记', () => {
-  it('新目录打开时写入标记，再次打开是同一个项目；新建项目也有标记', async () => {
+describe('project marker', () => {
+  it('a marker is written when a new directory is opened, and reopening it is the same project; newly created projects also have a marker', async () => {
     const work = await mkdir('作品');
     const first = await harness.openProject(work);
     const marker = JSON.parse(await fs.readFile(projectMarkerPath(work), 'utf8'));
@@ -78,7 +78,7 @@ describe('项目标记', () => {
     expect(await markerId(created.path)).toBe(created.id);
   });
 
-  it('移动之后按标记认出：id 不变，路径与跟着目录的名字更新，会话仍在且工作目录跟着换', async () => {
+  it('after moving, it is recognized by its marker: the id stays the same, the path and the name that follows the directory are updated, and the session remains with the working directory following it', async () => {
     const a = await mkdir('旧名');
     const project = await harness.openProject(a);
     const conversation = await harness.createConversation({ projectId: project.id });
@@ -98,7 +98,7 @@ describe('项目标记', () => {
     expect(await harness.openProject(c)).toMatchObject({ id: project.id, path: c, name: '我的片子' });
   });
 
-  it('复制出来的目录是新项目：副本换新标识，原项目与它的会话不受影响', async () => {
+  it('a copied directory is a new project: the copy gets a new identifier, and the original project and its sessions are unaffected', async () => {
     const original = await mkdir('原片');
     const project = await harness.openProject(original);
     const conversation = await harness.createConversation({ projectId: project.id });
@@ -119,7 +119,7 @@ describe('项目标记', () => {
     expect((await harness.openProject(copy)).id).toBe(opened.id);
   });
 
-  it('删掉标记：登记里有这个路径时沿用原来的 id（升级路径），没有时是新项目', async () => {
+  it('marker deleted: if the registry has this path, the original id is kept (upgrade path), otherwise it is a new project', async () => {
     const work = await mkdir('作品');
     const project = await harness.openProject(work);
     await fs.rm(path.join(work, '.ccut'), { recursive: true });
@@ -134,7 +134,7 @@ describe('项目标记', () => {
     expect(fresh.id).not.toBe(project.id);
   });
 
-  it('认不出的标记改名保留后当作没有；版本太新的拒绝打开且不改写', async () => {
+  it('an unrecognized marker is renamed and kept, then treated as absent; a marker from a newer version is refused and not rewritten', async () => {
     const broken = await mkdir('坏标记');
     await fs.mkdir(path.join(broken, '.ccut'));
     await fs.writeFile(projectMarkerPath(broken), '{ 不是 JSON');
@@ -167,7 +167,7 @@ describe('项目标记', () => {
     expect(harness.listProjects().some((p) => p.path === future)).toBe(false);
   });
 
-  it.skipIf(process.getuid?.() === 0)('目录不可写：明确报错，不登记没有标记的项目', async () => {
+  it.skipIf(process.getuid?.() === 0)('directory not writable: reports a clear error and does not register a project without a marker', async () => {
     const locked = await mkdir('只读');
     await fs.chmod(locked, 0o555);
     try {
@@ -180,7 +180,7 @@ describe('项目标记', () => {
     }
   });
 
-  it('登记丢了：按标记重建 id；启动时加载登记不写标记', async () => {
+  it('registry lost: the id is rebuilt from the marker; loading the registry at startup does not write markers', async () => {
     const work = await mkdir('作品');
     const project = await harness.openProject(work);
     await harness.shutdown();
@@ -205,7 +205,7 @@ describe('项目标记', () => {
 });
 
 /** Videos in a session without a project stay in its working directory; a project is created and bound only when the user creates one or deletes the session (architecture design §3.10), along with the migration at startup. */
-describe('无项目会话绑定项目', () => {
+describe('binds a project to a session without a project', () => {
   /** A fake video directory: any directory with `video.db` counts as a video (video format spec §1). */
   async function fakeVideo(dir: string): Promise<void> {
     await fs.mkdir(dir, { recursive: true });
@@ -218,7 +218,7 @@ describe('无项目会话绑定项目', () => {
       () => false,
     );
 
-  it('第一次绑定建项目（没有视频时名字取标题）、换工作目录、东西搬过去；重复与并发的调用拿回同一个项目', async () => {
+  it('first binding creates a project (the name comes from the title when there is no video), changes the working directory, and moves the contents; repeated and concurrent calls get back the same project', async () => {
     const conversation = await harness.createConversation({ title: '我的片子' });
     expect(conversation.projectId).toBeNull();
     expect(conversation.cwd).toBe(path.join(home.scratchDir, conversation.id));
@@ -248,7 +248,7 @@ describe('无项目会话绑定项目', () => {
     expect((await harness.ensureConversationProject(untitled.id)).name).toBe(HP.untitledProject().text);
   });
 
-  it('项目名取工作目录里最早建的视频；给了名字时用给的', async () => {
+  it('the project name is taken from the earliest-created video in the working directory; a given name is used when provided', async () => {
     const conversation = await harness.createConversation({ title: '帮我加字幕' });
     await fakeVideo(path.join(conversation.cwd, '访谈'));
     await new Promise((r) => setTimeout(r, 20));
@@ -263,7 +263,7 @@ describe('无项目会话绑定项目', () => {
     expect((await harness.ensureConversationProject(named.id, { name: '第 12 期' })).name).toBe('第 12 期');
   });
 
-  it('崩溃恢复：项目目录选定之后、会话绑定之前退出，下次接着用同一个目录，不产生第二个项目', async () => {
+  it('crash recovery: exit after the project directory is chosen and before the session is bound; next time the same directory is reused, and no second project is created', async () => {
     const conversation = await harness.createConversation({ title: '半途' });
     // Simulate a binding interrupted halfway: the chosen directory was recorded, created and registered, but the session is not yet bound.
     const chosen = path.join(home.projectsDir, '半途');
@@ -278,7 +278,7 @@ describe('无项目会话绑定项目', () => {
     expect(await exists(conversation.cwd)).toBe(false);
   });
 
-  it('启动迁移：无项目会话的工作目录与其中的视频不动；没有会话的收进「恢复的视频」（按界面语言命名，再次启动沿用），没有视频的删掉', async () => {
+  it('startup migration: working directories and videos of sessions without a project are left alone; directories without a session are moved into \'Recovered videos\' (named in the UI language, and reused on later startups); those without videos are deleted', async () => {
     const live = await harness.createConversation({ title: '旧会话' });
     await fakeVideo(path.join(live.cwd, '旧视频'));
     await fs.writeFile(path.join(live.cwd, 'exports.txt'), 'x');
@@ -318,7 +318,7 @@ describe('无项目会话绑定项目', () => {
     expect(await exists(path.join(recovered.path, '孤儿视频 2', 'video.db'))).toBe(true);
   });
 
-  it('启动迁移：属于项目的会话还留着的工作目录（回合中绑定后的链接或剩下的文件）收拾掉', async () => {
+  it('startup migration: working directories still left by sessions that belong to a project (links left after binding during a turn, or leftover files) are cleaned up', async () => {
     const conversation = await harness.createConversation({ title: '收尾' });
     const project = await harness.ensureConversationProject(conversation.id);
     const scratch = path.join(home.scratchDir, conversation.id);
@@ -334,7 +334,7 @@ describe('无项目会话绑定项目', () => {
     expect(await exists(path.join(project.path, 'late.txt'))).toBe(true);
   });
 
-  it('删除工作目录里还有视频的会话：先建以视频命名的项目搬进去再删，视频不丢；没有视频的工作目录随会话删掉', async () => {
+  it('deleting a session whose working directory still has videos: first create a project named after the video, move them in, then delete, so no video is lost; working directories without videos are deleted with the session', async () => {
     const legacy = await harness.createConversation({ title: '要删的' });
     await fakeVideo(path.join(legacy.cwd, '留下的视频'));
     await harness.deleteConversation(legacy.id);
@@ -350,7 +350,7 @@ describe('无项目会话绑定项目', () => {
     expect(harness.listProjects()).toHaveLength(1);
   });
 
-  it('旧版本放在 Runtime Home 里的工作目录：启动时搬到新位置，会话跟着换；属于项目的与没有会话的照旧收拾', async () => {
+  it('working directories from an older version stored in Runtime Home: moved to the new location at startup, and the session follows; those belonging to a project or without a session are cleaned up as before', async () => {
     await harness.shutdown();
     home = resolveRuntimeHome({ CUCCUT_HOME: path.join(dir, 'home'), CUCCUT_SESSIONS_DIR: path.join(dir, 'sessions') });
     const legacyDir = home.legacyScratchDir!;
@@ -389,7 +389,7 @@ describe('无项目会话绑定项目', () => {
     expect(await harness.migrateScratch()).toEqual({ moved: 0, folded: 0, recovered: 0, removed: 0 });
   });
 
-  it('视频还开着就不放进项目：拒绝（VIDEO_IN_USE），不建项目、不绑定、不搬；删会话同样拒绝；关掉之后照常放进去', async () => {
+  it('a video still open is not put into a project: refused (VIDEO_IN_USE), with no project created, bound or moved; deleting the session is refused too; after it is closed it is put in as usual', async () => {
     await harness.shutdown();
     let busy: string[] = [];
     const idleClosed: string[] = [];
@@ -431,7 +431,7 @@ describe('无项目会话绑定项目', () => {
     expect(await exists(conversation.cwd)).toBe(false);
   });
 
-  it('检查之后才打开的视频（竞态）：其余照搬，它留在工作目录里，关掉之后再搬', async () => {
+  it('a video opened after the check (race): the rest are moved, it stays in the working directory, and is moved after it is closed', async () => {
     await harness.shutdown();
     let busy: string[] = [];
     let checked = false;
@@ -474,7 +474,7 @@ describe('无项目会话绑定项目', () => {
     }
   });
 
-  it('共用工作目录（folderOf）：新会话在那条会话的工作目录里；共用的总是自己有目录的那条；那条属于项目时建在项目里', async () => {
+  it('shared working directory (folderOf): a new session goes into that session\'s working directory; the shared one is always the one that has its own directory; when that one belongs to a project, it is created inside the project', async () => {
     const owner = await harness.createConversation({ title: '原来的' });
     const guest = await harness.createConversation({ title: '切片', folderOf: owner.id });
     expect(guest).toMatchObject({ projectId: null, cwd: owner.cwd, folderOf: owner.id });
@@ -494,7 +494,7 @@ describe('无项目会话绑定项目', () => {
     expect(harness.getConversation(guest.id).conversation).toMatchObject({ cwd: owner.cwd, folderOf: owner.id });
   });
 
-  it('共用的会话放进项目：放进的是那条会话，共用它的一起进去，卡片改指向项目；删共用的会话不碰目录', async () => {
+  it('putting a shared session into a project: the session is moved in, sessions sharing it move along, and the card now points to the project; deleting a shared session does not touch the directory', async () => {
     const owner = await harness.createConversation({ title: '原来的' });
     await fakeVideo(path.join(owner.cwd, '访谈'));
     const guest = await harness.createConversation({ title: '切片', folderOf: owner.id });
@@ -522,7 +522,7 @@ describe('无项目会话绑定项目', () => {
     expect(await exists(owner.cwd)).toBe(false);
   });
 
-  it('删掉有别的会话共用目录的那条：先放进项目，共用它的跟着进去，目录不丢', async () => {
+  it('deleting the one whose directory other sessions share: first moved into a project, the sharing sessions move with it, and the directory is not lost', async () => {
     const owner = await harness.createConversation({ title: '原来的' });
     await fs.writeFile(path.join(owner.cwd, 'notes.txt'), '笔记');
     const guest = await harness.createConversation({ title: '切片', folderOf: owner.id });
@@ -533,7 +533,7 @@ describe('无项目会话绑定项目', () => {
     expect(await fs.readFile(path.join(conversation.cwd, 'notes.txt'), 'utf8')).toBe('笔记');
   });
 
-  it('启动时跟上那条会话：它已经进了项目的一起进；它没了的，第一条接过目录，其余改共用它', async () => {
+  it('at startup, follow that session: if it is already in a project, the rest move in too; if it is gone, the first one takes over the directory and the others share it', async () => {
     const owner = await harness.createConversation({ title: '原来的' });
     await fakeVideo(path.join(owner.cwd, '访谈'));
     const first = await harness.createConversation({ title: '一', folderOf: owner.id });
@@ -574,8 +574,8 @@ describe('无项目会话绑定项目', () => {
   }
 });
 
-describe('幻灯片回执', () => {
-  it('同一份 deck 只有一条：再次校验通过时更新标题、页数与任务，id 与位置不变；没有任务时保留原来的', async () => {
+describe('slide receipt', () => {
+  it('one entry per deck: when validation passes again, the title, page count and task are updated and the id and position stay the same; the original task is kept when there is no task', async () => {
     const conversation = await harness.createConversation({ title: '做幻灯片' });
     const target = { conversationId: conversation.id, path: 'decks/talk' };
     harness.recordSlidesCreated(conversation.id, 'task_1', { target, title: '初稿', slideCount: 3 });
@@ -594,13 +594,13 @@ describe('幻灯片回执', () => {
 describe('withEditorContext', () => {
   const base = { videoId: 'vid', videoName: '样片', videoPath: 'videos/样片', revision: '3', selection: [], playheadSeconds: 1.5 };
 
-  it('带界面语言时在上下文块里写一行', () => {
+  it('writes one line in the context block when the UI language is given', () => {
     const text = withEditorContext('剪一下', { ...base, uiLanguage: 'zh-Hans' });
     expect(text).toContain('<cuccut-editor-context>');
     expect(text).toContain('\n用户的界面语言是 zh-Hans。\n');
   });
 
-  it('旧客户端没给界面语言时不写这一行', () => {
+  it('does not write this line when an older client gives no UI language', () => {
     expect(withEditorContext('剪一下', base)).not.toContain('界面语言');
   });
 });

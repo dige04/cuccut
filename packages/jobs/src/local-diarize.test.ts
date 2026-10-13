@@ -38,7 +38,7 @@ async function writeRepo(root: string, repo: string, revision: string): Promise<
   );
 }
 
-describe('已有转写的说话人区分（假 Model Worker）', () => {
+describe('speaker diarization of existing transcription (fake Model Worker)', () => {
   let dir: string;
   let controlFile: string;
   let recordFile: string;
@@ -70,7 +70,7 @@ describe('已有转写的说话人区分（假 Model Worker）', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('job.run（diarize）：词时间与刻度交给 Worker，输出是 staging 里的 speakers.json，进度按阶段', async () => {
+  it('job.run (diarize): word timing and scale are handed to the Worker, the output is speakers.json in staging, and progress is by stage', async () => {
     const input = path.join(dir, 'input.wav');
     await fs.writeFile(input, 'not really audio');
     const staging = path.join(dir, 'staging');
@@ -107,7 +107,7 @@ describe('已有转写的说话人区分（假 Model Worker）', () => {
     });
   });
 
-  it('Worker 不声明 diarize：load-failed（capability-missing），模型包不停用', async () => {
+  it('Worker does not declare diarize: load-failed (capability-missing), the model pack is not disabled', async () => {
     await control({ capabilities: ['transcribe'] });
     const error = await provider
       .diarize(

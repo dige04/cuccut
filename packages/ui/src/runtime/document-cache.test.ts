@@ -16,8 +16,8 @@ function setup() {
   return { cache, read, pending, listener, settle };
 }
 
-describe('文档正文缓存', () => {
-  it('正在取的不重复发；取到之后通知', async () => {
+describe('document body cache', () => {
+  it('an in-progress fetch is not sent again; notify once fetched', async () => {
     const { cache, read, pending, listener, settle } = setup();
     cache.load('doc', 'r1');
     cache.load('doc', 'r1');
@@ -28,7 +28,7 @@ describe('文档正文缓存', () => {
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
-  it('预览重试：忘掉路上的请求、再要就重新发，迟到的不收；取到的照留', async () => {
+  it('preview retry: forget in-flight requests, a new request sends again, late ones are not kept; fetched content is still kept', async () => {
     const { cache, read, pending, settle } = setup();
     cache.load('doc', 'r1');
     cache.load('kept', 'r1');

@@ -12,8 +12,8 @@ const text = (patch: Partial<Place> = {}, style: Record<string, unknown> = { fon
   ({ id: 't', type: 'text', text: '标题', place: box(patch), style }) as unknown as PlacedItem;
 const image = (id: string, patch: Partial<Place> = {}) => ({ id, type: 'image', mode: 'pip', place: box(patch) }) as unknown as PlacedItem;
 
-describe('单件手势', () => {
-  it('移动：吸到画布中线；⌥ 不吸', () => {
+describe('single-item gestures', () => {
+  it('move: snaps to the canvas center line; ⌥ disables snapping', () => {
     const member = memberOf(image('a'), canvas);
     const g = { kind: 'move' as const, member, p0: { x: 480, y: 270 } };
     const snapped = stepGesture(g, { x: 955, y: 270 }, free, env);
@@ -22,7 +22,7 @@ describe('单件手势', () => {
     expect(stepGesture(g, { x: 955, y: 270 }, { shift: false, alt: true }, env).poses[0]).toMatchObject({ cx: 955 });
   });
 
-  it('旋转绕中心：转 90°，中心不动，只写角度', () => {
+  it('rotate around center: turns 90°, center stays put, only the angle is written', () => {
     const item = image('a');
     const member = memberOf(item, canvas);
     const pivot = pivotOf(item, canvas);
@@ -33,7 +33,7 @@ describe('单件手势', () => {
     expect(gestureOperations('s', [member], poses, 1, canvas)).toEqual([{ type: 'setTransform', sequenceId: 's', itemId: 'a', rot: 90 }]);
   });
 
-  it('四角等比：文字连字号一起放大，草稿与提交同一份', () => {
+  it('proportional corner scaling: text font size scales with it, and the draft and commit are the same', () => {
     const item = text();
     const member = memberOf(item, canvas);
     const g = { kind: 'corner' as const, member, handle: 'se' as const, p0: { x: 576, y: 366 } };
@@ -48,7 +48,7 @@ describe('单件手势', () => {
     expect(patch.place).toEqual({ x: 27.5, y: 29.4, w: 15 });
   });
 
-  it('改边：文字的右边只改框宽（高写进 scaleY），不动字号', () => {
+  it('edge resize: text\'s right edge changes only the box width (height goes into scaleY), font size stays', () => {
     const member = memberOf(text(), canvas);
     const g = { kind: 'edge' as const, member, handle: 'e' as const, p0: { x: 576, y: 270 } };
     const frame = stepGesture(g, { x: 626, y: 300 }, free, env);
@@ -56,14 +56,14 @@ describe('单件手势', () => {
     expect(ops).toEqual([{ type: 'setTransform', sequenceId: 's', itemId: 't', x: 26.3, w: 12.6, scaleY: 0.794 }]);
   });
 
-  it('没动过：不出操作', () => {
+  it('untouched: no operation', () => {
     const member = memberOf(image('a'), canvas);
     expect(gestureOperations('s', [member], [member.start], 1, canvas)).toEqual([]);
   });
 });
 
-describe('多选手势', () => {
-  it('整体平移：位移按全组夹', () => {
+describe('multi-select gestures', () => {
+  it('whole move: the offset is clamped for the whole group', () => {
     const members = [memberOf(image('a', { x: 3.125 }), canvas), memberOf(image('b'), canvas)];
     const g = { kind: 'group-move' as const, members, p0: { x: 0, y: 0 } };
     const { poses } = stepGesture(g, { x: -200, y: 0 }, free, env);
@@ -71,7 +71,7 @@ describe('多选手势', () => {
     expect(poses.map((p) => p.cx)).toEqual([57.6, 477.6]);
   });
 
-  it('整体缩放：一笔里每件一条，文字另改字号', () => {
+  it('whole scale: one entry per item in a single stroke, text font size changed separately', () => {
     const members = [memberOf(image('a', { x: 20 }), canvas), memberOf(text({ x: 30 }), canvas)];
     const bounds = boundsOf(members.map((m) => aabbOf(m.start)))!;
     const g = { kind: 'group-scale' as const, members, bounds, p0: { x: bounds.x + bounds.w, y: bounds.y + bounds.h } };
@@ -83,8 +83,8 @@ describe('多选手势', () => {
   });
 });
 
-describe('键盘与归零', () => {
-  it('微调：同一位移，只写位置', () => {
+describe('keyboard and reset', () => {
+  it('nudge: same offset, only position is written', () => {
     const ops = nudgeOperations('s', [image('a'), image('b', { y: 50 })], { x: 19.2, y: 0 }, canvas);
     expect(ops).toEqual([
       { type: 'setTransform', sequenceId: 's', itemId: 'a', x: 26 },
@@ -92,12 +92,12 @@ describe('键盘与归零', () => {
     ]);
   });
 
-  it('旋转归零：0° 的不提交', () => {
+  it('rotation reset: a 0° change is not committed', () => {
     expect(resetRotation('s', image('a'))).toEqual([]);
     expect(resetRotation('s', image('a', { rot: 30 }))).toEqual([{ type: 'setTransform', sequenceId: 's', itemId: 'a', rot: 0 }]);
   });
 
-  it('字号：夹在 1–400；不认得的样式不动', () => {
+  it('font size: clamped to 1–400; unrecognized styles stay as they are', () => {
     expect(scaledFontSize(text({}, { fontSize: 300 }), 2)).toBe(400);
     expect(scaledFontSize(text({}, {}), 0.5)).toBe(15);
     expect(scaledFontSize(text({}, { schema: 'other/1' }), 2)).toBeNull();

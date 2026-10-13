@@ -135,8 +135,8 @@ function input(seq: Sequence, missing: MissingAsset[] | null, extra: Partial<Sta
   return { sequence: seq, assets, missing, unplayable: new Map(), canPick: true, ...extra };
 }
 
-describe('主媒体', () => {
-  it('根序列里启用的视频与音频，按起点排，同时开始的视频在前，同一版本只算一次', () => {
+describe('main media', () => {
+  it('enabled videos and audio in the root sequence, sorted by start; videos that start at the same time come first; the same version counts once', () => {
     const seq = sequence([audio('x', 'm', 0), video('y', 'b', 60), video('w', 'a', 0), video('dup', 'a', 120), image('i', 'p')]);
     expect(primaryMedia(seq).map((m) => [m.ref.id, m.kind])).toEqual([
       ['a', 'video'],
@@ -145,20 +145,20 @@ describe('主媒体', () => {
     ]);
   });
 
-  it('停用的实例不算：它不放，缺了也不影响画面', () => {
+  it('disabled instances do not count: they do not play, and missing ones do not affect the picture', () => {
     expect(primaryMedia(sequence([video('v', 'a', 0, { enabled: false })]))).toEqual([]);
   });
 });
 
-describe('舞台提示', () => {
-  it('主媒体都在、没有主媒体、还没查到时都不出卡', () => {
+describe('stage hints', () => {
+  it('no card is shown when all main media is present, there is no main media, or the check has not finished', () => {
     expect(stageMediaNotice(input(sequence([video('v', 'a', 0)]), []))).toBeNull();
     expect(stageMediaNotice(input(sequence([image('i', 'p')]), [lost('p')])), '只缺图片不出卡').toBeNull();
     expect(stageMediaNotice(input(sequence([]), [lost('a')])), '空白视频不出卡').toBeNull();
     expect(stageMediaNotice(input(sequence([video('v', 'a', 0)]), null))).toBeNull();
   });
 
-  it('找不到源文件：点名文件名，不点整条路径；登记了盘时提示接上它', () => {
+  it('source file not found: names the file, not the full path; when a drive is registered, prompts to reconnect it', () => {
     const n = stageMediaNotice(input(sequence([video('v', 'a', 0)]), [lost('a', 'missing', { volume: '素材盘' })]))!;
     expect(n.kind).toBe('missing');
     expect(n.title).toBe('找不到源文件');
@@ -171,7 +171,7 @@ describe('舞台提示', () => {
     expect(n.hint).toBe(C.relinkHint);
   });
 
-  it('文件变了、越出项目目录：各自写明原因，也都能重新关联；盘的提示只在找不到时说', () => {
+  it('file changed or moved outside the project folder: each states its reason and can be relinked; the drive hint appears only when not found', () => {
     const seq = sequence([video('v', 'b', 0)]);
     const changed = stageMediaNotice(input(seq, [lost('b', 'changed', { volume: '素材盘' })]))!;
     expect(changed.title).toBe('源文件变了');
@@ -184,32 +184,32 @@ describe('舞台提示', () => {
     expect(outside.name).toBe('b-roll.mov');
   });
 
-  it('多个主媒体读不到：卡上写时间线上第一个，并说还有几个', () => {
+  it('several main media unreadable: the card names the first on the timeline and says how many others there are', () => {
     const seq = sequence([video('late', 'b', 90), video('early', 'a', 0), audio('m', 'm', 30)]);
     const n = stageMediaNotice(input(seq, [lost('b'), lost('a'), lost('m', 'changed')]))!;
     expect(n.name).toBe('interview-feb.mp4');
     expect(n.more).toBe(C.more(2));
   });
 
-  it('缺的是音频：说听不到这段声音，不说没有画面', () => {
+  it('missing audio: says this sound cannot be heard, not that there is no picture', () => {
     const n = stageMediaNotice(input(sequence([audio('m', 'm', 0)]), [lost('m')]))!;
     expect(n.body).toContain('听不到这段声音');
     expect(n.body).not.toContain('画面');
   });
 
-  it('只看实例引用的那个版本：缺的是别的版本时不出卡', () => {
+  it('only the version the instance references counts: no card when a different version is missing', () => {
     const seq = sequence([video('v', 'a', 0)]);
     expect(stageMediaNotice(input(seq, [{ ...lost('a'), revision: '2' }]))).toBeNull();
   });
 
-  it('网页宿主没有选文件：不放按钮，说明要到桌面端找回', () => {
+  it('web host has no file picker: no button, explains to recover it in the desktop app', () => {
     const n = stageMediaNotice(input(sequence([video('v', 'a', 0)]), [lost('a')], { canPick: false }))!;
     expect(n.relink).toBeNull();
     expect(n.hint).toBe(C.desktopOnly);
     expect(n.hint).not.toContain('影片');
   });
 
-  it('收在视频目录里的素材、旧版本：不能重新关联，写明原因', () => {
+  it('media stored in the video folder and old versions: cannot be relinked, with the reason stated', () => {
     const managedOne = stageMediaNotice(input(sequence([video('v', 'z', 0)]), [lost('z')]))!;
     expect(managedOne.name).toBe('z-name');
     expect(managedOne.relink).toBeNull();
@@ -221,7 +221,7 @@ describe('舞台提示', () => {
     expect(old.hint).toBe(C.oldRevision);
   });
 
-  it('文件在、播放器打不开：附播放器原话，不给重新关联；读不到的排在它前面时先说读不到的', () => {
+  it('file exists but the player cannot open it: attaches the player\'s own message and offers no relink; unreadable ones listed before it are mentioned first', () => {
     const seq = sequence([video('v', 'a', 0), video('w', 'b', 90)]);
     const unplayable = new Map([['a@1', 'DEMUXER_ERROR_NO_SUPPORTED_STREAMS']]);
     const bad = stageMediaNotice(input(seq, [], { unplayable }))!;
@@ -237,22 +237,22 @@ describe('舞台提示', () => {
     expect(both.more).toBe(C.more(1));
   });
 
-  it('所有文案按术语表写「视频」', () => {
+  it('all copy uses "video" per the glossary', () => {
     const texts = [...Object.values(C.titles), ...Object.values(C.causes), C.relinkHint, C.desktopOnly, C.managed, C.oldRevision];
     for (const text of texts) expect(text).not.toContain('影片');
   });
 });
 
-describe('文件名', () => {
-  it('取最后一段，Windows 路径也认；没有就原样', () => {
+describe('file name', () => {
+  it('takes the last segment, Windows paths included; returns the input as is when there is no separator', () => {
     expect(fileName('/Volumes/素材盘/interview-feb.mp4')).toBe('interview-feb.mp4');
     expect(fileName('C:\\clips\\a.mov')).toBe('a.mov');
     expect(fileName('')).toBe('');
   });
 });
 
-describe('什么时候重查', () => {
-  it('素材的位置、存放方式、当前版本变了，指纹就变；别的不变', () => {
+describe('when to re-check', () => {
+  it('the fingerprint changes when media\'s location, storage mode or current version changes; nothing else does', () => {
     const before = assetsFingerprint(assets);
     expect(assetsFingerprint({ ...assets })).toBe(before);
     expect(assetsFingerprint({ ...assets, a: linked('a', '/Users/me/interview-feb.mp4') })).not.toBe(before);
@@ -262,18 +262,18 @@ describe('什么时候重查', () => {
     expect(assetsFingerprint(fewer)).not.toBe(before);
   });
 
-  it('上次读不到、这次读得到的素材要重新载入；第一次查不算恢复', () => {
+  it('media unreadable last time but readable now is reloaded; the first check does not count as recovery', () => {
     expect(recoveredAssets([lost('a'), lost('b')], [lost('b')])).toEqual(['a']);
     expect(recoveredAssets(null, [])).toEqual([]);
     expect(recoveredAssets([lost('a')], [lost('a', 'changed')])).toEqual([]);
   });
 });
 
-describe('放不出来的判据', () => {
+describe('criteria for playback failure', () => {
   const ref = { id: 'a', revision: '1' };
   const decode = { kind: 'error', code: 3, message: 'PIPELINE_ERROR_DECODE' } as const;
 
-  it('换了地址还是解不了才算：第一次报错可能只是句柄过期', () => {
+  it('counts only when it still cannot be resolved after a new address: a first error may just be an expired handle', () => {
     let log: PlaybackLog = {};
     log = notePlayback(log, 'video:a@1#0', ref, decode);
     expect(unplayableRefs(log).size).toBe(0);
@@ -281,14 +281,14 @@ describe('放不出来的判据', () => {
     expect(unplayableRefs(log).get('a@1')).toBe('PIPELINE_ERROR_DECODE');
   });
 
-  it('重取之后载入成功就清零', () => {
+  it('resets to zero once loading succeeds after re-fetching', () => {
     let log: PlaybackLog = notePlayback({}, 'k', ref, decode);
     log = notePlayback(log, 'k', ref, { kind: 'loaded' });
     log = notePlayback(log, 'k', ref, decode);
     expect(unplayableRefs(log).size).toBe(0);
   });
 
-  it('网络中断、中止、地址取不到都不算放不出来', () => {
+  it('network interruption, abort, or failure to get the address do not count as playback failure', () => {
     let log: PlaybackLog = {};
     for (let i = 0; i < 3; i++) {
       log = notePlayback(log, 'k', ref, { kind: 'error', code: 2, message: 'network' });
@@ -297,7 +297,7 @@ describe('放不出来的判据', () => {
     expect(log).toEqual({});
   });
 
-  it('浏览器没给原话时按错误码说一句', () => {
+  it('when the browser gives no message, says one line based on the error code', () => {
     let log: PlaybackLog = {};
     log = notePlayback(log, 'k', ref, { kind: 'error', code: 4, message: '' });
     log = notePlayback(log, 'k', ref, { kind: 'error', code: 4, message: ' ' });

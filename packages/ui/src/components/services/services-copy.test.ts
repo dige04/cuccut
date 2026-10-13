@@ -7,8 +7,8 @@ afterEach(() => {
   setLocale('zh-Hans');
 });
 
-describe('服务页文案', () => {
-  it('英文界面读英文', () => {
+describe('services page copy', () => {
+  it('English UI reads English', () => {
     vi.stubEnv('CUCCUT_LOCALE', 'en');
     setLocale('en');
     expect(MCP_COPY.title).toBe('MCP service');
@@ -21,7 +21,7 @@ describe('服务页文案', () => {
     expect(COMMON_COPY.lightsLabel(['MCP service: on', 'Web service: off'])).toBe('MCP service: on, Web service: off');
   });
 
-  it('简体中文译文照旧', () => {
+  it('Simplified Chinese translation unchanged', () => {
     expect(MCP_COPY.title).toBe('MCP 服务');
     expect(APPROVAL_CARD_COPY.video('发布会')).toBe('视频「发布会」');
     expect(COMMON_COPY.lightsLabel(['甲', '乙'])).toBe('甲，乙');

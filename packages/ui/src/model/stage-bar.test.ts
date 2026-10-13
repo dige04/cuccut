@@ -85,15 +85,15 @@ function videoAsset(id: string, width: number, height: number): AssetRecord {
 
 const hd = { width: 1920, height: 1080 };
 
-describe('画幅表', () => {
-  it('认出表里的档，表里的优先于「原始」', () => {
+describe('aspect ratio table', () => {
+  it('recognizes a preset in the table; table presets take priority over "original"', () => {
     expect(stageRatioOf(hd, hd)).toBe('16:9');
     expect(stageRatioOf({ width: 2538, height: 1080 }, null)).toBe('2.35:1');
     expect(stageRatioOf({ width: 1080, height: 1350 }, { width: 1080, height: 1350 })).toBe(ORIGINAL_RATIO);
     expect(stageRatioOf({ width: 1080, height: 1350 }, hd)).toBeNull();
   });
 
-  it('钮上的字：表里的照写，别的约分，约不小写成小数', () => {
+  it('button label: table presets are written as is, others are reduced, and a ratio that cannot be reduced is written as a decimal', () => {
     expect(ratioText(hd)).toBe('16:9');
     expect(ratioText({ width: 1080, height: 1350 })).toBe('4:5');
     expect(ratioText({ width: 2520, height: 1080 })).toBe('7:3');
@@ -103,7 +103,7 @@ describe('画幅表', () => {
     expect(ratioText({ width: 1000, height: 1234 })).toBe('1:1.23');
   });
 
-  it('换一档：短边不变，「原始」按主视频的比例，没有视频时不换', () => {
+  it('switching a preset: the short side stays, "original" follows the main video\'s ratio, and nothing changes when there is no video', () => {
     expect(stageRatioCanvas(hd, '9:16', null)).toEqual({ width: 1080, height: 1920 });
     expect(stageRatioCanvas(hd, '2.35:1', null)).toEqual({ width: 2538, height: 1080 });
     expect(stageRatioCanvas(hd, ORIGINAL_RATIO, { width: 1080, height: 1350 })).toEqual({ width: 1080, height: 1350 });
@@ -111,14 +111,14 @@ describe('画幅表', () => {
     expect(stageRatioCanvas(hd, '5:4', null)).toBeNull();
   });
 
-  it('「原始」取主媒体里第一段视频的显示尺寸', () => {
+  it('"original" takes the display size of the first video in the main media', () => {
     const assets = { a: videoAsset('a', 1080, 1350) };
     expect(sourceSize(sequence([video('v', 'a')]), assets)).toEqual({ width: 1080, height: 1350 });
     expect(sourceSize(sequence([]), assets)).toBeNull();
     expect(sourceSize(sequence([video('v', 'missing')]), assets)).toBeNull();
   });
 
-  it('自定义：要正数，长边不超过引擎上限', () => {
+  it('custom: must be positive, long side not above the engine limit', () => {
     expect(customRatio(hd, 21, 9)).toEqual({ ok: true, canvas: { width: 2520, height: 1080 } });
     expect(customRatio(hd, 0, 9)).toEqual({ ok: false, reason: 'invalid' });
     expect(customRatio(hd, Number.NaN, 9)).toEqual({ ok: false, reason: 'invalid' });
@@ -127,14 +127,14 @@ describe('画幅表', () => {
     expect(edge.ok && edge.canvas.width).toBe(CANVAS_SIDE_MAX);
   });
 
-  it('竖幅才是竖幅', () => {
+  it('only portrait is portrait', () => {
     expect(isPortrait({ width: 1080, height: 1920 })).toBe(true);
     expect(isPortrait({ width: 1080, height: 1080 })).toBe(false);
   });
 });
 
-describe('平台安全区', () => {
-  it('三块遮挡区不重叠，安全框夹在中间', () => {
+describe('platform safe area', () => {
+  it('three obstruction zones do not overlap, and the safe frame sits between them', () => {
     const [top, right, bottom] = safeZones();
     expect(top).toMatchObject({ key: 'top', y: 0, h: 8 });
     expect(right).toMatchObject({ key: 'right', x: 82, y: 8, h: 68 });

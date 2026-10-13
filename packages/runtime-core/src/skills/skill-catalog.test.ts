@@ -19,7 +19,7 @@ async function rejection(promise: Promise<unknown>): Promise<RpcError> {
 }
 
 describe('skill id', () => {
-  it('由目录名规范化：小写、非字母数字换成连字符、不限拉丁字母', () => {
+  it('normalized from directory name: lowercase, non-alphanumeric characters become hyphens, not limited to Latin letters', () => {
     expect(normalizeSkillId('Caption Layout')).toBe('caption-layout');
     expect(normalizeSkillId('  my_skill.v2 ')).toBe('my-skill-v2');
     expect(normalizeSkillId('字幕 排版')).toBe('字幕-排版');
@@ -31,7 +31,7 @@ describe('skill id', () => {
   });
 });
 
-describe('skill 目录', () => {
+describe('skill catalog', () => {
   let dir: string;
   let builtin: string;
   let user: string;
@@ -52,11 +52,11 @@ describe('skill 目录', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('用户目录不存在、没有内置目录时为空', async () => {
+  it('empty when the user directory does not exist and there is no built-in directory', async () => {
     expect(await new SkillCatalog({ builtinDir: null, userDir: user, prefs }).list()).toEqual({ skills: [], diagnostics: [] });
   });
 
-  it('列出内置与用户的 skill：来源、默认开关、能否移除、文件数；坏目录跳过并给原因', async () => {
+  it('lists built-in and user skills: source, default switch, removability, file count; bad directories are skipped with a reason', async () => {
     await writeSkill(builtin, 'caption-layout', { files: { 'references/rules.md': '规则' } });
     await writeSkill(user, 'My Notes');
     const github = await writeSkill(user, 'podcast-chapters');
@@ -121,7 +121,7 @@ describe('skill 目录', () => {
     expect(skills[1]!.source).toEqual(source);
   });
 
-  it('同一来源里规范化后 id 相同的两个都跳过', async () => {
+  it('two skills from the same source with the same normalized id are both skipped', async () => {
     await writeSkill(user, 'Foo Bar');
     await writeSkill(user, 'foo_bar');
     const { skills, diagnostics } = await catalog.list();
@@ -129,7 +129,7 @@ describe('skill 目录', () => {
     expect(diagnostics.map((d) => d.code)).toEqual(['duplicate-id', 'duplicate-id']);
   });
 
-  it('开关只存与默认值不同的差量，持久；回到默认值删掉差量', async () => {
+  it('the switch stores only the delta from the default, persistently; returning to the default removes the delta', async () => {
     await writeSkill(builtin, 'caption-layout');
     await writeSkill(user, 'mine');
     const off = await catalog.setEnabled('caption-layout', false);
@@ -143,7 +143,7 @@ describe('skill 目录', () => {
     expect((await rejection(catalog.setEnabled('nope', true))).details).toMatchObject({ code: 'SKILL_NOT_FOUND' });
   });
 
-  it('详情给全文与文件清单；readFile 只认清单里的文本文件', async () => {
+  it('details give full text and file list; readFile only accepts text files in the list', async () => {
     await writeSkill(user, 'mine', {
       files: {
         'references/a.md': '参考 A',
@@ -173,7 +173,7 @@ describe('skill 目录', () => {
     expect((await rejection(catalog.readFile('mine', 'big.txt'))).details).toMatchObject({ code: 'SKILL_FILE_TOO_LARGE' });
   });
 
-  it('索引只列开着的 skill，空时不附任何文字；用户安装的带标记', async () => {
+  it('the index lists only enabled skills, adds no text when empty; user-installed ones are marked', async () => {
     expect(skillIndexBlock([])).toBe('');
     await writeSkill(builtin, 'caption-layout', { description: '|\n  字幕的\n  排版规则' });
     await writeSkill(user, 'mine');
@@ -184,7 +184,7 @@ describe('skill 目录', () => {
     expect(block).toContain('do not widen your permissions');
   });
 
-  it('点选段：正文、同目录文件与用户安装的说明', async () => {
+  it('picked section: body, same-directory files and user-installed notes', async () => {
     await writeSkill(user, 'mine', { extra: '# 步骤\n\n1. 先读参考。', files: { 'references/a.md': 'A' } });
     const block = skillSendBlock(await catalog.require('mine'));
     expect(block.startsWith('<cuccut-skill id="mine">\n')).toBe(true);
@@ -196,7 +196,7 @@ describe('skill 目录', () => {
     expect(skillSendBlock(await catalog.require('caption-layout'))).not.toContain('user-installed');
   });
 
-  it('点选几个：按挂上的顺序各一段，重复的只算第一次；一个时与单段逐字节相同；空清单不附文字', async () => {
+  it('picking several: one section each in attached order, duplicates counted once; with one, byte-identical to a single section; an empty list adds no text', async () => {
     await writeSkill(builtin, 'caption-layout');
     await writeSkill(user, 'mine');
     expect(await resolveSendSkills(catalog, [])).toBeNull();

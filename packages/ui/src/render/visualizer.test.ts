@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { WAVE_STYLES, waveStyleKey } from './visualizer.ts';
 
-describe('声波样式', () => {
-  it('10 款，键序是属性页目录的次序；旧名合并到新款上', () => {
+describe('waveform styles', () => {
+  it('10 styles, key order follows the inspector\'s catalog order; old names are merged into the new styles', () => {
     expect(Object.keys(WAVE_STYLES)).toEqual([
       'bars',
       'bars_rounded',
@@ -24,7 +24,7 @@ describe('声波样式', () => {
     expect(waveStyleKey('nope')).toBeNull();
   });
 
-  it('时域的两款是 −120 / −10 那扇窄窗、没有 dB 控件；频谱款是 −80 / 40', () => {
+  it('the two time-domain styles use the narrow −120 / −10 window with no dB control; the spectrum styles use −80 / 40', () => {
     expect(WAVE_STYLES.oscilloscope).toMatchObject({ hasControl: false, minDb: -120, maxDb: -10 });
     expect(WAVE_STYLES.ring_wave).toMatchObject({ hasControl: false, aspect: 'square' });
     expect(WAVE_STYLES.dots).toMatchObject({ hasControl: true, minDb: -80, maxDb: 40, secondaryColor: '#FF4C45' });

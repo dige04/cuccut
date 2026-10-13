@@ -19,14 +19,14 @@ afterEach(async () => {
 const at = '2026-10-06T00:00:00.000Z';
 
 describe('AgentProviderStore', () => {
-  it('没有文件或文件损坏时当没有', async () => {
+  it('treated as none when there is no file or the file is corrupt', async () => {
     expect(await new AgentProviderStore(file).load()).toEqual([]);
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, '{ not json');
     expect(await new AgentProviderStore(file).load()).toEqual([]);
   });
 
-  it('丢掉不合法的条目：id 写法不对、内置 id、重名、命令为空、名字为空', async () => {
+  it('drops invalid entries: malformed id, built-in id, duplicate name, empty command, empty name', async () => {
     await fs.mkdir(path.dirname(file), { recursive: true });
     const ok = { id: 'my-agent', name: 'Mine', command: ['my-agent', '--acp'], env: { A: '1', B: 2 }, addedAt: at };
     await fs.writeFile(
@@ -46,7 +46,7 @@ describe('AgentProviderStore', () => {
     expect(await new AgentProviderStore(file).load()).toEqual([{ ...ok, env: { A: '1' } }]);
   });
 
-  it('加与删落盘，文件权限 0600；重复的 id 抛错，删不存在的返回 false', async () => {
+  it('add and remove are written to disk with file mode 0600; a duplicate id throws, removing a nonexistent one returns false', async () => {
     const store = new AgentProviderStore(file);
     await store.load();
     await store.add({ id: 'one', name: 'One', command: ['one'], addedAt: at });

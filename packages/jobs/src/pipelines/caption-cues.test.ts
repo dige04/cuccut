@@ -22,8 +22,8 @@ function speechBody(list: W[]) {
   };
 }
 
-describe('读转写（与编辑器的 speech-cues.ts 同一条规则）', () => {
-  it('零时长的词不丢：后面有空隙就占一小段（至多 0.08 秒），整句进同一条字幕', () => {
+describe('reading transcription (same rule as the editor\'s speech-cues.ts)', () => {
+  it('zero-duration words are not dropped: if a gap follows, they take a short slice (at most 0.08 seconds), the whole sentence goes into one subtitle cue', () => {
     // Real sample: the aligner resolved "ask—you" to the same cell, and there is a 0.24-second gap after it.
     const read = readSpeechWords(
       speechBody([
@@ -45,7 +45,7 @@ describe('读转写（与编辑器的 speech-cues.ts 同一条规则）', () => 
     expect(body.cues).toEqual([{ id: 'q-w1', start: 14716, end: 15436, text: 'just ask—you know,', words: { first: 'w1', last: 'w3' } }]);
   });
 
-  it('没有空隙的零时长词把文字并进相邻的词（前面有词接前面，没有就接后面）；隐藏的词不进字幕，但它的时间照样算空隙的边界', () => {
+  it('a zero-duration word without a gap merges its text into the adjacent word (joins the previous word if there is one, otherwise the next); hidden words stay out of subtitles, but their timing still counts as gap boundaries', () => {
     const read = readSpeechWords(
       speechBody([
         ['w1', 1, 1, 'to'],
@@ -64,7 +64,7 @@ describe('读转写（与编辑器的 speech-cues.ts 同一条规则）', () => 
     expect(deriveCues(read.words).map((cue) => cue.text)).toEqual(['to be frank,', 'yes.', 'Bye.']);
   });
 
-  it('隐藏的、空白的词不进字幕；不是转写正文返回 null', () => {
+  it('hidden or blank words stay out of subtitles; if the transcription has no body, return null', () => {
     const read = readSpeechWords(
       speechBody([
         ['w1', 0, 0.5, 'Hello'],

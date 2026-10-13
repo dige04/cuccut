@@ -92,8 +92,8 @@ async function failure(promise: Promise<unknown>): Promise<ProviderFailure> {
   return error as ProviderFailure;
 }
 
-describe('OpenAI 语音', () => {
-  it('模型表：默认 gpt-4o-mini-tts / marin；tts-1 只有 9 个音色、不接受 instructions；都不接受 seed', () => {
+describe('OpenAI speech', () => {
+  it('model table: default gpt-4o-mini-tts / marin; tts-1 has only 9 voices and does not accept instructions; neither accepts seed', () => {
     const models = new OpenAiSpeechAdapter().models(config('x', null));
     const byId = Object.fromEntries(models.map((m) => [m.modelId, m]));
     expect(models.find((m) => m.default)).toMatchObject({ modelId: 'gpt-4o-mini-tts', defaultVoice: 'marin', acceptsInstructions: true });
@@ -103,7 +103,7 @@ describe('OpenAI 语音', () => {
     expect(models.every((m) => !m.acceptsSeed && m.formats.join() === 'mp3,wav,flac')).toBe(true);
   });
 
-  it('请求形状：JSON、Bearer、预置音色是字符串、自定义音色是 { id }；响应体就是音频', async () => {
+  it('request shape: JSON, Bearer, preset voice is a string, custom voice is { id }; response body is the audio', async () => {
     server = await startFakeProviderServer(fakeOpenAiHandler());
     const cfg = config(`${server.origin}/v1`, OPENAI_KEY);
     const adapter = new OpenAiSpeechAdapter();
@@ -125,7 +125,7 @@ describe('OpenAI 语音', () => {
     expect(server.requests[1]!.json).toMatchObject({ voice: { id: 'voice_1234' }, response_format: 'wav' });
   });
 
-  it('回 JSON 或空体是协议错误；401 是 PROVIDER_AUTH_FAILED，回显的密钥被去掉', async () => {
+  it('a JSON or empty response body is a protocol error; 401 is PROVIDER_AUTH_FAILED, with the echoed key removed', async () => {
     server = await startFakeProviderServer(() => ({ status: 200, json: { ok: true } }));
     const cfg = config(`${server.origin}/v1`, OPENAI_KEY);
     expect((await failure(synthesize(new OpenAiSpeechAdapter(), cfg, 'tts-1', speech({ voice: 'alloy' })))).kind).toBe('protocol');
@@ -137,7 +137,7 @@ describe('OpenAI 语音', () => {
     expect(JSON.stringify({ message: auth.message, details: auth.details })).not.toContain(OPENAI_KEY);
   });
 
-  it('取消：中止在途请求，抛 ProviderAborted，连接关闭', async () => {
+  it('cancel: aborts the in-flight request, throws ProviderAborted, closes the connection', async () => {
     server = await startFakeProviderServer(() => 'hang');
     const controller = new AbortController();
     const pending = synthesize(
@@ -154,8 +154,8 @@ describe('OpenAI 语音', () => {
   });
 });
 
-describe('OpenAI 图片', () => {
-  it('请求 n、size、output_format，不发 response_format；解 b64_json；报告用量', async () => {
+describe('OpenAI images', () => {
+  it('requests n, size and output_format, does not send response_format; decodes b64_json; reports usage', async () => {
     server = await startFakeProviderServer(fakeOpenAiHandler());
     const progress: number[] = [];
     const out = await generate(
@@ -172,7 +172,7 @@ describe('OpenAI 图片', () => {
     expect(server.requests[0]!.json).toEqual({ model: 'gpt-image-2', prompt: 'a fox', n: 3, size: '1536x864', output_format: 'png' });
   });
 
-  it('张数不对、没有 b64_json：协议错误', async () => {
+  it('wrong image count or missing b64_json: protocol error', async () => {
     server = await startFakeProviderServer(() => ({ status: 200, json: { data: [{ b64_json: 'AAAA' }] } }));
     const cfg = config(`${server.origin}/v1`, OPENAI_KEY);
     expect((await failure(generate(new OpenAiImageAdapter(), cfg, 'gpt-image-1', image({ count: 2 })))).kind).toBe('protocol');
@@ -180,7 +180,7 @@ describe('OpenAI 图片', () => {
     expect((await failure(generate(new OpenAiImageAdapter(), cfg, 'gpt-image-1', image()))).kind).toBe('protocol');
   });
 
-  it('模型表：gpt-image-2 是默认，宽高比 16:9 对应 1536x864；参考图与 seed 按声明', () => {
+  it('model table: gpt-image-2 is the default, aspect ratio 16:9 maps to 1536x864; reference images and seed follow the declaration', () => {
     const models = new OpenAiImageAdapter().models(config('x', null));
     const def = models.find((m) => m.default)!;
     expect(def.modelId).toBe('gpt-image-2');
@@ -189,8 +189,8 @@ describe('OpenAI 图片', () => {
   });
 });
 
-describe('ElevenLabs 语音', () => {
-  it('路径带音色与 output_format，密钥在 xi-api-key；multilingual_v2 不发 language_code，v3 发', async () => {
+describe('ElevenLabs speech', () => {
+  it('path carries voice and output_format, key is in xi-api-key; multilingual_v2 does not send language_code, v3 does', async () => {
     server = await startFakeProviderServer(fakeElevenLabsHandler());
     const adapter = new ElevenLabsAdapter();
     const cfg = config(`${server.origin}/v1`, ELEVENLABS_KEY);
@@ -208,7 +208,7 @@ describe('ElevenLabs 语音', () => {
     expect(server.requests[1]!.json).toMatchObject({ language_code: 'zh' });
   });
 
-  it('模型表：音色属于账号（没有预置音色、没有默认音色）；字符上限按模型；不提供 flac', () => {
+  it('model table: voices belong to the account (no preset voices, no default voice); character limits per model; flac not offered', () => {
     const models = new ElevenLabsAdapter().models(config('x', null));
     expect(models.find((m) => m.default)?.modelId).toBe('eleven_multilingual_v2');
     expect(models.every((m) => m.voices.length === 0 && m.defaultVoice === null && m.voiceModes.join() === 'custom')).toBe(true);
@@ -221,7 +221,7 @@ describe('ElevenLabs 语音', () => {
     expect(models.every((m) => !m.formats.includes('flac') && m.acceptsSeed)).toBe(true);
   });
 
-  it('额度用尽（错误体 quota_exceeded）是 PROVIDER_QUOTA_EXCEEDED；sk_ 形式的密钥不出现在错误里', async () => {
+  it('quota exhausted (error body quota_exceeded) is PROVIDER_QUOTA_EXCEEDED; sk_ keys do not appear in errors', async () => {
     server = await startFakeProviderServer(() => ({
       status: 401,
       json: { detail: { status: 'quota_exceeded', message: `quota for ${ELEVENLABS_KEY}` } },
@@ -233,15 +233,15 @@ describe('ElevenLabs 语音', () => {
     expect(JSON.stringify({ message: error.message, details: error.details })).not.toContain(ELEVENLABS_KEY);
   });
 
-  it('验证密钥：GET /models', async () => {
+  it('key validation: GET /models', async () => {
     server = await startFakeProviderServer(fakeElevenLabsHandler());
     await new ElevenLabsAdapter().validateCredential(config(`${server.origin}/v1`, ELEVENLABS_KEY), new AbortController().signal, http);
     expect(server.requests[0]).toMatchObject({ method: 'GET', path: '/v1/models' });
   });
 });
 
-describe('Google 图片', () => {
-  it('尺寸换成宽高比与分辨率；一张一次请求；取 model_output 的图片，不取 thought 的中间图', async () => {
+describe('Google images', () => {
+  it('size is converted to aspect ratio and resolution; one image per request; takes the model_output image, not the intermediate thought image', async () => {
     server = await startFakeProviderServer(fakeGoogleHandler());
     const progress: number[] = [];
     const out = await generate(
@@ -263,7 +263,7 @@ describe('Google 图片', () => {
     });
   });
 
-  it('不给尺寸时不发宽高比；2.5 只发宽高比', async () => {
+  it('no aspect ratio is sent when no size is given; 2.5 sends only the aspect ratio', async () => {
     server = await startFakeProviderServer(fakeGoogleHandler());
     const cfg = config(`${server.origin}/v1beta`, GOOGLE_KEY);
     await generate(new GoogleImageAdapter(), cfg, 'gemini-3.1-flash-image', image());
@@ -276,7 +276,7 @@ describe('Google 图片', () => {
     });
   });
 
-  it('只回文字是被拒绝；媒体类型不符是协议错误；失败的交互是被拒绝', () => {
+  it('text-only response is rejected; mismatched media type is a protocol error; a failed interaction is rejected', () => {
     const textOnly = { status: 'completed', steps: [{ type: 'model_output', content: [{ type: 'text', text: 'I cannot draw that.' }] }] };
     expect(() => parseImageInteraction(textOnly, 'png')).toThrow(/I cannot draw that/);
     const wrongType = { steps: [{ type: 'model_output', content: [{ type: 'image', data: 'AAAA', mime_type: 'image/jpeg' }] }] };
@@ -284,7 +284,7 @@ describe('Google 图片', () => {
     expect(() => parseImageInteraction({ status: 'failed', steps: [] }, 'png')).toThrow(/failed/);
   });
 
-  it('模型表：尺寸各不相同（每个尺寸只对应一种写法），默认 3.1 Flash Image，最多 4 张', () => {
+  it('model table: sizes differ (each size maps to exactly one form), default 3.1 Flash Image, at most 4 images', () => {
     for (const model of new GoogleImageAdapter().models(config('x', null))) {
       expect(new Set(model.sizes).size).toBe(model.sizes.length);
       expect(model.aspectRatios.every((a) => model.sizes.includes(a.size))).toBe(true);
@@ -297,14 +297,14 @@ describe('Google 图片', () => {
   });
 });
 
-describe('OpenAI 兼容端点', () => {
+describe('OpenAI-compatible endpoint', () => {
   const declared: AdapterConfig['declared'] = [
     { modelId: 'whisper', capability: 'transcribe' },
     { modelId: 'kokoro', capability: 'synthesizeSpeech', voices: ['af_bella', 'am_adam'], maxInputChars: 1000, formats: ['wav', 'mp3'] },
     { modelId: 'sdxl', capability: 'generateImage', sizes: ['512x512'], maxCount: 2 },
   ];
 
-  it('按声明的能力分开列模型，补上保守的默认值', () => {
+  it('lists models separately by declared capability, filling in conservative defaults', () => {
     const cfg = config('x', null, declared);
     expect(new CompatibleSpeechAdapter(() => '本机').models(cfg)).toEqual([
       expect.objectContaining({
@@ -323,7 +323,7 @@ describe('OpenAI 兼容端点', () => {
     ]);
   });
 
-  it('不带密钥时不发 Authorization；图片请求 b64_json，任意音色原样传', async () => {
+  it('no Authorization is sent without a key; image requests use b64_json, any voice is passed through as is', async () => {
     server = await startFakeProviderServer(fakeOpenAiHandler());
     const cfg = config(`${server.origin}/v1`, null, declared);
     await synthesize(new CompatibleSpeechAdapter(() => '本机'), cfg, 'kokoro', speech({ voice: 'zf_xiaobei', format: 'wav' }));
@@ -342,7 +342,7 @@ describe('OpenAI 兼容端点', () => {
 });
 
 describe('OnlineGenerator', () => {
-  it('把输出写进 staging 并给出摘要；没有配置时 unavailable；取消时 cancelled', async () => {
+  it('writes output to staging and gives a summary; unavailable when not configured; cancelled on cancel', async () => {
     server = await startFakeProviderServer(fakeOpenAiHandler());
     const staging = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-gen-'));
     try {
@@ -395,8 +395,8 @@ describe('OnlineGenerator', () => {
   });
 });
 
-describe('OnlineProviderSource 的生成能力', () => {
-  it('按 Provider 列能力；自定义端点只列声明的能力；没有那种能力的 generator 是 null；视图不回显密钥', async () => {
+describe('OnlineProviderSource generation capabilities', () => {
+  it('lists capabilities per Provider; custom endpoints list only declared capabilities; a generator without that capability is null; the view does not echo keys', async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-src-'));
     try {
       const store = await ModelServiceStore.open(

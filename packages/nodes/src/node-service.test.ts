@@ -72,7 +72,7 @@ function rawRequest(
   });
 }
 
-describe('节点服务（HTTP + 假 Model Worker）', () => {
+describe('node service (HTTP + fake Model Worker)', () => {
   let node: TestNode;
   let token: string;
 
@@ -97,7 +97,7 @@ describe('节点服务（HTTP + 假 Model Worker）', () => {
   const getJob = async (jobId: string) => (await (await api(`/v1/jobs/${jobId}`)).json()) as NodeJob;
   const jobDir = (jobId: string) => path.join(node.home.nodeJobsDir, jobId);
 
-  it('健康检查：不要令牌与版本头，给出能力与模型包状态', async () => {
+  it('health check: no token or version header needed, reports capability and model pack status', async () => {
     await start();
     const response = await fetch(`${node.baseUrl}/v1/health`);
     expect(response.status).toBe(200);
@@ -122,7 +122,7 @@ describe('节点服务（HTTP + 假 Model Worker）', () => {
     expect(node.advertiser.active).toMatchObject({ name: 'test-node', port: node.service.port, version: 1 });
   });
 
-  it('完整流程：创建 → 上传 → 事件流 → 结果（ETag、Range）→ 删除；不发布产物、不碰视频、不泄露转写', async () => {
+  it('full flow: create, upload, event stream, result (ETag, Range), delete; no artifacts published, no video touched, no transcript leaked', async () => {
     await start();
     const request = testJobRequest(MEDIA, { options: { language: { mode: 'prefer', tag: null }, diarize: true, timescale: 1_000_000 } });
     const created = await create(request);
@@ -235,7 +235,7 @@ describe('节点服务（HTTP + 假 Model Worker）', () => {
     expect(await exists(jobDir(job.jobId))).toBe(false);
   });
 
-  it('幂等创建：相同 clientJobId 与内容返回同一个任务，内容不同 409', async () => {
+  it('idempotent create: same clientJobId and content return the same task, different content gives 409', async () => {
     await start();
     const request = testJobRequest(MEDIA);
     const first = await create(request);
@@ -268,7 +268,7 @@ describe('节点服务（HTTP + 假 Model Worker）', () => {
     expect(((await separate.json()) as NodeJob).jobId).not.toBe(job.jobId);
   });
 
-  it('请求不合规：400，带出问题所在', async () => {
+  it('malformed request: 400, identifying the problem', async () => {
     await start();
     const bad = await create({ ...testJobRequest(MEDIA), input: { ...testJobRequest(MEDIA).input, contentHash: 'md5:abc' } });
     expect(bad.status).toBe(400);
@@ -285,7 +285,7 @@ describe('节点服务（HTTP + 假 Model Worker）', () => {
     expect(extra.status).toBe(400);
   });
 
-  it('摘要不符：422，任务失败，媒体立即删除', async () => {
+  it('digest mismatch: 422, task fails, media deleted immediately', async () => {
     await start();
     const request = testJobRequest(MEDIA);
     const job = (await (await create(request)).json()) as NodeJob;
@@ -303,7 +303,7 @@ describe('节点服务（HTTP + 假 Model Worker）', () => {
     expect(node.manager.list()).toEqual([]);
   });
 
-  it('长度与声明不符：422 且任务失败；没有 Content-Length（分块上传）：400，任务仍等上传', async () => {
+  it('length does not match the declaration: 422 and task fails; no Content-Length (chunked upload): 400, task still waits for upload', async () => {
     await start();
     const job = (await (await create(testJobRequest(MEDIA))).json()) as NodeJob;
     const chunked = await rawRequest(node.baseUrl, {
@@ -325,7 +325,7 @@ describe('节点服务（HTTP + 假 Model Worker）', () => {
     expect(await getJob(job.jobId)).toMatchObject({ state: 'failed', error: { code: 'INPUT_HASH_MISMATCH' } });
   });
 
-  it('不在等待上传的任务不收媒体：409', async () => {
+  it('task not awaiting upload does not accept media: 409', async () => {
     await start();
     const { job } = await submitTestJob(node.baseUrl, token, MEDIA);
     const again = await upload(job.jobId, MEDIA);
@@ -335,7 +335,7 @@ describe('节点服务（HTTP + 假 Model Worker）', () => {
     expect(await getJob(job.jobId)).toMatchObject({ state: 'completed' });
   });
 
-  it('创建后没有按时上传：任务以 INPUT_EXPIRED 失败，事件流结束，目录删除', async () => {
+  it('no upload in time after creation: task fails with INPUT_EXPIRED, event stream ends, directory deleted', async () => {
     await start({ limits: { inputExpiryMs: 150 } });
     const job = (await (await create(testJobRequest(MEDIA))).json()) as NodeJob;
     const events = await readEvents(await api(`/v1/jobs/${job.jobId}/events`));
@@ -344,7 +344,7 @@ describe('节点服务（HTTP + 假 Model Worker）', () => {
     expect((await upload(job.jobId, MEDIA)).status).toBe(409);
   });
 
-  it('队列满：每个客户端有上限，别的客户端不受影响；终结的不算', async () => {
+  it('queue full: each client has a limit, other clients are unaffected; finished tasks don\'t count', async () => {
     await start({ limits: { maxActivePerClient: 2 } });
     const a = (await (await create(testJobRequest(MEDIA))).json()) as NodeJob;
     await create(testJobRequest(MEDIA));
@@ -358,7 +358,7 @@ describe('节点服务（HTTP + 假 Model Worker）', () => {
     expect((await create(testJobRequest(MEDIA))).status).toBe(201);
   });
 
-  it('媒体太大 413；磁盘不够 507', async () => {
+  it('media too large: 413; insufficient disk: 507', async () => {
     let free = 10 * 1024 ** 3;
     await start({ limits: { maxInputBytes: MEDIA.length - 1, diskReserveBytes: 1024 }, freeBytes: async () => free });
     const big = await create(testJobRequest(MEDIA));
@@ -375,7 +375,7 @@ describe('节点服务（HTTP + 假 Model Worker）', () => {
     expect((await create(testJobRequest(MEDIA))).status).toBe(201);
   });
 
-  it('能力关闭：403 CAPABILITY_DISABLED；健康检查照实报告', async () => {
+  it('capability disabled: 403 CAPABILITY_DISABLED; health check reports it accurately', async () => {
     await start({ capabilities: { transcribe: false } });
     const response = await create(testJobRequest(MEDIA));
     expect(response.status).toBe(403);
@@ -384,7 +384,7 @@ describe('节点服务（HTTP + 假 Model Worker）', () => {
     expect(health.capabilities.transcribe.enabled).toBe(false);
   });
 
-  it('模型包不可用：409 MODEL_NOT_READY，带出状态', async () => {
+  it('model pack unavailable: 409 MODEL_NOT_READY, with status', async () => {
     await start();
     const missing = await create(testJobRequest(MEDIA, { bundleId: TEST_NODE_MISSING_BUNDLE }));
     expect(missing.status).toBe(409);
@@ -397,7 +397,7 @@ describe('节点服务（HTTP + 假 Model Worker）', () => {
     expect(await errorOf(unknown)).toMatchObject({ code: 'MODEL_NOT_READY', details: { state: 'unknown' } });
   });
 
-  it('别的客户端的任务一律 404', async () => {
+  it('other clients\' tasks always 404', async () => {
     await start();
     const { job } = await submitTestJob(node.baseUrl, token, MEDIA);
     const other = await node.pair('client-b', 'B');
@@ -418,7 +418,7 @@ describe('节点服务（HTTP + 假 Model Worker）', () => {
     expect(await getJob(job.jobId)).toMatchObject({ state: 'completed' });
   });
 
-  it('取消运行中的任务：等到终结，重复取消幂等；结果 409，目录删除', async () => {
+  it('cancel a running task: waits until it finishes, repeated cancel is idempotent; result 409, directory deleted', async () => {
     await start();
     const { job } = await submitTestJob(node.baseUrl, token, MEDIA, { bundleId: 'fake@cpu#slow' });
     await until(async () => (await getJob(job.jobId)).state === 'running');
@@ -439,7 +439,7 @@ describe('节点服务（HTTP + 假 Model Worker）', () => {
     expect(node.service.status().jobs).toEqual({ running: 0, queued: 0 });
   });
 
-  it('取消等上传的任务；删除运行中的任务先取消再删', async () => {
+  it('cancel a task awaiting upload; delete a running task cancels it first, then deletes', async () => {
     await start();
     const waiting = (await (await create(testJobRequest(MEDIA))).json()) as NodeJob;
     expect(await (await api(`/v1/jobs/${waiting.jobId}/cancel`, { method: 'POST' })).json()).toMatchObject({ state: 'cancelled' });
@@ -453,7 +453,7 @@ describe('节点服务（HTTP + 假 Model Worker）', () => {
     expect(await exists(jobDir(job.jobId))).toBe(false);
   });
 
-  it('结果保留期满：结果 410，任务本身 404', async () => {
+  it('result retention expired: result 410, task itself 404', async () => {
     await start({ limits: { resultRetentionMs: 200 } });
     const { job } = await submitTestJob(node.baseUrl, token, MEDIA);
     await readEvents(await api(`/v1/jobs/${job.jobId}/events`));
@@ -465,7 +465,7 @@ describe('节点服务（HTTP + 假 Model Worker）', () => {
     expect((await api(`/v1/jobs/${job.jobId}`)).status).toBe(404);
   });
 
-  it('Worker 崩溃一次：节点自动重试并完成，事件里看得到第 2 次尝试，不出现 interrupted', async () => {
+  it('Worker crashes once: node retries automatically and completes, the second attempt is visible in events, no interrupted appears', async () => {
     await start();
     const { job } = await submitTestJob(node.baseUrl, token, MEDIA, { bundleId: 'fake@cpu#crash-once' });
     const events = await readEvents(await api(`/v1/jobs/${job.jobId}/events`));
@@ -478,7 +478,7 @@ describe('节点服务（HTTP + 假 Model Worker）', () => {
     expect(node.manager.inspect(job.jobId)).toMatchObject({ state: 'completed', attempt: 2 });
   });
 
-  it('模型输出不合规：任务失败，诊断里不留结果文件', async () => {
+  it('malformed model output: task fails, no result file left in diagnostics', async () => {
     await start();
     const { job } = await submitTestJob(node.baseUrl, token, MEDIA, { bundleId: 'fake@cpu#invalid-output' });
     const events = await readEvents(await api(`/v1/jobs/${job.jobId}/events`));
@@ -490,7 +490,7 @@ describe('节点服务（HTTP + 假 Model Worker）', () => {
     expect(files.filter((f) => String(f).endsWith('result.json'))).toEqual([]);
   });
 
-  it('没有语音：任务完成，结果照常可取', async () => {
+  it('no speech: task completes, result still retrievable', async () => {
     await start();
     const { job } = await submitTestJob(node.baseUrl, token, MEDIA, { bundleId: 'fake@cpu#no-speech' });
     await readEvents(await api(`/v1/jobs/${job.jobId}/events`));
@@ -499,7 +499,7 @@ describe('节点服务（HTTP + 假 Model Worker）', () => {
     expect(await result.json()).toMatchObject({ outcome: 'no-speech', segments: [] });
   });
 
-  it('事件流的心跳', async () => {
+  it('heartbeat of the event stream', async () => {
     await start({ heartbeatMs: 50 });
     const job = (await (await create(testJobRequest(MEDIA))).json()) as NodeJob;
     const response = await api(`/v1/jobs/${job.jobId}/events`);
@@ -515,7 +515,7 @@ describe('节点服务（HTTP + 假 Model Worker）', () => {
   });
 });
 
-describe('配对与吊销（HTTP）', () => {
+describe('pairing and revocation (HTTP)', () => {
   let node: TestNode;
 
   afterEach(async () => {
@@ -529,7 +529,7 @@ describe('配对与吊销（HTTP）', () => {
       body: JSON.stringify({ code, clientId, clientName: 'Client' }),
     });
 
-  it('配对成功拿到令牌，配对码用掉；错误的码 403', async () => {
+  it('successful pairing gets a token and uses up the pairing code; wrong code 403', async () => {
     node = await startTestNode();
     const code = pairingCodeOf(node.service.status())!;
     expect(code).toMatch(/^\d{6}$/);
@@ -547,7 +547,7 @@ describe('配对与吊销（HTTP）', () => {
     expect((await nodeFetch(node.baseUrl, body.token, '/v1/jobs/job_x')).status).toBe(404);
   });
 
-  it('输错 5 次锁定：429 带 Retry-After，正确的码也不行；期满后要新的配对码', async () => {
+  it('5 wrong attempts lock out: 429 with Retry-After, even the correct code fails; after expiry a new pairing code is needed', async () => {
     const clock = new ManualClock();
     node = await startTestNode({ clock });
     const code = pairingCodeOf(node.service.status())!;
@@ -566,7 +566,7 @@ describe('配对与吊销（HTTP）', () => {
     expect((await pairWith(fresh)).status).toBe(200);
   });
 
-  it('配对码 10 分钟过期', async () => {
+  it('pairing code expires after 10 minutes', async () => {
     const clock = new ManualClock();
     node = await startTestNode({ clock });
     const code = pairingCodeOf(node.service.status())!;
@@ -574,7 +574,7 @@ describe('配对与吊销（HTTP）', () => {
     expect((await pairWith(code)).status).toBe(403);
   });
 
-  it('重新配对换掉旧令牌，之前的任务还在；吊销让令牌失效并删除这个客户端的任务', async () => {
+  it('re-pairing replaces the old token, earlier tasks remain; revocation invalidates the token and deletes this client\'s tasks', async () => {
     node = await startTestNode();
     const first = await node.pair('client-a');
     const media = Buffer.from('media for revoke');
@@ -606,14 +606,14 @@ describe('配对与吊销（HTTP）', () => {
   });
 });
 
-describe('共享开关（NodeService）', () => {
+describe('share toggle (NodeService)', () => {
   let node: TestNode;
 
   afterEach(async () => {
     await node?.close();
   });
 
-  it('开启前不监听；开启后监听、登记并给出配对码；关闭后停止监听、撤下登记、删除远端任务', async () => {
+  it('does not listen before enabling; after enabling, listens, registers and issues a pairing code; after disabling, stops listening, withdraws registration, deletes remote tasks', async () => {
     node = await startTestNode({ share: null });
     expect(node.service.status()).toMatchObject({ enabled: false, listening: false, error: null, pairing: null, nodeId: null });
     expect(node.service.status().addresses).toEqual([]);
@@ -656,7 +656,7 @@ describe('共享开关（NodeService）', () => {
     await expect(fetch(`${baseUrl}/v1/health`)).rejects.toThrow();
   });
 
-  it('端口被占用：不监听，error 说明原因；换个端口再开启就好', async () => {
+  it('port in use: does not listen, error explains the cause; enabling again after switching ports works', async () => {
     const blocker = http.createServer();
     await new Promise<void>((resolve) => blocker.listen(0, '127.0.0.1', resolve));
     const taken = (blocker.address() as { port: number }).port;
@@ -678,7 +678,7 @@ describe('共享开关（NodeService）', () => {
   });
 });
 
-describe('能力的分项开关', () => {
+describe('per-capability toggles', () => {
   let node: TestNode | null = null;
 
   afterEach(async () => {
@@ -695,7 +695,7 @@ describe('能力的分项开关', () => {
     });
   const stored = async (n: TestNode) => JSON.parse(await fs.readFile(n.home.nodeShareFile, 'utf8')) as Record<string, unknown>;
 
-  it('第一次开启共享：支持的能力全部打开，写进 node-share.json', async () => {
+  it('first enable of sharing: all supported capabilities turned on, written to node-share.json', async () => {
     node = await startTestNode({ share: null });
     // Never enabled before: reports the defaults in effect when it was enabled.
     expect(node.service.status().capabilities).toEqual({ transcribe: { enabled: true } });
@@ -705,7 +705,7 @@ describe('能力的分项开关', () => {
     expect((await health(node)).capabilities.transcribe.enabled).toBe(true);
   });
 
-  it('关闭立即生效：健康照实报告，新任务 403 CAPABILITY_DISABLED；已经接受的任务（运行中、等上传）照常跑完', async () => {
+  it('disabling takes effect immediately: health reports accurately, new tasks 403 CAPABILITY_DISABLED; tasks already accepted (running, awaiting upload) still run to completion', async () => {
     node = await startTestNode();
     const n = node;
     const token = await n.pair();
@@ -746,7 +746,7 @@ describe('能力的分项开关', () => {
     expect((await createJob(n, token, testJobRequest(MEDIA))).status).toBe(201);
   });
 
-  it('开关持久：重启后照样关着，健康照实报告；共享关着时也能设，开启时沿用', async () => {
+  it('toggles persist: still off after restart, health reports accurately; can be set while sharing is off, and carried over when enabled', async () => {
     node = await startTestNode();
     const token = await node.pair();
     await node.service.setCapability('transcribe', false);
@@ -767,7 +767,7 @@ describe('能力的分项开关', () => {
     expect(restarted.capabilities).toEqual({ transcribe: { enabled: false } });
   });
 
-  it('不是节点支持共享的模型能力：invalid-request，状态不变', async () => {
+  it('a model capability the node does not support sharing: invalid-request, state unchanged', async () => {
     node = await startTestNode();
     for (const capability of ['synthesizeSpeech', 'download', 'export', '']) {
       await expect(node.service.setCapability(capability, false)).rejects.toMatchObject({
@@ -779,7 +779,7 @@ describe('能力的分项开关', () => {
     expect((await stored(node)).capabilities).toEqual({ transcribe: { enabled: true } });
   });
 
-  it('分项开关之前写下的 node-share.json：照常读入，开启过共享的转写算打开，已配对的客户端还在', async () => {
+  it('node-share.json written before per-capability toggles: read as usual, transcription counts as on if sharing was ever enabled, paired clients still present', async () => {
     node = await startTestNode();
     const token = await node.pair();
     const dir = node.dir;
@@ -805,7 +805,7 @@ describe('能力的分项开关', () => {
     expect((await stored(node)).capabilities).toEqual({ transcribe: { enabled: true } });
   });
 
-  it('分项开关之前写下、从没开启过共享的文件：第一次开启时全部打开', async () => {
+  it('file written before per-capability toggles that never enabled sharing: all turned on at first enable', async () => {
     node = await startTestNode({ share: null });
     const dir = node.dir;
     await node.close({ keepDir: true });
@@ -819,7 +819,7 @@ describe('能力的分项开关', () => {
     expect(status.capabilities).toEqual({ transcribe: { enabled: true }, align: { enabled: true } });
   });
 
-  it('之后新加入的能力：已经开启过共享的节点默认关闭，由主人打开；新开启共享的节点默认打开', async () => {
+  it('capabilities added later: nodes that have already enabled sharing default them to off, to be turned on by the owner; nodes that newly enable sharing default them to on', async () => {
     node = await startTestNode();
     const dir = node.dir;
     await node.close({ keepDir: true });
@@ -836,25 +836,25 @@ describe('能力的分项开关', () => {
   });
 });
 
-describe('ShareStatus.addresses：只列出此刻连得上的地址', () => {
+describe('ShareStatus.addresses: lists only addresses reachable right now', () => {
   const lan = () => ['192.168.1.20', '10.0.0.5'];
 
-  it('没在监听：空', () => {
+  it('not listening: empty', () => {
     expect(shareAddresses(null, lan)).toEqual([]);
   });
 
-  it('监听所有接口：本机的局域网地址', () => {
+  it('listening on all interfaces: the machine\'s LAN addresses', () => {
     expect(shareAddresses('0.0.0.0', lan)).toEqual(['192.168.1.20', '10.0.0.5']);
     expect(shareAddresses('::', lan)).toEqual(['192.168.1.20', '10.0.0.5']);
   });
 
-  it('绑定具体地址：只有这个地址，回环地址也一样', () => {
+  it('bound to a specific address: only that address, loopback address too', () => {
     expect(shareAddresses('192.168.1.20', lan)).toEqual(['192.168.1.20']);
     expect(shareAddresses('127.0.0.1', lan)).toEqual(['127.0.0.1']);
   });
 });
 
-describe('与本地视频任务共用一个队列', () => {
+describe('shares one queue with local video tasks', () => {
   /** An in-memory video: one asset, recording the submitted edits. */
   class FakeVideos implements JobVideos {
     leases = 0;
@@ -889,7 +889,7 @@ describe('与本地视频任务共用一个队列', () => {
     await node?.close();
   });
 
-  it('同一个模型包上的本地任务与远端任务按到达顺序一次一个', async () => {
+  it('on the same model pack, local and remote tasks run one at a time in arrival order', async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-node-queue-'));
     const audio = path.join(dir, 'audio.wav');
     await fs.writeFile(audio, 'local audio');
@@ -925,7 +925,7 @@ describe('与本地视频任务共用一个队列', () => {
   });
 });
 
-describe('node-share.json 读不了或认不出', () => {
+describe('node-share.json cannot be read or recognized', () => {
   let node: TestNode | undefined;
   let dir: string;
 
@@ -938,7 +938,7 @@ describe('node-share.json 读不了或认不出', () => {
   it.each([
     ['不是 JSON', '{ not json'],
     ['更新版本写下的', JSON.stringify({ formatVersion: 2, enabled: true, clients: [] })],
-  ])('%s：Runtime 照常启动，共享关着且不能修改，文件原样留着', async (_label, text) => {
+  ])('%s: Runtime starts as usual, sharing is off and cannot be changed, file left as is', async (_label, text) => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-node-share-'));
     const home = resolveRuntimeHome({ CUCCUT_HOME: dir });
     await fs.mkdir(path.dirname(home.nodeShareFile), { recursive: true });

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mergeLoginEnv, parseEnv0, resolveLoginShellEnv, stripHostSessionEnv } from './login-shell.ts';
 
 describe('stripHostSessionEnv', () => {
-  it('按前缀去掉宿主 Claude Code 会话的变量，保留用户自己配的与无关的', () => {
+  it('strips host Claude Code session variables by prefix, keeps user-configured and unrelated ones', () => {
     const env = {
       // Host session (part of this leaked through, found in real testing with the Claude Code desktop app)
       CLAUDECODE: '1',
@@ -64,8 +64,8 @@ describe('stripHostSessionEnv', () => {
   });
 });
 
-describe('登录 shell 的环境', () => {
-  it('parseEnv0：NUL 分隔，值里可以有换行与等号；去掉 shell 自己的状态', () => {
+describe('login shell environment', () => {
+  it('parseEnv0: NUL-separated; values may contain newlines and equals signs; drops the shell\'s own state', () => {
     const text = [
       'GEMINI_API_KEY=k=1',
       'MULTI=a\nb',
@@ -80,7 +80,7 @@ describe('登录 shell 的环境', () => {
     expect(parseEnv0(text)).toEqual({ GEMINI_API_KEY: 'k=1', MULTI: 'a\nb' });
   });
 
-  it('mergeLoginEnv：只在登录 shell 里有的补上，两边都有的以当前进程为准，PATH 合并且登录 shell 的在前', () => {
+  it('mergeLoginEnv: adds variables present only in the login shell; where both have one, the current process wins; PATH is merged with the login shell\'s entries first', () => {
     const merged = mergeLoginEnv(
       { GEMINI_API_KEY: 'from-shell', CUCCUT_HOME: '/shell/home', PATH: '/opt/homebrew/bin:/usr/bin' },
       { CUCCUT_HOME: '/runtime/home', PATH: '/usr/bin:/bin' },
@@ -89,7 +89,7 @@ describe('登录 shell 的环境', () => {
     expect(mergeLoginEnv(null, { PATH: '/bin', A: '1' })).toEqual({ PATH: '/bin', A: '1' });
   });
 
-  it.skipIf(process.platform === 'win32')('resolveLoginShellEnv：真的起一次登录 shell，读到整份环境', async () => {
+  it.skipIf(process.platform === 'win32')('resolveLoginShellEnv: really starts a login shell and reads the full environment', async () => {
     const env = await resolveLoginShellEnv();
     expect(env?.HOME).toBeTruthy();
     expect(env?.PATH).toBeTruthy();

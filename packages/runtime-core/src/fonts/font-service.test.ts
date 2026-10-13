@@ -162,7 +162,7 @@ const submitter = { kind: 'connection', id: 'conn_1' } as const;
 /** Byte count of the font file served by the fake service. */
 const sizeOf = (family: string) => Buffer.byteLength(`FONT:${family}\n`) + 4096;
 
-describe('按需下载的字体（FontService）', () => {
+describe('on-demand fonts (FontService)', () => {
   let dir: string;
   let server: FakeServer;
   let jobs: JobManager;
@@ -210,7 +210,7 @@ describe('按需下载的字体（FontService）', () => {
   const face = (family: string, weight = 400, italic = false): FontFaceQuery => ({ family, weight, italic });
   const resolve = (faces: FontFaceQuery[], download = true) => fonts.resolve(faces, { download, submitter });
 
-  it('本机没有、目录里有的 face 自动下载：先记下载中，任务完成后从下载缓存解析；请求只带族名与字重', async () => {
+  it('faces missing locally but listed in the catalog download automatically: marked as downloading first, resolved from the download cache after the task completes; the request carries only family name and weight', async () => {
     const first = await resolve([face('Lobster')]);
     expect(first.faces).toEqual([]);
     expect(first.missing).toEqual([{ ...face('Lobster'), reason: 'downloading', jobId: expect.stringMatching(/^job_/) }]);
@@ -248,7 +248,7 @@ describe('按需下载的字体（FontService）', () => {
     expect(await fs.readdir(path.join(dir, 'fonts', '.staging'))).toEqual([]);
   });
 
-  it('同一个 face 同时要两次只下载一次；斜体与字重按目录对好再请求', async () => {
+  it('the same face requested twice at once downloads only once; italic and weight are matched against the catalog before requesting', async () => {
     const [a, b] = await Promise.all([resolve([face('Noto Serif JP', 600)]), resolve([face('Noto Serif JP', 700)])]);
     expect(a.missing[0]!.jobId).toBe(b.missing[0]!.jobId);
     await jobs.settled(a.missing[0]!.jobId!);
@@ -264,7 +264,7 @@ describe('按需下载的字体（FontService）', () => {
     expect(server.requests).toEqual([]);
   });
 
-  it('下载失败的原因：HTTP 状态、分片、文件不在文件主机上、不是字体、族名对不上；坏文件不进缓存，最近失败过的不自动重试', async () => {
+  it('download failure reasons: HTTP status, chunks, file not on the file host, not a font, family name mismatch; bad files do not enter the cache, and recently failed ones are not retried automatically', async () => {
     const cases: [string, FontDownloadErrorCode, RegExp][] = [
       ['Broken Font', 'FONT_DOWNLOAD_SOURCE', /HTTP 404/],
       ['Sliced Font', 'FONT_DOWNLOAD_SOURCE', /分片/],
@@ -301,7 +301,7 @@ describe('按需下载的字体（FontService）', () => {
     expect(server.requests.map((r) => r.url)).toEqual(['/css2?family=Broken+Font:wght@400']);
   });
 
-  it('连不上与 5xx 按退避重试；不下载的情况：自动下载关着、严格离线、不在目录里、本机已有', async () => {
+  it('connection failures and 5xx are retried with backoff; cases where it does not download: auto-download off, strict offline, not in the catalog, already present locally', async () => {
     const { missing } = await resolve([face('Flaky Font')]);
     expect(await jobs.settled(missing[0]!.jobId!)).toBe('completed');
     expect(server.requests.filter((r) => r.url.startsWith('/s/flaky')).length).toBe(3);
@@ -323,7 +323,7 @@ describe('按需下载的字体（FontService）', () => {
     expect(server.requests.some((r) => r.url.includes('Lobster'))).toBe(false);
   });
 
-  it('取消下载：任务记为取消，临时文件删除，选字列表显示取消；同一个命令重发返回原来的任务', async () => {
+  it('cancel download: task is recorded as cancelled, the temp file is deleted, the font picker shows cancelled; resending the same command returns the original task', async () => {
     const started = await fonts.download({ family: 'Slow Font', commandId: 'cmd_slow' }, submitter);
     const jobId = started.jobId!;
     expect((await fonts.download({ family: 'Slow Font', commandId: 'cmd_slow' }, submitter)).jobId).toBe(jobId);
@@ -347,7 +347,7 @@ describe('按需下载的字体（FontService）', () => {
     expect((await fonts.downloaded()).faces).toEqual([]);
   });
 
-  it('取消不算失败：取消的下载、取消导出停下的下载，下次要用时照样自动下载；真的失败了才十分钟内不自动重试', async () => {
+  it('cancellation is not a failure: cancelled downloads, and downloads stopped by cancelling an export, still auto-download the next time they are needed; only real failures are not auto-retried within ten minutes', async () => {
     const settledFamily = async (family: string) => {
       for (let i = 0; i < 100 && (await fonts.catalogueList({ families: [family] })).families[0]!.state === 'downloading'; i++) {
         await new Promise((r) => setTimeout(r, 20));
@@ -393,7 +393,7 @@ describe('按需下载的字体（FontService）', () => {
     expect(jobs.list()).toHaveLength(count);
   });
 
-  it('同时下载三个族：两个马上开始，第三个从第一条记录起就是排在上限后面的 queued，前面的下完才开始', async () => {
+  it('downloading three families at once: two start immediately; the third is queued behind the limit from its first record and starts once the earlier ones finish', async () => {
     server.slowMs = 5;
     const seen = new Map<string, { state: string; wait: string | null }[]>();
     const stop = jobs.onChange((job) => {
@@ -427,7 +427,7 @@ describe('按需下载的字体（FontService）', () => {
     }
   });
 
-  it('选字列表：随内核在前，已下载其次，再按目录，本机独有的最后；按名字、分类、文字与状态筛，分页', async () => {
+  it('font picker: shipped-with-core first, then downloaded, then catalog, and locally-only last; filtered by name, category, script and status, paginated', async () => {
     await jobs.settled((await fonts.download({ family: 'Lobster' }, submitter)).jobId!);
     const all = await fonts.catalogueList({ limit: 500 });
     const names = all.families.map((f) => f.family);
@@ -460,7 +460,7 @@ describe('按需下载的字体（FontService）', () => {
     expect(page.families.map((f) => f.family)).toEqual(names.slice(2, 5));
   });
 
-  it('删除与清空：还没结束的导出用着的不删（FONT_IN_USE），任务结束后可以删；清空留下用着的', async () => {
+  it('delete and clear: fonts used by unfinished exports are not deleted (FONT_IN_USE), and can be deleted after the task ends; clear keeps those in use', async () => {
     await jobs.settled((await fonts.download({ family: 'Lobster' }, submitter)).jobId!);
     await jobs.settled((await fonts.download({ family: 'Noto Serif JP', faces: [{ weight: 400, italic: false }] }, submitter)).jobId!);
     const [lobster] = (await fonts.resolve([face('Lobster')], { download: false, submitter })).faces;
@@ -506,7 +506,7 @@ describe('按需下载的字体（FontService）', () => {
     await expect(fs.readdir(path.join(dir, 'fonts', 'files', 'lobster'))).rejects.toThrow();
   });
 
-  it('导出：冻结时分出要下载的 face，任务里下载（进度按字节、失败给原因、取消就停）', async () => {
+  it('export: at freeze, faces to download are separated out and downloaded in the task (progress by bytes, failures give a reason, cancel stops it)', async () => {
     const plans = await fonts.planExport([face('Lobster'), face('Roboto'), face('Nowhere Sans')]);
     expect([...plans.values()]).toEqual([{ kind: 'download' }, { kind: 'engine' }, { kind: 'engine' }]);
     settings.autoDownload = false;
@@ -534,7 +534,7 @@ describe('按需下载的字体（FontService）', () => {
     await expect(pending).rejects.toThrow('导出取消了');
     expect((await fonts.downloaded()).faces.map((f) => f.family)).toEqual(['Lobster']);
   });
-  it('取消导出只停它自己开始的下载：别处（选字、打开视频）开始的同一个 face 照样下完', async () => {
+  it('cancelling an export stops only the downloads it started itself; the same face started elsewhere (font picker, opening a video) still finishes', async () => {
     server.slowMs = 10;
     const started = await fonts.download({ family: 'Slow Font' }, submitter);
     const controller = new AbortController();
@@ -544,7 +544,7 @@ describe('按需下载的字体（FontService）', () => {
     expect(await jobs.settled(started.jobId!)).toBe('completed');
     expect((await fonts.downloaded()).faces.map((f) => f.family)).toEqual(['Slow Font']);
   });
-  it('样张：只带族名里的字（text 参数），按文件头认格式，存进缓存下次不再取；严格离线、不在目录里不取；文件不在文件主机上就报', async () => {
+  it('specimen: carries only the characters in the text parameter, detects the format from the file header, stores it in the cache so it is not fetched next time; not fetched in strict offline or when not in the catalog; reports when the file is not on the file host', async () => {
     const lobster = await fonts.sample({ family: 'lobster' });
     expect(lobster).toMatchObject({ family: 'Lobster', text: 'Lobster', format: 'truetype' });
     expect(Buffer.from(lobster.data!, 'base64').subarray(4).toString('utf8')).toBe('FONT:Lobster\nLobster');
@@ -584,7 +584,7 @@ describe('按需下载的字体（FontService）', () => {
     expect(await fs.readdir(path.join(dir, 'fonts', 'samples'))).toHaveLength(2);
   });
 
-  it('视频用到的字体：按族归好，带状态与回退族；download 时按自动下载的规则开始下载，最近失败过的不自动重试', async () => {
+  it('fonts used by a video: grouped by family, with status and fallback families; download starts under the auto-download rules, and recently failed ones are not retried automatically', async () => {
     const census = {
       fallback: 'Noto Sans SC',
       faces: [

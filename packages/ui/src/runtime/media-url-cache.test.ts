@@ -28,8 +28,8 @@ function setup() {
   return { cache, resolve, pending, handle, settle, advance: (ms: number) => (now += ms) };
 }
 
-describe('媒体地址缓存', () => {
-  it('关视频或重连时终止尚未完成的兼容播放轮询', async () => {
+describe('media URL cache', () => {
+  it('closing a video or reconnecting terminates unfinished compatibility playback polling', async () => {
     const cache = new MediaUrlCache((_video, _asset, signal) => new Promise((_resolve, reject) => {
       signal.addEventListener('abort', () => reject(signal.reason), { once: true });
     }));
@@ -39,7 +39,7 @@ describe('媒体地址缓存', () => {
     await stopped;
     expect(cache.peek('vid1', asset)).toBeNull();
   });
-  it('同一刻上千次要同一个素材版本只发一次请求，都拿到同一个地址；取到之后同步可读', async () => {
+  it('a thousand requests for the same media version at the same moment send only one request and all get the same address; readable synchronously once fetched', async () => {
     const { cache, resolve, pending, handle } = setup();
     const waiters = Array.from({ length: 1000 }, () => cache.get('vid1', asset));
     expect(resolve).toHaveBeenCalledTimes(1);
@@ -52,7 +52,7 @@ describe('媒体地址缓存', () => {
     expect(resolve).toHaveBeenCalledTimes(1);
   });
 
-  it('按「视频:素材@版本」分开：换了版本或视频都另要', () => {
+  it('keyed by \'video:media@version\': a different version or video is requested separately', () => {
     const { cache, resolve } = setup();
     void cache.get('vid1', asset);
     void cache.get('vid1', { id: 'asset_a', revision: '2' });
@@ -61,7 +61,7 @@ describe('媒体地址缓存', () => {
     expect(resolve).toHaveBeenCalledTimes(3);
   });
 
-  it('失败不记：等着的都拿到同一个错误，下一次再要就重新发', async () => {
+  it('failures are not recorded: those waiting all get the same error, and the next request sends again', async () => {
     const { cache, resolve, pending, handle, settle } = setup();
     const waiters = Array.from({ length: 10 }, () => cache.get('vid1', asset).catch((error: Error) => error));
     const refused = new Error('视频没有打开；先打开它');
@@ -77,7 +77,7 @@ describe('媒体地址缓存', () => {
     expect(await again).toBe(granted.url);
   });
 
-  it('句柄离过期不到一分钟就不再用，重新要', async () => {
+  it('a handle less than a minute from expiry is no longer used; request again', async () => {
     const { cache, resolve, pending, handle, settle, advance } = setup();
     const first = cache.get('vid1', asset);
     const granted = handle(HOUR);
@@ -96,7 +96,7 @@ describe('媒体地址缓存', () => {
     expect(cache.peek('vid1', asset)).toBe(next.url);
   });
 
-  it('clear 之后路上的请求回来也不收：等它的照样拿到结果，但缓存里没有，下一次另要', async () => {
+  it('after clear, in-flight requests that come back are not kept: whoever waits on them still gets the result, but the cache does not hold it, and the next request is separate', async () => {
     const { cache, resolve, pending, handle, settle } = setup();
     const before = cache.get('vid1', asset);
     cache.clear();
@@ -109,7 +109,7 @@ describe('媒体地址缓存', () => {
     expect(resolve).toHaveBeenCalledTimes(2);
   });
 
-  it('clear 之后同一个键的新请求先回来、旧请求后回来：留下新的；旧请求失败也不删新的', async () => {
+  it('after clear, if a new request for the same key returns before an old one: keep the new; a failing old request does not delete the new', async () => {
     const { cache, pending, handle, settle } = setup();
     void cache.get('vid1', asset).catch(() => {});
     cache.clear();
@@ -122,7 +122,7 @@ describe('媒体地址缓存', () => {
     expect(cache.peek('vid1', asset)).toBe(granted.url);
   });
 
-  it('invalidate 只在记着的还是放不出的那个地址时才删：先报错的删掉重新要，其余的跟上同一个新请求', async () => {
+  it('invalidate deletes only when the remembered address is still the one that fails to play: the one that reports the error first is deleted and requested again, the rest join the same new request', async () => {
     const { cache, resolve, pending, handle, settle } = setup();
     const first = cache.get('vid1', asset);
     const dead = handle();
@@ -151,7 +151,7 @@ describe('媒体地址缓存', () => {
     expect(resolve).toHaveBeenCalledTimes(2);
   });
 
-  it('预览重试：这部视频取到的与路上的都丢掉、重新要，路上那次迟到也不收；别的视频不动', async () => {
+  it('preview retry: this video\'s fetched and in-flight entries are all dropped and requested again, a late in-flight one is not kept; other videos are untouched', async () => {
     const { cache, resolve, pending, handle, settle } = setup();
     const other = { id: 'asset_b', revision: '1' };
     void cache.get('vid1', asset);
@@ -178,7 +178,7 @@ describe('媒体地址缓存', () => {
     expect(cache.peek('vid1', asset)).toBe(fresh.url);
   });
 
-  it('转换中：记下路上的请求报的进度并通知；好了、失败了都删掉，不在准备的素材是 undefined', async () => {
+  it('converting: record the progress reported by in-flight requests and notify; delete on both success and failure; media not being prepared is undefined', async () => {
     const { cache, pending, handle, settle } = setup();
     const other = { id: 'asset_b', revision: '1' };
     const heard = vi.fn();
@@ -210,7 +210,7 @@ describe('媒体地址缓存', () => {
     expect(heard).toHaveBeenCalledTimes(5);
   });
 
-  it('转换中：重试丢掉的请求还在轮询，它报的进度不收；关视频时全部删掉', async () => {
+  it('converting: a retry drops the request, which is still polling, its reported progress is not kept; all are deleted when the video closes', async () => {
     const { cache, pending } = setup();
     void cache.get('vid1', asset);
     pending[0]!.progress(0.3);

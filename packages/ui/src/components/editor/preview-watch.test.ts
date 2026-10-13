@@ -51,7 +51,7 @@ function harness(probe: () => PreviewSnapshot, visible = () => true) {
   return { watch, warn, error, advance, scheduled: () => pending !== null };
 }
 
-test('卡在哪一步：载入中按内核、视频、计划分；出错不算卡住', () => {
+test('which step is stuck: while loading, split by kernel, video, plan; errors do not count as stuck', () => {
   expect(stalledStep(snapshot({ status: 'loading', planner: 'loading' }), false)).toBe('planner-loading');
   expect(stalledStep(snapshot({ status: 'loading', video: false }), false)).toBe('no-video');
   expect(stalledStep(snapshot({ status: 'loading', videoError: '坏了' }), false)).toBe('video-error');
@@ -59,7 +59,7 @@ test('卡在哪一步：载入中按内核、视频、计划分；出错不算�
   expect(stalledStep(snapshot({ status: 'error', planner: 'loading' }), false)).toBeNull();
 });
 
-test('卡在哪一步：就绪之后看媒体、文档、字体，再看要画的帧有没有画上去', () => {
+test('which step is stuck: after ready, check media, documents, fonts, then check whether the frame to draw has been drawn', () => {
   const media = [{ itemId: 'clip', kind: 'video' as const, wait: 'no-element' as const, wantedSeconds: 1, element: null }];
   expect(stalledStep(snapshot({ media, documents: ['doc'] }), false)).toBe('media-pending');
   expect(stalledStep(snapshot({ documents: ['doc'] }), false)).toBe('documents-pending');
@@ -82,7 +82,7 @@ const preparing = (progress: number | null, assetId = 'asset_a'): MediaProbe => 
   element: null,
 });
 
-test('卡在哪一步：都在等兼容副本时看进度；夹着别的媒体还是在等媒体', () => {
+test('which step is stuck: when all are waiting on compatible copies, check progress; with other media in between, still waiting on media', () => {
   expect(stalledStep(snapshot({ media: [preparing(0.3)] }), false)).toBe('media-preparing');
   // The Runtime doesn't know the progress yet: not counted as stalled (conversion has its own timeout).
   expect(stalledStep(snapshot({ media: [preparing(null)] }), false)).toBeNull();
@@ -94,7 +94,7 @@ test('卡在哪一步：都在等兼容副本时看进度；夹着别的媒体�
   expect(preparingMark({ media: [preparing(0.3)] })).not.toBe(preparingMark({ media: [preparing(0.3001)] }));
 });
 
-test('转换中：进度一直在走就不报；停在同一处满门槛才报，再走起来算卡住结束', () => {
+test('converting: no report while progress keeps moving; reported only when stuck at the same point past the threshold; once moving again, the stall ends', () => {
   let progress = 0;
   const { watch, warn, advance } = harness(() => snapshot({ media: [preparing(progress)] }));
   const seen: (string | null)[] = [];
@@ -114,14 +114,14 @@ test('转换中：进度一直在走就不报；停在同一处满门槛才报�
   expect(seen).toEqual(['media-preparing', null]);
 });
 
-test('转换中：Runtime 一直不知道进度就一直不报', () => {
+test('converting: while Runtime never knows progress, never report', () => {
   const { watch, warn, advance } = harness(() => snapshot({ media: [preparing(null)] }));
   watch.start();
   advance(STALL_MS * 5);
   expect(warn).not.toHaveBeenCalled();
 });
 
-test('同一步卡过门槛只报一次，带上快照；有进展之后重新计时、再卡再报', () => {
+test('a stall at the same step past the threshold is reported once, with a snapshot; after progress, the timer restarts and a new stall is reported again', () => {
   let current = snapshot({ status: 'loading', planner: 'loading' });
   const { watch, warn, advance } = harness(() => current);
   watch.start();
@@ -155,7 +155,7 @@ test('同一步卡过门槛只报一次，带上快照；有进展之后重新�
   expect(watch.report).toMatchObject({ step: 'documents-pending', documents: ['doc'] });
 });
 
-test('要画的帧：画布上一直没换才算卡住，播放中每次都换了就不报', () => {
+test('frame to draw: counts as stuck only if the canvas never changes; during playback, not reported if it changes every time', () => {
   let painted = {};
   let current = () => snapshot({ playing: true, paintWanted: true, painted });
   const { watch, warn, advance } = harness(() => current());
@@ -172,7 +172,7 @@ test('要画的帧：画布上一直没换才算卡住，播放中每次都换�
   expect(watch.report?.step).toBe('not-painted');
 });
 
-test('页面隐藏时不计时，回来之后重新算', () => {
+test('no timing while the page is hidden; timing restarts when it returns', () => {
   let visible = true;
   const { watch, warn, advance } = harness(
     () => snapshot({ status: 'loading', planner: 'loading' }),
@@ -190,7 +190,7 @@ test('页面隐藏时不计时，回来之后重新算', () => {
   expect(warn).toHaveBeenCalledTimes(1);
 });
 
-test('停了就不再排检查；意外的错一阵只打一次，记进报告', () => {
+test('once stopped, no more checks are scheduled; a burst of unexpected errors is logged only once and recorded in the report', () => {
   const { watch, error, warn, advance, scheduled } = harness(() => snapshot({ status: 'loading', planner: 'loading' }));
   watch.start();
   expect(scheduled()).toBe(true);
@@ -206,7 +206,7 @@ test('停了就不再排检查；意外的错一阵只打一次，记进报告',
   expect(scheduled()).toBe(false);
 });
 
-test('诊断自己抛错不影响之后的检查', () => {
+test('a diagnostic\'s own error does not affect later checks', () => {
   let calls = 0;
   const { watch, error, advance } = harness(() => {
     calls++;
@@ -219,7 +219,7 @@ test('诊断自己抛错不影响之后的检查', () => {
   expect(calls).toBe(3);
 });
 
-test('媒体元素的状态：不带地址，只说有没有', () => {
+test('media element state: no address included, only whether one exists', () => {
   expect(probeElement(null)).toEqual({ wait: 'no-element', element: null });
   const video = {
     readyState: 1,
@@ -245,7 +245,7 @@ test('媒体元素的状态：不带地址，只说有没有', () => {
   expect(probeElement({ complete: true, naturalWidth: 0, src: 'x' } as never).wait).toBe('error');
 });
 
-test('报出卡住与卡住结束都通知订阅者；报告带开始卡住的时刻', () => {
+test('both the stall and the end of a stall notify subscribers; the report includes the moment the stall began', () => {
   let current = snapshot({
     media: [{ itemId: 'clip', assetId: 'asset_a', kind: 'video', wait: 'no-element', wantedSeconds: 0, element: null }],
   });
@@ -264,7 +264,7 @@ test('报出卡住与卡住结束都通知订阅者；报告带开始卡住的�
   expect(watch.report?.ongoing).toBe(false);
 });
 
-test('重试从头计时：手上的卡住算结束，还卡着要再满门槛才报', () => {
+test('retry restarts timing: the current stall counts as ended; if still stuck, it must pass the threshold again before reporting', () => {
   const current = snapshot({ status: 'loading', planner: 'loading' });
   const { watch, warn, advance } = harness(() => current);
   const seen: (string | null)[] = [];
@@ -282,7 +282,7 @@ test('重试从头计时：手上的卡住算结束，还卡着要再满门槛�
   expect(seen).toEqual(['planner-loading', null, 'planner-loading']);
 });
 
-test('订阅者抛错不影响诊断', () => {
+test('a subscriber error does not affect diagnosis', () => {
   const current = snapshot({ status: 'loading', planner: 'loading' });
   const { watch, warn, error, advance } = harness(() => current);
   watch.onChange(() => {

@@ -231,7 +231,7 @@ async function until<T>(read: () => T | undefined | null | false | Promise<T | u
   }
 }
 
-describe('重启恢复与对账（JobManager）', () => {
+describe('restart recovery and reconciliation (JobManager)', () => {
   let dir: string;
   let paths: { jobsFile: string; stagingDir: string; artifactsDir: string; diagnosticsDir: string };
   let generator: FakeGenerator;
@@ -336,7 +336,7 @@ describe('重启恢复与对账（JobManager）', () => {
     expect(admission.settles).toEqual([{ reservationId: job.grant!.reservationId, basis: 'unknown' }]);
   }
 
-  it('产物发布后、应用前崩溃：重启后复用产物补做应用，不重新生成、只写一次', async () => {
+  it('crash after the artifact is published and before it is applied: after restart the artifact is reused to finish applying, not regenerated, and written only once', async () => {
     crashAt = { point: 'artifact-published' };
     const before = await speak();
     expect(before).toMatchObject({ state: 'running', phase: 'applying', result: { artifactId: expect.any(String) } });
@@ -360,7 +360,7 @@ describe('重启恢复与对账（JobManager）', () => {
     expect(await stored(before.jobId)).toMatchObject({ state: 'completed' });
   });
 
-  it('账本记下命令后、提交前崩溃：按旧命令查回执（没有），换新命令提交一次', async () => {
+  it('crash after the ledger records the command and before submission: the receipt is looked up with the old command (none), and the new command is submitted once', async () => {
     crashAt = { point: 'application-recorded' };
     const before = await speak();
     const [pending] = await ledgerApps(before.jobId);
@@ -377,7 +377,7 @@ describe('重启恢复与对账（JobManager）', () => {
     expectSettledOnce(job);
   });
 
-  it('提交后、记回执前崩溃：重启后按同一个命令查到回执，补记，不再写', async () => {
+  it('crash after submission and before recording the receipt: after restart, the receipt is found with the same command, recorded, and not written again', async () => {
     crashAt = { point: 'application-committed' };
     const before = await speak();
     expect((await ledgerApps(before.jobId)).map((a) => a.state)).toEqual(['validating']);
@@ -394,7 +394,7 @@ describe('重启恢复与对账（JobManager）', () => {
     expectSettledOnce(job);
   });
 
-  it('重启后查不了回执：不换命令重写，应用记为 rejected（RECEIPT_UNKNOWN）；查得到之前 apply 也拒绝', async () => {
+  it('receipt cannot be looked up after restart: not rewritten with a new command, and the application is recorded as rejected (RECEIPT_UNKNOWN); apply is also refused until the receipt can be found', async () => {
     crashAt = { point: 'application-committed' };
     const before = await speak();
     videos.receiptFails = true;
@@ -419,7 +419,7 @@ describe('重启恢复与对账（JobManager）', () => {
     expect(videos.leases).toBe(0);
   });
 
-  it('目标没了：应用 stale-input，产物留作候选，不猜相邻对象；视频打开之前 apply 拒绝', async () => {
+  it('target gone: application is stale-input, the artifact is kept as a candidate, and no adjacent object is guessed; apply is refused until the video is open', async () => {
     crashAt = { point: 'artifact-published' };
     const before = await speak();
     videos.gone = true;
@@ -451,7 +451,7 @@ describe('重启恢复与对账（JobManager）', () => {
     expectSettledOnce(applied);
   });
 
-  it('停止屏障：账本写下命令之后被取消，不再提交；结果留作候选，三件事实分开记；apply 之后应用', async () => {
+  it('stop barrier: cancelled after the ledger records the command, no more submission; the result is kept as a candidate, the three facts are recorded separately; applied after apply', async () => {
     crashAt = { point: 'application-recorded', action: (jobId) => void manager.cancel(jobId) };
     const job = await speak();
     expect(job).toMatchObject({
@@ -479,7 +479,7 @@ describe('重启恢复与对账（JobManager）', () => {
     });
   });
 
-  it('引擎侧的停止屏障：Node 侧检查之后才取消，交给引擎的那一笔被拒（TASK_STOPPED），应用记 cancelled，不查回执', async () => {
+  it('engine-side stop barrier: cancelled after the Node-side check, the item handed to the engine is rejected (TASK_STOPPED), the application is recorded as cancelled, and the receipt is not looked up', async () => {
     crashAt = { point: 'application-submitting', action: (jobId) => void manager.cancel(jobId) };
     const job = await speak();
     expect(job).toMatchObject({ state: 'cancelled', cancellation: { remote: 'not-applicable', cost: 'charged' } });
@@ -501,7 +501,7 @@ describe('重启恢复与对账（JobManager）', () => {
     expect(videos.committed).toHaveLength(1);
   });
 
-  it('产物写进产物库、结果还没记下时崩溃：重启后按发布意图认领产物补做应用，不重新生成、预算只结算一次', async () => {
+  it('crash after the artifact is written to the artifact library and before the result is recorded: after restart the artifact is claimed by its publish intent to finish applying, not regenerated, and the budget is settled only once', async () => {
     crashAt = { point: 'artifact-stored' };
     const before = await speak();
     expect(before).toMatchObject({ state: 'running', phase: 'publishing', result: null });
@@ -525,7 +525,7 @@ describe('重启恢复与对账（JobManager）', () => {
     expect(after.jobs.find((j) => j.record.jobId === before.jobId)).not.toHaveProperty('publishing');
   });
 
-  it('发布意图记下了、产物却不全：丢掉意图，按原来的矩阵处理（外发调用等对账，不重发）', async () => {
+  it('publish intent recorded but artifacts incomplete: the intent is discarded and handled per the original matrix (outbound calls are reconciled, not resent)', async () => {
     crashAt = { point: 'artifact-stored' };
     const before = await speak();
     await fs.rm(paths.artifactsDir, { recursive: true, force: true });
@@ -539,7 +539,7 @@ describe('重启恢复与对账（JobManager）', () => {
     expect(videos.committed).toHaveLength(0);
   });
 
-  it('「已开始」落盘之后、记下 running 之前崩溃：重启时不当成没开始重新排队，等对账，预算保守扣一次', async () => {
+  it('crash after \'started\' is written to disk and before running is recorded: on restart it is not requeued as if it never started; it waits for reconciliation, and the budget is conservatively charged once', async () => {
     admission.crashAfterStart = true;
     const { jobId } = await manager.submitSynthesizeSpeech({ text: '一', videoId: 'mov_1' }, CONNECTION);
     await until(async () => admission.started.has('rsv_1') && (await stored(jobId))?.state === 'queued');
@@ -556,7 +556,7 @@ describe('重启恢复与对账（JobManager）', () => {
   });
 
   it.each(['artifact-stored', 'artifact-published'] as const)(
-    '智能体提交的任务在 %s 之后崩溃：重启后先查回执，没有提交过就不自动应用（它的 Run 已经结束），留给用户 apply',
+    'a task submitted by an agent crashes after %s: after restart, the receipt is checked first; if it was never submitted, it is not applied automatically (its Run has already ended) and is left for the user to apply',
     async (point) => {
       crashAt = { point };
       const before = await speak(AGENT);
@@ -571,7 +571,7 @@ describe('重启恢复与对账（JobManager）', () => {
     },
   );
 
-  it('智能体提交的任务提交后崩溃：查到回执照样补记（已经写了的就是写了）', async () => {
+  it('a task submitted by an agent crashes after submission: if the receipt is found, it is recorded as usual (what was written is written)', async () => {
     crashAt = { point: 'application-committed' };
     const before = await speak(AGENT);
     await restart();
@@ -579,7 +579,7 @@ describe('重启恢复与对账（JobManager）', () => {
     expect(videos.committed).toHaveLength(1);
   });
 
-  it('崩溃时在跑的外发调用 needs-reconciliation（预算保守扣），排队的重新校验后排队；retry', async () => {
+  it('outbound calls running at crash are needs-reconciliation (budget conservatively charged), queued ones are re-validated and re-queued; retry', async () => {
     generator.hold();
     const running = await manager.submitSynthesizeSpeech({ text: '一', videoId: 'mov_1' }, CONNECTION);
     const queued = await manager.submitSynthesizeSpeech({ text: '二', videoId: 'mov_1' }, CONNECTION);
@@ -633,7 +633,7 @@ describe('重启恢复与对账（JobManager）', () => {
     expect(videos.leases).toBe(0);
   });
 
-  it('discard：放弃结果不明的调用，记下三件事实，保守扣下的预算不退；视频没打开时 retry 拒绝', async () => {
+  it('discard: abandons a call with an unknown result, records the three facts, and the conservatively charged budget is not refunded; retry is refused while the video is not open', async () => {
     generator.hold();
     const { jobId } = await manager.submitSynthesizeSpeech({ text: '一', videoId: 'mov_1' }, CONNECTION);
     await until(async () => (await stored(jobId))?.state === 'running');
@@ -663,7 +663,7 @@ describe('重启恢复与对账（JobManager）', () => {
     expect(admission.settles).toHaveLength(1);
   });
 
-  it('排队任务重启时视频目录不见了：失败（STALE_JOB_INPUT），不执行', async () => {
+  it('queued task on restart with its video directory missing: fails (STALE_JOB_INPUT), not executed', async () => {
     generator.hold();
     const first = await manager.submitSynthesizeSpeech({ text: '一', videoId: 'mov_1' }, CONNECTION);
     const queued = await manager.submitSynthesizeSpeech({ text: '二', videoId: 'mov_1' }, CONNECTION);
@@ -676,7 +676,7 @@ describe('重启恢复与对账（JobManager）', () => {
     expect(admission.settles).toContainEqual({ reservationId: 'rsv_2', basis: 'released' });
   });
 
-  it('可查询的远端任务：失败的 failed、没到达的 interrupted、还在跑的等对账，从不重新提交', async () => {
+  it('queryable remote tasks: failed ones are failed, undelivered ones are interrupted, still-running ones wait for reconciliation, and they are never resubmitted', async () => {
     generator.hold();
     const ids: string[] = [];
     for (const text of ['一', '二', '三']) {
@@ -721,7 +721,7 @@ describe('重启恢复与对账（JobManager）', () => {
   });
 });
 
-describe('恢复矩阵与对账的规则', () => {
+describe('recovery matrix and reconciliation rules', () => {
   const job = (patch: Partial<JobRecord>, spec: unknown = { capability: 'synthesizeSpeech' }): StoredJob => ({
     record: {
       jobId: 'job_1',
@@ -739,7 +739,7 @@ describe('恢复矩阵与对账的规则', () => {
   });
   const app = (state: string) => ({ state }) as NonNullable<JobRecord['applications']>[number];
 
-  it('按停在哪里决定', () => {
+  it('decided by where it stopped', () => {
     expect(recoveryAction(job({ state: 'completed' }), undefined, undefined)).toEqual({ kind: 'keep' });
     expect(recoveryAction(job({ state: 'queued' }), undefined, undefined)).toEqual({ kind: 'requeue' });
     expect(recoveryAction(job({ state: 'queued', submitter: AGENT }), undefined, undefined)).toEqual({ kind: 'interrupt' });
@@ -762,7 +762,7 @@ describe('恢复矩阵与对账的规则', () => {
     expect(recoveryAction(job({ state: 'completed' }), app('committed'), undefined)).toEqual({ kind: 'keep' });
   });
 
-  it('取消的三件事实', () => {
+  it('the three facts of cancellation', () => {
     const at = '2026-01-01T00:00:00.000Z';
     expect(cancellationFacts({ providerId: 'fake' }, 'queued', at, { now: at })).toEqual({
       requestedAt: at,
@@ -779,7 +779,7 @@ describe('恢复矩阵与对账的规则', () => {
     expect(cancellationFacts({ providerId: 'fake' }, 'unknown', at)).toMatchObject({ remote: 'unknown', cost: 'possible' });
   });
 
-  it('对账决定只在合法的状态下可用', () => {
+  it('reconciliation decisions are available only in valid states', () => {
     expect(reconcileChoices(job({ state: 'needs-reconciliation' }), undefined)).toEqual(['retry', 'discard']);
     expect(reconcileChoices(job({ state: 'interrupted' }), undefined)).toEqual(['retry']);
     expect(reconcileChoices(job({ state: 'interrupted', submitter: { kind: 'pipeline', id: 'job_p' } }), undefined)).toEqual([]);

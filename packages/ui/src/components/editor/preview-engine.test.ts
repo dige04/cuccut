@@ -24,7 +24,7 @@ function fakePlanner(): RenderPlanner {
   return { onRecovered: null, setVideo: () => {}, planAt: () => ({ layers: [], voices: [] }) } as unknown as RenderPlanner;
 }
 
-test('停用之后接回来的引擎照常出计划：开发模式下效果会多跑一轮清理与建立', async () => {
+test('an engine reattached after being disabled still produces plans as usual: in dev mode the effects run one extra cleanup and setup cycle', async () => {
   const planner = Promise.resolve(fakePlanner());
   const engine = new PreviewEngine({ onTime: () => {}, onEnded: () => {} }, () => planner);
   // StrictMode order: create → clean up (dispose) → create again (resume); the planner only finishes loading after this.
@@ -39,7 +39,7 @@ test('停用之后接回来的引擎照常出计划：开发模式下效果会�
   engine.dispose();
 });
 
-test('停用了的引擎不再接计划器', async () => {
+test('a disabled engine no longer connects to the planner', async () => {
   const planner = Promise.resolve(fakePlanner());
   const engine = new PreviewEngine({ onTime: () => {}, onEnded: () => {} }, () => planner);
   engine.setVideo(sequence, {});
@@ -51,7 +51,7 @@ test('停用了的引擎不再接计划器', async () => {
   expect(seen).toEqual([{ kind: 'loading' }]);
 });
 
-test('画面由帧计划器画：还在取的文档不报，跳过的层与内核的提示报出来', async () => {
+test('frames drawn by the frame planner: documents still being fetched are not reported; skipped layers and kernel hints are reported', async () => {
   const layers = [
     { kind: 'caption', itemId: 'cap', matrix: [1, 0, 0, 1, 0, 0], opacity: 1, content: { documentId: 'doc_caption', sequenceSeconds: 0 } },
     { kind: 'shape', itemId: 'badge', matrix: [1, 0, 0, 1, 0, 0], opacity: 1, content: { shape: { shape: 'vendor-star' } } },
@@ -106,7 +106,7 @@ test('画面由帧计划器画：还在取的文档不报，跳过的层与内�
   engine.dispose();
 });
 
-test('转写：按文稿触发的闪避、写了 speaker 的声波与字幕要时送进计划器（取到了的），都没有时不取也不送', async () => {
+test('transcription: script-triggered ducking, speaker-tagged waveforms and subtitles are sent to the planner when needed (once fetched); when none exist, nothing is fetched or sent', async () => {
   const sentSpeech: unknown[] = [];
   const planner = { ...fakePlanner(), setSpeech: (transcripts: unknown) => sentSpeech.push(transcripts) } as unknown as RenderPlanner;
   const bodies: Record<string, unknown> = { doc_a: { schema: 'cuccut.speech/1', words: [] } };
@@ -161,7 +161,7 @@ test('转写：按文稿触发的闪避、写了 speaker 的声波与字幕要�
   engine.dispose();
 });
 
-test('声波要的素材频谱：在算时不报占位提示，算好了送进计划器再画一次；太大的素材不分析，报出来', async () => {
+test('asset spectrum a waveform needs: no placeholder hint while it is computing; once computed, send it to the planner and draw again; assets too large are not analyzed and are reported', async () => {
   const layers = [
     { kind: 'generator', itemId: 'viz', matrix: [1, 0, 0, 1, 0, 0], opacity: 1, content: { generator: 'cuccut.audio-visualizer' } },
   ];
@@ -225,7 +225,7 @@ test('声波要的素材频谱：在算时不报占位提示，算好了送进�
   engine.dispose();
 });
 
-test('写了 speaker 的声波：转写还在取时不报「没有转写」，取到了（暂停中）这一帧就送上并按转写报', async () => {
+test('speaker-tagged waveform: while transcription is still being fetched, do not report "no transcription"; once fetched (while paused), send that frame and report per transcription', async () => {
   const layers = [
     { kind: 'generator', itemId: 'viz', matrix: [1, 0, 0, 1, 0, 0], opacity: 1, content: { generator: 'cuccut.audio-visualizer' } },
   ];
@@ -279,7 +279,7 @@ test('写了 speaker 的声波：转写还在取时不报「没有转写」，�
 test.each([
   ['SVG', 'image/svg+xml'],
   ['GIF', 'image/gif'],
-])('%s 图片层：送素材字节、不读图片元素的像素；字节还在取时先留着上一帧', async (_label, mediaType) => {
+])('%s image layer: sends asset bytes, does not read pixels from the image element; while bytes are still being fetched, keep the previous frame', async (_label, mediaType) => {
   const svg = { id: 'asset_svg', revision: 'r1' };
   const layers = [{ kind: 'image', itemId: 'sticker', asset: svg, matrix: [1, 0, 0, 1, 0, 0], opacity: 1 }];
   const plan = { canvas: { width: 1920, height: 1080, background: '#000000', backgroundAlpha: 1 }, layers, voices: [] };
@@ -328,7 +328,7 @@ test.each([
   engine.dispose();
 });
 
-test('本机字体：报缺的族里排字点了名的 face 向宿主要一次，到了注入计划器再画；取的时候不报缺字体，取不到的照报', async () => {
+test('local fonts: for missing families, the face named by typesetting is requested from the host once, and drawn once injected into the planner; no missing-font report while fetching, but report fonts that cannot be fetched', async () => {
   const layers = [{ kind: 'text', itemId: 'title', matrix: [1, 0, 0, 1, 0, 0], opacity: 1, content: {} }];
   const plan = { canvas: { width: 1920, height: 1080, background: '#000000', backgroundAlpha: 1 }, layers, voices: [] };
   const note = (family: string) => ({
@@ -452,7 +452,7 @@ const playable = {
   items: [{ id: 'title', type: 'text', enabled: true, trackId: 't', span: { fromFrame: 0, durationFrames: 300 } }],
 } as unknown as Sequence;
 
-test('播放中同一个视频帧只画一次；有东西变了（文档、素材、字体、尺寸）的那一帧照画', async () => {
+test('during playback, the same video frame is drawn only once; a frame where something changed (document, asset, font, size) is drawn as usual', async () => {
   const frames = manualFrames();
   const { planner, renders } = playablePlanner();
   let notify = () => {};
@@ -480,7 +480,7 @@ test('播放中同一个视频帧只画一次；有东西变了（文档、素�
   engine.dispose();
 });
 
-test('播放中按像素预算降分辨率画；停下来画回原尺寸的那一帧', async () => {
+test('during playback, draw at reduced resolution per the pixel budget; the frame drawn when stopped returns to original size', async () => {
   const frames = manualFrames();
   const { planner, renders } = playablePlanner();
   const engine = new PreviewEngine({ onTime: () => {}, onEnded: () => {} }, () => Promise.resolve(planner));
@@ -566,7 +566,7 @@ function fakeMedia() {
   return { video: new FakeVideo() };
 }
 
-test('停着定位：视频还在定位时先用它上一张画面马上画，落地了画精确的那一帧；拖动中降分辨率，停下画回原尺寸', async () => {
+test('paused seeking: while the video is still seeking, draw immediately from its previous frame, and once landed, draw the exact frame; reduce resolution while dragging, and draw back at original size when stopped', async () => {
   const { video } = fakeMedia();
   const asset = { id: 'asset_v', revision: 'r1' };
   const renders: { seconds: number; width: number; picture: number | null }[] = [];
@@ -653,7 +653,7 @@ test('停着定位：视频还在定位时先用它上一张画面马上画，�
   }
 });
 
-test('字幕命中框随实际出帧通知；换帧先清空旧框，没有几何的帧不沿用旧字幕', async () => {
+test('subtitle hit boxes are notified along with the actual frame output; switching frames first clears old boxes, and frames without geometry do not reuse old subtitles', async () => {
   const plan = { sequenceId: 'seq', sequenceRevision: 'r1', frame: 0, canvas: sequence.canvas, layers: [], voices: [] };
   const hits: CaptionHit[] = [{ layerId: 'cap', itemId: 'cap', documentId: 'doc', cueId: 'c1', cx: 960, cy: 900, w: 800, h: 50, rotation: 0 }];
   let captionHits: CaptionHit[] = hits;
@@ -685,7 +685,7 @@ test('字幕命中框随实际出帧通知；换帧先清空旧框，没有几�
   engine.dispose();
 });
 
-test('转录中的临时字幕：叠进送给计划器的序列，文档不向 Runtime 取，点选与提示都不算它，收起后照原样送', async () => {
+test('temporary subtitles during transcription: overlaid onto the sequence sent to the planner, the document is not fetched from Runtime, selection and hints ignore them, and after collapsing they are sent as before', async () => {
   const live = {
     kind: 'caption',
     itemId: 'cc-live-caption',
@@ -762,7 +762,7 @@ test('转录中的临时字幕：叠进送给计划器的序列，文档不向 R
   engine.dispose();
 });
 
-test('倍速：播放中从换的那一刻起按新倍速走钟，媒体元素跟着乘上倍速', async () => {
+test('playback speed: during playback, the clock runs at the new speed from the moment of change, and the media element multiplies by the speed too', async () => {
   const { video } = fakeMedia();
   const frames: FrameRequestCallback[] = [];
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => frames.push(callback));
@@ -812,7 +812,7 @@ test('倍速：播放中从换的那一刻起按新倍速走钟，媒体元素�
   }
 });
 
-test('字幕档位：送给计划器的序列上停用不该露的字幕，换视频时照样停，收起后照原样送', async () => {
+test('subtitle tier: on the sequence sent to the planner, subtitles that should not show are disabled; still stopped on video switch; after collapsing, sent as before', async () => {
   const videos: Sequence[] = [];
   const planner = { ...fakePlanner(), setVideo: ({ sequence: s }: { sequence: Sequence }) => videos.push(s) } as unknown as RenderPlanner;
   const engine = new PreviewEngine({ onTime: () => {}, onEnded: () => {} }, () => Promise.resolve(planner));
@@ -846,7 +846,7 @@ test('字幕档位：送给计划器的序列上停用不该露的字幕，换�
   engine.dispose();
 });
 
-test('监听音量变了时通知订阅者；订阅时先给一次当前的', () => {
+test('notify subscribers when the volume changes while listening; on subscribe, give the current value once first', () => {
   const engine = new PreviewEngine({ onTime: () => {}, onEnded: () => {} }, () => Promise.resolve(fakePlanner()));
   const seen: { volume: number; muted: boolean }[] = [];
   const stop = engine.onMonitor((monitor) => seen.push(monitor));

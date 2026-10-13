@@ -19,8 +19,8 @@ async function setup(): Promise<{ planner: RenderPlanner; video: VideoSnapshot }
   return { planner, video };
 }
 
-describe.skipIf(!built)('帧计划器（WASM）', () => {
-  it('中英文字幕自动补间距，与显式空格的实际像素一致', async () => {
+describe.skipIf(!built)('frame planner (WASM)', () => {
+  it('auto-spacing for mixed Chinese and English subtitles matches the actual pixels of explicit spaces', async () => {
     const { planner, video } = await setup();
     planner.addFonts(planner.fontFiles().map((name) => new Uint8Array(readFileSync(`${fonts}${name}`))));
     const sequence = video.sequences[video.rootSequenceId]!;
@@ -53,7 +53,7 @@ describe.skipIf(!built)('帧计划器（WASM）', () => {
     }
   });
 
-  it('与原生 Rust 的金标准逐字节一致', async () => {
+  it('byte-identical to the native Rust gold standard', async () => {
     const { planner } = await setup();
     const lines = readFileSync(`${fixtures}plan-golden.txt`, 'utf8').trimEnd().split('\n');
     expect(lines.length).toBeGreaterThan(10);
@@ -63,7 +63,7 @@ describe.skipIf(!built)('帧计划器（WASM）', () => {
     }
   });
 
-  it('计划里的层按合成顺序排列', async () => {
+  it('layers in the plan are ordered by composition order', async () => {
     const { planner } = await setup();
     const plan = planner.planAt(1.5);
     expect(plan.frame).toBe(45);
@@ -71,7 +71,7 @@ describe.skipIf(!built)('帧计划器（WASM）', () => {
     expect(plan.voices.map((voice) => voice.itemId)).toEqual(['item_land_a', 'item_music', 'item_hidden']);
   });
 
-  it('错误带着引擎的代码；送不进去的视频不顶掉上一个', async () => {
+  it('errors carry the engine\'s code; a video that cannot be fed in does not replace the previous one', async () => {
     const { planner, video } = await setup();
     const sequence = video.sequences[video.rootSequenceId]!;
     const failure = (() => {
@@ -87,14 +87,14 @@ describe.skipIf(!built)('帧计划器（WASM）', () => {
     expect(() => planner.planAt(Number.NaN)).toThrow(PlanFailure);
   });
 
-  it('非法的帧率是错误，不是陷阱', async () => {
+  it('an invalid frame rate is an error, not a trap', async () => {
     const { planner, video } = await setup();
     const sequence = video.sequences[video.rootSequenceId]!;
     planner.setVideo({ sequence: { ...sequence, fps: { num: 0, den: 1 } }, assets: video.assets });
     expect(() => planner.planAt(1)).toThrow(expect.objectContaining({ code: 'INVALID_TIME_VALUE' }));
   });
 
-  it('画帧与导出同一个内核：字体注入之后才画，媒体层画送进去的画面，整帧不透明', async () => {
+  it('frame drawing and export share one kernel: drawing happens after font injection, the media layer draws the fed-in picture, the whole frame is opaque', async () => {
     const { planner } = await setup();
     expect(() => planner.render(1.5, 320, 180)).toThrow(expect.objectContaining({ code: 'INVALID_PARAMS' }));
     const files = planner.fontFiles();
@@ -121,7 +121,7 @@ describe.skipIf(!built)('帧计划器（WASM）', () => {
     expect(() => planner.setPicture('item_land_a', red, 10, 10)).toThrow(expect.objectContaining({ code: 'INVALID_PICTURE' }));
   });
 
-  it('素材频谱在临时实例里算；声波缺哪份报哪份，送进去之后照着声音画', async () => {
+  it('media spectrum is computed in a temporary instance; the waveform reports which piece is missing, and after it is fed in, draws from the audio', async () => {
     const { planner, video } = await setup();
     planner.addFonts([new Uint8Array(readFileSync(`${fonts}${planner.fontFiles()[0]}`))]);
     // Synthesized audio: one second of 440 Hz. Stereo takes the average of the two channels, which is the same as feeding the averaged mono signal; the same samples twice give the same bytes.
@@ -161,7 +161,7 @@ describe.skipIf(!built)('帧计划器（WASM）', () => {
     expect(planner.render(1, 160, 90).spectra).toHaveLength(1);
   });
 
-  it('本机字体：报缺的族与点了名的 face；送进来之后不缺，已经分出去的实例与之后分的实例都有，界面不留字节', async () => {
+  it('local fonts: reports the missing families and the faces named; after they are fed in nothing is missing, instances already handed out and those handed out later both have them, the UI keeps no bytes', async () => {
     const { planner, video } = await setup();
     planner.addFonts(planner.fontFiles().map((name) => new Uint8Array(readFileSync(`${fonts}${name}`))));
     const sequence = video.sequences[video.rootSequenceId]!;
@@ -202,7 +202,7 @@ describe.skipIf(!built)('帧计划器（WASM）', () => {
     expect(loads).toBe(1);
   });
 
-  it('文字框由内核量：与画字同一批字体，没注入字体时量不了', async () => {
+  it('text boxes are measured by the kernel: same fonts as drawing text, cannot measure when no fonts are injected', async () => {
     const { planner } = await setup();
     const style = { fontSize: 24, fontWeight: 'bold', lineHeight: 1.2, backgroundColor: '#000000CC', backgroundPadding: 14 };
     const canvas = { width: 1920, height: 1080 };
@@ -272,8 +272,8 @@ function trappingModule(): WebAssembly.Module {
   );
 }
 
-describe('帧计划器的重新载入', () => {
-  it('陷阱之后抛 PLANNER_CRASHED，`recovered()` 在重新载入好了之后兑现，`onRecovered` 照旧调用', async () => {
+describe('frame planner reload', () => {
+  it('after a trap, throws PLANNER_CRASHED; `recovered()` resolves once the reload is done, `onRecovered` is still called', async () => {
     const planner = await RenderPlanner.instantiate(trappingModule());
     const canvas = { width: 1920, height: 1080 };
     await planner.recovered();
@@ -296,7 +296,7 @@ describe('帧计划器的重新载入', () => {
     expect(planner.measureText('字', {}, null, canvas)).toEqual({ width: 12, height: 34 });
   });
 
-  it('本机字体不留字节：重新载入时按 `load` 重新要（要的期间送来的也要），都要回来之后才算好；要不到的跳过', async () => {
+  it('local fonts keep no bytes: on reload they are requested again via `load` (including those fed in during the request), and it counts as done only after all come back; ones that cannot be obtained are skipped', async () => {
     const planner = await RenderPlanner.instantiate(trappingModule());
     const canvas = { width: 1920, height: 1080 };
     const loads: string[] = [];
@@ -329,7 +329,7 @@ describe('帧计划器的重新载入', () => {
     expect(planner.measureText('字', {}, null, canvas)).toEqual({ width: 12, height: 34 });
   });
 
-  it('重新载入失败：在等的与之后才来等的 `recovered()` 都拒绝，不会一直等下去', async () => {
+  it('reload failure: both the `recovered()` calls already waiting and those that start waiting later reject, so nothing waits forever', async () => {
     const planner = await RenderPlanner.instantiate(trappingModule());
     const canvas = { width: 1920, height: 1080 };
     const instantiate = vi.spyOn(WebAssembly, 'instantiate').mockRejectedValueOnce(new Error('重新实例化失败'));

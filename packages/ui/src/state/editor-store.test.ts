@@ -14,17 +14,17 @@ vi.hoisted(() => {
   });
 });
 
-describe('编辑器右侧面板', () => {
+describe('editor right-side panel', () => {
   beforeEach(() => useEditor.setState({ panelTab: 'video', panelWidth: PANEL_WIDTH_DEFAULT, panelHidden: false }));
 
-  it('点工具栏换页并展开；传 null 收起，页留着', () => {
+  it('clicking the toolbar switches the page and expands; passing null collapses it, the page is kept', () => {
     useEditor.getState().showPanel(null);
     expect(useEditor.getState()).toMatchObject({ panelTab: 'video', panelHidden: true });
     useEditor.getState().showPanel('props');
     expect(useEditor.getState()).toMatchObject({ panelTab: 'props', panelHidden: false });
   });
 
-  it('换到另一个视频时落到给的页；同一个视频重开不动用户切过的页', () => {
+  it('switching to another video lands on the given page; reopening the same video does not change the page the user switched to', () => {
     useEditor.setState({ videoId: null });
     useEditor.getState().attach('v1', 'transcript');
     expect(useEditor.getState()).toMatchObject({ videoId: 'v1', panelTab: 'transcript' });
@@ -35,7 +35,7 @@ describe('编辑器右侧面板', () => {
     expect(useEditor.getState()).toMatchObject({ videoId: 'v2', panelTab: 'audio' });
   });
 
-  it('舞台工具条的观看态（倍速、字幕隐藏、安全区）换视频时复位，同一个视频重开不动', () => {
+  it('stage toolbar viewing state (playback speed, subtitle hiding, safe area) resets when switching videos; reopening the same video does not change it', () => {
     useEditor.setState({ videoId: null });
     useEditor.getState().attach('v1');
     useEditor.getState().setRate(1.5);
@@ -47,7 +47,7 @@ describe('编辑器右侧面板', () => {
     expect(useEditor.getState()).toMatchObject({ rate: 1, captionsHidden: false, safeArea: false });
   });
 
-  it('拖缝：宽度钳在上限内；拖到收起线以下就收起，记住的宽度不变', () => {
+  it('drag seam: width is clamped to the limit; dragging below the collapse line collapses it, the remembered width is unchanged', () => {
     useEditor.getState().dragPanel(420.4);
     expect(useEditor.getState().panelWidth).toBe(420);
     useEditor.getState().dragPanel(900);
@@ -59,42 +59,42 @@ describe('编辑器右侧面板', () => {
   });
 });
 
-describe('网页宿主上的面板页', () => {
-  it('记着的是 AI 工具时落回文稿；桌面端照旧', () => {
+describe('panel page on the web host', () => {
+  it('if the remembered one is the AI tool, falls back to the script; desktop unchanged', () => {
     expect(hostPanelTab('aitools', true)).toBe('transcript');
     expect(hostPanelTab('aitools', false)).toBe('aitools');
     expect(hostPanelTab('subtitle', true)).toBe('subtitle');
   });
 });
 
-describe('时间线缩放的下限', () => {
+describe('timeline zoom lower bound', () => {
   beforeEach(() => useEditor.setState({ pxPerSecond: ZOOM_DEFAULT, zoomFloor: ZOOM_MIN }));
 
-  it('短视频夹在 [ZOOM_MIN, ZOOM_MAX]', () => {
+  it('short videos are clamped to [ZOOM_MIN, ZOOM_MAX]', () => {
     useEditor.getState().setZoom(0.5);
     expect(useEditor.getState().pxPerSecond).toBe(ZOOM_MIN);
     useEditor.getState().setZoom(1e6);
     expect(useEditor.getState().pxPerSecond).toBe(ZOOM_MAX);
   });
 
-  it('长视频的下限低于 ZOOM_MIN：能缩到整片入镜', () => {
+  it('for long videos the lower bound is below ZOOM_MIN: can zoom out until the whole video fits in view', () => {
     useEditor.getState().setZoomFloor(0.2);
     useEditor.getState().setZoom(0.01);
     expect(useEditor.getState().pxPerSecond).toBe(0.2);
   });
 
-  it('换成短视频时把记着的极小缩放夹回 ZOOM_MIN', () => {
+  it('when switching to a short video, a remembered tiny zoom is clamped back to ZOOM_MIN', () => {
     useEditor.setState({ pxPerSecond: 0.2, zoomFloor: 0.2 });
     useEditor.getState().setZoomFloor(ZOOM_MIN);
     expect(useEditor.getState().pxPerSecond).toBe(ZOOM_MIN);
   });
 });
 
-describe('片段选区与文稿词选区互斥（产品设计 §5.7）', () => {
+describe('clip selection and script word selection are mutually exclusive (product design §5.7)', () => {
   const words = { assetId: 'a1', anchor: 2, focus: 5, extra: [] as Array<[number, number]> };
   beforeEach(() => useEditor.setState({ selection: [], wordSelection: null, draft: null, documentDraft: null }));
 
-  it('选出词时清掉片段选区与草稿；清掉词选区不动片段选区', () => {
+  it('selecting words clears the clip selection and draft; clearing the word selection does not change the clip selection', () => {
     useEditor.getState().select(['i1']);
     useEditor.setState({ documentDraft: { documentId: 'd1', baseRevision: 'r1', body: {} } });
     useEditor.getState().setWordSelection(words);
@@ -104,7 +104,7 @@ describe('片段选区与文稿词选区互斥（产品设计 §5.7）', () => {
     expect(useEditor.getState().selection).toEqual(['i2']);
   });
 
-  it('拖选扩词（更新函数）也走同一条规则；没有片段选区时不换掉 selection', () => {
+  it('drag-select word expansion (update function) follows the same rule; without a clip selection, selection is not replaced', () => {
     useEditor.getState().setWordSelection(words);
     const before = useEditor.getState().selection;
     useEditor.getState().setWordSelection((s) => (s ? { ...s, focus: 9 } : s));
@@ -112,7 +112,7 @@ describe('片段选区与文稿词选区互斥（产品设计 §5.7）', () => {
     expect(useEditor.getState().selection).toBe(before);
   });
 
-  it('选中片段（点选或 ⌘ 加选）清掉词选区；清空片段选区不动词选区', () => {
+  it('selecting clips (click or ⌘ add) clears the word selection; clearing the clip selection does not change the word selection', () => {
     useEditor.getState().setWordSelection(words);
     useEditor.getState().select([]);
     expect(useEditor.getState().wordSelection).toEqual(words);
@@ -123,7 +123,7 @@ describe('片段选区与文稿词选区互斥（产品设计 §5.7）', () => {
     expect(useEditor.getState()).toMatchObject({ selection: ['i3'], wordSelection: null });
   });
 
-  it('⌘ 点掉最后一件片段时词选区不受影响；换视频两边都清', () => {
+  it('⌘-clicking off the last clip does not affect the word selection; switching videos clears both', () => {
     useEditor.setState({ selection: ['i1'], wordSelection: words });
     useEditor.getState().toggleSelect('i1');
     expect(useEditor.getState()).toMatchObject({ selection: [], wordSelection: words });

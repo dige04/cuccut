@@ -154,8 +154,8 @@ async function runAll(deps: SpeakersDeps) {
   return { params, artifacts, done, proposalId: (outputs.propose as { artifactId: string }).artifactId };
 }
 
-describe('识别说话人的流程', () => {
-  it('没有模型包或没装好时以 MODEL_UNAVAILABLE 拒绝，没装好的带上模型包状态（界面据此下载）', async () => {
+describe('speaker identification flow', () => {
+  it('without a model pack or when not properly installed: rejected with MODEL_UNAVAILABLE; when not installed, carries the model pack status (the UI uses it to download)', async () => {
     const missing = speakersPipeline(setup({ pack: null }).deps);
     await expect(missing.prepare({ videoId: 'vid_1' }, {} as never)).rejects.toMatchObject({
       code: 'conflict',
@@ -168,7 +168,7 @@ describe('识别说话人的流程', () => {
     });
   });
 
-  it('冻结唯一的转写与它的版本，把词时间交给 Worker；提案复用已有说话人、新建一位，并试算译文重切', async () => {
+  it('freezes the sole transcription and its version, hands word timings to the Worker; the proposal reuses existing speakers, creates one new, and trial-recomputes translation resegmentation', async () => {
     const { deps, runs } = setup();
     const { params, done } = await runAll(deps);
     expect(params).toMatchObject({ documentId: 'doc_s', revision: '1', assetId: 'asset_1', bundleId: 'speaker-diarization@mlx' });
@@ -202,13 +202,13 @@ describe('识别说话人的流程', () => {
     ]);
   });
 
-  it('Worker 给的说话人与词数对不上时 MODEL_OUTPUT_INVALID', async () => {
+  it('when the speaker and word counts from the Worker don\'t match: MODEL_OUTPUT_INVALID', async () => {
     const { deps } = setup({ labels: ['A'] });
     await expect(runAll(deps)).rejects.toMatchObject({ code: 'MODEL_OUTPUT_INVALID' });
   });
 });
 
-describe('应用识别说话人的提案', () => {
+describe('applying the speaker identification proposal', () => {
   async function proposal() {
     const fixture = setup();
     const { artifacts, proposalId } = await runAll(fixture.deps);
@@ -216,7 +216,7 @@ describe('应用识别说话人的提案', () => {
     return { ...fixture, file };
   }
 
-  it('转写与有变化的译文各写一个新版本：说话人改名、句子切开、译文重切不重译；概要更新说话人数', async () => {
+  it('transcription and each translation that changed are each written as a new version: speaker renamed, sentences split, translation resegmented without retranslating; summary updates speaker count', async () => {
     const { deps, file } = await proposal();
     const plan = await speakerApplyOperations(deps.videos, file, { 'spk-2': ' 嘉宾 ' });
     expect(plan.label).toBe(speakersApplyLabel());
@@ -240,7 +240,7 @@ describe('应用识别说话人的提案', () => {
     expect(translationOp!.summary).toEqual({ unitCount: 3, sourceRevision: '1' });
   });
 
-  it('文稿或译文在识别之后改过时 STALE_JOB_INPUT', async () => {
+  it('STALE_JOB_INPUT if the script or translation is changed after identification', async () => {
     const { deps, documents, file } = await proposal();
     documents.doc_t = record('doc_t', 'translation', { sourceDocumentId: 'doc_s' }, '2');
     await expect(speakerApplyOperations(deps.videos, file)).rejects.toMatchObject({
@@ -254,7 +254,7 @@ describe('应用识别说话人的提案', () => {
     });
   });
 
-  it('改名只认提案里的说话人，名字不能为空', async () => {
+  it('renaming only accepts speakers in the proposal; the name must not be empty', async () => {
     const { deps, file } = await proposal();
     await expect(speakerApplyOperations(deps.videos, file, { ghost: '谁' })).rejects.toMatchObject({ code: 'invalid-request' });
     await expect(speakerApplyOperations(deps.videos, file, { a: '  ' })).rejects.toMatchObject({ code: 'invalid-request' });

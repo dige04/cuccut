@@ -120,7 +120,7 @@ async function readJsonEntry<T>(file: string, name: string): Promise<T> {
   return JSON.parse((await readEntry(file, entry, 1 << 26)).toString('utf8')) as T;
 }
 
-describe.skipIf(!engine || !ffmpeg)('便携包与工程导出（真实引擎）', () => {
+describe.skipIf(!engine || !ffmpeg)('portable package and project export (real engine)', () => {
   let fixtures: string;
   let dir: string;
   let runtime: RunningRuntime;
@@ -254,7 +254,7 @@ describe.skipIf(!engine || !ffmpeg)('便携包与工程导出（真实引擎）'
     return { videoId, documentId };
   }
 
-  it('导出再打开：内容与素材摘要相同，素材都收进了新视频；包里没有本机路径（OUT-02）', async () => {
+  it('export then reopen: content and media digests match, all media is collected into the new video; the package has no local paths (OUT-02)', async () => {
     const { videoId, documentId } = await richVideo();
     const original = snapshotOf(videoId);
 
@@ -361,7 +361,7 @@ describe.skipIf(!engine || !ffmpeg)('便携包与工程导出（真实引擎）'
     expect(await fs.readdir(other.path)).toEqual(before);
   });
 
-  it('预检逐项拒绝读不到的素材；跳过时清单如实标缺失，打开后是缺失的链接素材；目标已存在时拒绝', async () => {
+  it('preflight rejects unreadable media item by item; when skipped, the manifest honestly marks it missing and it opens as missing linked media; rejects when the target already exists', async () => {
     const [a, b, c] = [await fixture('a.wav'), await fixture('b.wav'), await fixture('c.wav')];
     const { ref } = await client.request('videos.create', { projectId: project.id, name: '缺素材' });
     const videoId = ref.videoId;
@@ -413,7 +413,7 @@ describe.skipIf(!engine || !ffmpeg)('便携包与工程导出（真实引擎）'
     }
   });
 
-  it('取消：不留下半个包，也不留临时文件', async () => {
+  it('cancel: leaves no half-written package and no temporary files', async () => {
     const big = path.join(project.path, 'media', 'big.json');
     await fs.mkdir(path.dirname(big), { recursive: true });
     const handle = await fs.open(big, 'w');
@@ -429,7 +429,7 @@ describe.skipIf(!engine || !ffmpeg)('便携包与工程导出（真实引擎）'
     expect(await fs.readdir(path.join(project.path, 'exports'))).toEqual([]);
   });
 
-  it('工程导出：序列写成 xmeml，素材按路径引用，表达不了的逐项警告', async () => {
+  it('project export: sequences are written as xmeml, media is referenced by path, and anything it cannot express is warned about item by item', async () => {
     const a = await fixture('a.wav');
     const { ref } = await client.request('videos.create', { projectId: project.id, name: '工程' });
     const videoId = ref.videoId;
@@ -494,7 +494,7 @@ describe.skipIf(!engine || !ffmpeg)('便携包与工程导出（真实引擎）'
     expect((await codeOf({ videoId, settings: { kind: 'project', format: 'xmeml' } })).code).toBe('EXPORT_NOTHING_TO_EXPORT');
   });
 
-  it('命令行 import-package：经发现文件连上运行中的 Runtime，在 --project 指定的项目里建成新视频；坏包以错误码退出', async () => {
+  it('CLI import-package: connects to the running Runtime through the discovery file and creates a new video in the project given by --project; a bad package exits with an error code', async () => {
     const { videoId } = await richVideo();
     const original = snapshotOf(videoId);
     const file = (await exportOnce({ videoId, settings: { kind: 'portable' } })).result!.outputs![0]!.path!;
@@ -536,7 +536,7 @@ describe.skipIf(!engine || !ffmpeg)('便携包与工程导出（真实引擎）'
     expect(await fs.readdir(target)).toEqual(before);
   });
 
-  it('启动时清掉上次强杀留下的导出临时文件与打开便携包的暂存目录；用户文件与刚写的留着', async () => {
+  it('on startup, clears export temp files and portable package open staging directories left by the last forced kill; user files and just-written files are kept', async () => {
     const { videoId } = await richVideo();
     const job = await exportOnce({ videoId, settings: { kind: 'portable' } });
     const exportsDir = path.join(project.path, 'exports');

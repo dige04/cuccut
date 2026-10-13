@@ -73,7 +73,7 @@ class FakeVideos implements JobVideos {
   }
 }
 
-describe('本地文生图（假 Model Worker）', () => {
+describe('local text-to-image (fake Model Worker)', () => {
   let dir: string;
   let controlFile: string;
   let recordFile: string;
@@ -154,7 +154,7 @@ describe('本地文生图（假 Model Worker）', () => {
     return manager.inspect(jobId);
   }
 
-  it('能力视图：local 提供 generateImage，模型描述来自模型包（一次一张、PNG、接受 seed、免费）', async () => {
+  it('capability view: local provides generateImage, model description comes from the model pack (one image at a time, PNG, accepts seed, free)', async () => {
     const view = await services.refresh();
     expect(view.generateImage.default).toBeNull();
     expect(view.generateImage.effective).toBeNull();
@@ -175,7 +175,7 @@ describe('本地文生图（假 Model Worker）', () => {
     expect(capability.models[0]!.aspectRatios.map((a) => a.size)).not.toContain('512x512');
   });
 
-  it('提交时冻结尺寸与 seed（没给时抽一个）；Worker 收到 image 的 job.run，输出的 PNG 校验后发布', async () => {
+  it('submit freezes size and seed (a seed is drawn if none is given); the Worker receives image job.run, and the output PNG is validated before publishing', async () => {
     const job = await draw({ size: '16:9' });
     expect(job).toMatchObject({
       state: 'completed',
@@ -204,13 +204,13 @@ describe('本地文生图（假 Model Worker）', () => {
     expect(imageSelfTestVerdict(artifact, { width: 1024, height: 576 })).toMatchObject({ passed: true });
   });
 
-  it('给了 seed 就用它；重新执行沿用冻结的 seed', async () => {
+  it('a given seed is used; re-execution reuses the frozen seed', async () => {
     const job = await draw({ seed: 42 });
     expect(job.generation).toMatchObject({ seed: 42, size: '1024x1024' });
     expect((await recorded())[0]).toMatchObject({ options: { seed: 42, width: 1024, height: 1024 } });
   });
 
-  it('给了步数就冻结并交给 Worker；没给时不写（Worker 用默认步数）', async () => {
+  it('a given step count is frozen and handed to the Worker; when none is given, nothing is written (the Worker uses its default steps)', async () => {
     const job = await draw({ size: '512x512', steps: 8 });
     expect(job).toMatchObject({
       state: 'completed',
@@ -221,21 +221,21 @@ describe('本地文生图（假 Model Worker）', () => {
     expect((await draw()).generation).not.toHaveProperty('steps');
   });
 
-  it('资源调度按模型包登记的峰值计 Model Worker：candle 在 CPU 上计内存、不占 GPU 内存', async () => {
+  it('resource scheduling counts the Model Worker by the peak registered by the model pack: candle counts memory on CPU and does not take GPU memory', async () => {
     expect((await draw()).state).toBe('completed');
     expect(scheduler.snapshot().holders).toMatchObject([
       { holder: modelWorkerHolder(IMAGE), demand: { ...MODEL_WORKER_DEMAND, memory: REAL.image!.peakBytes, gpuMemory: 0 } },
     ]);
   });
 
-  it('峰值高于固定需求的模型包：Model Worker 按峰值计', async () => {
+  it('model pack with a peak above the fixed requirement: the Model Worker is counted at the peak', async () => {
     expect((await draw({ model: BIG })).state).toBe('completed');
     expect(scheduler.snapshot().holders).toMatchObject([
       { holder: modelWorkerHolder(BIG), demand: { ...MODEL_WORKER_DEMAND, memory: 3 * GiB, gpuMemory: 0 } },
     ]);
   });
 
-  it('模型不支持的尺寸、张数与格式在提交时拒绝，不创建任务', async () => {
+  it('sizes, counts and formats the model does not support are rejected at submission, no task is created', async () => {
     for (const request of [{ size: '640x640' }, { count: 2 }, { format: 'jpeg' as const }, { steps: 4 }, { steps: 41 }, { steps: 8.5 }]) {
       const refused = await manager.submitGenerateImage({ prompt: 'x', provider: 'local', model: IMAGE, ...request }, submitter).then(
         () => null,
@@ -246,7 +246,7 @@ describe('本地文生图（假 Model Worker）', () => {
     expect(manager.list()).toEqual([]);
   });
 
-  it('Worker 不声明 image：MODEL_LOAD_FAILED（capability-missing），不加载，模型包不停用', async () => {
+  it('Worker does not declare image: MODEL_LOAD_FAILED (capability-missing), nothing is loaded, the model pack is not disabled', async () => {
     await control({ capabilities: ['transcribe'] });
     expect(await draw()).toMatchObject({
       state: 'failed',
@@ -256,7 +256,7 @@ describe('本地文生图（假 Model Worker）', () => {
     expect(catalog.blocked(IMAGE)).toBe(false);
   });
 
-  it('Worker 没列出这个 family：同样是 capability-missing，不发 model.load，模型包不停用', async () => {
+  it('Worker does not list this family: likewise capability-missing, no model.load is sent, the model pack is not disabled', async () => {
     await control({ capabilities: ['transcribe', 'image'], imageFamilies: [] });
     expect(await draw()).toMatchObject({
       state: 'failed',

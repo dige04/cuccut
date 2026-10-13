@@ -21,13 +21,13 @@ const report = (step: StallStep, patch: { media?: MediaProbe[]; documents?: stri
   fonts: patch.fonts ?? [],
 });
 
-describe('预览卡住提示', () => {
+describe('preview stall hint', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     setLocale('zh-Hans');
   });
 
-  it('诊断的每一步都落到设计稿的一类', () => {
+  it('every diagnostic step maps to a category in the design spec', () => {
     expect(stallTopic('planner-loading')).toBe('engine');
     expect((['no-video', 'video-error', 'no-plan'] as const).map(stallTopic)).toEqual(['video', 'video', 'video']);
     expect(stallTopic('media-pending')).toBe('media');
@@ -38,7 +38,7 @@ describe('预览卡住提示', () => {
     expect(stallTopic('no-canvas')).toBe('paint');
   });
 
-  it('点名在等的素材、字幕文档与字体；查不到名字用通用说法', () => {
+  it('name the asset, subtitle document and font being waited on; when the name cannot be found, use a generic description', () => {
     expect(stallDetail(report('media-pending', { media: [probe(), probe('asset_blank'), probe('asset_a')] }), names)).toBe(
       '在等媒体：interview.mp4',
     );
@@ -53,7 +53,7 @@ describe('预览卡住提示', () => {
     expect(stallDetail(report('not-painted'), names)).toBe('画面一直没有更新');
   });
 
-  it('英文照设计稿的说法', () => {
+  it('English uses the design spec\'s wording', () => {
     vi.stubEnv('CUCCUT_LOCALE', 'en');
     setLocale('en');
     expect(stallDetail(report('media-pending', { media: [probe('asset_a')] }), names)).toBe('Waiting for media: interview.mp4');
@@ -62,12 +62,12 @@ describe('预览卡住提示', () => {
     expect(stallDetail(report('documents-pending', { documents: ['doc_gone'] }), names)).toBe('Waiting for captions');
   });
 
-  it('转换的百分比：向下取整、封顶 99；不知道进度是 null', () => {
+  it('conversion percentage: rounded down, capped at 99; null when progress is unknown', () => {
     expect([0, 0.009, 0.374, 0.999, 1, 1.5].map(preparePercent)).toEqual([0, 0, 37, 99, 99, 99]);
     expect([null, undefined, Number.NaN, -0.1].map(preparePercent)).toEqual([null, null, null, null]);
   });
 
-  it('已经等了几秒：从开始卡住算起，向下取整', () => {
+  it('seconds already waited: counted from the start of the stall, rounded down', () => {
     expect(waitedSeconds({ since: 2000 }, 12_999)).toBe(10);
     expect(waitedSeconds({ since: 2000 }, 13_000)).toBe(11);
     expect(waitedSeconds({ since: 5000 }, 1000)).toBe(0);

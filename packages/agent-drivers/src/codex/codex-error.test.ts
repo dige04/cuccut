@@ -9,7 +9,7 @@ const err = (message: string, codexErrorInfo: CodexErrorInfo | null = null, addi
 });
 
 describe('classifyCodexError', () => {
-  it('结构化字段优先', () => {
+  it('structured fields take precedence', () => {
     expect(classifyCodexError(err('Your access token could not be refreshed.', 'unauthorized'))).toBe('AGENT_AUTH_REQUIRED');
     expect(classifyCodexError(err("You've hit your usage limit.", 'usageLimitExceeded'))).toBe('AGENT_RATE_LIMITED');
     expect(classifyCodexError(err('Rate limit reached', 'rateLimitExceeded'))).toBe('AGENT_RATE_LIMITED');
@@ -20,13 +20,13 @@ describe('classifyCodexError', () => {
     expect(classifyCodexError(err('stream error', { httpConnectionFailed: { httpStatusCode: 429 } }))).toBe('AGENT_RATE_LIMITED');
   });
 
-  it('其他明确的结构化原因不归这几类，即使原文里有关键词', () => {
+  it('other explicit structured reasons do not fall into these categories, even if the raw text contains keywords', () => {
     expect(classifyCodexError(err('context window exceeded; please log in again', 'contextWindowExceeded'))).toBeNull();
     expect(classifyCodexError(err('sandbox denied', 'sandboxError'))).toBeNull();
     expect(classifyCodexError(err('cannot steer', { activeTurnNotSteerable: { turnKind: 'review' } }))).toBeNull();
   });
 
-  it('other、badRequest、没带状态的连接错误、没有结构化字段：看原文', () => {
+  it('other, badRequest, connection errors without a status, and no structured field: look at the raw text', () => {
     expect(classifyCodexError(err('unexpected status 404 Not Found: Model not found gpt-x', 'other'))).toBe('AGENT_MODEL_UNAVAILABLE');
     expect(classifyCodexError(err('unexpected status 401 Unauthorized', 'other'))).toBe('AGENT_AUTH_REQUIRED');
     expect(classifyCodexError(err('bad request', 'badRequest', 'invalid api key provided'))).toBe('AGENT_AUTH_REQUIRED');
@@ -37,7 +37,7 @@ describe('classifyCodexError', () => {
 });
 
 describe('classifyCodexErrorText', () => {
-  it('模型一类先于账号一类', () => {
+  it('model category takes precedence over account category', () => {
     expect(classifyCodexErrorText("The 'gpt-9' model is not supported when using Codex with a ChatGPT account.")).toBe(
       'AGENT_MODEL_UNAVAILABLE',
     );
@@ -45,7 +45,7 @@ describe('classifyCodexErrorText', () => {
     expect(classifyCodexErrorText('unknown model: foo')).toBe('AGENT_MODEL_UNAVAILABLE');
   });
 
-  it('账号一类按设计稿的词表；auth 词根、denied、forbidden 不收', () => {
+  it('account category follows the design\'s word list; auth roots, denied and forbidden are not included', () => {
     expect(classifyCodexErrorText('Not logged in. Run codex login.')).toBe('AGENT_AUTH_REQUIRED');
     expect(classifyCodexErrorText('session expired')).toBe('AGENT_AUTH_REQUIRED');
     expect(classifyCodexErrorText('HTTP 401')).toBe('AGENT_AUTH_REQUIRED');
@@ -55,7 +55,7 @@ describe('classifyCodexErrorText', () => {
     expect(classifyCodexErrorText('wrote 14012 bytes')).toBeNull();
   });
 
-  it('限流一类', () => {
+  it('rate-limit category', () => {
     expect(classifyCodexErrorText('usage limit reached for image_gen')).toBe('AGENT_RATE_LIMITED');
     expect(classifyCodexErrorText('insufficient_quota')).toBe('AGENT_RATE_LIMITED');
     expect(classifyCodexErrorText('status 429')).toBe('AGENT_RATE_LIMITED');

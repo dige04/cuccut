@@ -45,8 +45,8 @@ function video(id: string, name: string, patch: Partial<SpaceEntry> = {}): Space
 const names: Record<string, string> = { v1: '发布会', v2: '访谈' };
 const nameOf = (id: string) => names[id];
 
-describe('开放范围', () => {
-  it('能选的视频：只要项目里、不在回收站的视频条目，按名字排、同一个只算一次；改过名用改后的', () => {
+describe('sharing scope', () => {
+  it('selectable videos: only video entries in the project that are not in the trash, sorted by name, each counted once; a renamed video uses its new name', () => {
     const entries = [
       video('v2', '访谈'),
       video('v1', 'raw', { user: { favorite: false, displayName: '发布会', trashedAt: null } }),
@@ -61,7 +61,7 @@ describe('开放范围', () => {
     ]);
   });
 
-  it('一句话：全部写总数，一个写名字（找不到写 ID），多个写数目，空名单直说', () => {
+  it('summary line: all writes the total, one writes its name (the ID when not found), several writes the count, an empty list says so directly', () => {
     expect(mcpScope('all', 3, nameOf)).toBe('所有视频（3）');
     expect(mcpScope({ ids: ['v1'] }, 3, nameOf)).toBe('「发布会」');
     expect(mcpScope({ ids: ['vx'] }, 3, nameOf)).toBe('「vx」');
@@ -69,7 +69,7 @@ describe('开放范围', () => {
     expect(mcpScope({ ids: [] }, 3, nameOf)).toBe('没有开放任何视频');
   });
 
-  it('勾选之后：勾满等于全部，去重并丢掉不认识的；一部不剩是空名单，不悄悄放宽', () => {
+  it('after checking: all checked equals all; de-duplicates and drops unknown entries; when none are left it is an empty list and does not silently widen', () => {
     const all = ['v1', 'v2', 'v3'];
     expect(pickedScope(['v1', 'v2', 'v3'], all)).toBe('all');
     expect(pickedScope(['v2', 'v2', 'vx'], all)).toEqual({ ids: ['v2'] });
@@ -77,7 +77,7 @@ describe('开放范围', () => {
     expect(pickedScope([], [])).toEqual({ ids: [] });
   });
 
-  it('服务卡副行：开着说开放了什么，关着说启动后开放什么，起停中只说范围', () => {
+  it('service card subline: when on, says what is shared; when off, says what will be shared after starting; while starting or stopping, only says the scope', () => {
     expect(levelTitle('ask')).toBe('修改前询问');
     expect(mcpSub('on', '所有视频（3）', 'read')).toBe('所有视频（3） · 只读 · 需要令牌');
     expect(mcpSub('off', '「发布会」', 'auto')).toBe('启动后开放「发布会」 · 直接放行 · 需要令牌');
@@ -85,8 +85,8 @@ describe('开放范围', () => {
   });
 });
 
-describe('工具目录', () => {
-  it('目录照协议常量；不认识的工具名照写', () => {
+describe('tool catalog', () => {
+  it('the catalog follows the protocol constants; unrecognized tool names are written as is', () => {
     expect(MCP_TOOLS.map((t) => t.name)).toEqual(MCP_SERVICE_TOOL_NAMES.map((t) => t.name));
     expect(mcpToolTitle('edits_apply')).toBe('修改视频');
     expect(mcpToolTitle('mystery')).toBe('mystery');
@@ -100,7 +100,7 @@ describe('工具目录', () => {
     ]);
   });
 
-  it('去向：读取直接应答；写入在只读下不提供，询问档调用前询问，放行档直接执行', () => {
+  it('destination: reads answer directly; writes are not offered in read-only mode, the ask tier asks before calling, the allow tier runs directly', () => {
     const read = MCP_TOOLS.find((t) => t.name === 'videos_list')!;
     const write = MCP_TOOLS.find((t) => t.name === 'export')!;
     expect(toolGate(read, 'read')).toBe('answer');
@@ -109,7 +109,7 @@ describe('工具目录', () => {
     expect(toolGate(write, 'auto')).toBe('auto');
   });
 
-  it('段标题旁的一句：提供几个、几个要询问', () => {
+  it('a line beside the section title: how many are offered and how many need asking', () => {
     const total = MCP_TOOLS.length;
     const reads = MCP_TOOLS.filter((t) => t.access === 'read').length;
     expect(toolsSummary('read')).toBe(`提供 ${reads} / ${total} 个工具 · 全部只读`);
@@ -118,15 +118,15 @@ describe('工具目录', () => {
   });
 });
 
-describe('最近请求', () => {
-  it('结果：成功、常见的拒绝说人话，其余照写错误码', () => {
+describe('recent requests', () => {
+  it('result: success and common refusals are written in plain language; others show the error code as is', () => {
     expect(outcomeLabel('ok')).toBe('成功');
     expect(outcomeLabel('SERVICE_APPROVAL_DENIED')).toBe('没有放行');
     expect(outcomeLabel('VIDEO_NOT_FOUND')).toBe('视频不在范围里');
     expect(outcomeLabel('INTERNAL')).toBe('INTERNAL');
   });
 
-  it('一行：工具与视频名；视频不在列表里写 ID', () => {
+  it('one line: tool and video name; a video not in the list is written as its ID', () => {
     const base = { at: '2026-10-03T08:00:00Z', clientId: 'c1', clientName: 'Claude', outcome: 'ok' };
     expect(requestLine({ ...base, tool: 'videos_list', videoId: null }, nameOf)).toBe('videos_list');
     expect(requestLine({ ...base, tool: 'edits_apply', videoId: 'v1' }, nameOf)).toBe('edits_apply · 「发布会」');
@@ -134,7 +134,7 @@ describe('最近请求', () => {
   });
 });
 
-describe('服务审批', () => {
+describe('service approvals', () => {
   const now = Date.parse('2026-10-03T08:00:00Z');
   const approval = (approvalId: string, serviceId: ServiceApproval['serviceId'], secondsLeft: number): ServiceApproval => ({
     approvalId,
@@ -148,13 +148,13 @@ describe('服务审批', () => {
     expiresAt: new Date(now + secondsLeft * 1000).toISOString(),
   });
 
-  it('剩余秒数向上取整，过了或日期坏了是 0', () => {
+  it('remaining seconds round up; 0 when expired or the date is invalid', () => {
     expect(approvalSecondsLeft({ expiresAt: new Date(now + 1500).toISOString() }, now)).toBe(2);
     expect(approvalSecondsLeft({ expiresAt: new Date(now - 1).toISOString() }, now)).toBe(0);
     expect(approvalSecondsLeft({ expiresAt: 'x' }, now)).toBe(0);
   });
 
-  it('只给这个服务的、还没过时限的；rail 角标数所有服务的', () => {
+  it('only this service\'s approvals that have not expired; the rail badge counts approvals for all services', () => {
     const list = [approval('a1', 'mcp', 30), approval('a2', 'mcp', 0), approval('a3', 'model-api', 20)];
     expect(liveApprovals(list, 'mcp', now).map((a) => a.approvalId)).toEqual(['a1']);
     expect(liveApprovals(list, 'model-api', now).map((a) => a.approvalId)).toEqual(['a3']);
@@ -173,14 +173,14 @@ describe('服务审批', () => {
     maxCalls: null,
   };
 
-  it('外发授权从 tasks 主题的统一列表按 approvalId 找，没有就是空', () => {
+  it('outbound authorization is looked up by approvalId in the unified tasks-topic list; empty when absent', () => {
     const pending = [{ approvalId: 'a1', grants: [grant] }, { approvalId: 'a2' }] as PendingApproval[];
     expect(approvalGrants(pending, 'a1')).toEqual([grant]);
     expect(approvalGrants(pending, 'a2')).toEqual([]);
     expect(approvalGrants(pending, 'a9')).toEqual([]);
   });
 
-  it('外发授权的一句：数据、收件方、用途，有估算带上金额', () => {
+  it('one line for an outbound authorization: data, recipient, purpose; include the amount when there is an estimate', () => {
     expect(grantLine(grant)).toBe('要把音频发给 openai（转录）');
     expect(grantLine({ ...grant, dataKinds: ['transcript', 'document'], estimate: { amount: '0.02', currency: 'USD' } })).toBe(
       '要把文稿与译文、文本与提示词发给 openai（转录） · 约 0.02 USD',

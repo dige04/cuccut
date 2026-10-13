@@ -62,7 +62,7 @@ function cli(args: string[], options: { cwd: string; home: string; env?: Record<
   });
 }
 
-describe.skipIf(!engine || !ffmpeg)('CLI 子进程（真实 Runtime）', () => {
+describe.skipIf(!engine || !ffmpeg)('CLI subprocess (real Runtime)', () => {
   let dir: string;
   let fixtures: string;
   let clip: string;
@@ -109,7 +109,7 @@ describe.skipIf(!engine || !ffmpeg)('CLI 子进程（真实 Runtime）', () => {
 
   const run = (args: string[], input?: string) => cli(args, { cwd: project.path, home: dir, input });
 
-  it('--help 一屏、spec 是带接口版本的 JSON', async () => {
+  it('--help fits one screen, spec is JSON with the interface version', async () => {
     const help = await run(['--help']);
     expect(help.code).toBe(0);
     expect(help.stdout.trimEnd().split('\n').length).toBeLessThanOrEqual(40);
@@ -119,7 +119,7 @@ describe.skipIf(!engine || !ffmpeg)('CLI 子进程（真实 Runtime）', () => {
     expect(spec.json.tools.some((tool: { name: string }) => tool.name === 'videos_create')).toBe(true);
   });
 
-  it('status 默认是摘要，--full 带上各服务的模型；不认识的参数退出码 4', async () => {
+  it('status defaults to a summary, --full includes each service\'s models; unknown argument exit code 4', async () => {
     const summary = await run(['status']);
     expect(summary.code, summary.stdout + summary.stderr).toBe(0);
     const capabilities = summary.json.result.capabilities.capabilities;
@@ -136,7 +136,7 @@ describe.skipIf(!engine || !ffmpeg)('CLI 子进程（真实 Runtime）', () => {
     expect((await run(['status', '--bogus'])).code).toBe(4);
   });
 
-  it('videos create 建在 cwd 所在的项目里', async () => {
+  it('videos create builds in the project containing cwd', async () => {
     const created = await run(['videos', 'create', 'CLI 样片']);
     expect(created.code, created.stdout + created.stderr).toBe(0);
     expect(created.json.ok).toBe(true);
@@ -147,7 +147,7 @@ describe.skipIf(!engine || !ffmpeg)('CLI 子进程（真实 Runtime）', () => {
     expect((await fs.stat(path.join(project.path, videoPath, 'video.db'))).isFile()).toBe(true);
   });
 
-  it('videos inspect：位置参数与 --video 一样', async () => {
+  it('videos inspect: a positional argument works the same as --video', async () => {
     const positional = await run(['videos', 'inspect', videoId]);
     const flagged = await run(['videos', 'inspect', '--video', videoPath]);
     for (const ran of [positional, flagged]) {
@@ -160,7 +160,7 @@ describe.skipIf(!engine || !ffmpeg)('CLI 子进程（真实 Runtime）', () => {
     expect(both.json.error.code).toBe('INVALID_ARGUMENTS');
   });
 
-  it('edits apply --dry-run 只检查、不写', async () => {
+  it('edits apply --dry-run only checks, does not write', async () => {
     const operations = JSON.stringify([
       { type: 'importAsset', path: clip, name: '片段', ref: 'a' },
       { type: 'addItem', asset: { ref: 'a' } },
@@ -176,7 +176,7 @@ describe.skipIf(!engine || !ffmpeg)('CLI 子进程（真实 Runtime）', () => {
     expect(after.json.result.assets ?? []).toEqual([]);
   });
 
-  it('documents read --max-bytes 1024：结果落盘到 .cuccut-out/', async () => {
+  it('documents read --max-bytes 1024: the result is written to .cuccut-out/', async () => {
     const body = JSON.stringify({ text: '这是一段足够长的笔记。'.repeat(200) });
     const put = await run(['documents', 'put', videoId, '--kind', 'notes', '--body', '-'], body);
     expect(put.code, put.stdout + put.stderr).toBe(0);
@@ -193,7 +193,7 @@ describe.skipIf(!engine || !ffmpeg)('CLI 子进程（真实 Runtime）', () => {
     expect(read.stdout.length).toBeLessThan(4096);
   });
 
-  it('videos delete 不带 --yes：退出码 4，不删', async () => {
+  it('videos delete without --yes: exit code 4, does not delete', async () => {
     const refused = await run(['videos', 'delete', videoId]);
     expect(refused.code).toBe(4);
     expect(refused.json.error.code).toBe('CONFIRMATION_REQUIRED');
@@ -201,7 +201,7 @@ describe.skipIf(!engine || !ffmpeg)('CLI 子进程（真实 Runtime）', () => {
     expect((await fs.stat(path.join(project.path, videoPath, 'video.db'))).isFile()).toBe(true);
   });
 
-  it('transcribe --file … --no-wait：提交就返回', async () => {
+  it('transcribe --file … --no-wait: returns on submit', async () => {
     const ran = await run(['transcribe', '--file', clip, '--no-video', '--no-wait']);
     // This test Runtime has no transcription capability configured: either submission succeeds and returns a jobId, or it reports before submission that configuration is needed (exit code 2).
     if (ran.code === 0) {
@@ -212,7 +212,7 @@ describe.skipIf(!engine || !ffmpeg)('CLI 子进程（真实 Runtime）', () => {
     }
   });
 
-  it('transcode：--no-wait 返回 jobId；默认等到完成并带上产物', async () => {
+  it('transcode: --no-wait returns jobId; by default waits until completion and includes the outputs', async () => {
     const submitted = await run(['transcode', movie, '--extract-audio', '--out-dir', path.join(dir, 'out-a'), '--no-wait']);
     expect(submitted.code, submitted.stdout + submitted.stderr).toBe(0);
     expect(submitted.json.result.jobId).toMatch(/^job_/);
@@ -224,13 +224,13 @@ describe.skipIf(!engine || !ffmpeg)('CLI 子进程（真实 Runtime）', () => {
     expect((await fs.readdir(path.join(dir, 'out-b'))).length).toBeGreaterThan(0);
   });
 
-  it('未知参数退出码 4', async () => {
+  it('unknown argument exit code 4', async () => {
     const ran = await run(['videos', 'inspect', videoId, '--no-such-flag']);
     expect(ran.code).toBe(4);
     expect(ran.json.error.code).toBe('INVALID_ARGUMENTS');
   });
 
-  it('管理桶：信封与退出码同派生命令；部分名词的其余子命令交给派生命令', async () => {
+  it('admin bucket: envelope and exit codes match the derived commands; the remaining subcommands of some nouns are handed to derived commands', async () => {
     const dir = await run(['models', 'dir']);
     expect(dir.code, dir.stdout + dir.stderr).toBe(0);
     expect(dir.json.ok).toBe(true);
@@ -310,7 +310,7 @@ describe.skipIf(!engine || !ffmpeg)('CLI 子进程（真实 Runtime）', () => {
   }, 60_000);
 });
 
-describe('runtime ensure / stop（隔离 CUCCUT_HOME，从仓库入口拉起）', () => {
+describe('runtime ensure / stop (isolated CUCCUT_HOME, launched from the repo entry)', () => {
   let home: string;
   let pid: number | null = null;
 
@@ -325,7 +325,7 @@ describe('runtime ensure / stop（隔离 CUCCUT_HOME，从仓库入口拉起）'
 
   const run = (args: string[]) => cli(args, { cwd: home, home, env: { CUCCUT_RUNTIME_ENTRY: REPO_RUNTIME } });
 
-  it('ensure 拉起、再 ensure 复用、stop 停掉', async () => {
+  it('ensure starts, a second ensure reuses, stop shuts down', async () => {
     const before = await run(['runtime', 'status']);
     expect(before.json).toMatchObject({ ok: true, result: { running: false }, next: 'cuccut runtime ensure' });
 

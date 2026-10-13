@@ -86,7 +86,7 @@ class FakeVideos implements JobVideos {
   }
 }
 
-describe('本地音乐生成', () => {
+describe('local music generation', () => {
   let dir: string;
   let engine: string;
   let catalog: ModelCatalog;
@@ -153,7 +153,7 @@ describe('本地音乐生成', () => {
       await fs.mkdir(path.join(dir, 'staging'), { recursive: true });
     });
 
-    it('起引擎进程：命令行按冻结参数，模型目录是模型包的仓库；输出 music.wav 在 staging，带摘要与 audio/wav；撞上限记警告', async () => {
+    it('start the engine process: command line uses frozen parameters, the model directory is the model pack\'s repository; output music.wav in staging, with a digest and audio/wav; hitting the limit logs a warning', async () => {
       const { s, events, warnings } = sink();
       const attempt = await provider.generate(run(), s, new AbortController().signal);
       expect(attempt.outcome).toBe('completed');
@@ -182,7 +182,7 @@ describe('本地音乐生成', () => {
       expect(args).not.toContain('--backend');
     });
 
-    it('没撞上限不记警告；自检的少步数进命令行；引擎自己改了输出名时退回 staging 里的 WAV', async () => {
+    it('not hitting the limit logs no warning; the self-check\'s reduced steps go on the command line; when the engine renames the output itself, fall back to the WAV in staging', async () => {
       env.FAKE_SECONDS = '1';
       env.FAKE_RENAME = '1';
       const { s, warnings } = sink();
@@ -195,14 +195,14 @@ describe('本地音乐生成', () => {
       expect(args).toContain('cot=off');
     });
 
-    it('后端由选项给时进命令行', async () => {
+    it('backend goes on the command line when given by an option', async () => {
       const withBackend = new LocalMusicProvider({ catalog, engine: () => engine, env: async () => env, threads: 1, backend: 'metal' });
       await withBackend.generate(run(), sink().s, new AbortController().signal);
       const args = JSON.parse(await fs.readFile(path.join(dir, 'staging', 'args.json'), 'utf8')) as string[];
       expect(args.slice(-2)).toEqual(['--backend', 'metal']);
     });
 
-    it('引擎找不到：unavailable；不是音乐模型包：unavailable；别的能力：protocol', async () => {
+    it('engine not found: unavailable; not a music model pack: unavailable; other capability: protocol', async () => {
       const missing = new LocalMusicProvider({ catalog, engine: () => null, env: async () => env });
       await expect(missing.generate(run(), sink().s, new AbortController().signal)).rejects.toMatchObject({
         kind: 'unavailable',
@@ -216,7 +216,7 @@ describe('本地音乐生成', () => {
       ).rejects.toBeInstanceOf(ProviderFailure);
     });
 
-    it('引擎非零退出：crashed 并带 stderr 的尾巴；退出了没有 WAV：protocol', async () => {
+    it('engine exits non-zero: crashed with the stderr tail; exits with no WAV: protocol', async () => {
       env.FAKE_FAIL = 'out of memory';
       await expect(provider.generate(run(), sink().s, new AbortController().signal)).rejects.toMatchObject({
         kind: 'crashed',
@@ -227,7 +227,7 @@ describe('本地音乐生成', () => {
       await expect(provider.generate(run(), sink().s, new AbortController().signal)).rejects.toMatchObject({ kind: 'protocol' });
     });
 
-    it('取消：结束进程，以 cancelled 兑现；已中止的信号不起进程', async () => {
+    it('cancel: end the process, settle as cancelled; an already-aborted signal does not start a process', async () => {
       env.FAKE_HANG = '1';
       const controller = new AbortController();
       const { s, events } = sink();
@@ -242,8 +242,8 @@ describe('本地音乐生成', () => {
     });
   });
 
-  describe('资源需求', () => {
-    it('按模型包登记的估计峰值计入任务自己：Apple Silicon 计 GPU 内存，别的平台计内存；没有共用的 holder', () => {
+  describe('resource requirements', () => {
+    it('the estimated peak registered by the model pack counts toward the task itself: Apple Silicon counts GPU memory, other platforms count memory; no shared holder', () => {
       expect(localMusicResources(YUE.bundleId, { bytes: 10 * GiB, pool: 'gpuMemory' })).toEqual({
         demand: expect.objectContaining({ gpuMemory: 10 * GiB, scratchDisk: LOCAL_MUSIC_DEMAND.scratchDisk }),
       });
@@ -297,7 +297,7 @@ describe('本地音乐生成', () => {
       await manager.shutdown();
     });
 
-    it('提交：冻结参数（seed 没给时抽一个、上限缺省取模型默认）、模型包记进任务；完成后发布 WAV 产物，撞上限的警告在任务上', async () => {
+    it('submit: freeze parameters (a seed is drawn if none is given, limits default to the model default), record the model pack on the task; on completion publish the WAV artifact, limit warnings on the task', async () => {
       env.FAKE_SECONDS = '2';
       const { jobId } = await manager.submitGenerateMusic(
         { mode: 'instrumental', style: 'calm piano', maxDurationSec: 4 },
@@ -321,21 +321,21 @@ describe('本地音乐生成', () => {
       if (args.length > 0) expect(args).toContain('seed=5');
     });
 
-    it('提交时检查：歌曲没歌词拒绝，不创建任务', async () => {
+    it('submit-time check: a song without lyrics is rejected, no task is created', async () => {
       await expect(manager.submitGenerateMusic({ mode: 'song', style: 's' }, { kind: 'connection', id: 'c' })).rejects.toMatchObject({
         code: 'invalid-request',
       });
       expect(manager.snapshot().jobs).toHaveLength(0);
     });
 
-    it('引擎失败：任务 failed，不重试', async () => {
+    it('engine failure: task failed, no retry', async () => {
       env.FAKE_FAIL = 'no gpu';
       const { jobId } = await manager.submitGenerateMusic({ mode: 'instrumental', style: 'x' }, { kind: 'connection', id: 'c' });
       await manager.settled(jobId);
       expect(manager.inspect(jobId)).toMatchObject({ state: 'failed', attempt: 1 });
     });
 
-    it('取消在途的生成：任务 cancelled', async () => {
+    it('cancel an in-flight generation: task cancelled', async () => {
       env.FAKE_HANG = '1';
       const { jobId } = await manager.submitGenerateMusic({ mode: 'instrumental', style: 'x' }, { kind: 'connection', id: 'c' });
       for (let i = 0; i < 50 && manager.inspect(jobId).state !== 'running'; i++) await new Promise((r) => setTimeout(r, 20));

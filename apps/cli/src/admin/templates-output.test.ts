@@ -34,8 +34,8 @@ const example: TemplateSummary = {
   pack: null,
 };
 
-describe('cuccut templates 的输出', () => {
-  it('场景模板在前；跳过的模板列在最后，带原因与目录', () => {
+describe('cuccut templates output', () => {
+  it('scene templates first; skipped templates listed last, with reason and directory', () => {
     const lines = formatTemplateList({
       templates: [example, scene],
       diagnostics: [
@@ -59,7 +59,7 @@ describe('cuccut templates 的输出', () => {
     expect(formatTemplateList({ templates: [], diagnostics: [] })).toEqual(['没有可用的模板']);
   });
 
-  it('show 打印清单要点与提示词全文', () => {
+  it('show prints the manifest highlights and the full prompt text', () => {
     const lines = formatTemplateDetail({ template: scene, prompt: '你要做一条视频。\n' });
     expect(lines[0]).toBe('新品发布片（launch-film v1.0.0，场景模板，内置）');
     expect(lines).toContain('可以这样说：给一款台灯做一条发布片。');
@@ -82,7 +82,7 @@ describe('cuccut templates 的输出', () => {
     expect(checked).toContain('验证：2026-10-04 codex v1.0.0 partial，成片 16:9 · 15 秒，缺 synthesizeSpeech');
   });
 
-  it('chat --template 只带 id，不是 kebab-case 时本地拒绝', () => {
+  it('chat --template takes only an id; a value that is not kebab-case is rejected locally', () => {
     expect(parseChatTemplate(undefined)).toBeUndefined();
     expect(parseChatTemplate('data-story')).toEqual({ id: 'data-story' });
     expect(parseChatTemplate(' data-story ')).toEqual({ id: 'data-story' });

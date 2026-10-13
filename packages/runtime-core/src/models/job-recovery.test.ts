@@ -142,7 +142,7 @@ class Life {
   }
 }
 
-describe.skipIf(!engine || !ffmpeg)('崩溃后重启：转写（真实引擎 + 假 Model Worker）', () => {
+describe.skipIf(!engine || !ffmpeg)('crash then restart: transcription (real engine + fake Model Worker)', () => {
   let fixtures: string;
   let audio: string;
   let life: Life;
@@ -169,7 +169,7 @@ describe.skipIf(!engine || !ffmpeg)('崩溃后重启：转写（真实引擎 + �
   });
 
   it.each(['artifact-stored', 'artifact-published', 'application-recorded', 'application-committed'] as const)(
-    '%s 之后崩溃：重启后复用转写结果补做应用，只写一份 speech 文档',
+    'crash after %s: restart reuses the transcription result to finish applying, writes only one speech document',
     async (point) => {
       const { project } = await life.client.request('projects.create', { name: '恢复测试' });
       const opened = await life.client.request('videos.create', { projectId: project.id });
@@ -217,7 +217,7 @@ describe.skipIf(!engine || !ffmpeg)('崩溃后重启：转写（真实引擎 + �
   );
 });
 
-describe.skipIf(!engine || !ffprobe)('崩溃后重启与对账：生成（真实引擎 + 假供应商）', () => {
+describe.skipIf(!engine || !ffprobe)('crash, restart and reconciliation: generation (real engine + fake provider)', () => {
   let openai: FakeProviderServer;
   let life: Life;
   let project: Project;
@@ -240,7 +240,7 @@ describe.skipIf(!engine || !ffprobe)('崩溃后重启与对账：生成（真实
 
   const speechRequests = () => openai.requests.filter((r) => r.method === 'POST' && r.path.endsWith('/audio/speech'));
 
-  it('停止屏障拦下自动应用：结果留作候选，三件事实分开；经网关 jobs.reconcile apply 之后导入，不重新请求', async () => {
+  it('stop barrier intercepts auto-apply: result kept as a candidate, three facts kept separate; imported after gateway jobs.reconcile apply, without requesting again', async () => {
     life.crashAt = { point: 'application-recorded', action: (jobId) => void life.runtime.models.jobs.cancel(jobId) };
     const { jobId } = await life.client.request('models.synthesizeSpeech', { text: '旁白', provider: 'openai', videoId: ref.videoId });
     const cancelled = await life.settled(jobId);
@@ -266,7 +266,7 @@ describe.skipIf(!engine || !ffprobe)('崩溃后重启与对账：生成（真实
     });
   });
 
-  it('停止与提交赛跑：Node 侧检查之后才停止，引擎拒绝那一笔（TASK_STOPPED），视频里什么都没写', async () => {
+  it('stop vs. submit race: Node-side check happens before stopping, engine rejects that one (TASK_STOPPED), nothing written to the video', async () => {
     life.crashAt = { point: 'application-submitting', action: (jobId) => void life.runtime.models.jobs.cancel(jobId) };
     const { jobId } = await life.client.request('models.synthesizeSpeech', { text: '旁白', provider: 'openai', videoId: ref.videoId });
     const cancelled = await life.settled(jobId);
@@ -289,7 +289,7 @@ describe.skipIf(!engine || !ffprobe)('崩溃后重启与对账：生成（真实
     expect(Object.keys(life.runtime.videos.mirror(ref.videoId)!.video.assets)).toHaveLength(1);
   });
 
-  it('产物写进产物库、结果还没记下时崩溃：重启后认领产物补做应用，不重新请求，只导入一个素材', async () => {
+  it('crash after output written to the artifact library but before the result is recorded: after restart, claim the output and finish applying without requesting again, importing only one media item', async () => {
     life.crashAt = { point: 'artifact-stored' };
     const { jobId } = await life.client.request('models.synthesizeSpeech', { text: '旁白', provider: 'openai', videoId: ref.videoId });
     await until(() => life.crashed);
@@ -307,7 +307,7 @@ describe.skipIf(!engine || !ffprobe)('崩溃后重启与对账：生成（真实
     expect(grants.map((g) => g.usage)).toEqual([expect.objectContaining({ calls: 1, reservedCalls: 0 })]);
   });
 
-  it('外发请求到达供应商时，授权账本里这笔预留已经在磁盘上记为开始', async () => {
+  it('when the outbound request reaches the provider, this reservation in the authorization ledger is already recorded as started on disk', async () => {
     const seen: Array<boolean | null> = [];
     const reply = fakeOpenAiHandler();
     openai.handler = async (request, server) => {
@@ -322,7 +322,7 @@ describe.skipIf(!engine || !ffprobe)('崩溃后重启与对账：生成（真实
     expect(seen).toEqual([true]);
   });
 
-  it('提交后、记回执前崩溃：重启后按命令查到回执补记，视频里只有一个导入的素材', async () => {
+  it('crash after submit but before recording the receipt: after restart, look up the receipt by command and record it, the video has only one imported media item', async () => {
     life.crashAt = { point: 'application-committed' };
     const { jobId } = await life.client.request('models.synthesizeSpeech', { text: '旁白', provider: 'openai', videoId: ref.videoId });
     await until(() => life.crashed);
@@ -339,7 +339,7 @@ describe.skipIf(!engine || !ffprobe)('崩溃后重启与对账：生成（真实
     });
   });
 
-  it('停止时请求还没返回：needs-reconciliation，重启后不自动重发；视频打开之后 retry 再请求一次', async () => {
+  it('stop while the request has not returned: needs-reconciliation, not resent automatically after restart; retry after the video is opened sends the request once more', async () => {
     openai.handler = () => 'hang';
     const { jobId } = await life.client.request('models.synthesizeSpeech', { text: '旁白', provider: 'openai', videoId: ref.videoId });
     await openai.waitForRequests(1);
@@ -365,7 +365,7 @@ describe.skipIf(!engine || !ffprobe)('崩溃后重启与对账：生成（真实
     expect(Object.keys(life.runtime.videos.mirror(ref.videoId)!.video.assets)).toEqual([done.result!.outputs![0]!.assetId]);
   });
 
-  it('discard：放弃结果不明的调用，重启后仍是 cancelled', async () => {
+  it('discard: abandon the call with an unknown result, still cancelled after restart', async () => {
     openai.handler = () => 'hang';
     const { jobId } = await life.client.request('models.synthesizeSpeech', { text: '旁白', provider: 'openai' });
     await openai.waitForRequests(1);

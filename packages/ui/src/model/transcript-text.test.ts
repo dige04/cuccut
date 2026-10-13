@@ -38,8 +38,8 @@ function replaceAll(body: unknown, words: TranscriptWord[], query: string, repla
   return replaceInParagraph(body, para, findRanges(para.text, re!, false), replacement);
 }
 
-describe('时间码', () => {
-  it('mm:ss 向下取整，一小时以上 hh:mm:ss（与导出的文稿同一个写法）', () => {
+describe('timecode', () => {
+  it('mm:ss rounded down, hh:mm:ss for an hour or more (same format as the exported transcript)', () => {
     expect([timeStamp(0), timeStamp(65.9), timeStamp(599.99), timeStamp(3723), timeStamp(-2)]).toEqual([
       '00:00',
       '01:05',
@@ -50,8 +50,8 @@ describe('时间码', () => {
   });
 });
 
-describe('一段的文字', () => {
-  it('词去掉首尾空白，spaced 的词前空一格；整个剪掉的词不算，选区复制时算', () => {
+describe('segment text', () => {
+  it('words trimmed of leading and trailing whitespace; spaced words get a leading space; fully cut words do not count, but count when copying a selection', () => {
     const words = [w(0, 'a', ' Hello', false), w(1, 'b', ' big', true, 'cut'), w(2, 'c', ' world', true), w(3, 'd', '.', false)];
     expect(paragraphText(words)).toEqual({
       text: 'Hello world.',
@@ -66,8 +66,8 @@ describe('一段的文字', () => {
   });
 });
 
-describe('命中摊到词上', () => {
-  it('词内按词的偏移给；盖住词间空格时标在后一个词前面；当前那一处单独标', () => {
+describe('distributes the match across words', () => {
+  it('within a word, given by the word\'s offset; when covering a space between words, marked before the following word; the current one is marked separately', () => {
     const para = paragraphText([w(0, 'a', ' Hello', false), w(1, 'b', ' big', true, 'cut'), w(2, 'c', ' world', true), w(3, 'd', '.', false)]);
     const marks = wordHighlights(para, [
       { start: 4, end: 7, current: true },
@@ -80,8 +80,8 @@ describe('命中摊到词上', () => {
   });
 });
 
-describe('替换', () => {
-  it('命中在一个词里只改这个词；一个词里几处一起改；保留前导空白', () => {
+describe('replace', () => {
+  it('a match within one word changes only that word; multiple matches in one word change together; leading whitespace kept', () => {
     const body = speech([
       { id: 'a', text: ' banana' },
       { id: 'b', text: ' split' },
@@ -92,7 +92,7 @@ describe('替换', () => {
     expect(texts(result?.body)).toEqual([' bANANa', ' split']);
   });
 
-  it('跨词：块数对得上时一一落到词上，对不上时落到第一个词、其余隐藏', () => {
+  it('across words: when block counts match, they map one-to-one onto words; when they do not, all go to the first word and the rest are hidden', () => {
     const body = speech([
       { id: 'a', text: ' Jim' },
       { id: 'b', text: ' Lu' },
@@ -104,7 +104,7 @@ describe('替换', () => {
     expect(texts(replaceAll(body, words, 'jim lu', '')?.body)).toEqual([null, null, ' said']);
   });
 
-  it('盖住了词间空格的命中把两边的词并起来；中文跨词落到第一个词', () => {
+  it('a match covering the space between words merges the words on both sides; Chinese cross-word matches land on the first word', () => {
     const body = speech([
       { id: 'a', text: ' open' },
       { id: 'b', text: ' AI' },
@@ -122,7 +122,7 @@ describe('替换', () => {
     expect(texts(replaceAll(zh, zhWords, '你好', '您好')?.body)).toEqual(['您好', null, '吗']);
   });
 
-  it('替换成一样的文字、没有命中时不写（null）；剪掉的词不参与', () => {
+  it('replacing with identical text or with no match writes nothing (null); cut words do not participate', () => {
     const body = speech([
       { id: 'a', text: '一' },
       { id: 'b', text: '二' },
@@ -134,22 +134,22 @@ describe('替换', () => {
   });
 });
 
-describe('复制', () => {
+describe('copy', () => {
   const paras: CopyParagraph[] = [
     { start: 12.6, speaker: '主持人', text: '大家好，欢迎收看。', translation: 'Hello everyone.' },
     { start: 65, speaker: null, text: 'Then we start.', translation: '然后我们开始。' },
   ];
 
-  it('纯文字：段与段之间空一行', () => {
+  it('plain text: a blank line between segments', () => {
     expect(copyText(paras, { view: 'source' })).toBe('大家好，欢迎收看。\n\nThen we start.');
   });
 
-  it('译文与双语：双语是原文一行、译文一行', () => {
+  it('translation and bilingual: bilingual is one line of original, one line of translation', () => {
     expect(copyText(paras, { view: 'translation' })).toBe('Hello everyone.\n\n然后我们开始。');
     expect(copyText(paras.slice(0, 1), { view: 'both' })).toBe('大家好，欢迎收看。\nHello everyone.');
   });
 
-  it('按导出文稿的写法排（§4.4）：Markdown 说话人加粗、时间戳在段尾，标记字符转义', () => {
+  it('laid out per the exported transcript format (§4.4): Markdown speaker in bold, timestamp at segment end, markup characters escaped', () => {
     const md = { format: 'md', view: 'source', speakers: true, timestamps: true } as const;
     expect(writeTranscript([{ chapter: null, paras }], md)).toBe('**主持人:** 大家好，欢迎收看。 [00:12]\n\nThen we start. [01:05]');
     expect(writeTranscript([{ chapter: null, paras: [{ ...paras[1]!, text: 'a*b_c #1' }] }], { ...md, timestamps: false })).toBe('a\\*b\\_c \\#1');
@@ -162,13 +162,13 @@ describe('复制', () => {
     );
   });
 
-  it('纯文本：说话人后跟冒号，双语译文紧接下一行；标题只在 Markdown 写', () => {
+  it('plain text: speaker followed by a colon, bilingual translation right on the next line; headings written only in Markdown', () => {
     const txt = { format: 'txt', view: 'both', speakers: true, timestamps: false, title: '访谈' } as const;
     expect(writeTranscript([{ chapter: null, paras }], txt)).toBe('主持人: 大家好，欢迎收看。\nHello everyone.\n\nThen we start.\n然后我们开始。');
     expect(writeTranscript([{ chapter: null, paras: paras.slice(1) }], { ...txt, format: 'md', view: 'source' })).toBe('# 访谈\n\nThen we start.');
   });
 
-  it('章节：Markdown 是二级标题（带时间戳时加 · mm:ss），纯文本是 — 名字 —；正文是空的段与没有段的章不写', () => {
+  it('chapters: Markdown uses a level-two heading (with · mm:ss when there is a timestamp), plain text uses — name —; empty-body segments and chapters with no segments are not written', () => {
     const sections = [
       { chapter: { title: '开场', start: 0 }, paras: paras.slice(0, 1) },
       { chapter: { title: '空章', start: 30 }, paras: [{ ...paras[1]!, text: ' ' }] },
@@ -182,7 +182,7 @@ describe('复制', () => {
     );
   });
 
-  it('按章分节：段归它开始时已经开始的最后一章；第一章之前的段没有标题；同一章接着的段不重复标题', () => {
+  it('sectioning by chapter: a segment belongs to the last chapter started by its start time; segments before the first chapter have no heading; consecutive segments in the same chapter do not repeat the heading', () => {
     const chapters = [
       { title: '一', start: 10 },
       { title: '二', start: 60 },
@@ -196,7 +196,7 @@ describe('复制', () => {
     ]);
   });
 
-  it('回执：段数加字数，中文按字、拉丁按词，哪种多按哪种', () => {
+  it('receipt: segment count plus word count, Chinese counted by character, Latin by word, whichever script is the majority counts', () => {
     expect(copyReceipt(paras, 'source')).toBe('2 段 · 7 字');
     expect(copyReceipt(paras.slice(1), 'source')).toBe('1 段 · 3 词');
     // Length figures in the export panel: paragraph count, Han character count and word count, counted by the Runtime, using the same terms.
@@ -206,7 +206,7 @@ describe('复制', () => {
   });
 });
 
-describe('译文按段', () => {
+describe('translation by segment', () => {
   const body = speech([
     { id: 'w1', text: '第一句。' },
     { id: 'w2', text: '第二' },
@@ -227,7 +227,7 @@ describe('译文按段', () => {
     })),
   });
 
-  it('一句归它第一个词所在的段，段里各句接起来；拉丁文字之间空一格，中文直接接', () => {
+  it('a sentence belongs to the segment containing its first word; sentences in a segment are joined; Latin text separated by a space, Chinese joined directly', () => {
     const paras = [{ words: [{ id: 'w1' }, { id: 'w2' }] }, { words: [{ id: 'w3' }, { id: 'w4' }] }];
     expect(
       paragraphTranslations(
@@ -255,7 +255,7 @@ describe('译文按段', () => {
     ).toEqual(['一。二。', '']);
   });
 
-  it('拆开的未计时段按原词认；认不出的正文返回 null', () => {
+  it('split untimed segments are matched by original words; body text that cannot be recognized returns null', () => {
     expect(paragraphTranslations(body, translation([['s-w4', 'Three.']]), [{ words: [{ id: 'w4~2' }] }])).toEqual(['Three.']);
     expect(paragraphTranslations(body, { schema: 'cuccut.translation/1' }, [])).toBeNull();
   });

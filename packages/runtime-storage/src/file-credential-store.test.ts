@@ -17,7 +17,7 @@ describe('FileCredentialStore', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('四种操作；写入是 0600、临时文件加改名；重开后还在', async () => {
+  it('four operations; writes are 0600, temp file plus rename; still there after reopening', async () => {
     const store = new FileCredentialStore(file);
     expect(await store.get('provider:openai')).toBeNull();
     expect(await store.has('provider:openai')).toBe(false);
@@ -39,7 +39,7 @@ describe('FileCredentialStore', () => {
     expect(await reopened.get('node:node_1')).toBe('c_x.secret');
   });
 
-  it('权限被放宽过的文件，写入后收紧到 0600', async () => {
+  it('file whose permissions were loosened is tightened to 0600 after a write', async () => {
     const store = new FileCredentialStore(file);
     await store.set('provider:openai', 'sk-a');
     await fs.chmod(file, 0o644);
@@ -47,7 +47,7 @@ describe('FileCredentialStore', () => {
     expect((await fs.stat(file)).mode & 0o777).toBe(0o600);
   });
 
-  it('第 1 版的文件（键是 providerId）原样读出', async () => {
+  it('version 1 file (keyed by providerId) read back as is', async () => {
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, JSON.stringify({ formatVersion: 1, credentials: { openai: 'sk-old', 'custom:box': 'box', empty: '' } }));
     const store = new FileCredentialStore(file);
@@ -57,13 +57,13 @@ describe('FileCredentialStore', () => {
     expect((await store.keys()).sort()).toEqual(['provider:custom:box', 'provider:openai']);
   });
 
-  it('并发写入串行，最后的状态完整', async () => {
+  it('concurrent writes serialized, final state complete', async () => {
     const store = new FileCredentialStore(file);
     await Promise.all(['a', 'b', 'c', 'd', 'e'].map((x) => store.set(`node:${x}`, `t-${x}`)));
     expect((await new FileCredentialStore(file).keys()).sort()).toEqual(['node:a', 'node:b', 'node:c', 'node:d', 'node:e']);
   });
 
-  it('文件损坏时不从空开始：每个操作报告不可用，文件不改名、不覆盖；修好之后不用重建就恢复', async () => {
+  it('corrupted file: do not start from empty; every operation reports unavailable, file not renamed or overwritten; recovers once fixed without rebuilding', async () => {
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, '{ not json');
     const warn = vi.fn();
@@ -77,7 +77,7 @@ describe('FileCredentialStore', () => {
     expect(await store.get('provider:openai')).toBe('sk-b');
   });
 
-  it('更新版本写下的文件：报告不可用，不改写', async () => {
+  it('file written by a newer version: reports unavailable, not rewritten', async () => {
     await fs.mkdir(path.dirname(file), { recursive: true });
     const text = JSON.stringify({ formatVersion: 3, secrets: {} });
     await fs.writeFile(file, text);
@@ -87,7 +87,7 @@ describe('FileCredentialStore', () => {
     expect(await fs.readFile(file, 'utf8')).toBe(text);
   });
 
-  it('迁到钥匙串时文件认不出：什么也不迁、不删，记 warn', async () => {
+  it('file unrecognized during migration to keychain: migrate nothing, delete nothing, log warn', async () => {
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, '{ not json');
     const warn = vi.fn();
@@ -99,21 +99,21 @@ describe('FileCredentialStore', () => {
     expect(await fs.readFile(file, 'utf8')).toBe('{ not json');
   });
 
-  it('空文件按没有处理', async () => {
+  it('empty file treated as absent', async () => {
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, '');
     const store = new FileCredentialStore(file);
     expect(await store.get('provider:openai')).toBeNull();
   });
 
-  it('不合规的 key 与空密钥是调用方的错误', () => {
+  it('invalid key and empty secret are caller errors', () => {
     const store = new FileCredentialStore(file);
     expect(() => store.get('openai')).toThrow(TypeError);
     expect(() => store.set('provider:x y', 's')).toThrow(TypeError);
     expect(() => store.set('provider:x', '')).toThrow(TypeError);
   });
 
-  it('写不进文件时内存与文件都不变，错误里没有密钥', async () => {
+  it('when the file cannot be written, memory and file both unchanged; error contains no secret', async () => {
     const store = new FileCredentialStore(file);
     await store.set('provider:openai', 'sk-a');
     await fs.chmod(path.dirname(file), 0o500);
@@ -127,7 +127,7 @@ describe('FileCredentialStore', () => {
     }
   });
 
-  it('removeIfEmpty 只在没有密钥时删除文件', async () => {
+  it('removeIfEmpty deletes the file only when no keys remain', async () => {
     const store = new FileCredentialStore(file);
     await store.set('provider:openai', 'sk-a');
     expect(await store.removeIfEmpty()).toBe(false);

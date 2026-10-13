@@ -78,7 +78,7 @@ describe('ModelInstaller', () => {
       .plan(bundleId, { repair })
       .then((detail) => installer.install(detail, { signal: new AbortController().signal, ...(onProgress ? { onProgress } : {}) }));
 
-  it('计划给出大小与来源；安装后已装好、记进安装记录，进度只增不减且以字节计', async () => {
+  it('the plan gives size and source; after install it is installed and recorded in the install log, and progress only increases and is measured in bytes', async () => {
     const { catalog, installer } = setup();
     const detail = await installer.plan('test-a@mlx');
     expect(detail.plan).toMatchObject({
@@ -110,7 +110,7 @@ describe('ModelInstaller', () => {
     expect((await installer.plan('test-a@mlx')).plan).toMatchObject({ upToDate: true, downloadBytes: 0 });
   });
 
-  it('共享组件只装一份：第二个模型包只下载自己缺的组件', async () => {
+  it('shared components are installed once: a second bundle downloads only the components it is missing', async () => {
     const { catalog, installer } = setup();
     await run(installer, 'test-a@mlx');
     const before = source.requests.length;
@@ -128,7 +128,7 @@ describe('ModelInstaller', () => {
     expect(new Set(source.requests.slice(before).map((r) => r.repo))).toEqual(new Set([asrB.repo]));
   });
 
-  it('引用计数：删除一个模型包保留别的模型包在用的组件；最后一个删掉时回收', async () => {
+  it('reference counting: deleting one bundle keeps components other bundles use; the last removal reclaims them', async () => {
     const { catalog, installer } = setup();
     await run(installer, 'test-a@mlx');
     await run(installer, 'test-b@mlx');
@@ -145,7 +145,7 @@ describe('ModelInstaller', () => {
     expect((await readInstallRecord(root)).bundles).toEqual({});
   });
 
-  it('文件齐全但没有记录的模型包也算持有者', async () => {
+  it('a bundle with all files present but no record also counts as a holder', async () => {
     const { installer } = setup();
     await run(installer, 'test-a@mlx');
     await run(installer, 'test-b@mlx');
@@ -154,7 +154,7 @@ describe('ModelInstaller', () => {
     expect(result.kept).toEqual([{ repo: vad.repo, usedBy: ['test-b@mlx'] }]);
   });
 
-  it('仓库目录里是别的版本时不删', async () => {
+  it('a repository directory holding another version is not deleted', async () => {
     const { installer } = setup();
     const other = { ...vad, revision: 'd'.repeat(40) };
     serveRepo(source, other);
@@ -183,7 +183,7 @@ describe('ModelInstaller', () => {
     expect(await fs.stat(path.join(root, 'acme', 'vad')).catch(() => null)).not.toBeNull();
   });
 
-  it('修复只重下坏的与缺的文件，好文件原样复用', async () => {
+  it('repair re-downloads only the bad and missing files and reuses good files as they are', async () => {
     const { catalog, installer } = setup();
     await run(installer, 'test-a@mlx');
     const asrDir = catalog.repoDir(asrA.repo);
@@ -211,7 +211,7 @@ describe('ModelInstaller', () => {
     expect((await installer.plan('test-a@mlx', { repair: true })).plan.upToDate).toBe(true);
   });
 
-  it('缺文件的组件：只补缺的文件，不整个重下', async () => {
+  it('components with missing files: only the missing files are fetched, not the whole component', async () => {
     const { catalog, installer } = setup();
     await run(installer, 'test-a@mlx');
     await fs.rm(path.join(catalog.repoDir(vad.repo), 'config.json'));
@@ -228,7 +228,7 @@ describe('ModelInstaller', () => {
     expect(await catalog.status('test-a@mlx')).toMatchObject({ state: 'installed' });
   });
 
-  it('可用空间不足：MODEL_DOWNLOAD_NO_SPACE，带需要与可用的字节，不发请求', async () => {
+  it('insufficient free space: MODEL_DOWNLOAD_NO_SPACE with the needed and available bytes, and no request is sent', async () => {
     const { installer } = setup();
     free = 1000;
     const detail = await installer.plan('test-a@mlx');
@@ -244,7 +244,7 @@ describe('ModelInstaller', () => {
     expect(source.requests.filter((r) => r.method === 'GET')).toEqual([]);
   });
 
-  it('取消后暂存区留着：模型包报告暂停的安装；再次计划只算剩下的字节并续传', async () => {
+  it('after cancel, staging is kept: the bundle reports a paused install; planning again counts only the remaining bytes and resumes', async () => {
     const { catalog, installer } = setup();
     source.throttle(8 * 1024, 10);
     const controller = new AbortController();
@@ -276,7 +276,7 @@ describe('ModelInstaller', () => {
     expect(await catalog.status('test-a@mlx')).toMatchObject({ state: 'installed' });
   });
 
-  it('丢弃暂停的安装：删掉暂存区', async () => {
+  it('discarding a paused install deletes staging', async () => {
     const { catalog, installer } = setup();
     const stage = stagingDirOf(root, asrA.repo, asrA.revision);
     await fs.mkdir(stage, { recursive: true });
@@ -287,7 +287,7 @@ describe('ModelInstaller', () => {
     expect(await fs.readdir(root)).toEqual([]);
   });
 
-  it('大小未知：计划向来源发 HEAD 取大小；取不到时总字节数为未知、用估计值确认', async () => {
+  it('unknown size: planning sends HEAD to the source for the size; when unavailable the total is unknown and is confirmed with an estimate', async () => {
     const { installer } = setup({ sizes: false });
     const detail = await installer.plan('test-a@mlx');
     expect(detail.plan.downloadBytes).toBe(bytesOf(asrA) + bytesOf(vad));
@@ -303,7 +303,7 @@ describe('ModelInstaller', () => {
     expect(progress.at(-1)!.receivedBytes).toBe(bytesOf(asrA) + bytesOf(vad));
   });
 
-  it('HEAD 不给大小（ModelScope）：改发只要第一个字节的 GET，从 Content-Range 读总长', async () => {
+  it('HEAD gives no size (ModelScope): a GET for only the first byte is sent instead, reading the total length from Content-Range', async () => {
     const manifests = [asrA, asrB, vad].map((r) => syntheticManifest(r, { sizes: false, estimatedBytes: 1_000_000 }));
     const catalog = new ModelCatalog({ root, ...mac, bundles, manifests });
     const sizeless: typeof fetch = async (input, init) => {
@@ -326,7 +326,7 @@ describe('ModelInstaller', () => {
     expect((await quirk.plan('test-a@mlx')).plan.downloadBytes).toBe(bytesOf(asrA) + bytesOf(vad));
   });
 
-  it('计划的来源：选了 ModelScope 时，它上面没有的仓库改从公共模型仓库下载，两个基址都写出来', async () => {
+  it('planned source: when ModelScope is selected, repositories it lacks are downloaded from the public model repository, and both base URLs are written out', async () => {
     const whisper: SyntheticRepo = { repo: 'ggerganov/whisper.cpp', revision: 'e'.repeat(40), files: { 'ggml.bin': Buffer.from('w') } };
     const manifests = [syntheticManifest(vad), syntheticManifest(whisper)];
     const def = {
@@ -344,7 +344,7 @@ describe('ModelInstaller', () => {
     expect(await plan('https://mirror.example')).toBe('https://mirror.example');
   });
 
-  it('内置清单缺可信的哈希：拒绝安装（不下载了再算）', async () => {
+  it('built-in manifest lacks a trusted hash: installation is refused (it does not download and then compute one)', async () => {
     const manifests = [asrA, vad].map((r) => syntheticManifest(r));
     manifests[1]!.files[0]!.sha256 = null;
     const catalog = new ModelCatalog({ root, ...mac, bundles, manifests });
@@ -355,7 +355,7 @@ describe('ModelInstaller', () => {
     expect(source.requests).toEqual([]);
   });
 
-  it('自检结果记进安装记录，模型包状态带 selfTest；状态变化通知监听者', async () => {
+  it('self-test results are recorded in the install log, the bundle status carries selfTest, and status changes notify listeners', async () => {
     const { catalog, installer } = setup();
     await run(installer, 'test-a@mlx');
     const changed: string[] = [];
@@ -371,7 +371,7 @@ describe('ModelInstaller', () => {
     expect(changed).toEqual(['test-a@mlx', 'test-b@mlx', 'test-b@mlx']);
   });
 
-  it('清单的 sourceRepo：大小与文件都向上游仓库要，装进登记的兄弟目录', async () => {
+  it('a manifest\'s sourceRepo: size and files are requested from the upstream repository and installed into the registered sibling directory', async () => {
     const upstream: SyntheticRepo = { repo: 'acme/whisper', revision: 'd'.repeat(40), files: { 'big.bin': syntheticBytes(120_000, 4) } };
     serveRepo(source, upstream);
     const sibling = { ...syntheticManifest(upstream, { sizes: false }), repo: 'acme/whisper-big', sourceRepo: upstream.repo };
@@ -402,7 +402,7 @@ describe('ModelInstaller', () => {
  * Release-page component (audio.cpp engine, architecture design §6.3): downloads the archive for the host platform, checks size and sha256, unpacks it, writes the manifest, and publishes atomically to the tools directory;
  * a bad archive leaves no half-directory; it is reclaimed when the last holder deletes it; an old install without a manifest is not downloaded again. The archive is served by a small server on the local loopback address.
  */
-describe('ModelInstaller 发布页组件', () => {
+describe('ModelInstaller release-page component', () => {
   let root: string;
   let work: string;
   let source: FakeModelSource;
@@ -506,7 +506,7 @@ describe('ModelInstaller 发布页组件', () => {
   const run = (installer: ModelInstaller, bundleId: string, repair = false) =>
     installer.plan(bundleId, { repair }).then((detail) => installer.install(detail, { signal: new AbortController().signal }));
 
-  it('随模型一起下载：计划按登记的大小（不发 HEAD），解开根目录的文件、略过同包工具，写清单，探测可执行文件', async () => {
+  it('downloaded together with the model: planning uses the registered size (no HEAD), extracts root-level files, skips same-bundle tools, writes the manifest, and probes the executable', async () => {
     const body = packRelease('#!/bin/sh\necho "audio.cpp 0.9.1"\n');
     const { catalog, installer, engineDir } = setup(release(body), {
       probe: async (exe) => {
@@ -546,7 +546,7 @@ describe('ModelInstaller 发布页组件', () => {
     ]);
   });
 
-  it('工具下载镜像：地址是 <基址>/<名字>/<版本>/<文件名>，计划的来源是镜像', async () => {
+  it('tool download mirror: the URL is <base>/<name>/<version>/<filename>, and the planned source is the mirror', async () => {
     const body = packRelease('#!/bin/sh\nexit 0\n');
     const rel = release(body);
     assets.set('/mirror/audiocpp/0.9.1/audio-test-bin.tar.gz', body);
@@ -558,7 +558,7 @@ describe('ModelInstaller 发布页组件', () => {
     expect(await fs.stat(path.join(engineDir, 'audiocpp_cli'))).toBeTruthy();
   });
 
-  it('摘要不符：MODEL_DOWNLOAD_INTEGRITY，删掉下载的文件，不留组件目录', async () => {
+  it('digest mismatch: MODEL_DOWNLOAD_INTEGRITY, the downloaded file is deleted, and no component directory is left', async () => {
     const body = packRelease('#!/bin/sh\nexit 0\n');
     const rel = release(body);
     assets.set('/download/v0.9.1/audio-test-bin.tar.gz', Buffer.concat([body.subarray(0, body.length - 1), Buffer.from([body.at(-1)! ^ 1])]));
@@ -570,7 +570,7 @@ describe('ModelInstaller 发布页组件', () => {
     expect(left.filter((f) => f.startsWith('audio-test-bin'))).toEqual([]);
   });
 
-  it('坏包与缺可执行文件：MODEL_DOWNLOAD_INTEGRITY，删掉暂存区，不留半个目录', async () => {
+  it('bad archive and missing executable: MODEL_DOWNLOAD_INTEGRITY, staging is deleted, and no half-finished directory is left', async () => {
     const garbage = Buffer.from('this is not a gzip archive at all');
     const { installer, engineDir } = setup(release(garbage));
     await expect(run(installer, 'music-a@audio-cpp')).rejects.toMatchObject({ code: 'MODEL_DOWNLOAD_INTEGRITY' });
@@ -591,7 +591,7 @@ describe('ModelInstaller 发布页组件', () => {
     expect(await fs.stat(path.join(root, '.ccut-tools', '.ccut-staging')).catch(() => null)).toBeNull();
   });
 
-  it('探测失败：删掉刚发布的组件目录，MODEL_DOWNLOAD_INTEGRITY', async () => {
+  it('probe failure: the just-published component directory is deleted, MODEL_DOWNLOAD_INTEGRITY', async () => {
     const { installer, engineDir } = setup(release(packRelease('#!/bin/sh\nexit 1\n')), {
       probe: async () => {
         throw new Error('exit code 1');
@@ -601,7 +601,7 @@ describe('ModelInstaller 发布页组件', () => {
     expect(await fs.stat(engineDir).catch(() => null)).toBeNull();
   });
 
-  it('引用计数：删除一个模型包保留共用的引擎；最后一个删掉时回收工具目录里的引擎', async () => {
+  it('reference counting: deleting one bundle keeps the shared engine; the last removal reclaims the engine in the tool directory', async () => {
     const { catalog, installer, engineDir } = setup(release(packRelease('#!/bin/sh\nexit 0\n')));
     await run(installer, 'music-a@audio-cpp');
     await run(installer, 'music-b@audio-cpp');
@@ -616,7 +616,7 @@ describe('ModelInstaller 发布页组件', () => {
     expect(await catalog.status('music-b@audio-cpp')).toMatchObject({ state: 'not-installed' });
   });
 
-  it('旧版装下的引擎（只有可执行文件、没有清单）：计划不下载它，校验通过；修复时重新下载并写清单', async () => {
+  it('an engine from an older install (executable only, no manifest): planning does not download it and verification passes; repair re-downloads it and writes the manifest', async () => {
     const body = packRelease('#!/bin/sh\nexit 0\n');
     const { catalog, installer, engineDir } = setup(release(body));
     await fs.mkdir(engineDir, { recursive: true });
@@ -642,7 +642,7 @@ describe('ModelInstaller 发布页组件', () => {
     expect(again.plan.components.map((c) => c.action)).toEqual(['keep', 'keep']);
   });
 
-  it('engineOverride 满足的引擎：计划是 keep，不下载；没有引擎包的平台也能装', async () => {
+  it('an engine satisfied by engineOverride: the plan is keep, nothing is downloaded, and platforms without an engine bundle can still install', async () => {
     const exe = path.join(work, 'my-audiocpp_cli');
     await fs.writeFile(exe, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
     const rel = release(packRelease('#!/bin/sh\nexit 0\n'));

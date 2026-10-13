@@ -9,7 +9,7 @@ import { BUILTIN_VOICES, builtinVoiceFile } from './speech-voices.ts';
 
 const SOURCE_ASSETS = fileURLToPath(new URL('../assets', import.meta.url));
 
-describe('随应用分发的模型数据', () => {
+describe('model data shipped with the app', () => {
   const temps: string[] = [];
   const process_ = process as { resourcesPath?: string };
   const originalResources = process_.resourcesPath;
@@ -26,11 +26,11 @@ describe('随应用分发的模型数据', () => {
     return dir;
   }
 
-  it('源码布局：从模块往上找到仓库里的 packages/models/assets', () => {
+  it('source layout: walking up from the module finds packages/models/assets in the repository', () => {
     expect(resolveModelAssetsDir({})).toBe(SOURCE_ASSETS);
   });
 
-  it('自测样本与目录里每只内置音色的录音都解析成存在的文件', () => {
+  it('self-test samples and every built-in voice recording in the directory resolve to existing files', () => {
     const sample = selfTestSampleFile(TRANSCRIBE_SELF_TEST, {});
     expect(sample).toBe(path.join(SOURCE_ASSETS, 'self-test-sample.wav'));
     expect(fs.statSync(sample!).isFile()).toBe(true);
@@ -42,7 +42,7 @@ describe('随应用分发的模型数据', () => {
     }
   });
 
-  it('环境变量优先，在调用时读；目录里缺文件时照样给出路径，由读的地方报缺失', () => {
+  it('environment variables take precedence and are read at call time; when a file is missing from the directory the path is still returned, and the reader reports the absence', () => {
     const dir = temp();
     const env = { [MODEL_ASSETS_ENV]: dir };
     expect(resolveModelAssetsDir(env)).toBe(dir);
@@ -50,7 +50,7 @@ describe('随应用分发的模型数据', () => {
     expect(fs.existsSync(selfTestSampleFile(TRANSCRIBE_SELF_TEST, env)!)).toBe(false);
   });
 
-  it('打包后的应用：资源目录里的 model-assets 先于仓库', () => {
+  it('packaged app: model-assets in the resources directory take precedence over the repository', () => {
     const resources = temp();
     process_.resourcesPath = resources;
     expect(resolveModelAssetsDir({})).toBe(SOURCE_ASSETS);

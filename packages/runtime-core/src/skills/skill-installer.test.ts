@@ -22,7 +22,7 @@ async function rejection(promise: Promise<unknown>): Promise<RpcError> {
 
 const SKILL_MD = '---\nname: Podcast chapters\ndescription: 给播客分章节\n---\n\n# 步骤\n';
 
-describe('skill 的安装动作', () => {
+describe('skill install actions', () => {
   let dir: string;
   let builtin: string;
   let user: string;
@@ -57,8 +57,8 @@ describe('skill 的安装动作', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  describe('从本地文件夹添加', () => {
-    it('复制整个文件夹、记下来源，默认开着；不改原文件夹', async () => {
+  describe('adds from a local folder', () => {
+    it('copies the whole folder, records the source, enabled by default; does not modify the original folder', async () => {
       const source = await writeSkill(path.join(dir, 'src'), 'Caption Layout', { files: { 'references/a.md': 'A', '.git/HEAD': 'x' } });
       const result = await installer().add({ path: source });
       expect(result.skill).toMatchObject({ id: 'caption-layout', origin: 'personal', enabled: true, removable: true, fileCount: 2 });
@@ -74,7 +74,7 @@ describe('skill 的安装动作', () => {
       expect(await staged()).toEqual([]);
     });
 
-    it('已有同 id 的 skill（含内置的）时拒绝，不覆盖；可以另给 id', async () => {
+    it('rejects when a skill with the same id exists (including built-in), does not overwrite; a different id can be given', async () => {
       const source = await writeSkill(path.join(dir, 'src'), 'mine');
       await installer().add({ path: source });
       await fs.writeFile(path.join(user, 'mine', 'SKILL.md'), '---\nname: mine\ndescription: 已改过\n---\n');
@@ -89,7 +89,7 @@ describe('skill 的安装动作', () => {
       expect((await installer().add({ path: clash, id: 'my-caption-layout' })).skill.id).toBe('my-caption-layout');
     });
 
-    it('缺 SKILL.md、front matter 不合规、文件夹不存在、有符号链接时拒绝，不留下东西', async () => {
+    it('rejects when SKILL.md is missing, front matter is non-compliant, the folder does not exist or there are symbolic links, leaving nothing behind', async () => {
       const empty = path.join(dir, 'src', 'empty');
       await fs.mkdir(empty, { recursive: true });
       await fs.writeFile(path.join(empty, 'README.md'), 'x');
@@ -117,7 +117,7 @@ describe('skill 的安装动作', () => {
       expect(await staged()).toEqual([]);
     });
 
-    it('超过文件数上限时拒绝', async () => {
+    it('rejects when the file count limit is exceeded', async () => {
       const files: Record<string, string> = {};
       for (let i = 0; i <= SKILL_LIMITS.files; i++) files[`refs/${i}.md`] = 'x';
       const big = await writeSkill(path.join(dir, 'src'), 'big', { files });
@@ -127,7 +127,7 @@ describe('skill 的安装动作', () => {
       });
     });
 
-    it('不能把 skill 目录里的文件夹再添加一次', async () => {
+    it('cannot add a folder that is inside the skill directory again', async () => {
       await installer().add({ path: await writeSkill(path.join(dir, 'src'), 'mine') });
       expect((await rejection(installer().add({ path: path.join(user, 'mine'), id: 'again' }))).details).toMatchObject({
         code: 'SKILL_INVALID',
@@ -135,8 +135,8 @@ describe('skill 的安装动作', () => {
     });
   });
 
-  describe('从 GitHub 导入', () => {
-    it('解析地址：owner/repo、仓库首页、/tree/<ref>/<子目录>；别的拒绝', () => {
+  describe('imports from GitHub', () => {
+    it('parses addresses: owner/repo, repo home page, /tree/<ref>/<subdirectory>; others are rejected', () => {
       expect(parseGithubSkillUrl('o/r')).toEqual({ owner: 'o', repo: 'r', ref: null, path: '', url: 'https://github.com/o/r' });
       expect(parseGithubSkillUrl('https://github.com/o/r.git/')).toMatchObject({ repo: 'r', ref: null });
       expect(parseGithubSkillUrl('https://github.com/o/r/tree/v1.0/skills/podcast-chapters?x=1#y')).toMatchObject({
@@ -151,7 +151,7 @@ describe('skill 的安装动作', () => {
       }
     });
 
-    it('导入仓库根：按提交下载，记下地址、ref 与提交，默认关着', async () => {
+    it('imports the repo root: downloads by commit, records address, ref and commit, disabled by default', async () => {
       const github = fakeGithub({ 'SKILL.md': SKILL_MD, 'references/a.md': 'A', '.github/workflow.yml': 'x' });
       const result = await installer(github).importGithub({ url: 'https://github.com/o/r' });
       expect(result.skill).toMatchObject({
@@ -177,7 +177,7 @@ describe('skill 的安装动作', () => {
       expect(await staged()).toEqual([]);
     });
 
-    it('导入子目录：id 取子目录名，只取这个目录', async () => {
+    it('imports a subdirectory: id taken from the subdirectory name, only that directory is fetched', async () => {
       const github = fakeGithub({
         'README.md': 'repo',
         'skills/podcast-chapters/SKILL.md': SKILL_MD,
@@ -191,7 +191,7 @@ describe('skill 的安装动作', () => {
       expect(github.requests.some((u) => u.includes('skills/other'))).toBe(false);
     });
 
-    it('超过上限、缺 SKILL.md、含符号链接时在下载文件之前拒绝', async () => {
+    it('rejects before downloading files when over the limit, missing SKILL.md or containing symbolic links', async () => {
       const files: Record<string, string> = { 'SKILL.md': SKILL_MD };
       for (let i = 0; i < SKILL_LIMITS.files; i++) files[`refs/${i}.md`] = 'x';
       const tooMany = fakeGithub(files);
@@ -218,7 +218,7 @@ describe('skill 的安装动作', () => {
       expect(await staged()).toEqual([]);
     });
 
-    it('目标已存在时在联网之前拒绝', async () => {
+    it('rejects before going online when the target already exists', async () => {
       await installer().add({ path: await writeSkill(path.join(dir, 'src'), 'r') });
       const github = fakeGithub({ 'SKILL.md': SKILL_MD });
       expect((await rejection(installer(github).importGithub({ url: 'o/r' }))).details).toMatchObject({
@@ -229,7 +229,7 @@ describe('skill 的安装动作', () => {
       expect(github.requests).toEqual([]);
     });
 
-    it('子目录不存在、限流、严格离线时如实拒绝', async () => {
+    it('honestly rejects when the subdirectory does not exist, is rate-limited, or in strict offline mode', async () => {
       const github = fakeGithub({ 'SKILL.md': SKILL_MD });
       expect((await rejection(installer(github).importGithub({ url: 'https://github.com/o/r/tree/main/nope' }))).details).toMatchObject({
         code: 'SKILL_SOURCE_NOT_FOUND',
@@ -246,7 +246,7 @@ describe('skill 的安装动作', () => {
       expect(await staged()).toEqual([]);
     });
 
-    it('同一个 commandId 重试返回第一次的结果，不再下载', async () => {
+    it('retrying with the same commandId returns the first result without downloading again', async () => {
       const github = fakeGithub({ 'SKILL.md': SKILL_MD });
       const inst = installer(github);
       const first = await inst.importGithub({ url: 'o/r', commandId: 'cmd-1' });
@@ -256,8 +256,8 @@ describe('skill 的安装动作', () => {
     });
   });
 
-  describe('移除', () => {
-    it('删掉用户的 skill 目录并忘掉它的开关；内置的不能移除', async () => {
+  describe('remove', () => {
+    it('deletes the user\'s skill directory and forgets its switch; built-in ones cannot be removed', async () => {
       await installer().add({ path: await writeSkill(path.join(dir, 'src'), 'mine') });
       await catalog.setEnabled('mine', false);
       const removed = await installer().remove('mine');

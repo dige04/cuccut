@@ -43,7 +43,7 @@ describe('useNarrow', () => {
     receive([entry], {} as ResizeObserver);
   }
 
-  it('输入框留白从 24px 收到 12px 后，临界宽度保持紧凑，不反复切换', () => {
+  it('after input padding shrinks from 24px to 12px, the threshold width stays compact and does not flip back and forth', () => {
     useNarrow({ current: element }, 520 + 24 * 2, 'border-box');
     expect(observe).toHaveBeenCalledWith(element, { box: 'border-box' });
     let compact = false;
@@ -56,7 +56,7 @@ describe('useNarrow', () => {
     expect(modes).toEqual(Array(8).fill(true));
   });
 
-  it('实际外宽跨过断点时才切换，等于断点使用正常布局', () => {
+  it('switches only when the actual outer width crosses the breakpoint; equal to the breakpoint uses the normal layout', () => {
     useNarrow({ current: element }, 568, 'border-box');
     outerWidth = 567;
     resize(543);
@@ -69,7 +69,7 @@ describe('useNarrow', () => {
     expect(setNarrow).toHaveBeenLastCalledWith(false);
   });
 
-  it('没有 borderBoxSize 时仍按外框宽度判断', () => {
+  it('without borderBoxSize, still judges by the border-box width', () => {
     useNarrow({ current: element }, 568, 'border-box');
     resize(532, false);
     expect(setNarrow).toHaveBeenLastCalledWith(true);
@@ -78,7 +78,7 @@ describe('useNarrow', () => {
     expect(setNarrow).toHaveBeenLastCalledWith(false);
   });
 
-  it('其他调用默认仍按内容宽度判断，并在卸载时停止观察', () => {
+  it('other callers still judge by content width by default, and stop observing on unmount', () => {
     useNarrow({ current: element }, 520);
     expect(observe).toHaveBeenCalledWith(element, { box: 'content-box' });
     resize(508);

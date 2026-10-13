@@ -25,8 +25,8 @@ const SLIDES_INDEX = '<!doctype html><html><head><script>window.slides=1</script
 const DESIGN_INDEX = '<!doctype html><html><head><script>window.design=1</script></head><body></body></html>';
 const CANVAS = JSON.stringify({ v: 3, title: 'Poster', boards: { 'Main.dc.html': { x: 0, y: 0, w: 880, h: 560 } }, order: ['Main.dc.html'] });
 
-describe('设计稿的文件布局（DeckStore + CANVAS_LAYOUT）', () => {
-  it('清单是整棵目录树里的普通文件，不含 assets/、隐藏的、符号链接与段名不合规则的', async () => {
+describe('design file layout (DeckStore + CANVAS_LAYOUT)', () => {
+  it('the listing includes only regular files in the whole directory tree, excluding assets/, hidden entries, symbolic links and invalid segment names', async () => {
     const dir = await tempDir({
       'canvas.json': CANVAS,
       'Main.dc.html': '<x-dc></x-dc>',
@@ -55,7 +55,7 @@ describe('设计稿的文件布局（DeckStore + CANVAS_LAYOUT）', () => {
     expect(await store.readProjectFile('project/Link.dc.html')).toBeNull();
   });
 
-  it('文件数超过 512 时只列前 512 个，并且只记一次', async () => {
+  it('lists only the first 512 files when there are more than 512, and records this only once', async () => {
     const files: Record<string, string> = { 'canvas.json': CANVAS };
     for (let i = 0; i < CANVAS_LIMITS.files + 5; i++) files[`parts/p${String(i).padStart(4, '0')}.css`] = String(i);
     const dir = await tempDir(files);
@@ -68,7 +68,7 @@ describe('设计稿的文件布局（DeckStore + CANVAS_LAYOUT）', () => {
     expect(warnings).toEqual([CANVAS_LIMITS.files]);
   });
 
-  it('发布：子目录里的新文件可写；assets/、隐藏路径与不合规则的段名是 read_only_path；一次至多 16 MB', async () => {
+  it('publish: new files in subdirectories are writable; assets/, hidden paths and invalid segment names are read_only_path; at most 16 MB at a time', async () => {
     const dir = await tempDir({ 'canvas.json': CANVAS, 'Main.dc.html': 'v1' });
     const store = new DeckStore(dir, CANVAS_LAYOUT);
     const write = (text: string) => ({ base64: Buffer.from(text).toString('base64'), contentType: 'text/html' });
@@ -85,7 +85,7 @@ describe('设计稿的文件布局（DeckStore + CANVAS_LAYOUT）', () => {
     expect((big.body as { code?: string }).code).toBe('too_large');
   });
 
-  it('外部改动的监听覆盖新建的子目录', async () => {
+  it('external-change watching covers newly created subdirectories', async () => {
     const dir = await tempDir({ 'canvas.json': CANVAS, 'Main.dc.html': 'v1' });
     const store = new DeckStore(dir, CANVAS_LAYOUT);
     const events: DeckChangeEvent[] = [];
@@ -112,7 +112,7 @@ describe('设计稿的文件布局（DeckStore + CANVAS_LAYOUT）', () => {
   });
 });
 
-describe('SlidesServer 的 /design/ 路由（docs/design/canvas §6.2）', () => {
+describe('SlidesServer /design/ route (docs/design/canvas §6.2)', () => {
   let slidesDist: string;
   let designDist: string | null;
   let canvasDir: string;
@@ -156,7 +156,7 @@ describe('SlidesServer 的 /design/ 路由（docs/design/canvas §6.2）', () =>
   const publish = (files: unknown, init: RequestInit = {}) =>
     fetch(at('__deck/publish'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ files }), ...init });
 
-  it('同一个目录与种类复用 grant；grant 只对自己的种类有效；同一个目录按两种打开各有 grant', async () => {
+  it('reuses the grant for the same directory and kind; a grant is valid only for its own kind; the same directory opened in two ways has a grant for each', async () => {
     expect(await server.open(canvasDir, 'design')).toBe(grant);
     const slidesGrant = await server.open(deckDir);
     expect((await fetch(`${base}/slides/${grant}/`)).status).toBe(404);
@@ -168,7 +168,7 @@ describe('SlidesServer 的 /design/ 路由（docs/design/canvas §6.2）', () =>
     expect(server.storeOf(await realpath(canvasDir))?.layout).not.toBe(CANVAS_LAYOUT);
   });
 
-  it('编辑器页面：缺 / 时重定向到 /design/；CSP 允许内联脚本、eval 与 blob:，不带哈希；frameAncestors 照给', async () => {
+  it('editor page: redirects to /design/ when / is missing; CSP allows inline scripts, eval and blob:, without hashes; frameAncestors is passed through as given', async () => {
     const redirect = await fetch(`${base}/design/${grant}?lang=en`, { redirect: 'manual' });
     expect(redirect.status).toBe(308);
     expect(redirect.headers.get('location')).toBe(`/design/${grant}/?lang=en`);
@@ -192,7 +192,7 @@ describe('SlidesServer 的 /design/ 路由（docs/design/canvas §6.2）', () =>
     expect(slidesCsp).not.toContain('unsafe-eval');
   });
 
-  it('没构建设计稿编辑器时页面回 503，说明是设计稿编辑器', async () => {
+  it('returns 503 with a message naming the design editor when the design editor is not built', async () => {
     const saved = designDist;
     designDist = null;
     try {
@@ -206,7 +206,7 @@ describe('SlidesServer 的 /design/ 路由（docs/design/canvas §6.2）', () =>
     }
   });
 
-  it('清单、文件、发布与 read_only_path', async () => {
+  it('listing, files, publishing and read_only_path', async () => {
     const listing = (await (await fetch(at('_files.json'))).json()) as FileListing;
     expect(Object.keys(listing.files)).toEqual(['project/Main.dc.html', 'project/canvas.json']);
     const file = await fetch(at('project/Main.dc.html'));
@@ -225,7 +225,7 @@ describe('SlidesServer 的 /design/ 路由（docs/design/canvas §6.2）', () =>
     expect(await readFile(path.join(canvasDir, 'assets/index.json'), 'utf8')).toBe('{}');
   });
 
-  it('只读与跨源的写被拒；session 报告能否编辑', async () => {
+  it('rejects read-only and cross-origin writes; session reports whether editing is allowed', async () => {
     options = { canEdit: false };
     expect(await (await fetch(at('__deck/session'))).json()).toEqual({ canEdit: false });
     const readOnly = await publish({ 'project/Main.dc.html': null });
@@ -236,7 +236,7 @@ describe('SlidesServer 的 /design/ 路由（docs/design/canvas §6.2）', () =>
     expect(await readFile(path.join(canvasDir, 'Main.dc.html'), 'utf8')).toBe('<x-dc>v1</x-dc>');
   });
 
-  it('素材：上传进 assets/；根级 /_blob/ 默认在所有目录里找，blobScope design 时只找设计稿', async () => {
+  it('assets: uploads go into assets/; root-level /_blob/ searches all directories by default, and only design files when blobScope is design', async () => {
     const uploaded = (await (
       await fetch(at('__deck/assets'), { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: Buffer.from('canvas-png') })
     ).json()) as UploadResult;
@@ -257,7 +257,7 @@ describe('SlidesServer 的 /design/ 路由（docs/design/canvas §6.2）', () =>
     expect((await fetch(at(`_blob/${deckBlob.id}`))).status).toBe(404);
   });
 
-  it('没配置设计稿编辑器时不能打开设计稿，/design/ 一律 404', async () => {
+  it('cannot open designs when no design editor is configured; /design/ always returns 404', async () => {
     const bare = new SlidesServer({ editorDist: () => slidesDist });
     await expect(bare.open(canvasDir, 'design')).rejects.toThrow();
     expect(bare.editorAvailable('design')).toBe(false);

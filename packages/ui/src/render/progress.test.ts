@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { PROGRESS_STYLES } from './progress.ts';
 
-describe('进度条样式', () => {
-  it('14 款，键序是属性页目录的次序', () => {
+describe('progress bar styles', () => {
+  it('14 styles; key order is the order of the property page directory', () => {
     expect(Object.keys(PROGRESS_STYLES)).toEqual([
       'normal',
       'rounded',

@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { RpcError, setLocale } from '@cuccut/protocol';
 import { explainExportError, exportErrorCode } from './export-rejection.ts';
 
-describe('导出被拒', () => {
-  it('画不出来的内容逐项列出，成片可以跳过它们重提', () => {
+describe('export rejected', () => {
+  it('content that cannot be rendered is listed item by item; the final film can skip them and be resubmitted', () => {
     const error = new RpcError('invalid-request', '有 2 项内容导出画不出来：……', {
       code: 'EXPORT_UNSUPPORTED_CONTENT',
       items: [
@@ -20,7 +20,7 @@ describe('导出被拒', () => {
     expect(problem.remedy).toEqual({ kind: 'skip-unsupported' });
   });
 
-  it('便携包缺素材：列出名字与原因，可以跳过缺失的重提', () => {
+  it('portable package missing media: lists names and reasons; can skip the missing items and resubmit', () => {
     const problem = explainExportError(
       new RpcError('conflict', '有 1 个素材版本读不到', {
         code: 'ASSET_MISSING',
@@ -34,7 +34,7 @@ describe('导出被拒', () => {
     expect(problem.hint).toContain('missingAssets');
   });
 
-  it('成片缺素材只给路径与说明，没有跳过这一步', () => {
+  it('final film missing media gives only the path and explanation; there is no skip step', () => {
     const problem = explainExportError(new RpcError('conflict', '链接的素材「a」不在原来的位置', { code: 'ASSET_MISSING', assetId: 'a', path: '/x/a.mov' }), {
       kind: 'video',
       stage: 'rejected',
@@ -44,7 +44,7 @@ describe('导出被拒', () => {
     expect(problem.hint).toBe('找回文件，或在素材里重新链接它，再导一次。');
   });
 
-  it('工具缺失：照原话给出补救', () => {
+  it('missing tool: gives the remedy in the original wording', () => {
     const problem = explainExportError(
       new RpcError('conflict', '成片导出需要 ffmpeg', { code: 'EXPORT_TOOL_MISSING', missing: 'ffmpeg', remedy: '安装 ffmpeg（含 ffprobe）' }),
       { kind: 'video', stage: 'rejected' },
@@ -52,7 +52,7 @@ describe('导出被拒', () => {
     expect(problem).toMatchObject({ title: '这台电脑缺导出要用的工具', items: ['缺：ffmpeg'], hint: '安装 ffmpeg（含 ffprobe）', remedy: null });
   });
 
-  it('几份文档都能导出：给出候选让用户选一份', () => {
+  it('several documents can be exported: offers candidates for the user to pick one', () => {
     const problem = explainExportError(
       new RpcError('invalid-request', '有几份文档都可以导出', {
         code: 'EXPORT_SOURCE_AMBIGUOUS',
@@ -73,7 +73,7 @@ describe('导出被拒', () => {
     });
   });
 
-  it('位置写不进、空间不够：换个位置', () => {
+  it('location not writable or not enough space: choose another location', () => {
     expect(
       explainExportError(new RpcError('conflict', '写不进', { code: 'EXPORT_DESTINATION_UNWRITABLE', path: '/ro/x.mp4', recovery: '换一个可写的目录' }), {
         kind: 'video',
@@ -88,7 +88,7 @@ describe('导出被拒', () => {
     ).toMatchObject({ items: ['需要约 3.0 GB，只剩 512 MB'], remedy: { kind: 'pick-dir' } });
   });
 
-  it('范围里没东西：写出那一段', () => {
+  it('nothing in the range: states that segment', () => {
     const problem = explainExportError(
       new RpcError('invalid-request', '导出范围里没有任何文字', { code: 'EXPORT_NOTHING_TO_EXPORT', range: { start: 12, end: 30.5 } }),
       { kind: 'subtitles', stage: 'rejected' },
@@ -96,7 +96,7 @@ describe('导出被拒', () => {
     expect(problem.items).toEqual(['0:12.0–0:30.5']);
   });
 
-  it('任务失败：逐个列出没保存成的文件', () => {
+  it('task failed: lists each file that was not saved', () => {
     const problem = explainExportError(
       {
         code: 'EXPORT_PARTIALLY_PUBLISHED',
@@ -108,7 +108,7 @@ describe('导出被拒', () => {
     expect(problem).toMatchObject({ code: 'EXPORT_PARTIALLY_PUBLISHED', title: '只保存了一部分文件', items: ['访谈.part2.mp4：帧数不对；时长差 0.4 秒'] });
   });
 
-  it('资源准入放不下：列出缺的维度', () => {
+  it('resource admission cannot fit: lists the missing dimensions', () => {
     const problem = explainExportError(
       { message: '这次导出要的内存超过这台电脑的容量', details: { code: 'RESOURCE_ADMISSION_UNSATISFIABLE', dimensions: ['memory', 'scratchDisk'] } },
       { kind: 'video', stage: 'rejected' },
@@ -121,7 +121,7 @@ describe('导出被拒', () => {
     });
   });
 
-  it('认不出的错误：照原话', () => {
+  it('unrecognized error: shown in the original wording', () => {
     expect(explainExportError(new Error('连接断了'), { kind: 'audio', stage: 'rejected' })).toEqual({
       code: null,
       title: '导出没有开始',

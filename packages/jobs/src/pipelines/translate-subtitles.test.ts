@@ -71,8 +71,8 @@ class FakeText implements TextProvider {
   }
 }
 
-describe('字幕文件翻译的参数', () => {
-  it('input 要是 .srt 或 .vtt 的绝对路径；与视频参数不能同时给', () => {
+describe('subtitle file translation parameters', () => {
+  it('input must be an absolute path to a .srt or .vtt; cannot be given together with video parameters', () => {
     expect(parseTranslateSubtitlesParams({ input: '/a/b.srt', targetLanguage: 'zh', bilingual: true, format: 'vtt' })).toEqual({
       input: '/a/b.srt',
       targetLanguage: 'zh',
@@ -93,7 +93,7 @@ describe('字幕文件翻译的参数', () => {
   });
 });
 
-describe('字幕文件的翻译流程', () => {
+describe('subtitle file translation flow', () => {
   let dir: string;
   let files: string;
   let saved: string;
@@ -161,7 +161,7 @@ describe('字幕文件的翻译流程', () => {
 
   const stepJob = (record: JobRecord, name: string) => jobs.inspect(record.pipeline!.steps.find((s) => s.name === name)!.jobId!);
 
-  it('逐批翻译：条数、序号与时间行不变，空条原样保留；写在保存位置，不覆盖已有的文件', async () => {
+  it('translated batch by batch: cue count, indices and timing lines unchanged, empty cues kept as is; written to the save location, existing files not overwritten', async () => {
     const input = await write('movie.srt', srt(25));
     const record = await translate({ input });
     expect(record).toMatchObject({ state: 'completed', providerId: 'fake', modelId: 'writer', videoId: null });
@@ -216,7 +216,7 @@ describe('字幕文件的翻译流程', () => {
     expect(await fs.readFile(out, 'utf8')).toBe(bytes.toString('utf8'));
   });
 
-  it('双语与换格式：VTT 转 SRT 每条原文在上、译文在下，cue settings 与 NOTE 丢掉并告警；输出到指定目录', async () => {
+  it('bilingual and format change: VTT to SRT, each cue has the source above and the translation below; cue settings and NOTE dropped with a warning; output to the specified directory', async () => {
     const input = await write('talk.vtt', VTT);
     const outDir = path.join(dir, 'out');
     await fs.mkdir(outDir);
@@ -241,7 +241,7 @@ describe('字幕文件的翻译流程', () => {
     expect(stepJob(record, 'check').warnings).toEqual([expect.objectContaining({ code: 'SUBTITLE_SETTINGS_DROPPED' })]);
   });
 
-  it('VTT 到 VTT：标识、cue settings 与 NOTE 原样；术语表进提示词', async () => {
+  it('VTT to VTT: identifiers, cue settings and NOTE as is; glossary goes into the prompt', async () => {
     const input = await write('talk.vtt', VTT);
     const record = await translate({ input, glossary: [{ source: 'CucCut', target: '酷剪' }], sourceLanguage: 'en' });
     expect(record.state).toBe('completed');
@@ -251,7 +251,7 @@ describe('字幕文件的翻译流程', () => {
     expect(record.pipeline!.summary).toMatchObject({ sourceLanguage: 'en', glossary: { terms: 1 } });
   });
 
-  it('模型返回的条数不对：重发；一直不对时停在翻译这一步、不写文件，修好之后重试从翻译继续', async () => {
+  it('model returns the wrong number of cues: resend; when it stays wrong, stops at the translation step, writes no file; after fixing, retry resumes from translation', async () => {
     const input = await write('movie.srt', srt(5));
     const normal = text.reply;
     text.reply = (items) => JSON.stringify({ translations: items.slice(1).map((i) => ({ id: i.id, text: 'x' })) });
@@ -276,7 +276,7 @@ describe('字幕文件的翻译流程', () => {
     expect(await fs.readdir(saved)).toEqual(['movie.zh-CN.srt']);
   });
 
-  it('读不准、太大、找不到的文件与不能写的输出目录：启动就拒绝，不建任务', async () => {
+  it('unreadable, too large or missing files and an unwritable output directory: rejected at start, no task created', async () => {
     const start = (params: Record<string, unknown>) =>
       runner.start({ pipeline: 'translate-subtitles', params: { targetLanguage: 'en', ...params } }, { kind: 'connection', id: 'c' });
     const broken = await write('broken.srt', '1\n00:00:01,000 --> 00:00:02,000\nA\n2\n00:00:03,000 --> 00:00:04,000\nB\n');
@@ -300,7 +300,7 @@ describe('字幕文件的翻译流程', () => {
     expect(jobs.list()).toEqual([]);
   });
 
-  it('没有配置文本模型：启动就以 CAPABILITY_NOT_CONFIGURED 拒绝，不建任务', async () => {
+  it('no text model configured: rejected at start with CAPABILITY_NOT_CONFIGURED, no task created', async () => {
     configured = false;
     const input = await write('movie.srt', srt(2));
     await expect(

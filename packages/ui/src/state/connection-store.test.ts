@@ -4,10 +4,10 @@ import { defaultDriver, useConnection } from './connection-store.ts';
 
 const driver = (id: 'claude' | 'codex', isDefault = false) => ({ id, isDefault }) as DriverInfo;
 
-describe('连接镜像里的 Agent 列表', () => {
+describe('agent list in the connection mirror', () => {
   afterEach(() => useConnection.setState({ drivers: null, checking: [], agentPreferences: null }));
 
-  it('setAgents 整份替换：探测结果、首次探测中的 Driver 与偏好', () => {
+  it('setAgents replaces the whole thing: probe results, the Driver being probed for the first time, and preferences', () => {
     const preferences = { drivers: {}, rules: [] } as unknown as AgentsView['preferences'];
     useConnection.getState().setAgents({ drivers: [], checking: ['claude', 'codex'], preferences });
     expect(useConnection.getState()).toMatchObject({ drivers: [], checking: ['claude', 'codex'], agentPreferences: preferences });
@@ -15,7 +15,7 @@ describe('连接镜像里的 Agent 列表', () => {
     expect(useConnection.getState()).toMatchObject({ drivers: [{ id: 'codex' }], checking: ['claude'] });
   });
 
-  it('defaultDriver：标了默认的优先；没标默认、又有在检测的，先不下结论', () => {
+  it('defaultDriver: the one marked default takes priority; if none is marked default and some are being detected, no conclusion yet', () => {
     expect(defaultDriver(null, [])).toBeNull();
     expect(defaultDriver([driver('claude'), driver('codex', true)], ['claude'])?.id).toBe('codex');
     // The default one is probably still being detected, so do not substitute the first one.

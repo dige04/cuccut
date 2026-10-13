@@ -8,8 +8,8 @@ import { parseFrame } from './opencode-server.ts';
 
 const PATCH = 'Index: notes.txt\n===\n--- notes.txt\n+++ notes.txt\n@@ -1,3 +1,3 @@\n alpha\n-beta\n+BETA\n gamma\n';
 
-describe('版本', () => {
-  it('认 2.x 的 `opencode v2.0.24` 与 1.x 的裸版本号', () => {
+describe('version', () => {
+  it('recognizes `opencode v2.0.24` for 2.x and bare version numbers for 1.x', () => {
     expect(parseOpenCodeVersion('opencode v2.0.24\n')).toBe('2.0.24');
     expect(parseOpenCodeVersion('1.18.34\n')).toBe('1.18.34');
     expect(parseOpenCodeVersion('v2.1.0-beta.3')).toBe('2.1.0');
@@ -19,14 +19,14 @@ describe('版本', () => {
   });
 });
 
-describe('模型', () => {
-  it('id 写成 provider/model，按第一个斜杠拆回去', () => {
+describe('models', () => {
+  it('id written as provider/model, split back at the first slash', () => {
     expect(modelRef('anthropic/claude-sonnet-5', null)).toEqual({ providerID: 'anthropic', id: 'claude-sonnet-5' });
     expect(modelRef('openrouter/meta/llama', 'high')).toEqual({ providerID: 'openrouter', id: 'meta/llama', variant: 'high' });
     expect(modelRef('no-slash', null)).toBeNull();
   });
 
-  it('只留启用的模型，variants 当推理强度，默认模型打标', () => {
+  it('keeps only enabled models, variants are used as reasoning effort, default model is marked', () => {
     const models = driverModels(
       [
         { id: 'a', providerID: 'p', name: 'A', enabled: true, variants: [{ id: 'default' }, { id: 'low' }, { id: 'high' }] },
@@ -50,17 +50,17 @@ describe('模型', () => {
     ]);
   });
 
-  it('账号：只有自带的 OpenCode Zen 时为 null', () => {
+  it('account: null when only the bundled OpenCode Zen is present', () => {
     expect(accountOf([{ id: 'opencode', name: 'OpenCode Zen', activation: 'enabled' }])).toBeNull();
     expect(accountOf([{ id: 'opencode' }, { id: 'anthropic', name: 'Anthropic', activation: 'enabled' }])).toBe('Anthropic');
   });
 });
 
-describe('访问模式 → 权限规则', () => {
+describe('access mode → permission rules', () => {
   const effect = (mode: Parameters<typeof permissionRules>[0], action: string) =>
     permissionRules(mode).find((r) => r.action === action)?.effect;
 
-  it('plan 拒绝编辑，命令与目录外来问；ask 到 auto 都来问，由 Harness 查表；fullAccess 放行', () => {
+  it('plan rejects edits, asks about commands and out-of-directory access; ask through auto all ask, with the Harness looking up the table; fullAccess allows', () => {
     expect(effect('plan', 'edit')).toBe('deny');
     expect(effect('plan', 'shell')).toBe('ask');
     for (const mode of ['ask', 'autoAcceptEdits', 'auto'] as const) {
@@ -72,22 +72,22 @@ describe('访问模式 → 权限规则', () => {
     expect(effect('fullAccess', 'shell')).toBe('allow');
   });
 
-  it('每一档都拒绝 question（CucCut 没有回答表单的通道）', () => {
+  it('every level rejects question (CucCut has no channel for answering forms)', () => {
     for (const mode of ['plan', 'ask', 'autoAcceptEdits', 'auto', 'fullAccess'] as const) expect(effect(mode, 'question')).toBe('deny');
   });
 });
 
-describe('权限请求 → 审批', () => {
+describe('permission request → approval', () => {
   const cwd = '/work';
 
-  it('shell 是命令，规则按 commandRule', () => {
+  it('shell is a command; rules follow commandRule', () => {
     const out = approvalOf({ id: 'per_1', sessionID: 's', action: 'shell', resources: ['npm install left-pad'] }, cwd);
     expect(out.request).toEqual({ kind: 'command', command: 'npm install left-pad', cwd, reason: null, rule: 'npm install' });
     expect(out.grantKey).toBe('command:npm install');
     expect(out.escalation).toBe(false);
   });
 
-  it('edit 是文件修改，文件取元数据里的相对路径', () => {
+  it('edit is a file change; the file is taken from the relative path in the metadata', () => {
     const out = approvalOf(
       {
         id: 'per_2',
@@ -102,14 +102,14 @@ describe('权限请求 → 审批', () => {
     expect(out.grantKey).toBe('file-change');
   });
 
-  it('external_directory 算越界', () => {
+  it('external_directory counts as out of bounds', () => {
     const out = approvalOf({ id: 'per_3', sessionID: 's', action: 'external_directory', resources: ['/etc/*'] }, cwd);
     expect(out.request.kind).toBe('tool');
     expect(out.escalation).toBe(true);
   });
 });
 
-describe('工具步骤', () => {
+describe('tool steps', () => {
   const base: ToolState = {
     id: 'call_1',
     name: 'edit',
@@ -122,7 +122,7 @@ describe('工具步骤', () => {
     endedAt: 1250,
   };
 
-  it('文件修改的输出是 OpenCode 给的统一 diff', () => {
+  it('file change output is the unified diff from OpenCode', () => {
     expect(toolItem(base, '/work', [])).toEqual({
       kind: 'tool-call',
       id: 'call_1',
@@ -136,14 +136,14 @@ describe('工具步骤', () => {
     });
   });
 
-  it('没有元数据时由 oldString / newString 拼 diff', () => {
+  it('without metadata, the diff is built from oldString / newString', () => {
     const item = toolItem({ ...base, metadata: null }, '/work', []);
     expect(item.title).toBe('notes.txt');
     expect(item.output).toBe(editDiff('notes.txt', base.input));
     expect(item.output).toContain('-beta\n+BETA');
   });
 
-  it('shell 的标题是命令，MCP 工具按服务名前缀认', () => {
+  it('shell title is the command; MCP tools are recognized by the server name prefix', () => {
     expect(toolItem({ ...base, name: 'shell', input: { command: 'echo hi' }, metadata: null, content: 'hi' }, '/work', []).title).toBe(
       'echo hi',
     );
@@ -153,8 +153,8 @@ describe('工具步骤', () => {
   });
 });
 
-describe('SSE 帧', () => {
-  it('解析 data 行，忽略心跳注释', () => {
+describe('SSE frames', () => {
+  it('parses data lines, ignores heartbeat comments', () => {
     expect(parseFrame(': heartbeat')).toBeNull();
     expect(parseFrame('data: {"id":"evt_1","type":"server.connected","data":{}}')).toEqual({
       id: 'evt_1',

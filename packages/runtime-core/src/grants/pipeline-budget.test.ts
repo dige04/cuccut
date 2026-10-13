@@ -120,7 +120,7 @@ class Life {
   }
 }
 
-describe.skipIf(!engine || !ffprobe)('智能体启动的流程计入任务预算（假 yt-dlp + 真实引擎 + 假供应商）', () => {
+describe.skipIf(!engine || !ffprobe)('agent-started pipelines count toward the task budget (fake yt-dlp + real engine + fake provider)', () => {
   let life: Life;
   let videoId: Id;
   let conversationId: Id;
@@ -175,7 +175,7 @@ describe.skipIf(!engine || !ffprobe)('智能体启动的流程计入任务预算
     return started.body.jobId as Id;
   }
 
-  it('流程与它提交的转写算进任务预算；超出时停在转写一步并报告，供应商没有收到请求；用户启动的流程不受限', async () => {
+  it('a pipeline and the transcription it submits count toward the task budget; when exceeded, it stops at the transcription step and reports, and the provider receives no request; user-started pipelines are not limited', async () => {
     const { taskId, session } = await agentTask(1);
 
     const first = await life.settled(await startImport(session, 'one'));
@@ -218,7 +218,7 @@ describe.skipIf(!engine || !ffprobe)('智能体启动的流程计入任务预算
     expect(await life.usage(taskId)).toEqual({ calls: 1, reservedCalls: 0 });
   });
 
-  it('转写的产物写进产物库之后崩溃：重启后补做应用，任务预算只结算一次，再重启也不变', async () => {
+  it('crash after transcription output is written to the artifact library: on restart, the apply is completed, the task budget is settled only once, and restarting again changes nothing', async () => {
     const { taskId, session } = await agentTask(2);
     life.crashAt = 'artifact-stored';
     const pipelineJobId = await startImport(session, 'crash');

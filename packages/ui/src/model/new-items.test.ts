@@ -55,31 +55,31 @@ const layer: VisualLayer = {
   shape: { shape: 'rect' },
 };
 
-describe('新建的时间', () => {
+describe('creation time', () => {
   const film = sequence([track('v1', 0, 'visual')], [shape('a', 'v1', 0, 300)]);
 
-  it('从播放头起，截到片尾', () => {
+  it('from the playhead, trimmed to the end', () => {
     expect(spanAtPlayhead(film, 60, 8)).toEqual({ fromFrame: 60, durationFrames: 240 });
     expect(spanAtPlayhead(film, 200, 8)).toEqual({ fromFrame: 200, durationFrames: 100 });
   });
 
-  it('播放头在片尾或更后面时起点不前移，至少留 0.1 秒', () => {
+  it('when the playhead is at or beyond the end, start does not move forward; keep at least 0.1 seconds', () => {
     expect(spanAtPlayhead(film, 300, 8)).toEqual({ fromFrame: 300, durationFrames: 3 });
     expect(spanAtPlayhead(film, 420, 8)).toEqual({ fromFrame: 420, durationFrames: 3 });
   });
 
-  it('空片子整段落下', () => {
+  it('empty project: the whole span falls', () => {
     expect(spanAtPlayhead(sequence([], []), 30, 8)).toEqual({ fromFrame: 30, durationFrames: 240 });
   });
 
-  it('整部片子：从头到尾；空片子从播放头起 10 秒', () => {
+  it('whole project: from start to end; empty project: 10 seconds from the playhead', () => {
     expect(wholeFilmSpan(film, 90)).toEqual({ fromFrame: 0, durationFrames: 300 });
     expect(wholeFilmSpan(sequence([], []), 90)).toEqual({ fromFrame: 90, durationFrames: 300 });
   });
 });
 
-describe('新建放哪条轨道', () => {
-  it('压在这段时间里有东西的最上面那条之上；锁住、隐藏的跳过', () => {
+describe('which track new items go on', () => {
+  it('above the topmost track with content in this span; locked and hidden tracks are skipped', () => {
     const tracks = [
       track('v0', 0, 'visual'),
       track('v1', 1, 'visual'),
@@ -94,7 +94,7 @@ describe('新建放哪条轨道', () => {
     expect(visualSlots(seq, { fromFrame: 90, durationFrames: 30 }, 2).slots).toEqual([{ trackId: 'v0' }, { trackId: 'v1' }]);
   });
 
-  it('不够就在最上面新建，同一笔事务里用 ref 引用', () => {
+  it('if not enough, create a new one at the top, referenced by ref in the same transaction', () => {
     const seq = sequence([track('v0', 0, 'visual')], [shape('a', 'v0', 0, 90)]);
     expect(visualSlots(seq, { fromFrame: 0, durationFrames: 30 }, 2, '文字')).toEqual({
       slots: [{ trackRef: 'new-track-0' }, { trackRef: 'new-track-1' }],
@@ -106,14 +106,14 @@ describe('新建放哪条轨道', () => {
   });
 });
 
-describe('新建的操作', () => {
-  it('新建一层的 place：中心总写明，取一位小数；宽给了才写，不转不写角度', () => {
+describe('new item operation', () => {
+  it('place for a new layer: center always written, one decimal place; width written only when given, rotation not written when not turned', () => {
     expect(placeBox({ x: 50, y: 85, w: 100 })).toEqual({ x: 50, y: 85, w: 100 });
     expect(placeBox({ x: 25.04, y: 50, w: 15.06, rot: -4 })).toEqual({ x: 25, y: 50, w: 15.1, rot: -4 });
     expect(placeBox({ x: 50, y: 50, rot: 0 })).toEqual({ x: 50, y: 50 });
   });
 
-  it('各层错峰出现、一起结束，最晚的也留 0.1 秒', () => {
+  it('layers appear staggered and end together; the latest also keeps 0.1 seconds', () => {
     const seq = sequence([track('v0', 0, 'visual')], []);
     const operations = insertVisual(seq, { fromFrame: 30, durationFrames: 60 }, [
       layer,
@@ -132,7 +132,7 @@ describe('新建的操作', () => {
     expect(JSON.stringify(operations)).not.toContain('delayFrames');
   });
 
-  it('回执里只取新建的片段', () => {
+  it('receipt only takes newly created clips', () => {
     const seq = sequence([track('v0', 0, 'visual')], [shape('b', 'v0', 0, 30), shape('a', 'v0', 30, 30)]);
     expect(createdItemIds(['trk_new', 'b', 'doc', 'a'], seq)).toEqual(['b', 'a']);
   });

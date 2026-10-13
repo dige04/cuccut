@@ -27,7 +27,7 @@ async function write(file: string, content = 'x'): Promise<void> {
 
 const PAGE = '<!doctype html>\n<title>短片</title>\n';
 
-describe('新建项目文件（projects.files.create）', () => {
+describe('create project file (projects.files.create)', () => {
   let dir: string;
   let root: string;
   const scope = { projectId: 'proj_a' };
@@ -48,7 +48,7 @@ describe('新建项目文件（projects.files.create）', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('在根目录写入 UTF-8 文本，返回按项目定位的路径与条目', async () => {
+  it('writes UTF-8 text in the root directory, returns path relative to project and entry', async () => {
     const result = await createProjectFile(root, scope, { name: '新网页.html', content: PAGE });
     expect(result.target).toEqual({ projectId: 'proj_a', path: '新网页.html' });
     expect(result.entry).toMatchObject({ path: '新网页.html', name: '新网页.html', isDir: false, kind: 'document' });
@@ -57,14 +57,14 @@ describe('新建项目文件（projects.files.create）', () => {
     expect(await fs.readFile(path.join(root, '新网页.html'), 'utf8')).toBe(PAGE);
   });
 
-  it('子目录：路径相对根目录，用 / 分隔；名字只取最后一段', async () => {
+  it('subdirectory: path relative to root, separated by /; name takes only the last segment', async () => {
     const result = await createProjectFile(root, scope, { name: '../../escape/page.html', content: 'a', dir: 'pages/' });
     expect(result.target).toEqual({ projectId: 'proj_a', path: 'pages/page.html' });
     expect(await fs.readFile(path.join(root, 'pages', 'page.html'), 'utf8')).toBe('a');
     await expect(fs.stat(path.join(dir, 'escape'))).rejects.toThrow();
   });
 
-  it('重名不覆盖：依次试「名字 2.扩展名」「名字 3.扩展名」', async () => {
+  it('name collision does not overwrite: tries \'name 2.ext\', then \'name 3.ext\'', async () => {
     const first = await createProjectFile(root, scope, { name: 'page.html', content: '1' });
     const second = await createProjectFile(root, scope, { name: 'page.html', content: '2' });
     const third = await createProjectFile(root, scope, { name: 'page.html', content: '3' });
@@ -78,7 +78,7 @@ describe('新建项目文件（projects.files.create）', () => {
     expect(numberedName('README', 3)).toBe('README 3');
   });
 
-  it('dir 越界、绝对路径、不存在、不是目录、隐藏 / 依赖 / 视频目录：拒绝', async () => {
+  it('dir escapes, absolute path, nonexistent, not a directory, hidden / dependency / video directory: rejected', async () => {
     const reject = async (dirParam: string) =>
       (await rejection(createProjectFile(root, scope, { name: 'a.html', content: '', dir: dirParam }))).code;
     expect(await reject('..')).toBe('invalid-request');
@@ -93,7 +93,7 @@ describe('新建项目文件（projects.files.create）', () => {
     await expect(fs.stat(path.join(root, 'Intro.video', 'blobs', 'a.html'))).rejects.toThrow();
   });
 
-  it('符号链接：指出根目录的目录不能写入，指向根目录里的照常写入', async () => {
+  it('symbolic link: a directory pointing out of root cannot be written; one pointing inside root is written normally', async () => {
     await fs.symlink(path.join(dir, 'outside'), path.join(root, 'out-link'));
     await fs.symlink(path.join(root, 'pages'), path.join(root, 'pages-link'));
     expect((await rejection(createProjectFile(root, scope, { name: 'a.html', content: '', dir: 'out-link' }))).code).toBe(
@@ -104,19 +104,19 @@ describe('新建项目文件（projects.files.create）', () => {
     expect(await fs.readFile(path.join(root, 'pages', 'b.html'), 'utf8')).toBe('b');
   });
 
-  it('空名、.、..、以点开头的名字、依赖目录名、控制字符：拒绝', async () => {
+  it('empty name, ., .., names starting with a dot, dependency directory names, control characters: rejected', async () => {
     for (const name of ['', '   ', '.', '..', 'sub/..', '.env', '.ccut', 'node_modules', 'a\u0000b.html', 'a\nb.html']) {
       expect((await rejection(createProjectFile(root, scope, { name, content: '' }))).code).toBe('invalid-request');
     }
     await expect(fs.stat(path.join(root, '.env'))).rejects.toThrow();
   });
 
-  it('根目录不存在：not-found', async () => {
+  it('root directory does not exist: not-found', async () => {
     expect((await rejection(createProjectFile(path.join(dir, 'gone'), scope, { name: 'a.html', content: '' }))).code).toBe('not-found');
   });
 });
 
-describe('新建项目文件经网关（端到端）', () => {
+describe('create project file via gateway (end to end)', () => {
   let dir: string;
   let runtime: RunningRuntime;
   let client: CucCutClient;
@@ -145,7 +145,7 @@ describe('新建项目文件经网关（端到端）', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('项目会话与 projectId 落在项目目录、按项目定位；无项目会话落在工作目录、按会话定位；参数严格校验', async () => {
+  it('project session and projectId land in the project directory, located by project; sessions without a project land in the working directory, located by session; parameters strictly validated', async () => {
     const projectDir = path.join(dir, 'proj');
     await fs.mkdir(projectDir, { recursive: true });
     const { project } = await client.request('projects.open', { path: projectDir });

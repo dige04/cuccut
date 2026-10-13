@@ -23,8 +23,8 @@ const snapshot = (patch: Partial<ResourcesSnapshot> = {}): ResourcesSnapshot => 
   ...patch,
 });
 
-describe('资源调度', () => {
-  it('每个维度一行：容量、来源、正在用、后台还能用；统一内存说明 GPU 计入内存', () => {
+describe('resource scheduling', () => {
+  it('one row per dimension: capacity, source, in use, still available in the background; unified memory note says the GPU counts toward memory', () => {
     const rows = capacityRows(snapshot());
     expect(rows.map((r) => [r.label, r.total])).toEqual([
       ['内存', '16.0 GB'],
@@ -37,7 +37,7 @@ describe('资源调度', () => {
     expect(rows[2]!.desc).toBe('系统探测 · 正在用 4 线程 · 后台任务还能用 4 线程');
   });
 
-  it('未知的维度不写用量；手动设定的标出来', () => {
+  it('unknown dimensions show no usage; manually set values are marked', () => {
     const s = snapshot();
     const rows = capacityRows({
       ...s,
@@ -55,12 +55,12 @@ describe('资源调度', () => {
     expect(rows[0]!.desc).toMatch(/^手动设定 · /);
   });
 
-  it('一项工作的量', () => {
+  it('the amount of one job', () => {
     expect(demandLine({ memory: 2 * GiB, cpuThreads: 4 })).toBe('内存 2.0 GB、CPU 线程 4 线程');
     expect(demandLine({})).toBe('不占本机资源');
   });
 
-  it('表单按 GB 填、存成 MiB；三项都空时整个设置为 null', () => {
+  it('the form takes GB and stores MiB; the whole setting is null when all three fields are empty', () => {
     expect(capacityForm(null)).toEqual({ memoryGB: null, gpuMemoryGB: null, cpuThreads: null });
     expect(capacityForm({ memoryMiB: 12288, gpuMemoryMiB: null, cpuThreads: 6 })).toEqual({ memoryGB: 12, gpuMemoryGB: null, cpuThreads: 6 });
     expect(capacitySetting({ memoryGB: 12.5, gpuMemoryGB: null, cpuThreads: 6 })).toEqual({ memoryMiB: 12800, gpuMemoryMiB: null, cpuThreads: 6 });
@@ -69,7 +69,7 @@ describe('资源调度', () => {
     expect(sameCapacity(null, { memoryMiB: 512, gpuMemoryMiB: null, cpuThreads: null })).toBe(false);
   });
 
-  it('留空时的占位写自动探测到的值', () => {
+  it('the placeholder for an empty field shows the automatically detected value', () => {
     expect(autoPlaceholder(snapshot(), 'memoryGB')).toBe('自动（16.0）');
     expect(autoPlaceholder(snapshot(), 'gpuMemoryGB')).toBe('自动（10.7）');
     expect(autoPlaceholder(snapshot(), 'cpuThreads')).toBe('自动（10）');

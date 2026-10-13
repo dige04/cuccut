@@ -32,13 +32,13 @@ describe('trimCache', () => {
       () => false,
     );
 
-  it('没超上限时什么也不删', async () => {
+  it('deletes nothing when under the limit', async () => {
     await put('media/aa/peaks.bin', 100, 5);
     const result = await trimCache(dir, { maxBytes: 1000 });
     expect(result).toMatchObject({ totalBytes: 100, removed: 0, remainingBytes: 100 });
   });
 
-  it('超过上限：从最旧的删起，降到上限的 90%；内容索引不删', async () => {
+  it('over the limit: deletes from the oldest down to 90% of the limit; content index is not deleted', async () => {
     const index = await put('content-index/index.db', 300, 100);
     const wal = await put('content-index/index.db-wal', 50, 100);
     const shm = await put('content-index/index.db-shm', 50, 100);
@@ -53,7 +53,7 @@ describe('trimCache', () => {
     for (const file of [oldest, older]) expect(await exists(file)).toBe(false);
   });
 
-  it('正在写的临时文件不删，旧的临时文件照常淘汰；删空的旧目录一并删掉', async () => {
+  it('temporary files being written are not deleted, old temporary files are evicted as usual; empty old directories are removed too', async () => {
     const inFlight = await put('media/playback/y.mp4.abc.tmp.mp4', 500, 0);
     const stale = await put('media/playback/z.mp4.def.tmp.mp4', 500, 3);
     const thumb = await put('media/cc/thumb-1.jpg', 100, 2);
@@ -68,7 +68,7 @@ describe('trimCache', () => {
     expect(await exists(ccDir)).toBe(false);
   });
 
-  it('目录不存在时返回空的结果', async () => {
+  it('returns an empty result when the directory does not exist', async () => {
     const result = await trimCache(path.join(dir, 'missing'), { maxBytes: 10 });
     expect(result).toEqual({ totalBytes: 0, protectedBytes: 0, removed: 0, removedBytes: 0, failed: 0, remainingBytes: 0 });
   });

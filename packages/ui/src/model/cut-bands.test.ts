@@ -55,7 +55,7 @@ const band = (s = afterCut()): CutBand => cutBands(s)[0]!;
 const marks = (b: CutBand, words: SpeechWord[] = WORDS) => bandWordMarks(b, words, fps);
 
 describe('cutBands', () => {
-  it('视频与链接音频在同一处的剪口并成一条带：代表剪口取视频，长度按恢复的帧数；两缘夹在相邻实例里、各留一帧', () => {
+  it('cut points at the same place in video and linked audio are merged into one band: representative cut point taken from video, length by restored frame count; both edges clamped within adjacent instances, each leaving one frame', () => {
     expect(cutBands(afterCut())).toEqual([
       {
         key: 'asset_a@120',
@@ -74,7 +74,7 @@ describe('cutBands', () => {
     ]);
   });
 
-  it('相邻实例的另一头也是剪口时可以拖到头（两处剪口并成一处）', () => {
+  it('when the other end of an adjacent instance is also a cut point, it can be dragged to the end (two cut points merged into one)', () => {
     const s = sequence(TRACKS, [video('a', 0, 60, 0), video('b', 60, 60, 4), video('c', 120, 60, 8)]);
     expect(cutBands(s).map((b) => [b.leftId, b.rightId, b.frames, b.lo, b.hi])).toEqual([
       ['a', 'b', 60, -59, 120],
@@ -82,19 +82,19 @@ describe('cutBands', () => {
     ]);
   });
 
-  it('没有剪口就没有带', () => {
+  it('no cut points, no band', () => {
     expect(cutBands(sequence(TRACKS, [video('a', 0, 120, 0), video('b', 120, 60, 4)]))).toEqual([]);
   });
 });
 
 describe('cutText', () => {
-  it('至少一半落在剪掉区间里的词按先后拼起来；中文不空格', () => {
+  it('words at least half inside the cut range joined in order; Chinese without spaces', () => {
     expect(cutText(WORDS, 4, 6)).toBe('词4词5');
     expect(cutText(WORDS, 4.5, 6)).toBe('词5');
     expect(cutText(WORDS, 4.4, 4.6)).toBe('');
   });
 
-  it('西文词带前导空格时空一格', () => {
+  it('Western words with a leading space get one space', () => {
     const w = (text: string, start: number, end: number): SpeechWord => ({ id: text, start, end, text, paragraphStart: false });
     const words = [w(' know', 5, 5.4), w(' well', 3, 3.8), w(' um', 3.8, 4.4), w(' you', 4.5, 4.9), w(' right', 6, 6.5)];
     expect(cutText(words, 4, 6)).toBe('um you know');
@@ -102,7 +102,7 @@ describe('cutText', () => {
 });
 
 describe('bandWordMarks', () => {
-  it('剪口左边按左实例、右边按右实例、剪掉的那段按比例换到拖动坐标（帧，相对剪口）', () => {
+  it('left of cut uses left instance, right uses right instance, the cut segment converted proportionally to drag coordinates (frames, relative to cut point)', () => {
     const m = marks(band());
     const at = (id: string) => m.find((x) => x.word.id === id);
     const round = (id: string) => [at(id)?.t0, at(id)?.t1].map((t) => Math.round((t ?? NaN) * 1e6) / 1e6);
@@ -115,7 +115,7 @@ describe('bandWordMarks', () => {
 });
 
 describe('dragBandEdge', () => {
-  it('缺省吸词边界：左缘吸到最近的词头（留余量、向前取整到帧），右缘吸到最近的词尾', () => {
+  it('default snaps to word boundaries: left edge snaps to nearest word start (keeps margin, rounded down to frame), right edge snaps to nearest word end', () => {
     const b = band();
     const left = dragBandEdge(b, marks(b), 'start', -25, false, fps);
     expect([left.start, left.end, left.word?.id, left.changed]).toEqual([-32, 60, 'w3', true]);
@@ -125,14 +125,14 @@ describe('dragBandEdge', () => {
     expect([right.start, right.end, right.word?.id]).toEqual([0, 86, 'w6']);
   });
 
-  it('按住 Alt 自由落点，对齐到帧；没有词时也退回自由', () => {
+  it('holding Alt drops freely, aligned to frames; falls back to free when there are no words', () => {
     const b = band();
     const free = dragBandEdge(b, marks(b), 'start', -25.4, true, fps);
     expect([free.start, free.word]).toEqual([-25, null]);
     expect(dragBandEdge(b, [], 'start', -25.4, false, fps).start).toBe(-25);
   });
 
-  it('夹取：越界贴住极限；拖过另一条边就是零宽', () => {
+  it('clamping: beyond limit sticks at limit; dragging past the other edge is zero-width', () => {
     const b = band();
     expect(dragBandEdge(b, marks(b), 'start', -500, false, fps).start).toBe(-119);
     expect(dragBandEdge(b, marks(b), 'end', 1000, false, fps).end).toBe(239);
@@ -142,7 +142,7 @@ describe('dragBandEdge', () => {
     expect([shutRight.start, shutRight.end]).toEqual([0, 0]);
   });
 
-  it('按下没挪动原样返回', () => {
+  it('no movement on press returns the original', () => {
     const b = band();
     expect(dragBandEdge(b, marks(b), 'end', 0, false, fps)).toEqual({ edge: 'end', start: 0, end: 60, word: null, changed: false });
   });
@@ -153,7 +153,7 @@ describe('retimeOperations', () => {
   const CUTS = [{ id: 'cut-1', from: 4, to: 6 }];
   const restoreCut = { type: 'restoreCut', sequenceId: 'seq', assetId: 'asset_a', cutId: 'cut-1' };
 
-  it('一笔事务：先 restoreCut 放回这一处，再 addCuts 剪新的素材区间', () => {
+  it('one transaction: first restoreCut to put this one back, then addCuts to cut the new media range', () => {
     const s = afterCut();
     const plan = retimeOperations(s, ASSETS, band(s), CUTS, { start: -32, end: 60 });
     expect(plan?.ok).toBe(true);
@@ -166,21 +166,21 @@ describe('retimeOperations', () => {
     ]);
   });
 
-  it('右缘往后拖：剪口之后多剪一截', () => {
+  it('right edge dragged later: one more section cut after the cut point', () => {
     const s = afterCut();
     const plan = retimeOperations(s, ASSETS, band(s), CUTS, { start: 0, end: 86 });
     const add = plan?.ok ? plan.operations.at(-1) : null;
     expect(add?.type === 'addCuts' && add.cuts).toEqual([{ from: '4', to: '6.866667' }]);
   });
 
-  it('拖到零宽只恢复；范围没变不写', () => {
+  it('dragged to zero width only restores; range unchanged, nothing written', () => {
     const s = afterCut();
     const plan = retimeOperations(s, ASSETS, band(s), CUTS, { start: 60, end: 60 });
     expect(plan?.ok && [plan.frames, plan.operations]).toEqual([0, [restoreCut]]);
     expect(retimeOperations(s, ASSETS, band(s), CUTS, { start: 0, end: 60 })).toBeNull();
   });
 
-  it('剪口差半帧以内也算对上接缝；没有剪口是 untracked，只盖住一部分是 partial', () => {
+  it('within half a frame of the cut counts as a matched seam; no cut point is untracked, partially covered is partial', () => {
     const s = afterCut();
     const near = [{ id: 'cut-1', from: 4.01, to: 6 }];
     expect(retimeOperations(s, ASSETS, band(s), near, { start: 0, end: 30 })?.ok).toBe(true);

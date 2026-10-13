@@ -97,7 +97,7 @@ class FakeVideos implements JobVideos {
   }
 }
 
-describe('本地语音合成（假 Model Worker）', () => {
+describe('local speech synthesis (fake Model Worker)', () => {
   let dir: string;
   let controlFile: string;
   let recordFile: string;
@@ -201,7 +201,7 @@ describe('本地语音合成（假 Model Worker）', () => {
       (error: RpcError) => error,
     );
 
-  it('没有默认值、也不指定：CAPABILITY_NOT_CONFIGURED（no-default，去装或选本地模型）；设为默认后直接可用', async () => {
+  it('no default and none specified: CAPABILITY_NOT_CONFIGURED (no-default, install or choose a local model); usable directly once set as default', async () => {
     const refused = await rejection(manager.submitSynthesizeSpeech({ text: '你好' }, submitter));
     expect(refused.details).toMatchObject({ code: 'CAPABILITY_NOT_CONFIGURED', capability: 'synthesizeSpeech', reason: 'no-default' });
     expect(manager.list()).toEqual([]);
@@ -227,7 +227,7 @@ describe('本地语音合成（假 Model Worker）', () => {
     });
   });
 
-  it('内置音色：随应用分发的录音在提交时冻结摘要；Worker 收到 clone 与原文，输出的 WAV 校验后发布', async () => {
+  it('built-in voice: recordings shipped with the app have their digest frozen at submission; the Worker receives the clone and the source text, and the output WAV is validated before publishing', async () => {
     const job = await speak({ voice: 'en-female', language: 'en', seed: 7 });
     const voice = builtinVoice('en-female')!;
     const voiceFile = builtinVoiceFile(voice)!;
@@ -264,14 +264,14 @@ describe('本地语音合成（假 Model Worker）', () => {
     expect(probed).toHaveLength(1);
   });
 
-  it('资源调度按 candle 模型包的常驻量计 Model Worker：参数个数 × 4（CPU 的 f32）加 1 GiB，计在内存、不占 GPU 内存', async () => {
+  it('resource scheduling counts the Model Worker by the candle model pack\'s resident size: parameter count × 4 (f32 on CPU) plus 1 GiB, counted in memory, not GPU memory', async () => {
     expect((await speak()).state).toBe('completed');
     expect(scheduler.snapshot().holders).toMatchObject([
       { holder: modelWorkerHolder(CLONE), demand: { ...MODEL_WORKER_DEMAND, memory: (500_000_000 + 100_000_000) * 4 + GiB, gpuMemory: 0 } },
     ]);
   });
 
-  it('用文件克隆：提交时冻结；执行前文件变了就失败（ASSET_MISSING），不换声音', async () => {
+  it('clone from a file: frozen at submission; if the file changes before execution, fail (ASSET_MISSING), do not swap the voice', async () => {
     const ref = path.join(dir, 'ref.wav');
     await fs.writeFile(ref, 'my voice');
     const job = await speak({ reference: { file: ref, transcript: '我的声音' } });
@@ -298,7 +298,7 @@ describe('本地语音合成（假 Model Worker）', () => {
     expect((await recorded()).filter((r) => (r.options as { text: string }).text === '二')).toEqual([]);
   });
 
-  it('音色库条目：直接用它的参考录音（不需要在线克隆），任务冻结条目的版本', async () => {
+  it('voice library entry: uses its reference recording directly (no online clone needed), the task freezes the entry\'s version', async () => {
     const ref = path.join(dir, 'lib.wav');
     await fs.copyFile(builtinVoiceFile(builtinVoice('zh-male')!)!, ref);
     const content = {
@@ -322,7 +322,7 @@ describe('本地语音合成（假 Model Worker）', () => {
     expect((await recorded())[0]).toMatchObject({ options: { voice: { mode: 'clone', transcript: '你好' } } });
   });
 
-  it('模型做不到的方式在提交时拒绝，不创建任务', async () => {
+  it('a mode the model cannot do is rejected at submission, no task is created', async () => {
     for (const request of [
       { model: SPEAKERS, reference: { file: path.join(dir, 'x.wav') } },
       { voiceDescription: 'calm' },
@@ -339,7 +339,7 @@ describe('本地语音合成（假 Model Worker）', () => {
     expect(await recorded()).toEqual([]);
   });
 
-  it('读不出的参考录音：用户给的文件是 INPUT_UNREADABLE（句子点名文件）；随应用分发的录音是 APP_FILE_MISSING（重新安装，句子里没有路径）', async () => {
+  it('unreadable reference recording: a user-supplied file is INPUT_UNREADABLE (the sentence names the file); a recording shipped with the app is APP_FILE_MISSING (reinstall, the sentence has no path)', async () => {
     const missing = path.join(dir, 'gone', 'my-voice.wav');
     const refused = await rejection(
       manager.submitSynthesizeSpeech({ text: '你好', provider: 'local', model: CLONE, reference: { file: missing } }, submitter),
@@ -371,7 +371,7 @@ describe('本地语音合成（假 Model Worker）', () => {
     expect(await recorded()).toEqual([]);
   });
 
-  it('内置音色的录音在提交后、执行前不见了：任务以 APP_FILE_MISSING 失败（不是 ASSET_MISSING），不换声音', async () => {
+  it('built-in voice recording missing after submission and before execution: task fails with APP_FILE_MISSING (not ASSET_MISSING), voice not swapped', async () => {
     const assets = path.join(dir, 'assets');
     await fs.mkdir(path.join(assets, 'tts-voices'), { recursive: true });
     const voiceFile = path.join(assets, 'tts-voices', 'en-female.wav');
@@ -408,7 +408,7 @@ describe('本地语音合成（假 Model Worker）', () => {
     }
   });
 
-  it('Worker 不声明 synthesize：MODEL_LOAD_FAILED（capability-missing），不加载，模型包不停用', async () => {
+  it('Worker does not declare synthesize: MODEL_LOAD_FAILED (capability-missing), nothing is loaded, the model pack is not disabled', async () => {
     await control({ capabilities: ['transcribe'] });
     const job = await speak({ voice: 'en-female' });
     expect(job).toMatchObject({
@@ -421,7 +421,7 @@ describe('本地语音合成（假 Model Worker）', () => {
     expect(await catalog.status(CLONE)).toMatchObject({ state: 'installed' });
   });
 
-  it('Worker 没列出这个 family：同样是 capability-missing，不发 model.load，模型包不停用', async () => {
+  it('Worker does not list this family: likewise capability-missing, no model.load is sent, the model pack is not disabled', async () => {
     await control({ capabilities: ['transcribe', 'synthesize'], synthesizeFamilies: ['voxcpm2', 'omnivoice'] });
     const job = await speak({ voice: 'en-female' });
     expect(job).toMatchObject({
@@ -441,7 +441,7 @@ describe('本地语音合成（假 Model Worker）', () => {
     expect(await catalog.status(CLONE)).toMatchObject({ state: 'installed' });
   });
 
-  it('念不了的读音标注：任务照常完成，逐条带 reading-dropped 警告', async () => {
+  it('a pronunciation annotation that cannot be spoken: the task still completes, each one carries a reading-dropped warning', async () => {
     await control({
       capabilities: ['transcribe', 'synthesize'],
       readingsDropped: [{ start: 1, end: 2, reading: 'hang2', origin: 'user' }],
@@ -457,7 +457,7 @@ describe('本地语音合成（假 Model Worker）', () => {
     ]);
   });
 
-  it('输出是静音：解码校验照常通过（静音也是合法 WAV），由自检判定不通过', async () => {
+  it('output is silence: decode validation passes as usual (silence is valid WAV), the self-check fails it', async () => {
     const job = await speak({ model: SILENT, voice: 'en-female' });
     expect(job.state).toBe('completed');
     const artifact = await fs.readFile(path.join(dir, 'artifacts', `${job.result!.artifactId.replace('sha256:', '')}.wav`));

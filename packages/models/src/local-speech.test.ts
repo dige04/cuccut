@@ -60,7 +60,7 @@ const REFERENCE: FrozenSpeechReference = {
 };
 
 describe('planLocalVoice', () => {
-  it('不指定声音：内置音色按请求语言挑（没有那种语言时取第一只）；说话人模型用默认说话人', () => {
+  it('no voice specified: a built-in voice is picked by the requested language (the first one when none matches); speaker models use the default speaker', () => {
     expect(plan(BASE, { language: 'ja-JP' })).toMatchObject({ mode: 'preset', voice: 'ja-female', builtin: { id: 'ja-female' } });
     expect(plan(BASE, { language: 'sw' })).toMatchObject({ mode: 'preset', voice: 'zh-female' });
     expect(plan(BASE, {})).toMatchObject({ mode: 'preset', voice: 'zh-female' });
@@ -69,7 +69,7 @@ describe('planLocalVoice', () => {
     expect(plan(BASE, { voice: 'en-male' })).toMatchObject({ mode: 'preset', voice: 'en-male', builtin: { id: 'en-male' } });
   });
 
-  it('克隆：文件或音色库条目；原文只给读原文的模型', () => {
+  it('cloning: a file or voice-library entry; the source text is given only to models that read source text', () => {
     expect(plan(BASE, { reference: { file: '/r.wav', transcript: '  原文 ' } })).toEqual({
       mode: 'clone',
       source: 'file',
@@ -82,7 +82,7 @@ describe('planLocalVoice', () => {
     expect(() => plan(INDEX, { reference: { file: '/r.wav', transcript: '原文' } })).toThrow(invalid());
   });
 
-  it('描述：自由文本或封闭词表（每类至多一项，英文不分大小写，全角逗号也算）', () => {
+  it('description: free text or a closed vocabulary (at most one item per category, English is case-insensitive, and full-width commas also count as separators)', () => {
     expect(plan(DESIGN, { voiceDescription: ' a calm narrator ' })).toEqual({ mode: 'describe', description: 'a calm narrator' });
     expect(plan(OMNI, { voiceDescription: 'Female, low pitch，四川话' })).toMatchObject({ mode: 'describe' });
     expect(() => plan(OMNI, { voiceDescription: 'female, robot' })).toThrow(invalid({ term: 'robot' }));
@@ -91,7 +91,7 @@ describe('planLocalVoice', () => {
     expect(() => plan(DESIGN, { voiceDescription: '  ' })).toThrow(invalid());
   });
 
-  it('模型做不到的方式与没有的音色都拒绝，不换声音；三种声音只能给一个', () => {
+  it('a method the model cannot do and a voice that does not exist are both rejected without switching voice; only one of the three voice kinds may be given', () => {
     expect(() => plan(CUSTOM, { reference: { file: '/r.wav' } })).toThrow(invalid({ voiceMode: 'clone' }));
     expect(() => plan(CUSTOM, { voice: 'library:vce_1' })).toThrow(invalid({ voiceMode: 'clone' }));
     expect(() => plan(BASE, { voiceDescription: 'calm' })).toThrow(invalid({ voiceMode: 'describe' }));
@@ -102,7 +102,7 @@ describe('planLocalVoice', () => {
     expect(() => plan(OMNI, { reference: { file: '/r.wav' }, voiceDescription: 'female' })).toThrow(invalid());
   });
 
-  it('内置音色：克隆模型要它的录音，描述模型不要；冻结的 voice 记下来源', () => {
+  it('built-in voices: clone models need their recording, describe models do not; the frozen voice records its source', () => {
     const preset = plan(BASE, { voice: 'en-female' });
     expect(builtinReferenceFile(BASE.model, preset)).toMatchObject({
       source: 'builtin',
@@ -120,11 +120,11 @@ describe('planLocalVoice', () => {
   });
 });
 
-describe('speechParameters（本地模型）', () => {
+describe('speechParameters (local models)', () => {
   const freeze = (choice: ModelChoice<'synthesizeSpeech'>, request: SynthesizeSpeechRequest, reference: FrozenSpeechReference | null) =>
     speechParameters(choice, request, { plan: planLocalVoice(choice, request), reference });
 
-  it('克隆：参考录音冻结进参数；文本原样保留（读音标注由引擎处理）', () => {
+  it('cloning: the reference recording is frozen into the parameters; text is kept as-is (pronunciation markup is handled by the engine)', () => {
     const text = '重(chong2)新开始';
     const parameters = freeze(BASE, { text, reference: { file: '/r.wav' } }, REFERENCE);
     expect(parameters).toEqual({
@@ -141,12 +141,12 @@ describe('speechParameters（本地模型）', () => {
     });
   });
 
-  it('需要参考录音却没有冻结：编程错误', () => {
+  it('a reference recording needed but not frozen: a programming error', () => {
     expect(() => freeze(BASE, { text: 'x', voice: 'en-female' }, null)).toThrow(/was not frozen/);
     expect(() => freeze(BASE, { text: 'x', reference: { file: '/r.wav' } }, null)).toThrow(/was not frozen/);
   });
 
-  it('VoiceDesign 的内置音色冻结成它的描述；说话人模型不带参考录音', () => {
+  it('VoiceDesign built-in voices are frozen to their description; speaker models carry no reference recording', () => {
     expect(freeze(DESIGN, { text: 'x', voice: 'en-male' }, null)).toMatchObject({
       voice: 'en-male',
       voiceMode: 'preset',
@@ -157,7 +157,7 @@ describe('speechParameters（本地模型）', () => {
     expect(custom).not.toHaveProperty('reference');
   });
 
-  it('旋钮按模型的范围检查；模型没有的旋钮拒绝', () => {
+  it('knobs are checked against the model\'s range; knobs the model does not have are rejected', () => {
     const omni = freeze(OMNI, { text: 'x', voiceDescription: 'male', speed: 1.2, cfg: 3, steps: 16, seed: 9 }, null);
     expect(omni).toMatchObject({ voiceMode: 'describe', voiceDescription: 'male', speed: 1.2, cfg: 3, steps: 16, seed: 9 });
     expect(() => freeze(OMNI, { text: 'x', voiceDescription: 'male', steps: 100 }, null)).toThrow(invalid());
@@ -169,7 +169,7 @@ describe('speechParameters（本地模型）', () => {
     expect(() => freeze(BASE, { text: 'x'.repeat(2001), voice: 'en-female' }, REFERENCE)).toThrow(invalid({ limit: 2000 }));
   });
 
-  it('在线模型不接受本地才有的字段', () => {
+  it('online models do not accept fields that exist only for local models', () => {
     const online: ModelChoice<'synthesizeSpeech'> = {
       ...BASE,
       providerId: 'openai',
@@ -185,7 +185,7 @@ describe('speechParameters（本地模型）', () => {
 
 describe('synthesizeRunOf', () => {
   const common = { text: 't', language: 'en', instructions: null, speed: null, seed: 3 };
-  it('参考录音是 clone（内置音色也是），描述是 describe，其余是 preset', () => {
+  it('a reference recording is clone (built-in voices too), a description is describe, and everything else is preset', () => {
     expect(synthesizeRunOf({ ...common, voice: 'en-female', reference: { ...REFERENCE, source: 'builtin', transcript: '原文' } })).toEqual({
       input: { file: '/r.wav', contentHash: REFERENCE.sha256, track: 0 },
       options: {
@@ -219,7 +219,7 @@ describe('freezeReferenceFile', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('读出摘要与长度；读不出（不存在、是目录）时 invalid-request', async () => {
+  it('reads the summary and length; when unreadable (missing, or a directory) it is invalid-request', async () => {
     const file = path.join(dir, 'ref.wav');
     await fs.writeFile(file, 'reference bytes');
     expect(await freezeReferenceFile({ source: 'file', path: file, transcript: '原文' })).toEqual({
@@ -241,7 +241,7 @@ describe('freezeReferenceFile', () => {
     });
   });
 
-  it('内置音色的录音读不出来是安装不完整（APP_FILE_MISSING），句子里不带路径', async () => {
+  it('an unreadable built-in voice recording means an incomplete installation (APP_FILE_MISSING), and the message contains no path', async () => {
     const voice = builtinVoice('en-male')!;
     const builtin = { source: 'builtin' as const, voiceId: voice.id, asset: voice.asset, transcript: null };
     const gone = path.join(dir, 'gone', 'en-male.wav');
@@ -256,7 +256,7 @@ describe('freezeReferenceFile', () => {
     }
   });
 
-  it('随应用分发的内置音色录音都在', async () => {
+  it('all built-in voice recordings shipped with the app are present', async () => {
     const voice = builtinVoice('zh-female')!;
     const frozen = await freezeReferenceFile({
       source: 'builtin',
@@ -307,8 +307,8 @@ function wav(options: {
   return Buffer.concat([header, data]);
 }
 
-describe('自检的判定', () => {
-  it('能解码、时长合理、有声音才通过', () => {
+describe('self-check verdicts', () => {
+  it('passes only if it decodes, has a reasonable duration, and contains sound', () => {
     expect(speechSelfTestVerdict(wav({ seconds: 1 }))).toMatchObject({
       passed: true,
       wav: { sampleRate: 24_000, channels: 1, bitsPerSample: 16, encoding: 'pcm', durationSec: 1 },
@@ -321,7 +321,7 @@ describe('自检的判定', () => {
     expect(speechSelfTestVerdict(wav({ seconds: 0.5, bits: 32 }))).toMatchObject({ passed: true });
   });
 
-  it('静音、太短、太长、不是 WAV 都不通过', () => {
+  it('silent, too short, too long, or not a WAV fails', () => {
     expect(speechSelfTestVerdict(wav({ seconds: 1, sample: () => 0 }))).toMatchObject({ passed: false, problem: '输出是静音' });
     // -70 dBFS also counts as silence.
     expect(speechSelfTestVerdict(wav({ seconds: 1, sample: (i) => (i % 2 ? 1 : -1) * 10 ** (-70 / 20) }))).toMatchObject({ passed: false });
@@ -339,7 +339,7 @@ describe('自检的判定', () => {
     });
   });
 
-  it('削波：到了满幅的样本超过 0.1% 不通过；峰值接近满幅但没有削到顶的照常通过', () => {
+  it('clipping: fails when samples at full scale exceed 0.1%; a peak near full scale that does not clip at the top passes as usual', () => {
     const square = speechSelfTestVerdict(wav({ seconds: 1, sample: (i) => (i % 2 ? 1 : -1) * 0.6 }));
     expect(square).toMatchObject({ passed: true, wav: { clippedRatio: 0 } });
     // 24 samples at full scale in one second (0.1%) still passes; more than that is clipping.
@@ -355,7 +355,7 @@ describe('自检的判定', () => {
     });
   });
 
-  it('inspectWav 认出坏头：缺 data、编码与声道不支持', () => {
+  it('inspectWav recognises bad headers: missing data chunk, unsupported encoding and channel count', () => {
     const good = wav({ seconds: 0.1 });
     expect(inspectWav(good.subarray(0, 36))).toEqual({ ok: false, problem: '缺少 data 块' });
     const alaw = Buffer.from(good);
@@ -369,7 +369,7 @@ describe('自检的判定', () => {
     expect(inspectWav(bits)).toMatchObject({ ok: false, problem: expect.stringMatching(/位深/) });
   });
 
-  it('自检的句子：模型列出的第一种有句子的语言；接受任意语言时用英文', () => {
+  it('self-check sentence: the first language with a sentence that the model lists; English when any language is accepted', () => {
     expect(speechSelfTestRequest(def('qwen3-tts-0.6b-base@mlx-8bit'))).toEqual({ text: SPEECH_SELF_TEST_SENTENCES.zh, language: 'zh' });
     expect(speechSelfTestRequest(def('omnivoice@mlx-int8'))).toEqual({ text: SPEECH_SELF_TEST_SENTENCES.en, language: 'en' });
     const swahili = { ...def('gpt-sovits-v2@mlx-fp16'), speech: { ...def('gpt-sovits-v2@mlx-fp16').speech!, languages: ['sw', 'ar'] } };

@@ -12,8 +12,8 @@ function capture(json: boolean) {
   return { output: new Output({ json, stdout, stderr }), out: () => out, err: () => err };
 }
 
-describe('信封与退出码', () => {
-  it('错误码 → 退出码只有一张表', () => {
+describe('envelope and exit codes', () => {
+  it('error code to exit code: there is only one table', () => {
     expect(exitCodeFor('CAPABILITY_NOT_CONFIGURED')).toBe(EXIT.actionRequired);
     expect(exitCodeFor('GRANT_REQUIRED')).toBe(EXIT.actionRequired);
     expect(exitCodeFor('TOOL_CONSENT_REQUIRED')).toBe(EXIT.actionRequired);
@@ -31,7 +31,7 @@ describe('信封与退出码', () => {
     expect(exitCodeForJob(null)).toBe(EXIT.failed);
   });
 
-  it('--json：成功 { ok, result, next }，失败 { ok: false, error }，都写 stdout', () => {
+  it('--json: success { ok, result, next }, failure { ok: false, error }, both written to stdout', () => {
     const ok = capture(true);
     expect(ok.output.success({ videoId: 'v1', next: '用 cuccut videos inspect 看看' })).toBe(0);
     expect(JSON.parse(ok.out())).toEqual({
@@ -56,7 +56,7 @@ describe('信封与退出码', () => {
     expect(failed.err()).toBe('');
   });
 
-  it('人读：结果按缩进写 stdout，next 单独一行；失败写 stderr', () => {
+  it('human-readable: result is indented and written to stdout, next on its own line; failures written to stderr', () => {
     const ok = capture(false);
     ok.output.success({ videoId: 'v1', tracks: [{ id: 't1', kind: 'video' }], tags: ['a', 'b'], next: '下一步' });
     expect(ok.out()).toBe('videoId: v1\ntracks:\n  - id: t1\n    kind: video\ntags: a, b\n下一步: 下一步\n');
@@ -68,7 +68,7 @@ describe('信封与退出码', () => {
     expect(failed.err()).toContain('下一步: cuccut help videos inspect');
   });
 
-  it('多行文本缩进成块', () => {
+  it('multi-line text is indented as a block', () => {
     expect(renderHuman({ text: '第一行\n第二行' })).toBe('text: |\n  第一行\n  第二行');
   });
 });

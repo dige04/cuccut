@@ -74,7 +74,7 @@ const doc = (id: string, kind: string, createdAt: string, sourceAssetId = 'a1'):
 const seg = (start: number, end: number, text = `${start}`): JobLiveSegment => ({ start, end, text });
 
 describe('liveAt / livePending', () => {
-  it('转录位置 = max(最后一段的终点, 进度秒数)，夹在素材时长里', () => {
+  it('transcription position = max(end of last segment, progress seconds), clamped to media duration', () => {
     expect(liveAt([], null, 30)).toBe(0);
     expect(liveAt([seg(0, 4), seg(4, 9)], null, 30)).toBe(9);
     // Progress is reported in seconds: the front edge follows progress when decoding and VAD run ahead of recognition.
@@ -84,7 +84,7 @@ describe('liveAt / livePending', () => {
     expect(liveAt([], { done: 45, total: 30, unit: 'seconds' }, 30)).toBe(30);
   });
 
-  it('按 VAD 片段报的进度只当下限：done / total × 时长', () => {
+  it('progress reported by VAD segments is only a lower bound: done / total × duration', () => {
     expect(liveAt([], { done: 5, total: 10, unit: 'segments' }, 30)).toBe(15);
     expect(liveAt([seg(0, 20)], { done: 5, total: 10, unit: 'segments' }, 30)).toBe(20);
     // When the total and the duration are unknown, do not convert by segment count.
@@ -92,7 +92,7 @@ describe('liveAt / livePending', () => {
     expect(liveAt([seg(0, 3)], { done: 5, total: 10, unit: 'segments' }, null)).toBe(3);
   });
 
-  it('待定带从转录位置到素材末尾；转写做完（done）时没有待定带', () => {
+  it('pending band runs from transcription position to media end; no pending band when transcription is done', () => {
     expect(livePending(0, 30)).toEqual({ start: 0, end: 30 });
     expect(livePending(12, 30)).toEqual({ start: 12, end: 30 });
     expect(livePending(30, 30)).toBeNull();
@@ -106,13 +106,13 @@ describe('liveTranscriptions', () => {
   const parent = job({ jobId: 'p1', kind: 'pipeline', assetId: null, submitter: { kind: 'agent', id: 'c1', taskId: 't1' } });
   const step = job({ jobId: 's1', submitter: { kind: 'pipeline', id: 'p1' } });
 
-  it('从转写 Job 找起：带上流程父任务；别的视频、别的种类不算', () => {
+  it('looks up from the transcription job: includes the flow parent task; other videos and other kinds do not count', () => {
     const found = liveTranscriptions([parent, step, job({ jobId: 'x', videoId: 'v2' }), job({ jobId: 'e', kind: 'export' })], 'v1');
     expect(found).toEqual([{ assetId: 'a1', step, parent, running: true }]);
     expect(liveTranscriptions([parent, step], null)).toEqual([]);
   });
 
-  it('转写做完、父任务还在跑（建字幕层）时仍算，running 为 false；父任务结束就不算了', () => {
+  it('still counts when transcription is done but the parent task is still running (building the subtitle layer), with running false; does not count once the parent task ends', () => {
     const done = { ...step, state: 'completed' as const, endedAt: '2026-10-01T09:05:00Z' };
     expect(liveTranscriptions([parent, done], 'v1')).toEqual([{ assetId: 'a1', step: done, parent, running: false }]);
     const ended = { ...parent, state: 'completed' as const, endedAt: '2026-10-01T09:06:00Z' };
@@ -121,14 +121,14 @@ describe('liveTranscriptions', () => {
     expect(liveTranscriptions([{ ...done, submitter: { kind: 'connection', id: 'x' } }], 'v1')).toEqual([]);
   });
 
-  it('同一个素材重试过时取最新的那次', () => {
+  it('when the same media was retried, the latest attempt is used', () => {
     const retry = job({ jobId: 's2', submitter: { kind: 'pipeline', id: 'p1' }, createdAt: '2026-10-01T09:01:00Z' });
     expect(liveTranscriptions([parent, step, retry], 'v1').map((t) => t.step.jobId)).toEqual(['s2']);
   });
 });
 
-describe('第一次转录才画临时行；收尾时不空一拍', () => {
-  it('时间线上有这个素材的字幕、或开始前已有转写（重新转录）时不画', () => {
+describe('temporary row is drawn only for the first transcription; no blank beat at wrap-up', () => {
+  it('not drawn when the timeline already has subtitles for this media or a transcript already existed before starting (re-transcription)', () => {
     const documents = { cap: doc('cap', 'caption', '2026-10-01T09:10:00Z'), other: doc('other', 'caption', '2026-10-01T08:00:00Z', 'a2') };
     expect(assetCaptioned(sequence([video('v', 0, 300, 0), caption('c', 'other')]), documents, 'a1')).toBe(false);
     expect(assetCaptioned(sequence([video('v', 0, 300, 0), caption('c', 'cap')]), documents, 'a1')).toBe(true);
@@ -138,7 +138,7 @@ describe('第一次转录才画临时行；收尾时不空一拍', () => {
     expect(transcribedBefore(speech, 'a2', '2026-10-01T09:06:00Z')).toBe(false);
   });
 
-  it('按真实的先后走一遍：识别中 → 转写落盘、段落被丢掉但留着 → 字幕轨出现 / 流程结束', () => {
+  it('walks through the real order: recognizing → transcript written to disk, segments dropped but kept → subtitle track appears / flow ends', () => {
     const parent = job({ jobId: 'p1', kind: 'pipeline', assetId: null });
     const running = job({ jobId: 's1', submitter: { kind: 'pipeline', id: 'p1' } });
     const done = {
@@ -177,21 +177,21 @@ describe('第一次转录才画临时行；收尾时不空一拍', () => {
     expect(liveTranscriptions([ended, done], 'v1')).toEqual([]);
   });
 
-  it('转写做完却一段也没有时不画空行；取消、失败的段落不留', () => {
+  it('no empty row when transcription finishes with no segments; cancelled or failed segments are not kept', () => {
     expect(liveRowShown({ running: false, segments: 0, captioned: false, transcribedBefore: false })).toBe(false);
     const parent = job({ jobId: 'p1', kind: 'pipeline', assetId: null });
     const cancelled = job({ jobId: 's1', state: 'cancelled', submitter: { kind: 'pipeline', id: 'p1' } });
     expect(holdSegments({ s1: [seg(0, 1)] }, {}, {}, [parent, cancelled])).toEqual({});
   });
 
-  it('没有变化时返回原对象（订阅者不因此重画）', () => {
+  it('returns the same object when nothing changed (subscribers do not redraw)', () => {
     const held = {};
     expect(holdSegments({}, {}, held, [])).toBe(held);
   });
 });
 
-describe('投到时间线上', () => {
-  it('段落经取用这个素材的实例投到序列上：裁掉的部分不出现，错开的实例放对', () => {
+describe('projected onto the timeline', () => {
+  it('segments projected onto the sequence through instances using this media: trimmed parts do not appear, offset instances are placed correctly', () => {
     // Material 0–10 s placed at sequence 0–5 s (taking 0–5), material 20–30 s placed at sequence 5–10 s.
     const seq = sequence([video('v1', 0, 150, 0), video('v2', 150, 150, 20)]);
     const segments = [seg(1, 3, 'a'), seg(6, 8, 'cut'), seg(21, 24, 'b'), seg(4, 22, 'across')];
@@ -206,7 +206,7 @@ describe('投到时间线上', () => {
     expect(placeSegments(seq, 'a1', segments)).toBe(placed);
   });
 
-  it('待定带也按实例裁成几块；时长不明时延到实例末尾', () => {
+  it('the pending band is also cut into pieces per instance; when the duration is unknown it extends to the instance end', () => {
     const seq = sequence([video('v1', 0, 150, 0), video('v2', 150, 150, 20)]);
     expect(placePending(seq, 'a1', { start: 3, end: 30 })).toEqual([
       { start: 3, end: 5 },
@@ -217,7 +217,7 @@ describe('投到时间线上', () => {
   });
 });
 
-describe('只读的文稿行', () => {
+describe('read-only script row', () => {
   const subtitleTrack: Track = { id: 's1', order: 2, kind: 'subtitle', locked: false, visible: true, muted: false, solo: { enabled: false, group: 'visual' } };
   const speechBody = {
     schema: 'cuccut.speech/1',
@@ -232,13 +232,13 @@ describe('只读的文稿行', () => {
     ],
   };
 
-  it('转录过、一条字幕轨都没有：每个取用了的素材一行，取最新那份转写', () => {
+  it('transcribed with no subtitle tracks at all: one row per used media, using the latest transcript', () => {
     const seq = sequence([video('v1', 0, 150, 0)]);
     const documents = { old: doc('old', 'speech', '2026-01-01'), now: doc('now', 'speech', '2026-02-01'), cap: doc('cap', 'caption', '2026-03-01') };
     expect(transcriptRows(seq, documents, new Set())).toEqual([{ assetId: 'a1', speech: documents.now }]);
   });
 
-  it('有字幕轨、没有转写、素材不在时间线上、正画着临时转录行：都不画', () => {
+  it('not drawn when: has a subtitle track, no transcript, media not on the timeline, or a temporary transcription row is being drawn', () => {
     const seq = sequence([video('v1', 0, 150, 0)]);
     const documents = { now: doc('now', 'speech', '2026-02-01') };
     expect(transcriptRows({ ...seq, tracks: [subtitleTrack] }, documents, new Set())).toEqual([]);
@@ -247,7 +247,7 @@ describe('只读的文稿行', () => {
     expect(transcriptRows(seq, documents, new Set(['a1']))).toEqual([]);
   });
 
-  it('句子按字幕的断句切开，经实例投到序列上：剪掉的不出现', () => {
+  it('sentences split by subtitle line breaks, projected onto the sequence through instances: cut parts do not appear', () => {
     // Material 0–5 s placed at sequence 0–5 s, material 20–25 s placed at sequence 5–10 s.
     const seq = sequence([video('v1', 0, 150, 0), video('v2', 150, 150, 20)]);
     const placed = placeTranscript(seq, 'a1', speechBody);

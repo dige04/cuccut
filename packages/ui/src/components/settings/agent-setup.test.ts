@@ -83,29 +83,29 @@ const model = (id: string, patch: Partial<DriverModel> = {}): DriverModel => ({
   ...patch,
 });
 
-describe('版本与状态', () => {
-  it('版本逐段按数字比', () => {
+describe('version and status', () => {
+  it('versions are compared segment by segment as numbers', () => {
     expect(compareVersions('2.1.284', '2.2.0')).toBe(-1);
     expect(compareVersions('0.130.0', '0.99.9')).toBe(1);
     expect(compareVersions('1.0', '1.0.0')).toBe(0);
     expect(compareVersions(null, '0.1')).toBe(-1);
   });
 
-  it('只有装着、知道最新版本且本机更旧，才算有新版本', () => {
+  it('only an installed agent that knows the latest version and is older locally counts as having a new version', () => {
     expect(hasUpdate(driver({ latestVersion: '0.131.0' }))).toBe(true);
     expect(hasUpdate(driver({ latestVersion: '0.130.0' }))).toBe(false);
     expect(hasUpdate(driver({ latestVersion: null }))).toBe(false);
     expect(hasUpdate(driver({ state: 'not-installed', version: null, latestVersion: '0.131.0' }))).toBe(false);
   });
 
-  it('出错、版本太旧、没登录是挡路的；停用与没装不是', () => {
+  it('errors, a version that is too old, and not logged in block; disabled and not installed do not', () => {
     expect(STATE_PRIORITY).toEqual(['not-installed', 'error', 'outdated', 'signed-out', 'disabled', 'ready']);
     expect(['error', 'outdated', 'signed-out'].every((state) => isBlocked({ state: state as DriverInfo['state'] }))).toBe(true);
     expect(isBlocked({ state: 'disabled' })).toBe(false);
     expect(isBlocked({ state: 'not-installed' })).toBe(false);
   });
 
-  it('状态词与色调跟设计稿一致', () => {
+  it('status words and tones match the design', () => {
     expect(agentBadge(driver())).toEqual({ label: '可用', tone: 'positive' });
     expect(agentBadge(driver({ latestVersion: '0.131.0' }))).toEqual({ label: '可用 · 有新版本', tone: 'notice' });
     expect(agentBadge(driver({ state: 'not-installed' }))).toEqual({ label: '未安装', tone: 'neutral' });
@@ -115,7 +115,7 @@ describe('版本与状态', () => {
     expect(agentBadge(driver({ state: 'disabled' }))).toEqual({ label: '已停用', tone: 'neutral' });
   });
 
-  it('配置里的默认模型这一版不认得：只在可用时提示，有新版本才给升级目标', () => {
+  it('default model in config not recognized by this version: hint only when usable, give an upgrade target only when a newer version exists', () => {
     const gated = driver({ configModel: 'gpt-6', configModelKnown: false });
     expect(configModelGate(gated)).toEqual({ model: 'gpt-6', version: '0.130.0', latest: null });
     expect(agentBadge(gated)).toEqual({ label: '可用 · 默认模型不可用', tone: 'notice' });
@@ -127,7 +127,7 @@ describe('版本与状态', () => {
     expect(configModelGate(driver({ state: 'signed-out', configModel: 'gpt-6', configModelKnown: false }))).toBeNull();
   });
 
-  it('装了的排在前面，其余保持原来的次序', () => {
+  it('installed ones come first, the rest keep their original order', () => {
     const list = [
       driver({ id: 'claude', state: 'not-installed' }),
       driver({ id: 'codex', state: 'signed-out' }),
@@ -137,8 +137,8 @@ describe('版本与状态', () => {
   });
 });
 
-describe('问题条与排查', () => {
-  it('每种挡路的状态各有一个界面里做得到的修法', () => {
+describe('problem rows and troubleshooting', () => {
+  it('each blocking status has one fix that can be done in the UI', () => {
     expect(agentProblem(driver())).toBeNull();
     expect(agentProblem(driver({ state: 'disabled' }))).toBeNull();
     expect(agentProblem(driver({ state: 'error', detail: 'codex --version 没有正常退出。' }))).toMatchObject({
@@ -156,25 +156,25 @@ describe('问题条与排查', () => {
     expect(agentProblem(driver({ state: 'outdated', version: '0.100.0', latestVersion: '0.131.0' }))?.cta).toBe('升级到 0.131.0');
   });
 
-  it('版本过旧时 Driver 给了说明就用它（OpenCode 1.x 要改装另一个包）', () => {
+  it('when the version is too old, use the Driver\'s note if given (OpenCode 1.x needs a different package installed)', () => {
     const detail = 'OpenCode 1.18.34 版本过低，请升级：npm install -g @opencode/cli';
     const outdated = agentProblem(driver({ state: 'outdated', version: '1.18.34', minVersion: '2.0.10', detail }));
     expect(outdated?.body).toBe(`${detail} 升级只更新这个命令行工具，不影响你的账号和它自己的设置。`);
   });
 
-  it('用户添加的：npx / uvx 现取现用的登录起它自己的包，其余起程序本身', () => {
+  it('user-added: login for npx / uvx fetch-on-run starts its own package, others start the program itself', () => {
     const custom = (command: string[]) =>
       driver({ id: 'auggie', command: command[0]!, loginCommand: null, source: 'custom', custom: { command, envKeys: [], addedAt: '' } });
     expect(loginCommandOf(custom(['npx', '-y', '@augmentcode/auggie@0.33.0', '--acp']))).toBe('npx -y @augmentcode/auggie@0.33.0');
     expect(loginCommandOf(custom(['goose', 'acp']))).toBe('goose');
   });
 
-  it('登录命令没给时直接起 CLI', () => {
+  it('launches the CLI directly when no login command is given', () => {
     expect(loginCommandOf(driver())).toBe('codex login');
     expect(loginCommandOf(driver({ loginCommand: null }))).toBe('codex');
   });
 
-  it('排查只看第一条红的，后面的标「上一步通过后再检查」', () => {
+  it('troubleshooting only looks at the first failing item; later ones are marked \'check after the previous step passes\'', () => {
     const steps = diagnose(driver({ state: 'outdated', version: '0.100.0' }));
     expect(steps.map((s) => s.state)).toEqual(['ok', 'ok', 'fail', 'skip', 'skip']);
     expect(diagnosisVerdict(steps)).toEqual({ ok: false, text: '卡在「CucCut 支持这个版本」：当前 0.100.0，最低要求 0.120.0' });
@@ -187,8 +187,8 @@ describe('问题条与排查', () => {
   });
 });
 
-describe('Agent 表的分组', () => {
-  it('检测到的在前；常驻的没装也在主列表；「更多」四家没检测到时折叠；添加的没检测到也不折叠', () => {
+describe('agent table grouping', () => {
+  it('detected ones first; built-in ones not installed still in the main list; the four \'more\' agents collapse when not detected; added ones do not collapse when not detected', () => {
     const list = [
       driver({ id: 'claude', state: 'not-installed' }),
       driver({ id: 'codex', state: 'ready' }),
@@ -207,22 +207,22 @@ describe('Agent 表的分组', () => {
     expect(moreSummary(['a', 'b', 'c', 'd'].map((name) => ({ name })))).toBe('a、b、c 等');
   });
 
-  it('添加的没检测到时状态词是「还没检测」，内置的仍是「未安装」', () => {
+  it('an added agent not detected shows \'not detected yet\', a built-in one still shows \'not installed\'', () => {
     expect(agentBadge(driver({ state: 'not-installed', source: 'custom' }))).toEqual({ label: '还没检测', tone: 'neutral' });
     expect(agentBadge(driver({ state: 'not-installed' }))).toEqual({ label: '未安装', tone: 'neutral' });
     expect(agentBadge(driver({ state: 'signed-out', source: 'custom' })).label).toBe('需要登录');
   });
 });
 
-describe('页顶状态卡', () => {
-  it('有能用的就说准备好了，并说出默认模型', () => {
+describe('top status card', () => {
+  it('says ready when something usable exists, and names the default model', () => {
     const view = agentOverview([driver({ defaultModel: 'gpt-5', models: [model('gpt-5', { label: 'GPT-5' })] })]);
     expect(view).toMatchObject({ state: 'ready', driverId: 'codex', action: 'start' });
     expect(view.body).toContain('Codex CLI · GPT-5');
     expect(agentOverview([driver()]).body).toContain('Agent 默认模型');
   });
 
-  it('先说出问题的，再说停用的，最后才是都没装', () => {
+  it('names problem ones first, then disabled ones, and finally the not-installed ones', () => {
     expect(agentOverview([driver({ state: 'signed-out' })])).toMatchObject({ state: 'attention', action: 'open', cta: '查看问题' });
     expect(agentOverview([driver({ state: 'disabled', enabled: false })])).toMatchObject({ state: 'off', action: 'enable', cta: '启用 Codex CLI' });
     expect(agentOverview([driver({ state: 'not-installed' })])).toMatchObject({ state: 'missing', driverId: null, action: null });
@@ -230,8 +230,8 @@ describe('页顶状态卡', () => {
   });
 });
 
-describe('安装与升级命令', () => {
-  it('认得出的来源只看真实位置', () => {
+describe('install and upgrade commands', () => {
+  it('recognized sources are judged by real location only', () => {
     expect(installKindOf('/opt/homebrew/bin/codex', '/opt/homebrew/Caskroom/codex/0.130.0/codex')).toBe('brew');
     expect(installKindOf('/opt/homebrew/bin/codex', '/opt/homebrew/lib/node_modules/@openai/codex/bin/codex.js')).toBe('npm');
     expect(installKindOf('/usr/local/bin/claude', '/usr/local/Cellar/claude-code/2.1.0/libexec/lib/node_modules/@anthropic-ai/claude-code/cli.js')).toBe('brew');
@@ -240,7 +240,7 @@ describe('安装与升级命令', () => {
     expect(installKindOf('C:\\Users\\me\\AppData\\Roaming\\npm\\codex.cmd', 'C:\\Users\\me\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\bin\\codex.js')).toBe('npm');
   });
 
-  it('版本管理器的 shim 和 bun、pnpm、yarn、volta 装的认不出', () => {
+  it('version manager shims and installs from bun, pnpm, yarn, or volta are not recognized', () => {
     expect(installKindOf('/Users/me/.local/share/mise/shims/codex', '/Users/me/.local/share/mise/installs/node/22/lib/node_modules/@openai/codex/bin/codex.js')).toBeNull();
     expect(installKindOf('/Users/me/.bun/bin/codex', '/Users/me/.bun/install/global/node_modules/@openai/codex/bin/codex.js')).toBeNull();
     expect(installKindOf('/Users/me/Library/pnpm/codex', '/Users/me/Library/pnpm/global/5/node_modules/@openai/codex/bin/codex.js')).toBeNull();
@@ -249,7 +249,7 @@ describe('安装与升级命令', () => {
     expect(installKindOf(null, null)).toBeNull();
   });
 
-  it('没装给安装命令，起手选第一种', () => {
+  it('not installed gives the install command, defaulting to the first method', () => {
     const plan = installPlan(driver({ state: 'not-installed', executable: null, realExecutable: null }));
     expect(plan.upgrading).toBe(false);
     expect(plan.choices.map((c) => c.command)).toEqual(['brew install codex', 'npm install -g @openai/codex']);
@@ -257,7 +257,7 @@ describe('安装与升级命令', () => {
     expect(plan.initial).toBe('brew');
   });
 
-  it('装了给升级命令，起手选认出来的那一种', () => {
+  it('installed gives the upgrade command, defaulting to the recognized method', () => {
     const plan = installPlan(driver({ executable: '/opt/homebrew/bin/codex', realExecutable: '/opt/homebrew/lib/node_modules/@openai/codex/bin/codex.js' }));
     expect(plan.upgrading).toBe(true);
     expect(plan.choices.map((c) => c.command)).toEqual(['brew upgrade codex', 'npm install -g @openai/codex@latest']);
@@ -265,13 +265,13 @@ describe('安装与升级命令', () => {
     expect(plan.initial).toBe('npm');
   });
 
-  it('认出的方式不在方式表里就不算认出，退回第一种', () => {
+  it('a recognized method not in the method table does not count as recognized; falls back to the first method', () => {
     const plan = installPlan(driver({ executable: '/Users/me/.local/bin/codex', realExecutable: '/Users/me/.local/share/claude/versions/1' }));
     expect(plan.detected).toBeNull();
     expect(plan.initial).toBe('brew');
   });
 
-  it('从网络下载脚本再交给 shell 的命令要标出来', () => {
+  it('commands that download a script from the network and pass it to a shell must be flagged', () => {
     const plan = installPlan(
       driver({
         state: 'not-installed',
@@ -287,20 +287,20 @@ describe('安装与升级命令', () => {
   });
 });
 
-describe('默认模型与强度', () => {
-  it('模型表为空时只有「Agent 默认模型」一项', () => {
+describe('default model and effort', () => {
+  it('when the model table is empty, only the \'Agent default model\' item is shown', () => {
     const rows = modelChoices(driver());
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ key: AGENT_DEFAULT_MODEL_KEY, model: null, label: 'Agent 默认模型', description: '按 CLI 配置选择' });
     expect(selectedModelKey(driver())).toBe(AGENT_DEFAULT_MODEL_KEY);
   });
 
-  it('说出 CLI 配置的模型；这一版不认得时提示升级', () => {
+  it('names the model configured in the CLI; hints at an upgrade when this version does not recognize it', () => {
     expect(modelChoices(driver({ configModel: 'gpt-5' }))[0]?.description).toBe('按 CLI 配置选择 · gpt-5');
     expect(modelChoices(driver({ configModel: 'gpt-6', configModelKnown: false }))[0]?.description).toBe('按 CLI 配置选择 · gpt-6 需要升级 CLI');
   });
 
-  it('模型按原序列出并标定位；偏好里的模型不在表里时原样露出且不能再选', () => {
+  it('models are listed in original order and tagged by position; a preferred model not in the table is shown as-is and cannot be selected', () => {
     const models = [model('a', { tier: 'balanced' }), model('b', { tier: 'max', description: '自己的说明' }), model('c')];
     const rows = modelChoices(driver({ models, defaultModel: 'gone' }));
     expect(rows.map((r) => r.key)).toEqual([AGENT_DEFAULT_MODEL_KEY, 'gone', 'a', 'b', 'c']);
@@ -311,7 +311,7 @@ describe('默认模型与强度', () => {
     expect(selectedModelKey(driver({ defaultModel: 'a' }))).toBe('a');
   });
 
-  it('「推荐」只标推荐的那一个：模型表里别的 balanced 不标，最强、最快照旧', () => {
+  it('\'recommended\' tags only the recommended one: other balanced models in the table are not tagged, and the strongest and fastest keep their existing labels', () => {
     const models = [
       model('gpt-6-astra', { tier: 'max' }),
       model('gpt-6.1-sol', { tier: 'balanced' }),
@@ -329,7 +329,7 @@ describe('默认模型与强度', () => {
     expect(claude.filter((r) => r.tag === '推荐').map((r) => r.key)).toEqual(['sonnet']);
   });
 
-  it('偏好里的模型消失了：选中与强度都按推荐模型（新会话实际用的），消失的那行仍露出', () => {
+  it('preferred model gone: selection and effort both follow the recommended model (what new sessions actually use), and the missing row is still shown', () => {
     const efforts = [{ id: 'low', label: 'Low' }, { id: 'high', label: 'High' }];
     const models = [model('gpt-6.1-sol', { tier: 'balanced', efforts, defaultEffort: 'low' }), model('gpt-6-luna', { tier: 'fast' })];
     const gone = driver({ models, defaultModel: 'gpt-5-sol' });
@@ -343,7 +343,7 @@ describe('默认模型与强度', () => {
     expect(selectedModelKey(driver({ defaultModel: 'gpt-5-sol' }))).toBe('gpt-5-sol');
   });
 
-  it('强度只在指定了分强度的模型时出现，中文名认不得就用原标签', () => {
+  it('effort appears only for models with named effort levels; if the Chinese name is not recognized, the original label is used', () => {
     const efforts = [
       { id: 'low', label: 'Low' },
       { id: 'high', label: 'High' },
@@ -362,8 +362,8 @@ describe('默认模型与强度', () => {
   });
 });
 
-describe('「总是允许」的规则', () => {
-  it('空列表给设计稿的空态', () => {
+describe('\'always allow\' rules', () => {
+  it('empty list shows the design\'s empty state', () => {
     expect(rulesView([])).toEqual({
       rules: [],
       title: '总是允许的命令 · 0 条',
@@ -372,7 +372,7 @@ describe('「总是允许」的规则', () => {
     expect(rulesView(null).rules).toEqual([]);
   });
 
-  it('去重、去掉空串，保持添加顺序，原文不改（移除时要原样交回）', () => {
+  it('dedupes and drops empty strings, keeps insertion order, does not change the original text (returned as-is on removal)', () => {
     const view = rulesView(['ccut info', '', 'ccut status ', 'ccut info', 'Bash(git status)']);
     expect(view.rules).toEqual(['ccut info', 'ccut status ', 'Bash(git status)']);
     expect(view.title).toBe('总是允许的命令 · 3 条');
@@ -380,8 +380,8 @@ describe('「总是允许」的规则', () => {
   });
 });
 
-describe('诊断信息', () => {
-  it('每个 Agent 一行：状态、版本与路径，链接与真实位置不同时都给', () => {
+describe('diagnostic info', () => {
+  it('one line per agent: status, version and path; both the link and the real location are given when they differ', () => {
     const text = diagnosticsText([
       driver(),
       driver({ id: 'claude', name: 'Claude Code', state: 'not-installed', version: null, executable: null, realExecutable: null }),
@@ -392,7 +392,7 @@ describe('诊断信息', () => {
   });
 });
 
-describe('应用内运行', () => {
+describe('in-app run', () => {
   const run = (patch: Partial<AgentSetupRun> = {}): AgentSetupRun => ({
     runId: 'setup_1',
     driverId: 'codex',
@@ -409,7 +409,7 @@ describe('应用内运行', () => {
     ...patch,
   });
 
-  it('最近一次按 Agent 取；日志第一行是 $ 命令，丢过的行先说一句', () => {
+  it('latest run is taken per agent; the first log line is the $ command; a note is shown first when lines were dropped', () => {
     const runs = [run({ runId: 'b', driverId: 'claude' }), run({ runId: 'a' }), run({ runId: 'old' })];
     expect(latestSetupRun(runs, 'codex')?.runId).toBe('a');
     expect(latestSetupRun([], 'codex')).toBeNull();
@@ -417,7 +417,7 @@ describe('应用内运行', () => {
     expect(setupLog(run({ droppedLines: 3 }))).toBe('$ brew upgrade codex\n…（前面 3 行已省略）\n==> Upgrading codex');
   });
 
-  it('成功后的 toast 按设计稿；失败、停止不弹', () => {
+  it('success toast follows the design; no toast on failure or stop', () => {
     expect(setupDoneToast(run(), driver({ version: '0.131.0' }))).toEqual({ tone: 'positive', text: 'Codex CLI 现在是 0.131.0 · 正在刷新它的模型列表' });
     expect(setupDoneToast(run({ action: 'install' }), driver({ state: 'signed-out' }))?.text).toBe('检测到 Codex CLI 0.130.0 · 还需要登录一次');
     expect(setupDoneToast(run({ action: 'install' }), driver())?.text).toBe('检测到 Codex CLI 0.130.0');

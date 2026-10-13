@@ -32,7 +32,7 @@ const caption = (text: string) => ({
   cues: [{ id: 'c1', start: 1_000_000, end: 2_500_000, text, speaker: '宝玉' }],
 });
 
-describe.skipIf(!engine)('Space（真实引擎）', () => {
+describe.skipIf(!engine)('Space (real engine)', () => {
   let dir: string;
   let runtime: RunningRuntime;
   let client: CucCutClient;
@@ -82,7 +82,7 @@ describe.skipIf(!engine)('Space（真实引擎）', () => {
     await runtime.space.idle();
   }
 
-  it('视频内部标题不同于迁移目录名时，列表、改名和重建使用真实标题', async () => {
+  it('when the internal video title differs from the migrated directory name, list, rename and rebuild use the real title', async () => {
     const legacyName = 'legacy-title-fixture';
     const video = await videoWithCaption(legacyName, 'Interview transcript');
     await settle();
@@ -108,7 +108,7 @@ describe.skipIf(!engine)('Space（真实引擎）', () => {
     expect(reopened.snapshot.video.name).toBe(name);
   });
 
-  it('打开的与没打开的视频都能检索；编辑之后增量更新；重建期间不完整', async () => {
+  it('both open and unopened videos are searchable; incremental update after editing; incomplete during rebuild', async () => {
     const open = await videoWithCaption('访谈', '今天讲剪辑技巧');
     const closed = await videoWithCaption('Vlog', '周末去爬山，顺便剪辑');
     await client.request('videos.close', { videoId: closed.videoId });
@@ -187,7 +187,7 @@ describe.skipIf(!engine)('Space（真实引擎）', () => {
   }
 
   it.skipIf(!ffmpeg)(
-    '删除视频：移进回收站、撤销与恢复、物理删除；别的连接开着、有内部租约、被别的进程锁着时拒绝；链接素材的原文件不动',
+    'delete video: move to trash, undo and restore, permanent delete; rejected when another connection has it open, when an internal lease exists, or when locked by another process; linked media originals are not touched',
     async () => {
       const ref = await videoWithCaption('访谈', '今天讲剪辑技巧');
       const original = path.join(project.path, ref.relPath);
@@ -308,7 +308,7 @@ describe.skipIf(!engine)('Space（真实引擎）', () => {
     },
   );
 
-  it('视频目录就是另一个项目的目录：删除在动任何东西之前以 VIDEO_TRASH_SOURCE_ROOT 拒绝', async () => {
+  it('video directory is another project\'s directory: delete is rejected with VIDEO_TRASH_SOURCE_ROOT before touching anything', async () => {
     const ref = await videoWithCaption('整个项目', '根目录就是视频');
     const videoDir = path.join(project.path, ref.relPath);
     // The user opened this video directory itself as a project: it is that project's source directory.

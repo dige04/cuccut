@@ -20,11 +20,11 @@ beforeEach(async () => {
   await useTranscriptCopyPrefs.persist.rehydrate();
 });
 
-it('没存过时是 Markdown、五个开关全开', () => {
+it('when nothing was saved, the format is Markdown with all five toggles on', () => {
   expect(copyPrefsOf(useTranscriptCopyPrefs.getState())).toEqual(COPY_DEFAULTS);
 });
 
-it('记住上一次选的格式与勾选，重新打开还是这一组', async () => {
+it('remembers the last chosen format and checkboxes; reopening shows the same set', async () => {
   useTranscriptCopyPrefs.getState().set({ format: 'txt' });
   useTranscriptCopyPrefs.getState().set({ frontmatter: false, speakers: false });
   const saved = localStorage.getItem(KEY)!;

@@ -31,7 +31,7 @@ import { fixtureView, speechModel } from './models-test-fixtures.ts';
 const COPY = { none: '每次选择', noneDesc: '不设默认', codex: 'Codex CLI · 画图', codexDesc: '用你的 Codex 订阅', unavailable: '不可用' };
 
 describe('categoryCapability', () => {
-  it('只有语音识别、语音合成与图像生成有模型服务能力', () => {
+  it('only speech recognition, speech synthesis and image generation have model service capability', () => {
     expect(categoryCapability('asr')).toBe('transcribe');
     expect(categoryCapability('tts')).toBe('synthesizeSpeech');
     expect(categoryCapability('image')).toBe('generateImage');
@@ -43,7 +43,7 @@ describe('categoryCapability', () => {
 });
 
 describe('providerConnected', () => {
-  it('内置的要启用且有密钥；自建的要启用且有地址', () => {
+  it('built-in ones must be enabled and have a key; self-hosted ones must be enabled and have an address', () => {
     expect(providerConnected('openai', { enabled: true, enabledAt: null, credential: 'set' })).toBe(true);
     expect(providerConnected('openai', { enabled: true, enabledAt: null, credential: 'missing' })).toBe(false);
     expect(providerConnected('openai', { enabled: false, enabledAt: null, credential: 'set' })).toBe(false);
@@ -54,13 +54,13 @@ describe('providerConnected', () => {
 });
 
 describe('cloudProviders', () => {
-  it('内置的只在有这种能力的档露面，智能体与本机的不算服务商；已连接的排前面', () => {
+  it('built-in ones appear only in tiers with that capability; agents and local are not providers; connected ones come first', () => {
     const cards = cloudProviders(fixtureView(), 'generateImage');
     expect(cards.map((c) => c.providerId)).toEqual(['openai', 'custom:asr-box', 'custom:tts-box', 'google']);
     expect(cards.find((c) => c.providerId === 'openai')!.models.map((m) => m.modelId)).toEqual(['gpt-image-1']);
   });
 
-  it('自建服务商每一档都露面：没声明这一档时模型为空、这一档不可用', () => {
+  it('self-hosted providers appear in every tier: when a tier is not declared, the model is empty and the tier is unavailable', () => {
     const cards = cloudProviders(fixtureView(), 'synthesizeSpeech');
     const asr = cards.find((c) => c.providerId === 'custom:asr-box')!;
     expect(asr).toMatchObject({ custom: true, connected: true, models: [], available: false, capabilities: ['transcribe'] });
@@ -70,7 +70,7 @@ describe('cloudProviders', () => {
     expect(cards.some((c) => c.providerId === 'google')).toBe(false);
   });
 
-  it('密钥对话框用的能力清单：内置的按视图里出现的档', () => {
+  it('capability list for the key dialog: built-in ones follow the tiers that appear in the view', () => {
     const openai = cloudProviders(fixtureView(), 'transcribe').find((c) => c.providerId === 'openai')!;
     expect(openai.capabilities).toEqual(['transcribe', 'synthesizeSpeech', 'generateImage']);
     const google = cloudProviders(fixtureView(), 'transcribe').find((c) => c.providerId === 'google')!;
@@ -78,8 +78,8 @@ describe('cloudProviders', () => {
   });
 });
 
-describe('自建服务商的模型声明', () => {
-  it('从视图还原声明：带上限与音色，标签与 ID 相同时不写', () => {
+describe('self-hosted provider model declarations', () => {
+  it('restore declarations from the view: include limit and voice; not written when label and ID are the same', () => {
     expect(declaredModels(fixtureView(), 'custom:tts-box')).toEqual([
       { modelId: 'tts-1', label: '中文女声', capability: 'synthesizeSpeech', voices: ['zh-female'], maxInputChars: 4096, formats: ['mp3'] },
     ]);
@@ -95,7 +95,7 @@ describe('自建服务商的模型声明', () => {
     ]);
   });
 
-  it('添加模型时原有声明整体带上（models 是整体替换）', () => {
+  it('when adding a model, the existing declarations are carried over as a whole (models is replaced as a whole)', () => {
     const request = addModelRequest(fixtureView(), 'custom:tts-box', newDeclaredModel(' flux-dev ', 'generateImage'));
     expect(request.providerId).toBe('custom:tts-box');
     expect(request.models!.map((m) => [m.modelId, m.capability])).toEqual([
@@ -105,13 +105,13 @@ describe('自建服务商的模型声明', () => {
     expect(request).not.toHaveProperty('enabled');
   });
 
-  it('模型 ID 不分用途查重', () => {
+  it('model IDs are deduplicated regardless of purpose', () => {
     expect(modelIdTaken(fixtureView(), 'custom:tts-box', 'tts-1')).toBe(true);
     expect(modelIdTaken(fixtureView(), 'custom:tts-box', ' tts-1 ')).toBe(true);
     expect(modelIdTaken(fixtureView(), 'custom:tts-box', 'tts-2')).toBe(false);
   });
 
-  it('音色 ID 用逗号、顿号或空白分隔，去重；只有语音合成带音色', () => {
+  it('voice IDs separated by commas, enumeration commas or whitespace, deduplicated; only speech synthesis has voices', () => {
     expect(parseVoiceIds('zh-female, zh-male，en、zh-female  x')).toEqual(['zh-female', 'zh-male', 'en', 'x']);
     expect(newDeclaredModel('tts-2', 'synthesizeSpeech', 'a, b')).toEqual({ modelId: 'tts-2', capability: 'synthesizeSpeech', voices: ['a', 'b'] });
     expect(newDeclaredModel('tts-2', 'synthesizeSpeech', '')).toEqual({ modelId: 'tts-2', capability: 'synthesizeSpeech' });
@@ -119,8 +119,8 @@ describe('自建服务商的模型声明', () => {
   });
 });
 
-describe('添加自建服务商', () => {
-  it('ID 先用名字，取不出时用主机名；撞上已有的加序号', () => {
+describe('add self-hosted provider', () => {
+  it('ID uses the name first; if none can be derived, uses the hostname; a collision gets a number', () => {
     expect(customProviderId('My Box', 'https://x.dev/v1', new Set())).toBe('custom:my-box');
     expect(customProviderId('硅基流动', 'https://api.siliconflow.cn/v1', new Set())).toBe('custom:siliconflow');
     expect(customProviderId('本机', 'http://localhost:8000/v1', new Set())).toBe('custom:localhost-8000');
@@ -130,13 +130,13 @@ describe('添加自建服务商', () => {
     expect(customProviderId('x'.repeat(90), '', new Set())).toMatch(/^custom:[a-z0-9][a-z0-9-]{0,62}$/);
   });
 
-  it('地址查重不分大小写、不管末尾斜杠', () => {
+  it('address duplicate check is case-insensitive and ignores a trailing slash', () => {
     expect(endpointOwner(fixtureView(), ' https://API.example.com/v1/ ')).toEqual({ providerId: 'custom:asr-box', label: 'ASR Box' });
     expect(endpointOwner(fixtureView(), 'https://api.example.com/v2')).toBeNull();
     expect(endpointOwner(fixtureView(), '')).toBeNull();
   });
 
-  it('要名字、http(s) 地址与第一只模型才能提交', () => {
+  it('name, http(s) address and first model are required before submitting', () => {
     const draft = { name: 'Box', url: 'https://box.local/v1', modelId: 'm', capability: 'transcribe' as const, voiceIds: '' };
     expect(customDraftReady(draft)).toBe(true);
     expect(customDraftReady({ ...draft, url: 'box.local' })).toBe(false);
@@ -145,7 +145,7 @@ describe('添加自建服务商', () => {
     expect(isEndpointUrl('ftp://x')).toBe(false);
   });
 
-  it('只登记名字、地址与第一只模型，不启用（连接时才启用）', () => {
+  it('only registers name, address and first model, does not enable (enabled on connection)', () => {
     const request = customProviderRequest(fixtureView(), {
       name: ' 语音盒子 ',
       url: 'https://voice.example.com/v1/ ',
@@ -162,19 +162,19 @@ describe('添加自建服务商', () => {
   });
 });
 
-describe('密钥', () => {
-  it('保存 = 启用并验证；自建的可以不填密钥', () => {
+describe('key', () => {
+  it('save = enable and verify; self-hosted may leave the key empty', () => {
     expect(connectRequest('openai', ' sk-test ')).toEqual({ providerId: 'openai', enabled: true, verify: true, credential: 'sk-test' });
     expect(connectRequest('custom:box', '  ')).toEqual({ providerId: 'custom:box', enabled: true, verify: true });
   });
 
-  it('内置的移除密钥 = 清掉并停用', () => {
+  it('removing the key of a built-in = clear it and disable', () => {
     expect(disconnectRequest('openai')).toEqual({ providerId: 'openai', enabled: false, credential: null });
   });
 });
 
-describe('默认模型菜单', () => {
-  it('键是 providerId/modelId，modelId 里可以有斜杠', () => {
+describe('default model menu', () => {
+  it('key is providerId/modelId; modelId may contain slashes', () => {
     expect(defaultKey(null)).toBe('none');
     expect(defaultKey({ providerId: 'custom:or', modelId: 'openai/gpt-4o' })).toBe('custom:or/openai/gpt-4o');
     expect(parseDefaultKey('custom:or/openai/gpt-4o')).toEqual({ providerId: 'custom:or', modelId: 'openai/gpt-4o' });
@@ -182,7 +182,7 @@ describe('默认模型菜单', () => {
     expect(parseDefaultKey('broken')).toBeNull();
   });
 
-  it('列出能用的在线服务商的模型；没设默认时勾「每次选择」', () => {
+  it('lists models of usable online providers; when no default is set, check "choose each time"', () => {
     const picker = cloudDefaultPicker(fixtureView(), 'synthesizeSpeech', null, COPY);
     expect(picker.selectedKey).toBe('none');
     expect(picker.empty).toBe(false);
@@ -193,7 +193,7 @@ describe('默认模型菜单', () => {
     ]);
   });
 
-  it('分组的 key 与选项的 key 不重（S2 的集合里重了会崩）', () => {
+  it('group keys and option keys must not collide (a collision in an S2 set crashes)', () => {
     const view = fixtureView();
     view.synthesizeSpeech.default = { providerId: 'custom:gone', modelId: 'tts-9' };
     const pickers = [
@@ -207,7 +207,7 @@ describe('默认模型菜单', () => {
     }
   });
 
-  it('图像档：Codex 能画时多一项；已是默认但画不了时照样勾着、写原因', () => {
+  it('image tier: when Codex can draw, one extra item; if already default but cannot draw, still checked with the reason written', () => {
     const view = fixtureView();
     let picker = cloudDefaultPicker(view, 'generateImage', { ready: true, why: null }, COPY);
     expect(picker.sections.at(-1)!.items).toEqual([{ key: 'agent:codex/image-gen', label: 'Codex CLI · 画图', description: '用你的 Codex 订阅' }]);
@@ -221,7 +221,7 @@ describe('默认模型菜单', () => {
     expect(picker.sections.at(-1)!.items[0]).toMatchObject({ label: 'Codex CLI · 画图（不可用）', description: 'Codex 还没有登录' });
   });
 
-  it('默认指向不可用的服务商（如删掉的自建）时照样列出、勾着，不替用户清', () => {
+  it('when the default points to an unavailable provider (e.g. a deleted self-hosted one), still listed and checked, not cleared on the user\'s behalf', () => {
     const view = fixtureView();
     view.synthesizeSpeech.default = { providerId: 'custom:gone', modelId: 'tts-9' };
     const picker = cloudDefaultPicker(view, 'synthesizeSpeech', null, COPY);
@@ -229,7 +229,7 @@ describe('默认模型菜单', () => {
     expect(picker.sections.at(-1)!.items).toEqual([{ key: 'custom:gone/tts-9', label: 'custom:gone · tts-9（不可用）' }]);
   });
 
-  it('语音识别的默认是本机模型时云端页勾「不设云端默认」那一项', () => {
+  it('when the speech-recognition default is a local model, the cloud page checks the "no cloud default" item', () => {
     const view = fixtureView();
     view.transcribe.default = { providerId: 'local', modelId: 'qwen3-asr-0.6b@mlx-4bit' };
     expect(cloudDefaultPicker(view, 'transcribe', null, COPY).selectedKey).toBe('none');
@@ -237,7 +237,7 @@ describe('默认模型菜单', () => {
     expect(cloudDefaultPicker(view, 'transcribe', null, COPY).selectedKey).toBe('openai/whisper-1');
   });
 
-  it('语音合成的默认是本机模型时单列一项勾着，「每次选择」才是清掉默认', () => {
+  it('when the speech-synthesis default is a local model, a separate item is checked; only "choose each time" clears the default', () => {
     const view = fixtureView();
     view.synthesizeSpeech.providers.unshift({
       providerId: 'local',
@@ -257,7 +257,7 @@ describe('默认模型菜单', () => {
     expect(picker.sections.some((s) => s.key === 'current')).toBe(false);
   });
 
-  it('什么都没连时只剩「每次选择」', () => {
+  it('when nothing is connected, only "choose each time" remains', () => {
     const view = fixtureView();
     for (const p of view.generateImage.providers) p.available = false;
     expect(cloudDefaultPicker(view, 'generateImage', { ready: false, why: null }, COPY).empty).toBe(true);
@@ -265,7 +265,7 @@ describe('默认模型菜单', () => {
   });
 });
 
-describe('刷新模型与音色目录', () => {
+describe('refresh model and voice catalog', () => {
   const voice = (voiceId: string) => ({ voiceId, label: voiceId });
   const speech = [
     { modelId: 'eleven_v3', label: 'v3', voices: [voice('rachel'), voice('adam')] },
@@ -283,7 +283,7 @@ describe('刷新模型与音色目录', () => {
     ...patch,
   });
 
-  it('文本生成档刷新模型，语音合成档刷新音色目录（OpenAI 不露），识别与图像档没有', () => {
+  it('text-generation tier refreshes models; speech-synthesis tier refreshes the voice catalog (not shown for OpenAI); recognition and image tiers have none', () => {
     expect(refreshKind(card({ providerId: 'openai' }), 'generateText')).toBe('models');
     expect(refreshKind(card({ providerId: 'custom:box', custom: true, models: [] }), 'generateText')).toBe('models');
     expect(refreshKind(card(), 'synthesizeSpeech')).toBe('voices');
@@ -292,12 +292,12 @@ describe('刷新模型与音色目录', () => {
     expect(refreshKind(card(), 'generateImage')).toBeNull();
   });
 
-  it('音色按 ID 去重', () => {
+  it('voices deduplicated by ID', () => {
     expect(voiceCount(card().models)).toBe(2);
     expect(voiceCount([{ modelId: 'x', label: 'x' }])).toBe(0);
   });
 
-  it('说明行：没连接或没有模型时不管；正在刷新优先', () => {
+  it('note line: ignored when not connected or no models; refreshing takes priority', () => {
     expect(refreshLine(card({ connected: false }), 'synthesizeSpeech', false)).toBeNull();
     expect(refreshLine(card({ models: [] }), 'synthesizeSpeech', false)).toBeNull();
     expect(refreshLine(card({ providerId: 'openai' }), 'synthesizeSpeech', false)).toBeNull();
@@ -307,7 +307,7 @@ describe('刷新模型与音色目录', () => {
     });
   });
 
-  it('没刷新过是内置目录；失败写原因；刷新过数出取不到的内置模型', () => {
+  it('never refreshed means the built-in catalog; failures write the reason; after a refresh, count built-in models that cannot be found', () => {
     expect(refreshLine(card(), 'synthesizeSpeech', false)).toEqual({ state: 'builtin', kind: 'voices', models: 2, voices: 2 });
     expect(refreshLine(card({ refreshed: { at: '2026-10-03T00:00:00Z', ok: false, error: '401 · 密钥无效' } }), 'synthesizeSpeech', false)).toEqual({
       state: 'failed',
@@ -330,7 +330,7 @@ describe('刷新模型与音色目录', () => {
     );
   });
 
-  it('保存密钥后顺手刷新：自建的或有文本生成的', () => {
+  it('after saving a key, refresh in passing: self-hosted or those with text generation', () => {
     expect(refreshAfterKey({ custom: true, capabilities: [] })).toBe(true);
     expect(refreshAfterKey({ custom: false, capabilities: ['transcribe', 'generateText'] })).toBe(true);
     expect(refreshAfterKey({ custom: false, capabilities: ['synthesizeSpeech'] })).toBe(false);

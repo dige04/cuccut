@@ -2,14 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { formatTenths, shortenPath } from './format.ts';
 
 describe('shortenPath', () => {
-  it('macOS 与 Linux 的主目录缩成 ~', () => {
+  it('macOS and Linux home directories are shortened to ~', () => {
     expect(shortenPath('/Users/me')).toBe('~');
     expect(shortenPath('/Users/me/CucCut/models')).toBe('~/CucCut/models');
     expect(shortenPath('/home/me/CucCut')).toBe('~/CucCut');
     expect(shortenPath('/Volumes/ExtremeSSD/CucCut')).toBe('/Volumes/ExtremeSSD/CucCut');
   });
 
-  it('Windows 的主目录：任意盘符、不分大小写，后面的分隔符原样保留', () => {
+  it('Windows home directory: any drive letter, case-insensitive, trailing separators kept as they are', () => {
     expect(shortenPath('C:\\Users\\me')).toBe('~');
     expect(shortenPath('C:\\Users\\me\\CucCut\\models')).toBe('~\\CucCut\\models');
     expect(shortenPath('c:\\users\\Me\\CucCut')).toBe('~\\CucCut');
@@ -18,8 +18,8 @@ describe('shortenPath', () => {
   });
 });
 
-describe('formatTenths（原型 model-time.test.js 的 timecode）', () => {
-  it('一位小数、满一小时进位', () => {
+describe('formatTenths (prototype model-time.test.js timecode)', () => {
+  it('one decimal place, carries over at one hour', () => {
     expect(formatTenths(0)).toBe('00:00.0');
     expect(formatTenths(12.4)).toBe('00:12.4');
     expect(formatTenths(206)).toBe('03:26.0');
@@ -35,7 +35,7 @@ describe('formatTenths（原型 model-time.test.js 的 timecode）', () => {
     expect(formatTenths(3599.99)).toBe('1:00:00.0');
   });
 
-  it('decimals: 0 去掉小数位', () => {
+  it('decimals: 0 drops the decimal places', () => {
     expect(formatTenths(12.4, { decimals: 0 })).toBe('00:12');
     expect(formatTenths(3723.5, { decimals: 0 })).toBe('1:02:04');
   });

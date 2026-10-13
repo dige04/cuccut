@@ -21,7 +21,7 @@ const note = (over: Partial<DraftDesignSystemAnnotation> = {}): DraftDesignSyste
 });
 
 describe('design-system-annotations', () => {
-  it('加一条：批注去掉首尾空白；空的、超长的、超过条数的不收', () => {
+  it('add one: annotation is trimmed; empty, overlong or over-limit annotations are rejected', () => {
     const one = addDesignSystemAnnotation([], note({ text: '  小一点 \n' }));
     expect(one.error).toBeNull();
     expect(one.list[0]!.text).toBe('小一点');
@@ -34,13 +34,13 @@ describe('design-system-annotations', () => {
     expect(over.list).toBe(full);
   });
 
-  it('删一条；没有这条时原样返回', () => {
+  it('remove one; returns the input unchanged when the item is absent', () => {
     const list = [note(), note({ id: 'n2' })];
     expect(removeDesignSystemAnnotation(list, 'missing')).toBe(list);
     expect(removeDesignSystemAnnotation(list, 'n1').map((n) => n.id)).toEqual(['n2']);
   });
 
-  it('编号标记：只给这套设计系统的，编号是在整份草稿里的序号，带上章节', () => {
+  it('number markers: only for this design system, numbered by position in the whole draft, including the section', () => {
     const list = [note(), note({ id: 'n2', system: other }), note({ id: 'n3', anchor: 'ds-cover', section: undefined })];
     expect(systemThreads(list, system)).toEqual([
       { id: 'n1', anchor: 'comp-Button', n: 1, section: 'components' },
@@ -49,7 +49,7 @@ describe('design-system-annotations', () => {
     expect(systemThreads(list, { projectId: 'p1', path: 'spectrum-2' })).toEqual([]);
   });
 
-  it('交出去的那份：去掉界面里的 id，空的可选字段不带', () => {
+  it('exported copy: strips UI ids and omits empty optional fields', () => {
     expect(sentDesignSystemAnnotations([note({ detail: 'Component "Button" in section components (components/Button/) · comp-Button' })])).toEqual([
       {
         system,

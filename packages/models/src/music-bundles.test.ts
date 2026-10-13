@@ -41,8 +41,8 @@ const YUE = MUSIC_BUNDLES[0]!;
 const GiB = 1024 * 1024 * 1024;
 const status = { detail: undefined } as unknown as ModelBundleStatus;
 
-describe('本地音乐模型包的登记', () => {
-  it('YuE2 3B 的 q8 GGUF 在总登记里，是 music / audio-cpp；仓库整个是一个 music 组件，第二个组件是引擎，有非商用许可与名字', () => {
+describe('registration of local music model packs', () => {
+  it('YuE2 3B\'s q8 GGUF is in the overall registry as music / audio-cpp; the repo as a whole is one music component, the second component is the engine, with a non-commercial license and name', () => {
     expect(MUSIC_BUNDLES.map((b) => b.bundleId)).toEqual([
       'yue2-3b@audio-cpp-q8',
     ]);
@@ -71,7 +71,7 @@ describe('本地音乐模型包的登记', () => {
     expect(YUE.license).toMatchObject({ commercialUse: false });
   });
 
-  it('内置清单：6 个文件都有 sha256 与大小，估计字节等于大小之和；登记的权重与 VAE 文件都在', () => {
+  it('built-in manifest: all 6 files have sha256 and size, estimated bytes equal the sum of sizes; registered weight and VAE files are all present', () => {
     const source = YUE.components.music!;
     const manifest = repoManifestFor(source.repo, source.revision)!;
     expect(manifest).not.toBeNull();
@@ -88,7 +88,7 @@ describe('本地音乐模型包的登记', () => {
     expect(paths).toContain(YUE.music!.files.vae);
   });
 
-  describe('目录里的状态', () => {
+  describe('status in the directory', () => {
     let dir: string;
     beforeEach(async () => {
       dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-music-bundles-'));
@@ -97,7 +97,7 @@ describe('本地音乐模型包的登记', () => {
       await fs.rm(dir, { recursive: true, force: true });
     });
 
-    it('哪个平台都列；没装时 not-installed；只有模型没有引擎是 not-installed / incomplete，引擎齐了才 installed；没有引擎包的平台是 unsupported', async () => {
+    it('every platform is listed; not-installed when not installed; having only the model without the engine is not-installed / incomplete, installed only once the engine is complete; a platform without an engine pack is unsupported', async () => {
       for (const [platform, arch] of [
         ['darwin', 'arm64'],
         ['win32', 'x64'],
@@ -163,7 +163,7 @@ describe('本地音乐模型包的登记', () => {
       expect(unsupported!.detail).toContain('linux-arm64');
     });
 
-    it('峰值按登记的估计值取池：Apple Silicon 计 GPU 内存，别的平台计内存；不是音乐包时 null', () => {
+    it('peak takes the pool from the registered estimate: Apple Silicon counts GPU memory, other platforms count memory; null when not a music pack', () => {
       const mac = new ModelCatalog({
         root: dir,
         platform: 'darwin',
@@ -185,7 +185,7 @@ describe('本地音乐模型包的登记', () => {
       });
     });
 
-    it('本机 Provider：没装时 not-installed；只缺引擎也是 not-installed（修复模型包即可）；引擎齐了可用；没有引擎包的平台 unsupported', async () => {
+    it('local provider: not-installed when not installed; only the engine missing is also not-installed (repairing the model pack is enough); usable once the engine is complete; unsupported on a platform without an engine pack', async () => {
       const catalog = (arch: 'arm64' | 'x64' = 'arm64', platform: 'darwin' | 'linux' = 'darwin') =>
         new ModelCatalog({ root: dir, platform, arch, workerAvailable: () => false });
       const music = {} as never;
@@ -238,8 +238,8 @@ describe('本地音乐模型包的登记', () => {
   });
 });
 
-describe('模型描述与冻结参数', () => {
-  it('歌曲与纯音乐、只出 WAV、接受 seed、免费；上限与编排选项来自模型包，提示耗时', () => {
+describe('model description and frozen parameters', () => {
+  it('songs and instrumentals, WAV output only, accepts seed, free; limits and arrangement options come from the model pack, hint the duration', () => {
     const info = localMusicModelInfo(YUE, status, true, '/opt/audiocpp_cli');
     expect(info).toMatchObject({
       modelId: YUE.bundleId,
@@ -265,7 +265,7 @@ describe('模型描述与冻结参数', () => {
     expect(info.local!.steps).toEqual(YUE.music!.steps);
   });
 
-  it('引擎找不到时不可用，说明取模型包状态的；模型包有问题时带目录给的说明', () => {
+  it('unavailable when the engine is not found, the explanation takes the model pack status; when the model pack has a problem, includes the explanation given by the directory', () => {
     const missing = localMusicModelInfo(YUE, { detail: 'audio.cpp engine 0.9.1 is not installed' } as unknown as ModelBundleStatus, true, null);
     expect(missing.available).toBe(false);
     expect(missing.detail).toContain('audio.cpp');
@@ -278,7 +278,7 @@ describe('模型描述与冻结参数', () => {
     ).toMatchObject({ available: false, detail: 'checksum mismatch' });
   });
 
-  it('seed：给了就用，没给时抽一个 0..2^32-1 的整数', () => {
+  it('seed: uses the given one, otherwise draws an integer from 0..2^32-1', () => {
     expect(localMusicSeed(0)).toBe(0);
     expect(localMusicSeed(4_294_967_295)).toBe(4_294_967_295);
     for (let i = 0; i < 20; i++) {
@@ -289,13 +289,13 @@ describe('模型描述与冻结参数', () => {
     }
   });
 
-  it('时长 → 语义 token 上限按模型族的帧率，至少 1', () => {
+  it('duration to semantic token limit by the model family\'s frame rate, at least 1', () => {
     expect(YUE2_SEMANTIC_TOKENS_PER_SEC).toBe(25);
     expect(semanticMaxTokens(120, YUE.music!)).toBe(3000);
     expect(semanticMaxTokens(0.01, YUE.music!)).toBe(1);
   });
 
-  it('冻结的参数 → 引擎命令行：歌曲带歌词、纯音乐空歌词；风格、编排、seed、token 上限是 request-option；权重路径是 session-option；输出写进 staging', () => {
+  it('frozen parameters to engine command line: songs with lyrics, instrumentals with empty lyrics; style, arrangement, seed, token limit are request-option; weight path is session-option; output is written to staging', () => {
     const run = musicEngineRunOf(
       {
         capability: 'generateMusic',
@@ -360,12 +360,12 @@ describe('模型描述与冻结参数', () => {
     );
   });
 
-  it('环境变量名固定', () => {
+  it('environment variable names are fixed', () => {
     expect(AUDIO_CPP_CLI_ENV).toBe('CUCCUT_AUDIOCPP_CLI');
   });
 });
 
-describe('提交时的检查', () => {
+describe('checks at submission', () => {
   const model = (extra: Partial<MusicModelInfo> = {}): MusicModelInfo => ({
     ...localMusicModelInfo(YUE, status, true, '/opt/audiocpp_cli'),
     ...extra,
@@ -395,7 +395,7 @@ describe('提交时的检查', () => {
     throw new Error('expected a rejection');
   };
 
-  it('纯音乐不带歌词：时长缺省取模型的默认值，编排取模型默认，格式 wav，seed 是调用方冻结的', () => {
+  it('instrumentals without lyrics: duration defaults to the model\'s default, arrangement takes the model default, format wav, seed is frozen by the caller', () => {
     expect(musicParameters(choice(), base, 99)).toEqual({
       capability: 'generateMusic',
       mode: 'instrumental',
@@ -409,7 +409,7 @@ describe('提交时的检查', () => {
     });
   });
 
-  it('歌曲要歌词；给了目标时长没给上限时上限等于目标；步数在范围内才进冻结参数', () => {
+  it('songs require lyrics; with a target duration but no limit given, the limit equals the target; steps go into the frozen parameters only when within range', () => {
     const song = musicParameters(
       choice(),
       {
@@ -439,7 +439,7 @@ describe('提交时的检查', () => {
     expect(reject({ ...base, steps: 7.5 })).toBe('invalid-request');
   });
 
-  it('风格空或超长、歌词超长、时长出范围或目标超过上限、不支持的模式或编排、格式不对：拒绝', () => {
+  it('rejects an empty or overlong style, overlong lyrics, a duration out of range or a target over the limit, an unsupported mode or arrangement, or a wrong format', () => {
     expect(reject({ ...base, style: '  ' })).toBe('invalid-request');
     expect(reject({ ...base, style: 'x'.repeat(2001) })).toBe(
       'invalid-request',
@@ -473,8 +473,8 @@ describe('提交时的检查', () => {
   });
 });
 
-describe('自检', () => {
-  it('固定输入：几秒纯音乐、不编排、少步数、固定 seed；冻结参数与正式提交同形', () => {
+describe('self-check', () => {
+  it('fixed input: a few seconds of instrumental, no arrangement, few steps, fixed seed; frozen parameters have the same shape as the real submission', () => {
     expect(MUSIC_SELF_TEST).toMatchObject({
       mode: 'instrumental',
       maxDurationSec: 8,
@@ -494,7 +494,7 @@ describe('自检', () => {
     });
   });
 
-  it('判定与语音合成同一套：有声的 WAV 通过并给出时长与采样率；不是 WAV、静音不通过', () => {
+  it('verdict uses the same check as speech synthesis: audible WAV passes and reports duration and sample rate; non-WAV and silence fail', () => {
     const ok = musicSelfTestVerdict(wav({ seconds: 2, rate: 44_100 }));
     expect(ok).toMatchObject({ passed: true, wav: { sampleRate: 44_100 } });
     expect(

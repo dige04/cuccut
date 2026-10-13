@@ -7,7 +7,7 @@ import { ensureSaveDirectory, ensureSaveDirectoryForStep, readableStem, writable
 
 /** Save location (architecture design §7.9): the directory is created, confirmed writable, and file names are readable. */
 
-describe('保存位置的目录', () => {
+describe('save location directory', () => {
   let dir: string;
   beforeEach(async () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-save-'));
@@ -17,13 +17,13 @@ describe('保存位置的目录', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('不存在时逐级创建', async () => {
+  it('created level by level when absent', async () => {
     const target = path.join(dir, 'a', 'b');
     expect(await writableDirectoryProblem(target)).toBeNull();
     expect((await fs.stat(target)).isDirectory()).toBe(true);
   });
 
-  it('是文件、或在文件下面：提交时 conflict，执行时是步骤错误，都带 OUTPUT_DESTINATION_UNAVAILABLE', async () => {
+  it('is a file, or under a file: conflict at submit, step error at execution, both carry OUTPUT_DESTINATION_UNAVAILABLE', async () => {
     const file = path.join(dir, 'file');
     await fs.writeFile(file, 'x');
     for (const target of [file, path.join(file, 'sub')]) {
@@ -37,7 +37,7 @@ describe('保存位置的目录', () => {
     }
   });
 
-  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('没有写权限：拒绝', async () => {
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('no write permission: rejected', async () => {
     const locked = path.join(dir, 'locked');
     await fs.mkdir(locked);
     await fs.chmod(locked, 0o500);
@@ -49,14 +49,14 @@ describe('保存位置的目录', () => {
   });
 });
 
-describe('可读的文件名', () => {
-  it('取开头一段、空白合成一个空格；空文字用兜底的名字', () => {
+describe('readable file name', () => {
+  it('takes the leading segment, collapses whitespace into one space; empty text uses the fallback name', () => {
     expect(readableStem('  你好\n\t世界  ', 'speech')).toBe('你好 世界');
     expect(readableStem('   ', 'speech')).toBe('speech');
     expect([...readableStem('字'.repeat(100), 'x')]).toHaveLength(40);
   });
 
-  it('按下载文件名的规则去掉路径分隔符与保留字符', () => {
+  it('removes path separators and reserved characters following the download file-name rules', () => {
     const stem = readableStem('a/b\\c:d*e?f"g<h>i|j', 'x');
     expect(stem).not.toMatch(/[/\\:*?"<>|]/);
   });

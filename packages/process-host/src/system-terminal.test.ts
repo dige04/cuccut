@@ -51,7 +51,7 @@ describe('openSystemTerminal', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('macOS：写 0o700 的 .command 脚本，用 open 打开', async () => {
+  it('macOS: writes a 0o700 .command script and opens it with open', async () => {
     const fake = fakeSpawn(() => ({ exit: 0 }));
     const result = await openSystemTerminal('brew upgrade codex', { platform: 'darwin', spawn: fake.spawn, tmpDir: dir });
     expect(result).toEqual({ status: 'opened', detail: null });
@@ -75,7 +75,7 @@ describe('openSystemTerminal', () => {
     ]);
   });
 
-  it('macOS：脚本运行后删掉自己，提示行原样打印（单引号等特殊字符已转义）', async () => {
+  it('macOS: script deletes itself after running, prompt line printed as is (single quotes and other special characters escaped)', async () => {
     const command = `echo "it's \\$HOME" && echo done`;
     const fake = fakeSpawn(() => ({ exit: 0 }));
     await openSystemTerminal(command, { platform: 'darwin', spawn: fake.spawn, tmpDir: dir });
@@ -86,7 +86,7 @@ describe('openSystemTerminal', () => {
     await expect(fs.access(file)).rejects.toThrow();
   });
 
-  it('macOS：open 失败时删掉脚本，返回 unsupported', async () => {
+  it('macOS: when open fails, deletes the script and returns unsupported', async () => {
     const failed = fakeSpawn(() => ({ exit: 1 }));
     expect(await openSystemTerminal('codex login', { platform: 'darwin', spawn: failed.spawn, tmpDir: dir })).toMatchObject({ status: 'unsupported' });
     const missing = fakeSpawn(() => ({ error: true }));
@@ -94,7 +94,7 @@ describe('openSystemTerminal', () => {
     expect(await fs.readdir(dir)).toEqual([]);
   });
 
-  it('Windows：cmd.exe /c start "" cmd.exe /k <命令>', async () => {
+  it('Windows: cmd.exe /c start "" cmd.exe /k <command>', async () => {
     const fake = fakeSpawn(() => ({ exit: 0 }));
     expect(await openSystemTerminal('npm install -g @openai/codex', { platform: 'win32', spawn: fake.spawn })).toEqual({ status: 'opened', detail: null });
     expect(fake.calls[0]).toMatchObject({
@@ -104,7 +104,7 @@ describe('openSystemTerminal', () => {
     });
   });
 
-  it('Linux：按顺序找第一个在 PATH 上的终端，起不来就试下一个', async () => {
+  it('Linux: finds the first terminal on PATH in order, tries the next if it fails to start', async () => {
     const fake = fakeSpawn((command) => (command === 'gnome-terminal' ? { error: true } : { spawn: true }));
     const available = async (program: string) => program === 'gnome-terminal' || program === 'xterm';
     const result = await openSystemTerminal('codex login', { platform: 'linux', spawn: fake.spawn, available });
@@ -114,21 +114,21 @@ describe('openSystemTerminal', () => {
     expect(fake.calls[1]!.args).toEqual(['-e', 'sh', '-c', posixTerminalScript('codex login')]);
   });
 
-  it('Linux：没有终端程序时 unsupported，不 spawn', async () => {
+  it('Linux: unsupported when no terminal program, does not spawn', async () => {
     const fake = fakeSpawn(() => ({ spawn: true }));
     const result = await openSystemTerminal('claude', { platform: 'linux', spawn: fake.spawn, available: async () => false });
     expect(result).toEqual({ status: 'unsupported', detail: 'No terminal program found' });
     expect(fake.calls).toEqual([]);
   });
 
-  it('其他平台 unsupported；多行命令直接拒绝', async () => {
+  it('other platforms unsupported; multi-line commands rejected outright', async () => {
     const fake = fakeSpawn(() => ({ exit: 0 }));
     expect(await openSystemTerminal('claude', { platform: 'aix', spawn: fake.spawn })).toMatchObject({ status: 'unsupported' });
     await expect(openSystemTerminal('claude\nrm -rf ~', { platform: 'darwin', spawn: fake.spawn, tmpDir: dir })).rejects.toThrow();
     expect(fake.calls).toEqual([]);
   });
 
-  it('shellQuote 与脚本内容', async () => {
+  it('shellQuote and script content', async () => {
     expect(shellQuote(`a'b`)).toBe(`'a'\\''b'`);
     expect(macCommandScript('claude')).toContain(`printf '%s\\n' 'CucCut：运行 claude'\nclaude\n`);
     const { stdout } = await run('sh', ['-c', `printf '%s' ${shellQuote(`$(id) \`x\` 'q' "d"`)}`]);

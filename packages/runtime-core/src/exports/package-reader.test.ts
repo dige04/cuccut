@@ -102,8 +102,8 @@ async function patchHeader(file: string, index: number, offset: number, value: s
   await fs.writeFile(file, bytes);
 }
 
-describe('便携包的归档', () => {
-  it('写出再读：逐个文件核对摘要，可以同时解开', async () => {
+describe('portable package archiving', () => {
+  it('write then read: each file\'s digest is checked, and it can be unpacked at the same time', async () => {
     const files = baseFiles();
     const file = await archive(files);
     const out = path.join(dir, 'out');
@@ -124,7 +124,7 @@ describe('便携包的归档', () => {
     if (listed) expect(listed).toEqual([...Object.keys(files), 'video.manifest.json']);
   });
 
-  it('路径越出包、绝对路径、包的布局之外的文件：PACKAGE_PATH_UNSAFE', async () => {
+  it('path escapes the package, absolute path, file outside the package layout: PACKAGE_PATH_UNSAFE', async () => {
     for (const name of ['../escape', '/etc/passwd', 'assets/../../x', 'documents//x', 'other.txt', 'assets\\x', 'C:/x']) {
       expect(safePackagePath(name), name).toBe(false);
       const file = await archive({ ...baseFiles(), [name]: Buffer.from('x') }, null);
@@ -137,7 +137,7 @@ describe('便携包的归档', () => {
     expect(await codeOf(readPackage(await archive(files, manifest)))).toBe('PACKAGE_PATH_UNSAFE');
   });
 
-  it('符号链接与硬链接条目：PACKAGE_PATH_UNSAFE；其他条目种类与坏的头：PACKAGE_INVALID', async () => {
+  it('symlink and hard link entries: PACKAGE_PATH_UNSAFE; other entry kinds and bad headers: PACKAGE_INVALID', async () => {
     for (const [type, code] of [
       ['2', 'PACKAGE_PATH_UNSAFE'],
       ['1', 'PACKAGE_PATH_UNSAFE'],
@@ -155,7 +155,7 @@ describe('便携包的归档', () => {
     expect(await codeOf(readPackage(corrupt))).toBe('PACKAGE_INVALID');
   });
 
-  it('更高的打包版本：PACKAGE_VERSION_UNSUPPORTED；不是 CucCut 包：PACKAGE_INVALID', async () => {
+  it('higher packaging version: PACKAGE_VERSION_UNSUPPORTED; not a CucCut package: PACKAGE_INVALID', async () => {
     const files = baseFiles();
     const newer = await archive(files, manifestFor(files, { packageVersion: 2 }));
     expect(await codeOf(readPackage(newer))).toBe('PACKAGE_VERSION_UNSUPPORTED');
@@ -164,7 +164,7 @@ describe('便携包的归档', () => {
     expect(await codeOf(readPackage(await archive(files, null)))).toBe('PACKAGE_INVALID');
   });
 
-  it('内容被改：PACKAGE_DIGEST_MISMATCH，解开的半成品由调用方删', async () => {
+  it('content changed: PACKAGE_DIGEST_MISMATCH, the caller deletes the half-unpacked output', async () => {
     const file = await archive(baseFiles());
     const [, doc] = await listArchive(file);
     const bytes = await fs.readFile(file);
@@ -179,7 +179,7 @@ describe('便携包的归档', () => {
     expect(await codeOf(readPackage(await archive(files, manifest)))).toBe('PACKAGE_DIGEST_MISMATCH');
   });
 
-  it('清单与归档不一一对应：多出、缺少、重复的文件都拒绝', async () => {
+  it('manifest and archive do not match one to one: extra, missing or duplicate files are all rejected', async () => {
     const files = baseFiles();
     const extra = await archive({ ...files, 'assets/extra.bin': Buffer.from('x') }, manifestFor(files));
     expect(await codeOf(readPackage(extra))).toBe('PACKAGE_INVALID');
@@ -195,15 +195,15 @@ describe('便携包的归档', () => {
     expect(await codeOf(readPackage(twice))).toBe('PACKAGE_INVALID');
   });
 
-  it('ustar 写不下的：路径超过 255 字节、单个文件 8 GiB 以上', () => {
+  it('what ustar cannot hold: paths over 255 bytes, single files of 8 GiB or more', () => {
     expect(ustarProblem(`assets/${'a'.repeat(90)}/${'b'.repeat(90)}.png`, 1)).toBeNull();
     expect(ustarProblem(`assets/${'a'.repeat(300)}`, 1)).toMatch(/太长/);
     expect(ustarProblem('assets/x.png', MAX_ENTRY_BYTES + 1)).toMatch(/8 GiB/);
   });
 });
 
-describe('便携包导出的预检与工程导出的小工具', () => {
-  it('空间不够时以 EXPORT_INSUFFICIENT_SPACE 拒绝', async () => {
+describe('portable package export preflight and the project export helper', () => {
+  it('rejects with EXPORT_INSUFFICIENT_SPACE when there is not enough space', async () => {
     const tight = async () => ({ bavail: 10, bsize: 4096 });
     const error = await checkSpace(dir, 1024, tight).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(RpcError);
@@ -211,7 +211,7 @@ describe('便携包导出的预检与工程导出的小工具', () => {
     await expect(checkSpace(dir, 1024, async () => ({ bavail: 1n << 30n, bsize: 4096n }))).resolves.toBeUndefined();
   });
 
-  it('xmeml 的帧率与路径 URL', () => {
+  it('xmeml frame rate and path URLs', () => {
     expect(xmemlRate({ num: 30000, den: 1001 })).toEqual({ timebase: 30, ntsc: true, exact: true });
     expect(xmemlRate({ num: 25, den: 1 })).toEqual({ timebase: 25, ntsc: false, exact: true });
     expect(xmemlRate({ num: 25, den: 2 })).toMatchObject({ timebase: 13, exact: false });

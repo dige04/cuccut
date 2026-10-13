@@ -29,14 +29,14 @@ function expectCovers(layout: LoopPiece[], total: number) {
   expect(last.start + last.dur).toBeCloseTo(total, 3);
 }
 
-describe('配乐铺满（设计稿 model-music.js loopLayout）', () => {
-  it('音乐比视频长只有一段，截到结尾、片尾淡出', () => {
+describe('music bed fills the timeline (design draft model-music.js loopLayout)', () => {
+  it('music longer than the video is one segment, trimmed to the end with a fade-out at the end', () => {
     const l = loopLayout(300, 206);
     expect(l).toEqual([{ start: 0, dur: 206, lane: 0, fadeIn: 0, fadeOut: 3 }]);
     expect(loopSummary(l, 206)).toBe('片尾淡出 3 秒');
   });
 
-  it('首尾相接、接缝交叉淡化 2 秒、交替两条轨，最后一段片尾淡出', () => {
+  it('segments joined end to end, seam cross-faded over 2 seconds, alternating two tracks, last segment fades out at the end', () => {
     const l = loopLayout(300, 742);
     expectCovers(l, 742);
     expect(l.map((s) => s.start)).toEqual([0, 298, 596]);
@@ -49,7 +49,7 @@ describe('配乐铺满（设计稿 model-music.js loopLayout）', () => {
     expect(loopSummary(l, 742)).toBe('循环 3 段铺满 742 秒 · 接缝交叉淡化 2 秒 · 片尾淡出 3 秒');
   });
 
-  it('正好整段数、剩一小截时最后一段仍长过交叉淡化；音乐写长了按实际时长铺；超长视频', () => {
+  it('exact whole segments, or a small remainder where the last segment is still longer than the cross-fade; music written too long fills by actual duration; very long videos', () => {
     const exact = loopLayout(300, 598); // 300 + 298: the second segment finishes exactly
     expectCovers(exact, 598);
     expect(exact).toHaveLength(2);
@@ -67,7 +67,7 @@ describe('配乐铺满（设计稿 model-music.js loopLayout）', () => {
     expect(loopLayout(30, 0)).toEqual([]);
   });
 
-  it('很短的音乐：交叉淡化不超过一段的四分之一，淡入淡出之和不超过片段长度', () => {
+  it('very short music: cross-fade does not exceed a quarter of a segment, fade-in plus fade-out sum does not exceed the clip length', () => {
     const l = loopLayout(4, 10);
     expectCovers(l, 10);
     expect(l[1]!.fadeIn).toBe(1);
@@ -76,11 +76,11 @@ describe('配乐铺满（设计稿 model-music.js loopLayout）', () => {
   });
 });
 
-describe('musicBedOperations：一笔事务里新建音乐轨、每段一个音频实例', () => {
+describe('musicBedOperations: in one transaction create a new music track, one audio instance per segment', () => {
   // 742 s = 22260 frames @30fps
   const long = sequence([track('t1', 'visual', 0)], [videoItem('v1', 't1', 0, 742 * 30)]);
 
-  it('视频比音乐长：两条音乐轨交替，起点拆成帧与帧内偏移，长度与淡化按铺法', () => {
+  it('video longer than music: two music tracks alternate, start split into frame and in-frame offset, length and fades per the fill method', () => {
     const r = musicBedOperations(long, music(300), 'job_1');
     expect(r).not.toBeNull();
     const { operations, layout, totalSec } = r!;
@@ -111,7 +111,7 @@ describe('musicBedOperations：一笔事务里新建音乐轨、每段一个音�
     expect(last.mix.fadeOut).toEqual({ ticks: '3000', timescale: 1000 });
   });
 
-  it('非整数帧率：帧内偏移在一帧之内、以毫秒为整数算', () => {
+  it('non-integer frame rate: in-frame offset stays within one frame, computed in whole milliseconds', () => {
     const ntsc = sequence([track('t1', 'visual', 0)], [videoItem('v1', 't1', 0, 20000)], { fps: { num: 30000, den: 1001 } });
     const r = musicBedOperations(ntsc, music(300), 'job_1')!;
     const insert = r.operations.find((op) => op.type === 'insertItems')!;
@@ -126,7 +126,7 @@ describe('musicBedOperations：一笔事务里新建音乐轨、每段一个音�
     expect(ticks).toBe(298000 * 30000 - 8931 * 1001 * 1000);
   });
 
-  it('视频不比音乐长：一条音乐轨、一段截到结尾', () => {
+  it('video not longer than music: one music track, one segment trimmed to the end', () => {
     const short = sequence([track('t1', 'visual', 0)], [videoItem('v1', 't1', 0, 206 * 30)]);
     const r = musicBedOperations(short, music(300), 'job_1')!;
     expect(r.operations.filter((op) => op.type === 'addTrack')).toHaveLength(1);
@@ -136,13 +136,13 @@ describe('musicBedOperations：一笔事务里新建音乐轨、每段一个音�
     expect(insert.items[0]).toMatchObject({ fromFrame: 0, playDuration: { ticks: '206000', timescale: 1000 }, mix: { volume: 1, fadeOut: { ticks: '3000', timescale: 1000 } } });
   });
 
-  it('空时间线、没时长的素材、不是音频的素材都不铺', () => {
+  it('empty timeline, material with no duration, and non-audio material are not filled', () => {
     expect(musicBedOperations(sequence([track('t1', 'visual', 0)], []), music(300), 'job_1')).toBeNull();
     expect(musicBedOperations(long, music(300, { revisions: { '2': { revision: '2' } } } as unknown as Partial<AssetRecord>), 'job_1')).toBeNull();
     expect(musicBedOperations(long, music(300, { kind: 'video' } as Partial<AssetRecord>), 'job_1')).toBeNull();
   });
 
-  it('素材时长不是整毫秒：铺的长度向下取整，不比素材长；最后一段不越过序列末尾', () => {
+  it('material duration not in whole milliseconds: fill length rounded down, not longer than the material; last segment does not cross the sequence end', () => {
     // 299.99977… s @44.1 kHz
     const odd = music(300, { revisions: { '2': { revision: '2', duration: { ticks: '13229990', timescale: 44100 } } } } as unknown as Partial<AssetRecord>);
     const r = musicBedOperations(long, odd, 'job_1')!;
@@ -163,7 +163,7 @@ describe('musicBedOperations：一笔事务里新建音乐轨、每段一个音�
     expect(tail.start + tail.dur).toBeLessThanOrEqual((20000 * 1001) / 30000 + 1e-9);
   });
 
-  it('再铺一床就换掉上一床：同一笔里先删上一床的实例与只放着它们的音乐轨', () => {
+  it('laying a new bed replaces the previous one: in the same transaction, first delete the previous bed\'s instances and the music tracks holding only them', () => {
     const mark = { [SOUNDTRACK_EXTENSION]: { jobId: 'job_0' } };
     const withBed = sequence(
       [track('t1', 'visual', 0), track('m1', 'audio', 1), track('m2', 'audio', 2), track('a3', 'audio', 3)],
@@ -187,7 +187,7 @@ describe('musicBedOperations：一笔事务里新建音乐轨、每段一个音�
     expect(r.operations.filter((op) => op.type === 'addTrack')).toHaveLength(2);
   });
 
-  it('素材已经在时间线上就不再铺', () => {
+  it('material already on the timeline is not filled again', () => {
     const placed = sequence([track('t1', 'visual', 0), track('a1', 'audio', 1)], [videoItem('v1', 't1', 0, 300), audioItem('m1', 'a1', 0, 10, { assetRef: { id: 'asset_m', revision: '2' } })]);
     expect(assetOnTimeline(placed, 'asset_m')).toBe(true);
     expect(assetOnTimeline(placed, 'asset_x')).toBe(false);

@@ -25,8 +25,8 @@ vi.mock('@cuccut/editor-wasm', async (importOriginal) => {
 
 const MODULES = import.meta.glob(['../**/*.ts', '!../**/*.test.ts', '!../**/*.d.ts']);
 
-describe('没有编辑语义的 WASM', () => {
-  it.for(Object.keys(MODULES))('载入 %s 不碰 WASM', async (file, context) => {
+describe('WASM without editing semantics', () => {
+  it.for(Object.keys(MODULES))('loading %s does not touch WASM', async (file, context) => {
     try {
       await MODULES[file]!();
     } catch (error) {
@@ -36,7 +36,7 @@ describe('没有编辑语义的 WASM', () => {
     }
   });
 
-  it('读到由 WASM 算出的常量时才报不可用', async () => {
+  it('reports unavailable only when reading a constant computed by WASM', async () => {
     const { CONFETTI_STYLES, CONFETTI_RANGES } = await import('./confetti.ts');
     const { ELEMENT_TILES } = await import('../model/element-catalog.ts');
     expect(() => CONFETTI_STYLES.length).toThrow(EditorWasmUnavailable);

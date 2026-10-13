@@ -50,7 +50,7 @@ function sequence(items: Sequence['items']): Sequence {
 }
 
 describe('liveCaptionCues', () => {
-  it('投到序列上的段落按时间排好，去掉空白与零长的块', () => {
+  it('segments projected onto the sequence are sorted by time, removing blank and zero-length blocks', () => {
     const cues = liveCaptionCues([
       { key: 'b', start: 6, end: 9, text: ' 第二段 ' },
       { key: 'a', start: 0, end: 4, text: '第一段' },
@@ -63,7 +63,7 @@ describe('liveCaptionCues', () => {
     ]);
   });
 
-  it('剪掉的部分没有字幕、错开的实例按时间线时间放（与时间线临时行同一套投影）', () => {
+  it('cut-out parts have no subtitles; offset instances are placed at timeline time (same projection as the timeline\'s temporary row)', () => {
     // Material 0–10 s placed at sequence 0–5 s (taking material 0–5), material 20–30 s placed at sequence 5–15 s.
     const seq = sequence([video('i1', 0, 150, 0), video('i2', 150, 300, 20)]);
     const placed = placeSegments(seq, 'a1', [
@@ -84,13 +84,13 @@ describe('liveCueAt', () => {
     { key: 'b', start: 6, end: 9, text: '第二段' },
   ]);
 
-  it('播放头落在已识别的段落里就是这一段（左闭右开）', () => {
+  it('the playhead inside a recognized segment selects that segment (left-closed, right-open)', () => {
     expect(liveCueAt(cues, 0)?.text).toBe('第一段');
     expect(liveCueAt(cues, 3.99)?.text).toBe('第一段');
     expect(liveCueAt(cues, 6)?.text).toBe('第二段');
   });
 
-  it('段落之间与还没转录到的部分没有字幕', () => {
+  it('gaps between segments and not-yet-transcribed parts have no subtitles', () => {
     expect(liveCueAt(cues, 4)).toBeNull();
     expect(liveCueAt(cues, 5)).toBeNull();
     expect(liveCueAt(cues, 9)).toBeNull();
@@ -100,7 +100,7 @@ describe('liveCueAt', () => {
 });
 
 describe('withLiveCaption', () => {
-  it('最上面加一条锁住的字幕轨与铺满现有时长的一层字幕，序列 ID、版本与时长不变', () => {
+  it('a locked subtitle track is added at the top with a layer spanning the existing duration; sequence ID, version and duration unchanged', () => {
     const seq = sequence([video('i1', 0, 300, 0)]);
     const out = withLiveCaption(seq);
     expect(out.id).toBe('seq');
@@ -123,14 +123,14 @@ describe('withLiveCaption', () => {
     expect(seq.tracks).toHaveLength(1);
   });
 
-  it('空序列不加', () => {
+  it('not added to an empty sequence', () => {
     const seq = sequence([]);
     expect(withLiveCaption(seq)).toBe(seq);
   });
 });
 
 describe('liveCaptionDocuments', () => {
-  it('字幕正文是序列时钟的毫秒，样式是默认预设', () => {
+  it('subtitle text is the sequence clock\'s milliseconds; style is the default preset', () => {
     const [caption, style] = liveCaptionDocuments(liveCaptionCues([{ key: 'a', start: 1.2345, end: 3.5, text: '你好' }]));
     expect(caption).toMatchObject({ documentId: LIVE_CAPTION_DOCUMENT_ID, kind: 'caption', lineKind: 'original' });
     expect(caption!.body).toEqual({

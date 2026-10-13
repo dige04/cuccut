@@ -43,8 +43,8 @@ const info: AppUpdateInfo = {
 
 const ctx = { lang: 'zh-Hans', lastCheck: null, now: 0 };
 
-describe('版本说明', () => {
-  it('取当前语言，缺了按主语言、英文、notes 回落；关于页最多 6 行', () => {
+describe('release notes', () => {
+  it('takes the current language; if missing, falls back to the main language, then English, then notes; the about page shows at most 6 lines', () => {
     const zh = notesFor(info, 'zh-Hans');
     expect(zh.lines).toHaveLength(6);
     expect(zh.more).toBe(true);
@@ -58,13 +58,13 @@ describe('版本说明', () => {
     expect(notesText({ notes: 'Plain', notesLocalized: {} }, 'ja')).toBe('Plain');
   });
 
-  it('更新窗列全部条目，剥掉行首的列表记号', () => {
+  it('update window lists all entries, stripping list markers at line start', () => {
     expect(notesAll(info, 'zh-Hans')).toHaveLength(7);
     expect(notesAll({ ...info, notesLocalized: {}, notes: '• 一\n- 二\n* 三\n四' }, 'zh-Hans')).toEqual(['一', '二', '三', '四']);
     expect(notesAll(null, 'zh-Hans')).toEqual([]);
   });
 
-  it('相对时间', () => {
+  it('relative time', () => {
     expect(relTime(100, 130)).toBe('刚刚');
     expect(relTime(0, 5 * 60)).toBe('5 分钟前');
     expect(relTime(0, 3 * 3600 + 10)).toBe('3 小时前');
@@ -72,10 +72,10 @@ describe('版本说明', () => {
   });
 });
 
-describe('设置 › 关于', () => {
+describe('Settings › About', () => {
   const labels = (v: ReturnType<typeof view>) => v.actions.map((a) => a.label + (a.disabled ? '(禁用)' : ''));
 
-  it('各态的文案与按钮', () => {
+  it('copy and buttons for each state', () => {
     const idle = view({ k: 'idle' }, { lang: 'zh-Hans', lastCheck: 0, now: 3 * 3600 });
     expect(labels(idle)).toEqual(['检查更新']);
     expect(idle.sub).toBe('上次检查：3 小时前');
@@ -104,18 +104,18 @@ describe('设置 › 关于', () => {
     ]);
   });
 
-  it('不检查更新时只写一句为什么', () => {
+  it('when not checking for updates, only one sentence explaining why', () => {
     expect(view({ k: 'unsupported', why: 'dev' }, ctx)).toEqual({ line: '开发构建不检查更新', tone: 'muted', actions: [] });
     expect(view({ k: 'unsupported', why: 'appStore' }, ctx).line).toBe('App Store 版本由 App Store 负责更新');
   });
 
-  it('系统版本不够：红字写要求的 macOS，不给下载', () => {
+  it('system version too old: red text states the required macOS, no download offered', () => {
     const v = view({ k: 'available', info, systemUnmet: '27.0' }, ctx);
     expect([v.line, v.warn, v.actions]).toEqual(['有新版本 2.3.0（Build 57）', '需要 macOS 27.0', []]);
     expect(view({ k: 'available', info }, ctx).warn).toBeUndefined();
   });
 
-  it('静默检查在途（bg）时显示不变', () => {
+  it('silent check in progress (bg) shows no change', () => {
     expect(view({ k: 'available', info, bg: true }, ctx)).toEqual(view({ k: 'available', info }, ctx));
     expect(sideButton({ k: 'available', info, bg: true })).toEqual(sideButton({ k: 'available', info }));
     const ready: AppUpdateState = { k: 'ready', info, path: '/x.zip' };
@@ -124,28 +124,28 @@ describe('设置 › 关于', () => {
     expect(dialog({ ...ready, bg: true }, { lang: 'zh-Hans', current: null })).toEqual(dialog(ready, { lang: 'zh-Hans', current: null }));
   });
 
-  it('下载到 100% 就是校验段', () => {
+  it('download reaching 100% is the verification stage', () => {
     expect(verifying({ k: 'downloading', info, pct: 100 })).toBe(true);
     expect(verifying({ k: 'downloading', info, pct: 99 })).toBe(false);
     expect(verifying({ k: 'ready', info, path: '/x.zip' })).toBe(false);
   });
 
-  it('在等后台任务结束：写还有几个，可以不等了', () => {
+  it('waiting for background tasks to finish: says how many are left, may stop waiting', () => {
     const v = view({ k: 'ready', info, path: '/x.zip' }, { ...ctx, waiting: 2 });
     expect(v.line).toBe('2.3.0 已下载，等后台任务结束后安装');
     expect(v.sub).toBe('还有 2 个后台任务在跑，都结束后自动安装。');
     expect(v.link).toEqual({ k: 'stopWaiting', label: '不等了' });
   });
 
-  it('出错文案每一类都有，重试各回各的那一步', () => {
+  it('error copy exists for each category, retry goes back to its own step', () => {
     for (const text of Object.values(FAILURE_TEXT)) expect(text).toMatch(/。$/);
     expect(retryAction({ k: 'error', failure: 'check', info: null })).toBe('check');
     expect(retryAction({ k: 'error', failure: 'verify', info })).toBe('download');
   });
 });
 
-describe('rail 上的更新按钮', () => {
-  it('显示表：每一行', () => {
+describe('update button on the rail', () => {
+  it('display table: each row', () => {
     expect(sideButton({ k: 'available', info })).toEqual({ visible: true, glyph: 'download', dot: 'white', tip: '有新版本 · CucCut 2.3.0' });
     expect(sideButton({ k: 'available', info, systemUnmet: '27.0' })).toEqual({ visible: false });
     expect(sideButton({ k: 'downloading', info, pct: 42 })).toEqual({ visible: true, glyph: 'ring', pct: 42, dot: null, tip: '正在下载更新 · 42%' });
@@ -176,10 +176,10 @@ describe('rail 上的更新按钮', () => {
   });
 });
 
-describe('更新窗', () => {
+describe('update window', () => {
   const current = { version: '2.2.1', build: 56 };
 
-  it('头部、正文与全部说明（不截 6 行）', () => {
+  it('header, body and all notes (not cut to 6 lines)', () => {
     const d = dialog({ k: 'available', info }, { lang: 'zh-Hans', current });
     expect(d?.title).toBe('有新版本');
     expect(d?.sub).toBe('CucCut 2.3.0 · Build 57');
@@ -200,7 +200,7 @@ describe('更新窗', () => {
     expect(dialog({ k: 'error', failure: 'verify', info }, { lang: 'zh-Hans', current })?.title).toBe('有新版本');
   });
 
-  it('底栏：每一态', () => {
+  it('footer bar: each state', () => {
     const foot = (st: AppUpdateState, waiting?: number) => dialog(st, { lang: 'zh-Hans', current: null, waiting })!.footer;
     const keys = (f: ReturnType<typeof foot>) => f.buttons.map((b) => `${b.k}:${b.label}:${b.variant}`);
     const av = foot({ k: 'available', info });
@@ -223,7 +223,7 @@ describe('更新窗', () => {
     expect(keys(waiting)).toEqual(['stopWaiting:不等了:secondary', 'restart:重启并更新:accent']);
   });
 
-  it('按钮不该显示的态一律没有窗', () => {
+  it('states where the button should not show have no window at all', () => {
     const none: AppUpdateState[] = [
       { k: 'idle' },
       { k: 'checking' },
@@ -238,13 +238,13 @@ describe('更新窗', () => {
 });
 
 describe('toast', () => {
-  it('已下载与可以更新了', () => {
+  it('downloaded and ready to update', () => {
     expect(readyToast(info)).toEqual({ text: 'CucCut 2.3.0 已下载，退出时自动安装', action: '重启并更新' });
     expect(availableToast(info)).toEqual({ text: 'CucCut 2.3.0 可以更新了', action: '查看' });
   });
 });
 
-describe('停止屏障', () => {
+describe('stop barrier', () => {
   const job = (jobId: string, state: JobRecord['state'], providerId: string, endedAt: string | null = null) =>
     ({
       jobId,
@@ -264,14 +264,14 @@ describe('停止屏障', () => {
     ({ taskId, status, goal: `目标 ${taskId}`, conversationId: 'c1', projectId: null, startedAt: '', endedAt: null }) as unknown as TaskSummary;
   const live = (j: JobRecord) => j.state === 'queued' || j.state === 'running';
 
-  it('远端：节点与云端服务商；本机与本机上的智能体不算', () => {
+  it('remote: nodes and cloud providers; this machine and agents on it do not count', () => {
     expect(runsRemotely('local')).toBe(false);
     expect(runsRemotely('agent:codex')).toBe(false);
     expect(runsRemotely('node:studio')).toBe(true);
     expect(runsRemotely('openai')).toBe(true);
   });
 
-  it('在跑的 Agent 任务与 Job 合成一张，带上怎么停', () => {
+  it('running Agent tasks and Jobs are combined into one list, with how to stop them', () => {
     const list = barrierTasks(
       [job('j1', 'running', 'local'), job('j2', 'queued', 'openai'), job('j3', 'completed', 'openai', '2026-10-03T01:00:00Z')],
       [task('t1', 'running'), task('t2', 'stopping'), task('t3', 'completed')],
@@ -285,7 +285,7 @@ describe('停止屏障', () => {
     ]);
   });
 
-  it('没有任务在跑时直接装；有时问，并列出远端的', () => {
+  it('install directly when no task is running; when there are some, ask and list the remote ones', () => {
     expect(restartAsk([])).toBeNull();
     const tasks: BarrierTask[] = [
       { id: 'a', title: '转录', where: 'whisper · 本机', remote: false, action: null },
@@ -302,8 +302,8 @@ describe('停止屏障', () => {
   });
 });
 
-describe('设置 › 通用的开关', () => {
-  it('文案照设计稿；打开写两个键，关上只关自动下载', () => {
+describe('switch in Settings › General', () => {
+  it('copy follows the design; turning it on writes two keys, turning it off only disables auto-download', () => {
     expect(AUTO_ROW.label).toBe('自动检查并下载更新');
     expect(AUTO_ROW.desc).toBe('启动时和之后每 6 小时检查一次；下载好的更新在你下次退出时安装，也可以马上重启更新，不会自己重启。');
     expect(autoUpdatePatch(true)).toEqual({ 'updates.autoCheck': true, 'updates.autoDownload': true });

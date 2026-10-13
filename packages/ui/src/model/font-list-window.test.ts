@@ -11,8 +11,8 @@ import {
 
 const rows = (n: number, prefix = 'Family') => Array.from({ length: n }, (_, i) => ({ family: `${prefix} ${i}` }));
 
-describe('选字框的虚拟列表', () => {
-  it('分段摊平成定高的条目：段头 26px、一行 33px，空段不出现', () => {
+describe('font picker virtual list', () => {
+  it('sections flattened into fixed-height items: section header 26px, row 33px; empty sections do not appear', () => {
     const layout = fontListLayout([
       { key: 'video', title: '这个视频里用到', rows: rows(2, 'Used') },
       { key: 'recent', title: '最近用过', rows: [] },
@@ -30,7 +30,7 @@ describe('选字框的虚拟列表', () => {
     expect(layout.height).toBe(2 * FONT_HEAD_HEIGHT + 5 * FONT_ROW_HEIGHT);
   });
 
-  it('1944 行只画视野里的几十条，滚到哪画到哪', () => {
+  it('1944 rows: only the few dozen items in view are drawn, drawing as you scroll', () => {
     const layout = fontListLayout([{ key: 'all', title: '全部字体', rows: rows(1944) }]);
     const [start, end] = visibleRange(layout.items, 0, FONT_LIST_HEIGHT);
     expect(start).toBe(0);
@@ -45,7 +45,7 @@ describe('选字框的虚拟列表', () => {
     expect(s3).toBeGreaterThan(1900);
   });
 
-  it('样张只取视野里还没取过的行（不含段头、不含前后多画的）', () => {
+  it('sample fetches only rows in view not yet fetched (excluding section headers and the extra rows drawn before and after)', () => {
     const layout = fontListLayout([{ key: 'all', title: '全部字体', rows: rows(100) }]);
     const known = new Set(['Family 1']);
     const want = samplesToLoad(layout.items, 0, FONT_LIST_HEIGHT, (f) => known.has(f));
@@ -54,7 +54,7 @@ describe('选字框的虚拟列表', () => {
     expect(want.length).toBeLessThanOrEqual(7);
   });
 
-  it('打开时把选中的那一行滚进视野，第一屏里就不滚', () => {
+  it('on open, scrolls the selected row into view; does not scroll on the first screen', () => {
     const layout = fontListLayout([{ key: 'all', title: '全部字体', rows: rows(500) }]);
     expect(scrollToRow(layout.items, 'Family 2', FONT_LIST_HEIGHT)).toBe(0);
     const top = scrollToRow(layout.items, 'family 300', FONT_LIST_HEIGHT);

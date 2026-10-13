@@ -7,14 +7,14 @@ import { classifyFileContent, inspectFileContent, FILE_SAMPLE_BYTES } from './fi
 const utf8 = (text: string) => new TextEncoder().encode(text);
 const classify = (bytes: Uint8Array, name = 'file.unknown', complete = true) => classifyFileContent(bytes, complete, name);
 
-describe('文件内容采样', () => {
-  it('未知扩展名与无扩展名的多语言文本、空文件可以查看', async () => {
+describe('file content sampling', () => {
+  it('multilingual text with unknown or no extension, and empty files, can be viewed', async () => {
     for (const name of ['README', '说明.abc', 'pretend.mp4']) {
       expect(await classify(utf8('中文 English العربية 日本語\n'), name)).toMatchObject({ contentKind: 'text', textEncoding: 'utf-8' });
     }
     expect(await classify(utf8(''))).toMatchObject({ contentKind: 'text' });
   });
-  it('图片、PDF、音频与视频按内容识别，不信伪装扩展名', async () => {
+  it('images, PDFs, audio and video are identified by content, not by disguised extensions', async () => {
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6J1sAAAAASUVORK5CYII=', 'base64');
     expect(await classify(png, 'data.txt')).toMatchObject({ contentKind: 'image', mimeType: 'image/png' });
     expect(await classify(utf8('%PDF-1.7\nfixture'), 'report.abc')).toMatchObject({ contentKind: 'pdf' });
@@ -23,12 +23,12 @@ describe('文件内容采样', () => {
     const mp4 = Buffer.from('00000018667479706d703432000000006d70343269736f6d', 'hex');
     expect(await classify(mp4, 'clip.txt')).toMatchObject({ contentKind: 'video', mimeType: 'video/mp4' });
   });
-  it('二进制与压缩包不当文本，压缩包不解压', async () => {
+  it('binaries and archives are not treated as text; archives are not extracted', async () => {
     expect(await classify(Uint8Array.of(0, 1, 2), 'notes.txt')).toMatchObject({ contentKind: 'binary' });
     expect(await classify(Uint8Array.of(0xff, 0x80, 0x01))).toMatchObject({ contentKind: 'binary' });
     expect(await classify(Uint8Array.of(0x50, 0x4b, 3, 4), 'report.docx')).toEqual({ contentKind: 'archive', mimeType: 'application/zip' });
   });
-  it('UTF-16 BOM 与截在 UTF-8 字符中间的前缀，不误报二进制', async () => {
+  it('UTF-16 BOM and a prefix cut in the middle of a UTF-8 character are not misreported as binary', async () => {
     const le = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from('你好\nhello', 'utf16le')]);
     expect(await classify(le)).toMatchObject({ contentKind: 'text', textEncoding: 'utf-16le' });
     const be = Buffer.from(le); be.swap16();
@@ -37,16 +37,16 @@ describe('文件内容采样', () => {
     expect(await classify(truncated, 'readme', false)).toMatchObject({ contentKind: 'text' });
     expect(await classify(truncated)).toMatchObject({ contentKind: 'binary' });
   });
-  it('SVG 和 HTML 内容识别，但不执行或联网', async () => {
+  it('SVG and HTML content is recognized, but not executed or fetched from the network', async () => {
     expect(await classify(utf8('<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"></svg>'))).toMatchObject({ contentKind: 'image', mimeType: 'image/svg+xml' });
     expect(await classify(utf8('<!doctype html><html><script>throw 1</script></html>'))).toMatchObject({ contentKind: 'text', mimeType: 'text/html; charset=utf-8' });
   });
 });
 
-describe('采样有界与文件错误', () => {
+describe('sampling is bounded, and file errors', () => {
   let dir: string | undefined;
   afterEach(async () => { if (dir) await fs.rm(dir, { recursive: true, force: true }); });
-  it('只读取前 64 KiB；不存在或变为符号链接的路径报错', async () => {
+  it('reads only the first 64 KiB; paths that do not exist or have become symlinks raise errors', async () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-file-content-'));
     const file = path.join(dir, 'huge.bin');
     await fs.writeFile(file, Buffer.concat([Buffer.alloc(FILE_SAMPLE_BYTES, 65), Buffer.from([0])]));

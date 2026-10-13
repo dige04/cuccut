@@ -3,7 +3,7 @@ import { RpcError, setLocale } from '@cuccut/protocol';
 import { CucCutClient } from './client.ts';
 
 /** When the UI language is English, the connection errors the client writes itself are in English, and include a message reference. */
-describe('client 的英文文案', () => {
+describe('client English copy', () => {
   beforeEach(() => {
     vi.stubEnv('CUCCUT_LOCALE', 'en');
     setLocale('en');
@@ -13,7 +13,7 @@ describe('client 的英文文案', () => {
     setLocale('zh-Hans');
   });
 
-  it('关闭之后的请求：英文错误带引用', async () => {
+  it('requests after close: English error with a reference', async () => {
     const client = new CucCutClient({
       resolve: async () => ({ endpoint: 'ws://127.0.0.1:1', token: 't' }),
       client: { kind: 'cli', name: 'test', version: '0' },

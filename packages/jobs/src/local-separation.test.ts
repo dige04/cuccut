@@ -53,7 +53,7 @@ async function writeRepo(root: string, repo: string, revision: string): Promise<
   );
 }
 
-describe('本地人声分离（假 Model Worker）', () => {
+describe('local vocal separation (fake Model Worker)', () => {
   let dir: string;
   let controlFile: string;
   let recordFile: string;
@@ -94,7 +94,7 @@ describe('本地人声分离（假 Model Worker）', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('job.run（separate）：请求的采样率交给 Worker，输出是 staging 里的 vocals.wav 与 background.wav，进度按步', async () => {
+  it('job.run (separate): the requested sample rate is handed to the Worker, the output is vocals.wav and background.wav in staging, progress by step', async () => {
     const input = path.join(dir, 'input.wav');
     await fs.writeFile(input, 'not really audio');
     const out = await staging('a');
@@ -123,7 +123,7 @@ describe('本地人声分离（假 Model Worker）', () => {
     expect(run).not.toHaveProperty('input.range');
   });
 
-  it('Worker 不声明 separate：load-failed（capability-missing），不发 model.load，模型包不停用', async () => {
+  it('Worker does not declare separate: load-failed (capability-missing), no model.load is sent, the model pack is not disabled', async () => {
     await control({ capabilities: ['transcribe'] });
     const out = await staging('b');
     const error = await provider
@@ -146,7 +146,7 @@ describe('本地人声分离（假 Model Worker）', () => {
     expect(catalog.blocked(BUNDLE)).toBe(false);
   });
 
-  it('输入读不出来：input-unreadable，说明里带文件', async () => {
+  it('input unreadable: input-unreadable, the message includes the file', async () => {
     const out = await staging('c');
     const missing = path.join(dir, 'missing.wav');
     const error = await provider
@@ -158,7 +158,7 @@ describe('本地人声分离（假 Model Worker）', () => {
     expect(error).toMatchObject({ kind: 'input-unreadable', details: { file: missing, workerCode: 'INPUT_UNREADABLE' } });
   });
 
-  it('输出写不进 staging：output-unwritable，不计崩溃，几次都不停用模型包；分离一步是 STAGING_WRITE_FAILED', async () => {
+  it('output cannot be written to staging: output-unwritable, not counted as a crash, never disables the model pack no matter how many times; the separation step is STAGING_WRITE_FAILED', async () => {
     await control({ capabilities: ['separate'], faults: ['run-error:OUTPUT_WRITE_FAILED'] });
     const input = path.join(dir, 'input.wav');
     await fs.writeFile(input, 'not really audio');
@@ -181,7 +181,7 @@ describe('本地人声分离（假 Model Worker）', () => {
     expect(catalog.blocked(BUNDLE)).toBe(false);
   });
 
-  it('取消：job.cancel 之后 Worker 以 cancelled 返回，不写输出', async () => {
+  it('cancel: after job.cancel the Worker returns cancelled and writes no output', async () => {
     await control({ capabilities: ['separate'], faults: ['slow'] });
     const input = path.join(dir, 'input.wav');
     await fs.writeFile(input, 'x');
@@ -198,7 +198,7 @@ describe('本地人声分离（假 Model Worker）', () => {
     await expect(fs.stat(path.join(out, 'vocals.wav'))).rejects.toThrow();
   });
 
-  describe.skipIf(!hasFfmpeg)('配音的分离执行者（真实 ffmpeg）', () => {
+  describe.skipIf(!hasFfmpeg)('dub separation executor (real ffmpeg)', () => {
     const makeInput = (file: string, seconds: number, rate: number) =>
       execFileSync('ffmpeg', [
         '-v',
@@ -215,7 +215,7 @@ describe('本地人声分离（假 Model Worker）', () => {
         file,
       ]);
 
-    it('采样率取输入音轨的；Worker 的输出与容器等长时原样交回，合输出合约', async () => {
+    it('sample rate taken from the input track; when the Worker\'s output is the same length as the container it is returned as is, matching the output contract', async () => {
       const input = path.join(dir, 'clip.wav');
       makeInput(input, 1, 32_000);
       const separator = localDubSeparator({ provider, bundleId: BUNDLE, ffmpeg, ffprobe });
@@ -239,7 +239,7 @@ describe('本地人声分离（假 Model Worker）', () => {
       expect(stemProblems(probed[0]!, { vocals: probed[1]!, background: probed[2]! })).toEqual([]);
     });
 
-    it('容器比 Worker 写出的长：两路都补静音到容器时长，采样率不变', async () => {
+    it('container longer than what the Worker wrote: both tracks are padded with silence to the container duration, sample rate unchanged', async () => {
       await control({ capabilities: ['separate'], separateSeconds: 1.2 });
       const input = path.join(dir, 'longer.wav');
       makeInput(input, 1.5, 48_000);
@@ -259,7 +259,7 @@ describe('本地人声分离（假 Model Worker）', () => {
       expect(probed[1]!.audio).toMatchObject({ sampleRate: 48_000, channels: 2 });
     });
 
-    it('Provider 的失败换成这一步的错误码：Worker 不支持是 MODEL_LOAD_FAILED', async () => {
+    it('Provider failure is mapped to this step\'s error code: Worker does not support it is MODEL_LOAD_FAILED', async () => {
       await control({ capabilities: ['transcribe'] });
       const input = path.join(dir, 'clip.wav');
       makeInput(input, 0.5, 44_100);
@@ -271,7 +271,7 @@ describe('本地人声分离（假 Model Worker）', () => {
       expect(error).toMatchObject({ code: 'MODEL_LOAD_FAILED', details: { providerId: 'local', detail: 'capability-missing' } });
     });
 
-    it('输出写不进 staging 是 STAGING_WRITE_FAILED；执行者带着模型包与权重估计', async () => {
+    it('output cannot be written to staging is STAGING_WRITE_FAILED; the executor carries the model pack and the weight estimate', async () => {
       await control({ capabilities: ['separate'], faults: ['run-error:OUTPUT_WRITE_FAILED'] });
       const input = path.join(dir, 'clip.wav');
       makeInput(input, 0.5, 44_100);

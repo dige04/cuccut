@@ -10,8 +10,8 @@ import { CommandOutput, runCommand } from './tool-command.ts';
 
 /** Runs a command on the user's behalf (architecture design §12.9): output cleanup and truncation, exit codes, stopping ends the child processes along with it, timeouts, and failure to start. */
 
-describe('命令输出', () => {
-  it('合并换行写法，\\r 改写的进度行只留最后一次，去掉终端颜色；只数写完的行', () => {
+describe('command output', () => {
+  it('merges line-break styles, keeps only the last progress line rewritten by \\r, strips terminal colors; counts only completed lines', () => {
     const out = new CommandOutput(1000);
     out.push('==> \x1b[1;32mUpgrading\x1b[0m\r\n');
     out.push('progress 10%\rprogress 50%');
@@ -27,7 +27,7 @@ describe('命令输出', () => {
     expect(out.lines).toBe(3);
   });
 
-  it('超过上限时按整行截掉前面的', () => {
+  it('when over the limit, truncates the earlier content by whole lines', () => {
     const out = new CommandOutput(20);
     for (let i = 0; i < 10; i++) out.push(`line ${i}\n`);
     expect(out.truncated).toBe(true);
@@ -38,7 +38,7 @@ describe('命令输出', () => {
   });
 });
 
-describe('执行命令', () => {
+describe('run command', () => {
   let dir: string;
   beforeEach(async () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-tool-command-'));
@@ -62,7 +62,7 @@ describe('执行命令', () => {
     }
   };
 
-  it.skipIf(process.platform === 'win32')('退出码与标准输出、标准错误', async () => {
+  it.skipIf(process.platform === 'win32')('exit code, stdout and stderr', async () => {
     const file = await script('ok', 'echo out; echo err >&2; exit 3');
     let text = '';
     const outcome = await runCommand([file, 'a b'], {
@@ -76,7 +76,7 @@ describe('执行命令', () => {
     expect(text).toContain('err\n');
   });
 
-  it.skipIf(process.platform === 'win32')('停止时连同它派生的进程一起结束', async () => {
+  it.skipIf(process.platform === 'win32')('stopping also ends the processes it spawned', async () => {
     const pids = path.join(dir, 'pids');
     const file = await script('slow', `echo $$ > '${pids}'; /bin/sleep 30 & echo $! >> '${pids}'; echo started; wait`);
     const controller = new AbortController();
@@ -89,7 +89,7 @@ describe('执行命令', () => {
     await until(() => !alive(shell!) && !alive(sleep!));
   });
 
-  it.skipIf(process.platform === 'win32')('超时与不能启动', async () => {
+  it.skipIf(process.platform === 'win32')('timeout and failure to start', async () => {
     const file = await script('hang', '/bin/sleep 30');
     const signal = new AbortController().signal;
     expect(await runCommand([file], { env: {}, signal, timeoutMs: 100, killGraceMs: 100, onOutput: () => {} })).toEqual({ kind: 'timed-out' });
@@ -99,7 +99,7 @@ describe('执行命令', () => {
     });
   });
 
-  it('Windows：不建进程组，停止时用 taskkill /T /F 结束整棵进程树', async () => {
+  it('Windows: no process group is created, and stopping ends the whole process tree with taskkill /T /F', async () => {
     const calls: { command: string; args: readonly string[]; options: SpawnOptions }[] = [];
     const child = Object.assign(new EventEmitter(), { pid: 77, stdout: new PassThrough(), stderr: new PassThrough(), kill: () => true }) as unknown as ChildProcess;
     const spawnFn = (command: string, args: readonly string[], options: SpawnOptions) => {

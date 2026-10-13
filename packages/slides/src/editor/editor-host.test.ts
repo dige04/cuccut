@@ -15,7 +15,7 @@ function fakeFetch(respond: (url: string, init: RequestInit) => Response | Promi
 }
 
 describe('encodeWireBatch', () => {
-  it('字符串按 UTF-8、Blob 按原始字节转 base64，保留 contentType 和 ifMatch（null 也原样）', async () => {
+  it('strings converted to base64 as UTF-8, Blobs as raw bytes; contentType and ifMatch kept (null too)', async () => {
     const wire = await encodeWireBatch({
       'project/a.html': { content: '中文 ✓', contentType: 'text/html', ifMatch: 'a'.repeat(64) },
       'project/b.bin': { content: new Blob([new Uint8Array([0, 255])]), contentType: 'application/octet-stream' },
@@ -30,12 +30,12 @@ describe('encodeWireBatch', () => {
     expect(wire.files['project/c.css']).toEqual({ base64: Buffer.from('a{}').toString('base64'), contentType: 'text/css', ifMatch: null });
   });
 
-  it('删除项原样传过去', async () => {
+  it('delete items passed through unchanged', async () => {
     const wire = await encodeWireBatch({ 'project/x': { delete: true, ifMatch: 'b'.repeat(64) }, 'project/y': null });
     expect(wire.files).toEqual({ 'project/x': { delete: true, ifMatch: 'b'.repeat(64) }, 'project/y': null });
   });
 
-  it('大文件分块编码不爆栈', async () => {
+  it('large file chunked encoding does not overflow the stack', async () => {
     const big = 'x'.repeat(200_000);
     const wire = await encodeWireBatch({ 'project/big.txt': { content: big, contentType: 'text/plain' } });
     const entry = wire.files['project/big.txt'];
@@ -45,7 +45,7 @@ describe('encodeWireBatch', () => {
 });
 
 describe('createHttpBackend', () => {
-  it('POST 到 <base>__deck/publish，成功时返回路由的 PublishResult', async () => {
+  it('POST to <base>__deck/publish; on success returns the route\'s PublishResult', async () => {
     const result: PublishResult = { version: 'local-1', seq: 1, shas: {} };
     const { impl, calls } = fakeFetch(() => Response.json(result));
     const backend = createHttpBackend('/slides/g1/', impl);
@@ -55,18 +55,18 @@ describe('createHttpBackend', () => {
     expect(JSON.parse(String(calls[0]!.init.body))).toEqual({ files: { 'project/a': { base64: 'eA==', contentType: 'text/plain' } } });
   });
 
-  it('路由返回 PublishError 时原样抛出，运行时据 code 处理', async () => {
+  it('when the route returns PublishError it is thrown unchanged; runtime handles it by code', async () => {
     const conflict = { code: 'conflict', live: 'v2', paths: [] };
     const { impl } = fakeFetch(() => Response.json(conflict, { status: 409 }));
     await expect(createHttpBackend('/', impl).publish({})).rejects.toEqual(conflict);
   });
 
-  it('返回的不是 PublishError（比如代理的 HTML 错误页）时抛 upstream_error', async () => {
+  it('when the response is not a PublishError (e.g. a proxy\'s HTML error page) throws upstream_error', async () => {
     const { impl } = fakeFetch(() => new Response('<h1>Bad Gateway</h1>', { status: 502 }));
     await expect(createHttpBackend('/', impl).publish({})).rejects.toEqual({ code: 'upstream_error', message: 'publish failed: HTTP 502' });
   });
 
-  it('upload 用 options.type、其次 file.type 作为 Content-Type，发到 <base>__deck/assets', async () => {
+  it('upload uses options.type, then file.type as Content-Type, sent to <base>__deck/assets', async () => {
     const uploaded: UploadResult = { id: 'c'.repeat(32), url: `/_blob/${'c'.repeat(32)}` };
     const { impl, calls } = fakeFetch(() => Response.json(uploaded));
     const backend = createHttpBackend('/s/', impl);
@@ -76,7 +76,7 @@ describe('createHttpBackend', () => {
     expect(calls.map(c => (c.init.headers as Record<string, string>)['Content-Type'])).toEqual(['image/png', 'image/webp']);
   });
 
-  it('upload 失败：有 PublishError 原样抛（只读模式），没有抛 upstream_error', async () => {
+  it('upload failure: PublishError thrown as is (read-only mode); not thrown as upstream_error', async () => {
     const readOnly = { code: 'not_writer', message: 'read only' };
     await expect(createHttpBackend('/', fakeFetch(() => Response.json(readOnly, { status: 403 })).impl).upload(new Blob(['x']))).rejects.toEqual(readOnly);
     await expect(createHttpBackend('/', fakeFetch(() => new Response(null, { status: 413 })).impl).upload(new Blob(['x']))).rejects.toMatchObject({
@@ -84,7 +84,7 @@ describe('createHttpBackend', () => {
     });
   });
 
-  it('idle 等所有还没回来的请求结束，失败的也算结束', async () => {
+  it('idle waits for all still-pending requests to finish; failed ones count as finished', async () => {
     const gates: (() => void)[] = [];
     const { impl } = fakeFetch(
       (url) => new Promise<Response>(resolve => gates.push(() => resolve(url.endsWith('publish') ? Response.json({ version: 'v' }) : new Response(null, { status: 500 })))),
@@ -120,7 +120,7 @@ describe('createEditorHost', () => {
     return { backend, batches };
   };
 
-  it('只有一个用户；默认能编辑、什么都能做', async () => {
+  it('single user; editable by default and can do everything', async () => {
     const host = createEditorHost(makeBackend().backend);
     expect(await host.user.id()).toBe(LOCAL_USER.id);
     expect(await host.user.canEdit()).toBe(true);
@@ -131,13 +131,13 @@ describe('createEditorHost', () => {
     });
   });
 
-  it('只读时 canEdit 与 can 都是 false', async () => {
+  it('in read-only mode canEdit and can are both false', async () => {
     const host = createEditorHost(makeBackend().backend, { canEdit: async () => false });
     expect(await host.user.canEdit()).toBe(false);
     expect(await host.user.can('edit')).toBe(false);
   });
 
-  it('artifact.publish 和 self.publish 都转给同一个 backend；不提供 use()，给了 comments 才有 comments', async () => {
+  it('artifact.publish and self.publish both forwarded to the same backend; use() not provided; comments exist only when given', async () => {
     const { backend, batches } = makeBackend();
     const host = createEditorHost(backend);
     await host.artifact.publish({ 'project/a': null });
@@ -152,7 +152,7 @@ describe('createEditorHost', () => {
 });
 
 describe('readSessionCanEdit', () => {
-  it('读 __deck/session 一次并缓存', async () => {
+  it('reads __deck/session once and caches it', async () => {
     const { impl, calls } = fakeFetch(() => Response.json({ canEdit: false }));
     const canEdit = readSessionCanEdit('/s/', impl);
     expect(await canEdit()).toBe(false);
@@ -160,7 +160,7 @@ describe('readSessionCanEdit', () => {
     expect(calls.map(c => c.url)).toEqual(['/s/__deck/session']);
   });
 
-  it('读不到时按能编辑处理', async () => {
+  it('when it can\'t be read, treated as editable', async () => {
     expect(await readSessionCanEdit('/', fakeFetch(() => new Response(null, { status: 404 })).impl)()).toBe(true);
     expect(await readSessionCanEdit('/', async () => Promise.reject(new Error('offline')))()).toBe(true);
   });
@@ -193,17 +193,17 @@ describe('flushEdits', () => {
     return { win: target as unknown as Window & typeof globalThis, backend };
   }
 
-  it('没有未保存的改动时立刻回 true', async () => {
+  it('with no unsaved changes, returns true immediately', async () => {
     const { win, backend } = fakeEditor(0);
     expect(await flushEdits(win, backend)).toBe(true);
   });
 
-  it('有改动时等发布结束再问，直到不再 dirty', async () => {
+  it('with changes, waits for publishing to finish before asking, until no longer dirty', async () => {
     const { win, backend } = fakeEditor(2);
     expect(await flushEdits(win, backend)).toBe(true);
   });
 
-  it('超时回 false', async () => {
+  it('returns false on timeout', async () => {
     const { win, backend } = fakeEditor(1, 200);
     expect(await flushEdits(win, backend, 20)).toBe(false);
   });

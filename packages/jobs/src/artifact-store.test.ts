@@ -8,7 +8,7 @@ import { ArtifactStore, collectArtifactIds } from './artifact-store.ts';
 /**
  * Write durability of the artifact store: temp file is fully written and fsync'd → rename → fsync the directory. Records open, sync and rename in the order they happen.
  */
-describe('ArtifactStore 写入 fsync', () => {
+describe('ArtifactStore write fsync', () => {
   let dir: string;
   let events: string[];
   let proto: { sync: () => Promise<void> };
@@ -53,7 +53,7 @@ describe('ArtifactStore 写入 fsync', () => {
     return 'file';
   }
 
-  it('put：fsync 临时文件，再改名，再 fsync 目录；内容完整', async () => {
+  it('put: fsyncs the temp file, renames it, then fsyncs the directory; content is complete', async () => {
     const bytes = Buffer.from('{"hello":"world"}');
     const { artifactId, path: file } = await store().put(bytes);
     expect(events).toEqual(['sync tmp', 'rename tmp -> file', 'sync dir']);
@@ -63,7 +63,7 @@ describe('ArtifactStore 写入 fsync', () => {
     expect((await fs.readdir(path.join(dir, 'artifacts'))).filter((n) => n.endsWith('.tmp'))).toEqual([]);
   });
 
-  it('putFile：克隆（或复制）之后同样 fsync、改名、fsync 目录', async () => {
+  it('putFile: after cloning (or copying), the same fsync, rename, and directory fsync', async () => {
     const source = path.join(dir, 'source.wav');
     await fs.writeFile(source, Buffer.alloc(4096, 7));
     events.length = 0;
@@ -74,7 +74,7 @@ describe('ArtifactStore 写入 fsync', () => {
     expect(await store().verify(artifactId)).toBe(true);
   });
 
-  it('已经有同一内容时不再写，也不 fsync', async () => {
+  it('when the same content already exists, nothing is written and no fsync is done', async () => {
     const bytes = Buffer.from('same');
     await store().put(bytes);
     events.length = 0;
@@ -82,7 +82,7 @@ describe('ArtifactStore 写入 fsync', () => {
     expect(events).toEqual([]);
   });
 
-  it('fsync 失败时不改名，临时文件删掉', async () => {
+  it('when fsync fails, no rename happens and the temp file is deleted', async () => {
     vi.mocked(proto.sync).mockRejectedValueOnce(
       Object.assign(new Error('EIO'), { code: 'EIO' }),
     );
@@ -118,7 +118,7 @@ describe('ArtifactStore.sweep', () => {
       () => false,
     );
 
-  it('删掉没有引用、超过 1 小时的产物；有引用的与刚发布的留着', async () => {
+  it('deletes artifacts with no references that are older than 1 hour; referenced ones and newly published ones are kept', async () => {
     const orphan = await store.put(Buffer.from('orphan'), 'json');
     const byLedger = await store.put(Buffer.from('ledger'), 'wav');
     const bySpace = await store.put(Buffer.from('space'), 'png');
@@ -135,7 +135,7 @@ describe('ArtifactStore.sweep', () => {
     expect(await exists(fresh.path)).toBe(true);
   });
 
-  it('重新发布已有的内容刷新修改时间，宽限期照样成立', async () => {
+  it('republishing existing content refreshes the modification time, and the grace period still applies', async () => {
     const first = await store.put(Buffer.from('same bytes'), 'json');
     await age(first.path, 3 * HOUR);
     await store.put(Buffer.from('same bytes'), 'json');
@@ -143,7 +143,7 @@ describe('ArtifactStore.sweep', () => {
     expect(await exists(first.path)).toBe(true);
   });
 
-  it('残留的 .tmp 超过 1 小时删掉，新的留着；名字不是产物形状的文件与目录不动', async () => {
+  it('leftover .tmp files older than 1 hour are deleted and new ones are kept; files and directories whose names do not look like artifacts are left alone', async () => {
     const artifacts = path.join(dir, 'artifacts');
     await fs.mkdir(path.join(artifacts, 'nested'), { recursive: true });
     const hex = 'a'.repeat(64);
@@ -163,11 +163,11 @@ describe('ArtifactStore.sweep', () => {
     expect(await exists(path.join(artifacts, 'nested'))).toBe(true);
   });
 
-  it('产物目录还不存在时什么也不做', async () => {
+  it('does nothing when the artifact directory does not exist yet', async () => {
     expect(await store.sweep(new Set())).toEqual({ scanned: 0, removed: 0, removedBytes: 0, temporaryRemoved: 0, failed: 0 });
   });
 
-  it('collectArtifactIds：在嵌套的值里找出全部产物 id', () => {
+  it('collectArtifactIds: finds all artifact ids in nested values', () => {
     const a = `sha256:${'1'.repeat(64)}`;
     const b = `sha256:${'2'.repeat(64)}`;
     const ids = collectArtifactIds({ result: { artifactId: a }, steps: [{ output: { units: [{ vocalsArtifactId: b }] } }], other: 'sha256:short' });

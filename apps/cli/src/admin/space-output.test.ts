@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { formatSpaceContinue, formatSpacePurge, formatVideoDelete, parseSpaceArgs } from './space-output.ts';
 
-describe('cuccut space 的参数', () => {
-  it('rescan、rebuild 与按条目的操作', () => {
+describe('cuccut space arguments', () => {
+  it('rescan, rebuild and per-entry operations', () => {
     expect(parseSpaceArgs(['rescan'], {})).toEqual({ kind: 'rescan' });
     expect(parseSpaceArgs(['rebuild'], {})).toEqual({ kind: 'rebuild' });
     expect(parseSpaceArgs(['purge', 'sp_1'], {})).toEqual({ kind: 'purge', entryId: 'sp_1' });
@@ -12,7 +12,7 @@ describe('cuccut space 的参数', () => {
     expect(() => parseSpaceArgs(['delete', 'sp_1'], {})).toThrow(/用法/);
   });
 
-  it('删除视频与从条目继续会话', () => {
+  it('delete video and resume session from entry', () => {
     expect(parseSpaceArgs(['delete-video', 'sp_1'], {})).toEqual({ kind: 'delete-video', entryId: 'sp_1' });
     expect(() => parseSpaceArgs(['delete-video'], {})).toThrow(/delete-video <条目 id>/);
     expect(() => parseSpaceArgs(['delete-video', 'sp_1'], { conversation: 'cnv_1' })).toThrow(/不接受 --conversation/);
@@ -26,8 +26,8 @@ describe('cuccut space 的参数', () => {
   });
 });
 
-describe('cuccut space 的输出', () => {
-  it('彻底删除：删了，或列出挡住它的引用', () => {
+describe('cuccut space output', () => {
+  it('permanent delete: deleted, or lists the references blocking it', () => {
     expect(formatSpacePurge({ status: 'purged', entryId: 'sp_1' })).toEqual(['已彻底删除 sp_1']);
     expect(
       formatSpacePurge({
@@ -38,7 +38,7 @@ describe('cuccut space 的输出', () => {
     ).toEqual(['没有删除 sp_1：还有引用', '  视频「访谈」的素材引用着它']);
   });
 
-  it('删除视频：回收站里的条目与可以恢复的命令；继续会话：会话与下一步', () => {
+  it('delete video: the trash entry and the command to restore it; resume session: the session and next step', () => {
     const deleted = {
       status: 'trashed' as const,
       entryId: 'sp_t',

@@ -115,7 +115,7 @@ async function rejection(promise: Promise<unknown>): Promise<RpcError> {
   throw new Error('应该被拒绝');
 }
 
-describe('任务里的用户库', () => {
+describe('user library in tasks', () => {
   let dir: string;
   let library: LibraryStore;
   let transcriber: HoldingTranscriber;
@@ -193,7 +193,7 @@ describe('任务里的用户库', () => {
       },
     });
 
-  it('术语表的规范写法进入提示；Job 冻结条目的版本与摘要，任务期间固定，结束后解除', async () => {
+  it('the glossary\'s canonical spelling enters the prompt; the version and digest of the Job\'s frozen entries are fixed during the task and released after it ends', async () => {
     const a = (await glossary('甲', ['CucCut', 'Rust'])).entry;
     const b = (await glossary('乙', ['Rust', 'Tauri'])).entry;
     const { jobId } = await manager.submitTranscribe(
@@ -231,7 +231,7 @@ describe('任务里的用户库', () => {
     ).toBe('pruned');
   });
 
-  it('模型不接受提示：忽略术语表与用户的提示，在记录里说明并提醒，不报错', async () => {
+  it('model does not accept prompts: the glossary and user prompt are ignored, noted and warned in the record, without an error', async () => {
     acceptsHint = false;
     const a = (await glossary('甲', ['CucCut', 'Rust'])).entry;
     const { jobId } = await manager.submitTranscribe(
@@ -246,7 +246,7 @@ describe('任务里的用户库', () => {
     await manager.cancel(jobId);
   });
 
-  it('翻译用术语表与不存在的条目被拒绝，不创建任务', async () => {
+  it('a translation glossary and nonexistent entries are rejected, and no task is created', async () => {
     const t = await library.put({
       library: 'glossaries',
       content: { name: '译', kind: 'translation', sourceLanguage: null, targetLanguage: 'en', defaultEnabled: false, terms: [] },
@@ -261,7 +261,7 @@ describe('任务里的用户库', () => {
     expect(manager.list()).toEqual([]);
   });
 
-  it('对外服务的客户端不能引用用户库：术语表与库音色都被拒绝，不创建任务', async () => {
+  it('external service clients cannot reference the user library: the glossary and library voices are both rejected, and no task is created', async () => {
     const service = { kind: 'service' as const, id: 'model-api', clientId: 'cli_1' };
     const a = (await glossary('甲', ['CucCut'])).entry;
     const glossaryRefused = await rejection(
@@ -288,7 +288,7 @@ describe('任务里的用户库', () => {
     expect(manager.list()).toEqual([]);
   });
 
-  it('library:<id> 音色：有效克隆、没有克隆、克隆过期', async () => {
+  it('library:<id> voice: valid clone, no clone, expired clone', async () => {
     const ref = path.join(dir, 'ref.wav');
     await fs.writeFile(ref, WAV);
     const content = {

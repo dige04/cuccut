@@ -23,7 +23,7 @@ async function until<T>(read: () => T | undefined | null | false, timeoutMs = 5_
   }
 }
 
-describe('CodexDriver（假 codex）', () => {
+describe('CodexDriver (fake codex)', () => {
   let dir: string;
   let fake: FakeCodex;
   let driver: CodexDriver;
@@ -38,7 +38,7 @@ describe('CodexDriver（假 codex）', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('探测：没有安装、没有登录、可用', async () => {
+  it('probe: not installed, signed out, available', async () => {
     fake.scenario({ installed: false });
     expect(await driver.probe()).toMatchObject({ state: 'not-installed', status: 'unavailable', unavailableReason: 'not-installed', version: null });
     fake.scenario({ installed: true, loggedIn: false });
@@ -47,7 +47,7 @@ describe('CodexDriver（假 codex）', () => {
     expect(await driver.probe()).toMatchObject({ state: 'ready', status: 'available', unavailableReason: null, version: '0.160.0', minVersion: '0.158.0' });
   });
 
-  it('探测：账号描述取登录方式，不带 login status 的原文（可能有打码的密钥）', async () => {
+  it('probe: account description takes the login method, not the raw login status text (which may contain masked keys)', async () => {
     expect(await driver.probe()).toMatchObject({ state: 'ready', account: 'ChatGPT 账号' });
     expect(describeCodexAccount('Logged in using an API key - sk-proj-***ABCD')).toBe('OpenAI API 密钥');
     expect(describeCodexAccount('Logged in using Amazon Bedrock API key')).toBe('Amazon Bedrock');
@@ -56,7 +56,7 @@ describe('CodexDriver（假 codex）', () => {
     expect(describeCodexAccount('')).toBe('Codex 账号');
   });
 
-  it('探测：经临时 app-server 的 model/list 取模型表（含分页），隐藏的不列；进程用完就关，不算会话', async () => {
+  it('probe: model table comes from model/list on a temporary app-server (paginated), hidden models are not listed; the process is closed after use and does not count as a session', async () => {
     const probe = await driver.probe();
     expect(probe.capabilities).toEqual({ steer: true, approvals: true, resume: true, images: true });
     expect(probe.models).toEqual([
@@ -86,7 +86,7 @@ describe('CodexDriver（假 codex）', () => {
     expect(fake.log().some((e) => e.kind === 'start')).toBe(false);
   });
 
-  it('探测：未登录也列模型；版本太旧时不起 app-server', async () => {
+  it('probe: models are listed even when signed out; app-server is not started when the version is too old', async () => {
     fake.scenario({ loggedIn: false });
     const signedOut = await driver.probe();
     expect(signedOut).toMatchObject({ state: 'signed-out' });
@@ -97,13 +97,13 @@ describe('CodexDriver（假 codex）', () => {
     expect(fake.log().filter((e) => e.kind === 'catalog-start')).toHaveLength(1);
   });
 
-  it('探测：模型表缓存，同时到来的探测共用一次请求', async () => {
+  it('probe: model table is cached, concurrent probes share one request', async () => {
     await Promise.all([driver.probe(), driver.probe()]);
     await driver.probe();
     expect(fake.log().filter((e) => e.kind === 'catalog-start')).toHaveLength(1);
   });
 
-  it('探测：config.toml 顶层的 model，与它在不在目录里（隐藏模型也算认得）', async () => {
+  it('probe: top-level model in config.toml, and whether it is in the catalog (hidden models count as known)', async () => {
     const config = path.join(fake.codexHome, 'config.toml');
     await fs.writeFile(config, 'model = "fake-hidden"\nmodel_reasoning_effort = "high"\n');
     expect(await driver.probe()).toMatchObject({ configModel: 'fake-hidden', configModelKnown: true });
@@ -114,7 +114,7 @@ describe('CodexDriver（假 codex）', () => {
     expect(await driver.probe()).toMatchObject({ configModel: null, configModelKnown: null });
   });
 
-  it('探测：model/list 出错时模型表为空，探测照常；configModelKnown 说不清为 null', async () => {
+  it('probe: when model/list fails the model table is empty and the probe proceeds as usual; configModelKnown is null when it cannot be determined', async () => {
     fake.scenario({ models: 'error' });
     await fs.writeFile(path.join(fake.codexHome, 'config.toml'), 'model = "fake-sol"\n');
     expect(await driver.probe()).toMatchObject({ state: 'ready', models: [], configModel: 'fake-sol', configModelKnown: null });
@@ -123,13 +123,13 @@ describe('CodexDriver（假 codex）', () => {
     expect(fake.log().filter((e) => e.kind === 'catalog-start')).toHaveLength(1);
   });
 
-  it('探测：model/list 空表时 configModelKnown 为 null', async () => {
+  it('probe: configModelKnown is null when model/list returns an empty table', async () => {
     fake.scenario({ models: [] });
     await fs.writeFile(path.join(fake.codexHome, 'config.toml'), 'model = "fake-sol"\n');
     expect(await driver.probe()).toMatchObject({ state: 'ready', models: [], configModel: 'fake-sol', configModelKnown: null });
   });
 
-  it('探测：model/list 不应答时按时限放弃，并关掉临时进程', async () => {
+  it('probe: gives up on model/list after the time limit when it does not respond, and shuts down the temporary process', async () => {
     fake.scenario({ models: 'hang' });
     const slow = new CodexDriver(silentLogger, { locate: fake.locate, modelListTimeoutMs: 300 });
     const started = Date.now();
@@ -140,13 +140,13 @@ describe('CodexDriver（假 codex）', () => {
     await until(() => fake.log().some((e) => e.kind === 'catalog-exit' || e.kind === 'exit'));
   });
 
-  it('探测：只列可见模型，未知的说明不臆测定位', async () => {
+  it('probe: lists only visible models; for an unknown model, says so without guessing where it belongs', async () => {
     fake.scenario({ models: [fakeModel('gpt-5.5', { description: 'Older model.' }), fakeModel('codex-auto-review', { hidden: true })] });
     const probe = await driver.probe();
     expect(probe.models).toEqual([expect.objectContaining({ id: 'gpt-5.5', tier: null, description: 'Older model.' })]);
   });
 
-  it('受限的会话：工作目录、从不审批、只写工作目录（不含临时目录、不联网），没有 MCP 服务；关闭后进程退出', async () => {
+  it('restricted session: working directory, never asks for approval, writes only to the working directory (not temp dirs, no network), no MCP servers; the process exits on close', async () => {
     const cwd = path.join(dir, 'staging');
     await fs.mkdir(cwd);
     const session = await driver.createSession({
@@ -173,7 +173,7 @@ describe('CodexDriver（假 codex）', () => {
     await until(() => fake.log().some((e) => e.kind === 'exit'));
   });
 
-  it('普通会话不受影响：按访问模式给策略，带上 MCP 服务与放宽的工具时限，没有沙箱的细项', async () => {
+  it('normal session is unaffected: policy follows the access mode, with MCP servers and the relaxed tool timeout, and no sandbox details', async () => {
     const cwd = path.join(dir, 'project');
     await fs.mkdir(cwd);
     const session = await driver.createSession({
@@ -194,7 +194,7 @@ describe('CodexDriver（假 codex）', () => {
     await session.close();
   });
 
-  it('访问模式 → Codex 的审批策略与沙箱（取更严的一方），旧值先换成新值', () => {
+  it('access mode → Codex approval policy and sandbox (the stricter one wins), old values are replaced with new ones first', () => {
     expect(codexPolicy('plan')).toEqual({ approvalPolicy: 'untrusted', approvalsReviewer: 'user', sandbox: 'read-only' });
     expect(codexPolicy('ask')).toEqual({ approvalPolicy: 'untrusted', approvalsReviewer: 'user', sandbox: 'workspace-write' });
     expect(codexPolicy('autoAcceptEdits')).toEqual({ approvalPolicy: 'untrusted', approvalsReviewer: 'user', sandbox: 'workspace-write' });
@@ -204,7 +204,7 @@ describe('CodexDriver（假 codex）', () => {
     expect(codexPolicy('authorized')).toEqual(codexPolicy('fullAccess'));
   });
 
-  it('auto 下 Codex 来问的只有越出沙箱的动作：审批请求带 escalation；ask 下不带', async () => {
+  it('under auto, Codex only asks about actions that go outside the sandbox: approval requests carry escalation; under ask they do not', async () => {
     const cwd = path.join(dir, 'project');
     await fs.mkdir(cwd);
     fake.scenario({ turn: { askApproval: true, reply: 'done' } });

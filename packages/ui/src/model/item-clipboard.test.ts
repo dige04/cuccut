@@ -70,8 +70,8 @@ function sequence(tracks: Track[], items: Sequence['items']): Sequence {
 
 const labelOf = () => '图形';
 
-describe('粘贴的时间', () => {
-  it('播放头在源片段里（两端都算）就原地；在外面就搬到播放头，保长并夹在片长里', () => {
+describe('paste time', () => {
+  it('if the playhead is inside the source clip (ends included) the clip stays in place; if outside, it moves to the playhead, keeping its length and clamped within the clip duration', () => {
     expect(pasteStart({ start: 30, end: 90 }, 30, 300)).toBe(30);
     expect(pasteStart({ start: 30, end: 90 }, 90, 300)).toBe(30);
     expect(pasteStart({ start: 30, end: 90 }, 150, 300)).toBe(150);
@@ -81,11 +81,11 @@ describe('粘贴的时间', () => {
   });
 });
 
-describe('粘贴的位置', () => {
+describe('paste position', () => {
   const canvas = { width: 1920, height: 1080 };
   const at = (place: Place) => shape('a', 'v1', 0, 30, { place });
 
-  it('中心往右下错开 2% × 第几次，夹在限位里；大小与角度不变', () => {
+  it('center offset to the bottom-right by 2% × paste count, clamped to limits; size and angle unchanged', () => {
     expect(pastePlace(at({ x: 50, y: 50, w: 10, rot: 15 }), canvas, 1)).toEqual({ x: 52, y: 52, w: 10, rot: 15 });
     expect(pastePlace(at({ x: 50, y: 50, w: 10 }), canvas, 3)).toEqual({ x: 56, y: 56, w: 10 });
     // Already near the bottom right: only pushed to 97% / 96%.
@@ -94,20 +94,20 @@ describe('粘贴的位置', () => {
     expect(pastePlace(at({ w: 10 }), canvas, 1)).toEqual({ x: 52, y: 52, w: 10 });
   });
 
-  it('原本在限位外的那一轴不动；铺满画布的原样不动', () => {
+  it('an axis that was already outside the limits stays put; full-canvas items stay as they are', () => {
     expect(pastePlace(at({ x: 50, y: 111, w: 10 }), canvas, 1)).toEqual({ x: 52, y: 111, w: 10 });
     const full = { ...shape('v', 'v1', 0, 30), type: 'video', mode: 'fullscreen', place: {} } as unknown as VideoItem;
     expect(pastePlace(full, canvas, 1)).toBe(full.place);
   });
 
-  it('名字加「· 副本」，不叠两次', () => {
+  it('name gets "· 副本" appended, not appended twice', () => {
     expect(copyName('标题')).toBe('标题 · 副本');
     expect(copyName('标题 · 副本')).toBe('标题 · 副本');
   });
 });
 
-describe('粘贴', () => {
-  it('源轨道空着就放回原轨；去掉引擎管的字段；整批一笔', () => {
+describe('paste', () => {
+  it('source track empty: put back on the original track; engine-managed fields removed; the whole batch is one entry', () => {
     const seq = sequence([track('v1', 0, 'visual')], []);
     const source = shape('a', 'v1', 30, 60, { name: '方块', linkGroupId: 'g1' });
     const plan = pasteOperations(seq, [source], { playheadFrame: 45, generation: 1, labelOf });
@@ -120,7 +120,7 @@ describe('粘贴', () => {
     for (const key of ['id', 'lineage', 'enabled', 'locked', 'paintOrder', 'followPolicy', 'linkGroupId']) expect(item).not.toHaveProperty(key);
   });
 
-  it('原轨在落点被占：放到上面第一条空着的同类轨道；没有就新建一条，后面的副本也能放进去', () => {
+  it('original track occupied at the drop point: placed on the first free same-kind track above; if none, a new one is created, and later copies can also go in', () => {
     const tracks = [track('v1', 0, 'visual'), track('a1', 1, 'audio'), track('v2', 2, 'visual'), track('v3', 3, 'visual', { locked: true })];
     const a = shape('a', 'v1', 0, 60);
     const seq = sequence(tracks, [a, shape('b', 'v2', 0, 30)]);
@@ -138,7 +138,7 @@ describe('粘贴', () => {
     expect(placed.type === 'insertItems' && placed.items[0]).toMatchObject({ trackId: 'v2', span: { fromFrame: 70 } });
   });
 
-  it('同一批里两件落在同一段：第二件不叠在第一件上', () => {
+  it('two items in the same batch landing on the same span: the second does not overlap the first', () => {
     const seq = sequence([track('v1', 0, 'visual')], []);
     const a = shape('a', 'v1', 0, 60);
     const b = shape('b', 'v1', 0, 60);
@@ -151,7 +151,7 @@ describe('粘贴', () => {
     ]);
   });
 
-  it('文字没有自己的名字时不起名；字幕副本共用同一份文档', () => {
+  it('text without its own name is not given one; subtitle copies share the same document', () => {
     const text: TextItem = { ...shape('t', 'v1', 0, 30), type: 'text', text: '你好', style: {} } as unknown as TextItem;
     const caption: CaptionItem = {
       id: 'c',
@@ -173,7 +173,7 @@ describe('粘贴', () => {
     expect(plan.operations[0]).toMatchObject({ type: 'addTrack', kind: 'subtitle' });
   });
 
-  it('音频：原地保留帧内偏移，搬到播放头时落在帧上', () => {
+  it('audio: keeps its in-frame offset in place; when moved to the playhead, lands on a frame', () => {
     const a = audio('a', 'a1', 30, 2, '800');
     const seq = sequence([track('a1', 0, 'audio'), track('a2', 1, 'audio')], [a]);
     const here = pasteOperations(seq, [a], { playheadFrame: 40, generation: 1, labelOf: () => '配乐' });

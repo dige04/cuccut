@@ -11,7 +11,7 @@ function toChinese(): void {
   setLocale('zh-Hans');
 }
 
-describe('模型文字的多语言', () => {
+describe('multilingual model text', () => {
   beforeEach(() => {
     vi.stubEnv('CUCCUT_LOCALE', 'en');
     setLocale('en');
@@ -22,7 +22,7 @@ describe('模型文字的多语言', () => {
     setLocale('zh-Hans');
   });
 
-  it('错误按当前语言生成，并记下引用', () => {
+  it('errors are generated in the current language and their reference is recorded', () => {
     const error = new TextGenerationError('PROVIDER_REJECTED', ModelsTextGeneration.contentFiltered({ provider: 'OpenAI' }));
     expect(error.message).toBe("OpenAI's content filter blocked this output");
     expect(error.messageRef?.key).toBe('modelsTextGeneration.contentFiltered');
@@ -31,7 +31,7 @@ describe('模型文字的多语言', () => {
     expect(new TextGenerationError('PROVIDER_UNAVAILABLE', 'upstream said no').messageRef).toBeUndefined();
   });
 
-  it('detail 与 detailRef 一起存，读的人换语言时重新生成', () => {
+  it('detail is stored together with detailRef and regenerated when the reader changes language', () => {
     const stored = modelDetail(ModelsTextGeneration.cancelled());
     expect(stored.detail).toBe('Call cancelled');
     toChinese();
@@ -39,7 +39,7 @@ describe('模型文字的多语言', () => {
     expect(modelDetail('raw worker text')).toEqual({ detail: 'raw worker text' });
   });
 
-  it('能力名每次读都按当前语言生成', () => {
+  it('capability names are generated in the current language on every read', () => {
     expect(CAPABILITY_LABELS.transcribe).toBe('Transcription');
     expect(capabilityLabel('generateText').text).toBe('Text generation');
     toChinese();

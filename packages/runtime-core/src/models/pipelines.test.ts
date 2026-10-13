@@ -132,7 +132,7 @@ const SPEECH = {
   chapters: [],
 };
 
-describe.skipIf(!engine)('固定流程（真实引擎 + 假供应商）', () => {
+describe.skipIf(!engine)('fixed pipeline (real engine + fake provider)', () => {
   let side: Side | undefined;
   let openai: FakeProviderServer | undefined;
   const state = { broken: 0, garbage: false, calls: 0 };
@@ -175,7 +175,7 @@ describe.skipIf(!engine)('固定流程（真实引擎 + 假供应商）', () => 
 
   const revisionOf = async (videoId: string) => (await side!.client.request('videos.history', { videoId })).entries[0]!.videoRevision;
 
-  it('pipelines.list 列出各个流程与参数的 schema', async () => {
+  it('pipelines.list lists each pipeline and its parameter schema', async () => {
     const { pipelines } = await side!.client.request('pipelines.list', {});
     expect(pipelines.map((p) => [p.name, p.steps.map((s) => s.name)])).toEqual([
       ['transcode', ['probe', 'encode', 'verify', 'publish']],
@@ -198,7 +198,7 @@ describe.skipIf(!engine)('固定流程（真实引擎 + 假供应商）', () => 
     await expect(side!.client.request('pipelines.start', { pipeline: 'nope', params: {} })).rejects.toMatchObject({ code: 'not-found' });
   });
 
-  it('没有配置文本模型：pipelines.start 以 CAPABILITY_NOT_CONFIGURED 拒绝，不建任务', async () => {
+  it('no text model configured: pipelines.start rejects with CAPABILITY_NOT_CONFIGURED, no task created', async () => {
     const { videoId } = await videoWithSpeech();
     const error = await side!.client
       .request('pipelines.start', { pipeline: 'translate', params: { videoId, targetLanguage: 'en' } })
@@ -209,7 +209,7 @@ describe.skipIf(!engine)('固定流程（真实引擎 + 假供应商）', () => 
   });
 
   it.skipIf(!speechWorker)(
-    '翻译把文稿交给文本模型要授权（§12.5）：撤销默认授权后启动即拒绝，不建任务；只覆盖这个视频的文稿授权按次计入用量',
+    'translation handing the script to the text model requires authorization (§12.5): after revoking the default authorization, start is rejected, no task created; an authorization covering only this video\'s script is counted per use',
     async () => {
       await configure();
       const { videoId } = await videoWithSpeech();
@@ -243,7 +243,7 @@ describe.skipIf(!engine)('固定流程（真实引擎 + 假供应商）', () => 
   );
 
   it.skipIf(!speechWorker)(
-    '翻译写进视频：新的译文文档以 system:pipeline 写入，正文合 §5.3；jobs.list 默认折叠步骤；截断的答案重发',
+    'translation written into the video: new translation document written as system:pipeline, body merged per §5.3; jobs.list collapses steps by default; a truncated answer is resent',
     async () => {
       await configure();
       const { videoId, speechId } = await videoWithSpeech();
@@ -309,7 +309,7 @@ describe.skipIf(!engine)('固定流程（真实引擎 + 假供应商）', () => 
     },
   );
 
-  it.skipIf(!speechWorker)('一直不合约定：翻译这一步失败，视频不变；pipelines.retry 从这一步继续', async () => {
+  it.skipIf(!speechWorker)('output that keeps violating the contract: translation step fails, video unchanged; pipelines.retry continues from this step', async () => {
     await configure();
     const { videoId } = await videoWithSpeech();
     const before = await revisionOf(videoId);
@@ -334,7 +334,7 @@ describe.skipIf(!engine)('固定流程（真实引擎 + 假供应商）', () => 
     });
   });
 
-  it.skipIf(!ffmpeg || !speechWorker)('翻译流程写出的译文（/2）→ 双语 SRT 导出：按流程切的句子配译文，句内的长停顿不拆句', async () => {
+  it.skipIf(!ffmpeg || !speechWorker)('translation output from pipeline (/2) → bilingual SRT export: sentences split per pipeline with translation attached, long pauses within a sentence do not split it', async () => {
     await configure();
     const { project } = await side!.client.request('projects.create', { name: '双语' });
     const audio = path.join(project.path, 'media', 'a.wav');
@@ -403,7 +403,7 @@ describe.skipIf(!engine)('固定流程（真实引擎 + 假供应商）', () => 
     ]);
   });
 
-  it.skipIf(!ffmpeg)('文件转码经网关：结果是没有视频的生成记录', async () => {
+  it.skipIf(!ffmpeg)('file transcode via gateway: result is a generation record without video', async () => {
     const clip = path.join(side!.dir, 'clip.mp4');
     execFileSync('ffmpeg', [
       '-v',

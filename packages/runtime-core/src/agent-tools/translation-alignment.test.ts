@@ -20,7 +20,7 @@ const speechBody = {
   ],
 };
 
-describe.skipIf(!editorWasmAvailable())('putDocument 译文：补句级对齐', () => {
+describe.skipIf(!editorWasmAvailable())('putDocument translation: fill in sentence-level alignment', () => {
   const read = sourceSentences(speechBody);
   if ('problem' in read) throw new Error(read.problem);
   const [first, second] = read.sentences;
@@ -58,7 +58,7 @@ describe.skipIf(!editorWasmAvailable())('putDocument 译文：补句级对齐', 
     ...extra,
   });
 
-  it('alignment 为 null：按句子补成句级对齐，textHash 按译文算；调用方的正文不改', async () => {
+  it('alignment null: sentence-level alignment filled from sentences, textHash computed from translation; caller\'s body not changed', async () => {
     const op = put([unit(first!, '你好。'), unit(second!, '早上好。')]);
     const original = op.body;
     const operations: Record<string, unknown>[] = [op];
@@ -72,7 +72,7 @@ describe.skipIf(!editorWasmAvailable())('putDocument 译文：补句级对齐', 
     expect(reads.at(-1)).toEqual(['speech', '3']);
   });
 
-  it('写了句级对齐：补上 textHash，译文改过时重算；块级的对齐不动', async () => {
+  it('sentence-level alignment written: textHash filled, recomputed when translation changed; block-level alignment untouched', async () => {
     const sentence = { basis: 'natural', correspondence: 'sentence', blocks: [], sourceWordIds: ['w1', 'w2'] };
     const blocks = {
       basis: 'natural',
@@ -93,7 +93,7 @@ describe.skipIf(!editorWasmAvailable())('putDocument 译文：补句级对齐', 
     expect(alignments).toEqual([[{ ...sentence, textHash: hash('你好。') }, blocks], [{ ...sentence, textHash: hash('嗨。') }]]);
   });
 
-  it('核对不上的不补：指纹不同、句子不在、过期的单元；转写读不到时整份不动', async () => {
+  it('unmatched not filled: different fingerprint, sentence absent, stale unit; whole document untouched when transcript unreadable', async () => {
     const op = put([
       unit(first!, '你好。', { sourceFingerprint: 'other' }),
       unit({ id: 's-gone', fingerprint: '' }, '没了。'),
@@ -112,7 +112,7 @@ describe.skipIf(!editorWasmAvailable())('putDocument 译文：补句级对齐', 
     expect((hashOnly.body.units[0] as { alignment: unknown }).alignment).toEqual({ ...sentence, textHash: hash('你好。') });
   });
 
-  it('改已有的译文（只给 documentId）：转写从文档头的来源找；记下的版本读不到时读当前版本', async () => {
+  it('modifying existing translation (only documentId given): transcript found from document header\'s source; when recorded version unreadable, reads current version', async () => {
     const op: Record<string, unknown> = { ...put([unit(first!, '你好。')]), documentId: 'trans' };
     delete op.sourceDocument;
     const body = op.body as { sourceBasis: Record<string, unknown> };

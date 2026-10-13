@@ -8,7 +8,7 @@ import { parseAcpVersion, acpPathVariable } from './acp-binary.ts';
 import { AcpDriver, acpDrivers } from './acp-driver.ts';
 import { ACP_PRESETS } from './acp-presets.ts';
 
-describe('AcpDriver.probe（假 ACP 智能体）', () => {
+describe('AcpDriver.probe (fake ACP agent)', () => {
   let dir: string;
   let fake: FakeAcp;
 
@@ -23,7 +23,7 @@ describe('AcpDriver.probe（假 ACP 智能体）', () => {
 
   const sessionsStarted = () => fake.log().filter((e) => e.kind === 'start').length;
 
-  it('已安装、已登录：ready，版本、模型表（旧版 models）、能力；共享实现已验证，可以开会话', async () => {
+  it('installed and signed in: ready, with version, model table (legacy models), capabilities; the shared implementation is verified and a session can be opened', async () => {
     const driver = new AcpDriver('gemini', silentLogger, { locate: fake.locate });
     const probe = await driver.probe();
     expect(probe).toMatchObject({
@@ -47,14 +47,14 @@ describe('AcpDriver.probe（假 ACP 智能体）', () => {
     expect(fake.requests('session/prompt')).toEqual([]);
   });
 
-  it('模型表缓存：同一版本 10 分钟内不再起进程', async () => {
+  it('model table cache: no process started within 10 minutes for the same version', async () => {
     const driver = new AcpDriver('gemini', silentLogger, { locate: fake.locate });
     await driver.probe();
     await driver.probe();
     expect(sessionsStarted()).toBe(1);
   });
 
-  it('模型表来自分类为 model 的配置项（含分组）', async () => {
+  it('model table comes from config options categorized as model (including groups)', async () => {
     fake.scenario({ models: 'config' });
     const probe = await new AcpDriver('kimi', silentLogger, { locate: fake.locate }).probe();
     expect(probe.models.map((m) => [m.id, m.isDefault])).toEqual([
@@ -63,7 +63,7 @@ describe('AcpDriver.probe（假 ACP 智能体）', () => {
     ]);
   });
 
-  it('Cursor 的模型表走 cursor/list_available_models，取不到时退回会话里的', async () => {
+  it('Cursor\'s model table uses cursor/list_available_models; when unavailable, falls back to the one in the session', async () => {
     fake.scenario({ cursorModels: true, version: '2026.04.01' });
     const probe = await new AcpDriver('cursor', silentLogger, { locate: fake.locate }).probe();
     expect(probe.models.map((m) => m.id)).toEqual(['auto', 'cursor-fast']);
@@ -74,7 +74,7 @@ describe('AcpDriver.probe（假 ACP 智能体）', () => {
     expect(fallback.models.map((m) => m.id)).toEqual(['fake-pro', 'fake-flash']);
   });
 
-  it('没登录（session/new 回 -32000）：signed-out，给登录命令', async () => {
+  it('not signed in (session/new returns -32000): signed-out, gives the sign-in command', async () => {
     fake.scenario({ loggedIn: false });
     const probe = await new AcpDriver('gemini', silentLogger, { locate: fake.locate }).probe();
     expect(probe.state).toBe('signed-out');
@@ -86,7 +86,7 @@ describe('AcpDriver.probe（假 ACP 智能体）', () => {
     expect(probe.detail).toContain('API key is missing');
   });
 
-  it.skipIf(process.platform === 'win32')('探测结束时，临时进程派生的进程（cursor-agent 启动时跑的 rg 那样）一起结束', async () => {
+  it.skipIf(process.platform === 'win32')('when probing ends, processes spawned by a temporary process end too (like rg run by cursor-agent on startup)', async () => {
     fake.scenario({ loggedIn: false, cursorModels: true, version: '2026.04.17', helper: true });
     const helpers = () => fake.log().flatMap((e) => (e.kind === 'start' && e.helper ? [e.helper] : []));
     try {
@@ -106,7 +106,7 @@ describe('AcpDriver.probe（假 ACP 智能体）', () => {
     }
   });
 
-  it('没装：not-installed，说怎么装；太旧：outdated', async () => {
+  it('not installed: not-installed, says how to install; too old: outdated', async () => {
     fake.scenario({ installed: false });
     const missing = await new AcpDriver('kimi', silentLogger, { locate: fake.locate }).probe();
     expect(missing.state).toBe('not-installed');
@@ -119,7 +119,7 @@ describe('AcpDriver.probe（假 ACP 智能体）', () => {
     expect(sessionsStarted()).toBe(0);
   });
 
-  it('ACP 模式起不来：error，原文写进 detail', async () => {
+  it('ACP mode fails to start: error, original text written into detail', async () => {
     const broken = path.join(dir, 'broken');
     await fs.writeFile(broken, '#!/bin/sh\necho "unknown flag" >&2\nexit 3\n', { mode: 0o755 });
     const probe = await new AcpDriver('grok', silentLogger, {
@@ -130,8 +130,8 @@ describe('AcpDriver.probe（假 ACP 智能体）', () => {
   });
 });
 
-describe('ACP 预设', () => {
-  it('内置预设：启动参数、安装方式、覆盖变量', () => {
+describe('ACP presets', () => {
+  it('built-in presets: launch arguments, install method, override variables', () => {
     expect(acpDrivers(silentLogger).map((d) => d.id)).toEqual(['copilot', 'gemini', 'cursor', 'grok', 'kimi']);
     expect(Object.values(ACP_PRESETS).map((p) => [p.id, p.command, p.args.join(' ')])).toEqual([
       ['copilot', 'copilot', '--acp'],
@@ -167,7 +167,7 @@ describe('ACP 预设', () => {
     expect(new AcpDriver({ ...ACP_PRESETS.grok, verified: false }, silentLogger).verified).toBe(false);
   });
 
-  it('版本号取输出里的第一个', () => {
+  it('version number takes the first one in the output', () => {
     expect(parseAcpVersion('0.46.0\n')).toBe('0.46.0');
     expect(parseAcpVersion('2026.03.30-a1b2c3')).toBe('2026.03.30');
     expect(parseAcpVersion('kimi, version 0.11.0')).toBe('0.11.0');

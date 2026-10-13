@@ -31,7 +31,7 @@ describe('UsageLedger', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('没有文件时是空账本；追加串行、一行一条、0600；读回同样的记录', async () => {
+  it('no file means an empty ledger; appends are serial, one record per line, 0600; reads back the same records', async () => {
     const ledger = new UsageLedger(file);
     expect(await ledger.read()).toEqual([]);
     const records = Array.from({ length: 20 }, (_, i) => record({ durationMs: i }));
@@ -41,7 +41,7 @@ describe('UsageLedger', () => {
     expect(await new UsageLedger(file).read()).toEqual(records);
   });
 
-  it('坏的行（半行、认不出的字段）跳过并报告；验证的记录可以没有能力与模型', async () => {
+  it('bad lines (partial lines, unrecognized fields) are skipped and reported; verified records may lack capability and model', async () => {
     const warnings: Array<Record<string, unknown> | undefined> = [];
     const ledger = new UsageLedger(file, { warn: (_message, data) => warnings.push(data) });
     await ledger.append(record());
@@ -55,7 +55,7 @@ describe('UsageLedger', () => {
     expect(warnings).toEqual([{ skipped: 4 }]);
   });
 
-  it('读不了（不是文件不存在）时抛出，不当作空账本；写不进去时报告、不抛出', async () => {
+  it('throws when unreadable (not when the file is missing), rather than treating it as an empty ledger; reports without throwing when unable to write', async () => {
     await fs.mkdir(file, { recursive: true });
     const warnings: string[] = [];
     const ledger = new UsageLedger(file, { warn: (message) => warnings.push(message) });

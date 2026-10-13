@@ -12,8 +12,8 @@ const asset = (audio: boolean): AssetRecord =>
     revisions: { '1': { revision: '1', ...(audio ? { audio: { sampleRate: 48000, channels: 2 } } : {}) } },
   }) as unknown as AssetRecord;
 
-describe('分离音频', () => {
-  it('素材有音轨、自带的声音开着、恒定速率时才能分', () => {
+describe('detach audio', () => {
+  it('audio can be detached only when the media has an audio track, its own sound is on, and the rate is constant', () => {
     const item = videoItem('v1', 't1', 30, 90);
     expect(canDetachAudio(item, asset(true))).toBe(true);
     expect(canDetachAudio(item, asset(false))).toBe(false);
@@ -23,7 +23,7 @@ describe('分离音频', () => {
     expect(canDetachAudio(hold, asset(true))).toBe(false);
   });
 
-  it('一笔里新建音频轨、放一段同素材同时间的音频、关掉视频自带的声音', () => {
+  it('in one edit: create an audio track, place an audio clip of the same media at the same time, and mute the video\'s own sound', () => {
     const timeMap = { kind: 'linear' as const, sourceIn: { ticks: '45', timescale: 30 }, rate: { num: 2, den: 1 } };
     const item = videoItem('v1', 't1', 30, 91, {
       name: '开场',
@@ -56,7 +56,7 @@ describe('分离音频', () => {
     ]);
   });
 
-  it('包络照抄', () => {
+  it('envelope is copied as is', () => {
     const envelope = [{ percent: 0, volume: 1 }, { percent: 100, volume: 0.2 }];
     const item = videoItem('v1', 't1', 0, 30, { embeddedAudio: { enabled: true, volume: 1, envelope } });
     const insert = detachAudioOperations(sequence([track('t1', 'visual', 0)], [item]), item)[1] as { items: { mix: unknown }[] };

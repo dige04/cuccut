@@ -32,7 +32,7 @@ if (!engine || !ffprobe) console.warn('跳过任务保护的后台写入测试�
 const OPENAI_KEY = 'sk-test-ONLY-FOR-TESTS-task-protection-0123456789';
 const TERMINAL = new Set(['completed', 'failed', 'cancelled', 'interrupted', 'needs-reconciliation']);
 
-describe.skipIf(!engine || !ffprobe)('任务下的后台写入带着任务保护（真实引擎 + 假供应商 + 假 yt-dlp）', () => {
+describe.skipIf(!engine || !ffprobe)('background writes under a task carry task protection (real engine + fake provider + fake yt-dlp)', () => {
   let dir: string;
   let openai: FakeProviderServer;
   let fake: FakeYtDlp;
@@ -110,7 +110,7 @@ describe.skipIf(!engine || !ffprobe)('任务下的后台写入带着任务保护
 
   const video = () => runtime.videos.mirror(videoId)!.video;
 
-  it('生成任务的结果触碰保护：应用记为被拒、产物留作候选；用户 jobs.reconcile apply 照常写入；用户提交的不受限制', async () => {
+  it('generation task\'s result touches protection: applied and marked rejected, artifact kept as candidate; user\'s jobs.reconcile apply writes as usual; user-submitted is unrestricted', async () => {
     const { session } = await protectedTask();
     const before = video();
 
@@ -160,7 +160,7 @@ describe.skipIf(!engine || !ffprobe)('任务下的后台写入带着任务保护
     expect(done.applications!.map((a) => a.state)).toEqual(['committed']);
   });
 
-  it('智能体启动的从链接导入：导入一步触碰保护，流程停在那一步，下载的文件留着；用户启动的照常导入', async () => {
+  it('agent-initiated import from link: the import step touches protection, flow stops at that step, downloaded file kept; user-initiated imports as usual', async () => {
     const { session } = await protectedTask();
     const before = video();
 

@@ -24,7 +24,7 @@ beforeEach(() => {
   useTranscriptMode.setState({ mode: 'edit' });
 });
 
-describe('进文稿调起止', () => {
+describe('entering the script adjusts the start and end', () => {
   it('opens the transcript in cut mode, remembers where it came from and asks for one scroll', () => {
     openCutEntry('v_child', false);
     expect(useEditor.getState()).toMatchObject({ panelTab: 'transcript', panelHidden: false });
@@ -71,7 +71,7 @@ describe('进文稿调起止', () => {
   });
 });
 
-describe('回到<面板> 的文案', () => {
+describe('copy for returning to <panel>', () => {
   const initial = getLocale();
   const use = (locale: Locale) => {
     vi.stubEnv('CUCCUT_LOCALE', locale);

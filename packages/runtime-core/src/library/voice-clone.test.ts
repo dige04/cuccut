@@ -35,7 +35,7 @@ async function rejection(promise: Promise<unknown>): Promise<RpcError> {
   throw new Error('应该被拒绝');
 }
 
-describe.skipIf(!ffprobe)('音色克隆', () => {
+describe.skipIf(!ffprobe)('voice cloning', () => {
   let dir: string;
   let runtime: RunningRuntime;
   let client: CucCutClient;
@@ -136,7 +136,7 @@ describe.skipIf(!ffprobe)('音色克隆', () => {
     return settled(jobId);
   }
 
-  it('没有授权声明、没有克隆接口、没有覆盖 audio 的授权时拒绝，不建任务、不发请求', async () => {
+  it('rejects when there is no authorization statement, no cloning interface, or no grant covering audio; no task created, no request sent', async () => {
     await enable();
     const unconsented = await voice(false);
     const consent = await rejection(client.request('library.createVoiceClone', { id: unconsented.id, providerId: 'elevenlabs' }));
@@ -156,7 +156,7 @@ describe.skipIf(!ffprobe)('音色克隆', () => {
     expect(fake.requests).toEqual([]);
   });
 
-  it('建立：上传参考录音、记下克隆、结算授权；参考录音改了转为 stale；重新克隆替换并删掉旧的；删除', async () => {
+  it('create: uploads the reference recording, records the clone, settles the grant; a changed reference recording becomes stale; re-cloning replaces and deletes the old one; delete', async () => {
     await enable();
     const grantId = await grantAudio();
     const entry = await voice(true);
@@ -236,7 +236,7 @@ describe.skipIf(!ffprobe)('音色克隆', () => {
     expect(missing.code).toBe('not-found');
   });
 
-  it('删除了的音色留下的克隆：仍然能删，删完连墓碑一起清掉', async () => {
+  it('clones left behind by a deleted voice can still be deleted, and the tombstone is cleared along with them', async () => {
     await enable();
     await grantAudio();
     const entry = await voice(true);
@@ -251,7 +251,7 @@ describe.skipIf(!ffprobe)('音色克隆', () => {
     await expect(fs.stat(path.join(runtime.library.store.dir, 'voices', entry.id))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
-  it('供应商拒绝上传：任务失败，带 Provider 的错误码，不记克隆；授权按失败结算', async () => {
+  it('provider rejects upload: task fails with a Provider error code, no clone is recorded; the grant is settled as failed', async () => {
     await enable();
     const grantId = await grantAudio();
     const entry = await voice(true);
@@ -266,7 +266,7 @@ describe.skipIf(!ffprobe)('音色克隆', () => {
     expect(usage.grant.usage.reservedCalls).toBe(0);
   });
 
-  it('localOnly：不请求远端，只清记录', async () => {
+  it('localOnly: does not request the remote, only clears the record', async () => {
     await enable();
     await grantAudio();
     const entry = await voice(true);

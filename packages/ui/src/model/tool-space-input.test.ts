@@ -31,7 +31,7 @@ const videoRow = (entryId: string, patch: Partial<PickerRow> = {}): PickerRow =>
   ...patch,
 });
 
-describe('Space 选择器的候选', () => {
+describe('Space picker candidates', () => {
   const entries = [
     entry('clip'),
     entry('final', { kind: 'export', name: '成片.mp4', lastActivityAt: '2026-10-03T00:00:00.000Z' }),
@@ -42,13 +42,13 @@ describe('Space 选择器的候选', () => {
     entry('movie', { kind: 'video', name: 'movie' }),
   ];
 
-  it('只列工具收的种类，回收站里的不列；能选的在前，同组按最近活动', () => {
+  it('lists only the kinds the tool accepts, trash excluded; selectable ones first, within a group by most recent activity', () => {
     const rows = spaceRows('compress-video', entries, []);
     expect(rows.map((r) => r.entryId)).toEqual(['final', 'clip', 'busy']);
     expect(rows.at(-1)).toMatchObject({ eligible: false, reason: SPACE_INPUT_COPY.generating });
   });
 
-  it('视频行来自候选（带文稿与置灰原因），只给收视频的工具', () => {
+  it('video rows come from candidates (with script and greyed-out reasons), only given to tools that accept videos', () => {
     const videos = [videoRow('movie'), videoRow('raw', { eligible: false, reason: '还没有文稿' })];
     const rows = spaceRows('transcribe', entries, videos);
     expect(rows.map((r) => r.entryId)).toEqual(['final', 'movie', 'clip', 'voice', 'busy', 'raw']);
@@ -56,12 +56,12 @@ describe('Space 选择器的候选', () => {
     expect(spaceRows('extract-audio', entries, videos).some((r) => r.kind === 'video')).toBe(false);
   });
 
-  it('按名字搜索，不分大小写', () => {
+  it('searches by name, case-insensitive', () => {
     expect(spaceRows('transcribe', entries, [videoRow('Movie')], 'MOV').map((r) => r.entryId)).toEqual(['Movie']);
     expect(spaceRows('synthesize-speech', entries, [], 'note').map((r) => r.entryId)).toEqual(['notes']);
   });
 
-  it('条目本身的原因：生成中、缺失、失败、读不了的文档与字幕格式', () => {
+  it('item-level reasons: generating, missing, failed, unreadable document and subtitle format', () => {
     expect(entryReason(entry('a', { status: 'missing' }))).toBe(SPACE_INPUT_COPY.missing);
     expect(entryReason(entry('a', { status: 'failed' }))).toBe(SPACE_INPUT_COPY.failed);
     expect(entryReason(entry('a', { kind: 'document', fileName: 'a.pdf' }))).toBe(SPACE_INPUT_COPY.textOnly);
@@ -71,14 +71,14 @@ describe('Space 选择器的候选', () => {
     expect(entryReason(entry('a', {}, '2026-09-01T00:00:00.000Z'))).toBe(SPACE_INPUT_COPY.trashed);
   });
 
-  it('收的种类写成一句', () => {
+  it('the accepted kinds are written as one sentence', () => {
     expect(spaceKindsText('transcribe')).toBe('视频、视频素材、成片、音频');
     expect(spaceKindsText('generate-image')).toBe('');
   });
 });
 
-describe('条目按哪种输入提交', () => {
-  it('视频写进它，生成语音与文本生成的文档是素材，其余当文件', () => {
+describe('which input an item is submitted as', () => {
+  it('videos are written into it; generated speech and text-generated documents are assets; the rest are files', () => {
     expect(inputKindOf('transcribe', 'video')).toBe('video');
     expect(inputKindOf('transcribe', 'audio')).toBe('file');
     expect(inputKindOf('translate-subtitles', 'subtitle')).toBe('file');
@@ -88,8 +88,8 @@ describe('条目按哪种输入提交', () => {
   });
 });
 
-describe('条目 → 收它的工具', () => {
-  it('按目录顺序；回收站里的没有', () => {
+describe('item → tools that accept it', () => {
+  it('in catalog order; none from trash', () => {
     expect(toolsForEntry(entry('a', { kind: 'audio' }))).toEqual(['transcribe', 'extract-audio']);
     expect(toolsForEntry(entry('a', { kind: 'subtitle' }))).toEqual(['translate-subtitles', 'synthesize-speech', 'generate-text']);
     expect(toolsForEntry(entry('a', { kind: 'video' }))).toEqual(['transcribe', 'translate-subtitles', 'dub']);

@@ -51,7 +51,7 @@ const setup = async () => {
 };
 
 describe('createCommentsBridge', () => {
-  it('compose 把文档坐标换成视口坐标发给父窗口，批注框打开后兑现 opened', async () => {
+  it('compose converts document coordinates to viewport coordinates and sends them to the parent; fulfilled with opened once the comment box opens', async () => {
     const { parent, handlers, ctl } = await setup();
     vi.stubGlobal('scrollX', 10);
     vi.stubGlobal('scrollY', 100);
@@ -68,7 +68,7 @@ describe('createCommentsBridge', () => {
     }
   });
 
-  it('父窗口没打开批注框时兑现 opened:false 并结束 composing；area 会带上', async () => {
+  it('fulfilled with opened:false and ends composing when the parent doesn\'t open the comment box; area included', async () => {
     const { parent, handlers, ctl } = await setup();
     const result = ctl.compose('area:a:0.1,0.1,0.2,0.2', { x: 0, y: 0 }, { label: '区域', area: true });
     expect(parent.sent[0]).toMatchObject({ type: 'editor:compose', area: true });
@@ -78,7 +78,7 @@ describe('createCommentsBridge', () => {
     expect(handlers.composing).toHaveBeenLastCalledWith(false);
   });
 
-  it('父窗口一直不回应时超时按没打开处理', async () => {
+  it('times out as not opened when the parent never responds', async () => {
     vi.useFakeTimers();
     try {
       const { ctl, handlers } = await setup();
@@ -91,7 +91,7 @@ describe('createCommentsBridge', () => {
     }
   });
 
-  it('新的 compose 先把上一次当作没打开', async () => {
+  it('a new compose first treats the previous one as not opened', async () => {
     const { ctl, parent } = await setup();
     const first = ctl.compose('a', { x: 0, y: 0 }, { label: 'a' });
     ctl.compose('b', { x: 0, y: 0 }, { label: 'b' });
@@ -99,7 +99,7 @@ describe('createCommentsBridge', () => {
     expect(parent.sent.map(m => (m.type === 'editor:compose' ? m.requestId : m.type))).toEqual(['r1', 'r2']);
   });
 
-  it('标注模式：运行时与父窗口都能开关，变化通知对方；重复设置不重复通知', async () => {
+  it('annotation mode: runtime and parent can both toggle, changes notify the other side; repeated setting doesn\'t notify again', async () => {
     const { parent, handlers, ctl, bridge, layer } = await setup();
     ctl.enterMode();
     ctl.enterMode();
@@ -112,7 +112,7 @@ describe('createCommentsBridge', () => {
     expect(layer.clears()).toBeGreaterThan(0);
   });
 
-  it('父窗口给的标注交给运行时（active 为 false），打开标注模式时再给一次', async () => {
+  it('annotations from the parent handed to runtime (active false), given again when annotation mode is turned on', async () => {
     const { parent, handlers, ctl } = await setup();
     parent.deliver({ type: 'editor:threads', threads: [{ id: 't1', anchor: 'slide:a#p', n: 1 }] });
     expect(handlers.threads).toHaveBeenLastCalledWith([{ id: 't1', anchor: 'slide:a#p', active: false }]);
@@ -121,7 +121,7 @@ describe('createCommentsBridge', () => {
     expect(handlers.threads).toHaveBeenCalledWith([{ id: 't1', anchor: 'slide:a#p', active: false }]);
   });
 
-  it('设计系统的章节（section）随 compose 发出、随标注交回', async () => {
+  it('design system sections sent with compose, returned with annotations', async () => {
     const { parent, handlers, ctl } = await setup();
     void ctl.compose('comp-Button', { x: 0, y: 0 }, { label: 'Components › 组件 “Button”', section: 'components' });
     expect(parent.sent[0]).toMatchObject({ type: 'editor:compose', anchor: 'comp-Button', section: 'components' });
@@ -129,7 +129,7 @@ describe('createCommentsBridge', () => {
     expect(handlers.threads).toHaveBeenLastCalledWith([{ id: 't1', anchor: 'comp-Button', active: false, section: 'components' }]);
   });
 
-  it('placed 的位置按父窗口给的编号画；标注变了用上次的位置重画', async () => {
+  it('placed positions drawn with the parent\'s numbering; when annotations change, redrawn at the last positions', async () => {
     const { parent, layer, ctl } = await setup();
     const thread = { id: 't1', anchor: 'slide:a#p', n: 3 };
     parent.deliver({ type: 'editor:threads', threads: [thread] });
@@ -139,7 +139,7 @@ describe('createCommentsBridge', () => {
     expect(layer.renders.at(-1)).toEqual({ positions: { t1: { x: 5, y: 6 } }, threads: [] });
   });
 
-  it('reveal 转给运行时；dispose 后不再收消息，挂着的 compose 按没打开处理', async () => {
+  it('reveal forwarded to runtime; after dispose no messages received, pending compose treated as not opened', async () => {
     const { parent, handlers, ctl, bridge } = await setup();
     parent.deliver({ type: 'editor:reveal', id: 't9' });
     expect(handlers.reveal).toHaveBeenCalledWith('t9');
@@ -149,7 +149,7 @@ describe('createCommentsBridge', () => {
     expect(parent.listeners.size).toBe(0);
   });
 
-  it('customAnchors 之前就开了标注模式时，拿到 handlers 立刻同步', async () => {
+  it('when annotation mode was already on before customAnchors, handlers get synced immediately on receipt', async () => {
     const parent = fakeLink();
     const bridge = createCommentsBridge(parent.link, fakePins().pins);
     parent.deliver({ type: 'editor:set-mode', on: true });
@@ -160,8 +160,8 @@ describe('createCommentsBridge', () => {
   });
 });
 
-describe('postMessage 校验', () => {
-  it('编辑器消息：只放行列出的类型，字段类型与长度都核对', () => {
+describe('postMessage validation', () => {
+  it('editor messages: only listed types allowed, field types and lengths checked', () => {
     expect(readEditorMessage({ type: 'editor:ready', canEdit: false })).toEqual({ type: 'editor:ready', canEdit: false });
     expect(readEditorMessage({ type: 'editor:compose', requestId: 'r', anchor: 'a', point: { x: 1, y: 2 }, label: 'l', extra: 1 })).toEqual({
       type: 'editor:compose',
@@ -196,7 +196,7 @@ describe('postMessage 校验', () => {
     }
   });
 
-  it('父窗口消息：threads 只取 id、anchor、n 与 section', () => {
+  it('parent messages: threads takes only id, anchor, n and section', () => {
     expect(readHostMessage({ type: 'editor:threads', threads: [{ id: 't', anchor: 'a', n: 1, body: 'x' }] })).toEqual({
       type: 'editor:threads',
       threads: [{ id: 't', anchor: 'a', n: 1 }],
@@ -245,7 +245,7 @@ describe('domPinLayer', () => {
     return { doc: doc as unknown as Document, layers };
   }
 
-  it('n 不大于 0 的是父窗口为跳转临时给的，不画标记', () => {
+  it('n not greater than 0 is a temporary jump from the parent, no marker drawn', () => {
     const { doc, layers } = fakeDocument();
     domPinLayer(doc).render({ a: { x: 10, y: 20 }, tmp: { x: 30, y: 40 }, gone: { x: 0, y: 0 } }, [
       { id: 'a', anchor: 's1#t', n: 2 },

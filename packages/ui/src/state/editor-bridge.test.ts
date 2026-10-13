@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { flushEditors, registerEditorFlush, useEditorReveal } from './editor-bridge.ts';
 
 describe('editor-bridge', () => {
-  it('发送前只等这几份 deck 打开着的编辑器；返回没保存成的那几份的名字，注销后不再等', async () => {
+  it('before sending, waits only for the editors of these decks that are open; returns the names of those not saved; after unregistering, no longer waits', async () => {
     const calls: string[] = [];
     const offA = registerEditorFlush('a', { flush: async () => (calls.push('a'), true), name: () => '甲' });
     const offB = registerEditorFlush('b', { flush: async () => (calls.push('b'), false), name: () => '乙' });
@@ -21,7 +21,7 @@ describe('editor-bridge', () => {
     offA();
   });
 
-  it('跳转的要求按 deck 存，取走时只认同一次（再点一次是新的）', () => {
+  it('jump requests are stored per deck; when taken, only one is honored (clicking again is a new one)', () => {
     const { request } = useEditorReveal.getState();
     request('d1', 'n1', 's01#title');
     const first = useEditorReveal.getState().reveals.d1!;

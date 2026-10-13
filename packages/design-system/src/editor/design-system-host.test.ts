@@ -57,7 +57,7 @@ function fakeWindow(respond: (url: string) => Response, framed = false) {
 }
 
 describe('readSessionUserName', () => {
-  it('读 <base>__deck/session 的 userName，只读一次', async () => {
+  it('reads userName from <base>__deck/session, reads it only once', async () => {
     const { impl, calls } = fakeFetch(() => Response.json({ canEdit: true, userName: 'jim' }));
     const name = readSessionUserName('/design-system/g1/', impl);
     expect(await name()).toBe('jim');
@@ -66,7 +66,7 @@ describe('readSessionUserName', () => {
     expect(calls[0]!.init.cache).toBe('no-store');
   });
 
-  it('没有、不是字符串、HTTP 失败或请求失败时为空串', async () => {
+  it('empty string when missing, not a string, HTTP failure or request failure', async () => {
     for (const respond of [
       () => Response.json({ canEdit: true }),
       () => Response.json({ userName: 42 }),
@@ -81,7 +81,7 @@ describe('readSessionUserName', () => {
 });
 
 describe('createDesignSystemHost', () => {
-  it('不带标注、标注标签与 use；文件、用户与会话能力照转', async () => {
+  it('no annotations, annotation labels and use; file, user and session capabilities are passed through', async () => {
     const chat = { suggestPrompt: async () => {} };
     const { host, publish } = fakeSlidesHost({
       chat,
@@ -101,12 +101,12 @@ describe('createDesignSystemHost', () => {
     expect(await ds.user.name()).toBe('jim');
   });
 
-  it('没有会话（页面单独打开）时不给 chat', () => {
+  it('no chat when there is no session (page opened on its own)', () => {
     const { host } = fakeSlidesHost();
     expect('chat' in createDesignSystemHost(host, async () => '')).toBe(false);
   });
 
-  it('上传不用运行时给的文件名，只转交 type', async () => {
+  it('upload does not use the filename given by the runtime, only passes type', async () => {
     const { host, uploads } = fakeSlidesHost();
     const ds = createDesignSystemHost(host, async () => '');
     const file = new Blob(['<svg/>'], { type: 'image/svg+xml' });
@@ -125,7 +125,7 @@ describe('createDesignSystemHost', () => {
 });
 
 describe('installDesignSystemEditorHost', () => {
-  it('装上 globalThis.designSystemHost：路由相对页面所在目录，单独打开时没有 chat', async () => {
+  it('installs globalThis.designSystemHost: routes are relative to the page\'s directory; no chat when opened on its own', async () => {
     const { win, calls } = fakeWindow(url =>
       url.endsWith('__deck/session') ? Response.json({ canEdit: false, userName: 'jim' }) : Response.json({ version: 'v1', seq: 1, shas: {} }),
     );
@@ -139,7 +139,7 @@ describe('installDesignSystemEditorHost', () => {
     expect(calls.map(c => c.url)).toEqual([base + '__deck/session', base + '__deck/session', base + '__deck/publish']);
   });
 
-  it('在 CucCut 的 iframe 里时有 chat（提示交给父窗口）；运行时不调 comments，标注交给目标层', async () => {
+  it('inside CucCut\'s iframe there is chat (the prompt is handed to the parent window); the runtime does not call comments, annotations go to the target layer', async () => {
     const { win, posted, types } = fakeWindow(() => Response.json({ canEdit: true }), true);
     installDesignSystemEditorHost({ win });
     const ds = win.designSystemHost!;

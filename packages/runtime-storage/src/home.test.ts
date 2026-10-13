@@ -4,8 +4,8 @@ import { defaultSessionsDir, resolveRuntimeHome } from './home.ts';
 
 const user = path.resolve('/Users/me');
 
-describe('无项目会话的工作目录（架构设计 §3.10）', () => {
-  it('默认 Home 用系统给应用的数据目录；不论有没有显式给出 CUCCUT_HOME（桌面端拉起时总会给）都一样', () => {
+describe('working directory for sessions without a project (architecture design §3.10)', () => {
+  it('default Home uses the app data directory provided by the system; same whether or not CUCCUT_HOME is explicitly given (the desktop app always passes it)', () => {
     const implicit = resolveRuntimeHome({}, 'darwin', user);
     const explicit = resolveRuntimeHome({ CUCCUT_HOME: path.join(user, '.cuccut') }, 'darwin', user);
     expect(implicit.scratchDir).toBe(path.join(user, 'Library', 'Application Support', 'CucCut', 'Sessions'));
@@ -14,7 +14,7 @@ describe('无项目会话的工作目录（架构设计 §3.10）', () => {
     expect(implicit.legacyScratchDir).toBe(path.join(user, '.cuccut', 'scratch'));
   });
 
-  it('别的 Home（开发、测试）跟着放到 <home>/scratch；CUCCUT_SESSIONS_DIR 优先', () => {
+  it('other Homes (development, testing) go under <home>/scratch; CUCCUT_SESSIONS_DIR takes precedence', () => {
     const dev = resolveRuntimeHome({ CUCCUT_HOME: path.join(user, 'repo', '.dev', 'cuccut-home') }, 'darwin', user);
     expect(dev.scratchDir).toBe(path.join(user, 'repo', '.dev', 'cuccut-home', 'scratch'));
     expect(dev.legacyScratchDir).toBeNull();
@@ -23,7 +23,7 @@ describe('无项目会话的工作目录（架构设计 §3.10）', () => {
     expect(custom.legacyScratchDir).toBe(path.join(user, '.cuccut', 'scratch'));
   });
 
-  it('各平台的应用数据目录', () => {
+  it('app data directories per platform', () => {
     expect(defaultSessionsDir({ LOCALAPPDATA: 'C:\\Users\\me\\AppData\\Local' }, 'win32', 'C:\\Users\\me')).toBe(
       'C:\\Users\\me\\AppData\\Local\\CucCut\\Sessions',
     );

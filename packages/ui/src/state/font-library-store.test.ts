@@ -76,8 +76,8 @@ beforeEach(() => {
   useJobs.setState({ ready: true, jobs: [] });
 });
 
-describe('字体库的状态', () => {
-  it('整表按页取，次序照 Runtime 的；取过不再取', async () => {
+describe('font library state', () => {
+  it('the whole table is fetched by page, in the Runtime\'s order; not fetched again once fetched', async () => {
     const all = Array.from({ length: 1200 }, (_, i) => status(`Family ${i}`));
     const client = fakeClient({
       'fonts.catalogue': (p) => ({
@@ -95,7 +95,7 @@ describe('字体库的状态', () => {
     expect(state.statuses['family 1199']!.family).toBe('Family 1199');
   });
 
-  it('选中还没下载的族开始下载并记进最近用过；已经有的不下载', async () => {
+  it('selecting a family not yet downloaded starts the download and records it in recently used; ones already present are not downloaded', async () => {
     useFontLibrary.setState({
       statuses: { lobster: status('Lobster'), inter: status('Inter', { state: 'built-in', source: 'built-in' }) },
       order: ['inter', 'lobster'],
@@ -114,7 +114,7 @@ describe('字体库的状态', () => {
     expect(useFontRecent.getState().recent).toEqual(['Lobster', 'Inter']);
   });
 
-  it('打开视频：清点并按设置下载，字体条记下要下载的一批；跳过当前这个就取消它的任务', async () => {
+  it('opening a video: inventory and download per settings, the font bar records the batch to download; skipping the current one cancels its task', async () => {
     const usage: FontsUsageResult = {
       fallback: 'Noto Sans SC',
       started: ['Lobster'],
@@ -155,7 +155,7 @@ describe('字体库的状态', () => {
     expect(useFontLibrary.getState().statuses['lobster']!.error!.code).toBe('CANCELLED');
   });
 
-  it('下载任务结束时按族重新取状态', async () => {
+  it('when a download task finishes, refetch the status per family', async () => {
     const client = fakeClient({
       'fonts.catalogue': () => ({ total: 1, families: [status('Lobster', { state: 'downloaded' })], catalogueDate: '' }),
     });
@@ -170,7 +170,7 @@ describe('字体库的状态', () => {
     expect(useFontLibrary.getState().statuses['lobster']!.state).toBe('downloaded');
   });
 
-  it('导出离开下载阶段时，重新取它在下的族（导出自己的下载没有 fontDownload 任务）', async () => {
+  it('when export leaves the download stage, refetch the families it is using (export\'s own downloads have no fontDownload task)', async () => {
     const client = fakeClient({
       'fonts.catalogue': () => ({ total: 1, families: [status('Long Cang', { state: 'downloaded' })], catalogueDate: '' }),
     });
@@ -189,7 +189,7 @@ describe('字体库的状态', () => {
     expect(useFontLibrary.getState().statuses['long cang']!.state).toBe('downloaded');
   });
 
-  it('导出开始与结束时重取已下载列表（导出钉住的字体标「导出在用」，结束后解除）', async () => {
+  it('the downloaded list is refetched when export starts and ends (fonts pinned by export are marked \'in use by export\' and released when it ends)', async () => {
     const lobster: DownloadedFontFace = {
       family: 'Lobster',
       weight: 400,
@@ -226,7 +226,7 @@ describe('字体库的状态', () => {
     expect(useFontLibrary.getState().downloaded!.inUse).toEqual([]);
   });
 
-  it('导出面板的清点带上「烧录字幕」：不烧时只给字幕用的族不在清单里；各记一份，晚到的回应不串，整部视频的清点不动', async () => {
+  it('the export panel\'s inventory includes \'burn in subtitles\': when not burning, families used only by subtitles are not in the list; each keeps its own record, late responses do not cross over, the whole-video inventory is unchanged', async () => {
     const used = (family: string): FontsUsageResult['families'][number] => ({
       family,
       faces: [{ weight: 400, italic: false }],
@@ -257,7 +257,7 @@ describe('字体库的状态', () => {
     expect(usage['v1']).toBe(whole);
   });
 
-  it('样张：本机字体用它自己，目录里的取子集装进字体表，取不到就是纯文字', async () => {
+  it('specimen: local fonts use their own, catalog ones are subset into the font table, and if not obtainable it is plain text', async () => {
     useFontLibrary.setState({
       statuses: {
         lobster: status('Lobster'),

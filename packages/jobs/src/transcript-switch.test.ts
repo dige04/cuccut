@@ -138,15 +138,15 @@ const replaceOf = (translations: TranscriptReplace['translations'] = 'carry'): T
 const newSpeechOp = (): PutDocument =>
   ({ type: 'putDocument', kind: 'speech', name: '转写', body: structuredClone(nextSpeech) }) as PutDocument;
 
-describe('换用文稿', () => {
-  it('规范化文本：去掉标点与空白，NFKC，大小写折叠', () => {
+describe('switch transcript', () => {
+  it('normalised text: strip punctuation and whitespace, NFKC, case folding', () => {
     expect(normalizeText('Hello, World!')).toBe(normalizeText(' hello world'));
     expect(normalizeText('ＡＢＣ　１２')).toBe('abc12');
     expect(normalizeText('你好，世界。')).toBe('你好世界');
     expect(normalizeText('Straße')).not.toBe(normalizeText('Strasse!x'));
   });
 
-  it('句子配对：按素材时钟的重叠贪心配对，重叠不到较短一句的一半不配；两边的刻度各算各的', () => {
+  it('sentence pairing: greedy pairing by overlap on the media clock; sentences overlapping less than half of the shorter one are not paired; each side\'s timescale is computed separately', () => {
     const prev = [
       { start: 0, end: 1000 },
       { start: 1000, end: 2000 },
@@ -164,7 +164,7 @@ describe('换用文稿', () => {
     ]);
   });
 
-  it('一笔事务：文稿的新版本在前；译文、字幕、配音计划结转，换行与分段按时间重锚，影响记在文稿扩展里', async () => {
+  it('one transaction: the new transcript version comes first; translations, subtitles and dub plans carry over, line breaks and segments are re-anchored by time, and the impact is recorded in the transcript extension', async () => {
     const { operations, impact } = await planTranscriptSwitch(fakeVideos(), {
       videoId: 'vid_1',
       replace: replaceOf(),
@@ -232,7 +232,7 @@ describe('换用文稿', () => {
     expect(dub.units[1]).not.toHaveProperty('actualSamples');
   });
 
-  it('translations: discard：译文与随它的配音计划不动，只换文稿、重切派生自文稿的字幕', async () => {
+  it('translations: discard: translations and their dub plans stay unchanged; only the transcript is replaced and subtitles derived from it are re-split', async () => {
     const { operations, impact } = await planTranscriptSwitch(fakeVideos(), {
       videoId: 'vid_1',
       replace: replaceOf('discard'),
@@ -243,7 +243,7 @@ describe('换用文稿', () => {
     expect(impact).toMatchObject({ translations: [], dubs: [] });
   });
 
-  it('应用前文稿又被改过：以 TRANSCRIPT_EDITED 拒绝；文稿不在时是过期的输入', async () => {
+  it('transcript edited again before applying: rejected with TRANSCRIPT_EDITED; a missing transcript is stale input', async () => {
     const edited = speech([
       ['w0', 0, 400, 'Hello'],
       ['w1', 500, 900, ' friend.'],

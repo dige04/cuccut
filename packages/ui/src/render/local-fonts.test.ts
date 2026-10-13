@@ -36,7 +36,7 @@ function server(requests: string[], whole = false) {
   };
 }
 
-test('按 face 要本机字体：只按区间取这个 face 的表拼起来；几个查询落到同一个 face 只给一次，找不到的不给', async () => {
+test('requesting local fonts by face: only fetches this face\'s table by range and concatenates it; several queries resolving to the same face are given once; those not found are not given', async () => {
   const asked: FontFaceQuery[][] = [];
   const regular = { family: 'PingFang SC', weight: 400, italic: false };
   const medium = { family: 'PingFang SC', weight: 500, italic: false };
@@ -57,7 +57,7 @@ test('按 face 要本机字体：只按区间取这个 face 的表拼起来；�
   expect(asked.at(-1)).toEqual([regular]);
 });
 
-test('一次最多问 32 个 face，多的分几批问', async () => {
+test('at most 32 faces are asked at once; more are asked in several batches', async () => {
   const sizes: number[] = [];
   const source = runtimeFonts(async (faces) => (sizes.push(faces.length), { faces: [], missing: [] }), server([]));
   const queries = Array.from({ length: 70 }, (_, i) => ({ family: `F${i}`, weight: 400, italic: false }));
@@ -65,7 +65,7 @@ test('一次最多问 32 个 face，多的分几批问', async () => {
   expect(sizes).toEqual([32, 32, 6]);
 });
 
-test('区间不被认（回了整个文件）或取不到时整批失败，不读整个文件；之后还能再要', async () => {
+test('if the range is not recognized (the whole file is returned) or cannot be fetched, the whole batch fails without reading the whole file; later requests still work', async () => {
   const query = { family: 'X', weight: 400, italic: false };
   const requests: string[] = [];
   let whole = true;
@@ -85,7 +85,7 @@ test('区间不被认（回了整个文件）或取不到时整批失败，不�
   await expect(notFound.load([query])).rejects.toThrow('404');
 });
 
-test('先到的 face 经 onPartial 先给（不等同一批里在下载的），最后的结果里不再重复', async () => {
+test('faces that arrive first are given first via onPartial (not waiting for downloads in the same batch), and are not repeated in the final result', async () => {
   const local = { family: 'PingFang SC', weight: 400, italic: false };
   const lobster = { family: 'Lobster', weight: 400, italic: false };
   const fileFace = (query: FontFaceQuery, fileName: string) => ({ ...face(query), file: handle(fileName, FILE.length) });

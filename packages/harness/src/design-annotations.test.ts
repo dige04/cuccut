@@ -29,11 +29,11 @@ const note = (over: Partial<DesignAnnotation> = {}): DesignAnnotation => ({
 });
 
 describe('withDesignAnnotations', () => {
-  it('没有标注时原样返回', () => {
+  it('returns unchanged when there are no annotations', () => {
     expect(withDesignAnnotations('改一下', [])).toBe('改一下');
   });
 
-  it('每份设计稿一段，按第一次出现的顺序；编号是这条消息设计稿标注里的序号；多行批注缩进对齐', () => {
+  it('one section per design, in order of first appearance; the numbers are the order within this message\'s design annotations; multi-line comments are indented to align', () => {
     const text = withDesignAnnotations('按标注改', [
       { annotation: note(), canvasPath: 'poster/' },
       { annotation: note({ label: 'Area over Main', detail: undefined, area: true, text: '留白太多\n往上挪' }), canvasPath: '/abs/other/' },
@@ -72,11 +72,11 @@ const systemNote = (over: Partial<DesignSystemAnnotation> = {}): DesignSystemAnn
 });
 
 describe('withDesignSystemAnnotations', () => {
-  it('没有标注时原样返回', () => {
+  it('returns unchanged when there are no annotations', () => {
     expect(withDesignSystemAnnotations('改一下', [])).toBe('改一下');
   });
 
-  it('每套设计系统一段，按第一次出现的顺序；编号是这条消息设计系统标注里的序号；多行批注缩进对齐', () => {
+  it('one section per design system, in order of first appearance; the numbers are the order within this message\'s design system annotations; multi-line comments are indented to align', () => {
     const text = withDesignSystemAnnotations('按标注改', [
       { annotation: systemNote(), systemPath: 'spectrum-2/' },
       { annotation: systemNote({ label: 'Colors › token “x”', detail: undefined, text: '改深一点\n对比度不够' }), systemPath: '/abs/ember/' },
@@ -226,8 +226,8 @@ afterEach(async () => {
   await fs.rm(dir, { recursive: true, force: true });
 });
 
-describe('send 与 steer 带设计稿标注', () => {
-  it('设计稿标注段排在幻灯片标注段之后，用户消息上原样记一份（不带解析出的路径）', async () => {
+describe('send and steer include design annotations', () => {
+  it('the design annotation section comes after the slide annotation section, and a copy is recorded on the user message as-is (without the resolved paths)', async () => {
     const conversation = await harness.createConversation({ title: '改设计稿' });
     const designAnnotations: ResolvedDesignAnnotation[] = [{ annotation: note({ canvas: { conversationId: conversation.id, path: 'poster' } }), canvasPath: 'poster/' }];
     const slideAnnotations: ResolvedSlideAnnotation[] = [
@@ -248,7 +248,7 @@ describe('send 与 steer 带设计稿标注', () => {
     expect(message).toMatchObject({ text: '按标注改', designAnnotations: [designAnnotations[0]!.annotation] });
   });
 
-  it('没带标注的消息不写这个字段；插话带的标注同样附上、记下', async () => {
+  it('messages without annotations do not write this field; annotations carried by an interjection are attached and recorded the same way', async () => {
     const conversation = await harness.createConversation({ title: '插话' });
     await harness.send({ conversationId: conversation.id, text: '做一份设计稿', commandId: newId('cmd') });
     const session = await until(() => driver.sessions.at(-1));
@@ -269,8 +269,8 @@ describe('send 与 steer 带设计稿标注', () => {
   });
 });
 
-describe('send 与 steer 带设计系统标注', () => {
-  it('设计系统标注段排在设计稿标注段之后，用户消息上原样记一份（不带解析出的路径）', async () => {
+describe('send and steer include design system annotations', () => {
+  it('the design system annotation section comes after the design annotation section, and a copy is recorded on the user message as-is (without the resolved paths)', async () => {
     const conversation = await harness.createConversation({ title: '改设计系统' });
     const designAnnotations: ResolvedDesignAnnotation[] = [{ annotation: note({ canvas: { conversationId: conversation.id, path: 'poster' } }), canvasPath: 'poster/' }];
     const designSystemAnnotations: ResolvedDesignSystemAnnotation[] = [
@@ -288,7 +288,7 @@ describe('send 与 steer 带设计系统标注', () => {
     expect(message).toMatchObject({ text: '按标注改', designSystemAnnotations: [designSystemAnnotations[0]!.annotation] });
   });
 
-  it('没带标注的消息不写这个字段；插话带的标注同样附上、记下', async () => {
+  it('messages without annotations do not write this field; annotations carried by an interjection are attached and recorded the same way', async () => {
     const conversation = await harness.createConversation({ title: '插话' });
     await harness.send({ conversationId: conversation.id, text: '做一套设计系统', commandId: newId('cmd') });
     const session = await until(() => driver.sessions.at(-1));
@@ -309,8 +309,8 @@ describe('send 与 steer 带设计系统标注', () => {
   });
 });
 
-describe('recordDesignCreated（docs/design/canvas §7.3）', () => {
-  it('同一份设计稿只有一条：再次通过时更新标题、画板数与任务，id 不变；别的设计稿另起一条', async () => {
+describe('recordDesignCreated (docs/design/canvas §7.3)', () => {
+  it('one entry per design: when it passes again, the title, artboard count and task are updated and the id stays the same; other designs get their own entry', async () => {
     const conversation = await harness.createConversation({ title: '设计稿卡片' });
     const target = { conversationId: conversation.id, path: 'poster' };
     const cards = () => harness.getConversation(conversation.id).items.filter((item) => item.kind === 'design-created');
@@ -326,8 +326,8 @@ describe('recordDesignCreated（docs/design/canvas §7.3）', () => {
   });
 });
 
-describe('recordDesignSystemCreated（docs/design/canvas §10.5）', () => {
-  it('同一个设计系统只有一条：再次通过时更新标题与任务，id 不变；别的设计系统另起一条', async () => {
+describe('recordDesignSystemCreated (docs/design/canvas §10.5)', () => {
+  it('one entry per design system: when it passes again, the title and task are updated and the id stays the same; other design systems get their own entry', async () => {
     const conversation = await harness.createConversation({ title: '设计系统卡片' });
     const target = { conversationId: conversation.id, path: 'acme' };
     const cards = () => harness.getConversation(conversation.id).items.filter((item) => item.kind === 'design-system-created');

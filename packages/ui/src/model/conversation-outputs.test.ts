@@ -70,7 +70,7 @@ const change = (
 });
 
 describe('conversationOutputs', () => {
-  it('内部检查导出不从普通文件扫描绕回产物列表；按来源记录或真实路径匹配，不按名字与时长猜测', () => {
+  it('internal check exports are not pulled back from a plain file scan into the outputs list; matched by recorded source or real path, not guessed by name and duration', () => {
     for (const cwd of ['/work/c1', 'C:\\work\\c1']) {
       const source = { projectId: null, conversationId: 'c1' };
       const preview = {
@@ -99,7 +99,7 @@ describe('conversationOutputs', () => {
     }
   });
 
-  it('项目会话：同一个视频改几次只列一项，取最近一次的时长；名字以 Space 里的为准', () => {
+  it('project session: the same video edited several times is listed once, using the duration of the latest; the name follows the one in Space', () => {
     const items = [
       change('x1', 'm1', '2026-10-02T01:00:00.000Z', { projectId: 'p1', path: '预告' }),
       change('x2', 'm2', '2026-10-02T02:00:00.000Z', { projectId: 'p1', path: '花絮' }),
@@ -114,13 +114,13 @@ describe('conversationOutputs', () => {
     expect(outputs[0]!.video).toEqual({ projectId: 'p1', path: '预告' });
   });
 
-  it('进了回收站的视频不列', () => {
+  it('videos in the trash are not listed', () => {
     const items = [change('x1', 'm1', '2026-10-02T01:00:00.000Z', { projectId: 'p1', path: '预告' })];
     const entries = [entry('e1', { kind: 'video', relPath: '预告' }, '2026-10-02T02:00:00.000Z')];
     expect(conversationOutputs({ id: 'c1', projectId: 'p1' }, items, entries)).toEqual([]);
   });
 
-  it('不属于项目的会话：再加上自己工作目录里的文件，视频不重复', () => {
+  it('sessions not in a project: files in their own working directory are added, the video not duplicated', () => {
     const source = { projectId: null, conversationId: 'c1' };
     const items = [change('x1', 'm1', '2026-10-02T03:00:00.000Z', { conversationId: 'c1', path: '样片' })];
     const entries = [
@@ -134,7 +134,7 @@ describe('conversationOutputs', () => {
     expect(outputs[1]!.video).toBeNull();
   });
 
-  it('记下产生它的任务：视频取最近一次修改，文件取改到它的文件改动步骤（绝对路径或相对路径都认）', () => {
+  it('record the task that produced it: video takes the latest modification, file takes the file-change step that changed it (absolute or relative path both recognized)', () => {
     const source = { projectId: null, conversationId: 'c1' };
     const items: TimelineItem[] = [
       { ...change('x1', 'm1', '2026-10-02T01:00:00.000Z', { conversationId: 'c1', path: '样片' }), taskId: 't1' },
@@ -151,7 +151,7 @@ describe('conversationOutputs', () => {
     expect(Object.fromEntries(outputs.map((o) => [o.id, o.taskId]))).toEqual({ m1: 't2', a: 't1', b: 't2', gone: null });
   });
 
-  it('智能体新建的视频（video-created）与它提交的 Job 指向的视频也列；别的会话的 Job 不算', () => {
+  it('videos created by the agent (video-created) and videos pointed to by Jobs it submitted are listed too; Jobs from other sessions don\'t count', () => {
     const items: TimelineItem[] = [
       {
         kind: 'video-created',
@@ -182,7 +182,7 @@ describe('conversationOutputs', () => {
     ]);
   });
 
-  it('智能体做好的幻灯片（slides-created）：一份一项，标题、页数与任务取回执；Space 有条目时用条目 id，工作目录里不重复', () => {
+  it('slides made by the agent (slides-created): one item each, title, page count and task taken from the receipt; when Space has an entry, use the entry id, no duplicate in the working directory', () => {
     const source = { projectId: null, conversationId: 'c1' };
     const receipt = (id: string, path: string, title: string): TimelineItem => ({
       kind: 'slides-created',
@@ -207,7 +207,7 @@ describe('conversationOutputs', () => {
     expect(outputs.every((o) => o.kind === 'slides' && o.video === null)).toBe(true);
   });
 
-  it('智能体做好的设计稿（design-created）：同幻灯片，画板数取回执；Space 有条目时用条目 id，工作目录里不重复', () => {
+  it('design drafts made by the agent (design-created): same as slides, artboard count from the receipt; when Space has an entry, use the entry id, no duplicate in the working directory', () => {
     const source = { projectId: null, conversationId: 'c1' };
     const items: TimelineItem[] = [
       {
@@ -232,7 +232,7 @@ describe('conversationOutputs', () => {
     expect(outputs.every((o) => o.kind === 'design' && o.video === null && !o.slides)).toBe(true);
   });
 
-  it('智能体做好的设计系统（design-system-created）：同设计稿，没有计数；Space 有条目时用条目 id，工作目录里不重复', () => {
+  it('design systems made by the agent (design-system-created): same as design drafts, no count; when Space has an entry, use the entry id, no duplicate in the working directory', () => {
     const source = { projectId: null, conversationId: 'c1' };
     const items: TimelineItem[] = [
       {
@@ -267,7 +267,7 @@ describe('conversationOutputs', () => {
     expect(outputs.every((o) => o.video === null && !o.slides && !o.design)).toBe(true);
   });
 
-  it('limit：会话头最多 30 项，按回复分组时可以不截断', () => {
+  it('limit: session header shows at most 30 items; can be untruncated when grouped by reply', () => {
     const source = { projectId: null, conversationId: 'c1' };
     const entries = Array.from({ length: 35 }, (_, i) => entry(`e${i}`, { source }));
     expect(conversationOutputs({ id: 'c1', projectId: null }, [], entries)).toHaveLength(30);
@@ -287,7 +287,7 @@ describe('outputsByMessage', () => {
     taskId,
   });
 
-  it('归到任务最后一条显示出来的回复下面，按先后排；没有回复的任务、认不出任务的不挂', () => {
+  it('attached under the reply shown last in the task, in order; tasks with no reply and tasks not recognized are not attached', () => {
     const items: TimelineItem[] = [
       reply('r1', 't1', '先看看'),
       reply('r2', 't1', '改好了'),
@@ -307,7 +307,7 @@ describe('outputsByMessage', () => {
     expect(byMessage.get('r4')!.map((o) => o.id)).toEqual(['second']);
   });
 
-  it('流式中的空回复也算（回复写完前产物先挂在它下面）', () => {
+  it('empty replies during streaming also count (outputs are attached under it before the reply is finished)', () => {
     const streaming: TimelineItem = { kind: 'agent-message', id: 'r2', createdAt: '2026-10-02T00:00:00.000Z', taskId: 't1', text: '', streaming: true };
     const items: TimelineItem[] = [reply('r1', 't1', '好'), streaming];
     expect([...outputsByMessage(items, [output('a', 't1', '2026-10-02T01:00:00.000Z')]).keys()]).toEqual(['r2']);
@@ -328,12 +328,12 @@ describe('outputSourceMissing', () => {
   });
   const space = { ready: true, scanning: false, issues: [] };
 
-  it('Space 扫完、来源扫描完整、却没有这个视频的条目：找不到源文件', () => {
+  it('Space scan finished, source scan complete, but no entry for this video: source file not found', () => {
     expect(outputSourceMissing(video(), space)).toBe(true);
     expect(outputSourceMissing(video({ video: { conversationId: 'c1', path: '样片' } }), space)).toBe(true);
   });
 
-  it('有条目、还在扫、扫描不完整、不是视频时都不下结论', () => {
+  it('when there is an entry, still scanning, scan incomplete, or not a video: no conclusion drawn', () => {
     expect(outputSourceMissing(video({ entry: entry('e1', { kind: 'video' }) }), space)).toBe(false);
     expect(outputSourceMissing(video(), { ...space, ready: false })).toBe(false);
     expect(outputSourceMissing(video(), { ...space, scanning: true })).toBe(false);
@@ -376,7 +376,7 @@ describe('posterFrame', () => {
     rate: { num: 1, den: 1 },
   });
 
-  it('取根序列上最早、轨道可见、启用着、有画面的视频片段开头那一帧', () => {
+  it('takes the first frame of the earliest visible, enabled video clip with picture on the root sequence', () => {
     const items = [
       clip('later', 'v1', 60, 'movie', linear(9)),
       clip('noVideo', 'v1', 0, 'sound', linear(1)),
@@ -387,7 +387,7 @@ describe('posterFrame', () => {
     expect(posterFrame(snapshot(items, ['v2']))).toEqual({ asset: { id: 'movie', revision: '1' }, at: 4 });
   });
 
-  it('没有视频片段时为 null', () => {
+  it('null when there is no video clip', () => {
     expect(posterFrame(snapshot([]))).toBeNull();
   });
 });

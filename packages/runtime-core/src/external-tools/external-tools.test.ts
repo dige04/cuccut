@@ -158,7 +158,7 @@ async function filesUnder(dir: string): Promise<string[]> {
   return out;
 }
 
-describe('受管外部工具（假下载来源 + 假 yt-dlp）', () => {
+describe('managed external tools (fake download source + fake yt-dlp)', () => {
   let side: Side | undefined;
 
   beforeEach(async () => {
@@ -170,7 +170,7 @@ describe('受管外部工具（假下载来源 + 假 yt-dlp）', () => {
     side = undefined;
   });
 
-  it('状态、同意、校验失败与安装成功、撤回之后流程拒绝、严格离线', async () => {
+  it('status, consent, verification failure and install success, flow rejected after withdrawal, strict offline', async () => {
     const s = side!;
     const listed = await s.client.request('externalTools.list', {});
     expect(listed.tools.map((t) => [t.name, t.state])).toEqual([
@@ -248,7 +248,7 @@ describe('受管外部工具（假下载来源 + 假 yt-dlp）', () => {
     await expect(fs.stat(installed.path!)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
-  it('本机浏览器的 Cookie 库：只给支持的浏览器、名字与时间，不给路径；带上主机的平台', async () => {
+  it('local browser cookie store: only supported browsers, names and times are given, not paths; includes the host\'s platform', async () => {
     const s = side!;
     // Looks at this machine's real home directory (only whether files exist). Which browsers are present varies by machine; the detailed lookup rules are tested in @cuccut/jobs with a temp directory.
     const { platform, browsers } = await s.client.request('externalTools.cookieBrowsers', {});
@@ -260,7 +260,7 @@ describe('受管外部工具（假下载来源 + 假 yt-dlp）', () => {
     await expect(s.client.request('externalTools.cookieBrowsers', { name: 'yt-dlp' } as never)).rejects.toMatchObject({ code: 'invalid-request' });
   });
 
-  it('指定路径：不能运行的拒绝，过旧的报告需要更新、流程拒绝；清除后回到受管副本之外的来源', async () => {
+  it('specified path: unrunnable paths are rejected; outdated ones report needing an update and the flow is rejected; after clearing, falls back to sources other than the managed copy', async () => {
     const s = side!;
     const notExe = path.join(s.dir, 'not-exe');
     await fs.writeFile(notExe, 'hello');
@@ -283,7 +283,7 @@ describe('受管外部工具（假下载来源 + 假 yt-dlp）', () => {
     expect((await s.client.request('externalTools.setPath', { name: 'yt-dlp', path: null })).tool.state).toBe('missing');
   });
 
-  it('内置清单没有可信的 sha256：同意了也不下载；PATH 只有空目录时找不到系统里的 yt-dlp', async () => {
+  it('built-in manifest has no trusted sha256: does not download even with consent; when PATH has only empty directories, the system yt-dlp is not found', async () => {
     const s = side!;
     const service = new ExternalToolService({
       toolsDir: path.join(s.dir, 'builtin-tools'),
@@ -303,7 +303,7 @@ describe('受管外部工具（假下载来源 + 假 yt-dlp）', () => {
     });
   });
 
-  it('Windows：PATH 里先找到的是 .cmd 时报不可用（不经 cmd.exe 执行），指定路径也不收脚本', async () => {
+  it('Windows: when the first match on PATH is a .cmd, it is reported unavailable (not run through cmd.exe), and specified paths do not accept scripts either', async () => {
     const s = side!;
     const bin = path.join(s.dir, 'win-bin');
     await fs.mkdir(bin, { recursive: true });
@@ -326,7 +326,7 @@ describe('受管外部工具（假下载来源 + 假 yt-dlp）', () => {
     await expect(service.setPath({ name: YT_DLP, path: cmd })).rejects.toMatchObject({ details: { code: 'TOOL_UNAVAILABLE' } });
   });
 
-  it.skipIf(!engine || !hasFfprobe)('下载之后导入视频：来源脱敏，视频目录、任务记录与 Runtime Home 里没有原始链接', async () => {
+  it.skipIf(!engine || !hasFfprobe)('import video after download: source is redacted; the original link does not appear in the video directory, task records or Runtime Home', async () => {
     const s = side!;
     const install = await s.client.request('externalTools.install', { name: 'yt-dlp', consent: true });
     expect((await settledJob(s, install.jobId)).state).toBe('completed');
@@ -366,7 +366,7 @@ describe('受管外部工具（假下载来源 + 假 yt-dlp）', () => {
     expect((await s.fake.calls()).some((c) => c.argv?.at(-1) === raw)).toBe(true);
   });
 
-  it('智能体：需要安装时按 high 确认并提交安装；装好之后按 command 确认下载；撤回之后按 high 重新同意', async () => {
+  it('agent: when installation is needed, confirms at high and submits the install; after installing, confirms the download at command; after withdrawal, re-consents at high', async () => {
     const s = side!;
     const { project } = await s.client.request('projects.create', { name: '智能体导入' });
     const {
@@ -507,7 +507,7 @@ const alive = (pid: number) => {
   }
 };
 
-describe.skipIf(process.platform === 'win32')('按原安装方式更新系统里的 yt-dlp（假 Homebrew）', () => {
+describe.skipIf(process.platform === 'win32')('updates the system yt-dlp using its original install method (fake Homebrew)', () => {
   let side: Side | undefined;
 
   beforeEach(async () => {
@@ -520,7 +520,7 @@ describe.skipIf(process.platform === 'win32')('按原安装方式更新系统里
     side = undefined;
   });
 
-  it('先交出完整命令要确认；确认后执行，输出进任务记录，结束后重新检测；失败时保留输出与退出码', async () => {
+  it('first hands over the full command for confirmation; after confirmation it runs, output goes into the task record, and it re-detects when finished; on failure, output and exit code are kept', async () => {
     const s = side!;
     const brew = await writeFakeBrew(s.dir);
     const set = await s.client.request('externalTools.setPath', { name: 'yt-dlp', path: brew.link });
@@ -593,7 +593,7 @@ describe.skipIf(process.platform === 'win32')('按原安装方式更新系统里
     });
   });
 
-  it('更新期间流程拒绝、不能删除，重复请求交回同一个任务；停止时连同子进程一起结束', async () => {
+  it('during an update the flow is rejected and it cannot be deleted; a repeated request returns the same task; stopping also ends child processes', async () => {
     const s = side!;
     const brew = await writeFakeBrew(s.dir);
     const plan = (await s.client.request('externalTools.setPath', { name: 'yt-dlp', path: brew.link })).tool.update!;
@@ -619,7 +619,7 @@ describe.skipIf(process.platform === 'win32')('按原安装方式更新系统里
     expect(ytDlp((await s.client.request('externalTools.list', {})).tools).updateJobId).toBeNull();
   });
 
-  it('不代为更新的情形：严格离线、判断不了安装方式、CucCut 下载的副本、没有找到', async () => {
+  it('cases where it does not update on the user\'s behalf: strict offline, install method cannot be determined, a copy downloaded by CucCut, not found', async () => {
     const s = side!;
     await expect(s.client.request('externalTools.update', { name: 'yt-dlp' })).rejects.toMatchObject({
       details: { code: 'TOOL_UPDATE_UNSUPPORTED', remedy: expect.stringContaining('externalTools.detect') },
@@ -651,7 +651,7 @@ describe.skipIf(process.platform === 'win32')('按原安装方式更新系统里
     });
   });
 
-  it.skipIf(process.getuid?.() === 0)('要管理员权限才能改写时不代为执行：交出带 sudo 的命令', async () => {
+  it.skipIf(process.getuid?.() === 0)('does not run on the user\'s behalf when admin rights are needed to overwrite: hands over the command with sudo', async () => {
     const s = side!;
     const locked = path.join(s.dir, 'locked');
     await fs.mkdir(locked);
@@ -671,8 +671,8 @@ describe.skipIf(process.platform === 'win32')('按原安装方式更新系统里
   });
 });
 
-describe('下载失败的补救说明', () => {
-  it('设置按设置页上的名字说，不写设置键', () => {
+describe('remediation notes for download failure', () => {
+  it('settings are named as on the settings page, not as settings keys', () => {
     for (const remedy of Object.values(TOOL_DOWNLOAD_REMEDIES)) expect(remedy).not.toMatch(/tools\.\w+/);
     expect(TOOL_DOWNLOAD_REMEDIES.TOOL_DOWNLOAD_NETWORK).toContain('「设置 › 通用」的「工具下载来源」');
     expect(TOOL_DOWNLOAD_REMEDIES.TOOL_DOWNLOAD_SOURCE).toContain('「设置 › 通用」的「工具下载来源」');

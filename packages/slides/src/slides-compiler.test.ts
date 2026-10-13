@@ -17,18 +17,18 @@ afterEach(async () => {
 });
 
 describe('resolveSlidesEditorDist', () => {
-  it('环境变量指的目录里有 index.html 时用它', async () => {
+  it('uses index.html in the directory named by the env variable when present', async () => {
     await writeFile(path.join(dir, 'index.html'), '<!doctype html>');
     expect(resolveSlidesEditorDist({ CUCCUT_SLIDES_EDITOR_DIST: dir })).toBe(dir);
   });
 
-  it('环境变量指的目录不存在或是空的时为 null（打包时没带编辑器）', async () => {
+  it('null when the env-variable directory does not exist or is empty (editor not bundled at build time)', async () => {
     expect(resolveSlidesEditorDist({ CUCCUT_SLIDES_EDITOR_DIST: path.join(dir, 'slides-editor') })).toBeNull();
     await mkdir(path.join(dir, 'empty'));
     expect(resolveSlidesEditorDist({ CUCCUT_SLIDES_EDITOR_DIST: path.join(dir, 'empty') })).toBeNull();
   });
 
-  it('编译器要构建目录里有 node/compiler.cjs', async () => {
+  it('compiler requires node/compiler.cjs in the build directory', async () => {
     expect(compilerAvailable(null)).toBe(false);
     expect(compilerAvailable(dir)).toBe(false);
     await mkdir(path.join(dir, 'node'));

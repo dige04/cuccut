@@ -8,8 +8,8 @@ import { FakeClient, jobRecord } from './testing/fake-client.ts';
 const progress = () => new ProgressReporter('jsonl', new PassThrough());
 const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
 
-describe('waitForJob（Agent 面设计 §5.4）', () => {
-  it('终态与 packages/jobs 的 isTerminal 相同：needs-reconciliation 算；Worker 重试的中断不算', () => {
+describe('waitForJob (Agent surface design §5.4)', () => {
+  it('terminal states match isTerminal in packages/jobs: needs-reconciliation counts; an interruption from a Worker retry does not count', () => {
     for (const state of ['completed', 'failed', 'cancelled', 'needs-reconciliation'] as const) {
       expect(isFinished(jobRecord({ jobId: 'j', state })), state).toBe(true);
     }
@@ -22,7 +22,7 @@ describe('waitForJob（Agent 面设计 §5.4）', () => {
     );
   });
 
-  it('订阅的事件到终态就结束；needs-reconciliation 也结束', async () => {
+  it('subscribed events end at a terminal state; needs-reconciliation also ends', async () => {
     const fake = new FakeClient();
     const watcher = watchJobs(fake.client);
     const waiting = waitForJob(fake.client, 'job_1', watcher, { progress: progress() });
@@ -34,7 +34,7 @@ describe('waitForJob（Agent 面设计 §5.4）', () => {
     expect(fake.subscribed).toBe(false);
   });
 
-  it('minAttempt：之前那次尝试的终态不算（jobs retry 沿用同一个 jobId）', async () => {
+  it('minAttempt: the terminal state of an earlier attempt does not count (jobs retry reuses the same jobId)', async () => {
     const fake = new FakeClient();
     const watcher = watchJobs(fake.client);
     fake.snapshot([jobRecord({ jobId: 'job_1', state: 'failed', attempt: 1 })]);
@@ -48,7 +48,7 @@ describe('waitForJob（Agent 面设计 §5.4）', () => {
     await expect(waiting).resolves.toMatchObject({ kind: 'finished', job: { state: 'completed', attempt: 2 } });
   });
 
-  it('initial：快照还没到时先用查过的记录，已经结束的不必等', async () => {
+  it('initial: when the snapshot has not arrived yet, uses the record already fetched; an already ended job need not wait', async () => {
     const fake = new FakeClient();
     const watcher = watchJobs(fake.client);
     const initial = jobRecord({ jobId: 'job_1', state: 'failed', error: { code: 'GRANT_REQUIRED', message: '要授权' } as never });
@@ -58,7 +58,7 @@ describe('waitForJob（Agent 面设计 §5.4）', () => {
     });
   });
 
-  it('超时：结果是 timeout 与最近的记录，任务不取消', async () => {
+  it('timeout: the result is timeout with the latest record, the task is not cancelled', async () => {
     const fake = new FakeClient();
     const watcher = watchJobs(fake.client);
     fake.snapshot([jobRecord({ jobId: 'job_1', state: 'running' })]);
@@ -67,7 +67,7 @@ describe('waitForJob（Agent 面设计 §5.4）', () => {
     expect(fake.calls.map((call) => call.method)).not.toContain('jobs.cancel');
   });
 
-  it('连接断了：RUNTIME_UNAVAILABLE（退出码 3），带 jobId', async () => {
+  it('connection lost: RUNTIME_UNAVAILABLE (exit code 3), with jobId', async () => {
     const fake = new FakeClient();
     const watcher = watchJobs(fake.client);
     const waiting = waitForJob(fake.client, 'job_1', watcher, { progress: progress() });

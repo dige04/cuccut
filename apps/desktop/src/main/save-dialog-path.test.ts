@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { SAVE_FILE_MAX_BYTES, saveDialogPath, saveFileData } from './save-dialog-path.ts';
 
-describe('系统保存窗口初始路径', () => {
-  it('使用选定目录，文件名不能带入其他目录', () => {
+describe('initial path of the system save dialog', () => {
+  it('uses the chosen directory; a file name cannot bring in another directory', () => {
     expect(saveDialogPath('/other/访谈.mp4', '/Volumes/成片 disk', 'darwin')).toBe('/Volumes/成片 disk/访谈.mp4');
     expect(saveDialogPath('访谈.mp4', 'relative', 'darwin')).toBe('访谈.mp4');
     expect(saveDialogPath('访谈.mp4', '/bad\0dir', 'darwin')).toBe('访谈.mp4');
@@ -14,13 +14,13 @@ describe('系统保存窗口初始路径', () => {
     ['\\\\server\\共享', '\\\\server\\共享\\访谈.mp4'],
     ['\\\\?\\C:\\成片', '\\\\?\\C:\\成片\\访谈.mp4'],
     ['\\\\?\\UNC\\server\\共享', '\\\\?\\UNC\\server\\共享\\访谈.mp4'],
-  ])('Windows 初始目录 %s', (dir, expected) => {
+  ])('Windows initial directory %s', (dir, expected) => {
     expect(saveDialogPath('D:/other/访谈.mp4', dir, 'win32')).toBe(expected);
   });
 });
 
-describe('渲染进程交来要保存的内容', () => {
-  it('只收 Uint8Array，超过上限的不收', () => {
+describe('content handed over by the renderer process to save', () => {
+  it('accepts only Uint8Array, rejects content over the limit', () => {
     const bytes = new Uint8Array([1, 2, 3]);
     expect(saveFileData(bytes)).toBe(bytes);
     expect(() => saveFileData('abc')).toThrow();

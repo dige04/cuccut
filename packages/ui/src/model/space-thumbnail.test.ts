@@ -16,15 +16,15 @@ const entry = (patch: Partial<SpaceEntry> = {}): SpaceEntry => ({
   ...patch,
 });
 
-describe('缩略图：要不要取', () => {
-  it('有画面或正文的类型才取；音频、便携包、模板不问', () => {
+describe('thumbnail: whether to fetch', () => {
+  it('only fetched for types with a picture or body text; audio, packs, and templates are not queried', () => {
     for (const kind of ['video', 'export', 'video-file', 'image', 'document', 'subtitle'] as const) {
       expect(wantsThumbnail(entry({ kind }))).toBe(true);
     }
     for (const kind of ['audio', 'package', 'template'] as const) expect(wantsThumbnail(entry({ kind }))).toBe(false);
   });
 
-  it('缺失、生成中与失败的不取（Runtime 都答 none）；来源已变、回收站里的照取', () => {
+  it('missing, generating, and failed items are not fetched (the Runtime answers none for all); items whose source changed or that are in the trash are still fetched', () => {
     expect(wantsThumbnail(entry({ status: 'missing' }))).toBe(false);
     expect(wantsThumbnail(entry({ status: 'generating' }))).toBe(false);
     expect(wantsThumbnail(entry({ status: 'failed' }))).toBe(false);
@@ -43,8 +43,8 @@ describe('缩略图：要不要取', () => {
   });
 });
 
-describe('缩略图：版本', () => {
-  it('最近活动、大小、状态、指向的视频与路径变了版本才变；改名、收藏不变', () => {
+describe('thumbnail: version', () => {
+  it('the version changes only when last activity, size, status, the linked video, or the path changes; renaming and favoriting do not change it', () => {
     const base = entry({ kind: 'video', ref: { videoId: 'v1' } });
     const v = thumbnailVersion(base);
     expect(
@@ -62,8 +62,8 @@ describe('缩略图：版本', () => {
   });
 });
 
-describe('缩略图：Runtime 的回答', () => {
-  it('画面拼成 data URL，摘要原样，空摘要与 none 画占位', () => {
+describe('thumbnail: Runtime response', () => {
+  it('the picture is assembled into a data URL, the summary is kept as is, and an empty summary or none draws a placeholder', () => {
     expect(
       toThumbnail({
         kind: 'image',

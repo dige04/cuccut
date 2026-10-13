@@ -18,15 +18,15 @@ const layoutOf = (n: number, measured: Record<string, number> = {}) => layoutRow
 const gaps = (segments: RowSegment[]) => segments.flatMap((s) => ('gap' in s ? [s.gap] : []));
 const rows = (segments: RowSegment[]) => segments.flatMap((s) => ('index' in s ? [s.index] : []));
 
-describe('不定高的虚拟列表：排版', () => {
-  it('量过的用量到的高，没量过的按估计；offsets 比行数多一个，末尾是总高', () => {
+describe('variable-height virtual list: layout', () => {
+  it('measured rows use their measured height, unmeasured ones use the estimate; offsets has one more entry than rows, the last being the total height', () => {
     const layout = layoutRows(keys(4), new Map([['k1', 80]]), (i) => 40 + i);
     expect([...layout.offsets]).toEqual([0, 40, 120, 162, 205]);
     expect(layout.total).toBe(205);
     expect(rowCount(layout)).toBe(4);
   });
 
-  it('空列表与单行', () => {
+  it('empty list and single row', () => {
     const empty = layoutRows([], NONE, () => 50);
     expect(empty.total).toBe(0);
     expect(rowAt(empty, 10)).toBe(-1);
@@ -39,7 +39,7 @@ describe('不定高的虚拟列表：排版', () => {
     expect(alignedScrollTop(one, 0, 600, 0, 'end')).toBe(0);
   });
 
-  it('按 y 二分找行：上沿算这一行，越界夹到两头', () => {
+  it('binary search for the row by y: the top edge counts as that row; out-of-range is clamped to both ends', () => {
     const layout = layoutOf(1000);
     expect(rowAt(layout, 0)).toBe(0);
     expect(rowAt(layout, 49.9)).toBe(0);
@@ -49,7 +49,7 @@ describe('不定高的虚拟列表：排版', () => {
     expect(rowAt(layout, 1e9)).toBe(999);
   });
 
-  it('窗口是与视口加前后余量相交的行；只挂几十行', () => {
+  it('the window is the rows intersecting the viewport plus overscan before and after; only a few dozen rows are mounted', () => {
     const layout = layoutOf(5000);
     expect(rowRange(layout, 0, 600, 0)).toEqual([0, 12]);
     // The top edge is exactly at the bottom edge of a row: that row does not count.
@@ -64,14 +64,14 @@ describe('不定高的虚拟列表：排版', () => {
   });
 });
 
-describe('不定高的虚拟列表：段', () => {
-  it('窗口之外没有钉住的行：前后各一段空白', () => {
+describe('variable-height virtual list: segments', () => {
+  it('no pinned rows outside the window: a blank segment before and after', () => {
     const layout = layoutOf(100);
     const segments = rowSegments(layout, [10, 13], []);
     expect(segments).toEqual([{ gap: 500 }, { index: 10 }, { index: 11 }, { index: 12 }, { gap: 87 * 50 }]);
   });
 
-  it('钉住的行在窗口外：按下标插进去，前后的空白拆开；在窗口内的不重复', () => {
+  it('pinned rows outside the window: inserted by index, with the blank segments split around them; pinned rows inside the window are not duplicated', () => {
     const layout = layoutOf(100, { k3: 120 });
     const segments = rowSegments(layout, [50, 52], [3, 51, 90, 3]);
     expect(rows(segments)).toEqual([3, 50, 51, 90]);
@@ -80,7 +80,7 @@ describe('不定高的虚拟列表：段', () => {
     expect(segments[2]).toEqual({ gap: layout.offsets[50]! - layout.offsets[4]! });
   });
 
-  it('钉住的行与窗口相邻、彼此相邻：中间没有空白段；越界的钉子不算', () => {
+  it('pinned rows adjacent to the window and to each other: no blank segment between them; out-of-range pins do not count', () => {
     const layout = layoutOf(100);
     const segments = rowSegments(layout, [20, 22], [19, 22, 23, 60, 61, -1, 100, 1.5]);
     expect(rows(segments)).toEqual([19, 20, 21, 22, 23, 60, 61]);
@@ -98,13 +98,13 @@ describe('不定高的虚拟列表：段', () => {
     ]);
   });
 
-  it('钉在第一行、最后一行：没有零高的空白段', () => {
+  it('pinned on the first and last rows: no zero-height blank segments', () => {
     const layout = layoutOf(10);
     const segments = rowSegments(layout, [4, 6], [0, 9]);
     expect(segments).toEqual([{ index: 0 }, { gap: 150 }, { index: 4 }, { index: 5 }, { gap: 150 }, { index: 9 }]);
   });
 
-  it('空白段的高度加上挂着的行高，总是等于总高', () => {
+  it('blank segment heights plus the mounted row heights always equal the total height', () => {
     const measured: Record<string, number> = {};
     for (let i = 0; i < 300; i += 7) measured[`k${i}`] = 30 + ((i * 13) % 90);
     const layout = layoutRows(keys(300), new Map(Object.entries(measured)), (i) => 40 + (i % 5) * 11.2);
@@ -128,17 +128,17 @@ describe('不定高的虚拟列表：段', () => {
   });
 });
 
-describe('不定高的虚拟列表：对齐', () => {
+describe('variable-height virtual list: alignment', () => {
   const layout = layoutRows(keys(100), new Map([['k40', 900]]), () => 50);
   const viewport = 600;
 
-  it('start、end、center', () => {
+  it('start, end, center', () => {
     expect(alignedScrollTop(layout, 20, viewport, 0, 'start')).toBe(1000);
     expect(alignedScrollTop(layout, 20, viewport, 0, 'end')).toBe(1050 - 600);
     expect(alignedScrollTop(layout, 20, viewport, 0, 'center')).toBe(1000 - 275);
   });
 
-  it('nearest：整行可见不动，在上面贴顶，在下面贴底，比视口高的贴顶', () => {
+  it('nearest: a fully visible row does not move; above the viewport snaps to top, below snaps to bottom; a row taller than the viewport snaps to top', () => {
     expect(alignedScrollTop(layout, 20, viewport, 800, 'nearest')).toBe(800);
     expect(alignedScrollTop(layout, 20, viewport, 1010, 'nearest')).toBe(1000);
     expect(alignedScrollTop(layout, 20, viewport, 300, 'nearest')).toBe(1050 - 600);
@@ -146,7 +146,7 @@ describe('不定高的虚拟列表：对齐', () => {
     expect(alignedScrollTop(layout, 40, viewport, 2100, 'nearest')).toBe(2000);
   });
 
-  it('夹在 [0, total − viewport]', () => {
+  it('clamped to [0, total − viewport]', () => {
     expect(alignedScrollTop(layout, 0, viewport, 500, 'center')).toBe(0);
     expect(alignedScrollTop(layout, 99, viewport, 0, 'start')).toBe(layout.total - viewport);
     expect(alignedScrollTop(layout, 500, viewport, 0, 'start')).toBe(layout.total - viewport);
@@ -154,8 +154,8 @@ describe('不定高的虚拟列表：对齐', () => {
   });
 });
 
-describe('不定高的虚拟列表：锚点补偿', () => {
-  it('只补锚点上方的变化', () => {
+describe('variable-height virtual list: anchor compensation', () => {
+  it('only compensates changes above the anchor', () => {
     const before = layoutOf(100);
     const after = layoutOf(100, { k5: 80, k30: 20, k60: 200 });
     // The anchor is row 50: row 5 above is +30 and row 30 is −30, so they cancel out.
@@ -168,14 +168,14 @@ describe('不定高的虚拟列表：锚点补偿', () => {
     expect(anchorShift(before, after, 6)).toBe(30);
   });
 
-  it('滚在顶上（锚点第 0 行）与空列表：不补', () => {
+  it('scrolled to the top (anchor is row 0) and empty list: no compensation', () => {
     const before = layoutOf(10);
     const after = layoutOf(10, { k0: 300 });
     expect(anchorShift(before, after, 0)).toBe(0);
     expect(anchorShift(layoutOf(0), layoutOf(0), 3)).toBe(0);
   });
 
-  it('补完之后锚点行在视口里的位置不变', () => {
+  it('after compensating, the anchor row\'s position in the viewport is unchanged', () => {
     const before = layoutOf(200);
     const scrollTop = 4321;
     const anchor = rowAt(before, scrollTop);
@@ -186,8 +186,8 @@ describe('不定高的虚拟列表：锚点补偿', () => {
   });
 });
 
-describe('行数粗估', () => {
-  it('拉丁按半个字宽、CJK 按一个字宽，显式换行各起一行', () => {
+describe('rough row count estimate', () => {
+  it('Latin counts as half a character width, CJK as one, and explicit line breaks each start a new line', () => {
     expect(estimateLines('', 300, 14)).toBe(1);
     // 300px / 14px ≈ 21.4em: 42 Latin letters fit on one line, 43 wrap to two lines.
     expect(estimateLines('a'.repeat(42), 300, 14)).toBe(1);

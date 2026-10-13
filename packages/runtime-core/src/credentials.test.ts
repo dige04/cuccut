@@ -112,7 +112,7 @@ async function homeText(home: RuntimeHome): Promise<string> {
 const openaiView = (models: ModelsSnapshot | null): ProviderCapabilityView | undefined =>
   models?.capabilities.transcribe.providers.find((p) => p.providerId === 'openai');
 
-describe('凭据存储（经 Runtime）', () => {
+describe('credential store (via Runtime)', () => {
   let side: Side | undefined;
   let openai: FakeProviderServer | undefined;
 
@@ -124,7 +124,7 @@ describe('凭据存储（经 Runtime）', () => {
     side = openai = undefined;
   });
 
-  it('钥匙串后端：启动时迁走明文文件里的密钥与节点令牌；之后的读写都经助手，密钥不进文件、日志、事件与助手的参数', async () => {
+  it('keychain backend: on startup, plaintext-file keys and node tokens moved out; afterwards reads and writes go through the helper, keys not in file, log, events, or helper arguments', async () => {
     openai = await startFakeProviderServer(fakeOpenAiHandler());
     side = await startSide({ helper: 'fake', openai });
     const items = async () => JSON.parse(await fs.readFile(path.join(side!.helperDir, 'items.json'), 'utf8')) as Record<string, string>;
@@ -175,7 +175,7 @@ describe('凭据存储（经 Runtime）', () => {
     expect(calls).not.toContain('"secretInEnv":true');
   });
 
-  it('钥匙串不可用（助手缺失）：不回退到明文文件；Provider 报告凭据不可用并带原因；改密钥以 CREDENTIAL_UNAVAILABLE 拒绝', async () => {
+  it('keychain unavailable (helper missing): no fallback to plaintext file; Provider reports credential unavailable with reason; changing key rejected with CREDENTIAL_UNAVAILABLE', async () => {
     side = await startSide({ helper: null });
     const before = await fs.readFile(side.home.modelCredentialsFile, 'utf8');
 

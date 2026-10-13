@@ -7,7 +7,7 @@ import { taskFailure } from './localized.ts';
 import { videoDirName } from './videos/video-service.ts';
 
 /** Text the Runtime emits is generated in the current language, and references travel with errors over the wire (repo convention §5). The test process is pinned to Simplified Chinese by default; here it is switched to English. */
-describe('runtime-core 的文案目录', () => {
+describe('runtime-core copy catalog', () => {
   beforeEach(() => {
     vi.stubEnv('CUCCUT_LOCALE', 'en');
     setLocale('en');
@@ -17,7 +17,7 @@ describe('runtime-core 的文案目录', () => {
     setLocale('zh-Hans');
   });
 
-  it('英文缺省：共用短句与任务失败的说明是英文，引用可以按简体中文重新生成', () => {
+  it('English default: shared short phrases and task failure descriptions are English, citations can be regenerated in Simplified Chinese', () => {
     expect(RcCommon.cancelled().text).toBe('Cancelled');
     const failure = taskFailure('X', RcCommon.cancelled());
     expect(failure.message).toBe('Cancelled');
@@ -28,7 +28,7 @@ describe('runtime-core 的文案目录', () => {
     expect(new RpcError('conflict', RcCommon.cancelled()).message).toBe('已取消');
   });
 
-  it('授权错误：数据种类按读者的语言列出，补救说明带引用', () => {
+  it('authorization errors: data kinds listed in the reader\'s language, remedy includes citation', () => {
     const item = { recipient: 'openai', dataKinds: ['transcript', 'audio'], videoId: null } as unknown as GrantRequestItem;
     const { message, details } = grantRequiredDetails([item]);
     expect(message.text).toBe("Sending transcripts and translations and audio to openai needs the user's grant");
@@ -39,7 +39,7 @@ describe('runtime-core 的文案目录', () => {
     expect(localizeText(message.text, refOf(message))).toBe('把文稿与译文、音频交给 openai 需要用户授权');
   });
 
-  it('字体下载的补救、Space 的引用说明与默认的视频目录名是英文', () => {
+  it('font download remedy, Library citation note and default video directory name are English', () => {
     expect(FONT_DOWNLOAD_REMEDIES.FONT_DOWNLOAD_NETWORK).toBe(fontDownloadRemedy('FONT_DOWNLOAD_NETWORK').text);
     expect(FONT_DOWNLOAD_REMEDIES.FONT_DOWNLOAD_NETWORK).not.toMatch(/[一-鿿]/);
     expect(RcSpace.refStrayFiles({ names: 'a.mp4/b.txt/c.png', total: 5 }).text).toBe(
@@ -61,7 +61,7 @@ describe('runtime-core 的文案目录', () => {
     expect(RcAgentTools.reviewSeverity({ id: 'blank', from: 'critical', to: 'nitpick' }).text).toBe('Change what “blank” is worth: critical → nitpick');
   });
 
-  it('导出与便携包：复数与嵌套的引用', () => {
+  it('export and portable package: plurals and nested citations', () => {
     expect(RcCommon.videoNotOpen().text).toBe("The video isn't open");
     expect(RcExport.partiallyPublished({ failed: 1, published: 2 }).text).toBe("1 file wasn't exported; 2 were published");
     expect(RcExport.projectItemOmitted({ kind: 'Confetti', itemId: 'i1', name: null, reason: 'not supported' }).text).toBe(

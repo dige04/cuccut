@@ -31,8 +31,8 @@ const conversation = (id: string, patch: Partial<Conversation> = {}): Conversati
   ...patch,
 });
 
-describe('会话状态', () => {
-  it('把活动与未读映射成侧栏的四种状态', () => {
+describe('session status', () => {
+  it('maps activity and unread to the four sidebar states', () => {
     expect(sessionStatus(conversation('a', { activity: 'awaiting-approval' }))).toBe('waiting');
     expect(sessionStatus(conversation('a', { activity: 'running' }))).toBe('running');
     expect(sessionStatus(conversation('a', { activity: 'stopping' }))).toBe('running');
@@ -41,14 +41,14 @@ describe('会话状态', () => {
     expect(sessionStatus(conversation('a'))).toBeNull();
   });
 
-  it('正在停止单独显示，不算进行中', () => {
+  it('stopping is shown separately and does not count as in progress', () => {
     expect(conversationStatus(conversation('a', { activity: 'stopping' }))).toEqual({ label: '正在停止', variant: 'neutral' });
     expect(conversationStatus(conversation('a', { activity: 'running' }))?.label).toBe('进行中');
   });
 });
 
 describe('buildSidebar', () => {
-  it('项目按最近活动排，会话挂在项目下；不属于项目的进「最近」', () => {
+  it('projects sort by recent activity, sessions sit under their project; sessions not in a project go to \'Recent\'', () => {
     const tree = buildSidebar(
       [project('p1'), project('p2', { lastActiveAt: '2026-10-01T01:00:00.000Z' })],
       [
@@ -63,7 +63,7 @@ describe('buildSidebar', () => {
     expect(tree.pinned).toEqual([]);
   });
 
-  it('置顶的项目与会话同时还在原来的位置；归档的不显示', () => {
+  it('pinned projects and sessions also stay in their original place; archived ones are hidden', () => {
     const tree = buildSidebar(
       [project('p1', { pinned: true }), project('p2', { archived: true })],
       [conversation('c1', { pinned: true }), conversation('c2', { archived: true })],
@@ -73,7 +73,7 @@ describe('buildSidebar', () => {
     expect(tree.loose.map((c) => c.id)).toEqual(['c1']);
   });
 
-  it('项目汇总下面会话的状态，要动手的在前', () => {
+  it('a project summarizes the status of its sessions, with those needing action first', () => {
     const tree = buildSidebar(
       [project('p1')],
       [
@@ -85,7 +85,7 @@ describe('buildSidebar', () => {
     expect(tree.projects[0]?.summary).toBe('1 个等待批准 · 1 个进行中 · 1 个已完成未读');
   });
 
-  it('会话可以按名称排；「在一个列表中」收齐项目下与不属于项目的会话', () => {
+  it('sessions can be sorted by name; \'in one list\' gathers project and non-project sessions together', () => {
     const tree = buildSidebar(
       [project('p1'), project('p2', { archived: true })],
       [

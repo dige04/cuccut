@@ -28,28 +28,28 @@ async function cli(argv: string[]): Promise<{ code: number; stdout: string; stde
   return { code, ...chunks };
 }
 
-describe('runCli：不为拼错的命令或帮助拉起 Runtime（Agent 面设计 §4.5）', () => {
-  it('已知名词后不认识的动词：UNKNOWN_COMMAND（退出码 4），不拉起 Runtime', async () => {
+describe('runCli: does not start Runtime for a misspelled command or for help (Agent surface design §4.5)', () => {
+  it('unknown verb after a known noun: UNKNOWN_COMMAND (exit code 4), does not start Runtime', async () => {
     const result = await cli(['videos', 'frobnicate', '--json']);
     expect(result.code).toBe(4);
     expect(JSON.parse(result.stdout).error.code).toBe('UNKNOWN_COMMAND');
     expect(fs.readdirSync(home)).toEqual([]);
   });
 
-  it('不认识的名词也一样', async () => {
+  it('unknown noun too', async () => {
     const result = await cli(['frobnicate', '--json']);
     expect(result.code).toBe(4);
     expect(fs.readdirSync(home)).toEqual([]);
   });
 
-  it('只给名词：列出这一组', async () => {
+  it('noun only: lists that group', async () => {
     const result = await cli(['videos']);
     expect(result.code).toBe(0);
     expect(result.stdout).toMatch(/^cuccut videos <command>\n[^]*\n  inspect /);
     expect(fs.readdirSync(home)).toEqual([]);
   });
 
-  it('元命令的帮助：help runtime、runtime --help、help status、status --help、spec --help、version --help', async () => {
+  it('meta-command help: help runtime, runtime --help, help status, status --help, spec --help, version --help', async () => {
     for (const argv of [
       ['help', 'runtime'],
       ['runtime', '--help'],
@@ -68,13 +68,13 @@ describe('runCli：不为拼错的命令或帮助拉起 Runtime（Agent 面设�
     expect(fs.readdirSync(home)).toEqual([]);
   });
 
-  it('help videos delete 的示例带 --yes', async () => {
+  it('help videos delete\'s example includes --yes', async () => {
     const result = await cli(['help', 'videos', 'delete']);
     expect(result.code).toBe(0);
     expect(result.stdout).toMatch(/cuccut videos delete .*--yes/);
   });
 
-  it('skill path 不连 Runtime；help skill、help mcp 有用法', async () => {
+  it('skill path does not connect to Runtime; help skill and help mcp show usage', async () => {
     const result = await cli(['skill', 'path', '--json']);
     expect(result.code).toBe(0);
     expect(JSON.parse(result.stdout).result.hosts.map((host: { agent: string }) => host.agent)).toEqual([

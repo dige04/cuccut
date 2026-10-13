@@ -48,8 +48,8 @@ const paired = (overrides: Partial<PairedNode> = {}): PairedNode => ({
   ...overrides,
 });
 
-describe('cuccut share 的能力开关', () => {
-  it('状态里逐项列出能力的开关；关闭的给出打开的命令', () => {
+describe('cuccut share capability switches', () => {
+  it('status lists each capability switch; a disabled one gives the command to turn it on', () => {
     const on = formatShareStatus(status());
     expect(on).toContain('能力：');
     expect(on).toContain('  转写（transcribe）：已打开');
@@ -61,7 +61,7 @@ describe('cuccut share 的能力开关', () => {
     expect(off.indexOf('能力：')).toBeLessThan(off.findIndex((line) => line.startsWith('已配对的电脑：')));
   });
 
-  it('share 关着时也显示能力的开关', () => {
+  it('capability switches are shown even when share is off', () => {
     const lines = formatShareStatus(
       status({ enabled: false, listening: false, addresses: [], capabilities: { transcribe: { enabled: false } } }),
     );
@@ -69,7 +69,7 @@ describe('cuccut share 的能力开关', () => {
     expect(lines).toContain('  转写（transcribe）：已关闭（cuccut share capability transcribe on 打开）');
   });
 
-  it('capability <能力> <on|off>', () => {
+  it('capability <capability> <on|off>', () => {
     expect(parseCapabilitySwitch(['transcribe', 'off'])).toEqual({ capability: 'transcribe', enabled: false });
     expect(parseCapabilitySwitch(['transcribe', 'on'])).toEqual({ capability: 'transcribe', enabled: true });
     // Whether a capability is recognized is decided by the Runtime (invalid-request). Here only the shape is checked.
@@ -79,7 +79,7 @@ describe('cuccut share 的能力开关', () => {
     }
   });
 
-  it('nodes 列表：节点关闭了转写的共享时报告不可用与原因', () => {
+  it('nodes list: when a node has transcription sharing turned off, reports it as unavailable and gives the reason', () => {
     expect(describeNode(paired())).toBe('Studio  node_abc  192.168.1.20:47610  可用 · 模型 fake@cpu · 运行 0 排队 1');
     expect(describeNode(paired({ health: health(false) }))).toBe(
       'Studio  node_abc  192.168.1.20:47610  不可用 · 节点关闭了转写的共享（需要那台电脑打开）',

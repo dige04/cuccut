@@ -26,7 +26,7 @@ if (!hasFfmpeg) console.warn('跳过在线转写的 ffmpeg 集成测试：没有
 const WAV_HEADER_BYTES = 44;
 const WAV_BYTES_PER_SEC = 32_000;
 
-describe.skipIf(!hasFfmpeg)('OnlineTranscriber（真实 ffmpeg + 假的兼容端点）', () => {
+describe.skipIf(!hasFfmpeg)('OnlineTranscriber (real ffmpeg + fake compatible endpoint)', () => {
   let dir: string;
   let server: FakeProviderServer;
   /** 2 s tone · 1 s silence · 2 s tone · 1 s silence · 2 s tone, 8 s in total. */
@@ -118,7 +118,7 @@ describe.skipIf(!hasFfmpeg)('OnlineTranscriber（真实 ffmpeg + 假的兼容端
     return { result, events, progress, leftovers };
   };
 
-  it('超过单次请求的上限：在静音处切成几块，每块不超过上限，段的时间按块的起点换回素材时钟', async () => {
+  it('over the single-request limit: split into chunks at silences, each chunk within the limit, segment times mapped back to the media clock by chunk start', async () => {
     const before = server.requests.length;
     const { result, events, progress, leftovers } = await run(speech);
     const uploads = server.requests.slice(before);
@@ -157,7 +157,7 @@ describe.skipIf(!hasFfmpeg)('OnlineTranscriber（真实 ffmpeg + 假的兼容端
     expect(leftovers).toEqual(['result.json']);
   });
 
-  it('请求的范围：从范围起点解码，时间加回偏移；超出结尾的部分记 range-clamped', async () => {
+  it('requested range: decodes from the range start and adds the offset back to times; parts beyond the end are recorded as range-clamped', async () => {
     const before = server.requests.length;
     const { result, events } = await run(speech, {
       input: { file: speech, contentHash: 'sha256:test', track: 0, range: { start: 6 * 1000, end: 20 * 1000, timescale: 1000 } },
@@ -171,7 +171,7 @@ describe.skipIf(!hasFfmpeg)('OnlineTranscriber（真实 ffmpeg + 假的兼容端
     expect(validateAsrResult(result, { runGeneration: 1 })).toMatchObject({ ok: true });
   });
 
-  it('没有音轨：不请求供应商，结果是 no-audio-track', async () => {
+  it('no audio track: the provider is not requested, result is no-audio-track', async () => {
     const before = server.requests.length;
     const { result, leftovers } = await run(videoOnly);
     expect(server.requests.length).toBe(before);

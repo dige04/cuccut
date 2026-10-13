@@ -40,8 +40,8 @@ const glossary = (terms: string[], language: string | null = null): Transcriptio
   terms: terms.map((canonical) => ({ canonical, misheard: [] })),
 });
 
-describe('生成字幕的转录设置', () => {
-  it('能挑的模型：本机、远端节点、云端；节点没连上的列着写原因', () => {
+describe('transcription settings for generating subtitles', () => {
+  it('selectable models: local, remote node, cloud; unconnected nodes are listed with the reason', () => {
     const options = transcribeModelOptions(withNode(fixtureView(), false));
     expect(options.map((o) => o.key)).toEqual([
       'local/qwen3-asr-0.6b@mlx-4bit',
@@ -56,7 +56,7 @@ describe('生成字幕的转录设置', () => {
     expect(transcribeModelOptions(withNode(fixtureView()))[1]!.usable).toBe(true);
   });
 
-  it('不动设置时什么都不传：模型、语言跟随默认，术语表由 Runtime 读视频启用的', () => {
+  it('with settings untouched nothing is sent: model and language follow the default, the glossary is read by the Runtime from the video\'s enabled ones', () => {
     const view = fixtureView();
     const options = transcribeModelOptions(view);
     const picked = pickModel(options, null, view.transcribe.effective);
@@ -67,7 +67,7 @@ describe('生成字幕的转录设置', () => {
     expect(transcribeRequestOptions(DEFAULT_TRANSCRIBE_SETUP, pickModel(options, null, null))).toEqual({});
   });
 
-  it('挑过模型才传 provider / model；挑的不在清单里时回到默认', () => {
+  it('provider and model are sent only after a model is picked; a pick not in the list reverts to default', () => {
     const view = fixtureView();
     const options = transcribeModelOptions(view);
     const picked = pickModel(options, 'openai/whisper-1', view.transcribe.effective);
@@ -77,7 +77,7 @@ describe('生成字幕的转录设置', () => {
     expect([gone.explicit, gone.option?.key]).toEqual([false, 'local/qwen3-asr-0.6b@mlx-4bit']);
   });
 
-  it('指定语言按断言传；这只模型不认的语言回到自动、不传', () => {
+  it('a specified language is sent as asserted; a language this model does not recognize reverts to auto and is not sent', () => {
     const view = withNode(fixtureView());
     const options = transcribeModelOptions(view);
     const local = pickModel(options, null, view.transcribe.effective);
@@ -91,7 +91,7 @@ describe('生成字幕的转录设置', () => {
     });
   });
 
-  it('提示词：收提示的模型才传，去掉首尾空白、截到 1200；不收的不传（Runtime 会拒）', () => {
+  it('prompt: sent only to models that accept prompts, trimmed and cut to 1200; not sent to others (the Runtime rejects it)', () => {
     const view = withNode(fixtureView());
     const options = transcribeModelOptions(view);
     const local = pickModel(options, null, view.transcribe.effective);
@@ -103,7 +103,7 @@ describe('生成字幕的转录设置', () => {
     expect(transcribeRequestOptions(setup({ model: node.option!.key, prompt: '林澈' }), node)).not.toHaveProperty('hint');
   });
 
-  it('识别提示用不上时写原因，有收提示的模型时指一只', () => {
+  it('when the recognition prompt is unusable, writes the reason; when there is a model accepting prompts, names one', () => {
     const view = withNode(fixtureView());
     const options = transcribeModelOptions(view);
     const node = pickModel(options, 'node:studio/whisper-large-v3', view.transcribe.effective).option;
@@ -114,7 +114,7 @@ describe('生成字幕的转录设置', () => {
     expect(hintBlock(null)).toContain('先在上面挑一只');
   });
 
-  it('提示的篇幅与 Runtime 拼法同口径：去重、第一条换行接、之后顿号，放不下的计数', () => {
+  it('prompt length follows the Runtime\'s assembly: deduplicated, first item joined with a line break, later ones with a 、; items that do not fit are counted', () => {
     expect(hintBudget('播客', [glossary(['林澈', '周远']), glossary(['周远', 'CucCut'])])).toEqual({ custom: 2, terms: 3, dropped: 0, chars: 15 });
     expect(hintBudget('', [glossary(['林澈', '周远'])])).toEqual({ custom: 0, terms: 2, dropped: 0, chars: 5 });
     // Limit 6: 「ab\nccc」 is exactly 6 characters, 「、dd」 does not fit.
@@ -124,7 +124,7 @@ describe('生成字幕的转录设置', () => {
     );
   });
 
-  it('术语表的行：启用的按次序在前，再列库里其余的转录术语表；用不上的写原因', () => {
+  it('glossary rows: enabled ones first in order, then the other transcription glossaries in the library; unusable ones state the reason', () => {
     const library = [
       { id: 'g-a', name: '产品名', kind: 'transcription' as const, termCount: 3 },
       { id: 'g-b', name: '嘉宾', kind: 'transcription' as const, termCount: 2 },
@@ -140,7 +140,7 @@ describe('生成字幕的转录设置', () => {
     expect(transcribeGlossaryRows(library, { 'g-a': glossary([]) }, [])[0]!.meta).toBe('不限语言 · 0 条');
   });
 
-  it('折起来的摘要与模型那一行', () => {
+  it('collapsed summary and model row', () => {
     const view = fixtureView();
     const options = transcribeModelOptions(view);
     const local = pickModel(options, null, view.transcribe.effective);

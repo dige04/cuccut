@@ -9,8 +9,8 @@ import { TRANSLATE_SUBTITLES_PIPELINE } from './pipelines/translate-subtitles.ts
 
 /** Static registry of the tool catalogue (architecture design §7.9): the first batch of tools, complete declarations, stable IDs. */
 
-describe('工具目录', () => {
-  it('十个工具按组排列，ID 唯一且是小写连字符', () => {
+describe('tool catalogue', () => {
+  it('ten tools are grouped, with unique lowercase hyphenated IDs', () => {
     expect(TOOL_CATALOGUE.map((t) => t.id)).toEqual([
       'transcribe',
       'translate-subtitles',
@@ -42,7 +42,7 @@ describe('工具目录', () => {
     }
   });
 
-  it('每个工具对应一个流程或一种直接任务，依赖照实声明', () => {
+  it('each tool maps to one pipeline or one direct task, and dependencies are declared accurately', () => {
     expect(toolDefinition('transcribe')).toMatchObject({
       execution: { kind: 'pipeline', method: 'pipelines.start', pipeline: TRANSCRIBE_PIPELINE },
       inputs: ['file', 'video'],
@@ -116,7 +116,7 @@ describe('工具目录', () => {
     expect(toolDefinition('nope')).toBeNull();
   });
 
-  it('分成四组：语音与字幕、文字与图片、音乐、视频文件（§7.9，产品设计 §2.7）', () => {
+  it('split into four groups: speech and subtitles, text and images, music, video files (§7.9, product design §2.7)', () => {
     const groups = Object.fromEntries(TOOL_CATEGORIES.map((c) => [c, TOOL_CATALOGUE.filter((t) => t.category === c).map((t) => t.id)]));
     expect(groups).toEqual({
       speech: ['transcribe', 'translate-subtitles', 'dub', 'synthesize-speech'],

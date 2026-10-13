@@ -28,7 +28,7 @@ async function until(check: () => boolean, timeoutMs: number): Promise<void> {
   }
 }
 
-describe.skipIf(process.platform === 'win32')('AcpProcess 结束时不留下智能体派生的进程', () => {
+describe.skipIf(process.platform === 'win32')('AcpProcess leaves no agent-spawned processes when it ends', () => {
   let dir: string;
   let fake: FakeAcp;
   const open: AcpProcess[] = [];
@@ -62,7 +62,7 @@ describe.skipIf(process.platform === 'win32')('AcpProcess 结束时不留下智�
     return proc;
   }
 
-  it('关闭：SIGTERM 之后还在的派生进程被强杀，close 等到它们都退出', async () => {
+  it('close: spawned processes still alive after SIGTERM are force-killed; close waits until they all exit', async () => {
     const proc = await start();
     const [helper] = helpers();
     expect(alive(helper!)).toBe(true);
@@ -72,7 +72,7 @@ describe.skipIf(process.platform === 'win32')('AcpProcess 结束时不留下智�
     expect(alive(proc.child.pid!)).toBe(false);
   });
 
-  it('智能体自己退出：它留下的进程随即被强杀，不必等关闭', async () => {
+  it('agent exits on its own: processes it left behind are force-killed immediately, without waiting for close', async () => {
     const proc = await start();
     const [helper] = helpers();
     // The fake agent exits when stdin is closed.
@@ -81,7 +81,7 @@ describe.skipIf(process.platform === 'win32')('AcpProcess 结束时不留下智�
     await until(() => !alive(helper!), 2_000);
   });
 
-  it('initialize 之前就退出：start 失败，它派生的进程也已结束', async () => {
+  it('exits before initialize: start fails, and the processes it spawned have also ended', async () => {
     fake.scenario({ exitOnInitialize: true });
     await expect(start()).rejects.toThrow();
     const [helper] = helpers();

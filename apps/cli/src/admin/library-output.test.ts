@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { formatVideoSelection, parseIdList, parseLibraryName, parseSpeakerVoice } from './library-output.ts';
 
-describe('cuccut library 的参数与输出', () => {
-  it('库名只认三个', () => {
+describe('cuccut library arguments and output', () => {
+  it('only three library names are accepted', () => {
     expect(parseLibraryName('voices')).toBe('voices');
     expect(() => parseLibraryName('fonts')).toThrow('没有这个库：fonts');
     expect(() => parseLibraryName(undefined)).toThrow('缺少');
   });
 });
 
-describe('视频里启用的库条目', () => {
-  it('--speaker-voice：转写:说话人=音色，Provider 的音色带 @Provider', () => {
+describe('library entries enabled in a video', () => {
+  it('--speaker-voice: transcript:speaker=voice, provider voices carry @Provider', () => {
     expect(parseSpeakerVoice('doc_s:S1=library:voice_a')).toEqual({ documentId: 'doc_s', speakerId: 'S1', voice: 'library:voice_a' });
     expect(parseSpeakerVoice('doc_s:S2=pNInz6obpg@elevenlabs')).toEqual({
       documentId: 'doc_s',
@@ -24,7 +24,7 @@ describe('视频里启用的库条目', () => {
     expect(parseIdList('')).toEqual([]);
   });
 
-  it('显示：每一步的术语表与说话人的音色', () => {
+  it('display: glossary of each step and the speakers\' voices', () => {
     expect(
       formatVideoSelection({
         videoId: 'vid_1',

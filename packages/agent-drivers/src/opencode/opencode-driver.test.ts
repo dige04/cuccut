@@ -7,7 +7,7 @@ import { createFakeOpenCode, type FakeOpenCode } from '../testing/fake-opencode.
 import { OpenCodeDriver } from './opencode-driver.ts';
 
 /** Probing of the OpenCode Driver against a fake opencode: version check, model table, account notes, caching, and forced refresh. */
-describe('OpenCodeDriver.probe（假 opencode）', () => {
+describe('OpenCodeDriver.probe (fake opencode)', () => {
   let dir: string;
   let fake: FakeOpenCode;
   let driver: OpenCodeDriver;
@@ -24,7 +24,7 @@ describe('OpenCodeDriver.probe（假 opencode）', () => {
 
   const serveStarts = () => fake.log().filter((e) => e.kind === 'start').length;
 
-  it('2.x：就绪，模型表来自 serve，只有免费模型时说明怎么接入账号', async () => {
+  it('2.x: ready, model table comes from serve; with only free models, explains how to connect an account', async () => {
     const probe = await driver.probe();
     expect(probe.id).toBe('opencode');
     expect(probe.verified).toBe(true);
@@ -49,7 +49,7 @@ describe('OpenCodeDriver.probe（假 opencode）', () => {
     await expect.poll(() => fake.log().filter((e) => e.kind === 'exit').length).toBe(1);
   });
 
-  it('接入了别的 provider 时报账号', async () => {
+  it('reports the account when another provider is connected', async () => {
     fake.scenario({
       providers: [
         { id: 'opencode', name: 'OpenCode Zen' },
@@ -61,7 +61,7 @@ describe('OpenCodeDriver.probe（假 opencode）', () => {
     expect(probe.detail).toBeNull();
   });
 
-  it('1.x：版本过低，请升级；不起 serve', async () => {
+  it('1.x: version too old, asks to upgrade; does not start serve', async () => {
     fake.scenario({ versionOutput: '1.18.34' });
     const probe = await driver.probe();
     expect(probe.state).toBe('outdated');
@@ -71,26 +71,26 @@ describe('OpenCodeDriver.probe（假 opencode）', () => {
     expect(serveStarts()).toBe(0);
   });
 
-  it('早于 2.0.10 的 2.x 也算过低', async () => {
+  it('2.x versions earlier than 2.0.10 are also too old', async () => {
     fake.scenario({ versionOutput: 'opencode v2.0.3' });
     expect((await driver.probe()).state).toBe('outdated');
   });
 
-  it('没装：not-installed，并说怎么装', async () => {
+  it('not installed: not-installed, and explains how to install', async () => {
     fake.scenario({ installed: false });
     const probe = await driver.probe();
     expect(probe.state).toBe('not-installed');
     expect(probe.detail).toContain('npm install -g @opencode/cli');
   });
 
-  it('模型表读不出来：error', async () => {
+  it('model table cannot be read: error', async () => {
     fake.scenario({ catalog: 'error' });
     const probe = await driver.probe();
     expect(probe.state).toBe('error');
     expect(probe.detail).toContain('catalog exploded');
   });
 
-  it('模型表缓存 10 分钟，同时到来的探测共用一次；force 真的再查', async () => {
+  it('model table is cached for 10 minutes, concurrent probes share one request; force really re-queries', async () => {
     await Promise.all([driver.probe(), driver.probe()]);
     await driver.probe();
     expect(serveStarts()).toBe(1);

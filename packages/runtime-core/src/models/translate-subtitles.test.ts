@@ -60,7 +60,7 @@ function translator(state: { calls: number }): FakeHandler {
   };
 }
 
-describe.skipIf(!engine)('字幕文件的翻译（网关 + 假供应商）', () => {
+describe.skipIf(!engine)('subtitle file translation (gateway + fake provider)', () => {
   let dir: string;
   let openai: FakeProviderServer;
   let runtime: RunningRuntime;
@@ -118,7 +118,7 @@ describe.skipIf(!engine)('字幕文件的翻译（网关 + 假供应商）', () 
   const settled = (jobId: string): Promise<JobRecord> =>
     until(() => jobs!.jobs.find((j) => j.jobId === jobId && ['completed', 'failed', 'cancelled'].includes(j.state)));
 
-  it('没有配置文本模型：以 CAPABILITY_NOT_CONFIGURED 拒绝，不改交智能体、不建任务', async () => {
+  it('no text model configured: rejected with CAPABILITY_NOT_CONFIGURED, not handed to agent, no task created', async () => {
     const input = await subtitleFile();
     const error = await client
       .request('pipelines.start', { pipeline: 'translate-subtitles', params: { input, targetLanguage: 'en' } })
@@ -127,7 +127,7 @@ describe.skipIf(!engine)('字幕文件的翻译（网关 + 假供应商）', () 
     expect(await client.request('jobs.list', { children: true })).toEqual({ jobs: [] });
   });
 
-  it('文件到文件：写出同样条数与时间码的译文字幕，不碰视频；输出是 Space 里带生成记录的条目', async () => {
+  it('file to file: writes translated subtitles with the same number of entries and timecodes, does not touch the video; output is a Library item with a generation record', async () => {
     await configure();
     const input = await subtitleFile();
     // The output directory is the project directory that holds the source file, so the published file and the scanned one are the same entry (when not given, it is the save location; see pipelines.test.ts).
@@ -160,7 +160,7 @@ describe.skipIf(!engine)('字幕文件的翻译（网关 + 假供应商）', () 
     expect(entries.find((e) => e.fileName === 'talk.srt')!.origin).toBeUndefined();
   });
 
-  it('字幕文本按 transcript 授权：撤销默认授权后启动即拒绝；桌面界面带待批准项、命令行不带；批准之后同一个 commandId 重新提交', async () => {
+  it('subtitle text authorized by transcript: after revoking default authorization start rejected; desktop UI shows pending approval item, CLI does not; after approval the same commandId is resubmitted', async () => {
     await configure();
     const input = await subtitleFile();
     const byDefault = (await client.request('grants.list', { recipient: 'openai' })).grants.find((g) => g.origin === 'provider-enable')!;
@@ -207,7 +207,7 @@ describe.skipIf(!engine)('字幕文件的翻译（网关 + 假供应商）', () 
     expect(state.calls).toBe(1);
   });
 
-  it('读不准的字幕文件：启动就以 SUBTITLE_FILE_INVALID 拒绝，带行号，不建任务', async () => {
+  it('unreadable subtitle file: rejected at start with SUBTITLE_FILE_INVALID, with line number, no task created', async () => {
     await configure();
     const { project } = await client.request('projects.create', { name: '坏字幕' });
     const input = path.join(project.path, 'broken.vtt');
@@ -219,7 +219,7 @@ describe.skipIf(!engine)('字幕文件的翻译（网关 + 假供应商）', () 
     expect(await client.request('jobs.list', { children: true })).toEqual({ jobs: [] });
   });
 
-  it('命令行：cuccut translate --file 换格式、双语、输出目录与 --json；读不准的文件与视频输入同时给时报错', async () => {
+  it('command line: cuccut translate --file with format change, bilingual, output directory and --json; error when an unreadable file and video input are both given', async () => {
     await configure();
     const input = await subtitleFile();
     const home = path.join(dir, 'home');

@@ -173,7 +173,7 @@ interface Side {
   jobs(): JobsSnapshot | null;
 }
 
-describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引擎 + 假供应商）', () => {
+describe.skipIf(!engine || !speechWorker || !ffmpeg)('translation dubbing (real engine + fake provider)', () => {
   let side: Side;
   let models: FakeModelSource;
   let openai: FakeProviderServer;
@@ -315,7 +315,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
   const extensionOf = (item: unknown) =>
     ((item as { extensions?: Record<string, unknown> }).extensions ?? {})[DUB_EXTENSION] as Record<string, unknown> | undefined;
 
-  it('译文要交给语音合成的 Provider：没有覆盖 transcript 的授权时启动即拒绝，不建任务、不发请求', async () => {
+  it('translated text to be sent to a speech-synthesis provider: rejected at start when there is no grant covering transcript; no task created, no request sent', async () => {
     const { videoId } = await videoWithSpeech();
     const error = await side.client
       .request('pipelines.start', { pipeline: 'dub', params: { videoId, targetLanguage: 'en', voice: VOICE } })
@@ -338,7 +338,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
     expect(texts).toEqual([]);
   });
 
-  it('工具页的当场授权：一次拒绝列出翻译与合成两项待批准的外发，逐项发放之后用同一个 commandId 重新提交即启动；命令行不带待批准项', async () => {
+  it('on-the-spot grant on the tools page: one rejection lists the two pending egress items (translation and synthesis); after granting each, resubmitting with the same commandId starts it; the command line carries no pending items', async () => {
     const { videoId } = await videoWithSpeech();
     // The user revoked OpenAI's default authorization (it is not reissued after revocation): both translation and synthesis need authorization on the spot.
     const openaiDefault = (await side.client.request('grants.list', { recipient: 'openai' })).grants.find(
@@ -396,7 +396,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
     expect(texts.length).toBeGreaterThan(0);
   });
 
-  it('工具页直接提交的任务（生成语音）：额度用完时同样带待批准项，发放之后同一个 commandId 重新提交即创建任务', async () => {
+  it('task submitted directly from the tools page (generate speech): when quota runs out, it likewise carries pending items; after granting, resubmitting with the same commandId creates the task', async () => {
     const elevenDefault = (await side.client.request('grants.list', { recipient: 'elevenlabs' })).grants.find(
       (g) => g.origin === 'provider-enable',
     )!;
@@ -435,7 +435,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
     expect((await submit()).jobId).toBe(jobId);
   });
 
-  it('按说话人选音色：视频里的绑定优先、其次参数；库里的音色没有克隆时那位说话人的句子不合成、逐句报告，不换成别的音色', async () => {
+  it('choose voice by speaker: the binding in the video takes priority, then the parameter; when the library voice has no clone, that speaker\'s sentences are not synthesized and are reported one by one, not swapped for another voice', async () => {
     // Sentences 1 and 3 are S1, sentence 2 is S2, sentence 4 has no speaker.
     const speakerOf: Record<string, string> = { w1: 'S1', w2: 'S1', w3: 'S2', w4: 'S2', w5: 'S1', w6: 'S1' };
     const words = WORDS.map((w) => (speakerOf[w.id] ? { ...w, speaker: speakerOf[w.id]! } : w));
@@ -505,7 +505,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
     expect(dubItems(sequence)).toHaveLength(2);
   });
 
-  it('译文用了库里的术语表：术语表改了之后，含改动术语的句子过期、不合成（glossary-changed），别的句子照常', async () => {
+  it('translation uses the glossary from the library: after the glossary changes, sentences containing changed terms expire and are not synthesized (glossary-changed); other sentences proceed as usual', async () => {
     const { videoId, speechId } = await videoWithSpeech();
     await grantTranscript();
     const { entry: glossary } = await side.client.request('library.put', {
@@ -569,7 +569,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
     expect(plan.units.find((u) => u.status === 'stale')!.extensions[DUB_EXTENSION]).toMatchObject({ staleReason: 'glossary-changed' });
   });
 
-  it('翻译 → 逐句合成 → 对齐 → 一笔事务应用：配音轨、实例、配音计划与压低原声；超长的句子不放、如实报告', async () => {
+  it('translate, synthesize sentence by sentence, align, then apply in one transaction: dub track, instances, dub plan and lowered original audio; overlong sentences are not placed and are reported honestly', async () => {
     // Sentence 2 is split into two adjacent pieces: dubbed only once.
     const { videoId, sequenceId, projectId, relPath } = await videoWithSpeech(2);
     await grantTranscript();
@@ -648,7 +648,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
     expect(JSON.stringify(side.received)).not.toContain(ELEVENLABS_KEY);
   });
 
-  it('句级重配：先改译文再只重配这几句，写回同一组（同一条轨、同一份计划的新版本）；种子透传；放不下的句子留着旧的一版；切回旧版本是一笔可撤销的编辑', async () => {
+  it('sentence-level redub: edit the translation first, then redub only those sentences and write back to the same group (a new version of the same track and plan); seed passed through; sentences that do not fit keep their old version; switching back to an old version is an undoable edit', async () => {
     const { videoId, sequenceId, projectId, relPath } = await videoWithSpeech();
     const grantId = await grantTranscript();
     const first = await settled(
@@ -838,7 +838,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
     expect(itemOf(undone, 't-s-w1').id).toBe(current.id);
   });
 
-  it('授权只够 2 次调用、要合成 4 句：停在合成，说明合成了几句、还剩几句；放宽之后重试只合成剩下的', async () => {
+  it('grant covers only 2 calls and 4 sentences need synthesis: stops at synthesis, reporting how many sentences were synthesized and how many remain; after relaxing the grant, retry synthesizes only the remainder', async () => {
     const { videoId } = await videoWithSpeech();
     const grantId = await grantTranscript(2);
     const { jobId } = await side.client.request('pipelines.start', {
@@ -868,7 +868,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
     expect((await side.client.request('videos.history', { videoId })).entries.length).toBe(before + 1);
   });
 
-  it('用已有的译文：原文改过的句子过期、不合成，计划里记为 stale；静音原声并提醒背景一起没了', async () => {
+  it('use existing translation: sentences whose source text changed expire and are not synthesized, recorded as stale in the plan; original audio muted, with a warning that the background goes too', async () => {
     const { videoId, sequenceId, projectId, relPath, speechId } = await videoWithSpeech();
     await grantTranscript();
     const { jobId: translateJob } = await side.client.request('pipelines.start', {
@@ -936,7 +936,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
   }
 
   it.skipIf(!appleSilicon)(
-    '分离过、原声压低：原句实例静音，换成「背景声」（原样）与「人声」（被压低）两轨；静音的实例记进计划；撤销那一笔全部还原',
+    'after separation, original audio lowered: original clip instances are muted and replaced by two tracks, "background" (as-is) and "vocals" (lowered); muted instances are recorded in the plan; undoing that edit restores everything',
     async () => {
       const { videoId, sequenceId, projectId, relPath } = await videoWithSpeech();
       await installSeparator();
@@ -993,7 +993,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
     },
   );
 
-  it.skipIf(!appleSilicon)('分离过、原声静音：只放「背景声」一轨，不放人声；不提醒背景一起没了', async () => {
+  it.skipIf(!appleSilicon)('after separation, original audio muted: only the "background" track is placed, no vocals; no warning that the background goes too', async () => {
     const { videoId, sequenceId, projectId, relPath } = await videoWithSpeech();
     await installSeparator();
     await grantTranscript();
@@ -1011,7 +1011,7 @@ describe.skipIf(!engine || !speechWorker || !ffmpeg)('翻译配音（真实引�
     expect(sequence.ducking ?? []).toEqual([]);
   });
 
-  it('音频导出的声音来源：混音（原声已静音）、只要原声（去掉配音、恢复静音的原声）、只要这一组配音', async () => {
+  it('audio export sound sources: mix (original already muted), original only (dub removed, muted original restored), only this dub group', async () => {
     const { videoId } = await videoWithSpeech();
     await grantTranscript();
     const { jobId } = await side.client.request('pipelines.start', {

@@ -20,7 +20,7 @@ const status = (family: string, extra: Partial<FontFamilyStatus>): FontFamilySta
 });
 
 describe('cuccut fonts', () => {
-  it('参数：族名可以分开写，字重与斜体一起给；分类与文字只认列出来的', () => {
+  it('arguments: family names may be written separately, weight and italic are given together; category and text accept only the listed values', () => {
     expect(parseFontsArgs([], {})).toEqual({ kind: 'downloaded' });
     expect(parseFontsArgs(['download', 'Noto', 'Sans', 'SC'], {})).toEqual({ kind: 'download', family: 'Noto Sans SC' });
     expect(parseFontsArgs(['download', 'Lobster'], { weights: '400, 700', italic: true })).toEqual({
@@ -47,7 +47,7 @@ describe('cuccut fonts', () => {
     expect(() => parseFontsArgs(['nope'], {})).toThrow('用法');
   });
 
-  it('输出：下载缓存按族合并、带大小与许可；列表带状态、进度与失败原因；删除说明保留了什么', () => {
+  it('output: download cache is merged by family, with size and license; list includes status, progress and failure reason; delete explains what was kept', () => {
     const face = { licence: 'OFL-1.1' as const, sha256: 'a'.repeat(64), downloadedAt: '2026-10-04T00:00:00Z' };
     expect(
       formatDownloadedFonts(

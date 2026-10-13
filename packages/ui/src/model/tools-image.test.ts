@@ -83,8 +83,8 @@ function withLocal(patch: Partial<ImageModelInfo> = {}, available = true): Model
 
 const draft = (patch: Partial<ImageDraft> = {}): ImageDraft => ({ ...BLANK_IMAGE, model: 'openai/gpt-image-1', ...patch });
 
-describe('画幅', () => {
-  it('有宽高比时列宽高比（带默认尺寸），否则列尺寸', () => {
+describe('frame size', () => {
+  it('lists the aspect ratio (with default size) when there is one, otherwise the dimensions', () => {
     expect(aspectOptions(ratios).map((o) => [o.key, o.label, o.sub])).toEqual([
       ['1:1', '1:1', '1024×1024'],
       ['3:2', '3:2', '1536×1024'],
@@ -98,19 +98,19 @@ describe('画幅', () => {
     expect(ratioOfSize('1536x1024')).toBe('3:2');
   });
 
-  it('草稿的画幅不成立时用模型的默认（默认尺寸对应的宽高比）', () => {
+  it('a draft\'s frame size that does not hold falls back to the model\'s default (the aspect ratio of the default size)', () => {
     expect(sizeKeyFor({ size: null }, ratios)).toBe('3:2');
     expect(sizeKeyFor({ size: '2:3' }, ratios)).toBe('2:3');
     expect(sizeKeyFor({ size: '16:9' }, ratios)).toBe('3:2');
     expect(sizeKeyFor({ size: null }, imageModel('auto', { sizes: [], defaultSize: null }))).toBeNull();
   });
 
-  it('模型一行：画幅几种、一次几张、收不收种子', () => {
+  it('model row: number of frame sizes, images per run, whether it accepts a seed', () => {
     expect(imageModelLine(ratios)).toBe('3 种画幅 · 一次最多 4 张 · 收种子');
     expect(imageModelLine(imageModel('auto', { sizes: [], aspectRatios: [], maxCount: 1, acceptsSeed: false }))).toBe('尺寸由服务商定 · 一次最多 1 张');
   });
 
-  it('张数夹在 1 到 maxCount 之间；换模型时画幅与张数跟着收', () => {
+  it('image count is clamped between 1 and maxCount; frame size and count follow when switching models', () => {
     expect(countFor({ count: 9 }, ratios)).toBe(4);
     expect(countFor({ count: 0 }, ratios)).toBe(1);
     const one = option(imageModel('imagen', { sizes: ['1024x1024'], maxCount: 1 }), { key: 'google/imagen' });
@@ -118,15 +118,15 @@ describe('画幅', () => {
   });
 });
 
-describe('校验与请求', () => {
-  it('没写提示词、超长、张数超出、种子不是整数', () => {
+describe('validation and request', () => {
+  it('missing prompt, too long, count out of range, seed not an integer', () => {
     expect(imageProblems(draft(), option(ratios))).toEqual([emptyPrompt()]);
     expect(imageProblems(draft({ prompt: '一'.repeat(11) }), option(ratios))).toEqual(['提示词 11 字 · 这只模型最多 10 字']);
     expect(imageProblems(draft({ prompt: 'cat', count: 5 }), option(ratios))).toEqual(['一次最多 4 张']);
     expect(imageProblems(draft({ prompt: 'cat', seed: '1.5' }), option(ratios))).toEqual(['种子要是整数']);
   });
 
-  it('请求带画幅、张数，收种子的模型才带种子', () => {
+  it('request carries frame size and count; only models that accept a seed include it', () => {
     expect(imageRequest(draft({ prompt: ' cat ', size: '2:3', count: 2, seed: '42' }), option(ratios))).toEqual({
       prompt: 'cat',
       provider: 'openai',
@@ -139,7 +139,7 @@ describe('校验与请求', () => {
     expect(imageRequest(draft({ prompt: 'cat', seed: '42' }), option(auto))).toEqual({ prompt: 'cat', provider: 'openai', model: 'auto', count: 1 });
   });
 
-  it('主按钮旁的现状：门、问题、摘要', () => {
+  it('status beside the primary button: gate, issue, summary', () => {
     const options = cloudModelOptions(fixtureView(), 'generateImage');
     expect(imageStatus(draft(), null, false)).toEqual({ text: '先选一只模型', bad: true });
     expect(imageStatus(draft(), options[1]!, false)).toEqual({ text: '先连接 Google Gemini', bad: true });
@@ -149,8 +149,8 @@ describe('校验与请求', () => {
   });
 });
 
-describe('本机模型', () => {
-  it('云端在前、本机在后；本机名字用模型名，没下载的也列出', () => {
+describe('local models', () => {
+  it('cloud first, local after; local names use the model name, and not-yet-downloaded ones are listed too', () => {
     const view = withLocal({ available: false, unavailableReason: 'not-installed' }, false);
     expect(imageModelOptions(view).map((o) => [o.key, o.local ?? false])).toEqual([
       ['openai/gpt-image-1', false],
@@ -165,7 +165,7 @@ describe('本机模型', () => {
     expect(localImageOptions(withLocal())[0]!.usable).toBe(true);
   });
 
-  it('开页回落只落到云端：没默认、没保存时不选本机，哪怕本机能用', () => {
+  it('fallback on page open lands only on cloud: with no default and nothing saved, local is not picked even if usable', () => {
     const options = imageModelOptions(withLocal());
     expect(initialModelKey(options, null, null, imageFallback)).toBe('openai/gpt-image-1');
     const localOnly = options.filter((o) => o.local);
@@ -175,7 +175,7 @@ describe('本机模型', () => {
     );
   });
 
-  it('步数：没给用默认，夹进范围；请求只给本机模型带步数', () => {
+  it('steps: uses default when unset, clamped to range; request only includes steps for local models', () => {
     expect(stepsFor({ steps: null }, qwen)).toBe(20);
     expect(stepsFor({ steps: 100 }, qwen)).toBe(40);
     expect(stepsFor({ steps: 3 }, qwen)).toBe(8);
@@ -193,7 +193,7 @@ describe('本机模型', () => {
     expect(imageRequest(draft({ prompt: 'cat', steps: 12 }), option(ratios))).not.toHaveProperty('steps');
   });
 
-  it('现状一句与页头标签', () => {
+  it('status sentence and header tag', () => {
     const missing = localImageOptions(withLocal({ available: false, unavailableReason: 'not-installed' }, false))[0]!;
     expect(imageStatus(draft(), missing, false)).toEqual({ text: '先下载 Qwen-Image-2.1', bad: true });
     const ready = localImageOptions(withLocal())[0]!;
@@ -204,7 +204,7 @@ describe('本机模型', () => {
     expect(imageHeaderChip(ready)).toBe('在这台电脑上出图 · 不联网');
   });
 
-  it('跑起来按步报：第 x/N 步，走完是解码；没有按步的进度时 null', () => {
+  it('running reports per step: step x/N, decoding once finished; null when there is no per-step progress', () => {
     expect(imageStepPhase({ progress: { unit: 'steps', done: 3, total: 20 } })).toBe('第 3/20 步');
     expect(imageStepPhase({ progress: { unit: 'steps', done: 0, total: 20 } })).toBe('第 1/20 步');
     expect(imageStepPhase({ progress: { unit: 'steps', done: 20, total: 20 } })).toBe('解码');
@@ -212,14 +212,14 @@ describe('本机模型', () => {
   });
 });
 
-describe('记录', () => {
+describe('records', () => {
   const done = imageJob({
     state: 'completed',
     generation: { capability: 'generateImage', prompt: '山间小路', size: null, aspectRatio: '3:2', count: 2, format: 'png', seed: 7 },
     result: { documentId: null, artifactId: 'sha256:1', outputs: [imageOut('sha256:1', 1536, 1024), imageOut('sha256:2', 1536, 1024)] },
   });
 
-  it('每张图的名字与尺寸、种子', () => {
+  it('each image\'s name, size and seed', () => {
     expect(imageResults(done).map((r) => [r.name, r.meta])).toEqual([
       ['图片 1', '1536×1024 · 种子 7'],
       ['图片 2', '1536×1024 · 种子 7'],
@@ -228,11 +228,11 @@ describe('记录', () => {
     expect(imageFileName('图片 1', 'image/jpeg')).toBe('图片 1.jpg');
   });
 
-  it('再来一版：带回提示词与设置，种子留空', () => {
+  it('make another: carries back the prompt and settings, seed left empty', () => {
     expect(againDraft(done)).toEqual({ prompt: '山间小路', model: 'openai/gpt-image-1', size: '3:2', count: 2, seed: '', steps: null });
   });
 
-  it('再试一次：照冻结的参数原样再提交', () => {
+  it('retry: resubmits the frozen parameters as they were', () => {
     expect(retryRequest(done)).toEqual({ prompt: '山间小路', provider: 'openai', model: 'gpt-image-1', size: '3:2', count: 2, format: 'png', seed: 7 });
     expect(retryRequest(imageJob({ generation: undefined }))).toBeNull();
   });

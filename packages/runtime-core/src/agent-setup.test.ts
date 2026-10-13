@@ -44,7 +44,7 @@ class SetupDriver implements AgentDriver {
   }
 }
 
-describe('Agent 的安装、升级与登录（假 Driver）', () => {
+describe('agent install, upgrade and login (fake driver)', () => {
   let dir: string;
   let runtime: RunningRuntime;
   let driver: SetupDriver;
@@ -116,7 +116,7 @@ describe('Agent 的安装、升级与登录（假 Driver）', () => {
     });
   }
 
-  it('安装成功：输出逐行送达，退出码 0，结束前重新探测，agents.list 是新版本', async () => {
+  it('install succeeds: output delivered line by line, exit code 0, re-probed before finishing, agents.list shows the new version', async () => {
     expect((await client.request('agents.list', {})).drivers[0]!.version).toBeNull();
     const probesBefore = driver.probes;
     const { run } = await client.request('agents.runSetup', { driverId: 'codex', action: 'install', kind: 'brew', commandId: newId('cmd') });
@@ -130,7 +130,7 @@ describe('Agent 的安装、升级与登录（假 Driver）', () => {
     expect((await client.request('agents.list', {})).drivers[0]!.version).toBe('2.0.0');
   });
 
-  it('升级失败：非 0 退出码与输出（含 stderr）', async () => {
+  it('upgrade fails: non-zero exit code and output (including stderr)', async () => {
     const { run } = await client.request('agents.runSetup', { driverId: 'codex', action: 'upgrade', kind: 'brew', commandId: newId('cmd') });
     expect(run.command).toBe(`sh ${path.join(dir, 'upgrade-fail.sh')}`);
     const done = await finished(run.runId);
@@ -138,7 +138,7 @@ describe('Agent 的安装、升级与登录（假 Driver）', () => {
     expect([...done.output].sort()).toEqual(['Password:', 'sudo: a terminal is required']);
   });
 
-  it('取消：运行中的命令被结束，状态为 cancelled；同一个 Agent 运行中再起一次为 busy；同一个 commandId 返回同一次', async () => {
+  it('cancel: the running command is ended, status cancelled; starting again on the same agent while running is busy; the same commandId returns the same run', async () => {
     const commandId = newId('cmd');
     const { run } = await client.request('agents.runSetup', { driverId: 'codex', action: 'install', kind: 'npm', commandId });
     await until(() => mirror.runs.find((r) => r.runId === run.runId)?.output.includes('start'));
@@ -153,7 +153,7 @@ describe('Agent 的安装、升级与登录（假 Driver）', () => {
     expect((await rejection(client.request('agents.cancelSetup', { runId: 'setup_nope' }))).code).toBe('not-found');
   });
 
-  it('script 类、探测里没有的方式、参数里夹带命令：都拒绝，不运行', async () => {
+  it('script kind, a method not in the probe, commands smuggled in arguments: all rejected, not run', async () => {
     const script = await rejection(client.request('agents.runSetup', { driverId: 'codex', action: 'install', kind: 'script', commandId: newId('cmd') }));
     expect(script.code).toBe('invalid-request');
     // Only codex is registered.
@@ -177,7 +177,7 @@ describe('Agent 的安装、升级与登录（假 Driver）', () => {
     expect(mirror.runs).toEqual([]);
   });
 
-  it('探测结果里没有这种方式时 invalid-request', async () => {
+  it('invalid-request when the probe result has no such method', async () => {
     const original = driver.probe.bind(driver);
     driver.probe = async () => ({ ...(await original()), install: [] });
     await detect();
@@ -185,7 +185,7 @@ describe('Agent 的安装、升级与登录（假 Driver）', () => {
     expect(error.code).toBe('invalid-request');
   });
 
-  it('openTerminal：登录用 loginCommand，安装与升级按 kind 取命令（script 类也可以），打不开时 unsupported 并带回命令', async () => {
+  it('openTerminal: login uses loginCommand, install and upgrade take the command by kind (script kind also allowed); unsupported with the command returned when it cannot open', async () => {
     expect(await client.request('agents.openTerminal', { driverId: 'codex', action: 'login' })).toEqual({ status: 'opened', command: 'fake login' });
     expect(await client.request('agents.openTerminal', { driverId: 'codex', action: 'install', kind: 'script' })).toEqual({
       status: 'opened',
@@ -204,7 +204,7 @@ describe('Agent 的安装、升级与登录（假 Driver）', () => {
     expect((await rejection(client.request('agents.openTerminal', { driverId: 'codex', action: 'login' }))).code).toBe('invalid-request');
   });
 
-  it('Runtime 停止时结束还在运行的命令', async () => {
+  it('ends still-running commands when the Runtime stops', async () => {
     const { run } = await client.request('agents.runSetup', { driverId: 'codex', action: 'upgrade', kind: 'npm', commandId: newId('cmd') });
     await until(() => mirror.runs.find((r) => r.runId === run.runId)?.output.includes('start'));
     const started = Date.now();

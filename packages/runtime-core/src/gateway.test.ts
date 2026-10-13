@@ -50,7 +50,7 @@ async function settledCounts(expected: HandleCounts, ms = 1_000): Promise<Handle
   }
 }
 
-describe('网关', () => {
+describe('gateway', () => {
   it('rejects unlisted development origins while opaque desktop origins still require the token', async () => {
     const gateway = newGateway();
     const endpoint = await gateway.listen();
@@ -80,7 +80,7 @@ describe('网关', () => {
     }
   });
 
-  it('端口被占用：listen 带着原始错误拒绝，不留下监听或心跳定时器', async () => {
+  it('port in use: listen rejects with the original error, leaving no listener or heartbeat timer behind', async () => {
     const blocker = net.createServer();
     await new Promise<void>((resolve) => blocker.listen(0, '127.0.0.1', resolve));
     const taken = (blocker.address() as net.AddressInfo).port;
@@ -101,7 +101,7 @@ describe('网关', () => {
     }
   });
 
-  it('监听成功后 close 释放端口与心跳定时器', async () => {
+  it('after listening succeeds, close releases the port and heartbeat timer', async () => {
     const before = await settledCounts({ servers: 0, timers: 0 });
     const gateway = newGateway();
     const endpoint = await gateway.listen('127.0.0.1', 0);

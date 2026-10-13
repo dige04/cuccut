@@ -32,8 +32,8 @@ const video = (id: string, videoId: string, patch: Partial<SpaceEntry> = {}): Sp
   ...patch,
 });
 
-describe('命中片段', () => {
-  it('按位置切开，越界与重叠的收拢', () => {
+describe('matched fragments', () => {
+  it('splits by position; out-of-range and overlapping ranges are merged', () => {
     expect(snippetParts('今天讲剪辑和字幕', [[2, 4]])).toEqual([
       { text: '今天', hit: false },
       { text: '讲剪', hit: true },
@@ -44,8 +44,8 @@ describe('命中片段', () => {
   });
 });
 
-describe('打开命中', () => {
-  it('优先用条目；条目在回收站里时打不开；只有序列时间能直接跳', () => {
+describe('opening a match', () => {
+  it('prefers the entry; cannot open when the entry is in the trash; can jump directly only when there is sequence time', () => {
     const entries = [video('v1', 'vid1'), video('v2', 'vid2', { user: { favorite: false, displayName: null, trashedAt: '2026-10-01T00:00:00.000Z' } })];
     expect(hitTarget({ entryId: 'v1', videoId: 'vid1' }, entries)).toEqual({ projectId: 'p1', path: 'v1' });
     expect(hitTarget({ entryId: null, videoId: 'vid1' }, entries)).toEqual({ projectId: 'p1', path: 'v1' });
@@ -55,7 +55,7 @@ describe('打开命中', () => {
     expect(seekSeconds({ time: { clock: 'source', start: 12.5, end: 13 } })).toBeNull();
   });
 
-  it('结果不全时说明', () => {
+  it('explains when results are incomplete', () => {
     expect(searchNote({ complete: true, pendingVideos: 0, truncated: false, hits: [] })).toBeNull();
     expect(searchNote({ complete: false, pendingVideos: 2, truncated: true, hits: new Array(50) })).toBe(
       '还有 2 个视频的内容索引没有更新完，结果可能缺视频或是旧版本的；命中太多，只列出前 50 条。',
@@ -79,8 +79,8 @@ const hit = (videoId: string, start: number, patch: Partial<SpaceSearchHit> = {}
   ...patch,
 });
 
-describe('过滤与分组', () => {
-  it('请求：全部种类不传 kinds，不限说话人不传 speaker；项目照旧', () => {
+describe('filtering and grouping', () => {
+  it('request: all kinds omit kinds, no speaker limit omits speaker; the project is unchanged', () => {
     expect(searchRequest('剪辑', null, ANY_HIT)).toEqual({ query: '剪辑', limit: SEARCH_LIMIT });
     expect(searchRequest('剪辑', 'none', { kind: 'translation', speaker: '宝玉' })).toEqual({
       query: '剪辑',
@@ -92,7 +92,7 @@ describe('过滤与分组', () => {
     expect(searchRequest('剪辑', 'p1', { kind: 'all', speaker: '' })).toEqual({ query: '剪辑', limit: SEARCH_LIMIT, projectId: 'p1' });
   });
 
-  it('说话人按名字整串对上（Runtime 是「含有」）；选项并进见过的、带上已选的', () => {
+  it('speaker matches the whole name string (the Runtime uses \'contains\'); options merge with the speakers already seen and include the selected ones', () => {
     const hits = [hit('a', 1, { speaker: '宝玉' }), hit('a', 2, { speaker: '宝玉的嘉宾' }), hit('b', 3)];
     expect(exactSpeaker(hits, '宝玉').map((h) => h.time.start)).toEqual([1]);
     expect(exactSpeaker(hits, null)).toHaveLength(3);
@@ -102,7 +102,7 @@ describe('过滤与分组', () => {
     expect(speakerOptions(['b', 'a'], 'c')).toEqual(['a', 'b', 'c']);
   });
 
-  it('按视频分组：组按第一次出现，组里保持原来的顺序', () => {
+  it('grouping by video: groups in order of first appearance, items within a group keep their original order', () => {
     const groups = groupHits([hit('a', 1), hit('b', 5), hit('a', 3)]);
     expect(groups.map((g) => [g.videoId, g.videoName, g.hits.map((h) => h.time.start)])).toEqual([
       ['a', '视频 a', [1, 3]],
@@ -111,7 +111,7 @@ describe('过滤与分组', () => {
     expect(groupHits([])).toEqual([]);
   });
 
-  it('每组先给十条，「再显示」一次再放十条（设计稿 planRows）', () => {
+  it('each group first shows ten rows; each \'show more\' adds ten more (design planRows)', () => {
     const rows = Array.from({ length: 23 }, (_, i) => i);
     expect(planGroupRows(rows)).toMatchObject({ rest: 13, more: 10, next: 20 });
     expect(planGroupRows(rows).rows).toHaveLength(10);
@@ -120,7 +120,7 @@ describe('过滤与分组', () => {
     expect(planGroupRows(rows, 30).rows).toHaveLength(23);
   });
 
-  it('命中行：标签是种类（译文带语言），位置是时间 · 说话人', () => {
+  it('hit row: the label is the kind (translations include the language), the position is time · speaker', () => {
     expect(hitChip({ documentKind: 'translation', language: 'en' })).toBe('译文 · en');
     expect(hitChip({ documentKind: 'chapter', language: null })).toBe('章节');
     expect(hitWhere({ time: { clock: 'sequence', start: 65, end: 70 }, speaker: '宝玉' })).toBe('1:05 · 宝玉');

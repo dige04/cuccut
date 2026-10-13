@@ -65,7 +65,7 @@ function run(args: string[], values: Record<string, unknown>, fake: FakeClient, 
 }
 
 describe('cuccut mcp install', () => {
-  it('开服务（随 Runtime 启动）、建客户端、写宿主配置', async () => {
+  it('starts the service (with Runtime startup), creates the client, writes host config', async () => {
     const fake = fakeRuntime();
     const { capture, done } = run(['install'], { agent: 'cursor', level: 'auto' }, fake);
     expect(await done).toBe(0);
@@ -86,7 +86,7 @@ describe('cuccut mcp install', () => {
     expect(config.mcpServers.cuccut.headers.Authorization).toBe('Bearer bct_secret');
   });
 
-  it('已有 cuccut 条目、没给 --yes：拒绝，不建客户端', async () => {
+  it('existing cuccut entry, no --yes: refuses, does not create a client', async () => {
     fs.mkdirSync(path.join(home, '.gemini'));
     fs.writeFileSync(path.join(home, '.gemini', 'settings.json'), JSON.stringify({ mcpServers: { cuccut: {} } }));
     const fake = fakeRuntime();
@@ -96,7 +96,7 @@ describe('cuccut mcp install', () => {
     expect(fake.calls).toEqual([]);
   });
 
-  it('--yes 替换已有条目：从旧令牌认出旧客户端，新条目写好后吊销它', async () => {
+  it('--yes replaces an existing entry: recognizes the old client from its old token, revokes it after the new entry is written', async () => {
     fs.mkdirSync(path.join(home, '.cursor'));
     const file = path.join(home, '.cursor', 'mcp.json');
     fs.writeFileSync(file, JSON.stringify({ mcpServers: { cuccut: { url: 'x', headers: { Authorization: 'Bearer mcl_old.c2VjcmV0' } } } }));
@@ -116,7 +116,7 @@ describe('cuccut mcp install', () => {
     expect(capture.out()).toContain('已吊销它用的客户端：Cursor（mcl_old）');
   });
 
-  it('--yes 替换 Claude Code 的条目：令牌从 settings.json 的 env 里认出来', async () => {
+  it('--yes replaces a Claude Code entry: the token is recognized from the env in settings.json', async () => {
     fs.writeFileSync(
       path.join(home, '.claude.json'),
       JSON.stringify({ mcpServers: { cuccut: { type: 'http', url: 'x', headers: { Authorization: 'Bearer ${CUCCUT_MCP_TOKEN}' } } } }),
@@ -131,7 +131,7 @@ describe('cuccut mcp install', () => {
     expect(capture.envelope().result).toMatchObject({ replaced: true, revokedClient: { clientId: 'mcl_cc' } });
   });
 
-  it('--yes 替换认不出令牌的条目：不吊销，列出同名的客户端', async () => {
+  it('--yes replaces an entry whose token is not recognized: does not revoke, lists clients with the same name', async () => {
     fs.mkdirSync(path.join(home, '.gemini'));
     fs.writeFileSync(
       path.join(home, '.gemini', 'settings.json'),
@@ -150,7 +150,7 @@ describe('cuccut mcp install', () => {
     });
   });
 
-  it('--yes 替换认不出令牌的条目、也没有同名的客户端：结果里说明没有吊销', async () => {
+  it('--yes replaces an entry whose token is not recognized and no client has the same name: the result says nothing was revoked', async () => {
     fs.mkdirSync(path.join(home, '.gemini'));
     fs.writeFileSync(
       path.join(home, '.gemini', 'settings.json'),
@@ -163,7 +163,7 @@ describe('cuccut mcp install', () => {
     expect(capture.out()).toContain('认不出它用的是哪个客户端，没有吊销');
   });
 
-  it('写配置失败：吊销刚建的客户端', async () => {
+  it('config write fails: revokes the just-created client', async () => {
     fs.mkdirSync(path.join(home, '.cursor'));
     fs.writeFileSync(path.join(home, '.cursor', 'mcp.json'), '{ broken');
     const fake = fakeRuntime();
@@ -182,7 +182,7 @@ describe('cuccut mcp install', () => {
     expect(fs.existsSync(path.join(home, '.cursor', 'mcp.json'))).toBe(false);
   });
 
-  it('Claude Code：令牌只在 settings.json 的 env 里', async () => {
+  it('Claude Code: token only in the env of settings.json', async () => {
     const fake = fakeRuntime({ ...off, state: 'on', autostart: true });
     const { capture, done } = run(['install'], { agent: 'claude-code' }, fake);
     expect(await done).toBe(0);
@@ -198,7 +198,7 @@ describe('cuccut mcp install', () => {
     expect(fs.readFileSync(path.join(home, '.claude', 'settings.json'), 'utf8')).toContain('bct_secret');
   });
 
-  it('还没有任何项目：登记默认项目目录下的 CLI 项目，外部 Agent 新建视频才有项目可用', async () => {
+  it('no projects yet: registers the CLI project in the default project directory so a video created by an external agent has a project to use', async () => {
     const projectsDir = path.join(home, 'CucCut Projects');
     const fake = fakeRuntime({ ...off, state: 'on', autostart: true });
     fake.methods['projects.list'] = () => ({ projects: [] });
@@ -220,7 +220,7 @@ describe('cuccut mcp install', () => {
     expect(capture.envelope().result).toMatchObject({ defaultProject: { projectId: 'prj_cli', name: 'CLI', path: dir } });
   });
 
-  it('已有项目：不登记新项目，结果里 defaultProject 为 null', async () => {
+  it('existing projects: no new project is registered, defaultProject is null in the result', async () => {
     const fake = fakeRuntime({ ...off, state: 'on', autostart: true });
     const { capture, done } = run(['install'], { agent: 'cursor' }, fake);
     expect(await done).toBe(0);
@@ -228,7 +228,7 @@ describe('cuccut mcp install', () => {
     expect(capture.envelope().result).toMatchObject({ defaultProject: null });
   });
 
-  it('等级只认 ask、auto', async () => {
+  it('level accepts only ask and auto', async () => {
     await expect(run(['install'], { agent: 'codex', level: 'readonly' }, fakeRuntime()).done).rejects.toSatisfy(
       (error: unknown) => error instanceof CliError && error.code === 'INVALID_ARGUMENTS',
     );
@@ -236,7 +236,7 @@ describe('cuccut mcp install', () => {
 });
 
 describe('cuccut mcp status', () => {
-  it('服务、客户端与各宿主有没有条目，不含令牌', async () => {
+  it('whether the service, clients and each host have an entry, without the token', async () => {
     fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({ mcpServers: { cuccut: { url: 'x' } } }));
     const fake = fakeRuntime({ ...off, state: 'on', endpoint: 'http://127.0.0.1:47620/mcp', clients: [client] });
     const { capture, done } = run(['status'], {}, fake, false);

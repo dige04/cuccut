@@ -34,7 +34,7 @@ afterAll(() => {
 });
 
 describe('motion-graphics lint', () => {
-  it.each(['scaffold.html', ...exemplarFiles])('%s 通过 lint，且没有无法静态求值的窗口', (rel) => {
+  it.each(['scaffold.html', ...exemplarFiles])('%s passes lint, and has no windows that cannot be statically evaluated', (rel) => {
     const r = lintHtml(read(rel));
     expect(r.issues).toEqual([]);
     expect(r.warnings).toEqual([]);
@@ -45,32 +45,32 @@ describe('motion-graphics lint', () => {
 
   const base = read('exemplars/lower-third/16x9.html');
 
-  it('没有统一出场 → EXIT_MISSING', () => {
+  it('no unified exit → EXIT_MISSING', () => {
     expect(codes(mutate(base, /\s*const exit = 1 - easeInOut\(.*\n/, '\n'))).toContain('EXIT_MISSING');
   });
 
-  it('出场窗口过早 → EXIT_WINDOW', () => {
+  it('exit window too early → EXIT_WINDOW', () => {
     expect(codes(mutate(base, 'DURATION - 0.62, DURATION - 0.05', 'DURATION - 1.5, DURATION - 0.05'))).toContain('EXIT_WINDOW');
   });
 
-  it('最后一个入场太晚 → HOLD_TOO_SHORT；data-motion-continuous 跳过停留检查', () => {
+  it('last entrance too late → HOLD_TOO_SHORT; data-motion-continuous skips the hold check', () => {
     const late = mutate(base, 'range(time, 0.9, 1.45)', 'range(time, 1.9, 2.45)');
     expect(codes(late)).toEqual(['HOLD_TOO_SHORT']);
     expect(codes(mutate(late, 'data-composition-id="main"', 'data-composition-id="main" data-motion-continuous="true"'))).toEqual([]);
   });
 
-  it('Math.sin 里的周期窗口不算入场（callout-pin 的 pulse）', () => {
+  it('periodic windows inside Math.sin do not count as entrances (callout-pin\'s pulse)', () => {
     const r = lintHtml(read('exemplars/callout-pin/16x9.html'));
     expect(r.meta.windows.some((w: { periodic: boolean; end: number }) => w.periodic && w.end > 3)).toBe(true);
     expect(r.issues).toEqual([]);
   });
 
-  it('第一个入场从 0 开始 → FIRST_ENTRY_TOO_EARLY；窗口过短 → WINDOW_LENGTH', () => {
+  it('first entrance starts at 0 → FIRST_ENTRY_TOO_EARLY; window too short → WINDOW_LENGTH', () => {
     expect(codes(mutate(base, 'range(time, 0.03, 0.63)', 'range(time, 0, 0.6)'))).toContain('FIRST_ENTRY_TOO_EARLY');
     expect(codes(mutate(base, 'range(time, 0.25, 0.82)', 'range(time, 0.25, 0.3)'))).toContain('WINDOW_LENGTH');
   });
 
-  it('外部引用 → EXTERNAL_URL / EXTERNAL_SCRIPT / EXTERNAL_LINK / CSS_IMPORT / NETWORK_API', () => {
+  it('external references → EXTERNAL_URL / EXTERNAL_SCRIPT / EXTERNAL_LINK / CSS_IMPORT / NETWORK_API', () => {
     expect(codes(mutate(base, '<section id="scene">', '<section id="scene"><img src="https://example.com/a.png">'))).toContain(
       'EXTERNAL_URL',
     );
@@ -83,31 +83,31 @@ describe('motion-graphics lint', () => {
     expect(codes(mutate(base, '/* slot:motion */', '/* slot:motion */ fetch("a.json");'))).toContain('NETWORK_API');
   });
 
-  it('非确定性 → NONDETERMINISTIC；rAF 在 play() 之外 → RAF_OUTSIDE_PLAY', () => {
+  it('non-determinism → NONDETERMINISTIC; rAF outside play() → RAF_OUTSIDE_PLAY', () => {
     expect(codes(mutate(base, '/* slot:motion */', '/* slot:motion */ const jitter = Math.random();'))).toContain('NONDETERMINISTIC');
     expect(codes(mutate(base, '/* slot:motion */', '/* slot:motion */ const now = Date.now();'))).toContain('NONDETERMINISTIC');
     expect(codes(mutate(base, '/* slot:motion */', '/* slot:motion */ requestAnimationFrame(() => {});'))).toEqual(['RAF_OUTSIDE_PLAY']);
   });
 
-  it('缺颜色 token → TOKEN_MISSING；缺文案标记 → COPY_PRIMARY_MISSING / COPY_RULE_MISSING', () => {
+  it('missing color token → TOKEN_MISSING; missing copy marker → COPY_PRIMARY_MISSING / COPY_RULE_MISSING', () => {
     expect(codes(mutate(base, /;--accent:#[0-9a-f]+/, ''))).toEqual(['TOKEN_MISSING']);
     expect(codes(mutate(base, ' data-copy-primary>', '>'))).toContain('COPY_PRIMARY_MISSING');
     expect(codes(mutate(base, '.copy{max-width:100%;overflow:hidden;text-overflow:ellipsis}', ''))).toContain('COPY_RULE_MISSING');
   });
 
-  it('根元素属性缺失或非法 → ROOT_ATTR_MISSING / ROOT_ATTR_INVALID / VIEWPORT_MISMATCH / TIMELINE_REGISTRY_MISSING', () => {
+  it('missing or invalid root element attributes → ROOT_ATTR_MISSING / ROOT_ATTR_INVALID / VIEWPORT_MISMATCH / TIMELINE_REGISTRY_MISSING', () => {
     expect(codes(mutate(base, / data-structure="[^"]*"/, ''))).toContain('ROOT_ATTR_MISSING');
     expect(codes(mutate(base, 'data-fps="30"', 'data-fps="0"'))).toContain('ROOT_ATTR_INVALID');
     expect(codes(mutate(base, 'content="width=1920,height=1080"', 'content="width=1280,height=720"'))).toContain('VIEWPORT_MISMATCH');
     expect(codes(mutate(base, 'window.__timelines = { [COMPOSITION_ID]: timeline };', ''))).toContain('TIMELINE_REGISTRY_MISSING');
   });
 
-  it('超过 512 KB → FILE_TOO_LARGE', () => {
+  it('over 512 KB → FILE_TOO_LARGE', () => {
     expect(codes(mutate(base, '</body>', `<!-- ${'x'.repeat(520 * 1024)} --></body>`))).toContain('FILE_TOO_LARGE');
   });
 });
 
-describe('motion-graphics 范例', () => {
+describe('motion-graphics examples', () => {
   // After removing the layout slots, viewport, root size, aspect ratio and title, the landscape and portrait versions must be identical.
   const strip = (html: string) =>
     html
@@ -118,17 +118,17 @@ describe('motion-graphics 范例', () => {
       .replace(/data-aspect-ratio="[^"]*"/, '')
       .replace(/<title>[^<]*<\/title>/, '');
 
-  it.each(EXEMPLARS)('%s 横竖两版只差布局槽与尺寸', (id) => {
+  it.each(EXEMPLARS)('%s landscape and portrait versions differ only in layout slots and dimensions', (id) => {
     expect(strip(read(`exemplars/${id}/9x16.html`))).toBe(strip(read(`exemplars/${id}/16x9.html`)));
   });
 
-  it.each(exemplarFiles)('%s 的颜色只来自三个 token', (rel) => {
+  it.each(exemplarFiles)('%s colors come only from three tokens', (rel) => {
     const html = read(rel).replace(/#root\{[^}]*\}/, '');
     expect(html.match(/#[0-9a-fA-F]{3,8}\b(?![\w-])/g) ?? []).toEqual([]);
     expect(html).not.toMatch(/\brgba?\(|\bhsla?\(/);
   });
 
-  it('skill 目录里没有符号链接与点开头的文件', () => {
+  it('skill directory has no symlinks or dot-prefixed files', () => {
     const walk = (dir: string): string[] =>
       fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
         const p = path.join(dir, e.name);
@@ -139,7 +139,7 @@ describe('motion-graphics 范例', () => {
     expect(walk(skill).length).toBeGreaterThan(10);
   });
 
-  it('references/scaffold.md 的 html 围栏与 scaffold.html 逐字节一致', () => {
+  it('the html fence in references/scaffold.md is byte-identical to scaffold.html', () => {
     const md = read('references/scaffold.md');
     const fence = /```html\n([\s\S]*?)```/.exec(md);
     expect(fence?.[1]).toBe(read('scaffold.html'));
@@ -149,7 +149,7 @@ describe('motion-graphics 范例', () => {
 describe('motion-graphics build', () => {
   const html = path.join(skill, 'exemplars/big-number/16x9.html');
 
-  it('写出完整清单，contentHash 稳定，files.manifest 与实际文件一致', () => {
+  it('writes a complete manifest, contentHash is stable, files.manifest matches the actual files', () => {
     const a = buildBundle({ html, out: tmp() });
     const b = buildBundle({ html, out: tmp() });
     expect(a.ok).toBe(true);
@@ -192,13 +192,13 @@ describe('motion-graphics build', () => {
     });
   });
 
-  it('参数改变 bundleId / revision / alpha', () => {
+  it('parameters change bundleId / revision / alpha', () => {
     const r = buildBundle({ html, out: tmp(), bundleId: 'stat-card', revision: 'r7', alpha: false });
     expect(r.manifest).toMatchObject({ bundleId: 'stat-card', revision: 'r7', output: { alpha: false } });
     expect(r.dir.endsWith(`${path.sep}r7`)).toBe(true);
   });
 
-  it('lint 失败时不写出任何文件', () => {
+  it('writes no files when lint fails', () => {
     const dir = tmp();
     const bad = path.join(dir, 'bad.html');
     fs.writeFileSync(bad, fs.readFileSync(html, 'utf8').replace('/* slot:motion */', '/* slot:motion */ Math.random();'));
@@ -209,7 +209,7 @@ describe('motion-graphics build', () => {
     expect(fs.existsSync(out)).toBe(false);
   });
 
-  it('verify 的采样时刻落在包络里', () => {
+  it('verify\'s sample times fall within the envelope', () => {
     const { meta } = lintHtml(fs.readFileSync(html, 'utf8'));
     const t = sampleTimes(meta);
     expect(t.start).toBe(0);

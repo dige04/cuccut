@@ -3,7 +3,7 @@ import { methodParamSchemas } from './schemas.ts';
 import { DESIGN_ANNOTATION_LIMITS } from './design.ts';
 import { WEB_DEFAULT_METHODS, WEB_READ_METHODS } from './web.ts';
 
-describe('conversations.send / steer 带的设计稿标注（docs/design/canvas §9）', () => {
+describe('design annotations carried by conversations.send / steer (docs/design/canvas §9)', () => {
   const base = { conversationId: 'c', text: 'hi', commandId: 'k' };
   const note = {
     canvas: { conversationId: 'c', path: 'poster' },
@@ -14,7 +14,7 @@ describe('conversations.send / steer 带的设计稿标注（docs/design/canvas 
     text: '按钮再大一点',
   };
 
-  it('send 与 steer 都收，三种 canvas 写法都认，可以与幻灯片标注同时带', () => {
+  it('send and steer both accept it, all three canvas formats are recognized, can be combined with slide annotations', () => {
     const slide = { deck: { conversationId: 'c', path: 'talk' }, anchor: 'a', label: 'p1', text: 'x' };
     for (const method of ['conversations.send', 'conversations.steer'] as const) {
       const schema = methodParamSchemas[method];
@@ -30,7 +30,7 @@ describe('conversations.send / steer 带的设计稿标注（docs/design/canvas 
     }
   });
 
-  it('每条消息至多 20 条，单条批注至多 2000 字，空批注、多余字段与幻灯片的字段名都不收', () => {
+  it('at most 20 per message, at most 2000 characters per annotation; empty annotations, extra fields and slide field names are rejected', () => {
     const send = methodParamSchemas['conversations.send'];
     const many = Array.from({ length: DESIGN_ANNOTATION_LIMITS.perMessage + 1 }, () => note);
     expect(send.safeParse({ ...base, designAnnotations: many }).success).toBe(false);
@@ -48,15 +48,15 @@ describe('conversations.send / steer 带的设计稿标注（docs/design/canvas 
   });
 });
 
-describe('design.open（docs/design/canvas §6.1）', () => {
-  it('参数是 FileTarget', () => {
+describe('design.open (docs/design/canvas §6.1)', () => {
+  it('parameter is FileTarget', () => {
     const schema = methodParamSchemas['design.open'];
     expect(schema.safeParse({ conversationId: 'c', path: 'poster' }).success).toBe(true);
     expect(schema.safeParse({ entryId: 'e1' }).success).toBe(true);
     expect(schema.safeParse({ path: 'poster' }).success).toBe(false);
   });
 
-  it('在 Web 的默认集合与只读集合里，与 slides.open 一样', () => {
+  it('in the Web default and read-only sets, same as slides.open', () => {
     expect(WEB_DEFAULT_METHODS).toContain('design.open');
     expect(WEB_READ_METHODS).toContain('design.open');
   });

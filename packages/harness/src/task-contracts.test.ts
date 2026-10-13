@@ -206,8 +206,8 @@ afterEach(async () => {
   await fs.rm(dir, { recursive: true, force: true });
 });
 
-describe('任务合同', () => {
-  it('没有显式合同时建立默认合同：范围来自编辑器上下文，经任务条目与任务中心对用户可见', async () => {
+describe('task contract', () => {
+  it('without an explicit contract a default one is created: the scope comes from the editor context and is visible to the user through the task entry and task center', async () => {
     const conversation = await harness.createConversation({});
     const events: TasksEvent[] = [];
     harness.subscribe('tasks', undefined, (sequenced) => events.push(sequenced.event as TasksEvent));
@@ -250,7 +250,7 @@ describe('任务合同', () => {
     expect(events.some((e) => e.type === 'task.upsert' && e.task.taskId === taskId && e.task.contractRevision === 1)).toBe(true);
   });
 
-  it('修改产生新修订、旧修订可查；切换访问模式也记一个修订；重启之后修订与检查结果都在', async () => {
+  it('a change creates a new revision, and old revisions can be viewed; switching access mode also records a revision; after restart, revisions and check results are all still there', async () => {
     const conversation = await harness.createConversation({});
     const { taskId, session } = await start(conversation.id, '配字幕', {
       accessMode: 'ask',
@@ -337,7 +337,7 @@ describe('任务合同', () => {
     expect(harness.listContracts({ conversationId: conversation.id }).contracts.map((c) => c.taskId)).toEqual([taskId]);
   });
 
-  it('智能体不能改访问模式、预算与保护范围；能细化范围、约束与检查，修订记为智能体所改', async () => {
+  it('the agent cannot change access mode, budget or protected scope; it can refine scope, constraints and checks, and the revision is recorded as changed by the agent', async () => {
     const conversation = await harness.createConversation({});
     const { taskId } = await start(conversation.id, '做个预告片');
     for (const patch of [{ autonomy: 'fullAccess' as const }, { budget: { maxCalls: 100, cap: null } }, { protectedRefs: [] }]) {
@@ -361,7 +361,7 @@ describe('任务合同', () => {
     });
   });
 
-  it('改变目标：stop 停止旧任务后以新目标建立新任务；合同由旧合同派生，预算上限照搬', async () => {
+  it('changing the goal: with stop, the old task is stopped and a new task is created with the new goal; the contract is derived from the old one, and the budget limit is carried over', async () => {
     const conversation = await harness.createConversation({});
     const { taskId, session } = await start(conversation.id, '剪成 60 秒', {
       contract: { constraints: [{ kind: 'style', text: '保留片头' }], budget: { maxCalls: 3, cap: null } },
@@ -386,7 +386,7 @@ describe('任务合同', () => {
     expect(items.some((i) => i.kind === 'notice' && i.text.startsWith('目标已改变：旧任务已停止'))).toBe(true);
   });
 
-  it('改变目标：keep 只停下旧任务的回合，不取消它提交的后台 Job；旧任务已结束时直接建立新任务', async () => {
+  it('changing the goal: with keep, only the old task\'s turn is stopped and the background Jobs it submitted are not cancelled; when the old task has already ended, the new task is created directly', async () => {
     const cancelled: Id[] = [];
     await harness.shutdown();
     const drivers = new DriverRegistry();
@@ -425,7 +425,7 @@ describe('任务合同', () => {
     expect(busy.code).toBe('busy');
   });
 
-  it('早先没有合同的任务：读入时补上默认合同', async () => {
+  it('tasks that had no contract earlier: a default contract is filled in when read', async () => {
     const conversation = await harness.createConversation({});
     const { taskId, session } = await start(conversation.id, '旧任务', { accessMode: 'plan' });
     session.finish();

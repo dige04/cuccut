@@ -19,8 +19,8 @@ const qwenWithPack = { ...qwen, speakers: 'pack' as const };
 const online = transcribeModel('gpt-4o-transcribe');
 const mb = (bytes: number) => `${Math.round(bytes / 1024 / 1024)} MB`;
 
-describe('识别说话人的开关', () => {
-  it('模型自带区分时开着锁住、不单列一步；不区分的关着锁住', () => {
+describe('speaker recognition toggle', () => {
+  it('when the model distinguishes speakers itself, locked on and not listed as a separate step; when it does not, locked off', () => {
     expect(speakerSwitch(moss, false, false)).toEqual({ kind: 'builtin', on: true, locked: true, missing: false, step: false });
     expect(speakerSwitch(online, true, true)).toEqual({ kind: 'none', on: false, locked: true, missing: false, step: false });
     expect(speakerSwitch(null, null, false).kind).toBe('none');
@@ -29,14 +29,14 @@ describe('识别说话人的开关', () => {
     expect(speakerPackId(qwen)).toBe(PACK);
   });
 
-  it('要模型包的：装了默认开，没装默认关；用户拨过的值优先，开着没装要先下载', () => {
+  it('for those needing a model pack: on by default when installed, off when not; a user-set value takes priority; on while not installed requires downloading first', () => {
     expect(speakerSwitch(qwenWithPack, null, true)).toEqual({ kind: 'pack', on: true, locked: false, missing: false, step: true });
     expect(speakerSwitch(qwen, null, false)).toEqual({ kind: 'pack', on: false, locked: false, missing: false, step: false });
     expect(speakerSwitch(qwen, true, false)).toEqual({ kind: 'pack', on: true, locked: false, missing: true, step: true });
     expect(speakerSwitch(qwenWithPack, false, true)).toEqual({ kind: 'pack', on: false, locked: false, missing: false, step: false });
   });
 
-  it('装没装看模型包的组件；这台电脑没列出模型包时看模型描述', () => {
+  it('installed status checks the model pack\'s components; when this machine does not list the pack, checks the model description', () => {
     const installed = bundle(PACK, {
       capability: 'diarize',
       components: [{ component: 'segmentation', repo: 'a/b', revision: 'r', state: 'installed', bytes: 1, sharedWith: [] }],
@@ -52,7 +52,7 @@ describe('识别说话人的开关', () => {
     expect(speakerPackInstalled(qwen, null)).toBe(false);
   });
 
-  it('开关下面那一句与折叠标题上的状态；体积只在知道时写', () => {
+  it('the sentence under the toggle and the status on the collapsed heading; size written only when known', () => {
     const pack = speakerPackFacts(
       bundle(PACK, {
         capability: 'diarize',
@@ -101,7 +101,7 @@ describe('识别说话人的开关', () => {
   });
 });
 
-describe('运行里的「识别说话人」一步', () => {
+describe('the \'speaker recognition\' step in the run', () => {
   const view = (): ModelCapabilitiesView => {
     const v = fixtureView();
     v.transcribe.providers[0]!.models = [qwen, moss];
@@ -116,7 +116,7 @@ describe('运行里的「识别说话人」一步', () => {
   const asr = (modelId: string, createdAt = '2026-10-01T00:00:00Z', jobId = 'job_t') =>
     ({ jobId, kind: 'transcribe', providerId: 'local', modelId, createdAt, submitter: { kind: 'pipeline', id: 'job_1' } }) as JobRecord;
 
-  it('只在 diarize: true 且由模型包来区分时单列', () => {
+  it('listed separately only when diarize: true and the model pack does the distinguishing', () => {
     const v = view();
     expect(diarizeStepOf(run({ diarize: true, provider: 'local', model: qwen.modelId }), [], v)).toBe(true);
     expect(diarizeStepOf(run({ diarize: true, provider: 'local', model: moss.modelId }), [], v)).toBe(false);
@@ -126,7 +126,7 @@ describe('运行里的「识别说话人」一步', () => {
     expect(diarizeStepOf(run({ diarize: true, provider: 'local', model: qwen.modelId }), [], null)).toBe(false);
   });
 
-  it('模型先看转写任务记下的，再看冻结的参数，最后是生效的默认值', () => {
+  it('model is checked first against what the transcription task recorded, then the frozen parameters, and finally the effective default', () => {
     const v = view();
     expect(diarizeStepOf(run({ diarize: true, provider: 'local', model: qwen.modelId }), [asr(moss.modelId)], v)).toBe(false);
     expect(diarizeStepOf(run({ diarize: true }), [], v)).toBe(true);

@@ -28,8 +28,8 @@ import {
   videoSettings,
 } from './export-settings.ts';
 
-describe('成片设置', () => {
-  it('分辨率：画布本来的尺寸排第一，往下只列更小的标准档；竖屏按短边算', () => {
+describe('final film settings', () => {
+  it('resolution: the canvas\'s native size comes first, followed only by smaller standard presets; portrait is measured by the short side', () => {
     expect(resolutionChoices({ width: 1920, height: 1080 }).map((c) => [c.label, c.width, c.height, c.source])).toEqual([
       ['1080p', 1920, 1080, true],
       ['720p', 1280, 720, false],
@@ -42,7 +42,7 @@ describe('成片设置', () => {
     expect(resolutionChoices({ width: 1440, height: 1080 })[1]).toMatchObject({ width: 960, height: 720 });
   });
 
-  it('默认设置只带烧字幕；选了更小的档才带 height，体积档落成 crf，响度开着才带', () => {
+  it('default settings include only burned-in subtitles; height is included only when a smaller preset is chosen, size presets become crf, loudness is included only when turned on', () => {
     const canvas = { width: 1920, height: 1080 };
     expect(videoSettings(DEFAULT_VIDEO_FORM, canvas, {}, DEFAULT_LOUDNESS_FORM)).toEqual({ kind: 'video', format: 'mp4', burnCaptions: true });
     expect(
@@ -70,7 +70,7 @@ describe('成片设置', () => {
     });
   });
 
-  it('画幅：与画布同比例的档不列；换了画幅时短边由档位定、长边按画幅推，宽高都给（引擎加黑边）', () => {
+  it('aspect ratio: presets with the canvas\'s ratio are not listed; when the aspect changes, the short side is set by the preset and the long side is derived from the aspect, both width and height given (engine adds black bars)', () => {
     const canvas = { width: 1920, height: 1080 };
     expect(ratioChoices(canvas).map((r) => r.key)).toEqual(['9:16', '1:1', '4:5']);
     expect(ratioChoices({ width: 1080, height: 1920 }).map((r) => r.key)).toEqual(['16:9', '1:1', '4:5']);
@@ -113,32 +113,32 @@ describe('成片设置', () => {
     });
   });
 
-  it('成片的声音来源：混音不带 source；只要原声、只要某组配音照音频导出的写法', () => {
+  it('final film audio source: mix omits source; original-only and single-dub-group options are written as audio exports', () => {
     const canvas = { width: 1920, height: 1080 };
     expect(videoSettings({ ...DEFAULT_VIDEO_FORM, source: 'original' }, canvas, {}, DEFAULT_LOUDNESS_FORM)).toMatchObject({ kind: 'video', source: 'original' });
     expect(videoSettings({ ...DEFAULT_VIDEO_FORM, source: 'dub:g_en' }, canvas, {}, DEFAULT_LOUDNESS_FORM)).toMatchObject({ source: { dubGroupId: 'g_en' } });
   });
 });
 
-describe('响度', () => {
-  it('减号用 U+2212，一位小数只在需要时出现', () => {
+describe('loudness', () => {
+  it('minus sign uses U+2212; one decimal place appears only when needed', () => {
     expect(formatDb(-16)).toBe('−16');
     expect(formatDb(-1.5)).toBe('−1.5');
     expect(formatDb(0)).toBe('0');
   });
 
-  it('当前值不在常用档里时补进去，从大到小', () => {
+  it('when the current value is not among the common presets, it is added, sorted from largest to smallest', () => {
     expect(dbChoices([-14, -16, -23], -18)).toEqual([-14, -16, -18, -23]);
     expect(dbChoices([-14, -16], -16)).toEqual([-14, -16]);
   });
 
-  it('说明句', () => {
+  it('explanatory sentences', () => {
     expect(loudnessNote(DEFAULT_LOUDNESS_FORM)).toBe('关：按视频里的混音原样导出。');
     expect(loudnessNote({ on: true, lufs: -16, truePeak: -1.5 })).toBe('整片混音统一到 −16 LUFS，真峰值不超过 −1.5 dBTP。');
   });
 });
 
-describe('音频设置', () => {
+describe('audio settings', () => {
   const seq = sequence(
     [track('a1', 'audio', 1), track('a2', 'audio', 2)],
     [
@@ -149,16 +149,16 @@ describe('音频设置', () => {
     ],
   );
 
-  it('配音组：同一 groupId 的配音本体算一组，分离出的背景不算', () => {
+  it('dub groups: dub bodies with the same groupId count as one group; separated background does not count', () => {
     expect(dubGroups(seq)).toEqual([{ groupId: 'g_en', language: 'en', label: 'English配音', items: 2 }]);
   });
 
-  it('快速选择：有配音时才有「只要原声」与每组配音', () => {
+  it('quick select: \'original only\' and per-group dubs appear only when there are dubs', () => {
     expect(audioSourceChoices([]).map((c) => c.key)).toEqual(['mix']);
     expect(audioSourceChoices(dubGroups(seq)).map((c) => c.key)).toEqual(['mix', 'original', 'dub:g_en']);
   });
 
-  it('WAV 不带码率；混音不带 source；配音组落成 dubGroupId', () => {
+  it('WAV carries no bitrate; mix carries no source; dub groups are written as dubGroupId', () => {
     expect(audioSettings({ ...DEFAULT_AUDIO_FORM, format: 'wav' }, {}, DEFAULT_LOUDNESS_FORM)).toEqual({ kind: 'audio', format: 'wav', channels: 2 });
     expect(audioSettings({ format: 'm4a', bitrate: 320, channels: 1, source: 'dub:g_en' }, { ranges: [{ start: 0, end: 1 }, { start: 2, end: 3 }] }, { on: true, lufs: -16, truePeak: -1.5 })).toEqual({
       kind: 'audio',
@@ -173,7 +173,7 @@ describe('音频设置', () => {
   });
 });
 
-describe('字幕设置', () => {
+describe('subtitle settings', () => {
   const documents = {
     speech: documentRecord('speech', 'speech', '转写', { language: 'zh' }),
     trans: documentRecord('trans', 'translation', '英文译文', { language: 'en', sourceDocumentId: 'speech' }),
@@ -186,7 +186,7 @@ describe('字幕设置', () => {
     [captionItem('c_en', 's2', 'en'), captionItem('c_zh', 's1', 'zh'), captionItem('c_ja', 's3', 'ja')],
   );
 
-  it('每份字幕文档一行，原文在前、名字与字幕轨条一致；轨道停用的算没开', () => {
+  it('one row per subtitle document, source first, with names matching the subtitle track strip; a disabled track counts as off', () => {
     const lanes = subtitleLanes(seq, documents);
     expect(lanes.map((l) => [l.documentId, l.label, l.shown])).toEqual([
       ['zh', '原文（访谈）', true],
@@ -196,13 +196,13 @@ describe('字幕设置', () => {
     expect(initialSubtitlePick(lanes)).toEqual(['zh', 'en']);
   });
 
-  it('没有字幕轨时退回转写文档', () => {
+  it('falls back to the transcription document when there are no subtitle tracks', () => {
     const lanes = subtitleLanes(sequence([], []), documents);
     expect(lanes.map((l) => [l.documentId, l.kind])).toEqual([['speech', 'speech']]);
     expect(initialSubtitlePick(lanes)).toEqual(['speech']);
   });
 
-  it('一条出它自己；两条合成一份是双语；各出一份与三条以上置灰', () => {
+  it('one track exports itself; two tracks combine into one bilingual file; exporting each separately and three or more tracks are greyed out', () => {
     const lanes = subtitleLanes(seq, documents);
     expect(subtitlePlan(lanes, [], true)).toEqual({ options: null, block: 'none' });
     expect(subtitlePlan(lanes, ['en'], true)).toEqual({ options: { documentId: 'en' }, block: null });
@@ -211,7 +211,7 @@ describe('字幕设置', () => {
     expect(subtitlePlan(lanes, ['en', 'zh', 'ja'], true).block).toBe('too-many');
   });
 
-  it('预计文件名照 Runtime 的规则：语言后缀、双语连写、几段加 partN', () => {
+  it('expected file name follows Runtime\'s rules: language suffix, bilingual names joined, multiple segments get partN', () => {
     expect(defaultFileNames('访谈: 第一期', { kind: 'subtitles', format: 'srt', documentId: 'zh', bilingual: { documentId: 'en' } }, documents)).toEqual(['访谈_ 第一期.zh-en.srt']);
     expect(defaultFileNames('访谈', { kind: 'subtitles', format: 'vtt', documentId: 'speech_x' }, documents)).toEqual(['访谈.subtitles.vtt']);
     expect(defaultFileNames('访谈', { kind: 'video', format: 'mp4' }, documents)).toEqual(['访谈.mp4']);
@@ -232,7 +232,7 @@ describe('字幕设置', () => {
     expect(safeFileStem(' ..  ')).toBe('video');
   });
 
-  it('成片没挑位置时导到原视频所在的文件夹；素材在视频目录里面时交给 Runtime 的缺省', () => {
+  it('when no final film location is chosen, export to the folder of the original video; when media is inside the video directory, defer to Runtime\'s default', () => {
     expect(exportSourceDir('/Users/me/Movies/访谈.mp4', '/Users/me/CucCut/访谈')).toBe('/Users/me/Movies');
     expect(exportSourceDir('/a.mp4', null)).toBe('/');
     expect(exportSourceDir('C:\\Videos\\talk.mp4', 'D:\\CucCut\\talk')).toBe('C:\\Videos');
@@ -244,7 +244,7 @@ describe('字幕设置', () => {
     expect(exportSourceDir(null, '/v')).toBeNull();
   });
 
-  it('只有成片默认导到原视频所在的文件夹，别的种类放项目的 exports/；挑过的位置优先', () => {
+  it('only the final film defaults to the original video\'s folder; other kinds go to the project\'s exports/; a chosen location takes precedence', () => {
     expect(exportTargetDir('video', undefined, null, '/Movies')).toBe('/Movies');
     for (const kind of ['audio', 'subtitles', 'transcript', 'project', 'portable'] as const) {
       expect(exportTargetDir(kind, undefined, null, '/Movies')).toBeNull();
@@ -256,8 +256,8 @@ describe('字幕设置', () => {
   });
 });
 
-describe('文稿设置', () => {
-  it('来源先看转写，带上派生自它的译文；没有转写时看时间轴上的字幕', () => {
+describe('script settings', () => {
+  it('source checks the transcription first, including translations derived from it; without a transcription, checks subtitles on the timeline', () => {
     const documents = {
       speech: documentRecord('speech', 'speech', '转写', { language: 'zh' }),
       trans: documentRecord('trans', 'translation', '英文译文', { language: 'en', sourceDocumentId: 'speech' }),
@@ -271,7 +271,7 @@ describe('文稿设置', () => {
     expect(transcriptSources(seq, captionsOnly).map((s) => s.documentId)).toEqual(['zh']);
   });
 
-  it('双语对照带译文；选项只带与默认值不同的，文首只在 Markdown 时带', () => {
+  it('bilingual comparison includes translations; options include only those differing from defaults; the front-matter is included only for Markdown', () => {
     const defaults = { frontmatter: false, chapters: false, speakers: true, skipCut: true };
     expect(
       transcriptSettings({ documentId: 'speech', translationId: 'trans', format: 'md', timestamps: true, ...defaults }, 'speech', {}),
@@ -311,32 +311,32 @@ describe('文稿设置', () => {
   });
 });
 
-describe('工程设置', () => {
-  it('便携包缺素材时可以跳过；xmeml 没有别的参数', () => {
+describe('project settings', () => {
+  it('portable package can skip when media is missing; xmeml has no other parameters', () => {
     expect(projectSettings('portable', 'fail')).toEqual({ kind: 'portable' });
     expect(projectSettings('portable', 'skip')).toEqual({ kind: 'portable', missingAssets: 'skip' });
     expect(projectSettings('xmeml', 'skip')).toEqual({ kind: 'project', format: 'xmeml' });
   });
 });
 
-describe('每种配音各一份', () => {
+describe('one file per dub type', () => {
   const groups = [
     { groupId: 'g_en', language: 'en', label: 'English配音', items: 2 },
     { groupId: 'g_ja', language: 'ja', label: '日本語配音', items: 1 },
   ];
 
-  it('文件名标签：语言代码；没有语言按位置编号；撞了加序号', () => {
+  it('file name tag: language code; without a language, numbered by position; clashes get a sequence number', () => {
     expect(dubTags([{ language: 'en' }, { language: null }, { language: 'en' }, { language: 'a/b' }])).toEqual(['en', 'dub2', 'en-2', 'a_b']);
   });
 
-  it('每组一份，来源是 dubGroupId；只出一个文件时带固定文件名', () => {
+  it('one per group, sourced from dubGroupId; a single file carries a fixed file name', () => {
     const parts = dubParts(groups, { ...DEFAULT_AUDIO_FORM, format: 'wav' }, { range: { start: 1, end: 5 } }, DEFAULT_LOUDNESS_FORM, '访谈: 第 1 期');
     expect(parts.map((p) => p.fileName)).toEqual(['访谈_ 第 1 期.audio.en.wav', '访谈_ 第 1 期.audio.ja.wav']);
     expect(parts[0]!.settings).toEqual({ kind: 'audio', format: 'wav', range: { start: 1, end: 5 }, source: { dubGroupId: 'g_en' }, channels: 2 });
     expect(parts[1]!.settings).toMatchObject({ source: { dubGroupId: 'g_ja' } });
   });
 
-  it('几段各出一份时不给文件名（Runtime 会把它套到每一段上）', () => {
+  it('when several segments each get a file, no file name is given (Runtime applies it to each segment)', () => {
     const ranges = [
       { start: 0, end: 1 },
       { start: 2, end: 3 },

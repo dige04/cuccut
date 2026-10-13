@@ -44,19 +44,19 @@ const list = [
   skill('brand', { name: '品牌规范', origin: 'builtin', removable: false }),
 ];
 
-describe('列表的排序、搜索与筛选', () => {
-  it('按来源（内置、我的、第三方）再按名称排，不依赖 Runtime 给的顺序', () => {
+describe('list sorting, search and filtering', () => {
+  it('sorts by source (built-in, mine, third-party) then by name, not relying on the Runtime\'s order', () => {
     expect(sortSkills([...list].reverse()).map((s) => s.id)).toEqual(['brand', 'subtitle-style', 'chapters']);
   });
 
-  it('搜名称、描述与 id，不分大小写；不假定语言', () => {
+  it('searches name, description and id, case-insensitive; assumes no language', () => {
     expect(filterSkills(list, 'subtitle', 'all').map((s) => s.id)).toEqual(['subtitle-style']);
     expect(filterSkills(list, 'PUNCTUATION', 'all').map((s) => s.id)).toEqual(['subtitle-style']);
     expect(filterSkills(list, '章节', 'all').map((s) => s.id)).toEqual(['chapters']);
     expect(filterSkills(list, '  ', 'all')).toHaveLength(3);
   });
 
-  it('按来源筛选，和搜索叠加；计数跟着搜索词走', () => {
+  it('filters by source, combined with search; the count follows the search term', () => {
     expect(filterSkills(list, '', 'third-party').map((s) => s.id)).toEqual(['chapters']);
     expect(filterSkills(list, 'subtitle', 'builtin')).toEqual([]);
     expect(countSkills(list, '')).toEqual({ all: 3, builtin: 1, personal: 1, 'third-party': 1, pack: 0 });
@@ -64,14 +64,14 @@ describe('列表的排序、搜索与筛选', () => {
   });
 });
 
-describe('输入框「+ › 使用 Skill」的条目', () => {
-  it('开着的在前、组内保持原顺序；关着的也列出来（点选不看开关）', () => {
+describe('the \'+ › Use Skill\' entry in the input', () => {
+  it('enabled ones first, keeping original order within the group; disabled ones are listed too (selecting does not check the toggle)', () => {
     const items = skillMenuItems([skill('a', { enabled: false }), skill('b'), skill('c', { enabled: false }), skill('d')]);
     expect(items.map((i) => i.id)).toEqual(['b', 'd', 'a', 'c']);
     expect(items.map((i) => i.enabled)).toEqual([true, true, false, false]);
   });
 
-  it('描述折成一行，过长截断加省略号，不切坏增补字符', () => {
+  it('description folded into one line, long ones truncated with an ellipsis, without breaking supplementary characters', () => {
     expect(clipLine('第一行\n\n第二行   第三段')).toBe('第一行 第二行 第三段');
     expect(clipLine('一二三四五六', 4)).toBe('一二三…');
     expect(clipLine('😀😀😀😀😀', 3)).toBe('😀😀…');
@@ -79,7 +79,7 @@ describe('输入框「+ › 使用 Skill」的条目', () => {
     expect([...item!.description]).toHaveLength(60);
   });
 
-  it('挂上的 skill 接在后面，已经挂着的不重复（内置的摘掉再加回也接在后面）', () => {
+  it('attached skills are appended, and already-attached ones are not duplicated (a built-in that is removed and re-added is also appended)', () => {
     expect(appendSkillId([], 'a')).toEqual(['a']);
     expect(appendSkillId(['a'], 'b')).toEqual(['a', 'b']);
     expect(appendSkillId(['a', 'b'], 'a')).toEqual(['a', 'b']);
@@ -87,13 +87,13 @@ describe('输入框「+ › 使用 Skill」的条目', () => {
   });
 });
 
-describe('卡片与详情的文字', () => {
-  it('来源 · 版本', () => {
+describe('card and detail text', () => {
+  it('source · version', () => {
     expect(skillMetaLine({ origin: 'builtin', version: '1.2.0' })).toBe('内置 · v1.2.0');
     expect(skillMetaLine({ origin: 'third-party', version: null })).toBe('第三方');
   });
 
-  it('来源：本地路径，或 GitHub 地址@ref（提交取前 7 位）', () => {
+  it('source: a local path, or a GitHub address@ref (commits take the first 7 characters)', () => {
     expect(skillSourceLine(null)).toBeNull();
     expect(skillSourceLine({ kind: 'local', path: '/Users/me/skills/x', addedAt: '2026-10-01T00:00:00Z' })).toBe('/Users/me/skills/x');
     expect(
@@ -123,13 +123,13 @@ describe('卡片与详情的文字', () => {
     expect(SKILL_TABS.map((t) => t.key)).toEqual(['all', 'builtin', 'personal', 'third-party', 'pack']);
   });
 
-  it('SKILL.md 去掉开头的 front matter，没有时原样', () => {
+  it('SKILL.md strips the leading front matter, and is returned as-is when there is none', () => {
     expect(skillBody('---\nname: x\ndescription: y\n---\n\n# 标题\n正文')).toBe('# 标题\n正文');
     expect(skillBody('﻿---\r\nname: x\r\n---\r\n正文')).toBe('正文');
     expect(skillBody('# 没有 front matter')).toBe('# 没有 front matter');
   });
 
-  it('文件大小', () => {
+  it('file size', () => {
     expect(fileSizeLabel(512)).toBe('512 字节');
     expect(fileSizeLabel(2048)).toBe('2.0 KB');
     expect(fileSizeLabel(300 * 1024)).toBe('300 KB');
@@ -137,16 +137,16 @@ describe('卡片与详情的文字', () => {
   });
 });
 
-describe('错误码换成人话', () => {
+describe('error codes are turned into plain language', () => {
   const err = (code: string, details: Record<string, unknown> = {}) => new RpcError('conflict', 'Runtime 的原话', { code, ...details });
 
-  it('读 details.code；不是 RpcError 或没有细分码时为 null', () => {
+  it('reads details.code; null when the error is not an RpcError or has no sub-code', () => {
     expect(skillErrorCode(err('SKILL_EXISTS'))).toBe('SKILL_EXISTS');
     expect(skillErrorCode(new RpcError('internal', 'x'))).toBeNull();
     expect(skillErrorCode(new Error('x'))).toBeNull();
   });
 
-  it('已存在、格式不对、超限、地址不对、离线、限流、网络都有各自的说法', () => {
+  it('already exists, malformed, over the limit, wrong address, offline, rate-limited and network errors each have their own wording', () => {
     expect(skillErrorMessage(err('SKILL_EXISTS', { skillId: 'subtitle-style' }), 'add')).toContain('「subtitle-style」');
     expect(skillErrorMessage(err('SKILL_EXISTS'), 'import')).toContain('先移除旧的');
     expect(skillErrorMessage(err('SKILL_INVALID', { issues: ['根目录缺少 SKILL.md'] }), 'add')).toContain('根目录缺少 SKILL.md');
@@ -158,16 +158,16 @@ describe('错误码换成人话', () => {
     expect(skillErrorMessage(err('WEB_METHOD_NOT_ALLOWED'), 'remove')).toContain('桌面应用');
   });
 
-  it('同一个「来源不存在」按动作说：导入说 GitHub 上没有，添加说文件夹不在了', () => {
+  it('the same \'source not found\' is worded per action: import says it is not on GitHub, add says the folder is gone', () => {
     expect(skillErrorMessage(err('SKILL_SOURCE_NOT_FOUND'), 'import')).toContain('GitHub');
     expect(skillErrorMessage(err('SKILL_SOURCE_NOT_FOUND'), 'add')).toContain('文件夹');
   });
 
-  it('认不出的退回 Runtime 的原话', () => {
+  it('unrecognized ones fall back to the Runtime\'s original message', () => {
     expect(skillErrorMessage(new Error('磁盘满了'), 'add')).toBe('没能添加：磁盘满了');
   });
 
-  it('发送失败：skill 的错误说 skill 的原因，其余照旧', () => {
+  it('send failure: a skill error states the skill\'s reason, otherwise unchanged', () => {
     expect(sendFailureMessage(new RpcError('not-found', 'x', { code: 'SKILL_NOT_FOUND' }))).toContain('已经不在了');
     expect(sendFailureMessage(new Error('断线'))).toBe('没能发送：断线');
   });

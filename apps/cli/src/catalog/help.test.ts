@@ -16,8 +16,8 @@ afterEach(() => {
   setLocale('zh-Hans');
 });
 
-describe('帮助', () => {
-  it.each(['zh-Hans', 'en'] as const)('一屏帮助不超过 40 行（%s）', (locale) => {
+describe('help', () => {
+  it.each(['zh-Hans', 'en'] as const)('a help screen is at most 40 lines (%s)', (locale) => {
     vi.stubEnv('CUCCUT_LOCALE', locale);
     setLocale(locale);
     const text = renderMainHelp(snapshot.tools, admin);
@@ -32,7 +32,7 @@ describe('帮助', () => {
     expect(text).toContain('spec [<name>]');
   });
 
-  it('每条命令的帮助都能派生，带参数、效果与示例', () => {
+  it('each command\'s help can be derived, with arguments, effects and examples', () => {
     const names = snapshot.tools.map((tool) => tool.name);
     for (const tool of snapshot.tools) {
       const command = commandOf(tool);
@@ -48,7 +48,7 @@ describe('帮助', () => {
     expect(group).toContain('configure');
   });
 
-  it('目录示例写成的命令行解析回同一组参数', async () => {
+  it('a command line written from a catalog example parses back to the same arguments', async () => {
     for (const tool of snapshot.tools) {
       const command = commandOf(tool);
       for (const example of tool.examples) {
@@ -68,7 +68,7 @@ describe('帮助', () => {
     }
   });
 
-  it('要确认的命令（videos delete、models install）：示例与通用旗标带 --yes', () => {
+  it('commands that need confirmation (videos delete, models install): examples and common flags include --yes', () => {
     const tree = buildTree(snapshot.tools);
     for (const display of [
       ['videos', 'delete'],
@@ -86,7 +86,7 @@ describe('帮助', () => {
     expect(wait).not.toContain('--no-wait');
   });
 
-  it('说明里的工具名写成命令；摘要取第一句', () => {
+  it('tool names in descriptions are written as commands; the summary takes the first sentence', () => {
     const names = snapshot.tools.map((tool) => tool.name);
     expect(renderToolNames('先用 videos_inspect，再 edits_apply；transcribe 不动', names)).toBe(
       '先用 cuccut videos inspect，再 cuccut edits apply；transcribe 不动',
@@ -97,7 +97,7 @@ describe('帮助', () => {
 });
 
 describe('spec', () => {
-  it('整个目录与一项都带接口版本，能当 JSON 解析', () => {
+  it('the whole catalog and each item carry the interface version and parse as JSON', () => {
     const whole = JSON.parse(JSON.stringify(specOf(snapshot, snapshot.editOps, undefined))) as Record<string, unknown>;
     expect(whole.interfaceVersion).toBe(snapshot.interfaceVersion);
     expect(whole.tools).toHaveLength(snapshot.tools.length);
@@ -111,7 +111,7 @@ describe('spec', () => {
     expect(specOf(snapshot, snapshot.editOps, 'transcribe')).toMatchObject({ tool: { name: 'transcribe', effect: 'job' } });
   });
 
-  it('edits.<操作> 给操作的 schema；不认识的名字是 INVALID_ARGUMENTS', () => {
+  it('edits.<operation> gives the operation\'s schema; an unknown name is INVALID_ARGUMENTS', () => {
     expect(specOf(snapshot, snapshot.editOps, 'edits.renameVideo')).toMatchObject({ operation: { type: 'renameVideo' } });
     expect(specOf(snapshot, snapshot.editOps, 'edits.apply')).toMatchObject({ tool: { name: 'edits_apply' } });
     expect(() => specOf(snapshot, snapshot.editOps, 'edits.nope')).toThrow(CliError);

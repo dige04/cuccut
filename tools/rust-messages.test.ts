@@ -28,20 +28,20 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllEnvs());
 
-describe('Rust msg! 与 TS 文案目录', () => {
-  it('找得到 Rust 里的消息', () => {
+describe('Rust msg! and TS copy catalog', () => {
+  it('finds messages in Rust', () => {
     expect(messages.length).toBeGreaterThan(300);
     expect(messages.find((m) => m.key === 'engine.notFound')).toMatchObject({ template: '{kind} {id} does not exist' });
   });
 
-  it('同一个键处处用同一个模板', () => {
+  it('a given key uses the same template everywhere', () => {
     const byKey = new Map<string, Set<string>>();
     for (const m of messages) byKey.set(m.key, (byKey.get(m.key) ?? new Set()).add(m.template));
     const conflicts = [...byKey].filter(([, templates]) => templates.size > 1).map(([key, templates]) => `${key}: ${[...templates].join(' | ')}`);
     expect(conflicts).toEqual([]);
   });
 
-  it('每个键都已登记，英文与 Rust 模板一致', () => {
+  it('every key is registered, and the English matches the Rust template', () => {
     const wrong = messages.flatMap((m) => {
       const rendered = formatRef({ key: m.key, params: selfParams(m.template) }, MISSING, 'en');
       return rendered === m.template ? [] : [`${m.file}:${m.line} ${m.key}: ${rendered === MISSING ? '没有登记' : rendered}`];
@@ -49,7 +49,7 @@ describe('Rust msg! 与 TS 文案目录', () => {
     expect(wrong).toEqual([]);
   });
 
-  it('每种译文都用上全部参数', () => {
+  it('every translation uses all parameters', () => {
     const wrong = LOCALES.filter((locale) => locale !== 'en').flatMap((locale) =>
       messages.flatMap((m) => {
         const rendered = formatRef({ key: m.key, params: selfParams(m.template) }, MISSING, locale);
@@ -60,7 +60,7 @@ describe('Rust msg! 与 TS 文案目录', () => {
     expect(wrong).toEqual([]);
   });
 
-  it('目录里没有 Rust 已经不用的键', () => {
+  it('the catalog has no keys that Rust no longer uses', () => {
     const used = new Set(messages.map((m) => m.key));
     const stale = Object.entries(RUST_AREAS).flatMap(([area, builders]) => Object.keys(builders).map((name) => `${area}.${name}`)).filter((key) => !used.has(key));
     expect(stale).toEqual([]);
@@ -68,7 +68,7 @@ describe('Rust msg! 与 TS 文案目录', () => {
 });
 
 describe('messagesIn', () => {
-  it('处理转义，跳过注释与测试模块', () => {
+  it('handles escapes, skips comments and test modules', () => {
     const source = [
       'fn a() { msg!("x.one", "Say \\"hi\\" \\u{2014} {name}", name); }',
       '/// msg!("x.doc", "in a doc comment")',
@@ -90,7 +90,7 @@ describe('messagesIn', () => {
   });
 });
 
-describe('引擎错误的引用', () => {
+describe('engine error references', () => {
   // Same shape as the unit tests in `crates/video-engine/src/error.rs`: entity kinds are nested references.
   const body = {
     code: 'ENTITY_NOT_FOUND',
@@ -104,19 +104,19 @@ describe('引擎错误的引用', () => {
     recoveryRef: { key: 'engine.notFoundRecovery' },
   };
 
-  it('按当前语言展开，嵌套的种类也跟着换', () => {
+  it('expands in the current language, nested kinds switch too', () => {
     expect(localizeText(body.message, body.messageRef)).toBe('Clip item_1 does not exist');
     setLocale('zh-Hans');
     expect(localizeText(body.message, body.messageRef)).toBe('片段 item_1 不存在');
     expect(localizeText(body.recovery, body.recoveryRef)).toBe('重新读取视频之后再选择目标');
   });
 
-  it('认不出的键照用英文缺省文字', () => {
+  it('unrecognized keys fall back to the English default text', () => {
     setLocale('zh-Hans');
     expect(localizeText('Something new', { key: 'engine.fromTheFuture' })).toBe('Something new');
   });
 
-  it('RpcError 带着引用，文字是 Runtime 的语言', () => {
+  it('RpcError carries the reference, text is in the Runtime\'s language', () => {
     setLocale('zh-Hans');
     const error = engineError(body);
     expect(error.code).toBe('not-found');
@@ -125,7 +125,7 @@ describe('引擎错误的引用', () => {
     expect(error.toPayload()).toMatchObject({ messageRef: body.messageRef });
   });
 
-  it('拼接的多条原因逐条展开', () => {
+  it('concatenated multiple causes expand one by one', () => {
     const problems = { key: 'list.join', params: { head: { key: 'time.leadingZero', text: 'x' }, tail: { key: 'engine.overlap', text: 'y' } } };
     setLocale('zh-Hans');
     expect(formatRef({ key: 'engine.bodyNotSchema', params: { schema: 'cuccut.cuts/1', problems } }, '')).toBe(

@@ -24,13 +24,13 @@ function fakeRuntime(fail?: unknown) {
   return { runtime, sent };
 }
 
-describe('交给 Agent：挂着的几个 skill 一起发', () => {
+describe('hand off to agent: send the attached skills together', () => {
   beforeEach(() => {
     useDirectory.setState({ conversations: [] });
     useShell.setState({ queues: {} });
   });
 
-  it('空闲时直接发，skills 按挂上的顺序整组带上', async () => {
+  it('send directly when idle, skills carried as a group in the order they were attached', async () => {
     const { runtime, sent } = fakeRuntime();
     const result = await sendOrQueue(
       runtime,
@@ -44,13 +44,13 @@ describe('交给 Agent：挂着的几个 skill 一起发', () => {
     expect(sent[0]).not.toHaveProperty('skill');
   });
 
-  it('没挂 skill 时不带 skills', async () => {
+  it('no skills carried when none are attached', async () => {
     const { runtime, sent } = fakeRuntime();
     await sendOrQueue(runtime, 'c1', { text: 'x', attachments: [], skills: [] }, null);
     expect(sent[0]).not.toHaveProperty('skills');
   });
 
-  it('会话正忙：排队，排队的那条带着整组 skill', async () => {
+  it('session busy: queued, and the queued message carries the whole skill group', async () => {
     const { runtime } = fakeRuntime(new RpcError('busy', '忙'));
     const result = await sendOrQueue(runtime, 'c1', { text: '再来', attachments: [], skills: [{ id: 'a' }, { id: 'b' }] }, null);
     expect(result).toEqual({ status: 'queued' });
@@ -77,7 +77,7 @@ function handoffRuntime() {
   return { runtime, calls, seen };
 }
 
-describe('交给 Agent：那条会话打开到眼前', () => {
+describe('hand off to agent: the session opens in front', () => {
   const video = { videoId: 'v1', name: '访谈', path: '/p/访谈', source: { projectId: 'p1', conversationId: null }, relPath: '访谈' };
   const target = { entryId: 'e1' };
   const request = { video, session: 'new' as const, text: '写成博客', attachments: [], skills: [], draftKey: 'tool:v1:blog' };
@@ -87,7 +87,7 @@ describe('交给 Agent：那条会话打开到眼前', () => {
     useShell.setState({ queues: {}, views: {}, workspaces: {}, workspaceNarrow: false, hiddenBeforeNarrow: false });
   });
 
-  it('从 Space 打开的视频：新建会话、发出去，转到 Home 的这条会话，视频作为标签留在右边', async () => {
+  it('video opened from Space: create a session, send it, switch to this session in Home, video kept as a tab on the right', async () => {
     useShell.setState({ route: { tab: 'space', category: 'all', projectId: 'p1', video: target } as unknown as Route });
     const { runtime, calls } = handoffRuntime();
     expect(await handToAgent(runtime, request)).toMatchObject({ conversationId: 'c-new', taskId: 'task-1', drafted: false });
@@ -98,7 +98,7 @@ describe('交给 Agent：那条会话打开到眼前', () => {
     expect(conversationVisible(state, 'c-new')).toBe(true);
   });
 
-  it('窄窗口里：选中会话标签，会话露出来', async () => {
+  it('in a narrow window: selecting the session tab brings the session into view', async () => {
     useShell.setState({
       route: { tab: 'home', conversationId: 'c-old', projectId: null, pane: { kind: 'video', target } } as unknown as Route,
       workspaceNarrow: true,
@@ -110,7 +110,7 @@ describe('交给 Agent：那条会话打开到眼前', () => {
     expect(conversationVisible(state, 'c-new')).toBe(true);
   });
 
-  it('接着当前会话：不新建，转到那一条', async () => {
+  it('continue current session: no new session, switch to that one', async () => {
     useDirectory.setState({ conversations: [{ id: 'c-old' }] as never });
     useShell.setState({ route: { tab: 'space', category: 'all', projectId: 'p1', video: target } as unknown as Route });
     const { runtime, calls } = handoffRuntime();
@@ -120,7 +120,7 @@ describe('交给 Agent：那条会话打开到眼前', () => {
     expect(conversationVisible(useShell.getState(), 'c-old')).toBe(true);
   });
 
-  it('不属于项目的视频：新会话不属于项目，与视频所在的那条会话共用工作目录，不建项目', async () => {
+  it('video not in a project: the new session is not in a project, shares the working directory of the session the video is in, and no project is created', async () => {
     useDirectory.setState({ conversations: [{ id: 'c-loose', projectId: null }] as never });
     useShell.setState({ route: { tab: 'space', category: 'all', projectId: null, video: target } as unknown as Route });
     const { runtime, calls, seen } = handoffRuntime();
@@ -131,7 +131,7 @@ describe('交给 Agent：那条会话打开到眼前', () => {
   });
 });
 
-describe('交给 Agent：找可剪的口与刷新过期译文留在原地', () => {
+describe('hand off to agent: find cuttable speech gaps and refresh stale translations, staying in place', () => {
   const video = { videoId: 'v1', name: '访谈', path: '/p/访谈', source: { projectId: 'p1', conversationId: null }, relPath: '访谈' };
   const target = { entryId: 'e1' };
   const request = { video, session: 'new' as const, text: '找可剪的口', attachments: [], skills: [], draftKey: 'aitool:v1:cleanup', stay: true };
@@ -141,7 +141,7 @@ describe('交给 Agent：找可剪的口与刷新过期译文留在原地', () =
     useShell.setState({ queues: {}, views: {}, workspaces: {}, videoChats: {}, drafts: {}, workspaceNarrow: false, hiddenBeforeNarrow: false });
   });
 
-  it('Home 里开着的视频：会话照样建好、话照样发出去，路由不动，带回会话与任务号', async () => {
+  it('video open in Home: the session is still created and the message still sent, the route stays put, and the session and task number are returned', async () => {
     const route = { tab: 'home', conversationId: 'c-old', projectId: null, pane: { kind: 'video', target } } as unknown as Route;
     useShell.setState({ route });
     const { runtime, calls } = handoffRuntime();
@@ -150,7 +150,7 @@ describe('交给 Agent：找可剪的口与刷新过期译文留在原地', () =
     expect(useShell.getState().route).toEqual(route);
   });
 
-  it('从 Space 打开的视频：只记成这个视频的悬浮会话，不转到 Home', async () => {
+  it('video opened from Space: only recorded as a floating session of this video, no switch to Home', async () => {
     const route = { tab: 'space', category: 'all', projectId: 'p1', video: target } as unknown as Route;
     useShell.setState({ route });
     const { runtime } = handoffRuntime();
@@ -160,7 +160,7 @@ describe('交给 Agent：找可剪的口与刷新过期译文留在原地', () =
     expect(Object.values(state.videoChats)).toEqual(['c-new']);
   });
 
-  it('话没发出去：放进那条会话的输入框，会话打开到眼前', async () => {
+  it('message not sent: put into that session\'s input box, session opened in front', async () => {
     useShell.setState({ route: { tab: 'space', category: 'all', projectId: 'p1', video: target } as unknown as Route });
     const runtime = Object.create(RuntimeSession.prototype) as RuntimeSession;
     Object.assign(runtime, {

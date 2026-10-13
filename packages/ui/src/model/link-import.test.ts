@@ -78,15 +78,15 @@ const SUMMARY = {
   transcribeJobId: null,
 };
 
-describe('认出与读出', () => {
-  it('只认 link-import 的父任务', () => {
+describe('recognize and read', () => {
+  it('recognizes only link-import parent tasks', () => {
     expect(isLinkImport(job())).toBe(true);
     expect(isLinkImport({ kind: 'pipeline', pipeline: { ...job().pipeline!, name: 'translate' } })).toBe(false);
     expect(isLinkImport({ kind: 'transcribe' })).toBe(false);
     expect(isLinkImport(null)).toBe(false);
   });
 
-  it('冻结参数与摘要', () => {
+  it('frozen parameters and summary', () => {
     expect(linkFrozen(job())).toEqual({
       url: 'https://www.youtube.com/watch?v=abc',
       host: 'youtube.com',
@@ -103,7 +103,7 @@ describe('认出与读出', () => {
     expect(linkSummary(job({ summary: { ...SUMMARY, cookieBrowser: 'netscape' } }))?.cookieBrowser).toBeNull();
   });
 
-  it('标题：解析出来之前写主机名', () => {
+  it('title: the host name is written before parsing completes', () => {
     expect(linkTitle(job())).toBe('从链接导入 · youtube.com');
     const resolved = job({ steps: [step('resolve', 'completed', { output: { metadata: { title: '访谈', platform: 'youtube', durationSec: 12 } } })] });
     expect(linkMeta(resolved)).toEqual({ title: '访谈', platform: 'youtube', durationSec: 12 });
@@ -112,8 +112,8 @@ describe('认出与读出', () => {
   });
 });
 
-describe('来源', () => {
-  it('首页建视频时素材记的来源与流程自己导入时同形，摘要没有的取解析步骤', () => {
+describe('source', () => {
+  it('the source recorded for media when a video is created from Home has the same shape as when the flow imports it itself; when the summary has none, the parse step is used', () => {
     expect(linkProvenance(job())).toBeNull();
     const metadata = { title: '访谈', platform: 'youtube', webpageUrl: 'https://www.youtube.com/watch?v=abc', mediaId: 'abc', uploadDate: '20260930' };
     const done = job({ jobId: 'job_9', summary: SUMMARY, steps: [step('resolve', 'completed', { output: { metadata } })] });
@@ -136,8 +136,8 @@ describe('来源', () => {
   });
 });
 
-describe('下载进度', () => {
-  it('读下载那一步子任务的字节数', () => {
+describe('download progress', () => {
+  it('reads the byte count of the download sub-task', () => {
     const child = { ...job(), jobId: 'job_dl', kind: 'pipeline-step', progress: { done: 1024 * 1024, total: 4 * 1024 * 1024, unit: 'bytes' } } as JobRecord;
     expect(downloadProgress(job(), [child])).toEqual({ pct: 25, text: '1.0 MB / 4.0 MB' });
     expect(downloadProgress(job(), [{ ...child, progress: { done: 2048, total: null, unit: 'bytes' } }])).toEqual({ pct: null, text: '已下载 2.0 KB' });
@@ -145,14 +145,14 @@ describe('下载进度', () => {
   });
 });
 
-describe('三步', () => {
+describe('three steps', () => {
   const states = (j: JobRecord, follow: Parameters<typeof linkStages>[1]) => linkStages(j, follow).map((s) => s.state);
 
-  it('下载中：第一步在做', () => {
+  it('downloading: step one in progress', () => {
     expect(states(job(), null)).toEqual(['current', 'pending', 'pending']);
   });
 
-  it('下载失败：第一步失败，后面不动', () => {
+  it('download failed: step one fails, later steps do not move', () => {
     const failed = job({
       state: 'failed',
       steps: [step('resolve', 'completed'), step('download', 'failed'), step('verify', 'pending'), step('publish', 'pending')],
@@ -160,7 +160,7 @@ describe('三步', () => {
     expect(states(failed, null)).toEqual(['failed', 'pending', 'pending']);
   });
 
-  it('流程完成后，建视频与转录由首页执行器接着做', () => {
+  it('after the flow completes, video creation and transcription continue in the Home executor', () => {
     const done = job({ state: 'completed', steps: ['resolve', 'download', 'verify', 'publish'].map((n) => step(n, 'completed')), summary: SUMMARY });
     expect(states(done, { video: 'running', subs: 'pending' })).toEqual(['done', 'current', 'pending']);
     expect(states(done, { video: 'done', subs: 'running' })).toEqual(['done', 'done', 'current']);
@@ -170,7 +170,7 @@ describe('三步', () => {
     expect(states(done, null)).toEqual(['done', 'current', 'pending']);
   });
 
-  it('带 videoId 起的导入：导入与转写是流程自己的步骤', () => {
+  it('import started with a videoId: import and transcription are the flow\'s own steps', () => {
     const own = job({
       state: 'running',
       steps: [...['resolve', 'download', 'verify', 'publish', 'import'].map((n) => step(n, 'completed')), step('transcribe', 'running')],
@@ -178,7 +178,7 @@ describe('三步', () => {
     expect(states(own, null)).toEqual(['done', 'done', 'current']);
   });
 
-  it('大标题', () => {
+  it('headline', () => {
     expect(linkHeading({ state: 'running' }, null)).toBe('把这条链接变成可编辑的视频');
     expect(linkHeading({ state: 'cancelled' }, null)).toBe('导入已停止');
     expect(linkHeading({ state: 'completed' }, { video: 'done', subs: 'running' })).toBe('视频已就绪，正在生成字幕');
@@ -186,8 +186,8 @@ describe('三步', () => {
   });
 });
 
-describe('失败的说法', () => {
-  it('认得的码给补救按钮，带上下载工具的原话', () => {
+describe('failure wording', () => {
+  it('a recognized code gets a remedy button, with the download tool\'s original words', () => {
     const issue = linkIssue({ code: 'LINK_NETWORK_ERROR', message: 'x', details: { stderr: 'ERROR: timed out', remedy: 'r', step: 'download' } });
     expect(issue).toMatchObject({ title: '连接中断了', actions: ['retry', 'use-file'], diag: 'ERROR: timed out' });
     expect(linkIssue({ code: 'LINK_LOGIN_REQUIRED', message: 'x' })!.actions[0]).toBe('use-file');
@@ -195,7 +195,7 @@ describe('失败的说法', () => {
     expect(linkIssue({ code: 'LINK_SOURCE_EXPIRED', message: 'x' })!.actions).toEqual(['restart']);
   });
 
-  it('不认得的码照原话写；中断没有错误码也有说法；没出错时 null', () => {
+  it('an unrecognized code is shown with its original words; an interruption without an error code also has wording; null when there is no error', () => {
     expect(linkIssue({ code: 'WHATEVER', message: '出错了', details: { remedy: '换个办法' } })).toMatchObject({
       title: '导入没有完成',
       body: '出错了。换个办法',
@@ -204,7 +204,7 @@ describe('失败的说法', () => {
     expect(linkIssue(null, 'completed')).toBeNull();
   });
 
-  it('提交被拒时读出码', () => {
+  it('reads the code when submission is rejected', () => {
     expect(rejectionCode({ details: { code: 'TOOL_NOT_INSTALLED' } })).toBe('TOOL_NOT_INSTALLED');
     expect(rejectionCode(new Error('x'))).toBeNull();
   });
@@ -244,36 +244,36 @@ const tool = (patch: Partial<ExternalToolStatus> = {}): ExternalToolStatus => ({
   ...patch,
 });
 
-describe('下载工具卡片', () => {
+describe('download tool card', () => {
   const card = (status: ExternalToolStatus | null, o: Partial<{ checking: boolean; installing: boolean; updating: boolean }> = {}) =>
     toolCard(status, { checking: false, installing: false, ...o });
 
-  it('检查中、没登记', () => {
+  it('checking, not registered', () => {
     expect(card(null, { checking: true }).state).toBe('checking');
     expect(card(null).state).toBe('unknown');
   });
 
-  it('没装：能下载时给「同意并安装」与来源、大小、许可', () => {
+  it('not installed: when downloadable, offers "Agree and install" with source, size and license', () => {
     const c = card(tool());
     expect(c).toMatchObject({ state: 'install', action: '同意并安装' });
     expect(c.facts[0]).toBe('版本 2026.01.01 · 约 35 MB');
     expect(c.facts[1]).toBe('从 github.com 下载 · Unlicense 许可');
   });
 
-  it('清单不全或平台不支持：不能装，说原因', () => {
+  it('manifest incomplete or platform unsupported: cannot install, states the reason', () => {
     const c = card(tool({ offer: { ...tool().offer!, blockedReason: '清单里没有这个平台的摘要。' } }));
     expect(c).toMatchObject({ state: 'blocked', action: null });
     expect(c.body).toContain('清单里没有这个平台的摘要');
   });
 
-  it('正在安装', () => {
+  it('installing', () => {
     expect(card(tool({ installJobId: 'job_i' })).state).toBe('installing');
     expect(card(tool(), { installing: true }).state).toBe('installing');
   });
 
   const brew = { method: 'homebrew' as const, argv: ['/opt/homebrew/bin/brew', 'upgrade', 'yt-dlp'], command: '/opt/homebrew/bin/brew upgrade yt-dlp', runnable: true, reason: null };
 
-  it('版本旧：CucCut 下载的能更新，系统里的按原安装方式更新（能代为执行时指向下面的命令）', () => {
+  it('version outdated: CucCut-downloaded copies can be updated; system-installed copies are updated by their original install method (when it can run on its own, points to the command below)', () => {
     expect(card(tool({ state: 'outdated', source: 'managed', version: '2024.01.01' }))).toMatchObject({ state: 'update', action: '同意并更新' });
     const system = card(tool({ state: 'outdated', source: 'system', version: '2024.01.01' }));
     expect(system).toMatchObject({ state: 'blocked', action: null });
@@ -281,13 +281,13 @@ describe('下载工具卡片', () => {
     expect(card(tool({ state: 'outdated', source: 'system', version: '2024.01.01', update: brew })).body).toContain('可以用下面这条命令按原安装方式更新');
   });
 
-  it('正在更新：卡片说在更新，事实照旧', () => {
+  it('updating: the card says it is updating, facts unchanged', () => {
     const installed = tool({ state: 'installed', reason: null, path: '/opt/homebrew/bin/yt-dlp', version: '2026.01.01', source: 'system', update: brew });
     expect(card({ ...installed, updateJobId: 'job_u' })).toMatchObject({ state: 'updating', action: null });
     expect(card(installed, { updating: true }).facts).toEqual(['yt-dlp 2026.01.01 · 系统里装的 · Homebrew 安装', '/opt/homebrew/bin/yt-dlp']);
   });
 
-  it('装好了：没同意时要同意，同意过就绪', () => {
+  it('installed: consent required if not given; ready once consented', () => {
     const installed = tool({ state: 'installed', reason: null, path: '/opt/homebrew/bin/yt-dlp', version: '2026.01.01', source: 'system' });
     expect(card(installed)).toMatchObject({ state: 'consent', action: '同意使用' });
     expect(card(installed).facts).toEqual(['yt-dlp 2026.01.01 · 系统里装的', '/opt/homebrew/bin/yt-dlp']);
@@ -299,7 +299,7 @@ describe('下载工具卡片', () => {
     expect(toolReady(null)).toBe(false);
   });
 
-  it('下载位置', () => {
+  it('download location', () => {
     expect(downloadDirLabel('/Users/me/Downloads', '/Users/me/p')).toBe('~/Downloads');
     expect(downloadDirLabel(null, '/Users/me/p/')).toBe('~/Downloads');
     expect(downloadDirLabel(null, null)).toBe('~/Downloads');

@@ -9,8 +9,8 @@ import {
   settingsSub,
 } from './settings-nav.ts';
 
-describe('设置分组', () => {
-  it('Agent 自成一组，在偏好设置之后、应用之前：提供方、skills，然后是 packs', () => {
+describe('settings groups', () => {
+  it('Agent forms its own group, after preferences and before the app: providers, skills, then packs', () => {
     expect(SETTINGS_GROUPS.map((g) => g.id)).toEqual(['preferences', 'agents', 'app']);
     expect(SETTINGS_GROUPS.find((g) => g.id === 'agents')).toMatchObject({ label: 'Agent', keys: ['agent', 'skills', 'packs'] });
     expect(SETTINGS_GROUPS.find((g) => g.id === 'app')?.keys).toEqual(['publishing', 'glossary', 'review', 'privacy', 'diagnostics', 'about']);
@@ -27,7 +27,7 @@ describe('设置分组', () => {
     expect(SETTINGS_GROUPS.find((g) => g.id === 'app')?.keys).toEqual(['publishing', 'glossary', 'review', 'privacy', 'diagnostics', 'about']);
   });
 
-  it('每个分节恰好属于一组，且都有标签', () => {
+  it('each section belongs to exactly one group, and all have labels', () => {
     expect(SETTINGS_GROUPS.flatMap((g) => g.keys).sort()).toEqual([...SETTINGS_SECTIONS].sort());
     expect(SETTINGS_SECTION_INFO.map((s) => s.key)).toEqual([...SETTINGS_SECTIONS]);
     const label = (key: string) => SETTINGS_SECTION_INFO.find((s) => s.key === key)?.label;
@@ -36,16 +36,16 @@ describe('设置分组', () => {
     expect(label('privacy')).toBe('隐私与权限');
   });
 
-  it('组 id 与条目 key 不重名（S2 SideNav 共用一个 id 空间，撞名会抛 RangeError）', () => {
+  it('group ids and item keys do not collide (S2 SideNav shares one id space, and a collision throws RangeError)', () => {
     const ids = [...SETTINGS_GROUPS.map((g) => g.id), 'models', ...SETTINGS_SECTIONS, ...MODEL_CATEGORIES];
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it('skills 是独立分节', () => {
+  it('skills is its own section', () => {
     expect(isSettingsSection('skills')).toBe(true);
   });
 
-  it('review 在应用组里紧跟术语库（m2-review-gate §2.3）', () => {
+  it('review sits right after the glossary in the app group (m2-review-gate §2.3)', () => {
     expect(isSettingsSection('review')).toBe(true);
     const app = SETTINGS_GROUPS.find((g) => g.id === 'app')!.keys;
     expect(app.indexOf('review')).toBe(app.indexOf('glossary') + 1);
@@ -79,8 +79,8 @@ describe('pages inside a section', () => {
   });
 });
 
-describe('旧的 Agent 页签去向', () => {
-  it('skills、permissions 各去新位置，其余留在 Agent 提供方', () => {
+describe('where the old Agent tabs went', () => {
+  it('skills and permissions each move to their new place; the rest stay under Agent providers', () => {
     expect(legacyAgentSection('skills')).toBe('skills');
     expect(legacyAgentSection('permissions')).toBe('privacy');
     expect(legacyAgentSection('advanced')).toBe('agent');

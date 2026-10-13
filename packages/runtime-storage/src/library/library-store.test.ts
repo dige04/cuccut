@@ -35,7 +35,7 @@ async function rejection(promise: Promise<unknown> | (() => unknown)): Promise<R
 
 const codeOf = (error: RpcError) => (error.details as { code?: string } | undefined)?.code;
 
-describe('用户库的存储', () => {
+describe('storage of the user library', () => {
   let dir: string;
   let events: LibraryEvent[];
   let store: LibraryStore;
@@ -63,7 +63,7 @@ describe('用户库的存储', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('术语表：新建、不变不出新版本、修改出新版本、乐观并发、删除', async () => {
+  it('glossary: create, unchanged does not produce a new version, edit produces a new version, optimistic concurrency, delete', async () => {
     const created = await store.put({ library: 'glossaries', content: glossary });
     expect(created).toMatchObject({ created: true, changed: true, entry: { library: 'glossaries', version: 1 } });
     expect(created.entry.contentHash).toMatch(/^sha256:[0-9a-f]{64}$/);
@@ -102,7 +102,7 @@ describe('用户库的存储', () => {
     expect(events.map((e) => e.type)).toEqual(['entry.upsert', 'entry.upsert', 'entry.removed']);
   });
 
-  it('翻译用术语表要有目标语言', async () => {
+  it('translation glossary must have a target language', async () => {
     const entry = await store.put({
       library: 'glossaries',
       content: {
@@ -124,7 +124,7 @@ describe('用户库的存储', () => {
     expect(codeOf(bad)).toBe('LIBRARY_FORMAT_INVALID');
   });
 
-  it('品牌库：图片按内容认类型并按摘要存放，颜色与字幕样式，叠加模板被拒绝', async () => {
+  it('brand library: images identified by content type and stored by digest; colors and subtitle styles; overlay templates rejected', async () => {
     const source = path.join(fixtures, 'logo.dat');
     await fs.writeFile(source, PNG);
     const image = await store.put({ library: 'brand', content: { name: '标志', kind: 'image' }, file: { path: source } });
@@ -176,7 +176,7 @@ describe('用户库的存储', () => {
     expect(store.list('brand', 'color')).toHaveLength(1);
   });
 
-  it('音色：授权声明、参考录音变了克隆转为 stale、库音色的解析', async () => {
+  it('voice: consent statement, changed reference recording makes clone stale, resolution of library voices', async () => {
     const ref = path.join(fixtures, 'ref.bin');
     await fs.writeFile(ref, wav(1));
     // A new voice must provide a reference recording.
@@ -257,7 +257,7 @@ describe('用户库的存储', () => {
     expect((await rejection(() => store.get({ library: 'voices', id }))).code).toBe('not-found');
   });
 
-  it('固定的旧版本保留，解除固定后清掉；删除了的条目等固定解除再删', async () => {
+  it('pinned old versions kept, cleared after unpinning; deleted entries deleted only after the pin is removed', async () => {
     const source = path.join(fixtures, 'a.png');
     await fs.writeFile(source, PNG);
     const v1 = (await store.put({ library: 'brand', content: { name: 'a', kind: 'image' }, file: { path: source } })).entry;
@@ -290,7 +290,7 @@ describe('用户库的存储', () => {
     await expect(fs.stat(path.join(dir, 'library', 'brand', v1.id))).rejects.toThrow();
   });
 
-  it('重启之后数据还在；没写完的条目与没被引用的文件清掉', async () => {
+  it('data survives restart; unfinished entries and unreferenced files cleaned up', async () => {
     const g = (await store.put({ library: 'glossaries', content: glossary })).entry;
     await store.put({ library: 'glossaries', id: g.id, content: { ...glossary, name: '改名' } });
     store.pin('job', [{ library: 'glossaries', id: g.id }]);
@@ -307,7 +307,7 @@ describe('用户库的存储', () => {
     await expect(fs.stat(path.join(dir, 'library', 'brand', 'brd_partial'))).rejects.toThrow();
   });
 
-  it('识别提示：用户提示在前，规范写法去重后接上，放不下的计数', () => {
+  it('recognition hints: user hints first, canonical spellings appended after dedup, count when it doesn\'t fit', () => {
     const terms = (names: string[]): TranscriptionGlossary => ({
       ...glossary,
       terms: names.map((canonical) => ({ canonical, misheard: [] })),
@@ -321,7 +321,7 @@ describe('用户库的存储', () => {
     expect(composeTranscribeHint(undefined, [])).toEqual({ hint: undefined, terms: 0, dropped: 0 });
   });
 
-  it('文件头识别', () => {
+  it('file header recognition', () => {
     expect(sniffBytes(PNG)?.mediaType).toBe('image/png');
     expect(sniffBytes(wav(0))?.mediaType).toBe('audio/wav');
     expect(sniffBytes(Buffer.from('wOF2xxxx'))?.mediaType).toBe('font/woff2');
@@ -330,7 +330,7 @@ describe('用户库的存储', () => {
     expect(sniffBytes(Buffer.from('# hello'))).toBeNull();
   });
 
-  it('`.lottie` 压缩包：中央目录里有 animations/*.json（或第 2 版的 a/*.json）才算', () => {
+  it('`.lottie` archive: counts only if the central directory contains animations/*.json (or a/*.json in version 2)', () => {
     expect(
       isDotLottie(
         storedZip([

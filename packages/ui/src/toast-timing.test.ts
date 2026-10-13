@@ -19,7 +19,7 @@ describe('installToastAutoDismiss', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it('没给 timeout 的按默认几秒；给了的不短于 5 秒', () => {
+  it('without a timeout, uses the default of several seconds; a given one is no shorter than 5 seconds', () => {
     const { queue, added } = fakeQueue();
     const uninstall = installToastAutoDismiss(queue, () => false);
     queue.neutral('a');
@@ -29,7 +29,7 @@ describe('installToastAutoDismiss', () => {
     uninstall();
   });
 
-  it('带按钮的 toast 到时由这里关掉；先关掉的不再计时', () => {
+  it('a toast with a button is closed here when it times out; one closed earlier no longer runs its timer', () => {
     const { queue, added, closed } = fakeQueue();
     const uninstall = installToastAutoDismiss(queue, () => false);
     const onClose = vi.fn();
@@ -48,7 +48,7 @@ describe('installToastAutoDismiss', () => {
     uninstall();
   });
 
-  it('指针或焦点停在 toast 上时顺延', () => {
+  it('the timeout is extended while the pointer or focus is on the toast', () => {
     const { queue, closed } = fakeQueue();
     let held = true;
     const uninstall = installToastAutoDismiss(queue, () => held);
@@ -61,7 +61,7 @@ describe('installToastAutoDismiss', () => {
     uninstall();
   });
 
-  it('同一个队列只装一次', () => {
+  it('the same queue holds it only once', () => {
     const { queue, added } = fakeQueue();
     const uninstall = installToastAutoDismiss(queue, () => false);
     installToastAutoDismiss(queue, () => false);

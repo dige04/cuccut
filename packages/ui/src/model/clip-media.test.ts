@@ -19,29 +19,29 @@ const linear = (sourceIn: number, num = 1, den = 1): TimeMap => ({
   rate: { num, den },
 });
 
-describe('片段里的源时间', () => {
-  it('线性映射：sourceIn 加上相对内容开始的时间乘速度', () => {
+describe('source time within a clip', () => {
+  it('linear mapping: sourceIn plus the time relative to content start times speed', () => {
     const clock = sourceClock(linear(10, 2), 4);
     expect(sourceSecondsAt(clock, 4)).toBe(10);
     expect(sourceSecondsAt(clock, 5.5)).toBe(13);
   });
 
-  it('定格：一直是同一个源时间', () => {
+  it('freeze: always the same source time', () => {
     const clock = sourceClock({ kind: 'hold', sourceAt: { ticks: '7', timescale: 2 } }, 4);
     expect(sourceSecondsAt(clock, 0)).toBe(3.5);
     expect(sourceSecondsAt(clock, 100)).toBe(3.5);
   });
 });
 
-describe('胶片条', () => {
-  it('只算看得见的格子', () => {
+describe('filmstrip', () => {
+  it('only visible cells are computed', () => {
     expect(visibleTiles(100, 640, { left: 0, right: 2000 })).toEqual([0, 10]);
     expect(visibleTiles(100, 640, { left: 300, right: 500 })).toEqual([3, 7]);
     expect(visibleTiles(100, 640, { left: 2000, right: 3000 })).toEqual([10, 10]);
     expect(visibleTiles(100, 640, { left: -500, right: 50 })).toEqual([0, 0]);
   });
 
-  it('取帧粒度不超过一格覆盖的源时长', () => {
+  it('frame sampling granularity does not exceed the source duration one cell covers', () => {
     expect(thumbnailGrid(0.05)).toBe(0.1);
     expect(thumbnailGrid(0.64)).toBe(0.5);
     expect(thumbnailGrid(1.6)).toBe(1);
@@ -49,7 +49,7 @@ describe('胶片条', () => {
     expect(thumbnailGrid(4000)).toBe(3600);
   });
 
-  it('每格取它左边那一刻的画面：经 timeMap 换成源时间、按粒度取整、不超出素材', () => {
+  it('each cell takes the frame at its left: converted to source time via timeMap, rounded to granularity, not beyond the media', () => {
     // 32 px per second: one cell is 2 s wide; at 2x speed one cell covers 4 s of source time, so the granularity is 2 s.
     const tiles = filmstripTiles({
       clipLeft: 64,
@@ -67,7 +67,7 @@ describe('胶片条', () => {
     ]);
   });
 
-  it('裁掉开头时内容不动：片段左边晚于内容开始，从后面的源时间取起', () => {
+  it('trimming the start leaves content unchanged: when the clip\'s left edge is later than the content start, begins from a later source time', () => {
     const tiles = filmstripTiles({
       clipLeft: 64,
       clipWidth: 64,
@@ -81,19 +81,19 @@ describe('胶片条', () => {
   });
 });
 
-describe('波形', () => {
-  it('base64 解成字节', () => {
+describe('waveform', () => {
+  it('base64 decoded to bytes', () => {
     expect([...decodePeaks(btoa(String.fromCharCode(0, 128, 255)))]).toEqual([0, 128, 255]);
   });
 
-  it('取一段源时间里的最大峰值；区间不到一格时取那一格', () => {
+  it('takes the maximum peak in a source time range; if the range is smaller than one cell, takes that cell', () => {
     const peaks = Uint8Array.from([10, 50, 20, 200, 0]);
     expect(peakIn(peaks, 10, 0, 0.3)).toBe(50);
     expect(peakIn(peaks, 10, 0.31, 0.32)).toBe(200);
     expect(peakIn(peaks, 10, 0.9, 1.2)).toBe(0);
   });
 
-  it('按第 98 百分位放大，几乎静音的素材有下限', () => {
+  it('scaled to the 98th percentile, near-silent media has a floor', () => {
     const peaks = new Uint8Array(100).fill(64);
     peaks[99] = 255;
     expect(peakScale(peaks)).toBeCloseTo(255 / 64);
@@ -101,7 +101,7 @@ describe('波形', () => {
     expect(peakScale(new Uint8Array(0))).toBe(1);
   });
 
-  it('包络沿画布逐点取峰值；定格没有波形', () => {
+  it('envelope takes peaks point by point along the canvas; freeze has no waveform', () => {
     const peaks = Uint8Array.from([255, 0, 128, 0]);
     const common = { width: 4, step: 2, clipLeft: 0, clipStart: 0, pxPerSecond: 2, peaks, binsPerSecond: 1, scale: 1 };
     expect(waveEnvelope({ ...common, canvasLeft: 0, clock: sourceClock(linear(0), 0) })).toEqual([1, 0, 128 / 255]);

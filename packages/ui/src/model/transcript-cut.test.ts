@@ -192,7 +192,7 @@ const CUT_SET: CutSetBody = {
 const cutsOf = (ops: EditOperation[]) => ops.map((op) => (op.type === 'addCuts' ? [op.sequenceId, op.assetId, op.cuts] : op.type));
 
 describe('transcriptWords', () => {
-  it('从时间线推导剪没剪：投不到的词是剪掉，剪口落在词中间的只剩一部分', () => {
+  it('derives cut state from the timeline: words that do not map are cut, a cut point falling inside a word leaves only part of it', () => {
     const list = words(0.8);
     list[3] = { ...list[3]!, start: 3.5, end: 4.5 };
     const result = transcriptWords(afterCut(), 'asset_a', list);
@@ -215,7 +215,7 @@ describe('transcriptWords', () => {
     expect(result.map((w) => w.index)).toEqual([...Array(12).keys()]);
   });
 
-  it('剪口取整后只剩一丝（不到一成）的词算整个剪掉，那一丝不当落点', () => {
+  it('after rounding, a word with only a sliver left (under 10%) counts as fully cut, and the sliver is not a cut point', () => {
     const list = words(0.8);
     list[3] = { ...list[3]!, start: 3.98, end: 4.9 };
     const result = transcriptWords(afterCut(), 'asset_a', list);
@@ -223,7 +223,7 @@ describe('transcriptWords', () => {
     expect(result[3]!.placements).toEqual([]);
   });
 
-  it('词按开始时刻排，西文词之间空一格、中文不空', () => {
+  it('words sorted by start time; Western words separated by a space, Chinese without', () => {
     const list: SpeechWord[] = [
       { id: 'b', start: 1, end: 1.5, text: 'world', paragraphStart: false },
       { id: 'a', start: 0, end: 0.5, text: 'hello', paragraphStart: false },
@@ -239,7 +239,7 @@ describe('transcriptWords', () => {
     ]);
   });
 
-  it('播放头找词：落在词里给下标，落在停顿里没有', () => {
+  it('playhead finds the word: index if inside a word, none if in a pause', () => {
     const result = transcriptWords(afterCut(), 'asset_a', words(0.8));
     const index = placementIndex(result);
     expect(wordAt(index, 0.5)).toBe(0);
@@ -249,8 +249,8 @@ describe('transcriptWords', () => {
   });
 });
 
-describe('已读的词（播放跟随）', () => {
-  it('游标只在播放头跨过词尾时变；剪掉的词不算', () => {
+describe('read words (playback follow)', () => {
+  it('cursor changes only when the playhead passes a word\'s end; cut words do not count', () => {
     // afterCut: 词0–3 (words 0–3) at sequence [i, i + 0.8), 词4, 词5 (words 4, 5) cut, 词6–11 (words 6–11) at [i - 2, i - 1.2).
     const result = transcriptWords(afterCut(), 'asset_a', words(0.8));
     const ends = playedIndex(result);
@@ -266,7 +266,7 @@ describe('已读的词（播放跟随）', () => {
     expect(playedUntil(ends, 100)).toBeCloseTo(9.8);
   });
 
-  it('同一段素材用了两次：播完第一处就算读过', () => {
+  it('same media used twice: finishing the first occurrence counts as read', () => {
     const twice = seq([video('va', 0, 120, 0), video('vb', 120, 120, 0)]);
     const result = transcriptWords(twice, 'asset_a', words(0.8, 4));
     expect(result[0]!.placements).toHaveLength(2);
@@ -277,7 +277,7 @@ describe('已读的词（播放跟随）', () => {
     expect(playedUntil(ends, 4.5)).toBeCloseTo(3.8);
   });
 
-  it('段的阈值：没读到是 -Infinity，读完是 Infinity，读到一半给游标；整段剪掉永远没读', () => {
+  it('segment threshold: -Infinity when unread, Infinity when read, cursor when partway; a fully cut segment is never read', () => {
     const result = transcriptWords(afterCut(), 'asset_a', words(0.8));
     const head = paragraphPlayedSpan(result.slice(0, 4));
     expect(head?.[0]).toBeCloseTo(0.8);
@@ -290,7 +290,7 @@ describe('已读的词（播放跟随）', () => {
     expect(paragraphPlayed(gone, 100)).toBe(-Infinity);
   });
 
-  it('居中位置夹在可滚范围里', () => {
+  it('centered position clamped to the scrollable range', () => {
     // Viewport 400, content 2000: a 20-high word at pixel 1000 → 810.
     expect(centerScrollTop(2000, 400, 1000, 20)).toBe(810);
     expect(centerScrollTop(2000, 400, 50, 20)).toBe(0);
@@ -300,7 +300,7 @@ describe('已读的词（播放跟随）', () => {
 });
 
 describe('transcriptParagraphs', () => {
-  it('换说话人、标了段首、停顿两秒以上时分段', () => {
+  it('splits into segments on a speaker change, a marked segment start, or a pause of two seconds or more', () => {
     const list: SpeechWord[] = [
       { id: 'a', start: 0, end: 0.5, text: '一', speaker: 's1', paragraphStart: false },
       { id: 'b', start: 0.6, end: 1, text: '二', speaker: 's1', paragraphStart: false },
@@ -319,7 +319,7 @@ describe('transcriptParagraphs', () => {
 });
 
 describe('cutTrackIds', () => {
-  it('取用素材的轨道、链接实例的轨道、作用实例指向它们的字幕轨；背景音乐与没写作用实例的字幕不算', () => {
+  it('source media tracks, linked instance tracks, and subtitle tracks whose effect instances point to them; background music and subtitles without an effect instance do not count', () => {
     const sequence = seq(
       [
         video('va', 0, 360, 0, { linkGroupId: 'g1' }),
@@ -335,7 +335,7 @@ describe('cutTrackIds', () => {
 });
 
 describe('cutOperations', () => {
-  it('S03：删素材 [4, 6) 编成一笔 addCuts，区间是素材秒；序列上删 60 帧', () => {
+  it('S03: deleting media [4, 6) is encoded as one addCuts, the range in media seconds; deleting 60 frames on the sequence', () => {
     const sequence = whole();
     const list = transcriptWords(sequence, 'asset_a', words());
     const plan = cutOperations(sequence, ASSETS, 'asset_a', list, new Set([4, 5]));
@@ -346,7 +346,7 @@ describe('cutOperations', () => {
     expect(plan.words).toBe(2);
   });
 
-  it('一串选中的词连同词间的停顿一起剪；多段按先后编进同一个 addCuts', () => {
+  it('a selected run of words is cut together with the pauses between them; multiple segments are encoded in order into the same addCuts', () => {
     const sequence = whole();
     const list = transcriptWords(sequence, 'asset_a', words(0.8));
     const plan = cutOperations(sequence, ASSETS, 'asset_a', list, new Set([2, 3, 8]));
@@ -363,7 +363,7 @@ describe('cutOperations', () => {
     expect(plan.ok && plan.frames).toBe(78);
   });
 
-  it('没选中的已剪词不打断一串；跨剪口的两段合成一段', () => {
+  it('unselected cut words do not break a run; two segments across a cut point merge into one', () => {
     const sequence = afterCut();
     const list = transcriptWords(sequence, 'asset_a', words());
     // 词3 (word 3, the last word of va), 词4 and 词5 (words 4 and 5) already cut, 词6 (word 6, the first word of vb): one clip segment [3, 7), merged by the engine with the existing cuts.
@@ -373,7 +373,7 @@ describe('cutOperations', () => {
     expect(cutOperations(sequence, ASSETS, 'asset_a', list, new Set([4, 5]))).toEqual({ ok: false, reason: 'nothing' });
   });
 
-  it('没选中的留着的词把一串断开', () => {
+  it('unselected kept words break the run', () => {
     const sequence = whole();
     const list = transcriptWords(sequence, 'asset_a', words());
     const plan = cutOperations(sequence, ASSETS, 'asset_a', list, new Set([2, 4]));
@@ -383,14 +383,14 @@ describe('cutOperations', () => {
     ]);
   });
 
-  it('同一段素材用了两次：只编一个素材区间，引擎在两处都剪', () => {
+  it('same media used twice: only one media range is encoded, and the engine cuts both occurrences', () => {
     const sequence = seq([video('va', 0, 120, 0), video('vb', 150, 120, 0)]);
     const list = transcriptWords(sequence, 'asset_a', words());
     const plan = cutOperations(sequence, ASSETS, 'asset_a', list, new Set([1]));
     expect(plan.ok && [plan.ranges, plan.frames]).toEqual([[{ from: 1, to: 2 }], 60]);
   });
 
-  it('剪口不超出素材时长；不足一帧的不编，全都不足一帧时照实拒绝', () => {
+  it('cut points do not exceed the media duration; cuts under one frame are not encoded, and if all are under one frame it rejects honestly', () => {
     const sequence = whole();
     const long = transcriptWords(sequence, 'asset_a', [{ id: 'x', start: 11.5, end: 12.4, text: '尾', paragraphStart: false }]);
     const plan = cutOperations(sequence, ASSETS, 'asset_a', long, new Set([0]));
@@ -403,12 +403,12 @@ describe('cutOperations', () => {
 describe('restoreOperations', () => {
   const cuts = readCutSet(CUT_SET)!;
 
-  it('读剪口集合：刻度换成素材秒，保留出处；不是剪口集合时返回 null', () => {
+  it('reads the cut-point set: ticks converted to media seconds, origin kept; returns null when it is not a cut-point set', () => {
     expect(cuts).toEqual([{ id: 'cut-1', from: 4, to: 6, ref: 'sug-1' }]);
     expect(readCutSet({ schema: 'cuccut.speech/1' })).toBeNull();
   });
 
-  it('选中的已剪词 → 盖住它们的剪口整个放回，一笔 restoreCut', () => {
+  it('selected cut words: the cut that covers them is fully restored, as one restoreCut', () => {
     const sequence = afterCut();
     const list = transcriptWords(sequence, 'asset_a', words());
     const ranges = restoreRanges(list, new Set([3, 5, 6]));
@@ -422,7 +422,7 @@ describe('restoreOperations', () => {
     });
   });
 
-  it('只碰到剪口边上的不算；没有剪口盖住时照实拒绝（untracked）', () => {
+  it('merely touching a cut edge does not count; with no cut covering it, rejects honestly (untracked)', () => {
     const sequence = afterCut();
     expect(restoreOperations(sequence, 'asset_a', cuts, [{ from: 6, to: 7 }])).toEqual({ ok: false, reason: 'untracked' });
     expect(restoreOperations(sequence, 'asset_a', [], [{ from: 4, to: 5 }])).toEqual({ ok: false, reason: 'untracked' });
@@ -430,7 +430,7 @@ describe('restoreOperations', () => {
 });
 
 describe('cutSeams', () => {
-  it('同一轨道上首尾相接、同一素材、素材空了一段的两个实例之间是剪口', () => {
+  it('two instances on the same track that abut, use the same media, and have a gap in the media are a cut point', () => {
     const seams = cutSeams(afterCut());
     expect(seams.map((s) => [s.trackId, s.leftId, s.rightId, s.frame, s.gap, s.to])).toEqual([
       ['v1', 'va', 'vb', 120, 2, 6],
@@ -438,7 +438,7 @@ describe('cutSeams', () => {
     ]);
   });
 
-  it('时间线上空着、不同素材、素材连续（只是拆开）的都不是剪口', () => {
+  it('gaps on the timeline, different media, or continuous media (just split apart) are not cut points', () => {
     const sequence = seq([
       video('a', 0, 120, 0),
       video('b', 150, 60, 6),
@@ -450,7 +450,7 @@ describe('cutSeams', () => {
   });
 });
 
-describe('改原文', () => {
+describe('edit original text', () => {
   const body = {
     schema: 'cuccut.speech/1',
     clock: 'source-asset',
@@ -464,7 +464,7 @@ describe('改原文', () => {
     sentences: null,
   };
 
-  it('改计时的词保留前导空白与别的字段；改成空等于删掉；没有变化返回 null', () => {
+  it('editing a timed word keeps leading whitespace and other fields; setting it empty equals deleting; returns null when unchanged', () => {
     const next = editWordText(body, 'w1', 'Hi');
     expect((next!.words as unknown[])[0]).toEqual({
       id: 'w1',
@@ -480,7 +480,7 @@ describe('改原文', () => {
     expect((editWordText(body, 'w2', '  ')!.words as Array<{ hidden?: boolean }>)[1]!.hidden).toBe(true);
   });
 
-  it('未计时段拆开的一块只改它自己那一段；读回来词 ID 不变', () => {
+  it('an untimed segment split into pieces: editing one piece changes only its own segment; word IDs remain the same when read back', () => {
     const pieces = readSpeechWords(body)!.words.filter((w) => rawWordId(w.id) === 'w3');
     expect(pieces.map((w) => [w.id, w.text])).toEqual([
       ['w3', '第一句话。'],
@@ -496,7 +496,7 @@ describe('改原文', () => {
     ).toEqual(['w3', 'w3~2', 'w3~3']);
   });
 
-  it('删文字：计时的词标隐藏，未计时段只删选中的块，整段都删了才标隐藏', () => {
+  it('deleting text: timed words are marked hidden; untimed segments delete only the selected block, and are marked hidden only when the whole segment is deleted', () => {
     const next = hideWords(body, ['w1', 'w3~2'])!;
     const list = next.words as Array<{ id: string; text: string; hidden?: boolean }>;
     expect(list[0]!.hidden).toBe(true);
@@ -509,7 +509,7 @@ describe('改原文', () => {
 });
 
 describe('staleCaptions', () => {
-  it('由这份转写的旧版本生成、还在时间线上的字幕算过期', () => {
+  it('subtitles generated from an older version of this transcription that are still on the timeline count as stale', () => {
     const speech: DocumentRecord = { id: 'doc_speech', kind: 'speech', name: '转写', currentRevision: '3', revisions: {} };
     const cap = (id: string, revision: string): DocumentRecord => ({
       id,

@@ -14,12 +14,12 @@ afterEach(() => {
 });
 
 describe('compositionHostScript', () => {
-  it('没有开关时是 null：走桌面应用', () => {
+  it('is null without the switch: runs the desktop app', () => {
     expect(compositionHostScript(['/app/CucCut', '.'])).toBeNull();
     expect(compositionHostScript(['/app/CucCut', '--composition-host=/tmp/host.cjs'])).toBeNull();
   });
 
-  it('开关后面的下一个参数是脚本', () => {
+  it('the argument after the switch is the script', () => {
     expect(compositionHostScript(['/app/CucCut', '--composition-host', '/c/host-1.cjs'])).toBe('/c/host-1.cjs');
     // In dev mode, default_app puts the app files first. Chromium may also insert switches in front.
     expect(compositionHostScript(['/e/Electron', '/repo/out/main/index.js', '--no-sandbox', '--composition-host', 'C:\\c\\host.cjs'])).toBe(
@@ -27,14 +27,14 @@ describe('compositionHostScript', () => {
     );
   });
 
-  it('开关后面没有脚本时是空字符串', () => {
+  it('is an empty string when no script follows the switch', () => {
     expect(compositionHostScript(['/app/CucCut', '--composition-host'])).toBe('');
     expect(compositionHostScript(['/app/CucCut', '--composition-host', '--inspect'])).toBe('');
   });
 });
 
 describe('runCompositionHost', () => {
-  it('Electron 数据目录设到脚本旁边的 profile/，再同步加载脚本', () => {
+  it('sets the Electron data directory to profile/ beside the script, then loads the script synchronously', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cuccut-host-entry-'));
     temps.push(dir);
     const script = path.join(dir, 'host-test.cjs');

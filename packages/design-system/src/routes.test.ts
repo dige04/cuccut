@@ -45,7 +45,7 @@ const CANVAS_LAYOUT: DeckLayout = {
 };
 const CANVAS = JSON.stringify({ v: 3, title: 'Poster', boards: { 'Main.dc.html': { x: 0, y: 0, w: 880, h: 560 } }, order: ['Main.dc.html'] });
 
-describe('SlidesServer 的 /design-system/ 路由（docs/design/canvas §10.4）', () => {
+describe('SlidesServer /design-system/ route (docs/design/canvas §10.4)', () => {
   let slidesDist: string;
   let designDist: string;
   let systemDist: string | null;
@@ -106,7 +106,7 @@ describe('SlidesServer 的 /design-system/ 路由（docs/design/canvas §10.4）
   const upload = async (url: string, body: Buffer, type = 'image/png') =>
     fetch(url, { method: 'POST', headers: { 'Content-Type': type }, body: new Uint8Array(body) });
 
-  it('/design-system/<grant>/ 与 /design/<grant>/ 互不匹配：跨种类的 grant 一律 404；同一个目录按两种打开各有 grant', async () => {
+  it('/design-system/<grant>/ and /design/<grant>/ do not match each other: a grant of the other kind always gets 404; the same directory opened in both ways has a grant each', async () => {
     expect(await server.open(systemDir, 'design-system')).toBe(grant);
     const designGrant = await server.open(canvasDir, 'design');
     const slidesGrant = await server.open(deckDir);
@@ -129,7 +129,7 @@ describe('SlidesServer 的 /design-system/ 路由（docs/design/canvas §10.4）
     expect(server.storeOf(await realpath(systemDir), 'design')?.layout).toBe(CANVAS_LAYOUT);
   });
 
-  it('编辑器页面与 artifact-type/run.html 同源提供，都带设计系统的 CSP；缺 / 时带查询重定向', async () => {
+  it('editor page is served same-origin with artifact-type/run.html, both with the design-system CSP; a missing / redirects with the query', async () => {
     const redirect = await fetch(`${base}/design-system/${grant}?path=brand&lang=en`, { redirect: 'manual' });
     expect(redirect.status).toBe(308);
     expect(redirect.headers.get('location')).toBe(`/design-system/${grant}/?path=brand&lang=en`);
@@ -156,7 +156,7 @@ describe('SlidesServer 的 /design-system/ 路由（docs/design/canvas §10.4）
     expect(designSystemEditorCsp()).toBe(designEditorCsp());
   });
 
-  it('没构建设计系统编辑器时页面回 503，run.html 回 404', async () => {
+  it('when the design-system editor is not built the page returns 503, run.html returns 404', async () => {
     const saved = systemDist;
     systemDist = null;
     try {
@@ -171,7 +171,7 @@ describe('SlidesServer 的 /design-system/ 路由（docs/design/canvas §10.4）
     }
   });
 
-  it('清单不含 _blobs/；project/* 按扩展名给 Content-Type（.js 是 JavaScript），都带 nosniff 与数据 CSP', async () => {
+  it('manifest excludes _blobs/; project/* gets Content-Type by extension (.js is JavaScript), all with nosniff and the data CSP', async () => {
     const listing = (await (await fetch(at('_files.json'))).json()) as FileListing;
     expect(Object.keys(listing.files)).toEqual([
       'project/README.md',
@@ -203,7 +203,7 @@ describe('SlidesServer 的 /design-system/ 路由（docs/design/canvas §10.4）
     expect((await fetch(at(`project/${BLOBS_DIR}/0123456789abcdef0123456789abcdef.png`))).status).toBe(404);
   });
 
-  it('发布：assets/<组>/ 可写，project/_blobs/… 是 read_only_path', async () => {
+  it('publish: assets/<group>/ is writable, project/_blobs/… is read_only_path', async () => {
     const write = (text: string) => ({ base64: Buffer.from(text).toString('base64'), contentType: 'image/svg+xml' });
     const ok = await publish({ 'project/assets/Icons/cup.svg': write('<svg>cup</svg>') });
     expect(ok.status).toBe(200);
@@ -214,7 +214,7 @@ describe('SlidesServer 的 /design-system/ 路由（docs/design/canvas §10.4）
     expect(await readdir(path.join(systemDir, BLOBS_DIR))).not.toContain('ffffffffffffffffffffffffffffffff.svg');
   });
 
-  it('上传写进 _blobs/；SVG 至多 2 MiB；/design-system/<grant>/_blob/<id> 取得到', async () => {
+  it('uploads are written to _blobs/; SVG at most 2 MiB; /design-system/<grant>/_blob/<id> can fetch them', async () => {
     const uploaded = (await (await upload(at('__deck/assets'), Buffer.from('system-png'))).json()) as UploadResult;
     expect(uploaded.url).toBe(`/_blob/${uploaded.id}`);
     expect(await readdir(path.join(systemDir, BLOBS_DIR))).toContain(`${uploaded.id}.png`);
@@ -227,7 +227,7 @@ describe('SlidesServer 的 /design-system/ 路由（docs/design/canvas §10.4）
     expect(smallSvg.status).toBe(200);
   });
 
-  it('根级 /_blob/<id> 按 blobScope 收窄：design-system 只找设计系统，isolated 找设计稿与设计系统，design 只找设计稿', async () => {
+  it('root-level /_blob/<id> is narrowed by blobScope: design-system looks only in design systems, isolated looks in designs and design systems, design looks only in designs', async () => {
     const systemBlob = ((await (await upload(at('__deck/assets'), Buffer.from('system-png'))).json()) as UploadResult).id;
     const designGrant = await server.open(canvasDir, 'design');
     const designBlob = ((await (await upload(`${base}/design/${designGrant}/__deck/assets`, Buffer.from('design-png'))).json()) as UploadResult).id;
@@ -248,7 +248,7 @@ describe('SlidesServer 的 /design-system/ 路由（docs/design/canvas §10.4）
     expect((await fetch(at(`_blob/${designBlob}`))).status).toBe(404);
   });
 
-  it('session 另带本机用户名（user.name()）；取不到时不带；设计稿的 session 不带', async () => {
+  it('session also carries the local username (user.name()); omitted when unavailable; design session does not carry it', async () => {
     expect(await (await fetch(at('__deck/session'))).json()).toEqual({ canEdit: true, userName: 'tester' });
     userName = undefined;
     expect(await (await fetch(at('__deck/session'))).json()).toEqual({ canEdit: true });
@@ -261,7 +261,7 @@ describe('SlidesServer 的 /design-system/ 路由（docs/design/canvas §10.4）
     expect(await (await fetch(`${base}/design/${designGrant}/__deck/session`)).json()).toEqual({ canEdit: false });
   });
 
-  it('没给 userName 时取本机用户名；没配置设计系统编辑器时不能打开，/design-system/ 一律 404', async () => {
+  it('without userName, uses the local username; without a configured design-system editor it cannot open, /design-system/ always 404s', async () => {
     const plain = new SlidesServer({ editorDist: () => slidesDist, designSystem: { editorDist: () => systemDist, layout: DESIGN_SYSTEM_LAYOUT } });
     const plainGrant = await plain.open(systemDir, 'design-system');
     const plainHttp = http.createServer((request, response) => {

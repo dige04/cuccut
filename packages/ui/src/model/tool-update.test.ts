@@ -37,8 +37,8 @@ const status = (patch: Partial<ExternalToolStatus> = {}): ExternalToolStatus => 
   ...patch,
 });
 
-describe('「更新」一节', () => {
-  it('系统里、你指定的那一份有；CucCut 下载的副本、没装的、正在安装的没有；正在更新时总有', () => {
+describe('"更新" section', () => {
+  it('present when it\'s the copy you specified in the system; not for a CucCut-downloaded copy, not installed, or being installed; always present while updating', () => {
     expect(hasUpdateSection(status())).toBe(true);
     expect(hasUpdateSection(status({ source: 'user', update: null }))).toBe(true);
     expect(hasUpdateSection(status({ source: 'managed', update: null }))).toBe(false);
@@ -49,7 +49,7 @@ describe('「更新」一节', () => {
     expect(hasUpdateSection(null)).toBe(false);
   });
 
-  it('能代为执行的写安装方式；不能的说原因与下一步，不重复「执行这条命令」', () => {
+  it('a runnable install method is written out; when it can\'t run, the reason and next step are given, without repeating "执行这条命令"', () => {
     expect(updateSectionCopy(brew)).toEqual({ label: '用 Homebrew 更新', hint: null });
     expect(updateSectionCopy({ ...brew, method: 'standalone' }).label).toBe('用 官方独立程序 更新');
     const admin = updateSectionCopy({ ...brew, method: 'standalone', runnable: false, reason: '这份 yt-dlp 所在的 /usr/local/bin 要管理员权限才能改写，CucCut 不替你提权。' });
@@ -66,7 +66,7 @@ describe('「更新」一节', () => {
     expect(updateSectionCopy(null).hint).toMatch(/判断不了.*重新检测/);
   });
 
-  it('判断不了安装方式时按 Runtime 所在主机列常用命令', () => {
+  it('when the install method can\'t be determined, lists common commands for the host the Runtime runs on', () => {
     expect(manualUpdateCommands('darwin').map((m) => m.label)).toEqual(['Homebrew', 'pip', '官方独立程序']);
     expect(manualUpdateCommands('linux')).toEqual(manualUpdateCommands('darwin'));
     expect(manualUpdateCommands(null)).toEqual(manualUpdateCommands('darwin'));
@@ -79,16 +79,16 @@ describe('「更新」一节', () => {
   });
 });
 
-describe('更新的结果', () => {
+describe('update result', () => {
   const base = { exitCode: 0, error: null, before: '2026.07.04', after: '2026.09.30' };
 
-  it('成功：版本变了说更新到哪个版本，没变说已是最新', () => {
+  it('success: if the version changed, says updated to which version; if not, says already up to date', () => {
     expect(updateSummary({ ...base, state: 'completed' })).toEqual({ tone: 'positive', title: '已更新到 2026.09.30', body: null });
     expect(updateSummary({ ...base, state: 'completed', after: '2026.07.04' })).toEqual({ tone: 'neutral', title: '已是最新版本 2026.07.04', body: null });
     expect(updateSummary({ ...base, state: 'completed', before: null, after: null }).title).toBe('已是最新版本');
   });
 
-  it('失败说退出码；没有退出码时说任务的错误；停止的不猜结果', () => {
+  it('failure reports the exit code; without one, reports the task error; stopped doesn\'t guess a result', () => {
     const failed = updateSummary({ ...base, state: 'failed', exitCode: 1 });
     expect(failed).toMatchObject({ tone: 'negative', title: '更新没有完成（退出码 1）' });
     expect(failed.body).toMatch(/^原来的 yt-dlp 不受影响/);
@@ -98,7 +98,7 @@ describe('更新的结果', () => {
     expect(updateSummary({ ...base, state: 'cancelled', exitCode: null })).toMatchObject({ tone: 'notice', title: '已停止更新' });
   });
 
-  it('输出框：结束后补退出码或「已停止」，截掉过前面时先说一句，还没有输出时是省略号', () => {
+  it('output box: after finishing, appends the exit code or "已停止"; when the earlier output was truncated, a note is given first; with no output yet, an ellipsis', () => {
     const cmd = { line: brew.command, output: '==> Upgrading\nyt-dlp 2026.07.04 -> 2026.09.30\n', lines: 2, truncated: false, exitCode: null };
     expect(updateLog(cmd, 'running', true)).toBe('==> Upgrading\nyt-dlp 2026.07.04 -> 2026.09.30');
     expect(updateLog({ ...cmd, exitCode: 0 }, 'completed', false)).toBe('==> Upgrading\nyt-dlp 2026.07.04 -> 2026.09.30\n（退出码 0）');
@@ -110,7 +110,7 @@ describe('更新的结果', () => {
     expect(updateLog({ ...cmd, output: 'No available upgrade found.\n', exitCode: 0x8a15002b }, 'completed', false)).toBe('No available upgrade found.\n（退出码 0x8A15002B）');
   });
 
-  it('退出码：Windows 的 HRESULT 一类按十六进制写，负数按无符号数看', () => {
+  it('exit codes: Windows HRESULT-style values are written in hex, negative numbers are treated as unsigned', () => {
     expect(exitCodeText(0)).toBe('0');
     expect(exitCodeText(255)).toBe('255');
     expect(exitCodeText(2316632107)).toBe('0x8A15002B');
@@ -118,7 +118,7 @@ describe('更新的结果', () => {
     expect(updateSummary({ state: 'failed', exitCode: 0x8a150014, error: null, before: null, after: null }).title).toBe('更新没有完成（退出码 0x8A150014）');
   });
 
-  it('更新前的版本：点执行时记下的优先，否则读任务记录', () => {
+  it('previous version: the one recorded when execute was clicked takes priority, otherwise read from the task record', () => {
     expect(updateBefore('2026.07.04', { modelId: '2026.01.01' })).toBe('2026.07.04');
     expect(updateBefore(null, { modelId: '2026.01.01' })).toBe('2026.01.01');
     expect(updateBefore(null, { modelId: 'unknown' })).toBeNull();

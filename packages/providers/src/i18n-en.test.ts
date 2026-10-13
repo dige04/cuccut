@@ -6,7 +6,7 @@ import { providerFetch } from './http/provider-fetch.ts';
 import { COMPAT_VENDORS } from './vendor-catalog.ts';
 
 /** When the UI language is English, the error classification notes and provider names for online services are in English; the provider's original text is passed through unchanged as a parameter. */
-describe('providers 的英文文案', () => {
+describe('providers English copy', () => {
   const servers: FakeProviderServer[] = [];
 
   beforeEach(() => {
@@ -19,14 +19,14 @@ describe('providers 的英文文案', () => {
     await Promise.all(servers.splice(0).map((s) => s.close()));
   });
 
-  it('供应商名字在读取时按当前语言', () => {
+  it('provider names follow the current language when read', () => {
     expect(COMPAT_VENDORS.moonshot.label).toBe('Kimi (Moonshot)');
     vi.unstubAllEnvs();
     setLocale('zh-Hans');
     expect(COMPAT_VENDORS.moonshot.label).toBe('Kimi（Moonshot）');
   });
 
-  it('请求被拒：分类说明是英文，供应商的原话原样附上', async () => {
+  it('request rejected: the category explanation is in English, the provider\'s original message is attached as is', async () => {
     const server = await startFakeProviderServer(() => ({ status: 400, json: { error: { message: '参数不对' } } }));
     servers.push(server);
     const error = await providerFetch(

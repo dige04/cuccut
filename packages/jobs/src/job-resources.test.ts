@@ -134,7 +134,7 @@ function deferred() {
   return { promise, resolve };
 }
 
-describe('JobManager 的资源准入（假 Model Worker）', () => {
+describe('JobManager resource admission (fake Model Worker)', () => {
   let dir: string;
   let catalog: ModelCatalog;
   let provider: LocalTranscribeProvider;
@@ -237,7 +237,7 @@ describe('JobManager 的资源准入（假 Model Worker）', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('放不下的任务排队并记下在等什么；取消排队的撤回请求；结束后后面的开始', async () => {
+  it('tasks that do not fit are queued and record what they are waiting for; cancelling a queued task withdraws the request; the next ones start after one ends', async () => {
     await start();
     const first = deferred();
     const a = task(first.promise);
@@ -266,7 +266,7 @@ describe('JobManager 的资源准入（假 Model Worker）', () => {
     await until(() => scheduler.outstanding === 0);
   });
 
-  it('停止 Runtime 时任务还在运行与排队：全部停下，租约全部归还', async () => {
+  it('when Runtime stops with tasks running and queued: all stop, and all leases are returned', async () => {
     await start();
     const gate = deferred();
     const ids = [task(gate.promise), task(gate.promise), task(gate.promise)].map((t) => t.jobId);
@@ -275,7 +275,7 @@ describe('JobManager 的资源准入（假 Model Worker）', () => {
     expect(scheduler.outstanding).toBe(0);
   });
 
-  it('同一队列的并发上限也是一种等待；需求超过这台机器能给的量时提交即被拒绝', async () => {
+  it('the concurrency limit of the same queue is also a kind of waiting; submission is rejected at once when demand exceeds what this machine can provide', async () => {
     await start();
     const gate = deferred();
     const a = task(gate.promise, { queue: { key: 'serial', concurrency: 1 }, resources: { demand: {} } });
@@ -299,7 +299,7 @@ describe('JobManager 的资源准入（假 Model Worker）', () => {
     await until(() => scheduler.outstanding === 0);
   });
 
-  it('转写：Model Worker 进程持有 holder，任务结束后仍计入；卸载、进程真的退出之后才归还', async () => {
+  it('transcription: the Model Worker process holds a holder and still counts after the task ends; it is returned only after unloading and the process actually exits', async () => {
     await start();
     const { jobId } = await submit();
     await manager.settled(jobId);
@@ -317,7 +317,7 @@ describe('JobManager 的资源准入（假 Model Worker）', () => {
     expect(releasedWhileAlive).toEqual([false]);
   });
 
-  it('Model Worker 的需求按提交时要加载的权重估计（candle 在 CPU 上，计在内存）：没装的可选组件不计，装上之后计入；不知道权重多大时用固定值', async () => {
+  it('Model Worker demand is estimated from the weights to be loaded at submission (candle on CPU, counted in memory): optional components not installed are not counted, and are counted once installed; a fixed value is used when the weight size is unknown', async () => {
     const manifest = (repo: string, revision: string, size: number): RepoManifestSpec => ({
       repo,
       revision,
@@ -361,7 +361,7 @@ describe('JobManager 的资源准入（假 Model Worker）', () => {
     await until(() => scheduler.outstanding === 0);
   });
 
-  it('取消（Worker 不理会取消）：进程被结束之前不归还，结束之后不泄漏', async () => {
+  it('cancel (Worker ignores cancellation): not returned until the process is ended, and no leak after it ends', async () => {
     await start({ cancelGraceMs: 300 });
     const bundleId = 'fake@cpu#hang-on-cancel,slow';
     const { jobId } = await submit(bundleId);
@@ -376,7 +376,7 @@ describe('JobManager 的资源准入（假 Model Worker）', () => {
     expect(releasedWhileAlive).toEqual([false]);
   });
 
-  it('Worker 崩溃后自动重试：同一份租约跨过两次尝试，结束后不泄漏', async () => {
+  it('automatic retry after Worker crash: the same lease spans both attempts, and does not leak after completion', async () => {
     await start();
     const bundleId = 'fake@cpu#crash-once';
     const leased: boolean[] = [];
@@ -398,7 +398,7 @@ describe('JobManager 的资源准入（假 Model Worker）', () => {
     expect(releasedWhileAlive).toEqual([false, false]);
   });
 
-  it('加载时取消：任务先归还租约，正在加载的进程照样计入，直到它退出', async () => {
+  it('cancel during loading: the task returns its lease first, the process still loading counts until it exits', async () => {
     await start();
     const bundleId = 'fake@cpu#slow-load';
     const { jobId } = await submit(bundleId);
@@ -415,7 +415,7 @@ describe('JobManager 的资源准入（假 Model Worker）', () => {
     expect(releasedWhileAlive).toEqual([false]);
   });
 
-  it('空闲的 Model Worker 给排队的转写让位：卸载它、等它退出，再启动另一个模型包', async () => {
+  it('an idle Model Worker yields to queued transcription: it is unloaded, waited on to exit, and then another model pack is started', async () => {
     await start();
     const first = await submit('fake@cpu');
     await manager.settled(first.jobId);
@@ -431,7 +431,7 @@ describe('JobManager 的资源准入（假 Model Worker）', () => {
     expect(scheduler.snapshot().holders).toMatchObject([{ holder: modelWorkerHolder('other@cpu'), users: 0, processes: 1 }]);
   });
 
-  it('空闲卸载与新任务交错：每个进程退出后都归还，不泄漏', async () => {
+  it('idle unload interleaved with new tasks: returned after each process exits, with no leak', async () => {
     await start({ idleMs: 30 });
     for (let i = 0; i < 4; i++) {
       const { jobId } = await submit();
@@ -442,7 +442,7 @@ describe('JobManager 的资源准入（假 Model Worker）', () => {
     expect(provider.workerPid('fake@cpu')).toBeNull();
   });
 
-  it('停止 Runtime：排队的撤回、运行中的停下、Model Worker 退出之后租约全部归还', async () => {
+  it('stop Runtime: queued withdrawn, running stopped, and all leases returned after Model Workers exit', async () => {
     await start();
     const running = await submit('fake@cpu#slow');
     await until(() => manager.inspect(running.jobId).phase === 'transcribing');

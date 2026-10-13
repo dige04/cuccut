@@ -30,7 +30,7 @@ function fakeDeps(options: { holds?: boolean; undo?: () => unknown } = {}) {
 }
 
 describe('undoInBackground', () => {
-  it('打开 → 按事务撤销 → 关掉', async () => {
+  it('open → undo by transaction → close', async () => {
     const { deps, calls, holds } = fakeDeps();
     await expect(undoInBackground(deps, target, 'tx_1')).resolves.toEqual({ kind: 'undone', transactionId: 'tx_undo' });
     expect(calls.map((c) => c.method)).toEqual(['videos.open', 'edits.undo', 'videos.close']);
@@ -40,13 +40,13 @@ describe('undoInBackground', () => {
     expect(holds).toEqual([{ target, videoId: 'mov_1' }]);
   });
 
-  it('编辑器占着这个视频时不替它关', async () => {
+  it('does not close it when the editor holds this video', async () => {
     const { deps, calls } = fakeDeps({ holds: true });
     await undoInBackground(deps, target, 'tx_1');
     expect(calls.map((c) => c.method)).toEqual(['videos.open', 'edits.undo']);
   });
 
-  it('已经撤销过：返回撤销它的那一笔，照样关掉', async () => {
+  it('already undone: returns the undo entry that undid it, and still closes', async () => {
     const { deps, calls } = fakeDeps({
       undo: () => {
         throw engineError('UNDO_UNAVAILABLE', { transactionId: 'tx_1', undoneBy: 'tx_prev' });
@@ -56,7 +56,7 @@ describe('undoInBackground', () => {
     expect(calls.at(-1)!.method).toBe('videos.close');
   });
 
-  it('撤销冲突等其它错误原样抛出，也会关掉', async () => {
+  it('undo conflicts and other errors are rethrown as-is, and it still closes', async () => {
     const { deps, calls } = fakeDeps({
       undo: () => {
         throw engineError('UNDO_CONFLICT');
@@ -68,7 +68,7 @@ describe('undoInBackground', () => {
 });
 
 describe('alreadyUndoneBy', () => {
-  it('只认带着 undoneBy 的 UNDO_UNAVAILABLE', () => {
+  it('only recognizes UNDO_UNAVAILABLE that carries undoneBy', () => {
     expect(alreadyUndoneBy(engineError('UNDO_UNAVAILABLE', { undoneBy: 'tx_u' }))).toBe('tx_u');
     expect(alreadyUndoneBy(engineError('UNDO_UNAVAILABLE'))).toBeNull();
     expect(alreadyUndoneBy(engineError('UNDO_CONFLICT', { undoneBy: 'tx_u' }))).toBeNull();

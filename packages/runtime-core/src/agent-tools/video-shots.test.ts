@@ -103,8 +103,8 @@ function fakeAnalysis(sceneAt: SceneCut[]) {
   return { calls, deps: { analysis, assetFile: async () => ({ root: '/', file: 'x' }) } };
 }
 
-describe('镜头切换：分段与切换点（假的分析）', () => {
-  it('区间对到帧，空的与超过 20 分钟的拒绝', () => {
+describe('shot cuts: segmentation and cut points (fake analysis)', () => {
+  it('range snapped to frame; empty and over 20 minutes rejected', () => {
     const v = video([clip('a', 0, 300, 0)]);
     expect(shotsRange(v, { start: 1.01, end: 2.99 })).toMatchObject({ from: 30, to: 90 });
     expect(shotsRange(v, {})).toMatchObject({ from: 0, to: 300 });
@@ -117,7 +117,7 @@ describe('镜头切换：分段与切换点（假的分析）', () => {
     expect(shotsToolError(other)).toBe(other);
   });
 
-  it('场景切换按片段的时间映射换回时间线（源起点不为 0、时间线起点不为 0），对到帧', async () => {
+  it('scene cuts mapped back to timeline via clip\'s time mapping (source start not 0, timeline start not 0), snapped to frame', async () => {
     // Timeline 2–6 s plays source 10–14 s; cuts at source 11.5 s and 13.0 s → timeline 3.5 s and 5 s.
     const v = video([clip('a', 60, 120, 10)]);
     const { calls, deps } = fakeAnalysis([
@@ -139,7 +139,7 @@ describe('镜头切换：分段与切换点（假的分析）', () => {
     expect(result.shots[0]!.sampleAt).toEqual(['2.3167', '2.75', '3.2167']);
   });
 
-  it('换了片段、源画面接不上的地方是 edit；同一素材源时间接续的拆分不算切换', async () => {
+  it('where clip changed and source picture doesn\'t continue: edit; splits continuing source time of same media are not cuts', async () => {
     // a: 0–2 s plays source 0–2 s; b: 2–4 s plays source 2–4 s (continuing); c: 4–6 s plays source 30–32 s (a jump).
     const v = video([clip('a', 0, 60, 0), clip('b', 60, 60, 2), clip('c', 120, 60, 30)]);
     const { deps } = fakeAnalysis([]);
@@ -147,7 +147,7 @@ describe('镜头切换：分段与切换点（假的分析）', () => {
     expect(result.cuts).toEqual([{ at: 4, score: null, kind: 'edit' }]);
   });
 
-  it('上层轨道盖住一段：盖住与移开的地方各一处 edit；分段按最上层的片段', async () => {
+  it('upper track covers a span: one edit each at covering and uncovering points; segmentation follows topmost clip', async () => {
     const v = video([clip('a', 0, 180, 0), clip('pip', 60, 30, 50, { trackId: 'trk_v2' })]);
     expect(shotSegments(v, 0, 180).map((s) => [s.from, s.to, s.source?.item.id])).toEqual([
       [0, 60, 'a'],
@@ -168,7 +168,7 @@ describe('镜头切换：分段与切换点（假的分析）', () => {
     ]);
   });
 
-  it('短于 minShot 的镜头并进前一个，第一个并进后一个', async () => {
+  it('shot shorter than minShot merged into the previous one, the first merged into the next', async () => {
     const v = video([clip('a', 0, 300, 0)]);
     const { deps } = fakeAnalysis([
       { at: 0.3, score: 0.5 },
@@ -192,7 +192,7 @@ const hasFfmpeg = (() => {
   }
 })();
 
-describe.skipIf(!hasFfmpeg)('镜头切换（真实 ffmpeg）', () => {
+describe.skipIf(!hasFfmpeg)('shot cuts (real ffmpeg)', () => {
   let dir: string;
   let analysis: MediaAnalysis;
 
@@ -220,14 +220,14 @@ describe.skipIf(!hasFfmpeg)('镜头切换（真实 ffmpeg）', () => {
 
   const deps = () => ({ analysis, assetFile: async () => ({ root: dir, file: 'cat.mp4' }) });
 
-  it('sceneCuts：切换点在源时钟上，跳转的偏移已加回', async () => {
+  it('sceneCuts: cut points on source clock, jump offset added back', async () => {
     const asset = { contentHash: `sha256:${'cd'.repeat(32)}`, mediaType: 'video/mp4', durationSec: 5.5 };
     const cuts = await analysis.sceneCuts(asset, { fromSec: 1, durSec: 4, threshold: 0.3 }, async () => ({ root: dir, file: 'cat.mp4' }));
     expect(cuts.map((c) => Math.round(c.at * 30))).toEqual([60, 105]);
     for (const c of cuts) expect(c.score).toBeGreaterThan(0.3);
   });
 
-  it('时间线起点不为 0、源从 1s 起播：切换点 ±1 帧，镜头与取帧时刻落在各自镜头里', async () => {
+  it('timeline start not 0, source starts playing at 1s: cut point ±1 frame, shot and frame-fetch time fall in their respective shots', async () => {
     // Timeline 3–7.5 s plays source 1–5.5 s: cuts at source 2 s and 3.5 s → timeline 4 s and 5.5 s.
     const v = video([clip('a', 90, 135, 1)]);
     // The first 3 s are empty: going from nothing to footage also counts as an edit.
@@ -246,7 +246,7 @@ describe.skipIf(!hasFfmpeg)('镜头切换（真实 ffmpeg）', () => {
     }
   });
 
-  it('两个片段剪在一起：接口处是 edit，各段里的场景切换照常', async () => {
+  it('two clips cut together: junction is an edit, scene cuts within each segment as usual', async () => {
     // a: 0–3 s plays source 0–3 s (including the cut at 2 s); b: 3–5 s plays source 3.5–5.5 s (colour bars). At the join, the source jumps from 3 s to 3.5 s.
     const v = video([clip('a', 0, 90, 0), clip('b', 90, 60, 3.5)]);
     const result = await detectShots(deps(), v, {});

@@ -41,7 +41,7 @@ describe('SettingsStore', () => {
     );
   }
 
-  it('没有文件时全是默认值，来源是 default', async () => {
+  it('with no file, all values are defaults, source is default', async () => {
     const store = await open();
     expect(store.snapshotAll()).toEqual({ settings: SETTING_DEFAULTS, defaults: SETTING_DEFAULTS });
     expect(store.view(['offline.strict'])).toEqual({ settings: { 'offline.strict': false }, defaults: { 'offline.strict': false } });
@@ -49,7 +49,7 @@ describe('SettingsStore', () => {
     expect(await exists(file)).toBe(false);
   });
 
-  it('未知的键与坏值整批拒绝，什么都不落盘', async () => {
+  it('unknown keys or bad values reject the whole batch, nothing written to disk', async () => {
     const store = await open();
     const unknown = await rejection(store.set({ 'offline.strict': true, 'openai.apiKey': 'sk-test' }));
     expect(unknown.code).toBe('invalid-request');
@@ -65,7 +65,7 @@ describe('SettingsStore', () => {
     expect(store.get('updates.autoCheck')).toBe(false);
   });
 
-  it('改值、null 恢复默认；等于默认值的取值不另存；只在有效值变化时通知', async () => {
+  it('change values, null restores default; values equal to the default are not stored separately; notify only when the effective value changes', async () => {
     const store = await open();
     const events: SettingsChange[] = [];
     store.onChange((changed) => events.push(changed));
@@ -89,7 +89,7 @@ describe('SettingsStore', () => {
     expect(events).toEqual([first.changed, reset.changed]);
   });
 
-  it('重新打开后保留；文件里不认识的键原样保留，坏值按默认处理', async () => {
+  it('kept on reopen; unknown keys in the file kept as is, bad values treated as default', async () => {
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(
       file,
@@ -108,7 +108,7 @@ describe('SettingsStore', () => {
     expect(saved.values['future.thing']).toEqual({ a: 1 });
   });
 
-  it('文件里存着旧的访问模式：读出来换成新值，仍算用户设置', async () => {
+  it('file holds an old access mode: read back converted to the new value, still counts as a user setting', async () => {
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, JSON.stringify({ schemaVersion: 1, values: { 'agent.defaultAccessMode': 'controlled' } }));
     const store = await open();
@@ -122,7 +122,7 @@ describe('SettingsStore', () => {
     expect((await open()).get('agent.defaultAccessMode')).toBe('fullAccess');
   });
 
-  it('文件不是合法的 JSON 时改名保留、全部取默认值', async () => {
+  it('file that is not valid JSON renamed and kept, all values default', async () => {
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, '{ not json');
     const store = await open();
@@ -132,7 +132,7 @@ describe('SettingsStore', () => {
     expect(names).not.toContain(path.basename(file));
   });
 
-  it('更新版本写下的文件：取默认值，不改名也不覆盖', async () => {
+  it('file written by a newer version: defaults used, neither renamed nor overwritten', async () => {
     await fs.mkdir(path.dirname(file), { recursive: true });
     const text = JSON.stringify({ schemaVersion: 2, settings: { 'offline.strict': true } });
     await fs.writeFile(file, text);
@@ -143,7 +143,7 @@ describe('SettingsStore', () => {
     expect(await fs.readdir(path.dirname(file))).toEqual([path.basename(file)]);
   });
 
-  it('并发的修改串行执行，后一笔看得到前一笔', async () => {
+  it('concurrent changes serialized; later one sees the earlier one', async () => {
     const store = await open();
     const results = await Promise.all([
       store.set({ 'offline.strict': true }),
@@ -161,7 +161,7 @@ describe('SettingsStore', () => {
     expect(leftovers).toEqual([]);
   });
 
-  it('冻结的取值是副本：之后改设置不影响它', async () => {
+  it('frozen value is a copy: later setting changes don\'t affect it', async () => {
     const store = await open();
     await store.set({ 'captions.maxLineLength': { cjk: 20, other: 50 } });
     const frozen = store.snapshot(['captions.maxLineLength']);

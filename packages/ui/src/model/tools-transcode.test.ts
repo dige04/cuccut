@@ -87,8 +87,8 @@ function videoOut(path: string, byteLength: number, patch: Partial<Extract<Gener
 
 const draft = (patch: Partial<TranscodeDraft> = {}): TranscodeDraft => ({ ...BLANK_COMPRESS, inputs: ['/v/a.mp4'], ...patch });
 
-describe('选文件', () => {
-  it('手动输入的路径去掉引号、还原终端转义与 file:// 网址', () => {
+describe('select files', () => {
+  it('manually entered paths have quotes removed and terminal escapes and file:// URLs restored', () => {
     expect(parsePathInput('  "/Users/me/My Movies/a.mov" ')).toBe('/Users/me/My Movies/a.mov');
     expect(parsePathInput('/Users/me/My\\ Movies/a.mov')).toBe('/Users/me/My Movies/a.mov');
     expect(parsePathInput('file:///Users/me/My%20Movies/a.mov')).toBe('/Users/me/My Movies/a.mov');
@@ -98,7 +98,7 @@ describe('选文件', () => {
     expect(isAbsolutePath('a.mp4')).toBe(false);
   });
 
-  it('加文件：去重、不是视频的与相对路径不收，并说清楚', () => {
+  it('adding files: duplicates, non-video and relative paths are rejected, with a clear explanation', () => {
     const r = addInputs(['/v/a.mp4'], ['/v/a.mp4', '/v/b.mov', '/v/song.mp3', 'c.mp4', '/v/raw.mts']);
     // Files whose extension is not recognized (.mts) pass through, and ffprobe decides.
     expect(r.inputs).toEqual(['/v/a.mp4', '/v/b.mov', '/v/raw.mts']);
@@ -106,12 +106,12 @@ describe('选文件', () => {
     expect(addNotice(addInputs([], ['/v/x.mkv']))).toBeNull();
   });
 
-  it('提取音频另收音频文件', () => {
+  it('extract audio takes audio files separately', () => {
     expect(addInputs([], ['/v/song.mp3', '/v/a.mp4'], true).inputs).toEqual(['/v/song.mp3', '/v/a.mp4']);
     expect(addInputs([], ['/v/cover.png'], true).rejected).toEqual(['/v/cover.png']);
   });
 
-  it('最多 100 个文件', () => {
+  it('at most 100 files', () => {
     const many = Array.from({ length: 99 }, (_, i) => `/v/${i}.mp4`);
     const r = addInputs(many, ['/v/x.mp4', '/v/y.mp4', '/v/z.mp4']);
     expect(r.inputs).toHaveLength(100);
@@ -119,7 +119,7 @@ describe('选文件', () => {
     expect(addNotice(r)).toBe('一次最多 100 个文件，多出的 2 个没有加');
   });
 
-  it('上移、下移、移出、拖着排、按文件名排', () => {
+  it('move up, move down, remove, drag to reorder, sort by file name', () => {
     const list = ['/a', '/b', '/c'];
     expect(moveInput(list, 2, -1)).toEqual(['/a', '/c', '/b']);
     expect(moveInput(list, 0, -1)).toEqual(list);
@@ -131,8 +131,8 @@ describe('选文件', () => {
   });
 });
 
-describe('提交', () => {
-  it('没选文件、合并只有一段、码率越界、输出目录不是绝对路径时拦下', () => {
+describe('submit', () => {
+  it('blocks when no file is selected, merge has only one segment, bitrate is out of range, or the output directory is not an absolute path', () => {
     expect(transcodeProblems(draft({ inputs: [] }), 'compress')).toEqual(['先选一个视频文件']);
     expect(transcodeProblems(draft({ inputs: [] }), 'merge')).toEqual(['至少要两段视频']);
     expect(transcodeProblems(draft(), 'merge')).toEqual(['至少要两段视频，再加一段']);
@@ -142,7 +142,7 @@ describe('提交', () => {
     expect(transcodeProblems(draft({ inputs: ['/a.mp4', '/b.mp4'] }), 'merge')).toEqual([]);
   });
 
-  it('按画质只给 CRF，按码率只给码率；没选目录与不缩放时不给', () => {
+  it('by quality only CRF is given, by bitrate only bitrate; no directory selected and no scaling are omitted', () => {
     expect(transcodeRequest(draft(), 'compress')).toEqual({ inputs: ['/v/a.mp4'], action: 'compress', codec: 'h264', crf: 26, audioBitrateKbps: 128 });
     expect(transcodeRequest(draft({ codec: 'hevc', quality: 'smaller', maxHeight: 720, outDir: ' /out ' }), 'compress')).toEqual({
       inputs: ['/v/a.mp4'],
@@ -159,7 +159,7 @@ describe('提交', () => {
     expect(crfOf('high', 'h264')).toBe(22);
   });
 
-  it('提取音频只给文件、音频码率与输出目录；没选文件时说视频或音频', () => {
+  it('extract audio gives only file, audio bitrate and output directory; with no file selected says video or audio', () => {
     expect(transcodeRequest({ ...BLANK_EXTRACT, inputs: ['/v/a.mp4'], maxHeight: 720, outDir: '/out' }, 'extract-audio')).toEqual({
       inputs: ['/v/a.mp4'],
       action: 'extract-audio',
@@ -169,7 +169,7 @@ describe('提交', () => {
     expect(transcodeProblems({ ...BLANK_EXTRACT }, 'extract-audio')).toEqual(['先选一个视频或音频文件']);
   });
 
-  it('Space 条目在列表里记成 space:<entryId>：不算相对路径、不重复加，提交时换成 { entryId }', () => {
+  it('Space entries are recorded in the list as space:<entryId>: not treated as relative paths, not added twice, replaced with { entryId } on submit', () => {
     expect(spaceInput('ent_1')).toBe('space:ent_1');
     expect(entryIdOfInput('space:ent_1')).toBe('ent_1');
     expect(entryIdOfInput('/v/a.mp4')).toBeNull();
@@ -195,21 +195,21 @@ describe('提交', () => {
     expect(toolOfJob(done)).toBe('extract-audio');
   });
 
-  it('设置的一行摘要', () => {
+  it('one-line summary of settings', () => {
     expect(settingsLine(draft())).toBe('原始分辨率 · H.264 · 均衡 · 音频 128 kbps');
     expect(settingsLine(draft({ maxHeight: 720, codec: 'hevc', rate: 'bitrate', videoKbps: 3000 }))).toBe('720p · H.265 · 3000 kbps · 音频 128 kbps');
   });
 
-  it('被拒时点名 ffmpeg，其余照 Runtime 的原话', () => {
+  it('when rejected names ffmpeg; the rest uses the Runtime\'s own wording', () => {
     expect(rejectionText(new RpcError('conflict', '找不到 ffmpeg', { code: 'MEDIA_TOOL_UNAVAILABLE' }))).toBe('ffmpeg 不能用：找不到 ffmpeg');
     expect(rejectionText(new RpcError('not-found', '找不到输入文件 /v/a.mp4'))).toBe('找不到输入文件 /v/a.mp4');
   });
 });
 
-describe('ffmpeg 的现状', () => {
+describe('ffmpeg status', () => {
   const status = (patch: Partial<ExternalToolStatus>): ExternalToolStatus =>
     ({ name: 'ffmpeg', label: 'ffmpeg', state: 'installed', version: '8.0.1', reason: null, remedy: null, ...patch }) as ExternalToolStatus;
-  it('就绪、没装、太旧', () => {
+  it('ready, not installed, too old', () => {
     expect(ffmpegLine(status({}))).toEqual({ ready: true, text: 'ffmpeg 8.0.1 就绪', remedy: null });
     expect(ffmpegLine(status({ state: 'missing', version: null, remedy: '安装 ffmpeg' }))).toEqual({ ready: false, text: '要先装 ffmpeg', remedy: '安装 ffmpeg' });
     expect(ffmpegLine(status({ state: 'outdated', version: '3.4', reason: '低于 4.0' })).ready).toBe(false);
@@ -217,14 +217,14 @@ describe('ffmpeg 的现状', () => {
   });
 });
 
-describe('记录', () => {
+describe('records', () => {
   const compress = transcodeJob({ inputs: ['/v/holiday.mov'], action: 'compress', codec: 'h264', maxHeight: 720, crf: 26, audioBitrateKbps: 128 });
   const merge = transcodeJob(
     { inputs: ['/v/a.mp4', '/v/b.mp4', '/v/c.mp4'], action: 'merge', codec: 'h264', crf: 23, audioBitrateKbps: 128 },
     { jobId: 'job_m', createdAt: '2026-10-03T00:01:00.000Z' },
   );
 
-  it('只列界面提交的 transcode 父任务，新的在前；别的流程、子任务、视频里的、藏起来的不列', () => {
+  it('lists only UI-submitted transcode parent tasks, newest first; other pipelines, subtasks, ones in video, and hidden ones are not listed', () => {
     const translate = transcodeJob({}, { jobId: 'job_x' }, { name: 'translate' });
     const step = toolJob({ jobId: 'job_s', kind: 'pipeline-step', parentJobId: 'job_t' });
     const inVideo = transcodeJob({ inputs: ['/a'], action: 'compress' }, { jobId: 'job_v', videoId: 'vid_1' });
@@ -234,7 +234,7 @@ describe('记录', () => {
     expect(transcodeJobs([compress, merge], ['job_m']).map((j) => j.jobId)).toEqual(['job_t']);
   });
 
-  it('标题与设置行', () => {
+  it('title and settings line', () => {
     expect(transcodeTitle(compress)).toBe('holiday.mov');
     expect(transcodeTitle(merge)).toBe('a.mp4 + 2 段');
     expect(transcodeMeta(compress)).toBe('压缩 · ≤720p · H.264 · 均衡（CRF 26）');
@@ -243,7 +243,7 @@ describe('记录', () => {
     expect(transcodeTitle(done)).toBe('holiday-compressed.mp4');
   });
 
-  it('编码时读子任务按秒的进度；别的步骤写第几步', () => {
+  it('while encoding, reads the subtask\'s per-second progress; other steps write which step', () => {
     const child = toolJob({ jobId: 'job_enc', kind: 'pipeline-step', phase: 'encoding', progress: { done: 12.4, total: 42, unit: 'seconds' } });
     const running = transcodeJob(
       { inputs: ['/a.mp4'], action: 'compress' },
@@ -261,7 +261,7 @@ describe('记录', () => {
     expect(transcodeProgress(running, [running, waiting])).toEqual({ text: '编码 · 等 ffmpeg 空出名额', percent: null });
   });
 
-  it('压缩的结果行：输出规格与省了多少（源文件大小来自读取输入那一步）', () => {
+  it('compress result row: output spec and how much was saved (source file size comes from the read-input step)', () => {
     const probe = { ...STEPS[0]!, status: 'completed' as const, jobId: 'job_p', attempts: 1, output: { stats: [{ size: 68.4 * 1024 * 1024, mtimeMs: 1 }], mode: 're-encode', reason: null } };
     const params = { inputs: ['/v/holiday.mov'], action: 'compress', codec: 'h264', crf: 26, audioBitrateKbps: 128 };
     const steps = [probe, ...STEPS.slice(1).map((s) => ({ ...s, status: 'completed' as const, jobId: null, attempts: 1, output: null }))];
@@ -281,7 +281,7 @@ describe('记录', () => {
     expect(transcodeResults(finished(70 * 1024 * 1024))[0]!.size).toBe('68.4 MB → 70.0 MB（没有变小）');
   });
 
-  it('合并的结果行写源文件一共多大，不算省了多少；流复制时设置行只写段数与流复制', () => {
+  it('merge result row gives the total source file size, not savings; with stream copy the settings row only gives segment count and stream copy', () => {
     const probe = { ...STEPS[0]!, status: 'completed' as const, jobId: 'job_p', attempts: 1, output: { stats: [{ size: 400 * 1024, mtimeMs: 1 }, { size: 443 * 1024, mtimeMs: 1 }], mode: 'stream-copy', reason: null } };
     const params = { inputs: ['/v/a.mp4', '/v/b.mp4'], action: 'merge', codec: 'h264', crf: 22, audioBitrateKbps: 128 };
     const running = transcodeJob(params, { state: 'running' }, { steps: [probe, ...STEPS.slice(1).map((s) => ({ ...s, status: 'pending' as const, jobId: null, attempts: 0, output: null }))] });
@@ -301,7 +301,7 @@ describe('记录', () => {
     expect(transcodeMeta(reencoded)).toBe('合并 2 段 · H.264 · 高画质（CRF 22）');
   });
 
-  it('合并写流复制还是重新编码与原因；完成前读取输入那一步判定了的先写出来', () => {
+  it('merge states stream copy or re-encode and why; a decision made by the read-input step before completion is written out first', () => {
     const copied = transcodeJob({ inputs: ['/a.mp4', '/b.mp4'], action: 'merge' }, {}, {
       summary: { action: 'merge', mode: 'stream-copy', reason: null, executor: { tool: 'ffmpeg', version: '8.0.1', commands: [] }, files: ['/a-merged.mp4'] },
     });
@@ -314,7 +314,7 @@ describe('记录', () => {
     expect(mergeModeLine(merge)).toBeNull();
   });
 
-  it('复制命令：每条一行，带空格的参数加引号', () => {
+  it('copy command: one per line, arguments with spaces are quoted', () => {
     const done = transcodeJob({ inputs: ['/a.mp4'], action: 'compress' }, {}, {
       summary: { action: 'compress', mode: 're-encode', reason: null, executor: { tool: 'ffmpeg', version: '8', commands: [['-i', 'file:my clip.mp4', '-crf', '26', 'my clip-compressed.mp4']] }, files: [] },
     });
@@ -322,7 +322,7 @@ describe('记录', () => {
     expect(commandText(compress)).toBeNull();
   });
 
-  it('状态词、用时、失败的修法与原文', () => {
+  it('status word, duration, failure fix and original text', () => {
     expect(transcodeStateWord({ state: 'running', endedAt: null })).toBe('处理中');
     expect(transcodeStateWord({ state: 'queued', endedAt: null })).toBe('排队中');
     expect(transcodeStateWord({ state: 'completed', endedAt: 'x' })).toBeNull();
@@ -346,7 +346,7 @@ describe('记录', () => {
     expect(ffmpegLine(null).remedy).not.toMatch(/brew|winget|apt/);
   });
 
-  it('带回左边：冻结的参数回到表单，CRF 取最接近的一档；重试照原参数', () => {
+  it('carry back to left: frozen parameters return to the form, CRF takes the closest preset; retry uses the original parameters', () => {
     expect(againTranscodeDraft(compress, BLANK_COMPRESS)).toEqual({ ...BLANK_COMPRESS, inputs: ['/v/holiday.mov'], maxHeight: 720, quality: 'balanced' });
     // For h264, 23 is farther from “balanced, 26” than “high quality, 22” is: pick high quality.
     expect(againTranscodeDraft(merge, BLANK_MERGE)?.quality).toBe('high');

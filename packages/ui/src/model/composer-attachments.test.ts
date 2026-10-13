@@ -4,8 +4,8 @@ import { admitImages, checkImage, rejectionMessage } from './composer-attachment
 
 const png = (size = 1024, name = 'a') => ({ name, type: 'image/png', size });
 
-describe('附图校验', () => {
-  it('只收 png / jpeg / gif / webp', () => {
+describe('attachment validation', () => {
+  it('only png / jpeg / gif / webp accepted', () => {
     expect(checkImage({ type: 'image/png', size: 1 })).toBeNull();
     expect(checkImage({ type: 'image/jpeg', size: 1 })).toBeNull();
     expect(checkImage({ type: 'image/gif', size: 1 })).toBeNull();
@@ -15,13 +15,13 @@ describe('附图校验', () => {
     expect(checkImage({ type: '', size: 1 })).toBe('type');
   });
 
-  it('单张正好 20 MiB 可以，多一个字节不行；空文件不行', () => {
+  it('a single file of exactly 20 MiB is allowed, one more byte is not; empty file not allowed', () => {
     expect(checkImage(png(MAX_ATTACHMENT_BYTES))).toBeNull();
     expect(checkImage(png(MAX_ATTACHMENT_BYTES + 1))).toBe('size');
     expect(checkImage(png(0))).toBe('size');
   });
 
-  it('一条消息正好 8 张可以，第 9 张退回', () => {
+  it('one message of exactly 8 images is allowed, the 9th is rejected', () => {
     const eight = Array.from({ length: MAX_ATTACHMENTS_PER_MESSAGE }, (_, i) => png(10, `p${i}`));
     expect(admitImages(0, eight)).toEqual({ accepted: eight, rejected: null });
     const { accepted, rejected } = admitImages(6, [png(1, 'x'), png(1, 'y'), png(1, 'z')]);
@@ -30,13 +30,13 @@ describe('附图校验', () => {
     expect(admitImages(MAX_ATTACHMENTS_PER_MESSAGE, [png(1)])).toEqual({ accepted: [], rejected: 'count' });
   });
 
-  it('不合格的不占名额，合格的照收；提示第一条原因', () => {
+  it('invalid ones don\'t use up a slot, valid ones are still accepted; the first reason is shown', () => {
     const result = admitImages(0, [png(MAX_ATTACHMENT_BYTES + 1, 'big'), { name: 'svg', type: 'image/svg+xml', size: 5 }, png(5, 'ok')]);
     expect(result.accepted.map((f) => f.name)).toEqual(['ok']);
     expect(result.rejected).toBe('size');
   });
 
-  it('提示文案照原型', () => {
+  it('hint copy follows the prototype', () => {
     expect(rejectionMessage('size')).toBe('请选择不超过 20 MiB 的图片');
     expect(rejectionMessage('count')).toBe('最多附上 8 张图片');
   });

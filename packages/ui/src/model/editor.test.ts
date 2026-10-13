@@ -119,20 +119,20 @@ function sequence(tracks: Track[], items: Sequence['items']): Sequence {
   };
 }
 
-describe('编辑器模型', () => {
-  it('轨道行：视觉轨道序号大的在上，音频在下', () => {
+describe('editor model', () => {
+  it('track rows: higher-numbered visual tracks on top, audio below', () => {
     const seq = sequence([track('v1', 0, 'visual'), track('a1', 1, 'audio'), track('v2', 2, 'visual')], []);
     expect(trackRows(seq).map((r) => r.label)).toEqual(['画面 2', '画面 1', '音频']);
   });
 
-  it('轨道行：字幕与画面是同一叠，按 order 排，同类不止一条时按顺序编号', () => {
+  it('track rows: subtitles and video share one stack, ordered by order; when there is more than one of a kind, numbered in sequence', () => {
     const seq = sequence([track('v1', 0, 'visual'), track('a1', 1, 'audio'), track('s1', 2, 'subtitle'), track('s2', 3, 'subtitle')], []);
     expect(trackRows(seq).map((r) => r.label)).toEqual(['字幕 2', '字幕 1', '画面', '音频']);
     const over = sequence([track('s1', 0, 'subtitle'), track('v1', 1, 'visual'), track('s2', 2, 'subtitle'), track('v2', 3, 'visual')], []);
     expect(trackRows(over).map((r) => r.label)).toEqual(['画面 2', '字幕 2', '画面 1', '字幕 1']);
   });
 
-  it('轨道行：有名字的轨道写「类别 · 名字」，不再编号', () => {
+  it('track rows: named tracks show \'category · name\' and are not numbered', () => {
     const seq = sequence(
       [track('s1', 0, 'subtitle', { name: '英文' }), track('s2', 1, 'subtitle'), track('a1', 2, 'audio', { name: '原声' })],
       [],
@@ -140,12 +140,12 @@ describe('编辑器模型', () => {
     expect(trackRows(seq).map((r) => r.label)).toEqual(['字幕 2', '字幕 · 英文', '音频 · 原声']);
   });
 
-  it('轨道行：引擎默认的 V1、A1 代号不当名字', () => {
+  it('track rows: engine default codes V1 and A1 are not treated as names', () => {
     const seq = sequence([track('v1', 0, 'visual', { name: 'V1' }), track('a1', 1, 'audio', { name: 'A1' })], []);
     expect(trackRows(seq).map((r) => r.label)).toEqual(['画面', '音频']);
   });
 
-  it('时间线行：没有名字也没有实例的音频轨不画（视频自带声音），有实例或有名字的照画', () => {
+  it('timeline rows: audio tracks with no name and no instances are not drawn (the video\'s own sound); tracks with instances or names are drawn', () => {
     const bare = sequence([track('v1', 0, 'visual', { name: 'V1' }), track('a1', 1, 'audio', { name: 'A1' })], []);
     expect(timelineRows(bare).map((r) => r.label)).toEqual(['画面']);
     const music = { ...itemBase, id: 'm', trackId: 'a2', type: 'audio' } as unknown as SequenceItem;
@@ -157,7 +157,7 @@ describe('编辑器模型', () => {
     expect(trackRows(seq)).toHaveLength(4);
   });
 
-  it('实例进哪类轨道：字幕只进字幕轨道，文字、图形、合成进视觉轨道', () => {
+  it('which track kind an instance goes on: subtitles go only on subtitle tracks; text, graphics and compositions go on visual tracks', () => {
     const [visual, audio, subtitle] = [track('v1', 0, 'visual'), track('a1', 1, 'audio'), track('s1', 2, 'subtitle')];
     expect((['video', 'image', 'text', 'shape', 'composition'] as const).every((type) => trackAccepts(visual!, { type }))).toBe(true);
     expect(trackAccepts(visual!, { type: 'caption' })).toBe(false);
@@ -168,7 +168,7 @@ describe('编辑器模型', () => {
     expect(trackAccepts(subtitle!, { type: 'video' })).toBe(false);
   });
 
-  it('实例的名字：自己的名字优先，否则取文字内容、素材名、元素种类名、字幕文档名', () => {
+  it('instance name: its own name first; otherwise the text content, media name, element kind name, or subtitle document name', () => {
     const assets = {
       asset_v: { id: 'asset_v', kind: 'video', name: 'clip.mp4', currentRevision: '1', revisions: {} },
       asset_b: { id: 'asset_b', kind: 'bundle', name: '片头', currentRevision: '1', revisions: {} },
@@ -204,7 +204,7 @@ describe('编辑器模型', () => {
     expect(itemFrames(caption('c', 's1', 'doc_1'), fps)).toEqual({ start: 15, end: 60 });
   });
 
-  it('时间线块的类别：元素按自己的类型，带计时读数的文字算计数器，代码包是合成', () => {
+  it('timeline block category: elements by their own type, text with a timing readout counts as a counter, code packages are compositions', () => {
     expect(clipKind(video('a', 'v1', 0, 30))).toBe('video');
     expect(clipKind(text('t', 'v1', 'hi'))).toBe('text');
     expect(clipKind(caption('c', 's1', 'doc_1'))).toBe('caption');
@@ -218,7 +218,7 @@ describe('编辑器模型', () => {
     expect(clipKind(composition('k', 'v1', 0, { kind: 'bundle', assetRef: { id: 'asset_b', revision: '1' } }))).toBe('composition');
   });
 
-  it('预览的视频元素：带预渲染替身的合成也占替身素材的元素，没有替身的合成不占', () => {
+  it('preview video elements: compositions with a pre-rendered proxy also take a proxy-media element; compositions without a proxy do not', () => {
     const prerender = { id: 'asset_p', revision: '1' };
     const seq = sequence(
       [track('v1', 0, 'visual'), track('v2', 1, 'visual')],
@@ -235,7 +235,7 @@ describe('编辑器模型', () => {
     ]);
   });
 
-  it('预览的视频元素：同一素材同一帧上用到几处就要几个，首尾相接的共用一个', () => {
+  it('preview video elements: one is needed per use of the same media at the same frame; end-to-end adjacent uses share one', () => {
     const seq = sequence(
       [track('v1', 0, 'visual'), track('v2', 1, 'visual')],
       [video('a', 'v1', 0, 30), video('b', 'v1', 30, 30), video('c', 'v2', 15, 30), { ...video('d', 'v2', 0, 90), enabled: false }],
@@ -244,7 +244,7 @@ describe('编辑器模型', () => {
     expect(videoSlots(sequence([track('v1', 0, 'visual')], [video('a', 'v1', 0, 30), video('b', 'v1', 30, 30)]))[0]?.count).toBe(1);
   });
 
-  it('预览的视频元素：拆开的两段之间有两侧转场时，窗口里同一素材要两个元素；单侧转场不加', () => {
+  it('preview video elements: when two split segments have transitions on both sides, the window needs two elements for the same media; a one-sided transition adds none', () => {
     const base = sequence([track('v1', 0, 'visual')], [video('a', 'v1', 0, 30), video('b', 'v1', 30, 30, '30')]);
     const dissolve = {
       id: 't1',
@@ -259,7 +259,7 @@ describe('编辑器模型', () => {
     expect(videoSlots({ ...base, transitions: [{ ...dissolve, rightItemId: undefined }] })[0]?.count).toBe(1);
   });
 
-  it('吸附：阈值内取最近的目标，不吸附正在拖的实例', () => {
+  it('snapping: within the threshold, snap to the nearest target; does not snap the instance being dragged', () => {
     const seq = sequence([track('v1', 0, 'visual')], [video('a', 'v1', 0, 30), video('b', 'v1', 60, 30)]);
     const targets = snapTargets(seq, 45, new Set(['b']));
     expect(targets.sort((x, y) => x - y)).toEqual([0, 30, 45]);
@@ -267,7 +267,7 @@ describe('编辑器模型', () => {
     expect(snapFrame(38, targets, 4)).toEqual({ frame: 38, snapped: null });
   });
 
-  it('刻度与时码', () => {
+  it('ticks and timecode', () => {
     expect(rulerStep(40).major).toBe(2);
     expect(rulerStep(400).major).toBe(0.2);
     expect(rulerLabel(65, 5)).toBe('1:05');
@@ -277,7 +277,7 @@ describe('编辑器模型', () => {
     expect(formatTimecode(3661, { num: 30000, den: 1001 })).toBe('01:01:00:29');
   });
 
-  it('播放键三态：在播是暂停，停在片尾（差不到 0.05 秒）是重播', () => {
+  it('play button has three states: while playing it pauses; stopped at the end (within 0.05 seconds) it replays', () => {
     expect(playButtonState({ playing: false, playhead: 0, duration: 10 })).toBe('play');
     expect(playButtonState({ playing: true, playhead: 3, duration: 10 })).toBe('pause');
     // While playing, the button still shows pause at the end: the engine stops only once playback has reached the end.
@@ -289,7 +289,7 @@ describe('编辑器模型', () => {
     expect(playButtonState({ playing: false, playhead: 0, duration: 0 })).toBe('play');
   });
 
-  it('秒数输入：十进制字符串原样交给引擎，「分:秒」换算成秒', () => {
+  it('seconds input: decimal strings are passed to the engine as is; \'min:sec\' is converted to seconds', () => {
     expect(parseSecondsInput('10')).toBe('10');
     expect(parseSecondsInput(' 10.010 秒')).toBe('10.010');
     expect(parseSecondsInput('1:05.5')).toBe('65.5');

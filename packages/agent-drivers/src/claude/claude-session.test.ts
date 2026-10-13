@@ -67,8 +67,8 @@ afterEach(async () => {
   sessions = [];
 });
 
-describe('ClaudeSession：回合与条目', () => {
-  it('文字回合：流式 delta 与完成的条目同一个 id；Query 的选项；第二轮复用同一个 Query', async () => {
+describe('ClaudeSession: turns and entries', () => {
+  it('text turn: streamed delta and completed entry share one id; Query options; the second turn reuses the same Query', async () => {
     const fake = createFakeClaude({
       sessionId: 'sess-1',
       turn: (t) => {
@@ -120,14 +120,14 @@ describe('ClaudeSession：回合与条目', () => {
     expect(query.inputs).toHaveLength(2);
   });
 
-  it('上一轮没结束时不能开新的一轮', async () => {
+  it('a new turn cannot start while the previous one is still running', async () => {
     const fake = createFakeClaude({ turn: () => new Promise(() => {}) });
     const s = track(open(fake));
     await s.session.startTurn({ text: '一' }, settings());
     await expect(s.session.startTurn({ text: '二' }, settings())).rejects.toThrow(/还没有结束/);
   });
 
-  it('工具调用：命令成功记退出码 0，失败从「Exit code N」取；读文件的标题带工具名；改文件的输出是 diff', async () => {
+  it('tool call: a successful command records exit code 0, a failed one takes it from “Exit code N”; the title of a file read includes the tool name; a file edit\'s output is a diff', async () => {
     const fake = createFakeClaude({
       turn: (t) => {
         const ok = t.toolUse('Bash', { command: 'npm test', description: '跑测试' });
@@ -163,7 +163,7 @@ describe('ClaudeSession：回合与条目', () => {
     expect(done.every((i) => typeof i.durationMs === 'number')).toBe(true);
   });
 
-  it('子智能体的帧不进时间线', async () => {
+  it('frames from sub-agents do not enter the timeline', async () => {
     const fake = createFakeClaude({
       turn: (t) => {
         t.emit({
@@ -183,7 +183,7 @@ describe('ClaudeSession：回合与条目', () => {
   });
 });
 
-describe('ClaudeSession：审批', () => {
+describe('ClaudeSession: approvals', () => {
   /** Records each ask's answer in order. */
   function asking(commands: Array<{ name: string; input: Record<string, unknown> }>) {
     const answers: Array<PermissionResult | null> = [];
@@ -202,7 +202,7 @@ describe('ClaudeSession：审批', () => {
     return { fake, answers };
   }
 
-  it('命令：请求的形状；accept 放行且原样带回输入，decline 拒绝且条目记为 declined', async () => {
+  it('command: request shape; accept allows and returns the input unchanged, decline rejects and the entry is recorded as declined', async () => {
     const input = { command: 'npm install', description: '安装依赖' };
     const { fake, answers } = asking([{ name: 'Bash', input }]);
     const s = track(open(fake));
@@ -230,7 +230,7 @@ describe('ClaudeSession：审批', () => {
     await s.session.respondToApproval(again.approvalId, { decision: 'accept' });
   });
 
-  it('本会话允许：同一条规则不再问，不同的命令照样问', async () => {
+  it('allow for this session: the same rule is no longer asked, different commands are still asked', async () => {
     const { fake, answers } = asking([
       { name: 'Bash', input: { command: 'npm install' } },
       { name: 'Bash', input: { command: 'npm install lodash' } },
@@ -247,7 +247,7 @@ describe('ClaudeSession：审批', () => {
     expect(answers.map((a) => a?.behavior)).toEqual(['allow', 'allow', 'allow']);
   });
 
-  it('总是允许：只在会话里放行，绝不回传 updatedPermissions（不写 Claude 的设置文件）', async () => {
+  it('always allow: only allowed within the session, never returns updatedPermissions (does not write Claude\'s settings file)', async () => {
     const { fake, answers } = asking([
       { name: 'WebFetch', input: { url: 'https://example.com/a', prompt: '读一下' } },
       { name: 'WebFetch', input: { url: 'https://example.com/b', prompt: '再读' } },
@@ -263,7 +263,7 @@ describe('ClaudeSession：审批', () => {
     }
   });
 
-  it('文件修改、Agent 自带工具、其他 MCP 工具的请求形状', async () => {
+  it('request shapes for file edits, Agent built-in tools and other MCP tools', async () => {
     const { fake } = asking([
       { name: 'Write', input: { file_path: '/work/out.txt', content: 'x' } },
       { name: 'WebFetch', input: { url: 'https://example.com', prompt: '读一下' } },
@@ -285,7 +285,7 @@ describe('ClaudeSession：审批', () => {
     ]);
   });
 
-  it('AskUserQuestion：不弹审批卡，直接拒绝并让 Claude 用文字问；时间线上记为 declined，带着问题与选项', async () => {
+  it('AskUserQuestion: no approval card; rejects directly and has Claude ask in text; recorded as declined on the timeline, with the question and options', async () => {
     const input = {
       questions: [
         {
@@ -318,7 +318,7 @@ describe('ClaudeSession：审批', () => {
     ]);
   });
 
-  it('ExitPlanMode：审批带计划全文、不给总是允许、不记会话级放行；在先给方案下批准后提示切换访问模式', async () => {
+  it('ExitPlanMode: approval carries the full plan, no always-allow, no session-level allow; after approving a plan that was shown first, prompts to switch access mode', async () => {
     const plan = '# 方案\n\n1. 剪掉开头的静音\n2. 加字幕';
     const { fake, answers } = asking([
       { name: 'ExitPlanMode', input: { plan } },
@@ -356,7 +356,7 @@ describe('ClaudeSession：审批', () => {
     expect(o.of('session.warning')).toEqual([]);
   });
 
-  it('approvalRequest：越界路径并进文件列表，decisionReason 作为理由；复合命令没有规则，只按原文放行', () => {
+  it('approvalRequest: out-of-bounds paths are merged into the file list, decisionReason is used as the reason; compound commands have no rule and are allowed only as written', () => {
     const signal = new AbortController().signal;
     expect(
       approvalRequest('Edit', { file_path: '/work/a.ts' }, { signal, toolUseID: 't', requestId: 'r', blockedPath: '/etc/hosts', decisionReason: '路径在工作目录之外' }, '/work'),
@@ -367,7 +367,7 @@ describe('ClaudeSession：审批', () => {
     expect(compound.grantKey).toBe(`command:${compound.request.rule ?? 'npm install > log.txt'}`);
   });
 
-  it('CucCut 自己的工具预先放行：allowedTools 与 canUseTool 都不拦；mcpServers 转成 http 配置；令牌不进日志', async () => {
+  it('CucCut\'s own tools are pre-approved: neither allowedTools nor canUseTool blocks them; mcpServers become http config; tokens do not enter logs', async () => {
     const lines: string[] = [];
     const recording: Logger = {
       debug: (m, f) => lines.push(m + JSON.stringify(f ?? {})),
@@ -402,8 +402,8 @@ describe('ClaudeSession：审批', () => {
   });
 });
 
-describe('ClaudeSession：中断与插话', () => {
-  it('中断：挂着的审批结清，Query 收到 interrupt，回合记为 interrupted；不在跑时 not-running', async () => {
+describe('ClaudeSession: interrupts and interjections', () => {
+  it('interrupt: pending approvals are settled, the Query receives interrupt, the turn is recorded as interrupted; not-running when nothing is running', async () => {
     const answers: Array<PermissionResult | null> = [];
     const fake = createFakeClaude({
       turn: async (t) => {
@@ -427,7 +427,7 @@ describe('ClaudeSession：中断与插话', () => {
     expect(await s.session.interrupt(turnId)).toEqual({ status: 'not-running' });
   });
 
-  it('中断请求失败：回执为 unknown', async () => {
+  it('interrupt request fails: the receipt is unknown', async () => {
     const fake = createFakeClaude({ turn: () => new Promise(() => {}) });
     const s = track(open(fake));
     const { turnId } = await s.session.startTurn({ text: 'go' }, settings());
@@ -435,7 +435,7 @@ describe('ClaudeSession：中断与插话', () => {
     expect(await s.session.interrupt(turnId)).toEqual({ status: 'unknown' });
   });
 
-  it('停止屏障的 cancel：拒绝并要求 Claude 结束本回合', async () => {
+  it('cancel from the stop barrier: rejects and asks Claude to end this turn', async () => {
     const answers: Array<PermissionResult | null> = [];
     const fake = createFakeClaude({
       turn: async (t) => {
@@ -450,7 +450,7 @@ describe('ClaudeSession：中断与插话', () => {
     expect(answers[0]).toMatchObject({ behavior: 'deny', interrupt: true });
   });
 
-  it('插话：以 priority:next 推进同一个输入流；回合不对或已结束时 unavailable', async () => {
+  it('interjection: advances the same input stream with priority:next; unavailable when the turn does not match or has ended', async () => {
     const fake = createFakeClaude({
       turn: async (t) => {
         t.text('先这样');
@@ -472,7 +472,7 @@ describe('ClaudeSession：中断与插话', () => {
     expect(await s.session.steer(turnId, { text: '晚了' })).toBe('unavailable');
   });
 
-  it('插话会结清挂着的审批', async () => {
+  it('an interjection settles pending approvals', async () => {
     const answers: Array<PermissionResult | null> = [];
     const fake = createFakeClaude({
       turn: async (t) => {
@@ -491,7 +491,7 @@ describe('ClaudeSession：中断与插话', () => {
     expect(answers[0]).toMatchObject({ behavior: 'deny' });
   });
 
-  it('插话没赶上、作为下一轮排着（queued_turn_count > 0）：CucCut 的回合等它跑完才结束', async () => {
+  it('an interjection that missed the turn and is queued as the next one (queued_turn_count > 0): CucCut\'s turn waits for it to finish before ending', async () => {
     const fake = createFakeClaude({
       turn: async (t) => {
         t.text('第一段');
@@ -512,7 +512,7 @@ describe('ClaudeSession：中断与插话', () => {
   });
 });
 
-describe('ClaudeSession：访问模式、模型与强度', () => {
+describe('ClaudeSession: access mode, model and effort', () => {
   const MODES: Array<[AgentMode, string]> = [
     ['plan', 'plan'],
     ['ask', 'default'],
@@ -521,13 +521,13 @@ describe('ClaudeSession：访问模式、模型与强度', () => {
     ['fullAccess', 'bypassPermissions'],
   ];
 
-  it('访问模式（含先给方案）与 Claude 权限模式的对照，旧值先换成新值', () => {
+  it('access modes (including plan-first) mapped to Claude permission modes; old values are converted to new ones first', () => {
     for (const [mode, permission] of MODES) expect(claudePermissionMode(mode)).toBe(permission);
     expect(claudePermissionMode('controlled')).toBe('default');
     expect(claudePermissionMode('authorized')).toBe('bypassPermissions');
   });
 
-  it.each(MODES)('起 Query 时的权限模式：%s', async (mode, permission) => {
+  it.each(MODES)('permission mode when starting a Query: %s', async (mode, permission) => {
     const fake = createFakeClaude();
     const s = track(open(fake, { accessMode: mode }));
     const { turnId } = await s.session.startTurn({ text: 'go' }, settings({ accessMode: mode }));
@@ -545,7 +545,7 @@ describe('ClaudeSession：访问模式、模型与强度', () => {
     }
   });
 
-  it('换档：同一个 Query 上 setPermissionMode', async () => {
+  it('mode switch: setPermissionMode on the same Query', async () => {
     const fake = createFakeClaude();
     const s = track(open(fake));
     for (const mode of ['ask', 'fullAccess', 'autoAcceptEdits', 'auto', 'plan', 'ask'] as AgentMode[]) {
@@ -556,7 +556,7 @@ describe('ClaudeSession：访问模式、模型与强度', () => {
     expect(fake.last().callsOf('setPermissionMode')).toEqual([['bypassPermissions'], ['acceptEdits'], ['auto'], ['plan'], ['default']]);
   });
 
-  it('auto 遇到不支持的模型：退回逐项询问并提示一次', async () => {
+  it('auto with an unsupported model: falls back to asking per item and warns once', async () => {
     const fake = createFakeClaude();
     const s = track(open(fake, { accessMode: 'auto', model: 'haiku' }));
     for (let i = 0; i < 2; i++) {
@@ -570,7 +570,7 @@ describe('ClaudeSession：访问模式、模型与强度', () => {
     expect(warnings[0]!.message).toMatch(/haiku.*「自动」.*「逐项询问」/);
   });
 
-  it('auto 被 CLI 拒绝（setPermissionMode 抛错）：退回逐项询问并提示，回合照常进行', async () => {
+  it('auto rejected by the CLI (setPermissionMode throws): falls back to per-item asking with a warning, the turn proceeds as usual', async () => {
     const fake = createFakeClaude({ rejectModes: ['auto'] });
     const s = track(open(fake, { accessMode: 'fullAccess' }));
     const first = await s.session.startTurn({ text: 'go' }, settings({ accessMode: 'fullAccess' }));
@@ -581,7 +581,7 @@ describe('ClaudeSession：访问模式、模型与强度', () => {
     expect(s.of('session.warning')[0]!.message).toMatch(/permission mode auto is not available/);
   });
 
-  it('模型：变了就 setModel，回到默认传 undefined；切换失败时以 AGENT_MODEL_UNAVAILABLE 拒绝这一轮', async () => {
+  it('model: calls setModel when changed, passes undefined to return to default; when switching fails, rejects this turn with AGENT_MODEL_UNAVAILABLE', async () => {
     const fake = createFakeClaude();
     const s = track(open(fake));
     for (const model of [null, 'sonnet', 'sonnet', null]) {
@@ -597,7 +597,7 @@ describe('ClaudeSession：访问模式、模型与强度', () => {
     expect(s.of('turn.started')).toHaveLength(4);
   });
 
-  it('强度：起 Query 时给；变了就带恢复句柄重启 Query；认不出的强度按默认', async () => {
+  it('effort: given when starting a Query; when changed, restarts the Query with the resume handle; unrecognized effort falls back to default', async () => {
     const fake = createFakeClaude({ sessionId: 'sess-e' });
     const s = track(open(fake));
     const first = await s.session.startTurn({ text: 'go' }, settings({ effort: 'high', model: 'sonnet' }));
@@ -622,8 +622,8 @@ describe('ClaudeSession：访问模式、模型与强度', () => {
   });
 });
 
-describe('ClaudeSession：恢复、错误与退出', () => {
-  it('恢复句柄：第一轮之前就能给出；起 Query 时带 resume；别的 Driver 的句柄不认', async () => {
+describe('ClaudeSession: resume, errors and exit', () => {
+  it('resume handle: available before the first turn; passed as resume when starting a Query; handles from other Drivers are not accepted', async () => {
     const fake = createFakeClaude();
     const s = track(open(fake, { resume: { driverId: 'claude', data: { sessionId: 'old-1' } } }));
     expect(s.session.describePersistence()).toEqual({ driverId: 'claude', data: { sessionId: 'old-1' } });
@@ -636,7 +636,7 @@ describe('ClaudeSession：恢复、错误与退出', () => {
     expect(other.session.describePersistence()).toBeNull();
   });
 
-  it('原生会话恢复不了：提示，换新会话重发这一轮，句柄换成新的', async () => {
+  it('native session cannot be resumed: warns, starts a new session to resend this turn, and the handle is replaced with the new one', async () => {
     const fake = createFakeClaude({ sessionId: 'new-1', resumable: () => false });
     const s = track(open(fake, { resume: { driverId: 'claude', data: { sessionId: 'gone-1' } } }));
     const { turnId } = await s.session.startTurn({ text: '继续' }, settings());
@@ -669,7 +669,7 @@ describe('ClaudeSession：恢复、错误与退出', () => {
     ['max_output_tokens', null],
   ];
 
-  it.each(ERRORS)('出错的回合：%s → %s；错误原文随 turn.completed 带出，不重复成一条回复', async (error, code) => {
+  it.each(ERRORS)('turn that errors: %s → %s; the raw error arrives with turn.completed and is not repeated as a reply', async (error, code) => {
     const fake = createFakeClaude({
       turn: (t) => {
         t.apiError(error, `API Error: ${error}`);
@@ -682,7 +682,7 @@ describe('ClaudeSession：恢复、错误与退出', () => {
     expect(s.items()).toEqual([]);
   });
 
-  it('API 重试发 session.error（willRetry）；启动就失败的结果按 startup_failure_reason 分类', async () => {
+  it('API retry emits session.error (willRetry); a failure at startup is classified by startup_failure_reason', async () => {
     const fake = createFakeClaude({
       turn: (t) => {
         t.emit({
@@ -714,7 +714,7 @@ describe('ClaudeSession：恢复、错误与退出', () => {
     ]);
   });
 
-  it('进程出错退出：挂着的审批结清，发 session.exited 带原因', async () => {
+  it('process exits with an error: pending approvals are settled, session.exited is emitted with the reason', async () => {
     const fake = createFakeClaude({ turn: async (t) => void (await t.ask('Bash', { command: 'ls' })) });
     const s = track(open(fake));
     await s.session.startTurn({ text: 'go' }, settings());
@@ -729,7 +729,7 @@ describe('ClaudeSession：恢复、错误与退出', () => {
     await expect(s.session.startTurn({ text: 'go' }, settings())).rejects.toThrow(/已关闭/);
   });
 
-  it('进程自己结束：session.exited 带 stderr 的最后一行', async () => {
+  it('process ends on its own: session.exited carries the last line of stderr', async () => {
     const fake = createFakeClaude();
     const s = track(open(fake));
     const { turnId } = await s.session.startTurn({ text: 'go' }, settings());
@@ -739,7 +739,7 @@ describe('ClaudeSession：恢复、错误与退出', () => {
     expect(await until(() => s.of('session.exited')[0])).toEqual({ type: 'session.exited', error: 'fatal: lost connection' });
   });
 
-  it('close：结清审批、关掉 Query、只发一次 session.exited；之后不能再开回合', async () => {
+  it('close: settles approvals, closes the Query, emits session.exited only once; no turn can be opened afterwards', async () => {
     const answers: Array<PermissionResult | null> = [];
     const fake = createFakeClaude({ turn: async (t) => void answers.push(await t.ask('Bash', { command: 'ls' })) });
     const s = open(fake);
@@ -757,7 +757,7 @@ describe('ClaudeSession：恢复、错误与退出', () => {
   });
 });
 
-describe('ClaudeSession：图片与受限调用', () => {
+describe('ClaudeSession: images and restricted calls', () => {
   let dir: string;
   beforeEach(async () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-claude-session-'));
@@ -766,7 +766,7 @@ describe('ClaudeSession：图片与受限调用', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('图片读成 base64 的 image 块放在文字前面；image/jpg 归一成 image/jpeg；不支持的格式直接拒绝', async () => {
+  it('images read as base64 image blocks come before the text; image/jpg is normalized to image/jpeg; unsupported formats are rejected outright', async () => {
     const png = path.join(dir, 'a.png');
     const jpg = path.join(dir, 'b.jpg');
     await fs.writeFile(png, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
@@ -792,7 +792,7 @@ describe('ClaudeSession：图片与受限调用', () => {
     ]);
   });
 
-  it('受限调用（cwd-write-only）：acceptEdits 加沙箱，不给 MCP 服务，要问的一律拒绝、不发审批', async () => {
+  it('restricted call (cwd-write-only): acceptEdits plus sandbox, no MCP servers, anything that would ask is rejected without sending an approval', async () => {
     const answers: Array<PermissionResult | null> = [];
     const fake = createFakeClaude({
       turn: async (t) => {
@@ -826,7 +826,7 @@ describe('ClaudeSession：图片与受限调用', () => {
 });
 
 describe('ClaudeDriver → ClaudeSession', () => {
-  it('经 Driver 建的会话用找到的 claude 与它的环境', async () => {
+  it('sessions created through the Driver use the found claude and its environment', async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-claude-wire-'));
     try {
       const cli = await createFakeClaudeCli(path.join(dir, 'fake'));

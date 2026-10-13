@@ -66,7 +66,7 @@ const approval = (id: string, taskId: string): TimelineItem =>
   }) as unknown as TimelineItem;
 
 describe('gapBetween', () => {
-  it('相邻种类定间距', () => {
+  it('spacing is set by adjacent kinds', () => {
     expect(gapBetween('user', 'user')).toBe(4);
     expect(gapBetween('user', 'assistant')).toBe(0);
     expect(gapBetween('tool', 'tool')).toBe(0);
@@ -81,7 +81,7 @@ describe('gapBetween', () => {
     expect(gapBetween(null, 'user')).toBe(0);
   });
 
-  it('卡片后与消息留出间距，页脚和第一行仍沿用原间距', () => {
+  it('spacing after a card and before a message; footer and first line keep the original spacing', () => {
     const preceding: RowKind[] = ['user', 'assistant', 'tool'];
     const following: RowKind[] = ['user', 'assistant', 'tool', 'approval', 'notice'];
     for (const prev of preceding) {
@@ -91,14 +91,14 @@ describe('gapBetween', () => {
     expect(gapBetween(null, 'assistant', true)).toBe(0);
   });
 
-  it('线程块的行种类', () => {
+  it('row kinds of thread blocks', () => {
     const blocks = buildThread([user('u1', 't1'), tool('c1', 't1'), agent('a1', 't1', '好'), task('t1')]);
     expect(blocks.map(rowKind)).toEqual(['user', 'tool', 'assistant', 'footer']);
   });
 });
 
 describe('turns', () => {
-  it('按用户消息切回合，正文用空行连接、不含工具；任务状态行只记成这一轮的任务', () => {
+  it('splits turns at user messages; body is joined with blank lines and excludes tools; task status rows are recorded only as this turn\'s tasks', () => {
     const blocks = buildThread([
       user('u1', 't1'),
       task('t1'),
@@ -125,7 +125,7 @@ describe('turns', () => {
     expect(turns([])).toEqual([]);
   });
 
-  it('只有用户消息、没有回复的回合不显示页脚；进行中、停止与失败照常显示', () => {
+  it('turns with only a user message and no reply show no footer; in-progress, stopped and failed still show', () => {
     const [done, bare] = turns(buildThread([user('u1', 't1'), agent('a1', 't1', '好'), task('t1'), user('u2', 't2')]));
     expect(showFooter(done!, false)).toBe(true);
     expect(showFooter(bare!, false)).toBe(false);
@@ -135,8 +135,8 @@ describe('turns', () => {
   });
 });
 
-describe('页脚文案', () => {
-  it('时长与结束时刻', () => {
+describe('footer copy', () => {
+  it('duration and end time', () => {
     expect(elapsedLabel(42000)).toBe('0:42');
     expect(elapsedLabel(63000)).toBe('1:03');
     expect(elapsedLabel(3725000)).toBe('1:02:05');
@@ -145,7 +145,7 @@ describe('页脚文案', () => {
     expect(clockLabel(new Date(2026, 9, 5, 9, 5).getTime())).toBe('09:05');
   });
 
-  it('进行中、等允许、完成、停止与失败', () => {
+  it('in progress, awaiting permission, done, stopped and failed', () => {
     expect(footerLabel({ status: 'running', startedAt: 1000, now: 43000 })).toBe('正在工作 · 0:42');
     expect(footerLabel({ status: null, now: 0 })).toBe('正在工作');
     expect(footerLabel({ status: 'running', waiting: true, startedAt: 1000, now: 61000 })).toBe('等你允许 · 1:00');
@@ -158,7 +158,7 @@ describe('页脚文案', () => {
 });
 
 describe('diffLines / looksLikeDiff', () => {
-  it('按行归类，文件头不算增删', () => {
+  it('classifies by line; file headers do not count as additions or deletions', () => {
     const diff = '--- a/分镜.md\n+++ b/分镜.md\n@@ -1,2 +1,2 @@\n 标题\n-旧的一行\n+新的一行\n';
     expect(looksLikeDiff(diff)).toBe(true);
     expect(looksLikeDiff('duration 206s · 3 speakers')).toBe(false);
@@ -167,13 +167,13 @@ describe('diffLines / looksLikeDiff', () => {
   });
 });
 
-describe('步骤行的元数据', () => {
+describe('step row metadata', () => {
   const call = (patch: Partial<Extract<TimelineItem, { kind: 'tool-call' }>>) => ({
     ...(tool('c', 't') as Extract<TimelineItem, { kind: 'tool-call' }>),
     ...patch,
   });
 
-  it('非零退出码与耗时；拒绝与中断写在前面', () => {
+  it('non-zero exit code and duration; rejected and interrupted are written first', () => {
     expect(stepMeta(call({ exitCode: 1, durationMs: 400 }), 'failed')).toEqual([{ text: '退出码 1', code: true }, { text: '0.4s' }]);
     expect(stepMeta(call({ exitCode: 0, durationMs: 12_300 }), 'completed')).toEqual([{ text: '12s' }]);
     expect(stepMeta(call({ durationMs: 63_000 }), 'completed')).toEqual([{ text: '1:03' }]);
@@ -181,7 +181,7 @@ describe('步骤行的元数据', () => {
     expect(stepMeta(call({}), 'completed')).toEqual([]);
   });
 
-  it('错误一段的文字', () => {
+  it('error section text', () => {
     expect(stepError(call({ exitCode: 2 }), 'failed')).toBe('命令以退出码 2 结束');
     expect(stepError(call({}), 'failed')).toBe('这一步没有完成');
     expect(stepError(call({}), 'declined')).toBe('这一步被拒绝了');
@@ -189,7 +189,7 @@ describe('步骤行的元数据', () => {
 });
 
 describe('nextToolStatus', () => {
-  it('失败之后不再被改回', () => {
+  it('not changed back after a failure', () => {
     expect(nextToolStatus('failed', 'completed')).toBe('failed');
     expect(nextToolStatus('running', 'completed')).toBe('completed');
     expect(nextToolStatus(null, 'running')).toBe('running');
@@ -197,7 +197,7 @@ describe('nextToolStatus', () => {
 });
 
 describe('parsePathToken', () => {
-  it('前缀路径与多段路径', () => {
+  it('prefixed paths and multi-segment paths', () => {
     expect(parsePathToken('./transcript.json')).toEqual({ path: './transcript.json', line: null, lineEnd: null, col: null });
     expect(parsePathToken('~/CucCut/访谈/分镜.md')?.path).toBe('~/CucCut/访谈/分镜.md');
     expect(parsePathToken('../a')?.path).toBe('../a');
@@ -210,7 +210,7 @@ describe('parsePathToken', () => {
     }
   });
 
-  it('行号后缀与 tooltip', () => {
+  it('line number suffix and tooltip', () => {
     expect(parsePathToken('src/app.ts:12')).toEqual({ path: 'src/app.ts', line: 12, lineEnd: null, col: null });
     expect(parsePathToken('src/app.ts:12-20')).toEqual({ path: 'src/app.ts', line: 12, lineEnd: 20, col: null });
     expect(parsePathToken('./a.rs:12:5')).toEqual({ path: './a.rs', line: 12, lineEnd: null, col: 5 });
@@ -221,7 +221,7 @@ describe('parsePathToken', () => {
     expect(pathTip(parsePathToken('/other/a.ts')!, '/work/proj')).toBe('/other/a.ts');
   });
 
-  it('不像路径的不算', () => {
+  it('strings that do not look like paths do not count', () => {
     for (const s of [
       'transcript.json',
       'ccut auto <文件>',

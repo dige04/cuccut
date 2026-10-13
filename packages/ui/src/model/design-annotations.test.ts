@@ -21,7 +21,7 @@ const note = (over: Partial<DraftDesignAnnotation> = {}): DraftDesignAnnotation 
 });
 
 describe('design-annotations', () => {
-  it('加一条：批注去掉首尾空白；空的、超长的、超过条数的不收', () => {
+  it('add one: annotation is trimmed; empty, overlong or over-limit annotations are rejected', () => {
     const one = addDesignAnnotation([], note({ text: '  bigger \n' }));
     expect(one.error).toBeNull();
     expect(one.list[0]!.text).toBe('bigger');
@@ -34,13 +34,13 @@ describe('design-annotations', () => {
     expect(over.list).toBe(full);
   });
 
-  it('删一条；没有这条时原样返回', () => {
+  it('remove one; returns the input unchanged when the item is absent', () => {
     const list = [note(), note({ id: 'n2' })];
     expect(removeDesignAnnotation(list, 'missing')).toBe(list);
     expect(removeDesignAnnotation(list, 'n1').map((n) => n.id)).toEqual(['n2']);
   });
 
-  it('编号标记：只给这份设计稿的，编号是在整份草稿里的序号', () => {
+  it('number markers: only for this design, numbered by position in the whole draft', () => {
     const list = [note(), note({ id: 'n2', canvas: other }), note({ id: 'n3', anchor: 'b' })];
     expect(canvasThreads(list, canvas)).toEqual([
       { id: 'n1', anchor: 'a:Main.dc.html#0.1', n: 1 },
@@ -49,7 +49,7 @@ describe('design-annotations', () => {
     expect(canvasThreads(list, { projectId: 'p1', path: 'designs/landing' })).toEqual([]);
   });
 
-  it('交出去的那份：去掉界面里的 id，空的可选字段不带', () => {
+  it('exported copy: strips UI ids and omits empty optional fields', () => {
     expect(sentDesignAnnotations([note({ board: 'Main.dc.html', detail: 'Main.dc.html: #0.1 button', area: true })])).toEqual([
       {
         canvas,
@@ -64,7 +64,7 @@ describe('design-annotations', () => {
     expect(sentDesignAnnotations([note()])[0]).not.toHaveProperty('board');
   });
 
-  it('从运行时的定位描述里认出画板文件', () => {
+  it('recognize the artboard file from the runtime locator description', () => {
     expect(boardOfDetail('Main.dc.html: #1.2 button "Book now"')).toBe('Main.dc.html');
     expect(boardOfDetail('screens/Phone_2.dc.html')).toBe('screens/Phone_2.dc.html');
     expect(boardOfDetail('Area over Main.dc.html (part): #1 text "Hi"')).toBe('Main.dc.html');

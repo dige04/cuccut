@@ -39,14 +39,14 @@ const imported: SkillSummary = {
   },
 };
 
-describe('cuccut skills 的输出', () => {
-  it('回执写明目标目录与来源', () => {
+describe('cuccut skills output', () => {
+  it('receipt states the target directory and source', () => {
     expect(formatSkillChanged('已导入', imported)).toBe(
       '已导入 podcast-chapters（播客分章，关着）→ /home/skills/podcast-chapters\n来源：https://github.com/o/r（main@abcdef012345，2026-10-02T00:00:00.000Z）',
     );
   });
 
-  it('--skill 与 --id 只查形状，不假定拉丁字母', () => {
+  it('--skill and --id only check the shape, without assuming Latin letters', () => {
     expect(parseChatSkill(undefined)).toBeUndefined();
     expect(parseChatSkill(' caption-layout ')).toEqual({ id: 'caption-layout' });
     expect(parseSkillId('字幕-排版', '--id')).toBe('字幕-排版');

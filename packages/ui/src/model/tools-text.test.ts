@@ -23,8 +23,8 @@ import {
   textTruncated,
 } from './tools-text.ts';
 
-describe('校验与请求', () => {
-  it('没写要求、超过 16,000 字符（按码点数）', () => {
+describe('validation and request', () => {
+  it('missing requirements; over 16,000 characters (by code points)', () => {
     expect(textProblems({ input: '  ' })).toEqual([emptyInput()]);
     expect(textProblems({ input: '写一段旁白' })).toEqual([]);
     expect(textProblems({ input: '字'.repeat(MAX_TEXT_INPUT) })).toEqual([]);
@@ -32,12 +32,12 @@ describe('校验与请求', () => {
     expect(tooLong()).toBe('一次最多输入 16,000 字符');
   });
 
-  it('字数行：n / 16,000 字符，超了标出来', () => {
+  it('character count line: n / 16,000 characters; flagged when exceeded', () => {
     expect(textCounter({ input: ' 你好 ' })).toEqual({ text: '2 / 16,000 字符', over: false });
     expect(textCounter({ input: 'a'.repeat(16_001) })).toEqual({ text: '16,001 / 16,000 字符', over: true });
   });
 
-  it('请求是一条 user 消息，指名服务商与模型；推理强度与输出上限不给', () => {
+  it('request is one user message naming the provider and model; reasoning effort and output limit are not included', () => {
     expect(textRequest({ input: ' 写一段旁白 ' }, { providerId: 'openai', modelId: 'gpt-5-mini' })).toEqual({
       messages: [{ role: 'user', content: '写一段旁白' }],
       provider: 'openai',
@@ -51,7 +51,7 @@ describe('校验与请求', () => {
     });
   });
 
-  it('主按钮旁的现状：门、问题、这次用谁', () => {
+  it('status beside the primary button: gate, issue, which one is used this time', () => {
     const options = cloudModelOptions(textView(), 'generateText');
     expect(options.map((o) => [o.key, o.usable])).toEqual([
       ['openai/gpt-5-mini', true],
@@ -68,8 +68,8 @@ describe('校验与请求', () => {
   });
 });
 
-describe('推理强度', () => {
-  it('推理强度用模型页的默认；模型不能调时照实说', () => {
+describe('reasoning effort', () => {
+  it('reasoning effort uses the model page default; when the model cannot adjust it, says so', () => {
     const tunable = textModel('gpt-5-mini', { efforts: ['low', 'high'] });
     expect(textEffortLine({ effort: null }, tunable)).toBe('推理强度 · 自动（模型页设的默认）');
     expect(textEffortLine({ effort: 'minimal' }, tunable)).toBe('推理强度 · 最低（模型页设的默认）');
@@ -77,14 +77,14 @@ describe('推理强度', () => {
   });
 });
 
-describe('记录', () => {
+describe('records', () => {
   const done = textJob({
     state: 'completed',
     endedAt: '2026-10-03T10:15:00.123Z',
     result: { documentId: null, artifactId: 'sha256:t1', text: textResult({ length: 1234, usage: { inputTokens: 10, outputTokens: 900 } }) },
   });
 
-  it('要求、事实、文件名与 Space 里那份同名', () => {
+  it('requirements, facts and file name match the same-named one in Space', () => {
     expect(textPrompt(done)).toBe('写一段城市漫游旁白');
     expect(textFacts(done)).toBe('1,234 字 · 输出 900 token');
     expect(textFileName(done)).toBe('生成文本-20261003-101500.txt');
@@ -93,7 +93,7 @@ describe('记录', () => {
     expect(textFacts(json)).toBe('20 字 · JSON');
   });
 
-  it('截断：警告或结束原因是 length', () => {
+  it('truncation: a warning or finish reason of length', () => {
     expect(textTruncated(done)).toBe(false);
     const cut = textJob({ ...done, warnings: [{ code: 'output-truncated' }] });
     expect(textTruncated(cut)).toBe(true);
@@ -102,7 +102,7 @@ describe('记录', () => {
     expect(textTruncated(byReason)).toBe(true);
   });
 
-  it('Space 里的文档：按产物 ID 找，进了废纸篓的不算', () => {
+  it('documents in Space: found by artifact ID; ones in the trash do not count', () => {
     const entry = (artifactId: string, trashedAt: string | null = null): SpaceEntry => ({
       id: `e-${artifactId}`,
       kind: 'document',
@@ -121,12 +121,12 @@ describe('记录', () => {
     expect(textSpaceEntry([entry('sha256:t1')], textJob())).toBeNull();
   });
 
-  it('带回左边：要求与模型', () => {
+  it('carry back to the left: requirements and model', () => {
     expect(againTextDraft(done)).toEqual({ input: '写一段城市漫游旁白', model: 'openai/gpt-5-mini' });
     expect(againTextDraft(textJob({ generation: undefined }))).toBeNull();
   });
 
-  it('再试一次：照冻结的参数原样再提交，推理强度交回当初请求的那一档', () => {
+  it('retry: resubmits the frozen parameters as they were; reasoning effort returns to the level originally requested', () => {
     expect(retryTextRequest(done)).toEqual({
       messages: [{ role: 'user', content: '写一段城市漫游旁白' }],
       responseFormat: { type: 'text' },

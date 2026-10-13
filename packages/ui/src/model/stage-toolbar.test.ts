@@ -65,8 +65,8 @@ const SAMPLES = [
   composition({ kind: 'bundle', assetRef: { id: 'a', revision: 1 } }),
 ];
 
-describe('按类型归类', () => {
-  it('文字 / 视频 / 图片 / 图形 / 贴纸 / 进度 / 声波 / 计时 / 彩纸 / 白板各走自己的一条；代码包合成退回「其他」', () => {
+describe('grouping by type', () => {
+  it('text / video / image / shape / sticker / progress / waveform / timer / confetti / whiteboard each have their own path; a code-package composition falls back to "other"', () => {
     expect(SAMPLES.map(barKindOf)).toEqual([
       'text',
       'video',
@@ -84,8 +84,8 @@ describe('按类型归类', () => {
   });
 });
 
-describe('配置表照原型摆', () => {
-  it('文字：条子是「颜色 字体 字号 │ 样式 动画」，菜单逐项照原型', () => {
+describe('config table laid out as in the prototype', () => {
+  it('text: the bar is "color font size │ style animation", menus follow the prototype item by item', () => {
     const spec = toolbarFor(text());
     expect(ids(spec.visible)).toEqual([
       ['color', 'font', 'size'],
@@ -104,7 +104,7 @@ describe('配置表照原型摆', () => {
     ]);
   });
 
-  it('视频：条子上有转场、音量、变速；菜单最后一段从调整时间到删除', () => {
+  it('video: the bar has transition, volume, speed; the menu\'s last section runs from adjust time to delete', () => {
     const spec = toolbarFor(video());
     expect(ids(spec.visible)).toEqual([
       ['animation', 'transitions'],
@@ -113,7 +113,7 @@ describe('配置表照原型摆', () => {
     expect(menuIds(spec.more).at(-1)).toEqual(['adjust-timing', 'crop-video', 'replace-video', 'detach-audio', 'save-to-brand-kit', 'delete']);
   });
 
-  it('翻转与适应画布在图片、视频、图形、贴纸菜单的第一段：一行两簇', () => {
+  it('flip and fit to canvas are in the first section of the image, video, shape and sticker menus: one row, two clusters', () => {
     for (const item of [image(), video(), shape(), sticker()]) {
       expect(menuIds(toolbarFor(item).more)[0]).toEqual([
         ['flip-vertical', 'flip-horizontal'],
@@ -122,13 +122,13 @@ describe('配置表照原型摆', () => {
     }
   });
 
-  it('每一类的菜单最后一段都以删除收尾', () => {
+  it('every kind\'s menu ends its last section with delete', () => {
     for (const item of SAMPLES.filter((i) => barKindOf(i) !== 'other')) {
       expect(menuIds(toolbarFor(item).more).at(-1)?.at(-1)).toBe('delete');
     }
   });
 
-  it('「属性」只在文字、图形、贴纸、计时、彩纸、白板的菜单里', () => {
+  it('"Properties" appears only in the menus for text, shape, sticker, timer, confetti and whiteboard', () => {
     const withProps = Object.entries(BAR)
       .filter(([, layout]) => (layout.more ?? []).some((g) => g.flat().includes('properties')))
       .map(([kind]) => kind)
@@ -136,11 +136,11 @@ describe('配置表照原型摆', () => {
     expect(withProps).toEqual(['confetti', 'counter', 'shape', 'sticker', 'text', 'whiteboard']);
   });
 
-  it('条子上都没有「存到品牌库」', () => {
+  it('no bar has "Save to brand library"', () => {
     for (const layout of Object.values(BAR)) expect(layout.visible.flat()).not.toContain('save-to-brand-kit');
   });
 
-  it('彩纸与白板：条子上一颗「动画」，菜单是不透明度、复制 / 层级、属性、时长 / 停用 / 删除', () => {
+  it('confetti and whiteboard: the bar has one "Animation" button; the menu is opacity, duplicate / layer, properties, duration / disable / delete', () => {
     for (const item of [element('confetti', { confetti: {} }), element('whiteboard', { whiteboard: {} })]) {
       const spec = toolbarFor(item);
       expect(ids(spec.visible)).toEqual([['animation']]);
@@ -148,7 +148,7 @@ describe('配置表照原型摆', () => {
     }
   });
 
-  it('认不出的合成只有一颗「属性」，菜单是通用的不透明度、复制 / 层级、时长 / 停用 / 删除', () => {
+  it('an unrecognized composition has only one "Properties" button; the menu is the generic opacity, duplicate / layer, duration / disable / delete', () => {
     const spec = toolbarFor(composition({ kind: 'bundle', assetRef: { id: 'a', revision: 1 } }));
     expect(ids(spec.visible)).toEqual([['properties']]);
     expect(menuIds(spec.more)).toEqual([['opacity'], ['copy', 'arrange'], ['adjust-timing', 'disable', 'delete']]);
@@ -156,8 +156,8 @@ describe('配置表照原型摆', () => {
   });
 });
 
-describe('每一格做什么', () => {
-  it('每一格都有显示名；不能用的每一格都写了原因', () => {
+describe('what each cell does', () => {
+  it('every cell has a display name; each unusable cell states its reason', () => {
     for (const item of SAMPLES) {
       for (const tool of allTools(toolbarFor(item))) {
         expect(tool.label).toBe(TOOL_LABEL[tool.id]);
@@ -167,19 +167,19 @@ describe('每一格做什么', () => {
     }
   });
 
-  it('还接不上的几格不能用：动画、圆角（预览画不出）、滤镜、智能裁剪', () => {
+  it('cells not yet wired are unusable: animation, rounded corners (the preview cannot draw them), filters, smart crop', () => {
     const spec = toolbarFor(video());
     for (const id of ['animation', 'round-corners', 'filters', 'crop-video']) {
       expect(find(spec, id)?.action.kind, id).toBe('off');
     }
   });
 
-  it('替换视频 / 替换图片是命令（开替换窗口，只换这一段）', () => {
+  it('replace video / replace image is a command (opens the replace dialog, replaces only this clip)', () => {
     expect(find(toolbarFor(video()), 'replace-video')?.action).toEqual({ kind: 'command' });
     expect(find(toolbarFor(image()), 'replace-image')?.action).toEqual({ kind: 'command' });
   });
 
-  it('分离音频：素材有音轨且视频自带的声音开着时是命令，否则说没有声音', () => {
+  it('separate audio: a command when the media has an audio track and the video\'s own sound is on; otherwise says there is no sound', () => {
     const withSound = media('video', { audio: { sampleRate: 48000, channels: 2 } });
     const clip = video();
     expect(find(toolbarFor(clip, { asset: withSound }), 'detach-audio')?.action).toEqual({ kind: 'command' });
@@ -189,7 +189,7 @@ describe('每一格做什么', () => {
   });
 
   // The toolbars already shipped in CucCut v2 (MEDIA_MORE / PLAIN_MORE in stage-toolbar.logic.ts): every category except video has opacity and “Hide” in its menu.
-  it('对照 v2：除视频外每一类的菜单里都有不透明度（下钻）与停用片段（命令，删除前一格）', () => {
+  it('compared with v2: every kind except video has opacity (drill-down) and disable clip (command, placed before delete) in its menu', () => {
     for (const item of SAMPLES) {
       const spec = toolbarFor(item);
       const kind = barKindOf(item);
@@ -204,14 +204,14 @@ describe('每一格做什么', () => {
     }
   });
 
-  it('「层级」在每一类画面元素的菜单里都下钻一层（四个方向）', () => {
+  it('"Layer" drills down one level in the menu of every kind of visual element (four directions)', () => {
     for (const item of SAMPLES) {
       const spec = toolbarFor(item);
       expect(find(spec, 'arrange')?.action, item.type).toEqual({ kind: 'sub' });
     }
   });
 
-  it('文字：颜色字体字号开弹层，B / I / 对齐是开关，行高字距下钻，样式跳到属性页「样式」一节', () => {
+  it('text: color, font, size open a popover; B / I / align are toggles; line height and letter spacing drill down; style jumps to the "Style" section of the properties page', () => {
     const spec = toolbarFor(text());
     expect(find(spec, 'color')?.action).toEqual({ kind: 'pop' });
     expect(find(spec, 'font')?.action).toEqual({ kind: 'pop' });
@@ -222,7 +222,7 @@ describe('每一格做什么', () => {
     expect(find(spec, 'delete')?.action).toEqual({ kind: 'command' });
   });
 
-  it('样式认不出的文字：改字的几格都不能用，说出样式名', () => {
+  it('text with an unrecognized style: the cells that change text are unusable, naming the style', () => {
     const spec = toolbarFor(text({ schema: 'cuccut.text-style/v2' }));
     for (const id of ['color', 'font', 'size', 'bold', 'line-height', 'text-styles']) {
       const action = find(spec, id)?.action;
@@ -231,7 +231,7 @@ describe('每一格做什么', () => {
     }
   });
 
-  it('视频：转场与效果跳到属性页对应一节；时间映射不是恒速时变速不能用', () => {
+  it('video: transition and effects jump to the matching section of the properties page; speed is unusable when the time map is not constant-speed', () => {
     const spec = toolbarFor(video());
     expect(find(spec, 'transitions')?.action).toEqual({ kind: 'jump', section: 'transition' });
     expect(find(spec, 'effects')?.action).toEqual({ kind: 'jump', section: 'effects' });
@@ -240,7 +240,7 @@ describe('每一格做什么', () => {
     expect(find(toolbarFor(video({ kind: 'hold', sourceAt: { ticks: '0', timescale: 1 } })), 'speed')?.action.kind).toBe('off');
   });
 
-  it('元素的参数格（填充色、样式、模式、计时的颜色字体）跳到属性页页首', () => {
+  it('element parameter cells (fill color, style, mode, timer color and font) jump to the top of the properties page', () => {
     expect(find(toolbarFor(sticker()), 'fill-list')?.action).toEqual({ kind: 'jump', section: null });
     expect(find(toolbarFor(element('progress', { progress: { style: 'rounded' } })), 'progress-picker')?.action).toEqual({
       kind: 'jump',
@@ -252,7 +252,7 @@ describe('每一格做什么', () => {
     expect(find(spec, 'bold')?.action).toEqual({ kind: 'jump', section: null });
   });
 
-  it('存到品牌库：文字说的是品牌库还没有文字样式一栏；视频、图片取得到素材的原文件才能存', () => {
+  it('save to brand library: text says the brand library has no text style section yet; video and image can be saved only when the original media file is reachable', () => {
     expect(find(toolbarFor(text()), 'save-to-brand-kit')?.action).toEqual({ kind: 'off', reason: OFF_REASON.brandText });
     expect(find(toolbarFor(video()), 'save-to-brand-kit')?.action).toEqual({ kind: 'off', reason: OFF_REASON.brand });
     expect(find(toolbarFor(video(), { asset: media('audio') }), 'save-to-brand-kit')?.action).toEqual({ kind: 'off', reason: OFF_REASON.brand });
@@ -264,14 +264,14 @@ describe('每一格做什么', () => {
     expect(find(toolbarFor(image(), { asset: embedded }), 'save-to-brand-kit')?.action).toEqual({ kind: 'off', reason: 'reason' in found ? found.reason : '' });
   });
 
-  it('浏览器里存不了品牌库（Web 服务不放行 library.*）：素材片段与字幕都说明在哪能用；文字仍说没有文字样式一栏', () => {
+  it('in the browser the brand library cannot be saved to (the web service does not allow library.*): media clips and subtitles explain where they can be used; text still says there is no text style section', () => {
     const web = { kind: 'off', reason: OFF_REASON.brandWeb };
     expect(find(toolbarFor(video(), { asset: linkedVideo(), web: true }), 'save-to-brand-kit')?.action).toEqual(web);
     expect(find(captionToolbar({ paired: false, styled: true, web: true }), 'save-to-brand-kit')?.action).toEqual(web);
     expect(find(toolbarFor(text(), { web: true }), 'save-to-brand-kit')?.action).toEqual({ kind: 'off', reason: OFF_REASON.brandText });
   });
 
-  it('按下去存的就是条子上判过的那一节与来源', () => {
+  it('what gets saved on press is the section and source judged on the bar', () => {
     const asset = linkedVideo();
     const item = { ...video(), assetRef: { id: asset.id, revision: 'r1' } } as unknown as PlacedItem;
     expect(itemAsset(item, { [asset.id]: asset })).toBe(asset);
@@ -280,14 +280,14 @@ describe('每一格做什么', () => {
     expect(brandTarget(undefined)).toEqual({ reason: OFF_REASON.brand });
   });
 
-  it('图形：颜色与描边开弹层；图形参数是固定字段，哪种图形都能改', () => {
+  it('shape: color and stroke open a popover; shape parameters are fixed fields, editable for any shape', () => {
     expect(find(toolbarFor(shape()), 'border')?.action).toEqual({ kind: 'pop' });
     expect(find(toolbarFor(shape({ shape: 'star', fill: '#FF0000' })), 'color')?.action).toEqual({ kind: 'pop' });
   });
 });
 
-describe('字幕的工具条', () => {
-  it('双语：条子是「原文 | 译文 │ 颜色 字体 字号 │ 编辑 样式 动画」，菜单照原型', () => {
+describe('subtitle toolbar', () => {
+  it('bilingual: the bar is "source | translation │ color font size │ edit style animation", menus follow the prototype', () => {
     const spec = captionToolbar({ paired: true, styled: true });
     expect(spec.kind).toBe('subtitle');
     expect(ids(spec.visible)).toEqual([['sub-scope'], ['color', 'font', 'size'], ['sub-edit', 'sub-style', 'sub-animation']]);
@@ -301,19 +301,19 @@ describe('字幕的工具条', () => {
     ]);
   });
 
-  it('只有一种行时没有「原文 | 译文」那一段', () => {
+  it('with only one line type, there is no "source | translation" section', () => {
     expect(ids(captionToolbar({ paired: false, styled: true }).visible)).toEqual([
       ['color', 'font', 'size'],
       ['sub-edit', 'sub-style', 'sub-animation'],
     ]);
   });
 
-  it('没有删除，也没有格式里不存在的「这一句 / 全部」与「套用到全局」', () => {
+  it('no delete, and no "this line / all" or "apply to global" that do not exist in the format', () => {
     const tools = allTools(captionToolbar({ paired: true, styled: true })).map((t) => t.id as string);
     for (const id of ['delete', 'sub-cue-scope', 'apply-style-to-global']) expect(tools).not.toContain(id);
   });
 
-  it('颜色字体字号开弹层，B / I / 对齐是开关，行高字距下钻，动画打开属性页的「当前词」', () => {
+  it('color, font, size open a popover; B / I / align are toggles; line height and letter spacing drill down; animation opens the "current word" section of the properties page', () => {
     const spec = captionToolbar({ paired: true, styled: true });
     expect(find(spec, 'color')?.action).toEqual({ kind: 'pop' });
     expect(find(spec, 'size')?.action).toEqual({ kind: 'pop' });
@@ -329,7 +329,7 @@ describe('字幕的工具条', () => {
     }
   });
 
-  it('还在用缺省样式时存不了品牌库；有样式文档就能存', () => {
+  it('cannot save to the brand library while the default style is still in use; it can be saved once there is a style document', () => {
     expect(find(captionToolbar({ paired: false, styled: false }), 'save-to-brand-kit')?.action).toEqual({
       kind: 'off',
       reason: OFF_REASON.captionDefaultStyle,
@@ -337,7 +337,7 @@ describe('字幕的工具条', () => {
     expect(find(captionToolbar({ paired: false, styled: true }), 'save-to-brand-kit')?.action).toEqual({ kind: 'command' });
   });
 
-  it('大小写按「原样 → 全大写 → 首字母大写 → 全小写」轮换；capitalize 算首字母大写', () => {
+  it('case cycles through "as is → uppercase → capitalize → lowercase"; capitalize counts as title-case', () => {
     expect(captionCase(undefined)).toBe('none');
     expect(captionCase('capitalize')).toBe('title');
     expect(nextCaptionCase(undefined)).toBe('uppercase');
@@ -347,24 +347,24 @@ describe('字幕的工具条', () => {
   });
 });
 
-describe('落位', () => {
+describe('placement', () => {
   const area = { w: 800, h: 450 };
   const bar = { w: 200, h: 30 };
 
-  it('先放选框上方 12px，横向对着选框居中', () => {
+  it('first placed 12px above the selection box, horizontally centered on it', () => {
     expect(toolbarPlacement({ x: 300, y: 200, w: 200, h: 100 }, area, bar, false)).toEqual({ left: 300, top: 158, below: false, maxWidth: 784 });
   });
 
-  it('有旋转钮时抬到 50px 跨过它', () => {
+  it('with a rotate handle, raised to 50px to clear it', () => {
     expect(toolbarPlacement({ x: 300, y: 200, w: 200, h: 100 }, area, bar, true).top).toBe(120);
   });
 
-  it('上方贴着舞台顶就翻到下方；下方也放不下就夹在底边以内', () => {
+  it('if the top touches the stage top, flips below; if it does not fit below either, clamped within the bottom edge', () => {
     expect(toolbarPlacement({ x: 300, y: 20, w: 200, h: 100 }, area, bar, false)).toMatchObject({ top: 132, below: true });
     expect(toolbarPlacement({ x: 300, y: 10, w: 200, h: 430 }, area, bar, false)).toMatchObject({ top: 412, below: true });
   });
 
-  it('横向夹在舞台里；舞台比条子窄时给出最大宽度', () => {
+  it('horizontally clamped within the stage; when the stage is narrower than the bar, a maximum width is given', () => {
     expect(toolbarPlacement({ x: -50, y: 200, w: 100, h: 50 }, area, bar, false).left).toBe(8);
     expect(toolbarPlacement({ x: 760, y: 200, w: 100, h: 50 }, area, bar, false).left).toBe(592);
     expect(toolbarPlacement({ x: 10, y: 200, w: 100, h: 50 }, { w: 160, h: 450 }, bar, false)).toMatchObject({ left: 8, maxWidth: 144 });

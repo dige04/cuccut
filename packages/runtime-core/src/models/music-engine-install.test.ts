@@ -185,7 +185,7 @@ async function install(side: Side) {
   return { plan: first.plan, job: side.runtime.models.jobs.inspect(submitted.jobId!) };
 }
 
-describe.skipIf(process.platform === 'win32')('音乐模型包与引擎组件的安装（假模型来源 + 假工具镜像 + 假 audiocpp_cli）', () => {
+describe.skipIf(process.platform === 'win32')('installing the music model pack and engine component (fake model source + fake tool mirror + fake audiocpp_cli)', () => {
   let source: FakeModelSource;
   let side: Side | undefined;
   let scratch: string;
@@ -203,7 +203,7 @@ describe.skipIf(process.platform === 'win32')('音乐模型包与引擎组件的
     await fs.rm(scratch, { recursive: true, force: true });
   });
 
-  it('一份计划装权重与引擎：引擎解开到 tools/audiocpp/<版本>/，模型包 installed，能力视图看到引擎；删除后回收', async () => {
+  it('one plan installs weights and engine: engine unpacked to tools/audiocpp/<version>/, model pack installed, capability view shows the engine; reclaimed after delete', async () => {
     const release = await packRelease(scratch, '#!/bin/sh\necho "audio.cpp 0.9.1"\necho "backends: cpu"\n');
     side = await startSide(source, release);
     const s = side;
@@ -243,7 +243,7 @@ describe.skipIf(process.platform === 'win32')('音乐模型包与引擎组件的
     expect(await musicEngineInCapabilities(s.client)).toBeNull();
   });
 
-  it('坏包（摘要对得上但解不开）：MODEL_DOWNLOAD_INTEGRITY，不留引擎目录与暂存', async () => {
+  it('bad package (digest matches but cannot be unpacked): MODEL_DOWNLOAD_INTEGRITY, leaves no engine directory or staging', async () => {
     const broken: Release = { bytes: Buffer.from('not an archive'), fileName: 'audio-test-bin.tar.gz' };
     side = await startSide(source, broken);
     const { job } = await install(side);
@@ -252,7 +252,7 @@ describe.skipIf(process.platform === 'win32')('音乐模型包与引擎组件的
     expect((await bundleOf(side.client)).components).toContainEqual(expect.objectContaining({ component: ENGINE, state: 'missing' }));
   });
 
-  it('探测认不出是 audio.cpp：MODEL_DOWNLOAD_INTEGRITY，删掉刚发布的引擎目录', async () => {
+  it('probe doesn\'t recognize audio.cpp: MODEL_DOWNLOAD_INTEGRITY, deletes the just-published engine directory', async () => {
     const release = await packRelease(scratch, '#!/bin/sh\necho "something else"\n');
     side = await startSide(source, release);
     const { job } = await install(side);
@@ -260,7 +260,7 @@ describe.skipIf(process.platform === 'win32')('音乐模型包与引擎组件的
     expect(await fs.stat(path.join(side.toolsDir, 'audiocpp', VERSION)).catch(() => null)).toBeNull();
   });
 
-  it('迁移：旧版作为受管外部工具装下的引擎（没有清单）直接算装好，只下载权重；装好后计划为 0 字节', async () => {
+  it('migration: an engine installed previously as a managed external tool (no manifest) counts as installed directly, only weights downloaded; after installed the plan is 0 bytes', async () => {
     const release = await packRelease(scratch, '#!/bin/sh\necho "audio.cpp 0.9.1"\n');
     const legacy = (toolsDir: string) => path.join(toolsDir, 'audiocpp', VERSION, 'audiocpp_cli');
     side = await startSide(source, release, async (toolsDir) => {
@@ -284,8 +284,8 @@ describe.skipIf(process.platform === 'win32')('音乐模型包与引擎组件的
   });
 });
 
-describe('resolveAudioCppCli 的查找顺序', () => {
-  it('环境变量（给了就只用它）→ 装好的引擎组件 → PATH', async () => {
+describe('lookup order of resolveAudioCppCli', () => {
+  it('environment variable (if given, only it is used) → installed engine component → PATH', async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-resolve-engine-'));
     try {
       const exe = process.platform === 'win32' ? 'audiocpp_cli.exe' : 'audiocpp_cli';

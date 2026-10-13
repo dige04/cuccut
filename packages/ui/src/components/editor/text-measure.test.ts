@@ -31,8 +31,8 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-describe('新建文字时量框', () => {
-  it('内核还没载入时等它，载入之后按它量，不先给近似的框', async () => {
+describe('measure the box when creating text', () => {
+  it('wait for the kernel while it is not loaded, measure with it after loading, and do not give an approximate box first', async () => {
     const kernel = fakeKernel();
     const loading = deferred<TextKernel>();
     const build = vi.fn((measureOn: MeasureOn) => blankTextLayer(canvas, measureOn(canvas)));
@@ -46,13 +46,13 @@ describe('新建文字时量框', () => {
     expect(layer.place?.w).toBeCloseTo((400 / 1920) * 100, 1);
   });
 
-  it('内核载入失败就拒绝，不建框', async () => {
+  it('reject if the kernel fails to load, no box created', async () => {
     const build = vi.fn(() => 1);
     await expect(withTextMeasure(build, () => Promise.reject(new Error('预览渲染模块没有载入')))).rejects.toThrow('预览渲染模块没有载入');
     expect(build).not.toHaveBeenCalled();
   });
 
-  it('量到一半内核陷阱（PLANNER_CRASHED）：等它重新载入好了，把整组重量一遍', async () => {
+  it('kernel trap (PLANNER_CRASHED) during measurement: wait for it to reload, then re-measure the whole group', async () => {
     // Trap on the second measurement: the first layer is measured but the second is not, so the result must not be a partial one.
     const kernel = fakeKernel((call) => (call === 2 ? crashed() : null));
     const build = vi.fn((measureOn: MeasureOn) => [measureOn(canvas)('一', {}, null).width, measureOn(canvas)('一二', {}, null).width]);
@@ -69,14 +69,14 @@ describe('新建文字时量框', () => {
     expect(kernel.calls()).toBe(4);
   });
 
-  it('不是陷阱的错误照抛，不重试', async () => {
+  it('errors that are not traps are rethrown, not retried', async () => {
     const kernel = fakeKernel(() => new PlanFailure({ code: 'INVALID_PARAMS', message: '还没注入字体' }));
     const build = vi.fn((measureOn: MeasureOn) => measureOn(canvas)('字', {}, null));
     await expect(withTextMeasure(build, async () => kernel)).rejects.toMatchObject({ code: 'INVALID_PARAMS' });
     expect(build).toHaveBeenCalledTimes(1);
   });
 
-  it('每次都陷阱时试三次就放弃', async () => {
+  it('give up after three tries when every attempt traps', async () => {
     const kernel = fakeKernel(() => crashed());
     const recovered = vi.spyOn(kernel, 'recovered').mockResolvedValue(undefined);
     const build = vi.fn((measureOn: MeasureOn) => measureOn(canvas)('字', {}, null));
@@ -85,7 +85,7 @@ describe('新建文字时量框', () => {
     expect(recovered).toHaveBeenCalledTimes(2);
   });
 
-  it('重新载入失败时拒绝', async () => {
+  it('reject when reloading fails', async () => {
     const kernel = fakeKernel(() => crashed());
     vi.spyOn(kernel, 'recovered').mockRejectedValue(new Error('重新实例化失败'));
     await expect(

@@ -37,8 +37,8 @@ const output = (path: string, byteLength: number, media: GeneratedOutput['media'
   path,
 });
 
-describe('导出任务', () => {
-  it('取这个视频最近一条在跑的导出，别的视频、别的种类、结束了的都不算', () => {
+describe('export job', () => {
+  it('takes the most recent running export for this video; other videos, other kinds and finished ones do not count', () => {
     const jobs = [
       exportJob({ jobId: 'old', createdAt: '2026-10-01T09:00:00Z' }),
       exportJob({ jobId: 'new', createdAt: '2026-10-01T10:00:00Z', state: 'queued' }),
@@ -50,14 +50,14 @@ describe('导出任务', () => {
     expect(latestLiveExport([], 'v1')).toBeNull();
   });
 
-  it('顶栏按钮：百分比只在有总量时念', () => {
+  it('top bar button: percentage is read out only when a total is known', () => {
     expect(exportButtonLabel(null)).toBe('导出');
     expect(exportButtonLabel(exportJob({ jobId: 'j', state: 'queued' }))).toBe('导出排队中');
     expect(exportButtonLabel(exportJob({ jobId: 'j', progress: { done: 31, total: 100, unit: 'frames' } }))).toBe('导出中 · 31%');
     expect(exportButtonLabel(exportJob({ jobId: 'j', progress: { done: 3, total: null, unit: 'outputs' } }))).toBe('导出中…');
   });
 
-  it('视图：在跑、完成、取消、中断、失败', () => {
+  it('view: running, done, cancelled, interrupted, failed', () => {
     expect(exportView(exportJob({ jobId: 'j' }))).toBe('run');
     expect(exportView(exportJob({ jobId: 'j', state: 'interrupted', endedAt: null }))).toBe('run');
     expect(exportView(exportJob({ jobId: 'j', state: 'interrupted', endedAt: '2026-10-01T09:05:00Z' }))).toBe('interrupted');
@@ -66,7 +66,7 @@ describe('导出任务', () => {
     expect(exportView(exportJob({ jobId: 'j', state: 'failed' }))).toBe('failed');
   });
 
-  it('标题、所在页与阶段按种类说', () => {
+  it('title, page and stage are described by kind', () => {
     expect(exportTitle({ kind: 'video', format: 'mp4' })).toBe('导出视频 · MP4');
     expect(exportTitle({ kind: 'transcript', format: 'md' })).toBe('导出文稿 · Markdown');
     expect(exportTitle({ kind: 'portable' })).toBe('导出便携包');
@@ -82,7 +82,7 @@ describe('导出任务', () => {
     expect(exportPhaseLabel(exportJob({ jobId: 'j', state: 'queued', phase: 'queued', wait }))).toBe('等待资源：内存不够');
   });
 
-  it('进度只写 Runtime 报的事实', () => {
+  it('progress records only facts Runtime reports', () => {
     expect(exportProgressLine(exportJob({ jobId: 'j', progress: { done: 1200, total: 3600, unit: 'frames' } }))).toBe('已画 1,200 / 3,600 帧');
     expect(exportProgressLine(exportJob({ jobId: 'j', progress: { done: 40, total: 180, unit: 'seconds' } }))).toBe('已处理 0:40 / 3:00');
     expect(exportProgressLine(exportJob({ jobId: 'j', progress: { done: 1, total: 3, unit: 'outputs' } }))).toBe('已写 1 / 3 个文件');
@@ -90,7 +90,7 @@ describe('导出任务', () => {
     expect(exportProgressLine(exportJob({ jobId: 'j', progress: null }))).toBeNull();
   });
 
-  it('速度与剩余时间：分:秒，超过一小时写时；算不出时不写', () => {
+  it('speed and remaining time: min:sec, with hours when over an hour; omitted when not computable', () => {
     expect(exportSpeedParts({ rate: 58.4, fps: 58.4, secondsLeft: 83.2 })).toEqual(['58 fps', '剩余 1:24']);
     expect(exportSpeedParts({ rate: 2.46, fps: 2.46, secondsLeft: 3723 })).toEqual(['2.5 fps', '剩余 1:02:03']);
     expect(exportSpeedParts({ rate: 10, fps: null, secondsLeft: 10 })).toEqual(['剩余 0:10']);
@@ -99,7 +99,7 @@ describe('导出任务', () => {
     expect(exportTimeLeft(null)).toBeNull();
   });
 
-  it('输出读实际路径：重名时 Runtime 加过的序号照实显示', () => {
+  it('output reads the actual path: a sequence number Runtime added for a name clash is shown as is', () => {
     const done = exportJob({
       jobId: 'j',
       state: 'completed',
@@ -113,7 +113,7 @@ describe('导出任务', () => {
     expect(exportDoneLine(done)).toBe('访谈 (2).mp4 · 84 MB');
   });
 
-  it('取消：没写完的删掉；点了取消还在跑时算「正在取消」', () => {
+  it('cancel: unfinished files are deleted; while still running after cancel is clicked, it counts as \'cancelling\'', () => {
     expect(cancelledLine(exportJob({ jobId: 'j', state: 'cancelled', result: null }))).toBe('没写完的文件已删掉 · 视频本身不受影响');
     const cancellation = { requestedAt: '2026-10-01T09:01:00Z', localStoppedAt: null, remote: 'not-applicable' as const, cost: 'none' as const };
     expect(cancelPending(exportJob({ jobId: 'j', cancellation }))).toBe(true);

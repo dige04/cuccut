@@ -74,8 +74,8 @@ const SPEECH = plan('speech', [
   { id: 'w4', start: 2.5, end: 3, text: 'line.', sentenceId: 's2' },
 ]);
 
-describe('字幕与文稿', () => {
-  it('显示宽度与换行：全角算 2，按宽度折行', () => {
+describe('subtitles and transcript', () => {
+  it('display width and line wrapping: full-width counts as 2, wrapped by width', () => {
     expect(displayWidth('ab中文')).toBe(6);
     const lines = wrapLines('one two three four five six seven', 10);
     expect(lines.every((l) => displayWidth(l) <= 10)).toBe(true);
@@ -83,7 +83,7 @@ describe('字幕与文稿', () => {
     expect(wrapLines('一二三四五六七八九十', 8).every((l) => displayWidth(l) <= 8)).toBe(true);
   });
 
-  it('SRT：按句成条，序号从 1 开始，毫秒时间；箭头被转义', () => {
+  it('SRT: one cue per sentence, numbering from 1, millisecond times; arrows escaped', () => {
     const out = renderText(input({ format: 'srt', primary: { document: doc('d', 'speech'), plan: SPEECH } }));
     expect(out.entries).toBe(2);
     expect(out.content).toBe('1\n00:00:00,000 --> 00:00:01,000\nHello world.\n\n2\n00:00:02,000 --> 00:00:03,000\nSecond line.\n');
@@ -99,7 +99,7 @@ describe('字幕与文稿', () => {
     expect(checkText('srt', arrow.content, { entries: 1, durationSec: 10 }).ok).toBe(true);
   });
 
-  it('VTT：头部与转义；校验发现条数不对、时间倒退', () => {
+  it('VTT: header and escaping; validation reports wrong cue count and backward time', () => {
     const caption = plan('caption', [{ id: 'c1', start: 1, end: 2, text: '<b>A & B</b>' }]);
     const out = renderText(input({ format: 'vtt', primary: { document: doc('c', 'caption'), plan: caption } }));
     expect(out.content.startsWith('WEBVTT\n')).toBe(true);
@@ -111,7 +111,7 @@ describe('字幕与文稿', () => {
     expect(checkText('srt', beyond, { entries: 1, durationSec: 10 }).ok).toBe(false);
   });
 
-  it('长句按宽度与 7 秒拆成几条，拆点的时间来自词', () => {
+  it('long sentences split into several cues by width and 7 seconds, split points\' times come from words', () => {
     const words = Array.from({ length: 30 }, (_, i) => ({
       id: `w${i}`,
       start: i * 0.5,
@@ -132,7 +132,7 @@ describe('字幕与文稿', () => {
     }
   });
 
-  it('JSON：全部可信时写逐词时间；字幕文档没有词时间', () => {
+  it('JSON: when all are trusted, writes per-word times; subtitle document has no word times', () => {
     const speech = JSON.parse(renderText(input({ format: 'json', primary: { document: doc('d', 'speech'), plan: SPEECH } })).content) as {
       schema: string;
       wordTiming: string;
@@ -153,7 +153,7 @@ describe('字幕与文稿', () => {
     expect(sentence.segments[0]!.words).toBeUndefined();
   });
 
-  it('双语：译文按句配上；被剪得不完整的句子不配，并提醒', () => {
+  it('bilingual: translation matched by sentence; sentences cut incompletely not matched, and a warning given', () => {
     const body = {
       words: [{ id: 'w1' }, { id: 'w2' }, { id: 'w3' }, { id: 'w4' }, { id: 'w5' }],
       sentences: [
@@ -182,7 +182,7 @@ describe('字幕与文稿', () => {
     expect(out.warnings.map((w) => w.code)).toContain('TRANSLATION_SKIPPED_PARTIAL_SENTENCE');
   });
 
-  it('双语（translation/2）：按 sourceSentenceId 配，显示改写优先，成员取 sourceWordIds，过期的单元不写', () => {
+  it('bilingual (translation/2): matched by sourceSentenceId, display rewrite takes priority, members take sourceWordIds, stale units not written', () => {
     const unit = (sid: string, naturalText: string, sourceWordIds: string[], extra: object = {}) => ({
       id: `t-${sid}`,
       sourceSentenceId: sid,
@@ -233,7 +233,7 @@ describe('字幕与文稿', () => {
   });
 
   it.skipIf(!editorWasmAvailable())(
-    '双语（translation/2，alignment 为 null）：成员按翻译时的规则从转写的词得出，转写没存句子时每句照样配上译文',
+    'bilingual (translation/2, alignment null): members derived from transcript words by the translation-time rules; when transcript stored no sentences, each sentence still gets its translation',
     () => {
       // A translation the agent wrote following documents_read: the unit is not aligned; the transcript is what transcribe writes, and `sentences` is null.
       const words = [
@@ -328,7 +328,7 @@ describe('字幕与文稿', () => {
     },
   );
 
-  it('双语：零时长的词放不上字幕，但不算剪掉——译文照配、不拆条；隐藏的词仍算剪掉', () => {
+  it('bilingual: zero-duration words cannot be placed on subtitles but are not counted as cut — translation still matched, cue not split; hidden words still count as cut', () => {
     const unit = (sid: string, naturalText: string, sourceWordIds: string[]) => ({
       id: `t-${sid}`,
       sourceSentenceId: sid,
@@ -371,7 +371,7 @@ describe('字幕与文稿', () => {
     expect(hidden.warnings.map((w) => w.code)).toEqual(['TRANSLATION_SKIPPED_PARTIAL_SENTENCE']);
   });
 
-  it('文稿：段末写这一段开始的时间（不加反引号，满一小时 hh:mm:ss）；纯文本没有标记', () => {
+  it('transcript: segment end writes the time this segment starts (no backticks, hh:mm:ss past one hour); plain text has no markers', () => {
     const transcript = { kind: 'transcript' as const, primary: { document: doc('d', 'speech'), plan: SPEECH } };
     const md = renderText(input({ ...transcript, format: 'md', timestamps: true }));
     expect(md.content).toBe('# 测试\n\nHello world. Second line. [00:00]\n');
@@ -391,7 +391,7 @@ describe('字幕与文稿', () => {
     expect(long.content).toBe('One. [00:59]\n\nTwo. [01:02:05]\n');
   });
 
-  it('纯文本：正文长得像章节小标题（「— … —」）时照样算一段，校验按写出的小标题数扣', () => {
+  it('plain text: body looking like a chapter subheading (“— … —”) still counts as a segment; validation subtracts by subheadings written', () => {
     const aside = plan('speech', [{ id: 'w1', start: 0, end: 1, text: '— Aside —' }]);
     const txt = renderText(input({ kind: 'transcript', format: 'txt', primary: { document: doc('d', 'speech'), plan: aside } }));
     expect(txt.content).toBe('— Aside —\n');
@@ -414,7 +414,7 @@ describe('字幕与文稿', () => {
     );
   });
 
-  it('文稿：章节小标题写在这一章的第一段前（章节处断段），没有段落的章不写；Markdown 与纯文本', () => {
+  it('transcript: chapter subheadings written before the first paragraph of that chapter (segment break at chapter), chapters without paragraphs not written; Markdown and plain text', () => {
     const chapters = [
       { title: 'Intro', start: 0 },
       { title: 'Empty', start: 1.5 },
@@ -437,7 +437,7 @@ describe('字幕与文稿', () => {
     expect(renderText(input({ ...transcript, chapters: null, format: 'txt' })).entries).toBe(1);
   });
 
-  it('文稿：文首元信息（只 Markdown）：字段按顺序、缺的不写、换行折成空格、JSON 转义，之后是说话人与章节表', () => {
+  it('transcript: file-head metadata (Markdown only): fields in order, missing ones omitted, line breaks folded to spaces, JSON escaped, followed by speakers and chapter table', () => {
     const speech = doc('d', 'speech', {
       body: {
         speakers: [
@@ -495,7 +495,7 @@ describe('字幕与文稿', () => {
     expect(renderText(input({ ...transcript, format: 'txt' })).content).not.toContain('---');
   });
 
-  it('文稿：双语时时间戳跟在原文段末，译文另起（Markdown 引用、纯文本下一行）', () => {
+  it('transcript: bilingual timestamp follows the original\'s segment end, translation on a new line (Markdown quote, plain text next line)', () => {
     const body = {
       speakers: [{ id: 'a', name: 'Ana' }],
       words: [{ id: 'w1' }, { id: 'w2' }, { id: 'w3' }, { id: 'w4' }],
@@ -530,7 +530,7 @@ describe('字幕与文稿', () => {
     expect(txt.content).toBe(`Ana: Hello world. Second line. [00:00]\n你好世界。第二行。\n`);
   });
 
-  it('文稿不跳过剪掉的部分：从正文取原文（隐藏的词不要），时间是素材时钟；给了范围时取投影到的首尾之间；章节换到原文时钟', () => {
+  it('transcript does not skip cut parts: original text taken from body (not hidden words), times are media clock; when range given, taken between projected endpoints; chapters mapped to original clock', () => {
     const body = {
       timescale: 1000,
       words: [
@@ -618,7 +618,7 @@ describe('字幕与文稿', () => {
     ]);
   });
 
-  it('文稿：一个人讲到底也按停顿与篇幅分段，与文稿面板同一套规则', () => {
+  it('transcript: one speaker speaking throughout is still split by pauses and length, same rules as transcript panel', () => {
     // A transcript with no stored sentences or paragraphs: one speaker's monologue. Each sentence is about 50 characters, with 0.2 seconds of pause between sentences; a 2.5-second pause before sentence 8.
     const sentence = 'This sentence is about fifty characters long, ok.'.split(' ');
     let t = 0;
@@ -650,7 +650,7 @@ describe('字幕与文稿', () => {
     );
   });
 
-  it('文稿：开着说话人时每段都写（只有一位也写），没名字的用默认名；关掉时都不写，JSON 也不带', () => {
+  it('transcript: with speakers on, every segment written (even only one speaker), unnamed use default name; when off, none written, JSON too has none', () => {
     const speakers = {
       speakers: [
         { id: 'a', name: 'Ana' },
@@ -678,7 +678,7 @@ describe('字幕与文稿', () => {
     expect(renderText(input({ ...off, speakers: true, format: 'json' })).content).toContain('"speaker": "Ana"');
   });
 
-  it('ASS：样式行、对话行的厘秒时间与转义', () => {
+  it('ASS: style line, dialogue line centisecond times and escaping', () => {
     const caption = plan('caption', [{ id: 'c1', start: 1.234, end: 2.5, text: '{\\b1}x' }]);
     const out = renderText(input({ format: 'ass', primary: { document: doc('c', 'caption'), plan: caption } }));
     expect(out.content).toContain('[Script Info]');
@@ -689,14 +689,14 @@ describe('字幕与文稿', () => {
   });
 });
 
-describe('ASS 样式映射', () => {
-  it('颜色换成 &HAABBGGRR', () => {
+describe('ASS style mapping', () => {
+  it('color converted to &HAABBGGRR', () => {
     expect(assColor('#ff8000', 'x')).toBe('&H000080FF');
     expect(assColor('rgba(0, 0, 255, 0.5)', 'x')).toBe('&H80FF0000');
     expect(assColor('nonsense', '&H00FFFFFF')).toBe('&H00FFFFFF');
   });
 
-  it('认得的样式映射，表达不了的列出来；认不出的整份列出', () => {
+  it('recognized style mappings; ones not expressible listed; unrecognized listed in full', () => {
     const mapping = assStyleMapping(
       {
         schema: 'cuccut.legacy-studio-style/0.1',
@@ -712,7 +712,7 @@ describe('ASS 样式映射', () => {
   });
 });
 
-describe('音频混音参数', () => {
+describe('audio mixdown parameters', () => {
   const asset: PlannedAsset = {
     assetId: 'a',
     revision: '1',
@@ -748,7 +748,7 @@ describe('音频混音参数', () => {
 
   const script = { option: '-/filter_complex' as const, file: '/tmp/out.graph' };
 
-  it('每段：取源、单声道铺到两声道、变速、按样本裁齐、增益、淡入、延后到位置；不归一化地混合', () => {
+  it('per segment: source fetch, mono spread to stereo, speed change, sample trim-align, gain, fade-in, delay to position; mixed without normalization', () => {
     const { args, graph } = mixArgs(base, new Map([['a@1', asset]]), 48000, 2, '/tmp/out.wav', script);
     expect(args).toEqual(expect.arrayContaining(['-ss', '3', '-t', '2.1', '-i', 'file:/media/a.wav']));
     expect(graph).toContain('pan=stereo|c0=c0|c1=c0');
@@ -761,13 +761,13 @@ describe('音频混音参数', () => {
     expect(graph).toContain('atrim=end_sample=96000');
   });
 
-  it('没有冻结的素材是错误；没有片段时是一段静音', () => {
+  it('unfrozen media is an error; with no clips it is one silent segment', () => {
     expect(() => mixArgs(base, new Map(), 48000, 2, '/tmp/out.wav', script)).toThrow();
     const silent = mixArgs({ ...base, segments: [] }, new Map(), 44100, 1, '/tmp/out.wav', script);
     expect(silent.graph).toBe('[0:a]atrim=end_sample=88200[out]');
   });
 
-  it('滤镜图从文件读，不放在命令行上：很密的包络照样只多一个文件名；选项按 ffmpeg 的说明挑', () => {
+  it('filtergraph read from file, not on command line: very dense envelope still only adds one filename; options chosen per ffmpeg\'s documentation', () => {
     const dense: Array<[number, number]> = Array.from({ length: 20_000 }, (_, i) => [0.5 + i * 0.00005, 0.5 + 0.5 * Math.sin(i / 7)]);
     const segment = { ...base.segments[0]!, gainDb: 0, envelope: dense };
     const { args, graph } = mixArgs({ ...base, segments: [segment] }, new Map([['a@1', asset]]), 48000, 2, '/tmp/out.wav', script);
@@ -814,7 +814,7 @@ describe('音频混音参数', () => {
     return knots[i]![1];
   }
 
-  it('闪避的折点：分段线性、台阶取后一个、两端保持；与 render-graph 的 knots_at 一致', () => {
+  it('ducking breakpoints: piecewise linear, step takes the later value, endpoints held; consistent with render-graph\'s knots_at', () => {
     const ducking: Array<[number, number]> = [
       [1, 0],
       [1.5, 6],
@@ -842,7 +842,7 @@ describe('音频混音参数', () => {
     ).toBeNull();
   });
 
-  it('逐样本的振幅：淡变 × 等功率交叉淡化 × 闪避', () => {
+  it('per-sample amplitude: fade × equal-power crossfade × ducking', () => {
     const segment: AudioSegment = {
       ...base.segments[0]!,
       fadeIn: undefined,
@@ -881,7 +881,7 @@ describe('音频混音参数', () => {
     return t1 > t0 ? g0 + ((g1 - g0) * (t - t0)) / (t1 - t0) : g1;
   }
 
-  it('音量包络：分段线性、两端保持、常量段不带插值项；与 render-graph 的 envelope_at 一致（v2 envelope_volume_expr）', () => {
+  it('volume envelope: piecewise linear, endpoints held, constant segments carry no interpolation term; consistent with render-graph\'s envelope_at (v2 envelope_volume_expr)', () => {
     const envelope: Array<[number, number]> = [
       [1, 1],
       [2, 0.25],
@@ -911,7 +911,7 @@ describe('音频混音参数', () => {
     expect(envelopeExpression({ start: 0, envelope: [[0, 1]] })).toBeNull();
   });
 
-  it('包络与淡变、闪避相乘；烘焙得很密的包络照样逐点对得上', () => {
+  it('envelope multiplied with fades and ducking; very dense envelope still matches point by point after baking', () => {
     const segment: AudioSegment = {
       ...base.segments[0]!,
       gainDb: 0,
@@ -938,7 +938,7 @@ describe('音频混音参数', () => {
   });
 });
 
-describe('落点与发布', () => {
+describe('output location and publishing', () => {
   let dir: string;
 
   beforeEach(async () => {
@@ -949,7 +949,7 @@ describe('落点与发布', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('文件名：去掉不能用的字符、补扩展名、重名加序号', () => {
+  it('file name: removes invalid characters, adds extension, sequence number on collision', () => {
     expect(safeFileStem('a/b:c*?')).toBe('a_b_c__');
     expect(safeFileStem('...')).toBe('video');
     expect(withExtension('成品', 'srt')).toBe('成品.srt');
@@ -958,14 +958,14 @@ describe('落点与发布', () => {
     expect(candidateName('a.en.srt', 3)).toBe('a.en (3).srt');
   });
 
-  it('目录：给定的必须存在且是绝对路径；默认的按需建', async () => {
+  it('directory: given one must exist and be absolute; default created as needed', async () => {
     await expect(prepareDirectory('relative', false)).rejects.toBeInstanceOf(DestinationError);
     await expect(prepareDirectory(path.join(dir, 'missing'), false)).rejects.toMatchObject({ code: 'EXPORT_DESTINATION_UNWRITABLE' });
     expect(await prepareDirectory(path.join(dir, 'exports'), true)).toBe(path.join(dir, 'exports'));
     expect((await fs.stat(path.join(dir, 'exports'))).isDirectory()).toBe(true);
   });
 
-  it('发布：不覆盖，重名加序号；指定的名字已存在时拒绝，除非覆盖；不留临时文件', async () => {
+  it('publishing: no overwrite, sequence number on collision; rejected when the given name exists unless overwriting; no temp files left', async () => {
     const staged = path.join(dir, 'staged.srt');
     await fs.writeFile(staged, 'new');
     const out = path.join(dir, 'out');

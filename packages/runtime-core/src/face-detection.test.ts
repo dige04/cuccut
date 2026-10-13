@@ -32,8 +32,8 @@ const ffmpeg = (() => {
 })();
 const command = resolveFaceDetectCommand();
 
-describe('人脸检测不可用时', () => {
-  it('找不到 face-detect 或模型：整次退回 null，只记一次日志', async () => {
+describe('when face detection is unavailable', () => {
+  it('face-detect or model not found: the whole call returns null and is logged only once', async () => {
     const log = recordingLogger();
     const noBinary = createFaceDetector({ log, command: null });
     expect(await noBinary.detect(['/x.png'])).toBeNull();
@@ -44,20 +44,20 @@ describe('人脸检测不可用时', () => {
     expect(await noModel.detect(['/x.png'])).toBeNull();
   });
 
-  it('进程起不来：null', async () => {
+  it('process fails to start: null', async () => {
     const detector = createFaceDetector({ log: recordingLogger(), command: path.join(os.tmpdir(), 'no-such-face-detect'), model: faceDetectionModelFile() });
     expect(await detector.detect(['/x.png'])).toBeNull();
   });
 });
 
-describe('给帧标人脸（withFaces）', () => {
+describe('tag frames with faces (withFaces)', () => {
   const frames = [
     { at: '0', file: '/a.png', width: 10 },
     { at: '1', file: null },
     { at: '2', file: '/b.png', width: 10 },
   ];
 
-  it('有文件的帧按顺序拿到各自的 faces，没有文件的帧不加', async () => {
+  it('frames with files get their own faces in order; frames without files get none added', async () => {
     const seen: string[][] = [];
     const detector: FaceDetector = {
       async detect(files) {
@@ -77,7 +77,7 @@ describe('给帧标人脸（withFaces）', () => {
     });
   });
 
-  it('没有检测器或检测失败：detector 为 null，faces 是空数组', async () => {
+  it('no detector or detection fails: detector is null and faces is an empty array', async () => {
     const failing: FaceDetector = { detect: async () => null };
     for (const detector of [undefined, failing]) {
       const result = await withFaces(detector, frames);
@@ -87,7 +87,7 @@ describe('给帧标人脸（withFaces）', () => {
   });
 });
 
-describe.skipIf(!command || !ffmpeg)('face-detect 与随附的 YuNet 模型（真实进程）', () => {
+describe.skipIf(!command || !ffmpeg)('face-detect and the bundled YuNet model (real process)', () => {
   let dir: string;
   beforeAll(async () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-face-detect-'));
@@ -96,7 +96,7 @@ describe.skipIf(!command || !ffmpeg)('face-detect 与随附的 YuNet 模型（�
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('纯色与测试图案上没有脸；读不了的文件让整次退回 null', async () => {
+  it('no faces on solid colors and test patterns; an unreadable file makes the whole call return null', async () => {
     const blank = path.join(dir, 'blank.png');
     const pattern = path.join(dir, 'pattern.jpg');
     execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'color=c=gray:s=640x360', '-frames:v', '1', blank]);
@@ -111,7 +111,7 @@ describe.skipIf(!command || !ffmpeg)('face-detect 与随附的 YuNet 模型（�
     expect(log.lines.some((l) => l.level === 'warn' && l.message === 'Face detection failed')).toBe(true);
   });
 
-  it.skipIf(!process.env.CUCCUT_FACE_FIXTURE)('真实的人脸帧（CUCCUT_FACE_FIXTURE）：至少一张脸，框在 0–1 之内', async () => {
+  it.skipIf(!process.env.CUCCUT_FACE_FIXTURE)('real face frame (CUCCUT_FACE_FIXTURE): at least one face, with boxes within 0-1', async () => {
     const found = await createFaceDetector({ log: recordingLogger() }).detect([process.env.CUCCUT_FACE_FIXTURE!]);
     expect(found?.detector).toBe('yunet');
     const faces = found!.faces[0]!;

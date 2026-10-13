@@ -61,8 +61,8 @@ function canvas(extra: Record<string, unknown> = {}) {
 
 const GOOD = { 'canvas.json': canvas(), 'Main.dc.html': board(), [`assets/${BLOB}.png`]: 'png', 'assets/index.json': '{}' };
 
-describe('readCanvasInfo / inspectCanvas（docs/design/canvas §2.1）', () => {
-  it('v 为 3、boards 是对象才算设计稿；标题去掉空白，没有时用目录名', async () => {
+describe('readCanvasInfo / inspectCanvas (docs/design/canvas §2.1)', () => {
+  it('a design is counted only when v is 3 and boards is an object; title is trimmed, falls back to the directory name', async () => {
     expect(await readCanvasInfo(await tempDir(GOOD))).toEqual({ title: 'Spring Menu Poster', boardCount: 1 });
     expect(await readCanvasInfo(await tempDir({ 'canvas.json': JSON.stringify({ v: 3, boards: {} }) }, 'my-poster'))).toEqual({
       title: 'my-poster',
@@ -74,14 +74,14 @@ describe('readCanvasInfo / inspectCanvas（docs/design/canvas §2.1）', () => {
     expect(await readCanvasInfo(await tempDir({}))).toBeNull();
   });
 
-  it('canvas.json 是符号链接时不算', async () => {
+  it('canvas.json as a symlink does not count', async () => {
     const real = await tempDir(GOOD);
     const dir = await tempDir({});
     await symlink(path.join(real, 'canvas.json'), path.join(dir, 'canvas.json'));
     expect(await readCanvasInfo(dir)).toBeNull();
   });
 
-  it('inspectCanvas 的大小取目录与第一层子目录里的普通文件', async () => {
+  it('inspectCanvas size takes regular files in the directory and its first-level subdirectories', async () => {
     const dir = await tempDir({ ...GOOD, 'a/b/deep.css': 'x'.repeat(1000), '.hidden': 'x'.repeat(1000) });
     const stat = await inspectCanvas(dir);
     expect(stat).toMatchObject({ title: 'Spring Menu Poster', boardCount: 1 });
@@ -90,14 +90,14 @@ describe('readCanvasInfo / inspectCanvas（docs/design/canvas §2.1）', () => {
   });
 });
 
-describe('checkCanvas（docs/design/canvas §7.2）', () => {
+describe('checkCanvas (docs/design/canvas §7.2)', () => {
   const messages = async (files: Record<string, string>) => (await checkCanvas(await tempDir(files))).issues.map(i => `${i.file}: ${i.message}`);
 
-  it('合格的设计稿没有问题；返回标题与画板数', async () => {
+  it('a valid design has no issues; returns title and board count', async () => {
     expect(await checkCanvas(await tempDir(GOOD))).toEqual({ title: 'Spring Menu Poster', boardCount: 1, issues: [] });
   });
 
-  it('子目录里的画板与 ds/ 里的 .dc.html；实体转义的 data-props', async () => {
+  it('boards in subdirectories and .dc.html in ds/; entity-escaped data-props', async () => {
     const result = await checkCanvas(
       await tempDir({
         ...GOOD,
@@ -127,13 +127,13 @@ describe('checkCanvas（docs/design/canvas §7.2）', () => {
     expect(result.boardCount).toBe(2);
   });
 
-  it('canvas.json 缺失、不是 JSON、版本不对', async () => {
+  it('canvas.json missing, not JSON, wrong version', async () => {
     expect(await messages({ 'Main.dc.html': board() })).toContainEqual(expect.stringMatching(/^canvas\.json: missing/));
     expect(await messages({ 'canvas.json': '{' })).toContainEqual(expect.stringMatching(/^canvas\.json: is not valid JSON/));
     expect(await messages({ 'canvas.json': JSON.stringify({ v: 4, boards: {} }) })).toContainEqual(expect.stringMatching(/"v": 3/));
   });
 
-  it('canvas.json 的字段与上限', async () => {
+  it('canvas.json fields and limits', async () => {
     const issues = await messages({
       ...GOOD,
       'canvas.json': canvas({
@@ -182,7 +182,7 @@ describe('checkCanvas（docs/design/canvas §7.2）', () => {
     expectIssue(/launch\.file must be a key of boards/);
   });
 
-  it('画板文件：support.js 头行、<x-dc>、data-dc-script 块、data-props 与 $preview', async () => {
+  it('board files: support.js header line, <x-dc>, data-dc-script blocks, data-props and $preview', async () => {
     const issues = await messages({
       ...GOOD,
       'canvas.json': canvas({
@@ -210,7 +210,7 @@ describe('checkCanvas（docs/design/canvas §7.2）', () => {
     expectIssue(/^D\.dc\.html: missing the <script type="text\/x-dc" data-dc-script/);
   });
 
-  it('没登记的画板、重名、素材、嵌入与网上的脚本样式', async () => {
+  it('unregistered boards, duplicate names, assets, embeds and online script styles', async () => {
     const issues = await messages({
       ...GOOD,
       'Main.dc.html': board({
@@ -234,7 +234,7 @@ describe('checkCanvas（docs/design/canvas §7.2）', () => {
     expectIssue(/^styles\/x\.css: @import https:\/\/evil\.example\/x\.css loads a stylesheet from the network/);
   });
 
-  it('原格式的踩坑规则：标签闭合与引号、{{ }} 只是查找、逻辑块、脚本拼界面、按键与网络、素材地址、dc-import', async () => {
+  it('legacy-format pitfall rules: tag closing and quotes, {{ }} is only a lookup, logic blocks, scripts building the UI, keys and network, asset addresses, dc-import', async () => {
     const issues = await messages({
       ...GOOD,
       'canvas.json': canvas({
@@ -298,7 +298,7 @@ class Comp extends Base {
     expectIssue(/^B\.dc\.html: <script src> "lib\/missing\.js" is not a file in this design/);
   });
 
-  it('路径段不合规则、符号链接与文件数上限', async () => {
+  it('path segments that break the rules, symlinks and the file count limit', async () => {
     const files: Record<string, string> = { ...GOOD, 'has space.dc.html': 'x', '-x/y.css': 'y' };
     for (let i = 0; i < 512; i++) files[`parts/p${i}.css`] = 'a{}';
     const dir = await tempDir(files);
@@ -312,8 +312,8 @@ class Comp extends Base {
   });
 });
 
-describe('resolveDesignEditorDist（docs/design/canvas §3）', () => {
-  it('环境变量指的目录要有 index.html', async () => {
+describe('resolveDesignEditorDist (docs/design/canvas §3)', () => {
+  it('the directory the environment variable points to must have index.html', async () => {
     const dist = await tempDir({ 'index.html': '<!doctype html>' });
     expect(resolveDesignEditorDist({ CUCCUT_DESIGN_EDITOR_DIST: dist })).toBe(dist);
     expect(resolveDesignEditorDist({ CUCCUT_DESIGN_EDITOR_DIST: path.join(dist, 'nope') })).toBeNull();

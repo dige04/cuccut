@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { exportCommand, FRAME_CHROME_POKE, readFrameChromeMessage } from './design-exports.ts';
 
-describe('设计稿运行时的 frame 协议', () => {
-  it('认 hello；碰一下时不接管保存状态（rows: false）', () => {
+describe('design runtime frame protocol', () => {
+  it('accepts hello; touching does not take over save state (rows: false)', () => {
     expect(readFrameChromeMessage({ __frame_chrome_hello: true })).toEqual({ kind: 'hello' });
     expect(FRAME_CHROME_POKE).toEqual({ __frame_chrome_poke: true, rows: false });
   });
 
-  it('report 里只留菜单里有的格式，按 HTML、PDF、PNG 排，字段只认布尔值', () => {
+  it('report keeps only the formats in the menu, ordered HTML, PDF, PNG; fields accept only booleans', () => {
     const message = readFrameChromeMessage({
       __frame_chrome_report: true,
       snapshot: {
@@ -33,7 +33,7 @@ describe('设计稿运行时的 frame 协议', () => {
     });
   });
 
-  it('没有 exports 的 report 是空列表；版本不对、形状不对的不认', () => {
+  it('a report without exports is an empty list; wrong version or wrong shape is rejected', () => {
     expect(readFrameChromeMessage({ __frame_chrome_report: true, snapshot: { v: 1, saved: 'saving' } })).toEqual({ kind: 'report', exports: [] });
     expect(readFrameChromeMessage({ __frame_chrome_report: true, snapshot: { v: 2, exports: [] } })).toBeNull();
     expect(readFrameChromeMessage({ __frame_chrome_report: true, snapshot: { v: 1, exports: {} } })).toBeNull();
@@ -43,7 +43,7 @@ describe('设计稿运行时的 frame 协议', () => {
     expect(readFrameChromeMessage(null)).toBeNull();
   });
 
-  it('导出命令照运行时报的给 interactive；bundle 只在 interactive 时带', () => {
+  it('export command uses the interactive mode the runtime reports; bundle is included only in interactive mode', () => {
     const request = crypto.randomUUID();
     // The runtime only accepts 16–64 letters, digits, _, - (frame-host-bridge.tsx)
     expect(request).toMatch(/^[A-Za-z0-9_-]{16,64}$/);

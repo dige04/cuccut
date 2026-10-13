@@ -17,21 +17,21 @@ vi.hoisted(() => {
 
 const draft = { documentId: 'doc_style', baseRevision: 'r1', body: { y: 40 } };
 
-describe('文档草稿', () => {
+describe('document drafts', () => {
   beforeEach(() => useEditor.setState({ documentDraft: null }));
 
-  it('草稿所基于的版本取草稿；别的文档不受影响', () => {
+  it('the draft\'s base version fetches the draft; other documents are unaffected', () => {
     expect(draftedBody(draft, 'doc_style', 'r1', { y: 86 })).toEqual({ y: 40 });
     expect(draftedBody(draft, 'doc_other', 'r1', { y: 86 })).toEqual({ y: 86 });
     expect(draftedBody(null, 'doc_style', 'r1', { y: 86 })).toEqual({ y: 86 });
   });
 
-  it('提交后的新版本还没取到时先用草稿，取到之后用新正文', () => {
+  it('after a commit, the draft is used until the new version is fetched; once fetched, the new body is used', () => {
     expect(draftedBody(draft, 'doc_style', 'r2', undefined)).toEqual({ y: 40 });
     expect(draftedBody(draft, 'doc_style', 'r2', { y: 41 })).toEqual({ y: 41 });
   });
 
-  it('新版本的正文到了就丢掉草稿；同一版本的不丢', () => {
+  it('the draft is dropped when the new version\'s body arrives; a draft for the same version is kept', () => {
     useEditor.setState({ documentDraft: draft });
     dropStaleDraft('doc_style', 'r1', { y: 86 });
     expect(useEditor.getState().documentDraft).toBe(draft);
@@ -41,7 +41,7 @@ describe('文档草稿', () => {
     expect(useEditor.getState().documentDraft).toBeNull();
   });
 
-  it('预览来源叠上草稿，草稿变了通知重画', () => {
+  it('preview source overlaid with the draft; a changed draft notifies a redraw', () => {
     const bodies = new Map([['doc_style@r1', { y: 86 }]]);
     const inner = { peek: (id: string, rev: string) => bodies.get(`${id}@${rev}`), load: vi.fn(), subscribe: () => () => {} };
     const documents = new DraftDocuments(inner);
@@ -56,7 +56,7 @@ describe('文档草稿', () => {
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
-  it('提交后预览自己去取新版本，取到就丢掉草稿：撤销回到旧版本时画旧正文，不再露出草稿', async () => {
+  it('after a commit, the preview fetches the new version itself and drops the draft once fetched: undoing back to the old version draws the old body and no longer shows the draft', async () => {
     const bodies = new Map<string, unknown>([['doc_style@r1', { y: 86 }]]);
     const inner = { peek: (id: string, rev: string) => bodies.get(`${id}@${rev}`), load: vi.fn(), subscribe: () => () => {} };
     const documents = new DraftDocuments(inner);

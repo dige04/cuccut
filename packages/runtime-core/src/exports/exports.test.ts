@@ -155,7 +155,7 @@ function speechBody(words = WORDS) {
   return { schema: 'cuccut.speech/1', clock: 'source-asset', timescale: 1000, speakers: [], words, sentences: null, chapters: [] };
 }
 
-describe.skipIf(!engine || !ffmpeg)('导出（真实引擎 + ffmpeg）', () => {
+describe.skipIf(!engine || !ffmpeg)('export (real engine + ffmpeg)', () => {
   let fixtures: string;
   let dir: string;
   let runtime: RunningRuntime;
@@ -267,7 +267,7 @@ describe.skipIf(!engine || !ffmpeg)('导出（真实引擎 + ffmpeg）', () => {
     return { videoId, documentId };
   }
 
-  it('字幕与文稿：时间是时间线时间，剪掉的词不出现，变速后的词时间跟着变（AT-30）', async () => {
+  it('subtitles and transcript: times are timeline times, cut words do not appear, and word times follow speed changes (AT-30)', async () => {
     const { videoId, documentId } = await speechVideo();
 
     const srt = await exportOnce({ videoId, settings: { kind: 'subtitles', format: 'srt' } });
@@ -362,7 +362,7 @@ describe.skipIf(!engine || !ffmpeg)('导出（真实引擎 + ffmpeg）', () => {
     expect(cueTimes(await fs.readFile(parts.result!.outputs![1]!.path!, 'utf8'))).toEqual([[0.05, 0.55]]);
   });
 
-  it('exports.renderText：不写文件、不建任务，正文与同样设置导出的文件逐字节相同', async () => {
+  it('exports.renderText: writes no file and creates no task; the text is byte-identical to a file exported with the same settings', async () => {
     const { videoId, documentId } = await speechVideo();
     const exportsDir = path.join(project.path, 'exports');
     const settingsList: ExportCreateRequest['settings'][] = [
@@ -424,7 +424,7 @@ describe.skipIf(!engine || !ffmpeg)('导出（真实引擎 + ffmpeg）', () => {
     expect(closed).toMatchObject({ code: 'not-found', details: { code: 'VIDEO_NOT_OPEN' } });
   });
 
-  it('句级文档不写逐词时间；词时间不可信时也不假装逐词（AT-05）', async () => {
+  it('sentence-level documents write no per-word times; when word times are unreliable, it does not pretend to be per-word (AT-05)', async () => {
     const { videoId } = await speechVideo();
     const caption = {
       schema: 'cuccut.caption/1',
@@ -484,7 +484,7 @@ describe.skipIf(!engine || !ffmpeg)('导出（真实引擎 + ffmpeg）', () => {
     return { videoId, a, b, aPath };
   }
 
-  it('音频：时长、两段频率的拼接、音量、范围、静音与变速', async () => {
+  it('audio: duration, concatenation of two frequency segments, volume, range, mute and speed change', async () => {
     const { videoId, a } = await spliceVideo();
     const job = await exportOnce({ videoId, settings: { kind: 'audio', format: 'wav' } });
     const out = job.result!.outputs![0]!;
@@ -528,7 +528,7 @@ describe.skipIf(!engine || !ffmpeg)('导出（真实引擎 + ffmpeg）', () => {
   });
 
   // Mastering runs in the debug-build Worker, so several exports take longer than the other cases.
-  it('音频：响度母带做到目标响度与真峰值，实测与增益写进校验；音量高于预览时提醒', async () => {
+  it('audio: loudness mastering reaches the target loudness and true peak, measured values and gain are recorded in the verification; warns when the volume is higher than the preview', async () => {
     const { videoId, b } = await spliceVideo();
     await edit(videoId, [{ type: 'setAudioMix', sequenceId: video(videoId).sequenceId, itemId: b.id, volume: dbToVolume(3) }]);
     const job = await exportOnce({
@@ -564,7 +564,7 @@ describe.skipIf(!engine || !ffmpeg)('导出（真实引擎 + ffmpeg）', () => {
     expect(Math.abs(probeDuration(m4a.result!.outputs![0]!.path!) - 2)).toBeLessThan(0.1);
   }, 60_000);
 
-  it('音频：转场的声音交叉淡化——出场一侧 cos、入场一侧 sin，各自从剪切点之外取 handles', async () => {
+  it('audio: transition audio crossfade, cos on the outgoing side and sin on the incoming side, each taking handles from outside the cut point', async () => {
     const aPath = await fixture('tone-a.mp4');
     const bPath = await fixture('tone-b.mp4');
     const { ref } = await client.request('videos.create', { projectId: project.id, name: '转场' });
@@ -640,7 +640,7 @@ describe.skipIf(!engine || !ffmpeg)('导出（真实引擎 + ffmpeg）', () => {
     expect(tone(hard, 1000, 2.2) / refB).toBeCloseTo(1, 1);
   });
 
-  it('音频：闪避按规则的梯形压低目标（attack、release 在线性增益上过渡）', async () => {
+  it('audio: ducking lowers the target with a rule-based trapezoid (attack and release ramp in linear gain)', async () => {
     const aPath = await fixture('a.wav');
     const bPath = await fixture('tone-b.mp4');
     const { ref } = await client.request('videos.create', { projectId: project.id, name: '闪避' });
@@ -690,7 +690,7 @@ describe.skipIf(!engine || !ffmpeg)('导出（真实引擎 + ffmpeg）', () => {
     expect(20 * Math.log10(tone(ranged, 440, 1.0) / level)).toBeCloseTo(-4.1, 0);
   });
 
-  it('音频：音量包络取代音量，与淡出相乘；缓动在后一点上；只导出一段范围时按实例时间取样', async () => {
+  it('audio: volume envelope replaces volume and multiplies with the fade; easing applies at the later point; when exporting only one range, samples by instance time', async () => {
     const aPath = await fixture('a.wav');
     const { ref } = await client.request('videos.create', { projectId: project.id, name: '包络' });
     const videoId = ref.videoId;
@@ -748,7 +748,7 @@ describe.skipIf(!engine || !ffmpeg)('导出（真实引擎 + ffmpeg）', () => {
     expect(20 * Math.log10(tone(ranged, 440, 0.75) / level)).toBeCloseTo(expected(0.5), 1);
   });
 
-  it('冻结：提交之后的修改不影响这次导出（AT-25）', async () => {
+  it('freeze: edits after submission do not affect this export (AT-25)', async () => {
     const { videoId } = await speechVideo();
     const before = video(videoId);
     const { jobId } = await client.request('exports.create', { videoId, settings: { kind: 'subtitles', format: 'srt' } });
@@ -764,7 +764,7 @@ describe.skipIf(!engine || !ffmpeg)('导出（真实引擎 + ffmpeg）', () => {
     expect(empty.details).toMatchObject({ code: 'EXPORT_RANGE_EMPTY' });
   });
 
-  it('预检：空范围、没有文档、目标已存在或不可写、素材缺失或被改、缺 ffmpeg，都不建任务', async () => {
+  it('preflight: empty range, no document, target already exists or is not writable, media missing or changed, ffmpeg missing, none create a task', async () => {
     const { videoId } = await speechVideo();
     const codeOf = async (request: ExportCreateRequest) =>
       ((await rejection(client.request('exports.create', request))).details as { code: string }).code;
@@ -856,7 +856,7 @@ describe.skipIf(!engine || !ffmpeg)('导出（真实引擎 + ffmpeg）', () => {
     expect(jobs.map((j) => j.jobId)).toEqual([overwritten.jobId]);
   });
 
-  it('取消：清掉 staging，不留半个文件；重启之后任务与产物仍可查（AT-26）', async () => {
+  it('cancel: clears staging and leaves no partial file; after restart, the task and output can still be looked up (AT-26)', async () => {
     const long = await fixture('long.wav');
     const { ref } = await client.request('videos.create', { projectId: project.id, name: '长音频' });
     const videoId = ref.videoId;

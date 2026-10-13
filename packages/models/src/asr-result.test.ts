@@ -55,11 +55,11 @@ function problemsOf(mutate: (r: AsrResult) => void, expect_ = {}): string[] {
 }
 
 describe('validateAsrResult', () => {
-  it('合规的结果通过', () => {
+  it('a compliant result passes', () => {
     expect(validateAsrResult(valid(), { runGeneration: 1 })).toMatchObject({ ok: true });
   });
 
-  it('分段：递增、不重叠、在 duration 之内、文本非空', () => {
+  it('segments: increasing, non-overlapping, within duration, non-empty text', () => {
     expect(problemsOf((r) => (r.segments[1]!.start = 900_000))).toContain('segments[1] 与前一段重叠或没有按 start 递增');
     expect(problemsOf((r) => (r.segments[1]!.end = 4_000_000))).toContain('segments[1] 超出 duration');
     expect(problemsOf((r) => (r.segments[0]!.end = 0))).toContain('segments[0] 的 start 应小于 end');
@@ -67,7 +67,7 @@ describe('validateAsrResult', () => {
     expect(problemsOf((r) => (r.segments[0]!.start = 1.5))).toContain('segments[0] 的时间应为非负整数 tick');
   });
 
-  it('词：在段内、单调、时间缺失的取段首', () => {
+  it('words: within the segment, monotonic, and missing times take the segment start', () => {
     expect(problemsOf((r) => (r.segments[0]!.words[1]!.end = 1_200_000))).toContain('segments[0].words[1] 超出所在段');
     expect(problemsOf((r) => (r.segments[0]!.words[1]!.start = 300_000))).toContain('segments[0].words[1] 没有单调递增');
     expect(problemsOf((r) => (r.segments[0]!.words[0]!.timingQuality = 'guess' as never))).toContain(
@@ -81,7 +81,7 @@ describe('validateAsrResult', () => {
     ).toContain('segments[1].words[0] 的时间缺失时应为所在段的 start');
   });
 
-  it('说话人、语言与结果种类', () => {
+  it('speakers, languages and result kinds', () => {
     expect(problemsOf((r) => (r.segments[0]!.speakerId = 'S9'))).toContain('segments[0].speakerId 不在 speakers 里');
     expect(problemsOf((r) => (r.language.tag = 'not a tag!'))).toContain('language.tag 不是合法的 BCP 47');
     expect(problemsOf((r) => (r.language.source = 'asserted'), { assertedLanguage: 'zh-CN' })).toContain('language.tag 与断言的语言不一致');
@@ -94,7 +94,7 @@ describe('validateAsrResult', () => {
     expect(validateAsrResult(null)).toEqual({ ok: false, problems: ['结果不是一个对象'] });
   });
 
-  it('BCP 47 规范化', () => {
+  it('BCP 47 normalisation', () => {
     expect(canonicalLanguageTag('zh-cn')).toBe('zh-CN');
     expect(canonicalLanguageTag('???')).toBeNull();
   });

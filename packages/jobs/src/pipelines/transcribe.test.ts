@@ -18,8 +18,8 @@ import type { PipelineTargets, VideoLease } from './video-target.ts';
  * imports are recognized by command, and transcription is recognized by the Job Ledger. The subtitle layer on the real engine is covered by `transcribe-pipeline.test.ts` in runtime-core.
  */
 
-describe('转录的参数', () => {
-  it('videoId 或带 media 的新建目标；media 要是绝对路径', () => {
+describe('transcription parameters', () => {
+  it('videoId or a new-target with media; media must be an absolute path', () => {
     expect(parseTranscribeParams({ videoId: 'v1', captions: false, language: 'en' })).toEqual({
       videoId: 'v1',
       captions: false,
@@ -53,7 +53,7 @@ describe('转录的参数', () => {
     }
   });
 
-  it('落点参数：取代时可以结转或丢掉译文、确认丢掉改动；新视频可以给名字', () => {
+  it('placement parameters: when replacing, translations can be carried over or dropped, dropping edits can be confirmed; a new video can be given a name', () => {
     expect(parseTranscribeParams({ videoId: 'v1', destination: 'replace', translations: 'discard', acceptEdited: true })).toEqual({
       videoId: 'v1',
       destination: 'replace',
@@ -68,7 +68,7 @@ describe('转录的参数', () => {
     });
   });
 
-  it('主轨：第一条有音视频实例的画面轨，没有时音频轨；素材去重', () => {
+  it('main track: the first picture track with an audio-video instance, otherwise an audio track; media deduplicated', () => {
     const seq = (tracks: Array<[string, 'visual' | 'audio', number]>, items: Array<[string, string, 'video' | 'audio', number]>) =>
       ({
         tracks: tracks.map(([id, kind, order]) => ({ id, kind, order })),
@@ -332,7 +332,7 @@ class FakeTargets implements Pick<PipelineTargets, 'reserve' | 'create' | 'entry
   }
 }
 
-describe('转录流程', () => {
+describe('transcription flow', () => {
   let dir: string;
   let jobs: JobManager;
   let runner: PipelineRunner;
@@ -385,7 +385,7 @@ describe('转录流程', () => {
     return jobs.inspect(jobId);
   }
 
-  it('已打开的视频：取主轨上的素材转写；别的素材的文稿不算，落点是 first', async () => {
+  it('an open video: transcribes the media on the main track; scripts of other media don\'t count, placement is first', async () => {
     videos.add('vid_1', [{ assetId: 'asset_a' }, { assetId: 'asset_a' }]);
     videos.putSpeech('vid_1', 'doc_old', 'job_old', 'asset_other');
     const { jobId } = await start({ videoId: 'vid_1', captions: false, language: 'en' });
@@ -433,7 +433,7 @@ describe('转录流程', () => {
     return body;
   };
 
-  it('这份素材已有文稿：缺省在同一范围新建一部视频，导入同一份素材文件再转写；名字默认带上原名', async () => {
+  it('this media already has a script: by default a new video is created in the same scope, importing the same media file and transcribing it; the name defaults to include the original name', async () => {
     videos.add('vid_1', [{ assetId: 'asset_a' }]);
     videos.putSpeech('vid_1', 'doc_old', 'job_old', 'asset_a');
     const { jobId } = await start({ videoId: 'vid_1', captions: false });
@@ -463,7 +463,7 @@ describe('转录流程', () => {
     expect(named.pipeline!.summary).toMatchObject({ target: 'new-video', newVideo: { videoId: 'vid_new_2', name: '第二版' } });
   });
 
-  it('取代：文稿被改过时提交即以 TRANSCRIPT_EDITED 拒绝；acceptEdited 或没改过时提交，转写 Job 带着要取代的文稿与指纹', async () => {
+  it('replace: when the script was edited, submission is rejected with TRANSCRIPT_EDITED; submission with acceptEdited or when unedited, the transcription Job carries the script being replaced and its fingerprint', async () => {
     videos.add('vid_1', [{ assetId: 'asset_a' }]);
     videos.putSpeech('vid_1', 'doc_old', 'job_old', 'asset_a');
     videos.bodies.set(
@@ -516,7 +516,7 @@ describe('转录流程', () => {
     });
   });
 
-  it('摘要带上新文稿区分出的说话人数', async () => {
+  it('the summary carries the speaker count distinguished by the new script', async () => {
     videos.add('vid_1', [{ assetId: 'asset_a' }]);
     transcriber.speakerCount = 3;
     const { jobId } = await start({ videoId: 'vid_1', captions: false, diarize: true });
@@ -525,7 +525,7 @@ describe('转录流程', () => {
     expect(record.pipeline!.summary).toMatchObject({ documentId: 'doc_job_t1', speakerCount: 3 });
   });
 
-  it('主轨上不止一个素材或没有素材：给出要转写的素材', async () => {
+  it('more than one media or no media on the main track: gives the media to transcribe', async () => {
     videos.add('vid_1', [{ assetId: 'asset_a' }, { assetId: 'asset_b' }]);
     const ambiguous = await finished((await start({ videoId: 'vid_1' })).jobId);
     expect(ambiguous).toMatchObject({
@@ -542,7 +542,7 @@ describe('转录流程', () => {
     expect(transcriber.submitted.map((s) => [s.assetId, s.hint])).toEqual([['asset_b', '播客']]);
   });
 
-  it('启动前检查：视频没打开、转写没配置、媒体文件不在', async () => {
+  it('pre-start checks: video not open, transcription not configured, media file missing', async () => {
     await expect(start({ videoId: 'vid_x' })).rejects.toMatchObject({ code: 'not-found' });
     videos.add('vid_1', [{ assetId: 'asset_a' }]);
     await expect(start({ videoId: 'vid_1', provider: 'missing' })).rejects.toMatchObject({
@@ -555,7 +555,7 @@ describe('转录流程', () => {
     expect(targets.created).toBe(0);
   });
 
-  it('新建视频：占位、新建、导入并放上时间线、转写导入的素材；来源记文件与这次运行', async () => {
+  it('new video: placeholder, create, import and place on the timeline, transcribe the imported media; source records the file and this run', async () => {
     const { jobId } = await start({ target: { create: { projectId: 'p1', media } }, captions: false });
     const record = await finished(jobId);
     expect(record).toMatchObject({ state: 'completed', videoId: 'vid_new_1' });
@@ -581,7 +581,7 @@ describe('转录流程', () => {
     expect(targets.leases).toBe(0);
   });
 
-  it('新建之后、记下产出之前中断：重试认回占下的目录里的视频，导入按命令认回，不多建、不多导入', async () => {
+  it('interrupted after creation and before recording the output: retry recognizes the video in the reserved directory, the import is recognized by command, no extra creation or extra import', async () => {
     // Creation succeeded, but the import was submitted and no receipt came back: this step fails, and the output is not recorded.
     videos.crashAfterApply = true;
     const { jobId } = await start({ target: { create: { projectId: 'p1', media, name: '我的视频' } }, captions: false });
@@ -606,7 +606,7 @@ describe('转录流程', () => {
     expect(targets.leases).toBe(0);
   });
 
-  it('转写失败后重试：换一个命令重新提交；完成了的转写在重试时认回，不再提交', async () => {
+  it('transcription retry after failure: resubmit with a different command; a completed transcription is recognized on retry and not submitted again', async () => {
     videos.add('vid_1', [{ assetId: 'asset_a' }]);
     transcriber.outcome = 'failed';
     const { jobId } = await start({ videoId: 'vid_1', captions: false });
@@ -634,7 +634,7 @@ describe('转录流程', () => {
     expect(transcriber.submitted).toHaveLength(2);
   });
 
-  it('上次的转写写入的文档被删了：重试时重新转写', async () => {
+  it('the document written by the last transcription was deleted: retry transcribes again', async () => {
     videos.add('vid_1', [{ assetId: 'asset_a' }]);
     // The subtitle layer step cannot read the fake body, so it fails at this step (transcription has already completed).
     const { jobId } = await start({ videoId: 'vid_1' });
@@ -647,7 +647,7 @@ describe('转录流程', () => {
     expect(transcriber.submitted.map((s) => s.commandId)).toEqual([`${jobId}:transcribe`, `${jobId}:transcribe:2`]);
   });
 
-  it('取消：在跑的转写 Job 一并取消，停在转写这一步，视频不变；重试时换一个命令重新提交', async () => {
+  it('cancel: the running transcription Job is cancelled too, stops at the transcription step, video unchanged; retry resubmits with a different command', async () => {
     videos.add('vid_1', [{ assetId: 'asset_a' }]);
     transcriber.outcome = 'running';
     const cancelled: Id[] = [];
@@ -684,7 +684,7 @@ describe('转录流程', () => {
   });
 });
 
-describe('只给文件的转录', () => {
+describe('transcription from file only', () => {
   let dir: string;
   let jobs: JobManager;
   let runner: PipelineRunner;
@@ -724,7 +724,7 @@ describe('只给文件的转录', () => {
     return jobs.inspect(jobId);
   }
 
-  it('参数：file 与 target、videoId、captions 等互斥；相对路径与没解析的 Space 条目拒绝', () => {
+  it('parameters: file is mutually exclusive with target, videoId, captions and so on; relative paths and unresolved Space entries are rejected', () => {
     expect(parseTranscribeParams({ file: '/a/b.mp3', outDir: '/out', language: 'en' })).toEqual({
       file: '/a/b.mp3',
       outDir: '/out',
@@ -744,7 +744,7 @@ describe('只给文件的转录', () => {
     }
   });
 
-  it('把 <源文件名>.txt 与 .srt 写到保存位置；重名时两个一起换序号；没有视频', async () => {
+  it('writes <source-file-name>.txt and .srt to the save location; on a name clash both get a number together; no video', async () => {
     await fs.mkdir(saved);
     await fs.writeFile(path.join(saved, '访谈 第一集.srt'), '别人的字幕');
     const { jobId } = await start({ file: media, language: 'en', hint: '播客' });
@@ -759,7 +759,7 @@ describe('只给文件的转录', () => {
     expect(await fs.readFile(media, 'utf8')).toBe('fake media');
   });
 
-  it('给了 outDir 用它；不存在时创建；是文件时拒绝提交', async () => {
+  it('outDir given: used; created if absent; rejected at submission when it is a file', async () => {
     const out = path.join(dir, 'mine', 'deep');
     const { jobId } = await start({ file: media, outDir: out });
     await finished(jobId);
@@ -770,7 +770,7 @@ describe('只给文件的转录', () => {
 });
 
 
-it('新字幕样式在参数中冻结，错误 schema 与不建字幕的组合拒绝', () => {
+it('new subtitle style frozen in the parameters; wrong schema and combinations that don\'t create subtitles are rejected', () => {
   const base = { videoId: 'v', captions: true };
   expect(parseTranscribeParams({ ...base, captionStyle: DEFAULT_CAPTION_STYLE_BODY })).toMatchObject({ captionStyle: DEFAULT_CAPTION_STYLE_BODY });
   for (const captionStyle of [null, [], { schema: 'unknown', style: {} }, { ...DEFAULT_CAPTION_STYLE_BODY, style: [] }]) {

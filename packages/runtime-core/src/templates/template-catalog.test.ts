@@ -58,8 +58,8 @@ async function writeTemplate(dir: string, name: string, value: unknown, files: R
   return at;
 }
 
-describe('模板目录的加载', () => {
-  it('合规的模板连同封面与素材一起加载；隐藏文件与不是目录的条目忽略', async () => {
+describe('template catalog loading', () => {
+  it('compliant templates load with their cover and assets; hidden files and non-directory entries are ignored', async () => {
     await writeTemplate(
       root,
       'with-files',
@@ -78,7 +78,7 @@ describe('模板目录的加载', () => {
     expect(scan.templates[0]).toMatchObject({ origin: 'user', dir: path.join(root, 'with-files'), prompt: '你要做一条视频。\n' });
   });
 
-  it('坏清单、id 与目录名不符、不认识的 schema：跳过并记诊断，其余照常', async () => {
+  it('bad manifest, id not matching directory name, unknown schema: skipped with a diagnostic, others load as usual', async () => {
     await writeTemplate(root, 'good', manifest('good'));
     await writeTemplate(root, 'broken-json', '{ not json');
     await writeTemplate(root, 'mismatch', manifest('other-id'));
@@ -95,7 +95,7 @@ describe('模板目录的加载', () => {
     expect(byDir['extra-field']).toMatchObject({ code: 'invalid' });
   });
 
-  it('prompt.md 缺失、为空、超过上限或不是 UTF-8 都不合规', async () => {
+  it('prompt.md missing, empty, over the limit or not UTF-8 is non-compliant', async () => {
     await writeTemplate(root, 'empty-prompt', manifest('empty-prompt'), { 'prompt.md': '  \n' });
     await writeTemplate(root, 'big-prompt', manifest('big-prompt'), { 'prompt.md': 'x'.repeat(16 * 1024 + 1) });
     await writeTemplate(root, 'bad-utf8', manifest('bad-utf8'), { 'prompt.md': Buffer.from([0xff, 0xfe, 0x41]) });
@@ -112,7 +112,7 @@ describe('模板目录的加载', () => {
     });
   });
 
-  it('占位符：scene 的 prompt.md 不得有 {{，example 的 prompt.md 与 fields 对得上', async () => {
+  it('placeholders: scene\'s prompt.md must not contain {{, example\'s prompt.md must match fields', async () => {
     const example = (id: string, fields: TemplateManifest['fields']) => {
       const { ratio: _r, durationSeconds: _d, brief: _b, fields: _f, ...rest } = manifest(id);
       return { ...rest, kind: 'example' as const, ...(fields ? { fields } : {}) };
@@ -133,7 +133,7 @@ describe('模板目录的加载', () => {
     });
   });
 
-  it('登记的文件要在，目录里的文件都要登记', async () => {
+  it('registered files must exist, and all files in the directory must be registered', async () => {
     await writeTemplate(root, 'missing-cover', manifest('missing-cover', { cover: { file: 'cover.png', tone: 'blue' } }));
     await writeTemplate(root, 'stray-file', manifest('stray-file'), { 'notes.txt': '草稿', 'assets/x.svg': '<svg/>' });
 
@@ -144,7 +144,7 @@ describe('模板目录的加载', () => {
     expect(issues['stray-file']).toEqual(['目录里有没登记的文件：assets/x.svg', '目录里有没登记的文件：notes.txt']);
   });
 
-  it('封面与预览超过体积上限时不合规', async () => {
+  it('cover and preview over the size limit are non-compliant', async () => {
     const cover = { file: 'cover.jpg', tone: 'blue' as const };
     const big = manifest('too-big', { cover, preview: { file: 'preview.mp4' } });
     await writeTemplate(root, 'too-big', big, {
@@ -163,14 +163,14 @@ describe('模板目录的加载', () => {
     expect(scan.diagnostics[0]!.issues[0]).toMatch(/^cover\.jpg 超过 153600 字节/);
   });
 
-  it('清单里的路径越出模板目录时不合规', async () => {
+  it('a manifest path that goes outside the template directory is non-compliant', async () => {
     await writeTemplate(root, 'escape', manifest('escape', { assets: [{ path: 'assets/../../secret.svg', type: 'svg', note: '标志' }] }));
     const scan = await scanTemplateDir(root, 'user');
     expect(scan.templates).toEqual([]);
     expect(scan.diagnostics[0]).toMatchObject({ code: 'invalid', dir: 'escape' });
   });
 
-  it('符号链接不跟随：模板里的链接让模板不合规，指出去的模板目录不加载', async () => {
+  it('symbolic links are not followed: a link in a template makes it non-compliant, and a template directory that links outward is not loaded', async () => {
     const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-outside-'));
     try {
       await fs.writeFile(path.join(outside, 'secret.svg'), '<svg/>');
@@ -194,7 +194,7 @@ describe('模板目录的加载', () => {
     }
   });
 
-  it('相对路径的目录照常加载，诊断给绝对路径', async () => {
+  it('a relative-path directory loads as usual, diagnostics give the absolute path', async () => {
     await writeTemplate(root, 'good', manifest('good'));
     await writeTemplate(root, 'bad', manifest('other'));
     const scan = await scanTemplateDir(path.relative(process.cwd(), root), 'builtin');
@@ -202,12 +202,12 @@ describe('模板目录的加载', () => {
     expect(scan.diagnostics.map((d) => d.path)).toEqual([path.join(root, 'bad')]);
   });
 
-  it('目录不存在时为空', async () => {
+  it('empty when the directory does not exist', async () => {
     expect(await scanTemplateDir(path.join(root, 'nope'), 'user')).toEqual({ templates: [], diagnostics: [] });
   });
 });
 
-describe('语言版本', () => {
+describe('language versions', () => {
   const en = {
     title: 'Sample template',
     summary: 'One line.',
@@ -226,7 +226,7 @@ describe('语言版本', () => {
     ...extra,
   });
 
-  it('locales/ 里的译文算登记过；按想要的语言挑：同一语言，其次同一主语言的另一种写法，再其次英文', async () => {
+  it('translations in locales/ count as registered; pick by the wanted language: same language, then another form of the same primary language, then English', async () => {
     await writeTemplate(root, 'multi', manifest('multi'), overlays());
     const scan = await scanTemplateDir(root, 'user');
     expect(scan.diagnostics).toEqual([]);
@@ -245,14 +245,14 @@ describe('语言版本', () => {
     expect((await catalog.get('multi', 'zh-Hans')).prompt).toBe('你要做一条视频。\n');
   });
 
-  it('不传语言时按 Runtime 的界面语言', async () => {
+  it('without a language, uses the Runtime\'s UI language', async () => {
     await writeTemplate(root, 'multi', manifest('multi'), overlays());
     const catalog = new TemplateCatalog({ builtinDir: null, userDir: root });
     const expected = getLocale() === 'zh-Hans' ? '示例模板' : getLocale() === 'ja' ? 'サンプル' : 'Sample template';
     expect((await catalog.list()).templates[0]!.manifest.title).toBe(expected);
   });
 
-  it('译文不合规时整个模板不合规：缺一半、项数不同、占位符对不上、与原文同一种语言', async () => {
+  it('a non-compliant translation makes the whole template non-compliant: half missing, different item count, mismatched placeholders, same language as the source', async () => {
     await writeTemplate(root, 'half', manifest('half'), { 'locales/en.json': JSON.stringify(en) });
     await writeTemplate(root, 'fields', manifest('fields'), {
       'locales/en.json': JSON.stringify({ ...en, brief: 'Explain {{topic}} to {{audience}}.', fields: [...en.fields, { label: 'audience' }] }),
@@ -285,7 +285,7 @@ describe('语言版本', () => {
   });
 });
 
-describe('两个来源合在一起', () => {
+describe('two sources combined', () => {
   let builtin: string;
   let user: string;
 
@@ -297,7 +297,7 @@ describe('两个来源合在一起', () => {
     await writeTemplate(user, 'my-own', manifest('my-own'));
   });
 
-  it('同 id 时内置的优先，用户的那一份记 builtin-conflict', async () => {
+  it('with the same id, the built-in one takes precedence and the user\'s copy is recorded as builtin-conflict', async () => {
     const catalog = new TemplateCatalog({ builtinDir: builtin, userDir: user });
     const { templates, diagnostics } = await catalog.list();
     expect(templates.map((t) => [t.manifest.id, t.origin, t.manifest.title])).toEqual([
@@ -331,7 +331,7 @@ describe('两个来源合在一起', () => {
     expect((await new TemplateCatalog({ builtinDir: builtin, userDir: user }).list()).templates.every((t) => t.pack === null)).toBe(true);
   });
 
-  it('不缓存：用户放进新模板、删掉模板之后再列一次就变了', async () => {
+  it('not cached: listing again after the user adds a new template or deletes one reflects the change', async () => {
     const catalog = new TemplateCatalog({ builtinDir: builtin, userDir: user });
     expect((await catalog.list()).templates).toHaveLength(2);
     await writeTemplate(user, 'later', manifest('later'));
@@ -340,7 +340,7 @@ describe('两个来源合在一起', () => {
     await expect(catalog.get('my-own')).rejects.toMatchObject({ code: 'not-found', details: { code: 'TEMPLATE_NOT_FOUND' } });
   });
 
-  it('get 给清单与正文；locate 只认登记的随附文件', async () => {
+  it('get returns the manifest and body; locate only accepts registered accompanying files', async () => {
     await writeTemplate(
       user,
       'with-cover',
@@ -360,8 +360,8 @@ describe('两个来源合在一起', () => {
   });
 });
 
-describe('内置模板', () => {
-  it('仓库的 templates/ 全部加载成功，没有诊断', async () => {
+describe('built-in templates', () => {
+  it('all of the repo\'s templates/ load successfully, with no diagnostics', async () => {
     const catalog = new TemplateCatalog({ builtinDir: REPO_TEMPLATES, userDir: path.join(root, 'none') });
     const { templates, diagnostics } = await catalog.list();
     expect(diagnostics).toEqual([]);
@@ -372,7 +372,7 @@ describe('内置模板', () => {
     expect(new Set(templates.map((t) => t.manifest.kind))).toEqual(new Set(['scene', 'example']));
   });
 
-  it('内置模板每种别的出货语言都有译文，按各语言要时文案都换成那种语言', async () => {
+  it('built-in templates have a translation for every other shipped language; copy switches to that language when requested', async () => {
     const catalog = new TemplateCatalog({ builtinDir: REPO_TEMPLATES, userDir: path.join(root, 'none') });
     const base = await catalog.list('en');
     for (const t of base.templates) expect(t.languages, t.manifest.id).toEqual(['en', ...LOCALES.filter((l) => l !== 'en')]);
@@ -382,7 +382,7 @@ describe('内置模板', () => {
     }
   });
 
-  it('内置模板建议先读的 skills 都在仓库根的 skills/ 里', async () => {
+  it('the skills that built-in templates recommend reading first all exist in the repo root\'s skills/', async () => {
     const { templates } = await new TemplateCatalog({ builtinDir: REPO_TEMPLATES, userDir: path.join(root, 'none') }).list();
     const missing = templates.flatMap((t) =>
       (t.manifest.skills ?? []).filter((id) => !existsSync(path.join(REPO_SKILLS, id, 'SKILL.md'))).map((id) => `${t.manifest.id} → ${id}`),
@@ -390,7 +390,7 @@ describe('内置模板', () => {
     expect(missing).toEqual([]);
   });
 
-  it('目录解析：环境变量优先，开发时找到仓库根的 templates/', () => {
+  it('directory resolution: environment variable takes precedence, in development finds templates/ at the repo root', () => {
     expect(resolveBuiltinTemplatesDir({ CUCCUT_TEMPLATES_DIR: '/opt/x/templates' })).toBe('/opt/x/templates');
     expect(resolveBuiltinTemplatesDir({})).toBe(REPO_TEMPLATES);
   });

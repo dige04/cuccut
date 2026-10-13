@@ -41,8 +41,8 @@ import {
 const SKILLS_DIR = path.resolve(import.meta.dirname, '../../../../skills/cuccut/built-in-skills');
 const AGENT_TOOLS: AgentToolId[] = ['polish', 'chapters', 'speakers', 'retranscribe', 'cleanup', 'stale', 'summary', 'blog', 'title', 'desc', 'cover', 'shortscut'];
 
-describe('AI 工具目录', () => {
-  it('六组十六个工具，次序与原型一致', () => {
+describe('AI tools catalog', () => {
+  it('six groups and sixteen tools, in the same order as the prototype', () => {
     expect(AI_TOOLS.map((t) => t.id)).toEqual([
       'crop',
       'shortscut',
@@ -63,7 +63,7 @@ describe('AI 工具目录', () => {
     ]);
   });
 
-  it('识别说话人、翻译与配音走 Runtime；智能裁剪还做不了并写明原因；其余（含剪成短视频）交给 Agent', () => {
+  it('speaker recognition, translation and dubbing go through the Runtime; smart trim is not yet possible and says why; the rest (including cutting into a short video) goes to the Agent', () => {
     expect(AI_TOOLS.filter((t) => t.tier === 'runtime').map((t) => t.id)).toEqual(['speakers', 'translate', 'dub']);
     const soon = AI_TOOLS.filter((t) => t.tier === 'soon');
     expect(soon.map((t) => t.id)).toEqual(['crop']);
@@ -73,7 +73,7 @@ describe('AI 工具目录', () => {
     expect(aiTool('shortscut').setup).toEqual(['找出最值得单独发布的话题，各剪成一支完整的短视频。']);
   });
 
-  it('生成配乐在「声音」组、列在最后，去工具页做，不要文稿', () => {
+  it('generate music sits in the Sound group, listed last, done on the tools page, not from the script', () => {
     expect(aiTool('soundtrack')).toMatchObject({ group: 'sound', tier: 'tool', name: '生成配乐' });
     expect(LIST_GROUPS.at(-1)).toBe('sound');
     expect(listedTools('sound').map((t) => t.id)).toEqual(['soundtrack']);
@@ -81,20 +81,20 @@ describe('AI 工具目录', () => {
     expect(needsTranscript('polish')).toBe(true);
   });
 
-  it('认得工具 id', () => {
+  it('recognizes tool ids', () => {
     expect(isAiToolId('polish')).toBe(true);
     expect(isAiToolId('export')).toBe(false);
     expect(isAiToolId(null)).toBe(false);
   });
 
-  it('句子里用不上范围的工具不给范围一行', () => {
+  it('a tool the sentence does not use a range for gets no range line', () => {
     expect(hasScope('polish')).toBe(true);
     expect(hasScope('title')).toBe(true);
     expect(hasScope('chapters')).toBe(false);
     expect(hasScope('stale')).toBe(false);
   });
 
-  it('交给 Agent 后只有找可剪的口与刷新过期译文留在原地', () => {
+  it('after handing off to the Agent, only finding cuttable speech and refreshing stale translations stay in place', () => {
     expect(agentStaysOnPage('cleanup')).toBe(true);
     expect(agentStaysOnPage('stale')).toBe(true);
     expect(agentStaysOnPage('polish')).toBe(false);
@@ -102,21 +102,21 @@ describe('AI 工具目录', () => {
   });
 });
 
-describe('交给 Agent 的意图句', () => {
-  it('有片名用片名，没有说这个视频；范围缺省是全篇', () => {
+describe('intent sentence handed to the Agent', () => {
+  it('uses the title when there is one, otherwise says this video; the default range is the whole video', () => {
     expect(intentPrompt({ tool: 'polish', title: '码与远方' })).toBe('润色「码与远方」的全篇文稿：修错字、补标点、按话题分段，不改写我的表达。');
     expect(intentPrompt({ tool: 'cleanup', title: ' ', scope: '第 2 章 · 开场' })).toBe(
       '找出这个视频第 2 章 · 开场里的口癖、长停顿和重复起句，先列出来，我确认后再剪。',
     );
   });
 
-  it('附加要求一句一条，补句号，空的跳过', () => {
+  it('extra requirements, one sentence per line, end with a period, skip empty ones', () => {
     expect(intentPrompt({ tool: 'chapters', title: 'A', extra: ['先润色并分段，再生成章节', '', null, '  不要用英文！ '] })).toBe(
       '给「A」按话题分出章节，每章起一个短标题。先润色并分段，再生成章节。不要用英文！',
     );
   });
 
-  it('刷新过期译文：写出勾了哪几类，被剪切的那类多一句怎么处理', () => {
+  it('refresh stale translations: state which categories are checked, and what to do with the cut category, one more sentence', () => {
     expect(intentPrompt({ tool: 'stale', title: 'A', edited: true, cut: false })).toBe('「A」有几句译文过期了（原文改过），只重译这些句子，其余一个字不动。');
     expect(intentPrompt({ tool: 'stale', title: 'A', edited: 3, cut: true })).toBe(
       '「A」有几句译文过期了（3 句原文改过、原文被剪切），只重译这些句子，被剪切的按剪后的原文重译、整句剪掉的随句一起剪掉，其余一个字不动。',
@@ -124,7 +124,7 @@ describe('交给 Agent 的意图句', () => {
     expect(intentPrompt({ tool: 'stale' })).toBe('这个视频有几句译文过期了：原文改过，只重译这些句子，其余一个字不动。');
   });
 
-  it('译文列表交给 Agent 重译：一句写时间码与原文开头，一批写语言与句数；只改这几句', () => {
+  it('translation list handed to the Agent to retranslate: one sentence gives the timecode and the start of the source text, one batch gives the language and sentence count; only these sentences change', () => {
     expect(retranslatePrompt({ title: 'A', language: '英语', scope: { time: '0:12', text: '我们先看第一个例子' } })).toBe(
       '把「A」里0:12 「我们先看第一个例子」这一句重译成英语，只改这一句的译文，时间轴、字幕样式与别的句子一个字不动。',
     );
@@ -134,20 +134,20 @@ describe('交给 Agent 的意图句', () => {
     expect(retranslatePrompt({ title: 'A', language: '日语', count: 4 })).toBe('「A」的日语译文有 4 句过期或待翻译，只重译这些句子，其余一个字不动。');
   });
 
-  it('起标题与做封面带个数，缺省 6 个 / 3 张', () => {
+  it('title and cover creation carries a count, default 6 / 3 images', () => {
     expect(intentPrompt({ tool: 'title', title: 'A', count: 8 })).toBe('给「A」起 8 个候选标题，角度各不相同，每个写一行理由，挑一个推荐。');
     expect(intentPrompt({ tool: 'title', title: 'A' })).toContain('起 6 个候选标题');
     expect(intentPrompt({ tool: 'cover', title: 'A' })).toContain('做 3 张封面候选');
   });
 });
 
-describe('设置态折成附加要求', () => {
-  it('找可剪的口：全勾不加，没勾的合成一句', () => {
+describe('settings state folded into extra requirements', () => {
+  it('find cuttable speech: all checked adds nothing, unchecked ones are combined into one sentence', () => {
     expect(cleanupExtra({ fillers: true, pauses: true, repeats: true })).toEqual([]);
     expect(cleanupExtra({ fillers: false, pauses: true, repeats: false })).toEqual(['口癖不找、重复起句不找']);
   });
 
-  it('写作：范围在最前，篇幅不进起标题与封面，视角只进博客与简介', () => {
+  it('writing: range first, length does not go into the title and cover, perspective only goes into the blog and description', () => {
     expect(writingExtra('blog', { scope: '第 1 章 · 开场', length: 'long', style: 'pop', language: '英语', view: 'viewer', note: ' 提一下嘉宾 ' })).toEqual([
       '只看第 1 章 · 开场',
       '篇幅：长',
@@ -164,7 +164,7 @@ describe('设置态折成附加要求', () => {
     expect(writingExtra('desc', { style: 'custom', customStyle: ' ', view: 'auto' })).toEqual([]);
   });
 
-  it('写博客的关键帧插图：勾上才加一行，别的工具不加', () => {
+  it('blog keyframe illustrations: add one line only when checked, other tools do not add it', () => {
     const pic = '需要配图的地方从视频里取关键帧插进正文，每张配一句图注';
     expect(writingExtra('blog', { style: 'plain', frames: true })).toContain(pic);
     expect(writingExtra('blog', { style: 'plain' })).not.toContain(pic);
@@ -173,7 +173,7 @@ describe('设置态折成附加要求', () => {
     expect(intentPrompt({ tool: 'blog', extra: writingExtra('blog', { frames: true }) })).toContain(`${pic}。`);
   });
 
-  it('做封面：要说的事、画幅、封面字', () => {
+  it('cover: the point to make, canvas ratio, cover text', () => {
     expect(writingExtra('cover', { idea: '一句话讲清', ratio: '9:16', coverText: 'phrase', length: 'long' })).toEqual([
       '封面要说的一件事：一句话讲清',
       '画幅 9:16',
@@ -182,8 +182,8 @@ describe('设置态折成附加要求', () => {
   });
 });
 
-describe('画布比例', () => {
-  it('约成最简整数比；量不出来时按 16:9', () => {
+describe('canvas ratio', () => {
+  it('reduce to the simplest integer ratio; use 16:9 when it cannot be measured', () => {
     expect(canvasRatio(1920, 1080)).toBe('16:9');
     expect(canvasRatio(1080, 1920)).toBe('9:16');
     expect(canvasRatio(1000, 1000)).toBe('1:1');
@@ -191,8 +191,8 @@ describe('画布比例', () => {
   });
 });
 
-describe('剪成短视频', () => {
-  it('时长缺省自动（没有区间）；预设四档，自定义的两头夹在 1–600 秒、填反了对调、相等时拉开一秒', () => {
+describe('cut into a short video', () => {
+  it('default duration is automatic (no range); four preset tiers; custom values are clamped to 1–600 seconds on both ends, swapped if reversed, and one second apart when equal', () => {
     expect(SHORTS_DEFAULTS.length).toBe('auto');
     expect(shortsLengthRange(SHORTS_DEFAULTS)).toBeNull();
     expect(SHORTS_LENGTHS.map((l) => l.key)).toEqual(['auto', 'short', 'medium', 'long', 'extended', 'custom']);
@@ -204,7 +204,7 @@ describe('剪成短视频', () => {
     expect(shortsLengthRange({ length: 'custom', lenMin: Number.NaN, lenMax: 45 })).toEqual({ min: 30, max: 45 });
   });
 
-  it('参数一行一句折进模板：意图句、几支多长、画幅与取景、字幕、已切过的不再找，最后一行直接创建', () => {
+  it('parameters folded into the template one line per sentence: intent sentence, how many clips and how long, ratio and framing, subtitles, already-cut parts are not searched again, final line creates directly', () => {
     const intent = intentPrompt({ tool: 'shortscut', title: 'A', scope: '第 2 章 · 开场' });
     expect(intent).toBe('从「A」的第 2 章 · 开场里找出最值得单独发布的话题，每个话题剪成一支完整的短视频：每支一部新视频，引用同一份原片，原视频和时间轴不动。');
     const lines = toolTemplate('shortscut', intent, { lines: shortsLines(SHORTS_DEFAULTS, { hasTranslation: true }) }).split('\n');
@@ -218,7 +218,7 @@ describe('剪成短视频', () => {
     ]);
   });
 
-  it('保留原画幅不裁；没有译文只带原文；「跟着说话的人」不开放、落回自动；不叫 Agent 把视频收进项目', () => {
+  it('keep the original ratio without cropping; without translation carry only the original; \'follow the speaker\' is not offered and falls back to automatic; do not have the Agent pull the video into the project', () => {
     const lines = shortsLines(
       { ...SHORTS_DEFAULTS, count: 12, length: 'medium', ratio: 'source', tracks: 'translation', style: 'video', skipDone: false },
       { hasTranslation: false },
@@ -235,7 +235,7 @@ describe('剪成短视频', () => {
     );
   });
 
-  it('几支、多长可以各自交给 Agent 按话题定：下拉自动在最前，提示词里那一句只把自动的一半交出去，下面那行说明跟着变', () => {
+  it('the count and length can each be left to the Agent to decide by topic: the dropdown\'s automatic goes first, the sentence in the prompt hands over only the automatic half, and the note below changes with it', () => {
     expect(SHORTS_DEFAULTS.count).toBe('auto');
     expect(SHORTS_COUNTS.map((c) => c.label)).toEqual(['自动', '1 支', '2 支', '3 支', '4 支', '5 支', '6 支', '7 支', '8 支', '9 支', '10 支']);
     const first = (s: Partial<typeof SHORTS_DEFAULTS>) => shortsLines({ ...SHORTS_DEFAULTS, ...s }, { hasTranslation: true })[0];
@@ -250,8 +250,8 @@ describe('剪成短视频', () => {
   });
 });
 
-describe('AI 工具 Tab', () => {
-  it('列表第一批是从文稿出发的三组加「画面」组里的剪成短视频与「声音」组，写作与发布各有一句副题；脚注说清翻译在哪、智能裁剪还没来', () => {
+describe('AI tools tab', () => {
+  it('first batch in the list is the three groups starting from the script plus cut into short video under Visuals and the Sound group; writing and publishing each have a subtitle sentence; the footnote says where translation is and that smart trim is not yet available', () => {
     expect(LIST_GROUPS).toEqual(['transcript', 'writing', 'publish', 'frame', 'sound']);
     expect(listedTools('frame').map((t) => t.id)).toEqual(['shortscut']);
     expect(LIST_GROUPS.flatMap((g) => listedTools(g)).map((t) => t.id)).not.toContain('crop');
@@ -274,14 +274,14 @@ describe('AI 工具 Tab', () => {
     expect(laterNote()).toMatch(/智能裁剪/);
   });
 
-  it('每个工具都有一句「会不会改视频」', () => {
+  it('every tool has a sentence on whether it changes the video', () => {
     for (const id of AGENT_TOOLS) expect(toolEffect(id), id).toBeTruthy();
     expect(toolEffect('polish')).toMatch(/撤销/);
     expect(toolEffect('cleanup')).toMatch(/确认之前/);
     for (const id of ['summary', 'blog', 'title', 'desc', 'cover'] as const) expect(toolEffect(id)).toMatch(/^不改视频/);
   });
 
-  it('模板 = 意图句 + 固定约束：写作类带 Markdown 与语言，整理类不带', () => {
+  it('template = intent sentence + fixed constraints: writing types carry Markdown and language, organizing types do not', () => {
     const intent = intentPrompt({ tool: 'summary', title: 'A' });
     const lines = toolTemplate('summary', intent, { language: '英语' }).split('\n');
     expect(lines[0]).toBe(intent);
@@ -298,7 +298,7 @@ describe('AI 工具 Tab', () => {
     expect(toolTemplate('cleanup', '  ')).toBe('');
   });
 
-  it('会话去向：缺省新会话；这个视频有说过话的会话时才给「接着」，标上消息数', () => {
+  it('session destination: default is a new session; \'continue\' is offered only when this video has a session with messages, marked with the message count', () => {
     const none = sessionOptions({ canCreate: true, current: null });
     expect(none.options.map((o) => o.key)).toEqual(['new']);
     expect(none.fallback).toBe('new');
@@ -317,12 +317,12 @@ describe('AI 工具 Tab', () => {
     expect(sessionOptions({ canCreate: false, current: null }).fallback).toBeNull();
   });
 
-  it('主按钮下那行随去向变', () => {
+  it('the line below the main button changes with the destination', () => {
     expect(handoffHint('new')).toMatch(/^新开一条会话/);
     expect(handoffHint('current')).toMatch(/^发到这个视频当前的会话/);
   });
 
-  it('每个交给 Agent 的工具都配一个内置 skill，id 都在仓库的 skills/ 里；列表里没有就不挂', () => {
+  it('every tool handed to the Agent has a built-in skill, ids all in the repo\'s skills/; if not in the list, do not attach', () => {
     const builtin = new Set(fs.readdirSync(SKILLS_DIR, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name));
     for (const id of AGENT_TOOLS) expect(TOOL_SKILL[id], id).toBeTruthy();
     for (const [tool, id] of Object.entries(TOOL_SKILL)) {
@@ -336,7 +336,7 @@ describe('AI 工具 Tab', () => {
   });
 });
 
-describe('英文界面', () => {
+describe('English interface', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     setLocale('zh-Hans');
@@ -347,7 +347,7 @@ describe('英文界面', () => {
     setLocale('en');
   };
 
-  it('工具名、分组与选项随语言换；读的是同一份目录对象', () => {
+  it('tool names, groups and options change with the language; reads the same catalog object', () => {
     const polish = aiTool('polish');
     expect(polish.name).toBe('润色文稿');
     english();
@@ -364,7 +364,7 @@ describe('英文界面', () => {
     for (const t of AI_TOOLS.filter((x) => x.tier === 'soon')) expect(t.why).toMatch(/Runtime doesn’t have this workflow yet/);
   });
 
-  it('拉丁与西里尔界面语言的附加要求保留句末标点与句间空格', () => {
+  it('for Latin and Cyrillic interface languages, the additional requirements keep sentence-end punctuation and spaces between sentences', () => {
     vi.stubEnv('CUCCUT_LOCALE', undefined);
     for (const locale of LOCALES.filter((value) => !['zh-Hans', 'zh-Hant', 'ja', 'ko'].includes(value))) {
       setLocale(locale);
@@ -375,7 +375,7 @@ describe('英文界面', () => {
     }
   });
 
-  it('意图句与附加要求用英文写，句末补英文句号、句间空一格', () => {
+  it('intent sentences and additional requirements are written in English, with a final English period added and one space between sentences', () => {
     english();
     expect(intentPrompt({ tool: 'polish', title: 'Code', scope: 'Chapter 2 · Intro', extra: ['Keep it short', 'Thanks!'] })).toBe(
       'Polish the transcript of Chapter 2 · Intro of “Code”: fix typos, add punctuation, and split into paragraphs by topic, without rewriting my wording. Keep it short. Thanks!',
@@ -401,7 +401,7 @@ describe('英文界面', () => {
     expect(handoffHint('new')).toMatch(/^Starts a new session/);
   });
 
-  it('每种界面语言都给全了 AI 工具 Tab 的文案', () => {
+  it('every interface language has full copy for the AI tools tab', () => {
     vi.stubEnv('CUCCUT_LOCALE', undefined);
     for (const locale of LOCALES) {
       setLocale(locale);

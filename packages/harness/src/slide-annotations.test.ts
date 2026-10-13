@@ -22,11 +22,11 @@ const note = (over: Partial<SlideAnnotation> = {}): SlideAnnotation => ({
 });
 
 describe('withSlideAnnotations', () => {
-  it('没有标注时原样返回', () => {
+  it('returns unchanged when there are no annotations', () => {
     expect(withSlideAnnotations('改一下', [])).toBe('改一下');
   });
 
-  it('每份 deck 一段，编号是整条消息里的序号，多行批注缩进对齐', () => {
+  it('one section per deck; the numbers are the order within the whole message; multi-line comments are indented to align', () => {
     const text = withSlideAnnotations('按标注改', [
       { annotation: note(), deckPath: 'talk/' },
       { annotation: note({ label: '第 1 页 › 一块区域', detail: undefined, area: true, text: '留白太多\n往上挪' }), deckPath: 'other/' },
@@ -176,8 +176,8 @@ afterEach(async () => {
   await fs.rm(dir, { recursive: true, force: true });
 });
 
-describe('send 与 steer 带幻灯片标注', () => {
-  it('标注附在交给智能体的文字最后，用户消息上原样记一份（不带解析出的路径）', async () => {
+describe('send and steer include slide annotations', () => {
+  it('annotations are appended to the end of the text handed to the agent, and a copy is recorded on the user message as-is (without the resolved paths)', async () => {
     const conversation = await harness.createConversation({ title: '改幻灯片' });
     const annotations: ResolvedSlideAnnotation[] = [{ annotation: note({ deck: { conversationId: conversation.id, path: 'talk' } }), deckPath: 'talk/' }];
     await harness.send({ conversationId: conversation.id, text: '按标注改', commandId: newId('cmd'), slideAnnotations: annotations });
@@ -188,7 +188,7 @@ describe('send 与 steer 带幻灯片标注', () => {
     expect(message).toMatchObject({ text: '按标注改', slideAnnotations: [annotations[0]!.annotation] });
   });
 
-  it('没带标注的消息不写这个字段；插话带的标注同样附上、记下', async () => {
+  it('messages without annotations do not write this field; annotations carried by an interjection are attached and recorded the same way', async () => {
     const conversation = await harness.createConversation({ title: '插话' });
     await harness.send({ conversationId: conversation.id, text: '做一份幻灯片', commandId: newId('cmd') });
     const session = await until(() => driver.sessions.at(-1));

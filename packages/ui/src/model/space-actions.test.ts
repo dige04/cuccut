@@ -36,8 +36,8 @@ const entry = (id: string, patch: Partial<SpaceEntry> = {}, user: Partial<SpaceE
 const artifact = (id: string, patch: Partial<SpaceEntry> = {}) =>
   entry(id, { source: { projectId: null, conversationId: null }, ref: { artifactId: id }, ...patch });
 
-describe('二次编辑的去处', () => {
-  it('视频进编辑器；有来源视频的回到来源视频；没有来源的成片与视频素材新建视频', () => {
+describe('where re-editing goes', () => {
+  it('videos open in the editor; items with a source video go back to the source video; exports and video media without a source create a new video', () => {
     expect(editRoute(entry('v', { kind: 'video' }))).toBe('video');
     expect(editRoute(entry('e', { kind: 'export', origin: { source: 'exported', videoId: 'vid1' } }))).toBe('source-video');
     expect(editRoute(entry('e', { kind: 'export' }))).toBe('new-video');
@@ -47,7 +47,7 @@ describe('二次编辑的去处', () => {
     expect(editRoute(entry('p', { kind: 'package' }))).toBeNull();
   });
 
-  it('做不了的写明原因：状态、还没开放的编辑、拿不到路径的产物', () => {
+  it('actions that cannot be done state the reason: status, editing not yet available, outputs without a path', () => {
     expect(editBlock(entry('v', { kind: 'video' }), null)).toBeNull();
     expect(editBlock(entry('f'), '/work/f.mp4')).toBeNull();
     expect(editBlock(entry('f'), null)).toMatch('不在项目或会话的目录里');
@@ -61,13 +61,13 @@ describe('二次编辑的去处', () => {
   });
 });
 
-describe('继续与删除', () => {
-  it('回收站里的条目要先恢复才能带入会话', () => {
+describe('continue and delete', () => {
+  it('items in the trash must be restored before they can be brought into a session', () => {
     expect(continueBlock(entry('a'))).toBeNull();
     expect(continueBlock(entry('a', {}, { trashedAt: '2026-10-01T00:00:00.000Z' }))).toMatch('先恢复');
   });
 
-  it('彻底删除只给回收站里的；失败的占位直接清除；生成中的先取消', () => {
+  it('permanent delete is only offered for trashed items; failed placeholders are cleared directly; items being generated are canceled first', () => {
     expect(purgeBlock(entry('a'))).toMatch('先移入回收站');
     expect(purgeBlock(entry('a', {}, { trashedAt: '2026-10-01T00:00:00.000Z' }))).toBeNull();
     const failed = entry('j1', { status: 'failed', ref: { jobId: 'j1' }, source: { projectId: null, conversationId: null } });
@@ -76,7 +76,7 @@ describe('继续与删除', () => {
     expect(purgeBlock(entry('j2', { status: 'generating', ref: { jobId: 'j2' } }))).toMatch('先在任务页取消');
   });
 
-  it('删除视频时列出由它导出、生成的条目（不含视频本身与回收站里的）', () => {
+  it('deleting a video lists the entries it exported or generated (excluding the video itself and items in the trash)', () => {
     const rows = [
       entry('v', { kind: 'video', ref: { videoId: 'vid1' } }),
       artifact('x', { kind: 'export', origin: { source: 'exported', videoId: 'vid1' } }),
@@ -87,7 +87,7 @@ describe('继续与删除', () => {
     expect(relatedEntries(rows, 'vid1').map((e) => e.id)).toEqual(['x', 'y']);
   });
 
-  it('任务与来源会话：占位看自己的任务，产物看 origin', () => {
+  it('task and source session: placeholders look at their own task, outputs look at origin', () => {
     expect(entryJobId(entry('j', { ref: { jobId: 'j' } }))).toBe('j');
     expect(entryJobId(artifact('a', { origin: { source: 'generated', jobId: 'job9' } }))).toBe('job9');
     expect(entryJobId(entry('f'))).toBeNull();
@@ -96,8 +96,8 @@ describe('继续与删除', () => {
   });
 });
 
-describe('导入的结果', () => {
-  it('写明几个复制进了 imports/、几个没导入', () => {
+describe('import results', () => {
+  it('states how many were copied into imports/ and how many were not imported', () => {
     expect(importSummary([{ ok: true, copied: true }])).toEqual({ text: '已导入 1 个素材 · 复制进了项目的 imports/', tone: 'positive' });
     expect(importSummary([{ ok: true, copied: false }, { ok: true, copied: true }, { ok: false, error: '认不出' }])).toEqual({
       text: '已导入 2 个素材 · 1 个复制进了项目的 imports/ · 1 个没有导入',
@@ -107,8 +107,8 @@ describe('导入的结果', () => {
   });
 });
 
-describe('从文件新建视频', () => {
-  it('只有视频、音频、图片能放上时间线', () => {
+describe('creating a video from a file', () => {
+  it('only video, audio, and images can be placed on the timeline', () => {
     expect(placeKindOf('a.MOV')).toBe('video');
     expect(placeKindOf('b.wav')).toBe('audio');
     expect(placeKindOf('c.png')).toBe('image');
@@ -116,7 +116,7 @@ describe('从文件新建视频', () => {
     expect(placeKindOf('noext')).toBeNull();
   });
 
-  it('视频名取文件名去掉扩展名', () => {
+  it('the video name is the file name without its extension', () => {
     expect(videoNameOf('/Users/me/Movies/采访 01.mp4')).toBe('采访 01');
     expect(videoNameOf('C:\\clips\\b-roll.mov')).toBe('b-roll');
     expect(videoNameOf('/x/.hidden')).toBe('.hidden');
@@ -124,30 +124,30 @@ describe('从文件新建视频', () => {
   });
 });
 
-describe('随消息带上的条目', () => {
-  it('最多写出两个名字', () => {
+describe('entries attached to a message', () => {
+  it('at most two names are written', () => {
     expect(referencesText([{ name: '成片' }])).toBe('资料库条目 「成片」');
     expect(referencesText([{ name: 'a' }, { name: 'b' }])).toBe('资料库条目 「a」「b」');
     expect(referencesText([{ name: 'a' }, { name: 'b' }, { name: 'c' }])).toBe('资料库条目 「a」「b」等 3 个');
   });
 
-  it('说明写类型与位置', () => {
+  it('the description states the type and location', () => {
     expect(referenceDescription({ kind: 'image', relPath: 'imports/封面.png' })).toBe('图片 · imports/封面.png');
     expect(referenceDescription({ kind: 'audio', relPath: null })).toBe('音频 · 产物');
   });
 });
 
-describe('便携包打开成新视频', () => {
+describe('opening a portable pack creates a new video', () => {
   const pkg = (patch: Partial<SpaceEntry> = {}, user: Partial<SpaceEntry['user']> = {}) =>
     entry('p', { kind: 'package', name: 'p.cuccut', fileName: 'p.cuccut', relPath: 'exports/p.cuccut', ...patch }, user);
 
-  it('项目或会话目录里的包能打开，新视频建在包所在的目录', () => {
+  it('packs in a project or session folder can be opened; the new video is created in the pack\'s folder', () => {
     expect(packageBlock(pkg(), '/work/exports/p.cuccut')).toBeNull();
     expect(packageScope(pkg())).toEqual({ projectId: 'p1' });
     expect(packageScope(pkg({ source: { projectId: null, conversationId: 'c1' } }))).toEqual({ conversationId: 'c1' });
   });
 
-  it('回收站、导出中、缺失、失败、不在来源目录里的包打不开，并说明原因', () => {
+  it('packs in the trash, being exported, missing, failed, or outside the source folder cannot be opened, and the reason is stated', () => {
     expect(packageBlock(pkg({}, { trashedAt: '2026-10-01T00:00:00.000Z' }), '/work/p.cuccut')).toMatch('先恢复');
     expect(packageBlock(pkg({ status: 'generating' }), '/work/p.cuccut')).toMatch('还在导出');
     expect(packageBlock(pkg({ status: 'missing' }), '/work/p.cuccut')).toMatch('找不到');
@@ -158,18 +158,18 @@ describe('便携包打开成新视频', () => {
   });
 });
 
-describe('列表与卡片的集合依赖键', () => {
+describe('list and card collections depend on keys', () => {
   const entries = [entry('a', { kind: 'video' }), entry('b')];
   const reveal = () => true;
 
-  it('同一个 entries 数组，转录动作后到（null → redo）时键变，菜单才会重渲染出「重新转录…」', () => {
+  it('with the same entries array, the key changes when the transcription action arrives (null → redo), so the menu re-renders with \'Re-transcribe…\'', () => {
     const before = entryMenuKey(entries, reveal, () => null);
     const after = entryMenuKey(entries, reveal, (e) => (e.kind === 'video' ? 'redo' : null));
     expect(after).not.toBe(before);
     expect(entryMenuKey(entries, reveal, (e) => (e.kind === 'video' ? 'redo' : null))).toBe(after);
   });
 
-  it('能否在文件夹中显示、来源列变了也让键变；结果都没变时键不变（不每次渲染都失效缓存）', () => {
+  it('the key changes when \'show in folder\' availability or the source column changes; the key stays the same when results are unchanged (the cache is not invalidated on every render)', () => {
     const none = () => null;
     const base = entryMenuKey(entries, reveal, none, () => '项目一');
     expect(

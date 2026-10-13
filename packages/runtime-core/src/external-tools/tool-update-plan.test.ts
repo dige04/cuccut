@@ -50,8 +50,8 @@ const launcher = (shebang: string, module = 'yt_dlp') =>
   ]);
 const PIP_SCRIPT = (shebang: string) => `${shebang}\n# -*- coding: utf-8 -*-\nimport re\nimport sys\nfrom yt_dlp import main\nif __name__ == '__main__':\n    sys.exit(main())\n`;
 
-describe('按原安装方式更新：判断办法', () => {
-  it('Homebrew：用同一个前缀的 brew 执行 upgrade；开发版加 --fetch-HEAD；找不到 brew 时只给命令', async () => {
+describe('update by original install method: how to determine it', () => {
+  it('Homebrew: runs upgrade with the brew from the same prefix; development builds add --fetch-HEAD; when brew is not found, only the command is given', async () => {
     const prefix = path.join(dir, 'homebrew');
     const brew = await write(path.join(prefix, 'bin', 'brew'), '#!/bin/sh\n');
     await write(path.join(prefix, 'Cellar', 'yt-dlp', '2026.07.04', 'libexec', 'bin', 'yt-dlp'), PIP_SCRIPT('#!/usr/bin/python3'));
@@ -79,7 +79,7 @@ describe('按原安装方式更新：判断办法', () => {
     });
   });
 
-  it('pipx：在 PATH 里找 pipx；找不到时只给命令', async () => {
+  it('pipx: finds pipx on PATH; when not found, only the command is given', async () => {
     const venv = await write(path.join(dir, '.local', 'pipx', 'venvs', 'yt-dlp', 'bin', 'yt-dlp'), PIP_SCRIPT('#!/usr/bin/python3'));
     const shim = await link(venv, path.join(dir, '.local', 'bin', 'yt-dlp'));
     const pathDir = path.join(dir, 'path');
@@ -92,7 +92,7 @@ describe('按原安装方式更新：判断办法', () => {
     });
   });
 
-  it('pip：用入口脚本的解释器（绝对路径、env、长路径写法），用户目录加 --user，解释器不在时只给命令', async () => {
+  it('pip: uses the entry script\'s interpreter (absolute path, env, long-path form), adds --user for user directories, and gives only the command when the interpreter is missing', async () => {
     const python = await write(path.join(dir, 'venv', 'bin', 'python3.12'), '#!/bin/sh\n');
     const script = await write(path.join(dir, 'venv', 'bin', 'yt-dlp'), PIP_SCRIPT(`#!${python}`));
     expect(await plan(script)).toEqual({
@@ -123,7 +123,7 @@ describe('按原安装方式更新：判断办法', () => {
     });
   });
 
-  it.skipIf(root)('pip：装在当前用户不能写的位置时不代为执行，只给原命令（不加 sudo）', async () => {
+  it.skipIf(root)('pip: installed where the current user cannot write, does not run on the user\'s behalf and only gives the original command (without sudo)', async () => {
     const python = await write(path.join(dir, 'py', 'python3'), '#!/bin/sh\n');
     const script = await write(path.join(dir, 'pip-locked', 'yt-dlp'), PIP_SCRIPT(`#!${python}`));
     await fs.chmod(path.dirname(script), 0o555);
@@ -132,7 +132,7 @@ describe('按原安装方式更新：判断办法', () => {
     expect(result!.command.startsWith('sudo')).toBe(false);
   });
 
-  it('官方独立程序：二进制文件与 zipapp 执行 -U；Windows 上认不出的 Scripts 目录里的 .exe 不算', async () => {
+  it('official standalone programs: binaries and zipapps run -U; on Windows, an .exe in an unrecognized Scripts directory does not count', async () => {
     const macho = Buffer.concat([Buffer.from([0xcf, 0xfa, 0xed, 0xfe]), Buffer.alloc(64)]);
     const binary = await write(path.join(dir, 'bin', 'yt-dlp'), macho);
     expect(await plan(binary)).toEqual({ method: 'standalone', argv: [binary, '-U'], command: `${binary} -U`, runnable: true, reason: null });
@@ -151,7 +151,7 @@ describe('按原安装方式更新：判断办法', () => {
     expect(await winPlan(tools)).toMatchObject({ method: 'standalone', argv: [tools, '-U'], runnable: true });
   });
 
-  it('Windows 的 winget：真实位置在 WinGet\\Packages\\<包 ID>_<源> 下，用 PATH 里的 winget 不交互地升级；找不到 winget、全机范围时只给命令', async () => {
+  it('Windows winget: the real location is under WinGet\\Packages\\<package ID>_<source>; upgrades non-interactively with winget from PATH; when winget is not found or the install is machine-wide, only the command is given', async () => {
     const local = path.join(dir, 'Local');
     const pkg = await write(path.join(local, 'Microsoft', 'WinGet', 'Packages', 'yt-dlp.yt-dlp_Microsoft.Winget.Source_8wekyb3d8bbwe', 'yt-dlp.exe'), PE);
     const shim = await link(pkg, path.join(local, 'Microsoft', 'WinGet', 'Links', 'yt-dlp.exe'));
@@ -189,7 +189,7 @@ describe('按原安装方式更新：判断办法', () => {
     expect((await winPlan(other, {}, apps))!.method).toBe('standalone');
   });
 
-  it('Windows 的 Scoop：shims 里的入口（旁边有 .shim）或 apps 下的版本目录，用 System32 的 powershell.exe 执行 scoop.ps1；全局安装与找不到 Scoop 时只给命令', async () => {
+  it('Windows Scoop: the entry in shims (with a .shim beside it) or the version directory under apps, runs scoop.ps1 with System32\'s powershell.exe; global installs and a missing Scoop get only the command', async () => {
     const scoop = path.join(dir, 'scoop');
     const version = await write(path.join(scoop, 'apps', 'yt-dlp', '2026.07.04', 'yt-dlp.exe'), PE);
     await link(path.dirname(version), path.join(scoop, 'apps', 'yt-dlp', 'current'));
@@ -229,7 +229,7 @@ describe('按原安装方式更新：判断办法', () => {
     expect(await winPlan(customExe, { SCOOP_GLOBAL: custom })).toMatchObject({ method: 'scoop', command: 'scoop update yt-dlp --global', runnable: false });
   });
 
-  it('Windows 的 Chocolatey：bin 里的入口或 lib 下的包，总要管理员权限，只给 choco upgrade', async () => {
+  it('Windows Chocolatey: the entry in bin or the package under lib, always needs admin rights, only gives choco upgrade', async () => {
     const reason = expect.stringContaining('Chocolatey 装的程序要管理员权限');
     const bin = await write(path.join(dir, 'ProgramData', 'chocolatey', 'bin', 'yt-dlp.exe'), PE);
     expect(await winPlan(bin)).toEqual({ method: 'chocolatey', argv: ['choco', 'upgrade', 'yt-dlp'], command: 'choco upgrade yt-dlp', runnable: false, reason, reasonRef: { key: 'rcExternalTools.chocolateyAdmin' } });
@@ -240,7 +240,7 @@ describe('按原安装方式更新：判断办法', () => {
     expect((await winPlan(lib))!.method).toBe('standalone');
   });
 
-  it('Windows 的 pip：从启动器里的 #! 一行读出解释器，用它执行 -m pip；不在解释器旁边的加 --user；指向 pipx 的 venv 按 pipx', async () => {
+  it('Windows pip: reads the interpreter from the #! line in the launcher and runs -m pip with it; adds --user when not beside the interpreter; a venv pointing to pipx is handled as pipx', async () => {
     // Python installed on the system: Scripts sits beside the interpreter. When the path has spaces, the #! line is wrapped in double quotes.
     const python = await write(path.join(dir, 'Py thon313', 'python.exe'), PE);
     const exe = await write(path.join(dir, 'Py thon313', 'Scripts', 'yt-dlp.exe'), launcher(`"${python}"`));
@@ -272,7 +272,7 @@ describe('按原安装方式更新：判断办法', () => {
     expect(await winPlan(uv)).toBeNull();
   });
 
-  it('Windows：Program Files、ProgramData 下的按要管理员权限处理（fs.access 在 Windows 上不看访问控制列表）', async () => {
+  it('Windows: anything under Program Files and ProgramData is treated as needing admin rights (fs.access on Windows does not check access control lists)', async () => {
     const programFiles = path.join(dir, 'Program Files');
     const env = { ProgramFiles: programFiles };
     const standalone = await write(path.join(programFiles, 'yt-dlp', 'yt-dlp.exe'), PE);
@@ -289,7 +289,7 @@ describe('按原安装方式更新：判断办法', () => {
     expect(await winPlan(exe, { PROGRAMFILES: programFiles })).toMatchObject({ method: 'pip', runnable: false, reason: expect.stringContaining('管理员身份') });
   });
 
-  it.skipIf(root)('官方独立程序：所在目录要管理员权限时不代为执行，给出带 sudo 的命令', async () => {
+  it.skipIf(root)('official standalone programs: when the directory needs admin rights, does not run on the user\'s behalf and gives the command with sudo', async () => {
     const binary = await write(path.join(dir, 'locked', 'yt-dlp'), Buffer.concat([Buffer.from([0xcf, 0xfa, 0xed, 0xfe]), Buffer.alloc(64)]));
     await fs.chmod(path.dirname(binary), 0o555);
     expect(await plan(binary)).toEqual({
@@ -301,7 +301,7 @@ describe('按原安装方式更新：判断办法', () => {
     });
   });
 
-  it('判断不了的：自己写的包装脚本、uv 装的工具（环境里没有 pip）、不存在的文件', async () => {
+  it('undeterminable cases: a self-written wrapper script, a tool installed by uv (no pip in the environment), a nonexistent file', async () => {
     const wrapper = await write(path.join(dir, 'wrap', 'yt-dlp'), '#!/bin/sh\nexec node /opt/yt-dlp.js "$@"\n');
     expect(await plan(wrapper)).toBeNull();
     const python = await write(path.join(dir, '.local', 'share', 'uv', 'tools', 'yt-dlp', 'bin', 'python3'), '#!/bin/sh\n');
@@ -311,8 +311,8 @@ describe('按原安装方式更新：判断办法', () => {
   });
 });
 
-describe('更新命令的结果', () => {
-  it('退出码 0 算成功；winget 没有可升级的版本（0x8A15002B，可能报成负数）也算，别的方式不算', () => {
+describe('update command results', () => {
+  it('exit code 0 counts as success; winget having no upgradable version (0x8A15002B, possibly reported as a negative number) also counts; other methods do not', () => {
     expect(updateSucceeded('homebrew', 0)).toBe(true);
     expect(updateSucceeded('winget', 0x8a15002b)).toBe(true);
     expect(updateSucceeded('winget', 0x8a15002b - 2 ** 32)).toBe(true);
@@ -321,21 +321,21 @@ describe('更新命令的结果', () => {
     expect(updateSucceeded('winget', null)).toBe(false);
   });
 
-  it('退出码：负数或超过 0xFFFF 的按 8 位十六进制写', () => {
+  it('exit codes: negative numbers or those above 0xFFFF are written as 8-digit hex', () => {
     expect(exitCodeText(1)).toBe('1');
     expect(exitCodeText(0x8a150014)).toBe('0x8A150014');
     expect(exitCodeText(-1)).toBe('0xFFFFFFFF');
   });
 });
 
-describe('给人看的命令', () => {
-  it('POSIX：安全的参数原样，其余加单引号', () => {
+describe('commands for display to people', () => {
+  it('POSIX: safe arguments are kept as-is, others are single-quoted', () => {
     expect(commandLine(['/opt/homebrew/bin/brew', 'upgrade', 'yt-dlp'], 'darwin')).toBe('/opt/homebrew/bin/brew upgrade yt-dlp');
     expect(commandLine(['python3', '-m', 'pip', 'install', '-U', 'yt-dlp[default]'], 'linux')).toBe("python3 -m pip install -U 'yt-dlp[default]'");
     expect(commandLine(['/Users/a b/yt-dlp', "it's", ''], 'darwin')).toBe(`'/Users/a b/yt-dlp' 'it'\\''s' ''`);
   });
 
-  it('Windows（PowerShell）：单引号里的单引号写两遍，第一个词加了引号时前面加 &', () => {
+  it('Windows (PowerShell): a single quote inside single quotes is doubled; when the first word is quoted, & is prepended', () => {
     expect(commandLine(['C:\\Users\\ming\\bin\\yt-dlp.exe', '-U'], 'win32')).toBe('C:\\Users\\ming\\bin\\yt-dlp.exe -U');
     expect(commandLine(['C:\\Program Files\\Python313\\python.exe', '-m', 'pip', 'install', '-U', 'yt-dlp[default]'], 'win32')).toBe(
       "& 'C:\\Program Files\\Python313\\python.exe' -m pip install -U 'yt-dlp[default]'",

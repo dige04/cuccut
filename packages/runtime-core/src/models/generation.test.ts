@@ -138,7 +138,7 @@ async function readArtifact(side: Side, artifactId: string): Promise<{ bytes: Bu
   return { bytes: Buffer.from(await response.arrayBuffer()), mimeType: handle.mimeType };
 }
 
-describe('生成能力：选择与提交时的检查（不需要 ffprobe）', () => {
+describe('generation capabilities: selection and checks at submission (does not need ffprobe)', () => {
   let side: Side | undefined;
   let openai: FakeProviderServer | undefined;
 
@@ -148,7 +148,7 @@ describe('生成能力：选择与提交时的检查（不需要 ffprobe）', ()
     side = openai = undefined;
   });
 
-  it('什么都没配置：两种能力都没有出厂默认，以 CAPABILITY_NOT_CONFIGURED 拒绝，不创建任务', async () => {
+  it('nothing configured: neither capability has a factory default; rejects with CAPABILITY_NOT_CONFIGURED and creates no task', async () => {
     side = await startSide({});
     const { capabilities } = await side.client.request('models.capabilities', {});
     expect(capabilities.synthesizeSpeech).toMatchObject({ default: null, effective: null });
@@ -178,7 +178,7 @@ describe('生成能力：选择与提交时的检查（不需要 ffprobe）', ()
     expect(await side.client.request('jobs.list', {})).toEqual({ jobs: [] });
   });
 
-  it('启用了 Provider 但没设默认值：提示设默认值；显式指定可用；setDefault 之后成为生效的默认值', async () => {
+  it('provider enabled but no default set: prompts to set a default; explicit selection works; after setDefault it becomes the effective default', async () => {
     openai = await startFakeProviderServer(fakeOpenAiHandler());
     side = await startSide({ openai });
     await side.client.request('models.configure', { providerId: 'openai', enabled: true, credential: OPENAI_KEY });
@@ -220,7 +220,7 @@ describe('生成能力：选择与提交时的检查（不需要 ffprobe）', ()
   });
 });
 
-describe.skipIf(!ffprobe)('生成任务：假供应商 → 校验 → 产物', () => {
+describe.skipIf(!ffprobe)('generation task: fake provider, then verification, then output', () => {
   let side: Side;
   let openai: FakeProviderServer;
   let google: FakeProviderServer;
@@ -240,7 +240,7 @@ describe.skipIf(!ffprobe)('生成任务：假供应商 → 校验 → 产物', (
     await elevenlabs.close();
   });
 
-  it('OpenAI 语音（默认值）：冻结模型与音色，校验解码，发布产物，读回同样的字节', async () => {
+  it('OpenAI speech (default): freezes model and voice, verifies decoding, publishes the output, reads back the same bytes', async () => {
     await side.client.request('models.configure', { providerId: 'openai', enabled: true, credential: OPENAI_KEY });
     await side.client.request('models.setDefault', { capability: 'synthesizeSpeech', providerId: 'openai' });
     const { jobId } = await side.client.request('models.synthesizeSpeech', { text: '欢迎来到 CucCut', speed: 1.25 });
@@ -278,7 +278,7 @@ describe.skipIf(!ffprobe)('生成任务：假供应商 → 校验 → 产物', (
     await expectNoSecret(side, OPENAI_KEY);
   });
 
-  it('Google 图片：按宽高比请求，一张一次，产物是 PNG 并报告宽高', async () => {
+  it('Google image: requests by aspect ratio, one image at a time, output is PNG with reported width and height', async () => {
     await side.client.request('models.configure', { providerId: 'google', enabled: true, credential: GOOGLE_KEY });
     const { jobId } = await side.client.request('models.generateImage', {
       prompt: 'a red fox',
@@ -310,7 +310,7 @@ describe.skipIf(!ffprobe)('生成任务：假供应商 → 校验 → 产物', (
     await expectNoSecret(side, GOOGLE_KEY);
   });
 
-  it('ElevenLabs：音色属于账号，不给音色在提交时拒绝；给了音色走 xi-api-key 与 output_format', async () => {
+  it('ElevenLabs: voices belong to the account; without a voice, submission is rejected; with a voice, it uses xi-api-key and output_format', async () => {
     await side.client.request('models.configure', { providerId: 'elevenlabs', enabled: true, credential: ELEVENLABS_KEY });
     const noVoice = await side.client
       .request('models.synthesizeSpeech', { text: 'hello', provider: 'elevenlabs' })
@@ -334,7 +334,7 @@ describe.skipIf(!ffprobe)('生成任务：假供应商 → 校验 → 产物', (
     await expectNoSecret(side, ELEVENLABS_KEY);
   });
 
-  it('输出解不开：MODEL_OUTPUT_INVALID，不发布产物，不重试', async () => {
+  it('output cannot be decoded: MODEL_OUTPUT_INVALID, no output published, no retry', async () => {
     await side.client.request('models.configure', { providerId: 'openai', enabled: true, credential: OPENAI_KEY });
     openai.handler = (request) =>
       request.path.endsWith('/images/generations')
@@ -347,7 +347,7 @@ describe.skipIf(!ffprobe)('生成任务：假供应商 → 校验 → 产物', (
     expect(await fs.readdir(side.home.artifactsDir).catch(() => [])).toEqual([]);
   });
 
-  it('供应商拒绝密钥：PROVIDER_AUTH_FAILED；回显的密钥不出现在任何地方', async () => {
+  it('provider rejects key: PROVIDER_AUTH_FAILED; an echoed key appears nowhere', async () => {
     await side.client.request('models.configure', { providerId: 'openai', enabled: true, credential: OPENAI_KEY });
     openai.handler = () => ({ status: 401, json: { error: { message: `Incorrect API key provided: ${OPENAI_KEY}` } } });
     const { jobId } = await side.client.request('models.synthesizeSpeech', { text: 'hi', provider: 'openai' });
@@ -357,7 +357,7 @@ describe.skipIf(!ffprobe)('生成任务：假供应商 → 校验 → 产物', (
     await expectNoSecret(side, OPENAI_KEY);
   });
 
-  it('取消运行中的生成：中止在途请求，任务 cancelled', async () => {
+  it('cancel a running generation: aborts the in-flight request, task cancelled', async () => {
     await side.client.request('models.configure', { providerId: 'openai', enabled: true, credential: OPENAI_KEY });
     openai.handler = () => 'hang';
     const { jobId } = await side.client.request('models.synthesizeSpeech', { text: 'hi', provider: 'openai' });
@@ -368,7 +368,7 @@ describe.skipIf(!ffprobe)('生成任务：假供应商 → 校验 → 产物', (
     expect((await side.client.request('jobs.inspect', { jobId })).state).toBe('cancelled');
   });
 
-  it('同样的参数提交两次是两个任务；同一个 commandId 是同一个任务', async () => {
+  it('the same parameters submitted twice are two tasks; the same commandId is one task', async () => {
     await side.client.request('models.configure', { providerId: 'openai', enabled: true, credential: OPENAI_KEY });
     const a = await side.client.request('models.synthesizeSpeech', { text: 'same', provider: 'openai' });
     const b = await side.client.request('models.synthesizeSpeech', { text: 'same', provider: 'openai' });
@@ -380,13 +380,13 @@ describe.skipIf(!ffprobe)('生成任务：假供应商 → 校验 → 产物', (
     for (const { jobId } of [a, b, c]) expect((await settled(side, jobId)).state).toBe('completed');
   });
 
-  it('artifacts.openHandle：不存在的产物 not-found', async () => {
+  it('artifacts.openHandle: nonexistent artifact gives not-found', async () => {
     const error = await side.client.request('artifacts.openHandle', { artifactId: `sha256:${'0'.repeat(64)}` }).catch((e: unknown) => e);
     expect(error).toMatchObject({ code: 'not-found' });
   });
 });
 
-describe.skipIf(!ffprobe || !engine)('生成结果导入视频（真实引擎）', () => {
+describe.skipIf(!ffprobe || !engine)('generation result import into video (real engine)', () => {
   let side: Side;
   let openai: FakeProviderServer;
 
@@ -400,7 +400,7 @@ describe.skipIf(!ffprobe || !engine)('生成结果导入视频（真实引擎）
     await openai.close();
   });
 
-  it('给了视频：以 system:jobs 导入为候选素材（不上时间线），来源记 generated 与参数摘要', async () => {
+  it('video given: imported as a candidate media item under system:jobs (not placed on the timeline), with source recorded as generated and a parameter digest', async () => {
     await side.client.request('models.configure', { providerId: 'openai', enabled: true, credential: OPENAI_KEY });
     const { project } = await side.client.request('projects.create', { name: '生成' });
     const opened = await side.client.request('videos.create', { projectId: project.id });

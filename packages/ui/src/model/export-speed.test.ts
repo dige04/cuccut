@@ -18,22 +18,22 @@ function feed(records: readonly Rec[]): SpeedTrack | undefined {
   return records.reduce<SpeedTrack | undefined>((track, job) => trackSpeed(track, job), undefined);
 }
 
-describe('导出速度与剩余时间', () => {
-  it('按最近几秒的进度算 fps 与剩余时间', () => {
+describe('export speed and remaining time', () => {
+  it('computes fps and remaining time from progress over the last few seconds', () => {
     const jobs = [frames(0, 0), frames(500, 30), frames(1000, 60), frames(2000, 120)];
     const speed = exportSpeed(feed(jobs), jobs[jobs.length - 1]!);
     expect(speed?.fps).toBeCloseTo(60);
     expect(speed?.secondsLeft).toBeCloseTo((6000 - 120) / 60);
   });
 
-  it('样本不到一秒、没有进展时算不出', () => {
+  it('cannot be computed when the sample is under one second or there is no progress', () => {
     const early = [frames(0, 0), frames(400, 24)];
     expect(exportSpeed(feed(early), early[1]!)).toBeNull();
     const stalled = [frames(0, 50), frames(3000, 50)];
     expect(exportSpeed(feed(stalled), stalled[1]!)).toBeNull();
   });
 
-  it('只看最近的窗口：前面慢、后面快时按后面的速度', () => {
+  it('looks only at the recent window: when it was slow earlier and fast later, uses the later speed', () => {
     const jobs: Rec[] = [];
     for (let s = 0; s <= 10; s++) jobs.push(frames(s * 1000, s <= 5 ? s * 10 : 50 + (s - 5) * 100));
     const track = feed(jobs)!;
@@ -41,7 +41,7 @@ describe('导出速度与剩余时间', () => {
     expect(exportSpeed(track, jobs[jobs.length - 1]!)?.fps).toBeCloseTo(100);
   });
 
-  it('换总量或数字往回走时从头记；离开渲染阶段（下载字体、保存文件）不记', () => {
+  it('restarts recording when the total changes or the number goes backward; not recorded outside the render stage (downloading fonts, saving files)', () => {
     const running = feed([frames(0, 0), frames(2000, 100)])!;
     expect(trackSpeed(running, frames(3000, 10))?.samples).toEqual([{ at: T0 + 3000, done: 10 }]);
     expect(trackSpeed(running, frames(3000, 150, 9000))?.samples).toHaveLength(1);
@@ -52,7 +52,7 @@ describe('导出速度与剩余时间', () => {
     expect(trackSpeed(undefined, fonts)).toBeUndefined();
   });
 
-  it('不在跑、不是导出、没有总量的不记；单位不是帧时只有剩余时间', () => {
+  it('not recorded when not running, not an export, or with no total; when the unit is not frames, only remaining time is shown', () => {
     expect(trackSpeed(undefined, { ...frames(0, 0), state: 'completed' })).toBeUndefined();
     expect(trackSpeed(undefined, { ...frames(0, 0), kind: 'transcribe' })).toBeUndefined();
     expect(trackSpeed(undefined, { ...frames(0, 0), progress: { done: 0, total: null, unit: 'frames' } })).toBeUndefined();
@@ -61,7 +61,7 @@ describe('导出速度与剩余时间', () => {
     expect(exportSpeed(feed(jobs), jobs[1]!)).toEqual({ rate: 10, fps: null, secondsLeft: 10 });
   });
 
-  it('同一个样本重复到达时不变', () => {
+  it('unchanged when the same sample arrives again', () => {
     const track = feed([frames(0, 0), frames(1500, 90)]);
     expect(trackSpeed(track, frames(1500, 90))).toBe(track);
   });

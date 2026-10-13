@@ -24,7 +24,7 @@ const ffmpeg = (() => {
   }
 })();
 
-describe.skipIf(!engine || !ffmpeg)('工具目录经网关给 CLI（真实引擎）', () => {
+describe.skipIf(!engine || !ffmpeg)('tool catalog passed to CLI through gateway (real engine)', () => {
   let fixtures: string;
   let clip: string;
   let dir: string;
@@ -86,7 +86,7 @@ describe.skipIf(!engine || !ffmpeg)('工具目录经网关给 CLI（真实引擎
     return outcome.result as Record<string, unknown>;
   }
 
-  it('catalog.list：接口版本与带 JSON Schema、风险的工具', async () => {
+  it('catalog.list: interface version and tools with JSON Schema and risk', async () => {
     const listed = await client.request('catalog.list', {});
     expect(listed.interfaceVersion).toBe(MCP_INTERFACE_VERSION);
     expect(listed.tools.length).toBeGreaterThan(0);
@@ -110,7 +110,7 @@ describe.skipIf(!engine || !ffmpeg)('工具目录经网关给 CLI（真实引擎
     expect(listed.tools.find((t) => t.name === 'videos_create')?.risk).toBe('edit');
   });
 
-  it('videos_create 建在 cwd 所在的项目里；videoId、绝对与相对的视频目录指同一个视频', async () => {
+  it('videos_create built in the project where cwd is; videoId, absolute and relative video directory refer to the same video', async () => {
     const created = await ok('videos_create', { name: '终端样片' }, project.path);
     const videoId = created.videoId as string;
     expect(videoId).toMatch(/^video_/);
@@ -138,7 +138,7 @@ describe.skipIf(!engine || !ffmpeg)('工具目录经网关给 CLI（真实引擎
     expect((await ok('videos_inspect', { video: videoId }, project.path)).videoId).toBe(videoId);
   });
 
-  it('不在项目里时新建到默认项目目录的 CLI 项目，并在结果里说明', async () => {
+  it('when not in a project, creates a CLI project in the default project directory and notes it in the result', async () => {
     const elsewhere = await fs.mkdtemp(path.join(dir, 'elsewhere-'));
     const created = await ok('videos_create', { name: '无项目' }, elsewhere);
     expect(created.note).toEqual(expect.stringContaining(LOCAL_DEFAULT_PROJECT_DIR));
@@ -148,7 +148,7 @@ describe.skipIf(!engine || !ffmpeg)('工具目录经网关给 CLI（真实引擎
     expect(projects.some((p) => p.path === defaultProject)).toBe(true);
   });
 
-  it('edits_apply 的 importAsset 相对路径按 cwd 解析；写入的操作者是 user_local', async () => {
+  it('edits_apply importAsset relative path resolved against cwd; the writing actor is user_local', async () => {
     const media = path.join(project.path, 'media');
     await fs.mkdir(media);
     await fs.copyFile(clip, path.join(media, 'clip.mp4'));
@@ -174,7 +174,7 @@ describe.skipIf(!engine || !ffmpeg)('工具目录经网关给 CLI（真实引擎
     expect(entries.find((e) => e.label === '导入')?.actor).toEqual({ kind: 'user', id: 'user_local' });
   });
 
-  it('工具层的拒绝在返回值里：未知工具、参数不对、cwd 不存在', async () => {
+  it('tool-layer rejections in the return value: unknown tool, wrong arguments, cwd does not exist', async () => {
     const unknown = await call('no_such_tool', {}, project.path);
     expect(unknown).toMatchObject({ ok: false, error: { code: 'UNKNOWN_TOOL' } });
 
@@ -192,7 +192,7 @@ describe.skipIf(!engine || !ffmpeg)('工具目录经网关给 CLI（真实引擎
     await expect(client.request('catalog.call', { name: 'videos_list', args: {}, cwd: 'relative' })).rejects.toBeInstanceOf(RpcError);
   });
 
-  it('只给 cli 与 desktop 连接：agent 连接调用 catalog.* 被拒绝', async () => {
+  it('only cli and desktop connections: agent connection calling catalog.* is rejected', async () => {
     const desktop = await connect('desktop');
     try {
       expect((await desktop.request('catalog.list', {})).tools.length).toBeGreaterThan(0);
@@ -211,7 +211,7 @@ describe.skipIf(!engine || !ffmpeg)('工具目录经网关给 CLI（真实引擎
     }
   });
 
-  it('catalog.agentSkill：仓库里的说明书按 CLI 面渲染好', async () => {
+  it('catalog.agentSkill: the manual in the repo rendered for the CLI surface', async () => {
     const skill = await client.request('catalog.agentSkill', {});
     expect(skill.id).toBe('cuccut');
     expect(skill.interfaceVersion).toBe(MCP_INTERFACE_VERSION);

@@ -50,8 +50,8 @@ describe('GrantStore', () => {
     });
   }
 
-  describe('匹配', () => {
-    it('按数据种类、接收方与范围匹配', async () => {
+  describe('matching', () => {
+    it('matches by data kind, recipient and scope', async () => {
       const store = await open();
       const grant = persistent(store, { dataKinds: ['audio', 'transcript'], scope: { videoId: 'vid_a' } });
 
@@ -64,7 +64,7 @@ describe('GrantStore', () => {
       expect(store.evaluate(call({ videoId: null })).status).toBe('none');
     });
 
-    it('全部视频的授权覆盖任何视频与不属于视频的调用；任务授权只覆盖那个任务', async () => {
+    it('all-videos grant covers any video and non-video calls; task grant covers only that task', async () => {
       const store = await open();
       persistent(store);
       const task = persistent(store, { taskId: 'task_1', dataKinds: ['frames'] });
@@ -74,7 +74,7 @@ describe('GrantStore', () => {
       expect(store.evaluate(call({ dataKinds: ['frames'], taskId: 'task_2' })).status).toBe('none');
     });
 
-    it('优先用最具体的授权', async () => {
+    it('prefers the most specific grant', async () => {
       const store = await open();
       persistent(store);
       const video = persistent(store, { scope: { videoId: 'vid_a' } });
@@ -83,7 +83,7 @@ describe('GrantStore', () => {
       expect(store.evaluate(call({ taskId: 'task_1' }))).toMatchObject({ grant: { grantId: task.grantId } });
     });
 
-    it('「只这一次」的授权只被点名的那次调用使用', async () => {
+    it('"only this once" grant used only by the named call', async () => {
       const store = await open();
       const once = persistent(store, { once: true, origin: 'approval' });
       expect(once.maxCalls).toBe(1);
@@ -98,7 +98,7 @@ describe('GrantStore', () => {
       expect(store.evaluate(call({ grantId: once.grantId }))).toMatchObject({ status: 'exhausted', measure: 'calls' });
     });
 
-    it('到期的授权不再覆盖，报告为曾经覆盖它的那条', async () => {
+    it('expired grant no longer covers; reported as the one that covered it before', async () => {
       const store = await open();
       const grant = persistent(store, { expiresAt: '2026-10-02T00:00:00Z' });
       expect(store.evaluate(call()).status).toBe('covered');
@@ -107,8 +107,8 @@ describe('GrantStore', () => {
     });
   });
 
-  describe('撤销与代', () => {
-    it('撤销之后不再覆盖新的调用，排队中按旧代预留的调用开始时被拒绝', async () => {
+  describe('revocation and generation', () => {
+    it('after revocation, no longer covers new calls; queued calls reserved under the old generation are denied when they start', async () => {
       const store = await open();
       const grant = persistent(store);
       const queued = store.admit(call(), { jobId: 'job_q' });
@@ -130,7 +130,7 @@ describe('GrantStore', () => {
       expect(store.revoke(grant.grantId).alreadySent).toMatchObject({ calls: 1, unknownCostCalls: 1 });
     });
 
-    it('收紧时代加一，按旧代预留的调用开始时被拒绝；放宽不加代', async () => {
+    it('tightening increments the generation, and calls reserved under the old generation are denied when they start; loosening does not increment', async () => {
       const store = await open();
       const grant = persistent(store, { dataKinds: ['audio', 'transcript'] });
       const before = store.admit(call(), { jobId: 'job_1' });
@@ -147,8 +147,8 @@ describe('GrantStore', () => {
     });
   });
 
-  describe('预留与结算', () => {
-    it('次数上限计入预留中的调用', async () => {
+  describe('reservation and settlement', () => {
+    it('count limit includes reserved calls', async () => {
       const store = await open();
       const grant = persistent(store, { maxCalls: 2 });
       const a = store.admit(call());
@@ -166,7 +166,7 @@ describe('GrantStore', () => {
       expect(store.admit(call()).ok).toBe(true);
     });
 
-    it('并行的预留不会一起越过上限', async () => {
+    it('parallel reservations do not together exceed the limit', async () => {
       const store = await open();
       const grant = persistent(store, { maxCalls: 3 });
       const results = await Promise.all(Array.from({ length: 20 }, async () => store.admit(call())));
@@ -174,7 +174,7 @@ describe('GrantStore', () => {
       expect(store.get(grant.grantId)!.usage.reservedCalls).toBe(3);
     });
 
-    it('金额上限：按估算预留，完成时按报告或估算计，失败时保守扣除', async () => {
+    it('amount limit: reserved by estimate, settled by reported or estimated amount on completion, conservatively deducted on failure', async () => {
       const store = await open();
       const grant = persistent(store, { budgetMode: 'estimate-cap', budgetCap: { amount: '1.00', currency: 'USD' } });
       const estimate = estimateCallCost({ currency: 'USD', amount: '0.40', unit: 'request' }, {});
@@ -207,7 +207,7 @@ describe('GrantStore', () => {
       expect(store.admit(call({ estimate: { amount: '0.35', currency: 'USD' } })).ok).toBe(true);
     });
 
-    it('有金额上限而估不出金额（没有价格、币种不同）时无法保证上限', async () => {
+    it('with an amount limit but no estimable amount (no price, different currency), the limit cannot be guaranteed', async () => {
       const store = await open();
       persistent(store, { budgetMode: 'estimate-cap', budgetCap: { amount: '5', currency: 'USD' } });
       expect(store.evaluate(call()).status).toBe('unverifiable');
@@ -217,7 +217,7 @@ describe('GrantStore', () => {
       expect(store.evaluate(call()).status).toBe('covered');
     });
 
-    it('重试再预留一次：重试也消耗预算', async () => {
+    it('retry reserves again: retries also consume budget', async () => {
       const store = await open();
       const grant = persistent(store, { maxCalls: 2 });
       const first = store.admit(call(), { jobId: 'job_1' });
@@ -234,8 +234,8 @@ describe('GrantStore', () => {
     });
   });
 
-  describe('持久化', () => {
-    it('写盘（0600）并在重新打开时恢复；孤儿预留按开始与否结算', async () => {
+  describe('persistence', () => {
+    it('written to disk (0600) and restored on reopen; orphan reservations settled by whether they started', async () => {
       const store = await open();
       const grant = persistent(store, { maxCalls: 5 });
       const started = store.admit(call(), { jobId: 'job_a' });
@@ -251,7 +251,7 @@ describe('GrantStore', () => {
       expect(reopened.get(grant.grantId)!.usage).toMatchObject({ calls: 1, reservedCalls: 0, unknownCostCalls: 1 });
     });
 
-    it('「已开始」落盘之后 start 才放行：之后崩溃，重启时按已开始保守结算，不会释放', async () => {
+    it('start proceeds only after "started" is persisted: after a crash, on restart it is settled conservatively as started, not released', async () => {
       const store = await open();
       const grant = persistent(store, { maxCalls: 5 });
       const admitted = store.admit(call(), { jobId: 'job_a' });
@@ -268,7 +268,7 @@ describe('GrantStore', () => {
       expect(reopened.get(grant.grantId)!.usage).toMatchObject({ calls: 1, reservedCalls: 0, unknownCostCalls: 1 });
     });
 
-    it('「已开始」写不进磁盘时不放行，撤回开始；flush 不会因为一直写不进去而卡住', async () => {
+    it('when "started" cannot be written to disk, start is not granted and the start is rolled back; flush does not hang because writes keep failing', async () => {
       const store = await open();
       persistent(store);
       const admitted = store.admit(call(), { jobId: 'job_a' });
@@ -289,8 +289,8 @@ describe('GrantStore', () => {
     });
   });
 
-  describe('启用 Provider 时的默认授权', () => {
-    it('同一次启用只发放一次；撤销后不补发，重新启用才发放；停用撤销默认授权', async () => {
+  describe('default grants when enabling a Provider', () => {
+    it('one enable issues once; not reissued after revocation, reissued on re-enable; disabling revokes default grants', async () => {
       const store = await open();
       const first = store.ensureProviderGrant({ recipient: 'openai', dataKinds: ['audio'], enabledAt: 't1', label: 'OpenAI' })!;
       expect(first).toMatchObject({ origin: 'provider-enable', budgetMode: 'per-call-unknown-cost', maxCalls: null, budgetCap: null });
@@ -312,11 +312,11 @@ describe('GrantStore', () => {
     });
   });
 
-  describe('任务预算', () => {
+  describe('task budget', () => {
     const usd = (amount: string) => ({ amount, currency: 'USD' });
     const priced = (amount: string) => estimateCallCost({ currency: 'USD', amount, unit: 'request' }, {});
 
-    it('次数上限跨 Provider 合计；超出时不预留，授权的预留也不占', async () => {
+    it('count limit totaled across Providers; when exceeded, nothing is reserved, and grant reservations do not count against it', async () => {
       const store = await open();
       persistent(store);
       const google = persistent(store, { recipient: 'google' });
@@ -334,7 +334,7 @@ describe('GrantStore', () => {
       expect(store.taskBudget('task_1')!.usage.reservedCalls).toBe(2);
     });
 
-    it('金额上限：同币种估算合计；估不出、币种不同时无法保证', async () => {
+    it('amount limit: estimated total in the same currency; cannot be guaranteed when not estimable or when currencies differ', async () => {
       const store = await open();
       persistent(store);
       persistent(store, { recipient: 'google' });
@@ -351,7 +351,7 @@ describe('GrantStore', () => {
       expect(store.taskBudget('task_1')!.usage.reserved).toEqual([usd('0.80')]);
     });
 
-    it('结算只记一次：完成按报告或估算，失败保守扣除，没开始的释放；金额未知之后金额上限无法保证', async () => {
+    it('settlement recorded once: completion by reported or estimated amount, failure conservatively deducted, unstarted reservations released; after the amount becomes unknown, the amount limit cannot be guaranteed', async () => {
       const store = await open();
       persistent(store);
       store.setTaskBudget('task_1', { maxCalls: null, cap: null });
@@ -383,7 +383,7 @@ describe('GrantStore', () => {
       expect(store.evaluateTask({ taskId: 'task_1', estimate: priced('0.01') })).toMatchObject({ status: 'unverifiable' });
     });
 
-    it('崩溃之后：开始过的孤儿预留保守地记进任务预算，只记一次；没开始的释放', async () => {
+    it('after a crash: orphan reservations that had started are conservatively recorded into the task budget, once; unstarted ones released', async () => {
       const store = await open();
       persistent(store);
       store.setTaskBudget('task_1', { maxCalls: 5, cap: usd('5') });
@@ -404,7 +404,7 @@ describe('GrantStore', () => {
       expect(again.taskBudget('task_1')!.usage).toMatchObject({ calls: 1, spent: [usd('0.70')] });
     });
 
-    it('早先没有任务预算的账本照常读入', async () => {
+    it('ledgers from before task budgets existed still load as usual', async () => {
       await fs.mkdir(path.dirname(file), { recursive: true });
       await fs.writeFile(file, JSON.stringify({ schemaVersion: 1, grants: [], reservations: [] }));
       const store = await open();
@@ -413,7 +413,7 @@ describe('GrantStore', () => {
     });
   });
 
-  it('发放时校验预算方式与金额', async () => {
+  it('validates budget mode and amount when issuing', async () => {
     const store = await open();
     expect(() => persistent(store, { budgetMode: 'estimate-cap' })).toThrow(/budgetCap/);
     expect(() => persistent(store, { budgetCap: { amount: '1', currency: 'USD' } })).toThrow(RpcError);

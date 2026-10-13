@@ -30,7 +30,7 @@ async function lines(file: string): Promise<Record<string, unknown>[]> {
     .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
-describe('JobLedger（JSONL）', () => {
+describe('JobLedger (JSONL)', () => {
   let dir: string;
   let file: string;
 
@@ -43,7 +43,7 @@ describe('JobLedger（JSONL）', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('只追加变化了的任务与删掉的任务；重放与最后一次快照一致', async () => {
+  it('appends only changed and deleted tasks; replay matches the last snapshot', async () => {
     const ledger = new JobLedger(file);
     expect(await ledger.load()).toEqual([]);
     const a = job('job_a');
@@ -67,7 +67,7 @@ describe('JobLedger（JSONL）', () => {
     expect(reloaded).toEqual(JSON.parse(JSON.stringify([a, c])));
   });
 
-  it('没有变化时不写', async () => {
+  it('writes nothing when nothing changed', async () => {
     const ledger = new JobLedger(file);
     await ledger.load();
     const a = job('job_a');
@@ -83,7 +83,7 @@ describe('JobLedger（JSONL）', () => {
     expect(await fs.readFile(file, 'utf8')).toBe(before);
   });
 
-  it('保存时就取下快照：之后改对象不影响已排队的写入', async () => {
+  it('takes a snapshot at save time: later changes to the object do not affect queued writes', async () => {
     const ledger = new JobLedger(file);
     await ledger.load();
     const a = job('job_a');
@@ -93,7 +93,7 @@ describe('JobLedger（JSONL）', () => {
     expect((await new JobLedger(file).load())[0]!.record.state).toBe('queued');
   });
 
-  it('末尾被截断的残行跳过并记日志；下一次写整份压缩，之后读到全部记录', async () => {
+  it('a truncated partial line at the end is skipped and logged; the next write compacts the whole file, and then all records are read', async () => {
     const warnings: string[] = [];
     const log = { info() {}, warn: (message: string) => void warnings.push(message), error() {} };
     const ledger = new JobLedger(file);
@@ -111,7 +111,7 @@ describe('JobLedger（JSONL）', () => {
     expect((await new JobLedger(file).load()).map((j) => j.record.jobId)).toEqual(['job_a', 'job_b', 'job_d']);
   });
 
-  it('行数超过阈值时压缩：只留存活的记录，内容与压缩前重放的一致', async () => {
+  it('compacts when the line count exceeds the threshold: only live records are kept, and the content matches the replay from before compaction', async () => {
     const ledger = new JobLedger(file, { compaction: { ratio: 2, minLines: 4 } });
     await ledger.load();
     const a = job('job_a');
@@ -136,7 +136,7 @@ describe('JobLedger（JSONL）', () => {
     expect((await new JobLedger(file).load()).map((j) => j.record.state)).toEqual(['completed', 'failed']);
   });
 
-  it('旧的 jobs.json：导入后写成 jobs.jsonl，旧文件改名为 .migrated', async () => {
+  it('old jobs.json: after import it is written as jobs.jsonl, and the old file is renamed to .migrated', async () => {
     const legacy = path.join(dir, 'store', 'jobs.json');
     await fs.mkdir(path.dirname(legacy), { recursive: true });
     const old = [job('job_a', 'completed'), job('job_b', 'failed')];
@@ -152,7 +152,7 @@ describe('JobLedger（JSONL）', () => {
     expect(await fs.readFile(file, 'utf8')).toBe(before);
   });
 
-  it('只有半个文件头（第一次写时崩溃）：按空的读，不改名；下一次写整份重写', async () => {
+  it('only half a file header (crash during first write): read as empty, not renamed; the next write rewrites the whole file', async () => {
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, '{"op":"header","form');
     const ledger = new JobLedger(file);
@@ -163,7 +163,7 @@ describe('JobLedger（JSONL）', () => {
     expect((await new JobLedger(file).load()).map((j) => j.record.jobId)).toEqual(['job_a']);
   });
 
-  it('认不出的文件改名保留，从空开始', async () => {
+  it('an unrecognized file is renamed and kept, and starts empty', async () => {
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, '{"op":"header","formatVersion":99}\n');
     const ledger = new JobLedger(file);
@@ -180,7 +180,7 @@ describe('JobLedger（JSONL）', () => {
   });
 });
 
-describe('ApplicationLedger（JSONL）', () => {
+describe('ApplicationLedger (JSONL)', () => {
   let dir: string;
   let file: string;
 
@@ -193,7 +193,7 @@ describe('ApplicationLedger（JSONL）', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('写入一条追加一行；再写入的移到最后；按任务删除；重放后一致', async () => {
+  it('writing one entry appends one line; writing again moves it to the end; deletes by task; consistent after replay', async () => {
     const ledger = new ApplicationLedger(file);
     await ledger.load();
     const first = application('app_1', 'job_a');
@@ -213,7 +213,7 @@ describe('ApplicationLedger（JSONL）', () => {
     expect(reloaded.latest('job_a')?.record.state).toBe('committed');
   });
 
-  it('冻结之后不再落盘', async () => {
+  it('nothing is written to disk after freezing', async () => {
     const ledger = new ApplicationLedger(file);
     await ledger.load();
     await ledger.put(application('app_1', 'job_a'));
@@ -225,7 +225,7 @@ describe('ApplicationLedger（JSONL）', () => {
     expect(reloaded.all().map((item) => item.record.applicationId)).toEqual(['app_1']);
   });
 
-  it('旧的 applications.json：导入后改名为 .migrated', async () => {
+  it('old applications.json: renamed to .migrated after import', async () => {
     const legacy = path.join(dir, 'store', 'applications.json');
     await fs.mkdir(path.dirname(legacy), { recursive: true });
     const old = [application('app_1', 'job_a', 'committed')];

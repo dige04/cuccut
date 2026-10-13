@@ -15,8 +15,8 @@ function wrong(code: string): string {
   return code === '000000' ? '111111' : '000000';
 }
 
-describe('配对', () => {
-  it('配对码是 6 位数字，用一次就作废；令牌是 clientId.secret，持久的只有盐与摘要', () => {
+describe('pairing', () => {
+  it('pairing code is 6 digits, invalidated after one use; token is clientId.secret, only the salt and digest are persisted', () => {
     const clock = new ManualClock();
     const pairing = new Pairing([], { clock });
     const { code, expiresAt } = pairing.newCode();
@@ -44,7 +44,7 @@ describe('配对', () => {
     expect(pairing.verify(outcome.token)).toMatchObject({ clientId: 'client-a', lastSeenAt: new Date(clock.now()).toISOString() });
   });
 
-  it('错误的令牌一律无效', () => {
+  it('wrong tokens are always invalid', () => {
     const pairing = new Pairing([]);
     const outcome = pairing.pair(pairing.newCode().code, 'client-a', 'A');
     if (!outcome.ok) throw new Error('配对失败');
@@ -66,7 +66,7 @@ describe('配对', () => {
     expect(pairing.verify(outcome.token)).not.toBeNull();
   });
 
-  it('配对码过期后无效', () => {
+  it('pairing code is invalid after expiry', () => {
     const clock = new ManualClock();
     const pairing = new Pairing([], { clock });
     const { code } = pairing.newCode();
@@ -77,7 +77,7 @@ describe('配对', () => {
     expect(pairing.pair(code, 'client-a', 'A')).toEqual({ ok: false, code: 'PAIRING_CODE_INVALID' });
   });
 
-  it('输错 5 次锁定 10 分钟并作废配对码；锁定期满后要新的配对码', () => {
+  it('5 wrong attempts lock for 10 minutes and invalidate the pairing code; after the lock expires a new pairing code is needed', () => {
     const clock = new ManualClock();
     const pairing = new Pairing([], { clock });
     const { code } = pairing.newCode();
@@ -98,7 +98,7 @@ describe('配对', () => {
     expect(pairing.pair(fresh.code, 'client-a', 'A').ok).toBe(true);
   });
 
-  it('生成新的配对码解除锁定、清零计数', () => {
+  it('generating a new pairing code lifts the lock and resets the count', () => {
     const clock = new ManualClock();
     const pairing = new Pairing([], { clock });
     const { code } = pairing.newCode();
@@ -110,7 +110,7 @@ describe('配对', () => {
     expect(pairing.pair(fresh.code, 'client-a', 'A').ok).toBe(true);
   });
 
-  it('同一个 clientId 重新配对换掉旧令牌；吊销后令牌无效', () => {
+  it('re-pairing the same clientId replaces the old token; token invalid after revocation', () => {
     const pairing = new Pairing([]);
     const first = pairing.pair(pairing.newCode().code, 'client-a', 'A');
     const second = pairing.pair(pairing.newCode().code, 'client-a', 'A2');
@@ -125,7 +125,7 @@ describe('配对', () => {
     expect(pairing.has('client-a')).toBe(false);
   });
 
-  it('从持久状态恢复的客户端仍能用原令牌', () => {
+  it('clients restored from persisted state can still use their original token', () => {
     const pairing = new Pairing([]);
     const outcome = pairing.pair(pairing.newCode().code, 'client-a', 'A');
     if (!outcome.ok) throw new Error('配对失败');

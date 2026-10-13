@@ -25,14 +25,14 @@ import { GPT_SOVITS, INDEX_TTS2, OMNIVOICE, QWEN_BASE, QWEN_CUSTOM, QWEN_DESIGN,
 const mine = [{ id: 'v1', name: '我自己' }];
 const exclusive = (r: object) => ['voice', 'reference', 'voiceDescription'].filter((k) => k in r).length;
 
-describe('示例台词与语言', () => {
-  it('十一门语言、每门三句', () => {
+describe('sample lines and languages', () => {
+  it('eleven languages, three lines each', () => {
     const codes = [...new Set(SAMPLE_LINES.map((l) => l.code))];
     expect(codes).toEqual(['zh', 'en', 'ja', 'ko', 'es', 'de', 'fr', 'it', 'pt', 'ru', 'ar']);
     for (const code of codes) expect(sampleKinds(code).map((k) => k.k)).toEqual(['intro', 'numbers', 'mood']);
   });
 
-  it('语言芯片来自模型声明的语言：不限时给全部；有清单时取有示例的，按示例表的次序；没有示例的不给', () => {
+  it('language chips come from the languages the model declares: all when unrestricted; with a list, those that have examples, in example table order; languages without examples are not given', () => {
     expect(sampleLangs(INDEX_TTS2)).toHaveLength(11);
     expect(sampleLangs(GPT_SOVITS).map((l) => l.code)).toEqual(['zh', 'en']);
     expect(sampleLangs({ languages: ['es', 'ar', 'sw', 'ja'] }).map((l) => l.code)).toEqual(['ja', 'es', 'ar']);
@@ -40,14 +40,14 @@ describe('示例台词与语言', () => {
     expect(sampleLangs({ languages: ['zh-CN'] }).map((l) => l.code)).toEqual(['zh']);
   });
 
-  it('缺这种台词时退到这门语言的第一句，再退到表头', () => {
+  it('when this kind of line is missing, falls back to the language\'s first line, then to the header', () => {
     expect(sampleLine('en', 'mood').text).toMatch(/^Fast/);
     expect(sampleLine('xx', 'mood')).toBe(SAMPLE_LINES[0]);
   });
 });
 
-describe('快捷音色', () => {
-  it('预设模型：四个说话人（标签是听感），其余五个在「更多音色」', () => {
+describe('quick voices', () => {
+  it('preset model: four speakers (labels describe how they sound), the other five are under \'More voices\'', () => {
     expect(quickVoices(QWEN_CUSTOM, mine).map((v) => [v.key, v.label])).toEqual([
       ['Vivian', '女声 · 明亮'],
       ['Serena', '女声 · 沉稳'],
@@ -57,7 +57,7 @@ describe('快捷音色', () => {
     expect(moreVoices(QWEN_CUSTOM).map((v) => v.key)).toEqual(['Dylan', 'Ryan', 'Aiden', 'Ono_Anna', 'Sohee']);
   });
 
-  it('克隆模型：默认音色、我的声音、快捷四只内置音色、临时用一段；其余四只在「更多音色」', () => {
+  it('clone model: default voice, my voice, the four built-in quick voices, one-off clip; the other four are under \'More voices\'', () => {
     expect(quickVoices(QWEN_BASE, mine).map((v) => v.key)).toEqual([
       'default',
       'my:v1',
@@ -70,7 +70,7 @@ describe('快捷音色', () => {
     expect(moreVoices(QWEN_BASE).map((v) => v.label)).toEqual(['日语女声', '日语男声', '西班牙语女声', '西班牙语男声']);
   });
 
-  it('描述模型：内置音色、三句现成描述与自己描述', () => {
+  it('description model: built-in voices, three ready-made descriptions and a custom description', () => {
     expect(quickVoices(QWEN_DESIGN, mine).map((v) => v.key)).toEqual([
       'zh-female',
       'zh-male',
@@ -83,7 +83,7 @@ describe('快捷音色', () => {
     ]);
   });
 
-  it('语气只给预设说话人且收风格说明的模型（情绪档这一版带不了）', () => {
+  it('tone is only offered for preset speakers on models that accept style instructions (the emotion tier is not supported in this version)', () => {
     expect(quickTones(QWEN_CUSTOM).map((t) => t.k)).toEqual(['upbeat', 'natural', 'anchor', 'soft']);
     expect(quickTones(VOXCPM2)).toEqual([]);
     expect(quickTones(INDEX_TTS2)).toEqual([]);
@@ -91,7 +91,7 @@ describe('快捷音色', () => {
 });
 
 describe('quickForm', () => {
-  it('初值：第一门示例语言 + 介绍；预设模型 Vivian + 热情洋溢，克隆模型用这门语言的女声', () => {
+  it('initial values: first sample language + introduction; preset model Vivian + enthusiastic; clone model uses a female voice in this language', () => {
     expect(quickForm(QWEN_CUSTOM, quickDefaults(QWEN_CUSTOM), mine).request).toEqual({
       text: sampleLine('zh', 'intro').text,
       provider: 'local',
@@ -103,7 +103,7 @@ describe('quickForm', () => {
     expect(quickForm(QWEN_BASE, quickDefaults(QWEN_BASE), mine).request).toMatchObject({ voice: 'zh-female', language: 'zh' });
   });
 
-  it('换语言：没点过音色时内置音色跟着语言走，台词种类留着；点过就不动', () => {
+  it('changing language: if no voice was picked, built-in voices follow the language and the line kind stays; if one was picked, nothing changes', () => {
     let pick = quickDefaults(INDEX_TTS2);
     pick = { ...pick, kind: 'numbers' };
     let next = chooseLang(INDEX_TTS2, pick, 'ja');
@@ -114,13 +114,13 @@ describe('quickForm', () => {
     expect(next.voice).toBe('en-male');
   });
 
-  it('自然语气不带 instructions；自己写的一句不带语言', () => {
+  it('natural tone has no instructions; a self-written line has no language', () => {
     const pick: QuickPick = { ...quickDefaults(QWEN_CUSTOM), tone: 'natural', editing: true, draft: 'Bonjour à tous' };
     const request = quickForm(QWEN_CUSTOM, pick, mine).request!;
     expect(request).toEqual({ text: 'Bonjour à tous', provider: 'local', model: QWEN_CUSTOM.modelId, voice: 'Vivian' });
   });
 
-  it('默认音色不给 voice（Runtime 按语言挑）；我的声音给 library:<id>', () => {
+  it('default voice does not pass voice (Runtime picks by language); my voice passes library:<id>', () => {
     const pick = quickDefaults(QWEN_BASE);
     expect(quickForm(QWEN_BASE, chooseVoice(pick, 'default'), mine).request).not.toHaveProperty('voice');
     expect(quickForm(QWEN_BASE, chooseVoice(pick, 'my:v1'), mine).request).toMatchObject({ voice: 'library:v1' });
@@ -130,7 +130,7 @@ describe('quickForm', () => {
     });
   });
 
-  it('临时用一段：没选录音时说清楚；选了给 reference（模型读原文时带上原文）；示例录音用内置音色', () => {
+  it('one-off clip: says clearly when no recording is chosen; when chosen, passes reference (the model includes the source text when reading); sample recording uses a built-in voice', () => {
     const pick = chooseVoice(quickDefaults(GPT_SOVITS), 'file');
     expect(quickForm(GPT_SOVITS, pick, mine)).toMatchObject({ request: null, problem: '先选一段参考录音，或换回内置音色' });
     const withFile = { ...chooseFile(pick, '/Users/me/rec/我的录音.wav'), transcript: ' 你好 ' };
@@ -144,7 +144,7 @@ describe('quickForm', () => {
     expect(quickForm(GPT_SOVITS, sample, mine).request).toMatchObject({ voice: 'en-female' });
   });
 
-  it('描述模型：现成描述与自己描述走 voiceDescription，内置音色走 voice；自己描述不能空', () => {
+  it('description model: ready-made and custom descriptions go through voiceDescription, built-in voices go through voice; custom description cannot be empty', () => {
     const pick = quickDefaults(QWEN_DESIGN);
     expect(quickForm(QWEN_DESIGN, pick, mine).request).toMatchObject({ voice: 'zh-female' });
     expect(quickForm(QWEN_DESIGN, chooseVoice(pick, 'warm'), mine).request).toMatchObject({
@@ -156,7 +156,7 @@ describe('quickForm', () => {
     });
   });
 
-  it('voice、reference 与 voiceDescription 至多一个', () => {
+  it('at most one of voice, reference and voiceDescription', () => {
     const picks: [typeof QWEN_BASE, QuickPick][] = [
       [QWEN_CUSTOM, quickDefaults(QWEN_CUSTOM)],
       [QWEN_DESIGN, chooseVoice(quickDefaults(QWEN_DESIGN), 'anchor')],
@@ -167,7 +167,7 @@ describe('quickForm', () => {
     for (const [model, pick] of picks) expect(exclusive(quickForm(model, pick, mine).request!)).toBeLessThanOrEqual(1);
   });
 
-  it('空文本、超长文本说清楚；身份随选择变', () => {
+  it('empty and overlong text are explained; identity changes with the selection', () => {
     const pick = quickDefaults(QWEN_BASE);
     expect(quickForm(QWEN_BASE, { ...pick, editing: true, draft: '  ' }, mine).problem).toBe('先输入要合成的文本');
     expect(quickForm({ ...QWEN_BASE, maxInputChars: 5 }, { ...pick, editing: true, draft: '一二三四五六' }, mine).problem).toContain(
@@ -178,10 +178,10 @@ describe('quickForm', () => {
   });
 });
 
-describe('进度与结果', () => {
+describe('progress and result', () => {
   const job = (patch: Partial<JobRecord>) => ({ phase: 'queued', progress: null, ...patch }) as JobRecord;
 
-  it('任务阶段 → 一句话；合成报了步数时给百分比', () => {
+  it('task stage → one sentence; a percentage when synthesis reports steps', () => {
     expect(quickPhase(undefined)).toEqual({ label: '提交中', percent: null });
     expect(quickPhase(job({ phase: 'loading' })).label).toBe('加载模型');
     expect(quickPhase(job({ phase: 'generating', progress: { done: 1, total: 4, unit: 'steps' } }))).toEqual({
@@ -192,7 +192,7 @@ describe('进度与结果', () => {
     expect(quickPhase(job({ phase: 'publishing' })).label).toBe('写出音频');
   });
 
-  it('结果行：音色 · 语气 · 语言[· 台词] · 用时 · 音频时长', () => {
+  it('result line: voice · tone · language[· line] · elapsed time · audio duration', () => {
     const pick = quickDefaults(QWEN_CUSTOM);
     expect(quickSummary(QWEN_CUSTOM, pick, mine, { seconds: 1.64, audioSec: 3.92 })).toBe(
       'Vivian · 热情洋溢 · 中文 · 用时 1.6 秒 · 音频 3.9 秒',
@@ -210,7 +210,7 @@ describe('auditionBundle', () => {
   const models = new Map([QWEN_BASE, QWEN_CUSTOM, INDEX_TTS2, OMNIVOICE].map((m) => [m.modelId, m]));
   const synth = (id: string, patch = {}) => bundle(id, { capability: 'synthesize', ...patch });
 
-  it('按设计稿的次序挑装好的、能克隆的；表外的（OmniVoice）排后面；一只都没有时 null', () => {
+  it('picks installed, cloneable voices in design order; those outside the table (OmniVoice) go last; null when there are none', () => {
     expect(auditionBundle([synth(QWEN_BASE.modelId), synth(INDEX_TTS2.modelId), synth(QWEN_CUSTOM.modelId)], models)).toBe(
       INDEX_TTS2.modelId,
     );

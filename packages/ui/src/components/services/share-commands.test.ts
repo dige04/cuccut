@@ -71,8 +71,8 @@ beforeEach(() => {
   useConnection.setState({ state: { status: 'connected', connectionId: 'c1' } as never });
 });
 
-describe('共享这台 Mac 的命令', () => {
-  it('开始共享：那一两秒是「正在开始」，结果整份写回', async () => {
+describe('commands for sharing this Mac', () => {
+  it('start sharing: those one or two seconds are "starting", the whole result is written back', async () => {
     const gate = deferred<ShareStatus>();
     const { session, calls } = fakeSession({ 'nodes.share.start': () => gate.promise });
     const running = flipShare(session, true);
@@ -85,7 +85,7 @@ describe('共享这台 Mac 的命令', () => {
     expect(calls).toEqual([['nodes.share.start', {}]]);
   });
 
-  it('停止共享失败时清掉「正在停止」并把错误抛出去', async () => {
+  it('when stopping sharing fails, clear "stopping" and throw the error', async () => {
     useShare.setState({ status: status({ enabled: true, listening: true }) });
     const { session } = fakeSession({
       'nodes.share.stop': () => {
@@ -97,7 +97,7 @@ describe('共享这台 Mac 的命令', () => {
     expect(useShare.getState().status?.enabled).toBe(true);
   });
 
-  it('轮询结果晚于改动回来时不覆盖改动', async () => {
+  it('a polling result arriving after a change does not overwrite the change', async () => {
     const poll = deferred<ShareStatus>();
     const { session } = fakeSession({
       'nodes.share.status': () => poll.promise,
@@ -110,7 +110,7 @@ describe('共享这台 Mac 的命令', () => {
     expect(useShare.getState().status?.capabilities.transcribe?.enabled).toBe(false);
   });
 
-  it('没连上 Runtime 时不读；读失败不改镜像', async () => {
+  it('not read when not connected to Runtime; a failed read does not change the mirror', async () => {
     const { session, calls } = fakeSession({
       'nodes.share.status': () => {
         throw new Error('断了');
@@ -125,7 +125,7 @@ describe('共享这台 Mac 的命令', () => {
     expect(useShare.getState().status?.enabled).toBe(true);
   });
 
-  it('重新生成配对码、吊销与开关能力都带对参数并写回', async () => {
+  it('regenerate pairing code, revoke and toggle capability all carry the right parameters and write back', async () => {
     const { session, calls } = fakeSession({
       'nodes.share.pairingCode': () => status({ enabled: true, pairing: { code: '111222', expiresAt: '2026-10-03T10:10:00Z' } }),
       'nodes.share.revoke': () => status({ enabled: true, clients: [] }),
@@ -143,8 +143,8 @@ describe('共享这台 Mac 的命令', () => {
   });
 });
 
-describe('使用其他电脑的命令', () => {
-  it('读已配对的节点；配对后放进列表，同一个节点替换原来那条', async () => {
+describe('commands for using other computers', () => {
+  it('read paired nodes; after pairing, add to the list, the same node replaces the original entry', async () => {
     const { session, calls } = fakeSession({
       'nodes.list': () => ({ nodes: [node('node_a')] }),
       'nodes.pair': () => ({ node: { ...node('node_a'), problem: null } }),
@@ -157,7 +157,7 @@ describe('使用其他电脑的命令', () => {
     expect(calls[1]).toEqual(['nodes.pair', { host: '192.168.1.31', port: 47610, code: '481924' }]);
   });
 
-  it('取消配对只删这一台', async () => {
+  it('unpairing removes only that one machine', async () => {
     useShare.setState({ nodes: [node('node_a'), node('node_b')] });
     const { session, calls } = fakeSession({ 'nodes.remove': () => ({}) });
     await unpairNode(session, 'node_a');
@@ -165,7 +165,7 @@ describe('使用其他电脑的命令', () => {
     expect(calls).toEqual([['nodes.remove', { nodeId: 'node_a' }]]);
   });
 
-  it('配对失败原样抛出，列表不变', async () => {
+  it('pairing failure is rethrown as is, list unchanged', async () => {
     useShare.setState({ nodes: [] });
     const { session } = fakeSession({
       'nodes.pair': () => {

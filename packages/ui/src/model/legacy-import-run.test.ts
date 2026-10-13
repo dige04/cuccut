@@ -45,11 +45,11 @@ const failed = item('发布会', 'not-imported', { kind: 'failed', report: '/Use
 const finished = run([item('a', 'imported'), item('b', 'imported'), kyoto, iceland, course, broken, failed, item('c', 'skipped')]);
 
 describe('legacy-import-run', () => {
-  it('计数：没导入的不含跳过的；这一轮要导入的不算跳过的', () => {
+  it('count: not-imported excludes skipped; items to import in this round are not counted as skipped', () => {
     expect(runCounts(finished)).toEqual({ imported: 2, pending: 5, skipped: 1, queued: 0, importing: 0, live: 0, total: 7 });
   });
 
-  it('原因分组：每块没接上的硬盘一组，其余按原因各一组，每组有原因与怎么办', () => {
+  it('reason groups: one group per disconnected drive, the rest one group per reason, each group with its reason and what to do', () => {
     const groups = problemGroups(finished);
     expect(groups.map((g) => [g.kind, g.items.length])).toEqual([
       ['offline', 2],
@@ -63,7 +63,7 @@ describe('legacy-import-run', () => {
     for (const g of groups) expect(g.title && g.why && g.fix && g.short).toBeTruthy();
   });
 
-  it('卡片上的原因与怎么办：有没接上的硬盘先说接上它', () => {
+  it('reason and what-to-do on the card: a disconnected drive is first told to be reconnected', () => {
     expect(cardNote(finished)).toBe(
       '2 个项目的素材在没接上的「Extreme SSD」上，1 个项目的素材文件找不到，1 个项目的文件读不出来，1 个项目导入到一半出错。',
     );
@@ -72,7 +72,7 @@ describe('legacy-import-run', () => {
     expect(cardNote(run([item('a', 'imported')]))).toBe('');
   });
 
-  it('每一行的说明与「在文件夹中显示」的目标', () => {
+  it('each row\'s description and the "Show in folder" target', () => {
     expect(itemNote(kyoto)).toBe('缺 7 个文件，例如 /Volumes/Extreme SSD/2025/京都/A001.MP4');
     expect(itemNote(course)).toBe('缺 /Users/me/Movies/第 2 讲.mov');
     expect(itemNote(broken)).toBe(broken.path);
@@ -82,7 +82,7 @@ describe('legacy-import-run', () => {
     expect(revealTarget(failed)).toBe('/Users/me/Documents/CucCut/发布会/import-report.json');
   });
 
-  it('任务页那一行：在跑念阶段与进度；跑完留了没导入的念「N 个待处理」、用提醒色', () => {
+  it('task page row: shows the running phase and progress; when finished with items not imported, reads "N pending" in the warning color', () => {
     const live = run([item('a', 'imported'), item('b', 'importing'), item('c', 'queued'), item('d', 'queued')], 'importing');
     const row = legacyTaskRow(live, 'darwin');
     expect(row).toMatchObject({ id: 'legacy-import:r1', origin: 'legacy-import', live: true, tone: 'accent', pct: 25, progress: 25 });
@@ -100,13 +100,13 @@ describe('legacy-import-run', () => {
     expect(legacyTaskRow(run([item('a', 'imported')]), 'darwin')).toMatchObject({ tone: 'positive', label: '已完成' });
   });
 
-  it('Windows 的导入目录原样写盘符', () => {
+  it('Windows import directory keeps the drive letter as is', () => {
     expect(runSub({ ...run([item('a', 'imported')]), directory: 'C:\\Users\\me\\Documents\\CucCut' }, 'win32')).toBe(
       '已导入 1 · 导入到 C:\\Users\\me\\Documents\\CucCut',
     );
   });
 
-  it('Home 顶上那一条：在跑报进度，跑完有没导入的报结果，全导入了不出', () => {
+  it('the banner at the top of Home: reports progress while running, reports results when finished with items not imported, hidden when everything was imported', () => {
     const live = run([item('a', 'imported'), item('b', 'importing'), item('c', 'queued')], 'importing');
     expect(runBanner(live, 'darwin')).toMatchObject({
       state: 'running',
@@ -122,7 +122,7 @@ describe('legacy-import-run', () => {
     expect(runBanner(null, 'darwin')).toBeNull();
   });
 
-  it('跑完的 toast：整次导入报整体；重试只报重试的那几个', () => {
+  it('toast after a run: a whole import reports the whole; a retry reports only the retried items', () => {
     const all = new Set(finished.items.filter((it) => it.state !== 'skipped').map((it) => it.path));
     expect(finishToast(finished, all)).toEqual({ text: '导入结束：2 个已导入，5 个没导入', tone: 'neutral', action: 'result' });
     const clean = run([item('a', 'imported'), item('b', 'imported')]);
@@ -138,7 +138,7 @@ describe('legacy-import-run', () => {
     expect(finishToast(retried, new Set([iceland.path]))).toEqual({ text: '重试的 1 个还是没导入', tone: 'neutral', action: 'result' });
   });
 
-  it('点到的、还没导入的项目', () => {
+  it('clicked items that are not yet imported', () => {
     expect(pendingPaths(finished)).toEqual([kyoto.path, iceland.path, course.path, broken.path, failed.path]);
     expect(pendingPaths(finished, [kyoto.path, item('a', 'imported').path])).toEqual([kyoto.path]);
     expect(pendingPaths(null)).toEqual([]);

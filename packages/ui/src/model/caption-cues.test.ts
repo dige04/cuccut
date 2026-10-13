@@ -45,8 +45,8 @@ const cues = [
   { id: 'd', start: 13, end: 14, text: ' ' },
 ];
 
-describe('字幕句子投到时间线', () => {
-  it('经作用实例的时间映射投影：剪掉的源区间不出现，跨剪切点的句子被裁开', () => {
+describe('caption sentences projected onto the timeline', () => {
+  it('projected through the time mapping of the acting instance: cut-out source ranges do not appear, and sentences crossing a cut point are split', () => {
     // The first segment takes source 0–5 s and places it at 0–5 s; the second takes source 10–13 s and places it at 5–8 s.
     const first = clip('v_a', 0, 150, 0);
     const second = clip('v_b', 150, 90, 300);
@@ -67,7 +67,7 @@ describe('字幕句子投到时间线', () => {
     ]);
   });
 
-  it('序列时钟的文档直接用文档时间，裁在字幕实例的区间里', () => {
+  it('for a document on the sequence clock, use document time directly, clipped to the caption instance\'s range', () => {
     const caption: CaptionItem = {
       ...base,
       id: 'cap',
@@ -84,7 +84,7 @@ describe('字幕句子投到时间线', () => {
     ]);
   });
 
-  it('作用实例都删了时什么也不出现（不退回序列时间）；序列时钟的文档有作用实例时只在实例覆盖的区间里出现', () => {
+  it('when all acting instances are deleted, nothing appears (does not fall back to sequence time); for a sequence-clock document with acting instances, it only appears within the ranges the instances cover', () => {
     const caption: CaptionItem = {
       ...base,
       id: 'cap',
@@ -101,7 +101,7 @@ describe('字幕句子投到时间线', () => {
     expect(placed).toEqual([{ key: 'v_a:b', cueId: 'b', start: 4, end: 5, text: '二' }]);
   });
 
-  it('作用实例重叠（链在一起的音视频）：后列出的只占没被占的区间，不出两份', () => {
+  it('overlapping acting instances (linked audio and video): the later-listed one only takes unoccupied ranges, no duplicates', () => {
     const caption: CaptionItem = {
       ...base,
       id: 'cap',
@@ -120,7 +120,7 @@ describe('字幕句子投到时间线', () => {
     ]);
   });
 
-  it('缓存版按字幕文档、序列与实例记住：同一组输入取回同一份，换了序列版本就重算', () => {
+  it('cached version keyed by caption document, sequence and instance: same inputs return the same result, a changed sequence version recomputes', () => {
     const caption: CaptionItem = {
       ...base,
       id: 'cap',

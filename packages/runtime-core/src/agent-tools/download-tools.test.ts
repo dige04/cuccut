@@ -57,7 +57,7 @@ function fakeScope(write = true): { scope: ToolScope; confirmed: ToolConfirmatio
 const principal = { kind: 'agent', conversationId: 'conv_1' } as unknown as AgentPrincipal;
 
 describe('downloads_save', () => {
-  it('复制之后登记为 Space 交付物：下载目录里的真实路径、字节数、内容摘要与提交者；登记失败不影响结果', async () => {
+  it('after copying, registered as a Space deliverable: real path in download directory, byte count, content digest, and submitter; registration failure does not affect the result', async () => {
     await fs.writeFile(path.join(root, 'post.md'), '# 你好\n');
     const { scope } = fakeScope();
     const handovers: DownloadHandover[] = [];
@@ -73,7 +73,7 @@ describe('downloads_save', () => {
     expect(second.path).toBe(path.join(downloads, 'post-2.md'));
   });
 
-  it('复制到下载目录（不存在时新建）；重名时加序号，不覆盖；风险 command，确认之后才写', async () => {
+  it('copy to download directory (created if missing); name collisions get a sequence number, no overwrite; risk command, written only after confirmation', async () => {
     await fs.mkdir(path.join(root, 'out'));
     await fs.writeFile(path.join(root, 'out', 'talk.zh-Hans.srt'), '1\n00:00:00,000 --> 00:00:01,000\n你好\n');
     const { scope, confirmed } = fakeScope();
@@ -102,7 +102,7 @@ describe('downloads_save', () => {
     expect(named.path).toBe(path.join(downloads, '字幕 中文.srt'));
   });
 
-  it('不生成审批就拒绝：绝对路径、..、符号链接（文件与目录）、目录、不存在、视频目录与 .ccut、超过上限', async () => {
+  it('rejected without an approval: absolute paths, .., symbolic links (files and directories), directories, nonexistent, video directories and .ccut, over the limit', async () => {
     const outside = path.join(tmp, 'secret.txt');
     await fs.writeFile(outside, 'secret');
     await fs.symlink(outside, path.join(root, 'link.txt'));
@@ -138,7 +138,7 @@ describe('downloads_save', () => {
     expect(await rejected(plan.dispatch('downloads_save', { path: 'big.txt' }, principal))).toBe('PLAN_ONLY');
   });
 
-  it('下载目录里已有同名的符号链接：不跟随、不覆盖，换下一个序号', async () => {
+  it('a symlink with the same name already in the download directory: not followed, not overwritten, next sequence number used', async () => {
     await fs.writeFile(path.join(root, 'notes.txt'), 'mine');
     await fs.mkdir(downloads);
     const victim = path.join(tmp, 'victim.txt');
@@ -150,7 +150,7 @@ describe('downloads_save', () => {
     expect(await fs.readFile(victim, 'utf8')).toBe('keep');
   });
 
-  it('检查之后源被换成符号链接：拒绝', async () => {
+  it('source replaced with a symlink after the check: rejected', async () => {
     await fs.writeFile(path.join(root, 'notes.txt'), 'mine');
     const plan = await prepareDownloadSave({ root, path: 'notes.txt', downloadsDir: downloads });
     await fs.rm(path.join(root, 'notes.txt'));
@@ -159,7 +159,7 @@ describe('downloads_save', () => {
     expect(await rejected(plan.commit())).toBe('PATH_IS_SYMLINK');
   });
 
-  it('文件名：去掉分隔符、控制字符与开头的 . 和 -；扩展名沿用源文件的；连扩展名不超过 120 个字符', () => {
+  it('file name: separators, control characters, and leading . and - removed; extension inherited from source; the full name including extension is at most 120 characters', () => {
     expect(downloadFileName('talk.zh-Hans', '.srt')).toBe('talk.zh-Hans.srt');
     expect(downloadFileName('talk.SRT', '.srt')).toBe('talk.SRT');
     expect(downloadFileName('.hidden', '.txt')).toBe('hidden.txt');

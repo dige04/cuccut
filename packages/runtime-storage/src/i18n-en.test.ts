@@ -8,7 +8,7 @@ import { GrantStore } from './grant-store.ts';
 import { decodeGlossaryMarkdown } from './library/glossary-markdown.ts';
 
 /** When the UI language is English, the text the storage layer writes for people is English. Grant purposes that the Runtime writes and persists carry a message reference. */
-describe('runtime-storage 的英文文案', () => {
+describe('English copy for runtime-storage', () => {
   let dir: string;
 
   beforeEach(async () => {
@@ -22,11 +22,11 @@ describe('runtime-storage 的英文文案', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('凭据问题的说明', () => {
+  it('explanation of credential problems', () => {
     expect(credentialProblem(new CredentialStoreError('denied', 'nope')).message).toBe('Access denied: nope');
   });
 
-  it('授权：错误带引用；默认授权的目的带引用，切回中文后能重新生成', async () => {
+  it('grants: errors carry a citation; the purpose of default grants carries a citation, regenerated after switching back to Chinese', async () => {
     const store = await GrantStore.open(path.join(dir, 'grants.json'));
     let caught: unknown;
     try {
@@ -46,7 +46,7 @@ describe('runtime-storage 的英文文案', () => {
     expect(localizeText(grant.purpose, grant.purposeRef)).toBe('启用 OpenAI 时默认发放');
   });
 
-  it('术语表文件的格式错误', () => {
+  it('format error in the glossary file', () => {
     let caught: unknown;
     try {
       decodeGlossaryMarkdown('no front matter');

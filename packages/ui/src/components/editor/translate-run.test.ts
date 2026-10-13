@@ -259,8 +259,8 @@ afterEach(() => {
   resetTranscribe();
 });
 
-describe('提交翻译', () => {
-  it('走真的会话：pipelines.start 收到流程名、只含流程认得的键的参数与 commandId', async () => {
+describe('submit translation', () => {
+  it('real session: pipelines.start receives the flow name, parameters containing only keys the flow recognizes, and commandId', async () => {
     const session = new RuntimeSession({} as HostBridge);
     const calls: Array<[string, unknown]> = [];
     vi.spyOn(session.client, 'request').mockImplementation((async (method: string, params: unknown) => {
@@ -294,7 +294,7 @@ describe('提交翻译', () => {
     expect(calls).toHaveLength(1);
   });
 
-  it('没有配置文本模型：提交被拒，就地给原因、提示与去模型页的路，不留运行态', async () => {
+  it('no text model configured: submission rejected, reason, hint and route to the models page given in place, no run state kept', async () => {
     const { deps } = fake();
     deps.runtime.startTranslate = vi.fn(async () => {
       throw new RpcError('conflict', '没有可用的文本模型', {
@@ -319,8 +319,8 @@ describe('提交翻译', () => {
   });
 });
 
-describe('翻译完成', () => {
-  it('流程建了字幕层：照 summary.captions 留收据（撤销按那笔事务），列表对照它、选中新的那层；编辑器不再自己写；后面的事件不会再收一次', async () => {
+describe('translation completed', () => {
+  it('flow created the subtitle layer: keep a receipt per summary.captions (undo follows that transaction), the list matches it and selects the new layer; the editor no longer writes on its own; later events are not received again', async () => {
     const { deps, applied } = fake();
     bindTranslate(deps);
     await startTranslate(setup);
@@ -356,7 +356,7 @@ describe('翻译完成', () => {
     expect(deps.runtime.videos.undo).toHaveBeenCalledWith({ transaction: 'tx-cap' });
   });
 
-  it('没建字幕层：投不到画面上、流程没建时留一句去对照列表放；没有可显示的句子如实说', async () => {
+  it('no subtitle layer created: when it cannot be shown on screen or the flow did not create one, leave one line to check the list and place it; when there are no displayable sentences, say so accurately', async () => {
     const { deps, applied } = fake();
     bindTranslate(deps);
     const cases: Array<[PipelineCaptionsSummary | undefined, Partial<TranslateProblem>]> = [
@@ -390,7 +390,7 @@ describe('翻译完成', () => {
     expect(applied).toEqual([]);
   });
 
-  it('收据上的撤销：撤掉放到画面上的那一笔；撤不了时如实说', async () => {
+  it('undo on the receipt: revert the entry placed on screen; when it cannot be reverted, say so accurately', async () => {
     const { deps, toasts } = fake();
     bindTranslate(deps);
     useTranslateRun.setState({
@@ -409,7 +409,7 @@ describe('翻译完成', () => {
     expect(toasts.at(-1)?.[0]).toBe('negative');
   });
 
-  it('已经在视频里的译文：放到画面上，提示带撤销', async () => {
+  it('translations already in the video: placed on screen, notice with undo', async () => {
     const { deps, applied, toasts } = fake();
     bindTranslate(deps);
     open('vid', { speech: speechRecord, tr: translationRecord });
@@ -420,8 +420,8 @@ describe('翻译完成', () => {
   });
 });
 
-describe('失败、中断与重试', () => {
-  it('停在翻译这一步：给原因与重试，说明会再计费；重试同一个任务，旧记录不会被当成结果再收一次', async () => {
+describe('failure, interruption and retry', () => {
+  it('stopped at the translation step: give the reason and retry, noting it will be billed again; retry the same task, old records are not received again as results', async () => {
     const { deps, applied } = fake();
     bindTranslate(deps);
     await startTranslate(setup);
@@ -463,7 +463,7 @@ describe('失败、中断与重试', () => {
     expect(useTranslateRun.getState().receipts.vid).toMatchObject({ translationDocumentId: 'tr', transactionId: 'tx-cap' });
   });
 
-  it('中断与取消：中断的给重试（停在翻译之后不再调模型）；取消的只提示一句', async () => {
+  it('interruption and cancel: interrupted gives retry (stopped after translation, no more model calls); cancelled shows one line only', async () => {
     const { deps, toasts } = fake();
     bindTranslate(deps);
     await startTranslate(setup);
@@ -481,8 +481,8 @@ describe('失败、中断与重试', () => {
   });
 });
 
-describe('改一句译文', () => {
-  it('一笔事务：译文文档的新版本连同从它生成的字幕里这一句的几条；别的条不动', async () => {
+describe('edit one translation line', () => {
+  it('one transaction: new version of the translation document together with the subtitle entries for this line generated from it; other entries untouched', async () => {
     const { deps, applied, toasts, bodies } = fake();
     bindTranslate(deps);
     const captionRecord = {
@@ -559,8 +559,8 @@ describe('改一句译文', () => {
   });
 });
 
-describe('就地重译过期句', () => {
-  it('只重译点名的句子：参数带 translationId 与 sentences、不建字幕层；完成给带撤销的提示，撤的是流程写的那一笔', async () => {
+describe('retranslate stale sentences in place', () => {
+  it('retranslate only the named sentences: parameters include translationId and sentences, no subtitle layer created; on completion a notice with undo, which reverts the entry the flow wrote', async () => {
     const { deps, toasts } = fake();
     const undos: Array<() => void> = [];
     bindTranslate({ ...deps, toast: (kind, message, undo) => (deps.toast(kind, message, undo), undo && undos.push(undo)) });
@@ -595,7 +595,7 @@ describe('就地重译过期句', () => {
     expect(deps.runtime.videos.undo).toHaveBeenCalledWith({ transaction: 'tx-refresh' });
   });
 
-  it('不点名时交给 Runtime 挑；失败挂问题卡（不给重试，从菜单再来）', async () => {
+  it('when no sentences are named, Runtime picks; on failure attach an issue card (no retry, start again from the menu)', async () => {
     const { deps } = fake();
     bindTranslate(deps);
     await startRefresh({ videoId: 'vid', record: translationRecord, language: 'en', count: 2, model: null });
@@ -607,7 +607,7 @@ describe('就地重译过期句', () => {
     expect(useTranslateRun.getState().problems.vid).toMatchObject({ kind: 'failed', title: '重译失败', message: '模型回的不是合法的 JSON', retry: null, refresh: 'tr' });
   });
 
-  it('提交被拒：问题卡也带着是哪一份译文', async () => {
+  it('submission rejected: the issue card also carries which translation it belongs to', async () => {
     const { deps } = fake();
     deps.runtime.startTranslate = vi.fn(async () => {
       throw new Error('模型不支持结构化输出');
@@ -619,7 +619,7 @@ describe('就地重译过期句', () => {
   });
 });
 
-describe('标为过期与去掉过期标记', () => {
+describe('mark as stale and clear the stale mark', () => {
   const captionRecord = {
     id: 'cap-en',
     kind: 'caption',
@@ -641,7 +641,7 @@ describe('标为过期与去掉过期标记', () => {
     ],
   };
 
-  it('标为过期只写译文文档（字幕文字不变），进撤销历史；已经过期的不再写', async () => {
+  it('marking as stale only writes the translation document (subtitle text unchanged), entering undo history; already stale ones are not written again', async () => {
     const { deps, applied, toasts, bodies } = fake();
     bodies['cap-en'] = { document: captionRecord, revision: '1', body: captionBody };
     bindTranslate(deps);
@@ -664,7 +664,7 @@ describe('标为过期与去掉过期标记', () => {
     expect(applied).toHaveLength(1);
   });
 
-  it('去掉过期标记：原句改过的单元按新的词重新绑定，字幕里这一句的几条跟着重切；同一笔事务', async () => {
+  it('clear the stale mark: units whose source sentence changed are rebound to the new words, and this sentence\'s subtitle entries are re-split accordingly; same transaction', async () => {
     const { deps, applied, toasts, bodies } = fake();
     bodies['cap-en'] = { document: captionRecord, revision: '1', body: captionBody };
     bindTranslate(deps);

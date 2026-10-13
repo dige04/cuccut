@@ -14,8 +14,8 @@ import {
   tokensShort,
 } from './models-text.ts';
 
-describe('推理强度', () => {
-  it('五档：自动（null）与 Runtime 的四档', () => {
+describe('reasoning effort', () => {
+  it('five levels: auto (null) and Runtime\'s four levels', () => {
     expect(EFFORT_CHOICES.map((c) => [c.key, c.label])).toEqual([
       ['auto', '自动'],
       ['minimal', '最低'],
@@ -30,19 +30,19 @@ describe('推理强度', () => {
     expect(effortOfKey('max')).toBeNull();
   });
 
-  it('请求：自动交 null', () => {
+  it('request: auto sends null', () => {
     expect(effortRequest('auto')).toEqual({ capability: 'generateText', effort: null });
     expect(effortRequest('low')).toEqual({ capability: 'generateText', effort: 'low' });
   });
 
-  it('已连接的模型里能调推理强度的有几只', () => {
+  it('how many connected models support adjustable reasoning effort', () => {
     expect(effortModelCount(textView())).toEqual({ tunable: 1, total: 2 });
     expect(effortModelCount(fixtureView())).toEqual({ tunable: 0, total: 0 });
   });
 });
 
-describe('并发上限', () => {
-  it('夹在 1–32，取整；不是数时不提交', () => {
+describe('concurrency limit', () => {
+  it('clamped to 1–32, rounded; not submitted when not a number', () => {
     expect(CONCURRENCY_MAX).toBe(32);
     expect(clampConcurrency(0)).toBe(1);
     expect(clampConcurrency(40)).toBe(32);
@@ -52,14 +52,14 @@ describe('并发上限', () => {
     expect(concurrencyRequest(Number.NaN)).toBeNull();
   });
 
-  it('视图没给参数时用出厂值', () => {
+  it('factory value used when the view gives no parameter', () => {
     expect(textParameters(textView({ effort: 'low', concurrency: 2 }))).toEqual({ effort: 'low', concurrency: 2 });
     expect(textParameters(textView(null))).toEqual({ effort: null, concurrency: 4 });
   });
 });
 
-describe('模型一行', () => {
-  it('token 数写短', () => {
+describe('model row', () => {
+  it('token counts written short', () => {
     expect(tokensShort(128_000)).toBe('128K');
     expect(tokensShort(32_768)).toBe('32K');
     expect(tokensShort(1_048_576)).toBe('1M');
@@ -67,7 +67,7 @@ describe('模型一行', () => {
     expect(tokensShort(512)).toBe('512');
   });
 
-  it('上下文、单次输出、推理强度', () => {
+  it('context, single output, reasoning effort', () => {
     expect(textModelLine(textModel('gpt-5-mini', { efforts: ['low', 'medium', 'high'], contextTokens: 400_000, maxOutputTokens: 128_000 }))).toBe(
       '上下文 400K · 单次输出 128K · 推理强度 低 / 中 / 高',
     );

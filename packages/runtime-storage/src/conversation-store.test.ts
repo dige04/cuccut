@@ -55,7 +55,7 @@ function plain(value: unknown): unknown {
 }
 
 describe('ConversationStore', () => {
-  it('新会话第一行是快照；流式更新同一条 item 只追加 upsert 行；没有变化时不写', async () => {
+  it('new session\'s first line is a snapshot; streaming updates to the same item only append upsert rows; no write when nothing changed', async () => {
     const store = new ConversationStore(dir, { log });
     await store.load();
     const r = record();
@@ -86,7 +86,7 @@ describe('ConversationStore', () => {
     expect(plain((await reload()).get('conv_1'))).toEqual(plain(r));
   });
 
-  it('元数据与任务合同写成 meta 行，重放结果与内存一致', async () => {
+  it('metadata and task contract written as meta rows; replayed result matches memory', async () => {
     const store = new ConversationStore(dir, { log });
     await store.load();
     const r = record();
@@ -124,7 +124,7 @@ describe('ConversationStore', () => {
     expect((await lines()).map((l) => l.op)).toEqual(['snapshot', 'item', 'item', 'meta', 'meta', 'item']);
   });
 
-  it('item 被删或换了顺序：写快照，不追加', async () => {
+  it('item deleted or reordered: write a snapshot, do not append', async () => {
     const store = new ConversationStore(dir, { log });
     await store.load();
     const r = record();
@@ -142,7 +142,7 @@ describe('ConversationStore', () => {
     expect((await reload()).get('conv_1')!.items.map((i) => i.id)).toEqual(['item_3', 'item_1']);
   });
 
-  it('末尾残行跳过并记日志；中间读不了的行也跳过', async () => {
+  it('trailing partial line skipped and logged; unreadable lines in the middle also skipped', async () => {
     const store = new ConversationStore(dir, { log });
     await store.load();
     const r = record();
@@ -169,7 +169,7 @@ describe('ConversationStore', () => {
     expect(warnings).toEqual([]);
   });
 
-  it('认不出的文件改名为 .corrupt-<时间> 并跳过：文件头不对、没有快照、空文件', async () => {
+  it('unrecognized file renamed to .corrupt-<time> and skipped: bad file header, no snapshot, empty file', async () => {
     await fs.writeFile(path.join(dir, 'conv_bad.jsonl'), 'not json\n{"op":"item"}\n');
     await fs.writeFile(path.join(dir, 'conv_empty.jsonl'), '');
     await fs.writeFile(path.join(dir, 'conv_noheader.jsonl'), `${JSON.stringify({ op: 'snapshot', ...record('conv_noheader') })}\n`);
@@ -188,7 +188,7 @@ describe('ConversationStore', () => {
     expect(warnings).toEqual([]);
   });
 
-  it('不认识的 formatVersion 或 schemaVersion：记日志，不读，文件留着', async () => {
+  it('unknown formatVersion or schemaVersion: log, do not read, keep the file', async () => {
     const header = '{"op":"header","formatVersion":2}\n';
     await fs.writeFile(path.join(dir, 'conv_v2.jsonl'), `${header}${JSON.stringify({ op: 'snapshot', ...record('conv_v2'), schemaVersion: 2 })}\n`);
     await fs.writeFile(path.join(dir, 'conv_f3.jsonl'), `{"op":"header","formatVersion":3}\n${JSON.stringify({ op: 'snapshot', ...record('conv_f3') })}\n`);
@@ -198,7 +198,7 @@ describe('ConversationStore', () => {
     expect((await fs.readdir(dir)).sort()).toEqual(['conv_f3.jsonl', 'conv_old.json', 'conv_v2.jsonl']);
   });
 
-  it('压缩：日志超过阈值时整份记录写成一行快照，内容等价', async () => {
+  it('compaction: when the log exceeds the threshold, the whole record is written as one snapshot line with equivalent content', async () => {
     const store = new ConversationStore(dir, { log });
     await store.load();
     const r = record();
@@ -220,7 +220,7 @@ describe('ConversationStore', () => {
     expect((await fs.readdir(dir)).filter((n) => n.endsWith('.tmp'))).toEqual([]);
   });
 
-  it('旧的 .json 迁移成 .jsonl 快照，旧文件改名为 .json.migrated；有同名 .jsonl 时忽略旧文件', async () => {
+  it('old .json migrated to a .jsonl snapshot, old file renamed to .json.migrated; old file ignored when a .jsonl of the same name exists', async () => {
     const legacy = record('conv_legacy');
     legacy.items.push(agentMessage('item_1', 'old', false));
     await fs.writeFile(path.join(dir, 'conv_legacy.json'), JSON.stringify(legacy, null, 2));
@@ -243,7 +243,7 @@ describe('ConversationStore', () => {
     expect(warnings.map((w) => w.message)).toEqual(['Legacy conversation file ignored: a conversation log with the same name exists']);
   });
 
-  it('delete 删掉日志文件，挂起的写入不会再把它写回来', async () => {
+  it('delete removes the log file; pending writes do not write it back', async () => {
     const store = new ConversationStore(dir, { log });
     await store.load();
     store.put(record());

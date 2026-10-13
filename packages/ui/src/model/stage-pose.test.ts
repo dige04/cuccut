@@ -51,8 +51,8 @@ const tallRef = { id: 'tall', revision: 1 };
 /** The result of `placeFields` applied on top of `place` (as it looks after the engine writes it to disk). */
 const applied = (it: PlacedItem, fields: Record<string, unknown>) => ({ ...it, place: { ...it.place, ...fields } }) as PlacedItem;
 
-describe('place ↔ 盒', () => {
-  it('铺满画布的视频：盒就是整块画布，只能转', () => {
+describe('place ↔ box', () => {
+  it('full-canvas video: the box is the whole canvas, and it can only rotate', () => {
     const video = placed({ type: 'video', mode: 'fullscreen', place: { x: 10, w: 50, rot: 30 } });
     expect(poseOf(video, canvas)).toEqual({ cx: 960, cy: 540, w: 1920, h: 1080, rotation: 30 });
     expect(posable(video, canvas)).toBe(false);
@@ -60,7 +60,7 @@ describe('place ↔ 盒', () => {
     expect(pivotOf(video, canvas)).toEqual({ x: 960, y: 540 });
   });
 
-  it('画中画视频（源是竖的）：宽是 w% × scale，高按源的显示宽高比；挪动、缩放换回来不漂', () => {
+  it('picture-in-picture video (portrait source): width is w% × scale, height follows the source\'s display aspect ratio; moving and scaling back do not drift', () => {
     const video = placed({ type: 'video', mode: 'pip', assetRef: tallRef, place: { x: 25, y: 50, w: 30 } });
     expect(posable(video, canvas, assets)).toBe(true);
     const pose = poseOf(video, canvas, assets);
@@ -80,7 +80,7 @@ describe('place ↔ 盒', () => {
     expect(placeFields(video, { ...pose, h: pose.h / 2 }, canvas, assets)).toEqual({ scaleY: 0.5 });
   });
 
-  it('写了 h 的图形：框高是画幅高的 h%，同样乘 scale；scale 不动，框宽折成 w', () => {
+  it('a shape with h set: box height is h% of the frame height, also multiplied by scale; scale unchanged, box width folds into w', () => {
     const shape = placed({ type: 'shape', shape: { shape: 'rect', h: 10 }, place: { w: 20, scale: 2 } });
     const pose = poseOf(shape, canvas);
     expect(pose).toEqual({ cx: 960, cy: 540, w: 768, h: 216, rotation: 0 });
@@ -92,7 +92,7 @@ describe('place ↔ 盒', () => {
     expect(back.h).toBeCloseTo(432);
   });
 
-  it('box 贴纸：高是宽的 0.62；没变的盒不出字段', () => {
+  it('box sticker: height is 0.62 of width; an unchanged box produces no fields', () => {
     const sticker = placed({ type: 'sticker', sticker: { source: 'template', templateId: 'box' } });
     const pose = poseOf(sticker, canvas);
     expect(pose).toMatchObject({ cx: 960, cy: 540, w: 384 });
@@ -103,7 +103,7 @@ describe('place ↔ 盒', () => {
     expect(poseOf(applied(sticker, moved), canvas).h).toBeCloseTo(119.04);
   });
 
-  it('素材是视频的贴纸与占位框按媒体摆，裁剪留下的区域定框高：与帧计划画的是同一个框', () => {
+  it('sticker and placeholder frames whose media is video are placed by the media; the area left by cropping sets the frame height, matching the frame plan\'s box', () => {
     const sticker = placed({ type: 'sticker', sticker: { source: 'asset' }, assetRef: tallRef });
     expect(poseOf(sticker, canvas, assets)).toMatchObject({ cx: 960, cy: 540, w: 384 });
     expect(poseOf(sticker, canvas, assets).h).toBeCloseTo(682.67, 2);
@@ -113,7 +113,7 @@ describe('place ↔ 盒', () => {
     expect(poseOf(cropped, canvas, assets).h).toBeCloseTo(512);
   });
 
-  it('文字左右拉边：只改框宽，高写进 scaleY；换回来高不变（取三位小数之内）', () => {
+  it('text edge drag left and right: only the box width changes, height goes into scaleY; switching back keeps the height unchanged (within three decimal places)', () => {
     const text = placed({ type: 'text', text: '标题', place: { x: 50, y: 50, w: 20 } });
     const pose = poseOf(text, canvas);
     expect(pose).toEqual({ cx: 960, cy: 540, w: 384, h: 384, rotation: 0 });
@@ -124,7 +124,7 @@ describe('place ↔ 盒', () => {
     expect(back.h).toBeCloseTo(384, 0);
   });
 
-  it('各种类的缺省：声波贴底铺满，进度条 80% × 5%；角度绕回 ±180', () => {
+  it('default values per kind: waveform sits at the bottom and fills the width, progress bar 80% × 5%; angles wrap to ±180', () => {
     expect(poseOf(placed({ type: 'visualizer' }), canvas)).toEqual({ cx: 960, cy: 918, w: 1920, h: 216, rotation: 0 });
     expect(poseOf(placed({ type: 'progress' }), canvas)).toEqual({ cx: 960, cy: 540, w: 1536, h: 54, rotation: 0 });
     const wave = placed({ type: 'visualizer' });
@@ -132,7 +132,7 @@ describe('place ↔ 盒', () => {
     expect(placeFields(wave, { ...poseOf(wave, canvas), rotation: 370 }, canvas)).toEqual({ rot: 10 });
   });
 
-  it('点在不在旋转过的盒里；外包盒按旋转后算', () => {
+  it('whether a point is inside a rotated box; the bounding box is computed after rotation', () => {
     const tall = { cx: 500, cy: 300, w: 200, h: 20, rotation: 90 };
     expect(poseContains(tall, { x: 500, y: 390 })).toBe(true);
     expect(poseContains(tall, { x: 590, y: 300 })).toBe(false);
@@ -141,8 +141,8 @@ describe('place ↔ 盒', () => {
     expect(r.h).toBeCloseTo(200);
   });
 });
-describe('能力表与把手', () => {
-  it('三档：视频与合成自由、文字左右加四角、图片与图形只有四角', () => {
+describe('capability table and handles', () => {
+  it('three tiers: video and composition are free, text gets left/right plus corners, images and shapes get only corners', () => {
     expect(resizeKindOf(item('video'))).toBe('free');
     expect(resizeKindOf(item('composition'))).toBe('free');
     expect(resizeKindOf(item('text'))).toBe('text');
@@ -150,7 +150,7 @@ describe('能力表与把手', () => {
     expect(resizeKindOf(item('shape'))).toBe('corner');
   });
 
-  it('任一边 < 24 退化成少几个的那一套', () => {
+  it('if any side is < 24, it falls back to the set with fewer handles', () => {
     expect(handlesFor('free', 100, 100)).toHaveLength(8);
     expect(handlesFor('free', 20, 100)).toEqual(['nw', 's', 'e']);
     expect(handlesFor('text', 100, 100)).toEqual(['w', 'e', 'nw', 'ne', 'sw', 'se']);
@@ -160,13 +160,13 @@ describe('能力表与把手', () => {
     expect(smallHandles(50, 40)).toBe(false);
   });
 
-  it('四角：自由一档改宽高，其余等比缩放', () => {
+  it('corners: the free tier changes width and height, the others scale proportionally', () => {
     expect(cornerScales('free', 'se')).toBe(false);
     expect(cornerScales('text', 'se')).toBe(true);
     expect(cornerScales('text', 'e')).toBe(false);
   });
 
-  it('光标随旋转角转（30° 一格）', () => {
+  it('cursor turns with the rotation angle (30° steps)', () => {
     expect(resizeCursor('e', 0)).toBe('e-resize');
     expect(resizeCursor('n', 45)).toBe('ne-resize');
     expect(resizeCursor('n', 90)).toBe('e-resize');
@@ -174,19 +174,19 @@ describe('能力表与把手', () => {
   });
 });
 
-describe('移动', () => {
+describe('move', () => {
   const snap = { canvas, others: [], threshold: 10 };
 
-  it('中心 ±1.5% 吸到画布中线，⌥（不吸）时原样', () => {
+  it('center within ±1.5% snaps to the canvas center line; with ⌥ (no snapping) it stays as is', () => {
     expect(dragMove(box, 450, 0, textLimits, snap)).toMatchObject({ cx: 960, cy: 300 });
     expect(dragMove(box, 450, 0, textLimits, null)).toMatchObject({ cx: 950, cy: 300 });
   });
 
-  it('夹进限位', () => {
+  it('clamped to limits', () => {
     expect(dragMove(box, -1000, 0, textLimits, null).cx).toBeCloseTo(57.6);
   });
 
-  it('多线吸附：边对上别的对象的边，并报出那条线', () => {
+  it('multi-line snapping: an edge snaps to another object\'s edge and reports that line', () => {
     const others = [{ x: 1200, y: 0, w: 100, h: 100 }];
     const moved = dragMove(box, 593, 0, textLimits, { canvas, others, threshold: 10 });
     expect(moved.cx).toBe(1100);
@@ -197,14 +197,14 @@ describe('移动', () => {
     });
   });
 
-  it('参考线：此刻贴着的线', () => {
+  it('guide lines: the lines currently snapped to', () => {
     expect(guidesFor({ x: 860, y: 0, w: 200, h: 100 }, canvas, [], 1)).toEqual([
       { axis: 'x', at: 960 },
       { axis: 'y', at: 0 },
     ]);
   });
 
-  it('限位：视频只留一条可见带；起手在限位外的放宽到起手位置', () => {
+  it('limits: a video keeps only one visible band; a start outside the limits is relaxed to the starting position', () => {
     const big = { cx: 960, cy: 540, w: 3840, h: 2160, rotation: 0 };
     expect(moveLimits(item('video'), big, canvas).x).toEqual([-1728, 3648]);
     expect(moveLimits(item('text'), box, canvas).x).toEqual(textLimits.x);
@@ -212,22 +212,22 @@ describe('移动', () => {
   });
 });
 
-describe('改边', () => {
+describe('edge resize', () => {
   const base = { start: box, alt: false, shift: false, ratio: null, range };
 
-  it('右边：只长宽，左边不动', () => {
+  it('right edge: only grows width, left edge stays put', () => {
     const r = edgeResize({ ...base, handle: 'e', dx: 50, dy: 30 });
     expect(r).toMatchObject({ w: 250, h: 100, cx: 525, cy: 300 });
   });
 
-  it('转 90° 的左边：位移投影到自身轴', () => {
+  it('left edge rotated 90°: the offset projects onto its own axis', () => {
     const r = edgeResize({ ...base, start: { ...box, rotation: 90 }, handle: 'w', dx: 0, dy: 50 });
     expect(r.w).toBeCloseTo(150);
     expect(r.cx).toBeCloseTo(500);
     expect(r.cy).toBeCloseTo(325);
   });
 
-  it('四角默认锁比例、对角不动；⇧ 解锁', () => {
+  it('corners lock proportions by default with the opposite corner fixed; ⇧ unlocks', () => {
     const locked = edgeResize({ ...base, handle: 'se', dx: 40, dy: 0 });
     expect(locked.w / locked.h).toBeCloseTo(2);
     expect(locked.cx - locked.w / 2).toBeCloseTo(400);
@@ -235,19 +235,19 @@ describe('改边', () => {
     expect(edgeResize({ ...base, handle: 'se', dx: 40, dy: 0, shift: true })).toMatchObject({ w: 240, h: 100 });
   });
 
-  it('⌥ 以中心对称、位移双倍计入', () => {
+  it('⌥ scales symmetrically around the center, with the offset counted twice', () => {
     expect(edgeResize({ ...base, handle: 'e', dx: 50, dy: 0, alt: true })).toMatchObject({ w: 300, cx: 500 });
   });
 
-  it('不窄于画布 2%，对边照样不动', () => {
+  it('not narrower than 2% of the canvas; the opposite edge still stays put', () => {
     const r = edgeResize({ ...base, handle: 'e', dx: -500, dy: 0 });
     expect(r.w).toBeCloseTo(38.4);
     expect(r.cx - r.w / 2).toBeCloseTo(400);
   });
 });
 
-describe('四角等比缩放', () => {
-  it('锚在对角：倍率按到对角的距离比，对角不动', () => {
+describe('corner proportional scaling', () => {
+  it('anchored at the diagonal: the scale factor is the ratio of distances to the diagonal corner, which stays put', () => {
     const { pose, factor } = cornerScale(box, 'se', { x: 600, y: 350 }, { x: 700, y: 400 }, false);
     expect(factor).toBeCloseTo(1.5);
     expect(pose.w).toBeCloseTo(300);
@@ -255,25 +255,25 @@ describe('四角等比缩放', () => {
     expect(pose.cy - pose.h / 2).toBeCloseTo(250);
   });
 
-  it('⌥ 锚在中心', () => {
+  it('⌥ anchors at the center', () => {
     const { pose, factor } = cornerScale(box, 'se', { x: 600, y: 350 }, { x: 700, y: 400 }, true);
     expect(factor).toBeCloseTo(2);
     expect(pose).toMatchObject({ cx: 500, cy: 300 });
   });
 
-  it('倍率夹在 0.1 以上', () => {
+  it('scale factor clamped to at least 0.1', () => {
     expect(cornerScale(box, 'se', { x: 600, y: 350 }, { x: 400.5, y: 250.2 }, false).factor).toBe(0.1);
   });
 
-  it('对角随旋转走', () => {
+  it('the diagonal follows the rotation', () => {
     const p = oppositeCorner({ ...box, rotation: 90 }, 'se');
     expect(p.x).toBeCloseTo(550);
     expect(p.y).toBeCloseTo(200);
   });
 });
 
-describe('旋转', () => {
-  it('15° 栅格；⇧ 自由一位小数', () => {
+describe('rotation', () => {
+  it('15° grid; ⇧ free with one decimal place', () => {
     expect(snapRotation(7.4, false)).toBe(0);
     expect(snapRotation(7.6, false)).toBe(15);
     expect(snapRotation(-172, false)).toBe(-165);
@@ -282,14 +282,14 @@ describe('旋转', () => {
     expect(snapRotation(33.33, true)).toBe(33.3);
   });
 
-  it('指针绕枢轴转过的角度', () => {
+  it('the angle the pointer turns around the pivot', () => {
     expect(dragRotation(0, { x: 500, y: 300 }, { x: 500, y: 200 }, { x: 600, y: 300 }, false)).toBe(90);
     expect(dragRotation(30, { x: 500, y: 300 }, { x: 500, y: 200 }, { x: 400, y: 300 }, false)).toBe(-60);
   });
 });
 
-describe('多选', () => {
-  it('整体平移：位移夹到全组都合法', () => {
+describe('multi-select', () => {
+  it('whole move: the offset is clamped so the whole group stays valid', () => {
     const starts = [
       { ...box, cx: 100 },
       { ...box, cx: 1800 },
@@ -299,7 +299,7 @@ describe('多选', () => {
     expect(d.y).toBe(0);
   });
 
-  it('整体缩放：绕统一框中心，把手跟手', () => {
+  it('whole scale: around the shared box center, handles follow the pointer', () => {
     const starts = [
       { cx: 400, cy: 300, w: 100, h: 100, rotation: 0 },
       { cx: 600, cy: 300, w: 100, h: 100, rotation: 15 },
@@ -313,8 +313,8 @@ describe('多选', () => {
   });
 });
 
-describe('键盘与框选', () => {
-  it('方向键 1%，⇧ 5%，⌥↑/↓ 0.1%；⌥←/→ 让给时间', () => {
+describe('keyboard and marquee selection', () => {
+  it('arrow keys move 1%, ⇧ 5%, ⌥↑/↓ 0.1%; ⌥←/→ is left to time', () => {
     expect(nudgeDelta('ArrowLeft', false, false, canvas)).toEqual({ x: -19.2, y: 0 });
     expect(nudgeDelta('ArrowRight', true, false, canvas)).toEqual({ x: 96, y: 0 });
     expect(nudgeDelta('ArrowUp', false, true, canvas)?.y).toBeCloseTo(-1.08);
@@ -322,7 +322,7 @@ describe('键盘与框选', () => {
     expect(nudgeDelta('a', false, false, canvas)).toBeNull();
   });
 
-  it('框选 4px 以内仍是点击；相交不算边贴边', () => {
+  it('marquee within 4px is still a click; intersecting does not count as edge-touching', () => {
     expect(marqueeRect({ x: 10, y: 10 }, { x: 12, y: 13 }).on).toBe(false);
     expect(marqueeRect({ x: 10, y: 10 }, { x: 6, y: 20 })).toEqual({ x: 6, y: 10, w: 4, h: 10, on: true });
     expect(rectsCross({ x: 0, y: 0, w: 10, h: 10 }, { x: 10, y: 0, w: 5, h: 5 })).toBe(false);

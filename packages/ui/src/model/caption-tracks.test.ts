@@ -48,8 +48,8 @@ const documents: Record<string, DocumentRecord> = {
   other: doc('other', 'caption', '旁白'),
 };
 
-describe('字幕轨条', () => {
-  it('每条轨上的每份字幕一枚 chip：原文写「原文」，译文写语言名；切开的几段算一枚', () => {
+describe('caption track strips', () => {
+  it('one chip per caption on each track: original written as \'original\', translation written as language name; several segments from a cut count as one chip', () => {
     const seq = sequence(
       [track('s2', 2), track('s1', 1)],
       [caption('c3', 's2', 'en'), caption('c2', 's1', 'orig', 60), caption('c1', 's1', 'orig', 0)],
@@ -61,7 +61,7 @@ describe('字幕轨条', () => {
     ]);
   });
 
-  it('同名的补上文档名；拿下的、轨被停用的、锁住的各有状态', () => {
+  it('same-named ones get the document name added; removed, track-disabled, and locked each have a status', () => {
     const seq = sequence(
       [track('s1', 1), track('s2', 2, { visible: false }), track('s3', 3, { locked: true })],
       [caption('a', 's1', 'orig'), caption('b', 's2', 'other'), caption('c', 's3', 'en', 0, { enabled: false })],
@@ -75,13 +75,13 @@ describe('字幕轨条', () => {
     expect(onScreen(chips).map((chip) => chip.documentId)).toEqual(['orig', 'other']);
   });
 
-  it('文档不在的实例不列；语言名认不出时原样', () => {
+  it('instances whose document is missing are not listed; when the language name is not recognized, shown as-is', () => {
     expect(captionChips(sequence([track('s1', 1)], [caption('x', 's1', 'missing')]), documents)).toEqual([]);
     expect(languageName('ja')).toBe('日本語');
     expect(languageName('!!')).toBe('!!');
   });
 
-  it('拿下：最后一条拒绝；否则把这枚的每段都停用', () => {
+  it('remove: the last one is refused; otherwise disable every segment of this chip', () => {
     const one = sequence([track('s1', 1)], [caption('a', 's1', 'orig'), caption('b', 's1', 'other', 60, { enabled: false })]);
     const chips = captionChips(one, documents);
     expect(dropOperations(one, chips, chips[0]!)).toEqual({ refused: 'last' });
@@ -95,7 +95,7 @@ describe('字幕轨条', () => {
     });
   });
 
-  it('放回：画面上已有两条时问一次（放回后三条）', () => {
+  it('put back: asked once when two tracks are already on screen (three after putting back)', () => {
     const seq = sequence(
       [track('s1', 1), track('s2', 2), track('s3', 3)],
       [caption('a', 's1', 'orig'), caption('b', 's2', 'en', 0, { enabled: false }), caption('c', 's3', 'other', 0, { enabled: false })],
@@ -112,7 +112,7 @@ describe('字幕轨条', () => {
     expect(putBackOperations(seq, after, after[2]!).confirm).toBe(3);
   });
 
-  it('倒转：只有原文与译文共用一份样式、都在画面上时才有目标', () => {
+  it('swap: target only exists when original and translation share one style and both are on screen', () => {
     const shared = sequence(
       [track('s1', 1), track('s2', 2)],
       [caption('a', 's1', 'orig', 0, { styleDocumentId: 'st' }), caption('b', 's2', 'en', 0, { styleDocumentId: 'st' })],

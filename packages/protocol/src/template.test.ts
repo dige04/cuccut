@@ -54,14 +54,14 @@ const base: TemplateManifest = {
   preview: { beats: ['一', '二', '三'] },
 };
 
-describe('模板清单的校验', () => {
-  it('合规的场景模板与作品示例', () => {
+describe('template manifest validation', () => {
+  it('valid scene templates and example works', () => {
     expect(parseTemplateManifest(base, 'sample-scene')).toEqual({ ok: true, manifest: base });
     const { ratio: _r, durationSeconds: _d, brief: _b, ...rest } = base;
     expect(templateManifestSchema.safeParse({ ...rest, kind: 'example' }).success).toBe(true);
   });
 
-  it('场景模板必须给画幅、时长与 brief；作品示例不得有 brief', () => {
+  it('scene templates must give aspect ratio, duration and brief; example works must not have a brief', () => {
     expect(templateManifestSchema.safeParse({ ...base, kind: 'example' }).success).toBe(false);
     for (const key of ['ratio', 'durationSeconds', 'brief'] as const) {
       const { [key]: _omit, ...rest } = base;
@@ -69,7 +69,7 @@ describe('模板清单的校验', () => {
     }
   });
 
-  it('brief 里的占位符与 fields 对得上：都声明、都引用、label 不重复', () => {
+  it('placeholders in the brief match fields: all declared, all referenced, no duplicate labels', () => {
     const ok = (patch: Partial<TemplateManifest>) => templateManifestSchema.safeParse({ ...base, ...patch }).success;
     expect(ok({ brief: '给 {{主题}} 做一条讲解，受众是 {{受众}}，再讲一遍 {{主题}}。' })).toBe(true);
     expect(ok({ brief: '给 {{主题}} 做一条讲解。' }), '受众没被引用').toBe(false);
@@ -87,7 +87,7 @@ describe('模板清单的校验', () => {
     expect(ok({ brief: many.map((f) => `{{${f.label}}}`).join(''), fields: many })).toBe(false);
   });
 
-  it('skills：kebab-case、不重复、最多 4 项', () => {
+  it('skills: kebab-case, no duplicates, at most 4 entries', () => {
     const ok = (skills: unknown) => templateManifestSchema.safeParse({ ...base, skills }).success;
     expect(ok([])).toBe(true);
     expect(ok(['video-production', 'video-production'])).toBe(false);
@@ -95,7 +95,7 @@ describe('模板清单的校验', () => {
     expect(ok(['a', 'b', 'c', 'd', 'e'])).toBe(false);
   });
 
-  it('时长 5–600 秒、步长 5；beats 3–5 条', () => {
+  it('duration 5–600 seconds, step 5; 3–5 beats', () => {
     for (const durationSeconds of [0, 3, 7, 605, 12.5])
       expect(templateManifestSchema.safeParse({ ...base, durationSeconds }).success).toBe(false);
     for (const durationSeconds of [5, 600, 185]) expect(templateManifestSchema.safeParse({ ...base, durationSeconds }).success).toBe(true);
@@ -103,7 +103,7 @@ describe('模板清单的校验', () => {
     expect(templateManifestSchema.safeParse({ ...base, preview: { beats: ['1', '2', '3', '4', '5', '6'] } }).success).toBe(false);
   });
 
-  it('未知字段被拒绝，不认识的 schema 单独报出', () => {
+  it('unknown fields are rejected; unrecognized schema is reported separately', () => {
     expect(templateManifestSchema.safeParse({ ...base, mode: 'quality' }).success).toBe(false);
     expect(templateManifestSchema.safeParse({ ...base, cover: { ...base.cover, color: 'red' } }).success).toBe(false);
     expect(parseTemplateManifest({ ...base, schema: 2 })).toMatchObject({ ok: false, reason: 'unsupported-schema' });
@@ -111,7 +111,7 @@ describe('模板清单的校验', () => {
     expect(parseTemplateManifest(base, 'other-name')).toMatchObject({ ok: false, reason: 'invalid' });
   });
 
-  it('id、版本、语言与许可的格式', () => {
+  it('formats of id, version, language and license', () => {
     for (const id of ['Promo', 'promo_ad', '-promo', 'promo--ad', '1promo'])
       expect(templateManifestSchema.safeParse({ ...base, id }).success, id).toBe(false);
     expect(templateManifestSchema.safeParse({ ...base, version: '1.0' }).success).toBe(false);
@@ -119,7 +119,7 @@ describe('模板清单的校验', () => {
     expect(templateManifestSchema.safeParse({ ...base, license: 'MIT OR Apache-2.0' }).success).toBe(true);
   });
 
-  it('路径只能是目录内的相对路径；封面、预览与素材各有位置', () => {
+  it('paths must be relative paths inside the directory; cover, preview and assets each have their own location', () => {
     for (const p of ['', '/etc/passwd', 'C:/x.png', '~/x.png', '../x.png', 'assets/../x.png', 'assets//x.png', 'assets\\x.png', './x.png'])
       expect(templatePathProblem(p), p).not.toBeNull();
     expect(templatePathProblem('assets/logo.svg')).toBeNull();
@@ -146,17 +146,17 @@ describe('模板清单的校验', () => {
   });
 });
 
-describe('待填项', () => {
+describe('fill-in fields', () => {
   const fields = [{ label: '产品', example: '线上瑜伽课' }, { label: '受众' }];
 
-  it('取出占位符，换成示例或「[label]」', () => {
+  it('placeholders are taken out and replaced with the example or "[label]"', () => {
     const text = '给 {{产品}} 做推广，受众是 {{受众}}，{{产品}} 要出现两次；{单个花括号}不算。';
     expect(templateSlots(text)).toEqual(['产品', '受众', '产品']);
     expect(templateExampleText(text, fields)).toBe('给 线上瑜伽课 做推广，受众是 受众，线上瑜伽课 要出现两次；{单个花括号}不算。');
     expect(templateUnfilledText(text)).toBe('给 [产品] 做推广，受众是 [受众]，[产品] 要出现两次；{单个花括号}不算。');
   });
 
-  it('对照声明找问题；scene 的正文不得有占位符，example 的正文与 fields 对得上', () => {
+  it('checks against declarations to find problems; scene body must have no placeholders, example body must match fields', () => {
     expect(templateSlotProblems('给 {{产品}}，受众 {{受众}}。', fields)).toEqual([]);
     expect(templateSlotProblems('给 {{产品}}，时长 {{时长}}。', fields)).toHaveLength(2);
     expect(templateSlotProblems('给 {{产品}}，受众 {{受众}}，{{坏的', fields)).toHaveLength(1);
@@ -168,7 +168,7 @@ describe('待填项', () => {
   });
 });
 
-describe('语言版本', () => {
+describe('language versions', () => {
   const en: TemplateTranslation = {
     title: 'Sample',
     summary: 'One line.',
@@ -182,7 +182,7 @@ describe('语言版本', () => {
     preview: { beats: ['One', 'Two', 'Three'] },
   };
 
-  it('译文文件名：locales/<语言小写>.json 与 .md，只认出货语言', () => {
+  it('translation file names: locales/<lowercase language>.json and .md, only shipped languages are recognized', () => {
     expect(templateTranslationFiles('pt-BR')).toEqual({ text: 'locales/pt-br.json', prompt: 'locales/pt-br.md' });
     expect(templateTranslationFile('locales/zh-hant.md')).toEqual({ locale: 'zh-Hant', part: 'prompt' });
     expect(templateTranslationFile('locales/en.json')).toEqual({ locale: 'en', part: 'text' });
@@ -190,7 +190,7 @@ describe('语言版本', () => {
       expect(templateTranslationFile(file), file).toBeNull();
   });
 
-  it('合规的译文；未知字段、超长与重复被拒绝', () => {
+  it('valid translations; unknown fields, overlong values and duplicates are rejected', () => {
     expect(parseTemplateTranslation(en, base)).toEqual({ ok: true, translation: en });
     expect(parseTemplateTranslation({ ...en, ratio: '9:16' }, base).ok).toBe(false);
     expect(parseTemplateTranslation({ ...en, title: 'x'.repeat(TEMPLATE_LIMITS.title + 1) }, base).ok).toBe(false);
@@ -198,7 +198,7 @@ describe('语言版本', () => {
     expect(parseTemplateTranslation({ ...en, cover: { tone: 'red' } }, base).ok).toBe(false);
   });
 
-  it('与 template.json 对照：brief 与 fields 对得上，项数相同，素材已登记', () => {
+  it('checked against template.json: brief and fields match, same item count, assets registered', () => {
     const issues = (value: unknown, manifest: TemplateManifest = base) => {
       const result = parseTemplateTranslation(value, manifest);
       return result.ok ? [] : result.issues;
@@ -213,7 +213,7 @@ describe('语言版本', () => {
     expect(issues(en, example)).toEqual([expect.stringMatching(/^brief: /)]);
   });
 
-  it('套用译文：文案与 language 换掉，其余字段与没译的部分不变', () => {
+  it('applying a translation replaces the copy and language; other fields and untranslated parts stay unchanged', () => {
     const withAssets: TemplateManifest = { ...base, assets: [{ path: 'assets/a.svg', type: 'svg', note: '图标' }, { path: 'assets/b.png', type: 'image', note: '底图' }] };
     const localized = localizeTemplateManifest(withAssets, 'en', { ...en, cover: { kicker: 'STEP' }, assets: [{ path: 'assets/a.svg', note: 'Icon' }] });
     expect(localized).toMatchObject({ id: base.id, version: base.version, language: 'en', title: 'Sample', brief: en.brief, fields: en.fields, tags: ['explainer'], ratio: '16:9' });
@@ -223,7 +223,7 @@ describe('语言版本', () => {
     expect(localizeTemplateManifest(base, 'en', { ...en, cover: undefined }).cover).toEqual(base.cover);
   });
 
-  it('挑语言：同一语言，其次同一主语言的另一种写法，再其次英文，最后用 template.json', () => {
+  it('language selection: same language, then another spelling of the same primary language, then English, finally template.json', () => {
     const all = ['en', 'ja', 'zh-Hant', 'pt-BR'] as const;
     expect(pickTemplateLanguage('zh-CN', all, 'ja')).toBe('ja');
     expect(pickTemplateLanguage('zh-CN', all, 'ja-JP')).toBe('ja');
@@ -239,7 +239,7 @@ describe('语言版本', () => {
   });
 });
 
-describe('验证记录', () => {
+describe('verification records', () => {
   const verification: TemplateVerification = {
     date: '2026-10-04',
     version: '1.0.0',
@@ -253,7 +253,7 @@ describe('验证记录', () => {
   };
   const ok = (v: unknown) => templateManifestSchema.safeParse({ ...base, verification: v }).success;
 
-  it('合规的记录；封面图、预览视频与占位字段可以并存', () => {
+  it('valid records; cover image, preview video and placeholder fields may coexist', () => {
     expect(ok(verification)).toBe(true);
     expect(ok({ ...verification, materials: [], capabilities: [] })).toBe(true);
     const full = {
@@ -264,7 +264,7 @@ describe('验证记录', () => {
     expect(templateManifestSchema.safeParse({ ...full, verification }).success).toBe(true);
   });
 
-  it('日期、版本、引擎、结论与能力的取值', () => {
+  it('allowed values for date, version, engine, verdict and capabilities', () => {
     for (const date of ['2026-13-01', '2026-02-30', '2026/10/04', '20261004']) expect(ok({ ...verification, date }), date).toBe(false);
     expect(ok({ ...verification, version: '1.0' })).toBe(false);
     expect(ok({ ...verification, engine: 'Codex 0.159' })).toBe(false);
@@ -273,7 +273,7 @@ describe('验证记录', () => {
     expect(ok({ ...verification, capabilities: ['generateMusic', 'generateMusic'] })).toBe(false);
   });
 
-  it('有成片时必须给实测的画幅与时长；fail 可以没有', () => {
+  it('when a final video exists, measured aspect ratio and duration must be given; fail may omit them', () => {
     const { output: _o, ...noOutput } = verification;
     expect(ok(noOutput)).toBe(false);
     expect(ok({ ...noOutput, outcome: 'fail' })).toBe(true);
@@ -281,7 +281,7 @@ describe('验证记录', () => {
     expect(ok({ ...verification, output: { ratio: '16:9', durationSeconds: 0 } })).toBe(false);
   });
 
-  it('素材要有 https 地址与许可；未知字段被拒绝', () => {
+  it('assets need an https address and a license; unknown fields are rejected', () => {
     const material = verification.materials[0]!;
     expect(ok({ ...verification, materials: [{ ...material, url: 'http://example.org/x' }] })).toBe(false);
     expect(ok({ ...verification, materials: [{ ...material, license: '' }] })).toBe(false);
@@ -291,8 +291,8 @@ describe('验证记录', () => {
   });
 });
 
-describe('templates.* 与发送时挂的模板', () => {
-  it('发送时的模板引用：id 为 kebab-case，素材是目录内的相对路径，没有别的字段', () => {
+describe('templates.* and templates attached when sending', () => {
+  it('template reference when sending: id is kebab-case, assets are relative paths inside the directory, no other fields', () => {
     expect(templateSendRefSchema.safeParse({ id: 'launch-film', version: '1.0.0', assets: ['assets/logo.svg'] }).success).toBe(true);
     expect(templateSendRefSchema.safeParse({ id: 'Launch' }).success).toBe(false);
     expect(templateSendRefSchema.safeParse({ id: 'launch-film', assets: ['../x.svg'] }).success).toBe(false);
@@ -301,7 +301,7 @@ describe('templates.* 与发送时挂的模板', () => {
     expect(send.safeParse({ conversationId: 'c', text: 'hi', commandId: 'k', template: { id: 'launch-film' } }).success).toBe(true);
   });
 
-  it('openHandle 只收模板内的相对路径', () => {
+  it('openHandle accepts only relative paths inside the template', () => {
     const open = methodParamSchemas['templates.openHandle'];
     expect(open.safeParse({ id: 'launch-film', path: 'cover.png' }).success).toBe(true);
     for (const p of ['/etc/passwd', '../x.png', 'assets//x.svg'])
@@ -309,7 +309,7 @@ describe('templates.* 与发送时挂的模板', () => {
     expect(methodParamSchemas['templates.list'].safeParse({ extra: 1 }).success).toBe(false);
   });
 
-  it('列表、单个模板与发送时可以带想要的语言', () => {
+  it('list, single template and sending can carry a requested language', () => {
     expect(methodParamSchemas['templates.list'].safeParse({ language: 'zh-Hant' }).success).toBe(true);
     expect(methodParamSchemas['templates.get'].safeParse({ id: 'launch-film', language: 'pt-BR' }).success).toBe(true);
     expect(templateSendRefSchema.safeParse({ id: 'launch-film', language: 'ja' }).success).toBe(true);
@@ -329,18 +329,18 @@ function listFiles(dir: string, prefix = ''): string[] {
     });
 }
 
-describe('仓库内置模板 templates/', () => {
+describe('built-in repository templates in templates/', () => {
   const dirs = fs
     .readdirSync(TEMPLATES_DIR, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort();
 
-  it('有模板目录', () => {
+  it('has a template directory', () => {
     expect(dirs.length).toBeGreaterThan(0);
   });
 
-  it.each(dirs)('%s：清单合法、id 等于目录名、提示词非空、引用的文件都在', (dir) => {
+  it.each(dirs)('%s: manifest is valid, id equals directory name, prompt is non-empty, referenced files all exist', (dir) => {
     const root = path.join(TEMPLATES_DIR, dir);
     const result = parseTemplateManifest(JSON.parse(fs.readFileSync(path.join(root, TEMPLATE_MANIFEST_FILE), 'utf8')), dir);
     if (!result.ok) throw new Error(`${dir}: ${result.issues.join('; ')}`);
@@ -373,7 +373,7 @@ describe('仓库内置模板 templates/', () => {
     expect(own, `${dir} 不该有原文语言的译文`).toEqual([]);
   });
 
-  it('id 不重复', () => {
+  it('ids are not duplicated', () => {
     const ids = dirs.map((dir) => JSON.parse(fs.readFileSync(path.join(TEMPLATES_DIR, dir, TEMPLATE_MANIFEST_FILE), 'utf8')).id);
     expect(new Set(ids).size).toBe(ids.length);
   });
@@ -383,7 +383,7 @@ describe('仓库内置模板 templates/', () => {
     return LOCALES.filter((locale) => locale !== localeOfTag(manifest.language)).map((locale) => [`${dir} · ${locale}`, dir, locale] as const);
   });
 
-  it.each(translations)('%s：译文齐全、合法，与 template.json 对得上', (_name, dir, locale) => {
+  it.each(translations)('%s: translations are complete and valid, match template.json', (_name, dir, locale) => {
     const root = path.join(TEMPLATES_DIR, dir);
     const result = parseTemplateManifest(JSON.parse(fs.readFileSync(path.join(root, TEMPLATE_MANIFEST_FILE), 'utf8')), dir);
     if (!result.ok) throw new Error(`${dir}: ${result.issues.join('; ')}`);

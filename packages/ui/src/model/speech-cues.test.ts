@@ -136,8 +136,8 @@ function speechBody(list: Array<W | [string, number, number, string, string | un
 
 const texts = (cues: { text: string }[]) => cues.map((cue) => cue.text);
 
-describe('字符规则（与远端导出一致，谚文空格除外）', () => {
-  it('全角字算 2；西文词之间加空格，全角字与标点前不加；前导空格的词原样接', () => {
+describe('character rules (match the remote export, except Hangul spaces)', () => {
+  it('full-width characters count as 2; a space goes between Western words, none before full-width characters or punctuation; a word with a leading space is joined as is', () => {
     expect(displayWidth('ab中文')).toBe(6);
     expect(joinWords(['Hello', ',', 'world'], false)).toBe('Hello, world');
     expect(joinWords(['我', '用', 'CucCut', '剪', '。'], false)).toBe('我用CucCut剪。');
@@ -147,7 +147,7 @@ describe('字符规则（与远端导出一致，谚文空格除外）', () => {
     expect(joinWords(['한국', 'iPhone', '中文'], false)).toBe('한국 iPhone中文');
   });
 
-  it('句末与从句标点照 cue.rs：缩写、带点的词干不算句末；至多跳过一个右引号', () => {
+  it('sentence-end and clause punctuation follow cue.rs: abbreviations and dotted word stems do not end a sentence; at most one closing quote is skipped', () => {
     expect(sentenceEnd('ready.')).toBe(true);
     expect(sentenceEnd('好。')).toBe(true);
     expect(sentenceEnd('done."')).toBe(true);
@@ -163,8 +163,8 @@ describe('字符规则（与远端导出一致，谚文空格除外）', () => {
   });
 });
 
-describe('切条（cue.rs 的夹具）', () => {
-  it('西文行宽正好 42 格', () => {
+describe('cue splitting (cue.rs fixtures)', () => {
+  it('a Western line is exactly 42 cells wide', () => {
     const words = placed([
       ['w0', 0, 1, 'abcdefghijklmnopqrst'],
       ['w1', 1, 2, 'abcdefghijklmnopqrstu'],
@@ -180,7 +180,7 @@ describe('切条（cue.rs 的夹具）', () => {
     ]);
   });
 
-  it('中日韩字算双宽、不加空格：21 个字一条，第 22 个另起', () => {
+  it('CJK characters count as double width with no spaces: 21 characters per cue, the 22nd starts a new one', () => {
     const cues = deriveCues(contiguous([...'字幕系统需要在中文字符之间保持自然换行规则稳'], 0.1, 'c'));
     expect(cues.map((cue) => [cue.id, cue.text])).toEqual([
       ['q-c0', '字幕系统需要在中文字符之间保持自然换行规则'],
@@ -189,18 +189,18 @@ describe('切条（cue.rs 的夹具）', () => {
     expect(cues[0]!.end).toBeCloseTo(2.1);
   });
 
-  it('短句的句号照样收口，不把下一句吞进来', () => {
+  it('a period ends a short sentence without swallowing the next one', () => {
     const cues = deriveCues(contiguous('take their job. Maybe they use a new tool.'.split(' '), 0.5));
     expect(texts(cues)).toEqual(['take their job.', 'Maybe they use a new tool.']);
   });
 
-  it('中文句号断开', () => {
+  it('a Chinese full stop breaks the cue', () => {
     const cues = deriveCues(contiguous(cjkTokens('今天我们来聊一聊这个产品的设计。然后再看看它的实现细节究竟如何。'), 0.2));
     expect(cues).toHaveLength(2);
     expect(cues[0]!.text.endsWith('。')).toBe(true);
   });
 
-  it('说话人切换一定断', () => {
+  it('a speaker change always breaks the cue', () => {
     const cues = deriveCues(
       placed([
         ['w0', 0, 1, '你好', 'A'],
@@ -213,7 +213,7 @@ describe('切条（cue.rs 的夹具）', () => {
     ]);
   });
 
-  it('从句标点：逗号要行宽满 12，破折号满 6', () => {
+  it('clause punctuation: a comma needs a line width of at least 12, a dash at least 6', () => {
     expect(texts(deriveCues(contiguous(['Hello,', 'I', 'am', 'here'], 0.3)))).toEqual(['Hello, I am here']);
     expect(texts(deriveCues(contiguous(['This', 'is', 'a', 'long', 'clause,', 'and', 'more'], 0.3)))).toEqual([
       'This is a long clause,',
@@ -223,7 +223,7 @@ describe('切条（cue.rs 的夹具）', () => {
     expect(texts(deriveCues(contiguous(['Stop', 'it—', 'now'], 0.3)))).toEqual(['Stop it—', 'now']);
   });
 
-  it('停顿：0.6 秒以上且行宽满 20 才断；超过 1 秒一定断（远端的分句规则）', () => {
+  it('pause: breaks only after 0.6 s or more with a line width of at least 20; over 1 s always breaks (remote sentence-split rule)', () => {
     const long = placed([
       ['w0', 0, 1, 'abcdefghij'],
       ['w1', 1, 2, 'klmnopqrst'],
@@ -242,13 +242,13 @@ describe('切条（cue.rs 的夹具）', () => {
     expect(texts(deriveCues(gap))).toEqual(['Hi', 'there']);
   });
 
-  it('溢出：下一个词收在标点上、总宽不超 50 时收进来', () => {
+  it('overflow: the next word is taken in when it ends on punctuation and the total width stays within 50', () => {
     const head = 'abcdefghijklmnopqrstuvwxyzabcdefghijklmn'; // 40
     expect(texts(deriveCues(contiguous([head, 'opq,', 'rest'], 0.3)))).toEqual([`${head} opq,`, 'rest']);
     expect(texts(deriveCues(contiguous([head, 'opqr', 'rest'], 0.3)))).toEqual([head, 'opqr rest']);
   });
 
-  it('一条不超过 7 秒（远端导出的上限）', () => {
+  it('a cue lasts no more than 7 seconds (remote export limit)', () => {
     const cues = deriveCues(contiguous(Array.from({ length: 10 }, () => 'a'), 1));
     expect(cues.map((cue) => [cue.start, cue.end])).toEqual([
       [0, 7],
@@ -256,16 +256,16 @@ describe('切条（cue.rs 的夹具）', () => {
     ]);
   });
 
-  it('前导空格的词：拼接与行宽按原样', () => {
+  it('words with a leading space: joining and line width as is', () => {
     const cues = deriveCues(contiguous([' Hello', ' world.', ' Next'], 0.3));
     expect(texts(cues)).toEqual(['Hello world.', 'Next']);
   });
 });
 
-describe('读转写', () => {
+describe('reading transcription', () => {
   const one = sequence([video('v', 0, 300, 0)]);
 
-  it('隐藏的词不进字幕（cue.rs 契约）', () => {
+  it('hidden words stay out of subtitles (cue.rs contract)', () => {
     const body = speechBody([
       ['w0', 0, 0.2, 'Um', undefined, { hidden: true }],
       ['w1', 0.2, 0.7, 'Hello'],
@@ -279,7 +279,7 @@ describe('读转写', () => {
     expect(cues[0]!.end).toBeCloseTo(1.4);
   });
 
-  it('全部隐藏就没有字幕；不是转写正文返回 null', () => {
+  it('all words hidden means no subtitles; a value that is not transcript body returns null', () => {
     const body = speechBody([
       ['w0', 0, 0.5, 'Hidden', undefined, { hidden: true }],
       ['w1', 0.5, 1, 'line.', undefined, { hidden: true }],
@@ -288,7 +288,7 @@ describe('读转写', () => {
     expect(readSpeechWords({ schema: 'cuccut.caption/1', cues: [] })).toBeNull();
   });
 
-  it('没有词时间的整段：按空白与标点拆开，过宽的按宽度切，时间按宽度插值；数字里的点不断', () => {
+  it('a segment without word timing: split on whitespace and punctuation, cut over-wide pieces by width, interpolate times by width; a dot inside a number does not break', () => {
     const pieces = splitUntimed('今天聊产品设计，然后看实现。接着讲 2.14 版', 10, 30, 42);
     expect(pieces.map((p) => p.text)).toEqual(['今天聊产品设计，', '然后看实现。', '接着讲', '2.14', '版']);
     expect(pieces[0]!.start).toBe(10);
@@ -316,7 +316,7 @@ describe('读转写', () => {
     expect(cues.every((cue) => cue.end - cue.start <= 7)).toBe(true);
   });
 
-  it('零时长的词不丢：后面有空隙就占一小段（至多 0.08 秒），紧挨着下一个词的并进相邻的词', () => {
+  it('zero-length words are kept: when a gap follows, they take a short slice (at most 0.08 s); words directly before the next word merge into their neighbour', () => {
     const long = sequence([video('v', 0, 600, 0)]);
     // Real sample: the aligner resolved the start and end of “ask—you” to the same cell, and a 0.24-second gap follows.
     const gap = readSpeechWords(
@@ -360,7 +360,7 @@ describe('读转写', () => {
     expect(tail[1]!.end).toBeCloseTo(0.58);
   });
 
-  it('存了句子时按句子断：句中的「Dr.」不断，句子换了就断，段首标在句子第一个成员上', () => {
+  it('with stored sentences, break by sentence: "Dr." inside a sentence does not break, a sentence change breaks, the segment start is set on the sentence\'s first member', () => {
     const list: W[] = [
       ['w0', 0, 0.3, 'Dr.'],
       ['w1', 0.3, 0.6, 'Smith'],
@@ -389,7 +389,7 @@ describe('读转写', () => {
   });
 });
 
-describe('投到序列上（text_plan.rs 的 asset-items）', () => {
+describe('project onto the sequence (text_plan.rs asset-items)', () => {
   const words = readSpeechWords(
     speechBody([
       ['w0', 4.5, 4.9, 'before'],
@@ -399,7 +399,7 @@ describe('投到序列上（text_plan.rs 的 asset-items）', () => {
     ]),
   )!.words;
 
-  it('按入点与裁切换算：范围外的丢掉，跨出点的裁在区间里', () => {
+  it('remapped by in point and trim: items outside the range are dropped, items crossing the out point are cut to the range', () => {
     // The instance is placed at 1–3 seconds, taking source 5–7 seconds.
     const out = projectSpeech(sequence([video('v', 30, 60, 5)]), 'asset_a', words);
     expect(out.map((word) => word.id)).toEqual(['w1', 'w2']);
@@ -409,7 +409,7 @@ describe('投到序列上（text_plan.rs 的 asset-items）', () => {
     expect(out[1]!.end).toBeCloseTo(3);
   });
 
-  it('变速：源时间除以速度', () => {
+  it('speed change: source time divided by speed', () => {
     const out = projectSpeech(sequence([video('v', 0, 60, 4, 2)]), 'asset_a', words);
     // Source 4–8 seconds is compressed into 0–2 seconds.
     expect(out.map((word) => [word.id, +word.start.toFixed(3), +word.end.toFixed(3)])).toEqual([
@@ -420,12 +420,12 @@ describe('投到序列上（text_plan.rs 的 asset-items）', () => {
     ]);
   });
 
-  it('定格、别的素材与图片不投影', () => {
+  it('freeze frames, other media and images are not projected', () => {
     const hold: VideoItem = { ...video('h', 0, 300, 0), timeMap: { kind: 'hold', sourceAt: { ticks: '0', timescale: 1 } } };
     expect(projectSpeech(sequence([hold, video('o', 0, 300, 0, 1, 'asset_b')]), 'asset_a', words)).toEqual([]);
   });
 
-  it('同一素材放了两次：两处都投到，key 不同，次序稳定；字幕在素材时钟上只切一条', () => {
+  it('same media placed twice: projected at both places with different keys and a stable order; subtitles on the media clock are cut as one cue', () => {
     const one = readSpeechWords(speechBody([['w-000001', 0.2, 0.5, 'Hi.']]))!.words;
     const seq = sequence([video('v2', 60, 30, 0), video('v1', 0, 30, 0)]);
     const out = projectSpeech(seq, 'asset_a', one);
@@ -437,13 +437,13 @@ describe('投到序列上（text_plan.rs 的 asset-items）', () => {
     expect(deriveCues(one).map((cue) => [cue.id, cue.start])).toEqual([['q-w-000001', 0.2]]);
   });
 
-  it('链接在一起的音视频重叠：后来的只占没被占的区间，不出重复', () => {
+  it('linked audio and video overlap: the later one takes only the uncovered span, no duplicates', () => {
     const out = projectSpeech(sequence([audio('b-audio', 0, 10), video('a-video', 0, 300, 0)]), 'asset_a', words);
     expect(out.map((word) => word.key)).toEqual(['a-video:w0', 'a-video:w1', 'a-video:w2', 'a-video:w3']);
   });
 });
 
-describe('写成字幕文档', () => {
+describe('written as a subtitle document', () => {
   const cues = [
     { id: 'q-w0', start: 0.2, end: 1.5, text: '你好', speaker: 'S1', wordIds: ['w0', 'w0b'] },
     { id: 'q-w1', start: 1.4, end: 2.0004, text: '再见', speaker: 'S2', wordIds: ['w1'] },
@@ -453,7 +453,7 @@ describe('写成字幕文档', () => {
     ['S2', '嘉宾'],
   ]);
 
-  it('素材时钟、毫秒刻度；不压到下一条；两个以上说话人才写名字；每条指向转写里的首词到末词', () => {
+  it('media clock in milliseconds; a cue does not run into the next one; speaker names are written only with two or more speakers; each cue points from the first to the last transcript word', () => {
     expect(speechCaptionBody(cues, speakers)).toEqual({
       schema: 'cuccut.caption/1',
       clock: 'source-asset',
@@ -470,7 +470,7 @@ describe('写成字幕文档', () => {
     expect((single.cues as object[]).every((cue) => !('speaker' in cue))).toBe(true);
   });
 
-  it('取整撞在一起：结束至少比开始晚 1 毫秒，下一条的开始推到这一条的结束（远端 quantize）', () => {
+  it('rounding collision: the end is at least 1 ms after the start, and the next start is pushed to this cue\'s end (remote quantize)', () => {
     const same = [
       { id: 'a', start: 1.0001, end: 1.0002, text: '一', wordIds: ['a'] },
       { id: 'b', start: 1.0003, end: 1.0004, text: '二', wordIds: ['b'] },
@@ -484,7 +484,7 @@ describe('写成字幕文档', () => {
     ]);
   });
 
-  it('事务：记下来源转写与版本；没有作用实例时实例盖住第一条到最后一条；有空字幕轨就放进去', () => {
+  it('transaction: records the source transcript and version; with no target instance, the instance covers the first to the last cue; placed on an empty subtitle track if one exists', () => {
     const body = speechCaptionBody(cues, speakers);
     const source = { name: '访谈 字幕', language: 'zh', speechDocumentId: 'doc_s', speechRevision: '3', assetId: 'asset_a', trackName: '字幕' };
     const ops = speechCaptionOperations(sequence([], [track('s1', 1, 'subtitle')]), body, source);
@@ -504,7 +504,7 @@ describe('写成字幕文档', () => {
     expect(fresh[2]).toMatchObject({ items: [{ trackRef: 'new-subtitle-track' }] });
   });
 
-  it('事务：作用实例是取用这个素材的实例（按起点排），实例盖住它们；文档记下素材', () => {
+  it('transaction: the target instances are the instances that use this media (sorted by start), and the instance covers them; the document records the media', () => {
     const body = speechCaptionBody(cues, speakers);
     const source = { name: '访谈 字幕', speechDocumentId: 'doc_s', speechRevision: '3', assetId: 'asset_a', trackName: '字幕' };
     // Two segments: 3–5 seconds and 1–2 seconds; other assets do not count.
@@ -520,8 +520,8 @@ describe('写成字幕文档', () => {
   });
 });
 
-describe('句数', () => {
-  it('终止标点收住一句；缩写、小数、网址不算；没收尾的最后一段也算一句', () => {
+describe('sentence count', () => {
+  it('terminal punctuation ends a sentence; abbreviations, decimals and URLs do not count; an unterminated last segment also counts as a sentence', () => {
     expect(countSentences(['今天聊设计。再看实现。'])).toBe(2);
     expect(countSentences(['Hello world, this is', 'a test. And more'])).toBe(2);
     expect(countSentences(['Dr. Smith is here.'])).toBe(1);
@@ -533,7 +533,7 @@ describe('句数', () => {
   });
 });
 
-describe('投影转写的候选筛选', () => {
+describe('candidate filtering for projected transcription', () => {
   /** The way it was written before: each instance and each word projected pair by pair. */
   function projectAll(seq: Sequence, assetId: string, words: readonly SpeechWord[]): PlacedWord[] {
     const items = seq.items
@@ -575,7 +575,7 @@ describe('投影转写的候选筛选', () => {
     return placed.sort((x, y) => x.start - y.start || (x.key < y.key ? -1 : x.key > y.key ? 1 : 0));
   }
 
-  it('与逐对投影的结果完全相同：交错、变速、重复取用同一段源、跨剪点的长词、重复的 ID', () => {
+  it('matches pairwise projection exactly: interleaved, speed-changed, repeated use of the same source span, long words across a cut point, duplicate IDs', () => {
     let seed = 11;
     const next = (n: number) => {
       seed = (seed * 1103515245 + 12345) % 2147483648;
@@ -599,7 +599,7 @@ describe('投影转写的候选筛选', () => {
     expect(fast).toEqual(projectAll(seq, 'asset_a', words));
   });
 
-  it('已占区间并起来扣，与逐对扣相同：首尾相接、嵌套、同区间不同 ID、被前面几段盖满、±0', () => {
+  it('subtracting merged occupied spans matches pairwise subtraction: end-to-start adjacency, nesting, same span with different IDs, fully covered by earlier spans, ±0', () => {
     let seed = 23;
     const next = (n: number) => {
       seed = (seed * 1103515245 + 12345) % 2147483648;
@@ -664,7 +664,7 @@ describe('投影转写的候选筛选', () => {
     expect(fast).toEqual(projectAll(seq, 'asset_a', words));
   });
 
-  it('已占区间不按起点放进来时，扣出的段也与逐对扣相同（交叠、相接、嵌套、乱序、±0、NaN）', () => {
+  it('when occupied spans are not added in start order, the subtracted pieces still match pairwise subtraction (overlap, adjacency, nesting, out of order, ±0, NaN)', () => {
     const pairwise = (interval: [number, number], taken: ReadonlyArray<[number, number]>) => {
       let parts = [interval];
       for (const [a, b] of taken) {
@@ -744,7 +744,7 @@ describe('投影转写的候选筛选', () => {
     }
   });
 
-  it('区间端点是 NaN 时改回逐对扣', () => {
+  it('falls back to pairwise subtraction when a span endpoint is NaN', () => {
     const items: Sequence['items'] = [video('c0', 0, 300, 0), video('c1', 200, 300, 5)];
     // playDuration is not a number: the end of the interval is NaN.
     const broken = audio('c2', 400, 1);

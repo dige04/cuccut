@@ -42,8 +42,8 @@ function harness(request: (entryId: string) => Promise<SpaceThumbnail>, options:
   return { cache, advance };
 }
 
-describe('Space 缩略图缓存', () => {
-  it('挂上才取，取到了通知并记住；同一份结果返回同一个对象', async () => {
+describe('Space thumbnail cache', () => {
+  it('fetched only once mounted; on fetch, notifies and remembers; the same result returns the same object', async () => {
     const request = vi.fn(async (id: string) => picture(id));
     const { cache, advance } = harness(request);
     const listener = vi.fn();
@@ -71,7 +71,7 @@ describe('Space 缩略图缓存', () => {
     expect(request).toHaveBeenCalledTimes(1);
   });
 
-  it('同时只发几个，后挂上的先取；滚走了还在排队的不发', async () => {
+  it('only a few at a time, the one mounted later is fetched first; ones scrolled away while still queued are not sent', async () => {
     const pending = new Map<string, ReturnType<typeof deferred<SpaceThumbnail>>>();
     const request = vi.fn((id: string) => {
       const d = deferred<SpaceThumbnail>();
@@ -96,7 +96,7 @@ describe('Space 缩略图缓存', () => {
     expect(request.mock.calls.map(([id]) => id)).toEqual(['e', 'd', 'b', 'a', 'c']);
   });
 
-  it('会话卡和 Space 共用一次请求；一处卸下后另一处仍能等到视频封面', async () => {
+  it('the session card and the Space share one request; after one place unmounts, the other still gets the video cover', async () => {
     let ready = false;
     const request = vi.fn(async (): Promise<SpaceThumbnail> => (ready ? picture('poster') : { kind: 'none' }));
     const { cache, advance } = harness(request);
@@ -114,7 +114,7 @@ describe('Space 缩略图缓存', () => {
     releaseCard();
   });
 
-  it('排队超过上限时丢掉最早排进来的', async () => {
+  it('when the queue exceeds the limit, drop the earliest queued', async () => {
     const gate = deferred<SpaceThumbnail>();
     const request = vi.fn((id: string) => (id === 'busy' ? gate.promise : Promise.resolve(picture(id))));
     const { cache } = harness(request, { concurrency: 1, maxQueue: 2 });
@@ -126,7 +126,7 @@ describe('Space 缩略图缓存', () => {
     expect(request.mock.calls.map(([id]) => id)).toEqual(['busy', 'c', 'b']);
   });
 
-  it('版本变了重取，新的到之前先画旧的', async () => {
+  it('a version change refetches; the old one is drawn until the new one arrives', async () => {
     let n = 0;
     const gate = deferred<SpaceThumbnail>();
     const request = vi.fn(async () => (++n === 1 ? picture('old') : gate.promise));
@@ -147,7 +147,7 @@ describe('Space 缩略图缓存', () => {
     });
   });
 
-  it('not-found 与 forbidden 当作没有，不重试', async () => {
+  it('not-found and forbidden are treated as absent and not retried', async () => {
     const request = vi.fn(async (id: string): Promise<SpaceThumbnail> => {
       throw new RpcError(id === 'gone' ? 'not-found' : 'forbidden', 'no');
     });
@@ -161,7 +161,7 @@ describe('Space 缩略图缓存', () => {
     expect(cache.peek('hidden')).toEqual({ kind: 'none' });
   });
 
-  it('其余失败立刻再要一次（超时之后 Runtime 已经缓存），之后退避，几次都不行就放弃', async () => {
+  it('other failures are requested again immediately (after a timeout the Runtime has already cached it), then back off; give up after several failures', async () => {
     const request = vi.fn(async (): Promise<SpaceThumbnail> => {
       throw new RpcError('internal', '请求超时：space.thumbnail');
     });
@@ -185,7 +185,7 @@ describe('Space 缩略图缓存', () => {
     expect(request).toHaveBeenCalledTimes(6);
   });
 
-  it('重新连上之后，断开期间放弃了的再要；拿到了的不重取', async () => {
+  it('after reconnecting, requests abandoned during the disconnect are requested again; ones already obtained are not refetched', async () => {
     let connected = false;
     const request = vi.fn(async (id: string): Promise<SpaceThumbnail> => {
       if (!connected && id === 'a') throw new RpcError('internal', '与 Runtime 的连接已断开');
@@ -209,7 +209,7 @@ describe('Space 缩略图缓存', () => {
     expect(cache.peek('a')).toMatchObject({ kind: 'image' });
   });
 
-  it('超时后立刻再要一次就拿到', async () => {
+  it('after a timeout, requesting again immediately gets it', async () => {
     let n = 0;
     const request = vi.fn(async () => {
       if (++n === 1) throw new RpcError('internal', '请求超时：space.thumbnail');
@@ -222,7 +222,7 @@ describe('Space 缩略图缓存', () => {
     expect(cache.peek('a')).toMatchObject({ kind: 'image' });
   });
 
-  it('视频答 none（内容索引还没追平）时隔一阵复查，最多两次；其他类型不复查', async () => {
+  it('when a video answers none (the content index has not caught up yet), re-check after a delay, at most twice; other types are not re-checked', async () => {
     const answers: SpaceThumbnail[] = [{ kind: 'none' }, { kind: 'none' }, { kind: 'none' }];
     const request = vi.fn(async (id: string) => (id === 'doc' ? ({ kind: 'none' } as const) : answers.shift()!));
     const { cache, advance } = harness(request);
@@ -239,7 +239,7 @@ describe('Space 缩略图缓存', () => {
     expect(request.mock.calls.filter(([id]) => id === 'doc')).toHaveLength(1);
   });
 
-  it('记住的条目有上限，最久没用、没挂着的先丢', async () => {
+  it('remembered entries are capped; the least recently used ones that are not mounted are dropped first', async () => {
     const request = vi.fn(async (id: string) => picture(id));
     const { cache } = harness(request, { maxEntries: 2 });
     const releaseA = cache.retain('a', 'image', 'v1');
@@ -256,7 +256,7 @@ describe('Space 缩略图缓存', () => {
     expect(cache.peek('c')).not.toBeNull();
   });
 
-  it('clear 之后路上的请求回来也不收', async () => {
+  it('after clear, in-flight requests that come back are not kept', async () => {
     const gate = deferred<SpaceThumbnail>();
     const { cache } = harness(() => gate.promise);
     cache.retain('a', 'image', 'v1');

@@ -11,10 +11,10 @@ import { cssUrl, parseFontFaceCss, underEndpoint } from './google-fonts-css.ts';
 
 /** Font catalogue, requests and responses for the CSS endpoint, and download limits (architecture design §9.1). No network: downloads use the local fake service. */
 
-describe('随应用发布的字体目录', () => {
+describe('font catalog shipped with the app', () => {
   const catalogue = FontCatalogue.builtin();
 
-  it('有日期、上千个族，每个族有分类、文字、字重与开源许可；族名不重复', () => {
+  it('dated, with over a thousand families, each with category, scripts, weights and an open-source license; family names are not duplicated', () => {
     expect(catalogue.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     const families = catalogue.families();
     expect(families.length).toBeGreaterThan(1500);
@@ -31,7 +31,7 @@ describe('随应用发布的字体目录', () => {
     expect(families.filter((f) => f.scripts.includes('chinese')).length).toBeGreaterThan(10);
   });
 
-  it('文字按子集归类：中文的几个子集都算中文，不认识的子集归到 other', () => {
+  it('scripts are grouped by subset: several Chinese subsets all count as Chinese, and unrecognized subsets go to other', () => {
     expect(fontScriptsOf(['chinese-simplified', 'chinese-hongkong', 'latin', 'latin-ext', 'symbols'])).toEqual([
       'chinese',
       'latin',
@@ -40,7 +40,7 @@ describe('随应用发布的字体目录', () => {
     expect(FONT_SCRIPTS).toContain('japanese');
   });
 
-  it('目录格式不对时拒绝；坏条目跳过', () => {
+  it('rejects a catalog with the wrong format; skips bad entries', () => {
     expect(() => FontCatalogue.parse({ schema: 'x', families: [] })).toThrow();
     const parsed = FontCatalogue.parse({
       schema: 'cuccut.google-fonts-catalogue/1',
@@ -50,7 +50,7 @@ describe('随应用发布的字体目录', () => {
   });
 });
 
-describe('按目录对字重', () => {
+describe('matches weights against the catalog', () => {
   const entry = FontCatalogue.parse({
     schema: 'cuccut.google-fonts-catalogue/1',
     families: [
@@ -61,7 +61,7 @@ describe('按目录对字重', () => {
   });
   const several = entry.get('Several')!;
 
-  it('与 CSS 的字体匹配相同：400–500 先往上到 500 再往下，<400 先往下，>500 先往上；斜体有就挑斜体', () => {
+  it('same as CSS font matching: 400-500 searches up to 500 first, then down; under 400 searches down first; over 500 searches up first; picks italic when available', () => {
     expect(snapFace(several, 400, false)).toEqual({ weight: 400, italic: false });
     expect(snapFace(several, 500, false)).toEqual({ weight: 400, italic: false });
     expect(snapFace(several, 200, false)).toEqual({ weight: 300, italic: false });
@@ -71,7 +71,7 @@ describe('按目录对字重', () => {
     expect(snapFace(entry.get('Heavy')!, 400, true)).toEqual({ weight: 700, italic: false });
   });
 
-  it('没说要哪些 face 时下载常规与粗体，对好之后相同的只算一次', () => {
+  it('when no faces are specified, downloads regular and bold; after matching, duplicates count only once', () => {
     expect(defaultFaces(several)).toEqual([
       { weight: 400, italic: false },
       { weight: 900, italic: false },
@@ -80,8 +80,8 @@ describe('按目录对字重', () => {
   });
 });
 
-describe('CSS 接口', () => {
-  it('请求只带族名与字重、斜体，取值按（斜体、字重）升序', () => {
+describe('CSS interface', () => {
+  it('the request carries only family name, weight and italic, with values sorted ascending by (italic, weight)', () => {
     expect(cssUrl('https://fonts.googleapis.com/', 'Noto Sans SC', [{ weight: 700, italic: false }])).toBe(
       'https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@700',
     );
@@ -95,7 +95,7 @@ describe('CSS 接口', () => {
     ).toBe('https://mirror.example/fonts/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400');
   });
 
-  it('读出 @font-face：族名、字重范围、斜体、地址、格式与是否分片', () => {
+  it('reads @font-face: family name, weight range, italic, URL, format and whether it is chunked', () => {
     const css = `/* latin */
 @font-face {
   font-family: 'Playfair Display';
@@ -131,7 +131,7 @@ describe('CSS 接口', () => {
     ]);
   });
 
-  it('文件地址只认 https、同一个源、在基址的路径之下、不带账号', () => {
+  it('file URLs are accepted only if https, same origin, under the base path, and without credentials', () => {
     expect(underEndpoint('https://fonts.gstatic.com/s/a/1.ttf', 'https://fonts.gstatic.com')).toBe(true);
     expect(underEndpoint('https://m.example/fonts/s/a.ttf', 'https://m.example/fonts/')).toBe(true);
     expect(underEndpoint('https://m.example/other/a.ttf', 'https://m.example/fonts')).toBe(false);
@@ -142,7 +142,7 @@ describe('CSS 接口', () => {
   });
 });
 
-describe('下载的上限与跳转', () => {
+describe('download size limit and redirects', () => {
   async function serve(handler: http.RequestListener): Promise<{ url: string; close(): Promise<void> }> {
     const server = http.createServer(handler);
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -152,7 +152,7 @@ describe('下载的上限与跳转', () => {
     };
   }
 
-  it('声明或实际超过上限的不收（INTEGRITY）；跳转不跟（SOURCE）；地址不进错误信息', async () => {
+  it('files declared or actually over the limit are rejected (INTEGRITY); redirects are not followed (SOURCE); URLs do not appear in error messages', async () => {
     const server = await serve((req, res) => {
       req.url = req.url!.replace(/\?.*$/, '');
       if (req.url === '/declared') return void res.writeHead(200, { 'content-length': 5000 }).end(Buffer.alloc(5000));

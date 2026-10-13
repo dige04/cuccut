@@ -141,7 +141,7 @@ async function until<T>(read: () => T | undefined | false, timeoutMs = 3000): Pr
   }
 }
 
-describe('Runtime（假 Driver）', () => {
+describe('Runtime (fake driver)', () => {
   let dir: string;
   let runtime: RunningRuntime;
   let driver: FakeDriver;
@@ -203,7 +203,7 @@ describe('Runtime（假 Driver）', () => {
     return { get: () => current, updates, ready: until(() => current !== null) };
   }
 
-  it('发送消息：流式回复，任务完成，标题取自第一句', async () => {
+  it('send message: streamed reply, task completes, title taken from the first sentence', async () => {
     const { conversation } = await client.request('conversations.create', {});
     const view = mirror(conversation.id);
     await view.ready;
@@ -237,7 +237,7 @@ describe('Runtime（假 Driver）', () => {
     expect(runtime.publishing.store.publications()).toEqual([]);
   });
 
-  it('同一个 commandId 重发不会再起一个任务', async () => {
+  it('resending the same commandId does not start another task', async () => {
     const { conversation } = await client.request('conversations.create', {});
     const commandId = newId('cmd');
     const first = await client.request('conversations.send', { conversationId: conversation.id, text: 'hello', commandId });
@@ -248,7 +248,7 @@ describe('Runtime（假 Driver）', () => {
     expect(session.calls.filter((c) => c.startsWith('startTurn'))).toHaveLength(1);
   });
 
-  it('创作模板：列出内置与用户目录的模板，取正文，随附文件经媒体通道取', async () => {
+  it('creation templates: lists built-in and user-directory templates, gets body, attached files fetched via media channel', async () => {
     const own = path.join(dir, 'templates', 'my-scene');
     await fs.mkdir(path.join(own, 'assets'), { recursive: true });
     const { manifest } = (await client.request('templates.get', { id: 'launch-film' })).template;
@@ -291,7 +291,7 @@ describe('Runtime（假 Driver）', () => {
     expect((await rejection(client.request('templates.openHandle', { id: 'my-scene', path: '../x' }))).code).toBe('invalid-request');
   });
 
-  it('带场景模板发送：智能体拿到简报引导与正文，会话里是用户的原话加模板标记', async () => {
+  it('send with scene template: agent receives brief guidance and body, session shows user\'s original words plus template marker', async () => {
     const { conversation } = await client.request('conversations.create', {});
     const { prompt } = await client.request('templates.get', { id: 'launch-film' });
     await client.request('conversations.send', {
@@ -322,7 +322,7 @@ describe('Runtime（假 Driver）', () => {
     expect(example).toMatchObject({ code: 'invalid-request', details: { code: 'TEMPLATE_NOT_SCENE' } });
   });
 
-  it('审批：允许后回合继续并完成', async () => {
+  it('approval: after allow, the turn continues and completes', async () => {
     const { conversation } = await client.request('conversations.create', {});
     const { taskId } = await client.request('conversations.send', {
       conversationId: conversation.id,
@@ -345,7 +345,7 @@ describe('Runtime（假 Driver）', () => {
     expect(runtime.harness.getConversation(conversation.id).items.find((i) => i.kind === 'approval')).toMatchObject({ status: 'accepted' });
   });
 
-  it('停止屏障：先取消待批审批，再中断回合；之后的批准不再放行', async () => {
+  it('stop barrier: cancel pending approvals first, then interrupt the turn; later approvals no longer pass', async () => {
     const { conversation } = await client.request('conversations.create', {});
     const { taskId } = await client.request('conversations.send', {
       conversationId: conversation.id,
@@ -375,7 +375,7 @@ describe('Runtime（假 Driver）', () => {
     expect(runtime.harness.getConversation(conversation.id).conversation).toMatchObject({ activity: 'idle', activeTaskId: null });
   });
 
-  it('Driver 的审批按同一张决策表：自动允许、自动拒绝或交给用户；待处理的进统一列表与任务主题', async () => {
+  it('driver approvals follow the same decision table: auto-allow, auto-deny or hand to user; pending ones go into the unified list and task topic', async () => {
     let tasks: TasksSnapshot | null = null;
     client.subscribeTasks({
       snapshot: (snapshot) => {
@@ -434,7 +434,7 @@ describe('Runtime（假 Driver）', () => {
     }
   });
 
-  it('会话审批的两种处理方式：agents.respondToApproval 的 accept-for-session 与 approvals.respond 一样结束统一列表里的那条', async () => {
+  it('two ways to handle session approval: accept-for-session via agents.respondToApproval ends that item in the unified list just like approvals.respond', async () => {
     const { conversation } = await client.request('conversations.create', {});
     await client.request('conversations.send', {
       conversationId: conversation.id,
@@ -472,7 +472,7 @@ describe('Runtime（假 Driver）', () => {
     await until(() => driver.sessions.at(-1)!.calls.includes('approval:ap1:accept-for-session'));
   });
 
-  it('访问模式跟随设置；「总是允许」：规则归 CucCut 存，原生侧只按会话级放行，之后同一条规则自动答应；默认 Agent 存在设置里', async () => {
+  it('access mode follows settings; \'always allow\': rules kept by CucCut, native side only allows at session level, later the same rule auto-answers; default Agent stored in settings', async () => {
     const { conversation } = await client.request('conversations.create', {});
     // A session that has not been switched follows the setting agent.defaultAccessMode (default auto).
     expect(conversation).toMatchObject({ driverId: 'codex', model: null, effort: null, accessMode: null });
@@ -516,7 +516,7 @@ describe('Runtime（假 Driver）', () => {
     const disabled = await client.request('agents.configure', { driverId: 'codex', enabled: false });
     expect(disabled.drivers[0]).toMatchObject({ state: 'disabled', status: 'unavailable', enabled: false });
   });
-  it('agents 主题：快照是 agents.list 的视图；偏好、重新检测与默认 Agent 的变化逐次推送整份视图', async () => {
+  it('agents topic: snapshot is the view of agents.list; changes in preference, re-detection, and default Agent push the full view each time', async () => {
     const listed = await client.request('agents.list', {});
     let view: AgentsView | null = null;
     const seen: AgentsEvent[] = [];
@@ -553,7 +553,7 @@ describe('Runtime（假 Driver）', () => {
     }
   });
 
-  it('断线不取消回合：换一条连接还能看到并继续这个任务', async () => {
+  it('disconnect does not cancel the turn: reconnecting on another connection can still see and continue the task', async () => {
     const { conversation } = await client.request('conversations.create', {});
     const { taskId } = await client.request('conversations.send', {
       conversationId: conversation.id,
@@ -576,7 +576,7 @@ describe('Runtime（假 Driver）', () => {
     });
   });
 
-  it('任务主题：快照与增量；完成后会话标为未读，markRead 清掉', async () => {
+  it('task topic: snapshot and increments; after completion the session is marked unread, markRead clears it', async () => {
     let tasks: TasksSnapshot | null = null;
     client.subscribeTasks({
       snapshot: (snapshot) => {
@@ -606,7 +606,7 @@ describe('Runtime（假 Driver）', () => {
     await until(() => tasks?.tasks.length === 0);
   });
 
-  it('项目：新建在项目目录下且重名加序号；置顶与归档不改最近活动', async () => {
+  it('project: created under the project directory, duplicate names get a number; pin and archive do not change last activity', async () => {
     const first = await client.request('projects.create', { name: '短片' });
     const second = await client.request('projects.create', { name: '短片' });
     const unnamed = await client.request('projects.create', {});
@@ -628,7 +628,7 @@ describe('Runtime（假 Driver）', () => {
     expect(missing.code).toBe('not-found');
   });
 
-  it('Space：列出项目里的媒体文件，标记可改，媒体地址支持 Range', async () => {
+  it('Library: lists media files in the project, marked editable, media URLs support Range', async () => {
     const project = path.join(dir, 'work');
     await fs.mkdir(path.join(project, 'clips'), { recursive: true });
     await fs.mkdir(path.join(project, 'node_modules'), { recursive: true });
@@ -692,7 +692,7 @@ describe('Runtime（假 Driver）', () => {
     expect(space!.entries.map((e) => e.relPath)).toEqual(['clips/a.mp4']);
   });
 
-  it('Space：不列出项目标记目录；项目目录移动后跟到新位置，用户标记保留', async () => {
+  it('Library: does not list project marker directories; after project directory moves, follows to new location, user markers kept', async () => {
     const project = path.join(dir, 'before');
     await fs.mkdir(project, { recursive: true });
     await fs.writeFile(path.join(project, 'a.mp4'), 'x');
@@ -714,7 +714,7 @@ describe('Runtime（假 Driver）', () => {
     expect(runtime.space.locate(entry!.id).root).toBe(moved.path);
   });
 
-  it('从 Space 条目继续会话：选会话、只带标识与元数据、下一条消息带上后清掉；看不到条目的会话与回收站里的条目拒绝', async () => {
+  it('continue session from Library item: choose session, carry only identifier and metadata, cleared after the next message; sessions that can\'t see the item and items in trash are rejected', async () => {
     const project = path.join(dir, 'continue');
     await fs.mkdir(project, { recursive: true });
     const secret = '这段文件内容不该进提示词';
@@ -776,7 +776,7 @@ describe('Runtime（假 Driver）', () => {
     expect(trashed.details).toMatchObject({ code: 'SPACE_ENTRY_TRASHED' });
   });
 
-  it('媒体句柄按内容识别未知格式、无扩展名和伪装扩展名，HTTP 类型与元数据一致', async () => {
+  it('media handle detects unknown formats by content, no extension and disguised extension, HTTP type matches metadata', async () => {
     const { conversation } = await client.request('conversations.create', {});
     const examples = [
       { name: 'README', data: Buffer.from('中文 English\n'), kind: 'text', mime: 'text/plain; charset=utf-8' },
@@ -798,7 +798,7 @@ describe('Runtime（假 Driver）', () => {
     expect((await rejection(client.request('media.resolve', { conversationId: conversation.id, path: 'missing.abc' }))).code).toBe('not-found');
   });
 
-  it('媒体地址只发给会话工作目录里的文件', async () => {
+  it('media URL is only given for files inside the session\'s working directory', async () => {
     const outside = path.join(dir, 'secret.txt');
     await fs.writeFile(outside, 'secret');
     const { conversation } = await client.request('conversations.create', {});
@@ -823,7 +823,7 @@ describe('Runtime（假 Driver）', () => {
     expect(mixed.code).toBe('invalid-request');
   });
 
-  it('幻灯片（slides.open）：会话工作目录里的 deck 给网关上的编辑器地址；不越界、不跟符号链接出去；编辑器没构建时照常给地址、页面 503', async () => {
+  it('slides (slides.open): a deck in the session working directory gives the editor URL on the gateway; no escaping, does not follow symbolic links out; when the editor isn\'t built, the address is still given and the page returns 503', async () => {
     client.close();
     await runtime.close();
     runtime = await startRuntime({
@@ -877,7 +877,7 @@ describe('Runtime（假 Driver）', () => {
     });
   });
 
-  it('设计稿（design.open）：会话工作目录里的设计稿给网关上的编辑器地址；校验同 slides.open；编辑器没构建时照常给地址、页面 503', async () => {
+  it('design (design.open): a design in the session working directory gives the editor URL on the gateway; validation same as slides.open; when the editor isn\'t built, still gives URL, page 503', async () => {
     client.close();
     await runtime.close();
     runtime = await startRuntime({
@@ -941,7 +941,7 @@ describe('Runtime（假 Driver）', () => {
     });
   });
 
-  it('设计系统（designSystem.open）：会话工作目录里的设计系统给网关上的编辑器地址；校验同 design.open；编辑器没构建时照常给地址、页面 503', async () => {
+  it('design system (designSystem.open): a design system in the session working directory gives the editor URL on the gateway; validation same as design.open; when the editor isn\'t built, still gives URL, page 503', async () => {
     client.close();
     await runtime.close();
     runtime = await startRuntime({
@@ -1010,7 +1010,7 @@ describe('Runtime（假 Driver）', () => {
     });
   });
 
-  it('本机文件（{ localPath }）：只发给桌面客户端，以文件自己的目录为根，只给普通文件', async () => {
+  it('local file ({ localPath }): only sent to desktop client, rooted at the file\'s own directory, only regular files', async () => {
     const downloads = path.join(dir, 'Downie');
     await fs.mkdir(path.join(downloads, 'folder'), { recursive: true });
     const article = path.join(downloads, 'talk.blog.zh-CN.md');
@@ -1038,7 +1038,7 @@ describe('Runtime（假 Driver）', () => {
     expect((await rejection(client.request('media.resolve', { localPath: article }))).code).toBe('forbidden');
   });
 
-  it('字幕：列出视频同目录的字幕文件，同名的在前；定位可以是项目里的路径', async () => {
+  it('subtitles: lists subtitle files in the same directory as the video, same-named first; location can be a path in the project', async () => {
     const project = path.join(dir, 'film');
     await fs.mkdir(path.join(project, 'clips'), { recursive: true });
     for (const name of ['talk.mp4', 'talk.en.vtt', 'talk.srt', 'talk.zh.vtt', 'other.ass', 'notes.txt', '.hidden.srt', 'talkshow.srt']) {
@@ -1082,7 +1082,7 @@ describe('Runtime（假 Driver）', () => {
     expect((await rejection(client.request('media.subtitles', { projectId: 'proj_nope', path: 'clips/talk.mp4' }))).code).toBe('not-found');
   });
 
-  it('偏好设置：默认值、整批校验、null 恢复默认；主题先给快照再送变化', async () => {
+  it('preferences: defaults, whole-batch validation, null restores default; theme gives snapshot first then sends changes', async () => {
     let mirror: SettingsSnapshot | null = null;
     const events: SettingsEvent[] = [];
     client.subscribeSettings({
@@ -1133,7 +1133,7 @@ describe('Runtime（假 Driver）', () => {
     expect(mirror).toEqual(reset);
   });
 
-  it('偏好设置：重启后保留', async () => {
+  it('preferences: kept across restarts', async () => {
     await client.request('settings.set', { values: { 'updates.autoCheck': false, 'downloads.directory': '/tmp/cuccut-downloads' } });
     client.close();
     await runtime.close();
@@ -1143,7 +1143,7 @@ describe('Runtime（假 Driver）', () => {
     expect(settings).toEqual({ 'updates.autoCheck': false, 'downloads.directory': '/tmp/cuccut-downloads', 'offline.strict': false });
   });
 
-  it('存着旧访问模式的会话记录：重启后会话的模式与任务卡片上的模式换成新值', async () => {
+  it('session record with an old access mode: after restart, the session\'s mode and task card mode replaced with the new value', async () => {
     const { conversation } = await client.request('conversations.create', {});
     const { taskId } = await client.request('conversations.send', {
       conversationId: conversation.id,
@@ -1172,7 +1172,7 @@ describe('Runtime（假 Driver）', () => {
     expect(runtime.harness.conversationMode(conversation.id)).toBe('fullAccess');
   });
 
-  it('新会话读默认 Driver：设的引擎没有注册时拒绝创建', async () => {
+  it('new session reads default driver: creation rejected if the set engine is not registered', async () => {
     await client.request('settings.set', { values: { 'agent.defaultDriver': 'claude' } });
     expect((await rejection(client.request('conversations.create', {}))).code).toBe('driver-unavailable');
     expect(runtime.harness.directorySnapshot().conversations).toHaveLength(0);
@@ -1182,7 +1182,7 @@ describe('Runtime（假 Driver）', () => {
     expect(conversation.driverId).toBe('codex');
   });
 
-  it('未经集成测试的 Driver（D08）：可以选，但发送被拒绝，不开原生会话', async () => {
+  it('driver without integration tests (D08): selectable, but sending is rejected, no native session opened', async () => {
     client.close();
     await runtime.close();
     const created: CreateSessionOptions[] = [];
@@ -1208,7 +1208,7 @@ describe('Runtime（假 Driver）', () => {
     expect(created).toEqual([]);
   });
 
-  it('新任务读默认访问模式并记下来源；发送时显式给出的优先，并切换会话的模式', async () => {
+  it('new task reads default access mode and records the source; an explicitly given mode on send takes precedence and switches the session\'s mode', async () => {
     const { conversation } = await client.request('conversations.create', {});
     expect(conversation.accessMode).toBeNull();
     const taskOf = (taskId: Id) => runtime.harness.getConversation(conversation.id).items.find((i) => i.id === taskId);
@@ -1271,7 +1271,7 @@ describe('Runtime（假 Driver）', () => {
   });
 });
 
-describe('Runtime 启动失败', () => {
+describe('Runtime startup failure', () => {
   let dir: string;
   let home: RuntimeHome;
   let blocker: net.Server | null = null;
@@ -1328,7 +1328,7 @@ describe('Runtime 启动失败', () => {
     throw new Error('启动应该失败');
   }
 
-  it('网关端口被占用：启动带着原始错误失败，不写发现文件、释放实例锁；换个端口再启动就好', async () => {
+  it('gateway port in use: startup fails with original error, does not write discovery file, releases instance lock; starting again on another port works', async () => {
     const taken = await occupyPort();
     const error = await startupError(boot({ host: '127.0.0.1', port: taken }));
     expect(error).toMatchObject({ code: 'EADDRINUSE' });
@@ -1427,7 +1427,7 @@ describe('Runtime 启动失败', () => {
 
   const STARTED_STOPS = ['services', 'nodes', 'publishing', 'jobs', 'initiator', 'space', 'analysis', 'videos', 'harness', 'gateway'];
 
-  it('正常停止的顺序：对外服务、节点服务、发布、任务、发起端、Space、媒体分析、视频引擎、Harness、网关', async () => {
+  it('normal stop order: external services, node service, publishing, tasks, initiator, Library, media analysis, video engine, Harness, gateway', async () => {
     await prepareHome();
     const runtime = await boot({ watchSpace: true });
     const calls = recordStops();
@@ -1435,7 +1435,7 @@ describe('Runtime 启动失败', () => {
     expect(calls).toEqual(STARTED_STOPS);
   });
 
-  it('启动最后一步失败（网关端口被占）：已经起来的服务按停止顺序全部停掉，抛出原来的错误', async () => {
+  it('last startup step fails (gateway port taken): services already started are all stopped in stop order, original error thrown', async () => {
     const { sharePort } = await prepareHome();
     const taken = await occupyPort();
     const watchers = trackWatchers();
@@ -1460,7 +1460,7 @@ describe('Runtime 启动失败', () => {
     }
   });
 
-  it('启动中途失败（Space 标记文件读不了）：已经起来的服务停掉，没起来的不碰', async () => {
+  it('startup fails midway (Library marker file unreadable): services already started are stopped, not-yet-started ones untouched', async () => {
     const { sharePort } = await prepareHome();
     // It cannot be read at the filesystem level (here, a same-named directory): it is not treated as a bad file to rename, so startup fails.
     await fs.mkdir(home.spaceFile, { recursive: true });
@@ -1479,7 +1479,7 @@ describe('Runtime 启动失败', () => {
     await runtime.close();
   });
 
-  it('Space 标记文件不是 JSON：改名保留，照常启动', async () => {
+  it('Library marker file not JSON: renamed and kept, startup continues normally', async () => {
     await prepareHome();
     await fs.writeFile(home.spaceFile, '{ 损坏');
     const runtime = await boot();
@@ -1488,7 +1488,7 @@ describe('Runtime 启动失败', () => {
     expect(names.some((n) => n.startsWith(`${path.basename(home.spaceFile)}.corrupt-`))).toBe(true);
   });
 
-  it('停止某一步出错：后面的步骤照常执行，抛出的仍是启动失败的原始错误', async () => {
+  it('a stop step errors: later steps still run, the thrown error is still the original startup failure', async () => {
     const { sharePort } = await prepareHome();
     const taken = await occupyPort();
     const shutdown = Harness.prototype.shutdown;
@@ -1511,7 +1511,7 @@ describe('Runtime 启动失败', () => {
   });
 });
 
-describe('CLI 拉起的 Runtime（§2.2）', () => {
+describe('Runtime launched by CLI (§2.2)', () => {
   let dir: string;
   let home: RuntimeHome;
   let runtime: RunningRuntime | null = null;
@@ -1564,7 +1564,7 @@ describe('CLI 拉起的 Runtime（§2.2）', () => {
     }
   }
 
-  it('runtime.stop：调用者之外还有 CLI 或桌面端连着时 RUNTIME_IN_USE，只剩自己时停', async () => {
+  it('runtime.stop: RUNTIME_IN_USE when CLI or desktop is connected besides the caller; stops only when it is just self', async () => {
     const requestStop = vi.fn();
     runtime = await boot({ requestStop });
     const caller = await connect('cli');
@@ -1586,7 +1586,7 @@ describe('CLI 拉起的 Runtime（§2.2）', () => {
     await until(() => requestStop.mock.calls.length === 1);
   });
 
-  it('空闲退出：先删发现文件，再交给入口去停', async () => {
+  it('idle exit: delete discovery file first, then hand to the entry point to stop', async () => {
     let now = Date.parse('2026-10-06T00:00:00Z');
     let discoveryAtIdle: unknown = 'not-called';
     const onIdle = vi.fn(() => {

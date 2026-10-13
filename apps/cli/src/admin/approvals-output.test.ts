@@ -3,7 +3,7 @@ import type { PendingApproval } from '@cuccut/protocol';
 import { describeApprovalRequest, formatApprovals, formatMode, parseApprovalsArgs, parseModeOption } from './approvals-output.ts';
 
 describe('--mode', () => {
-  it('连字符写法对应协议里的值，不给时为 undefined', () => {
+  it('hyphenated form maps to the protocol value, undefined when not given', () => {
     expect(parseModeOption('ask')).toBe('ask');
     expect(parseModeOption('auto-accept-edits')).toBe('autoAcceptEdits');
     expect(parseModeOption('auto')).toBe('auto');
@@ -12,26 +12,26 @@ describe('--mode', () => {
     expect(parseModeOption(undefined)).toBeUndefined();
   });
 
-  it('不认识的值报错（旧值 controlled、authorized 不再接受）', () => {
+  it('unknown value reports an error (old values controlled and authorized are no longer accepted)', () => {
     expect(() => parseModeOption('yolo')).toThrow(/不认识的访问模式：yolo/);
     expect(() => parseModeOption('controlled')).toThrow(/不认识的访问模式/);
   });
 
-  it('给人看的写法', () => {
+  it('human-readable form', () => {
     expect(formatMode('autoAcceptEdits')).toBe('自动接受修改（auto-accept-edits）');
     expect(formatMode('auto')).toBe('自动（auto）');
   });
 });
 
-describe('cuccut approvals 的参数', () => {
-  it('list、allow、deny', () => {
+describe('cuccut approvals arguments', () => {
+  it('list, allow, deny', () => {
     expect(parseApprovalsArgs([])).toEqual({ kind: 'list' });
     expect(parseApprovalsArgs(['list'])).toEqual({ kind: 'list' });
     expect(parseApprovalsArgs(['allow', 'apv_1'])).toEqual({ kind: 'respond', approvalId: 'apv_1', decision: 'allow' });
     expect(parseApprovalsArgs(['deny', 'sap_2'])).toEqual({ kind: 'respond', approvalId: 'sap_2', decision: 'deny' });
   });
 
-  it('缺参数或多余参数给出用法', () => {
+  it('missing or extra arguments show usage', () => {
     expect(() => parseApprovalsArgs(['allow'])).toThrow(/用法/);
     expect(() => parseApprovalsArgs(['deny', 'a', 'b'])).toThrow(/用法/);
     expect(() => parseApprovalsArgs(['list', 'x'])).toThrow(/用法/);
@@ -39,7 +39,7 @@ describe('cuccut approvals 的参数', () => {
   });
 });
 
-describe('cuccut approvals 的输出', () => {
+describe('cuccut approvals output', () => {
   const now = Date.parse('2026-10-03T00:00:00.000Z');
   const conversation: PendingApproval = {
     approvalId: 'apv_1',
@@ -60,18 +60,18 @@ describe('cuccut approvals 的输出', () => {
     expiresAt: '2026-10-03T00:00:50.000Z',
   };
 
-  it('一条一行：来自谁、动作、风险、依据与时限', () => {
+  it('one per line: source, action, risk, basis and deadline', () => {
     expect(formatApprovals([conversation, service], now)).toEqual([
       'apv_1  会话「剪片头」  artifacts_save → out/a.png  [高风险] 覆盖已有文件 out/a.png（模式 自动（auto））',
       'sap_2  服务 mcp · Claude Desktop  edits_apply → demo  [修改] 删掉 3 段（等级 ask，50 秒后按拒绝处理）',
     ]);
   });
 
-  it('没有待处理的', () => {
+  it('no pending approvals', () => {
     expect(formatApprovals([])).toEqual(['没有待处理的审批']);
   });
 
-  it('会话里的审批提示', () => {
+  it('approval prompt in a session', () => {
     expect(describeApprovalRequest({ kind: 'command', command: 'ls', cwd: '/p', reason: null })).toBe('运行命令：ls');
     expect(describeApprovalRequest({ kind: 'file-change', files: ['a.ts', 'b.ts'], reason: null })).toBe('修改文件：a.ts, b.ts');
     expect(describeApprovalRequest({ kind: 'tool', tool: 'jobs_cancel', files: [], reason: '取消任务 job_1' })).toBe('调用 jobs_cancel');

@@ -92,7 +92,7 @@ function rejection(promise: Promise<unknown>): Promise<RpcError> {
   );
 }
 
-describe('数据外发的授权与预算', () => {
+describe('data egress grants and budget', () => {
   let side: Side | undefined;
   let openai: FakeProviderServer | undefined;
   let dir: string | undefined;
@@ -111,7 +111,7 @@ describe('数据外发的授权与预算', () => {
     side = openai = dir = undefined;
   });
 
-  it('迁移规则：启用发放默认授权（风险 command）；撤销后是 high 带外发的审批；只这一次与持续授权', async () => {
+  it('migration rules: enabling issues the default grant (risk command); after revoking, it is a high-risk approval with egress; one-time and continuous grants', async () => {
     const s = await start();
     await s.client.request('models.configure', { providerId: 'openai', enabled: true, credential: OPENAI_KEY });
     const [byDefault] = await grantsOf(s);
@@ -179,7 +179,7 @@ describe('数据外发的授权与预算', () => {
     ).resolves.toEqual({ status: 'already-resolved' });
   });
 
-  it('完全访问：没有授权覆盖的外发自动按只这一次放行；预算上限照样生效（BUDGET_EXCEEDED，不进审批）', async () => {
+  it('full access: egress without a grant covering it is automatically allowed once; budget limits still apply (BUDGET_EXCEEDED, not sent to approval)', async () => {
     const s = await start();
     await s.client.request('models.configure', { providerId: 'openai', enabled: true, credential: OPENAI_KEY });
     await revokeDefault(s);
@@ -212,7 +212,7 @@ describe('数据外发的授权与预算', () => {
     expect((await s.client.request('jobs.list', {})).jobs).toHaveLength(jobs);
   });
 
-  it('grants_request：一个任务的多项外发合并成一条审批；任务内的授权按次数封顶，之后的调用不再问', async () => {
+  it('grants_request: multiple egress items in one task are merged into one approval; grants within a task are capped by count, and later calls no longer ask', async () => {
     const s = await start();
     await s.client.request('models.configure', { providerId: 'openai', enabled: true, credential: OPENAI_KEY });
     await revokeDefault(s);
@@ -260,7 +260,7 @@ describe('数据外发的授权与预算', () => {
     expect(again.body.items).toMatchObject([{ status: 'covered', grantId: granted.items[1].grantId }]);
   });
 
-  it('并发提交：多个任务同时提交，预留是原子的，次数上限不会被超出；超出的以 BUDGET_EXCEEDED 拒绝且不建任务', async () => {
+  it('concurrent submission: multiple tasks submitted at once, reservations are atomic and the count limit is never exceeded; excess is rejected with BUDGET_EXCEEDED and no task is created', async () => {
     const s = await start();
     await s.client.request('models.configure', { providerId: 'openai', enabled: true, credential: OPENAI_KEY });
     await revokeDefault(s);
@@ -284,7 +284,7 @@ describe('数据外发的授权与预算', () => {
     expect(after.usage.calls + after.usage.reservedCalls).toBe(3);
   });
 
-  it('金额上限而模型没有价格：界面提交是 BUDGET_UNVERIFIABLE；会话里是「金额未知、只这一次」的审批', async () => {
+  it('amount limit but the model has no price: UI submission gives BUDGET_UNVERIFIABLE; in a session, it is an approval of "amount unknown, this time only"', async () => {
     const s = await start();
     await s.client.request('models.configure', { providerId: 'openai', enabled: true, credential: OPENAI_KEY });
     await revokeDefault(s);
@@ -313,7 +313,7 @@ describe('数据外发的授权与预算', () => {
     expect((await s.client.request('grants.usage', { grantId: grant.grantId })).grant.usage).toMatchObject({ calls: 0, reservedCalls: 0 });
   });
 
-  it('任务预算：任务里的外发跨调用合计；超出时 TASK_BUDGET_EXCEEDED、不建任务、不进审批；金额上限而估不出时 TASK_BUDGET_UNVERIFIABLE', async () => {
+  it('task budget: egress within a task is totaled across calls; when exceeded, TASK_BUDGET_EXCEEDED, no task created, not sent to approval; with an amount limit that cannot be estimated, TASK_BUDGET_UNVERIFIABLE', async () => {
     const s = await start();
     await s.client.request('models.configure', { providerId: 'openai', enabled: true, credential: OPENAI_KEY });
     const created = await s.client.request('tasks.create', {
@@ -363,7 +363,7 @@ describe('数据外发的授权与预算', () => {
     expect((await s.client.request('jobs.list', {})).jobs).toHaveLength(2);
   });
 
-  it('迁移规则的持久：用户撤销的默认授权重启后不补发；停用撤销、重新启用另发；旧版本没有启用时间的也有默认授权', async () => {
+  it('migration rule persistence: a default grant the user revoked is not reissued after restart; disabling and re-enabling issues a new one; older versions without an enabled time also get the default grant', async () => {
     const s = await start();
     await s.client.request('models.configure', { providerId: 'openai', enabled: true, credential: OPENAI_KEY });
     const byDefault = await revokeDefault(s);
@@ -406,7 +406,7 @@ describe('数据外发的授权与预算', () => {
     expect((await side.client.request('jobs.inspect', { jobId })).grant).toMatchObject({ grantId: legacy!.grantId });
   });
 
-  it('网关上的授权方法：create / update / revoke / usage 与 grants 主题；收紧使代加一', async () => {
+  it('grant methods on the gateway: create / update / revoke / usage and the grants topic; tightening increments the generation', async () => {
     const s = await start();
     await s.client.request('models.configure', { providerId: 'openai', enabled: true, credential: OPENAI_KEY });
     const { grant } = await s.client.request('grants.create', {

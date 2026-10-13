@@ -3,8 +3,8 @@ import { capabilitySettingsHref, MODEL_SERVICE_CAPABILITIES, setLocale } from '@
 import { settingsLink } from './settings-link.ts';
 import { useShell } from '../state/shell-store.ts';
 
-describe('回复里的设置链接', () => {
-  it('工具提供的每种能力链接都能定位到对应模型设置', () => {
+describe('settings links in replies', () => {
+  it('each capability link the tool provides leads to the matching model settings', () => {
     const categories = ['asr', 'tts', 'image', 'llm', 'sep', 'music'];
     MODEL_SERVICE_CAPABILITIES.forEach((capability, i) => {
       expect(settingsLink(capabilitySettingsHref(capability))?.route).toEqual({ tab: 'models', category: categories[i] });
@@ -30,11 +30,11 @@ describe('回复里的设置链接', () => {
   it.each(['/settings', '/settings/model', '/settings/models', '/settings/models/asr/voices',
     '/settings/models/sep/cloud', '/settings/models/llm/local', '/settings/agent/skills', '/settings/general/extra',
     '/settings/models/asr/cloud/extra', '/settings/models/asr?tab=cloud', 'https://example.com/settings/agent', '//example.com/settings/agent',
-    '/settings/unknown', 'javascript:alert(1)'])('未知地址 %s 只显示文字', (href) => {
+    '/settings/unknown', 'javascript:alert(1)'])('unknown address %s shows only text', (href) => {
     expect(settingsLink(href)).toBeNull();
   });
 
-  it('提示的位置随界面语言改变', () => {
+  it('the hint\'s position changes with the UI language', () => {
     expect(settingsLink('/settings/models/asr/cloud')?.trail).toBe('设置 › 模型 › 语音识别 › 云端模型');
     vi.stubEnv('CUCCUT_LOCALE', 'en');
     setLocale('en');
@@ -46,7 +46,7 @@ describe('回复里的设置链接', () => {
     }
   });
 
-  it('打开具体设置后，后退回到原会话', () => {
+  it('after opening a specific setting, going back returns to the original session', () => {
     const session = { tab: 'home' as const, conversationId: 'conv_settings_link', projectId: null };
     useShell.getState().go(session);
     useShell.getState().go(settingsLink('/settings/models/asr/cloud')!.route);

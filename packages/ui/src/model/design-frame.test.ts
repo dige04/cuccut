@@ -5,20 +5,20 @@ import { designFrameUrl, designSystemPath } from './design-frame.ts';
 const at = (hostname: string, port = '24399') => ({ protocol: 'http:', hostname, port });
 
 describe('designFrameUrl', () => {
-  it('Web 的相对地址换到另一个回环主机名，端口不变', () => {
+  it('web relative address is swapped to another loopback hostname, port unchanged', () => {
     expect(designFrameUrl('/design/g1/', at('127.0.0.1'))).toBe('http://localhost:24399/design/g1/');
     expect(designFrameUrl('/design/g1/', at('localhost'))).toBe('http://127.0.0.1:24399/design/g1/');
     expect(designFrameUrl('/design/g1/', at('localhost', ''))).toBe('http://127.0.0.1/design/g1/');
     expect(designFrameUrl('/design-system/g1/', at('127.0.0.1'))).toBe('http://localhost:24399/design-system/g1/');
   });
 
-  it('页面不在这两个主机名上时换不了，不退回同源', () => {
+  it('cannot swap when the page is not on either of the two hostnames; does not fall back to same-origin', () => {
     expect(designFrameUrl('/design/g1/', at('example.com'))).toBeNull();
     expect(designFrameUrl('/design/g1/', at('[::1]'))).toBeNull();
     expect(designFrameUrl('/design-system/g1/', at('example.com'))).toBeNull();
   });
 
-  it('桌面端网关的绝对地址原样用', () => {
+  it('desktop gateway absolute address is used as is', () => {
     expect(designFrameUrl('http://127.0.0.1:51234/design/g1/', at('example.com'))).toBe('http://127.0.0.1:51234/design/g1/');
   });
 });
@@ -37,12 +37,12 @@ describe('designSystemPath', () => {
     user: { favorite: false, displayName: null, trashedAt: null },
   };
 
-  it('按路径打开的用 FileTarget.path', () => {
+  it('opening by path uses FileTarget.path', () => {
     expect(designSystemPath({ conversationId: 'c1', path: 'brand' }, [])).toBe('brand');
     expect(designSystemPath({ projectId: 'p1', path: 'systems/brand' }, [entry])).toBe('systems/brand');
   });
 
-  it('按 Space 条目打开的用条目的相对路径，找不到条目时不带', () => {
+  it('opening by Space item uses the item\'s relative path; omitted when the item is not found', () => {
     expect(designSystemPath({ entryId: 'e1' }, [entry])).toBe('systems/brand');
     expect(designSystemPath({ entryId: 'missing' }, [entry])).toBeNull();
     // An entry outside the source directory: relPath is only a display name

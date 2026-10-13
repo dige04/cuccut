@@ -130,7 +130,7 @@ async function expectNoSecret(side: Side, secret: string) {
   for (const file of files) expect(await fs.readFile(file, 'utf8').catch(() => ''), file).not.toContain(secret);
 }
 
-describe('模型工具：能力视图与提交时的拒绝（不需要 ffprobe）', () => {
+describe('model tools: capability view and submission-time rejection (no ffprobe needed)', () => {
   let side: Side | undefined;
   let openai: FakeProviderServer | undefined;
 
@@ -140,7 +140,7 @@ describe('模型工具：能力视图与提交时的拒绝（不需要 ffprobe�
     side = openai = undefined;
   });
 
-  it('translate：文本模型没有配置时以 CAPABILITY_NOT_CONFIGURED 拒绝，next 指向自己翻译，不请用户去配置', async () => {
+  it('translate: rejected with CAPABILITY_NOT_CONFIGURED when text model is not configured, next points to self-translation, does not ask the user to configure', async () => {
     side = await startSide({});
     const srt = path.join(side.dir, 'talk.srt');
     await fs.writeFile(srt, '1\n00:00:00,000 --> 00:00:01,000\nhello\n');
@@ -153,7 +153,7 @@ describe('模型工具：能力视图与提交时的拒绝（不需要 ffprobe�
     expect(side.runtime.models.jobs.list()).toEqual([]);
   });
 
-  it('能力视图：三种能力、可用性与默认值；没有端点与密钥，也没有配置类的工具', async () => {
+  it('capability view: three capabilities, availability and defaults; no endpoints or keys, and no configuration-type tools', async () => {
     openai = await startFakeProviderServer(fakeOpenAiHandler());
     side = await startSide({ openai });
     const { session } = await send(side);
@@ -220,7 +220,7 @@ describe('模型工具：能力视图与提交时的拒绝（不需要 ffprobe�
     await expectNoSecret(side, OPENAI_KEY);
   });
 
-  it('没有配置：CAPABILITY_NOT_CONFIGURED 带补救与 next；停用的服务同样；超长文本 INPUT_TOO_LONG；都不创建任务', async () => {
+  it('not configured: CAPABILITY_NOT_CONFIGURED with remedy and next; disabled service likewise; overlong text INPUT_TOO_LONG; none create a task', async () => {
     openai = await startFakeProviderServer(fakeOpenAiHandler());
     side = await startSide({ openai });
     const { session } = await send(side);
@@ -321,7 +321,7 @@ describe('模型工具：能力视图与提交时的拒绝（不需要 ffprobe�
     await expectNoSecret(side, OPENAI_KEY);
   });
 
-  it('规划模式：可以看能力，不能提交；没有任务时工具不可用', async () => {
+  it('plan mode: can view capabilities, cannot submit; tools unavailable when there is no task', async () => {
     openai = await startFakeProviderServer(fakeOpenAiHandler());
     side = await startSide({ openai });
     await side.client.request('models.configure', { providerId: 'openai', enabled: true, credential: OPENAI_KEY });
@@ -337,7 +337,7 @@ describe('模型工具：能力视图与提交时的拒绝（不需要 ffprobe�
   });
 });
 
-describe('模型工具的访问模式（不需要 ffprobe）', () => {
+describe('access mode of model tools (no ffprobe needed)', () => {
   let side: Side | undefined;
   let openai: FakeProviderServer | undefined;
 
@@ -347,7 +347,7 @@ describe('模型工具的访问模式（不需要 ffprobe）', () => {
     side = openai = undefined;
   });
 
-  it('交给已启用的在线 Provider 是 command：自动接受修改下要问（允许后才提交），切到 auto 后不问', async () => {
+  it('handing to an enabled online Provider is command: under auto-accept modification, asks first (submits only after allowing); after switching to auto, no longer asks', async () => {
     openai = await startFakeProviderServer(fakeOpenAiHandler());
     side = await startSide({ openai });
     await side.client.request('models.configure', { providerId: 'openai', enabled: true, credential: OPENAI_KEY });
@@ -372,7 +372,7 @@ describe('模型工具的访问模式（不需要 ffprobe）', () => {
   });
 });
 
-describe.skipIf(!ffprobe)('模型工具：生成任务（假供应商，不带视频）', () => {
+describe.skipIf(!ffprobe)('model tools: generation task (fake provider, no video)', () => {
   let side: Side;
   let openai: FakeProviderServer;
   let google: FakeProviderServer;
@@ -390,7 +390,7 @@ describe.skipIf(!ffprobe)('模型工具：生成任务（假供应商，不带�
     await google.close();
   });
 
-  it('语音（默认值）：立即返回 jobId，jobs_inspect 等到完成；提交者是这个会话与任务；结果是产物', async () => {
+  it('voice (default): returns jobId immediately, jobs_inspect waits until completion; submitter is this session and task; result is the artifact', async () => {
     await side.client.request('models.setDefault', { capability: 'synthesizeSpeech', providerId: 'openai' });
     const { taskId, session } = await send(side);
     const submitted = await call(side, session, 'speak', { text: '欢迎来到 CucCut', speed: 1.25 });
@@ -425,7 +425,7 @@ describe.skipIf(!ffprobe)('模型工具：生成任务（假供应商，不带�
     await expectNoSecret(side, OPENAI_KEY);
   });
 
-  it('图片（显式 Provider）：两张，按宽高比；jobs_inspect 报告每个输出的尺寸', async () => {
+  it('image (explicit Provider): two images, by aspect ratio; jobs_inspect reports the size of each output', async () => {
     await side.client.request('models.configure', { providerId: 'google', enabled: true, credential: GOOGLE_KEY });
     const { session } = await send(side);
     const submitted = await call(side, session, 'image', {
@@ -447,7 +447,7 @@ describe.skipIf(!ffprobe)('模型工具：生成任务（假供应商，不带�
     await expectNoSecret(side, OPENAI_KEY);
   });
 
-  it('jobs_cancel 取消自己的任务；用户与别的会话的任务看不到、取消不了', async () => {
+  it('jobs_cancel cancels own task; user\'s and other sessions\' tasks are not visible and cannot be cancelled', async () => {
     openai.handler = () => 'hang';
     const { session } = await send(side);
     const { body } = await call(side, session, 'speak', { text: 'hi', provider: 'openai' });
@@ -476,7 +476,7 @@ describe.skipIf(!ffprobe)('模型工具：生成任务（假供应商，不带�
     expect(JSON.stringify(side.results)).not.toContain('user text');
   });
 
-  it('artifacts_save：产物复制到工作目录；已有文件只有 overwrite 才替换；写不到外面、符号链接与视频目录；别人的产物用不了', async () => {
+  it('artifacts_save: artifact copied to working directory; existing file replaced only with overwrite; cannot write outside, to symlinks, or to video directory; others\' artifacts unusable', async () => {
     const { session } = await send(side);
     const submitted = await call(side, session, 'speak', { text: '保存我', provider: 'openai' });
     const job = await settle(side, session, submitted.body.jobId);
@@ -583,7 +583,7 @@ describe.skipIf(!ffprobe)('模型工具：生成任务（假供应商，不带�
     await expectNoSecret(side, OPENAI_KEY);
   });
 
-  it('主停止取消这个会话还没结束的任务；完成的结果保留；停止回复不取消；别的会话与用户的任务不受影响', async () => {
+  it('main stop cancels tasks in this session not yet finished; completed results kept; stopping a reply does not cancel; other sessions\' and user\'s tasks unaffected', async () => {
     const { taskId, session } = await send(side);
     const done = await call(side, session, 'speak', { text: '已经完成', provider: 'openai' });
     const completed = await settle(side, session, done.body.jobId);
@@ -626,7 +626,7 @@ describe.skipIf(!ffprobe)('模型工具：生成任务（假供应商，不带�
   });
 });
 
-describe.skipIf(!ffprobe || !ffmpeg || !engine)('模型工具：带视频（真实引擎 + 假供应商）', () => {
+describe.skipIf(!ffprobe || !ffmpeg || !engine)('model tools: with video (real engine + fake provider)', () => {
   let fixtures: string;
   let audio: string;
   let side: Side;
@@ -658,7 +658,7 @@ describe.skipIf(!ffprobe || !ffmpeg || !engine)('模型工具：带视频（真�
     await openai.close();
   });
 
-  it('语音与图片带视频：导入为候选素材（不上时间线），assetId 由 jobs_inspect 给出，之后 edits_apply 才放上去', async () => {
+  it('voice and image with video: imported as candidate media (not placed on timeline), assetId given by jobs_inspect, edits_apply then places it', async () => {
     const { session } = await send(side);
     const before = side.runtime.videos.mirror(videoId)!.video;
     const speech = await call(side, session, 'speak', {
@@ -695,7 +695,7 @@ describe.skipIf(!ffprobe || !ffmpeg || !engine)('模型工具：带视频（真�
     await expectNoSecret(side, OPENAI_KEY);
   });
 
-  it('没带视频的产物：edits_apply 的 importAsset + artifactId 导入为 managed 素材，来源与带视频的生成相同，不再调用供应商', async () => {
+  it('artifact without video: edits_apply\'s importAsset + artifactId imports as managed media, same source as generation with video, no provider call again', async () => {
     const { session } = await send(side);
     // The same text, once with a video and once without: the asset source from both paths should be the same. The with-video run uses wav: its bytes differ, so the engine does not reuse the same asset.
     const submit = async (name: string, args: Record<string, unknown>) =>
@@ -794,7 +794,7 @@ describe.skipIf(!ffprobe || !ffmpeg || !engine)('模型工具：带视频（真�
     await expectNoSecret(side, OPENAI_KEY);
   });
 
-  it('转写：transcribe 给 video 与 asset，转录流程经在线 Provider 写成 speech 文档', async () => {
+  it('transcription: transcribe given video and asset, transcription flow written as speech document via online Provider', async () => {
     await side.client.request('models.setDefault', { capability: 'transcribe', providerId: 'openai' });
     const imported = await side.client.request('edits.apply', {
       videoId,
@@ -819,7 +819,7 @@ describe.skipIf(!ffprobe || !ffmpeg || !engine)('模型工具：带视频（真�
     await expectNoSecret(side, OPENAI_KEY);
   });
 
-  it('转写：transcribe 给 file 时新建视频、导入并转写；加 noVideo 时只写 TXT 与 SRT 文稿', async () => {
+  it('transcription: transcribe given file creates a video, imports and transcribes; with noVideo only TXT and SRT transcripts are written', async () => {
     await side.client.request('models.setDefault', { capability: 'transcribe', providerId: 'openai' });
     const { session } = await send(side);
     const created = await call(side, session, 'transcribe', { file: audio, name: '口播', noCaptions: true });
@@ -854,7 +854,7 @@ describe.skipIf(!ffprobe || !ffmpeg || !engine)('模型工具：带视频（真�
     await expectNoSecret(side, OPENAI_KEY);
   });
 
-  it('工作目录以外的视频：提交被拒绝；那个视频上的任务看不到，本目录视频上用户的任务看得到', async () => {
+  it('video outside the working directory: submission rejected; task on that video not visible, user\'s task on a video in this directory is visible', async () => {
     const { project: elsewhere } = await side.client.request('projects.create', { name: '别的项目' });
     const outside = await side.client.request('videos.create', { projectId: elsewhere.id, name: '别处' });
     const outsideId = outside.ref.videoId;

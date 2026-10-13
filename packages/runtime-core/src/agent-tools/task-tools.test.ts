@@ -26,7 +26,7 @@ const ffmpeg = (() => {
   }
 })();
 
-describe.skipIf(!engine || !ffmpeg)('任务合同的工具与保护范围（真实引擎）', () => {
+describe.skipIf(!engine || !ffmpeg)('task contract tools and protection scope (real engine)', () => {
   let fixtures: string;
   let clip: string;
   let dir: string;
@@ -106,7 +106,7 @@ describe.skipIf(!engine || !ffmpeg)('任务合同的工具与保护范围（真�
     return { first, second, revision: applied.body.revision.after };
   }
 
-  it('智能体读自己的合同；触碰保护的修改整笔拒绝并给出保护项；用户的修改不受限制；合同修改后按新范围检查', async () => {
+  it('agent reads its own contract; modification touching protection is rejected whole and lists protected items; user\'s modifications unrestricted; after contract change, checked against new scope', async () => {
     const { taskId } = await client.request('tasks.create', {
       conversationId,
       goal: '剪一版',
@@ -210,7 +210,7 @@ describe.skipIf(!engine || !ffmpeg)('任务合同的工具与保护范围（真�
     expect((await client.request('tasks.listChecks', { taskId })).results).toHaveLength(1);
   });
 
-  it('不在任务里的修改（界面）与没有保护的任务照常提交', async () => {
+  it('modifications not in a task (UI) and tasks without protection submit as usual', async () => {
     const { taskId } = await client.request('tasks.create', {
       conversationId,
       goal: '放素材',

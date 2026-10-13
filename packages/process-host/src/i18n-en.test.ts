@@ -4,7 +4,7 @@ import { ffmpegMissingRemedy, ffmpegMissingRemedyMessage } from './install-hint.
 import { WorkerTimeoutError } from './json-line-worker.ts';
 
 /** When the interface language is English, the fix for missing ffmpeg and the Worker's errors are in English, with a message reference. */
-describe('process-host 的英文文案', () => {
+describe('process-host English copy', () => {
   beforeEach(() => {
     vi.stubEnv('CUCCUT_LOCALE', 'en');
     setLocale('en');
@@ -14,7 +14,7 @@ describe('process-host 的英文文案', () => {
     setLocale('zh-Hans');
   });
 
-  it('缺 ffmpeg 的修法在调用时按当前语言', () => {
+  it('the fix for missing ffmpeg follows the current language at call time', () => {
     expect(ffmpegMissingRemedy({ platform: 'darwin' })).toBe(
       'Install ffmpeg (for example, brew install ffmpeg), or set its path with CUCCUT_FFMPEG',
     );
@@ -24,7 +24,7 @@ describe('process-host 的英文文案', () => {
     expect(message.key).toBe('processHostTools.remedyWithProbe');
   });
 
-  it('Worker 超时：英文说明带引用', () => {
+  it('Worker timeout: English explanation includes the reference', () => {
     const error = new WorkerTimeoutError('transcribe', 1500);
     expect(error.message).toBe('transcribe timed out (1500 ms)');
     expect(error.messageRef.key).toBe('processHostWorker.timedOut');

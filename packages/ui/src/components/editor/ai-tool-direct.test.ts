@@ -33,8 +33,8 @@ afterEach(() => {
 
 const para = (...spans: [number, number][]) => ({ words: spans.map(([start, end]) => ({ placements: [{ start, end }] })) });
 
-describe('直接调模型：哪些工具能做', () => {
-  it('润色、章节与写作发布类能直接调模型；重新转录、找可剪的口、做封面置灰并写各自的原因', () => {
+describe('direct model calls: which tools can work', () => {
+  it('polish, chapters and writing-publish tools can call the model directly; re-transcription, finding cuttable spots and cover are greyed out, each with its reason', () => {
     for (const tool of ['polish', 'chapters', 'summary', 'blog', 'title', 'desc'] as const) {
       expect(directTool(tool)).toBe(tool);
       expect(directRefresh(tool)).toBe(false);
@@ -50,13 +50,13 @@ describe('直接调模型：哪些工具能做', () => {
     expect(reasons[2]).toMatch(/images/);
   });
 
-  it('刷新过期译文也能直接调模型：不走 ai-tool，走 translate 的就地刷新', () => {
+  it('refreshing stale translations can also call the model directly: not via ai-tool, but via translate\'s in-place refresh', () => {
     expect(directTool('stale')).toBeNull();
     expect(directRefresh('stale')).toBe(true);
     expect(directBlocked('stale')).toBeNull();
   });
 
-  it('润色与章节要结构化输出；章节总是整篇', () => {
+  it('polish and chapters require structured output; chapters always cover the whole piece', () => {
     expect(needsStructuredOutput('polish')).toBe(true);
     expect(needsStructuredOutput('chapters')).toBe(true);
     expect(needsStructuredOutput('summary')).toBe(false);
@@ -64,7 +64,7 @@ describe('直接调模型：哪些工具能做', () => {
     expect(directHasScope('polish')).toBe(true);
   });
 
-  it('主按钮写这个工具自己的动作', () => {
+  it('primary button runs this tool\'s own action', () => {
     expect(directCta('polish')).toBe('Polish');
     expect(directCta('title')).toBe('Suggest titles');
     use('zh-Hans');
@@ -72,14 +72,14 @@ describe('直接调模型：哪些工具能做', () => {
   });
 });
 
-describe('发给模型的那一行', () => {
-  it('什么都不带时只有提示词', () => {
+describe('the line sent to the model', () => {
+  it('with nothing attached, only the prompt', () => {
     expect(contextLine(contextItems({ tool: 'summary', paragraphs: 0, scope: null, chapters: 3, attachments: 0, skills: [] }))).toBe(
       'Sent to the model: only the prompt above',
     );
   });
 
-  it('文稿、章节、附件、skill 按次序写；润色不带章节', () => {
+  it('script, chapters, attachments, skill written in order; polish doesn\'t include chapters', () => {
     const c = { paragraphs: 12, scope: null, chapters: 3, attachments: 2, skills: ['Summary', 'House style'] };
     expect(contextLine(contextItems({ tool: 'summary', ...c }))).toBe(
       'Sent to the model: prompt + transcript 12 paragraphs · chapters 3 · attachments 2 · Skill Summary, House style',
@@ -87,7 +87,7 @@ describe('发给模型的那一行', () => {
     expect(contextItems({ tool: 'polish', ...c })).toEqual(['transcript 12 paragraphs', 'attachments 2', 'Skill Summary, House style']);
   });
 
-  it('选了某一章时写章名；单数；中文', () => {
+  it('when a chapter is selected its title is written; singular; Chinese', () => {
     expect(contextItems({ tool: 'blog', paragraphs: 1, scope: 'Chapter 2 · Intro', chapters: 0, attachments: 0, skills: [] })).toEqual([
       'transcript · Chapter 2 · Intro 1 paragraph',
     ]);
@@ -97,7 +97,7 @@ describe('发给模型的那一行', () => {
     );
   });
 
-  it('skill 名字按各语言自己的列举写法：中文日文用「、」，不写成句子里的「和」', () => {
+  it('skill names use each language\'s own list style: Chinese and Japanese use 、, not the 和 of a sentence', () => {
     const c = { tool: 'summary' as const, paragraphs: 0, scope: null, chapters: 0, attachments: 0, skills: ['总结', '我的风格', '三点'] };
     use('zh-Hans');
     expect(contextItems(c)).toEqual(['Skill 总结、我的风格、三点']);
@@ -108,14 +108,14 @@ describe('发给模型的那一行', () => {
   });
 });
 
-describe('主按钮下那行', () => {
-  it('写进视频的工具：完成即应用、一键撤销；云端按用量计费', () => {
+describe('line under the primary button', () => {
+  it('tools that write into the video: applied on completion, one-click undo; cloud billed by usage', () => {
     expect(directHint({ tool: 'polish', model: 'gpt-5-mini', local: false })).toBe(
       'Calls gpt-5-mini directly, no conversation; applies when done, one-step undo. Cloud models bill by usage.',
     );
   });
 
-  it('只给结果的工具：给你读、拷走，不写进视频；本机模型不出本机', () => {
+  it('result-only tools: for you to read or copy, not written into the video; local models don\'t leave the machine', () => {
     expect(directHint({ tool: 'summary', model: 'Qwen3 4B', local: true })).toBe(
       'Calls Qwen3 4B directly, no conversation; the result is for you to read and copy, nothing is written to the video. Local model, stays on this computer.',
     );
@@ -127,15 +127,15 @@ describe('主按钮下那行', () => {
   });
 });
 
-describe('范围里的段数与流程参数', () => {
-  it('段里有词落在范围内就算；整段剪掉的不算', () => {
+describe('segment count and workflow parameters within range', () => {
+  it('a segment counts if a word falls within the range; segments cut entirely don\'t count', () => {
     const paragraphs = [para([0, 1], [1, 2]), para([5, 6]), { words: [{ placements: [] }] }, para([9, 10])];
     expect(scopedParagraphs(paragraphs, null)).toBe(3);
     expect(scopedParagraphs(paragraphs, { start: 1.5, end: 9 })).toBe(2);
     expect(scopedParagraphs(paragraphs, { start: 20, end: 30 })).toBe(0);
   });
 
-  it('只带给了的项；章节不带范围', () => {
+  it('only items provided; chapters have no range', () => {
     expect(
       directParams({
         videoId: 'vid',
@@ -166,7 +166,7 @@ describe('范围里的段数与流程参数', () => {
   });
 });
 
-describe('刷新过期译文：直接调模型', () => {
+describe('refresh stale translations: direct model call', () => {
   const doc = (id: string, kind: string, extra: Partial<DocumentRecord> = {}): DocumentRecord => ({
     id,
     kind,
@@ -183,11 +183,11 @@ describe('刷新过期译文：直接调模型', () => {
     cap: doc('cap', 'caption', { sourceDocumentId: 'en' }),
   };
 
-  it('只列译自转写的译文', () => {
+  it('lists only translations derived from transcription', () => {
     expect(refreshableTranslations(documents).map((d) => d.id)).toEqual(['en', 'ja']);
   });
 
-  it('刷新哪一份：选过的、入口带来的 ID、入口带来的语言名（`languageName`，各语言自称）、第一份', () => {
+  it('which one to refresh: the selected one, the ID the entry point provides, the language name the entry point provides (`languageName`, self-named in each language), the first one', () => {
     const list = refreshableTranslations(documents);
     expect(pickTranslation(list, { picked: null })?.id).toBe('en');
     expect(pickTranslation(list, { picked: null, presetLanguage: '日本語' })?.id).toBe('ja');
@@ -198,7 +198,7 @@ describe('刷新过期译文：直接调模型', () => {
     expect(pickTranslation([], { picked: null, presetId: 'ja' })).toBeNull();
   });
 
-  it('要重译的句数：过期（标了的、原文改过的）加还没有译文的；原句没了的不算', () => {
+  it('sentences to retranslate: stale (marked, source edited) plus those with no translation yet; source sentences removed don\'t count', () => {
     const row = (state: PairRow['state']) => ({ state }) as PairRow;
     const rows = ['ok', 'marked-stale', 'source-changed', 'untranslated', 'empty', 'sentence-gone', 'ok'].map((s) => row(s as PairRow['state']));
     expect(refreshCounts(rows)).toEqual({ todo: 4, stale: 2, untranslated: 2 });

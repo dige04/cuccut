@@ -12,8 +12,8 @@ import {
   switchConfettiStyle,
 } from './confetti.ts';
 
-describe('彩纸配方', () => {
-  it('十款齐全，缺省参数落在范围内：颜色 ≤ 8、形状都在 12 种之内、发射起点跟配方', () => {
+describe('confetti recipes', () => {
+  it('ten styles are all present; default parameters are within range: colors ≤ 8, shapes are all within the 12 kinds, emitter origin follows the recipe', () => {
     expect(CONFETTI_STYLES.map((style) => style.key)).toEqual([
       'rainbow-paper',
       'pastel-fall',
@@ -43,7 +43,7 @@ describe('彩纸配方', () => {
     }
   });
 
-  it('认不出的款回落到第一款；种子只收 53 位以内的非负整数', () => {
+  it('unrecognized styles fall back to the first; seeds only accept non-negative integers within 53 bits', () => {
     expect(confettiStyle('nope').key).toBe('rainbow-paper');
     expect(confettiSeed(12.7)).toBe(12);
     expect(confettiSeed(-5)).toBe(5);
@@ -53,8 +53,8 @@ describe('彩纸配方', () => {
   });
 });
 
-describe('随机源', () => {
-  it('randomSeed 给出非零安全整数', () => {
+describe('random source', () => {
+  it('randomSeed yields a non-zero safe integer', () => {
     for (let i = 0; i < 20; i++) {
       const seed = randomSeed();
       expect(Number.isSafeInteger(seed) && seed > 0).toBe(true);
@@ -62,15 +62,15 @@ describe('随机源', () => {
   });
 });
 
-describe('参数', () => {
-  it('换款回缺省但种子保留', () => {
+describe('parameters', () => {
+  it('switching styles resets to defaults but keeps the seed', () => {
     const next = switchConfettiStyle({ ...confettiDefaults('rainbow-paper', 99), size: 3 }, 'hearts-petals');
     expect(next.seed).toBe(99);
     expect(next.style).toBe('hearts-petals');
     expect(next.size).toBe(1);
   });
 
-  it('多于 8 色、非法形状与越界值被夹回', () => {
+  it('more than 8 colors, invalid shapes, and out-of-range values are clamped back', () => {
     const fixed = normalizeConfetti({
       style: 'neon-streamers',
       colors: new Array(12).fill('#FFFFFF'),
@@ -91,7 +91,7 @@ describe('参数', () => {
     expect(normalizeConfetti(null).style).toBe('rainbow-paper');
   });
 
-  it('发射参数：没自定时回落到配方第一枚发射器，多发射器的款标 multi', () => {
+  it('emitter parameters: without customization, falls back to the recipe\'s first emitter; styles with multiple emitters are marked multi', () => {
     const cannons = effectiveEmit(confettiDefaults('party-cannons'));
     expect([cannons.x, cannons.y, cannons.angle, cannons.spread, cannons.multi]).toEqual([0, 83, -65, 26, true]);
     const custom = effectiveEmit({ ...confettiDefaults('party-cannons'), origin: { x: 50, y: 50 }, angle: -90 });

@@ -41,8 +41,8 @@ function fakeSession(replies: Record<string, Reply>) {
   return { session, calls };
 }
 
-describe('安装与修复：两步确认', () => {
-  it('第一步只要计划，不带 confirmBytes 与 commandId', async () => {
+describe('install and repair: two-step confirmation', () => {
+  it('step one only requests the plan, without confirmBytes and commandId', async () => {
     const { session, calls } = fakeSession({ 'models.install': () => ({ plan: plan(), jobId: null }), 'models.repair': () => ({ plan: plan(), jobId: null }) });
     await planInstall(session, 'install', QWEN);
     await planInstall(session, 'repair', QWEN);
@@ -52,14 +52,14 @@ describe('安装与修复：两步确认', () => {
     ]);
   });
 
-  it('第二步原样交回 confirmBytes（带 commandId），拿到任务', async () => {
+  it('step two returns confirmBytes unchanged (with commandId) and gets the task', async () => {
     const { session, calls } = fakeSession({ 'models.install': () => ({ plan: plan(), jobId: 'job_1' }) });
     expect(await confirmInstall(session, 'install', plan())).toEqual({ kind: 'started', jobId: 'job_1' });
     expect(calls[0]![1]).toMatchObject({ bundleId: QWEN, confirmBytes: 400 });
     expect(calls[0]![1]).toHaveProperty('commandId');
   });
 
-  it('大小变了：带回新计划让对话框重新确认，不算失败', async () => {
+  it('size changed: bring back the new plan so the dialog confirms again; not counted as a failure', async () => {
     const next = plan({ confirmBytes: 520, downloadBytes: 520 });
     const error = new RpcError('conflict', '要下载的字节数变了，请按新的计划重新确认', { code: 'MODEL_INSTALL_SIZE_CHANGED', plan: next });
     const { session } = fakeSession({
@@ -70,13 +70,13 @@ describe('安装与修复：两步确认', () => {
     expect(await confirmInstall(session, 'repair', plan())).toEqual({ kind: 'replan', plan: next });
   });
 
-  it('已经齐全：没有任务', async () => {
+  it('already complete: no task', async () => {
     const done = plan({ upToDate: true, confirmBytes: 0, downloadBytes: 0 });
     const { session } = fakeSession({ 'models.repair': () => ({ plan: done, jobId: null }) });
     expect(await confirmInstall(session, 'repair', done)).toEqual({ kind: 'up-to-date', plan: done });
   });
 
-  it('严格离线、磁盘不够这些拒绝原样抛出', async () => {
+  it('rejections such as strict offline mode or insufficient disk space are rethrown as is', async () => {
     const error = new RpcError('conflict', '严格离线模式下不下载模型', { code: 'OFFLINE_STRICT' });
     const { session } = fakeSession({
       'models.install': () => {
@@ -87,8 +87,8 @@ describe('安装与修复：两步确认', () => {
   });
 });
 
-describe('停下、删除与检查', () => {
-  it('暂停保留已下载的；取消下载时一并删掉', async () => {
+describe('stop, delete and check', () => {
+  it('pause keeps what has been downloaded; cancelling the download deletes it too', async () => {
     const { session, calls } = fakeSession({ 'models.cancelInstall': () => ({ bundle: bundle(QWEN, { state: 'not-installed' }) }) });
     await stopInstall(session, QWEN, false);
     await stopInstall(session, QWEN, true);
@@ -98,7 +98,7 @@ describe('停下、删除与检查', () => {
     ]);
   });
 
-  it('删除返回 Runtime 实际删了什么、留了什么；在用时原样抛出', async () => {
+  it('delete returns what Runtime actually deleted and what it kept; rethrown as is when in use', async () => {
     const result = { removed: ['Qwen/Qwen3-ASR-0.6B'], kept: [{ repo: 'silero/vad', usedBy: ['b@mlx'] }], bundle: bundle(QWEN, { state: 'not-installed' }) };
     const { session } = fakeSession({ 'models.remove': () => result });
     expect(await removeBundle(session, QWEN)).toEqual(result);
@@ -112,7 +112,7 @@ describe('停下、删除与检查', () => {
     await expect(removeBundle(other, QWEN)).rejects.toBe(busy);
   });
 
-  it('检查提交一个任务（带 commandId）', async () => {
+  it('check submits one task (with commandId)', async () => {
     const { session, calls } = fakeSession({ 'models.test': () => ({ jobId: 'job_3' }) });
     expect(await startSelfTest(session, QWEN)).toBe('job_3');
     expect(calls[0]![0]).toBe('models.test');

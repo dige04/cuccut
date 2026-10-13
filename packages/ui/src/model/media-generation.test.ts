@@ -59,8 +59,8 @@ const LANDSCAPE = { width: 1920, height: 1080 };
 const PORTRAIT = { width: 1080, height: 1920 };
 const SQUARE = { width: 1080, height: 1080 };
 
-describe('请求带上视频', () => {
-  it('语音：带 videoId 与素材名（文字开头 24 字）', () => {
+describe('request carries the video', () => {
+  it('voice: carries videoId and the media name (first 24 characters of the text)', () => {
     const req = editorSpeechRequest(
       { ...BLANK_TTS, text: '  欢迎使用 CucCut！\n转录、翻译、配音、剪辑，全都在你自己的电脑上完成。 ', voice: 'preset:echo' },
       speech,
@@ -71,31 +71,31 @@ describe('请求带上视频', () => {
     expect(speechAssetName('你好')).toBe('语音：你好');
   });
 
-  it('我的声音照合同原样交 library:<id>', () => {
+  it('my voice is passed as-is per the contract: library:<id>', () => {
     expect(editorSpeechRequest({ ...BLANK_TTS, text: '你好', voice: 'library:v9' }, speech, 'v1').voice).toBe('library:v9');
   });
 
-  it('图片：带 videoId；「跟视频画布」按画布取最接近的画幅', () => {
+  it('image: carries videoId; "follow video canvas" picks the closest aspect ratio to the canvas', () => {
     const draft: EditorImageDraft = { ...BLANK_IMAGE, prompt: '一只纸鹤', size: '2:3', fit: true };
     expect(editorImageRequest(draft, imageOption(ratios), 'v1', LANDSCAPE)).toMatchObject({ videoId: 'v1', size: '3:2', prompt: '一只纸鹤' });
     expect(editorImageRequest({ ...draft, fit: false }, imageOption(ratios), 'v1', LANDSCAPE).size).toBe('2:3');
   });
 
-  it('重试补回 videoId；参数不全时照旧 null', () => {
+  it('retry restores videoId; when parameters are incomplete, still null as before', () => {
     expect(withVideo(retryRequest(imageJob()), 'v1')).toMatchObject({ prompt: '水墨风格的山间小路', videoId: 'v1' });
     expect(withVideo(null, 'v1')).toBeNull();
   });
 });
 
-describe('跟视频画布', () => {
-  it('横、竖、方三种画布各落到最接近的一档', () => {
+describe('follow video canvas', () => {
+  it('landscape, portrait and square canvases each map to the closest tier', () => {
     const options = aspectOptions(ratios);
     expect(canvasAspect(LANDSCAPE, options)?.key).toBe('3:2');
     expect(canvasAspect(PORTRAIT, options)?.key).toBe('2:3');
     expect(canvasAspect(SQUARE, options)?.key).toBe('1:1');
   });
 
-  it('16:9 / 9:16 有就取原样；只列尺寸的模型按尺寸的比例算', () => {
+  it('16:9 / 9:16 are used as-is when available; models that only list sizes use the ratio of the size', () => {
     const wide = imageModel('w', { aspectRatios: ['16:9', '9:16', '1:1', '4:3'].map((ratio) => ({ ratio, size: '1024x1024' })) });
     expect(fittedAspect(wide, LANDSCAPE)?.key).toBe('16:9');
     expect(fittedAspect(wide, PORTRAIT)?.key).toBe('9:16');
@@ -103,7 +103,7 @@ describe('跟视频画布', () => {
     expect(fittedAspect(sizes, LANDSCAPE)?.key).toBe('1792x1024');
   });
 
-  it('模型不让选尺寸、画布没有大小时没有这一档，草稿原样', () => {
+  it('when the model does not allow choosing a size and the canvas has no size, this tier does not exist and the draft stays as is', () => {
     const fixed = imageModel('fixed', { sizes: [], aspectRatios: [] });
     expect(fittedAspect(fixed, LANDSCAPE)).toBeNull();
     expect(canvasAspect({ width: 0, height: 0 }, aspectOptions(ratios))).toBeNull();
@@ -112,8 +112,8 @@ describe('跟视频画布', () => {
   });
 });
 
-describe('视频里的生成记录', () => {
-  it('只要这个视频、这一类，新的在前，藏起来的不列；不限提交者', () => {
+describe('generation records in the video', () => {
+  it('only this video and this kind, newest first, hidden ones not listed; not limited to submitter', () => {
     const jobs = [
       imageJob({ jobId: 'a', videoId: 'v1', createdAt: '2026-10-03T00:00:00.000Z' }),
       imageJob({ jobId: 'b', videoId: 'v1', createdAt: '2026-10-03T00:05:00.000Z', submitter: { kind: 'agent', id: 's1', taskId: 't1' } }),
@@ -126,14 +126,14 @@ describe('视频里的生成记录', () => {
     expect(videoGenerationJobs(jobs, 'v1', 'synthesizeSpeech', []).map((j) => j.jobId)).toEqual(['e']);
   });
 
-  it('结果导入成的素材', () => {
+  it('media imported from results', () => {
     const job = imageJob({ state: 'completed', result: { outputs: [{ ...imageOut('sha256:1'), assetId: 'as_1' }, imageOut('sha256:2')] } as never });
     expect(outputAsset(job, 'sha256:1')).toBe('as_1');
     expect(outputAsset(job, 'sha256:2')).toBeNull();
     expect(outputAsset(job, 'sha256:x')).toBeNull();
   });
 
-  it('生成语音子页的阶段', () => {
+  it('stages of the generate-voice subpage', () => {
     expect(ttsStage(null, null)).toBe('setup');
     expect(ttsStage('job_1', null)).toBe('run');
     expect(ttsStage('job_1', toolJob({ state: 'queued' }))).toBe('run');

@@ -24,15 +24,15 @@ import {
 
 const term = (source: string, target: string, entryId: string | null = 'glo_a'): PromptTerm => ({ source, target, entryId });
 
-describe('术语的出现与每批的上限', () => {
-  it('语言标签在子标签边界上相配', () => {
+describe('glossary term occurrences and the per-batch cap', () => {
+  it('language tags match at subtag boundaries', () => {
     expect(languageMatches('en', 'en-US')).toBe(true);
     expect(languageMatches('EN-us', 'en')).toBe(true);
     expect(languageMatches('zh-Hans', 'zh-Hant')).toBe(false);
     expect(languageMatches('en', 'eng')).toBe(false);
   });
 
-  it('拉丁字母的写法要在词边界上，中文按子串，不分大小写', () => {
+  it('Latin-script terms match on word boundaries, CJK terms by substring, case-insensitively', () => {
     expect(termOccurs('AI', 'He said AI is here')).toBe(true);
     expect(termOccurs('AI', 'He said it')).toBe(false);
     expect(termOccurs('CucCut', '我们用cuccut剪辑')).toBe(true);
@@ -42,7 +42,7 @@ describe('术语的出现与每批的上限', () => {
     expect(termOccurs('  ', 'anything')).toBe(false);
   });
 
-  it('条数不多时每批带全部；多了只带这一批出现的，按优先顺序截到上限并报告截掉几条', () => {
+  it('with few entries every batch carries all of them; with many, each batch carries only the terms that appear in it, truncated to the cap in priority order, reporting how many were dropped', () => {
     const few = Array.from({ length: ALL_TERMS }, (_, i) => term(`word${i}`, `词${i}`));
     expect(selectTerms(few, 'nothing relevant')).toEqual({ terms: few, capped: 0 });
 
@@ -63,7 +63,7 @@ describe('术语的出现与每批的上限', () => {
     expect(limited.terms.length + limited.capped).toBe(40);
   });
 
-  it('去重：调用时给的优先，其次调用时给的库里的，最后视频启用的；同一写法不分大小写只留第一条', () => {
+  it('dedupe: call-time entries first, then call-time glossary entries, then video-enabled ones; the same spelling is kept once, case-insensitively, first occurrence wins', () => {
     const terms = promptTerms({
       inline: [{ source: 'Cut', target: '剪（调用时）' }],
       entries: [
@@ -97,7 +97,7 @@ describe('术语的出现与每批的上限', () => {
   });
 });
 
-describe('glossaryRef 与术语表改了之后的过期', () => {
+describe('glossaryRef and staleness after the glossary changes', () => {
   const snapshot = {
     inline: [{ source: 'CucCut', target: '酷剪' }],
     entries: [
@@ -118,7 +118,7 @@ describe('glossaryRef 与术语表改了之后的过期', () => {
   };
   const source = 'Open the timeline in CucCut.\nTrim the clip.\nThen export.';
 
-  it('记下条目、版本与原文里出现过的术语（没出现的不记）', () => {
+  it('records the entries, versions and source-text terms that occur (absent ones are not recorded)', () => {
     const ref = glossaryRefOf(snapshot, source)!;
     expect(ref.entries).toEqual([{ library: 'glossaries', id: 'glo_a', version: 2, contentHash: 'sha256:a2', name: '产品词' }]);
     expect(ref.inline).toMatchObject({ count: 1, contentHash: expect.stringMatching(/^sha256:/) });
@@ -130,7 +130,7 @@ describe('glossaryRef 与术语表改了之后的过期', () => {
     expect(glossaryRefOf({ inline: [], entries: [] }, source)).toBeNull();
   });
 
-  it('表没变时都不过期；改了译法只让含这条术语的句子过期；新加的术语出现在句子里也算；删了表时含它的术语的句子过期', () => {
+  it('nothing goes stale while the table is unchanged; changing a translation only stales sentences containing that term; a newly added term counts when it appears in a sentence; deleting the table stales sentences containing its terms', () => {
     const ref = glossaryRefOf(snapshot, source) as GlossaryRef;
     const terms = snapshot.entries[0]!.terms;
     const now = (contentHash: string, list: typeof terms) => () => ({ contentHash, terms: list });
@@ -149,7 +149,7 @@ describe('glossaryRef 与术语表改了之后的过期', () => {
   });
 });
 
-describe('解析库里的术语表', () => {
+describe('parses the glossary from the library', () => {
   let dir: string;
   let library: LibraryStore;
 
@@ -176,7 +176,7 @@ describe('解析库里的术语表', () => {
       },
     });
 
-  it('调用时给的在前；视频启用的删了或语言不符时跳过并记下，转写用的不报；对外服务的客户端只能用调用时直接给的术语', async () => {
+  it('call-time entries come first; a video-enabled entry that was deleted or whose language does not match is skipped and recorded, while transcription-use entries are not reported; external-service clients may only use terms passed directly at call time', async () => {
     const zh = (await translation('zh 表', 'zh-CN', 'en')).entry;
     const en = (await translation('en 表', 'en')).entry;
     const other = (await translation('另一张', 'zh')).entry;

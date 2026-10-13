@@ -29,7 +29,7 @@ const router: TranscribeRouter = {
   executors: () => [],
 };
 
-describe('不经模型的任务（JobManager.submitTask）', () => {
+describe('tasks without a model (JobManager.submitTask)', () => {
   let dir: string;
   let paths: { jobsFile: string; stagingDir: string; artifactsDir: string; diagnosticsDir: string };
   let manager: JobManager;
@@ -73,7 +73,7 @@ describe('不经模型的任务（JobManager.submitTask）', () => {
 
   const submitter = { kind: 'connection', id: 'conn_1' } as const;
 
-  it('正常返回即完成：结果、阶段与警告进记录，staging 删除，重启后还查得到', async () => {
+  it('a normal return completes the task: result, stages and warnings are recorded, staging is deleted, and it can still be looked up after a restart', async () => {
     let staging = '';
     const { jobId } = manager.submitTask(
       submission(async (run: TaskRun) => {
@@ -97,7 +97,7 @@ describe('不经模型的任务（JobManager.submitTask）', () => {
     expect(manager.inspect(jobId)).toMatchObject({ kind: 'export', state: 'completed' });
   });
 
-  it('TaskFailure 是失败：错误码、详情与已经发布的部分结果都保留', async () => {
+  it('TaskFailure is a failure: the error code, details and already-published partial results are all kept', async () => {
     const { jobId } = manager.submitTask(
       submission(async () => {
         throw new TaskFailure(
@@ -120,7 +120,7 @@ describe('不经模型的任务（JobManager.submitTask）', () => {
     });
   });
 
-  it('运行中取消：执行函数收到信号，任务为 cancelled，staging 删除', async () => {
+  it('cancelling a running task: the executor receives the signal, the task becomes cancelled, and staging is deleted', async () => {
     let started!: () => void;
     const running = new Promise<void>((resolve) => (started = resolve));
     let staging = '';
@@ -140,7 +140,7 @@ describe('不经模型的任务（JobManager.submitTask）', () => {
     await expect(fs.stat(staging)).rejects.toThrow();
   });
 
-  it('排队中取消不执行；同一个 commandId 返回原来的任务', async () => {
+  it('cancelling a queued task does not run it; the same commandId returns the original task', async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => (release = resolve));
     const busy = manager.submitTask(
@@ -176,7 +176,7 @@ describe('不经模型的任务（JobManager.submitTask）', () => {
     expect(ran).toBe(false);
   });
 
-  it('Runtime 停止时运行中的任务标为 interrupted，重启后不续跑、不当成转写任务', async () => {
+  it('when the Runtime stops, running tasks are marked interrupted; after restart they are not resumed and are not treated as transcription tasks', async () => {
     let started!: () => void;
     const running = new Promise<void>((resolve) => (started = resolve));
     const { jobId } = manager.submitTask(

@@ -77,7 +77,7 @@ function translationBody(speechId: Id, sequenceId: Id) {
   };
 }
 
-describe.skipIf(!engine || !ffmpeg)('识别说话人（真实引擎 + 假 Model Worker）', () => {
+describe.skipIf(!engine || !ffmpeg)('speaker recognition (real engine + fake Model Worker)', () => {
   let dir: string;
   let runtime: RunningRuntime;
   let client: CucCutClient;
@@ -181,7 +181,7 @@ describe.skipIf(!engine || !ffmpeg)('识别说话人（真实引擎 + 假 Model 
   const docOf = async (videoId: Id, documentId: Id) =>
     (await client.request('documents.read', { videoId, documentId })) as { revision: string; body: any };
 
-  it('没装模型包时启动即拒绝（MODEL_UNAVAILABLE，带模型包状态），不建任务', async () => {
+  it('without the model pack installed, start is rejected immediately (MODEL_UNAVAILABLE, with model pack status), no task created', async () => {
     const { videoId } = await videoWithSpeech();
     const error = await client.request('pipelines.start', { pipeline: 'speakers', params: { videoId } }).catch((e: unknown) => e);
     expect(error).toMatchObject({ code: 'conflict', details: { code: 'MODEL_UNAVAILABLE', bundle: { bundleId: PACK.bundleId } } });
@@ -189,7 +189,7 @@ describe.skipIf(!engine || !ffmpeg)('识别说话人（真实引擎 + 假 Model 
     expect(listed.bundles.find((b) => b.bundleId === PACK.bundleId)?.estimatedBytes).toBeGreaterThan(0);
   });
 
-  it('识别给出提案、不改视频；应用一笔事务写转写与重切的译文（改过的名字），撤销还原；识别之后改过转写时拒绝应用', async () => {
+  it('recognition gives a proposal and doesn\'t change the video; applying a transaction writes transcript and re-split translation (changed names), undo restores; after the transcript was edited following recognition, apply is rejected', async () => {
     const { videoId, speechId, translationId } = await videoWithSpeech();
     await installPack();
     const before = await client.request('videos.history', { videoId });
@@ -245,7 +245,7 @@ describe.skipIf(!engine || !ffmpeg)('识别说话人（真实引擎 + 假 Model 
     expect((await docOf(videoId, translationId)).body.units).toHaveLength(3);
   });
 
-  it('不是识别说话人的任务、或不属于这个视频时 invalid-request', async () => {
+  it('not a speaker recognition task, or not belonging to this video: invalid-request', async () => {
     const { videoId } = await videoWithSpeech();
     await installPack();
     const install = jobs!.jobs.find((j) => j.kind !== 'pipeline')!;

@@ -50,8 +50,8 @@ function sequence(ducking: DuckingRule[] = []): Sequence {
   } as unknown as Sequence;
 }
 
-describe('压低原声', () => {
-  it('找规则：点名片段的优先，其次点名轨道的', () => {
+describe('duck original sound', () => {
+  it('find rule: rules naming the clip take priority, then rules naming the track', () => {
     const byTrack = { ...rule, id: 'd2', target: { trackIds: ['a2'] } };
     expect(duckingRuleFor(sequence([byTrack, rule]), music)?.id).toBe('d1');
     expect(duckingRuleFor(sequence([byTrack]), music)?.id).toBe('d2');
@@ -60,13 +60,13 @@ describe('压低原声', () => {
     expect(isOwnRule(byTrack, music)).toBe(false);
   });
 
-  it('「压在」的选项：别的、有发声片段的轨道', () => {
+  it('the \'duck under\' options: other tracks that have sounding clips', () => {
     // The video's own sound is off. The picture track does not count.
     expect(triggerOptions(sequence(), music).map((o) => o.key)).toEqual(['a1']);
     expect(triggerOptions(sequence(), video).map((o) => o.key)).toEqual(['a1', 'a2']);
   });
 
-  it('打开：新建只点名这个片段的规则；停用的规则重新启用', () => {
+  it('turn on: creates a rule naming only this clip; a disabled rule is re-enabled', () => {
     expect(enableOperations(sequence(), music, 'a1')).toEqual([
       { type: 'setDucking', sequenceId: 'seq', trigger: { kind: 'items', trackIds: ['a1'] }, target: { itemIds: ['music'] } },
     ]);
@@ -76,13 +76,13 @@ describe('压低原声', () => {
     expect(enableOperations(sequence([rule]), music, 'a1')).toEqual([]);
   });
 
-  it('关掉：自己的规则删掉，共用的停用', () => {
+  it('turn off: own rules are deleted, shared ones are disabled', () => {
     expect(disableOperations(sequence([rule]), music)).toEqual([{ type: 'removeDucking', sequenceId: 'seq', ruleId: 'd1' }]);
     const shared = { ...rule, target: { itemIds: ['music', 'clip'] } };
     expect(disableOperations(sequence([shared]), music)).toEqual([{ type: 'setDucking', sequenceId: 'seq', ruleId: 'd1', enabled: false }]);
   });
 
-  it('读数与改动：秒是十进制字符串，恢复缺省写回三项', () => {
+  it('readout and changes: seconds are decimal strings; restoring defaults writes back the three fields', () => {
     expect(ruleValues(rule)).toEqual({ depth: 10, attack: 0.02, release: 0.35 });
     expect(isDefault(rule)).toBe(true);
     expect(isDefault({ ...rule, depth: 18 })).toBe(false);

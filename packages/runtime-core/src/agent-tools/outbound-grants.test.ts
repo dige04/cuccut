@@ -5,7 +5,7 @@ import { modelCallRisk, outboundGrantOf } from './outbound-grants.ts';
 /** Risk levels of the model tools (architecture §3.12, §12.5). */
 
 describe('modelCallRisk', () => {
-  it('本机是 edit；有授权覆盖的外发是 command；没有授权覆盖是 high；没有启用、解析不到时按 command（提交时会被拒绝）', () => {
+  it('local is edit; outbound covered by grant is command; not covered is high; not enabled or unresolvable is command (rejected at submission)', () => {
     expect(modelCallRisk({ kind: 'local', enabled: true, granted: true })).toBe('edit');
     expect(modelCallRisk({ kind: 'online', enabled: true, granted: true })).toBe('command');
     expect(modelCallRisk({ kind: 'node', enabled: true, granted: true })).toBe('command');
@@ -17,7 +17,7 @@ describe('modelCallRisk', () => {
 });
 
 describe('outboundGrantOf', () => {
-  it('授权判断的结果换成风险：本机 edit、节点 command、覆盖 command、要授权 high、没有启用 command', () => {
+  it('grant judgment result mapped to risk: local edit, node command, covered command, need grant high, not enabled command', () => {
     const item = { recipient: 'openai' } as GrantRequestItem;
     expect(modelCallRisk(outboundGrantOf({ status: 'none', kind: 'local' }))).toBe('edit');
     expect(modelCallRisk(outboundGrantOf({ status: 'none', kind: 'node' }))).toBe('command');

@@ -22,7 +22,7 @@ async function until<T>(read: () => T | undefined | null | false, timeoutMs = 5_
   }
 }
 
-describe('CodexSession（假 codex）', () => {
+describe('CodexSession (fake codex)', () => {
   let dir: string;
   let cwd: string;
   let fake: FakeCodex;
@@ -55,7 +55,7 @@ describe('CodexSession（假 codex）', () => {
 
   const lastParams = (method: string) => fake.requests(method).at(-1)!.params;
 
-  it('访问模式 → thread/start 与 turn/start 的 approvalPolicy、审批人（一律 user）与沙箱', async () => {
+  it('access mode → approvalPolicy, approver (always user) and sandbox for thread/start and turn/start', async () => {
     const expected: Array<[AgentMode, string, string]> = [
       ['plan', 'untrusted', 'read-only'],
       ['ask', 'untrusted', 'workspace-write'],
@@ -86,7 +86,7 @@ describe('CodexSession（假 codex）', () => {
     }
   });
 
-  it('同一个会话里换访问模式，下一轮按新的带；进出「先给方案」时才带 sandboxPolicy', async () => {
+  it('switching access mode within the same session applies the new one on the next turn; sandboxPolicy is sent only when entering or leaving \'plan first\' mode', async () => {
     const { session, completed } = await start({}, 'auto');
     for (const [text, accessMode] of [
       ['a', 'auto'],
@@ -108,7 +108,7 @@ describe('CodexSession（假 codex）', () => {
     ]);
   });
 
-  it('图片按 localImage 给路径，文字在前；只有图片时不发空文字', async () => {
+  it('images are given as localImage paths, text first; no empty text is sent when there are only images', async () => {
     const { session, completed } = await start();
     expect(session.capabilities).toMatchObject({ images: true, steer: true });
     const images = [
@@ -125,7 +125,7 @@ describe('CodexSession（假 codex）', () => {
     expect(lastParams('turn/start').input).toEqual([{ type: 'localImage', path: '/work/a.png' }]);
   });
 
-  it('插话：正在跑的回合 accepted（带 expectedTurnId）；别的回合、已经结束的回合 unavailable，不发请求', async () => {
+  it('interjection: a running turn is accepted (with expectedTurnId); other turns and already-finished turns are unavailable, no request is sent', async () => {
     const { session, events, completed } = await start({ turn: { status: 'hang' } });
     const { turnId } = await session.startTurn({ text: '开始' }, { accessMode: 'ask', model: null, effort: null });
     await until(() => events.some((e) => e.type === 'turn.started' && e.turnId === turnId));
@@ -148,7 +148,7 @@ describe('CodexSession（假 codex）', () => {
     expect(fake.requests('turn/steer')).toHaveLength(1);
   });
 
-  it('插话：Codex 明确拒绝（没有活动回合、不支持这个方法）为 unavailable；说不清送没送到的抛错', async () => {
+  it('interjection: an explicit rejection by Codex (no active turn, method not supported) is unavailable; an ambiguous delivery failure throws', async () => {
     for (const steer of ['no-active-turn', 'unsupported'] as const) {
       const { session, events } = await start({ turn: { status: 'hang' }, steer });
       const { turnId } = await session.startTurn({ text: '开始' }, { accessMode: 'ask', model: null, effort: null });
@@ -162,7 +162,7 @@ describe('CodexSession（假 codex）', () => {
     expect(fake.requests('turn/steer')).toHaveLength(3);
   });
 
-  it('错误：会重试的发 session.error 不结束回合；不再重试的只随 turn.completed 报一次，带错误码', async () => {
+  it('errors: retryable ones emit session.error without ending the turn; non-retryable ones are reported once, with turn.completed, with an error code', async () => {
     const { session, events, completed } = await start({
       turn: {
         status: 'failed',
@@ -181,7 +181,7 @@ describe('CodexSession（假 codex）', () => {
     ]);
   });
 
-  it('错误码：重试中的 429 带码而回合照常完成；回合失败按结构化原因与原文分类', async () => {
+  it('error codes: a 429 during retry carries the code and the turn still completes; turn failures are classified by structured reason and raw text', async () => {
     const retrying = await start({
       turn: {
         status: 'completed',

@@ -14,7 +14,7 @@ const ffprobe = ffprobePathFor(ffmpeg);
 const hasFfmpeg = spawnSync(ffmpeg, ['-version']).status === 0 && spawnSync(ffprobe, ['-version']).status === 0;
 
 describe('ffprobePathFor', () => {
-  it('同目录换名字，保留扩展名', () => {
+  it('same directory with a new name keeps the extension', () => {
     expect(ffprobePathFor('/opt/homebrew/bin/ffmpeg')).toBe('/opt/homebrew/bin/ffprobe');
     expect(ffprobePathFor('C:/tools/ffmpeg.exe')).toBe('C:/tools/ffprobe.exe');
     expect(ffprobePathFor('ffmpeg')).toBe('ffprobe');
@@ -27,7 +27,7 @@ describe.skipIf(!resolveElectronBinary() || !hasFfmpeg)('bakeComposition', { tim
     for (const dir of tmpDirs) fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('hyperframes-basic 烘焙成带 alpha 的 ProRes 4444', async () => {
+  it('hyperframes-basic bakes to ProRes 4444 with alpha', async () => {
     const bundle = await inspectBundle(path.join(fixtures, 'hyperframes-basic'), { manifest: { alpha: true } });
     tmpDirs.push(bundle.root);
     const out = fs.mkdtempSync(path.join(os.tmpdir(), 'cuccut-bake-test-'));
@@ -80,7 +80,7 @@ describe.skipIf(!resolveElectronBinary() || !hasFfmpeg)('bakeComposition', { tim
     expect(Number(stream.nb_read_frames)).toBe(60);
   });
 
-  it('中止信号 → 停止并拒绝', async () => {
+  it('abort signal → stops and rejects', async () => {
     const bundle = await inspectBundle(path.join(fixtures, 'hyperframes-basic'));
     tmpDirs.push(bundle.root);
     const out = fs.mkdtempSync(path.join(os.tmpdir(), 'cuccut-bake-test-'));

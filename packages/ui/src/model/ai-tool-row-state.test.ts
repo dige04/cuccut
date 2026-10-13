@@ -4,39 +4,39 @@ import { aiToolJobFacts, aiToolRowState, pendingCutCount, soundtrackJobFacts, ty
 import { toolJob } from './tools-test-fixtures.ts';
 
 describe('aiToolRowState', () => {
-  it('什么都没有时不出状态', () => {
+  it('no status shown when nothing is present', () => {
     expect(aiToolRowState('polish', {})).toBeNull();
     expect(aiToolRowState('cleanup', { pendingCuts: 0, staleSentences: 0, chapters: 0, last: null, running: null })).toBeNull();
   });
 
-  it('在跑：带百分比；不知道百分比时 null（列表写「在跑」）', () => {
+  it('running: includes percentage; null when the percentage is unknown (the list writes \'running\')', () => {
     expect(aiToolRowState('polish', { running: { percent: 40 } })).toEqual({ kind: 'running', percent: 40 });
     expect(aiToolRowState('polish', { running: { percent: null } })).toEqual({ kind: 'running', percent: null });
   });
 
-  it('结果没看完与说话人提案', () => {
+  it('unreviewed results and speaker proposals', () => {
     expect(aiToolRowState('summary', { result: true })).toEqual({ kind: 'result' });
     expect(aiToolRowState('speakers', { review: true })).toEqual({ kind: 'review' });
   });
 
-  it('找可剪的口：待定的建议条数', () => {
+  it('finding cut points: count of pending suggestions', () => {
     expect(aiToolRowState('cleanup', { pendingCuts: 3 })).toEqual({ kind: 'pending', count: 3 });
   });
 
-  it('刷新过期译文：过期的句数', () => {
+  it('refresh stale translations: count of stale sentences', () => {
     expect(aiToolRowState('stale', { staleSentences: 5 })).toEqual({ kind: 'stale', count: 5 });
   });
 
-  it('生成章节：时间线上的章节数', () => {
+  it('generate chapters: number of chapters on the timeline', () => {
     expect(aiToolRowState('chapters', { chapters: 4 })).toEqual({ kind: 'chapters', count: 4 });
   });
 
-  it('上次跑完的时间；那一笔撤销了就是已撤销', () => {
+  it('last completed time; if that entry was undone, it shows as undone', () => {
     expect(aiToolRowState('title', { last: { at: '2026-10-09T08:00:00Z', undone: false } })).toEqual({ kind: 'last', at: '2026-10-09T08:00:00Z' });
     expect(aiToolRowState('polish', { last: { at: '2026-10-09T08:00:00Z', undone: true } })).toEqual({ kind: 'undone' });
   });
 
-  it('待定、过期、章节只算各自的工具', () => {
+  it('pending, stale and chapters each count only their own tools', () => {
     const facts: AiToolRowFacts = { pendingCuts: 3, staleSentences: 5, chapters: 4 };
     expect(aiToolRowState('polish', facts)).toBeNull();
     expect(aiToolRowState('summary', facts)).toBeNull();
@@ -45,22 +45,22 @@ describe('aiToolRowState', () => {
     expect(aiToolRowState('chapters', facts)?.kind).toBe('chapters');
   });
 
-  describe('优先级：在跑 > 待处理 > 过期 > 章节 > 上次跑过', () => {
+  describe('priority: running > pending > stale > chapters > last run', () => {
     const last = { at: '2026-10-09T08:00:00Z', undone: false };
-    it('在跑压过一切', () => {
+    it('running overrides everything', () => {
       const all: AiToolRowFacts = { running: { percent: 10 }, result: true, review: true, pendingCuts: 2, staleSentences: 2, chapters: 2, last };
       for (const tool of ['cleanup', 'stale', 'chapters', 'speakers', 'polish'] as const) expect(aiToolRowState(tool, all)?.kind).toBe('running');
     });
-    it('结果没看完压过章节与上次', () => {
+    it('unreviewed results override chapters and last run', () => {
       expect(aiToolRowState('chapters', { result: true, chapters: 3, last })?.kind).toBe('result');
     });
-    it('待定压过上次', () => {
+    it('pending overrides last run', () => {
       expect(aiToolRowState('cleanup', { pendingCuts: 2, last })?.kind).toBe('pending');
     });
-    it('过期压过上次', () => {
+    it('stale overrides last run', () => {
       expect(aiToolRowState('stale', { staleSentences: 2, last })?.kind).toBe('stale');
     });
-    it('章节压过上次与已撤销', () => {
+    it('chapters override last run and undone', () => {
       expect(aiToolRowState('chapters', { chapters: 3, last })?.kind).toBe('chapters');
       expect(aiToolRowState('chapters', { chapters: 3, last: { ...last, undone: true } })?.kind).toBe('chapters');
     });
@@ -82,7 +82,7 @@ const job = (over: Partial<JobRecord> & { tool?: string; video?: string }): JobR
   }) as JobRecord;
 
 describe('aiToolJobFacts', () => {
-  it('按工具分：在跑的带百分比、完成的取最近一次；别的视频、别的流程、失败的不算', () => {
+  it('per tool: running ones include the percentage, completed ones take the most recent; other videos, other flows and failed ones do not count', () => {
     const facts = aiToolJobFacts(
       [
         job({ jobId: 'a', tool: 'polish', endedAt: '2026-10-09T07:00:00Z' }),
@@ -110,10 +110,10 @@ describe('pendingCutCount', () => {
     speechRef: { id: 'sp', revision },
     suggestions: [{ status: 'pending' }, { status: 'pending' }, { status: 'accepted' }],
   });
-  it('只数还没定的建议', () => {
+  it('counts only undecided suggestions', () => {
     expect(pendingCutCount([{ record: documents.pr, body: body('r2') }], documents)).toBe(2);
   });
-  it('转写改过、提案过期了不算；正文没到或认不出来不算', () => {
+  it('not counted when the transcription was edited or the proposal expired; not counted when the body has not arrived or is unrecognized', () => {
     expect(pendingCutCount([{ record: documents.pr, body: body('r1') }], documents)).toBe(0);
     expect(pendingCutCount([{ record: documents.pr, body: undefined }], documents)).toBe(0);
     expect(pendingCutCount([{ record: documents.pr, body: { schema: 'other' } }], documents)).toBe(0);
@@ -123,7 +123,7 @@ describe('pendingCutCount', () => {
 describe('soundtrackJobFacts', () => {
   const music = (patch: Parameters<typeof toolJob>[0]) => toolJob({ kind: 'generateMusic', providerId: 'local', modelId: 'yue2-3b@audio-cpp-q8', videoId: 'v1', ...patch });
 
-  it('只看这部视频的 generateMusic 任务：在跑的带百分比，最近一次完成的记时间', () => {
+  it('looks only at this video\'s generateMusic tasks: running ones include the percentage, and the most recent completed one records its time', () => {
     const jobs = [
       music({ jobId: 'j1', state: 'running', progress: { done: 25, total: 100, unit: 'seconds' } }),
       music({ jobId: 'j2', state: 'completed', endedAt: '2026-10-10T01:00:00.000Z' }),

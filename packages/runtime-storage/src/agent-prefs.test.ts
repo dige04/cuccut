@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AgentPrefsStore, defaultAgentPreferences } from './agent-prefs.ts';
 
-describe('Agent 偏好', () => {
+describe('agent preferences', () => {
   let dir: string;
   let file: string;
 
@@ -17,11 +17,11 @@ describe('Agent 偏好', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('没有文件时是默认值', async () => {
+  it('defaults when there is no file', async () => {
     expect(await new AgentPrefsStore(file).load()).toEqual(defaultAgentPreferences());
   });
 
-  it('改了落盘，重新读回来一样', async () => {
+  it('changes are written to disk and read back the same', async () => {
     const store = new AgentPrefsStore(file);
     await store.load();
     await store.update((p) => {
@@ -34,7 +34,7 @@ describe('Agent 偏好', () => {
     expect(store.driver('codex')).toEqual({ enabled: true, defaultModel: null, defaultEffort: null, executable: null });
   });
 
-  it('坏掉或不认识的字段按默认处理', async () => {
+  it('broken or unknown fields are treated as defaults', async () => {
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(
       file,
@@ -59,7 +59,7 @@ describe('Agent 偏好', () => {
     expect(prefs.rules).toEqual(['ok']);
   });
 
-  it('读不了的 JSON 不拦启动', async () => {
+  it('unreadable JSON does not block startup', async () => {
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, '{ not json');
     expect(await new AgentPrefsStore(file).load()).toEqual(defaultAgentPreferences());

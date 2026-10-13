@@ -59,7 +59,7 @@ describe('ModelCatalog', () => {
     await writeRepo(root, vad.repo, vad.revision, { 'config.json': '{}', 'model.safetensors': 'weights-vad' });
   }
 
-  it('模型目录的根：CUCCUT_MODELS_DIR 覆盖默认的 <home>/models', () => {
+  it('model catalogue root: CUCCUT_MODELS_DIR overrides the default <home>/models', () => {
     expect(resolveModelsRoot('/h', {})).toBe(path.join('/h', 'models'));
     expect(resolveModelsRoot('/h', { CUCCUT_MODELS_DIR: '/m' })).toBe(path.resolve('/m'));
     // Set `models.dir` after the environment variable but before the default. Setting it to the default location is the same as not setting it.
@@ -72,7 +72,7 @@ describe('ModelCatalog', () => {
     expect(resolveModelsDir('/h', {}, path.join('/h', 'models'))).toMatchObject({ source: 'default' });
   });
 
-  it('换模型目录的根之后按新目录重算；移动期间模型包不可用', async () => {
+  it('after changing the catalogue root it is recomputed from the new directory; bundles are unavailable while it is being moved', async () => {
     const catalog = new ModelCatalog({ root, ...mac });
     await installBoth();
     expect((await catalog.status(QWEN3_ASR_0_6B_BUNDLE))?.state).toBe('installed');
@@ -92,7 +92,7 @@ describe('ModelCatalog', () => {
     }
   });
 
-  it('缺清单、缺文件、大小不符、版本不符都是 not-installed；只缺一部分组件是 incomplete；齐全是 installed', async () => {
+  it('missing manifest, missing file, size mismatch, or version mismatch are all not-installed; only some components missing is incomplete; complete is installed', async () => {
     const catalog = new ModelCatalog({ root, ...mac });
     expect(await catalog.status(QWEN3_ASR_0_6B_BUNDLE)).toMatchObject({
       state: 'not-installed',
@@ -177,7 +177,7 @@ describe('ModelCatalog', () => {
     expect(await catalog.status('nope')).toBeNull();
   });
 
-  it('组件带登记里自己的许可：MOSS 的说话人模型是 CC-BY-4.0 并带署名；没登记许可的组件不带', async () => {
+  it('components carry their own registered license: MOSS\'s speaker model is CC-BY-4.0 with attribution; components without a registered license carry none', async () => {
     const catalog = new ModelCatalog({ root, ...mac });
     const moss = await catalog.status('moss-transcribe-diarize@mlx-8bit');
     const speaker = moss!.components!.find((c) => c.component === 'speaker')!;
@@ -189,7 +189,7 @@ describe('ModelCatalog', () => {
     expect(qwen!.components!.find((c) => c.component === 'vad')).not.toHaveProperty('license');
   });
 
-  it('Worker 要加载的权重：识别按清单相加；分离的权重 16 位存、32 位算，按文件的两倍；合成不估', async () => {
+  it('weights the Worker loads: recognition sums the manifest; separation weights are stored at 16 bits and computed at 32, counted at twice the file size; synthesis is not estimated', async () => {
     const catalog = new ModelCatalog({ root, ...mac });
     const separate = BUNDLES.find((b) => b.bundleId === 'htdemucs-ft@mlx')!;
     const file = weightBytes([separate.components.separator!]);
@@ -200,7 +200,7 @@ describe('ModelCatalog', () => {
     expect(await catalog.workerWeightBytes(speech.bundleId)).toBeNull();
   });
 
-  it('分离模型包随平台：Apple Silicon 列 MLX 的，别的平台列 candle 的（同一个仓库），各自是人声分离的默认；candle 的常驻按文件两倍、池随设备', async () => {
+  it('separation bundles by platform: Apple Silicon lists the MLX one, other platforms list the candle one (same repository), each the default for vocal separation; the candle resident amount is twice the file size, and the pool follows the device', async () => {
     const silicon = new ModelCatalog({ root, ...mac });
     const siliconSeparate = silicon.definitions().filter((d) => d.capability === 'separate');
     expect(siliconSeparate.map((d) => d.bundleId)).toEqual(['htdemucs-ft@mlx']);
@@ -234,7 +234,7 @@ describe('ModelCatalog', () => {
     expect(await linux.workerFootprint('htdemucs-ft@candle')).toEqual({ bytes, pool: 'gpuMemory' });
   });
 
-  it('mlx 只在 darwin/arm64 上可用；别的平台不列出，硬登记进去的是 error / unsupported', async () => {
+  it('mlx is available only on darwin/arm64; other platforms do not list it, and one registered directly is error / unsupported', async () => {
     await installBoth();
     const linux = new ModelCatalog({ root, platform: 'linux', arch: 'x64' });
     expect(await linux.status(QWEN3_ASR_0_6B_BUNDLE)).toBeNull();
@@ -244,7 +244,7 @@ describe('ModelCatalog', () => {
     }
   });
 
-  it('按平台列出：Apple Silicon 只列 MLX 与 Core ML，别的平台只列 candle 与 GGML，audio.cpp 哪里都列；名字与仓库相同，默认模型包随平台', async () => {
+  it('listed by platform: Apple Silicon lists only MLX and Core ML, other platforms only candle and GGML, and audio.cpp everywhere; names and repositories are the same, and the default bundle follows the platform', async () => {
     const ids = (catalog: ModelCatalog) => catalog.definitions().map((d) => d.bundleId);
     const silicon = new ModelCatalog({ root, ...mac });
     expect(silicon.definitions().every((d) => d.backend === 'mlx' || d.backend === 'coreml' || d.backend === 'audio-cpp')).toBe(true);
@@ -322,7 +322,7 @@ describe('ModelCatalog', () => {
     expect(silicon.definitions().some((d) => d.backend === 'ggml')).toBe(false);
   });
 
-  it('GGML 模型包：设备随 Worker 握手报告的（CUDA、Vulkan 或 CPU）；常驻量是 Whisper 权重的存储字节加 candle 的 VAD 与对齐器', async () => {
+  it('GGML bundles: the device is what the Worker reports in its handshake (CUDA, Vulkan or CPU); the resident amount is the stored bytes of the Whisper weights plus candle\'s VAD and aligner', async () => {
     const turbo = BUNDLES.find((b) => b.bundleId === 'whisper-large-v3-turbo@ggml')!;
     const whisper = turbo.components.asr!;
     await writeRepo(root, whisper.repo, whisper.revision, { 'ggml-large-v3-turbo-q8_0.bin': 'ggml-weights' });
@@ -347,7 +347,7 @@ describe('ModelCatalog', () => {
     expect(await windows.status(turbo.bundleId)).toMatchObject({ device: 'cpu' });
   });
 
-  it('candle 模型包：装好就可用，设备随 Worker 握手报告的（CUDA 或 CPU），交给 Worker 时也用它', async () => {
+  it('candle bundles: usable once installed; the device is what the Worker reports in its handshake (CUDA or CPU), and it is also used when handed to the Worker', async () => {
     await installBoth();
     const linux = new ModelCatalog({ root, platform: 'linux', arch: 'x64', threads: 2 });
     expect(await linux.status('qwen3-asr-0.6b@candle')).toMatchObject({ state: 'installed', backend: 'candle', device: 'cpu' });
@@ -386,7 +386,7 @@ describe('ModelCatalog', () => {
     expect(await silicon.status(QWEN3_ASR_0_6B_BUNDLE)).toMatchObject({ device: 'metal' });
   });
 
-  it('bundleFor 按协议规范 §4 给出绝对目录与清单里的文件', async () => {
+  it('bundleFor gives the absolute directory and manifest files per protocol spec §4', async () => {
     await installBoth();
     const catalog = new ModelCatalog({ root, ...mac, threads: 3 });
     const bundle = await catalog.bundleFor(QWEN3_ASR_0_6B_BUNDLE);
@@ -421,7 +421,7 @@ describe('ModelCatalog', () => {
     expect(path.isAbsolute(bundle.components.asr!.dir)).toBe(true);
   });
 
-  it('「说话人区分」模型包：装好之后用它的识别模型包带上它的组件、权重计进常驻；MOSS 自己区分，没装时不带', async () => {
+  it('speaker diarization bundle: once installed, the recognition bundle it pairs with carries its components, and its weights count toward the resident amount; MOSS diarizes on its own, so it is not carried when not installed', async () => {
     await installBoth();
     const catalog = new ModelCatalog({ root, ...mac });
     const pack = catalog.definition(SPEAKER_DIARIZATION_BUNDLE)!;
@@ -474,7 +474,7 @@ describe('ModelCatalog', () => {
     );
   });
 
-  it('清单里越出目录的路径视为没有清单', async () => {
+  it('a manifest path that leaves the directory is treated as no manifest', async () => {
     await installBoth();
     const manifestFile = path.join(root, ...vad.repo.split('/'), MANIFEST_FILE);
     const manifest = JSON.parse(await fs.readFile(manifestFile, 'utf8'));
@@ -486,7 +486,7 @@ describe('ModelCatalog', () => {
     expect(status!.detail).toContain('没有清单');
   });
 
-  it('verify 显式校验 sha256 并缓存结果；enable 清掉', async () => {
+  it('verify explicitly checks sha256 and caches the result; enable clears it', async () => {
     await installBoth();
     const catalog = new ModelCatalog({ root, ...mac });
     expect((await catalog.verify(QWEN3_ASR_0_6B_BUNDLE)).ok).toBe(true);
@@ -501,7 +501,7 @@ describe('ModelCatalog', () => {
     expect(await catalog.status(QWEN3_ASR_0_6B_BUNDLE)).toMatchObject({ state: 'installed' });
   });
 
-  it('运行状态、停用与没有 Worker 叠加在磁盘状态之上', async () => {
+  it('runtime status, disabled state and no Worker are layered on top of the disk state', async () => {
     await installBoth();
     let worker = true;
     const catalog = new ModelCatalog({ root, ...mac, workerAvailable: () => worker });
@@ -524,7 +524,7 @@ describe('ModelCatalog', () => {
     process.arch === 'arm64' &&
     fsSync.existsSync(path.join(realRoot, ...asr.repo.split('/'), MANIFEST_FILE));
 
-  it.skipIf(!realAvailable)('读这台机器上真实的模型目录（只查大小，不算 hash）', async () => {
+  it.skipIf(!realAvailable)('reads the real model directory on this machine (checks sizes only, no hashing)', async () => {
     const catalog = new ModelCatalog({ root: realRoot });
     const status = await catalog.status(QWEN3_ASR_0_6B_BUNDLE);
     expect(status?.state).toBe('installed');
@@ -535,7 +535,7 @@ describe('ModelCatalog', () => {
 });
 
 /** The second component of the music model pack, the audio.cpp engine (architecture design §6.3): the archive is chosen by host platform, placed in the tools directory, and can be replaced with `engineOverride`. */
-describe('ModelCatalog audio.cpp 引擎组件', () => {
+describe('ModelCatalog audio.cpp engine component', () => {
   const YUE = 'yue2-3b@audio-cpp-q8';
   let root: string;
   beforeEach(async () => {
@@ -547,7 +547,7 @@ describe('ModelCatalog audio.cpp 引擎组件', () => {
     await fs.rm(root, { recursive: true, force: true });
   });
 
-  it('没有引擎包的平台：仍然列出，状态是 error / unsupported，说明带平台；平台键可以由测试指定', async () => {
+  it('platforms without an engine bundle: still listed, with status error / unsupported and a message that names the platform; the platform key can be set by the test', async () => {
     const arm = new ModelCatalog({ root, platform: 'linux', arch: 'arm64' });
     expect(arm.platformKey).toBe('linux-arm64');
     expect(arm.definitions().map((d) => d.bundleId)).toContain(YUE);
@@ -562,7 +562,7 @@ describe('ModelCatalog audio.cpp 引擎组件', () => {
     expect((await pinned.status(YUE))!.estimatedBytes).toBeGreaterThan(0);
   });
 
-  it('engineOverride：文件在时组件算装好（bytes 为 null），也不报平台不支持；文件不在时不算', async () => {
+  it('engineOverride: when the file is present the component counts as installed (bytes is null) and no unsupported-platform error is reported; when absent it does not count', async () => {
     const exe = path.join(root, 'my-audiocpp_cli');
     await fs.writeFile(exe, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
     const catalog = new ModelCatalog({ root, platform: 'linux', arch: 'arm64', engineOverride: exe });
@@ -581,7 +581,7 @@ describe('ModelCatalog audio.cpp 引擎组件', () => {
     expect(gone.engineExecutable(YUE)).toBeNull();
   });
 
-  it('旧版装下的引擎（有可执行文件、没有清单）算装好，校验通过；工具目录默认在模型目录的 .ccut-tools 里', async () => {
+  it('an engine from an older install (has the executable, no manifest) counts as installed and passes verification; the tool directory defaults to .ccut-tools inside the model directory', async () => {
     const catalog = new ModelCatalog({ root, platform: 'darwin', arch: 'arm64' });
     expect(catalog.toolsDir).toBe(path.join(root, '.ccut-tools'));
     const dir = path.join(catalog.toolsDir, 'audiocpp', '0.9.1');

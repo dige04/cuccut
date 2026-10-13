@@ -4,15 +4,15 @@ import { COPY_DEFAULTS, copyAllSettings, copyEffective, copyIncludes, scopeIsPla
 const all: TranscriptCopyPrefs = { format: 'md', frontmatter: true, chapters: true, timestamps: true, speakers: true, skipCut: false };
 const bodyOnly: TranscriptCopyPrefs = { format: 'txt', frontmatter: false, chapters: false, timestamps: false, speakers: false, skipCut: true };
 
-describe('文稿面板复制的组合', () => {
-  it('缺省是 Markdown、五个开关全开', () => {
+describe('combinations copied from the transcript panel', () => {
+  it('default is Markdown with all five toggles on', () => {
     expect(COPY_DEFAULTS).toEqual({ format: 'md', frontmatter: true, chapters: true, timestamps: true, speakers: true, skipCut: true });
     const eff = copyEffective(COPY_DEFAULTS, { hasChapters: true, translationOnly: false });
     expect(copyIncludes(eff, 'all')).toEqual(['frontmatter', 'chapters', 'timestamps', 'speakers']);
     expect(scopeIsPlain(eff, 'para')).toBe(false);
   });
 
-  it('纯文本、只带正文时，节选只有一项「复制文字」', () => {
+  it('for plain text with body only, the excerpt has a single \'copy text\' item', () => {
     const eff = copyEffective(bodyOnly, { hasChapters: true, translationOnly: false });
     expect(copyIncludes(eff, 'all')).toEqual([]);
     expect(scopeIsPlain(eff, 'chapter')).toBe(true);
@@ -20,14 +20,14 @@ describe('文稿面板复制的组合', () => {
     expect(scopeIsPlain({ ...eff, format: 'md' }, 'para')).toBe(false);
   });
 
-  it('生效值：文首只在 Markdown，章节要视频有章节；只看译文时没有文首、跳过已剪段', () => {
+  it('effective values: header only in Markdown, chapters require the video to have chapters; with translation only there is no header and cut segments are skipped', () => {
     expect(copyEffective({ ...all, format: 'txt' }, { hasChapters: true, translationOnly: false }).frontmatter).toBe(false);
     expect(copyEffective(all, { hasChapters: false, translationOnly: false }).chapters).toBe(false);
     const translationOnly = copyEffective(all, { hasChapters: true, translationOnly: true });
     expect([translationOnly.frontmatter, translationOnly.skipCut]).toEqual([false, true]);
   });
 
-  it('每个范围实际带上的项：节选不写文首、不列含已剪段，这一段不写章节标题', () => {
+  it('items each range actually includes: excerpt has no header and does not list cut segments; this segment has no chapter heading', () => {
     expect(copyIncludes(all, 'all')).toEqual(['frontmatter', 'chapters', 'timestamps', 'speakers', 'keepCut']);
     expect(copyIncludes(all, 'chapter')).toEqual(['chapters', 'timestamps', 'speakers']);
     expect(copyIncludes(all, 'para')).toEqual(['timestamps', 'speakers']);
@@ -36,7 +36,7 @@ describe('文稿面板复制的组合', () => {
     expect(scopeIsPlain({ ...bodyOnly, chapters: true }, 'chapter')).toBe(false);
   });
 
-  it('全文交给 Runtime 的设置：每份转写一份，配上它的译文，文首只写在第一份', () => {
+  it('full-text settings passed to the Runtime: one per transcription, paired with its translation; the header is written only on the first one', () => {
     const settings = copyAllSettings(all, [
       { documentId: 'doc_a', translationId: 'doc_t' },
       { documentId: 'doc_b', translationId: null },

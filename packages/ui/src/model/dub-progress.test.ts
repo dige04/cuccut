@@ -73,8 +73,8 @@ function job(state: JobRecord['state'], extra: Partial<JobRecord> = {}, statuses
 const child = (jobId: string, state: JobRecord['state'], extra: Partial<JobRecord> = {}): JobRecord =>
   job(state, { jobId, kind: 'pipeline-step', parentJobId: 'p1', pipeline: undefined, ...extra });
 
-describe('翻译配音的进度', () => {
-  it('认得这个视频的配音流程与配成的语言', () => {
+describe('translation dub progress', () => {
+  it('recognizes this video\'s dub flow and the languages set up', () => {
     const running = job('running');
     expect(isDubJob(running, 'vid')).toBe(true);
     expect(isDubJob(running, 'other')).toBe(false);
@@ -83,7 +83,7 @@ describe('翻译配音的进度', () => {
     expect(dubLanguageOf(running)).toBe('en');
   });
 
-  it('跳过的、按参数一定跳过的步骤不计；合成那步按句报进度并数逐句子任务', () => {
+  it('skipped steps, and steps always skipped by parameters, are not counted; the synthesis step reports progress per sentence and counts per-sentence tasks', () => {
     const parent = job(
       'running',
       {},
@@ -116,7 +116,7 @@ describe('翻译配音的进度', () => {
     expect(progress.sentences).toEqual({ running: 1, failed: 1 });
   });
 
-  it('给了译文时翻译三步一开始就不计入，进度不跳；完成时 100', () => {
+  it('when a translation is given, the three translation steps are excluded from the start so progress does not jump; 100 when done', () => {
     const parent = job('running', {}, { 'freeze-source': 'running' });
     parent.pipeline!.params.translationId = 't-en';
     expect(dubProgress(parent, []).percent).toBe(0);
@@ -126,7 +126,7 @@ describe('翻译配音的进度', () => {
     expect(dubProgress(job('queued'), []).queued).toBe(true);
   });
 
-  it('重试会不会为做过的再花钱：翻译整步重跑、合成只补剩下的、之后的不再调用', () => {
+  it('retry does not pay again for finished work: the whole translation step reruns, synthesis fills only the remainder, later steps are no longer called', () => {
     const stopped = (name: string) => job('failed', {}, { [name]: 'failed' });
     expect(dubRetryNote(stopped('translate'))).toBe('charges');
     const local = stopped('translate');
@@ -137,7 +137,7 @@ describe('翻译配音的进度', () => {
     expect(dubRetryNote(stopped('freeze-source'))).toBeNull();
   });
 
-  it('补救按停下的那一步：翻译用文本模型那家，合成用语音合成那家', () => {
+  it('remedy follows the step that stopped: translation uses the text model\'s provider, synthesis uses the speech synthesis provider', () => {
     const auth = { code: 'PROVIDER_AUTH_FAILED', message: '凭据无效' };
     const atTranslate = job('failed', { error: auth }, { translate: 'failed' });
     expect(dubRemedy(atTranslate)?.target).toEqual({ tab: 'models', category: 'llm', page: 'cloud' });
@@ -167,8 +167,8 @@ const summary = (extra: Partial<DubSummary> = {}): DubSummary => ({
   ...extra,
 });
 
-describe('翻译配音的收据', () => {
-  it('读摘要；各句的去向只列有句子的，放上的在前', () => {
+describe('translation dub receipt', () => {
+  it('reads the summary; sentence destinations list only entries with sentences, placed ones first', () => {
     const done = job('completed');
     done.pipeline!.summary = summary() as unknown as Record<string, unknown>;
     expect(dubSummaryOf(done)?.planDocumentId).toBe('plan');
@@ -183,7 +183,7 @@ describe('翻译配音的收据', () => {
     ]);
   });
 
-  it('音色不可用的句子按说话人归拢，原因写成人话', () => {
+  it('sentences with unavailable voices are grouped by speaker, with the reason in plain language', () => {
     expect(voiceFailures(summary().voiceUnavailableUnits)).toEqual([
       { speakerId: 'S2', voice: 'library:a', code: 'VOICE_CLONE_REQUIRED', reason: 'stale', units: ['u3', 'u7'] },
     ]);
@@ -192,7 +192,7 @@ describe('翻译配音的收据', () => {
     expect(voiceReasonText('LIBRARY_ENTRY_NOT_APPLICABLE', 'service-client')).toBe('对外服务的调用方不能用库里的音色');
   });
 
-  it('失败里的逐句事实：全部不可用、合成失败的句子、已合成与还剩', () => {
+  it('per-sentence facts on failure: all unavailable, sentences whose synthesis failed, synthesized and remaining', () => {
     expect(
       dubFailureFacts({
         error: {
@@ -214,7 +214,7 @@ describe('翻译配音的收据', () => {
     expect(dubFailureFacts({ error: null })).toEqual({ unavailable: [], failed: [], synthesized: null, remaining: null });
   });
 
-  it('告警同一码只留一条，带 Runtime 的原话', () => {
+  it('warnings with the same code keep only one, with Runtime\'s original wording', () => {
     const warned = job('completed', {
       warnings: [
         { code: 'DUB_UNITS_STALE', detail: '1 句译文已经过期' },

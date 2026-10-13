@@ -45,8 +45,8 @@ Timestamp     A/R  Flags         IF  Hostname                               Addr
  0:39:07.352  Add  40000002       7  Junmins-Mac-mini.local.                169.254.71.144                               4500
 `;
 
-describe('dns-sd 输出的解析', () => {
-  it('浏览：本服务类型的实例出现与消失；实例名可以含空格与括号', () => {
+describe('parsing dns-sd output', () => {
+  it('browse: instances of this service type appear and disappear; instance names may contain spaces and parentheses', () => {
     const events = BROWSE_SAMPLE.split('\n').map(parseBrowseLine).filter(Boolean);
     expect(events).toEqual([
       { action: 'add', name: 'Probe Node 1' },
@@ -57,7 +57,7 @@ describe('dns-sd 输出的解析', () => {
     expect(parseBrowseLine('')).toBeNull();
   });
 
-  it('解析实例：主机去掉末尾的点，端口，TXT 的 id 与 v', () => {
+  it('resolve instance: host strips trailing dot, port, TXT id and v', () => {
     expect(parseLookupOutput(LOOKUP_SAMPLE)).toEqual({ host: 'Junmins-Mac-mini.local', port: 47999, txt: { id: 'node_probe', v: '1' } });
     // Output has not reached that line yet
     expect(parseLookupOutput(LOOKUP_SAMPLE.split('\n').slice(0, 3).join('\n'))).toBeNull();
@@ -70,7 +70,7 @@ describe('dns-sd 输出的解析', () => {
     expect(parseLookupOutput(' 0:00:00.000  x can be reached at host.local.:99999 (interface 1)')).toBeNull();
   });
 
-  it('地址：Add 行的 IPv4，去重，跳过 No Such Record 与 0.0.0.0；挑选时私网优先，回环与链路本地最后', () => {
+  it('addresses: IPv4 from Add lines, deduplicated, skipping No Such Record and 0.0.0.0; when picking, private network first, loopback and link-local last', () => {
     const addresses = parseAddressOutput(ADDRESS_SAMPLE);
     expect(addresses).toEqual(['10.0.0.243', '127.0.0.1', '169.254.71.144']);
     expect(pickAddress(addresses)).toBe('10.0.0.243');
@@ -80,7 +80,7 @@ describe('dns-sd 输出的解析', () => {
     expect(pickAddress([])).toBeNull();
   });
 
-  it('转义：\\DDD 是十进制字节（UTF-8 可以跨多个转义），\\x 是字符本身', () => {
+  it('escapes: \\DDD is a decimal byte (UTF-8 can span multiple escapes), \\x is the character itself', () => {
     expect(unescapeDnsSd(String.raw`Probe\032Node\0321`)).toBe('Probe Node 1');
     expect(unescapeDnsSd(String.raw`a\.b\\c`)).toBe('a.b\\c');
     expect(unescapeDnsSd(String.raw`\229\174\157`)).toBe('宝');
@@ -128,7 +128,7 @@ setInterval(() => {}, 1000);
     }
   };
 
-  it('浏览 → 解析 → 取地址，期限到即返回，子进程全部结束', async () => {
+  it('browse, then resolve, then get addresses; returns once the deadline passes, all child processes end', async () => {
     const fake = await fakeDnsSd();
     const started = Date.now();
     const nodes = await new DnsSdDiscoverer({ command: fake.command }).discover(1_500);
@@ -143,11 +143,11 @@ setInterval(() => {}, 1000);
     for (const pid of pids) expect(alive(pid)).toBe(false);
   });
 
-  it('命令不存在：空列表', async () => {
+  it('command not found: empty list', async () => {
     expect(await new DnsSdDiscoverer({ command: '/nonexistent/dns-sd' }).discover(300)).toEqual([]);
   });
 
-  it('非 macOS 不浏览', async () => {
+  it('does not browse on non-macOS', async () => {
     expect(defaultDiscoverer('linux')).toBe(noDiscoverer);
     expect(await noDiscoverer.discover(100)).toEqual([]);
   });

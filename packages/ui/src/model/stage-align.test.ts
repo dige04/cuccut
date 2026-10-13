@@ -13,8 +13,8 @@ const at = (id: string, left: number, top: number, w = 5, h = 5, patch: Partial<
     place: { x: left + w / 2, y: top + h / 2, w, ...patch },
   }) as unknown as PlacedItem;
 
-describe('对齐', () => {
-  it('左对齐到选区：都对到最左那件的左边，只写 x', () => {
+describe('alignment', () => {
+  it('align left to selection: all align to the left edge of the leftmost item, writing only x', () => {
     const items = [at('a', 5, 10), at('b', 15, 20), at('c', 12, 40, 10)];
     expect(alignOperations('s', items, 'left', 'selection', canvas)).toEqual([
       { type: 'setTransform', sequenceId: 's', itemId: 'b', x: 7.5 },
@@ -22,7 +22,7 @@ describe('对齐', () => {
     ]);
   });
 
-  it('左对齐到画布：贴画布左边', () => {
+  it('align left to canvas: snaps to the canvas\'s left edge', () => {
     const items = [at('a', 5, 10), at('b', 15, 20)];
     expect(alignOperations('s', items, 'left', 'canvas', canvas)).toEqual([
       { type: 'setTransform', sequenceId: 's', itemId: 'a', x: 2.5 },
@@ -30,7 +30,7 @@ describe('对齐', () => {
     ]);
   });
 
-  it('右对齐、水平居中、底对齐', () => {
+  it('align right, horizontal center, bottom align', () => {
     const items = [at('a', 5, 10), at('b', 15, 20, 10)];
     expect(alignOperations('s', items, 'right', 'selection', canvas)).toEqual([
       { type: 'setTransform', sequenceId: 's', itemId: 'a', x: 22.5 },
@@ -49,7 +49,7 @@ describe('对齐', () => {
     ]);
   });
 
-  it('按旋转后的外包盒量：转 90° 的盒按竖着的宽高对齐', () => {
+  it('measured by the rotated bounding box: a box rotated 90° aligns by its vertical width and height', () => {
     const items = [at('a', 5, 10), at('b', 20, 30, 10, 5, { rot: 90 })];
     // b is 192 wide and 54 high, centered at 480: the bounding box's left edge is at 453; aligned to 96, the center moves to 123 (6.4%).
     expect(alignOperations('s', items, 'left', 'selection', canvas)).toEqual([
@@ -57,7 +57,7 @@ describe('对齐', () => {
     ]);
   });
 
-  it('已经对齐的不出操作；改 y 从不写 x', () => {
+  it('already aligned items produce no operation; changing y never writes x', () => {
     const items = [at('a', 5, 10), at('b', 5, 30)];
     expect(alignOperations('s', items, 'left', 'selection', canvas)).toEqual([]);
     for (const op of alignOperations('s', [at('a', 5, 10), at('b', 15, 30)], 'top', 'selection', canvas)) {
@@ -66,7 +66,7 @@ describe('对齐', () => {
     }
   });
 
-  it('画中画视频的框高按源的宽高比量（要给素材表）', () => {
+  it('picture-in-picture video frame height is measured by the source aspect ratio (must be given to the media table)', () => {
     const video = {
       id: 'v',
       type: 'video',
@@ -91,8 +91,8 @@ describe('对齐', () => {
   });
 });
 
-describe('分布', () => {
-  it('参照选区：首尾不动，中间那件让两边空隙一样大', () => {
+describe('distribution', () => {
+  it('relative to selection: first and last stay put, the middle item makes the gaps on both sides equal', () => {
     const items = [at('a', 0, 0), at('c', 50, 0), at('b', 10, 0)];
     // 0–5, b is 5 wide, 50–55: gap (55 − 15) / 2 = 20, b lands at 25.
     expect(distributeOperations('s', items, 'x', 'selection', canvas)).toEqual([
@@ -100,7 +100,7 @@ describe('分布', () => {
     ]);
   });
 
-  it('参照画布：首件贴起边、末件贴终边，竖向只写 y', () => {
+  it('relative to canvas: first item snaps to the start edge, last to the end edge, vertical writes only y', () => {
     const items = [at('a', 0, 10), at('b', 0, 30), at('c', 0, 50)];
     // Height 5 × 3, gap (100 − 15) / 2 = 42.5: 0, 47.5, 95.
     expect(distributeOperations('s', items, 'y', 'canvas', canvas)).toEqual([
@@ -110,7 +110,7 @@ describe('分布', () => {
     ]);
   });
 
-  it('不到三件不分布；已经等距的不出操作', () => {
+  it('fewer than three items are not distributed; already evenly spaced items produce no operation', () => {
     expect(distributeOperations('s', [at('a', 0, 0), at('b', 25, 0)], 'x', 'selection', canvas)).toEqual([]);
     expect(distributeOperations('s', [at('a', 0, 0), at('b', 20, 0), at('c', 40, 0)], 'x', 'selection', canvas)).toEqual([]);
   });

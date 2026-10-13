@@ -38,8 +38,8 @@ const file: WorkspaceItem = { kind: 'file', target: { conversationId: 'c1', path
 const files: WorkspaceItem = { kind: 'files' };
 const web: WorkspaceItem = { kind: 'web', id: 'w1', url: '' };
 
-describe('标签的开关与排序', () => {
-  it('打开同 key 的标签就地换成新的，不重复；关掉当前标签由同位置的下一个接上', () => {
+describe('tab opening, closing and ordering', () => {
+  it('opening a tab with the same key replaces it in place, without duplicating; closing the current tab selects the next one at the same position', () => {
     let state = openTab(openTab(openTab(EMPTY_WORKSPACE, video), file), files);
     state = openTab(state, video);
     expect(state.tabs).toEqual([video, file, files]);
@@ -49,14 +49,14 @@ describe('标签的开关与排序', () => {
     expect(closeTab(state, 'nope')).toBe(state);
   });
 
-  it('replaceTab 原地换掉一个标签并选中它；新标签已开着时挪过来；没有这个标签时等于打开', () => {
+  it('replaceTab replaces a tab in place and selects it; if the new tab is already open, it is moved over; when the tab does not exist it is equivalent to opening', () => {
     const state = { tabs: [video, web, file], active: itemKey(web) };
     expect(replaceTab(state, itemKey(web), files)).toEqual({ tabs: [video, files, file], active: 'files' });
     expect(replaceTab(state, itemKey(web), file)).toEqual({ tabs: [video, file], active: itemKey(file) });
     expect(replaceTab(state, 'nope', files)).toEqual(openTab(state, files));
   });
 
-  it('moveTab 挪到目标前后；没变化时返回原对象', () => {
+  it('moveTab moves to before or after the target; returns the original object when nothing changed', () => {
     const state = { tabs: [video, file, files], active: null };
     expect(moveTab(state, 'files', itemKey(video)).tabs).toEqual([files, video, file]);
     expect(moveTab(state, itemKey(video), 'files', true).tabs).toEqual([file, files, video]);
@@ -64,8 +64,8 @@ describe('标签的开关与排序', () => {
   });
 });
 
-describe('收起与恢复右侧区域', () => {
-  it('路由离开标签时收起并记下刚才的标签；「显示右侧区域」回到它', () => {
+describe('collapsing and restoring the right-side area', () => {
+  it('leaving a tab by route collapses and remembers the tab just left; \'show right area\' returns to it', () => {
     const open = { tabs: [video, file, files], active: itemKey(file) };
     const collapsed = reconcileTabs(open, undefined);
     expect(collapsed).toEqual({ tabs: open.tabs, active: null, last: itemKey(file) });
@@ -74,7 +74,7 @@ describe('收起与恢复右侧区域', () => {
     expect(restoreKey(open)).toBe(itemKey(file));
   });
 
-  it('记下的标签关掉了就回到最后一个；一个都没有时是 null', () => {
+  it('if the remembered tab was closed, returns to the last one; null when there are none', () => {
     const collapsed = { tabs: [video, file], active: null, last: 'files' };
     expect(restoreKey(collapsed)).toBe(itemKey(file));
     expect(closeTab({ tabs: [video, file], active: null, last: itemKey(file) }, itemKey(file))).toEqual({ tabs: [video], active: null });
@@ -82,14 +82,14 @@ describe('收起与恢复右侧区域', () => {
     expect(restoreKey(EMPTY_WORKSPACE)).toBeNull();
   });
 
-  it('重新打开标签时不再带着记下的标签', () => {
+  it('reopening a tab no longer carries the remembered tab', () => {
     const collapsed = { tabs: [video], active: null, last: itemKey(video) };
     expect(reconcileTabs(collapsed, files)).toEqual({ tabs: [video, files], active: 'files' });
   });
 });
 
-describe('网页标签换地址', () => {
-  it('就地改 url，不动当前标签与顺序；没这个标签或没变化时原样返回', () => {
+describe('web tab changes address', () => {
+  it('changes the url in place, without changing the current tab or order; returned as is when the tab does not exist or nothing changed', () => {
     const state = { tabs: [web, video], active: itemKey(video) };
     const next = updateWebUrl(state, 'w1', 'https://example.com/');
     expect(next).toEqual({ tabs: [{ ...web, url: 'https://example.com/' }, video], active: itemKey(video) });
@@ -98,8 +98,8 @@ describe('网页标签换地址', () => {
   });
 });
 
-describe('视频还被哪条会话的标签引用', () => {
-  it('任何一组标签里还有这个视频就不关', () => {
+describe('which conversations\' tabs still reference a video', () => {
+  it('a video is not closed while any tab group still contains it', () => {
     const key = targetKey(video.kind === 'video' ? video.target : { entryId: '' });
     expect(isVideoReferenced({ c1: { tabs: [file], active: null }, c2: { tabs: [video], active: null } }, key)).toBe(true);
     expect(isVideoReferenced({ c1: { tabs: [file], active: null } }, key)).toBe(false);
@@ -108,8 +108,8 @@ describe('视频还被哪条会话的标签引用', () => {
   });
 });
 
-describe('会话列宽与窄窗口', () => {
-  it('宽度至少 320，取整，不再卡在 560', () => {
+describe('conversation column width and narrow window', () => {
+  it('width is at least 320, rounded, and is no longer stuck at 560', () => {
     expect(clampDock(100)).toBe(320);
     expect(clampDock(900)).toBe(900);
     expect(clampDock(400.4)).toBe(400);
@@ -117,14 +117,14 @@ describe('会话列宽与窄窗口', () => {
     expect(DOCK_DEFAULT).toBe(380);
   });
 
-  it('会话列保留右侧 320，但能超过原来的 45%', () => {
+  it('the conversation column keeps 320 on the right, but can exceed the previous 45%', () => {
     expect(dockFor(2000, 380)).toBe(380);
     expect(dockFor(1400, 1000)).toBe(1000);
     expect(dockFor(1000, 900)).toBe(680);
     expect(dockFor(600, 380)).toBe(320);
   });
 
-  it('拖过右侧最小宽度后继续跟踪，到 160 阈值才隐藏，回拉可展开', () => {
+  it('after dragging past the right side\'s minimum width, tracking continues; it hides only at the 160 threshold, and can expand when dragged back', () => {
     expect(resizeSplit(800, 1400)).toEqual({ width: 800, hidden: false });
     expect(resizeSplit(1240, 1400)).toEqual({ width: 1080, hidden: false });
     expect(resizeSplit(1241, 1400)).toEqual({ width: 1080, hidden: true });
@@ -133,7 +133,7 @@ describe('会话列宽与窄窗口', () => {
     expect(resizeSplit(100, 1400)).toEqual({ width: 320, hidden: false });
   });
 
-  it('窄模式只看容器，不随拖动中会话宽度变化', () => {
+  it('narrow mode depends only on the container and does not change with the conversation width while dragging', () => {
     expect(EDITOR_MIN_WIDTH).toBe(695);
     expect(isNarrow(1400)).toBe(false);
     expect(isNarrow(1015)).toBe(false);
@@ -142,14 +142,14 @@ describe('会话列宽与窄窗口', () => {
     for (const width of [0, -1, NaN, Infinity]) expect(isNarrow(width)).toBe(false);
   });
 
-  it('切到单列时：焦点在会话区或功能区收起选会话，否则停在当前标签', () => {
+  it('switching to a single column: if focus is in the conversation area or feature area, collapses and selects the conversation, otherwise stays on the current tab', () => {
     expect(narrowShowsConversation(true, true)).toBe(true);
     expect(narrowShowsConversation(false, false)).toBe(true);
     expect(narrowShowsConversation(false, true)).toBe(false);
   });
 });
 
-describe('标签名与条目', () => {
+describe('tab names and entries', () => {
   const entry = (id: string, patch: Partial<SpaceEntry>): SpaceEntry => ({
     id,
     kind: 'video',
@@ -164,7 +164,7 @@ describe('标签名与条目', () => {
     ...patch,
   });
 
-  it('项目文件、网页主机名、条目名，找不到条目时用路径末段，再不行就是不可用', () => {
+  it('project file, web hostname, entry name; when the entry is not found, uses the last path segment, otherwise it is unavailable', () => {
     expect(workspaceTitle(files)).toBe('项目文件');
     expect(workspaceTitle(web)).toBe('新标签页');
     expect(workspaceTitle({ kind: 'web', id: 'w', url: 'https://example.com/a' })).toBe('example.com');
@@ -193,7 +193,7 @@ describe('标签名与条目', () => {
     expect(workspaceTitle({ kind: 'design-system', target: { entryId: 'e1' } })).toBe('设计系统不可用');
   });
 
-  it('按条目 id、项目路径或会话路径找到 Space 条目', () => {
+  it('finds a Space entry by entry id, project path or conversation path', () => {
     const entries = [
       entry('e1', { relPath: '视频/第一部', name: '第一部' }),
       entry('e2', { relPath: 'notes.md', source: { projectId: null, conversationId: 'c1' } }),
@@ -205,8 +205,8 @@ describe('标签名与条目', () => {
   });
 });
 
-describe('标签条的键盘与拖动', () => {
-  it('左右循环，Home / End 到两头', () => {
+describe('tab bar keyboard and dragging', () => {
+  it('left and right wrap around; Home / End go to the ends', () => {
     expect(tabKeyIndex('ArrowRight', 2, 3)).toBe(0);
     expect(tabKeyIndex('ArrowLeft', 0, 3)).toBe(2);
     expect(tabKeyIndex('Home', 2, 3)).toBe(0);
@@ -215,7 +215,7 @@ describe('标签条的键盘与拖动', () => {
     expect(tabKeyIndex('ArrowRight', 0, 0)).toBeNull();
   });
 
-  it('拖动按未变换的槽位判断目标，邻居平移成放下后的顺序', () => {
+  it('dragging determines the target by untransformed slots; neighbors shift to the order after drop', () => {
     const rects = [
       { key: 'a', left: 0, width: 100 },
       { key: 'b', left: 104, width: 100 },
@@ -227,10 +227,10 @@ describe('标签条的键盘与拖动', () => {
   });
 });
 
-describe('工作区视图', () => {
+describe('workspace view', () => {
   const view = (hidden: boolean, full: boolean) => ({ hidden, full });
 
-  it('完整视图要有标签；单条 = 窄窗口或完整视图；单条里功能区收起就是选着会话', () => {
+  it('full view requires tabs; single = narrow window or full view; in single, a collapsed feature area means the conversation is selected', () => {
     expect(workspaceMode({ active: 'a', count: 1, view: view(false, false), narrow: false })).toEqual({
       visible: true,
       full: false,
@@ -252,13 +252,13 @@ describe('工作区视图', () => {
     expect(workspaceMode({ active: 'a', count: 2, view: view(false, false), narrow: true })).toMatchObject({ single: true, conversation: false });
   });
 
-  it('进入完整视图时保留屏幕上的那一格：分屏可见是当前标签，否则是会话', () => {
+  it('entering full view keeps the slot on screen: if split is visible it is the current tab, otherwise the conversation', () => {
     expect(fullViewEntry(true, 'web:1')).toBe('web:1');
     expect(fullViewEntry(false, 'web:1')).toBe(CONVERSATION_TAB);
     expect(fullViewEntry(true, null)).toBe(CONVERSATION_TAB);
   });
 
-  it('标签页按钮：没有标签 → 打开；完整视图 → 分屏；分屏可见 → 隐藏；收起 → 显示并列出标签', () => {
+  it('tabs button: no tabs → open; full view → split; split visible → hide; collapsed → show and list tabs', () => {
     expect(tabsButton({ count: 0, visible: false, full: false })).toEqual({ action: 'open', glyph: 'tabs-plus', listed: false });
     expect(tabsButton({ count: 3, visible: true, full: true })).toEqual({ action: 'split', glyph: 'hide-tabs', listed: false });
     expect(tabsButton({ count: 3, visible: false, full: true })).toEqual({ action: 'split', glyph: 'hide-tabs', listed: false });
@@ -269,8 +269,8 @@ describe('工作区视图', () => {
   });
 });
 
-describe('地址栏输入', () => {
-  it('只认 http/https；localhost 与主机:端口补上协议', () => {
+describe('address bar input', () => {
+  it('only http/https is recognized; localhost and host:port get the protocol added', () => {
     expect(safeUrl('example.com')).toBe('https://example.com/');
     expect(safeUrl('localhost:3000')).toBe('http://localhost:3000/');
     expect(safeUrl('javascript:alert(1)')).toBeNull();

@@ -27,7 +27,7 @@ const repo = (relative: string) => fileURLToPath(new URL(`../../../../${relative
 const BUNDLED_DIR = repo('crates/render-raster/assets/fonts');
 const PROBE = repo('crates/render-raster/tests/fixtures/fonts/ColrProbe.ttf');
 
-describe.skipIf(!engine)('字体与真实引擎', () => {
+describe.skipIf(!engine)('fonts and real engine', () => {
   let dir: string;
   let services: VideoService[];
 
@@ -52,12 +52,12 @@ describe.skipIf(!engine)('字体与真实引擎', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('随内核发布的族名与字体文件里的一致', async () => {
+  it('family names shipped with the core match those in the font files', async () => {
     const families = await videoService(BUNDLED_DIR).fontFamilies();
     expect(new Set(families.map((f) => f.toLowerCase()))).toEqual(new Set(BUNDLED_FONT_FAMILIES.map((f) => f.toLowerCase())));
   });
 
-  it('下载的文件经引擎核对：是字体、族名对得上才进缓存；之后引擎从缓存里挑到它（本机没有这个族）', async () => {
+  it('downloaded files are checked by the engine: only if they are fonts and the family name matches do they enter the cache; the engine then picks them from the cache (the family is not installed locally)', async () => {
     const probe = await fs.readFile(PROBE);
     const server = http.createServer((req, res) => {
       const url = new URL(req.url!, 'http://127.0.0.1');

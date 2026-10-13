@@ -78,25 +78,25 @@ const view = (patch: Partial<ZoomView> = {}): ZoomView => ({
 });
 
 describe('zoomLabel', () => {
-  it('≥10% 取整，100% = ZOOM_DEFAULT', () => {
+  it('≥10% rounds to an integer, 100% = ZOOM_DEFAULT', () => {
     expect(zoomLabel(ZOOM_DEFAULT)).toBe('100%');
     expect(zoomLabel(8.8)).toBe('22%');
     expect(zoomLabel(ZOOM_MAX)).toBe('1000%');
     expect(zoomLabel(ZOOM_MIN)).toBe('10%');
   });
 
-  it('1–10% 留一位小数并去掉 .0', () => {
+  it('1–10% keeps one decimal and drops .0', () => {
     expect(zoomLabel(1.76)).toBe('4.4%');
     expect(zoomLabel(2)).toBe('5%');
   });
 
-  it('<1% 取两位有效数字并去掉末尾的 0', () => {
+  it('<1% keeps two significant digits and drops trailing zeros', () => {
     expect(zoomLabel(0.168)).toBe('0.42%');
     expect(zoomLabel(0.02)).toBe('0.05%');
     expect(zoomLabel(0.0048)).toBe('0.012%');
   });
 
-  it('进位跨档不写成 10.0% / 1.0%，有效缩放不显示 0%', () => {
+  it('rounding up across a tier doesn\'t render as 10.0% / 1.0%, and an effective zoom never shows 0%', () => {
     expect(zoomLabel((9.96 / 100) * ZOOM_DEFAULT)).toBe('10%');
     expect(zoomLabel((0.996 / 100) * ZOOM_DEFAULT)).toBe('1%');
     expect(zoomLabel(0.0001)).not.toBe('0%');
@@ -104,37 +104,37 @@ describe('zoomLabel', () => {
   });
 });
 
-describe('缩放下限', () => {
-  it('短视频停在 ZOOM_MIN', () => {
+describe('zoom minimum', () => {
+  it('short videos stop at ZOOM_MIN', () => {
     expect(zoomFloor(60, 1000)).toBe(ZOOM_MIN);
   });
 
-  it('两小时的视频能缩到整片入镜，标签小于 1%', () => {
+  it('a two-hour video can zoom out to fit the whole piece in frame, with a label under 1%', () => {
     const floor = zoomFloor(7200, 1000);
     expect(floor).toBeCloseTo((1000 - ZOOM_PAD * 2) / 7200, 10);
     expect(clampZoom(0.001, floor)).toBe(floor);
     expect(zoomLabel(floor)).toBe('0.34%');
   });
 
-  it('适应窗口正好等于下限，不被夹住', () => {
+  it('fit-to-window exactly equals the minimum and isn\'t clamped', () => {
     const floor = zoomFloor(3960, 900);
     expect(clampZoom(fitPxPerSecond(3960, 900), floor)).toBe(floor);
     expect(zoomPlan('fit', view({ duration: 3960, lane: 900 }))).toMatchObject({ pxPerSecond: floor, scroll: 0 });
   });
 
-  it('没有时长或泳道还没量出来时退回 ZOOM_MIN', () => {
+  it('without a duration, or before the lane is measured, falls back to ZOOM_MIN', () => {
     expect(zoomFloor(0, 1000)).toBe(ZOOM_MIN);
     expect(zoomFloor(7200, ZOOM_PAD * 2)).toBe(ZOOM_MIN);
   });
 
-  it('上限 ZOOM_MAX，下限高于 ZOOM_MIN 时不抬高', () => {
+  it('maximum is ZOOM_MAX; a minimum above ZOOM_MIN is not raised', () => {
     expect(clampZoom(1e6, ZOOM_MIN)).toBe(ZOOM_MAX);
     expect(clampZoom(ZOOM_MIN, 50)).toBe(ZOOM_MIN);
   });
 });
 
 describe('zoomPlan', () => {
-  it('放大 / 缩小以视口内的播放头为锚', () => {
+  it('zoom in / out anchors on the playhead within the viewport', () => {
     const before = view({ playhead: 10, scroll: 100 });
     const x = ZOOM_PAD + 10 * ZOOM_DEFAULT - 100;
     const plan = zoomPlan('in', before)!;
@@ -143,24 +143,24 @@ describe('zoomPlan', () => {
     expect(zoomPlan('out', before)!.pxPerSecond).toBeCloseTo(ZOOM_DEFAULT / 1.5, 9);
   });
 
-  it('播放头不在视口内时让视口中线的时刻不动', () => {
+  it('when the playhead is outside the viewport, the time at the viewport\'s center stays fixed', () => {
     const plan = zoomPlan('100', view({ playhead: 200, scroll: 0, duration: 300, pxPerSecond: 20 }))!;
     expect(plan.pxPerSecond).toBe(ZOOM_DEFAULT);
     const middle = (500 - ZOOM_PAD) / 20;
     expect(ZOOM_PAD + middle * plan.pxPerSecond - plan.scroll).toBeCloseTo(500, 9);
   });
 
-  it('缩小不越过下限', () => {
+  it('zooming out does not go past the minimum', () => {
     expect(zoomPlan('out', view({ pxPerSecond: ZOOM_MIN }))!.pxPerSecond).toBe(ZOOM_MIN);
   });
 
-  it('缩放到播放头：200% 并让播放头居中', () => {
+  it('zoom to playhead: 200% and centers the playhead', () => {
     const plan = zoomPlan('playhead', view({ playhead: 30, pxPerSecond: 5 }))!;
     expect(plan.pxPerSecond).toBe(ZOOM_PLAYHEAD);
     expect(ZOOM_PAD + 30 * plan.pxPerSecond - plan.scroll).toBeCloseTo(500, 9);
   });
 
-  it('适应区间：铺满泳道并居中；到了上限也居中', () => {
+  it('fit range: fills the lanes and centers; also centers when reaching the maximum', () => {
     const plan = zoomPlan('fitClip', view({ duration: 600 }), { start: 100, end: 120 })!;
     expect(plan.pxPerSecond).toBeCloseTo(fitPxPerSecond(20, 1000), 9);
     expect(ZOOM_PAD + 100 * plan.pxPerSecond - plan.scroll).toBeCloseTo(ZOOM_PAD, 9);
@@ -170,35 +170,35 @@ describe('zoomPlan', () => {
     expect(ZOOM_PAD + 10.25 * tiny.pxPerSecond - tiny.scroll).toBeCloseTo(500, 9);
   });
 
-  it('没有区间时返回 null', () => {
+  it('returns null when there is no range', () => {
     expect(zoomPlan('fitClip', view(), null)).toBeNull();
     expect(zoomPlan('fitSelection', view())).toBeNull();
   });
 
-  it('滚动偏移不小于 0', () => {
+  it('scroll offset is not less than 0', () => {
     expect(anchoredScroll(1, 500, 10)).toBe(0);
   });
 });
 
-describe('适应的区间', () => {
+describe('fit range', () => {
   const tracks = [track('v1', 0), track('v2', 1), track('a1', 2, 'audio')];
   const seq = sequence(tracks, [video('base', 'v1', 0, 60), video('top', 'v2', 20, 10), video('later', 'v1', 60, 30)]);
 
-  it('选中的片段盖住播放头时用它', () => {
+  it('uses the selected clip when it covers the playhead', () => {
     expect(clipSpanAt(seq, ['base'], 25)).toEqual({ start: 0, end: 60 });
   });
 
-  it('否则取最上面一条画面轨道上播放头下的视频', () => {
+  it('otherwise uses the video under the playhead on the top video track', () => {
     expect(clipSpanAt(seq, [], 25)).toEqual({ start: 20, end: 30 });
     expect(clipSpanAt(seq, ['later'], 5)).toEqual({ start: 0, end: 60 });
     expect(clipSpanAt(seq, [], 70)).toEqual({ start: 60, end: 90 });
   });
 
-  it('播放头下没有视频时返回 null', () => {
+  it('returns null when no video is under the playhead', () => {
     expect(clipSpanAt(seq, [], 95)).toBeNull();
   });
 
-  it('所选：并集；没选中返回 null', () => {
+  it('selected: union; returns null when nothing is selected', () => {
     expect(selectionSpan(seq, ['top', 'later'])).toEqual({ start: 20, end: 90 });
     expect(selectionSpan(seq, [])).toBeNull();
   });
@@ -214,7 +214,7 @@ describe('zoomKey', () => {
     expect(zoomKey(key('0', 'Digit0'), true)).toBe('100');
   });
 
-  it('⌥⌘1–4 认物理键位（macOS 上 key 是特殊字符）', () => {
+  it('⌥⌘1–4 matches physical key positions (on macOS, key yields a special character)', () => {
     expect(zoomKey(key('¡', 'Digit1', true), true)).toBe('fit');
     expect(zoomKey(key('™', 'Digit2', true), true)).toBe('fitClip');
     expect(zoomKey(key('£', 'Digit3', true), true)).toBe('playhead');
@@ -223,7 +223,7 @@ describe('zoomKey', () => {
     expect(zoomKey(key('!', 'Digit1', true, true), true)).toBeNull();
   });
 
-  it('没按 ⌘ / Ctrl 不算', () => {
+  it('without ⌘ / Ctrl does not count', () => {
     expect(zoomKey(key('=', 'Equal'), false)).toBeNull();
     expect(zoomKey(key('a', 'KeyA'), true)).toBeNull();
   });

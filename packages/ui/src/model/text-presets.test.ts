@@ -11,8 +11,8 @@ const measure: MeasureText = (text, _style, wrap) => {
 };
 const byId = (id: string) => TEXT_PRESETS.find((preset) => preset.id === id)!;
 
-describe('文字预设', () => {
-  it('51 条：简单 13、标题 10、下三分 20、其它 8，文字样式与图形都不带 schema', () => {
+describe('text presets', () => {
+  it('51 entries: simple 13, title 10, lower third 20, other 8; text styles and shapes carry no schema', () => {
     expect(TEXT_PRESETS).toHaveLength(51);
     expect(['simple', 'title', 'lower', 'other'].map((c) => presetsOf(c as 'simple').length)).toEqual([13, 10, 20, 8]);
     for (const preset of TEXT_PRESETS) {
@@ -23,13 +23,13 @@ describe('文字预设', () => {
     }
   });
 
-  it('文字没给宽时按量出来的宽落框（画幅宽的百分比），中心在画幅百分比处', () => {
+  it('when text has no width, the measured width sets the box (a percentage of the frame width), centered at the frame percentage', () => {
     const [layer] = presetLayers(byId('simple.02'), canvas, fps, measure);
     // Six characters, 60 pixels wide: 3.125% of 1920, to one decimal place.
     expect(layer).toMatchObject({ type: 'text', text: 'Simple', place: { x: 50, y: 50, w: 3.1 } });
   });
 
-  it('多层：形状按 w、高写进 shape.h，给了宽的文字按它落框，成员按 delay 错峰', () => {
+  it('multi-layer: the shape writes w and h into shape.h, text with a given width sets its box by it, members stagger by delay', () => {
     const preset = byId('lowerThird.01');
     const layers = presetLayers(preset, canvas, fps, measure);
     expect(layers.map((layer) => layer.type)).toEqual(preset.layers.map((layer) => layer.kind));
@@ -44,13 +44,13 @@ describe('文字预设', () => {
     expect(preferredLayer(preset)).toBe(preset.layers.findIndex((layer) => layer.kind === 'text'));
   });
 
-  it('旋转的那一条带上角度', () => {
+  it('the rotated strip carries the angle', () => {
     const preset = TEXT_PRESETS.find((p) => p.layers.some((layer) => layer.place.rot))!;
     const index = preset.layers.findIndex((layer) => layer.place.rot);
     expect(presetLayers(preset, canvas, fps, measure)[index]!.place.rot).toBe(preset.layers[index]!.place.rot);
   });
 
-  it('添加文本框：画面中线偏上，按字量框', () => {
+  it('add text box: positioned above the frame\'s center line, sized by its text', () => {
     expect(blankTextLayer(canvas, measure)).toMatchObject({
       type: 'text',
       text: '输入文字',

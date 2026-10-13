@@ -157,7 +157,7 @@ function multipart(fields: Record<string, string | string[]>, file: { name: stri
   return { body: Buffer.concat(parts), contentType: `multipart/form-data; boundary=${boundary}` };
 }
 
-describe('模型接口服务', () => {
+describe('model API service', () => {
   let dir: string;
   let fixtures: string;
   let wav: Buffer;
@@ -245,7 +245,7 @@ describe('模型接口服务', () => {
     )!.id;
   }
 
-  it('认证与来源：没有令牌、令牌错误 → 401；带 Origin、Host 不是回环 → 403；吊销后失效；每个回答都带接口版本', async () => {
+  it('auth and origin: no token, wrong token → 401; with Origin, Host not loopback → 403; invalid after revocation; every response carries the interface version', async () => {
     const { token, clientId } = await issue();
     const [, secret] = token.split('.');
 
@@ -295,7 +295,7 @@ describe('模型接口服务', () => {
     expect(JSON.stringify(status)).not.toContain(secret);
   });
 
-  it('/v1/models 按路由开关：默认只有本机；开启在线路由后列出在线模型，关掉又看不见，按名请求 404 或 503', async () => {
+  it('/v1/models follows route switches: by default only local; enabling online route lists online models, turning off hides them, requesting by name gives 404 or 503', async () => {
     const { token } = await issue();
     const local = await modelIds(token);
     expect(local.some((id) => id.startsWith('openai/'))).toBe(false);
@@ -363,7 +363,7 @@ describe('模型接口服务', () => {
     expect((await send(base, '/v1/audio/speech', { token, json: { model: 'my-voice', input: 'hi' } })).status).toBe(404);
   });
 
-  it('语音、图片与文本：形状、Job 的提交者与生成记录；不支持的参数 400；未知模型 404', async () => {
+  it('speech, image and text: shape, Job submitter and generation record; unsupported parameter 400; unknown model 404', async () => {
     const { token, clientId } = await issue();
     await enableOnline();
 
@@ -502,7 +502,7 @@ describe('模型接口服务', () => {
     for (const reply of [speech, image, chat, stream, unknown]) expect(reply.text).not.toContain(OPENAI_KEY);
   });
 
-  it('结构化输出与供应商的失败：json_schema 通过与不通过；429 原样转出 Retry-After', async () => {
+  it('structured output and provider failures: json_schema pass and fail; 429 forwards Retry-After as-is', async () => {
     const { token } = await issue();
     await enableOnline();
     const model = await textModel(token);
@@ -545,7 +545,7 @@ describe('模型接口服务', () => {
     expect(limited.json.error).toMatchObject({ code: 'PROVIDER_QUOTA_EXCEEDED', type: 'rate_limit_error' });
   });
 
-  it('等级：read 只能查模型列表；ask 每个生成请求一条审批，同意、拒绝与超时', async () => {
+  it('levels: read may only list models; ask requires one approval per generation request, allow, deny and timeout', async () => {
     const { token } = await issue('审批');
     await enableOnline();
     await client.request('services.configure', { serviceId: 'model-api', level: 'read' });
@@ -588,7 +588,7 @@ describe('模型接口服务', () => {
     expect(openai.requests.filter((r) => r.path.endsWith('/audio/speech'))).toHaveLength(1);
   });
 
-  it('数据外发的授权与预算（§12.5、§7.8）：默认授权覆盖；撤销后 auto 是 403 GRANT_REQUIRED；ask 下高风险审批发放持续授权；用完 409', async () => {
+  it('data outbound authorization and budget (§12.5, §7.8): default authorization covers; auto after revoke is 403 GRANT_REQUIRED; under ask, high-risk approval issues a persistent grant; exhausted → 409', async () => {
     const { token } = await issue('授权');
     await enableOnline();
     const speechCalls = () => openai.requests.filter((r) => r.path.endsWith('/audio/speech')).length;
@@ -647,7 +647,7 @@ describe('模型接口服务', () => {
     });
   });
 
-  it('调用方断开时取消 Job；每个客户端的在途请求有上限（429），别的客户端不受影响', async () => {
+  it('caller disconnect cancels Job; in-flight requests per client are capped (429), other clients unaffected', async () => {
     const first = await issue('甲');
     const second = await issue('乙');
     await enableOnline();
@@ -684,7 +684,7 @@ describe('模型接口服务', () => {
     await until(async () => (await send(base, '/v1/chat/completions', { token: first.token, json: body })).status === 200);
   });
 
-  it('停止服务不取消已经提交的任务', async () => {
+  it('stopping the service does not cancel already submitted tasks', async () => {
     const { token } = await issue();
     await enableOnline();
     const model = await textModel(token);
@@ -705,7 +705,7 @@ describe('模型接口服务', () => {
     await until(async () => (await client.request('jobs.inspect', { jobId })).state === 'completed');
   });
 
-  describe.skipIf(!localTranscribe)('本机转写', () => {
+  describe.skipIf(!localTranscribe)('local transcription', () => {
     async function transcribe(token: string, fields: Record<string, string | string[]>, data: Buffer = wav) {
       const { body, contentType } = multipart(fields, { name: 'speech.wav', type: 'audio/wav', data });
       return send(base, '/v1/audio/transcriptions', { token, body, contentType });
@@ -715,7 +715,7 @@ describe('模型接口服务', () => {
       return fs.readdir(path.join(home.stagingDir, 'model-api')).catch(() => []);
     }
 
-    it('whisper-1 → 本机默认模型：json、text、srt、vtt 与 verbose_json；提交者与生成记录；staging 清掉', async () => {
+    it('whisper-1 → local default model: json, text, srt, vtt and verbose_json; submitter and generation record; staging cleared', async () => {
       const { token, clientId } = await issue();
       const json = await transcribe(token, { model: 'whisper-1' });
       expect(json.status).toBe(200);
@@ -766,7 +766,7 @@ describe('模型接口服务', () => {
       expect(await stagingLeft()).toEqual([]);
     });
 
-    it('上传超过上限 → 413（声明的长度与分块传输两种）；staging 清掉；名额归还', async () => {
+    it('upload over limit → 413 (both declared length and chunked transfer); staging cleared; quota returned', async () => {
       const { token } = await issue();
       await client.request('services.configure', { serviceId: 'model-api', maxConcurrentPerClient: 1 });
       const big = Buffer.alloc(MAX_UPLOAD + 1024, 1);
@@ -780,7 +780,7 @@ describe('模型接口服务', () => {
       expect((await transcribe(token, { model: 'whisper-1' })).status).toBe(200);
     });
 
-    it('转写中调用方断开：Job 取消，上传删掉', async () => {
+    it('caller disconnects during transcription: Job cancelled, upload deleted', async () => {
       const { token } = await issue();
       await fs.writeFile(control, JSON.stringify({ faults: ['slow'] }));
       const { body, contentType } = multipart({ model: 'whisper-1' }, { name: 'speech.wav', type: 'audio/wav', data: wav });

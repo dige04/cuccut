@@ -60,8 +60,8 @@ const WHISPER_SHAPED: BundleDefinition = {
 /** MOSS: segments by itself (no VAD), with an optional aligner and speaker model. */
 const MOSS = BUNDLES.find((b) => b.bundleId === 'moss-transcribe-diarize@mlx-8bit')!;
 
-describe('本地识别的模型包登记', () => {
-  it('两档 Qwen3-ASR：同样的组件形状、同一份许可；默认模型包不变', () => {
+describe('local recognition model bundle registry', () => {
+  it('two Qwen3-ASR tiers: same component shape and same license; the default bundle is unchanged', () => {
     const small = BUNDLES.find((b) => b.bundleId === 'qwen3-asr-0.6b@mlx-4bit')!;
     const large = BUNDLES.find((b) => b.bundleId === 'qwen3-asr-1.7b@mlx-8bit')!;
     expect(large).toMatchObject({ capability: 'transcribe', backend: 'mlx', device: 'metal' });
@@ -80,7 +80,7 @@ describe('本地识别的模型包登记', () => {
     expect(small.license).toEqual({ ...large.license, url: 'https://huggingface.co/Qwen/Qwen3-ASR-0.6B' });
   });
 
-  it('识别模型包共用可选的对齐器，只有 MOSS 带说话人模型；对齐器与说话人模型各有上游许可', () => {
+  it('recognition bundles share an optional aligner, and only MOSS includes a speaker model; the aligner and speaker model each have upstream licenses', () => {
     const transcribe = BUNDLES.filter((b) => b.capability === 'transcribe');
     // The 5 MLX bundles (including 2 Whisper bundles not listed), the 2 Core ML bundles, plus the 3 candle bundles (same components) and the 2 GGML bundles.
     expect(transcribe).toHaveLength(12);
@@ -109,7 +109,7 @@ describe('本地识别的模型包登记', () => {
     expect(WESPEAKER.license!.summary).toMatch(/WeSpeaker.*pyannote\.audio.*CC-BY-4\.0.*MLX/);
   });
 
-  it('预先登记的仓库清单：每个文件都有 sha256 与大小，总数相符', () => {
+  it('pre-registered repository manifest: every file has sha256 and size, and the count matches', () => {
     for (const repo of ASR_REPOS) {
       const matching = REPO_MANIFESTS.filter((m) => m.repo === repo);
       expect(matching, repo).toHaveLength(1);
@@ -135,7 +135,7 @@ describe('本地识别的模型包登记', () => {
     expect(weightBytes([{ repo: 'nobody/nothing', revision: 'r' }])).toBeNull();
   });
 
-  it('coreml 与 mlx 一样只在 Apple Silicon 的 macOS 上可用', () => {
+  it('coreml, like mlx, is available only on macOS on Apple Silicon', () => {
     expect(backendSupported('coreml', 'darwin', 'arm64')).toBe(true);
     expect(backendSupported('coreml', 'darwin', 'x64')).toBe(false);
     expect(backendSupported('coreml', 'linux', 'arm64')).toBe(false);
@@ -144,7 +144,7 @@ describe('本地识别的模型包登记', () => {
     expect(backendSupported('ggml', 'linux', 'arm64')).toBe(true);
   });
 
-  it('断言的语言按 asr 的模型族把关：每个模型族自己的表', () => {
+  it('asserted languages are checked against the asr model family: each family has its own table', () => {
     expect(QWEN3_ASR_LANGUAGES).toHaveLength(30);
     expect(WHISPER_LANGUAGES).toHaveLength(100);
     expect(MOSS_LANGUAGES).toHaveLength(101);
@@ -159,7 +159,7 @@ describe('本地识别的模型包登记', () => {
     expect(QWEN3_ASR_LANGUAGES).not.toContain('sw');
   });
 
-  it('Whisper（CoreML）的两个模型包：共用 Silero 与 openai/whisper-large-v3 的分词器，各自的许可；可选的对齐器', () => {
+  it('the two Whisper (CoreML) bundles: share Silero and the openai/whisper-large-v3 tokenizer, each with its own license; optional aligner', () => {
     const large = BUNDLES.find((b) => b.bundleId === 'whisper-large-v3@coreml')!;
     const turbo = BUNDLES.find((b) => b.bundleId === 'whisper-large-v3-turbo@coreml')!;
     for (const def of [large, turbo]) {
@@ -180,7 +180,7 @@ describe('本地识别的模型包登记', () => {
     expect(turbo.license).toMatchObject({ name: 'MIT', commercialUse: true });
   });
 
-  it('Whisper（MLX）的两个模型包：mlx-community 的 fp16 权重，分词器与 Core ML 的共用；登记了但不列出', () => {
+  it('the two Whisper (MLX) bundles: mlx-community fp16 weights, with the tokenizer shared with Core ML; registered but not listed', () => {
     const large = BUNDLES.find((b) => b.bundleId === 'whisper-large-v3@mlx')!;
     const turbo = BUNDLES.find((b) => b.bundleId === 'whisper-large-v3-turbo@mlx')!;
     const coreml = BUNDLES.find((b) => b.bundleId === 'whisper-large-v3-turbo@coreml')!;
@@ -207,7 +207,7 @@ describe('本地识别的模型包登记', () => {
     expect(manifestOf('openai/whisper-large-v3').files.map((f) => f.path)).toContain('generation_config.json');
   });
 
-  it('Whisper（GGML）的两个模型包：单文件权重、没有分词器，共用 Silero 与可选的对齐器；上游同一仓库，large-v3 登记在兄弟目录', () => {
+  it('the two Whisper (GGML) bundles: single-file weights, no tokenizer, share Silero and an optional aligner; same upstream repository, with large-v3 registered in a sibling directory', () => {
     const large = BUNDLES.find((b) => b.bundleId === 'whisper-large-v3@ggml')!;
     const turbo = BUNDLES.find((b) => b.bundleId === 'whisper-large-v3-turbo@ggml')!;
     for (const def of [large, turbo]) {
@@ -239,7 +239,7 @@ describe('本地识别的模型包登记', () => {
     for (const def of [large, turbo]) expect(def.license!.summary).toContain('GGML');
   });
 
-  it('GGML 模型包不在 Apple Silicon 上列出（那里用 Core ML 的），别的平台都列出', () => {
+  it('GGML bundles are not listed on Apple Silicon (which uses the Core ML ones); they are listed on all other platforms', () => {
     const ggml = (platform: NodeJS.Platform, arch: string) =>
       platformBundles(platform, arch)
         .filter((b) => b.backend === 'ggml')
@@ -255,12 +255,12 @@ describe('本地识别的模型包登记', () => {
     }
   });
 
-  it('Whisper 形状的定义与 MOSS：必需组件只算没有标可选的', () => {
+  it('Whisper-shaped definition and MOSS: required components are only those not marked optional', () => {
     expect(requiredSources(WHISPER_SHAPED).map((s) => s.family)).toEqual(['whisper-coreml', 'silero-vad', 'whisper-tokenizer']);
     expect(requiredSources(MOSS).map((s) => s.family)).toEqual(['moss-transcribe-diarize']);
   });
 
-  it('MOSS 的模型包：MLX、没有 VAD，asr 的仓库与内置清单同一修订，上游许可 Apache-2.0', () => {
+  it('MOSS bundle: MLX, no VAD, the asr repository and built-in manifest at the same revision, upstream license Apache-2.0', () => {
     expect(MOSS).toMatchObject({ capability: 'transcribe', backend: 'mlx', device: 'metal' });
     expect(Object.keys(MOSS.components)).toEqual(['asr', 'aligner', 'speaker']);
     expect(MOSS.components.asr).toEqual({
@@ -286,7 +286,7 @@ async function writeRepo(root: string, repo: string, revision: string): Promise<
   );
 }
 
-describe('可选组件', () => {
+describe('optional components', () => {
   let root: string;
   const mac = { platform: 'darwin' as const, arch: 'arm64' };
 
@@ -301,7 +301,7 @@ describe('可选组件', () => {
   const install = (def: BundleDefinition, which: 'required' | 'all') =>
     Promise.all((which === 'all' ? Object.values(def.components) : requiredSources(def)).map((s) => writeRepo(root, s!.repo, s!.revision)));
 
-  it('缺可选组件时模型包仍算装好，组件状态标出可选；交给 Worker 时略去，装了就带上', async () => {
+  it('a bundle still counts as installed when optional components are missing; their status is marked optional; they are omitted when handed to the Worker and included when installed', async () => {
     const catalog = new ModelCatalog({ root, bundles: [WHISPER_SHAPED, MOSS], ...mac, threads: 2 });
     expect(await catalog.status(MOSS.bundleId)).toMatchObject({ state: 'not-installed' });
     await install(MOSS, 'required');
@@ -343,7 +343,7 @@ describe('可选组件', () => {
     );
   });
 
-  it('Qwen3-ASR 没装对齐器照样可用、词时间是估计的；装上对齐器后交给 Worker 并报告原生词时间', async () => {
+  it('Qwen3-ASR works without the aligner, with estimated word timings; once the aligner is installed it is handed to the Worker and native word timings are reported', async () => {
     const qwen = BUNDLES.find((b) => b.bundleId === 'qwen3-asr-0.6b@mlx-4bit')!;
     const catalog = new ModelCatalog({ root, bundles: [qwen], ...mac, threads: 2 });
     const wordTimestamps = async () => {
@@ -360,7 +360,7 @@ describe('可选组件', () => {
     expect(await wordTimestamps()).toBe('native');
   });
 
-  it('MOSS 是默认的转写模型；没装时默认退回已装好的识别模型，都没装时仍标 MOSS', async () => {
+  it('MOSS is the default transcription model; when not installed the default falls back to an installed recognition model, and when none is installed it is still labelled MOSS', async () => {
     const qwen = BUNDLES.find((b) => b.bundleId === 'qwen3-asr-0.6b@mlx-4bit')!;
     const catalog = new ModelCatalog({ root, bundles: [qwen, MOSS], ...mac, threads: 2 });
     const defaults = async () => {
@@ -375,13 +375,13 @@ describe('可选组件', () => {
     expect(await defaults()).toEqual([MOSS.bundleId]);
   });
 
-  it('扫描模型目录：必需组件齐了就认出模型包', async () => {
+  it('scanning the model directory: a bundle is recognised once its required components are present', async () => {
     await install(MOSS, 'required');
     const scan = await scanModelsDir(root, [WHISPER_SHAPED, MOSS]);
     expect(scan.bundleIds).toEqual([MOSS.bundleId]);
   });
 
-  it('本机 Provider 报告每个识别模型包按模型族的语言', async () => {
+  it('the local provider reports each recognition bundle\'s languages by model family', async () => {
     const registered = BUNDLES.filter((b) => b.capability === 'transcribe');
     const catalog = new ModelCatalog({ root, bundles: registered, ...mac });
     const view = await new LocalProviderSource({ catalog, transcriber: null }).describe('local', 'view');
@@ -400,7 +400,7 @@ describe('可选组件', () => {
     expect(models.map((m) => m.modelId)).toContain(MOSS.bundleId);
   });
 
-  it('本机 Provider 的识别模型用登记的人看的名字，不带模型包 ID 与后端', async () => {
+  it('the local provider\'s recognition models use the registered human-readable names, without bundle IDs or backends', async () => {
     const registered = BUNDLES.filter((b) => b.capability === 'transcribe');
     const catalog = new ModelCatalog({ root, bundles: registered, ...mac });
     const view = await new LocalProviderSource({ catalog, transcriber: null }).describe('local', 'view');
@@ -412,7 +412,7 @@ describe('可选组件', () => {
     }
   });
 
-  it('每个模型包都有名字；同一个模型换后端（MLX / candle、Core ML / GGML）名字相同；同一平台同一能力里名字不重复', () => {
+  it('every bundle has a name; the same model on a different backend (MLX / candle, Core ML / GGML) has the same name; names are unique within one platform and capability', () => {
     for (const def of BUNDLES) expect(def.label.trim(), def.bundleId).not.toBe('');
     const byModel = new Map<string, Set<string>>();
     for (const def of BUNDLES) {
@@ -440,7 +440,7 @@ describe('可选组件', () => {
     }
   });
 
-  it('MOSS 不收识别提示；只对齐长行，装了对齐器也不算原生词时间', async () => {
+  it('MOSS does not accept recognition prompts; it aligns only long lines, and even with the aligner installed its word timings are not counted as native', async () => {
     const catalog = new ModelCatalog({ root, bundles: [MOSS], ...mac, threads: 2 });
     const describe = async () => {
       const view = await new LocalProviderSource({ catalog, transcriber: null }).describe('local', 'view');
@@ -451,7 +451,7 @@ describe('可选组件', () => {
     expect(await describe()).toMatchObject({ available: true, acceptsHint: false, wordTimestamps: 'none', cost: 'free-local' });
   });
 
-  it('Whisper 的 large-v3 在仓库子目录里：交给 Worker 的是子目录与其下的文件；叠放在仓库根的分词器文件不影响装好', async () => {
+  it('Whisper large-v3 lives in a repository subdirectory: the Worker receives the subdirectory and the files under it; tokenizer files stacked at the repository root do not affect installation', async () => {
     const large = BUNDLES.find((b) => b.bundleId === 'whisper-large-v3@coreml')!;
     const catalog = new ModelCatalog({ root, bundles: [large], ...mac, threads: 2 });
     // Old layout: the subdirectory holds the CoreML model, and the tokenizer files are stacked at the repository root. The manifest lists both.

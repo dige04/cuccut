@@ -23,7 +23,7 @@ async function rejection(promise: Promise<unknown>): Promise<RpcError> {
   throw new Error('应该被拒绝');
 }
 
-describe('Agent skill 端到端', () => {
+describe('agent skills end to end', () => {
   let dir: string;
   let builtin: string;
   let home: RuntimeHome;
@@ -72,7 +72,7 @@ describe('Agent skill 端到端', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('会话指导是说明书按工具桥面渲染的正文；没有 craft 时索引里只有说明书页', async () => {
+  it('session guidance is the manual body rendered for the tool-bridge surface; without craft, the index contains only manual pages', async () => {
     await boot();
     const { session } = await send('你好');
     const instructions = session.options.developerInstructions!;
@@ -96,7 +96,7 @@ describe('Agent skill 端到端', () => {
     });
   });
 
-  it('skills_read 能读说明书页；同 id 的用户 skill 让位', async () => {
+  it('skills_read can read manual pages; a user skill with the same id yields', async () => {
     await writeSkill(home.skillsDir, 'cuccut-conventions');
     await boot();
     const { session } = await send('开始');
@@ -121,7 +121,7 @@ describe('Agent skill 端到端', () => {
     expect(outside).toMatchObject({ ok: false, error: { code: 'SKILL_NOT_FOUND' } });
   });
 
-  it('开着的 skill 出现在会话开始的索引里，关着的不出现；开关经 RPC 持久', async () => {
+  it('enabled skills appear in the index at session start, disabled ones do not; the switch persists via RPC', async () => {
     await writeSkill(builtin, 'caption-layout', { description: '字幕排版规则' });
     await writeSkill(builtin, 'b-roll');
     await boot();
@@ -138,7 +138,7 @@ describe('Agent skill 端到端', () => {
     expect(JSON.parse(await fs.readFile(home.skillPrefsFile, 'utf8'))).toMatchObject({ enabled: { 'b-roll': false } });
   });
 
-  it('点选 skill 发送：智能体拿到正文，消息带 skill 标记；关着的也能点选；不存在时拒绝', async () => {
+  it('sending a picked skill: the agent receives the body, the message carries a skill marker; disabled ones can also be picked; rejects when not found', async () => {
     await writeSkill(builtin, 'caption-layout', { extra: '# 字幕\n\n每行不超过 16 个字。', files: { 'references/fonts.md': '字体表' } });
     await boot();
     await client.request('skills.setEnabled', { id: 'caption-layout', enabled: false });
@@ -157,7 +157,7 @@ describe('Agent skill 端到端', () => {
     expect(missing).toMatchObject({ code: 'not-found', details: { code: 'SKILL_NOT_FOUND' } });
   });
 
-  it('一条消息点选几个 skill：按挂上的顺序各一段，旧写法的 skill 排在最前，重复的只算一次', async () => {
+  it('one message picks several skills: one section each in attached order, legacy-format skills come first, duplicates counted once', async () => {
     await writeSkill(builtin, 'caption-layout');
     await writeSkill(builtin, 'b-roll');
     await boot();
@@ -181,7 +181,7 @@ describe('Agent skill 端到端', () => {
     expect(missing).toMatchObject({ code: 'not-found', details: { code: 'SKILL_NOT_FOUND' } });
   });
 
-  it('skills_read：取正文与同目录文件；路径穿越与不存在的 skill 返回工具错误', async () => {
+  it('skills_read: fetches body and same-directory files; path traversal and nonexistent skills return tool errors', async () => {
     await writeSkill(builtin, 'caption-layout', { files: { 'references/fonts.md': '字体表' } });
     await boot();
     const { session } = await send('开始');
@@ -201,7 +201,7 @@ describe('Agent skill 端到端', () => {
     expect(JSON.stringify(unknown.body)).toContain('SKILL_NOT_FOUND');
   });
 
-  it('经 RPC 添加、查看、读文件、移除；readFile 拒绝路径穿越', async () => {
+  it('add, view, read file and remove via RPC; readFile rejects path traversal', async () => {
     await boot();
     const source = await writeSkill(path.join(dir, 'src'), 'My Notes', { files: { 'notes.md': '笔记' } });
     const added = await client.request('skills.add', { path: source, commandId: newId('cmd') });
@@ -222,7 +222,7 @@ describe('Agent skill 端到端', () => {
   });
 });
 
-describe('会话指导的说明书', () => {
+describe('manual for session guidance', () => {
   let dir: string;
 
   beforeEach(async () => {
@@ -233,7 +233,7 @@ describe('会话指导的说明书', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('找不到或渲染不了时 Runtime 启动失败，不带着空指导开会话', async () => {
+  it('Runtime startup fails when the manual is not found or cannot be rendered, rather than starting a session with empty guidance', async () => {
     const home = resolveRuntimeHome({ CUCCUT_HOME: path.join(dir, 'home') });
     const start = (agentSkillsDir: string | null) =>
       startRuntime({ home, drivers: () => [new ToolDriver()], watchSpace: false, skillsDir: null, agentSkillsDir });

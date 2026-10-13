@@ -2,20 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { mapCodexItem, unwrapShell } from './map-item.ts';
 
 describe('unwrapShell', () => {
-  it('去掉登录 shell 的外壳', () => {
+  it('strips the login shell wrapper', () => {
     expect(unwrapShell(`/bin/zsh -lc 'ls -la'`)).toBe('ls -la');
     expect(unwrapShell(`/bin/bash -lc 'echo '\\''hi'\\'''`)).toBe(`echo 'hi'`);
     expect(unwrapShell(`/bin/zsh -lc "echo \\"x\\""`)).toBe('echo "x"');
   });
 
-  it('不是一整段被包住的命令原样返回', () => {
+  it('a command that is not wrapped as a whole is returned as is', () => {
     expect(unwrapShell('ls -la')).toBe('ls -la');
     expect(unwrapShell(`bash -c 'a' && 'b'`)).toBe(`bash -c 'a' && 'b'`);
   });
 });
 
 describe('mapCodexItem', () => {
-  it('命令的标题是里面那条命令，详情保留原文与目录', () => {
+  it('command title is the inner command; details keep the original text and directory', () => {
     const item = mapCodexItem({
       type: 'commandExecution',
       id: 'i1',

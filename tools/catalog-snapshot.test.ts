@@ -6,13 +6,13 @@ import { SNAPSHOT_FILE as CLI_SNAPSHOT_FILE } from '../apps/cli/src/catalog/snap
 import { SNAPSHOT_FILE, buildCatalogSnapshot, snapshotText } from './catalog-snapshot.ts';
 
 /** The CLI's offline catalog snapshot (Agent surface design §2.3): matches the current `ToolCatalog` as seen from the terminal; flags derived from it do not clash with the CLI's own flags of the same name. */
-describe('CLI 的目录快照', () => {
-  it('快照文件与当前的工具目录一致', () => {
+describe('CLI catalog snapshot', () => {
+  it('snapshot file matches the current tool catalog', () => {
     expect(CLI_SNAPSHOT_FILE).toBe(SNAPSHOT_FILE);
     expect(fs.readFileSync(SNAPSHOT_FILE, 'utf8')).toBe(snapshotText());
   });
 
-  it('只含终端的工具，带接口版本、效果、示例与操作目录', () => {
+  it('terminal-only tools carry interface version, effects, examples and action catalog', () => {
     const snapshot = buildCatalogSnapshot();
     expect(snapshot.interfaceVersion).toBe(MCP_INTERFACE_VERSION);
     expect(snapshot.tools.length).toBeGreaterThan(30);
@@ -28,7 +28,7 @@ describe('CLI 的目录快照', () => {
     }
   });
 
-  it('目录字段派生出的旗标不与 CLI 保留的重名（--dry-run 与 --project 是有意的）', () => {
+  it('flags derived from catalog fields do not clash with names reserved by the CLI (--dry-run and --project are intentional)', () => {
     const collisions = new Set<string>();
     for (const tool of buildCatalogSnapshot().tools) {
       for (const spec of flagSpecs(tool.inputSchema)) {

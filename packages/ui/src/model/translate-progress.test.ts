@@ -55,8 +55,8 @@ function job(state: JobRecord['state'], extra: Partial<JobRecord> = {}): JobReco
 const child = (done: number, total: number | null): JobRecord =>
   job('running', { jobId: 'c2', kind: 'pipeline-step', parentJobId: 'p1', pipeline: undefined, progress: { done, total, unit: 'units' } as JobRecord['progress'] });
 
-describe('翻译流程的进度', () => {
-  it('认得这个视频的翻译流程，读出目标语言、原文与写进视频的译文', () => {
+describe('progress of the translation pipeline', () => {
+  it('recognizes this video\'s translation pipeline, reads the target language, the source text and the translation written into the video', () => {
     const running = job('running');
     expect(isTranslateJob(running, 'vid')).toBe(true);
     expect(isTranslateJob(running, 'other')).toBe(false);
@@ -70,7 +70,7 @@ describe('翻译流程的进度', () => {
     expect(translationOf(summarized)).toBe('tr2');
   });
 
-  it('完成的步骤算满，翻译那一步按子任务的句数算一部分；没完成最多 99', () => {
+  it('completed steps count as full; the translation step counts partially by subtask sentence count; at most 99 when not complete', () => {
     expect(translateProgress(job('running'), [child(10, 40)])).toEqual({
       percent: Math.floor(((5 + 85 * 0.25) / 100) * 100),
       step: '翻译',
@@ -92,7 +92,7 @@ describe('翻译流程的进度', () => {
     });
   });
 
-  it('智能体自己翻译：算这个视频的翻译，范围读 translation；没有步骤与百分比，完成时 100', () => {
+  it('agent translating itself: counts this video\'s translation, scope reads translation; no steps or percentage; 100 when complete', () => {
     const agent = job('running', {
       jobId: 'a1',
       kind: 'agentTranslate',
@@ -116,7 +116,7 @@ describe('翻译流程的进度', () => {
     expect(retryNote({ ...agent, state: 'interrupted' })).toBeNull();
   });
 
-  it('重试的计费说明：停在翻译那一步、在线模型才会再计费；之后的步骤不再调模型；之前的什么都不说', () => {
+  it('retry billing note: stopped at the translation step, only online models are billed again; later steps do not call the model again; earlier ones say nothing', () => {
     const stopped = (name: string, providerId = 'openai') => {
       const failed = job('failed', { providerId });
       failed.pipeline = { ...failed.pipeline!, stoppedAt: name };

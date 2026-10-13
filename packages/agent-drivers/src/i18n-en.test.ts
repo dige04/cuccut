@@ -12,7 +12,7 @@ import { PiDriver } from './pi/pi-driver.ts';
 import { piAccessWarning } from './pi/pi-session.ts';
 
 /** When the UI language is English, the text the Driver writes for people (probe notes, account, install method, session hints) is in English and carries message references. */
-describe('agent-drivers 的英文文案', () => {
+describe('agent-drivers English copy', () => {
   beforeEach(() => {
     vi.stubEnv('CUCCUT_LOCALE', 'en');
     setLocale('en');
@@ -22,25 +22,25 @@ describe('agent-drivers 的英文文案', () => {
     setLocale('zh-Hans');
   });
 
-  it('通用文案', () => {
+  it('common copy', () => {
     expect(String(DriversCommon.turnInProgress())).toBe("The previous turn hasn't finished yet");
     expect(String(DriversCommon.resumeFailed({ name: 'Codex', error: '' }))).not.toMatch(/[一-龥]/);
   });
 
-  it('账号描述', () => {
+  it('account description', () => {
     expect(describeClaudeAccount({ authMethod: 'claude.ai', subscriptionType: 'pro' } as never)).toBe('Claude Pro subscription');
     expect(describeCodexAccount('Logged in using ChatGPT')).toBe('ChatGPT account');
     expect(describeCodexAccount('Logged in using an API key - sk-***')).toBe('OpenAI API key');
   });
 
-  it('预设表按当前语言取：订阅说明、安装方式、登录提示', () => {
+  it('preset tables follow the current language: subscription notes, install methods, login hints', () => {
     expect(String(ACP_PRESETS.cursor.plan)).toBe('Cursor subscription');
     expect(ACP_PRESETS.cursor.install?.[0]).toMatchObject({ label: 'Official script', labelRef: { key: 'driversCommon.officialScript' } });
     expect(String(loginAdvice(ACP_PRESETS.copilot))).not.toMatch(/[一-龥]/);
     expect(String(piAccessWarning())).toContain('"Full access"');
   });
 
-  it('describe() 的 plan 带 planRef', () => {
+  it('describe() plan carries planRef', () => {
     const claude = new ClaudeDriver(silentLogger).describe();
     expect(claude.plan).toBe('Claude Pro or Max subscription');
     expect(claude.planRef).toMatchObject({ key: 'driversClaude.plan' });
@@ -50,7 +50,7 @@ describe('agent-drivers 的英文文案', () => {
     });
   });
 
-  it('没装时的探测说明是英文，带 detailRef', async () => {
+  it('probe explanation when not installed is in English, with detailRef', async () => {
     const locate = async () => null;
     const codex = await new CodexDriver(silentLogger, { locate }).probe();
     expect(codex.detail).toBe("Couldn't find the codex command. Install Codex CLI, or set its location in Settings.");

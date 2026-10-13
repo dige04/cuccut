@@ -13,7 +13,7 @@ import { AttachmentStore, type AttachmentStoreOptions } from './attachments.ts';
 const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
 const ALLOWED = 'http://localhost:5173';
 
-describe('附件仓库', () => {
+describe('attachment store', () => {
   let dir: string;
   let store: AttachmentStore;
   let server: http.Server;
@@ -53,7 +53,7 @@ describe('附件仓库', () => {
     return error as RpcError;
   }
 
-  it('普通文件保留扩展名、类型与原始字节，并可在重启后定位',async()=>{
+  it('regular file keeps extension, type, and original bytes, and can be located after restart',async()=>{
     const bytes=Buffer.from('a,b\n1,2'),prepared=await store.prepare({fileName:'表格.csv',mimeType:'text/csv',size:bytes.length});
     expect(prepared.attachment.kind).toBe('file');expect(store.kindOf(prepared.attachment.id)).toBe('file');
     expect((await put(prepared.uploadUrl,bytes,{'Content-Type':'text/csv'})).status).toBe(204);
@@ -62,7 +62,7 @@ describe('附件仓库', () => {
     await open();expect(store.fileOf(prepared.attachment)).toEqual(persisted);
   });
 
-  it('登记、上传、发送：文件名只用来显示，文件存在附件自己的目录里', async () => {
+  it('register, upload, send: file name only used for display, file stored in the attachment\'s own directory', async () => {
     const { attachment, uploadUrl } = await store.prepare({ fileName: '截图 1.png', mimeType: 'image/png', size: PNG.length });
     expect(attachment).toMatchObject({ kind: 'image', fileName: '截图 1.png', mimeType: 'image/png', size: PNG.length });
     expect(uploadUrl).toMatch(new RegExp(`^${base}/attachments/[A-Za-z0-9_-]{43}$`));
@@ -83,7 +83,7 @@ describe('附件仓库', () => {
     expect((await rejects(store.resolve(['att_00000000000000000000000000000000']))).code).toBe('not-found');
   });
 
-  it('登记时检查大小、格式与文件名', async () => {
+  it('size, format, and file name checked at registration', async () => {
     expect((await rejects(store.prepare({ fileName: 'a.png', mimeType: 'image/png', size: MAX_ATTACHMENT_BYTES + 1 }))).message).toContain('太大');
     expect((await rejects(store.prepare({ fileName: 'a.png', mimeType: 'image/png', size: 0 }))).code).toBe('invalid-request');
     expect((await rejects(store.prepare({ fileName: 'a.png', mimeType: 'image/png', size: 1.5 }))).code).toBe('invalid-request');
@@ -95,7 +95,7 @@ describe('附件仓库', () => {
     expect(await fs.readdir(dir)).toEqual([]);
   });
 
-  it('上传时检查 Content-Type、Content-Length 与来源；不对的不写盘', async () => {
+  it('Content-Type, Content-Length and origin checked on upload; mismatches not written to disk', async () => {
     const prepare = () => store.prepare({ fileName: 'a.png', mimeType: 'image/png', size: PNG.length });
 
     const wrongType = await prepare();
@@ -130,7 +130,7 @@ describe('附件仓库', () => {
     expect((await fs.readdir(dir, { recursive: true })).some((f) => f.endsWith('.part'))).toBe(false);
   });
 
-  it('上传中途断开：删掉半个文件，这次登记作废', async () => {
+  it('upload interrupted midway: half file deleted, this registration voided', async () => {
     const big = Buffer.alloc(256 * 1024, 7);
     const { attachment, uploadUrl } = await store.prepare({ fileName: 'big.png', mimeType: 'image/png', size: big.length });
     await new Promise<void>((resolve) => {
@@ -147,7 +147,7 @@ describe('附件仓库', () => {
     expect((await rejects(store.resolve([attachment.id]))).code).toBe('not-found');
   });
 
-  it('过期：上传地址约 10 分钟内有效，传完没发出去的定期清掉，发出去的留着', async () => {
+  it('expiry: upload URL valid about 10 minutes; uploaded but not sent cleared periodically, sent ones kept', async () => {
     await open({ uploadTtlMs: 30, unsentTtlMs: 30, sweepMs: 60_000 });
     const stale = await store.prepare({ fileName: 'a.png', mimeType: 'image/png', size: PNG.length });
     const unsent = await store.prepare({ fileName: 'b.png', mimeType: 'image/png', size: PNG.length });
@@ -168,7 +168,7 @@ describe('附件仓库', () => {
     expect(await fs.readdir(dir)).toEqual([]);
   });
 
-  it('启动时清掉没有会话引用的附件目录，只认附件 ID 的样子', async () => {
+  it('on startup, attachment directories with no session reference are cleared; only IDs of attachment form recognized', async () => {
     const kept = 'att_11111111111111111111111111111111';
     const orphan = 'att_22222222222222222222222222222222';
     for (const name of [kept, orphan, 'notes']) await fs.mkdir(path.join(dir, name));

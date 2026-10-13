@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { readEditorMessage, readHostMessage, SAVE_FILE_MAX_BYTES, saveFileName } from './editor-messages.ts';
 
-describe('导出文件的消息（editor:save-file）', () => {
-  it('父窗口认 ArrayBuffer 与 Blob，别的内容、空文件名不认', () => {
+describe('export file message (editor:save-file)', () => {
+  it('parent window accepts ArrayBuffer and Blob; other content and empty file names rejected', () => {
     const data = new ArrayBuffer(4);
     expect(readEditorMessage({ type: 'editor:save-file', requestId: 'r1', filename: 'Landing.html', data })).toEqual({
       type: 'editor:save-file',
@@ -18,13 +18,13 @@ describe('导出文件的消息（editor:save-file）', () => {
     expect(readEditorMessage({ type: 'editor:save-file', requestId: 'x'.repeat(101), filename: 'a.html', data })).toBeNull();
   });
 
-  it('超过上限的文件不认', () => {
+  it('files over the limit rejected', () => {
     const big = { byteLength: SAVE_FILE_MAX_BYTES + 1 };
     Object.setPrototypeOf(big, ArrayBuffer.prototype);
     expect(readEditorMessage({ type: 'editor:save-file', requestId: 'r1', filename: 'a.zip', data: big })).toBeNull();
   });
 
-  it('编辑器只认三种结果', () => {
+  it('editor accepts only three result types', () => {
     for (const outcome of ['saved', 'declined', 'failed'] as const) {
       expect(readHostMessage({ type: 'editor:save-file-result', requestId: 'r1', outcome })).toEqual({ type: 'editor:save-file-result', requestId: 'r1', outcome });
     }
@@ -34,7 +34,7 @@ describe('导出文件的消息（editor:save-file）', () => {
 });
 
 describe('saveFileName', () => {
-  it('去掉路径分隔符、保留字符与控制字符，扩展名要在允许的范围里', () => {
+  it('removes path separators, keeps ordinary and control characters, extension must be within the allowed range', () => {
     expect(saveFileName('Landing page.html')).toBe('Landing page.html');
     expect(saveFileName('../../etc/passwd.html')).toBe('etc passwd.html');
     expect(saveFileName('a\\b:c*d?"e<f>g|h.PDF')).toBe('a b c d e f g h.PDF');
@@ -43,7 +43,7 @@ describe('saveFileName', () => {
     expect(saveFileName('design-html.zip')).toBe('design-html.zip');
   });
 
-  it('没有扩展名、扩展名不认得、太长时返回 null', () => {
+  it('returns null when there is no extension, the extension is unrecognized, or the name is too long', () => {
     expect(saveFileName('README')).toBeNull();
     expect(saveFileName('.html')).toBeNull();
     expect(saveFileName('run.exe')).toBeNull();

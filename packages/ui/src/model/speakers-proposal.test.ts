@@ -14,8 +14,8 @@ import {
 
 const speaker = (id: string, name: string): ProposedSpeaker => ({ id, name, isNew: false, words: 1, seconds: 1, sentences: 1, clips: [] });
 
-describe('识别说话人', () => {
-  it('试听片段：素材时间加一句的开头，长的截断', () => {
+describe('speaker identification', () => {
+  it('audition clip: media time plus the start of a sentence; long ones are truncated', () => {
     expect(clockText(0)).toBe('00:00');
     expect(clockText(74.9)).toBe('01:14');
     expect(clockText(3725)).toBe('1:02:05');
@@ -25,7 +25,7 @@ describe('识别说话人', () => {
     expect(clipLabel({ sentenceId: 's', start: 0, end: 1, text: '  大家好 ' }, 1000)).toBe('00:00 · 大家好');
   });
 
-  it('片段投到时间线上；剪掉了的不给区间', () => {
+  it('clip is projected onto the timeline; cut-away parts do not get a range', () => {
     const item = {
       id: 'clip',
       trackId: 'v1',
@@ -41,7 +41,7 @@ describe('识别说话人', () => {
     expect(clipWindow(sequence, 'other', { sentenceId: 's', start: 2500, end: 3000, text: 'x' }, 1000)).toBeNull();
   });
 
-  it('运行到哪一段：解码与声纹、聚类、整理', () => {
+  it('which stage is running: decoding and voiceprints, clustering, organizing', () => {
     const steps = (diarize: PipelineStepState['status'], propose: PipelineStepState['status']) =>
       [
         { name: 'diarize', label: '', status: diarize, jobId: 'c1', attempts: 1, output: null },
@@ -55,7 +55,7 @@ describe('识别说话人', () => {
     expect(speakersStage(parent(steps('completed', 'running')), [child('done')])).toBe(2);
   });
 
-  it('改名：空的、太长的不行；提交只带改过的', () => {
+  it('renaming: empty or overlong names are rejected; the submission only includes changed names', () => {
     expect(nameProblem('  ')).toBe('名字不能为空');
     expect(nameProblem('x'.repeat(101))).toBe('名字最多 100 个字');
     expect(nameProblem('嘉宾')).toBeNull();
@@ -64,7 +64,7 @@ describe('识别说话人', () => {
     expect(changedNames(speakers, { a: ' 说话人 1 ', b: ' 嘉宾 ' })).toEqual({ b: '嘉宾' });
   });
 
-  it('收据与用时', () => {
+  it('receipts and elapsed time', () => {
     expect(durationText(9200)).toBe('9.2s');
     expect(durationText(65_000)).toBe('1m 5s');
     expect(
@@ -72,7 +72,7 @@ describe('识别说话人', () => {
     ).toBe('已应用 · 识别出 3 位说话人 · 9.2s · 本机声纹模型');
   });
 
-  it('只认「说话人区分」模型包', () => {
+  it('only recognizes the \'speaker diarization\' model pack', () => {
     const bundles = [
       { bundleId: 'qwen3-asr@mlx', capability: 'transcribe' },
       { bundleId: 'speaker-diarization@mlx', capability: 'diarize' },

@@ -28,7 +28,7 @@ function fakeSpawn(fail: 'error' | 'throw' | null = null) {
 }
 
 describe('killProcessTree', () => {
-  it('Windows：用 System32 的 taskkill /T /F 结束整棵树', () => {
+  it('Windows: ends the whole tree with System32\'s taskkill /T /F', () => {
     const fake = fakeSpawn();
     const { child, kills } = fakeChild(4321);
     killProcessTree(child, 'SIGTERM', { platform: 'win32', spawn: fake.spawn, env: { SystemRoot: 'D:\\Win' } });
@@ -39,7 +39,7 @@ describe('killProcessTree', () => {
     expect(kills).toEqual([]);
   });
 
-  it('Windows：taskkill 起不来时退回结束直接子进程', async () => {
+  it('Windows: falls back to ending the direct child process when taskkill cannot start', async () => {
     const errored = fakeSpawn('error');
     const a = fakeChild(1);
     killProcessTree(a.child, 'SIGKILL', { platform: 'win32', spawn: errored.spawn, env: {} });
@@ -52,7 +52,7 @@ describe('killProcessTree', () => {
     expect(b.kills).toEqual(['SIGTERM']);
   });
 
-  it('没有 pid（没能启动）时不调 taskkill', () => {
+  it('does not call taskkill when there is no pid (failed to start)', () => {
     const fake = fakeSpawn();
     const { child, kills } = fakeChild(undefined);
     killProcessTree(child, 'SIGTERM', { platform: 'win32', spawn: fake.spawn });
@@ -60,12 +60,12 @@ describe('killProcessTree', () => {
     expect(kills).toEqual(['SIGTERM']);
   });
 
-  it('taskkill 路径：SystemRoot、windir 都没有时用 C:\\Windows', () => {
+  it('taskkill path: uses C:\\Windows when neither SystemRoot nor windir is set', () => {
     expect(taskkillPath({ windir: 'E:\\W' })).toBe('E:\\W\\System32\\taskkill.exe');
     expect(taskkillPath({})).toBe('C:\\Windows\\System32\\taskkill.exe');
   });
 
-  it.skipIf(process.platform === 'win32')('POSIX：信号发给整个进程组，孙进程一起结束', async () => {
+  it.skipIf(process.platform === 'win32')('POSIX: signal is sent to the whole process group, grandchild processes end too', async () => {
     const child = spawn('/bin/sh', ['-c', 'sleep 30 & echo $!; wait'], { stdio: ['ignore', 'pipe', 'ignore'], detached: true });
     const grandchild = await new Promise<number>((resolve) => child.stdout!.once('data', (chunk: Buffer) => resolve(Number(String(chunk).trim()))));
     const closed = new Promise((resolve) => child.once('close', resolve));

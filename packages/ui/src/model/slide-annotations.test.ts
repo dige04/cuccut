@@ -23,8 +23,8 @@ const note = (over: Partial<DraftSlideAnnotation> = {}): DraftSlideAnnotation =>
   ...over,
 });
 
-describe('幻灯片标注草稿', () => {
-  it('加标注：去首尾空白，空的、超长的、超过 20 条的都不收', () => {
+describe('slide annotation draft', () => {
+  it('adding an annotation: trims surrounding whitespace; empty, overlong, or beyond 20 entries are rejected', () => {
     const one = addSlideAnnotation([], note({ text: '  改短一点 \n' }));
     expect(one.error).toBe(null);
     expect(one.list[0]!.text).toBe('改短一点');
@@ -37,7 +37,7 @@ describe('幻灯片标注草稿', () => {
     expect(over.list).toBe(full);
   });
 
-  it('删标注；编辑器的编号标记按整份草稿的序号，别的 deck 跳过不重排', () => {
+  it('removing annotations; the editor\'s numbered markers follow the draft\'s whole sequence, and other decks are skipped without renumbering', () => {
     const notes = [note(), note({ id: 'n2', anchor: 's02#list' }), note({ id: 'n3', deck: deck2 }), note({ id: 'n4' })];
     expect(removeSlideAnnotation(notes, 'missing')).toBe(notes);
     expect(removeSlideAnnotation(notes, 'n2').map((n) => n.id)).toEqual(['n1', 'n3', 'n4']);
@@ -50,14 +50,14 @@ describe('幻灯片标注草稿', () => {
     expect(deckThreads(notes, { projectId: 'p1', path: 'slides/intro/deck.json' })).toEqual([{ id: 'n3', anchor: 's01#title', n: 3 }]);
   });
 
-  it('交出去的那一份去掉界面里的 id，空的可选字段不带', () => {
+  it('the exported copy strips UI ids, and empty optional fields are omitted', () => {
     expect(sentSlideAnnotations([note({ slideId: 's01', detail: 'Slide 1 #s01 · title', area: true }), note({ id: 'n2' })])).toEqual([
       { deck: deck1, anchor: 's01#title', slideId: 's01', label: 'Slide 1 › Title', detail: 'Slide 1 #s01 · title', area: true, text: '改短一点' },
       { deck: deck1, anchor: 's01#title', label: 'Slide 1 › Title', text: '改短一点' },
     ]);
   });
 
-  it('定位描述里的 slide id；已发送那条的跳转 id', () => {
+  it('slide id in the location description; the jump id for a sent item', () => {
     expect(slideIdOfDetail('Slide 3 #s03 · heading "Hello"')).toBe('s03');
     expect(slideIdOfDetail('Area on slide 2 #intro-2 (40%, 10%)')).toBe('intro-2');
     expect(slideIdOfDetail('Slide 3 · heading')).toBe(undefined);
@@ -67,7 +67,7 @@ describe('幻灯片标注草稿', () => {
 });
 
 describe('useDraftSlideAnnotations', () => {
-  it('按会话分；发出去的摘掉，发送期间新加的留着', () => {
+  it('separated by session; sent items are removed, and items added during sending are kept', () => {
     const store = useDraftSlideAnnotations.getState();
     expect(store.add('c1', note())).toBe(null);
     expect(store.add('c1', note({ id: 'n2' }))).toBe(null);

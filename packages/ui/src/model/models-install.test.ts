@@ -74,8 +74,8 @@ function job(patch: Partial<JobRecord>): JobRecord {
   } as JobRecord;
 }
 
-describe('确认对话框', () => {
-  it('确切大小、可用空间、来源与各组件', () => {
+describe('confirm dialog', () => {
+  it('exact size, available space, source and each component', () => {
     const view = installPlanView(plan());
     expect(view.size).toBe('要下载 1.2 GB');
     expect(view.amount).toBe('1.2 GB');
@@ -86,27 +86,27 @@ describe('确认对话框', () => {
     expect(view.lines.map((l) => l.value)).toEqual(['1.2 GB · 2 个文件', '已装好，不动']);
   });
 
-  it('大小未知时写明是估计；有续传的部分说出来', () => {
+  it('when size is unknown, say it is an estimate; state partial downloads that can be resumed', () => {
     const view = installPlanView(plan({ downloadBytes: null, resumedBytes: 300 * MB }));
     expect(view.size).toBe('约 1.2 GB（有文件大小未知，按登记的估计）');
     expect(view.amount).toBe('约 1.2 GB');
     expect(view.resumed).toBe('上次已经下载的 300 MB 接着用，不再重下。');
   });
 
-  it('磁盘不够：先说清楚，不让确认', () => {
+  it('not enough disk: explain first, do not allow confirmation', () => {
     const view = installPlanView(plan({ availableBytes: 500 * MB }));
     expect(view.noSpace).toBe('磁盘空间不够：这次要 1.2 GB，模型目录所在的磁盘只剩 500 MB。先清理出空间再下载。');
   });
 
-  it('查不到可用空间时不编', () => {
+  it('when available space cannot be found, do not make it up', () => {
     const view = installPlanView(plan({ availableBytes: null }));
     expect(view.space).toBeNull();
     expect(view.noSpace).toBeNull();
   });
 });
 
-describe('进度', () => {
-  it('知道总数时给百分比；不知道时不伪造', () => {
+describe('progress', () => {
+  it('give percentage when total is known; do not fabricate when unknown', () => {
     expect(installProgressView({ jobId: 'j', state: 'downloading', receivedBytes: 300 * MB, totalBytes: 1200 * MB })).toEqual({
       state: 'downloading',
       label: '正在下载 300 MB / 1.2 GB',
@@ -118,7 +118,7 @@ describe('进度', () => {
     expect(unknown.label).toBe('正在下载 · 已收到 300 MB');
   });
 
-  it('排队、校验时进度条不确定；暂停时可以继续', () => {
+  it('during queueing and verification the progress bar is indeterminate; can resume when paused', () => {
     expect(installProgressView({ jobId: 'j', state: 'queued', receivedBytes: 0, totalBytes: 10 })).toMatchObject({ percent: null, running: true });
     expect(installProgressView({ jobId: 'j', state: 'verifying', receivedBytes: 10, totalBytes: 10 })).toMatchObject({ percent: null, running: true });
     expect(installProgressView({ jobId: null, state: 'paused', receivedBytes: 300 * MB, totalBytes: 1200 * MB })).toEqual({
@@ -130,19 +130,19 @@ describe('进度', () => {
   });
 });
 
-describe('失败与补救', () => {
-  it('磁盘满：带上要多少、剩多少，说已下载的会留着', () => {
+describe('failures and remedies', () => {
+  it('disk full: state how much is needed and how much is left, and say downloaded parts will be kept', () => {
     const problem = modelProblem('MODEL_DOWNLOAD_NO_SPACE', '模型目录所在的磁盘空间不足', { requiredBytes: 2 * GB, availableBytes: 1 * GB });
     expect(problem.remedy).toBe('这次要 2.0 GB，只剩 1.0 GB。清理出磁盘空间后再下载；已经下载的部分会留着，下次接着下。');
   });
 
-  it('RPC 拒绝按 details.code 认；认不得的用 Runtime 给的 remedy，再没有就只有原话', () => {
+  it('RPC rejection is recognized by details.code; unrecognized uses the remedy given by Runtime, and if none, only the original words', () => {
     expect(rpcProblem(new RpcError('conflict', '严格离线模式下不下载模型', { code: 'OFFLINE_STRICT' })).remedy).toMatch(/严格离线/);
     expect(rpcProblem(new RpcError('conflict', '奇怪', { code: 'X', remedy: '这样办' }))).toEqual({ message: '奇怪', remedy: '这样办' });
     expect(rpcProblem(new Error('断了'))).toEqual({ message: '断了', remedy: null });
   });
 
-  it('安装任务失败、现在没在装时给出原因；取消的不算', () => {
+  it('install task failed and not currently installing: give the reason; cancellation does not count', () => {
     const failed = job({ error: { code: 'MODEL_DOWNLOAD_NETWORK', message: '下载 a 失败：timeout' } });
     const idle = bundle(QWEN, { state: 'not-installed' });
     expect(installFailure(idle, [failed])?.message).toBe('下载 a 失败：timeout');
@@ -151,7 +151,7 @@ describe('失败与补救', () => {
     expect(installFailure(again, [failed])).toBeNull();
   });
 
-  it('下载来源的补救按设置页上的名字说，不写设置键', () => {
+  it('remedy for a download source is named as on the settings page, not the settings key', () => {
     for (const code of ['MODEL_DOWNLOAD_NETWORK', 'MODEL_DOWNLOAD_INTEGRITY', 'MODEL_DOWNLOAD_SOURCE']) {
       const { remedy } = modelProblem(code, '下载失败', {});
       expect(remedy, code).toContain('「设置 › 通用」的「模型下载来源」');
@@ -160,8 +160,8 @@ describe('失败与补救', () => {
   });
 });
 
-describe('删除估算', () => {
-  it('别的已装模型包也用的组件保留，其余算腾出的空间', () => {
+describe('deletion estimate', () => {
+  it('components also used by other installed model packs are kept; the rest counts as freed space', () => {
     const target = bundle(QWEN, {
       components: [component('Qwen/Qwen3-ASR-0.6B'), component('silero/vad', { component: 'vad', sharedWith: ['b@mlx', 'c@mlx'] })],
     });
@@ -171,11 +171,11 @@ describe('删除估算', () => {
     expect(removalBody(estimate)).toBe('大约腾出 100 MB。silero/vad 还有 b@mlx 在用，保留。要再用时重新下载。');
   });
 
-  it('没有组件信息时不编数字', () => {
+  it('when there is no component info, do not fabricate numbers', () => {
     expect(removalBody(removalEstimate(bundle(QWEN), [bundle(QWEN)]))).toBe('删掉这个模型包独有的文件。要再用时重新下载。');
   });
 
-  it('删完照 Runtime 的结果说', () => {
+  it('after deletion, report per Runtime\'s result', () => {
     expect(removedToast(QWEN, { removed: ['a'], kept: [] })).toBe(`已删除 ${QWEN}`);
     expect(removedToast(QWEN, { removed: [], kept: [{ repo: 'silero/vad', usedBy: ['b@mlx'] }] })).toBe(
       `已删除 ${QWEN} · silero/vad 还有别的模型包在用，保留`,
@@ -183,8 +183,8 @@ describe('删除估算', () => {
   });
 });
 
-describe('分组与每行能做什么', () => {
-  it('自己的文件在盘上就在已安装：修复中的、权重在缺组件的都是；第一次下载中的、只有别人装上的公共组件的在可下载', () => {
+describe('groups and what each row can do', () => {
+  it('own files on disk means installed: those under repair and whose weights are present but missing components are; those downloading for the first time and those with only public components installed by others are downloadable', () => {
     const fresh = bundle('a@mlx', { state: 'downloading', components: [component('x', { state: 'missing', bytes: null })] });
     const repairing = bundle('b@mlx', { state: 'downloading', components: [component('y')] });
     const partial = bundle('c@mlx', { state: 'not-installed', reason: 'incomplete', components: [component('c'), component('z', { state: 'missing' })] });
@@ -198,7 +198,7 @@ describe('分组与每行能做什么', () => {
     expect(isBundleInstalled(bundle('f@mlx', { state: 'downloading' }))).toBe(false);
   });
 
-  it('下载中的行不换组：按记着的那一组放，下载结束再按文件归组', () => {
+  it('rows being downloaded do not switch groups: placed by the remembered group, grouped by file after the download finishes', () => {
     const running = { jobId: 'j', state: 'downloading' as const, receivedBytes: 5, totalBytes: 10 };
     const start = bundle('a@mlx', { state: 'downloading', install: running, components: [component('w', { state: 'missing' }), component('v', { state: 'missing' })] });
     const placed = installingPlacement(localGroups([start], 'asr'));
@@ -213,7 +213,7 @@ describe('分组与每行能做什么', () => {
     expect(installingPlacement(localGroups([done], 'asr', placed))).toEqual(new Map());
   });
 
-  it('没装：能下载；暂停：继续或丢掉；在装：只能停下', () => {
+  it('not installed: can download; paused: resume or discard; installing: can only stop', () => {
     expect(bundleActions(bundle(QWEN, { state: 'not-installed' }))).toMatchObject({ install: true, resume: false, remove: false });
     const paused = bundle(QWEN, { state: 'not-installed', install: { jobId: null, state: 'paused', receivedBytes: 5, totalBytes: 10 } });
     expect(bundleActions(paused)).toMatchObject({ install: false, resume: true, discard: true, stop: false });
@@ -229,7 +229,7 @@ describe('分组与每行能做什么', () => {
     });
   });
 
-  it('装好的能修复、删除；这台电脑不支持的不能下载', () => {
+  it('installed ones can be repaired and deleted; ones this computer does not support cannot be downloaded', () => {
     expect(bundleActions(bundle(QWEN, { state: 'ready' }))).toMatchObject({ repair: true, remove: true, install: false });
     expect(bundleActions(bundle(QWEN, { state: 'not-installed', reason: 'hash-mismatch', components: [component('x')] }))).toMatchObject({
       repair: true,
@@ -240,7 +240,7 @@ describe('分组与每行能做什么', () => {
     });
   });
 
-  it('装好了、缺可选组件：能补齐（只下缺的），不算没装；在装、暂停、跑不了的不给补齐', () => {
+  it('installed with missing optional components: can complete (download only the missing), not counted as not installed; installing, paused, or unable to run do not offer completion', () => {
     const aligner = component('aufklarer/aligner', { component: 'aligner', optional: true, state: 'missing', bytes: null });
     const half = bundle(QWEN, { state: 'ready', components: [component('w'), aligner] });
     expect(isBundleInstalled(half)).toBe(true);
@@ -256,7 +256,7 @@ describe('分组与每行能做什么', () => {
     expect(bundleActions(partial)).toMatchObject({ complete: false, install: true });
   });
 
-  it('权重在、缺公共组件（ownFiles）：给补齐不给下载，能修复、删除；只有别人装上的公共组件的走下载、不给删', () => {
+  it('weights present, missing public components (ownFiles): offer completion, not download; can repair and delete; only those with public components installed by others go to download and cannot be deleted', () => {
     const vad = component('silero/vad', { component: 'vad', state: 'missing', bytes: null });
     const half = bundle(QWEN, { state: 'not-installed', reason: 'incomplete', components: [component('w'), vad] });
     expect(bundleActions(half, true)).toEqual({
@@ -282,7 +282,7 @@ describe('分组与每行能做什么', () => {
   });
 });
 
-describe('就地下载（工具页、转录设置、配音的「下载 {大小}」）', () => {
+describe('download in place (tools page, transcription settings, dubbing\'s "Download {size}")', () => {
   const missing = (bundleId: string, patch: Partial<ModelBundleStatus> = {}) =>
     bundle(bundleId, {
       state: 'not-installed',
@@ -292,14 +292,14 @@ describe('就地下载（工具页、转录设置、配音的「下载 {大小}�
     });
   const ready = (bundleId: string) => bundle(bundleId, { state: 'ready', components: [component('w')] });
 
-  it('没装好、这台电脑也跑得了才能下载', () => {
+  it('can download only when not properly installed and this computer can run it', () => {
     expect(canDownload(missing(QWEN))).toBe(true);
     expect(canDownload(ready(QWEN))).toBe(false);
     expect(canDownload(missing(QWEN, { state: 'error', reason: 'unsupported' }))).toBe(false);
     expect(canDownload(missing(QWEN, { state: 'error', reason: 'worker-missing' }))).toBe(false);
   });
 
-  it('只认本机的模型，按模型 ID 找模型包；云端、装好了的、找不到的为 null', () => {
+  it('recognizes only local models, finds the model pack by model ID; cloud, installed, or not found are null', () => {
     const bundles = [missing(QWEN), ready('kokoro-82m')];
     expect(downloadableBundle(bundles, { providerId: 'local', modelId: QWEN })?.bundleId).toBe(QWEN);
     expect(downloadableBundle(bundles, { providerId: 'openai', modelId: QWEN })).toBeNull();
@@ -308,14 +308,14 @@ describe('就地下载（工具页、转录设置、配音的「下载 {大小}�
     expect(downloadableBundle(bundles, null)).toBeNull();
   });
 
-  it('分离模型：按 ID 排第一只能下载的（与 Runtime 挑分离默认值同序）；都下载不了时 null', () => {
+  it('separated model: picks the first downloadable by ID (same order as Runtime\'s choice of separation default); null when none is downloadable', () => {
     const sep = (bundleId: string, patch: Partial<ModelBundleStatus> = {}) => missing(bundleId, { capability: 'separate', ...patch });
     const list = [missing(QWEN), sep('z@mlx'), sep('a@candle', { state: 'error', reason: 'unsupported' }), sep('b@mlx')];
     expect(separationDownload(list)?.bundleId).toBe('b@mlx');
     expect(separationDownload([missing(QWEN), sep('a@candle', { state: 'error', reason: 'unsupported' })])).toBeNull();
   });
 
-  it('下载的样子：大小先用下载任务的总量、再按缺的组件算；在下写百分比，停在一半是暂停', () => {
+  it('download appearance: size uses the download task\'s total first, then computes from missing components; shows percentage while downloading, paused when halfway', () => {
     expect(downloadView(missing(QWEN))).toEqual({ state: 'idle', size: fmtSize(1.2 * GB), percent: null });
     // Weights present, only shared components missing: writes only the missing item (the same figure as “fill in {size}” on the settings page), not an estimate for the whole model.
     const vad = component('silero/vad', { component: 'vad', state: 'missing', bytes: null, estimatedBytes: 30 * MB });
@@ -337,7 +337,7 @@ describe('就地下载（工具页、转录设置、配音的「下载 {大小}�
     expect(downloadView(paused).state).toBe('paused');
   });
 
-  it('权重已在的就地下载走补齐（与设置页同一个判断）：只借到别人装上的公共组件、什么都没有的走下载', () => {
+  it('when weights are already present, in-place download takes completion (same judgment as the settings page): borrows only public components installed by others, and when nothing, goes to download', () => {
     const vad = (state: 'installed' | 'missing') => component('silero/vad', { component: 'vad', state });
     const half = missing('a@mlx', { reason: 'incomplete', components: [component('a'), vad('missing')] });
     const fresh = missing('b@mlx', { components: [component('b', { state: 'missing' }), vad('missing')] });

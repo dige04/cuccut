@@ -89,8 +89,8 @@ function unit(id: string, words: string[], text: string, extra: Partial<Translat
   };
 }
 
-describe('译文 → 字幕条', () => {
-  it('时间取原句成员词的时间（素材时钟）；过期与空的单元不出字幕', () => {
+describe('translation → subtitle cues', () => {
+  it('timing takes the time of the source sentence\'s member words (media clock); stale and empty units produce no cues', () => {
     const cues = translationCues(speech, [
       unit('t-s-w1', ['w1', 'w2'], 'It is fine today.'),
       unit('t-s-w3', ['w3', 'w4'], "Let's begin."),
@@ -103,7 +103,7 @@ describe('译文 → 字幕条', () => {
     ]);
   });
 
-  it('长译文按 speech-cues 的规矩切成几条，时间按宽度插值，不跨出原句', () => {
+  it('long translations are split into several cues by speech-cues rules, timing is interpolated by width, and does not extend beyond the source sentence', () => {
     const long = 'This is a rather long translated sentence, which certainly needs to wrap onto more than one caption line.';
     const cues = translationCues(speech, [unit('t-s-w1', ['w1', 'w2'], long)]);
     expect(cues.length).toBeGreaterThan(1);
@@ -114,7 +114,7 @@ describe('译文 → 字幕条', () => {
     expect(cues.map((c) => c.text).join(' ')).toBe(long);
   });
 
-  it('原句的词按 ID 找（没有词时间的段拆出来的 `w~n` 归到 `w`）；一个词也找不到的单元不出', () => {
+  it('source sentence words are looked up by ID (`w~n` from a segment split without word timing maps to `w`); units where no word is found produce no cues', () => {
     const words = readSpeechWords({
       schema: 'cuccut.speech/1',
       timescale: 1000,
@@ -130,7 +130,7 @@ describe('译文 → 字幕条', () => {
     expect(cues.map((c) => c.text).join(' ')).toBe('One long paragraph.');
   });
 
-  it('字幕条的归属按边界判：t-s-w1 不吞 t-s-w10', () => {
+  it('cue ownership is decided by boundary: t-s-w1 does not swallow t-s-w10', () => {
     expect(cueOfUnit('q-t-s-w1', 't-s-w1')).toBe(true);
     expect(cueOfUnit('q-t-s-w1~3', 't-s-w1')).toBe(true);
     expect(cueOfUnit('q-t-s-w10', 't-s-w1')).toBe(false);
@@ -138,11 +138,11 @@ describe('译文 → 字幕条', () => {
   });
 });
 
-describe('改一句译文 → 只换字幕里这一句的几条', () => {
+describe('editing one translation sentence → only replaces the cues of that sentence in the subtitles', () => {
   const units = [unit('t-s-w1', ['w1', 'w2'], 'Fine.'), unit('t-s-w10', ['w3', 'w4'], 'Go.')];
   const body = speechCaptionBody(translationCues(speech, units), speech.speakers);
 
-  it('原处换掉，别的条（含手改过的字）不动', () => {
+  it('replaced in place; other cues (including hand-edited text) are untouched', () => {
     const edited = { ...body, cues: (body.cues as Array<Record<string, unknown>>).map((c) => (c.id === 'q-t-s-w10' ? { ...c, text: 'Go!!' } : c)) };
     const fresh = translationCues(speech, [unit('t-s-w1', ['w1', 'w2'], 'It is a very fine day today, my friends, a truly lovely one.')]);
     const next = retextCaption(edited, 't-s-w1', fresh, speech.speakers);
@@ -153,7 +153,7 @@ describe('改一句译文 → 只换字幕里这一句的几条', () => {
     expect(next.schema).toBe('cuccut.caption/1');
   });
 
-  it('改成空的就去掉这一句；原来没有的按时间插进去', () => {
+  it('emptied text removes the sentence; sentences that had no cues are inserted by time', () => {
     const removed = retextCaption(body, 't-s-w1', [], speech.speakers);
     expect((removed.cues as Array<{ id: string }>).map((c) => c.id)).toEqual(['q-t-s-w10']);
     const back = retextCaption(removed, 't-s-w1', translationCues(speech, [units[0]!]), speech.speakers);
@@ -170,7 +170,7 @@ const doc = (id: string, kind: string, extra: Partial<DocumentRecord> = {}): Doc
   ...extra,
 });
 
-describe('放到画面上的事务', () => {
+describe('transactions that place them on the frame', () => {
   const documents: Record<string, DocumentRecord> = {
     speech: doc('speech', 'speech'),
     trans: doc('trans', 'translation', { sourceDocumentId: 'speech', language: 'en' }),
@@ -190,7 +190,7 @@ describe('放到画面上的事务', () => {
   };
   const tracks = [track('v1', 0, 'visual'), track('s1', 1, 'subtitle'), track('s2', 2, 'subtitle')];
 
-  it('双语、原文没有样式：新建一份默认样式，原文与译文一起用上；新轨、文档、实例在同一笔里', () => {
+  it('bilingual, source has no style: creates a default style, source and translation both use it; new track, document, and instances are in the same transaction', () => {
     const seq = sequence([caption('srt-1', 's2', 'srt'), caption('o1', 's1', 'orig'), caption('o2', 's1', 'orig')], tracks);
     // No instance on the timeline uses this asset: no target instance is written, and the range covers from the first cue to the last.
     const chips = captionChips(seq, documents);
@@ -215,13 +215,13 @@ describe('放到画面上的事务', () => {
     expect((ops[5] as { items: object[] }).items[0]).not.toHaveProperty('scopeItemIds');
   });
 
-  it('素材时钟：作用实例是时间线上取用这个素材的实例，区间盖住它们（同生成的原文字幕）', () => {
+  it('media clock: affected instances are the instances on the timeline that use this media; the span covers them (as with generated source subtitles)', () => {
     const seq = sequence([video('b', 90, 60, 5), video('a', 0, 30, 0)], tracks);
     const ops = translationCaptionOperations(seq, body, { ...source, bilingual: false }, null);
     expect(ops.at(-1)).toMatchObject({ items: [{ scopeItemIds: ['a', 'b'], span: { fromFrame: 0, durationFrames: 150 } }] });
   });
 
-  it('双语、原文有样式：共用它；原文被拿下的放回来', () => {
+  it('bilingual, source has a style: shares it; source that was taken off the frame is put back', () => {
     const seq = sequence([caption('o1', 's1', 'orig', { styleDocumentId: 'style', enabled: false })], tracks);
     const paired = pairedOriginal(captionChips(seq, documents), documents, 'speech');
     const ops = translationCaptionOperations(seq, body, { ...source, bilingual: true }, paired);
@@ -230,7 +230,7 @@ describe('放到画面上的事务', () => {
     expect(ops[3]).toMatchObject({ items: [{ styleDocumentId: 'style' }] });
   });
 
-  it('只看译文：原文从画面上拿下（不删）；锁住的原文不动', () => {
+  it('translation only: source is taken off the frame (not deleted); locked source is untouched', () => {
     const seq = sequence([caption('o1', 's1', 'orig')], tracks);
     const paired = pairedOriginal(captionChips(seq, documents), documents, 'speech');
     const ops = translationCaptionOperations(seq, body, { ...source, bilingual: false }, paired);
@@ -247,7 +247,7 @@ describe('放到画面上的事务', () => {
     ]);
   });
 
-  it('配对：同一份转写生成的优先，其次画面上的第一条原文；只认从这份译文生成的字幕', () => {
+  it('pairing: source cues generated from the same transcription first, then the first source cue on the frame; only counts cues generated from this translation', () => {
     const seq = sequence([caption('srt-1', 's2', 'srt')], tracks);
     expect(pairedOriginal(captionChips(seq, documents), documents, 'speech')?.documentId).toBe('srt');
     expect(pairedOriginal([], documents, 'speech')).toBeNull();

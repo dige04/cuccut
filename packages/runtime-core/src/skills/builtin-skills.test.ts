@@ -35,7 +35,7 @@ const AGENT_ONLY_IDS = ['design', 'design-system', 'slides'];
 /** The skill index at session start takes only the first 300 characters of description (`skill-brief.ts`). The built-in ones are written within this length. */
 const INDEX_DESCRIPTION_CHARS = 300;
 
-describe('仓库里的内置 skill', () => {
+describe('built-in skills in the repo', () => {
   let tmp: string;
   let builtinDir: string;
   let skills: LoadedSkill[];
@@ -58,7 +58,7 @@ describe('仓库里的内置 skill', () => {
     await fs.rm(tmp, { recursive: true, force: true });
   });
 
-  it('开发时从仓库根找到 skills/cuccut/built-in-skills/，全部加载、没有诊断', async () => {
+  it('in development, finds skills/cuccut/built-in-skills/ from the repo root, loads all, no diagnostics', async () => {
     expect(builtinDir.endsWith(path.join('skills', 'cuccut', 'built-in-skills'))).toBe(true);
     expect(skills.map((s) => s.id).sort()).toEqual(EXPECTED_IDS);
     const list = await catalog.list();
@@ -68,7 +68,7 @@ describe('仓库里的内置 skill', () => {
     }
   });
 
-  it('front matter 齐全且在上限内', () => {
+  it('front matter is complete and within limits', () => {
     for (const skill of skills) {
       expect(skill.name.trim(), skill.id).not.toBe('');
       expect(skill.name.length, skill.id).toBeLessThanOrEqual(SKILL_LIMITS.name);
@@ -81,7 +81,7 @@ describe('仓库里的内置 skill', () => {
     expect(new Set(names).size).toBe(names.length);
   });
 
-  it('文件数、大小在上限内，正文提到的 references 文件都在', () => {
+  it('file count and size within limits, all references files mentioned in the body exist', () => {
     for (const skill of skills) {
       const skillFile = skill.files.find((f) => f.path === 'SKILL.md');
       expect(skillFile, skill.id).toBeDefined();
@@ -98,14 +98,14 @@ describe('仓库里的内置 skill', () => {
     }
   });
 
-  it('目录 README.md 的索引列出全部内置 skill，每行链到它的 SKILL.md', async () => {
+  it('directory README.md index lists all built-in skills, each line linking to its SKILL.md', async () => {
     const readme = await fs.readFile(path.join(builtinDir, 'README.md'), 'utf8');
     const rows = [...readme.matchAll(/^\| \[`([a-z0-9-]+)`\]\(([^)]+)\) \|/gm)];
     expect(rows.map((row) => row[1]).sort()).toEqual(EXPECTED_IDS);
     for (const [, id, target] of rows) expect(target, id).toBe(`${id}/SKILL.md`);
   });
 
-  it('说明书 SKILL.md 的「内置 skill」表（只给 CLI 面）列出全部内置 skill，只给会话内智能体的除外', async () => {
+  it('the manual SKILL.md\'s "built-in skills" table (CLI surface only) lists all built-in skills, excluding those only for in-session agents', async () => {
     const manual = await fs.readFile(path.join(builtinDir, '..', 'SKILL.md'), 'utf8');
     const start = manual.indexOf('### Built-in skills');
     expect(start).toBeGreaterThan(0);

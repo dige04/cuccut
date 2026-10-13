@@ -26,7 +26,7 @@ describe('providerFetch', () => {
     await Promise.all(servers.splice(0).map((s) => s.close()));
   });
 
-  it('跨源重定向不带密钥：A 重定向到 B，B 收到的请求头里没有 Authorization', async () => {
+  it('cross-origin redirect drops the key: A redirects to B, and B\'s request headers have no Authorization', async () => {
     const b = await server(() => ({ status: 200, json: { ok: true } }));
     const a = await server(() => ({ status: 302, headers: { location: `${b.origin}/file` } }));
     const response = await providerFetch(options, request(`${a.origin}/models`));
@@ -37,7 +37,7 @@ describe('providerFetch', () => {
     expect(JSON.stringify(b.requests[0]!.headers)).not.toContain(KEY);
   });
 
-  it('同源重定向照常带密钥；Google 的密钥头也一样只给原始的源', async () => {
+  it('same-origin redirect keeps the key; Google\'s key header likewise goes only to the original origin', async () => {
     let hops = 0;
     const a = await server((r) => (hops++ === 0 ? { status: 307, headers: { location: '/v2' + r.path } } : { status: 200, json: {} }));
     await providerFetch(options, request(`${a.origin}/x`));
@@ -50,7 +50,7 @@ describe('providerFetch', () => {
     expect(b.requests[0]!.headers['x-goog-api-key']).toBeUndefined();
   });
 
-  it('跨源重定向的 POST 不跟随：PROVIDER_REJECTED，素材不会送到别处', async () => {
+  it('POST on cross-origin redirect is not followed: PROVIDER_REJECTED, media is not sent elsewhere', async () => {
     const b = await server(() => ({ status: 200, json: {} }));
     const a = await server(() => ({ status: 307, headers: { location: `${b.origin}/upload` } }));
     const error = await providerFetch(options, request(`${a.origin}/audio`, { method: 'POST', body: () => 'audio' })).catch(
@@ -61,7 +61,7 @@ describe('providerFetch', () => {
     expect(b.requests).toHaveLength(0);
   });
 
-  it('4xx 不重试：401 认证失败、429 配额，供应商回显的密钥被去掉', async () => {
+  it('4xx is not retried: 401 auth failure, 429 quota; the provider\'s echoed key is removed', async () => {
     const a = await server(() => ({ status: 401, json: { error: { message: `Incorrect API key provided: ${KEY}` } } }));
     const error = (await providerFetch(options, request(`${a.origin}/x`)).catch((e: unknown) => e)) as ProviderFailure;
     expect(error).toMatchObject({ kind: 'rejected', details: { code: 'PROVIDER_AUTH_FAILED', status: 401 } });
@@ -88,7 +88,7 @@ describe('providerFetch', () => {
     });
   });
 
-  it('5xx 与连不上：退避重试，一共 3 次；中途恢复就成功', async () => {
+  it('5xx and connection failures: retried with backoff, 3 attempts in total; succeeds if it recovers midway', async () => {
     let calls = 0;
     const a = await server(() => (++calls < 3 ? { status: 502, text: 'bad gateway' } : { status: 200, json: { ok: 1 } }));
     expect((await providerFetch(options, request(`${a.origin}/x`))).json()).toEqual({ ok: 1 });
@@ -109,7 +109,7 @@ describe('providerFetch', () => {
     });
   });
 
-  it('超时算一次失败；取消立即中止在途请求，服务端看到连接关闭', async () => {
+  it('a timeout counts as one failure; cancel aborts the in-flight request immediately, and the server sees the connection close', async () => {
     const a = await server(() => 'hang');
     await expect(providerFetch({ ...options, attempts: 1 }, request(`${a.origin}/x`, { timeoutMs: 100 }))).rejects.toMatchObject({
       kind: 'unavailable-remote',
@@ -124,7 +124,7 @@ describe('providerFetch', () => {
 });
 
 describe('redact', () => {
-  it('去掉给定的密钥与常见的密钥形状，截短到 300 字符', () => {
+  it('removes the given key and common key shapes, truncated to 300 characters', () => {
     expect(redact(`key=${KEY}`, [KEY])).toBe('key=[REDACTED]');
     expect(redact('Bearer sk-proj-abcdefgh12345', [])).toBe('Bearer [REDACTED]');
     expect(redact('AIzaSyA-0123456789abcdefghijklmnop', [])).toBe('[REDACTED]');

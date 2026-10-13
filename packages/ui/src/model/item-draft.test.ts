@@ -47,8 +47,8 @@ const audio: AudioItem = {
 
 const sequence = { id: 'seq', revision: '7', items: [text, audio] } as unknown as Sequence;
 
-describe('属性草稿', () => {
-  it('叠在同一版本的序列上，只换草稿里的片段', () => {
+describe('property draft', () => {
+  it('applied over a sequence of the same version, replacing only the clips in the draft', () => {
     const draft: ItemDraft = { itemId: 'text_1', revision: '7', patch: { place: { x: 60, opacity: 0.5 } } };
     const next = applyDraft(sequence, draft);
     expect(next.items[0]).toMatchObject({ place: { x: 60, y: 50, w: 20, opacity: 0.5 } });
@@ -56,17 +56,17 @@ describe('属性草稿', () => {
     expect(sequence.items[0]).toBe(text);
   });
 
-  it('序列换了版本，草稿作废', () => {
+  it('sequence version changed, draft is discarded', () => {
     expect(applyDraft(sequence, { itemId: 'text_1', revision: '6', patch: { place: { opacity: 0 } } })).toBe(sequence);
     expect(applyDraft(sequence, null)).toBe(sequence);
   });
 
-  it('只叠这种片段有的字段', () => {
+  it('applies only the fields that this kind of clip has', () => {
     expect(patchItem(audio, { mix: { volume: 0.5 }, place: { opacity: 0.2 } })).toEqual({ ...audio, mix: { volume: 0.5 } });
     expect(patchItem(text, { style: { bold: true }, shape: { shape: 'rect' } })).toEqual({ ...text, style: { bold: true } });
   });
 
-  it('画面效果整体替换，null 去掉（有 fx 的片段才叠）', () => {
+  it('visual effects replaced as a whole; null removes them (only clips with fx get applied)', () => {
     const fx = { blur: 3 };
     expect(patchItem({ ...image, fx: { brightness: 0.2 } }, { fx })).toEqual({ ...image, fx });
     expect(patchItem({ ...image, fx: { brightness: 0.2 } }, { fx: null })).toEqual(image);
@@ -74,7 +74,7 @@ describe('属性草稿', () => {
     expect(patchItem(audio, { fx })).toBe(audio);
   });
 
-  it('同一片段同一版本的草稿叠在一起，换了片段就重来', () => {
+  it('drafts for the same clip and version stack together; switching clips starts over', () => {
     const a: ItemDraft = { itemId: 'text_1', revision: '7', patch: { place: { x: 10, opacity: 0.5 } } };
     const b: ItemDraft = { itemId: 'text_1', revision: '7', patch: { place: { y: 20 } } };
     expect(mergeDraft(a, b).patch).toEqual({ place: { x: 10, y: 20, opacity: 0.5 } });
@@ -82,7 +82,7 @@ describe('属性草稿', () => {
     expect(mergeDraft(a, c)).toBe(c);
   });
 
-  it('几份草稿逐份叠上（舞台整体拖动），过期的那份跳过', () => {
+  it('several drafts stack one by one (whole-stage drag); an expired one is skipped', () => {
     const second = { ...text, id: 'text_2' };
     const seq = { ...sequence, items: [text, second, audio] } as Sequence;
     const shown = applyDrafts(seq, [

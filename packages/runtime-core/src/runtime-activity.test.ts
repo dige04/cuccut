@@ -17,8 +17,8 @@ function setup(state: { jobs?: number; services?: string[] } = {}) {
   return { activity, onIdle, advance: (ms: number) => (now += ms), state };
 }
 
-describe('Runtime 的空闲退出', () => {
-  it('没有连接、任务与对外服务满 idleExitMinutes 时退出一次', () => {
+describe('Runtime idle exit', () => {
+  it('exits once when no connections, tasks, or external services for idleExitMinutes', () => {
     const { activity, onIdle, advance } = setup();
     advance(9 * 60_000);
     activity.check();
@@ -30,7 +30,7 @@ describe('Runtime 的空闲退出', () => {
     activity.stop();
   });
 
-  it('连接、任务、对外服务都算在用；断开之后重新计时', () => {
+  it('connections, tasks, external services all count as in use; timing restarts after disconnect', () => {
     const state: { jobs?: number; services?: string[] } = {};
     const { activity, onIdle, advance } = setup(state);
     activity.connected(principal('desktop'));
@@ -60,7 +60,7 @@ describe('Runtime 的空闲退出', () => {
     expect(activity.status().idleExit).toMatchObject({ minutes: 10 });
   });
 
-  it('只查状态的 CLI 连接不改空闲计时；发出别的请求才算在用', () => {
+  it('CLI connection that only queries status does not change idle timing; sending another request counts as in use', () => {
     const { activity, onIdle, advance } = setup();
     const since = activity.status().idleExit!.idleSince;
     expect(since).toEqual(expect.any(String));
@@ -96,7 +96,7 @@ describe('Runtime 的空闲退出', () => {
     expect(later.onIdle).toHaveBeenCalledTimes(1);
   });
 
-  it('不带空闲退出时只报告，不计时', () => {
+  it('without idle exit, only reports, does not time', () => {
     const activity = new RuntimeActivity({ info, activeJobs: () => 0, runningServices: () => [] }, null);
     activity.start();
     activity.connected(principal('cli'));

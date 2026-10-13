@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useDraftSkills } from './draft-skills-store.ts';
 
-describe('输入框点选的 skill 草稿', () => {
+describe('skill draft picked in the input box', () => {
   beforeEach(() => useDraftSkills.setState({ skills: {} }));
 
-  it('按挂上的顺序追加，重复的不再加；不同草稿键互不影响', () => {
+  it('appended in the order attached; duplicates are not added again; different draft keys do not affect each other', () => {
     const store = useDraftSkills.getState();
     store.add('c1', 'caption-layout');
     store.add('c1', 'b-roll');
@@ -13,7 +13,7 @@ describe('输入框点选的 skill 草稿', () => {
     expect(useDraftSkills.getState().skills).toEqual({ c1: ['caption-layout', 'b-roll'], c2: ['blog-post'] });
   });
 
-  it('逐个摘掉；摘光了键也去掉', () => {
+  it('removed one by one; when all are removed the key is also removed', () => {
     const store = useDraftSkills.getState();
     store.set('c1', ['a', 'b', 'a', 'c']);
     expect(useDraftSkills.getState().skills.c1).toEqual(['a', 'b', 'c']);
@@ -24,7 +24,7 @@ describe('输入框点选的 skill 草稿', () => {
     expect(useDraftSkills.getState().skills).toEqual({});
   });
 
-  it('没变化时不换引用；整组搬到另一个草稿键', () => {
+  it('no change keeps the same reference; the whole group moves to another draft key', () => {
     const store = useDraftSkills.getState();
     store.add('draft', 'a');
     const before = useDraftSkills.getState().skills;

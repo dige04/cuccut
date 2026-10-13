@@ -51,8 +51,8 @@ const status = (family: string, patch: Partial<FontFamilyStatus> = {}): FontFami
 const row = (family: string, patch: Partial<FontFamilyStatus> = {}): FontRow => liveRow(status(family, patch), undefined);
 const byName = (rows: FontRow[]) => new Map(rows.map((r) => [familyKey(r.family), r]));
 
-describe('字体库', () => {
-  it('在跑的 fontDownload 任务叠上字节进度；导出里的下载用状态里的字节数', () => {
+describe('font library', () => {
+  it('running fontDownload tasks overlay byte progress; downloads in export use the byte count from state', () => {
     const jobs = [
       job({
         jobId: 'j1',
@@ -77,7 +77,7 @@ describe('字体库', () => {
     expect(progressText({ done: 0, total: null })).toBe('');
   });
 
-  it('「等待中」只给排在同时下载上限后面的任务；马上开始、还没收到字节的念「下载中」', () => {
+  it('\'waiting\' is shown only for tasks queued behind the concurrent download limit; tasks starting immediately and not yet receiving bytes read \'downloading\'', () => {
     const fontJob = (patch: Parameters<typeof job>[0]) => job({ kind: 'fontDownload', modelId: 'Lobster', ...patch });
     const since = '2026-10-04T00:00:00Z';
     const states = {
@@ -114,7 +114,7 @@ describe('字体库', () => {
     expect(bar(states.waiting)).toMatchObject({ kind: 'running', progress: '等待中', value: null });
   });
 
-  it('行尾：标签、下载、进度、失败与已取消（重试）', () => {
+  it('row end: label, download, progress, failed and cancelled (retry)', () => {
     expect(rowEnd(row('Inter', { state: 'built-in', source: 'built-in' }))).toEqual({ kind: 'badge', label: '内置' });
     expect(rowEnd(row('Roboto', { state: 'installed', source: 'local' }))).toEqual({ kind: 'badge', label: '本机' });
     expect(rowEnd(row('Lobster', { state: 'downloaded' }))).toEqual({ kind: 'badge', label: '已下载', tone: 'positive' });
@@ -136,7 +136,7 @@ describe('字体库', () => {
     });
   });
 
-  it('分段：视频里用到、最近用过、全部；检索或筛选时合成搜索结果；打开时的次序冻结住', () => {
+  it('sections: used in the video, recently used, all; search or filtering combines into search results; order at open is frozen', () => {
     const rows = [
       row('Inter', { state: 'built-in', source: 'built-in' }),
       row('Lobster', { category: 'display' }),
@@ -160,7 +160,7 @@ describe('字体库', () => {
     expect(catalogueCount(rows)).toBe(3);
   });
 
-  it('选中还没下载的族：提示先用回退字体，中日韩的给取消下载', () => {
+  it('selecting a family not yet downloaded: prompts to use the fallback font first; CJK families get a cancel-download option', () => {
     expect(pickToast(status('Lobster'))).toEqual({
       text: '「Lobster」下载好之前先用「Noto Sans SC」显示，下载好后自动换上',
       cancellable: false,
@@ -169,7 +169,7 @@ describe('字体库', () => {
     expect(pushRecent(['A', 'B', 'lobster'], 'Lobster')).toEqual(['Lobster', 'A', 'B']);
   });
 
-  it('详情：状态、来源、分类、字重、大小（下载之后）与许可', () => {
+  it('details: status, source, category, weights, size (after download) and license', () => {
     const f = row('Lobster', {
       state: 'downloaded',
       italics: [400],
@@ -191,7 +191,7 @@ describe('字体库', () => {
     ]);
   });
 
-  it('镜像地址只接受 https，不带账号、查询参数与片段；空的用默认', () => {
+  it('mirror address accepts only https, without account, query parameters or fragments; empty uses the default', () => {
     expect(mirrorError('')).toBeNull();
     expect(mirrorError('https://fonts.example.cn/google')).toBeNull();
     expect(mirrorError('fonts.example.cn')).toBe('不是有效的地址');
@@ -201,7 +201,7 @@ describe('字体库', () => {
     expect(mirrorError('https://fonts.example.cn/#x')).toBe('地址里不能带查询参数或 #');
   });
 
-  it('设置里的已下载列表：每个族一行，导出在用的标出来；清空的结果按族数', () => {
+  it('downloaded list in settings: one row per family, families in use by export are marked; the clear result is counted by family', () => {
     const face = (family: string, weight: number, sizeBytes: number, downloadedAt: string) => ({
       family,
       weight,
@@ -229,7 +229,7 @@ describe('字体库', () => {
     expect(clearedText([], 0, [])).toBe('已清空 0 个族，释放 0 B');
   });
 
-  it('字体条：进行中念第几个与进度，全到了说已就绪，没取到列出回退与原因（跳过、取消、失败），自动下载关着时可以下载', () => {
+  it('font strip: while in progress, reads which one and the progress; when all are in, says ready; families not obtained are listed with fallback and reason (skipped, cancelled, failed); can download while auto-download is off', () => {
     const fallback = () => 'Noto Sans SC';
     const batch: FontBatch = { videoId: 'v1', families: ['Lobster', 'Ma Shan Zheng'], mode: 'auto', skipped: [], dismissed: false };
     const at = '2026-10-04T00:00:00Z';
@@ -272,7 +272,7 @@ describe('字体库', () => {
     expect(fontBar({ ...batch, dismissed: true }, idle, fallback)).toBeNull();
   });
 
-  it('打开视频的一批只算字体目录里有、此刻画不出来的族', () => {
+  it('a batch on opening a video counts only families in the font catalog that cannot be rendered right now', () => {
     const usage = (family: string, patch: Partial<FontFamilyStatus>, fallback: string | null): FontUsageFamily => ({
       family,
       faces: [{ weight: 400, italic: false }],
@@ -289,7 +289,7 @@ describe('字体库', () => {
     ).toEqual(['Lobster']);
   });
 
-  it('导出面板的字体提示：在下载的先等，失败的用回退代替（重试），没下载的按自动下载开关说', () => {
+  it('font hint in the export panel: fonts downloading are waited for; failed ones are replaced by fallback (retry); not-downloaded ones are described per the auto-download switch', () => {
     const at = '2026-10-04T00:00:00Z';
     const usage: FontUsageFamily[] = [
       { family: 'A', faces: [], status: status('A', { state: 'downloading' }), fallback: 'Noto Sans SC' },
@@ -316,7 +316,7 @@ describe('字体库', () => {
     });
   });
 
-  it('导出完成：没取到的族按族列出回退与原因；准备阶段念下载字体与百分比', () => {
+  it('export complete: families not obtained are listed per family with fallback and reason; in the preparation stage, reads downloading fonts and the percentage', () => {
     const font = (family: string, weight: number, reason: string) => ({ family, weight, italic: false, fallback: 'Noto Sans SC', reason });
     expect(
       exportFontFallbacks([
@@ -353,7 +353,7 @@ describe('字体库', () => {
     expect(exportFontPhase({ ...exporting, phase: 'generating' }, [])).toBeNull();
   });
 
-  it('选字框的整表：系统字体在最前，Runtime 的次序，现值不在表里时补一行「没有这个字体」', () => {
+  it('full font picker list: system fonts first, Runtime\'s order; when the current value is not in the list, a row \'no such font\' is added', () => {
     const statuses = { inter: status('Inter', { state: 'built-in', source: 'built-in' }), lobster: status('Lobster') };
     const rows = pickerRows(statuses, ['inter', 'lobster'], 'Lobster');
     expect(rows.map((f) => [f.family, f.state])).toEqual([
@@ -371,7 +371,7 @@ describe('字体库', () => {
     expect(fontLabel('Inter')).toBe('Inter');
   });
 
-  it('删除下载的文件：成功、导出在用（FONT_IN_USE）与其他拒绝', () => {
+  it('deleting downloaded files: success, export in use (FONT_IN_USE), and other rejections', () => {
     expect(removeToast('Lobster', null)).toEqual({ text: '已删除「Lobster」下载的字体', tone: 'neutral' });
     const inUse = { message: '「Lobster」正被还没结束的导出使用，导出结束后再删', details: { code: 'FONT_IN_USE', family: 'Lobster' } };
     expect(removeToast('Lobster', inUse)).toEqual({ text: '还没结束的导出在用「Lobster」· 导出结束后再删', tone: 'notice' });

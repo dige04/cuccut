@@ -16,7 +16,7 @@ vi.hoisted(() => {
 
 beforeEach(() => useCaptionPreferences.setState({ preferences: {} }));
 
-it('默认隐藏普通标点，重载后新字幕沿用修改过的属性而不是旧视频的其他属性', async () => {
+it('ordinary punctuation is hidden by default; after reload, new subtitles inherit the modified properties rather than other properties of the old video', async () => {
   expect(asObject(newCaptionStyle().style).punct).toBe(true);
   const before = { ...asObject(DEFAULT_CAPTION_STYLE.style), width: 42, origStyle: { fontFamily: 'old-font' } };
   const after = { ...before, punct: false, y: 75, order: 'orig', gap: 12, displayTiming: { leadIn: 0.8, tail: 1.5 }, origStyle: { fontFamily: 'old-font', fontColor: '#FF0000' }, transStyle: { fontColor: '#00FF00' }, cues: { secret: true }, language: 'ja', documentId: 'old' };
@@ -34,7 +34,7 @@ it('默认隐藏普通标点，重载后新字幕沿用修改过的属性而不�
   expect(asObject(newCaptionStyle().style)).not.toHaveProperty('transStyle');
 });
 
-it('新字幕与偏好同一笔事务保存；双语共用旧样式时保持视频原样', () => {
+it('new subtitles and preferences are saved in the same transaction; when bilingual subtitles share the old style, the video is kept as is', () => {
   const unstyled: EditOperation[] = [{ type: 'insertItems', sequenceId: 'seq', items: [{ type: 'caption', documentRef: 'caption', trackRef: 'track', span: { fromFrame: 0, durationFrames: 30 } }] }];
   const operations = withNewCaptionStyle(unstyled, newCaptionStyle());
   expect(operations[0]).toMatchObject({ type: 'putDocument', kind: 'caption-style', body: DEFAULT_CAPTION_STYLE });
@@ -45,14 +45,14 @@ it('新字幕与偏好同一笔事务保存；双语共用旧样式时保持视�
   expect(withNewCaptionStyle(fresh, { ...DEFAULT_CAPTION_STYLE, style: { punct: false } })[0]).toMatchObject({ ref: 'style', body: { style: { punct: false } } });
 });
 
-it('损坏的持久化字段不带入字幕内容或非有限数值', async () => {
+it('corrupted persisted fields do not carry into subtitle content or non-finite numbers', async () => {
   localStorage.setItem('cuccut.captionPreferences', JSON.stringify({ version: 1, state: { preferences: { y: 77, text: 'private', cues: {}, origStyle: { fontColor: '#FF0000', cues: 'private' }, dropShadow: { on: true, private: 'private' } } } }));
   await useCaptionPreferences.persist.rehydrate();
   expect(useCaptionPreferences.getState().preferences).toEqual({ y: 77, origStyle: { fontColor: '#FF0000' }, dropShadow: { on: true } });
 });
 
 
-it('单语原文的外观修改也单独记住，不染到下次的译文', () => {
+it('appearance changes to monolingual source text are also remembered separately and do not tint the next translation', () => {
   const before = asObject(DEFAULT_CAPTION_STYLE.style);
   useCaptionPreferences.getState().remember(before, { ...before, fontColor: '#FF0000', fontSize: 40 }, 'original');
   expect(newCaptionStyle().style).toMatchObject({ fontColor: '#FFFFFF', origStyle: { fontColor: '#FF0000', fontSize: 40 } });

@@ -11,8 +11,8 @@ import {
 } from './dub.ts';
 import { TRANSLATION_SCHEMA } from './translation-document.ts';
 
-describe('翻译配音的参数', () => {
-  it('targetLanguage 与 translationId 至少给一个；原声处理与压低的 dB 检查取值', () => {
+describe('dub translation parameters', () => {
+  it('at least one of targetLanguage and translationId is given; checks the values for original audio handling and the ducking dB', () => {
     expect(parseDubParams({ videoId: 'vid_1', targetLanguage: 'en', voice: 'library:voice_1' })).toEqual({
       videoId: 'vid_1',
       targetLanguage: 'en',
@@ -28,14 +28,14 @@ describe('翻译配音的参数', () => {
     expect(() => parseDubParams({ videoId: 'vid_1', targetLanguage: 'en', nope: 1 })).toThrow();
   });
 
-  it('给了已有的译文时不翻译：翻译用的参数不适用', () => {
+  it('when an existing translation is given, no translation: the translation parameters don\'t apply', () => {
     expect(() => parseDubParams({ videoId: 'vid_1', translationId: 'doc_t', style: '口语' })).toThrow(/不翻译/);
     expect(() => parseDubParams({ videoId: 'vid_1', translationId: 'doc_t', textModel: 'gpt-x' })).toThrow(/不翻译/);
   });
 });
 
-describe('句级重配的参数（regroup）', () => {
-  it('只要视频与 regroup：不要求 targetLanguage 或 translationId；种子可以是 new 或整数', () => {
+describe('sentence-level redub parameters (regroup)', () => {
+  it('only video and regroup are needed: targetLanguage or translationId not required; seed can be new or an integer', () => {
     expect(parseDubParams({ videoId: 'vid_1', regroup: { groupId: 'dub_1', units: ['u1', 'u2'] } })).toEqual({
       videoId: 'vid_1',
       regroup: { groupId: 'dub_1', units: ['u1', 'u2'] },
@@ -51,7 +51,7 @@ describe('句级重配的参数（regroup）', () => {
     );
   });
 
-  it('译文、语言、音色、Provider、模型、翻译用的参数与原声的处理都取自计划：同给时逐项拒绝', () => {
+  it('translation, language, voice, Provider, model, translation parameters and original-audio handling all come from the plan: when given together, each is rejected', () => {
     const regroup = { groupId: 'dub_1', units: ['u1'] };
     for (const [key, value] of [
       ['translationId', 'doc_t'],
@@ -74,7 +74,7 @@ describe('句级重配的参数（regroup）', () => {
     }
   });
 
-  it('regroup 的形状逐项检查', () => {
+  it('regroup shape is checked item by item', () => {
     const parse = (regroup: unknown) => parseDubParams({ videoId: 'vid_1', regroup });
     expect(() => parse('dub_1')).toThrow(/regroup 应为对象/);
     expect(() => parse({ units: ['u1'] })).toThrow(/regroup.groupId/);
@@ -91,7 +91,7 @@ describe('句级重配的参数（regroup）', () => {
   });
 });
 
-describe('句级重配的冻结（进程内的假视频与假合成）', () => {
+describe('sentence-level redub freezing (in-process fake video and fake composition)', () => {
   const plan = {
     schema: DUBBING_PLAN_SCHEMA,
     sequenceId: 'seq_1',
@@ -145,7 +145,7 @@ describe('句级重配的冻结（进程内的假视频与假合成）', () => {
   const start = (pipeline: ReturnType<typeof dubPipeline>, regroup: Record<string, unknown>) =>
     pipeline.prepare(parseDubParams({ videoId: 'vid_1', regroup }), { retry: false });
 
-  it('译文、语言、Provider、模型与音色取自计划；用了说话人绑定的句子照那次的音色；记下计划与配音轨', async () => {
+  it('translation, language, Provider, model and voice come from the plan; sentences bound to a speaker keep that run\'s voice; the plan and the dub track are recorded', async () => {
     const { pipeline, prepared } = setup(true);
     const frozen = await start(pipeline, { groupId: 'dub_1', units: ['u1', 'u2'], seed: 7 });
     expect(prepared[0]).toEqual({ provider: 'elevenlabs', model: 'm1', voice: 'voice_p', language: 'en' });
@@ -165,14 +165,14 @@ describe('句级重配的冻结（进程内的假视频与假合成）', () => {
     expect(frozen.contentHash).not.toBe(whole.contentHash);
   });
 
-  it("种子：'new' 随机取一个；模型不接受种子时 'new' 记为 null、给数字拒绝", async () => {
+  it("seed: 'new' draws a random one; when the model does not accept a seed, 'new' is recorded as null, a numeric value is rejected", async () => {
     const random = (await start(setup(true).pipeline, { groupId: 'dub_1', units: ['u1'] })).params.regroup!.seed!;
     expect(Number.isInteger(random) && random >= 1 && random < 1_000_000).toBe(true);
     expect((await start(setup(false).pipeline, { groupId: 'dub_1', units: ['u1'], seed: 'new' })).params.regroup!.seed).toBeNull();
     await expect(start(setup(false).pipeline, { groupId: 'dub_1', units: ['u1'], seed: 7 })).rejects.toThrow(/不接受种子/);
   });
 
-  it('要求分离：启动时按默认选定分离模型包并冻结（重试照用），分离一步按这个模型包的 Worker 申请资源', async () => {
+  it('separation required: at start, the default selected separation model pack is picked and frozen (retries reuse it), the separation step requests resources per this model pack\'s Worker', async () => {
     const asked: unknown[] = [];
     const separator: DubDeps['separator'] = async (model) => {
       asked.push(model);
@@ -221,21 +221,21 @@ describe('句级重配的冻结（进程内的假视频与假合成）', () => {
     expect(keep.params).toMatchObject({ originalAudio: 'keep', separateBackground: false, separatorId: null });
   });
 
-  it('组不在、句子不在计划或译文里：提交时拒绝', async () => {
+  it('group not found, sentence not in the plan or translation: rejected at submission', async () => {
     const { pipeline } = setup(true);
     await expect(start(pipeline, { groupId: 'dub_2', units: ['u1'] })).rejects.toMatchObject({ details: { code: 'DUB_GROUP_NOT_FOUND' } });
     await expect(start(pipeline, { groupId: 'dub_1', units: ['u1', 'u9'] })).rejects.toMatchObject({ details: { missing: ['u9'] } });
   });
 });
 
-describe('分离的输出合约（假的分离结果）', () => {
+describe('separation output contract (fake separation result)', () => {
   const audio = (durationSec: number, sampleRate = 48_000) => ({ durationSec, audio: { sampleRate } });
 
-  it('人声与背景各一条、与输入等长（容差 20 毫秒）、采样率相同时没有问题', () => {
+  it('vocals and background tracks each one, same length as the input (20 ms tolerance), same sample rate: no problem', () => {
     expect(stemProblems(audio(10), { vocals: audio(10.01), background: audio(9.99) })).toEqual([]);
   });
 
-  it('长度不同、采样率不同、没有音频都逐项列出', () => {
+  it('different length, different sample rate, or no audio are each listed', () => {
     const problems = stemProblems(audio(10), {
       vocals: audio(9.5),
       background: { durationSec: 10, audio: null },
@@ -250,8 +250,8 @@ describe('分离的输出合约（假的分离结果）', () => {
   });
 });
 
-describe('配音在序列上的起点', () => {
-  it('拆成粗帧与一帧之内的余数（约分）', () => {
+describe('dub\'s start position on the sequence', () => {
+  it('split into coarse frames and a remainder within one frame (reduced)', () => {
     expect(audioStart(0, { num: 30, den: 1 })).toEqual({ fromFrame: 0, subframeOffset: { ticks: '0', timescale: 1 } });
     expect(audioStart(1_500_000, { num: 30, den: 1 })).toEqual({ fromFrame: 45, subframeOffset: { ticks: '0', timescale: 1 } });
     // 1.01 seconds @ 30 fps: frame 30, with 0.01 seconds left over.
@@ -264,7 +264,7 @@ describe('配音在序列上的起点', () => {
   });
 });
 
-describe('应用配音的事务：原声与分离出的两轨', () => {
+describe('transaction applying the dub: original audio and the two separated tracks', () => {
   type Input = Parameters<typeof dubOperations>[0];
   type Ops = Awaited<ReturnType<typeof dubOperations>>;
   const timeMap = { kind: 'linear', sourceIn: { ticks: '0', timescale: 1 }, rate: { num: 1, den: 1 } };
@@ -339,7 +339,7 @@ describe('应用配音的事务：原声与分离出的两轨', () => {
   const ofType = (ops: Ops, type: string) => ops.filter((op) => op.type === type) as Array<Record<string, any>>;
   const plan = (ops: Ops) => ofType(ops, 'putDocument')[0]!.body;
 
-  it('压低且分离过：原句实例静音、换成「背景声」（原样音量）与「人声」两轨，闪避压人声轨与没换的原声；静音的实例记进计划', async () => {
+  it('ducked and separated: the original clip instances are muted, replaced with the \'background\' (original volume) and \'vocals\' tracks; ducking presses the vocals track and the unreplaced original audio; muted instances are recorded in the plan', async () => {
     const ops = await run('duck', true);
     expect(ofType(ops, 'importAsset').map((op) => [op.ref, op.name, op.provenance.source.stem])).toEqual([
       ['dub-audio-1', '配音（en）第 1 句', undefined],
@@ -385,7 +385,7 @@ describe('应用配音的事务：原声与分离出的两轨', () => {
     });
   });
 
-  it('静音且分离过：原句实例都静音，只放「背景声」一轨，不放人声、没有闪避', async () => {
+  it('muted and separated: all original clip instances are muted, only the \'background\' track is placed, no vocals, no ducking', async () => {
     const ops = await run('mute', true);
     expect(ofType(ops, 'addTrack').map((op) => op.name)).toEqual(['配音（en）', '背景声（en）']);
     expect(ofType(ops, 'insertItems')[1]!.items).toHaveLength(1);
@@ -394,7 +394,7 @@ describe('应用配音的事务：原声与分离出的两轨', () => {
     expect(plan(ops).extensions[DUB_EXTENSION].mutedItemIds).toEqual(['item_v', 'item_a']);
   });
 
-  it('没有分离：压低时一条闪避压原句实例，不静音、不记静音的实例；不动时什么都不碰', async () => {
+  it('not separated: when ducking, one ducking lane presses the original clip instances, no muting, no muted instances recorded; when untouched, nothing is touched', async () => {
     const duck = await run('duck', false);
     expect(ofType(duck, 'addTrack').map((op) => op.name)).toEqual(['配音（en）']);
     expect(ofType(duck, 'setAudioMix')).toEqual([]);

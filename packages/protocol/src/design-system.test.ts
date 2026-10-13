@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { methodParamSchemas } from './schemas.ts';
 import { DESIGN_SYSTEM_ANNOTATION_LIMITS } from './design-system.ts';
 
-describe('conversations.send / steer 带的设计系统标注（docs/design/canvas §10.6）', () => {
+describe('design system annotations carried by conversations.send / steer (docs/design/canvas §10.6)', () => {
   const base = { conversationId: 'c', text: 'hi', commandId: 'k' };
   const note = {
     system: { conversationId: 'c', path: 'spectrum-2' },
@@ -13,7 +13,7 @@ describe('conversations.send / steer 带的设计系统标注（docs/design/canv
     text: '圆角改小',
   };
 
-  it('send 与 steer 都收，三种 system 写法都认，可以与幻灯片、设计稿标注同时带', () => {
+  it('send and steer both accept it, all three system formats are recognized, can be combined with slide and design annotations', () => {
     const slide = { deck: { conversationId: 'c', path: 'talk' }, anchor: 'a', label: 'p1', text: 'x' };
     const design = { canvas: { conversationId: 'c', path: 'poster' }, anchor: 'Main.dc.html#el-1', label: 'Main', text: 'y' };
     for (const method of ['conversations.send', 'conversations.steer'] as const) {
@@ -30,7 +30,7 @@ describe('conversations.send / steer 带的设计系统标注（docs/design/canv
     }
   });
 
-  it('每条消息至多 20 条，单条批注至多 2000 字，空批注、多余字段与设计稿的字段名都不收', () => {
+  it('at most 20 per message, at most 2000 characters per annotation; empty annotations, extra fields and design field names are rejected', () => {
     const send = methodParamSchemas['conversations.send'];
     const many = Array.from({ length: DESIGN_SYSTEM_ANNOTATION_LIMITS.perMessage + 1 }, () => note);
     expect(send.safeParse({ ...base, designSystemAnnotations: many }).success).toBe(false);

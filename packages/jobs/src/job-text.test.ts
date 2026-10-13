@@ -12,7 +12,7 @@ function toChinese(): void {
   setLocale('zh-Hans');
 }
 
-describe('任务文字的多语言', () => {
+describe('multilingual task text', () => {
   beforeEach(() => {
     vi.stubEnv('CUCCUT_LOCALE', 'en');
     setLocale('en');
@@ -23,14 +23,14 @@ describe('任务文字的多语言', () => {
     setLocale('zh-Hans');
   });
 
-  it('任务错误按当前语言生成，并带上引用供界面换语言', () => {
+  it('task errors are generated in the current language, with a reference so the UI can switch language', () => {
     const error = jobError('JOB_INTERRUPTED', JobsManager.interrupted());
     expect(error.message).toBe("The task didn't finish before Runtime stopped; you can submit it again");
     expect(error.messageRef?.key).toBe('jobsManager.interrupted');
     expect(formatRef(error.messageRef!, error.message, 'zh-Hans')).toBe('Runtime 停止时任务没有完成；可以重新提交');
   });
 
-  it('「说明：原因」嵌套原因的引用，换语言时整句一起换', () => {
+  it('a \'explanation: cause\' nested cause reference: the whole sentence switches together when the language changes', () => {
     const cause = new RpcError('not-found', JobsManager.videoNotOpen());
     const message = withCause(JobsManager.requeueCheckFailed(), cause);
     expect(message.text).toBe("The check before re-queuing failed: The video isn't open");
@@ -40,7 +40,7 @@ describe('任务文字的多语言', () => {
     expect(String(withCause(JobsManager.requeueCheckFailed(), new Error('ENOENT')))).toBe('The check before re-queuing failed: ENOENT');
   });
 
-  it('警告的 detail 带 detailRef', () => {
+  it('warning detail carries detailRef', () => {
     const warning = jobWarning('output-truncated', JobsManager.outputTruncated({ limit: 512 }));
     expect(warning.detail).toBe('The output hit the limit (512 tokens) and was cut off; the content is incomplete');
     expect(localizeText(warning.detail, warning.detailRef)).toBe(warning.detail);
@@ -48,7 +48,7 @@ describe('任务文字的多语言', () => {
     expect(localizeText(warning.detail, warning.detailRef)).toBe('输出到了上限（512 token）被截断，内容不完整');
   });
 
-  it('资源调度的拒绝与等待说明', () => {
+  it('resource scheduling rejection and waiting explanations', () => {
     const exceeded = new ResourceExceedsCapacity([
       { dimension: 'memory', demand: 2, limit: 1 },
       { dimension: 'gpuMemory', demand: 2, limit: 1 },
@@ -60,14 +60,14 @@ describe('任务文字的多语言', () => {
     expect(JobsResourceScheduler.queuedBehind({ ahead: 1 }).text).toBe('Queued: 1 task ahead in the same queue');
   });
 
-  it('工具目录的名字与说明在读的时候按当前语言生成', () => {
+  it('tool catalog names and descriptions are generated in the current language when read', () => {
     const transcribe = TOOL_CATALOGUE.find((tool) => tool.id === 'transcribe')!;
     expect(transcribe.label).toBe('Transcribe');
     toChinese();
     expect(transcribe.label).toBe('转录');
   });
 
-  it('列表分隔符跟随语言', () => {
+  it('list separators follow the language', () => {
     expect(joinList(['a', 'b'])).toBe('a, b');
     toChinese();
     expect(joinList(['a', 'b'])).toBe('a、b');

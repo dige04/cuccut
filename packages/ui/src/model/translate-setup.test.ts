@@ -21,8 +21,8 @@ const doc = (id: string, kind: string, extra: Partial<DocumentRecord> = {}): Doc
   ...extra,
 });
 
-describe('目标语言', () => {
-  it('同一种语言按主语言判，中文再分简繁', () => {
+describe('target language', () => {
+  it('same language is judged by its primary language, Chinese is further split into simplified and traditional', () => {
     expect(sameLanguage('en-US', 'en')).toBe(true);
     expect(sameLanguage('zh', 'zh-Hans')).toBe(true);
     expect(sameLanguage('zh-CN', 'zh-Hant')).toBe(false);
@@ -30,7 +30,7 @@ describe('目标语言', () => {
     expect(sameLanguage('ja', 'ko')).toBe(false);
   });
 
-  it('和原文同一种的、这份转写已经有译文的不能选；默认中文译成英语，别的译成简体中文', () => {
+  it('the source language, and any language this transcription already has a translation for, cannot be chosen; by default Chinese translates to English, others to Simplified Chinese', () => {
     const documents = {
       speech: doc('speech', 'speech', { language: 'zh' }),
       en: doc('en', 'translation', { sourceDocumentId: 'speech', language: 'en' }),
@@ -51,8 +51,8 @@ describe('目标语言', () => {
   });
 });
 
-describe('术语表', () => {
-  it('方向：目标相配，源语言不限或相配；照 Runtime 的前缀规则（zh-CN 不配 zh-Hans）', () => {
+describe('glossary', () => {
+  it('direction: target matches, source is unrestricted or matches; follows the Runtime prefix rule (zh-CN does not match zh-Hans)', () => {
     expect(glossaryFits({ sourceLanguage: null, targetLanguage: 'en' }, 'zh', 'en')).toBe(true);
     expect(glossaryFits({ sourceLanguage: 'zh', targetLanguage: 'en-US' }, 'zh-CN', 'en')).toBe(true);
     expect(glossaryFits({ sourceLanguage: 'ja', targetLanguage: 'en' }, 'zh', 'en')).toBe(false);
@@ -62,7 +62,7 @@ describe('术语表', () => {
     expect(glossaryFits({ sourceLanguage: null, targetLanguage: 'zh' }, 'en', 'zh-Hant')).toBe(true);
   });
 
-  it('本篇命中的词条（不分大小写），同一个源词取第一条', () => {
+  it('entries hit in this piece (case-insensitive), the first entry wins for the same source term', () => {
     const terms = [
       { source: '宝玉', target: 'Baoyu', note: '人名' },
       { source: 'cuccut', target: 'CucCut', note: null },
@@ -86,7 +86,7 @@ const glossary = (targetLanguage: string, sources: string[], sourceLanguage: str
   terms: sources.map((source) => ({ source, target: source.toUpperCase(), note: null })),
 });
 
-describe('视频启用的术语表', () => {
+describe('glossaries enabled for the video', () => {
   const candidates = [
     { id: 'product', name: '产品名', content: glossary('en', ['宝玉', 'cuccut', '没出现']) },
     { id: 'people', name: '人名', content: glossary('en-US', ['小明']) },
@@ -96,7 +96,7 @@ describe('视频启用的术语表', () => {
   ];
   const text = '今天宝玉用 CucCut 剪视频';
 
-  it('列出方向对得上的（启用的按次序排前面），启用了但用不上的也列出并写原因；方向不符又没启用的不列', () => {
+  it('lists direction-matching ones (enabled ones first, in order), also lists enabled ones that cannot be used and gives the reason; disabled ones with a mismatched direction are not listed', () => {
     const rows = glossaryRows(candidates, ['japanese', 'product', 'gone', 'broken'], 'zh', 'en', text);
     expect(rows.map((r) => [r.id, r.enabled, r.used])).toEqual([
       ['japanese', true, false],
@@ -114,7 +114,7 @@ describe('视频启用的术语表', () => {
     expect(rows[5]!.note).toBe('正在读取…');
   });
 
-  it('勾选排到最后、取消拿掉；重复、没变或超过上限时 null', () => {
+  it('checking moves it to the end, unchecking removes it; null when duplicate, unchanged, or over the limit', () => {
     expect(toggleGlossary(['a'], 'b', true)).toEqual(['a', 'b']);
     expect(toggleGlossary(['a', 'b'], 'a', false)).toEqual(['b']);
     expect(toggleGlossary(['a'], 'a', true)).toBeNull();
@@ -124,8 +124,8 @@ describe('视频启用的术语表', () => {
   });
 });
 
-describe('pipelines.start 的参数', () => {
-  it('只放流程认得的键；空的风格、默认模型都不传；术语表不传（Runtime 用视频启用的）', () => {
+describe('pipelines.start arguments', () => {
+  it('only passes keys the pipeline recognizes; empty style and default model are not passed; glossary is not passed (Runtime uses the video\'s enabled ones)', () => {
     expect(
       translateParams({ videoId: 'v', speechDocumentId: 'speech', targetLanguage: 'en', style: '  ', model: null }),
     ).toEqual({ videoId: 'v', documentId: 'speech', targetLanguage: 'en' });

@@ -19,8 +19,8 @@ const copy: EditorExportCopy = {
 
 beforeEach(() => vi.clearAllMocks());
 
-describe('保存编辑器交来的导出文件', () => {
-  it('Web：按扩展名给类型后交给浏览器下载，不另外提示', async () => {
+describe('saves the export file handed over by the editor', () => {
+  it('Web: assigns the type from the extension and hands it to the browser download, with no extra prompt', async () => {
     const data = new ArrayBuffer(3);
     expect(await saveEditorFile({}, { filename: 'Landing/page.html', data }, copy)).toBe('saved');
     expect(mocks.downloadBlob).toHaveBeenCalledExactlyOnceWith(expect.any(Blob), 'Landing page.html');
@@ -32,7 +32,7 @@ describe('保存编辑器交来的导出文件', () => {
     expect([png.type, await png.text()]).toEqual(['image/png', 'png']);
   });
 
-  it('桌面端：存储对话框按扩展名过滤，存好后提示路径', async () => {
+  it('desktop: the save dialog filters by extension, and shows the path after saving', async () => {
     const saveFile = vi.fn(async () => '/Users/me/Desktop/Landing.png');
     expect(await saveEditorFile({ saveFile }, { filename: 'Landing.png', data: new Blob([new Uint8Array([1, 2])]) }, copy)).toBe('saved');
     expect(saveFile).toHaveBeenCalledExactlyOnceWith({
@@ -45,7 +45,7 @@ describe('保存编辑器交来的导出文件', () => {
     expect(mocks.positive).toHaveBeenCalledWith('saved ~/Desktop/Landing.png', expect.anything());
   });
 
-  it('桌面端：取消回 declined，不提示；写不进去回 failed 并提示原因', async () => {
+  it('desktop: cancel returns declined with no prompt; a write failure returns failed and shows the reason', async () => {
     expect(await saveEditorFile({ saveFile: async () => null }, { filename: 'a.zip', data: new ArrayBuffer(1) }, copy)).toBe('declined');
     expect(mocks.positive).not.toHaveBeenCalled();
     expect(mocks.negative).not.toHaveBeenCalled();
@@ -56,7 +56,7 @@ describe('保存编辑器交来的导出文件', () => {
     expect(mocks.negative).toHaveBeenCalledWith('failed disk full', expect.anything());
   });
 
-  it('扩展名不在允许的范围里：不保存，回 failed', async () => {
+  it('extension outside the allowed range: not saved, returns failed', async () => {
     const saveFile = vi.fn(async () => '/x');
     expect(await saveEditorFile({ saveFile }, { filename: 'run.exe', data: new ArrayBuffer(1) }, copy)).toBe('failed');
     expect(saveFile).not.toHaveBeenCalled();

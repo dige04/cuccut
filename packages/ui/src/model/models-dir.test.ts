@@ -57,15 +57,15 @@ const inspection: ModelsDirInspection = {
   move: { requiredBytes: 4 * GB, sameVolume: false, fits: true },
 };
 
-describe('模型目录', () => {
-  it('长路径中间省略：主目录缩成 ~，保留开头与结尾，最后一段不省', () => {
+describe('model directory', () => {
+  it('long path middle-elided: home directory shrinks to ~, keep start and end, last segment not elided', () => {
     expect(shortenDir('/Volumes/ExtremeSSD/CucCut/models')).toBe('/Volumes/ExtremeSSD/CucCut/models');
     expect(shortenDir('/Users/me/Library/Application Support/CucCut/models')).toBe('~/Library/Application Support/CucCut/models');
     expect(shortenDir('/Users/me/Library/Application Support/CucCut/models', 30)).toBe('~/Library/…/CucCut/models');
     expect(shortenDir('/a/very/long/path/with/many/segments/and-a-really-long-final-folder-name', 20)).toBe('…/and-a-really-long…');
   });
 
-  it('Windows 路径：用 \\ 拼回去，盘符算开头的一段，最后一段不省', () => {
+  it('Windows paths: rejoin with \\, drive letter counts as the first segment, last segment not elided', () => {
     expect(shortenDir('C:\\Users\\me\\AppData\\Roaming\\CucCut\\models')).toBe('~\\AppData\\Roaming\\CucCut\\models');
     expect(shortenDir('C:\\Users\\me\\AppData\\Roaming\\CucCut\\models', 20)).toBe('~\\AppData\\…\\models');
     expect(shortenDir('D:\\Models\\cuccut')).toBe('D:\\Models\\cuccut');
@@ -77,7 +77,7 @@ describe('模型目录', () => {
     );
   });
 
-  it('卡片副题与目录本身的问题', () => {
+  it('card subtitle and the directory\'s own problems', () => {
     expect(dirStats(info)).toBe('已用 3.0 GB · 所在磁盘可用 812.0 GB · 已识别 3 个模型');
     expect(dirStats({ ...info, freeBytes: null, modelCount: 0, usedBytes: 0 })).toBe('已用 1 KB · 已识别 0 个模型');
     expect(dirHealth(info)).toBeNull();
@@ -85,7 +85,7 @@ describe('模型目录', () => {
     expect(dirHealth({ ...info, writable: false })).toContain('写入权限');
   });
 
-  it('在用本地模型的任务让更改暂时不可用：下载、检查、带模型包的任务；在线任务与结束的不算', () => {
+  it('tasks using local models make changes temporarily unavailable: downloads, checks, tasks with model packs; online tasks and finished ones do not count', () => {
     const bundles = [{ bundleId: 'asr', label: 'Qwen3-ASR 0.6B' } as ModelBundleStatus];
     expect(dirBlocker([], bundles)).toBeNull();
     expect(dirBlocker([job({ state: 'completed' }), job({ bundleId: null, providerId: 'openai' })], bundles)).toBeNull();
@@ -106,14 +106,14 @@ describe('模型目录', () => {
     expect(dirBlocker([job({ kind: 'modelInstall' })], bundles)?.hasTasks).toBe(false);
   });
 
-  it('确认框：选的文件夹不能用时说明原因', () => {
+  it('confirm dialog: when the chosen folder is unusable, explain why', () => {
     expect(changePlan({ ...inspection, problem: 'missing' })).toMatchObject({ kind: 'error', title: '找不到这个文件夹' });
     expect(changePlan({ ...inspection, problem: 'not-writable' })).toMatchObject({ kind: 'error', title: '这个文件夹不可写' });
     expect(changePlan({ ...inspection, problem: 'nested' })).toMatchObject({ kind: 'error' });
     expect(changePlan({ ...inspection, problem: 'same' })).toEqual({ kind: 'same' });
   });
 
-  it('确认框：当前目录里没有模型时直接切换，只说新位置里有什么', () => {
+  it('confirm dialog: when there are no models in the current directory, switch directly, only say what\'s in the new location', () => {
     const plan = changePlan({ ...inspection, current: { repos: [], bundleIds: [], bytes: 0 } });
     expect(plan).toEqual({ kind: 'direct', found: '发现 2 个已下载的模型（2.0 GB），可以直接使用。 所在磁盘可用 100.0 GB。' });
     expect(pickedMode(plan, 'move')).toBe('switch');
@@ -125,7 +125,7 @@ describe('模型目录', () => {
     expect(empty).toMatchObject({ kind: 'direct', found: expect.stringContaining('还没有模型') });
   });
 
-  it('确认框：当前目录里有模型时在移过去与只切换之间选；放不下时移过去不可选', () => {
+  it('confirm dialog: when there are models in the current directory, choose between moving there and only switching; when it doesn\'t fit, move is unavailable', () => {
     const plan = changePlan(inspection);
     expect(plan).toMatchObject({
       kind: 'choose',
@@ -141,13 +141,13 @@ describe('模型目录', () => {
     expect(pickedMode(tight, 'move')).toBe('switch');
   });
 
-  it('更改之后的提示', () => {
+  it('notice after the change', () => {
     expect(appliedText('switch', '/x/models', true, false)).toBe('模型目录已改为 /x/models · 原位置的文件保留');
     expect(appliedText('switch', '/x/models', false, false)).toBe('模型目录已改为 /x/models');
     expect(appliedText('move', '/x/models', true, true)).toBe('开始把模型移到 /x/models');
   });
 
-  it('移动进度：按字节；排队、完成阶段不伪造百分比', () => {
+  it('move progress: by bytes; queued and completing phases do not fabricate a percentage', () => {
     expect(moveProgressView(undefined, '/x')).toEqual({ percent: null, label: '等待开始移动到 /x…' });
     const moving = job({ kind: 'modelsMove', phase: 'moving', progress: { done: 256 * MB, total: GB, unit: 'bytes' } });
     expect(moveProgressView(moving, '/x')).toEqual({ percent: 25, label: '正在移动 256 MB / 1.0 GB 到 /x…' });

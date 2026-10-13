@@ -77,7 +77,7 @@ html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
 </script></body></html>`;
 }
 
-describe.skipIf(!engine || !worker || !ffmpeg || !electron)('代码画面工具（终端目录，真实引擎与 Electron）', () => {
+describe.skipIf(!engine || !worker || !ffmpeg || !electron)('code-scene tools (terminal catalog, real engine and Electron)', () => {
   let fixtures: string;
   let dir: string;
   let runtime: RunningRuntime;
@@ -138,7 +138,7 @@ describe.skipIf(!engine || !worker || !ffmpeg || !electron)('代码画面工具�
 
   const snapshot = () => runtime.videos.mirror(videoId)!.video;
 
-  it('compositions_import：验证、烘焙透明预渲染、导入两个素材并放一个合成片段', async () => {
+  it('compositions_import: validates, bakes a transparent pre-render, imports two media and places one composition clip', async () => {
     expect(TOOL_RISK.compositions_import).toBe(TOOL_RISK.assets_import);
     expect(TOOL_RISK.compositions_preview).toBe('read');
     const { tools } = await client.request('catalog.list', {});
@@ -187,7 +187,7 @@ describe.skipIf(!engine || !worker || !ffmpeg || !electron)('代码画面工具�
     expect(prerenderRevision.provenance.origin).toBe('composition-bake');
   }, 180_000);
 
-  it('compositions_preview：同一时刻摘要相同、不同时刻不同、超过时长夹到末帧', async () => {
+  it('compositions_preview: same digest at the same moment, different at different moments, times beyond the duration are clamped to the last frame', async () => {
     const preview = await ok('compositions_preview', {
       video: videoId,
       assetId: imported.bundle.assetId,
@@ -219,7 +219,7 @@ describe.skipIf(!engine || !worker || !ffmpeg || !electron)('代码画面工具�
     expect(inline.frames[0].sha256).toBe(frames[2]!.sha256);
   }, 180_000);
 
-  it('错误码：没有根元素、引用网络、画面不确定', async () => {
+  it('error codes: no root element, network reference, non-deterministic frame', async () => {
     const revision = snapshot().revision;
     const noRoot = await failure('compositions_import', {
       video: videoId,
@@ -260,7 +260,7 @@ describe.skipIf(!engine || !worker || !ffmpeg || !electron)('代码画面工具�
   /** Export one frame of the finished video at t = 1 s (rgb24), for the two checks below. */
   let exportedFrame: Buffer | undefined;
 
-  it('导出成片：时长对、预渲染里的方块画在该在的位置', async () => {
+  it('export: duration is correct, the box in the pre-render is drawn in the right place', async () => {
     const submitted = await ok('export', { video: videoId, kind: 'video', format: 'mp4' });
     let job: Loose = await ok('jobs_wait', { jobId: submitted.jobId, timeoutSec: 50 });
     for (let i = 0; i < 4 && !job.settled; i++) job = await ok('jobs_wait', { jobId: submitted.jobId, timeoutSec: 50 });
@@ -299,7 +299,7 @@ describe.skipIf(!engine || !worker || !ffmpeg || !electron)('代码画面工具�
   }, 240_000);
 
   // The stand-in for the composition instance has no background plate (frame-render's element.rs sets `bg: None` for compositions): the transparent pre-render goes directly over the footage underneath.
-  it('导出成片：方块以外透出底下的画面', () => {
+  it('export: outside the box, the footage below shows through', () => {
     const raw = exportedFrame;
     expect(raw).toBeDefined();
     if (!raw) return;
@@ -323,7 +323,7 @@ describe.skipIf(!engine || !worker || !ffmpeg || !electron)('代码画面工具�
     expect(outsideLit / outsideTotal).toBeGreaterThan(0.5);
   });
 
-  it('compositions_import 带 replace：原地换掉片段的代码包与预渲染，其余设置都保留', async () => {
+  it('compositions_import with replace: swaps the clip\'s code bundle and pre-render in place, keeping all other settings', async () => {
     const itemId = imported.itemId as Id;
     await ok('edits_apply', {
       video: videoId,
@@ -385,7 +385,7 @@ describe.skipIf(!engine || !worker || !ffmpeg || !electron)('代码画面工具�
   }, 240_000);
 
   // Edit operations cannot create a second sequence (nested sequences are not in the type set, video format spec §3.4), but a portable package can carry one in: the engine accepts every sequence in the snapshot when it opens the package.
-  it('compositions_import 带 replace：片段在帧率不同的另一个序列里时，按那个序列的帧率烘焙与换算', async () => {
+  it('compositions_import with replace: when the clip is in a sequence with a different frame rate, bakes and converts using that sequence\'s frame rate', async () => {
     // Export a portable package, add a 24 fps sequence to the snapshot, place a composition clip in it (reusing the code package and pre-render of the clip in the root sequence), and repack.
     const submitted = await ok('export', { video: videoId, kind: 'portable', format: 'cuccut' });
     let job: Loose = await ok('jobs_wait', { jobId: submitted.jobId, timeoutSec: 50 });

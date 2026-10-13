@@ -12,7 +12,7 @@ import {
 } from './index.ts';
 import { methodParamSchemas } from './schemas.ts';
 
-describe('访问模式与风险等级的决策表', () => {
+describe('decision table for access modes and risk levels', () => {
   const table: Record<AgentMode, Record<RiskLevel, ApprovalVerdict>> = {
     plan: { read: 'allow', edit: 'deny', command: 'ask', high: 'deny' },
     ask: { read: 'allow', edit: 'ask', command: 'ask', high: 'ask' },
@@ -21,13 +21,13 @@ describe('访问模式与风险等级的决策表', () => {
     fullAccess: { read: 'allow', edit: 'allow', command: 'allow', high: 'allow' },
   };
 
-  it('每个模式 × 每个风险等级', () => {
+  it('each mode × each risk level', () => {
     for (const mode of AGENT_MODES) {
       for (const risk of RISK_LEVELS) expect(decideApproval(mode, risk), `${mode}/${risk}`).toBe(table[mode][risk]);
     }
   });
 
-  it('对外服务的等级：ask 逐次确认，auto 直接执行，read 只有查询', () => {
+  it('levels for external services: ask confirms each time, auto runs directly, read is query-only', () => {
     const expected: Record<(typeof SERVICE_LEVELS)[number], Record<RiskLevel, ApprovalVerdict>> = {
       read: { read: 'allow', edit: 'deny', command: 'deny', high: 'deny' },
       ask: { read: 'allow', edit: 'ask', command: 'ask', high: 'ask' },
@@ -38,14 +38,14 @@ describe('访问模式与风险等级的决策表', () => {
     }
   });
 
-  it('旧值换成新值', () => {
+  it('old values are mapped to new values', () => {
     expect(normalizeAgentMode('controlled')).toBe('ask');
     expect(normalizeAgentMode('authorized')).toBe('fullAccess');
     expect(normalizeAgentMode('plan')).toBe('plan');
     for (const mode of AGENT_MODES) expect(normalizeAgentMode(mode)).toBe(mode);
   });
 
-  it('协议参数接受新值与旧值，不认识的拒绝', () => {
+  it('protocol parameters accept new and old values, reject unrecognized ones', () => {
     const send = methodParamSchemas['conversations.send'];
     const update = methodParamSchemas['conversations.update'];
     for (const mode of [...AGENT_MODES, 'controlled', 'authorized']) {

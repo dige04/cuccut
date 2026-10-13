@@ -81,8 +81,8 @@ function result(documents: ReadContentResult['documents']): ReadContentResult {
   return { videoId: 'v1', name: '访谈', revision: 'rev-1', snapshot: snapshot(), documents };
 }
 
-describe('内容抽取', () => {
-  it('转写用时间线投影（序列时间），投影为空时退回源时间', () => {
+describe('content extraction', () => {
+  it('transcription uses the timeline projection (sequence time), falling back to source time when the projection is empty', () => {
     const projected = extractContent(result([speechDoc('d1', true)]), '/p/访谈');
     const speech = projected.segments.filter((s) => s.kind === 'speech');
     expect(speech.length).toBeGreaterThan(0);
@@ -97,7 +97,7 @@ describe('内容抽取', () => {
     expect(fallback.find((s) => s.text.includes('剪辑'))).toMatchObject({ start: 1, speaker: '宝玉' });
   });
 
-  it('译文 /2 借用转写的时间，过期的单元不收；/1 照旧按单元 ID', () => {
+  it('translation /2 borrows transcription timing, stale units are excluded; /1 still uses unit IDs as before', () => {
     const translation2 = {
       documentId: 't2',
       kind: 'translation',
@@ -130,7 +130,7 @@ describe('内容抽取', () => {
     expect(legacy.segments).toContainEqual(expect.objectContaining({ kind: 'translation', text: '旧译文', start: 0 }));
   });
 
-  it('章节取根序列的 chapter 标记；视频事实与读不出的文档', () => {
+  it('chapters take the chapter markers of the root sequence; video facts and unreadable documents', () => {
     const extracted = extractContent(result([{ documentId: 'bad', kind: 'caption', error: '正文坏了' }]), '/p/访谈');
     expect(extracted.segments).toEqual([expect.objectContaining({ kind: 'chapter', text: '第二章 开拍\n准备器材', start: 10, end: 15 })]);
     expect(extracted.problems).toEqual([{ documentId: 'bad', detail: '正文坏了' }]);
@@ -139,8 +139,8 @@ describe('内容抽取', () => {
   });
 });
 
-describe('视频事实：时长与画布尺寸', () => {
-  it('取根序列：时长是最晚结束的实例（按序列帧率），尺寸是画布', () => {
+describe('video facts: duration and canvas size', () => {
+  it('root sequence: duration is the latest-ending instance (at sequence frame rate), size is the canvas', () => {
     const complete = snapshot({
       sequences: {
         seq: {
@@ -180,7 +180,7 @@ describe('视频事实：时长与画布尺寸', () => {
     expect(facts.timeline).toEqual({ durationSec: 5.005, width: 1080, height: 1920 });
   });
 
-  it('快照不全（没有轨道、画布或实例的区间）时没有', () => {
+  it('none when the snapshot is incomplete (no tracks, canvas or instance ranges)', () => {
     expect(extractContent(result([]), '/p/访谈').facts.timeline).toBeNull();
     const noCanvas = snapshot({
       sequences: { seq: { id: 'seq', fps: { num: 30, den: 1 }, tracks: [], items: [], markers: [] } },
@@ -189,7 +189,7 @@ describe('视频事实：时长与画布尺寸', () => {
   });
 });
 
-describe('视频事实：派生来源', () => {
+describe('video facts: derived source', () => {
   const derivation = (summary: unknown) =>
     snapshot({
       documents: {
@@ -197,26 +197,26 @@ describe('视频事实：派生来源', () => {
       },
     });
 
-  it('取 derivation 文档当前版本的概要：父视频、版本、幂等键与区间', () => {
+  it('takes the summary of the current version of the derivation document: parent video, version, idempotency key and range', () => {
     const summary = { schema: 'cuccut.derivation/1', parentVideoId: 'v_parent', parentRevision: '7', key: 'abc123def456', range: { start: 1.5, end: 4.5 }, cuts: [] };
     const { facts } = extractContent({ ...result([]), snapshot: derivation(summary) }, '/p/访谈');
     expect(facts.origin).toEqual({ parentVideoId: 'v_parent', parentRevision: '7', key: 'abc123def456', range: { start: 1.5, end: 4.5 } });
   });
 
-  it('不是派生的视频与形状不对的概要为 null', () => {
+  it('a video that is not derived, and a summary with the wrong shape, are null', () => {
     expect(extractContent(result([]), '/p/访谈').facts.origin).toBeNull();
     const wrong = { schema: 'cuccut.derivation/2', parentVideoId: 'v_parent', parentRevision: '7', key: 'k', range: { start: 0, end: 1 } };
     expect(extractContent({ ...result([]), snapshot: derivation(wrong) }, '/p/访谈').facts.origin).toBeNull();
   });
 });
 
-describe('视频事实：文稿、译文与配音组', () => {
-  it('没有文稿时三项都是空的', () => {
+describe('video facts: script, translations and voiceover group', () => {
+  it('all three are empty when there is no script', () => {
     const { facts } = extractContent(result([]), '/p/访谈');
     expect(facts).toMatchObject({ transcripts: [], translations: [], dubGroups: [] });
   });
 
-  it('转写的语言、逐词时间与是否在时间线上', () => {
+  it('transcription language, word-level timing and whether it is on the timeline', () => {
     const estimated = speechDoc('d2', false);
     const body = estimated.body as { words: Array<Record<string, unknown>> };
     body.words[1]!.timingQuality = 'estimated';
@@ -227,7 +227,7 @@ describe('视频事实：文稿、译文与配音组', () => {
     ]);
   });
 
-  it('译文的目标语言、译自的转写与过期的单元', () => {
+  it('translation target language, source transcription and stale units', () => {
     const speech = speechDoc('d1', false);
     const read = sourceSentences({ schema: 'cuccut.speech/1', ...(speech.body as object) });
     if (!('sentences' in read)) throw new Error(read.problem);
@@ -279,7 +279,7 @@ describe('视频事实：文稿、译文与配音组', () => {
     expect(legacy).toMatchObject({ language: null, sourceDocumentId: 'd1', units: 3, staleUnits: 2 });
   });
 
-  it('配音组：配音计划与配音实例合起来，背景声不算实例', () => {
+  it('voiceover group: voiceover plan and voiceover instances together; background audio is not counted as an instance', () => {
     const snap = snapshot({
       documents: {
         plan1: {
@@ -319,7 +319,7 @@ describe('视频事实：文稿、译文与配音组', () => {
   });
 });
 
-describe('内容检索', () => {
+describe('content search', () => {
   const v1: ContentSegment[] = [
     { kind: 'speech', documentId: 'd1', language: 'zh', clock: 'sequence', start: 20, end: 22, text: '我们来剪辑视频', speaker: '宝玉' },
     { kind: 'speech', documentId: 'd1', language: 'zh', clock: 'sequence', start: 3, end: 5, text: '视频剪辑很好玩', speaker: 'Guest' },
@@ -370,7 +370,7 @@ describe('内容检索', () => {
     };
   }
 
-  it('子串、多词 AND、大小写与全角不敏感；按视频顺序与时间排', () => {
+  it('substring, multi-word AND, case and full-width insensitive; ordered by video order and time', () => {
     const { hits, truncated } = searchSegments(store, videos, { query: '剪辑', limit: 10 });
     expect(truncated).toBe(false);
     expect(hits.map((h) => [h.videoId, h.documentKind, h.time.start])).toEqual([
@@ -399,7 +399,7 @@ describe('内容检索', () => {
     expect(searchSegments(store, videos, { query: '剪辑', limit: 3 })).toMatchObject({ truncated: false });
   });
 
-  it('结果按调用方给的视频顺序；范围之外的视频不出现', () => {
+  it('results follow the caller\'s video order; videos outside the scope do not appear', () => {
     store.replace(stored(videos[1]!), [{ ...v2[0]!, text: '剪辑 the video' }]);
     const reversed = [videos[1]!, videos[0]!];
     expect(searchSegments(store, reversed, { query: '剪辑', limit: 10 }).hits.map((h) => h.videoId)).toEqual(['v2', 'v1', 'v1', 'v1']);
@@ -407,7 +407,7 @@ describe('内容检索', () => {
     expect(searchSegments(store, [], { query: '剪辑', limit: 10 })).toEqual({ hits: [], truncated: false });
   });
 
-  it('两字的词走子串过滤，三字以上走 MATCH；混合的多词同一段里 AND', () => {
+  it('two-character words use substring filtering, three or more use MATCH; mixed multi-word queries are ANDed within the same segment', () => {
     expect(termClauses(['剪辑'])).toEqual({ match: null, short: ['剪辑'] });
     expect(termClauses(['剪辑视', 'ab', 'say "hi"'])).toEqual({ match: '"剪辑视" AND "say ""hi"""', short: ['ab'] });
     // Counted by code points: two emoji are four UTF-16 units, still too short.
@@ -433,7 +433,7 @@ describe('内容检索', () => {
     expect(searchSegments(store, videos, { query: 'f%n', limit: 10 }).hits).toHaveLength(0);
   });
 
-  it('种类与说话人过滤', () => {
+  it('filter by kind and speaker', () => {
     expect(searchSegments(store, videos, { query: '剪辑', kinds: ['speech'], limit: 10 }).hits.map((h) => h.time.start)).toEqual([3, 20]);
     expect(searchSegments(store, videos, { query: '视频', kinds: ['chapter', 'caption'], limit: 10 }).hits).toEqual([]);
     expect(searchSegments(store, videos, { query: '剪辑', speaker: '宝', limit: 10 }).hits.map((h) => h.speaker)).toEqual(['宝玉']);
@@ -441,7 +441,7 @@ describe('内容检索', () => {
     expect(searchSegments(store, videos, { query: '剪辑', speaker: 'nobody', limit: 10 }).hits).toEqual([]);
   });
 
-  it('换掉一个视频的段落不影响别的视频；删掉的视频查不到', () => {
+  it('replacing one video\'s segments does not affect other videos; deleted videos are not found', () => {
     store.replace(stored(videos[0]!), [{ ...v1[0]!, text: '换了内容' }]);
     expect(searchSegments(store, videos, { query: '剪辑', limit: 10 }).hits).toEqual([]);
     expect(searchSegments(store, videos, { query: '换了内容', limit: 10 }).hits).toHaveLength(1);
@@ -451,7 +451,7 @@ describe('内容检索', () => {
     expect(store.videos().map((v) => v.dir)).toEqual([videos[0]!.dir]);
   });
 
-  it('库的格式版本不对、文件坏掉或被删掉时重建成空库', async () => {
+  it('the library is rebuilt as empty when its format version is wrong, the file is corrupt or it has been deleted', async () => {
     const file = path.join(tmp, STORE_FILE);
     store.close();
     const reopened = new ContentStore(tmp);
@@ -479,7 +479,7 @@ describe('内容检索', () => {
     expect(searchSegments(store, videos, { query: 'edit', limit: 10 }).hits).toHaveLength(1);
   });
 
-  it('长段落截取命中附近并改写位置', () => {
+  it('long segments are excerpted around the hit and the position is rewritten', () => {
     const text = `${'前'.repeat(200)}关键词${'后'.repeat(200)}`;
     const found = matchTerms(text, ['关键词'])!;
     expect(found.snippet.startsWith('…')).toBe(true);

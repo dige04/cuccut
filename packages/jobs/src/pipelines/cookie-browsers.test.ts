@@ -22,8 +22,8 @@ async function touch(file: string, minutesAgo: number): Promise<void> {
   await fs.utimes(file, at, at);
 }
 
-describe('本机浏览器的 Cookie 库', () => {
-  it('macOS：只列出真有库的浏览器（数据目录在但没有库的不算），最近改过的在前', async () => {
+describe('local browser cookie store', () => {
+  it('macOS: only lists browsers that actually have a store (a data directory without a store doesn\'t count), most recently modified first', async () => {
     const support = path.join(root, 'Library', 'Application Support');
     await touch(path.join(support, 'Google', 'Chrome', 'Profile 1', 'Network', 'Cookies'), 30);
     await touch(path.join(support, 'Google', 'Chrome', 'Default', 'Network', 'Cookies'), 5);
@@ -40,7 +40,7 @@ describe('本机浏览器的 Cookie 库', () => {
     ]);
   });
 
-  it('Windows：Opera 与 Firefox 在 APPDATA，其余在 LOCALAPPDATA；缺一个环境变量时只是少几个', async () => {
+  it('Windows: Opera and Firefox are under APPDATA, the rest under LOCALAPPDATA; a missing environment variable just yields fewer', async () => {
     const local = path.join(root, 'Local');
     const roaming = path.join(root, 'Roaming');
     await touch(path.join(local, 'Google', 'Chrome', 'User Data', 'Default', 'Network', 'Cookies'), 3);
@@ -52,7 +52,7 @@ describe('本机浏览器的 Cookie 库', () => {
     expect(cookieDatabaseRules({ platform: 'win32', home: root, env: {} }).some((r) => r.id === 'safari')).toBe(false);
   });
 
-  it('Linux：XDG 配置目录（没有时 ~/.config），Firefox 还认 ~/.mozilla 与 snap；时间相同时按固定顺序', async () => {
+  it('Linux: XDG config directory (~/.config if absent), Firefox also checks ~/.mozilla and snap; ties in time are ordered by a fixed order', async () => {
     const config = path.join(root, 'xdg');
     await touch(path.join(config, 'chromium', 'Default', 'Cookies'), 10);
     await touch(path.join(config, 'google-chrome', 'Default', 'Cookies'), 10);
@@ -66,7 +66,7 @@ describe('本机浏览器的 Cookie 库', () => {
     expect((await detectCookieBrowsers({ platform: 'linux', home: root, env: {} })).map((b) => b.id)).toEqual(['vivaldi', 'firefox']);
   });
 
-  it('什么都没有时是空的；没有主目录时不找', async () => {
+  it('empty when nothing is found; no search when there is no home directory', async () => {
     expect(await detectCookieBrowsers({ platform: 'darwin', home: root, env: {} })).toEqual([]);
     expect(cookieDatabaseRules({ platform: 'darwin', home: null, env: {} })).toEqual([]);
   });

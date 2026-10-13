@@ -23,7 +23,7 @@ describe('ModelServiceStore', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('没有文件时从空配置开始，不落盘；第一次修改才写，两份文件都是 0600，密钥只在密钥文件里', async () => {
+  it('with no files, starts from an empty config without writing to disk; written on first change; both files are 0600, and keys live only in the key file', async () => {
     const store = await open();
     expect(store.providerIds()).toEqual([]);
     expect(store.getDefault('transcribe')).toBeNull();
@@ -64,7 +64,7 @@ describe('ModelServiceStore', () => {
     expect((await fs.readdir(path.dirname(paths.modelServicesFile))).sort()).toEqual(['model-credentials.json', 'model-services.json']);
   });
 
-  it('只读视图从不回显密钥；enabledAt 在重复启用时不变，停用时清空', async () => {
+  it('the read-only view never echoes keys; enabledAt is unchanged on repeated enable and cleared on disable', async () => {
     const store = await open();
     await store.updateProvider('openai', { enabled: true, credential: KEY }, () => 't1');
     await store.updateProvider('openai', { enabled: true }, () => 't2');
@@ -98,7 +98,7 @@ describe('ModelServiceStore', () => {
     expect(store.configView('openai').endpoint).toBeUndefined();
   });
 
-  it('自定义端点的声明模型与默认值在重开后还在；删除 Provider 时默认值保留', async () => {
+  it('a custom endpoint\'s declared models and defaults survive reopening; deleting a provider keeps the default values', async () => {
     const store = await open();
     await store.updateProvider('custom:box', {
       enabled: true,
@@ -119,7 +119,7 @@ describe('ModelServiceStore', () => {
     expect((await open()).getDefault('transcribe')).toBeNull();
   });
 
-  it('认不出的条目丢掉；凭据文件坏了时打开照样成功，Provider 报告凭据不可用', async () => {
+  it('unrecognised entries are dropped; a corrupt credential file still opens successfully, and the provider reports credentials unavailable', async () => {
     await fs.mkdir(path.dirname(paths.modelServicesFile), { recursive: true });
     await fs.writeFile(
       paths.modelServicesFile,
@@ -140,7 +140,7 @@ describe('ModelServiceStore', () => {
     expect(await fs.readFile(credentialsFile, 'utf8')).toBe('{not json');
   });
 
-  it('配置文件不是 JSON：改名保留、从空开始；更新版本写下的：不改名，修改也不覆盖它', async () => {
+  it('config file is not JSON: renamed aside and starts empty; one written by a newer version: not renamed, and changes do not overwrite it', async () => {
     await fs.mkdir(path.dirname(paths.modelServicesFile), { recursive: true });
     await fs.writeFile(paths.modelServicesFile, '{ not json');
     expect((await open()).providerIds()).toEqual([]);
@@ -155,7 +155,7 @@ describe('ModelServiceStore', () => {
     expect(await fs.readFile(paths.modelServicesFile, 'utf8')).toBe(text);
   });
 
-  it('之前版本的密钥文件（formatVersion 1，键是 providerId）照原样读出；迁成账号 main，写第 2 版的配置，再删旧键', async () => {
+  it('a key file from an earlier version (formatVersion 1, keyed by providerId) is read as-is; it is migrated to the account main, the version 2 config is written, and then the old keys are deleted', async () => {
     await fs.mkdir(path.dirname(credentialsFile), { recursive: true });
     await fs.writeFile(
       paths.modelServicesFile,
@@ -193,7 +193,7 @@ describe('ModelServiceStore', () => {
     expect(await reopened.credential('openai')).toBe(KEY);
   });
 
-  it('迁移中途停下（写了新键、第 1 版的配置还在）：再开一次结果相同，不重复建账号', async () => {
+  it('migration stopped midway (new keys written, version 1 config still present): reopening gives the same result and does not create the account twice', async () => {
     await fs.mkdir(path.dirname(credentialsFile), { recursive: true });
     const v1 = JSON.stringify({ formatVersion: 1, providers: { openai: { enabled: true, enabledAt: 't' } }, defaults: {} });
     await fs.writeFile(paths.modelServicesFile, v1);
@@ -207,7 +207,7 @@ describe('ModelServiceStore', () => {
     expect(JSON.parse(await fs.readFile(credentialsFile, 'utf8')).credentials).toEqual({ 'provider:openai/main': KEY });
   });
 
-  it('迁移时凭据存储读不了：报告原因、不当作没有密钥；下次打开（可用了）再迁', async () => {
+  it('credential store unreadable during migration: reports the reason and does not treat it as having no keys; migrates on the next open once available', async () => {
     await fs.mkdir(path.dirname(credentialsFile), { recursive: true });
     await fs.writeFile(
       paths.modelServicesFile,
@@ -247,7 +247,7 @@ describe('ModelServiceStore', () => {
     expect(JSON.parse(await fs.readFile(paths.modelServicesFile, 'utf8')).formatVersion).toBe(2);
   });
 
-  it('账号：加、改、排序、删；一次调用用第一个启用且有密钥的账号；状态只记录、不换账号', async () => {
+  it('accounts: add, edit, reorder, delete; a call uses the first enabled account that has a key; status is only recorded and does not switch accounts', async () => {
     const store = await open();
     const changes: number[] = [];
     store.onAccountChange(() => changes.push(1));
@@ -299,13 +299,13 @@ describe('ModelServiceStore', () => {
     expect(JSON.parse(await fs.readFile(credentialsFile, 'utf8')).credentials).toEqual({});
   });
 
-  it('掩码：前 3 + … + 后 4；8 个字符以内全是 •', () => {
+  it('masking: first 3 + … + last 4; up to 8 characters are all •', () => {
     expect(maskCredential('sk-abcdefghij1234')).toBe('sk-…1234');
     expect(maskCredential('12345678')).toBe('••••••••');
     expect(maskCredential('abc')).toBe('••••••••');
   });
 
-  it('凭据存储不可用：打开照常，视图报告原因；改密钥与删除以 CREDENTIAL_UNAVAILABLE 拒绝、配置不变；错误里没有密钥', async () => {
+  it('credential store unavailable: opening works as usual and the view reports the reason; changing keys and deleting are rejected with CREDENTIAL_UNAVAILABLE and the config is unchanged; no key appears in the error', async () => {
     await (await open()).updateProvider('openai', { enabled: true, credential: KEY });
     const broken: CredentialStore = {
       kind: 'keychain',
@@ -346,7 +346,7 @@ describe('ModelServiceStore', () => {
     expect(JSON.parse(await fs.readFile(credentialsFile, 'utf8')).credentials['provider:openai/main']).toBe(KEY);
   });
 
-  it('删除 Provider 时删除它全部账号的密钥', async () => {
+  it('deleting a provider deletes the keys of all its accounts', async () => {
     const store = await open();
     await store.updateProvider('custom:box', { enabled: true, endpoint: 'http://x', credential: 'box-key' });
     await store.addAccount('custom:box', { credential: 'box-key-2' });

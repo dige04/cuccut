@@ -70,7 +70,7 @@ const videos: JobVideos = {
   },
 };
 
-describe('文本生成任务（JobManager）', () => {
+describe('text generation tasks (JobManager)', () => {
   let dir: string;
   let paths: { jobsFile: string; stagingDir: string; artifactsDir: string; diagnosticsDir: string };
   let text: FakeText;
@@ -141,7 +141,7 @@ describe('文本生成任务（JobManager）', () => {
     return fs.readFile(file!, 'utf8');
   }
 
-  it('纯文本：发布为 .txt 产物，结果带预览、用量、模型版本与说明；冻结的参数记在任务里', async () => {
+  it('plain text: published as a .txt artifact, with the result carrying a preview, usage, model version and notes; frozen parameters are recorded on the task', async () => {
     const job = await generate({
       messages: [
         { role: 'system', content: 'Be terse.' },
@@ -192,7 +192,7 @@ describe('文本生成任务（JobManager）', () => {
     expect(runner.stats()).toEqual({ fake: { calls: 1, retries: 0, failures: 0 } });
   });
 
-  it('给了保存位置：按最后一条用户消息开头取名写一份 .txt 副本，结果多一项带路径的文本输出', async () => {
+  it('with a save location: writes a .txt copy named from the start of the last user message, and the result gains one more text output with its path', async () => {
     const saveDir = path.join(dir, 'saved');
     const job = await generate({
       messages: [
@@ -211,7 +211,7 @@ describe('文本生成任务（JobManager）', () => {
     expect((await generate()).result!.outputs).toBeUndefined();
   });
 
-  it('长输出：预览按码点截到 2000 个字符', async () => {
+  it('long output: the preview is truncated to 2000 code points', async () => {
     const long = '😀'.repeat(2500);
     text.next = async () => ({ text: long, finishReason: 'stop', usage: null, modelVersion: null });
     const job = await generate();
@@ -220,7 +220,7 @@ describe('文本生成任务（JobManager）', () => {
     expect(await artifact(job)).toBe(long);
   });
 
-  it('纯文本被截断（length）：任务完成，带 output-truncated 警告', async () => {
+  it('plain text cut off (length): the task completes with an output-truncated warning', async () => {
     text.next = async () => ({ text: 'Hel', finishReason: 'length', usage: null, modelVersion: null });
     const job = await generate({ maxOutputTokens: 1 });
     expect(job.state).toBe('completed');
@@ -228,7 +228,7 @@ describe('文本生成任务（JobManager）', () => {
     expect(job.warnings).toEqual([expect.objectContaining({ code: 'output-truncated' })]);
   });
 
-  it('结构化输出：校验过的 JSON 发布为 .json 产物', async () => {
+  it('structured output: validated JSON is published as a .json artifact', async () => {
     text.next = async () => ({ text: '{"title":"Hi","tags":["a"]}', finishReason: 'stop', usage: null, modelVersion: null });
     const job = await generate({ responseFormat: { type: 'json', schema: SCHEMA, name: 'card' } });
     expect(job.state).toBe('completed');
@@ -238,7 +238,7 @@ describe('文本生成任务（JobManager）', () => {
     expect(job.generation).toMatchObject({ responseFormat: { type: 'json', schema: SCHEMA, name: 'card' } });
   });
 
-  it('结构化输出不合 schema、不是 JSON、被截断：MODEL_OUTPUT_INVALID，不发布', async () => {
+  it('structured output that fails the schema, is not JSON, or is truncated: MODEL_OUTPUT_INVALID, not published', async () => {
     text.next = async () => ({ text: '{"title":3,"extra":1}', finishReason: 'stop', usage: null, modelVersion: null });
     let job = await generate({ responseFormat: { type: 'json', schema: SCHEMA } });
     expect(job).toMatchObject({ state: 'failed', result: null, error: { code: 'MODEL_OUTPUT_INVALID', details: { reason: 'schema' } } });
@@ -255,7 +255,7 @@ describe('文本生成任务（JobManager）', () => {
     expect(runner.stats().fake).toEqual({ calls: 3, retries: 0, failures: 3 });
   });
 
-  it('Provider 的拒绝：内容过滤、上下文过长、认证失败按封闭的错误码', async () => {
+  it('provider refusals: content filtering, context too long and authentication failure map to closed error codes', async () => {
     text.next = async () => ({ text: '', finishReason: 'content-filter', usage: null, modelVersion: null });
     let job = await generate();
     expect(job.error).toMatchObject({ code: 'PROVIDER_REJECTED', details: { reason: 'content-filter', providerId: 'fake' } });
@@ -273,7 +273,7 @@ describe('文本生成任务（JobManager）', () => {
     expect(job.error).toMatchObject({ code: 'PROVIDER_UNAVAILABLE', details: { reason: 'timeout' } });
   });
 
-  it('提交时检查：schema 编译不过、模型不接受的 temperature、超过上限的输出、空消息都拒绝', async () => {
+  it('submit-time checks: a schema that does not compile, a temperature the model does not accept, an output above the limit, and empty messages are all rejected', async () => {
     const submit = (request: Partial<GenerateTextRequest>) =>
       manager.submitGenerateText({ messages: [{ role: 'user', content: 'x' }], ...request }, { kind: 'connection', id: 'c' });
     await expect(submit({ responseFormat: { type: 'json', schema: { type: 'string' } } })).rejects.toMatchObject({
@@ -294,7 +294,7 @@ describe('文本生成任务（JobManager）', () => {
     expect(text.runs).toHaveLength(0);
   });
 
-  it('同一个 commandId 只建一个任务', async () => {
+  it('the same commandId creates only one task', async () => {
     const submitter = { kind: 'connection' as const, id: 'conn_1' };
     const request = { messages: [{ role: 'user' as const, content: 'hi' }], commandId: 'cmd_text_1' };
     const [a, b] = await Promise.all([manager.submitGenerateText(request, submitter), manager.submitGenerateText(request, submitter)]);
@@ -304,7 +304,7 @@ describe('文本生成任务（JobManager）', () => {
     expect(text.runs).toHaveLength(1);
   });
 
-  it('取消：中止在途的调用，任务 cancelled，不计失败', async () => {
+  it('cancel: aborts the in-flight call, the task becomes cancelled and is not counted as a failure', async () => {
     let started!: () => void;
     const running = new Promise<void>((resolve) => (started = resolve));
     text.next = (_run, signal) =>

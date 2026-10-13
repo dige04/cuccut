@@ -80,7 +80,7 @@ function tools(scope: ToolScope, compiler: SlidesRuntime | null = rt) {
 }
 
 describe('slides_check', () => {
-  it.skipIf(!rt)('没有问题时在会话里记一条 slides-created：来源目录 + 相对路径、标题与页数', async () => {
+  it.skipIf(!rt)('without problems, records a slides-created entry in session: source directory + relative path, title and page count', async () => {
     await writeDeck('decks/talk', { a: SLIDE('a'), b: SLIDE('b') });
     const { scope, recorded } = fakeScope(false);
     const result = (await tools(scope).dispatch('slides_check', { path: './decks/talk/' }, principal)) as Record<string, unknown>;
@@ -89,7 +89,7 @@ describe('slides_check', () => {
     expect(recorded).toEqual([{ target: { conversationId: 'conv_1', path: 'decks/talk' }, title: '季度回顾', slideCount: 2 }]);
   });
 
-  it.skipIf(!rt)('有问题时返回每页的问题，不记卡片', async () => {
+  it.skipIf(!rt)('with problems, returns each page\'s problems, no card recorded', async () => {
     await writeDeck('talk', { a: SLIDE('a'), b: SLIDE('b', '<marquee>x</marquee>') });
     const { scope, recorded } = fakeScope();
     const result = (await tools(scope).dispatch('slides_check', { path: 'talk' }, principal)) as {
@@ -101,7 +101,7 @@ describe('slides_check', () => {
     expect(recorded).toEqual([]);
   });
 
-  it.skipIf(!rt)('排版提示不算问题：照样记卡片，next 提醒改掉', async () => {
+  it.skipIf(!rt)('layout hints are not problems: card still recorded, next reminds to fix them', async () => {
     const overlap = [
       '<p style="position:absolute;left:100px;top:100px;width:400px;font-size:40px">Overlapping</p>',
       '<p style="position:absolute;left:120px;top:110px;width:400px;font-size:40px">Covered</p>',
@@ -119,7 +119,7 @@ describe('slides_check', () => {
     expect(recorded).toHaveLength(1);
   });
 
-  it('编辑器没构建时说明不可用；路径越界、不存在、不是 deck 时拒绝', async () => {
+  it('when editor is not built, says unavailable; path outside bounds, nonexistent, or not a deck rejected', async () => {
     await writeDeck('talk', { a: SLIDE('a') });
     await fs.mkdir(path.join(root, 'plain'));
     await fs.mkdir(path.join(root, 'node_modules', 'pkg'), { recursive: true });
@@ -137,7 +137,7 @@ describe('slides_check', () => {
 });
 
 describe('slides_import_asset', () => {
-  it('图片拷进 deck 的 assets/，返回 /_blob/<id>；同一张只存一份；风险 edit，确认之后才写', async () => {
+  it('images copied into the deck\'s assets/, returns /_blob/<id>; same image stored once; risk edit, written only after confirmation', async () => {
     const deck = await writeDeck('talk', { a: SLIDE('a') });
     await fs.mkdir(path.join(root, 'images'));
     await fs.writeFile(path.join(root, 'images', 'cover.png'), 'png-bytes');
@@ -155,7 +155,7 @@ describe('slides_import_asset', () => {
     expect((await fs.readdir(path.join(deck, 'assets'))).filter((name) => name !== 'index.json')).toEqual([`${id}.png`]);
   });
 
-  it('字体也拷进 assets/，下一步说明把 src 登记进 deck.json 的 faces', async () => {
+  it('fonts also copied into assets/, next step says to register src in deck.json\'s faces', async () => {
     const deck = await writeDeck('talk', { a: SLIDE('a') });
     await fs.writeFile(path.join(root, 'Brand.woff2'), 'woff2-bytes');
     const result = (await tools(fakeScope().scope).dispatch('slides_import_asset', { deck: 'talk', path: 'Brand.woff2' }, principal)) as Record<string, unknown>;
@@ -165,7 +165,7 @@ describe('slides_import_asset', () => {
     expect(await fs.readFile(path.join(deck, 'assets', `${id}.woff2`), 'utf8')).toBe('woff2-bytes');
   });
 
-  it('只收工作目录里的普通图片与字体文件；规划模式只读；检查不过的不生成审批', async () => {
+  it('only regular image and font files in the working directory accepted; plan mode read-only; checks that fail generate no approval', async () => {
     await writeDeck('talk', { a: SLIDE('a') });
     await fs.writeFile(path.join(root, 'notes.md'), '# 讲稿');
     await fs.writeFile(path.join(tmp, 'secret.png'), 'png');

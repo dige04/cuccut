@@ -53,7 +53,7 @@ describe('NodeStore', () => {
   });
   const mode = async () => (await fs.stat(file)).mode & 0o777;
 
-  it('第一次打开生成 clientId 并以 0600 落盘；再次打开不变', async () => {
+  it('first open generates a clientId and writes it to disk as 0600; reopening leaves it unchanged', async () => {
     const store = await NodeStore.open(file, credentials);
     expect(store.clientId).toMatch(CLIENT_ID_PATTERN);
     expect(await mode()).toBe(0o600);
@@ -62,7 +62,7 @@ describe('NodeStore', () => {
     expect(JSON.parse(await fs.readFile(file, 'utf8'))).toEqual({ formatVersion: 1, clientId: store.clientId, nodes: [] });
   });
 
-  it('文件损坏或 clientId 不合规：重新生成', async () => {
+  it('corrupt file or invalid clientId: regenerates', async () => {
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, '{ not json');
     const store = await NodeStore.open(file, credentials);
@@ -71,7 +71,7 @@ describe('NodeStore', () => {
     expect((await NodeStore.open(file, credentials)).clientId).not.toBe('has.dot');
   });
 
-  it('文件损坏：先改名保留再生成新的 clientId', async () => {
+  it('corrupt file: renames it to keep it first, then generates a new clientId', async () => {
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, '{ not json');
     const store = await NodeStore.open(file, credentials);
@@ -82,7 +82,7 @@ describe('NodeStore', () => {
     expect(JSON.parse(await fs.readFile(file, 'utf8')).clientId).toBe(store.clientId);
   });
 
-  it('更新版本写下的文件：不改名也不覆盖，这次用只在内存里的 clientId', async () => {
+  it('file written by a newer version: neither renamed nor overwritten; this time uses a clientId that exists only in memory', async () => {
     await fs.mkdir(path.dirname(file), { recursive: true });
     const text = JSON.stringify({ formatVersion: 2, clientId: 'c_future', peers: [] });
     await fs.writeFile(file, text);
@@ -92,7 +92,7 @@ describe('NodeStore', () => {
     expect((await fs.readdir(path.dirname(file))).some((n) => n.includes('.corrupt-'))).toBe(false);
   });
 
-  it('写入：原子（不留临时文件）、0600（即使原文件权限被放宽）；令牌只在凭据存储里', async () => {
+  it('writes: atomic (no temp files left), 0600 (even if the original file\'s permissions were loosened); token only in the credential store', async () => {
     const store = await NodeStore.open(file, credentials);
     await fs.chmod(file, 0o644);
     await store.upsert(node('node_a', 'Studio'));
@@ -119,7 +119,7 @@ describe('NodeStore', () => {
     expect(reopened.list().map((n) => n.nodeId)).toEqual(['node_a', 'node_b', 'node_c', 'node_d', 'node_e']);
   });
 
-  it('别名唯一：默认取名字，冲突时加序号；不能与别的节点的 nodeId 相同；指定的别名冲突时 conflict', async () => {
+  it('alias is unique: defaults to the name, adds a number on conflict; cannot equal another node\'s nodeId; a specified alias that conflicts yields conflict', async () => {
     const store = await NodeStore.open(file, credentials);
     expect((await store.upsert(node('node_a', 'Studio'))).alias).toBe('Studio');
     expect((await store.upsert(node('node_b', 'Studio'))).alias).toBe('Studio-2');
@@ -135,7 +135,7 @@ describe('NodeStore', () => {
     expect(store.resolve('nope')).toBeNull();
   });
 
-  it('同一个 nodeId 再次配对：替换记录与令牌，保留别名（除非指定新的）', async () => {
+  it('same nodeId paired again: replaces the record and token, keeps the alias (unless a new one is given)', async () => {
     const store = await NodeStore.open(file, credentials);
     await store.upsert(node('node_a', 'Studio', { alias: 'mine' }));
     const replaced = await store.upsert(node('node_a', 'Studio Renamed', { host: '10.0.0.9', token: 'tok-new' }));
@@ -147,7 +147,7 @@ describe('NodeStore', () => {
     expect((await store.upsert(node('node_a', 'Studio', { alias: 'other' }))).alias).toBe('other');
   });
 
-  it('删除：只删这一个节点；不存在时返回 false', async () => {
+  it('delete: removes only this one node; returns false when it does not exist', async () => {
     const store = await NodeStore.open(file, credentials);
     await store.upsert(node('node_a', 'A'));
     await store.upsert(node('node_b', 'B'));
@@ -170,7 +170,7 @@ describe('NodeStore', () => {
     );
   };
 
-  it('旧文件里的令牌：打开时迁进凭据存储，文件里不再有令牌', async () => {
+  it('token in an old file: migrated into the credential store on open, no token left in the file', async () => {
     await legacyFile([
       { nodeId: 'node_a', token: 'c_legacy.secret-a' },
       { nodeId: 'node_b', token: 'c_legacy.secret-b' },
@@ -185,7 +185,7 @@ describe('NodeStore', () => {
     expect(await (await NodeStore.open(file, credentials)).token('node_a')).toBe('c_legacy.secret-a');
   });
 
-  it('迁移部分失败：迁成功的去掉，失败的留在文件里但不拿来用；日志不含令牌', async () => {
+  it('partial migration failure: successfully migrated ones are removed, failed ones stay in the file but are not used; log contains no token', async () => {
     await legacyFile([
       { nodeId: 'node_a', token: 'c_legacy.secret-a' },
       { nodeId: 'node_b', token: 'c_legacy.secret-b' },
@@ -217,7 +217,7 @@ describe('NodeStore', () => {
     expect(await fs.readFile(file, 'utf8')).not.toContain('secret');
   });
 
-  it('凭据存储不可用：配对与删除以 CREDENTIAL_UNAVAILABLE 拒绝、记录不变；读令牌报告原因', async () => {
+  it('credential store unavailable: pairing and deletion are rejected with CREDENTIAL_UNAVAILABLE, record unchanged; reading the token reports the reason', async () => {
     const memory = new MemoryCredentials();
     const store = await NodeStore.open(file, memory);
     await store.upsert(node('node_a', 'A'));

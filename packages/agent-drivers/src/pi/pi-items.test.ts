@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { fileChangeDiff, PiItemMapper, piToolItem, toolResult } from './pi-items.ts';
 
 /** Parsing of pi tool results: the shapes come from pi 1.0.4's real output, with fallbacks for older field names. */
-describe('pi 工具条目', () => {
-  it('bash：structuredContent 优先；没有时从文字里剥掉退出码那一行', () => {
+describe('pi tool entries', () => {
+  it('bash: structuredContent takes precedence; when absent, the exit code line is stripped from the text', () => {
     expect(
       toolResult(
         'bash',
@@ -26,7 +26,7 @@ describe('pi 工具条目', () => {
     });
   });
 
-  it('edit：没有 details.patch 时从 edits 或旧式 old_string / new_string 合成；工作目录里的绝对路径写相对路径', () => {
+  it('edit: without details.patch, synthesized from edits or legacy old_string / new_string; absolute paths within the working directory are written as relative paths', () => {
     expect(fileChangeDiff('edit', { path: '/w/src/a.ts', edits: [{ oldText: 'a\nb', newText: 'c' }] }, { content: [] }, '/w')).toBe(
       '--- a/src/a.ts\n+++ b/src/a.ts\n@@ -0,0 +0,0 @@\n-a\n-b\n+c',
     );
@@ -36,7 +36,7 @@ describe('pi 工具条目', () => {
     expect(fileChangeDiff('write', { path: '/elsewhere/n.txt', content: '' }, null, '/w')).toBe('+++ /elsewhere/n.txt\n@@ -0,0 +1,0 @@');
   });
 
-  it('标题：读、搜一类带工具名；未知工具取第一个字符串参数', () => {
+  it('titles: read, search and similar carry the tool name; unknown tools use the first string argument', () => {
     expect(piToolItem('1', 'grep', { pattern: 'foo', path: 'src' }, null).title).toBe('grep foo · src');
     expect(piToolItem('1', 'ls', {}, null).title).toBe('ls');
     expect(piToolItem('1', 'subagent', { task: 'look around\nmore' }, null)).toMatchObject({
@@ -45,7 +45,7 @@ describe('pi 工具条目', () => {
     });
   });
 
-  it('回合在工具结束前收尾：工具记成 interrupted，开着的文字按已有内容收掉', () => {
+  it('turn ends before the tool finishes: the tool is recorded as interrupted, open text is closed with its existing content', () => {
     const mapper = new PiItemMapper('t', null, () => 0);
     mapper.map({ type: 'message_start', message: { role: 'assistant' } });
     mapper.map({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', contentIndex: 0, delta: 'hal' } });

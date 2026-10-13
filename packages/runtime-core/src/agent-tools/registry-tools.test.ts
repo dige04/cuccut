@@ -16,7 +16,7 @@ import { ToolDriver, tool, until, type ToolSession } from './testing/fake-agent.
  * Registry-type tools (agent-surface design §4.3): `jobs_wait` / `jobs_list` / `jobs_retry`, `models_list`, `projects_list` / `projects_create`, `skills_list`, `library_list` / `library_show`. Each of the three principals (session, external service, terminal) goes through its visible scope. Jobs are created directly as managed jobs, without the video engine or models.
  */
 
-describe('登记类工具', () => {
+describe('registration tools', () => {
   let dir: string;
   let builtin: string;
   let home: RuntimeHome;
@@ -131,8 +131,8 @@ describe('登记类工具', () => {
     return job;
   }
 
-  describe('任务', () => {
-    it('jobs_wait：等到结束时 settled 为 true，结果与 jobs_inspect 相同；超时不算错，settled 为 false 并提示再调一次', async () => {
+  describe('tasks', () => {
+    it('jobs_wait: waits until finished, settled true, result same as jobs_inspect; timeout is not an error, settled false and prompts to call again', async () => {
       const { conversationId, session } = await agent();
       const job = hostJob({ kind: 'agent', id: conversationId, taskId: newId('task') });
 
@@ -158,7 +158,7 @@ describe('登记类工具', () => {
       expect(tooLong.isError).toBe(true);
     });
 
-    it('jobs_wait：别的会话的任务看不到', async () => {
+    it('jobs_wait: other sessions\' tasks not visible', async () => {
       const { conversationId: other } = await agent();
       const { session } = await agent();
       const job = hostJob({ kind: 'agent', id: other, taskId: newId('task') });
@@ -167,7 +167,7 @@ describe('登记类工具', () => {
       expect(refused.body.error.code).toBe('JOB_NOT_FOUND');
     });
 
-    it('jobs_list：会话只看本会话的，对外服务只看本客户端的，终端看全部；子任务折叠，按状态与条数筛选', async () => {
+    it('jobs_list: session sees only its own, external service only its client\'s, terminal sees all; subtasks folded, filtered by status and count', async () => {
       const { conversationId: mine, session } = await agent();
       const { conversationId: theirs } = await agent();
       const { url, token, clientId } = await openMcp();
@@ -208,7 +208,7 @@ describe('登记类工具', () => {
       expect(limited.truncated).toBe(true);
     });
 
-    it('jobs_retry：不是固定流程的任务不能重跑；还在进行的流程也不能', async () => {
+    it('jobs_retry: tasks not of fixed flow cannot be rerun; neither can flows still in progress', async () => {
       const job = hostJob({ kind: 'connection', id: 'conn_test' });
       await job.finish('failed', { error: { code: 'TEST_FAILED', message: '测试失败' } });
       const refused = await local('jobs_retry', { jobId: job.jobId });
@@ -219,8 +219,8 @@ describe('登记类工具', () => {
     });
   });
 
-  describe('项目', () => {
-    it('projects_list：会话只有所属的项目，不属于项目的会话没有；对外服务不给路径；终端列出全部', async () => {
+  describe('projects', () => {
+    it('projects_list: session sees only those it belongs to, none if session not in a project; external service gets no paths; terminal lists all', async () => {
       const { project: extra } = await client.request('projects.create', { name: '另一个' });
       const { session } = await agent();
       const inProject = (await tool(session, 'projects_list', {})).body;
@@ -256,7 +256,7 @@ describe('登记类工具', () => {
       );
     });
 
-    it('projects_create：终端里相对 cwd 新建目录并登记、改名；再建一次原样返回；文件不能当项目', async () => {
+    it('projects_create: terminal creates directory relative to cwd and registers, renames; creating again returns as-is; a file cannot be a project', async () => {
       const work = path.join(dir, 'work');
       await fs.mkdir(work);
       const created = await localOk('projects_create', { path: 'show/ep1', name: '第一期' }, work);
@@ -277,7 +277,7 @@ describe('登记类工具', () => {
     });
   });
 
-  it('skills_list：id、名字、一行说明与开关；不给路径；skills_read 用这里的 id', async () => {
+  it('skills_list: id, name, one-line description, and toggle; no paths; skills_read uses the id from here', async () => {
     await client.request('skills.setEnabled', { id: 'b-roll', enabled: false });
     const { session } = await agent();
     const listed = (await tool(session, 'skills_list', {})).body;
@@ -362,7 +362,7 @@ describe('登记类工具', () => {
     expect((await mcpCall(url, token, 'packs_choose_style', { pack: 'none' })).isError).toBe(true);
   });
 
-  it('library_list / library_show：条目摘要与内容；没有的条目报 LIBRARY_ENTRY_NOT_FOUND', async () => {
+  it('library_list / library_show: entry summary and content; missing entry reports LIBRARY_ENTRY_NOT_FOUND', async () => {
     const { entry } = await client.request('library.put', {
       library: 'glossaries',
       content: {
@@ -493,7 +493,7 @@ describe('登记类工具', () => {
     if (!cliNoProject.ok) expect(cliNoProject.error.code).toBe('PROFILE_NO_PROJECT');
   });
 
-  it('models_list：经对外服务列出模型包，不带本机路径；models_test 不在对外服务里', async () => {
+  it('models_list: lists model packs via external service, no local paths; models_test not in external service', async () => {
     const { url, token } = await openMcp();
     const listed = await mcpCall(url, token, 'models_list', {});
     expect(listed.isError).toBe(false);

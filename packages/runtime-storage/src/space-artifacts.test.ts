@@ -40,7 +40,7 @@ function job(partial: Partial<JobRecord>): JobRecord {
   } as JobRecord;
 }
 
-describe('Space 的产物记录', () => {
+describe('Space artifact records', () => {
   let dir: string;
   let file: string;
 
@@ -53,7 +53,7 @@ describe('Space 的产物记录', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('下载结果保留项目关联，文件路径独立，重读后关联仍在', async () => {
+  it('download result keeps project association, file path is independent, association still there after rereading', async () => {
     const record = job({ kind: 'pipeline', videoId: null, pipeline: { name: 'link-import', params: { projectId: 'project-a', cookieBrowser: 'chrome', url: 'https://example.com/private' }, steps: [] } as never });
     record.result!.outputs![0]!.path = '/Users/test/Downloads/result.txt';
     const facts = spaceJobFacts(record)!;
@@ -67,7 +67,7 @@ describe('Space 的产物记录', () => {
     expect(reopened.list()[0]?.pipeline?.params?.projectId).toBe('project-a');
   });
 
-  it('只给文件的转录：结果有发布的文件时当文件流程留下；给了视频的转录（没有输出）不当', async () => {
+  it('transcription of a file only: kept as a file workflow when the result has a published file; transcription given a video (no output) is not', async () => {
     const outputs = [
       { artifactId: 'sha256:t', path: '/Users/test/Downloads/clip.txt', mediaType: 'text/plain', byteLength: 6, assetId: null, media: { kind: 'text', entries: 1, durationSec: 1 } },
       { artifactId: 'sha256:s', path: '/Users/test/Downloads/clip.srt', mediaType: 'application/x-subrip', byteLength: 30, assetId: null, media: { kind: 'text', entries: 1, durationSec: 1 } },
@@ -94,7 +94,7 @@ describe('Space 的产物记录', () => {
     expect(isFilePipelineJob({ kind: 'pipeline', pipeline: { name: 'transcribe' }, result: null })).toBe(false);
   });
 
-  it('只留结束了、有结果、会留下产物的任务，只留派生用的字段', () => {
+  it('keep only tasks that have ended, have results, and leave artifacts; keep only derived fields', () => {
     const facts = spaceJobFacts(job({}))!;
     expect(facts).toMatchObject({ jobId: 'job_1', kind: 'generateImage', state: 'completed', videoId: 'v1' });
     expect(facts).not.toHaveProperty('warnings');
@@ -105,7 +105,7 @@ describe('Space 的产物记录', () => {
     expect(spaceJobFacts(job({ kind: 'transcribe' }))).toBeNull();
   });
 
-  it('新建了视频的流程：只留完成了的 create 与它的 videoId，没有产物；重读时照样认得', async () => {
+  it('workflow that created a video: keep only the completed create and its videoId, no artifact; still recognized on reread', async () => {
     const step = (name: string, status: 'completed' | 'failed' | 'skipped', output: Record<string, unknown> | null) => ({
       name,
       label: name,
@@ -147,7 +147,7 @@ describe('Space 的产物记录', () => {
     expect(reread.get('job_p')).toEqual(facts);
   });
 
-  it('写入后重读一致；读坏的行跳过；整个文件读不了时改名留存，从空的开始', async () => {
+  it('reread after write is consistent; bad lines skipped; when the whole file can\'t be read, it is renamed and kept, starting empty', async () => {
     const store = new SpaceArtifactStore(file);
     expect(await store.load()).toEqual({ skipped: 0, quarantined: null });
     await store.put([spaceJobFacts(job({}))!, spaceJobFacts(job({ jobId: 'job_2' }))!]);
@@ -171,7 +171,7 @@ describe('Space 的产物记录', () => {
     expect(broken.list()).toEqual([]);
     await expect(fs.readFile(loaded.quarantined!, 'utf8')).resolves.toBe('{ 坏了');
   });
-  it('只为清扫保留的引用：结果、步骤与应用里的产物 id，不含输入摘要；重读后还在，清扫起点落盘且不后移', async () => {
+  it('references kept only for sweeping: results, steps and in-app artifact ids, not input summaries; still there after reread, sweep start persisted and not moved later', async () => {
     const a = `sha256:${'1'.repeat(64)}`;
     const b = `sha256:${'2'.repeat(64)}`;
     const dub = job({
@@ -196,7 +196,7 @@ describe('Space 的产物记录', () => {
     expect([...(await again.referencedArtifactIds())].sort()).toEqual([a, b]);
   });
 
-  it('读坏了改名留存的文件里的产物 id 照样算引用：下次启动不误删', async () => {
+  it('artifact ids in a file renamed after a failed read still count as references: not wrongly deleted on next startup', async () => {
     const lost = `sha256:${'3'.repeat(64)}`;
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, `{ "jobs": [{ "result": { "artifactId": "${lost}" } }`);

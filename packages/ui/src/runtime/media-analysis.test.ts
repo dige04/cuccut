@@ -43,8 +43,8 @@ function harness(
   return { cache, advance };
 }
 
-describe('素材分析缓存：峰值', () => {
-  it('pending 时按 Runtime 给的间隔再问，算好之后解码并通知', async () => {
+describe('media analysis cache: peaks', () => {
+  it('when pending, polls again at the interval the Runtime gives; once computed, decodes and notifies', async () => {
     const answers: MediaPeaks[] = [
       { status: 'pending', retryAfterMs: 1000 },
       { status: 'ready', binsPerSecond: 50, peaks: btoa(String.fromCharCode(10, 64, 32)) },
@@ -73,7 +73,7 @@ describe('素材分析缓存：峰值', () => {
     expect(peaks).toHaveBeenCalledTimes(2);
   });
 
-  it('没有声音的素材记住结果，不再问', async () => {
+  it('media without sound remembers the result and is not queried again', async () => {
     const peaks = vi.fn(async (): Promise<MediaPeaks> => ({ status: 'no-audio' }));
     const { cache } = harness({ peaks });
     cache.peaks(clip);
@@ -83,7 +83,7 @@ describe('素材分析缓存：峰值', () => {
     expect(peaks).toHaveBeenCalledTimes(1);
   });
 
-  it('失败之后隔一阵才重取，间隔逐次翻倍', async () => {
+  it('after a failure, refetch only after a delay; the interval doubles each time', async () => {
     const peaks = vi.fn(async (): Promise<MediaPeaks> => {
       throw new Error('引擎重启中');
     });
@@ -106,7 +106,7 @@ describe('素材分析缓存：峰值', () => {
     expect(peaks).toHaveBeenCalledTimes(3);
   });
 
-  it('换视频之后路上的结果不收，轮询也停下', async () => {
+  it('after switching videos, in-flight results are not kept, and polling stops too', async () => {
     const answer = deferred<MediaPeaks>();
     const peaks = vi.fn(() => answer.promise);
     const { cache, advance } = harness({ peaks });
@@ -118,8 +118,8 @@ describe('素材分析缓存：峰值', () => {
   });
 });
 
-describe('素材分析缓存：缩略图', () => {
-  it('同一格只要一次；取到之后是 data URL', async () => {
+describe('media analysis cache: thumbnails', () => {
+  it('the same cell is requested only once; after fetching it is a data URL', async () => {
     const thumbnail = vi.fn(async (_asset: VersionRef, at: number): Promise<MediaThumbnail> => ({
       mimeType: 'image/jpeg',
       data: 'AAAA',
@@ -134,7 +134,7 @@ describe('素材分析缓存：缩略图', () => {
     expect(cache.thumbnail(clip, 1.5)).toBe('data:image/jpeg;base64,AAAA');
   });
 
-  it('同时只发几个请求，后要的先取', async () => {
+  it('only a few requests are sent at a time; the most recently requested is fetched first', async () => {
     const pending = new Map<number, ReturnType<typeof deferred<MediaThumbnail>>>();
     const thumbnail = vi.fn((_asset: VersionRef, at: number) => {
       const answer = deferred<MediaThumbnail>();
@@ -150,7 +150,7 @@ describe('素材分析缓存：缩略图', () => {
     expect(thumbnail.mock.calls.map(([, at]) => at)).toEqual([4, 3, 2]);
   });
 
-  it('排队太长时丢掉最早排进来的，下次画到时再排', async () => {
+  it('when the queue gets too long, drop the earliest queued; queue again when it is next drawn', async () => {
     const pending = new Map<number, ReturnType<typeof deferred<MediaThumbnail>>>();
     const thumbnail = vi.fn((_asset: VersionRef, at: number) => {
       const answer = deferred<MediaThumbnail>();
@@ -171,7 +171,7 @@ describe('素材分析缓存：缩略图', () => {
     expect(thumbnail.mock.calls.map(([, at]) => at)).toEqual([3, 1, 2]);
   });
 
-  it('一张都没取到就连续失败几次的素材不再要；别的素材不受影响', async () => {
+  it('media for which not a single thumbnail was fetched and that fails several times in a row is no longer requested; other media is unaffected', async () => {
     const thumbnail = vi.fn(async (asset: VersionRef, at: number): Promise<MediaThumbnail> => {
       if (asset.id === clip.id) throw new Error('解不了');
       return { mimeType: 'image/jpeg', data: 'ok', at };
@@ -187,7 +187,7 @@ describe('素材分析缓存：缩略图', () => {
     expect(cache.thumbnail(other, 1)).toBe('data:image/jpeg;base64,ok');
   });
 
-  it('记住的张数有上限，最久没用的先丢', async () => {
+  it('the number of remembered entries is capped; the least recently used are dropped first', async () => {
     const thumbnail = vi.fn(async (_asset: VersionRef, at: number): Promise<MediaThumbnail> => ({
       mimeType: 'image/jpeg',
       data: String(at),

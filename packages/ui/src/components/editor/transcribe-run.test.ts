@@ -190,8 +190,8 @@ beforeEach(() => {
 });
 afterEach(() => resetTranscribe());
 
-describe('生成字幕', () => {
-  it('候选素材：只取放在时间线上的音视频，带上最新的那份转写', () => {
+describe('generate subtitles', () => {
+  it('candidate assets: only audio and video placed on the timeline, along with the latest transcription', () => {
     const asset = (id: string, kind: string) => ({ id, kind, name: `${id}.mp4`, currentRevision: '1', revisions: {} }) as never;
     const speech = (id: string, at: string): DocumentRecord => ({
       id,
@@ -209,7 +209,7 @@ describe('生成字幕', () => {
     expect(candidates.map((c) => [c.asset.id, c.speech?.id])).toEqual([['asset', 'fresh']]);
   });
 
-  it('没有配置转录：提交被拒，就地给出原因、提示与去模型页的补救，不留运行态', async () => {
+  it('no transcription configured: submission rejected, reason, hint and remedy linking to the models page given in place, no run state kept', async () => {
     const { deps } = fake();
     deps.runtime.startPipeline = vi.fn(async () => {
       throw new RpcError('conflict', '没有可用的转录服务', {
@@ -231,7 +231,7 @@ describe('生成字幕', () => {
     });
   });
 
-  it('转录设置：按视频记；提交转录流程时把选项带上，videoId / assetId 不被盖掉', async () => {
+  it('transcription settings: stored per video; when submitting the transcription flow the options are carried along, and videoId / assetId are not overwritten', async () => {
     const { deps } = fake();
     bindTranscribe(deps);
     const base = { language: '', model: null, prompt: '' };
@@ -256,7 +256,7 @@ describe('生成字幕', () => {
     expect(useSubtitleRun.getState().setups).toEqual({});
   });
 
-  it('流程完成：照 summary.captions 选中新的那层、提示带撤销（撤流程建字幕层的那笔）；编辑器不再自己写；后面的事件不会再收一次', async () => {
+  it('flow completed: select the new layer per summary.captions, notice with undo (reverts the entry the flow used to create the subtitle layer); the editor no longer writes on its own; later events are not received again', async () => {
     const { deps, applied, toasts } = fake();
     bindTranscribe(deps);
     await startTranscribe('vid', { id: 'asset', name: '访谈.mp4' });
@@ -280,7 +280,7 @@ describe('生成字幕', () => {
     expect(toasts).toEqual([['positive', '已生成 3 条字幕', true]]);
   });
 
-  it('新的一层停用着放上去时如实说；投不到画面上、没有字幕条、流程没建时各自收尾', async () => {
+  it('when the new layer is placed while disabled, say so; when it cannot be shown on screen, when there is no subtitle bar, or when the flow did not create one, each wraps up in its own way', async () => {
     const { deps, toasts } = fake();
     bindTranscribe(deps);
     await startTranscribe('vid', { id: 'asset', name: '访谈.mp4' });
@@ -312,7 +312,7 @@ describe('生成字幕', () => {
     }
   });
 
-  it('没有音轨、取消、失败：如实收尾', async () => {
+  it('no audio track, cancel, failure: wrap up accurately', async () => {
     const { deps, toasts } = fake();
     bindTranscribe(deps);
     await startTranscribe('vid', { id: 'asset', name: '访谈.mp4' });
@@ -348,7 +348,7 @@ describe('生成字幕', () => {
     });
   });
 
-  it('转写 Job 要用户拿主意（结果不明、识别结果在没写进视频）：流程失败，指到那个转写 Job', async () => {
+  it('transcription Job needs the user\'s decision (outcome unclear, recognition result not written into the video): flow fails, pointing to that transcription Job', async () => {
     const result = { documentId: 'speech', artifactId: 'a' };
     const ended = { endedAt: '2026-10-03T00:00:00.000Z', result };
     const unapplied = job('failed', { ...ended, error: { code: 'STALE_JOB_INPUT', message: '视频已经改过' }, applications: [application('stale-input')] });
@@ -377,7 +377,7 @@ describe('生成字幕', () => {
     expect(applied).toEqual([]);
   });
 
-  it('用已有转写生成；用户换了视频时不往别的视频里写', async () => {
+  it('generate from an existing transcription; when the user switches video, do not write into another video', async () => {
     const { deps, applied, toasts } = fake();
     bindTranscribe(deps);
     open('vid', { speech: speechRecord });

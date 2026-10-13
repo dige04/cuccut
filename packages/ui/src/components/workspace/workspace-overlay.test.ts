@@ -10,8 +10,8 @@ function fakeBody() {
   };
 }
 
-describe('功能区覆盖层登记', () => {
-  it('有覆盖层登记着时 body 带标记，全部撤销后去掉', () => {
+describe('feature-area overlay registration', () => {
+  it('body carries a marker while any overlay is registered, and it is removed once all are undone', () => {
     const body = fakeBody();
     const overlays = createWorkspaceOverlays(() => body);
     expect(body.attributes.has(WORKSPACE_OVERLAY_ATTRIBUTE)).toBe(false);
@@ -25,7 +25,7 @@ describe('功能区覆盖层登记', () => {
     expect(overlays.count()).toBe(0);
   });
 
-  it('撤销函数重复调用只撤销一次，不会提前去掉别人的标记', () => {
+  it('calling an undo function repeatedly undoes only once, and does not prematurely remove another\'s marker', () => {
     const body = fakeBody();
     const overlays = createWorkspaceOverlays(() => body);
     const drag = overlays.register();
@@ -38,7 +38,7 @@ describe('功能区覆盖层登记', () => {
     expect(body.attributes.has(WORKSPACE_OVERLAY_ATTRIBUTE)).toBe(false);
   });
 
-  it('没有 document 时（Node）只计数', () => {
+  it('without document (Node) only counts', () => {
     const overlays = createWorkspaceOverlays(() => null);
     const release = overlays.register();
     expect(overlays.count()).toBe(1);

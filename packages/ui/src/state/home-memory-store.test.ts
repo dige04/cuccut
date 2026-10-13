@@ -15,14 +15,14 @@ const data = vi.hoisted(() => {
   return map;
 });
 
-describe('起始页记住的选择', () => {
-  it('读出上次的项目与目标语言；坏数据当没有', () => {
+describe('start page remembered choices', () => {
+  it('reads back the last project and target language; bad data is treated as none', () => {
     expect(useHomeMemory.getState()).toMatchObject({ project: 'proj_a', target: '日文' });
     expect(memoryOf({ project: 3, target: '   ' })).toEqual({ project: null, target: null });
     expect(memoryOf(null)).toEqual({ project: null, target: null });
   });
 
-  it('选「不用项目」记成 null；填的目标语言去掉首尾空白再记，都写回这台电脑', () => {
+  it('choosing \'no project\' records null; the entered target language is trimmed before recording; both are written back to this computer', () => {
     useHomeMemory.getState().setProject(null);
     useHomeMemory.getState().setTarget('  English ');
     expect(useHomeMemory.getState()).toMatchObject({ project: null, target: 'English' });

@@ -13,8 +13,8 @@ function image(x: number): ImageData {
   return new ImageData(data, 4, 2);
 }
 
-describe('字幕样式卡一圈的帧', () => {
-  it('按共用时钟取格：一圈循环，原点之前的时刻也落在圈里', () => {
+describe('frames for one cycle of the subtitle style card', () => {
+  it('sample cells on the shared clock: one cycle loops, and times before the origin also fall within the cycle', () => {
     const loop = new CaptionLoop(2);
     expect(loop.count).toBe(2 * CAPTION_FPS);
     expect(new CaptionLoop(4 / CAPTION_FPS).count).toBe(4);
@@ -25,7 +25,7 @@ describe('字幕样式卡一圈的帧', () => {
     expect(loop.time(3)).toBeCloseTo(3 / CAPTION_FPS);
   });
 
-  it('裁到不透明的那一块存；画面一样的格共用一份', () => {
+  it('crop to the opaque area before storing; cells with identical images share one copy', () => {
     const loop = new CaptionLoop(1);
     const first = loop.put(0, image(1));
     expect(first.at).toEqual({ x: 1, y: 0, width: 1, height: 1 });
@@ -39,7 +39,7 @@ describe('字幕样式卡一圈的帧', () => {
     expect(loop.put(0, image(3))).toBe(first);
   });
 
-  it('一圈每格都画过且都是同一份画面才算不动；清掉之后从头算', () => {
+  it('a cycle counts as static only when every cell has been drawn and all show the same image; after clearing, counting starts over', () => {
     const loop = new CaptionLoop(4 / CAPTION_FPS);
     // Drawn out of order: a full lap of the same frame is still recognized.
     for (const index of [0, 2, 1]) loop.put(index, image(1));
@@ -51,7 +51,7 @@ describe('字幕样式卡一圈的帧', () => {
     expect(loop.still).toBe(false);
   });
 
-  it('存满了就不再存，那一格照样贴得出来；与相邻格一样的仍共用', () => {
+  it('once full, nothing more is stored and that cell is still drawn; cells identical to a neighbor still share', () => {
     const loop = new CaptionLoop(1, 8);
     loop.put(0, image(0));
     loop.put(2, image(1));

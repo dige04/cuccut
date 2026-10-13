@@ -74,7 +74,7 @@ function setup(patch: Partial<ResourceCapacity> = {}) {
 }
 
 describe('ResourceScheduler', () => {
-  it('队列的并发上限是调度的约束：同一队列按先后，记下在等并发', () => {
+  it('a queue\'s concurrency cap constrains scheduling: jobs in the same queue run in order, and waiting for a concurrency slot is recorded', () => {
     const { scheduler, request } = setup();
     const queue = { key: 'fake@cpu', concurrency: 1 };
     const a = request({ owner: 'a', queue });
@@ -95,7 +95,7 @@ describe('ResourceScheduler', () => {
     expect(scheduler.snapshot().waiting).toEqual([]);
   });
 
-  it('放不下的等资源，记下缺的维度；归还之后按先后准入', () => {
+  it('work that does not fit waits for resources and records the missing dimension; after resources are returned it is admitted in order', () => {
     const { scheduler, request } = setup();
     const a = request({ owner: 'a', demand: { memory: 6 * GiB } });
     const b = request({ owner: 'b', demand: { memory: 6 * GiB } });
@@ -113,7 +113,7 @@ describe('ResourceScheduler', () => {
     expect(scheduler.outstanding).toBe(0);
   });
 
-  it('单个需求超过这台机器能给的量：提交时检查与准入时都直接拒绝，不等', () => {
+  it('a single requirement exceeding what this machine can provide is rejected at submit and at admission, without waiting', () => {
     const { scheduler, request } = setup();
     const huge: ResourceRequest = { owner: 'x', label: 'test', demand: { memory: 11 * GiB } };
     const error = scheduler.check(huge);
@@ -128,7 +128,7 @@ describe('ResourceScheduler', () => {
     expect(scheduler.snapshot().waiting).toEqual([]);
   });
 
-  it('不插队：后来的不能拿前面在等的维度；不碰这些维度的可以先开始', () => {
+  it('no queue jumping: later work cannot take dimensions that earlier waiting work needs; work that touches none of those dimensions may start first', () => {
     const { request } = setup();
     const a = request({ owner: 'a', demand: { memory: 6 * GiB } });
     const b = request({ owner: 'b', demand: { memory: 6 * GiB } });
@@ -146,7 +146,7 @@ describe('ResourceScheduler', () => {
     expect(c.lease).not.toBeNull();
   });
 
-  it('共用的 holder：已经有了就不再计，进程持有的一份在任务之后仍然计入，进程退出后才归还', () => {
+  it('shared holder: once already held it is not counted again; a copy held by the process stays counted after the task and is released only when the process exits', () => {
     const { scheduler, request } = setup();
     const holder = { id: 'model-worker:fake', demand: { memory: 3 * GiB } };
     const a = request({ owner: 'a', holder, demand: { memory: 1 * GiB } });
@@ -170,7 +170,7 @@ describe('ResourceScheduler', () => {
     expect(scheduler.outstanding).toBe(0);
   });
 
-  it('空闲的 holder 挡住排队的工作时被请求让位（最久没用的先），进程退出后才准入', () => {
+  it('an idle holder blocking queued work is asked to yield (least recently used first), and admission happens only after the process exits', () => {
     const { scheduler, request } = setup();
     const evicted: string[] = [];
     const releases = new Map<string, () => void>();
@@ -194,7 +194,7 @@ describe('ResourceScheduler', () => {
     expect(evicted).toEqual(['model-worker:old']);
   });
 
-  it('后台不能吃掉交互预留；交互排在后台前面', () => {
+  it('background work cannot take the interactive reservation; interactive work is ahead of background work', () => {
     const { request } = setup();
     const a = request({ owner: 'a', demand: { memory: 9 * GiB } });
     expect(a.lease).not.toBeNull();
@@ -212,7 +212,7 @@ describe('ResourceScheduler', () => {
     expect(background.lease).not.toBeNull();
   });
 
-  it('CPU 线程超过总数时按上限计（只会变慢），未知的维度不准入', () => {
+  it('CPU threads above the total are capped at the limit (only slower); work needing an unknown dimension is not admitted', () => {
     const { scheduler, request } = setup();
     expect(scheduler.check({ owner: 'x', label: 'test', demand: { cpuThreads: 64 } })).toBeNull();
     const a = request({ owner: 'a', demand: { cpuThreads: 64, gpuMemory: 100 * GiB, scratchDisk: 100 * GiB } });
@@ -222,7 +222,7 @@ describe('ResourceScheduler', () => {
     expect(b.wait).toMatchObject({ reason: 'resources', dimensions: ['cpuThreads'] });
   });
 
-  it('统一内存：GPU 的需求同时计入内存', () => {
+  it('unified memory: GPU requirements also count against memory', () => {
     const { scheduler, request } = setup({
       gpuMemory: 10 * GiB,
       unifiedMemory: true,
@@ -235,7 +235,7 @@ describe('ResourceScheduler', () => {
     expect(b.wait).toMatchObject({ reason: 'resources', dimensions: ['memory', 'gpuMemory'] });
   });
 
-  it('磁盘按可用空间：已经租出的加回去判断永远放不下', () => {
+  it('disk is measured by free space: leased amounts are added back in the check, otherwise it would never fit', () => {
     const { capacity, scheduler, request } = setup({
       scratchDisk: 10 * GiB,
       sources: { memory: 'system', gpuMemory: 'unknown', cpuThreads: 'system', scratchDisk: 'statfs' },
@@ -254,7 +254,7 @@ describe('ResourceScheduler', () => {
     expect(b.lease).not.toBeNull();
   });
 
-  it('acquire：中止时撤回，后面的照常准入', async () => {
+  it('acquire: aborting withdraws the request, and later requests are admitted as usual', async () => {
     const { scheduler, request } = setup();
     const a = request({ owner: 'a', demand: { memory: 8 * GiB } });
     const controller = new AbortController();
@@ -279,7 +279,7 @@ describe('ResourceScheduler', () => {
     expect(scheduler.outstanding).toBe(0);
   });
 
-  it('撤回排队的请求不留痕迹', () => {
+  it('withdrawing a queued request leaves no trace', () => {
     const { scheduler, request } = setup();
     const a = request({ owner: 'a', queue: { key: 'q', concurrency: 1 } });
     const b = request({ owner: 'b', queue: { key: 'q', concurrency: 1 } });
@@ -292,7 +292,7 @@ describe('ResourceScheduler', () => {
 });
 
 describe('MachineCapacity', () => {
-  it('Apple 芯片按统一内存估计 GPU 内存；设置可以逐项覆盖', () => {
+  it('Apple chips estimate GPU memory from unified memory; settings can override each item', () => {
     let override: { memoryMiB: number | null; gpuMemoryMiB: number | null; cpuThreads: number | null } | null = null;
     const capacity = new MachineCapacity({
       system: { platform: 'darwin', arch: 'arm64', totalMemory: 24 * GiB, cpuThreads: 10 },
@@ -316,7 +316,7 @@ describe('MachineCapacity', () => {
     });
   });
 
-  it('其余机器的 GPU 内存未知（除非设置给出）；磁盘按 staging 所在卷的可用空间', async () => {
+  it('on other machines GPU memory is unknown unless set; disk is measured by free space on the volume holding staging', async () => {
     let override: { memoryMiB: number | null; gpuMemoryMiB: number | null; cpuThreads: number | null } | null = null;
     const capacity = new MachineCapacity({
       scratchDir: process.cwd(),

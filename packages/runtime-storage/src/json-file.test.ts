@@ -16,7 +16,7 @@ describe('writeJsonAtomic', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('durable：写完、同步之后改名，权限照给的；不留临时文件；后写的覆盖先写的', async () => {
+  it('durable: after writing and syncing, rename; permissions preserved; no temp file left; later write overwrites earlier', async () => {
     const file = path.join(dir, 'store', 'jobs.json');
     await writeJsonAtomic(file, { n: 1 }, { durable: true, mode: 0o600 });
     await writeJsonAtomic(file, { n: 2 }, { durable: true, mode: 0o600 });
@@ -25,7 +25,7 @@ describe('writeJsonAtomic', () => {
     expect(await fs.readdir(path.dirname(file))).toEqual(['jobs.json']);
   });
 
-  it('durable：写不进去时抛出，原来的文件不动', async () => {
+  it('durable: throws when the write fails, original file untouched', async () => {
     const file = path.join(dir, 'store', 'jobs.json');
     await writeJsonAtomic(file, { n: 1 }, { durable: true });
     await fs.chmod(path.dirname(file), 0o500);

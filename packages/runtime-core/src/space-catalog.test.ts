@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { classifyFile, entryIdOf, scanDirectory } from './space-catalog.ts';
 import { parseRange } from './media.ts';
 
-describe('Space 扫描', () => {
+describe('Space scan', () => {
   let root: string;
 
   beforeEach(async () => {
@@ -22,7 +22,7 @@ describe('Space 扫描', () => {
     await fs.writeFile(file, content);
   }
 
-  it('按扩展名分类，认不出的不收', () => {
+  it('classifies by extension, skips unrecognized files', () => {
     expect(classifyFile('A.MP4')).toBe('video-file');
     expect(classifyFile('cover.jpeg')).toBe('image');
     expect(classifyFile('voice.m4a')).toBe('audio');
@@ -32,7 +32,7 @@ describe('Space 扫描', () => {
     expect(classifyFile('Makefile')).toBeNull();
   });
 
-  it('跳过隐藏目录与依赖目录，不跟随符号链接', async () => {
+  it('skips hidden and dependency directories, does not follow symbolic links', async () => {
     await touch('a.mp4');
     await touch('sub/b.png');
     await touch('.git/c.png');
@@ -48,7 +48,7 @@ describe('Space 扫描', () => {
     expect(result.files.map((f) => f.relPath).sort()).toEqual(['a.mp4', 'sub/b.png']);
   });
 
-  it('深度与数量有上限，超出时如实报告', async () => {
+  it('depth and count are capped, and overflow is reported honestly', async () => {
     await touch('1/2/3/deep.mp4');
     await touch('1/shallow.mp4');
     const shallow = await scanDirectory(root, { maxDepth: 1, maxFiles: 100, maxVisited: 100 });
@@ -60,7 +60,7 @@ describe('Space 扫描', () => {
     expect(capped.issue?.kind).toBe('truncated');
   });
 
-  it('含 video.db 的目录是一个视频条目；改名之前只有 movie.db 的目录也算，等引擎打开时升级', async () => {
+  it('a directory containing video.db is one video entry; a directory that still has only movie.db before the rename also counts, upgraded when the engine opens it', async () => {
     await touch('新/video.db', 'db');
     await touch('新/blobs/x.mp4');
     await touch('旧/movie.db', 'db');
@@ -72,18 +72,18 @@ describe('Space 扫描', () => {
     ]);
   });
 
-  it('目录不存在算空，不算问题', async () => {
+  it('a missing directory counts as empty, not as a problem', async () => {
     expect(await scanDirectory(path.join(root, 'missing'))).toEqual({ files: [], issue: null });
   });
 
-  it('条目 id 只由来源与相对路径决定', () => {
+  it('entry id is determined only by source and relative path', () => {
     expect(entryIdOf('project:p1', 'a.mp4')).toBe(entryIdOf('project:p1', 'a.mp4'));
     expect(entryIdOf('project:p1', 'a.mp4')).not.toBe(entryIdOf('project:p2', 'a.mp4'));
   });
 });
 
-describe('Range 解析', () => {
-  it('单段范围', () => {
+describe('Range parsing', () => {
+  it('single-segment range', () => {
     expect(parseRange(undefined, 10)).toBeNull();
     expect(parseRange('bytes=0-', 10)).toEqual({ start: 0, end: 9 });
     expect(parseRange('bytes=2-5', 10)).toEqual({ start: 2, end: 5 });
@@ -92,7 +92,7 @@ describe('Range 解析', () => {
     expect(parseRange('bytes=-30', 10)).toEqual({ start: 0, end: 9 });
   });
 
-  it('越界与看不懂的范围', () => {
+  it('out-of-bounds and unreadable ranges', () => {
     expect(parseRange('bytes=10-', 10)).toBe('unsatisfiable');
     expect(parseRange('bytes=5-2', 10)).toBe('unsatisfiable');
     expect(parseRange('bytes=-0', 10)).toBe('unsatisfiable');

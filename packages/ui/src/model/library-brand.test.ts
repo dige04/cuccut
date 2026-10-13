@@ -38,12 +38,12 @@ const asset = (id: string, kind: AssetRecord['kind'], name: string, patch: Parti
 
 const file = (mediaType: string, byteLength = 2048) => ({ sha256: 'sha256:aa', byteLength, mediaType, fileName: 'x' });
 
-describe('节与名字', () => {
-  it('各节按设计稿的次序，不含模板', () => {
+describe('sections and names', () => {
+  it('sections in design-spec order, without templates', () => {
     expect(BRAND_SECTIONS.map((s) => s.kind)).toEqual(['video', 'image', 'sticker', 'color', 'font', 'captionStyle']);
   });
 
-  it('本机文件的默认名是去掉扩展名的文件名', () => {
+  it('a local file\'s default name is its file name without the extension', () => {
     expect(nameFromPath('/Users/me/台标 2026.png')).toBe('台标 2026');
     expect(nameFromPath('C:\\brand\\logo.final.webp')).toBe('logo.final');
     expect(nameFromPath('/tmp/.hidden')).toBe('.hidden');
@@ -51,8 +51,8 @@ describe('节与名字', () => {
   });
 });
 
-describe('品牌色', () => {
-  it('只收六位或八位 hex，存成大写；三位展开', () => {
+describe('brand color', () => {
+  it('accepts only six- or eight-digit hex, stored in uppercase; three-digit expanded', () => {
     expect(normalizeColor('#ff5a1f')).toBe('#FF5A1F');
     expect(normalizeColor('ff5a1f80')).toBe('#FF5A1F80');
     expect(normalizeColor(' #abc ')).toBe('#AABBCC');
@@ -60,21 +60,21 @@ describe('品牌色', () => {
     expect(normalizeColor('red')).toBeNull();
   });
 
-  it('CSS 用 rgba，带上不透明度', () => {
+  it('CSS uses rgba, including the opacity', () => {
     expect(colorCss('#FF0000')).toBe('rgba(255, 0, 0, 1)');
     expect(colorCss('#00FF0080')).toBe('rgba(0, 255, 0, 0.502)');
   });
 });
 
-describe('条目说明与放法', () => {
-  it('贴纸写清是图片还是 Lottie，文件写大小', () => {
+describe('item descriptions and how to place them', () => {
+  it('stickers state whether they are image or Lottie; files state the size', () => {
     const lottie: BrandContent = { name: 'a', kind: 'sticker', file: file('application/json', 3 * 1024 * 1024) };
     expect(brandMeta(lottie)).toBe('Lottie 动画 · 3.0 MB');
     expect(brandMeta({ name: 'b', kind: 'image', file: file('image/png', 500) })).toBe('500 B');
     expect(brandMeta({ name: 'c', kind: 'color', value: '#112233' })).toBe('#112233');
   });
 
-  it('图片、视频与图片贴纸上时间线；Lottie 用内置播放器；字体只进素材库', () => {
+  it('images, video and image stickers go on the timeline; Lottie uses the built-in player; fonts go only to the media library', () => {
     expect(brandPlacement({ name: 'a', kind: 'image', file: file('image/png') })).toBe('asset');
     expect(brandPlacement({ name: 'a', kind: 'video', file: file('video/mp4') })).toBe('asset');
     expect(brandPlacement({ name: 'a', kind: 'sticker', file: file('image/gif') })).toBe('asset');
@@ -83,7 +83,7 @@ describe('条目说明与放法', () => {
     expect(brandPlacement({ name: 'a', kind: 'font', file: file('font/ttf') })).toBe('import-only');
   });
 
-  it('Lottie 一层：指向素材当前版本、循环、画面中央 18% 宽的正方', () => {
+  it('Lottie layer: points to the asset\'s current version, loops, a square 18% of the frame width at the center', () => {
     const layer = lottieLayer('挥手', asset('ast_1', 'other', '挥手', { mediaType: 'application/json' }), { width: 1920, height: 1080 });
     expect(layer).toMatchObject({
       type: 'sticker',
@@ -95,14 +95,14 @@ describe('条目说明与放法', () => {
   });
 });
 
-describe('元素页里的品牌库贴纸', () => {
-  it('Lottie 进动态贴纸那一页，图片（GIF 也是：只画得出一帧）进贴纸那一页', () => {
+describe('brand library stickers on the elements page', () => {
+  it('Lottie goes to the animated stickers page; images (GIFs too, since they render only one frame) go to the stickers page', () => {
     expect(isDynamicSticker({ name: 'a', kind: 'sticker', file: file('application/json') })).toBe(true);
     expect(isDynamicSticker({ name: 'a', kind: 'sticker', file: file('image/gif') })).toBe(true);
     expect(isDynamicSticker({ name: 'a', kind: 'sticker', file: file('image/png') })).toBe(false);
   });
 
-  it('搜索：名字、「我的贴纸 / 品牌库」与那一页的名字；动态页的也认「贴纸」', () => {
+  it('search: name, "我的贴纸 / 品牌库" and that page\'s name; the animated page also matches "贴纸"', () => {
     expect(stickerMatches('台标 Logo', false, '')).toBe(true);
     expect(stickerMatches('台标 Logo', false, ' logo ')).toBe(true);
     expect(stickerMatches('台标 Logo', false, '我的贴纸')).toBe(true);
@@ -118,8 +118,8 @@ describe('元素页里的品牌库贴纸', () => {
   });
 });
 
-describe('从这个视频的素材存进来', () => {
-  it('生成的素材用产物，链接的素材用原路径，收进视频目录的说明原因', () => {
+describe('saved from this video\'s media', () => {
+  it('generated media uses the artifact, linked media uses the original path; media copied into the video directory explains why', () => {
     const generated = asset('a', 'image', 'g', { provenance: { origin: 'generated', source: { artifactId: 'sha256:ab' } } });
     expect(assetLibrarySource(generated)).toEqual({ source: { artifactId: 'sha256:ab' } });
     const linked = asset('b', 'video', 'l', { storage: { mode: 'linked', locator: { path: '/Volumes/素材/片头.mp4' }, frozen: false } });
@@ -129,7 +129,7 @@ describe('从这个视频的素材存进来', () => {
     expect(assetLibrarySource(asset('d', 'image', 'm'))).toHaveProperty('reason');
   });
 
-  it('按节挑素材：贴纸一节收图片与 Lottie，音频不收', () => {
+  it('picking media by section: the stickers section takes images and Lottie, not audio', () => {
     const assets = {
       a: asset('a', 'image', 'B 台标'),
       b: asset('b', 'other', 'A 挥手', { mediaType: 'application/json' }),
@@ -145,8 +145,8 @@ describe('从这个视频的素材存进来', () => {
   });
 });
 
-describe('字幕样式', () => {
-  it('要带 schema，不超过 64 KiB', () => {
+describe('subtitle style', () => {
+  it('must include a schema, no larger than 64 KiB', () => {
     expect(captionStyleProblem({ schema: 'cuccut.caption-style/1', style: {} })).toBeNull();
     expect(captionStyleProblem({ style: {} })).toBe('字幕样式文档没有 schema，存不进品牌库');
     expect(captionStyleProblem(null)).toBe('字幕样式文档是空的');
@@ -188,7 +188,7 @@ describe('字幕样式', () => {
     ducking: [],
   });
 
-  it('能存的样式：字幕在用的 caption-style 文档，用的多的在前', () => {
+  it('styles that can be saved: caption-style documents in use for subtitles, most-used first', () => {
     const documents = {
       a: doc('a', 'caption-style', '原文样式'),
       b: doc('b', 'caption-style', '译文样式'),
@@ -212,7 +212,7 @@ describe('字幕样式', () => {
     expect(captionStyleCandidates(sequence([track('t1')], []), documents)).toEqual([]);
   });
 
-  it('套用时改序列上的字幕，跳过锁住的实例与锁住的轨', () => {
+  it('applying changes subtitles on the sequence, skipping locked instances and locked tracks', () => {
     const seq = sequence(
       [track('t1'), track('t2', true)],
       [caption('c1', 't1'), caption('c2', 't1', { locked: true }), caption('c3', 't2')],

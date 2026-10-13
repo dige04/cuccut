@@ -167,8 +167,8 @@ afterEach(async () => {
   await fs.rm(dir, { recursive: true, force: true });
 });
 
-describe('Agent 探测缓存', () => {
-  it('从磁盘缓存起步：agents.list 立刻返回上次的结果，不等后台探测；探完推送新结果并写回文件', async () => {
+describe('agent probe cache', () => {
+  it('starts from the disk cache: agents.list returns the last result immediately without waiting for background probing; after probing, pushes the new result and writes it back to the file', async () => {
     await seed({ codex: stored('signed-out', '0.9.0') });
     const codex = new FakeDriver('codex');
     codex.hold = gate();
@@ -202,7 +202,7 @@ describe('Agent 探测缓存', () => {
     expect(file.drivers.codex.capabilities).toBeUndefined();
   });
 
-  it('没有缓存：探测快的等它探完，要拉起智能体进程的（slowProbe）列在 checking；慢的不挡快的，各自完成各自推送', async () => {
+  it('without a cache: fast probes are awaited, and probes that launch an agent process (slowProbe) are listed as checking; a slow probe does not block fast ones, and each pushes its own result when done', async () => {
     const codex = new FakeDriver('codex');
     const gemini = new FakeDriver('gemini', true, true);
     gemini.hold = gate();
@@ -222,7 +222,7 @@ describe('Agent 探测缓存', () => {
     expect(h.agentsSnapshot().drivers.find((d) => d.id === 'gemini')).toMatchObject({ verified: true, state: 'ready' });
   });
 
-  it('一个 Driver 的探测抛错记成 error，不影响别的', async () => {
+  it('a probe error in one Driver is recorded as error without affecting the others', async () => {
     const claude = new FakeDriver('claude');
     claude.fail = '炸了';
     const codex = new FakeDriver('codex');
@@ -235,7 +235,7 @@ describe('Agent 探测缓存', () => {
     expect(view.drivers.find((d) => d.id === 'codex')).toMatchObject({ state: 'ready' });
   });
 
-  it('detect 强制探测并等它完成（可以只探一个），返回前推送', async () => {
+  it('detect forces a probe and waits for it to finish (it can probe just one), pushing before returning', async () => {
     const claude = new FakeDriver('claude');
     const codex = new FakeDriver('codex');
     const h = await open([claude, codex]);
@@ -264,7 +264,7 @@ describe('Agent 探测缓存', () => {
     expect(codex.calls).toHaveLength(3);
   });
 
-  it('强制探测顶替进行中的普通探测：旧的结果回来时丢掉', async () => {
+  it('a forced probe replaces an in-progress normal probe: the old result is discarded when it returns', async () => {
     const codex = new FakeDriver('codex');
     codex.hold = gate();
     codex.version = '1.0.0';
@@ -282,7 +282,7 @@ describe('Agent 探测缓存', () => {
     expect(h.agentsSnapshot().drivers[0]!.version).toBe('3.0.0');
   });
 
-  it('改可执行文件：丢掉旧结果，只重新探测这一个，带上新的可执行文件', async () => {
+  it('changing the executable: drops the old result, re-probes only this one, using the new executable', async () => {
     const claude = new FakeDriver('claude');
     const codex = new FakeDriver('codex');
     const h = await open([claude, codex]);
@@ -296,7 +296,7 @@ describe('Agent 探测缓存', () => {
     expect(claude.calls).toHaveLength(1);
   });
 
-  it('缓存里的可执行文件与偏好不一致时丢弃那一条', async () => {
+  it('an entry in the cache is dropped when its executable does not match the preference', async () => {
     const prefs = new AgentPrefsStore(home.agentPrefsFile);
     await prefs.load();
     await prefs.update((p) => {
@@ -316,7 +316,7 @@ describe('Agent 探测缓存', () => {
     claude.hold.open();
   });
 
-  it('缓存文件坏了当没有缓存', async () => {
+  it('a corrupt cache file is treated as no cache', async () => {
     await fs.mkdir(path.dirname(home.agentProbesFile), { recursive: true });
     await fs.writeFile(home.agentProbesFile, '{ 这不是 JSON');
     const codex = new FakeDriver('codex');
@@ -330,7 +330,7 @@ describe('Agent 探测缓存', () => {
     expect(await new AgentProbeStore(home.agentProbesFile).load()).toHaveProperty('codex');
   });
 
-  it('偏好变化推送新视图', async () => {
+  it('a preference change pushes a new view', async () => {
     const h = await open([new FakeDriver('codex')]);
     await h.agents();
     const before = events.length;
@@ -341,7 +341,7 @@ describe('Agent 探测缓存', () => {
     expect(lastView()!.drivers[0]).toMatchObject({ enabled: false, state: 'disabled' });
   });
 
-  it('便宜的纠正：缓存说不可用且超过 60 秒没探过的 Driver，agents.list 与会话创建时后台再探；slowProbe 的不探', async () => {
+  it('cheap correction: Drivers the cache marks unavailable and not probed for over 60 seconds are probed again in the background on agents.list and session creation; slowProbe ones are not probed', async () => {
     const codex = new FakeDriver('codex');
     codex.state = 'signed-out';
     codex.checkedAt = '2026-10-01T00:00:00.000Z';
@@ -360,7 +360,7 @@ describe('Agent 探测缓存', () => {
     expect(gemini.calls).toHaveLength(1);
   });
 
-  it('会话以 AGENT_AUTH_REQUIRED 失败：后台强制重新探测这个 Driver 并推送', async () => {
+  it('a session fails with AGENT_AUTH_REQUIRED: the Driver is force-probed again in the background and the result is pushed', async () => {
     const codex = new FakeDriver('codex');
     const claude = new FakeDriver('claude');
     const h = await open([codex, claude]);

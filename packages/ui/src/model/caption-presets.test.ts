@@ -54,8 +54,8 @@ const look = (patch: Partial<DesignLook> = {}): DesignLook => ({
   ...patch,
 });
 
-describe('分区与次序', () => {
-  it('六个分区按气质分：基础 3、社交 20、商务 6、复古 6、动效 7、动态排版 1', () => {
+describe('sections and order', () => {
+  it('six sections grouped by character: basic 3, social 20, business 6, retro 6, motion 7, kinetic typography 1', () => {
     const groups = presetGroups();
     expect(groups.map((g) => [g.key, g.label, g.presets.length])).toEqual([
       ['basic', '基础', 3],
@@ -70,7 +70,7 @@ describe('分区与次序', () => {
     expect(new Set(CAPTION_PRESETS.map((p) => p.id)).size).toBe(43);
   });
 
-  it('每张卡的涂装完整：只有涂装键，阴影与发光两个槽都给值，不带字号', () => {
+  it('each card\'s finish is complete: only finish keys, shadow and glow slots both given values, no font size', () => {
     for (const p of CAPTION_PRESETS) {
       expect(Object.keys(p.style).filter((key) => !PAINT_KEYS.includes(key))).toEqual([]);
       for (const key of ['fontFamily', 'fontWeight', 'fontColor', 'textAlign', 'textTransform', 'background', 'textOutline', 'dropShadow', 'glow']) {
@@ -80,7 +80,7 @@ describe('分区与次序', () => {
     }
   });
 
-  it('每张卡显式写出当前词；套上去只写涂装键与词级键', () => {
+  it('each card explicitly writes the current word; when applied, only finish keys and word-level keys are written', () => {
     for (const p of CAPTION_PRESETS) {
       expect(p.body.activeWord.mode, p.id).toBeDefined();
       expect(p.body.preset).toEqual({ id: p.id, revision: 1 });
@@ -92,8 +92,8 @@ describe('分区与次序', () => {
   });
 });
 
-describe('原型 look 换算', () => {
-  it('字体：商用字体换替身，字重后缀去掉', () => {
+describe('prototype look conversion', () => {
+  it('font: commercial fonts replaced with substitutes, weight suffix removed', () => {
     expect(fontFamilyOf('Poppins SemiBold')).toBe('Poppins');
     expect(fontFamilyOf('Poppins Extrabold')).toBe('Poppins');
     expect(fontFamilyOf('The Bold Font')).toBe('Poppins');
@@ -101,7 +101,7 @@ describe('原型 look 换算', () => {
     expect(fontFamilyOf('Playfair Display')).toBe('Playfair Display');
   });
 
-  it('字距 ×0.3、描边 ×1.25、圆角 30×c/55、留白 30×1.4×p/80、行高 ÷100', () => {
+  it('letter spacing ×0.3, stroke ×1.25, corner radius 30×c/55, padding 30×1.4×p/80, line height ÷100', () => {
     const style = lookStyle(look({ spacing: -2, outline: true, outlineW: 11, corners: 30, pad: 20, lh: 115, upper: 'upper' }));
     expect(style.letterSpacing).toBe(-0.6);
     expect(style.textOutline).toEqual({ on: true, color: '#000000', width: 13.75 });
@@ -112,7 +112,7 @@ describe('原型 look 换算', () => {
     expect(style.textTransform).toBe('uppercase');
   });
 
-  it('底板：不透明度进颜色的 alpha，0 就关；整块 / 逐行', () => {
+  it('backdrop: opacity goes into the color\'s alpha, 0 turns it off; whole block / per line', () => {
     expect(lookStyle(look({ bg: '#B6FF60', opacity: 100, plate: 'block' }))).toMatchObject({
       background: true,
       backgroundColor: '#B6FF60FF',
@@ -121,7 +121,7 @@ describe('原型 look 换算', () => {
     expect(lookStyle(look({ opacity: 0 }))).toMatchObject({ background: false, backgroundColor: '#00000000', backgroundStyle: 'wrap' });
   });
 
-  it('有阴影：距离为 0 的是发光，否则是投影（距离、模糊 ÷100，alpha 进不透明度）', () => {
+  it('with shadow: distance 0 is glow, otherwise drop shadow (distance and blur ÷100, alpha goes into opacity)', () => {
     expect(lookStyle(look({ shadow: true, shDist: 0, shBlur: 45, shColor: '#FF25CE80' }))).toMatchObject({
       glow: { on: true, color: '#FF25CE', intensity: 50.2, range: 50 },
       dropShadow: { on: false },
@@ -132,7 +132,7 @@ describe('原型 look 换算', () => {
     });
   });
 
-  it('画廊里的 look 卡：Lime 的替身字体、Vegas 的粉色描边', () => {
+  it('look cards in the gallery: Lime\'s substitute font, Vegas\'s pink stroke', () => {
     expect(preset('lime').style).toMatchObject({ fontFamily: 'Poppins', fontWeight: 900, fontColor: '#232323', backgroundColor: '#B6FF60FF' });
     expect(preset('vegas').style).toMatchObject({
       textOutline: { on: true, color: '#ff98e9', width: 3.75 },
@@ -140,7 +140,7 @@ describe('原型 look 换算', () => {
     });
   });
 
-  it('经典与 Shorts 照旧版 classic_look / shorts_look，不带字号', () => {
+  it('classic and Shorts remain as classic_look / shorts_look, no font size', () => {
     expect(preset('classic').style).toMatchObject({
       fontFamily: 'system',
       bold: true,
@@ -158,7 +158,7 @@ describe('原型 look 换算', () => {
   });
 });
 
-describe('套用', () => {
+describe('apply', () => {
   const body = {
     schema: STUDIO,
     style: {
@@ -175,7 +175,7 @@ describe('套用', () => {
     extra: 1,
   };
 
-  it('全部：涂装整组换掉，落位、字号、次序与正文别的字段不动；覆盖里的涂装清掉', () => {
+  it('all: the whole finish group is replaced; placement, font size, order and other body fields unchanged; finish in overrides is cleared', () => {
     const next = applyPreset(body, preset('karl'), 'all');
     const style = next.style as Json;
     expect(next.extra).toBe(1);
@@ -189,7 +189,7 @@ describe('套用', () => {
     expect(currentPreset(style, ['original', 'translation'])?.id).toBe('karl');
   });
 
-  it('改过一项：仍亮着来源卡，标「已修改」；没记来源卡的旧样式按涂装比', () => {
+  it('one item changed: source card still lit, marked \'modified\'; old styles with no recorded source card are matched by finish', () => {
     const style = applyPreset(body, preset('karl'), 'all').style as Json;
     expect(presetModified(style, preset('karl'), ['original'])).toBe(false);
     const changed = { ...style, fontColor: '#123456' };
@@ -201,7 +201,7 @@ describe('套用', () => {
     expect(currentPreset({ ...preset('lime').style }, ['original'])?.id).toBe('lime');
   });
 
-  it('套卡把当前词与动效一起换掉：旧的 anim / karaokeColor / textMotion 清掉', () => {
+  it('applying a card replaces the current word and motion too: old anim / karaokeColor / textMotion cleared', () => {
     const old = { ...body, style: { ...body.style, anim: { name: 'Bounce' }, karaokeColor: '#FF0000', textMotion: { version: 1, in: { preset: 'pop' } } } };
     const style = applyPreset(old, preset('studio-ktv'), 'all').style as Json;
     expect(style.anim).toBeUndefined();
@@ -210,14 +210,14 @@ describe('套用', () => {
     expect(style.stylePreset).toEqual({ id: 'studio-ktv', revision: 1 });
   });
 
-  it('角标：当前词模式；倒鸭子标排版模式', () => {
+  it('corner badge: current word mode; inverted-duck badge uses layout mode', () => {
     expect(presetBadge(preset('classic'))).toBe('color');
     expect(presetBadge(preset('studio-ktv'))).toBe('sweep');
     expect(presetBadge(preset('phantom'))).toBe('box');
     expect(presetBadge(preset('daoyazi'))).toBe('sequence');
   });
 
-  it('只给译文：写进 transStyle，根上有、卡上没有的涂装键写 null，原文不动', () => {
+  it('translation only: written into transStyle, finish keys present at root but not on the card written as null, original untouched', () => {
     const next = applyPreset(body, preset('lime'), 'translation');
     const style = next.style as Json;
     expect(style.fontFamily).toBe('Inter');
@@ -231,13 +231,13 @@ describe('套用', () => {
     expect(presetOn(style, preset('lime'), ['original', 'translation'])).toBe(false);
   });
 
-  it('只给原文：覆盖里的字号留着', () => {
+  it('original only: font size in overrides is kept', () => {
     const style = applyPreset(body, preset('ali'), 'original').style as Json;
     expect((style.origStyle as Json).fontSize).toBe(28);
     expect(presetOn(style, preset('ali'), ['original'])).toBe(true);
   });
 
-  it('默认预设（规范 §5.6）是「经典」涂装，逗号句号照原文画；画廊里亮的是「经典」', () => {
+  it('default preset (spec §5.6) is the \'classic\' finish, comma and period drawn as in the original; the gallery lights \'classic\'', () => {
     const style = DEFAULT_CAPTION_STYLE.style as Json;
     expect(DEFAULT_CAPTION_STYLE.schema).toBe(STUDIO);
     expect(style).toEqual({ ...preset('classic').style, wordAnimation: CLASSIC_WORD_ANIMATION, punct: true });
@@ -256,14 +256,14 @@ describe('套用', () => {
     expect(presetModified(style, preset('classic'), ['original', 'translation'])).toBe(false);
   });
 
-  it('没有样式文档时从空样式套', () => {
+  it('without a style document, apply from an empty style', () => {
     const next = applyPreset(undefined, preset('classic'), 'all');
     expect(next.schema).toBe(STUDIO);
     expect(presetOn(next.style as Json, preset('classic'), ['original'])).toBe(true);
   });
 });
 
-describe('套到哪份样式', () => {
+describe('which style document to apply to', () => {
   const chip = (key: string, kind: CaptionChip['kind'], extra: Partial<CaptionChip> = {}): CaptionChip => ({
     key,
     documentId: key,
@@ -277,20 +277,20 @@ describe('套到哪份样式', () => {
     ...extra,
   });
 
-  it('选中那条的样式；它没有时取画面上别的在用的；拿下的不算', () => {
+  it('the style of the selected line; if it has none, takes another one in use on screen; removed ones don\'t count', () => {
     const chips = [chip('a', 'original'), chip('b', 'translation', { styleDocumentId: 's' }), chip('c', 'original', { state: 'shelved', styleDocumentId: 'z' })];
     expect(galleryTarget(chips, 'a')).toEqual({ styleDocumentId: 's', kinds: ['original', 'translation'] });
     expect(galleryTarget([chip('a', 'original')], null)).toEqual({ styleDocumentId: null, kinds: ['original'] });
   });
 
-  it('另一条用着别的样式：不算进这份管的行', () => {
+  it('another line uses a different style: not counted in the lines this one manages', () => {
     const chips = [chip('a', 'original', { styleDocumentId: 's' }), chip('b', 'translation', { styleDocumentId: 'u' })];
     expect(galleryTarget(chips, 'a')).toEqual({ styleDocumentId: 's', kinds: ['original'] });
     expect(galleryTarget(chips, 'b')).toEqual({ styleDocumentId: 'u', kinds: ['translation'] });
   });
 });
 
-describe('事务', () => {
+describe('transaction', () => {
   const base = { enabled: true, locked: false, paintOrder: 0, followPolicy: { kind: 'sequence-fixed' as const } };
   const track = (id: string, locked = false): Track => ({
     id,
@@ -329,14 +329,14 @@ describe('事务', () => {
     [caption('c1', 't1'), caption('c2', 't1', { locked: true }), caption('c3', 't2'), caption('c4', 't1', { styleDocumentId: 's' })],
   );
 
-  it('没有样式文档：新建一份，挂给还没有样式、没锁的字幕', () => {
+  it('no style document: create one, attached to captions without a style that are not locked', () => {
     expect(captionStyleOperations(seq, undefined, { schema: STUDIO, style: {} })).toEqual([
       { type: 'putDocument', ref: 'style', kind: 'caption-style', name: '字幕样式', body: { schema: STUDIO, style: {} } },
       { type: 'setCaptionStyle', sequenceId: 'seq', itemId: 'c1', styleDocument: { ref: 'style' } },
     ]);
   });
 
-  it('有样式文档：写新版本，没样式的也挂上', () => {
+  it('style document exists: write a new version, attach to unstyled ones too', () => {
     const record: DocumentRecord = { id: 's', kind: 'caption-style', name: '字幕样式', currentRevision: '1', revisions: {} };
     expect(captionStyleOperations(seq, record, { schema: STUDIO, style: {} })).toEqual([
       { type: 'putDocument', documentId: 's', kind: 'caption-style', body: { schema: STUDIO, style: {} } },
@@ -345,8 +345,8 @@ describe('事务', () => {
   });
 });
 
-describe('缩略图', () => {
-  it('居中、固定字号；双语按次序给样张：上行英文、下行中文', () => {
+describe('thumbnail', () => {
+  it('centered, fixed font size; bilingual gives samples in order: English on top, Chinese below', () => {
     const root = { x: 10, y: 90, width: 40, fontSize: 60, verticalAlign: 'bottom', scale: 2, transStyle: { fontSize: 50, fontColor: '#fff' } };
     const scene = thumbScene(root, ['original', 'translation'], { width: 160, height: 66 }, 13);
     expect(scene.root).toMatchObject({ x: 50, y: 50, verticalAlign: 'center', fontSize: 30 });
@@ -368,10 +368,10 @@ describe('缩略图', () => {
   });
 });
 
-describe('属性页改词级维度', () => {
+describe('property page changes word-level dimension', () => {
   const sweep = (b: CaptionStyleBody): CaptionStyleBody => ({ ...b, activeWord: { ...b.activeWord, mode: 'sweep', color: '#FF0000' } });
 
-  it('全部套的卡：写根样式，只动词级键；来源卡留着、标「已修改」', () => {
+  it('apply to all cards: write root style, change only word-level keys; source card kept, marked \'modified\'', () => {
     const style = applyPreset(undefined, preset('classic'), 'all').style as Json;
     const next = editWordStyle(style, 'original', true, sweep);
     for (const key of PAINT_KEYS) expect(next[key], key).toEqual(style[key]);
@@ -381,7 +381,7 @@ describe('属性页改词级维度', () => {
     expect(presetModified(next, preset('classic'), ['original'])).toBe(true);
   });
 
-  it('只套给原文的卡：写进 origStyle；译文双语时写进 transStyle、按译文编译', () => {
+  it('card applied to original only: written into origStyle; bilingual translation written into transStyle, compiled by translation', () => {
     const style = applyPreset(applyPreset(undefined, preset('classic'), 'all'), preset('karl'), 'original').style as Json;
     const next = editWordStyle(style, 'original', true, sweep);
     expect((next.origStyle as Json).textMotion).toMatchObject({ karaoke: { color: '#FF0000' } });

@@ -4,8 +4,8 @@ import { exportLanes, laneOn, soundLanes } from './export-lanes.ts';
 
 const docs = { d1: documentRecord('d1', 'caption', '访谈字幕', { language: 'zh' }) };
 
-describe('导出清单（只读，跟着时间轴）', () => {
-  it('字幕在上、画面、音频在下；带声音的画面轨也算一条声音', () => {
+describe('export list (read-only, follows the timeline)', () => {
+  it('subtitles on top, then video, audio below; a video track with sound also counts as one audio track', () => {
     const seq = sequence(
       [track('v', 'visual', 0), track('a', 'audio', 0), track('s', 'subtitle', 0)],
       [videoItem('i1', 'v', 0, 300), videoItem('i2', 'v', 300, 300), audioItem('m', 'a', 0, 10), captionItem('c', 's', 'd1')],
@@ -19,7 +19,7 @@ describe('导出清单（只读，跟着时间轴）', () => {
     expect(soundLanes(lanes).map((l) => l.kind)).toEqual(['visual', 'audio']);
   });
 
-  it('隐藏只关画面、静音只关声音；独显 / 独听让别的轨关掉', () => {
+  it('hide turns off only video, mute turns off only sound; solo video / solo audio turns other tracks off', () => {
     const seq = sequence(
       [
         track('v1', 'visual', 0, { muted: true }),
@@ -42,12 +42,12 @@ describe('导出清单（只读，跟着时间轴）', () => {
     expect(laneOn(byTrack.a!)).toBe(false);
   });
 
-  it('画面在、声音被静音：理由写声音那一半', () => {
+  it('video on, sound muted: the reason is stated for the sound half', () => {
     const seq = sequence([track('v', 'visual', 0, { muted: true })], [videoItem('i1', 'v', 0, 300)]);
     expect(exportLanes(seq, {})[0]).toMatchObject({ picture: true, sound: false, reason: '声音：时间轴上静音' });
   });
 
-  it('没有启用实例的轨道不列', () => {
+  it('tracks with no enabled instances are not listed', () => {
     const seq = sequence([track('v', 'visual', 0), track('a', 'audio', 0)], [videoItem('i1', 'v', 0, 300, { enabled: false })]);
     expect(exportLanes(seq, {})).toEqual([]);
   });

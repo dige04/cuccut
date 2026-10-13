@@ -9,7 +9,7 @@ import { derivePiModels, parseModelReference, piThinkingLevels } from './pi-mode
 import { PiDriver, PI_MIN_VERSION } from './pi-driver.ts';
 
 /** Pi Driver probe against a fake pi: installation, version, login state (judged by the available model table), the model table, and its cache. */
-describe('PiDriver.probe（假 pi）', () => {
+describe('PiDriver.probe (fake pi)', () => {
   let dir: string;
   let fake: FakePi;
   let driver: PiDriver;
@@ -24,7 +24,7 @@ describe('PiDriver.probe（假 pi）', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('有可用模型：ready，模型表是 provider/id，默认模型与推理档位来自 get_state 与 thinkingLevelMap', async () => {
+  it('models available: ready, model table is provider/id, default model and reasoning levels come from get_state and thinkingLevelMap', async () => {
     const probe = await driver.probe();
     expect(probe).toMatchObject({
       id: 'pi',
@@ -79,7 +79,7 @@ describe('PiDriver.probe（假 pi）', () => {
     expect(fake.commands('prompt')).toEqual([]);
   });
 
-  it('没有可用模型：signed-out，提示 /login 或 API 密钥', async () => {
+  it('no models available: signed-out, prompts for /login or an API key', async () => {
     fake.scenario({ models: [], current: null });
     const probe = await driver.probe();
     expect(probe.state).toBe('signed-out');
@@ -87,7 +87,7 @@ describe('PiDriver.probe（假 pi）', () => {
     expect(probe.models).toEqual([]);
   });
 
-  it('模型表缓存 10 分钟，同时到来的探测共用一次；force 重新起进程', async () => {
+  it('model table is cached for 10 minutes, concurrent probes share one request; force starts the process again', async () => {
     await Promise.all([driver.probe(), driver.probe()]);
     await driver.probe();
     expect(fake.commands('get_available_models')).toHaveLength(1);
@@ -95,7 +95,7 @@ describe('PiDriver.probe（假 pi）', () => {
     expect(fake.commands('get_available_models')).toHaveLength(2);
   });
 
-  it('没装：not-installed；太旧：outdated；起不来：error 带 stderr', async () => {
+  it('not installed: not-installed; too old: outdated; fails to start: error with stderr', async () => {
     fake.scenario({ installed: false });
     expect((await driver.probe()).state).toBe('not-installed');
     fake.scenario({ installed: true, version: '0.62.0' });
@@ -108,28 +108,28 @@ describe('PiDriver.probe（假 pi）', () => {
     expect(broken.detail).toContain('fake pi failed to start');
   });
 
-  it('手动指定的可执行文件不存在：not-installed', async () => {
+  it('manually specified executable does not exist: not-installed', async () => {
     const probe = await driver.probe({ executable: path.join(dir, 'nope', 'pi') });
     expect(probe.state).toBe('not-installed');
     expect(probe.detail).toContain('不存在');
   });
 });
 
-describe('pi 模型与版本的解析', () => {
-  it('--version 输出', () => {
+describe('parsing pi models and version', () => {
+  it('--version output', () => {
     expect(parsePiVersion('1.0.4\n')).toBe('1.0.4');
     expect(parsePiVersion('pi v0.84.4')).toBe('0.84.4');
     expect(parsePiVersion('nothing')).toBeNull();
   });
 
-  it('provider/id 与 provider:id', () => {
+  it('provider/id and provider:id', () => {
     expect(parseModelReference('anthropic/claude-sonnet-5')).toEqual({ provider: 'anthropic', id: 'claude-sonnet-5' });
     expect(parseModelReference('openrouter/meta/llama')).toEqual({ provider: 'openrouter', id: 'meta/llama' });
     expect(parseModelReference('ollama:qwen3')).toEqual({ provider: 'ollama', id: 'qwen3' });
     expect(parseModelReference('gpt-5')).toEqual({ provider: null, id: 'gpt-5' });
   });
 
-  it('推理档位：null 表示不支持，xhigh / max 要映射里有；默认 medium 不支持时先往上取', () => {
+  it('reasoning levels: null means unsupported, xhigh / max must be in the mapping; when default medium is unsupported, move up first', () => {
     const base = { id: 'm', provider: 'p', reasoning: true };
     expect(piThinkingLevels({ ...base })).toEqual({ efforts: ['off', 'minimal', 'low', 'medium', 'high'], defaultEffort: 'medium' });
     expect(piThinkingLevels({ ...base, thinkingLevelMap: { medium: null, low: null, max: 'max' } })).toEqual({
@@ -143,7 +143,7 @@ describe('pi 模型与版本的解析', () => {
     expect(piThinkingLevels({ ...base, reasoning: false })).toEqual({ efforts: [], defaultEffort: null });
   });
 
-  it('get_state 的模型是 unknown（没配模型）时没有默认', () => {
+  it('no default when get_state\'s model is unknown (no model configured)', () => {
     const models = derivePiModels([{ id: 'a', provider: 'p' }], { provider: 'unknown', id: 'unknown' });
     expect(models[0]!.isDefault).toBe(false);
   });

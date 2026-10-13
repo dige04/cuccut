@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { burnedCaptionLanguages, DEFAULT_LOUDNESS_TARGET, transcriptStamp } from './exports.ts';
 import { methodParamSchemas } from './schemas.ts';
 
-describe('导出设置', () => {
-  it('用途适用于每种导出，省略保持交付语义，拒绝未知用途', () => {
+describe('export settings', () => {
+  it('purpose applies to every export, omitting it keeps delivery semantics, unknown purposes rejected', () => {
     const create = methodParamSchemas['exports.create'];
     for (const [kind, format] of [['video', 'mp4'], ['audio', 'wav'], ['subtitles', 'srt'], ['transcript', 'txt'], ['portable', 'cuccut'], ['project', 'xmeml']]) {
       for (const purpose of [undefined, 'deliverable', 'preview']) {
@@ -14,7 +14,7 @@ describe('导出设置', () => {
     }
   });
 
-  it('exports.renderText 只接受字幕与文稿的设置，参数与 exports.create 的同一种设置相同', () => {
+  it('exports.renderText only accepts subtitle and transcript settings, with the same parameters as the same kind of setting in exports.create', () => {
     const render = methodParamSchemas['exports.renderText'];
     expect(
       render.safeParse({
@@ -44,7 +44,7 @@ describe('导出设置', () => {
     ).toBe(false);
   });
 
-  it('文稿的选项（文首、章节、说话人、跳过剪掉的部分）只属于文稿，字幕不接受', () => {
+  it('transcript options (heading, chapters, speakers, skipping cut parts) belong only to transcripts, subtitles don\'t accept them', () => {
     const create = methodParamSchemas['exports.create'];
     const options = { frontmatter: true, chapters: true, speakers: false, skipCut: false };
     expect(create.safeParse({ videoId: 'v', settings: { kind: 'transcript', format: 'md', ...options } }).success).toBe(true);
@@ -58,7 +58,7 @@ describe('导出设置', () => {
     }
   });
 
-  it('文稿的时刻：不满一小时 mm:ss，满一小时 hh:mm:ss（小时两位），向下取整，负数与非数是 00:00', () => {
+  it('transcript timestamps: under one hour mm:ss, one hour or more hh:mm:ss (two-digit hours), rounded down, negative and non-numeric are 00:00', () => {
     expect([0, 59.9, 65.9, 3599.99, 3600, 3725.2, 36000, 360000, -2, Number.NaN].map(transcriptStamp)).toEqual([
       '00:00',
       '00:59',
@@ -73,7 +73,7 @@ describe('导出设置', () => {
     ]);
   });
 
-  it('响度目标：默认值合 schema；积分响度 −70 到 0 LUFS、真峰值 −20 到 0 dBTP，不接受别的字段', () => {
+  it('loudness target: default value matches the schema; integrated loudness -70 to 0 LUFS, true peak -20 to 0 dBTP, other fields not accepted', () => {
     const create = methodParamSchemas['exports.create'];
     const audio = (loudness: unknown) => create.safeParse({ videoId: 'v', settings: { kind: 'audio', format: 'wav', loudness } }).success;
     expect(audio(DEFAULT_LOUDNESS_TARGET)).toBe(true);
@@ -85,7 +85,7 @@ describe('导出设置', () => {
     expect(audio(null)).toBe(true);
   });
 
-  it('成片的字幕语言：画进画面的字幕轨从上到下、去重；隐藏、别的轨独显、停用的实例与没写语言的文档不算', () => {
+  it('subtitle languages of the finished video: burned-in subtitle tracks top to bottom, deduplicated; hidden tracks, tracks shown separately, disabled instances and documents without a language don\'t count', () => {
     const track = (id: string, order: number, extra: Record<string, unknown> = {}) => ({
       id,
       order,

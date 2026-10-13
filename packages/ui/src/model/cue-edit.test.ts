@@ -24,14 +24,14 @@ const body = {
   ],
 };
 
-describe('字幕列表', () => {
-  it('按开始时刻排好；没有 ID 的按下标补上', () => {
+describe('caption list', () => {
+  it('sorted by start time; those without IDs get an index-based ID', () => {
     expect(listCues(body)!.cues.map((cue) => cue.id)).toEqual(['a', 'b', 'c']);
     expect(listCues({ ...body, cues: [{ start: 0, end: 1000, text: 'x' }] })!.cues[0]).toMatchObject({ id: 'cue-0', start: 0, end: 1 });
     expect(listCues({ schema: 'other' })).toBeNull();
   });
 
-  it('改字：别的字段原样带走，词级时间扔掉；没变就不算', () => {
+  it('editing text: other fields carried over as-is, word-level timing discarded; no change, no count', () => {
     const { body: next, changed } = setCueTexts(
       body,
       new Map([
@@ -45,15 +45,15 @@ describe('字幕列表', () => {
   });
 });
 
-describe('拆与并', () => {
-  it('拆分点按字数比例，两边各留 0.3 秒，落在 0.01 秒上', () => {
+describe('split and merge', () => {
+  it('split point proportional to character count, each side keeps 0.3 seconds, rounded to 0.01 seconds', () => {
     expect(splitTicks(0, 3000, 1, 2, 1000)).toBe(1000);
     expect(splitTicks(0, 3000, 1, 99, 1000)).toBe(300);
     expect(splitTicks(0, 500, 1, 9, 1000)).toBe(250);
     expect(splitTicks(0, 1_000_000, 1, 2, 1_000_000)).toBe(330_000);
   });
 
-  it('在光标处拆成两句：新句 ID 不重复，段首只留在前一句', () => {
+  it('splitting at the cursor into two sentences: new sentence ID not duplicated, paragraph start stays only with the previous sentence', () => {
     const result = splitCue(body, 'a', 'Hello world', 5)!;
     expect(result.id).toBe('a-1');
     const cues = listCues(result.body)!.cues;
@@ -70,7 +70,7 @@ describe('拆与并', () => {
     expect(splitCue(splitCue(result.body, 'a', 'Hel lo', 3)!.body, 'a', 'x y', 1)!.id).toBe('a-3');
   });
 
-  it('并入上一句：文字按语种接、时间接上；说话人不同或到头了不并', () => {
+  it('merge into previous: text joined by language, times joined; not merged when the speaker differs or at the end', () => {
     const up = mergeCue(body, 'b', null, -1);
     expect(up).toMatchObject({ id: 'a', caret: 11 });
     if ('refused' in up) throw new Error('refused');
@@ -88,22 +88,22 @@ describe('拆与并', () => {
   });
 });
 
-describe('阅读速度与语言', () => {
-  it('中日韩用更低的阈值', () => {
+describe('reading speed and language', () => {
+  it('CJK uses a lower threshold', () => {
     expect(readingSpeed('一二三四五六七八九十', 1, 'zh-CN')).toEqual({ value: 10, level: 'warn' });
     expect(readingSpeed('一二三四五六七八九十', 1, 'en')).toEqual({ value: 10, level: 'ok' });
     expect(readingSpeed('abcdefghijklmnopqrstuvw', 1, undefined).level).toBe('bad');
     expect(readingSpeed('  ', 1, 'zh').level).toBe('none');
   });
 
-  it('按字猜语言', () => {
+  it('guess language by characters', () => {
     expect(guessLanguage('今天天气不错，我们出去走走。')).toBe('zh');
     expect(guessLanguage('こんにちは、元気ですか')).toBe('ja');
     expect(guessLanguage('Hello there')).toBeUndefined();
   });
 });
 
-describe('导入字幕文件', () => {
+describe('import subtitle file', () => {
   const track = (id: string, order: number, kind: Track['kind'], extra: Partial<Track> = {}): Track => ({
     id,
     order,
@@ -133,7 +133,7 @@ describe('导入字幕文件', () => {
     { index: 2, start: 2.5, end: 4.01, text: '第二句' },
   ];
 
-  it('正文是序列时钟、毫秒刻度', () => {
+  it('body is sequence clock, millisecond scale', () => {
     expect(captionBodyOf(cues)).toEqual({
       schema: 'cuccut.caption/1',
       clock: 'sequence',
@@ -145,7 +145,7 @@ describe('导入字幕文件', () => {
     });
   });
 
-  it('有空着的字幕轨就放进去，没有就新建一条；实例从 0 到最后一句结束', () => {
+  it('placed onto an empty caption track if one exists, otherwise a new one is created; instance runs from 0 to the end of the last sentence', () => {
     const ops = importCaptionOperations(
       sequence([track('s0', 1, 'subtitle', { locked: true }), track('s1', 2, 'subtitle')]),
       cues,

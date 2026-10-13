@@ -28,8 +28,8 @@ afterEach(() => {
 const entry = { name: 'cuccut', url: 'http://127.0.0.1:47620/mcp', token: 'bct_secret' };
 const readJson = (file: string) => JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, any>;
 
-describe('宿主的位置', () => {
-  it('skills 目录：默认在 HOME 下，CLAUDE_CONFIG_DIR、CODEX_HOME 生效', () => {
+describe('host locations', () => {
+  it('skills directory: defaults under HOME, CLAUDE_CONFIG_DIR and CODEX_HOME take effect', () => {
     expect(hostSkillsDir('claude-code', env)).toBe(path.join(home, '.claude', 'skills'));
     expect(hostSkillsDir('codex', env)).toBe(path.join(home, '.codex', 'skills'));
     expect(hostSkillsDir('cursor', env)).toBe(path.join(home, '.cursor', 'skills'));
@@ -41,15 +41,15 @@ describe('宿主的位置', () => {
     expect(mcpHostConfig('codex', custom).file).toBe(path.join(home, 'cx', 'config.toml'));
   });
 
-  it('--agent 只认四个宿主', () => {
+  it('--agent only accepts the four hosts', () => {
     expect(parseAgentHost('codex')).toBe('codex');
     expect(() => parseAgentHost(undefined)).toThrow(/缺少 --agent/);
     expect(() => parseAgentHost('vscode')).toThrow(/不认识的宿主「vscode」/);
   });
 });
 
-describe('写 MCP 配置', () => {
-  it('Claude Code：令牌进 settings.json 的 env，.claude.json 只写引用；其余键原样保留', () => {
+describe('writes MCP config', () => {
+  it('Claude Code: token goes into the env of settings.json, .claude.json only writes a reference; other keys are kept as they are', () => {
     fs.writeFileSync(
       path.join(home, '.claude.json'),
       JSON.stringify({ theme: 'dark', mcpServers: { other: { type: 'stdio', command: 'x' } } }),
@@ -71,7 +71,7 @@ describe('写 MCP 配置', () => {
     expect(hasMcpEntry('claude-code', env)).toBe(true);
   });
 
-  it('Claude Code：PATH 上有 claude 时交给它（已有条目先删再加）', () => {
+  it('Claude Code: hands off to claude when it is on PATH (existing entries are removed before adding)', () => {
     const calls: string[][] = [];
     writeMcpEntry('claude-code', env, entry, { runClaude: (args) => calls.push(args) });
     expect(calls).toEqual([
@@ -94,7 +94,7 @@ describe('写 MCP 配置', () => {
     expect(calls.map((args) => args[1])).toEqual(['remove', 'add']);
   });
 
-  it('Cursor 与 Gemini CLI：明文请求头，新文件只给自己读写', () => {
+  it('Cursor and Gemini CLI: plaintext request headers, new file readable and writable only by its owner', () => {
     expect(writeMcpEntry('cursor', env, entry).tokenStorage).toBe('plaintext');
     const cursorFile = path.join(home, '.cursor', 'mcp.json');
     expect(readJson(cursorFile).mcpServers.cuccut).toEqual({ url: entry.url, headers: { Authorization: 'Bearer bct_secret' } });
@@ -110,7 +110,7 @@ describe('写 MCP 配置', () => {
     if (process.platform !== 'win32') expect(fs.statSync(geminiFile).mode & 0o777).toBe(0o644);
   });
 
-  it('读不懂的 JSON 报错，不覆盖', () => {
+  it('unreadable JSON reports an error and does not overwrite', () => {
     const file = path.join(home, '.cursor', 'mcp.json');
     fs.mkdirSync(path.dirname(file));
     fs.writeFileSync(file, '{ broken');
@@ -118,7 +118,7 @@ describe('写 MCP 配置', () => {
     expect(fs.readFileSync(file, 'utf8')).toBe('{ broken');
   });
 
-  it('Codex：只换 [mcp_servers.cuccut] 那一段（含子表），其余原样', () => {
+  it('Codex: only replaces the [mcp_servers.cuccut] section (including sub-tables), the rest stays as it is', () => {
     const file = path.join(home, '.codex', 'config.toml');
     fs.mkdirSync(path.dirname(file));
     const before = [
@@ -154,7 +154,7 @@ describe('写 MCP 配置', () => {
     );
   });
 
-  it('Codex：没有这一段时接在末尾', () => {
+  it('Codex: appends the section at the end when it is missing', () => {
     const file = path.join(home, '.codex', 'config.toml');
     fs.mkdirSync(path.dirname(file));
     fs.writeFileSync(file, 'model = "gpt-5"\n');
@@ -166,8 +166,8 @@ describe('写 MCP 配置', () => {
   });
 });
 
-describe('旧条目的令牌与配置的格式', () => {
-  it('认出各宿主旧条目用的令牌与它的客户端 id', () => {
+describe('token and config format of old entries', () => {
+  it('recognizes the token used by each host\'s old entry and its client id', () => {
     expect(readMcpEntryToken('cursor', env)).toBeNull();
     writeMcpEntry('cursor', env, { ...entry, token: 'mcl_a.c2VjcmV0' });
     expect(readMcpEntryToken('cursor', env)).toBe('mcl_a.c2VjcmV0');
@@ -191,7 +191,7 @@ describe('旧条目的令牌与配置的格式', () => {
     expect(clientIdOfToken('no-dot')).toBeNull();
   });
 
-  it('JSON 沿用原来的缩进、换行符与结尾换行', () => {
+  it('JSON keeps the original indentation, line endings and trailing newline', () => {
     const file = path.join(home, '.cursor', 'mcp.json');
     fs.mkdirSync(path.dirname(file));
     fs.writeFileSync(file, '{\n    "mcpServers": {\n        "other": { "url": "y" }\n    }\n}');
@@ -209,7 +209,7 @@ describe('旧条目的令牌与配置的格式', () => {
     expect(jsonIndent('{\n  "a": 1\n}')).toBe(2);
   });
 
-  it('Claude Code：写条目失败时把 settings.json 里的旧令牌放回去', () => {
+  it('Claude Code: when writing the entry fails, restores the old token in settings.json', () => {
     fs.mkdirSync(path.join(home, '.claude'));
     const settingsFile = path.join(home, '.claude', 'settings.json');
     fs.writeFileSync(settingsFile, JSON.stringify({ env: { CUCCUT_MCP_TOKEN: 'mcl_old.c2VjcmV0' } }, null, 2));

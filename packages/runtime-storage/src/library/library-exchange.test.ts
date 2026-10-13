@@ -47,8 +47,8 @@ async function rejection(promise: Promise<unknown> | (() => unknown)): Promise<R
 
 const codeOf = (error: RpcError) => (error.details as { code?: string } | undefined)?.code;
 
-describe('术语表的 Markdown', () => {
-  it('两种术语表往返不变（含转义）', () => {
+describe('glossary Markdown', () => {
+  it('both glossary formats round-trip unchanged (including escaping)', () => {
     for (const content of [transcription, translation]) {
       const text = encodeGlossaryMarkdown(content);
       expect(text.startsWith('---\nformat: cuccut.glossary\nversion: 1\n')).toBe(true);
@@ -57,7 +57,7 @@ describe('术语表的 Markdown', () => {
     expect(encodeGlossaryMarkdown(transcription)).toContain('| CucCut | 宝卡特, 包\\, cut, 包\\、卡 |');
   });
 
-  it('手写的文件：表头大小写、表格前的标题、全角分隔符', () => {
+  it('hand-written file: header case, heading before table, full-width separators', () => {
     const text = [
       '---',
       'format: cuccut.glossary',
@@ -107,14 +107,14 @@ describe('术语表的 Markdown', () => {
       '翻译没有目标语言',
       '---\nformat: cuccut.glossary\nversion: 1\nkind: translation\nname: x\n---\n| Source | Target | Note |\n| --- | --- | --- |\n',
     ],
-  ])('拒绝坏文件：%s', async (_label, text) => {
+  ])('rejects bad file: %s', async (_label, text) => {
     const error = await rejection(() => decodeGlossaryMarkdown(text, 'x'));
     expect(error.code).toBe('invalid-request');
     expect(codeOf(error)).toBe('LIBRARY_FORMAT_INVALID');
   });
 });
 
-describe('交换文件的导入与导出', () => {
+describe('import and export of exchange files', () => {
   let dir: string;
   let store: LibraryStore;
 
@@ -147,7 +147,7 @@ describe('交换文件的导入与导出', () => {
     ).entry;
   };
 
-  it('按内容识别，不看扩展名', async () => {
+  it('identified by content, not extension', async () => {
     // Glossary inside a .png, image inside a .md.
     const glossary = await importFile('terms.png', encodeGlossaryMarkdown(translation));
     expect(glossary).toMatchObject({ library: 'glossaries', content: translation });
@@ -180,7 +180,7 @@ describe('交换文件的导入与导出', () => {
     expect(codeOf(error)).toBe('LIBRARY_FORMAT_INVALID');
   });
 
-  it('术语表与品牌条目导出后再导入，内容相同；目标存在时不覆盖', async () => {
+  it('glossary and brand entries exported then imported have the same content; not overwritten when the target exists', async () => {
     const g = (await store.put({ library: 'glossaries', content: transcription })).entry;
     const target = path.join(dir, 'out.md');
     expect(await writeLibraryExport(store, g, target)).toMatchObject({
@@ -204,7 +204,7 @@ describe('交换文件的导入与导出', () => {
     expect(await fs.readFile(imageFile)).toEqual(PNG);
   });
 
-  it('音色包：往返，摘要、长度与类型不符时拒绝', async () => {
+  it('voice pack: round-trip; rejected when digest, length or type does not match', async () => {
     const ref = path.join(dir, 'ref');
     await fs.writeFile(ref, WAV);
     const voice = (

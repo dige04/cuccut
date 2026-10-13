@@ -30,7 +30,7 @@ import { bundle, fixtureView } from './models-test-fixtures.ts';
 const QWEN = 'qwen3-asr-0.6b@mlx-4bit';
 
 describe('localGroups', () => {
-  it('转写与对齐都算语音识别；文件齐全的算已安装，not-installed 的在可下载里', () => {
+  it('transcription and alignment both count as speech recognition; complete files count as installed, not-installed ones are in downloadable', () => {
     const bundles = [
       bundle(QWEN, { state: 'ready' }),
       bundle('aligner@mlx', { capability: 'align', state: 'not-installed', reason: 'missing-manifest' }),
@@ -42,7 +42,7 @@ describe('localGroups', () => {
     expect(groups.available.map((b) => b.bundleId)).toEqual(['aligner@mlx']);
   });
 
-  it('分离的模型包归音源分离，不进语音识别', () => {
+  it('separated model packs belong to audio separation, not speech recognition', () => {
     const bundles = [bundle(QWEN, { state: 'ready' }), bundle('htdemucs-ft@mlx', { capability: 'separate', state: 'installed' })];
     expect(bundleCategory(bundles[1]!)).toBe('sep');
     expect(localGroups(bundles, 'sep').installed.map((b) => b.bundleId)).toEqual(['htdemucs-ft@mlx']);
@@ -50,7 +50,7 @@ describe('localGroups', () => {
     expect(bundleFacts(bundles[1]!)).toMatch(/^分离 · MLX/);
   });
 
-  it('可选组件缺了不影响已安装；权重没下、只有可选组件的仍在可下载里', () => {
+  it('missing optional components do not affect installed; weights not downloaded and with only optional components still in downloadable', () => {
     const component = (name: string, state: 'installed' | 'missing', optional = false) => ({
       component: name,
       repo: `test/${name}`,
@@ -73,13 +73,13 @@ describe('localGroups', () => {
     expect(bundleFacts(missingRequired)).toBe('转写 · Core ML · metal');
   });
 
-  it('其它类还没有本地模型包', () => {
+  it('other categories do not yet have local model packs', () => {
     expect(localGroups([bundle(QWEN)], 'tts')).toEqual({ installed: [], available: [] });
   });
 });
 
 describe('bundleChips', () => {
-  it('默认在前，再写 Worker 状态', () => {
+  it('default first, then write Worker status', () => {
     expect(bundleChips(bundle(QWEN, { state: 'ready' }), true)).toEqual([
       { label: '默认', tone: 'accent' },
       { label: '已加载', tone: 'positive' },
@@ -87,7 +87,7 @@ describe('bundleChips', () => {
     expect(bundleChips(bundle(QWEN), false)).toEqual([]);
   });
 
-  it('不可用写原因；从没装过的不加标签，装过但文件不对的提示一下', () => {
+  it('unavailable: write the reason; never-installed gets no label; installed but files wrong gets a hint', () => {
     expect(bundleChips(bundle(QWEN, { state: 'error', reason: 'resource' }), false)).toEqual([{ label: '已停用', tone: 'negative' }]);
     expect(bundleChips(bundle(QWEN, { state: 'not-installed', reason: 'missing-manifest' }), false)).toEqual([]);
     expect(bundleChips(bundle(QWEN, { state: 'not-installed', reason: 'size-mismatch' }), false)).toEqual([
@@ -95,7 +95,7 @@ describe('bundleChips', () => {
     ]);
   });
 
-  it('装好了、缺可选组件：写缺哪几件；必需组件缺、跑不了的不写', () => {
+  it('installed with missing optional components: write which ones are missing; required missing and cannot run: not written', () => {
     const part = (component: string, patch: Partial<ModelComponentStatus> = {}): ModelComponentStatus => ({
       component,
       repo: `r/${component}`,
@@ -119,14 +119,14 @@ describe('bundleChips', () => {
 });
 
 describe('bundleFacts / canReenable', () => {
-  it('事实：用途 · 后端 · 设备 · 说明', () => {
+  it('facts: purpose · backend · device · note', () => {
     expect(bundleFacts(bundle(QWEN))).toBe('转写 · MLX · metal');
     expect(bundleFacts(bundle(QWEN, { capability: 'align', backend: 'candle', device: 'cpu', detail: '缺少 model.safetensors' }))).toBe(
       '对齐 · Candle · cpu · 缺少 model.safetensors',
     );
   });
 
-  it('只有停用与加载失败的能重新启用', () => {
+  it('only disabled and failed-to-load can be re-enabled', () => {
     expect(canReenable({ state: 'error', reason: 'resource' })).toBe(true);
     expect(canReenable({ state: 'error', reason: 'load-failed' })).toBe(true);
     expect(canReenable({ state: 'error', reason: 'unsupported' })).toBe(false);
@@ -137,13 +137,13 @@ describe('bundleFacts / canReenable', () => {
 describe('localDefaultPicker', () => {
   const bundles = [bundle(QWEN), bundle('other@mlx', { state: 'not-installed' }), bundle('aligner@mlx', { capability: 'align' })];
 
-  it('没设默认：勾「自动选择」，并说出它此刻落到哪只；菜单里只有装好的转写模型包', () => {
+  it('no default set: check "auto select" and say which one it currently resolves to; menu lists only installed transcription model packs', () => {
     const picker = localDefaultPicker(fixtureView(), bundles);
     expect(picker).toMatchObject({ selectedKey: AUTO_DEFAULT, other: null, autoUses: QWEN });
     expect(picker.items.map((i) => i.key)).toEqual([AUTO_DEFAULT, QWEN]);
   });
 
-  it('默认是本机模型包：勾它；没装的照样列出来', () => {
+  it('default is a local model pack: check it; not-installed ones are still listed', () => {
     const view = fixtureView();
     view.transcribe.default = { providerId: 'local', modelId: QWEN };
     expect(localDefaultPicker(view, bundles).selectedKey).toBe(QWEN);
@@ -153,23 +153,23 @@ describe('localDefaultPicker', () => {
     expect(picker.items.at(-1)).toEqual({ key: 'other@mlx', label: 'other@mlx（未安装）' });
   });
 
-  it('默认是云端模型：这里不勾任何一项，如实写出是哪只', () => {
+  it('default is a cloud model: check no item here, state honestly which one it is', () => {
     const view = fixtureView();
     view.transcribe.default = { providerId: 'openai', modelId: 'whisper-1' };
     view.transcribe.effective = { providerId: 'openai', modelId: 'whisper-1', source: 'user-default' };
     expect(localDefaultPicker(view, bundles)).toMatchObject({ selectedKey: null, other: 'OpenAI · whisper-1', autoUses: null });
   });
 
-  it('选项 → setDefault 参数', () => {
+  it('option → setDefault parameter', () => {
     expect(localDefaultChoice(AUTO_DEFAULT)).toEqual({ providerId: null });
     expect(localDefaultChoice(QWEN)).toEqual({ providerId: 'local', modelId: QWEN });
   });
 
-  it('视图还没到时也能画', () => {
+  it('can be drawn even before the view arrives', () => {
     expect(localDefaultPicker(null, []).selectedKey).toBe(AUTO_DEFAULT);
   });
 
-  it('音源分离也有「自动选择」：出厂默认落到装好的分离模型包；菜单只列分离的模型包，设了默认就勾它', () => {
+  it('audio separation also has "auto select": factory default resolves to an installed separation model pack; menu lists only separation model packs, and checks it when set as default', () => {
     const SEP = 'htdemucs-ft@mlx';
     const all = [...bundles, bundle(SEP, { capability: 'separate', label: 'HTDemucs-FT' })];
     const view = fixtureView();
@@ -187,17 +187,17 @@ describe('localDefaultPicker', () => {
   });
 });
 
-describe('图像生成的本地模型', () => {
+describe('local models for image generation', () => {
   const IMAGE = 'qwen-image-2.1@mlx-4bit';
   const image = (patch: Parameters<typeof bundle>[1] = {}) => bundle(IMAGE, { capability: 'image', label: 'Qwen-Image-2.1', ...patch });
 
-  it('文生图的模型包在图像生成一类；事实写「生图」', () => {
+  it('text-to-image model packs are in the image generation category; facts write "image generation"', () => {
     expect(bundleCategory(image())).toBe('image');
     expect(localGroups([bundle(QWEN), image()], 'image').installed.map((b) => b.bundleId)).toEqual([IMAGE]);
     expect(bundleFacts(image())).toBe('生图 · MLX · metal');
   });
 
-  it('默认菜单没有「自动选择」：没设时什么都不勾，只列装好的；设了本地的就勾它；设的那只不可选时按未设置算', () => {
+  it('default menu has no "auto select": when unset nothing is checked, only installed ones are listed; when a local one is set, check it; when the set one is unselectable, treated as unset', () => {
     const bundles = [image(), bundle('half@mlx', { capability: 'image', state: 'not-installed' }), bundle(QWEN)];
     const view = fixtureView();
     const unset = localDefaultPicker(view, bundles, 'image');
@@ -210,7 +210,7 @@ describe('图像生成的本地模型', () => {
   });
 });
 
-describe('许可行', () => {
+describe('license row', () => {
   const lic = (name: string, summary = name): ModelLicense => ({ name, url: `https://x.test/${name}`, commercialUse: true, summary });
   const comp = (component: string, license?: ModelLicense): ModelComponentStatus => ({
     component,
@@ -223,7 +223,7 @@ describe('许可行', () => {
   });
   const parts = (lines: ReturnType<typeof licenseLines>) => lines.map((l) => `${l.part}:${l.license.name}`);
 
-  it('权重的许可，再加上与它不同或要署名的组件', () => {
+  it('license of the weights, plus components that differ from it or require attribution', () => {
     const apache = lic('Apache-2.0');
     const moss = bundle('moss', { components: [comp('asr'), comp('aligner', lic('Apache-2.0')), comp('speaker', lic('CC-BY-4.0'))] });
     expect(parts(licenseLines(moss, apache))).toEqual(['模型权重:Apache-2.0', '声纹嵌入:CC-BY-4.0']);
@@ -240,7 +240,7 @@ describe('许可行', () => {
     expect(parts(licenseLines(bundle('y', { components: [comp('other', lic('BSD'))] }), null))).toEqual(['other:BSD']);
   });
 
-  it('只有一条权重许可时不写「模型权重 · 」，多条或组件的写名字', () => {
+  it('with only one weight license, do not write "model weights · "; with multiple licenses or components, write the names', () => {
     const one = licenseLines(bundle('a'), lic('MIT', '可商用'));
     expect(one.map((l) => licenseLineText(l, one.length))).toEqual(['MIT · 可商用']);
     const two = licenseLines(bundle('b', { components: [comp('speaker', lic('CC-BY-4.0', '须署名'))] }), lic('MIT', '可商用'));
@@ -250,7 +250,7 @@ describe('许可行', () => {
   });
 });
 
-describe('公共组件', () => {
+describe('shared components', () => {
   const part = (component: string, state: 'installed' | 'missing', patch: Partial<ModelComponentStatus> = {}): ModelComponentStatus => ({
     component,
     repo: `test/${component}`,
@@ -302,7 +302,7 @@ describe('公共组件', () => {
   });
   const byComponent = (shared: ReturnType<typeof sharedComponents>, name: string) => shared.find((c) => c.component === name)!;
 
-  it('同一类里两只及以上声明的组件才算公共，按 VAD、对齐器、声纹的顺序；只有一只用的不算', () => {
+  it('components declared by two or more in the same category count as shared, in the order VAD, aligner, speaker embedding; one used alone does not count', () => {
     const shared = sharedComponents([whisper(), pack, qwen(), moss()], 'asr');
     expect(shared.map((c) => c.component)).toEqual(['vad', 'aligner', 'speaker']);
     expect(byComponent(shared, 'aligner').users.map((b) => b.bundleId)).toEqual(['moss@mlx', 'qwen@mlx', 'whisper@coreml']);
@@ -314,7 +314,7 @@ describe('公共组件', () => {
     expect(sharedComponents([bundle('a'), bundle('b')], 'asr')).toEqual([]);
   });
 
-  it('同一个仓库换了角色或版本不算同一个组件（IndexTTS2 的权重与 IndexTTS 2.5 借来的辅助件）', () => {
+  it('same repo with a different role or version does not count as the same component (IndexTTS2 weights and auxiliary files borrowed from IndexTTS 2.5)', () => {
     const v2 = bundle('index-tts2', { capability: 'synthesize', components: [part('tts', 'installed', { repo: 'IndexTeam/IndexTTS-2' })] });
     const v25 = bundle('index-tts2.5', {
       capability: 'synthesize',
@@ -325,20 +325,20 @@ describe('公共组件', () => {
     expect(sharedComponents([old, moss()], 'asr')).toEqual([]);
   });
 
-  it('自己的文件在盘上：装好了，或者公共组件以外有装好的组件；只有别人装上的公共组件不算', () => {
+  it('own files on disk: installed, or some installed component beyond the shared ones; shared components installed only by others do not count', () => {
     const shared = sharedComponents([moss(), whisper(), qwen()], 'asr');
     expect(hasOwnFiles(moss(), shared)).toBe(true);
     expect(hasOwnFiles(whisper(), shared)).toBe(true);
     expect(hasOwnFiles(qwen(), shared)).toBe(false);
   });
 
-  it('分组看自己的文件：权重在、缺必需分词器的 Whisper 在已安装，只有别人装上 VAD 的 Qwen 与说话人区分包在可下载', () => {
+  it('grouped by own files: Whisper with weights present and a required tokenizer missing counts as installed; Qwen with VAD installed only by others and the speaker diarization pack are downloadable', () => {
     const groups = localGroups([moss(), whisper(), qwen(), pack], 'asr');
     expect(groups.installed.map((b) => b.bundleId)).toEqual(['moss@mlx', 'whisper@coreml']);
     expect(groups.available.map((b) => b.bundleId)).toEqual(['qwen@mlx', 'speaker-diarization@mlx']);
   });
 
-  it('权重在、缺组件的行：补齐的是缺的全部，只挂一个「缺 …」标签；在下载的不挂，自己一件没有的不挂', () => {
+  it('rows with weights present but missing components: completion covers all missing ones, attaching only one "missing …" label; rows being downloaded get none, and rows with none of their own get none', () => {
     expect(missingParts(whisper(), true).map((c) => c.component)).toEqual(['aligner', 'tokenizer']);
     expect(missingParts(whisper())).toEqual([]);
     expect(bundleChips(whisper(), false, true)).toEqual([{ label: '缺 Forced aligner、分词器', tone: 'notice' }]);
@@ -347,7 +347,7 @@ describe('公共组件', () => {
     expect(bundleChips(qwen({ reason: 'incomplete' }), false, false)).toEqual([]);
   });
 
-  it('装齐还要下多少：缺的组件之和，可选的也算；有不知道大小的或没有组件信息时为 null', () => {
+  it('remaining download to complete: sum of missing components, optional ones included; null when some size is unknown or there is no component info', () => {
     expect(needBytes(moss())).toBe(350);
     expect(needBytes(whisper())).toBe(305);
     expect(needBytes(whisper(null))).toBeNull();
@@ -355,7 +355,7 @@ describe('公共组件', () => {
     expect(needBytes(bundle('b', { components: [part('asr', 'installed')] }))).toBe(0);
   });
 
-  it('缺的组件借一只文件在盘上、用到它的模型补齐，挑要下得最少的；一样多按 ID，大小不知道的排后面', () => {
+  it('missing components borrow a file on disk, complete with the models that use it, choosing the one with the least download; ties by ID, unknown sizes placed last', () => {
     const pick = (bundles: Parameters<typeof sharedComponents>[0], name: string) => {
       const shared = sharedComponents(bundles, 'asr');
       const action = sharedAction(byComponent(shared, name), shared);
@@ -377,7 +377,7 @@ describe('公共组件', () => {
     expect(pick([moss(), whisper(), qwen({ install: { ...downloading, jobId: null, state: 'paused' } })], 'aligner')).toBe('get:whisper@coreml');
   });
 
-  it('副题数文件在盘上的模型；缺着又有这种模型要用的算待补全', () => {
+  it('subtitle counts models with files on disk; with missing ones that need such a model, counts as pending completion', () => {
     const shared = sharedComponents([moss(), whisper(), qwen(), pack], 'asr');
     expect(sharedUsage(byComponent(shared, 'aligner'), shared)).toEqual({ live: 2, all: 3 });
     expect(sharedUsage(byComponent(shared, 'speaker'), shared)).toEqual({ live: 1, all: 2 });
@@ -387,7 +387,7 @@ describe('公共组件', () => {
     expect(sharedRepair(fresh)).toEqual([]);
   });
 
-  it('组件名与说明：列了的给译名与一句说明，没列的用组件名、不写说明', () => {
+  it('component names and notes: when listed, give the translated name and one sentence note; when not listed, use the component name without a note', () => {
     expect(componentLabel('tokenizer')).toBe('分词器');
     expect(componentDesc('vad')).toBe('切出有人说话的段落');
     expect(componentLabel('mystery')).toBe('mystery');
@@ -395,7 +395,7 @@ describe('公共组件', () => {
   });
 });
 
-describe('音乐模型包的 audio.cpp 引擎组件', () => {
+describe('audio.cpp engine component of the music model pack', () => {
   const MUSIC = 'yue2-3b@audio-cpp-q8';
   const APACHE: ModelLicense = { name: 'Apache-2.0', url: 'https://github.com/0xShug0/audio.cpp/blob/main/LICENSE', commercialUse: true, summary: '可商用' };
   const NC: ModelLicense = { name: 'CC-BY-NC-4.0', url: 'https://example.test/nc', commercialUse: false, summary: '只许非商业用途' };
@@ -430,18 +430,18 @@ describe('音乐模型包的 audio.cpp 引擎组件', () => {
       components: [weights(w), engine(e)],
     });
 
-  it('来源：发布页的写「GitHub 发布 仓库 标签」，标签不截断；模型仓库的写 仓库@提交前 7 位', () => {
+  it('source: release page written as "GitHub release repo tag", tag not truncated; model repo written as repo@first 7 characters of the commit', () => {
     expect(componentSource(engine('missing'))).toBe('GitHub 发布 0xShug0/audio.cpp v0.9.1');
     expect(componentSource(weights('installed'))).toBe('audio-cpp/Yue2-3B-GGUF@cca74d8');
     expect(componentLabel('audiocpp-engine')).toBe('audio.cpp 引擎');
     expect(componentDesc('audiocpp-engine')).toMatch(/Vulkan/);
   });
 
-  it('只有这一只模型用引擎：不进公共组件区，跟着模型的行走', () => {
+  it('only this one model uses the engine: not in the shared components area, follows the model\'s row', () => {
     expect(sharedComponents([music('installed', 'missing')], 'music')).toEqual([]);
   });
 
-  it('权重在、缺引擎：在已安装，挂「缺 audio.cpp 引擎」，补齐只下引擎；下载按钮的体积就是引擎的', () => {
+  it('weights present, engine missing: installed, attach "missing audio.cpp engine", completion downloads only the engine; the download button size is the engine\'s', () => {
     const half = music('installed', 'missing');
     expect(localGroups([half], 'music').installed).toEqual([half]);
     expect(missingParts(half, hasOwnFiles(half, [])).map((c) => c.component)).toEqual(['audiocpp-engine']);
@@ -451,7 +451,7 @@ describe('音乐模型包的 audio.cpp 引擎组件', () => {
     expect(bundleActions(half, true)).toMatchObject({ install: false, complete: true, repair: true, remove: true });
   });
 
-  it('都没装：下载的体积含引擎；只有引擎（发布页组件或自建引擎）不算自己的文件在盘上', () => {
+  it('nothing installed: download size includes the engine; engine only (release page component or self-built engine) does not count as own files on disk', () => {
     const fresh = music('missing', 'missing');
     expect(needBytes(fresh)).toBe(4_632_000_000);
     expect(bundleActions(fresh, hasOwnFiles(fresh, []))).toMatchObject({ install: true, complete: false });
@@ -461,7 +461,7 @@ describe('音乐模型包的 audio.cpp 引擎组件', () => {
     expect(needBytes(engineOnly)).toBe(4_600_000_000);
   });
 
-  it('许可：权重的，再加上引擎的 Apache-2.0', () => {
+  it('license: that of the weights, plus the engine\'s Apache-2.0', () => {
     const lines = licenseLines(music('installed', 'installed'), NC);
     expect(lines.map((l) => [l.part, l.license.name])).toEqual([
       ['模型权重', 'CC-BY-NC-4.0'],

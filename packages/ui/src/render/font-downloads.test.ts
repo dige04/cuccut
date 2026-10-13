@@ -17,7 +17,7 @@ function face(query: FontFaceQuery, source: 'local' | 'downloaded'): Face {
   } as unknown as Face;
 }
 
-test('下载中的 face 隔一会儿再问，直到下载结束；本机有的、失败的照原样合进结果', async () => {
+test('a face still downloading is asked again after a while, until the download ends; faces available locally or that failed are merged into the result as is', async () => {
   const local = { family: 'PingFang SC', weight: 400, italic: false };
   const lobster = { family: 'Lobster', weight: 400, italic: false };
   const broken = { family: 'Broken Font', weight: 700, italic: false };
@@ -60,7 +60,7 @@ test('下载中的 face 隔一会儿再问，直到下载结束；本机有的�
   expect(result.missing).toEqual([{ ...broken, reason: 'download-failed', code: 'FONT_DOWNLOAD_SOURCE' }]);
 });
 
-test('等的时候下载被取消：再问不带 download，Runtime 答「可以下载」就照回退字体画，不重新开始', async () => {
+test('download cancelled while waiting: asks again without download; if the Runtime answers \'can download\', it draws with the fallback font as before and does not restart', async () => {
   const lobster = { family: 'Lobster', weight: 400, italic: false };
   const asked: boolean[] = [];
   const answers: FontsResolveResult[] = [
@@ -76,7 +76,7 @@ test('等的时候下载被取消：再问不带 download，Runtime 答「可以
   expect(result).toEqual({ faces: [], missing: [{ ...lobster, reason: 'downloadable' }] });
 });
 
-test('等到上限就不再等：还在下载的记为 downloading，照回退字体画', async () => {
+test('waiting stops at the limit: faces still downloading are marked downloading and drawn with the fallback font', async () => {
   const lobster = { family: 'Lobster', weight: 400, italic: false };
   let calls = 0;
   const resolve = downloadingResolve(
@@ -88,7 +88,7 @@ test('等到上限就不再等：还在下载的记为 downloading，照回退�
   expect(result).toEqual({ faces: [], missing: [{ ...lobster, reason: 'downloading' }] });
 });
 
-test('同一批里先到的 face 先交出去：本机的不等下载，等的时候先下载完的也先给', async () => {
+test('within a batch, faces that arrive first are handed over first: local ones do not wait for downloads, and while waiting, those finished downloading first are also given first', async () => {
   const local = { family: 'PingFang SC', weight: 400, italic: false };
   const lobster = { family: 'Lobster', weight: 400, italic: false };
   const mashan = { family: 'Ma Shan Zheng', weight: 400, italic: false };
@@ -110,7 +110,7 @@ test('同一批里先到的 face 先交出去：本机的不等下载，等的�
   expect(result.faces.map((f) => f.family)).toEqual(['PingFang SC', 'Lobster', 'Ma Shan Zheng']);
 });
 
-test('没有要等的就不分批交：结果一次给', async () => {
+test('when nothing needs to wait, results are not split into batches: all given at once', async () => {
   const local = { family: 'PingFang SC', weight: 400, italic: false };
   const partial: unknown[] = [];
   const resolve = downloadingResolve(async () => ({ faces: [face(local, 'local')], missing: [] }), { sleep: async () => {} });

@@ -4,7 +4,7 @@ import { useHelp } from './help-store.ts';
 describe('useHelp', () => {
   beforeEach(() => useHelp.setState({ isOpen: false, session: 0, origin: null }));
 
-  it('每次打开算一次新的会话；开着时再打开不重置', () => {
+  it('each open counts as a new session; opening again while open does not reset', () => {
     useHelp.getState().open();
     expect(useHelp.getState()).toMatchObject({ isOpen: true, session: 1 });
     useHelp.getState().open();
@@ -15,7 +15,7 @@ describe('useHelp', () => {
     expect(useHelp.getState().session).toBe(2);
   });
 
-  it('没有 DOM 时不记来源', () => {
+  it('no source is recorded when there is no DOM', () => {
     useHelp.getState().open(null);
     expect(useHelp.getState().origin).toBeNull();
   });

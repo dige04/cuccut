@@ -44,7 +44,7 @@ describe('JsonLineWorker', () => {
 
   const start = () => JsonLineWorker.start({ command: process.execPath, args: [script] });
 
-  it('请求与响应、错误体、事件按行顺序到达', async () => {
+  it('requests and responses, error bodies, events arrive in line order', async () => {
     const worker = await start();
     expect(worker.pid).toBeGreaterThan(0);
     expect(await worker.request('echo', { a: 1 })).toEqual({ a: 1 });
@@ -63,7 +63,7 @@ describe('JsonLineWorker', () => {
     expect(worker.alive).toBe(false);
   });
 
-  it('超时只拒绝这一个请求；子进程退出拒绝在途请求并通知 onExit', async () => {
+  it('a timeout rejects only that one request; child process exit rejects in-flight requests and notifies onExit', async () => {
     const worker = await start();
     await expect(worker.request('hang', {}, { timeoutMs: 50 })).rejects.toBeInstanceOf(WorkerTimeoutError);
     const pending = worker.request('hang', {});
@@ -77,7 +77,7 @@ describe('JsonLineWorker', () => {
     await expect(worker.request('echo', {})).rejects.toBeInstanceOf(WorkerExitedError);
   });
 
-  it('kill 立即结束，标为预期的退出', async () => {
+  it('kill ends immediately, marked as an expected exit', async () => {
     const worker = await start();
     const pending = worker.request('hang', {});
     const exit = await worker.kill();
@@ -85,7 +85,7 @@ describe('JsonLineWorker', () => {
     await expect(pending).rejects.toBeInstanceOf(WorkerExitedError);
   });
 
-  it('stderr 只保留尾部', async () => {
+  it('stderr keeps only the tail', async () => {
     const worker = await JsonLineWorker.start({ command: process.execPath, args: [script], stderrLimitBytes: 1024 });
     await worker.request('spam', { bytes: 100_000 });
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -95,7 +95,7 @@ describe('JsonLineWorker', () => {
     await worker.close();
   });
 
-  it('可执行文件不存在时启动失败', async () => {
+  it('start fails when the executable does not exist', async () => {
     await expect(JsonLineWorker.start({ command: path.join(dir, 'missing') })).rejects.toBeInstanceOf(WorkerSpawnError);
   });
 });

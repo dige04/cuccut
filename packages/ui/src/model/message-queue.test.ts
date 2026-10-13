@@ -27,14 +27,14 @@ function memoryQueue(initial: QueuedMessage[]): QueueAccess & { items: QueuedMes
 
 const ids = (queue: { items: QueuedMessage[] }) => queue.items.map((m) => m.id);
 
-describe('排队的增删改', () => {
-  it('入队排在最后；删除只删那一条', () => {
+describe('queue add, remove and edit', () => {
+  it('enqueue goes last; delete removes only that one', () => {
     const queue = enqueueMessage(enqueueMessage([], msg('a')), msg('b'));
     expect(queue.map((m) => m.id)).toEqual(['a', 'b']);
     expect(removeQueuedMessage(queue, 'a').map((m) => m.id)).toEqual(['b']);
   });
 
-  it('编辑改文字，图片跟着；改成空的就删掉（图片不能单独发）', () => {
+  it('edit changes text, image follows; emptying it deletes it (an image cannot be sent alone)', () => {
     const image = { id: 'img', kind: 'image' as const, fileName: 'x.png', mimeType: 'image/png', size: 1 };
     const queue = [msg('a'), msg('b'), { ...msg('c'), attachments: [image] }];
     expect(editQueuedMessage(queue, 'a', '  新的  ')[0]!.text).toBe('新的');
@@ -43,7 +43,7 @@ describe('排队的增删改', () => {
     expect(editQueuedMessage(queue, 'c', '').map((m) => m.id)).toEqual(['a', 'b']);
   });
 
-  it('读回持久化的条目时认形状', () => {
+  it('recognize shape when reading back persisted entries', () => {
     expect(isQueuedMessage(msg('a'))).toBe(true);
     expect(isQueuedMessage({ id: 'a', text: 'x' })).toBe(false);
     expect(isQueuedMessage({ ...msg('a'), attachments: [{}] })).toBe(false);
@@ -75,7 +75,7 @@ describe('排队的增删改', () => {
     expect(isQueuedMessage({ ...msg('a'), designSystemAnnotations: system })).toBe(false);
   });
 
-  it('读回时把只能点一个 skill 时存的 skill 换成 skills', () => {
+  it('when reading back, replace a skill stored from the single-skill-pick form with skills', () => {
     expect(readQueuedMessage({ ...msg('a'), skill: { id: 'old' } })).toEqual({ ...msg('a'), skills: [{ id: 'old' }] });
     expect(readQueuedMessage({ ...msg('a'), skills: [{ id: 'x' }, { id: 'y' }] })).toEqual({ ...msg('a'), skills: [{ id: 'x' }, { id: 'y' }] });
     expect(readQueuedMessage({ ...msg('a'), skill: { id: 'x' }, skills: [{ id: 'x' }, { id: 'y' }] })?.skills).toEqual([{ id: 'x' }, { id: 'y' }]);
@@ -84,7 +84,7 @@ describe('排队的增删改', () => {
   });
 });
 
-describe('立即发送（steer 与回退）', () => {
+describe('send immediately (steer and fallback)', () => {
   const transport = (status: SteerStatus | Error, send = vi.fn(async () => {})) => ({
     steer: vi.fn(async () => {
       if (status instanceof Error) throw status;
@@ -93,7 +93,7 @@ describe('立即发送（steer 与回退）', () => {
     send,
   });
 
-  it('steered：移出队列，不再另发', async () => {
+  it('steered: removed from the queue, not sent again', async () => {
     const queue = memoryQueue([msg('a'), msg('b')]);
     const t = transport('steered');
     expect(await sendQueuedNow(queue, t, 'b')).toEqual({ status: 'steered' });
@@ -101,7 +101,7 @@ describe('立即发送（steer 与回退）', () => {
     expect(t.send).not.toHaveBeenCalled();
   });
 
-  it('unsupported：留在队列（放到队首，任务结束后先发它），不发送', async () => {
+  it('unsupported: stays in queue (moved to the front, sent first after the task ends), not sent', async () => {
     const queue = memoryQueue([msg('a'), msg('b')]);
     const t = transport('unsupported');
     expect(await sendQueuedNow(queue, t, 'b')).toEqual({ status: 'deferred' });
@@ -109,7 +109,7 @@ describe('立即发送（steer 与回退）', () => {
     expect(t.send).not.toHaveBeenCalled();
   });
 
-  it('no-active-turn：直接 send 这一条', async () => {
+  it('no-active-turn: send this one directly', async () => {
     const queue = memoryQueue([msg('a'), msg('b')]);
     const t = transport('no-active-turn');
     expect(await sendQueuedNow(queue, t, 'a')).toEqual({ status: 'sent' });
@@ -118,7 +118,7 @@ describe('立即发送（steer 与回退）', () => {
     expect(ids(queue)).toEqual(['b']);
   });
 
-  it('send 出错：放回队首，其他的不动也不发', async () => {
+  it('send error: put back at the front, others untouched and not sent', async () => {
     const queue = memoryQueue([msg('a'), msg('b')]);
     const t = transport(
       'no-active-turn',
@@ -131,7 +131,7 @@ describe('立即发送（steer 与回退）', () => {
     expect(t.send).toHaveBeenCalledTimes(1);
   });
 
-  it('steer 出错同样放回；已经不在队列里的什么也不做', async () => {
+  it('steer error likewise puts it back; an item no longer in the queue does nothing', async () => {
     const queue = memoryQueue([msg('a')]);
     expect(await sendQueuedNow(queue, transport(new Error('断开')), 'a')).toEqual({ status: 'failed', error: '断开' });
     expect(ids(queue)).toEqual(['a']);
@@ -140,7 +140,7 @@ describe('立即发送（steer 与回退）', () => {
     expect(t.steer).not.toHaveBeenCalled();
   });
 
-  it('移出发生在等待之前：同一条不会被自动发送再取到', async () => {
+  it('removal happens before waiting: the same item is not auto-sent and picked up again', async () => {
     const queue = memoryQueue([msg('a'), msg('b')]);
     let release: (status: SteerStatus) => void = () => {};
     const pending = sendQueuedNow(queue, { steer: () => new Promise((r) => (release = r)), send: async () => {} }, 'a');
@@ -151,8 +151,8 @@ describe('立即发送（steer 与回退）', () => {
   });
 });
 
-describe('任务结束后自动发送', () => {
-  it('只发队首一条', async () => {
+describe('auto-send after the task ends', () => {
+  it('sends only the first item in the queue', async () => {
     const queue = memoryQueue([msg('a'), msg('b')]);
     const send = vi.fn(async () => {});
     expect(await sendQueueHead(queue, { send })).toEqual({ status: 'sent' });
@@ -160,7 +160,7 @@ describe('任务结束后自动发送', () => {
     expect(ids(queue)).toEqual(['b']);
   });
 
-  it('失败放回队首，不重试', async () => {
+  it('on failure put back at the front, not retried', async () => {
     const queue = memoryQueue([msg('a'), msg('b')]);
     const send = vi.fn(async () => {
       throw new Error('没连上');
@@ -170,7 +170,7 @@ describe('任务结束后自动发送', () => {
     expect(ids(queue)).toEqual(['a', 'b']);
   });
 
-  it('空队列什么也不做', async () => {
+  it('empty queue does nothing', async () => {
     const send = vi.fn(async () => {});
     expect(await sendQueueHead(memoryQueue([]), { send })).toEqual({ status: 'missing' });
     expect(send).not.toHaveBeenCalled();

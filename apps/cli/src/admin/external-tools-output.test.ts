@@ -49,10 +49,10 @@ const status = (patch: Partial<ExternalToolStatus> = {}): ExternalToolStatus => 
   ...patch,
 });
 
-describe('cuccut external-tools 的参数', () => {
+describe('cuccut external-tools arguments', () => {
   const resolve = (file: string) => `/cwd/${file}`;
 
-  it('子命令与用法错误', () => {
+  it('subcommands and usage errors', () => {
     expect(parseToolsArgs([], {}, resolve)).toEqual({ kind: 'list' });
     expect(parseToolsArgs(['detect'], {}, resolve)).toEqual({ kind: 'detect' });
     expect(parseToolsArgs(['detect', 'yt-dlp'], {}, resolve)).toEqual({ kind: 'detect', name: 'yt-dlp' });
@@ -74,8 +74,8 @@ describe('cuccut external-tools 的参数', () => {
   });
 });
 
-describe('外部工具的输出', () => {
-  it('状态：版本与来源、路径、同意、原因与补救', () => {
+describe('external tools output', () => {
+  it('status: version and source, path, consent, reason and remedy', () => {
     expect(formatToolStatus(status())).toEqual([
       'yt-dlp  未安装  从链接导入',
       '  同意：还没有同意（用之前要同意：cuccut external-tools consent yt-dlp）',
@@ -102,7 +102,7 @@ describe('外部工具的输出', () => {
     expect(formatToolList([])).toEqual(['没有登记的外部工具']);
   });
 
-  it('下载说明：来源、版本、大小、许可；清单不全时说明原因', () => {
+  it('download notice: source, version, size, license; explains the reason when the manifest is incomplete', () => {
     const lines = formatToolOffer('yt-dlp', offer);
     expect(lines[0]).toBe('将下载 yt-dlp 2026.07.04');
     expect(lines).toContain('  来源：https://mirror.example.com/yt-dlp/2026.07.04/yt-dlp_macos');
@@ -114,7 +114,7 @@ describe('外部工具的输出', () => {
     expect(installToolPrompt('yt-dlp', offer)).toBe('同意下载并使用 yt-dlp 2026.07.04（36.0 MB）？[y/N] ');
   });
 
-  it('更新：状态里的办法、确认前的说明、不能代为执行时交给终端', () => {
+  it('update: method from status, notice before confirmation, hands off to the terminal when it cannot run on its behalf', () => {
     const plan = {
       method: 'homebrew' as const,
       argv: ['/opt/homebrew/bin/brew', 'upgrade', 'yt-dlp'],
@@ -158,7 +158,7 @@ describe('外部工具的输出', () => {
     ]);
   });
 
-  it('更新：逐行跟随输出，截掉的行用一行说明代替；结束时说更新到了哪个版本', () => {
+  it('update: follows output line by line, a one-line note replaces truncated lines; at the end, states which version it was updated to', () => {
     const run = (output: string, lines: number) => ({ line: 'brew upgrade yt-dlp', output, lines, truncated: false, exitCode: null });
     // Print only lines that have been fully written. The unfinished line is held until the end.
     expect(newCommandLines(run('a\nb\nprogress 50%', 2), 0, false)).toEqual({ lines: ['a', 'b'], printed: 2 });

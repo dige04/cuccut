@@ -16,7 +16,7 @@ const toolResult = (id: string, content: unknown, isError = false, toolUseResult
 const looksLikeDiff = (text: string) => /^@@ .* @@/m.test(text) || (/^--- \S/m.test(text) && /^\+\+\+ \S/m.test(text));
 
 describe('ClaudeItemMapper', () => {
-  it('同一条 API 消息里的多个文字块按先后认领流式时的 id', () => {
+  it('multiple text blocks in one API message claim the streaming ids in order', () => {
     const mapper = new ClaudeItemMapper('turn_1');
     const events = [
       stream({ type: 'message_start', message: { id: 'msg_1' } }),
@@ -38,7 +38,7 @@ describe('ClaudeItemMapper', () => {
     expect(mapper.openTools().map((t) => t.id)).toEqual(['toolu_1']);
   });
 
-  it('省略了内容的思考不留空条目；没流式过的文字也照样成条', () => {
+  it('thinking with omitted content leaves no empty entry; text that was never streamed still becomes an entry', () => {
     const mapper = new ClaudeItemMapper('turn_1');
     expect(mapper.map(assistant('msg_1', [{ type: 'thinking', thinking: '', signature: 's' }]))).toEqual([]);
     expect(mapper.map(assistant('msg_2', [{ type: 'text', text: '直接给全文' }]))).toMatchObject([
@@ -46,7 +46,7 @@ describe('ClaudeItemMapper', () => {
     ]);
   });
 
-  it('工具结果：拒绝过的记 declined，中断中出错的记 interrupted；不认识的 tool_use_id 忽略', () => {
+  it('tool results: rejected ones are recorded as declined, errors during interruption as interrupted; unknown tool_use_id is ignored', () => {
     const mapper = new ClaudeItemMapper('turn_1');
     mapper.map(assistant('m', [
       { type: 'tool_use', id: 'a', name: 'Write', input: { file_path: '/w/a' } },
@@ -61,7 +61,7 @@ describe('ClaudeItemMapper', () => {
     expect(mapper.map(toolResult('zzz', 'x'))).toEqual([]);
   });
 
-  describe('改文件的工具：成功时 output 是从输入合成的 unified diff', () => {
+  describe('file-editing tools: on success, output is a unified diff synthesized from the input', () => {
     const run = (name: string, input: Record<string, unknown>, result: unknown, isError = false, toolUseResult?: unknown) => {
       const mapper = new ClaudeItemMapper('turn_1', Date.now, '/work/video');
       const started = mapper.map(assistant('m', [{ type: 'tool_use', id: 't1', name, input }]));
@@ -70,7 +70,7 @@ describe('ClaudeItemMapper', () => {
       return { started: started[0], item: done.item };
     };
 
-    it('Edit：一个块，旧文本记 -、新文本记 +；路径相对工作目录，detail 不变', () => {
+    it('Edit: one block, old text as -, new text as +; paths relative to the working directory, detail unchanged', () => {
       const { started, item } = run(
         'Edit',
         { file_path: '/work/video/notes/plan.md', old_string: '标题\n旧的一行\n', new_string: '标题\n新的一行\n补一行\n' },
@@ -84,7 +84,7 @@ describe('ClaudeItemMapper', () => {
       expect(started).toMatchObject({ type: 'item.started', item: { output: null, detail: 'Edit /work/video/notes/plan.md' } });
     });
 
-    it('结构化结果带补丁时按它拼：真实行号与上下文', () => {
+    it('when the structured result carries a patch, builds from it: real line numbers and context', () => {
       const input = { file_path: '/work/video/notes/plan.md', old_string: '旧的一行', new_string: '新的一行' };
       const structuredPatch = [
         { oldStart: 3, oldLines: 3, newStart: 3, newLines: 4, lines: [' 标题', '-旧的一行', '+新的一行', '+补一行', ' 结尾'] },
@@ -96,14 +96,14 @@ describe('ClaudeItemMapper', () => {
       expect(looksLikeDiff(item.output!)).toBe(true);
     });
 
-    it('Write 覆盖带补丁时有完整的 ---/+++ 头', () => {
+    it('Write overwrite with a patch has full ---/+++ headers', () => {
       const structuredPatch = [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, lines: ['-old', '+new'] }];
       const input = { file_path: '/work/video/a.txt', content: 'new\n' };
       const { item } = run('Write', input, 'updated', false, { type: 'update', structuredPatch });
       expect(item.output).toBe(['--- a/a.txt', '+++ b/a.txt', '@@ -1,1 +1,1 @@', '-old', '+new'].join('\n'));
     });
 
-    it('补丁为空、形状不对或指向别的文件时，回退到从输入合成', () => {
+    it('when the patch is empty, malformed or points to another file, falls back to synthesizing from the input', () => {
       const input = { file_path: '/work/video/a.txt', old_string: 'x', new_string: 'y' };
       const fallback = ['--- a/a.txt', '+++ b/a.txt', '@@ -0,0 +0,0 @@', '-x', '+y'].join('\n');
       const hunk = { oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, lines: ['-x', '+y'] };
@@ -118,7 +118,7 @@ describe('ClaudeItemMapper', () => {
       }
     });
 
-    it('Write 新建：旧侧是 /dev/null，全是 + 行', () => {
+    it('Write create: old side is /dev/null, all + lines', () => {
       const { item } = run(
         'Write',
         { file_path: '/work/video/a.txt', content: 'one\ntwo\n' },
@@ -128,14 +128,14 @@ describe('ClaudeItemMapper', () => {
       expect(looksLikeDiff(item.output!)).toBe(true);
     });
 
-    it('Write 覆盖已有文件：拿不到旧内容，只有 +++ 头与新内容；结构化结果优先于确认文字', () => {
+    it('Write overwrite of an existing file: old content unavailable, only a +++ header and new content; the structured result takes precedence over the confirmation text', () => {
       const input = { file_path: '/elsewhere/b.txt', content: 'x' };
       const { item } = run('Write', input, 'File created successfully at: /elsewhere/b.txt', false, { type: 'update' });
       expect(item.output).toBe(['+++ /elsewhere/b.txt', '@@ -0,0 +1,1 @@', '+x'].join('\n'));
       expect(looksLikeDiff(item.output!)).toBe(true);
     });
 
-    it('MultiEdit：每个 edit 一个块', () => {
+    it('MultiEdit: one block per edit', () => {
       const { item } = run(
         'MultiEdit',
         {
@@ -151,14 +151,14 @@ describe('ClaudeItemMapper', () => {
       expect(item.output!.match(/^@@ /gm)).toHaveLength(2);
     });
 
-    it('没有工作目录时文件头用原路径', () => {
+    it('without a working directory, file headers use the original path', () => {
       const mapper = new ClaudeItemMapper('turn_1');
       const input = { file_path: '/w/a', old_string: 'x', new_string: 'y' };
       mapper.map(assistant('m', [{ type: 'tool_use', id: 't1', name: 'Edit', input }]));
       expect(mapper.map(toolResult('t1', 'ok'))).toMatchObject([{ item: { output: '--- /w/a\n+++ /w/a\n@@ -0,0 +0,0 @@\n-x\n+y' } }]);
     });
 
-    it('失败时 output 是错误原文，不是 diff', () => {
+    it('on failure, output is the raw error text, not a diff', () => {
       const error = '<tool_use_error>String to replace not found in file.</tool_use_error>';
       const { item } = run('Edit', { file_path: '/work/video/a.txt', old_string: 'nope', new_string: 'x' }, error, true);
       expect(item).toMatchObject({ status: 'failed', output: error });
@@ -166,7 +166,7 @@ describe('ClaudeItemMapper', () => {
     });
   });
 
-  it('工具种类与简述', () => {
+  it('tool kinds and short descriptions', () => {
     expect(['Bash', 'Edit', 'MultiEdit', 'NotebookEdit', 'mcp__x__y', 'WebSearch', 'WebFetch', 'Task', 'Read'].map(claudeToolKind)).toEqual([
       'command', 'file-change', 'file-change', 'file-change', 'mcp', 'web-search', 'web-search', 'other', 'other',
     ]);

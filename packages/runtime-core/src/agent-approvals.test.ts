@@ -43,7 +43,7 @@ const MODELS: DriverModel[] = [
   { id: 'model-b', label: 'B', description: null, tier: null, isDefault: false, efforts: [], defaultEffort: null },
 ];
 
-describe('审批、附件与模型校验（假 Agent）', () => {
+describe('approvals, attachments and model validation (fake agent)', () => {
   let dir: string | null = null;
   let runtime: RunningRuntime | null = null;
   let client: CucCutClient | null = null;
@@ -141,7 +141,7 @@ describe('审批、附件与模型校验（假 Agent）', () => {
 
   // ---- Approvals: sent by the Driver ----
 
-  it('访问模式 × Driver 送上来的命令、文件修改与工具：按决策表自动允许、拒绝或询问，自动的留一张已决定的卡并回给原生侧', async () => {
+  it('access mode × commands, file changes and tools sent up by the driver: automatically allowed, denied or asked per the decision table; automatic decisions leave a decided card and return it to the native side', async () => {
     await start();
     const requests = (cwd: string): Record<string, ApprovalRequest> => ({
       command: { kind: 'command', command: 'npm test', cwd: null, reason: null, rule: 'npm test' },
@@ -186,7 +186,7 @@ describe('审批、附件与模型校验（假 Agent）', () => {
     }
   });
 
-  it('规则：「总是允许」存进偏好，原生侧只按会话级放行；之后所有会话在「询问」时按规则答应，不放开模式拒绝的；移除后重新问', async () => {
+  it('rules: "always allow" is saved to preferences, the native side only allows per session; afterwards all sessions grant under "ask" per the rule, not overriding what the mode denies; asks again after removal', async () => {
     await start();
     const command: ApprovalRequest = { kind: 'command', command: 'git status', cwd: null, reason: null, rule: 'git status' };
 
@@ -231,7 +231,7 @@ describe('审批、附件与模型校验（假 Agent）', () => {
     return attachment;
   }
 
-  it('普通附件以文件上下文交给不支持图片的 Driver，保留附件预览定位',async()=>{
+  it('regular attachments are passed to a driver that does not support images as file context, keeping the attachment preview position',async()=>{
     await start({capabilities:{images:false}});const conversationId=await create('ask');
     const bytes=Buffer.from('name,count\ncover,3');
     const {attachment,uploadUrl}=await rpc().request('attachments.prepare',{fileName:'items.csv',mimeType:'text/csv',size:bytes.length});
@@ -241,7 +241,7 @@ describe('审批、附件与模型校验（假 Agent）', () => {
     expect((await items(conversationId)).find(item=>item.kind==='user-message')).toMatchObject({attachments:[{kind:'file',fileName:'items.csv'}]});
   });
 
-  it('附件：prepare → PUT → send，Driver 收到本地图片，时间线上的消息带着附件；steer 同样', async () => {
+  it('attachments: prepare → PUT → send, the driver receives the local image, and the timeline message carries the attachment; steer likewise', async () => {
     await start({ capabilities: { images: true, steer: true } });
     const conversationId = await create('ask');
     const first = await upload();
@@ -269,7 +269,7 @@ describe('审批、附件与模型校验（假 Agent）', () => {
     expect(await fs.readdir(path.join(dir!, 'attachments'))).toEqual([]);
   });
 
-  it('附件：media.resolve 按会话与附件 ID 给出只读句柄；别的会话、没发出去的、不认识的都是 not-found', async () => {
+  it('attachments: media.resolve returns a read-only handle by session and attachment ID; other sessions, unsent ones and unknown ones are not-found', async () => {
     await start({ capabilities: { images: true } });
     const conversationId = await create('ask');
     const sent = await upload(PNG, '截图 1.png');
@@ -298,7 +298,7 @@ describe('审批、附件与模型校验（假 Agent）', () => {
     await finish(conversationId, session);
   });
 
-  it('附件：太大、格式不对、没上传完、不认识、Agent 不支持图片时如实拒绝，不悄悄丢图', async () => {
+  it('attachments: too large, wrong format, not fully uploaded, unknown, or agent does not support images are rejected honestly, never silently dropping the image', async () => {
     await start();
     const tooBig = await rejection(rpc().request('attachments.prepare', { fileName: 'a.png', mimeType: 'image/png', size: 64 * 1024 * 1024 }));
     expect(tooBig.code).toBe('invalid-request');
@@ -318,7 +318,7 @@ describe('审批、附件与模型校验（假 Agent）', () => {
     expect((await items(conversationId)).filter((i) => i.kind === 'user-message')).toHaveLength(0);
   });
 
-  it('附件：支持图片的 Agent 上，没上传完与不认识的附件分别报错', async () => {
+  it('attachments: on an agent that supports images, not-fully-uploaded and unknown attachments each report their own error', async () => {
     await start({ capabilities: { images: true } });
     const conversationId = await create('ask');
     const { attachment } = await rpc().request('attachments.prepare', { fileName: 'a.png', mimeType: 'image/png', size: PNG.length });
@@ -337,7 +337,7 @@ describe('审批、附件与模型校验（假 Agent）', () => {
 
   // ---- Model and effort ----
 
-  it('模型与强度按模型表校验：新建、修改与默认值；只换模型时不适用的强度回到默认', async () => {
+  it('model and strength validated against the model table: create, update and defaults; when only the model changes, inapplicable strength returns to default', async () => {
     await start({ models: MODELS });
     const base = { projectId: project.id };
     expect((await rejection(rpc().request('conversations.create', { ...base, model: 'nope' }))).code).toBe('invalid-request');
@@ -364,7 +364,7 @@ describe('审批、附件与模型校验（假 Agent）', () => {
     expect(view.preferences.drivers.codex).toMatchObject({ defaultModel: 'model-b', defaultEffort: null });
   });
 
-  it('模型表为空（Agent 没报模型）时不校验', async () => {
+  it('no validation when the model table is empty (agent reported no models)', async () => {
     await start();
     const { conversation } = await rpc().request('conversations.create', { projectId: project.id, model: 'anything', effort: 'whatever' });
     expect(conversation).toMatchObject({ model: 'anything', effort: 'whatever' });
@@ -372,7 +372,7 @@ describe('审批、附件与模型校验（假 Agent）', () => {
 
   // ---- Failure reasons ----
 
-  it('失败原因（errorCode）透传到任务卡片：回合结束带的、之前的 session.error 带的、进程退出', async () => {
+  it('failure reason (errorCode) passed through to the task card: from turn end, from an earlier session.error, and from process exit', async () => {
     await start();
     const taskCard = async (conversationId: Id, taskId: Id) =>
       until(async () => (await items(conversationId)).find((i) => i.kind === 'task' && i.id === taskId && i.status !== 'running'));

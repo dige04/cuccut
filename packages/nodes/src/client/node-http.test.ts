@@ -76,7 +76,7 @@ describe('NodeClient', () => {
     return error;
   }
 
-  it('请求带协议版本头；令牌只在 Authorization 头里', async () => {
+  it('requests carry the protocol version header; token only in the Authorization header', async () => {
     seen.length = 0;
     await client.health({ timeoutMs: 1_000 });
     expect(seen[0]!.headers[NODE_PROTOCOL_HEADER.toLowerCase()]).toBe('1');
@@ -86,7 +86,7 @@ describe('NodeClient', () => {
     expect(seen[1]!.url).not.toContain('secret');
   });
 
-  it('节点的错误：NodeResponseError 带状态、错误码与详情；响应体不合规时按状态码', async () => {
+  it('node errors: NodeResponseError carries status, error code and details; when the response body is malformed, by status code', async () => {
     const unauthorized = await rejection(client.getJob(TOKEN, 'unauthorized', { timeoutMs: 1_000 }));
     expect(unauthorized).toBeInstanceOf(NodeResponseError);
     expect(unauthorized).toMatchObject({ status: 401, code: 'UNAUTHORIZED', message: '令牌无效或已吊销' });
@@ -107,7 +107,7 @@ describe('NodeClient', () => {
     expect(rejectReason(notFound)).toBeNull();
   });
 
-  it('错误码 → 拒绝原因（规范 §9、§10）', () => {
+  it('error code to rejection reason (spec §9, §10)', () => {
     const expected: Partial<Record<NodeErrorCode, string>> = {
       UNAUTHORIZED: 'unpaired',
       PROTOCOL_VERSION_UNSUPPORTED: 'version',
@@ -126,7 +126,7 @@ describe('NodeClient', () => {
     }
   });
 
-  it('连接问题：NodeConnectionError（连不上、超时、响应不是 JSON）；中止是 NodeRequestAborted', async () => {
+  it('connection problems: NodeConnectionError (cannot connect, timeout, response is not JSON); abort is NodeRequestAborted', async () => {
     const garbage = await rejection(client.getJob(TOKEN, 'garbage', { timeoutMs: 1_000 }));
     expect(garbage).toMatchObject({ name: 'NodeConnectionError', code: 'BAD_RESPONSE' });
 
@@ -147,7 +147,7 @@ describe('NodeClient', () => {
     expect(await rejection(aborted)).toBeInstanceOf(NodeRequestAborted);
   });
 
-  it('上传：流式、带 Content-Length、不用 Transfer-Encoding；下载：边写边算 sha256', async () => {
+  it('upload: streamed, with Content-Length, no Transfer-Encoding; download: computes sha256 while writing', async () => {
     const file = path.join(dir, 'media.bin');
     const media = crypto.randomBytes(256 * 1024);
     await fs.writeFile(file, media);
@@ -163,7 +163,7 @@ describe('NodeClient', () => {
     expect(await fs.readFile(dest, 'utf8')).toBe('result bytes');
   });
 
-  it('事件流：逐行读出；空闲期限到了抛 TIMEOUT；不合规的行抛 BAD_RESPONSE', async () => {
+  it('event stream: read line by line; throws TIMEOUT when the idle deadline passes; throws BAD_RESPONSE on malformed lines', async () => {
     const response = await client.events(TOKEN, 'j1', 0, { timeoutMs: 1_000 });
     const events: unknown[] = [];
     const error = await (async () => {
@@ -185,7 +185,7 @@ describe('NodeClient', () => {
     ).rejects.toMatchObject({ code: 'BAD_RESPONSE' });
   });
 
-  it('版本兼容：本机版本不低于节点的最低版本', () => {
+  it('version compatibility: local version is not lower than the node\'s minimum version', () => {
     expect(versionCompatible({ nodeProtocolVersion: 1, minNodeProtocolVersion: 1 })).toBe(true);
     expect(versionCompatible({ nodeProtocolVersion: 3, minNodeProtocolVersion: 1 })).toBe(true);
     expect(versionCompatible({ nodeProtocolVersion: 3, minNodeProtocolVersion: 2 })).toBe(false);

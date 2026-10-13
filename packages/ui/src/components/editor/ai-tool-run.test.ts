@@ -89,8 +89,8 @@ beforeEach(() => {
 
 afterEach(() => resetAiToolRun());
 
-describe('直接调模型的运行', () => {
-  it('提交 ai-tool 流程；只给结果的工具完成时留正文，不写视频', async () => {
+describe('direct model call run', () => {
+  it('submits ai-tool workflow; result-only tool keeps the body on completion, doesn\'t write to the video', async () => {
     const { deps } = fake();
     const key = runKey('vid', 'summary');
     expect(await startAiTool({ videoId: 'vid', tool: 'summary', prompt: 'Summarize' }, 'gpt-5-mini')).toBe(true);
@@ -109,7 +109,7 @@ describe('直接调模型的运行', () => {
     expect(useAiToolRun.getState().results[key]).toBeUndefined();
   });
 
-  it('写进视频的工具：收据带那笔事务，撤销一次', async () => {
+  it('tool that writes into the video: receipt carries the transaction, one undo', async () => {
     const { undone, toasts } = fake();
     const key = runKey('vid', 'polish');
     await startAiTool({ videoId: 'vid', tool: 'polish', prompt: 'Polish' }, 'gpt-5-mini');
@@ -126,7 +126,7 @@ describe('直接调模型的运行', () => {
     expect(useAiToolRun.getState().undoneJobs).toEqual({ p1: true });
   });
 
-  it('提交被拒（没配文本模型）：问题卡带原因，不留运行', async () => {
+  it('submission rejected (no text model configured): issue card carries the reason, no run kept', async () => {
     fake(async () => {
       throw new RpcError('invalid-request', 'No text model', { code: 'CAPABILITY_NOT_CONFIGURED' });
     });
@@ -136,7 +136,7 @@ describe('直接调模型的运行', () => {
     expect(useAiToolRun.getState().problems[key]).toMatchObject({ message: 'No text model', retryJobId: null });
   });
 
-  it('失败给原因与重试（同一个任务）；取消只提示', async () => {
+  it('failure gives reason and retry (same task); cancel only shows a hint', async () => {
     const { deps, toasts } = fake();
     const key = runKey('vid', 'chapters');
     await startAiTool({ videoId: 'vid', tool: 'chapters', prompt: 'Chapters' }, 'gpt-5-mini');
@@ -154,12 +154,12 @@ describe('直接调模型的运行', () => {
   });
 });
 
-describe('提示词框里改过的字', () => {
+describe('words edited in the prompt box', () => {
   const draftKey = toolDraftKey('vid', 'summary');
   const template = 'Summarize this video.';
   const edited = () => useAiToolPrompts.getState().prompts[draftKey];
 
-  it('跑完、结果页「完成」之后还在；改回模板与「恢复默认」才回到模板', async () => {
+  it('still there after the run and after "done" on the result page; returns to the template only when edited back to the template or "restore default" is used', async () => {
     fake();
     setAiToolPrompt(draftKey, 'Summarize in three bullets.', template);
     const key = runKey('vid', 'summary');
@@ -177,7 +177,7 @@ describe('提示词框里改过的字', () => {
     expect(edited()).toBeUndefined();
   });
 
-  it('按「视频 · 工具」分开存', () => {
+  it('stored separately per "video · tool"', () => {
     setAiToolPrompt(draftKey, 'A', template);
     setAiToolPrompt(toolDraftKey('vid', 'blog'), 'B', template);
     setAiToolPrompt(toolDraftKey('other', 'summary'), 'C', template);
@@ -185,12 +185,12 @@ describe('提示词框里改过的字', () => {
   });
 });
 
-describe('提示词框上挂着的 skill', () => {
+describe('skill attached to the prompt box', () => {
   const draftKey = toolDraftKey('vid', 'summary');
   const defaults = ['video-summary'];
   const stored = () => useAiToolSkills.getState().skills[draftKey];
 
-  it('摘掉内置的、跑完、结果页「完成」之后还摘着；加回成缺省那一份就不再存', async () => {
+  it('removed built-in; after the run and "done" on the result page still removed; re-adding the default version stops storing it', async () => {
     fake();
     detachAiToolSkill(draftKey, 'video-summary', defaults);
     expect(stored()).toEqual([]);
@@ -206,7 +206,7 @@ describe('提示词框上挂着的 skill', () => {
     expect(useAiToolSkills.getState().skills).toEqual({});
   });
 
-  it('接在后面、不重复；加回内置的也接在后面', () => {
+  it('appended after, not duplicated; re-adding a built-in also appends after', () => {
     attachAiToolSkill(draftKey, 'house-style', defaults);
     attachAiToolSkill(draftKey, 'house-style', defaults);
     expect(stored()).toEqual(['video-summary', 'house-style']);
@@ -217,7 +217,7 @@ describe('提示词框上挂着的 skill', () => {
     expect(stored()).toBeUndefined();
   });
 
-  it('按「视频 · 工具」分开存', () => {
+  it('stored separately per "video · tool"', () => {
     attachAiToolSkill(draftKey, 'a', defaults);
     detachAiToolSkill(toolDraftKey('vid', 'blog'), 'video-blog', ['video-blog']);
     attachAiToolSkill(toolDraftKey('other', 'summary'), 'c', defaults);

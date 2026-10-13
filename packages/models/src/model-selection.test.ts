@@ -67,7 +67,7 @@ const cnc = (reason: string, action: string, providerId?: string) => ({
 });
 
 describe('selectModel', () => {
-  it('显式的 provider：用它的默认模型；用户默认值指向它时用默认值的模型', () => {
+  it('explicit provider: uses its default model; when the user default points to it, uses the default\'s model', () => {
     expect(select({ provider: 'openai' })).toMatchObject({
       providerId: 'openai',
       modelId: 'whisper-1',
@@ -80,7 +80,7 @@ describe('selectModel', () => {
     expect(select({ provider: 'openai', model: 'gpt-4o-transcribe' })).toMatchObject({ modelId: 'gpt-4o-transcribe' });
   });
 
-  it('只给模型：先找默认的 Provider，再找 local，再找唯一列出它的；多个是 invalid-request，没有是 not-found', () => {
+  it('model only: looks for the default provider first, then local, then the only provider that lists it; several matches is invalid-request, none is not-found', () => {
     const providers = [local(), openai(), custom()];
     expect(select({ providers, model: 'whisper-1', userDefault: { providerId: 'custom:box', modelId: 'whisper-1' } })).toMatchObject({
       providerId: 'custom:box',
@@ -93,7 +93,7 @@ describe('selectModel', () => {
     expect(() => select({ model: 'asr-large' })).toThrow(expect.objectContaining(cnc('not-installed', 'install-model', 'local')));
   });
 
-  it('用户默认值优先于出厂默认；都没有时出厂默认是本机已安装的默认模型包', () => {
+  it('the user default takes precedence over the factory default; when neither exists, the factory default is the default bundle installed on this machine', () => {
     expect(select({ userDefault: { providerId: 'openai', modelId: 'whisper-1' } })).toMatchObject({
       providerId: 'openai',
       source: 'user-default',
@@ -101,7 +101,7 @@ describe('selectModel', () => {
     expect(select({})).toMatchObject({ providerId: 'local', modelId: 'asr-small', source: 'factory-default' });
   });
 
-  it('选中的不可用时直接拒绝，不换 Provider：缺密钥、停用、未安装、节点连不上', () => {
+  it('a selected unavailable choice is rejected without switching provider: missing key, disabled, not installed, node unreachable', () => {
     const missing = [local(), openai('missing-credential', 'missing')];
     expect(() => select({ providers: missing, userDefault: { providerId: 'openai', modelId: 'whisper-1' } })).toThrow(
       expect.objectContaining(cnc('missing-credential', 'configure-provider', 'openai')),
@@ -122,7 +122,7 @@ describe('selectModel', () => {
     );
   });
 
-  it('默认值指向已删除的 Provider 或已不存在的模型：拒绝并说明', () => {
+  it('default pointing to a deleted provider or a model that no longer exists: rejected with an explanation', () => {
     expect(() => select({ userDefault: { providerId: 'custom:gone', modelId: 'm' } })).toThrow(
       expect.objectContaining(cnc('disabled', 'configure-provider', 'custom:gone')),
     );
@@ -136,7 +136,7 @@ describe('selectModel', () => {
     expect(() => select({ provider: 'nobody' })).toThrow(expect.objectContaining({ code: 'not-found' }));
   });
 
-  it('什么都没有：no-default；提示指向已可用的 Provider，或安装模型包，或去配置', () => {
+  it('nothing available: no-default; the hint points to an available provider, installing a bundle, or configuring one', () => {
     const remedy = (action: string, providerId?: string) =>
       expect.objectContaining({
         details: expect.objectContaining({
@@ -149,7 +149,7 @@ describe('selectModel', () => {
     expect(() => select({ providers: [openai('not-configured', 'missing')] })).toThrow(remedy('configure-provider'));
   });
 
-  it('节点没列出的模型包照样放行，交给节点自己核对', () => {
+  it('a bundle the node does not list is still allowed through, leaving the node to check it', () => {
     expect(select({ providers: [node()], provider: 'node:studio', model: 'asr-xl' })).toMatchObject({
       providerId: 'node:studio',
       modelId: 'asr-xl',
@@ -157,7 +157,7 @@ describe('selectModel', () => {
     });
   });
 
-  it('effectiveChoice：可用时报告来源，不可用时 null', () => {
+  it('effectiveChoice: reports the source when available, null when not', () => {
     expect(effectiveChoice({ capability: 'transcribe', userDefault: null, providers: [local()] })).toEqual({
       providerId: 'local',
       modelId: 'asr-small',
@@ -169,7 +169,7 @@ describe('selectModel', () => {
     expect(effectiveChoice({ capability: 'synthesizeSpeech', userDefault: null, providers: [local()] })).toBeNull();
   });
 
-  it('人声分离有出厂默认：本机可用的分离模型包；用户默认值优先；没有可用的时补救是安装模型包', () => {
+  it('vocal separation has a factory default: the separation bundle available on this machine; the user default takes precedence; when none is available the remedy is to install a bundle', () => {
     const sepModel = (modelId: string, extra: Partial<SeparateModelInfo> = {}): SeparateModelInfo => ({
       modelId,
       label: modelId,
@@ -215,7 +215,7 @@ describe('selectModel', () => {
     );
   });
 
-  it('checkTranscribeOptions：模型不支持断言的语言时 invalid-request；不收提示不在这里拒绝', () => {
+  it('checkTranscribeOptions: invalid-request when the model does not support the asserted language; prompts it does not accept are not rejected here', () => {
     const choice = select({ provider: 'openai' });
     const strict = { ...choice, model: model('m', { acceptsHint: false, languages: ['en', 'zh'] }) };
     expect(() => checkTranscribeOptions(strict, { assertedLanguage: 'ja' })).toThrow(expect.objectContaining({ code: 'invalid-request' }));

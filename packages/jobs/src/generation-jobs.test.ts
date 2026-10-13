@@ -103,7 +103,7 @@ class FakeVideos implements JobVideos {
   }
 }
 
-describe('生成任务（JobManager）', () => {
+describe('generation jobs (JobManager)', () => {
   let dir: string;
   let paths: { jobsFile: string; stagingDir: string; artifactsDir: string; diagnosticsDir: string };
   let generator: FakeGenerator;
@@ -163,7 +163,7 @@ describe('生成任务（JobManager）', () => {
     return manager.inspect(jobId);
   }
 
-  it('没有视频：发布产物，记下冻结的参数；执行者收到的正是这份参数', async () => {
+  it('no video: publishes the artifact and records the frozen parameters; the executor receives exactly these parameters', async () => {
     const job = await speak();
     expect(job).toMatchObject({
       state: 'completed',
@@ -184,7 +184,7 @@ describe('生成任务（JobManager）', () => {
     expect((await speak()).inputHash).toBe(job.inputHash);
   });
 
-  it('给了视频：一笔事务导入为素材（不上时间线），来源不含原文；视频在读写之间被改过时换命令重试', async () => {
+  it('video given: imported as media in one transaction (not added to the timeline), with the source not including the original text; if the video is changed between read and write, retried with a new command', async () => {
     videos.failNext.push(new RpcError('conflict', '版本冲突'));
     const job = await speak({ videoId: 'mov_1', name: '旁白' });
     expect(job.state).toBe('completed');
@@ -207,14 +207,14 @@ describe('生成任务（JobManager）', () => {
     expect(videos.leases).toBe(0);
   });
 
-  it('导入被引擎拒绝：APPLY_FAILED，产物保留在结果里', async () => {
+  it('import rejected by the engine: APPLY_FAILED, the artifact is kept in the result', async () => {
     videos.failNext.push(new RpcError('invalid-request', '不能导入'));
     const job = await speak({ videoId: 'mov_1' });
     expect(job).toMatchObject({ state: 'failed', error: { code: 'APPLY_FAILED' } });
     expect(job.result!.outputs).toHaveLength(1);
   });
 
-  it('生成期间视频关了：STALE_JOB_INPUT，产物保留', async () => {
+  it('video closed during generation: STALE_JOB_INPUT, artifact kept', async () => {
     const original = generator.next;
     generator.next = async (run, sink, signal) => {
       videos.open = false;
@@ -225,7 +225,7 @@ describe('生成任务（JobManager）', () => {
     expect(videos.applied).toHaveLength(0);
   });
 
-  it('给了保存位置：发布后写一份按原文开头取名的副本（目录不存在时创建，不覆盖），路径记在输出里；不影响输入摘要', async () => {
+  it('save location given: after publishing, a copy is written named after the start of the original text (the directory is created if missing, not overwritten), and the path is recorded in the output; the input digest is unaffected', async () => {
     const saveDir = path.join(dir, 'saved', 'nested');
     const text = '  Hello:  world\n第二行 ';
     const job = await speak({ text, saveDir });
@@ -244,7 +244,7 @@ describe('生成任务（JobManager）', () => {
     expect((await speak({ text })).result!.outputs![0]!.path).toBeUndefined();
   });
 
-  it('保存位置不能写：提交时以 OUTPUT_DESTINATION_UNAVAILABLE 拒绝；执行时副本写不成只记警告，任务照样完成', async () => {
+  it('save location not writable: rejected at submission with OUTPUT_DESTINATION_UNAVAILABLE; during execution, if the copy cannot be written, only a warning is recorded and the task still completes', async () => {
     const blocked = path.join(dir, 'blocked');
     await fs.writeFile(blocked, 'x');
     await expect(
@@ -266,7 +266,7 @@ describe('生成任务（JobManager）', () => {
     expect(job.warnings).toEqual([expect.objectContaining({ code: 'save-copy-failed' })]);
   });
 
-  it('提交时视频没有打开：not-found，不创建任务', async () => {
+  it('video not open at submission: not-found, no task created', async () => {
     videos.open = false;
     await expect(manager.submitSynthesizeSpeech({ text: 'x', videoId: 'mov_1' }, { kind: 'connection', id: 'c' })).rejects.toMatchObject({
       code: 'not-found',
@@ -274,7 +274,7 @@ describe('生成任务（JobManager）', () => {
     expect(manager.list()).toHaveLength(0);
   });
 
-  it('解码校验不过：MODEL_OUTPUT_INVALID，不发布，原始文件移到诊断目录；不重试', async () => {
+  it('decode validation fails: MODEL_OUTPUT_INVALID, not published, the raw file is moved to the diagnostics directory; not retried', async () => {
     probe = async () => ({ ok: false, problems: ['解不开'] });
     const job = await speak();
     expect(job).toMatchObject({ state: 'failed', error: { code: 'MODEL_OUTPUT_INVALID', details: { problems: ['输出 1：解不开'] } } });
@@ -284,7 +284,7 @@ describe('生成任务（JobManager）', () => {
     expect(generator.runs).toHaveLength(1);
   });
 
-  it('声明的媒体类型与请求不符、摘要不符：MODEL_OUTPUT_INVALID', async () => {
+  it('declared media type does not match the request, or digest mismatch: MODEL_OUTPUT_INVALID', async () => {
     generator.next = async (run) => {
       await fs.writeFile(path.join(run.staging, 'out.wav'), 'RIFF');
       return {
@@ -300,7 +300,7 @@ describe('生成任务（JobManager）', () => {
     expect(problems).toMatch(/audio\/wav/);
   });
 
-  it('Provider 失败按种类归一化，不重试，不换 Provider', async () => {
+  it('provider failure is normalized by kind; not retried, and no provider switch', async () => {
     generator.next = async () => {
       throw new ProviderFailure('rejected', '参数不被接受', { code: 'PROVIDER_REJECTED' });
     };
@@ -309,7 +309,7 @@ describe('生成任务（JobManager）', () => {
     expect(generator.runs).toHaveLength(1);
   });
 
-  it('取消：中止在途的生成，任务 cancelled，不发布', async () => {
+  it('cancel: aborts the generation in progress, the task is cancelled, nothing is published', async () => {
     let started!: () => void;
     const running = new Promise<void>((resolve) => (started = resolve));
     generator.next = (_run, sink, signal) =>

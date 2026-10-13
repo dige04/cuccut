@@ -20,8 +20,8 @@ function setup() {
   return { cache, decoder, fetch, pending, released, listener, settle, advance: (ms: number) => (now += ms) };
 }
 
-describe('素材缓存', () => {
-  it('同一个素材只取一次，取到之后通知', async () => {
+describe('media cache', () => {
+  it('the same media is fetched only once, and subscribers are notified once it is fetched', async () => {
     const { cache, decoder, fetch, pending, listener, settle } = setup();
     expect(cache.get(asset, decoder)).toEqual({ state: 'loading' });
     expect(cache.get(asset, decoder)).toEqual({ state: 'loading' });
@@ -33,7 +33,7 @@ describe('素材缓存', () => {
     expect(cache.get(asset, decoder)).toEqual({ state: 'ready', value: 'lottie' });
   });
 
-  it('失败了报失败；隔一阵才重取，重取期间仍报失败，间隔逐次翻倍', async () => {
+  it('failure is reported as failure; refetch only after a delay, still reports failure during the refetch, and the interval doubles each time', async () => {
     const { cache, decoder, fetch, pending, settle, advance } = setup();
     cache.get(asset, decoder);
     await settle();
@@ -64,7 +64,7 @@ describe('素材缓存', () => {
     expect(cache.get(asset, decoder)).toEqual({ state: 'ready', value: 'ok' });
   });
 
-  it('换视频时释放解好的内容；路上的请求回来也只释放、不收', async () => {
+  it('switching videos releases decoded content; requests in flight that come back only release, not keep', async () => {
     const { cache, decoder, pending, released, settle } = setup();
     cache.get(asset, decoder);
     cache.get({ id: 'asset_b', revision: '1' }, decoder);
@@ -79,7 +79,7 @@ describe('素材缓存', () => {
     expect(cache.get({ id: 'asset_b', revision: '1' }, decoder)).toEqual({ state: 'loading' });
   });
 
-  it('预览重试：忘掉路上的请求、再要就重新取，迟到的只释放不收；解好的照留', async () => {
+  it('preview retry: forget in-flight requests, a new request refetches; late ones only release, not keep; decoded content is still kept', async () => {
     const { cache, decoder, fetch, pending, released, settle } = setup();
     const ready = { id: 'asset_b', revision: '1' };
     cache.get(asset, decoder);

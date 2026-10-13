@@ -45,7 +45,7 @@ function run(args: string[], values: Record<string, unknown>, fake: FakeClient |
 }
 
 describe('installAgentSkill', () => {
-  it('复制：写出全部文件；再装一次整个换掉', () => {
+  it('copy: writes all files; reinstalling replaces the whole thing', () => {
     const target = path.join(root, 'skills', 'cuccut');
     expect(installAgentSkill(rendered, target, null)).toEqual({ mode: 'copy' });
     expect(fs.readFileSync(path.join(target, 'references', 'start.md'), 'utf8')).toBe('先 cuccut status\n');
@@ -55,7 +55,7 @@ describe('installAgentSkill', () => {
     expect(fs.readdirSync(path.dirname(target))).toEqual(['cuccut']);
   });
 
-  it('--link：渲染结果放进链接目录，目标是指向它的链接', () => {
+  it('--link: puts the rendered output in the link directory, with the target being a link pointing to it', () => {
     const target = path.join(root, 'skills', 'cuccut');
     const linkDir = path.join(home, 'agent-skills', 'cuccut');
     expect(installAgentSkill(rendered, target, linkDir)).toEqual({ mode: 'link', linkTo: linkDir });
@@ -63,7 +63,7 @@ describe('installAgentSkill', () => {
     expect(fs.readFileSync(path.join(target, 'SKILL.md'), 'utf8')).toBe('# CucCut\n');
   });
 
-  it('--link 在 Windows 上放 junction（不要管理员权限），其它平台放目录链接', () => {
+  it('--link on Windows places a junction (no admin rights needed), other platforms place a directory link', () => {
     const target = path.join(root, 'skills', 'cuccut');
     const linkDir = path.join(home, 'agent-skills', 'cuccut');
     const symlink = vi.spyOn(fs, 'symlinkSync');
@@ -79,7 +79,7 @@ describe('installAgentSkill', () => {
     expect(fs.readFileSync(path.join(target, 'SKILL.md'), 'utf8')).toBe('# CucCut\n');
   });
 
-  it('替换已有的链接时只换链接，不动它指向的目录', () => {
+  it('replacing an existing link only swaps the link and leaves the directory it points to alone', () => {
     const other = path.join(root, 'v2-skill');
     fs.mkdirSync(other);
     fs.writeFileSync(path.join(other, 'SKILL.md'), '旧的');
@@ -91,7 +91,7 @@ describe('installAgentSkill', () => {
     expect(fs.readFileSync(path.join(other, 'SKILL.md'), 'utf8')).toBe('旧的');
   });
 
-  it('越界的路径报错，旧的目标不动', () => {
+  it('an out-of-bounds path errors and the old target stays as it is', () => {
     const target = path.join(root, 'skills', 'cuccut');
     installAgentSkill(rendered, target, null);
     expect(() => installAgentSkill({ files: [{ path: '../escape.md', content: 'x' }] }, target, null)).toThrow(/越界/);
@@ -101,7 +101,7 @@ describe('installAgentSkill', () => {
 });
 
 describe('cuccut skill install', () => {
-  it('装进宿主的 skills 目录（渲染结果来自 catalog.agentSkill）', async () => {
+  it('installs into the host\'s skills directory (rendered output comes from catalog.agentSkill)', async () => {
     const fake = new FakeClient();
     fake.methods['catalog.agentSkill'] = () => rendered;
     const { capture, done } = run(['install'], { agent: 'codex' }, fake);
@@ -118,7 +118,7 @@ describe('cuccut skill install', () => {
     expect(fs.existsSync(path.join(target, 'SKILL.md'))).toBe(true);
   });
 
-  it('目标已存在、没给 --yes：CONFIRMATION_REQUIRED，不连 Runtime 取说明书', async () => {
+  it('target exists, no --yes: CONFIRMATION_REQUIRED, does not connect to Runtime to fetch the manual', async () => {
     const target = path.join(env.HOME!, '.claude', 'skills', 'cuccut');
     fs.mkdirSync(target, { recursive: true });
     const fake = new FakeClient();
@@ -127,7 +127,7 @@ describe('cuccut skill install', () => {
     expect(fake.calls).toEqual([]);
   });
 
-  it('--dir 不给 --agent 也行；两样都不给是用法错误', async () => {
+  it('--dir works without --agent; giving neither is a usage error', async () => {
     const fake = new FakeClient();
     fake.methods['catalog.agentSkill'] = () => rendered;
     const { capture, done } = run(['install'], { dir: 'custom', link: true }, fake);
@@ -140,7 +140,7 @@ describe('cuccut skill install', () => {
 });
 
 describe('cuccut skill path', () => {
-  it('来源与各宿主的位置，以及现在装了什么', () => {
+  it('source and each host\'s location, and what is installed now', () => {
     const target = path.join(env.HOME!, '.gemini', 'skills', 'cuccut');
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.symlinkSync(path.join(root, 'elsewhere'), target);

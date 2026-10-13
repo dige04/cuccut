@@ -6,23 +6,23 @@ const base: Transition = { id: 't', kind: 'dissolve', durationFrames: 10, easing
 const left = { fromFrame: 0, durationFrames: 30 };
 const right = { fromFrame: 30, durationFrames: 30 };
 
-describe('转场窗口', () => {
-  it('两侧按 placement 摆在剪切点上（居中向下取整）', () => {
+describe('transition window', () => {
+  it('both sides placed on the cut point per placement (centered, rounded down)', () => {
     expect(transitionWindow(base, left, right)).toEqual([25, 35]);
     expect(transitionWindow({ ...base, durationFrames: 9 }, left, right)).toEqual([26, 35]);
     expect(transitionWindow({ ...base, placement: 'start-at-cut' }, left, right)).toEqual([30, 40]);
     expect(transitionWindow({ ...base, placement: 'end-at-cut' }, left, right)).toEqual([20, 30]);
   });
 
-  it('入场从实例开头开始，出场在实例结尾结束', () => {
+  it('in starts at the instance start, out ends at the instance end', () => {
     expect(transitionWindow(base, undefined, right)).toEqual([30, 40]);
     expect(transitionWindow(base, left, undefined)).toEqual([20, 30]);
     expect(transitionWindow(base, undefined, undefined)).toBeNull();
   });
 });
 
-describe('缓动', () => {
-  it('与 Rust 的四种一致', () => {
+describe('easing', () => {
+  it('matches the four from Rust', () => {
     expect(applyEasing('linear', 0.25)).toBe(0.25);
     expect(applyEasing('ease-in', 0.5)).toBe(0.25);
     expect(applyEasing('ease-out', 0.5)).toBe(0.75);
@@ -31,8 +31,8 @@ describe('缓动', () => {
   });
 });
 
-describe('转场让实例多占的帧', () => {
-  it('两侧：左侧画到窗口结束，右侧从窗口开始；单侧不变', () => {
+describe('frames the transition makes the instance occupy', () => {
+  it('both sides: left draws to the window end, right starts at the window start; one side unchanged', () => {
     const items = [
       { id: 'a', span: left },
       { id: 'b', span: right },

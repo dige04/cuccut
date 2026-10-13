@@ -59,7 +59,7 @@ const invalid = (details?: Record<string, unknown>) =>
 describe('speechParameters', () => {
   const speech = choice('synthesizeSpeech', speechModel());
 
-  it('补上默认音色与格式，冻结成完整的参数', () => {
+  it('fills in default voice and format, freezing them into complete parameters', () => {
     expect(speechParameters(speech, { text: 'hi', language: 'zh-Hans-CN', speed: 1.5 })).toEqual({
       capability: 'synthesizeSpeech',
       text: 'hi',
@@ -72,14 +72,14 @@ describe('speechParameters', () => {
     });
   });
 
-  it('文本按码点计上限，超过时拒绝（不截断）；空文本拒绝', () => {
+  it('text length limit counts code points, and text over the limit is rejected (not truncated); empty text is rejected', () => {
     expect(codePointLength('😀😀😀')).toBe(3);
     expect(speechParameters(speech, { text: '😀😀😀😀😀' }).text).toBe('😀😀😀😀😀');
     expect(() => speechParameters(speech, { text: '123456' })).toThrow(invalid({ length: 6, limit: 5 }));
     expect(() => speechParameters(speech, { text: '  ' })).toThrow(invalid());
   });
 
-  it('音色、语言、格式、语气说明、语速、seed 不合模型时拒绝', () => {
+  it('voice, language, format, style instructions, speed and seed that the model does not support are rejected', () => {
     expect(() => speechParameters(speech, { text: 'hi', voice: 'nova' })).toThrow(invalid({ voices: ['alloy'] }));
     expect(() => speechParameters(speech, { text: 'hi', language: 'ja' })).toThrow(invalid({ languages: ['en', 'zh'] }));
     expect(() => speechParameters(speech, { text: 'hi', language: 'not a tag!' })).toThrow(invalid());
@@ -91,7 +91,7 @@ describe('speechParameters', () => {
     expect(speechParameters(speech, { text: 'hi', instructions: '  ' }).instructions).toBeNull();
   });
 
-  it('没有默认音色时必须指定；接受自定义音色时任意 ID 原样传', () => {
+  it('a voice must be specified when there is no default; when custom voices are accepted, any ID is passed through unchanged', () => {
     const custom = choice('synthesizeSpeech', speechModel({ voices: [], defaultVoice: null, voiceModes: ['custom'], languages: 'any' }));
     expect(() => speechParameters(custom, { text: 'hi' })).toThrow(invalid({ voices: [] }));
     expect(speechParameters(custom, { text: 'hi', voice: 'JBFqnCBsd6RMkjVDRZzb', language: 'ja' })).toMatchObject({
@@ -104,7 +104,7 @@ describe('speechParameters', () => {
 describe('imageParameters', () => {
   const image = choice('generateImage', imageModel());
 
-  it('不给尺寸时用模型的默认（null 交给供应商）；宽高比换成对应的尺寸', () => {
+  it('without a size the model\'s default is used (null defers to the provider); an aspect ratio is converted to the matching size', () => {
     expect(imageParameters(image, { prompt: 'a fox' })).toEqual({
       capability: 'generateImage',
       prompt: 'a fox',
@@ -123,7 +123,7 @@ describe('imageParameters', () => {
     expect(imageParameters(image, { prompt: 'a fox', size: '1536x1024' })).toMatchObject({ size: '1536x1024', aspectRatio: null });
   });
 
-  it('尺寸、宽高比、张数、格式、提示词长度不合模型时拒绝', () => {
+  it('size, aspect ratio, count, format and prompt length that the model does not support are rejected', () => {
     expect(() => imageParameters(image, { prompt: 'a fox', size: '512x512' })).toThrow(invalid({ sizes: ['1024x1024', '1536x1024'] }));
     expect(() => imageParameters(image, { prompt: 'a fox', size: '16:9' })).toThrow(invalid({ aspectRatios: ['1:1', '3:2'] }));
     expect(() => imageParameters(image, { prompt: 'a fox', count: 3 })).toThrow(invalid({ maxCount: 2 }));
@@ -133,7 +133,7 @@ describe('imageParameters', () => {
     expect(() => imageParameters(image, { prompt: '' })).toThrow(invalid());
   });
 
-  it('步数只有本地模型接受：在线模型拒绝；本地按 local.steps 的范围检查，给了才冻结', () => {
+  it('steps are accepted only by local models: online models reject them; local ones are checked against the local.steps range and frozen only when given', () => {
     expect(() => imageParameters(image, { prompt: 'a fox', steps: 20 })).toThrow(invalid());
     const local = choice('generateImage', { ...imageModel(), local: { steps: { min: 8, max: 40, step: 4, default: 20 } } });
     expect(imageParameters(local, { prompt: 'a fox', steps: 8 })).toMatchObject({ steps: 8 });
@@ -142,7 +142,7 @@ describe('imageParameters', () => {
   });
 });
 
-describe('生成能力的选择', () => {
+describe('choosing a generation capability', () => {
   const view = (providerId: string, kind: ProviderView['kind'], available = true): ProviderView => ({
     providerId,
     kind,
@@ -151,7 +151,7 @@ describe('生成能力的选择', () => {
     capabilities: { synthesizeSpeech: { models: [speechModel()], available } },
   });
 
-  it('没有出厂默认：local 提供了也不自动选，要显式指定或设默认值', () => {
+  it('no factory default: local is not auto-selected even if offered; it must be specified explicitly or set as the default', () => {
     const select = (input: { provider?: string; userDefault?: { providerId: string; modelId: string } }) =>
       selectModel({
         capability: 'synthesizeSpeech',
@@ -176,7 +176,7 @@ describe('生成能力的选择', () => {
     });
   });
 
-  it('什么都不可用：remedy 是去配置一个服务', () => {
+  it('nothing available: the remedy is to configure a service', () => {
     expect(() => selectModel({ capability: 'synthesizeSpeech', userDefault: null, providers: [view('openai', 'online', false)] })).toThrow(
       expect.objectContaining({ details: expect.objectContaining({ remedy: expect.objectContaining({ action: 'configure-provider' }) }) }),
     );

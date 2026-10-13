@@ -35,7 +35,7 @@ const EDIT_TOOL = {
   metadata: { files: [{ file: 'notes.txt', patch: PATCH, status: 'modified' }] },
 };
 
-describe('OpenCodeSession（假 opencode serve）', () => {
+describe('OpenCodeSession (fake opencode serve)', () => {
   let dir: string;
   let cwd: string;
   let fake: FakeOpenCode;
@@ -73,7 +73,7 @@ describe('OpenCodeSession（假 opencode serve）', () => {
     effort,
   });
 
-  it('一轮：推理与回复按增量到达，执行成功后回合完成', async () => {
+  it('a turn: reasoning and reply arrive as deltas; the turn completes after execution succeeds', async () => {
     const { session, events, completed } = await start({ turn: { reasoning: 'thinking', reply: 'hello there', end: 'succeeded' } });
     const { turnId } = await session.startTurn({ text: 'hi' }, settings());
     const done = await completed(turnId);
@@ -94,7 +94,7 @@ describe('OpenCodeSession（假 opencode serve）', () => {
     expect(session.describePersistence()).toEqual({ driverId: 'opencode', data: { sessionId: expect.stringMatching(/^ses_/) } });
   });
 
-  it('执行失败：回合 failed，带 OpenCode 的错误', async () => {
+  it('execution failure: turn failed, with the OpenCode error', async () => {
     const { session, completed } = await start({ turn: { end: 'failed', error: 'rate limited' } });
     const { turnId } = await session.startTurn({ text: 'hi' }, settings());
     const done = await completed(turnId);
@@ -102,7 +102,7 @@ describe('OpenCodeSession（假 opencode serve）', () => {
     expect(done.error).toBe('rate limited');
   });
 
-  it('文件修改要审批：允许之后完成，步骤的输出是统一 diff', async () => {
+  it('file change needs approval: completes after allowing; the step output is the unified diff', async () => {
     const { session, events, completed, approval } = await start({
       turn: { tool: { ...EDIT_TOOL, input: { ...EDIT_TOOL.input, path: path.join(cwd, 'notes.txt') } }, reply: 'ok' },
     });
@@ -118,7 +118,7 @@ describe('OpenCodeSession（假 opencode serve）', () => {
     expect(tool).toMatchObject({ kind: 'tool-call', tool: 'file-change', title: 'notes.txt', status: 'completed', output: PATCH });
   });
 
-  it('拒绝：那一步 declined，OpenCode 以 interrupted(shutdown) 结束执行，回合记成完成并提示', async () => {
+  it('rejection: that step is declined, OpenCode ends execution with interrupted(shutdown), the turn is recorded as completed and a notice is shown', async () => {
     const { session, events, completed, approval } = await start({
       turn: { tool: { name: 'shell', input: { command: 'rm -rf build' }, permission: { action: 'shell', resources: ['rm -rf build'] } } },
     });
@@ -135,7 +135,7 @@ describe('OpenCodeSession（假 opencode serve）', () => {
     expect(replies.map((e) => e.body)).toEqual([{ decision: 'reject' }]);
   });
 
-  it('本会话放行：之后同类的请求直接答应，从不回原生的 always', async () => {
+  it('allow for this session: later requests of the same kind are approved directly, never replying with the native always', async () => {
     const shell = { name: 'shell', input: { command: 'npm test' }, permission: { action: 'shell', resources: ['npm test'] } };
     const { session, events, completed, approval } = await start({ turn: { tool: shell, reply: 'ok' } });
     const first = await session.startTurn({ text: 'test' }, settings());
@@ -148,7 +148,7 @@ describe('OpenCodeSession（假 opencode serve）', () => {
     expect(replies.map((e) => e.body)).toEqual([{ decision: 'once' }, { decision: 'once' }]);
   });
 
-  it('中断：挂着的审批收起并拒绝，回合 interrupted', async () => {
+  it('interrupt: pending approvals are dismissed and rejected, the turn is interrupted', async () => {
     const { session, events, completed, approval } = await start({
       turn: { tool: { name: 'shell', input: { command: 'sleep 100' }, permission: { action: 'shell', resources: ['sleep 100'] } } },
     });
@@ -160,7 +160,7 @@ describe('OpenCodeSession（假 opencode serve）', () => {
     expect(await session.interrupt(turnId)).toEqual({ status: 'not-running' });
   });
 
-  it('中断一直跑着的回合', async () => {
+  it('interrupts a turn that keeps running', async () => {
     const { session, completed } = await start({ turn: { reply: 'partial', end: 'hang' } });
     const { turnId } = await session.startTurn({ text: 'go' }, settings());
     await until(() => fake.requests('POST', '/api/session/:id/prompt').length > 0);
@@ -170,7 +170,7 @@ describe('OpenCodeSession（假 opencode serve）', () => {
     expect(fake.requests('POST', '/api/session/:id/interrupt')).toHaveLength(1);
   });
 
-  it('serve 意外退出：session.exited 带原因，不再报回合结果', async () => {
+  it('serve exits unexpectedly: session.exited with the reason, no longer reports turn results', async () => {
     const { session, events } = await start({ turn: { crash: true } });
     await session.startTurn({ text: 'boom' }, settings());
     const exited = await until(() => events.find((e) => e.type === 'session.exited'));
@@ -178,7 +178,7 @@ describe('OpenCodeSession（假 opencode serve）', () => {
     expect(events.some((e) => e.type === 'turn.completed')).toBe(false);
   });
 
-  it('访问模式变了：下一轮之前改会话的权限规则；模型与强度用 provider/model 与 variant', async () => {
+  it('access mode changed: session permission rules are changed before the next turn; model and effort use provider/model and variant', async () => {
     const { session, completed } = await start();
     const first = await session.startTurn({ text: 'a' }, settings('ask'));
     await completed(first.turnId);
@@ -193,14 +193,14 @@ describe('OpenCodeSession（假 opencode serve）', () => {
     });
   });
 
-  it('模型写法不对：开不了这一轮', async () => {
+  it('wrong model format: the turn cannot be started', async () => {
     const { session } = await start();
     await expect(session.startTurn({ text: 'a' }, settings('ask', 'no-slash'))).rejects.toMatchObject({
       agentCode: 'AGENT_MODEL_UNAVAILABLE',
     });
   });
 
-  it('插话：进行中的回合用 delivery steer', async () => {
+  it('interjection: an in-progress turn uses delivery steer', async () => {
     const { session, completed } = await start({ turn: { end: 'hang' } });
     const { turnId } = await session.startTurn({ text: 'go' }, settings());
     expect(await session.steer!(turnId, { text: 'also this' })).toBe('accepted');
@@ -210,7 +210,7 @@ describe('OpenCodeSession（假 opencode serve）', () => {
     await completed(turnId);
   });
 
-  it('恢复：按 id 接回原生会话（换了 serve 进程也行），恢复不了时新建并提示', async () => {
+  it('resume: reattaches the native session by id (also works with a different serve process), creates a new one with a notice if resume fails', async () => {
     const first = await start();
     const handle = first.session.describePersistence();
     await first.session.close();
@@ -223,7 +223,7 @@ describe('OpenCodeSession（假 opencode serve）', () => {
     await until(() => fresh.events.find((e) => e.type === 'session.warning' && e.message.includes('无法恢复')));
   });
 
-  it('MCP 服务登记到 serve（执行超时 24 小时），连不上时提示', async () => {
+  it('MCP servers are registered with serve (execution timeout 24 hours), a notice is shown when they cannot connect', async () => {
     const mcpServers = { cuccut: { url: 'http://127.0.0.1:1/mcp', headers: { authorization: 'Bearer t' } } };
     await start({}, { mcpServers });
     const put = fake.requests('PUT', '/api/experimental/mcp/cuccut')[0]!;
@@ -241,7 +241,7 @@ describe('OpenCodeSession（假 opencode serve）', () => {
     await until(() => failing.events.find((e) => e.type === 'session.warning' && e.message.includes('MCP')));
   });
 
-  it('开发者指令写进会话的 instructions 条目；接口不在时附在第一轮前面', async () => {
+  it('developer instructions are written into the session\'s instructions entry; when the API is missing they are prepended to the first turn', async () => {
     await start({}, { developerInstructions: 'Be brief.' });
     expect(fake.log().find((e) => e.path?.endsWith('/instructions/entries/cuccut'))?.body).toEqual({ value: 'Be brief.' });
 
@@ -252,11 +252,11 @@ describe('OpenCodeSession（假 opencode serve）', () => {
     expect(prompts.at(-1)!.body!.text).toBe('<system-instructions>\nBe brief.\n</system-instructions>\n\nhi');
   });
 
-  it('受限的一次性调用不支持', async () => {
+  it('restricted one-off calls are not supported', async () => {
     await expect(start({}, { confinement: 'cwd-write-only' })).rejects.toThrow('不支持受限的一次性调用');
   });
 
-  it('关闭会话结束 serve', async () => {
+  it('closing the session ends serve', async () => {
     const { session } = await start();
     await session.close();
     await until(() => fake.log().some((e) => e.kind === 'exit'));

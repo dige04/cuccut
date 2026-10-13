@@ -28,8 +28,8 @@ const seq = sequence([track('v1', 'visual', 1)], [videoItem('c1', 'v1', 0, 1800)
 });
 const chapters = sequenceChapters(seq);
 
-describe('章节：区间', () => {
-  it('按起点排，到下一章为止，最后一章到片尾；没名字的写「第 N 章」，其他标记不算', () => {
+describe('chapters: ranges', () => {
+  it('sorted by start, runs to the next chapter, last chapter runs to the end; unnamed ones written as \'Chapter N\', other markers not counted', () => {
     expect(chapters.map((c) => [c.id, c.index, c.title, c.start, c.end, c.startFrame, c.endFrame])).toEqual([
       ['m1', 0, '开场', 0, 20, 0, 600],
       ['m2', 1, '正文', 20, 45, 600, 1350],
@@ -37,11 +37,11 @@ describe('章节：区间', () => {
     ]);
   });
 
-  it('与导出页的章节区间同一口径', () => {
+  it('same basis as the chapter ranges on the export page', () => {
     expect(visibleChapters(chapters).map((c) => [c.id, c.title, c.start, c.end])).toEqual(chapterPieces(seq).map((p) => [p.id, p.label, p.start, p.end]));
   });
 
-  it('起点在片尾之后的章还在，长度为 0，条上不画', () => {
+  it('chapters starting after the end are kept, length 0, not drawn on the bar', () => {
     const late = sequenceChapters(
       sequence([track('v1', 'visual', 1)], [videoItem('c1', 'v1', 0, 300)], { markers: [chapter('a', 0, 'A'), chapter('b', 600, 'B')] }),
     );
@@ -52,7 +52,7 @@ describe('章节：区间', () => {
     expect(visibleChapters(late).map((c) => c.id)).toEqual(['a']);
   });
 
-  it('播放头在哪一章：左闭右开，最后一章含片尾；第一章之前是 -1', () => {
+  it('which chapter the playhead is in: left-closed right-open, last chapter includes the end; before the first chapter is -1', () => {
     expect(chapterAt(chapters, 0)).toBe(0);
     expect(chapterAt(chapters, 19.99)).toBe(0);
     expect(chapterAt(chapters, 20)).toBe(1);
@@ -63,8 +63,8 @@ describe('章节：区间', () => {
   });
 });
 
-describe('章节：上一章 / 下一章', () => {
-  it('上一章：章中间先回本章起点，贴着起点时去上一章；最前面回到 0', () => {
+describe('chapters: previous / next chapter', () => {
+  it('previous: mid-chapter first returns to this chapter\'s start, near the start goes to the previous chapter; at the very beginning returns to 0', () => {
     expect(prevChapterStart(chapters, 30)).toBe(20);
     expect(prevChapterStart(chapters, 20.03)).toBe(0);
     expect(prevChapterStart(chapters, 20)).toBe(0);
@@ -72,7 +72,7 @@ describe('章节：上一章 / 下一章', () => {
     expect(prevChapterStart([], 12)).toBe(0);
   });
 
-  it('下一章：后面最近的章起点；最后一章里去片尾；没有章时不动', () => {
+  it('next: nearest later chapter start; in the last chapter goes to the end; no chapters, no move', () => {
     expect(nextChapterStart(chapters, 0)).toBe(20);
     expect(nextChapterStart(chapters, 19.97)).toBe(45);
     expect(nextChapterStart(chapters, 50)).toBe(60);
@@ -80,8 +80,8 @@ describe('章节：上一章 / 下一章', () => {
   });
 });
 
-describe('章节条', () => {
-  it('章节铺满片长；第一章之前与章节之间的空当补成没有章的段', () => {
+describe('chapter bar', () => {
+  it('chapters fill the clip length; gaps before the first chapter and between chapters are filled as segments without a chapter', () => {
     const gap = sequenceChapters(
       sequence([track('v1', 'visual', 1)], [videoItem('c1', 'v1', 0, 1800)], {
         markers: [chapter('a', 300, 'A', { durationFrames: 300 }), chapter('b', 900, 'B')],
@@ -95,20 +95,20 @@ describe('章节条', () => {
     ]);
   });
 
-  it('没有章时是一整段播放进度；片长为 0 时什么都不画', () => {
+  it('no chapters means one whole segment of playback progress; when length is 0 nothing is drawn', () => {
     expect(bandSegments([], 12).map((s) => [s.chapter, s.start, s.end])).toEqual([[null, 0, 12]]);
     expect(bandSegments(chapters, 0)).toEqual([]);
   });
 
-  it('拖起点：晚于上一章、早于下一章，不出片尾；第一章最早到 0', () => {
+  it('dragging a start: later than the previous chapter, earlier than the next, not past the end; first chapter earliest is 0', () => {
     expect(startBounds(chapters, 0, 1800)).toEqual({ min: 0, max: 599 });
     expect(startBounds(chapters, 1, 1800)).toEqual({ min: 1, max: 1349 });
     expect(startBounds(chapters, 2, 1800)).toEqual({ min: 601, max: 1799 });
   });
 });
 
-describe('章节：编辑操作', () => {
-  it('加一章：按帧提交、exact-frame；预填「第 N 章」', () => {
+describe('chapters: editing operations', () => {
+  it('add a chapter: committed by frame, exact-frame; prefilled \'Chapter N\'', () => {
     expect(defaultChapterTitle(chapters, 900)).toBe('第 3 章');
     expect(defaultChapterTitle([], 0)).toBe('第 1 章');
     expect(addChapterOperation(seq, chapters, 900, ' 插曲 ')).toEqual({
@@ -117,7 +117,7 @@ describe('章节：编辑操作', () => {
     });
   });
 
-  it('加一章不成立：那一帧已有一章、落在片尾、名字空白', () => {
+  it('add a chapter fails: that frame already has a chapter, falls at the end, or the name is blank', () => {
     expect(addChapterOperation(seq, chapters, 600, 'x')).toEqual({ ok: false, reason: 'exists' });
     expect(addChapterOperation(seq, chapters, 1800, 'x')).toEqual({ ok: false, reason: 'beyond' });
     expect(addChapterOperation(seq, chapters, 900, '   ')).toEqual({ ok: false, reason: 'blank' });
@@ -128,7 +128,7 @@ describe('章节：编辑操作', () => {
     ]);
   });
 
-  it('改名：去空白；空白或没变时不写，标题过长截到 200 字', () => {
+  it('rename: trim whitespace; blank or unchanged is not written; titles longer than 200 characters truncated', () => {
     const second = chapters[1]!;
     expect(renameChapterOperation('seq', second, ' 正片 ')).toEqual({ type: 'upsertChapter', sequenceId: 'seq', chapterId: 'm2', title: '正片' });
     expect(renameChapterOperation('seq', second, '正文')).toBeNull();
@@ -137,7 +137,7 @@ describe('章节：编辑操作', () => {
     expect(long && 'title' in long ? long.title?.length : 0).toBe(200);
   });
 
-  it('挪起点与删除', () => {
+  it('moving a start and deleting', () => {
     const second = chapters[1]!;
     expect(moveChapterOperation('seq', second, 750)).toEqual({
       type: 'upsertChapter',
@@ -151,10 +151,10 @@ describe('章节：编辑操作', () => {
   });
 });
 
-describe('文稿按章分组', () => {
+describe('transcript grouped by chapter', () => {
   const brief = (rows: ChapterRow[]) => rows.map((r) => (r.kind === 'chapter' ? `#${r.chapter?.id ?? '-'}:${r.count}` : r.index));
 
-  it('段中点落在哪一章就归哪一章，章变了插头行', () => {
+  it('a segment goes to the chapter where its midpoint falls; the header row is inserted when the chapter changes', () => {
     const paras = [
       { start: 0, end: 8 },
       { start: 8, end: 22 },
@@ -164,18 +164,18 @@ describe('文稿按章分组', () => {
     expect(brief(chapterRows(chapters, paras, true))).toEqual(['#m1:2', 0, 1, '#m2:1', 2, '#m3:1', 3]);
   });
 
-  it('整段剪掉的跟着前一段，开头的跟着后一段', () => {
+  it('segments cut entirely go with the previous segment, leading ones go with the next', () => {
     const paras = [null, { start: 2, end: 6 }, null, { start: 25, end: 30 }];
     expect(brief(chapterRows(chapters, paras, false))).toEqual(['#m1:3', 0, 1, 2, '#m2:1', 3]);
   });
 
-  it('没有段落的章：只有一份转写时照样出头行（开头、中间、结尾），几份转写时不列', () => {
+  it('chapters without paragraphs: with only one transcript, header rows still shown (start, middle, end); with several transcripts, not listed', () => {
     const paras = [{ start: 25, end: 30 }];
     expect(brief(chapterRows(chapters, paras, true))).toEqual(['#m1:0', '#m2:1', 0, '#m3:0']);
     expect(brief(chapterRows(chapters, paras, false))).toEqual(['#m2:1', 0]);
   });
 
-  it('第一章之前的段不插头行；片段挪过之后又回到第一章之前，插「第一章之前」', () => {
+  it('segments before the first chapter get no header row; after a clip is moved back before the first chapter, insert \'before first chapter\'', () => {
     const late = sequenceChapters(sequence([track('v1', 'visual', 1)], [videoItem('c1', 'v1', 0, 1800)], { markers: [chapter('a', 300, 'A')] }));
     const paras = [
       { start: 0, end: 4 },
@@ -185,7 +185,7 @@ describe('文稿按章分组', () => {
     expect(brief(chapterRows(late, paras, true))).toEqual([0, '#a:1', 1, '#-:1', 2]);
   });
 
-  it('片段挪过、章号往回跳时照次序插头行，有段落的章不再当空章补', () => {
+  it('after a clip is moved and the chapter number jumps back, headers are inserted in order; chapters with paragraphs are no longer filled as empty chapters', () => {
     const paras = [
       { start: 2, end: 6 },
       { start: 50, end: 55 },
@@ -194,18 +194,18 @@ describe('文稿按章分组', () => {
     expect(brief(chapterRows(chapters, paras, true))).toEqual(['#m1:1', 0, '#m3:1', 1, '#m2:1', 2]);
   });
 
-  it('段的区间：首个还在的词起点到末个还在的词终点；整段剪掉是 null', () => {
+  it('segment range: from the start of the first remaining word to the end of the last remaining word; null when entirely cut', () => {
     const at = (start: number, end: number) => ({ start, end });
     expect(paragraphSpan([{ placements: [] }, { placements: [at(2, 3)] }, { placements: [at(4, 5), at(9, 10)] }, { placements: [] }])).toEqual(at(2, 5));
     expect(paragraphSpan([{ placements: [] }])).toBeNull();
   });
 
-  it('没有章时不插头行', () => {
+  it('no chapters, no header rows', () => {
     expect(brief(chapterRows([], [{ start: 0, end: 1 }, null], true))).toEqual([0, 1]);
   });
 });
 
-describe('文稿里换章、剪章', () => {
+describe('in the transcript, change and cut chapters', () => {
   // Chapter one has two segments, chapter two has two, chapter three has one.
   const paras = [
     { start: 0, end: 8 },
@@ -215,7 +215,7 @@ describe('文稿里换章、剪章', () => {
     { start: 46, end: 58 },
   ];
 
-  it('往后挪：下一章的起点挪到这一段开头（向下取整到帧），同侧后面的段一起走', () => {
+  it('moving later: the next chapter\'s start moves to the beginning of this segment (rounded down to a frame), later segments on the same side move with it', () => {
     expect(moveParagraphPlan(seq, chapters, paras, 1, 1)).toMatchObject({
       from: { id: 'm1' },
       to: { id: 'm2' },
@@ -225,7 +225,7 @@ describe('文稿里换章、剪章', () => {
     });
   });
 
-  it('往前挪：这一章的起点挪到同章下一段的开头', () => {
+  it('moving earlier: this chapter\'s start moves to the beginning of the next segment in the same chapter', () => {
     expect(moveParagraphPlan(seq, chapters, paras, 2, -1)).toMatchObject({
       from: { id: 'm2' },
       to: { id: 'm1' },
@@ -235,7 +235,7 @@ describe('文稿里换章、剪章', () => {
     });
   });
 
-  it('不成立：会掏空本章、前后没有章、整段剪掉、在第一章之前', () => {
+  it('not allowed: would empty this chapter, no chapter before or after, the whole segment cut, or before the first chapter', () => {
     expect(moveParagraphPlan(seq, chapters, paras, 0, 1)).toBeNull();
     expect(moveParagraphPlan(seq, chapters, paras, 3, -1)).toBeNull();
     expect(moveParagraphPlan(seq, chapters, paras, 0, -1)).toBeNull();
@@ -258,7 +258,7 @@ describe('文稿里换章、剪章', () => {
     ).toBeNull();
   });
 
-  it('剪掉一章：删区间、删标记、后面的章按升序前移这一章的长度，一笔事务', () => {
+  it('cut a chapter: delete range, delete markers, later chapters shift earlier in ascending order by this chapter\'s length, one transaction', () => {
     expect(cutChapterOperations(seq, chapters, chapters[0]!, ['v1'])).toEqual({
       ok: true,
       frames: 600,
@@ -280,7 +280,7 @@ describe('文稿里换章、剪章', () => {
     expect(last.ok && last.operations.map((op) => op.type)).toEqual(['removeRange', 'removeChapter']);
   });
 
-  it('剪掉一章不成立：整个视频就这一章、没有长度、没有要剪的轨道', () => {
+  it('cut a chapter not allowed: the video has only this chapter, no length, no track to cut', () => {
     const only = sequence([track('v1', 'visual', 1)], [videoItem('c1', 'v1', 0, 1800)], { markers: [chapter('a', 0, 'A'), chapter('z', 1800, 'Z')] });
     const list = sequenceChapters(only);
     expect(cutChapterOperations(only, list, list[0]!, ['v1'])).toEqual({ ok: false, reason: 'whole' });

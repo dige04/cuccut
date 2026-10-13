@@ -8,7 +8,7 @@ const ctx: TaskContext = { projects: [], conversations: [] };
 const NOW = Date.parse('2026-10-01T09:12:40Z');
 
 describe('took / secs / fmtSize', () => {
-  it('同原型的写法', () => {
+  it('wording matches the prototype', () => {
     expect(took(42_000)).toBe('42s');
     expect(took(760_000)).toBe('12m 40s');
     expect(took(3_900_000)).toBe('1h 5m');
@@ -21,7 +21,7 @@ describe('took / secs / fmtSize', () => {
 });
 
 describe('taskFacts', () => {
-  it('在跑的 Job：类型、发起方、状态、开始于、跑在、阶段、用时；没有数据的行不出', () => {
+  it('running job: type, initiator, status, started at, running on, stage, elapsed; rows without data are not shown', () => {
     const record = job({ jobId: 'j1', startedAt: '2026-10-01T09:00:00Z' });
     expect(taskFacts(jobRow(record, ctx), { job: record }, NOW)).toEqual([
       ['类型', '转录'],
@@ -34,7 +34,7 @@ describe('taskFacts', () => {
     ]);
   });
 
-  it('排队的 Job 不写用时；生图写图片张数；配音写语言', () => {
+  it('queued job has no elapsed time; image generation shows the image count; voice-over shows the language', () => {
     const queued = job({ jobId: 'q', state: 'queued', phase: 'queued', startedAt: null, submitter: { kind: 'system', id: 'runtime' } });
     const facts = taskFacts(jobRow(queued, ctx), { job: queued }, NOW);
     expect(facts.find(([k]) => k === '用时')).toBeUndefined();
@@ -70,7 +70,7 @@ describe('taskFacts', () => {
     expect(speechFacts).toContainEqual(['发起方', '远端节点']);
   });
 
-  it('Agent 任务：等批准照 chip 念，正在停止照 chip 念，结束了的按结束时间算用时', () => {
+  it('agent task: awaiting approval reads the chip, stopping reads the chip, finished tasks compute elapsed from the end time', () => {
     const waiting = agentRow(task({ taskId: 't', conversationId: 'c2' }), { projects: [], conversations: [{ id: 'c2', projectId: null, activity: 'awaiting-approval' }] });
     expect(taskFacts(waiting, {}, NOW)).toContainEqual(['状态', '需要你确认']);
     const stopping = agentRow(task({ taskId: 't', status: 'stopping' }), ctx);
@@ -97,7 +97,7 @@ describe('jobRemedy', () => {
   const failed = (details: unknown, code = 'CAPABILITY_NOT_CONFIGURED', patch = {}) =>
     job({ jobId: 'f', state: 'failed', error: { code, message: 'x', details }, ...patch });
 
-  it('CAPABILITY_NOT_CONFIGURED 按 remedy.action 去模型页的对应类与页，提示用它自己的', () => {
+  it('CAPABILITY_NOT_CONFIGURED goes to the matching kind and page on the models page per remedy.action, with its own hint', () => {
     const install = jobRemedy(failed(notConfigured({ action: 'install-model', capability: 'transcribe', hint: '装一个本地模型' })));
     expect(install).toEqual({ label: '去补装组件', target: { tab: 'models', category: 'asr', page: 'local' }, hint: '装一个本地模型' });
     expect(jobRemedy(failed(notConfigured({ action: 'configure-provider', capability: 'generateImage', hint: 'h' })))?.target).toEqual({
@@ -119,7 +119,7 @@ describe('jobRemedy', () => {
     ).toEqual({ tab: 'settings', section: 'agent' });
   });
 
-  it('按错误码兜底：凭据去云端模型，本地模型包去本地模型；别的错误不给去处', () => {
+  it('error-code fallback: credentials go to cloud models, local model packs go to local models; other errors offer no destination', () => {
     expect(jobRemedy(failed(undefined, 'PROVIDER_AUTH_FAILED', { providerId: 'openai' }))?.target).toEqual({
       tab: 'models',
       category: 'asr',
@@ -133,7 +133,7 @@ describe('jobRemedy', () => {
 });
 
 describe('rejectionRemedy', () => {
-  it('提交时被拒、details 带 CAPABILITY_NOT_CONFIGURED：按 remedy 给去处与提示', () => {
+  it('rejected on submit with CAPABILITY_NOT_CONFIGURED in details: gives a destination and hint per remedy', () => {
     const error = Object.assign(new Error('没有配置'), {
       details: {
         code: 'CAPABILITY_NOT_CONFIGURED',
@@ -150,14 +150,14 @@ describe('rejectionRemedy', () => {
     });
   });
 
-  it('别的拒绝没有去处', () => {
+  it('other rejections have no destination', () => {
     expect(rejectionRemedy('generateImage', new Error('busy'))).toBeNull();
     expect(rejectionRemedy('generateImage', Object.assign(new Error('x'), { details: { code: 'GRANT_REQUIRED' } }))).toBeNull();
   });
 });
 
 describe('cancellationCost', () => {
-  it('没有外发的不写；不支持取消、不知道发没发、已拿到结果分开说', () => {
+  it('no outbound request is not written; not cancellable, unknown whether sent, and result already received are each stated separately', () => {
     expect(cancellationCost({ remote: 'not-submitted', cost: 'none' })).toBeNull();
     expect(cancellationCost({ remote: 'cancel-unsupported', cost: 'possible' })).toContain('服务商不支持取消');
     expect(cancellationCost({ remote: 'unknown', cost: 'possible' })).toContain('不确定请求有没有发出');
@@ -165,7 +165,7 @@ describe('cancellationCost', () => {
     expect(cancellationCost({ remote: 'cancelled', cost: 'charged' })).toContain('计费');
   });
 
-  it('详情表里有「费用」一行', () => {
+  it('the details table has a "Cost" row', () => {
     const cancelled = job({
       jobId: 'c',
       state: 'cancelled',
@@ -176,7 +176,7 @@ describe('cancellationCost', () => {
 });
 
 describe('jobOutputs / imageRequest', () => {
-  it('生成任务每个输出一行；转录只说文稿写进了视频；没有结果时为空', () => {
+  it('generation tasks have one row per output; transcription only says the transcript was written into the video; empty when there is no result', () => {
     const outputs = jobOutputs({
       result: {
         documentId: null,
@@ -197,7 +197,7 @@ describe('jobOutputs / imageRequest', () => {
     expect(jobOutputs({ result: null })).toEqual([]);
   });
 
-  it('导出写到磁盘上的文件：名字取实际路径（含重名序号），带路径给「在文件夹中显示」', () => {
+  it('exported files on disk: the name uses the actual path (including the duplicate-name number); with a path, offers "Show in folder"', () => {
     const outputs = jobOutputs({
       result: {
         documentId: null,
@@ -221,7 +221,7 @@ describe('jobOutputs / imageRequest', () => {
     ]);
   });
 
-  it('便携包不在产物库里：不给「打开」，只给「在文件夹中显示」', () => {
+  it('portable pack is not in the artifact library: no "Open", only "Show in folder"', () => {
     const [row] = jobOutputs({
       result: {
         documentId: null,
@@ -241,7 +241,7 @@ describe('jobOutputs / imageRequest', () => {
     expect(row).toMatchObject({ key: 'sha256:pkg', name: '访谈.cuccut', artifactId: null, path: '/p/exports/访谈.cuccut' });
   });
 
-  it('生图请求的元信息：模型 · 画幅 · 张数 · 用时', () => {
+  it('image request metadata: model · aspect ratio · count · elapsed time', () => {
     const record = job({
       jobId: 'g',
       kind: 'generateImage',

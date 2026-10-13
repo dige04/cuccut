@@ -139,7 +139,7 @@ describe('RemoteNodeProvider', () => {
   /** All of this client's tasks on the node have been deleted. */
   const nodeJobsGone = (node: TestNode) => node.service.jobs.counts().running + node.service.jobs.counts().queued === 0;
 
-  it('完成：结果在 staging 里且核对过，阶段与进度转给 sink，节点上的任务已删除', async () => {
+  it('completion: result is in staging and verified, stage and progress are forwarded to the sink, the task on the node is deleted', async () => {
     const { node, provider, run, token } = await setup();
     const r = await run();
     const { sink, seen } = recorder();
@@ -161,13 +161,13 @@ describe('RemoteNodeProvider', () => {
     expect(probe.status).toBe(404);
   });
 
-  it('节点上 Worker 崩溃一次：节点自己重试，结果的 runGeneration 是节点的尝试序号', async () => {
+  it('Worker on the node crashes once: the node retries itself, the result\'s runGeneration is the node\'s attempt number', async () => {
     const { provider, run } = await setup();
     const attempt = await provider.transcribe(await run(`${TEST_NODE_BUNDLE}#crash-once`), recorder().sink, new AbortController().signal);
     expect(attempt).toMatchObject({ outcome: 'completed', runGeneration: 2 });
   });
 
-  it('节点上的任务失败：remote-failed，带节点的错误码与 nodeId', async () => {
+  it('task fails on the node: remote-failed, with the node\'s error code and nodeId', async () => {
     const { provider, run, record } = await setup();
     const failure = await failureOf(
       provider.transcribe(await run(`${TEST_NODE_BUNDLE}#crash-on-run`), recorder().sink, new AbortController().signal),
@@ -176,7 +176,7 @@ describe('RemoteNodeProvider', () => {
     expect(failure.details).toMatchObject({ code: 'MODEL_WORKER_CRASHED', node: record.nodeId });
   });
 
-  it('预检的拒绝：模型包不在节点上、能力关闭、令牌无效、地址上换了节点', async () => {
+  it('preflight rejections: model pack not on the node, capability disabled, invalid token, node swapped at the address', async () => {
     const missing = await setup();
     let failure = await failureOf(
       missing.provider.transcribe(await missing.run(TEST_NODE_MISSING_BUNDLE), recorder().sink, new AbortController().signal),
@@ -218,7 +218,7 @@ describe('RemoteNodeProvider', () => {
     expect(failure).toMatchObject({ kind: 'node-rejected', details: { reason: 'unpaired' } });
   });
 
-  it('预检之后节点才关掉转写：创建时的 403 CAPABILITY_DISABLED 同样归为 capability-disabled，带补救', async () => {
+  it('node turns off transcription only after preflight: a 403 CAPABILITY_DISABLED at creation is likewise classified as capability-disabled, with a remedy', async () => {
     const health: NodeHealth = {
       schema: NODE_HEALTH_SCHEMA,
       nodeId: 'node_race',
@@ -269,7 +269,7 @@ describe('RemoteNodeProvider', () => {
     expect(failure.message).toContain('cuccut share capability transcribe on');
   });
 
-  it('令牌读不到（凭据存储不可用）：unavailable，带原因、不带令牌，不发请求', async () => {
+  it('token cannot be read (credential store unavailable): unavailable, with reason, no token, no request sent', async () => {
     let requests = 0;
     const server = http.createServer((_req, res) => {
       requests++;
@@ -306,7 +306,7 @@ describe('RemoteNodeProvider', () => {
     expect(requests).toBe(0);
   });
 
-  it('协议版本不兼容：version', async () => {
+  it('incompatible protocol version: version', async () => {
     const health: NodeHealth = {
       schema: NODE_HEALTH_SCHEMA,
       nodeId: 'node_future',
@@ -330,7 +330,7 @@ describe('RemoteNodeProvider', () => {
     expect(failure).toMatchObject({ kind: 'node-rejected', details: { reason: 'version', node: 'node_future' } });
   });
 
-  it('连不上：node-lost / unreachable', async () => {
+  it('cannot connect: node-lost / unreachable', async () => {
     const { provider, run, records, record } = await setup();
     const closed = net.createServer();
     await new Promise<void>((resolve) => closed.listen(0, '127.0.0.1', resolve));
@@ -341,7 +341,7 @@ describe('RemoteNodeProvider', () => {
     expect(failure).toMatchObject({ kind: 'node-lost', details: { reason: 'unreachable', node: record.nodeId } });
   });
 
-  it('取消：节点确认后删除任务，结果为 cancelled 且没有警告', async () => {
+  it('cancel: task deleted after the node confirms, result is cancelled with no warnings', async () => {
     const { node, provider, run } = await setup();
     const controller = new AbortController();
     const { sink, seen } = recorder();
@@ -354,7 +354,7 @@ describe('RemoteNodeProvider', () => {
     expect(await fs.readdir(node.home.nodeJobsDir).catch(() => [])).toEqual([]);
   });
 
-  it('取消时节点不可达：仍然 cancelled，带 remote-cancel-unconfirmed', async () => {
+  it('node unreachable on cancel: still cancelled, with remote-cancel-unconfirmed', async () => {
     const { provider, proxy, run } = await setup({ proxy: true });
     const controller = new AbortController();
     const { sink, seen } = recorder();
@@ -365,7 +365,7 @@ describe('RemoteNodeProvider', () => {
     expect(await pending).toEqual({ outcome: 'cancelled', workerVersion: null, warnings: [{ code: 'remote-cancel-unconfirmed' }] });
   });
 
-  it('事件流断一次：带 since 重连，进度不倒退、不重复，照常完成', async () => {
+  it('event stream drops once: reconnects with since, progress does not go backward or repeat, completes as usual', async () => {
     const { provider, proxy, run } = await setup({ proxy: true });
     proxy!.dropOnce((line) => line.includes('/events'), 700);
     const { sink, seen } = recorder();
@@ -379,7 +379,7 @@ describe('RemoteNodeProvider', () => {
     expect(done.at(-1)).toBe(20);
   });
 
-  it('心跳超时也算断开：重连后照常完成', async () => {
+  it('heartbeat timeout also counts as a drop: completes as usual after reconnecting', async () => {
     // The node emits progress only every 300 ms and a heartbeat every 15 seconds: with no data for 100 ms, disconnect and reconnect.
     const { provider, proxy, run } = await setup({ proxy: true, timing: { heartbeatTimeoutMs: 100, lostAfterMs: 5_000 } });
     const attempt = await provider.transcribe(await run(`${TEST_NODE_BUNDLE}#slow`), recorder().sink, new AbortController().signal);
@@ -387,7 +387,7 @@ describe('RemoteNodeProvider', () => {
     expect(proxy!.requests.filter((line) => line.includes('/events')).length).toBeGreaterThan(3);
   });
 
-  it('节点失联：重连期限到了 node-lost / stream-lost', async () => {
+  it('node lost: reconnect deadline passes, node-lost / stream-lost', async () => {
     const { provider, proxy, run, record } = await setup({ proxy: true });
     const { sink, seen } = recorder();
     // Attach the handler first: the failure may happen during the awaits below.
@@ -398,7 +398,7 @@ describe('RemoteNodeProvider', () => {
     expect(failure).toMatchObject({ kind: 'node-lost', details: { reason: 'stream-lost', node: record.nodeId } });
   });
 
-  it('节点重启：重连时任务已不存在，node-lost / node-restarted', async () => {
+  it('node restarts: on reconnect the task no longer exists, node-lost / node-restarted', async () => {
     const { node, provider, proxy, run } = await setup({ proxy: true, timing: { lostAfterMs: 10_000 } });
     const { sink, seen } = recorder();
     // Attach the handler first: the failure may happen during the awaits below.
@@ -414,7 +414,7 @@ describe('RemoteNodeProvider', () => {
     expect(failure).toMatchObject({ kind: 'node-lost', details: { reason: 'node-restarted' } });
   });
 
-  it('节点停止共享：任务被节点取消（不是我们取消的），node-lost / node-restarted', async () => {
+  it('node stops sharing: task cancelled by the node (not by us), node-lost / node-restarted', async () => {
     const { node, provider, run } = await setup();
     const { sink, seen } = recorder();
     // Attach the handler first: the failure may happen during the awaits below.

@@ -106,7 +106,7 @@ function event(eventSeq: string, projection: VideoEvent['projection'], revision 
 }
 
 describe('applyVideoEvent', () => {
-  it('应用实例的增删改，按轨道与起点排序，不修改输入', () => {
+  it('adding, removing and updating applied instances, sorted by track and start, does not mutate input', () => {
     const state = base();
     const header = {
       id: 'seq_1',
@@ -138,14 +138,14 @@ describe('applyVideoEvent', () => {
     expect(removed.video.sequences.seq_1!.items.map((i) => i.id)).toEqual(['item_a']);
   });
 
-  it('重复投递的事件原样返回', () => {
+  it('duplicate-delivered events are returned as is', () => {
     const state = base();
     expect(applyVideoEvent(state, event('1', { upserts: [{ kind: 'video', id: 'video_1', value: { name: 'x' } }], removals: [] }))).toBe(
       state,
     );
   });
 
-  it('转场、标记与闪避规则的投影：按序列归位并排序，删除后移走', () => {
+  it('projection of transitions, markers and ducking rules: placed per sequence and sorted, moved away after deletion', () => {
     const state = base();
     const fade = (id: string, left: string, right: string) => ({
       id,
@@ -207,7 +207,7 @@ describe('applyVideoEvent', () => {
     expect(seq.markers.map((m) => m.id)).toEqual(['chap_1', 'chap_2']);
   });
 
-  it('视频、素材与轨道的投影', () => {
+  it('projection of videos, media and tracks', () => {
     const next = applyVideoEvent(
       base(),
       event('2', {
@@ -228,7 +228,7 @@ describe('applyVideoEvent', () => {
     expect(next.video.assets.asset_1?.name).toBe('a.mp4');
   });
 
-  it('序列头的投影：改名之后的序列头没有 nameRef，旧的引用不留', () => {
+  it('sequence header projection: after a rename the sequence header has no nameRef, old references are not kept', () => {
     const state = base();
     const seq = state.video.sequences.seq_1!;
     const header = (name: string, extra: object = {}) => ({
@@ -251,7 +251,7 @@ describe('applyVideoEvent', () => {
     expect('nameRef' in renamed.video.sequences.seq_1!).toBe(false);
   });
 
-  it('文档头的投影：写入新版本替换文档头，删除后不在快照里', () => {
+  it('document header projection: writing a new version replaces the document header; after deletion it is not in the snapshot', () => {
     const header = {
       id: 'doc_1',
       kind: 'caption',
@@ -267,7 +267,7 @@ describe('applyVideoEvent', () => {
     expect(removed.video.documents).toEqual({});
   });
 
-  it('字幕实例在帧网格上，算进序列长度；它没有素材与时间映射', () => {
+  it('subtitle instances sit on the frame grid and count toward sequence length; they have no media and no time mapping', () => {
     const caption: CaptionItem = {
       id: 'item_c',
       trackId: 'trk_s1',
@@ -287,7 +287,7 @@ describe('applyVideoEvent', () => {
     expect(itemTimeMap(caption)).toBeUndefined();
   });
 
-  it('合成实例引用的素材：代码包，加上预渲染替身', () => {
+  it('assets referenced by composition instances: code bundle, plus the pre-rendered stand-in', () => {
     const composition: CompositionItem = {
       id: 'item_k',
       trackId: 'trk_v1',
@@ -308,7 +308,7 @@ describe('applyVideoEvent', () => {
     expect(itemTimeMap(composition)).toBe(composition.timeMap);
   });
 
-  it('音频实例的区间带子帧偏移', () => {
+  it('audio instance ranges carry sub-frame offsets', () => {
     const audio: AudioItem = {
       id: 'item_au',
       trackId: 'trk_a1',
@@ -339,7 +339,7 @@ describe('sequenceDisplayName', () => {
     setLocale('zh-Hans');
   });
 
-  it('缺省名与有 nameRef 之前存下的「主序列」都按当前语言显示', () => {
+  it('default names and the "main sequence" stored before nameRef existed are both shown in the current language', () => {
     expect(sequenceDisplayName(created)).toBe('主序列');
     expect(sequenceDisplayName(legacy)).toBe('主序列');
     vi.stubEnv('CUCCUT_LOCALE', 'en');
@@ -351,13 +351,13 @@ describe('sequenceDisplayName', () => {
     expect(sequenceDisplayName(legacy)).toBe('メインシーケンス');
   });
 
-  describe('用户起的名字', () => {
+  describe('user-given names', () => {
     beforeEach(() => {
       vi.stubEnv('CUCCUT_LOCALE', 'en');
       setLocale('en');
     });
 
-    it('原样显示，不跟着语言换', () => {
+    it('shown as is, not switched with the language', () => {
       expect(sequenceDisplayName({ name: 'Vertical cut' })).toBe('Vertical cut');
       expect(sequenceDisplayName({ name: '竖版' })).toBe('竖版');
       expect(sequenceDisplayName({ name: 'Main sequence' })).toBe('Main sequence');
@@ -366,7 +366,7 @@ describe('sequenceDisplayName', () => {
 });
 
 /** Engine-generated edit names carry references and are shown in the reader's language. Undo, redo and several edits take other edit names as nested arguments (command and protocol spec §3.1). */
-describe('事务的修改名', () => {
+describe('transaction edit names', () => {
   const trim = { key: 'engine.labelTrimClip', text: 'Trim clip' };
   const undoTrim = { key: 'engine.labelUndo', params: { label: trim } };
   const redoNamed = { key: 'engine.labelRedo', params: { label: '整理标题' } };
@@ -376,7 +376,7 @@ describe('事务的修改名', () => {
     setLocale('zh-Hans');
   });
 
-  it('按当前语言展开嵌套的修改名', () => {
+  it('expands nested edit names in the current language', () => {
     expect(localizeText('Undo: Trim clip', undoTrim)).toBe('撤销：裁切片段');
     expect(localizeText('Rename video and more (3 changes)', mixed)).toBe('重命名视频等 3 项修改');
     vi.stubEnv('CUCCUT_LOCALE', 'en');
@@ -388,14 +388,14 @@ describe('事务的修改名', () => {
     expect(localizeText('Undo: Trim clip', undoTrim)).toBe('取り消し：クリップをトリム');
   });
 
-  it('调用方给的修改名与没有引用的旧记录照原样', () => {
+  it('edit names given by the caller and old records without references are kept as is', () => {
     vi.stubEnv('CUCCUT_LOCALE', 'en');
     setLocale('en');
     expect(localizeText('Redo: 整理标题', redoNamed)).toBe('Redo: 整理标题');
     expect(localizeText('撤销：设置章节')).toBe('撤销：设置章节');
   });
 
-  it('edits.apply 收下调用方的修改名引用，只查外形与长度', () => {
+  it('edits.apply accepts the caller\'s edit name reference and checks only its shape and length', () => {
     const apply = methodParamSchemas['edits.apply'];
     const base = { videoId: 'v', commandId: 'c', expectedRevision: '0', operations: [{ type: 'renameVideo', name: 'x' }], label: 'Move 2 clips' };
     const nested = { key: 'editLabel.translateTo', params: { language: { key: 'editLabel.languageName', text: 'French' }, count: 2 } };

@@ -3,8 +3,8 @@ import { cliCommand, cliNext, renderForCli } from './catalog-methods.ts';
 
 const names = ['videos_inspect', 'videos_import_package', 'models_install', 'jobs_wait', 'transcribe', 'export'];
 
-describe('next 按主体渲染（给 CLI）', () => {
-  it('工具名换成 cuccut 命令，多词动词用 -；一级动词与普通词不动', () => {
+describe('next rendered per subject (for the CLI)', () => {
+  it('tool names become cuccut commands, multi-word verbs use -; top-level verbs and ordinary words stay unchanged', () => {
     expect(cliCommand('videos_import_package')).toBe('videos import-package');
     expect(cliCommand('export')).toBe('export');
     expect(cliNext('用 videos_inspect 重新读取，再 export；models_install 之后用 jobs_wait 等', names)).toBe(
@@ -13,7 +13,7 @@ describe('next 按主体渲染（给 CLI）', () => {
     expect(cliNext('my_videos_inspect_x 与 videos_import_package', names)).toBe('my_videos_inspect_x 与 cuccut videos import-package');
   });
 
-  it('只改结果与错误顶层的 next', () => {
+  it('only changes the top-level next of results and errors', () => {
     expect(renderForCli({ ok: true, result: { next: '用 videos_inspect', nested: { next: 'videos_inspect' } } }, names)).toEqual({
       ok: true,
       result: { next: '用 cuccut videos inspect', nested: { next: 'videos_inspect' } },

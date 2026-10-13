@@ -64,20 +64,20 @@ const driver = (extra: Partial<DriverInfo> = {}): DriverInfo =>
     ...extra,
   }) as DriverInfo;
 
-describe('推理强度标签', () => {
-  it('原生 id 映射成中文；medium 是「中」', () => {
+describe('reasoning effort labels', () => {
+  it('native ids map to Chinese labels; medium is \'中\'', () => {
     expect(effortLabel('low')).toBe('低');
     expect(effortLabel('medium')).toBe('中');
     expect(effortLabel('high')).toBe('高');
   });
 
-  it('认不出的原样显示：有原生标签用标签，没有用 id', () => {
+  it('unrecognized ones display as-is: the native label if present, otherwise the id', () => {
     expect(effortLabel('xhigh', 'Extra high')).toBe('Extra high');
     expect(effortLabel('minimal', '')).toBe('minimal');
     expect(effortLabel('minimal')).toBe('minimal');
   });
 
-  it('副文案照原型；「默认」标在模型自己的默认强度上', () => {
+  it('secondary copy follows the prototype; \'default\' is tagged on the model\'s own default effort', () => {
     const rows = effortRows(model('m', { defaultEffort: 'high' }));
     expect(rows).toEqual([
       { id: 'low', label: '低', sub: '快，适合小改动' },
@@ -89,8 +89,8 @@ describe('推理强度标签', () => {
   });
 });
 
-describe('模型表', () => {
-  it('Agent 默认模型打头，其余按推荐、最强、最快排，标出 Agent 自己的默认', () => {
+describe('model table', () => {
+  it('Agent default model comes first, the rest sorted by recommended, strongest, fastest; the agent\'s own default is marked', () => {
     const rows = modelRows(driver(), null);
     expect(rows.map((r) => [r.model, r.sub])).toEqual([
       [null, '按 CLI 配置选择'],
@@ -100,7 +100,7 @@ describe('模型表', () => {
     ]);
   });
 
-  it('「推荐」只标推荐的那一个，别的 balanced 不标（次序仍按模型表的定位）', () => {
+  it('\'recommended\' tags only the recommended one; other balanced models are not tagged (order still follows the table\'s positioning)', () => {
     const models = [
       model('gpt-6-astra', { tier: 'max' }),
       model('gpt-6.1-sol', { tier: 'balanced' }),
@@ -115,23 +115,23 @@ describe('模型表', () => {
     ]);
   });
 
-  it('模型表为空时只有 Agent 默认模型', () => {
+  it('when the model table is empty, only the Agent default model is shown', () => {
     expect(modelRows(driver({ models: [] }), null).map((r) => r.model)).toEqual([null]);
   });
 
-  it('选中却不在列表里的模型也露出来；CLI 配置的默认模型不认得时直说', () => {
+  it('a selected model not in the list is still shown; when the CLI-configured default model is not recognized, says so directly', () => {
     const rows = modelRows(driver({ configModel: 'gpt-9', configModelKnown: false }), 'old-model');
     expect(rows[0]!.sub).toBe('按 CLI 配置选择 · gpt-9 需要升级 CLI');
     expect(rows[1]).toEqual({ model: 'old-model', label: 'old-model', sub: '当前列表未提供此模型' });
   });
 
-  it('收起时的字样：Agent · 模型', () => {
+  it('collapsed label: Agent · Model', () => {
     expect(harnessLabel(driver(), 'opus')).toBe('Claude Code · OPUS');
     expect(harnessLabel(driver(), null)).toBe('Claude Code · Agent 默认模型');
     expect(harnessLabel(null, null)).toBe('正在检测 Agent…');
   });
 
-  it('换模型：新模型也有当前强度就留着，否则回到模型默认', () => {
+  it('changing model: keeps the current effort if the new model also has it, otherwise returns to the model\'s default', () => {
     const d = driver({ models: [model('a'), model('b', { efforts: [{ id: 'low', label: 'Low' }] })] });
     expect(modelChange(d, 'b', 'low')).toEqual({ driverId: 'claude', model: 'b', effort: 'low' });
     expect(modelChange(d, 'b', 'high')).toEqual({ driverId: 'claude', model: 'b', effort: null });
@@ -139,8 +139,8 @@ describe('模型表', () => {
   });
 });
 
-describe('Agent 行', () => {
-  it('用不了的标出原因；会话开始后其他 Agent 标出锁定原因', () => {
+describe('agent row', () => {
+  it('unusable ones show the reason; after a session starts, other agents show the lock reason', () => {
     const codex = driver({ id: 'codex', name: 'Codex CLI', state: 'signed-out', account: null });
     const rows = providerRows([driver(), codex], 'claude', 'opus', null);
     expect(rows[0]).toMatchObject({ ready: true, selected: true, sub: 'OPUS · Claude Pro 订阅' });
@@ -153,7 +153,7 @@ describe('Agent 行', () => {
     expect(locked[0]!.locked).toBe(false);
   });
 
-  it('「更多」四家与用户添加的没检测到时不列，检测到之后与内置一样列出；选着的照列', () => {
+  it('the four \'more\' agents and user-added ones are not listed when undetected; once detected they are listed like built-ins; a selected one is still listed', () => {
     const list = [
       driver(),
       driver({ id: 'gemini', name: 'Gemini CLI', state: 'not-installed' }),
@@ -166,21 +166,21 @@ describe('Agent 行', () => {
   });
 });
 
-describe('新会话草稿', () => {
-  it('没选过用偏好里的默认；选过的（包括明确选了 Agent 默认模型）照用', () => {
+describe('new session draft', () => {
+  it('if never chosen, uses the preferred default; a chosen one (including explicitly choosing the Agent default model) is used as-is', () => {
     const d = driver({ defaultModel: 'sonnet', defaultEffort: 'high' });
     expect(draftSelection(d, undefined)).toEqual({ model: 'sonnet', effort: 'high' });
     expect(draftSelection(d, { model: null })).toEqual({ model: null, effort: 'high' });
     expect(draftSelection(d, { driverId: 'codex', model: 'gpt' })).toEqual({ model: 'sonnet', effort: 'high' });
   });
 
-  it('偏好里的模型消失了，草稿用推荐模型（Runtime 建会话时也这么换）；还没有模型表时原样用', () => {
+  it('preferred model gone: the draft uses the recommended model (the Runtime also swaps it this way when creating a session); when there is no model table yet, uses it as-is', () => {
     expect(draftSelection(driver({ defaultModel: 'sonnet-old' }), undefined).model).toBe('sonnet');
     expect(draftSelection(driver({ models: [], defaultModel: 'sonnet-old' }), undefined).model).toBe('sonnet-old');
     expect(draftSelection(driver({ defaultModel: null }), undefined).model).toBeNull();
   });
 
-  it('换 Agent 丢掉原来的模型与强度；同一个 Agent 合并', () => {
+  it('switching agents drops the previous model and effort; the same agent is merged', () => {
     expect(applyAgentChange({ driverId: 'claude', model: 'opus', effort: 'high' }, 'claude', { driverId: 'codex', model: 'gpt' })).toEqual({
       driverId: 'codex',
       model: 'gpt',
@@ -192,7 +192,7 @@ describe('新会话草稿', () => {
     });
   });
 
-  it('读回持久化的选择：id 写法不对的 Agent 与类型不对的字段丢掉', () => {
+  it('reading back the persisted selection: agents with malformed ids and fields of the wrong type are dropped', () => {
     expect(parseAgentChoice({ driverId: 'Not Valid', model: 3, effort: 'low' })).toEqual({ effort: 'low' });
     // The id is open: the built-in one (opencode) and user-added ones are both recognized.
     for (const driverId of ['opencode', 'my-agent']) expect(parseAgentChoice({ driverId })).toEqual({ driverId });
@@ -203,7 +203,7 @@ describe('新会话草稿', () => {
     expect(parseAgentChoice('claude')).toBeNull();
   });
 
-  it('窄的时候模型只留级别名：去掉版本号、末尾标注与打头的厂商名', () => {
+  it('when narrow, the model keeps only the tier name: drops the version number, trailing annotation and leading vendor name', () => {
     const cases: Array<[string, string]> = [
       ['Sonnet 5.5', 'Sonnet'],
       ['Claude Opus 5.5', 'Opus'],
@@ -229,7 +229,7 @@ describe('新会话草稿', () => {
     for (const [label, short] of cases) expect(compactModelLabel(label), label).toBe(short);
   });
 
-  it('认不出的模型名原样返回（由样式截断）', () => {
+  it('unrecognized model names are returned as-is (truncated by styling)', () => {
     for (const label of [
       'gpt-6.1-sol',
       'claude-sonnet-5-20260101',
@@ -242,7 +242,7 @@ describe('新会话草稿', () => {
     expect(compactModelLabel('5.5')).toBe('5.5');
   });
 
-  it('窄的时候收起的字样：Agent 默认模型写「默认」，没探测到时照旧说正在检测', () => {
+  it('when narrow, the collapsed label for the Agent default model reads \'default\', and when not probed yet it still says detecting', () => {
     const d = driver({ models: [model('sonnet', { label: 'Sonnet 5.5' }), model('gpt-6.1-sol', { label: 'GPT-6.1 Sol' })] });
     expect(compactHarnessLabel(d, 'sonnet')).toBe('Sonnet');
     expect(compactHarnessLabel(d, 'gpt-6.1-sol')).toBe('Sol');
@@ -252,7 +252,7 @@ describe('新会话草稿', () => {
     expect(compactHarnessLabel(null, null)).toBe(AGENT_PICKER.detecting);
   });
 
-  it('Agent 图标：九个内置的都有图标文件，用户添加的用名字首字母', () => {
+  it('agent icons: all nine built-ins have icon files; user-added ones use the first letter of the name', () => {
     expect(Object.keys(AGENT_ICON_FILES).sort()).toEqual([...BUILTIN_DRIVER_IDS].sort());
     expect(agentIcon({ id: 'claude', name: 'Claude Code' })).toEqual({ kind: 'vendor', file: 'anthropic', mono: true });
     expect(agentIcon({ id: 'codex', name: 'Codex' })).toEqual({ kind: 'vendor', file: 'codex', mono: false });

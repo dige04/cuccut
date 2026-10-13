@@ -5,13 +5,13 @@ import { CLOUD_COPY, KIND_ITEMS, MODELS_PAGE_COPY, PROBE_COPY, quoted } from './
 import { TTS_LOCAL_COPY } from './tts-local-copy.ts';
 import { MY_VOICES_COPY } from './voices-copy.ts';
 
-describe('模型页文案随界面语言切换', () => {
+describe('models page copy switches with the UI language', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     setLocale('zh-Hans');
   });
 
-  it('英文界面读到英文，具名导出不用重新导入', () => {
+  it('English UI reads English; named exports need no re-import', () => {
     vi.stubEnv('CUCCUT_LOCALE', 'en');
     setLocale('en');
     expect(MODELS_PAGE_COPY.title).toBe('Models');
@@ -31,7 +31,7 @@ describe('模型页文案随界面语言切换', () => {
     expect(quoted('hi')).toBe('“hi”');
   });
 
-  it('中文界面读到原来的中文', () => {
+  it('Chinese UI reads the original Chinese', () => {
     setLocale('zh-Hans');
     expect(MODELS_PAGE_COPY.title).toBe('模型');
     expect(KIND_ITEMS[0]!.label).toBe('语音识别 · ASR');

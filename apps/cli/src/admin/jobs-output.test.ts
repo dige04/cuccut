@@ -40,8 +40,8 @@ function app(patch: Partial<ApplicationRecord>): ApplicationRecord {
   };
 }
 
-describe('cuccut jobs 的参数', () => {
-  it('resources；reconcile 要任务与三种决定之一', () => {
+describe('cuccut jobs arguments', () => {
+  it('resources; reconcile requires a task and one of three decisions', () => {
     expect(parseJobsArgs(['resources'])).toEqual({ kind: 'resources' });
     expect(() => parseJobsArgs([])).toThrow(/用法/);
     expect(parseJobsArgs(['reconcile', 'job_1', 'retry'])).toEqual({ kind: 'reconcile', jobId: 'job_1', decision: 'retry' });
@@ -55,13 +55,13 @@ describe('cuccut jobs 的参数', () => {
   });
 });
 
-describe('cuccut jobs 的输出', () => {
-  it('状态名', () => {
+describe('cuccut jobs output', () => {
+  it('state names', () => {
     expect(jobStateLabel('needs-reconciliation')).toBe('待对账');
     expect(jobStateLabel('interrupted')).toBe('中断');
   });
 
-  it('取消的三件事实分开写', () => {
+  it('the three facts of a cancel are written separately', () => {
     expect(describeCancellation({ requestedAt: 'x', localStoppedAt: 'y', remote: 'cancel-unsupported', cost: 'possible' })).toBe(
       '本地已停、远端不能取消、可能已计费',
     );
@@ -70,7 +70,7 @@ describe('cuccut jobs 的输出', () => {
     );
   });
 
-  it('对账之后的结果', () => {
+  it('result after reconciliation', () => {
     expect(formatReconcileResult('retry', job({ state: 'queued', attempt: 2 }))).toEqual([
       '已重新排队（第 2 次尝试）：job_1',
       '状态：排队',
@@ -115,13 +115,13 @@ describe('cuccut jobs 的输出', () => {
   });
 });
 
-describe('英文', () => {
+describe('English', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     setLocale('zh-Hans');
   });
 
-  it('状态、取消与对账的提示是英文', () => {
+  it('status, cancel and reconcile hints are in English', () => {
     vi.stubEnv('CUCCUT_LOCALE', 'en');
     setLocale('en');
     expect(jobStateLabel('needs-reconciliation')).toBe('Needs reconciling');

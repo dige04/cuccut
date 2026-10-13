@@ -26,7 +26,7 @@ describe.skipIf(!resolveElectronBinary())('verifyBundle', { timeout: 120_000 }, 
     for (const dir of tmpDirs) fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('hyperframes-basic：全部通过，实测透明', async () => {
+  it('hyperframes-basic: all pass, measured transparent', async () => {
     const bundle = await inspect('hyperframes-basic', { manifest: { alpha: true } });
     const report = await verifyBundle(host, bundle);
     expect(report.checks.filter((c) => c.status === 'failed')).toEqual([]);
@@ -60,7 +60,7 @@ describe.skipIf(!resolveElectronBinary())('verifyBundle', { timeout: 120_000 }, 
     expect(report.sampledFrames.map((f) => f.seconds)).toEqual([0, 1, 59 / 30, 2 + 1 / 30, 1]);
   });
 
-  it('声明透明但画面全不透明 → alpha 失败；声明不透明 → alpha 跳过', async () => {
+  it('declared transparent but frames fully opaque → alpha fails; declared opaque → alpha is skipped', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cuccut-verify-opaque-'));
     tmpDirs.push(dir);
     const html = fs.readFileSync(path.join(fixtures, 'hyperframes-basic/index.html'), 'utf8');
@@ -75,14 +75,14 @@ describe.skipIf(!resolveElectronBinary())('verifyBundle', { timeout: 120_000 }, 
     expect(opaque.status).toBe('passed');
   });
 
-  it('nondeterministic：determinism 失败（COMPOSITION_NONDETERMINISTIC）', async () => {
+  it('nondeterministic: determinism fails (COMPOSITION_NONDETERMINISTIC)', async () => {
     const report = await verifyBundle(host, await inspect('nondeterministic'));
     expect(check(report, 'determinism')).toMatchObject({ status: 'failed', code: 'COMPOSITION_NONDETERMINISTIC' });
     expect(report.status).toBe('failed');
     expect(report.capabilities?.randomAccess).toBe(false);
   });
 
-  it('network-runtime：运行期请求被拦截（COMPOSITION_NETWORK_BLOCKED）', async () => {
+  it('network-runtime: runtime request is blocked (COMPOSITION_NETWORK_BLOCKED)', async () => {
     const report = await verifyBundle(host, await inspect('network-runtime'));
     expect(check(report, 'network-static')?.status).toBe('passed');
     expect(check(report, 'network-runtime')).toMatchObject({
@@ -93,7 +93,7 @@ describe.skipIf(!resolveElectronBinary())('verifyBundle', { timeout: 120_000 }, 
     expect(report.status).toBe('failed');
   });
 
-  it('root-missing：root 失败，其余执行项跳过', async () => {
+  it('root-missing: root fails, the remaining execution items are skipped', async () => {
     const bundle = await inspect('root-missing', { manifest: { width: 1280, height: 720, fps: 30, durationFrames: 60 } });
     const report = await verifyBundle(host, bundle);
     expect(check(report, 'timeline')?.status).toBe('passed');

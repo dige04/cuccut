@@ -71,7 +71,7 @@ function translator(state: { broken: number; calls: number }): FakeHandler {
   };
 }
 
-describe.skipIf(!engine)('视频工具的目标（真实引擎）', () => {
+describe.skipIf(!engine)('video tool targets (real engine)', () => {
   let dir: string;
   let runtime: RunningRuntime;
   let client: CucCutClient;
@@ -176,7 +176,7 @@ describe.skipIf(!engine)('视频工具的目标（真实引擎）', () => {
     return out;
   };
 
-  it.skipIf(!speechWorker)('entryId 指向没打开的视频：以租约打开、翻译写进去，流程完成后放下并关闭', async () => {
+  it.skipIf(!speechWorker)('entryId points to an unopened video: opened under a lease, translation written in, released and closed when the pipeline completes', async () => {
     await configure();
     const { videoId, relPath, entryId } = await closedVideo();
     const { jobId } = await translate({ entryId });
@@ -192,7 +192,7 @@ describe.skipIf(!engine)('视频工具的目标（真实引擎）', () => {
     expect(await documentsOf(videoId, relPath)).toContain('translation');
   });
 
-  it.skipIf(!speechWorker)('entryId 指向别的连接已经打开着的视频：接上那一份，完成后它仍由那个连接打开着', async () => {
+  it.skipIf(!speechWorker)('entryId points to a video already open on another connection: attaches to that copy, and it stays open on that connection after completion', async () => {
     await configure();
     const { videoId, relPath, entryId } = await closedVideo();
     await client.request('videos.open', { projectId: project.id, path: relPath });
@@ -207,7 +207,7 @@ describe.skipIf(!engine)('视频工具的目标（真实引擎）', () => {
     await client.request('videos.close', { videoId });
   });
 
-  it('被别的进程锁着：pipelines.start 以 VIDEO_LOCKED 拒绝，不建任务、不动视频目录', async () => {
+  it('locked by another process: pipelines.start rejects with VIDEO_LOCKED, no task is created and the video directory is not touched', async () => {
     await configure();
     const { videoId, relPath, entryId } = await closedVideo();
     const videoDir = path.join(project.path, relPath);
@@ -228,7 +228,7 @@ describe.skipIf(!engine)('视频工具的目标（真实引擎）', () => {
     expect(await videoDirs()).toEqual([relPath]);
   });
 
-  it('回收站里的、不是视频的条目拒绝；videoId 与 target 冲突、翻译新建视频都拒绝', async () => {
+  it('entries in the trash and non-video entries are rejected; a conflict between videoId and target, and translation creating a new video, are both rejected', async () => {
     await configure();
     const { videoId, entryId } = await closedVideo();
     await fs.writeFile(path.join(project.path, 'notes.srt'), '1\n00:00:00,000 --> 00:00:01,000\n你好\n');
@@ -248,7 +248,7 @@ describe.skipIf(!engine)('视频工具的目标（真实引擎）', () => {
     expect(await client.request('jobs.list', { children: true })).toEqual({ jobs: [] });
   });
 
-  it.skipIf(!speechWorker)('失败之后放下视频；重试按记下的位置重新打开，不重新解析目标', async () => {
+  it.skipIf(!speechWorker)('releases the video after failure; retry reopens at the recorded location, without re-resolving the target', async () => {
     await configure();
     const { videoId, entryId } = await closedVideo();
     state.broken = 100;
@@ -265,14 +265,14 @@ describe.skipIf(!engine)('视频工具的目标（真实引擎）', () => {
     await until(() => runtime.videos.ref(videoId) === null);
   });
 
-  describe.skipIf(!hasFfprobe)('从链接新建视频（假 yt-dlp）', () => {
+  describe.skipIf(!hasFfprobe)('creates a video from a link (fake yt-dlp)', () => {
     beforeEach(async () => {
       const fake = await writeFakeYtDlp(path.join(dir, 'yt-dlp'));
       await client.request('externalTools.setPath', { name: 'yt-dlp', path: fake.command });
       await client.request('externalTools.consent', { name: 'yt-dlp', grant: true });
     });
 
-    it('新建视频（名字取页面标题），素材放在主轨从 0 开始、覆盖整段；Space 记下来源是这次运行', async () => {
+    it('creates a video (name taken from the page title), media placed on the main track from 0 covering the whole length; Space records the source as this run', async () => {
       const { jobId } = await client.request('pipelines.start', {
         pipeline: 'link-import',
         params: { url: 'https://video.example.com/watch?v=abc', target: { create: { projectId: project.id } } },
@@ -311,7 +311,7 @@ describe.skipIf(!engine)('视频工具的目标（真实引擎）', () => {
       expect(entry.origin).toMatchObject({ source: 'imported', projectId: project.id, videoId, jobId, capability: 'link-import' });
     });
 
-    it('智能体新建视频：风险仍是 command、项目默认是会话的；别的项目拒绝，不属于项目的会话建在它的工作目录里', async () => {
+    it('agent creates a video: risk is still command, the project defaults to the session\'s; other projects are rejected; a session not belonging to a project creates it in its working directory', async () => {
       const {
         conversation: { id: conversationId },
       } = await client.request('conversations.create', { projectId: project.id });
@@ -418,7 +418,7 @@ describe.skipIf(!engine)('视频工具的目标（真实引擎）', () => {
       expect(looseEntry.origin).toMatchObject({ jobId: looseJob.jobId, conversationId: loose });
     });
 
-    it('按不属于项目的会话新建（`create: { conversationId }`）：视频建在会话的工作目录里，不建项目；同一命令重复提交是同一个任务', async () => {
+    it('creating with a session not belonging to a project (`create: { conversationId }`): the video is created in the session\'s working directory, no project is created; the same command submitted again is the same task', async () => {
       const {
         conversation: { id: loose, cwd: scratch },
       } = await client.request('conversations.create', { projectId: null, title: '链接里的片' });
@@ -447,7 +447,7 @@ describe.skipIf(!engine)('视频工具的目标（真实引擎）', () => {
       expect(entry.source).toMatchObject({ projectId: null, conversationId: loose });
     });
 
-    it('不属于项目的会话只下载之后，按媒体的 artifactId 导入视频（bytes 收进视频，来源是这次下载）', async () => {
+    it('after only downloading in a session not belonging to a project, imports the video by the media\'s artifactId (bytes are taken into the video, source is this download)', async () => {
       const {
         conversation: { id: loose },
       } = await client.request('conversations.create', { projectId: null });
@@ -500,7 +500,7 @@ describe.skipIf(!engine)('视频工具的目标（真实引擎）', () => {
       expect(stale).toMatchObject({ isError: true, body: { error: { code: 'ARTIFACT_NOT_FOUND' } } });
     });
 
-    it('智能体在不属于项目的会话里不给目标也可以转写：流程按会话来源提交，transcribe 为 true', async () => {
+    it('agent can transcribe without a target in a session not belonging to a project: the pipeline is submitted with the session as source, transcribe is true', async () => {
       await configure();
       await client.request('models.setDefault', { capability: 'transcribe', providerId: 'openai' });
       const {

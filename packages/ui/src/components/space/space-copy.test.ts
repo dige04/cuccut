@@ -8,8 +8,8 @@ afterEach(() => {
   setLocale('zh-Hans');
 });
 
-describe('Space 页文案', () => {
-  it('英文界面读英文', () => {
+describe('Space page copy', () => {
+  it('English UI reads English', () => {
     vi.stubEnv('CUCCUT_LOCALE', 'en');
     setLocale('en');
     expect(SPACE_COPY.trash).toBe('Move to Trash');
@@ -29,7 +29,7 @@ describe('Space 页文案', () => {
     expect(SPACE_COPY.capability['videos-derive']).toBe('Cut into shorts');
   });
 
-  it('简体中文译文照旧', () => {
+  it('Simplified Chinese translation stays unchanged', () => {
     expect(SPACE_COPY.trash).toBe('移入回收站');
     expect(SPACE_COPY.hitsGrouped(3, 2)).toBe('3 条 · 2 个视频');
     expect(SPACE_COPY.failed(SPACE_COPY.rebuild, '磁盘满了')).toBe('没能重建索引：磁盘满了');

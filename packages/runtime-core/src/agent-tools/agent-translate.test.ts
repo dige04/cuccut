@@ -54,8 +54,8 @@ function setup() {
 
 const zh = { videoId: 'video_1', sourceDocumentId: 'doc_speech', language: 'zh-Hans' };
 
-describe('智能体自己翻译的进度记录', () => {
-  it('登记一条 agentTranslate 托管记录；同一回合同一范围沿用它', () => {
+describe('progress records for the agent\'s own translation', () => {
+  it('registers one agentTranslate managed record; the same scope in the same turn reuses it', () => {
     const { scope, access, hosted } = setup();
     const jobId = scope.translationStarted(access(), { ...zh, sentences: 42, sourceRevision: '3' });
     expect(jobId).toBeTruthy();
@@ -78,7 +78,7 @@ describe('智能体自己翻译的进度记录', () => {
     expect(hosted).toHaveLength(2);
   });
 
-  it('写入这门语言的译文时完成，结果指向译文；别的语言不受影响', async () => {
+  it('completes when a translation in this language is written, with the result pointing to the translation; other languages are unaffected', async () => {
     const { scope, access, hosted } = setup();
     scope.translationStarted(access(), { ...zh, sentences: 3 });
     scope.translationStarted(access(), { ...zh, language: 'ja', sentences: 3 });
@@ -89,7 +89,7 @@ describe('智能体自己翻译的进度记录', () => {
     expect(hosted[1]!.record.state).toBe('running');
   });
 
-  it('回合结束还没写：用户停止的记为取消，别的记为中断；别的任务结束不动它', async () => {
+  it('turn ends with nothing written: user-stopped is recorded as cancelled, others as interrupted; another task ending does not touch it', async () => {
     const { scope, access, hosted, emit, nextTask } = setup();
     scope.translationStarted(access(), { ...zh, sentences: 3 });
     const task = (taskId: string, status: 'running' | 'completed' | 'stopped') =>
@@ -111,7 +111,7 @@ describe('智能体自己翻译的进度记录', () => {
     expect(hosted[1]!.record.state).toBe('interrupted');
   });
 
-  it('下一个回合接着翻译同一范围：上一回合遗留的记录中断，重新登记', async () => {
+  it('the next turn continues translating the same scope: the record left by the previous turn is interrupted and registered again', async () => {
     const { scope, access, hosted, nextTask } = setup();
     const first = scope.translationStarted(access(), { ...zh, sentences: 3 });
     nextTask('task_2');
@@ -122,7 +122,7 @@ describe('智能体自己翻译的进度记录', () => {
     expect(hosted[1]!.record.submitter).toMatchObject({ taskId: 'task_2' });
   });
 
-  it('JobManager 取消或 Runtime 停止：只结束这条记录', async () => {
+  it('JobManager cancel or Runtime stop: ends only this record', async () => {
     const { scope, access, hosted } = setup();
     scope.translationStarted(access(), { ...zh, sentences: 3 });
     hosted[0]!.control.cancel();

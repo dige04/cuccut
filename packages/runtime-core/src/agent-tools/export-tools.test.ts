@@ -26,7 +26,7 @@ const ffmpeg = (() => {
 })();
 if (!engine || !ffmpeg) console.warn('跳过导出工具测试：没有 engine-host 或 ffmpeg');
 
-describe.skipIf(!engine || !ffmpeg)('导出工具（真实引擎）', () => {
+describe.skipIf(!engine || !ffmpeg)('export tools (real engine)', () => {
   let fixtures: string;
   let audio: string;
   let dir: string;
@@ -124,7 +124,7 @@ describe.skipIf(!engine || !ffmpeg)('导出工具（真实引擎）', () => {
     }, 15_000);
   }
 
-  it('规划模式下拒绝；可以修改时导出到工作目录的 exports/，jobs_inspect 给出路径与校验', async () => {
+  it('rejected in plan mode; when modification is allowed, exports to exports/ in the working directory, jobs_inspect gives the path and validation', async () => {
     const plan = await send('plan');
     const refused = await tool(plan, 'export', { video: videoPath, kind: 'subtitles', format: 'srt' });
     expect(refused.body.error.code).toBe('PLAN_ONLY');
@@ -195,7 +195,7 @@ describe.skipIf(!engine || !ffmpeg)('导出工具（真实引擎）', () => {
     expect((await overwritingVideo).body.error).toMatchObject({ code: 'APPROVAL_DENIED', risk: 'high' });
   });
 
-  it('内部检查用途经工具冻结进导出记录，文件与后台任务照常完成', async () => {
+  it('internal-check purpose frozen into the export record via the tool; file and background task complete as usual', async () => {
     const session = await send('auto');
     const submitted = await tool(session, 'export', { video: videoPath, kind: 'subtitles', format: 'srt', purpose: 'preview' });
     expect(submitted.isError).toBe(false);
@@ -209,7 +209,7 @@ describe.skipIf(!engine || !ffmpeg)('导出工具（真实引擎）', () => {
     expect(stored.jobs.find((j: Loose) => j.record.jobId === record.jobId).record.export.settings.purpose).toBe('preview');
   });
 
-  it('智能体自己翻译：documents_read 的转写带 translationBasis，照它写的译文能写入视频', async () => {
+  it('agent translates itself: documents_read\'s transcript carries translationBasis, and a translation written according to it can be written into the video', async () => {
     const session = await send('auto');
     const speechId = Object.values(runtime.videos.mirror(videoId)!.video.documents).find((d) => d.kind === 'speech')!.id;
     const read = await tool(session, 'documents_read', { video: videoPath, documentId: speechId });
@@ -255,7 +255,7 @@ describe.skipIf(!engine || !ffmpeg)('导出工具（真实引擎）', () => {
     );
   });
 
-  it('目标目录不能出工作目录、不能进视频目录；格式与种类要配；预检错误带错误码与 next', async () => {
+  it('target directory cannot leave the working directory or enter the video directory; format and kind must match; preflight errors carry an error code and next', async () => {
     const session = await send();
     const codeOf = async (args: Record<string, unknown>) =>
       (await tool(session, 'export', { video: videoPath, kind: 'subtitles', format: 'srt', ...args })).body.error;
@@ -309,7 +309,7 @@ describe.skipIf(!engine || !ffmpeg)('导出工具（真实引擎）', () => {
     expect(await client.request('exports.list', { videoId })).toEqual({ jobs: [] });
   });
 
-  it('便携包与工程：同样是 edit（覆盖时 high）；缺素材时逐项列出，不带本机路径', async () => {
+  it('portable package and project: both are edit (high when overwriting); missing media listed item by item, without local paths', async () => {
     const session = await send('auto');
     const submitted = await tool(session, 'export', { video: videoPath, kind: 'portable', format: 'cuccut' });
     expect(submitted.isError).toBe(false);

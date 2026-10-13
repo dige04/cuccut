@@ -93,10 +93,10 @@ function gatedRemote(gate: Promise<void>): (url: string, signal: AbortSignal) =>
     })();
 }
 
-describe('下载', () => {
+describe('download', () => {
   const options = { signal: new AbortController().signal, onProgress: () => {}, openRemote: noRemote };
 
-  it('流式落地、校验后改名，清掉别的安装包与残留的 .part', async () => {
+  it('streams to disk, renames after verification, removes other installers and leftover .part files', async () => {
     await fs.mkdir(cacheDir, { recursive: true });
     await fs.writeFile(path.join(cacheDir, 'CucCut-2.2.0.zip'), 'old');
     await fs.writeFile(path.join(cacheDir, 'stale.dmg.part'), 'old');
@@ -110,7 +110,7 @@ describe('下载', () => {
     expect(progress.at(-1)).toBe(100);
   });
 
-  it('摘要或大小对不上就丢掉并报告校验失败', async () => {
+  it('a digest or size mismatch discards the file and reports a verification failure', async () => {
     const bad = await downloadTo(infoFor({ sha256: '0'.repeat(64) }), cacheDir, options);
     expect(bad).toMatchObject({ ok: false, cancelled: false, failure: 'verify' });
     const short = await downloadTo(infoFor({ size: PAYLOAD.length + 10 }), cacheDir, options);
@@ -120,7 +120,7 @@ describe('下载', () => {
     expect(await fs.readdir(cacheDir)).toEqual([]);
   });
 
-  it('取消即停，不留 .part', async () => {
+  it('cancel stops and leaves no .part file', async () => {
     const controller = new AbortController();
     let release!: () => void;
     const gate = new Promise<void>((resolve) => (release = resolve));
@@ -136,12 +136,12 @@ describe('下载', () => {
     expect(await fs.readdir(cacheDir)).toEqual([]);
   });
 
-  it('打不开远端算下载失败', async () => {
+  it('a remote that cannot be opened counts as a download failure', async () => {
     const result = await downloadTo(infoFor({ url: 'https://example.invalid/x.zip' }), cacheDir, options);
     expect(result).toMatchObject({ ok: false, cancelled: false, failure: 'download' });
   });
 
-  it('缓存里的文件被改过就不复用', async () => {
+  it('a cached file that was modified is not reused', async () => {
     await downloadTo(infoFor(), cacheDir, options);
     expect(await cachedDownload(infoFor(), cacheDir)).toBe(path.join(cacheDir, 'CucCut-2.3.0.zip'));
     const tampered = Buffer.from(PAYLOAD);
@@ -150,7 +150,7 @@ describe('下载', () => {
     expect(await cachedDownload(infoFor(), cacheDir)).toBeNull();
   });
 
-  it('装完重新打开后只清这次启动之前的安装包', async () => {
+  it('after reopening post-install, only installers from before this launch are cleared', async () => {
     await fs.mkdir(cacheDir, { recursive: true });
     const started = Date.UTC(2026, 9, 5, 8, 0, 0);
     const before = new Date(started - 60_000);
@@ -239,8 +239,8 @@ async function fileFeed(): Promise<AppUpdateDeps['feed']> {
   return { url: await writeFeed(manifestText({ url: pathToFileURL(payloadPath).href })), allowFileUrl: true };
 }
 
-describe('服务', () => {
-  it('手动检查 → 有新版本（不提醒）→ 下载 → 已下载 → 安装后退出', async () => {
+describe('service', () => {
+  it('manual check → update available (no notification) → download → downloaded → install and quit', async () => {
     const h = harness({ feed: await fileFeed() });
     await h.service.check('manual');
     expect(h.state()).toMatchObject({ k: 'available', info: { version: '2.3.0', build: 57 } });
@@ -264,7 +264,7 @@ describe('服务', () => {
     expect(h.deps.quit).toHaveBeenCalledOnce();
   });
 
-  it('清单是别的变体的：检查失败，不提供更新', async () => {
+  it('manifest for another variant: check fails, no update is offered', async () => {
     const feed = await writeFeed(manifestText({ url: pathToFileURL(payloadPath).href }, { variant: 'cuda' }));
     const h = harness({ feed: { url: feed, allowFileUrl: true }, variant: 'vulkan' });
     await h.service.check('manual');
@@ -274,13 +274,13 @@ describe('服务', () => {
     expect(same.state()).toMatchObject({ k: 'available', info: { build: 57 } });
   });
 
-  it('已是最新', async () => {
+  it('up to date', async () => {
     const h = harness({ feed: await fileFeed(), current: { version: '2.3.0', build: 57 } });
     await h.service.check('manual');
     expect(h.state()).toEqual({ k: 'upToDate' });
   });
 
-  it('已是最新时清掉缓存里用不上的包（退出时装好后留下的安装器）', async () => {
+  it('when up to date, unused packages in the cache are cleared (installers left after an install on quit)', async () => {
     await fs.mkdir(path.join(cacheDir, 'unpack-57'), { recursive: true });
     await fs.writeFile(path.join(cacheDir, 'CucCut-2.3.0-build.57-win-x64-setup.exe'), 'x');
     await fs.writeFile(path.join(cacheDir, 'install.log'), 'keep');
@@ -290,7 +290,7 @@ describe('服务', () => {
     expect(await fs.readdir(cacheDir)).toEqual(['install.log']);
   });
 
-  it('自动检查且自动下载：后台下好，提醒「已下载」一次', async () => {
+  it('automatic check with automatic download: downloads in the background and notifies “已下载” once', async () => {
     const h = harness({ feed: await fileFeed() });
     h.service.configure({ autoCheck: true, autoDownload: true });
     await h.service.check('auto');
@@ -298,7 +298,7 @@ describe('服务', () => {
     expect(h.notices).toEqual([{ kind: 'ready', info: expect.objectContaining({ build: 57 }) }]);
   });
 
-  it('自动下载关着或不能自动换包：停在有新版本，提醒「可以更新了」', async () => {
+  it('automatic download off or the app cannot swap the package itself: stops at update available and notifies “可以更新了”', async () => {
     const off = harness({ feed: await fileFeed() });
     off.service.configure({ autoCheck: true, autoDownload: false });
     await off.service.check('auto');
@@ -311,7 +311,7 @@ describe('服务', () => {
     expect(manual.notices.map((n) => n.kind)).toEqual(['available']);
   });
 
-  it('缓存里已有同一 build：不重下，过一遍校验段再到已下载，自动检查时提醒', async () => {
+  it('cache already holds the same build: no re-download, runs through the verify stage to downloaded, notifies on automatic check', async () => {
     await downloadTo(infoFor(), cacheDir, { signal: new AbortController().signal, onProgress: () => {}, openRemote: noRemote });
     const h = harness({ feed: await fileFeed() });
     h.service.configure({ autoCheck: true, autoDownload: false });
@@ -328,7 +328,7 @@ describe('服务', () => {
     expect(manual.notices).toEqual([]);
   });
 
-  it('系统不够：停在有新版本，不下载也不提醒', async () => {
+  it('system short: stops at update available, neither downloads nor notifies', async () => {
     const h = harness({ feed: await fileFeed(), systemVersion: '13.6' });
     h.service.configure({ autoCheck: true, autoDownload: true });
     await h.service.check('auto');
@@ -338,7 +338,7 @@ describe('服务', () => {
     expect(h.notices).toEqual([]);
   });
 
-  it('检查失败进出错；有新版本时的静默检查失败保持原样', async () => {
+  it('check failure enters error; a silent check failure while an update is available leaves the state unchanged', async () => {
     const missing = harness({ feed: { url: pathToFileURL(path.join(root, 'nope.json')).href, allowFileUrl: true } });
     await missing.service.check('manual');
     expect(missing.state()).toEqual({ k: 'error', failure: 'check', info: null });
@@ -352,7 +352,7 @@ describe('服务', () => {
     expect(h.state()).toEqual({ k: 'available', info: expect.objectContaining({ build: 57 }) });
   });
 
-  it('清单里的安装包校验不过：丢掉并报告', async () => {
+  it('installer in the manifest fails verification: discarded and reported', async () => {
     const h = harness({ feed: { url: await writeFeed(manifestText({ url: pathToFileURL(payloadPath).href, sha256: 'c'.repeat(64) })), allowFileUrl: true } });
     await h.service.check('manual');
     h.service.download();
@@ -361,7 +361,7 @@ describe('服务', () => {
     expect(await fs.readdir(cacheDir)).toEqual([]);
   });
 
-  it('取消后晚到的下载结果被丢弃', async () => {
+  it('a download result arriving after cancel is discarded', async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => (release = resolve));
     const h = harness({
@@ -378,7 +378,7 @@ describe('服务', () => {
     expect(h.state().k).toBe('available');
   });
 
-  it('安装前重新校验：被改过的包删掉并报告', async () => {
+  it('re-verified before install: a modified package is deleted and reported', async () => {
     const h = harness({ feed: await fileFeed() });
     await h.service.check('manual');
     h.service.download();
@@ -391,7 +391,7 @@ describe('服务', () => {
     expect(await fs.readdir(cacheDir)).toEqual([]);
   });
 
-  it('不能自己换包：在访达里显示安装包、打开下载页，不退出', async () => {
+  it('cannot swap the package itself: reveals the installer in Finder and opens the download page, does not quit', async () => {
     const h = harness({ feed: await fileFeed(), installPackage: vi.fn(async (): Promise<InstallOutcome> => ({ type: 'fallback' })) });
     await h.service.check('manual');
     h.service.download();
@@ -403,7 +403,7 @@ describe('服务', () => {
     expect(h.state()).toMatchObject({ k: 'error', failure: 'manual', info: { build: 57 } });
   });
 
-  it('换包失败按类别报告', async () => {
+  it('swap failures are reported by category', async () => {
     const h = harness({
       feed: await fileFeed(),
       installPackage: vi.fn(async (): Promise<InstallOutcome> => ({ type: 'failed', failure: 'signature', detail: 'team' })),
@@ -416,7 +416,7 @@ describe('服务', () => {
     expect(h.deps.quit).not.toHaveBeenCalled();
   });
 
-  it('不检查更新时什么都不做', async () => {
+  it('does nothing when update checks are off', async () => {
     const h = harness({ unsupported: 'dev', feed: await fileFeed() });
     h.service.start();
     h.advance(FIRST_CHECK_DELAY_S * 1000);
@@ -426,7 +426,7 @@ describe('服务', () => {
   });
 });
 
-describe('分批推送', () => {
+describe('staged rollout', () => {
   const HOUR = 3600 * 1000;
   /** 10% released (the harness clock is 1 hour after release; the rollout completes over 10 hours). */
   async function rolloutFeed(offsetHours = -1): Promise<AppUpdateDeps['feed']> {
@@ -435,7 +435,7 @@ describe('分批推送', () => {
     return { url: await writeFeed(text), allowFileUrl: true };
   }
 
-  it('自动检查没轮到本机：当作已是最新，不提醒，记一行日志', async () => {
+  it('automatic check not reaching this machine: treated as up to date, no notification, logs one line', async () => {
     const log = vi.fn();
     const h = harness({ feed: await rolloutFeed(), log });
     h.service.configure({ autoCheck: true, autoDownload: true });
@@ -446,7 +446,7 @@ describe('分批推送', () => {
     expect(log).toHaveBeenCalledWith(expect.stringMatching(/^分批推送：build 57 .*10\.0%.*50\.0%/));
   });
 
-  it('轮到本机的照常推；发布时刻之前谁都不推', async () => {
+  it('machines reached are pushed as usual; nobody is pushed before the release time', async () => {
     const early = harness({ feed: await rolloutFeed(), rolloutBucket: async () => 0.05 });
     early.service.configure({ autoCheck: true, autoDownload: false });
     await early.service.check('auto');
@@ -459,14 +459,14 @@ describe('分批推送', () => {
     expect(future.state()).toEqual({ k: 'upToDate' });
   });
 
-  it('手动检查不受分批限制，也不读本机位置', async () => {
+  it('manual check is not limited by staging and does not read the machine\'s position', async () => {
     const h = harness({ feed: await rolloutFeed() });
     await h.service.check('manual');
     expect(h.state()).toMatchObject({ k: 'available', info: { build: 57 } });
     expect(h.deps.rolloutBucket).not.toHaveBeenCalled();
   });
 
-  it('手动检查找到过的同一 build，之后的自动检查不收回', async () => {
+  it('a later automatic check does not withdraw the same build that a manual check found', async () => {
     const h = harness({ feed: await rolloutFeed() });
     h.service.configure({ autoCheck: true, autoDownload: false });
     await h.service.check('manual');
@@ -476,7 +476,7 @@ describe('分批推送', () => {
     expect(h.deps.rolloutBucket).not.toHaveBeenCalled();
   });
 
-  it('下载失败（出错带着版本）后的自动检查也不收回', async () => {
+  it('an automatic check after a download failure (error carrying the version) also does not withdraw it', async () => {
     const text = manifestText(
       { url: pathToFileURL(payloadPath).href, sha256: 'c'.repeat(64) },
       { rolloutHours: 10, releasedAt: new Date(Date.UTC(2026, 9, 3, 7, 0, 0)).toISOString() },
@@ -490,7 +490,7 @@ describe('分批推送', () => {
     expect(h.state()).toMatchObject({ k: 'available', info: { build: 57 } });
   });
 
-  it('本机位置存在用户数据目录里，读不懂就重新生成，写不进去也照用', async () => {
+  it('the machine position is stored in the user data directory; unreadable means regenerate; unwritable is still used', async () => {
     const file = path.join(root, 'userData', 'update-installation-id');
     const first = await installationBucket(file);
     expect(first).toBeGreaterThanOrEqual(0);
@@ -537,8 +537,8 @@ async function toReady(h: Harness): Promise<void> {
 
 const ARCHIVE_57 = () => path.join(cacheDir, 'CucCut-2.3.0.zip');
 
-describe('校验段', () => {
-  it('下完先停在 100% 校验，就位后才到已下载', async () => {
+describe('verify stage', () => {
+  it('after download, stays at 100% during verification and reaches downloaded only once in place', async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => (release = resolve));
     const staging = stagingPrepare();
@@ -558,7 +558,7 @@ describe('校验段', () => {
     expect((await fs.readdir(cacheDir)).sort()).toEqual(['CucCut-2.3.0.zip', 'unpack-57']);
   });
 
-  it('校验段里取消：停下在跑的命令，丢掉安装包与解开的目录', async () => {
+  it('cancel during verification: stops the running command, discards the installer and the extracted directory', async () => {
     const h = harness({
       feed: await fileFeed(),
       prepare: vi.fn(async (info: AppUpdateInfo, archive: string, signal: AbortSignal): Promise<Prepared> => {
@@ -577,7 +577,7 @@ describe('校验段', () => {
     expect(h.state().k).toBe('available');
   });
 
-  it('校验段不过：删掉安装包，按类别报告', async () => {
+  it('verification fails: deletes the installer and reports by category', async () => {
     const h = harness({
       feed: await fileFeed(),
       prepare: vi.fn(async (): Promise<Prepared> => ({ type: 'failed', failure: 'signature', detail: 'team' })),
@@ -589,7 +589,7 @@ describe('校验段', () => {
     expect(await fs.readdir(cacheDir)).toEqual([]);
   });
 
-  it('就位过的「重启并更新」只做便宜核对，不再重算摘要', async () => {
+  it('“重启并更新” after the update is in place only does a cheap check and does not recompute the digest', async () => {
     const h = harness({ feed: await fileFeed(), prepare: stagingPrepare() });
     await toReady(h);
     await fs.writeFile(ARCHIVE_57(), 'tampered');
@@ -603,7 +603,7 @@ describe('校验段', () => {
   });
 });
 
-describe('已下载时的静默检查', () => {
+describe('silent check while downloaded', () => {
   async function readyHarness(overrides: Partial<AppUpdateDeps> = {}): Promise<Harness> {
     const h = harness({ feed: await fileFeed(), prepare: stagingPrepare(), ...overrides });
     h.service.configure({ autoCheck: true, autoDownload: false });
@@ -612,7 +612,7 @@ describe('已下载时的静默检查', () => {
     return h;
   }
 
-  it('还是同一 build：留在已下载，不重算也不重新就位', async () => {
+  it('still the same build: stays downloaded, no recompute and no re-placement', async () => {
     const h = await readyHarness();
     await h.service.check('auto');
     expect(h.states.map((s) => s.state)).toEqual([
@@ -625,7 +625,7 @@ describe('已下载时的静默检查', () => {
     expect(h.notices).toEqual([]);
   });
 
-  it('有了更新的 build：转到有新版本，旧的下载作废', async () => {
+  it('a newer build: moves to update available, the old download is invalidated', async () => {
     const h = await readyHarness();
     await feed58();
     await h.service.check('auto');
@@ -634,7 +634,7 @@ describe('已下载时的静默检查', () => {
     expect(await fs.readdir(cacheDir)).toEqual([]);
   });
 
-  it('有了更新的 build 且自动下载：作废旧的、下新的，就位后提醒', async () => {
+  it('a newer build with automatic download: invalidates the old one, downloads the new one, notifies once in place', async () => {
     const h = await readyHarness();
     h.service.configure({ autoCheck: true, autoDownload: true });
     await feed58();
@@ -644,7 +644,7 @@ describe('已下载时的静默检查', () => {
     expect((await fs.readdir(cacheDir)).sort()).toEqual(['CucCut-2.4.0.zip', 'unpack-58']);
   });
 
-  it('新 build 本机系统不够：留在已下载', async () => {
+  it('new build, system short: stays downloaded', async () => {
     const h = await readyHarness();
     await feed58({ minimumSystemVersion: '99.0' });
     await h.service.check('auto');
@@ -652,7 +652,7 @@ describe('已下载时的静默检查', () => {
     expect((await fs.readdir(cacheDir)).sort()).toEqual(['CucCut-2.3.0.zip', 'unpack-57']);
   });
 
-  it('更新被撤回：转到已是最新，删掉下载的包与解开的目录', async () => {
+  it('update withdrawn: moves to up to date, deletes the downloaded package and the extracted directory', async () => {
     const h = await readyHarness();
     await writeFeed(manifestText({ url: pathToFileURL(payloadPath).href }, { version: '2.2.0', build: 50 }));
     await h.service.check('auto');
@@ -660,7 +660,7 @@ describe('已下载时的静默检查', () => {
     expect(await fs.readdir(cacheDir)).toEqual([]);
   });
 
-  it('检查失败：留在已下载，文件都在', async () => {
+  it('check failure: stays downloaded, files remain', async () => {
     const h = await readyHarness();
     await writeFeed('{broken');
     await h.service.check('auto');
@@ -668,7 +668,7 @@ describe('已下载时的静默检查', () => {
     expect((await fs.readdir(cacheDir)).sort()).toEqual(['CucCut-2.3.0.zip', 'unpack-57']);
   });
 
-  it('新 build 没轮到本机：已下载与有新版本都原样不动', async () => {
+  it('new build not reaching this machine: downloaded and update available both stay unchanged', async () => {
     const rollout = { rolloutHours: 10, releasedAt: new Date(Date.UTC(2026, 9, 3, 7, 0, 0)).toISOString() };
     const h = await readyHarness();
     await feed58(rollout);
@@ -688,8 +688,8 @@ describe('已下载时的静默检查', () => {
   });
 });
 
-describe('退出即安装', () => {
-  it('已下载且就位：退出时换包，装完不重新打开，也不再调退出', async () => {
+describe('install on quit', () => {
+  it('downloaded and in place: swaps the package on quit, does not reopen after install, and does not call quit again', async () => {
     const h = harness({ feed: await fileFeed(), prepare: stagingPrepare() });
     await toReady(h);
     await h.service.installOnQuit();
@@ -704,7 +704,7 @@ describe('退出即安装', () => {
     expect(h.deps.installPackage).toHaveBeenCalledOnce();
   });
 
-  it('静默检查在飞时退出照样安装', async () => {
+  it('install on quit still happens while a silent check is in flight', async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => (release = resolve));
     const h = harness({ feed: await fileFeed(), prepare: stagingPrepare() });
@@ -724,7 +724,7 @@ describe('退出即安装', () => {
     expect(h.state().k).toBe('installing');
   });
 
-  it('不在已下载、不能自己换包、点过「重启并更新」：什么都不做', async () => {
+  it('not downloaded, cannot swap itself, or “重启并更新” was clicked: does nothing', async () => {
     const available = harness({ feed: await fileFeed() });
     await available.service.check('manual');
     await available.service.installOnQuit();
@@ -750,7 +750,7 @@ describe('退出即安装', () => {
     );
   });
 
-  it('不用就位的（Windows）：只核对文件还在、大小对，不在就不装', async () => {
+  it('no placement needed (Windows): only checks the file still exists and its size matches; if missing, does not install', async () => {
     const h = harness({ feed: await fileFeed(), macos: false });
     await toReady(h);
     await fs.rm(ARCHIVE_57());
@@ -763,7 +763,7 @@ describe('退出即安装', () => {
     expect(ok.deps.installPackage).toHaveBeenCalledWith(expect.anything(), ARCHIVE_57(), { staged: null, relaunch: false });
   });
 
-  it('换包程序迟迟不起：到时限照常退出', async () => {
+  it('swap program slow to start: quits at the time limit as usual', async () => {
     const h = harness({ feed: await fileFeed(), prepare: stagingPrepare() });
     await toReady(h);
     h.deps.installPackage = vi.fn(() => new Promise<InstallOutcome>(() => {}));
@@ -775,7 +775,7 @@ describe('退出即安装', () => {
   });
 });
 
-describe('节拍器', () => {
+describe('ticker', () => {
   function counting(): { fetchText: AppUpdateDeps['fetchText']; count(): number } {
     let calls = 0;
     return {
@@ -787,7 +787,7 @@ describe('节拍器', () => {
     };
   }
 
-  it('偏好没到不查；到了立刻补第一拍；之后满 6 小时才再查', async () => {
+  it('does not check before the preference is reached; once reached, runs the first tick immediately; afterwards checks only after 6 hours', async () => {
     const feed = counting();
     const h = harness({ feed: { url: 'https://example.invalid/appcast.json', allowFileUrl: false }, fetchText: feed.fetchText });
     h.service.start();
@@ -805,7 +805,7 @@ describe('节拍器', () => {
     expect(h.states.some((s, i) => i > 0 && s.state.k === 'checking' && h.states[i - 1]?.state.k === 'available')).toBe(false);
   });
 
-  it('自动检查关着：到点也不查，手动照常', async () => {
+  it('automatic check off: does not check when due, manual check unchanged', async () => {
     const feed = counting();
     const h = harness({ feed: { url: 'https://example.invalid/appcast.json', allowFileUrl: false }, fetchText: feed.fetchText });
     h.service.configure({ autoCheck: false, autoDownload: false });
@@ -816,7 +816,7 @@ describe('节拍器', () => {
     expect(feed.count()).toBe(1);
   });
 
-  it('dispose 后停表', async () => {
+  it('stops the timer after dispose', async () => {
     const feed = counting();
     const h = harness({ feed: { url: 'https://example.invalid/appcast.json', allowFileUrl: false }, fetchText: feed.fetchText });
     h.service.configure({ autoCheck: true, autoDownload: false });

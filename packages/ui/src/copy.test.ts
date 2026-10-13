@@ -21,8 +21,8 @@ const english = () => {
   setLocale('en');
 };
 
-describe('界面文案跟随界面语言', () => {
-  it('英文界面读到英文文案，读取时才取值', () => {
+describe('UI copy follows the UI language', () => {
+  it('English UI reads English copy, and the value is read only when read', () => {
     english();
     expect(ACCESS_MODE_LABEL.plan).toBe('Plan first');
     expect(S.conversationHeader.revealProject).toBe('Show Project Folder');
@@ -46,7 +46,7 @@ describe('界面文案跟随界面语言', () => {
     expect(PC.delivery.scheduledOn('TikTok')).toBe('Scheduled on TikTok');
   });
 
-  it('换回简体中文后与原来的中文逐字一致', () => {
+  it('switching back to Simplified Chinese matches the original Chinese word for word', () => {
     english();
     vi.stubEnv('CUCCUT_LOCALE', 'zh-Hans');
     setLocale('zh-Hans');
@@ -62,7 +62,7 @@ describe('界面文案跟随界面语言', () => {
     expect(S.titleBar.openInFull('剪辑')).toBe('在完整视图中打开「剪辑」');
   });
 
-  it('彩纸款名在已算好的配方上也随语言变', () => {
+  it('confetti style name also changes with the language on an already computed recipe', () => {
     let first: string;
     try {
       first = CONFETTI_STYLES[0]!.name;

@@ -79,8 +79,8 @@ function failedState(code: string | undefined, subject: CheckSubject = 'synthesi
   return checkState({ bundle: tts({ selfTest: failedSelfTest(code) }), jobs: [], subject });
 }
 
-describe('放哪、叫什么', () => {
-  it('叫「检查」，不再叫自测；说明一句讲清检查与修复', () => {
+describe('where it lives and what it is called', () => {
+  it('named "check", no longer "self-test"; one sentence explaining that check and repair differ', () => {
     expect(CHECK_LABEL.check).toBe('检查');
     expect(CHECK_LABEL.checkFull).toBe('检查模型');
     expect(CHECK_LABEL.details).not.toBe('详情');
@@ -90,14 +90,14 @@ describe('放哪、叫什么', () => {
   });
 });
 
-describe('状态行', () => {
-  it('没检查过不写', () => {
+describe('status line', () => {
+  it('nothing is written if never checked', () => {
     const state = checkState({ bundle: tts(), jobs: [], subject: 'synthesize' });
     expect(state).toEqual({ phase: 'idle' });
     expect(checkLineView(state, ALL, NOW)).toBeNull();
   });
 
-  it('检查中：真实阶段、进度与取消', () => {
+  it('running check: real stage, progress and cancel', () => {
     const running = checkState({
       bundle: tts(),
       jobs: [testJob({ progress: { done: 1, total: 2, unit: 'items' } as never })],
@@ -111,7 +111,7 @@ describe('状态行', () => {
     expect(view.actions.map((a) => a.k)).toEqual(['cancel']);
   });
 
-  it('阶段：排队、加载、试跑、核对；总量未知不给百分比', () => {
+  it('stages: queued, loading, trial run, verifying; no percentage when total is unknown', () => {
     expect(checkPhase({ phase: 'queued', progress: null })).toEqual({ label: '排队中', percent: null });
     expect(checkPhase({ phase: 'loading', progress: null }).label).toBe('加载模型');
     expect(checkPhase({ phase: 'starting', progress: null }).label).toBe('加载模型');
@@ -122,14 +122,14 @@ describe('状态行', () => {
     expect(checkPhase({ phase: 'validating', progress: null }).label).toBe('核对结果');
   });
 
-  it('通过：一句安静的话', () => {
+  it('passed: one quiet sentence', () => {
     const at = (ms: number) =>
       checkState({ bundle: tts({ selfTest: { state: 'passed', jobId: 'j', at: ago(ms) } }), jobs: [], subject: 'synthesize' });
     expect(checkLineView(at(3 * MIN), ALL, NOW)).toMatchObject({ tone: 'passed', text: '3 分钟前检查通过', actions: [] });
     expect(checkLineView(at(0), ALL, NOW)!.text).toBe('刚刚检查通过');
   });
 
-  it('取消检查：回到之前那一条（取消与被打断的不留结论）', () => {
+  it('cancel check: back to the previous entry (cancelled and interrupted checks leave no conclusion)', () => {
     const before = tts({ selfTest: { state: 'passed', jobId: 'job_old', at: ago(30 * MIN) } });
     expect(checkState({ bundle: before, jobs: [testJob()], subject: 'synthesize' }).phase).toBe('checking');
     for (const state of ['cancelled', 'interrupted'] as const) {
@@ -141,7 +141,7 @@ describe('状态行', () => {
     expect(checkState({ bundle: tts(), jobs: [testJob({ state: 'cancelled' })], subject: 'synthesize' }).phase).toBe('idle');
   });
 
-  it('修复中：行上说修复，取消后回到修复前那一条；修完自动再检查', () => {
+  it('repairing: row says repairing; after cancel, back to the entry before repair; automatically re-checks after repair finishes', () => {
     const damaged = tts({
       selfTest: failedSelfTest('MODEL_FILES_DAMAGED'),
       install: { jobId: 'job_fix', state: 'downloading', receivedBytes: 25, totalBytes: 100 },
@@ -166,8 +166,8 @@ describe('状态行', () => {
   });
 });
 
-describe('没通过', () => {
-  it('每个代码：一句人话 + 怎么办；正文不放代码；修复帮得上才给「修复…」，总有重新检查与技术详情', () => {
+describe('did not pass', () => {
+  it('each code: one plain sentence plus what to do; no code in body; "repair…" given only when repair helps; always has re-check and technical details', () => {
     for (const code of MODEL_CHECK_CODES) {
       const view = checkLineView(failedState(code), ALL, NOW)!;
       expect(view.tone, code).toBe('failed');
@@ -192,7 +192,7 @@ describe('没通过', () => {
     expect(checkLineView(failedState('MODEL_OUT_OF_MEMORY'), ALL, NOW)!.text).toMatch(/内存不够/);
   });
 
-  it('认不得的代码（旧记录、新版加的）：通用的一句，不给修复；Runtime 的原话只在技术详情', () => {
+  it('unrecognized code (old records, added in a newer version): a generic sentence, no repair; Runtime\'s original words only in technical details', () => {
     for (const code of [undefined, 'SOMETHING_NEW']) {
       const state = failedState(code);
       const view = checkLineView(state, ALL, NOW)!;
@@ -204,13 +204,13 @@ describe('没通过', () => {
     expect(checkDetailLines(failedState(undefined), TTS, NOW)[0]).toBe('代码 MODEL_SELF_TEST_FAILED');
   });
 
-  it('修复不了或不能检查时不给对应按钮', () => {
+  it('no matching button when repair is impossible or the check cannot run', () => {
     expect(checkLineView(failedState('MODEL_FILES_DAMAGED'), { repair: false, recheck: false }, NOW)!.actions.map((a) => a.k)).toEqual([
       'details',
     ]);
   });
 
-  it('没记进模型包的失败任务也算（应用自带的文件缺失）；结论取最新的那个', () => {
+  it('failed tasks not recorded in the model pack also count (app-bundled file missing); the conclusion is the latest one', () => {
     const job = testJob({
       bundleId: ASR,
       modelId: ASR,
@@ -243,8 +243,8 @@ describe('没通过', () => {
   });
 });
 
-describe('检查没能开始', () => {
-  it('提交被拒：同一行说，不弹 toast；连不上后台说后台没响应', () => {
+describe('check could not start', () => {
+  it('submission rejected: say it on the same line, no toast; when the backend is unreachable, say the backend did not respond', () => {
     const offline = rejectionOf(new RpcError('internal', 'Runtime 已断开'), ago(0));
     expect(offline.code).toBe('RUNTIME_UNREACHABLE');
     const state = checkState({ bundle: tts(), jobs: [], subject: 'synthesize', rejection: offline });
@@ -255,7 +255,7 @@ describe('检查没能开始', () => {
     expect(tryNotice(state, ALL)).toBeNull();
   });
 
-  it('代码在 details.code；认得的各一句，认不得的通用一句，原话进技术详情', () => {
+  it('code is in details.code; each recognized one gets a sentence, unrecognized gets a generic sentence, original words go to technical details', () => {
     const inUse = rejectionOf(new RpcError('conflict', 'busy', { code: 'MODEL_IN_USE', jobId: 'job_x', path: '/Users/x/a' }), ago(0));
     const state = checkState({ bundle: tts(), jobs: [], subject: 'synthesize', rejection: inUse });
     expect(checkLineView(state, ALL, NOW)!.text).toMatch(/正在被别的任务使用/);
@@ -268,7 +268,7 @@ describe('检查没能开始', () => {
     expect(rejectionOf(new RpcError('invalid-request', 'bad')).code).toBeNull();
   });
 
-  it('提交时应用自带的文件缺失：是检查没通过（重新安装），不是没能开始', () => {
+  it('app-bundled file missing at submission: it is a failed check (reinstall), not a check that could not start', () => {
     const r = rejectionOf(
       new RpcError('conflict', '找不到识别检查的样本', { code: 'APP_FILE_MISSING', file: '/Applications/CucCut.app/x.wav' }),
       ago(0),
@@ -280,15 +280,15 @@ describe('检查没能开始', () => {
     expect(checkDetailLines(state, ASR, NOW).join('\n')).not.toMatch(/Applications/);
   });
 
-  it('被拒之后又跑过检查：取新的', () => {
+  it('after a rejection, a check was run again: use the new one', () => {
     const r = rejectionOf(new RpcError('conflict', 'busy', { code: 'MODEL_IN_USE' }), ago(5 * MIN));
     const b = tts({ selfTest: { state: 'passed', jobId: 'j', at: ago(MIN) } });
     expect(checkState({ bundle: b, jobs: [], subject: 'synthesize', rejection: r }).phase).toBe('passed');
   });
 });
 
-describe('能不能检查', () => {
-  it('装好能用的直接检查；加载失败被停用的先重新启用；没装好、在装、不支持的不能', () => {
+describe('whether it can be checked', () => {
+  it('installed and working: check directly; disabled after a failed load: re-enable first; not installed, installing, or unsupported: cannot', () => {
     expect(checkRoute(bundle(ASR, { state: 'ready' }))).toBe('test');
     expect(
       checkRoute(
@@ -306,7 +306,7 @@ describe('能不能检查', () => {
     expect(checkRoute(bundle(ASR, { state: 'not-installed', reason: 'unsupported' }))).toBeNull();
   });
 
-  it('「说话人区分」模型包没有检查', () => {
+  it('the "speaker diarization" model pack has no check', () => {
     const pack = bundle('speaker-diarization@mlx', { capability: 'diarize', state: 'installed' });
     expect(hasCheck(pack)).toBe(false);
     expect(checkRoute(pack)).toBeNull();
@@ -314,13 +314,13 @@ describe('能不能检查', () => {
   });
 });
 
-describe('提交一次检查', () => {
+describe('submit one check', () => {
   afterEach(() => {
     useModelCheck.setState({ rejections: {}, repairs: {} });
     useModels.setState({ bundles: [] });
   });
 
-  it('被停用的先重新启用再检查；被拒记下，下一次提交清掉', async () => {
+  it('disabled ones are re-enabled before checking; rejections are recorded and cleared on next submission', async () => {
     const calls: string[] = [];
     useModels.setState({ bundles: [bundle(ASR, { state: 'error', reason: 'resource' })] });
     const ok = { enableModelBundle: async () => void calls.push('enable'), testModelBundle: async () => (calls.push('test'), 'job_1') };
@@ -341,8 +341,8 @@ describe('提交一次检查', () => {
   });
 });
 
-describe('试用面板', () => {
-  it('上次检查没通过先说，并给修复 / 重新检查', () => {
+describe('trial panel', () => {
+  it('if the last check failed, say so first, and offer repair / re-check', () => {
     expect(tryNotice({ phase: 'passed', at: ago(0) }, ALL)).toBeNull();
     expect(tryNotice({ phase: 'idle' }, ALL)).toBeNull();
     const n = tryNotice(failedState('MODEL_FILES_DAMAGED'), ALL)!;
@@ -352,7 +352,7 @@ describe('试用面板', () => {
     expect(tryNotice(failedState('APP_FILE_MISSING'), ALL)!.actions.map((a) => a.k)).toEqual(['recheck']);
   });
 
-  it('那次检查之后试用做成了就撤掉提醒，之前做成的不算', () => {
+  it('after that check, when a trial succeeds, remove the reminder; trials that succeeded before do not count', () => {
     const state = failedState('MODEL_OUTPUT_INVALID');
     const n = tryNotice(state, ALL)!;
     const at = Date.parse(state.phase === 'failed' ? state.at : '');
@@ -362,7 +362,7 @@ describe('试用面板', () => {
     expect(noticeAfterTry(null, new Date(at + 1000).toISOString())).toBeNull();
   });
 
-  it('自己的失败：录音读不出时点名文件', () => {
+  it('own failure: name the file when the recording cannot be read', () => {
     expect(tryFailureKind('INPUT_UNREADABLE', { file: '/Users/x/采访-张老师.m4a' })).toBe('refUnreadable');
     expect(tryFailureKind('ASSET_MISSING', null)).toBe('refUnreadable');
     expect(fileLabel('/Users/x/采访-张老师.m4a')).toBe('采访-张老师.m4a');
@@ -374,7 +374,7 @@ describe('试用面板', () => {
     expect(tryFailureView({ kind: 'refUnreadable', canCheck: true }).text).toMatch(/「录音」/);
   });
 
-  it('自己的失败：内存不够、模型出错、应用文件缺失、其他、表单没填好', () => {
+  it('own failure: out of memory, model error, app file missing, other, form not filled in correctly', () => {
     expect(tryFailureKind('RESOURCE_ADMISSION_UNSATISFIABLE', null)).toBe('noMemory');
     expect(tryFailureKind('MODEL_LOAD_FAILED', { reason: 'resource' })).toBe('noMemory');
     expect(tryFailureKind('MODEL_LOAD_FAILED', {})).toBe('modelError');
@@ -400,7 +400,7 @@ describe('试用面板', () => {
     });
   });
 
-  it('试画说「画」：提醒、内存不够、模型出错都换成图像的说法', () => {
+  it('trial drawing says "draw": reminders, out of memory and model errors all switched to image wording', () => {
     expect(tryNotice(failedState('MODEL_FILES_DAMAGED'), ALL, TRY_SUBJECT_IMAGE)!.todo).toMatch(/试画多半也会失败/);
     const oom = tryFailureView({ kind: 'noMemory', canCheck: true, subject: TRY_SUBJECT_IMAGE });
     expect([oom.text, oom.todo]).toEqual(['内存不够，没画完。', '关掉别的大模型后重试，或把步数调低。']);

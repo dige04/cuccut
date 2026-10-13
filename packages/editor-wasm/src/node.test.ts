@@ -28,8 +28,8 @@ const speech = {
   ],
 };
 
-describe.skipIf(!built)('editor-wasm（Node）', () => {
-  it('分句与指纹出自字幕与翻译核心', () => {
+describe.skipIf(!built)('editor-wasm (Node)', () => {
+  it('sentence splitting and fingerprints come from the subtitle and translation core', () => {
     const result = speechSentences(speech);
     expect(result.derivation).toBe(SENTENCE_DERIVATION);
     expect(result.timescale).toBe(1000);
@@ -47,7 +47,7 @@ describe.skipIf(!built)('editor-wasm（Node）', () => {
     expect(result.sentences[1]!.wordIds).toEqual(['w4']);
   });
 
-  it('同一份正文得出同一个结果；改一个字指纹就变', () => {
+  it('the same text gives the same result; changing one character changes the fingerprint', () => {
     const again = speechSentences(structuredClone(speech));
     expect(again).toEqual(speechSentences(speech));
     const edited = structuredClone(speech);
@@ -61,7 +61,7 @@ describe.skipIf(!built)('editor-wasm（Node）', () => {
     expect(changed.contentFingerprint).not.toBe(again.contentFingerprint);
   });
 
-  it('读不了的正文抛 INVALID_SPEECH', () => {
+  it('unreadable text throws INVALID_SPEECH', () => {
     expect(() => speechSentences({ schema: 'cuccut.speech/1', words: [{ id: 'w0', text: 'x' }] })).toThrow(EditorWasmError);
     try {
       speechSentences({ schema: 'cuccut.caption/1', words: [] });
@@ -71,7 +71,7 @@ describe.skipIf(!built)('editor-wasm（Node）', () => {
   });
 });
 
-describe.skipIf(!built)('editor-wasm：识别说话人（Node）', () => {
+describe.skipIf(!built)('editor-wasm: speaker recognition (Node)', () => {
   const words = ['Hello', ' there,', ' how', ' are', ' you?'].map((text, i) => ({
     id: `w${i}`,
     start: i * 500,
@@ -81,7 +81,7 @@ describe.skipIf(!built)('editor-wasm：识别说话人（Node）', () => {
   }));
   const body = { schema: 'cuccut.speech/1', timescale: 1000, speakers: [{ id: 'a', name: '说话人 1' }], words };
 
-  it('提案复用重叠最多的已有说话人，新聚类新建说话人；应用按提案改词', () => {
+  it('a proposal reuses the existing speaker with the most overlap, and a new cluster creates a new speaker; applying changes words according to the proposal', () => {
     const proposal = speakerProposal(body, [], ['A', 'A', 'A', 'B', 'B']);
     expect(proposal.speakers.map((s) => [s.id, s.name, s.isNew, s.sentences])).toEqual([
       ['a', '说话人 1', false, 1],
@@ -97,12 +97,12 @@ describe.skipIf(!built)('editor-wasm：识别说话人（Node）', () => {
     expect(applied.translations).toEqual([]);
   });
 
-  it('labels 与词数不符抛 INVALID_PROPOSAL', () => {
+  it('labels whose count does not match the word count throw INVALID_PROPOSAL', () => {
     expect(() => speakerProposal(body, [], ['A'])).toThrow(expect.objectContaining({ code: 'INVALID_PROPOSAL' }));
   });
 });
 
-describe.skipIf(!built)('editor-wasm：来源自带章节（Node）', () => {
+describe.skipIf(!built)('editor-wasm: source has its own chapters (Node)', () => {
   const body = {
     schema: 'cuccut.speech/1',
     timescale: 1000,
@@ -117,7 +117,7 @@ describe.skipIf(!built)('editor-wasm：来源自带章节（Node）', () => {
     sentences: null,
   };
 
-  it('简介里的时间戳大纲吸到段落起点；不吸附时保留原时间', () => {
+  it('timestamp outline in the description snaps to paragraph starts; without snapping the original times are kept', () => {
     const source = { description: 'Chapters:\n0:00 Intro\n0:59 Next part' };
     const snapped = sourceChapters({ speech: body, source, durationSeconds: 90 });
     expect(snapped.rows).toEqual([
@@ -132,7 +132,7 @@ describe.skipIf(!built)('editor-wasm：来源自带章节（Node）', () => {
     ]);
   });
 
-  it('没有来源章节时返回空的结果', () => {
+  it('returns an empty result when the source has no chapters', () => {
     expect(sourceChapters({ source: { title: 'x' }, durationSeconds: 10 }).sourceChapters).toEqual([]);
   });
 });

@@ -26,7 +26,7 @@ afterEach(() => {
 });
 
 describe('localeFromSearch', () => {
-  it('取地址上的 lang，认不出或没带时为 null', () => {
+  it('reads lang from the address; null when unrecognized or absent', () => {
     expect(localeFromSearch('?lang=zh-Hans')).toBe('zh-Hans');
     expect(localeFromSearch('?foo=1&lang=pt-BR')).toBe('pt-BR');
     expect(localeFromSearch('?lang=xx')).toBeNull();
@@ -35,7 +35,7 @@ describe('localeFromSearch', () => {
 });
 
 describe('createCommentLabels', () => {
-  it('按界面语言给词，表里没有的返回 undefined（运行时用英文）', () => {
+  it('words given by the interface language; undefined for entries not in the table (runtime uses English)', () => {
     const labels = createCommentLabels('zh-Hans');
     expect(labels.slide(3)).toBe('第 3 页');
     expect(labels.textRole('h1')).toBe('一级标题');
@@ -49,14 +49,14 @@ describe('createCommentLabels', () => {
     expect(labels.areaPart('somewhere')).toBeUndefined();
   });
 
-  it('没有语言时用英文', () => {
+  it('English when no language', () => {
     const labels = createCommentLabels(null);
     expect(labels.slide(1)).toBe('Slide 1');
     expect(labels.covered(1)).toBe(' · 1 element');
     expect(labels.covered(2)).toBe(' · 2 elements');
   });
 
-  it.each(LOCALES)('%s 的每个词都有译文', (locale) => {
+  it.each(LOCALES)('every word in %s has a translation', (locale) => {
     const labels = createCommentLabels(locale);
     const words = [
       labels.slide(12),
@@ -75,7 +75,7 @@ describe('createCommentLabels', () => {
 });
 
 /** The runtime uses these words when building labels, so the editor must be built first (`npm run build:slides-editor`). */
-describe.skipIf(!compilerAvailable())('运行时的标注位置标签', () => {
+describe.skipIf(!compilerAvailable())('runtime annotation position labels', () => {
   type Labels = { label: string; detail: string };
   type Runtime = Record<string, unknown> & {
     textRoleLabels: Record<string, string>;
@@ -116,14 +116,14 @@ describe.skipIf(!compilerAvailable())('运行时的标注位置标签', () => {
     }
   };
 
-  it('英文词表与运行时原文逐字一致', () => {
+  it('English word list matches runtime source text exactly', () => {
     const labels = createCommentLabels('en');
     for (const [role, text] of Object.entries(rt().textRoleLabels)) expect(labels.textRole(role)).toBe(text);
     for (const [shape, text] of Object.entries(rt().shapeVariantLabels)) expect(labels.element({ kind: 'shape', shape })).toBe(text);
     expect(labelsWith(labels)).toEqual(labelsWith(null));
   });
 
-  it('区域方位的键覆盖运行时会给的全部短语', () => {
+  it('regional direction keys cover all phrases the runtime produces', () => {
     const parts = new Set<string>();
     for (let x0 = 0; x0 < 1; x0 += 0.05)
       for (let x1 = x0 + 0.05; x1 <= 1.0001; x1 += 0.05)
@@ -133,7 +133,7 @@ describe.skipIf(!compilerAvailable())('运行时的标注位置标签', () => {
     expect([...parts].sort()).toEqual([...PARTS].sort());
   });
 
-  it('换成界面语言的只有 label，detail 保持英文', () => {
+  it('only label switched to interface language; detail stays English', () => {
     const english = labelsWith(null);
     const chinese = labelsWith(createCommentLabels('zh-Hans'));
     expect(chinese.nodes.map((n) => n.label)).toEqual([

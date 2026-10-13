@@ -12,7 +12,7 @@ describe('TopicLog', () => {
     return { log, publish };
   };
 
-  it('没有游标时给快照，序号与快照同一水位', () => {
+  it('without a cursor, a snapshot is given, and sequence numbers are at the same watermark as the snapshot', () => {
     const { log, publish } = make();
     publish('a');
     publish('b');
@@ -20,7 +20,7 @@ describe('TopicLog', () => {
     expect(result).toEqual({ mode: 'snapshot', seq: '2', snapshot: 2 });
   });
 
-  it('游标在缓冲区里时补发其后的事件', () => {
+  it('when the cursor is in the buffer, the later events are replayed', () => {
     const { log, publish } = make();
     publish('a');
     publish('b');
@@ -36,13 +36,13 @@ describe('TopicLog', () => {
     });
   });
 
-  it('游标已是最新时补发为空', () => {
+  it('when the cursor is already current, the replay is empty', () => {
     const { log, publish } = make();
     publish('a');
     expect(log.subscribe('1', () => {}).result).toEqual({ mode: 'replay', seq: '1', events: [] });
   });
 
-  it('补不齐（被挤出缓冲区或来自未来）时回到快照', () => {
+  it('when the replay cannot be completed (pushed out of the buffer or from the future), falls back to the snapshot', () => {
     const { log, publish } = make(2);
     for (const e of ['a', 'b', 'c', 'd']) publish(e);
     expect(log.subscribe('1', () => {}).result.mode).toBe('snapshot');
@@ -50,7 +50,7 @@ describe('TopicLog', () => {
     expect(log.subscribe('9', () => {}).result.mode).toBe('snapshot');
   });
 
-  it('订阅之后发布的事件推给监听者，退订后不再推', () => {
+  it('events published after subscribing are pushed to the listener, and not after unsubscribing', () => {
     const { log, publish } = make();
     const seen: string[] = [];
     const sub = log.subscribe(undefined, (e) => seen.push(`${e.seq}:${e.event}`));

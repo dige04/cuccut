@@ -28,7 +28,7 @@ const ffmpeg = (() => {
 const ready = !!engine && ffmpeg && editorWasmAvailable();
 if (!ready) console.warn('跳过建字幕层工具测试：没有 engine-host、ffmpeg 或 editor-wasm');
 
-describe.skipIf(!ready)('建字幕层工具（真实引擎）', () => {
+describe.skipIf(!ready)('subtitle layer creation tools (real engine)', () => {
   let fixtures: string;
   let audio: string;
   let dir: string;
@@ -155,7 +155,7 @@ describe.skipIf(!ready)('建字幕层工具（真实引擎）', () => {
     return { translationId, put: put.body };
   }
 
-  it('风险与 edits_apply 相同；规划模式下拒绝，视频不变', async () => {
+  it('risk same as edits_apply; rejected in plan mode, video unchanged', async () => {
     expect(TOOL_RISK.captions_create).toBe(TOOL_RISK.edits_apply);
     const session = await send('plan');
     const before = video().revision;
@@ -164,7 +164,7 @@ describe.skipIf(!ready)('建字幕层工具（真实引擎）', () => {
     expect(video().revision).toBe(before);
   });
 
-  it('转写建原文字幕；智能体写的译文补上对齐后建译文与双语字幕；再建一次不覆盖', async () => {
+  it('transcription creates source subtitles; an agent-written translation is aligned and then creates translation and bilingual subtitles; creating again does not overwrite', async () => {
     const session = await send('auto');
 
     // Source text: placed in a newly created caption track, and shown.
@@ -261,7 +261,7 @@ describe.skipIf(!ready)('建字幕层工具（真实引擎）', () => {
     expect(cards.filter((c) => (c as Loose).label === '建立字幕层')).toHaveLength(4);
   });
 
-  it('改已有的译文：从它生成的字幕层在同一笔里只换改过的句子的字幕条，时间照旧；标了过期的句子去掉字幕条', async () => {
+  it('editing an existing translation: the subtitle layer generated from it, in the same edit, replaces only the subtitle cues for changed sentences with timing unchanged; subtitle cues for sentences marked stale are removed', async () => {
     const session = await send('auto');
     const { translationId } = await writeTranslation(session);
     const layer = await tool(session, 'captions_create', { video: videoPath, documentId: translationId });
@@ -283,7 +283,7 @@ describe.skipIf(!ready)('建字幕层工具（真实引擎）', () => {
     expect(createdBy(captionId)).toBe(createdBy(translationId));
   });
 
-  it('没有原文字幕层时给译文带 bilingual: true：一次调用两层都建、共用样式，pairedOriginal 标 created；撤销一笔两层一起撤', async () => {
+  it('without a source subtitle layer, a translation is given bilingual: true: one call creates both layers sharing a style, pairedOriginal is marked created; undoing one edit undoes both layers together', async () => {
     const session = await send('auto');
     const { translationId } = await writeTranslation(session);
     const before = video().revision;
@@ -327,7 +327,7 @@ describe.skipIf(!ready)('建字幕层工具（真实引擎）', () => {
     expect(video().sequences[video().rootSequenceId]!.items.filter((i) => i.type === 'caption')).toEqual([]);
   });
 
-  it('不能建字幕层的文档与素材不在时间线上：明确的错误码，视频不变', async () => {
+  it('documents that cannot take a subtitle layer and media not on the timeline: explicit error codes, video unchanged', async () => {
     const session = await send('auto');
     const inspected = await tool(session, 'videos_inspect', { video: videoPath });
     const missing = await tool(session, 'captions_create', { video: videoPath, documentId: 'doc_nope' });

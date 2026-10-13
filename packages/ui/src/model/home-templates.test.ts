@@ -65,8 +65,8 @@ function summary(patch: Partial<TemplateManifest>, extra: Partial<Omit<TemplateS
 
 const catalog = templateCatalogOf(BUILTIN);
 
-describe('目录换成界面用的形状', () => {
-  it('内置的 24 个：12 个场景模板、12 个作品示例，按 id 排', () => {
+describe('directory converted to the shape the UI uses', () => {
+  it('24 built-in: 12 scene templates and 12 work examples, sorted by id', () => {
     expect(catalog).toHaveLength(24);
     expect(findTemplates(catalog, '', { kind: 'scene' })).toHaveLength(12);
     expect(findTemplates(catalog, '', { kind: 'example' })).toHaveLength(12);
@@ -75,7 +75,7 @@ describe('目录换成界面用的形状', () => {
     expect(catalog.every((t) => t.source === 'builtin')).toBe(true);
   });
 
-  it('时长按秒；没写的画幅、时长、示例输入是自动 / 空', () => {
+  it('durations in seconds; unspecified aspect ratio, duration and sample input are auto / empty', () => {
     const promo = templateOf(catalog, 'promo-ad')!;
     expect(promo).toMatchObject({ language: 'en', kind: 'scene', ratio: '9:16', length: 30, tone: 'magenta', figure: 'ring', kicker: 'AD' });
     expect(promo.sample).not.toBe('');
@@ -86,7 +86,7 @@ describe('目录换成界面用的形状', () => {
     expect(templateLength(undefined)).toBeNull();
   });
 
-  it('示例句由 brief 与 fields 拼出：占位符换成示例，没有示例的用 label；brief、fields、skills 原样带上', () => {
+  it('sample sentence built from brief and fields: placeholders replaced with examples, label used when there is no example; brief, fields and skills carried over as is', () => {
     const mine = homeTemplateOf(summary({}));
     expect(mine.sample).toBe('讲讲我的猫，给受众看');
     expect(mine.brief).toBe('讲讲{{宠物}}，给{{受众}}看');
@@ -95,7 +95,7 @@ describe('目录换成界面用的形状', () => {
     expect(templateOf(catalog, 'promo-ad')!.sample).not.toContain('{{');
   });
 
-  it('封面图与预览视频：清单写了、Runtime 也说文件在才用；没有分幕时用标题顶一幕', () => {
+  it('cover image and preview video: used only when the manifest lists them and the Runtime says the file exists; without scenes, the title stands in for one scene', () => {
     const withFiles = homeTemplateOf(
       summary(
         { cover: { file: 'cover.png', tone: 'blue' }, preview: { file: 'preview.mp4' } },
@@ -107,7 +107,7 @@ describe('目录换成界面用的形状', () => {
     expect(missing.cover).toBeNull();
   });
 
-  it('用户目录的排在内置之后；清单写了社区的算社区', () => {
+  it('user-directory templates come after built-in ones; a manifest that says community counts as community', () => {
     const mixed = templateCatalogOf([
       summary({ id: 'zz-mine' }),
       summary({ id: 'aa-shared', source: 'community' }),
@@ -117,8 +117,8 @@ describe('目录换成界面用的形状', () => {
   });
 });
 
-describe('输入框下的模板网格', () => {
-  it('默认八个都在内置目录里：六个场景模板加两个作品示例，七个分类都有', () => {
+describe('template grid below the input box', () => {
+  it('all eight defaults are in the built-in directory: six scene templates plus two work examples, covering all seven categories', () => {
     const shelf = templateShelf(catalog, null);
     expect(SHELF_MAX).toBe(8);
     expect(shelf.map((t) => t.id)).toEqual([...SHELF_DEFAULT]);
@@ -126,7 +126,7 @@ describe('输入框下的模板网格', () => {
     expect(new Set(shelf.map((t) => t.category)).size).toBe(7);
   });
 
-  it('最近用过的在前；目录里已经没有的键（旧版本存的 tips、anim）丢掉并用默认补齐', () => {
+  it('recently used come first; keys no longer in the directory (tips, anim stored by an old version) are dropped and filled with defaults', () => {
     expect(templateShelf(catalog, ['tips', 'white-ui-launch', 'anim', 'white-ui-launch']).map((t) => t.id)).toEqual([
       'white-ui-launch',
       ...SHELF_DEFAULT.slice(0, 7),
@@ -135,15 +135,15 @@ describe('输入框下的模板网格', () => {
     expect(templateShelf([], ['promo-ad'])).toEqual([]);
   });
 
-  it('从模板库挑的新面孔排到最前、挤掉最后一个；已在网格里的不挪位置；目录里没有的不收', () => {
+  it('new faces picked from the template library move to the front, pushing out the last one; items already in the grid keep their position; items not in the directory are not added', () => {
     expect(shelfAfterPick(catalog, null, 'data-story')).toEqual([...SHELF_DEFAULT]);
     expect(shelfAfterPick(catalog, ['tips'], 'white-ui-launch')).toEqual(['white-ui-launch', ...SHELF_DEFAULT.slice(0, 7)]);
     expect(shelfAfterPick(catalog, null, 'nope')).toEqual([...SHELF_DEFAULT]);
   });
 });
 
-describe('模板库的筛选', () => {
-  it('类型、分类、搜索词可以叠加；分类按钮是全部加规范的七类，每类都有模板', () => {
+describe('template library filters', () => {
+  it('type, category and search terms can combine; category buttons are All plus the seven canonical categories, each with templates', () => {
     const cats = templateCategories(catalog);
     expect(cats.map((c) => c.key)).toEqual(['all', ...TEMPLATE_CATEGORIES]);
     expect(cats[1]).toEqual({ key: 'marketing', label: '营销推广' });
@@ -155,20 +155,20 @@ describe('模板库的筛选', () => {
     expect(findTemplates(catalog, 'conversion').map((t) => t.id)).toEqual(['promo-ad']);
   });
 
-  it('认不出的分类键按键名显示，并多一个分类按钮', () => {
+  it('unrecognized category keys are shown by their key name, with one extra category button', () => {
     const odd = templateCatalogOf([summary({ id: 'odd', category: 'gaming' as never })]);
     expect(categoryLabel('gaming')).toBe('gaming');
     expect(templateCategories(odd).at(-1)).toEqual({ key: 'gaming', label: 'gaming' });
   });
 
-  it('只有一种来源时不出来源筛选；有用户目录的模板时按内置 / 我的筛', () => {
+  it('no source filter when there is only one source; with user-directory templates, filter by built-in / mine', () => {
     expect(templateSources(catalog)).toEqual([]);
     const mixed = templateCatalogOf([...BUILTIN, summary({})]);
     expect(templateSources(mixed).map((s) => s.label)).toEqual(['全部来源', '内置', '我的']);
     expect(findTemplates(mixed, '', { source: 'user' }).map((t) => t.id)).toEqual(['my-template']);
   });
 
-  it('分页：页码越界收回有效范围，空列表也算一页', () => {
+  it('paging: out-of-range page numbers are clamped to the valid range; an empty list counts as one page', () => {
     const first = pageOf(catalog, 1);
     expect([first.items.length, first.page, first.pages, first.total]).toEqual([TEMPLATES_PER_PAGE, 1, 3, 24]);
     expect(pageOf(catalog, 99).page).toBe(3);
@@ -177,8 +177,8 @@ describe('模板库的筛选', () => {
   });
 });
 
-describe('卡片与详情的文案', () => {
-  it('场景模板写默认画幅时长；作品示例没写的说交给 Agent', () => {
+describe('card and detail copy', () => {
+  it('scene templates show default aspect ratio and duration; work examples without them say the agent will decide', () => {
     const promo = templateOf(catalog, 'promo-ad')!;
     expect(templateMeta(promo)).toBe('9:16 · 约 30 秒 · 内置');
     expect(templateSpecLine(promo)).toBe('默认 9:16 · 约 30 秒，要改就在消息里说');
@@ -200,7 +200,7 @@ describe('卡片与详情的文案', () => {
     expect(templateOriginLabel(mine)).toBe('我的');
   });
 
-  it('「需要你补充」按 brief 里出现的顺序列待填项，带清单里的说明；作品示例不列', () => {
+  it('"Needs your input" lists fill-in fields in the order they appear in the brief, with manifest notes; work examples are not listed', () => {
     const fields = [
       { label: '受众', hint: '谁会看到' },
       { label: '产品', hint: '要推广的是什么', example: '瑜伽课' },
@@ -216,7 +216,7 @@ describe('卡片与详情的文案', () => {
     expect(templateSlotFields(promo).map((f) => f.label)).toEqual(promo.fields.map((f) => f.label));
   });
 
-  it('素材按种类数，含视频；没有的种类不列', () => {
+  it('media counted by kind, including video; kinds with none are not listed', () => {
     const t = homeTemplateOf(
       summary({
         assets: [

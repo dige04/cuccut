@@ -41,7 +41,7 @@ function open(): void {
   useEditor.setState({ videoId: 'vid_1', selection: ['item_1', 'gone'], playhead: 1.23456 });
 }
 
-describe('发给智能体的编辑器上下文', () => {
+describe('editor context sent to the agent', () => {
   const initial = getLocale();
   // The test environment may pin the language with `CUCCUT_LOCALE`; here the language must really be switched.
   beforeEach(() => vi.stubEnv('CUCCUT_LOCALE', ''));
@@ -50,7 +50,7 @@ describe('发给智能体的编辑器上下文', () => {
     vi.unstubAllEnvs();
   });
 
-  it('带上发送这一刻的界面语言', () => {
+  it('includes the UI language at the moment of sending', () => {
     open();
     setLocale('zh-Hans');
     expect(captureEditorContext({ conversationId: null, projectId: 'p1' })).toEqual({
@@ -66,7 +66,7 @@ describe('发给智能体的编辑器上下文', () => {
     expect(captureEditorContext({ conversationId: null, projectId: 'p1' })?.uiLanguage).toBe('pt-BR');
   });
 
-  it('视频不属于这个会话的来源时不附上下文', () => {
+  it('no context is attached when the video is not a source of this session', () => {
     open();
     expect(captureEditorContext({ conversationId: null, projectId: 'p2' })).toBeNull();
   });

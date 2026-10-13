@@ -62,8 +62,8 @@ afterEach(() => {
   useTemplateCatalog.setState(emptyTemplateCatalog());
 });
 
-describe('模板目录', () => {
-  it('同时要几次只发一次；取到后按来源与 id 排好放进镜像，诊断原样带上', async () => {
+describe('template catalog', () => {
+  it('multiple simultaneous requests send once; after fetching, sorted by source and id and put into the mirror, diagnostics carried over as is', async () => {
     const result: TemplateListResult = {
       templates: [summary('zeta'), summary('alpha')],
       diagnostics: [
@@ -79,7 +79,7 @@ describe('模板目录', () => {
     expect(state.diagnostics).toHaveLength(1);
   });
 
-  it('按当前界面语言要；取的过程中换了语言，旧语言的结果不放进镜像，新语言另取一次', async () => {
+  it('requested in the current UI language; if the language changes during the fetch, the old-language result is not put into the mirror and the new language is fetched separately', async () => {
     switchLocale('ja');
     const answers: Record<string, (result: TemplateListResult) => void> = {};
     const { session, calls } = fakeSession(
@@ -97,7 +97,7 @@ describe('模板目录', () => {
     expect(useTemplateCatalog.getState().templates.map((t) => t.id)).toEqual(['fr-only']);
   });
 
-  it('取失败：没取到过时报失败；取到过的列表不清掉', async () => {
+  it('fetch failure: reports failure if nothing was ever fetched; a list fetched before is not cleared', async () => {
     let fail = true;
     const { session } = fakeSession(() => {
       if (fail) throw new Error('与 Runtime 的连接已断开');
@@ -115,8 +115,8 @@ describe('模板目录', () => {
   });
 });
 
-describe('提示词', () => {
-  it('按 id@版本:语言 缓存；失败的不记，下次重取', async () => {
+describe('prompts', () => {
+  it('cached by id@version:language; failures are not recorded, refetched next time', async () => {
     let fail = true;
     const { session, calls } = fakeSession((_method, params) => {
       if (fail) throw new Error('没有这个模板');
@@ -135,8 +135,8 @@ describe('提示词', () => {
   });
 });
 
-describe('随附文件', () => {
-  it('句柄到期前复用，快到期或报错后重新要', async () => {
+describe('attached files', () => {
+  it('handle reused before expiry; requested again when close to expiry or after an error', async () => {
     let n = 0;
     let expiresIn = 10 * 60_000;
     const { session, calls } = fakeSession((_method, params): MediaHandle => {
@@ -156,8 +156,8 @@ describe('随附文件', () => {
   });
 });
 
-describe('带场景模板发送', () => {
-  it('template 原样交给 conversations.send；不挂时不带这个字段', async () => {
+describe('send with a scene template', () => {
+  it('template is passed as is to conversations.send; the field is omitted when none is attached', async () => {
     const { session, calls } = fakeSession(() => ({ taskId: 'task_1' }));
     const send = RuntimeSession.prototype.send;
     await send.call(session as RuntimeSession, 'conv_1', '讲讲我的猫', undefined, [], { id: 'promo-ad', version: '1.0.0' });

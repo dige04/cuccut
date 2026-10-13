@@ -46,14 +46,14 @@ async function rejection(promise: Promise<unknown>): Promise<CliError> {
   return error;
 }
 
-describe('旗标派生', () => {
+describe('flag derivation', () => {
   it('camelCase → --kebab-case', () => {
     expect(kebab('documentId')).toBe('document-id');
     expect(kebab('layoutProfileId')).toBe('layout-profile-id');
     expect(kebab('video')).toBe('video');
   });
 
-  it('快捷开关：transcribe --replace 即 --target replace，与那个字段的旗标二选一；派生的 --accept-edited、--name 照常', async () => {
+  it('shortcut switch: transcribe --replace is --target replace, one of two flags for that field; derived --accept-edited and --name work as usual', async () => {
     expect(await parse(['transcribe'], ['demo', '--replace', '--discard-translations', '--accept-edited'])).toEqual({
       video: 'demo',
       target: 'replace',
@@ -65,7 +65,7 @@ describe('旗标派生', () => {
     expect((await rejection(parse(['transcribe'], ['demo', '--replace=yes']))).code).toBe('INVALID_ARGUMENTS');
   });
 
-  it('位置参数与同名旗标都行，但只能给一个', async () => {
+  it('positional argument and a flag of the same name both work, but only one may be given', async () => {
     expect(await parse(['videos', 'inspect'], ['demo'])).toEqual({ video: 'demo' });
     expect(await parse(['videos', 'inspect'], ['--video', 'demo', '--from-seconds', '1.5'])).toEqual({ video: 'demo', fromSeconds: 1.5 });
     expect(await parse(['videos', 'inspect'], ['--video=demo'])).toEqual({ video: 'demo' });
@@ -75,7 +75,7 @@ describe('旗标派生', () => {
     expect((await rejection(parse(['videos', 'list'], ['extra']))).code).toBe('INVALID_ARGUMENTS');
   });
 
-  it('不认识的旗标、缺值、类型不对都是 INVALID_ARGUMENTS，退出码 4', async () => {
+  it('unknown flag, missing value or wrong type is INVALID_ARGUMENTS, exit code 4', async () => {
     const unknown = await rejection(parse(['videos', 'inspect'], ['demo', '--bogus']));
     expect(unknown.code).toBe('INVALID_ARGUMENTS');
     expect(unknown.extra.flag).toBe('--bogus');
@@ -87,14 +87,14 @@ describe('旗标派生', () => {
     expect((await rejection(parse(['videos', 'inspect'], ['demo', '--limit', '1', '--limit', '2']))).code).toBe('INVALID_ARGUMENTS');
   });
 
-  it('缺必填参数时按旗标名说明', async () => {
+  it('missing required arguments are explained by flag name', async () => {
     const missing = await rejection(parse(['documents', 'read'], ['demo']));
     expect(missing.code).toBe('INVALID_ARGUMENTS');
     expect(missing.extra.missing).toEqual(['--document-id']);
     expect((await rejection(parse(['videos', 'inspect'], []))).message).toContain('<video>');
   });
 
-  it('布尔是开关，--no-x 给 false；字段名以 no 开头的按字段名匹配', async () => {
+  it('booleans are switches, --no-x gives false; field names starting with no are matched by field name', async () => {
     expect(await parse(['captions', 'create'], ['demo', '--document-id', 'd1', '--bilingual'])).toEqual({
       video: 'demo',
       documentId: 'd1',
@@ -119,7 +119,7 @@ describe('旗标派生', () => {
     });
   });
 
-  it('数组可重复，也可以给 JSON 数组；枚举与固定格式的元素可以逗号分隔', async () => {
+  it('arrays are repeatable or take a JSON array; enum and fixed-format elements may be comma-separated', async () => {
     expect(await parse(['videos', 'frames'], ['demo', '--at', '1', '--at', '2.5'])).toEqual({ video: 'demo', at: ['1', '2.5'] });
     expect(await parse(['videos', 'frames'], ['demo', '--at', '1,2.5,4'])).toEqual({ video: 'demo', at: ['1', '2.5', '4'] });
     expect(await parse(['videos', 'frames'], ['demo', '--at', '["3"]'])).toEqual({ video: 'demo', at: ['3'] });
@@ -133,7 +133,7 @@ describe('旗标派生', () => {
     expect((await rejection(parse(['transcode'], ['a.mp4', '--files', 'b.mp4']))).code).toBe('INVALID_ARGUMENTS');
   });
 
-  it('对象与对象数组：JSON 字面量、@文件、-（stdin）；范围写 a:b，帧率写 n/d', async () => {
+  it('objects and object arrays: JSON literal, @file, - (stdin); range is written a:b, frame rate is written n/d', async () => {
     const ops = [{ type: 'renameVideo', name: '新名字' }];
     const source = input({ 'ops.json': JSON.stringify(ops) });
     expect(
@@ -198,7 +198,7 @@ describe('旗标派生', () => {
     );
   });
 
-  it('自由文本接受 @文件 与 -；stdin 只读一次；@@ 写字面的 @', async () => {
+  it('free text accepts @file and -; stdin is read only once; @@ writes a literal @', async () => {
     const source = input({ 'line.txt': '你好' }, '来自 stdin');
     expect(await parse(['speak'], ['@line.txt'], { source })).toEqual({ text: '你好' });
     expect(await parse(['speak'], ['--text', '-'], { source })).toEqual({ text: '来自 stdin' });
@@ -209,7 +209,7 @@ describe('旗标派生', () => {
     );
   });
 
-  it('--dry-run 只给有 dryRun 字段的命令；--project 也交给有 project 字段的工具', async () => {
+  it('--dry-run is given only to commands with a dryRun field; --project is also passed to tools with a project field', async () => {
     const apply = ['demo', '--expected-revision', 'r1', '--label', 'x', '--operations', '[]'];
     expect(await parse(['edits', 'apply'], apply, { globals: { dryRun: true } })).toMatchObject({ dryRun: true });
     expect((await rejection(parse(['videos', 'inspect'], ['demo'], { globals: { dryRun: true } }))).code).toBe('INVALID_ARGUMENTS');
@@ -222,8 +222,8 @@ describe('旗标派生', () => {
   });
 });
 
-describe('CLI 自己的旗标', () => {
-  it('出现在哪里都行，其余原样留下', () => {
+describe('CLI\'s own flags', () => {
+  it('works anywhere; the rest is left as it is', () => {
     const { globals, rest } = extractGlobals([
       '--json',
       'videos',
@@ -263,7 +263,7 @@ describe('CLI 自己的旗标', () => {
     expect(extractGlobals(['speak', '--', '--json']).rest).toEqual(['speak', '--', '--json']);
   });
 
-  it('取值不对时 INVALID_ARGUMENTS', () => {
+  it('wrong value gives INVALID_ARGUMENTS', () => {
     expect(() => extractGlobals(['--timeout', 'soon'])).toThrow(CliError);
     expect(() => extractGlobals(['--progress', 'bars'])).toThrow(CliError);
     expect(() => extractGlobals(['--max-bytes'])).toThrow(CliError);

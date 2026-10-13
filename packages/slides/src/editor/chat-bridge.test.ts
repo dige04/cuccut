@@ -20,7 +20,7 @@ function fakeLink() {
 afterEach(() => vi.useRealTimers());
 
 describe('createChatBridge', () => {
-  it('suggestPrompt 发给父窗口，父窗口放进输入框后兑现', async () => {
+  it('suggestPrompt sent to the parent window; fulfilled once the parent puts it in the input box', async () => {
     const parent = fakeLink();
     const chat = createChatBridge(parent.link, () => 'p1');
     const done = chat.capability.suggestPrompt('Fix slide 2');
@@ -31,7 +31,7 @@ describe('createChatBridge', () => {
     await expect(done).resolves.toBeUndefined();
   });
 
-  it('父窗口放不进去或没回应时拒绝（运行时改为复制到剪贴板）', async () => {
+  it('rejected when the parent can\'t put it in or doesn\'t respond (at runtime it is changed to copy to clipboard)', async () => {
     vi.useFakeTimers();
     const parent = fakeLink();
     let n = 0;
@@ -44,7 +44,7 @@ describe('createChatBridge', () => {
     await expect(silent).rejects.toThrow();
   });
 
-  it('dispose 停止收消息，等着的都拒绝', async () => {
+  it('dispose stops receiving messages; pending ones rejected', async () => {
     const parent = fakeLink();
     const chat = createChatBridge(parent.link, () => 'p1');
     const waiting = chat.capability.suggestPrompt('a');

@@ -73,8 +73,8 @@ async function refused(promise: Promise<unknown>): Promise<ToolError> {
   throw new Error('应当拒绝');
 }
 
-describe('download：对外服务的落点', () => {
-  it('不给落点、newVideo 不给 project 都拒绝，next 指向 projects_list 的 projectId；不启动流程', async () => {
+describe('download: the destination for external service', () => {
+  it('rejected when neither destination is given nor project given for newVideo; next points to projects_list\'s projectId; flow not started', async () => {
     const { deps, started, confirmed } = harness();
     const tools = new LinkImportTools(deps);
     for (const args of [{ url: LINK }, { url: LINK, newVideo: true }]) {
@@ -87,7 +87,7 @@ describe('download：对外服务的落点', () => {
     expect(confirmed).toEqual([]);
   });
 
-  it('newVideo 带 project：新视频建在那个项目里；父任务记下 videoId 时登记进服务的范围，只登记一次', async () => {
+  it('newVideo with project: new video created in that project; when the parent task records videoId, registered in the service\'s scope, only once', async () => {
     const { deps, started, adopted, emit, listeners } = harness();
     const result = (await new LinkImportTools(deps).dispatch('download', { url: LINK, newVideo: true, project: 'prj_1' }, service)) as {
       jobId: Id;
@@ -109,7 +109,7 @@ describe('download：对外服务的落点', () => {
     expect(adopted).toEqual(['vid_new']);
   });
 
-  it('任务没建出视频就结束：不登记、不再监听；智能体的 newVideo 不走登记', async () => {
+  it('task ends without creating a video: not registered, no longer listening; agent\'s newVideo does not go through registration', async () => {
     const first = harness();
     await new LinkImportTools(first.deps).dispatch('download', { url: LINK, newVideo: true, project: 'prj_1' }, service);
     first.emit({ state: 'failed' });
@@ -124,8 +124,8 @@ describe('download：对外服务的落点', () => {
   });
 });
 
-describe('download：文件存到哪里', () => {
-  it('智能体导入视频的下载进下载目录（不给 saveTo）；只给 project 时进项目；对外服务有落点就进项目', async () => {
+describe('download: where the file is stored', () => {
+  it('video imported by the agent is downloaded to the download directory (no saveTo given); with only project given, goes into the project; when external service has a destination, goes there', async () => {
     const { deps, started } = harness();
     const tools = new LinkImportTools(deps);
     await tools.dispatch('download', { url: LINK, newVideo: true }, agent);
@@ -138,7 +138,7 @@ describe('download：文件存到哪里', () => {
     expect(started.map((p) => p.saveTo ?? null)).toEqual([null, null, null, null, 'project', 'project', 'project']);
   });
 
-  it('结果的 next 照实说文件在哪', async () => {
+  it('result\'s next states truthfully where the file is', async () => {
     const { deps } = harness();
     const tools = new LinkImportTools(deps);
     const imported = (await tools.dispatch('download', { url: LINK, video: 'vid_1' }, agent)) as { next: string };
@@ -148,8 +148,8 @@ describe('download：文件存到哪里', () => {
   });
 });
 
-describe('transcribe 给 url：转写的参数', () => {
-  it('语言、服务与模型、提示、说话人与 captions 原样交给流程；确认说明里写明语言', async () => {
+describe('transcribe with url: transcription parameters', () => {
+  it('language, service and model, prompt, speaker and captions passed to the flow as-is; confirmation notes state the language', async () => {
     const { deps, started, confirmed } = harness();
     await startLinkImport(
       deps,
@@ -182,7 +182,7 @@ describe('transcribe 给 url：转写的参数', () => {
     expect(confirmed[0]!.summary).toContain('建立字幕层');
   });
 
-  it('download 不带转写参数：流程参数里没有这些键', async () => {
+  it('download without transcription parameters: the flow parameters contain no such keys', async () => {
     const { deps, started } = harness();
     await new LinkImportTools(deps).dispatch('download', { url: LINK, newVideo: true, transcribe: true }, agent);
     for (const key of ['language', 'provider', 'model', 'hint', 'diarize', 'captions']) expect(started[0]).not.toHaveProperty(key);

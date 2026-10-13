@@ -3,8 +3,8 @@ import { formatClock } from './format.ts';
 import { SeekQueue } from './seek.ts';
 import { activeCues, decodeSubtitleText, nearIndex, parseSubtitles, seekTimeOf, subtitleFormatOf } from './subtitles.ts';
 
-describe('字幕解析', () => {
-  it('SRT：CRLF、BOM、多行、标签；坏块跳过；按开始时间排序', () => {
+describe('subtitle parsing', () => {
+  it('SRT: CRLF, BOM, multi-line, tags; bad blocks are skipped; sorted by start time', () => {
     const srt = [
       '﻿1',
       '00:00:05,500 --> 00:00:07,000',
@@ -32,7 +32,7 @@ describe('字幕解析', () => {
     ]);
   });
 
-  it('WebVTT：文件头、NOTE、STYLE、标识行、设置、实体与说话人标签', () => {
+  it('WebVTT: file header, NOTE, STYLE, identifier lines, settings, entities and speaker tags', () => {
     const vtt = [
       'WEBVTT - 标题',
       '',
@@ -55,7 +55,7 @@ describe('字幕解析', () => {
     ]);
   });
 
-  it('ASS：按 Format 取列，文字里的逗号保留，去掉覆盖标记，Comment 跳过', () => {
+  it('ASS: columns read by Format, commas in text kept, override tags removed, Comment lines skipped', () => {
     const ass = [
       '[Script Info]',
       'Title: x',
@@ -76,7 +76,7 @@ describe('字幕解析', () => {
     ]);
   });
 
-  it('编码：UTF-8（带不带 BOM）、GBK、UTF-16', () => {
+  it('encodings: UTF-8 (with or without BOM), GBK, UTF-16', () => {
     const text = '1\n00:00:01,000 --> 00:00:02,000\n你好\n';
     expect(decodeSubtitleText(new TextEncoder().encode(text))).toBe(text);
     expect(decodeSubtitleText(new Uint8Array([0xef, 0xbb, 0xbf, ...new TextEncoder().encode('你好')]))).toBe('你好');
@@ -85,7 +85,7 @@ describe('字幕解析', () => {
     expect(decodeSubtitleText(new Uint8Array([0xff, 0xfe, 0x60, 0x4f, 0x7d, 0x59]))).toBe('你好');
   });
 
-  it('格式按扩展名认；结束不晚于开始、没有文字的句子丢掉', () => {
+  it('format is detected by file extension; cues whose end is not after start, and cues without text, are dropped', () => {
     expect(subtitleFormatOf('a.SRT')).toBe('srt');
     expect(subtitleFormatOf('a.zh.vtt')).toBe('vtt');
     expect(subtitleFormatOf('a.ssa')).toBe('ass');
@@ -93,7 +93,7 @@ describe('字幕解析', () => {
     expect(parseSubtitles('1\n00:00:02,000 --> 00:00:01,000\n倒着\n\n2\n00:00:03,000 --> 00:00:04,000\n\n', 'srt')).toEqual([]);
   });
 
-  it('当前句：重叠的都算，结束那一刻不算；点一句定位到句首之后', () => {
+  it('current cue: all overlapping cues count, but not at the exact end moment; clicking a cue seeks to just after its start', () => {
     const cues = parseSubtitles(
       ['1', '00:00:00,000 --> 00:00:10,000', '长句', '', '2', '00:00:02,000 --> 00:00:03,000', '短句', ''].join('\n'),
       'srt',
@@ -105,7 +105,7 @@ describe('字幕解析', () => {
     expect(activeCues(cues, seekTimeOf(cues[1]!)).map((c) => c.index)).toContain(2);
   });
 
-  it('列表停靠：当前句；空档里取下一句；过了结尾取最后一句', () => {
+  it('list docking: the current cue; in a gap, the next cue; past the end, the last cue', () => {
     const cues = parseSubtitles(
       ['1', '00:00:01,000 --> 00:00:02,000', '一', '', '2', '00:00:04,000 --> 00:00:05,000', '二', ''].join('\n'),
       'srt',
@@ -119,8 +119,8 @@ describe('字幕解析', () => {
   });
 });
 
-describe('定位排队', () => {
-  it('一次只发一个 seek；拖动中只保留最新的请求；全部落地后才交还媒体时间', () => {
+describe('seek queue', () => {
+  it('only one seek is sent at a time; during dragging only the latest request is kept; media time is handed back only after all seeks land', () => {
     const media = { currentTime: 0 };
     const queue = new SeekQueue(media);
     expect(queue.target).toBeNull();
@@ -144,7 +144,7 @@ describe('定位排队', () => {
     expect(queue.settle()).toBe(true);
   });
 
-  it('reset 丢掉在途与排队的请求', () => {
+  it('reset drops in-flight and queued requests', () => {
     const queue = new SeekQueue({ currentTime: 0 });
     queue.request(1);
     queue.request(2);
@@ -154,8 +154,8 @@ describe('定位排队', () => {
   });
 });
 
-describe('时间显示', () => {
-  it('向下截断，不显示还没到的时间', () => {
+describe('time display', () => {
+  it('truncates down, not showing times not yet reached', () => {
     expect(formatClock(0)).toBe('0:00');
     expect(formatClock(7.99)).toBe('0:07');
     expect(formatClock(65.3, { tenths: true })).toBe('1:05.3');

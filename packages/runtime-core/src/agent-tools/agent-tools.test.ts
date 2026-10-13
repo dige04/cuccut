@@ -25,7 +25,7 @@ const ffmpeg = (() => {
   }
 })();
 
-describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
+describe.skipIf(!engine || !ffmpeg)('agent tools (real engine)', () => {
   let fixtures: string;
   let clip: string;
   let dir: string;
@@ -95,7 +95,7 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
     return (await client.request('conversations.get', { conversationId })).items;
   }
 
-  it('会话带着工具通道与指导建立；端点只认令牌、拒绝网页', async () => {
+  it('session is set up with the tool channel and guidance; the endpoint accepts only tokens and rejects web pages', async () => {
     const { session } = await send('hi');
     const server = session.options.mcpServers?.cuccut;
     expect(server?.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/);
@@ -123,7 +123,7 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
     expect((await mcp(session, 'resources/list')).error?.code).toBe(-32601);
   });
 
-  it('智能体经工具改视频：回执、界面主题、变更卡与任务来源都对得上', async () => {
+  it('agent edits a video through tools: receipt, UI theme, change card and task source all match', async () => {
     const videoEvents: VideoEvent[] = [];
     client.subscribeVideo(videoId, {
       snapshot: () => {},
@@ -215,7 +215,7 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
     expect(after.body.error.code).toBe('NO_ACTIVE_TASK');
   });
 
-  it('videos_create 新建视频后会话里记一条 video-created：打开编辑器的位置与新建时的版本', async () => {
+  it('videos_create records a video-created entry in the session after creating a video: the editor open location and the version at creation', async () => {
     const { taskId, session } = await send('新建一部视频');
     const created = await tool(session, 'videos_create', { name: '新片' });
     expect(created.isError, JSON.stringify(created.body)).toBe(false);
@@ -334,7 +334,7 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
     expect(runtime.harness.listProjects().some((p) => p.id === boundProject.id)).toBe(true);
   });
 
-  it('删除还有视频的无项目会话：视频搬进以视频命名的新项目，不随会话消失', async () => {
+  it('deleting a projectless session that still has videos: the videos move into a new project named after the video and do not disappear with the session', async () => {
     const { conversation } = await client.request('conversations.create', { projectId: null, title: '临时' });
     await client.request('conversations.send', { conversationId: conversation.id, text: '建一部', commandId: newId('cmd') });
     const session = await until(() => driver.sessions.at(-1)?.turnId ? driver.sessions.at(-1) : undefined);
@@ -347,7 +347,7 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
     await until(() => fs.access(path.join(project!.path, created.body.video, 'video.db')).then(() => true, () => false));
   });
 
-  it('智能体设置转场、效果、章节与闪避；删掉片段时回执说明转场为什么没了', async () => {
+  it('agent sets transitions, effects, chapters and ducking; when a clip is deleted, the receipt explains why its transition is gone', async () => {
     const { session } = await send('加个转场和章节');
     const inspected = await tool(session, 'videos_inspect', { video: videoId });
     const visualTrack = inspected.body.tracks.find((t: { kind: string }) => t.kind === 'visual').id;
@@ -417,7 +417,7 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
     await until(() => runtime.videos.mirror(videoId)!.video.sequences[after.body.sequence.id]!.transitions.length === 0);
   });
 
-  it('智能体用 setStyle 在铺满画布与画中画之间切换片段，画中画的位置保留', async () => {
+  it('agent switches a clip between full-canvas and picture-in-picture with setStyle, keeping the picture-in-picture position', async () => {
     const { session } = await send('把视频改成画中画');
     const inspected = await tool(session, 'videos_inspect', { video: videoId });
     const placed = await tool(session, 'edits_apply', {
@@ -463,7 +463,7 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
     expect(bad.isError).toBe(true);
   });
 
-  it('清理：deleteTrack 只删空轨道；assets_prune 先列出没有引用的素材，apply 时删掉，还在用的拒绝', async () => {
+  it('cleanup: deleteTrack deletes only empty tracks; assets_prune lists unreferenced media first, deletes on apply, and rejects media still in use', async () => {
     const { session } = await send('清理一下没用的轨道和素材');
     await fs.writeFile(path.join(project.path, 'logo.svg'), '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"/>');
     const inspected = await tool(session, 'videos_inspect', { video: videoId });
@@ -522,7 +522,7 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
     expect((await tool(session, 'assets_prune', { video: videoId })).body.assets).toEqual([]);
   });
 
-  it('space_list / space_search：会话里的智能体只看本会话来源目录（项目）里的条目，规划模式也能用', async () => {
+  it('space_list / space_search: an agent in a session sees only entries in that session\'s source directory (project), also available in plan mode', async () => {
     const { project: other } = await client.request('projects.create', { name: '别的项目' });
     const elsewhere = await client.request('videos.create', { projectId: other.id, name: '别处' });
     await client.request('space.rescan', {});
@@ -541,7 +541,7 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
     expect((await tool(session, 'space_search', { query: ' ' })).isError).toBe(true);
   });
 
-  it('规划模式只读；停止之后一律拒绝', async () => {
+  it('plan mode is read-only; everything is rejected after stop', async () => {
     const { taskId, session } = await send('看看', { autonomy: 'plan' });
     const inspected = await tool(session, 'videos_inspect', { video: videoPath });
     expect(inspected.isError).toBe(false);
@@ -561,7 +561,7 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
     expect(runtime.videos.mirror(videoId)!.video.revision).toBe(inspected.body.revision);
   });
 
-  it('访问模式：修改按决策表自动、询问或拒绝；允许后执行，拒绝、打断与停止都返回明确的错误；中途切换对之后的调用生效', async () => {
+  it('access mode: edits are automatically allowed, asked or denied per the decision table; executed after allow, and denial, interruption and stop each return a clear error; a mid-session switch applies to later calls', async () => {
     const { taskId, session } = await send('加几条轨道', { accessMode: 'ask' });
     const revision = () => runtime.videos.mirror(videoId)!.video.revision;
     const addTrack = () =>
@@ -639,7 +639,7 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
     ]);
   });
 
-  it('videos_inspect 按 videoId：关掉了的视频按来源目录找到并打开；别的目录里的找不到', async () => {
+  it('videos_inspect by videoId: a closed video is found in its source directory and opened; not found in other directories', async () => {
     const { session } = await send('看看视频');
     // Two closed videos (this is the state after creating them in the flow and releasing the lease): the first lookup by videoId scans the session source directories, and it also records each video's directory that it sees.
     const closed: { videoId: Id; relPath: string; name: string }[] = [];
@@ -675,7 +675,7 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
     }
   });
 
-  it('videos_delete：风险 high，自动接受修改时也要问；拒绝不动，允许后移进回收站；来源目录之外的视频找不到', async () => {
+  it('videos_delete: risk high, still asks even when edits are auto-accepted; denial changes nothing, allow moves it to the trash; videos outside the source directory are not found', async () => {
     const { session } = await send('删掉样片', { accessMode: 'autoAcceptEdits' });
     // Deleting is rejected while the UI has the video open (VIDEO_IN_USE): close it first.
     await client.request('videos.close', { videoId });
@@ -714,7 +714,7 @@ describe.skipIf(!engine || !ffmpeg)('智能体工具（真实引擎）', () => {
     }
   });
 
-  it('会话删除后令牌失效，智能体打开的视频按宽限期关闭', async () => {
+  it('after a session is deleted its token is invalidated, and videos the agent opened close after the grace period', async () => {
     const { session } = await send('读一下');
     // The UI closed it first, so only the agent still has it open.
     await client.request('videos.close', { videoId });

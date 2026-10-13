@@ -118,7 +118,7 @@ async function rejection(promise: Promise<unknown>): Promise<RpcError> {
 /** The fake codex has started several app-servers (one dedicated session per generation). */
 const sessions = (fake: FakeCodex) => fake.log().filter((e) => e.kind === 'start');
 
-describe('智能体图片 Provider：列出、可用性与配置（不需要 ffprobe）', () => {
+describe('agent image provider: listing, availability and configuration (does not need ffprobe)', () => {
   let side: Side | undefined;
 
   afterEach(async () => {
@@ -126,7 +126,7 @@ describe('智能体图片 Provider：列出、可用性与配置（不需要 ffp
     side = undefined;
   });
 
-  it('如实描述：一次一张、只有 PNG、尺寸与 seed 不可指定、订阅内额度未知；只出现在 generateImage', async () => {
+  it('honest description: one image at a time, PNG only, size and seed not specifiable, subscription quota unknown; appears only in generateImage', async () => {
     side = await startSide();
     const { capabilities } = await side.client.request('models.capabilities', {});
     expect(capabilities.transcribe.providers.some((p) => p.providerId === PROVIDER)).toBe(false);
@@ -160,7 +160,7 @@ describe('智能体图片 Provider：列出、可用性与配置（不需要 ffp
     expect(capabilities.generateImage).toMatchObject({ default: null, effective: null });
   });
 
-  it('不可用的原因与补救：没有安装、没有登录、版本太旧、没有启用', async () => {
+  it('reasons for unavailability and remedies: not installed, not signed in, version too old, not enabled', async () => {
     side = await startSide({ installed: false });
     const cases: Array<[Partial<FakeCodexScenario>, string, string, string]> = [
       [{ installed: false }, 'not-installed', 'not-installed', 'setup-agent'],
@@ -197,7 +197,7 @@ describe('智能体图片 Provider：列出、可用性与配置（不需要 ffp
     expect(sessions(side.fake)).toHaveLength(0);
   });
 
-  it('配置只有开关：密钥、端点、模型与验证都拒绝；启用后可用，停用后又不可用', async () => {
+  it('configuration is only a switch: keys, endpoints, models and verification are all rejected; available once enabled, unavailable again once disabled', async () => {
     side = await startSide();
     for (const extra of [{ credential: 'sk-x' }, { endpoint: 'http://127.0.0.1:1' }, { models: [{ modelId: 'm' }] }, { verify: true }]) {
       const error = await rejection(side.client.request('models.configure', { providerId: PROVIDER, enabled: true, ...extra }));
@@ -228,7 +228,7 @@ describe('智能体图片 Provider：列出、可用性与配置（不需要 ffp
     expect(await agentEntry(side)).toMatchObject({ available: false, unavailableReason: 'not-configured' });
   });
 
-  it('不接受的参数在提交时拒绝（不悄悄忽略）：尺寸、宽高比、seed、多张、别的格式、超长提示词', async () => {
+  it('unsupported parameters are rejected at submission (not silently ignored): size, aspect ratio, seed, multiple images, other formats, overlong prompts', async () => {
     side = await startSide();
     await side.client.request('models.configure', { providerId: PROVIDER, enabled: true });
     for (const extra of [
@@ -247,7 +247,7 @@ describe('智能体图片 Provider：列出、可用性与配置（不需要 ffp
   });
 });
 
-describe.skipIf(!ffprobe)('智能体图片 Provider：执行（假 codex + ffprobe）', () => {
+describe.skipIf(!ffprobe)('agent image provider: execution (fake codex + ffprobe)', () => {
   let side: Side;
 
   beforeEach(async () => {
@@ -259,7 +259,7 @@ describe.skipIf(!ffprobe)('智能体图片 Provider：执行（假 codex + ffpro
     await stopSide(side);
   });
 
-  it('显式指定：一个专用会话（工作目录是 staging、没有 MCP 服务、只写工作目录），产物是会话写下的 PNG 并记下实际尺寸', async () => {
+  it('explicitly specified: a dedicated session (working directory is staging, no MCP servers, writes only to the working directory); the output is the PNG the session writes, with actual dimensions recorded', async () => {
     const { jobId } = await side.client.request('models.generateImage', { prompt: 'a red fox, watercolor', provider: PROVIDER });
     const job = await settled(side, jobId);
     expect(job).toMatchObject({
@@ -298,7 +298,7 @@ describe.skipIf(!ffprobe)('智能体图片 Provider：执行（假 codex + ffpro
     expect(await fs.stat(staging).catch(() => null)).toBeNull();
   });
 
-  it('设为默认值后不指定 provider 也用它', async () => {
+  it('once set as default, it is used even without specifying a provider', async () => {
     await side.client.request('models.setDefault', { capability: 'generateImage', providerId: PROVIDER });
     const { capabilities } = await side.client.request('models.capabilities', {});
     expect(capabilities.generateImage).toMatchObject({
@@ -309,7 +309,7 @@ describe.skipIf(!ffprobe)('智能体图片 Provider：执行（假 codex + ffpro
     expect(await settled(side, jobId)).toMatchObject({ state: 'completed', providerId: PROVIDER });
   });
 
-  it('只有文字回复、没有图片：任务失败（PROVIDER_REJECTED，no-image），回复不是输出，也不换 Provider', async () => {
+  it('text-only reply with no image: task fails (PROVIDER_REJECTED, no-image); the reply is not output, and the provider is not switched', async () => {
     side.fake.scenario({ turn: { reply: 'I am unable to generate images in this environment.' } });
     const { jobId } = await side.client.request('models.generateImage', { prompt: 'a cat', provider: PROVIDER });
     const job = await settled(side, jobId);
@@ -323,7 +323,7 @@ describe.skipIf(!ffprobe)('智能体图片 Provider：执行（假 codex + ffpro
     expect(sessions(side.fake)).toHaveLength(1);
   });
 
-  it('回合失败：PROVIDER_REJECTED 带上智能体给的原因', async () => {
+  it('turn fails: PROVIDER_REJECTED with the reason given by the agent', async () => {
     side.fake.scenario({ turn: { status: 'failed', error: 'usage limit reached for image_gen' } });
     const { jobId } = await side.client.request('models.generateImage', { prompt: 'a cat', provider: PROVIDER });
     const job = await settled(side, jobId);
@@ -331,7 +331,7 @@ describe.skipIf(!ffprobe)('智能体图片 Provider：执行（假 codex + ffpro
     expect(job.error!.message).toContain('usage limit');
   });
 
-  it('写错的文件：解码不了的 PNG、扩展名是 png 的 GIF、两张都不叫 output.png，都是 MODEL_OUTPUT_INVALID', async () => {
+  it('wrongly written files: an undecodable PNG, a GIF with a png extension, two images neither named output.png; all are MODEL_OUTPUT_INVALID', async () => {
     const cases: Array<Record<string, string>> = [
       { 'output.png': b64(corruptPngFixture()) },
       { 'output.png': b64(GIF) },
@@ -345,14 +345,14 @@ describe.skipIf(!ffprobe)('智能体图片 Provider：执行（假 codex + ffpro
     }
   });
 
-  it('不在约定名字下、但只有一张图：照样收下（子目录里也找）', async () => {
+  it('not under the agreed name but only one image: still accepted (subdirectories are also searched)', async () => {
     side.fake.scenario({ turn: { files: { 'images/fox.png': b64(pngFixture(10, 20)) }, reply: 'done' } });
     const { jobId } = await side.client.request('models.generateImage', { prompt: 'a fox', provider: PROVIDER });
     const job = await settled(side, jobId);
     expect(job.result!.outputs![0]).toMatchObject({ media: { kind: 'image', width: 10, height: 20 } });
   });
 
-  it('会话请求审批：一律拒绝（没有人来批），回合照常结束', async () => {
+  it('session requests approval: always rejected (no one is there to approve), and the turn ends as usual', async () => {
     side.fake.scenario({ turn: { askApproval: true, files: { 'output.png': b64(pngFixture()) }, reply: 'done' } });
     const { jobId } = await side.client.request('models.generateImage', { prompt: 'a cat', provider: PROVIDER });
     expect(await settled(side, jobId)).toMatchObject({ state: 'completed' });
@@ -360,7 +360,7 @@ describe.skipIf(!ffprobe)('智能体图片 Provider：执行（假 codex + ffpro
     expect(answer!.msg!.result).toEqual({ decision: 'decline' });
   });
 
-  it('取消进行中的任务：中断回合并关闭会话，任务以 cancelled 结束', async () => {
+  it('cancel a running task: interrupts the turn and closes the session; the task ends as cancelled', async () => {
     side.fake.scenario({ turn: { status: 'hang' } });
     const { jobId } = await side.client.request('models.generateImage', { prompt: 'a slow cat', provider: PROVIDER });
     await until(() => side.fake.requests('turn/start').length === 1);
@@ -371,7 +371,7 @@ describe.skipIf(!ffprobe)('智能体图片 Provider：执行（假 codex + ffpro
     await until(() => side.fake.log().some((e) => e.kind === 'exit'));
   });
 
-  it('串行：两个任务排同一个队列，第二个会话在第一个关闭之后才启动', async () => {
+  it('serial: two tasks queued on the same queue; the second session starts only after the first closes', async () => {
     side.fake.scenario({ turn: { delayMs: 300, files: { 'output.png': b64(pngFixture()) }, reply: 'done' } });
     const first = await side.client.request('models.generateImage', { prompt: 'one', provider: PROVIDER });
     const second = await side.client.request('models.generateImage', { prompt: 'two', provider: PROVIDER });
@@ -386,7 +386,7 @@ describe.skipIf(!ffprobe)('智能体图片 Provider：执行（假 codex + ffpro
     expect(firstExit.t).toBeLessThanOrEqual(starts[1]!.t);
   });
 
-  it('排队期间被停用：不再开会话，任务失败（MODEL_LOAD_FAILED）', async () => {
+  it('disabled while queued: no session is opened, and the task fails (MODEL_LOAD_FAILED)', async () => {
     side.fake.scenario({ turn: { delayMs: 300, files: { 'output.png': b64(pngFixture()) }, reply: 'done' } });
     const first = await side.client.request('models.generateImage', { prompt: 'one', provider: PROVIDER });
     const second = await side.client.request('models.generateImage', { prompt: 'two', provider: PROVIDER });
@@ -397,7 +397,7 @@ describe.skipIf(!ffprobe)('智能体图片 Provider：执行（假 codex + ffpro
     expect(sessions(side.fake)).toHaveLength(1);
   });
 
-  it('排队期间授权被撤销（§12.5）：在跑的照常结束并计入；排队的开始前以 GRANT_REVOKED 失败，预留释放，不开会话', async () => {
+  it('grant revoked while queued (§12.5): running ones finish as usual and are counted; queued ones fail with GRANT_REVOKED before starting, the reservation is released, and no session is opened', async () => {
     side.fake.scenario({ turn: { delayMs: 300, files: { 'output.png': b64(pngFixture()) }, reply: 'done' } });
     const first = await side.client.request('models.generateImage', { prompt: 'one', provider: PROVIDER });
     const second = await side.client.request('models.generateImage', { prompt: 'two', provider: PROVIDER });
@@ -423,7 +423,7 @@ describe.skipIf(!ffprobe)('智能体图片 Provider：执行（假 codex + ffpro
   });
 });
 
-describe.skipIf(!ffprobe || !engine)('智能体图片导入视频（真实引擎）', () => {
+describe.skipIf(!ffprobe || !engine)('agent image import into video (real engine)', () => {
   let side: Side;
 
   beforeEach(async () => {
@@ -435,7 +435,7 @@ describe.skipIf(!ffprobe || !engine)('智能体图片导入视频（真实引擎
     await stopSide(side);
   });
 
-  it('给了视频：与别的 Provider 一样导入为候选素材，来源记 generated 与 agent:codex，时间线不变', async () => {
+  it('video given: imported as a candidate media item like other providers, with source recorded as generated and agent:codex; timeline unchanged', async () => {
     const { project } = await side.client.request('projects.create', { name: '智能体生成' });
     const opened = await side.client.request('videos.create', { projectId: project.id });
     const videoId = opened.ref.videoId;

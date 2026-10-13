@@ -46,8 +46,8 @@ function brokenStderr(code: string) {
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
-describe('createFileLogger 的回显', () => {
-  it.each(['EIO', 'EPIPE'])('stderr 写失败（%s）后不再回显，日志照常写进文件', async (code) => {
+describe('createFileLogger echo', () => {
+  it.each(['EIO', 'EPIPE'])('after a stderr write fails (%s), echo stops, and the log is still written to the file', async (code) => {
     const file = await logFile();
     const { stream, writes } = brokenStderr(code);
     const log = createFileLogger({ file, echo: true, echoStream: stream });
@@ -70,7 +70,7 @@ describe('createFileLogger 的回显', () => {
     expect(lines[1]).toMatchObject({ level: 'warn', code });
   });
 
-  it('写入同步抛错也停止回显', async () => {
+  it('a synchronous write error also stops echo', async () => {
     const file = await logFile();
     const writes: string[] = [];
     const stream = Object.assign(new EventEmitter(), {
@@ -92,7 +92,7 @@ describe('createFileLogger 的回显', () => {
     ]);
   });
 
-  it('写得出去时照常回显；关闭后摘掉错误监听', async () => {
+  it('echoes normally when writes succeed; removes the error listener after closing', async () => {
     const file = await logFile();
     const writes: string[] = [];
     const emitter = Object.assign(new EventEmitter(), {
@@ -113,7 +113,7 @@ describe('createFileLogger 的回显', () => {
     expect(emitter.listenerCount('error')).toBe(0);
   });
 
-  it('不回显时不碰 stderr', async () => {
+  it('does not touch stderr when not echoing', async () => {
     const file = await logFile();
     const { stream, writes, emitter } = brokenStderr('EIO');
     const log = createFileLogger({ file, echo: false, echoStream: stream });

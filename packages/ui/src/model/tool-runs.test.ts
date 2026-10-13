@@ -125,8 +125,8 @@ function status(patch: Partial<ToolStatus> = {}): ToolStatus {
   };
 }
 
-describe('运行视图', () => {
-  it('步骤照 Runtime 的流程，跳过的不列；当前步的子任务进度算进总进度', () => {
+describe('run view', () => {
+  it('steps follow the Runtime\'s workflow, skipped ones are not listed; the current step\'s subtask progress counts toward total progress', () => {
     const child = { ...job(), jobId: 'job_asr', kind: 'transcribe', progress: { done: 30, total: 60, unit: 'seconds' } } as JobRecord;
     const run = runView(job(), [child])!;
     expect(run.steps.map((s) => [s.name, s.status])).toEqual([
@@ -141,7 +141,7 @@ describe('运行视图', () => {
     expect(run.steps.map(stepNote)).toEqual(['完成', '50%', '等待']);
   });
 
-  it('失败停在哪一步；排队、完成、取消各有说法', () => {
+  it('failure stops at which step; queued, completed, and cancelled each have their own wording', () => {
     const failed = runView(
       job({
         state: 'failed',
@@ -161,7 +161,7 @@ describe('运行视图', () => {
     expect(runView({ ...job(), pipeline: undefined } as JobRecord)).toBeNull();
   });
 
-  it('由「说话人区分」区分说话人时，「转写」拆成「转写」与「识别说话人」两步，按转写任务的阶段分开', () => {
+  it('when speaker separation distinguishes speakers, "转写" is split into "转写" and "识别说话人" steps, separated by the transcription task\'s stages', () => {
     const asr = (phase: JobRecord['phase'], state: JobRecord['state'] = 'running') =>
       ({
         ...job(),
@@ -204,7 +204,7 @@ describe('运行视图', () => {
     expect(runView(job(), [asr('diarizing')])!.steps.map((s) => s.name)).toEqual(['create', 'transcribe', 'captions']);
   });
 
-  it('流程名落到工具页；转录页另收下载后转录的链接导入', () => {
+  it('workflow names resolve to tool pages; the transcription page additionally accepts link imports that download then transcribe', () => {
     expect(toolOfJob(job({ name: 'translate' }))).toBe('translate-subtitles');
     expect(toolOfJob(job({ name: 'translate-subtitles' }))).toBe('translate-subtitles');
     expect(toolOfJob(job({ name: 'transcode', params: { action: 'merge' } }))).toBe('merge-video');
@@ -216,7 +216,7 @@ describe('运行视图', () => {
     expect(runsOf([job(), linked], 'transcribe').map((j) => j.jobId)).toEqual(['l', 'job_1']);
   });
 
-  it('后台任务详情按工具运行来画的：转录、翻译字幕、翻译配音；下载视频也使用工具运行视图，转码不算', () => {
+  it('background task details are drawn as tool runs: transcription, translate subtitles, translate dub; download video also uses the tool run view, transcoding doesn\'t count', () => {
     expect(toolRunOf(job({ name: 'translate' }))).toBe('translate-subtitles');
     expect(toolRunOf(job({ name: 'dub' }))).toBe('dub');
     expect(toolRunOf(job({ name: 'link-import', params: { url: 'https://x.test/v', transcribe: true } }))).toBe('link-import');
@@ -224,15 +224,15 @@ describe('运行视图', () => {
     expect(toolRunOf({ ...job(), kind: 'transcribe' })).toBeNull();
   });
 
-  it('写进视频的结果才有「打开编辑」：翻译字幕文件与只下载不建视频的没有', () => {
+  it('only results written into a video have "打开编辑"; translated subtitle files and download-only runs that don\'t create a video don\'t', () => {
     expect(opensMovie('translate-subtitles', 'file')).toBe(false);
     expect(opensMovie('link-import', 'link', { target: 'none' })).toBe(false);
     expect(opensMovie('transcribe', 'file')).toBe(true);
   });
 });
 
-describe('当场授权', () => {
-  it('从拒绝的 details 里取待批准项；别的拒绝不算', () => {
+describe('authorize on the spot', () => {
+  it('takes pending approval items from the rejection\'s details; other rejections don\'t count', () => {
     expect(pendingGrantsOf(new RpcError('forbidden', '缺授权', { code: 'GRANT_REQUIRED', pendingGrants: [ITEM, { bogus: true }] }))).toEqual([ITEM]);
     expect(pendingGrantsOf({ details: { pendingGrants: [ITEM] } })).toEqual([ITEM]);
     expect(pendingGrantsOf(new RpcError('forbidden', '缺授权', { code: 'GRANT_REQUIRED' }))).toBeNull();
@@ -240,7 +240,7 @@ describe('当场授权', () => {
     expect(pendingGrantsOf(new RpcError('forbidden', 'x', { pendingGrants: [] }))).toBeNull();
   });
 
-  it('授权卡每项：发给谁、内容、费用（估不出时照实说）', () => {
+  it('each authorization card item: who it goes to, content, cost (state honestly when it can\'t be estimated)', () => {
     const labels = new Map([['openai', 'OpenAI']]);
     const lines = grantLines(
       [ITEM, ITEM, { ...ITEM, recipient: 'deepseek', dataKinds: ['transcript'], purpose: '翻译', estimate: { amount: '0.12', currency: 'USD' } }],
@@ -275,7 +275,7 @@ describe('当场授权', () => {
   const refusal = () => new RpcError('forbidden', '缺授权', { code: 'GRANT_REQUIRED', pendingGrants: [ITEM] });
   const request = { pipeline: 'transcribe', params: { target: { entryId: 'ent_1' } } };
 
-  it('被拒时交回待批准项；同意后逐项发放、用同一个 commandId 重提', async () => {
+  it('when rejected, returns the pending approval items; after consent, grants each item and resubmits with the same commandId', async () => {
     const session = fake([refusal()]);
     const first = await startTool(session, request, 'cmd_1');
     expect(first).toEqual({ kind: 'grants', items: [ITEM] });
@@ -289,7 +289,7 @@ describe('当场授权', () => {
     ]);
   });
 
-  it('发放之后还被拒、要的还是同一项：停下来说明，不再循环', async () => {
+  it('still rejected after granting, for the same item: stop and explain, don\'t loop', async () => {
     const session = fake([refusal(), refusal()]);
     await startTool(session, request, 'cmd_1');
     const granted = new Set<string>();
@@ -301,7 +301,7 @@ describe('当场授权', () => {
     expect(session.grants).toHaveLength(1);
   });
 
-  it('取代被改过的文稿被拒（TRANSCRIPT_EDITED）：交回 edited，等用户确认', async () => {
+  it('rejected for replacing an edited transcript (TRANSCRIPT_EDITED): returns edited and waits for user confirmation', async () => {
     const edited = new RpcError('conflict', '文稿改过', { code: 'TRANSCRIPT_EDITED', documentId: 'doc_1' });
     expect(transcriptEditedOf(edited)).toBe(true);
     expect(transcriptEditedOf(new RpcError('conflict', 'x', { code: 'JOB_NOT_RETRYABLE' }))).toBe(false);
@@ -309,15 +309,15 @@ describe('当场授权', () => {
     expect(out.kind).toBe('edited');
   });
 
-  it('别的失败照原样交回', async () => {
+  it('other failures are returned as-is', async () => {
     const session = fake([new RpcError('not-found', '视频不在了')]);
     const out = await startTool(session, request, 'cmd_1');
     expect(out.kind === 'failed' && out.error.message).toBe('视频不在了');
   });
 });
 
-describe('提交参数', () => {
-  it('流程名与目录固定参数来自 tools.list；界面的参数叠在上面；状态没到时不提交', () => {
+describe('submit parameters', () => {
+  it('workflow name and directory fixed parameters come from tools.list; UI parameters are layered on top; no submit when the status hasn\'t arrived', () => {
     expect(toolRequest(status(), 'video', { target: { entryId: 'e' }, bilingual: true })).toEqual({
       pipeline: 'translate',
       params: { captions: true, target: { entryId: 'e' }, bilingual: true },
@@ -329,7 +329,7 @@ describe('提交参数', () => {
     ).toBeNull();
   });
 
-  it('各工具的参数', () => {
+  it('parameters of each tool', () => {
     expect(transcribeParams({ create: { projectId: 'p', media: '/m.mp4' } }, { provider: 'local', model: 'whisper', language: '' })).toEqual({
       target: { create: { projectId: 'p', media: '/m.mp4' } },
       provider: 'local',
@@ -412,7 +412,7 @@ describe('提交参数', () => {
     ).not.toHaveProperty('textModel');
   });
 
-  it('翻译用的文本模型：不支持结构化输出的列着但用不了', () => {
+  it('text models for translation: those without structured output support are listed but unusable', () => {
     const view = textView();
     const options = translateModelOptions(view);
     expect(options.length).toBeGreaterThan(0);
@@ -428,20 +428,20 @@ describe('提交参数', () => {
     expect(off).toMatchObject({ usable: false, why: '这只模型不支持结构化输出，翻译用不了' });
   });
 
-  it('主轨上有几个素材时读出要选的素材', () => {
+  it('when several assets are on the main track, reads out the ones to choose from', () => {
     expect(ambiguousAssets(job({ error: { code: 'TRANSCRIBE_ASSET_AMBIGUOUS', message: 'x', details: { assetIds: ['a', 'b', 3] } } }))).toEqual(['a', 'b']);
     expect(ambiguousAssets(job({ error: { code: 'APPLY_FAILED', message: 'x' } }))).toBeNull();
     expect(ambiguousAssets(null)).toBeNull();
   });
 
-  it('选好素材重新开始：照冻结参数加 assetId；已经写进了视频时目标换成那个视频', () => {
+  it('restart with the chosen asset: uses frozen parameters plus assetId; when already written into a video, the target becomes that video', () => {
     const into = job({ name: 'transcribe', params: { target: { entryId: 'e1' }, language: 'zh' }, videoId: 'vid_1' });
     expect(withAsset(into, 'ast_2')).toEqual({ pipeline: 'transcribe', params: { target: { videoId: 'vid_1' }, language: 'zh', assetId: 'ast_2' } });
     const fresh = job({ name: 'transcribe', params: { target: { entryId: 'e1' } } });
     expect(withAsset(fresh, 'ast_2')?.params).toEqual({ target: { entryId: 'e1' }, assetId: 'ast_2' });
   });
 
-  it('从冻结参数推输入种类与链接导入的落点', () => {
+  it('infers the input kind and link-import destination from frozen parameters', () => {
     expect(runInput(job())).toBe('file');
     expect(runInput(job({ params: { target: { entryId: 'e' } } }))).toBe('video');
     expect(runInput(job({ name: 'translate-subtitles', params: { input: '/a.srt' } }))).toBe('file');
@@ -458,7 +458,7 @@ describe('提交参数', () => {
     expect(runInput(job({ params: { file: { entryId: 'e' } } }))).toBe('file');
   });
 
-  it('只出文稿的转录：参数没有说话人与视频；结果是保存位置里的两份文件，不打开视频、没有接着做', () => {
+  it('transcription that outputs only a script: parameters have no speakers or video; the result is two files in the save location, no video opens, and no continue', () => {
     const asr = { provider: 'local', model: 'whisper', language: 'zh', diarize: true };
     expect(transcribeFileParams('/v/访谈.mp4', asr)).toEqual({ file: '/v/访谈.mp4', provider: 'local', model: 'whisper', language: 'zh' });
     expect(transcribeFileParams({ entryId: 'e1' }, { ...asr, language: '' }, '/out')).toEqual({ file: { entryId: 'e1' }, outDir: '/out', provider: 'local', model: 'whisper' });
@@ -473,8 +473,8 @@ describe('提交参数', () => {
   });
 });
 
-describe('结果页', () => {
-  it('转录：新建视频与写进已有视频的说法；字幕层按状态说', () => {
+describe('result page', () => {
+  it('transcription: wording for creating a new video vs. writing into an existing one; the subtitle layer is described by status', () => {
     const created = job({
       state: 'completed',
       summary: {
@@ -514,7 +514,7 @@ describe('结果页', () => {
     expect(speakers(false, 2)).toHaveLength(2);
   });
 
-  it('重新转录：新建视频说原视频没动；取代说可以撤销、逐语言写结转，有过期的提示去刷新', () => {
+  it('re-transcribe: creating a new video says the original video is unchanged; replace says it can be undone, carries over per language, and shows a stale hint to refresh', () => {
     const fresh = job({
       state: 'completed',
       params: { target: { entryId: 'e' }, destination: 'new-video' },
@@ -575,7 +575,7 @@ describe('结果页', () => {
     expect(transcriptSwitchOf(job({ state: 'running', summary }))).toBeNull();
   });
 
-  it('翻译、链接导入的说法；没有摘要时没有', () => {
+  it('wording for translation and link import; none when there is no summary', () => {
     const tr = job({
       name: 'translate',
       state: 'completed',
@@ -609,24 +609,24 @@ describe('结果页', () => {
   });
 });
 
-describe('配音引擎的缺省', () => {
+describe('default dub engine', () => {
   const engine = (key: string, usable: boolean, languages: 'any' | string[]) => {
     const [providerId = '', modelId = ''] = key.split('/');
     return { key, providerId, provider: providerId, modelId, label: modelId, connected: usable, usable, why: usable ? null : '未连接', info: { languages } };
   };
   const options = [engine('a/one', true, ['en']), engine('b/two', true, 'any'), engine('c/three', false, 'any')];
 
-  it('选过的还在就用它，哪怕现在不能用', () => {
+  it('uses the previously selected one if it still exists, even if it\'s currently unusable', () => {
     expect(dubEngineKey(options, 'c/three', null, 'ja')).toBe('c/three');
   });
 
-  it('生效的默认值会念这门语言时用它，否则换一只会念的', () => {
+  it('uses the active default if it can speak this language, otherwise switches to one that can', () => {
     expect(dubEngineKey(options, null, { providerId: 'a', modelId: 'one' }, 'en')).toBe('a/one');
     expect(dubEngineKey(options, null, { providerId: 'a', modelId: 'one' }, 'ja')).toBe('b/two');
     expect(dubEngineKey(options, 'gone/x', null, null)).toBe('a/one');
   });
 
-  it('没有能用的时落到第一只；没有引擎时 null', () => {
+  it('falls back to the first one when none are usable; null when there are no engines', () => {
     expect(dubEngineKey([engine('c/three', false, 'any')], null, null, 'en')).toBe('c/three');
     expect(dubEngineKey([], null, null, 'en')).toBeNull();
   });

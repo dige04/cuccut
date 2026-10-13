@@ -15,8 +15,8 @@ import { aiToolMessages, chapterDrafts, parseTimestamp, polishBatches, polishEdi
 
 const word = (id: string, text: string, start: number, paragraphStart = false): ContextWord => ({ id, text, start, paragraphStart });
 
-describe('交给模型的消息', () => {
-  it('系统提示词：skill 在前、工具的输出格式在后；没有 skill 时只有输出格式', () => {
+describe('messages handed to the model', () => {
+  it('system prompt: skill first, tool output format after; without skill only output format', () => {
     const [system, user] = aiToolMessages({
       tool: 'summary',
       system: '<skill id="video-summary">RULES</skill>',
@@ -35,7 +35,7 @@ describe('交给模型的消息', () => {
     expect(only!.content).toBe('<request>\nTitles\n</request>');
   });
 
-  it('系统提示词：给了界面语言时在 skill 与输出格式之间说明，不给时不写', () => {
+  it('system prompt: when interface language given, stated between skill and output format; when not given, not written', () => {
     const [system] = aiToolMessages({ tool: 'summary', system: 'RULES', prompt: '', transcript: null, attachments: [], uiLanguage: 'zh-Hans' });
     expect(system!.content).toBe(`RULES\n\nThe user's interface language is zh-Hans.\n\n${system!.content.slice(system!.content.indexOf('Output:'))}`);
     const [bare] = aiToolMessages({ tool: 'summary', system: '', prompt: '', transcript: null, attachments: [] });
@@ -53,13 +53,13 @@ describe('交给模型的消息', () => {
     expect(polish!.content).not.toContain('Write in the language');
   });
 
-  it('润色给编了号的词，段落之间空一行', () => {
+  it('polish gives numbered words, paragraphs separated by a blank line', () => {
     const words = [word('w1', 'Hello', 0, true), word('w2', 'world', 1), word('w3', 'Next', 5, true)];
     const [, user] = aiToolMessages({ tool: 'polish', system: '', prompt: '', transcript: null, words: { items: words, offset: 0, total: 3 }, attachments: [] });
     expect(user!.content).toContain('<transcript words="1-3" total="3">\n1\tHello\n2\tworld\n\n3\tNext\n</transcript>');
   });
 
-  it('润色按段落分批；一段超过上限时整段成一批', () => {
+  it('polish batched by paragraph; a paragraph exceeding the limit becomes a batch on its own', () => {
     const words = [word('a', 'a', 0, true), word('b', 'b', 1), word('c', 'c', 2, true), word('d', 'd', 3), word('e', 'e', 4), word('f', 'f', 5, true)];
     expect(polishBatches(words, 3).map((b) => [b.offset, b.items.map((w) => w.id).join('')])).toEqual([
       [0, 'ab'],
@@ -70,7 +70,7 @@ describe('交给模型的消息', () => {
     expect(polishBatches([], 10)).toEqual([]);
   });
 
-  it('润色的修改：编号在这一批里、不空、不换行；与原文相同的不算', () => {
+  it('polish changes: numbering in this batch, not empty, no line breaks; same as original not counted', () => {
     const batch = { offset: 10, items: [word('w11', 'teh', 0), word('w12', 'cat', 1)] };
     const ok = polishEdits({ edits: [{ n: 11, text: 'the' }, { n: 12, text: 'cat' }] }, batch);
     expect('edits' in ok && [...ok.edits]).toEqual([['w11', 'the']]);
@@ -80,14 +80,14 @@ describe('交给模型的消息', () => {
     expect(polishEdits({ nope: [] }, batch)).toHaveProperty('problem');
   });
 
-  it('润色写回：只改 text，别的字段与词的个数、顺序不变', () => {
+  it('polish write-back: only text changed, other fields and the word count and order unchanged', () => {
     const body = { schema: 'cuccut.speech/1', words: [{ id: 'w1', text: 'teh', start: 0 }, { id: 'w2', text: 'cat', start: 1 }], speakers: [] };
     const out = polishedBody(body, { w1: 'the', w2: 'cat' });
     expect(out.changes).toBe(1);
     expect(out.body).toEqual({ ...body, words: [{ id: 'w1', text: 'the', start: 0 }, body.words[1]] });
   });
 
-  it('章节：时间码认得出、吸到最近的段落起点、去重排序、标题不空、落在视频里', () => {
+  it('chapters: timecodes recognized, snapped to nearest paragraph start, deduplicated and sorted, titles non-empty, within the video', () => {
     expect(parseTimestamp('[01:02]')).toBe(62);
     expect(parseTimestamp('1:00:05.5')).toBe(3605.5);
     expect(parseTimestamp('75')).toBe(75);
@@ -113,7 +113,7 @@ describe('交给模型的消息', () => {
     expect(chapterDrafts({ chapters: 'x' }, [0], 10)).toEqual([]);
   });
 
-  it('参数：工具与范围按协议校验，不合时 invalid-request 并指出哪个键', () => {
+  it('parameters: tool and range validated against protocol; when invalid, invalid-request and points to which key', () => {
     expect(parseAiToolParams({ videoId: 'v', tool: 'blog', prompt: 'p' })).toEqual({ videoId: 'v', tool: 'blog', prompt: 'p' });
     expect(parseAiToolParams({ videoId: 'v', tool: 'blog', prompt: 'p', uiLanguage: 'pt-BR' })).toEqual({ videoId: 'v', tool: 'blog', prompt: 'p', uiLanguage: 'pt-BR' });
     expect(() => parseAiToolParams({ videoId: 'v', tool: 'blog', prompt: 'p', uiLanguage: 'not a tag' })).toThrow(expect.objectContaining({ code: 'invalid-request', details: expect.objectContaining({ key: 'uiLanguage' }) }));
@@ -138,7 +138,7 @@ const MODEL: TextModelInfo = {
 
 const WORDS: ContextWord[] = [word('w1', 'Helo', 0, true), word('w2', 'world.', 1), word('w3', 'Second', 60, true), word('w4', 'part.', 61)];
 
-describe('ai-tool 流程', () => {
+describe('ai-tool flow', () => {
   let dir: string;
   let jobs: JobManager;
   let runner: PipelineRunner;
@@ -248,7 +248,7 @@ describe('ai-tool 流程', () => {
     return jobs.inspect(jobId);
   }
 
-  it('只给结果的工具：一次正文调用，skill 作为系统提示词，附件只带文本，不写视频', async () => {
+  it('result-only tool: one body call, skill as system prompt, attachments text only, no video written', async () => {
     const record = await run({ tool: 'summary', skills: [{ id: 'video-summary' }, { id: 'mine' }], attachments: ['att_txt', 'att_img'], uiLanguage: 'zh-Hans' });
     expect(record.state).toBe('completed');
     expect(record.pipeline!.steps.map((s) => [s.name, s.status])).toEqual([
@@ -276,14 +276,14 @@ describe('ai-tool 流程', () => {
     });
   });
 
-  it('范围：文稿只取这一段', async () => {
+  it('scope: transcript limited to this segment', async () => {
     const record = await run({ tool: 'blog', range: { start: 60, end: 120 } });
     expect(record.state).toBe('completed');
     expect(requests[0]!.messages[1]!.content).toContain('<transcript>\n**A:** Second part. [01:00]\n</transcript>');
     expect((record.pipeline!.summary as unknown as AiToolSummary).context.paragraphs).toBe(1);
   });
 
-  it('润色：结构化输出，改过的词一笔写回同一份转写', async () => {
+  it('polish: structured output, changed words written back to the same transcript in one go', async () => {
     reply = () => ({ json: { edits: [{ n: 1, text: 'Hello' }, { n: 4, text: 'part.' }] } });
     const record = await run({ tool: 'polish' });
     expect(record.state).toBe('completed');
@@ -296,7 +296,7 @@ describe('ai-tool 流程', () => {
     expect((record.pipeline!.summary as unknown as AiToolSummary).applied).toEqual({ transactionId: 'txn_1', changes: 1 });
   });
 
-  it('润色：编号对不上时失败，不写视频', async () => {
+  it('polish: fails when numbering does not match, no video written', async () => {
     reply = () => ({ json: { edits: [{ n: 9, text: 'x' }] } });
     const record = await run({ tool: 'polish' });
     expect(record.state).toBe('failed');
@@ -304,7 +304,7 @@ describe('ai-tool 流程', () => {
     expect(applied).toEqual([]);
   });
 
-  it('润色：模型工作期间文稿改了，以 STALE_JOB_INPUT 失败，不写', async () => {
+  it('polish: transcript changed while model working, fails with STALE_JOB_INPUT, nothing written', async () => {
     reply = () => {
       revision = 'r2';
       return { json: { edits: [{ n: 1, text: 'Hello' }] } };
@@ -324,7 +324,7 @@ describe('ai-tool 流程', () => {
     expect(skillCalls).toBe(before);
   });
 
-  it('章节：整份写进根序列，时间吸到段落起点', async () => {
+  it('chapters: whole written into root sequence, times snapped to paragraph starts', async () => {
     reply = () => ({ json: { chapters: [{ at: '00:00', title: 'Intro', summary: 'Hello' }, { at: '00:58', title: 'Second', summary: 'Part' }] } });
     const record = await run({ tool: 'chapters' });
     expect(record.state).toBe('completed');
@@ -342,14 +342,14 @@ describe('ai-tool 流程', () => {
     expect((record.pipeline!.summary as unknown as AiToolSummary).applied).toEqual({ transactionId: 'txn_1', changes: 2 });
   });
 
-  it('润色与章节要模型支持结构化输出：不支持时启动就拒绝', async () => {
+  it('polish and chapters require model support for structured output: rejected at start when unsupported', async () => {
     structured = false;
     await expect(runner.start({ pipeline: 'ai-tool', params: { videoId: 'vid_1', tool: 'chapters', prompt: '' } }, { kind: 'connection', id: 'c' })).rejects.toMatchObject({ code: 'invalid-request' });
     // Body-text tools do not require structured output.
     expect((await run({ tool: 'title' })).state).toBe('completed');
   });
 
-  it('视频没有打开：启动就拒绝', async () => {
+  it('no video open: rejected at start', async () => {
     await expect(runner.start({ pipeline: 'ai-tool', params: { videoId: 'vid_x', tool: 'desc', prompt: '' } }, { kind: 'connection', id: 'c' })).rejects.toMatchObject({ code: 'not-found' });
   });
 });

@@ -40,7 +40,7 @@ async function installSyntheticModels(modelsDir: string): Promise<void> {
   }
 }
 
-describe('Runtime 的节点服务', () => {
+describe('Runtime node service', () => {
   let dir: string;
   let home: RuntimeHome;
   let runtime: RunningRuntime | null = null;
@@ -99,7 +99,7 @@ describe('Runtime 的节点服务', () => {
     return (await response.json()) as NodePairResponse;
   };
 
-  it('默认关闭；开启后监听并给出配对码；重启后照样监听、已配对的客户端还在、不重新发配对码；node-share.json 是 0600', async () => {
+  it('off by default; after enabling, listens and shows pairing code; after restart still listens, paired clients still there, pairing code not reissued; node-share.json is 0600', async () => {
     await newHome();
     const { client: c1 } = await boot();
     const initial = await c1.request('nodes.share.status', {});
@@ -150,7 +150,7 @@ describe('Runtime 的节点服务', () => {
     expect(await c3.request('nodes.share.status', {})).toMatchObject({ enabled: false, listening: false });
   });
 
-  it('端口被占用：Runtime 照常启动，listening 为 false 并说明原因；换端口后恢复', async () => {
+  it('port in use: Runtime still starts, listening false with reason; restored after changing port', async () => {
     await newHome();
     const blocker = http.createServer();
     await new Promise<void>((resolve) => blocker.listen(0, '127.0.0.1', resolve));
@@ -177,7 +177,7 @@ describe('Runtime 的节点服务', () => {
     }
   });
 
-  it('启动中途失败：已经开始监听的节点服务一并关掉', async () => {
+  it('startup fails midway: node service that already started listening is shut down too', async () => {
     await newHome();
     const listenOn = (port: number) =>
       new Promise<http.Server>((resolve, reject) => {
@@ -212,14 +212,14 @@ describe('Runtime 的节点服务', () => {
     await closeServer(await listenOn(nodePort));
   });
 
-  it('网关方法的错误是 RpcError', async () => {
+  it('gateway method errors are RpcError', async () => {
     await newHome();
     const { client: c1 } = await boot();
     const error = await c1.request('nodes.share.pairingCode', {}).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(RpcError);
   });
 
-  it('nodes.share.setCapability：经网关开关一种能力，健康随即报告，持久并随重启恢复；不认识的能力 invalid-request', async () => {
+  it('nodes.share.setCapability: toggles one capability via gateway, health reports immediately, persisted and restored on restart; unknown capability invalid-request', async () => {
     await newHome();
     const { client: c1 } = await boot();
     expect((await c1.request('nodes.share.status', {})).capabilities).toEqual({ transcribe: { enabled: true } });
@@ -252,8 +252,8 @@ describe('Runtime 的节点服务', () => {
     expect((await (await fetch(`http://127.0.0.1:${on.port}/v1/health`)).json()).capabilities.transcribe.enabled).toBe(true);
   });
 
-  describe.skipIf(!appleSilicon)('远端任务进 Runtime 的任务列表（默认模型包 + 假 Model Worker）', () => {
-    it('jobs.list 里是节点提交、没有视频；日志里没有转写文字与令牌；停止时远端任务一并清理', async () => {
+  describe.skipIf(!appleSilicon)('remote task enters Runtime task list (default model pack + fake Model Worker)', () => {
+    it('jobs.list shows node-submitted task without video; logs have no transcript text or token; remote tasks cleaned up on stop', async () => {
       await newHome();
       await installSyntheticModels(home.modelsDir);
       const { client: c1 } = await boot({ modelWorker: { command: process.execPath, args: [FAKE_MODEL_WORKER] }, jobIdleMs: 60_000 });

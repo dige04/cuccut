@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { TRANSCRIBE_SELF_TEST, selfTestMatches } from './self-test-sample.ts';
 
-describe('模型包自检的期望文字', () => {
-  it('忽略大小写与标点；数字写成阿拉伯数字也算', () => {
+describe('expected text for the model pack self-test', () => {
+  it('ignores case and punctuation; numbers written as Arabic numerals also count', () => {
     expect(selfTestMatches('Testing one, two, three. CucCut is ready.', TRANSCRIBE_SELF_TEST)).toBe(true);
     expect(selfTestMatches('Testing 1, 2, 3, BayoCut is ready.', TRANSCRIBE_SELF_TEST)).toBe(true);
     expect(selfTestMatches('Testing one 2 three', TRANSCRIBE_SELF_TEST)).toBe(true);

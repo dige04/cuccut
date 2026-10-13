@@ -7,8 +7,8 @@ import { checkLink, checkResolvedHost, isPrivateAddress, redactUrl, redactUrlsIn
 
 /** Link checks, redaction and staging of the original link for link import (architecture design §7.9). */
 
-describe('链接检查', () => {
-  it('只接受公网的 http(s) 链接，不接受以 - 开头、带凭据与本地的', () => {
+describe('link check', () => {
+  it('only accepts public http(s) links; rejects those starting with -, with credentials, and local ones', () => {
     expect(checkLink('  https://Video.Example.com./watch?v=abc&utm_source=x#t=1 ')).toEqual({
       raw: 'https://Video.Example.com./watch?v=abc&utm_source=x#t=1',
       canonical: 'https://video.example.com./watch?v=abc',
@@ -51,7 +51,7 @@ describe('链接检查', () => {
     }
   });
 
-  it('脱敏：去掉凭据、片段与跟踪、签名参数，只留标识内容的参数并排序', () => {
+  it('redaction: strips credentials, fragments, tracking and signing parameters, keeps only identifying parameters and sorts them', () => {
     expect(redactUrl('https://video.example.com/watch?token=secret&v=abc&list=PL1&utm_campaign=x#frag')).toBe(
       'https://video.example.com/watch?list=PL1&v=abc',
     );
@@ -61,7 +61,7 @@ describe('链接检查', () => {
     );
   });
 
-  it('解析出内网地址时拒绝；解析不了是网络错误；字面 IP 不再解析', async () => {
+  it('rejected when resolving to an internal address; unresolvable is a network error; literal IPs are no longer resolved', async () => {
     const lookup = async (host: string) => (host === 'evil.example.com' ? ['93.184.216.34', '10.0.0.5'] : ['93.184.216.34']);
     await expect(checkResolvedHost('video.example.com', lookup)).resolves.toBeUndefined();
     await expect(checkResolvedHost('evil.example.com', lookup)).rejects.toMatchObject({ details: { code: 'LINK_PRIVATE_ADDRESS' } });
@@ -77,8 +77,8 @@ describe('链接检查', () => {
   });
 });
 
-describe('原始链接的暂存', () => {
-  it('0600 文件；删除最后一条时文件也删掉；prune 只留指定的', async () => {
+describe('staging of the raw link', () => {
+  it('0600 file; deleting the last entry also deletes the file; prune keeps only the specified ones', async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-link-sources-'));
     try {
       const file = path.join(dir, 'store', 'link-sources.json');

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SkillPrefsStore } from './skill-prefs.ts';
 
-describe('skill 开关', () => {
+describe('skill toggles', () => {
   let dir: string;
   let file: string;
 
@@ -17,13 +17,13 @@ describe('skill 开关', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('没有文件时没有差量', async () => {
+  it('no file means no deltas', async () => {
     const store = new SkillPrefsStore(file);
     expect(await store.load()).toEqual({ enabled: {} });
     expect(store.override('a')).toBeUndefined();
   });
 
-  it('只存与默认值不同的差量，回到默认值时删掉；落盘后读回来一样', async () => {
+  it('only stores deltas that differ from the default, deleted when returning to the default; reads back the same after writing to disk', async () => {
     const store = new SkillPrefsStore(file);
     await store.load();
     await store.set('caption-layout', false, true);
@@ -38,7 +38,7 @@ describe('skill 开关', () => {
     expect(await new SkillPrefsStore(file).load()).toEqual({ enabled: {} });
   });
 
-  it('坏掉或不认识的条目丢掉', async () => {
+  it('corrupted or unknown entries dropped', async () => {
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, JSON.stringify({ schemaVersion: 1, enabled: { ok: false, 'Bad Id': true, 字幕: true, x: 'yes' } }));
     expect(await new SkillPrefsStore(file).load()).toEqual({ enabled: { ok: false, 字幕: true } });

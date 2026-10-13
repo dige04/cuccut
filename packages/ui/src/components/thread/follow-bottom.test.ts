@@ -20,25 +20,25 @@ function settled(scrollTop: number, following = true): FollowState {
 }
 
 describe('nextFollowState', () => {
-  it('布局导致 scrollTop 变小、没有向上输入时不脱钩', () => {
+  it('layout shrinks scrollTop without upward input: does not unhook', () => {
     const next = nextFollowState(settled(1000), { scrollTop: 700, distanceFromBottom: 0, now: 1000 });
     expect(next.following).toBe(true);
     expect(next.lastScrollTop).toBe(700);
   });
 
-  it('滚轮向上后 100ms 内 scrollTop 变小就脱钩', () => {
+  it('scrollTop shrinks within 100ms after wheel up: unhooks', () => {
     const state = recordUpwardIntent(settled(1000), 1000);
     const next = nextFollowState(state, { scrollTop: 900, distanceFromBottom: 100, now: 1000 + UPWARD_INTENT_WINDOW_MS });
     expect(next.following).toBe(false);
   });
 
-  it('向上输入超过窗口之后 scrollTop 变小不脱钩', () => {
+  it('scrollTop shrinks after upward input has exceeded the window: does not unhook', () => {
     const state = recordUpwardIntent(settled(1000), 1000);
     const next = nextFollowState(state, { scrollTop: 900, distanceFromBottom: 100, now: 1000 + UPWARD_INTENT_WINDOW_MS + 1 });
     expect(next.following).toBe(true);
   });
 
-  it('拖滚动条期间超过时间窗口仍算向上输入', () => {
+  it('during a scrollbar drag, upward input still counts beyond the time window', () => {
     const state = beginScrollbarDrag(settled(1000));
     const next = nextFollowState(state, { scrollTop: 600, distanceFromBottom: 400, now: 5000 });
     expect(next.following).toBe(false);
@@ -46,24 +46,24 @@ describe('nextFollowState', () => {
     expect(released.following).toBe(true);
   });
 
-  it('滚回到距底 1px 以内重新跟上', () => {
+  it('scrolling back to within 1px of the bottom resumes following', () => {
     const next = nextFollowState(settled(500, false), { scrollTop: 799.5, distanceFromBottom: 0.5, now: 10 });
     expect(next.following).toBe(true);
   });
 
-  it('向下滚但没到底不跟上', () => {
+  it('scrolling down without reaching the bottom does not resume following', () => {
     const next = nextFollowState(settled(500, false), { scrollTop: 700, distanceFromBottom: 30, now: 10 });
     expect(next.following).toBe(false);
   });
 
-  it('没在跟时距底 ≤1 但 scrollTop 没变大（内容缩短被动到底）不跟上', () => {
+  it('not following, within 1px of the bottom but scrollTop did not grow (content shrank and passively reached the bottom): does not resume following', () => {
     const shrunk = nextFollowState(settled(500, false), { scrollTop: 400, distanceFromBottom: 0, now: 10 });
     expect(shrunk.following).toBe(false);
     const same = nextFollowState(settled(500, false), { scrollTop: 500, distanceFromBottom: 0, now: 10 });
     expect(same.following).toBe(false);
   });
 
-  it('第一次观察只记基准不改跟底', () => {
+  it('first observation only records the baseline and does not change following', () => {
     const next = nextFollowState(recordUpwardIntent(initialFollowState(), 0), { scrollTop: 0, distanceFromBottom: 500, now: 0 });
     expect(next.following).toBe(true);
     expect(next.lastScrollTop).toBe(0);
@@ -71,7 +71,7 @@ describe('nextFollowState', () => {
 });
 
 describe('shouldPin', () => {
-  it('跟底且没有近期向上输入时才钉底', () => {
+  it('pins to the bottom only when following and there is no recent upward input', () => {
     const state = settled(1000);
     expect(shouldPin(state, 0)).toBe(true);
     expect(shouldPin(recordUpwardIntent(state, 100), 150)).toBe(false);
@@ -82,7 +82,7 @@ describe('shouldPin', () => {
 });
 
 describe('isUpwardKey / isNearBottom', () => {
-  it('识别向上的按键', () => {
+  it('recognizes upward keys', () => {
     expect(isUpwardKey({ key: 'ArrowUp', shiftKey: false })).toBe(true);
     expect(isUpwardKey({ key: 'PageUp', shiftKey: false })).toBe(true);
     expect(isUpwardKey({ key: 'Home', shiftKey: false })).toBe(true);
@@ -91,7 +91,7 @@ describe('isUpwardKey / isNearBottom', () => {
     expect(isUpwardKey({ key: 'ArrowDown', shiftKey: false })).toBe(false);
   });
 
-  it('64px 内算接近底部', () => {
+  it('within 64px counts as near the bottom', () => {
     expect(isNearBottom(64)).toBe(true);
     expect(isNearBottom(65)).toBe(false);
   });

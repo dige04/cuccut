@@ -68,8 +68,8 @@ function invalidOf(source: string, format: 'srt' | 'vtt'): SubtitleFileError {
   throw new Error('应当拒绝');
 }
 
-describe('字幕文件的严格解析', () => {
-  it('SRT：序号、时间、多行文本与空条原样读出', () => {
+describe('strict subtitle file parsing', () => {
+  it('SRT: index, timing, multi-line text and empty cues are read as is', () => {
     const doc = parseSubtitles(SRT, 'srt');
     expect(doc.cues.map((c) => [c.id, c.startMs, c.endMs, c.lines.length])).toEqual([
       ['1', 1000, 2500, 2],
@@ -80,21 +80,21 @@ describe('字幕文件的严格解析', () => {
     expect(doc.cues[0]!.line).toBe(2);
   });
 
-  it('BOM 与 CRLF：与 LF 的结果相同', () => {
+  it('BOM and CRLF: same result as LF', () => {
     const crlf = `﻿${SRT.replace(/\n/g, '\r\n')}`;
     expect(parseSubtitles(crlf, 'srt')).toEqual(parseSubtitles(SRT, 'srt'));
     const bytes = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(SRT.replace(/\n/g, '\r\n'))]);
     expect(readSubtitleBytes(bytes, 'srt').cues).toHaveLength(4);
   });
 
-  it('解码：UTF-16 的 BOM、不是 UTF-8 时按 GB18030', () => {
+  it('decoding: UTF-16 BOM; when not UTF-8, decoded as GB18030', () => {
     const utf16 = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(SRT, 'utf16le')]);
     expect(decodeSubtitleBytes(utf16).replace(/^﻿/, '')).toBe(SRT);
     // GBK encoding of “你好”
     expect(decodeSubtitleBytes(Buffer.from([0xc4, 0xe3, 0xba, 0xc3]))).toBe('你好');
   });
 
-  it('VTT：头部、标识、cue settings、STYLE 与 NOTE 块', () => {
+  it('VTT: header, identifiers, cue settings, STYLE and NOTE blocks', () => {
     const doc = parseSubtitles(VTT, 'vtt');
     expect(doc.header).toBe('WEBVTT - demo\nKind: captions');
     expect(doc.cues.map((c) => [c.id, c.startMs, c.endMs, c.settings])).toEqual([
@@ -108,7 +108,7 @@ describe('字幕文件的严格解析', () => {
     ]);
   });
 
-  it('行内标记：送模型前去掉，并记下带标记', () => {
+  it('inline markup: stripped before sending to the model, and the presence of markup is recorded', () => {
     const srt = parseSubtitles(SRT, 'srt');
     expect(plainLines(srt.cues[0]!, 'srt')).toEqual({ lines: ['Hello there,', 'my friend.'], marked: true });
     expect(plainLines(srt.cues[1]!, 'srt')).toEqual({ lines: ['Up top'], marked: true });
@@ -129,7 +129,7 @@ describe('字幕文件的严格解析', () => {
     ['秒越界', '1\n00:00:61,000 --> 00:01:02,000\nA\n', 2],
     ['序号不是数字', 'one\n00:00:01,000 --> 00:00:02,000\nA\n', 1],
     ['没有字幕', '\n\n', 1],
-  ])('SRT 拒绝：%s', (_, source, line) => {
+  ])('SRT rejection: %s', (_, source, line) => {
     const error = invalidOf(source, 'srt');
     expect(error.code).toBe('SUBTITLE_FILE_INVALID');
     expect(error.details.line).toBe(line);
@@ -139,11 +139,11 @@ describe('字幕文件的严格解析', () => {
     ['没有 WEBVTT', '00:01.000 --> 00:02.000\nA\n'],
     ['头部之后没空行', 'WEBVTT\n00:01.000 --> 00:02.000\nA\n'],
     ['逗号的毫秒', 'WEBVTT\n\n00:00:01,000 --> 00:00:02,000\nA\n'],
-  ])('VTT 拒绝：%s', (_, source) => {
+  ])('VTT rejection: %s', (_, source) => {
     expect(invalidOf(source, 'vtt').code).toBe('SUBTITLE_FILE_INVALID');
   });
 
-  it('上限：大小与条数', () => {
+  it('limits: size and cue count', () => {
     const big = Buffer.alloc(MAX_SUBTITLE_BYTES + 1, 0x41);
     expect(() => readSubtitleBytes(big, 'srt')).toThrow(expect.objectContaining({ code: 'SUBTITLE_FILE_TOO_LARGE' }));
     const many = Array.from({ length: MAX_SUBTITLE_CUES + 1 }, (_, i) => `${clock(i * 10, 'srt')} --> ${clock(i * 10 + 5, 'srt')}\nx`);
@@ -151,8 +151,8 @@ describe('字幕文件的严格解析', () => {
   });
 });
 
-describe('写出字幕文件', () => {
-  it('SRT 原样往返：序号与时间行照抄，换行统一为 LF', () => {
+describe('writing subtitle files', () => {
+  it('SRT round-trip as is: indices and timing lines copied verbatim, line endings normalized to LF', () => {
     const doc = parseSubtitles(SRT, 'srt');
     const out = renderSubtitles(
       doc,
@@ -165,7 +165,7 @@ describe('写出字幕文件', () => {
     expect(out.text.startsWith('1\n00:00:01,000 --> 00:00:02,500\nHello there,\nmy friend.\n\n')).toBe(true);
   });
 
-  it('VTT 原样往返：头部、cue settings、标识与 NOTE 块留在原处；文本转义', () => {
+  it('VTT round-trip as is: header, cue settings, identifiers and NOTE blocks stay in place; text escaping', () => {
     const doc = parseSubtitles(VTT, 'vtt');
     const out = renderSubtitles(
       doc,
@@ -197,7 +197,7 @@ describe('写出字幕文件', () => {
     expect(parseSubtitles(out.text, 'vtt').cues.map((c) => c.timing)).toEqual(doc.cues.map((c) => c.timing));
   });
 
-  it('SRT 转 VTT：时间码按毫秒重写', () => {
+  it('SRT to VTT: timecodes rewritten in milliseconds', () => {
     const doc = parseSubtitles(SRT, 'srt');
     const out = renderSubtitles(
       doc,
@@ -209,7 +209,7 @@ describe('写出字幕文件', () => {
     expect(back.cues[3]!.timing).toBe('01:02:03.456 --> 01:02:04.000');
   });
 
-  it('VTT 转 SRT：丢掉 cue settings 与 NOTE 等块并计数，按顺序编号', () => {
+  it('VTT to SRT: drops blocks such as cue settings and NOTE and counts them, renumbers in order', () => {
     const doc = parseSubtitles(VTT, 'vtt');
     const out = renderSubtitles(
       doc,
@@ -225,7 +225,7 @@ describe('写出字幕文件', () => {
     ]);
   });
 
-  it('译文的整理：拆行、去空行，`-->` 换成箭头', () => {
+  it('translation tidying: splits lines, removes empty lines, `-->` replaced with an arrow', () => {
     expect(translationLines('  第一行 \r\n\n第二行 --> 继续\n')).toEqual(['第一行', '第二行 → 继续']);
   });
 });

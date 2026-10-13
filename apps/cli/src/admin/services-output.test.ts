@@ -27,8 +27,8 @@ const base: ServiceStatus = {
   recentRequests: [],
 };
 
-describe('cuccut services 的参数', () => {
-  it('列表、开关与客户端', () => {
+describe('cuccut services arguments', () => {
+  it('list, switches and clients', () => {
     expect(parseServicesArgs([])).toEqual({ kind: 'list' });
     expect(parseServicesArgs(['status'])).toEqual({ kind: 'list' });
     expect(parseServicesArgs(['start', 'mcp'])).toEqual({ kind: 'start', serviceId: 'mcp' });
@@ -50,7 +50,7 @@ describe('cuccut services 的参数', () => {
     expect(parseServicesArgs(['model-api', 'revoke', 'mcl_2'])).toEqual({ kind: 'revoke', service: 'model-api', clientId: 'mcl_2' });
   });
 
-  it('model-api 的别名', () => {
+  it('model-api alias', () => {
     expect(parseServicesArgs(['model-api', 'aliases'])).toEqual({ kind: 'aliases' });
     expect(parseServicesArgs(['model-api', 'alias', 'whisper-1', 'transcribe', 'local'])).toEqual({
       kind: 'alias',
@@ -66,7 +66,7 @@ describe('cuccut services 的参数', () => {
     expect(() => parseServicesArgs(['mcp', 'aliases'])).toThrow(/用法/);
   });
 
-  it('configure：端口、等级、范围与随 Runtime 启动', () => {
+  it('configure: port, level, scope and starting with Runtime', () => {
     expect(
       parseServicesArgs(['configure', 'mcp'], { port: '47700', level: 'auto', videos: 'vid_a, vid_b,vid_a', autostart: 'on' }),
     ).toEqual({
@@ -86,7 +86,7 @@ describe('cuccut services 的参数', () => {
     expect(() => parseServicesArgs(['configure', 'model-api'], { maxConcurrent: '0' })).toThrow(/--max-concurrent/);
   });
 
-  it('写错时给出用法', () => {
+  it('shows usage on a mistake', () => {
     expect(() => parseServicesArgs(['start'])).toThrow(/用法/);
     expect(() => parseServicesArgs(['start', 'ftp'])).toThrow(/不认识的服务：ftp/);
     expect(() => parseServicesArgs(['configure', 'mcp'])).toThrow(/没有要改的配置/);
@@ -99,7 +99,7 @@ describe('cuccut services 的参数', () => {
     expect(() => parseServicesArgs(['mcp', 'tokens'])).toThrow(/用法/);
   });
 
-  it('web：会话、吊销，以及只读与方法白名单的配置', () => {
+  it('web: sessions, revoke, and read-only and method allowlist config', () => {
     expect(parseServicesArgs(['web', 'sessions'])).toEqual({ kind: 'web-sessions' });
     expect(parseServicesArgs(['web', 'revoke', 'wses_1'])).toEqual({ kind: 'web-revoke', sessionId: 'wses_1' });
     expect(parseServicesArgs(['configure', 'web'], { port: '47700', readOnly: 'on' })).toEqual({
@@ -122,8 +122,8 @@ describe('cuccut services 的参数', () => {
   });
 });
 
-describe('cuccut services 的输出', () => {
-  it('状态、原因、等级与范围；没有提供的服务与节点服务各一行说明', () => {
+describe('cuccut services output', () => {
+  it('status, reason, level and scope; services not provided and node services each get a one-line note', () => {
     const lines = formatServices([
       { ...base, state: 'error', error: '端口 47620 已被占用', autostart: true, policy: { videos: { ids: ['vid_a'] }, level: 'auto' } },
       { ...base, serviceId: 'model-api', label: '模型接口服务', available: false, port: 47621, policy: null },
@@ -167,7 +167,7 @@ describe('cuccut services 的输出', () => {
     ]);
   });
 
-  it('新客户端的令牌只在创建时出现；连接信息不含令牌', () => {
+  it('a new client\'s token appears only at creation; connection info does not include the token', () => {
     const info: McpConnectionInfo = {
       url: 'http://127.0.0.1:47620/mcp',
       headers: { Authorization: 'Bearer <甲 的令牌>' },
@@ -199,7 +199,7 @@ describe('cuccut web', () => {
   };
   const link = { url: 'http://127.0.0.1:47622/#code=abcdefghijklmnopqrstuvwxyz', expiresAt: '2026-01-01T00:02:00.000Z' };
 
-  it('状态里有只读、白名单与会话数', () => {
+  it('status shows read-only, allowlist and session count', () => {
     expect(formatServices([web])).toEqual([
       'web  Web 服务  开着  http://127.0.0.1:47622/',
       '  随 Runtime 启动：否',
@@ -221,7 +221,7 @@ describe('cuccut web', () => {
     ).toEqual(['wses_1  登录于 a  最近使用 b  到期 c  连接 2 个  Firefox']);
   });
 
-  it('web open：先开服务，再打印访问链接；--launch 打开不带代码的登录页，代码只打在终端里', async () => {
+  it('web open: starts the service first, then prints the access link; --launch opens the login page without the code, the code is printed only in the terminal', async () => {
     const calls: string[] = [];
     const client = {
       start: async () => {
@@ -253,7 +253,7 @@ describe('cuccut web', () => {
     expect(() => splitAccessLink('http://127.0.0.1:47622/?code=x')).toThrow(/格式不对/);
   });
 
-  it('web open --video：链接的路径与查询直达视频的编辑器；--launch 打开的登录页保留路径与查询，代码仍只在终端里', async () => {
+  it('web open --video: the link\'s path and query go straight to the video\'s editor; the login page opened by --launch keeps the path and query, the code is still only in the terminal', async () => {
     const deep = {
       url: 'http://127.0.0.1:47622/home?video=%7B%22projectId%22%3A%22p1%22%2C%22path%22%3A%22a%22%7D#code=Zm9vYmFyYmF6cXV4MTIzNDU2',
       expiresAt: 'soon',
@@ -280,7 +280,7 @@ describe('cuccut web', () => {
     expect(splitAccessLink(deep.url)).toEqual({ loginUrl: deep.url.split('#')[0], code: 'Zm9vYmFyYmF6cXV4MTIzNDU2' });
   });
 
-  it('服务开不起来时说明原因，不发链接', async () => {
+  it('when the service cannot start, explains the reason and does not send a link', async () => {
     let linked = false;
     const client = {
       start: async () => ({ ...web, state: 'error' as const, endpoint: null, error: 'Web 客户端还没有构建' }),
@@ -293,20 +293,20 @@ describe('cuccut web', () => {
     expect(linked).toBe(false);
   });
 
-  it('各平台用默认浏览器打开', () => {
+  it('opens in the default browser on each platform', () => {
     expect(browserCommand('darwin', link.url)).toEqual({ command: 'open', args: [link.url] });
     expect(browserCommand('linux', link.url)).toEqual({ command: 'xdg-open', args: [link.url] });
     expect(browserCommand('win32', link.url)).toEqual({ command: 'cmd', args: ['/c', 'start', '""', link.url] });
   });
 });
 
-describe('英文', () => {
+describe('English', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     setLocale('zh-Hans');
   });
 
-  it('用法错误与服务状态是英文', () => {
+  it('usage errors and service status are in English', () => {
     vi.stubEnv('CUCCUT_LOCALE', 'en');
     setLocale('en');
     expect(() => parseServicesArgs(['bogus'])).toThrow(/^Usage: cuccut services \[status/);

@@ -76,7 +76,7 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 describe('watchAgentSetup', () => {
   afterEach(() => useAgentSetup.getState().reset());
 
-  it('终态先读 agents.list 写回连接镜像，再进运行镜像；只对看着跑完的那次回调一次', async () => {
+  it('terminal state first reads agents.list and writes back to the connection mirror, then goes to the run mirror; the callback fires once only for the run being watched to completion', async () => {
     const fake = fakeSession();
     const finished: AgentSetupRun[] = [];
     const stop = watchAgentSetup(fake.session, (run) => finished.push(run));
@@ -108,7 +108,7 @@ describe('watchAgentSetup', () => {
     expect(useAgentSetup.getState()).toMatchObject({ ready: false, runs: [] });
   });
 
-  it('runAgentSetup：主题事件先到时不用空输出盖掉', async () => {
+  it('runAgentSetup: when the theme event arrives first, it is not overwritten by empty output', async () => {
     const fake = fakeSession();
     const stop = watchAgentSetup(fake.session);
     fake.emit().snapshot({ runs: [] });
@@ -122,10 +122,10 @@ describe('watchAgentSetup', () => {
   });
 });
 
-describe('用 Codex 画图的两条命令', () => {
+describe('the two commands for drawing diagrams with Codex', () => {
   afterEach(() => useModels.setState({ ready: false, capabilities: null }));
 
-  it('probeModelCapabilities 把探测结果写进 useModels；setAgentProviderEnabled 只带开关', async () => {
+  it('probeModelCapabilities writes probe results into useModels; setAgentProviderEnabled carries only the toggle', async () => {
     const capabilities = { generateImage: { default: null, effective: null, providers: [] } } as unknown as ModelCapabilitiesView;
     const calls: [string, unknown][] = [];
     const session = {
@@ -149,10 +149,10 @@ describe('用 Codex 画图的两条命令', () => {
   });
 });
 
-describe('添加与移除智能体', () => {
+describe('adding and removing agents', () => {
   afterEach(() => useConnection.setState({ drivers: null, checking: [], agentPreferences: null }));
 
-  it('addAgentProvider 带上新的 commandId，返回的视图整份写回连接镜像；removeAgentProvider 只带 id', async () => {
+  it('addAgentProvider carries the new commandId, and the returned view is written back to the connection mirror in full; removeAgentProvider carries only the id', async () => {
     const calls: [string, Record<string, unknown>][] = [];
     const added = { drivers: [], checking: ['goose'], preferences: {} } as unknown as AgentsView;
     const removed = { drivers: [], checking: [], preferences: {} } as unknown as AgentsView;

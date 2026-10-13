@@ -32,8 +32,8 @@ const EXPECTED_IDS = [...MLX_IDS, ...CANDLE_IDS];
 const componentsOf = (def: BundleDefinition) => Object.entries(def.components).filter(([, source]) => source !== undefined);
 const status = { detail: undefined } as unknown as ModelBundleStatus;
 
-describe('本地语音合成模型包的登记', () => {
-  it('十个 MLX 模型包与它们的 candle 变体，都在总登记里，都是 synthesize；不登记 AuK', () => {
+describe('registration of local speech synthesis model packs', () => {
+  it('the ten MLX model packs and their candle variants are all in the overall registry, all synthesize; AuK is not registered', () => {
     expect(SPEECH_BUNDLES.map((b) => b.bundleId)).toEqual(EXPECTED_IDS);
     for (const def of SPEECH_BUNDLES) {
       expect(BUNDLES).toContain(def);
@@ -48,7 +48,7 @@ describe('本地语音合成模型包的登记', () => {
     expect(new Set(BUNDLES.map((b) => b.bundleId)).size).toBe(BUNDLES.length);
   });
 
-  it('每个组件都有内置清单：每个文件都有 64 位十六进制 sha256 与正的大小，估计字节等于大小之和', () => {
+  it('every component has a built-in manifest: every file has a 64-digit hex sha256 and a positive size, estimated bytes equal the sum of sizes', () => {
     for (const def of SPEECH_BUNDLES) {
       for (const [name, source] of componentsOf(def)) {
         const manifest = repoManifestFor(source!.repo, source!.revision);
@@ -68,7 +68,7 @@ describe('本地语音合成模型包的登记', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('candle 变体与 MLX 模型包同一仓库、同一特性，只换后端与设备；组件都带参数个数', () => {
+  it('candle variants and MLX model packs share the same repo and features, differing only in backend and device; components all carry parameter counts', () => {
     for (const [i, id] of CANDLE_IDS.entries()) {
       const candle = SPEECH_BUNDLES.find((b) => b.bundleId === id)!;
       const mlx = SPEECH_BUNDLES.find((b) => b.bundleId === MLX_IDS[i])!;
@@ -80,7 +80,7 @@ describe('本地语音合成模型包的登记', () => {
     }
   });
 
-  it('Qwen3-TTS 共用一份编解码器；IndexTTS 2.5 的辅助权重就是 IndexTTS2 的仓库', () => {
+  it('Qwen3-TTS shares one codec; IndexTTS 2.5\'s auxiliary weights are the IndexTTS2 repo', () => {
     const qwen = SPEECH_BUNDLES.filter((b) => b.bundleId.startsWith('qwen3-tts-'));
     expect(qwen).toHaveLength(10);
     const codecs = new Set(qwen.map((b) => `${b.components.codec!.repo}@${b.components.codec!.revision}`));
@@ -90,7 +90,7 @@ describe('本地语音合成模型包的登记', () => {
     expect(index25.components.aux).toMatchObject({ repo: index2.components.tts!.repo, revision: index2.components.tts!.revision });
   });
 
-  describe('目录里的状态', () => {
+  describe('status in the directory', () => {
     let dir: string;
     beforeEach(async () => {
       dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-speech-bundles-'));
@@ -99,7 +99,7 @@ describe('本地语音合成模型包的登记', () => {
       await fs.rm(dir, { recursive: true, force: true });
     });
 
-    it('Apple Silicon：没装是 not-installed，共用的编解码器列出其余四个 Qwen3-TTS 模型包，许可与名字随状态给出', async () => {
+    it('Apple Silicon: not-installed when not installed; the shared codec lists the other four Qwen3-TTS model packs; license and name given along with the status', async () => {
       const catalog = new ModelCatalog({ root: dir, platform: 'darwin', arch: 'arm64', workerAvailable: () => true });
       const base = (await catalog.status('qwen3-tts-0.6b-base@mlx-8bit'))!;
       expect(base).toMatchObject({ capability: 'synthesize', state: 'not-installed', label: 'Qwen3-TTS 0.6B Base' });
@@ -111,7 +111,7 @@ describe('本地语音合成模型包的登记', () => {
       expect(index2.components!.find((c) => c.component === 'tts')!.sharedWith).toEqual(['index-tts2.5@mlx-fp16']);
     });
 
-    it('别的平台：mlx 不可用，模型包不列出、硬登记进去的是 error / unsupported；列 candle 变体', async () => {
+    it('other platforms: mlx unavailable, model packs not listed, forcibly registered ones are error / unsupported; lists candle variants', async () => {
       expect(backendSupported('mlx', 'darwin', 'arm64')).toBe(true);
       expect(backendSupported('mlx', 'darwin', 'x64')).toBe(false);
       expect(backendSupported('mlx', 'win32', 'x64')).toBe(false);
@@ -124,7 +124,7 @@ describe('本地语音合成模型包的登记', () => {
       for (const id of MLX_IDS) expect(await forced.status(id)).toMatchObject({ state: 'error', reason: 'unsupported' });
     });
 
-    it('常驻量：candle 变体按参数个数 × 计算精度（CPU 计在内存，CUDA 计在 GPU 内存）；MLX 的合成按固定的需求（null）', async () => {
+    it('resident size: candle variants by parameter count × compute precision (CPU counts toward memory, CUDA toward GPU memory); MLX synthesis uses fixed requirements (null)', async () => {
       const win = new ModelCatalog({ root: dir, platform: 'win32', arch: 'x64', workerAvailable: () => true });
       // 0.6B Base (8-bit, 914.6M parameters) plus the shared codec (f32, 170.6M parameters): f32 on CPU.
       expect(await win.workerFootprint('qwen3-tts-0.6b-base@candle')).toEqual({ bytes: (914_643_008 + 170_557_441) * 4, pool: 'memory' });
@@ -137,7 +137,7 @@ describe('本地语音合成模型包的登记', () => {
     });
   });
 
-  describe('模型描述', () => {
+  describe('model description', () => {
     const info = (id: string) =>
       localSpeechModelInfo(
         SPEECH_BUNDLES.find((b) => b.bundleId === id)!,
@@ -145,7 +145,7 @@ describe('本地语音合成模型包的登记', () => {
         true,
       );
 
-    it('OmniVoice 的许可不可商用，写在模型描述里；能克隆、能按词表描述', () => {
+    it('OmniVoice\'s license forbids commercial use and is stated in the model description; can clone, can describe by vocabulary', () => {
       const omni = info('omnivoice@mlx-int8');
       expect(omni.local!.license).toMatchObject({ name: 'CC-BY-NC-4.0', commercialUse: false });
       expect(omni.voiceModes).toEqual(['preset', 'clone', 'describe']);
@@ -155,7 +155,7 @@ describe('本地语音合成模型包的登记', () => {
       for (const id of EXPECTED_IDS.filter((x) => !x.startsWith('omnivoice@'))) expect(info(id).local!.license.commercialUse).toBe(true);
     });
 
-    it('CustomVoice 列出模型自己的说话人；克隆模型列出内置音色；VoiceDesign 的内置音色是描述', () => {
+    it('CustomVoice lists the model\'s own speakers; the clone model lists built-in voices; VoiceDesign\'s built-in voices are descriptions', () => {
       const custom = info('qwen3-tts-1.7b-customvoice@mlx-8bit');
       expect(custom.voices.every((v) => v.source === 'model')).toBe(true);
       expect(custom.defaultVoice).toBe('Vivian');
@@ -177,7 +177,7 @@ describe('本地语音合成模型包的登记', () => {
       }
     });
 
-    it('candle 在 CPU 上照实提示比实时慢多少；Worker 报告了 CUDA 时与 MLX 一样不写', () => {
+    it('candle on CPU honestly hints how much slower than real time; when the Worker reports CUDA, it is omitted as with MLX', () => {
       const on = (device: string) => ({ device, detail: undefined }) as unknown as ModelBundleStatus;
       const of = (id: string, s: ModelBundleStatus) =>
         localSpeechModelInfo(
@@ -205,7 +205,7 @@ describe('本地语音合成模型包的登记', () => {
       for (const id of MLX_IDS) expect(of(id, on('metal'))).toBeUndefined();
     });
 
-    it('不可用时带上原因', () => {
+    it('includes the reason when unavailable', () => {
       const def = SPEECH_BUNDLES[0]!;
       const model = localSpeechModelInfo(def, { detail: '没装' } as unknown as ModelBundleStatus, false);
       expect(model).toMatchObject({ available: false, detail: '没装' });
@@ -213,7 +213,7 @@ describe('本地语音合成模型包的登记', () => {
   });
 });
 
-describe('引擎的语言表与旋钮区间', () => {
+describe('engine language table and knob ranges', () => {
   // The same fixture as the engine constants in model-runtime (crates/model-runtime/tests/synthesize_engine_limits.rs).
   const LIMITS_FILE = new URL('../../../crates/model-runtime/tests/fixtures/speech-engine-limits.json', import.meta.url);
   // Keyed by the part before `@` in the model package ID: the MLX and candle variants are the same engine.
@@ -224,7 +224,7 @@ describe('引擎的语言表与旋钮区间', () => {
     'gpt-sovits-v2': 'gpt-sovits',
   };
 
-  it('与 Worker 一侧的引擎常量一致', async () => {
+  it('matches the engine constants on the Worker side', async () => {
     const limits = JSON.parse(await fs.readFile(LIMITS_FILE, 'utf8')) as {
       languages: Record<string, string[]>;
       knobs: Record<string, Record<string, unknown>>;

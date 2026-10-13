@@ -7,8 +7,8 @@ function summary(library: LibraryEntrySummary['library'], id: string, patch: Par
   return { library, id, version: 1, contentHash: 'sha256:0', name: id, kind: library === 'voices' ? 'voice' : 'transcription', updatedAt: '2026-10-01T00:00:00Z', ...patch };
 }
 
-describe('library 主题的条目表', () => {
-  it('upsert 按库与 ID 替换或追加；removed 只拿掉那一个库里的', () => {
+describe('library-topic entry table', () => {
+  it('upsert replaces or appends by library and ID; removed only removes the entry in that one library', () => {
     const a = summary('voices', 'voc_1');
     const b = summary('glossaries', 'voc_1');
     let entries = applyLibraryEvent([a, b], { type: 'entry.upsert', entry: { ...a, version: 2, name: '新名字' } });
@@ -19,7 +19,7 @@ describe('library 主题的条目表', () => {
     expect(entries).toEqual([b, summary('voices', 'voc_2')]);
   });
 
-  it('一次订阅分给多个镜像：后登记的立刻拿到当前条目，取消登记后不再收到', () => {
+  it('one subscription fans out to multiple mirrors: a later registrant immediately gets the current entries; after unregistering, no more are received', () => {
     libraryFeed.snapshot({ entries: [summary('voices', 'voc_1'), summary('glossaries', 'gls_1')] });
     const first: number[] = [];
     const second: number[] = [];
@@ -34,7 +34,7 @@ describe('library 主题的条目表', () => {
     expect(second).toEqual([2, 3]);
   });
 
-  it('我的声音只留音色，按名字排', () => {
+  it('my voices keep only the timbre, sorted by name', () => {
     libraryFeed.snapshot({
       entries: [summary('voices', 'voc_b', { name: '旁白' }), summary('glossaries', 'gls_1'), summary('voices', 'voc_a', { name: '主播' })],
     });

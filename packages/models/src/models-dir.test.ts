@@ -64,8 +64,8 @@ const exists = (p: string) =>
     () => false,
   );
 
-describe('模型目录的盘上操作', () => {
-  it('按清单认出模型：登记过的仓库计入大小与模型包，别的仓库只列出；不在的文件夹是空的', async () => {
+describe('on-disk operations of the model directory', () => {
+  it('recognizes models by manifest: registered repos count toward size and model packs, other repos are only listed; a missing folder is empty', async () => {
     const scan = await scanModelsDir(from, BUNDLES);
     expect(scan.repos.map((r) => [r.repo, r.known])).toEqual([
       ['someone/else', false],
@@ -77,14 +77,14 @@ describe('模型目录的盘上操作', () => {
     expect(await scanModelsDir(path.join(tmp, 'nope'), BUNDLES)).toEqual({ repos: [], bundleIds: [], bytes: 0 });
   });
 
-  it('互相包含的目录', () => {
+  it('directories that contain each other', () => {
     expect(nestedDirs('/a/b', '/a/b')).toBe('same');
     expect(nestedDirs('/a/b', '/a/b/c')).toBe('nested');
     expect(nestedDirs('/a/b/c', '/a/b')).toBe('nested');
     expect(nestedDirs('/a/b', '/a/bc')).toBeNull();
   });
 
-  it('计划：目标里已有同一版本的不再搬；同名的别的版本留在原处', async () => {
+  it('plan: a target that already has the same version is not moved again; a same-named other version stays where it is', async () => {
     await writeSyntheticRepo(to, VAD);
     await writeSyntheticRepo(to, { ...ASR, revision: 'd'.repeat(40) });
     const plan = await planMove(from, to, BUNDLES);
@@ -96,7 +96,7 @@ describe('模型目录的盘上操作', () => {
   for (const same of [true, false]) {
     const label = same ? '同一块盘（改名）' : '跨盘（复制、校验）';
 
-    it(`${label}：搬过去、合并安装记录、进度按字节；换过去之后删原目录`, async () => {
+    it(`${label}: moves over, merges install records, progress by bytes; deletes the original directory after switching over`, async () => {
       await updateInstallRecord(to, (r) => {
         r.bundles['other@mlx'] = { installedAt: '2026-09-01T00:00:00.000Z' };
       });
@@ -128,7 +128,7 @@ describe('模型目录的盘上操作', () => {
       expect(await exists(path.join(from, INSTALL_RECORD_FILE))).toBe(false);
     });
 
-    it(`${label}：中途失败时回滚，原目录原样，目标里不留东西`, async () => {
+    it(`${label}: on failure midway rolls back, original directory left as is, nothing left in the target`, async () => {
       const plan = await planMove(from, to, BUNDLES);
       const failing = moveModels({
         from,
@@ -148,7 +148,7 @@ describe('模型目录的盘上操作', () => {
       expect(await exists(path.join(from, MOVE_JOURNAL_FILE))).toBe(false);
     });
 
-    it(`${label}：取消时回滚`, async () => {
+    it(`${label}: rolls back on cancel`, async () => {
       const plan = await planMove(from, to, BUNDLES);
       const abort = new AbortController();
       const cancelled = moveModels({
@@ -168,7 +168,7 @@ describe('模型目录的盘上操作', () => {
     });
   }
 
-  it('跨盘复制出来的文件校验不符时失败并回滚', async () => {
+  it('fails and rolls back when a file copied across disks fails verification', async () => {
     const plan = await planMove(from, to, BUNDLES);
     // A file in the original directory was corrupted (size unchanged): the copy does not match the manifest.
     const file = path.join(from, 'test', 'vad', 'model.bin');
@@ -183,7 +183,7 @@ describe('模型目录的盘上操作', () => {
     expect(await exists(path.join(from, 'test', 'asr', 'config.json'))).toBe(true);
   });
 
-  it('启动时按日志回滚上次没做完的移动：同一块盘时改名回来', async () => {
+  it('on startup, rolls back an unfinished move according to the log: on the same disk, renames back', async () => {
     // Crashes after pretending a repository was renamed over.
     await fs.writeFile(
       path.join(from, MOVE_JOURNAL_FILE),

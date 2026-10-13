@@ -8,7 +8,7 @@ import { SkillCatalog } from './skill-catalog.ts';
 import { skillReferencePaths, skillSystemPrompt } from './skill-brief.ts';
 import { writeSkill } from './testing/skill-fixtures.ts';
 
-describe('直接调模型时的系统提示词（AI 工具）', () => {
+describe('system prompt when calling the model directly (AI tools)', () => {
   let dir: string;
   let builtin: string;
   let user: string;
@@ -42,11 +42,11 @@ describe('直接调模型时的系统提示词（AI 工具）', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('没有 skill：空串，不读目录', async () => {
+  it('no skills: empty string, does not read the directory', async () => {
     expect(await skillSystemPrompt(catalog, [])).toEqual({ text: '', skills: [], references: 0 });
   });
 
-  it('一个 skill：只带 SKILL.md 正文与正文提到的 references/，不带别的文件', async () => {
+  it('one skill: includes only the SKILL.md body and the references/ mentioned in the body, no other files', async () => {
     const skill = await catalog.require('video-summary');
     expect(skillReferencePaths(skill)).toEqual(['references/writing-baseline.md']);
     const one = await skillSystemPrompt(catalog, [{ id: 'video-summary' }]);
@@ -62,7 +62,7 @@ describe('直接调模型时的系统提示词（AI 工具）', () => {
     expect(one.text).toContain('without tools');
   });
 
-  it('两个 skill：按挂上的顺序，重复的 id 只算一次，内容相同的参考文件只带第一次', async () => {
+  it('two skills: in attached order, duplicate ids count once, identical reference files are included only the first time', async () => {
     const two = await skillSystemPrompt(catalog, [{ id: 'titles-and-description' }, { id: 'video-summary' }, { id: 'titles-and-description' }]);
     expect(two.skills).toEqual(['titles-and-description', 'video-summary']);
     expect(two.text.match(/<skill id=/g)).toHaveLength(2);
@@ -74,7 +74,7 @@ describe('直接调模型时的系统提示词（AI 工具）', () => {
     expect(two.text).toContain('TITLE RULES');
   });
 
-  it('用户装的 skill 带一行说明；不存在的 skill 整条拒绝', async () => {
+  it('a user-installed skill carries a one-line note; a nonexistent skill rejects the whole request', async () => {
     const mixed = await skillSystemPrompt(catalog, [{ id: 'mine' }, { id: 'video-summary' }]);
     expect(mixed.text).toContain('<skill id="mine" name="mine" user-installed="true">');
     expect(mixed.text).toContain('grant no extra permissions');

@@ -71,7 +71,7 @@ describe('StorageGc', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('引用集合 = 账本 + Space 产物记录；其余超过宽限期的删掉，结果记 info', async () => {
+  it('reference set = ledger + Space artifact records; others beyond the grace period are deleted, result logged at info', async () => {
     const orphan = await artifacts.put(Buffer.from('orphan'));
     const ledger = await artifacts.put(Buffer.from('ledger'));
     const space = await artifacts.put(Buffer.from('space'), 'wav');
@@ -87,7 +87,7 @@ describe('StorageGc', () => {
     expect(logs).toContainEqual(expect.objectContaining({ level: 'info', message: 'Artifact cleanup finished' }));
   });
 
-  it('修改时间早于清扫起点的产物（开始保留引用之前的）不删', async () => {
+  it('artifacts with modification time earlier than the sweep start (before reference retention began) are not deleted', async () => {
     const legacy = await artifacts.put(Buffer.from('legacy'));
     const managed = await artifacts.put(Buffer.from('managed'));
     await age(legacy.path, 5 * HOUR);
@@ -98,7 +98,7 @@ describe('StorageGc', () => {
     expect(await exists(managed.path)).toBe(false);
   });
 
-  it('有排队或运行中的任务时推迟，任务结束、账本淘汰任务之后补跑', async () => {
+  it('deferred while tasks are queued or running; runs later once tasks finish and the ledger evicts them', async () => {
     const orphan = await artifacts.put(Buffer.from('orphan'));
     await age(orphan.path, 2 * HOUR);
     jobs = [{ jobId: 'job_run', state: 'running' } as JobRecord];
@@ -114,7 +114,7 @@ describe('StorageGc', () => {
     expect(await exists(orphan.path)).toBe(false);
   });
 
-  it('产物记录读不了（引用不全）时不清产物库，记一次 warn', async () => {
+  it('artifact store is not swept when artifact records cannot be read (incomplete references); logs one warn', async () => {
     const orphan = await artifacts.put(Buffer.from('orphan'));
     await age(orphan.path, 2 * HOUR);
     const instance = make({ blocked: 'space-artifacts-quarantined' });
@@ -124,7 +124,7 @@ describe('StorageGc', () => {
     expect(logs.filter((l) => l.level === 'warn')).toHaveLength(1);
   });
 
-  it('缓存超过设置的上限时按修改时间删最旧的', async () => {
+  it('when the cache exceeds the configured limit, deletes the oldest by modification time', async () => {
     const cache = path.join(dir, 'cache');
     await fs.mkdir(path.join(cache, 'media', 'aa'), { recursive: true });
     const old = path.join(cache, 'media', 'aa', 'old.jpg');

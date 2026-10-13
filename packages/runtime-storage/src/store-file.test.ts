@@ -35,11 +35,11 @@ const corruptNames = async () => (await fs.readdir(dir)).filter((n) => n.startsW
 describe('readJsonOrQuarantine', () => {
   const recognize = (raw: Record<string, unknown>) => (Array.isArray(raw.items) ? raw.items : null);
 
-  it('文件不在时 missing', async () => {
+  it('missing when file absent', async () => {
     expect(await readJsonOrQuarantine(file, { recognize })).toEqual({ status: 'missing', value: null });
   });
 
-  it('空文件（或只有空白）按没有处理，记 warn，不改名', async () => {
+  it('empty file (or only whitespace) treated as absent, logs warn, not renamed', async () => {
     await fs.writeFile(file, '  \n');
     const log = spyLog();
     expect(await readJsonOrQuarantine(file, { recognize, log })).toEqual({ status: 'empty', value: null });
@@ -52,7 +52,7 @@ describe('readJsonOrQuarantine', () => {
     ['顶层是数组', '[1, 2]'],
     ['顶层是数字', '42'],
     ['形状认不出', JSON.stringify({ schemaVersion: 1, items: 'nope' })],
-  ])('%s：改名保留、记 warn', async (_label, text) => {
+  ])('%s: renamed and kept, logs warn', async (_label, text) => {
     await fs.writeFile(file, text);
     const log = spyLog();
     const read = await readJsonOrQuarantine(file, { recognize, log });
@@ -64,7 +64,7 @@ describe('readJsonOrQuarantine', () => {
     expect(log.warn).toHaveBeenCalledOnce();
   });
 
-  it('版本高于已知：不改名，记 warn，按空处理（版本检查在形状检查之前）', async () => {
+  it('version higher than known: not renamed, logs warn, treated as empty (version check before shape check)', async () => {
     const text = JSON.stringify({ schemaVersion: 2, entries: {} });
     await fs.writeFile(file, text);
     const log = spyLog();
@@ -74,18 +74,18 @@ describe('readJsonOrQuarantine', () => {
     expect(log.warn).toHaveBeenCalledOnce();
   });
 
-  it('没有版本字段（早期的文件）照常交给 recognize', async () => {
+  it('file without a version field (early files) still passed to recognize as usual', async () => {
     await fs.writeFile(file, JSON.stringify({ items: [1] }));
     expect(await readJsonOrQuarantine(file, { recognize })).toEqual({ status: 'ok', value: [1] });
   });
 
-  it('quarantine: false 时认不出的文件不改名', async () => {
+  it('quarantine: false: unrecognized file not renamed', async () => {
     await fs.writeFile(file, '{ not json');
     expect(await readJsonOrQuarantine(file, { recognize, quarantine: false })).toEqual({ status: 'unrecognized', value: null });
     expect(await fs.readFile(file, 'utf8')).toBe('{ not json');
   });
 
-  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('文件系统读不了时抛出，不当作坏文件', async () => {
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('throws when the file system cannot read, not treated as a bad file', async () => {
     await fs.writeFile(file, '{}');
     await fs.chmod(file, 0o000);
     await expect(readJsonOrQuarantine(file, { recognize })).rejects.toMatchObject({ code: 'EACCES' });
@@ -95,7 +95,7 @@ describe('readJsonOrQuarantine', () => {
 });
 
 describe('JsonStoreFile', () => {
-  it('读到更新版本的文件之后不再写它', async () => {
+  it('after reading a newer-version file, it is no longer written', async () => {
     const text = JSON.stringify({ schemaVersion: 9 });
     await fs.writeFile(file, text);
     const log = spyLog();
@@ -198,7 +198,7 @@ const cases: Case[] = [
 ];
 
 describe.each(cases)('$name', ({ load, empty }) => {
-  it('坏文件改名保留、记 warn、从空开始；之后的写入写新文件', async () => {
+  it('bad file renamed and kept, logs warn, starts empty; later writes create a new file', async () => {
     await fs.writeFile(file, '{ not json');
     const log = spyLog();
     const { summary, write } = await load(file, log);
@@ -211,14 +211,14 @@ describe.each(cases)('$name', ({ load, empty }) => {
     expect(JSON.parse(await fs.readFile(file, 'utf8'))).toMatchObject({ schemaVersion: 1 });
   });
 
-  it('顶层结构认不出时同样改名保留', async () => {
+  it('unrecognized top-level structure likewise renamed and kept', async () => {
     await fs.writeFile(file, '[]');
     const { summary } = await load(file, spyLog());
     expect(summary).toEqual(empty);
     expect(await corruptNames()).toHaveLength(1);
   });
 
-  it('版本高于已知：按空处理，不改名，之后的写入也不覆盖', async () => {
+  it('version higher than known: treated as empty, not renamed, later writes do not overwrite it', async () => {
     const text = JSON.stringify({ schemaVersion: 99, future: true });
     await fs.writeFile(file, text);
     const log = spyLog();
@@ -230,7 +230,7 @@ describe.each(cases)('$name', ({ load, empty }) => {
     expect(log.warn).toHaveBeenCalled();
   });
 
-  it('空文件按没有处理，不改名', async () => {
+  it('empty file treated as absent, not renamed', async () => {
     await fs.writeFile(file, '');
     const { summary } = await load(file, spyLog());
     expect(summary).toEqual(empty);
@@ -238,27 +238,27 @@ describe.each(cases)('$name', ({ load, empty }) => {
   });
 });
 
-describe('GrantStore（授权账本不能静默丢）', () => {
-  it('坏文件：打开失败，文件原样留着、不改名', async () => {
+describe('GrantStore (grant ledger must not be silently lost)', () => {
+  it('bad file: open fails, file left as is, not renamed', async () => {
     await fs.writeFile(file, '{ not json');
     await expect(GrantStore.open(file)).rejects.toThrow(/Malformed grants file/);
     expect(await fs.readFile(file, 'utf8')).toBe('{ not json');
     expect(await corruptNames()).toEqual([]);
   });
 
-  it('顶层结构认不出：打开失败', async () => {
+  it('unrecognized top-level structure: open fails', async () => {
     await fs.writeFile(file, JSON.stringify({ schemaVersion: 1, grants: {} }));
     await expect(GrantStore.open(file)).rejects.toThrow(/Malformed grants file/);
   });
 
-  it('更新版本写下的：打开失败，不改写', async () => {
+  it('written by a newer version: open fails, not rewritten', async () => {
     const text = JSON.stringify({ schemaVersion: 2, ledger: [] });
     await fs.writeFile(file, text);
     await expect(GrantStore.open(file)).rejects.toThrow(/newer version/);
     expect(await fs.readFile(file, 'utf8')).toBe(text);
   });
 
-  it('空文件按没有处理', async () => {
+  it('empty file treated as absent', async () => {
     await fs.writeFile(file, '');
     const store = await GrantStore.open(file);
     expect(store.list({ includeEnded: true })).toEqual([]);

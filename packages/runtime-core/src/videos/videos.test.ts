@@ -60,7 +60,7 @@ async function rejection(promise: Promise<unknown>): Promise<RpcError> {
   throw new Error('应该被拒绝');
 }
 
-describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
+describe.skipIf(!engine || !ffmpeg)('videos (real engine)', () => {
   let fixtures: string;
   let clip: string;
   let dir: string;
@@ -162,7 +162,7 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     return opened;
   }
 
-  it('关闭视频时清理 blobs/：没有引用的 blob 删掉，仍被引用的与新鲜的 staging 留着；还有租约时不关闭也不清理', async () => {
+  it('closing a video cleans blobs/: unreferenced blobs are deleted, referenced ones and fresh staging are kept; with a lease still held, neither closes nor cleans', async () => {
     const { ref, snapshot } = await create(client, 'GC');
     await client.request('edits.apply', {
       videoId: ref.videoId,
@@ -191,7 +191,7 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     expect(existsSync(fresh)).toBe(true);
   });
 
-  it('新建、导入并添加；回执到达时镜像已经应用了事件，与引擎重新读出的快照一致', async () => {
+  it('create, import and add; when the receipt arrives the mirror has already applied the event and matches the snapshot the engine rereads', async () => {
     const { ref, snapshot } = await create(client, '第一部');
     expect(ref.relPath).toBe('第一部');
     expect(ref.source.projectId).toBe(project.id);
@@ -229,7 +229,7 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     expect(fromSpace.ref.relPath).toBe('第一部');
   });
 
-  it('同名新建加序号；同一个 commandId 新建只建一次', async () => {
+  it('creating with a duplicate name adds a number; creating with the same commandId creates only once', async () => {
     const commandId = newId('cmd');
     const a = await client.request('videos.create', { projectId: project.id, name: '同名', commandId });
     const again = await client.request('videos.create', { projectId: project.id, name: '同名', commandId });
@@ -238,7 +238,7 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     expect(b.ref.relPath).toBe('同名 2');
   });
 
-  it('重试与冲突：同一个命令返回同一份回执、不发新事件；旧版本号被拒绝', async () => {
+  it('retry and conflict: the same command returns the same receipt, no new event is sent; an old version number is rejected', async () => {
     const { ref, snapshot } = await create();
     const view = watch(client, ref.videoId);
     await view.ready;
@@ -273,7 +273,7 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     expect((bad.details as EngineErrorBody).code).toBe('INVALID_TIME_VALUE');
   });
 
-  it('撤销与重做：按操作者算可撤销的一步，经主题同步', async () => {
+  it('undo and redo: one undoable step counted per actor, synced through the topic', async () => {
     const { ref, snapshot } = await create();
     const view = watch(client, ref.videoId);
     await view.ready;
@@ -317,7 +317,7 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     });
   });
 
-  it('调用方给的修改名带着引用经网关存下（命令与协议规范 §3.1）', async () => {
+  it('a modification name supplied by the caller is stored through the gateway with its reference (command and protocol spec §3.1)', async () => {
     const { ref, snapshot } = await create();
     const labelRef = { key: 'editLabel.renameVideo' };
     const renamed = await client.request('edits.apply', {
@@ -345,7 +345,7 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     expect(bad.code).toBe('invalid-request');
   });
 
-  it('文档正文不进快照，按需读出；不给版本时读当前版本', async () => {
+  it('document body is not in the snapshot, read on demand; without a version, reads the current version', async () => {
     const { ref, snapshot } = await create();
     const body = {
       schema: 'cuccut.caption/1',
@@ -373,7 +373,7 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     return names.filter((name) => name !== '.staging');
   }
 
-  it('默认导入链接原文件：blobs/ 下没有新 bytes，素材经媒体通道取得，支持 Range', async () => {
+  it('importing a link by default keeps the original file: no new bytes under blobs/, media is fetched through the media channel, supports Range', async () => {
     const { ref, snapshot } = await create();
     const added = await importClip(ref.videoId, snapshot.video.revision);
     const assetId = added.receipt.createdIds.find((id) => id.startsWith('asset'))!;
@@ -388,7 +388,7 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     expect((await response.arrayBuffer()).byteLength).toBe(10);
   });
 
-  it('取素材位置时视频被关掉：回「视频没有打开」，不抛内部错误', async () => {
+  it('video closed while fetching media location: replies "video is not open", does not throw an internal error', async () => {
     const { ref, snapshot } = await create();
     const added = await importClip(ref.videoId, snapshot.video.revision);
     const assetId = added.receipt.createdIds.find((id) => id.startsWith('asset'))!;
@@ -402,7 +402,7 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     expect(error.details).toMatchObject({ code: 'VIDEO_NOT_OPEN' });
   });
 
-  it('显式 managed 才复制进视频目录；之后原文件删掉也照样取得', async () => {
+  it('only an explicit managed copies into the video directory; media is still retrievable after the original is deleted', async () => {
     const { ref, snapshot } = await create();
     const copy = path.join(fixtures, 'managed-copy.mp4');
     await fs.copyFile(clip, copy);
@@ -433,7 +433,7 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     expect((relative.details as EngineErrorBody).code).toBe('INVALID_OPERATION');
   });
 
-  it('链接素材按类型放行：图片、音视频、字体与 Lottie 可以预览，字幕与别的文件不放行', async () => {
+  it('linked media is allowed by type: images, audio/video, fonts and Lottie can be previewed; subtitles and other files are not allowed', async () => {
     const { ref, snapshot } = await create();
     const image = path.join(fixtures, 'still.png');
     const tone = path.join(fixtures, 'tone.wav');
@@ -486,7 +486,7 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     }
   });
 
-  it('链接的符号链接按它指向的真实文件放行：指向别的文件（哪怕长度相同）就不放行', async (context) => {
+  it('a linked symbolic link is allowed by the real file it points to: pointing at another file, even of the same length, is not allowed', async (context) => {
     const { ref, snapshot } = await create();
     const alias = path.join(fixtures, 'alias.mp4');
     await fs.rm(alias, { force: true });
@@ -518,7 +518,7 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     expect(refused.code).toBe('forbidden');
   });
 
-  it('链接的文件不见了：视频照常打开，素材标为缺失，别的素材不受影响', async () => {
+  it('linked file missing: the video still opens, the media is marked missing, other media are unaffected', async () => {
     const { ref, snapshot } = await create();
     const away = path.join(fixtures, 'away.mp4');
     await fs.copyFile(clip, away);
@@ -559,7 +559,7 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     });
   });
 
-  it('项目里的素材按相对视频目录登记：整个项目搬走之后，视频照常打开、素材照样取得', async () => {
+  it('project media is registered relative to the video directory: after the whole project is moved, the video still opens and media is still retrievable', async () => {
     const { ref, snapshot } = await create(client, '搬家');
     const inside = path.join(project.path, '素材', 'logo.svg');
     await fs.mkdir(path.dirname(inside), { recursive: true });
@@ -596,7 +596,7 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     }
   });
 
-  it('链接的 JSON 只放行 Lottie 动画', async () => {
+  it('linked JSON only allows Lottie animations', async () => {
     const { ref, snapshot } = await create();
     const sticker = path.join(fixtures, 'sticker.json');
     await fs.writeFile(sticker, JSON.stringify({ v: '5.8.1', w: 64, h: 64, fr: 30, ip: 0, op: 30, layers: [] }));
@@ -612,7 +612,7 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     expect(runtime.videos.mirror(ref.videoId)!.video.assets[linked.receipt.refs!.sticker!]!.kind).toBe('lottie');
   });
 
-  it('`.lottie` 压缩包按 Lottie 收：链接时只放行里面确实有动画的', async () => {
+  it('`.lottie` archives are treated as Lottie: when linked, only those actually containing an animation are allowed', async () => {
     const { ref, snapshot } = await create();
     const animation = JSON.stringify({ v: '5.8.1', w: 64, h: 48, fr: 30, ip: 0, op: 45, layers: [] });
     const archive = path.join(fixtures, 'wave.lottie');
@@ -668,7 +668,7 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     expect((failed.details as EngineErrorBody).code).toBe('MEDIA_PROBE_FAILED');
   });
 
-  it('素材分析：波形峰值与缩略图由 Runtime 算出，按内容摘要缓存；只分析音视频', async () => {
+  it('media analysis: waveform peaks and thumbnails are computed by the Runtime, cached by content digest; only audio and video are analyzed', async () => {
     const { ref, snapshot } = await create();
     const added = await importClip(ref.videoId, snapshot.video.revision);
     const assetId = added.receipt.createdIds.find((id) => id.startsWith('asset'))!;
@@ -704,7 +704,7 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     expect(missing.code).toBe('not-found');
   });
 
-  it('连接断开后经过宽限期关闭视频；没打开的视频不能编辑或订阅', async () => {
+  it('after the connection drops, the video closes after the grace period; an unopened video cannot be edited or subscribed to', async () => {
     const other = await connect();
     const { ref, snapshot } = await create(other);
     other.close();
@@ -716,7 +716,7 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     await importClip(ref.videoId, snapshot.video.revision);
   });
 
-  it('复制出来的项目：副本里的视频换新 videoId，内容、修订与历史不变，原视频不变', async () => {
+  it('duplicated project: the video in the copy gets a new videoId, content, revisions and history unchanged, original video unchanged', async () => {
     const { ref } = await create(client, '样片');
     await client.request('edits.apply', {
       videoId: ref.videoId,
@@ -751,7 +751,7 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     expect(videoMeta(path.join(project.path, '样片')).previousVideoIds).toBeUndefined();
   });
 
-  it('没有记所属项目的旧视频：打开时采用当前项目，不换 videoId', async () => {
+  it('old video with no recorded project: adopts the current project when opened, videoId not changed', async () => {
     const { ref } = await create(client, '旧片');
     await client.request('videos.close', { videoId: ref.videoId });
     const file = path.join(project.path, '旧片', 'video.db');
@@ -766,7 +766,7 @@ describe.skipIf(!engine || !ffmpeg)('视频（真实引擎）', () => {
     expect(videoMeta(path.dirname(file)).projectId).toBe(project.id);
   });
 
-  it('引擎进程崩溃后重启并重新打开视频，主题上发整体替换，之后可以继续编辑', async () => {
+  it('after the engine process crashes and restarts and reopens the video, the topic sends a full replacement, and editing can continue afterward', async () => {
     const { ref, snapshot } = await create();
     const view = watch(client, ref.videoId);
     await view.ready;

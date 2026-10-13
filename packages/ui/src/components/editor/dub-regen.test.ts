@@ -97,8 +97,8 @@ beforeEach(() => {
 });
 afterEach(() => resetDubRegen());
 
-describe('重新生成这几句', () => {
-  it('提交 dub 的 regroup（换个种子），记下计划已有的版本；完成后提示换上几句、哪几句没换上，撤销撤的是 Runtime 写回的那一笔', async () => {
+describe('regenerate these lines', () => {
+  it('submit dub regroup (new seed), record the plan\'s existing versions; on completion, report how many lines were swapped and which were not, and undo reverts the entry Runtime wrote back', async () => {
     const { deps } = fake();
     const request = { videoId: 'vid', groupId: 'dub_p1', units: ['u1', 'u2'], planDocumentId: 'plan' };
     expect(await regenerateUnits(deps, request)).toBe('p1');
@@ -138,7 +138,7 @@ describe('重新生成这几句', () => {
     expect(toasts).toHaveLength(2);
   });
 
-  it('一句都没换上时中性提示、没有撤销；失败与取消如实提示', async () => {
+  it('when no line is swapped, a neutral notice with no undo; failures and cancellations are reported as they happened', async () => {
     const { deps } = fake();
     const request = { videoId: 'vid', groupId: 'dub_p1', units: ['u2'], planDocumentId: 'plan' };
     await regenerateUnits(deps, request);
@@ -156,7 +156,7 @@ describe('重新生成这几句', () => {
     expect(toasts[5]).toMatchObject({ kind: 'neutral', message: C.cancelled });
   });
 
-  it('缺授权被拒：提示缺哪一家的授权，不记任务；没有句子时什么都不做', async () => {
+  it('missing grant rejected: say which provider\'s grant is missing, record no task; with no lines, do nothing', async () => {
     const { deps } = fake();
     deps.runtime.startDub.mockRejectedValueOnce(
       new RpcError('forbidden', '把译文交给 elevenlabs 需要用户授权', {
@@ -177,8 +177,8 @@ describe('重新生成这几句', () => {
   });
 });
 
-describe('改译文并重配', () => {
-  it('先在一笔编辑里写译文的新版本（只改动过的几句），再只重配这几句', async () => {
+describe('edit translation and redub', () => {
+  it('first write a new translation version in one edit (only the changed lines), then redub only those lines', async () => {
     const { deps, applied } = fake();
     const jobId = await retextAndRegenerate(deps, {
       videoId: 'vid',
@@ -204,7 +204,7 @@ describe('改译文并重配', () => {
     expect(deps.runtime.startDub).toHaveBeenCalledWith({ videoId: 'vid', regroup: { groupId: 'dub_p1', units: ['u1', 'u2'], seed: 'new' } });
   });
 
-  it('写译文那一笔没提交成时不重配；没改字时直接重配', async () => {
+  it('no redub when the translation write edit did not commit; redub directly when no text was changed', async () => {
     const { deps } = fake();
     deps.apply.mockResolvedValueOnce(null as unknown as TransactionReceipt);
     const request = { videoId: 'vid', groupId: 'dub_p1', units: ['u2'], planDocumentId: 'plan', translationId: 't-en' };
@@ -215,7 +215,7 @@ describe('改译文并重配', () => {
     expect(deps.apply).toHaveBeenCalledTimes(1);
   });
 
-  it('对话框的开合：没有句子时不开', () => {
+  it('dialog open and close: does not open when there are no lines', () => {
     openDubFit({ videoId: 'vid', groupId: 'dub_p1', units: [] });
     expect(useDubRegen.getState().fit).toBeNull();
     openDubFit({ videoId: 'vid', groupId: 'dub_p1', units: ['u1'] });

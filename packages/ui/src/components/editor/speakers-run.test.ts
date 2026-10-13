@@ -114,8 +114,8 @@ beforeEach(() => {
 
 afterEach(() => resetSpeakers());
 
-describe('识别说话人的运行', () => {
-  it('提交 speakers 流程；完成时进确认页（提案），不写视频', async () => {
+describe('speaker recognition run', () => {
+  it('submit the speakers flow; on completion, go to the confirmation page (proposal), without writing the video', async () => {
     const { deps } = fake();
     expect(await startSpeakers('vid', 'speech')).toBe(true);
     expect(deps.runtime.startPipeline).toHaveBeenCalledWith('speakers', { videoId: 'vid', documentId: 'speech' });
@@ -128,7 +128,7 @@ describe('识别说话人的运行', () => {
     expect(deps.runtime.videos.applySpeakers).not.toHaveBeenCalled();
   });
 
-  it('失败给原因与重试（同一个任务）；取消只提示', async () => {
+  it('on failure, give the reason and retry (same task); cancel only shows a notice', async () => {
     const { deps, toasts } = fake();
     await startSpeakers('vid');
     useJobs.setState({
@@ -145,7 +145,7 @@ describe('识别说话人的运行', () => {
     expect(toasts).toEqual(['已取消识别说话人']);
   });
 
-  it('提交被拒（比如没装模型包）：留下原因，不建运行', async () => {
+  it('submission rejected (e.g. model pack not installed): leave the reason, do not create a run', async () => {
     const { deps } = fake();
     deps.runtime.startPipeline.mockRejectedValueOnce(new Error('「说话人区分」模型还没有装好：先下载'));
     expect(await startSpeakers('vid')).toBe(false);
@@ -153,7 +153,7 @@ describe('识别说话人的运行', () => {
     expect(useSpeakersRun.getState().problems.vid).toMatchObject({ kind: 'failed', message: '「说话人区分」模型还没有装好：先下载' });
   });
 
-  it('模型包下载完成后自动开始；下载失败不开始', async () => {
+  it('starts automatically after the model pack download completes; does not start if the download fails', async () => {
     const { deps } = fake();
     awaitInstall('vid', 'inst1');
     useJobs.setState({ jobs: [{ ...job('inst1', 'running'), kind: 'modelInstall' } as JobRecord] });
@@ -172,7 +172,7 @@ describe('识别说话人的运行', () => {
   });
 });
 
-describe('确认与应用', () => {
+describe('confirm and apply', () => {
   async function proposed() {
     const fixture = fake();
     await startSpeakers('vid');
@@ -180,7 +180,7 @@ describe('确认与应用', () => {
     return fixture;
   }
 
-  it('应用只带改过的名字（去掉首尾空白）；收据可撤销、撤销那笔撤销即重做', async () => {
+  it('apply carries only the renamed names (trimmed of leading and trailing whitespace); the receipt can be undone, and undoing that undo redoes', async () => {
     const { deps, undone } = await proposed();
     renameSpeaker('vid', 'spk-2', ' 嘉宾 ');
     renameSpeaker('vid', 'a', '说话人 1');
@@ -201,14 +201,14 @@ describe('确认与应用', () => {
     expect(useSpeakersRun.getState().receipts.vid).toBeUndefined();
   });
 
-  it('没有改动可撤销时收据不给撤销', async () => {
+  it('a receipt offers no undo when there are no changes to undo', async () => {
     const { deps, receipt } = await proposed();
     deps.runtime.videos.applySpeakers.mockResolvedValueOnce(receipt(false));
     await applySpeakers('vid');
     expect(useSpeakersRun.getState().receipts.vid?.transactionId).toBeNull();
   });
 
-  it('应用被拒（识别之后文稿改过）：放下提案，留下原因', async () => {
+  it('apply rejected (script changed after recognition): drop the proposal, keep the reason', async () => {
     const { deps } = await proposed();
     deps.runtime.videos.applySpeakers.mockImplementationOnce(async () => {
       useVideo.setState((s) => ({ video: { ...s.video!, commandError: { message: '文稿在识别之后改过', code: null } } }));

@@ -10,7 +10,7 @@ const table: Record<string, unknown> | null = await import('@react-spectrum/ai/l
 const sequences = (): [string, readonly string[]][] => [['THINKING', THINKING], ['FALLBACK', FALLBACK], ...Object.entries(KINDS)];
 
 describe('agent-loader', () => {
-  it('只用图案类图形，不用字母类图形', () => {
+  it('uses only pattern-type shapes, not letter-type shapes', () => {
     const icons = new Set<string>(ICONS);
     expect(icons.size).toBe(ICONS.length);
     for (const [key, names] of sequences()) {
@@ -22,17 +22,17 @@ describe('agent-loader', () => {
     }
   });
 
-  it('通用序列用到全部图形、各一次，aiLogo 打头', () => {
+  it('the generic sequence uses every shape once, starting with aiLogo', () => {
     expect([...THINKING].sort()).toEqual([...ICONS].sort());
     expect(THINKING[0]).toBe('aiLogo');
   });
 
-  it('每个图形都至少用在一个类别里', () => {
+  it('every shape is used in at least one category', () => {
     const used = new Set<string>([...FALLBACK, ...Object.values(KINDS).flat()]);
     expect(ICONS.filter((name) => !used.has(name))).toEqual([]);
   });
 
-  it('同一个类别每次返回同一个数组；认不出的类别走 FALLBACK', () => {
+  it('the same category always returns the same array; unrecognized categories use FALLBACK', () => {
     for (const kind of Object.keys(KINDS)) expect(forKind(kind)).toBe(forKind(kind));
     expect(forKind('transcribe')).toBe(KINDS.transcribe);
     expect(forKind('no-such-kind')).toBe(FALLBACK);
@@ -41,8 +41,8 @@ describe('agent-loader', () => {
     expect(Object.isFrozen(KINDS.cut)).toBe(true);
   });
 
-  describe.skipIf(!table)('与 @react-spectrum/ai/loader 对照', () => {
-    it('ICONS 恰好是全部非字母的单个图形', () => {
+  describe.skipIf(!table)('matches @react-spectrum/ai/loader', () => {
+    it('ICONS is exactly all single non-letter shapes', () => {
       const singles = Object.entries(table ?? {})
         .filter(([name, v]) => Array.isArray(v) && v.length > 0 && !Array.isArray(v[0]) && !name.startsWith('adobe'))
         .map(([name]) => name);

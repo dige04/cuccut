@@ -89,10 +89,10 @@ function draw(
 
 const sha256 = (pixels: Uint8Array | Uint8ClampedArray) => createHash('sha256').update(pixels).digest('hex');
 
-describe.skipIf(!built)('预览与导出逐字节一致', () => {
+describe.skipIf(!built)('preview and export are byte-identical', () => {
   const data = built ? (JSON.parse(readFileSync(fixture, 'utf8')) as Fixture) : { fps: 30, sequenceId: 'seq', scenes: [] };
 
-  it('夹具覆盖每类场景', () => {
+  it('fixtures cover every kind of scene', () => {
     const names = data.scenes.map((scene) => scene.name);
     expect(names.length).toBeGreaterThan(40);
     for (const prefix of [
@@ -116,7 +116,7 @@ describe.skipIf(!built)('预览与导出逐字节一致', () => {
     }
   });
 
-  it('真实 WASM 字幕行框能选中所属实例，预览缩放后仍使用序列画布坐标', async () => {
+  it('real WASM caption line boxes can select the instance they belong to; after preview zoom, still uses sequence canvas coordinates', async () => {
     const planner = await RenderPlanner.instantiate(readFileSync(wasm));
     planner.addFonts(planner.fontFiles().map((name) => new Uint8Array(readFileSync(`${fonts}${name}`))));
     const scene = data.scenes.find((scene) => scene.name === 'captions-studio')!;
@@ -139,14 +139,14 @@ describe.skipIf(!built)('预览与导出逐字节一致', () => {
     expect(draw(planner, scene, { ...shot, captions: false }, seconds).captionHits).toEqual([]);
   });
 
-  it('逐词动画在几个阶段各取一帧，帧帧不同', () => {
+  it('word-by-word animation takes a frame at several stages, and each frame differs', () => {
     // Word-by-word reveal in the positioned-box style: starts drawing nothing, then words light up one by one. The four frames below are compared byte by byte.
     const reveal = data.scenes.find((scene) => scene.name === 'captions-boxed-reveal');
     expect(reveal?.shots.map((shot) => shot.frame)).toEqual([0, 15, 31, 75]);
     expect(new Set(reveal?.shots.map((shot) => shot.sha256)).size).toBe(4);
   });
 
-  it('每个场景的每一帧与原生导出相同', async () => {
+  it('every frame of every scene matches native export', async () => {
     const base = await RenderPlanner.instantiate(readFileSync(wasm));
     base.addFonts(base.fontFiles().map((name) => new Uint8Array(readFileSync(`${fonts}${name}`))));
     for (const scene of data.scenes) {
@@ -166,7 +166,7 @@ describe.skipIf(!built)('预览与导出逐字节一致', () => {
     }
   }, 120_000);
 
-  it('播放、停住与改窗口大小时几种尺寸来回画：停住的那一帧照样与原生导出相同', async () => {
+  it('during playback, pause and window resizing across several sizes: the paused frame still matches native export', async () => {
     const base = await RenderPlanner.instantiate(readFileSync(wasm));
     base.addFonts(base.fontFiles().map((name) => new Uint8Array(readFileSync(`${fonts}${name}`))));
     for (const scene of data.scenes) {
@@ -183,7 +183,7 @@ describe.skipIf(!built)('预览与导出逐字节一致', () => {
     }
   }, 120_000);
 
-  it('样式、文字、关键帧、字幕文档变了：两种尺寸各自的渲染器画出的都与新实例相同', async () => {
+  it('style, text, keyframes, or caption document changed: each renderer at both sizes draws the same as a new instance', async () => {
     const base = await RenderPlanner.instantiate(readFileSync(wasm));
     base.addFonts(base.fontFiles().map((name) => new Uint8Array(readFileSync(`${fonts}${name}`))));
     const sceneNamed = (name: string) => data.scenes.find((scene) => scene.name === name)!;

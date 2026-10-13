@@ -2,13 +2,13 @@ import { expect, test } from 'vitest';
 
 import { PLAYBACK_PIXELS, paintSize } from './playback-quality.ts';
 
-test('停住时按画布像素画原尺寸', () => {
+test('paused draws at full size in canvas pixels', () => {
   expect(paintSize({ width: 1920, height: 1080 }, 0.684, 'exact')).toEqual({ width: 1313, height: 739 });
   expect(paintSize({ width: 1920, height: 1080 }, 1, 'exact')).toEqual({ width: 1920, height: 1080 });
   expect(paintSize({ width: 1920, height: 1080 }, 0, 'exact')).toEqual({ width: 1, height: 1 });
 });
 
-test('播放中缩到像素预算之内，比例不变，不比停住时大', () => {
+test('during playback, scaled down to within the pixel budget, aspect ratio kept, not larger than when paused', () => {
   const sizes = [
     { canvas: { width: 1920, height: 1080 }, scale: 0.684 },
     { canvas: { width: 1920, height: 1080 }, scale: 1 },

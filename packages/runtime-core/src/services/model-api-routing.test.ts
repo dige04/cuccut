@@ -38,8 +38,8 @@ function failure(run: () => unknown): ApiError {
   throw new Error('应当失败');
 }
 
-describe('模型接口服务的路由', () => {
-  it('每个开关只放开自己那一类；不可用的 Provider 不列出', () => {
+describe('model API service routing', () => {
+  it('each switch only enables its own category; unavailable providers are not listed', () => {
     expect(listModels(VIEW, OFF, ALIASES).map((m) => m.id)).toEqual(['whisper-1', 'local/qwen3-asr']);
     expect(listModels(VIEW, { ...OFF, nodes: true }, ALIASES).map((m) => m.id)).toEqual([
       'whisper-1',
@@ -55,7 +55,7 @@ describe('模型接口服务的路由', () => {
     ]);
   });
 
-  it('名字：别名、`<providerId>/<modelId>`、裸模型名（按视图顺序取第一个可路由的）', () => {
+  it('names: aliases, `<providerId>/<modelId>`, bare model name (takes first routable in view order)', () => {
     const all = { online: true, nodes: true, agent: true };
     expect(resolveModel('whisper-1', 'transcribe', VIEW, OFF, ALIASES)).toEqual({ providerId: 'local', modelId: null });
     expect(resolveModel('node:studio/qwen3-asr', 'transcribe', VIEW, all, ALIASES)).toEqual({
@@ -83,8 +83,8 @@ describe('模型接口服务的路由', () => {
   });
 });
 
-describe('聊天参数的映射', () => {
-  it('developer → system、文本片段拼起来；max_completion_tokens 优先；temperature、seed、reasoning_effort 与 json_object', () => {
+describe('chat parameter mapping', () => {
+  it('developer → system, text fragments joined; max_completion_tokens takes precedence; temperature, seed, reasoning_effort and json_object', () => {
     const { request, stream, includeUsage } = chatRequest({
       model: 'x',
       messages: [

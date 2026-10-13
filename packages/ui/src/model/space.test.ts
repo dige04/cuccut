@@ -43,8 +43,8 @@ const entry = (id: string, patch: Partial<SpaceEntry> = {}, user: Partial<SpaceE
 
 const dirs = { projects: [{ id: 'p1', name: '宣传片', path: '/work/promo/' }], conversations: [{ id: 'c1', title: '', cwd: '/tmp/c1' }] };
 
-describe('分类', () => {
-  it('回收站只收移入的；其余分类都不含回收站里的', () => {
+describe('categories', () => {
+  it('the trash only contains items moved into it; other categories exclude trashed items', () => {
     const trashed = entry('a', {}, { trashedAt: '2026-10-01T00:00:00.000Z', favorite: true });
     expect(inCategory(trashed, 'trash')).toBe(true);
     expect(inCategory(trashed, 'all')).toBe(false);
@@ -52,7 +52,7 @@ describe('分类', () => {
     expect(inCategory(trashed, 'video-file')).toBe(false);
   });
 
-  it('计数与侧栏：有条目的类型才出现，全部、收藏、回收站总在', () => {
+  it('counts and sidebar: only types with entries appear; All, Favorites, and Trash always appear', () => {
     const counts = countByCategory([entry('a'), entry('b', { kind: 'image' }, { favorite: true })]);
     expect(counts.all).toBe(2);
     expect(counts['video-file']).toBe(1);
@@ -61,7 +61,7 @@ describe('分类', () => {
     expect(visibleCategories(counts).map((c) => c.key)).toEqual(['all', 'video-file', 'image', 'favorite', 'trash']);
   });
 
-  it('设计系统是单独的一类，排在设计稿后面、模板前面', () => {
+  it('design systems are their own category, placed after designs and before templates', () => {
     const counts = countByCategory([
       entry('t', { kind: 'template' }),
       entry('s', { kind: 'design-system', name: '品牌设计系统' }),
@@ -82,11 +82,11 @@ describe('viewEntries', () => {
   ];
   const query = { category: 'all' as const, projectId: null, search: '', sort: 'recent' as const };
 
-  it('默认按最近活动排', () => {
+  it('sorted by recent activity by default', () => {
     expect(viewEntries(rows, query).map((e) => e.id)).toEqual(['c', 'b', 'a']);
   });
 
-  it('创建与更新时间各自倒序，时间相同保持次序，未知与无效时间放在末尾', () => {
+  it('created and updated times each sort descending; equal times keep their order; unknown and invalid times go last', () => {
     const dated = [
       entry('old', { createdAt: '2026-10-01T01:00:00Z', updatedAt: '2026-10-01T04:00:00Z' }),
       entry('new', { createdAt: '2026-10-01T03:00:00+00:00', updatedAt: '2026-10-01T02:00:00Z' }),
@@ -101,12 +101,12 @@ describe('viewEntries', () => {
     expect(SPACE_SORTS.map((s) => s.key)).toEqual(['recent', 'created', 'updated', 'name', 'kind']);
   });
 
-  it('按项目筛选；none 是不属于任何项目的', () => {
+  it('filter by project; none means not in any project', () => {
     expect(viewEntries(rows, { ...query, projectId: 'p1' }).map((e) => e.id)).toEqual(['b', 'a']);
     expect(viewEntries(rows, { ...query, projectId: 'none' }).map((e) => e.id)).toEqual(['c']);
   });
 
-  it('按来源筛：只留从那部视频派生的视频，回收站里的照旧不列', () => {
+  it('filter by source: keeps only videos derived from that video; trashed items are still not listed', () => {
     const origin = { source: 'derived' as const, projectId: 'p1', videoId: 'v_parent', videoRevision: '7', capability: 'videos-derive' };
     const family = [
       entry('parent', { kind: 'video', ref: { videoId: 'v_parent' } }),
@@ -119,12 +119,12 @@ describe('viewEntries', () => {
     expect(viewEntries(family, { ...query, from: null }).length).toBe(3);
   });
 
-  it('搜索名称与路径；按类型排时视频类在前', () => {
+  it('search names and paths; when sorting by type, video types come first', () => {
     expect(viewEntries(rows, { ...query, search: 'CLIPS' }).map((e) => e.id)).toEqual(['a']);
     expect(viewEntries(rows, { ...query, sort: 'kind' }).map((e) => e.id)).toEqual(['c', 'a', 'b']);
   });
 
-  it('项目选项只列出现过的项目，有临时会话的条目时末尾加一项', () => {
+  it('project options list only projects that appear; an extra option is added at the end when there are entries from temporary sessions', () => {
     expect(
       projectOptions(rows, [
         { id: 'p1', name: '宣传片' },
@@ -137,7 +137,7 @@ describe('viewEntries', () => {
   });
 });
 
-describe('一部视频只出现一次', () => {
+describe('a video appears only once', () => {
   const query = { category: 'all' as const, projectId: null, search: '', sort: 'recent' as const };
   const at = (h: number) => `2026-10-01T${String(h).padStart(2, '0')}:00:00.000Z`;
   const from = (videoId: string) => ({ source: 'exported' as const, projectId: 'p1', videoId });
@@ -152,7 +152,7 @@ describe('一部视频只出现一次', () => {
   const other = entry('other', { kind: 'image', name: '海报.png', lastActivityAt: at(3) });
   const list = [video, ...files, other];
 
-  it('「全部」与「视频」里视频收下它的文件，卡片数按一部算；按类型看仍逐个列出', () => {
+  it('in \'All\' and \'Video\', the video absorbs its files and the card count counts it as one; by type, each is still listed separately', () => {
     expect(viewEntries(list, query).map((e) => e.id)).toEqual(['v', 'other']);
     const [row] = viewEntries(list, query);
     expect(row!.files!.map((f) => f.id)).toEqual(['final', 'mp4', 'srt', 'md']);
@@ -162,12 +162,12 @@ describe('一部视频只出现一次', () => {
     expect([counts.all, counts.video, counts.export, counts.subtitle, counts.document]).toEqual([2, 1, 1, 1, 1]);
   });
 
-  it('最近活动按视频与文件里最近的一次排；更新时间只看视频自己', () => {
+  it('recent activity sorts by the latest of the video and its files; updated time looks only at the video itself', () => {
     const late = entry('late', { kind: 'image', lastActivityAt: at(4) });
     expect(viewEntries([...list, late], query).map((e) => e.id)).toEqual(['v', 'late', 'other']);
   });
 
-  it('搜索与状态穿过文件：只靠文件对上时记下是哪个文件，「无状态」只看视频自己', () => {
+  it('search and status pass through files: when only a file matches, record which file it was; \'no status\' looks only at the video itself', () => {
     const [byFile] = viewEntries(list, { ...query, search: 'SRT' });
     expect([byFile!.id, byFile!.hits]).toEqual(['v', ['srt']]);
     expect(hitsText(byFile!)).toBe('找到 英文字幕.srt');
@@ -178,7 +178,7 @@ describe('一部视频只出现一次', () => {
     expect(viewEntries(list, { ...query, status: 'none' }).map((e) => e.id)).toEqual(['v', 'other']);
   });
 
-  it('卡片的明细与状态：视频自己没有状态时替最该被看见的文件说话', () => {
+  it('card details and status: when the video has no status of its own, speak for the most visible file', () => {
     const [row] = groupEntries(list);
     expect(filesSummary(row!)).toBe('成片 1 · 视频素材 1 · 字幕 1 · 文档 1');
     expect(filesAttention(row!)).toEqual({ status: 'source-changed', text: '文档来源已变' });
@@ -188,7 +188,7 @@ describe('一部视频只出现一次', () => {
     expect(filesAttention({ ...row!, status: 'missing' })).toBeNull();
   });
 
-  it('模板、回收站里的文件不收；视频进了回收站，它的文件各自出现', () => {
+  it('templates and files in the trash are not included; when a video goes to the trash, its files each appear separately', () => {
     const template = entry('tpl', { kind: 'template', origin: from('vid1') });
     const trashedFile = entry('old', { kind: 'export', origin: from('vid1') }, { trashedAt: at(6) });
     expect(viewEntries([video, template, trashedFile], query).map((e) => e.id)).toEqual(['v', 'tpl']);
@@ -196,7 +196,7 @@ describe('一部视频只出现一次', () => {
     expect(viewEntries([gone, ...files], query).map((e) => e.id)).toEqual(['md', 'srt', 'final', 'mp4']);
   });
 
-  it('查看框：视频列出名下的文件，文件回到所属的视频；同一个 videoId 有两处时收进先列出的那个', () => {
+  it('viewer: the video lists its files, and files return to their owning video; when the same videoId appears twice, it is grouped under the one listed first', () => {
     expect(filesOf(list, 'v').map((f) => f.id)).toEqual(['final', 'mp4', 'srt', 'md']);
     expect(filesOf(list, 'other')).toEqual([]);
     expect(hostVideoOf(list, files[2]!)?.id).toBe('v');
@@ -209,7 +209,7 @@ describe('一部视频只出现一次', () => {
   });
 });
 
-describe('不在来源目录里的产物（来源两项都是 null）', () => {
+describe('outputs outside the source folder (both source fields are null)', () => {
   const art = entry('art', {
     kind: 'image',
     source: { projectId: null, conversationId: null },
@@ -223,13 +223,13 @@ describe('不在来源目录里的产物（来源两项都是 null）', () => {
   });
   const query = { category: 'all' as const, projectId: null, search: '', sort: 'recent' as const };
 
-  it('按 origin.projectId 归到项目：项目筛选与选项都看两处', () => {
+  it('grouped into projects by origin.projectId: project filter and options both check both places', () => {
     expect(viewEntries([art, loose], { ...query, projectId: 'p1' }).map((e) => e.id)).toEqual(['art']);
     expect(viewEntries([art, loose], { ...query, projectId: 'none' }).map((e) => e.id)).toEqual(['loose']);
     expect(projectOptions([art], [{ id: 'p1', name: '宣传片' }])).toEqual([{ key: 'p1', label: '宣传片' }]);
   });
 
-  it('来源写项目 · 产生它的视频；没有项目时写产生它的会话', () => {
+  it('source shows project · the video that produced it; without a project, shows the session that produced it', () => {
     const names = videoNamesOf([entry('v', { kind: 'video', name: '发布会', ref: { videoId: 'vid1' } })]);
     expect(sourceLabel(art, dirs, '新会话', names)).toBe('宣传片 · 发布会');
     expect(sourceLabel(art, dirs, '新会话')).toBe('宣传片');
@@ -238,24 +238,24 @@ describe('不在来源目录里的产物（来源两项都是 null）', () => {
   });
 });
 
-describe('状态与时长', () => {
+describe('status and duration', () => {
   const query = { category: 'all' as const, projectId: null, search: '', sort: 'recent' as const };
   const rows = [entry('a', { status: 'candidate' }), entry('b'), entry('c', { status: 'missing' })];
 
-  it('按状态筛选；none 是没有状态的', () => {
+  it('filter by status; none means no status', () => {
     expect(viewEntries(rows, { ...query, status: 'candidate' }).map((e) => e.id)).toEqual(['a']);
     expect(viewEntries(rows, { ...query, status: 'none' }).map((e) => e.id)).toEqual(['b']);
     expect(viewEntries(rows, { ...query, status: 'any' })).toHaveLength(3);
   });
 
-  it('状态的字：生成中带进度', () => {
+  it('status text: generating shows progress', () => {
     expect(statusText({ status: null })).toBeNull();
     expect(statusText({ status: 'source-changed' })).toBe('来源已变');
     expect(statusText({ status: 'generating', statusDetail: { progress: { done: 1, total: 4 } } })).toBe('生成中 · 25%');
     expect(statusText({ status: 'generating', statusDetail: { progress: { done: 1, total: null } } })).toBe('生成中');
   });
 
-  it('时长或尺寸：视频写时长与画面，音频写时长，图片写尺寸，幻灯片写页数；没有媒体信息时 null', () => {
+  it('duration or size: video shows duration and frame, audio shows duration, images show dimensions, slides show page count; null when there is no media info', () => {
     expect(measureText({ kind: 'export', media: { durationSec: 65, width: 1920, height: 1080 } })).toBe('1:05 · 1920×1080');
     expect(measureText({ kind: 'audio', media: { durationSec: 3, width: 1, height: 1 } })).toBe('0:03');
     expect(measureText({ kind: 'image', media: { width: 640, height: 480 } })).toBe('640×480');
@@ -266,8 +266,8 @@ describe('状态与时长', () => {
   });
 });
 
-describe('位置与来源', () => {
-  it('项目条目在项目目录下，临时会话的条目在会话工作目录下；来源不在了为 null', () => {
+describe('location and source', () => {
+  it('project entries are under the project folder, temporary session entries are under the session\'s working folder; null when the source is gone', () => {
     expect(entryPath(entry('a', { relPath: 'clips/a.mp4' }), dirs)).toBe('/work/promo/clips/a.mp4');
     expect(entryPath(entry('c', { source: { projectId: null, conversationId: 'c1' } }), dirs)).toBe('/tmp/c1/c.mp4');
     expect(entryPath(entry('x', { source: { projectId: 'gone', conversationId: null } }), dirs)).toBeNull();
@@ -278,12 +278,12 @@ describe('位置与来源', () => {
     expect(entryPath(entry('n', { source: { projectId: null, conversationId: null } }), dirs)).toBeNull();
   });
 
-  it('来源一列带上子目录；没有标题的会话用占位名', () => {
+  it('the source column includes the subfolder; sessions without a title use a placeholder name', () => {
     expect(sourceLabel(entry('a', { relPath: 'clips/a.mp4' }), dirs, '新会话')).toBe('宣传片 · clips');
     expect(sourceLabel(entry('c', { source: { projectId: null, conversationId: 'c1' } }), dirs, '新会话')).toBe('会话「新会话」');
   });
 
-  it('派生的子视频：来源写「来自 父视频」，不收进父视频的卡片，父视频知道派生了几部', () => {
+  it('derived child videos: source reads \'from [parent video]\', are not grouped into the parent\'s card, and the parent knows how many were derived', () => {
     const parent = entry('parent', { kind: 'video', name: '发布会', relPath: 'talks/发布会', ref: { videoId: 'v_parent' } });
     const origin = { source: 'derived' as const, projectId: 'p1', videoId: 'v_parent', videoRevision: '7', capability: 'videos-derive' };
     const child = entry('child', { kind: 'video', name: '发布会 · 01:00–02:30', relPath: 'talks/发布会 · 01:00–02:30-abc', ref: { videoId: 'v_child' }, origin });
@@ -309,8 +309,8 @@ describe('位置与来源', () => {
   });
 });
 
-describe('预览与大小', () => {
-  it('浏览器放不了的格式如实说', () => {
+describe('preview and size', () => {
+  it('formats the browser cannot play are stated honestly', () => {
     expect(previewKind({ kind: 'video-file', fileName: 'a.MP4' })).toBe('video');
     expect(previewKind({ kind: 'video-file', fileName: 'a.mkv' })).toBeNull();
     expect(previewKind({ kind: 'image', fileName: 'a.heic' })).toBeNull();
@@ -328,11 +328,11 @@ describe('预览与大小', () => {
   });
 });
 
-describe('最近的视频', () => {
+describe('recent videos', () => {
   const video = (id: string, at: string, patch: Partial<SpaceEntry> = {}, user: Partial<SpaceEntry['user']> = {}) =>
     entry(id, { kind: 'video', ref: { videoId: `v-${id}` }, relPath: id, lastActivityAt: at, ...patch }, user);
 
-  it('只列还能选的项目里的视频，新的在前，最多几部', () => {
+  it('lists only videos in projects that are still selectable, newest first, up to a few', () => {
     const list = [
       video('old', '2026-09-01T00:00:00.000Z'),
       video('new', '2026-10-02T00:00:00.000Z'),

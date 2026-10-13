@@ -11,7 +11,7 @@ import { sweepLeftovers } from './leftover-files.ts';
  * Startup cleanup of leftovers (architecture design §5.8): deletes only export temp files and import staging directories that CucCut itself named, that are old enough, and that no in-progress job is using. User files, names that don't match, symbolic links, anything in subdirectories, and anything freshly written are never touched.
  */
 
-describe('启动时清理导出与打开便携包的残留', () => {
+describe('startup cleans up leftovers of exports and portable package opens', () => {
   let dir: string;
   let exportsDir: string;
   let root: string;
@@ -53,7 +53,7 @@ describe('启动时清理导出与打开便携包的残留', () => {
     );
   }
 
-  it('只删自己命名、够旧、没在用的；其余原样留着', async () => {
+  it('deletes only files it named itself that are old enough and not in use; leaves the rest as they are', async () => {
     const e = (name: string) => path.join(exportsDir, name);
     const r = (name: string) => path.join(root, name);
     const gone = [
@@ -118,7 +118,7 @@ describe('启动时清理导出与打开便携包的残留', () => {
     expect(await fs.readdir(path.join(dir, 'exports'))).toContain('成片.mp4');
   });
 
-  it('同一个目录里另一个导出还在运行时，只留它的输出名', async () => {
+  it('while another export in the same directory is still running, keeps only its output name', async () => {
     const done = await file(path.join(exportsDir, '.a.mp4.0a1b2c3d.tmp'));
     const running = await file(path.join(exportsDir, '.b.mp4.0a1b2c3d.tmp'));
     const result = await sweepLeftovers({

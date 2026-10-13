@@ -100,7 +100,7 @@ describe('digestVideo', () => {
     };
   }
 
-  it('图文、计时读数、合成与字幕实例进摘要：各带自己的内容，没有素材的不写 asset', () => {
+  it('images-with-text, timing readings, compositions and subtitle instances go into the digest, each with its own content; no asset written when no media', () => {
     const digest = digestVideo(
       video([
         {
@@ -217,7 +217,7 @@ describe('digestVideo', () => {
     ]);
   });
 
-  it('转场、章节、闪避规则，以及片段的摆法、声音、效果与裁剪', () => {
+  it('transitions, chapters, ducking rules, and clip placement, sound, effects, and trimming', () => {
     const clip = (id: string, fromFrame: number): SequenceItem => ({
       ...base,
       ...visual,
@@ -345,7 +345,7 @@ describe('digestVideo', () => {
     expect(item('item_m')).not.toHaveProperty('place');
   });
 
-  it('回执带上被引擎删掉的转场与变短的单侧转场', () => {
+  it('receipt carries transitions removed by engine and single-side transitions shortened', () => {
     const receipt = {
       transactionId: 'tx_1',
       commandId: 'cmd_1',
@@ -388,7 +388,7 @@ describe('digestVideo', () => {
     });
   });
 
-  it('文档只列文档头：当前版本与概要，不含正文', () => {
+  it('documents list only the header: current version and summary, no body', () => {
     const digest = digestVideo(
       video([
         { ...base, id: 'item_c', trackId: 'trk_s1', type: 'caption', span: { fromFrame: 0, durationFrames: 30 }, documentId: 'doc_speech' },
@@ -411,7 +411,7 @@ describe('digestVideo', () => {
     ]);
   });
 
-  it('从链接导入的素材带来源平台的元数据：简介截到 1200 个字符，作者章节结构化的优先，没有时从简介解析', () => {
+  it('media imported from link carries source-platform metadata: description truncated to 1200 characters, structured author chapters take priority, otherwise parsed from description', () => {
     const snapshot = video([]);
     const talk = snapshot.assets.asset_v!;
     const linked = (source: Record<string, unknown>) => ({
@@ -476,7 +476,7 @@ describe('digestVideo', () => {
 describe('normalizeOperations', () => {
   const cwd = '/work/project';
 
-  it('补根序列与对齐方式，时间换成秒', () => {
+  it('fill in root sequence and alignment mode, times converted to seconds', () => {
     const [add, move, moves] = normalizeOperations(
       [
         { type: 'addItem', asset: 'asset_1', at: 1.5 },
@@ -497,7 +497,7 @@ describe('normalizeOperations', () => {
     expect(moves).toMatchObject({ alignment: 'floor-frame', moves: [{ itemId: 'item_2', at: { unit: 'seconds', value: '2' } }] });
   });
 
-  it('保留已经写好的字段；帧时间原样交给引擎', () => {
+  it('already written fields kept; frame times passed to engine as-is', () => {
     const [op] = normalizeOperations(
       [{ type: 'splitItem', sequenceId: 'seq_2', itemId: 'i', at: { unit: 'frames', value: 12 }, alignment: 'exact-frame' }],
       'seq_root',
@@ -512,7 +512,7 @@ describe('normalizeOperations', () => {
     });
   });
 
-  it('剪口的起止是源素材时钟上的十进制秒，补上根序列', () => {
+  it('cut start/end are decimal seconds on source media clock, root sequence filled in', () => {
     const [cut, restore] = normalizeOperations(
       [
         {
@@ -540,7 +540,7 @@ describe('normalizeOperations', () => {
     expect(restore).toEqual({ type: 'restoreCut', assetId: 'a', cutId: 'cut_1', sequenceId: 'seq_root' });
   });
 
-  it('剪辑建议：检测参数的秒数换成十进制字符串，接受建议补上根序列', () => {
+  it('edit suggestions: detection parameter seconds converted to decimal strings; accepting suggestion fills root sequence', () => {
     const [propose, accept] = normalizeOperations(
       [
         { type: 'proposeCuts', assetId: 'a', detect: { minPause: 1, compressTo: 0.25, fillers: false } },
@@ -553,7 +553,7 @@ describe('normalizeOperations', () => {
     expect(accept).toEqual({ type: 'acceptCutSuggestions', proposalId: 'doc_p', suggestionIds: ['cut-fl-w2'], sequenceId: 'seq_root' });
   });
 
-  it('导入路径相对工作目录，~ 展开为主目录；不带时间的操作不加对齐', () => {
+  it('import path relative to working directory, ~ expands to home directory; operations without times get no alignment', () => {
     const [a, b, c, d, e] = normalizeOperations(
       [
         { type: 'importAsset', path: 'media/a.mp4' },
@@ -572,7 +572,7 @@ describe('normalizeOperations', () => {
     expect(e).toMatchObject({ type: 'updateSequence', sequenceId: 'seq_root' });
   });
 
-  it('转场时长、章节时间与闪避的起落换成引擎的写法', () => {
+  it('transition durations, chapter times, and ducking ramps converted to engine\'s notation', () => {
     const [transition, chapters, upsert, ducking, removal] = normalizeOperations(
       [
         { type: 'setTransition', leftItemId: 'a', rightItemId: 'b', kind: 'dissolve', duration: 0.5 },
@@ -623,7 +623,7 @@ describe('normalizeOperations', () => {
     expect(removal).toEqual({ type: 'removeTransition', transitionId: 'tr_1' });
   });
 
-  it('看不懂的时间与形态指出是第几个操作', () => {
+  it('unreadable time and shape point out which operation number', () => {
     expect(() =>
       normalizeOperations(
         [

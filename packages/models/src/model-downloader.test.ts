@@ -36,7 +36,7 @@ describe('ModelDownloader', () => {
   const downloader = (extra: Partial<ConstructorParameters<typeof ModelDownloader>[0]> = {}) =>
     new ModelDownloader({ root, endpoint: source.endpoint, backoffMs: () => 5, ...extra });
 
-  it('下载到暂存区、核对、原子发布并写清单', async () => {
+  it('downloads to staging, verifies, publishes atomically and writes the manifest', async () => {
     const d = downloader();
     let bytes = 0;
     await d.download(REPO, REV, files, new AbortController().signal, (delta) => (bytes += delta));
@@ -60,7 +60,7 @@ describe('ModelDownloader', () => {
     expect(source.requests.every((r) => r.headers.authorization === undefined)).toBe(true);
   });
 
-  it('断流后按 Range 续传，已收到的字节不再下载', async () => {
+  it('after a dropped connection, resumes with Range; bytes already received are not downloaded again', async () => {
     source.fault('sub/model.safetensors', { breakAfter: 100_000 });
     let bytes = 0;
     await downloader().download(REPO, REV, files, new AbortController().signal, (delta) => (bytes += delta));
@@ -74,7 +74,7 @@ describe('ModelDownloader', () => {
     expect(await fs.readFile(path.join(stagingDirOf(root, REPO, REV), 'sub/model.safetensors'))).toEqual(weights);
   });
 
-  it('取消：停下并留下 .part；下次带 Range 从断点接着下，核对过的文件不再请求', async () => {
+  it('cancel: stops and leaves the .part file; the next run resumes from the breakpoint with Range, and files already verified are not requested again', async () => {
     source.throttle(16 * 1024, 15);
     const controller = new AbortController();
     let received = 0;
@@ -99,7 +99,7 @@ describe('ModelDownloader', () => {
     expect(more).toBe(weights.length - kept);
   });
 
-  it('来源不支持续传（回 200）时从头写，进度扣回作废的字节', async () => {
+  it('when the source does not support resume (returns 200), writes from the start and subtracts the invalidated bytes from progress', async () => {
     source.fault('sub/model.safetensors', { breakAfter: 50_000 });
     source.fault('sub/model.safetensors', { ignoreRange: true });
     let bytes = 0;
@@ -108,7 +108,7 @@ describe('ModelDownloader', () => {
     expect(await fs.readFile(path.join(stagingDirOf(root, REPO, REV), 'sub/model.safetensors'))).toEqual(weights);
   });
 
-  it('续传请求回 200 或 5xx（ModelScope 的小文件）：不读那个回复，不带 Range 从头再要', async () => {
+  it('a resume request returning 200 or 5xx (ModelScope\'s small files): the reply is not read, and the file is requested again from the start without Range', async () => {
     source.fault('sub/model.safetensors', { breakAfter: 50_000 });
     source.fault('sub/model.safetensors', { status: 502 });
     let bytes = 0;
@@ -119,7 +119,7 @@ describe('ModelDownloader', () => {
     expect(ranges).toEqual([null, 'bytes=50000-', null]);
   });
 
-  it('内容不符：删掉坏文件，报 MODEL_DOWNLOAD_INTEGRITY 并带补救说明', async () => {
+  it('content mismatch: the bad file is deleted and MODEL_DOWNLOAD_INTEGRITY is reported with a remedy', async () => {
     source.fault('sub/model.safetensors', { corrupt: true });
     const error = await downloader()
       .download(REPO, REV, files, new AbortController().signal)
@@ -137,7 +137,7 @@ describe('ModelDownloader', () => {
     expect(await fs.stat(path.join(stage, 'sub/model.safetensors')).catch(() => null)).toBeNull();
   });
 
-  it('续传出来的文件不符：从头再下一次；干净的那次对了就算成功', async () => {
+  it('resumed file mismatches: downloads once more from the start; success if that clean attempt matches', async () => {
     // First leave a corrupt `.part` behind (like an old leftover that does not belong to this version).
     const stage = stagingDirOf(root, REPO, REV);
     await fs.mkdir(path.join(stage, 'sub'), { recursive: true });
@@ -148,7 +148,7 @@ describe('ModelDownloader', () => {
     expect(gets.map((r) => r.range)).toEqual(['bytes=1000-', null]);
   });
 
-  it('多出字节的内容按不符处理', async () => {
+  it('extra bytes are treated as a mismatch', async () => {
     source.put(REPO, REV, 'config.json', Buffer.concat([config, Buffer.from('extra')]));
     const error = await downloader()
       .download(REPO, REV, files, new AbortController().signal)
@@ -156,7 +156,7 @@ describe('ModelDownloader', () => {
     expect((error as DownloadError).code).toBe('MODEL_DOWNLOAD_INTEGRITY');
   });
 
-  it('404 不重试，报 MODEL_DOWNLOAD_SOURCE；5xx 重试用完报 MODEL_DOWNLOAD_NETWORK', async () => {
+  it('404 is not retried and reports MODEL_DOWNLOAD_SOURCE; 5xx is retried and reports MODEL_DOWNLOAD_NETWORK once retries run out', async () => {
     const missing = await downloader()
       .download(REPO, REV, [{ path: 'nope.bin', size: 1, sha256: '0'.repeat(64) }], new AbortController().signal)
       .catch((e: unknown) => e);
@@ -177,7 +177,7 @@ describe('ModelDownloader', () => {
     await downloader({ retries: 2 }).download(REPO, REV, files, new AbortController().signal);
   });
 
-  it('连不上来源：MODEL_DOWNLOAD_NETWORK', async () => {
+  it('cannot reach the source: MODEL_DOWNLOAD_NETWORK', async () => {
     const endpoint = source.endpoint;
     await source.close();
     const error = await new ModelDownloader({ root, endpoint, retries: 1, backoffMs: () => 1 })
@@ -188,7 +188,7 @@ describe('ModelDownloader', () => {
     source = await startFakeModelSource();
   });
 
-  it('收不到数据超过期限算断开，续传', async () => {
+  it('no data received beyond the deadline counts as a disconnect and resumes', async () => {
     source.fault('sub/model.safetensors', { stallAfter: 64 * 1024 });
     await downloader({ stallMs: 200 }).download(REPO, REV, files, new AbortController().signal);
     const gets = source.requests.filter((r) => r.method === 'GET' && r.file === 'sub/model.safetensors');
@@ -196,7 +196,7 @@ describe('ModelDownloader', () => {
     expect(gets[1]!.range).toMatch(/^bytes=\d+-$/);
   });
 
-  it('写入时磁盘满：MODEL_DOWNLOAD_NO_SPACE', async () => {
+  it('disk full while writing: MODEL_DOWNLOAD_NO_SPACE', async () => {
     const realOpen = fs.open;
     vi.spyOn(fs, 'open').mockImplementation(async (file, flags, mode) => {
       const handle = await realOpen(file, flags, mode);
@@ -215,7 +215,7 @@ describe('ModelDownloader', () => {
     expect((error as DownloadError).remedy).toContain('磁盘空间不足');
   });
 
-  it('发布替换旧版本的目录；可用空间查最近的已存在的上级目录', async () => {
+  it('publishing replaces the old version\'s directory; free space is checked on the nearest existing parent directory', async () => {
     const dir = path.join(root, 'acme', 'tiny-model');
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(path.join(dir, 'stale.bin'), 'old');

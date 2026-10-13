@@ -25,7 +25,7 @@ async function until<T>(read: () => T | undefined | null | false, timeoutMs = 5_
 type Completed = Extract<AgentEvent, { type: 'turn.completed' }>;
 type Approval = Extract<AgentEvent, { type: 'approval.requested' }>;
 
-describe('AcpSession（假 ACP 智能体）', () => {
+describe('AcpSession (fake ACP agent)', () => {
   let dir: string;
   let cwd: string;
   let fake: FakeAcp;
@@ -59,7 +59,7 @@ describe('AcpSession（假 ACP 智能体）', () => {
 
   const settings = (accessMode: AgentMode = 'ask', model: string | null = null) => ({ accessMode, model, effort: null });
 
-  it('新建会话：cwd 与 MCP 服务（Streamable HTTP）照传，第一轮前附开发者指令，消息与思考按增量到达', async () => {
+  it('new session: passes cwd and MCP servers (Streamable HTTP) as usual, attaches developer instructions before the first turn, messages and thinking arrive as increments', async () => {
     const { session, events, completed } = await start(
       { turn: { thought: 'thinking…', reply: 'hello world', plan: ['read', 'cut'] } },
       {
@@ -98,14 +98,14 @@ describe('AcpSession（假 ACP 智能体）', () => {
     expect(session.describePersistence()).toEqual({ driverId: 'gemini', data: { sessionId: created.sessionId ?? expect.any(String) } });
   });
 
-  it('智能体不支持经 HTTP 连 MCP：不传服务，提示用不了 CucCut 的工具', async () => {
+  it('agent does not support MCP over HTTP: servers are not passed, and it warns that CucCut\'s tools are unavailable', async () => {
     const { events } = await start({ mcpHttp: false }, { mcpServers: { cuccut: { url: 'http://127.0.0.1:9/mcp', headers: {} } } });
     expect(fake.requests('session/new').at(-1)!.params.mcpServers).toEqual([]);
     const warning = await until(() => events.find((e) => e.type === 'session.warning'));
     expect((warning as { message: string }).message).toContain('CucCut 的工具');
   });
 
-  it('恢复：支持 session/load 时加载，回放的历史不当成新内容', async () => {
+  it('resume: loads via session/load when supported; replayed history is not treated as new content', async () => {
     const first = await start();
     const handle = first.session.describePersistence() as AgentPersistenceHandle;
     const { session, events } = await start({}, { resume: handle });
@@ -117,7 +117,7 @@ describe('AcpSession（假 ACP 智能体）', () => {
     expect(events.filter((e) => e.type === 'item.delta' || e.type === 'session.warning')).toEqual([]);
   });
 
-  it('恢复：没有 session/load 时用 session/resume；都不支持或失败时新建并如实提示', async () => {
+  it('resume: uses session/resume when there is no session/load; when neither is supported or both fail, creates a new session and says so honestly', async () => {
     const handle: AgentPersistenceHandle = { driverId: 'gemini', data: { sessionId: 'old-session' } };
     await start({ loadSession: false, resume: true }, { resume: handle });
     expect(fake.requests('session/resume').at(-1)!.params).toMatchObject({ sessionId: 'old-session', cwd });
@@ -128,7 +128,7 @@ describe('AcpSession（假 ACP 智能体）', () => {
     expect(fake.requests('session/new')).toHaveLength(1);
   });
 
-  it('工具调用：开始与结束各一条，命令的标题、详情与输出', async () => {
+  it('tool call: one entry each for start and end, with the command\'s title, details and output', async () => {
     const { session, events, completed } = await start({
       turn: { tool: { kind: 'execute', title: 'Run ls', rawInput: { command: 'ls -la' }, output: 'a.mp4' }, reply: 'ok' },
     });
@@ -143,7 +143,7 @@ describe('AcpSession（假 ACP 智能体）', () => {
     expect(finished.item).toMatchObject({ status: 'completed', output: 'a.mp4', exitCode: 0 });
   });
 
-  it('审批：允许只选「只这一次」，拒绝选 reject_once 并记成 declined', async () => {
+  it('approval: allow picks “只这一次” only; reject picks reject_once and is recorded as declined', async () => {
     const turn = { tool: { kind: 'execute', title: 'Run rm', rawInput: { command: 'rm a.txt' } }, ask: 1, reply: 'ok' };
     const a = await start({ turn });
     const t1 = await a.session.startTurn({ text: 'go' }, settings());
@@ -165,7 +165,7 @@ describe('AcpSession（假 ACP 智能体）', () => {
     expect(declined.item).toMatchObject({ status: 'declined' });
   });
 
-  it('审批：本会话放行与「总是允许」由 Driver 记住，之后同类请求直接答应，从不选原生的 allow_always', async () => {
+  it('approval: session allow and “总是允许” are remembered by the Driver, later matching requests are approved directly, and the native allow_always is never chosen', async () => {
     for (const decision of ['accept-for-session', 'accept-always'] as const) {
       const s = await start({
         turn: { tool: { kind: 'execute', title: 'Run ccut', rawInput: { command: 'ccut info a.mp4' } }, ask: 3, reply: 'ok' },
@@ -180,7 +180,7 @@ describe('AcpSession（假 ACP 智能体）', () => {
     }
   });
 
-  it('审批：cancel 以 cancelled 作答并取消回合', async () => {
+  it('approval: cancel answers cancelled and cancels the turn', async () => {
     const s = await start({ turn: { tool: { kind: 'edit', title: 'Edit a.txt', locations: ['/p/a.txt'] }, ask: 1, reply: 'ok' } });
     const { turnId } = await s.session.startTurn({ text: 'go' }, settings());
     const approval = await s.approval();
@@ -192,7 +192,7 @@ describe('AcpSession（假 ACP 智能体）', () => {
     expect(fake.requests('session/cancel')).toHaveLength(1);
   });
 
-  it('改文件成功：output 是由 diff 内容块生成的 unified diff（路径相对工作目录，新建的旧侧是 /dev/null）', async () => {
+  it('file edit succeeds: output is a unified diff generated from the diff content block (paths relative to the working directory, the old side of a new file is /dev/null)', async () => {
     const s = await start({
       turn: {
         tool: {
@@ -235,7 +235,7 @@ describe('AcpSession（假 ACP 智能体）', () => {
     );
   });
 
-  it('改文件被拒：declined，output 不是 diff', async () => {
+  it('file edit rejected: declined, output is not a diff', async () => {
     const s = await start({
       turn: { tool: { kind: 'edit', title: 'Write', diffs: [{ path: path.join(cwd, 'a.txt'), oldText: null, newText: 'x\n' }] }, ask: 1 },
     });
@@ -246,7 +246,7 @@ describe('AcpSession（假 ACP 智能体）', () => {
     expect(done).toMatchObject({ item: { status: 'declined', output: null } });
   });
 
-  it('CucCut 自己的 MCP 工具：原生审批直接放行（由工具通道按访问模式把关），不出审批卡；别的 MCP 服务照常询问', async () => {
+  it('CucCut\'s own MCP tools: native approval passes them directly (the tool channel gates them by access mode), no approval card is shown; other MCP servers still ask', async () => {
     const mcpServers = { cuccut: { url: 'http://127.0.0.1:9/mcp', headers: {} } };
     for (const title of ['mcp__cuccut__videos_list', 'videos_list (cuccut MCP Server)']) {
       const s = await start({ turn: { tool: { kind: 'other', title }, ask: 1, reply: 'ok' } }, { mcpServers });
@@ -267,7 +267,7 @@ describe('AcpSession（假 ACP 智能体）', () => {
     await other.completed(turnId);
   });
 
-  it('中断：session/cancel，回合以 interrupted 结束；没在跑的回合报 not-running', async () => {
+  it('interrupt: session/cancel, the turn ends as interrupted; a turn that is not running reports not-running', async () => {
     const s = await start({ turn: { hang: true } });
     const { turnId } = await s.session.startTurn({ text: 'go' }, settings());
     await until(() => fake.requests('session/prompt').length > 0);
@@ -276,7 +276,7 @@ describe('AcpSession（假 ACP 智能体）', () => {
     expect(await s.session.interrupt(turnId)).toEqual({ status: 'not-running' });
   });
 
-  it('回合失败：需要登录的错误带 AGENT_AUTH_REQUIRED', async () => {
+  it('turn failure: a sign-in error carries AGENT_AUTH_REQUIRED', async () => {
     const s = await start({ turn: { error: { code: -32000, message: 'Authentication required' } } });
     const { turnId } = await s.session.startTurn({ text: 'go' }, settings());
     expect(await s.completed(turnId)).toMatchObject({
@@ -286,7 +286,7 @@ describe('AcpSession（假 ACP 智能体）', () => {
     });
   });
 
-  it('开会话时没登录：抛出带 AGENT_AUTH_REQUIRED 的错误', async () => {
+  it('opening a session while signed out: throws an error carrying AGENT_AUTH_REQUIRED', async () => {
     fake.scenario({ loggedIn: false });
     await expect(driver.createSession({ cwd, accessMode: 'ask', model: null, effort: null, resume: null })).rejects.toMatchObject({
       code: 'driver-unavailable',
@@ -294,7 +294,7 @@ describe('AcpSession（假 ACP 智能体）', () => {
     });
   });
 
-  it('访问模式取更严的原生模式；模型经 session/set_model 或配置项切换', async () => {
+  it('access mode takes the stricter native mode; the model is switched via session/set_model or a config option', async () => {
     const s = await start();
     const expected: Array<[AgentMode, string]> = [
       ['plan', 'plan'],
@@ -322,7 +322,7 @@ describe('AcpSession（假 ACP 智能体）', () => {
     ]);
   });
 
-  it('Copilot：URL 形式的模式 id，完全访问是 #agent 加 allow_all=on，离开时先关掉', async () => {
+  it('Copilot: URL-form mode id; full access is #agent plus allow_all=on, turned off first when leaving', async () => {
     const agent = 'https://agentclientprotocol.com/protocol/session-modes#agent';
     const plan = 'https://agentclientprotocol.com/protocol/session-modes#plan';
     const autopilot = 'https://agentclientprotocol.com/protocol/session-modes#autopilot';
@@ -363,7 +363,7 @@ describe('AcpSession（假 ACP 智能体）', () => {
     expect(n.events.filter((e) => e.type === 'session.warning')).toHaveLength(1);
   });
 
-  it('没有会话模式：不设模式，提示一次', async () => {
+  it('no session modes: no mode is set, warns once', async () => {
     const s = await start({ modes: null });
     for (const mode of ['plan', 'fullAccess'] as const) {
       const { turnId } = await s.session.startTurn({ text: mode }, settings(mode));
@@ -373,7 +373,7 @@ describe('AcpSession（假 ACP 智能体）', () => {
     expect(s.events.filter((e) => e.type === 'session.warning')).toHaveLength(1);
   });
 
-  it('图片按 base64 内容块发送', async () => {
+  it('images are sent as base64 content blocks', async () => {
     const image = path.join(dir, 'a.png');
     await fs.writeFile(image, Buffer.from([1, 2, 3]));
     const s = await start();
@@ -382,13 +382,13 @@ describe('AcpSession（假 ACP 智能体）', () => {
     expect(fake.requests('session/prompt').at(-1)!.params.prompt).toContainEqual({ type: 'image', mimeType: 'image/png', data: 'AQID' });
   });
 
-  it('受限的一次性调用不支持', async () => {
+  it('restricted one-shot calls are not supported', async () => {
     await expect(
       driver.createSession({ cwd, accessMode: 'ask', model: null, effort: null, resume: null, confinement: 'cwd-write-only' }),
     ).rejects.toMatchObject({ code: 'driver-unavailable' });
   });
 
-  it('关闭：先 session/close 再结束进程，报 session.exited 且没有错误', async () => {
+  it('close: session/close first, then ends the process, reports session.exited with no error', async () => {
     const s = await start();
     await s.session.close();
     expect(fake.requests('session/close')).toHaveLength(1);

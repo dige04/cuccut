@@ -48,8 +48,8 @@ afterEach(() => {
   useSkills.setState(emptySkills());
 });
 
-describe('skill 列表', () => {
-  it('同时要几次只发一次；取到后排好放进镜像，诊断原样带上', async () => {
+describe('skill list', () => {
+  it('multiple simultaneous requests send once; after fetching, sorted and put into the mirror, diagnostics carried over as is', async () => {
     const result: SkillListResult = {
       skills: [summary('zeta', { origin: 'third-party' }), summary('alpha')],
       diagnostics: [{ code: 'invalid', scope: 'user', dir: 'broken', path: '/home/skills/broken', message: '缺 SKILL.md', issues: [] }],
@@ -63,7 +63,7 @@ describe('skill 列表', () => {
     expect(state.diagnostics).toEqual(result.diagnostics);
   });
 
-  it('取失败：取到过的列表留着，只记下错误；下次照常重取', async () => {
+  it('fetch failure: a list fetched before is kept, only the error is recorded; refetched as usual next time', async () => {
     useSkills.getState().succeed({ skills: [summary('a')], diagnostics: [] });
     const { session, calls } = fakeSession(() => {
       throw new Error('断线');
@@ -76,8 +76,8 @@ describe('skill 列表', () => {
   });
 });
 
-describe('变更类命令', () => {
-  it('开关、添加、导入、移除都把返回的整份列表写回镜像', async () => {
+describe('mutating commands', () => {
+  it('toggle, add, import and remove each write the full returned list back to the mirror', async () => {
     const after = (skills: SkillSummary[]) => ({ skills, diagnostics: [] });
     const { session, calls } = fakeSession((method, params) => {
       if (method === 'skills.setEnabled') return { skill: summary('a', { enabled: false }), ...after([summary('a', { enabled: false })]) };
@@ -108,7 +108,7 @@ describe('变更类命令', () => {
     expect(calls[2]!.params).toMatchObject({ url: 'owner/repo' });
   });
 
-  it('失败时不动镜像，错误交给调用方', async () => {
+  it('on failure the mirror is untouched and the error is handed to the caller', async () => {
     useSkills.getState().succeed({ skills: [summary('a')], diagnostics: [] });
     const { session } = fakeSession(() => {
       throw new Error('已存在');

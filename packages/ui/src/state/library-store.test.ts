@@ -14,7 +14,7 @@ const entry = (library: LibraryEntrySummary['library'], id: string, name: string
 });
 
 describe('useLibrary', () => {
-  it('快照到了才 ready；术语表与品牌库各自按名字排，音色不进来', () => {
+  it('ready only once the snapshot arrives; the glossary and brand library are each sorted by name; voices are not included', () => {
     expect(useLibrary.getState().ready).toBe(false);
     libraryFeed.snapshot({
       entries: [entry('glossaries', 'gls_b', 'Beta'), entry('voices', 'voc_a', 'Voice'), entry('brand', 'brd_a', 'Accent')],
@@ -25,7 +25,7 @@ describe('useLibrary', () => {
     expect(state.brand.map((e) => e.id)).toEqual(['brd_a']);
   });
 
-  it('新增、改名与删除跟着事件走，改名后重新排序', () => {
+  it('add, rename and delete follow the events; re-sorted after a rename', () => {
     libraryFeed.snapshot({ entries: [entry('glossaries', 'gls_b', 'Beta')] });
     libraryFeed.event({ type: 'entry.upsert', entry: entry('glossaries', 'gls_a', 'Alpha') });
     expect(useLibrary.getState().glossaries.map((e) => e.id)).toEqual(['gls_a', 'gls_b']);

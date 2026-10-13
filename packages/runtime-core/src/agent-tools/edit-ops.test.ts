@@ -5,8 +5,8 @@ import { normalizeOperations } from './video-digest.ts';
 
 /** The operation table of `edits_ops` (`edit-ops.ts`): each operation is fully written, examples pass their own schema, the JSON Schema compiles, and examples can be filled out into the engine's shape. */
 
-describe('edits_apply 的操作表', () => {
-  it('操作不重名，每个都归到一个操作族，说明行以操作的形态开头', () => {
+describe('edits_apply operation table', () => {
+  it('operation names are unique, each belongs to an operation family, and description lines begin with the operation\'s shape', () => {
     expect(new Set(OPERATION_TYPES).size).toBe(OPERATION_TYPES.length);
     for (const spec of EDIT_OPERATIONS) {
       expect(OPERATION_FAMILIES).toContain(spec.family);
@@ -17,7 +17,7 @@ describe('edits_apply 的操作表', () => {
   });
 
   for (const spec of EDIT_OPERATIONS) {
-    it(`${spec.type}：示例通过 schema 与编译后的 JSON Schema，能补成引擎的形态`, () => {
+    it(`${spec.type}: example passes the schema and compiled JSON Schema, and can be completed into the engine's shape`, () => {
       expect(spec.example.type).toBe(spec.type);
       const parsed = spec.schema.safeParse(spec.example);
       expect(parsed.success, parsed.error?.message).toBe(true);

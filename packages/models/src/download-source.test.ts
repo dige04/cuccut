@@ -11,8 +11,8 @@ import {
 } from './download-source.ts';
 import { REPO_MANIFESTS } from './repo-manifests.ts';
 
-describe('下载来源', () => {
-  it('基址的优先级：环境变量 → 设置 → 公共仓库', () => {
+describe('download source', () => {
+  it('base URL precedence: environment variable → settings → public repository', () => {
     expect(resolveModelsEndpoint({}, null)).toEqual({ endpoint: DEFAULT_MODELS_ENDPOINT, origin: 'default' });
     expect(resolveModelsEndpoint({}, 'https://mirror.example/hf/')).toEqual({ endpoint: 'https://mirror.example/hf', origin: 'setting' });
     expect(resolveModelsEndpoint({ [MODELS_ENDPOINT_ENV]: 'http://127.0.0.1:9/' }, 'https://mirror.example')).toEqual({
@@ -21,7 +21,7 @@ describe('下载来源', () => {
     });
   });
 
-  it('不合规的基址：环境变量报错，设置退回公共仓库', () => {
+  it('invalid base URL: the environment variable errors, settings fall back to the public repository', () => {
     expect(() => resolveModelsEndpoint({ [MODELS_ENDPOINT_ENV]: 'ftp://x' }, null)).toThrow(MODELS_ENDPOINT_ENV);
     expect(resolveModelsEndpoint({}, 'https://user:pw@mirror.example').origin).toBe('default');
     for (const bad of ['mirror.example', 'https://a.example/?token=x', 'https://a.example/#x', 'https://u@a.example', 'file:///tmp']) {
@@ -30,7 +30,7 @@ describe('下载来源', () => {
     expect(validEndpoint('https://a.example/prefix')).toBe(true);
   });
 
-  it('文件 URL：<基址>/<owner>/<repo>/resolve/<revision>/<路径>，逐段编码，保留 /', () => {
+  it('file URL: <base>/<owner>/<repo>/resolve/<revision>/<path>, encoded segment by segment, keeping /', () => {
     expect(modelFileUrl('https://huggingface.co', 'aufklarer/Silero-VAD', 'abc123', 'model.safetensors')).toBe(
       'https://huggingface.co/aufklarer/Silero-VAD/resolve/abc123/model.safetensors',
     );
@@ -39,7 +39,7 @@ describe('下载来源', () => {
     );
   });
 
-  it('ModelScope：按主机认，路径是 /models/<owner>/<repo>/resolve/master/<路径>', () => {
+  it('ModelScope: matched by host; the path is /models/<owner>/<repo>/resolve/master/<path>', () => {
     for (const base of [MODELSCOPE_ENDPOINT, 'https://modelscope.cn/', 'https://www.modelscope.cn/models']) {
       expect(isModelScopeEndpoint(base)).toBe(true);
       expect(modelFileUrl(base, 'aufklarer/Silero-VAD', 'abc123', 'sub dir/model.safetensors')).toBe(
@@ -51,7 +51,7 @@ describe('下载来源', () => {
     }
   });
 
-  it('ModelScope：换了名字的仓库用它那边的名字，没有的仓库改从公共模型仓库下载', () => {
+  it('ModelScope: a renamed repository uses its name on that side; repositories it lacks are downloaded from the public model repository instead', () => {
     expect(modelFileUrl(MODELSCOPE_ENDPOINT, 'openai/whisper-large-v3', 'abc', 'tokenizer.json')).toBe(
       'https://www.modelscope.cn/models/openai-mirror/whisper-large-v3/resolve/master/tokenizer.json',
     );
@@ -66,7 +66,7 @@ describe('下载来源', () => {
     expect(repoEndpoint('https://mirror.example/', 'ggerganov/whisper.cpp')).toBe('https://mirror.example');
   });
 
-  it('改名表与缺失表只列内置清单里真有的下载仓库', () => {
+  it('the rename and missing tables list only download repositories that actually appear in the built-in manifest', () => {
     const repos = new Set(REPO_MANIFESTS.map((m) => m.sourceRepo ?? m.repo));
     for (const repo of ['openai/whisper-large-v3', 'OpenMOSS-Team/MOSS-Transcribe-Diarize', 'ggerganov/whisper.cpp', 'PJMixers-Dev/lj1995_GPT-SoVITS-safetensors']) {
       expect(repos.has(repo), repo).toBe(true);

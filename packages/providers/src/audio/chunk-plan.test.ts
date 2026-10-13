@@ -14,12 +14,12 @@ function expectValid(chunks: PlannedChunk[], duration: number, max: number) {
 }
 
 describe('planChunks', () => {
-  it('不超过上限时只有一块', () => {
+  it('one chunk when not over the limit', () => {
     expect(planChunks({ durationSec: 60, maxChunkSec: 60, silences: [] })).toEqual([{ start: 0, end: 60 }]);
     expect(planChunks({ durationSec: 0, maxChunkSec: 10, silences: [] })).toEqual([{ start: 0, end: 0 }]);
   });
 
-  it('没有静音时在上限处硬切', () => {
+  it('hard cut at the limit when there is no silence', () => {
     const chunks = planChunks({ durationSec: 250, maxChunkSec: 100, silences: [] });
     expect(chunks).toEqual([
       { start: 0, end: 100 },
@@ -28,7 +28,7 @@ describe('planChunks', () => {
     ]);
   });
 
-  it('切在窗口里最靠后的静音的中点', () => {
+  it('cuts at the midpoint of the latest silence in the window', () => {
     const chunks = planChunks({
       durationSec: 180,
       maxChunkSec: 100,
@@ -45,25 +45,25 @@ describe('planChunks', () => {
     ]);
   });
 
-  it('跨在窗口边上的静音取夹进窗口的点', () => {
+  it('a silence straddling the window edge uses the point clamped into the window', () => {
     // The midpoint 102.5 of silence 95–110 is outside the window, so it is clamped to the window end, 100.
     expect(planChunks({ durationSec: 150, maxChunkSec: 100, silences: [{ start: 95, end: 110 }] })[0]).toEqual({ start: 0, end: 100 });
     // The midpoint 46 of silence 40–52 is before the window, so it is clamped to the window start, 50.
     expect(planChunks({ durationSec: 150, maxChunkSec: 100, silences: [{ start: 40, end: 52 }] })[0]).toEqual({ start: 0, end: 50 });
   });
 
-  it('开头的静音不影响切点', () => {
+  it('leading silence does not affect cut points', () => {
     const chunks = planChunks({ durationSec: 150, maxChunkSec: 100, silences: [{ start: 0, end: 5 }] });
     expect(chunks[0]).toEqual({ start: 0, end: 100 });
   });
 
-  it('不留下太短的最后一块', () => {
+  it('does not leave a last chunk that is too short', () => {
     const chunks = planChunks({ durationSec: 100.2, maxChunkSec: 100, silences: [] });
     expectValid(chunks, 100.2, 100);
     expect(chunks.at(-1)!.end - chunks.at(-1)!.start).toBeGreaterThanOrEqual(1);
   });
 
-  it('同样的输入得到同样的计划（静音的顺序无关）', () => {
+  it('same input gives the same plan (silence order does not matter)', () => {
     const silences = [
       { start: 70, end: 72 },
       { start: 55, end: 57 },
@@ -75,7 +75,7 @@ describe('planChunks', () => {
     expectValid(a, 300, 100);
   });
 
-  it('长音频与密集静音：每块都在上限内并覆盖整段', () => {
+  it('long audio and dense silences: every chunk is within the limit and together they cover the whole range', () => {
     const silences = Array.from({ length: 400 }, (_, i) => ({ start: i * 9.3, end: i * 9.3 + 0.5 }));
     const chunks = planChunks({ durationSec: 3600, maxChunkSec: 540, silences });
     expectValid(chunks, 3600, 540);
@@ -83,26 +83,26 @@ describe('planChunks', () => {
     for (const c of chunks.slice(0, -1)) expect(silences.some((s) => s.start <= c.end && c.end <= s.end)).toBe(true);
   });
 
-  it('上限不合法时报错', () => {
+  it('errors when the limit is invalid', () => {
     expect(() => planChunks({ durationSec: 10, maxChunkSec: 0, silences: [] })).toThrow();
   });
 });
 
 describe('chunkLimitSec', () => {
-  it('时长与字节上限取小的，乘余量', () => {
+  it('takes the smaller of the duration and byte limits, then applies the margin', () => {
     expect(chunkLimitSec({ maxDurationSec: 1800, maxInputBytes: null, bytesPerSec: 32000 })).toBeCloseTo(1620);
     expect(chunkLimitSec({ maxDurationSec: null, maxInputBytes: 3_200_000, bytesPerSec: 32000 })).toBeCloseTo(90);
     expect(chunkLimitSec({ maxDurationSec: 60, maxInputBytes: 3_200_000, bytesPerSec: 32000 })).toBeCloseTo(54);
   });
 
-  it('偏好的块长更短时用它；都没有时不限', () => {
+  it('uses the preferred chunk length when it is shorter; unlimited when neither is set', () => {
     expect(chunkLimitSec({ maxDurationSec: null, maxInputBytes: 25_000_000, bytesPerSec: 8000, preferredSec: 120 })).toBe(120);
     expect(chunkLimitSec({ maxDurationSec: null, maxInputBytes: null, bytesPerSec: 8000 })).toBe(Number.POSITIVE_INFINITY);
   });
 });
 
 describe('parseSilences', () => {
-  it('读出 silencedetect 的起止，没有收尾的延续到末尾', () => {
+  it('reads silencedetect start and end; a silence without an end runs to the end', () => {
     const stderr = [
       '[silencedetect @ 0x1] silence_start: 1.5',
       '[silencedetect @ 0x1] silence_end: 2.25 | silence_duration: 0.75',

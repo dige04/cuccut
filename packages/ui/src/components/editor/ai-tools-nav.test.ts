@@ -24,21 +24,21 @@ async function restart() {
   await useAiToolAgentRuns.persist.rehydrate();
 }
 
-describe('留在原地的工具页：重启后接上', () => {
+describe('tool page left in place: reattached after restart', () => {
   beforeEach(async () => {
     useAiToolAgentRuns.setState({ runs: {} });
     localStorage.removeItem(KEY);
     await useAiToolAgentRuns.persist.rehydrate();
   });
 
-  it('这次交出去的不带 restored；重启后读回来的都标上', async () => {
+  it('what was handed off this time is not marked restored; everything read back after restart is marked', async () => {
     setAiToolAgentRun('aitool:v1:cleanup', run);
     expect(useAiToolAgentRuns.getState().runs['aitool:v1:cleanup']).toEqual(run);
     await restart();
     expect(useAiToolAgentRuns.getState().runs['aitool:v1:cleanup']).toEqual({ ...run, restored: true });
   });
 
-  it('目录读到后：任务还在跑的接上，跑完的丢掉', async () => {
+  it('after the directory is read: tasks still running are reattached, finished ones are dropped', async () => {
     setAiToolAgentRun('aitool:v1:cleanup', run);
     setAiToolAgentRun('aitool:v1:stale', { ...run, conversationId: 'c2', taskId: 't2' });
     await restart();
@@ -52,7 +52,7 @@ describe('留在原地的工具页：重启后接上', () => {
     expect(useAiToolAgentRuns.getState().runs).toEqual({ 'aitool:v1:cleanup': run });
   });
 
-  it('形状不对的记录读回来时丢掉', async () => {
+  it('records with the wrong shape are dropped when read back', async () => {
     localStorage.setItem(KEY, JSON.stringify({ state: { runs: { a: { conversationId: 1 }, b: run } }, version: 1 }));
     await useAiToolAgentRuns.persist.rehydrate();
     expect(useAiToolAgentRuns.getState().runs).toEqual({ b: { ...run, restored: true } });

@@ -19,8 +19,8 @@ import {
   speaks,
 } from './tools-models.ts';
 
-describe('工具页的模型选项', () => {
-  it('云端：已连接的服务商列全部模型，没连上的只列第一只并标未连接；智能体 Provider 不在里面', () => {
+describe('model options on the tools page', () => {
+  it('cloud: connected providers list all their models, unconnected ones list only the first and are marked not connected; agent provider is not included', () => {
     const options = cloudModelOptions(fixtureView(), 'synthesizeSpeech');
     expect(options.map((o) => [o.key, o.usable, o.why])).toEqual([
       ['openai/gpt-4o-mini-tts', true, null],
@@ -32,14 +32,14 @@ describe('工具页的模型选项', () => {
     expect(cloudModelOptions(fixtureView(), 'generateImage').map((o) => o.providerId)).toEqual(['openai', 'google']);
   });
 
-  it('`all` 时没连上的服务商也全列', () => {
+  it('`all` lists unconnected providers too', () => {
     const view = fixtureView();
     view.transcribe.providers[2]!.models.push({ ...view.transcribe.providers[2]!.models[0]!, modelId: 'gemini-2.5-pro', label: 'gemini-2.5-pro' });
     expect(cloudModelOptions(view, 'transcribe').filter((o) => o.providerId === 'google')).toHaveLength(1);
     expect(cloudModelOptions(view, 'transcribe', true).filter((o) => o.providerId === 'google')).toHaveLength(2);
   });
 
-  it('进页时：上次选的 → 生效默认值（要能用）→ 第一只能用的 → 第一只', () => {
+  it('on page open: last selected, then effective default (must be usable), then first usable, then first', () => {
     const options = cloudModelOptions(fixtureView(), 'synthesizeSpeech');
     expect(initialModelKey(options, 'elevenlabs/eleven_multilingual_v2', null)).toBe('elevenlabs/eleven_multilingual_v2');
     expect(initialModelKey(options, 'gone/x', { providerId: 'custom:tts-box', modelId: 'tts-1' })).toBe('custom:tts-box/tts-1');
@@ -51,8 +51,8 @@ describe('工具页的模型选项', () => {
   });
 });
 
-describe('本机模型', () => {
-  it('本机 Provider 的模型都列出来：装好的能用，没装的写「未下载」；排在云端后面', () => {
+describe('local models', () => {
+  it('all local provider models are listed: installed ones are usable, uninstalled ones say \'not downloaded\'; listed after cloud', () => {
     const view = withLocalSpeech();
     const local = localModelOptions(view, 'synthesizeSpeech');
     expect(local.map((o) => [o.key, o.local, o.usable, o.why])).toEqual([
@@ -66,7 +66,7 @@ describe('本机模型', () => {
     expect(localModelOptions(view, 'generateText')).toEqual([]);
   });
 
-  it('选中的本机模型没装：换用菜单里第一只装好的本机模型（云端不算）；没有时 null', () => {
+  it('selected local model not installed: switches to the first installed local model in the menu (cloud does not count); null if none', () => {
     const options = modelOptions(withLocalSpeech(), 'synthesizeSpeech');
     const missing = findOption(options, 'local/index-tts2');
     expect(installedAlternative(options, missing)?.key).toBe('local/kokoro-82m');
@@ -75,8 +75,8 @@ describe('本机模型', () => {
   });
 });
 
-describe('语言', () => {
-  it('中文名、不限时列常用语言、主语言子标签比对', () => {
+describe('language', () => {
+  it('Chinese names; unrestricted lists common languages; primary-language subtag matching', () => {
     expect(langName('zh')).toBe('中文');
     expect(languageOptions('any')[0]).toEqual({ key: '', label: '自动' });
     expect(languageOptions('any').map((o) => o.key)).toContain('ja');
@@ -86,7 +86,7 @@ describe('语言', () => {
     expect(speaks('any', 'xx')).toBe(true);
   });
 
-  it('按字符粗判语言', () => {
+  it('roughly detects the language by characters', () => {
     expect(detectLang('こんにちは')).toBe('ja');
     expect(detectLang('안녕하세요')).toBe('ko');
     expect(detectLang('你好 CucCut')).toBe('zh');
@@ -94,7 +94,7 @@ describe('语言', () => {
     expect(detectLang('123 !')).toBeNull();
   });
 
-  it('语言清单的短说法与服务商名', () => {
+  it('short language names and provider names in the language list', () => {
     expect(languagesShort('any')).toBe('多种语言');
     expect(languagesShort(['zh', 'en'])).toBe('中文、英语');
     expect(languagesShort(['zh', 'en', 'ja', 'ko'])).toBe('中文、英语等 4 种');
@@ -103,7 +103,7 @@ describe('语言', () => {
     expect(providerName(null, 'generateImage', 'openai')).toBe('openai');
   });
 
-  it('码点计数与种子', () => {
+  it('code point count and seed', () => {
     expect(codePoints('a😀中')).toBe(3);
     expect(parseSeed('')).toEqual({ ok: true, seed: null });
     expect(parseSeed(' 42 ')).toEqual({ ok: true, seed: 42 });

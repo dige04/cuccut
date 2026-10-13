@@ -26,7 +26,7 @@ describe('readVideoTarget', () => {
     throw new Error('应当拒绝');
   };
 
-  it('读三种目标与顶层 videoId', () => {
+  it('reads the three target kinds and the top-level videoId', () => {
     expect(readVideoTarget({}, both)).toBeNull();
     expect(readVideoTarget({ videoId: 'v1' }, both)).toEqual({ videoId: 'v1' });
     expect(readVideoTarget({ target: { videoId: 'v1' } }, both)).toEqual({ videoId: 'v1' });
@@ -39,7 +39,7 @@ describe('readVideoTarget', () => {
     expect(readVideoTarget({ target: { create: { conversationId: 'c1' } } }, both)).toEqual({ create: { conversationId: 'c1' } });
   });
 
-  it('形状不合、与 videoId 冲突、不接受的字段都拒绝', () => {
+  it('rejects a malformed shape, a conflict with videoId, and unaccepted fields', () => {
     expect(rejects({ target: { videoId: 'v1', entryId: 'e1' } })).toMatchObject({ code: 'invalid-request' });
     expect(rejects({ target: 'v1' })).toMatchObject({ code: 'invalid-request' });
     expect(rejects({ target: { path: '/x' } })).toMatchObject({ code: 'invalid-request' });
@@ -65,7 +65,7 @@ describe('readVideoTarget', () => {
     });
   });
 
-  it('接受 media 的流程可以给', () => {
+  it('pipelines that accept media may supply it', () => {
     expect(readVideoTarget({ target: { create: { projectId: 'p1', media: '/a.mp4' } } }, { create: { media: true } })).toEqual({
       create: { projectId: 'p1', media: '/a.mp4' },
     });
@@ -127,7 +127,7 @@ class FakeTargets implements PipelineTargets {
   }
 }
 
-describe('PipelineRunner 的视频目标', () => {
+describe('PipelineRunner video target', () => {
   let dir: string;
   let jobs: JobManager;
   let runner: PipelineRunner;
@@ -227,7 +227,7 @@ describe('PipelineRunner 的视频目标', () => {
   const retainedNow = () => [...retained.values()].reduce((a, b) => a + b, 0);
   const place1 = { root: '/space', file: 'video_1', scope: { projectId: 'p1' } };
 
-  it('entryId：提交时解析并以租约打开，记成完成的第一步；流程完成后放下', async () => {
+  it('entryId: resolved at submit and opened under a lease, recorded as the first completed step; released when the pipeline finishes', async () => {
     targets.entries.set('entry_1', place1);
     const { jobId } = await start({ target: { entryId: 'entry_1' } });
     const done = await finished(jobId);
@@ -244,7 +244,7 @@ describe('PipelineRunner 的视频目标', () => {
     expect(retainedNow()).toBe(0);
   });
 
-  it('{ videoId } 的目标等于顶层 videoId：解析目标这一步跳过', async () => {
+  it('a { videoId } target equal to the top-level videoId: the resolve-target step is skipped', async () => {
     const { jobId } = await start({ target: { videoId: 'video_9' } });
     const done = await finished(jobId);
     expect(done).toMatchObject({ state: 'completed', videoId: 'video_9' });
@@ -252,7 +252,7 @@ describe('PipelineRunner 的视频目标', () => {
     expect(seen).toEqual(['video_9']);
   });
 
-  it('entryId 解析出的视频与顶层 videoId 不一致时拒绝并放下租约', async () => {
+  it('rejects and releases the lease when the video resolved from entryId differs from the top-level videoId', async () => {
     targets.entries.set('entry_1', place1);
     await expect(start({ videoId: 'video_2', target: { entryId: 'entry_1' } })).rejects.toMatchObject({ code: 'invalid-request' });
     await expect(start({ videoId: 'video_2', target: { videoId: 'video_1' } })).rejects.toMatchObject({ code: 'invalid-request' });
@@ -260,7 +260,7 @@ describe('PipelineRunner 的视频目标', () => {
     expect(parents()).toEqual([]);
   });
 
-  it('被别的进程锁着：以 VIDEO_LOCKED 拒绝、不建任务；回收站、不是视频、不存在的条目各有错误', async () => {
+  it('locked by another process: rejected with VIDEO_LOCKED without creating a task; trash, not-a-video and missing entries each have their own error', async () => {
     targets.entries.set('entry_1', place1);
     targets.locked.add('video_1');
     await expect(start({ target: { entryId: 'entry_1' } })).rejects.toMatchObject({
@@ -277,7 +277,7 @@ describe('PipelineRunner 的视频目标', () => {
     expect(retainedNow()).toBe(0);
   });
 
-  it('失败时放下租约；重试按记下的位置重新取得', async () => {
+  it('releases the lease on failure; retry re-acquires it from the recorded position', async () => {
     targets.entries.set('entry_1', place1);
     failWork = true;
     const { jobId } = await start({ target: { entryId: 'entry_1' } });
@@ -295,7 +295,7 @@ describe('PipelineRunner 的视频目标', () => {
     expect(retainedNow()).toBe(0);
   });
 
-  it('重试时目标被别的进程锁着：拒绝重试，不留租约，流程仍可再重试', async () => {
+  it('target locked by another process at retry: retry is rejected without keeping a lease, and the pipeline can still be retried', async () => {
     targets.entries.set('entry_1', place1);
     failWork = true;
     const { jobId } = await start({ target: { entryId: 'entry_1' } });
@@ -311,7 +311,7 @@ describe('PipelineRunner 的视频目标', () => {
     expect(await finished(jobId)).toMatchObject({ state: 'completed' });
   });
 
-  it('新建视频之后的步骤失败：视频保留，重试不再新建', async () => {
+  it('a step after creating the video fails: the video is kept and retry does not create it again', async () => {
     failWork = true;
     const { jobId } = await start({ target: { create: { projectId: 'p1', name: '新的' } } });
     const failed = await finished(jobId);
@@ -331,7 +331,7 @@ describe('PipelineRunner 的视频目标', () => {
     expect(retainedNow()).toBe(0);
   });
 
-  it('没有 Runtime 目标时 entryId 拒绝；接受目标的流程第一步要是 targetStep()', async () => {
+  it('entryId is rejected without a Runtime target; a pipeline that accepts targets must have targetStep() as its first step', async () => {
     const plain = new PipelineRunner({ jobs, stagingDir: path.join(dir, 'staging2'), definitions: [pipeline()] });
     await expect(
       plain.start({ pipeline: 'target-fake', params: { target: { entryId: 'e' } } }, { kind: 'connection', id: 'c' }),

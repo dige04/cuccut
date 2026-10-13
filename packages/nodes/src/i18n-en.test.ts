@@ -8,7 +8,7 @@ import { FileCredentialStore } from '@cuccut/runtime-storage';
 import { NodeStore } from './client/node-store.ts';
 
 /** When the UI language is English, the node-side error messages shown to people are in English; the initiator's RPC errors carry a message reference. */
-describe('nodes 的英文文案', () => {
+describe('nodes English copy', () => {
   let dir: string;
 
   beforeEach(async () => {
@@ -22,7 +22,7 @@ describe('nodes 的英文文案', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('别名冲突：英文错误带引用', async () => {
+  it('alias conflict: English error includes the reference', async () => {
     const credentials = new FileCredentialStore(path.join(dir, 'model-credentials.json'));
     const store = await NodeStore.open(path.join(dir, 'nodes.json'), credentials);
     const base = { name: 'Studio', host: '127.0.0.1', port: 7000, token: `${store.clientId}.secret` };
@@ -33,7 +33,7 @@ describe('nodes 的英文文案', () => {
     expect((error as RpcError).messageRef?.key).toBe('nodesClient.aliasTaken');
   });
 
-  it('节点服务回给对方的说明按本机语言', () => {
+  it('explanation the node service returns to the peer is in the local language', () => {
     expect(NodesServer.portInUse({ port: 7000 }).text).toBe('Port 7000 is already in use');
     expect(NodesServer.capabilityNotShareable({ capability: 'x', shareable: 'transcribe' }).text).not.toMatch(/[一-龥]/);
   });

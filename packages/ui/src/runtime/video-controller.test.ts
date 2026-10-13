@@ -17,7 +17,7 @@ function open() {
 afterEach(() => useVideo.setState({ video: null }));
 
 describe('VideoController.apply', () => {
-  it('修改名带着目录引用一起提交，读者按自己的语言重新生成', async () => {
+  it('the rename is submitted together with the catalog reference, and readers regenerate it in their own language', async () => {
     const { request, videos } = open();
     await videos.apply([], EditLabel.relinkAsset({ name: 'a.mov' }));
     expect(request).toHaveBeenCalledWith(
@@ -30,7 +30,7 @@ describe('VideoController.apply', () => {
     );
   });
 
-  it('不给修改名时两个字段都不带，由引擎起名', async () => {
+  it('when no rename is given, neither field is sent, and the engine names it', async () => {
     const { request, videos } = open();
     await videos.apply([]);
     const params = request.mock.calls.find(([method]) => method === 'edits.apply')![1];

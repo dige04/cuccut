@@ -55,14 +55,14 @@ const catalog = templateCatalogOf(['promo-ad', 'knowledge-explainer', 'data-stor
 describe('useHomeTemplates', () => {
   beforeEach(() => useHomeTemplates.setState({ recent: [] }));
 
-  it('读出来的记忆只留字符串，不按目录过滤（那时目录还没取到）', () => {
+  it('remembered values read back are kept only as strings, not filtered by catalog (the catalog has not been fetched yet at that time)', () => {
     expect(hydrated).toEqual(['tips', 'vlog-edit']);
     expect(recentOf({ recent: ['tips', 3, '', 'vlog-edit', null] })).toEqual(['tips', 'vlog-edit']);
     expect(recentOf({ recent: 'tips' })).toEqual([]);
     expect(recentOf(null)).toEqual([]);
   });
 
-  it('选的时候按当时的目录重算：旧版本存的键清掉，用默认补齐，新面孔排到最前', () => {
+  it('recomputed against the catalog at selection time: keys stored by an old version are cleared, filled in with defaults, new faces are sorted to the front', () => {
     useHomeTemplates.setState({ recent: ['tips', 'anim'] });
     useHomeTemplates.getState().pick('white-ui-launch', catalog);
     expect(useHomeTemplates.getState().recent).toEqual(['white-ui-launch', 'promo-ad', 'knowledge-explainer', 'data-story', 'vlog-edit']);

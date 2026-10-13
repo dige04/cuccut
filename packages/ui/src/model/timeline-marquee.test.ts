@@ -81,8 +81,8 @@ const seq = sequence(
   [video('clip1', 'v1', 0, 300), video('clip2', 'v1', 300, 150), audio('voice', 'a1', 2.5, 4), audio('music', 'a2', 0, 20)],
 );
 
-describe('时间线框选', () => {
-  it('实例的盒：时段 × 整行，按秒换成内容坐标（音频起点可以在帧之间）', () => {
+describe('timeline marquee selection', () => {
+  it('instance box: time range × full row, converted to content coordinates in seconds (audio start can fall between frames)', () => {
     expect(itemBox(seq, 'clip2', layout)).toEqual({ x: 144 + 12 + 100, y: 24, w: 50, h: 64 });
     const voice = itemBox(seq, 'voice', layout)!;
     expect(voice.x).toBeCloseTo(144 + 12 + 25);
@@ -91,7 +91,7 @@ describe('时间线框选', () => {
     expect(itemBox(seq, 'missing', layout)).toBeNull();
   });
 
-  it('跨轨道全选框到的，锁着的轨道上的不选', () => {
+  it('marquee across tracks selects everything it covers, except on locked tracks', () => {
     // Spans 8–12 seconds horizontally, and the visual row and two audio rows vertically
     const rect = { x: 156 + 80, y: 30, w: 40, h: 140 };
     expect(marqueeItems(seq, layout, rect)).toEqual(['clip1', 'clip2']);
@@ -99,14 +99,14 @@ describe('时间线框选', () => {
     expect(marqueeItems(seq, layout, { x: 156 + 30, y: 100, w: 10, h: 10 })).toEqual(['voice']);
   });
 
-  it('贴边不算；锁着的实例不选', () => {
+  it('touching an edge doesn\'t count; locked instances are not selected', () => {
     // The right edge sits exactly against clip2's left edge (10 seconds)
     expect(marqueeItems(seq, layout, { x: 156 + 95, y: 30, w: 5, h: 10 })).toEqual(['clip1']);
     const locked = sequence(seq.tracks, [video('clip1', 'v1', 0, 300, true), video('clip2', 'v1', 300, 150)]);
     expect(marqueeItems(locked, layout, { x: 156, y: 30, w: 200, h: 10 })).toEqual(['clip2']);
   });
 
-  it('字幕实例不选：框过字幕行只选到别的轨上的片段', () => {
+  it('subtitle instances are not selected: marqueeing over a subtitle row only selects clips on other tracks', () => {
     const caption: CaptionItem = {
       id: 'cap',
       trackId: 's1',
@@ -125,11 +125,11 @@ describe('时间线框选', () => {
     expect(marqueeItems(withCaption, { ...layout, lanes }, { x: 156, y: 30, w: 40, h: 10 })).toEqual([]);
   });
 
-  it('矩形可以从右下往左上拉', () => {
+  it('the rectangle can be dragged from bottom-right to top-left', () => {
     expect(marqueeItems(seq, layout, { x: 156 + 120, y: 110, w: -40, h: -90 })).toEqual(['clip1', 'clip2']);
   });
 
-  it('换了缩放与滚动：内容坐标跟着缩放，矩形照样命中', () => {
+  it('after changing zoom and scroll: content coordinates follow the zoom, and the rectangle still hits', () => {
     const zoomed = { ...layout, pxPerSecond: 40 };
     // The same rectangle: at 10 px/s it is 30–35 seconds, with nothing there; at 40 px/s it is 7.5–8.75 seconds, landing on clip1
     const rect = { x: 156 + 300, y: 30, w: 50, h: 100 };
@@ -140,7 +140,7 @@ describe('时间线框选', () => {
     expect(marqueeItems(seq, zoomed, { x: 156 + 250, y: 90, w: 20, h: 10 })).toEqual(['voice']);
   });
 
-  it('⇧ / ⌘ 并入原选区（去重），否则换成框到的', () => {
+  it('⇧ / ⌘ merges into the existing selection (deduplicated), otherwise replaces it with the marqueed items', () => {
     expect(marqueeSelection(['a', 'b'], ['b', 'c'], true)).toEqual(['a', 'b', 'c']);
     expect(marqueeSelection(['a', 'b'], ['b', 'c'], false)).toEqual(['b', 'c']);
     expect(marqueeSelection(['a'], [], false)).toEqual([]);

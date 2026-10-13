@@ -46,7 +46,7 @@ const reasoning = (id: string, taskId: string, text: string): TimelineItem => ({
 });
 
 describe('buildThread', () => {
-  it('把任务状态行放在这个任务的最后一个条目之后', () => {
+  it('places the task status row after the task\'s last entry', () => {
     const blocks = buildThread([user('u1', 't1'), task('t1', 'completed'), agent('a1', 't1'), user('u2', 't2'), task('t2'), agent('a2', 't2')]);
     expect(blocks.map((b) => `${b.type}:${b.id}`)).toEqual([
       'user:u1',
@@ -58,12 +58,12 @@ describe('buildThread', () => {
     ]);
   });
 
-  it('进行中的任务刚开始时，状态行紧跟在用户消息后面', () => {
+  it('when an in-progress task has just started, the status row follows the user message', () => {
     const blocks = buildThread([user('u1', 't1'), task('t1')]);
     expect(blocks.map((b) => b.type)).toEqual(['user', 'task']);
   });
 
-  it('连续的推理与工具调用合并成一组；空推理与空回复不出现', () => {
+  it('consecutive reasoning and tool calls merge into one group; empty reasoning and empty replies don\'t appear', () => {
     const blocks = buildThread([
       user('u1', 't1'),
       task('t1'),
@@ -79,7 +79,7 @@ describe('buildThread', () => {
     expect(steps.type === 'steps' && steps.items.map((i) => i.id)).toEqual(['r1', 'c1', 'c2']);
   });
 
-  it('被回复隔开的步骤是两组', () => {
+  it('steps separated by a reply form two groups', () => {
     const blocks = buildThread([user('u1', 't1'), task('t1'), tool('c1', 't1'), agent('a1', 't1'), tool('c2', 't1')]);
     expect(blocks.map((b) => b.type)).toEqual(['user', 'steps', 'agent', 'steps', 'task']);
   });
@@ -104,8 +104,8 @@ const change = (id: string, taskId: string, undoOf: string | null = null): Timel
   undoOf,
 });
 
-describe('buildThread：变更卡', () => {
-  it('回执与步骤收进同一组，并标出之后被撤销的那一笔', () => {
+describe('buildThread: change card', () => {
+  it('receipts and steps are collected into the same group, and the entry later undone is marked', () => {
     const blocks = buildThread([user('u1', 't1'), tool('c1', 't1'), change('tx1', 't1'), tool('c2', 't1'), change('tx2', 't1', 'tx1')]);
     expect(blocks.map((b) => b.type)).toEqual(['user', 'steps']);
     const steps = blocks[1]!;
@@ -113,13 +113,13 @@ describe('buildThread：变更卡', () => {
     expect(steps.type === 'steps' && [...steps.undone]).toEqual(['tx1']);
   });
 
-  it('没有步骤时回执自己成一组，被回复隔开的回执各成一组', () => {
+  it('without steps, a receipt forms its own group; receipts separated by a reply each form their own group', () => {
     const blocks = buildThread([user('u1', 't1'), change('tx1', 't1'), agent('a1', 't1'), change('tx2', 't1')]);
     expect(blocks.map((b) => b.type)).toEqual(['user', 'steps', 'agent', 'steps']);
   });
 });
 
-describe('工具步骤', () => {
+describe('tool steps', () => {
   type ToolCall = Extract<TimelineItem, { kind: 'tool-call' }>;
   const step = (tool: ToolCall['tool'], title: string, detail: string | null = null): ToolCall => ({
     kind: 'tool-call',
@@ -136,7 +136,7 @@ describe('工具步骤', () => {
   });
   const cwd = '/work/proj';
 
-  it('类别由工具种类与标题推出，摘要是命令、相对路径或查询词', () => {
+  it('the category is inferred from the tool kind and title; the summary is the command, relative path, or query', () => {
     expect(toolStep(step('command', 'npm test'), cwd)).toEqual({ kind: 'command', label: '运行命令', summary: 'npm test' });
     expect(toolStep(step('other', 'Read /work/proj/src/a.ts'), cwd)).toEqual({ kind: 'read', label: '读取文件', summary: 'src/a.ts' });
     expect(toolStep(step('other', 'Grep TODO · src'), cwd)).toEqual({ kind: 'search', label: '搜索', summary: 'TODO · src' });
@@ -159,7 +159,7 @@ describe('工具步骤', () => {
     expect(toolStep(step('mcp', 'github.search'), cwd)).toEqual({ kind: 'other', label: '其他工具', summary: 'github.search' });
   });
 
-  it('CucCut 自己的工具念类别名，摘要只取参数里有的字段', () => {
+  it('CucCut\'s own tools read the category name; the summary takes only the fields present in the arguments', () => {
     const of = (title: string, args: unknown) => {
       const s = toolStep(step('mcp', `cuccut.${title}`, JSON.stringify(args)), cwd);
       return [s.label, s.summary, s.tool];
@@ -214,7 +214,7 @@ describe('工具步骤', () => {
     });
   });
 
-  it('新建视频的记录不占块，也不打断步骤组', () => {
+  it('a new-video record takes no block and doesn\'t break the step group', () => {
     const created: TimelineItem = {
       kind: 'video-created',
       id: 'created/mov_1',
@@ -229,7 +229,7 @@ describe('工具步骤', () => {
     expect(blocks.map((b) => b.type)).toEqual(['user', 'steps']);
   });
 
-  it('幻灯片的记录同样不占块，也不打断步骤组', () => {
+  it('a slide record likewise takes no block and doesn\'t break the step group', () => {
     const created: TimelineItem = {
       kind: 'slides-created',
       id: 'slides_1',
@@ -243,7 +243,7 @@ describe('工具步骤', () => {
     expect(blocks.map((b) => b.type)).toEqual(['user', 'steps']);
   });
 
-  it('设计稿的记录同样不占块，也不打断步骤组', () => {
+  it('a design record likewise takes no block and doesn\'t break the step group', () => {
     const created: TimelineItem = {
       kind: 'design-created',
       id: 'design_1',
@@ -257,7 +257,7 @@ describe('工具步骤', () => {
     expect(blocks.map((b) => b.type)).toEqual(['user', 'steps']);
   });
 
-  it('设计系统的记录同样不占块，也不打断步骤组', () => {
+  it('a design system record likewise takes no block and doesn\'t break the step group', () => {
     const created: TimelineItem = {
       kind: 'design-system-created',
       id: 'system_1',
@@ -270,7 +270,7 @@ describe('工具步骤', () => {
     expect(blocks.map((b) => b.type)).toEqual(['user', 'steps']);
   });
 
-  it('组头按种类首次出现的顺序归纳，文件按去重后的路径计数', () => {
+  it('the group header summarizes in the order each kind first appears; files are counted by deduplicated path', () => {
     const items = [
       step('other', 'Read /work/proj/a.ts'),
       step('command', 'ls'),
@@ -285,7 +285,7 @@ describe('工具步骤', () => {
   });
 });
 
-describe('视频工具', () => {
+describe('video tools', () => {
   const call = (title: string, detail: string | null): Extract<TimelineItem, { kind: 'tool-call' }> => ({
     kind: 'tool-call',
     id: title,
@@ -300,14 +300,14 @@ describe('视频工具', () => {
     durationMs: null,
   });
 
-  it('步骤名写成中文动作，修改带上说明', () => {
+  it('step names are written as Chinese action phrases, edits carry a note', () => {
     expect(toolTitle(call('cuccut.edits_apply', JSON.stringify({ label: '放入素材', operations: [] })))).toBe('修改视频：放入素材');
     expect(toolTitle(call('cuccut.videos_inspect', '{"video":"样片"}'))).toBe('读取视频');
     expect(toolTitle(call('cuccut.edits_apply', 'not json'))).toBe('修改视频');
     expect(toolTitle(call('other.tool', null))).toBe('other.tool');
   });
 
-  it('摘要按回执计视频修改的笔数：修改工具的调用本身算调用了工具', () => {
+  it('the summary counts video edits by receipt: the edit tool call itself counts as a tool call', () => {
     const items = [
       call('cuccut.videos_inspect', null),
       call('cuccut.edits_apply', null),
@@ -321,7 +321,7 @@ describe('视频工具', () => {
   });
 });
 
-describe('审批卡', () => {
+describe('approval card', () => {
   type Approval = Extract<TimelineItem, { kind: 'approval' }>;
   const approval = (patch: Partial<Approval> = {}, request: ApprovalRequest = command): Approval => ({
     kind: 'approval',
@@ -337,7 +337,7 @@ describe('审批卡', () => {
   });
   const command: ApprovalRequest = { kind: 'command', command: 'npm test -- --run', cwd: null, reason: '跑测试', rule: 'npm test' };
 
-  it('标题写「Agent 想要…」，文件改动显示短路径、复制全路径', () => {
+  it('the title reads "Agent 想要…", file changes show the short path and copy the full path', () => {
     expect(approvalSummary(command)).toEqual({ title: 'Agent 想要运行命令', kind: '运行命令', subject: 'npm test -- --run', copyText: 'npm test -- --run' });
     const files = approvalSummary({ kind: 'file-change', reason: null, files: ['/a/b/c/d/e.ts', 'x.ts'], rule: null });
     expect(files.title).toBe('Agent 想要修改文件');
@@ -348,7 +348,7 @@ describe('审批卡', () => {
     expect(approvalSummary(risky).copyText).toBe('X\n/a/b/c/d/e.mp4');
   });
 
-  it('决定过的一行：用户点的、总是允许、规则、访问模式、拒绝、停止', () => {
+  it('a decided row: user-clicked, always allow, rule, access mode, deny, stop', () => {
     expect(approvalDecidedLabel(approval(), 'accept')).toBe('已允许');
     expect(approvalDecidedLabel(approval(), 'accept-always')).toBe('已允许 · 之后 npm test 不再问');
     // The timeline records the chosen answer, which is still recognized after reloading; earlier records do not have it, so it falls back to “Allowed”.
@@ -377,7 +377,7 @@ describe('changeUndoState', () => {
   });
   const base = { transactionId: 'X', undoneInThread: false, local: null, history: null, redo: null };
 
-  it('有历史：被撤销奇数次是已撤销；撤销那一笔正是重做栈顶才给恢复', () => {
+  it('with history: undone an odd number of times means undone; the undo entry offers restore only when it is the top of the redo stack', () => {
     const undone = [entry('X', 0, 'U'), entry('U', 1)];
     expect(changeUndoState({ ...base, history: undone })).toEqual({ state: 'undone', restore: null });
     expect(changeUndoState({ ...base, history: undone, redo: 'U' })).toEqual({ state: 'undone', restore: 'U' });
@@ -387,7 +387,7 @@ describe('changeUndoState', () => {
     expect(changeUndoState({ ...base, history: [entry('X', 0)], undoneInThread: true })).toEqual({ state: 'applied' });
   });
 
-  it('历史还没包含本窗口刚做的动作时按本窗口的动作；没有历史时再按会话里记下的撤销', () => {
+  it('when the history does not yet include actions just taken in this window, use this window\'s actions; without history, fall back to undos recorded in the session', () => {
     const stale = [entry('X', 0)];
     expect(changeUndoState({ ...base, history: stale, local: { kind: 'undo', transactionId: 'U' }, redo: 'U' })).toEqual({
       state: 'undone',

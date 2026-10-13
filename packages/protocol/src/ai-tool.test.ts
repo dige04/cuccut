@@ -4,11 +4,11 @@ import { AI_TOOL_APPLY_KINDS, AI_TOOL_KINDS, AI_TOOL_PROMPT_MAX } from './pipeli
 import { MAX_ATTACHMENTS_PER_MESSAGE } from './limits.ts';
 import { SKILL_LIMITS } from './skill.ts';
 
-describe('ai-tool 流程的参数', () => {
+describe('ai-tool flow parameters', () => {
   const base = { videoId: 'vid_1', tool: 'summary', prompt: 'Summarize this video' };
   const ok = (params: Record<string, unknown>) => aiToolParamsSchema.safeParse(params).success;
 
-  it('收最少的参数与完整的参数', () => {
+  it('accepts the minimal and the full set of parameters', () => {
     expect(ok(base)).toBe(true);
     expect(
       ok({
@@ -26,13 +26,13 @@ describe('ai-tool 流程的参数', () => {
     expect(ok({ ...base, prompt: '' })).toBe(true);
   });
 
-  it('只收能直接调模型的工具', () => {
+  it('only accepts tools that call the model directly', () => {
     for (const tool of AI_TOOL_KINDS) expect(ok({ ...base, tool })).toBe(true);
     for (const tool of ['retranscribe', 'cleanup', 'stale', 'cover', 'speakers', 'translate']) expect(ok({ ...base, tool })).toBe(false);
     expect(AI_TOOL_APPLY_KINDS).toEqual(['polish', 'chapters']);
   });
 
-  it('拒绝多余字段、空视频、过长的提示词与倒着的范围', () => {
+  it('rejects extra fields, empty video, overlong prompts and reversed ranges', () => {
     expect(ok({ ...base, extra: 1 })).toBe(false);
     expect(ok({ ...base, uiLanguage: '' })).toBe(false);
     expect(ok({ ...base, uiLanguage: 'not a tag' })).toBe(false);
@@ -43,12 +43,12 @@ describe('ai-tool 流程的参数', () => {
     expect(ok({ ...base, range: { start: 0, end: 10, label: 'x' } })).toBe(false);
   });
 
-  it('章节总是整篇：给了范围时拒绝', () => {
+  it('chapters always cover the whole piece: rejects when a range is given', () => {
     expect(ok({ ...base, tool: 'chapters' })).toBe(true);
     expect(ok({ ...base, tool: 'chapters', range: { start: 0, end: 10 } })).toBe(false);
   });
 
-  it('附件与 skill 按发送时的上限与写法', () => {
+  it('attachments and skills follow the limits and format at send time', () => {
     expect(ok({ ...base, attachments: Array.from({ length: MAX_ATTACHMENTS_PER_MESSAGE }, (_, i) => `att_${i}`) })).toBe(true);
     expect(ok({ ...base, attachments: Array.from({ length: MAX_ATTACHMENTS_PER_MESSAGE + 1 }, (_, i) => `att_${i}`) })).toBe(false);
     expect(ok({ ...base, skills: [{ id: 'Not An Id' }] })).toBe(false);
@@ -56,13 +56,13 @@ describe('ai-tool 流程的参数', () => {
   });
 });
 
-describe('编辑器上下文的界面语言', () => {
+describe('UI language of the editor context', () => {
   const send = methodParamSchemas['conversations.send'];
   const context = { videoId: 'vid_1', videoName: '样片', videoPath: 'videos/样片', revision: '3', selection: [], playheadSeconds: 0 };
   const ok = (extra: Record<string, unknown>) =>
     send.safeParse({ conversationId: 'c', text: 'hi', commandId: 'k', context: { ...context, ...extra } }).success;
 
-  it('可选：旧客户端不给也收；给了要是 BCP 47 标签', () => {
+  it('optional: older clients may omit it and it is still accepted; when given, must be a BCP 47 tag', () => {
     expect(ok({})).toBe(true);
     expect(ok({ uiLanguage: 'zh-Hans' })).toBe(true);
     expect(ok({ uiLanguage: 'pt-BR' })).toBe(true);

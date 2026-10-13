@@ -57,8 +57,8 @@ function harness(upToDate: boolean) {
   return { tools: new ModelInstallTools(deps), confirmed, submitted };
 }
 
-describe('models_install 与音乐引擎', () => {
-  it('要下载：一次确认，大小与部件含引擎组件；结果只有模型包的任务', async () => {
+describe('models_install and music engine', () => {
+  it('download needed: one confirmation, size and parts include the engine component; result is only the model pack\'s task', async () => {
     const { tools, confirmed, submitted } = harness(false);
     const result = (await tools.dispatch('models_install', { bundleId: MUSIC, commandId: 'cmd_1' }, agent)) as Record<string, any>;
     expect(confirmed.map((c) => c.summaryRef?.key)).toEqual(['rcAgentTools.installModelSummary']);
@@ -69,7 +69,7 @@ describe('models_install 与音乐引擎', () => {
     expect(result.engine).toBeUndefined();
   });
 
-  it('已经装好（含引擎）：不确认，不提交', async () => {
+  it('already installed (including engine): no confirmation, no submission', async () => {
     const { tools, confirmed, submitted } = harness(true);
     const result = (await tools.dispatch('models_install', { bundleId: MUSIC }, agent)) as Record<string, any>;
     expect(confirmed).toEqual([]);

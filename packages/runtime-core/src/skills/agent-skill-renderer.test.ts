@@ -66,10 +66,10 @@ function cliTracesInAgentFace(files: AgentSkillFiles): string[] {
   return hits;
 }
 
-describe('说明书的渲染器', () => {
+describe('manual renderer', () => {
   const source = readAgentSkillDir(FIXTURE);
 
-  it('CLI 面：工具名换成命令、参数换成旗标、craft 换成相对链接，没有工具桥的写法', () => {
+  it('CLI surface: tool names become commands, parameters become flags, craft becomes relative links, with no tool-bridge wording', () => {
     const cli = renderAgentSkill(source, { face: 'cli', catalog: CLI });
     const skill = cli.get('SKILL.md')!;
     expect(skill).toContain('first `cuccut documents read`, then write the translation back with `cuccut documents put`');
@@ -93,12 +93,12 @@ describe('说明书的渲染器', () => {
     expect(bridgeNamesInCliFace(cli)).toEqual([]);
   });
 
-  it('读说明书目录时跳过同目录下的 built-in-skills/：内置 skill 本身不是说明书的页，也不随 CLI 面装进宿主', () => {
+  it('reading the manual directory skips built-in-skills/ beside it: built-in skills are not manual pages and are not installed into the host with the CLI surface', () => {
     expect(fs.existsSync(path.join(FIXTURE, 'built-in-skills', 'demo-polish', 'SKILL.md'))).toBe(true);
     expect([...source.keys()].filter((file) => file.startsWith('built-in-skills/'))).toEqual([]);
   });
 
-  it('工具桥面：工具名与字段名原样，craft 与页面链接换成 skills_read，没有 CLI 的痕迹', () => {
+  it('tool-bridge surface: tool and field names kept as is, craft and page links become skills_read, with no CLI traces', () => {
     const agent = renderAgentSkill(source, { face: 'agent', catalog: AGENT });
     const skill = agent.get('SKILL.md')!;
     expect(skill).toContain('first `documents_read`, then write the translation back with `documents_put`');
@@ -119,7 +119,7 @@ describe('说明书的渲染器', () => {
     expect(cliTracesInAgentFace(agent)).toEqual([]);
   });
 
-  it('两个面的硬规则条数相同', () => {
+  it('both surfaces have the same number of hard rules', () => {
     const cli = renderAgentSkill(source, { face: 'cli' }).get('SKILL.md')!;
     const agent = renderAgentSkill(source, { face: 'agent' }).get('SKILL.md')!;
     expect(countHardRules(cli)).toBe(5);
@@ -128,7 +128,7 @@ describe('说明书的渲染器', () => {
     expect(countHardRules('## 5. Hard rules\n\n1. A\n2. B\n   - sub-items do not count\n\n## 6. Delivery\n- not counted')).toBe(2);
   });
 
-  it('craft 的 id 只认小写连字符名，README.md 不算', () => {
+  it('a craft id only accepts lowercase hyphenated names, README.md does not count', () => {
     expect([...craftIdsOf(source)!].sort()).toEqual(['demo-chapters', 'demo-polish']);
     expect(craftIdsOf(['references/craft/README.md'])).toBeNull();
     expect(agentPageId('references/catalog/media.md')).toBe('cuccut-catalog-media');
@@ -137,7 +137,7 @@ describe('说明书的渲染器', () => {
     expect(agentPageId('references/mcp.md')).toBeNull();
   });
 
-  it('工具桥面的指导与内置页面', () => {
+  it('tool-bridge surface guidance and built-in pages', () => {
     const { guidance, pages } = renderAgentGuidance(source, AGENT);
     expect(guidance.startsWith('# CucCut')).toBe(true);
     expect(guidance).not.toContain('description:');
@@ -157,7 +157,7 @@ describe('说明书的渲染器', () => {
   });
 });
 
-describe('只给 CLI 面的目录页', () => {
+describe('CLI-only directory page', () => {
   const source = readAgentSkillDir(FIXTURE);
   const cliOnly = [
     '---',
@@ -173,7 +173,7 @@ describe('只给 CLI 面的目录页', () => {
   ].join('\n');
   const withPage = (extra: Record<string, string>): AgentSkillFiles => new Map([...source, ...Object.entries(extra)]);
 
-  it('工具桥面正文为空（只剩 front matter 与标题）的页不登记成说明书页；CLI 面照常有这一页', () => {
+  it('a tool-bridge page with an empty body (only front matter and heading left) is not registered as a manual page; the CLI surface still has the page', () => {
     const files = withPage({ 'references/catalog/web.md': cliOnly });
     const { pages } = renderAgentGuidance(files, AGENT);
     expect(pages.map((page) => page.id)).not.toContain('cuccut-catalog-web');
@@ -188,7 +188,7 @@ describe('只给 CLI 面的目录页', () => {
     expect(cli).toContain('`cuccut videos list`');
   });
 
-  it('两面都有的正文链到这一页时报错：链接要放进 cli 面', () => {
+  it('a body present on both surfaces that links to this page errors: the link must go in the cli surface', () => {
     const linked = (where: string) =>
       withPage({
         'references/catalog/web.md': cliOnly,
@@ -201,11 +201,11 @@ describe('只给 CLI 面的目录页', () => {
   });
 });
 
-describe('工具桥面的 craft 引用读起来通顺', () => {
+describe('craft references read smoothly on the tool-bridge surface', () => {
   const agent = (text: string) => renderAgentSkillText(text, { face: 'agent', file: 'references/workflows.md' });
   const cli = (text: string) => renderAgentSkillText(text, { face: 'cli', file: 'references/workflows.md' });
 
-  it('跟在 see、follow、表格与列举后面：名字在前，怎么读放括号里', () => {
+  it('after see, follow, tables and lists: name first, how to read in parentheses', () => {
     expect(agent('For polishing, see {{skill:polish-transcript}}.')).toBe('For polishing, see `polish-transcript` (read it with `skills_read`).');
     expect(agent('The method is in {{skill:talking-head-cut}} here.')).toBe(
       'The method is in `talking-head-cut` (read it with `skills_read`) here.',
@@ -219,7 +219,7 @@ describe('工具桥面的 craft 引用读起来通顺', () => {
     );
   });
 
-  it('前面紧挨着 read 时不说两遍 read；spread、thread 这类不算', () => {
+  it('does not repeat read when read immediately precedes it; words like spread and thread do not count', () => {
     expect(agent('1. Read {{skill:talking-head-cut}}.')).toBe('1. Use `skills_read` to read `talking-head-cut`.');
     expect(agent('Before starting, read {{skill:shorts-segments}}.')).toBe('Before starting, use `skills_read` to read `shorts-segments`.');
     expect(agent('Thread {{skill:video-blog}} in.')).toBe('Thread `video-blog` (read it with `skills_read`) in.');
@@ -230,12 +230,12 @@ describe('工具桥面的 craft 引用读起来通顺', () => {
   });
 });
 
-describe('只在会话里有的工具在 CLI 面的兜底写法', () => {
+describe('fallback wording on the CLI surface for tools that exist only in the session', () => {
   const cli = (text: string) => renderAgentSkillText(text, { face: 'cli', file: 'references/craft/x.md', catalog: CLI });
   const agent = (text: string) => renderAgentSkillText(text, { face: 'agent', file: 'references/craft/x.md', catalog: AGENT });
   const PATH_TOLD = SESSION_ONLY_TOOLS.downloads_save!.replacement;
 
-  it('downloads_save 在终端里没有命令：常见的整句换成「把路径告诉用户」，其余地方换成兜底说法，都不提工具名', () => {
+  it('downloads_save has no terminal command: common whole sentences become "tell the user the path", elsewhere fallback wording, never naming the tool', () => {
     // Original sentences from craft (skills/translate-subtitles, etc.).
     expect(
       cli('Write it as a new file in the working directory, then put it in the downloads directory with downloads_save and tell the user the path it returns.'),
@@ -253,7 +253,7 @@ describe('只在会话里有的工具在 CLI 面的兜底写法', () => {
     );
   });
 
-  it('slides_check 与 slides_import_asset：craft 里的那一步从 Call / import 起整行换掉，其余地方换成兜底说法', () => {
+  it('slides_check and slides_import_asset: in craft, the step is replaced from the Call / import line onward, elsewhere replaced with fallback wording', () => {
     const fallback = SESSION_ONLY_TOOLS.slides_import_asset!;
     // Step 6 and step 4 of skills/slides.
     expect(
@@ -274,7 +274,7 @@ describe('只在会话里有的工具在 CLI 面的兜底写法', () => {
     expect(agent('Call {{tool:slides_check}} to validate.')).toBe('Call `slides_check` to validate.');
   });
 
-  it('design_check 与 design_import_asset：skills/design 的校验句与导入句整句换掉，其余地方换成兜底说法', () => {
+  it('design_check and design_import_asset: the validation and import sentences in skills/design are replaced whole, elsewhere with fallback wording', () => {
     // Step 6 and step 3 of skills/design “New”.
     expect(
       cli(
@@ -294,7 +294,7 @@ describe('只在会话里有的工具在 CLI 面的兜底写法', () => {
     expect(agent('Then {{tool:design_check}}.')).toBe('Then `design_check`.');
   });
 
-  it('design_system_check 与 design_system_import_asset：skills/design-system 的校验句与两条调用说明整句换掉', () => {
+  it('design_system_check and design_system_import_asset: the validation sentence and two call notes in skills/design-system are replaced whole', () => {
     const check = SESSION_ONLY_TOOLS.design_system_check!.replacement;
     expect(
       cli(
@@ -318,7 +318,7 @@ describe('只在会话里有的工具在 CLI 面的兜底写法', () => {
   });
 });
 
-describe('说明书的标记法报错', () => {
+describe('manual markup syntax errors', () => {
   const render = (text: string, face: 'cli' | 'agent' = 'cli') => renderAgentSkillText(text, { face, file: 'references/x.md' });
   const errorOf = (fn: () => unknown) => {
     try {
@@ -330,7 +330,7 @@ describe('说明书的标记法报错', () => {
     throw new Error('应当抛错');
   };
 
-  it('未知占位符、未闭合的占位符带文件与行号', () => {
+  it('unknown placeholder and unclosed placeholder report file and line number', () => {
     expect(errorOf(() => render('一\n二 {{tool:Bad Name}}'))).toBe('references/x.md:2：工具名不合规：{{tool:Bad Name}}');
     expect(errorOf(() => render('{{thing:x}}'))).toContain('references/x.md:1：不认识的占位符 {{thing:x}}');
     expect(errorOf(() => render('甲\n乙\n{{tool:documents_read'))).toBe('references/x.md:3：占位符没有闭合（有 {{ 没有对应的 }}）');
@@ -350,7 +350,7 @@ describe('说明书的标记法报错', () => {
     );
   });
 
-  it('surface 与生成块：未闭合、嵌套、交叉、多余的闭合、不认识的名字', () => {
+  it('surface and generated blocks: unclosed, nested, crossed, extra closing, unknown name', () => {
     expect(errorOf(() => render('a\n<!-- surface: cli -->\nb'))).toBe('references/x.md:2：surface 标记没有闭合');
     expect(errorOf(() => render('<!-- surface: cli -->\n<!-- surface: agent -->'))).toContain('references/x.md:2：surface 标记不能嵌套');
     expect(errorOf(() => render('<!-- surface: web -->'))).toContain('不认识的面「web」');
@@ -362,7 +362,7 @@ describe('说明书的标记法报错', () => {
     );
   });
 
-  it('链接到说明书里没有的页时报错；行内代码里的链接与占位符不动', () => {
+  it('linking to a page not in the manual errors; links and placeholders inside inline code are left alone', () => {
     const files = new Set(['SKILL.md', 'references/x.md']);
     expect(errorOf(() => renderAgentSkillText('见 [y](y.md)', { face: 'cli', file: 'references/x.md', files }))).toContain(
       'references/x.md:1：链接 [y](y.md) 指向的 references/y.md 不在说明书里',
@@ -373,13 +373,13 @@ describe('说明书的标记法报错', () => {
   });
 });
 
-describe('说明书的位置', () => {
+describe('manual location', () => {
   const dirs: string[] = [];
   afterEach(() => {
     for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('环境变量优先，其次是打包资源，最后是仓库根', () => {
+  it('environment variable takes precedence, then bundled resources, finally the repo root', () => {
     expect(resolveBuiltinAgentSkillsDir({ CUCCUT_AGENT_SKILLS_DIR: '/x/skills' })).toBe('/x/skills');
     const resources = fs.mkdtempSync(path.join(os.tmpdir(), 'cuccut-agent-skills-'));
     dirs.push(resources);
@@ -389,7 +389,7 @@ describe('说明书的位置', () => {
   });
 });
 
-describe('仓库里的说明书', () => {
+describe('manual in the repo', () => {
   const dir = path.join(findRepoDir('skills')!, 'cuccut');
 
   // The three §8.6 tests run against the real instructions in the repository and the real tool catalog (the Runtime's tool group, with the view chosen by surface).
@@ -398,11 +398,11 @@ describe('仓库里的说明书', () => {
   const agent = renderAgentSkill(source, { face: 'agent', catalog: AGENT });
   const guidance = renderAgentGuidance(source, AGENT);
 
-  it('CLI 面的渲染里没有 a_b 工具名与工具桥用语', () => {
+  it('CLI surface rendering has no a_b tool names or tool-bridge wording', () => {
     expect(bridgeNamesInCliFace(cli)).toEqual([]);
   });
 
-  it('内置 skill 的 front matter 与说明书的路由表不写 a_b 工具名（它们原样进索引与引言，不经工具名改写）', () => {
+  it('built-in skill front matter and the manual\'s routing table do not write a_b tool names (they go into the index and intro as is, without tool-name rewriting)', () => {
     const bare = (text: string) =>
       CLI_COMPOUND.filter((name) => new RegExp(`(?<![A-Za-z0-9_{:])${name}(?![A-Za-z0-9_])`).test(text.replace(/\{\{[^}]*\}\}/g, '')));
     const skillsDir = resolveBuiltinSkillsDir({})!;
@@ -422,7 +422,7 @@ describe('仓库里的说明书', () => {
     expect(hits).toEqual([]);
   });
 
-  it('工具桥面的渲染里没有 cuccut 命令、--yes 与退出码（含会话指导与内置页面）', () => {
+  it('tool-bridge surface rendering has no cuccut command, --yes or exit codes (including session guidance and built-in pages)', () => {
     expect(cliTracesInAgentFace(agent)).toEqual([]);
     const rendered: AgentSkillFiles = new Map([
       ['guidance', guidance.guidance],
@@ -431,13 +431,13 @@ describe('仓库里的说明书', () => {
     expect(cliTracesInAgentFace(rendered)).toEqual([]);
   });
 
-  it('两面渲染出的硬规则条数相同', () => {
+  it('both surfaces render the same number of hard rules', () => {
     expect(countHardRules(cli.get('SKILL.md')!)).toBe(12);
     expect(countHardRules(agent.get('SKILL.md')!)).toBe(12);
     expect(countHardRules(guidance.guidance)).toBe(12);
   });
 
-  it('工具桥面：目录页、做法总览与约定成为内置页面，名字与说明取 front matter 或标题', () => {
+  it('tool-bridge surface: directory page, how-to overview and conventions become built-in pages, with names and descriptions taken from front matter or the heading', () => {
     expect(guidance.pages.map((page) => page.id)).toEqual([
       'cuccut-catalog-editing',
       'cuccut-catalog-export',

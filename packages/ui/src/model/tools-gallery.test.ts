@@ -52,8 +52,8 @@ function status(patch: Partial<ToolStatus>): ToolStatus {
 
 const pipeline = (name: string): PipelineInfo => ({ name, label: name, description: '', steps: [], paramsSchema: {} });
 
-describe('工具总览的现状行', () => {
-  it('目录里没有「即将推出」的工具；压缩、合并与提取音频确认能用时写在哪儿做', () => {
+describe('status line on the tools overview', () => {
+  it('no \'coming soon\' tools in the catalog; compress, merge and extract audio are listed where they are confirmed usable', () => {
     expect(TOOLS.filter((t) => plannedReason(t.id)).map((t) => t.id)).toEqual([]);
     // Doesn't look at the cloud capability view: if the view hasn't arrived, the status is still written here; not written before tools.list arrives.
     expect(toolCardStatus('compress-video', null, null)).toEqual({ on: true, text: transcodeCardStatus() });
@@ -65,7 +65,7 @@ describe('工具总览的现状行', () => {
     expect(toolCardStatus('extract-audio', null, web)).toEqual({ on: false, text: web });
   });
 
-  it('不可用以 tools.list 为准：写第一条原因，点变灰', () => {
+  it('unavailable follows tools.list: writes the first reason and greys the item out', () => {
     const down = status({ available: false, problems: [{ code: 'CAPABILITY_NOT_CONFIGURED', message: '还没有配置文本生成模型', remedy: '到设置里连接' }] });
     expect(toolBlock(down, null)).toBe('还没有配置文本生成模型');
     expect(toolBlock(down, null, undefined, true)).toBe('还没有配置文本生成模型。到设置里连接');
@@ -78,7 +78,7 @@ describe('工具总览的现状行', () => {
     expect(toolCardStatus('compress-video', null, 'ffmpeg 没装')).toEqual({ on: false, text: 'ffmpeg 没装' });
   });
 
-  it('执行它的流程不在 pipelines.list 里时按不了（按输入种类找流程）', () => {
+  it('cannot be pressed when the pipeline that runs it is not in pipelines.list (finds the pipeline by input kind)', () => {
     const ok = status({});
     expect(toolBlock(ok, null)).toBeNull();
     expect(toolBlock(ok, [pipeline('translate')])).toBeNull();
@@ -90,13 +90,13 @@ describe('工具总览的现状行', () => {
     expect(toolBlock(null, [])).toBeNull();
   });
 
-  it('从链接导入：确认能用时写下载工具就绪，状态没到时不写', () => {
+  it('import from link: writes download tool ready when confirmed usable, not written before the status arrives', () => {
     expect(toolCardStatus('link-import', null, null)).toEqual({ on: true, text: linkReadyStatus() });
     expect(toolCardStatus('link-import', null)).toBeNull();
     expect(toolCardStatus('transcribe', fixtureView(), null)).toBeNull();
   });
 
-  it('下载工具就绪但转录模型缺失：只下载能用，下载并转录显示原因与补救；模型就绪后解除阻碍', () => {
+  it('download tool ready but transcription model missing: only download is usable, download and transcribe shows the reason and fix; blocker cleared once the model is ready', () => {
     const download = status({
       id: 'link-import',
       execution: { kind: 'pipeline', method: 'pipelines.start', pipeline: 'link-import' },
@@ -110,7 +110,7 @@ describe('工具总览的现状行', () => {
     expect(toolBlock(download, pipelines, 'link', true, ['synthesizeSpeech'])).toBeNull();
   });
 
-  it('文本生成按能用的云端服务商计数', () => {
+  it('text generation counts usable cloud providers', () => {
     // OpenAI is connected; Google is not.
     expect(usableCloudCount(textView(), 'generateText')).toBe(1);
     expect(toolCardStatus('generate-text', textView())).toEqual({ on: true, text: '1 家云端已连接' });
@@ -118,7 +118,7 @@ describe('工具总览的现状行', () => {
     expect(toolCardStatus('generate-text', fixtureView())).toEqual({ on: false, text: '还没有可用的文本模型' });
   });
 
-  it('语音与生图按能用的云端服务商计数：连上了、这一档也可用', () => {
+  it('speech and image generation count usable cloud providers: connected, and this tier also usable', () => {
     const view = fixtureView();
     // OpenAI, and a TTS Box that declares a speech synthesis model; an ASR Box that is connected but has no model at this tier doesn't count.
     expect(usableCloudCount(view, 'synthesizeSpeech')).toBe(2);
@@ -127,19 +127,19 @@ describe('工具总览的现状行', () => {
     expect(toolCardStatus('generate-image', view)).toEqual({ on: true, text: '1 家云端已连接' });
   });
 
-  it('生成语音把装好的本机模型也算上', () => {
+  it('speech generation also counts installed local models', () => {
     expect(toolCardStatus('synthesize-speech', withLocalSpeech())).toEqual({ on: true, text: '本机 1 个模型 · 2 家云端已连接' });
     expect(toolCardStatus('synthesize-speech', withLocalSpeech(offline(fixtureView())))).toEqual({ on: true, text: '本机 1 个模型' });
   });
 
-  it('都没连上时说清楚', () => {
+  it('says clearly when nothing is connected', () => {
     const view = offline(fixtureView());
     expect(toolCardStatus('synthesize-speech', view)).toEqual({ on: false, text: '还没有可用的语音合成模型' });
     expect(toolCardStatus('generate-image', view)).toEqual({ on: false, text: '还没有可用的生图模型' });
     expect(toolCardStatus('generate-text', offline(textView()))).toEqual({ on: false, text: '还没有可用的文本模型' });
   });
 
-  it('能力视图还没到时不写现状', () => {
+  it('no status line while the capability view has not arrived', () => {
     expect(toolCardStatus('synthesize-speech', null)).toBeNull();
     expect(toolCardStatus('generate-image', null)).toBeNull();
     expect(toolCardStatus('generate-text', null)).toBeNull();

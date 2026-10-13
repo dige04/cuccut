@@ -55,14 +55,14 @@ const SIMPLE_HTML =
   '<!doctype html><div data-composition-id="main" data-width="320" data-height="180" data-fps="30" data-duration="1"></div>';
 
 describe('listBundleFiles', () => {
-  it('递归列出、按 path 排序、算每个文件的 sha256', async () => {
+  it('recursively lists, sorts by path, computes sha256 for each file', async () => {
     const dir = tree({ 'index.html': SIMPLE_HTML, 'b/z.js': 'z', 'a.css': 'body{}', 'dependency.lock': '' });
     const entries = await listBundleFiles(dir);
     expect(entries.map((e) => e.path)).toEqual(['a.css', 'b/z.js', 'dependency.lock', 'index.html']);
     expect(entries[1]).toEqual({ path: 'b/z.js', size: 1, sha256: sha('z') });
   });
 
-  it('符号链接 → BUNDLE_SYMLINK（文件与目录都算）', async () => {
+  it('symlink → BUNDLE_SYMLINK (both files and directories count)', async () => {
     const dir = tree({ 'index.html': SIMPLE_HTML });
     fs.symlinkSync(path.join(dir, 'index.html'), path.join(dir, 'alias.html'));
     expect(await codeOf(listBundleFiles(dir))).toBe('BUNDLE_SYMLINK');
@@ -71,7 +71,7 @@ describe('listBundleFiles', () => {
     expect(await codeOf(listBundleFiles(dir2))).toBe('BUNDLE_SYMLINK');
   });
 
-  it('白名单外的扩展名、点文件、node_modules → BUNDLE_FILE_NOT_ALLOWED', async () => {
+  it('extensions outside the allowlist, dotfiles, node_modules → BUNDLE_FILE_NOT_ALLOWED', async () => {
     expect(await codeOf(listBundleFiles(tree({ 'index.html': SIMPLE_HTML, 'tool.exe': 'MZ' })))).toBe('BUNDLE_FILE_NOT_ALLOWED');
     expect(await codeOf(listBundleFiles(tree({ 'index.html': SIMPLE_HTML, '.env': 'X=1' })))).toBe('BUNDLE_FILE_NOT_ALLOWED');
     expect(await codeOf(listBundleFiles(tree({ 'index.html': SIMPLE_HTML, 'node_modules/x/index.js': '' })))).toBe(
@@ -82,7 +82,7 @@ describe('listBundleFiles', () => {
     expect(ok).toHaveLength(3);
   });
 
-  it('超过上限 → BUNDLE_TOO_LARGE', async () => {
+  it('over the limit → BUNDLE_TOO_LARGE', async () => {
     const dir = tree({ 'a.js': 'a', 'b.js': 'b', 'c.js': 'c' });
     expect(await codeOf(listBundleFiles(dir, { limits: { maxFiles: 2 } }))).toBe('BUNDLE_TOO_LARGE');
     expect(await codeOf(listBundleFiles(dir, { limits: { maxFileBytes: 0 } }))).toBe('BUNDLE_TOO_LARGE');
@@ -93,7 +93,7 @@ describe('listBundleFiles', () => {
 });
 
 describe('computeContentHash', () => {
-  it('与手算的公式一致：排序、键顺序、紧凑 JSON，跳过三个不参与摘要的文件', () => {
+  it('matches the hand-computed formula: sorting, key order, compact JSON, skipping the three files that do not take part in the digest', () => {
     const a = { path: 'index.html', size: 5, sha256: sha('hello') };
     const b = { path: 'b.js', size: 1, sha256: sha('b') };
     const expected =
@@ -112,7 +112,7 @@ describe('computeContentHash', () => {
 });
 
 describe('scanNetworkReferences', () => {
-  it('找到绝对 URL 与会加载的协议相对 URL；注释与 xmlns 不算', async () => {
+  it('finds absolute URLs and protocol-relative URLs that would be loaded; comments and xmlns do not count', async () => {
     const dir = tree({
       'index.html': [
         '<!doctype html>',
@@ -164,7 +164,7 @@ describe('inspectBundle', () => {
     return dir;
   }
 
-  it('有效清单：通过，root 指向源目录', async () => {
+  it('valid manifest: passes, root points to the source directory', async () => {
     const dir = await bundleWithManifest();
     const bundle = await inspectBundle(dir);
     expect(bundle.synthesized).toBe(false);
@@ -174,7 +174,7 @@ describe('inspectBundle', () => {
     expect(bundle.totalBytes).toBe(bundle.entries.reduce((s, e) => s + e.size, 0));
   });
 
-  it('形状不对 → BUNDLE_MANIFEST_INVALID（带 zod issues）；未知合同或引擎 → BUNDLE_CONTRACT_UNSUPPORTED', async () => {
+  it('wrong shape → BUNDLE_MANIFEST_INVALID (with zod issues); unknown contract or engine → BUNDLE_CONTRACT_UNSUPPORTED', async () => {
     const invalid = await bundleWithManifest((m) => {
       m.extra = true;
       (m.permissions as Record<string, unknown>).network = 'allow';
@@ -195,7 +195,7 @@ describe('inspectBundle', () => {
     expect(await codeOf(inspectBundle(notJson))).toBe('BUNDLE_MANIFEST_INVALID');
   });
 
-  it('文件被改 → BUNDLE_HASH_MISMATCH；入口不在包里 → BUNDLE_ENTRY_MISSING', async () => {
+  it('file modified → BUNDLE_HASH_MISMATCH; entry not in the bundle → BUNDLE_ENTRY_MISSING', async () => {
     const dir = await bundleWithManifest();
     fs.appendFileSync(path.join(dir, 'index.html'), '<!-- edited -->');
     const error = (await inspectBundle(dir).catch((e: unknown) => e)) as CodeBundleError;
@@ -211,7 +211,7 @@ describe('inspectBundle', () => {
     expect(await codeOf(inspectBundle(missing))).toBe('BUNDLE_ENTRY_MISSING');
   });
 
-  it('没有清单时在暂存副本里合成，源目录不变', async () => {
+  it('without a manifest, synthesized in a staging copy; the source directory is unchanged', async () => {
     const source = path.join(fixtures, 'hyperframes-basic');
     const before = fs.readdirSync(source).sort();
     const staging = path.join(tmp(), 'staged');
@@ -238,7 +238,7 @@ describe('inspectBundle', () => {
     expect(again.manifest).toEqual(bundle.manifest);
   });
 
-  it('合成时识别原生合同；尺寸未知 → BUNDLE_MANIFEST_INVALID；不允许合成时同样报错', async () => {
+  it('recognizes the native contract when synthesizing; unknown dimensions → BUNDLE_MANIFEST_INVALID; also an error when synthesis is not allowed', async () => {
     const native = await inspectBundle(path.join(fixtures, 'cuccut-native'));
     tmpDirs.push(native.root);
     expect(native.manifest.runtime).toMatchObject({ contract: 'cuccut/1' });
@@ -253,7 +253,7 @@ describe('inspectBundle', () => {
     );
   });
 
-  it('静态网络引用 → BUNDLE_NETWORK_REFERENCE；strictNetwork: false 时只记录', async () => {
+  it('static network reference → BUNDLE_NETWORK_REFERENCE; with strictNetwork: false it is only recorded', async () => {
     const error = (await inspectBundle(path.join(fixtures, 'network-static')).catch((e: unknown) => e)) as CodeBundleError;
     expect(error.code).toBe('BUNDLE_NETWORK_REFERENCE');
     expect(error.details).toEqual([{ path: 'index.html', line: 15, text: 'https://example.invalid/lib.js' }]);
@@ -266,7 +266,7 @@ describe('inspectBundle', () => {
     expect(runtime.networkReferences).toEqual([]);
   });
 
-  it('接受 motion-graphics 的 build-bundle.mjs 产出的包', async () => {
+  it('accepts bundles produced by motion-graphics\' build-bundle.mjs', async () => {
     const out = tmp();
     const html = path.join(repo, 'skills/cuccut/built-in-skills/motion-graphics/exemplars/lower-third/16x9.html');
     const run = spawnSync(
@@ -291,7 +291,7 @@ describe('inspectBundle', () => {
 });
 
 describe('parseRate', () => {
-  it('整数、NTSC 小数与分数', () => {
+  it('integers, NTSC decimals and fractions', () => {
     expect(parseRate('30')).toEqual({ num: 30, den: 1 });
     expect(parseRate('29.97')).toEqual({ num: 30000, den: 1001 });
     expect(parseRate('24000/1001')).toEqual({ num: 24000, den: 1001 });

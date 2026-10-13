@@ -109,8 +109,8 @@ function editorFacts(provenance: Provenance, speech: DocumentRecord | null = doc
   });
 }
 
-describe('视频详情的行', () => {
-  it('缺席的行整行省略，不写占位', () => {
+describe('video details rows', () => {
+  it('absent rows are omitted entirely, no placeholder', () => {
     const bare: VideoInfoFacts = { title: '新视频', source: null, location: null, media: '00:00.0 · 1920×1080 · 30 fps', transcript: null, link: null };
     expect(sections(bare, editorExtras({ speakers: 0, chapters: 0, paragraphs: 0 }, []))[0]!.rows.map((r) => r.label)).toEqual(['媒体']);
     expect(contentsRow(0, 0, 0)).toBeNull();
@@ -124,7 +124,7 @@ describe('视频详情的行', () => {
     expect(heroLine(facts.source)).toBe('mix.wav');
   });
 
-  it('两个入口的信息密度不同：extras 只有编辑器那条路给得出', () => {
+  it('the two entry points show different amounts of information: extras can only be provided by the editor path', () => {
     const facts = editorFacts(LINK);
     const counts = contentCounts(sequence([{ id: 'm1', frame: 0, kind: 'chapter' } as Sequence['markers'][number]]), [
       { assetId: 'asset_a', body: speechBody },
@@ -148,7 +148,7 @@ describe('视频详情的行', () => {
     expect(sections(entryFacts({ kind: 'video' }, '口播剪辑', null))).toEqual([]);
   });
 
-  it('来源信息逐项放行，网址导入才有', () => {
+  it('source info is allowed item by item; only URL imports have it', () => {
     expect(sections(editorFacts(LOCAL)).map((s) => s.title)).toEqual([VIDEO_INFO_SECTION.media]);
     const meta = sections(editorFacts(LINK))[1]!;
     expect(meta.title).toBe(VIDEO_INFO_SECTION.source);
@@ -168,7 +168,7 @@ describe('视频详情的行', () => {
     expect(heroLine(editorFacts(LINK).source)).toBe('网址导入 · kelang-ep42-master.mp4');
   });
 
-  it('原标题与原简介：改过名才写原标题；原简介限高、复制全文', () => {
+  it('original title and original description: the original title is written only when renamed; the original description has a height limit and copies the full text', () => {
     const described: Provenance = { ...LINK, source: { ...(LINK.source as Record<string, unknown>), description: '第一段\n第二段' } };
     const meta = sections(editorFacts(described))[1]!;
     expect(meta.rows.map((r) => r.label)).toEqual(['原标题', '频道', '发布', '平台', '视频 ID', '网址', '原简介']);
@@ -181,7 +181,7 @@ describe('视频详情的行', () => {
     expect(sections(same).flatMap((s) => s.rows.map((r) => r.label))).not.toContain('原标题');
   });
 
-  it('位置与链接的源文件带着「在文件夹中显示」的路径；收进视频目录的素材没有源文件行', () => {
+  it('location and link source files carry a \'show in folder\' path; media brought into the video directory has no source file row', () => {
     const linked = asset(LINK);
     linked.revisions['1'] = { ...linked.revisions['1']!, storage: { mode: 'linked', locator: { path: '../downloads/kl.webm' }, frozen: false } };
     const facts = snapshotFacts({
@@ -198,7 +198,7 @@ describe('视频详情的行', () => {
     expect(sections(editorFacts(LOCAL))[0]!.rows.map((r) => r.label)).not.toContain('源文件');
   });
 
-  it('省略号只进眼睛不进剪贴板', () => {
+  it('ellipsis appears on screen only, not in the clipboard', () => {
     const long = '“The default way to code is vibecoding.” OpenAI chief research officer.mp4';
     const short = elideMiddle(long, HERO_NAME_MAX);
     expect(Array.from(short)).toHaveLength(HERO_NAME_MAX);
@@ -209,7 +209,7 @@ describe('视频详情的行', () => {
     expect(heroLine({ kind: '本地文件', fileName: long })).toBe(`本地文件 · ${long}`);
   });
 
-  it('复制文本就是屏幕上那几行，值内换行缩进两格', () => {
+  it('copied text is exactly the rows on screen; line breaks within values are indented two spaces', () => {
     const facts = editorFacts(LOCAL);
     const list = sections(facts, editorExtras({ speakers: 1, chapters: 3, paragraphs: 62 }, []));
     expect(copyText(facts.title, heroLine(facts.source), list)).toBe(
@@ -227,7 +227,7 @@ describe('视频详情的行', () => {
     );
   });
 
-  it('转写模型：在线写模型 ID，本机写模型包，旧形状认得出的才写', () => {
+  it('transcription model: online writes the model ID, local writes the model pack; legacy shapes are written only when recognized', () => {
     expect(speechModel(speechBody)).toBe('qwen3-asr-0.6b@mlx-4bit');
     expect(
       speechModel({ engine: { provider: 'openai', bundleId: null, models: { asr: { family: 'openai', revision: 'gpt-4o-transcribe' } }, backend: 'online' } }),

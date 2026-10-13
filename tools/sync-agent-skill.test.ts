@@ -101,8 +101,8 @@ function freshFixture(): string {
 
 const read = (root: string, rel: string) => fs.readFileSync(path.join(root, rel), 'utf8');
 
-describe('说明书的同步', () => {
-  it('craft 副本：去 front matter，正文的一级标题作标题，references 作附录，工具名与 skills_read 按 CLI 面改写', () => {
+describe('skill document sync', () => {
+  it('craft copy: strip front matter, body\'s level-one heading becomes the title, references become an appendix, tool names and skills_read rewritten per CLI surface', () => {
     const root = freshFixture();
     const result = buildAgentSkillSync(root, INPUTS);
     expect(result.files.get(`${AGENT}/references/craft/demo-polish.md`)).toBe(
@@ -145,7 +145,7 @@ describe('说明书的同步', () => {
     ]);
   });
 
-  it('craft 引用共享目录页：生成可解析链接、不复制表格，缺失目标时同步失败', () => {
+  it('craft references the shared directory page: generates resolvable links, does not copy tables, sync fails when the target is missing', () => {
     const root = freshFixture();
     const shared = `${AGENT}/references/catalog/voice-language-rates.md`;
     const body = '# Shared speech rates\n\n| Language | Rate |\n| --- | --- |\n| English | 2.1 |\n';
@@ -164,7 +164,7 @@ describe('说明书的同步', () => {
     expect(() => buildAgentSkillSync(root, INPUTS)).toThrow('references/catalog/voice-language-rates.md');
   });
 
-  it('一级动词也按 CLI 面改写；连着 -、/、. 或后跟 : 的不算工具名；代码块里不加反引号；英文词、代码与取值不改', () => {
+  it('leading verbs are also rewritten per CLI surface; a word joined to -, /, or ., or followed by :, is not a tool name; no backticks added inside code blocks; English words, code and values are left unchanged', () => {
     const root = freshFixture();
     fs.appendFileSync(
       path.join(root, BUILTIN, 'demo-polish/SKILL.md'),
@@ -197,7 +197,7 @@ describe('说明书的同步', () => {
     expect(result.warnings).toEqual([]);
   });
 
-  it('三个生成块：common-ops、按面分开的 error-codes、只给 CLI 面的 tool-map', () => {
+  it('three generated blocks: common-ops, error-codes split by surface, and tool-map for the CLI surface only', () => {
     const root = freshFixture();
     const files = buildAgentSkillSync(root, INPUTS).files;
     const editing = files.get(`${AGENT}/references/catalog/editing.md`)!;
@@ -228,7 +228,7 @@ describe('说明书的同步', () => {
     expect(mcp).toContain('Only in the CLI, not on MCP: `cuccut videos import-package`.\n<!-- /generated -->');
   });
 
-  it('写盘后 --check 一致；README.md 不归脚本管，多出来的 craft 页算过期并删掉', () => {
+  it('after writing, --check matches; README.md is not managed by the script; extra craft pages count as stale and are deleted', () => {
     const root = freshFixture();
     const craftDir = path.join(root, AGENT, 'references/craft');
     fs.writeFileSync(path.join(craftDir, 'old-one.md'), '# Stale\n');
@@ -242,7 +242,7 @@ describe('说明书的同步', () => {
     expect(diffAgentSkillSync(root, buildAgentSkillSync(root, INPUTS))).toEqual([]);
   });
 
-  it('改写不了的 skills_read 说法报错，带源文件与行号', () => {
+  it('an unrewritable skills_read phrasing errors, with source file and line number', () => {
     const root = freshFixture();
     fs.appendFileSync(path.join(root, BUILTIN, 'demo-chapters/SKILL.md'), '\nWhen unsure, look at something else with `skills_read`.\n');
     expect(() => buildAgentSkillSync(root, INPUTS)).toThrow(
@@ -250,13 +250,13 @@ describe('说明书的同步', () => {
     );
   });
 
-  it('生成后两个面都要渲染得过：占位符写错时失败', () => {
+  it('after generation both surfaces must render: fails when a placeholder is wrong', () => {
     const root = freshFixture();
     fs.appendFileSync(path.join(root, AGENT, 'references/workflows.md'), '\n4. {{tool:no_such}}\n');
     expect(() => buildAgentSkillSync(root, INPUTS)).toThrow('references/workflows.md:9：{{tool:no_such}}：CLI 面的目录里没有这个工具');
   });
 
-  it('命令行：--check 不一致时退出码 1，写入后为 0', () => {
+  it('command line: exit code 1 when --check mismatches, 0 after writing', () => {
     const root = freshFixture();
     const run = (...args: string[]) => spawnSync(process.execPath, [SCRIPT, '--root', root, ...args], { encoding: 'utf8' });
     const before = run('--check');
@@ -266,7 +266,7 @@ describe('说明书的同步', () => {
     expect(run('--check').status).toBe(0);
   });
 
-  it('仓库里的说明书与来源一致（不一致时运行 npm run build:agent-skill）', () => {
+  it('the repo\'s skill doc matches its source (run npm run build:agent-skill when it does not)', () => {
     expect(diffAgentSkillSync(REPO_ROOT, buildAgentSkillSync(REPO_ROOT))).toEqual([]);
   });
 });

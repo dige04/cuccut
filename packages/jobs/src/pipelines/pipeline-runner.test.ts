@@ -145,7 +145,7 @@ describe('PipelineRunner', () => {
       .filter((r) => r.parentJobId === jobId)
       .reverse();
 
-  it('按顺序执行各步，父任务按步骤报告进度，子任务记下父任务与提交者', async () => {
+  it('runs steps in order, the parent task reports progress by step, child tasks record the parent and the submitter', async () => {
     const { jobId } = await start();
     const parent = await finished(jobId);
     expect(control.runs).toEqual(['a', 'b', 'c']);
@@ -182,14 +182,14 @@ describe('PipelineRunner', () => {
     expect(parentEvents.some((e) => e.phase === 'generating' && e.progress?.calls?.calls === 1)).toBe(true);
   });
 
-  it('可选步骤按参数执行', async () => {
+  it('optional steps run according to parameters', async () => {
     const { jobId } = await start('with-d');
     const parent = await finished(jobId);
     expect(control.runs).toEqual(['a', 'b', 'c', 'd']);
     expect(parent.pipeline!.steps[3]!.status).toBe('completed');
   });
 
-  it('一步可以多开子任务，挂在同一个父任务与步骤下', async () => {
+  it('a step can open multiple child tasks, attached under the same parent task and step', async () => {
     control.fanOut = 2;
     const { jobId } = await start();
     await finished(jobId);
@@ -198,7 +198,7 @@ describe('PipelineRunner', () => {
     expect(extra.every((c) => c.state === 'completed' && c.submitter.kind === 'pipeline')).toBe(true);
   });
 
-  it('参数不合与没有的流程在启动时拒绝；同一个 commandId 只启动一次', async () => {
+  it('a flow with invalid or missing parameters is rejected at start; the same commandId starts only once', async () => {
     await expect(runner.start({ pipeline: 'nope', params: {} }, { kind: 'connection', id: 'c' })).rejects.toMatchObject({
       code: 'not-found',
     });
@@ -222,7 +222,7 @@ describe('PipelineRunner', () => {
     ]);
   });
 
-  it('一步失败时停在这一步：之前的保留，之后的不执行；重试从这一步开始并复用之前的产出', async () => {
+  it('when a step fails, stop at that step: earlier ones kept, later ones not run; retry starts from that step and reuses earlier outputs', async () => {
     control.failAt.add('b');
     const { jobId } = await start();
     const failed = await finished(jobId);
@@ -255,7 +255,7 @@ describe('PipelineRunner', () => {
     await expect(runner.retry(jobId)).rejects.toMatchObject({ code: 'conflict', details: { code: 'JOB_NOT_RETRYABLE' } });
   });
 
-  it('账本的上限只数顶层任务：子任务随父任务保留与淘汰；还能重试的流程另外保留，有上界', async () => {
+  it('the ledger limit counts only top-level tasks: child tasks are kept and evicted with their parent; flows that can still be retried are kept separately, with a bound', async () => {
     await runner.idle();
     await jobs.shutdown();
     await open({ maxRetainedJobs: 2, maxRetainedRetryablePipelines: 1 });
@@ -296,7 +296,7 @@ describe('PipelineRunner', () => {
     ).toEqual(new Set([failedNew, done[2]]));
   });
 
-  it('一看到失败的事件就重试：等这次执行收尾之后重试，不拒绝', async () => {
+  it('on seeing a failure event retry: waits until this run finishes, then retries, not rejected', async () => {
     control.failAt.add('b');
     const { jobId } = await start();
     await new Promise<void>((resolve) => {
@@ -309,7 +309,7 @@ describe('PipelineRunner', () => {
     expect(await finished(jobId)).toMatchObject({ state: 'completed', attempt: 2 });
   });
 
-  it('之前的产出不能再用时重试从那一步重来', async () => {
+  it('when earlier outputs can no longer be used, retry restarts from that step', async () => {
     control.failAt.add('c');
     const { jobId } = await start();
     await finished(jobId);
@@ -321,7 +321,7 @@ describe('PipelineRunner', () => {
     expect(control.runs).toEqual(['a', 'b', 'c']);
   });
 
-  it('取消先挡住新步骤：正在执行的那一步做完了也不再开始下一步', async () => {
+  it('cancel first blocks new steps: a step that is running finishes but the next does not start', async () => {
     control.hold('a', false);
     const { jobId } = await start();
     await control.reached;
@@ -336,7 +336,7 @@ describe('PipelineRunner', () => {
     await expect(fs.stat(path.join(dir, 'staging', 'pipelines', jobId))).rejects.toThrow();
   });
 
-  it('取消中止正在执行的那一步；取消子任务等于取消整个流程；被取消的流程可以重试', async () => {
+  it('cancel aborts the step in progress; cancelling a child task equals cancelling the whole flow; a cancelled flow can be retried', async () => {
     control.hold('b');
     const { jobId } = await start();
     await control.reached;
@@ -353,7 +353,7 @@ describe('PipelineRunner', () => {
     expect(control.runs).toEqual(['b', 'c']);
   });
 
-  it('Runtime 停止时流程与正在执行的那一步标为中断，重启后可以从那一步重试', async () => {
+  it('when the Runtime stops, the flow and the step in progress are marked interrupted; after restart it can retry from that step', async () => {
     control.hold('b');
     const { jobId } = await start();
     await control.reached;
@@ -376,7 +376,7 @@ describe('PipelineRunner', () => {
     expect(control.runs).toEqual(['b', 'c']);
   });
 
-  it('进程没有正常停止时，重启后没有终结的流程标为中断并记下停在哪一步', async () => {
+  it('when the process did not stop cleanly, unfinished flows are marked interrupted after restart, recording where they stopped', async () => {
     // The second step never ends and ignores abort: this simulates the process exiting directly.
     control.hold('b', false);
     const { jobId } = await start();

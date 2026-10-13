@@ -87,7 +87,7 @@ const SECURITY_HEADERS = {
   'x-frame-options': 'DENY',
 };
 
-describe('Web 服务', () => {
+describe('web service', () => {
   let dir: string;
   let dist: string;
   let home: RuntimeHome;
@@ -186,7 +186,7 @@ describe('Web 服务', () => {
     return client;
   }
 
-  it('附件上传是同源且绑定会话的单次地址；普通文件可交给不支持图片的 Agent', async()=>{
+  it('attachment upload is a same-origin, session-bound one-time address; ordinary files can be handed to agents that don\'t support images', async()=>{
     await boot();const origin=await openWeb(),cookie=await login(origin),other=await login(origin),page=await browser(origin,cookie);
     const body='name,count\ncover,3\n';
     const prepared=await page.request('attachments.prepare',{fileName:'items.csv',mimeType:'text/csv',size:Buffer.byteLength(body)});
@@ -206,7 +206,7 @@ describe('Web 服务', () => {
     await expect(page.request('attachments.prepare',{fileName:'blocked.csv',mimeType:'text/csv',size:1})).rejects.toBeTruthy();
   });
 
-  it('默认关闭、端口 47622；没有构建产物时开启进入 error 并说明，Runtime 照常', async () => {
+  it('off by default, port 47622; enabling without built assets enters error with explanation, Runtime still starts', async () => {
     await boot({ dist: null });
     const before = (await desktop.request('services.list', {})).services.find((s) => s.serviceId === 'web')!;
     expect(before).toMatchObject({ available: true, state: 'off', port: 47622, web: { readOnly: false, methods: null } });
@@ -223,7 +223,7 @@ describe('Web 服务', () => {
     });
   });
 
-  it('未登录：只有登录页；静态文件、媒体与网关都要会话；每个响应都带安全头', async () => {
+  it('not logged in: only login page; static files, media and gateway all require a session; every response carries security headers', async () => {
     await boot();
     const origin = await openWeb();
 
@@ -263,7 +263,7 @@ describe('Web 服务', () => {
     ).toBe(401);
   });
 
-  it('登录页的脚本：链接 fragment 里的代码立即兑换并从地址栏抹掉；粘贴的代码或整条链接经输入框兑换', async () => {
+  it('login page script: code in link fragment exchanged immediately and removed from address bar; pasted code or whole link exchanged via input field', async () => {
     await boot();
     const origin = await openWeb();
     const source = (await send(`${origin}/_auth/login.js`)).body;
@@ -325,7 +325,7 @@ describe('Web 服务', () => {
     expect(root.went).toEqual(['/']);
   });
 
-  it('访问链接只能用一次、过期作废；兑换要同源的 POST 与 JSON', async () => {
+  it('access link is single-use and expires; exchange requires same-origin POST with JSON', async () => {
     await boot({ dist, codeTtlMs: 300 });
     const origin = await openWeb();
 
@@ -357,7 +357,7 @@ describe('Web 服务', () => {
     expect((await desktop.request('services.web.listSessions', {})).sessions).toHaveLength(1);
   });
 
-  it('直达视频的访问链接：找不到的 videoId 以 VIDEO_NOT_FOUND 拒绝，不发代码', async () => {
+  it('direct-to-video access link: unknown videoId rejected with VIDEO_NOT_FOUND, no code issued', async () => {
     await boot();
     await openWeb();
     expect(
@@ -367,7 +367,7 @@ describe('Web 服务', () => {
     expect((await desktop.request('services.web.createAccessLink', {})).url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/#code=[A-Za-z0-9_-]+$/);
   });
 
-  it('Host 与 Origin：只接受自己的回环来源；别的站点发起的请求拿不到需要会话的内容', async () => {
+  it('Host and Origin: only accepts own loopback origins; requests from other sites cannot get session-required content', async () => {
     await boot();
     const origin = await openWeb();
     const port = new URL(origin).port;
@@ -420,7 +420,7 @@ describe('Web 服务', () => {
     }
   });
 
-  it('会话：主体是浏览器会话；列出与吊销，吊销立即断开；会话过期后不再执行；服务停止后全部作废', async () => {
+  it('session: principal is the browser session; list and revoke, revoke disconnects immediately; no execution after session expires; all invalidated when service stops', async () => {
     await boot({ dist, sessionTtlMs: 1500 });
     const origin = await openWeb();
     const cookie = await login(origin);
@@ -460,7 +460,7 @@ describe('Web 服务', () => {
     expect((await desktop.request('services.web.listSessions', {})).sessions).toEqual([]);
   });
 
-  it('白名单：默认集合之内可用，设置、凭据、对外服务与节点管理 forbidden；主题同样过滤；配置只能收紧，改了立即生效', async () => {
+  it('allowlist: default set usable, settings, credentials, external services and node management forbidden; topics filtered the same; config can only tighten, takes effect immediately', async () => {
     await boot();
     const origin = await openWeb();
     const cookie = await login(origin);
@@ -763,7 +763,7 @@ describe('Web 服务', () => {
     expect(audited.recentRequests[0]).toMatchObject({ clientName: '浏览器会话', tool: 'jobs.reconcile', outcome: 'not-found' });
   });
 
-  it('工具目录：浏览器能读目录与候选输入；执行方法不在白名单或只读时标为不可用；外部工具的问题不带本机路径与补救', async () => {
+  it('tool catalog: browser can read directory and candidate inputs; execution methods not in allowlist or read-only marked unavailable; external tool problems have no local paths or remedy', async () => {
     const emptyPath = path.join(dir, 'empty-path');
     await fs.mkdir(emptyPath);
     // PATH has only one empty directory and does not read overrides from the real environment, so all external tools are not installed.
@@ -849,7 +849,7 @@ describe('Web 服务', () => {
     expect((await page.request('tools.candidates', { toolId: 'transcribe' })).candidates).toEqual([]);
   });
 
-  it('项目与媒体：只能打开已登记的项目；媒体是同源的相对地址，支持 Range，没有会话不给，不暴露桌面的媒体通道', async () => {
+  it('project and media: only registered projects can be opened; media is same-origin relative URL, supports Range, not given without session, does not expose desktop media channel', async () => {
     await boot();
     const origin = await openWeb();
     const cookie = await login(origin);
@@ -902,7 +902,7 @@ describe('Web 服务', () => {
     expect(details(await readonlyPage.request('media.resolve', { localPath: local }).catch((e: unknown) => e))).toMatchObject({ code: 'forbidden' });
   });
 
-  it('幻灯片：浏览器拿到同源的相对地址（与桌面同一个 grant）；编辑器路由要会话，只能嵌在自己的页面里；只读配置下不能发布', async () => {
+  it('slides: browser gets same-origin relative URL (same grant as desktop); editor route requires session, can only be embedded in own page; cannot publish under read-only config', async () => {
     const editor = path.join(dir, 'slides-editor');
     await fs.mkdir(editor);
     await fs.writeFile(path.join(editor, 'index.html'), '<!doctype html><div id="root"></div>');
@@ -962,7 +962,7 @@ describe('Web 服务', () => {
     expect(await fs.readFile(path.join(deck, 'slides', 's01.html'), 'utf8')).toBe('<section>v2</section>');
   });
 
-  it('设计稿：浏览器拿到相对地址；/design/ 在另一个主机名上只认 grant，不要会话；跨站只放行导航；不带会话的 /_blob/ 只找设计稿；只读不能发布', async () => {
+  it('design: browser gets relative URL; /design/ on another hostname only accepts grant, no session required; cross-site only allows navigation; /_blob/ without session only finds designs; read-only cannot publish', async () => {
     const editor = path.join(dir, 'design-editor');
     await fs.mkdir(editor);
     await fs.writeFile(path.join(editor, 'index.html'), '<!doctype html><div id="root"></div><script>boot()</script>');
@@ -1096,7 +1096,7 @@ describe('Web 服务', () => {
     return { origin, other: `http://localhost:${port}`, cookie, page, project, onOther };
   }
 
-  it.each(ISOLATED_KINDS)('$kind：浏览器拿到相对地址；另一个主机名上只认 grant、不要会话；跨站只放行这种路由的导航；grant 跨种类 404', async (spec) => {
+  it.each(ISOLATED_KINDS)('$kind: browser gets relative URL; on another hostname only accepts grant, no session; cross-site only allows navigation for this route kind; grant across kinds 404', async (spec) => {
     const { origin, other, page, project, onOther } = await bootIsolated();
     await spec.write(path.join(project.path, 'mine'));
     await (spec.kind === 'design' ? ISOLATED_KINDS[1] : ISOLATED_KINDS[0]).write(path.join(project.path, 'theirs'));
@@ -1137,7 +1137,7 @@ describe('Web 服务', () => {
     expect((await onOther(`/${spec.kind}/${'x'.repeat(32)}/`)).status).toBe(404);
   });
 
-  it('设计系统：project/* 按扩展名给 Content-Type；根级 /_blob/ 按白名单只在开放的种类里找；两种都不开放时 403', async () => {
+  it('design system: project/* gives Content-Type by extension; root-level /_blob/ searches only open kinds per allowlist; 403 when neither kind is open', async () => {
     const { origin, cookie, page, project, onOther } = await bootIsolated();
     const canvasBlob = 'ab'.repeat(16);
     const systemBlob = 'cd'.repeat(16);
@@ -1178,7 +1178,7 @@ describe('Web 服务', () => {
     }
   });
 
-  it('访问代码与会话令牌不出现在 services.list、主题、日志、配置文件与审计里', async () => {
+  it('access code and session token don\'t appear in services.list, topics, logs, config file or audit', async () => {
     await boot();
     const events: ServicesEvent[] = [];
     let snapshot: ServicesSnapshot | null = null;
@@ -1225,7 +1225,7 @@ const ffmpeg = (() => {
 })();
 if (!engine || !ffmpeg) console.warn('跳过 Web 服务的视频测试：没有 engine-host 或 ffmpeg');
 
-describe.skipIf(!engine || !ffmpeg)('Web 服务：浏览器里的编辑（真实引擎）', () => {
+describe.skipIf(!engine || !ffmpeg)('web service: browser editing (real engine)', () => {
   let fixtures: string;
   let clip: string;
   let dir: string;
@@ -1309,7 +1309,7 @@ describe.skipIf(!engine || !ffmpeg)('Web 服务：浏览器里的编辑（真实
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('直达视频的访问链接：路径与查询是 webVideoHref（项目 + 相对路径），fragment 里只有代码', async () => {
+  it('direct-to-video access link: path and query are webVideoHref (project + relative path), fragment contains only the code', async () => {
     const { url } = await desktop.request('services.web.createAccessLink', { video: videoId });
     const link = new URL(url);
     const relPath = path.relative(project.path, videoPath).split(path.sep).join('/');
@@ -1325,7 +1325,7 @@ describe.skipIf(!engine || !ffmpeg)('Web 服务：浏览器里的编辑（真实
     expect(again.pathname + again.search).toBe(link.pathname + link.search);
   });
 
-  it('写入的操作者是用户本人（与桌面相同），不是 external:web；项目目录之外的素材文件被拒绝', async () => {
+  it('writes\' operator is the user themselves (same as desktop), not external:web; media files outside the project directory rejected', async () => {
     const applied = await page.request('edits.apply', {
       videoId,
       commandId: newId('cmd'),
@@ -1361,7 +1361,7 @@ describe.skipIf(!engine || !ffmpeg)('Web 服务：浏览器里的编辑（真实
     expect(web.recentRequests[0]).toMatchObject({ tool: 'edits.apply', videoId, outcome: 'PATH_OUTSIDE_PROJECT' });
   });
 
-  it('导出：目标目录只能在项目目录里，不能是视频目录，不能经符号链接出去；项目里的目录照常导出', async () => {
+  it('export: target directory must be inside project directory, not the video directory, cannot escape via symbolic link; directories in project export normally', async () => {
     await page.request('edits.apply', {
       videoId,
       commandId: newId('cmd'),
@@ -1405,7 +1405,7 @@ describe.skipIf(!engine || !ffmpeg)('Web 服务：浏览器里的编辑（真实
     expect(web.recentRequests.some((r) => r.tool === 'exports.create' && r.outcome === 'PATH_OUTSIDE_PROJECT')).toBe(true);
   });
 
-  it('Space：浏览器只能登记项目目录里的文件（不能经符号链接出去）；项目里的照常登记；能读能搜', async () => {
+  it('Library: browser can only register files within project directory (no escaping via symbolic link); those in the project register normally; can read and search', async () => {
     await fs.symlink(fixtures, path.join(project.path, 'outside-link'));
     const outside = path.join(fixtures, 'clip.mp4');
     for (const file of [outside, path.relative(project.path, outside), 'outside-link/clip.mp4', project.path]) {
@@ -1423,7 +1423,7 @@ describe.skipIf(!engine || !ffmpeg)('Web 服务：浏览器里的编辑（真实
     expect(web.recentRequests.some((r) => r.tool === 'space.import' && r.outcome === 'PATH_OUTSIDE_PROJECT')).toBe(true);
   });
 
-  it('便携包：浏览器只能打开项目目录里的包（不能经符号链接出去）；项目里的照常建成新视频', async () => {
+  it('portable package: browser can only open packages in project directory (no escape via symbolic link); those in the project become a new video normally', async () => {
     // The desktop exports the package outside the project.
     const outside = path.join(dir, 'outside');
     await fs.mkdir(outside);
@@ -1456,8 +1456,8 @@ describe.skipIf(!engine || !ffmpeg)('Web 服务：浏览器里的编辑（真实
 const built = resolveWebDist({});
 if (!built) console.warn('跳过 Web 客户端构建产物的冒烟测试：没有 apps/web/dist（先运行 npm run build:web）');
 
-describe.skipIf(!built)('Web 服务：真实的构建产物', () => {
-  it('登录后入口页引用的资源都能取到，类型正确，没有内联脚本', async () => {
+describe.skipIf(!built)('web service: real built assets', () => {
+  it('after login, resources referenced by the entry page are all fetchable with correct types, no inline scripts', async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-web-built-'));
     const runtime = await startRuntime({
       home: resolveRuntimeHome({ CUCCUT_HOME: dir }),

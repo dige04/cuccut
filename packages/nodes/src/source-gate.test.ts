@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { sourceAllowed } from './source-gate.ts';
 
-describe('来源门', () => {
+describe('source gate', () => {
   it.each([
     '127.0.0.1',
     '127.255.255.254',
@@ -25,7 +25,7 @@ describe('来源门', () => {
     'febf::1',
     'fc00::1',
     'fd12:3456:789a::1',
-  ])('允许 %s', (address) => {
+  ])('allow %s', (address) => {
     expect(sourceAllowed(address)).toBe(true);
   });
 
@@ -54,18 +54,18 @@ describe('来源门', () => {
     '2606:4700::1111',
     'fe00::1',
     'fbff::1',
-  ])('拒绝 %s', (address) => {
+  ])('reject %s', (address) => {
     expect(sourceAllowed(address)).toBe(false);
   });
 
   it.each([undefined, null, '', 'localhost', 'not-an-ip', '192.168.1', '192.168.1.1.1', '::ffff:192.168.1.256', 'fe80::1::2', '%en0'])(
-    '缺失或不合法的地址 %s 不允许',
+    'missing or invalid address %s is not allowed',
     (address) => {
       expect(sourceAllowed(address)).toBe(false);
     },
   );
 
-  it('allowAnySource 打开时什么地址都放行（包括缺失）', () => {
+  it('with allowAnySource on, any address is allowed (including missing)', () => {
     expect(sourceAllowed('8.8.8.8', true)).toBe(true);
     expect(sourceAllowed('2001:db8::1', true)).toBe(true);
     expect(sourceAllowed(undefined, true)).toBe(true);

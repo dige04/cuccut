@@ -90,8 +90,8 @@ function anthropicReply(request: RecordedRequest, text: string, extra: Record<st
   };
 }
 
-describe('Anthropic 文本（Messages）', () => {
-  it('模型表：默认 claude-sonnet-5-5；Haiku 不调推理强度、接受 temperature', () => {
+describe('Anthropic text (Messages)', () => {
+  it('model table: default claude-sonnet-5-5; Haiku does not take reasoning effort and accepts temperature', () => {
     const models = new AnthropicTextAdapter().models(config('x', null));
     expect(models.find((m) => m.default)?.modelId).toBe('claude-sonnet-5-5');
     expect(models.find((m) => m.modelId === 'claude-opus-5-5')).toMatchObject({ defaultEffort: 'medium', acceptsTemperature: false });
@@ -102,7 +102,7 @@ describe('Anthropic 文本（Messages）', () => {
     });
   });
 
-  it('请求形状：x-api-key 与 anthropic-version，system 在顶层，output_config 带推理强度与 JSON Schema；跳过思考块，输入含缓存', async () => {
+  it('request shape: x-api-key and anthropic-version, system at top level, output_config carries reasoning effort and JSON Schema; thinking blocks are skipped, input includes cache', async () => {
     server = await startFakeProviderServer((request) => anthropicReply(request, '{"title":"x"}'));
     const format = { type: 'json' as const, schema: SCHEMA, name: 'outline' };
     const reply = await call(
@@ -132,7 +132,7 @@ describe('Anthropic 文本（Messages）', () => {
     expect(request!.body.toString('utf8')).not.toContain(KEY_A);
   });
 
-  it('结束原因：max_tokens 是 length，refusal 是 content-filter', async () => {
+  it('finish reasons: max_tokens is length, refusal is content-filter', async () => {
     let stop = 'max_tokens';
     server = await startFakeProviderServer((request) => anthropicReply(request, 'x', { stop_reason: stop }));
     const adapter = new AnthropicTextAdapter();
@@ -144,7 +144,7 @@ describe('Anthropic 文本（Messages）', () => {
     expect((await call(adapter, config(server.origin, KEY_A), 'claude-haiku-4-5', params())).finishReason).toBe('content-filter');
   });
 
-  it('错误分类：认证、余额不足、提示过长、模型不存在、限速；回显的密钥被去掉', async () => {
+  it('error classification: auth, insufficient balance, prompt too long, model not found, rate limit; the echoed key is removed', async () => {
     let reply: FakeReply = { status: 401, json: {} };
     server = await startFakeProviderServer(() => reply);
     const cases: Array<[FakeReply, Record<string, unknown>]> = [
@@ -183,7 +183,7 @@ describe('Anthropic 文本（Messages）', () => {
     }
   });
 
-  it('列模型：GET /v1/models 的 data[].id', async () => {
+  it('lists models: data[].id from GET /v1/models', async () => {
     server = await startFakeProviderServer(() => ({
       status: 200,
       json: { data: [{ id: 'claude-sonnet-5-5' }, { id: 'claude-opus-5-5' }] },
@@ -195,8 +195,8 @@ describe('Anthropic 文本（Messages）', () => {
   });
 });
 
-describe('OpenAI 兼容服务商（目录）', () => {
-  it('只支持 JSON 模式的：json_object，schema 写进系统消息；max_tokens；读出缓存命中', async () => {
+describe('OpenAI-compatible providers (catalog)', () => {
+  it('for providers supporting only JSON mode: json_object, schema written into the system message; max_tokens; cache hits are read out', async () => {
     server = await startFakeProviderServer((request) => {
       const reply = chatCompletionReply(request, '{"title":"x"}') as { status: number; json: Record<string, unknown> };
       reply.json.usage = { prompt_tokens: 50, completion_tokens: 5, prompt_cache_hit_tokens: 30 };
@@ -229,7 +229,7 @@ describe('OpenAI 兼容服务商（目录）', () => {
     ).toContain(JSON.stringify(SCHEMA));
   });
 
-  it('支持 JSON Schema 的：json_schema，不加系统消息', async () => {
+  it('for providers supporting JSON Schema: json_schema, no system message added', async () => {
     server = await startFakeProviderServer((request) => chatCompletionReply(request, '{"title":"x"}'));
     const xai = COMPAT_VENDORS.xai;
     const adapter = new VendorTextAdapter({ label: xai.label, models: xai.models, jsonMode: xai.jsonMode });
@@ -244,7 +244,7 @@ describe('OpenAI 兼容服务商（目录）', () => {
     expect(body.messages).toHaveLength(2);
   });
 
-  it('目录：每家都有默认模型、目录信息与至少一个地区；只用 https', () => {
+  it('catalog: each provider has a default model, catalog info and at least one region; https only', () => {
     for (const [id, vendor] of Object.entries(COMPAT_VENDORS)) {
       expect(
         vendor.models.filter((m) => m.default),
@@ -257,7 +257,7 @@ describe('OpenAI 兼容服务商（目录）', () => {
   });
 });
 
-describe('账号：地区、基址、调用结果与用量', () => {
+describe('accounts: region, base URL, call results and usage', () => {
   async function withSource(
     baseUrls: Record<string, string>,
     body: (ctx: { source: OnlineProviderSource; store: ModelServiceStore; ledger: UsageLedger; dir: string }) => Promise<void>,
@@ -296,7 +296,7 @@ describe('账号：地区、基址、调用结果与用量', () => {
       });
   }
 
-  it('地区：只接受目录里的地区；没有地区的服务商不接受；本地与不存在的 Provider 没有账号', async () => {
+  it('regions: only regions in the catalog are accepted; providers without regions are not accepted; local and nonexistent providers have no account', async () => {
     await withSource({}, async ({ source }) => {
       await expect(source.addAccount({ providerId: 'moonshot', credential: VENDOR_KEY, region: 'eu' })).rejects.toMatchObject({
         code: 'invalid-request',
@@ -321,7 +321,7 @@ describe('账号：地区、基址、调用结果与用量', () => {
     });
   });
 
-  it('基址：账号的端点 > 服务商的端点 > 目录预设', async () => {
+  it('base URL: account endpoint > provider endpoint > catalog preset', async () => {
     const hits: string[] = [];
     server = await startFakeProviderServer((request) => {
       hits.push(request.path);
@@ -341,7 +341,7 @@ describe('账号：地区、基址、调用结果与用量', () => {
     });
   });
 
-  it('调用结果：401 记为密钥无效，429 记为限速（到期时间来自 Retry-After）；不换账号；每次调用写一条用量', async () => {
+  it('call results: 401 is recorded as invalid key, 429 as rate limited (expiry from Retry-After); no account switch; each call writes one usage record', async () => {
     let reply: (request: RecordedRequest) => FakeReply = (request) => anthropicReply(request, 'ok');
     server = await startFakeProviderServer((request) => reply(request));
     await withSource({ anthropic: server.origin }, async ({ source, ledger, store }) => {
@@ -395,7 +395,7 @@ describe('账号：地区、基址、调用结果与用量', () => {
     });
   });
 
-  it('验证：新密钥不通过不保存，记一条账号为 null 的验证用量；已保存的通过后状态是 ok', async () => {
+  it('validation: a new key that fails is not saved, and a verification usage record with a null account is written; a saved key that passes has status ok', async () => {
     let ok = false;
     server = await startFakeProviderServer(() =>
       ok
@@ -420,7 +420,7 @@ describe('账号：地区、基址、调用结果与用量', () => {
     });
   });
 
-  it('不可用的原因带着引用：没启用、没有密钥', async () => {
+  it('unavailable reasons carry a reference: not enabled, no key', async () => {
     await withSource({}, async ({ source }) => {
       const off = (await source.describe('qwen', 'view'))!;
       const offCap = Object.values(off.capabilities)[0]!;
@@ -431,7 +431,7 @@ describe('账号：地区、基址、调用结果与用量', () => {
     });
   });
 
-  it('移除目录里的服务商：停用并删掉所有账号与凭据；删掉最后一个账号时服务商留着', async () => {
+  it('removing a catalog provider: disables it and deletes all accounts and credentials; the provider stays when the last account is deleted', async () => {
     await withSource({}, async ({ source, dir }) => {
       await source.configure({ providerId: 'qwen', enabled: true });
       await source.addAccount({ providerId: 'qwen', credential: VENDOR_KEY });

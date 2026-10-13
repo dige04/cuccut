@@ -46,7 +46,7 @@ const loud: AudioOutputSettings = {
   loudness: { integratedLufs: -16, truePeakDb: -1.2 },
 };
 
-describe.skipIf(!ffmpeg)('音频导出的进度', () => {
+describe.skipIf(!ffmpeg)('audio export progress', () => {
   let staging: string;
   beforeEach(async () => {
     staging = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-audio-export-'));
@@ -69,7 +69,7 @@ describe.skipIf(!ffmpeg)('音频导出的进度', () => {
       progress: (seconds) => progress.push(seconds),
     });
 
-  it('开了响度标准化时混音走到一半，母带跑的时候进度接着走，母带完了才到头；不开时混音走完全程', async () => {
+  it('with loudness normalization on, progress keeps moving while mastering runs after mixdown is halfway, and reaches the end only once mastering finishes; without it, mixdown runs to the end', async () => {
     const progress: number[] = [];
     let atMasterStart = -1;
     const master: MasterRunner = async (inputFile, _signal, onProgress) => {
@@ -94,7 +94,7 @@ describe.skipIf(!ffmpeg)('音频导出的进度', () => {
     expect(plain.at(-1)).toBeCloseTo(DURATION, 1);
   });
 
-  it.skipIf(!worker)('Render Worker 的母带进度经 masterRunner 转给调用方', async () => {
+  it.skipIf(!worker)('Render Worker\'s mastering progress forwarded to caller via masterRunner', async () => {
     const reports: Array<[number, number]> = [];
     const runner = masterRunner({ command: worker! });
     const progress: number[] = [];
@@ -120,7 +120,7 @@ function wavSamples(bytes: Buffer): Float32Array {
   throw new Error('WAV 里没有 data 块');
 }
 
-describe.skipIf(!ffmpeg)('混音的滤镜图从文件读', () => {
+describe.skipIf(!ffmpeg)('mix filtergraph read from file', () => {
   let staging: string;
   beforeEach(async () => {
     staging = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-audio-graph-'));
@@ -129,7 +129,7 @@ describe.skipIf(!ffmpeg)('混音的滤镜图从文件读', () => {
     await fs.rm(staging, { recursive: true, force: true });
   });
 
-  it('烘焙得很密的包络（滤镜图超过 1 MiB）照样混得出来，按包络压低；用完的滤镜图文件删掉', async () => {
+  it('very dense envelope baked (filtergraph over 1 MiB) still mixes, attenuated by the envelope; used filtergraph file deleted', async () => {
     const tone = path.join(staging, 'tone.wav');
     execFileSync('ffmpeg', [
       '-hide_banner',
@@ -194,7 +194,7 @@ describe.skipIf(!ffmpeg)('混音的滤镜图从文件读', () => {
     expect((await fs.readdir(staging)).sort()).toEqual(['dense.wav', 'tone.wav']);
   });
 
-  it('检测出的写法与旧选项 -filter_complex_script（新版本里弃用但照样执行）在本机的 ffmpeg 上都跑得通', async () => {
+  it('detected syntax and legacy option -filter_complex_script (deprecated in new versions but still works) both run on the local ffmpeg', async () => {
     const detected = await detectFilterScriptOption({ command: 'ffmpeg' });
     for (const option of new Set([detected, '-filter_complex_script' as const])) {
       const file = path.join(staging, 'mix.graph');

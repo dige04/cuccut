@@ -114,7 +114,7 @@ const jobOf = (s: Side, jobId: string): JobRecord | undefined => s.jobs()?.jobs.
 const terminal = (job: JobRecord | undefined) => job && ['completed', 'failed', 'cancelled', 'interrupted'].includes(job.state) && job;
 const repoDir = (root: string, repo: string) => path.join(root, ...repo.split('/'));
 
-describe('模型目录', () => {
+describe('model directory', () => {
   beforeEach(async () => {
     tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-models-dir-e2e-'));
     free.bytes = 10 * 1024 * 1024 * 1024;
@@ -129,7 +129,7 @@ describe('模型目录', () => {
     await fs.rm(tmp, { recursive: true, force: true });
   });
 
-  it('缺省目录；查看别的文件夹时认出已有的模型、不写入；只切换后模型照常可用并在重启后保持', async () => {
+  it('default directory; when viewing another folder, recognizes existing models without writing; after switching only, models stay available and persist across restarts', async () => {
     side = await startSide();
     const defaultDir = path.join(tmp, 'home', 'models');
     const info = await side.client.request('models.getDir', {});
@@ -179,7 +179,7 @@ describe('模型目录', () => {
   it.each([
     ['同一块盘', true],
     ['跨盘', false],
-  ])('移动（%s）：作为任务按字节报告进度，期间模型不可用、不能再改；完成后换到新位置、删掉原目录里的文件', async (_label, same) => {
+  ])('move (%s): reports progress by bytes as a task, models unavailable during it and cannot be changed again; after completion switches to the new location, deletes the files in the original directory', async (_label, same) => {
     sameDisk = same;
     side = await startSide();
     const defaultDir = path.join(tmp, 'home', 'models');
@@ -230,7 +230,7 @@ describe('模型目录', () => {
     expect(await exists(path.join(defaultDir, INSTALL_RECORD_FILE))).toBe(false);
   });
 
-  it('移动中途失败时回滚：设置与目录不变，模型照常可用', async () => {
+  it('rollback when a move fails midway: settings and directory unchanged, models still available', async () => {
     side = await startSide();
     const defaultDir = path.join(tmp, 'home', 'models');
     for (const repo of repos) await writeSyntheticRepo(defaultDir, repo);
@@ -256,7 +256,7 @@ describe('模型目录', () => {
     await until(() => bundleState(side!)?.reason !== 'relocating');
   });
 
-  it('拒绝：不存在、不能写、互相包含、放不下', async () => {
+  it('rejections: does not exist, cannot write, mutually contained, not enough space', async () => {
     side = await startSide();
     const defaultDir = path.join(tmp, 'home', 'models');
     for (const repo of repos) await writeSyntheticRepo(defaultDir, repo);
@@ -301,7 +301,7 @@ describe('模型目录', () => {
   });
 
   // The self-test needs the Qwen3-ASR 0.6B MLX model pack, which only runs on macOS on Apple Silicon.
-  it('有任务在用本地模型时拒绝（MODEL_IN_USE），结束后卸下空闲的 Worker 再换', async () => {
+  it('rejected while a task is using the local model (MODEL_IN_USE); after it ends, unload idle Workers then switch', async () => {
     side = await startSide();
     const defaultDir = path.join(tmp, 'home', 'models');
     for (const repo of repos) await writeSyntheticRepo(defaultDir, repo);
@@ -328,7 +328,7 @@ describe('模型目录', () => {
     expect((await until(() => terminal(jobOf(side!, again)), 15_000)).state).toBe('completed');
   });
 
-  it('环境变量指定时只读', async () => {
+  it('read-only when specified by environment variable', async () => {
     const envDir = path.join(tmp, 'env-models');
     await fs.mkdir(envDir);
     side = await startSide({ CUCCUT_MODELS_DIR: envDir });
@@ -339,7 +339,7 @@ describe('模型目录', () => {
     expect(codeOf(await rejection(side.client.request('models.setDir', { path: null, mode: 'switch' })))).toBe('MODELS_DIR_ENV_LOCKED');
   });
 
-  it('不对浏览器开放', () => {
+  it('not exposed to the browser', () => {
     for (const method of ['models.getDir', 'models.inspectDir', 'models.setDir']) {
       expect(WEB_DEFAULT_METHODS).not.toContain(method);
       expect(WEB_READ_METHODS).not.toContain(method);

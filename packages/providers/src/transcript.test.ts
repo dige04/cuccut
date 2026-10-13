@@ -17,7 +17,7 @@ const context = (overrides: Partial<ResultContext> = {}): ResultContext => ({
 });
 
 describe('buildAsrResult', () => {
-  it('供应商的词时间标 provider，没有词的段按字符长度插值标 estimated；时间换回素材时钟的整数 tick', () => {
+  it('provider word timings are tagged provider; segments without words are interpolated by character length and tagged estimated; times map back to integer ticks on the media clock', () => {
     const result = buildAsrResult({
       context: context({ offsetSec: 10 }),
       decodedSec: 20,
@@ -68,7 +68,7 @@ describe('buildAsrResult', () => {
     });
   });
 
-  it('词超出段、段与前一段重叠：修正并记 timing-adjusted；换算之后没有长度的段丢弃并记 segment-degenerate', () => {
+  it('words beyond the segment, or a segment overlapping the previous one: corrected and recorded as timing-adjusted; segments with no length after conversion are dropped and recorded as segment-degenerate', () => {
     const result = buildAsrResult({
       context: context(),
       decodedSec: 10,
@@ -101,7 +101,7 @@ describe('buildAsrResult', () => {
     expect(result.segments[1]!.words[0]).toMatchObject({ start: 3000, end: 4000, timingQuality: 'provider' });
   });
 
-  it('只有词：按停顿与句末标点分段；只有文本：整块一段；什么都没有：no-speech', () => {
+  it('words only: split by pauses and sentence-final punctuation; text only: one block as one segment; nothing: no-speech', () => {
     const words = buildAsrResult({
       context: context(),
       decodedSec: 10,
@@ -135,7 +135,7 @@ describe('buildAsrResult', () => {
     expect(validateAsrResult(empty)).toMatchObject({ ok: true });
   });
 
-  it('断言的语言原样写回；没有音轨时 duration 为 0、coverage 为空', () => {
+  it('the asserted language is written back as is; without an audio track duration is 0 and coverage is empty', () => {
     const asserted = buildAsrResult({
       context: context({ language: { mode: 'assert', tag: 'zh-Hans' } }),
       decodedSec: 2,
@@ -148,7 +148,7 @@ describe('buildAsrResult', () => {
     expect(validateAsrResult(none)).toMatchObject({ ok: true });
   });
 
-  it('拼词：中日文之间与标点之前不加空格', () => {
+  it('word joining: no spaces between CJK text or before punctuation', () => {
     expect(joinWords(['Hello', ',', 'world', '!'])).toBe('Hello, world!');
     expect(joinWords(['你好', '世界', 'CucCut'])).toBe('你好世界CucCut');
     expect(
@@ -160,8 +160,8 @@ describe('buildAsrResult', () => {
   });
 });
 
-describe('响应解析', () => {
-  it('OpenAI：verbose_json 的段、词与语言名；json 只有文本与用量', () => {
+describe('response parsing', () => {
+  it('OpenAI: segments, words and language name from verbose_json; json has only text and usage', () => {
     expect(
       parseOpenAiTranscription(
         {
@@ -186,7 +186,7 @@ describe('响应解析', () => {
     expect(languageTagOf('Klingon')).toBeNull();
   });
 
-  it('Gemini：word_info 标注的偏移；结构化的段；读不出 JSON 时单段兜底；失败状态是拒绝', () => {
+  it('Gemini: offsets from word_info; structured segments; falls back to a single segment when JSON cannot be read; a failed status is rejected', () => {
     expect(offsetSec('1.250s')).toBe(1.25);
     expect(offsetSec('x')).toBeNull();
     const words = parseTranscribeInteraction({

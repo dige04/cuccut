@@ -81,8 +81,8 @@ const clip: AssetRecord & { kind: 'video' } = {
   },
 };
 
-describe('编辑操作', () => {
-  it('添加到时间线：画面放在播放头处最上层之上的空轨，没有就新建一条；指定了轨道时占着就接在末尾', () => {
+describe('edit operations', () => {
+  it('add to timeline: a video clip goes on the empty track above the topmost one at the playhead, creating one if none; when a track is specified and occupied, it is appended to the end', () => {
     const tracks = [track('v1', 0, 'visual'), track('a1', 1, 'audio'), track('v2', 2, 'visual')];
     const empty = sequence(tracks, []);
     expect(placeAsset(empty, clip, 15)).toMatchObject([{ type: 'addItem', trackId: 'v1', at: { unit: 'frames', value: 15 } }]);
@@ -126,7 +126,7 @@ describe('编辑操作', () => {
     expect(placeAsset(locked, clip, 0)).toMatchObject([{ trackId: 'v2' }]);
   });
 
-  it('拖进来的文件：导入与放置在同一笔事务，第一个放在落点', () => {
+  it('dragged-in files: import and placement in one transaction, the first placed at the drop point', () => {
     const seq = sequence([track('v1', 0, 'visual'), track('a1', 1, 'audio')], []);
     const ops = importAndPlace(
       seq,
@@ -145,14 +145,14 @@ describe('编辑操作', () => {
     expect(ops[0]).toEqual({ type: 'importAsset', path: '/a.mp4', ref: 'drop0' });
   });
 
-  it('导入方知道素材名与来源时一并带上', () => {
+  it('passes along the media name and source when the importer knows them', () => {
     const seq = sequence([track('v1', 0, 'visual')], []);
     const provenance = { origin: 'link-import', source: { url: 'https://example.com/v' } };
     const [op] = importAndPlace(seq, [{ path: '/d/访谈.mp4', kind: 'video', name: '访谈', provenance }], 0);
     expect(op).toEqual({ type: 'importAsset', path: '/d/访谈.mp4', ref: 'drop0', name: '访谈', provenance });
   });
 
-  it('拖动：单个可以换轨道，多个一起平移', () => {
+  it('drag: a single clip can change tracks; multiple clips shift together', () => {
     const seq = sequence([track('v1', 0, 'visual'), track('v2', 2, 'visual')], [video('a', 'v1', 0, 30), video('b', 'v1', 60, 30)]);
     expect(moveOperation(seq, { itemId: 'a', itemIds: ['a'], deltaFrames: 0, trackId: 'v1' })).toBeNull();
     expect(moveOperation(seq, { itemId: 'a', itemIds: ['a'], deltaFrames: 10, trackId: 'v2' })).toMatchObject({
@@ -169,7 +169,7 @@ describe('编辑操作', () => {
     });
   });
 
-  it('裁切至少留一帧；没变就不提交', () => {
+  it('trim keeps at least one frame; no commit when unchanged', () => {
     const seq = sequence([track('v1', 0, 'visual')], [video('a', 'v1', 30, 30)]);
     const item = seq.items[0]!;
     expect(trimOperation(seq, item, 'start', 60)).toBeNull();
@@ -179,7 +179,7 @@ describe('编辑操作', () => {
     expect(trimOperation(seq, item, 'end', 50)).toMatchObject({ edge: 'end', at: { value: 50 } });
   });
 
-  it('字幕与合成实例走同样的移动、裁切与拆分；代码包素材不能直接放上时间线', () => {
+  it('subtitle and composition instances use the same move, trim and split; code-package media cannot be placed directly on the timeline', () => {
     const base = { enabled: true, locked: false, paintOrder: 0, followPolicy: { kind: 'sequence-fixed' as const } };
     const caption: CaptionItem = {
       ...base,
@@ -225,7 +225,7 @@ describe('编辑操作', () => {
     expect(isPlaceable(bundle)).toBe(false);
   });
 
-  it('素材库按类别分页，每页按名字排', () => {
+  it('media library paginates by category, each page sorted by name', () => {
     const asset = (id: string, kind: AssetRecord['kind'], name: string) =>
       ({ id, kind, name, currentRevision: '1', revisions: {} }) as AssetRecord;
     const assets = {
@@ -239,7 +239,7 @@ describe('编辑操作', () => {
     expect(libraryAssets(assets, 'image')).toEqual([]);
   });
 
-  it('拆分：选中的优先；没选中时拆所有跨过播放头且没锁定的', () => {
+  it('split: selected clips first; with no selection, split all unlocked clips that cross the playhead', () => {
     const seq = sequence(
       [track('v1', 0, 'visual'), track('v2', 2, 'visual', true)],
       [video('a', 'v1', 0, 60), video('b', 'v2', 0, 60), video('c', 'v1', 60, 30)],
@@ -250,8 +250,8 @@ describe('编辑操作', () => {
   });
 });
 
-describe('删除选中（Delete 键、走带、检查器与右键菜单）', () => {
-  it('删的是选区里还在时间线上的片段；锁住的照样交给引擎判，选区里过时的 ID 不算', () => {
+describe('delete selection (Delete key, transport, inspector and context menu)', () => {
+  it('deletes clips in the selection that are still on the timeline; locked ones are still passed to the engine to decide; stale IDs in the selection are ignored', () => {
     const seq = sequence([track('v1', 0, 'visual'), track('v2', 1, 'visual', true)], [video('a', 'v1', 0, 30), video('b', 'v2', 0, 30)]);
     expect(deletableItemIds(seq, [])).toEqual([]);
     expect(deletableItemIds(seq, ['gone'])).toEqual([]);
@@ -259,8 +259,8 @@ describe('删除选中（Delete 键、走带、检查器与右键菜单）', () 
   });
 });
 
-describe('播放头下的片段（⌘A）', () => {
-  it('时段覆盖播放头那一帧的（终点那一帧不算）', () => {
+describe('clips under the playhead (⌘A)', () => {
+  it('time ranges covering the playhead frame (the end frame excluded)', () => {
     const seq = sequence([track('v1', 0, 'visual'), track('v2', 1, 'visual')], [video('a', 'v1', 0, 30), video('b', 'v2', 20, 30)]);
     expect(itemsAtFrame(seq, 25)).toEqual(['a', 'b']);
     expect(itemsAtFrame(seq, 30)).toEqual(['b']);
@@ -268,26 +268,26 @@ describe('播放头下的片段（⌘A）', () => {
   });
 });
 
-describe('微调时间（⌥←/→）', () => {
+describe('nudge time (⌥←/→)', () => {
   const seq = sequence(
     [track('v1', 0, 'visual'), track('v2', 1, 'visual', true)],
     [video('a', 'v1', 10, 20), video('b', 'v1', 40, 20), video('c', 'v2', 0, 20)],
   );
-  it('累计偏移：不越过 0，不撞到同轨道没选中的片段', () => {
+  it('cumulative offset: does not go past 0, and does not collide with unselected clips on the same track', () => {
     expect(nudgeDelta(seq, ['a'], 0, 5)).toBe(5);
     expect(nudgeDelta(seq, ['a'], 5, 5)).toBe(10);
     expect(nudgeDelta(seq, ['a'], 10, 1)).toBe(10);
     expect(nudgeDelta(seq, ['a'], 0, -10)).toBe(-10);
     expect(nudgeDelta(seq, ['a'], -10, -1)).toBe(-10);
   });
-  it('一起选中的片段互不阻挡；锁住的不动', () => {
+  it('clips selected together do not block each other; locked clips do not move', () => {
     expect(nudgeDelta(seq, ['a', 'b'], 0, 30)).toBe(30);
     expect(nudgeDelta(seq, ['c'], 0, 5)).toBe(0);
   });
 });
 
-describe('素材菜单：用在哪、在文件夹中显示', () => {
-  it('按起点排，带时间线行头上的轨道名', () => {
+describe('media menu: where used, show in folder', () => {
+  it('sorted by start, with the track name from the timeline row header', () => {
     const seq = sequence(
       [track('v1', 0, 'visual'), { ...track('v2', 1, 'visual'), name: 'B-roll' }],
       [{ ...video('b', 'v2', 60, 30), name: '桌面' }, video('a', 'v1', 0, 30), { ...video('c', 'v1', 90, 15), assetRef: { id: 'other', revision: '1' } }],
@@ -299,7 +299,7 @@ describe('素材菜单：用在哪、在文件夹中显示', () => {
     expect(assetUsages(null, 'asset_v')).toEqual([]);
   });
 
-  it('链接的素材给原文件（相对路径接在视频目录后）；收进视频目录的没有单独的位置', () => {
+  it('linked media gives the original file (a relative path is appended after the video directory); media collected into the video directory has no separate location', () => {
     const linked = (path: string): AssetRecord => ({
       ...clip,
       revisions: { '1': { ...clip.revisions['1']!, storage: { mode: 'linked', locator: { path }, frozen: false } } },
@@ -317,7 +317,7 @@ describe('素材菜单：用在哪、在文件夹中显示', () => {
   });
 });
 
-describe('音频页的配音组', () => {
+describe('dub groups on the audio page', () => {
   const dubAsset = (id: string, name: string, extra: Record<string, unknown>, seconds = 2): AssetRecord => ({
     id,
     kind: 'audio',
@@ -376,13 +376,13 @@ describe('音频页的配音组', () => {
     extensions: { 'cuccut.dub': { voice: { providerId: 'local', modelId: 'Qwen3-TTS', voice: 'v' }, mutedItemIds: ['orig'] } },
   };
 
-  it('时间线上的配音实例与配音流程生成的素材归到一组，其余音频平铺', () => {
+  it('dub instances on the timeline and media generated by dub flows are grouped together; other audio is listed flat', () => {
     const { groups, loose } = dubGroupIds(seq, Object.values(assets));
     expect(groups).toEqual(['dub_7']);
     expect(loose.map((a) => a.id)).toEqual(['song']);
   });
 
-  it('组卡：背景一行、每句一行（按时间排、带译文），没合成与过期的句也列出来；副题照设计稿', () => {
+  it('group card: one row for background, one row per sentence (sorted by time, with translation); unsynthesized and stale sentences are also listed; subtitle as in the design file', () => {
     const card = dubGroupCard(seq, assets, 'dub_7', plan);
     expect(card).toMatchObject({ groupId: 'dub_7', language: 'en', badge: 'EN', title: '配音 · English', state: 'on', trackId: 'a1', regen: 1 });
     expect([...card.itemIds].sort()).toEqual(['b1', 'd1', 'd2']);
@@ -396,7 +396,7 @@ describe('音频页的配音组', () => {
     expect(card.line).toBe('3 个文件 · 4 句 · 1 句没合成 · 1 句译文过期 · 1 句静音 · Qwen3-TTS');
   });
 
-  it('计划还没取到时按实例列；轨道静音是「轨已关」，实例都删了是「不在时间线」', () => {
+  it('when the plan has not been fetched, list by instance; track mute shows \'track off\', and when all instances are deleted it shows \'not on timeline\'', () => {
     const early = dubGroupCard(seq, assets, 'dub_7', undefined);
     expect(early.line).toBe('3 个文件 · 2 句 · 1 句静音');
     expect(early.files.filter((f) => f.kind === 'sentence').map((f) => f.name)).toEqual(['配音（en）第 1 句', '配音（en）第 2 句']);
@@ -407,7 +407,7 @@ describe('音频页的配音组', () => {
     expect(gone.files[0]).toMatchObject({ kind: 'bed', itemId: null, seconds: 60 });
   });
 
-  it('配音计划按概要里的 groupId 找；段头旁注照设计稿', () => {
+  it('dub plan is found by groupId in the summary; section header side note as in the design file', () => {
     const record = (id: string, kind: string, groupId: string): DocumentRecord => ({
       id,
       kind,

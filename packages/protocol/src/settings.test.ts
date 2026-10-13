@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { methodParamSchemas, settingValueSchemas, settingsPatchSchema } from './schemas.ts';
 import { SETTING_DEFAULTS, SETTING_DESCRIPTIONS, SETTING_KEYS, defaultSettingsSnapshot, isSettingKey } from './settings.ts';
 
-describe('偏好设置注册表', () => {
-  it('每个键都有 schema、默认值与说明，默认值合自己的 schema', () => {
+describe('preferences registry', () => {
+  it('every key has a schema, a default and a description; the default matches its own schema', () => {
     expect(Object.keys(settingValueSchemas).sort()).toEqual([...SETTING_KEYS].sort());
     expect(Object.keys(SETTING_DEFAULTS).sort()).toEqual([...SETTING_KEYS].sort());
     expect(Object.keys(SETTING_DESCRIPTIONS).sort()).toEqual([...SETTING_KEYS].sort());
@@ -13,7 +13,7 @@ describe('偏好设置注册表', () => {
     }
   });
 
-  it('键是点分的小写名，不含凭据类的键', () => {
+  it('keys are lowercase dot-separated names, with no credential-type keys', () => {
     for (const key of SETTING_KEYS) {
       expect(key).toMatch(/^[a-z]+(?:\.[a-z][A-Za-z]*)+$/);
       expect(key).not.toMatch(/key|token|secret|password|credential|apikey/i);
@@ -22,7 +22,7 @@ describe('偏好设置注册表', () => {
     expect(isSettingKey('models.apiKey')).toBe(false);
   });
 
-  it('补丁：未知的键与不合 schema 的值被拒绝，null 表示恢复默认', () => {
+  it('patch: unknown keys and values that fail the schema are rejected; null restores the default', () => {
     expect(settingsPatchSchema.safeParse({ 'offline.strict': true, 'agent.defaultDriver': null }).success).toBe(true);
     expect(settingsPatchSchema.safeParse({ 'openai.apiKey': 'sk-x' }).success).toBe(false);
     expect(settingsPatchSchema.safeParse({ 'agent.defaultAccessMode': 'everything' }).success).toBe(false);
@@ -34,7 +34,7 @@ describe('偏好设置注册表', () => {
     expect(settingsPatchSchema.safeParse({ 'updates.autoCheck': 'yes' }).success).toBe(false);
   });
 
-  it('访问模式：新值原样接受，旧值换成新值', () => {
+  it('access modes: new values accepted as is, old values mapped to new ones', () => {
     const schema = settingValueSchemas['agent.defaultAccessMode'];
     for (const mode of ['ask', 'autoAcceptEdits', 'auto', 'fullAccess', 'plan']) expect(schema.parse(mode)).toBe(mode);
     expect(schema.parse('controlled')).toBe('ask');
@@ -43,7 +43,7 @@ describe('偏好设置注册表', () => {
     expect(SETTING_DEFAULTS['agent.defaultAccessMode']).toBe('auto');
   });
 
-  it('方法参数：settings.get 只接受注册过的键', () => {
+  it('method parameters: settings.get only accepts registered keys', () => {
     expect(methodParamSchemas['settings.get'].safeParse({}).success).toBe(true);
     expect(methodParamSchemas['settings.get'].safeParse({ keys: ['offline.strict'] }).success).toBe(true);
     expect(methodParamSchemas['settings.get'].safeParse({ keys: ['nope'] }).success).toBe(false);
@@ -51,7 +51,7 @@ describe('偏好设置注册表', () => {
     expect(methodParamSchemas.subscribe.safeParse({ topic: 'settings' }).success).toBe(true);
   });
 
-  it('没有设置存储时按默认值冻结', () => {
+  it('freezes to defaults when there is no settings store', () => {
     expect(defaultSettingsSnapshot(['agent.defaultAccessMode', 'agent.defaultDriver'])).toEqual({
       values: { 'agent.defaultAccessMode': 'auto', 'agent.defaultDriver': null },
       sources: { 'agent.defaultAccessMode': 'default', 'agent.defaultDriver': 'default' },

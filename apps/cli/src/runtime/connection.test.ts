@@ -13,15 +13,15 @@ import {
   resolveRuntimeLaunch,
 } from './connection.ts';
 
-describe('Runtime 的入口与版本门', () => {
-  it.each(['darwin', 'win32', 'linux'] as const)('%s 打包后的资源位置与桌面端一致', (platform) => {
+describe('Runtime entry and version gate', () => {
+  it.each(['darwin', 'win32', 'linux'] as const)('%s packaged resource location matches the desktop app', (platform) => {
     const resources = path.join(os.tmpdir(), 'CucCut', 'resources');
     const env = packagedResourceEnv(resources, platform);
     expect(env).toEqual(desktopResourceEnv(packagedResources(resources), platform));
     expect(env.PMETAL_METALLIB_PATH).toBe(platform === 'darwin' ? path.join(resources, 'bin', 'mlx.metallib') : undefined);
   });
 
-  it('说明书的来源：CUCCUT_AGENT_SKILLS_DIR 优先；没有时回落到仓库里的 skills/，都没有时 null', () => {
+  it('manual source: CUCCUT_AGENT_SKILLS_DIR takes precedence; falls back to skills/ in the repo when unset, null when neither exists', () => {
     expect(resolveAgentSkillsDir({ CUCCUT_AGENT_SKILLS_DIR: '/x/skills' }, 'linux')).toBe('/x/skills');
     const repo = resolveAgentSkillsDir({}, 'linux');
     expect(repo).toMatch(/[/\\]skills$/);
@@ -29,7 +29,7 @@ describe('Runtime 的入口与版本门', () => {
     expect(resolveAgentSkillsDir({}, 'linux', os.tmpdir())).toBeNull();
   });
 
-  it('CUCCUT_RUNTIME_ENTRY 优先；没有时回落到仓库里的入口', () => {
+  it('CUCCUT_RUNTIME_ENTRY takes precedence; falls back to the entry in the repo when unset', () => {
     expect(resolveRuntimeLaunch({ CUCCUT_RUNTIME_ENTRY: '/x/runtime.ts' }, 'linux')).toEqual({
       command: process.execPath,
       args: [path.resolve('/x/runtime.ts')],
@@ -46,7 +46,7 @@ describe('Runtime 的入口与版本门', () => {
     expect(fs.existsSync(repo!.args[0]!)).toBe(true);
   });
 
-  it('装好的应用：Windows 按用户安装的位置，macOS 的 Applications', () => {
+  it('installed app: Windows per-user install location, macOS Applications', () => {
     const [win] = packagedApps({ LOCALAPPDATA: 'C:\\Users\\a\\AppData\\Local' }, 'win32');
     expect(win).toEqual({
       executable: 'C:\\Users\\a\\AppData\\Local\\Programs\\CucCut\\CucCut.exe',
@@ -55,7 +55,7 @@ describe('Runtime 的入口与版本门', () => {
     expect(packagedApps({}, 'darwin')[0]?.executable).toBe('/Applications/CucCut.app/Contents/MacOS/CucCut');
   });
 
-  it('接口版本不同：退出码 3，说明哪一边要更新', () => {
+  it('different interface versions: exit code 3, states which side must be updated', () => {
     expect(() => checkInterfaceVersion('2', '2')).not.toThrow();
     const newer = catchError(() => checkInterfaceVersion('3', '2'));
     expect(newer.code).toBe('INTERFACE_VERSION_MISMATCH');
@@ -64,7 +64,7 @@ describe('Runtime 的入口与版本门', () => {
     expect(catchError(() => checkInterfaceVersion('1', '2')).extra.update).toBe('runtime');
   });
 
-  it('--no-start 且没有 Runtime：RUNTIME_UNAVAILABLE（退出码 3），不拉起', async () => {
+  it('--no-start with no Runtime: RUNTIME_UNAVAILABLE (exit code 3), does not start it', async () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'cuccut-cli-home-'));
     try {
       const error = await ensureRuntime(home, { start: false }).then(

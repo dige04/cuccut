@@ -4,17 +4,17 @@ import os from 'node:os';
 import path from 'node:path';
 import { localDocumentPath, openLocalFile } from './open-local-file.ts';
 
-describe('系统默认应用打开产物', () => {
+describe('opens the artifact with the system default app', () => {
   let dir: string | undefined;
   afterEach(async () => { if (dir) await fs.rm(dir, { recursive: true, force: true }); });
-  it('只接受绝对文档或媒体路径，不执行脚本、程序、快捷方式或 URL', () => {
+  it('accepts only absolute document or media paths, does not run scripts, programs, shortcuts or URLs', () => {
     for (const input of [null, {}, 'clip.mp4', 'https://example.com/clip.mp4', 'file:///tmp/clip.mp4',
       '/tmp/run.sh', '/tmp/app.exe', '/tmp/link.lnk', '/tmp/app.command', '/tmp/bad\0.mp4']) {
       expect(localDocumentPath(input)).toBeNull();
     }
     expect(localDocumentPath(path.join(os.tmpdir(), '成片.MP4'))).toBe(path.join(os.tmpdir(), '成片.MP4'));
   });
-  it('存在的文件交给系统，目录与不存在的文件不交给系统；系统错误原样返回', async () => {
+  it('existing files are handed to the system; directories and missing files are not; system errors are returned as-is', async () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-open-file-'));
     const file = path.join(dir, '成片.mp4');
     await fs.writeFile(file, 'fixture');

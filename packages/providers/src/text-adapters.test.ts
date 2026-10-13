@@ -94,15 +94,15 @@ async function failure(promise: Promise<unknown>): Promise<ProviderFailure> {
   return error as ProviderFailure;
 }
 
-describe('OpenAI 文本（Chat Completions）', () => {
-  it('模型表：默认 gpt-6.1-sol；推理强度按模型；不接受 temperature 与 seed', () => {
+describe('OpenAI text (Chat Completions)', () => {
+  it('model table: default gpt-6.1-sol; reasoning effort per model; neither temperature nor seed is accepted', () => {
     const models = new OpenAiTextAdapter().models(config('x', null));
     expect(models.find((m) => m.default)?.modelId).toBe('gpt-6.1-sol');
     expect(models.find((m) => m.modelId === 'gpt-6.1-sol')!.efforts).toEqual(['low', 'medium', 'high']);
     expect(models.every((m) => m.structuredOutput && !m.acceptsTemperature && !m.acceptsSeed)).toBe(true);
   });
 
-  it('请求形状：Bearer、messages 原样、max_completion_tokens 与 reasoning_effort；解出文本、用量与模型版本', async () => {
+  it('request shape: Bearer, messages as is, max_completion_tokens and reasoning_effort; extracts text, usage and model version', async () => {
     server = await startFakeProviderServer(fakeOpenAiHandler('Hello there.'));
     const cfg = config(`${server.origin}/v1`, OPENAI_KEY);
     const reply = await call(new OpenAiTextAdapter(), cfg, 'gpt-6.1-sol', params({ effort: 'high', requestedEffort: 'high' }));
@@ -129,7 +129,7 @@ describe('OpenAI 文本（Chat Completions）', () => {
     expect(request!.body.toString('utf8')).not.toContain(OPENAI_KEY);
   });
 
-  it('结构化输出：发 json_schema（strict false）', async () => {
+  it('structured output: sends json_schema (strict false)', async () => {
     server = await startFakeProviderServer((request) => chatCompletionReply(request, '{"title":"x","count":1}'));
     const cfg = config(`${server.origin}/v1`, OPENAI_KEY);
     const format = { type: 'json' as const, schema: SCHEMA, name: 'outline' };
@@ -141,7 +141,7 @@ describe('OpenAI 文本（Chat Completions）', () => {
     });
   });
 
-  it('结束原因：length、content_filter、refusal 都读出来；认不出的是协议错误', async () => {
+  it('finish reasons: length, content_filter and refusal are all read; unrecognized ones are protocol errors', async () => {
     let finish: string | null = 'length';
     let refusal = false;
     server = await startFakeProviderServer((request) => {
@@ -165,7 +165,7 @@ describe('OpenAI 文本（Chat Completions）', () => {
     expect((await failure(call(adapter, cfg, 'gpt-6.1-sol', params()))).kind).toBe('protocol');
   });
 
-  it('错误分类：认证、上下文过长、模型不存在、内容过滤、额度用尽；回显的密钥被去掉', async () => {
+  it('error classification: auth, context too long, model not found, content filter, quota exhausted; the echoed key is removed', async () => {
     let reply: { status: number; json: unknown; headers?: Record<string, string> } = { status: 401, json: {} };
     server = await startFakeProviderServer(() => reply);
     const cfg = config(`${server.origin}/v1`, OPENAI_KEY);
@@ -209,7 +209,7 @@ describe('OpenAI 文本（Chat Completions）', () => {
     }
   });
 
-  it('限速带 Retry-After：按它等过之后重试，每次重试都回调', async () => {
+  it('rate limit with Retry-After: waits for it, retries after it, and calls back on every retry', async () => {
     let calls = 0;
     server = await startFakeProviderServer((request) => {
       calls++;
@@ -225,7 +225,7 @@ describe('OpenAI 文本（Chat Completions）', () => {
     expect(retries).toHaveLength(1);
   });
 
-  it('超时：重试 3 次后 PROVIDER_UNAVAILABLE（reason timeout）', async () => {
+  it('timeout: after 3 retries, PROVIDER_UNAVAILABLE (reason timeout)', async () => {
     server = await startFakeProviderServer(() => 'hang');
     const retries: number[] = [];
     const error = await failure(
@@ -236,7 +236,7 @@ describe('OpenAI 文本（Chat Completions）', () => {
     expect(retries).toHaveLength(2);
   });
 
-  it('取消：中止在途请求，抛 ProviderAborted，连接关闭', async () => {
+  it('cancel: aborts the in-flight request, throws ProviderAborted, closes the connection', async () => {
     server = await startFakeProviderServer(() => 'hang');
     const controller = new AbortController();
     const pending = call(new OpenAiTextAdapter(), config(`${server.origin}/v1`, OPENAI_KEY), 'gpt-6.1-sol', params(), {
@@ -249,8 +249,8 @@ describe('OpenAI 文本（Chat Completions）', () => {
   });
 });
 
-describe('Google 文本（generateContent）', () => {
-  it('请求形状：x-goog-api-key、systemInstruction、assistant → model、generationConfig；跳过思考摘要', async () => {
+describe('Google text (generateContent)', () => {
+  it('request shape: x-goog-api-key, systemInstruction, assistant → model, generationConfig; thought summaries are skipped', async () => {
     server = await startFakeProviderServer(fakeGoogleHandler('Bonjour.'));
     const cfg = config(`${server.origin}/v1beta`, GOOGLE_KEY);
     const reply = await call(
@@ -301,7 +301,7 @@ describe('Google 文本（generateContent）', () => {
     expect(request!.body.toString('utf8')).not.toContain(GOOGLE_KEY);
   });
 
-  it('结束原因：MAX_TOKENS 是 length，SAFETY 与输入被拦下是 content-filter，其余是被拒绝', async () => {
+  it('finish reasons: MAX_TOKENS is length, SAFETY and input blocked are content-filter, the rest are rejected', async () => {
     let finish: string | null = 'MAX_TOKENS';
     let blocked = false;
     server = await startFakeProviderServer((request) =>
@@ -322,7 +322,7 @@ describe('Google 文本（generateContent）', () => {
     expect(error).toMatchObject({ kind: 'rejected', details: { code: 'PROVIDER_REJECTED' } });
   });
 
-  it('错误分类：API_KEY_INVALID 是认证失败，token 上限是 INPUT_TOO_LONG，404 是模型不存在', async () => {
+  it('error classification: API_KEY_INVALID is auth failure, token limit is INPUT_TOO_LONG, 404 is model not found', async () => {
     let reply: { status: number; json: unknown } = { status: 400, json: {} };
     server = await startFakeProviderServer(() => reply);
     const cfg = config(`${server.origin}/v1beta`, GOOGLE_KEY);
@@ -353,8 +353,8 @@ describe('Google 文本（generateContent）', () => {
   });
 });
 
-describe('OpenAI 兼容端点的文本', () => {
-  it('声明的模型补上保守的默认值；用 max_tokens；没有密钥时不发 Authorization', async () => {
+describe('text for OpenAI-compatible endpoints', () => {
+  it('declared models get conservative defaults; uses max_tokens; no Authorization without a key', async () => {
     const declared: AdapterConfig['declared'] = [
       { modelId: 'qwen3', capability: 'generateText', efforts: ['low', 'high'] },
       { modelId: 'llama', capability: 'generateText', contextTokens: 8192, maxOutputTokens: 1024, structuredOutput: false },
@@ -387,7 +387,7 @@ describe('OpenAI 兼容端点的文本', () => {
     expect((request!.json as Record<string, unknown>).max_completion_tokens).toBeUndefined();
   });
 
-  it('有密钥时 Bearer', async () => {
+  it('Bearer when a key is present', async () => {
     server = await startFakeProviderServer((request) => chatCompletionReply(request, 'ok'));
     const cfg = config(`${server.origin}/v1`, CUSTOM_KEY, [{ modelId: 'qwen3', capability: 'generateText' }]);
     await call(new CompatibleTextAdapter(() => 'Studio'), cfg, 'qwen3', params());
@@ -395,15 +395,15 @@ describe('OpenAI 兼容端点的文本', () => {
   });
 });
 
-describe('列模型（models.refreshProvider 用）', () => {
-  it('OpenAI 与兼容端点：GET /models 的 data[].id', async () => {
+describe('lists models (used by models.refreshProvider)', () => {
+  it('OpenAI and compatible endpoints: data[].id from GET /models', async () => {
     server = await startFakeProviderServer(() => ({ status: 200, json: { data: [{ id: 'b' }, { id: 'a' }, { id: 'a' }, { nope: 1 }] } }));
     const listing = await new OpenAiTextAdapter().listModels(config(`${server.origin}/v1`, OPENAI_KEY), new AbortController().signal, http);
     expect(listing).toEqual({ models: ['a', 'b'] });
     expect(server.requests[0]).toMatchObject({ method: 'GET', path: '/v1/models' });
   });
 
-  it('Google：分页，去掉 models/ 前缀', async () => {
+  it('Google: pagination, strips the models/ prefix', async () => {
     server = await startFakeProviderServer((request) =>
       request.path.includes('pageToken=p2')
         ? { status: 200, json: { models: [{ name: 'models/gemini-3.7-flash' }] } }
@@ -418,7 +418,7 @@ describe('列模型（models.refreshProvider 用）', () => {
     expect(server.requests.map((r) => r.path)).toEqual(['/v1beta/models?pageSize=1000', '/v1beta/models?pageSize=1000&pageToken=p2']);
   });
 
-  it('ElevenLabs：模型与账号里的音色', async () => {
+  it('ElevenLabs: models and voices in the account', async () => {
     server = await startFakeProviderServer((request) =>
       request.path.endsWith('/voices')
         ? { status: 200, json: { voices: [{ voice_id: 'v1', name: 'Rachel' }, { voice_id: 'v2' }] } }
@@ -440,12 +440,12 @@ describe('列模型（models.refreshProvider 用）', () => {
   });
 });
 
-describe('TextRunner 与在线 Provider', () => {
+describe('TextRunner and online providers', () => {
   function run(providerId: string, overrides: Partial<TextParameters> = {}): TextRun {
     return { providerId, modelId: 'gpt-6.1-sol', parameters: params(overrides) };
   }
 
-  it('每个 Provider 的并发上限；计数调用、重试与失败；取消排队中的调用不发请求', async () => {
+  it('per-provider concurrency limit; counts calls, retries and failures; cancelling a queued call sends no request', async () => {
     const pending: Array<() => void> = [];
     let rateLimitOnce = true;
     server = await startFakeProviderServer(
@@ -501,7 +501,7 @@ describe('TextRunner 与在线 Provider', () => {
     expect(server.requests).toHaveLength(6);
   });
 
-  it('取消在途的调用：中止请求，连接关闭，不计失败', async () => {
+  it('cancelling an in-flight call: aborts the request, closes the connection, not counted as a failure', async () => {
     server = await startFakeProviderServer(() => 'hang');
     const runner = new TextRunner({ concurrency: () => 4 });
     const provider = new OnlineTextProvider({
@@ -521,7 +521,7 @@ describe('TextRunner 与在线 Provider', () => {
     expect(runner.active('openai')).toBe(0);
   });
 
-  it('没有配置时 unavailable，不发请求', async () => {
+  it('unavailable and no request when not configured', async () => {
     const provider = new OnlineTextProvider({
       providerId: 'openai',
       label: () => 'OpenAI',
@@ -533,7 +533,7 @@ describe('TextRunner 与在线 Provider', () => {
   });
 });
 
-describe('OnlineProviderSource 的文本能力与刷新', () => {
+describe('OnlineProviderSource text capability and refresh', () => {
   async function withSource(
     baseUrls: Record<string, string>,
     body: (source: OnlineProviderSource, store: ModelServiceStore, dir: string) => Promise<void>,
@@ -551,7 +551,7 @@ describe('OnlineProviderSource 的文本能力与刷新', () => {
     }
   }
 
-  it('OpenAI 与 Google 列 generateText；自定义端点只在声明了文本模型时列；textProvider 缓存', async () => {
+  it('OpenAI and Google list generateText; custom endpoints are listed only when a text model is declared; textProvider is cached', async () => {
     await withSource({}, async (source) => {
       await source.configure({ providerId: 'openai', enabled: true, credential: OPENAI_KEY });
       await source.configure({
@@ -575,7 +575,7 @@ describe('OnlineProviderSource 的文本能力与刷新', () => {
     });
   });
 
-  it('刷新成功：记下时间与数目；列表里没有的内置模型报告为不可用；ElevenLabs 的音色补进模型', async () => {
+  it('refresh succeeds: records time and count; built-in models missing from the list are reported as unavailable; ElevenLabs voices are added to the models', async () => {
     server = await startFakeProviderServer((request) => {
       const url = new URL(request.path, 'http://fake');
       if (url.pathname === '/v1/models') return { status: 200, json: { data: [{ id: 'gpt-6.1-sol' }, { id: 'gpt-image-2' }] } };
@@ -613,7 +613,7 @@ describe('OnlineProviderSource 的文本能力与刷新', () => {
     });
   });
 
-  it('刷新失败：照旧用内置列表并标明，错误里没有密钥；没有密钥或不存在时拒绝', async () => {
+  it('refresh fails: keeps using the built-in list and marks it, with no key in the error; rejected when the key is missing or the provider does not exist', async () => {
     server = await startFakeProviderServer(() => ({ status: 401, json: { error: { message: `bad key ${OPENAI_KEY}` } } }));
     await withSource({ openai: `${server.origin}/v1` }, async (source) => {
       await expect(source.refresh('openai')).rejects.toMatchObject({ code: 'invalid-request' });
@@ -630,7 +630,7 @@ describe('OnlineProviderSource 的文本能力与刷新', () => {
     });
   });
 
-  it('成功之后再失败：丢掉上次取到的列表，回到内置列表', async () => {
+  it('fails after a success: discards the last fetched list and falls back to the built-in list', async () => {
     let fail = false;
     server = await startFakeProviderServer(() =>
       fail ? { status: 503, json: {} } : { status: 200, json: { data: [{ id: 'gpt-6.1-sol' }] } },
@@ -649,7 +649,7 @@ describe('OnlineProviderSource 的文本能力与刷新', () => {
 });
 
 describe('Retry-After', () => {
-  it('秒数与 HTTP 日期；认不出时 null', () => {
+  it('seconds and HTTP dates; null when unrecognized', () => {
     const now = Date.parse('2026-10-03T00:00:00Z');
     expect(retryAfterSeconds('5', now)).toBe(5);
     expect(retryAfterSeconds('Sat, 03 Oct 2026 00:00:10 GMT', now)).toBe(10);

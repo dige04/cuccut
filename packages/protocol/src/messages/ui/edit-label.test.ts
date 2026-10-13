@@ -10,7 +10,7 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe('editLabel', () => {
-  it('语言参数存标签，按读者的语言显示语言名', () => {
+  it('language parameter stores the tag, language names shown in the reader\'s language', () => {
     const label = EditLabel.undoDub({ language: 'fr' });
     expect(label.text).toBe('Undo voice-over (French)');
     expect(refOf(label)).toEqual({ key: 'editLabel.undoDub', params: { language: 'fr' } });
@@ -19,7 +19,7 @@ describe('editLabel', () => {
     expect(EditLabel.removeDubGroup({ language: '' }).text).toBe('移除配音（）');
   });
 
-  it('嵌套的引用跟着换语言，内容名照原样', () => {
+  it('nested references follow the language change, content names kept as is', () => {
     const ratio = EditLabel.aspectRatio({ ratio: EditLabel.originalRatio() });
     const added = EditLabel.addNamed({ name: 'Logo' });
     expect([ratio.text, added.text]).toEqual(['Aspect ratio Original', 'Add Logo']);

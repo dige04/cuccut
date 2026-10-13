@@ -19,8 +19,8 @@ const detected: CookieBrowserInfo[] = [
   { id: 'edge', label: 'Edge', lastUsedAt: '2026-08-17T08:30:00Z' },
 ];
 
-describe('网站登录', () => {
-  it('勾选的浏览器按检测到的顺序排（就是尝试的顺序），没检测到的去掉', () => {
+describe('website sign-in', () => {
+  it('checked browsers are ordered by detection order (the try order); undetected ones are removed', () => {
     expect(orderedBrowsers(['edge', 'chrome'], detected)).toEqual(['chrome', 'edge']);
     expect(orderedBrowsers(['brave', 'safari'], detected)).toEqual(['safari']);
     expect(orderedBrowsers(['chrome'], [])).toEqual([]);
@@ -28,7 +28,7 @@ describe('网站登录', () => {
     expect(toggleBrowser(['chrome', 'edge'], 'chrome', false, detected)).toEqual(['edge']);
   });
 
-  it('「所有浏览器」：全选、半选与没选；点它在全选时清空，否则选上全部', () => {
+  it('"所有浏览器": checked, indeterminate and unchecked states; clicking it clears when all are checked, otherwise selects all', () => {
     expect(allBrowsersState([], detected)).toEqual({ selected: false, indeterminate: false });
     expect(allBrowsersState(['safari'], detected)).toEqual({ selected: false, indeterminate: true });
     expect(allBrowsersState(['edge', 'firefox', 'safari', 'chrome'], detected)).toEqual({ selected: true, indeterminate: false });
@@ -38,7 +38,7 @@ describe('网站登录', () => {
     expect(toggleAllBrowsers(['chrome', 'safari', 'firefox', 'edge'], detected)).toEqual([]);
   });
 
-  it('说明：按勾了几个说怎么用；总说只读勾选的、不保存 Cookie；Runtime 在 macOS 上时提示钥匙串与 Safari 权限', () => {
+  it('help text: explains usage by how many are checked; the summary says only checked ones are read and cookies are not saved; on macOS the Runtime prompts for Keychain and Safari permissions', () => {
     const none = cookieNotes([], 'darwin');
     expect(none[0]).toMatch(/匿名下载/);
     expect(none[1]).toMatch(/只读取你勾选的浏览器.*不保存 Cookie 内容/);
@@ -54,7 +54,7 @@ describe('网站登录', () => {
     expect(cookieNotes(['chrome', 'safari'], null)).toHaveLength(2);
   });
 
-  it('Windows：Chromium 内核的开着时读不到、要先退出；Chrome、Edge、Brave 的应用绑定加密可能读不到；没勾 Firefox 时建议改用它', () => {
+  it('Windows: Chromium-based browsers cannot be read while open and must be quit first; Chrome, Edge and Brave may be unreadable due to app-bound encryption; when Firefox is not checked, suggests using it instead', () => {
     const chrome = cookieNotes(['chrome'], 'win32');
     expect(chrome).toHaveLength(4);
     expect(chrome[2]).toMatch(/^Chrome 开着时 Cookie 库被占用.*先完全退出这个浏览器/);
@@ -72,7 +72,7 @@ describe('网站登录', () => {
     expect(cookieNotes([], 'win32')).toHaveLength(2);
   });
 
-  it('结果写明用上的浏览器；每个取值都有名字', () => {
+  it('the result states which browser was used; every value has a name', () => {
     expect(usedCookieText('chrome')).toBe('用了 Chrome 的 Cookie');
     expect(LINK_COOKIE_BROWSERS.every((id) => !!COOKIE_BROWSER_LABEL[id])).toBe(true);
   });

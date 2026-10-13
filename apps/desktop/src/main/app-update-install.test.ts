@@ -107,15 +107,15 @@ const unpacked = () => path.join(cacheDir, 'unpack-57');
 const stagedApp = (): StagedApp => ({ app: path.join(unpacked(), 'CucCut.app'), dir: unpacked() });
 const commandsOf = (calls: string[][]) => calls.map((c) => [path.basename(c[0] ?? ''), c[1]].join(' '));
 
-describe('macOS 校验与就位', () => {
-  it('能否自动换包：正式包、目录可写、有 Team ID', async () => {
+describe('macOS verification and placement', () => {
+  it('whether the package can be swapped automatically: release build, directory writable, has Team ID', async () => {
     expect(await macCanAutoInstall(macDeps(fakeExec().exec))).toBe(true);
     expect(await macCanAutoInstall(macDeps(fakeExec().exec, { runningBundle: null }))).toBe(false);
     expect(await macCanAutoInstall(macDeps(fakeExec().exec, { writable: async () => false }))).toBe(false);
     expect(await macCanAutoInstall(macDeps(fakeExec({ runningTeam: null }).exec))).toBe(false);
   });
 
-  it('ZIP：解到 unpack-<build>，校验身份 / 签名 / Team ID / 公证后就位；这一步不写脚本', async () => {
+  it('ZIP: extracts to unpack-<build>, places it after verifying identity / signature / Team ID / notarization; this step writes no script', async () => {
     const { exec, calls } = fakeExec();
     const deps = macDeps(exec);
     expect(await prepareMac(info(), archive(), deps)).toEqual({ type: 'staged', staged: stagedApp() });
@@ -124,19 +124,19 @@ describe('macOS 校验与就位', () => {
     expect(deps.launchScript).not.toHaveBeenCalled();
   });
 
-  it('身份或版本对不上：报校验失败，清掉解开的目录', async () => {
+  it('identity or version mismatch: reports verification failure, removes the extracted directory', async () => {
     const deps = macDeps(fakeExec({ plist: { CFBundleVersion: '56' } }).exec);
     expect(await prepareMac(info(), archive(), deps)).toMatchObject({ type: 'failed', failure: 'verify' });
     expect(await fs.readdir(cacheDir)).toEqual([]);
   });
 
-  it('旧 CucCut Bundle ID 不能替换新应用，即使版本和签名相同', async () => {
+  it('an old CucCut Bundle ID cannot replace the new app, even with the same version and signature', async () => {
     const deps = macDeps(fakeExec({ plist: { CFBundleIdentifier: 'com.jimliu.cuccut' } }).exec);
     expect(await prepareMac(info(), archive(), deps)).toMatchObject({ type: 'failed', failure: 'verify' });
     expect(await fs.readdir(cacheDir)).toEqual([]);
   });
 
-  it('签名、Team ID 或公证不过：报签名问题，清掉解开的目录', async () => {
+  it('signature, Team ID or notarization fails: reports a signing problem, removes the extracted directory', async () => {
     for (const options of [{ verifyFails: true }, { newTeam: 'ZZZZZ99999' }, { newTeam: null }, { spctlFails: true }] satisfies FakeOptions[]) {
       const outcome = await prepareMac(info(), archive(), macDeps(fakeExec(options).exec));
       expect(outcome, JSON.stringify(options)).toMatchObject({ type: 'failed', failure: 'signature' });
@@ -144,7 +144,7 @@ describe('macOS 校验与就位', () => {
     }
   });
 
-  it('DMG：只读挂上；挂上了却找不到 .app 时卸下，挂不上报校验失败', async () => {
+  it('DMG: mounted read-only; unmounted when the .app cannot be found after mounting; a mount failure reports verification failure', async () => {
     // The mount point is recognized as `/Volumes/…` from hdiutil's output, which cannot be created in the test, so only the “no .app inside” path is taken.
     const mount = '/Volumes/CucCut update test that does not exist';
     const empty = fakeExec({ mount });
@@ -158,18 +158,18 @@ describe('macOS 校验与就位', () => {
     expect(await prepareMac(info('dmg'), dmg, macDeps(unmounted.exec))).toMatchObject({ type: 'failed', failure: 'verify' });
   });
 
-  it('Windows 的安装包不在 macOS 上装', async () => {
+  it('a Windows installer is not installed on macOS', async () => {
     const outcome = await prepareMac(info('exe'), path.join(cacheDir, 'CucCut.exe'), macDeps(fakeExec().exec));
     expect(outcome).toMatchObject({ type: 'failed', failure: 'verify' });
   });
 
-  it('这台机器不能自己换包时不就位', async () => {
+  it('not placed when this machine cannot swap the package itself', async () => {
     expect(await prepareMac(info(), archive(), macDeps(fakeExec().exec, { runningBundle: null }))).toEqual({ type: 'none' });
     expect(await prepareMac(info(), archive(), macDeps(fakeExec().exec, { writable: async () => false }))).toEqual({ type: 'none' });
     expect(await prepareMac(info(), archive(), macDeps(fakeExec({ runningTeam: null }).exec))).toEqual({ type: 'none' });
   });
 
-  it('停了就不再往下跑，清掉解开的目录', async () => {
+  it('once stopped, does not continue, removes the extracted directory', async () => {
     const controller = new AbortController();
     const { exec, calls } = fakeExec();
     const stopping: Exec = async (file, args, signal) => {
@@ -183,14 +183,14 @@ describe('macOS 校验与就位', () => {
   });
 });
 
-describe('macOS 换包', () => {
+describe('macOS package swap', () => {
   async function staged(): Promise<StagedApp> {
     const outcome = await prepareMac(info(), archive(), macDeps(fakeExec().exec));
     if (outcome.type !== 'staged') throw new Error('not staged');
     return outcome.staged;
   }
 
-  it('就位的新包：只核对身份与版本，写好脚本并起它，不再解开、验签', async () => {
+  it('placed new package: only checks identity and version, writes the script and starts it, does not extract or verify the signature again', async () => {
     const ready = await staged();
     const { exec, calls } = fakeExec();
     const deps = macDeps(exec);
@@ -206,14 +206,14 @@ describe('macOS 换包', () => {
     expect(commandsOf(calls).every((c) => c.startsWith('plutil'))).toBe(true);
   });
 
-  it('退出即安装：用就位的新包，换完不打开应用', async () => {
+  it('install on quit: uses the placed new package, does not open the app after the swap', async () => {
     const ready = await staged();
     const deps = macDeps(fakeExec().exec);
     expect(await installMac(info(), archive(), deps, { staged: ready, relaunch: false })).toEqual({ type: 'launched' });
     expect(await fs.readFile(path.join(cacheDir, 'install-4242.sh'), 'utf8')).not.toContain('/usr/bin/open');
   });
 
-  it('就位的新包不在了：重启时从头解开校验，退出时不装', async () => {
+  it('placed new package is gone: on restart, extracts and verifies from the start; does not install on quit', async () => {
     const ready = await staged();
     await fs.rm(unpacked(), { recursive: true });
     const quit = macDeps(fakeExec().exec);
@@ -233,7 +233,7 @@ describe('macOS 换包', () => {
     expect(commandsOf(calls)).toEqual(expect.arrayContaining(['ditto -x', 'codesign --verify', 'spctl --assess']));
   });
 
-  it('就位的新包被换过（版本对不上）：重启时从头校验，不过就报告', async () => {
+  it('placed new package was replaced (version mismatch): on restart, verifies from the start, reports if it fails', async () => {
     const ready = await staged();
     const deps = macDeps(fakeExec({ plist: { CFBundleVersion: '56' } }).exec);
     expect(await installMac(info(), archive(), deps, { staged: ready, relaunch: true })).toMatchObject({
@@ -243,7 +243,7 @@ describe('macOS 换包', () => {
     expect(deps.launchScript).not.toHaveBeenCalled();
   });
 
-  it('这台机器不能自己换包时走手动', async () => {
+  it('manual route when this machine cannot swap the package itself', async () => {
     const options = { staged: null, relaunch: true };
     expect(await installMac(info(), archive(), macDeps(fakeExec().exec, { runningBundle: null }), options)).toEqual({ type: 'fallback' });
     expect(await installMac(info(), archive(), macDeps(fakeExec().exec, { writable: async () => false }), options)).toEqual({
@@ -252,7 +252,7 @@ describe('macOS 换包', () => {
     expect(await installMac(info(), archive(), macDeps(fakeExec({ runningTeam: null }).exec), options)).toEqual({ type: 'fallback' });
   });
 
-  it('起脚本失败算安装失败', async () => {
+  it('failing to start the script counts as an install failure', async () => {
     const deps = macDeps(fakeExec().exec, {
       launchScript: async () => {
         throw new Error('spawn failed');
@@ -265,10 +265,10 @@ describe('macOS 换包', () => {
   });
 });
 
-describe('Windows 换包', () => {
+describe('Windows package swap', () => {
   const exe = 'C:\\Users\\me\\AppData\\Local\\Programs\\cuccut\\CucCut.exe';
 
-  it('exe 旁边有 NSIS 的卸载程序才是安装版', async () => {
+  it('an installed build has an NSIS uninstaller next to the exe', async () => {
     const seen: string[] = [];
     const present = async (file: string) => {
       seen.push(file);
@@ -281,7 +281,7 @@ describe('Windows 换包', () => {
     expect(await nsisInstalledCopy(exe, async (file) => file.endsWith('unins000.exe'))).toBe(false);
   });
 
-  it('安装版记下安装器，等应用退出时再起；退出即安装装完不重新打开；zip 版走手动', async () => {
+  it('installed build records the installer and starts it when the app quits; install on quit does not reopen after installing; zip build takes the manual route', async () => {
     const launchOnQuit = vi.fn();
     expect(await installWindows('C:\\cache\\CucCut-setup.exe', { installedCopy: true, launchOnQuit })).toEqual({ type: 'launched' });
     expect(launchOnQuit).toHaveBeenCalledWith('C:\\cache\\CucCut-setup.exe', ['/S', '--updated', '--force-run']);
@@ -295,7 +295,7 @@ describe('Windows 换包', () => {
     expect(launchOnQuit).not.toHaveBeenCalled();
   });
 
-  it('退出时只起记下的最后一个，只起一次', () => {
+  it('on quit, starts only the last recorded one, and only once', () => {
     const spawned: [string, readonly string[]][] = [];
     const pending = createPendingLaunch(
       (file, args) => void spawned.push([file, args]),
@@ -310,7 +310,7 @@ describe('Windows 换包', () => {
     expect(spawned).toEqual([['C:\\cache\\new-setup.exe', ['/S', '--updated', '--force-run']]]);
   });
 
-  it('起不来只记日志，不抛', () => {
+  it('if it fails to start, only logs it, does not throw', () => {
     const logs: string[] = [];
     const pending = createPendingLaunch(
       () => {

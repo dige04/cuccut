@@ -153,7 +153,7 @@ async function stopSide(side: Side | undefined): Promise<void> {
   await fs.rm(side.dir, { recursive: true, force: true });
 }
 
-describe('模型服务（经网关，不需要引擎）', () => {
+describe('model services (via gateway, no engine needed)', () => {
   let side: Side | undefined;
   let openai: FakeProviderServer | undefined;
   let node: TestNode | undefined;
@@ -165,7 +165,7 @@ describe('模型服务（经网关，不需要引擎）', () => {
     side = openai = node = undefined;
   });
 
-  it('什么都没配置：没有生效的默认值，转写在提交时以 CAPABILITY_NOT_CONFIGURED 拒绝，不创建任务', async () => {
+  it('nothing configured: no effective default, transcription is rejected at submit with CAPABILITY_NOT_CONFIGURED, no task created', async () => {
     side = await startSide({});
     const { capabilities } = await side.client.request('models.capabilities', {});
     expect(capabilities.transcribe).toMatchObject({ default: null, effective: null });
@@ -204,7 +204,7 @@ describe('模型服务（经网关，不需要引擎）', () => {
     expect(await side.client.request('jobs.list', {})).toEqual({ jobs: [] });
   });
 
-  it('本机模型包装好：出厂默认就是本机', async () => {
+  it('local model pack installed: local is the default out of the box', async () => {
     side = await startSide({ localModels: true, worker: true });
     const { capabilities } = await side.client.request('models.capabilities', {});
     expect(capabilities.transcribe.effective).toEqual({
@@ -217,7 +217,7 @@ describe('模型服务（经网关，不需要引擎）', () => {
     expect(local.models.find((m) => m.modelId === DEFAULT_TRANSCRIBE_BUNDLE)).toMatchObject({ default: true, cost: 'free-local' });
   });
 
-  it('配置 OpenAI：启用与密钥只报告有没有；设为默认后成为生效的默认值；验证失败时不保存', async () => {
+  it('configure OpenAI: enable and key only report whether present; set as default becomes the effective default; no save when verification fails', async () => {
     openai = await startFakeProviderServer(fakeOpenAiHandler());
     side = await startSide({ openai });
     const configured = await side.client.request('models.configure', {
@@ -270,7 +270,7 @@ describe('模型服务（经网关，不需要引擎）', () => {
     });
   });
 
-  it('自定义端点：添加、声明模型、删除；指向它的默认值保留并报告不可用', async () => {
+  it('custom endpoint: add, declare models, delete; default values pointing to it are kept and reported unavailable', async () => {
     side = await startSide({});
     const added = await side.client.request('models.configure', {
       providerId: 'custom:studio-asr',
@@ -313,7 +313,7 @@ describe('模型服务（经网关，不需要引擎）', () => {
     });
   });
 
-  it('配对的节点出现在能力视图里，可以设为默认值', async () => {
+  it('a paired node appears in the capability view and can be set as default', async () => {
     node = await startTestNode();
     side = await startSide({});
     const code = pairingCodeOf(node.service.status())!;
@@ -335,7 +335,7 @@ describe('模型服务（经网关，不需要引擎）', () => {
     await until(() => side!.models()?.capabilities.transcribe.effective?.providerId === `node:${paired.nodeId}`);
   });
 
-  it('节点关闭了转写的共享：nodes.list 与能力视图都报告这个节点的转写不可用，带原因与补救；打开后恢复', async () => {
+  it('node turned off transcription sharing: nodes.list and capability view both report this node\'s transcription unavailable, with reason and remedy; restored after turning it on', async () => {
     node = await startTestNode();
     side = await startSide({});
     const code = pairingCodeOf(node.service.status())!;
@@ -373,7 +373,7 @@ describe('模型服务（经网关，不需要引擎）', () => {
   });
 });
 
-describe.skipIf(!engine || !ffmpeg)('在线转写（真实引擎 + 假供应商）', () => {
+describe.skipIf(!engine || !ffmpeg)('online transcription (real engine + fake provider)', () => {
   let fixtures: string;
   let audio: string;
   let side: Side;
@@ -437,7 +437,7 @@ describe.skipIf(!engine || !ffmpeg)('在线转写（真实引擎 + 假供应商�
     await side.client.request('models.setDefault', { capability: 'transcribe', providerId: 'openai' });
   }
 
-  it('OpenAI 是默认值：不指定 Provider 的转写走 OpenAI，speech 文档与原始结果记录来源，词时间来自供应商', async () => {
+  it('OpenAI is default: transcription without specified Provider goes to OpenAI, the speech document and raw result record source, word timing from the provider', async () => {
     await useOpenAi();
     const { videoId, assetId } = await videoWithAudio();
     const { jobId } = await side.client.request('models.transcribe', { videoId, assetId, hint: 'CucCut' });
@@ -482,7 +482,7 @@ describe.skipIf(!engine || !ffmpeg)('在线转写（真实引擎 + 假供应商�
     await expectNoSecret(OPENAI_KEY);
   });
 
-  it('不返回时间的模型：词时间按字符长度插值，标 estimated；断言的语言传给供应商', async () => {
+  it('model that returns no timing: word timing interpolated by character length, marked estimated; the asserted language is passed to the provider', async () => {
     await useOpenAi();
     const { videoId, assetId } = await videoWithAudio();
     const { jobId } = await side.client.request('models.transcribe', {
@@ -504,7 +504,7 @@ describe.skipIf(!engine || !ffmpeg)('在线转写（真实引擎 + 假供应商�
     expect(request.fields).toMatchObject({ model: ['gpt-4o-transcribe'], response_format: ['json'], language: ['en'] });
   });
 
-  it('自定义端点（OpenAI 兼容）：不带密钥，WAV 切片，声明的模型', async () => {
+  it('custom endpoint (OpenAI-compatible): no key, WAV slicing, declared model', async () => {
     await side.client.request('models.configure', {
       providerId: 'custom:studio',
       enabled: true,
@@ -525,7 +525,7 @@ describe.skipIf(!engine || !ffmpeg)('在线转写（真实引擎 + 假供应商�
     expect((await rawResult(job)).segments[0]!.words[0]!.timingQuality).toBe('provider');
   });
 
-  it('Google：密钥在 x-goog-api-key 头、不在地址里；转写模型的词时间来自供应商，通用模型的插值', async () => {
+  it('Google: key in x-goog-api-key header, not in the URL; word timing for transcription models comes from the provider, interpolation for general models', async () => {
     await side.client.request('models.configure', { providerId: 'google', enabled: true, credential: GOOGLE_KEY });
     await side.client.request('models.setDefault', { capability: 'transcribe', providerId: 'google' });
     const { videoId, assetId } = await videoWithAudio();
@@ -556,7 +556,7 @@ describe.skipIf(!engine || !ffmpeg)('在线转写（真实引擎 + 假供应商�
     await expectNoSecret(GOOGLE_KEY);
   });
 
-  it('OpenAI 是默认值时显式指定 provider: local，走本机的 Worker', async () => {
+  it('when OpenAI is default, explicitly specifying provider: local uses the local Worker', async () => {
     await useOpenAi();
     const { videoId, assetId } = await videoWithAudio();
     const { jobId } = await side.client.request('models.transcribe', { videoId, assetId, provider: 'local' });
@@ -570,7 +570,7 @@ describe.skipIf(!engine || !ffmpeg)('在线转写（真实引擎 + 假供应商�
     expect(openai.requests.filter((r) => r.method === 'POST')).toEqual([]);
   });
 
-  it('401：PROVIDER_AUTH_FAILED，不重试，供应商回显的密钥不出现在任何地方', async () => {
+  it('401: PROVIDER_AUTH_FAILED, not retried, the key echoed by the provider appears nowhere', async () => {
     await useOpenAi();
     openai.handler = () => ({ status: 401, json: { error: { message: `Incorrect API key provided: ${OPENAI_KEY}` } } });
     const { videoId, assetId } = await videoWithAudio();
@@ -585,7 +585,7 @@ describe.skipIf(!engine || !ffmpeg)('在线转写（真实引擎 + 假供应商�
     await expectNoSecret(OPENAI_KEY);
   });
 
-  it('5xx：退避重试 3 次之后 PROVIDER_UNAVAILABLE，JobManager 不再重试', async () => {
+  it('5xx: retries 3 times with backoff then PROVIDER_UNAVAILABLE, JobManager no longer retries', async () => {
     await useOpenAi();
     openai.handler = () => ({ status: 503, json: { error: { message: 'overloaded' } } });
     const { videoId, assetId } = await videoWithAudio();
@@ -598,7 +598,7 @@ describe.skipIf(!engine || !ffmpeg)('在线转写（真实引擎 + 假供应商�
     expect(openai.requests.filter((r) => r.method === 'POST')).toHaveLength(3);
   });
 
-  it('取消进行中的请求：任务 cancelled，供应商看到连接关闭', async () => {
+  it('cancel an in-flight request: task cancelled, provider sees the connection closed', async () => {
     await useOpenAi();
     openai.handler = () => 'hang';
     const { videoId, assetId } = await videoWithAudio();

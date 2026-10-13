@@ -47,8 +47,8 @@ function page() {
 }
 const $ = (id: string) => document.getElementById(id)!;
 
-describe('位置的说法', () => {
-  it('前缀是第一个「-」之前；文件按格式（tokens.json、components/<组件>/、素材的路径）', () => {
+describe('location wording', () => {
+  it('prefix is everything before the first \'-\'; files by format (tokens.json, components/<component>/, asset paths)', () => {
     expect(prefixOf('token-accent-background-default')).toBe('token');
     expect(prefixOf('ds-cover')).toBe('ds');
     expect(prefixOf('page')).toBe('page');
@@ -69,7 +69,7 @@ describe('位置的说法', () => {
     expect(fileOf('zzz', 'a')).toBeUndefined();
   });
 
-  it('给人看的是「章节 › 种类 “名字”」，章节标题只到章节，封面按名字；给模型看的是英文的种类、章节、文件与锚点', () => {
+  it('human-facing is \'section › kind "name"\', section headings go only to the section, cover by name; model-facing uses English kind, section, file and anchor', () => {
     const zh = createCommentLabels('zh-Hans');
     const token = { anchor: 'token-accent', prefix: 'token', name: 'accent', section: 'colors', sectionLabel: 'Colors' };
     expect(describeTarget(token, zh)).toEqual({
@@ -96,7 +96,7 @@ describe('位置的说法', () => {
     expect(describeTarget(token, createCommentLabels('fr')).label).toBe('Colors › Jeton « accent »');
   });
 
-  it.each(LOCALES)('%s 的每个种类都有译文', (locale) => {
+  it.each(LOCALES)('every kind in %s has a translation', (locale) => {
     const labels = createCommentLabels(locale);
     for (const prefix of ['token', 'cgroup', 'tset', 'style', 'font', 'knob', 'editor', 'picker', 'prop', 'props', 'cell', 'agroup', 'asset', 'comp', 'doc', 'dialog', 'lightbox', 'note', 'page']) {
       expect(labels.kind(prefix).trim()).not.toBe('');
@@ -109,8 +109,8 @@ describe('位置的说法', () => {
   });
 });
 
-describe('点中的目标', () => {
-  it('取最近的目标，锚点是它自己或祖先的 data-id，带章节；名字取 data-comment-name，没有时取看得到的名字', () => {
+describe('clicked target', () => {
+  it('takes the nearest target; anchor is its own or an ancestor\'s data-id, with section; name is taken from data-comment-name, otherwise the visible name', () => {
     page();
     expect(readTarget($('tokname'))).toEqual({
       anchor: 'token-accent-background-default',
@@ -128,14 +128,14 @@ describe('点中的目标', () => {
     expect(readTarget(null)).toBeNull();
   });
 
-  it('按锚点找回目标：带 data-id 的元素自己是目标就是它，否则是锚点归它的那个标题行', () => {
+  it('finds the target by anchor: an element with data-id is itself the target; otherwise it is the heading row that the anchor belongs to', () => {
     page();
     expect(findTarget(document, 'token-accent-background-default')).toBe($('tok'));
     expect(findTarget(document, 'cgroup-Brand-colors-0a1b2c3')).toBe($('ghead'));
     expect(findTarget(document, 'nope')).toBeNull();
   });
 
-  it('编号标记在目标右上角往里一点；没有大小、出了视口或被滚动容器裁掉时不画', () => {
+  it('number marker sits slightly inside the target\'s top-right corner; not drawn when it has no size, is outside the viewport or is clipped by a scroll container', () => {
     page();
     const tok = $('tok');
     tok.getBoundingClientRect = () => ({ left: 100, top: 200, right: 300, bottom: 240, width: 200, height: 40, x: 100, y: 200 }) as DOMRect;
@@ -191,7 +191,7 @@ const key = (target: EventTarget, k: string, init: KeyboardEventInit = {}) =>
   target.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...init }));
 
 describe('installCommentTargets', () => {
-  it('父窗口打开标注模式：页面带上模式属性，回 editor:mode；点目标弹批注框，页面收不到这次点击', async () => {
+  it('parent window opens annotation mode: the page gets the mode attribute and replies editor:mode; clicking a target opens the comment box, and the page does not receive that click', async () => {
     const { parent, dispose } = await setup();
     const pageClicks = vi.fn();
     $('inner').addEventListener('click', pageClicks);
@@ -225,7 +225,7 @@ describe('installCommentTargets', () => {
     dispose();
   });
 
-  it('标注模式关着时点击照常交给页面', async () => {
+  it('with annotation mode off, clicks go to the page as usual', async () => {
     const { parent, dispose } = await setup();
     const pageClicks = vi.fn();
     $('inner').addEventListener('click', pageClicks);
@@ -235,7 +235,7 @@ describe('installCommentTargets', () => {
     dispose();
   });
 
-  it('C 开关标注模式、Esc 退出；在输入框里、带修饰键时不算', async () => {
+  it('C toggles annotation mode, Esc exits; inside an input or with modifier keys it does not count', async () => {
     const { parent, dispose } = await setup();
     key($('field'), 'c');
     key(document.body, 'c', { metaKey: true });
@@ -251,7 +251,7 @@ describe('installCommentTargets', () => {
     dispose();
   });
 
-  it('标注模式开着时按草稿画编号标记，关掉时清空', async () => {
+  it('with annotation mode on, numbered markers are drawn from the draft; cleared when turned off', async () => {
     const { parent, dispose } = await setup();
     $('tok').getBoundingClientRect = () => ({ left: 100, top: 200, right: 300, bottom: 240, width: 200, height: 40, x: 100, y: 200 }) as DOMRect;
     parent.deliver({ type: 'editor:threads', threads: [{ id: 'a', anchor: 'token-accent-background-default', n: 2, section: 'colors' }, { id: 'b', anchor: 'gone', n: 3 }] });
@@ -264,7 +264,7 @@ describe('installCommentTargets', () => {
     dispose();
   });
 
-  it('跳回一处：把锚点、章节与名字交给运行时', async () => {
+  it('jump back to a spot: hands the anchor, section and name to the runtime', async () => {
     const { parent, dispose } = await setup();
     const reveals: unknown[] = [];
     const listen = (event: Event) => reveals.push((event as CustomEvent).detail);
@@ -287,7 +287,7 @@ describe('installCommentTargets', () => {
     dispose();
   });
 
-  it('卸下后不再拦点击，模式属性去掉', async () => {
+  it('after unmounting, clicks are no longer intercepted and the mode attribute is removed', async () => {
     const { parent, dispose } = await setup();
     parent.deliver({ type: 'editor:set-mode', on: true });
     dispose();

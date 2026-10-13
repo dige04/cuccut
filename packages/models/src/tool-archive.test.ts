@@ -119,13 +119,13 @@ describe('extractToolArchive', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('rootEntryName：只认根目录里安全的名字', () => {
+  it('rootEntryName: only accepts safe names in the root directory', () => {
     expect(rootEntryName('./audiocpp_cli')).toBe('audiocpp_cli');
     expect(rootEntryName('audiocpp_cli.exe')).toBe('audiocpp_cli.exe');
     for (const raw of ['./', '.', '..', '../evil', 'tools/x', '/etc/passwd', 'C:evil', 'a\\b', '._audiocpp_cli']) expect(rootEntryName(raw)).toBeNull();
   });
 
-  it('tar.gz：只解开根目录的普通文件，略过链接、子目录、穿越与跳过列表，保留可执行位，认 pax 长名字', async () => {
+  it('tar.gz: extracts only regular files in the root directory, skipping links, subdirectories, traversal and the skip list; keeps the executable bit; recognizes pax long names', async () => {
     const longName = `./${'l'.repeat(120)}.so`;
     const archive = path.join(dir, 'a.tar.gz');
     await fs.writeFile(
@@ -152,7 +152,7 @@ describe('extractToolArchive', () => {
     await expect(fs.access(path.join(dir, 'escape'))).rejects.toThrow();
   });
 
-  it('tar.gz：截断或不是 gzip 时报错', async () => {
+  it('tar.gz: errors when truncated or not gzip', async () => {
     const whole = tarGz([{ name: './audiocpp_cli', body: 'x'.repeat(4096), mode: 0o755 }]);
     const { gunzipSync } = await import('node:zlib');
     const truncated = gzipSync(gunzipSync(whole).subarray(0, 512 + 1000));
@@ -162,7 +162,7 @@ describe('extractToolArchive', () => {
     await expect(extractToolArchive(path.join(dir, 'n.tar.gz'), { format: 'tar.gz', skip: [] }, path.join(dir, 'out'))).rejects.toThrow();
   });
 
-  it('zip：「不压缩」与 deflate，略过目录、链接、子目录与跳过列表；.exe 可执行', async () => {
+  it('zip: stored (no compression) and deflate, skipping directories, links, subdirectories and the skip list; .exe is executable', async () => {
     const archive = path.join(dir, 'a.zip');
     await fs.writeFile(
       archive,
@@ -182,7 +182,7 @@ describe('extractToolArchive', () => {
     if (process.platform !== 'win32') expect((await fs.stat(path.join(dest, 'audiocpp_cli.exe'))).mode & 0o111).not.toBe(0);
   });
 
-  it('zip：不是 zip、或根目录没有文件时报错', async () => {
+  it('zip: errors when not a zip or when the root directory has no files', async () => {
     await fs.writeFile(path.join(dir, 'n.zip'), 'not a zip at all, definitely not');
     await expect(extractToolArchive(path.join(dir, 'n.zip'), { format: 'zip', skip: [] }, dest)).rejects.toBeInstanceOf(ToolArchiveError);
     await fs.writeFile(path.join(dir, 'e.zip'), zip([{ name: 'sub/only.exe', body: 'x' }]));

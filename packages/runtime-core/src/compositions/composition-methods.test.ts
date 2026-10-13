@@ -41,7 +41,7 @@ async function rejection(promise: Promise<unknown>): Promise<RpcError> {
   return error as RpcError;
 }
 
-describe.skipIf(!engine || !worker || !ffmpeg || !electron)('代码画面 RPC（桌面连接，真实引擎与 Electron）', () => {
+describe.skipIf(!engine || !worker || !ffmpeg || !electron)('code composition RPC (desktop connection, real engine and Electron)', () => {
   let dir: string;
   let runtime: RunningRuntime;
   let client: CucCutClient;
@@ -88,7 +88,7 @@ describe.skipIf(!engine || !worker || !ffmpeg || !electron)('代码画面 RPC（
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('compositions.preview：内联文件取帧，帧写在项目的 .cuccut-out/frames/<videoId>/，回媒体句柄', async () => {
+  it('compositions.preview: inline file frame fetch, frames written to project\'s .cuccut-out/frames/<videoId>/, media handle returned', async () => {
     const preview = await client.request(
       'compositions.preview',
       { video: videoId, files: [{ path: 'index.html', content: html }], at: ['1', '1', '9'] },
@@ -106,7 +106,7 @@ describe.skipIf(!engine || !worker || !ffmpeg || !electron)('代码画面 RPC（
     expect(await fs.readdir(framesDir)).toContain(a!.media.fileName);
   }, 300_000);
 
-  it('compositions.import：内联文件验证、烘焙、导入并放置；带 conversationId 时会话里有变更卡', async () => {
+  it('compositions.import: inline file validated, baked, imported and placed; with conversationId the session shows a change card', async () => {
     const before = runtime.videos.mirror(videoId)!.video.revision;
     const imported = await client.request(
       'compositions.import',
@@ -149,7 +149,7 @@ describe.skipIf(!engine || !worker || !ffmpeg || !electron)('代码画面 RPC（
     for (const change of changes) expect(change).toMatchObject({ taskId: null, videoId });
   }, 600_000);
 
-  it('错误：视频没打开、path 出了项目目录、会话不存在', async () => {
+  it('errors: video not open, path outside project directory, session does not exist', async () => {
     const notOpen = await rejection(
       client.request('compositions.import', { video: 'vid_missing', files: [{ path: 'index.html', content: html }] }),
     );

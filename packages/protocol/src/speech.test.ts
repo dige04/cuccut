@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { methodParamSchemas } from './schemas.ts';
 
-describe('models.synthesizeSpeech 的请求', () => {
+describe('models.synthesizeSpeech requests', () => {
   const schema = methodParamSchemas['models.synthesizeSpeech'];
   const ok = (extra: object) => schema.safeParse({ text: '你好', ...extra }).success;
 
-  it('本地模型的声音方式：参考录音（绝对路径，可带原文）、一句描述、扩散旋钮', () => {
+  it('local model voice modes: reference recording (absolute path, optionally with transcript), one-sentence description, diffusion knob', () => {
     expect(ok({})).toBe(true);
     expect(ok({ voice: 'library:vce_1' })).toBe(true);
     expect(ok({ reference: { file: '/Users/me/ref.wav' } })).toBe(true);
@@ -14,7 +14,7 @@ describe('models.synthesizeSpeech 的请求', () => {
     expect(ok({ cfg: 2.5, steps: 16 })).toBe(true);
   });
 
-  it('不合的拒绝：相对路径、多余字段、空描述、非整数步数；voice、reference 与 voiceDescription 只能给一个', () => {
+  it('rejects invalid input: relative path, extra fields, empty description, non-integer steps; only one of voice, reference and voiceDescription may be given', () => {
     expect(ok({ reference: { file: 'ref.wav' } })).toBe(false);
     expect(ok({ reference: { file: '/ref.wav', speaker: 'a' } })).toBe(false);
     expect(ok({ voiceDescription: '   ' })).toBe(false);
@@ -26,7 +26,7 @@ describe('models.synthesizeSpeech 的请求', () => {
     expect(ok({ reference: { file: '/ref.wav' }, voiceDescription: 'calm' })).toBe(false);
   });
 
-  it('本地模型包可以设为合成的默认', () => {
+  it('a local model pack can be set as the default for synthesis', () => {
     const setDefault = methodParamSchemas['models.setDefault'];
     expect(
       setDefault.safeParse({ capability: 'synthesizeSpeech', providerId: 'local', modelId: 'qwen3-tts-0.6b-base@mlx-8bit' }).success,

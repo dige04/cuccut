@@ -58,8 +58,8 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('ConversationState 流式增量合并', () => {
-  it('首个 delta 立即发布，窗口内的后续 delta 合成一条，窗口后再来又是立即发', () => {
+describe('ConversationState streaming delta merging', () => {
+  it('the first delta is published immediately, later deltas within the window are combined into one, and a delta after the window is again published immediately', () => {
     const { state, events, record } = make([message('m1')]);
     state.append('m1', 'text', 'a');
     expect(appends(events)).toEqual([{ id: 'm1', field: 'text', delta: 'a' }]);
@@ -91,7 +91,7 @@ describe('ConversationState 流式增量合并', () => {
     expect(events.map((e) => e.seq)).toEqual(['1', '2', '3', '4']);
   });
 
-  it('upsert 之前待发的 append 先发布', () => {
+  it('pending append is published before upsert', () => {
     const { state, events } = make([message('m1')]);
     state.append('m1', 'text', 'a');
     state.append('m1', 'text', 'b');
@@ -104,7 +104,7 @@ describe('ConversationState 流式增量合并', () => {
     expect(events).toHaveLength(3);
   });
 
-  it('updateConversation 之前也先 flush', () => {
+  it('updateConversation also flushes first', () => {
     const { state, events } = make([message('m1')]);
     state.append('m1', 'text', 'a');
     state.append('m1', 'text', 'b');
@@ -112,7 +112,7 @@ describe('ConversationState 流式增量合并', () => {
     expect(events.map((e) => e.event.type)).toEqual(['item.append', 'item.append', 'conversation.updated']);
   });
 
-  it('不同 item 或不同 field 的 delta 不混合', () => {
+  it('deltas for different items or fields are not mixed', () => {
     const { state, events } = make([message('m1'), message('m2'), toolCall('k1')]);
     state.append('m1', 'text', 'a');
     state.append('m2', 'text', 'x');
@@ -131,7 +131,7 @@ describe('ConversationState 流式增量合并', () => {
     ]);
   });
 
-  it('output 超限时记录里只保留末尾', () => {
+  it('when output exceeds the limit, only the end is kept in the record', () => {
     const { state, events, record } = make([toolCall('k1')]);
     state.append('k1', 'output', 'a'.repeat(OUTPUT_LIMIT));
     state.append('k1', 'output', 'b'.repeat(10));
@@ -144,7 +144,7 @@ describe('ConversationState 流式增量合并', () => {
     expect(appends(events).map((a) => a.delta.length)).toEqual([OUTPUT_LIMIT, 20]);
   });
 
-  it('新订阅者的快照与其后事件不重复文本', () => {
+  it('a new subscriber\'s snapshot and later events do not repeat text', () => {
     const { state, record } = make([message('m1')]);
     state.append('m1', 'text', 'a');
     state.append('m1', 'text', 'b');
@@ -169,7 +169,7 @@ describe('ConversationState 流式增量合并', () => {
     ).toBe('d');
   });
 
-  it('补发订阅在待发缓冲之后也能拿到全部增量', () => {
+  it('a catch-up subscription also gets all deltas after the pending buffer', () => {
     const { state } = make([message('m1')]);
     state.append('m1', 'text', 'a');
     state.append('m1', 'text', 'b');
@@ -179,7 +179,7 @@ describe('ConversationState 流式增量合并', () => {
     expect(appends(sub.result.events).map((a) => a.delta)).toEqual(['a', 'b']);
   });
 
-  it('dispose 清掉定时器，不再发布', () => {
+  it('dispose clears the timer and stops publishing', () => {
     const { state, events } = make([message('m1')]);
     state.append('m1', 'text', 'a');
     state.append('m1', 'text', 'b');

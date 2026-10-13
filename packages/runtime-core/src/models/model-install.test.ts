@@ -187,7 +187,7 @@ const bundleOf = (side: Side): ModelBundleStatus | undefined =>
 const jobOf = (side: Side, jobId: string): JobRecord | undefined => side.jobs()?.jobs.find((j) => j.jobId === jobId);
 const terminal = (job: JobRecord | undefined) => job && ['completed', 'failed', 'cancelled', 'interrupted'].includes(job.state) && job;
 
-describe('模型安装（假模型来源 + 假 Model Worker）', () => {
+describe('model install (fake model source + fake Model Worker)', () => {
   let source: FakeModelSource;
   let side: Side | undefined;
   const free = { bytes: (10 * 1024 * 1024 * 1024) as number | null };
@@ -204,7 +204,7 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
     await source.close();
   });
 
-  it('两步安装：先给大小，确认后是普通任务；进度在 jobs 主题（字节），状态在 models 主题；取消即暂停，再装续传；自检通过', async () => {
+  it('two-step install: first give the size, after confirmation it is a normal task; progress on the jobs topic (bytes), status on the models topic; cancel means pause, resume on reinstall; self-check passes', async () => {
     side = await startSide(source, free);
     expect(bundleOf(side)).toMatchObject({ state: 'not-installed', reason: 'missing-manifest' });
 
@@ -300,7 +300,7 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
     expect(side.jobs()!.jobs.every((j) => j.submitter.kind === 'connection')).toBe(true);
   });
 
-  it('删除：自检进行中拒绝（MODEL_IN_USE），结束后删除；修复只补缺的文件；严格离线拒绝下载', async () => {
+  it('delete: rejected while a self-check is running (MODEL_IN_USE), deleted after it ends; repair only fills missing files; strict offline rejects download', async () => {
     side = await startSide(source, free);
     const plan = await side.client.request('models.install', { bundleId: TRANSCRIBE_BUNDLE });
     const { jobId } = await side.client.request('models.install', {
@@ -383,7 +383,7 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
     expect(unknown).toMatchObject({ code: 'not-found' });
   });
 
-  it('补齐可选组件：装好的模型包缺对齐器时照常算装好，安装只下载它；装好后空闲的 Worker 先卸下，下一个任务带上它', async () => {
+  it('install optional components: an installed model pack missing its aligner still counts as installed, install only downloads it; after installed, an idle Worker is unloaded first, the next task brings it back', async () => {
     side = await startSide(source, free);
     const plan = await side.client.request('models.install', { bundleId: TRANSCRIBE_BUNDLE });
     const { jobId } = await side.client.request('models.install', {
@@ -428,7 +428,7 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
     ]);
   });
 
-  it('「说话人区分」模型包：装好后识别模型包报告能区分说话人；没有单独的检查；识别模型包在用时不能删', async () => {
+  it('\'speaker separation\' model pack: after installed, the recognition model pack report can tell speakers apart; no separate check; cannot delete the recognition model pack while in use', async () => {
     side = await startSide(source, free);
     const install = async (bundleId: string) => {
       const plan = (await side!.client.request('models.install', { bundleId })).plan;
@@ -467,7 +467,7 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
   });
 
   it.skipIf(!appleSilicon)(
-    '语音合成模型包：装好后自检合成一句，WAV 能解码、时长合理、有声音才通过；静音判为不通过；删掉默认的那只时清掉默认值',
+    'speech synthesis model pack: after install, self-check synthesizes one sentence, passes only if the WAV decodes, duration is reasonable and there is sound; silence fails; deleting the default one clears the default value',
     async () => {
       side = await startSide(source, free);
       await fs.writeFile(side.control, JSON.stringify({ capabilities: ['transcribe', 'synthesize'] }));
@@ -517,7 +517,7 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
   );
 
   it.skipIf(!appleSilicon)(
-    '文生图模型包：装好后自检生成一张 256² 的小图（4 步、固定 seed），PNG 能解码、尺寸对、不是纯色才通过',
+    'text-to-image model pack: after install, self-check generates one 256² small image (4 steps, fixed seed), passes only if the PNG decodes, size is correct and it is not a solid color',
     async () => {
       side = await startSide(source, free);
       const runs = path.join(side.dir, 'runs.jsonl');
@@ -556,7 +556,7 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
     },
   );
 
-  it.skipIf(!appleSilicon)('人声分离模型包：装好后自检把样本分成两路，等长、人声明显比背景响才通过；人声是静音判为不通过', async () => {
+  it.skipIf(!appleSilicon)('vocal separation model pack: after install, self-check splits the sample into two tracks, passes if same length and vocals are clearly louder than background; silent vocals fail', async () => {
     side = await startSide(source, free);
     await fs.writeFile(side.control, JSON.stringify({ capabilities: ['separate'] }));
     const plan = (await side.client.request('models.install', { bundleId: SEPARATE_BUNDLE })).plan;
@@ -603,7 +603,7 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
   });
 
   it.skipIf(!appleSilicon)(
-    '检查没通过的原因：加载时文件缺失或损坏是模型文件的问题，资源不足是内存不够；记在模型包上，技术细节里有 Worker 的错误码',
+    'reasons a check failed: missing or corrupt file on load is a model file problem, insufficient resources is not enough memory; recorded on the model pack, Worker error codes in technical details',
     async () => {
       side = await startSide(source, free);
       await fs.writeFile(side.control, JSON.stringify({ capabilities: ['transcribe', 'synthesize'] }));
@@ -631,7 +631,7 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
   );
 
   it.skipIf(!appleSilicon)(
-    '随应用分发的文件不在：自检在提交时以 APP_FILE_MISSING 拒绝（转写的样本、合成的内置音色录音）；执行前才不见的，任务以 APP_FILE_MISSING 失败、不记成自测没通过',
+    'files shipped with the app are missing: self-check rejects at submit with APP_FILE_MISSING (transcription samples, the built-in voice recording for synthesis); if they disappear just before execution, the task fails with APP_FILE_MISSING and is not recorded as self-check failed',
     async () => {
       const assets = path.join(os.tmpdir(), `cuccut-model-assets-${newId('t')}`);
       await fs.cp(resolveModelAssetsDir()!, assets, { recursive: true });
@@ -687,7 +687,7 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
     },
   );
 
-  it('暂停后丢弃：cancelInstall 带 discard 删掉暂存区', async () => {
+  it('discard after pause: cancelInstall with discard deletes the staging area', async () => {
     side = await startSide(source, free);
     source.throttle(8 * 1024, 20);
     const { plan } = await side.client.request('models.install', { bundleId: TRANSCRIBE_BUNDLE });
@@ -698,7 +698,7 @@ describe('模型安装（假模型来源 + 假 Model Worker）', () => {
     expect(await fs.readdir(side.home.modelsDir)).toEqual([]);
   });
 
-  it('智能体的下载工具：先给大小、按 command 确认，结果带大小；MCP 对外服务没有安装与删除', async () => {
+  it('agent download tool: give size first, confirm by command, result includes size; MCP external service has no install or delete', async () => {
     side = await startSide(source, free);
     const { project } = await side.client.request('projects.create', { name: '模型安装' });
     const {

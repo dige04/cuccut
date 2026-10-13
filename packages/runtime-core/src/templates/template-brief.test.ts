@@ -55,8 +55,8 @@ afterEach(async () => {
   await fs.rm(root, { recursive: true, force: true });
 });
 
-describe('简报引导前言', () => {
-  it('十条都在，并要求用用户的语言、不设默认的成片语言、缺能力时降级并说明、先读做法、没填的待填项当缺项问', () => {
+describe('brief guidance preamble', () => {
+  it('all ten items are present, and require the user\'s language, no default export language, degrading and explaining when a capability is missing, reading the how-to first, and asking about unfilled placeholders as missing items', () => {
     for (const n of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) expect(SCENE_BRIEF_PREAMBLE).toContain(`${n}. `);
     expect(SCENE_BRIEF_PREAMBLE).toContain('until the user confirms it, do not start making anything');
     expect(SCENE_BRIEF_PREAMBLE).toContain('the topic');
@@ -73,8 +73,8 @@ describe('简报引导前言', () => {
   });
 });
 
-describe('发送时解析场景模板', () => {
-  it('拼出前言、默认值、正文与全部素材；标记记下实际的版本', async () => {
+describe('resolves scene template when sending', () => {
+  it('assembles preamble, defaults, body and all assets; the marker records the actual version', async () => {
     const resolved = await resolveSceneTemplate(catalog, { id: 'launch-scene', version: '0.9.0' });
     expect(resolved.ref).toEqual({ id: 'launch-scene', version: '1.2.0', title: '发布短片', kind: 'scene', origin: 'builtin' });
     const text = resolved.instructions;
@@ -91,7 +91,7 @@ describe('发送时解析场景模板', () => {
     expect(text).toContain(' (audio): 背景音乐，约 30 秒');
   });
 
-  it('按发送时带的语言用译文：标记的标题、正文与素材说明都换成那种语言', async () => {
+  it('uses the translation in the language sent: the marked title, body and asset descriptions are all switched to that language', async () => {
     const dir = path.join(root, scene.id, 'locales');
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(
@@ -138,14 +138,14 @@ describe('发送时解析场景模板', () => {
     expect(builtin.instructions).not.toContain('comes from the pack');
   });
 
-  it('模板没给 skills 时不列做法', async () => {
+  it('does not list how-tos when the template gives no skills', async () => {
     const { skills: _s, ...noSkills } = scene;
     await fs.writeFile(path.join(root, scene.id, 'template.json'), JSON.stringify(noSkills));
     const resolved = await resolveSceneTemplate(catalog, { id: 'launch-scene' });
     expect(resolved.instructions).not.toContain('Recommended reading for this template:');
   });
 
-  it('assets 只附用户留下的；空数组一项也不附', async () => {
+  it('assets only include those left by the user; an empty array adds no items', async () => {
     const one = await resolveSceneTemplate(catalog, { id: 'launch-scene', assets: ['assets/bgm.mp3'] });
     expect(one.instructions).toContain('bgm.mp3');
     expect(one.instructions).not.toContain('logo.svg');
@@ -153,7 +153,7 @@ describe('发送时解析场景模板', () => {
     expect(none.instructions).not.toContain('Assets attached to the template');
   });
 
-  it('没登记的素材、作品示例与不存在的模板被拒绝', async () => {
+  it('unregistered assets, work examples and nonexistent templates are rejected', async () => {
     await expect(resolveSceneTemplate(catalog, { id: 'launch-scene', assets: ['assets/other.svg'] })).rejects.toMatchObject({
       code: 'invalid-request',
       details: { code: 'TEMPLATE_FILE_NOT_FOUND' },

@@ -74,7 +74,7 @@ function fakeOpenAi(): FakeHandler {
   };
 }
 
-describe.skipIf(!engine || !speechWorker || !hasFfmpeg)('转录流程与字幕层（真实引擎）', () => {
+describe.skipIf(!engine || !speechWorker || !hasFfmpeg)('transcription pipeline and subtitle layer (real engine)', () => {
   let dir: string;
   let runtime: RunningRuntime;
   let client: CucCutClient;
@@ -138,7 +138,7 @@ describe.skipIf(!engine || !speechWorker || !hasFfmpeg)('转录流程与字幕�
   const captions = (video: VideoSnapshot) =>
     video.sequences[video.rootSequenceId]!.items.filter((item): item is CaptionItem => item.type === 'caption');
 
-  it('从本机媒体新建视频：导入、放上时间线、转写、建字幕层；再转写另建视频；翻译建目标语言字幕层；取代文稿结转译文', async () => {
+  it('create a video from local media: import, place on timeline, transcribe, create subtitle layer; transcribe again creates another video; translation creates target-language subtitle layer; replacing the script carries over translations', async () => {
     // 1. Create a new video.
     const created = await start('transcribe', { target: { create: { projectId: project.id, media } } });
     const first = await settled(created.jobId);
@@ -363,7 +363,7 @@ describe.skipIf(!engine || !speechWorker || !hasFfmpeg)('转录流程与字幕�
     expect(JSON.stringify(await client.request('jobs.list', { children: true }))).not.toContain(OPENAI_KEY);
   });
 
-  it('新建在「建好、还没记下」之间中断：按占下的位置再新建时认回那个视频，不多建', async () => {
+  it('creation interrupted between \'built, not recorded yet\': on re-create at the occupied location, that video is recognized rather than creating another', async () => {
     const targets = pipelineTargets(runtime.videos, {
       entry: () => {
         throw new Error('不按条目');
@@ -391,7 +391,7 @@ describe.skipIf(!engine || !speechWorker || !hasFfmpeg)('转录流程与字幕�
     });
   });
 
-  it('媒体不在、不是绝对路径时拒绝，不新建视频、不建任务', async () => {
+  it('media missing or not an absolute path: rejected, no video created, no task created', async () => {
     const missing = await start('transcribe', {
       target: { create: { projectId: project.id, media: path.join(dir, 'nope.wav') } },
     }).catch((error: { details?: { code?: string } }) => error.details?.code);
@@ -404,7 +404,7 @@ describe.skipIf(!engine || !speechWorker || !hasFfmpeg)('转录流程与字幕�
     expect(await client.request('jobs.list', { children: true })).toEqual({ jobs: [] });
   });
 
-  it('视频里启用的转写术语表：新建的视频采用库里默认启用的那份，转写 Job 冻结它的版本', async () => {
+  it('transcription glossary enabled in the video: a newly created video adopts the glossary enabled by default in the Library, the transcription Job freezes its version', async () => {
     const { entry: glossary } = await client.request('library.put', {
       library: 'glossaries',
       content: {
@@ -424,7 +424,7 @@ describe.skipIf(!engine || !speechWorker || !hasFfmpeg)('转录流程与字幕�
     ]);
   });
 
-  it('音频按 audio 授权：撤销默认授权后启动即拒绝，不新建视频；桌面界面带待批准项，批准之后同一个 commandId 重新提交', async () => {
+  it('audio authorized by audio: after revoking default authorization, start rejected without creating a video; the desktop UI shows a pending approval item, and after approval the same commandId is resubmitted', async () => {
     const byDefault = (await client.request('grants.list', { recipient: 'openai' })).grants.find((g) => g.origin === 'provider-enable')!;
     expect(byDefault.dataKinds).toContain('audio');
     await client.request('grants.revoke', { grantId: byDefault.grantId });

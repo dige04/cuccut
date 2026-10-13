@@ -7,7 +7,7 @@ import { estimateWords, fixWordTimes, secondsToTicks, splitIntoWordPairs } from 
 const close = (a: number, b: number) => Math.abs(a - b) < 1e-9;
 
 describe('estimateWords', () => {
-  it('按字符长度插值，标点贴在前一个词上，最后一个词结束于段尾', () => {
+  it('interpolates by character length, punctuation attaches to the previous word, the last word ends at the segment end', () => {
     const words = estimateWords('ab abcd, ab', 'en', 1.0, 2.6);
     expect(words.map((w) => w.text)).toEqual(['ab', 'abcd,', 'ab']);
     expect(close(words[0]!.start, 1.0) && close(words[0]!.end, 1.4)).toBe(true);
@@ -15,27 +15,27 @@ describe('estimateWords', () => {
     expect(words[2]).toEqual({ text: 'ab', start: words[1]!.end, end: 2.6 });
   });
 
-  it('汉字逐字成词，句末标点贴在最后一个字上', () => {
+  it('Chinese characters form words one by one, sentence-final punctuation attaches to the last character', () => {
     const words = estimateWords('你好。', 'zh', 0, 1);
     expect(words.map((w) => w.text)).toEqual(['你', '好。']);
     expect(words[1]!.end).toBe(1);
   });
 
-  it('退化的输入：空白没有词；只有标点时整段算一个词；倒挂的段收成一点', () => {
+  it('degenerate input: whitespace has no words; when only punctuation, the whole segment counts as one word; an inverted segment collapses to a point', () => {
     expect(estimateWords('   ', null, 0, 1)).toEqual([]);
     expect(estimateWords('?!', null, 0.5, 0.75)).toEqual([{ text: '?!', start: 0.5, end: 0.75 }]);
     const collapsed = estimateWords('a b', null, 2, 1);
     expect(collapsed.every((w) => w.start === 2 && w.end === 2)).toBe(true);
   });
 
-  it('独立的标点并到前一个词；撇号算字母', () => {
+  it('standalone punctuation merges into the previous word; apostrophes count as letters', () => {
     expect(splitIntoWordPairs("don't — stop", 'en')).toEqual([
       { surface: "don't—", cleaned: "don't" },
       { surface: 'stop', cleaned: 'stop' },
     ]);
   });
 
-  it('中英混排：汉字前的非汉字前缀并入汉字，汉字后的拉丁字母单独成词', () => {
+  it('mixed Chinese and English: non-Han prefixes before Han characters merge into them, Latin letters after Han characters form their own words', () => {
     expect(splitIntoWordPairs('“你好AI', 'zh')).toEqual([
       { surface: '“你', cleaned: '你' },
       { surface: '好', cleaned: '好' },
@@ -43,7 +43,7 @@ describe('estimateWords', () => {
     ]);
   });
 
-  it('日文走词典分词（语言给出或按假名判断），尾随标点贴在词上', () => {
+  it('Japanese is segmented with a dictionary (when the language is given or judged by kana), trailing punctuation attaches to the word', () => {
     const byLanguage = splitIntoWordPairs('今日は晴れ。', 'ja');
     const byScript = splitIntoWordPairs('今日は晴れ。', null);
     expect(byLanguage).toEqual(byScript);
@@ -56,7 +56,7 @@ describe('estimateWords', () => {
 describe('fixWordTimes', () => {
   const segment = (words: Segment['words']): Segment => ({ id: 's', start: 100, end: 200, text: 'x', speakerId: null, words });
 
-  it('越段、倒挂与重叠的词收进段内并保持单调，报告改动过', () => {
+  it('words that cross segments, are inverted or overlap are pulled into the segment and kept monotonic, reporting that they were changed', () => {
     const s = segment([
       { start: 90, end: 120, text: 'a', confidence: null, timingQuality: 'provider' },
       { start: 110, end: 105, text: 'b', confidence: null, timingQuality: 'provider' },
@@ -73,14 +73,14 @@ describe('fixWordTimes', () => {
     expect(s.words[0]!.timingQuality).toBe('provider');
   });
 
-  it('本来就合法的词不改', () => {
+  it('already valid words are left unchanged', () => {
     const s = segment([{ start: 100, end: 150, text: 'a', confidence: null, timingQuality: 'estimated' }]);
     expect(fixWordTimes(s)).toBe(false);
   });
 });
 
 describe('secondsToTicks', () => {
-  it('四舍五入；负数与非有限值为 0', () => {
+  it('rounds; negative and non-finite values are 0', () => {
     expect(secondsToTicks(1.2345678, 1_000_000)).toBe(1_234_568);
     expect(secondsToTicks(-1, 1000)).toBe(0);
     expect(secondsToTicks(Number.NaN, 1000)).toBe(0);

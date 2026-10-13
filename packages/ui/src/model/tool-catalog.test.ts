@@ -19,8 +19,8 @@ import {
 
 /* Cases from design file model-tools.test.js, lines 19–64, with the tool IDs replaced by the IDs in the Runtime registry. */
 
-describe('工具目录', () => {
-  it('按处理的对象分四组：语音与字幕、文字与图片、音乐、视频文件（产品设计 §2.7，`TOOL_CATEGORIES` 的顺序）', () => {
+describe('tool catalog', () => {
+  it('groups into four by what they process: speech and subtitles, text and images, music, video files (product design §2.7, the order of `TOOL_CATEGORIES`)', () => {
     expect(TOOL_GROUPS.map((g) => [g.key, g.label])).toEqual([
       ['speech', '语音与字幕'],
       ['text-image', '文字与图片'],
@@ -56,7 +56,7 @@ describe('工具目录', () => {
     }
   });
 
-  it('旧版短名落到注册表 ID，未知的认不出', () => {
+  it('legacy short names resolve to registry IDs; unknown ones are not recognized', () => {
     expect(toolIdOf('translate')).toBe('translate-subtitles');
     expect(toolIdOf('link')).toBe('link-import');
     expect(toolIdOf('tts')).toBe('synthesize-speech');
@@ -79,7 +79,7 @@ describe('工具目录', () => {
     expect(isFileVideoTool('transcribe')).toBe(false);
   });
 
-  it('输入来源与结果从声明派生：转录三选一（链接由从链接导入执行）、翻译字幕的文件输入得到产物', () => {
+  it('input sources and results derive from declarations: transcription picks one of three (links are executed by import from link), translating subtitles from a file input yields an artifact', () => {
     expect(inputOptions('transcribe').map((o) => o.label)).toEqual(['本机文件', '资料库', '链接']);
     expect(inputOptions('transcribe').map((o) => o.via)).toEqual([null, null, 'link-import']);
     expect(inputOptions('translate-subtitles').map((o) => [o.key, o.label, o.output])).toEqual([
@@ -108,7 +108,7 @@ describe('工具目录', () => {
     expect(resultLine('nope')).toBe('');
   });
 
-  it('下载视频：链接输入得到文件，不需要视频目标', () => {
+  it('download video: a link input yields a file and needs no video target', () => {
     expect(inputOptions('link-import').map((o) => [o.key, o.output])).toEqual([['link', 'artifact']]);
     expect(outputOf('link-import', 'link')).toBe('artifact');
     expect(targetOptions('link-import')).toEqual([]);

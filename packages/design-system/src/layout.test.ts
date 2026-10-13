@@ -32,8 +32,8 @@ afterAll(async () => {
 const INDEX = JSON.stringify({ v: 3, layout: 'files', createdOnFiles: { v: 1, at: '2026-01-01T00:00:00.000Z' }, title: 'Acme', namespace: 'Acme' });
 const ID = '0123456789abcdef0123456789abcdef';
 
-describe('模块本身', () => {
-  it('能导入；源码里没有字面的行分隔符与不可见字符（写在正则里会让模块解析失败）', async () => {
+describe('the module itself', () => {
+  it('can be imported; the source has no literal line separators or invisible characters (in a regex they would break module parsing)', async () => {
     const layout = await import('./layout.ts');
     expect(layout.DESIGN_SYSTEM_LAYOUT.blobDir).toBe('_blobs');
     expect(Object.keys(await import('./index.ts'))).toEqual(expect.arrayContaining(['DESIGN_SYSTEM_LAYOUT', 'readDesignSystemInfo', 'checkDesignSystem', 'resolveDesignSystemEditorDist']));
@@ -45,14 +45,14 @@ describe('模块本身', () => {
   });
 });
 
-describe('路径规则（explainDesignSystemPath，照原版 isValidDesignSystemPath）', () => {
-  it('合规则的路径', () => {
+describe('path rules (explainDesignSystemPath, following the original isValidDesignSystemPath)', () => {
+  it('paths that follow the rules', () => {
     for (const p of ['README.md', 'tokens.json', 'components/Button/preview.html', 'components/lib/react.js', 'assets/Logos/mark.svg', 'fonts/Inter.woff2', 'guide/colors.md', '_notes.md', 'archived/old.md', '中文/说明.md']) {
       expect(explainDesignSystemPath(p), p).toBeNull();
     }
   });
 
-  it('不合规则的路径各有原因', () => {
+  it('paths that break the rules each have a reason', () => {
     for (const p of [
       'a\u2028b.md',
       'a\u2029b.md',
@@ -91,7 +91,7 @@ describe('路径规则（explainDesignSystemPath，照原版 isValidDesignSystem
     }
   });
 
-  it('isDesignSystemFile：索引本身是文件；_blobs/ 下的不是', () => {
+  it('isDesignSystemFile: the index itself is a file; files under _blobs/ are not', () => {
     expect(isDesignSystemFile('design-system.json')).toBe(true);
     expect(isDesignSystemFile('README.md')).toBe(true);
     expect(isDesignSystemFile('assets/Icons/a.svg')).toBe(true);
@@ -100,7 +100,7 @@ describe('路径规则（explainDesignSystemPath，照原版 isValidDesignSystem
     expect(isDesignSystemFile('index.html')).toBe(false);
   });
 
-  it('上传上限：SVG 2 MiB，其余 20 MiB', () => {
+  it('upload limits: SVG 2 MiB, others 20 MiB', () => {
     expect(designSystemUploadLimit('image/svg+xml')).toBe(2 * 1024 * 1024);
     expect(designSystemUploadLimit('Image/SVG+XML; charset=utf-8')).toBe(DESIGN_SYSTEM_LIMITS.svgUploadBytes);
     expect(designSystemUploadLimit('image/png')).toBe(20 * 1024 * 1024);
@@ -108,8 +108,8 @@ describe('路径规则（explainDesignSystemPath，照原版 isValidDesignSystem
   });
 });
 
-describe('识别（readDesignSystemInfo / inspectDesignSystem）', () => {
-  it('v 为 3、layout 为 "files" 的索引是设计系统；标题去掉空白，没有时用目录名；namespace 不合规则时 null', async () => {
+describe('detection (readDesignSystemInfo / inspectDesignSystem)', () => {
+  it('an index with v 3 and layout "files" is a design system; title is trimmed, falls back to the directory name; null namespace when it breaks the rules', async () => {
     expect(await readDesignSystemInfo(await tempDir({ 'design-system.json': INDEX }))).toEqual({ title: 'Acme', namespace: 'Acme' });
     const untitled = await tempDir({ 'design-system.json': JSON.stringify({ v: 3, layout: 'files', title: '  ', namespace: '1bad' }) });
     expect(await readDesignSystemInfo(untitled)).toEqual({ title: path.basename(untitled), namespace: null });
@@ -119,14 +119,14 @@ describe('识别（readDesignSystemInfo / inspectDesignSystem）', () => {
     });
   });
 
-  it('认法同原版 isFilesIndex：带迁移标记，或 v ≥ 3 且 layout 为 files；content 是对象的不算', async () => {
+  it('matching follows the original isFilesIndex: has the migration marker, or v ≥ 3 with layout files; content that is an object does not count', async () => {
     for (const index of [{ createdOnFiles: { v: 1 } }, { convertedFrom: {}, v: 2 }, { v: 4, layout: 'files' }]) {
       expect(await readDesignSystemInfo(await tempDir({ 'design-system.json': JSON.stringify(index) })), JSON.stringify(index)).not.toBeNull();
     }
     expect(await readDesignSystemInfo(await tempDir({ 'design-system.json': JSON.stringify({ v: 3, layout: 'files', content: {} }) }))).toBeNull();
   });
 
-  it('其余都不是：没有索引、旧版本、没有 layout、不是 JSON、数组、索引是符号链接或目录', async () => {
+  it('everything else is not: no index, old version, no layout, not JSON, an array, index is a symlink or a directory', async () => {
     for (const files of [
       {},
       { 'design-system.json': JSON.stringify({ v: 2, layout: 'files' }) },
@@ -145,7 +145,7 @@ describe('识别（readDesignSystemInfo / inspectDesignSystem）', () => {
     expect(await inspectDesignSystem(linked)).toBeNull();
   });
 
-  it('inspectDesignSystem：大小算目录与第一层子目录里的普通文件（含 _blobs/），不算隐藏文件', async () => {
+  it('inspectDesignSystem: size counts regular files in the directory and its first-level subdirectories (including _blobs/), not hidden files', async () => {
     const dir = await tempDir({
       'design-system.json': INDEX,
       'README.md': '12345',
@@ -160,8 +160,8 @@ describe('识别（readDesignSystemInfo / inspectDesignSystem）', () => {
   });
 });
 
-describe('设计系统的文件布局（DeckStore + DESIGN_SYSTEM_LAYOUT）', () => {
-  it('清单是整棵目录树里合路径规则的普通文件，不含 _blobs/、隐藏的、符号链接与工具配置', async () => {
+describe('design system file layout (DeckStore + DESIGN_SYSTEM_LAYOUT)', () => {
+  it('manifest is the regular files in the whole directory tree that follow the path rules, excluding _blobs/, hidden files, symlinks and tool config', async () => {
     const dir = await tempDir({
       'design-system.json': INDEX,
       'README.md': '# Acme',
@@ -197,7 +197,7 @@ describe('设计系统的文件布局（DeckStore + DESIGN_SYSTEM_LAYOUT）', ()
     expect(await store.readProjectFile('project/Link.md')).toBeNull();
   });
 
-  it('发布：assets/<组>/ 与索引可写；_blobs/、保留名、隐藏路径与工具配置是 read_only_path；单个文件 ≤15 MiB，一次 ≤16 MiB', async () => {
+  it('publish: assets/<group>/ and the index are writable; _blobs/, reserved names, hidden paths and tool config are read_only_path; a single file ≤15 MiB, one publish ≤16 MiB', async () => {
     const dir = await tempDir({ 'design-system.json': INDEX });
     const store = new DeckStore(dir, DESIGN_SYSTEM_LAYOUT);
     const write = (text: string | Buffer, contentType = 'image/svg+xml') => ({ base64: Buffer.from(text).toString('base64'), contentType });
@@ -225,7 +225,7 @@ describe('设计系统的文件布局（DeckStore + DESIGN_SYSTEM_LAYOUT）', ()
     expect(batch.status).toBe(413);
   });
 
-  it('上传写进 _blobs/（不进 assets/），不进清单', async () => {
+  it('uploads are written to _blobs/ (not assets/) and are not in the manifest', async () => {
     const dir = await tempDir({ 'design-system.json': INDEX });
     const store = new DeckStore(dir, DESIGN_SYSTEM_LAYOUT);
     const uploaded = await store.putBlob(Buffer.from('png-bytes'), 'image/png');
@@ -236,7 +236,7 @@ describe('设计系统的文件布局（DeckStore + DESIGN_SYSTEM_LAYOUT）', ()
     expect(Object.keys((await store.listing()).files)).toEqual(['project/design-system.json']);
   });
 
-  it('外部改动的监听覆盖 assets/<组>/，不报 _blobs/', async () => {
+  it('watching external changes covers assets/<group>/, does not report _blobs/', async () => {
     const dir = await tempDir({ 'design-system.json': INDEX, 'README.md': 'v1' });
     const store = new DeckStore(dir, DESIGN_SYSTEM_LAYOUT);
     const events: DeckChangeEvent[] = [];

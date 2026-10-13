@@ -18,8 +18,8 @@ const QWEN = IMAGE_BUNDLES[0]!;
 const QWEN_CANDLE = IMAGE_BUNDLES[1]!;
 const GiB = 1024 * 1024 * 1024;
 
-describe('本地文生图模型包的登记', () => {
-  it('MLX 与 candle 两个模型包，在总登记里，是 image；仓库整个是一个 image 组件，有许可与名字', () => {
+describe('local text-to-image model bundle registration', () => {
+  it('the MLX and candle bundles are in the master registry as image bundles; the whole repository is one image component, with a license and a name', () => {
     expect(IMAGE_BUNDLES.map((b) => b.bundleId)).toEqual(['qwen-image-2.1@mlx-4bit', 'qwen-image-2.1@candle']);
     expect(BUNDLES).toContain(QWEN);
     expect(BUNDLES).toContain(QWEN_CANDLE);
@@ -29,7 +29,7 @@ describe('本地文生图模型包的登记', () => {
     expect(QWEN.license).toMatchObject({ commercialUse: false });
   });
 
-  it('candle 的变体读同一个仓库版本（加载时反量化），名字、许可、尺寸与步数都相同，只换后端与峰值', () => {
+  it('the candle variant reads the same repository revision (dequantised at load), with the same name, license, sizes and steps, differing only in backend and peak', () => {
     expect(QWEN_CANDLE).toMatchObject({ capability: 'image', backend: 'candle', device: 'cpu', label: QWEN.label });
     expect(QWEN_CANDLE.components).toEqual(QWEN.components);
     expect(QWEN_CANDLE.license).toBe(QWEN.license);
@@ -41,7 +41,7 @@ describe('本地文生图模型包的登记', () => {
     expect(devicePeakBytes).toEqual({ cuda: 4 * GiB });
   });
 
-  it('内置清单：20 个文件都有 sha256 与大小，估计字节等于大小之和；三段的权重与分词表、调度器配置都在', () => {
+  it('built-in manifest: all 20 files have sha256 and size, estimated bytes equal the sum of sizes; the weights, tokenizer tables and scheduler configs for all three stages are present', () => {
     const source = QWEN.components.image!;
     const manifest = repoManifestFor(source.repo, source.revision)!;
     expect(manifest).not.toBeNull();
@@ -66,7 +66,7 @@ describe('本地文生图模型包的登记', () => {
     }
   });
 
-  it('列出的尺寸都合 Worker 的规则：32 的倍数、长边不超过 1536、长短边之比不超过 3；第一个是 1:1', () => {
+  it('every listed size follows the Worker\'s rules: a multiple of 32, long side at most 1536, long-to-short ratio at most 3; the first is 1:1', () => {
     expect(QWEN.image!.aspects).toBe(QWEN_IMAGE_ASPECTS);
     expect(QWEN_IMAGE_ASPECTS[0]).toEqual({ ratio: '1:1', size: '1024x1024' });
     for (const { size } of [...QWEN_IMAGE_ASPECTS, { size: `${IMAGE_SELF_TEST.width}x${IMAGE_SELF_TEST.height}` }]) {
@@ -78,7 +78,7 @@ describe('本地文生图模型包的登记', () => {
     }
   });
 
-  describe('目录里的状态', () => {
+  describe('statuses in the directory', () => {
     let dir: string;
     beforeEach(async () => {
       dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-image-bundles-'));
@@ -87,7 +87,7 @@ describe('本地文生图模型包的登记', () => {
       await fs.rm(dir, { recursive: true, force: true });
     });
 
-    it('Apple Silicon 上只列 MLX 的、没装是 not-installed；别的平台只列 candle 的；硬登记进去的 MLX 包是 error / unsupported', async () => {
+    it('on Apple Silicon only MLX bundles are listed, and a missing one is not-installed; other platforms list only candle bundles; an MLX bundle registered directly is error / unsupported', async () => {
       const mac = new ModelCatalog({ root: dir, platform: 'darwin', arch: 'arm64', workerAvailable: () => true });
       expect(
         mac
@@ -123,7 +123,7 @@ describe('本地文生图模型包的登记', () => {
       expect(await forced.status(QWEN.bundleId)).toMatchObject({ state: 'error', reason: 'unsupported' });
     });
 
-    it('Worker 的峰值按登记的 peakBytes 与设备取池：MLX 计 GPU 内存，candle 的 CPU 计内存、CUDA 计 GPU 内存', async () => {
+    it('the Worker\'s peak is pooled by the registered peakBytes and the device: MLX counts GPU memory, candle counts memory on CPU and GPU memory on CUDA', async () => {
       const mac = new ModelCatalog({ root: dir, platform: 'darwin', arch: 'arm64', workerAvailable: () => true });
       mac.setWorkerDevice('candle', 'cuda');
       // Resident-size estimates for recognition (including candle's per-device conversion) do not apply to text-to-image bundles.
@@ -146,10 +146,10 @@ describe('本地文生图模型包的登记', () => {
   });
 });
 
-describe('模型描述与冻结参数', () => {
+describe('model description and frozen parameters', () => {
   const status = { detail: undefined } as unknown as ModelBundleStatus;
 
-  it('一次一张、只出 PNG、不收参考图、接受 seed、免费；尺寸与宽高比来自模型包，提示耗时', () => {
+  it('one image at a time, PNG output only, no reference images, accepts seed, free; sizes and aspect ratios come from the bundle, and the hint gives the expected time', () => {
     const info = localImageModelInfo(QWEN, status, true);
     expect(info).toMatchObject({
       modelId: QWEN.bundleId,
@@ -173,7 +173,7 @@ describe('模型描述与冻结参数', () => {
     expect(info.local).toEqual({ steps: { min: 8, max: 40, step: 4, default: 20 } });
   });
 
-  it('candle 在 CPU 上照实提示要几个小时；Worker 报告了 CUDA 时与 MLX 一样', () => {
+  it('candle on CPU honestly warns it can take hours; when the Worker reports CUDA it behaves like MLX', () => {
     const cpu = { device: 'cpu', detail: undefined } as unknown as ModelBundleStatus;
     const cuda = { device: 'cuda', detail: undefined } as unknown as ModelBundleStatus;
     expect(localImageModelInfo(QWEN_CANDLE, cpu, true).notes).toContain('CPU');
@@ -181,7 +181,7 @@ describe('模型描述与冻结参数', () => {
     expect(localImageModelInfo(QWEN_CANDLE, cuda, true).notes).toBe(localImageModelInfo(QWEN, status, true).notes);
   });
 
-  it('seed：给了就用，没给时抽一个 0..2^32-1 的整数', () => {
+  it('seed: used when given; otherwise an integer in 0..2^32-1 is drawn', () => {
     expect(localImageSeed(0)).toBe(0);
     expect(localImageSeed(4_294_967_295)).toBe(4_294_967_295);
     for (let i = 0; i < 20; i++) {
@@ -192,7 +192,7 @@ describe('模型描述与冻结参数', () => {
     }
   });
 
-  it('冻结的参数 → job.run 的选项：拆出宽高；步数只有自检给；尺寸或 seed 没冻结是调用方的错', () => {
+  it('frozen parameters to job.run options: split width and height; steps only from the self-test; an unfrozen size or seed is the caller\'s error', () => {
     const parameters: ImageParameters = {
       capability: 'generateImage',
       prompt: 'p',
@@ -262,10 +262,10 @@ function png(width: number, height: number, channels: 3 | 4, pixel: (x: number, 
   ]);
 }
 
-describe('生图自检的判定', () => {
+describe('image self-check verdicts', () => {
   const gradient = (x: number, y: number) => [x * 8, y * 8, (x * y) & 0xff, 255];
 
-  it('五种行过滤都解得出同样的像素：渐变图通过，尺寸与颜色数如实报告', () => {
+  it('all five row filters decode to the same pixels: a gradient image passes, with size and colour count reported accurately', () => {
     const counts = new Set<number>();
     for (const filters of [[0], [1], [2], [3], [4], [0, 1, 2, 3, 4]]) {
       const parsed = inspectPng(png(32, 32, 4, gradient, filters));
@@ -284,7 +284,7 @@ describe('生图自检的判定', () => {
     });
   });
 
-  it('纯色、尺寸不对、不是 PNG、像素数据坏了：不通过并说明原因', () => {
+  it('solid colour, wrong size, not a PNG, corrupt pixel data: fails with the reason stated', () => {
     expect(
       imageSelfTestVerdict(
         png(32, 32, 4, () => [10, 20, 30, 255], [1]),

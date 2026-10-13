@@ -85,7 +85,7 @@ fn record(recipe: &CatalogueRecipe, viz: &VizFrame, time: f64) -> Value {
         [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
     );
     let frame = builder.finish();
-    assert_eq!(pushed, frame.ops.len(), "返回条数必须等于实际压入条数");
+    assert_eq!(pushed, frame.ops.len(), "returned count must equal the number of ops actually pushed");
     json!({
         "ops": frame.ops.len(),
         "paths": frame.paths.len(),
@@ -166,7 +166,7 @@ fn the_draw_golden_is_up_to_date() {
     assert_eq!(
         actual,
         pretty(&expected_json()),
-        "expected-draw.json 与生成器不一致"
+        "expected-draw.json does not match the generator"
     );
 }
 

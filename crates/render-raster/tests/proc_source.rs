@@ -88,7 +88,7 @@ fn rain_moves_with_time_is_repeatable_and_stays_in_its_box() {
     assert_eq!(lit(&a0, (242, 0, W, H)), 0);
 
     let (other_seed, _) = render(&doc(rain(4)), 0.5);
-    assert_ne!(a0, other_seed, "换 seed 换画面");
+    assert_ne!(a0, other_seed, "a new seed changes the picture");
 }
 
 #[test]
@@ -103,7 +103,7 @@ fn splash_is_one_shot() {
     let (after, f_after) = render(&d, 2.1);
     assert_eq!(lit(&before, (0, 0, W, H)), 0);
     assert_eq!(lit(&after, (0, 0, W, H)), 0);
-    assert_eq!(f_before, f_after, "溅落前后都是空画面");
+    assert_eq!(f_before, f_after, "the frame is empty both before and after the splash");
     assert_ne!(f_before, f_during);
     let n = lit(&during, (0, 0, W, H));
     assert!(n > 20, "droplets should be visible during the splash: {n}");
@@ -149,10 +149,10 @@ fn sky_clouds_drift_and_a_static_sky_keeps_its_fingerprint() {
     ));
     let (a, fa) = render(&cloudy, 0.0);
     let (b, fb) = render(&cloudy, 3.0);
-    assert_ne!(fa, fb, "云在飘");
+    assert_ne!(fa, fb, "the clouds drift");
     assert!(
         lit(&a, (0, 0, W, H)) > (W * H / 10) as usize,
-        "云量 0.6 应盖住一片天"
+        "cloud coverage 0.6 should cover part of the sky"
     );
     assert_ne!(a, b);
 }

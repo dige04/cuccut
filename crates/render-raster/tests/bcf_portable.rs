@@ -57,7 +57,7 @@ fn random_access_keeps_effects_and_identical_pixels() {
             .any(|pass| matches!(pass, RenderPass::Filter { .. }))
     );
     let expected = runtime.render_cpu(0.7, &mut NoMedia).unwrap();
-    assert!(start.data() != expected.data(), "不同时间应有不同位置");
+    assert!(start.data() != expected.data(), "different times should give different positions");
     // The frame actually goes through grayscale; it is not merely a Filter pass that was created but never executed.
     let colored = expected.pixels().iter().find(|p| p.red() > 0).unwrap();
     assert_eq!(colored.red(), colored.green());

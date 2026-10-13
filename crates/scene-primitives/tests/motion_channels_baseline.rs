@@ -243,7 +243,7 @@ fn resolve_document(doc: Value, inputs: Option<HostInputs>) -> Ir {
         let after = serde_json::to_string(&channels_json(&clip.tree.channels)).unwrap();
         assert_eq!(
             before[index], after,
-            "布局 + 相对长度求值不得改动无相对长度文档的通道"
+            "layout and relative-length evaluation must not change the channels of documents without relative lengths"
         );
     }
     ir
@@ -320,7 +320,7 @@ fn sample_frames_is_order_independent() {
             None,
         ));
     }
-    assert!(!channels.is_empty(), "media-demo 必须产出通道");
+    assert!(!channels.is_empty(), "media-demo must produce channels");
 
     // Dense grid covering [-0.5, total+0.5] plus a few intra-frame offsets.
     let mut times = Vec::new();

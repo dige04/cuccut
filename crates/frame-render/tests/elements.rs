@@ -84,7 +84,7 @@ fn text_is_drawn_with_its_opacity() {
         json!({}),
     );
     let frame = render(&video, 0.5, &mut Media::default());
-    assert!(painted(&frame) > 100, "文字要画出来");
+    assert!(painted(&frame) > 100, "text should be painted");
     let brightest = frame.chunks_exact(4).map(|p| p[0]).max().unwrap();
     assert!((120..=136).contains(&brightest), "the semi-transparent white text peaks at ≈ 128, actual {brightest}");
 }
@@ -314,7 +314,7 @@ fn enter_exit_and_loop_slots_animate_the_layer() {
         0.1,
         &mut red_media(),
     );
-    assert!(px(&fading, 80, 45)[0] < px(&still, 80, 45)[0] - 30, "入场淡入还没完成");
+    assert!(px(&fading, 80, 45)[0] < px(&still, 80, 45)[0] - 30, "enter fade has not finished");
     let settled = render(
         &red_pip(json!({ "animate": { "enter": { "preset": "fade", "dur": 1.0 } } })),
         1.5,
@@ -326,12 +326,12 @@ fn enter_exit_and_loop_slots_animate_the_layer() {
         2.9,
         &mut red_media(),
     );
-    assert!(px(&leaving, 80, 45)[0] < 200, "出场淡出");
+    assert!(px(&leaving, 80, 45)[0] < 200, "exit fade-out");
     let looping = red_pip(json!({ "animate": { "loop": { "preset": "rotate" } } }));
     assert_ne!(
         render(&looping, 0.2, &mut red_media()),
         render(&looping, 0.7, &mut red_media()),
-        "循环动画让不同时刻的画面不同"
+        "loop animation should make frames at different times differ"
     );
 }
 
@@ -420,7 +420,7 @@ fn visualizers_without_any_audio_draw_at_rest() {
         json!({ "type": "visualizer", "visualizer": { "style": "bars", "mainColor": "#FFFFFF" } }),
         0.5,
     );
-    assert!(painted(&frame) > 0, "静音时按静止的样子画");
+    assert!(painted(&frame) > 0, "when muted, paint as a still frame");
     assert!(renderer.warnings().is_empty(), "{:?}", renderer.warnings());
     assert!(renderer.missing_spectra().is_empty());
 }
@@ -655,8 +655,8 @@ fn lottie_embedded_images_are_drawn_and_external_ones_are_missing() {
     media.assets.insert("a_lottie".into(), LOTTIE_IMAGE.to_vec());
     let a = render(&lottie_video(), 0.1, &mut media);
     let b = render(&lottie_video(), 0.8, &mut media);
-    assert!(painted(&a) > 30, "内嵌的位图要画出来");
-    assert_ne!(a, b, "位图图层跟着关键帧动");
+    assert!(painted(&a) > 30, "embedded bitmap should be painted");
+    assert_ne!(a, b, "bitmap layer should follow keyframes");
     // An image that gives only a path: the asset is just a JSON file, so it cannot be read.
     let mut external: Value = serde_json::from_slice(LOTTIE_IMAGE).unwrap();
     external["assets"][0]["e"] = json!(0);
@@ -726,7 +726,7 @@ fn dotlottie_archives_draw_with_images_from_the_archive_and_svg_images() {
         "{left:?}–{right:?}"
     );
     let later = render(&video, 0.5, &mut media);
-    assert!(reds(&later).0.unwrap() > top.unwrap() + 10, "PNG 跟着关键帧往下移");
+    assert!(reds(&later).0.unwrap() > top.unwrap() + 10, "PNG should move down following keyframes");
 
     // An image missing from the package: it is still `lottie-asset-missing`.
     let broken = stored_zip(&[(
@@ -792,7 +792,7 @@ fn whiteboards_reveal_their_image() {
     let early = render(&video, 0.1, &mut Media::default().with("wb", picture.clone()));
     let late = render(&video, 2.9, &mut Media::default().with("wb", picture));
     assert!(painted(&late) > 30);
-    assert_ne!(early, late, "白板按顺序画出来");
+    assert_ne!(early, late, "whiteboard should be drawn in order");
 }
 
 #[test]

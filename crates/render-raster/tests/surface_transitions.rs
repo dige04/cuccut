@@ -53,7 +53,7 @@ fn ir_of(document: Value) -> Ir {
 /// `Ir` has no `Debug`, so `unwrap_err()` cannot be used.
 fn resolve_error(document: Value) -> String {
     match Resolver::new(document, None).unwrap().resolve() {
-        Ok(_) => panic!("应当报错"),
+        Ok(_) => panic!("expected an error"),
         Err(error) => error.to_string(),
     }
 }
@@ -155,9 +155,9 @@ fn the_window_endpoints_are_the_two_shots() {
 #[test]
 fn the_circle_opens_from_the_centre() {
     let mid = render(doc(circle_crop()), T0);
-    assert_eq!(px(&mid.data, W / 2, H / 2), BLUE, "圆心");
-    assert_eq!(px(&mid.data, 1, 1), RED, "左上角");
-    assert_eq!(px(&mid.data, W - 2, H - 2), RED, "右下角");
+    assert_eq!(px(&mid.data, W / 2, H / 2), BLUE, "circle center");
+    assert_eq!(px(&mid.data, 1, 1), RED, "top-left corner");
+    assert_eq!(px(&mid.data, W - 2, H - 2), RED, "bottom-right corner");
 }
 
 /// When the frame falls exactly on the end of the window, it is still the last frame of the transition (`progress = 1`), and the outgoing picture no longer shows. This uses the numbers from a real flashback in the footage: cut point `2493/30` s, `dur` 0.8 s, and the end is frame 2505. The window end was once computed as `(t0 − half) + 2·half`, giving `83.49999999999999`, which is one ulp earlier than this frame, while the render window of the outgoing clip extends to `t0 + half = 83.5`, so this frame still drew the outgoing picture. The incoming picture only occupies a small patch at the top-left and is transparent elsewhere, so drawing the outgoing picture one extra frame would expose it at the bottom-right corner.
@@ -179,11 +179,11 @@ fn the_last_frame_of_the_window_does_not_flash_back() {
         ]}]
     });
     let end = render(document, 2505.0 / 30.0);
-    assert_eq!(px(&end.data, 4, 4), BLUE, "入场画面");
+    assert_eq!(px(&end.data, 4, 4), BLUE, "incoming picture");
     assert_eq!(
         px(&end.data, W - 2, H - 2),
         [0, 0, 0, 0xff],
-        "终点帧露出了出镜画面"
+        "the end frame exposed the outgoing picture"
     );
 }
 
@@ -193,8 +193,8 @@ fn params_reach_the_effect_uniforms() {
     let mut spec = circle_crop();
     spec["params"] = json!({"cx": 0.0, "cy": 0.0});
     let mid = render(doc(spec), T0);
-    assert_eq!(px(&mid.data, 1, 1), BLUE, "圆心已经在左上角");
-    assert_eq!(px(&mid.data, W - 2, H - 2), RED, "对角最后才换");
+    assert_eq!(px(&mid.data, 1, 1), BLUE, "circle center is already at top-left");
+    assert_eq!(px(&mid.data, W - 2, H - 2), RED, "the diagonal changes last");
 }
 
 /// The flat path (`FrameRenderer::record`, the stream `ccut ops` prints) cannot draw a dual-input composite, so it **degrades** to the Motion fallback of the cut point rather than silently dropping the transition. The default fallback is `crossfade`: the start of the window still shows only the outgoing picture.

@@ -55,7 +55,7 @@ fn an_omitted_seed_is_compiled_to_zero_not_to_a_random_source() {
 fn a_different_seed_only_moves_the_channel_declared_random() {
     let a = samples(noisy(Some(0)), "opacity");
     let b = samples(noisy(Some(99)), "opacity");
-    assert_eq!(a, b, "seed 不得影响非随机通道");
+    assert_eq!(a, b, "the seed must not affect non-random channels");
     assert_ne!(samples(noisy(Some(0)), "x"), samples(noisy(Some(99)), "x"));
 }
 
@@ -80,7 +80,7 @@ fn the_channel_key_derives_a_separate_sub_seed() {
             break;
         }
     }
-    assert!(differs, "channel 应当派生出不同的子种子");
+    assert!(differs, "the channel should derive a different sub-seed");
 }
 
 /// Out-of-order sampling = in-order sampling (the phase 0 approach: a fixed splitmix64 seed with Fisher–Yates).

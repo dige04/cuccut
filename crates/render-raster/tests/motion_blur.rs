@@ -93,7 +93,7 @@ fn moving_content_is_smeared_and_fingerprint_changes() {
     let (two, two_fp) = blurred(&d, 0.2, 2).unwrap();
     let (four, four_fp) = blurred(&d, 0.2, 4).unwrap();
     assert_ne!(sharp_fp, two_fp);
-    assert_ne!(two_fp, four_fp, "N 进帧指纹");
+    assert_ne!(two_fp, four_fp, "N sub-frame fingerprint");
     assert_ne!(sharp, two);
     // 600 px/s, 30 fps, 180° shutter → sub-frames span 10 px: a semi-transparent transition band appears at the edge.
     assert!(
@@ -102,7 +102,7 @@ fn moving_content_is_smeared_and_fingerprint_changes() {
         partial(&two),
         partial(&sharp)
     );
-    assert!(partial(&four) > partial(&two), "子帧越多过渡越细");
+    assert!(partial(&four) > partial(&two), "more sub-frames make the transition finer");
     // Shutter open backwards: the position at this frame's time (x = 120) is still fully covered; no early smear appears on the left side.
     let at = |data: &[u8], x: u32| data[((80 * W + x) * 4) as usize];
     assert_eq!(at(&two, 125), 255);
@@ -117,7 +117,7 @@ fn static_content_averages_to_the_same_bytes_under_a_new_fingerprint() {
     let (sharp, sharp_fp) = plain(&d, 0.5);
     let (four, four_fp) = blurred(&d, 0.5, 4).unwrap();
     assert_eq!(sharp, four);
-    assert_ne!(sharp_fp, four_fp, "两种口径的帧指纹不混用");
+    assert_ne!(sharp_fp, four_fp, "fingerprints of the two sampling modes must not be mixed");
 }
 
 #[test]

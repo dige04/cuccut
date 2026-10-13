@@ -133,8 +133,8 @@ fn path_draw_measures_the_morphed_outline() {
         ]}
     })));
     let data = stage.pixels(1.0);
-    assert_eq!(px(&data, 100, 80), BLUE, "长线的前半段");
-    assert_eq!(px(&data, 140, 80), WHITE, "后半段还没画到");
+    assert_eq!(px(&data, 100, 80), BLUE, "first half of the long line");
+    assert_eq!(px(&data, 140, 80), WHITE, "second half not drawn yet");
 }
 
 #[test]
@@ -142,7 +142,7 @@ fn topology_mismatch_is_a_hard_error() {
     let bad =
         json!({"type": "path", "id": "p", "d": LEFT, "morphTo": "M0 0 L10 10", "fill": "#000"});
     let error = match Resolver::new(doc(bad), None).and_then(|mut r| r.resolve()) {
-        Ok(_) => panic!("拓扑不等应当报错"),
+        Ok(_) => panic!("mismatched topology should be an error"),
         Err(error) => error.to_string(),
     };
     assert!(error.contains("path-morph-topology"), "{error}");

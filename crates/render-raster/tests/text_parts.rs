@@ -183,7 +183,7 @@ fn typewriter_reveals_parts_one_by_one() {
     assert_eq!(
         *counts.last().unwrap(),
         fill_paths(&plain_renderer.record(&plain, &mut engine, 1.5)),
-        "全部 part 出场后应当与不带动画的整串一样多"
+        "after all parts have appeared, the count should match the unanimated full string"
     );
 }
 
@@ -248,6 +248,6 @@ fn karaoke_scale_changes_transforms_without_dropping_glyphs() {
     assert_ne!(
         render_raster::drawop::fingerprint(&settled),
         render_raster::drawop::fingerprint(&peak),
-        "峰值时刻的变换应当与落定后不同"
+        "the transform at peak time should differ from the settled one"
     );
 }

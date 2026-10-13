@@ -112,5 +112,5 @@ fn the_preview_shell_mirrors_the_rust_origin_table() {
         eprintln!("skipping mirror comparison: node is not available in this environment");
         return;
     };
-    assert_eq!(js, rust, "预览壳 resolve.js 与 ccut-core 的反查表漂移了");
+    assert_eq!(js, rust, "preview shell resolve.js and ccut-core reverse lookup table have drifted");
 }

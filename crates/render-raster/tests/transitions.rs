@@ -127,8 +127,8 @@ fn every_motion_transition_actually_moves_at_the_midpoint() {
 fn the_wipe_edge_sweeps_the_declared_direction() {
     let (left, _) = render("wipeLeft", T0);
     for y in (0..H).step_by(11) {
-        assert_eq!(px(&left, 60, y), RED, "wipeLeft: 边左侧应是离场画面");
-        assert_eq!(px(&left, 180, y), BLUE, "wipeLeft: 边右侧应是入场画面");
+        assert_eq!(px(&left, 60, y), RED, "wipeLeft: left of the edge should be the outgoing frame");
+        assert_eq!(px(&left, 180, y), BLUE, "wipeLeft: right of the edge should be the incoming frame");
         // Hard edge: the adjacent pixels on either side of the edge switch colors directly, with no blending in between.
         assert_eq!(px(&left, 119, y), RED);
         assert_eq!(px(&left, 120, y), BLUE);
@@ -136,8 +136,8 @@ fn the_wipe_edge_sweeps_the_declared_direction() {
 
     let (right, _) = render("wipeRight", T0);
     for y in (0..H).step_by(11) {
-        assert_eq!(px(&right, 60, y), BLUE, "wipeRight: 边左侧应是入场画面");
-        assert_eq!(px(&right, 180, y), RED, "wipeRight: 边右侧应是离场画面");
+        assert_eq!(px(&right, 60, y), BLUE, "wipeRight: left of the edge should be the incoming frame");
+        assert_eq!(px(&right, 180, y), RED, "wipeRight: right of the edge should be the outgoing frame");
         assert_eq!(px(&right, 119, y), BLUE);
         assert_eq!(px(&right, 120, y), RED);
     }
@@ -148,7 +148,7 @@ fn the_wipe_edge_sweeps_the_declared_direction() {
 fn zoom_through_scales_about_the_canvas_centre() {
     let (mid, _) = render("zoomThrough", T0);
     // At 240×160 the 0.9375× incoming board leaves a 7.5px gap on the left and right and a 5px gap on the top and bottom; the outgoing board is 1.1875×, covering only up to beyond the canvas, so what remains at the corners is the outgoing one.
-    assert_ne!(px(&mid, 0, 0), [0, 0, 0, 255], "角上不该是纯背景");
+    assert_ne!(px(&mid, 0, 0), [0, 0, 0, 255], "corner should not be pure background");
     // Both boards cover the center, so after compositing it is neither pure red nor pure blue.
     let centre = px(&mid, W / 2, H / 2);
     assert_ne!(centre, RED);

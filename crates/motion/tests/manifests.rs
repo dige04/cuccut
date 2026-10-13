@@ -176,7 +176,7 @@ fn the_thirty_four_catalogue_recipes_are_frozen_at_version_one() {
     let total = hashes.len();
     hashes.sort_unstable();
     hashes.dedup();
-    assert_eq!(hashes.len(), total, "两份配方的 manifest_hash 撞了");
+    assert_eq!(hashes.len(), total, "the manifest_hash of the two recipes collided");
 }
 
 /// `available` is a **surface catalog** switch (ADR-M09), not a kernel gate: core evaluation never reads it,
@@ -393,7 +393,7 @@ fn every_sticker_template_is_a_stack_of_coloured_outlines() {
     let total = hashes.len();
     hashes.sort_unstable();
     hashes.dedup();
-    assert_eq!(hashes.len(), total, "两份模板的 manifest_hash 撞了");
+    assert_eq!(hashes.len(), total, "the manifest_hash of the two templates collided");
     assert!(timeline_sticker("no-such-template").is_none());
 }
 
@@ -478,7 +478,7 @@ fn the_shipped_wave_is_a_function_of_algorithm_and_determinism() {
     assert_eq!(
         visualizers(&VISUALIZER_BARS),
         ["bars", "bars_bottom", "bars_rounded", "ring_bars"],
-        "柱状 4 种"
+        "4 bar kinds"
     );
     assert_eq!(
         visualizers(&VISUALIZER_CURVES),
@@ -490,7 +490,7 @@ fn the_shipped_wave_is_a_function_of_algorithm_and_determinism() {
             "ring_wave",
             "spectrum_area"
         ],
-        "曲线 / 点阵 / 脉冲 6 种"
+        "6 curve / dot / pulse kinds"
     );
 
     let progresses = |kernels: &[&str]| {
@@ -517,12 +517,12 @@ fn the_shipped_wave_is_a_function_of_algorithm_and_determinism() {
             "reverse_border",
             "rounded"
         ],
-        "P3 的 progress 6 种"
+        "6 progress kinds for P3"
     );
     assert_eq!(
         progresses(&PROGRESS_P4),
         ["snake", "snake_spin"],
-        "P4 的 snake 2 种"
+        "2 snake kinds for P4"
     );
 
     // The collection that is live is exactly the solution of the consumer allowlist: 10 + 8.

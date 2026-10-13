@@ -479,7 +479,7 @@ fn renderers_reused_across_sizes_and_documents_match_fresh_ones() {
     let mut reused = renderer(false, Documents::new(documents()));
     let first = render_with(&mut reused, &video, 1.0, &mut Media::default());
     assert!(painted(&first) > 100);
-    assert!(first.chunks_exact(4).any(|p| reddish([p[0], p[1], p[2], p[3]])), "文字层画上去了");
+    assert!(first.chunks_exact(4).any(|p| reddish([p[0], p[1], p[2], p[3]])), "the text layer was painted on top");
     reused.resize(W * 2, H * 2).unwrap();
     assert_eq!(render_with(&mut reused, &video, 1.0, &mut Media::default()), fresh(W * 2, H * 2));
     reused.resize(W, H).unwrap();
@@ -699,7 +699,7 @@ fn designed_caption_emphasis_lands_on_transcript_words() {
     );
     // Without a transcript to draw from, words are derived by splitting on whitespace. Without this ID, emphasis does not land.
     let (none, ..) = draw(None, hero("w2"));
-    assert_eq!(none, 0, "取不到词时不冒充强调");
+    assert_eq!(none, 0, "without a word to look up, emphasis is not faked");
 }
 
 #[test]
@@ -779,7 +779,7 @@ fn bottom_template_strips_lift_captions_without_drawing_the_template_twice() {
     let off = draw(clear(false), true);
     assert!(bottom(&plain) >= strip_top, "without a template the caption bottom edge sits near 86%: {}", bottom(&plain));
     assert!(bottom(&lifted) < strip_top, "the bottom bar lifts the caption above the bar's top edge: {}", bottom(&lifted));
-    assert_eq!(off, plain, "关掉 subsAvoid 不抬");
+    assert_eq!(off, plain, "turning off subsAvoid does not lift it");
     // The caption's appearance is unchanged: the white text has about the same pixel count.
     let (white_plain, ..) = centroid(&plain, whiteish);
     let (white_lifted, ..) = centroid(&lifted, whiteish);

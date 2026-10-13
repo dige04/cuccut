@@ -109,7 +109,7 @@ fn flow_and_the_legacy_slots_are_mutually_exclusive() {
     // resolve also rejects it (double safeguard: lint and resolve)
     let mut resolver = Resolver::new(document, None).unwrap();
     let error = match resolver.resolve() {
-        Ok(_) => panic!("resolve 应当拒绝 flow + 四槽"),
+        Ok(_) => panic!("resolve should reject flow + four slots"),
         Err(error) => error.to_string(),
     };
     assert!(error.starts_with("motion-legacy-and-flow"), "{error}");
@@ -216,7 +216,7 @@ fn part_motion_never_moves_the_layout_box() {
     assert_eq!(
         (fa.x, fa.y, fa.w, fa.h),
         (fb.x, fb.y, fb.w, fb.h),
-        "part 动画不得改变布局尺寸（§7.9）"
+        "part animation must not change the layout size (§7.9)"
     );
 }
 

@@ -128,7 +128,7 @@ fn missing_transcript_fails_resolution_and_lint() {
     media_only.insert_audio("voice", 30.0);
     r.set_host_inputs(media_only);
     let err = match r.resolve() {
-        Ok(_) => panic!("缺词表应失败"),
+        Ok(_) => panic!("missing word table should fail"),
         Err(e) => e.to_string(),
     };
     assert!(err.starts_with("word-anchor-no-transcript"), "{err}");

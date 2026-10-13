@@ -434,7 +434,7 @@ fn a_frame_without_v4_primitives_still_encodes_as_v3() {
     assert_eq!(
         u32::from_le_bytes(encoded[4..8].try_into().unwrap()),
         3,
-        "v3 帧的信封版本必须还是 3"
+        "the v3 frame's envelope version must still be 3"
     );
     // A v3 frame has no paints section: strings(0) + paths(1 path, 2 segments) + ops(1 op)
     let (version, back) = drawop::decode(&encoded).unwrap();
@@ -453,7 +453,7 @@ fn v4_primitives_lift_the_envelope_and_round_trip() {
     assert_eq!(version, 4);
     assert_eq!(back.paints, frame.paints);
     assert_eq!(back.ops, frame.ops);
-    assert_eq!(drawop::encode(&back), encoded, "v4 解码后重编码逐字节相同");
+    assert_eq!(drawop::encode(&back), encoded, "v4 re-encoding after decode is byte-for-byte identical");
 }
 
 #[test]
@@ -525,10 +525,10 @@ fn bitmaps_lift_the_envelope_to_v5_and_round_trip() {
 
     let (version, back) = drawop::decode(&encoded).unwrap();
     assert_eq!(version, 5);
-    assert_eq!(back.paints, frame.paints, "v5 仍带 v4 的 paint 节");
+    assert_eq!(back.paints, frame.paints, "v5 still carries the v4 paint section");
     assert_eq!(back.bitmaps, frame.bitmaps);
     assert_eq!(back.ops, frame.ops);
-    assert_eq!(drawop::encode(&back), encoded, "v5 解码后重编码逐字节相同");
+    assert_eq!(drawop::encode(&back), encoded, "v5 re-encoding after decode is byte-for-byte identical");
 }
 
 #[test]

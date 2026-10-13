@@ -296,7 +296,7 @@ fn text_shape_and_generators_fill_their_box() {
     assert_eq!(title.matrix, [960.0, 0.0, 0.0, 960.0, 480.0, -264.0]);
     assert_eq!((title.asset.as_ref(), title.source_rect), (None, None));
     let Some(LayerContent::Text { text, style }) = &title.content else {
-        panic!("文字层带文字");
+        panic!("text layer carries text");
     };
     assert_eq!(text, "标题");
     assert_eq!(style["fontSize"], 96);
@@ -307,7 +307,7 @@ fn text_shape_and_generators_fill_their_box() {
     // Width 10% = 192, height 10% = 108, center at (192, 216), rotated 90° clockwise around the center.
     assert_eq!(badge.matrix, [0.0, 192.0, -108.0, 0.0, 246.0, 120.0]);
     let Some(LayerContent::Shape { shape }) = &badge.content else {
-        panic!("图形层带图形");
+        panic!("shape layer carries a shape");
     };
     assert_eq!((shape["shape"].as_str(), shape["fill"].as_str()), (Some("rect"), Some("#FF0000")));
 
@@ -320,7 +320,7 @@ fn text_shape_and_generators_fill_their_box() {
         ..
     }) = &meter.content
     else {
-        panic!("生成器层带生成器");
+        panic!("generator layer carries a generator");
     };
     assert_eq!(generator, "cuccut.progress");
     assert!((elapsed_seconds - 10.0 / 30.0).abs() < 1e-12);
@@ -372,7 +372,7 @@ fn captions_project_through_the_covering_scope_item() {
         scope: Some(scope),
     }) = &caption.content
     else {
-        panic!("字幕层带作用实例");
+        panic!("caption layer carries a scope instance");
     };
     assert_eq!(
         (document_id.as_str(), style_document_id.as_deref()),
@@ -388,7 +388,7 @@ fn captions_project_through_the_covering_scope_item() {
 
     let later = plan(&video, 9.5);
     let Some(LayerContent::Caption { scope: Some(scope), .. }) = &layer(&later, "item_caption").content else {
-        panic!("字幕层带作用实例");
+        panic!("caption layer carries a scope instance");
     };
     assert_eq!(scope.item_id, "item_talk_b");
     assert!((scope.source_seconds - (20.0 + 10.0 / 30.0)).abs() < 1e-12);
@@ -396,7 +396,7 @@ fn captions_project_through_the_covering_scope_item() {
     // Captions with no active instance follow sequence time and appear only within their own span.
     let note = plan(&video, 9.8);
     let Some(LayerContent::Caption { scope, .. }) = &layer(&note, "item_note").content else {
-        panic!("字幕层");
+        panic!("caption layer");
     };
     assert!(scope.is_none());
     assert!(plan(&video, 9.5).layers.iter().all(|l| l.item_id != "item_note"));

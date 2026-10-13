@@ -75,7 +75,7 @@ fn the_asset_is_heard_at_its_source_time() {
         assert_eq!(painted(&before), painted(&quiet), "{audio}");
         assert!(
             painted(&loud) > painted(&quiet) + 50,
-            "{audio}：{} {}",
+            "{audio}: {} {}",
             painted(&quiet),
             painted(&loud)
         );
@@ -90,7 +90,7 @@ fn the_project_mix_follows_volume_but_a_single_asset_does_not() {
     assert_eq!(
         shot(&scene("a_tone", 1.0), 4.5, &mut media()),
         shot(&scene("a_tone", 0.1), 4.5, &mut media()),
-        "只听一个素材时不乘增益"
+        "when only one asset is heard, no gain is applied"
     );
 }
 

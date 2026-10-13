@@ -103,7 +103,7 @@ fn a_colr_glyph_records_a_bitmap_and_rasterizes_in_colour() {
 
     let bitmaps = draw_bitmaps(&frame);
     assert_eq!(bitmaps.len(), 1, "probe A is a colour glyph: one DrawBitmap");
-    assert_eq!(fill_paths(&frame), 0, "彩色字形不应再画它的单色回退轮廓");
+    assert_eq!(fill_paths(&frame), 0, "a colour glyph must not also draw its monochrome fallback outline");
     assert_eq!(frame.bitmaps.len(), 1);
     assert_eq!(drawop::required_version(&frame), 5);
     let (_, opacity, tf) = bitmaps[0];
@@ -115,7 +115,7 @@ fn a_colr_glyph_records_a_bitmap_and_rasterizes_in_colour() {
         red > 40 && blue > 40,
         "should draw a red diamond and a blue triangle: red={red} blue={blue}"
     );
-    assert_eq!(white, 0, "位图不吃文字颜色（#ffffff）");
+    assert_eq!(white, 0, "the bitmap does not take the text colour (#ffffff)");
 }
 
 /// The text color's alpha is multiplied into the bitmap's opacity; the color itself does not participate.
@@ -180,7 +180,7 @@ fn colour_glyph_recording_is_independent_of_cache_state() {
     let first = record(doc.clone(), &mut warm, 0.5);
     let again = record(doc.clone(), &mut warm, 0.5);
     let cold = record(doc, &mut probe_engine(), 0.5);
-    assert_eq!(first.bitmaps.len(), 1, "三个 A 共用一张位图");
+    assert_eq!(first.bitmaps.len(), 1, "three As share one bitmap");
     assert_eq!(draw_bitmaps(&first).len(), 3);
     assert_eq!(drawop::fingerprint(&first), drawop::fingerprint(&again));
     assert_eq!(drawop::fingerprint(&first), drawop::fingerprint(&cold));

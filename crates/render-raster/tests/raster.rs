@@ -522,8 +522,8 @@ fn even_odd_hollows_out_what_nonzero_fills_in() {
         render_raster::raster::rasterize(&make(false), 16, 16, &mut empty_media()).unwrap();
     let evenodd =
         render_raster::raster::rasterize(&make(true), 16, 16, &mut empty_media()).unwrap();
-    assert_eq!(pixel(&nonzero, 8, 8)[3], 255, "nonzero 中心应当被填满");
-    assert_eq!(pixel(&evenodd, 8, 8)[3], 0, "even-odd 中心应当被挖空");
+    assert_eq!(pixel(&nonzero, 8, 8)[3], 255, "nonzero center should be filled");
+    assert_eq!(pixel(&evenodd, 8, 8)[3], 0, "even-odd center should be hollowed out");
     // The ring band is consistent under both rules
     assert_eq!(pixel(&nonzero, 8, 2)[3], pixel(&evenodd, 8, 2)[3]);
 }
@@ -561,8 +561,8 @@ fn an_alpha_matte_cuts_the_layer_below_it() {
         ],
     };
     let pm = render_raster::raster::rasterize(&frame, 16, 16, &mut empty_media()).unwrap();
-    assert_eq!(pixel(&pm, 2, 2)[3], 255, "遮罩内保留");
-    assert_eq!(pixel(&pm, 13, 13)[3], 0, "遮罩外抹掉");
+    assert_eq!(pixel(&pm, 2, 2)[3], 255, "kept inside the mask");
+    assert_eq!(pixel(&pm, 13, 13)[3], 0, "erased outside the mask");
 }
 
 #[test]
@@ -724,15 +724,15 @@ fn draw_bitmap_places_premultiplied_pixels_with_opacity_and_clip() {
     assert_eq!(pixel(&pm, 3, 4), [255, 0, 0, 255]);
     assert_eq!(pixel(&pm, 4, 4), [0, 128, 0, 128]);
     assert_eq!(pixel(&pm, 3, 5), [0, 0, 255, 255]);
-    assert_eq!(pixel(&pm, 2, 4), [0, 0, 0, 0], "位图之外不画");
+    assert_eq!(pixel(&pm, 2, 4), [0, 0, 0, 0], "nothing drawn outside the bitmap");
     let half = pixel(&pm, 0, 12);
-    assert!((126..=129).contains(&half[3]), "opacity 0.5：{half:?}");
+    assert!((126..=129).contains(&half[3]), "opacity 0.5: {half:?}");
     assert!(
         (99..=101).contains(&half[0]),
         "premultiplied red halved by opacity: {half:?}"
     );
-    assert_eq!(pixel(&pm, 12, 2), [200, 40, 0, 255], "缩放后的内部像素");
-    assert_eq!(pixel(&pm, 15, 2), [0, 0, 0, 0], "裁剪框外不画");
+    assert_eq!(pixel(&pm, 12, 2), [200, 40, 0, 255], "inner pixel after scaling");
+    assert_eq!(pixel(&pm, 15, 2), [0, 0, 0, 0], "nothing drawn outside the crop box");
 }
 
 #[test]
@@ -797,11 +797,11 @@ fn static_prefix_is_rasterized_once_per_key_and_size() {
     assert_eq!(
         first.data(),
         draw(&frame(red, false), 6).data(),
-        "未命中=从头重放"
+        "miss = replay from the start"
     );
     let hit = draw(&frame(blue, true), 6);
     assert_eq!(pixel(&hit, 0, 0), [255, 0, 0, 255], "same key hit: prefix taken from cache");
-    assert_eq!(pixel(&hit, 2, 2), [0, 255, 0, 255], "前缀之后照常画");
+    assert_eq!(pixel(&hit, 2, 2), [0, 255, 0, 255], "drawn normally after the prefix");
     assert_eq!(hit.data(), first.data());
     // Size is part of the key; frames without the hint do not consult the cache.
     assert_eq!(pixel(&draw(&frame(blue, true), 7), 0, 0), [0, 0, 255, 255]);

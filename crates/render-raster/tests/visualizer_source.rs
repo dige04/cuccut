@@ -482,7 +482,7 @@ fn the_fingerprint_covers_the_spectrum_and_the_params() {
         VizTrack::derive(&bytes, param_sets()[1].1)
             .unwrap()
             .fingerprint(),
-        "同字节同参数必须同指纹"
+        "same bytes and same parameters must give the same fingerprint"
     );
     for (name, params) in param_sets() {
         if name == "default" {

@@ -1180,5 +1180,5 @@ fn parity_fixture_is_current() {
             now["name"]
         );
     }
-    assert_eq!(fixture, stored, "场景的个数或次序与夹具不同");
+    assert_eq!(fixture, stored, "the number or order of scenes differs from the fixture");
 }

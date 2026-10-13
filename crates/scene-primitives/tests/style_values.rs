@@ -85,13 +85,13 @@ fn gradient_object_parses_and_defaults_even_stops() {
     assert!(BgGradient::parse(&json!({"kind": "conic", "stops": []})).is_err());
     assert!(
         BgGradient::parse(&json!({"kind": "linear", "stops": [{"color": "#fff"}]})).is_err(),
-        "至少两个色标"
+        "at least two color stops"
     );
     assert!(
         BgGradient::parse(&json!({"kind": "linear",
             "stops": [{"at": 0.8, "color": "#fff"}, {"at": 0.2, "color": "#000"}]}))
         .is_err(),
-        "at 必须单调"
+        "at must be monotonic"
     );
 }
 
@@ -241,7 +241,7 @@ fn element_mask_parses_and_links_its_source() {
     assert!(m.luma && m.invert);
     assert!(
         ElementMask::parse(&json!({"source": "word"})).is_err(),
-        "必须带 #"
+        "must include #"
     );
     assert!(ElementMask::parse(&json!({"source": "#w", "mode": "alpha2"})).is_err());
     assert!(ElementMask::parse(&json!({"source": "#w", "feather": 2})).is_err());
@@ -256,7 +256,7 @@ fn element_mask_parses_and_links_its_source() {
     let tree = &ir.visual_clips[0].tree;
     assert!(tree.children[0].mask.is_some());
     assert!(!tree.children[0].mask_source);
-    assert!(tree.children[1].mask_source, "源元素被标成遮罩定义");
+    assert!(tree.children[1].mask_source, "the source element is marked as a mask definition");
 }
 
 #[test]

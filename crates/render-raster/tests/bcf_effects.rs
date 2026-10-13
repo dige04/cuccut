@@ -108,12 +108,12 @@ fn a_circle_clip_path_removes_the_corners() {
     assert_eq!(
         px(&clipped, 3, 3),
         [0x10, 0x10, 0x14, 0xff],
-        "圆外的角必须只剩底色"
+        "Corner pixels outside the circle must keep only the background color"
     );
     assert_eq!(
         px(&clipped, 50, 50),
         px(&plain, 50, 50),
-        "圆内的中心必须与未裁剪时逐字节相同"
+        "Center pixels inside the circle must be byte-identical to the unclipped render"
     );
 }
 
@@ -146,7 +146,7 @@ fn blend_mode_changes_the_composited_pixels() {
     assert_ne!(
         px(&normal, 50, 50),
         px(&screen, 50, 50),
-        "screen 必须与 normal 得到不同的合成结果"
+        "screen must composite differently from normal"
     );
     // screen only brightens, never darkens.
     for channel in 0..3 {
@@ -165,10 +165,10 @@ fn an_effect_stack_grows_filter_and_composite_passes() {
         "effects": [{"preset": "filter.grayscale", "presetVersion": 1, "params": {"amount": 1}}]
     }))));
     let (data, passes, filters) = render(ir, 1.0);
-    assert_eq!(filters, 1, "一条效果 ⇒ 一个 Filter pass");
+    assert_eq!(filters, 1, "one effect => one Filter pass");
     assert!(passes >= 3, "expected at least Draw + Filter + Composite, got {passes}");
     let [r, g, b, _] = px(&data, 50, 50);
-    assert_eq!(r, g, "灰度后三通道必须相等");
+    assert_eq!(r, g, "after grayscale, the three channels must be equal");
     assert_eq!(g, b);
 }
 
@@ -182,13 +182,13 @@ fn the_blur_channel_finally_renders() {
     }))));
     let sharp = render(ir_of(doc_with_element(square(json!({})))), 1.0).0;
     let (blurred, _, filters) = render(ir, 2.0);
-    assert_eq!(filters, 1, "非零 blur ⇒ 一个隐式 filter.blur");
+    assert_eq!(filters, 1, "non-zero blur => one implicit filter.blur");
     // A point just outside the square's right edge: when sharp it is pure background color, and after blurring it must be tinted with some red.
     assert_eq!(px(&sharp, 104, 50), [0x10, 0x10, 0x14, 0xff]);
     assert_ne!(
         px(&blurred, 104, 50),
         [0x10, 0x10, 0x14, 0xff],
-        "blur 必须把颜色扩散到盒外"
+        "blur must spread color outside the box"
     );
 }
 
@@ -203,10 +203,10 @@ fn a_zero_blur_frame_still_folds() {
     let mut engine = TextEngine::new();
     let renderer = FrameRenderer::new(&mut ir, &mut engine).unwrap();
     let planner = FramePlanner::cpu(&ir).unwrap();
-    assert!(!planner.topology().is_empty(), "有 blur 通道 ⇒ 拓扑非空");
+    assert!(!planner.topology().is_empty(), "blur channel present => topology is non-empty");
     assert!(
         planner.plan(&renderer, &ir, &mut engine, 0.0).is_folded(),
-        "blur 采样为 0 的那一刻应当折叠回单 Draw pass"
+        "at the moment blur samples 0, the plan should fold back into a single Draw pass"
     );
 }
 
@@ -229,7 +229,7 @@ fn the_blur_channel_adds_to_an_explicit_filter_blur() {
         .iter()
         .filter(|pass| matches!(pass, RenderPass::Filter { .. }))
         .collect();
-    assert_eq!(filters.len(), 1, "两者合并成一条 filter.blur");
+    assert_eq!(filters.len(), 1, "both merge into one filter.blur");
     let RenderPass::Filter { uniforms, .. } = filters[0] else {
         unreachable!()
     };
@@ -287,7 +287,7 @@ fn the_effect_path_is_bitwise_repeatable() {
     let b = render(make(), 1.0);
     assert_eq!(a.0, b.0);
     assert_eq!((a.1, a.2), (b.1, b.2));
-    assert_eq!(a.2, 2, "两条效果 ⇒ 两个 Filter pass");
+    assert_eq!(a.2, 2, "two effects => two Filter passes");
 }
 
 #[test]
@@ -422,8 +422,8 @@ fn keyframed_effect_params_change_pixels_and_fingerprints() {
     let at0 = fingerprint_at(doc.clone(), 0.0);
     let at1 = fingerprint_at(doc.clone(), 1.0);
     let at2 = fingerprint_at(doc.clone(), 1.5);
-    assert_ne!(at0, at1, "动画的效果参数必须进帧指纹");
-    assert_eq!(at1, at2, "关键帧结束后保持末值 ⇒ 同一帧");
+    assert_ne!(at0, at1, "animated effect parameters must enter the frame fingerprint");
+    assert_eq!(at1, at2, "after keyframes end, holding the last value => same frame");
 
     // The glow overflows the square's boundary at strength 3, and does not at strength 0.
     let (dark, _, _) = render(ir_of(doc.clone()), 0.0);
@@ -484,7 +484,7 @@ fn radial_blur_strength_animates_through_the_effect_channel() {
     assert_eq!(filters, 1);
     // strength 0 is pixel-for-pixel identical to no effect.
     let (plain, _, _) = render(ir_of(doc_with_element(square(json!({})))), 0.0);
-    assert_eq!(still, plain, "strength = 0 必须恒等");
+    assert_eq!(still, plain, "strength = 0 must be identity");
     // Each pixel samples toward the center. The square's right edge (the side facing the center) samples transparent pixels outside the square and is faded. The top-left corner is farthest from the center and all its samples fall inside the square, so it is essentially unchanged.
     assert!(zoomed != still);
     let edge = px(&zoomed, 98, 50);
@@ -562,7 +562,7 @@ fn part_blur_softens_each_word_on_its_own_schedule() {
     assert_eq!(filters, 0);
     // t = 0.25: the first word is coming into focus, and the second word has not started yet (it is held at its starting radius), so there are two radius buckets.
     let (mid, _, filters) = render(ir_of(doc(true)), 0.25);
-    assert_eq!(filters, 2, "每个不同的模糊半径各一层 filter.blur");
+    assert_eq!(filters, 2, "one filter.blur layer per distinct blur radius");
     assert_ne!(mid, reference);
     assert!(
         soft_pixels(&mid) > soft_pixels(&reference) * 2,

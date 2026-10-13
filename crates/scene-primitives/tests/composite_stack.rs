@@ -112,7 +112,7 @@ fn flash_and_tilt_also_stack_on_top_of_a_main_motion() {
         .iter()
         .filter(|c| c.prop == "rotation")
         .collect();
-    assert_eq!(rotations.len(), 2, "旋转必须是两条独立的 add 轨");
+    assert_eq!(rotations.len(), 2, "rotation must be two separate add tracks");
     assert!(
         rotations
             .iter()
@@ -123,7 +123,7 @@ fn flash_and_tilt_also_stack_on_top_of_a_main_motion() {
         .iter()
         .filter(|c| c.prop == "opacity")
         .collect();
-    assert_eq!(opacities.len(), 2, "不透明度是两条 multiply 轨");
+    assert_eq!(opacities.len(), 2, "opacity is two multiply tracks");
 
     // t = 0.25: rotateIn's -20 → 0 (linear) reaches -15; tilt's 0 → 10 (peak at 50%) reaches 5 ⇒ **added** = -10. The old “later write overrides” would only give 5 or -15 here.
     let pose = sample_channels(&node.channels, 0.25);
@@ -154,14 +154,14 @@ fn legacy_enter_and_exit_on_one_prop_each_own_their_window() {
         assert_eq!(ch.composite, motion::CompositeMode::Replace);
     }
     let at = |t: f64| sample_channels(&node.channels, t).scalar("opacity", 1.0);
-    assert_eq!(at(0.0), 0.0, "淡入从 0 开始");
+    assert_eq!(at(0.0), 0.0, "fade-in starts from 0");
     assert!(at(0.5) > 0.0 && at(0.5) < 1.0, "fade-in in progress: {}", at(0.5));
-    assert_eq!(at(2.0), 1.0, "两段之间保持淡入的末值");
+    assert_eq!(at(2.0), 1.0, "between the two segments, hold the fade-in end value");
     assert!(at(3.5) > 0.0 && at(3.5) < 1.0, "fade-out in progress: {}", at(3.5));
-    assert_eq!(at(4.0), 0.0, "淡出到 0");
+    assert_eq!(at(4.0), 0.0, "fade-out goes to 0");
     assert!(
         !sample_channels(&node.channels, 0.5).has_composition(),
-        "legacy 路径不得引入 add / multiply"
+        "the legacy path must not introduce add / multiply"
     );
 }
 
@@ -191,7 +191,7 @@ fn sequential_keyframe_tracks_on_one_prop_play_one_after_another() {
     let node = card(&ir);
     let at = |t: f64| sample_channels(&node.channels, t).scalar("rotation", 0.0);
     assert_eq!(at(0.25), 50.0, "first segment in progress; not overridden by the second segment's backfilled first value");
-    assert_eq!(at(0.75), 100.0, "两段之间保持第一段的末值");
+    assert_eq!(at(0.75), 100.0, "between the two segments, hold the end value of the first segment");
     assert_eq!(at(1.25), 150.0);
     assert_eq!(at(2.0), 0.0);
 }

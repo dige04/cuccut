@@ -32,7 +32,7 @@ fn titled(text: &str, w: f64) -> Vec<u8> {
 fn a_box_as_wide_as_measured_keeps_the_text_on_one_line() {
     for text in ["输入文字", "Hello world"] {
         let measured = renderer(false, Documents::default()).measure_text(text, &style(), None, (W, H));
-        assert!(measured.width > 20.0 && measured.width < f64::from(W), "{text}：{measured:?}");
+        assert!(measured.width > 20.0 && measured.width < f64::from(W), "{text}: {measured:?}");
         let w = measured.width / f64::from(W) * 100.0;
         // The box width is the measured width: it draws the same as a much wider box (centred, one line).
         assert_eq!(titled(text, w), titled(text, 100.0), "{text} wrapped onto two lines at its measured box width");

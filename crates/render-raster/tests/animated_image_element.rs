@@ -133,9 +133,9 @@ fn the_duration_table_drives_the_recorded_source_time() {
 #[test]
 fn the_intrinsic_loop_count_supplies_the_default() {
     let mut h = build(element(json!({})));
-    assert_eq!(h.media_ms(1.0), 0, "1.0s 回到第 0 帧");
+    assert_eq!(h.media_ms(1.0), 0, "at 1.0s, back to frame 0");
     assert_eq!(h.media_ms(1.35), 300);
-    assert_eq!(h.media_ms(3.7), 600, "第四遍仍在循环");
+    assert_eq!(h.media_ms(3.7), 600, "the fourth pass still loops");
     assert_eq!(h.pixel(1.05), RED);
     assert_eq!(h.pixel(3.65), YELLOW);
 }
@@ -145,7 +145,7 @@ fn the_intrinsic_loop_count_supplies_the_default() {
 fn an_explicit_loop_false_freezes_on_the_last_frame() {
     let mut h = build(element(json!({ "loop": false })));
     assert_eq!(h.media_ms(0.65), 600);
-    assert_eq!(h.media_ms(1.0), 600, "越过总时长即冻结");
+    assert_eq!(h.media_ms(1.0), 600, "past the total duration, it freezes");
     assert_eq!(h.media_ms(3.9), 600);
     assert_eq!(h.pixel(3.9), YELLOW);
 }
@@ -197,14 +197,14 @@ fn a_finite_loop_count_stops_after_its_plays() {
     };
     // Total length 300 ms, 2 passes ⇒ after 600 ms, frozen at the last frame's start, 200 ms
     let mut h = run(with(element(json!({}))));
-    assert_eq!(h.media_ms(0.35), 0, "0.35s 折回第二遍的第 0 帧");
-    assert_eq!(h.media_ms(0.45), 100, "第二遍的第 1 帧");
+    assert_eq!(h.media_ms(0.35), 0, "0.35s wraps to frame 0 of the second pass");
+    assert_eq!(h.media_ms(0.45), 100, "frame 1 of the second pass");
     assert_eq!(h.media_ms(0.6), 200, "both passes finished, freeze the last frame");
     assert_eq!(h.media_ms(3.9), 200);
     // An explicit loop: true overrides the asset's declaration
     let mut h = run(with(element(json!({ "loop": true }))));
-    assert_eq!(h.media_ms(0.6), 0, "第三遍从头开始");
-    assert_eq!(h.media_ms(3.88), 200, "第 13 遍的末帧");
+    assert_eq!(h.media_ms(0.6), 0, "the third pass starts from the beginning");
+    assert_eq!(h.media_ms(3.88), 200, "the last frame of the 13th pass");
 }
 
 /// Out-of-order recording is byte-for-byte identical to in-order recording. Rendering is out of order and parallel, so this is not optional.
@@ -238,8 +238,8 @@ fn frame_fingerprints_change_exactly_at_frame_boundaries() {
         let frame = h.renderer.record(&h.ir, &mut h.engine, t);
         render_raster::fingerprint(&frame)
     };
-    assert_eq!(fp(&mut h, 0.0), fp(&mut h, 0.08), "同一帧内指纹不变");
-    assert_ne!(fp(&mut h, 0.08), fp(&mut h, 0.12), "跨帧指纹必须变");
+    assert_eq!(fp(&mut h, 0.0), fp(&mut h, 0.08), "the fingerprint is unchanged within one frame");
+    assert_ne!(fp(&mut h, 0.08), fp(&mut h, 0.12), "the fingerprint must change across frames");
     assert_eq!(fp(&mut h, 0.12), fp(&mut h, 0.28));
 }
 
@@ -271,7 +271,7 @@ fn the_static_image_path_is_untouched() {
             _ => None,
         })
         .collect();
-    assert_eq!(ops, vec![(-1, [0.0f32; 4])], "静态图仍是 -1 + 整幅源");
+    assert_eq!(ops, vec![(-1, [0.0f32; 4])], "a static image is still -1 + the whole source");
 }
 
 /// When a GIF is declared as `type: "image"`, the error should point to `animatedImage` instead of simply saying “unsupported image format”.
@@ -288,7 +288,7 @@ fn a_gif_declared_as_a_plain_image_points_at_animated_image() {
         ] } ]
     });
     let err = match load_assets(&doc, &fixture_dir()) {
-        Ok(_) => panic!("静态图解码器不该收下 GIF"),
+        Ok(_) => panic!("the static image decoder must not accept a GIF"),
         Err(e) => e,
     };
     let text = format!("{err:#}");

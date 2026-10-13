@@ -195,7 +195,7 @@ fn disposal_and_canvas_composition_are_honoured() {
     let src = load("disposal.gif");
     let meta = src.probe().unwrap();
     assert_eq!(meta.frame_count(), 3);
-    assert_eq!(meta.loops, SourceLoop::Finite(2), "有限 loop count 被保留");
+    assert_eq!(meta.loops, SourceLoop::Finite(2), "finite loop count is preserved");
 
     let px = |i: usize, x: u32, y: u32| {
         let p = src.frame(i).unwrap().pixel(x, y).unwrap();
@@ -205,17 +205,17 @@ fn disposal_and_canvas_composition_are_honoured() {
     assert_eq!(px(0, 0, 0), (0xe0, 0x20, 0x20, 255));
     assert_eq!(px(0, 7, 7), (0xe0, 0x20, 0x20, 255));
     // Frame 1 (after frame 0, which has dispose = Keep): red background + a 4×4 green block in the middle
-    assert_eq!(px(1, 0, 0), (0xe0, 0x20, 0x20, 255), "帧 0 的红底被保留");
-    assert_eq!(px(1, 3, 3), (0x20, 0xc0, 0x20, 255), "绿块合成在红底上");
+    assert_eq!(px(1, 0, 0), (0xe0, 0x20, 0x20, 255), "frame 0’s red background is preserved");
+    assert_eq!(px(1, 3, 3), (0x20, 0xc0, 0x20, 255), "green block is composited over the red background");
     // Frame 2: the top-left 4×4 is this frame's blue block
-    assert_eq!(px(2, 1, 1), (0x20, 0x40, 0xe0, 255), "左上蓝块");
+    assert_eq!(px(2, 1, 1), (0x20, 0x40, 0xe0, 255), "top-left blue block");
     // Frame 1's `Background` **applies only to its own frame rectangle** (the 4×4 starting at (2,2)) —
     // this is the canonical GIF disposal semantics, not “clear the whole canvas”
-    assert_eq!(px(2, 5, 5), (0, 0, 0, 0), "帧 1 的矩形被处置成背景（透明）");
+    assert_eq!(px(2, 5, 5), (0, 0, 0, 0), "frame 1’s rectangle is disposed to background (transparent)");
     assert_eq!(
         px(2, 7, 7),
         (0xe0, 0x20, 0x20, 255),
-        "矩形之外仍是帧 0 保留的红底"
+        "outside the rectangle, the red background kept from frame 0 remains"
     );
 }
 
@@ -304,7 +304,7 @@ fn the_fingerprint_covers_every_frame_and_delay() {
             .fingerprint()
     };
     let h0 = hash(&base);
-    assert_eq!(h0, hash(&base), "同样的字节必须给出同样的指纹");
+    assert_eq!(h0, hash(&base), "identical bytes must produce an identical fingerprint");
 
     let mut colours = fixture_gen::STRIPE_COLOURS;
     colours[2][0] = colours[2][0].wrapping_add(1); // Change only one color component of frame 3
@@ -313,20 +313,20 @@ fn the_fingerprint_covers_every_frame_and_delay() {
         fixture_gen::STRIPE_DELAYS_CS,
         gif::Repeat::Infinite,
     );
-    assert_ne!(h0, hash(&recoloured), "改一帧像素必须换指纹");
+    assert_ne!(h0, hash(&recoloured), "changing one frame’s pixels must change the fingerprint");
 
     let mut delays = fixture_gen::STRIPE_DELAYS_CS;
     delays[1] += 1;
     let retimed =
         fixture_gen::stripes_gif(fixture_gen::STRIPE_COLOURS, delays, gif::Repeat::Infinite);
-    assert_ne!(h0, hash(&retimed), "改一条 delay 必须换指纹");
+    assert_ne!(h0, hash(&retimed), "changing one delay must change the fingerprint");
 
     let relooped = fixture_gen::stripes_gif(
         fixture_gen::STRIPE_COLOURS,
         fixture_gen::STRIPE_DELAYS_CS,
         gif::Repeat::Finite(3),
     );
-    assert_ne!(h0, hash(&relooped), "改 loop count 必须换指纹");
+    assert_ne!(h0, hash(&relooped), "changing the loop count must change the fingerprint");
 }
 
 /// The source itself does not loop: past the end, the last frame is always frozen. Loop folding is the caller's job (the element's `loop` / `segment` semantics).

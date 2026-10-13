@@ -4,15 +4,16 @@ import { newId, type Id } from '@cuccut/protocol';
 import type { AgentToolAccess, ToolGrant } from '@cuccut/harness';
 import type { TrustedPrincipal } from '../gateway.ts';
 
-/** 工具调用的身份：哪个会话的智能体（架构设计 §4.2）。 */
+/** The identity behind a tool call: which session's agent (architecture design §4.2). */
 export interface AgentPrincipal extends TrustedPrincipal {
   kind: 'agent';
   conversationId: Id;
 }
 
 /**
- * 工具通道的授权（架构设计 §3.5、§12.5）。每个原生会话一枚随机令牌，只认会话、不带权限：
- * 能做什么在每次调用时按会话当前的任务判断。会话关闭时收回令牌，并让它打开的视频按宽限期关闭。
+ * Tool-channel authorization (architecture design §3.5, §12.5). One random token per native session; it identifies only
+ * the session and carries no permissions: what it may do is decided on each call from the session's current task. When
+ * the session closes, the token is revoked and the videos it opened close after a grace period.
  */
 export class AgentGrants implements AgentToolAccess {
   readonly #byToken = new Map<string, AgentPrincipal>();
@@ -21,15 +22,17 @@ export class AgentGrants implements AgentToolAccess {
   #endpoint: string | null = null;
   #instructions: string | null = null;
 
-  /** `sessionInstructions`：每个原生会话开始时附在指导后面的一段（开着的 skill 的索引，§3.8）。 */
+  /** `sessionInstructions`: a section appended after the guidance when each native session starts (the index of enabled skills, §3.8). */
   constructor(onRevoke: (principal: AgentPrincipal) => void, sessionInstructions?: (conversationId: Id) => Promise<string>) {
     this.#onRevoke = onRevoke;
     this.#extra = sessionInstructions ?? null;
   }
 
   /**
-   * 每个原生会话的开发者指导（§3.8）：说明书按工具桥面渲染的「工作方式」段（`guidance.ts`）。工具目录建好之后才渲染得出来，
-   * 由 Runtime 在开会话之前设上；没设就开会话是装配错误，直接抛错，不带着空指导开会话。
+   * Developer guidance for each native session (§3.8): the "How to work" section of the agent guide rendered for the
+   * tool-bridge surface (`guidance.ts`). It can only be rendered once the tool catalog is built, so the Runtime sets it
+   * before opening sessions; opening a session without it is a wiring error and throws, rather than opening a session
+   * with empty guidance.
    */
   get instructions(): string {
     if (this.#instructions === null) throw new Error(RcAgentTools.instructionsNotSet().text);
@@ -44,7 +47,7 @@ export class AgentGrants implements AgentToolAccess {
     return this.#extra ? this.#extra(conversationId) : Promise.resolve('');
   }
 
-  /** 网关监听之后才知道地址。 */
+  /** The address is known only once the gateway is listening. */
   setEndpoint(url: string): void {
     this.#endpoint = url;
   }
@@ -66,7 +69,7 @@ export class AgentGrants implements AgentToolAccess {
     };
   }
 
-  /** `Authorization: Bearer <令牌>` → 身份；不认识或已收回时为空。 */
+  /** `Authorization: Bearer <token>` -> identity; null when unknown or revoked. */
   resolve(authorization: string | undefined): AgentPrincipal | null {
     const match = /^Bearer\s+(\S+)$/.exec(authorization ?? '');
     return match ? (this.#byToken.get(match[1]!) ?? null) : null;

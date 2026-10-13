@@ -1,7 +1,7 @@
-# 端到端流程
+# End-to-end workflows
 
-## 润色后翻译
+## Polish, then translate
 
-1. {{tool:transcribe}} 出转写。
-2. 按 {{skill:demo-polish}} 润色，写回同一份文档。
-3. 重新 {{tool:documents_read}}，带 {{arg:sourceDocument}} 写译文。
+1. {{tool:transcribe}} to get the transcript.
+2. Polish it following {{skill:demo-polish}} and write it back to the same document.
+3. {{tool:documents_read}} again and write the translation with {{arg:sourceDocument}}.

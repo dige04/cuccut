@@ -1,129 +1,129 @@
-# 动效图形的语法
+# Motion graphics grammar
 
-三个槽各有一套词汇。这里的数值来自对大量叠加式动效图形的统计，是默认值，不是上限；用户的风格说明优先。
+Each of the three slots has its own vocabulary. The numbers here come from statistics over a large set of overlay motion graphics; they are defaults, not limits. The user's style notes take precedence.
 
-## 1. 动效动词（motion）
+## 1. Motion verbs (motion)
 
-每个动词 = 1–2 个属性 + 一个缓动 + 一个时间窗。写法固定：`prop: (1 - p) * 幅度`、`scale: 起点 + (1 - 起点) * p`、`rotate: (1 - p) * 角度`、`opacity: p`，其中 `p` 是缓动后的进度。
+Each verb = 1–2 properties + one easing + one time window. The form is fixed: `prop: (1 - p) * amplitude`, `scale: start + (1 - start) * p`, `rotate: (1 - p) * angle`, `opacity: p`, where `p` is the eased progress.
 
-| 动词 | 属性与写法 | 缓动 | 幅度 | 窗口 |
+| Verb | Properties and form | Easing | Amplitude | Window |
 | --- | --- | --- | --- | --- |
-| slide（滑入） | `x` 或 `y` 从幅度到 0，同步 `opacity` | easeOut | 元素 30–120 px；画外面板 340–560 px | 0.57–0.7 s |
-| rise（升起） | `y` 从正值到 0 + `opacity` | easeOut | 32–100 px | 0.5–0.6 s |
-| pop（弹出） | `scale` 从起点到 1，可叠 `rotate` | backOut | 起点 0.2–0.45；角度 −10°～−25° | 0.5–0.6 s |
-| settle（落定） | 容器级 `scale` 从起点到 1 + `opacity` | easeOut | 起点 0.88–0.95 | 0.5–0.7 s |
-| lock（锁定） | 最后入场的标志或核心：`scale` 0.2→1 叠小角度 rotate | backOut | 角度 ≤ 10° | 0.5–0.6 s |
-| stagger（错峰） | 同类元素同一动词，起点递增 | 同元素 | 相邻 0.1–0.3 s | 3–4 个 |
-| draw（描线） | `path(id, p)`，SVG 元素带 `data-length` | easeInOut | — | 0.6–1.0 s |
-| unfold / reveal（展开） | `clip` 0→1，或 `scaleY` 0→1（transform-origin 顶部） | easeOut | — | 0.5–0.7 s |
-| sweep / underline（扫过） | `scaleX` 0→1（transform-origin 左侧） | easeInOut | — | 0.5–0.8 s |
-| count（计数） | `text(id, 格式化(目标 × p))`，位数固定、单位不动 | easeOut | — | 1.0–1.6 s |
-| pulse（脉动） | 停留期内 `scale` 乘 `1 + 0.02 * Math.sin(range(time, a, b) * 2π)` | 线性 | ±2% | 一个周期 1.2–1.3 s |
-| travel（移动） | `x` 线性插值，`y` 叠 `Math.sin(p * π) * 弧高` 走弧线；进度条上的元素用 `style(id, 'left', 'calc(…)')` 跟随 | easeInOut | 弧高 30–90 px | 0.8–1.2 s |
-| highlight / active（高亮） | 当前项换 accent 色、描边或 `scale` 1.05，跟随 stagger 的当前索引 | — | — | 与 stagger 同步 |
-| fade / crossfade（淡入淡出） | 只 `opacity` | easeInOut | — | 0.3–0.5 s |
+| slide | `x` or `y` from the amplitude to 0, with `opacity` | easeOut | element 30–120 px; off-frame panel 340–560 px | 0.57–0.7 s |
+| rise | `y` from a positive value to 0 + `opacity` | easeOut | 32–100 px | 0.5–0.6 s |
+| pop | `scale` from the start value to 1, optionally with `rotate` | backOut | start 0.2–0.45; angle −10° to −25° | 0.5–0.6 s |
+| settle | container-level `scale` from the start value to 1 + `opacity` | easeOut | start 0.88–0.95 | 0.5–0.7 s |
+| lock | the logo or core element that enters last: `scale` 0.2→1 with a small rotate | backOut | angle ≤ 10° | 0.5–0.6 s |
+| stagger | same verb on elements of the same kind, with increasing start times | same as the element | 0.1–0.3 s between neighbors | 3–4 items |
+| draw | `path(id, p)`, SVG element with `data-length` | easeInOut | — | 0.6–1.0 s |
+| unfold / reveal | `clip` 0→1, or `scaleY` 0→1 (transform-origin at the top) | easeOut | — | 0.5–0.7 s |
+| sweep / underline | `scaleX` 0→1 (transform-origin at the left) | easeInOut | — | 0.5–0.8 s |
+| count | `text(id, format(target × p))`, fixed digit count, unit does not move | easeOut | — | 1.0–1.6 s |
+| pulse | during the hold, multiply `scale` by `1 + 0.02 * Math.sin(range(time, a, b) * 2π)` | linear | ±2% | one cycle of 1.2–1.3 s |
+| travel | `x` interpolated linearly, add `Math.sin(p * π) * arcHeight` to `y` to follow an arc; elements on a progress bar follow with `style(id, 'left', 'calc(…)')` | easeInOut | arc height 30–90 px | 0.8–1.2 s |
+| highlight / active | the current item switches to the accent color, gets an outline or `scale` 1.05, following the current stagger index | — | — | in sync with the stagger |
+| fade / crossfade | `opacity` only | easeInOut | — | 0.3–0.5 s |
 
-规则：
+Rules:
 
-- 一个元素一次入场只组合 1–2 个属性（`x + opacity`、`scale + rotate`），不同时 slide 又 pop。
-- 位移配 easeOut，弹出配 backOut，描线、扫过与出场配 easeInOut。
-- 出场由骨架统一处理（整个 `#scene` 淡出），不给单个元素写出场；需要某个元素先走时用 `1 - range(...)` 的 opacity。
-- 需要随机感（粒子、散点）时用固定种子的伪随机（例如 mulberry32），不用 `Math.random`。
+- An element's entrance combines only 1–2 properties (`x + opacity`, `scale + rotate`); never slide and pop at the same time.
+- Movement uses easeOut, pops use backOut, draws, sweeps and exits use easeInOut.
+- The scaffold handles the exit for everything (the whole `#scene` fades out); do not write an exit for individual elements. When one element must leave earlier, use an opacity of `1 - range(...)`.
+- When you need a sense of randomness (particles, scatter), use a fixed-seed pseudo-random generator (for example mulberry32), never `Math.random`.
 
-## 2. 时间包络
+## 2. Time envelope
 
-默认总时长 4 s，30 fps。
+Default total duration 4 s, 30 fps.
 
-| 项 | 规则 |
+| Item | Rule |
 | --- | --- |
-| 第一元素起步 | 0.02–0.05 s |
-| 单元素窗口 | 0.5–0.8 s（描线 0.6–1.0 s，count 1.0–1.6 s） |
-| 错峰 | 相邻元素起点相差 0.1–0.4 s |
-| 元素数 | 每个图形 2–6 个时间窗，列表类 3–4 项 |
-| 入场结束 | 最后一个入场在总时长一半之前结束（4 s 时 ≤ 2.2 s） |
-| 停留 | 入场结束到出场开始 ≥ 1.2 s；带整句文案 ≥ 2 s |
-| 统一出场 | 结束前 0.62 s 到 0.05 s，easeInOut |
+| First element starts | 0.02–0.05 s |
+| Single-element window | 0.5–0.8 s (draw 0.6–1.0 s, count 1.0–1.6 s) |
+| Stagger | start times of neighboring elements differ by 0.1–0.4 s |
+| Element count | 2–6 time windows per graphic; lists 3–4 items |
+| Entrance end | the last entrance ends before the halfway point (≤ 2.2 s at 4 s) |
+| Hold | from the end of the entrance to the start of the exit ≥ 1.2 s; with full-sentence copy ≥ 2 s |
+| Unified exit | from 0.62 s to 0.05 s before the end, easeInOut |
 
-时长不是 4 s 时：出场固定贴末尾；入场段按 4 s 的比例缩放，但单窗口不短于 0.3 s、不长于 0.8 s；停留吃掉剩余时间。连续动效的图形（计数到结尾、走马灯）根元素加 `data-motion-continuous="true"`，停留检查改为人工看。
+When the duration is not 4 s: the exit stays pinned to the end; the entrance section scales proportionally from the 4 s version, but no single window is shorter than 0.3 s or longer than 0.8 s; the hold takes the remaining time. Graphics with continuous motion (counting to the end, a marquee) add `data-motion-continuous="true"` to the root element, and the hold check becomes a manual review.
 
-## 3. 结构角色（structure）
+## 3. Structure roles (structure)
 
-- 角色词：mark（标志、图标）、headline、label、card、rail（横条、轨道）、node（节点）、badge、chip、pill、note、divider、track（进度轨）、state（状态字）、anchor（锚点）、cursor、token（被强调的词）。
-- 数量：一个图形 2–6 个可动元素；列表 3–4 项；对比 2 项。
-- 文案：一条主文案 `data-copy-primary`、一条次文案 `data-copy-secondary`，其余是固定装饰字；文字容器加 `class="copy"`。
-- 常用组合：
+- Role words: mark (logo, icon), headline, label, card, rail (bar, track), node, badge, chip, pill, note, divider, track (progress track), state (status text), anchor, cursor, token (the emphasized word).
+- Counts: 2–6 animated elements per graphic; lists 3–4 items; comparisons 2 items.
+- Copy: one primary line `data-copy-primary`, one secondary line `data-copy-secondary`; the rest is fixed decorative text. Text containers get `class="copy"`.
+- Common combinations:
 
-| 组合 | 用途 |
+| Combination | Use |
 | --- | --- |
-| mark + headline + tagline | 品牌贴片、片尾 |
-| name + role + org | 下横栏 |
-| value + unit + takeaway | 大数字 |
-| label + track + state | 进度、倒计时 |
-| headline + items[3–4] + active | 列表、步骤、要点 |
-| anchor + line + label | 标注、引导 |
-| quote + source | 引语 |
-| kicker + headline + summary | 标题卡 |
+| mark + headline + tagline | brand sting, end card |
+| name + role + org | lower third |
+| value + unit + takeaway | big number |
+| label + track + state | progress, countdown |
+| headline + items[3–4] + active | list, steps, key points |
+| anchor + line + label | callout, pointer |
+| quote + source | quote |
+| kicker + headline + summary | title card |
 
-## 4. 位置族与安全区（layout）
+## 4. Position families and safe areas (layout)
 
-| 位置族 | 放哪 | 常见类别 |
+| Position family | Where | Typical categories |
 | --- | --- | --- |
-| lower-safe | 底部安全区内，左对齐或居中 | 下横栏、关键词字幕 |
-| centered | 画面中央的卡片或大字 | 大数字、引语、标题 |
-| top-rail | 顶部横条 | 新闻条、章节 |
-| side-rail | 左侧或右侧竖列 | 列表、聊天流 |
-| split | 左右或上下两栏 | 对比、价格 |
-| grid / cluster | 几块卡片成组 | 多项指标 |
-| radial | 中心一个、周围几个 | 功能环绕 |
-| corner | 某个角 | 标志、徽章、水印 |
-| full-frame-transparent | 整幅散布但中心留空 | 庆祝、粒子 |
+| lower-safe | inside the bottom safe area, left-aligned or centered | lower third, keyword caption |
+| centered | a card or large text in the middle of the frame | big number, quote, title |
+| top-rail | a bar across the top | news ticker, chapter |
+| side-rail | a column on the left or right | list, chat feed |
+| split | two columns or two rows | comparison, pricing |
+| grid / cluster | a group of cards | multiple metrics |
+| radial | one in the center, several around it | features around a core |
+| corner | one corner | logo, badge, watermark |
+| full-frame-transparent | scattered across the frame with the center left empty | celebration, particles |
 
-安全区（元素的包围盒不得越过）：
+Safe areas (element bounding boxes must not cross them):
 
-| 画幅 | 左右 | 上 | 下 |
+| Aspect ratio | Left/right | Top | Bottom |
 | --- | --- | --- | --- |
-| 16:9（1920×1080） | ≥ 70 px | ≥ 100 px | ≥ 100 px |
-| 9:16（1080×1920） | ≥ 60 px | ≥ 180 px | ≥ 230 px |
-| 1:1（1080×1080） | ≥ 60 px | ≥ 100 px | ≥ 160 px |
+| 16:9 (1920×1080) | ≥ 70 px | ≥ 100 px | ≥ 100 px |
+| 9:16 (1080×1920) | ≥ 60 px | ≥ 180 px | ≥ 230 px |
+| 1:1 (1080×1080) | ≥ 60 px | ≥ 100 px | ≥ 160 px |
 
-字号：说明 15–18 px，次级 20–24 px，主标题 42 px，大数字与海报式标题 68–80 px。文案容器有 `max-width`、`overflow:hidden`、`text-overflow:ellipsis`。
+Font sizes: captions 15–18 px, secondary 20–24 px, main headline 42 px, big numbers and poster-style titles 68–80 px. Copy containers have `max-width`, `overflow:hidden` and `text-overflow:ellipsis`.
 
-竖版重排只改布局槽：横向 grid 改纵向（`1fr 320px` → `1fr / 1fr 190px`）、卡片宽 ≈ 画布宽 − 2×边距（9:16 约 920–960 px）、文字块 `left:0; right:0` 顶对齐、底部元素上移到下边距之上；结构槽与动效槽不动。
+A vertical reflow changes only the layout slot: turn horizontal grids vertical (`1fr 320px` → `1fr / 1fr 190px`), card width ≈ canvas width − 2×margin (about 920–960 px at 9:16), text blocks `left:0; right:0` and top-aligned, bottom elements moved up above the bottom margin; the structure and motion slots stay unchanged.
 
-## 5. 颜色与皮肤
+## 5. Color and skins
 
-只用三个 token，定义在 `#root` 上：`--ink`（深色、文字）、`--panel`（浅底）、`--accent`（强调）。半透明用 `color-mix(in srgb, var(--ink) N%, transparent)`。
+Use only three tokens, defined on `#root`: `--ink` (dark, text), `--panel` (light background), `--accent` (emphasis). For translucency use `color-mix(in srgb, var(--ink) N%, transparent)`.
 
-可直接用的调色：
+Ready-to-use palettes:
 
-| 名字 | `--accent` | `--ink` | `--panel` |
+| Name | `--accent` | `--ink` | `--panel` |
 | --- | --- | --- | --- |
-| 暖橙 | `#f0583a` | `#24221f` | `#f9f6ef` |
-| 亮黄 | `#ffd43b` | `#1a1714` | `#fff8e6` |
-| 青蓝 | `#2bc4ee` | `#0f2230` | `#eaf7ff` |
-| 薄荷 | `#7fe0cf` | `#16212c` | `#f2fbff` |
-| 草绿 | `#a6ef5e` | `#181612` | `#fdfcf3` |
-| 珊瑚 | `#ff6252` | `#2a241e` | `#fff8e8` |
+| Warm orange | `#f0583a` | `#24221f` | `#f9f6ef` |
+| Bright yellow | `#ffd43b` | `#1a1714` | `#fff8e6` |
+| Cyan | `#2bc4ee` | `#0f2230` | `#eaf7ff` |
+| Mint | `#7fe0cf` | `#16212c` | `#f2fbff` |
+| Grass green | `#a6ef5e` | `#181612` | `#fdfcf3` |
+| Coral | `#ff6252` | `#2a241e` | `#fff8e8` |
 
-皮肤 = 调色 + 形态，形态参数写在布局槽里：
+Skin = palette + form; the form parameters go in the layout slot:
 
-| 皮肤 | 圆角 | 阴影 | 字体 | 其他 |
+| Skin | Corner radius | Shadow | Font | Other |
 | --- | --- | --- | --- | --- |
-| clean（编辑感） | 16–18 px | 柔阴影或无 | 系统无衬线 | 细分割线、letter-spacing 0.04em |
-| bold（海报感） | 28 px 以上或 0 | 无 | 粗体大字 68–80 px | 大色块 |
-| glass（半透明） | 24–28 px | 柔阴影 | 系统无衬线 | 面板用 color-mix 70–85% |
-| brutal（硬边） | 0–4 px | 硬阴影 `6px 6px 0 var(--ink)` | 粗体 | 2–3 px 实线描边 |
-| tech（界面感） | 6–10 px | 无 | 等宽 `ui-monospace, Menlo, monospace` | 细线、角标、全大写小字 |
-| sketch（手绘感） | 不规则（用 SVG 路径） | 无 | 系统无衬线 | 描线、轻微 rotate 1–3° |
+| clean (editorial) | 16–18 px | soft shadow or none | system sans-serif | thin dividers, letter-spacing 0.04em |
+| bold (poster) | 28 px or more, or 0 | none | large bold type 68–80 px | big color blocks |
+| glass (translucent) | 24–28 px | soft shadow | system sans-serif | panel uses color-mix 70–85% |
+| brutal (hard-edged) | 0–4 px | hard shadow `6px 6px 0 var(--ink)` | bold | 2–3 px solid outline |
+| tech (interface) | 6–10 px | none | monospace `ui-monospace, Menlo, monospace` | thin lines, corner marks, small all-caps text |
+| sketch (hand-drawn) | irregular (use SVG paths) | none | system sans-serif | drawn lines, slight rotate of 1–3° |
 
-## 6. 自检清单（与 lint 一致）
+## 6. Self-check list (matches the lint)
 
-1. 根元素（`id="root"`）有 `data-composition-id="main"`、`data-start="0"`、`data-width`、`data-height`、`data-fps`、`data-duration`、`data-aspect-ratio`，以及三层描述 `data-structure`、`data-layout`、`data-motion`（英文短语）；`<meta name="viewport">` 的宽高与根元素一致。
-2. `window.__timelines.main` 存在，`renderScene(time)` 是纯函数：画面只由 `time` 决定。
-3. 统一出场那行在，结束前 0.62 s 开始、0.05 s 结束。
-4. 所有 `range(time, a, b)`：a、b 只用数字、`DURATION` 与四则运算（否则 lint 只能给警告）；第一个 a ≥ 0.02；每个 0.2 ≤ b − a ≤ 2.0，且不越出 0–duration；最后一个入场的 b ≤ 出场开始 − 1.2（连续动效除外）。写在 `Math.sin(...)` / `Math.cos(...)` 参数里的 `range`（pulse 这类停留期动效）不算入场窗口。
-5. 没有 `http://`、`https://`、`//` 开头的地址，没有 `<script src>`、`<link>`、`@import`、`fetch(`、`XMLHttpRequest`、`WebSocket`、`EventSource`、动态 `import(`。
-6. 没有 `Date.now`、`performance.now`、`Math.random`、`new Date(`；`requestAnimationFrame` 只在时间线的 `play()` 里。
-7. `#root` 定义了 `--ink`、`--panel`、`--accent`；透明图形的根没有底色。整个文件不超过 512 KB。
-8. 至少一个 `data-copy-primary`；文字容器用 `.copy`。
-9. 抽帧看：0 s、入场结束、停留中点、结束前 0.3 s；换长文案与中日韩文案后不溢出、仍在安全区内。
+1. The root element (`id="root"`) has `data-composition-id="main"`, `data-start="0"`, `data-width`, `data-height`, `data-fps`, `data-duration`, `data-aspect-ratio`, plus the three descriptive layers `data-structure`, `data-layout`, `data-motion` (short English phrases); the width and height in `<meta name="viewport">` match the root element.
+2. `window.__timelines.main` exists and `renderScene(time)` is a pure function: the frame is determined by `time` alone.
+3. The unified-exit line is present, starting 0.62 s before the end and ending 0.05 s before it.
+4. Every `range(time, a, b)`: a and b use only numbers, `DURATION` and arithmetic (otherwise the lint can only warn); the first a ≥ 0.02; each 0.2 ≤ b − a ≤ 2.0 and stays within 0–duration; the last entrance's b ≤ exit start − 1.2 (except continuous motion). A `range` inside a `Math.sin(...)` / `Math.cos(...)` argument (hold-period motion such as pulse) does not count as an entrance window.
+5. No addresses starting with `http://`, `https://` or `//`; no `<script src>`, `<link>`, `@import`, `fetch(`, `XMLHttpRequest`, `WebSocket`, `EventSource` or dynamic `import(`.
+6. No `Date.now`, `performance.now`, `Math.random` or `new Date(`; `requestAnimationFrame` only inside the timeline's `play()`.
+7. `#root` defines `--ink`, `--panel` and `--accent`; a transparent graphic's root has no background color. The whole file is at most 512 KB.
+8. At least one `data-copy-primary`; text containers use `.copy`.
+9. Frame checks: 0 s, entrance end, hold midpoint, 0.3 s before the end; after swapping in long copy and CJK copy nothing overflows and everything stays inside the safe area.

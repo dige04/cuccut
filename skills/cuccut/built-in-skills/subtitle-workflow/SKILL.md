@@ -1,96 +1,96 @@
 ---
 name: subtitle-workflow
-description: 用户给了视频链接或本机音视频，要转录、加字幕、做译文字幕或双语字幕时用：建可编辑视频并导入，转写、润色，需要时翻译，把字幕层放到画面上，再按需导出字幕文件或成片。有媒体时「转录」「加字幕」「翻译成某种语言」都按这个流程。不用于与视频无关的文字翻译。
+description: Use when the user gives a video link or local media to transcribe, caption, or subtitle in another language or bilingually - create an editable video, transcribe, polish, translate if needed, add the caption layer, then export subtitles or the video. Not for translating text unrelated to a video.
 version: 2.0.0
 ---
 
-# 转录与字幕
+# Transcription and subtitles
 
-用户丢来一个链接或一个文件，说「加个字幕」。他要的成品是一个可编辑视频：素材在时间线上，转写润色过，需要时有译文，字幕层放在画面上；之后他能在编辑器里改一个字、挪一条字幕、换一种语言，要文件时再从视频导出。不要只交一个下载下来再改过的字幕文件：那样他改不了，也放不回视频上。
+The user drops in a link or a file and says "add subtitles". The deliverable they want is an editable video: the asset on the timeline, the transcript polished, a translation when needed, the caption layer on the picture; afterwards they can change a word, move a cue or switch languages in the editor, and export files from the video when they want them. Do not hand over only a subtitle file that was downloaded and edited: they cannot edit that, nor put it back on the video.
 
-最容易做坏的样子：步骤顺序乱了。转完就建字幕层，再润色，字幕层得删掉重建；先翻译再润色，译文全过期；跨回合接着做时从头来一遍，用户等了两次。所以全程按这个顺序：确认 → 建视频并导入 → 转写 → 润色（含说话人实名） → 章节（旁路） → 翻译 → 建字幕层 → 导出 → 交付说明。每一步等工具的回执或任务完成再走下一步；跨回合接着做时，先 videos_inspect 看已经做到哪一步，从那里接着做，不重复已完成的步骤。
+The easiest way to get it wrong: steps out of order. Build the caption layer right after transcribing and then polish, and the caption layer has to be deleted and rebuilt; translate before polishing, and the whole translation is stale; start over when continuing across turns, and the user waits twice. So always follow this order: confirm -> create the video and import -> transcribe -> polish (including naming speakers) -> chapters (side path) -> translate -> build the caption layer -> export -> delivery notes. Wait for each step's tool receipt or job completion before moving on; when continuing across turns, first use videos_inspect to see which step has been reached, continue from there, and do not repeat completed steps.
 
-## 1. 先确认
+## 1. Confirm first
 
-动手前把这几件事弄清楚，弄不清的问一次，不要边做边猜：
+Before starting, get these things clear; ask once about what is unclear rather than guessing as you go:
 
-- **交付物**：原文字幕、译文字幕还是双语字幕；要不要文件（字幕文件、带字幕的成片）。用户说「翻译成某种语言」是要译文字幕，说「双语」是双语字幕；只说转录、加字幕时是原文字幕。
-- **目标语言**：用 BCP 47 标签（如 `zh-Hans`、`en`、`ja`、`es`）。要翻译、用户又没说译成什么时问一次。
-- **原文语言、人名与术语**：用户说了就记下。语言给转写；人名与术语在转写模型收识别提示时给转写当 hint（见第 3 步），不收时只在润色时用。没说语言的让转写自动识别。
-- **来源元数据**：从链接导入的素材，videos_inspect 的 `assets[].source` 有标题、发布者、简介（`description`，最多 1200 字符）与作者的章节（`chapters`）；转写或下载完成时 `pipeline.summary.description` 与 `pipeline.summary.sourceChapters` 也给出简介和作者章节的条数。润色、说话人实名、章节都用它。
-- **在哪个视频上做**：编辑器里打开的或用户点名的视频就在它上面做；videos_inspect 看已有的素材、转写、译文与字幕层，已有的接着用。
-- 用户明确只要一个字幕文件、不要视频或项目时，不走这个流程，按 `translate-subtitles` 的文件一节做（只转录不翻译时就交下载目录里的文稿）。
+- **Deliverable**: source-language subtitles, translated subtitles or bilingual subtitles; whether files are wanted (subtitle files, a finished video with subtitles). "Translate into some language" means translated subtitles; "bilingual" means bilingual subtitles; plain "transcribe" or "add subtitles" means source-language subtitles.
+- **Target language**: a BCP 47 tag (such as `zh-Hans`, `en`, `ja`, `es`). When translation is wanted and the user did not say into what, ask once.
+- **Source language, names and terms**: note them when the user gives them. The language goes to transcription; names and terms go to transcription as the hint when the transcription model accepts recognition hints (see step 3), and are otherwise used only in polishing. When no language is given, let transcription detect it.
+- **Source metadata**: for assets imported from a link, videos_inspect's `assets[].source` has the title, uploader, description (`description`, at most 1200 characters) and the author's chapters (`chapters`); when transcription or download completes, `pipeline.summary.description` and `pipeline.summary.sourceChapters` also give the description and the number of author chapters. Polishing, speaker naming and chapters all use it.
+- **Which video to work on**: work on the video open in the editor or the one the user names; use videos_inspect to see the existing assets, transcripts, translations and caption layers, and reuse what exists.
+- When the user explicitly wants only a subtitle file and no video or project, do not use this workflow; follow the file section of `translate-subtitles` (when only transcription is wanted, deliver the transcript in the downloads directory).
 
-## 2. 建视频并导入
+## 2. Create the video and import
 
-- **链接**：transcribe 给 `url`（可给 language、hint、name、noCaptions），它新建视频、下载导入、放上时间线、转写并建字幕层；用户说了原文语言时带上 language，给了人名术语、而转写模型收提示时带上 hint（见第 3 步）。download 给 `newVideo: true` 与 `transcribe: true` 也新建视频并转写，但只用默认设置、不建字幕层。jobs_inspect 等到 completed：`pipeline.summary.videoId` 是新视频，`pipeline.summary.assetId` 是素材。新建的视频在之后的步骤失败时保留，不要再建一次。
-- **本机文件**：transcribe 给 `file`（可给 language、hint、name），它新建视频、导入、放上时间线并转写；第 3 步的转写就在这一步里。只要建视频不要转写时，videos_create 新建视频（名字取文件名；竖屏素材给竖屏的宽高），用 assets_import 导入并放上时间线（给 place）。
-- 链接下载失败时照 error.details.remedy 告诉用户怎么补救，不要用别的方式下载。
+- **Link**: transcribe with `url` (language, hint, name and noCaptions are optional); it creates the video, downloads and imports, places it on the timeline, transcribes and builds the caption layer. Pass language when the user gave the source language, and hint when they gave names and terms and the transcription model accepts hints (see step 3). download with `newVideo: true` and `transcribe: true` also creates a video and transcribes, but only with default settings and without building a caption layer. Wait with jobs_inspect until completed: `pipeline.summary.videoId` is the new video and `pipeline.summary.assetId` the asset. A newly created video is kept if a later step fails; do not create it again.
+- **Local file**: transcribe with `file` (language, hint and name are optional); it creates the video, imports, places it on the timeline and transcribes; step 3's transcription happens within this step. When you only want a video and no transcription, create one with videos_create (name it after the file; give portrait width and height for portrait footage), and import and place it on the timeline with assets_import (pass place).
+- When a link download fails, tell the user how to remedy it per error.details.remedy; do not download it another way.
 
-## 3. 转写
+## 3. Transcribe
 
-- 第 2 步用 transcribe 或带了 `transcribe: true` 的 download 时已经在转；已有视频要转写、或要带 language、hint 时用 transcribe 给 video（可给 asset；先 models_capabilities 看有没有可用的转写服务）。
-- 要润色时给 transcribe 加 `noCaptions: true`：字幕层在润色之后由第 7 步建（transcribe 默认转完就建一层，润色前建的要删掉重建）。
-- **hint 看模型**：带 hint 之前先在 models_capabilities 里看要用的转写模型（不给 model 时是默认的那只）的 `acceptsHint`。默认的 MOSS 不收提示：带了也照常转写，但提示被忽略，转写任务带 `hint-ignored` 提醒。这时不带 hint，人名与术语留到第 4 步润色，也不为了用上 hint 换到收提示的模型。
-- **转一次就用它**：不因为自己觉得识别得不够好就换模型或重转（transcribe 的 `target: replace`）。少量错字、人名与术语听错是正常的，第 4 步润色会改。只有用户要求换模型或重转，或者结果不能用（空的、语言认错、大段乱码）时，才重转。结果不能用时不用先问，直接重转一次，语言认错就带上正确的 language（不带时自动识别多半再认错）；然后告诉用户第一次的结果哪里不能用、重转改了什么、重转后的结果怎样，仍不能用时停下来问用户。重转一次是几分钟，用户在等。
-- jobs_inspect 等到 completed：`pipeline.summary.documentId` 是新转写（transcribe 给 url 或 download 带 `transcribe: true` 时同样在 `pipeline.summary.documentId`）。
-- 返回 CAPABILITY_NOT_CONFIGURED 时照它的 next 告诉用户要启用哪项服务，停在这里。
+- When step 2 used transcribe, or download with `transcribe: true`, transcription is already running; to transcribe an existing video, or to pass language or hint, use transcribe with video (asset is optional; first check models_capabilities for an available transcription service).
+- When polishing is planned, add `noCaptions: true` to transcribe: the caption layer is built in step 7 after polishing (by default transcribe builds a layer as soon as it finishes, and one built before polishing has to be deleted and rebuilt).
+- **The hint depends on the model**: before passing a hint, check `acceptsHint` in models_capabilities for the transcription model you will use (the default one when no model is given). The default MOSS accepts no hints: transcription runs as usual with a hint passed, but the hint is ignored and the transcription job carries a `hint-ignored` notice. In that case pass no hint and leave names and terms to polishing in step 4; do not switch to a model that accepts hints just to use one.
+- **Transcribe once and use it**: do not switch models or re-transcribe (transcribe with `target: replace`) just because you feel recognition is not good enough. A few typos and misheard names and terms are normal, and polishing in step 4 fixes them. Re-transcribe only when the user asks to switch models or re-transcribe, or when the result is unusable (empty, wrong language detected, long stretches of garbage). When the result is unusable, do not ask first: re-transcribe once directly, passing the correct language when the language was misdetected (without it, auto-detection will most likely get it wrong again); then tell the user what was unusable in the first result, what the re-transcription changed and how the new result looks, and if it is still unusable, stop and ask the user. A re-transcription takes minutes, and the user is waiting.
+- Wait with jobs_inspect until completed: `pipeline.summary.documentId` is the new transcript (also in `pipeline.summary.documentId` when transcribe was given a url or download had `transcribe: true`).
+- When CAPABILITY_NOT_CONFIGURED is returned, tell the user which service to enable per its next, and stop there.
 
-## 4. 润色
+## 4. Polish
 
-按 `polish-transcript` 的做法润色转写，写回同一份转写。默认只改错字、术语与标点，一词对一词，词的时间不动；用户说不要润色时跳过。润色必须在翻译之前：它会改分句。
+Polish the transcript following `polish-transcript` and write back to the same transcript. By default only typos, terms and punctuation change, word for word, with word timings untouched; skip it when the user says not to polish. Polishing must come before translation: it changes the sentence splits.
 
-按它的做法，来源元数据当背景参考用（人名、术语的准确写法只在说话人明显在说它时才照改，不往文稿里加东西）；润色写回后给占位名的说话人实名（有证据才写，拿不准留着占位名）。用户说不要润色时，说话人实名照样做。
+As that approach says, source metadata is background reference (exact spellings of names and terms are applied only when the speaker is clearly saying them, and nothing is added to the transcript); after polishing and writing back, give real names to placeholder speakers (write a name only with evidence; when unsure, keep the placeholder). When the user says not to polish, still name the speakers.
 
-## 5. 章节（旁路）
+## 5. Chapters (side path)
 
-每次转写默认给视频分章，除非用户说不要，或 videos_inspect 看到视频已经有章节（不覆盖；用户要重分时按 `video-chapters` 先问清替换还是调整）。章节是旁路：不阻塞翻译、字幕层和导出；失败不致命，最多重试一次，仍不行就在交付说明里如实写原因，接着做后面的步骤。
+Every transcription chapters the video by default, unless the user says not to, or videos_inspect shows the video already has chapters (do not overwrite; when the user wants them redone, follow `video-chapters` and first ask whether to replace or adjust). Chapters are a side path: they do not block translation, caption layers or export; a failure is not fatal - retry at most once, and if it still fails, state the reason truthfully in the delivery notes and carry on with the later steps.
 
-- **有作者章节**（`assets[].source.chapters` 不为空，或 `pipeline.summary.sourceChapters` 大于 0，或简介里有 `0:00 开场` 这类时间戳大纲）：用 chapters_adopt 给 video，把作者的章节吸到文稿的段落或句子起点上并写进视频，不用自己分；`chapters` 是空的、简介里却看得到时间戳大纲时，把那段大纲给 `outline`。读回执的 `sourceChapters`：matched、ambiguous、unanchored 各几条，交付时说明。
-- **没有作者章节**（chapters_adopt 返回 `NO_SOURCE_CHAPTERS` 也是这种情况，不算失败）：按 `video-chapters` 的做法自己分。
-- 用户要你自己写的章节，或要和作者大纲不同的粗细时，也按 `video-chapters` 自己分，作者大纲当参考。
-- 返回 `ASSET_NOT_PLACED` 时素材还不在时间线上：先放上时间线再做。
+- **Author chapters exist** (`assets[].source.chapters` is not empty, or `pipeline.summary.sourceChapters` is greater than 0, or the description has a timestamp outline such as `0:00 Intro`): use chapters_adopt with video to snap the author's chapters to the starts of the transcript's paragraphs or sentences and write them to the video, rather than chaptering yourself; when `chapters` is empty but a timestamp outline is visible in the description, pass that outline as `outline`. Read `sourceChapters` in the receipt: how many are matched, ambiguous and unanchored, and report them at delivery.
+- **No author chapters** (chapters_adopt returning `NO_SOURCE_CHAPTERS` is also this case, not a failure): chapter it yourself following `video-chapters`.
+- When the user wants chapters you write yourself, or a different granularity from the author's outline, also chapter it yourself following `video-chapters`, using the author's outline as reference.
+- When `ASSET_NOT_PLACED` is returned, the asset is not on the timeline yet: place it on the timeline first.
 
-## 6. 翻译
+## 6. Translate
 
-需要译文或双语时，按 `translate-subtitles` 的做法翻译。润色写回之后重新 documents_read 读转写，用那时的 translationBasis 翻译；已有同一语言的译文时在它上面更新，不新建第二份。
+When a translation or bilingual subtitles are needed, translate following `translate-subtitles`. After polishing and writing back, documents_read the transcript again and translate from the translationBasis at that point; when a translation in the same language already exists, update it rather than creating a second one.
 
-## 7. 建字幕层
+## 7. Build the caption layer
 
-用 captions_create 把字幕放到画面上，CucCut 按句对齐时间、按宽度切成字幕条：
+Use captions_create to put the subtitles on the picture; CucCut aligns the timing by sentence and splits the text into cues by width:
 
-- 原文字幕：documentId 给转写文档。
-- 译文字幕：documentId 给译文文档。
-- 双语字幕：给译文文档并带 `bilingual: true`。
+- Source-language subtitles: documentId is the transcript document.
+- Translated subtitles: documentId is the translation document.
+- Bilingual subtitles: give the translation document with `bilingual: true`.
 
-同一份文档每调用一次就多建一层，不覆盖。调用前先 videos_inspect 看这份文档是不是已经有字幕层：有了就不重复建；用户要重做时先说明会多出一层，问清是否删掉旧的。回执给出 transactionId 和字幕条数，说给用户。
+Each call on the same document builds another layer; it does not overwrite. Before calling, use videos_inspect to see whether this document already has a caption layer: if it does, do not build another; when the user wants it redone, first explain that an extra layer will appear and ask whether to delete the old one. The receipt gives a transactionId and the cue count; tell the user.
 
-## 8. 导出
+## 8. Export
 
-用户要文件时用 export，等 jobs_inspect 到 completed，把 outputs 里的 path 告诉用户：
+When the user wants files, use export, wait with jobs_inspect until completed, and tell the user the path in outputs:
 
-- 双语字幕文件：kind `subtitles`，`bilingual: true`（主文档是转写，副文档是译文，每句一条）。
-- 只要译文的字幕文件：kind `subtitles`，给 language；要求画面上已有这种语言的字幕层（第 7 步）。
-- 原文字幕文件：kind `subtitles`，主文档是转写。
-- 带字幕的成片：导出 mp4 或 webm，画面上的字幕层会画进去。
+- Bilingual subtitle file: kind `subtitles`, `bilingual: true` (the primary document is the transcript, the secondary the translation, one cue per sentence).
+- Translation-only subtitle file: kind `subtitles` with language; requires a caption layer in that language already on the picture (step 7).
+- Source-language subtitle file: kind `subtitles`, with the transcript as the primary document.
+- Finished video with subtitles: export mp4 or webm; caption layers on the picture are burned in.
 
-## 9. 要避免的
+## 9. What to avoid
 
-- 不要只交一个字幕文件，除非用户明确只要文件。
-- 不要在润色前建字幕层，不要在润色前翻译。
-- 不要因为自己觉得识别得不够好就重转；不要为了用上 hint 换模型。
-- 不要在同一份文档上重复建字幕层；不要重建已经新建过的视频。
-- 跨回合时不要从头来：先 videos_inspect 看做到哪了。
-- 章节失败不要反复重试，也不要让它卡住后面的步骤。
+- Do not hand over only a subtitle file, unless the user explicitly wants only a file.
+- Do not build caption layers before polishing, and do not translate before polishing.
+- Do not re-transcribe just because you feel recognition is not good enough; do not switch models just to use a hint.
+- Do not build duplicate caption layers on the same document; do not recreate a video that was already created.
+- Do not start over across turns: first use videos_inspect to see how far it got.
+- Do not retry failed chapters again and again, and do not let them block the later steps.
 
-## 10. 交付说明
+## 10. Delivery notes
 
-写给用户看的，说清他拿到了什么、哪里要他自己看一眼：
+Written for the user: say clearly what they got and where they need to take a look themselves:
 
-- 视频在哪：名字与所在位置；是新建的还是用户原来的。
-- 字幕层：建了哪几层（原文、译文、双语），各多少条。
-- 文件：导出的路径。
-- 润色改了什么、统一了哪些术语；译文的目标语言与句数。
-- 说话人：给谁实名了；哪些没有证据、仍是占位名。
-- 章节：几章；用的是作者的章节还是自己分的；作者章节里没对上的条目（ambiguous、unanchored）；没做或失败时说明原因。
-- 哪里拿不准：没改成的转写错误、不确定的译法、识别质量差的段落。
+- Where the video is: its name and location; whether it was newly created or the user's own.
+- Caption layers: which layers were built (source, translation, bilingual), and how many cues each.
+- Files: the exported paths.
+- What polishing changed and which terms were unified; the translation's target language and sentence count.
+- Speakers: who was named; who has no evidence and still has a placeholder name.
+- Chapters: how many; whether the author's chapters were used or you chaptered it yourself; author chapter entries that did not match (ambiguous, unanchored); when not done or failed, the reason.
+- What is uncertain: transcription errors not fixed, uncertain translations, passages with poor recognition quality.

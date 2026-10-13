@@ -19,29 +19,33 @@ import {
 import { upgradeLegacyTranslation } from '../videos/legacy-translation.ts';
 
 /**
- * 派生子视频的规划（架构设计 §3.5「派生子视频」，视频格式规范 §4.6 的 `derivation`）：复制父视频的整条时间线与文稿，
- * 再把区间之外的部分用剪口（`addCuts`，视频格式规范 §6.7）剪掉。子视频在编辑器里打开时，文稿面板是父视频的全文，
- * 区间之外的话显示为剪掉的，恢复剪口就能把片段往外扩。本模块只算事务，不提交、不读写文件；工具 `videos_derive`、
- * RPC `videos.derive` 与测试共用。
+ * Planning for deriving a child video (architecture design §3.5 "Deriving child videos", `derivation` in video format spec §4.6):
+ * copy the parent video's whole timeline and transcripts, then cut away everything outside the range with cuts (`addCuts`, video
+ * format spec §6.7). When the child video opens in the editor, the transcript panel shows the parent's full text, speech outside
+ * the range shows as cut, and restoring cuts widens the clip. This module only computes transactions; it does not commit or read or
+ * write files. Shared by the `videos_derive` tool, the `videos.derive` RPC and tests.
  *
- * 两笔事务：
+ * Two transactions:
  *
- * 1. 复制（`planDerivation` 的 `operations`）：轨道、素材（同一份文件，收在父视频里的同样收进子视频）、全部实例
- *    （字幕实例除外，不平移、不截断）、文稿整份、章节、画布背景与派生来源文档。
- * 2. 收尾（`planDerivationTrim`，要用第一笔新建的 ID）：轨道的隐藏与静音、转场、译文、父视频已有的剪口集合，
- *    然后对主素材记下区间之外的剪口（剪掉之后时间线只剩区间），最后锁回父视频锁着的轨道。译文一律写成
- *    `cuccut.translation/2`：旧项目导入的 `/1` 按转写现在的句子换过来（`legacy-translation.ts`），换不了的不复制，
- *    以 `translations-skipped` 说明。
+ * 1. Copy (`operations` of `planDerivation`): tracks, assets (the same files; those managed in the parent are managed in the child
+ *    too), all items (except caption items; not shifted, not truncated), whole transcripts, chapters, canvas background and the
+ *    derivation source document.
+ * 2. Finish (`planDerivationTrim`, needs the IDs created by the first): track hiding and muting, transitions, translations, the
+ *    parent's existing cut sets, then the cuts outside the range on the primary asset (after cutting, only the range remains on the
+ *    timeline), and finally re-locking tracks that were locked in the parent. Translations are always written as
+ *    `cuccut.translation/2`: a `/1` imported from an old project is converted by the transcript's current sentences
+ *    (`legacy-translation.ts`); one that cannot be converted is not copied and is reported as `translations-skipped`.
  *
- * 剪口记在素材的源时钟上，只作用于播放那个素材的实例；其余实例在复制时一律改成 `follow-cuts`，跟着剪口移动、缩短，
- * 整个落在剪掉范围里的删掉（恢复剪口时回不来，结果的 `items-not-restorable` 说明）。首版只对一个主素材（时间线上
- * 播放得最多的那个）记剪口：主素材盖不到的区间之外的部分（空隙、只有别的素材或图文的段落）留在子视频里，
- * 以 `range-not-exact` 说明。
+ * Cuts are recorded on the asset's source clock and apply only to items playing that asset; all other items are changed to
+ * `follow-cuts` when copied, moving and shrinking with the cuts, and any that fall entirely inside a cut range are deleted (they do
+ * not come back when cuts are restored; reported as `items-not-restorable`). The first version only records cuts on one primary
+ * asset (the one played most on the timeline): parts outside the range that the primary asset does not cover (gaps, stretches with
+ * only other assets or graphics) stay in the child video and are reported as `range-not-exact`.
  */
 
 export type DeriveErrorCode = 'DERIVE_RANGE_EMPTY' | 'DERIVE_UNSUPPORTED_ITEM' | 'DERIVE_PARENT_UNPLACED';
 
-/** 派生的拒绝：调用方按 `code` 换成 RPC 错误或工具错误。 */
+/** A derivation rejection: the caller maps `code` to an RPC error or a tool error. */
 export class DeriveError extends Error {
   readonly code: DeriveErrorCode;
   readonly details: Record<string, unknown>;
@@ -52,7 +56,7 @@ export class DeriveError extends Error {
   }
 }
 
-/** 派生时丢掉、改动或没做到的东西。 */
+/** Things dropped, changed or not achieved during derivation. */
 export type DeriveWarningCode =
   | 'anchor-dropped'
   | 'locks-dropped'
@@ -68,11 +72,11 @@ export interface DeriveWarning {
   code: DeriveWarningCode;
   itemId?: Id;
   assetId?: Id;
-  /** `translations-skipped`：没能复制的那份译文（父视频里的 ID）。 */
+  /** `translations-skipped`: the translation that could not be copied (its ID in the parent). */
   documentId?: Id;
   /**
-   * `range-not-exact`：区间之外没能剪掉的帧数；`items-not-restorable`：会被剪口删掉的实例数；`multiple-assets`：媒体素材数；
-   * `crops-adjusted`：截到区间、或截完为空丢掉的分段取景数。
+   * `range-not-exact`: frames outside the range that could not be cut; `items-not-restorable`: items the cuts will delete;
+   * `multiple-assets`: number of media assets; `crops-adjusted`: per-shot crops clamped to the range, or dropped as empty after clamping.
    */
   count?: number;
 }
@@ -86,27 +90,28 @@ export interface DeriveSettings {
   translations: boolean;
   chapters: boolean;
   /**
-   * 分段取景（按镜头）：父视频剪辑后时间线上的 `[from, to)` 秒各用一份裁剪。已对到帧、截到区间、按 from 排好；调用方给了
-   * `crops` 才有（截完可能是空数组），没给时省略，幂等键也不算它。没盖住的地方用 `crop`。
+   * Per-shot crops: one crop for each `[from, to)` seconds on the parent's edited timeline. Already frame-aligned, clamped to the
+   * range and sorted by from; present only when the caller gave `crops` (may be an empty array after clamping), otherwise omitted and
+   * not part of the idempotency key. Uncovered parts use `crop`.
    */
   crops?: CropShot[];
 }
 
-/** 一段取景：时间线上的 `[from, to)` 秒与这段的裁剪（四边比例，同 `Crop`）。 */
+/** One shot: `[from, to)` seconds on the timeline and its crop (edge fractions, as in `Crop`). */
 export interface CropShot extends Crop {
   from: number;
   to: number;
 }
 
-/** 分段取景在主素材源时钟上的样子（派生来源文档的 `framing`），供以后恢复剪口时按镜头补拆。 */
+/** The per-shot crops on the primary asset's source clock (`framing` in the derivation source document), for splitting by shot later when cuts are restored. */
 export interface DerivationFraming {
-  /** 主素材（父视频里的 ID）。 */
+  /** The primary asset (its ID in the parent). */
   assetId: Id;
-  /** 区间里主素材的每一段：源时钟上的 `[from, to)` 秒与它用的裁剪（没有裁剪时 null）。 */
+  /** Each piece of the primary asset in the range: `[from, to)` seconds on the source clock and its crop (null when uncropped). */
   shots: { from: number; to: number; crop: Crop | null }[];
 }
 
-/** 对到帧之后的区间：帧号与秒（`[start, end)`）。 */
+/** The range after frame alignment: frame numbers and seconds (`[start, end)`). */
 export interface AlignedRange {
   startFrame: number;
   endFrame: number;
@@ -114,43 +119,43 @@ export interface AlignedRange {
   end: number;
 }
 
-/** 区间之外的一个剪口：父视频素材源时钟上的秒。 */
+/** One cut outside the range: seconds on the source clock of a parent asset. */
 export interface DerivedCut {
   assetId: Id;
   from: number;
   to: number;
 }
 
-/** 派生来源文档的正文（`cuccut.derivation/1`）。 */
+/** Body of the derivation source document (`cuccut.derivation/1`). */
 export interface DerivationBody {
   schema: 'cuccut.derivation/1';
   parentVideoId: Id;
   parentRevision: string;
   range: { start: number; end: number };
-  /** 记剪口的主素材（父视频里的 ID）；没有可剪的媒体时 null。 */
+  /** The primary asset carrying the cuts (its ID in the parent); null when there is no media to cut. */
   primaryAssetId: Id | null;
   cuts: DerivedCut[];
   settings: DeriveSettings;
-  /** 分段取景（`settings.crops`）落在主素材源时钟上的样子；给了 `crops` 且有主素材时才有。 */
+  /** The per-shot crops (`settings.crops`) on the primary asset's source clock; only when `crops` was given and there is a primary asset. */
   framing?: DerivationFraming;
   key: string;
-  /** 开头一句、为什么挑它、提示牌（剪成短视频的结果页卡片）：调用方给了才有，不参与幂等键。 */
+  /** Opening line, why it was picked, and note cards (the result page cards for cutting into shorts): only when the caller gave them; not part of the idempotency key. */
   hook?: string;
   reason?: string;
   notes?: string[];
 }
 
-/** 派生时调用方附上的说明（`hook`、`reason`、`notes`），原样写进派生来源文档。 */
+/** Notes the caller attaches when deriving (`hook`, `reason`, `notes`), written as is into the derivation source document. */
 export interface DerivePick {
   hook?: string;
   reason?: string;
   notes?: string[];
 }
 
-/** 放在哪条轨道上：子视频已有的轨道，或第一笔事务里新建的轨道的 ref。 */
+/** Which track to place on: an existing track of the child video, or the ref of a track created in the first transaction. */
 export type TrackTarget = { trackId: Id } | { trackRef: string };
 
-/** 子视频里的一个实例：按轨道、种类与在时间线上的位置（复制时不平移，与父视频相同）找回。 */
+/** An item in the child video, found again by track, type and timeline position (not shifted when copied, so the same as in the parent). */
 export interface ItemLocator {
   track: TrackTarget;
   type: SequenceItem['type'];
@@ -168,7 +173,7 @@ export interface PlannedTransition {
   audioCrossfade?: boolean;
 }
 
-/** 收尾时写的译文：子视频的转写有了 ID 之后才填 `sourceBasis` 与 `sourceDocument`。 */
+/** A translation written while finishing: `sourceBasis` and `sourceDocument` are filled in once the child's transcript has an ID. */
 export interface PlannedTranslation {
   from: Id;
   speechRef: string;
@@ -177,7 +182,7 @@ export interface PlannedTranslation {
   body: Record<string, unknown>;
 }
 
-/** 收尾时复制的剪口集合：剪口原样，`scopeItemIds` 换成子视频的实例。 */
+/** A cut set copied while finishing: cuts unchanged, `scopeItemIds` mapped to the child's items. */
 export interface PlannedCutSet {
   from: Id;
   importRef: string;
@@ -208,9 +213,9 @@ export interface DerivationPlan {
   speech: PlannedSpeech[];
   derivation: DerivationBody;
   warnings: DeriveWarning[];
-  /** 复制的实例数。 */
+  /** Number of items copied. */
   itemCount: number;
-  /** 区间里播放的源区间（父视频的素材 ID、源时钟上的秒），按素材、起点排好；数子视频字幕层在区间里的字幕条用（`cuesInRange`）。 */
+  /** Source ranges played within the range (parent asset IDs, seconds on the source clock), sorted by asset and start; used to count the child caption layer's cues within the range (`cuesInRange`). */
   kept: DerivedCut[];
 }
 
@@ -219,21 +224,21 @@ export interface DerivationInput {
   range: AlignedRange;
   settings: DeriveSettings;
   key: string;
-  /** 子视频的根序列：ID、新建时的轨道与背景。 */
+  /** The child video's root sequence: ID, and the tracks and background it was created with. */
   target: { sequenceId: Id; tracks: readonly Track[]; background: string };
-  /** 素材版本的文件（绝对路径），键是 `assetFileKey`。 */
+  /** Files of asset revisions (absolute paths), keyed by `assetFileKey`. */
   files: ReadonlyMap<string, string>;
-  /** 父视频文稿、译文与剪口集合的正文（当前版本），键是文档 ID。没有的不复制。 */
+  /** Bodies of the parent's transcripts, translations and cut sets (current revisions), keyed by document ID. Missing ones are not copied. */
   documents: ReadonlyMap<Id, unknown>;
-  /** 写进视频的名字（按当前语言）。 */
+  /** Names written into the video (in the current language). */
   labels: { derivationName: string };
-  /** 调用方附上的说明；空的不写。 */
+  /** Notes attached by the caller; empty ones are not written. */
   pick?: DerivePick;
-  /** `alignCrops` 截掉或丢掉的分段数：大于 0 时以 `crops-adjusted` 说明。 */
+  /** Number of shots `alignCrops` clamped or dropped: reported as `crops-adjusted` when greater than 0. */
   cropsAdjusted?: number;
 }
 
-/** 说明里非空的那几项（去掉首尾空白；空的提示牌不要）。 */
+/** The non-empty note fields (trimmed; empty note cards dropped). */
 export function pickFields(pick: DerivePick | undefined): DerivePick {
   if (!pick) return {};
   const hook = pick.hook?.trim();
@@ -246,14 +251,14 @@ export const DERIVATION_REF = 'derivation';
 export const DERIVATION_KIND = 'derivation';
 export const DERIVATION_SCHEMA = 'cuccut.derivation/1';
 const CUT_SET_KIND = 'cut-set';
-/** 比这短的剪口不记（音频帧内偏移留下的零头）。 */
+/** Cuts shorter than this are not recorded (leftovers from sub-frame audio offsets). */
 const MIN_CUT_SECONDS = 0.001;
 
 export function assetFileKey(ref: VersionRef): string {
   return `${ref.id}@${ref.revision}`;
 }
 
-// ---- 有理数（BigInt），只用于时间换算 ----
+// ---- Rationals (BigInt), only for time conversion ----
 
 interface Q {
   n: bigint;
@@ -296,7 +301,7 @@ const time = (t: MediaTime): Q => q(BigInt(t.ticks), BigInt(t.timescale));
 const rate = (r: Rate): Q => q(BigInt(r.num), BigInt(r.den));
 const exact = (a: Q): string => `${a.n}/${a.d}`;
 
-/** 十进制秒，9 位小数：`up` 向上取整，否则向下（剪口起点向上、终点向下，只会略短，不会剪进区间或越出素材）。 */
+/** Decimal seconds with 9 decimal places: rounds up with `up`, otherwise down (cut starts round up and ends round down, so a cut can only be slightly shorter, never cutting into the range or past the asset). */
 function decimal(value: Q, up: boolean): string {
   const scale = 1_000_000_000n;
   const scaled = value.n * scale;
@@ -309,21 +314,22 @@ function decimal(value: Q, up: boolean): string {
   return `${negative ? '-' : ''}${whole}${frac ? `.${frac}` : ''}`;
 }
 
-// ---- 区间与幂等键 ----
+// ---- Range and idempotency key ----
 
-/** 时间线上一个词的位置（秒）：转写的词按播放它的实例投到剪辑后的时间线上。 */
+/** A word's position on the timeline (seconds): transcript words projected onto the edited timeline via the items playing them. */
 export interface TimelineWord {
   start: number;
   end: number;
 }
 
 /**
- * 剪辑后时间线上的 `[start, end)` 秒对到帧：起点向下取整、终点向上取整，截到序列长度。空了时 `DERIVE_RANGE_EMPTY`。
- * 秒数换帧时留一点余量，免得 0.1 × 30 这类浮点误差多出一帧。
+ * Aligns `[start, end)` seconds on the edited timeline to frames: start rounds down, end rounds up, clamped to the sequence length.
+ * `DERIVE_RANGE_EMPTY` when empty. Converting seconds to frames leaves a small margin so float errors like 0.1 × 30 do not add a frame.
  *
- * 给了 `words`（`timelineWords`）时边界留在句间的停顿里：终点向上取整之后越过了下一个词的起点（终点之后最先开始的词；
- * 停顿比一帧短时会把下一句的第一个词吃进来），改为向下取整；起点向下取整之后落在上一个词结束之前（起点之前最后结束的词），
- * 改为向上取整。改了之后区间空了就不改。返回的是实际采用的区间。
+ * With `words` (`timelineWords`), the boundaries stay in the pauses between sentences: if rounding the end up passes the start of the
+ * next word (the first word starting after the end; with a pause shorter than one frame it would swallow the first word of the next
+ * sentence), round it down instead; if rounding the start down lands before the end of the previous word (the last word ending before
+ * the start), round it up instead. Neither change is made if it would empty the range. Returns the range actually used.
  */
 export function alignRange(sequence: Sequence, start: number, end: number, words: readonly TimelineWord[] = []): AlignedRange {
   const fps = sequence.fps;
@@ -355,7 +361,7 @@ export function alignRange(sequence: Sequence, start: number, end: number, words
   };
 }
 
-/** 幂等键：父视频、版本、对齐后的区间与设置的 sha256 的前 12 位。名字不算在内。 */
+/** Idempotency key: the first 12 hex digits of the sha256 of the parent video, revision, aligned range and settings. The name is not included. */
 export function derivationKey(input: {
   parentVideoId: Id;
   parentRevision: string;
@@ -375,22 +381,26 @@ export function derivationKey(input: {
       captions: s.captions,
       translations: s.translations,
       chapters: s.chapters,
-      // 只在给了分段取景时才算进来：老调用的键不变。
+      // Only included when per-shot crops are given, so keys of older calls do not change.
       ...(s.crops ? { crops: s.crops.map((c) => [c.from, c.to, c.left, c.top, c.right, c.bottom]) } : {}),
     },
   });
   return createHash('sha256').update(canonical).digest('hex').slice(0, 12);
 }
 
-/** 区间首尾没被分段取景盖住的缺口小于这个秒数时，由第一段、最后一段向外延盖住（`alignCrops`）。 */
+/** When the gap at the start or end of the range not covered by per-shot crops is shorter than this many seconds, the first or last shot is extended outward to cover it (`alignCrops`). */
 const EDGE_CROP_TOLERANCE_SECONDS = 0.5;
 
 /**
- * 分段取景对到帧：每段的起止就近取整到帧（正好在两帧中间时取早的），截到对齐后的区间 `[S, E)`，按 from 排好。被截过的、
- * 截完为空丢掉的段数记在 `adjusted`（结果以 `crops-adjusted` 说明）。调用方保证各段按秒不重叠（参数校验）。
- * 对齐后，第一段起点晚于区间起点、最后一段终点早于区间终点，且缺口小于 `EDGE_CROP_TOLERANCE_SECONDS`（0.5 秒）时，把它向外延到
- * 区间边界：区间边界为落在停顿里被吸附（可比请求的宽几帧），而调用方的首尾段正好是请求的起止，不延的话那一小条会自成一个很短的
- * 片段并套用缺省裁剪。只动首尾两段、只向外延，不计入 `adjusted`；缺口更大的仍沿用缺省裁剪，且已计入 `adjusted` 的不变。
+ * Aligns per-shot crops to frames: each shot's start and end round to the nearest frame (the earlier one when exactly halfway),
+ * clamped to the aligned range `[S, E)` and sorted by from. The number of shots clamped, or dropped as empty after clamping, goes in
+ * `adjusted` (reported as `crops-adjusted`). The caller guarantees shots do not overlap in seconds (argument validation).
+ * After alignment, if the first shot starts after the range start or the last shot ends before the range end, by a gap shorter than
+ * `EDGE_CROP_TOLERANCE_SECONDS` (0.5 s), it is extended outward to the range boundary: the range boundaries snap into pauses (and may
+ * be a few frames wider than requested), while the caller's first and last shots match the requested start and end exactly; without
+ * extending, that sliver would become a very short clip of its own with the default crop. Only the first and last shots move, only
+ * outward, and this does not count toward `adjusted`; larger gaps still use the default crop, and what already counts toward
+ * `adjusted` is unchanged.
  */
 export function alignCrops(sequence: Sequence, range: AlignedRange, crops: readonly CropShot[]): { crops: CropShot[]; adjusted: number } {
   const fps = sequence.fps;
@@ -417,7 +427,7 @@ export function alignCrops(sequence: Sequence, range: AlignedRange, crops: reado
       bottom: shot.bottom,
     });
   }
-  // 首尾边缘的小缺口并入第一段、最后一段（只向外，不计 adjusted）。
+  // Small gaps at the edges merge into the first and last shots (outward only, not counted in adjusted).
   const tolerance = (EDGE_CROP_TOLERANCE_SECONDS * fps.num) / fps.den;
   const first = outFrames[0];
   const last = outFrames[outFrames.length - 1];
@@ -430,7 +440,7 @@ export function alignCrops(sequence: Sequence, range: AlignedRange, crops: reado
   return { crops: out, adjusted };
 }
 
-// ---- 复制哪些实例 ----
+// ---- Which items to copy ----
 
 function rootSequence(snapshot: VideoSnapshot): Sequence {
   const sequence = snapshot.sequences[snapshot.rootSequenceId];
@@ -438,7 +448,7 @@ function rootSequence(snapshot: VideoSnapshot): Sequence {
   return sequence;
 }
 
-/** 复制的轨道（字幕轨除外，按次序，空的不要）与上面的实例（字幕实例除外，按叠放次序）。有合成实例时拒绝。 */
+/** The tracks to copy (except subtitle tracks, in order, empty ones skipped) and their items (except caption items, in paint order). Rejects composition items. */
 function copiedTimeline(sequence: Sequence): { tracks: Track[]; items: SequenceItem[] } {
   const ordered = [...sequence.tracks].filter((t) => t.kind !== 'subtitle').sort((a, b) => a.order - b.order);
   const items: SequenceItem[] = [];
@@ -449,7 +459,7 @@ function copiedTimeline(sequence: Sequence): { tracks: Track[]; items: SequenceI
       .sort((a, b) => a.paintOrder - b.paintOrder);
     if (!onTrack.length) continue;
     for (const item of onTrack) {
-      // 合成实例引用代码包（目录），不能经素材文件复制。
+      // Composition items reference a code bundle (a directory) and cannot be copied via asset files.
       if (item.type === 'composition') throw new DeriveError('DERIVE_UNSUPPORTED_ITEM', { itemId: item.id, itemType: item.type });
     }
     tracks.push(track);
@@ -458,13 +468,13 @@ function copiedTimeline(sequence: Sequence): { tracks: Track[]; items: SequenceI
   return { tracks, items };
 }
 
-/** 实例在时间线上的位置，子视频里按它找回（复制时不平移）。 */
+/** An item's position on the timeline, used to find it again in the child video (not shifted when copied). */
 function positionOf(item: SequenceItem): string {
   if (item.type === 'audio') return `a:${item.fromFrame}:${exact(time(item.subframeOffset))}:${exact(time(item.playDuration))}`;
   return `v:${item.span.fromFrame}:${item.span.durationFrames}`;
 }
 
-/** 实例的输入：去掉引擎分配的（ID、来历、轨道、叠放次序）与引用父视频里别的对象的（链接组、跟随的目标），一律跟随剪口。 */
+/** An item's input: drops what the engine assigns (ID, lineage, track, paint order) and references to other objects in the parent (link group, follow target); always follows cuts. */
 function itemInput(item: SequenceItem, settings: DeriveSettings, warnings: DeriveWarning[]): Record<string, unknown> {
   const {
     id: _id,
@@ -478,7 +488,7 @@ function itemInput(item: SequenceItem, settings: DeriveSettings, warnings: Deriv
   } = item as SequenceItem & Record<string, unknown>;
   const input: Record<string, unknown> = { ...rest, followPolicy: { kind: 'follow-cuts' } };
   if (followPolicy.kind !== 'sequence-fixed' && followPolicy.kind !== 'follow-cuts') warnings.push({ code: 'anchor-dropped', itemId: item.id });
-  // 锁着的实例挡住剪口的波纹删除：复制成不锁的。
+  // Locked items block the ripple delete of cuts: copy them unlocked.
   if (locked) warnings.push({ code: 'locks-dropped', itemId: item.id });
   delete input.assetRef;
   if (item.type === 'video') {
@@ -488,9 +498,9 @@ function itemInput(item: SequenceItem, settings: DeriveSettings, warnings: Deriv
   return input;
 }
 
-// ---- 分段取景：把主素材的视频实例在镜头边界上拆开 ----
+// ---- Per-shot crops: split the primary asset's video items at shot boundaries ----
 
-/** 对到帧的一段取景。 */
+/** One frame-aligned shot. */
 interface FrameShot {
   fromFrame: number;
   toFrame: number;
@@ -506,11 +516,11 @@ function mediaTime(value: Q): MediaTime {
   return { ticks: value.n.toString(), timescale: Number(value.d) };
 }
 
-/** 时间线上帧号与取景的对应：区间之前的帧跟区间第一帧，之后的跟最后一帧；没有段盖住的帧是 null（用缺省裁剪）。 */
+/** Maps timeline frames to crops: frames before the range follow its first frame, frames after follow its last; frames no shot covers map to null (default crop). */
 class Framing {
   readonly shots: FrameShot[];
   readonly #range: AlignedRange;
-  /** 取景变化的帧（严格在区间里面）：主素材的实例在这些帧上拆开。 */
+  /** Frames where the crop changes (strictly inside the range): the primary asset's items are split at these frames. */
   readonly splits: number[];
 
   constructor(fps: Rate, range: AlignedRange, crops: readonly CropShot[]) {
@@ -533,10 +543,13 @@ class Framing {
 }
 
 /**
- * 一个视频实例按分段取景复制成的条目：主素材（正速率线性源时钟）的实例在取景变化的帧上拆成几段，`sourceIn` 用有理数精确算
- * （以后两段的裁剪改成一样时能按源连续合并）；入场动画只留第一段、出场只留最后一段，内嵌音频的淡入只留第一段、淡出只留
- * 最后一段，循环动画与音量包络每段从头算（`animation-split`）。别的视频实例不拆，整段取它在区间里中间那一帧的取景。
- * 没有段盖住的地方用缺省裁剪（`crop` 设置，否则实例原来的）。`shots` 收区间里主素材各段的源区间与裁剪。
+ * The entries a video item is copied into under per-shot crops: an item of the primary asset (positive-rate linear source clock) is
+ * split into pieces at frames where the crop changes, with `sourceIn` computed exactly with rationals (so two pieces can later merge
+ * by source continuity if their crops become the same); the enter animation stays only on the first piece and the exit only on the
+ * last, embedded audio fade-in only on the first and fade-out only on the last, and loop animations and volume envelopes restart on
+ * each piece (`animation-split`). Other video items are not split; the whole item takes the crop of its middle frame within the
+ * range. Parts no shot covers use the default crop (the `crop` setting, otherwise the item's own). `shots` collects the source
+ * ranges and crops of the primary asset's pieces within the range.
  */
 function framedEntries(
   item: SequenceItem,
@@ -599,14 +612,14 @@ function framedEntries(
   return out;
 }
 
-// ---- 区间之外的剪口 ----
+// ---- Cuts outside the range ----
 
 interface Interval {
   start: Q;
   end: Q;
 }
 
-/** 播放素材的一段：时间线上的 `[a, b)` 与源时钟 `sourceIn + (t − a) × rate`。 */
+/** A stretch playing an asset: `[a, b)` on the timeline and source clock `sourceIn + (t − a) × rate`. */
 interface MediaPiece {
   item: SequenceItem;
   assetId: Id;
@@ -627,7 +640,7 @@ function itemInterval(item: SequenceItem, fps: Rate): Interval {
 function mediaPiece(item: SequenceItem, fps: Rate): MediaPiece | 'unsupported' | null {
   if (item.type !== 'video' && item.type !== 'audio') return null;
   const map = item.timeMap;
-  // 剪口集合的实例要求正速率的线性源时钟（静帧、倒放的素材不记剪口）。
+  // Cut-set items require a positive-rate linear source clock (no cuts for freeze frames or reversed media).
   if (map.kind !== 'linear' || map.rate.num <= 0) return 'unsupported';
   const { start, end } = itemInterval(item, fps);
   return { item, assetId: item.assetRef.id, a: start, b: end, sourceIn: time(map.sourceIn), rate: rate(map.rate) };
@@ -681,9 +694,10 @@ interface CutPlan {
 }
 
 /**
- * 区间之外要剪掉的源区间：主素材（时间线上播放得最多、源时钟都是正速率线性的素材）在 `[0, S)` 与 `[E, 时长)` 里播放的源区间，
- * 减去它在区间里播放的（剪口作用于播放这个素材的全部实例，同一段源在区间里也播放时不能剪）。父视频已有的剪口对应的源区间
- * 不在实例里，这里自然不会重复记。
+ * Source ranges to cut outside the range: the source ranges the primary asset (the one played most on the timeline, with all source
+ * clocks positive-rate linear) plays in `[0, S)` and `[E, duration)`, minus what it plays within the range (cuts apply to every item
+ * playing this asset, so a source stretch that also plays within the range cannot be cut). Source ranges of the parent's existing
+ * cuts are not in the items, so they are naturally not recorded twice.
  */
 function planCuts(sequence: Sequence, items: SequenceItem[], range: AlignedRange, assetDuration: (assetId: Id) => Q | null): CutPlan {
   const fps = sequence.fps;
@@ -698,7 +712,7 @@ function planCuts(sequence: Sequence, items: SequenceItem[], range: AlignedRange
   const assets = new Set([...pieces.map((p) => p.assetId), ...unsupported]);
   if (assets.size > 1) warnings.push({ code: 'multiple-assets', count: assets.size });
 
-  // 主素材：播放得最多的那个；一样多时按 ID。
+  // Primary asset: the one played most; ties broken by ID.
   const coverage = new Map<Id, Q>();
   for (const p of pieces) if (!unsupported.has(p.assetId)) coverage.set(p.assetId, add(coverage.get(p.assetId) ?? ZERO, sub(p.b, p.a)));
   const primary = [...coverage.entries()].sort(([x, a], [y, b]) => cmp(b, a) || (x < y ? -1 : x > y ? 1 : 0))[0]?.[0] ?? null;
@@ -731,7 +745,7 @@ function planCuts(sequence: Sequence, items: SequenceItem[], range: AlignedRange
       .filter((s) => toNumber(sub(s.end, s.start)) >= MIN_CUT_SECONDS);
   }
 
-  // 剪口在时间线上盖住的部分；区间之外剩下没盖住的帧要说明。
+  // What the cuts cover on the timeline; frames outside the range left uncovered are reported.
   const covered = merge(
     own.flatMap((p) =>
       cuts.flatMap((c) => {
@@ -744,7 +758,7 @@ function planCuts(sequence: Sequence, items: SequenceItem[], range: AlignedRange
   const leftFrames = Math.round(toNumber(div(totalLength(left), frames(1, fps))));
   if (leftFrames >= 1) warnings.push({ code: 'range-not-exact', count: leftFrames });
 
-  // 不归主素材管的实例整个落在剪掉的范围里时，跟着剪口被删掉，恢复剪口也回不来。
+  // Items not belonging to the primary asset that fall entirely inside a cut range are deleted with the cuts and do not come back when cuts are restored.
   const lost = items.filter((item) => {
     if (own.some((p) => p.item === item)) return false;
     const span = itemInterval(item, fps);
@@ -756,9 +770,10 @@ function planCuts(sequence: Sequence, items: SequenceItem[], range: AlignedRange
 }
 
 /**
- * 转写的词在剪辑后时间线上的位置（秒）：每份取自时间线上素材的转写（`documents` 里有正文的），按播放那个素材的实例
- * （正速率线性的源时钟）把词的源区间投到时间线上；同一个词被几个实例播放时各算一次，剪掉的词不在里面。`alignRange` 用它
- * 把区间的边界留在句间的停顿里。
+ * Positions of transcript words on the edited timeline (seconds): for each transcript of an asset on the timeline (with a body in
+ * `documents`), projects word source ranges onto the timeline via the items playing that asset (positive-rate linear source clock);
+ * a word played by several items counts once per item, and cut words are excluded. `alignRange` uses it to keep range boundaries in
+ * the pauses between sentences.
  */
 export function timelineWords(snapshot: VideoSnapshot, documents: ReadonlyMap<Id, unknown>): TimelineWord[] {
   const sequence = rootSequence(snapshot);
@@ -790,7 +805,7 @@ export function timelineWords(snapshot: VideoSnapshot, documents: ReadonlyMap<Id
   return out.sort((x, y) => x.start - y.start);
 }
 
-/** 区间 `[S, E)` 里播放的源区间：每个实例（正速率线性的源时钟）与区间相交的部分换到源时钟上，按素材合并。 */
+/** Source ranges played within `[S, E)`: each item's (positive-rate linear source clock) intersection with the range mapped to the source clock, merged per asset. */
 function keptSource(sequence: Sequence, items: SequenceItem[], range: AlignedRange): DerivedCut[] {
   const fps = sequence.fps;
   const kept: Interval = { start: frames(range.startFrame, fps), end: frames(range.endFrame, fps) };
@@ -807,8 +822,9 @@ function keptSource(sequence: Sequence, items: SequenceItem[], range: AlignedRan
 }
 
 /**
- * 字幕正文（`cuccut.caption/1`，素材时钟）里有几条落在区间里播放的源区间（`kept`，同一个素材的）之内：与哪一段有重叠就算。
- * 正文读不出时 null。派生的结果里 `captions[].cueCount` 用它，只数子视频剪完之后还看得到的字幕条。
+ * How many cues in a caption body (`cuccut.caption/1`, asset clock) fall within the source ranges played in the range (`kept`, for
+ * the same asset): a cue counts if it overlaps any of them. null when the body cannot be read. Used for `captions[].cueCount` in the
+ * derivation result, counting only cues still visible in the child video after cutting.
  */
 export function cuesInRange(body: unknown, kept: readonly { from: number; to: number }[]): number | null {
   const b = body as { timescale?: unknown; cues?: unknown } | null;
@@ -825,11 +841,12 @@ export function cuesInRange(body: unknown, kept: readonly { from: number; to: nu
   return count;
 }
 
-// ---- 调用方要先准备的输入 ----
+// ---- Inputs the caller prepares first ----
 
 /**
- * 规划之前要准备的东西：要导入的素材版本（找文件）与要读正文的文档（这些素材的转写、剪口集合，以及转写的译文）。
- * 父视频里有合成实例时同样抛 `DERIVE_UNSUPPORTED_ITEM`。
+ * What to prepare before planning: the asset revisions to import (to locate files) and the documents whose bodies to read (these
+ * assets' transcripts and cut sets, and the transcripts' translations). Also throws `DERIVE_UNSUPPORTED_ITEM` when the parent has
+ * composition items.
  */
 export function derivationNeeds(snapshot: VideoSnapshot, settings: DeriveSettings): { assets: VersionRef[]; documentIds: Id[] } {
   const { items } = copiedTimeline(rootSequence(snapshot));
@@ -848,7 +865,7 @@ export function derivationNeeds(snapshot: VideoSnapshot, settings: DeriveSetting
   return { assets: [...assets.values()], documentIds: [...sourced, ...translations].map((d) => d.id) };
 }
 
-// ---- 规划 ----
+// ---- Planning ----
 
 export function planDerivation(input: DerivationInput): DerivationPlan {
   const { snapshot, range, settings, target } = input;
@@ -857,7 +874,7 @@ export function planDerivation(input: DerivationInput): DerivationPlan {
   const warnings: DeriveWarning[] = [];
   const operations: EditOperation[] = [];
 
-  // 轨道：每种轨道里第一条用到的接子视频新建时的那条，其余按父视频的次序新建（新建的排在上面，相对次序不变）。
+  // Tracks: the first used track of each kind maps to the one the child video was created with; the rest are created in the parent's order (new ones go on top, relative order kept).
   const trackTargets = new Map<Id, TrackTarget>();
   const defaults = new Map<TrackKind, Track[]>();
   for (const t of [...target.tracks].sort((a, b) => a.order - b.order)) defaults.set(t.kind, [...(defaults.get(t.kind) ?? []), t]);
@@ -882,7 +899,7 @@ export function planDerivation(input: DerivationInput): DerivationPlan {
     }
   }
 
-  // 素材：每个用到的素材版本导入一次，来源沿用父视频里的记录；收在父视频里的同样收进子视频，链接的仍链接到原文件。
+  // Assets: each used asset revision is imported once, keeping the provenance recorded in the parent; managed ones are managed in the child too, linked ones stay linked to the original file.
   const importRefs = new Map<string, string>();
   const assetImportRef = new Map<Id, string>();
   for (const item of items) {
@@ -909,7 +926,7 @@ export function planDerivation(input: DerivationInput): DerivationPlan {
     });
   }
 
-  // 文稿：整份复制（素材时钟，与时间线无关）。
+  // Transcripts: copied whole (asset clock, independent of the timeline).
   const speech: PlannedSpeech[] = [];
   const speechRefs = new Map<Id, string>();
   const docs = Object.values(snapshot.documents).sort(byId);
@@ -932,7 +949,7 @@ export function planDerivation(input: DerivationInput): DerivationPlan {
     });
   }
 
-  // 区间之外的剪口（主素材也决定分段取景拆哪些实例）。
+  // Cuts outside the range (the primary asset also decides which items per-shot crops split).
   const durationOf = (assetId: Id): Q | null => {
     const record = snapshot.assets[assetId];
     const duration = record?.revisions[record.currentRevision]?.duration;
@@ -940,8 +957,8 @@ export function planDerivation(input: DerivationInput): DerivationPlan {
   };
   const cutPlan = planCuts(sequence, items, range, durationOf);
 
-  // 实例：整条时间线，不平移、不截断。给了分段取景时主素材的视频实例在取景变化的帧上拆开（`framedEntries`），
-  // 一个父实例对应子视频里的几段（`piecesOf`，按时间排好）。
+  // Items: the whole timeline, not shifted or truncated. With per-shot crops, the primary asset's video items split at frames where
+  // the crop changes (`framedEntries`), so one parent item maps to several pieces in the child (`piecesOf`, in time order).
   const inserted: Record<string, unknown>[] = [];
   const piecesOf = new Map<Id, ItemLocator[]>();
   const framing = settings.crops ? new Framing(sequence.fps, range, settings.crops) : null;
@@ -969,7 +986,7 @@ export function planDerivation(input: DerivationInput): DerivationPlan {
   if (inserted.length) operations.push({ type: 'insertItems', sequenceId: target.sequenceId, items: inserted as never });
   if (sequence.animationBindings.length) warnings.push({ code: 'animation-bindings-dropped' });
 
-  // 章节：全部复制；剪口剪掉时章节跟着内容走（§3.13 的例外）。缩略图引用父视频的素材，不带过来。
+  // Chapters: all copied; when cuts remove content, chapters move with it (the exception in §3.13). Thumbnails reference parent assets and are not carried over.
   if (settings.chapters) {
     const chapters = sequence.markers
       .filter((m) => m.kind === 'chapter')
@@ -978,12 +995,12 @@ export function planDerivation(input: DerivationInput): DerivationPlan {
     if (chapters.length) operations.push({ type: 'setChapters', sequenceId: target.sequenceId, chapters, alignment: 'exact-frame' });
   }
 
-  // 画布背景沿用父视频（宽高在新建时已经给了）。
+  // Canvas background follows the parent (width and height were given at creation).
   if (sequence.canvas.background !== target.background) {
     operations.push({ type: 'updateSequence', sequenceId: target.sequenceId, background: sequence.canvas.background });
   }
 
-  // 转场：两侧都复制了，收尾时按位置找回实例。拆开的实例在左侧时接最后一段，在右侧时接第一段。
+  // Transitions: both sides were copied; while finishing, items are found again by position. A split item on the left attaches its last piece, on the right its first.
   const transitions: PlannedTransition[] = [];
   for (const t of sequence.transitions) {
     const left = t.leftItemId !== undefined ? piecesOf.get(t.leftItemId)?.at(-1) : undefined;
@@ -1001,7 +1018,7 @@ export function planDerivation(input: DerivationInput): DerivationPlan {
     });
   }
 
-  // 译文：整份复制；`sourceBasis` 等子视频的转写有了 ID 再填。
+  // Translations: copied whole; `sourceBasis` is filled in once the child's transcript has an ID.
   const translations: PlannedTranslation[] = [];
   if (settings.translations) {
     for (const record of docs) {
@@ -1009,7 +1026,7 @@ export function planDerivation(input: DerivationInput): DerivationPlan {
       const speechRef = speechRefs.get(record.sourceDocumentId);
       if (!speechRef) continue;
       const raw = input.documents.get(record.id);
-      // 旧项目导入的 `/1` 译文按转写现在的句子换成 `/2`（句级对齐），子视频才能给它建字幕层；换不了的不复制，以警告说明。
+      // A `/1` translation imported from an old project is converted to `/2` (sentence-aligned) by the transcript's current sentences so the child can build a caption layer from it; one that cannot be converted is not copied and is reported as a warning.
       const body = isTranslationBody(raw)
         ? raw
         : (upgradeLegacyTranslation(raw, input.documents.get(record.sourceDocumentId), record.language, {
@@ -1024,7 +1041,7 @@ export function planDerivation(input: DerivationInput): DerivationPlan {
     }
   }
 
-  // 父视频已有的剪口集合：剪口原样（对应的源区间已经不在复制的实例里），范围换成子视频的实例。
+  // The parent's existing cut sets: cuts unchanged (their source ranges are no longer in the copied items), scope mapped to the child's items.
   const cutSets: PlannedCutSet[] = [];
   for (const record of docs) {
     if (record.kind !== CUT_SET_KIND || !record.sourceAssetId) continue;
@@ -1037,7 +1054,7 @@ export function planDerivation(input: DerivationInput): DerivationPlan {
       importRef,
       name: record.name,
       body: body as Record<string, unknown>,
-      // 拆开的实例每一段都在范围里。
+      // Every piece of a split item is in scope.
       scope: scopeIds.flatMap((id) => piecesOf.get(id) ?? []),
     });
   }
@@ -1094,8 +1111,9 @@ export function planDerivation(input: DerivationInput): DerivationPlan {
 }
 
 /**
- * 第二笔事务（要用第一笔新建的 ID，`refs` 是第一笔回执的 `refs`）：轨道的隐藏与静音、转场、译文、父视频的剪口集合，
- * 然后记区间之外的剪口，最后锁回锁着的轨道。没有要做的时返回空数组。
+ * The second transaction (needs the IDs created by the first; `refs` is the `refs` of the first receipt): track hiding and muting,
+ * transitions, translations, the parent's cut sets, then the cuts outside the range, and finally re-locking locked tracks. Returns an
+ * empty array when there is nothing to do.
  */
 export function planDerivationTrim(
   plan: Pick<DerivationPlan, 'trim'>,
@@ -1109,7 +1127,7 @@ export function planDerivationTrim(
     if (!locator) return undefined;
     const id = trackId(locator.track);
     const matches = sequence.items.filter((item) => item.trackId === id && item.type === locator.type && positionOf(item) === locator.position);
-    // 同一条轨道上同类型、同位置的实例不止一个时认不出是哪个。
+    // With more than one item of the same type at the same position on the same track, it cannot be told which one it is.
     return matches.length === 1 ? matches[0]!.id : undefined;
   };
 
@@ -1154,7 +1172,7 @@ export function planDerivationTrim(
       name: t.name,
       ...(t.language ? { language: t.language } : {}),
       sourceDocument: { documentId: speechId },
-      // 转写整份复制，编辑视图的指纹（只取决于转写正文）不变；换成子视频的转写与序列。
+      // The transcript is copied whole, so the edit view fingerprint (which depends only on the transcript body) is unchanged; point to the child's transcript and sequence.
       body: { ...t.body, sourceBasis: { ...basis, speechRef: { id: speechId, revision: speech.currentRevision }, sequenceId: sequence.id } },
     });
   }
@@ -1191,7 +1209,7 @@ function dedupeWarnings(list: DeriveWarning[]): DeriveWarning[] {
   });
 }
 
-// ---- 文稿与译文的正文 ----
+// ---- Transcript and translation bodies ----
 
 interface SpeechBodyShape {
   schema: 'cuccut.speech/1';
@@ -1219,7 +1237,7 @@ function byId(a: { id: Id }, b: { id: Id }): number {
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
-/** 秒数写成 mm:ss（一小时以上 h:mm:ss），子视频的默认名用。 */
+/** Formats seconds as mm:ss (h:mm:ss from one hour), for the child video's default name. */
 export function clockLabel(seconds: number): string {
   const total = Math.floor(seconds + 1e-6);
   const h = Math.floor(total / 3600);

@@ -236,7 +236,7 @@ describe.skipIf(!engine || !worker || !ffmpeg || !electron)('代码画面工具�
       files: [{ path: 'index.html', content: overlayHtml({ extraHead: '<script src="https://example.invalid/x.js"></script>' }) }],
     });
     expect(network.code).toBe('BUNDLE_NETWORK_REFERENCE');
-    expect(network.next).toContain('包内');
+    expect(network.next).toContain('inside the bundle');
 
     const random = await failure('compositions_import', {
       video: videoId,

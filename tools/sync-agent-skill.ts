@@ -1,22 +1,27 @@
 #!/usr/bin/env node
 /**
- * 说明书的同步（Agent 面设计 §8.3、§8.6、§8.7）：
+ * Syncs the agent guide (agent surface design §8.3, §8.6, §8.7):
  *
- * 1. craft 副本：每个内置 skill `skills/cuccut/built-in-skills/<id>/`（SKILL.md + references/*.md）合成一页
- *    `skills/cuccut/references/craft/<id>.md`。
- *    front matter 去掉，正文开头的一级标题作标题（没有时用 `name`）、`description` 作引言，references 作二级附录；工具桥的工具名按 CLI 面改写
- *    （`documents_read` → `cuccut documents read`，`edits_apply` 的操作名不动），`skills_read` 的说法改成读本页附录或别的
- *    craft 页；正文里的标记与占位符按 CLI 面渲染（与说明书同一个渲染器）。`built-in-skills/` 里没有了的 craft 页删掉。
- * 2. 生成块：说明书里 `<!-- generated: <名字> -->` … `<!-- /generated -->` 之间的内容按目录重写：
- *    `common-ops`（最常用的 8 个 `edits_apply` 操作，来自 `edits_ops` 的说明与示例）、`error-codes`（错误码 → 退出码 →
- *    下一步，来自 `apps/cli/src/envelope.ts` 的表）、`tool-map`（MCP 工具 ↔ CLI 命令 ↔ 效果，来自目录）。
- * 3. 写完按两个面各渲染一遍（CLI 面核对终端的目录，工具桥面核对会话内智能体的目录），占位符或标记有错就失败。
+ * 1. Craft copies: each built-in skill `skills/cuccut/built-in-skills/<id>/` (SKILL.md + references/*.md) is composed into
+ *    one page, `skills/cuccut/references/craft/<id>.md`.
+ *    Front matter is dropped; the body's leading level-1 heading becomes the title (`name` when there is none), the
+ *    `description` the lead, and references become level-2 appendices. Tool-bridge tool names are rewritten for the CLI face
+ *    (`documents_read` → `cuccut documents read`; `edits_apply` operation names are unchanged), and `skills_read` phrasings
+ *    become references to this page's appendices or to other craft pages. Markers and placeholders in the body are rendered
+ *    for the CLI face (with the same renderer as the guide). Craft pages no longer in `built-in-skills/` are deleted.
+ * 2. Generated blocks: the content between `<!-- generated: <name> -->` … `<!-- /generated -->` in the guide is rewritten
+ *    from the catalogs: `common-ops` (the 8 most used `edits_apply` operations, from the descriptions and examples of
+ *    `edits_ops`), `error-codes` (error code → exit code → next step, from the table in `apps/cli/src/envelope.ts`) and
+ *    `tool-map` (MCP tool ↔ CLI command ↔ effect, from the catalog).
+ * 3. After writing, both faces are rendered once (the CLI face against the terminal catalog, the tool-bridge face against
+ *    the in-session agents' catalog); a bad placeholder or marker fails the sync.
  *
- *   node tools/sync-agent-skill.ts                 写入
- *   node tools/sync-agent-skill.ts --check         与磁盘不一致（或渲染不过）时退出码 1
- *   node tools/sync-agent-skill.ts --root <目录>   换一个根（下面有 skills/cuccut/ 与 skills/cuccut/built-in-skills/，测试的夹具用它）
+ *   node tools/sync-agent-skill.ts                 write
+ *   node tools/sync-agent-skill.ts --check         exit code 1 when disk differs (or rendering fails)
+ *   node tools/sync-agent-skill.ts --root <dir>    use another root (containing skills/cuccut/ and
+ *                                                  skills/cuccut/built-in-skills/; used by the test fixtures)
  *
- * 根 `package.json` 的 `build:agent-skill` 跑它。
+ * The root `package.json`'s `build:agent-skill` runs it.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -43,14 +48,14 @@ import { buildCatalogSnapshot } from './catalog-snapshot.ts';
 
 export const REPO_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-/** 生成要用的目录与表。默认从当前代码取；测试可以换。 */
+/** Catalogs and tables used for generation. Taken from the current code by default; tests can substitute them. */
 export interface SyncInputs {
-  /** 终端的目录（`surfaces` 含 `cli`）。 */
+  /** The terminal catalog (`surfaces` include `cli`). */
   cliTools: readonly CatalogTool[];
-  /** 会话内智能体（工具桥）看到的工具名。 */
+  /** Tool names the in-session agents (tool bridge) see. */
   agentToolNames: readonly string[];
   editOps: CatalogEditOperations;
-  /** 错误码 → 退出码（没列出的是 1）。 */
+  /** Error code → exit code (1 when not listed). */
   exitCodes: Readonly<Record<string, number>>;
 }
 
@@ -66,24 +71,24 @@ export function defaultSyncInputs(): SyncInputs {
 }
 
 export interface SyncResult {
-  /** 相对 `root` 的路径 → 应有的内容（craft 页与带生成块的页）。 */
+  /** Path relative to `root` → expected content (craft pages and pages with generated blocks). */
   files: Map<string, string>;
-  /** 该删的 craft 页（相对 `root`）。 */
+  /** Craft pages to delete (relative to `root`). */
   stale: string[];
-  /** 不阻止同步、但要人看的问题（例如 craft 里只在工具桥里有的工具名）。 */
+  /** Problems that do not block the sync but need a human look (such as tool names in a craft that exist only on the tool bridge). */
   warnings: string[];
 }
 
-/** 算出同步后应有的文件，不写盘。 */
+/** Computes the files the sync should produce, without writing to disk. */
 export function buildAgentSkillSync(root: string, inputs: SyncInputs = defaultSyncInputs()): SyncResult {
   const agentRel = `skills/${AGENT_SKILL_ID}`;
   const agentDir = path.join(root, agentRel);
   const skillsDir = path.join(agentDir, AGENT_SKILL_BUILTIN_DIR);
-  if (!isDirectory(agentDir)) throw new Error(`没有说明书目录 ${agentDir}`);
+  if (!isDirectory(agentDir)) throw new Error(`Agent guide directory not found: ${agentDir}`);
   const files = new Map<string, string>();
   const warnings: string[] = [];
 
-  // 1. craft 副本。
+  // 1. Craft copies.
   const craftIds = isDirectory(skillsDir)
     ? fs
         .readdirSync(skillsDir, { withFileTypes: true })
@@ -101,12 +106,12 @@ export function buildAgentSkillSync(root: string, inputs: SyncInputs = defaultSy
   const stale = isDirectory(craftAbs)
     ? fs
         .readdirSync(craftAbs)
-        // 只管 `<id>.md`；README.md 这类说明文件不归同步脚本。
+        // Only `<id>.md`; notes such as README.md are not the sync script's business.
         .filter((name) => craftIdsOf([`${AGENT_SKILL_CRAFT_DIR}/${name}`]) !== null && !ids.has(name.slice(0, -'.md'.length)))
         .map((name) => `${agentRel}/${AGENT_SKILL_CRAFT_DIR}/${name}`)
     : [];
 
-  // 2. 生成块。
+  // 2. Generated blocks.
   const source = readAgentSkillDir(agentDir);
   for (const [rel, text] of source) {
     if (!rel.endsWith('.md') || rel.startsWith(`${AGENT_SKILL_CRAFT_DIR}/`)) continue;
@@ -114,7 +119,7 @@ export function buildAgentSkillSync(root: string, inputs: SyncInputs = defaultSy
     if (filled !== null) files.set(`${agentRel}/${rel}`, filled);
   }
 
-  // 3. 两个面各渲染一遍：占位符、标记与工具名都要过。
+  // 3. Render each face once: placeholders, markers and tool names must all pass.
   const merged = new Map(source);
   for (const id of craftIdsOf(merged) ?? []) merged.delete(`${AGENT_SKILL_CRAFT_DIR}/${id}.md`);
   for (const [rel, text] of files) merged.set(rel.slice(agentRel.length + 1), text);
@@ -126,13 +131,13 @@ export function buildAgentSkillSync(root: string, inputs: SyncInputs = defaultSy
 
 // ---- craft ----
 
-/** 一份 craft 合成一页。 */
+/** Composes one craft into one page. */
 export function composeCraft(id: string, dir: string, craftIds: ReadonlySet<string>, inputs: SyncInputs, warnings: string[]): string {
   const sourceRel = `skills/${AGENT_SKILL_ID}/${AGENT_SKILL_BUILTIN_DIR}/${id}`;
   const skillSource = fs.readFileSync(path.join(dir, 'SKILL.md'), 'utf8');
   const parsed = parseSkillFrontmatter(skillSource);
-  if (!parsed.ok) throw new Error(`${sourceRel}/SKILL.md：${parsed.problem}`);
-  // 标题取正文开头的一级标题（`name` 是 skill 的 id，给人看的名字写在正文第一行），没有时退回 `name`。
+  if (!parsed.ok) throw new Error(`${sourceRel}/SKILL.md: ${parsed.problem}`);
+  // The title is the body's leading level-1 heading (`name` is the skill id; the human-readable name is on the body's first line), falling back to `name`.
   const title = firstHeading(parsed.body) ?? (parsed.fields.get('name') || id);
   const description = parsed.fields.get('description') ?? '';
 
@@ -145,14 +150,14 @@ export function composeCraft(id: string, dir: string, craftIds: ReadonlySet<stri
   const titles = new Map(appendices.map((a) => [a.file, a.title]));
 
   const page = `${AGENT_SKILL_CRAFT_DIR}/${id}.md`;
-  // 正文是源文件的尾部（去掉了 front matter 与开头的标题）：报错与提醒的行号按源文件算。
+  // The body is the tail of the source file (without front matter and the leading heading): line numbers in errors and warnings refer to the source file.
   const rewrite = (text: string, file: string, source: string) => {
     const lineOffset = source.replace(/\r\n?/g, '\n').split('\n').length - text.split('\n').length;
     return rewriteCraftText(text, { id, file: `${sourceRel}/${file}`, lineOffset, page, titles, craftIds, inputs, warnings });
   };
 
   const out: string[] = [
-    `<!-- 由 tools/sync-agent-skill.ts 从 ${sourceRel}/ 生成，不要手改：改源文件后运行 npm run build:agent-skill -->`,
+    `<!-- Generated by tools/sync-agent-skill.ts from ${sourceRel}/. Do not edit by hand: change the source files, then run npm run build:agent-skill -->`,
     '',
     `# ${title}`,
     '',
@@ -160,7 +165,7 @@ export function composeCraft(id: string, dir: string, craftIds: ReadonlySet<stri
   if (description) out.push(`> ${description.replace(/\s*\n\s*/g, ' ')}`, '');
   out.push(rewrite(dropLeadingHeading(parsed.body), 'SKILL.md', skillSource).trim(), '');
   for (const appendix of appendices) {
-    out.push(`## 附录：${appendix.title}`, '');
+    out.push(`## Appendix: ${appendix.title}`, '');
     out.push(demoteHeadings(rewrite(dropLeadingHeading(appendix.text), appendix.file, appendix.text)).trim(), '');
   }
   return out.join('\n');
@@ -168,13 +173,13 @@ export function composeCraft(id: string, dir: string, craftIds: ReadonlySet<stri
 
 interface RewriteContext {
   id: string;
-  /** 源文件（报错用）：`skills/cuccut/built-in-skills/<id>/SKILL.md`。 */
+  /** Source file (for errors): `skills/cuccut/built-in-skills/<id>/SKILL.md`. */
   file: string;
-  /** 正文第一行在源文件里的行号减一。 */
+  /** Line number of the body's first line in the source file, minus one. */
   lineOffset: number;
-  /** 副本在说明书里的位置：`references/craft/<id>.md`。 */
+  /** Location of the copy in the guide: `references/craft/<id>.md`. */
   page: string;
-  /** 本 skill 的 references 文件 → 附录标题。 */
+  /** This skill's references files → appendix titles. */
   titles: ReadonlyMap<string, string>;
   craftIds: ReadonlySet<string>;
   inputs: SyncInputs;
@@ -182,13 +187,15 @@ interface RewriteContext {
 }
 
 /**
- * craft 正文按 CLI 面改写。`skills_read` 的说法只认下面几种写法，其余的报错（带文件与行号），由写 craft 的人改成能对上的说法，
- * 不猜：
+ * Rewrites a craft body for the CLI face. Only the `skills_read` phrasings below are recognized; any other one is an error
+ * (with file and line), and whoever writes the craft changes it to a phrasing that matches, rather than this guessing:
  *
- * - 「用 `skills_read` 读本 skill 的 `references/x.md`」→「读本页的附录「…」」；
- * - 「…，要做这些时用 `skills_read` 取」→「…，要做这些时翻到那一节读」；
- * - 「用 `skills_read` 读 `<别的 craft id>`」→ 指向那一页的链接。
- * - 「用 `skills_read` 读 `cuccut-catalog-<页>`」→ 指向共享目录页的链接，不复制正文；目标在整份说明书渲染时校验。
+ * - "use `skills_read` to read this skill's `references/x.md`" → "read this page's appendix "…"";
+ * - "…; when you do these, fetch it with `skills_read`" → "…; when you do these, turn to that appendix";
+ *   "(fetch with `skills_read`)" → "(see this page's appendices)";
+ * - "use `skills_read` to read `<another craft id>`" → a link to that page;
+ * - "use `skills_read` to read `cuccut-catalog-<page>`" → a link to the shared catalog page, without copying its text; the
+ *   target is checked when the whole guide is rendered.
  */
 export function rewriteCraftText(text: string, ctx: RewriteContext): string {
   const cliNames = ctx.inputs.cliTools.map((tool) => tool.name);
@@ -200,25 +207,27 @@ export function rewriteCraftText(text: string, ctx: RewriteContext): string {
     if (!(error instanceof AgentSkillRenderError)) throw error;
     throw new AgentSkillRenderError(ctx.file, error.line > 0 ? lineAt(error.line - 1) : 0, error.problem);
   }
-  // 以下的改写都不增删行，第 i 行仍对应正文的第 i 行。
+  const read = (use: string) => (use === 'U' ? 'Read' : 'read');
+  // None of the rewrites below adds or removes lines: line i is still line i of the body.
   const lines = out.split('\n').map((line, index) =>
     line
       .replace(/`(references\/[^`\s]+\.md)`/g, (whole, ref: string) => {
         const title = ctx.titles.get(ref);
-        if (title) return `附录「${title}」`;
-        ctx.warnings.push(`${ctx.file}:${lineAt(index)}：提到的 ${ref} 不在这个 skill 的 references/ 里，原样留下`);
+        if (title) return `appendix "${title}"`;
+        ctx.warnings.push(`${ctx.file}:${lineAt(index)}: ${ref} is not in this skill's references/; left as is`);
         return whole;
       })
-      .replace(/用\s*`skills_read`\s*读本 skill 的\s*/g, '读本页的')
-      .replace(/用\s*`skills_read`\s*取/g, '翻到那一节读')
-      .replace(/用\s*`skills_read`\s*读\s*`([a-z0-9-]+)`/g, (whole, other: string) => {
+      .replace(/([Uu])se\s+`skills_read`\s+to read this skill's\s+/g, (_whole, use: string) => `${read(use)} this page's `)
+      .replace(/fetch it with\s+`skills_read`/g, 'turn to that appendix')
+      .replace(/fetch with\s+`skills_read`/g, "see this page's appendices")
+      .replace(/([Uu])se\s+`skills_read`\s+to read\s+`([a-z0-9-]+)`/g, (whole, use: string, other: string) => {
         const catalogPage = /^cuccut-catalog-([a-z0-9]+(?:-[a-z0-9]+)*)$/.exec(other);
         if (catalogPage) {
           const target = `references/catalog/${catalogPage[1]}.md`;
-          return `读 [${other}](${path.posix.relative(path.posix.dirname(ctx.page), target)})`;
+          return `${read(use)} [${other}](${path.posix.relative(path.posix.dirname(ctx.page), target)})`;
         }
         if (!ctx.craftIds.has(other)) return whole;
-        return `读 [\`${AGENT_SKILL_CRAFT_DIR}/${other}.md\`](${other}.md)`;
+        return `${read(use)} [\`${AGENT_SKILL_CRAFT_DIR}/${other}.md\`](${other}.md)`;
       }),
   );
   const left = lines.findIndex((line) => line.includes('skills_read'));
@@ -226,7 +235,7 @@ export function rewriteCraftText(text: string, ctx: RewriteContext): string {
     throw new AgentSkillRenderError(
       ctx.file,
       lineAt(left),
-      '这种 `skills_read` 的说法没法改写成 CLI 面：写成「用 `skills_read` 读本 skill 的 `references/…`」或「用 `skills_read` 读 `<craft id>`」',
+      "This `skills_read` phrasing cannot be rewritten for the CLI face: write \"use `skills_read` to read this skill's `references/…`\" or \"use `skills_read` to read `<craft id>`\"",
     );
   }
   out = renderCraftToolNames(lines.join('\n'), cliNames);
@@ -234,7 +243,7 @@ export function rewriteCraftText(text: string, ctx: RewriteContext): string {
   out.split('\n').forEach((line, index) => {
     for (const name of bridgeOnly) {
       if (craftToolNamePattern([name])!.test(line)) {
-        ctx.warnings.push(`${ctx.file}:${lineAt(index)}：${name} 只在 CucCut 的会话里有，CLI 面没有对应的命令，原样留下`);
+        ctx.warnings.push(`${ctx.file}:${lineAt(index)}: ${name} exists only in CucCut sessions and has no CLI command; left as is`);
       }
     }
   });
@@ -242,12 +251,15 @@ export function rewriteCraftText(text: string, ctx: RewriteContext): string {
 }
 
 /**
- * 正文里的裸工具名换成 CLI 命令（名字规则同 `renderCliToolNames`）；不在行内代码或代码块里时套上反引号，与占位符的输出一致。
- * 一级动词（`speak`、`export`）也改，所以边界比 `renderCliToolNames` 严：带 `-`、`/`、`.` 的不算（`translate-subtitles.md`、`export/`），
- * 后面跟 `:` 的是字段不是工具（`download` 的 `transcribe: true`）。一级动词又是普通的英文词（an image、PNG export）与代码
- * （CSS 的 `translate(…)`），见 `isVerbReference`。
+ * Replaces bare tool names in the body with CLI commands (same naming rule as `renderCliToolNames`); outside inline code
+ * and code blocks they are wrapped in backticks, matching the placeholder output. One-word verbs (`speak`, `export`) are
+ * rewritten too, so the boundaries are stricter than in `renderCliToolNames`: names joined with `-`, `/` or `.` do not count
+ * (`translate-subtitles.md`, `export/`), though a full stop ending the sentence does ("… with edits_apply."); and a
+ * one-word name followed by `:` is a field, not a tool (`transcribe: true` of `download`). Names with `_` are never fields,
+ * so a colon after them ("with videos_inspect: name, …") still counts. One-word verbs are also ordinary English words (an image, PNG export) and code (CSS `translate(…)`); see
+ * `isVerbReference`.
  */
-const CRAFT_TOOL_NAME_BOUNDARY = { before: '(?<![A-Za-z0-9_\\-/.])', after: '(?![A-Za-z0-9_\\-/.]|\\s*:)' } as const;
+const CRAFT_TOOL_NAME_BOUNDARY = { before: '(?<![A-Za-z0-9_\\-/.])', after: '(?![A-Za-z0-9_\\-/]|\\.[A-Za-z0-9_])' } as const;
 
 function craftToolNamePattern(names: readonly string[], flags = ''): RegExp | null {
   const sorted = [...names].sort((a, b) => b.length - a.length);
@@ -271,7 +283,9 @@ function renderCraftToolNames(text: string, names: readonly string[]): string {
         const command = `cuccut ${toolCommandName(name).display}`;
         const ticks = [...line.slice(0, offset)].filter((c) => c === '`').length;
         const at = fence ? 'fence' : ticks % 2 === 1 ? 'span' : 'prose';
-        if (!name.includes('_') && !isVerbReference(line, offset, name.length, at)) return name;
+        if (!name.includes('_') && (/^\s*:/.test(line.slice(offset + name.length)) || !isVerbReference(line, offset, name.length, at))) {
+          return name;
+        }
         if (at !== 'prose') return command;
         return `\`${command}\``;
       });
@@ -280,15 +294,25 @@ function renderCraftToolNames(text: string, names: readonly string[]): string {
 }
 
 /**
- * 一级动词在哪里算工具名：代码块里只认行首的命令（`transcribe --url x`，不认 `translate(-50%)`）；行内代码里是取值
- * （元素类型 `image`），不算；正文里要挨着中文（「用 export 导出」），挨着英文单词或两边都没有中文的是英文词。
+ * Where a one-word verb counts as a tool name. In code blocks, only as the command at the start of a line
+ * (`transcribe --url x`, not `translate(-50%)`); in inline code it is a value (element type `image`), so never. In prose it
+ * counts right after "use", "with" or "call" ("use transcribe with …", "with music (mode instrumental)"), unless a noun it
+ * qualifies follows ("image generation", "music track"); or when a field with a code value follows in parentheses
+ * ("export (kind `transcript`)"); or next to CJK text. Anything else is an English word.
  */
+const VERB_LEAD = /(?:^|[^A-Za-z])(?:use|with|call)\s+$/i;
+const VERB_NOUN_AFTER = /^\s+(?:generation|generations|model|models|track|tracks|mood|cue|cues|volume|file|files|type|URLs?)\b/i;
+const VERB_FIELD_AFTER = /^\s+\(\w+\s+`/;
+
 function isVerbReference(line: string, offset: number, length: number, at: 'fence' | 'span' | 'prose'): boolean {
   const after = line.slice(offset + length);
   if (at === 'fence') return line.slice(0, offset).trim() === '' && /^(\s|$)/.test(after);
   if (at === 'span') return false;
-  const before = line.slice(0, offset).trimEnd().slice(-1);
+  const head = line.slice(0, offset);
+  const before = head.trimEnd().slice(-1);
   const next = after.trimStart().slice(0, 1);
+  if (VERB_FIELD_AFTER.test(after)) return true;
+  if (VERB_LEAD.test(head) && !VERB_NOUN_AFTER.test(after)) return true;
   if (/[A-Za-z0-9]/.test(before) || /[A-Za-z0-9]/.test(next)) return false;
   return /[^\x00-\x7f]/.test(before) || /[^\x00-\x7f]/.test(next);
 }
@@ -309,7 +333,7 @@ function firstHeading(text: string): string | null {
   return /^#\s+(.+)$/m.exec(body)?.[1]?.trim() ?? null;
 }
 
-/** 去掉开头的一级标题（页首已经用它作了标题）。 */
+/** Drops the leading level-1 heading (the page header already uses it as the title). */
 function dropLeadingHeading(text: string): string {
   const lines = text.replace(/\r\n?/g, '\n').split('\n');
   const first = lines.findIndex((line) => line.trim() !== '');
@@ -317,7 +341,7 @@ function dropLeadingHeading(text: string): string {
   return lines.join('\n');
 }
 
-/** 标题降一级（代码块里的不动）：附录里的 `##` 变 `###`。 */
+/** Demotes headings by one level (not inside code blocks): `##` in an appendix becomes `###`. */
 function demoteHeadings(text: string): string {
   let fence = false;
   return text
@@ -330,14 +354,14 @@ function demoteHeadings(text: string): string {
     .join('\n');
 }
 
-// ---- 生成块 ----
+// ---- Generated blocks ----
 
 const SURFACE_OPEN = /^\s*<!--\s*surface:\s*(\S+?)\s*-->\s*$/;
 const SURFACE_CLOSE = /^\s*<!--\s*\/surface\s*-->\s*$/;
 const GENERATED_OPEN = /^\s*<!--\s*generated:\s*(\S+?)\s*-->\s*$/;
 const GENERATED_CLOSE = /^\s*<!--\s*\/generated\s*-->\s*$/;
 
-/** 重写一页里的生成块；没有生成块时 null。标记的合法性由渲染器检查，这里只认出块与它所在的面。 */
+/** Rewrites the generated blocks of a page; null when it has none. The renderer checks the markers; this only finds the blocks and the face each sits in. */
 export function fillGeneratedBlocks(text: string, file: string, inputs: SyncInputs): string | null {
   const lines = text.split('\n');
   const out: string[] = [];
@@ -353,7 +377,7 @@ export function fillGeneratedBlocks(text: string, file: string, inputs: SyncInpu
     if (!generated) continue;
     found = true;
     const end = lines.findIndex((candidate, j) => j > i && GENERATED_CLOSE.test(candidate));
-    if (end < 0) throw new AgentSkillRenderError(file, i + 1, '生成块没有闭合');
+    if (end < 0) throw new AgentSkillRenderError(file, i + 1, 'Generated block is not closed');
     const name = generated[1] as AgentSkillGeneratedBlock;
     out.push(...generateBlock(name, surface, inputs, file, i + 1).split('\n'));
     out.push(lines[end]!);
@@ -376,10 +400,10 @@ function generateBlock(
       if (surface) return errorCodes(surface, inputs.exitCodes);
       return wrapFaces(errorCodes('cli', inputs.exitCodes), errorCodes('agent', inputs.exitCodes));
     case 'tool-map':
-      if (surface === 'agent') throw new AgentSkillRenderError(file, line, 'tool-map 只属于 CLI 面，不能放在 agent 段里');
+      if (surface === 'agent') throw new AgentSkillRenderError(file, line, 'tool-map belongs to the CLI face only and cannot sit in an agent section');
       return surface === 'cli' ? toolMap(inputs.cliTools) : wrapFaces(toolMap(inputs.cliTools), null);
     default:
-      throw new AgentSkillRenderError(file, line, `不认识的生成块「${name as string}」`);
+      throw new AgentSkillRenderError(file, line, `Unknown generated block "${name as string}"`);
   }
 }
 
@@ -389,16 +413,16 @@ function wrapFaces(cli: string, agent: string | null): string {
   return parts.join('\n');
 }
 
-/** `common-ops` 选的操作与给人看的叫法（§8.7：放素材、裁剪、挪动、删除、分割、调音量、改文字优先）。 */
+/** Operations picked for `common-ops` and their human-readable labels (§8.7: placing assets, trimming, moving, deleting, splitting, volume and text first). */
 export const COMMON_OPS: readonly { op: string; label: string }[] = [
-  { op: 'importAsset', label: '导入素材' },
-  { op: 'addItem', label: '放素材' },
-  { op: 'trimItem', label: '裁剪' },
-  { op: 'moveItem', label: '挪动' },
-  { op: 'deleteItems', label: '删除' },
-  { op: 'splitItem', label: '分割' },
-  { op: 'setAudioMix', label: '调音量' },
-  { op: 'setText', label: '改文字' },
+  { op: 'importAsset', label: 'Import an asset' },
+  { op: 'addItem', label: 'Place an asset' },
+  { op: 'trimItem', label: 'Trim' },
+  { op: 'moveItem', label: 'Move' },
+  { op: 'deleteItems', label: 'Delete' },
+  { op: 'splitItem', label: 'Split' },
+  { op: 'setAudioMix', label: 'Change volume' },
+  { op: 'setText', label: 'Change text' },
 ];
 
 function commonOps(editOps: CatalogEditOperations): string {
@@ -406,34 +430,35 @@ function commonOps(editOps: CatalogEditOperations): string {
   const out: string[] = [];
   for (const { op, label } of COMMON_OPS) {
     const entry = byType.get(op);
-    if (!entry) throw new Error(`common-ops：edits_ops 里没有操作 ${op}`);
-    out.push(`**${label}**（\`${op}\`）：${firstSentence(entry.description)}`, '', '```json', JSON.stringify(entry.example), '```', '');
+    if (!entry) throw new Error(`common-ops: edits_ops has no operation ${op}`);
+    out.push(`**${label}** (\`${op}\`): ${firstSentence(entry.description)}`, '', '```json', JSON.stringify(entry.example), '```', '');
   }
   out.push(
-    '字幕层用 {{tool:captions_create}} 建，不是这里的操作；剪掉一段并让后面前移用 `removeRange`，口播的剪口用 `addCuts`。' +
-      '其余操作与每个字段的写法用 {{tool:edits_ops}} 取。',
+    'Caption layers are created with {{tool:captions_create}}, not with an operation here; to cut a span and close the gap, ' +
+      'use `removeRange`, and for cuts in a talking head use `addCuts`. Get the other operations and how to write each field ' +
+      'from {{tool:edits_ops}}.',
   );
   return out.join('\n');
 }
 
-/** 操作说明的第一句：签名之后（第一个「：」之后）到第一个句号。 */
+/** First sentence of an operation description: after the signature (after the first `}: `) up to the first full stop. */
 function firstSentence(description: string): string {
-  const colon = description.indexOf('：');
-  const rest = colon >= 0 ? description.slice(colon + 1) : description;
-  const end = rest.indexOf('。');
-  return (end >= 0 ? rest.slice(0, end + 1) : rest).trim();
+  const colon = description.indexOf('}: ');
+  const rest = colon >= 0 ? description.slice(colon + 3) : description;
+  const end = /\.(?=\s|$)/.exec(rest);
+  return (end ? rest.slice(0, end.index + 1) : rest).trim();
 }
 
-/** 退出码的「下一步」（命令与协议规范 §11.7 各档的含义）。 */
+/** Next step per exit code (what each class means in the command and protocol spec §11.7). */
 const CLI_NEXT: Readonly<Record<number, string>> = {
-  2: '要用户先做一件事：配置能力、授权或预算、同意或安装外部工具、登录、音色授权。把 `remedy` 原样转告用户，用户做完后照 `next` 重试；不用脚本、别的服务商或手改配置绕过',
-  3: 'Runtime 不可用或版本不同。先 `cuccut runtime ensure`；接口版本不同时请用户更新 CucCut 或 CLI，不绕过',
-  4: '参数不对：对照 `cuccut help <命令>` 或 `cuccut spec <名字>` 改；缺 `--yes` 时先问用户，用户同意后再加',
+  2: 'The user has to do something first: configure a capability, grant access or budget, agree to or install an external tool, sign in, authorize a voice. Pass `remedy` on to the user as is, and retry as `next` says once they are done; do not work around it with scripts, other providers or hand-edited configuration',
+  3: 'The Runtime is unavailable or a different version. Run `cuccut runtime ensure` first; when the interface version differs, ask the user to update CucCut or the CLI, and do not work around it',
+  4: 'Wrong arguments: fix them against `cuccut help <command>` or `cuccut spec <name>`; when `--yes` is missing, ask the user first and add it only once they agree',
 };
-const RUNTIME_NOT_MINE = 'Runtime 不归这个 CLI 停，或还有人在用：不停它，留着';
+const RUNTIME_NOT_MINE = 'The Runtime is not this CLI\'s to stop, or someone is still using it: do not stop it, leave it running';
 const AGENT_SKILL_BROKEN =
-  '说明书装不了：CucCut 安装不完整或说明书写错了。把 `message` 原样告诉用户，请用户重装或更新 CucCut；不自己拼装说明书';
-/** 退出码 1 里单独登记的错误码各有各的下一步：按错误码给，同一句的并成一行；没写到的落到「其他错误码」那一行的说法。 */
+  'The agent guide cannot be installed: the CucCut installation is incomplete or the guide is broken. Pass `message` on to the user as is and ask them to reinstall or update CucCut; do not assemble the guide yourself';
+/** Error codes registered under exit code 1 each have their own next step: given per code, with codes that share a sentence on one row; the rest fall under the "Other error codes" row. */
 const CLI_NEXT_FAILED: Readonly<Record<string, string>> = {
   RUNTIME_NOT_OWNED: RUNTIME_NOT_MINE,
   RUNTIME_IN_USE: RUNTIME_NOT_MINE,
@@ -441,14 +466,14 @@ const CLI_NEXT_FAILED: Readonly<Record<string, string>> = {
   AGENT_SKILL_INVALID: AGENT_SKILL_BROKEN,
 };
 const CLI_OTHER =
-  '失败或取消。看 `retryability`：`after-refresh` 先重新读再提交（版本冲突 `PROJECT_REVISION_CONFLICT` 时重新 {{tool:videos_inspect}}）；' +
-  '`after-user-action` 转告用户；`never` 换做法。等待超时（`WAIT_TIMEOUT`）时任务还在跑，用 {{tool:jobs_wait}} 接着等';
+  'Failed or cancelled. Look at `retryability`: `after-refresh` - read again before submitting (on a revision conflict, `PROJECT_REVISION_CONFLICT`, run {{tool:videos_inspect}} again); ' +
+  '`after-user-action` - pass it on to the user; `never` - change approach. On a wait timeout (`WAIT_TIMEOUT`) the job is still running: keep waiting with {{tool:jobs_wait}}';
 const AGENT_NEXT_ACTION =
-  '要用户先做一件事：配置能力、授权或预算、同意或安装外部工具、登录、音色授权。把 `remedy` 原样转告用户，用户做完后照 `next` 重试；不绕过';
-const AGENT_NEXT_ARGS = '参数或工具名不对：对照工具的 schema 改；`edits_apply` 的操作字段用 {{tool:edits_ops}} 取';
+  'The user has to do something first: configure a capability, grant access or budget, agree to or install an external tool, sign in, authorize a voice. Pass `remedy` on to the user as is, and retry as `next` says once they are done; do not work around it';
+const AGENT_NEXT_ARGS = 'Wrong arguments or tool name: fix them against the tool\'s schema; get the operation fields of `edits_apply` from {{tool:edits_ops}}';
 const AGENT_OTHER =
-  '失败或取消。看 `retryability`：`after-refresh` 先重新读再提交（版本冲突 `PROJECT_REVISION_CONFLICT` 时重新 {{tool:videos_inspect}}）；' +
-  '`after-user-action` 转告用户；`never` 换做法';
+  'Failed or cancelled. Look at `retryability`: `after-refresh` - read again before submitting (on a revision conflict, `PROJECT_REVISION_CONFLICT`, run {{tool:videos_inspect}} again); ' +
+  '`after-user-action` - pass it on to the user; `never` - change approach';
 
 function errorCodes(face: AgentSkillFace, exitCodes: Readonly<Record<string, number>>): string {
   const byExit = new Map<number, string[]>();
@@ -458,7 +483,7 @@ function errorCodes(face: AgentSkillFace, exitCodes: Readonly<Record<string, num
   }
   const codes = (list: readonly string[]) => list.map((code) => `\`${code}\``).join(' ');
   if (face === 'cli') {
-    const rows = ['| 错误码 | 退出码 | 下一步 |', '| --- | --- | --- |'];
+    const rows = ['| Error code | Exit code | Next step |', '| --- | --- | --- |'];
     for (const exit of [2, 3, 4]) {
       const list = byExit.get(exit);
       if (list?.length) rows.push(`| ${codes(list)} | ${exit} | ${CLI_NEXT[exit] ?? ''} |`);
@@ -470,34 +495,34 @@ function errorCodes(face: AgentSkillFace, exitCodes: Readonly<Record<string, num
       failed.get(next)!.push(code);
     }
     for (const [next, list] of failed) rows.push(`| ${codes(list)} | 1 | ${next} |`);
-    rows.push(`| 其他错误码 | 1 | ${CLI_OTHER} |`);
+    rows.push(`| Other error codes | 1 | ${CLI_OTHER} |`);
     return rows.join('\n');
   }
-  // 工具桥面：只列会话内智能体会遇到的（要用户做事的、参数的），不带退出码。
-  const rows = ['| 错误码 | 下一步 |', '| --- | --- |'];
+  // Tool-bridge face: only what in-session agents meet (user action needed, arguments), without exit codes.
+  const rows = ['| Error code | Next step |', '| --- | --- |'];
   const action = byExit.get(2) ?? [];
   if (action.length) rows.push(`| ${codes(action)} | ${AGENT_NEXT_ACTION} |`);
   const args = Object.keys(exitCodes).filter((code) => code === 'INVALID_ARGUMENTS' || code === 'UNKNOWN_TOOL');
   if (args.length) rows.push(`| ${codes(args)} | ${AGENT_NEXT_ARGS} |`);
-  rows.push(`| 其他错误码 | ${AGENT_OTHER} |`);
+  rows.push(`| Other error codes | ${AGENT_OTHER} |`);
   return rows.join('\n');
 }
 
 function toolMap(tools: readonly CatalogTool[]): string {
-  const rows = ['| MCP 工具 | CLI 命令 | 效果 |', '| --- | --- | --- |'];
+  const rows = ['| MCP tool | CLI command | Effect |', '| --- | --- | --- |'];
   const cliOnly: string[] = [];
   for (const tool of [...tools].sort((a, b) => a.name.localeCompare(b.name))) {
     const command = `cuccut ${toolCommandName(tool.name).display}`;
     if (tool.surfaces.includes('mcp')) rows.push(`| \`${tool.name}\` | \`${command}\` | ${tool.effect} |`);
     else cliOnly.push(`\`${command}\``);
   }
-  if (cliOnly.length) rows.push('', `只在 CLI 里、MCP 上没有的：${cliOnly.join('、')}。`);
+  if (cliOnly.length) rows.push('', `Only in the CLI, not on MCP: ${cliOnly.join(', ')}.`);
   return rows.join('\n');
 }
 
-// ---- 写盘与检查 ----
+// ---- Writing and checking ----
 
-/** 与磁盘比较：不一致的文件（相对 `root`）。 */
+/** Compares with disk: the files that differ (relative to `root`). */
 export function diffAgentSkillSync(root: string, result: SyncResult): string[] {
   const changed = [...result.files].filter(([rel, text]) => readOrNull(path.join(root, rel)) !== text).map(([rel]) => rel);
   return [...changed, ...result.stale].sort();
@@ -544,14 +569,14 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exit(1);
   }
-  for (const warning of result.warnings) process.stderr.write(`注意：${warning}\n`);
+  for (const warning of result.warnings) process.stderr.write(`Note: ${warning}\n`);
   if (args.includes('--check')) {
     const changed = diffAgentSkillSync(root, result);
     if (changed.length) {
-      process.stderr.write(`说明书与来源不一致：运行 npm run build:agent-skill\n${changed.map((rel) => `  ${rel}`).join('\n')}\n`);
+      process.stderr.write(`The agent guide is out of date with its sources: run npm run build:agent-skill\n${changed.map((rel) => `  ${rel}`).join('\n')}\n`);
       process.exit(1);
     }
   } else {
-    for (const rel of writeAgentSkillSync(root, result)) process.stdout.write(`${result.files.has(rel) ? '写入' : '删除'} ${rel}\n`);
+    for (const rel of writeAgentSkillSync(root, result)) process.stdout.write(`${result.files.has(rel) ? 'wrote' : 'deleted'} ${rel}\n`);
   }
 }

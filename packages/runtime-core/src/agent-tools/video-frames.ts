@@ -1,4 +1,3 @@
-// i18n-ignore-file: 给模型的工具说明、错误与下一步
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -9,24 +8,26 @@ import { inside, refuseVideoDirectory } from './artifact-save.ts';
 import { ToolError } from './tool-catalog.ts';
 
 /**
- * `videos_frames` 的取帧（Agent 面设计 §4.3）：时间线上的时刻 → 画面上最上层的视频片段 → 素材时间 → 素材的一帧。
- * 不合成：字幕、文字、贴纸与叠加的元素都不在帧里，画中画的位置与效果也不套，只是那个片段的素材画面。
+ * Frame grabbing for `videos_frames` (agent surface design §4.3): a time on the timeline -> the topmost video clip on
+ * screen -> asset time -> one frame of the asset.
+ * Nothing is composited: captions, text, stickers and overlaid elements are not in the frame, and picture-in-picture
+ * position and effects are not applied; it is only that clip's asset picture.
  */
 
-/** 单次最多取这么多帧。 */
+/** Maximum frames per call. */
 export const MAX_FRAMES = 24;
-/** 不给 `maxWidth` 时帧的长边上限（像素）。 */
+/** Long-edge limit of a frame (pixels) when `maxWidth` is not given. */
 export const DEFAULT_FRAME_EDGE = 1280;
-/** `range` 不给 `count` 时取几帧。 */
+/** How many frames `range` grabs when `count` is not given. */
 export const DEFAULT_RANGE_COUNT = 6;
 
-/** 帧写到写文件目录下的这里，再按 videoId 分开。 */
+/** Frames are written here under the output directory, split by videoId. */
 export const FRAMES_DIR = path.join('.cuccut-out', 'frames');
 
 export const FRAMES_NOTE =
-  '帧是时间线上最上层的那个视频片段的素材画面，不是合成后的画面：字幕、文字、贴纸与叠加的元素不在里面，画中画的位置、裁剪与效果也没有套用（composited: false）。没有视频片段的时刻 file 为 null。faces 是这一帧上检测到的人脸框（x、y、w、h 按帧的宽高归一化到 0–1，score 是置信度），坐标对应素材画面；detector 为 null 时没有做人脸检测，faces 为空不代表没有人脸。';
+  'A frame is the asset picture of the topmost video clip on the timeline, not the composited picture: captions, text, stickers and overlaid elements are not in it, and picture-in-picture position, crop and effects are not applied (composited: false). At times with no video clip, file is null. faces are the face boxes detected in this frame (x, y, w, h normalized to 0-1 by the frame width and height; score is the confidence), with coordinates in the asset picture; when detector is null no face detection ran, so empty faces does not mean there are no faces.';
 
-/** 时间线上一个时刻取到的源：片段、素材版本与素材时间。 */
+/** The source found at one time on the timeline: clip, asset revision and asset time. */
 export interface FrameSource {
   item: VideoItem;
   asset: FrameAsset;
@@ -35,24 +36,25 @@ export interface FrameSource {
   sourceSeconds: number;
 }
 
-/** 要取的时刻（十进制秒字符串）：`at` 原样，`range` 在 [起, 止) 里等间隔取 `count` 个，第一个在起点。 */
+/** The times to grab (decimal seconds strings): `at` as given; `range` takes `count` evenly spaced times in [start, end), the first at start. */
 export function frameTimes(args: { at?: string[] | undefined; range?: string | undefined; count?: number | undefined }): string[] {
   if ((args.at === undefined) === (args.range === undefined)) {
-    throw new ToolError('INVALID_ARGUMENTS', 'at 与 range 给且只给一个：at 是时刻的列表，range 是 "起:止"');
+    throw new ToolError('INVALID_ARGUMENTS', 'Give exactly one of at and range: at is a list of times, range is "start:end"');
   }
   if (args.at !== undefined) {
-    if (args.count !== undefined) throw new ToolError('INVALID_ARGUMENTS', 'count 只和 range 一起用');
+    if (args.count !== undefined) throw new ToolError('INVALID_ARGUMENTS', 'count is only used with range');
     return args.at;
   }
   const [from, to] = args.range!.split(':').map(Number) as [number, number];
-  if (!(to > from)) throw new ToolError('INVALID_ARGUMENTS', 'range 的终点要大于起点');
+  if (!(to > from)) throw new ToolError('INVALID_ARGUMENTS', 'The end of range must be greater than its start');
   const count = args.count ?? DEFAULT_RANGE_COUNT;
   return Array.from({ length: count }, (_, i) => decimal(from + ((to - from) * i) / count));
 }
 
 /**
- * 时间线上 `seconds` 处的源：根序列上盖住这一帧（`floor(秒 × 帧率)`）的、启用着、轨道可见、素材有画面的视频片段里最上层的
- * 那个（视觉轨的 `order` 越大越靠上，同一轨上按 `paintOrder`），按它的时间映射换成素材时间。没有时 null。
+ * The source at `seconds` on the timeline: among the enabled video clips on the root sequence that cover this frame
+ * (`floor(seconds x fps)`), sit on a visible track and whose asset has a picture, the topmost one (a higher visual-track
+ * `order` is higher; within one track by `paintOrder`), converted to asset time through its time map. null when none.
  */
 export function frameSourceAt(video: VideoSnapshot, seconds: number): FrameSource | null {
   const sequence = video.sequences[video.rootSequenceId];
@@ -61,7 +63,7 @@ export function frameSourceAt(video: VideoSnapshot, seconds: number): FrameSourc
   return frameSourceAtFrame(video, Math.floor((seconds * fps.num) / fps.den + 1e-9));
 }
 
-/** 同 `frameSourceAt`，按根序列的帧号。 */
+/** Like `frameSourceAt`, by root-sequence frame number. */
 export function frameSourceAtFrame(video: VideoSnapshot, frame: number): FrameSource | null {
   const sequence = video.sequences[video.rootSequenceId];
   if (!sequence) return null;
@@ -99,12 +101,12 @@ export function frameSourceAtFrame(video: VideoSnapshot, frame: number): FrameSo
 }
 
 /**
- * 帧的输出目录 `<root>/.cuccut-out/frames/<videoId>`：不存在时建出来；按真实路径不能出 `root`（`confine` 给了时也不能出它），
- * 不能在视频目录或 `.ccut` 里。返回真实路径。
+ * The frame output directory `<root>/.cuccut-out/frames/<videoId>`: created when missing; by real path it must not leave
+ * `root` (nor `confine` when given), and must not be inside a video directory or `.ccut`. Returns the real path.
  */
 export async function framesDirectory(root: string, videoId: Id, confine: string | null): Promise<string> {
   const refuse = () =>
-    new ToolError('PATH_OUTSIDE_WORKSPACE', `帧的输出目录 ${FRAMES_DIR} 指到了写文件的目录以外（不经过指向别处的符号链接）`);
+    new ToolError('PATH_OUTSIDE_WORKSPACE', `The frame output directory ${FRAMES_DIR} points outside the output directory (it must not go through a symlink pointing elsewhere)`);
   await fs.mkdir(root, { recursive: true });
   const rootReal = await fs.realpath(root);
   if (confine !== null && !inside(rootReal, await fs.realpath(confine))) throw refuse();
@@ -116,7 +118,7 @@ export async function framesDirectory(root: string, videoId: Id, confine: string
   return real;
 }
 
-/** 取一帧并写成文件 `at-<毫秒>ms.<png|jpg>`（同一时刻再取时覆盖）。返回文件的绝对路径与像素尺寸。 */
+/** Grabs one frame and writes it as `at-<milliseconds>ms.<png|jpg>` (grabbing the same time again overwrites it). Returns the file's absolute path and pixel size. */
 export async function writeFrame(
   analysis: MediaAnalysis,
   source: FrameSource,
@@ -138,15 +140,16 @@ export async function writeFrame(
   return { file, width: frame.width, height: frame.height };
 }
 
-/** 取到的一帧（`file` 为 null 是那个时刻没有视频片段）。 */
+/** A grabbed frame (`file` is null when there is no video clip at that time). */
 export interface TakenFrame {
   at: string;
   file: string | null;
 }
 
 /**
- * 给取到的帧标上人脸：有文件的帧加 `faces`（检测器不可用时为空数组），没有文件的帧不加；`detector` 是检测器的标识，
- * 没有检测器或这次没检测成时为 null（不报错，帧照常返回）。
+ * Tags grabbed frames with faces: frames with a file get `faces` (an empty array when the detector is unavailable),
+ * frames without a file get none; `detector` is the detector's id, null when there is no detector or detection failed
+ * this time (no error; the frames are returned as usual).
  */
 export async function withFaces<T extends TakenFrame>(
   detector: FaceDetector | undefined,

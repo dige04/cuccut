@@ -1,4 +1,3 @@
-// i18n-ignore-file: 给模型的工具说明与说明文字
 import {
   RpcError,
   sequenceDurationFrames,
@@ -16,26 +15,30 @@ import { ToolError } from './tool-catalog.ts';
 import { frameSourceAtFrame, type FrameSource } from './video-frames.ts';
 
 /**
- * 镜头切换（`videos_shots` 与 `videos.shots`，架构设计 §3.5「镜头切换」）：剪辑后时间线上一段区间里画面在哪里切换。
+ * Shot cuts (`videos_shots` and `videos.shots`, architecture design §3.5 "Shot cuts"): where the picture cuts within a
+ * range of the edited timeline.
  *
- * 1. 按取帧的同一条规则（`frameSourceAtFrame`：最上层、启用、轨道可见的视频片段）把区间切成若干段，每段是一个片段的一截；
- *    相邻两段换了片段、源画面又不接续（不同素材，或同一素材的源时间跳了）的地方是一处 `edit`。
- * 2. 每段线性正速率的源区间交给 ffmpeg 的场景分数（`MediaAnalysis.sceneCuts`），超过阈值的帧按这段的时间映射换回时间线，
- *    对到帧，是 `scene`。静帧、倒放的片段不检测。
- * 3. 短于 `minShot` 的镜头并进前一个（第一个并进后一个）：去掉它前面（第一个时是后面）的那处切换。
+ * 1. Split the range into segments by the same rule frame grabbing uses (`frameSourceAtFrame`: the topmost enabled video
+ *    clip on a visible track); each segment is a piece of one clip. Where two adjacent segments change clip and the source
+ *    picture does not continue (a different asset, or a jump in source time within the same asset) there is an `edit`.
+ * 2. Each segment's linear, positive-rate source range goes to ffmpeg's scene score (`MediaAnalysis.sceneCuts`); frames
+ *    above the threshold are mapped back to the timeline through the segment's time map and snapped to frames: `scene`.
+ *    Freeze-frame and reversed clips are not analyzed.
+ * 3. A shot shorter than `minShot` merges into the previous one (the first merges into the next): the cut before it (after
+ *    it, for the first) is removed.
  */
 
-/** 一次最多检测这么长的区间（秒）：要解码整段画面。 */
+/** Longest range analyzed at once (seconds): the whole picture has to be decoded. */
 export const MAX_SHOTS_RANGE_SECONDS = 20 * 60;
 export const DEFAULT_SCENE_THRESHOLD = 0.3;
 export const DEFAULT_MIN_SHOT = 0.8;
 
 export const SHOTS_NOTE =
-  '切换点只看画面突变（ffmpeg 场景分数），不认人：叠化、推拉会漏报，闪光、快速运动可能多报。kind "edit" 是时间线上换了片段、源画面接不上的地方。要核对时用 videos_frames 取切换点前后的帧。';
+  'Cuts are detected only from abrupt picture changes (ffmpeg scene score), not from people: dissolves and zooms may be missed, flashes and fast motion may add false cuts. kind "edit" is where the timeline changes clip and the source picture does not continue. To verify, use videos_frames to grab frames before and after a cut.';
 
 export type ShotsErrorCode = 'SHOTS_RANGE_EMPTY' | 'SHOTS_RANGE_TOO_LONG';
 
-/** 镜头检测的拒绝：调用方按 `code` 换成 RPC 错误或工具错误。 */
+/** A shot-detection rejection: callers turn it into an RPC error or a tool error by `code`. */
 export class ShotsError extends Error {
   readonly code: ShotsErrorCode;
   readonly details: Record<string, unknown>;
@@ -46,30 +49,30 @@ export class ShotsError extends Error {
   }
 }
 
-/** 工具面的错误：`ShotsError` 换成 `INVALID_ARGUMENTS`（给模型看的说明），别的原样抛。 */
+/** Tool-surface error: `ShotsError` becomes `INVALID_ARGUMENTS` (with an explanation for the model); anything else is rethrown as is. */
 export function shotsToolError(error: unknown): unknown {
   if (!(error instanceof ShotsError)) return error;
   return error.code === 'SHOTS_RANGE_TOO_LONG'
-    ? new ToolError('INVALID_ARGUMENTS', `区间超过 ${MAX_SHOTS_RANGE_SECONDS / 60} 分钟：分成几段分别检测`, { code: error.code, ...error.details })
-    : new ToolError('INVALID_ARGUMENTS', '区间对到帧之后是空的：终点要大于起点，起点要在时间线里', { code: error.code, ...error.details });
+    ? new ToolError('INVALID_ARGUMENTS', `The range is longer than ${MAX_SHOTS_RANGE_SECONDS / 60} minutes: split it into several ranges and detect each`, { code: error.code, ...error.details })
+    : new ToolError('INVALID_ARGUMENTS', 'The range is empty once snapped to frames: end must be greater than start, and start must be within the timeline', { code: error.code, ...error.details });
 }
 
 export interface ShotsOptions {
-  /** 剪辑后时间线上的秒；缺省 0 与时长。 */
+  /** Seconds on the edited timeline; default to 0 and the duration. */
   start?: number | undefined;
   end?: number | undefined;
   threshold?: number | undefined;
   minShot?: number | undefined;
 }
 
-/** 区间里的一段：帧号 `[from, to)` 与画面上的片段（没有片段时 null）。 */
+/** One segment of the range: frames `[from, to)` and the clip on screen (null when there is none). */
 export interface ShotSegment {
   from: number;
   to: number;
   source: FrameSource | null;
 }
 
-/** 对到帧之后的区间：起点向下、终点向上取整，截到时长。 */
+/** The range snapped to frames: start rounds down, end rounds up, clamped to the duration. */
 export function shotsRange(video: VideoSnapshot, options: Pick<ShotsOptions, 'start' | 'end'>): { from: number; to: number; fps: Rate } {
   const sequence = video.sequences[video.rootSequenceId];
   if (!sequence) throw new ShotsError('SHOTS_RANGE_EMPTY');
@@ -87,8 +90,9 @@ export function shotsRange(video: VideoSnapshot, options: Pick<ShotsOptions, 'st
 }
 
 /**
- * 把帧区间 `[from, to)` 按画面上的片段切段：边界是区间两端与其中各视频片段的起止帧；每个小段在起点问一次最上层的片段，
- * 相邻的同一片段（或都没有片段）合成一段。
+ * Splits the frame range `[from, to)` by the clip on screen: boundaries are the range ends and the start/end frames of
+ * every video clip inside it; each piece asks for the topmost clip at its start, and adjacent pieces with the same clip
+ * (or both with no clip) merge into one segment.
  */
 export function shotSegments(video: VideoSnapshot, from: number, to: number): ShotSegment[] {
   const sequence = video.sequences[video.rootSequenceId];
@@ -109,7 +113,7 @@ export function shotSegments(video: VideoSnapshot, from: number, to: number): Sh
   return out;
 }
 
-/** 线性正速率的源时钟：片段在帧 `frame` 处的源时间（秒）与速率；静帧、倒放的为 null。 */
+/** Linear, positive-rate source clock: the clip's source time (seconds) and rate at frame `frame`; null for freeze-frame or reversed clips. */
 function linearAt(source: FrameSource, frame: number, fps: Rate): { at: number; rate: number } | null {
   const map = source.item.timeMap;
   if (map.kind !== 'linear' || map.rate.num <= 0) return null;
@@ -118,7 +122,7 @@ function linearAt(source: FrameSource, frame: number, fps: Rate): { at: number; 
   return { at: Number(map.sourceIn.ticks) / map.sourceIn.timescale + local * rate, rate };
 }
 
-/** 两段相接处的画面接不接得上：同一素材版本、同一速率，左段末帧之后的源时间与右段首帧相差不到半帧。 */
+/** Whether the picture continues where two segments meet: same asset revision, same rate, and the source time after the left segment's last frame is within half a frame of the right segment's first frame. */
 function continuous(left: ShotSegment, right: ShotSegment, fps: Rate): boolean {
   if (!left.source || !right.source) return false;
   if (left.source.assetId !== right.source.assetId || left.source.revision !== right.source.revision) return false;
@@ -128,12 +132,12 @@ function continuous(left: ShotSegment, right: ShotSegment, fps: Rate): boolean {
   return Math.abs(a.at - b.at) < (0.5 * fps.den * a.rate) / fps.num;
 }
 
-/** 帧号写成秒（6 位小数）。 */
+/** A frame number as seconds (6 decimal places). */
 function secondsOf(frame: number, fps: Rate): number {
   return Math.round(((frame * fps.den) / fps.num) * 1e6) / 1e6;
 }
 
-/** 取帧用的时刻：帧的正中（十进制秒字符串），换回帧号时不会因为小数截断落到前一帧。 */
+/** The time used to grab a frame: the middle of the frame (decimal seconds string), so converting back to a frame number never falls to the previous frame through truncation. */
 function sampleText(frame: number, fps: Rate): string {
   const value = ((frame + 0.5) * fps.den) / fps.num;
   return value.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
@@ -141,11 +145,11 @@ function sampleText(frame: number, fps: Rate): string {
 
 export interface ShotsDeps {
   analysis: MediaAnalysis;
-  /** 素材版本的文件（同 `videos_frames` 的取法）。 */
+  /** The file of an asset revision (resolved the same way as `videos_frames`). */
   assetFile: (assetId: Id, revision: string) => Promise<{ root: string; file: string }>;
 }
 
-/** 检测镜头切换（见模块说明）。 */
+/** Detects shot cuts (see the module comment). */
 export async function detectShots(deps: ShotsDeps, video: VideoSnapshot, options: ShotsOptions): Promise<Omit<VideoShotsResult, 'videoId'>> {
   const threshold = options.threshold ?? DEFAULT_SCENE_THRESHOLD;
   const minShot = options.minShot ?? DEFAULT_MIN_SHOT;
@@ -172,7 +176,7 @@ export async function detectShots(deps: ShotsDeps, video: VideoSnapshot, options
     }
   }
 
-  // 短于 minShot 的镜头并进前一个（第一个并进后一个）。
+  // A shot shorter than minShot merges into the previous one (the first merges into the next).
   const frames = [...cuts.keys()].sort((a, b) => a - b);
   const minFrames = (minShot * fps.num) / fps.den;
   for (;;) {
@@ -198,7 +202,7 @@ export async function detectShots(deps: ShotsDeps, video: VideoSnapshot, options
   };
 }
 
-/** `videos.shots`（网关方法）：与工具 `videos_shots` 同一个实现；视频要已经打开。 */
+/** `videos.shots` (gateway method): the same implementation as the `videos_shots` tool; the video must already be open. */
 export async function videoShots(deps: { analysis: MediaAnalysis; videos: VideoService }, params: VideoShotsParams): Promise<VideoShotsResult> {
   const video = deps.videos.mirror(params.videoId)?.video;
   if (!video) throw new RpcError('not-found', RcCommon.videoNotOpen(), { code: 'VIDEO_NOT_OPEN' });

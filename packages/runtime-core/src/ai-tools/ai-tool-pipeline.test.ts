@@ -43,6 +43,17 @@ describe('交给模型的消息', () => {
     expect(bare!.content).not.toContain('interface language');
   });
 
+  it('prose tools state the output language order; the interface language is a step only when given', () => {
+    const [system] = aiToolMessages({ tool: 'blog', system: '', prompt: '', transcript: null, attachments: [], uiLanguage: 'vi' });
+    expect(system!.content).toContain(
+      "Write in the language the request names; otherwise in the language of the request; otherwise in the user's interface language; otherwise in the transcript's language.",
+    );
+    const [bare] = aiToolMessages({ tool: 'desc', system: '', prompt: '', transcript: null, attachments: [] });
+    expect(bare!.content).toContain("Write in the language the request names; otherwise in the language of the request; otherwise in the transcript's language.");
+    const [polish] = aiToolMessages({ tool: 'polish', system: '', prompt: '', transcript: null, attachments: [], uiLanguage: 'vi' });
+    expect(polish!.content).not.toContain('Write in the language');
+  });
+
   it('润色给编了号的词，段落之间空一行', () => {
     const words = [word('w1', 'Hello', 0, true), word('w2', 'world', 1), word('w3', 'Next', 5, true)];
     const [, user] = aiToolMessages({ tool: 'polish', system: '', prompt: '', transcript: null, words: { items: words, offset: 0, total: 3 }, attachments: [] });

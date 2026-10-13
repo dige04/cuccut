@@ -83,7 +83,7 @@ describe('downloads_save', () => {
     const first = (await tools.dispatch('downloads_save', { path: 'out/talk.zh-Hans.srt' }, principal)) as Record<string, unknown>;
     const target = path.join(downloads, 'talk.zh-Hans.srt');
     expect(first).toMatchObject({ path: target, bytes: 39, approval: { risk: 'command' } });
-    expect(first.next).toContain('告诉用户');
+    expect(first.next).toContain('Tell the user');
     expect(await fs.readFile(target, 'utf8')).toContain('你好');
     expect(confirmed).toHaveLength(1);
     expect(confirmed[0]).toMatchObject({ tool: 'downloads_save', targets: [target] });

@@ -1,13 +1,25 @@
 import type { AiToolKind, TextMessage } from '@cuccut/protocol';
-// i18n-ignore-file: 这个文件只生成交给文本模型的提示词与输出格式，不在界面显示
 
 /**
- * AI 工具「直接调模型」（产品设计 §5.10）交给文本模型的消息：系统提示词是挂着的 skill（`skillSystemPrompt`）、用户的界面语言（给了时），加上这个工具
- * 要的输出格式；用户消息是提示词框里的文字与这个视频的上下文（文稿、附件）。润色给编了号的词（只能一词对一词地改），
- * 其余工具给带时间码与说话人的 Markdown 文稿（与导出文稿同一份写法）。
+ * Messages that the AI tools' "call the model directly" path (product design §5.10) hands to a text model: the system prompt is the attached skills (`skillSystemPrompt`), the user's interface language (when given), plus the output format
+ * this tool needs; the user message is the text from the prompt box plus this video's context (transcript, attachments). Polish gets numbered words (edits are strictly one word to one word);
+ * the other tools get a Markdown transcript with timecodes and speakers (written the same way as the exported transcript).
  */
 
-/** 每个工具要模型交出什么（附在系统提示词最后）。 */
+/**
+ * Output language for the prose tools: the same order the built-in skills use, so it holds without a skill too. The
+ * interface language is a step only when it is given.
+ */
+function proseLanguage(uiLanguage: string | undefined): string {
+  const order = ['the language the request names', 'the language of the request'];
+  if (uiLanguage) order.push('the user\'s interface language');
+  order.push('the transcript\'s language');
+  return `Write in ${order.join('; otherwise in ')}.`;
+}
+
+const PROSE_TOOLS: ReadonlySet<AiToolKind> = new Set(['summary', 'blog', 'title', 'desc']);
+
+/** What each tool asks the model to return (appended at the end of the system prompt). */
 const OUTPUT: Record<AiToolKind, string> = {
   polish: [
     'Output: corrections to a transcript, as JSON {"edits":[{"n":<word number>,"text":"<corrected word text>"}]}.',
@@ -26,7 +38,7 @@ const OUTPUT: Record<AiToolKind, string> = {
   desc: 'Output: the description itself, ready to paste. No preamble, no closing remarks.',
 };
 
-/** 结构化输出的 JSON Schema（润色与章节）；其余工具是正文。 */
+/** JSON Schema for structured output (polish and chapters); the other tools return prose. */
 export function outputSchema(tool: AiToolKind): Record<string, unknown> | null {
   if (tool === 'polish') {
     return {
@@ -67,7 +79,7 @@ export function outputSchema(tool: AiToolKind): Record<string, unknown> | null {
   return null;
 }
 
-/** 润色用的一个词：转写里的 id 与文本，是否一段的开头，时间线上的起点（秒）。 */
+/** One word for polish: its id and text in the transcript, whether it starts a paragraph, and its start on the timeline (seconds). */
 export interface ContextWord {
   id: string;
   text: string;
@@ -75,7 +87,7 @@ export interface ContextWord {
   start: number;
 }
 
-/** 附上全文的附件。 */
+/** An attachment included in full. */
 export interface ContextAttachment {
   name: string;
   content: string;
@@ -83,22 +95,23 @@ export interface ContextAttachment {
 
 export interface AiToolMessageInput {
   tool: AiToolKind;
-  /** skill 合成的系统提示词（没有 skill 时空串）。 */
+  /** System prompt assembled from skills (an empty string when there are none). */
   system: string;
   prompt: string;
-  /** 带时间码的 Markdown 文稿（润色时不用）。 */
+  /** Markdown transcript with timecodes (unused for polish). */
   transcript: string | null;
-  /** 润色这一批的词（编号从 `offset + 1` 起）。 */
+  /** Words in this polish batch (numbered from `offset + 1`). */
   words?: { items: readonly ContextWord[]; offset: number; total: number };
   attachments: readonly ContextAttachment[];
-  /** 用户的界面语言（BCP 47）；给了时在系统提示词里说明，输出用什么语言由 skill 与输出格式决定。 */
+  /** The user's interface language (BCP 47); stated in the system prompt when given, while the output language is decided by the skill and the output format. */
   uiLanguage?: string;
 }
 
-/** 交给模型的消息：系统一条，用户一条。 */
+/** Messages for the model: one system, one user. */
 export function aiToolMessages(input: AiToolMessageInput): TextMessage[] {
   const language = input.uiLanguage ? `The user's interface language is ${input.uiLanguage}.` : '';
-  const system = [input.system.trim(), language, OUTPUT[input.tool]].filter(Boolean).join('\n\n');
+  const output = PROSE_TOOLS.has(input.tool) ? `${OUTPUT[input.tool]}\n${proseLanguage(input.uiLanguage)}` : OUTPUT[input.tool];
+  const system = [input.system.trim(), language, output].filter(Boolean).join('\n\n');
   const parts: string[] = [];
   parts.push(input.prompt.trim() ? `<request>\n${input.prompt.trim()}\n</request>` : '<request />');
   if (input.words) {
@@ -117,7 +130,7 @@ export function aiToolMessages(input: AiToolMessageInput): TextMessage[] {
   ];
 }
 
-/** 润色批次：按段落边界切，每批不超过 `max` 个词（一段比 `max` 还长时整段成一批）。 */
+/** Polish batches: split at paragraph boundaries, at most `max` words each (a paragraph longer than `max` becomes one batch on its own). */
 export function polishBatches(words: readonly ContextWord[], max: number): Array<{ offset: number; items: ContextWord[] }> {
   const batches: Array<{ offset: number; items: ContextWord[] }> = [];
   let current: ContextWord[] = [];
@@ -142,8 +155,8 @@ export function polishBatches(words: readonly ContextWord[], max: number): Array
 }
 
 /**
- * 校验润色的修改：编号在这一批里、文本不是空的；与原文相同的不算。返回词 id → 新文本；有对不上的编号或空文本时
- * 返回 `{ problem }`，整批不用（不能一词对一词的修改宁可不写）。
+ * Validates polish edits: the number is in this batch and the text is not empty; edits equal to the original do not count. Returns word id -> new text; on a mismatched number or empty text
+ * returns `{ problem }` and the whole batch is discarded (better no edits than edits that are not one word to one word).
  */
 export function polishEdits(
   json: unknown,
@@ -167,7 +180,7 @@ export function polishEdits(
   return { edits };
 }
 
-/** 时间码 `h:mm:ss`、`mm:ss`（可带小数）或秒数 → 秒；认不出时 null。 */
+/** Timecode `h:mm:ss`, `mm:ss` (decimals allowed) or plain seconds -> seconds; null when unrecognized. */
 export function parseTimestamp(value: string): number | null {
   const text = value.trim().replace(/^\[|\]$/g, '');
   if (/^\d+(\.\d+)?$/.test(text)) return Number(text);
@@ -186,8 +199,8 @@ export interface ChapterDraft {
 }
 
 /**
- * 校验模型给的章节：时间认得出、落在视频里，吸到最近的段落起点（`starts`，时间线上的秒，递增）；标题不空；吸到同一个
- * 起点的只留第一个。按时间排序。没有可用的章节时返回空列表。
+ * Validates the chapters from the model: the time is recognizable and inside the video, and snaps to the nearest paragraph start (`starts`, timeline seconds, ascending); the title is not empty; of chapters snapping to the same
+ * start only the first is kept. Sorted by time. Returns an empty list when no chapter is usable.
  */
 export function chapterDrafts(json: unknown, starts: readonly number[], duration: number): ChapterDraft[] {
   const list = (json as { chapters?: unknown } | null)?.chapters;

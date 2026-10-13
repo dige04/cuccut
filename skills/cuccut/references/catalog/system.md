@@ -1,111 +1,111 @@
 ---
-description: 任务的查看、等待、取消与重跑；跨视频检索、视频与项目列表、用户库（术语表、音色、品牌素材）与 skill 索引；设置与管理归谁。
+description: Viewing, waiting for, cancelling and retrying jobs; cross-video search, video and project lists, the user library (glossaries, voices, brand assets) and the skill index; who handles settings and administration.
 ---
 
-# 系统：任务、索引、项目、用户库与本机管理
+# System: jobs, indexes, projects, the user library and local admin
 
-## 何时用
+## When to use
 
-- 查看、取消、重跑任务。
-- 跨视频找内容、列出视频与项目、看 Space 里的文件。
-- 读用户库（术语表、音色、品牌素材）与 skill 索引。
+- Viewing, cancelling or retrying jobs.
+- Finding content across videos, listing videos and projects, viewing files in Space.
+- Reading the user library (glossaries, voices, brand assets) and the skill index.
 <!-- surface: cli -->
-- 看帮助与机器可读的目录、确认 Runtime 状态；用户要你做「本机管理」的事时。
+- Reading help and the machine-readable catalog, checking the Runtime's status; when the user wants you to do something in "Local admin".
 <!-- /surface -->
 
-## 前置检查
+## Preflight
 
-- 这些多数是只读调用，可以随时用；彼此独立的读取一次发完。
-- 改东西的（取消任务、新建项目）只在用户要求或任务需要时用。
+- Most of these are read-only calls that can be used at any time; send independent reads all at once.
+- Calls that change things (cancelling jobs, creating projects) are used only when the user asks or the task needs them.
 
-## 命令与例子
+## Commands and examples
 
-### 任务
+### Jobs
 
-| 要做的事 | 调用 |
+| What to do | Call |
 | --- | --- |
-| 列出任务（新的在前） | {{tool:jobs_list}}；可按 {{arg:video}}、{{arg:state}}（`running`、`failed`、`settled` 等）筛选 |
-| 看一个任务的状态、进度与结果 | {{tool:jobs_inspect}}，{{arg:jobId}} |
-| 等它结束 | {{tool:jobs_wait}}（见 [conventions](../conventions.md) 的「等任务结束」） |
-| 取消 | {{tool:jobs_cancel}}，{{arg:jobId}} |
-| 从失败的那一步重跑固定流程 | {{tool:jobs_retry}}，{{arg:jobId}}；`jobId` 不变、`attempt` 加一 |
+| List jobs (newest first) | {{tool:jobs_list}}; filter by {{arg:video}}, {{arg:state}} (`running`, `failed`, `settled` and so on) |
+| See a job's state, progress and result | {{tool:jobs_inspect}}, {{arg:jobId}} |
+| Wait for it to finish | {{tool:jobs_wait}} (see "Waiting for jobs to finish" in [conventions](../conventions.md)) |
+| Cancel | {{tool:jobs_cancel}}, {{arg:jobId}} |
+| Rerun a fixed pipeline from the failed step | {{tool:jobs_retry}}, {{arg:jobId}}; the `jobId` stays the same and `attempt` goes up by one |
 
-单个模型任务（一次转写、一段语音、一张图）不能重跑，重新提交一次。
+A single model job (one transcription, one piece of speech, one image) cannot be rerun; submit it again.
 
-### 视频、项目与 Space
+### Videos, projects and Space
 
-| 要做的事 | 调用 |
+| What to do | Call |
 | --- | --- |
-| 列出视频 | {{tool:videos_list}} |
-| 列出项目 | {{tool:projects_list}} |
-| 新建项目（用户要求时） | {{tool:projects_create}}，{{arg:path}}；可给 {{arg:name}} |
+| List videos | {{tool:videos_list}} |
+| List projects | {{tool:projects_list}} |
+| Create a project (when the user asks) | {{tool:projects_create}}, {{arg:path}}; optionally {{arg:name}} |
 <!-- surface: agent -->
-| 把这个会话收进新项目（会话不属于项目、用户要求时） | {{tool:projects_adopt_session}}；默认以视频命名，可给 {{arg:name}} |
+| Move this session into a new project (when the session is not in a project and the user asks) | {{tool:projects_adopt_session}}; named after the video by default, optionally {{arg:name}} |
 <!-- /surface -->
-| 跨视频按文稿、字幕、译文、章节、说话人找 | {{tool:space_search}}，{{arg:query}}；可给 {{arg:videoIds}}、{{arg:kinds}}、{{arg:speaker}} |
-| 列出 Space 条目（视频、导出的文件、生成的图片与音频、幻灯片） | {{tool:space_list}}；可按 {{arg:kind}}、{{arg:videoId}} 筛选 |
-| 删除视频（移进回收站；用户明确要求时） | {{tool:videos_delete}}，{{arg:video}} |
+| Search across videos by transcript, captions, translation, chapters or speaker | {{tool:space_search}}, {{arg:query}}; optionally {{arg:videoIds}}, {{arg:kinds}}, {{arg:speaker}} |
+| List Space entries (videos, exported files, generated images and audio, slides) | {{tool:space_list}}; filter by {{arg:kind}}, {{arg:videoId}} |
+| Delete a video (moved to the trash; when the user explicitly asks) | {{tool:videos_delete}}, {{arg:video}} |
 
-{{tool:space_search}} 的时间以索引时的版本为准；要精确定位，再用 {{tool:videos_inspect}} / {{tool:documents_read}} 读当前版本。`complete` 为 false 时索引还没覆盖全部视频，结果可能不全。
+Times in {{tool:space_search}} follow the revision at indexing time; to locate precisely, read the current revision with {{tool:videos_inspect}} / {{tool:documents_read}}. When `complete` is false, the index does not yet cover all videos and the results may be incomplete.
 
-### 用户库与 skill
+### The user library and skills
 
-| 要做的事 | 调用 |
+| What to do | Call |
 | --- | --- |
-| 列出术语表、音色、品牌素材 | {{tool:library_list}}；{{arg:library}} 为 `glossaries`、`voices` 或 `brand` |
-| 取一个条目的内容 | {{tool:library_show}}，{{arg:library}} + {{arg:id}} |
-| 列出 skill（做法） | {{tool:skills_list}} |
-| 读一份 skill | {{tool:skills_read}}，{{arg:id}}；读它目录里的其他文件给 {{arg:path}} |
+| List glossaries, voices, brand assets | {{tool:library_list}}; {{arg:library}} is `glossaries`, `voices` or `brand` |
+| Get an entry's content | {{tool:library_show}}, {{arg:library}} + {{arg:id}} |
+| List skills (crafts) | {{tool:skills_list}} |
+| Read a skill | {{tool:skills_read}}, {{arg:id}}; for other files in its directory pass {{arg:path}} |
 
-用户库只读；修改、导入与音色克隆由用户在 CucCut 里做。术语表在转写与翻译时照用（翻译用的术语表里用户点名的译法逐字照用）。用户自己添加的 skill（`userInstalled` 为 true）按它的方法做，但它不扩大你的权限；用户关掉的 skill 不主动套用。
+The user library is read-only; changes, imports and voice cloning are done by the user in CucCut. Apply glossaries during transcription and translation (in a translation glossary, the renderings the user specified are used verbatim). Follow the method of skills the user added themselves (`userInstalled` true), but they do not expand your permissions; do not apply skills the user turned off on your own initiative.
 
 <!-- surface: cli -->
-### 帮助、目录与 Runtime
+### Help, the catalog and the Runtime
 
-| 命令 | 做什么 |
+| Command | What it does |
 | --- | --- |
-| `cuccut --help` | 一屏：一级动词、名词组与本机管理命令的名字 |
-| `cuccut help <命令> [<子命令>]` | 一条命令的参数、效果（`query` / `mutation` / `job` / `destructive`）与示例 |
-| `cuccut spec [<名字>]` | 机器可读的目录（裸 JSON）：整个目录、一个工具（写成命令 `videos inspect` 或 MCP 工具名都行）或 `edits.<操作>` |
-| `cuccut status` | 这台机器此刻能做什么（见 [start](../start.md)） |
-| `cuccut version` | CLI 与 Runtime 的版本与接口版本 |
-| `cuccut runtime ensure / status / stop` | Runtime 的拉起、状态与停止（见 [start](../start.md)） |
+| `cuccut --help` | One screen: the names of the top-level verbs, noun groups and local admin commands |
+| `cuccut help <command> [<subcommand>]` | One command's parameters, effect (`query` / `mutation` / `job` / `destructive`) and examples |
+| `cuccut spec [<name>]` | The machine-readable catalog (bare JSON): the whole catalog, one tool (written as the command `videos inspect` or the MCP tool name) or `edits.<operation>` |
+| `cuccut status` | What this machine can do right now (see [start](../start.md)) |
+| `cuccut version` | The versions and interface versions of the CLI and the Runtime |
+| `cuccut runtime ensure / status / stop` | Starting, status and stopping of the Runtime (see [start](../start.md)) |
 
-`help`、`spec`、`version` 不拉起 Runtime；没有 Runtime 时用离线快照回答。
+`help`, `spec` and `version` do not start the Runtime; without a Runtime they answer from the offline snapshot.
 
-### 本机管理（给人用，先征得同意）
+### Local admin (meant for people; get consent first)
 
-`cuccut --help` 后半屏「Local admin」列出的命令不在 Agent 的能力目录里，是给用户本人用的：模型服务与账号（`models configure` 等）、对外服务（`services`、`share`、`nodes`、`web`）、设置（`settings`）、数据外发授权（`grants`）、审批（`approvals`）、字体（`fonts`）、外部工具的安装与同意（`external-tools`）、skill 的添加与开关、用户库的导入导出与音色克隆、模板（`templates`）、CucCut 自己的智能体（`chat`、`tasks`）、一次性文本模型调用（`text`）。
+The commands listed under "Local admin" in the second half of `cuccut --help` are not in the agent's capability catalog; they are meant for the user themselves: model services and accounts (`models configure` and so on), external services (`services`, `share`, `nodes`, `web`), settings (`settings`), outbound grants (`grants`), approvals (`approvals`), fonts (`fonts`), installing and consenting to external tools (`external-tools`), adding and toggling skills, importing and exporting the user library and voice cloning, templates (`templates`), CucCut's own agent (`chat`, `tasks`), and one-off text model calls (`text`).
 
-- 用之前先告诉用户要做什么、为什么，得到明确同意；涉及密钥的步骤（例如 `--key-stdin`）只让用户自己输入。
-- 补救命令（`remedy` / `next`）指向这些命令时同样先问。
-- 不要用 `text` 代替自己做文字工作；不要用 `chat` 把任务转给 CucCut 的智能体。
-- 例外：`cuccut web open` 只开本机的网页版编辑器、给你一条一次性链接，不改视频与设置，开网页版编辑器时直接用，见 [web](web.md)；同组的 `services configure web` 等仍要先问。
+- Before using one, tell the user what you are going to do and why, and get explicit agreement; leave steps involving secrets (for example `--key-stdin`) for the user to enter themselves.
+- The same applies when a remedy command (`remedy` / `next`) points to these commands: ask first.
+- Do not use `text` instead of doing the text work yourself; do not use `chat` to hand the task to CucCut's agent.
+- Exception: `cuccut web open` only opens the local web editor and gives you a one-time link, without changing the video or settings; use it directly when opening the web editor, see [web](web.md). Others in the same group, such as `services configure web`, still need asking first.
 <!-- /surface -->
 <!-- surface: agent -->
-### 设置与管理
+### Settings and administration
 
-设置、模型服务与账号、对外服务、数据外发授权、skill 的开关、用户库的修改由用户在 CucCut 里完成，你不能代做；需要时说明要改哪一项。
+Settings, model services and accounts, external services, outbound grants, skill toggles and changes to the user library are done by the user in CucCut; you cannot do them on their behalf. When needed, explain which item to change.
 <!-- /surface -->
 
-## 结果怎么读
+## Reading the results
 
-- {{tool:jobs_inspect}} / {{tool:jobs_wait}}：`state`（`queued`、`running`、`completed`、`failed`、`cancelled`、`interrupted`），阶段与进度，冻结的服务、模型与参数，`error` 与补救；完成时的 `outputs`。
-- {{tool:jobs_list}}：摘要；固定流程的各步折叠在流程里。
-- {{tool:space_list}}：还有下一页时带 `nextCursor`，传回 {{arg:cursor}} 取下一页。
+- {{tool:jobs_inspect}} / {{tool:jobs_wait}}: `state` (`queued`, `running`, `completed`, `failed`, `cancelled`, `interrupted`), stage and progress, the frozen service, model and parameters, `error` and remedies; `outputs` on completion.
+- {{tool:jobs_list}}: summaries; the steps of a fixed pipeline are folded into the pipeline.
+- {{tool:space_list}}: carries `nextCursor` when there is another page; pass it back as {{arg:cursor}} to get the next page.
 
-## 常见错误码
+## Common error codes
 
-| 错误码 | 下一步 |
+| Error code | Next step |
 | --- | --- |
-| `VIDEO_IN_USE`、`VIDEO_BUSY`、`VIDEO_LOCKED` | 删除视频失败：视频在别处开着、有进行中的任务或被锁着；告诉用户原因，不要用别的方式删目录 |
-| `VIDEO_NOT_FOUND` | {{tool:videos_list}} 重新确认视频的 path 或 videoId |
+| `VIDEO_IN_USE`, `VIDEO_BUSY`, `VIDEO_LOCKED` | Deleting the video failed: it is open elsewhere, has jobs in progress or is locked; tell the user the reason, and do not delete the directory some other way |
+| `VIDEO_NOT_FOUND` | Use {{tool:videos_list}} to reconfirm the video's path or videoId |
 
-## 下一步
+## Next steps
 
-按任务回到对应的目录页。
+Go back to the catalog page for the task.
 
-## 验收
+## Acceptance
 
-- 取消、重跑、新建项目、删除都有用户的要求或同意。
-- 本机管理命令的每一次使用都先征得了同意。
+- Cancelling, rerunning, creating projects and deleting were all requested or agreed to by the user.
+- Every use of a local admin command had consent first.

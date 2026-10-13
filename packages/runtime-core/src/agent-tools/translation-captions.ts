@@ -2,23 +2,27 @@ import type { DocumentRecord, Id } from '@cuccut/protocol';
 import { derivedFrom, readSpeechWords, retextCaption, translationCues, type CueTranslationUnit } from '@cuccut/jobs';
 
 /**
- * 智能体改了一份已有译文之后，从它生成的字幕层跟着换字幕条（架构设计 §10.3，与编辑器就地改一句译文同一个规矩）。
+ * After an agent changes an existing translation, the caption layers generated from it update their cues to match
+ * (architecture design §10.3; the same rule as editing one translated sentence in place in the editor).
  *
- * `documents_put` / `edits_apply` 给已有的译文（`putDocument` 带 `documentId`、`cuccut.translation/2`）写新版本时，这里拿它与
- * 当前版本逐个单元比：译文、显示改写、状态或原句的词变了的单元，与这次去掉的单元，在每份从这份译文生成的字幕文档里
- * （`derivedFrom`）换掉这几句的字幕条（`retextCaption`，按句级对齐切条，与编辑器、`captions_create` 同一套切法；标了过期的与
- * 空的单元没有字幕条），别的条不动。字幕文档的新版本加进同一笔编辑：撤销一次两边一起回去。同一笔里已经写了的字幕文档
- * 不动；转写读不了时不跟（照原样交给引擎）。
+ * When `documents_put` / `edits_apply` writes a new revision of an existing translation (`putDocument` with `documentId`,
+ * `cuccut.translation/2`), this compares it unit by unit with the current revision: for units whose translation, display
+ * rewrite, status or source-sentence words changed, and units removed this time, the cues for those sentences are
+ * replaced in every caption document generated from this translation (`derivedFrom`) (`retextCaption`, cutting cues by
+ * sentence-level alignment, the same cutting as the editor and `captions_create`; stale and empty units have no cues);
+ * other cues are untouched. The caption documents' new revisions join the same edit: one undo reverts both. Caption
+ * documents already written in the same edit are left alone; when the transcript cannot be read nothing follows (the
+ * operations go to the engine as is).
  */
 
-/** 读一份文档的正文：给了版本时读那一版。读不到时抛出。 */
+/** Reads a document body: that revision when one is given. Throws when it cannot be read. */
 export type DocumentBodyReader = (documentId: Id, revision?: string) => Promise<unknown>;
 
 type Json = Record<string, unknown>;
 
 const TRANSLATION_V2 = 'cuccut.translation/2';
 
-/** 在 `operations` 末尾加上要跟着换的字幕文档；返回跟着换了几份。 */
+/** Appends the caption documents that must follow to the end of `operations`; returns how many followed. */
 export async function syncTranslationCaptions(
   operations: Record<string, unknown>[],
   documents: Readonly<Record<Id, DocumentRecord>>,
@@ -66,7 +70,7 @@ export async function syncTranslationCaptions(
   return added.length;
 }
 
-/** 译文正文里切字幕要用的单元；不是 `/2` 的译文时 null。 */
+/** The units of a translation body needed to cut captions; null when it is not a `/2` translation. */
 function unitsOf(body: unknown): CueTranslationUnit[] | null {
   const b = body as Json | null;
   if (!b || typeof b !== 'object' || b.schema !== TRANSLATION_V2 || !Array.isArray(b.units)) return null;
@@ -89,7 +93,7 @@ function unitsOf(body: unknown): CueTranslationUnit[] | null {
   });
 }
 
-/** 决定字幕条的那几项：画面上的文字、是否出字幕、时间取自哪些词。 */
+/** The fields that determine the cues: on-screen text, whether a caption is shown, and which words the timing comes from. */
 function cueKey(unit: CueTranslationUnit): string {
   const text = (unit.displayRewrite?.text || unit.naturalText).trim();
   return JSON.stringify([text, unit.status === 'stale', unit.alignment?.sourceWordIds ?? null]);

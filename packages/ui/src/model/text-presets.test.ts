@@ -25,8 +25,8 @@ describe('文字预设', () => {
 
   it('文字没给宽时按量出来的宽落框（画幅宽的百分比），中心在画幅百分比处', () => {
     const [layer] = presetLayers(byId('simple.02'), canvas, fps, measure);
-    // 两个字 20 像素宽：1920 的 1.04%，取一位小数。
-    expect(layer).toMatchObject({ type: 'text', text: '简约', place: { x: 50, y: 50, w: 1 } });
+    // 六个字 60 像素宽：1920 的 3.125%，取一位小数。
+    expect(layer).toMatchObject({ type: 'text', text: 'Simple', place: { x: 50, y: 50, w: 3.1 } });
   });
 
   it('多层：形状按 w、高写进 shape.h，给了宽的文字按它落框，成员按 delay 错峰', () => {

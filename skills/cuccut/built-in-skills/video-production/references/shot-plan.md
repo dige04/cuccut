@@ -1,86 +1,86 @@
-# 分镜卡、过渡描述与运镜检查
+# Shot cards, transition descriptions and camera checks
 
-`SKILL.md` 第 3 节的细则：每张卡怎么填，过渡描述怎么写，运镜怎么查，两张汇总表长什么样。
+The details of `SKILL.md` section 3: how to fill each card, how to write transition descriptions, how to check camera moves, and what the two summary tables look like.
 
-## 1. 分镜卡的字段
+## 1. Shot card fields
 
-| 字段 | 写什么 |
+| Field | What to write |
 | --- | --- |
-| 叙事作用 | 建立、推进、高潮、收束、过渡，或补充（特写、细节、反应、插入、空镜、主观视角） |
-| 节奏 | 慢、中、快 |
-| 场景 | 环境：在哪、什么时间、有什么 |
-| 动作 | 主体 + 动作 + 轨迹，一句话 |
-| 过渡描述 | 2–4 句，见第 2 节 |
-| 目标时长 | 3–10 秒 |
-| 运镜 | 固定、摇、俯仰、推拉、变焦、升降、环绕、手持，或它们的组合 |
-| 首帧构图 | 景别 + 角度 + 构图（例如「中景，平视，主体在左三分之一」） |
-| 首帧可见内容 | 第一帧里看得见的全部东西 |
-| 镜间边界 | 连续（画面接着上一镜）或切 |
-| 首帧复用 | 是或否；是时首帧取上一镜实际做出来的最后一帧 |
-| 画面来源 | 用户素材、生成图片、代码画面，或组合 |
-| 对白 | 「角色：台词」，没有写无；画面内开口的按 `SKILL.md` 第 5 节改成画外或字幕 |
-| 音效 | 声源，没有写无 |
-| 配乐线索 | 单独配乐时：情绪、编配密度（稀疏、适中、饱满）、明暗；需要时写这段用核心乐器里的哪几样。情绪相同的相邻镜头可以写同样的线索 |
-| 旁白预算 | 这段旁白覆盖的镜头总秒数，写在这段的第一张卡上 |
-| 旁白文本 | 旁白全文，或「接上镜」，或无 |
+| Narrative role | Establish, develop, climax, resolve, transition, or supplement (close-up, detail, reaction, insert, empty shot, point of view) |
+| Pace | Slow, medium, fast |
+| Scene | The environment: where, when, what is there |
+| Action | Subject + action + path, one sentence |
+| Transition description | 2-4 sentences, see section 2 |
+| Target duration | 3-10 seconds |
+| Camera move | Static, pan, tilt, dolly, zoom, crane, orbit, handheld, or a combination |
+| First-frame composition | Shot size + angle + composition (for example "medium shot, eye level, subject in the left third") |
+| First-frame visible content | Everything visible in the first frame |
+| Shot boundary | Continuous (the picture carries on from the previous shot) or cut |
+| First-frame reuse | Yes or no; when yes, the first frame is the last frame the previous shot actually produced |
+| Picture source | User assets, generated images, code visuals, or a combination |
+| Dialogue | "Character: line", or none; on-screen speech becomes off-screen or subtitles per `SKILL.md` section 5 |
+| Sound effects | The sound source, or none |
+| Music cue | For separate music: mood, arrangement density (sparse, moderate, full), light or dark; when needed, which of the core instruments this passage uses. Adjacent shots with the same mood can have the same cue |
+| Narration budget | The total seconds of the shots this narration passage covers, written on the passage's first card |
+| Narration text | The full narration, or "continued from previous shot", or none |
 
-字段之间的约束：
+Constraints between fields:
 
-- 镜间边界是「连续」，下一镜的首帧复用就是「是」。
-- 首帧复用为「是」的镜头，要等上一镜真正做出来才能做；这样串起来的镜头按顺序做，不并行。
+- When the shot boundary is "continuous", the next shot's first-frame reuse is "yes".
+- A shot with first-frame reuse "yes" can only be made once the previous shot has really been produced; shots chained this way are made in order, not in parallel.
 
-## 2. 过渡描述怎么写
+## 2. How to write transition descriptions
 
-过渡描述直接决定这一镜做出来的样子，写得越具体越好。四样东西都要有：
+The transition description directly decides how the shot comes out; the more concrete, the better. It needs all four of these:
 
-1. **主体的外观**：从头到尾必须保持一致的那几个特征。
-2. **运动轨迹**：主体与机位在空间里怎么走、从哪到哪。
-3. **状态变化**：物体与环境在这几秒里怎么变。
-4. **始终存在的东西**：哪些从第一帧起就在、一直在，免得它们中途凭空出现或消失。
+1. **The subject's appearance**: the features that must stay consistent from start to finish.
+2. **Motion path**: how the subject and the camera move through space, from where to where.
+3. **State change**: how objects and the environment change over these seconds.
+4. **What is always present**: what is there from the first frame and stays, so it does not appear or vanish out of nowhere midway.
 
-| 不够 | 够 |
+| Not enough | Enough |
 | --- | --- |
-| 图表上涨 | 深色底上的柱状图从第一帧起就在，五根柱子都只露出底边。柱子从左到右依次升高，每根用约半秒长到自己的数值，顶端的数字随高度一起滚动。最后一根最高，到顶后由灰色变成强调色；坐标轴与标题始终不动。 |
-| 纸飞机飞过桌面 | 一只白色折纸飞机从画面左下角出发，沿一条略微上扬的弧线飞向右上方，机翼保持水平。桌上的台灯与笔记本始终在原位，飞机经过时在桌面投下一道移动的影子，结束时刚好飞出画面右缘。 |
-| 天黑了 | 窗外从傍晚的橙色天光开始，在整段里逐渐转成深蓝，对面楼的窗户一扇接一扇亮起暖黄的灯。室内的书架和绿植一直在画面里，只是从被天光照亮变成被台灯照亮。 |
+| The chart goes up | A bar chart on a dark background is there from the first frame, all five bars showing only their bases. The bars rise from left to right in turn, each growing to its value in about half a second, with the number on top rolling up with the height. The last bar is the tallest, and on reaching the top it turns from gray to the accent color; the axes and title never move. |
+| A paper plane flies across the desk | A white folded paper plane sets off from the bottom-left corner of the frame and flies to the upper right along a slightly rising arc, wings kept level. The desk lamp and notebook on the desk stay in place throughout; as the plane passes, it casts a moving shadow on the desk, and at the end it just leaves through the right edge of the frame. |
+| It gets dark | Outside the window it starts with orange evening light and gradually turns deep blue over the shot, while the windows of the building opposite light up warm yellow one after another. The bookshelf and plants indoors stay in the picture throughout, going from lit by daylight to lit by the desk lamp. |
 
-代码画面也照这个写：过渡描述就是这一镜动画的说明书，渲染代码按它实现。
+Code visuals follow the same pattern: the transition description is the spec for the shot's animation, and the rendering code implements it.
 
-## 3. 运镜的物理一致性
+## 3. Physical consistency of camera moves
 
-| 运镜 | 要满足的 |
+| Camera move | Must satisfy |
 | --- | --- |
-| 摇、俯仰、变焦 | 机位不动：只能看到原地转动或拉近、拉远能看到的东西 |
-| 推拉、跟拍、升降 | 机位移动：路线在场景里真实可走，距离在时长内走得完 |
-| 环绕 | 主体全程在画面中间，四周有绕行的空间 |
-| 手持 | 同推拉，允许不规则的晃动 |
-| 组合 | 同时满足涉及的每一项 |
+| Pan, tilt, zoom | The camera stays in place: it can only show what rotating in place or zooming in and out can show |
+| Dolly, tracking, crane | The camera moves: the path is really walkable in the scene, and the distance can be covered within the duration |
+| Orbit | The subject stays in the middle of the frame throughout, with room to circle around it |
+| Handheld | As for dolly, with irregular shake allowed |
+| Combination | Satisfies each move involved at the same time |
 
-常见的错与改法：
+Common mistakes and fixes:
 
-| 错 | 改 |
+| Mistake | Fix |
 | --- | --- |
-| 「从走廊入口摇到走廊中间」：机位其实要往前走 | 改成推或跟拍 |
-| 一镜从客厅开始、在阳台结束，中间没有可走的路 | 拆成两镜 |
-| 5 秒里穿过一整个广场 | 加长时长，或缩短距离 |
+| "Pan from the corridor entrance to the middle of the corridor": the camera actually has to walk forward | Change to a dolly or tracking shot |
+| A shot starts in the living room and ends on the balcony, with no walkable path between | Split into two shots |
+| Crossing a whole square in 5 seconds | Lengthen the duration, or shorten the distance |
 
-静图与代码画面的运镜是缩放和平移，同样受画面范围的限制：推近不超过原图分辨率撑得住的倍数，平移不越过图的边缘；要大范围的运动，先出一张够大的图。
+Camera moves on stills and code visuals are scaling and panning, likewise limited by the picture's extent: a push-in goes no further than the source resolution can hold, and a pan does not cross the image's edge; for large-range motion, produce a big enough image first.
 
-## 4. 两张汇总表
+## 4. The two summary tables
 
-**参考图需求表**：
+**Reference image needs**:
 
-| 元素 | 用到的镜头（景别） | 要出的图 |
+| Element | Shots used in (shot size) | Images to produce |
 | --- | --- | --- |
-| （标识名） | 第 2 镜（中景）、第 5 镜（特写） | 全身正面、面部特写 |
+| (identifier name) | Shot 2 (medium), shot 5 (close-up) | Full-body front, face close-up |
 
-只列镜头真用得上的图。
+List only images the shots actually use.
 
-**配乐情绪弧表**（只在单独配乐时）：按各镜的目标时长算出起止时间，取各镜的配乐线索；情绪、编配密度与明暗都相同的相邻镜头合成一行。
+**Music mood arc** (only for separate music): compute start and end times from each shot's target duration and take each shot's music cue; merge adjacent shots with the same mood, arrangement density and light or dark into one row.
 
-| 时间段 | 情绪 | 编配密度 | 这段的乐器（可选） |
+| Time span | Mood | Arrangement density | Instruments for this passage (optional) |
 | --- | --- | --- | --- |
-| 00:00–00:12 | 平静、好奇 | 稀疏 | 钢琴 |
-| 00:12–00:20 | 紧张、加速 | 适中 | 钢琴、打击乐 |
+| 00:00-00:12 | Calm, curious | Sparse | Piano |
+| 00:12-00:20 | Tense, accelerating | Moderate | Piano, percussion |
 
-做配乐时只按这张表，不另起一套：生成一段时，取它的整体走向写进风格描述；分段生成时，一行（或情绪相近的相邻几行）编成一段，时间与情绪按表。
+When making the music, use only this table and do not start another: when generating one piece, write its overall course into the style description; when generating in sections, each row (or several adjacent rows with similar moods) becomes one section, with times and moods per the table.

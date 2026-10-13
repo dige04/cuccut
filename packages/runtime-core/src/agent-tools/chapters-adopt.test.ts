@@ -163,7 +163,7 @@ describe.skipIf(!engine || !ffmpeg || !editorWasmAvailable())('chapters_adopt（
 
   it('注册：MCP 工具清单与风险，与 edits_apply 同级', async () => {
     expect(TOOL_RISK.chapters_adopt).toBe(TOOL_RISK.edits_apply);
-    expect(MCP_SERVICE_TOOL_NAMES).toContainEqual({ name: 'chapters_adopt', title: '采用来源章节', effect: 'mutation' });
+    expect(MCP_SERVICE_TOOL_NAMES).toContainEqual({ name: 'chapters_adopt', title: 'Adopt source chapters', effect: 'mutation' });
     const { tools } = await client.request('catalog.list', {});
     expect(tools.map((t) => t.name)).toContain('chapters_adopt');
   });
@@ -234,7 +234,7 @@ describe.skipIf(!engine || !ffmpeg || !editorWasmAvailable())('chapters_adopt（
       { at: 20, title: '问答' },
     ]);
     expect(plan.sourceChapters).toMatchObject({ entries: 3, unanchored: 3 });
-    expect(plan.notes).toEqual(expect.arrayContaining([expect.stringContaining('没有转写')]));
+    expect(plan.notes).toEqual(expect.arrayContaining([expect.stringContaining('has no transcript')]));
   });
 
   it('拒绝：没有来源章节（NO_SOURCE_CHAPTERS）、素材不在时间线上（ASSET_NOT_PLACED）', async () => {

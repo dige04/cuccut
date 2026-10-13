@@ -1,4 +1,3 @@
-// i18n-ignore-file: 给模型的工具说明与错误
 import { z } from 'zod';
 import { SPACE_LIST_MAX_LIMIT, SPACE_SEARCH_MAX_LIMIT, type JobRecord, type SpaceEntry } from '@cuccut/protocol';
 import type { SpaceCatalog } from '../space-catalog.ts';
@@ -9,13 +8,15 @@ import { ToolError, type ToolInfo, type ToolSet } from './tool-catalog.ts';
 import type { ToolAccess, ToolPrincipal, ToolScope } from './tool-scope.ts';
 
 /**
- * Space 的只读工具（架构设计 §3.5、§5.7、§5.11）：`space_list` 列条目，`space_search` 跨视频检索文稿、字幕、译文与章节。
- * 风险等级 `read`，规划模式与只读的对外服务都可用。范围由 `ToolScope` 的主体决定（`space/space-queries.ts`）：
- * 会话里的智能体看会话来源目录里的条目；对外服务只看范围之内的视频、由它们生成或导出的条目，任务的产物只看自己提交的。
+ * Read-only Space tools (architecture design §3.5, §5.7, §5.11): `space_list` lists entries, `space_search` searches
+ * transcripts, captions, translations and chapters across videos. Risk level `read`, available in plan mode and to
+ * read-only external services. The scope is decided by the `ToolScope` principal (`space/space-queries.ts`): the agent
+ * in a session sees entries in the session's source directory; an external service sees only videos within its scope
+ * and entries generated or exported from them, and only the job artifacts it submitted itself.
  */
 
 export interface SpaceToolsDeps {
-  /** Space 目录在工具目录之后才建好：调用时再取。 */
+  /** The Space catalog is built after the tool catalog: read it at call time. */
   space: () => SpaceCatalog;
   scope: ToolScope;
   jobs: { list(): JobRecord[] };
@@ -32,71 +33,71 @@ const schemas = {
       .max(KINDS.length)
       .optional()
       .describe(
-        '可选。只列这些种类：video（可编辑的视频）、export（导出的文件）、video-file、image、audio、subtitle、document、slides（幻灯片目录）、design（设计稿目录）、design-system（设计系统目录）、package（便携包）、template（模板）',
+        'Optional. List only these kinds: video (editable video), export (exported file), video-file, image, audio, subtitle, document, slides (slides directory), design (design directory), design-system (design system directory), package (portable package), template (template)',
       ),
     status: z
       .array(z.enum(STATUSES))
       .min(1)
       .max(8)
       .optional()
-      .describe('可选。只列这些状态：generating、failed、candidate、applied、published、source-changed、missing；none 是普通文件与视频'),
-    videoId: z.string().min(1).max(200).optional().describe('可选。这个视频本身，由它生成、导出的条目，以及从它切出的子视频（短片）'),
-    favorite: z.boolean().optional().describe('可选。只列收藏的'),
+      .describe('Optional. List only these statuses: generating, failed, candidate, applied, published, source-changed, missing; none means plain files and videos'),
+    videoId: z.string().min(1).max(200).optional().describe('Optional. This video itself, entries generated or exported from it, and sub-videos (shorts) cut from it'),
+    favorite: z.boolean().optional().describe('Optional. List favorites only'),
     cursor: z
       .string()
       .regex(/^\d{1,9}$/)
       .optional()
-      .describe('可选。上一页结果里的 nextCursor'),
-    limit: z.number().int().min(1).max(SPACE_LIST_MAX_LIMIT).optional().describe('可选。一页多少条，默认 50'),
+      .describe('Optional. nextCursor from the previous page of results'),
+    limit: z.number().int().min(1).max(SPACE_LIST_MAX_LIMIT).optional().describe('Optional. Entries per page, default 50'),
   }),
   space_search: z
     .strictObject({
-      query: z.string().max(500).describe('检索词：空白隔开的几个词都要在同一段里出现，不区分大小写；中文按字符匹配，不分词'),
-      videoIds: z.array(z.string().min(1).max(200)).min(1).max(200).optional().describe('可选。只在这些视频里找'),
+      query: z.string().max(500).describe('Search terms: all whitespace-separated words must appear in the same segment, case-insensitive; CJK text is matched by character, without word segmentation'),
+      videoIds: z.array(z.string().min(1).max(200)).min(1).max(200).optional().describe('Optional. Search only these videos'),
       kinds: z
         .array(z.enum(['speech', 'caption', 'translation', 'chapter']))
         .min(1)
         .max(4)
         .optional()
-        .describe('可选。只找这些文档：speech（转写）、caption（字幕）、translation（译文）、chapter（章节）'),
-      speaker: z.string().trim().min(1).max(200).optional().describe('可选。说话人的名字里含有这段文字'),
-      limit: z.number().int().min(1).max(SPACE_SEARCH_MAX_LIMIT).optional().describe('可选。最多返回多少条命中，默认 30'),
+        .describe('Optional. Search only these documents: speech (transcript), caption (captions), translation (translation), chapter (chapters)'),
+      speaker: z.string().trim().min(1).max(200).optional().describe('Optional. The speaker\'s name contains this text'),
+      limit: z.number().int().min(1).max(SPACE_SEARCH_MAX_LIMIT).optional().describe('Optional. Maximum number of hits to return, default 30'),
     })
-    .refine((p) => p.query.trim().length > 0 || p.speaker !== undefined, '要给检索词或说话人'),
+    .refine((p) => p.query.trim().length > 0 || p.speaker !== undefined, 'Give search terms or a speaker'),
 };
 
 type ToolName = keyof typeof schemas;
 
 const DEFINITIONS: Record<ToolName, ToolInfo> = {
   space_list: {
-    title: '列出 Space 里的条目',
+    title: 'List Space entries',
     description: [
-      '列出你能访问的 Space 条目。',
-      '条目有视频、项目里的素材文件、生成的图片 / 音频 / 文本、导出的文件，以及进行中与失败的生成任务。',
-      '按最近活动从新到旧，不含回收站里的。每条带 id、种类、名字、状态、所属项目、关联的 videoId 与相对路径。',
-      '还有下一页时带 nextCursor。只读，不打开视频。',
+      'List the Space entries you can access.',
+      'Entries include videos, asset files in projects, generated images / audio / text, exported files, and in-progress and failed generation jobs.',
+      'Ordered by most recent activity, newest first, excluding the trash. Each entry has id, kind, name, status, project, related videoId and relative path.',
+      'Includes nextCursor when there is another page. Read-only; does not open videos.',
     ].join('\n'),
     annotations: { readOnlyHint: true },
     effect: 'query',
     examples: [
-      { title: '最近的条目', args: {} },
-      { title: '一个视频导出的文件', args: { videoId: 'vid_1', kind: ['export'] } },
+      { title: 'Recent entries', args: {} },
+      { title: 'Files exported from one video', args: { videoId: 'vid_1', kind: ['export'] } },
     ],
     surfaces: ['agent', 'mcp', 'cli'],
   },
   space_search: {
-    title: '跨视频检索文稿',
+    title: 'Search transcripts across videos',
     description: [
-      '在你能访问的全部视频里按文稿（转写）、字幕、译文、章节与说话人查找。',
-      '不用打开视频。每条命中带 videoId、视频名、文档种类与 documentId、时间位置（clock 为 sequence 时是时间线上的秒，source 时是素材的源时间）与命中的片段。',
-      '时间以索引时的版本（indexedRevision）为准：要精确定位，用 videos_inspect / documents_read 读当前版本。',
-      'complete 为 false 时索引还没覆盖全部视频（刚有修改、正在重建或有视频读不了），结果可能不全，pendingVideos 是个数。',
+      'Search transcripts, captions, translations, chapters and speakers across videos.',
+      'Covers all videos you can access, without opening them. Each hit has videoId, video name, document kind and documentId, time position (seconds on the timeline when clock is sequence, the asset\'s source time when source) and the matching snippet.',
+      'Times reflect the revision at indexing time (indexedRevision): for exact positions, read the current revision with videos_inspect / documents_read.',
+      'When complete is false, the index does not yet cover every video (recent changes, a rebuild in progress, or unreadable videos), so results may be incomplete; pendingVideos is how many.',
     ].join('\n'),
     annotations: { readOnlyHint: true },
     effect: 'query',
     examples: [
-      { title: '检索一个词', args: { query: '发布会' } },
-      { title: '只在译文里找', args: { query: 'launch date', kinds: ['translation'], limit: 10 } },
+      { title: 'Search for a word', args: { query: 'keynote' } },
+      { title: 'Search translations only', args: { query: 'launch date', kinds: ['translation'], limit: 10 } },
     ],
     surfaces: ['agent', 'mcp', 'cli'],
     positional: 'query',
@@ -148,11 +149,11 @@ export class SpaceTools implements ToolSet {
         };
       }
       default:
-        throw new ToolError('UNKNOWN_TOOL', `没有这个工具：${name}`);
+        throw new ToolError('UNKNOWN_TOOL', `No such tool: ${name}`);
     }
   }
 
-  /** 主体 → 能看到的范围。终端里的用户本人与界面相同，看得到全部。 */
+  /** Principal -> visible scope. The user themselves in a terminal sees everything, like the UI. */
   #viewer(principal: ToolPrincipal): SpaceViewer {
     const access: ToolAccess = this.#deps.scope.authorize(principal, false);
     if (access.principal.kind === 'local') return USER_VIEWER;
@@ -171,7 +172,7 @@ export class SpaceTools implements ToolSet {
   }
 }
 
-/** 给智能体的条目：不带来源目录的绝对路径。 */
+/** Entries for agents: without the source directory's absolute path. */
 function entryOf(entry: SpaceEntry) {
   return {
     id: entry.id,

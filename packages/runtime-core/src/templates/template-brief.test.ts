@@ -58,18 +58,18 @@ afterEach(async () => {
 describe('简报引导前言', () => {
   it('十条都在，并要求用用户的语言、不设默认的成片语言、缺能力时降级并说明、先读做法、没填的待填项当缺项问', () => {
     for (const n of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) expect(SCENE_BRIEF_PREAMBLE).toContain(`${n}. `);
-    expect(SCENE_BRIEF_PREAMBLE).toContain('确认之前不开始制作');
-    expect(SCENE_BRIEF_PREAMBLE).toContain('主题');
-    expect(SCENE_BRIEF_PREAMBLE).toContain('受众');
-    expect(SCENE_BRIEF_PREAMBLE).toContain('合并成一轮提问');
-    expect(SCENE_BRIEF_PREAMBLE).toContain('用用户的语言提问和回复');
-    expect(SCENE_BRIEF_PREAMBLE).toContain('不把任何一种语言设为成片的默认语言');
-    expect(SCENE_BRIEF_PREAMBLE).toContain('以用户确认的简报为准');
-    expect(SCENE_BRIEF_PREAMBLE).toContain('没有语音合成就用字幕');
-    expect(SCENE_BRIEF_PREAMBLE).toContain('写明哪些要求因此降级');
-    expect(SCENE_BRIEF_PREAMBLE).toContain('skills_read 读 video-production');
-    expect(SCENE_BRIEF_PREAMBLE).toContain('「[受众]」');
-    expect(SCENE_BRIEF_PREAMBLE).toContain('归入简报缺项');
+    expect(SCENE_BRIEF_PREAMBLE).toContain('until the user confirms it, do not start making anything');
+    expect(SCENE_BRIEF_PREAMBLE).toContain('the topic');
+    expect(SCENE_BRIEF_PREAMBLE).toContain('the audience');
+    expect(SCENE_BRIEF_PREAMBLE).toContain('into one round of questions');
+    expect(SCENE_BRIEF_PREAMBLE).toContain('Ask and reply in the user\'s language');
+    expect(SCENE_BRIEF_PREAMBLE).toContain('Do not make any language the default for the finished video');
+    expect(SCENE_BRIEF_PREAMBLE).toContain('the brief the user confirmed wins');
+    expect(SCENE_BRIEF_PREAMBLE).toContain('without speech synthesis, let captions carry');
+    expect(SCENE_BRIEF_PREAMBLE).toContain('which requirements were downgraded');
+    expect(SCENE_BRIEF_PREAMBLE).toContain('read video-production (how to go from brief to finished video) with the cuccut tool skills_read');
+    expect(SCENE_BRIEF_PREAMBLE).toContain('"[audience]"');
+    expect(SCENE_BRIEF_PREAMBLE).toContain('together with the missing brief items');
   });
 });
 
@@ -80,15 +80,15 @@ describe('发送时解析场景模板', () => {
     const text = resolved.instructions;
     expect(text.startsWith('<cuccut-template id="launch-scene" version="1.2.0">')).toBe(true);
     expect(text.endsWith('</cuccut-template>')).toBe(true);
-    expect(text).toContain('用户选了场景模板「发布短片」。');
+    expect(text).toContain('The user chose the scene template "发布短片".');
     expect(text).toContain(SCENE_BRIEF_PREAMBLE);
     expect(text).toContain(
-      '模板默认值：画幅 9:16，时长 45 秒。\n这个模板建议先读的做法：video-production、narration（用 skills_read 读）。',
+      'Template defaults: aspect ratio 9:16, duration 45 seconds.\nRecommended reading for this template: video-production, narration (read with skills_read).',
     );
-    expect(text).toContain('模板正文：\n你要做一条发布短片。');
-    expect(text.indexOf(SCENE_BRIEF_PREAMBLE)).toBeLessThan(text.indexOf('模板正文'));
-    expect(text).toContain(`- ${JSON.stringify(path.join(root, 'launch-scene', 'assets', 'logo.svg'))}（svg）：片尾标志`);
-    expect(text).toContain('（audio）：背景音乐，约 30 秒');
+    expect(text).toContain('Template body:\n你要做一条发布短片。');
+    expect(text.indexOf(SCENE_BRIEF_PREAMBLE)).toBeLessThan(text.indexOf('Template body'));
+    expect(text).toContain(`- ${JSON.stringify(path.join(root, 'launch-scene', 'assets', 'logo.svg'))} (svg): 片尾标志`);
+    expect(text).toContain(' (audio): 背景音乐，约 30 秒');
   });
 
   it('按发送时带的语言用译文：标记的标题、正文与素材说明都换成那种语言', async () => {
@@ -110,9 +110,9 @@ describe('发送时解析场景模板', () => {
     await fs.writeFile(path.join(dir, 'en.md'), 'You are making a launch film.\n');
     const resolved = await resolveSceneTemplate(catalog, { id: 'launch-scene', language: 'en' });
     expect(resolved.ref).toMatchObject({ title: 'Launch film', version: '1.2.0' });
-    expect(resolved.instructions).toContain('模板正文：\nYou are making a launch film.');
-    expect(resolved.instructions).toContain('（svg）：End-card logo');
-    expect(resolved.instructions).toContain('（audio）：背景音乐，约 30 秒');
+    expect(resolved.instructions).toContain('Template body:\nYou are making a launch film.');
+    expect(resolved.instructions).toContain(' (svg): End-card logo');
+    expect(resolved.instructions).toContain(' (audio): 背景音乐，约 30 秒');
     const original = await resolveSceneTemplate(catalog, { id: 'launch-scene', language: 'zh-Hans' });
     expect(original.ref.title).toBe('发布短片');
   });
@@ -121,7 +121,7 @@ describe('发送时解析场景模板', () => {
     const { skills: _s, ...noSkills } = scene;
     await fs.writeFile(path.join(root, scene.id, 'template.json'), JSON.stringify(noSkills));
     const resolved = await resolveSceneTemplate(catalog, { id: 'launch-scene' });
-    expect(resolved.instructions).not.toContain('这个模板建议先读的做法：');
+    expect(resolved.instructions).not.toContain('Recommended reading for this template:');
   });
 
   it('assets 只附用户留下的；空数组一项也不附', async () => {
@@ -129,7 +129,7 @@ describe('发送时解析场景模板', () => {
     expect(one.instructions).toContain('bgm.mp3');
     expect(one.instructions).not.toContain('logo.svg');
     const none = await resolveSceneTemplate(catalog, { id: 'launch-scene', assets: [] });
-    expect(none.instructions).not.toContain('模板随附的素材');
+    expect(none.instructions).not.toContain('Assets attached to the template');
   });
 
   it('没登记的素材、作品示例与不存在的模板被拒绝', async () => {

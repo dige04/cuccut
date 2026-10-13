@@ -1,33 +1,33 @@
 ---
-# 来自 Manus tts-prompter skill
-description: 旁白首稿的语言语速参考：按语言、地区、计数单位与速率估算预算；有时长约束且尚无当前配置样音时读。
+# From the Manus tts-prompter skill
+description: Speech-rate reference for first-draft narration - estimate a budget by language, region, counting unit and rate. Read when there is a duration constraint and no sample audio from the current configuration yet.
 ---
 
-# 旁白语言语速参考表
+# Narration speech-rate reference table
 
-## 适用范围与校准条件
+## Scope and calibration conditions
 
-用于有时长约束、尚无当前配置样音时的**首稿预算**；没有时长约束的纯朗读不需要套表。实际模型支持哪些语言与音色仍以能力查询为准，这张表不是 CucCut 的支持清单。
+Use it for a **first-draft budget** when there is a duration constraint and no sample audio from the current configuration yet; plain reading with no duration constraint does not need the table. Which languages and voices a model actually supports is still decided by the capability query; this table is not CucCut's support list.
 
-下表是首稿估算用的经验基线，未在 CucCut 的各模型中逐一复测。
+The table below is an empirical baseline for first-draft estimates and has not been re-measured on each of CucCut's models.
 
-- 场景：视频画外旁白，纪录片式、自然平稳的语速。
-- 校准记录：TTS 引擎默认配置、音色 `Charon`，每种语言 2 个样本；具体引擎版本与样本明细未记录。该音色只记录校准条件，不是选音色的建议。
-- 提示前缀：`Read this as a documentary narrator at a natural, steady conversational pace:`。这是校准时的输入格式，CucCut 仍将表演说明与台词分字段传入。
-- `Unit`：`chars` 表示字符，`words` 表示词；`Rate` 是每秒音频包含的单位数。按每行的 Unit 计数，不把各语言统一换成英语词数。
-- 其他表演风格的速率可能约偏离 ±25%，音色影响约 ±5%；这些是校准记录中的经验值，不是跨模型误差上界或时长保证。
+- Scene: off-screen video narration, at a documentary-style, natural and steady pace.
+- Calibration record: the TTS engine's default configuration, voice `Charon`, 2 samples per language; the exact engine version and per-sample details were not recorded. The voice is recorded only as a calibration condition, not as a voice recommendation.
+- Prompt prefix: `Read this as a documentary narrator at a natural, steady conversational pace:`. This was the input format during calibration; CucCut still passes delivery instructions and lines in separate fields.
+- `Unit`: `chars` means characters, `words` means words; `Rate` is the number of units per second of audio. Count by each row's Unit; do not convert every language to English word counts.
+- Other performance styles may deviate by about ±25%, and the voice by about ±5%; these are empirical values from the calibration record, not a cross-model error bound or a duration guarantee.
 
-## 怎么用
+## How to use it
 
-1. 按目标语言及地区查行，用 **可用旁白秒数 × Rate** 估首稿单位数；Rate 已按音频总时长计算，不重复扣除普通句间停顿。额外设计的长静音、片头片尾先从可用时长扣掉。
-2. 例如 30 秒普通话旁白，`cmn-CN` 的 2.8 chars/s 给出约 84 字；30 秒美式英语旁白，`en-US` 的 2.1 words/s 给出约 63 词。它们是起稿值，不能据此承诺成品时长。
-3. 混合语言按片段分别计单位，估时为各片段的 `单位数 / Rate` 之和；不能把字符与词直接相加。切换发音的停顿仍需用样音核对。
-4. 查不到语言、地区或合适的计数方式时，不套英语速率；用目标模型、音色、语言与表演生成代表性样音。已有同配置的实测时优先用实测，换配置后重新校准。
-5. 首稿之后按 {{skill:narration}} 的语速校准方法实测并修订预算，最终以合成音频的媒体时长与试听结果验收；固定原稿不为凑预算擅自删改。
+1. Look up the row for the target language and region, and estimate the first-draft unit count as **available narration seconds × Rate**; Rate is already computed over the total audio duration, so do not subtract ordinary inter-sentence pauses again. Subtract deliberately designed long silences, intros and outros from the available time first.
+2. For example, 30 seconds of Mandarin narration at `cmn-CN`'s 2.8 chars/s gives about 84 characters; 30 seconds of American English narration at `en-US`'s 2.1 words/s gives about 63 words. These are starting values for drafting, and no finished duration can be promised from them.
+3. For mixed languages, count units per segment separately, and estimate time as the sum of each segment's `units / Rate`; do not add characters and words together directly. Pauses where pronunciation switches still need checking against sample audio.
+4. When the language, region or a suitable counting method is not in the table, do not apply English rates; generate representative sample audio with the target model, voice, language and performance. When measurements from the same configuration exist, prefer them, and recalibrate after changing configuration.
+5. After the first draft, measure and revise the budget with the speech-rate calibration method in {{skill:narration}}, and accept the result by the synthesized audio's media duration and by listening; a fixed script is not cut or altered on your own to fit the budget.
 
-## 完整参考表
+## Full reference table
 
-BCP-47 Code 用于查找语言；传给模型前核对该模型接受的语言代码，不从本表推定支持情况。
+The BCP-47 Code is for looking up the language; before passing it to a model, check which language codes that model accepts, and do not infer support from this table.
 
 | Language | BCP-47 Code | Unit | Rate |
 | :--- | :--- | :--- | :--- |

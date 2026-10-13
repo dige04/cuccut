@@ -1,138 +1,138 @@
 ---
 name: video-blog
-description: 用户要把一个视频写成博客文章、公众号或专栏文章、图文稿时用：一篇不看视频也能读明白的完整文章，分作者视角（用户自己的视频，以用户名义发布）与观众视角（别人的视频，带出处的转述）。需要视频的转写。不用于只要摘要要点（用视频内容总结），也不用于与视频无关的写作。
+description: Use to turn a video into a blog post, newsletter/column article or illustrated write-up: a complete article readable without the video, from the author perspective (the user's own video) or viewer perspective (someone else's, with sources). Needs the transcript. Not for key-point summaries.
 version: 2.2.0
 ---
 
-# 视频写成博客文章
+# Turning a video into a blog post
 
-读这篇文章的人没看过视频，多半也不打算看。他要的是一篇完整的文章：读完之后，视频里讲的道理他懂了，例子他记住了，步骤他能照着做。所以它既不是整理过的文稿，也不是总结：总结告诉读者这一期讲了什么，文章把这一期的内容完整地重讲一遍，让人读得下去。
+The person reading this article has not seen the video and most likely does not plan to. They want a complete article: after reading it, they understand the ideas the video explained, remember its examples, and can follow its steps. So it is neither a tidied-up transcript nor a summary: a summary tells readers what the episode covered, while the article retells the episode's content in full, in a form people can read through.
 
-最容易写坏的两种样子：一种是把文稿去掉口头禅、分几段、加几个小标题就交出去，读起来还是一个人在说话的记录，前后跳、指代不明、该解释的没解释；另一种是写着写着变成了总结，每个话题两句话带过，例子、数字和步骤都没了。前者读者读不顺，后者读者读完什么也带不走。
+The two easiest ways to get it wrong: one is to strip the filler words from the transcript, split it into a few paragraphs, add a few headings and hand it in - it still reads like a record of someone talking, jumping back and forth, with unclear references and nothing explained that needs explaining; the other is to drift into a summary, each topic passed over in two sentences, with the examples, numbers and steps gone. Readers cannot get through the first, and take nothing away from the second.
 
-动笔前先用 `skills_read` 读本 skill 的 `references/writing-baseline.md`：材料、基线（忠于文稿、不编造、转述不加料、补足背景）、两类读者与视角、篇幅与风格的档位、默认值都在那里，下面不重复。
+Before writing, use `skills_read` to read this skill's `references/writing-baseline.md`: the material, the baseline (stay faithful to the transcript, do not invent, report without embellishing, fill in the background), the two kinds of reader and perspective, the length and style levels, and the defaults are all there and are not repeated below.
 
-## 1. 取材料
+## 1. Gather the material
 
-1. 用 videos_inspect 看视频的文档。没有转写（kind 为 speech 的文档）时先转写，告诉用户转写在进行。转写没润色过时人名、术语可能有错字，对照视频信息核对。
-2. 带时间码的文稿：export（kind `transcript`、format `md`、timestamps `true`；有几份文稿时按它列出的候选用 documentId 指定），jobs_inspect 等到 completed，读 outputs 里的文件。时间是剪辑后时间线上的时间；要标时间点时取它，不要自己估算。
-3. 视频信息：videos_inspect 给出的视频名与章节；来源标题、作者、发布平台、链接只用视频信息里有的和用户提供的。
-4. 没有视频（例如只从链接下载并转写）：jobs_inspect 的 outputs 里有 SRT、TXT，直接读。
-5. 长文稿先分段读（按章节或时间），每段记下主题块、要引用的原话和它们的时间码，再合起来写成品。只读了一部分时不写成品。
-6. **必要时看画面**。文稿里指着屏幕说话的地方（演示、幻灯片、代码、图表、「这个」「这里」「大家看」），光读文字不知道在说什么时，用 videos_frames 在那几个时间码取几帧看（`at` 列出时刻，或 `range` 加 `count` 等间隔取，一次最多 24 帧，读每帧的 `file`）。纯对话、读文稿就能懂的不取。帧是那个时刻的素材画面，不含字幕、文字与叠加的元素；从画面里看到的东西是你补的背景，写进去时读者要分得清。
+1. Look at the video's documents with videos_inspect. If there is no transcript (a document of kind speech), transcribe first and tell the user the transcription is running. An unpolished transcript may misspell names and terms; check them against the video info.
+2. Timestamped transcript: export (kind `transcript`, format `md`, timestamps `true`; when there are several transcripts, pick one by documentId from the candidates it lists), wait with jobs_inspect until completed, and read the file in outputs. The times are on the edited timeline; take them when marking points in time, and do not estimate them yourself.
+3. Video info: the video name and chapters from videos_inspect; use only the source title, author, publishing platform and links found in the video info or provided by the user.
+4. No video (for example only downloaded from a link and transcribed): jobs_inspect's outputs have SRT and TXT; read them directly.
+5. Read a long transcript in parts first (by chapter or time); for each part note the topic blocks, quotes to use and their timestamps, then combine them into the final piece. Do not write the final piece after reading only part of it.
+6. **Look at the picture when needed.** Where the transcript talks while pointing at the screen (demos, slides, code, charts, "this", "here", "look at this") and the text alone does not tell you what is meant, use videos_frames to take a few frames at those timestamps (`at` lists moments, or `range` with `count` samples evenly, at most 24 frames per call; read each frame's `file`). Skip pure conversation and anything the transcript alone makes clear. A frame is the footage at that moment, without subtitles, text or overlaid elements; what you see in the picture is background you added, and readers must be able to tell when it goes in.
 
-## 2. 语言
+## 2. Language
 
-产出用哪种语言，按下面的顺序取第一个有的：
+For the output language, take the first of the following that exists:
 
-1. 用户这次的要求里指定的语言；没指定时，用户这次给你的消息所用的语言。
-2. 界面语言：会话上下文里给出了用户的界面语言时用它。
-3. 转写的语言。
+1. The language named in this request; if none is named, the language of the user's message to you this time.
+2. The interface language: when the session context gives the user's interface language, use it.
+3. The transcript's language.
 
-用户的消息只有几个字、看不出语言时跳过第 1 条。拿不准时按上面的顺序取，交付时提一句也可以出另一种语言的版本。写作基线对任何语言都成立；本页举的措辞只是示意。
+Skip item 1 when the user's message is only a few words and its language cannot be told. When unsure, go by the order above and mention on delivery that a version in another language is also possible. The writing baseline holds for any language; the wording on this page is only illustrative.
 
-## 3. 动笔之前
+## 3. Before writing
 
-先想清楚下面几件事，它们不进成品：
+First get the following clear; none of it goes into the deliverable:
 
-1. **视角是哪一种**。用户说了就照办；没说时按基线「视角」一节判断：用户的偏好里说明了身份、并且视频显然是用户自己的，用作者视角；显然是别人发布的，用观众视角；都看不出来按观众视角，拿不准可以简短地问一句。把别人的话说成用户自己的，比把用户的话写成转述更糟。
+1. **Which perspective.** Follow the user if they said; if not, judge by the baseline's "Perspective" section: when the user's preferences state their identity and the video is clearly the user's own, use the author perspective; when it was clearly published by someone else, use the viewer perspective; when neither is clear, use the viewer perspective, and you may briefly ask when unsure. Presenting someone else's words as the user's own is worse than writing the user's words as reporting.
 
-   | | 作者视角 | 观众视角 |
+   | | Author perspective | Viewer perspective |
    | --- | --- | --- |
-   | 什么时候 | 视频是用户自己的 | 视频是别人的 |
-   | 写给谁 | 用户的读者：关注用户的人、搜到这篇的人 | 没看过视频、想了解内容的人 |
-   | 目标 | 一篇能以用户名义发布、让人想读下去的文章 | 一篇能代替看视频的文章：完整、忠实 |
-   | 口吻 | 用户本人；可以用第一人称 | 第三人称转述，观点归给说它的人 |
-   | 开头 | 抓人（第 4 节） | 说明出处，再说这篇讲什么、对谁有用 |
-   | 固定栏目 | 加上用户偏好里的署名、结尾的关注语等 | 不给用户署名或推广 |
+   | When | The video is the user's own | The video is someone else's |
+   | Written for | The user's readers: people who follow the user, people who find this post by search | People who have not seen the video and want to know what is in it |
+   | Goal | An article publishable under the user's name that makes people want to read on | An article that can replace watching the video: complete and faithful |
+   | Voice | The user themself; first person is fine | Third-person reporting, views attributed to whoever voiced them |
+   | Opening | Gripping (section 4) | State the source, then what this piece covers and who it is useful for |
+   | Recurring sections | Add the byline, closing follow line etc. from the user's preferences | No byline or promotion for the user |
 
-2. **这篇文章最值得读的是什么**。一句话写下来：一个结论、一个结果、一个问题、一段经历。开头从它出发，标题从它出发。
-3. **读者为什么会在意**。他本来好奇什么、纠结什么、默认相信什么？这件事落在他自己的工作和生活上是什么？「跟读者有什么关系」要说得具体，不说「这对每个人都很重要」这类话。
-4. **文章的骨架**。视频里散在各处讲的同一个话题归到一节；结论可以提前；同一个意思说了好几遍的留最清楚的一遍。顺序按读者理解的需要排，不按视频的先后。调的过程里因果不能变。
-5. **读者会卡住的地方**。说话人一句带过的人名、公司、术语、比喻、跳过的步骤，逐个问：没看过视频的人知道在说什么吗？不知道的，正文里补一句，或用大白话说出意思，或者不写。
-6. **哪里要配图**。幻灯片、演示、图表、实物、操作的结果，光用文字说不清的，记下时间码（第 6 节）。
+2. **What is most worth reading in this article.** Write it down in one sentence: a conclusion, a result, a question, an experience. The opening starts from it, and so does the title.
+3. **Why readers would care.** What were they curious about, torn over, assuming by default? Where does this land in their own work and life? "What it has to do with the reader" must be concrete; do not say things like "this matters to everyone".
+4. **The article's skeleton.** Gather what the video says about the same topic in scattered places into one section; conclusions may come earlier; when the same idea is said several times, keep the clearest. Order follows what readers need to understand, not the video's sequence. Cause and effect must not change in the reordering.
+5. **Where readers will get stuck.** For every name, company, term, metaphor and skipped step the speaker passes over in a word, ask: would someone who has not seen the video know what is meant? For those they would not, add a sentence in the body, say what it means in plain words, or leave it out.
+6. **Where images are needed.** Slides, demos, charts, physical objects, the results of an action - anything words alone cannot make clear: note the timestamp (section 6).
 
-## 4. 开头
+## 4. The opening
 
-读者看完前几句就会决定要不要读下去。
+Readers decide after the first few sentences whether to read on.
 
-**作者视角**：头几句告诉读者读下去能得到什么，从最值得读的一点开始。不寒暄，不用「今天想跟大家聊聊」「最近很多人问我」开头。抓人的东西正文里必须兑现。语气先按这次的风格，其次按用户的偏好，都没有时按用户在视频里说话的方式；用户在视频里的观点和保留意见不因语气改变。
+**Author perspective**: the first few sentences tell readers what they get by reading on, starting from the one thing most worth reading. No small talk, no opening with "Today I want to talk about" or "Lately a lot of people have asked me". Whatever grips must be delivered in the body. For tone, follow this time's style first, then the user's preferences, and when there are neither, the way the user talks in the video; the user's views and reservations in the video do not change with tone.
 
-**观众视角**：第一段说明这是谁的视频、哪一期、发在哪里（按视频信息），说话人是谁、在这个话题上凭什么值得听，再说这篇讲什么、对谁有用。出处写得具体，但不写成简历：说他做过的和这个话题直接相关的那件事，不写头衔的堆叠。
+**Viewer perspective**: the first paragraph says whose video this is, which episode and where it was published (per the video info), who the speaker is and why they are worth listening to on this topic, then what this piece covers and who it is useful for. Be specific about the source without writing a resume: say the thing they did that bears directly on this topic, not a pile of job titles.
 
-对比一下（只是示意，不要照搬句式）：
+Compare (illustrative only; do not copy the formula):
 
-不好：今天想跟大家聊聊代码审查这件事。随着 AI 工具越来越普及，很多团队都遇到了新的问题。下面我就结合自己的经验，分几个方面来谈谈。
+Bad: Today I want to talk about code review. As AI tools become more and more widespread, many teams have run into new problems. Below, drawing on my own experience, I'll discuss it from a few angles.
 
-好：我们团队上线 AI 写代码的头两周，交付速度一点没快，反而慢了。代码产出涨了三倍，卡在审查上：没人看得过来。这篇讲我们怎么把审查流程改过来，以及改完之后被迫改的第二件事。
+Good: In the first two weeks after our team brought in AI to write code, we shipped no faster - we got slower. Code output tripled and piled up at review: nobody could keep up reading it. This post covers how we fixed our review process, and the second thing we were forced to change once we had.
 
-前一个开头读完，读者只知道「要谈代码审查」；后一个开头，读者已经知道这篇讲什么、跟自己有什么关系，并且想往下看。
+After the first opening, readers only know "this is going to be about code review"; after the second, they already know what the piece covers and what it has to do with them, and want to read on.
 
-**多人对话**两种视角里都可能出现：要么写成转述（按主题分组，观点归到人），要么保留问答体；问答体也要编辑过，不是贴文稿。
+**Multi-person conversations** can occur in either perspective: either write them as reporting (grouped by topic, views attributed to people) or keep the Q&A form; a Q&A must also be edited, not a pasted transcript.
 
-## 5. 从说到写
+## 5. From speech to writing
 
-- 去掉口头禅、重说、半截话和离题的闲聊；同一点说了好几遍的，留最清楚的一遍。
-- 把说话时靠语气、手势和画面传达的东西写出来：「这个」「那边」指的是什么，当时屏幕上在演示什么。看了帧的，把看到的写明白。
-- 保留例子、数字、步骤和原话里的关键措辞。它们是文章最有价值的部分，也是最容易在「整理」时丢掉的部分。
-- 立场不变。说话人留了余地的地方（「我猜」「可能」「在我们这种情况下」），文章里也留余地；不把「有时候管用」写成「管用」。
-- 术语：说话人顺口提到的工具名、框架名、技术细节，先问它对读者理解这一节是不是必需。不必需的不写；能用大白话说清的就不出现术语本身；绕不开的核心概念第一次出现时用一句读者能想象出来的话解释，不用另一个术语去解释。说话人自己打的比方通常是最好的解释，用在正文里。
-- 转述不掺评价。读者要分得清哪句是说话人说的、哪句是作者说的。观众视角里尤其如此：对方说了什么照实转述，评论是作者的，并且分开写。
-- 补背景遵守基线第 4 条。补的是帮读者理解视频内容的事实，不是你自己对这个话题的延伸讨论；不加视频没有表达的观点。
+- Remove filler words, restarts, half-finished sentences and off-topic chatter; when a point is made several times, keep the clearest.
+- Write out what speech conveyed through tone, gestures and the picture: what "this" and "over there" refer to, what was being demonstrated on screen at the time. If you looked at frames, write clearly what you saw.
+- Keep the examples, numbers, steps and the key wording of the original. They are the most valuable part of the article, and the part most easily lost in "tidying up".
+- Positions do not change. Where the speaker hedged ("I guess", "maybe", "in a situation like ours"), the article hedges too; do not turn "sometimes works" into "works".
+- Terms: for tool names, framework names and technical details the speaker mentions in passing, first ask whether they are necessary for readers to understand this section. Leave out the unnecessary ones; for ones plain words can make clear, do not use the term itself; explain unavoidable core concepts on first appearance with one sentence readers can picture, not with another term. The speaker's own analogies are usually the best explanation; use them in the body.
+- Report without mixing in evaluation. Readers must be able to tell which sentences the speaker said and which the author said. This matters most in the viewer perspective: report what the other person said as it was; commentary is the author's and is written separately.
+- Background follows baseline item 4. What you add are facts that help readers understand the video's content, not your own extended discussion of the topic; add no views the video did not express.
 
-## 6. 结构与配图
+## 6. Structure and images
 
-- **标题**由内容决定，从最值得读的一点出发；作者视角的标题还要吸引人，同样只说视频兑现的东西。
-- **正文分节**，每节的小标题说这一节的结论或讲什么（「瓶颈从写代码转到了审代码」，不是「关于代码审查」，更不是「第一部分」）。视频的章节可以作为分节的起点，但章节是给观众跳着看的，文章的分节按阅读的需要来。
-- 节内用自然段落，不用列表：列表装不下「因为……，所以……」。本身就是列表的内容（步骤、清单、对比）例外。
-- **结尾**在内容结束处停下，不加「总之」「希望对你有帮助」；作者视角有固定的结尾栏目就加上。
-- **配图**：有些内容要配图才说得清：幻灯片、演示、图表、实物、操作的结果。在这些地方写明需要什么画面、对应视频里哪个时间点（取自文稿的时间码），下面配一句图说。图辅助文字，不代替文字：去掉图，这一段仍然读得明白；只在需要画面的地方配图，不为好看每节一张。用 videos_frames 取到的帧可以直接给用户当素材（它是素材画面，不含字幕与叠加）；要带字幕或叠加效果的画面，请用户在编辑器里截。视频里没有、要另外画的插图标明是补的。用户同意生成插图时可以用 image 生成（不带 `video`）：只画示意图与概念图（一个比喻、一个场景、一种关系），不冒充视频里的画面、产品界面、真人或数据；全篇用同一段风格说明，比例按图在文章里的位置（通常横图 `16:9` 或 `4:3`），画面里不要字。用 artifacts_save 存到文章同一个目录，文件名同样扁平（如 `<视频名>.blog.fig-1.png`），图注写明是生成的。怎么调用、画不了时怎么办，用 `skills_read` 读 `cuccut-catalog-media` 的「生成图片」。
-- **用户要了关键帧插图时**（工具页勾了「添加关键帧插图」，或在对话里说要配图）：只在上面说的需要画面的地方取帧，用 videos_frames 给出那几个时刻（`at`，时间线上的秒数），一处一帧；画面在说话中变化时多取两三帧挑最清楚的一张。帧文件在工作目录的 `.cuccut-out/frames/<videoId>/` 里，把用到的复制到文章同一个目录，文件名带上文章名、不建子目录（如 `<视频名>.blog.at-12500ms.png`；交付时子目录保不住，扁平的文件名在哪都成立），在文章里写成相对路径的 Markdown 图片 `![图注](<视频名>.blog.at-12500ms.png)`，图下面一句图注说图里是什么、对应视频的时间点。没勾、也没说要配图时不插图片，只按上一条写明需要什么画面。按第 9 节交付文章时，图片一张张同样交出去，仍和文章放在同一个目录，并告诉用户共几张、放在哪。
+- The **title** is decided by the content and starts from the one thing most worth reading; an author-perspective title must also be compelling, and likewise says only what the video delivers.
+- **Split the body into sections**, each heading stating the section's conclusion or what it covers ("The bottleneck moved from writing code to reviewing it", not "About code review", let alone "Part one"). The video's chapters can be a starting point for sections, but chapters exist for viewers to jump around; the article's sections follow what reading needs.
+- Within a section, use natural paragraphs, not lists: a list cannot hold "because ..., so ...". Content that is itself a list (steps, checklists, comparisons) is the exception.
+- The **ending** stops where the content ends, with no "in short" or "hope this helps"; in the author perspective, add the recurring closing section if there is one.
+- **Images**: some content needs an image to be clear: slides, demos, charts, physical objects, the results of an action. At those places, state what picture is needed and which point in the video it corresponds to (taken from the transcript's timestamps), with a one-sentence caption below. Images support the text and do not replace it: with the image removed, the passage still makes sense; add images only where a picture is needed, not one per section for looks. Frames taken with videos_frames can be handed to the user directly as material (they are footage, without subtitles or overlays); for a picture with subtitles or overlay effects, ask the user to capture it in the editor. Mark illustrations that are not in the video and must be drawn separately as added. When the user agrees to generated illustrations, you may generate them with image (without `video`): draw only diagrams and concept images (a metaphor, a scene, a relationship), never posing as the video's picture, a product UI, real people or data; use one style description throughout, and an aspect ratio suited to the image's place in the article (usually landscape `16:9` or `4:3`), with no text in the picture. Save them with artifacts_save in the same directory as the article, with equally flat file names (such as `<video name>.blog.fig-1.png`), and state in the caption that they are generated. For how to call it and what to do when it cannot draw, use `skills_read` to read `cuccut-catalog-media`, section "Generating images".
+- **When the user asked for keyframe illustrations** (the tool page has "Add keyframe illustrations" checked, or they asked for images in the conversation): take frames only at the places described above that need a picture, giving those moments to videos_frames (`at`, seconds on the timeline), one frame per place; when the picture changes during the speech, take two or three more and pick the clearest. Frame files are in `.cuccut-out/frames/<videoId>/` in the working directory; copy the ones used into the article's directory, with file names carrying the article name and no subdirectories (such as `<video name>.blog.at-12500ms.png`; subdirectories do not survive delivery, while flat file names hold anywhere), and write them in the article as Markdown images with relative paths, `![caption](<video name>.blog.at-12500ms.png)`, with a one-sentence caption below saying what the image shows and which point in the video it corresponds to. When it is not checked and no images were asked for, insert no images; only state what picture is needed as in the previous item. When delivering the article per section 9, deliver the images one by one in the same way, still in the same directory as the article, and tell the user how many there are and where.
 
-## 7. 篇幅与风格
+## 7. Length and style
 
-文章没有固定长度：写到清楚为止，读者多读的每一段都应该有所得。给非专业读者把一件事讲明白要多花些字，这部分篇幅从砍掉的专业细节里省出来。档位的含义见基线第 4 节，对文章具体是：
+An article has no fixed length: write until it is clear, and every extra paragraph readers read should give them something. Making a point clear to non-specialist readers takes a few more words; that length comes out of the specialist detail you cut. What the levels mean is in baseline section 4; for articles specifically:
 
-| 篇幅 | 文章是什么样 |
+| Length | What the article is like |
 | --- | --- |
-| 短 | 一篇短文：只讲这个视频里最值得讲的一两件事，讲清楚 |
-| 中（默认） | 视频的主要内容都覆盖到；关键的例子和步骤保留 |
-| 长 | 完整重讲视频内容：每个论证、例子、步骤和数字都在，背景补全，每个需要画面的地方都写明了配图 |
+| Short | A short piece: only the one or two things in this video most worth telling, made clear |
+| Medium (default) | The video's main content is all covered; key examples and steps are kept |
+| Long | A full retelling of the video's content: every argument, example, step and number is there, background filled in, and every place needing a picture has its image stated |
 
-| 风格 | 在文章里 |
+| Style | In the article |
 | --- | --- |
-| 平实（默认） | 把内容讲清楚，不评论。作者视角默认用用户在视频里说话的方式 |
-| 科普 | 为外行重新组织：从读者已经知道的讲起，逐个解释术语，多用例子和比喻 |
-| 吐槽 | 作者带着态度讲：评论和调侃。观众视角里，对方说了什么照实转述，评论是作者的 |
-| 其他 | 照用户的描述写；给了范本时学它的语气和结构，不抄它的句子 |
+| Plain (default) | Make the content clear, no commentary. The author perspective defaults to the way the user talks in the video |
+| Popular science | Reorganized for laypeople: start from what readers already know, explain terms one by one, use more examples and analogies |
+| Roast | The author tells it with attitude: commentary and teasing. In the viewer perspective, report what the other person said as it was; the commentary is the author's |
+| Other | Write as the user describes; when given a model piece, learn its tone and structure without copying its sentences |
 
-文稿很长又要长版时，后半部分和前半部分写得一样充分。
+When the transcript is long and the long version is wanted, write the second half as fully as the first.
 
-## 8. 要避免的
+## 8. What to avoid
 
-- 不要把文稿去掉口头禅就当文章交；也不要写着写着变成总结。
-- 不要用「今天想跟大家聊聊」「随着……的发展」开头；观众视角不要把人物交代写成简历。
-- 不要把说话人提到的工具名、框架名、技术细节一个个照搬进来。
-- 正文不要列 bullet points，小标题不要写成「第一部分」「关于 X」。
-- 不要编造文稿里没有的内容；说话人的头衔、经历、数据尤其不能靠推测补全。
-- 不要把评价混进转述里；「更妙的是」「反讽的是」这类承接词也是评价。
-- 不要加「总之」「综上所述」「希望这篇对你有帮助」，不要强行升华。
-- 作者视角不要替用户做视频里没做的承诺、宣布用户没说过的计划。
+- Do not hand in the transcript minus its filler words as an article; do not drift into a summary either.
+- Do not open with "Today I want to talk about" or "With the development of ..."; in the viewer perspective, do not write the introduction of people as a resume.
+- Do not carry over every tool name, framework name and technical detail the speaker mentions.
+- Do not use bullet points in the body, and do not write headings like "Part one" or "About X".
+- Do not invent anything the transcript lacks; above all, do not fill in speakers' titles, experience or data by guessing.
+- Do not mix evaluation into reporting; connectives like "even better" or "ironically" are evaluation too.
+- Do not add "in short", "to sum up" or "hope this post helps", and do not force an uplifting conclusion.
+- In the author perspective, do not make promises on the user's behalf that the video did not make, nor announce plans the user did not state.
 
-## 9. 交付
+## 9. Delivery
 
-- 写成工作目录里的 Markdown 文件（如 `<视频名>.blog.md`；多种语言时在扩展名前加语言标签，如 `<视频名>.blog.en.md`）。不同篇幅或风格的版本各存一份；大改之前把上一版另存，小修直接改。会话不属于项目时工作目录用户看不到：再用 downloads_save 放进下载目录，把它返回的 path 告诉用户；插了关键帧的，图片文件一张张同样处理。
-- 向用户说明：文件的真实路径；用的是哪种视角、依据是什么；产出用了哪种语言、按哪条规则定的；文稿之外补了哪些背景（含从画面里看到的）；哪些信息没有核实、哪些链接要用户补；哪些配图需要用户截取；插了关键帧时，图片文件在哪、共几张。
+- Write a Markdown file in the working directory (such as `<video name>.blog.md`; for several languages, add a language tag before the extension, such as `<video name>.blog.en.md`). Save versions of different length or style separately; before a major rewrite, save the previous version under another name, and make small fixes in place. When the session does not belong to a project, the user cannot see the working directory: also put the file in the downloads directory with downloads_save and tell the user the path it returns; when keyframes were inserted, handle the image files one by one the same way.
+- Tell the user: the file's real path; which perspective was used and why; which language the output uses and by which rule it was chosen; what background was added beyond the transcript (including what was seen in the picture); which information was not verified and which links the user needs to fill in; which images the user needs to capture; when keyframes were inserted, where the image files are and how many there are.
 
-## 10. 自查
+## 10. Self-check
 
-- 视角对：作者视角用用户的口吻；观众视角说明了出处，没有把别人的观点说成用户的。
-- 只读开头，读者知道这篇讲什么、跟自己有什么关系、想不想往下读吗？作者视角抓人的东西正文兑现了吗？
-- 不看视频也读得明白；每个「这个」「那里」都有所指；每个留下的术语、人名、公司都必需，并且第一次出现时解释了。
-- 每个事实、数字和名字都在文稿或视频信息里；补的背景分得清，而且确定；从画面里看到的东西读者分得清是补的。
-- 说话人的立场和保留意见都在；转述里没有混进评价。
-- 例子、数字、步骤还在，没有在「整理」时丢掉。
-- 没有整段照搬文稿，也没有写成总结。
-- 只扫一遍小标题，能看出每一节讲什么。
-- 需要画面的地方写明了要什么画面；去掉图也读得明白。用户要了关键帧插图的，每张图都有图注，路径相对文章所在目录，图片文件和文章放在一起。
-- 产出的语言符合第 2 节的顺序；篇幅与风格是这次要的档位与风格。
+- The perspective is right: the author perspective uses the user's voice; the viewer perspective states the source and does not present others' views as the user's.
+- Reading only the opening, do readers know what the piece covers, what it has to do with them, and do they want to read on? In the author perspective, does the body deliver what the opening used to grip?
+- It makes sense without watching the video; every "this" and "there" refers to something; every remaining term, name and company is necessary and explained on first appearance.
+- Every fact, number and name is in the transcript or video info; added background is distinguishable and certain; readers can tell that what was seen in the picture is added.
+- The speakers' positions and reservations are all there; no evaluation is mixed into the reporting.
+- The examples, numbers and steps are still there, not lost in "tidying up".
+- No passage is copied wholesale from the transcript, and it has not turned into a summary.
+- Skimming only the headings, you can see what each section covers.
+- Places needing a picture state what picture is needed; it still makes sense with the images removed. When the user asked for keyframe illustrations, every image has a caption, paths are relative to the article's directory, and the image files sit with the article.
+- The output language follows the order in section 2; length and style are the level and style asked for this time.

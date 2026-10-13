@@ -144,7 +144,7 @@ describe.skipIf(!engine || !ffprobe)('任务下的后台写入带着任务保护
     // 智能体看得到原因，被告知不要绕过。
     const inspected = await tool(session, 'jobs_inspect', { jobId });
     expect(inspected.body).toMatchObject({ state: 'failed', applications: [{ state: 'rejected', videoId }] });
-    expect(inspected.body.next).toContain('不要用 edits_apply 再导入');
+    expect(inspected.body.next).toContain('Do not import it again with edits_apply');
 
     // 用户自己决定应用：不受任务保护限制，不再调用供应商。
     const applied = await client.request('jobs.reconcile', { jobId, decision: 'apply' });
@@ -179,7 +179,7 @@ describe.skipIf(!engine || !ffprobe)('任务下的后台写入带着任务保护
     expect(video().revision).toBe(before.revision);
     expect(Object.keys(video().assets)).toEqual(Object.keys(before.assets));
     const inspected = await tool(session, 'jobs_inspect', { jobId: job.jobId });
-    expect(inspected.body.next).toContain('不要改动');
+    expect(inspected.body.next).toContain('do not change');
 
     // 用户在界面里启动的同一条流程不在任务里：照常导入。
     const { jobId: userJob } = await client.request('pipelines.start', {

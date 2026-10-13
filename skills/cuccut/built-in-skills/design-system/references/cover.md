@@ -1,30 +1,30 @@
-# 封面：components/Cover/preview.html
+# The cover: components/Cover/preview.html
 
-每个设计系统都有一个封面。它是一份和组件预览完全一样的预览文档——第 1 行是 marker（`<!-- @dsCard height=288 -->`；240–360），同样的 preview frame、预加载（tokens.css、字体、bundle.css、bundle.js）、上限和 theme 传递——Overview 把它显示在品牌手册上方，这样设计系统一打开就有一张门面。目录要保持**干净**：旁边放一个 README.md 或 Cover.d.ts，或者 bundle 头部里出现 `Cover`，都会让它变成普通组件，设计系统就没有封面了。**最后**写它，依据你已经做好的内容。
+Every design system has a cover. It is a preview document exactly like a component preview - line 1 is the marker (`<!-- @dsCard height=288 -->`; 240-360), with the same preview frame, preloads (tokens.css, fonts, bundle.css, bundle.js), limits and theme passing - and Overview shows it above the brand guide, so the design system has a face the moment it opens. Keep the directory **clean**: a README.md or Cover.d.ts next to it, or `Cover` appearing in the bundle header, turns it into an ordinary component, and the design system has no cover. Write it **last**, based on what you have already made.
 
-## 方向：配色与图案
+## Direction: palette and pattern
 
-封面展示人们记住一个设计系统所凭的两样东西——它的颜色和它的形状——并以名字为主体。三个部分，每次都要有：
+The cover shows the two things people remember a design system by - its colors and its shapes - with the name as the subject. Three parts, every time:
 
-1. **色块。** 把配色做成大块的实色区域，而不是 chip：三到五个色块，用设计系统的 identity 色，取**十足**的色值——品牌、accent 和信号色相，一种深的 ink 或深色 surface，再加一个 tint 用来透气——合起来占封面的四分之一到一半。按 identity 分配分量，而不是按界面里的使用频率：人们认得这个品牌的那些颜色占大色块，即使界面里很少用它们（以中性色为主的设计系统，打头的是它那一两种色相）；只用来表示某个 state 的颜色（错误红）保持小块。从 scale 里裁出它们：边长取间距级或其倍数，圆角取圆角 token（方正的设计系统就用直角；pill 或圆形把 `rx` 设为短边的一半——SVG 里 `rx` 为 9999px 画出来的是椭圆，不是 pill）。按品牌自己的构图方式排列——齐平的模块化 grid、错落的堆叠、一块高板加几块卫星、一条由宽窄不一的色带拼成的长条、从上边或右边出血的色块。绝不排一行等大的方块：那是 swatch table。
-2. **一种图案**，叠在色块上或夹在色块之间，用色块的颜色（或在色块上镂出底色），依据设计系统对自己的描述来选——README 里的原则和 tokens 的 `usage` 说明：
-   - 柔和、友好、大圆角 → 取自圆角 scale 的圆、pill、半圆
-   - 精确、技术感、等宽字体、4px grid → 以一个间距级为步距的点状或加号 grid
-   - 编辑出版风、衬线、「用边框，不用阴影」 → **几条**发丝线（用设计系统的发丝线 token，保持它本来的强度）或横穿色块的 baseline grid——绝不铺满一片线，绝不只有线没有色块
-   - 张扬、粗重、海报式字体 → 以一个间距为节距的条纹、人字纹或棋盘格
-   - 几何、模块化、密集的界面 → 用圆角 token 切出的 tile，其中一些像组件那样合并成两格宽
-   - 具象母题（镜头、波浪、叶子、票券、火花）→ 由圆角构成的弧、四分之一圆或那个剪影
-   - 有特色的 display 字体或数字字体 → 一个超大的字形或数字当作形状用，被色块裁切
+1. **Color blocks.** Make the palette into large solid areas, not chips: three to five blocks in the design system's identity colors, at **full** strength - the brand, accent and signal hues, a deep ink or dark surface, plus one tint for breathing room - together taking a quarter to half of the cover. Weight them by identity, not by how often the interface uses them: the colors people recognize the brand by get the large blocks even if the interface rarely uses them (in a design system dominated by neutrals, its one or two hues lead); colors used only for a state (error red) stay small. Cut them from the scale: sides at spacing steps or multiples of them, corners at radius tokens (a square-cornered design system uses right angles; for a pill or circle set `rx` to half the short side - in SVG an `rx` of 9999px draws an ellipse, not a pill). Arrange them the brand's own way of composing - a flush modular grid, a staggered stack, one tall panel with a few satellites, a strip of bands of varying width, blocks bleeding off the top or right edge. Never a row of equal squares: that is a swatch table.
+2. **A pattern**, laid over the color blocks or between them, in the blocks' colors (or knocked out of a block to the background color), chosen from how the design system describes itself - the principles in the README and the tokens' `usage` notes:
+   - Soft, friendly, large radii → circles, pills, half circles taken from the radius scale
+   - Precise, technical, monospace, 4px grid → a dot or plus grid stepped at one spacing step
+   - Editorial, serif, "borders, not shadows" → **a few** hairlines (using the design system's hairline token at its own strength) or a baseline grid running across the blocks - never a field of lines, never lines without blocks
+   - Bold, heavy, poster type → stripes, chevrons or a checkerboard at a pitch of one spacing step
+   - Geometric, modular, dense interfaces → tiles cut with the radius tokens, some merged two wide like components
+   - Figurative motifs (lenses, waves, leaves, tickets, sparks) → arcs, quarter circles or that silhouette built from radii
+   - A distinctive display or numeral face → one oversized glyph or numeral used as a shape, cropped by the blocks
 
-   是形状，不是图画：不要人脸、吉祥物、图标或场景。选最能体现**这个**品牌的那一行，并在推导里说明原因；如果一个普通的设计系统也会落到同一行**并且**同样的排列，就换个排列。几何取自 scale（节距、间隙、圆角都是 token）；tile、圆点或 pill 用十二到六十个单元，线用三到六条——绝不上百。
-3. **名字**用 display 字体（只有一个 family 的设计系统：用正文 family 的 display 字重），最大 120px，leading .9–.95（两行时 .95 或更大），放在左下角的**底色**上，用 ink，下面一行标语，13–14px，用 muted（用 README 里的，或者用设计系统的口吻写一句话），两者放在一个最宽 440px 的文本块里。不要别的字。名字与 README 里的写法完全一致——同样的词、同样的大小写——只能在它本来就有的空格或连字符处断行（绝不在单词中间断），最多两行。给它划区：从 120px 往下到 64px 里选一个字号，让它最长的一行 ≤ 440px（fallback 字体最多宽出五分之一：无衬线按每个字母 0.6em 算，衬线 0.55，等宽 0.62）；行数 × 字号 + 标语 + 两个间距级还必须放得进高度。如果到 64px 仍宽于 440px，就用顶部色带 skeleton（见「规则」）。否则每个色块和图案单元都放在 x = 480 的右边：没有任何东西压过名字或标语，发丝线也不行。
+   Shapes, not pictures: no faces, mascots, icons or scenes. Pick the row that best expresses **this** brand, and say why in the derivation; if an ordinary design system would land on the same row **and** the same arrangement, change the arrangement. Geometry comes from the scale (pitch, gaps and radii are all tokens); use twelve to sixty units for tiles, dots or pills, three to six for lines - never hundreds.
+3. **The name** in the display face (a design system with one family: the body family's display weight), at most 120px, leading .9-.95 (.95 or more for two lines), on the **background** at the bottom left, in ink, with a one-line tagline below, 13-14px, in muted (from the README, or one sentence in the design system's voice), both in a text block at most 440px wide. No other text. The name matches the README's spelling exactly - same words, same capitalization - and may break only at a space or hyphen it already has (never mid-word), at most two lines. Zone it: pick a size from 120px down to 64px at which its longest line is ≤ 440px (a fallback font is up to a fifth wider: count 0.6em per letter for sans, 0.55 for serif, 0.62 for mono); lines × size + tagline + two spacing steps must also fit the height. If it is still wider than 440px at 64px, use the top-band skeleton (see "Rules"). Otherwise every block and pattern unit sits to the right of x = 480: nothing overlaps the name or tagline, not even a hairline.
 
-规则：
-- **一个内联 SVG 加两个文本元素，铺在底色上**；每个 fill、stroke 和 `rx` 都是绑定到 token 的 class（`.brand{fill:var(--brand)}`、`.tile{rx:var(--radius-lg)}`；pill 和圆形：短边的一半）。不用图片，不用 tokens 没定义的渐变或阴影。
-- **两个 theme 是同一个文件。** 渲染 dark 并**看一看**：和底色只差几个百分点的色块在那里会消失——把它绑定到另一个 token，而不是给它描边。
-- **一种 layout，960 × 高度。** Overview 按 960px 宽排布封面，在较窄的页面上把整张图等比缩小，所以在任何宽度下看起来都一样。不写任何响应式：不用宽度查询（容器查询或媒体查询），不用 `cqw`/`vw` 尺寸，不做窄屏 layout。色块和图案放在从 x = 480 到右边缘的一个框里。唯一的另一种 skeleton：一条由色块和图案组成的色带横贯顶部全宽（高 96–120px，约为高度的三分之一，与名字的 cap line 隔开一个间距级），名字在它下面，字号按第 3 条定；因为太宽才落到这里的名字，取 ≤ 64px 里能让最长一行放进 960px 减去文本块左右内边距的最大字号。品牌习惯用水平条带构图时用它，名字对它的区域来说太宽时也一律用它。
-- **不要动效。**
-- **眯眼看：**先读到名字，再是颜色，再是图案；如果图案抢了戏，把它的数量减半。**拇指盖住名字：**光凭色块和图案就该看得出这是哪个品牌；如果它们放在谁身上都行，那就是颜色或那一行选错了。
-- **先写推导**——四行，作为注释保留在 SVG 顶部：色块（token × 尺寸）、排列、图案那一行以及选中它的那句话、用到的间距级和圆角。色块、图案或 scale 那一行里如果没有 token，就从头再来。
+Rules:
+- **One inline SVG plus two text elements, on the background**; every fill, stroke and `rx` is a class bound to a token (`.brand{fill:var(--brand)}`, `.tile{rx:var(--radius-lg)}`; pills and circles: half the short side). No images, no gradients or shadows the tokens do not define.
+- **Both themes are the same file.** Render dark and **look at it**: a block only a few percent off the background vanishes there - bind it to another token rather than outlining it.
+- **One layout, 960 × height.** Overview lays the cover out at 960px wide and scales the whole thing down proportionally on narrower pages, so it looks the same at any width. Write nothing responsive: no width queries (container or media queries), no `cqw`/`vw` sizes, no narrow layout. Blocks and pattern go in a box from x = 480 to the right edge. The only other skeleton: a band of blocks and pattern across the full width at the top (96-120px high, about a third of the height, one spacing step clear of the name's cap line), with the name below it, sized per item 3; a name that landed here for being too wide takes the largest size ≤ 64px at which its longest line fits within 960px minus the text block's left and right padding. Use it when the brand habitually composes in horizontal bands, and always when the name is too wide for its zone.
+- **No motion.**
+- **Squint:** the name reads first, then the colors, then the pattern; if the pattern steals the show, halve its count. **Thumb over the name:** the blocks and pattern alone should tell you which brand this is; if they would fit anyone, the colors or the row are wrong.
+- **Write the derivation first** - four lines, kept as a comment at the top of the SVG: blocks (token × size), arrangement, the pattern row and the sentence that chose it, the spacing steps and radii used. If the blocks, pattern or scale line has no token in it, start over.
 
-避免：条形码（一片细竖线朝某条边越来越密）、swatch table、彩纸屑（超过五种颜色或两种图案）、海报（图案比名字还抢眼）、色块上写字。名字、配色、display 字体或 scale 变了时重新生成，较小的改动不重新生成。用户靠提要求来改它——在聊天里或评论里（「安静一点」、「多点绿色」、「用波浪」）：修改这个文件，除非要求改变了推导，否则保留推导，存为一个修订版本。它不在页面里编辑。
+Avoid: barcodes (a field of thin verticals getting denser toward one edge), swatch tables, confetti (more than five colors or two patterns), posters (a pattern louder than the name), text on blocks. Regenerate when the name, palette, display face or scale changes, not for smaller changes. Users change it by asking - in chat or in comments ("quieter", "more green", "use waves"): edit this file, keep the derivation unless the request changes it, and save it as a revision. It is not edited on the page.

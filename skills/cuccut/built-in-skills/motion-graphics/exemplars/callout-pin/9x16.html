@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=1080,height=1920">
 <title>callout-pin 9:16</title>
 <style>
-/* 骨架样式：不要改。画面相关的 CSS 全部写进下面的布局槽。 */
+/* Scaffold styles: do not edit. Put all scene CSS in the layout slot below. */
 html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:transparent}
 body{font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans", "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif;-webkit-font-smoothing:antialiased}
 *,*::before,*::after{box-sizing:border-box}
@@ -14,7 +14,7 @@ body{font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "
 .copy{max-width:100%;overflow:hidden;text-overflow:ellipsis}
 svg{overflow:visible}
 /* slot:layout */
-/* 横竖共用：锚点、圆环、折线与标签卡（组内坐标固定，整组由下面的定位移动） */
+/* Shared by both orientations: anchor, ring, elbow line and label card (fixed coordinates inside the group; the positioning below moves the whole group) */
 .cp-lines{position:absolute;left:0;top:0;width:660px;height:420px}
 .cp-line{fill:none;stroke:var(--accent);stroke-width:5;stroke-linecap:round;stroke-linejoin:round}
 .cp-dot,.cp-ring{position:absolute;left:40px;top:380px;border-radius:50%;transform:translate(-50%, -50%)}
@@ -24,12 +24,12 @@ svg{overflow:visible}
 .cp-title,.cp-note{display:block;margin:0;white-space:nowrap}
 .cp-title{font-size:36px;font-weight:800;line-height:1.2}
 .cp-note{margin-top:6px;font-size:22px;font-weight:500;line-height:1.3;color:color-mix(in srgb, var(--ink) 66%, transparent)}
-/* 9:16：组水平居中，锚点约在 (250, 1140) */
+/* 9:16: group centered horizontally, anchor at about (250, 1140) */
 .cp{position:absolute;left:210px;top:760px;width:660px;height:420px}
 </style>
 </head>
 <body>
-<div id="root" data-composition-id="main" data-start="0" data-width="1080" data-height="1920" data-duration="4" data-fps="30" data-aspect-ratio="9:16" data-structure="anchor dot + pulse ring + elbow line + label card" data-layout="offset callout right of center" data-motion="    // 锚点弹出，圆环入场后在停留期 pulse 一个周期（±2%），折线描出，标签卡 unfold，标题滑入
+<div id="root" data-composition-id="main" data-start="0" data-width="1080" data-height="1920" data-duration="4" data-fps="30" data-aspect-ratio="9:16" data-structure="anchor dot + pulse ring + elbow line + label card" data-layout="offset callout right of center" data-motion="    // Anchor pops, ring enters then pulses one cycle during the hold (±2%), elbow line draws, label card unfolds, title slides in
     const dot = range(time, 0.03, 0.55);
     apply('cp-dot', { scale: 0.3 + 0.7 * backOut(dot), opacity: dot * 3 }, true);
     const ring = easeOut(range(time, 0.15, 0.72));
@@ -63,9 +63,9 @@ svg{overflow:visible}
   const HEIGHT = Number(root.dataset.height);
   const DURATION = Number(root.dataset.duration);
 
-  // ---- 辅助函数：全是纯函数或只改指定元素的样式，不读时钟、不随机 ----
+  // ---- Helpers: all pure or only set styles on the given element; no clock reads, no randomness ----
   const clamp = (v, lo = 0, hi = 1) => Math.min(hi, Math.max(lo, v));
-  // time 落在 [start, end] 里的进度，两端夹到 0 和 1。
+  // Progress of time within [start, end], clamped to 0 and 1 at both ends.
   const range = (t, start, end) => (end <= start ? (t >= end ? 1 : 0) : clamp((t - start) / (end - start)));
   const easeOut = (p) => 1 - Math.pow(1 - p, 3);
   const easeInOut = (p) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
@@ -83,8 +83,8 @@ svg{overflow:visible}
     const el = node(id);
     if (el && el.textContent !== String(value)) el.textContent = String(value);
   };
-  // 一次写全 transform：没给的属性回到默认值，所以同一时刻重复调用结果相同。
-  // preserveCenter 为真时保留 translate(-50%,-50%)，用于以中心点定位的元素。
+  // Write the whole transform at once: omitted props fall back to defaults, so repeated calls at the same time give the same result.
+  // When preserveCenter is true, keep translate(-50%,-50%) for elements positioned by their center.
   const applyEl = (el, props = {}, preserveCenter = false) => {
     if (!el) return;
     const s = props.scale ?? 1;
@@ -95,11 +95,11 @@ svg{overflow:visible}
     parts.push(`scale(${s * (props.scaleX ?? 1)}, ${s * (props.scaleY ?? 1)})`);
     el.style.transform = parts.join(' ');
     if (props.opacity !== undefined) el.style.opacity = String(clamp(props.opacity));
-    // clip：0 全遮住，1 全露出，从左向右展开。
+    // clip: 0 fully hidden, 1 fully shown, revealed left to right.
     if (props.clip !== undefined) el.style.clipPath = `inset(0 ${((1 - clamp(props.clip)) * 100).toFixed(3)}% 0 0)`;
   };
   const apply = (id, props, preserveCenter) => applyEl(node(id), props, preserveCenter);
-  // 描线：按 data-length（不短于路径真实长度）设置虚线，progress 0 不可见，1 画满。
+  // Line draw: sets the dash from data-length (no shorter than the real path length); progress 0 is invisible, 1 is fully drawn.
   const path = (id, progress) => {
     const el = node(id);
     if (!el) return;
@@ -110,11 +110,11 @@ svg{overflow:visible}
     el.style.visibility = p > 0 ? 'visible' : 'hidden';
   };
 
-  // ---- 画面：只由 time 决定 ----
+  // ---- Scene: determined by time alone ----
   function renderScene(time) {
     const exit = 1 - easeInOut(range(time, DURATION - 0.62, DURATION - 0.05)); scene.style.opacity = String(exit);
     /* slot:motion */
-    // 锚点弹出，圆环入场后在停留期 pulse 一个周期（±2%），折线描出，标签卡 unfold，标题滑入
+    // Anchor pops, ring enters then pulses one cycle during the hold (±2%), elbow line draws, label card unfolds, title slides in
     const dot = range(time, 0.03, 0.55);
     apply('cp-dot', { scale: 0.3 + 0.7 * backOut(dot), opacity: dot * 3 }, true);
     const ring = easeOut(range(time, 0.15, 0.72));
@@ -126,7 +126,7 @@ svg{overflow:visible}
     apply('cp-title', { x: (1 - title) * 40, opacity: title });
   }
 
-  // ---- 可 seek 的时间线：渲染与导出只用 seek()，play() 只给预览 ----
+  // ---- Seekable timeline: rendering and export use only seek(); play() is for preview only ----
   class SeekableTimeline {
     constructor(duration, render) {
       this._duration = duration;
@@ -164,7 +164,7 @@ svg{overflow:visible}
     }
     play() {
       if (this._frame) return this;
-      // 用 rAF 回调给的时间戳推进，不读墙上时钟。
+      // Advance with the rAF callback's timestamp; never read the wall clock.
       const tick = (stamp) => {
         if (this._last !== null) this.seek(this._time + ((stamp - this._last) / 1000) * this._rate);
         this._last = stamp;
@@ -182,9 +182,9 @@ svg{overflow:visible}
   const timeline = new SeekableTimeline(DURATION, renderScene);
   window.__timelines = { [COMPOSITION_ID]: timeline };
 
-  // ---- QA：外部检查用，不影响画面 ----
+  // ---- QA: for external checks; does not affect the frame ----
   const SAFE_DEFAULT = HEIGHT > WIDTH ? { left: 60, right: 60, top: 180, bottom: 230 } : { left: 70, right: 70, top: 100, bottom: 100 };
-  // 停留期里的检查时刻：出场开始前 0.3 s（停留不短于 1.2 s，入场一定已经结束）。
+  // Check time within the hold: 0.3 s before the exit starts (the hold is at least 1.2 s, so the entrance has always finished).
   const HOLD_AT = DURATION - 0.92;
   const QA_COPY = {
     long: 'This replacement line is deliberately long so the check can prove the layout trims overflow instead of spilling outside the safe area',
@@ -202,7 +202,7 @@ svg{overflow:visible}
       timeline.seek(seconds);
       return timeline.time();
     },
-    // mode：'long' 长英文，'cjk' 中日混排长句，'original' 换回原文。
+    // mode: 'long' long English line, 'cjk' long mixed Chinese/Japanese sentence, 'original' restores the original copy.
     setCopy(mode) {
       for (const el of document.querySelectorAll('[data-copy-primary]')) {
         if (!originals.has(el)) originals.set(el, el.innerHTML);

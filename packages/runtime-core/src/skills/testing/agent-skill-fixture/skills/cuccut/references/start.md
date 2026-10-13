@@ -1,8 +1,8 @@
-# 启动
+# Start
 
 <!-- surface: agent -->
-会话内不需要这一页。
+A session does not need this page.
 <!-- /surface -->
 <!-- surface: cli -->
-先 `cuccut version`，再 `cuccut status`；之后按 [conventions](conventions.md) 的约定调用命令。
+First `cuccut version`, then `cuccut status`; after that, call commands as the [conventions](conventions.md) say.
 <!-- /surface -->

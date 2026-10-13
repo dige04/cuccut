@@ -1,41 +1,41 @@
 ---
 name: titles-and-description
-description: 用户要为准备发布的视频起标题、要几个标题候选、再来一批或照某个再来几个，或要写视频简介（视频页标题下的说明文字、章节列表、标签）时用。写给发布视频的人：吸引人，并且每句都由视频兑现。需要视频的转写。不用于给文章起标题等与视频无关的写作。
+description: Use when the user wants titles for a video they will publish (candidates, another batch, more like one) or a video description (text under the title, chapter list, tags). Compelling, and every line delivered by the video. Needs the transcript. Not for writing unrelated to a video.
 version: 2.0.0
 ---
 
-# 起标题与写简介
+# Titles and descriptions
 
-用户的视频做好了，准备发。标题决定列表里有没有人点，简介决定点进来的人看不看、看完的人找不找得到视频里提到的东西。两者都写给发布视频的人：吸引人，并且每一句视频都兑现。标题和简介配合着用：先出标题候选、让用户挑一个，写简介时就用它。
+The user's video is done and about to go out. The title decides whether anyone in a list clicks; the description decides whether those who click keep watching, and whether those who finish can find the things the video mentioned. Both are written for the person publishing the video: compelling, and every line delivered by the video. Titles and descriptions work together: offer title candidates first, let the user pick one, and use it when writing the description.
 
-最容易写坏的样子：从句式出发。「震惊！」「你绝对想不到」「一个视频讲清楚 X」，换个视频也能用，说明它没用上这个视频独有的东西；或者反过来，标题是视频名的复述，简介是视频的流水账，谁看了都不想点。
+The easiest way to get them wrong: start from a formula. "Shocking!", "You won't believe", "X explained in one video" would fit any other video just as well, which means they use nothing unique to this one. Or the opposite: the title restates the video's name and the description is a blow-by-blow recap that makes no one want to click.
 
-动笔前先用 `skills_read` 读本 skill 的 `references/writing-baseline.md`（材料、基线、两类读者与视角、篇幅与风格、默认值）。起标题再读 `references/titles.md`，写简介再读 `references/description.md`。
+Before writing, use `skills_read` to read this skill's `references/writing-baseline.md` (material, baseline, the two kinds of reader and perspective, length and style, defaults). For titles also read `references/titles.md`; for descriptions also read `references/description.md`.
 
-## 1. 取材料
+## 1. Gather the material
 
-1. 用 videos_inspect 看视频：名字、章节（chapters 的 atSeconds 与 title）、文档。没有转写（kind 为 speech 的文档）时先转写，告诉用户转写在进行。转写没润色过时人名、术语可能有错字，对照视频信息核对。
-2. 读文稿：export（kind `transcript`、format `md`、timestamps `true`；有几份文稿时按它列出的候选用 documentId 指定），jobs_inspect 等到 completed，读 outputs 里的文件。没有视频、只有从链接下载并转写的结果时，读 jobs_inspect 的 outputs 里的 TXT 或 SRT。
-3. 视频信息：来源标题、作者、原视频链接、发布平台只用视频信息里有的和用户提供的。
-4. 用户这次的要求：语言、篇幅、风格、候选个数、发布平台、视角；已选定的标题；之前给过的候选与用户想跟随的那一个，都在这段对话里找。用户说了标题和简介发在同一个平台时，两者按同一个平台写。
+1. Look at the video with videos_inspect: its name, chapters (the chapters' atSeconds and title), documents. If there is no transcript (a document of kind speech), transcribe first and tell the user the transcription is running. An unpolished transcript may misspell names and terms; check them against the video info.
+2. Read the transcript: export (kind `transcript`, format `md`, timestamps `true`; when there are several transcripts, pick one by documentId from the candidates it lists), wait with jobs_inspect until completed, and read the file in outputs. When there is no video, only the result of downloading and transcribing from a link, read the TXT or SRT in jobs_inspect's outputs.
+3. Video info: use only the source title, author, original video link and publishing platform found in the video info or provided by the user.
+4. What the user asks for this time: language, length, style, number of candidates, publishing platform, perspective; the title already chosen; candidates offered earlier and the one the user wants to follow - find all of these in this conversation. When the user says the title and description go on the same platform, write both for that platform.
 
-## 2. 动笔之前
+## 2. Before writing
 
-先想清楚这两件事，它们不进成品：
+Get these two things clear first; they do not go into the deliverable:
 
-1. **这个视频最值得看的是什么**。用一句话写下来：一个出人意料的结论、一个具体的结果、一个大家关心却答不上来的问题、一段不常见的经历、一个马上能用的方法。标题从它出发，简介的开头从它出发。一个视频往往有好几个值得看的点，它们就是不同候选的起点。
-2. **观众为什么会点**。他本来在找什么、好奇什么、以为是怎样的？这个视频能让他省下什么、避开什么、得到什么？把这个连接点说具体。
+1. **What is most worth watching in this video.** Write it down in one sentence: a surprising conclusion, a concrete result, a question people care about but cannot answer, an unusual experience, a method usable right away. The title starts from it, and so does the opening of the description. A video often has several points worth watching; they are the starting points of different candidates.
+2. **Why the viewer would click.** What were they looking for, curious about, assuming? What does this video save them, help them avoid, give them? Make that connection concrete.
 
-## 3. 交付
+## 3. Delivery
 
-- 标题：直接在回复里给出候选，每条带角度与一句理由，标出推荐的那一个；请用户挑一个，或说要再来一批、照哪个再来几个。
-- 简介：直接在回复里给出全文（标签单列一行）。用户要文件时写成工作目录里的 Markdown 文件（如 `<视频名>.description.md`；多种语言时在扩展名前加语言标签）；会话不属于项目时再用 downloads_save 放进下载目录，把它返回的 path 告诉用户。
-- 一并说明：用的是哪种视角、依据是什么；用户已经挑定的标题（或还待用户挑）；哪些信息没有核实、哪些链接要用户补；说了平台的，提醒用户对照平台现行的规则核对。
+- Titles: give the candidates directly in the reply, each with its angle and a one-sentence reason, and mark the recommended one; ask the user to pick one, or to ask for another batch or a few more like one of them.
+- Description: give the full text directly in the reply (tags on a line of their own). When the user wants a file, write a Markdown file in the working directory (such as `<video name>.description.md`; for several languages, add a language tag before the extension); when the session does not belong to a project, also put it in the downloads directory with downloads_save and tell the user the path it returns.
+- Also state: which perspective you used and why; the title the user has already picked (or that the user still has to pick); which information was not verified and which links the user needs to fill in; when a platform was named, remind the user to check against that platform's current rules.
 
-## 4. 要避免的
+## 4. What to avoid
 
-- 不要从句式出发；把视频名和人名换掉还能用的标题，重写。
-- 不要许诺视频没给的东西：数字、「最」「第一」、留下的问题，视频里都要有。
-- 不要用同一句话的改写充当不同的候选。
-- 不要编链接、编章节时间、编平台规则。
-- 简介不要以链接、标签、署名开头，不要写成流水账。
+- Do not start from a formula; rewrite any title that still works with the video name and people's names swapped out.
+- Do not promise what the video does not give: numbers, "best"/"first", open questions - the video must contain them.
+- Do not pass off rewordings of the same sentence as different candidates.
+- Do not invent links, chapter times or platform rules.
+- Do not open the description with links, tags or a byline, and do not write it as a blow-by-blow recap.

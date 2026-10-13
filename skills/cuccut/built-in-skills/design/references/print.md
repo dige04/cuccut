@@ -1,36 +1,36 @@
-# 印刷设计：海报、传单、宣传册、文档，任何以 PDF 导出的东西
+# Print design: posters, flyers, brochures, documents, anything exported as PDF
 
-印刷作品通过 Export PDF 导出，有两种形态。在做第一块画板**之前**决定用哪种；需求没说、又有人能回答时，用平白的话问（「每页单独设计，还是文字自动排到一页页上？多大尺寸？」）；没人可问：文档用流式，其余都用固定页，纸张用 Letter/A4。
+Print work is exported via Export PDF and comes in two forms. Decide which **before** making the first artboard; when the request does not say and someone can answer, ask in plain words ("Is each page designed on its own, or does the text flow onto pages automatically? What size?"); with no one to ask: documents flow, everything else uses fixed pages, on Letter/A4 paper.
 
-- **固定页**（`print` 不写或为 `"fixed"`）：每块画板正好是**一**页 PDF，尺寸就是它 frame 的大小。海报、传单、证书、简历、宣传册的各面、单页介绍：任何作为 layout 来设计的页面，以及任何说明了页数的需求。
-- **流式**（`"print": "flow"` + `"paper": "letter"|"a4"`）：**一**块放连续内容的画板，由导出时分页。报告、备忘录、信件、论文、指南。
+- **Fixed pages** (`print` omitted or `"fixed"`): each artboard is exactly **one** PDF page, the size of its frame. Posters, flyers, certificates, résumés, the panels of a brochure, one-page overviews: any page designed as a layout, and any request that states a page count.
+- **Flow** (`"print": "flow"` + `"paper": "letter"|"a4"`): **one** artboard of continuous content, paginated at export. Reports, memos, letters, papers, guides.
 
-（`print`、`paper`、`w`、`h` 是画板在 canvas.json 里的字段；在由这个类型创建的设计稿里，就是 `<canvas>/canvas.json` 中它的 `boards` entry 里的同名键。）
+(`print`, `paper`, `w`, `h` are the artboard's fields in canvas.json; in a design created by this type, they are the keys of the same name in its `boards` entry in `<canvas>/canvas.json`.)
 
-## 纸张与单位（CSS px，按 96 px/in）
-- 固定页：PDF 页面就是按这个比例换算的 frame；流式：纸张的尺寸。
-- Letter 816×1056 · A4 794×1123 · 横向 = 两者对调（仅限固定页）。
-  北美读者用 Letter，明显使用公制的读者用 A4；拿不准 → Letter。
-- 仅限固定页：Legal 816×1344 · Tabloid 1056×1632 · A5 559×794 ·
-  A3 1123×1587 · 用户**给定**尺寸的海报 = 英寸 × 96（18×24in → 1728×2304；每边 ≤ 8000）。没给尺寸 → 用 Letter/A4 设计，绝不自创纸张尺寸。
-- 1in = 96px · 1pt = 4/3px（12pt = 16px，9pt = 12px）· 0.75in = 72px ·
-  1mm ≈ 3.78px。写的时候用 px；思考时用 pt 和英寸。绝不用 vh/vw 或窗口百分比：它们跟随的是编辑器会改变大小的 viewport，而不是纸张。
+## Paper and units (CSS px, at 96 px/in)
+- Fixed pages: the PDF page is the frame converted at this ratio; flow: the paper size.
+- Letter 816×1056 · A4 794×1123 · landscape = the two swapped (fixed pages only).
+  Letter for North American readers, A4 for readers who clearly use metric; unsure → Letter.
+- Fixed pages only: Legal 816×1344 · Tabloid 1056×1632 · A5 559×794 ·
+  A3 1123×1587 · a poster at a size the user **gave** = inches × 96 (18×24in → 1728×2304; each side ≤ 8000). No size given → design on Letter/A4; never invent a paper size.
+- 1in = 96px · 1pt = 4/3px (12pt = 16px, 9pt = 12px) · 0.75in = 72px ·
+  1mm ≈ 3.78px. Write in px; think in pt and inches. Never use vh/vw or window percentages: they follow the viewport, which the editor resizes, not the paper.
 
-## 固定页
-- 根元素固定为 frame 的 `w`×`h`（`$preview` 也一样）；**填满**页面；超出边缘的内容在 PDF 里会被裁掉，绝不会挪到下一页：动手写之前先规划好高度。
-- 页面是满版出血的：背景可以铺到边缘，内容不行：每条边内侧留出 ≥40px 空白，连续正文四周留 72px（0.75in）。
-- 多页作品是**一组**画板，每页一块，按阅读顺序（左→右，再到下一行）排在设计稿的一个 page 上，这个 page 上不放别的；「All artboards (.pdf)」就是这个 page 上的所有画板，按这个顺序合成一个文件。
-- 页码、页眉、每张纸上的信头：画在每块画板上。双面传单 = 2 块画板。三折页 = 2 块各含 3 栏的画板：外侧一面 = 内折页 · 封底 · **封面**（最右）；内侧一面 = 一个从左→右读的跨页。按读者展开它的顺序来写（封面给出承诺，内页分三拍兑现，封底写具体安排和联系方式）。
+## Fixed pages
+- The root is fixed at the frame's `w`×`h` (and so is `$preview`); it **fills** the page; content past the edges is clipped in the PDF and never moves to the next page: plan the heights before writing.
+- Pages are full-bleed: backgrounds can run to the edge, content cannot: keep ≥40px clear inside every edge, and 72px (0.75in) around running text.
+- Multi-page work is **a set** of artboards, one per page, in reading order (left → right, then the next row) on one page of the design, with nothing else on that page; "All artboards (.pdf)" combines all artboards on that page, in that order, into one file.
+- Page numbers, headers, letterheads on every sheet: draw them on every artboard. A double-sided flyer = 2 artboards. A trifold = 2 artboards of 3 panels each: the outside = inner flap · back · **cover** (rightmost); the inside = one spread read left → right. Write it in the order the reader unfolds it (the cover makes the promise, the inside delivers it in three beats, the back gives the specifics and contact details).
 
-## 流式文档
-- `paper` 为 `"letter"` 时 `w` 816，为 `"a4"` 时 794；只能纵向。根元素 `width` = `w`，**不**设固定高度（印刷文档宽度是固定 px、高度随内容；PAGE 则根本没有 px 宽度），也不要内部滚动容器；frame `h` = 内容的高度，上限 8000（更长的内容仍会完整导出；画布只显示前 8000px）。
-- 页边距由你来定：根元素四周 padding 72px（0.75in），这个 padding 就是打印出来的页边距。每个分页处，导出只在切口下方和下一页内容上方加 ≈53px（一页的 5%），用 `<body>`/`<html>` 的背景填充：纸张颜色设在那里，不要设在内部的盒子上。
-- 分页位置由导出器决定，不由 CSS 决定：它在文本行**之间**切，绝不切穿 `<img>`/`<svg>`（照片用 `<img>` 放，绝不用 `background-image`：那样会被切开）；其他东西都不会保持完整：带边框的盒子、表格或卡片都可能在其中两行之间被分开。`break-before/inside`、`orphans`/`widows`、`@page` 和重复的 `<thead>` 在这里都不起作用，你也没法强制换页。每个图 + 图注都要远小于一页；图注仍可能落到下一页，高于 ≈950px 的图片会在页尾处被切断。在意分割位置或需要强制从新页开始时，改做一组固定页。
-- 连续正文只用**一**栏：CSS `columns` 和并排的文字栏会贯穿整篇文档的高度，再被切到各页上：只在比一页短的块里用它们。
-- 没有每页重复的东西（没有页眉、页脚或页码）；不用 `position: fixed/sticky`；每块画板 ≤100 页。
+## Flow documents
+- `w` is 816 for `paper` `"letter"` and 794 for `"a4"`; portrait only. The root's `width` = `w`, with **no** fixed height (a print document has a fixed px width and content-driven height; a PAGE has no px width at all) and no inner scroll containers; the frame's `h` = the content's height, capped at 8000 (longer content still exports in full; the canvas shows only the first 8000px).
+- You set the margins: 72px (0.75in) padding around the root, and that padding is the printed margin. At each page break, export adds only ≈53px (5% of a page) below the cut and above the next page's content, filled with the `<body>`/`<html>` background: set the paper color there, not on inner boxes.
+- The exporter decides where pages break, not CSS: it cuts **between** lines of text and never through an `<img>`/`<svg>` (put photos in `<img>`, never `background-image`: that gets cut); nothing else stays whole: a bordered box, table or card can be split between any two of its lines. `break-before/inside`, `orphans`/`widows`, `@page` and repeated `<thead>` have no effect here, and you cannot force a page break. Keep every figure + caption well under a page; a caption can still land on the next page, and images taller than ≈950px get cut at the page end. When you care where things split or need to force a new page, make a set of fixed pages instead.
+- Running text in **one** column only: CSS `columns` and side-by-side text columns run the full height of the document and are then cut across pages: use them only in blocks shorter than a page.
+- Nothing repeats per page (no headers, footers or page numbers); no `position: fixed/sticky`; ≤100 pages per artboard.
 
-## 文字、表格、ink
-- 文档以自己的 `<h1>` 开头（不另做报头），然后是清晰的 h2/h3 层级；正文 16px（12pt），行高 1.5–1.65，measure 60–75 个字符；图注和脚注 ≥12px（9pt），不能再小。标题用 `text-wrap: balance`，正文用 `pretty`。
-- 表格：一行表头，线 ≥1px（更细的发丝线印到纸上会看不见），数字右对齐；图和代码块配一行图注。
-- ink：浅色纸上用接近黑色的正文；不要大面积深色铺底；灰色文字不能浅于 #767676；描边 ≥1px；转成灰度后仍必须能读。
-- 传单是隔着一个房间、三秒钟内被读完的：**一**行主导文字（≤6 个词，80px/60pt+），其余一切明显处于从属地位；五个 W——是什么、什么时候、在哪里、花多少钱、一种行动方式（短网址或 QR 码、电话、可选的一排虚线格撕条）——紧凑地放在一起，不要散在大段文字里；优先用平涂色块和矢量图形，而不是照片和渐变；删减 copy，直到层级一眼就能看出来。
+## Text, tables, ink
+- A document opens with its own `<h1>` (no separate masthead), then a clear h2/h3 hierarchy; body 16px (12pt), line height 1.5–1.65, measure 60–75 characters; captions and footnotes ≥12px (9pt), never smaller. Headings use `text-wrap: balance`, body text `pretty`.
+- Tables: one header row, rules ≥1px (thinner hairlines vanish on paper), numbers right-aligned; figures and code blocks get a one-line caption.
+- Ink: near-black body text on light paper; no large dark backgrounds; gray text no lighter than #767676; strokes ≥1px; it must still read when converted to grayscale.
+- A flyer is read from across a room in three seconds: **one** dominant line (≤6 words, 80px/60pt+), everything else clearly subordinate; the five Ws (what, when, where, how much, one way to act: a short URL or QR code, a phone number, an optional row of dashed tear-off tabs) grouped tightly together, not scattered through paragraphs; prefer flat color blocks and vector graphics over photos and gradients; cut copy until the hierarchy is obvious at a glance.

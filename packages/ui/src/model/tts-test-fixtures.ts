@@ -1,9 +1,9 @@
-// i18n-ignore-file: 测试夹具，模拟 Runtime 发来的数据
+// i18n-ignore-file: test fixtures mimicking data sent by the Runtime; tests assert these sample values
 import type { LocalSpeechTraits, ModelLicense, SpeechModelInfo } from '@cuccut/protocol';
 
 /**
- * 本地语音合成模型的单测样本：形状照 Runtime 的 `localSpeechModelInfo`（packages/models/src/local-speech.ts）与
- * 模型包表（speech-bundles.ts）。
+ * Unit-test samples for local speech synthesis models: shaped like the Runtime's `localSpeechModelInfo` (packages/models/src/local-speech.ts) and
+ * the model bundle table (speech-bundles.ts).
  */
 
 const BUILTINS: [string, string][] = [

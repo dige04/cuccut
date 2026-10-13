@@ -10,17 +10,25 @@ import type { AgentPrincipal } from './grants.ts';
 import { approvalField, confirmSummary, scopedProject, type ToolPrincipal, type ToolScope } from './tool-scope.ts';
 
 /**
- * 项目工具（Agent 面设计 §4.3）：列出范围之内的已登记项目（`projects_list`），在一个目录上新建并登记项目（`projects_create`）。
+ * Project tools (agent surface design §4.3): list registered projects within scope (`projects_list`), and create and
+ * register a project on a directory (`projects_create`).
  *
- * - `projects_list` 三个面都有，范围由 `ToolScope.listProjects` 决定：会话只看得到所属的项目，对外服务只看得到范围之内的视频所属的项目
- *   （全部视频时是全部已登记项目，不给路径），终端是全部。
- * - `projects_create` 只在工具桥与 CLI（对外服务不新建项目）。`path` 相对会话的工作目录或终端的 cwd（`ToolScope.saveRoot`），绝对路径照收；
- *   目录不存在时建出来，已有的目录直接登记（与 `projects.open` 相同，写 `.ccut/project.json`）。会话里在工作目录之内是 `edit`，
- *   之外是写项目目录之外（`high`），按访问模式确认；终端不走审批。已经登记过的项目原样返回，不确认、不改名。
- * - `projects_adopt_session` 只在工具桥：用户明确要建项目时，把不属于项目的会话放进默认项目目录下的一个新项目（名字默认取会话里最早建的
- *   视频，`Harness.ensureConversationProject`，架构设计 §3.10），会话的视频与文件搬过去，之后在项目里工作。只写 CucCut 的项目目录下
- *   一个新建的目录、搬的是会话自己的工作目录，不覆盖任何文件，所以按 `edit` 确认。已经属于项目的会话原样返回那个项目。工作目录里还有
- *   视频被界面、任务或别的连接开着时拒绝（`VIDEO_IN_USE`），什么都不动。
+ * - `projects_list` is on all three surfaces; its scope comes from `ToolScope.listProjects`: a session sees only the
+ *   project it belongs to, an external service sees only the projects of videos within its scope (all registered
+ *   projects, without paths, when it has all videos), and the terminal sees everything.
+ * - `projects_create` is only on the tool bridge and the CLI (external services do not create projects). `path` is
+ *   relative to the session's working directory or the terminal's cwd (`ToolScope.saveRoot`); absolute paths are
+ *   accepted. A missing directory is created; an existing one is registered as is (same as `projects.open`, writing
+ *   `.ccut/project.json`). In a session it is `edit` inside the working directory and outside it, it counts as writing
+ *   outside the project directory (`high`), confirmed according to the access mode; the terminal skips approval. An already
+ *   registered project is returned as is, without confirmation or renaming.
+ * - `projects_adopt_session` is only on the tool bridge: when the user explicitly asks for a project, it moves a session
+ *   that belongs to no project into a new project under the default projects directory (named by default after the
+ *   session's earliest video, `Harness.ensureConversationProject`, architecture design §3.10); the session's videos and
+ *   files move there and work continues inside the project. It only writes a newly created directory under CucCut's
+ *   projects directory and moves the session's own working directory, overwriting no files, so it is confirmed as
+ *   `edit`. A session that already belongs to a project gets that project back as is. If videos in the working
+ *   directory are still open in the UI, a task or another connection, it refuses (`VIDEO_IN_USE`) and changes nothing.
  */
 
 export interface ProjectToolsDeps {
@@ -29,12 +37,11 @@ export interface ProjectToolsDeps {
   scope: ToolScope;
 }
 
-// i18n-ignore-start: 给模型的工具说明、错误与下一步
 const schemas = {
   projects_list: z.strictObject({}),
   projects_create: z.strictObject({
-    path: z.string().min(1).max(1000).describe('项目目录：相对工作目录（终端里是当前目录），或绝对路径；不存在时新建，已有的目录直接登记'),
-    name: z.string().trim().min(1).max(200).optional().describe('可选。项目的显示名；不给时用目录名'),
+    path: z.string().min(1).max(1000).describe('Project directory: relative to the working directory (the current directory in the terminal), or absolute; created if missing, an existing directory is registered as is'),
+    name: z.string().trim().min(1).max(200).optional().describe('Optional. Display name of the project; defaults to the directory name'),
   }),
   projects_adopt_session: z.strictObject({
     name: z
@@ -43,7 +50,7 @@ const schemas = {
       .min(1)
       .max(200)
       .optional()
-      .describe('可选。项目名；不给时取会话里最早建的视频的名字，还没有视频时取会话标题。用户说了名字才给'),
+      .describe('Optional. Project name; defaults to the name of the earliest video created in the session, or the session title if there are no videos yet. Only pass it when the user gave a name'),
   }),
 };
 
@@ -52,70 +59,68 @@ type Args<N extends ToolName> = z.infer<(typeof schemas)[N]>;
 
 const DEFINITIONS: Record<ToolName, ToolInfo> = {
   projects_list: {
-    title: '列出项目',
+    title: 'List projects',
     description: [
-      '列出你能用的 CucCut 项目。',
-      '每个项目：projectId、名字、目录（对外服务不给）与其中的视频数（数得出来时）。videos_create 的 project 参数用这里的 projectId（终端里用目录）。',
-      '会话里只有这个会话所属的项目（不属于项目的会话没有，它的视频在它自己的工作目录里）；对外服务只列访问范围之内的视频所属的项目。',
+      'List the CucCut projects you can use.',
+      'Each project: projectId, name, directory (not given to external services) and the number of videos in it (when it can be counted). Use the projectId from here for videos_create\'s project argument (the directory in the terminal).',
+      'In a session there is only the project this session belongs to (a session with no project has none; its videos live in its own working directory); external services list only the projects of videos within their access scope.',
     ].join('\n'),
     annotations: { readOnlyHint: true },
     effect: 'query',
-    examples: [{ title: '列出项目', args: {} }],
+    examples: [{ title: 'List projects', args: {} }],
     surfaces: ['agent', 'mcp', 'cli'],
   },
   projects_create: {
-    title: '新建项目',
+    title: 'Create project',
     description: [
-      '在一个目录上新建并登记 CucCut 项目。',
-      'path 相对工作目录（终端里是当前目录），也可以是绝对路径；目录不存在时新建，已有的目录直接登记（写入 .ccut/project.json，不动别的文件）。已经是项目的原样返回。',
-      '会话里：工作目录之内按普通修改确认，之外按高风险确认；新项目出现在用户的项目列表里，但这个会话仍在原来的工作目录里工作。用户只是说「建个项目」、没给目录时用 projects_adopt_session。',
+      'Create and register a CucCut project on a directory.',
+      'path is relative to the working directory (the current directory in the terminal), or absolute; a missing directory is created, an existing one is registered as is (writing .ccut/project.json and touching no other files). An existing project is returned as is.',
+      'In a session: inside the working directory it is confirmed as a normal edit, outside as high risk; the new project appears in the user\'s project list, but this session keeps working in its original working directory. When the user just says "make a project" without giving a directory, use projects_adopt_session.',
     ].join('\n'),
     annotations: { destructiveHint: false, idempotentHint: true },
     effect: 'mutation',
     examples: [
-      { title: '在当前目录下建项目', args: { path: 'my-show' } },
-      { title: '指定名字', args: { path: '/Users/me/Videos/episode-12', name: '第 12 期' } },
+      { title: 'Create a project under the current directory', args: { path: 'my-show' } },
+      { title: 'With a name', args: { path: '/Users/me/Videos/episode-12', name: 'Episode 12' } },
     ],
     surfaces: ['agent', 'cli'],
     positional: 'path',
   },
   projects_adopt_session: {
-    title: '把会话放进新项目',
+    title: 'Move session into a new project',
     description: [
-      '用户明确要求建项目（「建个项目」「放进项目里」）时用：在 CucCut 的项目目录下新建项目，把这个会话的视频与文件搬进去，会话从此属于它。',
-      '项目名不给时取会话里最早建的视频的名字（还没有视频时取会话标题）。用户没要求时不要调用：不属于项目的会话照样能新建、下载、编辑视频，视频就留在会话的工作目录里。',
-      '会话已经属于项目时原样返回那个项目。搬完之后会话的工作目录换成项目目录。工作目录里还有视频在编辑器、任务或别的连接里开着时拒绝（VIDEO_IN_USE），什么都不动：请用户关掉那几部视频后再试。',
+      'Move this session into a new project, only when the user explicitly asks.',
+      'For requests like "make a project" or "put this in a project": creates a project under CucCut\'s projects directory, moves this session\'s videos and files into it, and from then on the session belongs to it.',
+      'Without a name, the project is named after the earliest video created in the session (or the session title if there are no videos yet). Do not call it unless the user asked: a session with no project can still create, download and edit videos, which simply stay in the session\'s working directory.',
+      'If the session already belongs to a project, that project is returned as is. After the move, the session\'s working directory becomes the project directory. If videos in the working directory are still open in the editor, a task or another connection, it refuses (VIDEO_IN_USE) and changes nothing: ask the user to close those videos and try again.',
     ].join('\n'),
     annotations: { destructiveHint: false, idempotentHint: true },
     effect: 'mutation',
     examples: [
-      { title: '以视频命名', args: {} },
-      { title: '用户给了名字', args: { name: '第 12 期' } },
+      { title: 'Name it after the video', args: {} },
+      { title: 'The user gave a name', args: { name: 'Episode 12' } },
     ],
     surfaces: ['agent'],
   },
 };
-// i18n-ignore-end
 
-// i18n-ignore-start: 给模型的工具说明与下一步
-/** 列出了项目时的下一步：用它新建视频。 */
+/** Next step when projects were listed: use one to create a video. */
 const LIST_NEXT: Record<ToolPrincipal['kind'], string> = {
-  agent: '新建视频时把 projectId 作为 videos_create 的 project；视频清单用 videos_list。',
-  local: '新建视频时把项目目录（path）作为 videos_create 的 project；视频清单用 videos_list。',
-  service: '新建视频时把 projectId 作为 videos_create（或 download、transcribe 的新视频）的 project；视频清单用 videos_list。',
+  agent: 'When creating a video, pass the projectId as videos_create\'s project; list videos with videos_list.',
+  local: 'When creating a video, pass the project directory (path) as videos_create\'s project; list videos with videos_list.',
+  service: 'When creating a video, pass the projectId as the project of videos_create (or of a new video from download or transcribe); list videos with videos_list.',
 };
 
-/** 一个项目都没有时的出路：各个面能做的不一样（对外服务不能新建项目）。 */
+/** The way forward when there are no projects at all: each surface can do different things (external services cannot create projects). */
 const EMPTY_NEXT: Record<ToolPrincipal['kind'], string> = {
   agent:
-    '这个会话不属于任何项目：videos_create、download 的新视频不给 project，建在会话的工作目录里，不必先建项目。用户明确要建项目时用 projects_adopt_session（默认以视频命名）。',
+    'This session does not belong to any project: for new videos from videos_create or download, omit project and they are created in the session\'s working directory; there is no need to create a project first. When the user explicitly asks for a project, use projects_adopt_session (named after the video by default).',
   local:
-    '还没有登记的项目：videos_create 不给 project 时视频建在当前目录所属的项目里，没有时登记默认项目目录下的 CLI 项目；要放在指定的目录里，先用 projects_create 在那里新建并登记项目。',
+    'No projects registered yet: when videos_create gets no project, the video is created in the project the current directory belongs to, or, if there is none, in the CLI project registered under the default projects directory; to put it in a specific directory, first create and register a project there with projects_create.',
   service:
-    '访问范围之内没有项目，而对外服务不能新建项目，新视频只能建在已登记的项目里：请用户在 CucCut 里登记一个项目（或在终端运行 cuccut projects create <目录>；CucCut 里一个项目都没有时，cuccut mcp install 会登记默认的 CLI 项目）；访问范围是视频名单时，再请用户把项目里的视频加进范围。之后重新调用 projects_list。',
+    'There are no projects within the access scope, and external services cannot create projects, so new videos can only be created in registered projects: ask the user to register a project in CucCut (or run cuccut projects create <directory> in a terminal; when CucCut has no projects at all, cuccut mcp install registers the default CLI project); if the access scope is a list of videos, also ask the user to add videos from the project to the scope. Then call projects_list again.',
 };
 
-// i18n-ignore-end
 export class ProjectTools implements ToolSet {
   readonly schemas = schemas;
   readonly definitions = DEFINITIONS;
@@ -134,8 +139,7 @@ export class ProjectTools implements ToolSet {
       case 'projects_adopt_session':
         return this.#adoptSession(args as Args<'projects_adopt_session'>, principal);
       default:
-        // i18n-ignore: 给模型的工具说明、错误与下一步
-        return Promise.reject(new ToolError('UNKNOWN_TOOL', `没有这个工具：${name}`));
+        return Promise.reject(new ToolError('UNKNOWN_TOOL', `No such tool: ${name}`));
     }
   }
 
@@ -153,8 +157,7 @@ export class ProjectTools implements ToolSet {
     const target = path.resolve(base, args.path);
     const stat = await fs.stat(target).catch(() => null);
     if (stat && !stat.isDirectory()) {
-      // i18n-ignore: 给模型的工具说明、错误与下一步
-      throw new ToolError('INVALID_ARGUMENTS', `不是目录：${args.path}`, { issues: [{ path: 'path', message: '已经存在，但不是目录' }] });
+      throw new ToolError('INVALID_ARGUMENTS', `Not a directory: ${args.path}`, { issues: [{ path: 'path', message: 'Exists but is not a directory' }] });
     }
     const real = stat ? await fs.realpath(target) : null;
     const registered = real ? harness.listProjects().find((p) => p.path === real) : undefined;
@@ -173,7 +176,7 @@ export class ProjectTools implements ToolSet {
     });
     if (!stat) await fs.mkdir(target, { recursive: true });
     let project = await harness.openProject(target);
-    // 副本里的视频在后台换标识（与 `projects.open` 相同）。
+    // Videos in a copy get new identities in the background (same as `projects.open`).
     void videos.claimProjectVideos(project).catch(() => {});
     if (args.name && args.name !== project.name) project = await harness.updateProject({ projectId: project.id, name: args.name });
     return { ...scopedProject(project), created: !stat, existing: false, ...approvalField(approval), next: nextAfterCreate(principal) };
@@ -183,8 +186,7 @@ export class ProjectTools implements ToolSet {
     const { scope, harness, videos } = this.#deps;
     const access = scope.authorize(principal, true);
     if (principal.kind !== 'agent') {
-      // i18n-ignore: 给模型的工具说明、错误与下一步
-      throw new ToolError('UNKNOWN_TOOL', '没有这个工具：projects_adopt_session');
+      throw new ToolError('UNKNOWN_TOOL', 'No such tool: projects_adopt_session');
     }
     const conversationId = (principal as AgentPrincipal).conversationId;
     const { conversation } = harness.getConversation(conversationId);
@@ -196,7 +198,7 @@ export class ProjectTools implements ToolSet {
       ...confirmSummary(RcAgentTools.adoptSessionSummary({ name: args.name ?? null })),
       risk: 'edit',
     });
-    // 这个智能体自己开着的、在工作目录里的视频先放下，才能一起搬走；界面或任务还开着的，Harness 拒绝绑定（`VIDEO_IN_USE`）。
+    // First release videos in the working directory that this agent itself has open, so they can move along; for ones still open in the UI or a task, the Harness refuses to bind (`VIDEO_IN_USE`).
     const cwd = await fs.realpath(conversation.cwd).catch(() => conversation.cwd);
     for (const ref of videos.openRefs()) {
       if (inside(ref.path, cwd)) await videos.close(ref.videoId, principal).catch(() => {});
@@ -215,22 +217,18 @@ export class ProjectTools implements ToolSet {
   }
 }
 
-// i18n-ignore-start: 给模型的工具说明、错误与下一步
 const ADOPT_NEXT =
-  '会话已经属于这个项目：新视频不给 project 就建在项目里，视频与文件在项目目录里（相对路径不变）。告诉用户项目的名字与位置。';
+  'The session now belongs to this project: new videos without project are created in the project, and videos and files are in the project directory (relative paths unchanged). Tell the user the project\'s name and location.';
 const ADOPT_BUSY_NEXT =
-  '没有建项目，会话和视频都原样留着、照常能用。告诉用户是哪几部视频还开着，请用户在编辑器里关掉它们（或等任务结束）后再说一次；不要自己反复重试。';
-// i18n-ignore-end
+  'No project was created; the session and videos stay as they were and work as usual. Tell the user which videos are still open and ask them to close those in the editor (or wait for the task to finish) and then ask again; do not keep retrying on your own.';
 
 function nextAfterCreate(principal: ToolPrincipal): string {
-  // i18n-ignore-start: 给模型的工具说明、错误与下一步
   return principal.kind === 'agent'
-    ? '项目已登记，用户能在 CucCut 的项目列表里看到；这个会话仍在原来的工作目录里工作，videos_create 建不到新项目里。告诉用户项目的位置；要让这个会话和它的视频进项目，用 projects_adopt_session。'
-    : '项目已登记：videos_create 的 project 给这个项目目录（path）就建在这个项目里。';
-  // i18n-ignore-end
+    ? 'The project is registered and the user can see it in CucCut\'s project list; this session keeps working in its original working directory, and videos_create cannot create videos in the new project. Tell the user where the project is; to move this session and its videos into a project, use projects_adopt_session.'
+    : 'The project is registered: pass this project directory (path) as videos_create\'s project to create videos in it.';
 }
 
-/** 还不存在的路径：向上找到第一个存在的祖先，取它的真实路径再接上剩下的部分（判断在不在工作目录里用）。 */
+/** A path that does not exist yet: find the first existing ancestor, take its real path and append the rest (used to tell whether it is inside the working directory). */
 async function nearestReal(target: string): Promise<string> {
   const rest: string[] = [];
   for (let dir = target; ; dir = path.dirname(dir)) {

@@ -288,7 +288,7 @@ describe('Runtime（假 Driver）', () => {
     });
     const turn = await until(() => driver.sessions[0]?.calls.find((c) => c.startsWith('startTurn:')));
     expect(turn.startsWith('startTurn:给我的新耳机做一条发布片\n\n<cuccut-template id="launch-film" version="1.1.0">')).toBe(true);
-    expect(turn).toContain('先和用户确认简报');
+    expect(turn).toContain('First agree on the brief with the user');
     expect(turn).toContain(prompt.trim());
     const message = runtime.harness.getConversation(conversation.id).items.find((i) => i.kind === 'user-message');
     expect(message).toMatchObject({

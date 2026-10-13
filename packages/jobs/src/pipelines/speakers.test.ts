@@ -65,7 +65,7 @@ const pack = (state: ModelBundleStatus['state']) => ({ bundleId: 'speaker-diariz
 
 let dir: string;
 beforeEach(async () => {
-  dir = await fs.mkdtemp(path.join(os.tmpdir(), 'bc-speakers-'));
+  dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cc-speakers-'));
 });
 afterEach(async () => {
   await fs.rm(dir, { recursive: true, force: true });

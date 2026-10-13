@@ -108,7 +108,7 @@ describe('仓库里的内置 skill', () => {
 
   it('说明书 SKILL.md 的「内置 skill」表（只给 CLI 面）列出全部内置 skill，只给会话内智能体的除外', async () => {
     const manual = await fs.readFile(path.join(builtinDir, '..', 'SKILL.md'), 'utf8');
-    const start = manual.indexOf('### 内置 skill');
+    const start = manual.indexOf('### Built-in skills');
     expect(start).toBeGreaterThan(0);
     const section = manual.slice(start, manual.indexOf('<!-- /surface -->', start));
     const ids = [...section.matchAll(/^\| \{\{skill:([a-z0-9-]+)\}\} \|/gm)].map((row) => row[1]);

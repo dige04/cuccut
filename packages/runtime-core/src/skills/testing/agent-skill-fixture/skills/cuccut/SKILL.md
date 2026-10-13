@@ -1,51 +1,51 @@
 ---
 name: cuccut
-description: 测试用的说明书：用 CucCut 转录、翻译、剪辑与导出视频。
+description: A guide for tests - transcribe, translate, edit and export videos with CucCut.
 ---
 
 # CucCut
 
-有媒体要转录、翻译、剪辑或导出时用。
+Use it when there is media to transcribe, translate, edit or export.
 
-## 启动
+## Start
 
 <!-- surface: cli -->
-1. 找到 CLI：`cuccut` 在 PATH，或 `CUCCUT_CLI`。细节见 [start](references/start.md)，走 MCP 见 [mcp](references/mcp.md)。
-2. `cuccut version`；退出码 3 时请用户更新，不绕过。
-3. `cuccut status` 看这台机器能做什么。
+1. Find the CLI: `cuccut` on PATH, or `CUCCUT_CLI`. Details in [start](references/start.md); for MCP see [mcp](references/mcp.md).
+2. `cuccut version`; on exit code 3 ask the user to update, and do not work around it.
+3. `cuccut status` shows what this machine can do.
 <!-- /surface -->
 <!-- surface: agent -->
-工具已经接好，直接按任务读一页目录。
+The tools are already connected: read one catalog page for the task.
 <!-- /surface -->
 
-## 目录
+## Catalog
 
-| 页 | 覆盖什么 |
+| Page | What it covers |
 | --- | --- |
-| [editing](references/catalog/editing.md) | 时间线上的修改 |
-| [media](references/catalog/media.md) | 素材与取帧 |
+| [editing](references/catalog/editing.md) | Changes on the timeline |
+| [media](references/catalog/media.md) | Assets and frames |
 
-端到端的做法在 [workflows](references/workflows.md)，错误怎么处理见 [conventions](references/conventions.md#错误码之后做什么)，启动细节在 [start](references/start.md)。
+End-to-end recipes are in [workflows](references/workflows.md), how to handle errors is in [conventions](references/conventions.md#what-to-do-after-an-error-code), and start-up details are in [start](references/start.md).
 
-## 硬规则
+## Hard rules
 
-- 文字工作自己做：先 {{tool:documents_read}}，译完用 {{tool:documents_put}} 写回，不配文本模型。
-- 真相文件只经命令写，不碰 `video.db`。
+- Do text work yourself: first {{tool:documents_read}}, then write the translation back with {{tool:documents_put}}; do not configure a text model.
+- Write truth files only through commands; never touch `video.db`.
 <!-- surface: cli -->
-- 不可撤销的命令先问用户，用户同意后再加 `--yes`。
+- Ask the user before an irreversible command, and add `--yes` only once they agree.
 <!-- /surface -->
 <!-- surface: agent -->
-- 不可撤销的操作先问用户，用户同意后再做。
+- Ask the user before an irreversible operation, and do it only once they agree.
 <!-- /surface -->
-- 版本冲突时重新 {{tool:videos_inspect}}，再按新的 {{arg:revision}} 提交（字段写成 `{{arg:expectedRevision}}`）。
-- 润色的做法见 {{skill:demo-polish}}。
+- On a revision conflict, run {{tool:videos_inspect}} again, then submit with the new {{arg:revision}} (the field is written `{{arg:expectedRevision}}`).
+- For how to polish, see {{skill:demo-polish}}.
 
-调用的样子：
+What a call looks like:
 
 ```text
 {{tool:edits_apply}} {{arg:expectedRevision}} 12
 ```
 
-## 交付
+## Delivery
 
-报告改了什么、产物的真实路径、还要用户审的、没验证的。
+Report what changed, the real paths of the outputs, what the user still has to review and what was not verified.

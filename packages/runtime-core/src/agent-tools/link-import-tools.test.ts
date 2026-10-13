@@ -143,7 +143,7 @@ describe('download：文件存到哪里', () => {
     const { deps } = harness();
     const tools = new LinkImportTools(deps);
     const imported = (await tools.dispatch('download', { url: LINK, video: 'vid_1' }, agent)) as { next: string };
-    expect(imported.next).toContain('在下载目录');
+    expect(imported.next).toContain('in the downloads directory');
     const toProject = (await tools.dispatch('download', { url: LINK, project: 'prj_1' }, agent)) as { next: string };
     expect(toProject.next).toContain('downloads/');
   });

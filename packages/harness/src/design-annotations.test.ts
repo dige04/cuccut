@@ -45,15 +45,15 @@ describe('withDesignAnnotations', () => {
         '',
         '<cuccut-design-annotations canvas="poster/">',
         '1. Main › Button "Book now"',
-        '   定位：Main.dc.html › body > div > button "Book now"',
-        '   批注：按钮再大一点',
+        '   Location: Main.dc.html › body > div > button "Book now"',
+        '   Note: 按钮再大一点',
         '3. Cart › Title',
-        '   定位：Main.dc.html › body > div > button "Book now"',
-        '   批注：加粗',
+        '   Location: Main.dc.html › body > div > button "Book now"',
+        '   Note: 加粗',
         '</cuccut-design-annotations>',
         '<cuccut-design-annotations canvas="/abs/other/">',
         '2. Area over Main',
-        '   批注：留白太多',
+        '   Note: 留白太多',
         '        往上挪',
         '</cuccut-design-annotations>',
       ].join('\n'),
@@ -88,15 +88,15 @@ describe('withDesignSystemAnnotations', () => {
         '',
         '<cuccut-design-system-annotations system="spectrum-2/">',
         '1. 设计系统「Spectrum 2」 › Components › 组件 “Button”',
-        '   定位：Component "Button" in section components (components/Button/) · comp-Button',
-        '   批注：圆角改小',
+        '   Location: Component "Button" in section components (components/Button/) · comp-Button',
+        '   Note: 圆角改小',
         '3. Overview › 封面',
-        '   定位：Component "Button" in section components (components/Button/) · comp-Button',
-        '   批注：换张图',
+        '   Location: Component "Button" in section components (components/Button/) · comp-Button',
+        '   Note: 换张图',
         '</cuccut-design-system-annotations>',
         '<cuccut-design-system-annotations system="/abs/ember/">',
         '2. Colors › token “x”',
-        '   批注：改深一点',
+        '   Note: 改深一点',
         '        对比度不够',
         '</cuccut-design-system-annotations>',
       ].join('\n'),
@@ -264,7 +264,7 @@ describe('send 与 steer 带设计稿标注', () => {
     });
     expect(result).toEqual({ status: 'steered' });
     expect(session.inputs[1]).toContain('<cuccut-design-annotations canvas="poster/">');
-    expect(session.inputs[1]).toContain('   批注：换个颜色');
+    expect(session.inputs[1]).toContain('   Note: 换个颜色');
     expect(userMessages(conversation.id)[1]).toMatchObject({ text: '顺便改这里', designAnnotations: [annotation] });
   });
 });
@@ -304,7 +304,7 @@ describe('send 与 steer 带设计系统标注', () => {
     });
     expect(result).toEqual({ status: 'steered' });
     expect(session.inputs[1]).toContain('<cuccut-design-system-annotations system="spectrum-2/">');
-    expect(session.inputs[1]).toContain('   批注：主色再亮一点');
+    expect(session.inputs[1]).toContain('   Note: 主色再亮一点');
     expect(userMessages(conversation.id)[1]).toMatchObject({ text: '顺便改这里', designSystemAnnotations: [annotation] });
   });
 });

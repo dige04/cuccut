@@ -25,167 +25,176 @@ import type { AgentPrincipal } from './grants.ts';
 import { ToolError } from './tool-catalog.ts';
 
 /**
- * 工具的权限与范围（架构设计 §3.5、§4.8）。同一套工具实现（视频、模型）服务两种主体，区别只在这里：
+ * Tool permissions and scope (architecture design §3.5, §4.8). One set of tool implementations (video, model) serves several
+ * kinds of principal; the differences live only here:
  *
- * - 会话里的智能体（`AgentScope`）：工具只在任务里可用，规划模式只读，范围是会话的来源目录；有副作用的调用按会话此刻的
- *   访问模式与动作的风险查表（§3.12），要问的在会话里等用户；
- * - 对外服务的客户端（`ServiceScope`）：访问策略给出范围（全部视频或名单）与操作等级，`ask` 下逐次由用户确认；
- * - 终端里的用户本人（`LocalScope`，`catalog.call`）：用户能访问的一切，相对路径按 cwd 解析，不走 CucCut 的审批。
+ * - the agent in a session (`AgentScope`): tools are available only during a task, plan mode is read-only, and the scope is the
+ *   session's source directory; calls with side effects are looked up by the session's current access mode and the action's
+ *   risk (§3.12), and those that must ask wait for the user in the session;
+ * - an external service client (`ServiceScope`): the access policy gives the scope (all videos or a list) and the operation
+ *   level; under `ask` the user confirms each call;
+ * - the user themselves in a terminal (`LocalScope`, `catalog.call`): everything the user can access, relative paths resolve
+ *   against cwd, no CucCut approval.
  *
- * 一份目录同时服务会话里的智能体与终端时，工具组拿到的是 `ScopeRouter`：按主体的种类转给各自的范围。
+ * When one catalog serves both the session agent and the terminal, tool sets get a `ScopeRouter`, which forwards to each
+ * principal kind's own scope.
  *
- * 工具先 `authorize`，有副作用的再 `confirm`，然后经范围打开视频、提交任务；看得到哪些任务与产物也由范围决定。
+ * A tool first calls `authorize`, then `confirm` if it has side effects, then opens videos and submits jobs through the scope;
+ * which jobs and artifacts are visible is also decided by the scope.
  */
 
-/** 对外服务的主体（§4.8）：每个通过认证的外部请求一个，`name` 是服务 ID（操作者记为 `external:<serviceId>`）。 */
+/** An external service principal (§4.8): one per authenticated external request; `name` is the service ID (the actor is recorded as `external:<serviceId>`). */
 export interface ServicePrincipal extends TrustedPrincipal {
   kind: 'service';
   serviceId: ServiceId;
   clientId: string;
   clientName: string;
-  /** 外部请求断开时中止：等待中的审批随之取消。 */
+  /** Aborted when the external request disconnects: pending approvals are cancelled with it. */
   signal: AbortSignal;
-  /** 审计：这次请求解析到的目标视频（范围之内的）。 */
+  /** Audit: the target video this request resolved to (within scope). */
   audit: { videoId: Id | null };
 }
 
 /**
- * 终端里的用户本人（`catalog.call`，§3.5）：CLI 或桌面连接经网关按名调用目录里的工具。范围是用户能访问的一切，相对路径按
- * `cwd` 解析；写入的操作者是 `user_local`（与桌面界面共用撤销栈），任务的提交者是发起调用的连接；不走 CucCut 的审批。
+ * The user themselves in a terminal (`catalog.call`, §3.5): a CLI or desktop connection calls catalog tools by name through the
+ * gateway. The scope is everything the user can access, relative paths resolve against `cwd`; the actor for writes is
+ * `user_local` (sharing the undo stack with the desktop UI), the job submitter is the calling connection; no CucCut approval.
  */
 export interface LocalPrincipal extends TrustedPrincipal {
   kind: 'local';
-  /** 发起调用的网关连接：经它打开的视频在连接断开时随之放下（与界面打开的相同）。 */
+  /** The calling gateway connection: videos opened through it are released when it disconnects (same as those opened by the UI). */
   connectionId: string;
-  /** 发起调用的连接种类（审计）。 */
+  /** The kind of the calling connection (audit). */
   client: 'cli' | 'desktop';
-  /** CLI 的工作目录（绝对的真实路径），相对路径按它解析。 */
+  /** The CLI's working directory (absolute real path); relative paths resolve against it. */
   cwd: string;
-  /** 显式指定或从 cwd 向上找到的项目目录（真实路径）；没有则 null。 */
+  /** The project directory given explicitly or found by walking up from cwd (real path); null if none. */
   projectDir: string | null;
 }
 
 export type ToolPrincipal = AgentPrincipal | ServicePrincipal | LocalPrincipal;
 
-/** 一次调用的授权结果：提交任务时的提交者，以及范围自己的上下文。 */
+/** The authorization result of one call: the submitter for jobs, plus the scope's own context. */
 export interface ToolAccess {
   readonly principal: ToolPrincipal;
   readonly submitter: JobSubmitter;
 }
 
 /**
- * 有副作用的调用在执行之前的确认（§3.12）：显示给用户的内容与动作的风险等级。`video` 是调用方给的视频参数，
- * 确认之前先按范围解析；`targets` 是别的目标（文件）。`risk` 不给时按 `TOOL_RISK` 里工具的默认等级。
+ * Confirmation before a call with side effects runs (§3.12): what is shown to the user and the action's risk level. `video` is
+ * the caller's video argument, resolved against the scope before confirming; `targets` are other targets (files). Without
+ * `risk`, the tool's default level in `TOOL_RISK` applies.
  */
 export interface ToolConfirmation {
   tool: string;
   video?: string;
   targets?: string[];
   summary: string;
-  /** `summary` 的消息引用（文案目录 rcAgentTools）；审批动作还没有引用字段时只用 `summary`。 */
+  /** Message reference for `summary` (copy catalog rcAgentTools); approval actions without a reference field use `summary` only. */
   summaryRef?: MessageRef;
   risk?: RiskLevel;
   /**
-   * 这次调用要外发、还没有授权覆盖的数据（§12.5）。给了时确认通过就是授权了这次外发：说明里带回用户的选择（`grant`）；
-   * 对外服务的 `auto` 等级不是外发授权，直接以 `GRANT_REQUIRED` 拒绝。
+   * Data this call sends out that no grant covers yet (§12.5). When given, passing confirmation grants this transfer: the note
+   * carries back the user's choice (`grant`); an external service's `auto` level is not an outbound grant and is refused
+   * outright with `GRANT_REQUIRED`.
    */
   grants?: GrantRequestItem[];
 }
 
-/** 审批里给人看的一句话：当前语言的文字与它的引用。 */
+/** The one-line, human-facing approval summary: text in the current language and its reference. */
 export function confirmSummary(summary: Localized): { summary: string; summaryRef: MessageRef } {
   return { summary: summary.text, summaryRef: refOf(summary) };
 }
 
-/** 确认的结果，记进工具结果（§3.12）：当时生效的模式（对外服务没有模式）、风险等级与谁做的决定。 */
+/** The confirmation result, recorded in the tool result (§3.12): the mode in effect (external services have none), the risk level and who decided. */
 export interface ToolApprovalNote {
   mode: AgentMode | null;
   risk: RiskLevel;
-  /** `rule`：用户之前选了「总是允许」，按存下的规则自动答应。 */
+  /** `rule`: the user earlier chose "Always allow", so the stored rule approved it automatically. */
   decidedBy: 'auto' | 'user' | 'rule';
-  /** 带外发授权的确认通过时：用户对授权的选择（自动通过的是只这一次）。不进工具结果。 */
+  /** When a confirmation with an outbound grant passes: the user's grant choice (an automatic pass means this time only). Not included in the tool result. */
   grant?: ApprovalGrantChoice;
 }
 
 /**
- * 工具的默认风险等级（§3.12）。取决于参数的工具（模型工具、`artifacts_save`、`export`）在确认时给出 `risk`；
- * 这里没有、调用时也没给的按 `command` 处理。
+ * Default tool risk levels (§3.12). Tools whose risk depends on arguments (model tools, `artifacts_save`, `export`) pass `risk`
+ * when confirming; tools not listed here and given no risk are treated as `command`.
  */
 export const TOOL_RISK: Readonly<Record<string, RiskLevel>> = {
   videos_create: 'edit',
   edits_apply: 'edit',
   edits_undo: 'edit',
-  // 建字幕层（§7.9）：一笔可撤销的修改，与 edits_apply 同级。
+  // Creating a caption layer (§7.9): one undoable edit, same level as edits_apply.
   captions_create: 'edit',
-  // 写文档与导入素材（§3.5）：编译成 edits_apply 的操作，一笔可撤销的修改，同级。
+  // Writing documents and importing assets (§3.5): compiled into edits_apply operations, one undoable edit, same level.
   documents_put: 'edit',
   assets_import: 'edit',
-  // 清理没有引用的素材：只列出时只读；apply 时编译成 removeAssets，一笔可撤销的修改，同级。
+  // Pruning unreferenced assets: read-only when only listing; with apply it compiles into removeAssets, one undoable edit, same level.
   assets_prune: 'edit',
-  // 采用来源章节：dryRun 时只读；否则编译成一个 setChapters，一笔可撤销的修改，同级。
+  // Adopting source chapters: read-only with dryRun; otherwise compiled into one setChapters, one undoable edit, same level.
   chapters_adopt: 'edit',
-  // 导入代码画面（架构设计 §8）：验证、烘焙后编译成导入素材与放置片段两笔可撤销的修改，与 assets_import 同级。
+  // Importing code graphics (architecture design §8): validated and baked, then compiled into two undoable edits (import asset, place clip); same level as assets_import.
   compositions_import: 'edit',
-  // 打开便携包：新建一个视频目录，与 videos_create 同级。
+  // Opening a portable package: creates a new video directory, same level as videos_create.
   videos_import_package: 'edit',
-  // 派生子视频（§3.5）：在父视频旁边新建一个视频目录、复制并剪掉区间之外，父视频不变，与 videos_create 同级。
+  // Deriving a child video (§3.5): creates a new video directory next to the parent, copies it and cuts outside the range; the parent is unchanged; same level as videos_create.
   videos_derive: 'edit',
-  // 取帧（Agent 面设计 §4.3）：不改视频，只把帧写进写文件目录下的 .cuccut-out/frames/，规划模式也能用。
+  // Grabbing frames (agent surface design §4.3): does not change the video, only writes frames to .cuccut-out/frames/ under the output directory; usable in plan mode.
   videos_frames: 'read',
-  // 镜头切换：只读，不改视频、不写文件，规划模式也能用。
+  // Shot changes: read-only, no video changes, no files written; usable in plan mode.
   videos_shots: 'read',
-  // 预览代码画面：不改视频，只在离屏宿主里取帧，写进 .cuccut-out/frames/，与 videos_frames 同级。
+  // Previewing code graphics: does not change the video, only grabs frames in an offscreen host into .cuccut-out/frames/; same level as videos_frames.
   compositions_preview: 'read',
   videos_history: 'read',
   edits_ops: 'read',
   export: 'edit',
   artifacts_save: 'edit',
   jobs_cancel: 'command',
-  // 一级动词（Agent 面设计 §4.2）：启动固定流程；外发授权由流程检查，不在确认里代发。
+  // Top-level verbs (agent surface design §4.2): start fixed pipelines; outbound grants are checked by the pipeline, not issued in the confirmation.
   transcribe: 'command',
   translate: 'command',
   dub: 'command',
   transcode: 'command',
   speak: 'command',
   image: 'command',
-  // 下载模型（§6.3）：先给出大小，按访问模式决定要不要问。
+  // Downloading models (§6.3): the size is shown first; the access mode decides whether to ask.
   models_install: 'command',
   space_list: 'read',
   space_search: 'read',
-  // skill 的正文（§3.8）：只读 skill 目录里登记的文件。
+  // Skill bodies (§3.8): reads only files registered in the skill directory.
   skills_read: 'read',
   grants_request: 'high',
-  // 从链接下载（§7.9、§12.9）：下载按 `command`；要先下载 yt-dlp 或第一次同意用它时是 `high`，用各自的审批名，「本会话内都允许」不互相沿用。
+  // Downloading from a link (§7.9, §12.9): the download is `command`; downloading yt-dlp first or consenting to it the first time is `high`, under separate approval names, so "Allow for this session" does not carry over between them.
   download: 'command',
   external_tools_install: 'high',
   external_tools_consent: 'high',
-  // 把工作目录里的文件复制到下载目录（§3.5、§7.9）：工作目录以外的新文件，只进下载目录、不覆盖，与下载同级。
+  // Copying a working-directory file to the downloads directory (§3.5, §7.9): a new file outside the working directory, only into the downloads directory, never overwriting; same level as download.
   downloads_save: 'command',
-  // 删除视频（§5.5、§5.7）：移进回收站，可以恢复，但视频会从编辑器里消失；不在 MCP 面（`surfaces` 没有 `mcp`）。
+  // Deleting a video (§5.5, §5.7): moved to the trash and recoverable, but the video disappears from the editor; not on the MCP surface (`surfaces` has no `mcp`).
   videos_delete: 'high',
-  // 任务（Agent 面设计 §4.3）：等待与列表只读；重跑失败的固定流程与取消同级。
+  // Jobs (agent surface design §4.3): wait and list are read-only; rerunning a failed fixed pipeline is the same level as cancel.
   jobs_wait: 'read',
   jobs_list: 'read',
   jobs_retry: 'command',
-  // 本地模型包的状态只读；样本检查占用本机算力，与提交任务同级。
+  // Local model bundle status is read-only; the sample check uses local compute, same level as submitting a job.
   models_list: 'read',
   models_test: 'command',
-  // 新建项目：在会话的来源目录里是 `edit`，别处是写项目目录之外（`high`），调用时按路径给出；这里是默认值。
+  // Creating a project: `edit` in the session's source directory, elsewhere it writes outside the project directory (`high`); given per path at call time; this is the default.
   projects_list: 'read',
   projects_create: 'high',
-  // 把无项目会话放进新项目（§3.10）：只在 CucCut 的项目目录下建一个新目录、搬会话自己的工作目录，不覆盖文件。
+  // Moving a project-less session into a new project (§3.10): only creates a new directory under CucCut's projects directory and moves the session's own working directory, without overwriting files.
   projects_adopt_session: 'edit',
   skills_list: 'read',
-  // 用户库（§5.9）：只读。
+  // User library (§5.9): read-only.
   library_list: 'read',
   library_show: 'read',
-  // 幻灯片（docs/design/slides §7.2）：校验只读文件（通过时在会话里记一张卡片）；导入素材写 deck 目录的 assets/，按内容寻址、不覆盖。
+  // Slides (docs/design/slides §7.2): checking only reads files (records a card in the session when it passes); importing an asset writes to the deck directory's assets/, content-addressed, never overwriting.
   slides_check: 'read',
   slides_import_asset: 'edit',
-  // 设计稿（docs/design/canvas §7.2）：同幻灯片。校验只读文件；导入素材写设计稿目录的 assets/。
+  // Designs (docs/design/canvas §7.2): as for slides. Checking only reads files; importing an asset writes to the design directory's assets/.
   design_check: 'read',
   design_import_asset: 'edit',
-  // 设计系统（docs/design/canvas §10.5）：同设计稿。校验只读文件；导入素材写设计系统目录的 _blobs/。
+  // Design systems (docs/design/canvas §10.5): as for designs. Checking only reads files; importing an asset writes to the design system directory's _blobs/.
   design_system_check: 'read',
   design_system_import_asset: 'edit',
 };
@@ -194,12 +203,12 @@ export function toolRisk(request: ToolConfirmation): RiskLevel {
   return request.risk ?? TOOL_RISK[request.tool] ?? 'command';
 }
 
-/** 工具的默认风险等级（目录列表用）：没有登记的按 `command`。 */
+/** A tool's default risk level (for catalog listings): unlisted tools are `command`. */
 export function defaultToolRisk(tool: string): RiskLevel {
   return TOOL_RISK[tool] ?? 'command';
 }
 
-/** 工具结果里的 `approval` 字段：确认给了说明时带上（会话里的调用），否则不带。 */
+/** The `approval` field of a tool result: included when the confirmation returned a note (session calls), omitted otherwise. */
 export function approvalField(note: ToolApprovalNote | void): { approval?: ToolApprovalNote } {
   if (!note) return {};
   const { grant: _, ...approval } = note;
@@ -212,14 +221,14 @@ export interface VisibleArtifact {
   file: string;
 }
 
-/** 新建视频的位置：来源目录与来源。 */
+/** Where a new video goes: the source directory and the source. */
 export interface VideoRoot {
   root: string;
   scope: { projectId: Id } | { conversationId: Id };
   note?: string;
 }
 
-/** 导出目标目录的约束（见 `ToolScope.exportBase`）。 */
+/** Constraints on the export destination directory (see `ToolScope.exportBase`). */
 export interface ExportBase {
   base: string;
   within: string | null;
@@ -227,8 +236,8 @@ export interface ExportBase {
 }
 
 /**
- * `projects_list` 的一项：范围之内的已登记项目，与其中（范围之内的）视频数，数不出来时不给。`path` 是项目目录的绝对路径，
- * 对外服务不给（它的客户端只用项目 id）。
+ * One `projects_list` entry: a registered project within scope, with its (in-scope) video count, omitted when it cannot be
+ * counted. `path` is the absolute project directory, omitted for external services (their clients use project ids only).
  */
 export interface ScopedProject {
   projectId: Id;
@@ -237,7 +246,7 @@ export interface ScopedProject {
   videoCount?: number;
 }
 
-/** 已登记项目 → `projects_list` 的一项。 */
+/** Registered project -> one `projects_list` entry. */
 export function scopedProject(project: Project, extra: { path?: boolean; videoCount?: number | undefined } = {}): ScopedProject {
   return {
     projectId: project.id,
@@ -248,82 +257,91 @@ export function scopedProject(project: Project, extra: { path?: boolean; videoCo
 }
 
 export interface ToolScope<A extends ToolAccess = ToolAccess> {
-  /** 能不能调用（`write`：会改视频、提交或取消任务、写文件）。不能时抛出 `ToolError`。 */
+  /** Whether the call is allowed (`write`: changes videos, submits or cancels jobs, writes files). Throws `ToolError` if not. */
   authorize(principal: ToolPrincipal, write: boolean): A;
   /**
-   * 有副作用的调用在执行之前确认：按范围的模式（或等级）与风险查表，自动的立即通过，要问的等用户，拒绝时抛出 `ToolError`。
-   * 返回的说明可以放进工具结果；没有时为 undefined。
+   * Confirms a call with side effects before it runs: looked up by the scope's mode (or level) and the risk; automatic ones pass
+   * immediately, those that must ask wait for the user, and a refusal throws `ToolError`. The returned note may go into the tool
+   * result; undefined when there is none.
    */
   confirm(access: A, request: ToolConfirmation): Promise<ToolApprovalNote | void>;
-  /** `videos_list` 的结果：范围里的视频。 */
+  /** The result of `videos_list`: the videos in scope. */
   listVideos(access: A): Promise<Record<string, unknown>>;
   /**
-   * 新建视频的位置。`project` 是调用方给的项目（项目 id 或已登记项目目录的路径）：会话里不给时用会话的来源目录，
-   * 给了只能是会话所属的项目；对外服务必须给（缺了 `INVALID_ARGUMENTS`），看不到的项目与不存在的一样回答 `PROJECT_NOT_FOUND`；
-   * 终端里按 cwd 解析成项目目录。`note` 是给调用方的说明（例如落到了默认项目），`videos_create` 带进结果。
-   * 会话里不属于项目的会话建在它的工作目录里（§3.10），不建项目；`locate` 只找位置、不为新建做准备（确认之前、删除视频时；
-   * 终端的范围不登记项目）。
+   * Where a new video goes. `project` is the caller's project (a project id or the path of a registered project directory): in
+   * a session it defaults to the session's source directory and, when given, can only be the session's own project; an external
+   * service must give it (`INVALID_ARGUMENTS` if missing), and projects it cannot see are answered like missing ones with
+   * `PROJECT_NOT_FOUND`; in a terminal it resolves to a project directory from cwd. `note` is a note for the caller (e.g. it
+   * landed in the default project), which `videos_create` includes in its result.
+   * A session that belongs to no project creates videos in its working directory (§3.10) without creating a project; `locate`
+   * only finds the location without preparing for creation (before confirming, when deleting a video; the terminal scope does
+   * not register a project).
    */
   createRoot(access: A, project?: string, options?: { locate?: boolean }): VideoRoot | Promise<VideoRoot>;
-  /** 打开（或接上已经打开的）范围里的视频。范围之外的与不存在的一样回答 `VIDEO_NOT_FOUND`。 */
+  /** Opens (or attaches to an already open) video in scope. Out-of-scope videos are answered like missing ones with `VIDEO_NOT_FOUND`. */
   open(video: string, access: A): Promise<VideoOpenResult>;
-  /** `importAsset.path` 相对的目录；`confine` 不为空时路径（按真实路径）必须在它里面。 */
+  /** The directory `importAsset.path` is relative to; when `confine` is non-null the path (by real path) must be inside it. */
   importBase(access: A, opened: VideoOpenResult): { cwd: string; confine: string | null };
   /**
-   * 调用方给的本机文件（`transcribe` 的 `file`、`translate` 的 `file`、`transcode` 的 `files` 与 `outDir`）相对的目录：
-   * 会话的工作目录、终端的 cwd。对外服务没有本机路径的入口，以 `INVALID_ARGUMENTS` 拒绝（`next` 指向 `video` / `url`）。
+   * The directory that caller-given local files (`transcribe`'s `file`, `translate`'s `file`, `transcode`'s `files` and
+   * `outDir`) are relative to: the session's working directory, or the terminal's cwd. External services have no entry point for
+   * local paths and are refused with `INVALID_ARGUMENTS` (`next` points to `video` / `url`).
    */
   fileBase(access: A): string;
-  /** 调用方给的幂等键换成提交用的；没给时新生成。 */
+  /** Turns the caller's idempotency key into the one used for submission; generates a new one when none is given. */
   commandId(access: A, given: string | undefined): string;
-  /** 看得到的任务；看不到的与不存在的一样回答。 */
+  /** A visible job; invisible ones are answered like missing ones. */
   visibleJob(jobId: Id, access: A): Promise<JobRecord>;
-  /** 看得到的全部任务（`jobs_list`），新的在前；范围与 `visibleJob` 相同。 */
+  /** All visible jobs (`jobs_list`), newest first; same scope as `visibleJob`. */
   visibleJobs(access: A): Promise<JobRecord[]>;
-  /** 范围之内的已登记项目（`projects_list`）。 */
+  /** Registered projects within scope (`projects_list`). */
   listProjects(access: A): Promise<ScopedProject[]>;
-  /** 看得到的任务的产物。 */
+  /** An artifact of a visible job. */
   visibleArtifact(artifactId: string, access: A): Promise<VisibleArtifact>;
-  /** 这次调用的主体自己提交的任务（能取消的）。 */
+  /** Jobs submitted by this call's own principal (the ones it may cancel). */
   owns(record: JobRecord, access: A): boolean;
-  /** 修改提交之后：会话放一张变更卡；对外服务不做（审计在服务里记）。 */
+  /** After an edit is committed: a session posts a change card; external services do nothing (auditing is recorded in the service). */
   recordChange(access: A, change: VideoChange): void;
-  /** `videos_create` 新建视频之后：会话记一条 `video-created`；对外服务把它登记进自己的视频范围（之后看得见）。 */
+  /** After `videos_create` creates a video: a session records a `video-created` entry; an external service adds it to its own video scope (visible afterwards). */
   recordCreated?(access: A, created: VideoCreated): void | Promise<void>;
-  /** `slides_check` 校验通过之后：会话记一条 `slides-created`（同一份 deck 只有一条）；对外服务没有会话，不做。 */
+  /** After `slides_check` passes: a session records a `slides-created` entry (one per deck); external services have no session and do nothing. */
   recordSlides?(access: A, created: SlidesCreated): void;
-  /** `design_check` 没有问题之后：会话记一条 `design-created`（同一份设计稿只有一条）；对外服务没有会话，不做。 */
+  /** After `design_check` finds no problems: a session records a `design-created` entry (one per design); external services have no session and do nothing. */
   recordDesign?(access: A, created: DesignCreated): void;
-  /** `design_system_check` 没有问题之后：会话记一条 `design-system-created`（同一个设计系统只有一条）；对外服务没有会话，不做。 */
+  /** After `design_system_check` finds no problems: a session records a `design-system-created` entry (one per design system); external services have no session and do nothing. */
   recordDesignSystem?(access: A, created: DesignSystemCreated): void;
   /**
-   * 固定流程替调用方新建的视频（`download` / `transcribe` 给链接时的 `newVideo`）：对外服务把它登记进自己的视频范围；会话不做
-   * （视频卡来自流程的任务卡片）。
+   * A video a fixed pipeline created for the caller (`newVideo` when `download` / `transcribe` get a link): an external service
+   * adds it to its own video scope; a session does nothing (the video card comes from the pipeline's job card).
    */
   adoptCreatedVideo?(access: A, videoId: Id): void | Promise<void>;
   /**
-   * 写文件的目录：`artifacts_save` 的目标，`videos_frames` 在它下面的 `.cuccut-out/frames/` 里写帧，`videos_import_package` 的
-   * 相对路径也按它解析。给了 `opened` 时是为这个视频写（对外服务只在这时提供：视频所属项目的 `exports/`）。
+   * The directory for writing files: the target of `artifacts_save`; `videos_frames` writes frames into `.cuccut-out/frames/`
+   * under it; `videos_import_package` relative paths resolve against it too. With `opened`, it is for writing on behalf of that
+   * video (external services provide it only then: the `exports/` of the video's project).
    */
   saveRoot(access: A, opened?: VideoOpenResult): string;
   /**
-   * `export` 的目标目录：`dir` 相对 `base`，按真实路径不能出 `base`。`ownDefault` 时不给 `dir` 也导出到 `base`
-   * （不存在时在 `within` 里建）；否则不给 `dir` 时用导出服务的默认位置（视频来源目录的 `exports/`）。
-   * `within` 为 null 时没有目录约束：`dir` 可以是绝对路径，相对的按 `base` 解析（终端里的用户本人）。
+   * The destination directory for `export`: `dir` is relative to `base` and, by real path, cannot leave `base`. With
+   * `ownDefault`, omitting `dir` still exports to `base` (created inside `within` when missing); otherwise omitting `dir` uses
+   * the export service's default location (the `exports/` of the video's source directory).
+   * When `within` is null there is no directory constraint: `dir` may be absolute, and relative ones resolve against `base`
+   * (the user themselves in a terminal).
    */
   exportBase(access: A, opened: VideoOpenResult): ExportBase;
-  /** 这次调用所在任务的合同对这个视频的保护范围（§3.2），随修改交给引擎。没有任务合同的范围（对外服务）不实现。 */
+  /** The protections the current task's contract places on this video (§3.2), passed to the engine with edits. Scopes without task contracts (external services) do not implement it. */
   protections?(access: A, videoId: Id): EngineProtection[];
   /**
-   * 智能体要自己翻译一份转写（`documents_read` 给了 `translateTo`）：登记一条进度记录（`kind: 'agentTranslate'`），返回它的 jobId；
-   * 同一视频、同一份转写、同一门语言的记录还在进行时沿用它。只有会话里的智能体实现：别的范围不登记，为 null。
+   * The agent is about to translate a transcript itself (`documents_read` given `translateTo`): registers a progress record
+   * (`kind: 'agentTranslate'`) and returns its jobId; reuses the record for the same video, transcript and language while it is
+   * still running. Only the session agent implements it: other scopes register nothing and return null.
    */
   translationStarted?(access: A, start: TranslationScope & { sentences: number; sourceRevision?: string }): Id | null;
-  /** 写入了一份译文（`putDocument` kind `translation`）：对应的进度记录完成。 */
+  /** A translation was written (`putDocument` kind `translation`): the matching progress record completes. */
   translationWritten?(access: A, written: TranslationScope & { documentId: Id | null }): void;
 }
 
-/** 智能体自己翻译的对象：哪个视频的哪份转写，译成哪门语言。 */
+/** What the agent is translating itself: which transcript of which video, into which language. */
 export interface TranslationScope {
   videoId: Id;
   sourceDocumentId: Id;
@@ -331,8 +349,9 @@ export interface TranslationScope {
 }
 
 /**
- * 按主体的种类把调用转给各自的范围（§3.5）：同一份目录同时服务会话里的智能体（工具桥）与终端里的用户本人（`catalog.call`）。
- * 授权之后的调用按 `access.principal` 转发，访问对象始终是那个范围自己给出的。没有登记的种类一律 `FORBIDDEN`。
+ * Forwards calls to each principal kind's own scope (§3.5): one catalog serves both the session agent (tool bridge) and the
+ * user themselves in a terminal (`catalog.call`). After authorization, calls are forwarded by `access.principal`, and the
+ * access object is always the one that scope produced. Unregistered kinds are always `FORBIDDEN`.
  */
 export class ScopeRouter implements ToolScope<ToolAccess> {
   readonly #scopes: Partial<Record<ToolPrincipal['kind'], ToolScope>>;
@@ -343,8 +362,7 @@ export class ScopeRouter implements ToolScope<ToolAccess> {
 
   #of(principal: ToolPrincipal): ToolScope {
     const scope = this.#scopes[principal.kind];
-    // i18n-ignore: 给模型的工具说明、错误与下一步
-    if (!scope) throw new ToolError('FORBIDDEN', '这个工具通道不服务这类调用方');
+    if (!scope) throw new ToolError('FORBIDDEN', 'This tool channel does not serve this kind of caller');
     return scope;
   }
 

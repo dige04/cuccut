@@ -1,7 +1,7 @@
-// i18n-ignore-file: 测试夹具，模拟 Runtime 发来的数据
+// i18n-ignore-file: test fixtures mimicking data sent by the Runtime; tests assert these sample values
 import type { GeneratedOutput, JobRecord, TextJobResult } from '@cuccut/protocol';
 
-/** 工具页单测共用的假 Job 记录：形状照 `JobRecord`，默认是界面提交、不属于任何视频的一条语音合成。 */
+/** Fake Job record shared by the tools page unit tests: shaped like `JobRecord`; by default a speech synthesis job submitted from the UI that belongs to no video. */
 
 export const AUDIO_OUT: GeneratedOutput = {
   artifactId: 'sha256:aa',
@@ -62,7 +62,7 @@ export function imageJob(patch: Partial<JobRecord> = {}): JobRecord {
   });
 }
 
-/** 文本生成结果的摘要（`job.result.text`）：默认是一段完整结束的纯文本。 */
+/** Summary of a text generation result (`job.result.text`): by default a complete plain-text result. */
 export function textResult(patch: Partial<TextJobResult> = {}): TextJobResult {
   return {
     mediaType: 'text/plain',

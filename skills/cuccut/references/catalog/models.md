@@ -1,99 +1,99 @@
 ---
-description: 模型能力的机制：各能力可用的服务、模型与限制，本地模型包的安装与检查，能力没配置或要授权时怎么处理。遇到这类错误或要装模型包时读。
+description: Model capability mechanics - the services, models and limits available for each capability, installing and checking local model bundles, and what to do when a capability is not configured or needs a grant. Read when you hit such an error or need to install a model bundle.
 ---
 
-# 模型能力：查询、本地模型包与「没配置」的处理
+# Model capabilities: queries, local model bundles and handling "not configured"
 
-## 何时用
+## When to use
 
-- 动手前确认转写、语音合成、图片生成、音乐生成能不能用、限制是多少。
-- 本机模型没装，要装或检查本地模型包。
-- 收到 `CAPABILITY_NOT_CONFIGURED`、`GRANT_REQUIRED` 等要用户做事的错误。
+- Before starting, confirm whether transcription, speech synthesis, image generation and music generation are usable and what their limits are.
+- A local model is not installed, and a local model bundle needs installing or checking.
+- You received an error that needs the user to act, such as `CAPABILITY_NOT_CONFIGURED` or `GRANT_REQUIRED`.
 
-## 前置检查
+## Preflight
 
-能力有六种：转写（`transcribe`）、语音合成（`synthesizeSpeech`）、图片生成（`generateImage`）、音乐生成（`generateMusic`）、文本生成（`generateText`）、人声与背景分离（`separateAudio`）。
+There are six capabilities: transcription (`transcribe`), speech synthesis (`synthesizeSpeech`), image generation (`generateImage`), music generation (`generateMusic`), text generation (`generateText`), and voice and background separation (`separateAudio`).
 
-- **文本生成与你无关。** 它是工具页与固定流程（{{tool:translate}} 这类）用的文本模型；翻译、润色、总结由你自己做，它没配置不影响你，也不能经它调用别的模型。
-- 人声分离只在本机，只给翻译配音的「分离背景声」用。
-- 音乐生成只在本机（已安装的音乐模型包加 audio.cpp 引擎），没有在线服务；能力与安装见下文「音乐生成」，用法见 [music](music.md)。
+- **Text generation is not for you.** It is the text model used by tool pages and fixed pipelines (such as {{tool:translate}}); you do translation, polishing and summarizing yourself, so it being unconfigured does not affect you, and it cannot be used to call other models.
+- Voice separation is local only, and is used only for translated dubbing's "separate background".
+- Music generation is local only (an installed music model bundle plus the audio.cpp engine), with no online service; for capabilities and installation see "Music generation" below, and for usage see [music](music.md).
 
-## 命令与例子
+## Commands and examples
 
-| 要做的事 | 调用 |
+| What to do | Call |
 | --- | --- |
-| 看各能力可用的服务、模型、限制与默认值 | {{tool:models_capabilities}}；只看一种给 {{arg:capability}} |
-| 看本机模型包装没装、状态 | {{tool:models_list}} |
-| 装本机模型包 | {{tool:models_install}}；不给 {{arg:bundleId}} 时装这台机器默认的转写模型包，本机语音合成、生图与音乐生成必须给 |
-| 检查装好的模型包能不能用 | {{tool:models_test}}，{{arg:bundleId}} |
+| See each capability's usable services, models, limits and defaults | {{tool:models_capabilities}}; for just one, pass {{arg:capability}} |
+| See whether local model bundles are installed, and their status | {{tool:models_list}} |
+| Install a local model bundle | {{tool:models_install}}; without {{arg:bundleId}} it installs this machine's default transcription bundle; local speech synthesis, image generation and music generation must pass one |
+| Check whether an installed bundle works | {{tool:models_test}}, {{arg:bundleId}} |
 
-{{tool:models_install}} 下载几百 MB 到几 GB：
+{{tool:models_install}} downloads from hundreds of MB to several GB:
 
 <!-- surface: cli -->
-- 不带 `--yes` 时只报模型包与大小、不下载，以退出码 4 返回。先把大小告诉用户，同意后再带 `--yes`。
-- 下载可能很久：按 [conventions](../conventions.md) 的「等任务结束」给等待设上限。
+- Without `--yes`, it only reports the bundle and its size, downloads nothing, and returns with exit code 4. Tell the user the size first, and pass `--yes` once they agree.
+- Downloading may take a long time: put a limit on waiting per "Waiting for jobs to finish" in [conventions](../conventions.md).
 <!-- /surface -->
 <!-- surface: agent -->
-- 提交前 CucCut 会把大小告诉用户并按访问模式确认；你不要替用户同意。
+- Before submission, CucCut tells the user the size and confirms according to the access mode; do not agree on the user's behalf.
 <!-- /surface -->
-- 已经装好时不下载（`jobId` 为 null）；之前没下完的会续传。不要重复提交。
+- When already installed, nothing is downloaded (`jobId` is null); a previously unfinished download resumes. Do not submit twice.
 
-## 结果怎么读
+## Reading the results
 
-{{tool:models_capabilities}} 的每种能力：
+For each capability in {{tool:models_capabilities}}:
 
-- `effective`：不指定服务时实际会用的；为 null 时不指定服务的调用会以 `CAPABILITY_NOT_CONFIGURED` 拒绝。
-- 每个服务与模型：是否可用及原因、限制（文本长度 `maxInputChars`、提示词长度、尺寸、张数、音色、格式、语速范围、接不接受语气说明 `acceptsInstructions`、音乐的时长上限 `maxDurationSec` 与编排选项 `local.planning`）、默认值。
-- 本机服务的「模型」就是本地模型包：转写在 `transcribe` 下，合成在 `synthesizeSpeech` 下，生图在 `generateImage` 下，音乐生成在 `generateMusic` 下。
+- `effective`: what is actually used when no service is specified; when null, calls that do not specify a service are refused with `CAPABILITY_NOT_CONFIGURED`.
+- Each service and model: whether it is usable and why, its limits (text length `maxInputChars`, prompt length, sizes, counts, voices, formats, speed range, whether delivery instructions are accepted `acceptsInstructions`, music's duration limit `maxDurationSec` and planning options `local.planning`), and defaults.
+- A local service's "models" are the local model bundles: transcription under `transcribe`, synthesis under `synthesizeSpeech`, image generation under `generateImage`, music generation under `generateMusic`.
 
-{{tool:models_list}} 的每个模型包：`bundleId`、能力、状态（`not-installed`、`downloading`、`installed`、`ready` 等）与原因、下载大小的估计、最近一次检查（`selfTest`）。
+Each model bundle in {{tool:models_list}}: `bundleId`, capability, status (`not-installed`, `downloading`, `installed`, `ready` and so on) with a reason, an estimated download size, and the latest check (`selfTest`).
 
-{{tool:models_install}}：返回 `jobId` 与大小（`downloadBytes`；未知时看 `estimatedBytes`），等到 `completed` 才算装好。之后再提交转写；本机合成、生图与音乐生成没有出厂默认，提交 {{tool:speak}}、{{tool:image}} 或 {{tool:music}} 时带上 {{arg:provider}} `local` 与 {{arg:model}}（这个模型包）。
+{{tool:models_install}}: returns a `jobId` and the size (`downloadBytes`; when unknown, see `estimatedBytes`); it is installed only when it reaches `completed`. Then submit transcription again; local synthesis, image generation and music generation have no factory default, so when submitting {{tool:speak}}, {{tool:image}} or {{tool:music}}, pass {{arg:provider}} `local` and {{arg:model}} (this bundle).
 
-{{tool:models_test}}：`completed` 是通过；`failed` 时 `error.details.check` 是原因。
+{{tool:models_test}}: `completed` means it passed; on `failed`, `error.details.check` is the reason.
 
-## 音乐生成（`generateMusic`）
+## Music generation (`generateMusic`)
 
-只有本机的服务：模型是已安装的音乐模型包（目前是 `yue2-3b@audio-cpp-q8`，YuE2 3B，下载约 4.6 GB），由 audio.cpp 引擎（`audiocpp_cli`）在本机执行，不联网，没有在线服务，也没有出厂默认。先 {{tool:models_capabilities}}（能力 `generateMusic`）看有没有可用的模型、时长上限（`maxDurationSec`，YuE2 为 300 秒）、默认预算（`defaultDurationSec`）、编排选项（`local.planning.options` 与默认值）与风格、歌词的字数上限（`maxStyleChars`、`maxLyricsChars`）。
+Local service only: the model is an installed music model bundle (currently `yue2-3b@audio-cpp-q8`, YuE2 3B, about 4.6 GB to download), run locally by the audio.cpp engine (`audiocpp_cli`), offline, with no online service and no factory default. First check {{tool:models_capabilities}} (capability `generateMusic`) for a usable model, the duration limit (`maxDurationSec`, 300 seconds for YuE2), the default budget (`defaultDurationSec`), planning options (`local.planning.options` and the default) and the character limits for style and lyrics (`maxStyleChars`, `maxLyricsChars`).
 
-给视频配乐与要一段音乐时怎么提交、风格怎么写、长视频怎么铺满、怎么放上配乐轨，见 [music](music.md)。这里只留能力本身的事实：
+How to submit when scoring a video or making a piece of music, how to write the style, how to fill long videos and how to place it on the music track are in [music](music.md). Only the facts about the capability itself stay here:
 
-- **很慢**：一段要几分钟到十几分钟（CPU 更慢），提交一次，用 {{tool:jobs_wait}} 等，不重复提交。
-- **许可**：YuE2 是 CC-BY-NC-4.0，只许非商业用途（`license.commercialUse: false`）。用户要商用时先告诉用户这一点，由用户决定。
-- 没装模型包时 {{tool:models_install}} 给 {{arg:bundleId}} `yue2-3b@audio-cpp-q8`（先把大小告诉用户）；装好了但找不到引擎时能力报 `unsupported`，处理见下节。
+- **It is slow**: one run takes from a few minutes to over ten (slower on CPU); submit once, wait with {{tool:jobs_wait}}, and do not resubmit.
+- **License**: YuE2 is CC-BY-NC-4.0, for non-commercial use only (`license.commercialUse: false`). When the user wants commercial use, tell them this first and let them decide.
+- When the model bundle is not installed, call {{tool:models_install}} with {{arg:bundleId}} `yue2-3b@audio-cpp-q8` (tell the user the size first); when it is installed but the engine cannot be found, the capability reports `unsupported`; see the next section for handling.
 
-## 「没配置」与「要授权」怎么处理
+## Handling "not configured" and "needs a grant"
 
-| 情况 | 处理 |
+| Situation | What to do |
 | --- | --- |
-| {{tool:translate}} 报 `CAPABILITY_NOT_CONFIGURED` | 自己翻译（[subtitles](subtitles.md) 的自译路径），**不**请用户去配置 |
-| 转写、语音合成、图片生成、音乐生成报 `CAPABILITY_NOT_CONFIGURED`，`remedy.action` 为 `install-model` | 本机模型包没装：告诉用户要装哪个、多大，同意后 {{tool:models_install}}，装好再重提 |
-| `generateMusic` 的模型包装好了，能力仍 `unavailableReason: 'unsupported'`，`detail` 说找不到 audio.cpp 引擎 | 引擎（`audiocpp_cli`）不在这台机器上：先告诉用户引擎要下载（约 30–70 MB，Apache-2.0，来自 audio.cpp 的发布页），同意后带 {{arg:bundleId}} `yue2-3b@audio-cpp-q8` 调 {{tool:models_install}}，它在确认后安装引擎，用 {{tool:jobs_wait}} 等结果的 `engine.jobId`；`engine` 没有 `jobId` 而带 `reason` 时（`CUCCUT_AUDIOCPP_CLI` 指定的引擎不能运行、离线、这台机器没有包）照 `reason` 与 `remedy` 转告用户 |
-| 同上，其他 `remedy` | 要用户启用一项在线服务或配置账号：照 `remedy` 与 `next` 告诉用户要在哪里启用哪项，停在这里（图片只是交付的一部分时，停下的只是画图这一步，见 [media](media.md) 的「生成图片」） |
-| `GRANT_REQUIRED`、`GRANT_REVOKED` | 要把数据发给在线服务，但用户没有授权：照 `remedy` 转告用户 |
-| `BUDGET_EXCEEDED`、`TASK_BUDGET_EXCEEDED` | 超了预算：转告用户，由用户决定 |
-| `MODELS_DIR_MISSING` | 模型目录不在（例如外置盘没接上）：请用户接上或改设置 |
-| `MODEL_FILES_DAMAGED` | 模型文件损坏：请用户在 CucCut 里修复 |
-| `OFFLINE_STRICT` | 用户开了严格离线：只能用本机服务，告诉用户 |
+| {{tool:translate}} reports `CAPABILITY_NOT_CONFIGURED` | Translate yourself (the translate-yourself path in [subtitles](subtitles.md)); do **not** ask the user to configure anything |
+| Transcription, speech synthesis, image generation or music generation reports `CAPABILITY_NOT_CONFIGURED` with `remedy.action` `install-model` | The local model bundle is not installed: tell the user which one and how big it is, run {{tool:models_install}} once they agree, then resubmit after installation |
+| The `generateMusic` bundle is installed but the capability still has `unavailableReason: 'unsupported'`, and `detail` says the audio.cpp engine cannot be found | The engine (`audiocpp_cli`) is not on this machine: first tell the user the engine needs downloading (about 30–70 MB, Apache-2.0, from audio.cpp's releases page); once they agree, call {{tool:models_install}} with {{arg:bundleId}} `yue2-3b@audio-cpp-q8`, which installs the engine after confirmation, and wait with {{tool:jobs_wait}} on the result's `engine.jobId`; when `engine` has no `jobId` but a `reason` (the engine given by `CUCCUT_AUDIOCPP_CLI` cannot run, offline, no package for this machine), pass `reason` and `remedy` on to the user |
+| As above, with another `remedy` | The user needs to enable an online service or configure an account: tell the user where to enable what, following `remedy` and `next`, and stop here (when images are only part of the delivery, only the drawing step stops; see "Generating images" in [media](media.md)) |
+| `GRANT_REQUIRED`, `GRANT_REVOKED` | Data would be sent to an online service, but the user has not granted it: pass `remedy` on to the user |
+| `BUDGET_EXCEEDED`, `TASK_BUDGET_EXCEEDED` | Over budget: pass it on to the user and let them decide |
+| `MODELS_DIR_MISSING` | The models directory is missing (for example, an external drive is not connected): ask the user to connect it or change the setting |
+| `MODEL_FILES_DAMAGED` | Model files are damaged: ask the user to repair them in CucCut |
+| `OFFLINE_STRICT` | The user turned on strict offline mode: only local services can be used; tell the user |
 
-无论哪种，都**不**用 shell、脚本、别的网站或别的服务商绕过，不碰 API key 与凭据，不替用户改设置。
+In every case, do **not** work around it with a shell, scripts, other websites or other providers, do not touch API keys or credentials, and do not change settings on the user's behalf.
 <!-- surface: cli -->
-启用服务、配置账号、设默认值属于「本机管理」命令（`cuccut models configure` 等），给人用：要么请用户自己做，要么在用户明确同意后照 `next` 执行；密钥只由用户自己输入。
+Enabling services, configuring accounts and setting defaults are "Local admin" commands (`cuccut models configure` and so on), meant for people: either ask the user to do it themselves, or, with the user's explicit agreement, run them following `next`; secrets are entered only by the user.
 <!-- /surface -->
 <!-- surface: agent -->
-启用服务、配置账号、设默认值由用户在 CucCut 的设置里完成，你只说明要改哪一项。
+Enabling services, configuring accounts and setting defaults are done by the user in CucCut's settings; you only explain which item to change.
 <!-- /surface -->
 
-## 常见错误码
+## Common error codes
 
-见上一节的表；其余照 [conventions](../conventions.md) 的「错误对象怎么用」。
+See the table in the previous section; for anything else, see "How to use the error object" in [conventions](../conventions.md).
 
-## 下一步
+## Next steps
 
-- 能力就绪：回到原来的任务页（[subtitles](subtitles.md)、[voice](voice.md)、[media](media.md)、[music](music.md)）重新提交。
-- 用户暂时不配置：告诉用户哪一步做不了，其余能做的照常做完。
+- The capability is ready: go back to the original task page ([subtitles](subtitles.md), [voice](voice.md), [media](media.md), [music](music.md)) and resubmit.
+- The user will not configure it for now: tell the user which step cannot be done, and finish everything else that can be done.
 
-## 验收
+## Acceptance
 
-- 没有替用户配置、同意或输入密钥。
-- 装模型包前把大小告诉了用户并得到同意；装好后用 {{tool:models_list}} 或 {{tool:models_test}} 确认状态。
+- You did not configure, consent or enter secrets on the user's behalf.
+- Before installing a model bundle, you told the user the size and got agreement; after installing, you confirmed its status with {{tool:models_list}} or {{tool:models_test}}.

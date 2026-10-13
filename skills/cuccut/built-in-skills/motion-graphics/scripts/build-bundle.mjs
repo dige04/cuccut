@@ -1,14 +1,13 @@
 #!/usr/bin/env node
-// i18n-ignore-file: 给智能体用的独立脚本，lint 文案不进文案目录
-// 把一份按 motion-graphics 骨架写好的自包含 HTML 打成 CucCut 代码包（HyperFrames 合同），并先做静态 lint。
+// Packs a self-contained HTML written on the motion-graphics scaffold into a CucCut code bundle (HyperFrames contract), after a static lint.
 //
 //   node build-bundle.mjs --html <index.html> --out <dir> [--bundle-id <id>] [--revision <r>]
 //                         [--alpha true|false] [--lint-only] [--verify]
 //
-// 输出 <out>/<revision>/：index.html、files.manifest.json、bundle.manifest.json、dependency.lock、build.recipe.json；
-// --verify 再用 Electron 离屏窗口逐个时刻 seek、截图、检查，写 <out>/<revision>/verification.json，截图放包外的 <out>/<revision>-preview/<t>.png。
-// 结果以 JSON 打到 stdout；lint 或验证失败时退出码 1。无 npm 依赖；--verify 需要能解析到 electron 包。
-// 也可以被 import：导出 lintHtml(html) 与 buildBundle(opts)。
+// Writes <out>/<revision>/: index.html, files.manifest.json, bundle.manifest.json, dependency.lock, build.recipe.json;
+// --verify then seeks each moment in an offscreen Electron window, screenshots and checks it, and writes <out>/<revision>/verification.json; screenshots go outside the bundle in <out>/<revision>-preview/<t>.png.
+// Prints the result as JSON to stdout; exit code 1 when lint or verification fails. No npm dependencies; --verify needs a resolvable electron package.
+// Can also be imported: exports lintHtml(html) and buildBundle(opts).
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -36,7 +35,7 @@ const REQUIRED_ROOT_ATTRS = [
 const POSITIVE_ROOT_ATTRS = ['data-width', 'data-height', 'data-fps', 'data-duration'];
 const TOKENS = ['--ink', '--panel', '--accent'];
 
-// 出场窗口：开始不早于 duration−0.8，结束不晚于 duration−0.05；停留：最后一个入场到出场开始至少 1.2 s。
+// Exit window: starts no earlier than duration−0.8, ends no later than duration−0.05; hold: at least 1.2 s from the last entrance to the exit start.
 const EXIT_EARLIEST_START = 0.8;
 const EXIT_LATEST_END = 0.05;
 const MIN_HOLD = 1.2;
@@ -46,14 +45,14 @@ const MAX_WINDOW = 2.0;
 
 const sha256 = (data) => crypto.createHash('sha256').update(data).digest('hex');
 
-/** 字符偏移 → 1 起的行号。 */
+/** Character offset → 1-based line number. */
 function lineAt(src, index) {
   let line = 1;
   for (let i = 0; i < index && i < src.length; i++) if (src.charCodeAt(i) === 10) line++;
   return line;
 }
 
-/** 从 open（指向 '(' 或 '{'）开始找配对的闭括号，返回其下标；找不到返回 -1。不处理字符串里的括号，骨架写法足够。 */
+/** Finds the matching closing bracket from open (pointing at '(' or '{') and returns its index, or -1 if none. Brackets inside strings are not handled; enough for scaffold code. */
 function matchBracket(src, open) {
   const pair = { '(': ')', '{': '}', '[': ']' };
   const close = pair[src[open]];
@@ -65,7 +64,7 @@ function matchBracket(src, open) {
   return -1;
 }
 
-/** 按顶层逗号切分参数串。 */
+/** Splits an argument string on top-level commas. */
 function splitArgs(src) {
   const out = [];
   let depth = 0;
@@ -82,7 +81,7 @@ function splitArgs(src) {
   return out;
 }
 
-/** 只认数字、DURATION 与四则运算的表达式；别的（循环变量等）返回 null，表示无法静态求值。 */
+/** Accepts only expressions of numbers, DURATION and arithmetic; anything else (loop variables etc.) returns null, meaning it cannot be evaluated statically. */
 function evalTime(expr, duration) {
   const replaced = expr.replace(/\bDURATION\b/g, `(${duration})`);
   if (!/^[\d.\s+\-*/()]+$/.test(replaced)) return null;
@@ -94,7 +93,7 @@ function evalTime(expr, duration) {
   }
 }
 
-/** 在 Math.sin/Math.cos 的参数里：周期性的持续动效（pulse 等），不算入场窗口。 */
+/** Inside a Math.sin/Math.cos argument: periodic continuous motion (pulse etc.), not counted as an entrance window. */
 function insidePeriodic(src, index) {
   const lineStart = src.lastIndexOf('\n', index) + 1;
   const before = src.slice(lineStart, index);
@@ -117,8 +116,8 @@ function parseAttrs(tag) {
 }
 
 /**
- * 静态检查一份 HTML。返回 { ok, issues: [{code, message, line?}], warnings, meta }。
- * meta 带 width/height/fps/duration/compositionId 与时间包络（firstStart、entranceEnd、exitStart、exitEnd），供 build 与 verify 使用。
+ * Statically checks an HTML file. Returns { ok, issues: [{code, message, line?}], warnings, meta }.
+ * meta carries width/height/fps/duration/compositionId and the time envelope (firstStart, entranceEnd, exitStart, exitEnd) for build and verify.
  */
 export function lintHtml(html) {
   const issues = [];
@@ -127,23 +126,23 @@ export function lintHtml(html) {
   const meta = { compositionId: null, width: null, height: null, fps: null, duration: null, continuous: false, windows: [] };
 
   const bytes = Buffer.byteLength(html, 'utf8');
-  if (bytes > MAX_HTML_BYTES) add('FILE_TOO_LARGE', `HTML 有 ${bytes} 字节，超过上限 ${MAX_HTML_BYTES}`);
+  if (bytes > MAX_HTML_BYTES) add('FILE_TOO_LARGE', `HTML is ${bytes} bytes, over the limit of ${MAX_HTML_BYTES}`);
 
-  // 根元素
+  // Root element
   const rootMatch = /<([a-z][\w-]*)\b[^>]*(?<![\w-])id\s*=\s*["']root["'][^>]*>/i.exec(html);
   if (!rootMatch) {
-    add('ROOT_MISSING', '找不到 id="root" 的根元素');
+    add('ROOT_MISSING', 'No root element with id="root"');
   } else {
     const attrs = parseAttrs(rootMatch[0].slice(rootMatch[1].length + 1, -1));
     for (const name of REQUIRED_ROOT_ATTRS) {
-      if (!(name in attrs) || attrs[name].trim() === '') add('ROOT_ATTR_MISSING', `根元素缺少 ${name}`, rootMatch.index);
+      if (!(name in attrs) || attrs[name].trim() === '') add('ROOT_ATTR_MISSING', `Root element is missing ${name}`, rootMatch.index);
     }
     for (const name of POSITIVE_ROOT_ATTRS) {
       if (!(name in attrs)) continue;
       const v = Number(attrs[name]);
-      if (!Number.isFinite(v) || v <= 0) add('ROOT_ATTR_INVALID', `${name}="${attrs[name]}" 不是正数`, rootMatch.index);
+      if (!Number.isFinite(v) || v <= 0) add('ROOT_ATTR_INVALID', `${name}="${attrs[name]}" is not a positive number`, rootMatch.index);
     }
-    if ('data-start' in attrs && Number(attrs['data-start']) !== 0) add('ROOT_ATTR_INVALID', 'data-start 必须为 0', rootMatch.index);
+    if ('data-start' in attrs && Number(attrs['data-start']) !== 0) add('ROOT_ATTR_INVALID', 'data-start must be 0', rootMatch.index);
     meta.compositionId = attrs['data-composition-id'] || null;
     meta.width = Number(attrs['data-width']) || null;
     meta.height = Number(attrs['data-height']) || null;
@@ -152,30 +151,30 @@ export function lintHtml(html) {
     meta.continuous = attrs['data-motion-continuous'] === 'true';
   }
 
-  // viewport 与根尺寸一致
+  // viewport matches the root size
   const viewport = /<meta\b[^>]*name\s*=\s*["']viewport["'][^>]*>/i.exec(html);
-  if (!viewport) add('VIEWPORT_MISSING', '缺少 <meta name="viewport" content="width=W,height=H">');
+  if (!viewport) add('VIEWPORT_MISSING', 'Missing <meta name="viewport" content="width=W,height=H">');
   else if (meta.width && meta.height) {
     const content = parseAttrs(viewport[0]).content || '';
     const w = /width\s*=\s*(\d+)/.exec(content)?.[1];
     const h = /height\s*=\s*(\d+)/.exec(content)?.[1];
     if (Number(w) !== meta.width || Number(h) !== meta.height)
-      add('VIEWPORT_MISMATCH', `viewport（${content}）与根元素 ${meta.width}×${meta.height} 不一致`, viewport.index);
+      add('VIEWPORT_MISMATCH', `viewport (${content}) does not match the root element ${meta.width}×${meta.height}`, viewport.index);
   }
 
-  // 时间线登记
+  // Timeline registration
   const registry = /window\.__timelines\s*=\s*\{([^}]*)\}/.exec(html);
-  if (!registry) add('TIMELINE_REGISTRY_MISSING', '缺少 window.__timelines = { [compositionId]: timeline }');
+  if (!registry) add('TIMELINE_REGISTRY_MISSING', 'Missing window.__timelines = { [compositionId]: timeline }');
   else {
     const body = registry[1];
     const id = meta.compositionId ?? 'main';
     const literal = new RegExp(`(^|[\\s,{])(["'\`]?)${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\2\\s*:`).test(body);
     const computed =
       /\[\s*(COMPOSITION_ID|[\w.]*compositionId)\s*\]\s*:/.test(body) && /dataset\.compositionId|data-composition-id/.test(html);
-    if (!literal && !computed) add('TIMELINE_REGISTRY_MISSING', `window.__timelines 没有登记 composition "${id}"`, registry.index);
+    if (!literal && !computed) add('TIMELINE_REGISTRY_MISSING', `window.__timelines does not register composition "${id}"`, registry.index);
   }
 
-  // 统一出场
+  // Unified exit
   const exitRe =
     /const\s+exit\s*=\s*1\s*-\s*easeInOut\(\s*range\(\s*time\s*,([^,]+),([^)]+)\)\s*\)\s*;\s*scene\.style\.opacity\s*=\s*String\(\s*exit\s*\)/;
   const exitMatch = exitRe.exec(html);
@@ -183,25 +182,25 @@ export function lintHtml(html) {
   if (!exitMatch)
     add(
       'EXIT_MISSING',
-      '缺少统一出场：const exit = 1 - easeInOut(range(time, DURATION - a, DURATION - b)); scene.style.opacity = String(exit);',
+      'Missing the unified exit: const exit = 1 - easeInOut(range(time, DURATION - a, DURATION - b)); scene.style.opacity = String(exit);',
     );
   else if (meta.duration) {
     exitIndex = exitMatch.index + exitMatch[0].indexOf('range(');
     const start = evalTime(exitMatch[1].trim(), meta.duration);
     const end = evalTime(exitMatch[2].trim(), meta.duration);
-    if (start === null || end === null) add('EXIT_WINDOW', '统一出场的窗口无法静态求值', exitMatch.index);
+    if (start === null || end === null) add('EXIT_WINDOW', 'The unified exit window cannot be evaluated statically', exitMatch.index);
     else {
       meta.exitStart = start;
       meta.exitEnd = end;
       if (end > meta.duration - EXIT_LATEST_END + 1e-9)
-        add('EXIT_WINDOW', `出场结束 ${end} s 晚于 duration−${EXIT_LATEST_END}`, exitMatch.index);
+        add('EXIT_WINDOW', `Exit ends at ${end} s, later than duration−${EXIT_LATEST_END}`, exitMatch.index);
       if (start < meta.duration - EXIT_EARLIEST_START - 1e-9)
-        add('EXIT_WINDOW', `出场开始 ${start} s 早于 duration−${EXIT_EARLIEST_START}`, exitMatch.index);
-      if (end <= start) add('EXIT_WINDOW', '出场窗口的结束不晚于开始', exitMatch.index);
+        add('EXIT_WINDOW', `Exit starts at ${start} s, earlier than duration−${EXIT_EARLIEST_START}`, exitMatch.index);
+      if (end <= start) add('EXIT_WINDOW', 'The exit window does not end after it starts', exitMatch.index);
     }
   }
 
-  // 全部 range(time, a, b) 窗口
+  // All range(time, a, b) windows
   if (meta.duration) {
     const re = /\brange\(\s*time\s*,/g;
     let m;
@@ -215,15 +214,15 @@ export function lintHtml(html) {
       const a = evalTime(args[1] ?? '', meta.duration);
       const b = evalTime(args[2] ?? '', meta.duration);
       if (a === null || b === null) {
-        warnings.push({ code: 'WINDOW_NOT_STATIC', message: `range(time, ${args[1]}, ${args[2]}) 无法静态求值，未参与包络检查`, line });
+        warnings.push({ code: 'WINDOW_NOT_STATIC', message: `range(time, ${args[1]}, ${args[2]}) cannot be evaluated statically and was left out of the envelope check`, line });
         continue;
       }
       const periodic = insidePeriodic(html, m.index);
       meta.windows.push({ start: a, end: b, line, periodic });
       const len = b - a;
       if (len < MIN_WINDOW - 1e-9 || len > MAX_WINDOW + 1e-9)
-        add('WINDOW_LENGTH', `窗口 ${a}–${b} s 长 ${len.toFixed(2)} s，应在 ${MIN_WINDOW}–${MAX_WINDOW} s`, m.index);
-      if (a < 0 || b > meta.duration + 1e-9) add('WINDOW_OUT_OF_RANGE', `窗口 ${a}–${b} s 超出 0–${meta.duration} s`, m.index);
+        add('WINDOW_LENGTH', `Window ${a}–${b} s is ${len.toFixed(2)} s long; it should be ${MIN_WINDOW}–${MAX_WINDOW} s`, m.index);
+      if (a < 0 || b > meta.duration + 1e-9) add('WINDOW_OUT_OF_RANGE', `Window ${a}–${b} s falls outside 0–${meta.duration} s`, m.index);
     }
     const entrances = meta.windows.filter((w) => !w.periodic);
     if (entrances.length) {
@@ -233,31 +232,31 @@ export function lintHtml(html) {
       if (meta.firstStart < MIN_FIRST_START - 1e-9)
         issues.push({
           code: 'FIRST_ENTRY_TOO_EARLY',
-          message: `第一个入场从 ${meta.firstStart} s 开始，应不早于 ${MIN_FIRST_START} s`,
+          message: `The first entrance starts at ${meta.firstStart} s; it should start no earlier than ${MIN_FIRST_START} s`,
           line: first.line,
         });
       if (meta.exitStart !== undefined && !meta.continuous && meta.entranceEnd > meta.exitStart - MIN_HOLD + 1e-9) {
         const last = entrances.find((w) => w.end === meta.entranceEnd);
         issues.push({
           code: 'HOLD_TOO_SHORT',
-          message: `最后一个入场在 ${meta.entranceEnd} s 结束，距出场开始 ${meta.exitStart} s 不足 ${MIN_HOLD} s（持续动效可在根元素加 data-motion-continuous="true"）`,
+          message: `The last entrance ends at ${meta.entranceEnd} s, less than ${MIN_HOLD} s before the exit starts at ${meta.exitStart} s (for continuous motion, add data-motion-continuous="true" to the root element)`,
           line: last.line,
         });
       }
     }
   }
 
-  // 网络与外部资源
+  // Network and external resources
   const banned = [
-    [/https?:\/\//g, 'EXTERNAL_URL', '外部 URL'],
-    [/(["'`(=]\s*)\/\/[\w.-]/g, 'EXTERNAL_URL', '协议相对的 // URL'],
+    [/https?:\/\//g, 'EXTERNAL_URL', 'external URL'],
+    [/(["'`(=]\s*)\/\/[\w.-]/g, 'EXTERNAL_URL', 'protocol-relative // URL'],
     [/<script\b[^>]*\bsrc\s*=/gi, 'EXTERNAL_SCRIPT', '<script src>'],
     [/<link\s/gi, 'EXTERNAL_LINK', '<link>'],
     [/@import\b/g, 'CSS_IMPORT', '@import'],
     [/\bfetch\s*\(/g, 'NETWORK_API', 'fetch('],
     [/\bXMLHttpRequest\b/g, 'NETWORK_API', 'XMLHttpRequest'],
     [/\bnew\s+(?:WebSocket|EventSource)\b/g, 'NETWORK_API', 'WebSocket / EventSource'],
-    [/\bimport\s*\(/g, 'NETWORK_API', '动态 import('],
+    [/\bimport\s*\(/g, 'NETWORK_API', 'dynamic import('],
     [/\bDate\.now\b/g, 'NONDETERMINISTIC', 'Date.now'],
     [/\bperformance\.now\b/g, 'NONDETERMINISTIC', 'performance.now'],
     [/\bMath\.random\b/g, 'NONDETERMINISTIC', 'Math.random'],
@@ -265,10 +264,10 @@ export function lintHtml(html) {
   ];
   for (const [re, code, what] of banned) {
     let m;
-    while ((m = re.exec(html))) add(code, `不允许 ${what}：渲染须离线且只由 time 决定`, m.index);
+    while ((m = re.exec(html))) add(code, `${what} is not allowed: rendering must be offline and determined by time alone`, m.index);
   }
 
-  // requestAnimationFrame 只能出现在时间线的 play() 里
+  // requestAnimationFrame may appear only in the timeline's play()
   const playBodies = [];
   const playRe = /\bplay\s*\(\s*\)\s*\{/g;
   let pm;
@@ -281,24 +280,24 @@ export function lintHtml(html) {
   let rm;
   while ((rm = rafRe.exec(html))) {
     if (!playBodies.some(([o, c]) => rm.index > o && rm.index < c))
-      add('RAF_OUTSIDE_PLAY', 'requestAnimationFrame 只能用在时间线的 play() 里（预览），画面须由 seek 决定', rm.index);
+      add('RAF_OUTSIDE_PLAY', 'requestAnimationFrame may be used only in the timeline\'s play() (preview); the frame must be determined by seek', rm.index);
   }
 
-  // 颜色 token
+  // Color tokens
   const rootRule = /#root\s*\{([^}]*)\}/.exec(html);
-  if (!rootRule) add('TOKEN_MISSING', '缺少 #root{…} 规则与 --ink --panel --accent');
-  else for (const t of TOKENS) if (!new RegExp(`${t}\\s*:`).test(rootRule[1])) add('TOKEN_MISSING', `#root 没有定义 ${t}`, rootRule.index);
+  if (!rootRule) add('TOKEN_MISSING', 'Missing the #root{…} rule with --ink --panel --accent');
+  else for (const t of TOKENS) if (!new RegExp(`${t}\\s*:`).test(rootRule[1])) add('TOKEN_MISSING', `#root does not define ${t}`, rootRule.index);
 
-  // 文案
+  // Copy
   if (!/\bdata-copy-primary\b/.test(html.replace(/<script[\s\S]*?<\/script>/gi, '')))
-    add('COPY_PRIMARY_MISSING', '至少要有一个带 data-copy-primary 的文案元素');
+    add('COPY_PRIMARY_MISSING', 'At least one copy element with data-copy-primary is required');
   if (!/(^|[\s,}])\.copy\s*[{,]/m.test(html))
-    add('COPY_RULE_MISSING', '缺少 .copy{max-width:100%;overflow:hidden;text-overflow:ellipsis} 规则');
+    add('COPY_RULE_MISSING', 'Missing the .copy{max-width:100%;overflow:hidden;text-overflow:ellipsis} rule');
 
   return { ok: issues.length === 0, issues, warnings, meta };
 }
 
-/** 帧率 → 约分的整数比。 */
+/** Frame rate → reduced integer ratio. */
 export function toRate(fps) {
   for (const den of [1, 1001, 1000]) {
     const num = Math.round(fps * den);
@@ -316,8 +315,8 @@ function writeJson(file, value) {
 }
 
 /**
- * lint 通过后写出代码包。opts：{ html（文件路径）, out, bundleId?, revision?, alpha?, lintOnly? }。
- * 返回 { ok, lint, dir?, manifest? }；lint 失败时不写任何文件。
+ * Writes the code bundle once lint passes. opts: { html (file path), out, bundleId?, revision?, alpha?, lintOnly? }.
+ * Returns { ok, lint, dir?, manifest? }; writes no files when lint fails.
  */
 export function buildBundle(opts) {
   const htmlPath = path.resolve(opts.html);
@@ -334,15 +333,15 @@ export function buildBundle(opts) {
 
   fs.writeFileSync(path.join(dir, 'index.html'), html);
   fs.writeFileSync(path.join(dir, 'dependency.lock'), '');
-  // 配方只记确定的输入（不含绝对路径与时间），同样的输入得到同样的 contentHash。
+  // The recipe records only deterministic inputs (no absolute paths or times), so the same inputs give the same contentHash.
   writeJson(path.join(dir, 'build.recipe.json'), {
     tool: TOOL,
     version: TOOL_VERSION,
     inputs: { html: path.basename(htmlPath), sha256: sha256(html), bundleId, revision, alpha },
   });
 
-  // contentHash 覆盖这三个文件；不参与的 bundle.manifest.json、files.manifest.json、verification.json
-  // 与 @cuccut/protocol 的 CODE_BUNDLE_UNHASHED_FILES 一致。
+  // contentHash covers these three files; the excluded bundle.manifest.json, files.manifest.json and verification.json
+  // match CODE_BUNDLE_UNHASHED_FILES in @cuccut/protocol.
   const listed = ['build.recipe.json', 'dependency.lock', 'index.html'];
   const files = listed
     .map((p) => {
@@ -370,7 +369,7 @@ export function buildBundle(opts) {
   return { ok: true, lint, dir, manifest };
 }
 
-/** verify 的采样时刻：0、入场结束、停留中点、duration−0.3、duration。 */
+/** verify sample times: 0, entrance end, hold midpoint, duration−0.3, duration. */
 export function sampleTimes(meta) {
   const d = meta.duration;
   const end = meta.entranceEnd ?? Math.min(d / 2, 2);
@@ -398,7 +397,7 @@ function parseArgs(argv) {
     else if (a === '--lint-only') opts.lintOnly = true;
     else if (a === '--verify') opts.verify = true;
     else if (a === '--electron-verify') opts.electronVerify = next();
-    else throw new Error(`未知参数：${a}`);
+    else throw new Error(`Unknown argument: ${a}`);
   }
   return opts;
 }
@@ -409,7 +408,7 @@ function runVerifyInElectron(dir) {
   try {
     electron = require('electron');
   } catch {
-    return { ok: false, error: '--verify 需要 electron 包（在 CucCut 仓库里运行，或装好 electron）' };
+    return { ok: false, error: '--verify needs the electron package (run inside the CucCut repository, or install electron)' };
   }
   const env = { ...process.env };
   delete env.ELECTRON_RUN_AS_NODE;
@@ -418,11 +417,11 @@ function runVerifyInElectron(dir) {
     env,
   });
   const report = path.join(dir, 'verification.json');
-  if (!fs.existsSync(report)) return { ok: false, error: `Electron 验证没有写出报告（退出码 ${r.status}）` };
+  if (!fs.existsSync(report)) return { ok: false, error: `Electron verification wrote no report (exit code ${r.status})` };
   return JSON.parse(fs.readFileSync(report, 'utf8'));
 }
 
-// ---- Electron 端：离屏打开包的入口，按时刻 seek、截图、检查 ----
+// ---- Electron side: opens the bundle entry offscreen, seeks each moment, screenshots and checks ----
 async function electronVerify(dir) {
   const require = createRequire(import.meta.url);
   const { app, BrowserWindow, session } = require('electron');
@@ -466,7 +465,7 @@ async function electronVerify(dir) {
     check('timeline', await js(`!!(window.__timelines && window.__timelines[${id}])`));
     check('qa', await js('!!window.__GRAPHICS_QA__'));
 
-    // seek 后等页面真正重绘一帧再截图。
+    // After seeking, wait for the page to actually repaint a frame before the screenshot.
     const paint = () =>
       new Promise((resolve) => {
         const timer = setTimeout(resolve, 500);
@@ -486,7 +485,7 @@ async function electronVerify(dir) {
     };
 
     const times = sampleTimes(meta);
-    // 截图放在包目录之外：包里只留 contentHash 覆盖的文件与 verification.json。
+    // Screenshots go outside the bundle directory: the bundle keeps only the files covered by contentHash plus verification.json.
     const previewDir = `${dir}-preview`;
     fs.mkdirSync(previewDir, { recursive: true });
     const frames = {};
@@ -501,7 +500,7 @@ async function electronVerify(dir) {
     for (const f of Object.values(frames))
       check(`size@${f.t}`, f.size.width === width && f.size.height === height, `${f.size.width}×${f.size.height}`);
 
-    // 确定性：打乱顺序再取一遍，同一时刻 PNG 字节一致。
+    // Determinism: capture again in shuffled order; the PNG bytes for the same moment must match.
     for (const key of Object.keys(times).reverse()) {
       const again = sha256((await capture(times[key])).toPNG());
       check(`deterministic@${times[key]}`, again === frames[key].hash);
@@ -559,7 +558,7 @@ async function electronVerify(dir) {
     writeJson(path.join(dir, 'verification.json'), report);
   };
 
-  // ESM 主进程里不能顶层 await app.whenReady()：ready 要等模块求值结束才发。
+  // An ESM main process cannot top-level await app.whenReady(): ready fires only after module evaluation finishes.
   app
     .whenReady()
     .then(main)
@@ -590,7 +589,7 @@ function cli(argv) {
         {
           ok: false,
           error:
-            '用法：node build-bundle.mjs --html <index.html> --out <dir> [--bundle-id <id>] [--revision <r>] [--alpha true|false] [--lint-only] [--verify]',
+            'Usage: node build-bundle.mjs --html <index.html> --out <dir> [--bundle-id <id>] [--revision <r>] [--alpha true|false] [--lint-only] [--verify]',
         },
         null,
         2,

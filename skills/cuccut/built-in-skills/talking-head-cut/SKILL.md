@@ -1,80 +1,80 @@
 ---
 name: talking-head-cut
-description: 一两个人对着镜头说话的录音要剪成能发布的视频时用：去掉口癖、长停顿、录废重来的部分和离题的话，在几遍重录里挑一遍，收紧句间停顿，把最有力的原话挪到开头，再按需要加放大强调、B-roll、竖屏取景和配乐闪避。需要视频的转写。只想从长视频里挑几段短视频时用切短视频。
+description: Use to cut a recording of one or two people talking to camera into a publishable video - remove tics, long pauses, botched retakes and digressions, tighten pauses, open with the strongest line, add emphasis, B-roll and music. Needs a transcript. For shorts from a long video, use shorts-segments.
 version: 2.2.0
 ---
 
-# 剪口播
+# Talking-head cut
 
-用户录了一段对着镜头说的话，里面有口癖、有停顿、有说错重来的几遍。他要的是一条能直接发的视频：话顺、不拖、开头留得住人，而且他说过的意思一句没变。观众感觉不到剪过，才算剪好了。
+The user recorded themselves talking to the camera, with verbal tics, pauses and a few botched takes said again. What they want is a video they can publish as is: smooth, not dragging, an opening that holds people - and not one thing they meant changed. It is cut well only when viewers cannot tell it was cut.
 
-最容易剪坏的样子有两种。一种是边听边剪：读到一句觉得多余就删，剪到后面发现它是后文的前提，只好回头补。另一种是剪得太狠：每次换气都剪掉，停顿全压到最短，听起来像机器在说话；或者为了开头抓人把一句话从中间截出来，意思变了。
+There are two easy ways to get it wrong. One is cutting while listening: deleting a sentence the moment it seems redundant, only to find further on that it was the premise for what follows, and having to go back and restore it. The other is cutting too hard: removing every breath and squeezing every pause to the minimum, so it sounds like a machine talking; or lifting a sentence out from the middle for a grabby opening, which changes its meaning.
 
-口播视频里决定剪点的是**话**，不是画面：先让话顺下来，再处理画面。顺序：
+In a talking-head video, the **words** decide the cut points, not the picture: make the speech flow first, then deal with the picture. Order:
 
-1. 转写。没有转写，下面每一步都是瞎猜。没有 kind 为 speech 的文档时先转写，告诉用户转写在进行。
-2. 按论点列出留 / 删清单，一次剪完（第 2 节）。
-3. 收紧句间停顿（第 3 节）。
-4. 定开头（第 4 节）。
-5. **剪口定下之后**才加画面：放大强调、B-roll、文字；然后是取景与声音。做法在 `references/picture-and-sound.md`，要做这些时用 `skills_read` 取。
-6. 验收（第 5 节）。
+1. Transcribe. Without a transcript, every step below is guesswork. When there is no document of kind speech, transcribe first and tell the user the transcription is running.
+2. List keep / cut by argument, and cut it all in one go (section 2).
+3. Tighten the pauses between sentences (section 3).
+4. Settle the opening (section 4).
+5. Add visuals **only after the cuts are settled**: punch-in emphasis, B-roll, text; then framing and sound. How to do these is in `references/picture-and-sound.md`; when you do these, fetch it with `skills_read`.
+6. Acceptance (section 5).
 
-画面元素会跟着剪口走，但先剪话、后加画面仍然更省事：话没定下来之前，定不了放大落在哪一句、B-roll 给几秒。
+Visual elements follow the cuts, but cutting the words first and adding visuals afterwards is still easier: until the words are settled, you cannot decide which sentence the punch-in lands on or how many seconds the B-roll gets.
 
-## 1. 时间与剪法
+## 1. Time and cutting
 
-这里有两个时钟，搞混了剪点就落错地方：
+There are two clocks here; mix them up and the cut points land in the wrong place:
 
-- 转写（documents_read 读 speech 文档）里词的 start、end 是素材自己的时钟，按 timescale 换成秒：秒 = 刻度 ÷ timescale。addCuts、proposeCuts 用的就是素材时钟上的秒。
-- splitItem、moveItem、removeRange、导出的范围和 videos_frames 的 `at` 用时间线上的秒。素材上的时刻 t 在时间线上的位置 = 那个片段的 startSeconds +（t − sourceInSeconds）（videos_inspect 的片段里有这两个值；变过速的片段再除以速率）。不要凭感觉换算；拿不准就重新 videos_inspect 读片段。
-- 口播的删减用剪口（addCuts）：可以恢复（restoreCut），剪口集合是视频里 kind 为 cut-set 的文档。原文件不动。
+- In the transcript (the speech document read with documents_read), words' start and end are on the asset's own clock, converted to seconds by timescale: seconds = ticks / timescale. addCuts and proposeCuts use seconds on the asset clock.
+- splitItem, moveItem, removeRange, export ranges and videos_frames' `at` use seconds on the timeline. The position on the timeline of moment t in the asset = that item's startSeconds + (t - sourceInSeconds) (both values are in videos_inspect's items; for items with a speed change, divide further by the rate). Do not convert by feel; when unsure, read the items again with videos_inspect.
+- Talking-head removals use cuts (addCuts): they can be restored (restoreCut), and the cut set is the video's document of kind cut-set. The original file is untouched.
 
-## 2. 留 / 删清单
+## 2. Keep / cut list
 
-读全文，不要边听边一句一句剪：
+Read the whole text; do not cut sentence by sentence while listening:
 
-- **按论点列**：这段录音讲了哪几个论点，每个论点留哪几句。写成留 / 删清单（句子、留或删、理由），一次剪完；边读边剪，读到后面常发现前面删掉的一句是后文的前提。
-- **该删的**：开拍前的准备、说错重来的那几遍、录完到停机之间的杂音、与主线无关的离题话。
-- **口癖与长停顿**：用 edits_apply 的 proposeCuts（detect 里的 fillers 与 pauses）生成剪辑提案，用 documents_read 读提案，逐条看过，再用 acceptCutSuggestions 只接受该删的那些；要改区间的直接 addCuts 并把建议 ID 写进 ref。提案不检测重复的句子：录废重来、说了两遍的，自己按转写里的词时间用 addCuts 剪。
-- **几遍重录挑哪遍**：看完整（意思说全了）、自然（不像背的）、节奏（不拖不赶）。后一遍通常更顺，但这不是规则；拿不准就都留着，请用户听了再定。
-- **默认保持原来的顺序**。调序会改变论证；除了第 4 节的开头，其他任何挪动都先问用户。
-- 按整句删：剪口的边界落在词与词之间的空隙里，取整句第一个词的开头到最后一个词的结尾，不切进词里。
-- **清单定下后作为一笔修改提交**：每句要删的一个剪口，放进同一次 edits_apply。整笔是一步撤销：用户说「不要那一批」时，一次 edits_undo 就退回去。
+- **List by argument**: which arguments does this recording make, and which sentences does each argument keep? Write a keep / cut list (sentence, keep or cut, reason) and cut it all in one go; cutting as you read, you often find later that a sentence you deleted earlier was the premise of what follows.
+- **What to cut**: preparation before the take starts, the botched takes said again, noise between the end of the take and stopping the recording, digressions unrelated to the main line.
+- **Verbal tics and long pauses**: generate a cut proposal with edits_apply's proposeCuts (fillers and pauses in detect), read the proposal with documents_read, review every item, then use acceptCutSuggestions to accept only those that should go; to change a range, use addCuts directly and put the suggestion ID in ref. The proposal does not detect repeated sentences: for botched retakes and things said twice, cut them yourself with addCuts using the word timings in the transcript.
+- **Which retake to pick**: look at completeness (the idea fully said), naturalness (does not sound recited) and pace (neither dragging nor rushed). The later take is usually smoother, but that is not a rule; when unsure, keep them all and ask the user to listen and decide.
+- **Keep the original order by default.** Reordering changes the argument; apart from the opening in section 4, ask the user before any move.
+- Cut whole sentences: cut boundaries fall in the gaps between words, from the start of the sentence's first word to the end of its last word, never cutting into a word.
+- **Once the list is settled, submit it as one edit**: one cut per sentence to remove, all in the same edits_apply. The whole edit is one undo step: when the user says "not that batch", one edits_undo takes it back.
 
-## 3. 句间停顿
+## 3. Pauses between sentences
 
-停顿的长短是视频的语气：压得太短像赶，留得太长像拖。
+The length of the pauses is the video's tone of voice: too short sounds rushed, too long sounds draggy.
 
-- 起点（不是规则，要听着调）：句与句之间约 0.2 秒；节奏快的宣传类口播可以到 0.1–0.15 秒，讲道理或偏思考的 0.3–0.5 秒。语速慢、句子长的语言和说话人相应放宽。
-- 用 proposeCuts 的 detect 表达：pauses 打开，compressTo 设成上面的目标，minPause、maxGap 不给时用默认值。先读提案看会动多少处，再接受。整片用同一个数之后，回头看转折、包袱和提问之后的地方：那里的停顿是内容，压短就丢了。
-- **留住换气**：把每次换气都剪掉听起来像机器。剪的是空等，不是呼吸。
-- **词要完整**：剪点落在词之间的空隙，不吃掉第一个音节，也不吃掉结尾的尾音。转写的词边界很紧时，在剪点留一点余量。
-- 你听不到成片。停顿长短可以从剪口和片段读出来，但**顺不顺要人耳听**：用 export 导出一小段（range 是时间线上的秒）给用户听，并在报告里说明哪些只是量出来的。
+- A starting point (not a rule; adjust by ear): about 0.2 seconds between sentences; fast-paced promotional talking heads can go to 0.1-0.15 seconds, reasoning or reflective ones 0.3-0.5 seconds. Allow more for languages and speakers with a slow pace and long sentences.
+- Express it through proposeCuts' detect: turn pauses on, set compressTo to the target above, and leave minPause and maxGap at their defaults. Read the proposal first to see how many places it changes, then accept. After applying one number to the whole video, go back and look at the spots after turns, punchlines and questions: the pauses there are content, and squeezing them loses it.
+- **Keep the breaths**: removing every breath sounds like a machine. Cut the dead waiting, not the breathing.
+- **Keep words whole**: cut points fall in the gaps between words, never eating the first syllable or the trailing sound at the end. When the transcript's word boundaries are tight, leave a little margin at the cut point.
+- You cannot hear the finished video. Pause lengths can be read from the cuts and items, but **whether it flows needs a human ear**: use export to export a short stretch (range in timeline seconds) for the user to listen to, and say in the report which things were only measured.
 
-## 4. 开头
+## 4. The opening
 
-头几秒决定观众留不留。
+The first few seconds decide whether viewers stay.
 
-- 头几秒要有一句让人留下来的话。全片最有力的一句**原话**可以挪到开头：用 splitItem 在这句话的首尾（时间线上的秒）切开，再用一次 moveItems 把它挪到最前、把原来在它前面的片段顺次往后挪（同一轨道上的片段不能重叠）。
-- 挪的是原话；不重新配音，不拼半句。它原本带着的限定语一起带走（例如「在这种情况下」「对新手来说」，任何语言都一样）；拿掉限定语会改变意思时，就不挪。
+- The first few seconds need a line that makes people stay. The strongest **original line** in the whole video can move to the opening: use splitItem to cut at the start and end of the line (in timeline seconds), then a single moveItems to move it to the front and shift the items that were before it back in order (items on the same track cannot overlap).
+- Move the original line; do not re-record it or splice half sentences. Take the qualifiers it carried along with it (for example "in this case" or "for beginners", in any language); when removing the qualifier would change the meaning, do not move it.
 
-  对比一下（只是示意）：原话是「对新手来说，这个方法第一周就能见效」。挪「这个方法第一周就能见效」到开头，意思从「对新手」变成了「对所有人」，不能这么挪；要挪就整句挪。
-- 想清楚这句话在片子里出现一次还是两次，并告诉用户：挪动是**调序**，原来的位置就没有这句了；如果是预告、原位置也要保留，就不挪，而是在开头再放一份同一段素材（addItem 放同一个素材，再用 trimItem 裁到这句话的范围），并给它腾出位置。
-- 挪片段时别的轨道上的东西不一定跟着走。所以先定开头，再加放大和文字；如果已经加了，挪完之后 videos_inspect 重新读，逐个核对。
-- 没有能单独成立的原话时什么都不挪；按原来的顺序开始，把开场寒暄剪掉。
+  A comparison (illustrative only): the original line is "For beginners, this method shows results in the first week." Moving "this method shows results in the first week" to the opening changes the meaning from "for beginners" to "for everyone", so it cannot be moved that way; if you move it, move the whole sentence.
+- Decide whether the line appears once or twice in the video, and tell the user: a move is a **reorder**, so the line is no longer in its original place; if it is a teaser and the original place should keep it too, do not move it - instead put another copy of the same asset at the opening (addItem with the same asset, then trimItem to the line's range), and make room for it.
+- When items move, things on other tracks do not necessarily follow. So settle the opening first, then add punch-ins and text; if they were already added, re-read with videos_inspect after the move and check each one.
+- When no original line can stand on its own, move nothing; start in the original order and cut the opening small talk.
 
-## 5. 验收
+## 5. Acceptance
 
-- 读回：videos_inspect 看片段与时长，documents_read 看剪口集合，对照留 / 删清单逐项核对：该删的删了，该留的还在。
-- 要看画面时用 videos_frames 在时间线上的时刻取帧：它给的是那个时刻的素材画面，放大、字幕和叠加的元素不在里面；要核对合成后的效果，导出一小段成片给用户看。
-- 剪过之后译文会过期：有译文时按翻译字幕的做法，只重译变了的句子。
-- 报告分三栏写：**量出来的**（时长、剪口数、停顿改成了多少）、**看过的**（取了帧的写看了哪几处、看到什么；没看的如实写没看）、**要人听的**（剪点顺不顺、配乐音量）。开头那句挪没挪、原位置怎么处理，单独一句说明。
+- Read back: videos_inspect for the items and duration, documents_read for the cut set, and check them against the keep / cut list item by item: what should go is gone and what should stay is still there.
+- To look at the picture, use videos_frames to grab frames at timeline moments: it gives the asset picture at that moment, without punch-ins, captions or overlaid elements; to check the composited result, export a short stretch of the finished video for the user to look at.
+- Translations go stale after cutting: when there is a translation, follow the subtitle translation approach and retranslate only the sentences that changed.
+- The report has three columns: **measured** (duration, number of cuts, what the pauses were changed to), **seen** (where frames were grabbed, which spots were looked at and what was seen; what was not looked at is stated truthfully), **needs a human ear** (whether the cut points flow, the music volume). Whether the opening line was moved, and how its original place was handled, gets a sentence of its own.
 
-## 6. 要避免的
+## 6. What to avoid
 
-- 不要边听边剪，不要分几笔零散地剪。
-- 不要把每次换气都剪掉，不要把转折、包袱后面的停顿压掉。
-- 不要切进词里；不要为了开头拼半句、拿掉限定语。
-- 不要不问就调序（开头那一句除外）；不要替用户在几遍重录里硬选。
-- 不要把素材时钟和时间线时钟混用。
-- 不要把没听过的说成「顺」，把没看过的说成「没问题」。
+- Do not cut while listening, and do not cut in several scattered edits.
+- Do not remove every breath, and do not squeeze out the pauses after turns and punchlines.
+- Do not cut into words; do not splice half sentences or drop qualifiers for the opening.
+- Do not reorder without asking (except the opening line); do not force a choice among retakes for the user.
+- Do not mix the asset clock with the timeline clock.
+- Do not call what you have not heard "smooth", or what you have not seen "fine".

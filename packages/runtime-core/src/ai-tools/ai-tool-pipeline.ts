@@ -135,23 +135,21 @@ interface ApplyOutput extends Record<string, unknown> {
 const PARAMS_SCHEMA = {
   type: 'object',
   properties: {
-    // i18n-ignore-start: 参数说明（给智能体的 JSON Schema）
-    videoId: { type: 'string', description: '已打开的视频' },
-    tool: { type: 'string', enum: ['polish', 'chapters', 'summary', 'blog', 'title', 'desc'], description: '哪个 AI 工具' },
-    prompt: { type: 'string', description: '提示词' },
+    videoId: { type: 'string', description: 'An open video' },
+    tool: { type: 'string', enum: ['polish', 'chapters', 'summary', 'blog', 'title', 'desc'], description: 'Which AI tool' },
+    prompt: { type: 'string', description: 'The prompt' },
     range: {
       type: 'object',
       properties: { start: { type: 'number' }, end: { type: 'number' } },
       required: ['start', 'end'],
-      description: '时间线上的一段（秒）；不给时整篇。chapters 不接受',
+      description: 'A span of the timeline (seconds); the whole transcript when absent. Not accepted by chapters',
     },
-    documentId: { type: 'string', description: '用哪份 speech 文档；只有一份时可以不给' },
-    attachments: { type: 'array', items: { type: 'string' }, description: '附件 ID（attachments.prepare）' },
-    skills: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] }, description: '作为系统提示词的 skill，按顺序' },
-    provider: { type: 'string', description: '文本模型的 Provider；不给时用默认值' },
+    documentId: { type: 'string', description: 'Which speech document to use; may be omitted when there is only one' },
+    attachments: { type: 'array', items: { type: 'string' }, description: 'Attachment IDs (attachments.prepare)' },
+    skills: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] }, description: 'Skills used as the system prompt, in order' },
+    provider: { type: 'string', description: 'The text model provider; the default when absent' },
     model: { type: 'string' },
-    uiLanguage: { type: 'string', description: '用户的界面语言（BCP 47，如 zh-Hans、en），写进系统提示词' },
-    // i18n-ignore-end
+    uiLanguage: { type: 'string', description: 'The user\'s interface language (BCP 47, e.g. zh-Hans, en), stated in the system prompt' },
   },
   required: ['videoId', 'tool', 'prompt'],
   additionalProperties: false,

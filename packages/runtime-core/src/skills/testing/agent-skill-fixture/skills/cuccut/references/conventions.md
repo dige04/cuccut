@@ -1,26 +1,27 @@
-# 约定
+# Conventions
 
 <!-- surface: cli -->
-成功时 stdout 是 `{ ok: true, result, next? }`；`next` 是建议的下一条命令。
+On success stdout is `{ ok: true, result, next? }`; `next` is the suggested next command.
 <!-- /surface -->
 
-## 错误码之后做什么
+## What to do after an error code
 
 <!-- generated: error-codes -->
 <!-- surface: cli -->
-| 错误码 | 退出码 | 下一步 |
+| Error code | Exit code | Next step |
 | --- | --- | --- |
-| `CAPABILITY_NOT_CONFIGURED` `DUB_SEPARATION_NOT_CONFIGURED` `MODELS_DIR_MISSING` `CREDENTIAL_UNAVAILABLE` `AUTHENTICATION_REQUIRED` `OFFLINE_STRICT` `GRANT_REQUIRED` `GRANT_REVOKED` `BUDGET_EXCEEDED` `BUDGET_UNVERIFIABLE` `TASK_BUDGET_EXCEEDED` `TASK_BUDGET_UNVERIFIABLE` `TOOL_UNAVAILABLE` `TOOL_CONSENT_REQUIRED` `TOOL_UPDATE_CONFIRM_REQUIRED` `TOOL_UPDATE_MANUAL` `MEDIA_TOOL_UNAVAILABLE` `EXPORT_TOOL_MISSING` `LINK_LOGIN_REQUIRED` `LINK_COOKIES_UNAVAILABLE` `LINK_TOOL_UPDATE_REQUIRED` `VOICE_CONSENT_REQUIRED` `VOICE_CLONE_REQUIRED` | 2 | 要用户先做一件事：配置能力、授权或预算、同意或安装外部工具、登录、音色授权。把 `remedy` 原样转告用户，用户做完后照 `next` 重试；不用脚本、别的服务商或手改配置绕过 |
-| `RUNTIME_UNAVAILABLE` `RUNTIME_START_FAILED` `PROTOCOL_MISMATCH` `INTERFACE_VERSION_MISMATCH` `CATALOG_UNAVAILABLE` | 3 | Runtime 不可用或版本不同。先 `cuccut runtime ensure`；接口版本不同时请用户更新 CucCut 或 CLI，不绕过 |
-| `INVALID_ARGUMENTS` `UNKNOWN_COMMAND` `UNKNOWN_TOOL` `CONFIRMATION_REQUIRED` | 4 | 参数不对：对照 `cuccut help <命令>` 或 `cuccut spec <名字>` 改；缺 `--yes` 时先问用户，用户同意后再加 |
-| `RUNTIME_NOT_OWNED` `RUNTIME_IN_USE` | 1 | Runtime 不归这个 CLI 停，或还有人在用：不停它，留着 |
-| 其他错误码 | 1 | 失败或取消。看 `retryability`：`after-refresh` 先重新读再提交（版本冲突 `PROJECT_REVISION_CONFLICT` 时重新 {{tool:videos_inspect}}）；`after-user-action` 转告用户；`never` 换做法。等待超时（`WAIT_TIMEOUT`）时任务还在跑，用 {{tool:jobs_wait}} 接着等 |
+| `CAPABILITY_NOT_CONFIGURED` `DUB_SEPARATION_NOT_CONFIGURED` `MODELS_DIR_MISSING` `CREDENTIAL_UNAVAILABLE` `AUTHENTICATION_REQUIRED` `OFFLINE_STRICT` `GRANT_REQUIRED` `GRANT_REVOKED` `BUDGET_EXCEEDED` `BUDGET_UNVERIFIABLE` `TASK_BUDGET_EXCEEDED` `TASK_BUDGET_UNVERIFIABLE` `TOOL_UNAVAILABLE` `TOOL_CONSENT_REQUIRED` `TOOL_UPDATE_CONFIRM_REQUIRED` `TOOL_UPDATE_MANUAL` `MEDIA_TOOL_UNAVAILABLE` `EXPORT_TOOL_MISSING` `LINK_LOGIN_REQUIRED` `LINK_COOKIES_UNAVAILABLE` `LINK_TOOL_UPDATE_REQUIRED` `VOICE_CONSENT_REQUIRED` `VOICE_CLONE_REQUIRED` | 2 | The user has to do something first: configure a capability, grant access or budget, agree to or install an external tool, sign in, authorize a voice. Pass `remedy` on to the user as is, and retry as `next` says once they are done; do not work around it with scripts, other providers or hand-edited configuration |
+| `RUNTIME_UNAVAILABLE` `RUNTIME_START_FAILED` `PROTOCOL_MISMATCH` `INTERFACE_VERSION_MISMATCH` `CATALOG_UNAVAILABLE` | 3 | The Runtime is unavailable or a different version. Run `cuccut runtime ensure` first; when the interface version differs, ask the user to update CucCut or the CLI, and do not work around it |
+| `INVALID_ARGUMENTS` `UNKNOWN_COMMAND` `UNKNOWN_TOOL` `CONFIRMATION_REQUIRED` | 4 | Wrong arguments: fix them against `cuccut help <command>` or `cuccut spec <name>`; when `--yes` is missing, ask the user first and add it only once they agree |
+| `RUNTIME_NOT_OWNED` `RUNTIME_IN_USE` | 1 | The Runtime is not this CLI's to stop, or someone is still using it: do not stop it, leave it running |
+| `AGENT_SKILL_NOT_FOUND` `AGENT_SKILL_INVALID` | 1 | The agent guide cannot be installed: the CucCut installation is incomplete or the guide is broken. Pass `message` on to the user as is and ask them to reinstall or update CucCut; do not assemble the guide yourself |
+| Other error codes | 1 | Failed or cancelled. Look at `retryability`: `after-refresh` - read again before submitting (on a revision conflict, `PROJECT_REVISION_CONFLICT`, run {{tool:videos_inspect}} again); `after-user-action` - pass it on to the user; `never` - change approach. On a wait timeout (`WAIT_TIMEOUT`) the job is still running: keep waiting with {{tool:jobs_wait}} |
 <!-- /surface -->
 <!-- surface: agent -->
-| 错误码 | 下一步 |
+| Error code | Next step |
 | --- | --- |
-| `CAPABILITY_NOT_CONFIGURED` `DUB_SEPARATION_NOT_CONFIGURED` `MODELS_DIR_MISSING` `CREDENTIAL_UNAVAILABLE` `AUTHENTICATION_REQUIRED` `OFFLINE_STRICT` `GRANT_REQUIRED` `GRANT_REVOKED` `BUDGET_EXCEEDED` `BUDGET_UNVERIFIABLE` `TASK_BUDGET_EXCEEDED` `TASK_BUDGET_UNVERIFIABLE` `TOOL_UNAVAILABLE` `TOOL_CONSENT_REQUIRED` `TOOL_UPDATE_CONFIRM_REQUIRED` `TOOL_UPDATE_MANUAL` `MEDIA_TOOL_UNAVAILABLE` `EXPORT_TOOL_MISSING` `LINK_LOGIN_REQUIRED` `LINK_COOKIES_UNAVAILABLE` `LINK_TOOL_UPDATE_REQUIRED` `VOICE_CONSENT_REQUIRED` `VOICE_CLONE_REQUIRED` | 要用户先做一件事：配置能力、授权或预算、同意或安装外部工具、登录、音色授权。把 `remedy` 原样转告用户，用户做完后照 `next` 重试；不绕过 |
-| `INVALID_ARGUMENTS` `UNKNOWN_TOOL` | 参数或工具名不对：对照工具的 schema 改；`edits_apply` 的操作字段用 {{tool:edits_ops}} 取 |
-| 其他错误码 | 失败或取消。看 `retryability`：`after-refresh` 先重新读再提交（版本冲突 `PROJECT_REVISION_CONFLICT` 时重新 {{tool:videos_inspect}}）；`after-user-action` 转告用户；`never` 换做法 |
+| `CAPABILITY_NOT_CONFIGURED` `DUB_SEPARATION_NOT_CONFIGURED` `MODELS_DIR_MISSING` `CREDENTIAL_UNAVAILABLE` `AUTHENTICATION_REQUIRED` `OFFLINE_STRICT` `GRANT_REQUIRED` `GRANT_REVOKED` `BUDGET_EXCEEDED` `BUDGET_UNVERIFIABLE` `TASK_BUDGET_EXCEEDED` `TASK_BUDGET_UNVERIFIABLE` `TOOL_UNAVAILABLE` `TOOL_CONSENT_REQUIRED` `TOOL_UPDATE_CONFIRM_REQUIRED` `TOOL_UPDATE_MANUAL` `MEDIA_TOOL_UNAVAILABLE` `EXPORT_TOOL_MISSING` `LINK_LOGIN_REQUIRED` `LINK_COOKIES_UNAVAILABLE` `LINK_TOOL_UPDATE_REQUIRED` `VOICE_CONSENT_REQUIRED` `VOICE_CLONE_REQUIRED` | The user has to do something first: configure a capability, grant access or budget, agree to or install an external tool, sign in, authorize a voice. Pass `remedy` on to the user as is, and retry as `next` says once they are done; do not work around it |
+| `INVALID_ARGUMENTS` `UNKNOWN_TOOL` | Wrong arguments or tool name: fix them against the tool's schema; get the operation fields of `edits_apply` from {{tool:edits_ops}} |
+| Other error codes | Failed or cancelled. Look at `retryability`: `after-refresh` - read again before submitting (on a revision conflict, `PROJECT_REVISION_CONFLICT`, run {{tool:videos_inspect}} again); `after-user-action` - pass it on to the user; `never` - change approach |
 <!-- /surface -->
 <!-- /generated -->

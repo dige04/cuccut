@@ -1,9 +1,9 @@
-# 底本与默认值
+# Base text and defaults
 
-## 底本
+## Base text
 
-先通读，定下底本。要改的地方多时，做法在 `references/notes.md` 本页，不另取。
+Read it through first and settle the base text. When there is a lot to change, the method is in `references/notes.md` on this page; do not fetch anything else.
 
-## 默认值
+## Defaults
 
-- 只改错字与标点。
+- Fix only typos and punctuation.

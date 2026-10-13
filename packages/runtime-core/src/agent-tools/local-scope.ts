@@ -1,4 +1,3 @@
-// i18n-ignore-file: 工具通道（CLI 的本机范围）的错误、下一步与说明，给终端里的智能体与用户，与工具说明用同一种语言
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { RpcError, newId, type Id, type JobRecord, type JobSubmitter, type Project, type VideoOpenResult } from '@cuccut/protocol';
@@ -24,17 +23,25 @@ import {
 } from './tool-scope.ts';
 
 /**
- * 终端里的用户本人的权限与范围（架构设计 §3.5；Agent 面设计 §3）：CLI（或桌面连接）经网关 `catalog.call` 按名调用目录里的工具。
+ * Permissions and scope of the user themselves in a terminal (architecture design §3.5; agent surface design §3): the
+ * CLI (or a desktop connection) calls catalog tools by name through the gateway's `catalog.call`.
  *
- * - **范围**：用户能访问的一切。视频用 videoId、视频目录（绝对或相对 cwd）或 Space 条目 id 指明，解析顺序是目录 → videoId → 条目；
- *   没打开的由 Runtime 打开，挂在发起调用的连接上，调用完不强制关闭（连接断开时随之放下，与界面打开的相同）。
- * - **确认**：不走 CucCut 的审批，确认由 Agent 宿主（或终端里的用户自己）负责。外发数据与桌面界面相同：启用了的在线 Provider
- *   已有默认授权；没有授权覆盖的（用户撤销了）以 `GRANT_REQUIRED` 拒绝，不在这里替用户发放授权。
- * - **写入**：操作者 `user_local`（`actorOf` 按非智能体、非对外服务处理），与桌面界面共用撤销栈；任务的提交者是发起调用的连接
- *   （`{ kind: 'connection', id }`），与桌面端连接提交的相同。任务与产物全部可见、都能取消（与任务中心相同）。
- * - **路径**：素材导入、导出目标与产物保存按 cwd 解析相对路径，绝对路径照收，没有目录约束；视频目录与 `.ccut` 不可写是引擎与
- *   导出的保护，不在这里做。
- * - **项目**：`projectDir`（显式给，或从 cwd 向上找到的）里新建视频；没有时新建到默认项目目录下的 `CLI` 项目，并在结果里说明。
+ * - **Scope**: everything the user can access. A video is named by videoId, video directory (absolute or relative to
+ *   cwd) or Space entry id, resolved in the order directory -> videoId -> entry; videos not yet open are opened by the
+ *   Runtime and attached to the calling connection, and are not force-closed after the call (they are released when the
+ *   connection drops, the same as videos opened by the UI).
+ * - **Confirmation**: CucCut's approvals are not used; confirmation is the job of the agent host (or the user in the
+ *   terminal). Outbound data works as in the desktop UI: enabled online Providers already have a default grant; calls not
+ *   covered by a grant (the user revoked it) are refused with `GRANT_REQUIRED`, and no grant is issued here on the
+ *   user's behalf.
+ * - **Writes**: the actor is `user_local` (`actorOf` treats it as neither agent nor external service) and shares the undo
+ *   stack with the desktop UI; the job submitter is the calling connection (`{ kind: 'connection', id }`), the same as
+ *   jobs submitted by a desktop connection. All jobs and artifacts are visible and cancellable (same as the job center).
+ * - **Paths**: asset imports, export targets and artifact saves resolve relative paths against cwd and accept absolute
+ *   paths, with no directory restriction; keeping video directories and `.ccut` unwritable is the engine's and export's
+ *   protection, not done here.
+ * - **Projects**: new videos go into `projectDir` (given explicitly, or found by walking up from cwd); without one they
+ *   go into the `CLI` project under the default projects directory, and the result says so.
  */
 
 export interface LocalAccess extends ToolAccess {
@@ -45,21 +52,23 @@ export interface LocalScopeDeps {
   harness: Harness;
   videos: VideoService;
   jobs: JobManager;
-  /** Space 目录在工具目录之后才建好：调用时再取。 */
+  /** The Space catalog is built after the tool catalog: read it at call time. */
   space: () => SpaceCatalog;
-  /** 默认项目目录（`CUCCUT_PROJECTS_DIR`，见 `RuntimeHome.projectsDir`）。 */
+  /** Default projects directory (`CUCCUT_PROJECTS_DIR`, see `RuntimeHome.projectsDir`). */
   projectsDir: string;
 }
 
-/** 当前目录不在任何项目里时，新建视频所在的项目（默认项目目录下）。 */
+/** The project new videos go into when the current directory is in no project (under the default projects directory). */
 export const LOCAL_DEFAULT_PROJECT_DIR = 'CLI';
 
 const PROJECT_MARKER = path.join('.ccut', 'project.json');
 
 /**
- * 网关连接 + `catalog.call` 的参数 → 这次调用的主体。`cwd` 与 `project` 是绝对路径（协议的 schema 已经检查；`--project` 的相对路径
- * 由 CLI 按 cwd 解析好）；不存在或不是目录时以 `INVALID_ARGUMENTS` 拒绝。不给 `project` 时从 cwd 向上找 `.ccut/project.json`。
- * 这里只找、不登记：登记项目（写标记）留到真要用项目的时候（新建视频、按目录打开视频）。
+ * Gateway connection + `catalog.call` params -> the principal of this call. `cwd` and `project` are absolute paths (the
+ * protocol schema already checked; the CLI resolves a relative `--project` against cwd); a path that does not exist or
+ * is not a directory is refused with `INVALID_ARGUMENTS`. Without `project`, walks up from cwd looking for
+ * `.ccut/project.json`. This only finds, it does not register: registering the project (writing the marker) waits until
+ * the project is actually needed (creating a video, opening a video by directory).
  */
 export async function resolveLocalPrincipal(
   connection: TrustedPrincipal,
@@ -84,16 +93,17 @@ export class LocalScope implements ToolScope<LocalAccess> {
     this.#deps = deps;
   }
 
-  /** 一律允许：CLI 是用户本人在终端里操作，或用户授权的终端 Agent。 */
+  /** Always allowed: the CLI is the user themselves working in a terminal, or a terminal agent the user authorized. */
   authorize(principal: ToolPrincipal, _write: boolean): LocalAccess {
-    if (principal.kind !== 'local') throw new ToolError('FORBIDDEN', '这个范围只服务终端里的调用');
+    if (principal.kind !== 'local') throw new ToolError('FORBIDDEN', 'This scope only serves calls from a terminal');
     const submitter: JobSubmitter = { kind: 'connection', id: principal.connectionId };
     return { principal, submitter };
   }
 
   /**
-   * 不生成审批：确认由 Agent 宿主负责（Agent 面设计 §3.1）。没有授权覆盖的外发直接拒绝：Provider 的启用就是持续授权，
-   * 用户撤销了的不在这里替用户补发。
+   * No approvals are created: confirmation is the agent host's job (agent surface design §3.1). Outbound calls not covered
+   * by a grant are refused outright: enabling a Provider is a standing grant, and one the user revoked is not reissued
+   * here on the user's behalf.
    */
   async confirm(_access: LocalAccess, request: ToolConfirmation): Promise<ToolApprovalNote | void> {
     if (!request.grants?.length) return;
@@ -103,21 +113,21 @@ export class LocalScope implements ToolScope<LocalAccess> {
       ...extra,
       remedy: {
         ...remedy,
-        // i18n-ignore: ToolError 的补救只给 Agent 宿主里的模型看
-        hint: '把数据交给这个服务商需要授权：在 CucCut 的设置里重新启用这个服务商，或为它发放授权（数据种类、范围与预算），然后再试。',
+        hint: 'Sending data to this provider needs a grant: re-enable the provider in CucCut\'s settings, or issue it a grant (data kinds, scope and budget), then try again.',
       },
       next: GRANT_NEXT[code],
     });
   }
 
   /**
-   * 在项目里（`projectDir`）时列出这个项目里的视频（相对项目目录的 path 与绝对的 dir）；不在项目里时列出 Space 里的全部视频
-   * 与已经打开的视频。videoId 读不出来（被别处锁着）的照样列出，只是不带 videoId。
+   * Inside a project (`projectDir`), lists the videos in that project (path relative to the project directory, and the
+   * absolute dir); outside a project, lists all videos in Space plus videos already open. Videos whose videoId cannot be
+   * read (locked elsewhere) are still listed, just without a videoId.
    */
   async listVideos(access: LocalAccess): Promise<Record<string, unknown>> {
     const { projectDir } = access.principal;
     const open = new Map(this.#deps.videos.openRefs().map((ref) => [ref.path, ref]));
-    const next = '用 videoId 或视频目录调用 videos_inspect 读取视频；修改之前先读，拿到 revision 与对象 ID。';
+    const next = 'Call videos_inspect with a videoId or video directory to read a video; read before editing to get the revision and object IDs.';
     if (projectDir) {
       const scan = await scanDirectory(projectDir);
       const videos: Record<string, unknown>[] = [];
@@ -153,8 +163,8 @@ export class LocalScope implements ToolScope<LocalAccess> {
   }
 
   /**
-   * 新建视频：调用方给了 `project`（项目目录，绝对或相对 cwd）就用它；否则在 `projectDir` 里（登记它）；都没有时在默认项目
-   * 目录下的 `CLI` 项目里，并说明。
+   * Creating a video: use the caller's `project` (project directory, absolute or relative to cwd) if given; otherwise
+   * `projectDir` (registering it); with neither, the `CLI` project under the default projects directory, with a note.
    */
   async createRoot(access: LocalAccess, project?: string): Promise<VideoRoot> {
     const { cwd, projectDir } = access.principal;
@@ -169,7 +179,7 @@ export class LocalScope implements ToolScope<LocalAccess> {
     return {
       root: fallback.path,
       scope: { projectId: fallback.id },
-      note: `当前目录不在 CucCut 项目里：视频建在默认项目目录的 ${fallback.path}。要放进别的项目，在那个项目目录里运行，或用 --project 指定。`,
+      note: `The current directory is not in a CucCut project: the video was created in ${fallback.path} under the default projects directory. To use another project, run from that project's directory or pass --project.`,
     };
   }
 
@@ -183,12 +193,12 @@ export class LocalScope implements ToolScope<LocalAccess> {
     }
   }
 
-  /** `importAsset.path` 相对 cwd；绝对路径照收，没有目录约束。 */
+  /** `importAsset.path` is relative to cwd; absolute paths are accepted, with no directory restriction. */
   importBase(access: LocalAccess): { cwd: string; confine: string | null } {
     return { cwd: access.principal.cwd, confine: null };
   }
 
-  /** 本机文件按 cwd 解析，绝对路径照收。 */
+  /** Local files resolve against cwd; absolute paths are accepted. */
   fileBase(access: LocalAccess): string {
     return access.principal.cwd;
   }
@@ -197,21 +207,21 @@ export class LocalScope implements ToolScope<LocalAccess> {
     return given ?? newId('cmd');
   }
 
-  /** 全部任务都看得到（与任务中心相同）。 */
+  /** All jobs are visible (same as the job center). */
   async visibleJob(jobId: Id): Promise<JobRecord> {
     try {
       return this.#deps.jobs.inspect(jobId);
     } catch {
-      throw new ToolError('JOB_NOT_FOUND', `找不到任务 ${jobId}`);
+      throw new ToolError('JOB_NOT_FOUND', `Job not found: ${jobId}`);
     }
   }
 
-  /** `jobs_list`：全部任务（与任务中心相同）。 */
+  /** `jobs_list`: all jobs (same as the job center). */
   async visibleJobs(): Promise<JobRecord[]> {
     return this.#deps.jobs.list();
   }
 
-  /** `projects_list`：全部已登记项目，视频数按 Space 里登记的视频（首次扫描完成之后）。 */
+  /** `projects_list`: all registered projects, with video counts from the videos registered in Space (after the first scan finishes). */
   async listProjects(): Promise<ScopedProject[]> {
     const space = this.#deps.space();
     await space.ready;
@@ -226,34 +236,34 @@ export class LocalScope implements ToolScope<LocalAccess> {
     const record = this.#deps.jobs
       .list()
       .find((r) => r.result?.artifactId === artifactId || r.result?.outputs?.some((o) => o.artifactId === artifactId));
-    if (!record) throw new ToolError('ARTIFACT_NOT_FOUND', `找不到产物 ${artifactId}（jobs_inspect 的 outputs 里的 artifactId）`);
+    if (!record) throw new ToolError('ARTIFACT_NOT_FOUND', `Artifact not found: ${artifactId} (use an artifactId from the outputs of jobs_inspect)`);
     const output = record.result?.outputs?.find((o) => o.artifactId === artifactId) ?? null;
     const file = await locateArtifact(this.#deps.jobs.artifacts, artifactId, output);
-    if (!file) throw new ToolError('ARTIFACT_NOT_FOUND', `产物 ${artifactId} 的文件已经不在了`);
+    if (!file) throw new ToolError('ARTIFACT_NOT_FOUND', `The file for artifact ${artifactId} no longer exists`);
     return { record, output, file };
   }
 
-  /** 用户本人：哪个任务都能取消（与任务中心相同）。 */
+  /** The user themselves: any job can be cancelled (same as the job center). */
   owns(): boolean {
     return true;
   }
 
-  /** 变更卡只在会话里放；终端的修改在视频历史里（操作者 `user_local`）。 */
+  /** Change cards only go in sessions; terminal edits are in the video history (actor `user_local`). */
   recordChange(): void {}
 
-  /** `artifacts_save` 写到 cwd。 */
+  /** `artifacts_save` writes to cwd. */
   saveRoot(access: LocalAccess): string {
     return access.principal.cwd;
   }
 
-  /** 导出目标按 cwd 解析，绝对路径照收；不给时由导出服务放到视频来源目录（所属项目）的 `exports/`。 */
+  /** Export targets resolve against cwd, absolute paths accepted; when omitted, the export service puts the file in `exports/` of the video's source directory (its project). */
   exportBase(access: LocalAccess): ExportBase {
     return { base: access.principal.cwd, within: null, ownDefault: false };
   }
 
-  // ---- 定位 ----
+  // ---- Locating ----
 
-  /** 视频参数 → 打开的位置。解析顺序：目录（绝对或相对 cwd）→ videoId → Space 条目 id。 */
+  /** Video argument -> where to open it. Resolution order: directory (absolute or relative to cwd) -> videoId -> Space entry id. */
   async #locate(video: string, principal: LocalPrincipal): Promise<{ root: string; file: string; scope: VideoRoot['scope'] }> {
     const asDir = await realDirectoryOrNull(path.resolve(principal.cwd, video));
     if (asDir) return this.#locateDir(asDir, principal, video);
@@ -278,7 +288,7 @@ export class LocalScope implements ToolScope<LocalAccess> {
     throw videoNotFound(video);
   }
 
-  /** 视频目录 → 来源：已登记的项目（最深的那个）、向上找到的项目标记（登记它），或会话的工作目录（Space 里的条目）。 */
+  /** Video directory -> source: a registered project (the deepest one), a project marker found walking up (registering it), or a session working directory (an entry in Space). */
   async #locateDir(dir: string, principal: LocalPrincipal, video: string) {
     let best: Project | null = null;
     for (const project of this.#deps.harness.listProjects()) {
@@ -295,10 +305,10 @@ export class LocalScope implements ToolScope<LocalAccess> {
     if (best) return { root: best.path, file: dir, scope: { projectId: best.id } };
     const info = await this.#deps.space().videoEntryAt(dir);
     if (info) return { root: info.root, file: info.dir, scope: info.scope };
-    throw new ToolError('VIDEO_NOT_FOUND', `视频目录「${video}」不在任何项目里：用 --project 指定它所属的项目`);
+    throw new ToolError('VIDEO_NOT_FOUND', `Video directory "${video}" is not in any project: pass --project to name the project it belongs to`);
   }
 
-  /** videoId → 视频目录：打开着的、Space 里登记的，或当前项目里的（逐个只读地看身份）。找不到时 null。 */
+  /** videoId -> video directory: an open one, one registered in Space, or one in the current project (checking identities one by one, read-only). null if not found. */
   async #dirOfVideoId(videoId: string, principal: LocalPrincipal): Promise<string | null> {
     const ref = this.#deps.videos.ref(videoId);
     if (ref) return ref.path;
@@ -319,7 +329,7 @@ export class LocalScope implements ToolScope<LocalAccess> {
     return null;
   }
 
-  /** 登记（或接上已登记的）项目，与 `projects.open` 相同：副本里的视频在后台换标识。 */
+  /** Registers (or attaches to an already registered) project, same as `projects.open`: videos in a copy get new identities in the background. */
   async #register(dir: string): Promise<Project> {
     const project = await this.#deps.harness.openProject(dir);
     void this.#deps.videos.claimProjectVideos(project).catch(() => {});
@@ -327,10 +337,10 @@ export class LocalScope implements ToolScope<LocalAccess> {
   }
 }
 
-/** videoId 的样子：`video_` 加十六进制（与 AgentScope 相同）。 */
+/** Shape of a videoId: `video_` plus hex (same as AgentScope). */
 const VIDEO_ID = /^video_[0-9a-f]{8,32}$/;
 
-/** 从 `start` 向上找 `.ccut/project.json` 所在的目录；到根目录都没有时 null。 */
+/** Walks up from `start` to the directory containing `.ccut/project.json`; null if none up to the root. */
 async function findProjectDir(start: string): Promise<string | null> {
   for (let dir = start; ; dir = path.dirname(dir)) {
     const marked = await fs.stat(path.join(dir, PROJECT_MARKER)).then(
@@ -345,7 +355,7 @@ async function findProjectDir(start: string): Promise<string | null> {
 async function realDirectory(dir: string, field: string): Promise<string> {
   const real = await realDirectoryOrNull(dir);
   if (!real)
-    throw new ToolError('INVALID_ARGUMENTS', `${field} 不存在或不是目录：${dir}`, { issues: [{ path: field, message: '不是目录' }] });
+    throw new ToolError('INVALID_ARGUMENTS', `${field} does not exist or is not a directory: ${dir}`, { issues: [{ path: field, message: 'Not a directory' }] });
   return real;
 }
 
@@ -369,6 +379,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function videoNotFound(video: string): ToolError {
   return new ToolError(
     'VIDEO_NOT_FOUND',
-    `找不到视频「${video}」：给视频目录（绝对或相对当前目录）、videos_list 给出的 videoId，或 Space 条目 id`,
+    `Video "${video}" not found: give a video directory (absolute or relative to the current directory), a videoId from videos_list, or a Space entry id`,
   );
 }

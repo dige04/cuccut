@@ -1,15 +1,16 @@
-// i18n-ignore-file: 给模型的工具说明、错误与下一步
 import { z } from 'zod';
 
 /**
- * `edits_apply` 的操作族（命令与协议规范 §4.2）：每个操作的说明、参数的 JSON Schema 与一个最小示例，`edits_ops` 原样列出，
- * `edits_apply` 的说明由这里的说明拼成，两边不会走样。
+ * The operation families of `edits_apply` (command and protocol spec §4.2): each operation's description, the JSON Schema of
+ * its arguments and a minimal example. `edits_ops` lists them verbatim and the `edits_apply` description is assembled from
+ * these descriptions, so the two never drift apart.
  *
- * schema 描述的是智能体写的形态（`normalizeOperations` 补成引擎的标准形态之前）：时间写秒数，`sequenceId` 与 `alignment` 可以省略。
- * 字段的取值与适用范围仍由引擎校验，这里只给出形状、取值与说明，`edits_apply` 不按它预先拒绝。
+ * The schemas describe the shape an agent writes (before `normalizeOperations` fills it into the engine's canonical shape):
+ * times in seconds, `sequenceId` and `alignment` optional. Field values and where they apply are still validated by the
+ * engine; this only gives the shape, values and descriptions, and `edits_apply` does not reject anything up front by it.
  */
 
-/** 操作族：与命令与协议规范 §4.2 的表同一套分法（只列智能体能用的）。 */
+/** Operation families: the same grouping as the table in command and protocol spec §4.2 (only those agents can use). */
 export const OPERATION_FAMILIES = [
   'assets',
   'items',
@@ -26,7 +27,7 @@ export type OperationFamily = (typeof OPERATION_FAMILIES)[number];
 export interface EditOperationSpec {
   type: string;
   family: OperationFamily;
-  /** `edits_apply` 说明里的那一（几）行：形态与语义。 */
+  /** The line(s) in the `edits_apply` description: shape and semantics. */
   doc: readonly string[];
   schema: z.ZodType;
   example: Record<string, unknown>;
@@ -38,28 +39,28 @@ const time = z
     z.number(),
     z.string(),
     z.object({
-      unit: z.enum(['frames', 'seconds']).describe('frames（帧）或 seconds（十进制秒字符串）'),
-      value: z.union([z.number(), z.string()]).describe('帧数或秒数'),
+      unit: z.enum(['frames', 'seconds']).describe('frames, or seconds (a decimal seconds string)'),
+      value: z.union([z.number(), z.string()]).describe('Number of frames or seconds'),
     }),
   ])
-  .describe('时间：秒数（数字或数字字符串，例如 1.5），也可以写 {"unit":"frames","value":30}');
-const seconds = z.union([z.number(), z.string()]).describe('秒数（数字或十进制字符串）');
-const nullableNumber = (what: string) => z.number().nullable().optional().describe(`${what}；null 回到缺省`);
-const ref = z.string().optional().describe('同一笔修改里后面的操作引用它的名字');
+  .describe('Time: seconds (a number or numeric string, e.g. 1.5); {"unit":"frames","value":30} also works');
+const seconds = z.union([z.number(), z.string()]).describe('Seconds (a number or decimal string)');
+const nullableNumber = (what: string) => z.number().nullable().optional().describe(`${what}; null restores the default`);
+const ref = z.string().optional().describe('Name that later operations in the same edit use to refer to it');
 const assetTarget = z
-  .union([idOf('素材 ID'), z.object({ assetId: idOf('素材 ID') }), z.object({ ref: z.string().describe('importAsset 的 ref') })])
-  .describe('素材：素材 ID、{"assetId"} 或同一笔修改里 importAsset 的 {"ref"}');
-const sequenceId = z.string().optional().describe('序列 ID；省略时用根序列');
+  .union([idOf('Asset ID'), z.object({ assetId: idOf('Asset ID') }), z.object({ ref: z.string().describe('The ref of an importAsset') })])
+  .describe('Asset: an asset ID, {"assetId"}, or {"ref"} of an importAsset in the same edit');
+const sequenceId = z.string().optional().describe('Sequence ID; the root sequence when omitted');
 const timed = {
   sequenceId,
   alignment: z
     .enum(['nearest-frame', 'exact-frame', 'floor-frame', 'ceil-frame'])
     .optional()
-    .describe('时间对齐到帧：nearest-frame（缺省）、exact-frame、floor-frame、ceil-frame'),
+    .describe('How times snap to frames: nearest-frame (default), exact-frame, floor-frame, ceil-frame'),
 };
 
 function op(type: string, fields: z.ZodRawShape) {
-  return z.object({ type: z.literal(type).describe('操作种类'), ...fields });
+  return z.object({ type: z.literal(type).describe('Operation type'), ...fields });
 }
 
 export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
@@ -67,18 +68,18 @@ export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
     type: 'importAsset',
     family: 'assets',
     doc: [
-      '- {"type":"importAsset","path":"素材文件（相对工作目录或绝对路径）","name"?:"素材名","ref"?:"同一笔修改里引用它的名字","storage"?:"linked"|"managed"}：把媒体文件登记为视频的素材。默认 linked：文件留在原处、不复制，视频只记下它在哪里，之后移动或删除这个文件，素材就缺失了；给 "storage":"managed" 才把 bytes 复制进视频目录（用户要求复制进视频，或文件是你生成之后会清理的临时文件时）。',
-      '- {"type":"importAsset","artifactId":"sha256:…","name"?,"ref"?}：把生成的产物（jobs_inspect 的 outputs 里的 artifactId）导入为素材，不重新生成；来源记为那次生成，bytes 总是收进视频（managed）。path 与 artifactId 只给一个。',
+      '- {"type":"importAsset","path":"media file (relative to the working directory, or absolute)","name"?:"asset name","ref"?:"name to refer to it within the same edit","storage"?:"linked"|"managed"}: registers a media file as an asset of the video. Defaults to linked: the file stays where it is and is not copied; the video only records its location, so moving or deleting the file later leaves the asset missing. Only "storage":"managed" copies the bytes into the video folder (when the user asks for it to be copied into the video, or the file is a temporary file you generated and will clean up).',
+      '- {"type":"importAsset","artifactId":"sha256:…","name"?,"ref"?}: imports a generated artifact (an artifactId from the outputs of jobs_inspect) as an asset without regenerating it; its provenance records that generation, and the bytes are always collected into the video (managed). Give exactly one of path and artifactId.',
     ],
     schema: op('importAsset', {
-      path: z.string().optional().describe('素材文件：相对工作目录或绝对路径；与 artifactId 只给一个'),
-      artifactId: z.string().optional().describe('生成或下载的产物（jobs_inspect 的 outputs 里的 artifactId）；与 path 只给一个'),
-      name: z.string().optional().describe('素材名'),
+      path: z.string().optional().describe('Media file: relative to the working directory, or absolute; give exactly one of this and artifactId'),
+      artifactId: z.string().optional().describe('A generated or downloaded artifact (an artifactId from the outputs of jobs_inspect); give exactly one of this and path'),
+      name: z.string().optional().describe('Asset name'),
       ref: ref,
       storage: z
         .enum(['linked', 'managed'])
         .optional()
-        .describe('linked（缺省，文件留在原处）或 managed（复制进视频目录）；产物总是 managed'),
+        .describe('linked (default, the file stays where it is) or managed (copied into the video folder); artifacts are always managed'),
     }),
     example: { type: 'importAsset', path: 'demo.mp4', ref: 'clip' },
   },
@@ -86,10 +87,10 @@ export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
     type: 'collectAssets',
     family: 'assets',
     doc: [
-      '- {"type":"collectAssets","assetIds":["素材 ID"]}：把已经链接的素材的 bytes 收进视频目录（linked → managed），素材版本不变；已经在视频里的不做事。',
+      '- {"type":"collectAssets","assetIds":["asset ID"]}: collects the bytes of linked assets into the video folder (linked -> managed) without changing the asset revision; assets already in the video are left alone.',
     ],
     schema: op('collectAssets', {
-      assetIds: z.array(idOf('素材 ID')).min(1).describe('要收进视频目录的链接素材'),
+      assetIds: z.array(idOf('Asset ID')).min(1).describe('Linked assets to collect into the video folder'),
     }),
     example: { type: 'collectAssets', assetIds: ['asset_1'] },
   },
@@ -97,10 +98,10 @@ export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
     type: 'removeAssets',
     family: 'assets',
     doc: [
-      '- {"type":"removeAssets","assetIds":["素材 ID"]}：从视频里删掉没有任何引用的素材（片段与它的预渲染替身、章节缩略图、文档的来源都不再指向它）；还有引用时拒绝（details.usedBy 列出谁在用）。代码包与它烘焙出的预渲染替身成对删除。先用 assets_prune 看哪些能删。',
+      '- {"type":"removeAssets","assetIds":["asset ID"]}: removes assets that nothing references any more from the video (no item or its prerender proxy, chapter thumbnail or document source points to them); rejected while still referenced (details.usedBy lists what uses them). A code bundle and the prerender proxy baked from it are removed as a pair. Use assets_prune first to see what can be removed.',
     ],
     schema: op('removeAssets', {
-      assetIds: z.array(idOf('素材 ID')).min(1).describe('要删掉的、没有引用的素材'),
+      assetIds: z.array(idOf('Asset ID')).min(1).describe('Unreferenced assets to remove'),
     }),
     example: { type: 'removeAssets', assetIds: ['asset_1'] },
   },
@@ -108,13 +109,13 @@ export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
     type: 'addItem',
     family: 'items',
     doc: [
-      '- {"type":"addItem","asset":"素材 ID" 或 {"ref":"importAsset 的 ref"},"at"?:秒,"trackId"?,"name"?}：把素材放到时间线上；省略 at 时接在轨道末尾，省略 trackId 时用第一条未锁定的同类轨道（视频、图片放视觉轨，音频放音频轨）。',
+      '- {"type":"addItem","asset":"asset ID" or {"ref":"ref of an importAsset"},"at"?:seconds,"trackId"?,"name"?}: places an asset on the timeline; without at it is appended to the end of the track, and without trackId it goes on the first unlocked track of the matching kind (video and images on a visual track, audio on an audio track).',
     ],
     schema: op('addItem', {
       asset: assetTarget,
-      at: time.optional().describe('开始时间；省略时接在轨道末尾'),
-      trackId: idOf('轨道 ID').optional().describe('放在哪条轨道；省略时用第一条未锁定的同类轨道'),
-      name: z.string().optional().describe('片段名'),
+      at: time.optional().describe('Start time; appended to the end of the track when omitted'),
+      trackId: idOf('Track ID').optional().describe('Track to place it on; the first unlocked track of the matching kind when omitted'),
+      name: z.string().optional().describe('Item name'),
       ...timed,
     }),
     example: { type: 'addItem', asset: { ref: 'clip' }, at: 1 },
@@ -123,13 +124,13 @@ export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
     type: 'moveItem',
     family: 'items',
     doc: [
-      '- {"type":"moveItem","itemId","at"?:秒,"offset"?:秒,"trackId"?}：移动片段；at 是新的开始时间，offset 是相对移动（可为负），二选一。',
+      '- {"type":"moveItem","itemId","at"?:seconds,"offset"?:seconds,"trackId"?}: moves an item; at is the new start time, offset a relative move (may be negative); give one or the other.',
     ],
     schema: op('moveItem', {
-      itemId: idOf('片段 ID'),
-      at: time.optional().describe('新的开始时间；与 offset 二选一'),
-      offset: time.optional().describe('相对移动（可为负）；与 at 二选一'),
-      trackId: idOf('轨道 ID').optional().describe('移到哪条轨道；省略时不换轨'),
+      itemId: idOf('Item ID'),
+      at: time.optional().describe('New start time; either this or offset'),
+      offset: time.optional().describe('Relative move (may be negative); either this or at'),
+      trackId: idOf('Track ID').optional().describe('Track to move to; stays on its track when omitted'),
       ...timed,
     }),
     example: { type: 'moveItem', itemId: 'item_1', at: 5 },
@@ -138,11 +139,11 @@ export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
     type: 'arrangeItem',
     family: 'items',
     doc: [
-      '- {"type":"arrangeItem","itemId","direction":"forward"|"backward"|"front"|"back"}：调整画面片段的叠放次序（前移一层 / 后移一层 / 移到最前 / 移到最后）。叠放次序就是轨道的上下：与别的片段共用一条轨道时拆到相邻新建的轨道上，独占一条轨道时整条轨道挪位；已经在最前 / 最后时拒绝。',
+      '- {"type":"arrangeItem","itemId","direction":"forward"|"backward"|"front"|"back"}: changes the stacking order of a visual item (bring forward one level / send backward one level / bring to front / send to back). Stacking order is the order of tracks: an item sharing a track with other items is moved onto a new adjacent track, an item alone on its track moves the whole track; rejected when it is already at the front / back.',
     ],
     schema: op('arrangeItem', {
-      itemId: idOf('片段 ID'),
-      direction: z.enum(['forward', 'backward', 'front', 'back']).describe('forward 前移一层、backward 后移一层、front 移到最前、back 移到最后'),
+      itemId: idOf('Item ID'),
+      direction: z.enum(['forward', 'backward', 'front', 'back']).describe('forward one level up, backward one level down, front to the top, back to the bottom'),
       sequenceId,
     }),
     example: { type: 'arrangeItem', itemId: 'item_1', direction: 'forward' },
@@ -150,19 +151,19 @@ export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
   {
     type: 'moveItems',
     family: 'items',
-    doc: ['- {"type":"moveItems","moves":[{"itemId","at"?,"offset"?,"trackId"?}]}：一次移动多个片段。'],
+    doc: ['- {"type":"moveItems","moves":[{"itemId","at"?,"offset"?,"trackId"?}]}: moves several items at once.'],
     schema: op('moveItems', {
       moves: z
         .array(
           z.object({
-            itemId: idOf('片段 ID'),
-            at: time.optional().describe('新的开始时间；与 offset 二选一'),
-            offset: time.optional().describe('相对移动（可为负）'),
-            trackId: idOf('轨道 ID').optional().describe('移到哪条轨道'),
+            itemId: idOf('Item ID'),
+            at: time.optional().describe('New start time; either this or offset'),
+            offset: time.optional().describe('Relative move (may be negative)'),
+            trackId: idOf('Track ID').optional().describe('Track to move to'),
           }),
         )
         .min(1)
-        .describe('每个片段怎么移动'),
+        .describe('How to move each item'),
       ...timed,
     }),
     example: {
@@ -176,11 +177,11 @@ export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
   {
     type: 'trimItem',
     family: 'items',
-    doc: ['- {"type":"trimItem","itemId","edge":"start"|"end","at":秒}：裁切片段的开头或结尾，at 是这条边在时间线上的新位置。'],
+    doc: ['- {"type":"trimItem","itemId","edge":"start"|"end","at":seconds}: trims the start or end of an item; at is the new timeline position of that edge.'],
     schema: op('trimItem', {
-      itemId: idOf('片段 ID'),
-      edge: z.enum(['start', 'end']).describe('裁哪一边：start（开头）或 end（结尾）'),
-      at: time.describe('这条边在时间线上的新位置'),
+      itemId: idOf('Item ID'),
+      edge: z.enum(['start', 'end']).describe('Edge to trim: start or end'),
+      at: time.describe('New timeline position of that edge'),
       ...timed,
     }),
     example: { type: 'trimItem', itemId: 'item_1', edge: 'end', at: 8 },
@@ -189,11 +190,11 @@ export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
     type: 'splitItem',
     family: 'items',
     doc: [
-      '- {"type":"splitItem","itemId","at":秒}：在时间线上的这个位置把片段一分为二；关键帧按两半各自的窗口分开，裁切时关键帧跟着内容走。',
+      '- {"type":"splitItem","itemId","at":seconds}: splits an item in two at this timeline position; keyframes are divided by the window of each half, and when trimming, keyframes stay with the content.',
     ],
     schema: op('splitItem', {
-      itemId: idOf('片段 ID'),
-      at: time.describe('在时间线上的这个位置拆开'),
+      itemId: idOf('Item ID'),
+      at: time.describe('Timeline position to split at'),
       ...timed,
     }),
     example: { type: 'splitItem', itemId: 'item_1', at: 3.5 },
@@ -202,20 +203,20 @@ export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
     type: 'joinItems',
     family: 'items',
     doc: [
-      '- {"type":"joinItems","itemIds":["片段 ID","片段 ID"],"keep"?:"first"|"second"}：把同一轨道上首尾相接、取自同一素材且源时间连续的两个片段合并回一个（拆分的逆）；关键帧一并拼回。其余设置不一致时失败，details.keys 列出不一致的字段，再用 keep 指明取 itemIds 里第一个还是第二个的设置。',
+      '- {"type":"joinItems","itemIds":["item ID","item ID"],"keep"?:"first"|"second"}: merges two abutting (end-to-start) items on the same track, taken from the same asset with contiguous source time, back into one (the inverse of a split); keyframes are joined back too. Fails when their other settings differ, with details.keys listing the differing fields; then use keep to say whether to take the settings of the first or the second of itemIds.',
     ],
     schema: op('joinItems', {
-      itemIds: z.array(idOf('片段 ID')).length(2).describe('同一轨道上首尾相接的两个片段'),
-      keep: z.enum(['first', 'second']).optional().describe('设置不一致时取 itemIds 里 first（第一个）还是 second（第二个）的'),
+      itemIds: z.array(idOf('Item ID')).length(2).describe('Two abutting (end-to-start) items on the same track'),
+      keep: z.enum(['first', 'second']).optional().describe('When settings differ, take those of the first or the second of itemIds'),
     }),
     example: { type: 'joinItems', itemIds: ['item_1', 'item_2'] },
   },
   {
     type: 'deleteItems',
     family: 'items',
-    doc: ['- {"type":"deleteItems","itemIds":["..."]}：删除片段（不移动其他片段，留下空隙）。'],
+    doc: ['- {"type":"deleteItems","itemIds":["..."]}: deletes items (other items do not move; a gap is left).'],
     schema: op('deleteItems', {
-      itemIds: z.array(idOf('片段 ID')).min(1).describe('要删的片段（不移动其他片段）'),
+      itemIds: z.array(idOf('Item ID')).min(1).describe('Items to delete (other items do not move)'),
       sequenceId,
     }),
     example: { type: 'deleteItems', itemIds: ['item_1'] },
@@ -224,12 +225,12 @@ export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
     type: 'removeRange',
     family: 'items',
     doc: [
-      '- {"type":"removeRange","from":秒,"to":秒,"trackIds":["..."]}：波纹删除——在列出的轨道上删掉这段时间并让后面的内容前移补上（口播剪掉一句话、一段停顿）。盖住这段时间的视频、音频片段被拆开、删掉中间；文字、图片、字幕片段缩短；之后的片段前移。没列出的轨道不动，所以要连同画面一起动的配音、字幕轨都要列上；列出的轨道或要动的片段锁着时整笔失败（TARGET_LOCKED）。经被拆片段投影的字幕跟着走。',
+      '- {"type":"removeRange","from":seconds,"to":seconds,"trackIds":["..."]}: ripple delete: removes this span of time on the listed tracks and shifts what follows earlier to close the gap (cutting a sentence or a pause from a talking-head recording). Video and audio items covering the span are split and their middle removed; text, image and caption items are shortened; later items move earlier. Tracks not listed are untouched, so list the voice-over and caption tracks that must move with the picture; if a listed track or an item to be changed is locked, the whole edit fails (TARGET_LOCKED). Captions projected through a split item move with it.',
     ],
     schema: op('removeRange', {
-      from: time.describe('起点'),
-      to: time.describe('终点'),
-      trackIds: z.array(idOf('轨道 ID')).min(1).describe('在哪些轨道上删并前移；要一起动的配音、字幕轨都要列上'),
+      from: time.describe('Start'),
+      to: time.describe('End'),
+      trackIds: z.array(idOf('Track ID')).min(1).describe('Tracks to delete on and shift; list the voice-over and caption tracks that must move together'),
       ...timed,
     }),
     example: { type: 'removeRange', from: 12, to: 15.5, trackIds: ['track_v1', 'track_a1'] },
@@ -238,20 +239,20 @@ export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
     type: 'updateItem',
     family: 'items',
     doc: [
-      '- {"type":"updateItem","itemId","name"?,"enabled"?,"locked"?,"followPolicy"?}：改片段的名字（空字符串清掉）、启用、锁定与跟随策略。followPolicy 整个替换：{"kind":"follow-cuts"}（新建片段的缺省，跟着剪口移动、缩短）、{"kind":"sequence-fixed"}（固定在时间线的时刻上，剪口不动它）或 {"kind":"item-local","itemId":"目标片段 ID"}（保持相对那个片段的位置：目标移动、拆开、修剪起点时跟着动，目标删掉时一起删，回执的 removedWithTarget）。按词跟随的 speech-anchor 求不出位置时片段留在原处，列在回执的 orphanedAnchors。',
+      '- {"type":"updateItem","itemId","name"?,"enabled"?,"locked"?,"followPolicy"?}: changes an item\'s name (an empty string clears it), enabled, locked and follow policy. followPolicy is replaced as a whole: {"kind":"follow-cuts"} (the default for new items; moves and shortens with cuts), {"kind":"sequence-fixed"} (pinned to a moment on the timeline; cuts do not move it) or {"kind":"item-local","itemId":"target item ID"} (keeps its position relative to that item: moves when the target is moved, split or has its start trimmed, and is deleted with the target, reported in removedWithTarget of the receipt). When a word-following speech-anchor cannot be resolved, the item stays where it is and is listed in orphanedAnchors of the receipt.',
     ],
     schema: op('updateItem', {
-      itemId: idOf('片段 ID'),
-      name: z.string().optional().describe('片段名；空字符串清掉'),
-      enabled: z.boolean().optional().describe('启用'),
-      locked: z.boolean().optional().describe('锁定'),
+      itemId: idOf('Item ID'),
+      name: z.string().optional().describe('Item name; an empty string clears it'),
+      enabled: z.boolean().optional().describe('Enabled'),
+      locked: z.boolean().optional().describe('Locked'),
       followPolicy: z
         .object({
-          kind: z.enum(['follow-cuts', 'sequence-fixed', 'item-local']).describe('follow-cuts、sequence-fixed 或 item-local'),
-          itemId: idOf('item-local 时跟随的目标片段').optional(),
+          kind: z.enum(['follow-cuts', 'sequence-fixed', 'item-local']).describe('follow-cuts, sequence-fixed or item-local'),
+          itemId: idOf('The target item to follow with item-local').optional(),
         })
         .optional()
-        .describe('跟随策略，整个替换'),
+        .describe('Follow policy, replaced as a whole'),
       sequenceId,
     }),
     example: { type: 'updateItem', itemId: 'item_1', followPolicy: { kind: 'sequence-fixed' } },
@@ -260,13 +261,13 @@ export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
     type: 'setSpeed',
     family: 'items',
     doc: [
-      '- {"type":"setSpeed","itemId","rate":{"num":3,"den":2}}：视频、音频恒定变速（0.1–10 倍，分数须约分）；取用的素材范围不变，长度随之变化，盖住后面的片段时失败。',
+      '- {"type":"setSpeed","itemId","rate":{"num":3,"den":2}}: constant speed change for video and audio (0.1x to 10x, the fraction must be in lowest terms); the source range used stays the same and the duration changes accordingly; fails if the item would then overlap the next item.',
     ],
     schema: op('setSpeed', {
-      itemId: idOf('视频或音频片段 ID'),
+      itemId: idOf('Video or audio item ID'),
       rate: z
-        .object({ num: z.number().int().positive().describe('分子'), den: z.number().int().positive().describe('分母') })
-        .describe('速率（约分过的分数），0.1–10 倍'),
+        .object({ num: z.number().int().positive().describe('Numerator'), den: z.number().int().positive().describe('Denominator') })
+        .describe('Rate (a fraction in lowest terms), 0.1x to 10x'),
       sequenceId,
     }),
     example: { type: 'setSpeed', itemId: 'item_1', rate: { num: 3, den: 2 } },
@@ -275,18 +276,18 @@ export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
     type: 'setTransform',
     family: 'styles',
     doc: [
-      '- {"type":"setTransform","itemId","x"?,"y"?,"w"?,"scale"?,"scaleY"?,"rot"?,"flipX"?,"flipY"?}：改画面上的摆法，按画幅的百分比：x、y 是框中心（0–100，50 为正中，向右、向下增大），w 是框宽占画幅宽的百分比，高按内容的宽高比推出；scale 等比缩放、scaleY 再乘在高上，rot 是绕中心顺时针的角度。只改给出的字段，给 null 回到按种类的缺省。铺满画布（mode 为 fullscreen）的视频与图片不看 x、y、w 与缩放，只看旋转与镜像；要让它们按位置摆放，先用 setStyle 把 mode 改成 pip。改画布尺寸时片段跟着画布走。字幕与音频没有。',
+      '- {"type":"setTransform","itemId","x"?,"y"?,"w"?,"scale"?,"scaleY"?,"rot"?,"flipX"?,"flipY"?}: changes where an item sits in the picture, as percentages of the frame: x, y are the box center (0-100, 50 is the middle, increasing rightward and downward), w is the box width as a percentage of the frame width, with the height derived from the content aspect ratio; scale scales uniformly, scaleY additionally multiplies the height, rot is the clockwise angle around the center. Only the given fields change; null restores the per-kind default. Video and images filling the canvas (mode fullscreen) ignore x, y, w and scale and honor only rotation and flips; to position them, first switch mode to pip with setStyle. When the canvas size changes, items follow the canvas. Captions and audio have no transform.',
     ],
     schema: op('setTransform', {
-      itemId: idOf('画面片段 ID'),
-      x: nullableNumber('框中心的横向位置（画幅宽的百分比，50 为正中）'),
-      y: nullableNumber('框中心的纵向位置（画幅高的百分比）'),
-      w: nullableNumber('框宽占画幅宽的百分比'),
-      scale: nullableNumber('等比缩放'),
-      scaleY: nullableNumber('再乘在高上的缩放'),
-      rot: nullableNumber('绕中心顺时针的角度'),
-      flipX: z.boolean().optional().describe('水平镜像'),
-      flipY: z.boolean().optional().describe('垂直镜像'),
+      itemId: idOf('Visual item ID'),
+      x: nullableNumber('Horizontal position of the box center (percentage of frame width, 50 is the middle)'),
+      y: nullableNumber('Vertical position of the box center (percentage of frame height)'),
+      w: nullableNumber('Box width as a percentage of frame width'),
+      scale: nullableNumber('Uniform scale'),
+      scaleY: nullableNumber('Extra scale multiplied onto the height'),
+      rot: nullableNumber('Clockwise angle around the center'),
+      flipX: z.boolean().optional().describe('Flip horizontally'),
+      flipY: z.boolean().optional().describe('Flip vertically'),
       sequenceId,
     }),
     example: { type: 'setTransform', itemId: 'item_1', x: 75, y: 25, w: 30 },
@@ -295,32 +296,32 @@ export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
     type: 'setStyle',
     family: 'styles',
     doc: [
-      '- {"type":"setStyle","itemId","mode"?:"fullscreen"|"pip","fit"?:"cover"|"contain","bg"?:"blur"|"black"|"#RRGGBB","opacity"?,"radius"?,"mask"?:{"shape":"ellipse","feather"?},"crop"?:{"left","top","right","bottom"},"style"?:{…},"verticalAlign"?:"top"|"center"|"bottom"}：改片段的外观，只改给出的字段，给 null 回到缺省。mode 只用于视频、图片、素材贴纸、占位框与白板：fullscreen 铺满画布（画中画的位置与宽保留，切回 pip 时还原），pip 按 setTransform 的位置与宽摆放，缺省为 pip；fit 是铺满时裁切（cover）还是留边（contain），bg 是留边的底。opacity 在 0 到 1；radius 是圆角，按 540 短边下的像素；mask 的 feather 不小于 0；crop 每边是 0 到 1 的比例，左右、上下之和小于 1，只用于视频与图片。style 与 verticalAlign 只用于文字片段。',
+      '- {"type":"setStyle","itemId","mode"?:"fullscreen"|"pip","fit"?:"cover"|"contain","bg"?:"blur"|"black"|"#RRGGBB","opacity"?,"radius"?,"mask"?:{"shape":"ellipse","feather"?},"crop"?:{"left","top","right","bottom"},"style"?:{…},"verticalAlign"?:"top"|"center"|"bottom"}: changes how an item looks; only the given fields change, and null restores the default. mode applies only to video, images, asset stickers, placeholders and whiteboards: fullscreen fills the canvas (the picture-in-picture position and width are kept and come back when switching back to pip), pip places it by the position and width from setTransform; the default is pip. fit is whether filling crops (cover) or letterboxes (contain), and bg is the letterbox background. opacity is 0 to 1; radius is the corner radius in pixels relative to a 540 short edge; the mask feather is at least 0; crop is a 0-to-1 fraction per edge, with left + right and top + bottom each below 1, for video and images only. style and verticalAlign apply only to text items.',
     ],
     schema: op('setStyle', {
-      itemId: idOf('画面片段 ID'),
-      mode: z.enum(['fullscreen', 'pip']).nullable().optional().describe('fullscreen（铺满画布）或 pip（画中画）'),
-      fit: z.enum(['cover', 'contain']).nullable().optional().describe('铺满时 cover（裁切）或 contain（留边）'),
-      bg: z.string().nullable().optional().describe('留边的底：blur、black 或 #RRGGBB'),
-      opacity: nullableNumber('不透明度，0 到 1'),
-      radius: nullableNumber('圆角，540 短边下的像素'),
+      itemId: idOf('Visual item ID'),
+      mode: z.enum(['fullscreen', 'pip']).nullable().optional().describe('fullscreen (fills the canvas) or pip (picture in picture)'),
+      fit: z.enum(['cover', 'contain']).nullable().optional().describe('When filling: cover (crop) or contain (letterbox)'),
+      bg: z.string().nullable().optional().describe('Letterbox background: blur, black or #RRGGBB'),
+      opacity: nullableNumber('Opacity, 0 to 1'),
+      radius: nullableNumber('Corner radius, in pixels relative to a 540 short edge'),
       mask: z
-        .object({ shape: z.literal('ellipse').describe('ellipse'), feather: z.number().optional().describe('羽化，不小于 0') })
+        .object({ shape: z.literal('ellipse').describe('ellipse'), feather: z.number().optional().describe('Feather, at least 0') })
         .nullable()
         .optional()
-        .describe('遮罩'),
+        .describe('Mask'),
       crop: z
         .object({
-          left: z.number().describe('左边裁掉的比例'),
-          top: z.number().describe('上边裁掉的比例'),
-          right: z.number().describe('右边裁掉的比例'),
-          bottom: z.number().describe('下边裁掉的比例'),
+          left: z.number().describe('Fraction cropped from the left'),
+          top: z.number().describe('Fraction cropped from the top'),
+          right: z.number().describe('Fraction cropped from the right'),
+          bottom: z.number().describe('Fraction cropped from the bottom'),
         })
         .nullable()
         .optional()
-        .describe('裁剪（视频与图片），每边 0 到 1'),
-      style: z.record(z.string(), z.unknown()).nullable().optional().describe('文字样式对象（只用于文字片段）'),
-      verticalAlign: z.enum(['top', 'center', 'bottom']).nullable().optional().describe('文字的垂直对齐：top、center、bottom'),
+        .describe('Crop (video and images), 0 to 1 per edge'),
+      style: z.record(z.string(), z.unknown()).nullable().optional().describe('Text style object (text items only)'),
+      verticalAlign: z.enum(['top', 'center', 'bottom']).nullable().optional().describe('Vertical alignment of text: top, center, bottom'),
       sequenceId,
     }),
     example: { type: 'setStyle', itemId: 'item_1', mode: 'pip', opacity: 0.8 },
@@ -329,34 +330,34 @@ export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
     type: 'setText',
     family: 'styles',
     doc: [
-      '- {"type":"setText","itemId","text"} 或 {"type":"setText","itemId","counter":{"mode":"countdown"|"countup","format"?:"s"|"mm:ss"|"hh:mm:ss"}}：改文字片段的文字，或改成计时读数；两者只给一个。',
+      '- {"type":"setText","itemId","text"} or {"type":"setText","itemId","counter":{"mode":"countdown"|"countup","format"?:"s"|"mm:ss"|"hh:mm:ss"}}: changes the text of a text item, or turns it into a timer readout; give exactly one of the two.',
     ],
     schema: op('setText', {
-      itemId: idOf('文字片段 ID'),
-      text: z.string().optional().describe('新的文字；与 counter 只给一个'),
+      itemId: idOf('Text item ID'),
+      text: z.string().optional().describe('New text; give exactly one of this and counter'),
       counter: z
         .object({
-          mode: z.enum(['countdown', 'countup']).describe('countdown（倒计时）或 countup（正计时）'),
-          format: z.enum(['s', 'mm:ss', 'hh:mm:ss']).optional().describe('s、mm:ss 或 hh:mm:ss'),
+          mode: z.enum(['countdown', 'countup']).describe('countdown or countup'),
+          format: z.enum(['s', 'mm:ss', 'hh:mm:ss']).optional().describe('s, mm:ss or hh:mm:ss'),
         })
         .optional()
-        .describe('改成计时读数；与 text 只给一个'),
+        .describe('Turn it into a timer readout; give exactly one of this and text'),
       sequenceId,
     }),
-    example: { type: 'setText', itemId: 'item_1', text: '第一章' },
+    example: { type: 'setText', itemId: 'item_1', text: 'Chapter 1' },
   },
   {
     type: 'setAudioMix',
     family: 'styles',
     doc: [
-      '- {"type":"setAudioMix","itemId","muted"?,"volume"?,"fadeIn"?:秒,"fadeOut"?:秒}：改音频、视频或有声合成的声音；volume 是线性倍数，在 0 到 4，1 为原音量（0.5 约 -6 dB，2 约 +6 dB）；淡变 0 表示去掉。',
+      '- {"type":"setAudioMix","itemId","muted"?,"volume"?,"fadeIn"?:seconds,"fadeOut"?:seconds}: changes the sound of an audio, video or audible composition item; volume is a linear multiplier from 0 to 4, 1 being the original volume (0.5 is about -6 dB, 2 about +6 dB); a fade of 0 removes it.',
     ],
     schema: op('setAudioMix', {
-      itemId: idOf('音频、视频或有声合成片段 ID'),
-      muted: z.boolean().optional().describe('静音'),
-      volume: z.number().min(0).max(4).optional().describe('线性倍数，0 到 4，1 为原音量'),
-      fadeIn: seconds.optional().describe('淡入（秒），0 去掉'),
-      fadeOut: seconds.optional().describe('淡出（秒），0 去掉'),
+      itemId: idOf('Audio, video or audible composition item ID'),
+      muted: z.boolean().optional().describe('Muted'),
+      volume: z.number().min(0).max(4).optional().describe('Linear multiplier, 0 to 4, 1 is the original volume'),
+      fadeIn: seconds.optional().describe('Fade in (seconds); 0 removes it'),
+      fadeOut: seconds.optional().describe('Fade out (seconds); 0 removes it'),
       sequenceId,
     }),
     example: { type: 'setAudioMix', itemId: 'item_1', volume: 0.5, fadeOut: 1 },
@@ -365,19 +366,19 @@ export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
     type: 'setTransition',
     family: 'transitions-and-effects',
     doc: [
-      '- {"type":"setTransition","leftItemId"?,"rightItemId"?,"kind","params"?,"duration"?:秒,"easing"?,"placement"?,"audioCrossfade"?}：设置转场。两个 ID 都给是同一轨道上首尾相接的两个画面片段之间；只给 rightItemId 是这个片段的入场，只给 leftItemId 是出场。kind：dissolve（溶解）、wipe（擦除）、slide（滑入）、zoom（缩放）、iris（圆形展开），不带 params，单侧两侧都可以；dip-to-color（params {"color":"#RRGGBB"}）与 push（params {"direction":"left"|"right"|"up"|"down"}）只用于两侧。easing：linear、ease-in、ease-out、ease-in-out；placement：center（默认）、start-at-cut、end-at-cut。同一条边上原有的转场被替换。两侧转场必须给 duration，不超过 10 秒；素材在剪切点两侧余量（handles）不够时失败（TRANSITION_HANDLES_INSUFFICIENT，details 给出缺几帧），先裁短片段或缩短转场。单侧转场只能居中、不能交叉淡化声音，duration 在 0.1–2 秒，不给时 0.5 秒；片段变短时生效的长度缩到片段长度的一半，回执的 shortenedTransitions 列出。之后移动、裁切、删除让转场不再成立时，引擎删掉它并在回执的 removedTransitions 里说明原因。',
+      '- {"type":"setTransition","leftItemId"?,"rightItemId"?,"kind","params"?,"duration"?:seconds,"easing"?,"placement"?,"audioCrossfade"?}: sets a transition. With both IDs it goes between two adjacent visual items on the same track; with only rightItemId it is that item\'s entrance, with only leftItemId its exit. kind: dissolve, wipe, slide, zoom, iris take no params and work one-sided or two-sided; dip-to-color (params {"color":"#RRGGBB"}) and push (params {"direction":"left"|"right"|"up"|"down"}) are two-sided only. easing: linear, ease-in, ease-out, ease-in-out; placement: center (default), start-at-cut, end-at-cut. An existing transition on the same edge is replaced. A two-sided transition requires duration, at most 10 seconds; fails when the media handles on either side of the cut are too short (TRANSITION_HANDLES_INSUFFICIENT, details give how many frames are missing): trim the items or shorten the transition first. A one-sided transition is always centered and cannot crossfade audio; its duration is 0.1-2 seconds, 0.5 seconds when not given; when the item gets shorter, the effective duration is capped at half the item length, listed in shortenedTransitions of the receipt. When a later move, trim or delete makes a transition invalid, the engine removes it and gives the reason in removedTransitions of the receipt.',
     ],
     schema: op('setTransition', {
-      leftItemId: idOf('左边（出场）的片段').optional(),
-      rightItemId: idOf('右边（入场）的片段').optional(),
+      leftItemId: idOf('Item on the left (exiting)').optional(),
+      rightItemId: idOf('Item on the right (entering)').optional(),
       kind: z
         .enum(['dissolve', 'wipe', 'slide', 'zoom', 'iris', 'dip-to-color', 'push'])
-        .describe('dissolve、wipe、slide、zoom、iris；dip-to-color 与 push 只用于两侧'),
-      params: z.record(z.string(), z.unknown()).optional().describe('dip-to-color 的 {"color"}、push 的 {"direction"}'),
-      duration: time.optional().describe('长度；两侧转场必须给，不超过 10 秒'),
-      easing: z.enum(['linear', 'ease-in', 'ease-out', 'ease-in-out']).optional().describe('linear、ease-in、ease-out、ease-in-out'),
-      placement: z.enum(['center', 'start-at-cut', 'end-at-cut']).optional().describe('center（缺省）、start-at-cut、end-at-cut'),
-      audioCrossfade: z.boolean().optional().describe('同时交叉淡化声音（只用于两侧）'),
+        .describe('dissolve, wipe, slide, zoom, iris; dip-to-color and push are two-sided only'),
+      params: z.record(z.string(), z.unknown()).optional().describe('{"color"} for dip-to-color, {"direction"} for push'),
+      duration: time.optional().describe('Duration; required for two-sided transitions, at most 10 seconds'),
+      easing: z.enum(['linear', 'ease-in', 'ease-out', 'ease-in-out']).optional().describe('linear, ease-in, ease-out, ease-in-out'),
+      placement: z.enum(['center', 'start-at-cut', 'end-at-cut']).optional().describe('center (default), start-at-cut, end-at-cut'),
+      audioCrossfade: z.boolean().optional().describe('Also crossfade the audio (two-sided only)'),
       ...timed,
     }),
     example: { type: 'setTransition', leftItemId: 'item_1', rightItemId: 'item_2', kind: 'dissolve', duration: 0.5 },
@@ -385,9 +386,9 @@ export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
   {
     type: 'removeTransition',
     family: 'transitions-and-effects',
-    doc: ['- {"type":"removeTransition","transitionId"}：删除转场。'],
+    doc: ['- {"type":"removeTransition","transitionId"}: deletes a transition.'],
     schema: op('removeTransition', {
-      transitionId: idOf('转场 ID'),
+      transitionId: idOf('Transition ID'),
       sequenceId,
     }),
     example: { type: 'removeTransition', transitionId: 'transition_1' },
@@ -396,11 +397,11 @@ export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
     type: 'setEffects',
     family: 'transitions-and-effects',
     doc: [
-      '- {"type":"setEffects","itemId","fx":{…}|null}：整个替换视频、图片、贴纸、占位框、白板或合成片段的效果（fx），给 null 去掉；没写的字段不生效，保留已有的要一起带上。字段：brightness、exposure、contrast、saturation、temperature、hue（-1 到 1，0 为不变；hue 乘 180 度）；grayscale、sharpen、noise、vignette（0 到 1）；blur（0–100）；filterPreset（none、calm1、calm2、calm3、clean1–3、cottage1–3、peckham1–3）；effectPreset（none、invert、night_vision、thermal_vision、old、polaroid、filmic、snowy、box_blur、bokeh_blur）与 effectIntensity（0 到 1）；shadow {"offsetX","offsetY","blur","color","opacity"}；stroke {"width","color"}。长度都按 540 短边下的像素。',
+      '- {"type":"setEffects","itemId","fx":{…}|null}: replaces the effects (fx) of a video, image, sticker, placeholder, whiteboard or composition item as a whole; null removes them. Fields left out do not apply, so include existing ones you want to keep. Fields: brightness, exposure, contrast, saturation, temperature, hue (-1 to 1, 0 is unchanged; hue is multiplied by 180 degrees); grayscale, sharpen, noise, vignette (0 to 1); blur (0-100); filterPreset (none, calm1, calm2, calm3, clean1-3, cottage1-3, peckham1-3); effectPreset (none, invert, night_vision, thermal_vision, old, polaroid, filmic, snowy, box_blur, bokeh_blur) with effectIntensity (0 to 1); shadow {"offsetX","offsetY","blur","color","opacity"}; stroke {"width","color"}. All lengths are in pixels relative to a 540 short edge.',
     ],
     schema: op('setEffects', {
-      itemId: idOf('画面片段 ID'),
-      fx: z.record(z.string(), z.unknown()).nullable().describe('整个替换的效果对象；null 去掉'),
+      itemId: idOf('Visual item ID'),
+      fx: z.record(z.string(), z.unknown()).nullable().describe('Effects object that replaces the existing one as a whole; null removes it'),
       sequenceId,
     }),
     example: { type: 'setEffects', itemId: 'item_1', fx: { brightness: 0.1, saturation: -0.2 } },
@@ -409,27 +410,27 @@ export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
     type: 'setChapters',
     family: 'chapters-and-ducking',
     doc: [
-      '- {"type":"setChapters","chapters":[{"chapterId"?,"at":秒,"title","summary"?,"thumbnail"?:"图片素材 ID"}]}：整个替换章节列表（按时间严格递增，第一章通常在 0）。章节固定在时间线的时刻上，不跟着片段移动；剪口（addCuts、restoreCut）例外，章节跟着内容走。',
+      '- {"type":"setChapters","chapters":[{"chapterId"?,"at":seconds,"title","summary"?,"thumbnail"?:"image asset ID"}]}: replaces the whole chapter list (strictly increasing in time; the first chapter is usually at 0). Chapters are pinned to moments on the timeline and do not move with items; cuts (addCuts, restoreCut) are the exception, where chapters move with the content.',
     ],
     schema: op('setChapters', {
       chapters: z
         .array(
           z.object({
-            chapterId: idOf('沿用的章节 ID').optional(),
-            at: time.describe('章节开始的时间'),
-            title: z.string().describe('标题'),
-            summary: z.string().optional().describe('摘要'),
-            thumbnail: idOf('缩略图的图片素材 ID').optional(),
+            chapterId: idOf('Existing chapter ID to keep').optional(),
+            at: time.describe('Chapter start time'),
+            title: z.string().describe('Title'),
+            summary: z.string().optional().describe('Summary'),
+            thumbnail: idOf('Image asset ID for the thumbnail').optional(),
           }),
         )
-        .describe('整份章节列表，按时间严格递增'),
+        .describe('The complete chapter list, strictly increasing in time'),
       ...timed,
     }),
     example: {
       type: 'setChapters',
       chapters: [
-        { at: 0, title: '开场' },
-        { at: 42, title: '演示' },
+        { at: 0, title: 'Intro' },
+        { at: 42, title: 'Demo' },
       ],
     },
   },
@@ -437,24 +438,24 @@ export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
     type: 'upsertChapter',
     family: 'chapters-and-ducking',
     doc: [
-      '- {"type":"upsertChapter","chapterId"?,"at"?:秒,"title"?,"summary"?,"thumbnail"?}：新建一章（不给 chapterId，须给 at 与 title）或修改一章；summary、thumbnail 给 null 去掉。',
+      '- {"type":"upsertChapter","chapterId"?,"at"?:seconds,"title"?,"summary"?,"thumbnail"?}: creates a chapter (without chapterId; at and title are required) or changes one; null for summary or thumbnail removes it.',
     ],
     schema: op('upsertChapter', {
-      chapterId: idOf('要改的章节；不给时新建').optional(),
-      at: time.optional().describe('章节开始的时间；新建时必须给'),
-      title: z.string().optional().describe('标题；新建时必须给'),
-      summary: z.string().nullable().optional().describe('摘要；null 去掉'),
-      thumbnail: idOf('缩略图的图片素材 ID').nullable().optional(),
+      chapterId: idOf('Chapter to change; a new one is created when omitted').optional(),
+      at: time.optional().describe('Chapter start time; required when creating'),
+      title: z.string().optional().describe('Title; required when creating'),
+      summary: z.string().nullable().optional().describe('Summary; null removes it'),
+      thumbnail: idOf('Image asset ID for the thumbnail').nullable().optional(),
       ...timed,
     }),
-    example: { type: 'upsertChapter', at: 90, title: '总结' },
+    example: { type: 'upsertChapter', at: 90, title: 'Summary' },
   },
   {
     type: 'removeChapter',
     family: 'chapters-and-ducking',
-    doc: ['- {"type":"removeChapter","chapterId"}：删除一章。'],
+    doc: ['- {"type":"removeChapter","chapterId"}: deletes a chapter.'],
     schema: op('removeChapter', {
-      chapterId: idOf('章节 ID'),
+      chapterId: idOf('Chapter ID'),
       sequenceId,
     }),
     example: { type: 'removeChapter', chapterId: 'chapter_1' },
@@ -463,30 +464,30 @@ export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
     type: 'setDucking',
     family: 'chapters-and-ducking',
     doc: [
-      '- {"type":"setDucking","ruleId"?,"trigger":{"kind":"items","trackIds"?,"itemIds"?} 或 {"kind":"speech"},"target":{"trackIds"?,"itemIds"?},"depth"?,"attack"?:秒,"release"?:秒,"enabled"?,"name"?}：闪避，例如人声响起时把背景音乐压低。trigger 的 items 是这些轨道与片段发声时；speech 是有人说话时（按文稿，这一版还不压低）。不给 ruleId 时新建（须给 trigger 与 target），给了只改给出的字段。depth 是压低的 dB，在 0–60，默认 10；attack 默认 0.02 秒、release 默认 0.35 秒。触发组与目标组不能重叠。',
+      '- {"type":"setDucking","ruleId"?,"trigger":{"kind":"items","trackIds"?,"itemIds"?} or {"kind":"speech"},"target":{"trackIds"?,"itemIds"?},"depth"?,"attack"?:seconds,"release"?:seconds,"enabled"?,"name"?}: ducking, e.g. lowering the background music while a voice is heard. A trigger of kind items fires while these tracks and items sound; speech fires while someone is speaking (based on the transcript; this version does not duck for it yet). Without ruleId a rule is created (trigger and target required); with it, only the given fields change. depth is the reduction in dB, 0-60, default 10; attack defaults to 0.02 seconds, release to 0.35 seconds. The trigger and target groups must not overlap.',
     ],
     schema: op('setDucking', {
-      ruleId: idOf('要改的规则；不给时新建').optional(),
+      ruleId: idOf('Rule to change; a new one is created when omitted').optional(),
       trigger: z
         .object({
-          kind: z.enum(['items', 'speech']).describe('items（这些轨道与片段发声时）或 speech（有人说话时）'),
-          trackIds: z.array(z.string()).optional().describe('items 的轨道'),
-          itemIds: z.array(z.string()).optional().describe('items 的片段'),
+          kind: z.enum(['items', 'speech']).describe('items (while these tracks and items sound) or speech (while someone speaks)'),
+          trackIds: z.array(z.string()).optional().describe('Tracks for items'),
+          itemIds: z.array(z.string()).optional().describe('Items for items'),
         })
         .optional()
-        .describe('什么时候压低；新建时必须给'),
+        .describe('When to duck; required when creating'),
       target: z
         .object({
-          trackIds: z.array(z.string()).optional().describe('被压低的轨道'),
-          itemIds: z.array(z.string()).optional().describe('被压低的片段'),
+          trackIds: z.array(z.string()).optional().describe('Tracks to duck'),
+          itemIds: z.array(z.string()).optional().describe('Items to duck'),
         })
         .optional()
-        .describe('压低谁；新建时必须给'),
-      depth: z.number().min(0).max(60).optional().describe('压低的 dB，缺省 10'),
-      attack: seconds.optional().describe('压下去的时间（秒），缺省 0.02'),
-      release: seconds.optional().describe('恢复的时间（秒），缺省 0.35'),
-      enabled: z.boolean().optional().describe('启用'),
-      name: z.string().optional().describe('规则名'),
+        .describe('What to duck; required when creating'),
+      depth: z.number().min(0).max(60).optional().describe('Reduction in dB, default 10'),
+      attack: seconds.optional().describe('Time to duck down (seconds), default 0.02'),
+      release: seconds.optional().describe('Time to recover (seconds), default 0.35'),
+      enabled: z.boolean().optional().describe('Enabled'),
+      name: z.string().optional().describe('Rule name'),
       sequenceId,
     }),
     example: {
@@ -499,9 +500,9 @@ export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
   {
     type: 'removeDucking',
     family: 'chapters-and-ducking',
-    doc: ['- {"type":"removeDucking","ruleId"}：删除闪避规则。'],
+    doc: ['- {"type":"removeDucking","ruleId"}: deletes a ducking rule.'],
     schema: op('removeDucking', {
-      ruleId: idOf('规则 ID'),
+      ruleId: idOf('Rule ID'),
       sequenceId,
     }),
     example: { type: 'removeDucking', ruleId: 'duck_1' },
@@ -510,20 +511,20 @@ export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
     type: 'addCuts',
     family: 'speech',
     doc: [
-      '- {"type":"addCuts","assetId":"被剪的素材 ID","cuts":[{"from":秒,"to":秒,"ref"?:"建议 ID"}]}：口播剪辑——在这个素材的剪口集合里记下删掉的源区间（素材自己的时钟上的秒，不是时间线上的秒），并按剪口重排：播放这个素材的视频、音频片段在剪口处拆开、删掉中间，它们所在轨道上之后的内容前移；其他轨道上跟随剪口（followPolicy 为 follow-cuts，新建片段的缺省；要固定在时间线上先用 updateItem 改成 sequence-fixed）的片段一起移动、缩短，整个落在剪掉范围里的删掉（回执的 removedByCuts）；章节跟着内容前移，落在剪掉范围里的回到剪口处，整章都剪掉的删掉。与已有剪口间隔不超过 0.02 秒的合并。剪口集合的文档列在视频的 documents 里（kind 为 cut-set）。',
+      '- {"type":"addCuts","assetId":"ID of the asset being cut","cuts":[{"from":seconds,"to":seconds,"ref"?:"suggestion ID"}]}: speech editing: records removed source ranges in this asset\'s cut set (seconds on the asset\'s own clock, not timeline seconds) and re-lays out the timeline according to the cuts: video and audio items playing this asset are split at the cuts with the middle removed, and later content on their tracks moves earlier; items on other tracks that follow cuts (followPolicy follow-cuts, the default for new items; to pin one to the timeline, first switch it to sequence-fixed with updateItem) move and shorten along, and those falling entirely inside a removed range are deleted (removedByCuts in the receipt); chapters move earlier with the content, those inside a removed range move back to the cut, and chapters removed entirely are deleted. Cuts within 0.02 seconds of an existing cut are merged. The cut-set document is listed in the documents of the video (kind cut-set).',
     ],
     schema: op('addCuts', {
-      assetId: idOf('被剪的素材 ID'),
+      assetId: idOf('ID of the asset being cut'),
       cuts: z
         .array(
           z.object({
-            from: seconds.describe('素材时钟上的起点（秒，不是时间线上的秒）'),
-            to: seconds.describe('素材时钟上的终点（秒）'),
-            ref: idOf('出处：剪辑建议的 ID').optional(),
+            from: seconds.describe('Start on the asset clock (seconds, not timeline seconds)'),
+            to: seconds.describe('End on the asset clock (seconds)'),
+            ref: idOf('Origin: the ID of an edit suggestion').optional(),
           }),
         )
         .min(1)
-        .describe('删掉的源区间'),
+        .describe('Source ranges to remove'),
       sequenceId,
     }),
     example: { type: 'addCuts', assetId: 'asset_1', cuts: [{ from: 3.2, to: 4.1 }] },
@@ -532,11 +533,11 @@ export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
     type: 'restoreCut',
     family: 'speech',
     doc: [
-      '- {"type":"restoreCut","assetId":"素材 ID","cutId":"剪口 ID"}：恢复一个剪口，把删掉的部分放回接缝处、之后的内容与章节后移（正在接缝上的章不动）；找不到接缝时只从剪口集合里去掉（回执的 cutsNotRelaid）。',
+      '- {"type":"restoreCut","assetId":"asset ID","cutId":"cut ID"}: restores a cut, putting the removed part back at the seam and moving later content and chapters later (a chapter right on the seam stays put); when the seam cannot be found, the cut is only removed from the cut set (cutsNotRelaid in the receipt).',
     ],
     schema: op('restoreCut', {
-      assetId: idOf('素材 ID'),
-      cutId: idOf('剪口 ID'),
+      assetId: idOf('Asset ID'),
+      cutId: idOf('Cut ID'),
       sequenceId,
     }),
     example: { type: 'restoreCut', assetId: 'asset_1', cutId: 'cut_1' },
@@ -545,24 +546,25 @@ export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
     type: 'proposeCuts',
     family: 'speech',
     doc: [
-      '- {"type":"proposeCuts","assetId":"素材 ID","speechDocumentId"?,"detect"?:{"pauses"?,"fillers"?,"minPause"?:秒,"compressTo"?:秒,"maxGap"?:秒,"fillerLanguage"?:"auto"|"en"|"zh","customFillers"?:["词"],"trimChapterStarts"?}}：按这个素材的转写检测口癖（嗯、呃、um 等，含「就是」「you know」这类只在断句处算的软口癖）与长停顿（缺省 0.8 秒以上、3 秒以下的停顿压缩到 0.3 秒，句末多留 0.1 秒），写成剪辑提案：视频的 documents 里 kind 为 editorial-proposal 的文档（每个素材一份，再提出时整份替换）。不改时间线；已经剪掉的不再提出；素材有几份转写时用 speechDocumentId 指明。用 documents_read 读提案：suggestions 每条有 id、kind（filler 或 pause）、源区间 t0/t1（按 timescale 的刻度）、text、reason 与 status。不检测重复的句子。',
+      // i18n-ignore: example Chinese and Vietnamese filler words from the zh and vi filler lists
+      '- {"type":"proposeCuts","assetId":"asset ID","speechDocumentId"?,"detect"?:{"pauses"?,"fillers"?,"minPause"?:seconds,"compressTo"?:seconds,"maxGap"?:seconds,"fillerLanguage"?:"auto"|"en"|"zh"|"vi","customFillers"?:["word"],"trimChapterStarts"?}}: detects fillers in this asset\'s transcript (um, uh, Chinese 嗯 and 呃, Vietnamese ừm and ờ, etc., including soft fillers such as "you know", 就是 or "kiểu như là" that only count at phrase boundaries) and long pauses (by default, pauses of 0.8 seconds or more and under 3 seconds are compressed to 0.3 seconds, with 0.1 seconds extra kept at sentence ends), and writes them as an editorial proposal: a document of kind editorial-proposal in the documents of the video (one per asset, replaced as a whole when proposed again). Does not change the timeline; ranges already cut are not proposed again; when the asset has several transcripts, name one with speechDocumentId. Read the proposal with documents_read: each entry in suggestions has id, kind (filler or pause), the source range t0/t1 (in timescale ticks), text, reason and status. Repeated sentences are not detected.',
     ],
     schema: op('proposeCuts', {
-      assetId: idOf('素材 ID'),
-      speechDocumentId: idOf('用哪份转写；素材有几份时指明').optional(),
+      assetId: idOf('Asset ID'),
+      speechDocumentId: idOf('Transcript to use; name one when the asset has several').optional(),
       detect: z
         .object({
-          pauses: z.boolean().optional().describe('检测长停顿，缺省 true'),
-          fillers: z.boolean().optional().describe('检测口癖，缺省 true'),
-          minPause: seconds.optional().describe('最短的停顿（秒），缺省 0.8'),
-          compressTo: seconds.optional().describe('停顿压缩到（秒），缺省 0.3'),
-          maxGap: seconds.optional().describe('更长的不算停顿（秒），缺省 3'),
-          fillerLanguage: z.enum(['auto', 'en', 'zh']).optional().describe('口癖表：auto、en 或 zh'),
-          customFillers: z.array(z.string()).optional().describe('另外当作口癖的词'),
-          trimChapterStarts: z.boolean().optional().describe('章节之间的停顿也压缩'),
+          pauses: z.boolean().optional().describe('Detect long pauses, default true'),
+          fillers: z.boolean().optional().describe('Detect fillers, default true'),
+          minPause: seconds.optional().describe('Shortest pause (seconds), default 0.8'),
+          compressTo: seconds.optional().describe('Compress pauses to (seconds), default 0.3'),
+          maxGap: seconds.optional().describe('Longer gaps are not counted as pauses (seconds), default 3'),
+          fillerLanguage: z.enum(['auto', 'en', 'zh', 'vi']).optional().describe('Filler list: auto (English, Chinese and Vietnamese, the default), en, zh or vi'),
+          customFillers: z.array(z.string()).optional().describe('Additional words to treat as fillers'),
+          trimChapterStarts: z.boolean().optional().describe('Also compress pauses between chapters'),
         })
         .optional()
-        .describe('检测参数；不给的取缺省'),
+        .describe('Detection parameters; defaults apply to those not given'),
     }),
     example: { type: 'proposeCuts', assetId: 'asset_1', detect: { minPause: 1 } },
   },
@@ -570,11 +572,11 @@ export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
     type: 'acceptCutSuggestions',
     family: 'speech',
     doc: [
-      '- {"type":"acceptCutSuggestions","proposalId":"提案文档 ID","suggestionIds":["建议 ID"]}：接受提案里的建议，按建议的源区间剪掉（同 addCuts，剪口的 ref 是建议 ID），建议标成 accepted，一笔事务、可撤销。转写在提出之后改过时失败（details.rule 为 proposal-stale），先重新 proposeCuts。要改区间就不用这个，直接用 addCuts 并把建议 ID 写进 ref。',
+      '- {"type":"acceptCutSuggestions","proposalId":"proposal document ID","suggestionIds":["suggestion ID"]}: accepts suggestions from a proposal and cuts their source ranges (like addCuts, with the suggestion ID as the cut ref); the suggestions are marked accepted, in one undoable transaction. Fails when the transcript changed after the proposal was made (details.rule is proposal-stale): run proposeCuts again first. To change a range, do not use this; use addCuts directly and put the suggestion ID in ref.',
     ],
     schema: op('acceptCutSuggestions', {
-      proposalId: idOf('提案文档 ID'),
-      suggestionIds: z.array(idOf('建议 ID')).min(1).describe('接受的建议'),
+      proposalId: idOf('Proposal document ID'),
+      suggestionIds: z.array(idOf('Suggestion ID')).min(1).describe('Suggestions to accept'),
       sequenceId,
     }),
     example: { type: 'acceptCutSuggestions', proposalId: 'doc_proposal_1', suggestionIds: ['s1', 's2'] },
@@ -583,19 +585,19 @@ export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
     type: 'replaceCodeBundle',
     family: 'code',
     doc: [
-      '- {"type":"replaceCodeBundle","itemId":"合成片段 ID","assetRef":{"id":"代码包素材 ID","revision"},"prerender"?:{"id":"预渲染素材 ID","revision"}|null,"parameterValues"?:{…}}：原地换时间线上一个合成片段（代码画面）的代码包版本与预渲染：片段 ID、轨道、起点、位置与大小、不透明度、名字、效果、遮罩、关键帧、声音都不变。长度取新预渲染的长度（没有预渲染时取代码包清单的 intrinsic），变短就裁掉，变长撞上同轨后面的片段以 TIMELINE_OVERLAP 拒绝（先 moveItem 挪开或 deleteItems）。片段有参数而新包去掉或换了参数 Schema 时要同时给 parameterValues。回执的 impact.codeEdits 列出换掉的旧版本与前后的帧数。通常不用手写：compositions_import 带 replace 时就是这一步；第二笔失败时按它的 next 用这里完成。',
+      '- {"type":"replaceCodeBundle","itemId":"composition item ID","assetRef":{"id":"code bundle asset ID","revision"},"prerender"?:{"id":"prerender asset ID","revision"}|null,"parameterValues"?:{…}}: swaps, in place, the code bundle revision and prerender of a composition item (code graphic) on the timeline: the item ID, track, start, position and size, opacity, name, effects, mask, keyframes and sound all stay the same. The duration becomes that of the new prerender (or the intrinsic duration in the code bundle manifest when there is no prerender); a shorter one is trimmed, and a longer one that runs into the next item on the same track is rejected with TIMELINE_OVERLAP (moveItem it out of the way or deleteItems first). When the item has parameters and the new bundle drops or changes the parameter schema, give parameterValues too. impact.codeEdits in the receipt lists the replaced old revisions and the frame counts before and after. Usually not written by hand: it is the step compositions_import performs with replace; when its second edit fails, follow its next and finish it here.',
     ],
     schema: op('replaceCodeBundle', {
-      itemId: idOf('要替换的合成片段（type 为 composition）'),
+      itemId: idOf('Composition item to replace (type composition)'),
       assetRef: z
-        .object({ id: idOf('代码包素材 ID'), revision: z.string().describe('素材版本') })
-        .describe('新的代码包素材版本（compositions_import 返回的 bundle.assetId 与 bundle.revision）'),
+        .object({ id: idOf('Code bundle asset ID'), revision: z.string().describe('Asset revision') })
+        .describe('The new code bundle asset revision (bundle.assetId and bundle.revision returned by compositions_import)'),
       prerender: z
-        .object({ id: idOf('预渲染素材 ID'), revision: z.string().describe('素材版本') })
+        .object({ id: idOf('Prerender asset ID'), revision: z.string().describe('Asset revision') })
         .nullable()
         .optional()
-        .describe('新的预渲染（compositions_import 返回的 prerender.assetId 与 prerender.revision）；null 或省略是不要预渲染'),
-      parameterValues: z.record(z.string(), z.unknown()).optional().describe('整个替换片段的参数；省略时保留原来的'),
+        .describe('The new prerender (prerender.assetId and prerender.revision returned by compositions_import); null or omitted means no prerender'),
+      parameterValues: z.record(z.string(), z.unknown()).optional().describe('Item parameters, replaced as a whole; the existing ones are kept when omitted'),
       sequenceId,
     }),
     example: {
@@ -608,22 +610,22 @@ export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
   {
     type: 'addTrack',
     family: 'tracks-and-sequences',
-    doc: ['- {"type":"addTrack","kind":"visual"|"audio","name"?}：新增一条轨道。'],
+    doc: ['- {"type":"addTrack","kind":"visual"|"audio","name"?}: adds a track.'],
     schema: op('addTrack', {
-      kind: z.enum(['visual', 'audio']).describe('visual（画面）或 audio（声音）'),
-      name: z.string().optional().describe('轨道名'),
+      kind: z.enum(['visual', 'audio']).describe('visual (picture) or audio (sound)'),
+      name: z.string().optional().describe('Track name'),
       sequenceId,
     }),
-    example: { type: 'addTrack', kind: 'audio', name: '背景音乐' },
+    example: { type: 'addTrack', kind: 'audio', name: 'Background music' },
   },
   {
     type: 'deleteTrack',
     family: 'tracks-and-sequences',
     doc: [
-      '- {"type":"deleteTrack","trackId"}：删掉一条空轨道，其他轨道的上下顺序不变。轨道上还有片段时拒绝（details.itemIds 列出它们），先 deleteItems 删掉或 moveItem 挪到别的轨道，可以写在同一笔修改里；被闪避规则用着时也拒绝。',
+      '- {"type":"deleteTrack","trackId"}: deletes an empty track; the order of the other tracks is unchanged. Rejected while the track still has items (details.itemIds lists them): deleteItems them or moveItem them to another track first, which can go in the same edit; also rejected while a ducking rule uses the track.',
     ],
     schema: op('deleteTrack', {
-      trackId: idOf('轨道 ID'),
+      trackId: idOf('Track ID'),
       sequenceId,
     }),
     example: { type: 'deleteTrack', trackId: 'track_2' },
@@ -631,13 +633,13 @@ export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
   {
     type: 'updateTrack',
     family: 'tracks-and-sequences',
-    doc: ['- {"type":"updateTrack","trackId","locked"?,"visible"?,"muted"?,"name"?}：修改轨道。'],
+    doc: ['- {"type":"updateTrack","trackId","locked"?,"visible"?,"muted"?,"name"?}: changes a track.'],
     schema: op('updateTrack', {
-      trackId: idOf('轨道 ID'),
-      locked: z.boolean().optional().describe('锁定'),
-      visible: z.boolean().optional().describe('可见'),
-      muted: z.boolean().optional().describe('静音'),
-      name: z.string().optional().describe('轨道名'),
+      trackId: idOf('Track ID'),
+      locked: z.boolean().optional().describe('Locked'),
+      visible: z.boolean().optional().describe('Visible'),
+      muted: z.boolean().optional().describe('Muted'),
+      name: z.string().optional().describe('Track name'),
       sequenceId,
     }),
     example: { type: 'updateTrack', trackId: 'track_1', muted: true },
@@ -646,12 +648,12 @@ export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
     type: 'moveTrack',
     family: 'tracks-and-sequences',
     doc: [
-      '- {"type":"moveTrack","trackId","target","position":"above"|"below"}：把一条轨道挪到同类的另一条轨道（target）上面或下面，片段跟着轨道走；别的种类的轨道不动。',
+      '- {"type":"moveTrack","trackId","target","position":"above"|"below"}: moves a track above or below another track of the same kind (target); its items move with it; tracks of other kinds stay put.',
     ],
     schema: op('moveTrack', {
-      trackId: idOf('轨道 ID'),
-      target: idOf('作为参照的同类轨道 ID'),
-      position: z.enum(['above', 'below']).describe('放在参照轨道的上面（above）还是下面（below）'),
+      trackId: idOf('Track ID'),
+      target: idOf('ID of the reference track of the same kind'),
+      position: z.enum(['above', 'below']).describe('Place it above or below the reference track'),
       sequenceId,
     }),
     example: { type: 'moveTrack', trackId: 'track_2', target: 'track_1', position: 'below' },
@@ -660,15 +662,15 @@ export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
     type: 'updateSequence',
     family: 'tracks-and-sequences',
     doc: [
-      '- {"type":"updateSequence","name"?,"canvas"?:{"width","height"},"background"?:"#RRGGBB"}：改画布尺寸（像素）与底色（不透明的纯色）。片段的位置按画幅的百分比保存，改尺寸时跟着画布走。',
+      '- {"type":"updateSequence","name"?,"canvas"?:{"width","height"},"background"?:"#RRGGBB"}: changes the canvas size (pixels) and background color (an opaque solid color). Item positions are stored as percentages of the frame, so they follow the canvas when it is resized.',
     ],
     schema: op('updateSequence', {
-      name: z.string().optional().describe('序列名'),
+      name: z.string().optional().describe('Sequence name'),
       canvas: z
-        .object({ width: z.number().int().describe('宽（像素）'), height: z.number().int().describe('高（像素）') })
+        .object({ width: z.number().int().describe('Width (pixels)'), height: z.number().int().describe('Height (pixels)') })
         .optional()
-        .describe('画布尺寸'),
-      background: z.string().optional().describe('底色 #RRGGBB'),
+        .describe('Canvas size'),
+      background: z.string().optional().describe('Background color #RRGGBB'),
       sequenceId,
     }),
     example: { type: 'updateSequence', canvas: { width: 1080, height: 1920 } },
@@ -677,23 +679,23 @@ export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
     type: 'putDocument',
     family: 'documents-and-versions',
     doc: [
-      '- {"type":"putDocument","documentId"?,"kind","name"?,"language"?,"sourceAsset"?:{"assetId"},"sourceDocument"?:{"documentId"},"body":{…},"summary"?}：写入一份文档（转写、译文等）的新版本，body 是完整的正文对象（先用 documents_read 读出当前正文再改）；给 documentId 时改那份文档（kind 不能变），不给时新建。译文用 kind "translation"，sourceDocument 指向它译自的文档。正文与原来相同时不产生新版本。',
+      '- {"type":"putDocument","documentId"?,"kind","name"?,"language"?,"sourceAsset"?:{"assetId"},"sourceDocument"?:{"documentId"},"body":{…},"summary"?}: writes a new revision of a document (transcript, translation, etc.); body is the complete body object (read the current body with documents_read first, then change it); with documentId it changes that document (kind cannot change), without it a new one is created. Translations use kind "translation", with sourceDocument pointing to the document they translate. No new revision is created when the body is unchanged.',
     ],
     schema: op('putDocument', {
-      documentId: idOf('要改的文档；不给时新建').optional(),
-      kind: z.string().describe('文档种类：speech（转写）、translation（译文）等；改已有文档时不能变'),
-      name: z.string().optional().describe('文档名'),
-      language: z.string().optional().describe('语言（BCP 47），译文必须给'),
+      documentId: idOf('Document to change; a new one is created when omitted').optional(),
+      kind: z.string().describe('Document kind: speech (transcript), translation, etc.; cannot change for an existing document'),
+      name: z.string().optional().describe('Document name'),
+      language: z.string().optional().describe('Language (BCP 47); required for translations'),
       sourceAsset: z
-        .object({ assetId: idOf('素材 ID') })
+        .object({ assetId: idOf('Asset ID') })
         .optional()
-        .describe('来源素材（转写）'),
+        .describe('Source asset (for a transcript)'),
       sourceDocument: z
-        .object({ documentId: idOf('文档 ID') })
+        .object({ documentId: idOf('Document ID') })
         .optional()
-        .describe('来源文档（译文译自的转写）'),
-      body: z.record(z.string(), z.unknown()).describe('完整的正文对象（先 documents_read 读出当前正文再改）'),
-      summary: z.unknown().optional().describe('文档摘要'),
+        .describe('Source document (the transcript a translation is made from)'),
+      body: z.record(z.string(), z.unknown()).describe('The complete body object (read the current body with documents_read first, then change it)'),
+      summary: z.unknown().optional().describe('Document summary'),
     }),
     example: {
       type: 'putDocument',
@@ -705,28 +707,28 @@ export const EDIT_OPERATIONS: readonly EditOperationSpec[] = [
   {
     type: 'createCheckpoint',
     family: 'documents-and-versions',
-    doc: ['- {"type":"createCheckpoint","name","note"?}：在历史里留一个检查点。'],
+    doc: ['- {"type":"createCheckpoint","name","note"?}: leaves a checkpoint in the history.'],
     schema: op('createCheckpoint', {
-      name: z.string().describe('检查点名'),
-      note: z.string().optional().describe('备注'),
+      name: z.string().describe('Checkpoint name'),
+      note: z.string().optional().describe('Note'),
     }),
-    example: { type: 'createCheckpoint', name: '粗剪完成' },
+    example: { type: 'createCheckpoint', name: 'Rough cut done' },
   },
   {
     type: 'renameVideo',
     family: 'documents-and-versions',
-    doc: ['- {"type":"renameVideo","name"}：改视频名（不改目录名）。'],
+    doc: ['- {"type":"renameVideo","name"}: renames the video (the folder name is not changed).'],
     schema: op('renameVideo', {
-      name: z.string().describe('新的视频名（不改目录名）'),
+      name: z.string().describe('New video name (the folder name is not changed)'),
     }),
-    example: { type: 'renameVideo', name: '发布会精剪' },
+    example: { type: 'renameVideo', name: 'Launch event final cut' },
   },
 ];
 
-/** `edits_apply` 认得的操作种类，按上表的顺序。 */
+/** Operation types `edits_apply` accepts, in the order of the table above. */
 export const OPERATION_TYPES = EDIT_OPERATIONS.map((spec) => spec.type) as [string, ...string[]];
 
-/** `edits_ops` 的一项：说明、JSON Schema 与示例。 */
+/** One entry of `edits_ops`: description, JSON Schema and example. */
 export function describeOperation(spec: EditOperationSpec) {
   const { $schema: _, ...schema } = z.toJSONSchema(spec.schema, { io: 'input' }) as Record<string, unknown>;
   return {

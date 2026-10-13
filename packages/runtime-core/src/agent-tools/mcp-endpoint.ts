@@ -6,28 +6,31 @@ import type { ToolCatalog, ToolResult } from './tool-catalog.ts';
 import type { ToolPrincipal } from './tool-scope.ts';
 
 /**
- * MCP 端点（架构设计 §3.5、§4.8）：一个无状态的 MCP Streamable HTTP 端点，只回 `application/json`，
- * 不开 SSE、不发会话号。工具桥与对外的 MCP 服务共用它，区别只在认证得到的主体与工具目录：
+ * MCP endpoint (architecture design §3.5, §4.8): a stateless MCP Streamable HTTP endpoint that only replies with
+ * `application/json`, opens no SSE and issues no session id. The tool bridge and the external MCP service share it; they
+ * differ only in the authenticated principal and the tool catalog:
  *
- * - 工具桥挂在本机网关上：原生智能体（Codex）按 `config.mcp_servers` 连上来，用会话令牌认证；
- * - MCP 服务有自己的回环监听：其他应用里的智能体用发放给客户端的令牌认证，另外只接受回环的 `Host`（防 DNS 重绑定）。
+ * - the tool bridge is mounted on the local gateway: native agents (Codex) connect via `config.mcp_servers` and
+ *   authenticate with the session token;
+ * - the MCP service has its own loopback listener: agents in other apps authenticate with the token issued to their
+ *   client, and only a loopback `Host` is accepted (against DNS rebinding).
  *
- * - 只认 `/mcp`；带 `Origin` 的请求一律拒绝：浏览器里的网页不能调用它。
- * - 令牌只说明调用方是谁；能不能做由工具在每次调用时判断。
+ * - Only `/mcp` is recognized; any request carrying `Origin` is rejected: web pages in a browser cannot call it.
+ * - The token only says who the caller is; whether an action is allowed is decided by the tool on each call.
  */
 
 export interface McpEndpointOptions {
-  /** 工具桥：会话令牌。与 `authenticate` 二选一。 */
+  /** Tool bridge: session tokens. Mutually exclusive with `authenticate`. */
   grants?: AgentGrants;
-  /** 请求 → 主体；令牌缺失、不认识或已吊销时为空（回 401）。 */
+  /** Request -> principal; null when the token is missing, unknown or revoked (replies 401). */
   authenticate?: (request: IncomingMessage) => ToolPrincipal | null;
   tools: ToolCatalog;
   log: Logger;
-  /** 只接受 `Host` 为回环地址的请求。 */
+  /** Accept only requests whose `Host` is a loopback address. */
   loopbackHostOnly?: boolean;
-  /** `initialize` 回给客户端的服务信息；默认是 Runtime 的版本。 */
+  /** Server info returned to the client by `initialize`; defaults to the Runtime version. */
   serverInfo?: { version: string; meta?: Record<string, unknown> };
-  /** 每次工具调用之后（审计）。 */
+  /** After each tool call (audit). */
   onToolCall?: (name: string, principal: ToolPrincipal, result: ToolResult) => void;
 }
 
@@ -64,12 +67,12 @@ export class McpEndpoint {
     this.#log = options.log.child('mcp');
   }
 
-  /** 不是 `/mcp` 时返回 false，交给下一个处理者。认证通过时返回这次请求的主体。 */
+  /** Returns false when the path is not `/mcp`, leaving it to the next handler. Returns this request's principal when authentication passes. */
   handle(request: IncomingMessage, response: ServerResponse): boolean {
     return this.accept(request, response) !== false;
   }
 
-  /** 同 `handle`，但把认证得到的主体交给调用方（对外服务据此在请求结束时释放资源）：不是 `/mcp` 时 false，被拒绝时 null。 */
+  /** Like `handle`, but hands the authenticated principal to the caller (the external service uses it to release resources when the request ends): false when not `/mcp`, null when rejected. */
   accept(request: IncomingMessage, response: ServerResponse): ToolPrincipal | null | false {
     const url = new URL(request.url ?? '/', 'http://localhost');
     if (url.pathname !== PATH) return false;
@@ -107,17 +110,15 @@ export class McpEndpoint {
     try {
       message = JSON.parse(body);
     } catch {
-      // i18n-ignore: 回给 MCP 客户端（智能体）的 JSON-RPC 错误
-      reply(response, { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'JSON 解析失败' } });
+      reply(response, { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'JSON parse error' } });
       return;
     }
     if (Array.isArray(message)) {
-      // i18n-ignore: 回给 MCP 客户端（智能体）的 JSON-RPC 错误
-      reply(response, { jsonrpc: '2.0', id: null, error: { code: -32600, message: '不支持批量请求' } });
+      reply(response, { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Batch requests are not supported' } });
       return;
     }
     if (!isRequest(message)) {
-      // 通知与对服务器请求的回应：收下即可。
+      // Notifications and responses to server requests: just accept them.
       response.writeHead(202).end();
       return;
     }
@@ -125,8 +126,7 @@ export class McpEndpoint {
       const result = await this.#dispatch(message, principal);
       reply(response, { jsonrpc: '2.0', id: message.id, result });
     } catch (error) {
-      // i18n-ignore: 回给 MCP 客户端（智能体）的 JSON-RPC 错误
-      const failure = error instanceof JsonRpcFailure ? error : new JsonRpcFailure(-32603, '内部错误');
+      const failure = error instanceof JsonRpcFailure ? error : new JsonRpcFailure(-32603, 'Internal error');
       if (!(error instanceof JsonRpcFailure)) this.#log.error('MCP method failed', { method: message.method, error: String(error) });
       reply(response, { jsonrpc: '2.0', id: message.id, error: { code: failure.code, message: failure.message } });
     }
@@ -148,7 +148,7 @@ export class McpEndpoint {
       case 'ping':
         return {};
       case 'tools/list':
-        // MCP 的工具形状：目录项的 `effect`、`examples`、`surfaces`、`positional` 给 CLI 与帮助用，不进 tools/list。
+        // MCP tool shape: a catalog entry's `effect`, `examples`, `surfaces` and `positional` are for the CLI and help, not for tools/list.
         return {
           tools: this.#tools.list().map(({ name, title, description, inputSchema, annotations }) => ({
             name,
@@ -159,20 +159,18 @@ export class McpEndpoint {
           })),
         };
       case 'tools/call': {
-        // i18n-ignore: 回给 MCP 客户端（智能体）的 JSON-RPC 错误
-        if (typeof params.name !== 'string') throw new JsonRpcFailure(-32602, '缺少工具名');
+        if (typeof params.name !== 'string') throw new JsonRpcFailure(-32602, 'Missing tool name');
         const result = await this.#tools.call(params.name, params.arguments, principal);
         this.#options.onToolCall?.(params.name, principal, result);
         return result;
       }
       default:
-        // i18n-ignore: 回给 MCP 客户端（智能体）的 JSON-RPC 错误
-        throw new JsonRpcFailure(-32601, `不支持的方法：${message.method}`);
+        throw new JsonRpcFailure(-32601, `Unsupported method: ${message.method}`);
     }
   }
 }
 
-/** `Host` 是回环地址（可带端口）。没有 `Host` 的请求不接受。 */
+/** `Host` is a loopback address (optionally with a port). Requests without `Host` are not accepted. */
 export function loopbackHost(host: string | undefined): boolean {
   if (!host) return false;
   const match = /^(\[::1\]|127\.0\.0\.1|localhost)(:\d{1,5})?$/i.exec(host.trim());
@@ -190,7 +188,7 @@ function reply(response: ServerResponse, payload: unknown): void {
   response.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(text) }).end(text);
 }
 
-/** 读完请求体；超过上限时返回 null。 */
+/** Reads the whole request body; returns null when it exceeds the limit. */
 async function readBody(request: IncomingMessage): Promise<string | null> {
   const chunks: Buffer[] = [];
   let size = 0;

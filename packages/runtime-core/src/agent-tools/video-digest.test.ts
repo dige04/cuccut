@@ -633,8 +633,8 @@ describe('normalizeOperations', () => {
         's',
         cwd,
       ),
-    ).toThrow(/第 2 个操作/);
+    ).toThrow(/Operation 2:/);
     expect(() => normalizeOperations(['nope'], 's', cwd)).toThrow(OperationShapeError);
-    expect(() => normalizeOperations([{ type: 'splitItem', at: Number.NaN }], 's', cwd)).toThrow(/有限/);
+    expect(() => normalizeOperations([{ type: 'splitItem', at: Number.NaN }], 's', cwd)).toThrow(/finite/);
   });
 });

@@ -11,49 +11,60 @@ import { approvalField, confirmSummary, type ToolAccess, type ToolPrincipal, typ
 import { commandIdArg, videoArg } from './video-tools.ts';
 
 /**
- * 从链接下载（架构设计 §7.9、§12.9；Agent 面设计 §4.2）：一个工具 `download`，按工具此刻的状态走三种确认之一。
- * `transcribe` 给 `url` 时走同一段（`startLinkImport`）。
+ * Downloading from a link (architecture design §7.9, §12.9; agent surface design §4.2): one tool, `download`, which takes one of
+ * three confirmations depending on the tool's current state. `transcribe` given a `url` goes through the same path
+ * (`startLinkImport`).
  *
- * - yt-dlp 已安装、同意有效：按 `download`（`command`）确认，之后启动 `link-import` 流程。
- * - 没有安装（或版本过旧）：按 `external_tools_install`（`high`）确认，说明里写明来源、版本、大小与许可；用户同意即记下同意、
- *   提交安装任务，返回安装任务号。装好之后智能体再调用一次。
- * - 已安装但没有同意（或同意被撤回）：按 `external_tools_consent`（`high`）确认；同意之后直接启动流程，不再问第二次。
+ * - yt-dlp installed and consent valid: confirmed as `download` (`command`), then the `link-import` pipeline starts.
+ * - Not installed (or too old): confirmed as `external_tools_install` (`high`), with source, version, size and license in the
+ *   summary; when the user agrees, consent is recorded and an install job submitted, and the install job id is returned. Once
+ *   installed, the agent calls again.
+ * - Installed but no consent (or consent revoked): confirmed as `external_tools_consent` (`high`); after consent the pipeline
+ *   starts directly without asking a second time.
  *
- * 三个审批用不同的工具名：「本会话内都允许」按工具名记，允许过下载不等于允许过安装。严格离线、清单不全、用户指定的路径不能用时
- * 不弹确认，直接拒绝并说明补救。
+ * The three approvals use different tool names: "Allow for this session" is stored by tool name, so allowing a download is not
+ * allowing an install. In strict offline mode, with an incomplete manifest, or when the user-specified path is unusable, no
+ * confirmation is shown; the call is refused outright with a remedy.
  *
- * 落点三选一（都不给时只下载到下载目录）：
+ * One of three destinations (with none, it only downloads to the downloads directory):
  *
- * - `video`：导入范围之内的一个已有视频（链接素材）；它的时间线还空着时同时放上主轨（对外服务先 `videos_create` 再下载进去）；
- * - `newVideo`：新建一个视频并放上时间线，与 `videos_create` 建在同一处（`project`，不给时会话所属的项目或会话的工作目录，
- *   终端里按 cwd 找到的项目），之后 `videos_list`、`videos_inspect` 看得到；新建视频不提高风险（`edit` 低于下载的 `command`）；
- * - `project`：只下载，文件放进这个项目。
+ * - `video`: import into an existing video in scope (a linked asset); if its timeline is still empty it is also placed on the
+ *   main track (an external service first calls `videos_create`, then downloads into it);
+ * - `newVideo`: create a new video and place it on the timeline, in the same place as `videos_create` (`project`; defaults to
+ *   the session's project or the session's working directory, or the project found from cwd in a terminal), visible afterwards
+ *   to `videos_list` and `videos_inspect`; creating a video does not raise the risk (`edit` is below the download's `command`);
+ * - `project`: download only, with the files put into that project.
  *
- * 文件去哪：与界面、CLI 一样默认进下载目录（设置 `downloads.directory`，默认主机的下载文件夹），`video`、`newVideo` 导入的是
- * 链到那里的素材；只给 `project` 时放进那个项目的 `downloads/`（流程的 `saveTo: 'project'`）。对外服务只能写进项目，它的落点
- * 一律放进归属项目的 `downloads/`。归属是不属于项目的会话时仍进下载目录（会话的工作目录用户看不到）。不给落点时
- * `transcribe` 为 true 在媒体旁边生成 TXT 与 SRT 文稿；之后可以用结果里媒体的 `artifactId` 经 `edits_apply` 的 `importAsset`
- * 导入视频。
+ * Where files go: as in the UI and CLI, by default into the downloads directory (setting `downloads.directory`, defaulting to
+ * the host's Downloads folder); `video` and `newVideo` import assets linked there; with only `project`, into that project's
+ * `downloads/` (the pipeline's `saveTo: 'project'`). An external service can only write into projects, so its destinations
+ * always go into the owning project's `downloads/`. When the owner is a session without a project, files still go to the
+ * downloads directory (the user cannot see the session's working directory). With no destination and `transcribe` true, TXT
+ * and SRT transcripts are generated next to the media; the media's `artifactId` from the result can later be imported into a
+ * video through `edits_apply`'s `importAsset`.
  *
- * 对外服务（MCP，§4.8、§12.8、§12.9）的落点只能是范围之内的 `video` 或已登记的 `project`：`newVideo` 要同时给 `project`（与
- * `videos_create` 相同），流程新建的视频一出现（父任务记下 `videoId`）就登记进服务的范围（`ToolScope.adoptCreatedVideo`，范围是
- * 全部视频时不变），之后 `videos_list`、`videos_inspect` 看得到；不给落点、或 `newVideo` 不给 `project` 以 `INVALID_ARGUMENTS`
- * 拒绝。yt-dlp 没有安装或用户没有同意使用时直接拒绝，不代为安装或同意（下载并执行第三方程序由用户在 CucCut 里决定）。
+ * For an external service (MCP, §4.8, §12.8, §12.9) the destination can only be an in-scope `video` or a registered `project`:
+ * `newVideo` requires `project` too (as `videos_create` does), and the video the pipeline creates is added to the service's
+ * scope as soon as it appears (the parent job records `videoId`) (`ToolScope.adoptCreatedVideo`; unchanged when the scope is all
+ * videos), becoming visible to `videos_list` and `videos_inspect`; no destination, or `newVideo` without `project`, is refused
+ * with `INVALID_ARGUMENTS`. If yt-dlp is not installed or the user has not consented, the call is refused outright, with no
+ * install or consent on the user's behalf (downloading and running a third-party program is the user's decision in CucCut).
  *
- * `transcribe` 给 `url` 时另带转写的参数（语言、服务与模型、提示、说话人）与 `captions`（转写之后建字幕层），原样交给流程；
- * `download` 不带它们，转写用默认值、不建字幕层。
+ * `transcribe` given a `url` also carries transcription arguments (language, provider and model, hint, speakers) and
+ * `captions` (create a caption layer after transcribing), passed to the pipeline as is; `download` carries none of them, so
+ * transcription uses defaults and creates no caption layer.
  */
 
 export interface LinkImportToolsDeps {
   tools: ExternalToolService;
   pipelines: PipelineRunner;
-  /** 任务的变化：对外服务新建视频时等父任务记下 `videoId`，把它登记进服务的范围。 */
+  /** Job changes: when an external service creates a video, wait for the parent job to record `videoId` and add it to the service's scope. */
   jobs: Pick<JobManager, 'onChange' | 'inspect'>;
   offlineStrict: () => boolean;
   scope: ToolScope;
 }
 
-/** 一次从链接下载的请求（`download` 的参数，`transcribe` 给 `url` 时由它拼出）。 */
+/** One download-from-link request (`download`'s arguments, or assembled by `transcribe` when given a `url`). */
 export interface LinkImportRequest {
   url: string;
   video?: string | undefined;
@@ -63,52 +74,51 @@ export interface LinkImportRequest {
   audioOnly?: boolean | undefined;
   subtitleLanguages?: string[] | undefined;
   transcribe?: boolean | undefined;
-  /** 转写的参数（`transcribe` 给 `url` 时）；`download` 不带。 */
+  /** Transcription arguments (when `transcribe` is given a `url`); `download` has none. */
   language?: string | undefined;
   provider?: string | undefined;
   model?: string | undefined;
   hint?: string | undefined;
   diarize?: boolean | undefined;
-  /** 转写之后建字幕层（`transcribe` 给 `url` 且新建视频时）。 */
+  /** Create a caption layer after transcribing (when `transcribe` is given a `url` and creates a new video). */
   captions?: boolean | undefined;
   commandId?: string | undefined;
 }
 
-// i18n-ignore-start: 给模型的工具说明、错误与下一步
 const schemas = {
   download: z.strictObject({
-    url: z.string().min(1).max(4000).describe('视频页面的链接（http 或 https）。只取单个视频，不取播放列表'),
+    url: z.string().min(1).max(4000).describe('Link to the video page (http or https). Single videos only, not playlists'),
     project: z
       .string()
       .min(1)
       .max(1000)
       .optional()
       .describe(
-        '可选。项目（项目 id 或已登记项目目录的路径）：只给它时只下载，文件放进这个项目的 downloads/；与 newVideo 一起给时是新视频所在的项目。会话里只能是会话所属的项目',
+        'Optional. Project (a project id or the path of a registered project directory): given alone, it only downloads, putting the files in this project\'s downloads/; given with newVideo, it is the project for the new video. In a session it can only be the session\'s own project',
       ),
     video: videoArg
       .optional()
       .describe(
-        '可选。下载后导入到这个已有视频（videos_list 给出的 path 或 videoId），时间线还空着时同时放上主轨；文件在下载目录（对外服务放进它所属项目的 downloads/）；与 project、newVideo 不能同时给',
+        'Optional. After downloading, import into this existing video (a path or videoId from videos_list), also placing it on the main track if the timeline is still empty; the file stays in the downloads directory (for an external service, in the downloads/ of the video\'s project); cannot be combined with project or newVideo',
       ),
     newVideo: z
       .boolean()
       .optional()
       .describe(
-        '可选。新建一个视频：导入下载的媒体并放上时间线（主轨、从 0 开始、整段），与 videos_create 建在同一处；文件在下载目录（对外服务放进那个项目的 downloads/）',
+        'Optional. Create a new video: import the downloaded media and place it on the timeline (main track, from 0, full length), in the same place as videos_create; the file stays in the downloads directory (for an external service, in that project\'s downloads/)',
       ),
-    name: z.string().min(1).max(200).optional().describe('可选。新视频的名字，默认取页面标题；只与 newVideo 一起给'),
+    name: z.string().min(1).max(200).optional().describe('Optional. Name of the new video, defaulting to the page title; only with newVideo'),
     transcribe: z
       .boolean()
       .optional()
-      .describe('可选。给了 video 或 newVideo 时导入之后转写那份素材；否则把下载的文件转写为 TXT 与 SRT 文稿，放在媒体旁边'),
+      .describe('Optional. With video or newVideo, transcribe that asset after importing; otherwise transcribe the downloaded file into TXT and SRT transcripts next to the media'),
     subs: z
       .array(z.string().regex(/^[A-Za-z0-9-]{1,20}$/))
       .max(10)
       .optional()
-      .describe('可选。同时下载这些语言的字幕文件（例如 ["en","zh-Hans"]），放在媒体旁边、不导入视频；平台没有时跳过'),
-    audioOnly: z.boolean().optional().describe('可选。只下载音频'),
-    commandId: commandIdArg.optional().describe('可选。重试同一次提交时带上同一个值，不会重复创建任务'),
+      .describe('Optional. Also download subtitle files in these languages (e.g. ["en","zh-Hans"]), placed next to the media and not imported into the video; skipped when the platform has none'),
+    audioOnly: z.boolean().optional().describe('Optional. Download audio only'),
+    commandId: commandIdArg.optional().describe('Optional. Pass the same value when retrying the same submission so no duplicate job is created'),
   }),
 };
 
@@ -116,27 +126,26 @@ type Args = z.infer<(typeof schemas)['download']>;
 
 const DEFINITIONS: Record<'download', ToolInfo> = {
   download: {
-    title: '从链接下载',
+    title: 'Download from link',
     description: [
-      '用 yt-dlp 从视频页面的链接下载媒体，可以导入视频或新建视频并转写。',
-      '落点三选一：video 导入已有视频；newVideo 新建视频并放上时间线（可给 project、name）；project 只下载到项目的 downloads/。文件默认存进下载目录（设置 downloads.directory，默认系统的下载文件夹），video、newVideo 导入的素材链到那里；都不给时只下载、不建视频，只在用户明确说只要文件、不要视频时这样用。',
-      '要转写、加字幕、翻译的默认给 newVideo（或直接用 transcribe 给 url）：它新建视频、导入、放上时间线，transcribe 为 true 时再转写；之后 videos_list、videos_inspect 看得到它。新建的视频在之后的步骤失败时保留，不要再新建一次。',
-      '只在用户明确要从网页链接取视频时用。会按访问模式向用户确认；yt-dlp 没有安装时会请用户同意下载它（显示来源、版本、大小与许可），这次只提交安装并返回 installJobId：用 jobs_wait 等它 completed，再调用一次本工具。',
-      '立即返回 jobId。用 jobs_wait 等它结束（看进度用 jobs_inspect，progress.unit 为 bytes），state 为 completed 时 outputs 里有下载的文件与文稿（path）和导入的素材（assetId）；只下载时媒体的 artifactId 可以给 edits_apply 的 importAsset（文件要还在原处、没有改过）。失败时 error.code 是 LINK_LOGIN_REQUIRED、LINK_UNSUPPORTED、LINK_NETWORK_ERROR、LINK_DISK_FULL 等，error.details.remedy 说明怎么补救；不要用别的方式绕过（不要自己运行下载程序）。',
-      '对外服务的落点只能是范围之内的 video 或已登记的 project；newVideo 要同时给 project（新视频建在那个项目里，之后在服务的范围之内）；文件一律放进所属项目的 downloads/。',
+      'Downloads media from a video page link with yt-dlp. It can import into a video, or create a new video and transcribe it.',
+      'One of three destinations: video imports into an existing video; newVideo creates a new video and places it on the timeline (project and name may be given); project only downloads into the project\'s downloads/. Files are saved to the downloads directory by default (setting downloads.directory, defaulting to the system Downloads folder), and assets imported by video or newVideo link there; with none of them it only downloads and creates no video. Use that only when the user explicitly says they want just the file, not a video.',
+      'To transcribe, add captions or translate, default to newVideo (or use transcribe with url directly): it creates the video, imports and places it on the timeline, and transcribes when transcribe is true; afterwards videos_list and videos_inspect can see it. The created video is kept if a later step fails; do not create it again.',
+      'Use only when the user explicitly wants a video from a web page link. The user is asked to confirm according to the access mode; if yt-dlp is not installed, the user is asked to agree to download it (showing source, version, size and license), and this call only submits the install and returns installJobId: wait for it to be completed with jobs_wait, then call this tool again.',
+      'Returns a jobId immediately. Wait for it with jobs_wait (progress via jobs_inspect, progress.unit is bytes); when state is completed, outputs holds the downloaded files and transcripts (path) and the imported assets (assetId); for a download-only call the media\'s artifactId can be given to edits_apply\'s importAsset (the file must still be in place and unmodified). On failure error.code is LINK_LOGIN_REQUIRED, LINK_UNSUPPORTED, LINK_NETWORK_ERROR, LINK_DISK_FULL, etc., and error.details.remedy explains the remedy; do not work around it another way (do not run a downloader yourself).',
+      'For an external service the destination can only be an in-scope video or a registered project; newVideo requires project too (the new video is created in that project and is then within the service\'s scope); files always go into the owning project\'s downloads/.',
     ].join('\n'),
     annotations: { destructiveHint: false, idempotentHint: true },
     effect: 'job',
     examples: [
-      { title: '从链接新建视频并转写', args: { url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', newVideo: true, transcribe: true } },
-      { title: '下载到已有视频', args: { url: 'https://example.com/talk', video: 'demo' } },
-      { title: '只下载到项目，带英文字幕', args: { url: 'https://example.com/talk', project: 'prj_1', subs: ['en'] } },
+      { title: 'Create a video from a link and transcribe it', args: { url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', newVideo: true, transcribe: true } },
+      { title: 'Download into an existing video', args: { url: 'https://example.com/talk', video: 'demo' } },
+      { title: 'Download only into a project, with English subtitles', args: { url: 'https://example.com/talk', project: 'prj_1', subs: ['en'] } },
     ],
     surfaces: ['agent', 'mcp', 'cli'],
     positional: 'url',
   },
 };
-// i18n-ignore-end
 
 export class LinkImportTools implements ToolSet {
   readonly schemas = schemas;
@@ -148,14 +157,13 @@ export class LinkImportTools implements ToolSet {
   }
 
   dispatch(name: string, args: unknown, principal: ToolPrincipal): Promise<unknown> {
-    // i18n-ignore: 给模型的工具说明、错误与下一步
-    if (name !== 'download') return Promise.reject(new ToolError('UNKNOWN_TOOL', `没有这个工具：${name}`));
+    if (name !== 'download') return Promise.reject(new ToolError('UNKNOWN_TOOL', `No such tool: ${name}`));
     const { subs, ...rest } = args as Args;
     return startLinkImport(this.#deps, { ...rest, subtitleLanguages: subs }, principal);
   }
 }
 
-/** 从链接下载：检查落点与工具的状态、按状态确认、启动 `link-import` 流程（见文件头）。`download` 与 `transcribe` 共用。 */
+/** Download from a link: check the destination and tool state, confirm accordingly, start the `link-import` pipeline (see the file header). Shared by `download` and `transcribe`. */
 export function startLinkImport(deps: LinkImportToolsDeps, request: LinkImportRequest, principal: ToolPrincipal): Promise<unknown> {
   return start(deps, request, principal).catch((error: unknown) => {
     throw toolErrorOf(error);
@@ -165,59 +173,50 @@ export function startLinkImport(deps: LinkImportToolsDeps, request: LinkImportRe
 async function start(deps: LinkImportToolsDeps, args: LinkImportRequest, principal: ToolPrincipal) {
   const { tools, pipelines, scope } = deps;
   const access = scope.authorize(principal, true);
-  // i18n-ignore-start: 给模型的工具说明、错误与下一步
   if (args.video !== undefined && (args.newVideo || args.project !== undefined)) {
-    throw new ToolError('INVALID_ARGUMENTS', 'video 与 project、newVideo 只能给一个落点');
+    throw new ToolError('INVALID_ARGUMENTS', 'Give only one destination: video, or project / newVideo');
   }
-  if (args.name !== undefined && !args.newVideo) throw new ToolError('INVALID_ARGUMENTS', 'name 只与 newVideo 一起给');
+  if (args.name !== undefined && !args.newVideo) throw new ToolError('INVALID_ARGUMENTS', 'name is only given with newVideo');
   const service = access.principal.kind === 'service';
   if (service && args.video === undefined && args.project === undefined) {
     throw new ToolError(
       'INVALID_ARGUMENTS',
-      args.newVideo ? '对外服务新建视频要给 project：建在哪个已登记的项目里' : '对外服务的落点只能是范围之内的 video 或已登记的 project',
+      args.newVideo ? 'An external service creating a video must give project: the registered project to create it in' : 'For an external service the destination can only be an in-scope video or a registered project',
       {
-        next: '给 project（projects_list 结果里的 projectId）：带 newVideo 时新视频建在那个项目里，不带时只下载到项目；或给 video（范围之内的视频）导入它。',
+        next: 'Give project (a projectId from the projects_list result): with newVideo the new video is created in that project, without it the call only downloads into the project; or give video (an in-scope video) to import into it.',
       },
     );
   }
-  // i18n-ignore-end
-  // 链接先在本地检查（协议、私有地址、以 - 开头），不合格的不弹确认。
+  // Check the link locally first (scheme, private address, leading -); invalid links get no confirmation.
   const link = checkLink(args.url);
   if (deps.offlineStrict()) {
-    // i18n-ignore: 给模型的工具说明、错误与下一步
-    throw new ToolError('OFFLINE_STRICT', '严格离线模式下不从链接下载：请用户在设置里关掉严格离线，或把文件放进来源目录后导入');
+    throw new ToolError('OFFLINE_STRICT', 'No downloads from links in strict offline mode: ask the user to turn off strict offline in settings, or to put the file in the source directory and import it');
   }
   const status = await tools.status(YT_DLP);
   if (service && (status.state !== 'installed' || status.consent?.state !== 'granted')) {
-    // i18n-ignore-start: 给模型的工具说明、错误与下一步
-    throw new ToolError('TOOL_UNAVAILABLE', `${status.label} 还没有安装，或用户还没有同意用它从网站下载`, {
+    throw new ToolError('TOOL_UNAVAILABLE', `${status.label} is not installed yet, or the user has not yet agreed to use it to download from websites`, {
       tool: status.name,
       state: status.state,
-      remedy: `请用户在 CucCut 的外部工具设置里安装 ${status.label} 并同意使用它；对外服务不能代为安装或同意`,
+      remedy: `Ask the user to install ${status.label} in CucCut's external tools settings and agree to use it; an external service cannot install or consent on their behalf`,
     });
-    // i18n-ignore-end
   }
   if (status.installJobId) {
     return { jobId: null, installJobId: status.installJobId, tool: toolView(status), next: installNext };
   }
   if (status.state === 'unavailable' || (status.state !== 'installed' && !status.installable)) {
-    // i18n-ignore-start: 给模型的工具说明、错误与下一步
-    throw new ToolError('TOOL_UNAVAILABLE', `${status.label} 现在不能用：${status.reason ?? '没有可用的版本'}`, {
+    throw new ToolError('TOOL_UNAVAILABLE', `${status.label} cannot be used right now: ${status.reason ?? 'no usable version'}`, {
       tool: status.name,
       state: status.state,
-      remedy: status.remedy ?? '请用户在 CucCut 的外部工具设置里安装或指定 yt-dlp 的路径',
+      remedy: status.remedy ?? "Ask the user to install yt-dlp or set its path in CucCut's external tools settings",
     });
-    // i18n-ignore-end
   }
   if (status.state !== 'installed') {
     const offer = status.offer;
     if (!offer || offer.blockedReason || !offer.url) {
-      // i18n-ignore-start: 给模型的工具说明、错误与下一步
-      throw new ToolError('TOOL_MANIFEST_INCOMPLETE', `不能下载 ${status.label}：${offer?.blockedReason ?? '这个平台没有可用的版本'}`, {
+      throw new ToolError('TOOL_MANIFEST_INCOMPLETE', `Cannot download ${status.label}: ${offer?.blockedReason ?? 'no usable version for this platform'}`, {
         tool: status.name,
-        remedy: `请用户自己安装 ${status.label}，再在 CucCut 的外部工具设置里指定路径`,
+        remedy: `Ask the user to install ${status.label} themselves, then set its path in CucCut's external tools settings`,
       });
-      // i18n-ignore-end
     }
     const approval = await scope.confirm(access, {
       tool: 'external_tools_install',
@@ -245,13 +244,14 @@ async function start(deps: LinkImportToolsDeps, args: LinkImportRequest, princip
     );
     return { jobId: null, installJobId: installed.jobId, tool: toolView(installed.tool), ...approvalField(approval), next: installNext };
   }
-  // 落点先只找位置（范围之外、看不到的项目不弹确认）；新建视频的确认之后再取一次（终端那时才登记项目）。
+  // First only locate the destination (no confirmation for out-of-scope or invisible projects); for a new video, resolve it again after confirming (the terminal registers the project only then).
   let target = await targetOf(deps, args, access, { locate: true });
   const placed = args.video !== undefined || args.newVideo === true || args.project !== undefined;
-  // 文件进项目的 downloads/：对外服务只能写进项目（§12.8），有落点就进；智能体只在只给 project（只下载到项目）时进，
-  // 导入视频的与界面、CLI 一样留在下载目录。
+  // Files go into the project's downloads/: an external service can only write into projects (§12.8), so any destination goes
+  // there; the agent goes there only with project alone (download only into the project); video imports stay in the downloads
+  // directory, as in the UI and CLI.
   const intoProject = service ? placed : args.project !== undefined && !args.newVideo;
-  // 说清楚文件去哪、视频怎么变。
+  // Spell out where the files go and how the video changes.
   const about = {
     tool: status.label,
     version: status.version ?? '',
@@ -270,7 +270,7 @@ async function start(deps: LinkImportToolsDeps, args: LinkImportRequest, princip
       ? await scope.confirm(access, {
           tool: 'download',
           ...confirmSummary(RcAgentTools.linkImportSummary(about)),
-          // 新建视频（`edit`）不提高风险：仍按下载的 `command`。
+          // Creating a video (`edit`) does not raise the risk: it stays at the download's `command`.
           risk: 'command',
         })
       : await scope.confirm(access, {
@@ -301,36 +301,35 @@ async function start(deps: LinkImportToolsDeps, args: LinkImportRequest, princip
     },
     access.submitter,
   );
-  // 对外服务新建的视频：父任务一记下 videoId 就登记进服务的范围（不等任务结束）。
+  // A video created for an external service: added to the service's scope as soon as the parent job records videoId (without waiting for the job to end).
   if (service && args.newVideo && scope.adoptCreatedVideo) {
     const adopt = scope.adoptCreatedVideo.bind(scope);
     adoptWhenCreated(deps.jobs, jobId, (videoId) => adopt(access, videoId));
   }
-  // i18n-ignore-start: 给模型的工具说明、错误与下一步
-  const where = intoProject ? '所属项目的 downloads/（不属于项目的会话是下载目录）' : '下载目录';
+  const where = intoProject ? "the owning project's downloads/ (the downloads directory for a session without a project)" : 'the downloads directory';
   return {
     jobId,
     installJobId: null,
     url: link.canonical,
     ...approvalField(approval),
     next: args.newVideo
-      ? `下载已提交，完成后新建视频并放上时间线${args.transcribe ? `、转写${args.captions ? '、建立字幕层' : ''}` : ''}。用 jobs_wait 等它结束（看进度用 jobs_inspect）；state 为 completed 时 videoId 是新建的视频（可以直接给 videos_inspect），outputs[0].assetId 是导入的素材${
+      ? `Download submitted; when it finishes, a new video is created and placed on the timeline${args.transcribe ? `, then transcribed${args.captions ? ' and given a caption layer' : ''}` : ''}. Wait for it with jobs_wait (progress via jobs_inspect); when state is completed, videoId is the new video (can be passed straight to videos_inspect) and outputs[0].assetId is the imported asset${
           args.transcribe
             ? args.captions
-              ? '，pipeline.summary.documentId 是新转写（可以给 documents_read），summary.captions 是字幕层'
-              : '，pipeline.summary.documentId 是新转写（文稿在视频的 speech 文档里，要字幕层时再 captions_create）'
+              ? ', pipeline.summary.documentId is the new transcript (can be passed to documents_read), and summary.captions is the caption layer'
+              : ", pipeline.summary.documentId is the new transcript (the text is in the video's speech document; call captions_create if you need a caption layer)"
             : ''
-        }。新建的视频在之后的步骤失败时保留，不要再新建一次。`
+        }. The created video is kept if a later step fails; do not create it again.`
       : args.video !== undefined
-        ? `下载已提交。用 jobs_wait 等它结束（看进度用 jobs_inspect）；state 为 completed 时 outputs[0].path 是下载的文件（在${where}），outputs[0].assetId 是导入的素材。`
-        : `下载已提交，文件保存到${where}，不导入视频。用 jobs_wait 等它结束（看进度用 jobs_inspect）；state 为 completed 时 outputs[0].path 是下载的媒体，要放进视频时把 outputs[0].artifactId 给 edits_apply 的 importAsset${args.transcribe ? '；其后 mediaType 为 text/plain 的是 TXT 文稿、application/x-subrip 的是 SRT 字幕（path 在媒体旁边，artifactId 可用于 artifacts_save）' : ''}。把文件位置告诉用户。`,
+        ? `Download submitted. Wait for it with jobs_wait (progress via jobs_inspect); when state is completed, outputs[0].path is the downloaded file (in ${where}) and outputs[0].assetId is the imported asset.`
+        : `Download submitted; the file is saved to ${where} and not imported into a video. Wait for it with jobs_wait (progress via jobs_inspect); when state is completed, outputs[0].path is the downloaded media; to put it in a video, pass outputs[0].artifactId to edits_apply's importAsset${args.transcribe ? '; after it, the output with mediaType text/plain is the TXT transcript and application/x-subrip is the SRT subtitles (path is next to the media; artifactId can be used with artifacts_save)' : ''}. Tell the user where the file is.`,
   };
-  // i18n-ignore-end
 }
 
 /**
- * 流程参数里的落点：已有的视频（范围里的）、新建（与 `videos_create` 同一处），项目（只下载），或不给落点时调用方的来源
- * （会话的项目或会话、终端的项目；文件仍进下载目录）。
+ * The destination in the pipeline params: an existing (in-scope) video, a new one (in the same place as `videos_create`), a
+ * project (download only), or, with no destination, the caller's source (the session's project or the session, or the
+ * terminal's project; files still go to the downloads directory).
  */
 async function targetOf(
   deps: LinkImportToolsDeps,
@@ -340,14 +339,14 @@ async function targetOf(
 ): Promise<{ videoId: Id } | { target: PipelineVideoTarget } | { projectId: Id } | { conversationId: Id }> {
   const { scope } = deps;
   if (args.video !== undefined) return { videoId: (await scope.open(args.video, access)).ref.videoId };
-  // 新建的位置只在要用时才取：终端的范围取它时会登记项目（或建默认项目）；看不到的项目与不存在的一样回答。
-  // 只下载（不新建视频）时只找位置。
+  // Resolve the creation location only when needed: the terminal scope registers the project (or creates the default one)
+  // when resolving it; invisible projects are answered like missing ones. Download-only (no new video) just locates.
   const source = (await scope.createRoot(access, args.project, { locate: options.locate || !args.newVideo })).scope;
   if (args.newVideo) return { target: { create: { ...source, ...(args.name ? { name: args.name } : {}) } } };
   return source;
 }
 
-/** 等父任务记下 `videoId`（新建视频的那一步拿到租约时）再调用 `adopt`；任务先结束了就不再等。只调一次，失败不影响任务。 */
+/** Calls `adopt` once the parent job records `videoId` (when the video-creating step takes its lease); stops waiting if the job ends first. Called once; a failure does not affect the job. */
 function adoptWhenCreated(jobs: LinkImportToolsDeps['jobs'], jobId: Id, adopt: (videoId: Id) => void | Promise<void>): void {
   let done = false;
   const check = (record: JobRecord) => {
@@ -364,27 +363,26 @@ function adoptWhenCreated(jobs: LinkImportToolsDeps['jobs'], jobId: Id, adopt: (
     }
   };
   const stop = jobs.onChange(check);
-  // 同一个命令重复提交时拿回的是已有的任务：它可能已经记下了。
+  // A repeated submission of the same command returns the existing job, which may have recorded it already.
   try {
     check(jobs.inspect(jobId));
   } catch {
-    // 任务不在了：不再等。
+    // The job is gone: stop waiting.
     stop();
   }
 }
 
-// i18n-ignore-start: 给模型的工具说明、错误与下一步
 const installNext =
-  'yt-dlp 正在安装：用 jobs_wait 等 installJobId 对应的任务，state 为 completed 之后再调用一次 download；失败时 error.details.remedy 说明怎么补救。';
-// i18n-ignore-end
+  'yt-dlp is being installed: wait for the installJobId job with jobs_wait, and once state is completed call download again; on failure error.details.remedy explains the remedy.';
 
 function toolView(status: ExternalToolStatus) {
   return { name: status.name, state: status.state, version: status.version, source: status.source };
 }
 
 /**
- * 服务与流程的拒绝换成工具的错误：`details.code`（`TOOL_*`、`LINK_*`、`OFFLINE_STRICT`……）作为工具错误码。
- * 能力没有配置与授权、预算的拒绝留给工具目录按统一的格式说明补救（`errorBody` 补上 `remedy` 与 `next`）。
+ * Turns service and pipeline refusals into tool errors: `details.code` (`TOOL_*`, `LINK_*`, `OFFLINE_STRICT`, ...) becomes the
+ * tool error code. Unconfigured capabilities and grant or budget refusals are left to the tool catalog to explain in its uniform
+ * format (`errorBody` adds `remedy` and `next`).
  */
 export function toolErrorOf(error: unknown): unknown {
   if (error instanceof RpcError && typeof error.details === 'object' && error.details !== null) {

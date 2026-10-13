@@ -2745,9 +2745,8 @@ export function withSlideAnnotations(text: string, annotations: readonly Resolve
   if (annotations.length === 0) return text;
   const groups = new Map<string, string[]>();
   annotations.forEach(({ annotation: a, deckPath }, i) => {
-    // i18n-ignore-start: 发给智能体的标注（给模型的提示词），不随界面语言变化
-    const lines = [`${i + 1}. ${a.label}`, ...(a.detail ? [`   定位：${a.detail}`] : []), `   批注：${a.text.split('\n').join('\n        ')}`];
-    // i18n-ignore-end
+    // Annotations sent to the agent (part of the prompt): the labels stay the same whatever the UI language.
+    const lines = [`${i + 1}. ${a.label}`, ...(a.detail ? [`   Location: ${a.detail}`] : []), `   Note: ${a.text.split('\n').join('\n        ')}`];
     groups.set(deckPath, [...(groups.get(deckPath) ?? []), lines.join('\n')]);
   });
   const blocks = [...groups].map(([deckPath, items]) => [`<cuccut-slide-annotations deck=${JSON.stringify(deckPath)}>`, ...items, '</cuccut-slide-annotations>'].join('\n'));
@@ -2768,9 +2767,8 @@ export function withDesignAnnotations(text: string, annotations: readonly Resolv
   if (annotations.length === 0) return text;
   const groups = new Map<string, string[]>();
   annotations.forEach(({ annotation: a, canvasPath }, i) => {
-    // i18n-ignore-start: 发给智能体的标注（给模型的提示词），不随界面语言变化
-    const lines = [`${i + 1}. ${a.label}`, ...(a.detail ? [`   定位：${a.detail}`] : []), `   批注：${a.text.split('\n').join('\n        ')}`];
-    // i18n-ignore-end
+    // Annotations sent to the agent (part of the prompt): the labels stay the same whatever the UI language.
+    const lines = [`${i + 1}. ${a.label}`, ...(a.detail ? [`   Location: ${a.detail}`] : []), `   Note: ${a.text.split('\n').join('\n        ')}`];
     groups.set(canvasPath, [...(groups.get(canvasPath) ?? []), lines.join('\n')]);
   });
   const blocks = [...groups].map(([canvasPath, items]) =>
@@ -2793,9 +2791,8 @@ export function withDesignSystemAnnotations(text: string, annotations: readonly 
   if (annotations.length === 0) return text;
   const groups = new Map<string, string[]>();
   annotations.forEach(({ annotation: a, systemPath }, i) => {
-    // i18n-ignore-start: 发给智能体的标注（给模型的提示词），不随界面语言变化
-    const lines = [`${i + 1}. ${a.label}`, ...(a.detail ? [`   定位：${a.detail}`] : []), `   批注：${a.text.split('\n').join('\n        ')}`];
-    // i18n-ignore-end
+    // Annotations sent to the agent (part of the prompt): the labels stay the same whatever the UI language.
+    const lines = [`${i + 1}. ${a.label}`, ...(a.detail ? [`   Location: ${a.detail}`] : []), `   Note: ${a.text.split('\n').join('\n        ')}`];
     groups.set(systemPath, [...(groups.get(systemPath) ?? []), lines.join('\n')]);
   });
   const blocks = [...groups].map(([systemPath, items]) =>

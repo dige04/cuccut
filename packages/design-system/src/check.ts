@@ -1,20 +1,19 @@
 /**
- * 设计系统的结构校验（`design_system_check` 工具，docs/design/canvas §10.5）。只看文件，不渲染，按原格式（design-system skill 的
- * SKILL.md 与 references/format.md，常量取自原版运行时）逐条查：
- *   - design-system.json：v3、`layout: "files"`、`createdOnFiles` / `convertedFrom` 标记（没有时编辑器只读）、不是旧的单文件信封、
- *     各字段的形状、`namespace`、`libraries`、`groups` 与 `assetGroups`、素材记录（`{name, blob, size, type}`，blob 在 `_blobs/` 里）
- *   - tokens.json：语法、列表形状与上限（tokens-check.ts）
- *   - 路径规则（layout.ts 的 `explainDesignSystemPath`）、文件数（自有 ≤1,008）、合计 ≤256 MiB、单个文件 ≤15 MiB
- *   - 按类别的大小：README ≤200 KB，章节 *.md 每个 ≤512 KB 且至多 24 个，组件 README ≤64 KB，preview.html ≤256 KB，bundle.js ≤6 MB，
- *     bundle.css ≤2 MB，*.d.ts 合计 ≤1.5 MB，lib/*.js 每个 ≤2 MB，src/** 每个 ≤512 KB，assets/<组>/<文件> 每个 ≤12 MB，其他 ≤512 KB
- *     （原版 `DESIGN_SYSTEM_INLINE_LIMITS`；原版编辑器对 files 布局不再按类别封顶，format.md 仍把它们列为格式规则，这里照 format.md）
- *   - preview.html：第一行 `<!-- @dsCard … -->`，不用 iframe / frame / object / embed / portal / noscript，不链接 bundle.js 与库
- *   - bundle.js：经典脚本（不 import / export）、赋值 `window.<namespace>`、不连网、不含 `</script` 与 `<!--`；`@ds-bundle` 头行
- *   - 字体：fonts/ 里只放 woff2 / woff / ttf / otf，扩展名与文件头一致，tokens.json 的 `type.fonts` 列出的都在、在的都列出
- *   - 预览与 lib/ 里指向网上的脚本、样式与图片（CucCut 的 CSP 不放行 CDN，§10.2）；`/_blob/<id>` 引用都在 `_blobs/` 里
- * manifest.json、tokens.css、api/ 由编辑器保存时生成，不查（`notChecked`）。组件能不能渲染不在检查范围内。问题是给智能体看的英文，不进界面文案目录。
+ * Structural check of a design system (the `design_system_check` tool, docs/design/canvas §10.5). Reads files only, renders nothing, and checks item by item against the original format (the design-system skill's
+ * SKILL.md and references/format.md; constants taken from the original runtime):
+ *   - design-system.json: v3, `layout: "files"`, the `createdOnFiles` / `convertedFrom` marker (without it the editor is read-only), not the old single-file envelope,
+ *     the shape of each field, `namespace`, `libraries`, `groups` and `assetGroups`, asset records (`{name, blob, size, type}`, blob in `_blobs/`)
+ *   - tokens.json: syntax, list shape and limits (tokens-check.ts)
+ *   - path rules (`explainDesignSystemPath` in layout.ts), file count (own ≤1,008), total ≤256 MiB, single file ≤15 MiB
+ *   - size by category: README ≤200 KB, section *.md ≤512 KB each and at most 24, component README ≤64 KB, preview.html ≤256 KB, bundle.js ≤6 MB,
+ *     bundle.css ≤2 MB, *.d.ts ≤1.5 MB in total, lib/*.js ≤2 MB each, src/** ≤512 KB each, assets/<group>/<file> ≤12 MB each, anything else ≤512 KB
+ *     (original `DESIGN_SYSTEM_INLINE_LIMITS`; the original editor no longer caps the files layout by category, but format.md still lists them as format rules, so this follows format.md)
+ *   - preview.html: first line `<!-- @dsCard … -->`, no iframe / frame / object / embed / portal / noscript, no links to bundle.js or libraries
+ *   - bundle.js: classic script (no import / export), assigns `window.<namespace>`, no network access, no `</script` or `<!--`; the `@ds-bundle` header line
+ *   - fonts: only woff2 / woff / ttf / otf in fonts/, extension matches the file header, everything listed in tokens.json `type.fonts` exists and everything present is listed
+ *   - scripts, styles and images in previews and lib/ that point to the web (CucCut's CSP does not allow CDNs, §10.2); every `/_blob/<id>` reference exists in `_blobs/`
+ * manifest.json, tokens.css and api/ are generated when the editor saves and are not checked (`notChecked`). Whether components render is out of scope. Issues are English text for agents and do not go into the UI copy catalogs.
  */
-// i18n-ignore-file: 给模型的校验结果
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { BLOB_ID_PATTERN } from '@cuccut/slides';
@@ -38,42 +37,42 @@ import {
 import { TOKENS_LIMITS, checkTokensText, tokenFontFiles } from './tokens-check.ts';
 
 export interface DesignSystemIssue {
-  /** 相对设计系统目录的文件（`/` 分隔）；整个目录的问题是 `.`。 */
+  /** File relative to the design system directory (`/`-separated); issues about the whole directory use `.`. */
   file: string;
   message: string;
-  /** 少数要按种类处理的问题带一个代码（`DESIGN_SYSTEM_ISSUE_CODES`）；其余没有。 */
+  /** The few issues that need handling by kind carry a code (`DESIGN_SYSTEM_ISSUE_CODES`); the rest have none. */
   code?: DesignSystemIssueCode;
 }
 
 /**
- * 带代码的问题：
- * - `ASSET_RECORD_MISSING_UPLOAD`：索引里的素材记录（`assetGroups.<组>.files.*` 或 `blobs.*`）指向的上传不在 `_blobs/` 里，
- *   它还原到的路径上也没有文件，编辑器里这个素材打不开（`/_blob/<id>` 回 404）。
+ * Issues with a code:
+ * - `ASSET_RECORD_MISSING_UPLOAD`: an asset record in the index (`assetGroups.<group>.files.*` or `blobs.*`) points to an upload that is not in `_blobs/`,
+ *   and there is no file at the path it restores to either, so the asset cannot be opened in the editor (`/_blob/<id>` returns 404).
  */
 export const DESIGN_SYSTEM_ISSUE_CODES = ['ASSET_RECORD_MISSING_UPLOAD'] as const;
 export type DesignSystemIssueCode = (typeof DESIGN_SYSTEM_ISSUE_CODES)[number];
 
 export interface DesignSystemCheckResult {
-  /** 索引的标题（没有时是目录名）。 */
+  /** Title from the index (the directory name when missing). */
   title: string;
-  /** 索引的 `namespace`（没有或不合规则时 null）。 */
+  /** The index's `namespace` (null when missing or invalid). */
   namespace: string | null;
   issues: DesignSystemIssue[];
   /**
-   * 说明：原版能读、不用改，但编辑器不显示或会改写的地方（tokens.json 里不是 token 族的键；路径上已有文件的素材记录——
-   * 文件优先，编辑器下次保存时去掉记录）。不算问题，`issues` 为空时照样算通过。
+   * Notes: things the original reads fine and that need no change, but that the editor does not show or will rewrite (keys in tokens.json that are not token families; asset records whose path already has a file:
+   * the file wins and the editor drops the record on its next save). Not issues; the check still passes when `issues` is empty.
    */
   notes: DesignSystemIssue[];
-  /** 编辑器保存时生成、不查的文件。 */
+  /** Files generated when the editor saves; not checked. */
   notChecked: string[];
 }
 
-/** 不查的生成物（§10.5）。 */
+/** Generated files that are not checked (§10.5). */
 export const DESIGN_SYSTEM_NOT_CHECKED = [DESIGN_SYSTEM_PATHS.manifest, GENERATED_TOKENS_CSS_PATH, 'api/'] as const;
 
 const KIB = 1024;
 const MIB = 1024 * 1024;
-/** 按类别的大小上限（原版 `DESIGN_SYSTEM_INLINE_LIMITS`）。 */
+/** Size limits by category (original `DESIGN_SYSTEM_INLINE_LIMITS`). */
 export const DESIGN_SYSTEM_FILE_LIMITS = {
   readme: 200 * KIB,
   tokens: 512 * KIB,
@@ -86,22 +85,22 @@ export const DESIGN_SYSTEM_FILE_LIMITS = {
   asset: 12 * MIB,
   other: 512 * KIB,
 } as const;
-/** 章节（README 以外的 *.md）至多显示几个（原版 `MAX_DISPLAYED_DOCUMENTS`）。 */
+/** At most how many sections (*.md other than README) are shown (original `MAX_DISPLAYED_DOCUMENTS`). */
 export const MAX_SECTION_DOCUMENTS = 24;
 
-/** 扫描目录时最多看这么多个条目（超过时只报文件数超限）。 */
+/** At most this many entries are looked at when scanning the directory (beyond that only the file-count limit is reported). */
 const MAX_SCAN_ENTRIES = 20_000;
-/** 读入检查内容的上限：比这大的只按大小报。 */
+/** Read limit for checking content: anything larger is only reported by size. */
 const MAX_READ_BYTES = 8 * MIB;
 const FONT_EXTENSIONS: Record<string, string> = { woff2: 'WOFF2', woff: 'WOFF', ttf: 'TrueType', otf: 'OpenType' };
 const FORBIDDEN_PREVIEW_ELEMENTS = ['iframe', 'frame', 'object', 'embed', 'portal', 'noscript'];
-/** 原版 `COMPONENT_CARD_HEADER_PATTERN`。 */
+/** Original `COMPONENT_CARD_HEADER_PATTERN`. */
 const CARD_HEADER_PATTERN = /^[ \t]*<!--\s*@dsCard\b((?:(?!--)[^\r\n])*)(?:[\r\n]\s*)?-->/;
 const ASSET_TILE_SIZES = new Set(['xs', 's', 'm', 'l', 'xl']);
 const MAX_ASSET_GROUP_NAME_LENGTH = 80;
 const RESERVED_PROTOTYPE_NAMES = new Set(['__proto__', 'constructor', 'prototype']);
 const TEXT_EXTENSIONS = new Set(['md', 'mdx', 'markdown', 'txt', 'json', 'js', 'mjs', 'cjs', 'jsx', 'ts', 'tsx', 'css', 'html', 'htm', 'svg', 'xml', 'csv', 'yml', 'yaml', 'toml']);
-/** 原版的 `blob` 记录只认上传给的 id；CucCut 的 id 是 32 位小写十六进制（docs/design/canvas §2.1）。 */
+/** The original `blob` record only accepts ids handed out by uploads; CucCut ids are 32 lowercase hex characters (docs/design/canvas §2.1). */
 const BLOB_ID = BLOB_ID_PATTERN;
 
 type FileKind =
@@ -131,7 +130,7 @@ function extensionOf(rel: string): string {
   return dot <= 0 ? '' : base.slice(dot + 1);
 }
 
-/** 原版 `isAdditionalMarkdownPath`，另不算生成的 api/ 卡片。 */
+/** Original `isAdditionalMarkdownPath`, additionally excluding the generated api/ cards. */
 function isSectionDocument(rel: string): boolean {
   return (
     rel !== DESIGN_SYSTEM_PATHS.readme &&
@@ -144,7 +143,7 @@ function isSectionDocument(rel: string): boolean {
   );
 }
 
-/** 原版 `classifyDesignSystemFile`，另分出索引、编辑器自己的文件、生成物与 archived/。 */
+/** Original `classifyDesignSystemFile`, additionally separating the index, the editor's own files, generated files and archived/. */
 function classify(rel: string): FileKind {
   if (rel === DESIGN_SYSTEM_FILE) return 'index';
   if ((EDITOR_OWN_FILES as readonly string[]).includes(rel)) return 'own';
@@ -170,7 +169,7 @@ function classify(rel: string): FileKind {
   return 'other';
 }
 
-/** 每个类别的上限与说法；没有单独上限的类别是 null（只受 15 MiB 的单文件上限约束）。 */
+/** Limit and wording for each category; null for categories without their own limit (only the 15 MiB per-file limit applies). */
 function limitOf(kind: FileKind): { bytes: number; label: string } | null {
   switch (kind) {
     case 'readme':
@@ -202,11 +201,11 @@ function limitOf(kind: FileKind): { bytes: number; label: string } | null {
 }
 
 interface SystemTree {
-  /** 编辑器看得到的文件（相对路径）→ 字节数。不含 `_blobs/`。 */
+  /** Files the editor can see (relative path) -> byte size. Excludes `_blobs/`. */
   files: Map<string, number>;
-  /** `_blobs/` 里的素材 id。 */
+  /** Asset ids in `_blobs/`. */
   blobs: Set<string>;
-  /** `_blobs/` 以外文件的合计字节数。 */
+  /** Total bytes of files outside `_blobs/`. */
   totalBytes: number;
   truncated: boolean;
 }
@@ -223,7 +222,7 @@ async function scanTree(dir: string, issues: DesignSystemIssue[]): Promise<Syste
         tree.truncated = true;
         return;
       }
-      // 以点开头的（.DS_Store、.git）编辑器看不到，原格式也拒收：不进清单、不报
+      // Dotfiles (.DS_Store, .git) are invisible to the editor and rejected by the original format: not listed, not reported
       if (entry.name.startsWith('.')) continue;
       const child = rel === '' ? entry.name : `${rel}/${entry.name}`;
       if (rel === '' && entry.name === BLOBS_DIR && entry.isDirectory()) {
@@ -272,7 +271,7 @@ function attr(attrs: string, name: string): string | null {
   return match[1] ?? match[2] ?? match[3] ?? null;
 }
 
-/** 文本里的 `/_blob/<id>` 引用：id 不在 `_blobs/` 里或写错格式的记成问题。 */
+/** `/_blob/<id>` references in text: ids missing from `_blobs/` or malformed are recorded as issues. */
 function checkBlobRefs(file: string, text: string, blobs: ReadonlySet<string>, issues: DesignSystemIssue[]): void {
   const reported = new Set<string>();
   for (const match of text.matchAll(/\/_blob\/([^\s"'()<>?#`\\]*)/g)) {
@@ -289,7 +288,7 @@ function checkBlobRefs(file: string, text: string, blobs: ReadonlySet<string>, i
 
 const NO_CDN = 'CucCut previews load nothing from the network but Google Fonts (no CDN in the page CSP)';
 
-/** 脚本里指向网上的加载：`import()`、`fetch()`、`importScripts()`、给 `src` 赋网址、`<script src>` 字符串。 */
+/** Loads in scripts that point to the web: `import()`, `fetch()`, `importScripts()`, assigning a URL to `src`, `<script src>` strings. */
 function remoteScriptLoads(code: string): string[] {
   const urls: string[] = [];
   const patterns = [
@@ -309,7 +308,7 @@ function remoteScriptLoads(code: string): string[] {
   return urls;
 }
 
-/** css 里指向网上的 `@import` 与 `url()`（Google Fonts 除外）。 */
+/** `@import` and `url()` in CSS that point to the web (Google Fonts excepted). */
 function remoteCssLoads(css: string): string[] {
   const urls: string[] = [];
   for (const match of css.matchAll(/@import\s+(?:url\(\s*)?["']?([^"')\s;]+)/gi)) urls.push(match[1]!);
@@ -317,7 +316,7 @@ function remoteCssLoads(css: string): string[] {
   return [...new Set(urls.filter(url => isRemote(url) && !isGoogleFonts(url)))];
 }
 
-/** 一个 preview.html：头行、禁用元素、链接 bundle.js 与库、指向网上的脚本 / 样式 / 图片。 */
+/** One preview.html: header line, forbidden elements, links to bundle.js and libraries, scripts / styles / images pointing to the web. */
 function checkPreview(file: string, html: string, issues: DesignSystemIssue[]): void {
   const add = (message: string) => issues.push({ file, message });
   const text = html.replace(/^\uFEFF/, '');
@@ -355,7 +354,7 @@ function checkPreview(file: string, html: string, issues: DesignSystemIssue[]): 
   }
 }
 
-/** bundle.js 的 `@ds-bundle` 头行（原版 `parseBundleHeader`）：没有时 null，写坏了时 'invalid'。 */
+/** The `@ds-bundle` header line of bundle.js (original `parseBundleHeader`): null when missing, 'invalid' when malformed. */
 function bundleHeader(script: string): { namespace: string | null } | 'invalid' | null {
   const prefix = script.slice(0, 262144);
   const offset = prefix.indexOf('@ds-bundle:');
@@ -377,7 +376,7 @@ function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/** bundle.js：经典脚本、赋值 `window.<namespace>`、不连网、不含 `</script` 与 `<!--`。 */
+/** bundle.js: classic script, assigns `window.<namespace>`, no network access, no `</script` or `<!--`. */
 function checkBundle(file: string, code: string, namespace: string | null, issues: DesignSystemIssue[]): void {
   const add = (message: string) => issues.push({ file, message });
   if (/^\s*import\s*(?:[\w$*{},\s]+\s*from\s*)?['"]|^\s*export\s+(?:default\b|\{|\*|const\b|let\b|var\b|function\b|class\b|async\b)|\bimport\.meta\b|\bimport\s*\(/m.test(code)) {
@@ -403,7 +402,7 @@ function checkBundle(file: string, code: string, namespace: string | null, issue
   }
 }
 
-/** 字体文件：扩展名与文件头（woff2 `wOF2`、woff `wOFF`、ttf / otf 的 sfnt 头）。 */
+/** Font files: extension and file header (woff2 `wOF2`, woff `wOFF`, the sfnt header for ttf / otf). */
 async function checkFont(dir: string, file: string, issues: DesignSystemIssue[]): Promise<void> {
   const ext = extensionOf(file);
   const format = FONT_EXTENSIONS[ext];
@@ -425,7 +424,7 @@ async function checkFont(dir: string, file: string, issues: DesignSystemIssue[])
   }
 }
 
-/** 原版 `isAssetGroupName`：素材组的文件夹名。 */
+/** Original `isAssetGroupName`: folder name of an asset group. */
 export function isAssetGroupName(name: unknown): name is string {
   return (
     typeof name === 'string' &&
@@ -439,7 +438,7 @@ export function isAssetGroupName(name: unknown): name is string {
   );
 }
 
-/** 索引的键：`[A-Za-z0-9_./-]` 以外的 UTF-8 字节写成 `~` 加两位小写十六进制（原版 `encodeFileIndexKey`）。 */
+/** Index keys: UTF-8 bytes outside `[A-Za-z0-9_./-]` are written as `~` plus two lowercase hex digits (original `encodeFileIndexKey`). */
 export function encodeIndexKey(key: string): string {
   let encoded = '';
   for (const byte of Buffer.from(key, 'utf8')) {
@@ -449,7 +448,7 @@ export function encodeIndexKey(key: string): string {
   return encoded;
 }
 
-/** `encodeIndexKey` 的反过程（原版 `decodeFileIndexKey`）：`~` 加两位十六进制换回字节；写坏了时原样返回。 */
+/** Inverse of `encodeIndexKey` (original `decodeFileIndexKey`): `~` plus two hex digits back to bytes; returned unchanged when malformed. */
 export function decodeIndexKey(key: string): string {
   if (!key.includes('~')) return key;
   const bytes: number[] = [];
@@ -468,17 +467,17 @@ export function decodeIndexKey(key: string): string {
 interface IndexContext {
   tree: SystemTree;
   add: (message: string, code?: DesignSystemIssueCode) => void;
-  /** 路径上已有文件的记录（文件优先，见 `checkRecord`）：最后合成一条说明。 */
+  /** Records whose path already has a file (the file wins, see `checkRecord`): combined into a single note at the end. */
   shadowed: string[];
-  /** 由记录还原出来、上传也在 `_blobs/` 里的路径：编辑器里看得到，按文件算（例如 tokens.json 列的字体）。 */
+  /** Paths restored from records whose upload is also in `_blobs/`: visible in the editor, counted as files (e.g. fonts listed in tokens.json). */
   restored: Set<string>;
 }
 
 /**
- * 一条素材记录 `{name, blob, size, type}`；`where` 是它在索引里的位置，`filePath` 是它还原到的路径。
- * 原版打开时先读文件、再还原记录（`restoreFilesFromIndex`）：路径上已有文件时文件优先、记录被跳过，下次保存时从索引里去掉
- * （`buildFilesIndex` 只为仍是上传的文件写记录）。原版导出的设计系统就是这样：素材按 `assets/<组>/<名字>` 写成文件，索引里的
- * 记录原样保留，没有 `_blobs/`。所以这种记录只记一条说明；路径上没有文件、上传也不在 `_blobs/` 里的才是问题。
+ * One asset record `{name, blob, size, type}`; `where` is its position in the index, `filePath` the path it restores to.
+ * When opening, the original reads the files first and then restores records (`restoreFilesFromIndex`): if the path already has a file, the file wins, the record is skipped and dropped from the index on the next save
+ * (`buildFilesIndex` only writes records for files that are still uploads). Design systems exported by the original look exactly like this: assets are written as files under `assets/<group>/<name>`, the index's
+ * records are kept as they are, and there is no `_blobs/`. So such a record only gets a note; it is an issue only when the path has no file and the upload is not in `_blobs/` either.
  */
 function checkRecord(ctx: IndexContext, where: string, record: unknown, filePath: (name: string) => string): void {
   const { add, shadowed, restored, tree } = ctx;
@@ -512,7 +511,7 @@ function checkRecord(ctx: IndexContext, where: string, record: unknown, filePath
   }
 }
 
-/** design-system.json 的字段（标记、形状、namespace、libraries、groups、assetGroups、blobs、docs）。 */
+/** Fields of design-system.json (markers, shape, namespace, libraries, groups, assetGroups, blobs, docs). */
 function checkIndex(index: Record<string, unknown>, ctx: IndexContext, note: (message: string) => void): void {
   checkIndexFields(index, ctx, note);
   const { shadowed } = ctx;
@@ -524,9 +523,9 @@ function checkIndex(index: Record<string, unknown>, ctx: IndexContext, note: (me
 }
 
 /**
- * 索引各字段的形状。原版打开时（`restoreFilesFromIndex`）缺了的字段按空值读（`libraries` []、`groups` []、`assetGroups` {}、
- * `blobs` {}、`sections` {}；分组缺 `name` 时从键解出），所以只查给了的字段写得对不对：刚建好、只有标记、title 与
- * namespace 的索引没有问题。`docs` 是编辑器保存时写的，原版不读，只查形状。
+ * Shape of each index field. When opening (`restoreFilesFromIndex`) the original reads missing fields as empty values (`libraries` [], `groups` [], `assetGroups` {},
+ * `blobs` {}, `sections` {}; a group without `name` takes it from its key), so only fields that are present are checked: a freshly created index with only the marker, title and
+ * namespace has no issues. `docs` is written by the editor on save and not read by the original; only its shape is checked.
  */
 function checkIndexFields(index: Record<string, unknown>, ctx: IndexContext, note: (message: string) => void): void {
   const { add, tree } = ctx;
@@ -564,7 +563,7 @@ function checkIndexFields(index: Record<string, unknown>, ctx: IndexContext, not
   if (Object.hasOwn(index, 'sections') && (!isRecord(index.sections) || Object.values(index.sections).some(v => typeof v !== 'string'))) {
     add('"sections" must be an object of card titles ({} in a new index)');
   }
-  // groups 里的键不一定在 assetGroups 里（原版跳过；只有文件夹的组没有条目）
+  // Keys in groups need not be in assetGroups (the original skips them; a group that is only a folder has no entry)
   if (Object.hasOwn(index, 'groups') && (!Array.isArray(index.groups) || index.groups.some(g => typeof g !== 'string'))) {
     add('"groups" must be a list of asset group keys');
   }
@@ -609,8 +608,8 @@ async function readText(dir: string, rel: string): Promise<string | null> {
 }
 
 /**
- * 校验一个设计系统目录。问题按文件给出，`file` 为 `.` 的是整个目录的问题。不是设计系统（没有索引或不合 §10.1）时
- * 也照常检查其余文件，并报一条 design-system.json 的问题。
+ * Checks a design system directory. Issues are given per file; `file` `.` means an issue with the whole directory. When it is not a design system (no index, or not §10.1)
+ * the remaining files are still checked and one issue is reported for design-system.json.
  */
 export async function checkDesignSystem(dir: string): Promise<DesignSystemCheckResult> {
   const issues: DesignSystemIssue[] = [];
@@ -618,7 +617,7 @@ export async function checkDesignSystem(dir: string): Promise<DesignSystemCheckR
   const tree = await scanTree(dir, issues);
   const notChecked = [...DESIGN_SYSTEM_NOT_CHECKED];
 
-  // 索引
+  // Index
   let index: Record<string, unknown> | null = null;
   const indexText = tree.files.has(DESIGN_SYSTEM_FILE) ? await readText(dir, DESIGN_SYSTEM_FILE) : null;
   const addIndex = (message: string, code?: DesignSystemIssueCode) => issues.push({ file: DESIGN_SYSTEM_FILE, message, ...(code ? { code } : {}) });
@@ -632,7 +631,7 @@ export async function checkDesignSystem(dir: string): Promise<DesignSystemCheckR
     } catch (error) {
       addIndex(`is not valid JSON: ${(error as Error).message}`);
     }
-    // 只有标记也认得（原版 `isFilesIndex`），但写的人要按格式写全；带 "content" 对象的旧信封认不出，照样逐项检查，说清原因。
+    // A marker alone is recognized (original `isFilesIndex`), but authors should write the full format; an old envelope with a "content" object is not recognized, yet each item is still checked and the reason is stated.
     const envelope = isRecord(parsed) && isRecord(parsed.content);
     const fields = isRecord(parsed) && (envelope || isDesignSystemIndex(parsed)) ? parsed : null;
     if (parsed !== undefined && (!fields || typeof fields.v !== 'number' || fields.v < 3 || fields.layout !== 'files')) {
@@ -645,7 +644,7 @@ export async function checkDesignSystem(dir: string): Promise<DesignSystemCheckR
   if (index) checkIndex(index, { tree, add: addIndex, shadowed: [], restored }, noteIndex);
   const namespace = index && typeof index.namespace === 'string' && WINDOW_NAMESPACE_PATTERN.test(index.namespace) ? index.namespace : null;
 
-  // 文件数与大小
+  // File count and sizes
   let ownFiles = 0;
   let dtsTotal = 0;
   const sections: string[] = [];
@@ -677,7 +676,7 @@ export async function checkDesignSystem(dir: string): Promise<DesignSystemCheckR
     issues.push({ file: '.', message: `has ${sections.length} section documents (*.md outside components/, assets/, fonts/ and archived/); the editor shows at most ${MAX_SECTION_DOCUMENTS}, the rest stay files` });
   }
 
-  // 组件目录名
+  // Component directory names
   for (const file of tree.files.keys()) {
     if (!file.startsWith(DESIGN_SYSTEM_PATHS.componentsDir)) continue;
     const parts = file.slice(DESIGN_SYSTEM_PATHS.componentsDir.length).split('/');
@@ -686,7 +685,7 @@ export async function checkDesignSystem(dir: string): Promise<DesignSystemCheckR
     }
   }
 
-  // tokens.json 与字体
+  // tokens.json and fonts
   const tokensText = tree.files.has(DESIGN_SYSTEM_PATHS.tokens) ? await readText(dir, DESIGN_SYSTEM_PATHS.tokens) : null;
   if (tokensText !== null && (tree.files.get(DESIGN_SYSTEM_PATHS.tokens) ?? 0) <= TOKENS_LIMITS.bytes) {
     const tokens = checkTokensText(tokensText);
@@ -705,7 +704,7 @@ export async function checkDesignSystem(dir: string): Promise<DesignSystemCheckR
     }
   }
 
-  // assets/ 的组名
+  // Group names under assets/
   for (const file of tree.files.keys()) {
     if (!file.startsWith(DESIGN_SYSTEM_PATHS.assetsDir)) continue;
     const rest = file.slice(DESIGN_SYSTEM_PATHS.assetsDir.length);
@@ -715,7 +714,7 @@ export async function checkDesignSystem(dir: string): Promise<DesignSystemCheckR
     }
   }
 
-  // 内容
+  // Content
   for (const [file, bytes] of tree.files) {
     const kind = classify(file);
     if (kind === 'generated' || kind === 'own' || kind === 'archived' || bytes > MAX_READ_BYTES || bytes > DESIGN_SYSTEM_LIMITS.fileBytes) continue;

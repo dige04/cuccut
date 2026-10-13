@@ -1,14 +1,14 @@
 ---
-name: 示例润色
-description: 测试用的 craft：润色一份转写。只用于渲染器与同步脚本的测试。
+name: Demo polish
+description: A craft for tests - polish a transcript. Only for the renderer and sync script tests.
 version: 1.0.0
 ---
 
-# 润色一份转写
+# Polish a transcript
 
-动笔前先用 `skills_read` 读本 skill 的 `references/notes.md`：底本与默认值都在那里。
+Before writing, use `skills_read` to read this skill's `references/notes.md`: the base text and defaults are there.
 
-1. 用 documents_read 读出转写，确认 sourceBasis。
-2. 一词对一词地改，用 documents_put 写回同一份文档；改完用 videos_inspect 核对版本。
-3. 交付时用 downloads_save 把说明放进下载目录。
-4. 章节交给 {{skill:demo-chapters}}，那一步用 {{tool:edits_apply}} 的 setChapters。
+1. Read the transcript with documents_read and confirm sourceBasis.
+2. Edit word for word and write back to the same document with documents_put; afterwards check the revision with videos_inspect.
+3. At delivery, put the notes in the downloads directory with downloads_save.
+4. Hand chapters to {{skill:demo-chapters}}; that step uses setChapters of {{tool:edits_apply}}.

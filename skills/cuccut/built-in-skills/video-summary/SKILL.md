@@ -1,194 +1,194 @@
 ---
 name: video-summary
-description: 用户要总结一个视频、提炼要点、写内容摘要或会议纪要式的回顾时用：挑出这一期最值得带走的两三件事，从读者关心的问题讲起、讲透，其余少说或不说；另附一组带视频时间的要点，方便跳回那一段。适用于访谈、播客、演讲、教程、评测、会议、圆桌等任何有转写的视频。不用于总结与视频无关的文章或纯文本，也不用于写博客文章（那是另一种产出）。
+description: Use to summarize a video, distill key points, or write a digest or minutes-style recap: the two or three things most worth taking away, explained fully, plus key points with video times. Any video with a transcript (interviews, talks, tutorials, meetings...). Not for non-video text or blog posts.
 version: 2.0.0
 ---
 
-# 视频内容总结
+# Video summary
 
-读者来读总结，是因为没有时间看原视频。他想知道的只有一件事：这一期里有什么值得我带走的。所以总结不是原视频的缩略版，不需要覆盖全部话题，也不需要保持原来的顺序；它要做的是把最有价值的两三样东西挑出来，从读者关心的问题讲起，讲透，其余的少说或不说。
+Readers come to a summary because they have no time to watch the original video. They want to know only one thing: what in this episode is worth taking away for me. So a summary is not an abridged version of the original; it need not cover every topic or keep the original order. Its job is to pick out the two or three most valuable things, start from the questions readers care about, explain them fully, and say little or nothing about the rest.
 
-最容易写坏的样子是流水账：开头介绍嘉宾履历，然后按章节一块一块往下总结，每块篇幅差不多。这样写信息都在，但读者得自己从头读到尾去找哪句重要，等于把筛选的工作又推回给了他。
+The easiest way to get it wrong is a blow-by-blow recap: open with the guest's resume, then summarize chapter by chapter, each block about the same length. All the information is there, but readers have to read it front to back to find which sentences matter, which hands the sifting right back to them.
 
-动笔前先用 `skills_read` 读本 skill 的 `references/writing-baseline.md`：材料、基线（忠于文稿、不编造、转述不加料、补足背景）、两类读者、篇幅与风格的档位都在那里，下面不重复。
+Before writing, use `skills_read` to read this skill's `references/writing-baseline.md`: the material, the baseline (stay faithful to the transcript, do not invent, report without embellishing, fill in the background), the two kinds of reader, and the length and style levels are all there and are not repeated below.
 
-## 1. 取材料
+## 1. Gather the material
 
-1. 用 videos_inspect 看视频的文档。没有转写（kind 为 speech 的文档）时先转写，告诉用户转写在进行。转写没润色过时人名、术语可能有错字，对照视频信息核对。
-2. 带时间码的文稿：export（kind `transcript`、format `md`、timestamps `true`；有几份文稿时按它列出的候选用 documentId 指定），jobs_inspect 等到 completed，读 outputs 里的文件。这里的时间是剪辑后时间线上的时间，剪掉的词不在里面；要点的时间就取它，不要自己估算。
-3. 视频信息：videos_inspect 给出的视频名与章节；来源标题、作者、简介、链接等只用视频信息里有的和用户提供的。
-4. 没有视频（例如只从链接下载并转写）：jobs_inspect 的 outputs 里的 SRT 带时间码，直接读。
-5. **必要时看画面**。文稿里指着屏幕说话的地方（演示、幻灯片、代码、图表、「这个」「这里」「大家看」），光读文字不知道在说什么时，用 videos_frames 在那几个时间码取几帧看（`at` 列出时刻，或 `range` 加 `count` 等间隔取，一次最多 24 帧，读每帧的 `file`）。不是每个视频都要取帧：纯对话、读文稿就能懂的不取。取到的画面只用来弄清说话人在指什么、把它写明白；画面里看到的东西是你补的背景，不是说话人说过的话，写进去时读者要分得清。帧是素材画面，不含字幕、文字与叠加的元素。
+1. Look at the video's documents with videos_inspect. If there is no transcript (a document of kind speech), transcribe first and tell the user the transcription is running. An unpolished transcript may misspell names and terms; check them against the video info.
+2. Timestamped transcript: export (kind `transcript`, format `md`, timestamps `true`; when there are several transcripts, pick one by documentId from the candidates it lists), wait with jobs_inspect until completed, and read the file in outputs. The times here are on the edited timeline, and cut words are not in it; take key-point times from it, and do not estimate them yourself.
+3. Video info: the video name and chapters from videos_inspect; use only the source title, author, description, links etc. found in the video info or provided by the user.
+4. No video (for example only downloaded from a link and transcribed): the SRT in jobs_inspect's outputs has timestamps; read it directly.
+5. **Look at the picture when needed.** Where the transcript talks while pointing at the screen (demos, slides, code, charts, "this", "here", "look at this") and the text alone does not tell you what is meant, use videos_frames to take a few frames at those timestamps (`at` lists moments, or `range` with `count` samples evenly, at most 24 frames per call; read each frame's `file`). Not every video needs frames: skip pure conversation and anything the transcript alone makes clear. Use the frames only to work out what the speaker is pointing at and to write it clearly; what you see in the picture is background you added, not something the speaker said, and readers must be able to tell when it goes in. Frames show the footage only, without subtitles, text or overlaid elements.
 
-## 2. 语言
+## 2. Language
 
-产出用哪种语言，按下面的顺序取第一个有的：
+For the output language, take the first of the following that exists:
 
-1. 用户这次的要求里指定的语言；没指定时，用户这次给你的消息所用的语言。
-2. 界面语言：会话上下文里给出了用户的界面语言时用它。
-3. 转写的语言。
+1. The language named in this request; if none is named, the language of the user's message to you this time.
+2. The interface language: when the session context gives the user's interface language, use it.
+3. The transcript's language.
 
-用户的消息只有几个字、看不出语言时跳过第 1 条。拿不准时按上面的顺序取，交付时提一句也可以出另一种语言的版本。写作基线对任何语言都成立；本页举的措辞只是示意，换成别的语言时用那种语言里对应的说法。
+Skip item 1 when the user's message is only a few words and its language cannot be told. When unsure, go by the order above and mention on delivery that a version in another language is also possible. The writing baseline holds for any language; the wording on this page is only illustrative, so in another language use that language's equivalent phrasing.
 
-## 3. 写给谁看
+## 3. Who it is written for
 
-默认读者是对这个话题好奇、但不在这一行的人：看新闻、用过相关的产品、叫得出大公司的名字，但没在这个行业工作过，不熟悉行话。用户指定了别的读者时按用户的来。
+The default reader is curious about the topic but not in the field: follows the news, has used related products, can name the big companies, but has never worked in the industry and does not know the jargon. When the user names another reader, go with the user's.
 
-这个读者很聪明，只是没学过这一行。不用把话说得幼稚，也不用什么都从头讲起，要做的是别让他被行话卡住。这个设定决定三件事：挑什么当精华、术语怎么处理、一个道理讲到多细。
+This reader is smart, just not trained in this field. Do not talk down to them or explain everything from scratch; the job is to keep them from getting stuck on jargon. This setting decides three things: what to pick as the highlights, how to handle terms, and how finely to explain a point.
 
-## 4. 产出是什么
+## 4. What the output is
 
-两部分：
+Two parts:
 
-- **总结正文**：围绕精华组织的一篇文字。开头几句就点出最值得带走的东西，正文把它们讲透，次要内容在最后几句带过或不写。
-- **要点**：一组短句，每条是一个值得记住的结论、方法或数字，注明它依据的那段在视频里的时间，读者能从它跳回视频的那一段。
+- **Summary body**: a piece of writing organized around the highlights. The first few sentences point out what is most worth taking away, the body explains those things fully, and minor content is passed over in the last few sentences or left out.
+- **Key points**: a set of short sentences, each a conclusion, method or number worth remembering, noting the time in the video of the passage it rests on, so readers can jump from it back to that passage.
 
-正文给完整的来龙去脉，要点是导览：扫一眼要点就知道该回看哪一段。要点的条数取决于内容，不凑数。正文里值得回看的地方也可以注明时间。
+The body gives the full story; the key points are a guide: a glance at them tells readers which passage to revisit. The number of key points depends on the content; do not pad. Places in the body worth revisiting may also note their time.
 
-## 5. 动笔之前
+## 5. Before writing
 
-先从文稿里弄清下面几件事，它们不进成品。用户在这次要求里给了重点或附了自己的想法时，第 2、3 步围绕它来。
+First work out the following from the transcript; none of it goes into the deliverable. When the user gave a focus or attached their own thoughts in this request, steps 2 and 3 revolve around it.
 
-1. **谁在说话**。识别主持人和嘉宾；每位说话人是谁、以什么身份说。只依据文稿里的自我介绍、别人的介绍、顺口带出的经历（「我们当时做 X 的时候」）和视频信息。文稿里只有说话人编号、又无从确认时，用「主持人」「嘉宾」这类角色，不猜名字。
-2. **挑出精华**。这是最重要的一步，后面所有取舍都以它为准。通读后问自己：如果只能告诉朋友这一期的两三件事，是哪几件？
+1. **Who is speaking.** Identify the host and guests: who each speaker is and in what capacity they speak. Rely only on self-introductions in the transcript, introductions by others, experience mentioned in passing ("back when we were building X") and the video info. When the transcript has only speaker numbers and there is no way to confirm, use roles such as "the host" and "the guest"; do not guess names.
+2. **Pick the highlights.** This is the most important step; every later choice rests on it. After reading it through, ask yourself: if I could tell a friend only two or three things from this episode, which would they be?
 
-   算得上精华的，通常是新颖或反直觉的判断、只有亲历者才讲得出的内幕和细节、读者能直接拿去用的做法，以及支撑这些的有力案例和数字。常识、客套、泛泛的展望、别处已经讲烂的观点不算，哪怕它们在视频里占了很长时间。在视频里占多少时长，和它值不值得写，没有关系。
+   What counts as a highlight is usually a novel or counterintuitive judgment, inside stories and details only someone who was there could tell, practices readers can use directly, and the strong cases and numbers behind these. Common knowledge, pleasantries, vague outlooks and views worn out elsewhere do not count, even if they take up a long stretch of the video. How much time something takes in the video has nothing to do with whether it is worth writing.
 
-   挑的时候站在目标读者的位置上，不站在圈内人的位置上。同一期视频，从业者和外行想带走的东西不一样；只有圈内人才在意的内容，再精彩也往后放，或留到最后几句带过。精华一般两到三个，最多不超过四个。挑不出来、觉得每个话题都差不多重要，说明还没想清楚，再读一遍。
+   Pick from the target reader's position, not an insider's. From the same episode, practitioners and laypeople want to take away different things; content only insiders care about goes further back, however brilliant, or is passed over in the last few sentences. There are usually two or three highlights, never more than four. If you cannot pick any and every topic seems about equally important, you have not thought it through yet; read it again.
 
-   用户指定了重点时，这个重点就是全文的精华：开头从它切入，它写得最长、最完整，别的内容相应压缩。
-3. **想清楚读者为什么会在意**。对每个精华，找到它回答了读者的哪个问题：读者本来在好奇什么、纠结什么、默认相信什么？比如读者一直以为 A，说话人用亲身经历说明其实是 B；或者读者正在为某件事发愁，说话人恰好给了一个做法。这个连接点是开头的切入口，也是每一节展开时的引子。
-4. **弄明白说话人凭什么值得听**。读者大概率不认识他。要回答的不是「他的简历是什么」，而是在这个话题上，他的哪段经历让他有别人没有的视角。多位说话人时分清各自视角的差异（从业者、研究者、投资人；互相补充还是立场对立）。主持人也要弄清楚：他是谁决定了这场对话是什么性质，是同行交流做法、外行向内行请教，还是带着质疑来提问；只负责串场、身份和话题无关的主持人不用介绍。这一步的结果是备用的：在某个论断需要分量、或读者需要知道「这是谁在问、谁在答」的地方，用一句话点出来。
-5. **给剩下的内容分档**。精华以外的内容分三类：支撑精华的（论证、案例、背景），并进对应的精华里写；和精华无关但读者可能想知道的，留到最后几句话带过；其余的不写。判断方法是问一句：删掉它，读者会损失什么？说不出来就删。
-6. **标出读者会卡住的地方**。只看要写进总结的部分。说话人都是圈内人，一句带过的公司、事件、类比、术语很多。逐个问：目标读者看到这里知道在说什么吗？不知道的，按第 7 节处理。
-7. **核对背景**。要写进总结的人名、公司、产品、事件，以文稿和视频信息为准；转写多半是机器生成的，名字常拼错，对照视频信息核对。能联网查时可以查，查到的只用来介绍人物和补背景，不能变成说话人的观点；查到的和文稿对不上时以文稿为准，必要时注明。不能查或查不到时，只写文稿和视频信息里有依据的，不靠印象补。
+   When the user named a focus, that focus is the highlight of the whole piece: the opening cuts in from it, it gets the longest and most complete treatment, and everything else is compressed accordingly.
+3. **Work out why readers would care.** For each highlight, find which of the reader's questions it answers: what were readers curious about, torn over, assuming by default? For example, readers have always assumed A, and the speaker shows from experience that it is actually B; or readers are worried about something and the speaker happens to offer a way through. That connection is the way into the opening and the lead-in when each section unfolds.
+4. **Work out why the speaker is worth listening to.** Readers most likely do not know them. The question is not "what is their resume" but which experience gives them, on this topic, a perspective others lack. With several speakers, tell apart how their perspectives differ (practitioner, researcher, investor; complementing each other or opposed). Work out the host too: who they are decides the nature of the conversation - peers swapping practices, a layperson consulting an expert, or questioning with skepticism; a host who only links segments and whose identity has nothing to do with the topic needs no introduction. The result of this step is held in reserve: where a claim needs weight, or readers need to know "who is asking and who is answering", point it out in one sentence.
+5. **Sort the remaining content.** Content outside the highlights falls into three kinds: what supports a highlight (argument, cases, background) is folded into that highlight; what is unrelated to the highlights but readers may want to know is passed over in the last few sentences; the rest is left out. The test is to ask: if I delete it, what does the reader lose? If you cannot say, delete it.
+6. **Mark where readers will get stuck.** Look only at what will go into the summary. Speakers are all insiders, and they mention many companies, events, analogies and terms in passing. Ask of each: does the target reader know what is meant here? For those they do not, handle them as in section 7.
+7. **Check the background.** Names of people, companies, products and events that will go into the summary follow the transcript and video info; transcripts are mostly machine-generated and often misspell names, so check them against the video info. When you can search the web, you may; use what you find only to introduce people and fill in background, never as the speaker's views; when what you find does not match the transcript, the transcript wins, with a note if needed. When you cannot search or find nothing, write only what the transcript and video info support; do not fill in from memory.
 
-## 6. 正文怎么写
+## 6. Writing the body
 
-### 开头
+### The opening
 
-读者看完前几句就会决定要不要读下去。开头要做到两点：能吸引人读下去；让读者很快明白这一期讲了什么、跟自己有什么关系。最有价值的东西放在最前面。读者只读开头就走，也应该已经带走了这一期的核心。
+Readers decide after the first few sentences whether to read on. The opening must do two things: draw readers in to keep reading, and let them quickly understand what this episode covers and what it has to do with them. Put the most valuable thing first. A reader who reads only the opening and leaves should already have taken away the core of the episode.
 
-怎么切入，看这一期手上最好的材料是什么，没有固定的顺序：
+How to cut in depends on the best material this episode has; there is no fixed order:
 
-- 视频里有一个具体的场景或故事，本身就能说明这期的核心。直接讲这个故事。
-- 说话人有一个和多数人想法相反的判断。把大家默认的想法和他的判断摆在一起。
-- 读者正在纠结或好奇的一个问题，这期正好给了回答。
-- 一个出人意料的数字或事实。
+- The video has a concrete scene or story that by itself shows the core of the episode. Tell that story directly.
+- The speaker has a judgment that runs against what most people think. Put the common assumption and their judgment side by side.
+- A question readers are torn over or curious about, which this episode happens to answer.
+- A surprising number or fact.
 
-「跟读者有什么关系」要落在读者自己的生活和工作上：他以后用的东西会变成什么样，他现在花力气学的还值不值，他该不该做点什么。说得具体，不说「这对每个人都很重要」这类话。如果这期和普通读者的关系本来就不直接，如实讲清它讲了什么、为什么值得知道就够了，不硬拉关系。
+"What it has to do with the reader" must land on the reader's own life and work: what the things they use will become, whether what they are working hard to learn now is still worth it, whether they should do something. Be concrete; do not say things like "this matters to everyone". If the episode genuinely has no direct bearing on ordinary readers, it is enough to say plainly what it covers and why it is worth knowing; do not force a connection.
 
-开头要读起来轻松：两三个短段，不超过三百字；装不下说明想塞的点太多，只留最重要的那一个和它最直接的一两个支撑。精华的几点之间要看得出关系（因为、所以、但是），不要堆成一串互不相干的要点。尽量不出现需要解释的术语。
+The opening must read easily: two or three short paragraphs, no more than three hundred words; if it cannot fit, you are trying to cram in too many points, so keep only the most important one and its one or two most direct supports. The relations between the highlights must show (because, so, but); do not pile them into a string of unrelated points. Avoid terms that need explaining as far as possible.
 
-对比一下（只是示意，不要照搬句式）：
+Compare (illustrative only; do not copy the formula):
 
-不好：本期嘉宾是某公司编程工具团队的负责人，此前在多家公司做过开发者工具。这期节目里，他聊了产品的诞生过程、技术选型、代码审查的变化，以及对未来编程的看法。
+Bad: This episode's guest leads the coding tools team at a company and has previously built developer tools at several companies. In this episode, he talks about how the product came about, technical choices, changes in code review, and his views on the future of programming.
 
-好：AI 写代码越来越快，团队的交付速度却没有同步变快，问题出在哪？负责这个工具的人说，卡住他们的是代码审查：代码产出涨了几倍，人却看不过来。他们的解法是让 AI 先审一遍、人只看 AI 拿不准的部分，而这又逼着他们改了另一件事，就是工程师写需求的方式。
+Good: AI writes code faster and faster, yet teams are not shipping any faster - what is going wrong? The person in charge of this tool says what holds them back is code review: code output has grown several times over, and people cannot keep up reading it. Their fix is to have AI review first and people look only at what the AI is unsure about, and that in turn forced them to change something else: the way engineers write requirements.
 
-前一个开头读完，读者只知道「有这么一期视频」；后一个读完，读者已经拿到了结论，并且知道后面值得往下看什么。
+After the first opening, readers only know "there is an episode like this"; after the second, they already have the conclusion and know what is worth reading on for.
 
-两条界线：不卖关子，提出问题或讲完故事后，两三句之内给出答案；不夸大，说话人说到几分就写几分。不要写「本期视频……」「这期节目请到了……」这类开头。写完检查一下：把人名和产品名换掉，这段话还能原样放到另一期上吗？能，说明它没有用上这一期独有的东西，重写。
+Two boundaries: no teasing - after raising a question or telling a story, give the answer within two or three sentences; no exaggeration - write exactly as much as the speaker said. Do not open with "In this video..." or "This episode features...". Check after writing: with the names of people and products swapped out, could this paragraph go on another episode unchanged? If so, it uses nothing unique to this episode; rewrite it.
 
-### 人物交代
+### Introducing the people
 
-说话人各自是谁、凭什么值得听、这场对话是什么性质，要交代清楚，但位置和写法不固定：可以在开头用一个短语带上，可以在开头之后用一小段集中讲，也可以在他们第一次出场时顺手交代。不写成简历。某个判断来自他的亲身经历时，顺手点出出处（「他们内部上线头两周」「他带的团队里」），这比头衔更能说明这句话的分量；只留和当前论断相关的那一条，不每段回头介绍一遍。
+Who each speaker is, why they are worth listening to and what kind of conversation this is must be made clear, but where and how is not fixed: a phrase in the opening, a short paragraph right after the opening, or a word when they first appear. Do not write a resume. When a judgment comes from their own experience, note the source in passing ("in the first two weeks after they launched internally", "on the team he leads"); this shows the weight of the statement better than a job title. Keep only the one detail relevant to the claim at hand; do not reintroduce them in every paragraph.
 
-### 展开
+### Developing the highlights
 
-正文围绕精华逐个展开，一个精华一节。顺序按价值排，最重要的先写，和原视频的先后无关。同一个话题在视频里不同时间点聊到的内容合并到一起。
+The body develops the highlights one by one, one section per highlight. Order them by value, most important first, regardless of the order in the original video. Merge what the video says about the same topic at different points in time.
 
-每一节把这个精华讲透：说话人的结论是什么，他凭什么这么说（论证、亲身经历、案例、数字），做法层面有什么读者可以带走的。篇幅跟着价值走：最重要的一节可以写四五段，次要的两段就够，各节不需要一样长。
+Each section explains its highlight fully: what the speaker concludes, on what grounds (argument, personal experience, cases, numbers), and what readers can take away at the level of practice. Length follows value: the most important section may run four or five paragraphs, a minor one two is enough; sections need not be the same length.
 
-每节用**加粗的一句话**做小标题，直接写这一节的结论或要点，让只扫标题的读者也能抓到东西，比如「瓶颈从写代码转到了审代码」，而不是「关于代码审查」这类只说了话题的标签。内容本身很短时可以不加小标题。
+Give each section a **bold one-sentence** heading that states the section's conclusion or point directly, so readers who only skim the headings still get something - for example "The bottleneck moved from writing code to reviewing it", not a label like "About code review" that names only the topic. When the content is very short, the heading may be left out.
 
-节内用自然段落，不用列表：列表装不下「因为……，所以……」。本身就是列表的内容（步骤、清单、对比）例外。
+Within a section, use natural paragraphs, not lists: a list cannot hold "because ..., so ...". Content that is itself a list (steps, checklists, comparisons) is the exception.
 
-正文是转述，不掺评价。读者要能分清哪句是说话人说的、哪句是作者说的。主持人提出的质疑、给出的数字、打的比方，写明是主持人说的，不混成嘉宾的观点。重要观点用间接引语，言说动词用中性的「他说」「他认为」「在他看来」，不用替人加态度的词；直接引用只用于换个说法就失去味道的短句，与文稿一致，去掉口头禅。
+The body is reporting, with no evaluation mixed in. Readers must be able to tell which sentences the speaker said and which the author said. Doubts raised, numbers given and analogies made by the host are stated as the host's, not blended into the guest's views. Report important views in indirect speech with neutral verbs like "he says", "he thinks", "in his view", not words that add an attitude on someone's behalf; quote directly only short phrases that lose their flavor when reworded, matching the transcript, with filler words removed.
 
-### 让非专业读者读得懂
+### Making it readable for non-specialists
 
-专业视频里的术语很密，照搬过来读者每句话都要停一下，逐个加括号解释又会把文章撑得很碎。对每个术语和专有名词，先问它对读者理解这个要点是不是必需的，再从三种处理里选一种：
+Specialist videos are dense with terms; carried over as they are, readers stop at every sentence, while bracketing an explanation for each one fragments the piece. For every term and proper noun, first ask whether it is necessary for the reader to understand the point, then choose one of three treatments:
 
-- **不必需的，直接不写**。说话人顺口提到的具体工具、框架、命令、技术细节，多数属于这一类。读者要带走的是「她给助手做了一套能自己打开程序、像用户一样点一遍的检查工具」，至于底下调用了哪个库，写出来只会让他卡住。
-- **用大白话把意思说出来，不出现术语本身**。比如不写「用静态检查规则约束代码库」，写「给代码库定了很多自动检查的规矩，不合规矩的代码提交不上去」。
-- **必需的才保留，并在第一次出现时解释**。绕不开的核心概念、读者以后还会反复碰到的词、整篇都围着它转的词属于这一类。解释用一句读者能想象出来的话，说清它是什么、在这里为什么要紧，不用另一个术语去解释。
+- **Not necessary: leave it out.** Specific tools, frameworks, commands and technical details the speaker mentions in passing mostly belong here. What readers should take away is "she built the assistant a checking tool that can open the program itself and click through it like a user"; which library sits underneath only trips them up if written out.
+- **Say what it means in plain words, without the term itself.** For example, instead of "constrained the codebase with static analysis rules", write "set up many automatic checks for the codebase, so code that breaks the rules cannot be committed".
+- **Keep it only if necessary, and explain it on first appearance.** Core concepts that cannot be avoided, words readers will keep running into, and words the whole piece revolves around belong here. Explain with one sentence readers can picture, saying what it is and why it matters here; do not explain it with another term.
 
-一段里需要解释的新词超过两三个，说明写得太贴近原话了：退一步，先讲清楚这件事是什么、为什么重要，再决定哪些细节值得留。说话人自己打的比方通常是最好的解释工具，因为那是他本人在向外行讲；遇到好的比方，用在正文里帮读者理解对应的要点，不要当成花絮放到最后。
+If a paragraph needs more than two or three new words explained, it sticks too close to the original wording: step back, first make clear what the thing is and why it matters, then decide which details are worth keeping. The speaker's own analogies are usually the best explanatory tool, since that is the speaker explaining to laypeople; when you meet a good one, use it in the body to help readers grasp the corresponding point, not as a tidbit at the end.
 
-公司、产品、人物、事件也一样：读者不熟、名字又不重要的，换成通用说法；重要的，第一次出现时用一句话交代它是什么。补背景以让读者看懂这个论点为限：一个公司名补一句就够；一个故事需要几段才讲得清、而它确实是精华的一部分，就写几段。不展开成科普。
+The same goes for companies, products, people and events: ones readers do not know and whose names do not matter become generic descriptions; important ones get one sentence on first appearance saying what they are. Fill in background only as far as readers need to understand the point: one sentence for a company name is enough; if a story takes several paragraphs to make clear and it really is part of a highlight, write several paragraphs. Do not expand into a primer.
 
-### 次要内容与结尾
+### Minor content and the ending
 
-视频里和精华无关、但读者可能想知道的内容，在正文最后用三四句话带过，不加小标题，不评价视频本身（「其余部分聊得较散」）。想写的超过三四句，就再筛一遍；没有就不写。
+Content in the video unrelated to the highlights but possibly of interest to readers is passed over in three or four sentences at the end of the body, with no heading and no evaluation of the video itself ("the rest of it rambles a bit"). If you want to write more than three or four sentences, sift again; if there is nothing, write nothing.
 
-默认风格（平实）下，正文停在最后一个主题或带过次要内容的那几句，不另加「总之」「综上」式的总结、展望或号召。
+In the default (plain) style, the body stops at the last topic or at the sentences passing over minor content, with no added "in short" or "to sum up" summary, outlook or call to action.
 
-用户这次给了自己的想法（听完的感想、经历、想强调或反驳的点）时，它是最宝贵的输入：开头的切入优先围绕它，并在正文之后用作者的口吻写一段「作者的话」，保留用户原话里的具体细节和语气，只做润色和补全，不替换成更稳妥的说法。这段话和转述分开，读者一看就知道是作者在说。作者的经历、数字和立场只能用用户给的，不能起草；确实需要一段个人经历才立得住、而手上没有时，留一个明显的占位（如「【待补：你自己第一次遇到这个问题是什么时候】」），交付时告诉用户哪几处等他补。用户选了带评论的风格（见基线第 5 节）时，评论同样作为作者的话写、与转述分开，并以文稿为依据。
+When the user gave their own thoughts this time (impressions after listening, experiences, points they want to stress or rebut), they are the most valuable input: the opening preferably cuts in around them, and after the body write an "author's note" in the author's voice, keeping the concrete details and tone of the user's own words, only polishing and completing them, not replacing them with safer phrasing. This passage is kept apart from the reporting, so readers see at once that the author is speaking. The author's experiences, numbers and positions can only be ones the user gave, never drafted by you; where a personal experience is really needed to make a point stand and you have none, leave an obvious placeholder (such as "[TODO: when did you first run into this problem yourself]") and tell the user on delivery which places await them. When the user chose a style with commentary (see baseline section 5), the commentary is likewise written as the author's words, kept apart from the reporting and grounded in the transcript.
 
-## 7. 要点
+## 7. Key points
 
-- 每条一句话，单独看也能懂：主语、对象和结论都在这句话里；不写「他接着讨论了这个问题」。
-- 挑结论、方法、数字和新东西；跳过开场寒暄、过渡和大家都知道的。
-- 每条注明它依据的时间，指向这个话题开始的地方，取自文稿的时间码，不估算。
-- 按在视频里出现的顺序排；说同一件事的两条合并。
-- 要点与正文一致，不出现正文里没有的事实；不加评论，它是导览，准确转述就够了。
+- One sentence each, understandable on its own: subject, object and conclusion are all in the sentence; do not write "he then went on to discuss this issue".
+- Pick conclusions, methods, numbers and new things; skip opening pleasantries, transitions and what everyone knows.
+- Each notes the time it rests on, pointing to where the topic starts, taken from the transcript's timestamps, not estimated.
+- Order them as they appear in the video; merge two that say the same thing.
+- Key points agree with the body and contain no facts the body lacks; no commentary - they are a guide, and accurate reporting is enough.
 
-## 8. 不同的视频，不同的侧重
+## 8. Different videos, different emphasis
 
-| 视频 | 侧重 |
+| Video | Emphasis |
 | --- | --- |
-| 访谈、播客、圆桌 | 嘉宾的观点及其依据；主持人的问题只在有助于理解时保留 |
-| 演讲、讲座 | 论证的主线：问题、主张、证据、结论 |
-| 教程、演示 | 做成了什么、前提条件、步骤、常见错误；步骤写成有序列表；屏幕上的操作看不明白时取帧看 |
-| 评测、对比 | 比的是什么、在什么条件下、结论与保留意见 |
-| 叙事、纪录片、vlog | 发生了什么、转折在哪里；用户想保留的悬念不剧透 |
-| 会议、讨论 | 决定了什么、谁负责、还有什么没定 |
+| Interviews, podcasts, panels | The guests' views and their grounds; keep the host's questions only when they help understanding |
+| Talks, lectures | The main line of argument: problem, claim, evidence, conclusion |
+| Tutorials, demos | What was achieved, prerequisites, steps, common mistakes; write steps as an ordered list; take frames when on-screen actions are unclear |
+| Reviews, comparisons | What is compared, under what conditions, conclusions and reservations |
+| Narrative, documentary, vlog | What happened, where the turns are; do not spoil suspense the user wants to keep |
+| Meetings, discussions | What was decided, who owns it, what is still open |
 
-## 9. 篇幅与风格
+## 9. Length and style
 
-篇幅由精华的分量决定，不由视频的时长决定：写到清楚为止，同样的内容能写短就写短，读者多读的每一段都应该有所得。给非专业读者把一件事讲明白要多花些字，这部分篇幅从砍掉的专业细节里省出来。档位的含义见基线第 4 节，对总结具体是：
+Length is decided by the weight of the highlights, not the length of the video: write until it is clear, keep the same content as short as it can be, and every extra paragraph readers read should give them something. Making a point clear to non-specialist readers takes a few more words; that length comes out of the specialist detail you cut. What the levels mean is in baseline section 4; for summaries specifically:
 
-| 篇幅 | 正文 | 要点 |
+| Length | Body | Key points |
 | --- | --- | --- |
-| 短 | 几段：最重要的那一个精华及其依据，其他不写或在最后用一句话带过。不用小标题 | 只有最重要的几条 |
-| 中（默认） | 如第 6 节：开头，每个精华一节写到能复述，次要内容几句带过 | 每个精华都有；每个值得回看的地方一条 |
-| 长 | 每个精华写全：论证的每一步、例子、数字、值得引用的原话、前因后果都保留，并讲清精华之间的关系；次要内容也各给一小节。读完不必再看视频 | 每个值得回看的地方一条 |
+| Short | A few paragraphs: the single most important highlight and its grounds; the rest left out or passed over in one sentence at the end. No headings | Only the few most important |
+| Medium (default) | As in section 6: an opening, one section per highlight written so it can be restated, minor content passed over in a few sentences | Every highlight is covered; one for every place worth revisiting |
+| Long | Every highlight in full: every step of the argument, examples, numbers, quotes worth citing, causes and consequences all kept, and the relations between highlights made clear; minor content also gets a short section each. No need to watch the video after reading | One for every place worth revisiting |
 
-文稿很长又要长版时，后半部分和前半部分写得一样充分，不因为文稿长就把后面写薄。
+When the transcript is long and the long version is wanted, write the second half as fully as the first; do not let the later parts thin out because the transcript is long.
 
-风格体现在作者自己的叙述与评论上，视频说了什么不随风格变（基线第 5 节）。要点不论什么风格都不加评论。
+Style shows in the author's own narration and commentary; what the video said does not change with style (baseline section 5). Key points carry no commentary, whatever the style.
 
-## 10. 要避免的
+## 10. What to avoid
 
-- 不要按原视频的顺序和章节往下总结，不要追求覆盖所有话题，不要给每个话题分配差不多的篇幅。
-- 不要用嘉宾介绍开头，不要把人物交代写成简历，不要每一段都以人名开头。
-- 不要把说话人提到的工具名、框架名、技术细节一个个照搬进来。
-- 正文不要列 bullet points，不要给各节编号。
-- 不要用「知名专家」「行业大佬」「深耕多年」「见解独到」这类空话，用他具体做过的事代替。
-- 不要加「总之」「综上所述」「这期内容丰富」之类的话。
-- 不要编造文稿里没有的内容；说话人的职位、学历、经历、成就尤其不能靠推测补全。
-- 不要把评价混进转述里；「更妙的是」「反讽的是」这类承接词也是评价。
-- 不要为了显得生动用比喻性的动词（「长出来」「攒出来」「啃下来」），用最平常的说法（「总结出来」「迭代出来」「做完」）。
-- 不要为了吸引人而标题党、卖关子或夸大说话人的说法。
-- 不要让「作者的话」里出现用户没给过的经历、数字和立场。
+- Do not summarize in the original video's order and chapters, do not aim to cover every topic, do not give every topic about the same length.
+- Do not open with the guest introduction, do not write the introduction of people as a resume, do not begin every paragraph with a name.
+- Do not carry over every tool name, framework name and technical detail the speaker mentions.
+- Do not use bullet points in the body or number the sections.
+- Do not use empty phrases like "renowned expert", "industry heavyweight", "years of deep experience", "unique insights"; use concrete things they have done instead.
+- Do not add phrases like "in short", "to sum up", "this episode is packed with content".
+- Do not invent anything the transcript lacks; above all, do not fill in speakers' positions, education, experience or achievements by guessing.
+- Do not mix evaluation into reporting; connectives like "even better" or "ironically" are evaluation too.
+- Do not use figurative verbs to sound vivid ("grew out of", "scraped together", "chewed through"); use the plainest wording ("worked out", "iterated on", "finished").
+- Do not clickbait, tease or exaggerate what the speaker said to draw readers in.
+- Do not let the "author's note" contain experiences, numbers or positions the user did not give.
 
-## 11. 交付
+## 11. Delivery
 
-- 写成工作目录里的 Markdown 文件（如 `<视频名>.summary.md`；多种语言时在扩展名前加语言标签，如 `<视频名>.summary.en.md`）。不同篇幅或风格的版本各存一份，按版本命名；大改之前把上一版另存，小修直接改。会话不属于项目时工作目录用户看不到：再用 downloads_save 放进下载目录，把它返回的 path 告诉用户。用户只要在对话里看时，直接回复正文与要点。
-- 正文除小标题加粗外少用别的 Markdown 格式；要点单独成组。
-- 向用户说明：文件的真实路径；产出用了哪种语言、按哪条规则定的；文稿之外补了哪些背景（含从画面里看到的）；哪些信息没有核实；没照办的偏好或删掉的内容；有占位待补的地方单独列出。
+- Write a Markdown file in the working directory (such as `<video name>.summary.md`; for several languages, add a language tag before the extension, such as `<video name>.summary.en.md`). Save versions of different length or style separately, named by version; before a major rewrite, save the previous version under another name, and make small fixes in place. When the session does not belong to a project, the user cannot see the working directory: also put the file in the downloads directory with downloads_save and tell the user the path it returns. When the user only wants to read it in the conversation, reply with the body and key points directly.
+- Apart from bold headings, use little other Markdown formatting in the body; the key points form a group of their own.
+- Tell the user: the file's real path; which language the output uses and by which rule it was chosen; what background was added beyond the transcript (including what was seen in the picture); which information was not verified; preferences not followed or content cut; list separately any placeholders awaiting their input.
 
-## 12. 自查
+## 12. Self-check
 
-- 只读开头，读者能说出这期最值得带走的两三点、知道这期跟自己有什么关系吗？开头在三百字以内、没有需要解释的术语吗？是不是从嘉宾是谁、节目聊了什么切入的？
-- 把人名和产品名换掉，开头还能原样放到另一期上吗？能的话重写。
-- 挑的精华是目标读者最想知道的，还是圈内人最想知道的？最重要的精华是不是全文写得最充分的部分？用户指定了重点时，它是不是开头的切入点和最长的一节？
-- 各节的顺序是按价值排的，还是不知不觉又回到了原视频的顺序？逐节问：删掉这一节，读者会损失什么？说不出来的删掉，或并入带过次要内容的那一段。
-- 只扫一遍加粗标题，能看出每一节的结论吗？
-- 每个事实、数字和名字都能追溯到文稿、视频信息或用户给的材料；没有任何地方猜测说话人的身份；没有把说话人的话说得比原话更满。
-- 转述里没有混进评价；带「作者的话」或带评论的风格时，读者分得清哪句是说话人说的、哪句是作者说的。
-- 把自己当成一个不在这一行的读者从头读一遍：有没有哪一句需要停下来查词？有没有哪一段读完说不出它在讲什么？每个留下的术语、公司、人名、事件都必需、并且第一次出现时就解释了吗？每个故事读完能用「因为……所以……」复述出来吗？
-- 从画面里看到的东西，读者分得清是补的背景吗？
-- 每条要点单独看能懂，它注明的时间那里确实说了这件事。
-- 产出的语言符合第 2 节的顺序；篇幅与风格是这次要的档位与风格；没有注水的段落，也没有为变短丢掉关键事实。
+- Reading only the opening, can readers name the two or three things most worth taking away from this episode and know what it has to do with them? Is the opening under three hundred words, with no terms needing explanation? Does it cut in with who the guest is or what the show talked about?
+- With names of people and products swapped out, could the opening go on another episode unchanged? If so, rewrite it.
+- Are the chosen highlights what the target reader most wants to know, or what insiders most want to know? Is the most important highlight the most fully written part of the piece? When the user named a focus, is it the opening's way in and the longest section?
+- Are the sections ordered by value, or have they slipped back into the original video's order? Ask of each section: if I delete it, what does the reader lose? If you cannot say, delete it or fold it into the paragraph that passes over minor content.
+- Skimming only the bold headings, can you see each section's conclusion?
+- Every fact, number and name can be traced to the transcript, the video info or material the user gave; nowhere is a speaker's identity guessed; nothing the speakers said is stated more strongly than they said it.
+- No evaluation is mixed into the reporting; with an "author's note" or a commentary style, readers can tell which sentences the speaker said and which the author said.
+- Read it from the top as a reader outside the field: is there any sentence where you have to stop and look something up? Any paragraph after which you cannot say what it was about? Is every remaining term, company, name and event necessary, and explained on first appearance? Can every story be restated as "because ... so ..." after reading?
+- Can readers tell that what was seen in the picture is added background?
+- Every key point is understandable on its own, and the time it notes really is where this is said.
+- The output language follows the order in section 2; length and style are the level and style asked for this time; there are no padded paragraphs, and no key facts were dropped to make it shorter.

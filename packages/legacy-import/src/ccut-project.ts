@@ -1,11 +1,11 @@
 // i18n-ignore-file: Historical import report vocabulary is retained for compatibility with archived reports.
-// cuccut-app 的 `.ccut` 项目目录 → 视频计划。
+// cuccut-app `.ccut` project directory -> video plan.
 //
-// 旧格式有三种项目，落盘的文件不同：
-// - 字幕 / 翻译项目：`project.json`（主媒体）+ `transcript.json`（词、说话人、译文）+ `studio/data.json`（字幕行与句子的投影）；
-// - 时间线项目：再加 `timeline.json`（sources、clips、tracks/elements，时间是十进制秒，几何是画布百分比）；
-// - 代码项目：`main.ccut.tsx` + `data.json` + `assets/`，`project.json.media` 指向渲染出来的 mp4（没记时在项目里找，见 `discoverFilm`）。
-// 字段的去向见 docs/design/timeline/element-model-mapping.md 第 5 节。
+// The old format has three kinds of project, with different files on disk:
+// - caption / translation projects: `project.json` (main media) + `transcript.json` (words, speakers, translations) + `studio/data.json` (projection of caption lines and sentences);
+// - timeline projects: additionally `timeline.json` (sources, clips, tracks/elements; times are decimal seconds, geometry is canvas percentages);
+// - code projects: `main.ccut.tsx` + `data.json` + `assets/`; `project.json.media` points to the rendered mp4 (when not recorded, it is looked up in the project, see `discoverFilm`).
+// Where each field goes: docs/design/timeline/element-model-mapping.md section 5.
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
@@ -37,14 +37,14 @@ function readJson(file: string): Obj | null {
   return JSON.parse(readFileSync(file, 'utf8')) as Obj;
 }
 
-/** `place` 的字段（视频格式规范 §3.5，与 v2 相同）。 */
+/** Fields of `place` (video format spec §3.5, same as v2). */
 const PLACE_KEYS = ['x', 'y', 'w', 'scale', 'scaleY', 'rot', 'opacity', 'radius', 'cornerRadii', 'flipX', 'flipY'];
-/** 媒体类实例共用的外观字段。 */
+/** Appearance fields shared by media items. */
 const MEDIA_KEYS = ['mode', 'fit', 'bg', 'mask', 'fx'];
-/** 序列上关键帧绑定的属性；音量的关键帧是实例的包络。 */
+/** Properties with keyframe bindings on the sequence; volume keyframes are the item's envelope. */
 const KEYFRAME_PROPS = ['x', 'y', 'scale', 'scaleY', 'rot', 'opacity', 'radius'];
 const TRANSITION_KINDS = ['dissolve', 'wipe', 'slide', 'zoom', 'iris'];
-/** v2 的词锚点：`~<源>:<词>`，可选 `:start` / `:end`（各自可带 `+n` / `-n`），或不带端点时 `+n`。缺省端点是词头。 */
+/** v2 word anchor: `~<source>:<word>`, optionally `:start` / `:end` (each may carry `+n` / `-n`), or `+n` without an endpoint. The default endpoint is the word start. */
 const ANCHOR = /^~([A-Za-z0-9_.-]+):([A-Za-z0-9_.-]+?)(?::(start|end)([+-](?:\d+(?:\.\d+)?|\.\d+))?|\+(\d+(?:\.\d+)?|\.\d+))?$/;
 
 const TRACK_NAMES: Record<string, string> = { 'video-track': '视频', overlay: '叠加', text: '文字', broll: 'B-roll', wm: '水印' };
@@ -60,13 +60,13 @@ const SIDECARS: [string, string][] = [
   ['reframe', '重构图的中间文件（已登记为素材的除外）'],
 ];
 
-/** 代码项目渲染出来的成片可能的扩展名（与 v2 收编成片时认的相同）。 */
+/** Possible extensions of the film rendered by a code project (the same ones v2 accepts when adopting a film). */
 const FILM_EXTENSIONS = ['mp4', 'mov', 'mkv', 'webm', 'm4v', 'avi', 'ts'];
 
 /**
- * 代码项目没记下渲染结果（或记着的文件不在了）时，在项目里找它渲染出来的成片：项目根与 `out/` 下
- * 不以 `.` 开头的视频文件。只有一个时就是它；有几个时，取文件名（不含扩展名）等于合成 ID 的那一个，
- * 不是正好一个就不认（宁可当作没有渲染结果，也不拿草稿或别的版本充当替身）。
+ * When a code project did not record its render (or the recorded file is gone), look in the project for the film it rendered: video files at the project root and under `out/`
+ * not starting with `.`. If there is exactly one, that is it; if there are several, take the one whose file name (without extension) equals the composition ID;
+ * if that does not give exactly one, accept none (better to treat it as unrendered than to use a draft or another version as the proxy).
  */
 export function discoverFilm(dir: string, compositionId?: string): string | null {
   const found: string[] = [];
@@ -84,7 +84,7 @@ export function discoverFilm(dir: string, compositionId?: string): string | null
   return named.length === 1 ? named[0]! : null;
 }
 
-/** 旧项目没有记下帧率或尺寸时，直接问文件。 */
+/** When the old project did not record a frame rate or size, ask the file directly. */
 function probeVideo(file: string): { fps?: number; width?: number; height?: number; duration?: number } {
   if (!existsSync(file)) return {};
   try {
@@ -116,7 +116,7 @@ function probeVideo(file: string): { fps?: number; width?: number; height?: numb
   }
 }
 
-/** 从入口文件出发，沿相对 import 收集代码包实际用到的文件。 */
+/** Starting from the entry file, collect the files the code bundle actually uses by following relative imports. */
 function importClosure(root: string, entries: string[]): string[] {
   const seen = new Set<string>();
   const queue = [...entries];
@@ -182,7 +182,7 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
     media = { ...media, path: path.join(dir, media.path) };
   const isCode = typeof project.entry === 'string' && existsSync(path.join(dir, project.entry));
   const compiled = isCode ? loadJson(path.join(dir, 'out', 'doc.json')) : null;
-  // 代码项目没记下渲染结果、或记着的项目内文件不在了：在项目里找渲染出来的成片当预渲染替身。
+  // The code project did not record its render, or the recorded in-project file is gone: look in the project for the rendered film to use as the prerender proxy.
   let adoptedFilm: string | null = null;
   if (isCode) {
     const declared = typeof media?.path === 'string' && media.path.trim() ? (media.path as string) : null;
@@ -213,12 +213,12 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
         : media
           ? 'media'
           : 'blank';
-  // 代码项目的 `media` 是它渲染出来的成片（在项目的 out/ 里），不是源素材。
+  // A code project's `media` is the film it rendered (in the project's out/), not a source asset.
   const mainIsRender = isCode && typeof media?.path === 'string' && media.path.startsWith(dir + path.sep);
-  // 新格式的代码合成要有预渲染替身：没有渲染结果的合成不导入，代码包也就不登记。
+  // Code compositions in the new format need a prerender proxy: compositions without a render are not imported, and their code bundle is not registered either.
   const hasStandIn = mainIsRender && existsSync(media?.path) && (media?.kind ?? 'video') === 'video';
 
-  // 帧率：旧格式存浮点数，吸附到精确帧率；没有主媒体时用代码项目编译结果里的帧率，再没有就 30。
+  // Frame rate: the old format stores floats, snapped to an exact frame rate; without main media use the frame rate from the code project's compile result, otherwise 30.
   const snapped = snapFps(media?.fps) ?? snapFps(compiled?.meta?.fps);
   const fps: Rate = snapped?.rate ?? { num: 30, den: 1 };
   const originalName = String(project.title || base).trim() || base;
@@ -240,7 +240,7 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
       : { note: '旧项目没有帧率，按 30 取' }),
   };
 
-  // 画布：旧格式不落盘画布尺寸，只在少数项目里存了比例。
+  // Canvas: the old format does not store the canvas size on disk; only a few projects store an aspect ratio.
   const rotated = media && (media.rotation === 90 || media.rotation === 270);
   let canvas =
     media?.width && media?.height ? { width: rotated ? media.height : media.width, height: rotated ? media.width : media.height } : null;
@@ -262,7 +262,7 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
   const { width: W, height: H } = canvas;
   report.canvas = { width: W, height: H, ...(canvasNote ? { note: canvasNote } : {}) };
 
-  // ── 素材：全部按原路径链接 ─────────────────────────────────────────
+  // ── Assets: all linked at their original paths ─────────────────────────────────────────
   const assets: AssetPlan[] = [];
   const refOfPath = new Map<string, string>();
   const refOfSource = new Map<string, string>();
@@ -349,7 +349,7 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
   };
   return plan;
 
-  // ── 素材登记之后：文档、轨道、实例 ─────────────────────────────────
+  // ── After asset registration: documents, tracks, items ─────────────────────────────────
   function build(known: Map<string, AssetInfo>): VideoContent {
     const documents: DocumentPlan[] = [];
     const tracks: TrackPlan[] = [];
@@ -375,7 +375,7 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
       return { fromFrame, durationFrames: endFrame - fromFrame, shiftUs };
     };
 
-    /** 源区间不能超出素材：尾巴多出来的不足一帧在这里收掉。返回 0 表示放不下。 */
+    /** The source range must not exceed the asset: a trailing excess of less than one frame is trimmed here. Returns 0 when it does not fit. */
     const fitFrames = (durationFrames: number, sourceInUs: bigint, rate: Rate, durationUs: bigint | undefined): number => {
       if (durationUs == null) return durationFrames;
       const availableUs = ((durationUs - sourceInUs) * BigInt(rate.den)) / BigInt(rate.num);
@@ -385,7 +385,7 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
       return Math.max(0, max);
     };
 
-    // ── 几何与外观：v2 的字段就是新格式的字段，原样带过来 ──────────────────
+    // ── Geometry and appearance: v2 fields are the new format's fields, carried over as is ──────────────────
     const placeOf = (place: Obj | null | undefined, owner: string, keep: readonly string[] = PLACE_KEYS): Obj => {
       const out: Obj = {};
       for (const [key, value] of Object.entries(place ?? {})) {
@@ -418,7 +418,7 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
       (place?.scale ?? 1) === 1 &&
       (place?.scaleY ?? 1) === 1;
 
-    // ── 成片时钟：clips 加上各自源的 cuts（v2 的 arrange）。主轨的片段与词锚点都按它算 ──────
+    // ── Film clock: clips plus the cuts of their sources (v2's arrange). Main-track clips and word anchors are both computed on it ──────
     interface Piece {
       id: string;
       clipId: string;
@@ -483,7 +483,7 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
       }
     }
 
-    // ── 词锚点（`~<源>:<词>[:start|:end][±偏移]`）：按上面的时钟求成片时刻，写成 `speech-anchor` ──
+    // ── Word anchors (`~<source>:<word>[:start|:end][±offset]`): resolve the film time with the clock above, written as `speech-anchor` ──
     const words = new Map<string, { t0: bigint; t1: bigint }>(
       ((transcript?.words ?? []) as Obj[])
         .filter((w) => typeof w.t0 === 'number' && typeof w.t1 === 'number')
@@ -510,7 +510,7 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
       if (cutAt(srcId, (word.t0 + word.t1) / 2n)) return `词 ${wordId} 已经剪掉`;
       let at = edge === 'start' ? word.t0 : word.t1;
       const cut = cutAt(srcId, at);
-      // 词还在、端点落进剪口（只削掉词头或词尾）：起点吸到剪口之后，终点吸到剪口之前。
+      // The word is still there but an endpoint falls into a cut (only the word's head or tail is trimmed): snap the start to after the cut and the end to before it.
       if (cut) at = edge === 'start' ? micros(cut.t1) : micros(cut.t0);
       const placed = sourceToTimeline(srcId, at);
       if (placed.length === 0) return `词 ${wordId} 不在时间线上`;
@@ -561,10 +561,10 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
         timings.set(element, { startUs: s.us, endUs: e.us, startAnchor: s.anchor, endAnchor: e.anchor });
       }
     }
-    // 不设终点的元素到片尾：片尾 = 主轨与其余元素的最晚终点。
+    // Elements without an end run to the film's end: film end = the latest end of the main track and the other elements.
     const contentEndUs = [outputEndUs, ...[...timings.values()].map((t) => t.endUs ?? t.startUs)].reduce((a, b) => (a > b ? a : b), 0n);
 
-    // ── 剪口集合：每个有剪口、登记成素材的源一份（视频格式规范 §6.7） ────────────
+    // ── Cut sets: one per source that has cuts and is registered as an asset (video format spec §6.7) ────────────
     const cutSets: CutSetPlan[] = [];
     for (const srcId of Object.keys(sources)) {
       const ref = refOfSource.get(srcId);
@@ -598,7 +598,7 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
         kept.push({ id: String(cut.id), t0, t1, ...(typeof cut.ref === 'string' ? { ref: cut.ref } : {}) });
       }
       if (kept.length === 0) continue;
-      // 十进制秒的分母都是 10 的幂：最大的那个能精确表示全部剪口。
+      // Decimal seconds all have powers of 10 as denominators: the largest one represents every cut exactly.
       const timescale = kept.reduce((max, cut) => [max, cut.t0.den, cut.t1.den].reduce((a, b) => (a > b ? a : b)), 1n);
       const ticks = (t: { num: bigint; den: bigint }): string => String((t.num * timescale) / t.den);
       cutSets.push({
@@ -616,7 +616,7 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
     }
     const cutSetOf = (srcId: string | undefined): CutSetPlan | undefined => cutSets.find((set) => set.ref === `cut-set:${srcId}`);
 
-    // 每条旧轨道上的实例先收集起来，重叠的再分行。
+    // Collect the items of each old track first, then split overlapping ones into lanes.
     interface Pending {
       legacyTrack: string;
       trackName: string;
@@ -647,7 +647,7 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
       }
     };
 
-    /** 音频实例：起点落在帧加精确的帧内偏移，长度保留精确值；源区间不超出素材。 */
+    /** Audio item: the start lands on a frame plus an exact offset within the frame, the length keeps its exact value; the source range stays within the asset. */
     const audioTiming = (startUs: bigint, endUs: bigint, srcStartUs: bigint, rate: Rate, info: AssetInfo, id: string): Obj | null => {
       let lengthUs = endUs - startUs;
       if (info.durationUs != null) {
@@ -664,7 +664,7 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
       return { ...audioStart(startUs < 0n ? 0n : startUs, fps), playDuration: mediaTime(lengthUs), timeMap: linear(srcStartUs, rate) };
     };
 
-    /** 画面实例的区间与源映射：起点吸附挪了多少，源起点就跟着挪多少，画面与声音、字幕仍对在同一个源时刻上。 */
+    /** Span and source mapping of a picture item: the source start shifts by as much as the start snapped, so picture, sound and captions stay aligned on the same source instant. */
     const visualTiming = (
       startUs: bigint,
       endUs: bigint,
@@ -684,7 +684,7 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
       return { span: { fromFrame: span.fromFrame, durationFrames }, timeMap: linear(sourceInUs, rate) };
     };
 
-    // ── 关键帧：视觉属性写成序列上的绑定（`setKeyframes`），音量写成实例的包络 ──────────
+    // ── Keyframes: visual properties become bindings on the sequence (`setKeyframes`), volume becomes the item's envelope ──────────
     const easeOf = (ease: unknown, owner: string): Obj => {
       if (ease == null) return {};
       if (typeof ease === 'string' && EASE_NAMES.includes(ease)) return { ease };
@@ -722,7 +722,7 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
             drop('关键帧（时刻或数值不对）', `元素 ${owner} 的一个 ${property} 关键帧时刻或数值不对，没有带过来`);
             continue;
           }
-          // 秒落到帧上之后可能与前一帧重合：新格式要求严格递增，重合的只留前一个。
+          // After seconds land on frames a keyframe may coincide with the previous one: the new format requires strictly increasing frames, so only the earlier one is kept.
           const previous = keyframes[keyframes.length - 1];
           if (previous && time.localFrame != null && previous.localFrame >= time.localFrame) {
             drop('关键帧（落到同一帧）', `元素 ${owner} 的 ${property} 有两个关键帧落在同一帧上：只留前一个`);
@@ -760,7 +760,7 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
       return points.length > 0 ? { envelope: points } : {};
     };
 
-    /** 声音：v2 的音量是线性倍数，与新格式相同。 */
+    /** Sound: v2 volume is a linear gain, same as the new format. */
     const sound = (element: Obj): Obj => ({
       volume: typeof element.volume === 'number' ? clampTo(report, 'volume', element.volume, 0, 4) : 1,
       ...fade(element.audioFadeIn, 'fadeIn'),
@@ -768,7 +768,7 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
       ...envelopeOf(element),
     });
 
-    // ── 闪避：按（触发、深度、起落）归并成序列上的规则 ─────────────────────
+    // ── Ducking: merged by (trigger, depth, attack/release) into rules on the sequence ─────────────────────
     const ducking = new Map<string, DuckingPlan>();
     const addDuck = (element: Obj, sourceId: string): void => {
       const duck = element.duck as Obj | undefined;
@@ -791,7 +791,7 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
       else ducking.set(key, { ...plan, targetSourceIds: [sourceId] });
     };
 
-    // ── 转场：v2 视频元素的 in / out → 单侧转场 ─────────────────────────────
+    // ── Transitions: v2 video elements' in / out -> single-sided transitions ─────────────────────────────
     const transitionsOf = (element: Obj, kind: string): TransitionPlan[] => {
       const out: TransitionPlan[] = [];
       for (const side of ['in', 'out'] as const) {
@@ -807,7 +807,7 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
       return out;
     };
 
-    /** 代码项目渲染出来的成片：带预渲染替身的合成实例。成片里已经混进了配音、时间线上另有配音实例时，替身的声音关掉。 */
+    /** The film rendered by a code project: a composition item with a prerender proxy. When the film already has the voiceover mixed in and the timeline has separate voiceover items, the proxy's sound is turned off. */
     const dubbed = legacyTracks.some((t) => ((t.elements ?? []) as Obj[]).some((e) => e.kind === 'audio'));
     const renderedComposition = (timing: Obj, place: Obj, info: AssetInfo | undefined, audio: Obj, extra: Obj): Obj => {
       if (dubbed && audio.enabled) report.warnings.push('渲染结果里已经混入配音，时间线上另有配音实例：预渲染替身的声音已关掉');
@@ -822,12 +822,12 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
       };
     };
 
-    // ── 主轨：没有分离（detached）的旧文档，画面与声音由 clips 承载 ──
+    // ── Main track: old documents without detached media; picture and sound are carried by clips ──
     const hasVideoElements = legacyTracks.some((t) => ((t.elements ?? []) as Obj[]).some((e) => e.kind === 'video' && e.srcId === 'main'));
     const hex = (value: unknown): string | undefined =>
       typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value) ? value.toUpperCase() : undefined;
     if (!detached && !hasVideoElements) {
-      // 主画面没挪过时铺满画布、按 contain 放，`bg` 就是 v2 的整画布背景；挪过时是画中画，纯色背景落在画布底色上。
+      // When the main picture was not moved it fills the canvas with contain, and `bg` is v2's full-canvas background; when moved it is picture-in-picture and a solid background lands on the canvas background color.
       const fills = isDefaultPlace(mainLook.place);
       const look: Obj = fills
         ? { mode: 'fullscreen', fit: 'contain', bg: mainLook.background ?? 'black' }
@@ -865,11 +865,11 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
         cutSetOf(piece.srcId)?.scopeSourceIds.push(piece.id);
       }
     } else {
-      // 分离文档里画面是普通元素：v2 的整画布纯色就是画布底色。
+      // In a detached document the picture is an ordinary element: v2's full-canvas solid color is the canvas background color.
       background = hex(mainLook.background);
     }
 
-    // ── 元素 ────────────────────────────────────────────────────────
+    // ── Elements ────────────────────────────────────────────────────────
     for (const track of legacyTracks) {
       const trackId = String(track.id);
       const trackName = String(track.name ?? TRACK_NAMES[trackId] ?? trackId);
@@ -894,8 +894,8 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
         const srcStartUs = micros(typeof element.srcStart === 'number' ? element.srcStart : 0);
         const rate = rateOf(element.rate);
 
-        // 跟随：词锚点 → speech-anchor；不设终点 → 到序列末尾、固定在序列时间上；其余按时刻放的实例跟着剪口走
-        // （v2 的缺省，也是引擎的缺省；有剪口集合时照旧写明）。
+        // Follow: word anchors -> speech-anchor; no end -> to the sequence end, fixed to sequence time; other items placed by time follow the cuts
+        // (v2's default and the engine's default; stated explicitly when there is a cut set).
         const follow = (inScope: boolean, untilEnd: boolean): Obj => {
           if (anchored) {
             const policy = {
@@ -905,7 +905,7 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
             };
             return { followPolicy: policy, ...(untilEnd ? { untilSequenceEnd: true } : {}) };
           }
-          // v2：不设终点的元素不跟剪口移动；引擎的缺省是 follow-cuts，要写明 sequence-fixed。
+          // v2: elements without an end do not move with cuts; the engine defaults to follow-cuts, so sequence-fixed must be stated.
           if (untilEnd) return { followPolicy: { kind: 'sequence-fixed' }, untilSequenceEnd: true };
           return cutSets.length > 0 && !inScope ? { followPolicy: { kind: 'follow-cuts' } } : {};
         };
@@ -920,7 +920,7 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
           drop(`${what}（源没有登记）`, `${what} ${id} 的源 ${String(srcId)} 没有登记成素材，没有导入`);
 
         const audioElement = (assetInfo: AssetInfo, extra: Obj = {}): void => {
-          // 音频实例没有「到序列末尾」：不设终点的取到导入时的片尾。
+          // Audio items have no "to the sequence end": without an end they run to the film end at import time.
           if (open) count(report.estimated, '没有终点的音频（取到导入时的片尾）');
           const t = audioTiming(timing.startUs, endUs, srcStartUs, rate, assetInfo, id);
           if (!t) return;
@@ -978,7 +978,7 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
             if (isMain && mainIsRender && bundle) {
               visual('composition', renderedComposition({}, {}, info, audio, pick(element, ['mask', 'fx'])), { timing: t });
             } else {
-              // 分离文档里主视频的画面就是普通的视频元素：没写角色的按 a-roll 记。
+              // In a detached document the main video's picture is an ordinary video element: one without a role counts as a-roll.
               const roleFix = isMain && role == null ? { role: 'a-roll' } : {};
               visual('video', { assetRef: assetRef(info), embeddedAudio: audio, ...roleFix }, { timing: t, media: true });
             }
@@ -991,7 +991,7 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
               missing('音频元素');
               break;
             }
-            // `bcfClip`：这段配音认领了代码合成里的哪一句口播；合成与认领它的配音在后面归进一个音画联动组。
+            // `bcfClip`: which spoken line of the code composition this voiceover claims; the composition and the voiceover claiming it are later grouped into a linked audio-picture group.
             audioElement(info, element.bcfClip ? { bcfClip: element.bcfClip } : {});
             break;
           }
@@ -1013,7 +1013,7 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
             const sticker: Obj = element.sticker ?? {};
             if (sticker.source !== 'asset') visual('sticker', { sticker });
             else if (info && (info.kind === 'image' || info.kind === 'video' || info.kind === 'lottie')) {
-              // `loop`（loop/once/hold）与 `fillOverrides` 随 `sticker` 原样带过来；贴纸按离实例开始过了多久取源，v2 的取源起点与速度没有对应。
+            // `loop` (loop/once/hold) and `fillOverrides` are carried over as is with `sticker`; stickers take their source by time elapsed since the item start, so v2's source start and rate have no counterpart.
               if (srcStartUs !== 0n || rate.num !== rate.den)
                 drop('贴纸的取源起点与速度', `贴纸 ${id} 的 srcStart/rate 没有带过来：贴纸从源的开头按原速播放`);
               visual('sticker', { sticker, assetRef: assetRef(info) }, { media: true });
@@ -1045,7 +1045,7 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
       }
     }
 
-    // ── 代码项目没有时间线文件：整段就是一个合成实例，替身是渲染出来的成片 ──────────
+    // ── Code project without a timeline file: the whole thing is one composition item whose proxy is the rendered film ──────────
     if (isCode && pending.every((p) => p.kind !== 'visual')) {
       const timing =
         bundle && mainIsRender && main?.kind === 'video' && main.durationUs
@@ -1065,9 +1065,9 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
       }
     }
 
-    // ── 配音认领的合成（bcfClip）：合成实例与认领它口播的配音实例归进一个音画联动组 ─────────
-    // 组里的配音就是合成声音单独放的一份，合成的声音关着（规范 §3.7）。v2 只从合成的声音里扣掉认领的那几句；替身是混好的
-    // 成片，扣不了单句，整条关掉（上面 `dubbed` 已经关了）。
+    // ── Compositions claimed by voiceover (bcfClip): the composition item and the voiceover items claiming its lines go into one linked audio-picture group ─────────
+    // The voiceover in the group is the composition's sound as a separate copy, and the composition's sound is off (spec §3.7). v2 only subtracts the claimed lines from the composition's sound; the proxy is a mixed
+    // film from which single lines cannot be removed, so it is turned off entirely (`dubbed` above already did that).
     const claimed = pending.filter((p) => (p.plan.item.extensions as Obj | undefined)?.['cuccut.import']?.bcfClip != null);
     if (claimed.length > 0) {
       const compositions = pending.filter((p) => (p.plan.item as Obj).type === 'composition');
@@ -1086,7 +1086,7 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
       }
     }
 
-    // ── 分轨：同一条旧轨道上重叠的元素分到相邻的几条新轨道 ──────────────
+    // ── Lane splitting: overlapping elements on the same old track go onto several adjacent new tracks ──────────────
     const legacyTrackKeys: Record<string, string[]> = {};
     const groupOf = (p: Pending): string => `${p.kind}\u0000${p.legacyTrack}`;
     const groups = new Map<string, Pending[]>();
@@ -1120,7 +1120,7 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
       }
     }
 
-    // ── 模板层：序列上的对象，原样带过来 ──────────────────────────────────
+    // ── Template layers: objects on the sequence, carried over as is ──────────────────────────────────
     const template: Obj | undefined = timeline?.template ?? undefined;
     if (template) {
       const files = ((template.layers ?? []) as Obj[]).filter((layer) => typeof layer?.src?.file === 'string');
@@ -1130,7 +1130,7 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
         );
     }
 
-    // ── 文档：转写、译文、字幕、字幕样式、导出记录 ──────────────────────
+    // ── Documents: transcript, translations, captions, caption styles, export records ──────────────────────
     const totalFrames = Math.max(0, ...pending.map((p) => (p.kind === 'visual' ? p.end : frameAt(BigInt(Math.round(p.end)), fps, 'ceil'))));
     if (transcript) addTranscript(documents, tracks, items, { main, totalFrames, mainSourceIds });
     addExports(documents, known);
@@ -1162,13 +1162,13 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
       hue: s?.hue ?? null,
     }));
 
-    // 句子与段落：旧格式不落盘，靠规范性算法现算；编辑器把算好的结果存在 studio/data.json 里，这里直接取，不重算。
+    // Sentences and paragraphs: the old format does not store them but computes them with the normative algorithm; the editor saves the computed result in studio/data.json, which is taken here as is without recomputing.
     const fresh = (list: Obj[] | undefined, ids: (entry: Obj) => string[]): Obj[] | null => {
       if (!list?.length) return null;
       const stale = list.some((entry) => ids(entry).length === 0 || ids(entry).some((id) => !indexOf.has(id)));
       return stale ? null : list;
     };
-    // 较早的 studio 投影只存 cueIds；必须逐个找到字幕行再恢复词成员，不能把缺字段当成空句子。
+    // Older studio projections store only cueIds; each caption line must be found to restore its word members, rather than treating missing fields as empty sentences.
     const cueById = new Map<string, Obj>(((studio?.cues ?? []) as Obj[]).map((cue) => [String(cue.id), cue]));
     const sentenceWords = (sentence: Obj): string[] => {
       if (Array.isArray(sentence.sourceWordIds) && sentence.sourceWordIds.length > 0) return sentence.sourceWordIds;
@@ -1265,7 +1265,7 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
       });
     }
 
-    // 字幕行：原文一份，每种译文一份。时间在源素材的时钟上，经过时间线上引用这份素材的实例投影到视频时间。
+    // Caption lines: one copy for the original, one per translation. Times are on the source asset's clock and projected to video time through the timeline items that reference that asset.
     const style: Obj | null = loadJson(path.join(dir, 'studio', 'style.json')) ?? studio?.style ?? null;
     const captionDocs: { ref: string; role: string }[] = [];
     if (cues) {
@@ -1332,7 +1332,7 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
       report.warnings.push('时间线上没有主媒体的片段：字幕文档已导入，但没有放上时间线');
       return;
     }
-    // 旧样式的显示方式（原文 / 译文 / 双语）决定哪条字幕轨启用。
+    // The old style's display mode (original / translation / bilingual) decides which caption track is enabled.
     const mode = style?.mode;
     const shown = (role: string): boolean =>
       mode === 'bi' || mode == null || (mode === 'orig' && role === 'source') || (mode === 'trans' && role === 'translation');
@@ -1356,7 +1356,7 @@ export function planBcutProject(dir: string, taken: Set<string>, overrides: Reco
     }
   }
 
-  /** 旧项目导出过的成片与字幕文件：只记下它们在哪里，不搬动、不当素材。 */
+  /** Films and caption files the old project exported: only record where they are, without moving them or treating them as assets. */
   function addExports(documents: DocumentPlan[], known: Map<string, AssetInfo>): void {
     const files: string[] = [];
     const scan = (rel: string, pattern: RegExp): void => {

@@ -1,4 +1,3 @@
-// i18n-ignore-file: 给模型的视频摘要与操作格式错误（OperationShapeError）
 import os from 'node:os';
 import path from 'node:path';
 import {
@@ -26,20 +25,21 @@ import {
 import { sourceChapters } from '@cuccut/editor-wasm';
 
 /**
- * 给智能体看的视频摘要（架构设计 §3.7：按范围读取）。字段只留做决定需要的：稳定 ID、秒与帧、
- * 素材的类型与时长、文档头。时间同时给秒（便于理解）和帧（引擎的权威单位）。文档的正文不在摘要里。
+ * Video digest for agents (architecture design §3.7: scoped reads). Only fields needed for decisions are kept: stable
+ * IDs, seconds and frames, asset kinds and durations, document headers. Times are given both in seconds (easier to
+ * understand) and frames (the engine's authoritative unit). Document bodies are not in the digest.
  */
 
 export interface DigestOptions {
-  /** 只列与这段时间（秒）相交的片段。 */
+  /** List only clips that intersect this time range (seconds). */
   from?: number;
   to?: number;
-  /** 最多列多少个片段；多出来的如实标为截断。 */
+  /** Maximum number of clips to list; any beyond that are honestly marked as truncated. */
   limit?: number;
 }
 
 const DEFAULT_ITEM_LIMIT = 200;
-/** 文字实例的内容在摘要里最多留这么多字。 */
+/** Text item content is kept up to this many characters in the digest. */
 const TEXT_PREVIEW_CHARS = 120;
 
 export function digestVideo(snapshot: VideoSnapshot, videoPath: string, history: HistoryEntry[], options: DigestOptions = {}) {
@@ -167,10 +167,10 @@ export function digestVideo(snapshot: VideoSnapshot, videoPath: string, history:
   };
 }
 
-/** 素材来源里简介在摘要中最多保留的字符数（完整的在素材的 `provenance.source.description`）。 */
+/** Maximum characters of the source description kept in the digest (the full text is in the asset's `provenance.source.description`). */
 const SOURCE_DESCRIPTION_CHARS = 1200;
 
-/** 来源平台的元数据：从链接导入的素材（视频格式规范 §4.5），或来源里带着这些字段的。 */
+/** Source platform metadata: assets imported from a link (video format spec §4.5), or whose source carries these fields. */
 function isPlatformSource(
   provenance: AssetRevision['provenance'] | undefined,
 ): provenance is { origin: string; source: Record<string, unknown> } {
@@ -181,9 +181,11 @@ function isPlatformSource(
 }
 
 /**
- * `assets[].source`：来源平台的标题、发布者、简介（截到 1200 个字符）与作者章节（结构化 `chapters[]` 优先，没有时是简介里的
- * 时间戳大纲；源时间秒，未吸附）。润色与识别说话人时当背景参考，采用章节用 `chapters_adopt`。章节由字幕与翻译核心解析
- * （`bc_source_chapters`，不吸附）；WASM 没有构建时退回到结构化章节，简介不解析。
+ * `assets[].source`: the source platform's title, uploader, description (truncated to 1200 characters) and author
+ * chapters (structured `chapters[]` first, otherwise the timestamp outline in the description; source-time seconds, not
+ * snapped). Background reference for polishing and speaker identification; adopt chapters with `chapters_adopt`.
+ * Chapters are parsed by the captions and translation core (`bc_source_chapters`, no snapping); without a WASM build it
+ * falls back to the structured chapters and does not parse the description.
  */
 function sourceBlock(revision: AssetRevision | undefined) {
   const provenance = revision?.provenance;
@@ -210,7 +212,7 @@ function authorChapters(source: Record<string, unknown>, durationSeconds: number
   try {
     return sourceChapters({ source, durationSeconds, snap: false }).sourceChapters.map((c) => ({ at: round(c.start), title: c.title }));
   } catch {
-    // 摘要不因为可选的补充失败：WASM 没有构建或来源读不懂时，只列结构化章节（导入时已经清洗过）。
+    // The digest does not fail over an optional extra: without a WASM build or with an unreadable source, list only the structured chapters (already cleaned at import).
     const raw = Array.isArray(source.chapters) ? (source.chapters as unknown[]) : [];
     return raw.flatMap((item) => {
       const { start, title } = (item ?? {}) as { start?: unknown; title?: unknown };
@@ -221,7 +223,7 @@ function authorChapters(source: Record<string, unknown>, durationSeconds: number
   }
 }
 
-/** 代码包素材的清单身份：包的 bundleId 与清单的 revision（改文案、改色后重新打包时递增），用来分辨同一个包的不同版本。 */
+/** Manifest identity of a code bundle asset: the bundle's bundleId and the manifest revision (bumped when repackaging after copy or color changes), used to tell revisions of the same bundle apart. */
 function bundleIdentity(manifest: unknown): { bundleId?: string; manifestRevision?: string } {
   if (!manifest || typeof manifest !== 'object') return {};
   const { bundleId, revision } = manifest as { bundleId?: unknown; revision?: unknown };
@@ -256,7 +258,7 @@ function describeItem(item: SequenceItem, range: { start: number; end: number },
   };
 }
 
-/** 各类型自己的内容：文字或计时读数、合成的预渲染替身、字幕指向的文档。图形的几何、各类样式、生成类元素与合成的参数不进摘要。 */
+/** Each type's own content: text or counter readout, a composition's prerender stand-in, the document a caption points to. Shape geometry, styles, generated elements and composition parameters are not in the digest. */
 function describeContent(item: SequenceItem, snapshot: VideoSnapshot): Record<string, unknown> {
   switch (item.type) {
     case 'text': {
@@ -281,12 +283,14 @@ function describeContent(item: SequenceItem, snapshot: VideoSnapshot): Record<st
   }
 }
 
-/** 有 `mode` 的视觉媒体：铺满画布时 `place` 的位置、宽与缩放不参与。 */
+/** Visual media with a `mode`: when filling the canvas, `place` position, width and scale do not apply. */
 const MEDIA_TYPES = new Set<SequenceItem['type']>(['video', 'image', 'sticker', 'placeholder', 'whiteboard']);
 
 /**
- * 画面实例的摆法（`place`，画幅的百分比）：`x`、`y` 是框中心，`w` 是框宽占画幅宽的百分比，只列写了的字段（省略的取按种类的缺省）。
- * 视觉媒体带 `mode`；铺满画布（`fullscreen`，合成是 `place` 没写位置与宽时）只列旋转、镜像与不透明度。
+ * Placement of visual items (`place`, as percentages of the frame): `x`, `y` are the box center, `w` is the box width as
+ * a percentage of the frame width; only fields that are set are listed (omitted ones take the per-kind default). Visual
+ * media carry `mode`; when filling the canvas (`fullscreen`, or for a composition whose `place` has no position or
+ * width) only rotation, flips and opacity are listed.
  */
 function describePlace(item: SequenceItem): Record<string, unknown> {
   if (item.type === 'audio' || item.type === 'caption') return {};
@@ -308,7 +312,7 @@ function mediaMode(item: VisualItem): 'fullscreen' | 'pip' {
   return 'mode' in item && item.mode === 'fullscreen' ? 'fullscreen' : 'pip';
 }
 
-/** 声音：音频实例的混音、视频自带的声音、合成自己的声音。音量是线性倍数（1 为原音量）。 */
+/** Sound: an audio item's mix, a video's embedded audio, a composition's own audio. Volume is a linear multiplier (1 is the original level). */
 function describeSound(item: SequenceItem): Record<string, unknown> {
   const fades = (audio: { fadeIn?: { ticks: string; timescale: number }; fadeOut?: { ticks: string; timescale: number } }) => ({
     ...(audio.fadeIn ? { fadeInSeconds: round(mediaTimeToSeconds(audio.fadeIn)) } : {}),
@@ -327,7 +331,7 @@ function describeSound(item: SequenceItem): Record<string, unknown> {
   }
 }
 
-/** 裁剪与效果：效果只列写了的 `fx` 字段名，取值不进摘要。 */
+/** Crop and effects: effects list only the `fx` field names that are set; values are not in the digest. */
 function describeLook(item: SequenceItem): Record<string, unknown> {
   const look: Record<string, unknown> = {};
   if ((item.type === 'video' || item.type === 'image') && item.crop) look.crop = item.crop;
@@ -336,12 +340,12 @@ function describeLook(item: SequenceItem): Record<string, unknown> {
   return look;
 }
 
-/** 闪避的触发：说话时，或这些轨道与实例发声时。 */
+/** Ducking trigger: during speech, or when these tracks and items make sound. */
 function describeTrigger(trigger: DuckingTrigger): Record<string, unknown> {
   return trigger.kind === 'speech' ? { kind: 'speech' } : { kind: 'items', ...describeGroup(trigger) };
 }
 
-/** 闪避规则的一组：空的一半省略。 */
+/** One group of a ducking rule: an empty half is omitted. */
 function describeGroup(group: DuckingGroup): DuckingGroup {
   return {
     ...(group.trackIds?.length ? { trackIds: group.trackIds } : {}),
@@ -354,8 +358,9 @@ function trackOrder(sequence: Sequence, item: SequenceItem): number {
 }
 
 /**
- * 回执摘要：工具结果与变更卡都从这里取，不从模型的说法里取（命令与协议规范 §5）。
- * 修改名与引擎的错误一样按 Runtime 的语言给（`localizeText`）；变更卡另外带着 `labelRef`，界面按自己的语言显示。
+ * Receipt digest: tool results and change cards both come from here, not from what the model says (command and protocol
+ * spec §5). Edit labels, like engine errors, are given in the Runtime's language (`localizeText`); change cards also
+ * carry `labelRef`, which the UI shows in its own language.
  */
 export function digestReceipt(receipt: TransactionReceipt, fps: Rate, replayed: boolean) {
   return {
@@ -393,9 +398,9 @@ export function digestReceipt(receipt: TransactionReceipt, fps: Rate, replayed: 
   };
 }
 
-// ---- 操作的规范化 ----
+// ---- Normalizing operations ----
 
-/** 这些操作带时间：缺 `sequenceId` 时用根序列，缺 `alignment` 时取最近的帧。 */
+/** These operations carry times: without `sequenceId` they use the root sequence, without `alignment` the nearest frame. */
 const TIMED = new Set(['addItem', 'moveItem', 'moveItems', 'trimItem', 'splitItem', 'removeRange', 'setTransition', 'setChapters', 'upsertChapter']);
 const SEQUENCE_SCOPED = new Set([
   ...TIMED,
@@ -415,28 +420,31 @@ const SEQUENCE_SCOPED = new Set([
 export class OperationShapeError extends Error {
   readonly index: number;
   constructor(index: number, message: string) {
-    super(`第 ${index + 1} 个操作：${message}`);
+    super(`Operation ${index + 1}: ${message}`);
     this.name = 'OperationShapeError';
     this.index = index;
   }
 }
 
 /**
- * 把智能体写的操作补成引擎的标准形态（命令与协议规范 §4.2、§6.1）。只补默认值、换时间写法，
- * 不改语义；字段与取值的校验仍在引擎里做，未知字段由引擎拒绝。
+ * Completes operations written by the agent into the engine's canonical form (command and protocol spec §4.2, §6.1).
+ * Only fills defaults and converts time notation, without changing semantics; field and value validation still happens
+ * in the engine, which rejects unknown fields.
  *
- * - 时间可以写成数字或数字字符串（秒），换成 `{ unit: 'seconds', value }`；`{ unit, value }` 原样保留。
- * - `setAudioMix` 的淡入淡出、`setDucking` 的 attack / release 可以写数字（秒），换成十进制字符串。
- * - `setTransition.duration`、`setChapters` 每一章的 `at`、`upsertChapter.at` 与 `removeRange` 的 `from` / `to` 同上换成时间输入。
- * - `addItem.asset` 与章节的 `thumbnail` 可以直接写素材 ID。
- * - `importAsset.path` 相对会话的工作目录；`~/` 展开为主目录。
+ * - Times may be numbers or numeric strings (seconds), converted to `{ unit: 'seconds', value }`; `{ unit, value }` is
+ *   kept as is.
+ * - `setAudioMix` fades and `setDucking` attack / release may be numbers (seconds), converted to decimal strings.
+ * - `setTransition.duration`, each chapter's `at` in `setChapters`, `upsertChapter.at` and `removeRange`'s `from` / `to`
+ *   are converted to time inputs in the same way.
+ * - `addItem.asset` and a chapter's `thumbnail` may be given directly as an asset ID.
+ * - `importAsset.path` is relative to the session's working directory; `~/` expands to the home directory.
  */
 export function normalizeOperations(operations: unknown[], rootSequenceId: Id, cwd: string): Record<string, unknown>[] {
   return operations.map((raw, index) => {
-    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) throw new OperationShapeError(index, '要是一个对象');
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) throw new OperationShapeError(index, 'must be an object');
     const op: Record<string, unknown> = { ...(raw as Record<string, unknown>) };
     const type = op.type;
-    if (typeof type !== 'string') throw new OperationShapeError(index, '缺少 type');
+    if (typeof type !== 'string') throw new OperationShapeError(index, 'missing type');
     if (SEQUENCE_SCOPED.has(type) && op.sequenceId === undefined) op.sequenceId = rootSequenceId;
     if (TIMED.has(type) && op.alignment === undefined) op.alignment = 'nearest-frame';
     for (const key of ['at', 'offset'] as const) {
@@ -463,7 +471,7 @@ export function normalizeOperations(operations: unknown[], rootSequenceId: Id, c
       }
     }
     if (type === 'setTransition' && op.duration !== undefined) op.duration = timeInput(op.duration, index);
-    // 剪口是源素材时钟上的十进制秒，不是序列时间。
+    // Cuts are decimal seconds on the source asset's clock, not sequence time.
     if (type === 'addCuts' && Array.isArray(op.cuts)) {
       op.cuts = op.cuts.map((cut) => {
         if (typeof cut !== 'object' || cut === null) return cut;
@@ -474,7 +482,7 @@ export function normalizeOperations(operations: unknown[], rootSequenceId: Id, c
         return next;
       });
     }
-    // 剪辑建议的检测参数：秒数可以写数字，换成十进制字符串。
+    // Detection parameters for cut suggestions: seconds may be numbers, converted to decimal strings.
     if (type === 'proposeCuts' && typeof op.detect === 'object' && op.detect !== null && !Array.isArray(op.detect)) {
       const detect: Record<string, unknown> = { ...(op.detect as Record<string, unknown>) };
       for (const key of ['minPause', 'compressTo', 'maxGap'] as const) {
@@ -500,12 +508,12 @@ export function normalizeOperations(operations: unknown[], rootSequenceId: Id, c
 
 function timeInput(value: unknown, index: number): unknown {
   if (typeof value === 'number') {
-    if (!Number.isFinite(value)) throw new OperationShapeError(index, '时间不是有限的数');
+    if (!Number.isFinite(value)) throw new OperationShapeError(index, 'time is not a finite number');
     return { unit: 'seconds', value: decimal(value) };
   }
   if (typeof value === 'string') {
     const text = value.trim().replace(/s$/, '');
-    if (!/^-?\d+(\.\d+)?$/.test(text)) throw new OperationShapeError(index, `看不懂的时间「${value}」：写秒数，例如 1.5`);
+    if (!/^-?\d+(\.\d+)?$/.test(text)) throw new OperationShapeError(index, `unrecognized time "${value}": write seconds, e.g. 1.5`);
     return { unit: 'seconds', value: text };
   }
   return value;
@@ -516,7 +524,7 @@ function decimal(value: number): string {
   return value.toFixed(6).replace(/0+$/, '').replace(/\.$/, '');
 }
 
-/** 用户给的路径：`~/` 展开成主目录，相对路径对 `cwd` 解析。 */
+/** A user-given path: `~/` expands to the home directory, relative paths resolve against `cwd`. */
 export function resolveUserPath(file: string, cwd: string): string {
   if (file === '~' || file.startsWith('~/')) return path.join(os.homedir(), file.slice(1));
   return path.resolve(cwd, file);

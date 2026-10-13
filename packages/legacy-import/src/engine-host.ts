@@ -1,6 +1,5 @@
-// i18n-ignore-file: Historical import report vocabulary is retained for compatibility with archived reports.
-// Engine Host 的最小客户端：stdin/stdout 每行一个 JSON（见 crates/engine-host/src/main.rs）。
-// 脚本不依赖 packages/ 里的协议类型：这里只声明导入用到的几个形状。
+// Minimal Engine Host client: one JSON per line over stdin/stdout (see crates/engine-host/src/main.rs).
+// The script does not depend on the protocol types in packages/: only the few shapes the import uses are declared here.
 
 import os from 'node:os';
 import { spawn } from 'node:child_process';
@@ -28,7 +27,7 @@ export interface Receipt {
   createdIds: string[];
   updatedIds: string[];
   refs?: Record<string, string>;
-  /** 单侧转场写入之后，因为实例不到转场的两倍长而变短的那些（生效长度）。 */
+  /** Single-sided transitions that got shorter after being written because the item is less than twice the transition length (effective length). */
   impact?: { shortenedTransitions?: { id: string; durationFrames: number; effectiveFrames: number }[] };
 }
 
@@ -58,7 +57,7 @@ export class EngineHost {
     });
     this.#child.on('exit', (code) => {
       this.#closed = true;
-      for (const { reject, method } of this.#pending.values()) reject(new Error(`engine-host 退出（${code}），${method} 没有完成`));
+      for (const { reject, method } of this.#pending.values()) reject(new Error(`engine-host exited (${code}); ${method} did not complete`));
       this.#pending.clear();
     });
     createInterface({ input: this.#child.stdout }).on('line', (line) => {
@@ -81,7 +80,7 @@ export class EngineHost {
     });
   }
 
-  /** 提交一笔事务。`commandId` 相同、内容相同的重试返回同一张回执，所以整个导入可以重跑。 */
+  /** Commits one transaction. A retry with the same `commandId` and the same content returns the same receipt, so the whole import can be rerun. */
   async apply(videoId: string, commandId: string, label: string, operations: unknown[]): Promise<Receipt> {
     const { revision } = await this.request<{ revision: string }>('videos.inspect', { path: this.#paths.get(videoId) });
     const result = await this.request<{ receipt: Receipt }>('edits.apply', {

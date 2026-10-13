@@ -247,7 +247,7 @@ describe.skipIf(!ready)('建字幕层工具（真实引擎）', () => {
       enabled: false,
       bilingual: false,
       existing: { documentId: bilingual.body.documentId, itemIds: translated.map((i) => i.id) },
-      note: expect.stringContaining('没有覆盖'),
+      note: expect.stringContaining('it was not overwritten'),
     });
     expect(again.body.documentId).not.toBe(bilingual.body.documentId);
     expect(captionItems(again.body.documentId).map((i) => i.enabled)).toEqual([false]);

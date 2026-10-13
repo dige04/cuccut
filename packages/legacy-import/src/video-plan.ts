@@ -1,12 +1,11 @@
-// i18n-ignore-file: Historical import report vocabulary is retained for compatibility with archived reports.
-// 一个旧项目变成一个视频的「计划」：先列出素材，素材登记之后（知道了 ID、尺寸与时长）再给出文档、轨道与实例。
-// 计划是纯数据；写进视频由 video-writer.ts 负责，预演（dry-run）只算不写。
+// The "plan" for turning one old project into one video: list the assets first; once they are registered (IDs, sizes and durations known), produce the documents, tracks and items.
+// A plan is pure data; video-writer.ts writes it into the video, and a dry run only computes without writing.
 
 import type { Rate } from './exact-time.ts';
 
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 
-/** 旧格式自己记下的素材信息：预演时代替引擎的探测结果。 */
+/** Asset information recorded by the old format itself: stands in for the engine's probe results in a dry run. */
 export interface MediaHint {
   kind: 'video' | 'audio' | 'image' | 'lottie' | 'bundle' | 'other';
   width?: number;
@@ -19,16 +18,16 @@ export interface AssetPlan {
   ref: string;
   path: string;
   name?: string;
-  /** 目录素材（代码包）只收这些相对路径。 */
+  /** Directory assets (code bundles) include only these relative paths. */
   include?: string[];
   bundle?: Json;
   provenance?: { origin: string; source?: Json };
-  /** 旧格式记下的 `sha256-…`，用来发现文件在旧项目建好之后变过。 */
+  /** The `sha256-…` recorded by the old format, used to detect files that changed after the old project was created. */
   legacyHash?: string;
   hint: MediaHint;
 }
 
-/** 登记之后的素材。预演时由 `hint` 合成。 */
+/** An asset after registration. Synthesized from `hint` in a dry run. */
 export interface AssetInfo {
   id: string;
   revision: string;
@@ -55,13 +54,13 @@ export interface TrackPlan {
   key: string;
   kind: 'visual' | 'audio' | 'subtitle';
   name: string;
-  /** 旧轨道的隐藏、静音与锁定。锁定在全部写完之后才设，免得挡住后面的写入。 */
+  /** Hidden, muted and locked state of the old track. Locking is applied only after everything is written, so it does not block later writes. */
   hidden?: boolean;
   muted?: boolean;
   locked?: boolean;
 }
 
-/** `followPolicy` 里指向转写文档的占位：写入时换成转写文档当时的 `VersionRef`。 */
+/** Placeholder in `followPolicy` pointing to the transcript document: replaced on write with the transcript document's `VersionRef` at that time. */
 export const SPEECH_REF = { document: 'speech' };
 
 export interface KeyframePlan {
@@ -69,19 +68,19 @@ export interface KeyframePlan {
   keyframes: Json[];
 }
 
-/** 旧元素自己的单侧转场：`in` 落在实例的开头（`rightItemId`），`out` 落在结尾（`leftItemId`）。 */
+/** An old element's own single-sided transition: `in` lands at the item's start (`rightItemId`), `out` at its end (`leftItemId`). */
 export interface TransitionPlan {
   side: 'in' | 'out';
   kind: string;
-  /** 十进制秒。 */
+  /** Decimal seconds. */
   duration: string;
 }
 
 export interface ItemPlan {
   track: string;
-  /** 旧项目里的 ID，写进 `extensions["cuccut.import"].sourceId`，也用来把字幕、关键帧、转场、闪避与剪口集合挂到对应的实例上。 */
+  /** ID in the old project, written to `extensions["cuccut.import"].sourceId` and used to attach captions, keyframes, transitions, ducking and cut sets to the matching item. */
   sourceId: string;
-  /** 实例的字段，不含 `trackId`。字幕实例的 `documentId` 等由下面三个字段解析。 */
+  /** The item's fields, without `trackId`. A caption item's `documentId` etc. are resolved from the three fields below. */
   item: { [key: string]: Json };
   document?: string;
   styleDocument?: string;
@@ -90,7 +89,7 @@ export interface ItemPlan {
   transitions?: TransitionPlan[];
 }
 
-/** 一条闪避规则：v2 写在被压低的元素上，这里按（触发、深度、起落）归并成序列上的规则。 */
+/** One ducking rule: v2 writes it on the ducked element; here they are merged by (trigger, depth, attack/release) into rules on the sequence. */
 export interface DuckingPlan {
   trigger: { kind: 'speech' } | { kind: 'tracks'; legacyTrack: string };
   depth?: number;
@@ -99,7 +98,7 @@ export interface DuckingPlan {
   targetSourceIds: string[];
 }
 
-/** 一份剪口集合（视频格式规范 §6.7）：正文里的 `scopeItemIds` 在实例写完之后由 `scopeSourceIds` 换成实例 ID。 */
+/** A cut set (video format spec §6.7): `scopeItemIds` in the body are replaced from `scopeSourceIds` with item IDs once the items are written. */
 export interface CutSetPlan {
   ref: string;
   name: string;
@@ -112,17 +111,17 @@ export interface VideoContent {
   documents: DocumentPlan[];
   tracks: TrackPlan[];
   items: ItemPlan[];
-  /** 旧轨道 ID → 它拆出来的新轨道（闪避按轨道触发时用）。 */
+  /** Old track ID -> the new tracks it was split into (used when ducking triggers by track). */
   legacyTracks?: Record<string, string[]>;
   ducking?: DuckingPlan[];
   cutSets?: CutSetPlan[];
   template?: Json;
-  /** 画布底色 `#RRGGBB`。 */
+  /** Canvas background color `#RRGGBB`. */
   background?: string;
 }
 
 export interface ProjectPlan {
-  /** 稳定的键：决定视频目录名与事务的 commandId，重跑时不变。 */
+  /** Stable key: determines the video directory name and the transactions' commandId; unchanged on rerun. */
   key: string;
   name: string;
   dirName: string;
@@ -146,19 +145,19 @@ export interface ProjectReport {
   documents: Record<string, number>;
   tracks: number;
   items: Record<string, number>;
-  /** 旧格式里有、新格式没有位置的字段：原样放进 `extensions["cuccut.import"]`，这里计数。 */
+  /** Fields the old format has but the new format has no place for: kept as is in `extensions["cuccut.import"]`, counted here. */
   unmapped: Record<string, number>;
-  /** 旧格式里有、在新格式里不适用的行为或对应关系（键里写原因），不算丢失。 */
+  /** Behavior or mappings in the old format that do not apply in the new format (the key states why); not counted as lost. */
   notApplicable: Record<string, number>;
-  /** 导入时做的估算（画布尺寸、没有终点的音频的长度等）。 */
+  /** Estimates made during import (canvas size, length of audio without an end, etc.). */
   estimated: Record<string, number>;
-  /** 超出新格式取值范围、夹到范围里的值。 */
+  /** Values outside the new format's range, clamped into it. */
   clamped: Record<string, number>;
-  /** 新格式不接受、没有写进去的字段或对象（逐项的说明在 `warnings`）。 */
+  /** Fields or objects the new format rejects and that were not written (item-by-item explanations in `warnings`). */
   dropped: Record<string, number>;
-  /** 写进去的关键帧绑定、转场、闪避规则、剪口集合等序列上的对象。 */
+  /** Objects written on the sequence: keyframe bindings, transitions, ducking rules, cut sets, etc. */
   written: Record<string, number>;
-  /** 生效长度比写入长度短的单侧转场（实例不到转场的两倍长，引擎的回执）。 */
+  /** Single-sided transitions whose effective length is shorter than written (the item is less than twice the transition length; from the engine's receipt). */
   shortenedTransitions: { sourceId: string; side: string; durationFrames: number; effectiveFrames: number }[];
   anchors: { resolved: number; unresolved: number };
   time: { maxSnapMs: number; clampedTails: number };
@@ -200,14 +199,14 @@ export function count(table: Record<string, number>, key: string, by = 1): void 
   table[key] = (table[key] ?? 0) + by;
 }
 
-/** 夹到 `[lo, hi]`；夹过的在报告的「夹到范围里的」计数。 */
+/** Clamps to `[lo, hi]`; clamped values are counted in the report's "clamped" tally. */
 export function clampTo(report: ProjectReport, label: string, value: number, lo: number, hi: number): number {
   if (value >= lo && value <= hi) return value;
   count(report.clamped, label);
   return value < lo ? lo : hi;
 }
 
-/** 缓动名的封闭表（`motion::curve::EASE_NAMES`）：关键帧、音量包络与动画预设共用。 */
+/** Closed table of easing names (`motion::curve::EASE_NAMES`): shared by keyframes, volume envelopes and animation presets. */
 export const EASE_NAMES = [
   'linear',
   'easeInQuad',
@@ -231,7 +230,7 @@ export const EASE_NAMES = [
   'easeOutElastic',
 ];
 
-/** 同一条旧轨道上互相重叠的元素分到几条新轨道上（新格式同一轨道不重叠）。返回每个元素所在的行。 */
+/** Spreads mutually overlapping elements on the same old track over several new tracks (the new format forbids overlap within a track). Returns each element's lane. */
 export function lanes(ranges: { start: number; end: number }[]): number[] {
   const order = ranges.map((_, i) => i).sort((a, b) => ranges[a]!.start - ranges[b]!.start || a - b);
   const ends: number[] = [];
@@ -245,7 +244,7 @@ export function lanes(ranges: { start: number; end: number }[]): number[] {
   return lane;
 }
 
-/** 视频目录名：去掉路径分隔符与控制字符，保留原名可读。 */
+/** Video directory name: strip path separators and control characters, keeping the original name readable. */
 export function dirNameOf(name: string): string {
   const cleaned = name
     .replace(/[\\/:\u0000-\u001f]/g, '-')
@@ -254,7 +253,7 @@ export function dirNameOf(name: string): string {
   return (cleaned || 'untitled').slice(0, 80).trim();
 }
 
-/** 目录名不能撞：大小写不敏感的文件系统上也不撞。 */
+/** Directory names must not collide, not even on case-insensitive file systems. */
 export function uniqueName(name: string, taken: Set<string>): string {
   let candidate = name;
   for (let n = 2; taken.has(candidate.toLowerCase()); n++) candidate = `${name} ${n}`;

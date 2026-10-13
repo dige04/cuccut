@@ -32,10 +32,10 @@ const AGENT = { tools: agentCatalog.list() };
 const CLI_COMPOUND = [...new Set([...CLI.tools, ...AGENT.tools].map((tool) => tool.name))].filter((name) => name.includes('_'));
 
 /**
- * 只属于工具桥面（会话内智能体）的说法：审批与停止的错误码、编辑器上下文、工具桥本身。CLI 面里出现就是漏标了 surface。
- * `skills_read` 的「现取」在 CLI 面渲染成 `cuccut skills read`，所以 `skills_read` 本身也不该出现。
+ * 只属于工具桥面（会话内智能体）的说法：审批与停止的错误码、编辑器上下文、工具桥本身、访问模式。CLI 面里出现就是漏标了 surface。
+ * `skills_read` 的「现取」在 CLI 面渲染成 `cuccut skills read`，所以 `skills_read` 本身也不该出现。不分大小写比较。
  */
-const BRIDGE_ONLY_TERMS = ['APPROVAL_DENIED', 'APPROVAL_CANCELLED', 'TASK_STOPPED', '<cuccut-editor-context>', '工具桥', '访问模式'];
+const BRIDGE_ONLY_TERMS = ['APPROVAL_DENIED', 'APPROVAL_CANCELLED', 'TASK_STOPPED', '<cuccut-editor-context>', 'tool bridge', 'access mode'];
 
 /**
  * §8.6 的第一条：CLI 面里不出现 `a_b` 形式的工具名，也不出现 `skills_read` 的「现取」说法以外的工具桥用语。mcp.md 整页与
@@ -49,7 +49,7 @@ function bridgeNamesInCliFace(files: AgentSkillFiles): string[] {
     for (const name of [...CLI_COMPOUND, 'skills_read']) {
       if (new RegExp(`(?<![A-Za-z0-9_])${name}(?![A-Za-z0-9_])`).test(body)) hits.push(`${file}: ${name}`);
     }
-    for (const term of BRIDGE_ONLY_TERMS) if (body.includes(term)) hits.push(`${file}: ${term}`);
+    for (const term of BRIDGE_ONLY_TERMS) if (body.toLowerCase().includes(term.toLowerCase())) hits.push(`${file}: ${term}`);
   }
   return hits;
 }
@@ -59,7 +59,7 @@ function cliTracesInAgentFace(files: AgentSkillFiles): string[] {
   const hits: string[] = [];
   for (const [file, text] of files) {
     text.split('\n').forEach((line, index) => {
-      if (/(?<![.\w])cuccut [a-z]/.test(line) || /(?<![\w-])--[a-z]/.test(line) || /退出码/.test(line)) {
+      if (/(?<![.\w])cuccut [a-z]/.test(line) || /(?<![\w-])--[a-z]/.test(line) || /\bexit codes?\b/i.test(line)) {
         hits.push(`${file}:${index + 1}: ${line}`);
       }
     });
@@ -73,22 +73,22 @@ describe('说明书的渲染器', () => {
   it('CLI 面：工具名换成命令、参数换成旗标、craft 换成相对链接，没有工具桥的写法', () => {
     const cli = renderAgentSkill(source, { face: 'cli', catalog: CLI });
     const skill = cli.get('SKILL.md')!;
-    expect(skill).toContain('先 `cuccut documents read`，译完用 `cuccut documents put` 写回');
-    expect(skill).toContain('再按新的 `--revision` 提交（字段写成 `--expected-revision`）');
-    expect(skill).toContain('润色的做法见 [demo-polish](references/craft/demo-polish.md)。');
+    expect(skill).toContain('first `cuccut documents read`, then write the translation back with `cuccut documents put`');
+    expect(skill).toContain('then submit with the new `--revision` (the field is written `--expected-revision`)');
+    expect(skill).toContain('For how to polish, see [demo-polish](references/craft/demo-polish.md).');
     // 代码块里不套反引号。
     expect(skill).toContain('```text\ncuccut edits apply --expected-revision 12\n```');
     // 另一面的段落连同标记行删掉；页面链接原样。
-    expect(skill).toContain('细节见 [start](references/start.md)，走 MCP 见 [mcp](references/mcp.md)');
-    expect(skill).not.toContain('工具已经接好');
+    expect(skill).toContain('Details in [start](references/start.md); for MCP see [mcp](references/mcp.md).');
+    expect(skill).not.toContain('The tools are already connected');
     expect(skill).not.toMatch(/<!-- \/?surface/);
     // 从 references/ 下的页面引用 craft 时按该页计算相对路径。
-    expect(cli.get('references/catalog/editing.md')).toContain('剪口播的做法见 [demo-polish](../craft/demo-polish.md)。');
-    expect(cli.get('references/workflows.md')).toContain('按 [demo-polish](craft/demo-polish.md) 润色');
-    expect(cli.get('references/workflows.md')).toContain('带 `--source-document` 写译文');
+    expect(cli.get('references/catalog/editing.md')).toContain('For how to cut a talking head, see [demo-polish](../craft/demo-polish.md).');
+    expect(cli.get('references/workflows.md')).toContain('Polish it following [demo-polish](craft/demo-polish.md)');
+    expect(cli.get('references/workflows.md')).toContain('write the translation with `--source-document`');
     // 生成块的标记行保留，里面的占位符照样渲染。
     expect(cli.get('references/conventions.md')).toContain('<!-- generated: error-codes -->');
-    expect(cli.get('references/conventions.md')).toContain('| 错误码 | 退出码 | 下一步 |');
+    expect(cli.get('references/conventions.md')).toContain('| Error code | Exit code | Next step |');
     expect(cli.get('references/conventions.md')).not.toContain('{{');
     expect(cli.has('references/craft/demo-polish.md')).toBe(true);
     expect(bridgeNamesInCliFace(cli)).toEqual([]);
@@ -102,18 +102,19 @@ describe('说明书的渲染器', () => {
   it('工具桥面：工具名与字段名原样，craft 与页面链接换成 skills_read，没有 CLI 的痕迹', () => {
     const agent = renderAgentSkill(source, { face: 'agent', catalog: AGENT });
     const skill = agent.get('SKILL.md')!;
-    expect(skill).toContain('先 `documents_read`，译完用 `documents_put` 写回');
-    expect(skill).toContain('再按新的 `revision` 提交（字段写成 `expectedRevision`）');
-    expect(skill).toContain('润色的做法见 `demo-polish`（用 `skills_read` 读）。');
+    expect(skill).toContain('first `documents_read`, then write the translation back with `documents_put`');
+    expect(skill).toContain('then submit with the new `revision` (the field is written `expectedRevision`)');
+    expect(skill).toContain('For how to polish, see `demo-polish` (read it with `skills_read`).');
     expect(skill).toContain('```text\nedits_apply expectedRevision 12\n```');
-    expect(skill).toContain('工具已经接好，直接按任务读一页目录。');
-    expect(skill).toContain('| editing（用 `skills_read` 读 `cuccut-catalog-editing`） | 时间线上的修改 |');
+    expect(skill).toContain('The tools are already connected: read one catalog page for the task.');
+    expect(skill).toContain('| editing (read `cuccut-catalog-editing` with `skills_read`) | Changes on the timeline |');
     // 锚点去掉；工具桥面没有的页（start.md）退成纯文字。
     expect(skill).toContain(
-      '端到端的做法在 workflows（用 `skills_read` 读 `cuccut-workflows`），错误怎么处理见 conventions（用 `skills_read` 读 `cuccut-conventions`），启动细节在 start。',
+      'End-to-end recipes are in workflows (read `cuccut-workflows` with `skills_read`), how to handle errors is in conventions ' +
+        '(read `cuccut-conventions` with `skills_read`), and start-up details are in start.',
     );
-    expect(agent.get('references/catalog/media.md')).toContain('要剪就去 editing（用 `skills_read` 读 `cuccut-catalog-editing`）');
-    expect(agent.get('references/conventions.md')).toContain('| 错误码 | 下一步 |');
+    expect(agent.get('references/catalog/media.md')).toContain('to cut, go to editing (read `cuccut-catalog-editing` with `skills_read`)');
+    expect(agent.get('references/conventions.md')).toContain('| Error code | Next step |');
     // craft 副本是给外部 Agent 的，工具桥面不输出。
     expect([...agent.keys()].some((file) => file.startsWith('references/craft/'))).toBe(false);
     expect(cliTracesInAgentFace(agent)).toEqual([]);
@@ -124,8 +125,8 @@ describe('说明书的渲染器', () => {
     const agent = renderAgentSkill(source, { face: 'agent' }).get('SKILL.md')!;
     expect(countHardRules(cli)).toBe(5);
     expect(countHardRules(agent)).toBe(5);
-    expect(countHardRules('# 无关\n- 一条')).toBe(0);
-    expect(countHardRules('## 5. 硬规则\n\n1. 甲\n2. 乙\n   - 子项不算\n\n## 6. 交付\n- 不算')).toBe(2);
+    expect(countHardRules('# Unrelated\n- one')).toBe(0);
+    expect(countHardRules('## 5. Hard rules\n\n1. A\n2. B\n   - sub-items do not count\n\n## 6. Delivery\n- not counted')).toBe(2);
   });
 
   it('craft 的 id 只认小写连字符名，README.md 不算', () => {
@@ -148,12 +149,12 @@ describe('说明书的渲染器', () => {
       'cuccut-conventions',
     ]);
     const editing = pages.find((page) => page.id === 'cuccut-catalog-editing')!;
-    expect(editing.name).toBe('剪辑');
-    expect(editing.description).toBe('edits apply 的操作族、剪口播、章节、撤销与读回执。');
+    expect(editing.name).toBe('Editing');
+    expect(editing.description).toBe('Operation families of edits apply, talking-head cuts, chapters, undo and reading receipts.');
     expect(editing.body).not.toContain('<!--');
     const media = pages.find((page) => page.id === 'cuccut-catalog-media')!;
-    expect(media.name).toBe('素材');
-    expect(media.description).toBe('导入一个文件用 `assets_import`，取帧用 `videos_frames`。');
+    expect(media.name).toBe('Media');
+    expect(media.description).toBe('Import one file with `assets_import`; grab frames with `videos_frames`.');
   });
 });
 
@@ -205,108 +206,116 @@ describe('工具桥面的 craft 引用读起来通顺', () => {
   const agent = (text: string) => renderAgentSkillText(text, { face: 'agent', file: 'references/workflows.md' });
   const cli = (text: string) => renderAgentSkillText(text, { face: 'cli', file: 'references/workflows.md' });
 
-  it('跟在「见」「参见」「做法在」「按」、表格与列举后面：名字在前，怎么读放括号里', () => {
-    expect(agent('润色的做法见 {{skill:polish-transcript}}。')).toBe('润色的做法见 `polish-transcript`（用 `skills_read` 读）。');
-    expect(agent('细节参见{{skill:video-chapters}}。')).toBe('细节参见`video-chapters`（用 `skills_read` 读）。');
-    expect(agent('做法在 {{skill:talking-head-cut}} 里。')).toBe('做法在 `talking-head-cut`（用 `skills_read` 读） 里。');
-    expect(agent('2. 按 {{skill:polish-transcript}} 润色，写回。')).toBe('2. 按 `polish-transcript`（用 `skills_read` 读） 润色，写回。');
-    expect(agent('| 要总结 | {{skill:video-summary}} |')).toBe('| 要总结 | `video-summary`（用 `skills_read` 读） |');
-    expect(agent('craft 的事：{{skill:video-blog}}、{{skill:video-summary}}。')).toBe(
-      'craft 的事：`video-blog`（用 `skills_read` 读）、`video-summary`（用 `skills_read` 读）。',
+  it('跟在 see、follow、表格与列举后面：名字在前，怎么读放括号里', () => {
+    expect(agent('For polishing, see {{skill:polish-transcript}}.')).toBe('For polishing, see `polish-transcript` (read it with `skills_read`).');
+    expect(agent('The method is in {{skill:talking-head-cut}} here.')).toBe(
+      'The method is in `talking-head-cut` (read it with `skills_read`) here.',
+    );
+    expect(agent('2. Polish following {{skill:polish-transcript}}, then write back.')).toBe(
+      '2. Polish following `polish-transcript` (read it with `skills_read`), then write back.',
+    );
+    expect(agent('| Summarize | {{skill:video-summary}} |')).toBe('| Summarize | `video-summary` (read it with `skills_read`) |');
+    expect(agent('Crafts: {{skill:video-blog}}, {{skill:video-summary}}.')).toBe(
+      'Crafts: `video-blog` (read it with `skills_read`), `video-summary` (read it with `skills_read`).',
     );
   });
 
-  it('前面紧挨着「读」时不说两遍「读」；「通读」这类不算', () => {
-    expect(agent('1. 读 {{skill:talking-head-cut}}。')).toBe('1. 用 `skills_read` 读 `talking-head-cut`。');
-    expect(agent('动手前先读{{skill:shorts-segments}}。')).toBe('动手前先用 `skills_read` 读 `shorts-segments`。');
-    expect(agent('通读 {{skill:video-blog}}。')).toBe('通读 `video-blog`（用 `skills_read` 读）。');
-    // 别的占位符前面的「读」原样留下；CLI 面的「读」也留着。
-    expect(agent('读 {{tool:documents_read}} 的结果')).toBe('读 `documents_read` 的结果');
-    expect(cli('1. 读 {{skill:talking-head-cut}}。')).toBe('1. 读 [talking-head-cut](craft/talking-head-cut.md)。');
-    expect(cli('读 {{tool:documents_read}} 的结果')).toBe('读 `cuccut documents read` 的结果');
+  it('前面紧挨着 read 时不说两遍 read；spread、thread 这类不算', () => {
+    expect(agent('1. Read {{skill:talking-head-cut}}.')).toBe('1. Use `skills_read` to read `talking-head-cut`.');
+    expect(agent('Before starting, read {{skill:shorts-segments}}.')).toBe('Before starting, use `skills_read` to read `shorts-segments`.');
+    expect(agent('Thread {{skill:video-blog}} in.')).toBe('Thread `video-blog` (read it with `skills_read`) in.');
+    // 别的占位符前面的 read 原样留下；CLI 面的 read 也留着。
+    expect(agent('Read {{tool:documents_read}} results')).toBe('Read `documents_read` results');
+    expect(cli('1. Read {{skill:talking-head-cut}}.')).toBe('1. Read [talking-head-cut](craft/talking-head-cut.md).');
+    expect(cli('Read {{tool:documents_read}} results')).toBe('Read `cuccut documents read` results');
   });
 });
 
 describe('只在会话里有的工具在 CLI 面的兜底写法', () => {
   const cli = (text: string) => renderAgentSkillText(text, { face: 'cli', file: 'references/craft/x.md', catalog: CLI });
   const agent = (text: string) => renderAgentSkillText(text, { face: 'agent', file: 'references/craft/x.md', catalog: AGENT });
+  const PATH_TOLD = SESSION_ONLY_TOOLS.downloads_save!.replacement;
 
   it('downloads_save 在终端里没有命令：常见的整句换成「把路径告诉用户」，其余地方换成兜底说法，都不提工具名', () => {
     // craft 里的原句（skills/translate-subtitles 等）。
-    expect(cli('写成工作目录里的新文件，再用 downloads_save 放进下载目录，把它返回的 path 告诉用户。')).toBe(
-      '写成工作目录里的新文件，再把文件的路径告诉用户（终端里没有下载目录这一步：文件就在你写的位置）。',
-    );
-    expect(cli('交付时用 `downloads_save` 把说明放进下载目录。')).toBe(
-      '交付时把文件的路径告诉用户（终端里没有下载目录这一步：文件就在你写的位置）。',
-    );
+    expect(
+      cli('Write it as a new file in the working directory, then put it in the downloads directory with downloads_save and tell the user the path it returns.'),
+    ).toBe(`Write it as a new file in the working directory, then ${PATH_TOLD}.`);
+    expect(PATH_TOLD).toBe("tell the user the file's path (the terminal has no downloads directory step: the file is where you wrote it)");
+    expect(cli('At delivery, put the notes in the downloads directory with `downloads_save`.')).toBe(`At delivery, ${PATH_TOLD}.`);
     // 说明书里写成占位符也一样（不按终端的目录核对、不报「目录里没有」）。
-    expect(cli('最后 {{tool:downloads_save}}。')).toBe('最后 把文件交给用户（终端里直接告诉用户文件的路径）。');
-    expect(renderSessionOnlyTools('看 downloads_saved 与 my_downloads_save')).toBe('看 downloads_saved 与 my_downloads_save');
+    expect(cli('Finally {{tool:downloads_save}}.')).toBe("Finally hand the file to the user (in the terminal, tell the user the file's path).");
+    expect(renderSessionOnlyTools('see downloads_saved and my_downloads_save')).toBe('see downloads_saved and my_downloads_save');
     // 代码块里不动。
     expect(cli('```text\ndownloads_save\n```')).toBe('```text\ndownloads_save\n```');
     // 工具桥面原样。
-    expect(agent('再用 {{tool:downloads_save}} 放进下载目录。')).toBe('再用 `downloads_save` 放进下载目录。');
+    expect(agent('Then put it in the downloads directory with {{tool:downloads_save}}.')).toBe(
+      'Then put it in the downloads directory with `downloads_save`.',
+    );
   });
 
-  it('slides_check 与 slides_import_asset：craft 里的那一步从「调用」起整行换掉，其余地方换成兜底说法', () => {
+  it('slides_check 与 slides_import_asset：craft 里的那一步从 Call / import 起整行换掉，其余地方换成兜底说法', () => {
+    const fallback = SESSION_ONLY_TOOLS.slides_import_asset!;
     // skills/slides 的第 6 步与第 4 步。
-    expect(cli('6. **校验**。调用 `slides_check`（参数 `path` 是 deck 目录），逐条改掉它列出的问题。问题为 0 后线程里出现卡片。')).toBe(
-      '6. **校验**。终端里没有校验命令：按 `references/format.md` 逐页自查标签、样式与图片地址，按 `references/design.md` 的估算确认放得下，' +
-        '再核对 `deck.json` 的 `order`、`sections`、`cover` 都指向存在的页，`slides/` 里没有 `order` 之外的文件。',
+    expect(
+      cli('6. **Validate**. Call `slides_check` on the whole deck (parameter `path` is the deck directory), fix each problem it lists.'),
+    ).toBe(`6. **Validate**. ${SESSION_ONLY_TOOLS.slides_check!.replacement}`);
+    expect(SESSION_ONLY_TOOLS.slides_check!.replacement).toMatch(/^There is no check command in the terminal: /);
+    expect(
+      cli('   - Images the user gave: import each one into the deck with `slides_import_asset` (parameter `deck` is the deck directory) and write the returned `src`.'),
+    ).toBe(`   - Images the user gave: ${fallback.replacement}`);
+    expect(cli('Finally run {{tool:slides_check}} once more.')).toBe('Finally run the slides check (only in CucCut sessions) once more.');
+    expect(cli('- Import font files (woff2, woff) one by one with `slides_import_asset` and set `src` to the returned `/_blob/<id>`.')).toBe(
+      `- ${fallback.morePhrases![0]!.replacement.replace('$1', '(woff2, woff)')}`,
     );
-    expect(cli('4. **准备图片**。用户给的图片，逐张调用 `slides_import_asset` 放进 deck：返回的 `src` 写进 `<img src>`。')).toBe(
-      '4. **准备图片**。用户给的图片，终端里没有把图片导入 deck 的命令：页面先不放图片，交付时说明哪几页该配什么图。',
+    expect(cli('Images come in through slides_import_asset.')).toBe(
+      'Images come in through importing images and fonts (only in CucCut sessions).',
     );
-    expect(cli('最后跑一遍 {{tool:slides_check}}。')).toBe('最后跑一遍 幻灯片校验（只在 CucCut 的会话里有）。');
-    expect(cli('- 字体文件逐个用 `slides_import_asset` 导入，`src` 写它返回的 `/_blob/<id>`。')).toBe(
-      `- 字体文件${SESSION_ONLY_TOOLS.slides_import_asset!.morePhrases![0]!.replacement}`,
-    );
-    expect(cli('图片经 slides_import_asset 放进来。')).toBe('图片经 导入图片与字体（只在 CucCut 的会话里有） 放进来。');
     // 工具桥面原样。
-    expect(agent('调用 {{tool:slides_check}} 校验。')).toBe('调用 `slides_check` 校验。');
+    expect(agent('Call {{tool:slides_check}} to validate.')).toBe('Call `slides_check` to validate.');
   });
 
   it('design_check 与 design_import_asset：skills/design 的校验句与导入句整句换掉，其余地方换成兜底说法', () => {
-    // skills/design「新建」的第 6 步与第 3 步。
+    // skills/design「New」的第 6 步与第 3 步。
     expect(
       cli(
-        '6. 其余的。然后对设计稿运行 design_check，改掉它列出的每个问题，再运行一次，直到一个问题都不列：这时线程里才出现设计稿卡片。然后说一句。',
+        '6. The rest. Then run design_check on the design, fix every problem it lists, and run it again until it lists none: only then does the design card appear in the thread. Then say one line.',
       ),
-    ).toBe(
-      '6. 其余的。终端里没有设计稿校验，也没有设计稿卡片：按 `references/format.md` 自己逐个检查文件' +
-        '（标签都闭合、attribute 都加引号、`support.js` 那一行头部原样、`boards` 与 `order` 都指向存在的文件）。然后说一句。',
+    ).toBe(`6. The rest. ${SESSION_ONLY_TOOLS.design_check!.replacement} Then say one line.`);
+    expect(
+      cli(
+        '3. Each font **file**: import it with design_import_asset (see below; write `canvas.json` first) → write the `src` it returns **verbatim** into `<img src>` or `@font-face`. .css files as before.',
+      ),
+    ).toBe(`3. Each font **file**: ${SESSION_ONLY_TOOLS.design_import_asset!.replacement} .css files as before.`);
+    expect(cli('4. Then design_check until it lists no problems.')).toBe(
+      '4. Then the design check (only in CucCut sessions) until it lists no problems.',
     );
-    expect(
-      cli(
-        '3. 每个字体**文件**：用 design_import_asset 导入（见下文；先写好 `canvas.json`，见第 5 步）→ 它返回的 `src` **原样**写到 `<img src>` 或 `@font-face`。.css 文件照旧。',
-      ),
-    ).toBe('3. 每个字体**文件**：终端里没有把它导入设计稿的命令：先不放（图片换成带说明的 placeholder），并说明这份设计需要哪些文件。.css 文件照旧。');
-    expect(cli('4. 然后 design_check，直到不列问题。')).toBe('4. 然后 设计稿校验（只在 CucCut 的会话里有），直到不列问题。');
-    expect(cli('导入（design_import_asset）只用于字体')).toBe('导入（导入素材（只在 CucCut 的会话里有））只用于字体');
+    expect(cli('Importing (design_import_asset) is only for fonts')).toBe('Importing (importing assets (only in CucCut sessions)) is only for fonts');
     // 工具桥面原样。
-    expect(agent('然后 {{tool:design_check}}。')).toBe('然后 `design_check`。');
+    expect(agent('Then {{tool:design_check}}.')).toBe('Then `design_check`.');
   });
 
   it('design_system_check 与 design_system_import_asset：skills/design-system 的校验句与两条调用说明整句换掉', () => {
-    expect(
-      cli('3. index **最后**写。然后对设计系统运行 design_system_check，改掉它列出的每个问题，再运行一次，直到一个问题都不列：这时线程里才出现设计系统卡片。'),
-    ).toBe(
-      '3. index **最后**写。终端里没有设计系统校验，也没有设计系统卡片：按 `references/format.md` 自己逐个检查文件' +
-        '（index 的 marker 与字段、`tokens.json` 里每个 family 都写成列表、每条 record 与每个 `/_blob/<id>` 都指向存在的文件）。',
-    );
-    expect(
-      cli('- design_system_check（`path` = 设计系统的目录）→ 按文件列出的问题，以及不需要改动的提示；没有问题时：线程里出现设计系统卡片。'),
-    ).toBe(
-      '- 终端里没有设计系统校验，也没有设计系统卡片：按 `references/format.md` 自己逐个检查文件' +
-        '（index 的 marker 与字段、`tokens.json` 里每个 family 都写成列表、每条 record 与每个 `/_blob/<id>` 都指向存在的文件）。',
-    );
+    const check = SESSION_ONLY_TOOLS.design_system_check!.replacement;
     expect(
       cli(
-        '- design_system_import_asset（`system` = 设计系统的目录，`path` = 工作目录里的文件，`group` = 它所在的素材组）→ `src`（`/_blob/<id>`），以及要写到 index 里 `indexPath` 处的 `record`。还没有 index 的目录也能上传：index 照样最后写。',
+        '3. Write the index **last**. Then run design_system_check on the design system, fix every problem it lists, and run it again until it lists none: only then does the design system card appear in the thread.',
+      ),
+    ).toBe(`3. Write the index **last**. ${check}`);
+    expect(
+      cli(
+        "- design_system_check (`path` = the design system's directory) → problems listed by file, plus hints that need no change; when there are no problems: the design system card appears in the thread.",
+      ),
+    ).toBe(`- ${check}`);
+    expect(
+      cli(
+        "- design_system_import_asset (`system` = the design system's directory, `path` = the file in the working directory, `group` = the asset group it belongs to) → `src` (`/_blob/<id>`), plus the `record` to write into the index at `indexPath`. Uploading works for a directory that has no index yet: the index is still written last.",
       ),
     ).toBe(`- ${SESSION_ONLY_TOOLS.design_system_import_asset!.replacement}`);
-    expect(cli('图片经 design_system_import_asset 上传。')).toBe('图片经 上传素材（只在 CucCut 的会话里有） 上传。');
-    expect(agent('然后 {{tool:design_system_check}}。')).toBe('然后 `design_system_check`。');
+    expect(cli('Images are uploaded via design_system_import_asset.')).toBe(
+      'Images are uploaded via uploading assets (only in CucCut sessions).',
+    );
+    expect(agent('Then {{tool:design_system_check}}.')).toBe('Then `design_system_check`.');
   });
 });
 
@@ -408,7 +417,7 @@ describe('仓库里的说明书', () => {
       for (const [key, value] of parsed.fields) for (const name of bare(value)) hits.push(`${id} ${key}: ${name}`);
     }
     const skill = source.get('SKILL.md')!;
-    const table = skill.slice(skill.indexOf('| 用户说的话 |'), skill.indexOf('### 三条底线'));
+    const table = skill.slice(skill.indexOf('| What the user says |'), skill.indexOf('### The three baselines'));
     expect(table.length).toBeGreaterThan(0);
     for (const name of bare(table)) hits.push(`SKILL.md 路由表: ${name}`);
     expect(hits).toEqual([]);
@@ -424,9 +433,9 @@ describe('仓库里的说明书', () => {
   });
 
   it('两面渲染出的硬规则条数相同', () => {
-    expect(countHardRules(cli.get('SKILL.md')!)).toBe(11);
-    expect(countHardRules(agent.get('SKILL.md')!)).toBe(11);
-    expect(countHardRules(guidance.guidance)).toBe(11);
+    expect(countHardRules(cli.get('SKILL.md')!)).toBe(12);
+    expect(countHardRules(agent.get('SKILL.md')!)).toBe(12);
+    expect(countHardRules(guidance.guidance)).toBe(12);
   });
 
   it('工具桥面：目录页、做法总览与约定成为内置页面，名字与说明取 front matter 或标题', () => {

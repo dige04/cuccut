@@ -1,116 +1,116 @@
 ---
-description: 文稿与字幕的机制：转录、润色写回、自己翻译并写成译文、建字幕层、用配置好的文本模型翻译、读文稿写总结与文章。转写、润色、翻译或建字幕层之前读。
+description: Transcript and subtitle mechanics - transcribing, polishing and writing back, translating yourself, creating caption layers, translating with the configured text model, reading transcripts to write summaries and articles. Read before transcribing, polishing, translating or creating caption layers.
 ---
 
-# 文稿与字幕：转录、润色、翻译、字幕层
+# Transcripts and subtitles: transcription, polishing, translation, caption layers
 
-## 何时用
+## When to use
 
-- 有媒体（链接、本机文件、已有视频）要转录、加字幕。
-- 转写要润色或校对。
-- 要译文字幕或双语字幕；原文改过之后要更新译文。
-- 要从视频内容写总结、文章、标题与简介（读文稿）。
+- There is media (a link, a local file, an existing video) to transcribe or subtitle.
+- A transcript needs polishing or proofreading.
+- Translated or bilingual subtitles are wanted; the translation needs updating after the source changed.
+- Summaries, articles, titles and descriptions are to be written from the video's content (by reading the transcript).
 
-怎么润色、怎么译、怎么写总结是 craft 的事：{{skill:subtitle-workflow}}、{{skill:polish-transcript}}、{{skill:translate-subtitles}}、{{skill:video-summary}}、{{skill:video-blog}}、{{skill:titles-and-description}}。这一页只讲调用与回执。
+How to polish, translate and summarize is the crafts' business: {{skill:subtitle-workflow}}, {{skill:polish-transcript}}, {{skill:translate-subtitles}}, {{skill:video-summary}}, {{skill:video-blog}}, {{skill:titles-and-description}}. This page covers only calls and receipts.
 
-## 前置检查
+## Preflight
 
-- 在哪个视频上做：{{tool:videos_inspect}} 看文档清单。kind 为 `speech` 的是转写，`translation` 是译文，`caption` 是字幕层的文档。已有的接着用：已有转写不再转一遍，已有同一语言的译文在它上面改。
-- 要转写时先 {{tool:models_capabilities}}（能力 `transcribe`）看有没有可用的转写服务。
-- 原文语言、人名与术语：用户说了就记下。语言转写时给 {{tool:transcribe}} 的 {{arg:language}}；人名与术语只在转写模型收识别提示时给 {{arg:hint}}：{{tool:models_capabilities}} 里要用的模型（不给模型时是默认的那只）`acceptsHint` 为 true 才给。默认的 MOSS 不收，带了也照常转写，但提示被忽略、转写任务带 `hint-ignored` 提醒；这时人名与术语留给润色，不为了用上提示换模型。
-- 来源元数据：从链接导入的素材在 {{tool:videos_inspect}} 的 `assets[].source` 里有标题、发布者、简介与作者章节（见 [media](media.md)）。润色时当背景参考，说话人实名时当证据之一。
+- Which video to work on: look at the document list with {{tool:videos_inspect}}. kind `speech` is a transcript, `translation` is a translation, `caption` is a caption layer's document. Reuse what exists: do not transcribe again when a transcript exists, and edit an existing translation in the same language.
+- Before transcribing, call {{tool:models_capabilities}} (capability `transcribe`) to see whether a transcription service is available.
+- Source language, names and terms: note them when the user mentions them. Pass the language to {{tool:transcribe}}'s {{arg:language}} when transcribing; pass names and terms as {{arg:hint}} only when the transcription model accepts recognition hints: only when the model you will use in {{tool:models_capabilities}} (the default one when no model is given) has `acceptsHint` true. The default MOSS does not accept them; if passed, it still transcribes normally, but the hint is ignored and the transcription job carries a `hint-ignored` warning. In that case, leave names and terms to polishing; do not switch models just to use hints.
+- Source metadata: assets imported from a link have the title, uploader, description and author chapters in `assets[].source` in {{tool:videos_inspect}} (see [media](media.md)). Use it as background reference when polishing, and as one piece of evidence when naming speakers.
 
-## 命令与例子
+## Commands and examples
 
-### 转录
+### Transcription
 
-| 输入 | 调用 |
+| Input | Call |
 | --- | --- |
-| 链接 | {{tool:transcribe}}，{{arg:url}}：新建视频、下载、放上时间线、转写、建字幕层 |
-| 本机文件 | {{tool:transcribe}}，{{arg:file}}；可给 {{arg:name}} |
-| 已有视频 | {{tool:transcribe}}，{{arg:video}}；素材不止一个时给 {{arg:asset}} |
-| 要先润色再上字幕 | 加 {{arg:noCaptions}}：字幕层等润色之后再建 |
-| 用户明说只要文稿文件 | 加 {{arg:noVideo}}：只写 TXT 与 SRT，不建视频；本机文件可给 {{arg:outDir}} |
+| Link | {{tool:transcribe}}, {{arg:url}}: creates the video, downloads, places it on the timeline, transcribes, creates caption layers |
+| Local file | {{tool:transcribe}}, {{arg:file}}; optionally {{arg:name}} |
+| Existing video | {{tool:transcribe}}, {{arg:video}}; give {{arg:asset}} when there is more than one asset |
+| Polish before adding subtitles | Add {{arg:noCaptions}}: caption layers are created after polishing |
+| The user says outright they only want transcript files | Add {{arg:noVideo}}: writes only TXT and SRT, no video created; for local files you can give {{arg:outDir}} |
 
-可选 {{arg:language}}（不给时自动识别）、{{arg:hint}}（人名、术语、专有名词；只给收提示的模型，见前置检查）、{{arg:diarize}}（区分说话人）。视频里这份素材已有文稿时不在同一部视频里加第二份：缺省（{{arg:target}} 为 new-video）另建一部视频，链接同一份素材；{{arg:target}} 为 replace 时取代当前文稿，一笔可撤销的事务里结转译文、字幕与配音（{{arg:translations}} 为 discard 时不结转译文）。文稿在转录之后被用户改过时取代以 `TRANSCRIPT_EDITED` 拒绝：先问用户，确认丢掉那些修改再加 {{arg:acceptEdited}}。
+Optional: {{arg:language}} (auto-detected when not given), {{arg:hint}} (names, terms, proper nouns; only for models that accept hints, see Preflight), {{arg:diarize}} (separate speakers). When this asset already has a transcript in the video, a second one is not added to the same video: by default ({{arg:target}} new-video) another video is created that links the same asset; with {{arg:target}} replace, the current transcript is replaced, carrying over translations, captions and dubbing in one undoable transaction (with {{arg:translations}} discard, translations are not carried over). When the user edited the transcript after transcription, replacing is refused with `TRANSCRIPT_EDITED`: ask the user first, and add {{arg:acceptEdited}} once they confirm those edits may be dropped.
 
-重转（另建视频或取代）与换模型只在用户要求或结果不能用时做：不因为自己觉得识别得不够好就重转，少量错字、人名与术语听错在润色时改（{{skill:polish-transcript}}）。结果不能用（空的、语言认错、大段乱码）时不用先问，直接重转一次，语言认错就带上正确的 {{arg:language}}；之后告诉用户第一次的结果哪里不能用、重转改了什么、重转后的结果怎样，仍不能用时停下来问用户。
+Re-transcribe (into another video or by replacing) or switch models only when the user asks or the result is unusable: do not re-transcribe just because you think recognition is not good enough; fix a few typos and misheard names and terms while polishing ({{skill:polish-transcript}}). When the result is unusable (empty, wrong language detected, long stretches of garbage), re-transcribe once without asking first, passing the correct {{arg:language}} if the language was wrong; afterwards, tell the user what was unusable in the first result, what the re-transcription changed and how its result turned out; if it is still unusable, stop and ask the user.
 
-### 润色写回
+### Polishing and writing back
 
-1. {{tool:documents_read}} 读转写（{{arg:documentId}} 给 speech 文档）。
-2. 按 {{skill:polish-transcript}} 改正文，词的时间不动。
-3. {{tool:documents_put}} 写回**同一份**：{{arg:document}} 给它的 documentId，{{arg:body}} 是改好的完整正文。要防并发改动时带 {{arg:revision}}：这里是**视频**的版本（{{tool:videos_inspect}} 或上一次写命令回执里的 `revision`），不是 {{tool:documents_read}} 结果里同名的文档版本；给错了以 `PROJECT_REVISION_CONFLICT` 拒绝。
+1. Read the transcript with {{tool:documents_read}} ({{arg:documentId}} for the speech document).
+2. Fix the text following {{skill:polish-transcript}}; word timings stay unchanged.
+3. Write back to **the same document** with {{tool:documents_put}}: {{arg:document}} is its documentId and {{arg:body}} the complete fixed body. To guard against concurrent changes, pass {{arg:revision}}: this is the **video's** revision ({{tool:videos_inspect}}, or `revision` in the receipt of the previous write command), not the document revision of the same name in the {{tool:documents_read}} result; a wrong one is refused with `PROJECT_REVISION_CONFLICT`.
 
-### 说话人实名
+### Naming speakers
 
-转写的正文有 `speakers[]`（每位 `id` 与 `name`），词的说话人指向它的 `id`。区分说话人后自动起的名字是占位名：「说话人 n」及它在别的界面语言里的对应（`Speaker 1`、`Sprecher 1` …）、识别服务的编号标签（`SPEAKER_00`、`S1`、`spk-1`）、空、等于 id。多位说话人还有占位名时，润色末尾按 {{skill:polish-transcript}} 找证据实名，拿不准就留着占位名。写回仍用 {{tool:documents_put}} 写同一份转写，只改 `speakers[].name`，`words` 与其他字段照读到的原样；只覆盖占位名，用户起的名字不动；同一个人被拆成几个 id 时给同一个名字，不合并 id。
+The transcript body has `speakers[]` (each with `id` and `name`), and each word's speaker points to its `id`. The names assigned automatically after speaker separation are placeholder names: "Speaker n" and its equivalents in other UI languages (`说话人 1`, `Sprecher 1` …), the recognition service's numbered labels (`SPEAKER_00`, `S1`, `spk-1`), empty, or equal to the id. When several speakers still have placeholder names, at the end of polishing look for evidence to name them following {{skill:polish-transcript}}; when unsure, keep the placeholder name. Write back with {{tool:documents_put}} to the same transcript, changing only `speakers[].name` and keeping `words` and the other fields exactly as read; overwrite only placeholder names and leave names the user gave alone; when one person was split into several ids, give them the same name but do not merge the ids.
 
-### 自己翻译（默认路径）
+### Translating yourself (the default path)
 
-翻译由你自己做，不用 {{tool:translate}}：
+You do the translation yourself, not {{tool:translate}}:
 
-1. **润色写回之后再读一次转写。** {{tool:documents_read}} 读 speech 文档，结果里的 `translationBasis` 给出 `sourceBasis` 与切好的句子（每句 `id`、`fingerprint`、`text`、`wordIds`，以及素材时钟上的起止 `start`、`end`，单位秒）。润色会改分句与指纹，所以润色之后必须重新读。
-2. **逐句翻译**，按 {{skill:translate-subtitles}}：一句对一句，不合并、不拆分、不漏。
-3. **写成译文。** {{tool:documents_put}} 新建：{{arg:kind}} `translation`，{{arg:language}} 为目标语言（BCP 47），{{arg:sourceDocument}} 为转写的 documentId，{{arg:body}} 照 {{tool:documents_read}} 说明里的形状（`cuccut.translation/2`），`sourceBasis` 用这次读到的。每句的 `alignment` 照说明填，或写 null 让 Runtime 按句补上句级对齐。已有同一语言的译文时给 {{arg:document}} 更新它，不新建第二份。
-4. **建字幕层。** {{tool:captions_create}}，{{arg:documentId}} 给译文；双语加 {{arg:bilingual}}（译文为主、原文为辅，转写还没有原文字幕层时同一笔里一起建）。
-5. **要文件再导出。** {{tool:export}}，{{arg:kind}} `subtitles`，{{arg:format}} `srt` 等；双语加 {{arg:bilingual}}（见 [export](export.md)）。
+1. **Read the transcript again after polishing and writing back.** Read the speech document with {{tool:documents_read}}; `translationBasis` in the result gives `sourceBasis` and the split sentences (each with `id`, `fingerprint`, `text`, `wordIds`, and its start and end on the asset clock, `start` and `end`, in seconds). Polishing changes sentence splits and fingerprints, so you must read again after polishing.
+2. **Translate sentence by sentence**, following {{skill:translate-subtitles}}: one sentence for one sentence, no merging, splitting or skipping.
+3. **Write the translation.** Create it with {{tool:documents_put}}: {{arg:kind}} `translation`, {{arg:language}} the target language (BCP 47), {{arg:sourceDocument}} the transcript's documentId, and {{arg:body}} in the shape described by {{tool:documents_read}} (`cuccut.translation/2`), with the `sourceBasis` from this read. Fill each sentence's `alignment` as described, or write null to let the Runtime fill in sentence-level alignment. When a translation in the same language already exists, update it by passing {{arg:document}}; do not create a second one.
+4. **Create caption layers.** {{tool:captions_create}}, {{arg:documentId}} the translation; for bilingual, add {{arg:bilingual}} (translation primary, original secondary; if the transcript has no original caption layer yet, it is created in the same edit).
+5. **Export if files are wanted.** {{tool:export}}, {{arg:kind}} `subtitles`, {{arg:format}} `srt` and so on; for bilingual add {{arg:bilingual}} (see [export](export.md)).
 
 <!-- surface: cli -->
-正文大，写进文件再用 `--body @zh.json` 传，不塞进命令行（见 [conventions](../conventions.md) 的「参数怎么写」）。
+The body is large: write it to a file and pass it with `--body @translation.json`; do not cram it into the command line (see "How to write arguments" in [conventions](../conventions.md)).
 <!-- /surface -->
 <!-- surface: agent -->
-一次 {{tool:documents_put}} 写完整份译文，不分几次写。
+Write the whole translation in one {{tool:documents_put}} call, not in several.
 <!-- /surface -->
 
-原文改过（润色、剪辑）之后译文会过期：重新读转写，句子 `id` 与 `fingerprint` 都对得上的单元原样保留，其余重译，再写回同一份译文。从这份译文建过的字幕层不用重建：写回时 Runtime 在同一笔里只换改过的句子的字幕条，时间照旧（回执的 `syncedCaptions`）。
+After the source changes (polishing, editing), the translation goes stale: read the transcript again, keep units whose sentence `id` and `fingerprint` both still match, retranslate the rest, and write back to the same translation. Caption layers built from this translation need not be rebuilt: when writing back, the Runtime replaces only the captions of changed sentences in the same edit, keeping their timing (`syncedCaptions` in the receipt).
 
-### 建字幕层
+### Creating caption layers
 
-{{tool:captions_create}}，{{arg:documentId}} 给转写（原文字幕）或译文（译文字幕）；双语给译文并带 {{arg:bilingual}}。CucCut 按句对齐时间、按宽度切成字幕条，不要自己写字幕文档或拼字幕实例。
+{{tool:captions_create}}, {{arg:documentId}} the transcript (original-language captions) or a translation (translated captions); for bilingual, pass the translation with {{arg:bilingual}}. CucCut aligns timing by sentence and splits into captions by width; do not write caption documents or assemble caption instances yourself.
 
-同一份文档每调用一次就多建一层，不覆盖：调用前先 {{tool:videos_inspect}} 看是不是已经建过；用户要重做时先说明会多一层，问清是否删掉旧的。
+Each call on the same document adds another layer rather than overwriting: before calling, check with {{tool:videos_inspect}} whether one was already created; when the user wants it redone, first explain that it adds a layer and ask whether to delete the old one.
 
-### 用配置好的文本模型翻译（只在用户明确要求时）
+### Translating with the configured text model (only when the user explicitly asks)
 
-{{tool:translate}}：{{arg:video}} + {{arg:to}} 写成新译文并建字幕层；或 {{arg:file}}（SRT / VTT）+ {{arg:to}} 译成新文件，不碰视频。可选 {{arg:style}}、{{arg:glossary}}、{{arg:bilingual}}。没有配置文本模型时它以 `CAPABILITY_NOT_CONFIGURED` 拒绝：照 `next` 改走上面的自译路径，不请用户去配置。
+{{tool:translate}}: {{arg:video}} + {{arg:to}} writes a new translation and creates caption layers; or {{arg:file}} (SRT / VTT) + {{arg:to}} translates into a new file without touching any video. Optional {{arg:style}}, {{arg:glossary}}, {{arg:bilingual}}. Without a configured text model it is refused with `CAPABILITY_NOT_CONFIGURED`: follow `next` and switch to the translate-yourself path above; do not ask the user to configure one.
 
-### 读文稿写总结、文章、标题
+### Reading the transcript to write summaries, articles and titles
 
-纯文字的产出不写回视频（除非用户要章节，见 [editing](editing.md)）：
+Plain-text outputs are not written back to the video (unless the user wants chapters; see [editing](editing.md)):
 
-- 带时间码的文稿：{{tool:export}}，{{arg:kind}} `transcript`，{{arg:format}} `md`，{{arg:timestamps}}；读结果里文件的 `path`。这里的时间是剪辑后时间线上的时间，要点的时间就取它，不自己估。
-- 只要正文：{{tool:export}}，{{arg:kind}} `transcript`，{{arg:format}} `txt`；或 {{tool:documents_read}} 读转写的句子。
-- 有几份文稿时导出会以 `EXPORT_SOURCE_AMBIGUOUS` 拒绝并列出候选，用 {{arg:documentId}} 指定。
+- A timestamped transcript: {{tool:export}}, {{arg:kind}} `transcript`, {{arg:format}} `md`, {{arg:timestamps}}; read the file at `path` in the result. These times are times on the edited timeline; take key points' times from it, do not estimate them.
+- Just the text: {{tool:export}}, {{arg:kind}} `transcript`, {{arg:format}} `txt`; or read the transcript's sentences with {{tool:documents_read}}.
+- With several transcripts, export is refused with `EXPORT_SOURCE_AMBIGUOUS`, listing the candidates; specify one with {{arg:documentId}}.
 
-## 结果怎么读
+## Reading the results
 
-- {{tool:transcribe}} 完成：`pipeline.summary.documentId` 是新转写，`summary.captions` 是字幕层，新建视频时 `summary.videoId` 是视频。给 url 时找不到 documentId 就 {{tool:videos_inspect}} 找来源素材是这段素材的 speech 文档；给 url 时另有 `summary.description`（截断的简介）与 `summary.sourceChapters`（作者章节的条数），大于 0 时分章用 {{tool:chapters_adopt}}（见 [editing](editing.md)）。
-- {{tool:documents_put}}：与修改相同的回执（新版本 `revision`、`transactionId`），另有文档的 `documentId`；`filledAlignments` 是 Runtime 补了几句对齐，`syncedCaptions` 是改已有译文时跟着换了字幕条的字幕文档数。正文与原来相同时不产生新版本。
-- {{tool:captions_create}}：`documentId`（字幕文档）、`trackId`、`itemIds`、`cueCount`（字幕条数）、`enabled`；双语另有 `pairedOriginal`（`created` 为 true 是这次顺带建的原文层）。`existing` 不为空说明这份文档原本已有字幕层。
+- {{tool:transcribe}} completed: `pipeline.summary.documentId` is the new transcript, `summary.captions` the caption layers, and `summary.videoId` the video when one was created. With a url, if there is no documentId, use {{tool:videos_inspect}} to find the speech document whose source asset is this asset; with a url there are also `summary.description` (the truncated description) and `summary.sourceChapters` (the number of author chapters); when greater than 0, chapter with {{tool:chapters_adopt}} (see [editing](editing.md)).
+- {{tool:documents_put}}: the same receipt as an edit (new `revision`, `transactionId`), plus the document's `documentId`; `filledAlignments` is how many sentences the Runtime filled alignment for, and `syncedCaptions` is the number of caption documents whose captions were swapped along with an existing translation. A body identical to the previous one produces no new revision.
+- {{tool:captions_create}}: `documentId` (the caption document), `trackId`, `itemIds`, `cueCount` (the number of captions), `enabled`; bilingual also has `pairedOriginal` (`created` true means the original layer was created along with it this time). A non-empty `existing` means this document already had caption layers.
 
-## 常见错误码
+## Common error codes
 
-| 错误码 | 下一步 |
+| Error code | Next step |
 | --- | --- |
-| `CAPABILITY_NOT_CONFIGURED`（转写） | 没有可用的转写服务：照 `next` 转告用户，或按 [models](models.md) 装本地模型包；停在这里 |
-| `CAPABILITY_NOT_CONFIGURED`（{{tool:translate}}） | 文本模型没配：自己翻译，不请用户去配 |
-| `TRANSLATION_UNALIGNED` | 译文有 `alignment` 为 null、Runtime 补不上的句子：重新读转写，核对句子 `id` 与 `fingerprint` 后再写一次译文 |
-| `CAPTIONS_NOT_ON_TIMELINE` | 文档来源的素材不在时间线上：先放上时间线，或换一份文档 |
-| `CAPTIONS_EMPTY` | 没有可显示的字幕条：检查文档是不是空的 |
-| `PROJECT_REVISION_CONFLICT` | 见 [conventions](../conventions.md) 的「版本冲突」 |
-| `EXPORT_SOURCE_AMBIGUOUS` | 文档不止一份：用 `candidates` 里的 documentId 指定 |
+| `CAPABILITY_NOT_CONFIGURED` (transcription) | No usable transcription service: pass it on to the user following `next`, or install a local model bundle per [models](models.md); stop here |
+| `CAPABILITY_NOT_CONFIGURED` ({{tool:translate}}) | No text model configured: translate yourself; do not ask the user to configure one |
+| `TRANSLATION_UNALIGNED` | The translation has sentences whose `alignment` is null and the Runtime cannot fill: read the transcript again, check sentence `id` and `fingerprint`, then write the translation again |
+| `CAPTIONS_NOT_ON_TIMELINE` | The document's source asset is not on the timeline: place it on the timeline first, or use another document |
+| `CAPTIONS_EMPTY` | No captions to display: check whether the document is empty |
+| `PROJECT_REVISION_CONFLICT` | See "Revision conflicts" in [conventions](../conventions.md) |
+| `EXPORT_SOURCE_AMBIGUOUS` | More than one document: specify one with a documentId from `candidates` |
 
-## 下一步
+## Next steps
 
-- 字幕层建好、用户要文件：去 [export](export.md)。
-- 要配音：去 [voice](voice.md)，带上刚写的译文。
-- 要剪口播或分章：去 [editing](editing.md)。
+- Caption layers are done and the user wants files: go to [export](export.md).
+- Dubbing is wanted: go to [voice](voice.md), with the translation you just wrote.
+- A talking-head cut or chapters are wanted: go to [editing](editing.md).
 
-## 验收
+## Acceptance
 
-- 转写、译文、字幕层都在视频里，没有重复的转写与重复的字幕层；没有用户没要求、结果也并非不能用的重转或换模型；因结果不能用而重转的，已告诉用户原因和重转后的结果。
-- 润色在翻译之前，翻译用的是润色之后重新读到的句子。
-- 多位说话人时，证据够的都实名了；留着占位名的在报告里说明。
-- 译文句数等于转写句数；术语与专名全文一致。
-- 字幕层的条数（`cueCount`）报告给用户；字幕在画面上的位置要在编辑器或导出的成片里看，帧里看不到。
+- The transcript, translations and caption layers are all in the video, with no duplicate transcripts or caption layers; no re-transcription or model switch that the user did not ask for and the result did not need; for any re-transcription because the result was unusable, the user has been told why and how the new result turned out.
+- Polishing came before translation, and the translation used the sentences read again after polishing.
+- With several speakers, those with enough evidence have real names; placeholder names kept are explained in the report.
+- The number of translated sentences equals the number of transcript sentences; terms and proper names are consistent throughout.
+- The number of captions (`cueCount`) is reported to the user; where captions sit in the picture has to be seen in the editor or the exported video, not in frames.

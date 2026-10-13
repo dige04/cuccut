@@ -1029,7 +1029,7 @@ describe('对外服务：任务的提交者与可见性', () => {
       recipient: 'openai',
       dataKinds: ['document'],
       remedy: { action: 'create-grant' },
-      next: expect.stringContaining('不要换服务商'),
+      next: expect.stringContaining('Do not switch providers'),
     });
     expect((await client.request('jobs.list', {})).jobs).toHaveLength(1);
 

@@ -12,57 +12,64 @@ import { ToolError, type ToolInfo, type ToolSet } from './tool-catalog.ts';
 import { approvalField, confirmSummary, type ToolPrincipal, type ToolScope } from './tool-scope.ts';
 
 /**
- * `downloads_save`（架构设计 §3.5、§7.9）：把会话工作目录里的一个文件复制到下载目录，交给用户。不属于项目的会话的工作目录
- * 用户看不到，智能体自己做出的结果（例如译好的字幕）经它放到下载目录，与从链接导入下载的文件放在一起。
+ * `downloads_save` (architecture design §3.5, §7.9): copies a file from the session's working directory to the downloads
+ * directory to hand it to the user. The user cannot see the working directory of a session without a project, so results the
+ * agent makes itself (e.g. translated subtitles) go to the downloads directory through this tool, alongside files downloaded
+ * by link import.
  *
- * - 源：工作目录里的相对路径，按真实路径判断，不能经 `..`、绝对路径或符号链接指到外面；必须是普通文件，不能在视频目录
- *   （含 `video.db`）或 `.ccut` 里；不超过 `DOWNLOAD_SAVE_MAX_BYTES`。检查不过的直接拒绝，不生成审批。
- * - 目标：下载目录（与从链接导入同一个，见 `resolveDownloadsDirectory`），不存在时新建。只新建文件、不覆盖：重名时像从链接
- *   导入那样加序号（`名字-2.srt`）。文件名清理过（与下载的文件同一套规则），扩展名沿用源文件的。写完按真实路径确认在下载目录里。
- * - 风险 `command`（§3.12）：写的是工作目录以外的新文件，`autoAcceptEdits` 下照样询问；只进下载目录、不覆盖，与从链接导入
- *   下载文件同级。只给会话里的智能体（`surfaces` 只有 `agent`）：对外服务与 CLI 没有会话工作目录。
- * - 交出的文件登记为 Space 交付物（`register`，§5.7）：与从链接下载的文件同一条路，进 Space 的产物记录，按产物记录定位，
- *   回复里的链接按条目在文件标签里打开。登记失败不影响复制的结果。
+ * - Source: a path relative to the working directory, judged by real path; it cannot point outside via `..`, an absolute path
+ *   or a symlink; it must be a regular file, not inside a video directory (one containing `video.db`) or `.ccut`; at most
+ *   `DOWNLOAD_SAVE_MAX_BYTES`. Anything failing these checks is refused outright, with no approval generated.
+ * - Target: the downloads directory (the same one link import uses, see `resolveDownloadsDirectory`), created when missing.
+ *   Only new files, never overwriting: on a name clash a number is appended as link import does (`name-2.srt`). The file name
+ *   is sanitized (same rules as downloaded files) and keeps the source file's extension. After writing, the real path is
+ *   checked to be inside the downloads directory.
+ * - Risk `command` (§3.12): it writes a new file outside the working directory, so it still asks under `autoAcceptEdits`; only
+ *   into the downloads directory, never overwriting, the same risk level as link-import downloads. Only for the session agent
+ *   (`surfaces` is just `agent`): external services and the CLI have no session working directory.
+ * - Handed-over files are registered as Space deliverables (`register`, §5.7): the same path as files downloaded from links,
+ *   into Space's artifact records, located by artifact record, with links in replies opening the entry in a file tab. A
+ *   registration failure does not affect the copy's result.
  */
 
 /**
- * 单个文件的上限：这个工具交出去的是智能体做出的文字结果（字幕、文稿、笔记）和少量生成的媒体，几百 KB 到几十 MB；
- * 复制在工具调用里同步完成，上限让一次调用的时间与下载目录的占用有界。更大的成片用 `export` 导出。
+ * Per-file limit: this tool hands over text results the agent made (subtitles, transcripts, notes) and a little generated media,
+ * from a few hundred KB to tens of MB; the copy completes synchronously within the tool call, and the limit bounds both the
+ * call's duration and the downloads directory usage. Larger rendered videos go through `export`.
  */
 export const DOWNLOAD_SAVE_MAX_BYTES = 200 * 1024 * 1024;
 
-/** 文件名（含扩展名）的上限，按字符计：与从链接导入下载的文件名相同。 */
+/** File name length limit (including the extension), in characters: the same as for link-import downloads. */
 const NAME_MAX_CHARS = 120;
 const EXTENSION = /^\.[A-Za-z0-9]{1,16}$/;
 
 export interface DownloadToolsDeps {
   scope: ToolScope;
-  /** 此刻的下载目录（设置 `downloads.directory`，否则主机的下载文件夹）。 */
+  /** The current downloads directory (setting `downloads.directory`, otherwise the host's Downloads folder). */
   downloadsDirectory: () => string;
-  /** 复制完成后把文件登记为 Space 交付物（`SpaceCatalog.recordHandover`）。没有时不登记（测试、工具目录）。 */
+  /** After copying, registers the file as a Space deliverable (`SpaceCatalog.recordHandover`). Absent means no registration (tests, tool catalog). */
   register?: (handover: DownloadHandover) => Promise<void>;
 }
 
-/** 一次 `downloads_save` 交出的文件：下载目录里的真实路径、字节数、内容摘要与提交者。 */
+/** A file handed over by one `downloads_save`: its real path in the downloads directory, byte count, content digest and submitter. */
 export interface DownloadHandover {
   path: string;
   bytes: number;
-  /** `sha256:<hex>`：复制时按写出的内容算。 */
+  /** `sha256:<hex>`: computed over the content written during the copy. */
   artifactId: string;
   submitter: JobSubmitter;
   at: string;
 }
 
-// i18n-ignore-start: 给模型的工具说明、错误与下一步
 const schemas = {
   downloads_save: z.strictObject({
-    path: z.string().min(1).max(1000).describe('工作目录里要交给用户的文件（相对工作目录的路径）'),
+    path: z.string().min(1).max(1000).describe('The file in the working directory to hand to the user (a path relative to the working directory)'),
     name: z
       .string()
       .min(1)
       .max(200)
       .optional()
-      .describe('可选。下载目录里的文件名；不给时用源文件名。扩展名沿用源文件的（没写时补上），重名时自动加序号，不覆盖'),
+      .describe('Optional. File name in the downloads directory; defaults to the source file name. The source file\'s extension is kept (added if missing); on a name clash a number is appended automatically, never overwriting'),
   }),
 };
 
@@ -70,20 +77,19 @@ type Args = z.infer<(typeof schemas)['downloads_save']>;
 
 const DEFINITIONS: Record<'downloads_save', ToolInfo> = {
   downloads_save: {
-    title: '保存到下载目录',
+    title: 'Save to downloads',
     description: [
-      '把工作目录里的一个文件复制到下载目录（设置 downloads.directory，默认系统的下载文件夹），交给用户。会话不属于项目时，工作目录用户看不到：你自己做出的结果（例如译好的 SRT 字幕、文稿）写在工作目录里，再用它放进下载目录。',
-      `path 相对工作目录，不能用 .. 或符号链接指到外面，不能是视频目录或 .ccut 里的文件；只能是普通文件，不超过 ${formatBytes(DOWNLOAD_SAVE_MAX_BYTES)}。只新建文件、不覆盖：重名时自动加序号。`,
-      '会按访问模式向用户确认。返回下载目录里的绝对路径 path 与字节数 bytes：把 path 告诉用户。',
+      'Copies a file from the working directory into the downloads directory. The downloads directory is the setting downloads.directory, by default the system Downloads folder. When the session belongs to no project, the user cannot see the working directory: write results you make yourself (e.g. translated SRT subtitles, transcripts) in the working directory, then use this tool to put them in the downloads directory.',
+      `path is relative to the working directory; it cannot point outside with .. or a symlink, and cannot be a file inside a video directory or .ccut; it must be a regular file of at most ${formatBytes(DOWNLOAD_SAVE_MAX_BYTES)}. Only new files, never overwriting: on a name clash a number is appended automatically.`,
+      'The user is asked to confirm according to the access mode. Returns the absolute path in the downloads directory (path) and the byte count (bytes): tell the user the path.',
     ].join('\n'),
     annotations: { destructiveHint: false },
     effect: 'mutation',
-    examples: [{ title: '把译好的字幕交给用户', args: { path: 'out/demo.zh.srt', name: '发布会中文字幕' } }],
-    // 只给会话里的智能体：对外服务与 CLI 没有会话工作目录。
+    examples: [{ title: 'Hand translated subtitles to the user', args: { path: 'out/demo.vi.srt', name: 'Launch event Vietnamese subtitles' } }],
+    // Only for the session agent: external services and the CLI have no session working directory.
     surfaces: ['agent'],
   },
 };
-// i18n-ignore-end
 
 export class DownloadTools implements ToolSet {
   readonly schemas = schemas;
@@ -95,12 +101,11 @@ export class DownloadTools implements ToolSet {
   }
 
   dispatch(name: string, args: unknown, principal: ToolPrincipal): Promise<unknown> {
-    // i18n-ignore: 给模型的工具说明、错误与下一步
-    if (name !== 'downloads_save') return Promise.reject(new ToolError('UNKNOWN_TOOL', `没有这个工具：${name}`));
+    if (name !== 'downloads_save') return Promise.reject(new ToolError('UNKNOWN_TOOL', `No such tool: ${name}`));
     return this.#save(args as Args, principal);
   }
 
-  /** 先检查源与文件名（不合法的不生成审批），确认之后才建目录、写文件。 */
+  /** Checks the source and file name first (invalid ones generate no approval); creates the directory and writes only after confirmation. */
   async #save(args: Args, principal: ToolPrincipal) {
     const { scope } = this.#deps;
     const access = scope.authorize(principal, true);
@@ -117,7 +122,7 @@ export class DownloadTools implements ToolSet {
       ...confirmSummary(RcAgentTools.downloadSaveSummary({ source: plan.source, size: formatBytes(plan.bytes), target: planned })),
     });
     const saved = await plan.commit();
-    // 登记是附带的：文件已经交出去了，登记失败（Space 还没就绪、写记录失败）不让这次调用失败。
+    // Registration is incidental: the file has already been handed over, so a registration failure (Space not ready, record write failed) does not fail the call.
     await this.#deps
       .register?.({ path: saved.path, bytes: saved.bytes, artifactId: saved.artifactId, submitter: access.submitter, at: new Date().toISOString() })
       .catch(() => {});
@@ -125,13 +130,12 @@ export class DownloadTools implements ToolSet {
       path: saved.path,
       bytes: saved.bytes,
       ...approvalField(approval),
-      // i18n-ignore: 给模型的工具说明、错误与下一步
-      next: '文件已复制到下载目录（path 是绝对路径）。把这个路径告诉用户；工作目录里的原文件不变。',
+      next: 'The file was copied to the downloads directory (path is absolute). Tell the user this path; the original in the working directory is unchanged.',
     };
   }
 }
 
-/** 检查过的复制计划：源（相对工作目录）、目标目录与文件名（重名时 `commit` 加序号）、源的大小。 */
+/** A checked copy plan: source (relative to the working directory), target directory and file name (`commit` appends a number on a clash), source size. */
 export interface DownloadSavePlan {
   source: string;
   directory: string;
@@ -140,7 +144,7 @@ export interface DownloadSavePlan {
   commit(): Promise<SavedDownload>;
 }
 
-/** 写好的文件：真实路径、字节数与内容摘要（`sha256:<hex>`）。 */
+/** The written file: real path, byte count and content digest (`sha256:<hex>`). */
 export interface SavedDownload {
   path: string;
   bytes: number;
@@ -148,16 +152,16 @@ export interface SavedDownload {
 }
 
 interface PrepareParams {
-  /** 会话的工作目录。 */
+  /** The session's working directory. */
   root: string;
-  /** 相对工作目录的源路径。 */
+  /** Source path relative to the working directory. */
   path: string;
   name?: string;
   downloadsDir: string;
   maxBytes?: number;
 }
 
-/** 先检查、后写：这一步只读，不建目录、不写文件；`commit` 时按打开的文件句柄再核对一次，检查之后被换掉的源拒绝。 */
+/** Check first, write later: this step is read-only, creating no directories and writing no files; `commit` re-verifies via the open file handle and refuses a source swapped after the check. */
 export async function prepareDownloadSave(params: PrepareParams): Promise<DownloadSavePlan> {
   const max = params.maxBytes ?? DOWNLOAD_SAVE_MAX_BYTES;
   const rootReal = await fs.realpath(params.root);
@@ -167,19 +171,16 @@ export async function prepareDownloadSave(params: PrepareParams): Promise<Downlo
   if (resolved === rootReal || !inside(resolved, rootReal)) throw outsideSource();
 
   const stat = await fs.lstat(resolved).catch(() => null);
-  // i18n-ignore-start: 给模型的工具说明、错误与下一步
-  if (!stat) throw new ToolError('FILE_NOT_FOUND', `工作目录里没有这个文件：${given}`);
-  if (stat.isSymbolicLink()) throw new ToolError('PATH_IS_SYMLINK', 'path 是一个符号链接：给它指向的、在工作目录里的文件');
-  if (!stat.isFile()) throw new ToolError('NOT_A_FILE', 'path 要是一个普通文件（不是目录）');
-  // i18n-ignore-end
-  // 上级目录按真实路径判断：经过指向别处的符号链接目录的也算在外面。
+  if (!stat) throw new ToolError('FILE_NOT_FOUND', `No such file in the working directory: ${given}`);
+  if (stat.isSymbolicLink()) throw new ToolError('PATH_IS_SYMLINK', 'path is a symbolic link: give the file it points to, inside the working directory');
+  if (!stat.isFile()) throw new ToolError('NOT_A_FILE', 'path must be a regular file (not a directory)');
+  // The parent directory is judged by real path: going through a symlinked directory pointing elsewhere also counts as outside.
   const dirReal = await fs.realpath(path.dirname(resolved));
   if (!inside(dirReal, rootReal)) throw outsideSource();
   const base = path.basename(resolved);
   await refuseVideoDirectory(rootReal, dirReal, [base]).catch((error: unknown) => {
     if (error instanceof ToolError && error.code === 'PATH_INSIDE_VIDEO') {
-      // i18n-ignore: 给模型的工具说明、错误与下一步
-      throw new ToolError('PATH_INSIDE_VIDEO', '不能复制视频目录（含 video.db 的目录）或 .ccut 里的文件：要交出视频的内容用 export');
+      throw new ToolError('PATH_INSIDE_VIDEO', 'Files inside a video directory (one containing video.db) or .ccut cannot be copied: use export to hand over a video\'s content');
     }
     throw error;
   });
@@ -198,8 +199,9 @@ export async function prepareDownloadSave(params: PrepareParams): Promise<Downlo
 }
 
 /**
- * 下载目录里的文件名：扩展名沿用源文件的（不是 `.` 加 1–16 个字母数字的不算扩展名），名字没以它结尾时补上；其余部分按下载的
- * 文件名同一套规则清理（去掉路径分隔符、控制字符与开头的 `.`、`-`），连扩展名不超过 120 个字符。
+ * File name in the downloads directory: keeps the source file's extension (anything other than `.` plus 1-16 alphanumerics is
+ * not an extension), appending it when the name does not end with it; the rest is sanitized by the same rules as downloaded file
+ * names (path separators, control characters and leading `.`/`-` removed), at most 120 characters including the extension.
  */
 export function downloadFileName(given: string, sourceExtension: string): string {
   const ext = EXTENSION.test(sourceExtension) ? sourceExtension : '';
@@ -219,23 +221,20 @@ async function copyInto(
   name: string,
   max: number,
 ): Promise<SavedDownload> {
-  // 不跟随符号链接打开源，再按句柄核对它还是检查过的那个文件。
+  // Open the source without following symlinks, then verify via the handle that it is still the file that was checked.
   let source: fs.FileHandle;
   try {
     source = await fs.open(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
-    // i18n-ignore-start: 给模型的工具说明、错误与下一步
-    if (code === 'ELOOP') throw new ToolError('PATH_IS_SYMLINK', 'path 是一个符号链接：给它指向的、在工作目录里的文件');
-    if (code === 'ENOENT') throw new ToolError('FILE_NOT_FOUND', '文件在检查之后不见了');
-    // i18n-ignore-end
+    if (code === 'ELOOP') throw new ToolError('PATH_IS_SYMLINK', 'path is a symbolic link: give the file it points to, inside the working directory');
+    if (code === 'ENOENT') throw new ToolError('FILE_NOT_FOUND', 'The file disappeared after it was checked');
     throw error;
   }
   try {
     const now = await source.stat();
     if (!now.isFile() || now.ino !== checked.ino || now.dev !== checked.dev) {
-      // i18n-ignore: 给模型的工具说明、错误与下一步
-      throw new ToolError('SOURCE_CHANGED', '文件在检查之后被换掉了：确认它是你要交出的文件后重新调用');
+      throw new ToolError('SOURCE_CHANGED', 'The file was replaced after it was checked: make sure it is the file you want to hand over, then call again');
     }
     if (now.size > max) throw tooLarge(now.size, max);
 
@@ -251,7 +250,7 @@ async function copyInto(
       const target = path.join(dirReal, `${stem}${n === 1 ? '' : `-${n}`}${ext}`);
       let out: fs.FileHandle;
       try {
-        // 'wx'：已经存在（含符号链接）时失败，不覆盖、不跟随；权限按 0644 新建，不沿用源文件的可执行位。
+        // 'wx': fails if it already exists (including as a symlink), so no overwrite and no following; created with 0644, not inheriting the source's executable bit.
         out = await fs.open(target, 'wx', 0o644);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'EEXIST') continue;
@@ -260,7 +259,7 @@ async function copyInto(
       let bytes = 0;
       const hash = crypto.createHash('sha256');
       try {
-        // 按块从句柄读、往句柄写，不把整个文件读进内存；读到的超过上限（检查之后文件变大了）时放弃。
+        // Read from and write to handles in chunks, without loading the whole file into memory; give up if the bytes read exceed the limit (the file grew after the check).
         const buffer = Buffer.allocUnsafe(1024 * 1024);
         for (;;) {
           const { bytesRead } = await source.read(buffer, 0, buffer.length, bytes);
@@ -282,21 +281,18 @@ async function copyInto(
       }
       return { path: target, bytes, artifactId: `sha256:${hash.digest('hex')}` };
     }
-    // i18n-ignore: 给模型的工具说明、错误与下一步
-    throw new ToolError('DOWNLOAD_NAME_EXHAUSTED', `下载目录里同名的文件太多：换一个 name`);
+    throw new ToolError('DOWNLOAD_NAME_EXHAUSTED', `Too many files with this name in the downloads directory: use another name`);
   } finally {
     await source.close().catch(() => {});
   }
 }
 
 function outsideSource(): ToolError {
-  // i18n-ignore: 给模型的工具说明、错误与下一步
-  return new ToolError('PATH_OUTSIDE_WORKSPACE', 'path 要是这个会话工作目录里的文件（相对路径，不含 ..，不经过指向别处的符号链接）');
+  return new ToolError('PATH_OUTSIDE_WORKSPACE', 'path must be a file in this session\'s working directory (a relative path, no .., not through a symlink pointing elsewhere)');
 }
 
 function tooLarge(size: number, max: number): ToolError {
-  // i18n-ignore: 给模型的工具说明、错误与下一步
-  return new ToolError('FILE_TOO_LARGE', `文件有 ${formatBytes(size)}，超过了 ${formatBytes(max)} 的上限：成片用 export 导出`, {
+  return new ToolError('FILE_TOO_LARGE', `The file is ${formatBytes(size)}, over the ${formatBytes(max)} limit: export rendered videos with export`, {
     bytes: size,
     limit: max,
   });
@@ -304,11 +300,9 @@ function tooLarge(size: number, max: number): ToolError {
 
 function unavailable(directory: string, error?: unknown): ToolError {
   const code = (error as NodeJS.ErrnoException | undefined)?.code;
-  // i18n-ignore-start: 给模型的工具说明、错误与下一步
   return new ToolError(
     'DOWNLOADS_UNAVAILABLE',
-    `下载目录不能写入：${directory}。请用户检查设置里的下载目录（downloads.directory）是否存在、可写${code === 'ENOSPC' ? '，磁盘是否已满' : ''}`,
+    `The downloads directory is not writable: ${directory}. Ask the user to check that the downloads directory in settings (downloads.directory) exists and is writable${code === 'ENOSPC' ? ', and whether the disk is full' : ''}`,
     code ? { reason: code } : {},
   );
-  // i18n-ignore-end
 }

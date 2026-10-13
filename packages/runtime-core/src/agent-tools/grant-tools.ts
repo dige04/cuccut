@@ -7,13 +7,18 @@ import { approvalField, confirmSummary, type ToolPrincipal, type ToolScope } fro
 import { videoArg } from './video-tools.ts';
 
 /**
- * 一个任务要用到的外发一次申请（架构设计 §12.5）：智能体在开始一串模型调用之前，把要交给哪些服务商、哪些数据、
- * 大约多少次合并成一条审批（风险 `high`），用户批准一次即可，不必逐次确认。
+ * One up-front request for the outbound data a task needs (architecture design §12.5): before starting a series of model
+ * calls, the agent bundles which providers get which data, and roughly how many times, into one approval (risk `high`);
+ * the user approves once instead of confirming each call.
  *
- * - 只给会话里的智能体（`surfaces` 只有 `agent`：对外服务的客户端没有任务，MCP 服务的目录里没有它）；
- * - 批准后每一项发放一条只属于这个任务的授权，次数上限是申请的次数（用户也可以选择发放持续授权）；
- * - 已有授权覆盖的、本机与节点的项不进审批；额度不够的整次以 `BUDGET_EXCEEDED` 拒绝，不进审批；
- * - 它不放宽预算：之后每次调用照样在提交时预留、结算，次数用完就是 `BUDGET_EXCEEDED`。
+ * - Only for agents in a session (`surfaces` is only `agent`: external-service clients have no task, and the MCP
+ *   service's catalog does not list it);
+ * - once approved, each item issues a grant that belongs to this task only, capped at the requested number of calls
+ *   (the user may also choose to issue a standing grant);
+ * - items already covered by a grant, and local and node items, skip the approval; if the quota is insufficient the
+ *   whole request is rejected with `BUDGET_EXCEEDED` without an approval;
+ * - it does not relax the budget: every later call is still reserved and settled at submission, and once the calls run
+ *   out the result is `BUDGET_EXCEEDED`.
  */
 
 export interface GrantToolsDeps {
@@ -23,23 +28,22 @@ export interface GrantToolsDeps {
 
 const capabilityArg = z.enum(MODEL_SERVICE_CAPABILITIES as [ModelServiceCapability, ...ModelServiceCapability[]]);
 
-// i18n-ignore-start: 给模型的工具说明、错误与下一步
 const schemas = {
   grants_request: z.strictObject({
     items: z
       .array(
         z.strictObject({
-          capability: capabilityArg.describe('能力：transcribe、synthesizeSpeech、generateImage、generateMusic'),
-          provider: z.string().min(1).max(200).optional().describe('可选。Provider；不给时用这种能力的默认值'),
-          model: z.string().min(1).max(200).optional().describe('可选。模型 ID'),
-          video: videoArg.optional().describe('可选。数据来自（或结果导入）的视频；给了时授权只覆盖这个视频'),
-          calls: z.number().int().min(1).max(500).describe('这个任务里预计的调用次数（授权的次数上限）'),
-          purpose: z.string().min(1).max(200).describe('用途，给用户看（例如「把第 3 段旁白合成语音」）'),
+          capability: capabilityArg.describe('Capability: transcribe, synthesizeSpeech, generateImage, generateMusic'),
+          provider: z.string().min(1).max(200).optional().describe('Optional. Provider; defaults to the default for this capability'),
+          model: z.string().min(1).max(200).optional().describe('Optional. Model ID'),
+          video: videoArg.optional().describe('Optional. The video the data comes from (or the result is imported into); when given, the grant covers only this video'),
+          calls: z.number().int().min(1).max(500).describe('Expected number of calls in this task (the grant\'s call cap)'),
+          purpose: z.string().min(1).max(200).describe('Purpose, shown to the user (e.g. "Synthesize speech for narration segment 3")'),
         }),
       )
       .min(1)
       .max(10)
-      .describe('要申请的外发，每项一种能力（同一服务商的同一类数据合成一项），最多 10 项'),
+      .describe('Outbound uses to request, one capability per item (the same kind of data for the same provider goes in one item), at most 10 items'),
   }),
 };
 
@@ -47,25 +51,24 @@ type Args = z.infer<(typeof schemas)['grants_request']>;
 
 const DEFINITIONS: Record<keyof typeof schemas, ToolInfo> = {
   grants_request: {
-    title: '申请数据外发授权',
+    title: 'Request outbound data grants',
     description: [
-      '把一个任务要外发的数据合并成一次授权申请。',
-      '一个任务要多次调用在线或智能体服务商（转写、合成语音、生成图片）时，先用它把要交出的数据合并成一次申请，用户批准一次即可。',
-      '每一项给出能力、可选的 provider / model / video、预计次数 calls 与用途。批准后得到只属于这个任务、次数上限为 calls 的授权；之后的调用不再逐次要授权，次数用完会以 BUDGET_EXCEEDED 拒绝。',
-      '本机模型、已配对的节点与已有授权覆盖的项不需要申请（结果里 status 为 not-needed / covered）。用户拒绝时不要换服务商或别的办法绕过。',
+      'Bundles the data a task will send out into one grant request.',
+      'When a task will call online or agent providers several times (transcription, speech synthesis, image generation), use this first to bundle the data to be sent into one request; the user approves once.',
+      'Each item gives the capability, optional provider / model / video, the expected number of calls, and the purpose. Once approved you get a grant that belongs to this task only, capped at calls; later calls no longer ask for a grant each time, and once the calls run out they are rejected with BUDGET_EXCEEDED.',
+      'Local models, paired nodes and items already covered by a grant need no request (status not-needed / covered in the result). If the user declines, do not work around it by switching providers or any other means.',
     ].join('\n'),
     effect: 'mutation',
     examples: [
       {
-        title: '为一串语音合成申请授权',
-        args: { items: [{ capability: 'synthesizeSpeech', provider: 'openai', calls: 12, purpose: '把旁白逐段合成语音' }] },
+        title: 'Request a grant for a series of speech syntheses',
+        args: { items: [{ capability: 'synthesizeSpeech', provider: 'openai', calls: 12, purpose: 'Synthesize the narration segment by segment' }] },
       },
     ],
-    // 授权属于会话的任务：对外服务的客户端没有任务，CLI 是用户本人（启用 Provider 即持续授权）。
+    // Grants belong to the session's task: external-service clients have no task, and the CLI is the user themself (enabling a Provider is a standing grant).
     surfaces: ['agent'],
   },
 };
-// i18n-ignore-end
 
 export class GrantTools implements ToolSet {
   readonly schemas = schemas;
@@ -84,8 +87,7 @@ export class GrantTools implements ToolSet {
 
   async #request(args: Args, principal: ToolPrincipal) {
     const access = this.#scope.authorize(principal, true);
-    // i18n-ignore: 给模型的工具说明、错误与下一步
-    if (access.submitter.kind !== 'agent') throw new ToolError('UNKNOWN_TOOL', '这个工具只给会话里的智能体');
+    if (access.submitter.kind !== 'agent') throw new ToolError('UNKNOWN_TOOL', 'This tool is only for agents in a session');
     const taskId: Id = access.submitter.taskId;
     await this.#models.services.capabilities();
     const results: Record<string, unknown>[] = [];
@@ -102,8 +104,7 @@ export class GrantTools implements ToolSet {
         purpose: item.purpose,
       });
       if (plan.status === 'none') {
-        // i18n-ignore: 给模型的工具说明、错误与下一步
-        results.push({ capability: item.capability, status: 'not-needed', note: '本机、节点，或服务商没有启用（提交时会拒绝）' });
+        results.push({ capability: item.capability, status: 'not-needed', note: 'Local, a node, or the provider is not enabled (submission will be rejected)' });
       } else if (plan.status === 'covered') {
         results.push({ capability: item.capability, status: 'covered', grantId: plan.grant.grantId, recipient: plan.grant.recipient });
       } else {
@@ -112,8 +113,7 @@ export class GrantTools implements ToolSet {
         pending.push({ ...plan.item, maxCalls: item.calls });
       }
     }
-    // i18n-ignore: 给模型的工具说明、错误与下一步
-    if (pending.length === 0) return { items: results, next: '不需要新的授权，直接提交即可。' };
+    if (pending.length === 0) return { items: results, next: 'No new grant needed; submit directly.' };
     const approval = await this.#scope.confirm(access, {
       tool: 'grants_request',
       ...confirmSummary(
@@ -143,8 +143,7 @@ export class GrantTools implements ToolSet {
     return {
       items: results,
       ...approvalField(approval),
-      // i18n-ignore: 给模型的工具说明、错误与下一步
-      next: '授权已发放：按申请的次数提交；次数用完会以 BUDGET_EXCEEDED 拒绝，那时把情况告诉用户，不要换服务商绕过。',
+      next: 'Grant issued: submit within the requested number of calls; once they run out, calls are rejected with BUDGET_EXCEEDED. Then tell the user what happened; do not work around it by switching providers.',
     };
   }
 }

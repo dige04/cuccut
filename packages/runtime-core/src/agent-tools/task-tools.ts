@@ -1,4 +1,3 @@
-// i18n-ignore-file: 给模型的工具说明、错误与下一步
 import { z } from 'zod';
 import { RpcError, newId, type Id, type TaskContractPatch } from '@cuccut/protocol';
 import { taskContractPatchSchema } from '@cuccut/protocol/schemas';
@@ -7,12 +6,14 @@ import { ToolError, type ToolInfo, type ToolSet } from './tool-catalog.ts';
 import type { ToolAccess, ToolPrincipal, ToolScope } from './tool-scope.ts';
 
 /**
- * 智能体读写自己的任务合同（架构设计 §3.2）：只给会话里的智能体（`surfaces` 只有 `agent`），对外服务与 CLI 没有任务。
+ * The agent reads and writes its own task contract (architecture design §3.2): only for agents in a session (`surfaces`
+ * is only `agent`); external services and the CLI have no task.
  *
- * - `tasks_contract`：读当前任务的合同、预算用量与验收检查的结果；
- * - `tasks_update_contract`：细化范围、约束、交付与验收检查。访问模式、权限范围、预算与保护范围只由用户决定，
- *   带上它们时整次拒绝（`CONTRACT_FIELD_READONLY`）；修订记为智能体所改，用户能看到；
- * - `tasks_record_check`：记录一项验收检查的结果。
+ * - `tasks_contract`: reads the current task's contract, budget usage and acceptance-check results;
+ * - `tasks_update_contract`: refines scope, constraints, deliverables and acceptance checks. Access mode, permission
+ *   scope, budget and protected scope are decided by the user only; a call that includes them is rejected as a whole
+ *   (`CONTRACT_FIELD_READONLY`); the revision is recorded as made by the agent and is visible to the user;
+ * - `tasks_record_check`: records the result of one acceptance check.
  */
 
 export interface TaskToolsDeps {
@@ -22,57 +23,57 @@ export interface TaskToolsDeps {
 
 const schemas = {
   tasks_contract: z.strictObject({
-    revision: z.number().int().min(1).optional().describe('可选。合同的修订号；不给时是最新修订'),
+    revision: z.number().int().min(1).optional().describe('Optional. Contract revision number; defaults to the latest revision'),
   }),
   tasks_update_contract: z.strictObject({
-    expectedRevision: z.number().int().min(1).describe('读到的合同修订号（tasks_contract 的 contract.revision）'),
-    patch: taskContractPatchSchema.describe('要替换的字段：scope、constraints、deliverables、acceptanceChecks；给出的字段整体替换'),
+    expectedRevision: z.number().int().min(1).describe('The contract revision you read (contract.revision from tasks_contract)'),
+    patch: taskContractPatchSchema.describe('Fields to replace: scope, constraints, deliverables, acceptanceChecks; each given field is replaced as a whole'),
   }),
   tasks_record_check: z.strictObject({
-    checkId: z.string().min(1).max(200).describe('合同 acceptanceChecks 里的 checkId'),
-    outcome: z.enum(['passed', 'failed', 'skipped']).describe('结果：passed（通过）、failed（不通过）或 skipped（跳过）'),
-    note: z.string().max(2000).optional().describe('可选。依据或说明，给用户看'),
+    checkId: z.string().min(1).max(200).describe('A checkId from the contract\'s acceptanceChecks'),
+    outcome: z.enum(['passed', 'failed', 'skipped']).describe('Outcome: passed, failed or skipped'),
+    note: z.string().max(2000).optional().describe('Optional. Evidence or explanation, shown to the user'),
   }),
 };
 
 const DEFINITIONS: Record<keyof typeof schemas, ToolInfo> = {
   tasks_contract: {
-    title: '读取任务合同',
+    title: 'Read the task contract',
     description: [
-      '读取当前任务的合同。',
-      '包括目标、范围、约束、用户保护的内容（protectedRefs，不要修改它们）、交付、访问模式、预算与用量、验收检查及已记录的结果。',
-      '开始修改之前先读一次；用户改过合同之后（修订号变了）按新的约束做。',
+      'Reads the current task\'s contract.',
+      'It includes the goal, scope, constraints, content the user protects (protectedRefs; do not modify them), deliverables, access mode, budget and usage, acceptance checks and their recorded results.',
+      'Read it once before you start making changes; after the user changes the contract (the revision number changes), follow the new constraints.',
     ].join('\n'),
     annotations: { readOnlyHint: true },
     effect: 'query',
-    examples: [{ title: '读当前合同', args: {} }],
+    examples: [{ title: 'Read the current contract', args: {} }],
     surfaces: ['agent'],
   },
   tasks_update_contract: {
-    title: '细化任务合同',
+    title: 'Refine the task contract',
     description: [
-      '把对任务的理解写进合同。',
-      '可写的是范围（scope）、约束（constraints）、交付（deliverables）与验收检查（acceptanceChecks）。给出的字段整体替换，产生新的修订。',
-      '访问模式、权限范围、预算与保护范围只由用户决定：不要尝试修改，需要时请用户在 CucCut 里改。expectedRevision 不是最新时以 CONTRACT_REVISION_CONFLICT 拒绝，重新读取后再改。',
+      'Writes your understanding of the task into the contract.',
+      'Writable fields are scope, constraints, deliverables and acceptanceChecks. Each given field is replaced as a whole and creates a new revision.',
+      'Access mode, permission scope, budget and protected scope are decided by the user only: do not try to change them; when needed, ask the user to change them in CucCut. If expectedRevision is not the latest, the call is rejected with CONTRACT_REVISION_CONFLICT; read the contract again, then retry.',
     ].join('\n'),
     effect: 'mutation',
     examples: [
       {
-        title: '加一项验收检查',
+        title: 'Add an acceptance check',
         args: {
           expectedRevision: 1,
-          patch: { acceptanceChecks: [{ kind: 'review', description: '双语字幕逐句对照原文', required: true }] },
+          patch: { acceptanceChecks: [{ kind: 'review', description: 'Bilingual captions checked sentence by sentence against the source', required: true }] },
         },
       },
     ],
     surfaces: ['agent'],
   },
   tasks_record_check: {
-    title: '记录验收检查结果',
+    title: 'Record an acceptance-check result',
     description:
-      '记录一项验收检查的结果（passed、failed 或 skipped）与依据。按合同里的验收检查核对之后记录；结果会标明由智能体记录，用户能看到。',
+      'Records the result of one acceptance check, with its evidence. The result is passed, failed or skipped. Record it after verifying against the contract\'s acceptance check; the result is marked as recorded by the agent and is visible to the user.',
     effect: 'mutation',
-    examples: [{ title: '记一项通过', args: { checkId: 'check_1', outcome: 'passed', note: '逐句核对过时间轴' } }],
+    examples: [{ title: 'Record a pass', args: { checkId: 'check_1', outcome: 'passed', note: 'Timing checked sentence by sentence' } }],
     surfaces: ['agent'],
   },
 };
@@ -102,7 +103,7 @@ export class TaskTools implements ToolSet {
         case 'tasks_record_check':
           return this.#record(args as CheckArgs, principal);
         default:
-          throw new ToolError('UNKNOWN_TOOL', `没有这个工具：${name}`);
+          throw new ToolError('UNKNOWN_TOOL', `No such tool: ${name}`);
       }
     } catch (error) {
       throw contractError(error);
@@ -122,7 +123,7 @@ export class TaskTools implements ToolSet {
       { taskId, expectedRevision: args.expectedRevision, commandId: newId('cmd'), patch: args.patch as TaskContractPatch },
       'agent',
     );
-    return { contract, next: '合同已更新：之后的步骤按新的修订做。' };
+    return { contract, next: 'Contract updated: follow the new revision in the next steps.' };
   }
 
   #record(args: CheckArgs, principal: ToolPrincipal) {
@@ -135,12 +136,12 @@ export class TaskTools implements ToolSet {
   }
 
   #task(access: ToolAccess): Id {
-    if (access.submitter.kind !== 'agent' || !access.submitter.taskId) throw new ToolError('UNKNOWN_TOOL', '这个工具只给会话里的智能体');
+    if (access.submitter.kind !== 'agent' || !access.submitter.taskId) throw new ToolError('UNKNOWN_TOOL', 'This tool is only for agents in a session');
     return access.submitter.taskId;
   }
 }
 
-/** 合同的拒绝带着自己的错误码（`CONTRACT_FIELD_READONLY`、`CONTRACT_REVISION_CONFLICT`、`TASK_NOT_RUNNING`）交给智能体。 */
+/** Contract rejections reach the agent with their own error codes (`CONTRACT_FIELD_READONLY`, `CONTRACT_REVISION_CONFLICT`, `TASK_NOT_RUNNING`). */
 function contractError(error: unknown): unknown {
   if (!(error instanceof RpcError)) return error;
   const details = error.details as Record<string, unknown> | undefined;

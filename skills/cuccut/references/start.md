@@ -1,66 +1,66 @@
-# 启动：找到 CLI、版本门与预检
+# Getting started: finding the CLI, the version gate and preflight
 
 <!-- surface: agent -->
-会话内不需要这一页：工具已经连好，Runtime 由 CucCut 管。能做什么用 {{tool:models_capabilities}} 与 {{tool:models_list}} 查，见 [models](catalog/models.md)。
+You do not need this page inside a session: the tools are already connected and CucCut manages the Runtime. To see what can be done, use {{tool:models_capabilities}} and {{tool:models_list}}; see [models](catalog/models.md).
 <!-- /surface -->
 <!-- surface: cli -->
-## 1. 找到 CLI
+## 1. Find the CLI
 
-1. `command -v cuccut`（Windows 上 `where cuccut`）。找到就用它。
-2. 找不到时看环境变量 `CUCCUT_CLI`：它给出可执行文件的完整路径。
-3. 还没有：请用户安装 CucCut（桌面端自带 CLI），或告诉你 `cuccut` 在哪。不要自己下载安装包、不要去别的目录里翻找。
+1. `command -v cuccut` (on Windows, `where cuccut`). If it is found, use it.
+2. If not, check the `CUCCUT_CLI` environment variable: it gives the full path to the executable.
+3. Still nothing: ask the user to install CucCut (the desktop app ships with the CLI), or to tell you where `cuccut` is. Do not download an installer yourself, and do not go searching through other directories.
 
-下文统一写 `cuccut`，按找到的实际路径替换。
+The rest of this skill writes `cuccut`; substitute the actual path you found.
 
-## 2. 版本门
+## 2. Version gate
 
 ```text
 cuccut version
 ```
 
-输出裸 JSON：CLI 与（正在跑时）Runtime 的版本、两边的工具接口版本，以及是否一致。它不会拉起 Runtime。
+Prints bare JSON: the versions of the CLI and (when running) the Runtime, the tool interface version on each side, and whether they match. It does not start the Runtime.
 
-- 一致，或 Runtime 还没在跑：继续。
-- 不一致：之后任何要连 Runtime 的命令都会以退出码 3（`INTERFACE_VERSION_MISMATCH` / `PROTOCOL_MISMATCH`）拒绝。告诉用户哪一边要更新（通常是把 CucCut 更新到同一版本），停在这里。不要换旧参数、不要绕过。
+- They match, or the Runtime is not running yet: carry on.
+- They differ: from then on, every command that needs the Runtime is refused with exit code 3 (`INTERFACE_VERSION_MISMATCH` / `PROTOCOL_MISMATCH`). Tell the user which side needs updating (usually updating CucCut to the same version) and stop here. Do not switch to old parameters and do not work around it.
 
-## 3. 预检：这台机器能做什么
+## 3. Preflight: what this machine can do
 
 ```text
 cuccut status
 ```
 
-一次看清：
+Shows at a glance:
 
-| 字段 | 看什么 |
+| Field | What to look at |
 | --- | --- |
-| Runtime | 在不在跑、版本；没在跑时会自动拉起（`--no-start` 时只回答 `running: false`） |
-| 能力 | 转写、语音合成、图片生成、音乐生成、文本生成、人声分离各自此刻用哪个服务、哪些服务能用；不可用的带原因与补救命令。这是摘要：要看各服务的模型、音色与限制，用 `cuccut status --full` 或 `cuccut models capabilities --capability <能力>` |
-| 本地模型包 | 装了哪些、状态如何 |
-| 外部工具 | yt-dlp（下载链接）与 ffmpeg（导出、转码）在不在 |
+| Runtime | Whether it is running, and its version; if not running, it is started automatically (with `--no-start` it only answers `running: false`) |
+| Capabilities | For transcription, speech synthesis, image generation, music generation, text generation and voice separation: which service each uses right now and which services are usable; unavailable ones come with a reason and a remedy command. This is a summary: for each service's models, voices and limits, use `cuccut status --full` or `cuccut models capabilities --capability <capability>` |
+| Local model bundles | Which are installed, and their status |
+| External tools | Whether yt-dlp (downloading links) and ffmpeg (export, transcoding) are present |
 
-缺的东西照补救命令告诉用户怎么补。补救命令属于「本机管理」（模型服务、外部工具的安装与同意）时，先征得用户同意，有密钥的步骤只让用户自己做。本地模型包缺失可以按 [models](catalog/models.md) 的做法安装（要先报大小、得到同意）。
+For anything missing, tell the user how to fix it using the remedy command. When the remedy command is a "Local admin" command (installing or consenting to model services and external tools), get the user's agreement first, and leave any step involving secrets to the user. A missing local model bundle can be installed following [models](catalog/models.md) (report the size and get agreement first).
 
-只读帮助与目录不需要 Runtime：`cuccut --help`、`cuccut help <命令>`、`cuccut spec` 在没有 Runtime 时用随 CLI 带的离线快照回答。先看帮助、再决定要不要开工是可以的。
+Read-only help and the catalog do not need the Runtime: `cuccut --help`, `cuccut help <command>` and `cuccut spec` answer from the offline snapshot that ships with the CLI when there is no Runtime. It is fine to read the help first and then decide whether to start work.
 
-## 4. Runtime 归自己管
+## 4. The Runtime manages itself
 
-- **不手动起。** 每条要连 Runtime 的命令先找 `CUCCUT_HOME`（默认 `~/.cuccut`）里正在跑的 Runtime；找不到就在后台拉起一个，结果信封里带 `runtime: { started: true }`。桌面端开着时直接用桌面端的那个。
-- `cuccut runtime ensure`：显式做同一件事，打印 `started` 或 `reused`。想在长流程开头先把 Runtime 拉起来时用。
-- `cuccut runtime status`：进程、端口、版本、谁拉起的、有哪些连接与进行中的任务、多久后空闲退出；从不拉起。
-- `cuccut runtime stop`：只停 CLI 自己拉起的那个。桌面端或别人拉起的拒绝（`RUNTIME_NOT_OWNED`），有人在用或有任务没完时拒绝（`RUNTIME_IN_USE`），退出码都是 1，不要强停。
-- CLI 拉起的 Runtime 在没有连接、没有任务、没有开着的服务满设置 `runtime.idleExitMinutes`（默认 10 分钟）后自己退出。所以任务做完**不用**专门停；只在用户要求时 `stop`。
-- `--no-start`：不自动拉起，找不到就以退出码 3 返回（`RUNTIME_UNAVAILABLE`）。只想看状态、或用户不希望起后台进程时用。
+- **Do not start it by hand.** Every command that needs the Runtime first looks for a running Runtime in `CUCCUT_HOME` (default `~/.cuccut`); if none is found it starts one in the background, and the result envelope carries `runtime: { started: true }`. When the desktop app is open, its Runtime is used directly.
+- `cuccut runtime ensure`: does the same thing explicitly and prints `started` or `reused`. Use it to bring the Runtime up at the start of a long workflow.
+- `cuccut runtime status`: process, port, version, who started it, which connections and in-progress jobs it has, and how long until it exits when idle; it never starts one.
+- `cuccut runtime stop`: stops only the one the CLI itself started. It refuses one started by the desktop app or someone else (`RUNTIME_NOT_OWNED`), and refuses when someone is using it or jobs are unfinished (`RUNTIME_IN_USE`); both exit with code 1. Do not force-stop it.
+- A Runtime started by the CLI exits on its own after the `runtime.idleExitMinutes` setting (default 10 minutes) passes with no connections, no jobs and no open services. So you do **not** need to stop it when the task is done; run `stop` only when the user asks.
+- `--no-start`: do not start one automatically; if none is found, return with exit code 3 (`RUNTIME_UNAVAILABLE`). Use it when you only want the status, or when the user does not want a background process started.
 
-## 5. Runtime 起不来时
+## 5. When the Runtime will not start
 
-| 现象 | 处理 |
+| Symptom | What to do |
 | --- | --- |
-| 退出码 3，`RUNTIME_START_FAILED` | 把 `error.message` 原样告诉用户；请用户打开一次 CucCut 桌面端看是否正常，不要自己去改 `CUCCUT_HOME` 里的文件 |
-| 退出码 3，`RUNTIME_UNAVAILABLE` | 没带 `--no-start` 时重试一次；仍不行按上一行处理 |
-| 退出码 3，`CATALOG_UNAVAILABLE` | 离线时既没有快照也没有 Runtime：CLI 安装不完整，请用户重新安装 |
-| 退出码 3，版本不一致 | 见第 2 节 |
+| Exit code 3, `RUNTIME_START_FAILED` | Tell the user `error.message` verbatim; ask the user to open the CucCut desktop app once to see whether it works. Do not change files in `CUCCUT_HOME` yourself |
+| Exit code 3, `RUNTIME_UNAVAILABLE` | If you did not pass `--no-start`, retry once; if it still fails, handle it as in the row above |
+| Exit code 3, `CATALOG_UNAVAILABLE` | Offline with neither a snapshot nor a Runtime: the CLI installation is incomplete; ask the user to reinstall |
+| Exit code 3, version mismatch | See section 2 |
 
-## 6. 开工
+## 6. Start work
 
-按任务读一页目录（SKILL.md 第 3 节），再按 [conventions](conventions.md) 的约定调用命令。
+Read one catalog page for the task (SKILL.md section 3), then call commands following the conventions in [conventions](conventions.md).
 <!-- /surface -->

@@ -1,32 +1,32 @@
-# Anthropic 品牌色系统
+# Anthropic brand color system
 
-来源：设计团队 anthropic-design skill 的 `colors.css`（2025-12-11）。在 .dc.html 画板里把这些值用作行内样式的取值。
+Source: `colors.css` from the design team's anthropic-design skill (2025-12-11). In .dc.html artboards, use these values in inline styles.
 
-## 主色（基础：大多数 surface 只用这两种）
+## Primary colors (the foundation: most surfaces use only these two)
 
-| 名称  | Hex       | 用途 |
+| Name  | Hex       | Use |
 |-------|-----------|-----|
-| Ivory | `#FAF9F5` | 页面／画板背景。整页背景绝不用纯 #FFF。 |
-| Slate | `#141413` | 文字、深色 surface。 |
+| Ivory | `#FAF9F5` | Page/artboard background. Never use pure #FFF for a full-page background. |
+| Slate | `#141413` | Text, dark surfaces. |
 
-内容 surface（卡片、面板）用 `#FFFFFF`，叠在 Ivory 上。带 tint 的 hover／selected surface：`rgba(115,114,108,0.1)`。边框由低不透明度的 Slate 派生：默认 `0.5px solid rgba(31,30,29,0.15)`，更强一档用 `rgba(31,30,29,0.3)`；绝不用彩色边框来划分结构。
+Content surfaces (cards, panels) use `#FFFFFF` on top of Ivory. Tinted hover/selected surfaces: `rgba(115,114,108,0.1)`. Borders derive from low-opacity Slate: default `0.5px solid rgba(31,30,29,0.15)`, one step stronger `rgba(31,30,29,0.3)`; never use colored borders to divide structure.
 
-## Claude 色系
+## Claude colors
 
 | Token | Hex | |
 |-------|-----|---|
-| Claude primary（Clay，Spark 的颜色） | `#D97757` | accent；Claude surface 上唯一的强调色 |
-| Claude background（Ivory） | `#FAF9F5` | |
-| Claude text（Slate） | `#141413` | |
-| Claude accent（Oat） | `#E3DACC` | 淡色填充、分隔线 |
-| Main accent（Blue） | `#2A78D6` | 非 Claude 操作的主 accent |
+| Claude primary (Clay, the Spark color) | `#D97757` | accent; the only emphasis color on Claude surfaces |
+| Claude background (Ivory) | `#FAF9F5` | |
+| Claude text (Slate) | `#141413` | |
+| Claude accent (Oat) | `#E3DACC` | light fills, dividers |
+| Main accent (Blue) | `#2A78D6` | main accent for non-Claude actions |
 
-## 辅助色（多彩：用于插画与构图，不用于 UI chrome）
+## Secondary colors (multicolor: for illustration and composition, not UI chrome)
 
-强：Fig `#C46686` · Sky `#6A9BCC` · Olive `#788C5D` · Clay `#D97757`
-柔：Coral `#EBCECE` · Heather `#CBCADB` · Cactus `#BCD1CA` · Oat `#E3DACC`
+Strong: Fig `#C46686` · Sky `#6A9BCC` · Olive `#788C5D` · Clay `#D97757`
+Soft: Coral `#EBCECE` · Heather `#CBCADB` · Cactus `#BCD1CA` · Oat `#E3DACC`
 
-## 暖灰阶（21 级，黑 → 白）
+## Warm gray scale (21 steps, black → white)
 
 `#000000` 1000 · `#141413` 950 (Slate) · `#1A1918` 900 · `#1F1E1D` 850 ·
 `#262624` 800 · `#30302E` 750 · `#3D3D3A` 700 · `#4D4C48` 650 ·
@@ -35,8 +35,8 @@
 `#E8E6DC` 200 · `#F0EEE6` 150 · `#F5F4ED` 100 · `#FAF9F5` 050 (Ivory) ·
 `#FFFFFF` 000
 
-这些是**暖**灰：绝不换成冷灰或中性灰的 ramp。
+These are **warm** grays: never swap in a cool or neutral gray ramp.
 
-## 第三级 scale（营销／幻灯片／数据可视化，**不**用于产品界面）
+## Tertiary scales (marketing/slides/data visualization, **not** product UI)
 
-橙、黄、绿、青、蓝、紫、品红、红都有九级 scale；各自的锚点 500：橙 `#D97757`、黄 `#C9A82D`、绿 `#558A42`、青 `#2E9191`、蓝 `#6A9BCC`、紫 `#6B4D9E`、品红 `#A64D87`。只在图表和插画的 accent 上才用它们；看起来像产品的 UI 留在主色 + 灰阶体系里。
+Orange, yellow, green, teal, blue, purple, magenta and red each have a nine-step scale; their 500 anchors: orange `#D97757`, yellow `#C9A82D`, green `#558A42`, teal `#2E9191`, blue `#6A9BCC`, purple `#6B4D9E`, magenta `#A64D87`. Use them only for chart and illustration accents; UI that looks like product stays within the primary colors + gray scale.

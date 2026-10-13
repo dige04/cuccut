@@ -1,206 +1,206 @@
 ---
-description: 端到端的做法：链接到双语字幕成片、润色后翻译、翻译配音、剪口播、切短视频、总结与写稿、本机文件转码、旁白成片。多步任务动手前读对应的一条。
+description: End-to-end recipes - link to a bilingual-subtitled video, polish then translate, translated dubbing, talking-head cuts, cutting shorts, summaries and writing, transcoding local files, narrated videos. Read the matching recipe before starting a multi-step task.
 ---
 
-# 端到端的做法
+# End-to-end recipes
 
-每条做法只讲判断与步骤：每步点名用哪个工具或 craft，参数与回执去对应的目录页查。用户只要求一件小事时直接做那件，不套整条流程。
+Each recipe covers only judgment calls and steps: each step names the tool or craft to use; look up parameters and receipts on the matching catalog page. When the user asks for one small thing, just do that thing; do not wrap it in a full recipe.
 
-开始任何一条之前：
+Before starting any recipe:
 
-- **没说清的先问。** 用户要做某类成片但没说清时，先问清四件事：主题、目标（发在哪、给谁看、要达到什么）、受众、手上的材料；交付物、画幅、时长、语言也一并确认。
+- **Ask about what is unclear.** When the user wants some kind of finished video but has not said clearly what, first pin down four things: the subject, the goal (where it will be posted, who it is for, what it should achieve), the audience, and the material at hand; also confirm the deliverables, aspect ratio, duration and language.
 <!-- surface: cli -->
-  CucCut 装有场景模板（`cuccut templates` 列出，属本机管理命令，先问用户再看）时，可以请用户选一个模板，按它的简报问。
+  When CucCut has scene templates installed (listed by `cuccut templates`, a local admin command, so ask the user before looking), you can ask the user to pick a template and ask questions following its brief.
 <!-- /surface -->
-- **先看已有的。** 用户点名或已经在做的视频，先 {{tool:videos_inspect}} 看已经做到哪一步，从那里接着做。
-- **证据够了就停。** 理解一条视频按 [media](catalog/media.md) 的证据阶梯：先转写、再按文字定位、再取帧，彼此独立的读取一次发完。
+- **Look at what already exists.** For a video the user names or is already working on, first run {{tool:videos_inspect}} to see which step it has reached, and continue from there.
+- **Stop when the evidence is enough.** To understand a video, follow the evidence ladder in [media](catalog/media.md): transcript first, then locate by text, then grab frames; send independent reads all at once.
 
-## 1. 链接 → 转录 → 双语字幕 → 成片
+## 1. Link → transcription → bilingual subtitles → finished video
 
-**适用**：用户给了视频链接，要字幕（原文、译文或双语），可能还要带字幕的成片或字幕文件。**不走这条**：用户明说只要一个字幕文件、不要视频（见判断表最后一行）；链接里只是一段要翻译的文字。
+**Applies when**: the user gives a video link and wants subtitles (original, translated or bilingual), possibly also a finished video with subtitles or a subtitle file. **Not this recipe**: the user says outright they only want a subtitle file and no video (see the last row of the decision table); the link is just text to translate.
 
-| 信号 | 处理 | 原因 |
+| Signal | Action | Reason |
 | --- | --- | --- |
-| 用户说了原文语言或给了人名术语 | 先 {{tool:download}} 新建视频（不带转写），再 {{tool:transcribe}} 给视频并带语言与提示 | 一步转写时来不及带上这些，识别质量差 |
-| 要润色或翻译 | 转写时不建字幕层，润色、翻译之后再建 | 润色前建的字幕层要删掉重建 |
-| 用户只说「转录」「加字幕」 | 原文字幕，不翻译 | 默认含义 |
-| 用户说「双语」 | 译文为主、原文为辅的两层字幕 | 默认含义 |
-| 视频要登录才能看、网站不支持 | 照错误的 `remedy` 告诉用户，停下 | 不能绕过下载限制 |
-| 用户明说只要字幕文件 | 转写时不建视频，只出 TXT 与 SRT；翻译按 {{skill:translate-subtitles}} 的文件一节 | 用户的明确要求优先 |
+| The user stated the source language or gave names and terms | First {{tool:download}} to create the video (without transcription), then {{tool:transcribe}} the video with the language and hints | A one-step transcription has no chance to carry these, and recognition quality suffers |
+| Polishing or translation is wanted | Do not create caption layers during transcription; create them after polishing and translating | Caption layers created before polishing have to be deleted and rebuilt |
+| The user only says "transcribe" or "add subtitles" | Original-language subtitles, no translation | Default meaning |
+| The user says "bilingual" | Two caption layers, the translation primary and the original secondary | Default meaning |
+| The video needs a login, or the site is not supported | Tell the user using the error's `remedy`, then stop | Download restrictions must not be bypassed |
+| The user says outright they only want subtitle files | Do not create a video during transcription, output only TXT and SRT; for translation, follow the files section of {{skill:translate-subtitles}} | The user's explicit request takes priority |
 
-步骤：
+Steps:
 
-1. 确认交付物（哪种字幕、要不要文件、要不要成片）与目标语言，按 {{skill:subtitle-workflow}}。
-2. {{tool:transcribe}} 给链接：新建视频、下载、放上时间线、转写；要润色或翻译时不建字幕层。等到完成，记下视频与转写的 ID。
-3. 润色：按 {{skill:polish-transcript}}，{{tool:documents_read}} 读、{{tool:documents_put}} 写回同一份转写。{{tool:videos_inspect}} 里素材的 `source`（标题、发布者、简介）当背景参考：人名、术语的写法只在说话人明显在说它时照改，不往文稿里加东西。写回后给占位名的说话人实名，只改 `speakers[].name`，有证据才写。
-4. 章节（旁路）：作者有章节时 {{tool:chapters_adopt}} 吸到文稿上，没有时按 {{skill:video-chapters}} 自己分，用户说不要时跳过。不阻塞后面的步骤；失败不致命，最多重试一次，如实报告。
-5. 重新 {{tool:documents_read}} 读润色后的转写（translateTo 给目标语言，CucCut 显示「正在翻译」），按 {{skill:translate-subtitles}} 逐句翻译，{{tool:documents_put}} 写成译文。
-6. {{tool:captions_create}} 给译文并带双语：原文层与译文层一起建好。
-7. 用户要文件：{{tool:export}} 导出双语字幕文件；要成片再 {{tool:export}} 导出 mp4（字幕画进画面）。
+1. Confirm the deliverables (which subtitles, whether files are wanted, whether a finished video is wanted) and the target language, following {{skill:subtitle-workflow}}.
+2. {{tool:transcribe}} with the link: creates the video, downloads, places it on the timeline and transcribes; do not create caption layers when polishing or translation is wanted. Wait for completion and note the video and transcript IDs.
+3. Polish: following {{skill:polish-transcript}}, read with {{tool:documents_read}} and write back to the same transcript with {{tool:documents_put}}. Use the asset's `source` in {{tool:videos_inspect}} (title, uploader, description) as background reference: correct the spelling of names and terms only where the speaker is clearly saying them, and do not add anything to the transcript. After writing back, give real names to speakers with placeholder names, changing only `speakers[].name`, and only with evidence.
+4. Chapters (side path): when the author has chapters, snap them to the transcript with {{tool:chapters_adopt}}; otherwise split them yourself following {{skill:video-chapters}}; skip when the user says not to. This does not block later steps; failure is not fatal, retry at most once, and report it truthfully.
+5. Read the polished transcript again with {{tool:documents_read}} (pass the target language as translateTo; CucCut shows "Translating"), translate sentence by sentence following {{skill:translate-subtitles}}, and write the translation with {{tool:documents_put}}.
+6. {{tool:captions_create}} with the translation and bilingual: the original layer and the translated layer are created together.
+7. If the user wants files: {{tool:export}} the bilingual subtitle file; for a finished video, {{tool:export}} an mp4 as well (subtitles burned into the picture).
 <!-- surface: cli -->
-   要看字幕在画面上的位置、挡没挡人脸，或请用户在编辑器里审：开网页版编辑器（[web](catalog/web.md)），交付时给用户新链接。
+   To check where the subtitles sit in the picture and whether they cover faces, or to ask the user to review in the editor: open the web editor ([web](catalog/web.md)) and give the user a fresh link at delivery.
 <!-- /surface -->
-8. 交付：按 SKILL.md 的「交付」写报告。
+8. Deliver: write the report following the "Delivery" section of SKILL.md.
 
-**完成标准**：视频里有润色过的转写、一份目标语言的译文、一组双语字幕层；多位说话人时证据够的都实名了，留着占位名的说明了原因；章节写进了视频，或说明了没做、失败的原因与作者章节里没对上的条目；导出的文件路径取自结果；字幕条数与译文句数报告给用户；没看过的成片画面如实写明。
+**Done when**: the video has a polished transcript, a translation in the target language and a set of bilingual caption layers; with several speakers, those with enough evidence have real names and the reason is given for any placeholder names kept; chapters were written into the video, or the report says why they were not done or failed and which author chapters did not match; exported file paths come from the results; the number of captions and translated sentences is reported to the user; any finished-video picture you did not look at is stated truthfully.
 
-## 2. 已有视频：润色后翻译
+## 2. Existing video: polish, then translate
 
-**适用**：视频里已有转写，用户要译文字幕或双语字幕。**不走这条**：只要润色（做完第 2 步就停）；没有转写（先走第 1 条的转写步骤）。
+**Applies when**: the video already has a transcript and the user wants translated or bilingual subtitles. **Not this recipe**: only polishing is wanted (stop after step 2); there is no transcript (do the transcription steps of recipe 1 first).
 
-| 信号 | 处理 | 原因 |
+| Signal | Action | Reason |
 | --- | --- | --- |
-| 转写还是识别出来的样子（错字、术语不一、标点乱） | 先润色 | 译文继承原文的错误；润色会改分句 |
-| 用户说不要润色 | 跳过润色 | 用户的明确要求 |
-| 已有同一语言的译文 | 在它上面改，只重译变了的句子 | 不建第二份译文 |
-| 转写有几份 | 按来源素材对上用户说的那段，对不上就问 | 不猜 |
-| 用户明确要用配置好的文本模型翻译 | 用 {{tool:translate}} | 只有这种情况才用它 |
+| The transcript still looks raw from recognition (typos, inconsistent terms, messy punctuation) | Polish first | The translation inherits the source's errors; polishing changes sentence splits |
+| The user says not to polish | Skip polishing | The user's explicit request |
+| A translation in the same language already exists | Edit it, retranslating only the sentences that changed | Do not create a second translation |
+| There are several transcripts | Match the one the user means by its source asset; if it does not match, ask | Do not guess |
+| The user explicitly wants the configured text model to translate | Use {{tool:translate}} | Only in this case |
 
-步骤：
+Steps:
 
-1. {{tool:videos_inspect}} 找到转写与已有的译文、字幕层。
-2. 按 {{skill:polish-transcript}} 润色（含说话人实名），{{tool:documents_put}} 写回同一份转写。
-3. 重新 {{tool:documents_read}}（translateTo 给目标语言），用这次的句子按 {{skill:translate-subtitles}} 翻译，{{tool:documents_put}} 写入译文。
-4. {{tool:captions_create}} 建字幕层（先确认这份译文还没有字幕层）。
-5. 用户要文件时 {{tool:export}}。
+1. {{tool:videos_inspect}} to find the transcript and any existing translations and caption layers.
+2. Polish following {{skill:polish-transcript}} (including real speaker names) and write back to the same transcript with {{tool:documents_put}}.
+3. Run {{tool:documents_read}} again (pass the target language as translateTo), translate this read's sentences following {{skill:translate-subtitles}}, and write the translation with {{tool:documents_put}}.
+4. {{tool:captions_create}} to create the caption layer (first confirm this translation has no caption layer yet).
+5. {{tool:export}} if the user wants files.
 
-**完成标准**：润色在翻译之前；译文句数等于转写句数；没有重复的译文与字幕层；交付报告列出照用的术语与拿不准的句子。
+**Done when**: polishing came before translation; the number of translated sentences equals the number of transcript sentences; there are no duplicate translations or caption layers; the delivery report lists the terms used as given and the sentences you were unsure about.
 
-## 3. 翻译配音
+## 3. Translated dubbing
 
-**适用**：用户要把视频配成另一种语言。**不走这条**：只要一句旁白（直接 {{tool:speak}}，见 [voice](catalog/voice.md)）；由旁白带着走的成片（第 8 条）。
+**Applies when**: the user wants the video dubbed into another language. **Not this recipe**: only a single line of voice-over is wanted ({{tool:speak}} directly, see [voice](catalog/voice.md)); a finished video driven by narration (recipe 8).
 
-| 信号 | 处理 | 原因 |
+| Signal | Action | Reason |
 | --- | --- | --- |
-| 还没有目标语言的译文 | 先走第 2 条写好译文 | 你自己翻译；配音按译文逐句合成 |
-| 背景有音乐或环境声要保留 | 分离背景声，只压低或静音人声 | 直接静音原声会把背景一起去掉 |
-| 用户要完全替换原声 | 原声静音 | 用户的明确要求 |
-| 没说 | 原声压低 | 默认，保留原片的氛围 |
-| 用户点名了音色或用户库里有授权音色 | 用它 | 同一角色全片同一音色 |
+| There is no translation in the target language yet | Write the translation via recipe 2 first | You translate it yourself; dubbing synthesizes the translation sentence by sentence |
+| Background music or ambient sound should be kept | Separate the background, and only lower or mute the voice | Muting the original audio outright removes the background too |
+| The user wants the original audio fully replaced | Mute the original audio | The user's explicit request |
+| Not stated | Lower the original audio | Default; keeps the original's atmosphere |
+| The user named a voice, or the user library has an authorized voice | Use it | Same character, same voice throughout |
 
-步骤：
+Steps:
 
-1. {{tool:models_capabilities}} 看语音合成能不能用、有哪些音色；用户库音色用 {{tool:library_list}}。
-2. 没有译文时按第 2 条翻译并写入。
-3. {{tool:dub}} 给译文的 documentId、音色与原声处理方式。等到完成。
-4. 读结果里每句的合成情况；没合成的句子报告给用户。
-5. 用户要文件时 {{tool:export}} 成片或音频。
+1. {{tool:models_capabilities}} to see whether speech synthesis is usable and which voices exist; for user library voices use {{tool:library_list}}.
+2. If there is no translation, translate and write it via recipe 2.
+3. {{tool:dub}} with the translation's documentId, the voice and how to treat the original audio. Wait for completion.
+4. Read how each sentence was synthesized in the result; report sentences that were not synthesized to the user.
+5. {{tool:export}} the finished video or audio if the user wants files.
 
-**完成标准**：配音轨在视频里，句数与译文对得上或差额有原因；原声处理按用户确认的来；语气、对齐与音量写进「要人听的」。
+**Done when**: the dubbing track is in the video, and its sentence count matches the translation or the difference is explained; the original audio is treated as the user confirmed; tone, alignment and volume are listed under "needs a human to listen".
 
-## 4. 剪口播
+## 4. Talking-head cut
 
-**适用**：一两个人对着镜头说话的录音要剪成能发布的视频。**不走这条**：只想从长视频里挑几段短视频（第 5 条）；只要去掉一处口误（直接剪那一处）。
+**Applies when**: a recording of one or two people talking to camera needs to be cut into a publishable video. **Not this recipe**: you only want to pick a few shorts from a long video (recipe 5); only one slip needs removing (just cut that spot).
 
-| 信号 | 处理 | 原因 |
+| Signal | Action | Reason |
 | --- | --- | --- |
-| 没有转写 | 先转写 | 口播的剪点由话决定，没有转写就是瞎猜 |
-| 同一段说了几遍 | 挑最完整、最自然的一遍，拿不准都留着请用户听 | 提案不检测重复的句子 |
-| 想把一句挪到开头 | 只挪能单独成立的原话，限定语一起带走；先问清原位置留不留 | 调序会改变论证 |
-| 要加放大、B-roll、文字 | 剪口定下之后再加 | 话没定下来，定不了画面落在哪 |
+| There is no transcript | Transcribe first | Cut points in talking-head footage are decided by the words; without a transcript it is guesswork |
+| The same passage was said several times | Pick the most complete, most natural take; when unsure, keep them all and ask the user to listen | The proposal does not detect repeated sentences |
+| You want to move a line to the opening | Move only original lines that stand on their own, taking their qualifiers with them; first ask whether to keep the original position | Reordering changes the argument |
+| Zoom-ins, B-roll or text are wanted | Add them after the cuts are settled | Until the words are settled, you cannot settle where the visuals land |
 
-步骤：
+Steps:
 
-1. 读 {{skill:talking-head-cut}}。
-2. 没有转写时 {{tool:transcribe}}；{{tool:documents_read}} 读转写，按论点列出留 / 删清单。
-3. {{tool:edits_apply}} 生成口癖与停顿的剪辑提案，{{tool:documents_read}} 读提案，逐条决定。
-4. 把清单作为一笔修改提交（{{tool:edits_apply}}，先带预检看影响）：接受该删的建议、剪掉录废的部分。
-5. 定开头；剪口定下后再加画面元素与声音处理（craft 的 `references/` 里有做法，用到时再读）。
-6. 读回：{{tool:videos_inspect}} 看时长与片段，对照清单核对；导出一小段给用户听（{{tool:export}} 给范围）。
+1. Read {{skill:talking-head-cut}}.
+2. If there is no transcript, {{tool:transcribe}}; read the transcript with {{tool:documents_read}} and list what to keep / cut by argument.
+3. {{tool:edits_apply}} to generate a cut proposal for filler words and pauses; read the proposal with {{tool:documents_read}} and decide on each item.
+4. Submit the list as one edit ({{tool:edits_apply}}, with a dry run first to see the impact): accept the suggestions that should go and cut the flubbed parts.
+5. Settle the opening; once the cuts are settled, add visual elements and sound treatment (the craft's `references/` has the methods; read them when you need them).
+6. Read back: {{tool:videos_inspect}} to check duration and items against the list; export a short segment for the user to listen to ({{tool:export}} with a range).
 <!-- surface: cli -->
-   用户要自己在编辑器里听、拖剪点时，交付时给一条网页版编辑器的新链接（[web](catalog/web.md)）；用户在网页里改过之后，下一笔修改前重新 {{tool:videos_inspect}}。
+   When the user wants to listen and drag cut points in the editor themselves, give a fresh web editor link at delivery ([web](catalog/web.md)); after the user changes things on the web, run {{tool:videos_inspect}} again before the next edit.
 <!-- /surface -->
-7. 有译文时按第 2 条只重译变了的句子。
+7. If there are translations, retranslate only the changed sentences via recipe 2.
 
-**完成标准**：清单上该删的都删了、该留的都在；剪点在词与词之间；报告分三栏，剪口数与时长变化是量出来的，顺不顺是要人听的。
+**Done when**: everything on the list to cut is cut and everything to keep is still there; cut points fall between words; the report has the three columns, with the number of cuts and change in duration as measured, and whether it flows as needing a human to listen.
 
-## 5. 切短视频
+## 5. Cutting shorts
 
-**适用**：从一个长视频（访谈、讲座、直播回放）里挑几段能单独发布的短视频。**不走这条**：从零做一条新的短视频；把整段口播剪干净（第 4 条）。
+**Applies when**: picking a few clips that can be posted on their own from one long video (an interview, a lecture, a livestream replay). **Not this recipe**: making a new short from scratch; cleaning up a whole talking-head recording (recipe 4).
 
-| 信号 | 处理 | 原因 |
+| Signal | Action | Reason |
 | --- | --- | --- |
-| 用户给了目标平台 | 按平台确认画幅与时长 | 合要求 |
-| 候选片段开头不成立（要靠前文才懂） | 换一段，或向前多取一句 | 每段要能单独成立 |
-| 片段比目标时长短 | 照实交，不靠填充、循环、变速凑数 | 时长是目标不是配额 |
-| 用户还没挑 | 只交候选，不导出 | 让用户挑定再出文件 |
+| The user gave a target platform | Confirm the aspect ratio and duration for that platform | As requested |
+| A candidate clip's opening does not stand on its own (it needs the preceding context) | Pick another clip, or take one more sentence before it | Each clip must stand on its own |
+| A clip is shorter than the target duration | Deliver it as is; do not pad, loop or change speed to reach it | Duration is a target, not a quota |
+| The user has not picked yet | Deliver only candidates, do not export | Let the user pick before producing files |
 
-步骤：
+Steps:
 
-1. 读 {{skill:shorts-segments}}。
-2. {{tool:export}} 导出带时间码的文稿（或字幕），读出来按话题挑候选：每段是一个话题从钩子到讲完，几支、多长照用户说的，没说就按够格的话题定，交给用户挑。
+1. Read {{skill:shorts-segments}}.
+2. {{tool:export}} a timestamped transcript (or subtitles), read it and pick candidates by topic: each clip is one topic from its hook to its end; how many and how long follow what the user said, or if not said, as many topics as qualify; hand them to the user to pick.
 <!-- surface: cli -->
-   用户想在编辑器里边看边挑时，给一条网页版编辑器的新链接（[web](catalog/web.md)）；候选的起止仍写在文字里交给用户。
+   When the user wants to watch and pick in the editor, give a fresh web editor link ([web](catalog/web.md)); still write the candidates' start and end times in text for the user.
 <!-- /surface -->
-3. 用户挑定后 {{tool:export}} 成片，每段一个范围、各出一个文件。
-4. 要竖屏又要重新取景时，先在视频里调整画面（[editing](catalog/editing.md)），再导出。
+3. Once the user has picked, {{tool:export}} the finished clips, one range per clip and one file each.
+4. When vertical output with reframing is needed, first adjust the picture in the video ([editing](catalog/editing.md)), then export.
 
-**完成标准**：每段的起止、时长与一句理由交给了用户；导出的文件一段一个、路径取自结果；画幅与用户确认的一致。
+**Done when**: each clip's start, end, duration and a one-line reason have been given to the user; exported files are one per clip with paths taken from the results; the aspect ratio matches what the user confirmed.
 
-## 6. 总结与写稿
+## 6. Summaries and writing
 
-**适用**：总结、提炼要点、写成博客或公众号文章、起标题与写简介、分章节。**不走这条**：与视频无关的写作。
+**Applies when**: summarizing, pulling out key points, writing a blog post or article, writing titles and descriptions, chaptering. **Not this recipe**: writing unrelated to the video.
 
-| 信号 | 处理 | 原因 |
+| Signal | Action | Reason |
 | --- | --- | --- |
-| 要总结、要点 | {{skill:video-summary}} | 要点带视频时间，方便跳回 |
-| 要完整文章 | {{skill:video-blog}}，先问清是作者视角还是观众视角 | 两种写法不同 |
-| 要标题、简介 | {{skill:titles-and-description}} | 每句都要由视频兑现 |
-| 要章节写进视频 | 作者有章节或用户给了大纲：{{tool:chapters_adopt}}；否则按 {{skill:video-chapters}} 自己分 | 章节是视频的一部分；作者的分法优先 |
-| 没有转写 | 先转写 | 不凭标题与印象写 |
+| A summary or key points are wanted | {{skill:video-summary}} | Key points carry video times, so readers can jump back |
+| A complete article is wanted | {{skill:video-blog}}; first ask whether it is from the author's or the viewer's perspective | The two are written differently |
+| Titles or a description are wanted | {{skill:titles-and-description}} | Every line has to be backed by the video |
+| Chapters should be written into the video | If the author has chapters or the user gave an outline: {{tool:chapters_adopt}}; otherwise split them yourself following {{skill:video-chapters}} | Chapters are part of the video; the author's split takes priority |
+| There is no transcript | Transcribe first | Do not write from the title and impressions |
 
-步骤：
+Steps:
 
-1. 读对应的 craft。
-2. 取带时间的文稿：{{tool:export}} 导出带时间码的 md 文稿，读结果里的文件；时间就取它，不自己估。
-3. 自己写。总结、文章、标题、简介是纯文字，直接交给用户（用户要文件时写成文件）。
-4. 章节：作者的章节用 {{tool:chapters_adopt}} 吸到文稿上写入，读回执里的吸附统计；自己分的用 {{tool:edits_apply}} 的 `setChapters` 写入，读回执核对。
+1. Read the matching craft.
+2. Get a timestamped transcript: {{tool:export}} a timestamped md transcript and read the file in the result; take times from it, do not estimate them.
+3. Write it yourself. Summaries, articles, titles and descriptions are plain text; give them to the user directly (write them to a file if the user wants a file).
+4. Chapters: write the author's chapters with {{tool:chapters_adopt}}, which snaps them to the transcript, and read the snapping stats in the receipt; write chapters you split yourself with `setChapters` in {{tool:edits_apply}} and check the receipt.
 
-**完成标准**：每条要点、每个章节的时间都来自文稿；写的内容由视频兑现，没有编造；章节写进了视频并读回核对。
+**Done when**: the times of every key point and every chapter come from the transcript; what you wrote is backed by the video, with nothing invented; chapters were written into the video and checked by reading back.
 
-## 7. 本机文件：压缩、合并、提取音频
+## 7. Local files: compress, merge, extract audio
 
-**适用**：用户要把本机文件压小、转成别的编码、按顺序拼成一个、取出音轨，不需要可编辑视频。**不走这条**：要在拼起来的视频上继续剪辑或加字幕（新建视频，把几段素材依次放上时间线，见 [media](catalog/media.md)）。
+**Applies when**: the user wants local files made smaller, converted to another codec, joined in order into one, or their audio tracks extracted, with no editable video needed. **Not this recipe**: the user wants to keep editing or add subtitles on the joined video (create a video and place the clips on the timeline in order; see [media](catalog/media.md)).
 
-| 信号 | 处理 | 原因 |
+| Signal | Action | Reason |
 | --- | --- | --- |
-| 「压小一点」没给数 | 先问目标（分辨率上限或大致大小），或按 1080 高度给一个默认并说明 | 合要求 |
-| 合并的几段参数不同 | 照样合并，会重新编码，耗时更长 | 参数一致时才能流复制 |
-| 要提取音频 | 逐个取出音轨 | 能流复制时不重新编码 |
-| 用户的原文件 | 不动，输出写到新位置 | 不动用户的原始媒体 |
+| "Make it smaller" with no number | First ask for the target (a resolution cap or a rough size), or default to a height of 1080 and say so | As requested |
+| The clips to merge have different parameters | Merge anyway; it re-encodes and takes longer | Stream copy only works when parameters match |
+| Audio extraction is wanted | Extract the audio track of each file | No re-encoding when stream copy is possible |
+| The user's original files | Leave them untouched; write output to a new location | Do not touch the user's original media |
 
-步骤：
+Steps:
 
-1. 确认输入文件、顺序与输出位置。
-2. {{tool:transcode}}：压缩、合并或提取音轨，等到完成。
-3. 把结果里输出文件的路径告诉用户，报告大小与时长的变化。
+1. Confirm the input files, their order and the output location.
+2. {{tool:transcode}}: compress, merge or extract audio tracks, and wait for completion.
+3. Tell the user the output file paths from the result, and report the change in size and duration.
 
-**完成标准**：输出文件存在、路径取自结果；原文件没动；大小、时长、分辨率等量出来的数报告给用户。
+**Done when**: the output files exist with paths taken from the result; the original files are untouched; measured numbers such as size, duration and resolution are reported to the user.
 
-## 8. 旁白成片
+## 8. Narrated video
 
-**适用**：用户要一条由旁白带着走的成片（资讯快评、知识讲解、产品介绍、步骤教程），或给已有画面配一段多句的旁白。**不走这条**：把视频配成另一种语言（第 3 条）；只念一句话（直接 {{tool:speak}}，见 [voice](catalog/voice.md)）。
+**Applies when**: the user wants a finished video driven by narration (a news commentary, an explainer, a product introduction, a step-by-step tutorial), or a multi-sentence voice-over for existing footage. **Not this recipe**: dubbing a video into another language (recipe 3); reading just one line ({{tool:speak}} directly, see [voice](catalog/voice.md)).
 
-| 信号 | 处理 | 原因 |
+| Signal | Action | Reason |
 | --- | --- | --- |
-| 用户给了目标时长 | 先用这个模型念一句量出字/秒，再按它算稿子字数 | 字数定时长；写超了删句，不加速 |
-| 旁白超过 60 字 | 选用户库克隆音色或 `source` 为 `builtin` 的内置音色 | 预置说话人块间音高漂 3–5 个半音，像换了人 |
-| 用户点名要预置说话人 | 照用，报告里写明风险 | 用户的明确要求优先 |
-| 念出来比目标长 | 删词重配那一段 | 时间线变速会放大本来的快慢差 |
-| 某一句不自然 | 只重配那一句（同音色、同说明、换 seed） | 整段重配会把别的句子一起换掉 |
-| 稿子里有数字、专名 | 写成读法或用读音标注 | 念错比念慢更伤 |
+| The user gave a target duration | First have this model read one sentence to measure units per second (characters or words, per the language), then size the script from it | Length sets duration; if the script runs long, cut sentences rather than speeding up |
+| The narration is longer than 60 units | Choose a cloned voice from the user library or a built-in voice whose `source` is `builtin` | Preset speakers drift 3–5 semitones in pitch between chunks and sound like a different person |
+| The user named a preset speaker | Use it as named, and state the risk in the report | The user's explicit request takes priority |
+| The read is longer than the target | Cut words and re-voice that part | Changing speed on the timeline amplifies existing pace differences |
+| One sentence sounds unnatural | Re-voice only that sentence (same voice, same instructions, a different seed) | Re-voicing the whole passage replaces the other sentences too |
+| The script has numbers or proper names | Write them as they are read, or annotate the pronunciation | Misreading hurts more than reading slowly |
 
-步骤：
+Steps:
 
-1. 读 {{skill:narration}}。
-2. {{tool:models_capabilities}} 看语音合成能不能用、哪些音色是 `builtin` / `library`；用一句试稿 {{tool:speak}} 量出字/秒。
-3. 按预算写稿，一句一行；语气说明只写怎么说。
-4. {{tool:speak}} 整段提交（同音色、同说明、固定 seed，给 {{arg:video}}），等到完成，记下时长与 seed。
-5. {{tool:transcribe}} 给这个旁白素材拿字时间；按句算字/秒与停顿，找出要重配的句子并重配。
-6. {{tool:edits_apply}} 把旁白放上一条轨，按句子的起止排画面与字幕。要配乐时这时再生成或放上（成片时长已定），按 [music](catalog/music.md) 放在单独一条轨上、`setDucking` 压在旁白之下。
-7. {{tool:export}} 导出 2–3 处跨句边界的 5 秒片段给用户听；用户认可后再导出成片。
+1. Read {{skill:narration}}.
+2. {{tool:models_capabilities}} to see whether speech synthesis is usable and which voices are `builtin` / `library`; measure units per second with a one-sentence test read via {{tool:speak}}.
+3. Write the script to budget, one sentence per line; the delivery instructions say only how to speak.
+4. {{tool:speak}} submits the whole passage (same voice, same instructions, a fixed seed, with {{arg:video}}); wait for completion and note the duration and seed.
+5. {{tool:transcribe}} this narration asset to get word timings; compute units per second and pauses per sentence, find the sentences that need re-voicing and re-voice them.
+6. {{tool:edits_apply}} to place the narration on a track and lay out visuals and captions by each sentence's start and end. If music is wanted, generate or place it now (the finished video's length is settled), on its own track as described in [music](catalog/music.md), ducked under the narration with `setDucking`.
+7. {{tool:export}} 2–3 five-second clips spanning sentence boundaries for the user to listen to; once the user approves, export the finished video.
 <!-- surface: cli -->
-   画面与字幕的排布要用户看时，在网页版编辑器里请用户审（[web](catalog/web.md)），交付时给新链接。
+   When the user needs to see the layout of visuals and captions, ask them to review in the web editor ([web](catalog/web.md)) and give a fresh link at delivery.
 <!-- /surface -->
 
-**完成标准**：稿子字数在预算内、成片时长与旁白时长一致；一个音色、一套说明、seed 记录在报告里；每句的字/秒与停顿量过，异常句处理过或列出；接缝是**要人听的**，没听过就如实写。
+**Done when**: the script length is within budget and the finished video's duration matches the narration's; one voice, one set of instructions and the seed are recorded in the report; units per second and pauses were measured for every sentence, and outliers were fixed or listed; the seams **need a human to listen**, and if nobody listened, say so truthfully.

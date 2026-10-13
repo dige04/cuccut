@@ -148,7 +148,7 @@ describe.skipIf(!engine || !ffmpeg)('导出工具（真实引擎）', () => {
     expect(job.outputs).toEqual([
       expect.objectContaining({ path: path.join(project.path, 'exports', '样片.en.srt'), format: 'srt', validation: expect.any(Object) }),
     ]);
-    expect(job.next).toContain('导出完成');
+    expect(job.next).toContain('Export completed');
     expect(await fs.readFile(job.outputs[0].path, 'utf8')).toContain('Hello there.');
 
     // 工作目录里已有的目录与文件名。

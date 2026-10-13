@@ -1,13 +1,17 @@
 <!-- surface: cli -->
-# 走 MCP
+# Over MCP
 
-用 `cuccut mcp install --agent <宿主>` 接上；工具名与 CLI 命令一一对应：
+Connect with `cuccut mcp install --agent <host>`; tool names map one to one onto CLI commands:
 
 <!-- generated: tool-map -->
-| MCP 工具 | CLI 命令 | 效果 |
+| MCP tool | CLI command | Effect |
 | --- | --- | --- |
 | `assets_import` | `cuccut assets import` | mutation |
+| `assets_prune` | `cuccut assets prune` | mutation |
 | `captions_create` | `cuccut captions create` | mutation |
+| `chapters_adopt` | `cuccut chapters adopt` | mutation |
+| `compositions_import` | `cuccut compositions import` | mutation |
+| `compositions_preview` | `cuccut compositions preview` | mutation |
 | `documents_put` | `cuccut documents put` | mutation |
 | `documents_read` | `cuccut documents read` | query |
 | `download` | `cuccut download` | job |
@@ -26,6 +30,7 @@
 | `library_show` | `cuccut library show` | query |
 | `models_capabilities` | `cuccut models capabilities` | query |
 | `models_list` | `cuccut models list` | query |
+| `music` | `cuccut music` | job |
 | `projects_list` | `cuccut projects list` | query |
 | `skills_list` | `cuccut skills list` | query |
 | `skills_read` | `cuccut skills read` | query |
@@ -35,11 +40,13 @@
 | `transcribe` | `cuccut transcribe` | job |
 | `translate` | `cuccut translate` | job |
 | `videos_create` | `cuccut videos create` | mutation |
+| `videos_derive` | `cuccut videos derive` | mutation |
 | `videos_frames` | `cuccut videos frames` | mutation |
 | `videos_history` | `cuccut videos history` | query |
 | `videos_inspect` | `cuccut videos inspect` | query |
 | `videos_list` | `cuccut videos list` | query |
+| `videos_shots` | `cuccut videos shots` | query |
 
-只在 CLI 里、MCP 上没有的：`cuccut artifacts save`、`cuccut models install`、`cuccut models test`、`cuccut projects create`、`cuccut transcode`、`cuccut videos delete`、`cuccut videos import-package`。
+Only in the CLI, not on MCP: `cuccut artifacts save`, `cuccut models install`, `cuccut models test`, `cuccut projects create`, `cuccut transcode`, `cuccut videos delete`, `cuccut videos import-package`.
 <!-- /generated -->
 <!-- /surface -->

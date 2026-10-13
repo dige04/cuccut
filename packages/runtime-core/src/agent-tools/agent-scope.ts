@@ -1,4 +1,3 @@
-// i18n-ignore-file: 只有给模型的工具错误（ToolError）
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {
@@ -36,7 +35,7 @@ import {
   type VideoRoot,
 } from './tool-scope.ts';
 
-/** 会话里一次调用的授权：会话与进行中的任务。 */
+/** Authorization for one call in a session: the session and the task in progress. */
 export interface AgentAccess extends ToolAccess {
   readonly principal: AgentPrincipal;
   readonly conversation: Conversation;
@@ -44,23 +43,26 @@ export interface AgentAccess extends ToolAccess {
 }
 
 /**
- * 智能体工具的权限与范围（架构设计 §3.5、§4.2），视频工具与模型工具共用：
+ * Permissions and scope of agent tools (architecture design §3.5, §4.2), shared by video tools and model tools:
  *
- * - 工具只在会话有进行中的任务时可用；停止之后一律拒绝；规划模式只读；
- * - 有副作用的调用按会话此刻的访问模式与动作的风险查表（§3.12）：自动的直接执行，要问的在会话里放一张审批卡并等待
- *   （没有时限），用户拒绝、停止或打断时返回明确的错误；
- * - 智能体只能使用会话来源目录（所属项目的目录，或会话自己的工作目录）里的视频；
- * - 智能体只能看到本会话提交的任务与来源目录里已打开视频上的任务，产物也只能用这些任务的。
+ * - tools are available only while the session has a task in progress; refused after a stop; plan mode is read-only;
+ * - calls with side effects are looked up by the session's current access mode and the action's risk (§3.12): automatic ones
+ *   run directly, those that must ask post an approval card in the session and wait (no time limit), and a user denial, stop
+ *   or interruption returns a clear error;
+ * - the agent can only use videos in the session's source directory (its project's directory, or the session's own working
+ *   directory);
+ * - the agent only sees jobs submitted by this session and jobs on open videos in the source directory, and can only use
+ *   artifacts of those jobs.
  */
 export class AgentScope implements ToolScope<AgentAccess> {
   readonly #harness: Harness;
   readonly #videos: VideoService;
   readonly #jobs: JobManager;
-  /** 按 videoId 找过的、没有打开的视频的目录：下次先核对它，不对再扫。 */
+  /** Directories of unopened videos already located by videoId: checked first next time, rescanned if stale. */
   readonly #located = new Map<Id, string>();
-  /** 智能体自己翻译的进度记录（`translationStarted`），按会话、视频、转写与语言；终结了就拿掉。 */
+  /** Progress records of the agent's own translations (`translationStarted`), keyed by session, video, transcript and language; removed once terminal. */
   readonly #translations = new Map<string, { job: HostedJob; taskId: Id }>();
-  /** 订阅了任务中心（回合结束时收尾进度记录）。第一次登记进度记录时才订阅。 */
+  /** Whether the task center is subscribed (to close progress records when a turn ends). Subscribed on the first registered record. */
   #watchingTasks = false;
 
   constructor(deps: { harness: Harness; videos: VideoService; jobs: JobManager }) {
@@ -69,17 +71,17 @@ export class AgentScope implements ToolScope<AgentAccess> {
     this.#jobs = deps.jobs;
   }
 
-  /** 工具只在任务里可用；停止屏障之后一律拒绝（D04）；规划模式只读。 */
+  /** Tools are available only during a task; always refused after the stop barrier (D04); plan mode is read-only. */
   authorize(principal: ToolPrincipal, write: boolean): AgentAccess {
-    if (principal.kind !== 'agent') throw new ToolError('FORBIDDEN', '这个工具通道只服务会话里的智能体');
+    if (principal.kind !== 'agent') throw new ToolError('FORBIDDEN', 'This tool channel serves only the agent in a session');
     const run = this.#harness.agentRun(principal.conversationId);
-    if (!run.taskId) throw new ToolError('NO_ACTIVE_TASK', '这个会话没有进行中的任务；工具只在回合里可用');
-    if (run.stopRequested) throw new ToolError('TASK_STOPPED', '用户已经停止了这个任务：不要再读取或修改视频，结束这个回合');
+    if (!run.taskId) throw new ToolError('NO_ACTIVE_TASK', 'This session has no task in progress; tools are available only during a turn');
+    if (run.stopRequested) throw new ToolError('TASK_STOPPED', 'The user has stopped this task: do not read or change videos any further; end this turn');
     if (write && run.mode === 'plan') {
-      throw new ToolError('PLAN_ONLY', '当前是规划模式（只读）：说明你打算怎么改，等用户切换到可以修改的模式后再改');
+      throw new ToolError('PLAN_ONLY', 'Plan mode is on (read-only): explain what you intend to change, and wait for the user to switch to a mode that allows edits before changing anything');
     }
     const submitter: JobSubmitter = { kind: 'agent', id: run.conversation.id, taskId: run.taskId };
-    // 会话每次都取此刻的记录：调用中途绑定了项目（新建视频时，§3.10）之后，工作目录与来源目录跟着换。
+    // Always read the session's current record: once a project is bound mid-call (when creating a video, §3.10), the working and source directories follow.
     const harness = this.#harness;
     const captured = run.conversation;
     return {
@@ -92,7 +94,7 @@ export class AgentScope implements ToolScope<AgentAccess> {
     };
   }
 
-  /** 按会话此刻的访问模式与风险决定（§3.12）：自动、等用户，或拒绝。结果里的模式记进工具结果。 */
+  /** Decides by the session's current access mode and risk (§3.12): automatic, wait for the user, or refuse. The mode in the result goes into the tool result. */
   async confirm(access: AgentAccess, request: ToolConfirmation): Promise<ToolApprovalNote> {
     const targets = [...(request.video !== undefined ? [request.video] : []), ...(request.targets ?? [])];
     const risk = toolRisk(request);
@@ -101,7 +103,7 @@ export class AgentScope implements ToolScope<AgentAccess> {
       targets,
       summary: request.summary,
       risk,
-      // 「总是允许」按工具名存；高风险的这一次（不可撤销的覆盖、外发、付费）不提供，每次都问。
+      // "Always allow" is stored by tool name; it is not offered for high-risk calls (irreversible overwrites, outbound transfers, paid calls), which are asked every time.
       rule: risk === 'high' ? null : request.tool,
       ...(request.grants?.length ? { grants: request.grants } : {}),
     });
@@ -111,31 +113,31 @@ export class AgentScope implements ToolScope<AgentAccess> {
           mode: result.mode,
           risk: result.risk,
           decidedBy: result.decidedBy,
-          // 带外发授权的调用：用户的选择；自动通过（完全访问）的按只这一次。
+          // Calls with an outbound grant: the user's choice; an automatic pass (full access) counts as this time only.
           ...(request.grants?.length ? { grant: result.grant ?? { persist: false } } : {}),
         };
       case 'no-task':
-        throw new ToolError('NO_ACTIVE_TASK', '这个会话没有进行中的任务；工具只在回合里可用');
+        throw new ToolError('NO_ACTIVE_TASK', 'This session has no task in progress; tools are available only during a turn');
       case 'cancelled':
-        throw new ToolError('APPROVAL_CANCELLED', '这次调用在用户确认之前被取消了（任务被停止或回复被打断）：不要重试，结束这个回合', {
+        throw new ToolError('APPROVAL_CANCELLED', 'This call was cancelled before the user confirmed it (the task was stopped or the reply was interrupted): do not retry; end this turn', {
           mode: result.mode,
           risk: result.risk,
         });
       case 'denied':
         if (result.mode === 'plan') {
-          throw new ToolError('PLAN_ONLY', '当前是规划模式（只读）：说明你打算怎么改，等用户切换到可以修改的模式后再改');
+          throw new ToolError('PLAN_ONLY', 'Plan mode is on (read-only): explain what you intend to change, and wait for the user to switch to a mode that allows edits before changing anything');
         }
         throw new ToolError(
           'APPROVAL_DENIED',
           result.decidedBy === 'user'
-            ? '用户在 CucCut 里拒绝了这次调用：不要重试同样的调用，先问问用户'
-            : '当前的访问模式不允许这次调用：说明你打算做什么，请用户切换模式',
+            ? 'The user denied this call in CucCut: do not retry the same call; ask the user first'
+            : 'The current access mode does not allow this call: explain what you intend to do and ask the user to switch modes',
           { mode: result.mode, risk: result.risk },
         );
     }
   }
 
-  /** 来源目录里的视频，以及其中已经打开的视频的 videoId 和名字。 */
+  /** Videos in the source directory, with the videoId and name of those already open. */
   async listVideos(access: AgentAccess): Promise<Record<string, unknown>> {
     const { root } = this.source(access.conversation);
     const rootReal = await fs.realpath(root).catch(() => root);
@@ -154,8 +156,9 @@ export class AgentScope implements ToolScope<AgentAccess> {
   }
 
   /**
-   * 新建视频的位置：会话的来源，也就是所属项目的目录，不属于项目时是会话的工作目录（§3.10，视频留在那里，不为它建项目）。
-   * 给了 `project` 时只能是会话所属的项目（按 id 或目录），别的与不存在的一样回答。
+   * Where a new video goes: the session's source, i.e. its project's directory, or the session's working directory when it has
+   * no project (§3.10: the video stays there; no project is created for it). A given `project` can only be the session's own
+   * project (by id or directory); any other is answered like a missing one.
    */
   async createRoot(access: AgentAccess, project?: string): Promise<VideoRoot> {
     const source = this.source(access.conversation);
@@ -165,18 +168,18 @@ export class AgentScope implements ToolScope<AgentAccess> {
     ) {
       throw new ToolError(
         'PROJECT_NOT_FOUND',
-        `找不到项目「${project}」：只能在会话所属的项目里新建；不给 project 时建在会话的项目里，不属于项目的会话建在它的工作目录里`,
+        `Project "${project}" not found: you can only create in the session's own project; without project, videos are created in the session's project, or in the working directory for a session without a project`,
       );
     }
     return source;
   }
 
-  /** `importAsset.path` 相对会话的工作目录；绝对路径与 `~/` 照常接受（用户给的素材常在别处）。 */
+  /** `importAsset.path` is relative to the session's working directory; absolute paths and `~/` are accepted as usual (user-provided assets often live elsewhere). */
   importBase(access: AgentAccess): { cwd: string; confine: string | null } {
     return { cwd: access.conversation.cwd, confine: null };
   }
 
-  /** 本机文件相对会话的工作目录；绝对路径与 `~/` 照常接受。 */
+  /** Local files are relative to the session's working directory; absolute paths and `~/` are accepted as usual. */
   fileBase(access: AgentAccess): string {
     return access.conversation.cwd;
   }
@@ -189,7 +192,7 @@ export class AgentScope implements ToolScope<AgentAccess> {
     return ownedBy(record, access.conversation);
   }
 
-  /** 回执在会话里放一张变更卡（产品设计 §6.5）。 */
+  /** The receipt posts a change card in the session (product design §6.5). */
   recordChange(access: AgentAccess, change: VideoChange): void {
     const target =
       'conversationId' in change.target && !change.target.conversationId
@@ -198,7 +201,7 @@ export class AgentScope implements ToolScope<AgentAccess> {
     this.#harness.recordVideoChange(access.conversation.id, access.taskId, { ...change, target });
   }
 
-  /** `videos_create` 新建的视频在会话里记一条，界面的视频卡从它出现（架构设计 §11.3）。 */
+  /** A video created by `videos_create` is recorded in the session; the UI's video card comes from it (architecture design §11.3). */
   recordCreated(access: AgentAccess, created: VideoCreated): void {
     const target =
       'conversationId' in created.target && !created.target.conversationId
@@ -207,32 +210,34 @@ export class AgentScope implements ToolScope<AgentAccess> {
     this.#harness.recordVideoCreated(access.conversation.id, access.taskId, { ...created, target });
   }
 
-  /** `slides_check` 校验通过的 deck 在会话里记一条，界面的幻灯片卡片从它出现（docs/design/slides §7.3）。 */
+  /** A deck that passes `slides_check` is recorded in the session; the UI's slides card comes from it (docs/design/slides §7.3). */
   recordSlides(access: AgentAccess, created: SlidesCreated): void {
     this.#harness.recordSlidesCreated(access.conversation.id, access.taskId, created);
   }
 
-  /** `design_check` 没有问题的设计稿在会话里记一条，界面的设计稿卡片从它出现（docs/design/canvas §7.3）。 */
+  /** A design with no `design_check` problems is recorded in the session; the UI's design card comes from it (docs/design/canvas §7.3). */
   recordDesign(access: AgentAccess, created: DesignCreated): void {
     this.#harness.recordDesignCreated(access.conversation.id, access.taskId, created);
   }
 
-  /** `design_system_check` 没有问题的设计系统在会话里记一条，界面的设计系统卡片从它出现（docs/design/canvas §10.5）。 */
+  /** A design system with no `design_system_check` problems is recorded in the session; the UI's design system card comes from it (docs/design/canvas §10.5). */
   recordDesignSystem(access: AgentAccess, created: DesignSystemCreated): void {
     this.#harness.recordDesignSystemCreated(access.conversation.id, access.taskId, created);
   }
 
   /**
-   * 智能体要自己翻译一份转写：登记一条 `agentTranslate` 进度记录（托管任务，不排队、不执行，不持有视频的租约），
-   * 视频卡与字幕面板据此显示「正在翻译」。写入这门语言的译文时完成（`translationWritten`）；回合结束还没写时，
-   * 用户停止的记为取消，别的记为中断。同一会话、同一视频、同一份转写、同一门语言的记录还在进行时沿用它。
+   * The agent is about to translate a transcript itself: registers an `agentTranslate` progress record (a hosted job: not
+   * queued, not executed, holding no video lease), from which the video card and captions panel show "Translating". It
+   * completes when a translation in that language is written (`translationWritten`); if the turn ends before that, it is
+   * recorded as cancelled when the user stopped, otherwise as interrupted. A record for the same session, video, transcript and
+   * language is reused while still running.
    */
   translationStarted(access: AgentAccess, start: TranslationScope & { sentences: number; sourceRevision?: string }): Id | null {
     const key = translationKey(access.conversation.id, start);
     const open = this.#translations.get(key);
     if (open && !isTerminal(open.job.record().state)) {
       if (open.taskId === access.taskId) return open.job.jobId;
-      // 上一个回合留下的（它结束时本该收尾）：中断它，这个回合重新登记。
+      // Left over from a previous turn (which should have closed it when it ended): interrupt it and register anew for this turn.
       void open.job.finish('interrupted');
     }
     this.#watchTasks();
@@ -263,7 +268,7 @@ export class AgentScope implements ToolScope<AgentAccess> {
       warnings: [],
       translation: { sourceDocumentId: start.sourceDocumentId, targetLanguage: start.language, sentences: start.sentences },
     };
-    // 取消只结束这条记录，不停智能体的回合（界面不给它放取消按钮）；Runtime 停止时中断。
+    // Cancelling only ends this record, not the agent's turn (the UI shows no cancel button for it); interrupted when the Runtime stops.
     let job: HostedJob | null = null;
     const end = (state: 'cancelled' | 'interrupted') => {
       this.#translations.delete(key);
@@ -274,7 +279,7 @@ export class AgentScope implements ToolScope<AgentAccess> {
     return job.jobId;
   }
 
-  /** 写入了一份译文：同一会话、同一视频、同一份转写、同一门语言的进度记录完成，结果指向写入的译文。 */
+  /** A translation was written: the progress record for the same session, video, transcript and language completes, with its result pointing to the written translation. */
   translationWritten(access: AgentAccess, written: TranslationScope & { documentId: Id | null }): void {
     const key = translationKey(access.conversation.id, written);
     const open = this.#translations.get(key);
@@ -283,7 +288,7 @@ export class AgentScope implements ToolScope<AgentAccess> {
     void open.job.finish('completed', { result: { documentId: written.documentId, artifactId: '' } });
   }
 
-  /** 回合结束（任务中心里任务不再进行）时收尾它还开着的进度记录：用户停止的记为取消，别的记为中断。 */
+  /** When a turn ends (the task is no longer running in the task center), closes its still-open progress records: cancelled when the user stopped, otherwise interrupted. */
   #watchTasks(): void {
     if (this.#watchingTasks) return;
     this.#watchingTasks = true;
@@ -303,7 +308,7 @@ export class AgentScope implements ToolScope<AgentAccess> {
     });
   }
 
-  /** 任务合同此刻的保护范围：合同修改之后，之后的提交按新范围检查。 */
+  /** The task contract's current protections: after the contract changes, later submissions are checked against the new ones. */
   protections(access: AgentAccess, videoId: Id): EngineProtection[] {
     return engineProtections(this.#harness.currentContract(access.conversation.id, access.taskId), videoId);
   }
@@ -312,15 +317,15 @@ export class AgentScope implements ToolScope<AgentAccess> {
     return access.conversation.cwd;
   }
 
-  /** 导出的目录相对会话的来源目录；不给时由导出服务放到视频来源目录的 `exports/`。 */
+  /** Export directories are relative to the session's source directory; when omitted the export service uses the `exports/` of the video's source directory. */
   exportBase(access: AgentAccess): { base: string; within: string; ownDefault: boolean } {
     const { root } = this.source(access.conversation);
     return { base: root, within: root, ownDefault: false };
   }
 
   /**
-   * 会话的来源目录：所属项目的目录，或会话自己的工作目录。共用另一条会话工作目录的（`folderOf`）范围记那条会话：视频与文件的位置、
-   * Space 的来源都是它的。
+   * The session's source directory: its project's directory, or the session's own working directory. A session sharing another
+   * session's working directory (`folderOf`) is scoped to that session: video and file locations and the Space source are its.
    */
   source(conversation: Conversation): { root: string; scope: { projectId: Id } | { conversationId: Id } } {
     if (conversation.projectId) {
@@ -331,9 +336,11 @@ export class AgentScope implements ToolScope<AgentAccess> {
   }
 
   /**
-   * 打开（或接上已经打开的）视频，并把这个会话记为它的打开者。`video` 是相对来源目录的路径或 videoId；视频必须在来源目录里。
-   * videoId 不限于开着的视频：关掉了的（流程新建、放下租约之后）按来源目录里的视频目录找（只读地看身份，不取写入锁）；
-   * 来源目录之外的与不存在的一样回答 `VIDEO_NOT_FOUND`。
+   * Opens (or attaches to an already open) video and records this session as an opener. `video` is a path relative to the
+   * source directory or a videoId; the video must be in the source directory. A videoId is not limited to open videos: closed
+   * ones (created by a pipeline that has released its lease) are found among the video directories in the source directory
+   * (identity read-only, without taking the write lock); videos outside the source directory are answered like missing ones with
+   * `VIDEO_NOT_FOUND`.
    */
   async open(video: string, access: AgentAccess): Promise<VideoOpenResult> {
     const { conversation, principal } = access;
@@ -343,18 +350,19 @@ export class AgentScope implements ToolScope<AgentAccess> {
       return await this.#videos.open({ root, file: known ? known.path : video, scope }, principal);
     } catch (error) {
       if (error instanceof RpcError && error.code === 'not-found') {
-        throw new ToolError('VIDEO_NOT_FOUND', `找不到视频「${video}」：用 videos_list 给出的 path，或这个会话工作目录里的视频的 videoId`);
+        throw new ToolError('VIDEO_NOT_FOUND', `Video "${video}" not found: use a path from videos_list, or the videoId of a video in this session's working directory`);
       }
       if (error instanceof RpcError && error.code === 'forbidden') {
-        throw new ToolError('VIDEO_OUTSIDE_WORKSPACE', '只能使用这个会话工作目录里的视频');
+        throw new ToolError('VIDEO_OUTSIDE_WORKSPACE', 'Only videos in this session\'s working directory can be used');
       }
       throw error;
     }
   }
 
   /**
-   * 来源目录里某个 videoId 的视频目录（没有打开的）：先核对上次找到的位置，不对了再扫一遍来源目录，逐个只读地看身份
-   * （`peek`）。被别的进程锁着、读不了的目录跳过。找不到时 null。
+   * The video directory (not open) for a videoId in the source directory: checks the last known location first, otherwise
+   * rescans the source directory and reads each identity read-only (`peek`). Directories locked by another process or unreadable
+   * are skipped. null when not found.
    */
   async #locate(videoId: Id, root: string): Promise<{ path: string } | null> {
     const rootReal = await fs.realpath(root).catch(() => null);
@@ -383,7 +391,7 @@ export class AgentScope implements ToolScope<AgentAccess> {
     return null;
   }
 
-  /** 一个已经打开的视频是否在会话的来源目录里。没有打开时无从判断，为 false。 */
+  /** Whether an open video is in the session's source directory. false when it is not open (cannot tell). */
   async contains(videoId: Id, conversation: Conversation): Promise<boolean> {
     const ref = this.#videos.ref(videoId);
     if (!ref) return false;
@@ -394,7 +402,7 @@ export class AgentScope implements ToolScope<AgentAccess> {
     return ref.path === rootReal || ref.path.startsWith(prefix);
   }
 
-  /** 这个会话能看到的任务：自己提交的，或来源目录里已打开的视频上的。看不到的与不存在的一样回答。 */
+  /** Jobs this session can see: its own submissions, or jobs on open videos in the source directory. Invisible ones are answered like missing ones. */
   async visibleJob(jobId: Id, access: AgentAccess): Promise<JobRecord> {
     const { conversation } = access;
     let record: JobRecord;
@@ -407,7 +415,7 @@ export class AgentScope implements ToolScope<AgentAccess> {
     throw jobNotFound(jobId);
   }
 
-  /** `jobs_list`：本会话提交的与来源目录里已打开视频上的任务（与 `visibleJob` 相同），新的在前。 */
+  /** `jobs_list`: jobs submitted by this session and jobs on open videos in the source directory (same as `visibleJob`), newest first. */
   async visibleJobs(access: AgentAccess): Promise<JobRecord[]> {
     const { root } = this.source(access.conversation);
     const rootReal = await fs.realpath(root).catch(() => null);
@@ -421,7 +429,7 @@ export class AgentScope implements ToolScope<AgentAccess> {
       .filter((record) => ownedBy(record, access.conversation) || (record.videoId !== null && inSource(record.videoId)));
   }
 
-  /** `projects_list`：只有会话所属的项目；不属于项目的会话（工作目录不是项目）没有。 */
+  /** `projects_list`: only the session's own project; a session without a project (its working directory is not a project) has none. */
   async listProjects(access: AgentAccess): Promise<ScopedProject[]> {
     const { root, scope } = this.source(access.conversation);
     if (!('projectId' in scope)) return [];
@@ -432,8 +440,9 @@ export class AgentScope implements ToolScope<AgentAccess> {
   }
 
   /**
-   * 这个会话能用的产物：它看得到的任务的结果（生成的输出，或转写的结果）与产物库里的文件。同样的 bytes 可能出自几个任务，
-   * 优先取本会话自己提交的。失败但保留了结果的任务（导入视频失败）也算。看不到的与不存在的一样回答。
+   * Artifacts this session can use: results of jobs it can see (generated outputs, or transcription results) and files in the
+   * artifact store. The same bytes may come from several jobs; this session's own submissions are preferred. Failed jobs that
+   * kept a result (video import failed) count too. Invisible ones are answered like missing ones.
    */
   async visibleArtifact(
     artifactId: string,
@@ -447,14 +456,14 @@ export class AgentScope implements ToolScope<AgentAccess> {
     for (const record of candidates) {
       if (!(await this.#sees(record, conversation))) continue;
       const output = record.result?.outputs?.find((o) => o.artifactId === artifactId) ?? null;
-      // 发布到用户目录的输出（从链接导入下载的媒体）不进产物库：按登记的路径找，内容要对得上。
+      // Outputs published to user directories (media downloaded by link import) are not in the artifact store: found by the recorded path, and the content must match.
       const file = await locateArtifact(this.#jobs.artifacts, artifactId, output);
-      if (!file) throw new ToolError('ARTIFACT_NOT_FOUND', `产物 ${artifactId} 的文件已经不在了`);
+      if (!file) throw new ToolError('ARTIFACT_NOT_FOUND', `The file of artifact ${artifactId} no longer exists`);
       return { record, output, file };
     }
     throw new ToolError(
       'ARTIFACT_NOT_FOUND',
-      `找不到产物 ${artifactId}，或它不属于这个会话能看到的任务（jobs_inspect 的 outputs 里的 artifactId）`,
+      `Artifact ${artifactId} not found, or it does not belong to a job this session can see (use an artifactId from jobs_inspect outputs)`,
     );
   }
 
@@ -464,10 +473,10 @@ export class AgentScope implements ToolScope<AgentAccess> {
   }
 }
 
-/** videoId 的样子：`video_` 加十六进制（引擎分配 16 位；`newId` 是 32 位）。路径里有 `/` 或 `.`，对不上。 */
+/** The shape of a videoId: `video_` plus hex (16 digits from the engine; 32 from `newId`). Paths contain `/` or `.`, so they never match. */
 const VIDEO_ID = /^video_[0-9a-f]{8,32}$/;
 
-/** 这个会话提交的任务。 */
+/** Jobs submitted by this session. */
 export function ownedBy(record: JobRecord, conversation: Conversation): boolean {
   return record.submitter.kind === 'agent' && record.submitter.id === conversation.id;
 }
@@ -477,5 +486,5 @@ function translationKey(conversationId: Id, scope: TranslationScope): string {
 }
 
 function jobNotFound(jobId: Id): ToolError {
-  return new ToolError('JOB_NOT_FOUND', `找不到任务 ${jobId}，或它不属于这个会话的工作目录`);
+  return new ToolError('JOB_NOT_FOUND', `Job ${jobId} not found, or it does not belong to this session's working directory`);
 }

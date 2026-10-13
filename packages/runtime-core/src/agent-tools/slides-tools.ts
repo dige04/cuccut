@@ -3,7 +3,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import { RpcError } from '@cuccut/protocol';
 import { RcAgentTools } from '@cuccut/protocol/messages/runtime-core';
-import { checkDeck, contentTypeOf, problemCount, readDeckSummary, type CheckReport } from '@cuccut/slides';
+import { LAYOUT_NOTE_PREFIX, checkDeck, contentTypeOf, problemCount, readDeckSummary, type CheckReport } from '@cuccut/slides';
 import { resolveDeckDir, type SlidesService } from '../slides.ts';
 import { inside } from './artifact-save.ts';
 import { formatBytes } from './model-install-tools.ts';
@@ -11,18 +11,23 @@ import { ToolError, type ToolInfo, type ToolSet } from './tool-catalog.ts';
 import { approvalField, confirmSummary, type ToolAccess, type ToolPrincipal, type ToolScope } from './tool-scope.ts';
 
 /**
- * 会话里的幻灯片（docs/design/slides §7.2）：deck 的文件由智能体用 Driver 自带的文件工具写，这两个工具补上它自己做不到的。
+ * Slides in a session (docs/design/slides §7.2): the agent writes the deck's files with the Driver's own file tools; these
+ * two tools cover what it cannot do itself.
  *
- * - `slides_check`：用编辑器构建里的编译器逐页校验 deck（`@cuccut/slides` 的 `checkDeck`），返回问题清单。没有问题时在会话里
- *   记一条 `slides-created`（同一份 deck 只有一条，再次通过时更新标题与页数），线程里出现幻灯片卡片。只读文件，风险 `read`。
- * - `slides_import_asset`：把工作目录里的一张图片或一个字体拷进 deck 的 `assets/`（按内容寻址，同一份只存一份），返回写进
- *   `<img src>` 或 deck.json `faces` 的 `src` 的 `/_blob/<id>`。编辑器开着这份 deck 时与它共用存储，素材登记与发布串行。写 deck 目录，
- *   风险 `edit`。
+ * - `slides_check`: validates the deck slide by slide with the compiler from the editor build (`checkDeck` from
+ *   `@cuccut/slides`) and returns a list of problems. With no problems it records one `slides-created` in the session
+ *   (one per deck; passing again updates the title and slide count), and a slides card appears in the thread. Reads
+ *   files only, risk `read`.
+ * - `slides_import_asset`: copies an image or a font from the working directory into the deck's `assets/`
+ *   (content-addressed, stored once) and returns the `/_blob/<id>` to write into `<img src>` or the `src` of deck.json
+ *   `faces`. When the editor has this deck open it shares the store with it; asset registration and publishing are
+ *   serialized. Writes the deck directory, risk `edit`.
  *
- * deck 必须在会话的来源目录里（卡片按来源目录与相对路径打开）。只给会话里的智能体（`surfaces` 只有 `agent`）。
+ * The deck must be in the session's source directory (the card opens by source directory and relative path). Only for
+ * the agent in a session (`surfaces` is just `agent`).
  */
 
-/** 一个素材文件的上限（图片与字体）：幻灯片里的图片几百 KB 到几 MB，再大的先缩小；中日韩字体文件也在这之内。 */
+/** Limit for one asset file (images and fonts): slide images run from a few hundred KB to a few MB, shrink anything larger first; CJK font files also fit within this. */
 export const SLIDES_ASSET_MAX_BYTES = 20 * 1024 * 1024;
 
 export interface SlidesToolsDeps {
@@ -30,14 +35,13 @@ export interface SlidesToolsDeps {
   slides: Pick<SlidesService, 'compiler' | 'store'>;
 }
 
-// i18n-ignore-start: 给模型的工具说明、错误与下一步
 const schemas = {
   slides_check: z.strictObject({
-    path: z.string().min(1).max(1000).describe('deck 目录（里面有 deck.json），相对工作目录的路径'),
+    path: z.string().min(1).max(1000).describe('Deck directory (containing deck.json), as a path relative to the working directory'),
   }),
   slides_import_asset: z.strictObject({
-    deck: z.string().min(1).max(1000).describe('deck 目录（里面有 deck.json），相对工作目录的路径'),
-    path: z.string().min(1).max(1000).describe('要导入的文件，相对工作目录的路径：图片 png、jpg、gif、webp、avif、svg，或字体 woff2、woff、ttf、otf'),
+    deck: z.string().min(1).max(1000).describe('Deck directory (containing deck.json), as a path relative to the working directory'),
+    path: z.string().min(1).max(1000).describe('File to import, as a path relative to the working directory: an image (png, jpg, gif, webp, avif, svg) or a font (woff2, woff, ttf, otf)'),
   }),
 };
 
@@ -46,33 +50,33 @@ type Args<N extends ToolName> = z.infer<(typeof schemas)[N]>;
 
 const DEFINITIONS: Record<ToolName, ToolInfo> = {
   slides_check: {
-    title: '检查幻灯片',
+    title: 'Check slides',
     description: [
-      '用幻灯片编辑器的编译器校验一份 deck，返回问题清单。',
-      '逐页检查：格式之外的标签、会被丢掉的 CSS、表格行列不齐、页面文件里的 <title>/<link>/<style>、不是 /_blob 的图片地址、引用的 /_blob 素材不存在、序列化往返不稳定；deck.json 的 order、sections、cover 是否指向存在的页，faces 的字体编辑器认不认得、字体文件在不在，designSystems 与 ds/<目录>/ 是否对得上。各页的 notes 是不影响内容的提示，其中「排版」开头的是版面估算（内容超出框、文字互相压住、单词放不下）。',
-      '写完或改完 deck 必须调用一次。problems 为 0 时，线程里出现这份幻灯片的卡片（同一份 deck 只有一张，之后更新标题与页数），用户点开就能预览、编辑与标注；有问题时按 slides 里的说明改文件再调用。',
+      'Validate a deck with the slides editor\'s compiler and list its problems.',
+      `Checks each slide for: tags outside the format, CSS that would be dropped, tables with uneven rows/columns, <title>/<link>/<style> in slide files, image URLs that are not /_blob, referenced /_blob assets that do not exist, and unstable serialization round trips; and checks whether deck.json's order, sections and cover point to existing slides, whether the editor recognizes the fonts in faces and the font files exist, and whether designSystems matches ds/<folder>/. Each slide's notes are hints that do not affect content; those starting with "${LAYOUT_NOTE_PREFIX}" are layout estimates (content overflowing its box, text overlapping text, words that do not fit).`,
+      'Must be called once after writing or changing a deck. When problems is 0, a card for this deck appears in the thread (one per deck; later passes update the title and slide count) that the user can open to preview, edit and annotate; when there are problems, fix the files as described in slides and call it again.',
     ].join('\n'),
     annotations: { readOnlyHint: true },
     effect: 'query',
-    examples: [{ title: '检查刚写好的 deck', args: { path: 'talk' } }],
-    // 只给会话里的智能体：卡片记在会话里。
+    examples: [{ title: 'Check a deck just written', args: { path: 'talk' } }],
+    // Only for the agent in a session: the card is recorded in the session.
     surfaces: ['agent'],
     positional: 'path',
   },
   slides_import_asset: {
-    title: '导入幻灯片素材',
+    title: 'Import slides asset',
     description: [
-      '把工作目录里的一张图片或一个字体拷进 deck 的 assets/，返回写进页面或 deck.json 的地址。',
-      `按内容寻址，同一份只存一份；返回的 src 形如 /_blob/<id>：图片原样写进 slide 的 <img src="…">，字体原样写进 deck.json 里 faces 那一项的 src。只收 png、jpg、gif、webp、avif、svg 与 woff2、woff、ttf、otf，不超过 ${formatBytes(SLIDES_ASSET_MAX_BYTES)}。`,
-      'deck 与 path 都相对工作目录，不能用 .. 或符号链接指到外面。会按访问模式向用户确认。',
+      'Copy an image or font into the deck\'s assets/ and return its URL.',
+      'The file comes from the working directory; write the returned URL into a slide or deck.json.',
+      `Content-addressed, each file stored once; the returned src looks like /_blob/<id>: for an image write it verbatim into the slide's <img src="...">, for a font write it verbatim as the src of that entry in deck.json's faces. Accepts only png, jpg, gif, webp, avif, svg and woff2, woff, ttf, otf, up to ${formatBytes(SLIDES_ASSET_MAX_BYTES)}.`,
+      'deck and path are both relative to the working directory and may not point outside it with .. or symlinks. Asks the user for confirmation according to the access mode.',
     ].join('\n'),
     annotations: { destructiveHint: false, idempotentHint: true },
     effect: 'mutation',
-    examples: [{ title: '导入封面图', args: { deck: 'talk', path: 'images/cover.png' } }],
+    examples: [{ title: 'Import a cover image', args: { deck: 'talk', path: 'images/cover.png' } }],
     surfaces: ['agent'],
   },
 };
-// i18n-ignore-end
 
 export class SlidesTools implements ToolSet {
   readonly schemas = schemas;
@@ -90,8 +94,7 @@ export class SlidesTools implements ToolSet {
       case 'slides_import_asset':
         return this.#importAsset(args as Args<'slides_import_asset'>, principal);
       default:
-        // i18n-ignore: 给模型的工具说明、错误与下一步
-        return Promise.reject(new ToolError('UNKNOWN_TOOL', `没有这个工具：${name}`));
+        return Promise.reject(new ToolError('UNKNOWN_TOOL', `No such tool: ${name}`));
     }
   }
 
@@ -100,15 +103,13 @@ export class SlidesTools implements ToolSet {
     const access = scope.authorize(principal, false);
     const deck = await this.#deck(access, args.path);
     const rt = slides.compiler();
-    // i18n-ignore: 给模型的工具说明、错误与下一步
-    if (!rt) throw new ToolError('SLIDES_COMPILER_UNAVAILABLE', '这台机器上的 CucCut 没有构建幻灯片编辑器，无法校验，也不能在 CucCut 里打开。deck 文件照样能用，告诉用户这一点');
+    if (!rt) throw new ToolError('SLIDES_COMPILER_UNAVAILABLE', 'CucCut on this machine was built without the slides editor, so the deck cannot be validated or opened in CucCut. The deck files still work; tell the user this');
     let report: CheckReport;
     try {
-      // 带上编译器的排版提示（内容超出框、文字压住文字、单词放不下）：没有截图时这是看版面的唯一途径。
+      // Include the compiler's layout hints (content overflowing its box, text overlapping text, words that do not fit): without screenshots this is the only way to see the layout.
       report = checkDeck(rt, deck.dir, { verbose: true });
     } catch (error) {
-      // i18n-ignore: 给模型的工具说明、错误与下一步
-      throw new ToolError('SLIDES_CHECK_FAILED', `校验没能跑完：${(error as Error).message}。先检查 deck.json 是不是合法的 JSON`);
+      throw new ToolError('SLIDES_CHECK_FAILED', `Validation did not finish: ${(error as Error).message}. First check that deck.json is valid JSON`);
     }
     const problems = problemCount(report);
     if (problems === 0) scope.recordSlides?.(access, { target: deck.target, title: deck.summary.title, slideCount: deck.summary.slideCount });
@@ -128,16 +129,14 @@ export class SlidesTools implements ToolSet {
       ...(report.deckProblems.length > 0 ? { deckProblems: report.deckProblems } : {}),
       ...(report.orphans.length > 0 ? { orphans: report.orphans } : {}),
       ...(slidesWithFindings.length > 0 ? { slides: slidesWithFindings } : {}),
-      // i18n-ignore-start: 给模型的工具说明、错误与下一步
       next:
         problems > 0
-          ? '按 deckProblems 与各页的 problems 改文件，再调用 slides_check，直到 problems 为 0。notes 是提示，不影响内容；「排版」开头的尽量一并改掉。'
-          : '没有问题：线程里已经出现这份幻灯片的卡片，用户点开就能预览、编辑与标注。用一两句话告诉用户做好了什么，不要再贴文件内容。' +
-            (slidesWithFindings.some((slide) => slide.notes?.some((note) => note.startsWith('排版')))
-              ? ' 有页面带「排版」提示：版面可能放不下或互相压住，改好再校验一次。'
+          ? `Fix the files according to deckProblems and each slide's problems, then call slides_check again until problems is 0. notes are hints that do not affect content; try to fix the layout notes (starting with "${LAYOUT_NOTE_PREFIX}") as well.`
+          : 'No problems: a card for this deck is now in the thread, and the user can open it to preview, edit and annotate. Tell the user in a sentence or two what you made; do not paste the file contents again.' +
+            (slidesWithFindings.some((slide) => slide.notes?.some((note) => note.startsWith(LAYOUT_NOTE_PREFIX)))
+              ? ` Some slides have layout notes (starting with "${LAYOUT_NOTE_PREFIX}"): content may not fit or may overlap; fix them and check again.`
               : '') +
-            (report.orphans.length > 0 ? ' orphans 里的页不在 order 里，不会显示：不需要就删掉。' : ''),
-      // i18n-ignore-end
+            (report.orphans.length > 0 ? ' Slides in orphans are not in order and will not be shown: delete them if they are not needed.' : ''),
     };
   }
 
@@ -153,25 +152,23 @@ export class SlidesTools implements ToolSet {
       ...confirmSummary(RcAgentTools.slidesImportAssetSummary({ file: args.path, deck: deck.target.path || '.' })),
     });
     const bytes = await fs.readFile(file.path);
-    // i18n-ignore: 给模型的工具说明、错误与下一步
-    if (bytes.byteLength !== file.size) throw new ToolError('FILE_CHANGED', '文件在确认期间被改了：重新调用一次');
+    if (bytes.byteLength !== file.size) throw new ToolError('FILE_CHANGED', 'The file changed while waiting for confirmation: call again');
     const uploaded = await slides.store(deck.dir).putBlob(bytes, type);
     return {
       src: uploaded.url,
       bytes: uploaded.sizeBytes,
       contentType: type,
       ...approvalField(approval),
-      // i18n-ignore-start: 给模型的工具说明、错误与下一步
       next: type.startsWith('font/')
-        ? '在 deck.json 的 faces 里登记这个字体：{"family": "<页面 font-family 里写的名字>", "src": "<src>"}，原样用这个地址、不写 href；改完调用 slides_check。'
-        : '把 src 原样写进 slide 的 <img src="…">（不要写成相对路径或文件名）；改完调用 slides_check。',
-      // i18n-ignore-end
+        ? 'Register this font in deck.json\'s faces: {"family": "<the name used in the slides\' font-family>", "src": "<src>"}, using this URL verbatim and no href; call slides_check when done.'
+        : 'Write src verbatim into the slide\'s <img src="..."> (not as a relative path or file name); call slides_check when done.',
     };
   }
 
   /**
-   * 调用方给的 deck 目录：相对工作目录，必须在会话的来源目录里、是 deck（有合法的 deck.json）。返回真实路径、
-   * 打开它用的 FileTarget（来源目录 + 相对路径，`/` 分隔）与概况。
+   * The deck directory given by the caller: relative to the working directory, inside the session's source directory, and
+   * a deck (with a valid deck.json). Returns the real path, the FileTarget used to open it (source directory + relative
+   * path, `/`-separated) and the summary.
    */
   async #deck(access: ToolAccess, given: string) {
     const { scope } = this.#deps;
@@ -184,52 +181,52 @@ export class SlidesTools implements ToolSet {
       dir = await resolveDeckDir(root, relNative);
     } catch (error) {
       if (!(error instanceof RpcError)) throw error;
-      // i18n-ignore: 给模型的工具说明、错误与下一步
-      if (error.code === 'not-found') throw new ToolError('DECK_NOT_FOUND', `工作目录里没有这个目录：${given}`);
+      if (error.code === 'not-found') throw new ToolError('DECK_NOT_FOUND', `No such directory in the working directory: ${given}`);
       throw deckOutside();
     }
     const summary = await readDeckSummary(dir);
-    // i18n-ignore: 给模型的工具说明、错误与下一步
-    if (!summary) throw new ToolError('NOT_A_DECK', `${given} 不是 deck 目录：里面要有 deck.json，其中 v 为 4、order 是页 id 的数组`);
+    if (!summary) throw new ToolError('NOT_A_DECK', `${given} is not a deck directory: it needs a deck.json with v set to 4 and order as an array of slide ids`);
     const relPath = relNative.split(path.sep).filter(Boolean).join('/');
     return { dir, summary, target: { ...source, path: relPath } };
   }
 
-  /** 要导入的文件：工作目录里的普通文件（按真实路径判断，不经过符号链接），图片或字体，不超过上限。 */
+  /** The file to import: a regular file in the working directory (judged by real path, not through symlinks), an image or font, within the limit. */
   async #sourceFile(access: ToolAccess, given: string): Promise<{ path: string; size: number }> {
     const base = await fs.realpath(this.#deps.scope.fileBase(access));
     if (path.isAbsolute(given) || path.win32.isAbsolute(given) || given.split(/[\\/]+/).includes('..')) throw fileOutside();
     const resolved = path.resolve(base, given);
     if (resolved === base || !inside(resolved, base)) throw fileOutside();
     const stat = await fs.lstat(resolved).catch(() => null);
-    // i18n-ignore-start: 给模型的工具说明、错误与下一步
-    if (!stat) throw new ToolError('FILE_NOT_FOUND', `工作目录里没有这个文件：${given}`);
-    if (stat.isSymbolicLink()) throw new ToolError('PATH_IS_SYMLINK', 'path 是一个符号链接：给它指向的、在工作目录里的文件');
-    if (!stat.isFile()) throw new ToolError('NOT_A_FILE', 'path 要是一个普通文件（不是目录）');
+    if (!stat) throw new ToolError('FILE_NOT_FOUND', `No such file in the working directory: ${given}`);
+    if (stat.isSymbolicLink()) throw new ToolError('PATH_IS_SYMLINK', 'path is a symlink: give the file it points to, inside the working directory');
+    if (!stat.isFile()) throw new ToolError('NOT_A_FILE', 'path must be a regular file (not a directory)');
     const dirReal = await fs.realpath(path.dirname(resolved));
     if (!inside(dirReal, base)) throw fileOutside();
     const file = path.join(dirReal, path.basename(resolved));
     const type = contentTypeOf(file);
     if (!type.startsWith('image/') && !type.startsWith('font/')) {
-      throw new ToolError('UNSUPPORTED_ASSET_TYPE', '只能导入图片（png、jpg、gif、webp、avif、svg）或字体（woff2、woff、ttf、otf），按扩展名判断');
+      throw new ToolError('UNSUPPORTED_ASSET_TYPE', 'Only images (png, jpg, gif, webp, avif, svg) or fonts (woff2, woff, ttf, otf) can be imported, judged by file extension');
     }
     if (stat.size > SLIDES_ASSET_MAX_BYTES) {
-      throw new ToolError('FILE_TOO_LARGE', `文件有 ${formatBytes(stat.size)}，超过了 ${formatBytes(SLIDES_ASSET_MAX_BYTES)} 的上限：图片先缩小`, {
+      throw new ToolError('FILE_TOO_LARGE', `The file is ${formatBytes(stat.size)}, over the ${formatBytes(SLIDES_ASSET_MAX_BYTES)} limit: shrink the image first`, {
         bytes: stat.size,
         limit: SLIDES_ASSET_MAX_BYTES,
       });
     }
-    // i18n-ignore-end
     return { path: file, size: stat.size };
   }
 }
 
 function deckOutside(): ToolError {
-  // i18n-ignore: 给模型的工具说明、错误与下一步
-  return new ToolError('PATH_OUTSIDE_WORKSPACE', 'deck 要是会话工作目录里的目录（相对路径，不在隐藏目录或依赖目录里，不经过指向别处的符号链接）');
+  return new ToolError(
+    'PATH_OUTSIDE_WORKSPACE',
+    'deck must be a directory in the session\'s working directory (a relative path, not in a hidden or dependency directory, not through a symlink pointing elsewhere)',
+  );
 }
 
 function fileOutside(): ToolError {
-  // i18n-ignore: 给模型的工具说明、错误与下一步
-  return new ToolError('PATH_OUTSIDE_WORKSPACE', 'path 要是这个会话工作目录里的文件（相对路径，不含 ..，不经过指向别处的符号链接）');
+  return new ToolError(
+    'PATH_OUTSIDE_WORKSPACE',
+    'path must be a file in this session\'s working directory (a relative path, without .., not through a symlink pointing elsewhere)',
+  );
 }

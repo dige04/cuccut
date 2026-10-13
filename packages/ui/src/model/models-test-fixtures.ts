@@ -1,4 +1,4 @@
-// i18n-ignore-file: 测试夹具，模拟 Runtime 发来的数据
+// i18n-ignore-file: test fixtures mimicking data sent by the Runtime; tests assert these sample values
 import type {
   ImageModelInfo,
   ModelBundleStatus,
@@ -11,7 +11,7 @@ import type {
   TranscribeModelInfo,
 } from '@cuccut/protocol';
 
-/** 模型页单测共用的能力视图：形状照 Runtime 的真实视图（providers/online-source.ts、agent-source.ts、models/local-source.ts）。 */
+/** Capability view shared by the models page unit tests: shaped like the Runtime's real views (providers/online-source.ts, agent-source.ts, models/local-source.ts). */
 
 const off: ProviderConfigView = { enabled: false, enabledAt: null, credential: 'missing' };
 const keyed: ProviderConfigView = { enabled: true, enabledAt: '2026-10-01T00:00:00.000Z', credential: 'set' };
@@ -104,7 +104,7 @@ function online<M extends ProviderCapabilityView['models'][number]>(
 const asrBox: ProviderConfigView = { enabled: true, enabledAt: '2026-10-01T00:00:00.000Z', credential: 'missing', endpoint: 'https://api.example.com/v1' };
 const ttsBox: ProviderConfigView = { enabled: true, enabledAt: '2026-10-01T00:00:00.000Z', credential: 'set', endpoint: 'http://localhost:8000/v1' };
 
-/** OpenAI 连上了（语音合成、图像可用）；Google 与 ElevenLabs 没连；两家自建：一家声明了转写模型，一家声明了语音合成模型。 */
+/** OpenAI connected (speech synthesis and images available); Google and ElevenLabs not connected; two self-hosted: one declares a transcription model, the other a speech synthesis model. */
 export function fixtureView(): ModelCapabilitiesView {
   return {
     transcribe: {
@@ -158,8 +158,8 @@ export function fixtureView(): ModelCapabilitiesView {
 }
 
 /**
- * 在 `fixtureView()` 上补上文本生成：OpenAI 连上了（两只模型，一只能调推理强度），Google 没连。
- * 不直接加进 `fixtureView()`——那会改变 OpenAI「这把密钥给哪几类用」等现有断言。`parameters` 为 null 时视图里不带参数。
+ * Adds text generation on top of `fixtureView()`: OpenAI connected (two models, one with adjustable reasoning effort), Google not connected.
+ * Not added to `fixtureView()` directly, since that would change existing assertions such as OpenAI's "which kinds this key is used for". With `parameters` null the view carries no parameters.
  */
 export function textView(parameters: TextCapabilityParameters | null = { effort: null, concurrency: 4 }): ModelCapabilitiesView {
   const view = fixtureView();
@@ -190,7 +190,7 @@ export function bundle(bundleId: string, patch: Partial<ModelBundleStatus> = {})
   return { bundleId, capability: 'transcribe', backend: 'mlx', device: 'metal', state: 'installed', ...patch };
 }
 
-/** 在 fixture 上加一个本机语音合成 Provider：一只装好的、一只没装的。 */
+/** Adds a local speech synthesis Provider to the fixture: one model installed, one not. */
 export function withLocalSpeech(view: ModelCapabilitiesView = fixtureView()): ModelCapabilitiesView {
   return {
     ...view,

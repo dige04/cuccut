@@ -1,81 +1,81 @@
-# 幻灯片的设计
+# Slide design
 
-这一页讲怎么让一份幻灯片好讲、好看、放得下。格式本身（哪些标签与样式能用）在 `references/format.md`。
+This page covers how to make a deck easy to present, good-looking, and fitting on the slides. The format itself (which tags and styles are allowed) is in `references/format.md`.
 
-## 1. 先定方向
+## 1. Set the direction first
 
-动笔前一次定下，整份不变：
+Decide once before writing, and keep it for the whole deck:
 
-- **场合与受众**。内部周会、对外路演、课堂、发布会，信息密度与语气都不同：讲给熟人听的可以密一点，讲给陌生人听的一页只放一个结论。
-- **讲的人与读的人**。有人在台上讲，页面是提示与佐证，字少、图大；没人讲、发出去自己读，页面要能自己说清楚，句子可以完整一些，但仍然一页一件事。
-- **视觉方向**。从内容里找一个方向：财报偏克制（浅底、一种强调色、数字大），产品发布偏醒目（深底、大图、强对比），教学偏清楚（浅底、图解多、层级明显）。方向决定版式、字体与配色，不按心情每页换。
+- **Occasion and audience**. Internal weekly meeting, external pitch, classroom, product launch: information density and tone all differ. For people who know the subject you can be denser; for strangers, put only one conclusion on a slide.
+- **Presented or read**. When someone presents on stage, the slides are prompts and evidence: few words, large images. When no one presents and the deck is sent out to be read, the slides must explain themselves; sentences can be more complete, but it is still one thing per slide.
+- **Visual direction**. Find a direction in the content: financial reports lean restrained (light background, one accent color, large numbers), product launches lean bold (dark background, large images, strong contrast), teaching leans clear (light background, many diagrams, obvious hierarchy). The direction sets layout, fonts and colors; do not change it slide by slide on a whim.
 
-## 2. 配色
+## 2. Colors
 
-- 一深一浅两个底色，加一到两个强调色，全部写成十六进制。整份只用这几个颜色与它们的少量深浅变化。
-- 不用纯白 `#ffffff` 与纯黑 `#000000` 做大面积底色，略带色调的白与黑（如 `#f7f5f0`、`#1c1d21`）更耐看；卡片可以比底色亮一档。
-- 正文与背景的对比度至少 4.5:1，44px 以上的大字至少 3:1。浅底上的灰字最容易不够，宁可深一点。
-- 要区分的颜色（图表里的两条线、两种状态）同时拉开明暗，不只靠色相；避免只用红与绿区分，蓝与橙更稳。
-- 颜色不单独表意：状态、好坏、高亮的那一格，文字里也要写出来（「+4%，超出计划」「高风险」）。
-- 每页都写 `background`。整份用两种底色交替出节奏，偶尔用强调色整页铺底做一页「金句」或章节页。
-- 用户给了品牌色或明确的配色要求时照用，上面的比例让位于用户的要求。用了设计系统时颜色取自它（`references/design-system.md`），这一节只管对比度与颜色不单独表意。
+- One dark and one light background, plus one or two accent colors, all written as hex. Use only these colors and a few tints and shades of them across the deck.
+- Do not use pure white `#ffffff` or pure black `#000000` for large backgrounds; slightly tinted whites and blacks (such as `#f7f5f0`, `#1c1d21`) wear better; cards can be one step lighter than the background.
+- Contrast between body text and background is at least 4.5:1, and at least 3:1 for large text of 44px or more. Gray text on light backgrounds is most often too faint; err on the darker side.
+- Colors that must be told apart (two lines in a chart, two states) also differ in lightness, not just hue; avoid distinguishing only by red and green; blue and orange are safer.
+- Color never carries meaning alone: for status, good or bad, or a highlighted cell, say it in the text too ("+4%, above plan", "high risk").
+- Every slide sets `background`. Alternate the two backgrounds across the deck for rhythm, and occasionally fill a whole slide with the accent color for a key-line or section slide.
+- When the user gives brand colors or explicit color requirements, use them; the proportions above give way to the user's requirements. With a design system the colors come from it (`references/design-system.md`), and this section only governs contrast and not using color alone for meaning.
 
-## 3. 字体与字号
+## 3. Fonts and font sizes
 
-- 一到三种字体：标题一种、正文一种，最多再加一种等宽或装饰用。中日韩文字的页面，`font-family` 里要有能显示这些字的字体（网络字体或系统字体），并以通用族收尾。
-- 用了设计系统时字体取自它的字体栈，下面的推荐不适用。
-- 按方向选字体，不每份都用同一套：中文正文常用 `Noto Sans SC`，正式、人文的标题可用 `Noto Serif SC`；拉丁文字可选 `DM Sans`、`IBM Plex Sans`（技术）、`Source Serif 4`、`EB Garamond`（学术、人文）、`Oswald`（醒目的短标题）这类 Google Fonts 字体。
-- 每个用到的网络字体与导入的字体文件都要在 `deck.json` 的 `faces` 里登记（写法见 `references/format.md`「字体」）；字体栈里同时写一个常见的系统字体（Arial、Georgia、Courier New 这类），导出到别的软件时有退路。
-- 一套四到五级的字号阶梯，整份照用，例如：标题 72、小标题 44、正文 32、注释 24，大数字另给 120–200。强调用粗细、斜体或颜色，不另造一个字号。
-- 标题上方可以放一行小标签，标出这一页属于哪一部分：24–28px、强调色，拉丁文字全大写并加一点字距。
-- 用户说的字号是磅（pt）时乘 2 换成 px：36pt 是 72px。
-- 正文不小于 24px；投影在会议室里，28px 以上更稳。注释、来源这类小字也不小于 24px。
-- 行高：标题 1.1 左右，正文 1.3–1.5。
+- One to three fonts: one for titles, one for body text, and at most one more monospace or decorative font. On slides with CJK text, `font-family` must include a font that can display those characters (a web font or a system font) and end with a generic family.
+- With a design system, fonts come from its font stacks, and the recommendations below do not apply.
+- Choose fonts by direction rather than using the same set every time: for Chinese body text `Noto Sans SC` is common, and formal or humanist titles can use `Noto Serif SC`; for Latin text choose Google Fonts such as `DM Sans`, `IBM Plex Sans` (technical), `Source Serif 4`, `EB Garamond` (academic, humanist) or `Oswald` (bold short titles).
+- Every web font used and every imported font file must be registered in `faces` in `deck.json` (see "Fonts" in `references/format.md`); also put a common system font (Arial, Georgia, Courier New and the like) in the font stack as a fallback when exporting to other software.
+- One type scale of four to five steps used across the deck, for example: title 72, subtitle 44, body 32, notes 24, with big numbers at 120–200. Emphasize with weight, italics or color, not an extra size.
+- A small label line can go above the title to mark which part of the deck the slide belongs to: 24–28px, accent color, Latin text in all caps with a little letter spacing.
+- When the user gives sizes in points (pt), multiply by 2 for px: 36pt is 72px.
+- Body text is at least 24px; for projection in a meeting room, 28px or more is safer. Small text such as notes and sources is also at least 24px.
+- Line height: titles around 1.1, body text 1.3–1.5.
 
-## 4. 每页一件事
+## 4. One thing per slide
 
-- 一页只讲一个结论。标题默认直接写结论（「新用户翻了一倍」），不写话题（「用户增长情况」）；课堂、说明书这类按话题组织的，或用户要话题式标题时写话题。不管哪种，全部标题用同一种句式，连起来读就是整份的提纲。
-- 能不用要点列表就不用：并列的几项改成卡片一排、表格或几个大数字；一句话说得清的就只放一句话，配一张图。
-- 一定要列要点时不超过 5 条，每条一行，句式一致。
-- 数字要有出处：在页脚写来源，或在讲稿里写清楚。没有出处的数字写成 `[待补：…]`。
-- 不写「不是 A，而是 B」这类故作反转的句子，也不堆形容词。
-- 不加填充内容：版面空时调整版式，不编额外的段落、数字或图标去凑满；觉得该多加一页或一段时先问用户。
-- 避开一眼就是生成的套路：大面积渐变底、表情符号、带左侧强调色竖条的圆角卡片。
+- Each slide makes one conclusion. By default the title states the conclusion ("New users doubled"), not the topic ("User growth"); for topic-organized material such as lessons or manuals, or when the user wants topic titles, write the topic. Either way, all titles use the same sentence form, and read in sequence they form the outline of the deck.
+- Avoid bullet lists when you can: turn parallel items into a row of cards, a table or a few big numbers; if one sentence says it, put only that sentence, with an image.
+- When you must list points, use no more than 5, one line each, in parallel form.
+- Numbers need a source: write it in the footer or make it clear in the speaker notes. Numbers without a source are written as `[TBD: …]`, worded in the deck's language.
+- Do not write contrived reversals like "It's not A, it's B", and do not pile up adjectives.
+- Do not add filler: when the layout looks empty, adjust the layout instead of inventing extra paragraphs, numbers or icons to fill it; if you think another slide or paragraph is needed, ask the user first.
+- Avoid the telltale generated look: large gradient backgrounds, emoji, rounded cards with an accent-colored bar on the left.
 
-## 5. 版面与留白
+## 5. Layout and whitespace
 
-- 版心：四周留 128px，内容区是 1664×824。页脚（页码、来源、标志）只放一行 24px 的字，钉在 `bottom:64px`，这一页的底部留白改成 160px（`padding:128px 128px 160px`），其余内容不要越过 y=920。
-- 同一类页面用同一套结构：标题永远在左上的同一个位置，不跟内容一起居中，翻页时不跳。
-- 内容大约占满版心的七成。内容少时用 `justify-content:space-between` 把标题与结论撑开，或放一个 `flex:1` 的空 `<div>` 当弹簧；不要把小块内容孤零零地放在中间。
-- 相邻的方框要么共用一条边（后面的去掉 `border-top`），要么留出间距，不要两条线叠在一起。
-- 对齐：同一页的元素左边缘对齐到同一条线；卡片一排时等宽等高。
-- 宽度：正文句子放在 800–1000px 宽的一栏里（`width:960px`，或与图并排的 `flex:1` 栏），不铺满 1664px；一行大字（金句、结论）不超过约 1400px。
-- 几列并排、每列都有同样几行（三个方案各有标签、说明、卡片）时，用一个 `display:grid` 按行写，各列的行才对得齐；不写成三个各自往下排的列。
+- Content area: 128px margins on all sides, leaving 1664×824. A footer (page number, source, logo) holds only one line of 24px text pinned at `bottom:64px`; that slide's bottom padding becomes 160px (`padding:128px 128px 160px`), and no other content goes below y=920.
+- Slides of the same kind share one structure: the title always sits at the same top-left position, not centered with the content, so it does not jump when changing slides.
+- Content fills about 70% of the content area. With little content, use `justify-content:space-between` to spread the title and the conclusion apart, or an empty `flex:1` `<div>` as a spacer; do not leave a small block floating alone in the middle.
+- Adjacent boxes either share one edge (remove `border-top` from the later one) or have a gap between them; never let two lines sit on top of each other.
+- Alignment: elements on a slide align their left edges to the same line; cards in a row have equal width and height.
+- Width: body sentences sit in a column 800–1000px wide (`width:960px`, or a `flex:1` column beside an image), not across the full 1664px; one line of large text (key line, conclusion) is no wider than about 1400px.
+- When several columns sit side by side and each has the same rows (three options, each with a label, description and card), write them row by row in one `display:grid` so the rows line up across columns; do not write three columns that each stack downward on their own.
 
-### 估算高度，确认放得下
+### Estimate heights to make sure it fits
 
-放不下时，编辑器会把框里的字自动缩小（最多缩到六成，再放不下就溢出），缩出来的字号不在阶梯上，各页大小不一。写之前按下面估一遍，超了就删字或拆成两页，不要靠缩字号；校验给出的「排版」提示也会指出哪些框放不下：
+When content does not fit, the editor shrinks the text in the box automatically (down to at most 60%, then it overflows), and the shrunk sizes fall off the type scale and vary from slide to slide. Estimate as below before writing; if it is over, cut words or split into two slides rather than relying on smaller sizes; the `layout` notes from validation also point out which boxes do not fit:
 
-- 一行字的高度 ≈ 字号 × 行高。标题 72px、行高 1.1、两行 ≈ 160px。
-- 每行能放的字：中日韩文字 ≈ 宽度 ÷ 字号；拉丁字母 ≈ 宽度 ÷ (0.55 × 字号)。版心 1664px、正文 32px：一行约 52 个汉字或 95 个字母。
-- 卡片高度 = 行数 × 字号 × 行高 + 上下内边距；不要给卡片写死一个比这更小的 `height`，不写高度让它随内容。
-- 表格一行 ≈ 2.1 × 字号 × 文字行数。
-- 拉丁文字只在空格处换行：一个长单词比框还宽时会被截断，框的宽度至少要放下最长的那个词。
-- 把各块高度与它们之间的 `gap` 加起来，与 824px（有页脚时是 792px）比。
+- Height of one line ≈ font size × line height. Title 72px, line height 1.1, two lines ≈ 160px.
+- Characters per line: CJK ≈ width ÷ font size; Latin ≈ width ÷ (0.55 × font size). Content area 1664px, body 32px: about 52 CJK characters or 95 Latin letters per line.
+- Card height = lines × font size × line height + top and bottom padding; do not hard-code a card `height` smaller than that; leave the height unset so it follows the content.
+- One table row ≈ 2.1 × font size × lines of text.
+- Latin text wraps only at spaces: a long word wider than its box gets cut off, so a box must be at least as wide as its longest word.
+- Add up the block heights and the `gap`s between them, and compare with 824px (792px with a footer).
 
-## 6. 图片与图表
+## 6. Images and charts
 
-- 图从哪来、哪几页该放、怎么用图片生成模型画插图，见 `references/images.md`。图片都要先导入 deck（「新做一份」第 4 步），不用来路不明的网图；生成的插图只当配图，不冒充真实的产品、人物或数据。
-- 照片用 `object-fit:cover` 铺满给定的框；截图、示意图用 `object-fit:contain`，放在与它反差明显的底色上。
-- 整页铺底的照片写在 `<section>` 的第一个子元素，钉满全页（`position:absolute;left:0;top:0;width:1920px;height:1080px`），后面的文字压在上面；文字下面加一层半透明的色块或卡片保证对比度，整份用同一种做法。
-- 图上要标字（示意图的标注、照片上的说明）时，把 `<img>` 放进一个写了宽高的 `position:relative` 的 `<div>`，标注用钉在这个 `<div>` 里的 `<p>`；字不画进图里，也不写进 SVG 的 `<text>`。
-- 简单的数据图（几根柱子、一条趋势）可以用 `<div>` 画柱、用内联 `<svg>` 画线；数据点多、要精确时用表格，不要手画近似的图。图上标出单位与来源。
-- 柱子站在同一条底线上：放进一个固定高度、`display:flex;align-items:flex-end` 的轨道，每根的 `height` 按全页同一个比例算，数值写在柱顶，类别写在轨道下面；一页几组柱子时，轨道高度与比例都相同。
-- 流程与关系用 `<x-shape>` 与 `<x-connector>` 画，节点不超过七八个；更复杂的拆成几页逐步展开。先摆框、再连线：框按统一的列距与行距排在网格上，同类的框一样大，框之间至少 32px，宽度放得下最长的词；连线从框边的中点连到框边的中点，同一行或同一列的用直线，其余用 `hv` 或 `vh`；线旁的说明钉在离线至少 8px 的地方，不压在线上。
+- For where images come from, which slides get them, and how to draw illustrations with an image generation model, see `references/images.md`. Every image is imported into the deck first (step 4 of "Making a new deck"); do not use web images of unknown origin; generated illustrations are only decorative and never pass themselves off as a real product, person or data.
+- Photos use `object-fit:cover` to fill their frame; screenshots and diagrams use `object-fit:contain` on a background that contrasts clearly with them.
+- A full-slide background photo is the `<section>`'s first child, pinned to fill the slide (`position:absolute;left:0;top:0;width:1920px;height:1080px`), with the text after it on top; put a translucent color block or card under the text to ensure contrast, and use the same approach throughout the deck.
+- To label an image (callouts on a diagram, captions on a photo), put the `<img>` in a `position:relative` `<div>` with a set width and height, and use `<p>` elements pinned inside that `<div>` for the labels; never draw text into the image or put it in SVG `<text>`.
+- Simple data charts (a few bars, one trend) can use `<div>` bars and inline `<svg>` lines; when there are many data points or precision matters, use a table rather than a hand-drawn approximation. Mark units and sources on the chart.
+- Bars stand on the same baseline: put them in a fixed-height track with `display:flex;align-items:flex-end`, compute each bar's `height` with one scale for the whole slide, write the value on top of the bar and the category below the track; with several groups of bars on a slide, use the same track height and scale.
+- Draw flows and relationships with `<x-shape>` and `<x-connector>`, with no more than seven or eight nodes; split anything more complex across several slides that build up step by step. Place the boxes first, then connect them: arrange boxes on a grid with uniform column and row spacing, make boxes of the same kind the same size, keep at least 32px between boxes, and make each box wide enough for its longest word; connect from the midpoint of one box edge to the midpoint of another, with straight lines within a row or column and `hv` or `vh` otherwise; pin line labels at least 8px from the line, never on top of it.
 
-## 7. 节奏与动效
+## 7. Rhythm and animation
 
-- 封面、章节页、金句页用深底或强调色，内容页用浅底，翻页时有起伏。
-- 换页效果整份用同一种（`fade` 最稳），章节页可以换一种。
-- 元素逐个出现（`data-build-in`）只用在讲的时候要一步步揭开的地方，一页不超过三四步；发出去自己读的幻灯片不用。
-- 讲稿（`<aside>`）写讲的人要说而页面上没写的话：过渡句、数字背后的原因、要强调的一点。有人在台上讲的 deck 每页都写；发出去自己读的不写，页面自己要说清楚。
+- The cover, section slides and key-line slides use a dark or accent background, content slides a light one, so changing slides has some rise and fall.
+- Use one transition across the deck (`fade` is safest); section slides can use a different one.
+- Use elements appearing one by one (`data-build-in`) only where the presenter needs to reveal things step by step, no more than three or four steps per slide; not in decks sent out to be read.
+- Speaker notes (`<aside>`) hold what the presenter says that is not on the slide: transitions, the reasons behind numbers, the one point to stress. For a deck presented on stage, write them on every slide; for a deck sent out to be read, don't; the slides must explain themselves.

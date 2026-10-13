@@ -1,39 +1,39 @@
-# 口播的画面与声音
+# Picture and sound for talking heads
 
-剪口定下之后再做这些。时间换算见 `SKILL.md` 第 1 节；每一步的字段以 edits_apply 的说明为准。
+Do these only after the cuts are settled. Time conversion is in `SKILL.md` section 1; for every step's fields, edits_apply's documentation is authoritative.
 
-## 1. 放大强调
+## 1. Punch-in emphasis
 
-在要强调的那句话上把画面放大一点，下一句回到原来的大小。它也能盖住跳切：同一机位的两段接在一起时，景别一变，跳切就成了有意的剪辑。
+Enlarge the picture slightly on the sentence to emphasize, and return to the original size on the next sentence. It also covers jump cuts: when two segments from the same camera angle are joined, a change in shot size turns the jump cut into a deliberate edit.
 
-- 幅度是起点：约 1.1–1.15 倍就看得出；超过约 1.3 倍，多数素材开始发虚，脸也容易出框。素材分辨率低时更保守。
-- 做法：用 splitItem 在这句话的开头和下一句的开头（时间线上的秒）把主画面片段切开，放大**中间那个片段自己的画面**；不要在上面再叠一份同素材的副本。画面和声音本来就在这个片段上，口型不会错位；之后的剪口和挪动也会带着它。
-- 片段的 place.mode 是 fullscreen（铺满画布）时，setTransform 的缩放不起作用：在同一次 edits_apply 里先用 setStyle 把 mode 改成 pip，再用 setTransform 给 x 50、y 50、铺满所需的宽 w 与 scale（例如 1.12）。素材与画布宽高比相同时 w 是 100；素材比画布更宽时 w = 100 ×（素材宽高比 ÷ 画布宽高比）。
-- 放大之后人要还在框里：人不在正中时用 setTransform 的 x、y 挪一挪，别让眼睛和下巴出框。挪动不能露出画布：水平方向 |x − 50| 不超过（w × scale − 100）÷ 2，垂直方向同理按画面的高算；超了就再放大一点或少挪一点。
-- 取帧（videos_frames）看到的是素材画面，放大不在里面，所以合成后的效果你看不到：做完请用户在编辑器里看这句话之前、中间、之后的画面，或导出这几秒成片再看；报告里写明哪些没有亲眼看过。
-- 用几次由内容决定；每句都放大就等于没有强调。
+- The amount is a starting point: about 1.1-1.15x is noticeable; beyond about 1.3x most footage starts to look soft and the face easily leaves the frame. Be more conservative with low-resolution footage.
+- How: use splitItem to split the main picture item at the start of this sentence and the start of the next one (in timeline seconds), and enlarge **the middle item's own picture**; do not stack another copy of the same asset on top. The picture and sound already live on this item, so lip sync cannot drift, and later cuts and moves carry it along.
+- When the item's place.mode is fullscreen (filling the canvas), setTransform's scale has no effect: in the same edits_apply, first use setStyle to change mode to pip, then setTransform with x 50, y 50, the width w needed to fill, and scale (for example 1.12). When the asset and the canvas have the same aspect ratio, w is 100; when the asset is wider than the canvas, w = 100 × (asset aspect ratio / canvas aspect ratio).
+- After enlarging, the person must still be in frame: when they are not centered, nudge with setTransform's x and y so the eyes and chin do not leave the frame. The nudge must not reveal the canvas: horizontally |x - 50| must not exceed (w × scale - 100) / 2, and vertically likewise by the picture's height; if it does, enlarge a little more or nudge less.
+- Grabbed frames (videos_frames) show the asset picture without the punch-in, so you cannot see the composited result: when done, ask the user to look in the editor at the picture before, during and after this sentence, or export those seconds of the finished video and look; state in the report which things you did not see with your own eyes.
+- How many to use depends on the content; enlarging every sentence means nothing is emphasized.
 
 ## 2. B-roll
 
-- **画面跟着词来**：B-roll 在提到它的那个词出现（addItem 的 at 取这个词在时间线上的时刻），在讲它的几句话里一直在，在句间停顿处切回人，不在一句话中间切。放在主画面上面的视觉轨上（没有就 addTrack 加一条）；用 trimItem 把结尾裁到那个停顿；带声音的 B-roll 视频用 setAudioMix 静音，别盖住人声。要铺满画面时用 setStyle 把 mode 改成 fullscreen。
-- 素材来源按这个顺序：用户给的 → 来源和许可清楚的公开素材（由用户提供或同意） → 生成的图片。讲到能截图或录屏的具体东西时，放真实的画面。
-- **生成的 B-roll** 只配讲概念、比喻、场景或情绪的句子：每张画这句话里能看见的一个具体画面，比例按视频画幅，画面里不要字，整条视频用同一段风格说明。不拿它冒充说话人讲到的真东西（某个产品、某个人、某次活动、某组数据），那里用真实画面或不放。一条视频通常几张就够，静图放上去时镜头取短。怎么调用、怎么写提示词、画不了时怎么办，用 `skills_read` 读 `cuccut-catalog-media` 的「生成图片」；生成时带上 `video`，图进候选素材再放上时间线。
-- 来源与许可写进报告。
+- **The picture follows the words**: B-roll appears at the word that mentions it (addItem's at is that word's moment on the timeline), stays through the sentences about it, and cuts back to the person at a pause between sentences, never in the middle of a sentence. Put it on a visual track above the main picture (addTrack one if there is none); use trimItem to trim its end to that pause; mute B-roll video that has sound with setAudioMix so it does not cover the voice. To fill the frame, change mode to fullscreen with setStyle.
+- Sources in this order: provided by the user -> public footage with clear source and license (provided or approved by the user) -> generated images. When the talk mentions something specific that can be screenshotted or screen-recorded, use the real picture.
+- **Generated B-roll** only goes with sentences about concepts, metaphors, scenes or emotions: each image draws one concrete, visible thing from that sentence, ratio by the video's aspect ratio, no text in the image, one style description for the whole video. Do not pass it off as a real thing the speaker mentions (a product, a person, an event, a set of data); there, use real footage or nothing. A video usually needs only a few; keep shots of stills short. For how to call it, how to write the prompt and what to do when it cannot draw, use `skills_read` to read `cuccut-catalog-media`, section "Generating images"; pass `video` when generating, so the images go into candidate assets and then onto the timeline.
+- Write sources and licenses into the report.
 
-## 3. 竖屏取景
+## 3. Vertical framing
 
-把横屏口播改成竖屏：
+Turning a horizontal talking head into a vertical one:
 
-- 改画布：edits_apply 的 updateSequence 把 canvas 改成竖屏尺寸（例如 1080×1920）。片段的位置按画幅的百分比保存，会跟着画布走，之后再逐个镜头取景。
-- **一个镜头一种取景**：同一个镜头里人的水平位置固定，不跟着每一次晃动；取景只在剪点处变。
-- **按位置裁成竖屏**：片段用 setStyle 改成 pip，setTransform 的 w 取铺满画布高所需的宽（16:9 素材放进 9:16 画布约 316，其他比例按宽高比算：w = 100 ×（素材宽高比 ÷ 画布宽高比）），x 决定露出素材的哪一部分：说话人在素材里的水平位置是 f（0 最左、1 最右）时，x = 50 +（0.5 − f）× w，并保持 |x − 50| 不超过（w − 100）÷ 2。说话人的位置要看过画面才知道：用 videos_frames 在每个镜头的开头、结尾和动作最大的地方（时间线上的秒）取几帧，看人在素材的哪一侧、估出 f；取不到或拿不准时先居中，请用户在编辑器里核对有没有出框。裁切后的效果帧里看不到，请用户在编辑器里过一遍。
-- **整个横屏画面放进竖屏**（清楚的一份居中，后面垫着同一画面的模糊版）：主画面片段用 setStyle 设 mode fullscreen、fit contain、bg blur。
-- **两个人**：可以保持完整的横屏画面（不改画布，或用上面的模糊垫底）。跟着说话人切取景、两人上下叠放，这里都没有对应的做法：告诉用户，请用户在编辑器里自己调，或改用保持横屏。
-- 这些都是**固定取景**，不跟随走动的人。
+- Change the canvas: edits_apply's updateSequence changes canvas to a vertical size (for example 1080x1920). Item positions are stored as percentages of the frame and follow the canvas; then frame each shot.
+- **One framing per shot**: within a shot the person's horizontal position is fixed and does not follow every sway; the framing changes only at cut points.
+- **Crop to vertical by position**: set the item to pip with setStyle; setTransform's w is the width needed to fill the canvas height (a 16:9 asset in a 9:16 canvas is about 316; for other ratios, w = 100 × (asset aspect ratio / canvas aspect ratio)), and x decides which part of the asset shows: when the speaker's horizontal position in the asset is f (0 far left, 1 far right), x = 50 + (0.5 - f) × w, keeping |x - 50| no more than (w - 100) / 2. The speaker's position is known only after looking at the picture: use videos_frames to grab a few frames at the start and end of each shot and where the movement is largest (in timeline seconds), see which side of the asset the person is on, and estimate f; when you cannot grab frames or are unsure, center it first and ask the user to check in the editor that nobody leaves the frame. The cropped result is not visible in frames; ask the user to go through it in the editor.
+- **Put the whole horizontal picture into vertical** (a sharp copy centered, with a blurred version of the same picture behind it): set the main picture item with setStyle to mode fullscreen, fit contain, bg blur.
+- **Two people**: you can keep the full horizontal picture (no canvas change, or the blurred background above). Switching the framing to follow the speaker, or stacking the two people vertically, has no corresponding method here: tell the user and ask them to adjust it themselves in the editor, or keep it horizontal.
+- All of these are **fixed framing**; they do not follow a person who walks around.
 
-## 4. 声音
+## 4. Sound
 
-- 人声优先。某一段人声太小或太大时，改那个片段自己的声音：setAudioMix 的 volume，不要另叠一条音轨。和用户说音量用分贝，写进操作时换成线性倍数：倍数 = 10^(dB ÷ 20)（+6 dB 约 2 倍，−6 dB 约 0.5 倍）。
-- 配乐可有可无，用户没要就不加，交付时可以提一句能加。用的话压在人声下面，说话时字听得清，旋律不抢。
-- 配乐从哪来、怎么生成、怎么放：用 `skills_read` 读 `cuccut-catalog-music`，照它做。要点：用户给了音乐就用用户的；用户要配乐又没有音乐时，本机能生成就生成纯音乐，风格按口播的内容与情绪写，稀疏、动态平稳、不要突出的主旋律，例如 `ambient, soft piano, warm pads, slow tempo, sparse arrangement, steady dynamics, understated`；剪完、时长定了再生成，一次提交等完成；不能生成时照那一页告诉用户，不到网上找。
-- 放上去：单独一条音频轨，底音量先放低（setAudioMix 的 volume 0.3 左右），片头淡入、片尾淡出 2–3 秒；再用 setDucking 让它在人说话时自动压低：trigger 用 `{"kind":"items","trackIds":[人声所在的轨道]}`，target 指向配乐轨，depth 默认 10 dB（按文稿触发的 speech 这一版还不压低，所以用人声轨触发）。口播有剪口时，配乐连续铺着能盖住剪口处底噪的跳变，不要跟着剪口一起切。来源与许可写进报告（本机生成的只许非商业用途）。
+- The voice comes first. When a segment's voice is too quiet or too loud, change that item's own sound: setAudioMix's volume, not another stacked audio track. Talk to the user about volume in decibels, and convert to a linear factor when writing the operation: factor = 10^(dB / 20) (+6 dB is about 2×, -6 dB about 0.5×).
+- Music is optional; do not add it unless the user asked, and you can mention at delivery that it could be added. When used, it sits under the voice: the words stay clear while speaking, and the melody does not compete.
+- Where music comes from, how to generate it and how to place it: use `skills_read` to read `cuccut-catalog-music` and follow it. The key points: use the user's music if they gave some; when the user wants music and has none, generate instrumental music if this machine can, with a style written from the talking head's content and mood, sparse, with steady dynamics and no prominent lead melody, for example `ambient, soft piano, warm pads, slow tempo, sparse arrangement, steady dynamics, understated`; generate it after cutting, once the duration is settled, submitting once and waiting for completion; when it cannot be generated, tell the user as that page says, and do not search the web for music.
+- Placing it: its own audio track, base volume low at first (setAudioMix volume around 0.3), fading in at the start and out over 2-3 seconds at the end; then use setDucking so it lowers automatically while the person speaks: trigger `{"kind":"items","trackIds":[the track the voice is on]}`, target pointing at the music track, depth 10 dB by default (transcript-triggered speech does not duck yet in this version, so trigger by the voice track). When the talking head has cuts, music laid continuously masks the jumps in background noise at the cuts; do not cut it along with the cuts. Write sources and licenses into the report (locally generated music is for non-commercial use only).

@@ -114,7 +114,7 @@ describe('design_check', () => {
     const result = (await tools(scope).dispatch('design_check', { path: './designs/poster/' }, principal)) as Record<string, unknown>;
     expect(result).toMatchObject({ path: 'designs/poster', title: 'Spring Poster', boardCount: 1, problems: 0 });
     expect(result).not.toHaveProperty('issues');
-    expect(result.notChecked).toEqual(expect.stringContaining('不渲染'));
+    expect(result.notChecked).toEqual(expect.stringContaining('no rendering'));
     expect(recorded).toEqual([{ target: { conversationId: 'conv_1', path: 'designs/poster' }, title: 'Spring Poster', boardCount: 1 }]);
     expect(toolRisk({ tool: 'design_check' } as ToolConfirmation)).toBe('read');
   });

@@ -1,71 +1,71 @@
-# 视频标题
+# Video titles
 
-写给发布视频的人。观众在一列标题里扫过去，每条停留不到一秒：这条标题要让对的人停下来点进去，点进来之后觉得值。标题以几个候选的形式给出；用户挑一个，或要求照其中一个再来几个。
+Written for the person publishing the video. Viewers scan down a list of titles, spending under a second on each: this title has to make the right people stop and click, and make them feel it was worth it once they do. Titles are given as several candidates; the user picks one, or asks for a few more like one of them.
 
-## 1. 先找最值得看的一点
+## 1. First find the one thing most worth watching
 
-动笔前先用一句话写下这个视频最值得看的是什么：一个出人意料的结论、一个具体的结果、一个大家关心却答不上来的问题、一段不常见的经历、一个马上能用的方法。标题从这句话出发，不从句式出发。一个视频往往有好几个值得看的点；它们就是不同候选的起点。
+Before writing, put down in one sentence what is most worth watching in this video: a surprising conclusion, a concrete result, a question people care about but cannot answer, an unusual experience, a method usable right away. The title starts from this sentence, not from a formula. A video often has several points worth watching; they are the starting points of different candidates.
 
-写完检查一下：把人名和产品名换掉，这个标题还能原样放到另一个视频上吗？能，说明它没有用上这个视频独有的东西。
+Check after writing: with the names of people and products swapped out, could this title go on another video unchanged? If so, it uses nothing unique to this video.
 
-## 2. 让人想点
+## 2. Make people want to click
 
-- **利害**：这和观众有什么关系：能省下、避开或得到什么。
-- **反差**：和人们以为的不一样；普通的方法、不寻常的结果；某人做了与身份不相称的事。
-- **具体**：数字、人名和产品名、做到的结果、一个画面。具体的东西比形容词更吸引人：「成本降到三块钱」比「成本大幅下降」管用。
-- **视频会回答的问题**：让人想知道答案，而答案确实在视频里。
-- **重要的词放前面**：标题在列表里常被截断；最抓人的词放在前几个字。
-- **用观众的说法**：用他们搜索或聊天时会用的说法，不用看完才懂的代号和缩写。
-- **读着顺**：一口气能读完，不堆符号，不把所有技巧塞进一个标题。
+- **Stakes**: what this has to do with the viewer - what they can save, avoid or gain.
+- **Contrast**: not what people assume; an ordinary method with an unusual result; someone doing something at odds with who they are.
+- **Concrete**: numbers, names of people and products, results achieved, an image. Concrete things draw people in more than adjectives: "Cost down to three dollars" works better than "Costs drop sharply".
+- **A question the video will answer**: make people want to know the answer, and the answer really is in the video.
+- **Important words first**: titles are often truncated in lists; put the most gripping words in the first few.
+- **Use viewers' words**: the phrasing they would use when searching or chatting, not code names or abbreviations that only make sense after watching.
+- **Reads smoothly**: readable in one breath, no piles of symbols, not every trick crammed into one title.
 
-对比一下（只是示意，不要照搬句式）：
+Compare (illustrative only; do not copy the formula):
 
-不好：`关于 AI 代码审查的一些思考与实践分享`（说了话题，没说值得看的点；换个话题照样能用）
+Bad: `Some thoughts and practices on AI code review` (names the topic but not the point worth watching; would work just as well for another topic)
 
-好：`AI 写的代码涨了三倍，我们的审查流程是这样改的`（有数字、有反差、有观众能拿走的东西，并且视频里确实讲了）
+Good: `AI-written code tripled - here's how we changed our review process` (a number, a contrast, something viewers can take away, and the video really covers it)
 
-## 3. 兑现
+## 3. Deliver
 
-标题里的每一个说法视频里都有。只有视频里有时才用数字和「最」「第一」「所有」这类词；留下的问题视频里有答案；标题暗示的情绪和结局视频里真的发生。点进来觉得被骗，对作者的伤害比没人点更大：他不只失去这一个观众，还失去这个观众以后对他所有标题的信任。
+Every claim in the title is in the video. Use numbers and words like "best", "first", "all" only when the video has them; any question left open is answered in the video; the emotion and outcome the title hints at really happen in the video. Feeling tricked after clicking hurts the author more than nobody clicking: they lose not only this viewer but that viewer's trust in all their future titles.
 
-## 4. 候选
+## 4. Candidates
 
-- **角度真的不同**。角度是标题切入的地方：结论、问题、主体、一个数字、反差、利害、过程、一个场景等。同一个意思换个说法、换几个近义词，不算新的候选。
-- **每个候选标出角度，并给一句理由**：为什么从这里切入，会吸引什么样的人。
-- **推荐一个**：你认为最能让对的人点进来、同时最能兑现的那一个，说明理由。
-- **要几个给几个**。用户没说时给 6 个，用户要的在 3 到 12 个之间都照给。真正不同的角度不够时，在同一角度里换侧重（换一个具体细节、换一种利害），仍然不给同一句话的改写。
-- **再来一批**：已经给过候选时，新的一批既不重复它们的角度，也不重复它们的措辞；先找还没用过的值得看的点，再找没用过的切入方式。
-- **照某一个再来几个**：保持那个候选的角度与方向，换措辞、侧重、长短与用词；每个新候选都要和它、和彼此分得开。
-- 候选共用一种风格（这次的风格），在角度上不同。
-- 用户挑定之后（或改了措辞），之后写简介就以它为「已选定的标题」。挑标题不改视频名；用户要求时才用 edits_apply 的 renameVideo 改视频名。
+- **Angles that really differ.** The angle is where the title cuts in: the conclusion, a question, the subject, a number, a contrast, the stakes, the process, a scene, etc. Saying the same thing another way or swapping in a few synonyms is not a new candidate.
+- **Mark each candidate's angle and give a one-sentence reason**: why cut in here, and what kind of people it will draw.
+- **Recommend one**: the one you think will best get the right people to click while best delivering, with your reason.
+- **Give as many as asked.** When the user does not say, give 6; give anywhere from 3 to 12 when the user asks. When there are not enough truly different angles, shift the emphasis within one angle (a different concrete detail, a different stake), and still never give rewordings of the same sentence.
+- **Another batch**: when candidates have already been given, the new batch repeats neither their angles nor their wording; first look for points worth watching not yet used, then for ways in not yet used.
+- **A few more like one of them**: keep that candidate's angle and direction, and change the wording, emphasis, length and word choice; every new candidate must be distinct from it and from each other.
+- Candidates share one style (this time's style) and differ in angle.
+- Once the user has picked one (or reworded it), use it as the "chosen title" when writing the description afterwards. Picking a title does not rename the video; rename the video with edits_apply's renameVideo only when the user asks.
 
-## 5. 与封面、简介配合
+## 5. Working with the thumbnail and description
 
-- 封面上的文字补充标题而不是照抄：标题说清是什么，封面给画面和钩子，或者反过来。
-- 简介的开头接着标题说，不重复它。
-- 所以标题要能独立成立：没有封面也知道视频讲什么。
+- Text on the thumbnail complements the title rather than copying it: the title says clearly what it is and the thumbnail gives the image and the hook, or the other way round.
+- The opening of the description picks up from the title without repeating it.
+- So the title must stand on its own: without the thumbnail, it is still clear what the video is about.
 
-## 6. 系列与平台
+## 6. Series and platforms
 
-- 用户的偏好或材料里看得出这个系列已有的标题格式（集数、固定前缀、固定结构）时，保持它。
-- 用户说了发布平台时，照你知道的那个平台的规则写（长度、禁用的符号、大小写习惯）；不确定的规则不要编，并提醒用户自己核对。
+- When the user's preferences or the material show an existing title format for the series (episode numbers, a fixed prefix, a fixed structure), keep it.
+- When the user names the publishing platform, follow that platform's rules as you know them (length, disallowed symbols, capitalization conventions); do not invent rules you are unsure of, and remind the user to check them.
 
-## 7. 篇幅与风格
+## 7. Length and style
 
-| 篇幅 | 标题 |
+| Length | Title |
 | --- | --- |
-| 短 | 只说最重要的一个说法 |
-| 中（默认） | 一句完整的话 |
-| 长 | 主标题加副标题或补充细节 |
+| Short | Only the single most important claim |
+| Medium (default) | One complete sentence |
+| Long | A main title plus a subtitle or added detail |
 
-风格体现在语气上：平实直接说内容，科普让外行一眼看出讲什么，吐槽有态度和调侃，口语像朋友聊天。不论什么风格，都只说视频兑现的东西。用户想看不同风格时，候选可以分几种风格，在角度里写明风格。
+Style shows in the tone: plain states the content directly, popular science lets laypeople see at a glance what it covers, roast has attitude and teasing, conversational sounds like chatting with a friend. Whatever the style, say only what the video delivers. When the user wants to see different styles, candidates may be split across several styles, with the style noted in the angle.
 
-## 8. 自查
+## 8. Self-check
 
-- 每个候选都从一个真正值得看的点出发；换掉人名和产品名之后不能原样用在别的视频上。
-- 最抓人的词在前面；后半截被截掉，也看得出讲什么。
-- 每个说法视频都兑现：数字、最高级和问题的答案都在视频里。
-- 候选角度真的不同；没有重复已有的候选；照某一个做的保持了它的方向。
-- 每个候选都标了角度和理由；推荐的那个有理由。
-- 能独立成立，不和系列格式冲突；说了平台的，没有编造平台规则。
-- 篇幅与风格是这次要的档位与风格；语言与用词遵守用户的要求与偏好。
+- Every candidate starts from a point truly worth watching; with names of people and products swapped out, it cannot go unchanged on another video.
+- The most gripping words come first; even with the second half cut off, it is clear what it is about.
+- The video delivers every claim: numbers, superlatives and answers to questions are all in the video.
+- Candidate angles really differ; none repeats an existing candidate; ones made like a given candidate keep its direction.
+- Every candidate has its angle and reason marked; the recommended one has a reason.
+- It stands on its own and does not clash with the series format; when a platform was named, no platform rules were invented.
+- Length and style are the level and style asked for this time; language and wording follow the user's requests and preferences.

@@ -38,15 +38,15 @@ describe('withSlideAnnotations', () => {
         '',
         '<cuccut-slide-annotations deck="talk/">',
         '1. 第 3 页 › 标题 “AI 时代该学什么”',
-        '   定位：Element on slide 3 (s03) · title',
-        '   批注：标题太长，拆成两行',
+        '   Location: Element on slide 3 (s03) · title',
+        '   Note: 标题太长，拆成两行',
         '3. 第 4 页 › 正文 “三个原则”',
-        '   定位：Element on slide 3 (s03) · title',
-        '   批注：加一个例子',
+        '   Location: Element on slide 3 (s03) · title',
+        '   Note: 加一个例子',
         '</cuccut-slide-annotations>',
         '<cuccut-slide-annotations deck="other/">',
         '2. 第 1 页 › 一块区域',
-        '   批注：留白太多',
+        '   Note: 留白太多',
         '        往上挪',
         '</cuccut-slide-annotations>',
       ].join('\n'),
@@ -204,7 +204,7 @@ describe('send 与 steer 带幻灯片标注', () => {
     });
     expect(result).toEqual({ status: 'steered' });
     expect(session.inputs[1]).toContain('<cuccut-slide-annotations deck="talk/">');
-    expect(session.inputs[1]).toContain('   批注：换个颜色');
+    expect(session.inputs[1]).toContain('   Note: 换个颜色');
     expect(userMessages(conversation.id)[1]).toMatchObject({ text: '顺便改这里', slideAnnotations: [annotation] });
   });
 });

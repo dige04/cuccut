@@ -1,7 +1,6 @@
-// i18n-ignore-file: Historical import report vocabulary is retained for compatibility with archived reports.
-// 旧格式的时间是十进制秒（JSON 浮点数）。导入时先按十进制文本精确换成微秒，再落到新格式的两种时间上：
-// 画面区间吸附到帧网格，声音与源时间保持微秒精度（视频格式规范 §2）。
-// `insertItems` 按写入的帧与精确时间原样保存、不再量化，所以实例的量化在这里做，规则与引擎一致：最近的帧，同距取早。
+// Times in the old format are decimal seconds (JSON floats). On import they are first converted exactly to microseconds from their decimal text, then mapped onto the new format's two kinds of time:
+// picture spans snap to the frame grid, while sound and source times keep microsecond precision (video format spec §2).
+// `insertItems` stores the given frames and exact times as is without quantizing again, so items are quantized here, by the engine's rule: nearest frame, ties go to the earlier one.
 
 export type Rate = { num: number; den: number };
 
@@ -9,9 +8,9 @@ export type MediaTime = { ticks: string; timescale: number };
 
 const MICROS = 1_000_000n;
 
-/** 十进制秒 → 微秒。按数值的最短十进制写法取整（半数进位），不经过浮点乘法。 */
+/** Decimal seconds -> microseconds. Rounds from the value's shortest decimal representation (round half up), without floating-point multiplication. */
 export function micros(seconds: number): bigint {
-  if (!Number.isFinite(seconds)) throw new Error(`不是有限的时间：${seconds}`);
+  if (!Number.isFinite(seconds)) throw new Error(`Not a finite time: ${seconds}`);
   const text = String(seconds);
   if (/e/i.test(text)) return BigInt(Math.round(seconds * 1e6));
   const negative = text.startsWith('-');
@@ -37,12 +36,12 @@ function gcd(a: bigint, b: bigint): bigint {
   return a;
 }
 
-/** `num / den` 秒的规范 MediaTime（约分之后）。 */
+/** The canonical MediaTime for `num / den` seconds (after reducing). */
 export function reduce(num: bigint, den: bigint): MediaTime {
-  if (den <= 0n) throw new Error('timescale 必须为正');
+  if (den <= 0n) throw new Error('timescale must be positive');
   const g = gcd(num, den) || 1n;
   const timescale = den / g;
-  if (timescale > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error('timescale 超出安全整数');
+  if (timescale > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error('timescale exceeds the safe integer range');
   return { ticks: String(num / g), timescale: Number(timescale) };
 }
 
@@ -53,22 +52,22 @@ function divRound(num: bigint, den: bigint, mode: 'nearest' | 'floor' | 'ceil'):
   const below = num < 0n ? q - 1n : q;
   if (mode === 'floor') return below;
   if (mode === 'ceil') return below + 1n;
-  // 同距取早（视频格式规范 §2.6）。
+  // Ties go to the earlier frame (video format spec §2.6).
   const rest = num - below * den;
   return rest * 2n > den ? below + 1n : below;
 }
 
-/** 微秒时刻落在第几帧。 */
+/** Which frame a microsecond instant falls in. */
 export function frameAt(us: bigint, fps: Rate, mode: 'nearest' | 'floor' | 'ceil' = 'nearest'): number {
   return Number(divRound(us * BigInt(fps.num), BigInt(fps.den) * MICROS, mode));
 }
 
-/** 第 `frame` 帧开始的时刻（微秒，取最近的整数微秒，只用于报告误差与换算源时间）。 */
+/** Start of frame `frame` (microseconds, rounded to the nearest whole microsecond; only for reporting error and converting source times). */
 export function frameStart(frame: number, fps: Rate): bigint {
   return divRound(BigInt(frame) * BigInt(fps.den) * MICROS, BigInt(fps.num), 'nearest');
 }
 
-/** 音频的开始位置：所在帧，加上帧内的精确偏移（§2.10）。 */
+/** Start position of audio: its frame plus the exact offset within the frame (§2.10). */
 export function audioStart(us: bigint, fps: Rate): { fromFrame: number; subframeOffset: MediaTime } {
   const fromFrame = frameAt(us, fps, 'floor');
   const num = us * BigInt(fps.num) - BigInt(fromFrame) * BigInt(fps.den) * MICROS;
@@ -86,7 +85,7 @@ const KNOWN_RATES: Rate[] = [
   { num: 60, den: 1 },
 ];
 
-/** 旧格式把帧率存成浮点数（29.97002997…）：吸附到常见的精确帧率，差得远就按整数帧率取。 */
+/** The old format stores frame rates as floats (29.97002997…): snap to a common exact frame rate, or use an integer frame rate when far off. */
 export function snapFps(value: number | null | undefined): { rate: Rate; snapped: boolean } | null {
   if (!value || !Number.isFinite(value) || value <= 0) return null;
   for (const rate of KNOWN_RATES) {
@@ -95,7 +94,7 @@ export function snapFps(value: number | null | undefined): { rate: Rate; snapped
   return { rate: { num: Math.max(1, Math.round(value)), den: 1 }, snapped: false };
 }
 
-/** 十进制倍速（1.19）→ 精确的有理数。 */
+/** Decimal speed (1.19) -> exact rational number. */
 export function rateOf(value: number | null | undefined): Rate {
   if (!value || !Number.isFinite(value) || value <= 0) return { num: 1, den: 1 };
   const us = micros(value);
@@ -103,9 +102,9 @@ export function rateOf(value: number | null | undefined): Rate {
   return { num: Number(us / g), den: Number(MICROS / g) };
 }
 
-/** 十进制秒的精确有理数 `num / den`（`den` 是 10 的幂），按数值的最短十进制写法读，不舍入。 */
+/** Exact rational `num / den` (`den` is a power of 10) for decimal seconds, read from the value's shortest decimal representation, without rounding. */
 export function decimal(value: number): { num: bigint; den: bigint } {
-  if (!Number.isFinite(value)) throw new Error(`不是有限的数：${value}`);
+  if (!Number.isFinite(value)) throw new Error(`Not a finite number: ${value}`);
   const text = decimalText(value);
   const negative = text.startsWith('-');
   const [whole = '0', fraction = ''] = text.replace('-', '').split('.');
@@ -113,7 +112,7 @@ export function decimal(value: number): { num: bigint; den: bigint } {
   return { num: negative ? -num : num, den: 10n ** BigInt(fraction.length) };
 }
 
-/** 数值的最短十进制写法，不用指数记法（引擎的十进制秒字符串不收 `1e-7`）。 */
+/** The value's shortest decimal representation, without exponent notation (the engine's decimal-seconds strings do not accept `1e-7`). */
 export function decimalText(value: number): string {
   const text = String(value);
   const match = /^(-?)(\d+)(?:\.(\d+))?e([+-]\d+)$/i.exec(text);
@@ -126,7 +125,7 @@ export function decimalText(value: number): string {
   return `${sign}${digits.slice(0, point)}.${digits.slice(point)}`;
 }
 
-/** dB → 线性倍数（外部项目的音量是 dB）。 */
+/** dB -> linear gain (volume in external projects is in dB). */
 export function linearOfDb(db: number): number {
   return Math.round(10 ** (db / 20) * 1e6) / 1e6;
 }

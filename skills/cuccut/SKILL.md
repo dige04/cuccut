@@ -1,207 +1,211 @@
 ---
 name: cuccut
-description: 用 CucCut 处理视频与音频：转录、字幕、翻译、配音、剪口播、切短视频、分章、总结写稿、从链接下载、压缩转码、导出成片，或从零做一条成片。有媒体文件、视频链接、字幕文件或 CucCut 视频时用；只翻译纯文本、与视频无关的写作或作图、别的剪辑器与 FFmpeg 的用法、CucCut 源码开发不用。
+description: Use CucCut to work with video and audio - transcribe, subtitle, translate, dub, cut talking-head footage, cut shorts, add chapters, summarize and write from a video, download from a link, compress and transcode, export finished videos, or make a finished video from scratch. Use it when there is a media file, a video link, a subtitle file or a CucCut video. Do not use it to translate plain text, for writing or images unrelated to video, for how to use other editors or FFmpeg, or for developing CucCut's source code.
 version: 1.0.0
 ---
 
 # CucCut
 
-CucCut 是以**可编辑视频**为中心的剪辑工具：素材在时间线上，转写、译文、字幕层、章节与配音都存在视频里，用户随时可以在编辑器里接着改；文件（字幕、文稿、音频、成片）都从视频导出。
+CucCut is an editor built around the **editable video**: media sits on a timeline, and the transcript, translations, caption layers, chapters and dubbing all live inside the video, so the user can keep editing in the editor at any time. Files (subtitles, transcripts, audio, finished videos) are all exported from the video.
 
 <!-- surface: cli -->
-你经命令行 `cuccut` 操作 CucCut（走 MCP 时见 [references/mcp.md](references/mcp.md)）。命令与 MCP 工具同一份目录：MCP 工具 `<名词>_<动词>` 就是 `cuccut <名词> <动词>`，参数同名。
+You drive CucCut through the `cuccut` command line (over MCP, see [references/mcp.md](references/mcp.md)). Commands and MCP tools share one catalog: the MCP tool `<noun>_<verb>` is `cuccut <noun> <verb>`, with the same parameter names.
 <!-- /surface -->
 <!-- surface: agent -->
-你在 CucCut 里工作，用户和你共用同一个编辑器，随时可能手工修改。用户消息末尾的 `<cuccut-editor-context>` 是编辑器当时的状态（打开的视频、版本、选中的片段、播放头、用户的界面语言），不是用户写的话。编辑器里打开的或用户点名的视频，就在它上面做。
+You work inside CucCut. The user shares the same editor with you and may edit by hand at any moment. The `<cuccut-editor-context>` at the end of a user message is the editor's state at that moment (the open video, its revision, the selected items, the playhead, the user's UI language); it is not something the user wrote. Work on the video open in the editor or the one the user names.
 <!-- /surface -->
 
-## 1. 何时用，三条底线
+## 1. When to use it, and three baselines
 
-**用**：用户有媒体（本机音视频、视频页面链接、字幕文件、CucCut 视频或便携包），要转录、加字幕、翻译、配音、剪辑、下载、转码、导出，或要从视频内容总结、写稿、起标题、分章；也包括从零做一条成片（有没有素材都行）。
+**Use it** when the user has media (local audio or video, a video page link, a subtitle file, a CucCut video or a portable package) and wants to transcribe, subtitle, translate, dub, edit, download, transcode or export it, or wants to summarize, write, title or chapter from a video's content; this also covers making a finished video from scratch (with or without footage).
 
-**不用**：翻译一段与视频无关的纯文本；与视频无关的写作与图片；别的剪辑器或 FFmpeg 命令怎么写；CucCut 源码的开发。
+**Do not use it** to translate plain text unrelated to a video; for writing and images unrelated to video; for how to write commands for other editors or FFmpeg; or for developing CucCut's source code.
 
-用户的话按下表理解默认含义，再读对应的目录页与 craft（做法）：
+Read the user's words with the default meanings below, then read the matching catalog page and craft:
 
-| 用户说的话 | 默认含义 | 目录页 | craft |
+| What the user says | Default meaning | Catalog page | Craft |
 | --- | --- | --- | --- |
-| 转录、加字幕、出字幕 | 建可编辑视频，转写，建原文字幕层；要文件再导出 | [subtitles](references/catalog/subtitles.md) | {{skill:subtitle-workflow}} |
-| 翻译字幕、翻成某种语言、双语字幕 | 在视频里**自己**逐句翻译，建译文或双语字幕层 | [subtitles](references/catalog/subtitles.md) | {{skill:translate-subtitles}} |
-| 润色、校对转写 | 改错字、术语与标点，写回同一份转写，词的时间不变 | [subtitles](references/catalog/subtitles.md) | {{skill:polish-transcript}} |
-| 识别说话人、标说话人名字 | 没区分过的按声纹重新转录并区分；凭证据起真名，用户确认后写回转写的 speakers | [subtitles](references/catalog/subtitles.md) | {{skill:speaker-labeling}} |
-| 配音、翻译配音 | 先自己翻译，再按译文逐句合成、放上配音轨 | [voice](references/catalog/voice.md) | {{skill:translate-subtitles}}（翻译那一步） |
-| 旁白、念一段话 | 语音合成，按需放进视频 | [voice](references/catalog/voice.md) | — |
-| 旁白成片、给画面配多句旁白 | 先量语速算字数，一个能锁住音色的声音一次合成，画面剪到旁白上 | [voice](references/catalog/voice.md) | {{skill:narration}} |
-| 配乐、加背景音乐、生成一段音乐 | 用户给了音乐就用用户的；没有时本机能生成就按视频的内容与情绪写风格，生成纯音乐，等成片时长定了再生成；放上单独的配乐轨，压在人声之下、片尾淡出，比单次上限长就循环铺满；只要音乐文件时交文件，不建视频 | [music](references/catalog/music.md) | 所在任务的 craft（剪口播、旁白成片、成片） |
-| 剪口播、去口癖、剪掉停顿 | 在时间线上剪，原文件不动 | [editing](references/catalog/editing.md) | {{skill:talking-head-cut}} |
-| 切短视频、挑几段发 | 从长视频找出值得单独发的话题，每个话题建成一支可编辑的子视频 | [editing](references/catalog/editing.md) | {{skill:shorts-segments}} |
-| 分章、加时间轴目录 | 写进视频的章节 | [editing](references/catalog/editing.md) | {{skill:video-chapters}} |
-| 总结、提炼要点 | 读带时间的文稿，写总结与可跳转的要点 | [subtitles](references/catalog/subtitles.md) | {{skill:video-summary}} |
-| 写成博客、公众号文章 | 读文稿写成完整文章 | [subtitles](references/catalog/subtitles.md) | {{skill:video-blog}} |
-| 起标题、写简介 | 标题候选与简介，每句由视频兑现 | [subtitles](references/catalog/subtitles.md) | {{skill:titles-and-description}} |
-| 做封面、封面大字 | 标题与封面文案候选，挑定后按画幅生成封面图，导入为候选素材 | [media](references/catalog/media.md) | {{skill:cover-and-title}} |
-| 下载这个链接 | 新建视频并导入；用户明说只要文件才只下载 | [media](references/catalog/media.md) | — |
-| 压缩、转码、合并、提取音频 | 文件到文件，不建视频，原文件不动 | [media](references/catalog/media.md) | — |
-| 截几帧、看看画面 | 按时刻取帧成图片再看 | [media](references/catalog/media.md) | — |
-| 生成图片、配图、画插图 | 先看图片生成能用哪个服务，再按图要去的地方生成：进视频的导入为候选素材，给文章、幻灯片的存进工作目录 | [media](references/catalog/media.md) | 所在任务的 craft（封面、B-roll、旁白成片、成片分镜、文章与幻灯片配图） |
+| Transcribe, add subtitles, make subtitles | Create an editable video, transcribe it, create an original-language caption layer; export only if a file is wanted | [subtitles](references/catalog/subtitles.md) | {{skill:subtitle-workflow}} |
+| Translate subtitles, translate into some language, bilingual subtitles | Translate it **yourself**, sentence by sentence, inside the video; create a translated or bilingual caption layer | [subtitles](references/catalog/subtitles.md) | {{skill:translate-subtitles}} |
+| Polish or proofread the transcript | Fix typos, terms and punctuation and write back to the same transcript; word timings stay unchanged | [subtitles](references/catalog/subtitles.md) | {{skill:polish-transcript}} |
+| Identify speakers, label speaker names | If speakers were never separated, re-transcribe with voice-based separation; give real names based on evidence and write them to the transcript's speakers once the user confirms | [subtitles](references/catalog/subtitles.md) | {{skill:speaker-labeling}} |
+| Dub, translate and dub | Translate it yourself first, then synthesize the translation sentence by sentence and place it on a dubbing track | [voice](references/catalog/voice.md) | {{skill:translate-subtitles}} (for the translation step) |
+| Voice-over, read a passage aloud | Speech synthesis, placed in the video if needed | [voice](references/catalog/voice.md) | — |
+| Narrated video, multi-sentence narration over footage | Measure the speech rate first to size the script, synthesize once with a voice that holds its timbre, cut the visuals to the narration | [voice](references/catalog/voice.md) | {{skill:narration}} |
+| Score it, add background music, generate a piece of music | Use the user's music if they gave some; otherwise, if this machine can generate music, write a style from the video's content and mood and generate instrumental music once the finished video's length is settled; put it on its own music track, under the voices, fading out at the end, looped to fill if longer than the per-run limit; if only a music file is wanted, deliver the file without creating a video | [music](references/catalog/music.md) | The craft of the task at hand (talking-head cut, narrated video, finished video) |
+| Cut a talking-head video, remove filler words, cut pauses | Cut on the timeline; the original files stay untouched | [editing](references/catalog/editing.md) | {{skill:talking-head-cut}} |
+| Cut shorts, pick a few clips to post | Find the topics in a long video that are worth posting on their own; build each topic into an editable child video | [editing](references/catalog/editing.md) | {{skill:shorts-segments}} |
+| Add chapters, add a timestamp table of contents | Write chapters into the video | [editing](references/catalog/editing.md) | {{skill:video-chapters}} |
+| Summarize, pull out key points | Read the timestamped transcript and write a summary and key points that jump to the video | [subtitles](references/catalog/subtitles.md) | {{skill:video-summary}} |
+| Turn it into a blog post or article | Read the transcript and write a complete article | [subtitles](references/catalog/subtitles.md) | {{skill:video-blog}} |
+| Write titles, write a description | Title candidates and a description, every line backed by the video | [subtitles](references/catalog/subtitles.md) | {{skill:titles-and-description}} |
+| Make a cover, cover headline | Title and cover-text candidates; once one is chosen, generate a cover image at the frame's aspect ratio and import it as a candidate asset | [media](references/catalog/media.md) | {{skill:cover-and-title}} |
+| Download this link | Create a new video and import into it; download only, when the user says outright they only want the file | [media](references/catalog/media.md) | — |
+| Compress, transcode, merge, extract audio | File to file, no video created, original files untouched | [media](references/catalog/media.md) | — |
+| Grab a few frames, look at the picture | Grab frames as images at given times, then look at them | [media](references/catalog/media.md) | — |
+| Generate an image, illustrate, draw an illustration | First check which service image generation can use, then generate for where the image is going: images for the video are imported as candidate assets, images for articles and slides are saved to the working directory | [media](references/catalog/media.md) | The craft of the task at hand (cover, B-roll, narrated video, finished-video storyboard, article and slide illustrations) |
 <!-- surface: cli -->
-| 看成片画面、字幕位置，在编辑器里拖一下，让我在编辑器里看 | 开网页版编辑器直达这个视频；文字与时间线的修改仍走命令 | [web](references/catalog/web.md) | — |
+| Look at the rendered picture or caption placement, drag something in the editor, let me check it in the editor | Open the web editor straight to this video; text and timeline changes still go through commands | [web](references/catalog/web.md) | — |
 <!-- /surface -->
-| 导出、出成片、出 srt | 从视频导出字幕、文稿、音频或成片 | [export](references/catalog/export.md) | — |
-| 新建空视频、把素材放进去 | 新建视频，导入素材并放上时间线 | [media](references/catalog/media.md) | — |
-| 打包、便携包、打开 .cuccut 文件 | 导出便携包，或把便携包打开成新视频 | [export](references/catalog/export.md)、[media](references/catalog/media.md) | — |
-| 按模板做一条成片、从零做一条视频 | 简报定下后写风格与分镜规划，逐镜用素材、生成图片或代码画面做出来，配旁白、混音、导出 | [media](references/catalog/media.md)、[voice](references/catalog/voice.md) | {{skill:video-production}} |
-| 做一条某类视频，但没说清 | 先问清主题、目标、受众、手上的材料，再动手 | [workflows](references/workflows.md) | {{skill:video-production}} |
-| 加下横栏、关键词、大数字、标注、品牌贴片这类动效图形 | 按规则写一个自包含的 HTML 画面，打包成代码包导入，放上时间线对齐旁白 | [media](references/catalog/media.md) | {{skill:motion-graphics}} |
+| Export, render the finished video, give me an srt | Export subtitles, a transcript, audio or the finished video from the video | [export](references/catalog/export.md) | — |
+| Create an empty video, put footage into it | Create a video, import the footage and place it on the timeline | [media](references/catalog/media.md) | — |
+| Package, portable package, open a .cuccut file | Export a portable package, or open a portable package as a new video | [export](references/catalog/export.md), [media](references/catalog/media.md) | — |
+| Make a finished video from a template, make a video from scratch | Once the brief is settled, write the style and storyboard plan, build each shot from footage, generated images or code-drawn visuals, then add narration, mix and export | [media](references/catalog/media.md), [voice](references/catalog/voice.md) | {{skill:video-production}} |
+| Make some kind of video, but without saying clearly what | First pin down the subject, goal, audience and the material at hand, then start | [workflows](references/workflows.md) | {{skill:video-production}} |
+| Add motion graphics such as lower thirds, keywords, big numbers, callouts or brand stings | Write a self-contained HTML visual by the rules, package it as a code bundle and import it, then place it on the timeline aligned to the narration | [media](references/catalog/media.md) | {{skill:motion-graphics}} |
 <!-- surface: agent -->
-| 做幻灯片、演示文稿、汇报用的页面 | 在工作目录写一份 deck，校验通过后线程里出卡片，用户在功能区预览、编辑、标注 | [media](references/catalog/media.md) | {{skill:slides}} |
-| 做界面、网页、海报、图表或信息图、示意图、原型这类设计稿 | 在工作目录写一份设计稿（每块画板一个文件），校验通过后线程里出卡片，用户在功能区预览、编辑、标注 | [media](references/catalog/media.md) | {{skill:design}} |
-| 建设计系统、整理品牌 tokens 与组件 | 在工作目录写一个设计系统目录，可从代码仓库或设计工具整理；设计稿可以装用它 | — | {{skill:design-system}} |
+| Make slides, a presentation, pages for a report | Write a deck in the working directory; once it passes the check, a card appears in the thread and the user previews, edits and annotates it in the workspace panel | [media](references/catalog/media.md) | {{skill:slides}} |
+| Make a design such as a UI, web page, poster, chart or infographic, diagram or prototype | Write a design in the working directory (one file per artboard); once it passes the check, a card appears in the thread and the user previews, edits and annotates it in the workspace panel | [media](references/catalog/media.md) | {{skill:design}} |
+| Build a design system, organize brand tokens and components | Write a design system directory in the working directory, possibly assembled from a code repository or a design tool; designs can use it | — | {{skill:design-system}} |
 <!-- /surface -->
 
-### 三条底线
+### The three baselines
 
-后面每一页的验收都对照这三条：
+Every page that follows is checked against these three:
 
-| 底线 | 含义 | 典型违反 |
+| Baseline | Meaning | Typical violation |
 | --- | --- | --- |
-| 忠实 | 不改说话人的意思与立场；译文忠实；不动用户的原始媒体，范围在时间线上选、不预先切文件；文字工作自己做，不编造时间戳 | 为了凑开头拼半句话；把词级时间从句级估出来 |
-| 可看 | 剪点落在词与词之间、换气留着；字幕可读、避开人脸与平台控件；配乐在人声之下；画面变化跟着信息变化走 | 停顿一刀切压到 0；字幕盖住下三分之一 |
-| 合要求 | 画幅、时长、成片语言、交付物按用户确认的来；时长是目标不是配额，不靠填充、循环、变速凑数，也不为缩短删掉必要信息 | 为了凑 60 秒重复画面 |
+| Faithful | Do not change a speaker's meaning or stance; translations are faithful; do not touch the user's original media: choose ranges on the timeline, do not pre-cut files; do the text work yourself and do not invent timestamps | Splicing half a sentence to make an opening; estimating word timings from sentence timings |
+| Watchable | Cuts fall between words and breaths are kept; captions are readable and avoid faces and platform controls; music sits under the voices; visual changes follow changes in information | Cutting every pause down to 0; captions covering the lower third |
+| As requested | Aspect ratio, duration, output language and deliverables follow what the user confirmed; duration is a target, not a quota: do not pad, loop or change speed to reach it, and do not cut necessary information to shorten it | Repeating footage to reach 60 seconds |
 
-## 2. 启动
+## 2. Getting started
 
 <!-- surface: cli -->
-按顺序做，细节见 [references/start.md](references/start.md)：
+Do these in order; details in [references/start.md](references/start.md):
 
-1. **找到 CLI**：`cuccut` 在 PATH 上；不在时用环境变量 `CUCCUT_CLI` 给出的路径；都没有就请用户安装 CucCut 或告诉你位置，不要自己去下载。
-2. **`cuccut version`**：看 CLI 与 Runtime 的接口版本是否一致。不一致（退出码 3）时告诉用户哪一边要更新，不绕过、不按旧参数凑。
-3. **`cuccut status`**：这台机器此刻能做什么：每种能力的默认服务与可用性、本地模型包、外部工具（yt-dlp、ffmpeg），缺的带补救命令。
-4. **按任务读一页目录**（第 3 节）。
+1. **Find the CLI**: `cuccut` is on PATH; if not, use the path in the `CUCCUT_CLI` environment variable; if neither exists, ask the user to install CucCut or tell you where it is. Do not download it yourself.
+2. **`cuccut version`**: check whether the CLI and the Runtime have the same interface version. If they differ (exit code 3), tell the user which side needs updating; do not work around it or fall back to old parameters.
+3. **`cuccut status`**: what this machine can do right now: each capability's default service and availability, local model bundles, and external tools (yt-dlp, ffmpeg); anything missing comes with a remedy command.
+4. **Read one catalog page for the task** (section 3).
 
-不手动启动 Runtime：要连 Runtime 的命令找不到它时会自己在后台拉起（结果里 `runtime.started: true`），CLI 拉起的那个空闲一段时间后自己退出。任务结束不用专门停；只在用户要求时 `cuccut runtime stop`，它只停 CLI 自己拉起的那一个。
+Do not start the Runtime by hand: a command that needs the Runtime starts one in the background when it cannot find one (`runtime.started: true` in the result), and a Runtime started by the CLI exits on its own after being idle for a while. You do not need to stop it when the task is done; run `cuccut runtime stop` only when the user asks, and it stops only the one the CLI started.
 <!-- /surface -->
 <!-- surface: agent -->
-工具已经连好，不用启动什么。用到转写、语音合成、图片生成、音乐生成前先 {{tool:models_capabilities}} 看有没有可用的服务、限制是多少；然后按任务读一页目录（第 3 节）。
+The tools are already connected; there is nothing to start. Before transcription, speech synthesis, image generation or music generation, call {{tool:models_capabilities}} to see whether a service is available and what its limits are; then read one catalog page for the task (section 3).
 <!-- /surface -->
 
-## 3. 能力目录与阅读纪律
+## 3. Capability catalog and reading discipline
 
-| 页 | 在 CucCut 里是哪一块 | 覆盖什么 |
+| Page | Which part of CucCut | What it covers |
 | --- | --- | --- |
-| [media](references/catalog/media.md) | 视频、素材、下载与转码 | 从链接下载、转码与合并、取帧看画面、导入素材、新建视频、打开便携包、生成图片；看一条视频的证据阶梯 |
-| [subtitles](references/catalog/subtitles.md) | 文稿、译文与字幕层 | 转录、润色写回、自己翻译、建字幕层、用文本模型翻译、读文稿写总结与文章 |
-| [editing](references/catalog/editing.md) | 时间线上的修改 | 一笔修改的事务、版本、操作族与按需查操作、预检、撤销；剪口播、章节、文字与元素 |
-| [voice](references/catalog/voice.md) | 配音与语音合成 | 翻译配音、旁白、音色；「怎么说」与「说什么」分开写 |
-| [music](references/catalog/music.md) | 配乐与音乐生成 | 配乐从哪来、本机音乐生成与风格描述、长视频循环铺满或分段、配乐轨与人声闪避、许可 |
-| [export](references/catalog/export.md) | 导出 | 字幕、文稿、音频、成片、便携包、工程文件；画面与声音参数；交付前检查 |
-| [models](references/catalog/models.md) | 模型能力 | 能力查询、本地模型包安装与检查、能力没配置与要授权时怎么办 |
-| [system](references/catalog/system.md) | 任务、索引与本机 | 任务的查看、取消与重跑；Space 检索、项目、用户库、skill 索引；运行环境与管理命令 |
+| [media](references/catalog/media.md) | Videos, assets, downloading and transcoding | Downloading from links, transcoding and merging, grabbing frames to look at the picture, importing assets, creating videos, opening portable packages, generating images; the evidence ladder for understanding a video |
+| [subtitles](references/catalog/subtitles.md) | Transcripts, translations and caption layers | Transcribing, polishing and writing back, translating yourself, creating caption layers, translating with a text model, reading the transcript to write summaries and articles |
+| [editing](references/catalog/editing.md) | Changes on the timeline | The transaction of one edit, revisions, operation families and looking up operations on demand, dry runs, undo; talking-head cuts, chapters, text and elements |
+| [voice](references/catalog/voice.md) | Dubbing and speech synthesis | Translated dubbing, voice-over, voices; writing "how to say it" separately from "what to say" |
+| [music](references/catalog/music.md) | Scoring and music generation | Where the music comes from, local music generation and style descriptions, looping or segmenting for long videos, the music track and ducking under voices, licensing |
+| [export](references/catalog/export.md) | Export | Subtitles, transcripts, audio, finished videos, portable packages, project files; picture and sound parameters; pre-delivery checks |
+| [models](references/catalog/models.md) | Model capabilities | Capability queries, installing and checking local model bundles, what to do when a capability is not configured or needs a grant |
+| [system](references/catalog/system.md) | Jobs, indexes and this machine | Viewing, cancelling and retrying jobs; Space search, projects, the user library, the skill index; the runtime environment and admin commands |
 <!-- surface: cli -->
-| [web](references/catalog/web.md) | 网页版编辑器 | 在浏览器里打开某个视频的编辑器：看合成后的画面、播放、拖拽调整、请用户审；访问链接与会话、交付时的新链接 |
+| [web](references/catalog/web.md) | The web editor | Opening a video's editor in the browser: viewing the rendered picture, playback, drag-and-drop adjustments, asking the user to review; access links and sessions, a fresh link at delivery |
 <!-- /surface -->
 
-另有：端到端的做法在 [workflows](references/workflows.md)；
+Also: end-to-end recipes are in [workflows](references/workflows.md);
 <!-- surface: cli -->
-启动与版本在 [start](references/start.md)，输出、退出码、长任务与大结果在 [conventions](references/conventions.md)，走 MCP 在 [mcp](references/mcp.md)；CucCut 自带的全部 craft 见本节末尾的「内置 skill」。
+startup and versions are in [start](references/start.md); output, exit codes, long jobs and large results are in [conventions](references/conventions.md); working over MCP is in [mcp](references/mcp.md); all crafts that ship with CucCut are listed under "Built-in skills" at the end of this section.
 <!-- /surface -->
 <!-- surface: agent -->
-错误对象、版本冲突与等任务的通用处理在 [conventions](references/conventions.md)；目录页与 craft 都用 {{tool:skills_read}} 按 id 取，会话开始时附在这份指导后面的 skill 索引列出开着的。索引里没有的 craft（用户关掉了）不读，按这份指导做。
+general handling of error objects, revision conflicts and waiting for jobs is in [conventions](references/conventions.md); catalog pages and crafts are both fetched by id with {{tool:skills_read}}, and the skill index attached after this guidance at the start of the session lists the enabled ones. Do not read a craft that is missing from the index (the user turned it off); follow this guidance instead.
 <!-- /surface -->
 
-阅读纪律：
+Reading discipline:
 
-- 只开需要的那页；一页在同一个任务里只读一次，之后复用。动手前已经知道要读的几页一次读完。
-- 多阶段的 craft 只读当前阶段要用的部分；它的 `references/` 用到时再取。
+- Open only the pages you need; read each page only once per task and reuse it after that. When you already know which pages you need before starting, read them all at once.
+- For a multi-stage craft, read only the part the current stage needs; fetch its `references/` when you need them.
 <!-- surface: cli -->
-- 要某个命令的参数用 `cuccut help <命令>` 或 `cuccut spec <名字>`；要 `edits apply` 某个操作的字段用 `cuccut edits ops <操作>` 或 `cuccut spec edits.<操作>`。不拉整个目录，也不读 `--help` 以外的全文帮助。
+- For a command's parameters use `cuccut help <command>` or `cuccut spec <name>`; for the fields of an `edits apply` operation use `cuccut edits ops <operation>` or `cuccut spec edits.<operation>`. Do not pull the whole catalog, and do not read full help beyond `--help`.
 <!-- /surface -->
 <!-- surface: agent -->
-- 参数看工具说明；`edits_apply` 某个操作的字段用 {{tool:edits_ops}} 只查那一个操作，不拉整个清单。
+- Take parameters from the tool descriptions; for the fields of an `edits_apply` operation, use {{tool:edits_ops}} to look up only that operation instead of pulling the whole list.
 <!-- /surface -->
-- 任务属于某份 craft 时，动手前先读它，按它的做法做；跨回合继续同一个任务时也照它做，不中途换成自己的做法。
+- When the task belongs to a craft, read it before you start and follow its approach; when you continue the same task across turns, keep following it rather than switching to your own approach midway.
 
 <!-- surface: cli -->
-### 内置 skill
+### Built-in skills
 
-CucCut 自带的 craft（做法）。第 1 节的表按用户的话指到其中一个；表里没有的任务，按下面的一句话判断该读哪一份，需要时再打开细读。
+The crafts that ship with CucCut. The table in section 1 points to one of them from the user's words; for tasks not in that table, use the one-line summaries below to decide which to read, and open it for the details when needed.
 
-| craft | 名称 | 一句话 |
+| Craft | Name | In one line |
 | --- | --- | --- |
-| {{skill:subtitle-workflow}} | 转录与字幕 | 从链接或本机音视频建可编辑视频，转写、润色、按需翻译，放上字幕层，再按需导出 |
-| {{skill:polish-transcript}} | 润色转写 | 改错字与误听、统一术语与标点，写回同一份转写，词的时间不变 |
-| {{skill:speaker-labeling}} | 说话人标注 | 按声纹区分说话人，凭文稿与来源里的证据起真名，写回转写的说话人 |
-| {{skill:translate-subtitles}} | 翻译字幕 | 自己逐句翻译成视频里的译文，建译文或双语字幕层；也用来更新过期的译文 |
-| {{skill:video-summary}} | 视频内容总结 | 挑出最值得带走的两三件事讲透，另附一组带视频时间的要点 |
-| {{skill:video-blog}} | 写成博客文章 | 把视频写成不看视频也能读明白的完整文章，分作者视角与观众视角 |
-| {{skill:titles-and-description}} | 起标题与写简介 | 标题候选与视频简介（说明、章节、标签），每句都由视频兑现 |
-| {{skill:cover-and-title}} | 封面与标题 | 标题与封面文案候选，用户挑定后按画幅生成封面图，放进候选素材 |
-| {{skill:video-chapters}} | 分章节 | 在话题自然转换处分章，每章一个标题和一句摘要，写进视频的章节 |
-| {{skill:talking-head-cut}} | 剪口播 | 去口癖、长停顿与录废的部分，收紧节奏，按需加强调、B-roll、竖屏取景与配乐闪避 |
-| {{skill:shorts-segments}} | 切短视频 | 从长视频里找出能单独发布的话题，每个话题从钩子剪到讲完，建成可编辑的子视频 |
-| {{skill:narration}} | 旁白成片 | 按实测语速写稿，一个音色一次合成，量时长、只重配不合格的句子，再把画面剪到旁白上 |
-| {{skill:video-production}} | 从简报到成片 | 从零做一条完整成片：风格与分镜规划，逐镜出画面，配旁白、混音、导出验收 |
-| {{skill:motion-graphics}} | 动效图形 | 写一个自包含的 HTML 画面做下横栏、关键词、大数字、标注或品牌贴片，打包导入后放上时间线 |
+| {{skill:subtitle-workflow}} | Transcription and subtitles | Create an editable video from a link or local audio/video, transcribe, polish, translate if needed, add caption layers, then export if needed |
+| {{skill:polish-transcript}} | Polish a transcript | Fix typos and mishearings, unify terms and punctuation, write back to the same transcript with word timings unchanged |
+| {{skill:speaker-labeling}} | Speaker labeling | Separate speakers by voice, name them from evidence in the transcript and the source, write the speakers back to the transcript |
+| {{skill:translate-subtitles}} | Translate subtitles | Translate it yourself, sentence by sentence, into a translation inside the video and create translated or bilingual caption layers; also used to update stale translations |
+| {{skill:video-summary}} | Video summary | Pick the two or three things most worth taking away and explain them fully, plus a set of key points with video times |
+| {{skill:video-blog}} | Blog post from a video | Turn the video into a complete article that reads clearly without watching, from either the author's or the viewer's perspective |
+| {{skill:titles-and-description}} | Titles and description | Title candidates and a video description (summary, chapters, tags), every line backed by the video |
+| {{skill:cover-and-title}} | Cover and title | Title and cover-text candidates; once the user picks, generate a cover image at the frame's aspect ratio and add it to candidate assets |
+| {{skill:video-chapters}} | Chapters | Split chapters at natural topic changes, each with a title and a one-line summary, written into the video's chapters |
+| {{skill:talking-head-cut}} | Talking-head cut | Remove filler words, long pauses and flubbed takes, tighten the pacing, and add emphasis, B-roll, vertical reframing and music ducking as needed |
+| {{skill:shorts-segments}} | Cut shorts | Find topics in a long video that can be posted on their own, cut each from its hook to its end, and build each as an editable child video |
+| {{skill:narration}} | Narrated video | Write the script to the measured speech rate, synthesize once with one voice, measure durations, re-voice only the sentences that fail, then cut the visuals to the narration |
+| {{skill:video-production}} | From brief to finished video | Make a complete finished video from scratch: style and storyboard planning, visuals shot by shot, narration, mixing, export and acceptance checks |
+| {{skill:motion-graphics}} | Motion graphics | Write a self-contained HTML visual for a lower third, keyword, big number, callout or brand sting, package and import it, then place it on the timeline |
 
-这些页是内置 skill 随这份 skill 发布时的副本；`cuccut skills read <id>` 取的是这台机器上当前的版本（含用户自己加的 skill），两者不同时以后者为准。
+These pages are copies of the built-in skills as shipped with this skill; `cuccut skills read <id>` returns the current version on this machine (including skills the user added), and when the two differ the latter wins.
 <!-- /surface -->
 
-## 4. 编排
+## 4. Orchestration
 
-- 单步的事直接做：用户只要一件小事（导出一个 srt、截三帧、改一个标题）就只做那件，不套整条流程。
-- 用户消息里形如「[目标语言]」的方括号项，是快速开始或模板留给用户填、用户没有填的待填项：动手前先问清，不自己猜一个，也不原样抄进产物。
-- 有固定流程的事（转录、下载、翻译配音、转码、导出）用一级动词（{{tool:transcribe}}、{{tool:download}}、{{tool:dub}}、{{tool:transcode}}、{{tool:export}}）一步提交整条流程，不自己拆成几步。
-- 多步的任务你是导演：先写出计划（交付物、步骤、每步用哪个工具或 craft），按步骤做，每步读完结果再走下一步。
-- 写操作与占 GPU 的任务（转写、合成、音乐生成、导出成片）都由你自己下，一台机器上一次一个；子代理只交文件与结论，不让它们改视频或提交任务。
-- 跨回合接着做时，先读视频的当前状态（{{tool:videos_inspect}}），从已经做到的那一步接着做，不重复已完成的步骤。
+- Do single-step things directly: when the user wants one small thing (export an srt, grab three frames, change a title), do only that and do not wrap it in a full workflow.
+- A bracketed item such as "[target language]" in the user's message is a placeholder that a quick start or template left for the user to fill in, and the user did not: ask before starting; do not guess a value or copy it verbatim into the output.
+- For things with a fixed pipeline (transcription, download, translated dubbing, transcoding, export), use the top-level verbs ({{tool:transcribe}}, {{tool:download}}, {{tool:dub}}, {{tool:transcode}}, {{tool:export}}) to submit the whole pipeline in one step; do not split it into steps yourself.
+- For multi-step tasks you are the director: first write a plan (deliverables, steps, which tool or craft each step uses), follow the steps, and read each step's result before moving to the next.
+- Write operations and GPU-heavy jobs (transcription, synthesis, music generation, rendering the finished video) are all submitted by you, one at a time per machine; sub-agents only hand back files and conclusions, and are not allowed to change the video or submit jobs.
+- When you continue across turns, first read the video's current state ({{tool:videos_inspect}}) and continue from the step already reached; do not repeat completed steps.
 <!-- surface: agent -->
-- 会话不属于项目时，新视频不给 project，直接建在会话自己的工作目录里，不先建项目；用户明确要建项目时才用 {{tool:projects_adopt_session}}，把这个会话连同视频收进一个以视频命名的新项目。
+- When the session does not belong to a project, create new videos without a project, directly in the session's own working directory; do not create a project first. Only when the user explicitly wants a project, use {{tool:projects_adopt_session}} to move this session and its videos into a new project named after the video.
 <!-- /surface -->
 
-## 5. 硬规则
+## 5. Hard rules
 
-1. **文字工作自己做。** 翻译、润色、总结、分章、写稿由你完成，你本身就是文本模型；不配、不等文本模型，没配置文本生成也不是停下的理由。{{tool:translate}} 只在用户明确要用配置好的文本模型时用；它报 `CAPABILITY_NOT_CONFIGURED` 时照 `next` 自己翻，不请用户去配置。转写之后默认也做两件：润色末尾给占位名的说话人实名，并给视频分章（作者有章节就 {{tool:chapters_adopt}}）；实名只按证据，拿不准留着占位名；分章是旁路，失败不挡后面的步骤。
-2. **默认产物是可编辑视频。** 有媒体要转写、字幕、翻译、配音、剪辑时，结果落在一个视频里；用户明确说只要文件、不要视频时才不建视频。新建的视频在之后的步骤失败时保留，不要再建一次。
-3. **视频只经工具读写。** 视频是一个目录（`video.db` 与 `blobs/`）；不直接读写里面的文件，不用 sqlite、脚本或文件编辑改 `video.db`，`.ccut` 目录同理：那样会绕过版本校验、撤销和用户的编辑器。
-4. **不动用户的原始媒体。** 「剪」「删掉这段」「挪到」指时间线，不是改文件；范围在时间线上选，不预先切文件。只有用户明确要一个新的媒体文件时才生成（{{tool:transcode}}、{{tool:export}}），要进视频再导入。
-5. **任务要等到终态。** 返回任务的调用等到 `state` 为 `completed` 才算完成；没完成的不说做好了，不重复提交同一件事。怎么等见 [conventions](references/conventions.md)。
+1. **Do the text work yourself.** Translating, polishing, summarizing, chaptering and writing are done by you; you are a text model yourself. Do not configure or wait for a text model, and an unconfigured text generation capability is no reason to stop. Use {{tool:translate}} only when the user explicitly wants the configured text model; when it returns `CAPABILITY_NOT_CONFIGURED`, follow `next` and translate yourself rather than asking the user to configure it. After transcription, also do two things by default: at the end of polishing, give real names to speakers with placeholder names, and chapter the video ({{tool:chapters_adopt}} when the author has chapters). Name speakers only from evidence and keep the placeholder name when unsure; chaptering is a side path, and its failure does not block later steps.
+2. **The default output is an editable video.** When there is media to transcribe, subtitle, translate, dub or edit, the result lands in a video; skip creating a video only when the user explicitly says they want just a file and no video. A newly created video is kept when later steps fail; do not create it again.
+3. **Read and write videos only through the tools.** A video is a directory (`video.db` and `blobs/`); do not read or write the files inside it directly, and do not change `video.db` with sqlite, scripts or file edits; the same goes for `.ccut` directories. Doing so bypasses revision checks, undo and the user's editor.
+4. **Do not touch the user's original media.** "Cut", "delete this part" and "move to" refer to the timeline, not to changing files; choose ranges on the timeline and do not pre-cut files. Produce a new media file ({{tool:transcode}}, {{tool:export}}) only when the user explicitly wants one, and import it if it should go into the video.
+5. **Wait for jobs to reach a final state.** A call that returns a job is done only when `state` is `completed`; do not say something is done before it completes, and do not resubmit the same work. How to wait: see [conventions](references/conventions.md).
 <!-- surface: agent -->
-   用 {{tool:jobs_wait}} 等：一次最多 50 秒，`settled` 为 `false` 时再调一次；不用 {{tool:jobs_inspect}} 反复轮询。
+   Wait with {{tool:jobs_wait}}: at most 50 seconds per call; when `settled` is `false`, call it again. Do not poll repeatedly with {{tool:jobs_inspect}}.
 <!-- /surface -->
-6. **只改要求的，改完读回执。** 只改用户要求的部分。改之前读当前版本与对象 ID（{{tool:videos_inspect}}）；只有回执里的才是真正改了的，向用户说明回执里实际改了什么（对象、时间、时长变化）。相关的几步放进同一笔修改，一起撤销。
-7. **版本冲突就重新读。** `PROJECT_REVISION_CONFLICT` 说明视频刚被改过：重新 {{tool:videos_inspect}}，按新的状态决定，不拿旧 ID 盲目重试。
-8. **改错了撤销自己那一步。** 用 {{tool:edits_undo}}，不手工反向修改。
+6. **Change only what was asked, then read the receipt.** Change only the parts the user asked for. Before changing, read the current revision and object IDs ({{tool:videos_inspect}}); only what is in the receipt was actually changed, and tell the user what the receipt says actually changed (objects, times, change in duration). Put related steps into the same edit so they undo together.
+7. **On a revision conflict, read again.** `PROJECT_REVISION_CONFLICT` means the video was just changed: run {{tool:videos_inspect}} again and decide based on the new state; do not blindly retry with old IDs.
+8. **If you got it wrong, undo your own step.** Use {{tool:edits_undo}}; do not reverse the change by hand.
 <!-- surface: cli -->
-9. **不可撤销的先问。** `destructive` 的命令（如 `cuccut videos delete`）先向用户说明后果、得到同意，再带 `--yes`；不为省事默认加 `--yes`。`models install` 缺 `--yes` 时只报大小，先把大小告诉用户。
-<!-- /surface -->
-<!-- surface: agent -->
-9. **不可撤销的先问。** 删除这类不可撤销的操作只在用户明确要求时做。按用户选的访问模式，有些调用要等用户在 CucCut 里批准，工具会等到用户决定后才返回；不要替用户同意。返回 `APPROVAL_DENIED` 时不重试同样的操作，先问用户想怎么改；返回 `APPROVAL_CANCELLED` 或 `TASK_STOPPED` 时结束这个回合。
-<!-- /surface -->
-10. **要用户做的事转告用户。** `CAPABILITY_NOT_CONFIGURED`（转写、语音合成、图片生成、音乐生成这些你自己做不了的）、`GRANT_REQUIRED`、外部工具要同意或安装、链接要登录：照错误里的 `remedy` 与 `next` 告诉用户，不用 shell、脚本、别的网站或别的服务商绕过，不碰 API key 与凭据。
-<!-- surface: cli -->
-11. **管理命令先征得同意。** `cuccut --help` 后半屏「本机管理」里的命令（模型服务与凭据、设置、对外服务、授权、skill 开关等）是给人用的：先征得用户同意再用；密钥只由用户自己输入。打开网页版编辑器的 `cuccut web open` 除外（见 [web](references/catalog/web.md)）。
+9. **Ask before anything irreversible.** For a `destructive` command (such as `cuccut videos delete`), first explain the consequences to the user and get their agreement, then pass `--yes`; do not add `--yes` by default for convenience. Without `--yes`, `models install` only reports the size; tell the user the size first.
 <!-- /surface -->
 <!-- surface: agent -->
-11. **设置不代做。** 启用服务、配置凭据、改默认值、改设置由用户在 CucCut 的设置里完成，你只说明要改哪一项。
+9. **Ask before anything irreversible.** Do irreversible operations such as deletion only when the user explicitly asks. Depending on the access mode the user chose, some calls wait for the user to approve in CucCut, and the tool returns only after the user decides; do not approve on the user's behalf. On `APPROVAL_DENIED`, do not retry the same operation; ask the user how they want to change it. On `APPROVAL_CANCELLED` or `TASK_STOPPED`, end the turn.
+<!-- /surface -->
+10. **Pass on what the user needs to do.** For `CAPABILITY_NOT_CONFIGURED` (for transcription, speech synthesis, image generation or music generation, which you cannot do yourself), `GRANT_REQUIRED`, external tools that need consent or installing, and links that need a login: tell the user using the error's `remedy` and `next`. Do not work around it with a shell, scripts, other websites or other providers, and do not touch API keys or credentials.
+<!-- surface: cli -->
+11. **Get consent before admin commands.** The commands in the "Local admin" half of `cuccut --help` (model services and credentials, settings, external services, grants, skill toggles and so on) are meant for people: get the user's agreement before using them; secrets are entered only by the user. The exception is `cuccut web open`, which opens the web editor (see [web](references/catalog/web.md)).
+<!-- /surface -->
+<!-- surface: agent -->
+11. **Do not change settings on the user's behalf.** Enabling services, configuring credentials, changing defaults and changing settings are done by the user in CucCut's settings; you only explain which item to change.
+<!-- /surface -->
+12. **Reply in the user's language.** Write your replies in the language of the user's latest message; when it is too short to tell, keep the language of the conversation so far. Content you make (captions, translations, titles, descriptions, chapters, narration, summaries) is in the language the user asks for; otherwise it follows the transcript or the video's language, as each skill says. This guide being in English is no reason to answer in English.
+<!-- surface: agent -->
+   When nothing else tells you the language, use the user's UI language from `<cuccut-editor-context>`.
 <!-- /surface -->
 
-## 6. 交付
+## 6. Delivery
 
-完成后报告四件事：
+When done, report four things:
 
-1. **改了什么**：建了或改了哪个视频（名字、位置；新建的还是用户原来的），每笔修改的回执要点。
-2. **产物的真实路径**：导出的文件取任务结果 `outputs` 里的 `path`，不自己拼路径。
-3. **还要用户审的**：拿不准的译法、没改成的识别错误、挪动了顺序的地方、需要用户挑的候选；本机生成的配乐只许非商业用途时写明。
-4. **没验证的**，分三栏写：
-   - **量出来的**：读回执与结果得到的数，如时长、剪口数、字幕条数、句数、文件大小。
-   - **看过的**：取帧后实际看到的画面；没取帧就写没看。帧不含字幕、文字与叠加的元素，字幕位置挡没挡人脸只能在成片或编辑器里看。
+1. **What changed**: which video you created or changed (name and location; whether it is new or the user's existing one), and the key points of each edit's receipt.
+2. **The real paths of the outputs**: for exported files, take `path` from the job result's `outputs`; do not build paths yourself.
+3. **What the user still needs to review**: uncertain translations, recognition errors you could not fix, places where you reordered content, candidates the user needs to pick from; state it when locally generated music is licensed for non-commercial use only.
+4. **What was not verified**, in three columns:
+   - **Measured**: numbers you got by reading receipts and results, such as duration, number of cuts, number of captions, number of sentences, file size.
+   - **Looked at**: the pictures you actually saw after grabbing frames; if you did not grab frames, say you did not look. Frames do not include captions, text or overlaid elements; whether captions cover faces can only be seen in the finished video or the editor.
 <!-- surface: cli -->
-     网页版编辑器里看过的时刻也算，见 [web](references/catalog/web.md)。
+     Moments you looked at in the web editor also count; see [web](references/catalog/web.md).
 <!-- /surface -->
-   - **要人听的**：剪点顺不顺、配音的语气与对齐、配乐音量。
+   - **Needs a human to listen**: whether cuts flow, the tone and alignment of dubbing, the music level.
 
-工具失败属于「没验证」，不等于内容有问题；只按实际看到的帧下视觉判断。
+A tool failure counts as "not verified"; it does not mean the content is wrong. Make visual judgments only from frames you actually looked at.
 
 <!-- surface: cli -->
-**给用户一条新链接。** 要请用户在编辑器里审时，交付前再运行一次 `cuccut web open --video <videoId>`，把新链接给用户：你自己打开过的那条已经作废，新的也只能用一次、两分钟内有效。用户来不及马上点，就请用户自己运行 `cuccut web open --video <videoId> --launch`。见 [web](references/catalog/web.md)。
+**Give the user a fresh link.** When you want the user to review in the editor, run `cuccut web open --video <videoId>` once more before delivery and give the user the new link: the one you opened yourself is already spent, and the new one also works only once, within two minutes. If the user cannot click it right away, ask them to run `cuccut web open --video <videoId> --launch` themselves. See [web](references/catalog/web.md).
 <!-- /surface -->

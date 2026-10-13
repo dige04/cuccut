@@ -1,62 +1,62 @@
 ---
-name: 剪辑
-description: edits apply 的操作族、剪口播、章节、撤销与读回执。
+name: Editing
+description: Operation families of edits apply, talking-head cuts, chapters, undo and reading receipts.
 ---
 
-# 剪辑
+# Editing
 
-一笔修改用 {{tool:edits_apply}}，要操作的字段时用 {{tool:edits_ops}} 取。剪口播的做法见 {{skill:demo-polish}}。
+Make one edit with {{tool:edits_apply}}; get the fields of an operation with {{tool:edits_ops}}. For how to cut a talking head, see {{skill:demo-polish}}.
 
-## 常用操作
+## Common operations
 
 <!-- generated: common-ops -->
-**导入素材**（`importAsset`）：把媒体文件登记为视频的素材。
+**Import an asset** (`importAsset`): registers a media file as an asset of the video.
 
 ```json
 {"type":"importAsset","path":"demo.mp4","ref":"clip"}
 ```
 
-**放素材**（`addItem`）：把素材放到时间线上；省略 at 时接在轨道末尾，省略 trackId 时用第一条未锁定的同类轨道（视频、图片放视觉轨，音频放音频轨）。
+**Place an asset** (`addItem`): places an asset on the timeline; without at it is appended to the end of the track, and without trackId it goes on the first unlocked track of the matching kind (video and images on a visual track, audio on an audio track).
 
 ```json
 {"type":"addItem","asset":{"ref":"clip"},"at":1}
 ```
 
-**裁剪**（`trimItem`）：裁切片段的开头或结尾，at 是这条边在时间线上的新位置。
+**Trim** (`trimItem`): trims the start or end of an item; at is the new timeline position of that edge.
 
 ```json
 {"type":"trimItem","itemId":"item_1","edge":"end","at":8}
 ```
 
-**挪动**（`moveItem`）：移动片段；at 是新的开始时间，offset 是相对移动（可为负），二选一。
+**Move** (`moveItem`): moves an item; at is the new start time, offset a relative move (may be negative); give one or the other.
 
 ```json
 {"type":"moveItem","itemId":"item_1","at":5}
 ```
 
-**删除**（`deleteItems`）：删除片段（不移动其他片段，留下空隙）。
+**Delete** (`deleteItems`): deletes items (other items do not move; a gap is left).
 
 ```json
 {"type":"deleteItems","itemIds":["item_1"]}
 ```
 
-**分割**（`splitItem`）：在时间线上的这个位置把片段一分为二；关键帧按两半各自的窗口分开，裁切时关键帧跟着内容走。
+**Split** (`splitItem`): splits an item in two at this timeline position; keyframes are divided by the window of each half, and when trimming, keyframes stay with the content.
 
 ```json
 {"type":"splitItem","itemId":"item_1","at":3.5}
 ```
 
-**调音量**（`setAudioMix`）：改音频、视频或有声合成的声音；volume 是线性倍数，在 0 到 4，1 为原音量（0.5 约 -6 dB，2 约 +6 dB）；淡变 0 表示去掉。
+**Change volume** (`setAudioMix`): changes the sound of an audio, video or audible composition item; volume is a linear multiplier from 0 to 4, 1 being the original volume (0.5 is about -6 dB, 2 about +6 dB); a fade of 0 removes it.
 
 ```json
 {"type":"setAudioMix","itemId":"item_1","volume":0.5,"fadeOut":1}
 ```
 
-**改文字**（`setText`）：改文字片段的文字，或改成计时读数；两者只给一个。
+**Change text** (`setText`): changes the text of a text item, or turns it into a timer readout; give exactly one of the two.
 
 ```json
-{"type":"setText","itemId":"item_1","text":"第一章"}
+{"type":"setText","itemId":"item_1","text":"Chapter 1"}
 ```
 
-字幕层用 {{tool:captions_create}} 建，不是这里的操作；剪掉一段并让后面前移用 `removeRange`，口播的剪口用 `addCuts`。其余操作与每个字段的写法用 {{tool:edits_ops}} 取。
+Caption layers are created with {{tool:captions_create}}, not with an operation here; to cut a span and close the gap, use `removeRange`, and for cuts in a talking head use `addCuts`. Get the other operations and how to write each field from {{tool:edits_ops}}.
 <!-- /generated -->

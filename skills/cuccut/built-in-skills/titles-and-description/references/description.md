@@ -1,78 +1,78 @@
-# 视频简介
+# Video description
 
-写给发布视频的人。简介是视频页上标题下面那段文字。三种人会读它：还在决定看不看的人，只看折叠起来的头一两行；看完了想找视频里提到的某个东西的人，往下翻链接和章节；搜索的人，靠里面的词找到这个视频。一份简介要同时伺候好这三种人。
+Written for the person publishing the video. The description is the text under the title on the video page. Three kinds of people read it: those still deciding whether to watch, who see only the first line or two before it folds; those who finished and want to find something the video mentioned, who scroll down to the links and chapters; and searchers, who find the video through the words in it. One description has to serve all three well.
 
-只写一份简介。有已选定的标题时，简介配合它：接着标题说，不重复它。没有时，从这个视频最值得看的一点出发。
+Write only one description. When there is a chosen title, the description works with it: it picks up from the title without repeating it. When there is none, start from the one thing most worth watching in this video.
 
-最容易写坏的样子：开头是「大家好，欢迎来到我的频道」或一串链接，真正讲什么要翻到第三行才看到；或者整段是视频的流水账，把每个结论都剧透完，看了简介就不用看视频了。
+The easiest ways to get it wrong: opening with "Hi everyone, welcome to my channel" or a string of links, so what it is really about only shows up on the third line; or a whole paragraph of blow-by-blow recap that spoils every conclusion, so reading the description makes watching the video unnecessary.
 
-## 1. 开头
+## 1. The opening
 
-开头一两行最要紧：多数列表和视频页折叠时只显示这几行。
+The first line or two matter most: most lists and video pages show only these lines when folded.
 
-- 说清这个视频讲什么、谁会想看、看了能得到什么。
-- 从最值得看的一点开始，用具体的东西（一个结果、一个数字、一个名字、一个问题）；不寒暄，不把链接、标签或署名放在最前面。
-- 能独立成立：没有标题、不展开，也知道视频讲什么。
-- 说的每一件事视频都兑现。
+- Say clearly what the video is about, who would want to watch it and what they get from it.
+- Start from the one thing most worth watching, with something concrete (a result, a number, a name, a question); no small talk, and no links, tags or byline first.
+- Stands on its own: without the title and without expanding, it is clear what the video is about.
+- The video delivers everything it says.
 
-对比一下（只是示意）：
+Compare (illustrative only):
 
-不好：`大家好，这期视频我们来聊聊代码审查。欢迎点赞关注。链接见下方。`
+Bad: `Hi everyone, in this video we're talking about code review. Please like and subscribe. Links below.`
 
-好：`AI 把代码产出推高了三倍，审查反而成了瓶颈。这期讲我们怎么让 AI 先审一遍、人只看它拿不准的部分，以及为此被迫改掉的需求写法。适合正在团队里推 AI 编程的人。`
+Good: `AI tripled our code output, and review became the bottleneck. This episode covers how we let AI review first so people only look at what it is unsure about, and the way of writing requirements we were forced to drop along the way. For anyone rolling out AI coding on their team.`
 
-## 2. 内容概览
+## 2. Content overview
 
-开头之后，一小段或几条列表，按顺序说视频讲了什么、什么值得看。写给还在决定看不看的人：让他们知道里面有什么，但不把每个结论都剧透到不必再看，除非用户要的就是完整的说明。
+After the opening, a short paragraph or a few bullet points saying in order what the video covers and what is worth watching. Written for those still deciding whether to watch: let them know what is inside without spoiling every conclusion to the point that they need not watch, unless a full explanation is what the user wants.
 
-## 3. 章节
+## 3. Chapters
 
-- 视频有章节（videos_inspect 的 chapters）时，写章节列表：每章一行，时间取那一章的 atSeconds 换成时:分:秒（不到一小时写分:秒），名字取它的 title。只用视频里已有的章节，不自己估时间，也不自己编章节。
-- 视频没有章节时不写章节列表，也不编章节；需要时告诉用户可以先给视频分章节。
-- 用户说了发布平台时，章节的写法按那个平台的规则（见第 7 节）。
+- When the video has chapters (videos_inspect's chapters), write a chapter list: one line per chapter, the time taken from that chapter's atSeconds converted to h:mm:ss (m:ss when under an hour), the name taken from its title. Use only the chapters the video already has; do not estimate times or invent chapters.
+- When the video has no chapters, write no chapter list and invent no chapters; when useful, tell the user they can split the video into chapters first.
+- When the user named the publishing platform, write chapters by that platform's rules (see section 7).
 
-## 4. 出处与链接
+## 4. Sources and links
 
-- 只用材料里给了的链接：用户给的原视频与说话人主页、文稿里念出来的网址、用户提供的链接。缺的不编；应该有却缺的，说明需要用户补哪一个。
-- 视频里提到的书、工具和资源：材料里有名字就写名字，有链接才写链接。
+- Use only links given in the material: the original video and speakers' pages the user gave, URLs read out in the transcript, links the user provided. Do not invent missing ones; for ones that should be there but are missing, say which the user needs to fill in.
+- Books, tools and resources mentioned in the video: write the name when the material has it, and the link only when it has one.
 
-## 5. 标签
+## 5. Tags
 
-- 只取出现在文稿和视频信息里的词：人名和产品名、话题词、领域词。
-- 挑观众会搜的词；不堆与这个视频无关的热词。
-- 用户的偏好里有固定标签时加上。
+- Take only words that appear in the transcript and video info: names of people and products, topic words, domain words.
+- Pick words viewers would search for; do not pile on trending words unrelated to this video.
+- Add fixed tags when the user's preferences have them.
 
-## 6. 视角与固定栏目
+## 6. Perspective and recurring sections
 
-用户说了视角就照办；没说时按基线里「视角」一节判断。
+Follow the perspective the user named; when they did not name one, judge by the "Perspective" section of the baseline.
 
-- **作者视角**：用用户的口吻。正文之后加上用户偏好里的固定栏目（署名、关注方式、免责声明、固定链接等）。
-- **观众视角**（转载、翻译或搬运别人的视频）：在显眼的位置写明原作者和原视频的出处；不要把别人的内容说成用户的，除非用户要求，不加用户的推广栏目。
+- **Author perspective**: use the user's voice. After the body, add the recurring sections from the user's preferences (byline, how to follow, disclaimer, fixed links, etc.).
+- **Viewer perspective** (reposting, translating or re-uploading someone else's video): state the original author and the original video's source prominently; do not present someone else's content as the user's, and unless the user asks, do not add the user's promotional sections.
 
-## 7. 平台
+## 7. Platforms
 
-用户说了发布平台时，照你知道的那个平台的规则写：长度上限、章节怎么写、标签怎么写和写几个、链接能不能点。不确定的规则不要编，并说明用户需要对照平台现行的规则核对。没说平台时按通常的做法，不假定任何一个平台。
+When the user names the publishing platform, follow that platform's rules as you know them: length limit, how chapters are written, how tags are written and how many, whether links are clickable. Do not invent rules you are unsure of, and say that the user needs to check against the platform's current rules. When no platform is named, follow common practice and assume no particular platform.
 
-## 8. 篇幅与风格
+## 8. Length and style
 
-| 篇幅 | 简介 |
+| Length | Description |
 | --- | --- |
-| 短 | 只有开头：讲什么、谁会想看 |
-| 中（默认） | 开头、内容概览、章节（如果有）、出处与链接、标签 |
-| 长 | 在中的基础上，写每一章讲什么，提到的资源逐个列出，背景讲透 |
+| Short | Only the opening: what it is about, who would want to watch |
+| Medium (default) | Opening, content overview, chapters (if any), sources and links, tags |
+| Long | Medium plus what each chapter covers, every mentioned resource listed one by one, the background fully explained |
 
-平台有长度上限时以平台为准；装不下时保留最要紧的，并说明。
+When the platform has a length limit, the platform wins; when it cannot all fit, keep what matters most and say so.
 
-风格体现在语气上：平实直接说内容，科普让外行一眼看出讲什么，吐槽有态度和调侃，口语像朋友聊天。不论什么风格，都只说视频兑现的东西；出处、链接和标签不随风格变。
+Style shows in the tone: plain states the content directly, popular science lets laypeople see at a glance what it covers, roast has attitude and teasing, conversational sounds like chatting with a friend. Whatever the style, say only what the video delivers; sources, links and tags do not change with style.
 
-## 9. 自查
+## 9. Self-check
 
-- 开头一两行单独读，说清了讲什么、谁会想看，最值得看的一点在里面；不是寒暄或链接开头。
-- 配合已选定的标题，没有照抄标题。
-- 没有把每个结论都剧透完。
-- 每一件事视频都兑现；每个链接都有来源，没有编造。
-- 章节的时间和名字都取自视频已有的章节，没有估时间或编章节。
-- 每个标签都出现在文稿或视频信息里。
-- 视角对：观众视角写明了原作者和出处。
-- 说了平台的，没有编造平台规则，并提醒了核对。
-- 篇幅与风格是这次要的档位与风格；语言与用词遵守用户的要求与偏好。
+- Read alone, the first line or two say clearly what it is about and who would want to watch, and contain the one thing most worth watching; it does not open with small talk or links.
+- It works with the chosen title without copying it.
+- It does not spoil every conclusion.
+- The video delivers everything; every link has a source and none is invented.
+- Chapter times and names all come from the video's existing chapters; no times were estimated or chapters invented.
+- Every tag appears in the transcript or video info.
+- The perspective is right: the viewer perspective states the original author and source.
+- When a platform was named, no platform rules were invented, and the user was reminded to check.
+- Length and style are the level and style asked for this time; language and wording follow the user's requests and preferences.

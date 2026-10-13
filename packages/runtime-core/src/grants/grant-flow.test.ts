@@ -207,7 +207,7 @@ describe('数据外发的授权与预算', () => {
       grantId: capped.grantId,
       measure: 'calls',
       remedy: { action: 'raise-budget', commands: [`cuccut grants update ${capped.grantId} --max-calls <更大的次数>`] },
-      next: expect.stringContaining('不要换服务商'),
+      next: expect.stringContaining('Do not switch providers'),
     });
     expect(s.runtime.harness.approvals.pending()).toEqual([]);
     expect((await s.client.request('jobs.list', {})).jobs).toHaveLength(jobs);

@@ -115,8 +115,8 @@ describe('slides_check', () => {
       next: string;
     };
     expect(result.problems).toBe(0);
-    expect(result.slides[0]!.notes).toEqual(expect.arrayContaining([expect.stringMatching(/^排版 .*overlaps/)]));
-    expect(result.next).toMatch(/排版/);
+    expect(result.slides[0]!.notes).toEqual(expect.arrayContaining([expect.stringMatching(/^layout .*overlaps/)]));
+    expect(result.next).toMatch(/layout notes/);
     expect(recorded).toHaveLength(1);
   });
 

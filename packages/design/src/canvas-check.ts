@@ -1,19 +1,18 @@
 /**
- * 设计稿的结构校验（`design_check` 工具，docs/design/canvas §7.2）。只看文件，不渲染，按原格式
- * （design skill 的 SKILL.md「踩坑规则」与 references/format.md）逐条查：
- *   - canvas.json：v3、boards 的 x/y/w/h 与可选字段、guides、pages、notes、launch、order、designSystems 与 ds/<folder>/
- *   - boards 与 order 的路径都有文件；ds/ 以外的每个 .dc.html 都在 boards 里；画板文件名（不含 .dc.html）不重复
- *   - 每个画板：`<script src="./support.js"></script>` 头行、`<x-dc>`、唯一的 `data-dc-script` 块（classic JS 的
- *     `class Component extends DCLogic`）、单引号的 `data-props` 是合法 JSON、editor 取值、`$preview` 与 boards 的 w/h 一致
- *   - `<x-dc>` 标记：非空元素都闭合、属性都加引号、不自闭合（svg 里除外）、不用大写标签名、`{{ }}` 只是点号路径或字面量、
- *     `<dc-import name>` 与 `<a href="….dc.html">` 指向存在的画板
- *   - 脚本不拼界面（innerHTML、appendChild、自己的 window.X）、不装全局按键处理、不连网
- *   - 素材：`/_blob/<id>` 都在 assets/ 里；`<img src>` 与 `url(…)` 不用 data: URI、文件名或网址；行内 style 里不写 url(…)；
- *     没有 `<iframe>`/`<object>`/`<embed>`；网上的样式只认 Google Fonts；相对引用的支持文件都在设计稿里
- *   - 路径段的规则、文件数与合计大小的上限
- * ds/ 下是设计系统的原样拷贝，不查内容。画板脚本能不能跑、排版对不对不在检查范围内。问题是给智能体看的英文，不进界面文案目录。
+ * Structural check of a design (the `design_check` tool, docs/design/canvas §7.2). Reads files only, renders nothing, and checks item by item against the original format
+ * (the design skill's SKILL.md "pitfall rules" and references/format.md):
+ *   - canvas.json: v3, boards' x/y/w/h and optional fields, guides, pages, notes, launch, order, designSystems and ds/<folder>/
+ *   - every path in boards and order has a file; every .dc.html outside ds/ is in boards; board file names (without .dc.html) are unique
+ *   - each board: the `<script src="./support.js"></script>` header line, `<x-dc>`, a single `data-dc-script` block (classic JS
+ *     `class Component extends DCLogic`), single-quoted `data-props` is valid JSON, editor values, `$preview` matches the w/h in boards
+ *   - `<x-dc>` markup: non-void elements are closed, attributes are quoted, no self-closing (except inside svg), no uppercase tag names, `{{ }}` holds only a dotted path or a literal,
+ *     `<dc-import name>` and `<a href="….dc.html">` point to existing boards
+ *   - scripts do not build the UI (innerHTML, appendChild, their own window.X), install no global key handlers, make no network access
+ *   - assets: every `/_blob/<id>` is in assets/; `<img src>` and `url(…)` use no data: URIs, file names or web URLs; no url(…) in inline styles;
+ *     no `<iframe>`/`<object>`/`<embed>`; web stylesheets only from Google Fonts; relatively referenced support files are in the design
+ *   - path segment rules, limits on file count and total size
+ * ds/ holds verbatim copies of design systems; their content is not checked. Whether board scripts run or the layout is right is out of scope. Issues are English text for agents and do not go into the UI copy catalogs.
  */
-// i18n-ignore-file: 给模型的校验结果
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { ASSETS_DIR, BLOB_ID_PATTERN } from '@cuccut/slides';
@@ -30,45 +29,45 @@ import {
 } from './canvas-layout.ts';
 
 export interface CanvasIssue {
-  /** 相对设计稿目录的文件（`/` 分隔）；整个目录的问题是 `.`。 */
+  /** File relative to the design directory (`/`-separated); issues about the whole directory use `.`. */
   file: string;
   message: string;
 }
 
 export interface CanvasCheckResult {
-  /** canvas.json 的标题（没有时是目录名）。 */
+  /** Title from canvas.json (the directory name when missing). */
   title: string;
-  /** boards 里的画板数。 */
+  /** Number of boards in boards. */
   boardCount: number;
   issues: CanvasIssue[];
 }
 
-/** 原格式的其他上限（SKILL.md 的 canvas.json 说明）。 */
+/** Other limits of the original format (the canvas.json notes in SKILL.md). */
 const BOARD_SIZE = { min: 40, max: 8000 } as const;
 const MAX_PAGES = 40;
 const MAX_NOTES = 200;
 const MAX_GUIDES = 6;
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,40}$/;
-/** 画板文件读入的上限：比这大的不读，只报一条。 */
+/** Read limit for board files: anything larger is not read and gets a single issue. */
 const MAX_BOARD_BYTES = 8 * 1024 * 1024;
-/** 扫描目录时最多看这么多个条目（超过时只报文件数超限）。 */
+/** At most this many entries are looked at when scanning the directory (beyond that only the file-count limit is reported). */
 const MAX_SCAN_ENTRIES = 20_000;
 
 const SUPPORT_LINE = '<script src="./support.js"></script>';
 const TEXT_EXTENSIONS = new Set(['.html', '.css', '.js', '.mjs', '.json', '.svg', '.md', '.txt']);
 
 interface CanvasTree {
-  /** 编辑器看得到的文件（相对路径）→ 字节数。 */
+  /** Files the editor can see (relative path) -> byte size. */
   files: Map<string, number>;
-  /** assets/ 里的素材 id。 */
+  /** Asset ids in assets/. */
   assets: Set<string>;
-  /** 文件与素材的合计字节数。 */
+  /** Total bytes of files and assets. */
   totalBytes: number;
-  /** 扫描是否因为条目太多提前停下。 */
+  /** Whether the scan stopped early because there were too many entries. */
   truncated: boolean;
 }
 
-/** 扫一遍设计稿目录：可见文件、素材 id；段名不合规则的与符号链接直接记成问题。 */
+/** Scans the design directory once: visible files and asset ids; invalid segment names and symlinks are recorded as issues directly. */
 async function scanTree(dir: string, issues: CanvasIssue[]): Promise<CanvasTree> {
   const tree: CanvasTree = { files: new Map(), assets: new Set(), totalBytes: 0, truncated: false };
   let seen = 0;
@@ -125,7 +124,7 @@ async function scanAssets(dir: string, tree: CanvasTree): Promise<void> {
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 
-/** `data-props` 是普通的 HTML 属性：先按 HTML 解码实体，再按 JSON 解析。 */
+/** `data-props` is a plain HTML attribute: decode HTML entities first, then parse as JSON. */
 function decodeEntities(text: string): string {
   return text.replace(/&(#x[0-9a-f]+|#\d+|amp|apos|quot|lt|gt);/gi, (whole, name: string) => {
     const lower = name.toLowerCase();
@@ -146,7 +145,7 @@ function attr(attrs: string, name: string): { value: string; quote: "'" | '"' | 
   return { value: match[3]!, quote: '' };
 }
 
-/** 文本里的 `/_blob/<id>` 引用：id 不在 assets/ 里或写错格式的记成问题。 */
+/** `/_blob/<id>` references in text: ids missing from assets/ or malformed are recorded as issues. */
 function checkBlobRefs(file: string, text: string, assets: ReadonlySet<string>, issues: CanvasIssue[]): void {
   const reported = new Set<string>();
   for (const match of text.matchAll(/\/_blob\/([^\s"'()<>?#]*)/g)) {
@@ -161,7 +160,7 @@ function checkBlobRefs(file: string, text: string, assets: ReadonlySet<string>, 
   }
 }
 
-/** css 里指向网上的 `@import`（Google Fonts 除外）。 */
+/** `@import` in CSS that points to the web (Google Fonts excepted). */
 function checkCssImports(file: string, css: string, issues: CanvasIssue[]): void {
   for (const match of css.matchAll(/@import\s+(?:url\(\s*)?["']?([^"')\s;]+)/gi)) {
     const url = match[1]!;
@@ -176,24 +175,24 @@ interface BoardSize {
   h: number;
 }
 
-/** 一个画板文件校验时要的上下文。 */
+/** Context needed to check one board file. */
 interface BoardContext {
   file: string;
   size: BoardSize | null;
   tree: CanvasTree;
-  /** ds/ 以外的画板文件名（不含 .dc.html）→ 路径，`<dc-import name>` 按它找。 */
+  /** Board file names outside ds/ (without .dc.html) -> path; `<dc-import name>` resolves through this. */
   stems: ReadonlyMap<string, string>;
   issues: CanvasIssue[];
 }
 
-/** 标签的属性部分：引号里的 `>` 不算结束。 */
+/** The attribute part of a tag: a `>` inside quotes does not end it. */
 const ATTRS = String.raw`((?:[^>"']|"[^"]*"|'[^']*')*)`;
 const TAG = new RegExp(String.raw`<(\/?)([A-Za-z][A-Za-z0-9:-]*)` + ATTRS + '>', 'g');
 const VOID_ELEMENTS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr']);
 const RAW_TEXT = new Set(['script', 'style', 'textarea', 'title']);
-/** `data-props` 里 `editor` 的取值（format.md）。 */
+/** Values of `editor` in `data-props` (format.md). */
 const PROP_EDITORS = new Set(['text', 'color', 'int', 'float', 'range', 'boolean', 'enum']);
-/** `{{ }}` 只能是点号路径或字面量（format.md：never an expression）。 */
+/** `{{ }}` can only be a dotted path or a literal (format.md: never an expression). */
 const HOLE = /^\s*(?:[A-Za-z_$][\w$]*(?:\.[\w$]+)*|true|false|null|-?\d+(?:\.\d+)?|"[^"{}]*"|'[^'{}]*')\s*$/;
 
 function attrList(attrs: string): { name: string; value: string | null; quoted: boolean }[] {
@@ -209,7 +208,7 @@ function attrList(attrs: string): { name: string; value: string | null; quoted: 
   return list;
 }
 
-/** 在画板目录下解析相对引用；返回相对设计稿目录的路径，越出目录时 null。 */
+/** Resolves a relative reference from the board's directory; returns the path relative to the design directory, or null when it escapes the directory. */
 function resolveRelative(file: string, ref: string): string | null {
   const clean = ref.split(/[?#]/)[0]!;
   const parts = clean.startsWith('/') ? [] : file.split('/').slice(0, -1);
@@ -223,10 +222,10 @@ function resolveRelative(file: string, ref: string): string | null {
   return parts.join('/');
 }
 
-/** `/_blob/<id>`，以及设计系统 tokens.css 里的 `../_blob/<id>` 写法。 */
+/** `/_blob/<id>`, plus the `../_blob/<id>` form used in a design system's tokens.css. */
 const isBlobUrl = (url: string) => /^(?:\.{1,2}\/)*\/?_blob\//.test(url.trim());
 
-/** 图片与 `url(…)` 的地址：要么是上传的 `/_blob/<id>`，要么是 `{{hole}}`；data: URI 与文件名都不行。 */
+/** Image and `url(…)` addresses: either an uploaded `/_blob/<id>` or a `{{hole}}`; data: URIs and file names are not allowed. */
 function checkAssetUrl(ctx: BoardContext, url: string, where: string): void {
   const value = url.trim();
   if (value === '' || value.startsWith('#') || /^\{\{[\s\S]*\}\}$/.test(value) || isBlobUrl(value)) return;
@@ -238,7 +237,7 @@ function checkAssetUrl(ctx: BoardContext, url: string, where: string): void {
   } else add(`${where} names the file ${value}; upload it with design_import_asset and use the /_blob/<id> it returns`);
 }
 
-/** `<x-dc>` 里的标记：标签都要闭合、属性都要加引号、不自闭合（svg 里除外）、不用大写的标签名、`{{ }}` 只是查找。 */
+/** Markup inside `<x-dc>`: every tag closed, every attribute quoted, no self-closing (except inside svg), no uppercase tag names, `{{ }}` is only a lookup. */
 function checkMarkup(ctx: BoardContext, markup: string): void {
   const add = (message: string) => ctx.issues.push({ file: ctx.file, message });
   const text = markup.replace(/<!--[\s\S]*?-->/g, comment => ' '.repeat(comment.length));
@@ -325,7 +324,7 @@ function checkMarkup(ctx: BoardContext, markup: string): void {
   }
 }
 
-/** 画板里的样式：网上的 `@import`、`url(…)` 的地址。 */
+/** Styles in a board: `@import` from the web, `url(…)` addresses. */
 function checkStyle(ctx: BoardContext, css: string): void {
   checkCssImports(ctx.file, css, ctx.issues);
   for (const match of css.matchAll(/url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*))\s*\)/gi)) {
@@ -335,7 +334,7 @@ function checkStyle(ctx: BoardContext, css: string): void {
   }
 }
 
-/** 画板里的脚本：界面不由脚本拼（innerHTML、appendChild、自己的 window.X），不装全局按键处理，不连网（format.md）。 */
+/** Scripts in a board: the UI is not built by script (innerHTML, appendChild, their own window.X), no global key handlers, no network access (format.md). */
 function checkScript(ctx: BoardContext, code: string, logic: boolean): void {
   const add = (message: string) => ctx.issues.push({ file: ctx.file, message });
   if (logic) {
@@ -430,7 +429,7 @@ function checkBoardFile(ctx: BoardContext, html: string): void {
   checkBlobRefs(file, html, ctx.tree.assets, ctx.issues);
 }
 
-/** 画板按相对路径引用的支持文件（css、js、json，docs/design/canvas §2.1）必须在设计稿里。 */
+/** Support files a board references by relative path (css, js, json, docs/design/canvas §2.1) must be in the design. */
 function checkRelativeFile(ctx: BoardContext, ref: string, where: string): void {
   const target = resolveRelative(ctx.file, ref);
   if (target === null || target === '' || !ctx.tree.files.has(target)) {
@@ -439,16 +438,16 @@ function checkRelativeFile(ctx: BoardContext, ref: string, where: string): void 
 }
 
 const GUIDE_KINDS = new Set(['columns', 'rows', 'grid']);
-/** `title1` 是标题，没有 kind 是便签，其余是用户在画布上画的（SKILL.md 的 notes 说明）。 */
+/** `title1` is a title, no kind is a sticky note, everything else is something the user drew on the canvas (the notes section of SKILL.md). */
 const NOTE_KINDS = new Set(['title1', 'rect', 'oval', 'pen', 'line', 'arrow', 'image']);
-/** 设计系统在 ds/ 下的目录名（design-system-components.md：小写，至多 64 个字符，不以 - 或 _ 开头）。 */
+/** Directory names of design systems under ds/ (design-system-components.md: lowercase, at most 64 characters, not starting with - or _). */
 const DS_FOLDER = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const MAX_DESIGN_SYSTEMS = 4;
 
 /**
- * `designSystems` 与 `ds/<folder>/`：编辑器只在两者都在时才提供设计系统的颜色、文字样式与组件
- * （design-system-components.md）。拷了文件却没记录是问题；有记录、目录里还没有文件不算：skill 允许没有
- * `tokens.json` 时照装并说明（同原版），编辑器这时只是给不出设计系统的颜色。
+ * `designSystems` and `ds/<folder>/`: the editor only offers a design system's colors, text styles and components when both exist
+ * (design-system-components.md). Copied files without a record are an issue; a record whose directory has no files yet is not: the skill allows installing without
+ * `tokens.json` and saying so (same as the original), and the editor then simply cannot offer the design system's colors.
  */
 function checkDesignSystems(value: unknown, tree: CanvasTree, add: (message: string) => void): void {
   const folders = new Set<string>();
@@ -488,7 +487,7 @@ function checkDesignSystems(value: unknown, tree: CanvasTree, add: (message: str
   }
 }
 
-/** 检查 canvas.json 的字段与上限；返回画板路径 → 大小（字段不对的画板也在里面，大小为 null）。 */
+/** Checks the fields and limits of canvas.json; returns board path -> size (boards with invalid fields are included, with size null). */
 function checkIndex(canvas: Record<string, unknown> & { boards: Record<string, unknown> }, tree: CanvasTree, issues: CanvasIssue[]): Map<string, BoardSize | null> {
   const add = (message: string) => issues.push({ file: CANVAS_FILE, message });
   if (canvas.title !== undefined && typeof canvas.title !== 'string') add('title must be a string');
@@ -596,8 +595,8 @@ function checkIndex(canvas: Record<string, unknown> & { boards: Record<string, u
 }
 
 /**
- * 校验一份设计稿目录（docs/design/canvas §7.2）。目录本身不是设计稿（canvas.json 缺失或不合 §2.1）时，issues 里只有
- * canvas.json 的问题。
+ * Checks a design directory (docs/design/canvas §7.2). When the directory is not a design (canvas.json missing or not §2.1), issues contains only
+ * the canvas.json issue.
  */
 export async function checkCanvas(dir: string): Promise<CanvasCheckResult> {
   const issues: CanvasIssue[] = [];
@@ -643,7 +642,7 @@ export async function checkCanvas(dir: string): Promise<CanvasCheckResult> {
   for (const [file, bytes] of tree.files) {
     const ext = path.extname(file).toLowerCase();
     const board = isBoardPath(file);
-    // ds/ 下是设计系统的原样拷贝（design-system-components.md），不由智能体改，不查内容。
+    // ds/ holds verbatim copies of design systems (design-system-components.md); agents do not edit them and their content is not checked.
     if (file.split('/')[0] === DESIGN_SYSTEMS_DIR) continue;
     if (board) {
       if (canvas && !boards.has(file)) {

@@ -1,4 +1,3 @@
-// i18n-ignore-file: 给模型的工具说明与错误
 import { z } from 'zod';
 import { RpcError, SKILL_FILE, SKILL_ID_PATTERN, SKILL_LIMITS } from '@cuccut/protocol';
 import { readSkillFile, type SkillCatalog } from '../skills/skill-catalog.ts';
@@ -6,10 +5,13 @@ import { ToolError, type ToolInfo, type ToolSet } from './tool-catalog.ts';
 import type { ToolPrincipal, ToolScope } from './tool-scope.ts';
 
 /**
- * skill 的只读工具（架构设计 §3.8）：`skills_list` 列出内置与用户层的 skill（Agent 面设计 §8.3 的「现取」路径），`skills_read` 取一个
- * skill 的 `SKILL.md` 正文或目录里的文本文件。风险等级 `read`，规划模式下也能用。
- * 受限会话里智能体自己的文件工具读不到 `<Runtime Home>/skills/`，所以正文经这个工具取。开着的、关着的 skill 都能读：
- * 会话开始的索引只列开着的，点选的（可能是关着的）在消息里给了 id。对外服务（MCP）同样可以只读地取（`surfaces` 三个面都有）。
+ * Read-only skill tools (architecture design §3.8): `skills_list` lists built-in and user-level skills (the "fetch on
+ * demand" path of agent surface design §8.3); `skills_read` fetches a skill's `SKILL.md` body or a text file in its
+ * directory. Risk level `read`; also usable in plan mode.
+ * In a restricted session the agent's own file tools cannot read `<Runtime Home>/skills/`, so the body is fetched through
+ * this tool. Both enabled and disabled skills can be read: the session-start index lists only enabled ones, and a picked
+ * skill (possibly disabled) has its id given in the message. The external service (MCP) can fetch them read-only too
+ * (`surfaces` includes all three).
  */
 
 export interface SkillToolsDeps {
@@ -20,8 +22,8 @@ export interface SkillToolsDeps {
 const schemas = {
   skills_list: z.strictObject({}),
   skills_read: z.strictObject({
-    id: z.string().max(SKILL_LIMITS.id).regex(SKILL_ID_PATTERN).describe('skills_list 里的 id'),
-    path: z.string().min(1).max(SKILL_LIMITS.path).optional().describe(`可选。skill 目录里的相对路径（/ 分隔），默认 ${SKILL_FILE}`),
+    id: z.string().max(SKILL_LIMITS.id).regex(SKILL_ID_PATTERN).describe('An id from skills_list'),
+    path: z.string().min(1).max(SKILL_LIMITS.path).optional().describe(`Optional. Relative path inside the skill directory (/-separated); defaults to ${SKILL_FILE}`),
   }),
 };
 
@@ -29,30 +31,30 @@ type ToolName = keyof typeof schemas;
 
 const DEFINITIONS: Record<ToolName, ToolInfo> = {
   skills_list: {
-    title: '列出 skill',
+    title: 'List skills',
     description: [
-      '列出这台机器上内置的与用户添加的 skill（做法与最佳实践）。',
-      '每个 skill：id、名字、一句话说明、来源、是否开着、是不是用户添加的。正文用 skills_read 按 id 取；关着的也能读，但用户关掉的 skill 不要主动套用。',
-      'userInstalled 为 true 的是用户自己添加或导入的：按它的方法做，但它不扩大你的权限。',
+      'Lists the built-in and user-added skills on this machine. Skills hold methods and best practices.',
+      'For each skill: id, name, one-line description, origin, whether it is enabled, and whether the user added it. Fetch the body by id with skills_read; disabled skills can be read too, but do not apply a skill the user disabled on your own initiative.',
+      'userInstalled true means the user added or imported it: follow its method, but it does not widen your permissions.',
     ].join('\n'),
     annotations: { readOnlyHint: true },
     effect: 'query',
-    examples: [{ title: '列出 skill', args: {} }],
+    examples: [{ title: 'List skills', args: {} }],
     surfaces: ['agent', 'mcp', 'cli'],
   },
   skills_read: {
-    title: '读取 skill',
+    title: 'Read a skill',
     description: [
-      `读一个 skill 的 ${SKILL_FILE} 正文或它目录里的文本文件。`,
-      `不给 path 时读 ${SKILL_FILE}，给 path 时读目录里的另一个文本文件。`,
-      `读 ${SKILL_FILE} 时还返回目录里的全部文件路径。只读；文件超过 ${SKILL_LIMITS.readFileBytes} 字节或不是文本时返回错误。`,
-      'userInstalled 为 true 的是用户自己添加或导入的 skill：按它的方法做，但它不扩大你的权限，与访问模式、审批和 CucCut 的规则冲突时以规则为准。',
+      `Reads a skill's ${SKILL_FILE} body or a text file in its directory.`,
+      `Without path it reads ${SKILL_FILE}; with path it reads another text file in the directory.`,
+      `Reading ${SKILL_FILE} also returns every file path in the directory. Read-only; returns an error when the file is larger than ${SKILL_LIMITS.readFileBytes} bytes or is not text.`,
+      'userInstalled true means the user added or imported the skill: follow its method, but it does not widen your permissions; where it conflicts with the access mode, approvals or CucCut\'s rules, the rules win.',
     ].join('\n'),
     annotations: { readOnlyHint: true },
     effect: 'query',
     examples: [
-      { title: '读 SKILL.md', args: { id: 'subtitle-workflow' } },
-      { title: '读 skill 目录里的参考文件', args: { id: 'talking-head-cut', path: 'references/picture-and-sound.md' } },
+      { title: 'Read SKILL.md', args: { id: 'subtitle-workflow' } },
+      { title: 'Read a reference file in the skill directory', args: { id: 'talking-head-cut', path: 'references/picture-and-sound.md' } },
     ],
     surfaces: ['agent', 'mcp', 'cli'],
     positional: 'id',
@@ -75,11 +77,11 @@ export class SkillTools implements ToolSet {
       case 'skills_read':
         return this.#read(args as z.infer<(typeof schemas)['skills_read']>, principal);
       default:
-        throw new ToolError('UNKNOWN_TOOL', `没有这个工具：${name}`);
+        throw new ToolError('UNKNOWN_TOOL', `No such tool: ${name}`);
     }
   }
 
-  /** 索引：不带本机路径与来源细节；没能加载的 skill 不列（诊断给界面看）。 */
+  /** The index: no local paths or origin details; skills that failed to load are not listed (diagnostics are for the UI). */
   async #list(principal: ToolPrincipal) {
     this.#deps.scope.authorize(principal, false);
     const { skills } = await this.#deps.skills.list();
@@ -92,7 +94,7 @@ export class SkillTools implements ToolSet {
         enabled: s.enabled,
         userInstalled: s.removable,
       })),
-      next: '任务属于某个 skill 的范围时，先用 skills_read 读它的 SKILL.md，按它的做法做。',
+      next: 'When the task falls within a skill\'s scope, first read its SKILL.md with skills_read and follow its method.',
     };
   }
 
@@ -101,11 +103,11 @@ export class SkillTools implements ToolSet {
     const file = p.path ?? SKILL_FILE;
     try {
       const skill = await this.#deps.skills.require(p.id);
-      // 说明书页是会话指导的一部分，按工具桥面渲染（Agent 面设计 §8.6）；终端与 MCP 的读者有装好的 CucCut skill，里面是 CLI 面的同一页。
+      // Guide pages are part of the session guidance, rendered for the tool-bridge surface (agent surface design §8.6); terminal and MCP readers have the installed CucCut skill, which holds the same page for the CLI surface.
       if (skill.guide && principal.kind !== 'agent') {
         throw new ToolError(
           'SKILL_NOT_FOUND',
-          `没有这个 skill：${p.id}。它是 CucCut 会话内智能体的说明书页；外部 Agent 读装好的 CucCut skill 里的 references/（cuccut skill install）`,
+          `No such skill: ${p.id}. It is a guide page for agents inside a CucCut session; external agents read references/ in the installed CucCut skill (cuccut skill install)`,
         );
       }
       const { content, size } = await readSkillFile(skill, file);
@@ -120,7 +122,7 @@ export class SkillTools implements ToolSet {
         ...(file === SKILL_FILE ? { files: skill.files.map((f) => f.path) } : {}),
       };
     } catch (error) {
-      // 目录的拒绝换成工具错误：`details.code`（SKILL_NOT_FOUND、SKILL_FILE_NOT_FOUND……）作为错误码。
+      // Catalog rejections become tool errors: `details.code` (SKILL_NOT_FOUND, SKILL_FILE_NOT_FOUND, ...) is the error code.
       if (error instanceof RpcError) {
         const details = (error.details ?? {}) as { code?: unknown };
         throw new ToolError(typeof details.code === 'string' ? details.code : 'SKILL_READ_FAILED', error.message);
@@ -130,7 +132,7 @@ export class SkillTools implements ToolSet {
   }
 }
 
-/** skill 的说明压成一行，与会话开始时的 skill 索引同样截到 300 个字符。 */
+/** Collapses a skill's description into one line, truncated to 300 characters like the session-start skill index. */
 function summaryLine(description: string): string {
   const chars = [...description.replace(/\s+/g, ' ').trim()];
   return chars.length > 300 ? `${chars.slice(0, 299).join('')}…` : chars.join('');

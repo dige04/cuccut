@@ -1,23 +1,22 @@
-// i18n-ignore-file: 文字预设的示例字（包围盒按这些字量好，插入后用户自己改）
 import type { ShapeProps } from '@cuccut/protocol';
 
 /**
- * 文字预设（产品设计 §13.5）：51 条，照旧版 `core/presets/builtin/textpreset/*.json` 搬来。样式是 540 短边基准的文字样式
- * （与核心逐字段一致，省掉了等于缺省值的字段）；位置是画幅百分比，`w` 省略时按文字自己的宽。
- * 示例字换成原型（`model-textpresets.js`）的中文，`previewSize` 是目录卡上的字号，`layout` / `box` 是目录卡的版式与这一组的包围盒。
- * 动画还没有落地的地方，没有搬。
+ * Text presets (product design §13.5): 51 presets, ported from the old `core/presets/builtin/textpreset/*.json`. Styles are text styles on the 540 short-edge reference
+ * (field for field the same as the core, omitting fields equal to their defaults); positions are canvas percentages, and when `w` is omitted the width is the text's own width.
+ * Sample text is English (the prototype `model-textpresets.js` used Chinese); `previewSize` is the font size on the catalog card, `layout` / `box` are the card's layout and this group's bounding box.
+ * Parts that depend on animation not yet implemented were not ported.
  */
 
 export interface TextPresetLayer {
   kind: 'text' | 'shape';
   place: { x: number; y: number; w?: number; rot?: number };
-  /** 比整组晚几秒出现。 */
+  /** Seconds after the group that this layer appears. */
   delay?: number;
   text?: string;
   style?: Record<string, unknown>;
-  /** 目录卡上的字号（像素）。 */
+  /** Font size on the catalog card (pixels). */
   previewSize?: number;
-  /** 形状的高（画幅高的百分比）。 */
+  /** Shape height (percent of canvas height). */
   h?: number;
   shape?: ShapeProps;
 }
@@ -25,9 +24,9 @@ export interface TextPresetLayer {
 export interface TextPreset {
   id: string;
   category: 'simple' | 'title' | 'lower' | 'other';
-  /** 默认长度（秒）。 */
+  /** Default length (seconds). */
   duration: number;
-  /** 目录卡：`stack` 是字样卡（几行字本身），`scene` 是场景卡（裁到包围盒的那一块画面）。 */
+  /** Catalog card: `stack` is a type-specimen card (the lines of text themselves), `scene` is a scene card (the part of the frame cropped to the bounding box). */
   layout: 'stack' | 'scene';
   box: { x: number; y: number; w: number; h: number };
   layers: TextPresetLayer[];
@@ -39,12 +38,12 @@ export const TEXT_PRESETS: TextPreset[] = [
     category: 'simple',
     duration: 5,
     layout: 'stack',
-    box: { x: 50, y: 50, w: 5.39, h: 5.75 },
+    box: { x: 50, y: 50, w: 7.41, h: 5.75 },
     layers: [
       {
         kind: 'text',
         place: { x: 50, y: 50 },
-        text: '标题',
+        text: 'Title',
         style: {
           fontFamily: 'Roboto',
           fontSize: 25.9,
@@ -62,12 +61,12 @@ export const TEXT_PRESETS: TextPreset[] = [
     category: 'simple',
     duration: 5,
     layout: 'stack',
-    box: { x: 50, y: 50, w: 6.75, h: 8.17 },
+    box: { x: 50, y: 50, w: 10.24, h: 8.17 },
     layers: [
       {
         kind: 'text',
         place: { x: 50, y: 50 },
-        text: '简约',
+        text: 'Simple',
         style: {
           fontFamily: 'Montserrat',
           fontSize: 25.9,
@@ -89,12 +88,12 @@ export const TEXT_PRESETS: TextPreset[] = [
     category: 'simple',
     duration: 5,
     layout: 'stack',
-    box: { x: 50, y: 50, w: 5.39, h: 5.75 },
+    box: { x: 50, y: 50, w: 8.88, h: 5.75 },
     layers: [
       {
         kind: 'text',
         place: { x: 50, y: 50 },
-        text: '手写',
+        text: 'Script',
         style: {
           fontFamily: 'Damion',
           fontSize: 25.9,
@@ -112,12 +111,12 @@ export const TEXT_PRESETS: TextPreset[] = [
     category: 'simple',
     duration: 5,
     layout: 'stack',
-    box: { x: 50, y: 50, w: 5.39, h: 5.75 },
+    box: { x: 50, y: 50, w: 7.41, h: 5.75 },
     layers: [
       {
         kind: 'text',
         place: { x: 50, y: 50 },
-        text: '衬线',
+        text: 'Serif',
         style: {
           fontFamily: 'PT Serif',
           fontSize: 25.9,
@@ -135,12 +134,12 @@ export const TEXT_PRESETS: TextPreset[] = [
     category: 'simple',
     duration: 5,
     layout: 'stack',
-    box: { x: 50, y: 50, w: 8.08, h: 5.75 },
+    box: { x: 50, y: 50, w: 14.81, h: 5.75 },
     layers: [
       {
         kind: 'text',
         place: { x: 50, y: 50 },
-        text: '打字机',
+        text: 'Typewriter',
         style: {
           fontFamily: 'Source Code Pro',
           fontSize: 25.9,
@@ -547,7 +546,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 50, y: 53.6 },
-        text: '打字机',
+        text: 'Typewriter',
         style: {
           fontFamily: 'Courier Prime',
           fontSize: 11.9,
@@ -570,7 +569,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 50, y: 46.29, w: 64.94 },
-        text: '写一句\n标题',
+        text: 'Write a\ntitle',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 48.9,
@@ -585,7 +584,7 @@ export const TEXT_PRESETS: TextPreset[] = [
         kind: 'text',
         place: { x: 50, y: 60.32, w: 61.75 },
         delay: 0.53,
-        text: '这里是副标题',
+        text: 'Subtitle goes here',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 17.2,
@@ -608,7 +607,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 50, y: 50, w: 61.25 },
-        text: '深度\n解读\n',
+        text: 'Deep\nDive\n',
         style: {
           fontFamily: 'Bayon',
           fontSize: 67.2,
@@ -622,7 +621,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 50, y: 60.64, w: 61.2 },
-        text: '在这里写一句标题',
+        text: 'Write a headline here',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 9.1,
@@ -646,7 +645,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 50, y: 50, w: 72.67 },
-        text: '写一句\n标题',
+        text: 'Write a\ntitle',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 45.9,
@@ -669,7 +668,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 50, y: 46.39, w: 75.19 },
-        text: '这里是\n一句标题',
+        text: 'This is\na headline',
         style: {
           fontFamily: 'Libre Baskerville',
           fontSize: 40.5,
@@ -683,7 +682,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 50, y: 59.07, w: 37.97 },
-        text: '点标题或正文的任意位置\n就能直接开始输入。\n',
+        text: 'Click anywhere in the title or body\nto start typing.\n',
         style: {
           fontFamily: 'Libre Baskerville',
           fontSize: 9.3,
@@ -713,7 +712,7 @@ export const TEXT_PRESETS: TextPreset[] = [
         kind: 'text',
         place: { x: 47.98, y: 53.96, w: 27.85 },
         delay: 0.2,
-        text: '艺术指导',
+        text: 'Art Director',
         style: {
           fontFamily: 'Newsreader',
           fontSize: 20.6,
@@ -728,7 +727,7 @@ export const TEXT_PRESETS: TextPreset[] = [
         kind: 'text',
         place: { x: 51.21, y: 48.03, w: 34.41 },
         delay: 0.13,
-        text: '苏知白',
+        text: 'Sophie Lane',
         style: {
           fontFamily: 'Just Me Again Down Here',
           fontSize: 44.6,
@@ -758,7 +757,7 @@ export const TEXT_PRESETS: TextPreset[] = [
         kind: 'text',
         place: { x: 48.88, y: 47.61, w: 31.33 },
         delay: 0.2,
-        text: '林见川',
+        text: 'Liam Carter',
         style: {
           fontFamily: 'Newsreader',
           fontSize: 29.6,
@@ -773,7 +772,7 @@ export const TEXT_PRESETS: TextPreset[] = [
         kind: 'text',
         place: { x: 50.89, y: 53.29, w: 35.61 },
         delay: 0.33,
-        text: '艺术指导',
+        text: 'Art Director',
         style: {
           fontFamily: 'DM Sans',
           fontSize: 17.8,
@@ -796,7 +795,7 @@ export const TEXT_PRESETS: TextPreset[] = [
         kind: 'text',
         place: { x: 43.22, y: 57.32, w: 17.28 },
         delay: 0.17,
-        text: '动效设计',
+        text: 'Motion Designer',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 9.2,
@@ -814,7 +813,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 50, y: 51.69, w: 31.91 },
-        text: '周砚白',
+        text: 'Noah Lee',
         style: {
           fontFamily: 'Climate Crisis',
           fontSize: 25.5,
@@ -842,7 +841,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 47.5, y: 45.85, w: 29.67 },
-        text: '沈屿声',
+        text: 'Ella Shaw',
         style: {
           fontFamily: 'Poppins',
           fontSize: 21.2,
@@ -860,7 +859,7 @@ export const TEXT_PRESETS: TextPreset[] = [
         kind: 'text',
         place: { x: 51.43, y: 52.52, w: 31.45, rot: -343.8 },
         delay: 0.07,
-        text: '艺术指导',
+        text: 'Art Director',
         style: {
           fontFamily: 'Poppins',
           fontSize: 21.2,
@@ -886,7 +885,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 20.42, y: 64.56, w: 33.65 },
-        text: '林\n见川',
+        text: 'Liam\nCarter',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 27.6,
@@ -900,7 +899,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 19.75, y: 72.1, w: 31.06 },
-        text: '媒体关系统筹\n兼市场副总裁',
+        text: 'Head of Media Relations\nand VP of Marketing',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 8.2,
@@ -926,7 +925,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 15.24, y: 72.75, w: 22.01 },
-        text: '工作室创始人',
+        text: 'Studio Founder',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 9.9,
@@ -943,7 +942,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 19.3, y: 67.59, w: 29.41 },
-        text: '郑立言',
+        text: 'Leo Grant',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 19.8,
@@ -982,7 +981,7 @@ export const TEXT_PRESETS: TextPreset[] = [
         kind: 'text',
         place: { x: 19.39, y: 70.62, w: 28.04 },
         delay: 0.27,
-        text: '动效设计',
+        text: 'Motion Designer',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 10.4,
@@ -996,7 +995,7 @@ export const TEXT_PRESETS: TextPreset[] = [
         kind: 'text',
         place: { x: 19.32, y: 68.01, w: 28.03 },
         delay: 0.27,
-        text: '陈叙白',
+        text: 'Maya Chen',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 15.3,
@@ -1025,7 +1024,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 21.23, y: 65.08, w: 30.09 },
-        text: '高\n行舟',
+        text: 'Owen\nHale',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 39.9,
@@ -1040,7 +1039,7 @@ export const TEXT_PRESETS: TextPreset[] = [
         kind: 'text',
         place: { x: 19.17, y: 73.25, w: 25.22 },
         delay: 0.37,
-        text: '产品经理',
+        text: 'Product Lead',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 10.9,
@@ -1078,7 +1077,7 @@ export const TEXT_PRESETS: TextPreset[] = [
         kind: 'text',
         place: { x: 16.18, y: 61, w: 21.03 },
         delay: 0.2,
-        text: '陈\n叙白',
+        text: 'Maya\nChen',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 17.6,
@@ -1092,7 +1091,7 @@ export const TEXT_PRESETS: TextPreset[] = [
         kind: 'text',
         place: { x: 16.42, y: 69.81, w: 21.41 },
         delay: 0.2,
-        text: '产品经理\n影视制作部',
+        text: 'Product Manager\nFilm Production',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 10.8,
@@ -1114,7 +1113,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 19.08, y: 63.58, w: 30.81 },
-        text: '温',
+        text: 'Iris',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 27.1,
@@ -1128,7 +1127,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 19.08, y: 68.27, w: 30.81 },
-        text: '亦然',
+        text: 'Wells',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 27.1,
@@ -1143,7 +1142,7 @@ export const TEXT_PRESETS: TextPreset[] = [
         kind: 'text',
         place: { x: 21.68, y: 72.71, w: 34.69 },
         delay: 0.57,
-        text: '艺术指导 · 创意工作室',
+        text: 'Director · Studio',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 11,
@@ -1170,7 +1169,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 8.5, y: 64.15, w: 8.53 },
-        text: '上海',
+        text: 'Shanghai',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 10.2,
@@ -1195,7 +1194,7 @@ export const TEXT_PRESETS: TextPreset[] = [
         kind: 'text',
         place: { x: 17.15, y: 69.6, w: 24.97 },
         delay: 0.02,
-        text: '马砚',
+        text: 'Mason',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 21.6,
@@ -1236,7 +1235,7 @@ export const TEXT_PRESETS: TextPreset[] = [
         kind: 'text',
         place: { x: 16.55, y: 71.53, w: 18 },
         delay: 0.7,
-        text: '创意监制',
+        text: 'Creative Producer',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 8.7,
@@ -1251,7 +1250,7 @@ export const TEXT_PRESETS: TextPreset[] = [
         kind: 'text',
         place: { x: 20.36, y: 68.6, w: 25.96 },
         delay: 0.7,
-        text: '卢青野',
+        text: 'Ruby Hart',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 16.2,
@@ -1274,7 +1273,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 18.96, y: 65.13, w: 30.26 },
-        text: '沈\n屿声',
+        text: 'Ella\nShaw',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 34.8,
@@ -1289,7 +1288,7 @@ export const TEXT_PRESETS: TextPreset[] = [
         kind: 'text',
         place: { x: 18.53, y: 73.34, w: 29.3 },
         delay: 0.7,
-        text: '艺术指导 @ 屿声工作室',
+        text: 'Art Director @ Shaw Studio',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 10.5,
@@ -1312,7 +1311,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 21.51, y: 61.5, w: 34.03 },
-        text: '麦承宇',
+        text: 'Adam Ford',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 15.4,
@@ -1329,7 +1328,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 21.51, y: 66.74, w: 34.19 },
-        text: '创意监制',
+        text: 'Creative Producer',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 15.4,
@@ -1346,7 +1345,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 20.05, y: 71.9, w: 31.33 },
-        text: '@ 创意组',
+        text: '@ Creative Team',
         style: {
           fontFamily: 'Inter',
           fontSize: 15.4,
@@ -1372,7 +1371,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 19.11, y: 64.9, w: 28.81 },
-        text: '陈\n叙白',
+        text: 'Maya\nChen',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 24.3,
@@ -1390,7 +1389,7 @@ export const TEXT_PRESETS: TextPreset[] = [
         kind: 'text',
         place: { x: 13.76, y: 72.56, w: 18.98 },
         delay: 0.01,
-        text: '上海 · 2026',
+        text: 'Shanghai · 2026',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 11.1,
@@ -1423,7 +1422,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 21.39, y: 67.84, w: 35.45 },
-        text: '贺\n知遥',
+        text: 'Zoe\nKing',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 26.9,
@@ -1446,7 +1445,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 20.24, y: 68.48, w: 32.98 },
-        text: '姜叙',
+        text: 'Ivy',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 27.7,
@@ -1462,7 +1461,7 @@ export const TEXT_PRESETS: TextPreset[] = [
         kind: 'text',
         place: { x: 15.71, y: 72.71, w: 22.88 },
         delay: 0.33,
-        text: '资深剪辑',
+        text: 'Senior Editor',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 10.2,
@@ -1502,7 +1501,7 @@ export const TEXT_PRESETS: TextPreset[] = [
         kind: 'text',
         place: { x: 26.51, y: 70.97, w: 28.74 },
         delay: 0.16,
-        text: '沈屿声',
+        text: 'Ella Shaw',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 20.6,
@@ -1550,7 +1549,7 @@ export const TEXT_PRESETS: TextPreset[] = [
         kind: 'text',
         place: { x: 19.28, y: 73.09, w: 26.16 },
         delay: 0.03,
-        text: '上海',
+        text: 'Shanghai',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 13.9,
@@ -1580,7 +1579,7 @@ export const TEXT_PRESETS: TextPreset[] = [
         kind: 'text',
         place: { x: 20.51, y: 69.02, w: 28.45 },
         delay: 0.3,
-        text: '陈叙白',
+        text: 'Maya Chen',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 12.6,
@@ -1594,7 +1593,7 @@ export const TEXT_PRESETS: TextPreset[] = [
         kind: 'text',
         place: { x: 17.42, y: 71.5, w: 22.11 },
         delay: 0.3,
-        text: '市场总监',
+        text: 'Marketing Director',
         style: {
           fontFamily: 'Plus Jakarta Sans',
           fontSize: 10.3,
@@ -1616,7 +1615,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 36.46, y: 43.28, w: 49.5 },
-        text: '这是你的',
+        text: 'This is your',
         style: {
           fontFamily: 'Anton',
           fontSize: 56,
@@ -1633,7 +1632,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 50, y: 56.72, w: 76.59 },
-        text: '演示标题',
+        text: 'presentation title',
         style: {
           fontFamily: 'Anton',
           fontSize: 56,
@@ -1659,7 +1658,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 50, y: 27.5, w: 100 },
-        text: '正在直播',
+        text: 'LIVE NOW',
         style: {
           fontFamily: 'Anton',
           fontSize: 81,
@@ -1673,7 +1672,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 50, y: 50, w: 100 },
-        text: '正在直播',
+        text: 'LIVE NOW',
         style: {
           fontFamily: 'Anton',
           fontSize: 81,
@@ -1687,7 +1686,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 50, y: 72.5, w: 100 },
-        text: '正在直播',
+        text: 'LIVE NOW',
         style: {
           fontFamily: 'Anton',
           fontSize: 81,
@@ -1710,7 +1709,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 50, y: 50, w: 100 },
-        text: '糖果\r\n小铺',
+        text: 'Candy\r\nShop',
         style: {
           fontFamily: 'Shrikhand',
           fontSize: 97.2,
@@ -1733,7 +1732,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 50, y: 50, w: 100 },
-        text: '好\r\n心情',
+        text: 'Good\r\nVibes',
         style: {
           fontFamily: 'Monoton',
           fontSize: 97.2,
@@ -1756,7 +1755,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 50, y: 40.48, w: 80 },
-        text: '感谢',
+        text: 'Thanks for',
         style: {
           fontFamily: 'Archivo Black',
           fontSize: 32.4,
@@ -1771,7 +1770,7 @@ export const TEXT_PRESETS: TextPreset[] = [
         kind: 'text',
         place: { x: 50, y: 52.47, w: 80 },
         delay: 0.4,
-        text: '观看',
+        text: 'Watching',
         style: {
           fontFamily: 'Archivo Black',
           fontSize: 54,
@@ -1790,7 +1789,7 @@ export const TEXT_PRESETS: TextPreset[] = [
         kind: 'text',
         place: { x: 50, y: 62, w: 80 },
         delay: 1.8,
-        text: '点赞、评论、订阅',
+        text: 'Like, comment, subscribe',
         style: {
           fontFamily: 'Roboto',
           fontSize: 14.6,
@@ -1817,7 +1816,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 50, y: 50, w: 100 },
-        text: '咖啡\r\n时间',
+        text: 'Coffee\r\nTime',
         style: {
           fontFamily: 'Shrikhand',
           fontSize: 81,
@@ -1840,7 +1839,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 50, y: 43.25, w: 100 },
-        text: '健康\r\n餐！',
+        text: 'Healthy\r\nMeal!',
         style: {
           fontFamily: 'Lemon',
           fontSize: 70.2,
@@ -1854,7 +1853,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 50, y: 69.5, w: 100 },
-        text: '食谱',
+        text: 'Recipe',
         style: {
           fontFamily: 'Homemade Apple',
           fontSize: 48.6,
@@ -1877,7 +1876,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 50, y: 8, w: 100 },
-        text: '健身',
+        text: 'FITNESS',
         style: {
           fontFamily: 'Archivo Black',
           fontSize: 75.6,
@@ -1892,7 +1891,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 50, y: 29, w: 100 },
-        text: '健身',
+        text: 'FITNESS',
         style: {
           fontFamily: 'Archivo Black',
           fontSize: 75.6,
@@ -1907,7 +1906,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 50, y: 50, w: 100 },
-        text: '健身',
+        text: 'FITNESS',
         style: {
           fontFamily: 'Archivo Black',
           fontSize: 75.6,
@@ -1922,7 +1921,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 50, y: 71, w: 100 },
-        text: '健身',
+        text: 'FITNESS',
         style: {
           fontFamily: 'Archivo Black',
           fontSize: 75.6,
@@ -1937,7 +1936,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       {
         kind: 'text',
         place: { x: 50, y: 92, w: 100 },
-        text: '健身',
+        text: 'FITNESS',
         style: {
           fontFamily: 'Archivo Black',
           fontSize: 75.6,

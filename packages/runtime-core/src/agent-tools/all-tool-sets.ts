@@ -20,9 +20,12 @@ import { VideoDeleteTools } from './video-delete-tools.ts';
 import { VideoTools } from './video-tools.ts';
 
 /**
- * Runtime 组装的全部工具组（`runtime.ts` 的 `toolSets`）的空壳：依赖都是空的，只用来读 schema 与目录项，不能调用。
- * CLI 的离线目录快照（`tools/catalog-snapshot.ts`，构建时生成）与目录的测试用它；所以放在这里而不在 `testing/`。
- * 工具桥的端到端测试断言 tools/list 与这里的工具名一致，Runtime 加了工具组而这里没加时会失败。
+ * Empty shells of every tool group the Runtime assembles (`toolSets` in `runtime.ts`): all dependencies are empty; they
+ * are only for reading schemas and catalog entries and cannot be called.
+ * The CLI's offline catalog snapshot (`tools/catalog-snapshot.ts`, generated at build time) and the catalog tests use it,
+ * which is why it lives here rather than in `testing/`.
+ * The tool bridge's end-to-end test asserts that tools/list matches the tool names here; it fails when the Runtime adds a
+ * tool group that is not added here.
  */
 export function allToolSets(): ToolSet[] {
   const none = {} as never;
@@ -49,7 +52,7 @@ export function allToolSets(): ToolSet[] {
   ];
 }
 
-/** 全部工具名，按字母排序。 */
+/** All tool names, sorted alphabetically. */
 export function allToolNames(): string[] {
   return allToolSets()
     .flatMap((set) => Object.keys(set.schemas))

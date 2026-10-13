@@ -1,6 +1,6 @@
 import { writeCatalogSnapshot } from './catalog-snapshot.ts';
 
-/** vitest 的 globalSetup：测试前按当前的工具目录写 CLI 的离线快照（生成物，不进 git）。 */
+/** vitest globalSetup: writes the CLI's offline catalog snapshot from the current tool catalog before tests (generated, not in git). */
 export default function setup(): void {
   writeCatalogSnapshot();
 }

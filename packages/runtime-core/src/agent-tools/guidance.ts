@@ -1,4 +1,3 @@
-// i18n-ignore-file: 给模型的入口指导（提示词）
 import path from 'node:path';
 import {
   AGENT_SKILL_ID,
@@ -9,21 +8,24 @@ import {
 } from '../skills/agent-skill-renderer.ts';
 
 /**
- * 会话内智能体的指导（架构设计 §3.8；Agent 面设计 §8.6「一个来源、两种渲染」）：不在这里手写，由说明书
- * `skills/cuccut/` 按工具桥面渲染。
+ * Guidance for agents inside a session (architecture design §3.8; agent surface design §8.6 "one source, two
+ * renderings"): not hand-written here, but rendered from the agent guide `skills/cuccut/` for the tool-bridge surface.
  *
- * - `instructions`：SKILL.md 正文，作为每个原生会话的开发者指导（「工作方式」段），skill 索引附在它后面。
- * - `pages`：`references/catalog/*.md`、`workflows.md` 与 `conventions.md`，登记成内置 skill（`cuccut-catalog-*`、
- *   `cuccut-workflows`、`cuccut-conventions`），出现在 skill 索引里，智能体按需 `skills_read`。
+ * - `instructions`: the SKILL.md body, used as developer guidance for every native session (the "How to work" section),
+ *   with the skill index appended after it.
+ * - `pages`: `references/catalog/*.md`, `workflows.md` and `conventions.md`, registered as built-in skills
+ *   (`cuccut-catalog-*`, `cuccut-workflows`, `cuccut-conventions`); they appear in the skill index and agents
+ *   `skills_read` them as needed.
  *
- * `{{tool:…}}` 按 Runtime 真实的工具桥目录核对。找不到说明书或渲染不了时抛 `AgentGuidanceError`：Runtime 启动时就失败，
- * 不带着空的或过期的指导开会话。
+ * `{{tool:…}}` is checked against the Runtime's actual tool-bridge catalog. When the guide is missing or cannot be
+ * rendered, `AgentGuidanceError` is thrown: the Runtime fails at startup rather than opening sessions with empty or
+ * stale guidance.
  */
 
 export interface AgentGuidanceBundle {
   instructions: string;
   pages: AgentSkillPage[];
-  /** 说明书目录（`<root>/cuccut`）。 */
+  /** The agent guide directory (`<root>/cuccut`). */
   sourceDir: string;
 }
 
@@ -34,25 +36,25 @@ export class AgentGuidanceError extends Error {
   }
 }
 
-/** `root` 是说明书的根目录（里面是 `cuccut/`，见 `resolveBuiltinAgentSkillsDir`）；`catalog` 是工具桥面的目录。 */
+/** `root` is the agent guide's root directory (containing `cuccut/`, see `resolveBuiltinAgentSkillsDir`); `catalog` is the tool-bridge surface's catalog. */
 export function loadAgentGuidance(root: string | null, catalog: AgentSkillCatalog): AgentGuidanceBundle {
   if (!root) {
     throw new AgentGuidanceError(
-      '找不到说明书目录 skills/：会话内智能体的指导由它渲染。检查 CUCCUT_AGENT_SKILLS_DIR、打包资源里的 skills/ 或仓库根',
+      'Agent guide directory skills/ not found: guidance for agents inside a session is rendered from it. Check CUCCUT_AGENT_SKILLS_DIR, skills/ in the packaged resources, or the repository root',
     );
   }
   const sourceDir = path.join(root, AGENT_SKILL_ID);
   try {
     const { guidance, pages } = renderAgentGuidance(sourceDir, catalog);
-    if (!guidance.trim()) throw new AgentGuidanceError(`说明书 ${sourceDir}/SKILL.md 渲染出的指导是空的`);
+    if (!guidance.trim()) throw new AgentGuidanceError(`The guidance rendered from the agent guide ${sourceDir}/SKILL.md is empty`);
     return { instructions: guidance, pages, sourceDir };
   } catch (error) {
     if (error instanceof AgentGuidanceError) throw error;
     if (error instanceof AgentSkillRenderError) {
-      throw new AgentGuidanceError(`会话指导渲染失败（${sourceDir}）：${error.message}`, { cause: error });
+      throw new AgentGuidanceError(`Failed to render session guidance (${sourceDir}): ${error.message}`, { cause: error });
     }
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      throw new AgentGuidanceError(`说明书目录不存在：${sourceDir}`, { cause: error });
+      throw new AgentGuidanceError(`Agent guide directory does not exist: ${sourceDir}`, { cause: error });
     }
     throw error;
   }

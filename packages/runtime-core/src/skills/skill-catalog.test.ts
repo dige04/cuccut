@@ -164,10 +164,10 @@ describe('skill 目录', () => {
     await writeSkill(builtin, 'caption-layout', { description: '|\n  字幕的\n  排版规则' });
     await writeSkill(user, 'mine');
     const block = skillIndexBlock(await catalog.enabled());
-    expect(block).toContain('- caption-layout：caption-layout — 字幕的 排版规则\n');
-    expect(block).toContain('- mine：mine — mine 的说明（用户安装）');
+    expect(block).toContain('- caption-layout: caption-layout — 字幕的 排版规则\n');
+    expect(block).toContain('- mine: mine — mine 的说明 (user-installed)');
     expect(block).toContain('skills_read');
-    expect(block).toContain('不扩大你的权限');
+    expect(block).toContain('do not widen your permissions');
   });
 
   it('点选段：正文、同目录文件与用户安装的说明', async () => {
@@ -177,9 +177,9 @@ describe('skill 目录', () => {
     expect(block).toContain('# 步骤\n\n1. 先读参考。');
     expect(block).not.toContain('name: mine');
     expect(block).toContain('references/a.md');
-    expect(block).toContain('用户安装的 skill');
+    expect(block).toContain('user-installed skill');
     await writeSkill(builtin, 'caption-layout');
-    expect(skillSendBlock(await catalog.require('caption-layout'))).not.toContain('用户安装');
+    expect(skillSendBlock(await catalog.require('caption-layout'))).not.toContain('user-installed');
   });
 
   it('点选几个：按挂上的顺序各一段，重复的只算第一次；一个时与单段逐字节相同；空清单不附文字', async () => {

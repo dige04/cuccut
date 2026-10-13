@@ -16,26 +16,27 @@ import { OperationShapeError } from './video-digest.ts';
 import { GRANT_NEXT, isGrantErrorDetails } from '../grants/grant-errors.ts';
 
 /**
- * 工具目录（架构设计 §3.5）：MCP 端点背后的全部工具。各组工具（视频、模型）只给出参数 schema、说明与执行；
- * 解析参数、记日志、把错误换成智能体能据以行动的形态都在这里，各组一样。
+ * Tool catalog (architecture design §3.5): every tool behind the MCP endpoint. Each tool group (videos, models) only
+ * provides the argument schema, description and execution; parsing arguments, logging, and turning errors into a shape
+ * the agent can act on all happen here, the same for every group.
  */
 
 export interface ToolDefinition {
   name: string;
   title: string;
-  /** 第一句是一行摘要（以句号结束，`--help` 与 MCP 列表只取它），后面才是细则。 */
+  /** The first sentence is a one-line summary (ending with a period; `--help` and the MCP list show only it), followed by the details. */
   description: string;
   inputSchema: Record<string, unknown>;
   annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean; idempotentHint?: boolean };
-  /** 效果：`query` ⇔ `readOnlyHint`；`destructive` ⇒ `destructiveHint`；返回 `jobId` 的是 `job`。 */
+  /** Effect: `query` <=> `readOnlyHint`; `destructive` => `destructiveHint`; tools returning a `jobId` are `job`. */
   effect: ToolEffect;
-  /** 一到三个最小调用示例，每个 `args` 都要通过工具自己的 schema。 */
+  /** One to three minimal call examples; each `args` must pass the tool's own schema. */
   examples: ReadonlyArray<ToolExample>;
-  /** 出现在哪些面（工具桥、MCP 服务、CLI），写全，不靠默认值。 */
+  /** Which surfaces it appears on (tool bridge, MCP service, CLI), listed in full, no defaults. */
   surfaces: ReadonlyArray<ToolSurface>;
-  /** CLI 唯一的位置参数对应的字段名（通常是 `video`、`url` 或 `file`）。 */
+  /** Field name for the CLI's single positional argument (usually `video`, `url` or `file`). */
   positional?: string;
-  /** CLI 的快捷开关（`CatalogTool.cliSwitches`）：`--<flag>` 等于给 `field` 这个取值。 */
+  /** CLI shortcut switches (`CatalogTool.cliSwitches`): `--<flag>` means giving `field` this value. */
   cliSwitches?: ReadonlyArray<CatalogCliSwitch>;
 }
 
@@ -51,7 +52,7 @@ export interface ToolResult {
 
 export type ToolInfo = Omit<ToolDefinition, 'name' | 'inputSchema'>;
 
-/** 一组工具。`dispatch` 收到的参数已经按 `schemas[name]` 解析过。 */
+/** A group of tools. Arguments reaching `dispatch` have already been parsed with `schemas[name]`. */
 export interface ToolSet {
   readonly schemas: Readonly<Record<string, z.ZodType>>;
   readonly definitions: Readonly<Record<string, ToolInfo>>;
@@ -59,8 +60,9 @@ export interface ToolSet {
 }
 
 /**
- * 一份目录对某类主体的视图（§3.5、§4.8）：只露出 `surfaces` 含 `surface` 且 `expose` 认可的工具，看不到的与不存在的
- * 一样回答 `UNKNOWN_TOOL`；`describe` 改写个别工具的说明（对外的说明不提会话与工作目录）。
+ * A view of the catalog for one kind of principal (§3.5, §4.8): exposes only tools whose `surfaces` include `surface` and
+ * that `expose` accepts; hidden tools answer `UNKNOWN_TOOL` just like missing ones; `describe` rewrites the description of
+ * individual tools (external descriptions do not mention sessions or working directories).
  */
 export interface ToolCatalogView {
   surface?: ToolSurface;
@@ -68,7 +70,7 @@ export interface ToolCatalogView {
   describe?: (name: string, info: ToolInfo) => ToolInfo;
 }
 
-/** 工具层自己的拒绝：与引擎错误同一个形态，智能体按 `code` 决定下一步。 */
+/** A refusal from the tool layer itself: same shape as engine errors; the agent decides its next step by `code`. */
 export class ToolError extends Error {
   readonly code: string;
   readonly extra: Record<string, unknown>;
@@ -79,7 +81,7 @@ export class ToolError extends Error {
   }
 }
 
-/** 一次调用的结果：工具的结果对象，或给调用方的错误（`errorBody` 的形态）。 */
+/** The outcome of one call: the tool's result object, or an error for the caller (in the `errorBody` shape). */
 export type ToolOutcome = { ok: true; result: unknown } | { ok: false; error: ToolErrorBody };
 
 export type ToolErrorBody = { code: string; message: string } & Record<string, unknown>;
@@ -97,7 +99,7 @@ export class ToolCatalog {
     this.#view = view;
   }
 
-  /** 同一组工具（同一份实现与范围）的另一个视图：给另一类主体用，不另建工具组。 */
+  /** Another view of the same tool groups (same implementation and scope): for another kind of principal, without building new groups. */
   withView(view: ToolCatalogView): ToolCatalog {
     return new ToolCatalog(this.#sets, this.#parentLog, view);
   }
@@ -114,7 +116,7 @@ export class ToolCatalog {
     );
   }
 
-  /** MCP 工具结果的形态：结果或错误写成一段 JSON 文本。 */
+  /** The MCP tool result shape: the result or error written as one JSON text. */
   async call(name: string, args: unknown, principal: ToolPrincipal): Promise<ToolResult> {
     const outcome = await this.invoke(name, args, principal);
     return outcome.ok
@@ -122,18 +124,16 @@ export class ToolCatalog {
       : { content: [{ type: 'text', text: JSON.stringify({ error: outcome.error }) }], isError: true };
   }
 
-  /** 按名调用：解析参数、执行、记日志；错误换成 `errorBody` 的形态（`catalog.call` 原样交给 CLI）。 */
+  /** Calls by name: parses arguments, executes, logs; errors become the `errorBody` shape (`catalog.call` hands it to the CLI as is). */
   async invoke(name: string, args: unknown, principal: ToolPrincipal): Promise<ToolOutcome> {
     const started = Date.now();
     try {
       const found = this.#sets.find((s) => Object.hasOwn(s.schemas, name));
       const set = found && this.#exposed(found, name) ? found : undefined;
-      // i18n-ignore: 给模型的工具错误与下一步
-      if (!set) throw new ToolError('UNKNOWN_TOOL', `没有这个工具：${name}`);
+      if (!set) throw new ToolError('UNKNOWN_TOOL', `No such tool: ${name}`);
       const parsed = set.schemas[name]!.safeParse(args ?? {});
       if (!parsed.success) {
-        // i18n-ignore: 给模型的工具错误与下一步
-        throw new ToolError('INVALID_ARGUMENTS', '参数不对', {
+        throw new ToolError('INVALID_ARGUMENTS', 'Invalid arguments', {
           issues: parsed.error.issues.map((issue) => ({ path: issue.path.join('.'), message: issue.message })),
         });
       }
@@ -148,7 +148,7 @@ export class ToolCatalog {
     }
   }
 
-  /** 本机模型没有安装、而这份目录里露出了 `models_install`（会话里的智能体）时：告诉它可以先下载模型（§6.3）。 */
+  /** When the local model is not installed and this catalog exposes `models_install` (the agent in a session): tell it it can download the model first (§6.3). */
   #withInstallHint<T extends { code: string } & Record<string, unknown>>(body: T): T {
     const remedy = body.remedy as { action?: string } | undefined;
     if (body.code !== 'CAPABILITY_NOT_CONFIGURED' || remedy?.action !== 'install-model') return body;
@@ -164,24 +164,22 @@ export class ToolCatalog {
   }
 }
 
-/** 日志里的调用方：会话、对外服务与客户端，或终端的连接。不含令牌。 */
+/** The caller as logged: session, external service and client, or terminal connection. No tokens. */
 function callerOf(principal: ToolPrincipal): Record<string, string> {
   if (principal.kind === 'agent') return { conversationId: principal.conversationId };
   if (principal.kind === 'local') return { client: principal.client, connectionId: principal.connectionId };
   return { serviceId: principal.serviceId, clientId: principal.clientId };
 }
 
-// i18n-ignore-start: 给模型的工具错误与下一步
-/** 能力没有配置：智能体转告用户，不自己想办法绕过（§6.2）。 */
+/** Capability not configured: the agent relays this to the user and does not try to work around it (§6.2). */
 const NOT_CONFIGURED_NEXT =
-  '这是用户需要在 CucCut 里完成的配置，不是你能修好的问题：把 hint 与 commands 转告用户，请用户在设置里的模型配置中启用并配置服务，用 remedy.settingsHref 写成 Markdown 设置链接，链接文字用用户的语言说明对应能力（或在终端运行 commands 里的命令），然后再试。不要用 shell 命令、脚本、ffmpeg、别的网站或别的服务商绕过，也不要自己去找或填写 API key。';
+  'This is configuration the user has to complete in CucCut, not something you can fix: relay hint and commands to the user and ask them to enable and configure the service in the model settings, writing remedy.settingsHref as a Markdown settings link whose text names the capability in the user\'s language (or to run the commands in commands in a terminal), then try again. Do not work around it with shell commands, scripts, ffmpeg, other websites or other providers, and do not look for or fill in API keys yourself.';
 
-/** 本机模型没有安装：可以把下载模型作为前置步骤提交（大小先告诉用户、按访问模式确认）。 */
+/** Local model not installed: downloading the model can be submitted as a prerequisite step (the size is told to the user first, confirmed according to the access mode). */
 const INSTALL_MODEL_NEXT =
-  '本机模型包没有安装：可以用 models_install 下载它（工具会先把大小告诉用户并按访问模式确认；语音合成要给出 models_capabilities 里列出的合成模型包），用 jobs_wait 等它完成后再提交（合成带上 provider: local 与那个模型包）；也可以把 hint 与 commands 转告用户，请用户改用在线服务，用 remedy.settingsHref 写成 Markdown 设置链接。不要用 shell 命令、脚本或别的网站自己下载模型，也不要自己去找或填写 API key。';
-// i18n-ignore-end
+  'The local model bundle is not installed: you can download it with models_install (the tool first tells the user the size and confirms according to the access mode; for speech synthesis give a synthesis bundle listed in models_capabilities), wait for it to finish with jobs_wait, then submit again (for synthesis, with provider: local and that bundle); or relay hint and commands to the user and ask them to switch to an online service, writing remedy.settingsHref as a Markdown settings link. Do not download models yourself with shell commands, scripts or other websites, and do not look for or fill in API keys yourself.';
 
-/** 错误给智能体的形态：`code` 决定下一步，`retryability` / `recovery` / `next` 说怎么恢复。 */
+/** The error shape for agents: `code` decides the next step; `retryability` / `recovery` / `next` say how to recover. */
 export function errorBody(error: unknown): ToolErrorBody {
   if (error instanceof ToolError) return { code: error.code, message: error.message, ...error.extra };
   if (error instanceof OperationShapeError) return { code: 'INVALID_OPERATION', message: error.message, operationIndex: error.index };
@@ -195,12 +193,12 @@ export function errorBody(error: unknown): ToolErrorBody {
         ...(details.recovery ? { recovery: localizeText(details.recovery, details.recoveryRef) } : {}),
         ...(details.entityIds.length ? { entityIds: details.entityIds } : {}),
         ...(details.details !== null && details.details !== undefined ? { details: details.details } : {}),
-        // i18n-ignore: 给模型的工具错误与下一步
-        ...(details.code === 'PROJECT_REVISION_CONFLICT' ? { next: '用 videos_inspect 重新读取，按新的状态决定要不要改、怎么改' } : {}),
+        ...(details.code === 'PROJECT_REVISION_CONFLICT'
+          ? { next: 'Re-read with videos_inspect and decide from the new state whether and how to edit' }
+          : {}),
         ...(details.code === 'TASK_PROTECTED'
           ? {
-              // i18n-ignore: 给模型的工具错误与下一步
-              next: '这些内容在任务合同里受用户保护（tasks_contract 的 protectedRefs）：整笔修改没有写入。避开它们重新修改；确实要改时请用户调整保护范围，不要换别的办法绕过。',
+              next: 'This content is protected by the user in the task contract (protectedRefs in tasks_contract): the whole edit was not written. Edit again while avoiding it; if it really must change, ask the user to adjust the protection, and do not work around it another way.',
             }
           : {}),
       };
@@ -219,32 +217,29 @@ export function errorBody(error: unknown): ToolErrorBody {
         next: NOT_CONFIGURED_NEXT,
       };
     }
-    // 授权与预算（§12.5、§7.8）：错误码、补救与下一步，不换服务商绕过。
+    // Grants and budgets (§12.5, §7.8): error code, remedy and next step; no switching providers to work around it.
     if (isGrantErrorDetails(details)) {
       const { code, ...rest } = details;
       return { code, message: error.message, ...rest, next: GRANT_NEXT[code] };
     }
-    // 提交时按模型描述的检查（§6.2）：`details` 是模型的限制，原样交给智能体。
+    // Submission-time checks against the model description (§6.2): `details` holds the model's limits, passed to the agent as is.
     const extra = isRecord(details) ? details : null;
     if (extra && typeof extra.limit === 'number' && typeof extra.length === 'number') {
       return {
         code: 'INPUT_TOO_LONG',
         message: error.message,
         details: extra,
-        // i18n-ignore: 给模型的工具错误与下一步
-        next: `输入有 ${extra.length} 个字符，模型单次最多 ${extra.limit} 个：自己按句子或段落切成每段不超过 ${extra.limit} 个字符，逐段提交（每段一个任务）。Runtime 不会替你截断或切分。`,
+        next: `The input has ${extra.length} characters and the model takes at most ${extra.limit} per call: split it yourself by sentence or paragraph into pieces of at most ${extra.limit} characters and submit them one by one (one job per piece). The Runtime will not truncate or split it for you.`,
       };
     }
-    // 没有指定音色而模型没有默认音色，或模型没有这个音色：从清单里选，或请用户给出账号里的音色 ID；不换服务商。
+    // No voice given and the model has no default voice, or the model lacks that voice: pick one from the list, or ask the user for a voice ID from their account; do not switch providers.
     const voiceNext =
       extra && Array.isArray(extra.voices)
         ? {
             next:
               (extra.voices as unknown[]).length > 0
-                // i18n-ignore-start: 给模型的工具错误与下一步
-                ? '从 details.voices 里选一个音色，或请用户给出服务商账号里的音色 ID；不要换服务商绕过。'
-                : '这个模型的音色属于用户的服务商账号：请用户给出音色 ID（voice）；不要换服务商绕过。',
-                // i18n-ignore-end
+                ? 'Pick a voice from details.voices, or ask the user for a voice ID from their provider account; do not switch providers to work around it.'
+                : 'This model\'s voices belong to the user\'s provider account: ask the user for a voice ID (voice); do not switch providers to work around it.',
           }
         : {};
     return {
@@ -254,8 +249,7 @@ export function errorBody(error: unknown): ToolErrorBody {
       ...voiceNext,
     };
   }
-  // i18n-ignore: 给模型的工具错误与下一步
-  return { code: 'INTERNAL', message: '工具内部出错' };
+  return { code: 'INTERNAL', message: 'Internal tool error' };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -1,209 +1,209 @@
 ---
-description: 媒体的机制：从链接下载、转码与合并、取帧看画面、导入素材（链接还是复制）、新建视频、打开便携包、生成图片，以及看一条视频的证据阶梯。下载、导入、取帧或生成图片之前读。
+description: Media mechanics - downloading links, transcoding and merging, grabbing frames, importing assets (link or copy), creating videos, opening portable packages, generating images, and the evidence ladder for understanding a video. Read before downloading, importing, grabbing frames or generating images.
 ---
 
-# 媒体：下载、转码、取帧、素材与新建视频
+# Media: downloading, transcoding, frames, assets and new videos
 
-## 何时用
+## When to use
 
-- 用户给了视频页面的链接，要下载、导入或在它上面做事。
-- 本机文件要压缩、转码、按顺序合并、提取音轨（文件到文件，不建视频）。
-- 要看画面：构图、镜头分布、字幕会不会挡住内容、剪点前后是什么。
-- 要新建一个空视频、把素材导入视频并放上时间线、打开便携包（`.cuccut` 文件）。
-- 要生成图片放进视频。
+- The user gives a video page link and wants to download it, import it or work on it.
+- Local files need compressing, transcoding, merging in order or audio-track extraction (file to file, no video created).
+- You need to see the picture: composition, shot distribution, whether captions would cover content, what is on either side of a cut.
+- You need to create an empty video, import assets into a video and place them on the timeline, or open a portable package (a `.cuccut` file).
+- You need to generate images to put into a video.
 <!-- surface: agent -->
-- 要做幻灯片：给 deck 导入图片、校验整份 deck。
-- 要做设计稿：给设计稿导入图片与字体、校验整份设计稿。
+- Making slides: importing images into a deck and checking the whole deck.
+- Making a design: importing images and fonts into a design and checking the whole design.
 <!-- /surface -->
 
-要转写的链接与本机文件直接用 {{tool:transcribe}}（见 [subtitles](subtitles.md)）：它一步做完新建视频、下载或导入、放上时间线与转写。
+For links and local files that need transcribing, use {{tool:transcribe}} directly (see [subtitles](subtitles.md)): in one step it creates the video, downloads or imports, places it on the timeline and transcribes.
 
-## 前置检查
+## Preflight
 
-- 下载要 yt-dlp，转码与导出要 ffmpeg：缺了会以错误返回并带补救（见下面的错误码）。
+- Downloading needs yt-dlp; transcoding and export need ffmpeg. If missing, the call returns an error with a remedy (see the error codes below).
 <!-- surface: cli -->
-  `cuccut status` 一次看清两者在不在。
+  `cuccut status` shows both at a glance.
 <!-- /surface -->
-- 已有视频先 {{tool:videos_list}} / {{tool:videos_inspect}}：素材是不是已经导入过、有没有转写，已有的接着用，不重复导入。
-- 生成图片先 {{tool:models_capabilities}}（能力 `generateImage`）看有没有可用的模型、尺寸与张数的范围。
+- For existing videos, first {{tool:videos_list}} / {{tool:videos_inspect}}: whether the asset was already imported and whether there is a transcript; reuse what exists and do not import it again.
+- Before generating images, call {{tool:models_capabilities}} (capability `generateImage`) to see whether a model is available and the allowed range of sizes and counts.
 
-## 命令与例子
+## Commands and examples
 
-### 从链接下载
+### Downloading from a link
 
-| 要做的事 | 调用 |
+| What to do | Call |
 | --- | --- |
-| 下载并新建视频（默认） | {{tool:download}}，{{arg:url}} 给链接，{{arg:newVideo}}；可给 {{arg:name}}、{{arg:project}} |
-| 新建视频并转写 | 同上再加 {{arg:transcribe}}（或直接 {{tool:transcribe}} 给 {{arg:url}}） |
-| 导入到已有视频 | {{tool:download}}，{{arg:url}} + {{arg:video}} |
-| 只下载到项目 | {{tool:download}}，{{arg:url}} + {{arg:project}} |
-| 只要文件（用户明说） | {{tool:download}} 只给 {{arg:url}}：落到下载目录 |
-| 同时取平台字幕 | 加 {{arg:subs}}（语言列表），字幕文件放在媒体旁边、不导入视频 |
-| 只要音频 | 加 {{arg:audioOnly}} |
+| Download and create a video (default) | {{tool:download}}, {{arg:url}} with the link, {{arg:newVideo}}; optionally {{arg:name}}, {{arg:project}} |
+| Create a video and transcribe | As above plus {{arg:transcribe}} (or {{tool:transcribe}} directly with {{arg:url}}) |
+| Import into an existing video | {{tool:download}}, {{arg:url}} + {{arg:video}} |
+| Download into a project only | {{tool:download}}, {{arg:url}} + {{arg:project}} |
+| Just the file (the user says so outright) | {{tool:download}} with only {{arg:url}}: lands in the downloads directory |
+| Also fetch the platform's subtitles | Add {{arg:subs}} (a list of languages); subtitle files go next to the media and are not imported into the video |
+| Audio only | Add {{arg:audioOnly}} |
 
-{{arg:video}}、{{arg:newVideo}}、{{arg:project}} 三选一。只取单个视频，不取播放列表。
+Give exactly one of {{arg:video}}, {{arg:newVideo}}, {{arg:project}}. Only single videos are fetched, not playlists.
 
-要转写时知道语言或有人名、术语，直接用 {{tool:transcribe}} 给 {{arg:url}}，带上 {{arg:language}}、{{arg:hint}}（也可给 {{arg:provider}}、{{arg:diarize}}）：它下载、新建视频、转写并建字幕层；{{tool:download}} 的 {{arg:transcribe}} 只用默认设置转写、不建字幕层。
+When transcription is wanted and you know the language or have names and terms, use {{tool:transcribe}} directly with {{arg:url}}, passing {{arg:language}} and {{arg:hint}} (optionally {{arg:provider}}, {{arg:diarize}}): it downloads, creates the video, transcribes and creates caption layers; {{tool:download}}'s {{arg:transcribe}} transcribes with default settings only and does not create caption layers.
 
-### 转码、合并、提取音轨
+### Transcoding, merging, extracting audio
 
-{{tool:transcode}} 只吃本机文件，输出新文件，原文件不动，不建视频：
+{{tool:transcode}} takes only local files and outputs new files; the original files are untouched and no video is created:
 
-| 要做的事 | 关键参数 |
+| What to do | Key parameters |
 | --- | --- |
-| 压缩（默认逐个） | {{arg:files}}；{{arg:maxHeight}}（如 1080）、{{arg:crf}}（越小越清晰、文件越大）、{{arg:codec}}（h264 或 hevc） |
-| 按顺序合并成一个 | {{arg:files}} 按要的顺序排，{{arg:merge}} |
-| 逐个取出音轨 | {{arg:extractAudio}}（能流复制时不重新编码） |
-| 指定输出目录 | {{arg:outDir}}；不给时是下载目录 |
+| Compress (one by one by default) | {{arg:files}}; {{arg:maxHeight}} (e.g. 1080), {{arg:crf}} (lower is sharper and larger), {{arg:codec}} (h264 or hevc) |
+| Merge into one, in order | {{arg:files}} in the order you want, {{arg:merge}} |
+| Extract the audio track of each file | {{arg:extractAudio}} (no re-encoding when stream copy is possible) |
+| Choose the output directory | {{arg:outDir}}; the downloads directory when not given |
 
-### 取帧看画面
+### Grabbing frames to look at the picture
 
-{{tool:videos_frames}}：{{arg:at}} 列出时间线上的时刻，或 {{arg:range}}（`起:止`）加 {{arg:count}} 等间隔取；一次最多 24 帧，{{arg:maxWidth}} 缩小、{{arg:format}} 选 png 或 jpeg。
+{{tool:videos_frames}}: {{arg:at}} lists moments on the timeline, or {{arg:range}} (`start:end`) plus {{arg:count}} samples at even intervals; at most 24 frames per call; {{arg:maxWidth}} scales down and {{arg:format}} picks png or jpeg.
 
-- 帧取的是那个时刻最上层视频片段的素材画面，**不是合成后的成片**：字幕、文字、贴纸与叠加的元素不在里面，画中画的位置、裁剪与效果也没套用。要核对字幕位置或叠加效果，导出一小段成片（{{tool:export}} 给 range）再看。
-- 每帧顺带做人脸检测（本机，随应用的 YuNet 模型）：`faces` 是人脸框，坐标按帧的宽高归一化到 0–1、对应素材画面。按人定构图（比如竖屏裁框跟着发言人）时读 `faces`，不靠看图估位置；`detector` 为 null 时检测不可用，`faces` 为空不代表没人，这时再看图。
+- A frame is the source picture of the topmost video item at that moment, **not the rendered finished video**: captions, text, stickers and overlaid elements are not in it, and picture-in-picture position, cropping and effects are not applied. To check caption placement or overlays, export a short piece of the finished video ({{tool:export}} with a range) and look at that.
+- Each frame also gets face detection (local, with the YuNet model bundled with the app): `faces` are face boxes, with coordinates normalized to 0–1 by the frame's width and height, matching the source picture. When composing around people (for example, a vertical crop that follows the speaker), read `faces` rather than estimating positions by eye; when `detector` is null, detection is unavailable and an empty `faces` does not mean nobody is there, so look at the image.
 <!-- surface: cli -->
-  也可以在网页版编辑器里看合成后的画面、拖着调整，见 [web](web.md)。
+  You can also view the rendered picture and drag things into place in the web editor; see [web](web.md).
 <!-- /surface -->
-- 那个时刻没有视频片段时 `file` 为 null，不报错。
+- When there is no video item at that moment, `file` is null; this is not an error.
 
-### 新建视频、导入素材、打开便携包
+### Creating videos, importing assets, opening portable packages
 
-| 要做的事 | 调用 |
+| What to do | Call |
 | --- | --- |
-| 新建空视频 | {{tool:videos_create}}，{{arg:name}}；竖屏素材给竖屏的宽高（如 1080×1920），帧率按素材 |
-| 导入并放上时间线 | {{tool:assets_import}}，{{arg:path}} + {{arg:place}}（不给 place 只登记为素材） |
-| 导入生成的产物（语音、图片、音乐的 WAV 等） | {{tool:assets_import}}，{{arg:artifactId}}（不重新生成） |
-| 复制进视频 | {{tool:assets_import}} 加 {{arg:storage}} `managed` |
-| 和别的修改放进同一笔 | {{tool:edits_apply}} 的 `importAsset` + `addItem`，用 `ref` 连起来（见 [editing](editing.md)） |
-| 打开便携包 | {{tool:videos_import_package}}，{{arg:file}}；可给 {{arg:name}} |
-| 新建项目 | {{tool:projects_create}}，{{arg:path}}（只在用户要求时） |
+| Create an empty video | {{tool:videos_create}}, {{arg:name}}; for vertical footage give vertical dimensions (e.g. 1080×1920), and match the footage's frame rate |
+| Import and place on the timeline | {{tool:assets_import}}, {{arg:path}} + {{arg:place}} (without place it is only registered as an asset) |
+| Import a generated artifact (speech, images, music WAV, etc.) | {{tool:assets_import}}, {{arg:artifactId}} (no regeneration) |
+| Copy into the video | {{tool:assets_import}} with {{arg:storage}} `managed` |
+| Combine with other changes in one edit | `importAsset` + `addItem` in {{tool:edits_apply}}, connected with `ref` (see [editing](editing.md)) |
+| Open a portable package | {{tool:videos_import_package}}, {{arg:file}}; optionally {{arg:name}} |
+| Create a project | {{tool:projects_create}}, {{arg:path}} (only when the user asks) |
 
-导入默认**链接**原文件、不复制：之后移动或删除那个文件，素材就缺失了。用户要求复制进视频，或文件是你生成之后会清理的临时文件时，给 `managed`；已经链接的素材要收进视频，用 {{tool:edits_apply}} 的 `collectAssets`。
+Imports **link** to the original file by default rather than copying it: if that file is later moved or deleted, the asset goes missing. When the user asks for it to be copied into the video, or the file is a temporary file you generated and will clean up, use `managed`; to pull already-linked assets into the video, use `collectAssets` in {{tool:edits_apply}}.
 
-### 生成图片
+### Generating images
 
-{{tool:image}}：{{arg:prompt}}；可给 {{arg:size}}、{{arg:count}}、{{arg:seed}}、{{arg:provider}}、{{arg:model}}、{{arg:video}}（结果导入为那个视频的候选素材，不放上时间线）。不接受参考图。什么时候画、画成什么样由各 craft 决定（封面、B-roll、旁白成片的画面、分镜、文章与幻灯片的插图），这一节只讲怎么画。
+{{tool:image}}: {{arg:prompt}}; optionally {{arg:size}}, {{arg:count}}, {{arg:seed}}, {{arg:provider}}, {{arg:model}}, {{arg:video}} (results are imported as that video's candidate assets, not placed on the timeline). Reference images are not accepted. When to draw and what to draw are decided by each craft (covers, B-roll, narrated-video visuals, storyboards, illustrations for articles and slides); this section only covers how to draw.
 
-**先看能力**：{{tool:models_capabilities}}，{{arg:capability}} 给 `generateImage`。`effective` 是不指定服务时用谁（null 时不指定服务的调用会被拒），`usableProviders` 是能用的服务；再看要用的模型的 `sizes`、`aspectRatios`、`maxCount`、`maxPromptChars`、`acceptsSeed`、`cost` 与 `notes`。各服务差别很大：
+**Check capabilities first**: {{tool:models_capabilities}} with {{arg:capability}} `generateImage`. `effective` is what is used when no service is specified (when null, calls that do not specify a service are refused), and `usableProviders` are the services that can be used; then look at the chosen model's `sizes`, `aspectRatios`, `maxCount`, `maxPromptChars`, `acceptsSeed`, `cost` and `notes`. Services differ a lot:
 
-- 本机（`local`）不会自动成为默认：`effective` 不是它时，提交带 {{arg:provider}} `local` 与 {{arg:model}}。本机模型的提示词上限可能只有一千字左右，一次一张，一张要几分钟到十几分钟。
-- 智能体服务（如 `agent:codex`）可能不收尺寸与种子：`sizes` 与 `aspectRatios` 都为空的模型不给 {{arg:size}} 和 {{arg:seed}}，在提示词里写明横竖与构图，用的时候再裁。
-- `maxCount` 为 1 的模型要几张就分几次提交；一次只跑一个任务的服务会排队。张数多或模型慢时，先告诉用户大约要等多久。
+- Local (`local`) never becomes the default automatically: when `effective` is not local, submit with {{arg:provider}} `local` and {{arg:model}}. A local model's prompt limit may be only around a thousand characters; it makes one image at a time, and each takes from a few minutes to over ten.
+- Agent services (such as `agent:codex`) may not accept size or seed: for a model whose `sizes` and `aspectRatios` are both empty, do not pass {{arg:size}} or {{arg:seed}}; state orientation and composition in the prompt and crop when you use it.
+- For a model with `maxCount` 1, submit as many times as images you need; services that run one job at a time queue them. When there are many images or the model is slow, tell the user roughly how long it will take first.
 
-**尺寸**：按图要去的地方选比例：视频画面按画幅（`16:9`、`9:16`、`1:1`），幻灯片与文章按图框。{{arg:size}} 用模型 `aspectRatios` 里的比例或 `sizes` 里的尺寸；没有正好的取最接近的一种，放上去时裁掉多出的部分。
+**Size**: choose the aspect ratio for where the image is going: video visuals by the frame's aspect ratio (`16:9`, `9:16`, `1:1`), slides and articles by the image frame. Use a ratio from the model's `aspectRatios` or a size from `sizes` for {{arg:size}}; if none fits exactly, take the closest and crop the excess when placing it.
 
-**提示词怎么写**，按这个顺序：主体 → 外观或材质 → 场景 → 光 → 机位与构图 → 风格与质量 → 一句保真夹子（不要改什么、不要出现什么）。
+**How to write the prompt**, in this order: subject → appearance or material → setting → light → camera position and composition → style and quality → one fidelity clause (what not to change, what must not appear).
 
-- 写画得出来的具体东西（「一盏台灯照着摊开的笔记本」），不写抽象词（「效率」「增长」）。
-- 一个系列的图（同一条视频、同一份幻灯片）先写一段两三句的风格说明：画面类型、色彩（有色板时写进色值）、线条与光、细节密度。每张逐字带上，不每次重新措辞；模型 `acceptsSeed` 时同一系列用同一个 {{arg:seed}}。整条提示词不超过 `maxPromptChars`。
-- 不让模型在图里写字：生成的字常常写错。保真夹子里写明不要文字、字母、水印与标志；要字时用字幕、动效图形或页面里的文字叠上去，构图里给它留出干净的一侧。
-- 不用真实的品牌、作品、艺术家与真人做风格参照。生成的图只会「像」：不把它画成或说成用户真实的产品、界面、人物、地点或数据，要真东西时用用户的素材、截图或取帧。
+- Write concrete things that can be drawn ("a desk lamp shining on an open notebook"), not abstract words ("efficiency", "growth").
+- For a series of images (the same video, the same slide deck), first write a two-to-three-sentence style note: type of picture, color (include values when there is a palette), line and light, density of detail. Include it verbatim in every prompt rather than rephrasing it each time; when the model `acceptsSeed`, use the same {{arg:seed}} across the series. Keep the whole prompt within `maxPromptChars`.
+- Do not have the model write text in the image: generated text is often wrong. State in the fidelity clause that there must be no text, letters, watermarks or logos; when text is needed, overlay it with captions, motion graphics or text on the page, and leave a clean side in the composition for it.
+- Do not use real brands, works, artists or real people as style references. A generated image only ever "looks like" something: do not draw it as, or present it as, the user's real product, interface, people, places or data; when the real thing is needed, use the user's footage, screenshots or frames.
 
-**结果放哪**：提交后是一个任务，用 {{tool:jobs_wait}} 等它结束再读结果。给了 {{arg:video}} 时每张图导入为那个视频的候选素材（结果里有 `assetId`），要用再放上时间线；没给时只得到产物（`outputs` 里每张图的 `artifactId`），要文件用 {{tool:artifacts_save}} 存进工作目录（同名文件已经存在时换个名字），要进视频用 {{tool:assets_import}} 的 {{arg:artifactId}}，不重新生成。
+**Where results go**: a submission is a job; wait for it with {{tool:jobs_wait}} before reading the result. With {{arg:video}}, each image is imported as a candidate asset of that video (the result has an `assetId`); place it on the timeline when you use it. Without it you get only artifacts (each image's `artifactId` in `outputs`); for a file, save it to the working directory with {{tool:artifacts_save}} (pick another name if a file with that name exists), and to put it into a video, use {{arg:artifactId}} in {{tool:assets_import}} rather than generating again.
 
-**用之前看一眼**：能看图时用 {{tool:artifacts_save}} 存成文件再读一遍，看主体与构图、该留白的地方、颜色，以及有没有冒出来的字、水印、变形的手与脸。不合格的改提示词重画一次；还不行就不用它，换别的画面来源。没看的在交付时说没看过。
+**Look before using it**: when you can view images, save it as a file with {{tool:artifacts_save}} and look at it: subject and composition, the space that should stay empty, colors, and any stray text, watermarks, or distorted hands and faces. If it fails, revise the prompt and draw once more; if it still fails, do not use it and switch to another source of visuals. Anything you did not look at, say so at delivery.
 
-**画不了时**：没有可用的服务，或报 `CAPABILITY_NOT_CONFIGURED`、`GRANT_REQUIRED`、`BUDGET_EXCEEDED`。图只是这次交付的一部分时，停下的是画图这一步：照所在 craft 的退路把其余做完（不放图、换别的画面来源、留出位置），交付时一句话说明图片生成没能用、哪里本来要图，附上 `settingsHref` 的设置链接；用户就是来要图的，照 [models](models.md) 的处理转告用户。
+**When you cannot draw**: there is no usable service, or you get `CAPABILITY_NOT_CONFIGURED`, `GRANT_REQUIRED` or `BUDGET_EXCEEDED`. When images are only part of this delivery, only the drawing step stops: finish the rest using the fallback of the craft at hand (no image, another source of visuals, leave space), and at delivery say in one sentence that image generation was not available and where images were meant to go, with the settings link from `settingsHref`; when images are what the user came for, pass it on to the user as [models](models.md) describes.
 
-**花费与交付**：生成要花时间，用在线服务时还要花钱（看 `cost`）：只画用得上的，不一张张试着画，也不反复重画。交付时说清哪些图是生成的、用的哪个服务与模型、存在哪里或进了哪个视频的素材。
+**Cost and delivery**: generation takes time, and with online services it also costs money (see `cost`): draw only what will be used, do not draw one after another to experiment, and do not redraw repeatedly. At delivery, say which images were generated, which service and model were used, and where they were saved or which video's assets they went into.
 <!-- surface: agent -->
 
-### 幻灯片
+### Slides
 
-一份幻灯片是工作目录里的一个 deck 目录（`deck.json` 加 `slides/<id>.html`），页面用文件工具直接写；怎么做、格式是什么见 {{skill:slides}}。只有两步要用工具：
+A slide deck is a deck directory in the working directory (`deck.json` plus `slides/<id>.html`), whose pages you write directly with file tools; how to make one and its format are in {{skill:slides}}. Only two steps need tools:
 
-| 要做的事 | 调用 |
+| What to do | Call |
 | --- | --- |
-| 把工作目录里的图片或字体放进 deck | {{tool:slides_import_asset}}，{{arg:deck}} + {{arg:path}}；同一份只存一份 |
-| 校验整份 deck，通过后线程里出卡片 | {{tool:slides_check}}，{{arg:path}} 是 deck 目录；改完页面再校验一次 |
+| Put an image or font from the working directory into the deck | {{tool:slides_import_asset}}, {{arg:deck}} + {{arg:path}}; identical files are stored once |
+| Check the whole deck; once it passes, a card appears in the thread | {{tool:slides_check}}, {{arg:path}} is the deck directory; check again after changing pages |
 
-页面要插图时用 {{tool:image}} 生成（不带 {{arg:video}}），{{tool:artifacts_save}} 存进工作目录，再按上表导入 deck；哪几页画、提示词与尺寸见 {{skill:slides}}。
+When pages need illustrations, generate them with {{tool:image}} (without {{arg:video}}), save them to the working directory with {{tool:artifacts_save}}, then import them into the deck as in the table above; which pages to illustrate, prompts and sizes are in {{skill:slides}}.
 
-### 设计稿
+### Designs
 
-一份设计稿是工作目录里的一个目录（`canvas.json` 加每块画板一个 `.dc.html`），文件用文件工具直接写；怎么做、格式是什么见 {{skill:design}}，设计系统见 {{skill:design-system}}（只是文件，没有工具）。只有两步要用工具：
+A design is a directory in the working directory (`canvas.json` plus one `.dc.html` per artboard), whose files you write directly with file tools; how to make one and its format are in {{skill:design}}, and design systems are in {{skill:design-system}} (files only, no tools). Only two steps need tools:
 
-| 要做的事 | 调用 |
+| What to do | Call |
 | --- | --- |
-| 把工作目录里的图片或字体放进设计稿 | {{tool:design_import_asset}}，{{arg:canvas}} + {{arg:path}}；设计稿目录里要先有 `canvas.json`；同一份只存一份 |
-| 校验整份设计稿，通过后线程里出卡片 | {{tool:design_check}}，{{arg:path}} 是设计稿目录；改完文件再校验一次 |
+| Put an image or font from the working directory into the design | {{tool:design_import_asset}}, {{arg:canvas}} + {{arg:path}}; the design directory must already have `canvas.json`; identical files are stored once |
+| Check the whole design; once it passes, a card appears in the thread | {{tool:design_check}}, {{arg:path}} is the design directory; check again after changing files |
 
-css、js、json 这类支持文件不导入，直接写进设计稿目录，用相对路径引用。
+Supporting files such as css, js and json are not imported; write them directly into the design directory and reference them by relative path.
 <!-- /surface -->
 
-### 找镜头切换
+### Finding shot changes
 
-{{tool:videos_shots}}：{{arg:range}}（`起:止`，剪辑后时间线上的秒，最长 20 分钟）里画面在哪里切换。换了片段、画面接不上的地方是 `edit`；片段里的画面突变按场景分数检测，是 `scene`。漏报时调低 {{arg:threshold}}（默认 0.3），多报时调高；{{arg:minShot}}（默认 0.8 秒）以下的镜头并进前一个。
+{{tool:videos_shots}}: where the picture changes within {{arg:range}} (`start:end`, seconds on the edited timeline, at most 20 minutes). Where the item changes and the picture does not continue is an `edit`; sudden picture changes within an item are detected by scene score and are a `scene`. For misses lower {{arg:threshold}} (default 0.3); for false hits raise it; shots shorter than {{arg:minShot}} (default 0.8 seconds) are merged into the previous one.
 
-- 只看画面突变，不认人：叠化、推拉会漏，闪光可能多报。拿不准的切换点用 {{tool:videos_frames}} 取它前一帧与它本身看一眼。
-- 每个镜头的 `sampleAt` 是 3 个时刻，直接交给 {{tool:videos_frames}} 的 {{arg:at}}；一次最多 24 帧，也就是 8 个镜头。
+- It only sees sudden picture changes and does not recognize people: dissolves and push-ins/pull-outs get missed, and flashes may give false hits. For an uncertain change point, look at the frame before it and the frame itself with {{tool:videos_frames}}.
+- Each shot's `sampleAt` is 3 moments; pass them straight to {{tool:videos_frames}}'s {{arg:at}}; at most 24 frames per call, so 8 shots.
 
-## 结果怎么读
+## Reading the results
 
-- {{tool:download}} / {{tool:transcribe}}：`pipeline.summary.videoId` 是新视频，`assetId` 是素材；`outputs` 里有下载的文件与文稿的 `path`。给链接时 summary 另有 `description`（截断的简介）与 `sourceChapters`（作者章节的条数）。
-- 链接导入的素材：{{tool:videos_inspect}} 的 `assets[].source` 是来源元数据：`platform`、`webpageUrl`、`uploader`（发布者）、`uploadDate`、`title`、`description`（最多 1200 字符，被截断时 `descriptionTruncated` 为 true）、`chapters`（作者的章节 `[{ at, title }]`，平台给的或从简介的时间戳大纲解析出的，没有时 `[]`）。它是背景参考，不是文稿内容：润色时人名与术语的写法只在说话人明显在说它时照改，说话人实名时只在它唯一指明某一位时算证据（见 [subtitles](subtitles.md)）；作者章节用 {{tool:chapters_adopt}} 写进视频（见 [editing](editing.md)）。
-- {{tool:transcode}}：`outputs` 的 `path`（`pipeline.summary.files`）是输出文件，把位置告诉用户。
-- {{tool:videos_frames}}：`frames` 每帧有 `at`、`file`、`width`、`height`、`faces` 与取自哪个片段（`item`）、哪个素材（`asset`）。读 `file` 这张图片。`faces` 是 `[{x, y, w, h, score}]`：框的左上角与宽高，按帧的宽高归一化到 0–1，`score` 0–1，按 score 从高到低；顶层 `detector` 是 `yunet`，检测器不可用时为 null（`faces` 都是空数组）。`file` 为 null 的帧没有 `faces`。
-- {{tool:videos_shots}}：`cuts` 每处有 `at`（新镜头第一帧的秒）、`score`（`edit` 为 null）与 `kind`；`shots` 每个有 `start`、`end` 与 `sampleAt`。
-- {{tool:assets_import}}：回执里有 `assetId`、`itemId`（没放上时间线时为 null）与新版本。
-- {{tool:videos_create}} / {{tool:videos_import_package}}：返回与 {{tool:videos_inspect}} 相同的摘要，含 `videoId`。
-- {{tool:image}}：`outputs` 里每张图的 `artifactId`；带了 video 时还有 `assetId`。
-- {{tool:music}}（见 [music](music.md)）：`outputs` 里是一个 WAV 的 `artifactId`；带了 video 时还有 `assetId`；到了时长预算时 `warnings` 里有 `output-truncated`。
+- {{tool:download}} / {{tool:transcribe}}: `pipeline.summary.videoId` is the new video and `assetId` the asset; `outputs` holds the `path` of the downloaded file and the transcript. With a link, the summary also has `description` (the truncated description) and `sourceChapters` (the number of author chapters).
+- Assets imported from a link: `assets[].source` in {{tool:videos_inspect}} is the source metadata: `platform`, `webpageUrl`, `uploader`, `uploadDate`, `title`, `description` (at most 1200 characters; `descriptionTruncated` is true when truncated), `chapters` (the author's chapters `[{ at, title }]`, given by the platform or parsed from a timestamp outline in the description; `[]` when there are none). It is background reference, not transcript content: when polishing, correct the spelling of names and terms only where the speaker is clearly saying them; when naming speakers, it counts as evidence only when it uniquely identifies one person (see [subtitles](subtitles.md)); write the author's chapters into the video with {{tool:chapters_adopt}} (see [editing](editing.md)).
+- {{tool:transcode}}: the `path` in `outputs` (`pipeline.summary.files`) is the output file; tell the user where it is.
+- {{tool:videos_frames}}: each entry of `frames` has `at`, `file`, `width`, `height`, `faces`, and which item (`item`) and asset (`asset`) it came from. Read the image at `file`. `faces` is `[{x, y, w, h, score}]`: the box's top-left corner and size, normalized to 0–1 by the frame's width and height, `score` 0–1, sorted by score from high to low; the top-level `detector` is `yunet`, or null when the detector is unavailable (then every `faces` is an empty array). Frames whose `file` is null have no `faces`.
+- {{tool:videos_shots}}: each entry of `cuts` has `at` (the second of the new shot's first frame), `score` (null for `edit`) and `kind`; each entry of `shots` has `start`, `end` and `sampleAt`.
+- {{tool:assets_import}}: the receipt has `assetId`, `itemId` (null when not placed on the timeline) and the new revision.
+- {{tool:videos_create}} / {{tool:videos_import_package}}: return the same summary as {{tool:videos_inspect}}, including `videoId`.
+- {{tool:image}}: each image's `artifactId` in `outputs`; with video, also `assetId`.
+- {{tool:music}} (see [music](music.md)): `outputs` holds one WAV's `artifactId`; with video, also `assetId`; when the duration budget was reached, `warnings` contains `output-truncated`.
 <!-- surface: agent -->
-- {{tool:slides_import_asset}}：`src` 形如 `/_blob/<id>`，图片原样写进 `<img src>`，字体原样写进 `deck.json` 里 `faces` 那一项的 `src`；另有 `bytes` 与 `contentType`。
-- {{tool:slides_check}}：`problems` 是问题总数，为 0 时线程里记一张幻灯片卡片；否则 `slides` 列出每页的 `problems`，`deckProblems` 是 `deck.json`（含字体与设计系统的记录）与 `ds/` 的问题，`orphans` 是不在 `order` 里的页面文件。每页的 `notes` 不算问题，其中以「排版」开头的是放不下或互相压住的提示，尽量改掉。
-- {{tool:design_import_asset}}：`src` 形如 `/_blob/<id>`，原样写进 `<img src>`、`<helmet><style>` 里的 `url(…)` 或 `@font-face`；另有 `bytes` 与 `contentType`。
-- {{tool:design_check}}：`problems` 是问题总数，为 0 时线程里记一张设计稿卡片；否则 `issues` 每条有 `file`（相对设计稿目录，`.` 是整个目录）与 `message`，列不下时 `more` 说还有几条。`notChecked` 说明没查的部分：画板脚本能不能跑、排版与视觉效果。
+- {{tool:slides_import_asset}}: `src` looks like `/_blob/<id>`; write it as-is into `<img src>` for images, and for fonts into the `src` of that entry in `faces` in `deck.json`; there are also `bytes` and `contentType`.
+- {{tool:slides_check}}: `problems` is the total number of problems; at 0, a slide card is recorded in the thread; otherwise `slides` lists each page's `problems`, `deckProblems` are problems in `deck.json` (including font and design system records) and in `ds/`, and `orphans` are page files not in `order`. Each page's `notes` do not count as problems; those starting with `layout` flag content that does not fit or overlaps, and should be fixed where possible.
+- {{tool:design_import_asset}}: `src` looks like `/_blob/<id>`; write it as-is into `<img src>`, `url(…)` inside `<helmet><style>`, or `@font-face`; there are also `bytes` and `contentType`.
+- {{tool:design_check}}: `problems` is the total number of problems; at 0, a design card is recorded in the thread; otherwise each entry of `issues` has `file` (relative to the design directory; `.` is the whole directory) and `message`, and when they do not all fit, `more` says how many more there are. `notChecked` describes what was not checked: whether artboard scripts run, layout and visual effect.
 <!-- /surface -->
 
-## 看一条视频的证据阶梯
+## The evidence ladder for understanding a video
 
-要理解一条视频（剪什么、哪里是重点、画面上有什么）时按这个顺序，证据够了就停：
+To understand a video (what to cut, where the key points are, what is in the picture), go in this order and stop when the evidence is enough:
 
-1. **先完整导入原件，复用已有转写。** 缺转写的批量转录（{{tool:transcribe}}）。
-2. **在转写里按文字定位片段。** {{tool:documents_read}} 读转写；跨视频找用 {{tool:space_search}}。
-3. **再按时间批量取帧**，拼成带时间戳的接触表看构图与镜头分布（{{tool:videos_frames}} 给 range 与 count）；可疑区间加密采样，单帧细看。
-4. 仍不知道剪点在哪时，再找镜头切换（{{tool:videos_shots}}），按镜头取帧细看。
-5. 视频理解模型（配置了的话）放最后：问具体问题、要时间戳，并对照原片核实。
+1. **Import the full original first, and reuse existing transcripts.** Batch-transcribe whatever lacks a transcript ({{tool:transcribe}}).
+2. **Locate passages by text in the transcript.** Read the transcript with {{tool:documents_read}}; search across videos with {{tool:space_search}}.
+3. **Then grab frames in batches by time**, laid out as a timestamped contact sheet to see composition and shot distribution ({{tool:videos_frames}} with range and count); sample suspicious spans more densely and examine single frames.
+4. If you still do not know where the cut points are, find shot changes ({{tool:videos_shots}}) and grab frames per shot to examine.
+5. A video understanding model (if configured) comes last: ask specific questions, ask for timestamps, and verify against the original.
 
-彼此独立的读取一次发完，不要一帧一问。改动先做一段有代表性的，读回核对后再批量做；大改之后重新核对，没动的结果复用。
+Send independent reads all at once; do not ask one frame at a time. Make a change on a representative passage first, read it back to check, then apply it in bulk; after large changes, check again, and reuse results for what did not change.
 
-## 常见错误码
+## Common error codes
 
-| 错误码 | 下一步 |
+| Error code | Next step |
 | --- | --- |
-| `LINK_LOGIN_REQUIRED`、`LINK_COOKIES_UNAVAILABLE` | 视频要登录才能看：照 `remedy` 请用户处理，不要自己找 cookies |
-| `LINK_UNSUPPORTED` | 这个网站不支持：告诉用户，请他换链接或给本机文件 |
-| `LINK_NETWORK_ERROR` | 网络问题：可以重试一次，仍不行告诉用户 |
-| `LINK_DISK_FULL` | 磁盘满：告诉用户，不要自己删文件 |
-| `TOOL_CONSENT_REQUIRED`、`LINK_TOOL_UPDATE_REQUIRED` | yt-dlp 要用户同意下载或更新：转告用户，照 `next` 做 |
-| `EXPORT_TOOL_MISSING`、`MEDIA_TOOL_UNAVAILABLE` | 缺 ffmpeg：照 `remedy` 转告用户 |
-| `ASSET_MISSING` | 链接的原文件被移动或删除：请用户放回原处或给新位置 |
-| `INPUT_TOO_LONG` | 图片提示词超长：缩短后重提 |
-| `CAPABILITY_NOT_CONFIGURED` | 没有可用的图片模型：见 [models](models.md) |
+| `LINK_LOGIN_REQUIRED`, `LINK_COOKIES_UNAVAILABLE` | The video needs a login: ask the user to handle it using `remedy`; do not look for cookies yourself |
+| `LINK_UNSUPPORTED` | The site is not supported: tell the user and ask for another link or a local file |
+| `LINK_NETWORK_ERROR` | Network problem: you can retry once; if it still fails, tell the user |
+| `LINK_DISK_FULL` | Disk full: tell the user; do not delete files yourself |
+| `TOOL_CONSENT_REQUIRED`, `LINK_TOOL_UPDATE_REQUIRED` | yt-dlp needs the user to consent to downloading or updating it: pass it on to the user and follow `next` |
+| `EXPORT_TOOL_MISSING`, `MEDIA_TOOL_UNAVAILABLE` | ffmpeg is missing: pass `remedy` on to the user |
+| `ASSET_MISSING` | The linked original file was moved or deleted: ask the user to put it back or give its new location |
+| `INPUT_TOO_LONG` | The image prompt is too long: shorten it and resubmit |
+| `CAPABILITY_NOT_CONFIGURED` | No usable image model: see [models](models.md) |
 <!-- surface: agent -->
-| `DECK_NOT_FOUND`、`NOT_A_DECK` | 路径不是 deck 目录（没有 `deck.json`，或它不是幻灯片的索引）：核对路径 |
-| `SLIDES_COMPILER_UNAVAILABLE` | 这台机器上的 CucCut 没带幻灯片编辑器：deck 文件照样写好，告诉用户没法校验、也没法在 CucCut 里打开，不要自己找编译器 |
-| `CANVAS_NOT_FOUND`、`NOT_A_CANVAS` | 路径不是设计稿目录（没有 `canvas.json`，或它不合格式）：核对路径；导入素材前先写好 `canvas.json` |
-| `UNSUPPORTED_ASSET_TYPE` | 只能导入 png、jpg、gif、webp、avif、svg 图片；设计稿另收 woff2、woff、ttf、otf 字体 |
+| `DECK_NOT_FOUND`, `NOT_A_DECK` | The path is not a deck directory (no `deck.json`, or it is not a slide index): check the path |
+| `SLIDES_COMPILER_UNAVAILABLE` | CucCut on this machine does not include the slide editor: write the deck files anyway, and tell the user they cannot be checked or opened in CucCut; do not look for a compiler yourself |
+| `CANVAS_NOT_FOUND`, `NOT_A_CANVAS` | The path is not a design directory (no `canvas.json`, or it is malformed): check the path; write `canvas.json` before importing assets |
+| `UNSUPPORTED_ASSET_TYPE` | Only png, jpg, gif, webp, avif and svg images can be imported; designs also accept woff2, woff, ttf and otf fonts |
 <!-- /surface -->
 
 <!-- surface: cli -->
-不要自己运行 yt-dlp 或 ffmpeg 来绕过这些错误。
+Do not run yt-dlp or ffmpeg yourself to get around these errors.
 <!-- /surface -->
 <!-- surface: agent -->
-不要用 shell 自己运行下载程序或 ffmpeg 来绕过这些错误。
+Do not use a shell to run a downloader or ffmpeg yourself to get around these errors.
 <!-- /surface -->
 
-## 下一步
+## Next steps
 
-- 新建了视频并转写：去 [subtitles](subtitles.md) 润色、翻译、建字幕层。
-- 素材放上了时间线：去 [editing](editing.md) 剪辑。
-- 要文件：去 [export](export.md)。
+- Created a video and transcribed it: go to [subtitles](subtitles.md) to polish, translate and create caption layers.
+- Assets are on the timeline: go to [editing](editing.md) to edit.
+- Files are wanted: go to [export](export.md).
 
-## 验收
+## Acceptance
 
-- 视频是新建的还是用户原来的，名字与位置说清楚；没有重复建视频、重复导入素材。
-- 转码、合并的输出文件真实存在（取结果里的 `path`），原文件没动。
-- 只按真正取到并看过的帧下视觉判断；帧不含字幕与叠加元素这一点写进交付报告。
+- State clearly whether the video is new or the user's existing one, with its name and location; no duplicate videos and no duplicate asset imports.
+- Output files from transcoding and merging really exist (take `path` from the result), and the original files are untouched.
+- Make visual judgments only from frames actually grabbed and looked at; state in the delivery report that frames do not include captions or overlaid elements.

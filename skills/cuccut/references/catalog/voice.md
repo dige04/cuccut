@@ -1,125 +1,125 @@
 ---
-description: 声音的机制：翻译配音、旁白与语音合成、音色；说明与台词分离、目标语言与混合语言、标签的能力边界、时长与完整朗读。配音或合成语音之前读。
+description: Voice mechanics - translated dubbing, voice-over and speech synthesis, voices; separating instructions from lines, target and mixed languages, the limits of tags, duration and complete reading. Read before dubbing or synthesizing speech.
 ---
 
-# 声音：翻译配音、旁白与音色
+# Voice: translated dubbing, voice-over and voices
 
-## 何时用
+## When to use
 
-- 把视频配成另一种语言（翻译配音）。
-- 要一段旁白、念一段话，放进视频或交一个音频文件。
-- 选音色、看用户库里有哪些音色。
+- Dubbing a video into another language (translated dubbing).
+- A voice-over or a passage read aloud is wanted, placed in the video or delivered as an audio file.
+- Choosing a voice, or seeing which voices are in the user library.
 
-## 前置检查
+## Preflight
 
-- {{tool:models_capabilities}}（能力 `synthesizeSpeech`）：有没有可用的语音合成、各模型支持的语言（`languages`）、音色、语速范围、单次文本上限（`maxInputChars`）、接不接受语气说明（`acceptsInstructions`）。音色 ID 与支持的语言以当前模型返回为准；按模型选择独立的音色参考页（见下表）可帮助选角，不能代替可用性查询。
-- 配音要译文：先按 [subtitles](subtitles.md) 的自译路径写好译文（kind `translation`），再配音。
-- 用户库里的音色：{{tool:library_list}}，{{arg:library}} 给 `voices`；细节用 {{tool:library_show}}。克隆音色要有授权，由用户在 CucCut 里做。
-- 分离人声与背景声要本机的分离能力（能力 `separateAudio`），没有时配音会报 `DUB_SEPARATION_NOT_CONFIGURED`。
+- {{tool:models_capabilities}} (capability `synthesizeSpeech`): whether speech synthesis is available, the languages each model supports (`languages`), voices, speed range, the per-request text limit (`maxInputChars`), and whether delivery instructions are accepted (`acceptsInstructions`). Voice IDs and supported languages are whatever the current model returns; the per-model voice reference pages (see the table below) can help with casting but do not replace the availability query.
+- Dubbing needs a translation: first write the translation (kind `translation`) via the translate-yourself path in [subtitles](subtitles.md), then dub.
+- Voices in the user library: {{tool:library_list}} with {{arg:library}} `voices`; details with {{tool:library_show}}. Cloned voices need authorization, which the user does in CucCut.
+- Separating voices from the background needs the local separation capability (capability `separateAudio`); without it, dubbing reports `DUB_SEPARATION_NOT_CONFIGURED`.
 
-| 当前 TTS 模型 | 选音色时读 |
+| Current TTS model | Read when choosing a voice |
 | --- | --- |
-| Gemini TTS | [Gemini TTS 音色参考](voice-gemini-tts.md) |
-| 其他模型 | 读取该模型自身的音色说明，以能力查询实际返回的音色 ID 为准，不套用 Gemini 的音色表 |
+| Gemini TTS | [Gemini TTS voice reference](voice-gemini-tts.md) |
+| Other models | Read that model's own voice notes and go by the voice IDs the capability query actually returns; do not apply the Gemini voice table |
 
-## 命令与例子
+## Commands and examples
 
-### 翻译配音
+### Translated dubbing
 
-{{tool:dub}}：逐句合成、按原句时间对齐、放上一条新的配音轨。
+{{tool:dub}}: synthesizes sentence by sentence, aligns to the original sentence timings and places the result on a new dubbing track.
 
-| 要做的事 | 关键参数 |
+| What to do | Key parameters |
 | --- | --- |
-| 按你写好的译文配音（默认） | {{arg:video}} + {{arg:translation}}（译文的 documentId） |
-| 选音色 | {{arg:voice}}：模型的音色 ID，或用户库的 `library:<id>` |
-| 原声怎么处理 | {{arg:original}}：`duck` 压低（默认）、`mute` 静音、`keep` 保持 |
-| 保留背景声、只处理人声 | {{arg:separateBackground}} |
-| 指定服务与模型 | {{arg:provider}}、{{arg:model}} |
+| Dub from the translation you wrote (default) | {{arg:video}} + {{arg:translation}} (the translation's documentId) |
+| Choose a voice | {{arg:voice}}: the model's voice ID, or `library:<id>` from the user library |
+| How to treat the original audio | {{arg:original}}: `duck` lower it (default), `mute` silence it, `keep` keep it |
+| Keep the background and treat only the voice | {{arg:separateBackground}} |
+| Choose the service and model | {{arg:provider}}, {{arg:model}} |
 
-不给 {{arg:translation}}、只给 {{arg:to}} 时会用配置好的文本模型先翻译：只在用户明确要这样做时用。默认先自己翻译。
+Giving only {{arg:to}} without {{arg:translation}} has the configured text model translate first: use it only when the user explicitly wants that. By default, translate yourself first.
 
-### 旁白与语音合成
+### Voice-over and speech synthesis
 
-{{tool:speak}}：{{arg:text}} 是要说的话；可给 {{arg:voice}}、{{arg:language}}、{{arg:instructions}}、{{arg:format}}、{{arg:seed}}；{{arg:speed}} 只有 `speedRange` 不为 null 的模型接受（见下文「多句旁白」）。
+{{tool:speak}}: {{arg:text}} is what to say; optionally {{arg:voice}}, {{arg:language}}, {{arg:instructions}}, {{arg:format}}, {{arg:seed}}; {{arg:speed}} is accepted only by models whose `speedRange` is not null (see "Multi-sentence narration" below).
 
-- 给 {{arg:video}}：完成后音频导入为那个视频的**候选素材**（结果里有 `assetId`），不会放上时间线；要用时再 {{tool:edits_apply}} 的 `addItem` 放上去。
-- 不给 video：只得到产物（`artifactId`）。要放进视频用 {{tool:assets_import}} 给 {{arg:artifactId}}（不重新生成）；用户要文件本身时用 {{tool:artifacts_save}}。
-- 文本超过 `maxInputChars` 时提交就会被拒（`INPUT_TOO_LONG`，带上限）：自己按句子或段落切开，逐段提交，Runtime 不替你截断。
+- With {{arg:video}}: when done, the audio is imported as that video's **candidate asset** (the result has an `assetId`) and is not placed on the timeline; when you use it, place it with `addItem` in {{tool:edits_apply}}.
+- Without video: you get only an artifact (`artifactId`). To put it into a video, pass {{arg:artifactId}} to {{tool:assets_import}} (no regeneration); when the user wants the file itself, use {{tool:artifacts_save}}.
+- Text longer than `maxInputChars` is refused at submission (`INPUT_TOO_LONG`, with the limit): split it by sentence or paragraph yourself and submit piece by piece; the Runtime does not truncate for you.
 
-### 怎么填语气说明与台词
+### How to fill in delivery instructions and lines
 
-{{tool:speak}} 的 {{arg:instructions}} 与 {{arg:text}} 是两件事，分别传参；不要把「说明: 台词」拼成一个 text，冒号不是 CucCut 的指令分隔协议：
+{{tool:speak}}'s {{arg:instructions}} and {{arg:text}} are two different things passed as separate parameters; do not join "instructions: line" into one text. A colon is not a CucCut instruction-separator protocol:
 
-- **{{arg:instructions}} 只写怎么说**：目标语言、需要的口音、语气、场景与角色（「用普通话，平静自然，像深夜电台主持人」）。用具体情境描述表演，比堆情绪形容词更清楚；不写台词内容，也不用它保证物理时长。
-- **{{arg:text}} 只写说什么**：默认只放要念出来的字，不夹舞台说明、括号注释或语气标记；模型专属局部动作的例外见下文。
-- 两者方向一致：紧张的指令配紧张的台词；指令说「轻松」而台词是坏消息，结果会别扭。用户指定逐字朗读时保留原稿，调整说明，不为制造情绪擅改台词。
-- 指令不过度规定，点到语气与场景即可，模型会自然补全。
-- 不用真实品牌与真人做风格参照（「像某某主播」）。
-- 同一角色全片用同一音色、同一套指令基线；分段合成时每段都带同样的指令。
-- {{arg:instructions}} 的语言按模型说明或已有试读结果选择：模型明确要求或更适合英文说明时用英文；没有偏好证据时用用户的语言。说明语言与朗读语言分别决定，改用英文说明时仍明确目标语言，text 保持目标语言原稿，不随说明一起翻译。
-- 只有 `acceptsInstructions` 的模型接受指令；不接受时省略 instructions，按能力选音色与语速，不把说明塞进 text。
+- **{{arg:instructions}} says only how to speak**: target language, the accent wanted, tone, setting and role ("Speak in English, calm and natural, like a late-night radio host"). Describing the performance through a concrete situation is clearer than piling up emotion adjectives; do not include the content of the lines, and do not use it to guarantee a physical duration.
+- **{{arg:text}} says only what to say**: by default, only the words to be read aloud, without stage directions, bracketed notes or tone markers; for model-specific local actions, see the exceptions below.
+- The two point the same way: tense instructions go with tense lines; instructions saying "relaxed" over bad news will come out awkward. When the user asks for a verbatim read, keep the original script and adjust the instructions; do not alter the lines to create emotion.
+- Do not over-specify the instructions; naming the tone and setting is enough, and the model fills in the rest naturally.
+- Do not use real brands or real people as style references ("like such-and-such host").
+- The same character uses the same voice and the same baseline instructions throughout; when synthesizing in pieces, every piece carries the same instructions.
+- Choose the language of {{arg:instructions}} from the model's notes or results of earlier test reads: use English when the model explicitly asks for it or works better with English instructions; with no evidence of a preference, use the user's language. The language of the instructions and the language of the reading are decided separately; when switching to English instructions, still state the target language clearly, and keep text as the original script in the target language rather than translating it along with the instructions.
+- Only models with `acceptsInstructions` accept instructions; when not accepted, omit instructions, choose the voice and speed from the capabilities, and do not stuff the instructions into text.
 
-| 场景 | instructions（模型接受时） | text |
+| Scene | instructions (when the model accepts them) | text |
 | --- | --- | --- |
-| 深夜旁白 | 用普通话，像深夜电台主持人一样平静、温暖地讲述 | 夜深了。窗外的灯，还亮着。 |
-| 日英混读 | 用日语讲解，保留英文术语的英语发音，语气自然、清楚 | この機能は workflow を自動化します。 |
-| 轻声提醒 | 用西班牙语，像怕吵醒熟睡的人一样轻声说话 | Creo que por fin se ha dormido. |
-| 英文说明、中文台词（模型适合英文说明时） | Speak in Mandarin Chinese with a warm, conversational tone. | 欢迎回来，我们接着往下讲。 |
-| 带笑意的反应 | 用普通话，像听到意外趣事一样先自然地笑一下，再带笑意说话 | 哈哈，真没想到会这样！ |
-| 疲惫的叹息 | 用普通话，像忙碌一天后终于坐下来一样，先轻轻叹气再说话 | 唉……总算忙完了。 |
-| 缓慢安抚 | 用普通话，像安抚焦虑的朋友一样缓慢、轻柔地说话 | 别着急，我们一步一步来。 |
+| Late-night narration | Speak in English, calm and warm, like a late-night radio host telling a story | It's late. The lights outside are still on. |
+| Japanese with English terms | Explain in Japanese, keep the English pronunciation of English terms, natural and clear | この機能は workflow を自動化します。 |
+| Soft reminder | Speak in Spanish, softly, as if afraid to wake someone sleeping | Creo que por fin se ha dormido. |
+| English instructions, Mandarin lines (when the model works better with English instructions) | Speak in Mandarin Chinese with a warm, conversational tone. | 欢迎回来，我们接着往下讲。 |
+| Amused reaction | Speak in English; first laugh naturally, as if hearing something unexpectedly funny, then speak with a smile | Haha, I never saw that coming! |
+| Tired sigh | Speak in English; first sigh softly, as if finally sitting down after a busy day, then speak | Ahh... finally done. |
+| Slow reassurance | Speak in English, slowly and gently, like calming an anxious friend | Don't worry, we'll take it one step at a time. |
 
-笑声与叹气示例只用于允许创作的台词；「哈哈」「唉」是可能被念出的正文，不是动作标签。固定原稿不擅加语气词，可在模型支持时仅用说明请求表演；是否产生自然笑声或呼吸声要试听，不能把这些字当成必定生成非语音声音的语法。
+The laugh and sigh examples are only for lines where creative changes are allowed; "Haha" and "Ahh" are text that may be read aloud, not action tags. Do not add interjections to a fixed script; where the model supports it, request the performance through the instructions alone. Whether a natural laugh or breath comes out has to be checked by listening; do not treat these words as syntax that is guaranteed to produce non-speech sounds.
 
-### 语言、局部动作与对话
+### Language, local actions and dialogue
 
-{{tool:speak}} 的 {{arg:text}} 必须直接写成目标语言；需要翻译时先译好，不靠 {{arg:language}} 或说明让合成模型临场翻译。目标语言按用户要求与任务上下文决定，不从说明所用的语言推断。language 给当前模型支持的 BCP 47 代码；它不是翻译开关，也不能单独保证口音。
+{{tool:speak}}'s {{arg:text}} must be written directly in the target language; when translation is needed, translate first rather than relying on {{arg:language}} or the instructions to make the synthesis model translate on the fly. The target language is decided by the user's request and the task context, not inferred from the language of the instructions. Pass language as a BCP 47 code the current model supports; it is not a translation switch, and it cannot guarantee an accent on its own.
 
-- 混合语言在 text 中保留实际要念的各语言文字，并在模型接受说明时写清切换与术语读法；单个 language 不能表达一份语言列表。模型没有明确支持混读时，先试有代表性的短句；无法正确念出时说明限制，不擅自翻成单一语言。
-- 全局情绪放 instructions；停顿优先用目标语言的标点。`[sigh]`、`[laughing]`、`[whispering]`、`[long pause]` 与 SSML 都不是 CucCut 的通用语法；`acceptsInstructions` 也不代表支持这些标签。只有当前模型明确支持且试读确认后，才在合成文本中加入必要的局部动作；字幕与正文保留纯台词。
-- 不把 `[scared]`、`[excitedly]` 等情绪词塞进台词，也不保证方括号内容不会被念出。模型不支持标签时，把整体意图写进说明；必须精确的停顿或非语音声音用时间线上的静音与独立音效处理，不声称标签能精确控制毫秒。
-- 当前 speak 一次只选一个 voice，没有按角色分配音色的参数。对话按角色轮次分别合成，各角色保持同一音色与说明，再按返回的实际时长编排；不把「Joe: … / Jane: …」当成自动切换说话人的指令，角色名也不放进待念文本，除非本来就要念出名字。
+- For mixed languages, keep the actual text of each language to be read in text, and when the model accepts instructions, spell out the switching and how terms are pronounced; a single language cannot express a list of languages. When the model does not explicitly support mixed reading, first try a representative short sentence; if it cannot read it correctly, explain the limitation rather than translating it into a single language on your own.
+- Put global emotion in instructions; for pauses, prefer the target language's punctuation. `[sigh]`, `[laughing]`, `[whispering]`, `[long pause]` and SSML are not general CucCut syntax, and `acceptsInstructions` does not mean these tags are supported. Only when the current model explicitly supports them and a test read confirms it, add the necessary local actions to the synthesis text; captions and the body keep the pure lines.
+- Do not stuff emotion words such as `[scared]` or `[excitedly]` into the lines, and do not promise that bracketed content will not be read aloud. When the model does not support tags, write the overall intent into the instructions; handle pauses or non-speech sounds that must be precise with silence and separate sound effects on the timeline, and do not claim tags control milliseconds precisely.
+- speak currently picks only one voice per call and has no parameter for assigning voices by role. Synthesize dialogue role by role, turn by turn, keeping each role's voice and instructions the same, then arrange by the actual durations returned; do not treat "Joe: … / Jane: …" as an instruction to switch speakers automatically, and do not put role names into the text to be read unless the names are meant to be read aloud.
 
-### 时长与完整朗读
+### Duration and complete reading
 
-- **没有时长约束**：优先完整、准确地念出原稿；不为套语速表删词、加速或额外生成校准音频。
-- **有时长约束**：时长受模型、语言、音色、内容与表演影响，提示词不能保证精确秒数。尚无样音时可查 [旁白语言语速参考表](voice-language-rates.md)，按语言、单位与速率估首稿预算；旁白成片按 {{skill:narration}} 用目标配置实测修订。翻译配音仍走上面的 dub 对齐流程。
-- 超时先判断台词是否允许改写；固定原稿不能为了塞进时长而漏念、截断或擅自改写，向用户说明原稿与时长的冲突。合成后以返回的媒体时长为准。
+- **No duration constraint**: prioritize reading the original script completely and accurately; do not cut words, speed up or generate extra calibration audio to fit a speech-rate table.
+- **With a duration constraint**: duration depends on the model, language, voice, content and performance, and a prompt cannot guarantee an exact number of seconds. When there is no sample audio yet, use the [narration speech-rate reference table](voice-language-rates.md) to estimate a first-draft budget by language, unit and rate; for a narrated video, revise it by measuring with the target configuration following {{skill:narration}}. Translated dubbing still follows the dub alignment flow above.
+- When it runs over, first decide whether the lines may be rewritten; a fixed script must not be skipped, truncated or rewritten on your own to fit the duration; explain the conflict between the script and the duration to the user. After synthesis, go by the media duration returned.
 
-### 多句旁白：切块、音色与语速
+### Multi-sentence narration: chunking, voice and speech rate
 
-- **引擎会切块**：本机模型一次只能稳定念十几秒，长文本在引擎里按句末标点切成约 60 个单元（一个汉字或一个英文词算一个）一块逐块合成，再统一块之间的停顿与响度后拼接。块与块是独立生成的：块边界处的停顿与响度由引擎拉平，**音色不会**——`voices[].source` 为 `model` 的预置说话人每块独立采样，块间音高会漂 3–5 个半音，听起来像换了人。
-- **多句旁白选能锁住音色的声音**：用户库里已授权克隆的音色（`library:<id>`）或 `source` 为 `builtin` 的内置音色，每块都对着同一段参考录音生成，块间音高只差不到 1 个半音；预置说话人只用在 60 字以内，或用户点名要它时写明风险。
-- **整段一次提交**，或按段落几百字一段；不逐句提交——逐句不会让音色更一致，反而拉长总时长、每字变慢。重配某一句时才单独提交那一句（同音色、同说明、换 {{arg:seed}}）。
-- **{{arg:speed}} 不是通用旋钮**：只有 {{tool:models_capabilities}} 里 `speedRange` 不为 null 的模型接受；为 null 的模型给了会被拒（`MODEL_UNSUPPORTED`）。`speedRange` 与 `acceptsInstructions` 分别表示数值语速与风格说明的能力，不从其中一个推断另一个。
-- **表演语速与时长预算分开**：模型接受说明且能响应时，可写「缓慢安抚」「急促兴奋」这类表演要求；模型明确不支持或试读无效时按其限制处理。不要求提示词兑现「每秒五字」「刚好三十秒」，不靠临时加快表演或时间线变速把超长稿塞进预算；先定表演再按实测速率写稿，表演改变后重测。
-- **{{arg:seed}} 是重配的旋钮**：模型接受 seed 时固定一个并记下；某一句不满意只换那一句的 seed，满意的句子不动。
-- 要量语速与停顿：把旁白素材 {{tool:transcribe}}（断言语言、提示里放专名）拿到字时间，按句算字/秒与句间停顿。整条做法见 {{skill:narration}}。
+- **The engine chunks**: a local model can only read a dozen or so seconds reliably at once, so long text is split inside the engine at sentence-ending punctuation into chunks of about 60 units (one CJK character or one English word counts as one), synthesized chunk by chunk, then joined after evening out the pauses and loudness between chunks. Chunks are generated independently: the engine evens out pauses and loudness at chunk boundaries, but **not the timbre**. Preset speakers whose `voices[].source` is `model` are sampled independently per chunk, and pitch drifts 3–5 semitones between chunks, so it sounds like a different person.
+- **For multi-sentence narration choose a voice that holds its timbre**: an authorized cloned voice from the user library (`library:<id>`) or a built-in voice whose `source` is `builtin`; every chunk is generated against the same reference recording, and pitch differs by less than 1 semitone between chunks. Use preset speakers only for 60 units or less, or when the user names one, stating the risk.
+- **Submit the whole passage at once**, or a few hundred characters/words per paragraph; do not submit sentence by sentence: it does not make the voice more consistent, and instead lengthens the total duration and slows each unit. Submit a single sentence on its own only when re-voicing that sentence (same voice, same instructions, a different {{arg:seed}}).
+- **{{arg:speed}} is not a universal knob**: only models whose `speedRange` in {{tool:models_capabilities}} is not null accept it; models where it is null refuse it (`MODEL_UNSUPPORTED`). `speedRange` and `acceptsInstructions` indicate the numeric speed and style-instruction capabilities respectively; do not infer one from the other.
+- **Keep performance pace and the duration budget separate**: when the model accepts instructions and responds to them, you can write performance requests such as "slow and soothing" or "fast and excited"; when the model explicitly does not support it or a test read shows no effect, work within its limits. Do not ask the prompt to deliver "five characters per second" or "exactly thirty seconds", and do not squeeze an overlong script into the budget by temporarily speeding up the performance or changing speed on the timeline; settle the performance first, then write the script to the measured rate, and measure again if the performance changes.
+- **{{arg:seed}} is the re-voicing knob**: when the model accepts seed, fix one and note it; when one sentence is unsatisfactory, change only that sentence's seed and leave the satisfactory ones alone.
+- To measure speech rate and pauses: {{tool:transcribe}} the narration asset (asserting the language, with proper names in the hint) to get word timings, and compute units per second and inter-sentence pauses per sentence. The full method is in {{skill:narration}}.
 
-## 结果怎么读
+## Reading the results
 
-- {{tool:dub}} 完成：`pipeline.summary.trackId` 是配音轨，`summary.units` 说明放上了几句、几句没合成及原因。没合成的句子报告给用户。
-- {{tool:speak}} 完成：`outputs` 里有 `artifactId` 与媒体事实（时长）；带了 video 时还有 `assetId`。
+- {{tool:dub}} completed: `pipeline.summary.trackId` is the dubbing track, and `summary.units` says how many sentences were placed, how many were not synthesized, and why. Report sentences that were not synthesized to the user.
+- {{tool:speak}} completed: `outputs` has the `artifactId` and media facts (duration); with video, also `assetId`.
 
-## 常见错误码
+## Common error codes
 
-| 错误码 | 下一步 |
+| Error code | Next step |
 | --- | --- |
-| `CAPABILITY_NOT_CONFIGURED` | 没有可用的语音合成：照 `next` 转告用户，或按 [models](models.md) 装本地模型包 |
-| `DUB_SEPARATION_NOT_CONFIGURED` | 分离背景声不可用：转告用户，或问用户能否不分离（{{tool:dub}} 去掉 {{arg:separateBackground}}） |
-| `VOICE_CONSENT_REQUIRED`、`VOICE_CLONE_REQUIRED` | 用户库音色缺授权或还没在这个服务上克隆：转告用户在 CucCut 里处理 |
-| `INPUT_TOO_LONG` | 文本超长：按句切开逐段提交 |
-| `GRANT_REQUIRED` | 要用户授权把文本发给在线服务：照 `remedy` 转告用户 |
+| `CAPABILITY_NOT_CONFIGURED` | No usable speech synthesis: pass it on to the user following `next`, or install a local model bundle per [models](models.md) |
+| `DUB_SEPARATION_NOT_CONFIGURED` | Background separation is unavailable: pass it on to the user, or ask whether it can be done without separation ({{tool:dub}} without {{arg:separateBackground}}) |
+| `VOICE_CONSENT_REQUIRED`, `VOICE_CLONE_REQUIRED` | The user library voice lacks authorization or has not been cloned on this service yet: pass it on to the user to handle in CucCut |
+| `INPUT_TOO_LONG` | Text too long: split by sentence and submit piece by piece |
+| `GRANT_REQUIRED` | The user must authorize sending the text to an online service: pass `remedy` on to the user |
 
-## 下一步
+## Next steps
 
-- 配音轨放上了：导出成片或只导出声音（{{tool:export}}；{{arg:source}} 可以只要配音或只要原声，见 [export](export.md)）。
-- 要配乐、或配乐要在人声下面：见 [music](music.md)（配乐从哪来、生成、`setDucking` 闪避）。
+- The dubbing track is placed: export the finished video or just the audio ({{tool:export}}; {{arg:source}} can take only the dubbing or only the original audio, see [export](export.md)).
+- Music is wanted, or music needs to sit under the voices: see [music](music.md) (where music comes from, generation, `setDucking` ducking).
 
-## 验收
+## Acceptance
 
-- 每句都配上了，或没配上的有原因并报告。
-- 台词没有漏念或擅改；目标语言、混合语言中的专名与术语正确，说明、角色标签与动作标记没有被念进成品。未试听时这些不能记为已通过。
-- 同一角色音色一致；配音没有盖住画面里的重要原声（原声处理方式按用户确认的）。
-- 语气、对齐与音量是**要人听的**：导出一小段给用户听，报告里如实写没听过。
-- 多句旁白：每句的字/秒与句间停顿是**量出来的**（按 {{skill:narration}} 用字时间算），块边界处像不像同一个人是**要人听的**。
+- Every sentence is dubbed, or those not dubbed have a reason and are reported.
+- No lines are skipped or altered; the target language and the proper names and terms in mixed languages are correct, and instructions, role labels and action markers were not read into the result. Without listening, these cannot be recorded as passed.
+- The same character's voice is consistent; the dubbing does not bury important original audio in the picture (the original audio is treated as the user confirmed).
+- Tone, alignment and volume **need a human to listen**: export a short segment for the user to hear, and state truthfully in the report if nobody listened.
+- Multi-sentence narration: each sentence's units per second and inter-sentence pauses are **measured** (computed from word timings following {{skill:narration}}); whether it sounds like the same person across chunk boundaries **needs a human to listen**.

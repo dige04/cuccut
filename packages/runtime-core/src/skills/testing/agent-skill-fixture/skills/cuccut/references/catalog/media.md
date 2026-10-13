@@ -1,5 +1,5 @@
-# 素材
+# Media
 
-导入一个文件用 {{tool:assets_import}}，取帧用 {{tool:videos_frames}}。
+Import one file with {{tool:assets_import}}; grab frames with {{tool:videos_frames}}.
 
-先完整导入原件，再在转写里按文字定位片段；要剪就去 [editing](editing.md)，出错见 [conventions](../conventions.md#错误码之后做什么)。
+Import the whole original first, then locate segments by their text in the transcript; to cut, go to [editing](editing.md); for errors see [conventions](../conventions.md#what-to-do-after-an-error-code).

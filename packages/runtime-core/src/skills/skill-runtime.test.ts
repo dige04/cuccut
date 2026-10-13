@@ -79,14 +79,14 @@ describe('Agent skill 端到端', () => {
     const instructions = session.options.developerInstructions!;
     // 真实的 skills/cuccut/：SKILL.md 正文在前，skill 索引附在后面。
     expect(instructions.startsWith('# CucCut\n')).toBe(true);
-    expect(instructions).toContain('### 三条底线');
+    expect(instructions).toContain('### The three baselines');
     expect(instructions).toContain('`<cuccut-editor-context>`');
-    expect(instructions).toContain('用 `jobs_wait` 等：一次最多 50 秒');
-    expect(instructions).not.toMatch(/cuccut [a-z]|--yes|退出码|\{\{/);
+    expect(instructions).toContain('Wait with `jobs_wait`: at most 50 seconds per call');
+    expect(instructions).not.toMatch(/(?<![.\w])cuccut [a-z]|--yes|\b[Ee]xit codes?\b|\{\{/);
     const index = instructions.slice(instructions.indexOf('<cuccut-skills>'));
-    expect(index).toMatch(/前 \d+ 个是上面的指导引用的说明书页/);
+    expect(index).toMatch(/the first \d+ are the manual pages referenced by the guidance above/);
     for (const id of ['cuccut-catalog-media', 'cuccut-catalog-subtitles', 'cuccut-workflows', 'cuccut-conventions']) {
-      expect(index).toContain(`- ${id}：`);
+      expect(index).toContain(`- ${id}: `);
     }
     expect(session.inputs[0]).toBe('你好');
     // 说明书页不进设置里的列表，不能开关。
@@ -110,7 +110,7 @@ describe('Agent skill 端到端', () => {
       path: 'SKILL.md',
       files: ['SKILL.md'],
     });
-    expect(page.body.content).toContain('# 约定');
+    expect(page.body.content).toContain('# Conventions');
     expect(page.body.content).toContain('`jobs_wait`');
     expect(page.body.content).not.toContain('{{');
     const other = await tool(session, 'skills_read', { id: 'cuccut-conventions', path: 'references/x.md' });
@@ -134,7 +134,7 @@ describe('Agent skill 端到端', () => {
     ]);
     const { session } = await send('排一下字幕');
     expect(session.options.developerInstructions).toContain('<cuccut-skills>');
-    expect(session.options.developerInstructions).toContain('- caption-layout：caption-layout — 字幕排版规则');
+    expect(session.options.developerInstructions).toContain('- caption-layout: caption-layout — 字幕排版规则');
     expect(session.options.developerInstructions).not.toContain('b-roll');
     expect(JSON.parse(await fs.readFile(home.skillPrefsFile, 'utf8'))).toMatchObject({ enabled: { 'b-roll': false } });
   });
@@ -214,8 +214,8 @@ describe('Agent skill 端到端', () => {
 
     // 用户安装的 skill 在点选段与索引里带信任说明。
     const { session } = await send('整理笔记', 'my-notes');
-    expect(session.options.developerInstructions).toContain('（用户安装）');
-    expect(session.inputs[0]).toContain('用户安装的 skill');
+    expect(session.options.developerInstructions).toContain(' (user-installed)');
+    expect(session.inputs[0]).toContain('user-installed skill');
 
     const removed = await client.request('skills.remove', { id: 'my-notes' });
     expect(removed.removed).toEqual({ id: 'my-notes', path: path.join(home.skillsDir, 'my-notes') });
@@ -238,12 +238,12 @@ describe('会话指导的说明书', () => {
     const home = resolveRuntimeHome({ CUCCUT_HOME: path.join(dir, 'home') });
     const start = (agentSkillsDir: string | null) =>
       startRuntime({ home, drivers: () => [new ToolDriver()], watchSpace: false, skillsDir: null, agentSkillsDir });
-    await expect(start(null)).rejects.toThrow(/找不到说明书目录/);
-    await expect(start(path.join(dir, 'missing'))).rejects.toThrow(/说明书目录不存在/);
+    await expect(start(null)).rejects.toThrow(/Agent guide directory skills\/ not found/);
+    await expect(start(path.join(dir, 'missing'))).rejects.toThrow(/Agent guide directory does not exist/);
     const broken = path.join(dir, 'skills', 'cuccut');
     await fs.mkdir(broken, { recursive: true });
     await fs.writeFile(path.join(broken, 'SKILL.md'), '# CucCut\n\n<!-- surface: agent -->\n没有闭合\n');
-    await expect(start(path.join(dir, 'skills'))).rejects.toThrow(/会话指导渲染失败.*SKILL\.md:3：surface 标记没有闭合/);
+    await expect(start(path.join(dir, 'skills'))).rejects.toThrow(/Failed to render session guidance.*SKILL\.md:3：surface 标记没有闭合/);
     await fs.writeFile(path.join(broken, 'SKILL.md'), '# CucCut\n\n先 {{tool:no_such_tool}}。\n');
     await expect(start(path.join(dir, 'skills'))).rejects.toThrow(/工具桥面的目录里没有这个工具/);
   });

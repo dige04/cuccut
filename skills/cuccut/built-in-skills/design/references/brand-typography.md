@@ -1,23 +1,23 @@
-# Anthropic 品牌字体排印
+# Anthropic brand typography
 
-来源：设计团队 anthropic-design skill 的 `typography.css`（2025-12-11）。这里有意不附带字体**文件**（见 README.md）；先写上指定的 family，再配上如实的 fallback：没装 Anthropic 字体的地方，渲染的是 fallback stack。
+Source: `typography.css` from the design team's anthropic-design skill (2025-12-11). Font **files** are deliberately not included here (see README.md); write the specified family first, then an honest fallback: wherever the Anthropic fonts are not installed, the fallback stack renders.
 
-## Font stack（在行内样式里原样使用）
+## Font stacks (use verbatim in inline styles)
 
-- Sans（UI 文字、label、正文）：
+- Sans (UI text, labels, body text):
   `'Anthropic Sans', system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif`
-- Serif（display 标题、editorial 语气）：
+- Serif (display headings, editorial voice):
   `'Anthropic Serif', Georgia, 'Times New Roman', Times, serif`
-- Mono（代码）：
+- Mono (code):
   `'Anthropic Mono', 'JetBrains Mono', 'SF Mono', Monaco, 'Courier New', monospace`
 
-Anthropic Sans 与 Serif 都是可变字重 300–800。
+Anthropic Sans and Serif are both variable, weights 300–800.
 
-## Type scale（出自品牌字体系统）
+## Type scale (from the brand type system)
 
-| 角色 | Family | 字号 | 字重 | 行高 |
+| Role | Family | Size | Weight | Line height |
 |------|--------|------|--------|-------------|
-| Display（hero） | Serif | 38px | 330 | 1.2 |
+| Display (hero) | Serif | 38px | 330 | 1.2 |
 | Title | Serif | 28px | 500 | 1.3 |
 | Heading | Serif | 24px | 500 | 1.3 |
 | UI XL | Sans | 20px | 400 | 1.4 |
@@ -25,4 +25,4 @@ Anthropic Sans 与 Serif 都是可变字重 300–800。
 | Small/labels | Sans | 14px | 400 | 1.4 |
 | Caption | Sans | 12px | 400 | 1.35 |
 
-letter-spacing 保持 0；品牌观感靠暖色配色、宽松的留白、衬线 display 字配无衬线正文来建立，不靠 tracking 花招。标题用 Serif，字重适中（330–500），绝不用伪粗体。需要品牌观感时，不要把被用滥的 AI 默认 family（Inter、Roboto、Arial、Fraunces）当首选；Arial/Helvetica 只出现在 fallback stack 里。
+Keep letter-spacing at 0; the brand feel comes from the warm palette, generous whitespace, and serif display type with sans-serif body text, not from tracking tricks. Headings use Serif at moderate weights (330–500), never faux bold. When a brand feel is needed, do not make the overused AI default families (Inter, Roboto, Arial, Fraunces) the first choice; Arial/Helvetica appear only in fallback stacks.

@@ -10,25 +10,28 @@ import {
 } from '@cuccut/protocol';
 
 /**
- * `chapters_adopt` 的时间投影（架构设计 §7.9）：来源章节吸附后是素材（源）时间，章节固定在时间线的时刻上，
- * 要经过这个素材在时间线上的片段换成时间线秒。与取帧（`frameSourceAt`，时间线 → 源）方向相反。
+ * Time projection for `chapters_adopt` (architecture design §7.9): snapped source chapters are in asset (source) time,
+ * while chapters are pinned to times on the timeline, so they are converted to timeline seconds through this asset's
+ * clips on the timeline. The opposite direction from frame grabbing (`frameSourceAt`, timeline -> source).
  *
- * - 只认线性映射（`timeMap.kind` 为 `linear`）的启用片段；定格（`hold`）没有可逆的时间。
- * - 同一源时刻落在几个片段里（同一素材放了几次，或视频与音频各一个片段）取时间线上最早的那个。
- * - 源时刻落在剪掉的部分（不在任何片段里）时 `offTimeline: true`：落到源时间上之后最近的片段起点（话题在剪口之后接上）；
- *   之后没有片段时落到之前最近的那个片段的起点。
+ * - Only enabled clips with a linear map (`timeMap.kind` is `linear`) count; a freeze frame (`hold`) has no invertible time.
+ * - When one source time falls in several clips (the same asset placed several times, or one video and one audio clip),
+ *   the earliest on the timeline wins.
+ * - When the source time falls in a cut-away part (inside no clip), `offTimeline: true`: it lands on the start of the
+ *   nearest clip after it in source time (the topic resumes after the cut); when there is no clip after it, it lands on
+ *   the start of the nearest clip before it.
  */
 
-/** 素材在时间线上的一段：源区间 `[sourceStart, sourceEnd)` 对应时间线从 `timelineStart` 起。 */
+/** One piece of an asset on the timeline: the source range `[sourceStart, sourceEnd)` maps to the timeline from `timelineStart`. */
 export interface AssetSegment {
   sourceStart: number;
   sourceEnd: number;
   timelineStart: number;
-  /** 源秒每走 1 秒，时间线走 `rate.den / rate.num` 秒。 */
+  /** For every 1 second of source, the timeline advances `rate.den / rate.num` seconds. */
   rate: Rate;
 }
 
-/** 素材在序列上的线性片段，按时间线起点排序。没有放上时间线时为空。 */
+/** The asset's linear clips on the sequence, sorted by timeline start. Empty when it is not on the timeline. */
 export function assetSegments(sequence: Sequence, assetId: Id): AssetSegment[] {
   const segments: AssetSegment[] = [];
   for (const item of sequence.items) {
@@ -49,7 +52,7 @@ export function assetSegments(sequence: Sequence, assetId: Id): AssetSegment[] {
   return segments.sort((a, b) => a.timelineStart - b.timelineStart || a.sourceStart - b.sourceStart);
 }
 
-/** 一个源时刻在时间线上的位置；`segments` 不能为空。 */
+/** Where a source time lands on the timeline; `segments` must not be empty. */
 export function projectSourceTime(segments: readonly AssetSegment[], sourceSeconds: number): { at: number; offTimeline: boolean } {
   let best: number | null = null;
   for (const segment of segments) {
@@ -66,7 +69,7 @@ export function projectSourceTime(segments: readonly AssetSegment[], sourceSecon
   return { at: before.timelineStart, offTimeline: true };
 }
 
-/** 一章投影前后：`sourceAt` 是吸附后的源时间，`at` 是时间线秒（对齐到帧）。 */
+/** A chapter before and after projection: `sourceAt` is the snapped source time, `at` is timeline seconds (snapped to a frame). */
 export interface ProjectedChapter<T> {
   title: string;
   sourceAt: number;
@@ -76,8 +79,10 @@ export interface ProjectedChapter<T> {
 }
 
 /**
- * 把清洗后的章节（源时间，按起点递增）投影到时间线并收拾成 `setChapters` 能收的样子：对齐到序列的帧、按时间线排序，
- * 首章钳到 0，与前一章落在同一帧或更早的丢掉（`dropped`，例如几章都落在剪口之后的同一个起点）。
+ * Projects cleaned chapters (source time, ascending start) onto the timeline and tidies them into what `setChapters`
+ * accepts: snapped to the sequence's frames, sorted by timeline, the first chapter clamped to 0, and any chapter on the
+ * same frame as or earlier than the previous one dropped (`dropped`, e.g. several chapters landing on the same start
+ * after a cut).
  */
 export function projectChapters<T>(
   rows: ReadonlyArray<{ title: string; start: number; row: T }>,

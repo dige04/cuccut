@@ -6,83 +6,95 @@ import { findRepoDir } from './skill-catalog.ts';
 import { parseSkillFrontmatter } from './skill-frontmatter.ts';
 
 /**
- * 说明书的渲染器（Agent 面设计 §8.6）：`skills/cuccut/`（SKILL.md + references/**）一个来源，两种渲染。同目录下的
- * `built-in-skills/` 是内置 skill 本身（由 `SkillCatalog` 加载、同步成 craft 副本），不算说明书的页，读目录时跳过。
+ * Renderer for the agent guide (agent surface design §8.6): one source, `skills/cuccut/` (SKILL.md + references/**), two
+ * renderings. The `built-in-skills/` directory next to it holds the built-in skills themselves (loaded by `SkillCatalog` and
+ * synced into craft copies); it is not a page of the guide and is skipped when reading the directory.
  *
- * - `cli` 面：给外部 Agent（Claude Code、Codex、Cursor、Gemini），由 `cuccut skill install` 装进宿主的 skills 目录。
- * - `agent` 面：给 CucCut 自己的会话内智能体（工具桥），SKILL.md 正文成为指导的「工作方式」段，`references/catalog/*.md`
- *   与 `workflows.md` 成为内置 skill（`renderAgentGuidance`）。
+ * - `cli` face: for external agents (Claude Code, Codex, Cursor, Gemini), installed into the host's skills directory by
+ *   `cuccut skill install`.
+ * - `agent` face: for CucCut's own in-session agents (tool bridge). The SKILL.md body becomes the "how to work" section of
+ *   the guidance, and `references/catalog/*.md` and `workflows.md` become built-in skills (`renderAgentGuidance`).
  *
- * 标记法（写正文的人与渲染器的约定，各占一行的标记都要整行只有它）：
+ * Markup (the contract between authors and the renderer; every marker that takes a line must be alone on that line):
  *
- * - 面取舍：`<!-- surface: cli -->` … `<!-- /surface -->`（或 `agent`），不嵌套；渲染时保留本面的内容，另一面的整段连同标记行删掉。
- * - `{{tool:a_b}}`：CLI 面 `cuccut a b`（多词动词 `_` → `-`），工具桥面 `a_b`。
- * - `{{arg:camelCase}}`：CLI 面 `--kebab-case`，工具桥面 `camelCase`。
- * - 这两种的输出套反引号（`` `cuccut a b` ``）；占位符本身已在反引号或代码块里时不再套。
- * - `{{skill:id}}`：CLI 面是指向 `references/craft/<id>.md` 的链接（路径相对当前文件）；工具桥面是「`` `id` ``（用 `skills_read` 读）」，
- *   跟在「见」「按」「做法在」或表格、列举后面都通顺；前面紧挨着「读」时整句改成「用 `skills_read` 读 `` `id` ``」，不说两遍「读」。
- * - 只在会话里有、CLI 面没有对应命令的工具（`SESSION_ONLY_TOOLS`，如 `downloads_save`）：CLI 面换成不提工具名的兜底写法，
- *   正文里的裸名（craft 同步来的）与 `{{tool:…}}` 一样处理；工具桥面原样。
- * - 页面之间的相对链接：CLI 面原样（链到的文件必须存在）；工具桥面没有文件可点，改写成内置 skill 的引用——
- *   `[文字](references/catalog/x.md)` → 「文字（用 `skills_read` 读 `cuccut-catalog-x`）」，`workflows.md`、`conventions.md`
- *   同理（`cuccut-workflows`、`cuccut-conventions`），craft 副本 → 读 craft 本身的 id；工具桥面没有的页（`start.md`、`mcp.md`
- *   这类只给 CLI 的页）退成纯文字。
- * - 工具桥面不输出 `references/craft/`：会话内智能体用 `skills_read` 读本机的 skill，不读随说明书发布的副本。
- * - 生成块：`<!-- generated: <名字> -->` … `<!-- /generated -->`。内容由同步脚本（`tools/sync-agent-skill.ts`）写进源文件，
- *   渲染器不重算，只像正文一样处理里面的标记与占位符，标记行保留。
+ * - Face selection: `<!-- surface: cli -->` … `<!-- /surface -->` (or `agent`), not nested. Rendering keeps this face's
+ *   content and drops the other face's block together with its marker lines.
+ * - `{{tool:a_b}}`: `cuccut a b` on the CLI face (multi-word verbs `_` → `-`), `a_b` on the tool-bridge face.
+ * - `{{arg:camelCase}}`: `--kebab-case` on the CLI face, `camelCase` on the tool-bridge face.
+ * - The output of these two is wrapped in backticks (`` `cuccut a b` ``), unless the placeholder already sits in backticks
+ *   or a code block.
+ * - `{{skill:id}}`: on the CLI face, a link to `references/craft/<id>.md` (path relative to the current file); on the
+ *   tool-bridge face, "`` `id` `` (read it with `skills_read`)", which reads naturally after "see", "follow", "as in", in a
+ *   table or in a list. When the word "read" comes right before it, the phrase becomes "use `skills_read` to read
+ *   `` `id` ``", so "read" is not said twice.
+ * - Tools that exist only in sessions and have no CLI command (`SESSION_ONLY_TOOLS`, such as `downloads_save`): on the CLI
+ *   face they are replaced with a fallback wording that does not name the tool; bare names in the text (synced from crafts)
+ *   are handled like `{{tool:…}}`. The tool-bridge face keeps them as they are.
+ * - Relative links between pages: kept as they are on the CLI face (the linked file must exist). The tool-bridge face has no
+ *   files to click, so they become references to built-in skills: `[text](references/catalog/x.md)` → "text (read
+ *   `cuccut-catalog-x` with `skills_read`)"; likewise `workflows.md` and `conventions.md` (`cuccut-workflows`,
+ *   `cuccut-conventions`), and craft copies → the craft's own id. Pages the tool-bridge face does not have (CLI-only pages
+ *   such as `start.md` and `mcp.md`) fall back to plain text.
+ * - The tool-bridge face does not output `references/craft/`: in-session agents read the local skills with `skills_read`,
+ *   not the copies shipped with the guide.
+ * - Generated blocks: `<!-- generated: <name> -->` … `<!-- /generated -->`. The sync script (`tools/sync-agent-skill.ts`)
+ *   writes their content into the source files; the renderer does not recompute it, it only handles markers and
+ *   placeholders inside like any other text, and keeps the marker lines.
  *
- * - 代码里（代码块或同一行的行内代码）不带 `kind:` 的 `{{…}}` 不是占位符，是正文要讲的模板写法（如设计稿 Design Component 的
- *   `{{hole}}`、`{{ item.x }}`），原样保留；写在正文里的仍算不认识的占位符。
+ * - Inside code (a code block, or inline code on the same line), `{{…}}` without a `kind:` is not a placeholder but a
+ *   template the text is describing (such as `{{hole}}` or `{{ item.x }}` in a Design Component), and is kept as is; in
+ *   plain text it still counts as an unknown placeholder.
  *
- * 不认识的占位符、不认识的面或生成块、没有闭合或嵌套的标记一律抛 `AgentSkillRenderError`（带文件与行号），不默默放过。
- * 名字的转换规则只有一份（`@cuccut/protocol` 的 `toolCommandName`、`fieldFlagName`），与 CLI 的命令树、旗标相同。
+ * Unknown placeholders, unknown faces or generated blocks, and unclosed or nested markers all throw `AgentSkillRenderError`
+ * (with file and line); nothing is silently let through. The name conversion rules exist only once (`toolCommandName` and
+ * `fieldFlagName` in `@cuccut/protocol`), the same as the CLI's command tree and flags.
  */
 
 export type AgentSkillFace = 'cli' | 'agent';
 
-/** 说明书的 skill id，也是它在宿主 skills 目录里的目录名。 */
+/** The guide's skill id, which is also its directory name in the host's skills directory. */
 export const AGENT_SKILL_ID = 'cuccut';
 export const AGENT_SKILL_ENTRY = 'SKILL.md';
-/** craft 副本的目录（由 `built-in-skills/<id>/` 同步，§8.3）。 */
+/** Directory of the craft copies (synced from `built-in-skills/<id>/`, §8.3). */
 export const AGENT_SKILL_CRAFT_DIR = 'references/craft';
-/** 内置 skill 的目录（说明书目录下）：不是说明书的页，`readAgentSkillDir` 跳过它。 */
+/** Directory of the built-in skills (inside the guide directory): not guide pages; `readAgentSkillDir` skips it. */
 export const AGENT_SKILL_BUILTIN_DIR = 'built-in-skills';
-/** 生成块的名字。 */
+/** Names of the generated blocks. */
 export const AGENT_SKILL_GENERATED_BLOCKS = ['common-ops', 'error-codes', 'tool-map'] as const;
 export type AgentSkillGeneratedBlock = (typeof AGENT_SKILL_GENERATED_BLOCKS)[number];
 
-/** 相对路径（`/` 分隔）→ 文件内容。 */
+/** Relative path (`/`-separated) → file content. */
 export type AgentSkillFiles = Map<string, string>;
 
-/** 用来核对 `{{tool:…}}` 的目录：这个面能看到的工具。 */
+/** Catalog used to check `{{tool:…}}`: the tools this face can see. */
 export interface AgentSkillCatalog {
   tools: ReadonlyArray<{ name: string }>;
 }
 
 export interface RenderAgentSkillOptions {
   face: AgentSkillFace;
-  /** 给出时，`{{tool:…}}` 里的名字必须在目录里（CLI 面给 `surfaces` 含 `cli` 的目录，工具桥面给 `agent` 的）。 */
+  /** When given, names in `{{tool:…}}` must be in the catalog (the CLI face passes the catalog whose `surfaces` include `cli`, the tool-bridge face the `agent` one). */
   catalog?: AgentSkillCatalog | null;
 }
 
 export interface RenderAgentSkillTextOptions extends RenderAgentSkillOptions {
-  /** 文件的相对路径：报错、`{{skill:…}}` 与页面链接的相对路径都按它。 */
+  /** Relative path of the file: errors, `{{skill:…}}` and relative page links are all based on it. */
   file: string;
-  /** 已知的 craft id；给出时 `{{skill:…}}` 必须在里面。 */
+  /** Known craft ids; when given, `{{skill:…}}` must be one of them. */
   craftIds?: ReadonlySet<string> | null;
-  /** 说明书里的全部文件；给出时页面之间的相对链接必须指向其中一个。 */
+  /** All files of the guide; when given, relative links between pages must point at one of them. */
   files?: ReadonlySet<string> | null;
 }
 
 export class AgentSkillRenderError extends Error {
   readonly file: string;
   readonly line: number;
-  /** 带文件与行号的整句（`message` 是它的文字）：引用随 `catalog.agentSkill` 的错误过线，CLI 按自己的语言显示。 */
+  /** The full sentence with file and line (`message` is its text): it travels over the wire with `catalog.agentSkill` errors, and the CLI shows it in its own language. */
   readonly localized: Localized;
-  /** 不带文件与行号的那一句：换了位置重新报错时用（同步脚本把行号换算回源文件）。 */
+  /** The sentence without file and line: used when re-raising at another location (the sync script maps line numbers back to the source file). */
   readonly problem: Localized | string;
 
-  /** `problem` 是文案目录（rcSkills）的一条；同步脚本这类仓库工具也可以给纯文字。 */
+  /** `problem` is an entry of the copy catalog (rcSkills); repository tools such as the sync script may also pass plain text. */
   constructor(file: string, line: number, problem: Localized | string) {
     const localized =
       line > 0 ? RcSkills.renderErrorAt({ file, line, message: problem }) : RcSkills.renderErrorIn({ file, message: problem });
@@ -99,106 +111,133 @@ const SURFACE_OPEN = /^\s*<!--\s*surface:\s*(\S+?)\s*-->\s*$/;
 const SURFACE_CLOSE = /^\s*<!--\s*\/surface\s*-->\s*$/;
 const GENERATED_OPEN = /^\s*<!--\s*generated:\s*(\S+?)\s*-->\s*$/;
 const GENERATED_CLOSE = /^\s*<!--\s*\/generated\s*-->\s*$/;
-/** 占位符；前面紧挨着的「读」一并捕获（`{{skill:…}}` 在工具桥面要吞掉它，其余占位符原样放回）。「通读」「阅读」这类不算。 */
-const PLACEHOLDER = /((?<![通阅解朗宣研])读\s*)?\{\{([^{}\n]*)\}\}/g;
+/**
+ * Placeholder; a "read" right before it is captured too (`{{skill:…}}` on the tool-bridge face absorbs it, other placeholders
+ * put it back unchanged). Words that merely end in "read" ("spread", "thread") do not count.
+ */
+const PLACEHOLDER = /((?<![A-Za-z])[Rr]ead\s+)?\{\{([^{}\n]*)\}\}/g;
 const TOOL_NAME = /^[a-z]+(?:_[a-z]+)*$/;
 const ARG_NAME = /^[a-z][A-Za-z0-9]*$/;
 const SKILL_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const FENCE = /^\s*(```|~~~)/;
-/** 指向 `.md` 的相对链接（可带锚点）；`[文字](目标)`。 */
+/** Relative link to a `.md` file (an anchor is allowed): `[text](target)`. */
 const MD_LINK = /\[([^\]\n]+)\]\(([^()\s]+?\.md)(#[^()\s]*)?\)/g;
 const FACES: readonly string[] = ['cli', 'agent'];
 
-/** 只在会话里有、CLI 面没有对应命令的工具在 CLI 面的写法。 */
+/** How a tool that exists only in sessions, with no CLI command, is written on the CLI face. */
 export interface SessionOnlyToolFallback {
-  /** 常见的整句说法（工具名写成裸名、行内代码或 `{{tool:…}}` 都认）→ 换成 `replacement`。 */
+  /** The usual whole-sentence wording (the tool name as a bare name, inline code or `{{tool:…}}`) → replaced with `replacement`. */
   phrase: RegExp;
   replacement: string;
-  /** 同一个工具的其他整句说法，各有各的换法；在 `phrase` 之前换。 */
+  /** Other whole-sentence wordings for the same tool, each with its own replacement; applied before `phrase`. */
   morePhrases?: readonly { phrase: RegExp; replacement: string }[];
-  /** 其余地方出现的工具名换成这句。 */
+  /** The tool name anywhere else is replaced with this. */
   text: string;
 }
 
 /**
- * 会话内智能体有、终端没有的工具（`surfaces` 含 `agent`、不含 `cli`）在 CLI 面的兜底写法：外部 Agent 没有这个工具，
- * 也不该读到它的名字。只登记 craft 与说明书里真会出现的；没登记的仍由同步脚本提醒。
+ * CLI-face fallbacks for tools that in-session agents have but the terminal does not (`surfaces` include `agent` but not
+ * `cli`): external agents do not have the tool and should not read its name. Only wordings that really occur in crafts and
+ * the guide are registered; anything else is still reported by the sync script.
  */
-// i18n-ignore-start: 给模型的工具说明、错误与下一步
+const FONT_FALLBACK =
+  'there is no command in the terminal to import fonts into a deck: copy the fonts of the design system installed in the deck ' +
+  'to `ds/<folder>/fonts/<file>` (paths contain only letters, digits and `._/-`) and set `src` to ' +
+  '`project/ds/<folder>/fonts/<file>`; use Google Fonts or a system font for the others, and say so at delivery.';
 export const SESSION_ONLY_TOOLS: Readonly<Record<string, SessionOnlyToolFallback>> = {
-  // 会话不一定属于项目，写好的文件要放进下载目录用户才看得到；终端里文件就写在用户自己的目录，直接给路径。
+  // A session does not always belong to a project, so finished files go into the downloads directory for the user to see; in
+  // the terminal the file is already in the user's own directory, so just give the path.
   downloads_save: {
     phrase: new RegExp(
-      `用\\s*${toolNamePattern('downloads_save')}\\s*(?:把[^，。；\\n]*?)?放进下载目录(?:，把它返回的\\s*\`?path\`?\\s*告诉用户)?`,
+      `put [^,.;\\n]*? in the downloads directory with\\s*${toolNamePattern('downloads_save')}(?: and tell the user the \`?path\`? it returns)?`,
       'g',
     ),
-    replacement: '把文件的路径告诉用户（终端里没有下载目录这一步：文件就在你写的位置）',
-    text: '把文件交给用户（终端里直接告诉用户文件的路径）',
+    replacement: "tell the user the file's path (the terminal has no downloads directory step: the file is where you wrote it)",
+    text: "hand the file to the user (in the terminal, tell the user the file's path)",
   },
-  // 幻灯片（skills/slides）的校验与导入图片、字体只在会话里有；craft 里各占一个步骤，整步从「调用」「用」换到行尾。
+  // Checking slides (skills/slides) and importing images and fonts exist only in sessions; in crafts each is one step, and the
+  // whole step is replaced from "call" or "import" to the end of the line.
   slides_check: {
-    phrase: new RegExp(`调用\\s*${toolNamePattern('slides_check')}[^\\n]*`, 'g'),
+    phrase: new RegExp(`[Cc]all\\s*${toolNamePattern('slides_check')}[^\\n]*`, 'g'),
     replacement:
-      '终端里没有校验命令：按 `references/format.md` 逐页自查标签、样式与图片地址，按 `references/design.md` 的估算确认放得下，' +
-      '再核对 `deck.json` 的 `order`、`sections`、`cover` 都指向存在的页，`slides/` 里没有 `order` 之外的文件。',
-    text: '幻灯片校验（只在 CucCut 的会话里有）',
+      'There is no check command in the terminal: check each slide\'s tags, styles and image addresses yourself against ' +
+      '`references/format.md`, confirm with the estimates in `references/design.md` that everything fits, then check that ' +
+      '`order`, `sections` and `cover` in `deck.json` all point at existing slides and that `slides/` has no files outside `order`.',
+    text: 'the slides check (only in CucCut sessions)',
   },
   slides_import_asset: {
-    phrase: new RegExp(`逐张调用\\s*${toolNamePattern('slides_import_asset')}[^\\n]*`, 'g'),
-    replacement: '终端里没有把图片导入 deck 的命令：页面先不放图片，交付时说明哪几页该配什么图。',
-    // 字体（第 4 步、format.md「字体」、design-system.md）：编辑器也认装进 deck 的设计系统里的字体文件 project/ds/…。
+    phrase: new RegExp(`import each (?:one|logo and image)[^\\n]*?with\\s*${toolNamePattern('slides_import_asset')}[^\\n]*`, 'g'),
+    replacement:
+      'there is no command in the terminal to import images into a deck: leave images out of the slides for now, and at ' +
+      'delivery say which slides should get which images.',
+    // Fonts (step 4, "Fonts" in format.md, design-system.md): the editor also accepts font files of the design system
+    // installed in the deck, project/ds/….
     morePhrases: [
       {
-        phrase: new RegExp(`逐个用\\s*${toolNamePattern('slides_import_asset')}\\s*导入[^\\n]*`, 'g'),
-        replacement:
-          '终端里没有把字体导入 deck 的命令：装进 deck 的设计系统的字体拷到 `ds/<folder>/fonts/<文件>`（路径只含字母、数字与 `._/-`），' +
-          '`src` 写 `project/ds/<folder>/fonts/<文件>`；其他字体改用 Google Fonts 或系统字体，交付时说明。',
+        phrase: new RegExp(`Import font files ([^\\n]*?) one by one with\\s*${toolNamePattern('slides_import_asset')}[^\\n]*`, 'g'),
+        replacement: `Font files $1: ${FONT_FALLBACK}`,
+      },
+      {
+        phrase: new RegExp(`Import each font that has a file ([^\\n]*?) with\\s*${toolNamePattern('slides_import_asset')}[^\\n]*`, 'g'),
+        replacement: `Fonts that have a file $1: ${FONT_FALLBACK}`,
+      },
+      {
+        phrase: new RegExp(`import each with\\s*${toolNamePattern('slides_import_asset')},?\\s*and set \`src\`[^\\n]*`, 'g'),
+        replacement: `but ${FONT_FALLBACK}`,
       },
     ],
-    text: '导入图片与字体（只在 CucCut 的会话里有）',
+    text: 'importing images and fonts (only in CucCut sessions)',
   },
-  // 设计稿（skills/design）的校验与导入素材同样只在会话里有：「新建」第 6 步的校验句、第 3 步的导入句整句换掉。
+  // Checking designs (skills/design) and importing assets also exist only in sessions: the check sentence of step 6 of "New"
+  // and the import sentence of step 3 are replaced whole.
   design_check: {
-    phrase: new RegExp(`然后对设计稿运行\\s*${toolNamePattern('design_check')}[^\\n]*?这时线程里才出现设计稿卡片。`, 'g'),
-    replacement:
-      '终端里没有设计稿校验，也没有设计稿卡片：按 `references/format.md` 自己逐个检查文件' +
-      '（标签都闭合、attribute 都加引号、`support.js` 那一行头部原样、`boards` 与 `order` 都指向存在的文件）。',
-    text: '设计稿校验（只在 CucCut 的会话里有）',
-  },
-  design_import_asset: {
-    phrase: new RegExp(`用\\s*${toolNamePattern('design_import_asset')}\\s*导入（[^）\\n]*）→[^\\n]*?或 \`@font-face\`。`, 'g'),
-    replacement: '终端里没有把它导入设计稿的命令：先不放（图片换成带说明的 placeholder），并说明这份设计需要哪些文件。',
-    text: '导入素材（只在 CucCut 的会话里有）',
-  },
-  // 设计系统（skills/design-system）：「新建设计系统」第 3 步的校验句与「调用」的两条工具说明整句换掉；上传在终端里换成拷成文件（原版允许的另一种存法）。
-  design_system_check: {
     phrase: new RegExp(
-      `(?:然后对设计系统运行\\s*${toolNamePattern('design_system_check')}[^\\n]*?这时线程里才出现设计系统卡片。|` +
-        `${toolNamePattern('design_system_check')}（\`path\` = 设计系统的目录）[^\\n]*?线程里出现设计系统卡片。)`,
+      `Then run\\s*${toolNamePattern('design_check')}\\s*on the design,[^\\n]*?only then does the design card appear in the thread\\.`,
       'g',
     ),
     replacement:
-      '终端里没有设计系统校验，也没有设计系统卡片：按 `references/format.md` 自己逐个检查文件' +
-      '（index 的 marker 与字段、`tokens.json` 里每个 family 都写成列表、每条 record 与每个 `/_blob/<id>` 都指向存在的文件）。',
-    text: '设计系统校验（只在 CucCut 的会话里有）',
+      'There is no design check in the terminal, and no design card: check each file yourself against `references/format.md` ' +
+      '(every tag closed, every attribute quoted, the `support.js` line at the head unchanged, `boards` and `order` pointing ' +
+      'at existing files).',
+    text: 'the design check (only in CucCut sessions)',
+  },
+  design_import_asset: {
+    phrase: new RegExp(`import it with\\s*${toolNamePattern('design_import_asset')}\\s*\\([^)\\n]*\\)\\s*→[^\\n]*?or \`@font-face\`\\.`, 'g'),
+    replacement:
+      'there is no command in the terminal to import it into the design: leave it out for now (replace images with labeled ' +
+      'placeholders), and say which files this design needs.',
+    text: 'importing assets (only in CucCut sessions)',
+  },
+  // Design systems (skills/design-system): the check sentence of step 3 of "Creating" and the two tool notes under "Calls"
+  // are replaced whole; in the terminal, uploading becomes copying as files (the other way of storing the original allows).
+  design_system_check: {
+    phrase: new RegExp(
+      `(?:Then run\\s*${toolNamePattern('design_system_check')}\\s*on the design system,[^\\n]*?only then does the design system card appear in the thread\\.|` +
+        `${toolNamePattern('design_system_check')}\\s*\\(\`path\` = the design system's directory\\)[^\\n]*?the design system card appears in the thread\\.)`,
+      'g',
+    ),
+    replacement:
+      'There is no design system check in the terminal, and no design system card: check each file yourself against ' +
+      '`references/format.md` (the index\'s marker and fields, every family in `tokens.json` written as a list, every record ' +
+      'and every `/_blob/<id>` pointing at an existing file).',
+    text: 'the design system check (only in CucCut sessions)',
   },
   design_system_import_asset: {
-    phrase: new RegExp(`${toolNamePattern('design_system_import_asset')}（\`system\`[^\\n]*?index 照样最后写。`, 'g'),
+    phrase: new RegExp(`${toolNamePattern('design_system_import_asset')}\\s*\\(\`system\`[^\\n]*?the index is still written last\\.`, 'g'),
     replacement:
-      '终端里不能上传：把每张图片、每个视频和 PDF 作为文件拷到 `assets/<Group>/<file>`' +
-      '（`format.md`：「要么存成文件，要么存成上传」），不写 `files` record，并在它所在组的 `order` 里写上它；' +
-      '设计系统已有的 record 都保留，没有文件撑着的 record 一条也不写。',
-    text: '上传素材（只在 CucCut 的会话里有）',
+      'Uploading is not possible in the terminal: copy each image, video and PDF as a file to `assets/<Group>/<file>` ' +
+      '(`format.md`: stored "either as files or as uploads"), write no `files` record, and add it to its group\'s `order`; ' +
+      'keep every record the design system already has, and write no record without a file behind it.',
+    text: 'uploading assets (only in CucCut sessions)',
   },
 };
-// i18n-ignore-end
 
-/** 一个工具名在正文里的几种写法：裸名、行内代码、`{{tool:…}}`。 */
+/** The ways a tool name is written in the text: bare name, inline code, `{{tool:…}}`. */
 function toolNamePattern(name: string): string {
   return `(?:\\{\\{\\s*tool:\\s*${name}\\s*\\}\\}|\`${name}\`|(?<![A-Za-z0-9_])${name}(?![A-Za-z0-9_]))`;
 }
 
-/** CLI 面：会话专属工具换成兜底写法（先换整句，再换剩下的名字）。 */
+/** CLI face: session-only tools are replaced with their fallback wording (whole sentences first, then the remaining names). */
 export function renderSessionOnlyTools(line: string): string {
   let out = line;
   for (const [name, fallback] of Object.entries(SESSION_ONLY_TOOLS)) {
@@ -209,8 +248,8 @@ export function renderSessionOnlyTools(line: string): string {
 }
 
 /**
- * 读一个说明书目录：全部文件（不含点开头的与顶层的 `built-in-skills/`），相对路径按 `/` 分隔、排序。目录里有符号链接时抛错，
- * 不读到目录外。
+ * Reads a guide directory: every file (except dot files and the top-level `built-in-skills/`), with `/`-separated relative
+ * paths, sorted. Throws on symbolic links in the directory, so nothing outside it is read.
  */
 export function readAgentSkillDir(dir: string): AgentSkillFiles {
   const files: AgentSkillFiles = new Map();
@@ -229,7 +268,7 @@ export function readAgentSkillDir(dir: string): AgentSkillFiles {
   return files;
 }
 
-/** 渲染整个说明书：同样结构的文件集合。`.md` 按标记法处理，其余文件原样。 */
+/** Renders the whole guide into a file set of the same shape. `.md` files go through the markup; other files are kept as they are. */
 export function renderAgentSkill(source: string | AgentSkillFiles, options: RenderAgentSkillOptions): AgentSkillFiles {
   const files = typeof source === 'string' ? readAgentSkillDir(source) : source;
   if (!files.has(AGENT_SKILL_ENTRY)) {
@@ -246,8 +285,8 @@ export function renderAgentSkill(source: string | AgentSkillFiles, options: Rend
 }
 
 /**
- * 说明书里已有的 craft 副本（`references/craft/<id>.md`，id 是小写连字符名，`README.md` 这类说明文件不算）；一份都没有时
- * null（不核对 `{{skill:…}}`）。
+ * The craft copies already in the guide (`references/craft/<id>.md`, where the id is a lowercase hyphenated name; notes such
+ * as `README.md` do not count); null when there are none (then `{{skill:…}}` is not checked).
  */
 export function craftIdsOf(files: AgentSkillFiles | Iterable<string>): Set<string> | null {
   const prefix = `${AGENT_SKILL_CRAFT_DIR}/`;
@@ -259,7 +298,7 @@ export function craftIdsOf(files: AgentSkillFiles | Iterable<string>): Set<strin
   return ids.length ? new Set(ids) : null;
 }
 
-/** 渲染一个 Markdown 文件。craft 同步脚本对合成出的 craft 页也用它。 */
+/** Renders one Markdown file. The craft sync script also uses it on the craft pages it composes. */
 export function renderAgentSkillText(text: string, options: RenderAgentSkillTextOptions): string {
   const { face, file } = options;
   const known = options.catalog ? new Set(options.catalog.tools.map((tool) => tool.name)) : null;
@@ -363,13 +402,15 @@ function renderPlaceholders(
       case 'skill': {
         if (!SKILL_ID.test(value)) fail(RcSkills.badCraftId({ placeholder: whole }));
         if (options.craftIds && !options.craftIds.has(value)) fail(RcSkills.craftNotFound({ placeholder: whole, dir: AGENT_SKILL_CRAFT_DIR }));
-        // i18n-ignore: 给模型的工具说明、错误与下一步
-        if (face === 'agent') return lead ? `用 \`skills_read\` 读 \`${value}\`` : `\`${value}\`（用 \`skills_read\` 读）`;
+        if (face === 'agent') {
+          if (!lead) return `\`${value}\` (read it with \`skills_read\`)`;
+          return `${lead.startsWith('R') ? 'Use' : 'use'} \`skills_read\` to read \`${value}\``;
+        }
         const target = `${AGENT_SKILL_CRAFT_DIR}/${value}.md`;
         return `${lead ?? ''}[${value}](${path.posix.relative(path.posix.dirname(file), target)})`;
       }
       default:
-        // 代码里的模板洞（`{{hole}}`）原样保留，前面的「读」也原样放回。
+        // Template holes in code (`{{hole}}`) are kept as they are, and a preceding "read" is put back unchanged.
         if (colon < 0 && (inFence || insideInlineCode(line, at))) return match;
         return fail(RcSkills.unknownPlaceholder({ placeholder: whole }));
     }
@@ -378,7 +419,7 @@ function renderPlaceholders(
   return rendered;
 }
 
-/** `offset` 处是否在行内代码里（前面的反引号是奇数个）。 */
+/** Whether `offset` is inside inline code (an odd number of backticks before it). */
 function insideInlineCode(line: string, offset: number): boolean {
   let ticks = 0;
   for (let i = 0; i < offset; i++) if (line[i] === '`') ticks++;
@@ -386,8 +427,9 @@ function insideInlineCode(line: string, offset: number): boolean {
 }
 
 /**
- * 页面之间的相对链接。CLI 面原样，只核对目标存在；工具桥面改写成内置 skill 的引用，工具桥面没有的页退成纯文字。
- * 行内代码里的不动。
+ * Relative links between pages. The CLI face keeps them and only checks that the target exists; the tool-bridge face rewrites
+ * them into built-in skill references, and pages that face does not have fall back to plain text. Links in inline code are
+ * left alone.
  */
 function renderLinks(line: string, n: number, options: RenderAgentSkillTextOptions): string {
   const { face, file, files } = options;
@@ -397,12 +439,11 @@ function renderLinks(line: string, n: number, options: RenderAgentSkillTextOptio
     if (files && !files.has(resolved)) throw new AgentSkillRenderError(file, n, RcSkills.linkTargetMissing({ link: whole, target: resolved }));
     if (face === 'cli') return whole;
     const id = agentPageId(resolved);
-    // i18n-ignore: 给模型的工具说明、错误与下一步
-    return id ? `${text}（用 \`skills_read\` 读 \`${id}\`）` : text;
+    return id ? `${text} (read \`${id}\` with \`skills_read\`)` : text;
   });
 }
 
-/** 工具桥面里一个说明书文件对应的内置 skill id；工具桥面没有这一页时 null。 */
+/** The built-in skill id of a guide file on the tool-bridge face; null when that face does not have the page. */
 export function agentPageId(file: string): string | null {
   const catalog = /^references\/catalog\/([^/]+)\.md$/.exec(file);
   if (catalog) return `cuccut-catalog-${catalog[1]}`;
@@ -414,13 +455,13 @@ export function agentPageId(file: string): string | null {
 }
 
 /**
- * 「硬规则」标题下列表的条数（§8.6：两面渲染出的硬规则条数相同）。标题是任意级别里含「硬规则」的那个，列表只数顶格的
- * `-`、`*` 与 `1.` 项，到同级或更高级的下一个标题为止。没有这个标题时 0。
+ * Number of list items under the "Hard rules" heading (§8.6: both faces render the same number of hard rules). The heading
+ * is the one at any level that contains "Hard rules"; only top-level `-`, `*` and `1.` items count, up to the next heading
+ * of the same or a higher level. 0 when there is no such heading.
  */
 export function countHardRules(rendered: string): number {
   const lines = rendered.split('\n');
-  // i18n-ignore: 解析用的关键词
-  const start = lines.findIndex((line) => /^#{1,6}\s+.*硬规则/.test(line));
+  const start = lines.findIndex((line) => /^#{1,6}\s+.*\bHard rules\b/i.test(line));
   if (start < 0) return 0;
   const level = /^(#+)/.exec(lines[start]!)![1]!.length;
   let count = 0;
@@ -432,35 +473,37 @@ export function countHardRules(rendered: string): number {
   return count;
 }
 
-/** 内置 skill 形态的一页（工具桥面）：`references/catalog/*.md`、`workflows.md` 与 `conventions.md` 各一份。 */
+/** One page in built-in skill form (tool-bridge face): one each for `references/catalog/*.md`, `workflows.md` and `conventions.md`. */
 export interface AgentSkillPage {
-  /** `cuccut-catalog-media`、`cuccut-workflows`、`cuccut-conventions`。 */
+  /** `cuccut-catalog-media`, `cuccut-workflows`, `cuccut-conventions`. */
   id: string;
-  /** 来源文件在说明书里的相对路径（`references/catalog/media.md`）。 */
+  /** Relative path of the source file in the guide (`references/catalog/media.md`). */
   file: string;
   name: string;
   description: string;
-  /** 去掉 front matter 与生成块标记的正文。 */
+  /** The body without front matter and generated-block markers. */
   body: string;
 }
 
 export interface AgentGuidance {
-  /** SKILL.md 正文（去掉 front matter），作为会话指导的「工作方式」段。 */
+  /** The SKILL.md body (without front matter), used as the "how to work" section of the session guidance. */
   guidance: string;
   pages: AgentSkillPage[];
 }
 
 /**
- * 工具桥面：SKILL.md 正文渲染成会话指导的「工作方式」段，`references/catalog/*.md`、`references/workflows.md` 与
- * `references/conventions.md` 渲染成内置 skill 的形态（id 见 `agentPageId`，与工具桥面里改写后的链接一致）。页面的
- * `name` / `description` 取 front matter；没有 front matter 时取第一个 `#` 标题与其后的第一段。工具桥面正文为空的页
- * （整页只给 CLI 面，如 `catalog/web.md`）不登记；指导或别的页引用了它时抛 `AgentSkillRenderError`。
+ * Tool-bridge face: the SKILL.md body is rendered into the "how to work" section of the session guidance, and
+ * `references/catalog/*.md`, `references/workflows.md` and `references/conventions.md` into built-in skill form (ids from
+ * `agentPageId`, matching the rewritten links on that face). A page's `name` / `description` come from its front matter, or
+ * without front matter from the first `#` heading and the first paragraph after it. Pages whose body is empty on the
+ * tool-bridge face (the whole page is CLI-only, such as `catalog/web.md`) are not registered; throws
+ * `AgentSkillRenderError` when the guidance or another page references one.
  */
 export function renderAgentGuidance(source: string | AgentSkillFiles, catalog?: AgentSkillCatalog | null): AgentGuidance {
   const rendered = renderAgentSkill(source, { face: 'agent', catalog: catalog ?? null });
   const guidance = cleanBody(splitFrontmatter(rendered.get(AGENT_SKILL_ENTRY)!, AGENT_SKILL_ENTRY).body);
   const pages: AgentSkillPage[] = [];
-  /** 工具桥面正文为空的页（整页只给 CLI 面）：不登记成说明书页。 */
+  /** Pages whose body is empty on the tool-bridge face (the whole page is CLI-only): not registered as guide pages. */
   const skipped: string[] = [];
   const catalogPages = [...rendered.keys()].filter((file) => /^references\/catalog\/[^/]+\.md$/.test(file)).sort();
   const others = ['references/workflows.md', 'references/conventions.md'].filter((file) => rendered.has(file));
@@ -476,7 +519,7 @@ export function renderAgentGuidance(source: string | AgentSkillFiles, catalog?: 
     const description = fields.get('description') || firstParagraph(text);
     pages.push({ id, file, name, description, body: text });
   }
-  // 跳过的页在工具桥面读不到：指导与别的页不能引用它（指向它的链接要放进 cli 面）。
+  // Skipped pages cannot be read on the tool-bridge face: the guidance and other pages must not reference them (links to them belong in the cli face).
   for (const [file, text] of [[AGENT_SKILL_ENTRY, guidance] as const, ...pages.map((page) => [page.file, page.body] as const)]) {
     const dangling = skipped.find((id) => text.includes(`\`${id}\``));
     if (dangling)
@@ -485,7 +528,7 @@ export function renderAgentGuidance(source: string | AgentSkillFiles, catalog?: 
   return { guidance, pages };
 }
 
-/** 除了标题与空行还有没有正文。整页包在 `<!-- surface: cli -->` 里的页，工具桥面只剩 front matter（与标题）。 */
+/** Whether there is body text besides headings and blank lines. A page wrapped whole in `<!-- surface: cli -->` keeps only its front matter (and headings) on the tool-bridge face. */
 function hasBody(text: string): boolean {
   return text.split('\n').some((line) => line.trim() !== '' && !/^#{1,6}\s/.test(line));
 }
@@ -497,7 +540,7 @@ function splitFrontmatter(text: string, file: string): { fields: Map<string, str
   return { fields: parsed.fields, body: parsed.body };
 }
 
-/** 去掉生成块的标记行（提示词里不需要），收掉首尾空行。 */
+/** Drops generated-block marker lines (not needed in prompts) and trims leading and trailing blank lines. */
 function cleanBody(body: string): string {
   return body
     .split('\n')
@@ -517,9 +560,10 @@ function firstParagraph(text: string): string {
 }
 
 /**
- * 找说明书的根目录（里面是 `cuccut/`）：`CUCCUT_AGENT_SKILLS_DIR` → 打包后的 `<resources>/skills`（Electron 的
- * `process.resourcesPath`，再依次看 `resourceDirs`：CLI 传装好的 CucCut 应用的资源目录）→ 从本模块往上找仓库根的
- * `skills/`。与 `resolveBuiltinSkillsDir` 的顺序相同；都没有时 null。
+ * Finds the guide's root directory (the one containing `cuccut/`): `CUCCUT_AGENT_SKILLS_DIR` → the packaged
+ * `<resources>/skills` (Electron's `process.resourcesPath`, then each of `resourceDirs`: the CLI passes the resource
+ * directories of the installed CucCut app) → `skills/` at the repository root, searched upward from this module. Same order
+ * as `resolveBuiltinSkillsDir`; null when none exists.
  */
 export function resolveBuiltinAgentSkillsDir(env: NodeJS.ProcessEnv = process.env, resourceDirs: readonly string[] = []): string | null {
   if (env.CUCCUT_AGENT_SKILLS_DIR) return env.CUCCUT_AGENT_SKILLS_DIR;

@@ -2,20 +2,25 @@ import type { DocumentRecord, Id } from '@cuccut/protocol';
 import { EditorWasmUnavailable, sha256Hex, sourceSentences } from '@cuccut/jobs';
 
 /**
- * 智能体写译文时 Runtime 补上的句级对齐（视频格式规范 §5.3，架构设计 §3.5 的 `documents_read`）。
+ * Sentence-level alignment the Runtime fills in when an agent writes a translation (video format spec §5.3;
+ * `documents_read` in architecture design §3.5).
  *
- * 智能体自己翻译时按句子写单元，不做块级对齐；`alignment` 写 null 时，导出要按句子重新派生成员，`captions_create`
- * 切不出时间。`edits_apply` 的 `putDocument` 写 `cuccut.translation/2` 时，这里按单元的 `sourceSentenceId` 在它译自的
- * 转写里找到那一句（与 `documents_read` 的 `translationBasis` 同一套规则，经 editor-wasm），把 null 补成句级对齐
- * `{basis:'natural', correspondence:'sentence', blocks:[], sourceWordIds:<那一句的词>, textHash}`；写了对齐却缺
- * `sourceWordIds` 或 `textHash` 的同样补齐，句级、没有块的对齐的 `textHash` 按译文重算。
+ * An agent translating on its own writes units per sentence and does no block-level alignment; with `alignment` null,
+ * export has to re-derive members per sentence and `captions_create` cannot cut timing. When `putDocument` in
+ * `edits_apply` writes `cuccut.translation/2`, this finds each unit's `sourceSentenceId` in the transcript it was
+ * translated from (the same rules as `translationBasis` in `documents_read`, via editor-wasm) and fills null with a
+ * sentence-level alignment `{basis:'natural', correspondence:'sentence', blocks:[], sourceWordIds:<that sentence's words>, textHash}`;
+ * an alignment that is written but lacks `sourceWordIds` or `textHash` is completed the same way, and the `textHash` of a
+ * sentence-level alignment without blocks is recomputed from the translation.
  *
- * 只补核对得上的：句子在转写里找得到，单元的 `sourceFingerprint` 与那一句的相同（或没写）。过期的单元、找不到的句子、
- * 指纹对不上的不动；转写读不了、句子的 WASM 没有构建时只补写了对齐对象却缺的 `textHash`，其余照原样交给引擎。`textHash` 是 `"sha256:"` 加译文
- * （`naturalText`）的 UTF-8 SHA-256 十六进制，与翻译流程的核对相同。
+ * Only units that check out are filled: the sentence is found in the transcript and the unit's `sourceFingerprint` equals
+ * that sentence's (or is not written). Stale units, sentences not found and mismatched fingerprints are left alone; when
+ * the transcript cannot be read or the sentence WASM is not built, only the missing `textHash` of a written alignment
+ * object is filled, and everything else goes to the engine as is. `textHash` is `"sha256:"` plus the hex UTF-8 SHA-256 of
+ * the translation (`naturalText`), the same check the translation pipeline uses.
  */
 
-/** 读转写正文：给了版本时读那一版。读不到时抛出。 */
+/** Reads a transcript body: that revision when one is given. Throws when it cannot be read. */
 export type SpeechBodyReader = (documentId: Id, revision?: string) => Promise<unknown>;
 
 type Json = Record<string, unknown>;
@@ -23,8 +28,9 @@ type Json = Record<string, unknown>;
 const TRANSLATION_V2 = 'cuccut.translation/2';
 
 /**
- * 在 `operations`（已经规范化、发给引擎之前）里给译文的 `putDocument` 补对齐；返回补了几个单元。改动写在新的 `body`
- * 对象上（替换 `op.body`），不改调用方传进来的正文。
+ * Fills alignments for translation `putDocument`s in `operations` (already normalized, before going to the engine);
+ * returns how many units were filled. Changes are written to a new `body` object (replacing `op.body`); the caller's body
+ * is not mutated.
  */
 export async function fillTranslationAlignments(
   operations: Record<string, unknown>[],
@@ -41,7 +47,7 @@ export async function fillTranslationAlignments(
       stringOf((op.sourceDocument as { documentId?: unknown } | undefined)?.documentId) ??
       stringOf(speechRef?.id) ??
       (typeof op.documentId === 'string' ? (documents[op.documentId]?.sourceDocumentId ?? null) : null);
-    // 读不到句子时只补不靠句子的 `textHash`（写了对齐对象却没写它的）。
+    // When sentences cannot be read, fill only the sentence-independent `textHash` (where an alignment object is written without it).
     const sentences = (speechId ? await sentencesOf(readSpeech, speechId, stringOf(speechRef?.revision) ?? undefined) : null) ?? new Map();
     let changed = 0;
     const units = (body.units as unknown[]).map((raw) => {
@@ -59,7 +65,7 @@ export async function fillTranslationAlignments(
 
 type Sentences = Map<string, { fingerprint: string; wordIds: string[] }>;
 
-/** 那一版转写的句子；读不到（先按记下的版本，再按当前版本）、正文不对或 WASM 不在时 null。 */
+/** That transcript revision's sentences; null when it cannot be read (first the recorded revision, then the current one), the body is invalid, or the WASM is missing. */
 async function sentencesOf(readSpeech: SpeechBodyReader, speechId: Id, revision: string | undefined): Promise<Sentences | null> {
   let body: unknown;
   try {
@@ -83,7 +89,7 @@ async function sentencesOf(readSpeech: SpeechBodyReader, speechId: Id, revision:
   return new Map(read.sentences.map((s) => [s.id, { fingerprint: s.fingerprint, wordIds: [...s.wordIds] }]));
 }
 
-/** 补好的单元；不用补或补不了时原样返回同一个对象。 */
+/** The filled unit; returns the same object unchanged when nothing needs or can be filled. */
 function filledUnit(raw: unknown, sentences: Sentences): unknown {
   if (typeof raw !== 'object' || raw === null) return raw;
   const unit = raw as Json;
@@ -105,7 +111,7 @@ function filledUnit(raw: unknown, sentences: Sentences): unknown {
   const a = alignment as Json;
   const next: Json = { ...a };
   if (!Array.isArray(a.sourceWordIds) && matches) next.sourceWordIds = sentence.wordIds;
-  // 句级、没有块也没有拆分的对齐只认整句：译文改过时 textHash 跟着译文重算。块级的不动（块的对应要重新对齐）。
+  // A sentence-level alignment with no blocks and no split only tracks the whole sentence: when the translation changes, textHash is recomputed from it. Block-level ones are left alone (block correspondence needs realigning).
   const sentenceLevel = a.correspondence === 'sentence' && Array.isArray(a.blocks) && a.blocks.length === 0 && a.split === undefined;
   if (typeof a.textHash !== 'string' || (sentenceLevel && a.textHash !== textHash)) next.textHash = textHash;
   const changed = next.sourceWordIds !== a.sourceWordIds || next.textHash !== a.textHash;

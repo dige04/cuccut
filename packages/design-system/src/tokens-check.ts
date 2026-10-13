@@ -1,11 +1,10 @@
 /**
- * tokens.json 的检查（docs/design/canvas §10.5；格式见 design-system skill 的 references/format.md「tokens.json 语法」）。
- * 照搬原版 `parseTokens`（model/tokens.ts）：它丢掉（dropped）与警告（warnings）的每一项记成一条问题；只保留在文件里、编辑器
- * 不显示的（原版的 notes：不是 token 族的键、超出上限的族与字体条目）记成说明，不算问题——原版自己同步出来的 tokens.json 也带
- * 这类键（例如 `meta`）。原版在上限处静默截断的（主题、字族、文字样式组与样式、每族 token 数）与原版读不出的形状（名字到值的映射）另记问题。
- * 常量与正则同原版。问题是给智能体看的英文。
+ * tokens.json checks (docs/design/canvas §10.5; format: the design-system skill's references/format.md "tokens.json syntax").
+ * Mirrors the original `parseTokens` (model/tokens.ts): every item it drops (dropped) or warns about (warnings) becomes an issue; what is only kept in
+ * the file but not shown by the editor (the original's notes: keys that are not token families, families and font entries over the limit) becomes a note,
+ * not an issue (the original's own synced tokens.json carries such keys too, e.g. `meta`). Limits the original silently truncates at (themes, font families, text style groups and styles, tokens per family) and shapes it cannot read (name-to-value maps) are reported as separate issues.
+ * Constants and regexes match the original. Issues are English text for agents.
  */
-// i18n-ignore-file: 给模型的校验结果
 
 export const TOKENS_LIMITS = {
   bytes: 512 * 1024,
@@ -119,7 +118,7 @@ interface ColorToken {
   value: Record<string, string>;
 }
 
-/** 原版 `explainColorAliasError`：别名指向不存在的 token、成环或超过 16 层。 */
+/** Original `explainColorAliasError`: the alias points to a missing token, forms a cycle or is nested deeper than 16 levels. */
 function explainColorAliasError(token: ColorToken, themeId: string, baseThemeId: string, byName: Map<string, ColorToken>): { why: string; own: boolean } | undefined {
   const seen = new Set([token.name]);
   let current = token;
@@ -135,7 +134,7 @@ function explainColorAliasError(token: ColorToken, themeId: string, baseThemeId:
   return { why: `chains deeper than ${TOKENS_LIMITS.colorAliasDepth}`, own: true };
 }
 
-/** 原版 `removeInvalidColorAliases`。 */
+/** Original `removeInvalidColorAliases`. */
 function removeInvalidColorAliases(themes: readonly { id: string }[], tokens: ColorToken[], dropped: string[]): void {
   const baseThemeId = themes[0]!.id;
   for (;;) {
@@ -170,7 +169,7 @@ function removeInvalidColorAliases(themes: readonly { id: string }[], tokens: Co
   }
 }
 
-/** 一个族是不是原版读得了的列表形状 `{"tokens":[…]}`；是名字到值的映射（DTCG / W3C）时说明。 */
+/** Whether a family has the list shape the original can read, `{"tokens":[…]}`; a name-to-value map (DTCG / W3C) gets a note. */
 function shapeProblem(key: string, value: unknown): string | null {
   if (!isObject(value)) return `"${key}" must be an object {"tokens":[{"name","value","usage"}…]}`;
   if (!Array.isArray(value.tokens)) {
@@ -179,15 +178,15 @@ function shapeProblem(key: string, value: unknown): string | null {
   return null;
 }
 
-/** `checkTokensText` 的结果：问题（要改）与说明（原版的 notes：保留在文件里、编辑器不显示，不用改）。每条一句英文。 */
+/** Result of `checkTokensText`: issues (must fix) and notes (the original's notes: kept in the file, not shown by the editor, no fix needed). One English sentence each. */
 export interface TokensCheck {
   problems: string[];
   notes: string[];
 }
 
 /**
- * 检查 tokens.json 的文本。照原版 `parseTokens` 的读法：丢掉的值与警告算问题，另报原版静默截断的上限与读不了的形状；
- * 原版只记 notes 的（不显示的键、超出上限的族与字体条目）是说明。
+ * Checks the text of tokens.json. Reads it the way the original `parseTokens` does: dropped values and warnings are issues, plus the limits the original silently truncates at and shapes it cannot read;
+ * what the original only records as notes (hidden keys, families and font entries over the limit) are notes.
  */
 export function checkTokensText(text: string): TokensCheck {
   const problems: string[] = [];
@@ -414,7 +413,7 @@ export function checkTokensText(text: string): TokensCheck {
   return { problems: [...problems, ...dropped], notes };
 }
 
-/** tokens.json 里 `type.fonts[].file` 指向的路径（裸文件名是 `fonts/<file>`，同原版）。 */
+/** Paths referenced by `type.fonts[].file` in tokens.json (a bare file name means `fonts/<file>`, as in the original). */
 export function tokenFontFiles(text: string): string[] {
   try {
     const parsed: unknown = JSON.parse(text);

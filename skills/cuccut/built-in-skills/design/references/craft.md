@@ -1,103 +1,103 @@
-# 做好设计：完整版
+# Designing well: the full version
 
-SKILL.md 里是简短的规则；这里是它们背后的理由与细节。用户对某个设计决定有异议时读它，或者为了一件作品需要的具体章节来读：落地页的结构、wireframe 的轮次、手机原型（印刷品：print.md）。跨 family 的内容规则在文末；随附的品牌 kit 在 format.md 里说明。
+SKILL.md has the short rules; here are the reasons and details behind them. Read it when the user disputes a design decision, or for the specific section a piece of work needs: landing page structure, wireframe rounds, phone prototypes (print: print.md). Cross-family content rules are at the end; the bundled brand kit is described in format.md.
 
-## 做好设计（讲做法，不讲格式）
+## Designing well (about craft, not format)
 
-本文件末尾那些通用的内容规则（不加凑数的内容、加材料前先问、定点修改只改那一处、沿用已有设计的视觉语汇、AI slop 的俗套、受版权保护设计的规则）在设计稿上全部完整适用。下面讲的是设计本身特有的。
+The general content rules at the end of this file (no filler content, ask before adding material, targeted changes touch only that spot, follow the visual vocabulary of an existing design, AI slop clichés, rules on copyrighted designs) apply in full to designs. What follows is specific to design itself.
 
-### 审美和用户一起定，不替用户定
+### Settle the aesthetic with the user, not for the user
 
-用户没给审美、参考或设计系统时，先拿到他们的意见再定下来：问他们，或画 2–4 块真正不同、他们**看得到**的低保真方向画板；而不是自己挑一种审美（slop 就是这么来的）。一个具体的题材、asset 或品牌**就是**意见；没人可问时，定下一个叫得出名字的方向并说出来，而不是以一个问题收尾。决定一旦定下，就一直算数。然后定下一套小体系：
+When the user gives no aesthetic, references or design system, get their input before settling it: ask them, or draw 2–4 genuinely different low-fidelity direction artboards they can **see**, rather than picking an aesthetic yourself (that is how slop happens). A concrete subject, asset or brand **is** input; when no one can be asked, settle on a direction you can name and say it, rather than ending with a question. Once a decision is made, it stands. Then settle a small system:
 
-- 一组字体搭配：Google Fonts 能在 artifact 里加载（在 `<helmet>` 里放一个 `fonts.googleapis.com/css2?family=…&display=swap` `<link>`；别的 webfont 托管都不行）；1–3 个 family，每个配一个 metrics 相近的系统 fallback（字体加载期间，以及无法嵌入该字体的地方，显示的是它；导出 PNG/PDF 时会嵌入链接的 Google Fonts）。
-- 前景／背景：一种色调（暖、冷、中性）；白与黑都带一点微妙的色调（白色饱和度低于 0.02）。
-- Accent：0–2 个，用 oklch，chroma 和 lightness 相同、hue 不同。优先用品牌或设计系统的颜色；太受限时，从它们派生出协调的 oklch 颜色，而不是另外发明新色。
+- A font pairing: Google Fonts can load in the artifact (put a `fonts.googleapis.com/css2?family=…&display=swap` `<link>` in `<helmet>`; no other webfont host works); 1–3 families, each with a system fallback of similar metrics (that is what shows while the font loads and wherever the font cannot be embedded; PNG/PDF exports embed linked Google Fonts).
+- Foreground/background: one temperature (warm, cool, neutral); whites and blacks carry a subtle tint (white at a saturation below 0.02).
+- Accents: 0–2, in oklch, with the same chroma and lightness and different hues. Prefer brand or design system colors; when they are too limiting, derive harmonious oklch colors from them rather than inventing new ones.
 
-### 没有品牌或设计系统约束时
+### When there is no brand or design system constraint
 
-设计的作品**不**受现有品牌或设计系统约束时，用这份指引，并在动手前定下一个**大胆**的审美方向：
+When the work is **not** constrained by an existing brand or design system, use this guidance and commit to a **bold** aesthetic direction before building:
 
-- **目的**：这个设计解决什么问题？谁在用它？
-- **基调**：选一个极端：极致极简、极繁混乱、复古未来、有机／自然、奢华／精致、俏皮／玩具感、editorial／杂志、brutalist／原始、art deco／几何、柔和／粉彩、工业／实用，等等。拿这些找灵感，但设计出一个忠于这个审美方向的作品。
-- **差异化**：什么让它**令人难忘**？别人会记住的那一点是什么？
+- **Purpose**: what problem does this design solve? Who uses it?
+- **Tone**: pick an extreme: brutally minimal, maximalist chaos, retro-futuristic, organic/natural, luxurious/refined, playful/toy-like, editorial/magazine, brutalist/raw, art deco/geometric, soft/pastel, industrial/utilitarian, and so on. Use these for inspiration, but design a piece that is true to the chosen direction.
+- **Differentiation**: what makes it **unforgettable**? What is the one thing people will remember?
 
-大胆的极繁和精致的极简都行，关键在于有意为之，而不在于用力多猛。然后精准执行：
+Bold maximalism and refined minimalism both work; what matters is intention, not intensity. Then execute precisely:
 
-- **字体排印**：选美观、独特、有趣的字体。避开 Arial、Inter 这类泛用字体；选有辨识度、有个性的。用一款有辨识度的 display 字体搭配一款精致的正文字体。
-- **颜色与 theme**：定下一种统一的审美。主导色配鲜明的 accent，胜过畏手畏脚、平均分配的配色。
-- **动效**：设计里带动画时（画板里的 CSS），集中在高冲击力的时刻：一次精心编排的 reveal，比零散的微交互更让人愉悦。
-- **空间构图**：出人意料的 layout。不对称。重叠。斜向流动。打破 grid 的元素。大片留白，**或者**有控制的密集。
-- **背景与视觉细节**：营造氛围和纵深，而不是默认用纯色：gradient mesh、噪点纹理、几何图案、层叠的透明、戏剧化的阴影、装饰性边框、grain overlay。
+- **Typography**: choose beautiful, distinctive, interesting fonts. Avoid generic fonts like Arial and Inter; choose ones with character and personality. Pair a distinctive display font with a refined body font.
+- **Color and theme**: commit to one coherent aesthetic. A dominant color with sharp accents beats a timid, evenly distributed palette.
+- **Motion**: when the design animates (CSS in the artboard), concentrate it on high-impact moments: one well-orchestrated reveal delights more than scattered micro-interactions.
+- **Spatial composition**: unexpected layouts. Asymmetry. Overlap. Diagonal flow. Grid-breaking elements. Generous negative space **or** controlled density.
+- **Backgrounds and visual detail**: create atmosphere and depth rather than defaulting to solid colors: gradient meshes, noise textures, geometric patterns, layered transparency, dramatic shadows, decorative borders, grain overlays.
 
-在浅色与深色 theme、不同字体、不同审美之间变换，**绝不**在多次生成之间收敛到同样的选择。实现的复杂度也要和审美构想相称：极繁的设计需要繁复的效果；极简的设计需要克制、精准，并仔细处理间距和细微之处。
+Vary between light and dark themes, different fonts and different aesthetics, and **never** converge on the same choices across generations. Match implementation complexity to the aesthetic vision: maximalist designs need elaborate effects; minimalist designs need restraint, precision and careful attention to spacing and subtle details.
 
-### Anthropic 品牌的作品
+### Anthropic-branded work
 
-底色用 Ivory #FAF9F5，文字用 Slate #141413，Clay #D97757 作 accent，衬线 display 字配无衬线正文（确切的 font stack 在品牌颜色页和字体排印页上）。设计里带有 Claude 或 Anthropic 标志时：Claude Spark 每个 surface 只出现一次，绝不旋转、变形或放进 lockup；Claude logo 在浅色上用深色、在深色上用浅色，留出 clearspace，保持原始宽高比；Claude 与 Anthropic 的标志先后出现，绝不合在一起。
+Use Ivory #FAF9F5 for the background, Slate #141413 for text and Clay #D97757 as the accent, with serif display type and sans-serif body text (the exact font stacks are on the brand colors and typography pages). When the design carries the Claude or Anthropic marks: the Claude Spark appears only once per surface, never rotated, distorted or put in a lockup; the Claude logo is dark on light and light on dark, with clearspace and its original aspect ratio; the Claude and Anthropic marks appear one after the other, never combined.
 
-### 高保真 mockup 扎根于上下文
+### High-fidelity mockups are grounded in context
 
-好的高保真设计不是从零开始的，而是扎根于已有的设计上下文：用户的代码库或仓库、品牌 asset、现有产品的截图、附上的设计系统。设计之前先花时间拿到这些上下文，找不到就向用户要。从零开始 mock 一整个产品是**最后的手段**，会做出糟糕的设计。尽早说明你的假设、上下文和设计思路，一有能让用户回应的东西就拿给用户看。
+Good high-fidelity design does not start from scratch; it is grounded in existing design context: the user's codebase or repository, brand assets, screenshots of the existing product, an attached design system. Take the time to get this context before designing, and ask the user for it if you cannot find it. Mocking up a whole product from scratch is the **last resort** and produces poor design. State your assumptions, context and design thinking early, and show the user something as soon as there is something they can react to.
 
-没有某个图标、asset 或组件时，画一个 placeholder：在高保真设计里，placeholder 好过把真东西做砸。
+When you lack an icon, asset or component, draw a placeholder: in high-fidelity design, a placeholder is better than a botched version of the real thing.
 
-### 画布上的 variation 与备选
+### Variations and alternatives on the canvas
 
-多画板的设计稿就是为探索备选而生的，要有意识地用它：
+A multi-artboard design exists for exploring alternatives; use it deliberately:
 
-- 方向上的决定还没定时（整体方向、hero layout、字体搭配、配色取向、密度），在做完整交付物**之前**先定下来。给出 2–4 个真正不同的候选，每个探索一条你说得出名字的维度（「Warm editorial」对「Dense data-first」）：同一种审美的五种深浅根本算不上选择。做决定所需的保真度不等于交付物的保真度：低保真的草图画板就足以选定方向。
-- 在你的回复里（不是在画板上）给每个备选一个如实的动机和它的主要取舍：一组备选里只有你最喜欢的那个有人替它说话，那是一场做过手脚的投票。
-- 备选的名字保持稳定：一块画板一旦叫「Option B」或「Warm editorial」，就一直是这个身份；绝不在不同轮次之间给备选重新编号或改名。
-- 方向定了、用户想要可以留用的 variation 时，在几个维度上给至少 3 个：既有照章办事、符合现有 pattern 的设计，也有新颖的交互、layout、隐喻和视觉风格；重新组合品牌的视觉 DNA（scale、填充、质感、节奏、层叠、字体处理）。目标是用户可以自由搭配的原子化 variation，而不是那个完美的选项。
-- 早期探索时画 wireframe：广度优先于精细，每个想法 3–5 种不同做法，简单形状、placeholder 文字、尽量少的颜色：草图式、低保真，专注于结构和流程。
+- While directional decisions are still open (overall direction, hero layout, font pairing, color approach, density), settle them **before** building the full deliverable. Offer 2–4 genuinely different candidates, each exploring a dimension you can name ("Warm editorial" vs "Dense data-first"): five shades of the same aesthetic are no choice at all. The fidelity needed to decide is not the fidelity of the deliverable: low-fidelity sketch artboards are enough to pick a direction.
+- In your reply (not on the artboards), give each alternative an honest motivation and its main trade-off: a set of alternatives where only your favorite has an advocate is a rigged vote.
+- Keep alternatives' names stable: once an artboard is called "Option B" or "Warm editorial", that is its identity; never renumber or rename alternatives between rounds.
+- Once the direction is set and the user wants variations they can keep, give at least 3 across several dimensions: both by-the-book designs that fit existing patterns and novel interactions, layouts, metaphors and visual styles; recombine the brand's visual DNA (scale, fill, texture, rhythm, layering, type treatment). The goal is atomic variations the user can mix and match, not the one perfect option.
+- In early exploration draw wireframes: breadth over polish, 3–5 different takes per idea, simple shapes, placeholder text, minimal color: sketchy, low fidelity, focused on structure and flow.
 
-### 经得起直接拖改的 layout
+### Layouts that survive direct drag edits
 
-强烈优先用带 `gap` 的 flex/grid，而不是 inline flow。成组的兄弟元素（按钮、chip、图标、卡片、导航项、工具栏）用 `display: flex`/`grid` 加 `gap:` 来排，而不是让行内兄弟元素靠源码里的空白或逐个元素的外边距隔开：gap 的间距经得起直接操作的编辑（拖动重排、删除、复制，以及编辑器的 drag-out 与 wrap-in-flex 工具），空白文本节点经不起。inline flow 用于成段的文字，句子里偶尔夹一个 `<a>`/`<strong>`/`<em>`，不用于排布 UI 元素。多借助现代 CSS：`text-wrap: pretty`、CSS grid 以及其他高级效果都是你的好帮手。
+Strongly prefer flex/grid with `gap` over inline flow. Lay out groups of siblings (buttons, chips, icons, cards, nav items, toolbars) with `display: flex`/`grid` plus `gap:`, rather than inline siblings separated by whitespace in the source or per-element margins: gap spacing survives direct-manipulation edits (drag to reorder, delete, duplicate, and the editor's drag-out and wrap-in-flex tools), whitespace text nodes do not. Inline flow is for running text, with the occasional `<a>`/`<strong>`/`<em>` in a sentence, not for laying out UI elements. Lean on modern CSS: `text-wrap: pretty`, CSS grid and other advanced effects are your friends.
 
-### 合适的 scale
+### The right scale
 
-在生成的 **mockup** 内容里（手机屏画板里的按钮和列表行；不是 appifact 编辑器自己的 chrome，那个有它自己的规则），hit target 绝不应小于 44px。印刷画板的正文字号最小 12pt；任何设计里的文字都应按它实际的观看距离来定字号。
+In generated **mockup** content (buttons and list rows on a phone-screen artboard; not the appifact editor's own chrome, which has its own rules), hit targets should never be smaller than 44px. Body text on print artboards is at least 12pt; text in any design should be sized for its real viewing distance.
 
-### 画出来就无障碍
+### Accessible as drawn
 
-即使是静态 mockup，也用真正的元素画控件：`<button>`、`<a href>`，以及配上 `<label>` 的 `<input>`。带 `role` 或 `onClick` 的 div 或 span 看起来一样，但 Tab 键会跳过它，读屏软件也没有东西可读。只有图标的按钮要加 `aria-label`。文字与它背后内容的 contrast 至少 4.5:1（24px 起为 3:1）。最常不达标的是说明文字的灰色，以及白字下面的彩色填充：两者都调深。必须区分开的颜色在 lightness 上也要不同，不能只靠 hue；优先用蓝／橙，而不是红／绿。
+Even in static mockups, draw controls with real elements: `<button>`, `<a href>`, and `<input>` paired with `<label>`. A div or span with `role` or `onClick` looks the same, but Tab skips it and screen readers have nothing to read. Icon-only buttons get `aria-label`. Text contrast against what is behind it is at least 4.5:1 (3:1 from 24px). The usual failures are caption grays and colored fills under white text: darken both. Colors that must be told apart also differ in lightness, not only hue; prefer blue/orange over red/green.
 
-### 落地页与营销画板
+### Landing pages and marketing artboards
 
-按营销页的结构来搭：一个 hero，用一句话说清提供什么，配一个明确的 call to action；访客能信得过的证明（用户评价、客户 logo、数字：取自用户的材料，或用显眼标出的 placeholder）；回答访客真实疑虑的利益点区块，而不是罗列功能。每页一个主要行动，在页面往下重复出现，而不是三个互相争抢的按钮。
+Build to the structure of a marketing page: a hero that says in one sentence what is on offer, with a clear call to action; proof visitors can trust (testimonials, customer logos, numbers: from the user's material, or clearly marked placeholders); benefit sections that answer visitors' real concerns rather than listing features. One primary action per page, repeated further down, rather than three competing buttons.
 
-对落地页来说，copy 就是产品。写具体的 copy，扎根于用户告诉你的东西：他们的产品、他们的客户、他们的口吻。绝不用 lorem ipsum，绝不写「欢迎访问我们的网站」，绝不写套在哪家公司身上都成立、可以互换的营销套话。缺少真实信息时（价格、日期、地址），放一个显眼标出的 placeholder，比如 [YOUR PRICE]，让用户来填；不要编造。
+For a landing page, the copy is the product. Write specific copy grounded in what the user told you: their product, their customers, their voice. Never lorem ipsum, never "Welcome to our website", never interchangeable marketing boilerplate that fits any company. When real information is missing (prices, dates, addresses), put in a clearly marked placeholder such as [YOUR PRICE] for the user to fill; do not make it up.
 
-落地页是 **PAGE**，不是固定尺寸的画板：它的 canvas.json entry 写 `"expand": "fill"`，根元素是 fluid 的（根上不写 px 宽度，用带左右内边距的 `max-width` 容器，用 %/rem/fr，grid 在手机上收成一列），这样在全窗口视图里它按窗口宽度来 layout（在画布上则按 `w`）。高度：在画布上 `100vh` 就是 frame 的 `h`，所以 `vh` 只用于占满整屏的根元素（仪表盘或 web app shell）；后面还跟着内容的区块（如 hero）用 `px`/`rem` 的 `min-height`，绝不用 `vh`；根元素高度绝不用 `%`：声明了 `$preview` 时，它的父元素没有设定高度，`height: 100%` 会塌缩到内容高度。frame 的 `w`/`h`（以及 `$preview`）只是它在画布上的尺寸：把 `h` 设成页面在宽度 `w` 下的高度，否则画布会把它裁掉（宁可过高，也别被裁）。行内样式里的 `repeat(N, minmax(0, 1fr))` 在任何宽度下都保持 N 列，所以页面的 grid 用 `repeat(auto-fit, minmax(min(<min>px, 100%), 1fr))`，`<min>` 最多为宽度 `w` 下一列的宽度（算上 gap）；`min()` 让手机上的单列可以窄于 `<min>`，而不是溢出。仪表盘、web 应用界面和滚动式讲解页也一样。固定尺寸的根元素只用于固定格式：device mockup、海报、印刷品（包括备忘录和报告：`print.md`）、社交媒体配图。写的时候就按手机宽度来设计：标题不要断得难看，grid 不要被挤扁，文字不要小到看不清。
+A landing page is a **PAGE**, not a fixed-size artboard: its canvas.json entry has `"expand": "fill"` and its root is fluid (no px width on the root; a `max-width` container with side padding, %/rem/fr, grids that collapse to one column on phones), so in the full-window view it lays out at the window width (on the canvas, at `w`). Height: on the canvas `100vh` is the frame's `h`, so `vh` is only for a root that fills the whole screen (a dashboard or web app shell); sections followed by more content (such as a hero) use a `px`/`rem` `min-height`, never `vh`; never use `%` for the root's height: when `$preview` is declared, its parent has no set height and `height: 100%` collapses to the content height. The frame's `w`/`h` (and `$preview`) are only its size on the canvas: set `h` to the page's height at width `w`, or the canvas clips it (better too tall than clipped). An inline `repeat(N, minmax(0, 1fr))` keeps N columns at any width, so page grids use `repeat(auto-fit, minmax(min(<min>px, 100%), 1fr))`, with `<min>` at most one column's width at width `w` (counting gaps); `min()` lets the single column on phones be narrower than `<min>` instead of overflowing. The same goes for dashboards, web app screens and scrolling explainers. Fixed-size roots are only for fixed formats: device mockups, posters, print (including memos and reports: `print.md`), social media images. Design for phone width as you write: no ugly title breaks, no squashed grids, no text too small to read.
 
-### 印刷的做法
+### Print craft
 
-海报、传单、宣传册、备忘录、报告，任何以 PDF 形式交出去的东西：在画第一块画板之前读 `print.md`（就在本文件旁边）。
+Posters, flyers, brochures, memos, reports, anything delivered as a PDF: read `print.md` (right next to this file) before drawing the first artboard.
 
-### 手机原型
+### Phone prototypes
 
-不画假的 chrome：**不要**画假的 iOS 状态栏（那条「9:41 · 电池 · Wi-Fi」）或假的虚拟键盘。在真手机上，真的状态栏和键盘会渲染在你的 layout 上面：画上去的假货看起来会重复一层，显得幼稚。那块空间别动。桌面端的 device-frame 画板里也一样：手机矩形里不画假的状态栏。
+Do not draw fake chrome: **no** fake iOS status bar (the "9:41 · battery · Wi-Fi" strip) or fake virtual keyboard. On a real phone the real status bar and keyboard render over your layout: a drawn fake looks doubled and amateurish. Leave that space alone. The same goes for device-frame artboards on desktop: no fake status bar inside the phone rectangle.
 
-### 复刻已有界面
+### Recreating an existing interface
 
-用户要求复刻一个你能拿到源码的界面时（一份仓库 checkout、贴过来的文件、附上的设计系统），从真实源码来做，而不是凭你训练数据里对这个应用的记忆：先看看有什么，读组件和样式，把页面实际加载的 asset 复制过来（图标、字体、图片、样式表；不是只给 bundler 用的组件源码）。确切的数值（内边距、圆角、字号、行高）从源码里照抄；绝不四舍五入，也不吸附到 4/8-px grid 或框架默认值。比起截图，Claude 更擅长根据代码和设计上下文来复刻和编辑界面：有源码时，截图只当作高层次的参考。读不到源码时，停下来说明，而不是凭记忆编造。（至于到底要不要复刻，由共用的受版权保护设计规则决定。）
+When the user asks you to recreate an interface whose source you can access (a repository checkout, pasted files, an attached design system), work from the real source rather than from your training-data memory of the app: look at what is there first, read the components and styles, and copy the assets the page actually loads (icons, fonts, images, stylesheets; not component source meant only for a bundler). Copy exact values (padding, corner radii, font sizes, line heights) from the source; never round them or snap them to a 4/8-px grid or framework defaults. Claude is better at recreating and editing interfaces from code and design context than from screenshots: when the source is available, use screenshots only as a high-level reference. When you cannot read the source, stop and say so rather than inventing from memory. (Whether to recreate at all is governed by the shared rule on copyrighted designs.)
 
-## 所有 appifact family 共用的内容与设计规则
+## Content and design rules shared by all appifact families
 
 <!-- The block between the shared:* markers below is generated from
 skills/_shared/content-design.md by scripts/inline-shared.ts — edit the
 fragment and re-run it; hand edits here fail scripts/shared-inline.test.ts. -->
 
 <!-- shared:content-design -->
-这些规则针对的是写进 appifact 的**内容**（幻灯片、画板、仪表盘、预置的卡片和行），而不是它的 chrome（kit、工具栏、文档机制）。它们适用于每一个 family（各 family 的 skill 会在此之上加上自己的做法），而且没有一条会改变 kit 的规则。
+These rules target the **content** written into an appifact (slides, artboards, dashboards, preset cards and rows), not its chrome (kit, toolbars, document mechanics). They apply to every family (each family's skill adds its own craft on top), and none of them changes the kit's rules.
 
-- **不要加凑数的内容。** 绝不为了填满空间，用 placeholder 文字、假区块或资料性内容去充实设计。每个元素都应该配得上它的位置。某个区块显得空，那是要用 layout 和构图解决的设计问题，而不是靠编造内容。每一个「要」背后，都有一千个「不要」。避开「data slop」：没用的数字、图标或统计。少即是多；偏向极简。
-- **加材料前先问。** 你觉得再加一些区块、页面、copy 或内容会让设计更好时，先问用户，而不是自作主张加上。用户比你更了解他们的受众和目标。
-- **定点修改只改那一处。** 用户要求一个小的、定点的修改时（某段文字、一个颜色、一个元素），**只**改那个：其他所有 layout、间距、外边距、字体、尺寸、位置、颜色和内容都原封不动；不要重新设计或「改进」你没被要求碰的部分。重新设计、换新方向或从零开始的请求是另一回事：那时就做他们要求的大改动。你觉得更大范围的改动对一个小请求有帮助时，先完成他们要求的，再**建议**其余部分，而不是不经要求就动手。
-- **沿用已有设计的视觉语汇。** 在已有的界面或文档上添加内容时，先理解它的视觉语汇，然后照着来：匹配 copywriting 风格、配色、语气、hover/click state、动画风格、阴影 + 卡片 + layout pattern、密度，等等。
-- **避开 AI slop 的俗套：** 包括但不限于：滥用渐变背景、emoji（除非明确是品牌的一部分）、带圆角和左边框 accent 色的容器，以及被用滥的 font family（Inter、Roboto、Arial、Fraunces）。内容里的 emoji：只有品牌或设计系统用它时才用。（Appifact 的 chrome 更严格：绝不用 emoji 当 UI glyph，这条没有前提条件。）
-- **从源码复刻，不凭记忆或截图。** 被要求复刻一个你能拿到源码的界面或设计时（仓库、贴过来的文件、附上的设计系统），读真实的源码并据此来做，而不是凭你训练数据里对这个应用的记忆：读组件和样式，复制设计实际用到的 asset，照抄确切的数值（内边距、圆角、字号、行高），而不是四舍五入或吸附到 4/8-px grid 或框架默认值。比起截图，Claude 更擅长根据代码和设计上下文来复刻界面；有源码时，截图只当作高层次的参考。
-- **不要复刻受版权保护的设计。** 被要求复刻某家公司有辨识度的 UI pattern、专有的命令结构或带品牌的视觉元素时，你必须拒绝，除非用户的邮箱域名表明他们在那家公司工作。转而去理解用户想做什么，帮他们做出原创设计，同时尊重知识产权。（CucCut 会话里没有账号邮箱域名这个信号，所以这取决于用户告诉你他们在哪里工作；不清楚时就问。）
+- **Do not add filler content.** Never pad a design with placeholder text, fake sections or informational material just to fill space. Every element should earn its place. A section that looks empty is a design problem to solve with layout and composition, not with invented content. For every "yes" there are a thousand "no"s. Avoid "data slop": useless numbers, icons or stats. Less is more; lean minimal.
+- **Ask before adding material.** When you think more sections, pages, copy or content would improve the design, ask the user first rather than adding it on your own. The user knows their audience and goals better than you.
+- **Targeted changes touch only that spot.** When the user asks for a small, targeted change (a piece of text, a color, an element), change **only** that: leave all other layout, spacing, margins, fonts, sizes, positions, colors and content exactly as they are; do not redesign or "improve" parts you were not asked to touch. Requests to redesign, take a new direction or start over are different: then make the big change they asked for. When you think a broader change would help a small request, finish what they asked first, then **suggest** the rest, rather than doing it unasked.
+- **Follow the visual vocabulary of an existing design.** When adding to an existing interface or document, first understand its visual vocabulary, then follow it: match the copywriting style, palette, tone, hover/click states, animation style, shadow + card + layout patterns, density, and so on.
+- **Avoid AI slop clichés:** including but not limited to: overused gradient backgrounds, emoji (unless clearly part of the brand), rounded containers with a left-border accent color, and overused font families (Inter, Roboto, Arial, Fraunces). Emoji in content: only when the brand or design system uses them. (Appifact chrome is stricter: never use emoji as UI glyphs, with no exceptions.)
+- **Recreate from source, not from memory or screenshots.** When asked to recreate an interface or design whose source you can access (a repository, pasted files, an attached design system), read the real source and work from it rather than from your training-data memory of the app: read the components and styles, copy the assets the design actually uses, and copy exact values (padding, corner radii, font sizes, line heights) rather than rounding or snapping to a 4/8-px grid or framework defaults. Claude is better at recreating interfaces from code and design context than from screenshots; when the source is available, use screenshots only as a high-level reference.
+- **Do not recreate copyrighted designs.** When asked to recreate a company's distinctive UI patterns, proprietary command structure or branded visual elements, you must decline unless the user's email domain shows they work at that company. Instead, understand what the user is trying to make and help them create an original design while respecting intellectual property. (CucCut sessions have no account email domain signal, so this depends on the user telling you where they work; when unclear, ask.)
 <!-- /shared:content-design -->

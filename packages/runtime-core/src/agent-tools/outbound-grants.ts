@@ -2,20 +2,21 @@ import type { ProviderKind, RiskLevel } from '@cuccut/protocol';
 import type { OutboundPlan } from '../grants/grant-service.ts';
 
 /**
- * 数据外发的授权与模型工具的风险等级（架构设计 §3.12、§12.5）：风险取决于数据交给谁、有没有授权覆盖这次外发。
- * 判断本身在 `GrantService.plan`（按数据种类、接收方、范围、用途与预算匹配授权）；这里只把结果换成风险等级。
+ * Outbound data grants and the risk level of model tools (architecture design §3.12, §12.5): the risk depends on who
+ * receives the data and whether a grant covers this outbound use. The decision itself is in `GrantService.plan`
+ * (matching grants by data kind, recipient, scope, purpose and budget); this only turns the result into a risk level.
  */
 
 export interface OutboundGrant {
-  /** 解析不到时为 null（没有默认值、不认识的 Provider）：提交时会被拒绝。 */
+  /** null when it cannot be resolved (no default, unknown Provider): submission will be rejected. */
   kind: ProviderKind | null;
-  /** 用户启用了它（本机模型与已配对的节点总是）。没有启用的提交时会被拒绝，数据不会离开这台机器。 */
+  /** The user enabled it (always true for local models and paired nodes). A disabled one is rejected at submission, and the data never leaves this machine. */
   enabled: boolean;
-  /** 不离开这台机器，或已有授权覆盖这次外发。 */
+  /** Stays on this machine, or an existing grant covers this outbound use. */
   granted: boolean;
 }
 
-/** `GrantService.plan` 的结果换成授权状态：`none` 是本机、节点，或没有启用、解析不到的 Provider。 */
+/** Turns a `GrantService.plan` result into a grant state: `none` is local, a node, or a disabled or unresolvable Provider. */
 export function outboundGrantOf(plan: OutboundPlan): OutboundGrant {
   switch (plan.status) {
     case 'none': {
@@ -30,9 +31,11 @@ export function outboundGrantOf(plan: OutboundPlan): OutboundGrant {
 }
 
 /**
- * 模型工具的风险等级（§3.12）：本机模型是 `edit`（结果是候选素材或产物，不改时间线，可以删掉）；交给已配对的节点、
- * 或有授权覆盖的外发是 `command`；没有授权覆盖的外发是 `high`（审批里带上要授权的数据）。解析不到 Provider、
- * Provider 没有启用时按 `command`：提交时会被拒绝（带补救），数据不会外发，不必为它升级审批。
+ * Risk level of model tools (§3.12): local models are `edit` (the result is a candidate asset or artifact, the timeline is
+ * not changed, and it can be deleted); sending to a paired node, or outbound use covered by a grant, is `command`;
+ * outbound use without a covering grant is `high` (the approval carries the data to be granted). An unresolvable or
+ * disabled Provider counts as `command`: submission will be rejected (with a remedy), no data goes out, so there is no
+ * need to escalate the approval for it.
  */
 export function modelCallRisk(grant: OutboundGrant): RiskLevel {
   if (grant.kind === null || !grant.enabled) return 'command';

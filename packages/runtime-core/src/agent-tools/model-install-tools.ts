@@ -8,27 +8,30 @@ import { approvalField, confirmSummary, type ToolPrincipal, type ToolScope } fro
 import { commandIdArg } from './video-tools.ts';
 
 /**
- * 下载本地模型（架构设计 §3.5、§6.3）：智能体在做需要本机模型的事之前，把「下载模型」作为一个前置步骤提交。
+ * Downloading local models (architecture design §3.5, §6.3): before doing something that needs a local model, the agent
+ * submits "download the model" as a prerequisite step.
  *
- * 先做计划拿到大小，再按 `command` 风险确认（访问模式决定问不问用户；确认的说明里写明大小与来源），确认之后提交安装任务；
- * 结果带大小。`surfaces` 是工具桥与 CLI：MCP 对外服务不提供安装与删除（设计的对外清单里没有它，让外部客户端触发几 GB
- * 的下载是这台机器的管理，与 Web 服务不开放 `models.install` 同理）。删除与修复只在界面与 CLI 里做。
+ * First plan to get the size, then confirm at `command` risk (the access mode decides whether to ask the user; the
+ * confirmation text states size and source); once confirmed, submit the install job; the result carries the size.
+ * `surfaces` are the tool bridge and the CLI: the MCP external service offers no install or removal (it is not in the
+ * design's external list; letting external clients trigger multi-GB downloads is administration of this machine, for
+ * the same reason the web service does not expose `models.install`). Removal and repair happen only in the UI and CLI.
  *
- * 同组还有 `models_list`（本地模型包与状态，网关的 `models.list`，三个面都有）与 `models_test`（跑一遍固定样本检查一个模型包，
- * 网关的 `models.test`；占用本机算力，与 `models_install` 一样不开放给 MCP）。
+ * The same group also has `models_list` (local model bundles and their state, the gateway's `models.list`, on all three
+ * surfaces) and `models_test` (runs fixed samples to check one model bundle, the gateway's `models.test`; it uses local
+ * compute, so like `models_install` it is not exposed to MCP).
  *
- * 音乐生成的模型包（backend `audio-cpp`）的 audio.cpp 引擎是它的必需组件（`audiocpp-engine`）：在同一份安装计划里，大小算在
- * 模型包里，一次确认就够。
+ * For music generation bundles (backend `audio-cpp`), the audio.cpp engine is a required component (`audiocpp-engine`):
+ * it is in the same install plan, its size counts toward the bundle, and one confirmation covers both.
  */
 
 export interface ModelInstallToolsDeps {
   installs: ModelInstallService;
-  /** 本地模型包的目录（`models_list`）。 */
+  /** Catalog of local model bundles (`models_list`). */
   catalog: Pick<ModelCatalog, 'list'>;
   scope: ToolScope;
 }
 
-// i18n-ignore-start: 给模型的工具说明、错误与下一步
 const schemas = {
   models_install: z.strictObject({
     bundleId: z
@@ -37,14 +40,14 @@ const schemas = {
       .max(200)
       .optional()
       .describe(
-        `可选。要下载的本地模型包；不给时是这台机器默认的转写模型包 ${defaultTranscribeBundle(process.platform, process.arch)}，本机语音合成、生图与音乐生成必须给出。models_capabilities 里本机 Provider 的模型就是模型包（转写在 transcribe 下，合成在 synthesizeSpeech 下，生图在 generateImage 下，音乐在 generateMusic 下）`,
+        `Optional. The local model bundle to download; defaults to this machine's default transcription bundle ${defaultTranscribeBundle(process.platform, process.arch)}; required for local speech synthesis, image generation and music generation. The local Provider's models in models_capabilities are the bundles (transcription under transcribe, synthesis under synthesizeSpeech, image generation under generateImage, music under generateMusic)`,
       ),
-    commandId: commandIdArg.optional().describe('可选。重试同一次提交时带上同一个值，不会重复创建任务'),
+    commandId: commandIdArg.optional().describe('Optional. Pass the same value when retrying the same submission so no duplicate job is created'),
   }),
   models_list: z.strictObject({}),
   models_test: z.strictObject({
-    bundleId: z.string().min(1).max(200).describe('要检查的本地模型包：models_list 里的 bundleId（要已经装好）'),
-    commandId: commandIdArg.optional().describe('可选。重试同一次提交时带上同一个值，不会重复创建任务'),
+    bundleId: z.string().min(1).max(200).describe('The local model bundle to check: a bundleId from models_list (must already be installed)'),
+    commandId: commandIdArg.optional().describe('Optional. Pass the same value when retrying the same submission so no duplicate job is created'),
   }),
 };
 
@@ -53,49 +56,48 @@ type Args<N extends ToolName = 'models_install'> = z.infer<(typeof schemas)[N]>;
 
 const DEFINITIONS: Record<ToolName, ToolInfo> = {
   models_install: {
-    title: '下载本地模型',
+    title: 'Download local model',
     description: [
-      '下载并安装一个本机模型包（几百 MB 到几 GB）。',
-      '装好之后才能用本机转写、语音合成、生图或音乐生成。只在本机模型没有安装（CAPABILITY_NOT_CONFIGURED 的 remedy.action 为 install-model）时用。',
-      '音乐生成的模型包含 audio.cpp 引擎（组件 audiocpp-engine），随模型包一起下载，大小已算在内；音乐能力因为引擎没装而不可用时，也用本工具带上那个模型包补装。',
-      '提交前会把大小告诉用户并按访问模式确认；已经装好时不下载（jobId 为 null）。只下载缺的部分，之前没下完的会续传。',
-      '立即返回 jobId 与大小（downloadBytes；大小未知时为 null，estimatedBytes 是估计值）。用 jobs_wait 等它结束（要看进度用 jobs_inspect，progress.unit 为 bytes），state 为 completed 才算装好；之后再提交转写，或带上 provider: local 与这个模型包提交合成或生图（它们没有出厂默认）。不要重复提交同一件事。',
+      'Download and install a local model bundle (a few hundred MB to several GB).',
+      'Local transcription, speech synthesis, image generation and music generation are only available once it is installed. Use only when the local model is not installed (CAPABILITY_NOT_CONFIGURED with remedy.action install-model).',
+      'Music generation bundles include the audio.cpp engine (component audiocpp-engine), downloaded together with the bundle and already counted in its size; if music is unavailable because the engine is not installed, also use this tool with that bundle to install it.',
+      'Before submitting it tells the user the size and confirms according to the access mode; if already installed nothing is downloaded (jobId is null). Only missing parts are downloaded, and unfinished earlier downloads resume.',
+      'Returns jobId and size immediately (downloadBytes; null when the size is unknown, with estimatedBytes as the estimate). Wait for it with jobs_wait (for progress use jobs_inspect; progress.unit is bytes); it is installed only when state is completed. Then submit the transcription, or submit synthesis or image generation with provider: local and this bundle (they have no factory default). Do not submit the same thing twice.',
     ].join('\n'),
     annotations: { destructiveHint: false, idempotentHint: true },
     effect: 'job',
     examples: [
-      { title: '下载默认的转写模型包', args: {} },
-      { title: '下载指定的模型包', args: { bundleId: 'qwen3-asr-0.6b@mlx-4bit' } },
+      { title: 'Download the default transcription bundle', args: {} },
+      { title: 'Download a specific bundle', args: { bundleId: 'qwen3-asr-0.6b@mlx-4bit' } },
     ],
     surfaces: ['agent', 'cli'],
   },
   models_list: {
-    title: '列出本地模型包',
+    title: 'List local model bundles',
     description: [
-      '列出这台机器上的本地模型包与各自的状态。',
-      '每个模型包：bundleId、名字、能力（transcribe、align、synthesize、separate、image、music、diarize）、后端、状态（not-installed、downloading、installed、ready 等）与原因、下载大小的估计、权重许可、安装进度与最近一次检查的结果。',
-      '只读。要用本机模型时先看这里装没装；没装的用 models_install 下载（会话与终端里），能力与默认值看 models_capabilities。',
+      'List the local model bundles on this machine and their state.',
+      'Each bundle: bundleId, name, capability (transcribe, align, synthesize, separate, image, music, diarize), backend, state (not-installed, downloading, installed, ready, etc.) and reason, estimated download size, weights license, install progress and the result of the latest check.',
+      'Read-only. Before using a local model, check here whether it is installed; download missing ones with models_install (in sessions and the terminal); see models_capabilities for capabilities and defaults.',
     ].join('\n'),
     annotations: { readOnlyHint: true },
     effect: 'query',
-    examples: [{ title: '列出本地模型包', args: {} }],
+    examples: [{ title: 'List local model bundles', args: {} }],
     surfaces: ['agent', 'mcp', 'cli'],
   },
   models_test: {
-    title: '检查本地模型包',
+    title: 'Check local model bundle',
     description: [
-      '用固定样本把一个已装好的本地模型包完整跑一遍，检查它能不能用。',
-      '识别的模型包识别一段固定录音，合成的合成一句固定短句，生图的出一张小图，分离的分一段录音；说话人区分模型包没有单独的检查。不含用户的内容。',
-      '立即返回 jobId；用 jobs_wait 等它结束：completed 是通过，failed 时 error.details.check 是原因（MODEL_FILES_DAMAGED 可以请用户修复）。结果也记进 models_list 的 selfTest。',
+      'Run an installed local model bundle on fixed samples to check that it works.',
+      'Recognition bundles transcribe a fixed recording, synthesis bundles synthesize a fixed short sentence, image bundles generate a small image, and separation bundles separate a recording; speaker diarization bundles have no separate check. No user content is involved.',
+      'Returns jobId immediately; wait for it with jobs_wait: completed means passed; on failed, error.details.check is the reason (for MODEL_FILES_DAMAGED you can ask the user to repair). The result is also recorded in selfTest of models_list.',
     ].join('\n'),
     annotations: { destructiveHint: false },
     effect: 'job',
-    examples: [{ title: '检查一个模型包', args: { bundleId: 'qwen3-asr-0.6b@mlx-4bit' } }],
+    examples: [{ title: 'Check a model bundle', args: { bundleId: 'qwen3-asr-0.6b@mlx-4bit' } }],
     surfaces: ['agent', 'cli'],
     positional: 'bundleId',
   },
 };
-// i18n-ignore-end
 
 export class ModelInstallTools implements ToolSet {
   readonly schemas = schemas;
@@ -119,8 +121,7 @@ export class ModelInstallTools implements ToolSet {
       case 'models_test':
         return this.#test(args as Args<'models_test'>, principal);
       default:
-        // i18n-ignore: 给模型的工具说明、错误与下一步
-        return Promise.reject(new ToolError('UNKNOWN_TOOL', `没有这个工具：${name}`));
+        return Promise.reject(new ToolError('UNKNOWN_TOOL', `No such tool: ${name}`));
     }
   }
 
@@ -129,8 +130,7 @@ export class ModelInstallTools implements ToolSet {
     const bundles = await this.#catalog.list();
     return {
       bundles: bundles.map(digestBundle),
-      // i18n-ignore: 给模型的工具说明、错误与下一步
-      next: '没装的模型包用 models_install 下载（state 为 not-installed；reason 为 unsupported 的这台机器用不了）；装好的可以用 models_test 检查。',
+      next: 'Download bundles that are not installed with models_install (state not-installed; those with reason unsupported cannot be used on this machine); installed ones can be checked with models_test.',
     };
   }
 
@@ -153,8 +153,7 @@ export class ModelInstallTools implements ToolSet {
       jobId,
       bundleId: args.bundleId,
       ...approvalField(approval),
-      // i18n-ignore: 给模型的工具说明、错误与下一步
-      next: '检查已提交：用 jobs_wait 等它结束。completed 是通过；failed 时 error.details.check 是原因，告诉用户。不要重复提交。',
+      next: 'Check submitted: wait for it with jobs_wait. completed means passed; on failed, error.details.check is the reason - tell the user. Do not submit it again.',
     };
   }
 
@@ -164,10 +163,8 @@ export class ModelInstallTools implements ToolSet {
     const first = await this.#installs.install({ bundleId }, access.submitter).catch((error: unknown) => {
       throw toolErrorOf(error);
     });
-    // i18n-ignore-start: 给模型的工具说明、错误与下一步
-    if (first.jobId) return { ...resultOf(first.plan, first.jobId), next: '这个模型包已经在下载：用 jobs_wait 等它结束，不要重复提交。' };
-    if (first.plan.upToDate) return { ...resultOf(first.plan, null), next: '模型包已经装好，不用下载；可以直接提交转写。' };
-    // i18n-ignore-end
+    if (first.jobId) return { ...resultOf(first.plan, first.jobId), next: 'This bundle is already downloading: wait for it with jobs_wait; do not submit again.' };
+    if (first.plan.upToDate) return { ...resultOf(first.plan, null), next: 'The bundle is already installed, nothing to download; you can submit the transcription directly.' };
     const approval = await this.#scope.confirm(access, { tool: 'models_install', ...confirmSummary(summaryOf(first.plan)), risk: 'command' });
     const submitted = await this.#installs
       .install(
@@ -184,13 +181,12 @@ export class ModelInstallTools implements ToolSet {
     return {
       ...resultOf(submitted.plan, submitted.jobId),
       ...approvalField(approval),
-      // i18n-ignore: 给模型的工具说明、错误与下一步
-      next: '下载已提交。用 jobs_wait 等它结束（看进度用 jobs_inspect），state 为 completed 才算装好，之后再提交转写；失败时 error.details.remedy 说明怎么补救。',
+      next: 'Download submitted. Wait for it with jobs_wait (use jobs_inspect for progress); it is installed only when state is completed, then submit the transcription; on failure, error.details.remedy explains how to recover.',
     };
   }
 }
 
-/** 模型包的状态给模型看的版本：组件只留名字与装没装，没有本机路径。 */
+/** The bundle state as shown to the model: components keep only their name and whether installed, with no local paths. */
 function digestBundle(bundle: ModelBundleStatus) {
   return {
     bundleId: bundle.bundleId,
@@ -237,8 +233,7 @@ function resultOf(plan: ModelInstallPlan, jobId: string | null) {
     downloadBytes: plan.downloadBytes,
     estimatedBytes: plan.estimatedBytes,
     resumedBytes: plan.resumedBytes,
-    // i18n-ignore: 给模型的工具说明、错误与下一步
-    size: formatBytes(plan.confirmBytes) + (plan.downloadBytes === null ? '（估计）' : ''),
+    size: formatBytes(plan.confirmBytes) + (plan.downloadBytes === null ? ' (estimated)' : ''),
     components: plan.components
       .filter((c) => c.action === 'download')
       .map((c) => ({ component: c.component, repo: c.repo, bytes: c.bytes })),
@@ -258,7 +253,7 @@ function summaryOf(plan: ModelInstallPlan): Localized {
   });
 }
 
-/** 字节数给人看：KB、MB、GB，保留一位小数。 */
+/** Byte counts for humans: KB, MB, GB, with one decimal place. */
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   const units = ['KB', 'MB', 'GB', 'TB'];
@@ -271,7 +266,7 @@ export function formatBytes(bytes: number): string {
   return `${value.toFixed(1)} ${units[unit]}`;
 }
 
-/** 服务的拒绝换成工具的错误：`details.code`（`MODEL_INSTALL_SIZE_CHANGED`、`OFFLINE_STRICT`……）作为工具错误码。 */
+/** Turns a service refusal into a tool error: `details.code` (`MODEL_INSTALL_SIZE_CHANGED`, `OFFLINE_STRICT`, ...) becomes the tool error code. */
 function toolErrorOf(error: unknown): unknown {
   if (error instanceof RpcError && typeof error.details === 'object' && error.details !== null) {
     const { code, ...rest } = error.details as Record<string, unknown>;

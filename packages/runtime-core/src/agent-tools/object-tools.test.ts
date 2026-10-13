@@ -181,7 +181,7 @@ describe.skipIf(!engine || !ffmpeg)('对象的读写工具（终端目录，真�
     const { videoId, assetId, itemId } = await placedVideo('取帧');
     const frames = await ok('videos_frames', { video: videoId, at: ['0.5', '1', '3'] });
     const framesDir = path.join(project.path, '.cuccut-out', 'frames', videoId);
-    expect(frames).toMatchObject({ videoId, composited: false, note: expect.stringContaining('不是合成') });
+    expect(frames).toMatchObject({ videoId, composited: false, note: expect.stringContaining('not the composited picture') });
     expect(frames.frames).toHaveLength(3);
     expect(frames.frames[0]).toMatchObject({ at: '0.5', item: itemId, asset: assetId, width: 1280, height: 720 });
     expect(frames.frames[0].file).toBe(path.join(framesDir, 'at-500ms.png'));
@@ -331,7 +331,7 @@ describe.skipIf(!engine || !ffmpeg)('对象的读写工具（终端目录，真�
     const all = await ok('edits_ops', {});
     const listed = all.families.flatMap((f: Loose) => f.operations.map((o: Loose) => o.type));
     expect([...listed].sort()).toEqual([...OPERATION_TYPES].sort());
-    expect(all.conventions).toContain('秒');
+    expect(all.conventions).toContain('seconds');
     const one = await ok('edits_ops', { op: 'addItem' });
     expect(one.operation).toMatchObject({ type: 'addItem', family: 'items', example: { type: 'addItem' } });
     expect(one.operation.schema).toMatchObject({ type: 'object', properties: { type: expect.any(Object), asset: expect.any(Object) } });

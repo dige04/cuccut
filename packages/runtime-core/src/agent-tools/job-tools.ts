@@ -16,14 +16,17 @@ import { RcAgentTools } from '@cuccut/protocol/messages/runtime-core';
 import { approvalField, confirmSummary, type ToolPrincipal, type ToolScope } from './tool-scope.ts';
 
 /**
- * 任务工具（Agent 面设计 §4.3、§6.2）：查看一个任务（`jobs_inspect`）、取消自己提交的任务（`jobs_cancel`）、等一个任务结束（`jobs_wait`）、
- * 列出看得到的任务（`jobs_list`）、重跑失败的固定流程（`jobs_retry`，即网关的 `pipelines.retry`）。看得到哪些任务由范围决定
- * （`visibleJob` / `visibleJobs`）：会话是本会话提交的与来源目录里已打开视频上的，对外服务是自己提交的，终端是全部。三个面都有。
+ * Job tools (agent surface design §4.3, §6.2): inspect a job (`jobs_inspect`), cancel a job you submitted (`jobs_cancel`), wait for a
+ * job to finish (`jobs_wait`), list visible jobs (`jobs_list`), and rerun a failed fixed pipeline (`jobs_retry`, i.e. the gateway's
+ * `pipelines.retry`). Which jobs are visible is decided by the scope (`visibleJob` / `visibleJobs`): for a session, the ones it
+ * submitted and those on videos opened from its source directory; for the external service, the ones it submitted; for the
+ * terminal, all of them. Available on all three surfaces.
  *
- * 取消是写操作（规划模式与 `read` 等级下拒绝，`ask` 等级下逐次确认），风险等级是 `command`，只能取消自己提交的任务。
+ * Cancelling is a write (rejected in plan mode and at the `read` level, confirmed each time at the `ask` level), its risk level is
+ * `command`, and only jobs you submitted can be cancelled.
  *
- * `jobs_wait` 的结果与 `jobs_inspect` 相同（直接用本组的 `jobs_inspect` 生成，不另写一份摘要），多一个 `settled`。最长等 50 秒：
- * 常见 MCP 客户端的请求超时是 60 秒；没等到就再调一次。
+ * `jobs_wait` returns the same result as `jobs_inspect` (built directly with this group's `jobs_inspect`, no separate summary), plus
+ * `settled`. It waits at most 50 seconds: common MCP clients time out requests at 60 seconds; if the job is not done, call it again.
  */
 
 export interface JobToolsDeps {
@@ -32,20 +35,19 @@ export interface JobToolsDeps {
   scope: ToolScope;
 }
 
-/** 等待的上限（秒）。 */
+/** Maximum wait (seconds). */
 export const JOB_WAIT_MAX_SEC = 50;
 
-/** 任务状态，与协议的 `JobState` 一一对应（少一个时类型检查不过）。 */
+/** Job states, one-to-one with the protocol's `JobState` (type checking fails if one is missing). */
 const JOB_STATES = ['queued', 'running', 'completed', 'failed', 'cancelled', 'interrupted', 'needs-reconciliation'] as const;
 type MissingState = Exclude<JobState, (typeof JOB_STATES)[number]>;
 const _allStates: MissingState extends never ? true : never = true;
 void _allStates;
 
-/** `jobs_list` 的状态过滤：`JobState` 之一，或 `settled`（已经结束的，任何终态）。 */
+/** `jobs_list` state filter: one of `JobState`, or `settled` (finished, any terminal state). */
 const STATE_FILTERS = [...JOB_STATES, 'settled'] as const;
 
-// i18n-ignore-start: 给模型的工具说明、错误与下一步
-const jobIdArg = z.string().min(1).max(200).describe('提交时返回的 jobId');
+const jobIdArg = z.string().min(1).max(200).describe('The jobId returned on submission');
 
 const schemas = {
   jobs_inspect: z.strictObject({ jobId: jobIdArg }),
@@ -58,18 +60,18 @@ const schemas = {
       .min(1)
       .max(JOB_WAIT_MAX_SEC)
       .optional()
-      .describe(`可选。最多等多少秒，1 到 ${JOB_WAIT_MAX_SEC}，默认 ${JOB_WAIT_MAX_SEC}；到时还没结束就返回当时的状态（settled: false）`),
+      .describe(`Optional. Maximum seconds to wait, 1 to ${JOB_WAIT_MAX_SEC}, default ${JOB_WAIT_MAX_SEC}; if the job has not finished by then, returns its current state (settled: false)`),
   }),
   jobs_list: z.strictObject({
-    video: z.string().min(1).max(200).optional().describe('可选。只列这个视频上的任务：videoId'),
+    video: z.string().min(1).max(200).optional().describe('Optional. Only list jobs on this video: videoId'),
     state: z
       .enum(STATE_FILTERS)
       .optional()
-      .describe(`可选。只列这种状态的任务：${JOB_STATES.join('、')}；settled 是已经结束的（除 queued、running 以外的全部）`),
-    limit: z.number().int().min(1).max(100).optional().describe('可选。最多列几个，默认 20，最多 100'),
+      .describe(`Optional. Only list jobs in this state: ${JOB_STATES.join(', ')}; settled means finished (everything except queued and running)`),
+    limit: z.number().int().min(1).max(100).optional().describe('Optional. Maximum number to list, default 20, at most 100'),
   }),
   jobs_retry: z.strictObject({
-    jobId: jobIdArg.describe('失败、被取消或被中断的固定流程的 jobId（给流程里某一步的 jobId 时重跑它所在的流程）'),
+    jobId: jobIdArg.describe('The jobId of a failed, cancelled or interrupted fixed pipeline (given the jobId of a step in a pipeline, reruns that pipeline)'),
   }),
 };
 
@@ -78,104 +80,103 @@ type Args<N extends ToolName> = z.infer<(typeof schemas)[N]>;
 
 const DEFINITIONS: Record<ToolName, ToolInfo> = {
   jobs_inspect: {
-    title: '查看任务',
+    title: 'Inspect job',
     description: [
-      '查看一个任务的状态、进度与结果。',
-      '状态（queued、running、completed、failed、cancelled、interrupted）、阶段与进度、冻结的 Provider、模型与参数、错误与补救；完成时给出每个输出（artifactId、媒体事实、导入视频得到的 assetId，转写是 documentId）。',
-      '只读，不会触发新的计算。可以看你在这个会话里提交的任务，以及工作目录里已打开的视频上的任务。',
+      'Inspects a job\'s state, progress and results.',
+      'State (queued, running, completed, failed, cancelled, interrupted), phase and progress, the frozen provider, model and parameters, error and remedy; on completion, every output (artifactId, media facts, the assetId from importing into a video; documentId for a transcription).',
+      'Read-only; triggers no new computation. You can see jobs you submitted in this session and jobs on videos opened in the working directory.',
     ].join('\n'),
     annotations: { readOnlyHint: true },
     effect: 'query',
-    examples: [{ title: '查看任务', args: { jobId: 'job_1' } }],
+    examples: [{ title: 'Inspect a job', args: { jobId: 'job_1' } }],
     surfaces: ['agent', 'mcp', 'cli'],
     positional: 'jobId',
   },
   jobs_cancel: {
-    title: '取消任务',
+    title: 'Cancel job',
     description: [
-      '取消你在这个会话里提交的一个任务。',
-      '排队中的立即取消；运行中的等 Provider 停下。返回最终状态。',
-      '用户停止任务时，这个会话还在排队或运行的任务会一并取消。',
+      'Cancels a job you submitted in this session.',
+      'A queued job is cancelled immediately; a running one waits for the provider to stop. Returns the final state.',
+      'When the user stops the task, this session\'s queued or running jobs are cancelled with it.',
     ].join('\n'),
     annotations: { destructiveHint: false, idempotentHint: true },
     effect: 'mutation',
-    examples: [{ title: '取消任务', args: { jobId: 'job_1' } }],
+    examples: [{ title: 'Cancel a job', args: { jobId: 'job_1' } }],
     surfaces: ['agent', 'mcp', 'cli'],
     positional: 'jobId',
   },
   jobs_wait: {
-    title: '等待任务',
+    title: 'Wait for job',
     description: [
-      `等一个任务结束（最多 ${JOB_WAIT_MAX_SEC} 秒），返回与 jobs_inspect 相同的记录。`,
-      `阻塞到任务进入终态（completed、failed、cancelled、interrupted、needs-reconciliation）或超时；超时不是错误：settled 为 false，按 next 再调一次 jobs_wait 接着等。上限 ${JOB_WAIT_MAX_SEC} 秒（timeoutSec 默认也是 ${JOB_WAIT_MAX_SEC}），避开常见客户端 60 秒的请求超时。`,
-      '只读，不会触发新的计算；看得到的任务与 jobs_inspect 相同。等任务结束优先用它，不要反复调 jobs_inspect 轮询。',
+      `Waits for a job to finish and returns the same record as jobs_inspect. Waits at most ${JOB_WAIT_MAX_SEC} seconds.`,
+      `Blocks until the job reaches a terminal state (completed, failed, cancelled, interrupted, needs-reconciliation) or times out; a timeout is not an error: settled is false, and per next you call jobs_wait again to keep waiting. The limit is ${JOB_WAIT_MAX_SEC} seconds (timeoutSec also defaults to ${JOB_WAIT_MAX_SEC}), to stay under the 60-second request timeout of common clients.`,
+      'Read-only; triggers no new computation; the visible jobs are the same as for jobs_inspect. Prefer it for waiting on a job; do not poll by calling jobs_inspect repeatedly.',
     ].join('\n'),
     annotations: { readOnlyHint: true },
     effect: 'query',
     examples: [
-      { title: '等任务结束', args: { jobId: 'job_1' } },
-      { title: '最多等 10 秒', args: { jobId: 'job_1', timeoutSec: 10 } },
+      { title: 'Wait for a job to finish', args: { jobId: 'job_1' } },
+      { title: 'Wait at most 10 seconds', args: { jobId: 'job_1', timeoutSec: 10 } },
     ],
     surfaces: ['agent', 'mcp', 'cli'],
     positional: 'jobId',
   },
   jobs_list: {
-    title: '列出任务',
+    title: 'List jobs',
     description: [
-      '列出你看得到的任务，新的在前。',
-      '每项是摘要：jobId、种类、状态、阶段与进度、视频、Provider 与模型、谁提交的、时间与错误码；详情用 jobs_inspect，等结束用 jobs_wait。固定流程的各步折叠在流程里，不单独列出。',
-      '会话里看得到本会话提交的任务与工作目录里已打开视频上的任务；对外服务只看得到自己提交的。',
+      'Lists the jobs you can see, newest first.',
+      'Each entry is a summary: jobId, kind, state, phase and progress, video, provider and model, who submitted it, times and error code; use jobs_inspect for details and jobs_wait to wait for completion. The steps of a fixed pipeline are folded into the pipeline and not listed separately.',
+      'A session sees the jobs it submitted and jobs on videos opened in the working directory; the external service sees only the ones it submitted.',
     ].join('\n'),
     annotations: { readOnlyHint: true },
     effect: 'query',
     examples: [
-      { title: '最近的任务', args: {} },
-      { title: '一个视频上还在跑的任务', args: { video: 'video_0123456789abcdef', state: 'running' } },
-      { title: '最近失败的五个', args: { state: 'failed', limit: 5 } },
+      { title: 'Recent jobs', args: {} },
+      { title: 'Jobs still running on one video', args: { video: 'video_0123456789abcdef', state: 'running' } },
+      { title: 'The five most recent failures', args: { state: 'failed', limit: 5 } },
     ],
     surfaces: ['agent', 'mcp', 'cli'],
   },
   jobs_retry: {
-    title: '重跑失败的流程',
+    title: 'Rerun failed pipeline',
     description: [
-      '从失败的那一步重新执行一个固定流程（转写、翻译、配音、下载这类多步的任务）。',
-      '只能重跑失败、被取消或被中断的流程，前面完成的步骤复用之前的产出；单个模型任务（语音、图片、转写）不能重跑，重新提交一次。',
-      '返回 jobId（与原来相同，attempt 加一）；之后用 jobs_wait 等它结束。只能重跑你自己提交的流程。',
+      'Reruns a fixed pipeline from the step that failed. Pipelines are multi-step jobs such as transcription, translation, dubbing or download.',
+      'Only failed, cancelled or interrupted pipelines can be rerun; steps already completed reuse their earlier outputs. A single model job (speech, image, transcription) cannot be rerun; submit it again.',
+      'Returns the jobId (the same as before, with attempt incremented); then use jobs_wait to wait for it to finish. You can only rerun pipelines you submitted.',
     ].join('\n'),
     annotations: { destructiveHint: false },
     effect: 'job',
-    examples: [{ title: '重跑失败的流程', args: { jobId: 'job_1' } }],
+    examples: [{ title: 'Rerun a failed pipeline', args: { jobId: 'job_1' } }],
     surfaces: ['agent', 'mcp', 'cli'],
     positional: 'jobId',
   },
 };
 
-/** 任务失败时给智能体的下一步（命令与协议规范 §11.3 的恢复规则）。 */
+/** The agent's next step when a job fails (the recovery rules in the command and protocol spec §11.3). */
 const FAILURE_NEXT: Record<string, string> = {
   PROVIDER_AUTH_FAILED:
-    '服务商拒绝了密钥：请用户在设置里的模型配置中检查或更换密钥（或 cuccut models configure <providerId> --key-stdin --verify）。不要重试，也不要换服务商绕过。',
-  PROVIDER_QUOTA_EXCEEDED: '服务商限速或额度用尽：告诉用户，由用户决定何时再提交或改用其他服务。不要自动重试。',
-  PROVIDER_REJECTED: '服务商拒绝了这次请求：按 message 调整参数或换模型后重新提交；不要原样重试。',
-  PROVIDER_UNAVAILABLE: '服务商暂时不可用：稍后重新提交，或请用户决定改用其他服务。',
-  MODEL_OUTPUT_INVALID: '模型的输出没有通过校验，没有产物：可以重新提交一次（是新的任务）；反复失败就告诉用户。',
+    'The provider rejected the key: ask the user to check or replace the key in the model configuration in Settings (or cuccut models configure <providerId> --key-stdin --verify). Do not retry, and do not switch providers to work around it.',
+  PROVIDER_QUOTA_EXCEEDED: 'The provider rate-limited the request or the quota is used up: tell the user, and let the user decide when to resubmit or whether to use another service. Do not retry automatically.',
+  PROVIDER_REJECTED: 'The provider rejected this request: adjust the parameters or switch models per message, then resubmit; do not retry unchanged.',
+  PROVIDER_UNAVAILABLE: 'The provider is temporarily unavailable: resubmit later, or ask the user to decide whether to use another service.',
+  MODEL_OUTPUT_INVALID: 'The model output failed validation and there is no artifact: you may resubmit once (as a new job); if it keeps failing, tell the user.',
   STALE_JOB_INPUT:
-    '任务的输入或目标视频已经变化（例如视频被关闭）：产物保留，但没有写入视频。重新 videos_inspect；生成的输出可以用 edits_apply 的 importAsset + artifactId（outputs 里的）导入，不必重新生成。',
+    'The job\'s input or target video has changed (e.g. the video was closed): the artifact is kept but was not written to the video. Run videos_inspect again; the generated outputs can be imported with edits_apply importAsset + artifactId (from outputs), without regenerating.',
   APPLY_FAILED:
-    '结果已经生成，但写入视频被拒绝：产物保留。重新 videos_inspect 看当前状态，告诉用户；需要时用 edits_apply 的 importAsset + artifactId（outputs 里的）再导入，不必重新生成。',
-  JOB_INTERRUPTED: '任务被中断（Runtime 停止或重启）：需要时重新提交。',
+    'The result was generated, but writing it to the video was rejected: the artifact is kept. Run videos_inspect again to see the current state and tell the user; if needed, import it again with edits_apply importAsset + artifactId (from outputs), without regenerating.',
+  JOB_INTERRUPTED: 'The job was interrupted (the Runtime stopped or restarted): resubmit if needed.',
   TASK_PROTECTED:
-    '这一步的写入触碰了任务合同里用户设的「不要改动」范围（被触碰的保护见 details），没有写入视频，前面步骤的结果保留。不要换办法绕过；告诉用户，由用户决定是否调整保护范围或自己处理。',
-  EXPORT_VALIDATION_FAILED: '导出的文件没有通过校验，没有发布（details 列出问题）：告诉用户；不要原样重试。',
-  EXPORT_RENDER_FAILED: 'ffmpeg 生成失败，没有发布：把 details 告诉用户；不要换办法绕过。',
-  EXPORT_TOOL_MISSING: '缺 ffmpeg / ffprobe：把 details.remedy 转告用户，由用户安装；不要自己安装或绕过。',
-  EXPORT_DESTINATION_EXISTS: '发布时目标文件已经存在：换一个 fileName 重新导出；确实要替换时先问用户。',
-  EXPORT_DESTINATION_UNWRITABLE: '发布时目标目录不可写：换一个目录重新导出，或告诉用户。',
-  ASSET_MISSING: '导出开始前素材文件不见了：告诉用户，请用户重新链接。',
-  ASSET_CHANGED: '导出开始前链接的素材被改过：告诉用户，请用户确认后重新链接，再重新导出。',
+    'This step\'s write touched a "do not change" range the user set in the task contract (the protections touched are in details); nothing was written to the video, and the results of earlier steps are kept. Do not work around it another way; tell the user and let the user decide whether to adjust the protected range or handle it themselves.',
+  EXPORT_VALIDATION_FAILED: 'The exported file failed validation and was not published (details lists the problems): tell the user; do not retry unchanged.',
+  EXPORT_RENDER_FAILED: 'ffmpeg failed to render and nothing was published: pass details on to the user; do not work around it another way.',
+  EXPORT_TOOL_MISSING: 'ffmpeg / ffprobe is missing: pass details.remedy on to the user and let the user install it; do not install it yourself or work around it.',
+  EXPORT_DESTINATION_EXISTS: 'The target file already existed at publish time: export again with a different fileName; if it really should be replaced, ask the user first.',
+  EXPORT_DESTINATION_UNWRITABLE: 'The target directory was not writable at publish time: export again to a different directory, or tell the user.',
+  ASSET_MISSING: 'An asset file went missing before the export started: tell the user and ask them to relink it.',
+  ASSET_CHANGED: 'A linked asset was modified before the export started: tell the user, ask them to confirm and relink it, then export again.',
   RESOURCE_ADMISSION_UNSATISFIABLE:
-    '这项工作需要的内存、GPU 内存或磁盘超过了这台机器能给的量（details.dimensions）：告诉用户；可以缩小范围或降低输出尺寸后重新提交，不要原样重试。',
+    'This work needs more memory, GPU memory or disk than this machine can provide (details.dimensions): tell the user; you may narrow the scope or lower the output size and resubmit, but do not retry unchanged.',
 };
-// i18n-ignore-end
 
 export class JobTools implements ToolSet {
   readonly schemas = schemas;
@@ -199,12 +200,11 @@ export class JobTools implements ToolSet {
       case 'jobs_retry':
         return this.#retry(args as Args<'jobs_retry'>, principal);
       default:
-        // i18n-ignore: 给模型的工具说明、错误与下一步
-        return Promise.reject(new ToolError('UNKNOWN_TOOL', `没有这个工具：${name}`));
+        return Promise.reject(new ToolError('UNKNOWN_TOOL', `No such tool: ${name}`));
     }
   }
 
-  // ---- 查看与取消 ----
+  // ---- Inspect and cancel ----
 
   async #inspect(args: Args<'jobs_inspect'>, principal: ToolPrincipal) {
     const { scope } = this.#deps;
@@ -217,8 +217,7 @@ export class JobTools implements ToolSet {
     const access = scope.authorize(principal, true);
     const record = await scope.visibleJob(args.jobId, access);
     if (!scope.owns(record, access)) {
-      // i18n-ignore: 给模型的工具说明、错误与下一步
-      throw new ToolError('JOB_NOT_OWNED', '只能取消你在这个会话里提交的任务；别人提交的任务由用户自己决定');
+      throw new ToolError('JOB_NOT_OWNED', 'You can only cancel jobs you submitted in this session; jobs submitted by others are for the user to decide');
     }
     const approval = await scope.confirm(access, {
       tool: 'jobs_cancel',
@@ -229,7 +228,7 @@ export class JobTools implements ToolSet {
     return { jobId: record.jobId, state, ...approvalField(approval) };
   }
 
-  // ---- 等待、列出、重跑 ----
+  // ---- Wait, list, rerun ----
 
   async #wait(args: Args<'jobs_wait'>, principal: ToolPrincipal) {
     const { scope, jobs } = this.#deps;
@@ -246,8 +245,7 @@ export class JobTools implements ToolSet {
     return {
       ...inspected,
       settled,
-      // i18n-ignore: 给模型的工具说明、错误与下一步
-      next: `等了 ${timeoutSec} 秒还没有结束${waiting?.detail ? `（还在等资源：${waiting.detail}）` : ''}：再调一次 jobs_wait 接着等。不要重复提交，也不要声称已经完成。`,
+      next: `Not finished after waiting ${timeoutSec} seconds${waiting?.detail ? ` (still waiting for resources: ${waiting.detail})` : ''}: call jobs_wait again to keep waiting. Do not resubmit, and do not claim it is done.`,
     };
   }
 
@@ -264,12 +262,10 @@ export class JobTools implements ToolSet {
       jobs: matched.slice(0, limit).map(summaryOf),
       total: matched.length,
       truncated: matched.length > limit,
-      // i18n-ignore-start: 给模型的工具说明、错误与下一步
       next:
         matched.length > limit
-          ? `只列出了最新的 ${limit} 个（共 ${matched.length} 个）：加 state 或 video 缩小范围，或调大 limit。详情用 jobs_inspect，等结束用 jobs_wait。`
-          : '详情用 jobs_inspect，等结束用 jobs_wait。',
-      // i18n-ignore-end
+          ? `Only the newest ${limit} of ${matched.length} are listed: add state or video to narrow it down, or raise limit. Use jobs_inspect for details and jobs_wait to wait for completion.`
+          : 'Use jobs_inspect for details and jobs_wait to wait for completion.',
     };
   }
 
@@ -277,23 +273,21 @@ export class JobTools implements ToolSet {
     const { scope, pipelines } = this.#deps;
     const access = scope.authorize(principal, true);
     let record = await scope.visibleJob(args.jobId, access);
-    // 流程里的一步：重跑它所在的流程。
+    // A step in a pipeline: rerun its pipeline.
     if (record.kind === 'pipeline-step' && record.parentJobId) record = await scope.visibleJob(record.parentJobId, access);
-    // i18n-ignore-start: 给模型的工具说明、错误与下一步
     if (record.kind !== 'pipeline' || !record.pipeline) {
       throw new ToolError(
         'JOB_NOT_RETRYABLE',
-        '这个任务不是固定流程，不能重跑：单个模型任务（语音、图片、转写）重新提交一次（是新的任务）',
+        'This job is not a fixed pipeline and cannot be rerun: submit a single model job (speech, image, transcription) again (as a new job)',
         { kind: record.kind },
       );
     }
     if (!scope.owns(record, access)) {
-      throw new ToolError('JOB_NOT_OWNED', '只能重跑你自己提交的流程；别人提交的由用户自己决定');
+      throw new ToolError('JOB_NOT_OWNED', 'You can only rerun pipelines you submitted; ones submitted by others are for the user to decide');
     }
     if (!isTerminal(record.state)) {
-      throw new ToolError('JOB_NOT_RETRYABLE', '流程还没有结束：用 jobs_wait 等它结束；失败了再重跑', { state: record.state });
+      throw new ToolError('JOB_NOT_RETRYABLE', 'The pipeline has not finished yet: use jobs_wait to wait for it; rerun it only if it fails', { state: record.state });
     }
-    // i18n-ignore-end
     const approval = await scope.confirm(access, {
       tool: 'jobs_retry',
       ...confirmSummary(
@@ -309,13 +303,12 @@ export class JobTools implements ToolSet {
       pipeline: record.pipeline.name,
       attempt: record.attempt + 1,
       ...approvalField(approval),
-      // i18n-ignore: 给模型的工具说明、错误与下一步
-      next: '流程已从停下的那一步重新开始（jobId 不变，attempt 加一）：用 jobs_wait 等它结束，state 为 completed 才算完成；不要重复提交。',
+      next: 'The pipeline restarted from the step where it stopped (same jobId, attempt incremented): use jobs_wait to wait for it to finish; it is done only when state is completed. Do not resubmit.',
     };
   }
 }
 
-/** 等任务结束、超时或请求中止，先到的为准；超时与中止不是错误。 */
+/** Waits until the job settles, the timeout elapses or the request is aborted, whichever comes first; timeout and abort are not errors. */
 async function untilSettled(settled: Promise<unknown>, timeoutMs: number, signal: AbortSignal | undefined): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let onAbort: (() => void) | undefined;
@@ -338,7 +331,7 @@ async function untilSettled(settled: Promise<unknown>, timeoutMs: number, signal
   }
 }
 
-/** `jobs_list` 的一项：`jobs_inspect` 的摘要部分，不含参数、输出与下一步。 */
+/** One `jobs_list` entry: the summary part of `jobs_inspect`, without parameters, outputs or next. */
 function summaryOf(record: JobRecord) {
   return {
     jobId: record.jobId,
@@ -359,7 +352,7 @@ function summaryOf(record: JobRecord) {
   };
 }
 
-/** 服务的拒绝换成工具的错误：`details.code`（`JOB_NOT_RETRYABLE`……）作为工具错误码。 */
+/** Turns a service rejection into a tool error: `details.code` (`JOB_NOT_RETRYABLE`, ...) becomes the tool error code. */
 function toolErrorOf(error: unknown): unknown {
   if (error instanceof RpcError && typeof error.details === 'object' && error.details !== null) {
     const { code, ...rest } = error.details as Record<string, unknown>;
@@ -368,55 +361,51 @@ function toolErrorOf(error: unknown): unknown {
   return error;
 }
 
-/** 固定流程完成之后的下一步：结果在哪里（`pipeline.summary`）、接着可以做什么。认不出的流程用通用的说明。 */
+/** The next step after a fixed pipeline completes: where the results are (`pipeline.summary`) and what can come next. Unknown pipelines get the generic text. */
 export function pipelineNext(name: string, summary: Record<string, unknown> | null, videoId: Id | null): string | null {
-  // i18n-ignore-start: 给模型的工具说明、错误与下一步
   switch (name) {
     case TRANSCRIBE_PIPELINE:
       if (summary && 'files' in summary && !('documentId' in summary)) {
-        return '转录完成，没有建视频：pipeline.summary.files 是写出的 TXT 与 SRT 文稿（outputs 的 path 相同）。把位置告诉用户；要读内容时直接读这些文件。';
+        return 'Transcription completed without creating a video: pipeline.summary.files are the TXT and SRT transcripts written (the same as the paths in outputs). Tell the user where they are; to read the content, read these files directly.';
       }
-      return '转录完成：pipeline.summary.documentId 是新写入的转写（speech 文档，可以给 documents_read），summary.captions 是建的字幕层（status 为 created 时 documentId 是字幕文档）；新建视频时 summary.videoId 是新视频。接着可以 documents_read、captions_create 或 export。';
+      return 'Transcription completed: pipeline.summary.documentId is the newly written transcript (a speech document, can be passed to documents_read), and summary.captions is the caption layer created (when status is created, documentId is the caption document); when a video was created, summary.videoId is the new video. Next you can use documents_read, captions_create or export.';
     case TRANSLATE_PIPELINE:
-      return '翻译完成：pipeline.summary.documentId 是新写入的译文（translation 文档），summary.captions 是建的目标语言字幕层。要文件时用 export。';
+      return 'Translation completed: pipeline.summary.documentId is the newly written translation (a translation document), and summary.captions is the target-language caption layer created. Use export to get a file.';
     case TRANSLATE_SUBTITLES_PIPELINE:
-      return '翻译完成：pipeline.summary.file（outputs[0].path）是译好的字幕文件。把位置告诉用户。';
+      return 'Translation completed: pipeline.summary.file (outputs[0].path) is the translated subtitle file. Tell the user where it is.';
     case DUB_PIPELINE:
-      return '配音完成：配音放在新的配音轨上（pipeline.summary.trackId），summary.translation 是用的译文，summary.units 说明放上了几句、几句没有合成及原因。把结果告诉用户；要成片时用 export。';
+      return 'Dubbing completed: the dub is on a new dub track (pipeline.summary.trackId), summary.translation is the translation used, and summary.units says how many sentences were placed, how many were not synthesized and why. Tell the user the result; use export for the finished video.';
     case TRANSCODE_PIPELINE:
-      return '转码完成：outputs 的 path（pipeline.summary.files）是输出的文件，原文件不动。把位置告诉用户。';
+      return 'Transcode completed: the paths in outputs (pipeline.summary.files) are the output files; the original files are untouched. Tell the user where they are.';
     case LINK_IMPORT_PIPELINE:
-      // 只下载的从链接导入：文件已经写好（outputs 的 path），文稿与字幕同样。
+      // Download-only link import: the files are already written (the paths in outputs), and so are the transcript and subtitles.
       if (videoId === null) {
-        return '下载完成，没有导入视频：outputs 里的 path 是下载的文件（媒体，转写了时还有 TXT 文稿与 SRT 字幕）。把位置告诉用户；要读文稿内容时直接读 path，读不到时用 artifacts_save 把它的 artifactId 存进工作目录。要翻译时自己翻，写成工作目录里的新文件，再用 downloads_save 放进下载目录。';
+        return 'Download completed, not imported into a video: the paths in outputs are the downloaded files (the media, plus a TXT transcript and SRT subtitles when transcribed). Tell the user where they are; to read the transcript, read its path directly, or if you cannot, save its artifactId into the working directory with artifacts_save. To translate, do it yourself, write a new file in the working directory, then put it in the downloads directory with downloads_save.';
       }
       return `${
         summary?.createdVideo === true
-          ? '下载完成，新建了视频：summary.videoId 是新视频，下载的媒体已放上时间线（主轨、从 0 开始），pipeline.summary.assetId 是导入的素材'
-          : '下载完成并导入到已有的视频：summary.videoId 是那个视频，pipeline.summary.assetId 是导入的素材（它的时间线原来是空的时已放上主轨，否则只在素材库里，要用时 edits_apply 的 addItem 放上去）'
+          ? 'Download completed and a new video was created: summary.videoId is the new video, the downloaded media is placed on the timeline (main track, starting at 0), and pipeline.summary.assetId is the imported asset'
+          : 'Download completed and imported into an existing video: summary.videoId is that video, and pipeline.summary.assetId is the imported asset (placed on the main track if the timeline was empty, otherwise only in the asset library; to use it, place it with edits_apply addItem)'
       }${
         summary && typeof summary.transcribeJobId === 'string'
-          ? `；转写写进了视频的 speech 文档（${
-              typeof summary.documentId === 'string' ? 'summary.documentId' : 'videos_inspect 的文档里'
-            }）${linkImportCaptionsNext(summary.captions)}`
+          ? `; the transcription was written to the video's speech document (${
+              typeof summary.documentId === 'string' ? 'summary.documentId' : 'in the documents from videos_inspect'
+            })${linkImportCaptionsNext(summary.captions)}`
           : ''
-      }。`;
+      }.`;
     default:
       return null;
   }
-  // i18n-ignore-end
 }
 
-/** 从链接导入建字幕层这一步的下一步：建好了指向字幕文档，没建（停用、没放上时间线……）指向 captions_create。 */
+/** Next step for the link import's caption step: if created, points to the caption document; if not (disabled, not on the timeline, ...), points to captions_create. */
 function linkImportCaptionsNext(captions: unknown): string {
   const status = captions && typeof captions === 'object' ? (captions as { status?: unknown }).status : undefined;
-  // i18n-ignore: 给模型的下一步
-  if (status === 'created') return '，字幕层也建好了（summary.captions 的 documentId 是字幕文档）';
-  // i18n-ignore: 给模型的下一步
-  return '，要字幕层时用 captions_create';
+  if (status === 'created') return ', and the caption layer was created too (the documentId in summary.captions is the caption document)';
+  return '; use captions_create to add a caption layer';
 }
 
-/** 任务记录给模型看的版本：冻结的选择与参数、错误与下一步、每个输出。 */
+/** The model-facing view of a job record: the frozen choices and parameters, error and next step, and every output. */
 function digestJob(record: JobRecord) {
   const generation = record.generation
     ? record.generation.capability === 'synthesizeSpeech'
@@ -435,7 +424,7 @@ function digestJob(record: JobRecord) {
     mediaType: o.mediaType,
     assetId: o.assetId,
     media: o.media,
-    // 导出：发布的文件、格式与校验结果。
+    // Export: the published file, format and validation result.
     ...(o.path !== undefined ? { path: o.path } : {}),
     ...(o.format !== undefined ? { format: o.format } : {}),
     ...(o.validation !== undefined ? { validation: o.validation } : {}),
@@ -468,7 +457,7 @@ function digestJob(record: JobRecord) {
         }
       : {}),
     ...(record.warnings.length ? { warnings: record.warnings } : {}),
-    // 应用到视频的各次尝试（只有状态与原因）与取消的三件事实（§7.2、§7.4）：智能体看得到，但不能对账。
+    // Attempts to apply to the video (state and reason only) and the three cancellation facts (§7.2, §7.4): visible to the agent, but it cannot reconcile them.
     ...(record.applications?.length
       ? {
           applications: record.applications.map((a) => ({
@@ -479,7 +468,7 @@ function digestJob(record: JobRecord) {
         }
       : {}),
     ...(record.cancellation ? { cancellation: record.cancellation } : {}),
-    // 固定流程（一级动词 transcribe、translate、dub、transcode、download）：每一步的状态与完成时的摘要（新文稿、字幕层、文件）。
+    // Fixed pipeline (top-level verbs transcribe, translate, dub, transcode, download): each step's status and the summary on completion (new transcript, caption layer, files).
     ...(record.pipeline
       ? {
           pipeline: {
@@ -490,7 +479,7 @@ function digestJob(record: JobRecord) {
           },
         }
       : {}),
-    // 排队时在等什么（§7.6、§7.7）：同一队列的并发，或机器上的资源。
+    // What a queued job is waiting for (§7.6, §7.7): concurrency in the same queue, or resources on the machine.
     ...(record.wait ? { waiting: { reason: record.wait.reason, detail: record.wait.detail, since: record.wait.since } } : {}),
     ...(record.result
       ? record.kind === 'transcribe'
@@ -504,25 +493,24 @@ function digestJob(record: JobRecord) {
 }
 
 function nextFor(record: JobRecord): string {
-  // i18n-ignore-start: 给模型的工具说明、错误与下一步
   switch (record.state) {
     case 'queued':
     case 'running':
       if (record.wait?.reason === 'resources') {
-        return `还没有开始，正在等待资源（${record.wait.detail}）：前面的任务结束后自动开始。过一会儿再用 jobs_wait 等；不要重复提交，也不要取消重来。`;
+        return `Not started yet; waiting for resources (${record.wait.detail}): it starts automatically when earlier jobs finish. Wait with jobs_wait again in a while; do not resubmit, and do not cancel and start over.`;
       }
-      return '还没有完成：用 jobs_wait 等它结束。不要重复提交，也不要声称已经完成。';
+      return 'Not finished yet: use jobs_wait to wait for it. Do not resubmit, and do not claim it is done.';
     case 'completed':
       if (record.kind === 'export') {
-        return '导出完成：outputs 里是每个文件的 path（已经写到磁盘）与校验结果。把路径告诉用户；有 warnings 时一并说明。';
+        return 'Export completed: outputs holds each file\'s path (already written to disk) and validation result. Tell the user the paths; mention any warnings too.';
       }
       if (record.kind === 'transcribe') {
         return record.result?.documentId
-          ? '转写已写入视频的 speech 文档（documentId），videos_inspect 的文档里能看到。'
-          : '转写完成，但没有识别到语音或音轨，没有写入文档（见 warnings）。';
+          ? 'The transcription was written to the video\'s speech document (documentId), visible in the documents from videos_inspect.'
+          : 'Transcription completed, but no speech or audio track was detected, so no document was written (see warnings).';
       }
       if (record.kind === 'generateText') {
-        return '文本已发布为产物（artifactId），result.text.preview 是开头一段；warnings 里有 output-truncated 时内容不完整。';
+        return 'The text was published as an artifact (artifactId), and result.text.preview is its opening; if warnings contains output-truncated, the content is incomplete.';
       }
       if (record.kind === 'pipeline' && record.pipeline) {
         const done = pipelineNext(record.pipeline.name, record.pipeline.summary, record.videoId);
@@ -531,27 +519,26 @@ function nextFor(record: JobRecord): string {
       if (record.videoId !== null) {
         const imported = record.result?.outputs?.every((o) => o.assetId !== null) ?? false;
         return imported
-          ? '输出已导入视频为候选素材（assetId），还不在时间线上。要用时先 videos_inspect 取得 revision，再 edits_apply 的 addItem（asset 用这个 assetId）。'
-          : '输出已生成，但有的没能导入视频（assetId 为 null）：产物保留。重新 videos_inspect 看视频的状态，告诉用户。';
+          ? 'The outputs were imported into the video as candidate assets (assetId) and are not on the timeline yet. To use one, first get the revision with videos_inspect, then edits_apply addItem (with this assetId as asset).'
+          : 'The outputs were generated, but some could not be imported into the video (assetId is null): the artifacts are kept. Run videos_inspect again to see the video\'s state and tell the user.';
       }
-      return '输出只发布为产物（artifactId），没有导入任何视频，工作目录里也没有文件。要放进视频用 edits_apply 的 {"type":"importAsset","artifactId":…}（不重新生成）；需要文件本身时用 artifacts_save。';
+      return 'The outputs were only published as artifacts (artifactId), not imported into any video, and there is no file in the working directory. To put one in a video, use edits_apply {"type":"importAsset","artifactId":…} (no regeneration); when you need the file itself, use artifacts_save.';
     case 'failed':
       if (record.kind === 'export' && record.result?.outputs?.length) {
-        return '导出只完成了一部分：outputs 里的文件已经发布，error.details.failed 列出没有导出的文件与原因。如实告诉用户。';
+        return 'The export only partly completed: the files in outputs were published, and error.details.failed lists the files not exported and why. Tell the user exactly that.';
       }
-      // 结果触碰了任务的保护范围（§3.2）：要不要应用只能由用户决定，智能体不能再导入一次绕过。
+      // The result touched the task's protected range (§3.2): only the user can decide whether to apply it; the agent must not import it again to work around that.
       if ((record.error?.details as { reason?: unknown } | undefined)?.reason === 'TASK_PROTECTED') {
-        return '结果已经生成，但触碰了任务合同里用户设的「不要改动」范围（details.protections），没有写入视频；产物保留为候选。不要用 edits_apply 再导入或换办法绕过；告诉用户，由用户决定要不要应用（用户可以在任务列表里自己应用）。';
+        return 'The result was generated, but it touched a "do not change" range the user set in the task contract (details.protections), so it was not written to the video; the artifact is kept as a candidate. Do not import it again with edits_apply or work around it another way; tell the user and let the user decide whether to apply it (the user can apply it in the task list).';
       }
-      return FAILURE_NEXT[record.error?.code ?? ''] ?? '任务失败：把错误告诉用户；不要换一种办法绕过。';
+      return FAILURE_NEXT[record.error?.code ?? ''] ?? 'The job failed: tell the user the error; do not work around it another way.';
     case 'cancelled':
       return record.result
-        ? '任务已停止：结果已经生成，但停止之后不再自动应用到视频（产物保留为候选，见 applications）。告诉用户，由用户决定要不要用。'
-        : '任务已取消，没有结果。';
+        ? 'The job was stopped: the result was generated, but after stopping it is no longer applied to the video automatically (the artifact is kept as a candidate; see applications). Tell the user and let the user decide whether to use it.'
+        : 'The job was cancelled and has no result.';
     case 'needs-reconciliation':
-      return '外发的调用在 Runtime 停止时还没有结果：不知道远端有没有执行、有没有计费。不要重新提交；告诉用户到任务列表里决定重试或放弃（智能体不能代做）。';
+      return 'The outbound call had no result when the Runtime stopped: it is unknown whether the remote side ran it or charged for it. Do not resubmit; tell the user to decide in the task list whether to retry or abandon it (the agent cannot do this for them).';
     case 'interrupted':
       return FAILURE_NEXT.JOB_INTERRUPTED!;
   }
-  // i18n-ignore-end
 }

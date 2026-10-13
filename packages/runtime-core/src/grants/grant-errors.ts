@@ -240,20 +240,18 @@ export function isGrantErrorDetails(value: unknown): value is GrantErrorDetails 
   return isGrantErrorCode(code);
 }
 
-/** 智能体与外部客户端拿到授权错误时的下一步：转告用户，不换服务商绕过。 */
-// i18n-ignore-start: 给智能体与外部客户端（模型）看的下一步，不在界面显示
+/** The next step for an agent or external client that gets a grant error: relay it to the user; do not switch providers to get around it. */
 export const GRANT_NEXT: Readonly<Record<GrantErrorCode, string>> = {
   GRANT_REQUIRED:
-    '把数据交给这个服务商需要用户授权：把 remedy.hint 转告用户，请用户在 CucCut 里授权（或在会话里批准这一次）后再试。不要换服务商、换本机工具或别的办法绕过。',
-  GRANT_REVOKED: '用户撤销了（或到期了）这项授权：不要重试，告诉用户；用户重新授权之后再试。不要换服务商绕过。',
-  BUDGET_EXCEEDED: '这项授权的预算用完了：不要重试，把 remedy 转告用户，由用户决定是否调高上限。不要换服务商绕过预算。',
-  BUDGET_UNVERIFIABLE: '这个模型的费用估不出来，有金额上限的授权不能保证不超出：请用户逐次批准（金额未知）或改用按次计的授权。',
+    'Handing this data to this provider needs the user\'s grant: relay remedy.hint to the user and ask them to grant it in CucCut (or approve this one call in the session), then try again. Do not switch providers, use a local tool or find another way around it.',
+  GRANT_REVOKED: 'The user revoked this grant (or it expired): do not retry; tell the user, and try again once they grant it again. Do not switch providers to get around it.',
+  BUDGET_EXCEEDED: 'This grant\'s budget is used up: do not retry; relay remedy to the user, who decides whether to raise the limit. Do not switch providers to get around the budget.',
+  BUDGET_UNVERIFIABLE: 'The cost of this model cannot be estimated, so a grant with a spending limit cannot guarantee staying under it: ask the user to approve each call (amount unknown) or to use a per-call grant instead.',
   TASK_BUDGET_EXCEEDED:
-    '这个任务的预算用完了（跨服务商合计）：不要重试，也不要换服务商绕过；把 remedy 转告用户，由用户决定是否在任务合同里调高预算。',
+    'This task\'s budget is used up (summed across providers): do not retry, and do not switch providers to get around it; relay remedy to the user, who decides whether to raise the budget in the task contract.',
   TASK_BUDGET_UNVERIFIABLE:
-    '任务预算有金额上限，这次调用的费用无法按同一币种估算：不要换服务商绕过；告诉用户，由用户决定去掉金额上限或换用有单价的模型。',
+    'The task budget has a spending limit, and this call\'s cost cannot be estimated in the same currency: do not switch providers to get around it; tell the user, who decides whether to remove the spending limit or use a model with a unit price.',
 };
-// i18n-ignore-end
 
 /** 对外服务 `auto` 等级下没有授权覆盖的外发（§4.8）：`auto` 免的是逐次确认，不是外发授权。 */
 export function grantRequiredDetails(items: readonly GrantRequestItem[]): { message: Localized; details: GrantErrorDetails } {

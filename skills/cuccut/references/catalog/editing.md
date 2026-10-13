@@ -1,173 +1,173 @@
 ---
-description: 时间线修改的机制：一笔修改的事务与版本、预检、按需查操作、常用操作的例子、剪口播的提案与剪口、章节、撤销与读回执。第一次改时间线之前读。
+description: Timeline editing mechanics - the transaction and revision of one edit, dry runs, looking up operations on demand, examples of common operations, talking-head cut proposals and cuts, chapters, undo and reading receipts. Read before changing the timeline for the first time.
 ---
 
-# 编辑：时间线上的修改
+# Editing: changes on the timeline
 
-## 何时用
+## When to use
 
-- 剪辑：放素材、裁切、拆分、挪动、删除、波纹删除、变速、转场。
-- 剪口播：去口癖与长停顿、删掉录废的部分（剪口）。
-- 章节、文字与元素、画面摆法与外观、效果、声音与闪避、画布尺寸。
-- 写文档（转写、译文）也是一笔修改，但通常用 {{tool:documents_put}}（见 [subtitles](subtitles.md)）；作者的章节用 {{tool:chapters_adopt}} 写进视频（见下面的「章节」）。
+- Editing: placing assets, trimming, splitting, moving, deleting, ripple deleting, changing speed, transitions.
+- Talking-head cuts: removing filler words and long pauses, cutting flubbed takes (cuts).
+- Chapters, text and elements, picture placement and appearance, effects, sound and ducking, canvas size.
+- Writing documents (transcripts, translations) is also an edit, but usually goes through {{tool:documents_put}} (see [subtitles](subtitles.md)); the author's chapters are written into the video with {{tool:chapters_adopt}} (see "Chapters" below).
 
-剪哪里、留哪句、停顿多长是 craft 的事：{{skill:talking-head-cut}}、{{skill:video-chapters}}、{{skill:shorts-segments}}。这一页只讲怎么提交、怎么读回执。
+Where to cut, which lines to keep and how long pauses should be are the crafts' business: {{skill:talking-head-cut}}, {{skill:video-chapters}}, {{skill:shorts-segments}}. This page covers only how to submit and how to read receipts.
 
-## 前置检查
+## Preflight
 
-- {{tool:videos_inspect}} 拿当前版本（`revision`）与对象 ID（轨道、片段、素材、文档）。片段多时用 {{arg:fromSeconds}} / {{arg:toSeconds}} 读一段。
-- 分清两种时钟：移动、裁切、拆分、波纹删除、章节用**时间线上的秒**；剪口（`addCuts`）用**素材自己的秒**。换算见 [conventions](../conventions.md) 的「时间」。
-- 锁定的片段与轨道不能改；要动先问用户。
+- {{tool:videos_inspect}} to get the current revision (`revision`) and object IDs (tracks, items, assets, documents). With many items, read a span with {{arg:fromSeconds}} / {{arg:toSeconds}}.
+- Tell the two clocks apart: moving, trimming, splitting, ripple deletes and chapters use **timeline seconds**; cuts (`addCuts`) use **the asset's own seconds**. For the conversion see "Time" in [conventions](../conventions.md).
+- Locked items and tracks cannot be changed; ask the user before touching them.
 
-## 命令与例子
+## Commands and examples
 
-### 一笔修改：{{tool:edits_apply}}
+### One edit: {{tool:edits_apply}}
 
-- {{arg:operations}} 是按顺序执行的操作数组；**全部成功才提交**，任何一步失败整笔不生效、视频不变。
-- {{arg:expectedRevision}} 带上 {{tool:videos_inspect}} 或上一次回执的版本；不一致时拒绝（`PROJECT_REVISION_CONFLICT`）。
-- {{arg:label}} 写一句简短说明，显示在历史与撤销里（例如「删掉开头的寒暄」）。
-- 相关的几步放进同一笔：用户说「不要那一批」时一次撤销就退回去。同一笔里后面的操作可以用 `ref` 引用前面 `importAsset` 导入的素材。
-- 时间写秒数（`1.5`），也可以写 `{"unit":"frames","value":30}`。
+- {{arg:operations}} is an array of operations executed in order; **it commits only if all succeed**: if any step fails, the whole edit has no effect and the video is unchanged.
+- {{arg:expectedRevision}} carries the revision from {{tool:videos_inspect}} or the previous receipt; a mismatch is refused (`PROJECT_REVISION_CONFLICT`).
+- {{arg:label}} is a short description shown in history and undo (for example "Remove the small talk at the start").
+- Put related steps in the same edit: when the user says "not that batch", one undo takes it all back. Later operations in the same edit can refer with `ref` to an asset imported by an earlier `importAsset`.
+- Write times as seconds (`1.5`), or as `{"unit":"frames","value":30}`.
 
-### 先预检
+### Dry run first
 
-不确定操作写得对不对、会影响多少时，先给 {{tool:edits_apply}} 带上 {{arg:dryRun}} 提交一次：形态、参数、引用的对象与文件、版本对不上时与真正提交报同样的错，通过时返回补全后的操作与影响（`committed: false`），视频不变、不进历史。同轨重叠、锁定与任务保护只有真正提交时才知道。
+When you are not sure an operation is written correctly or how much it will affect, first submit {{tool:edits_apply}} once with {{arg:dryRun}}: shape, parameters, referenced objects and files, and revision mismatches report the same errors as a real submission; when it passes, it returns the completed operations and their impact (`committed: false`), the video is unchanged and nothing enters history. Overlaps on the same track, locks and job protection are only known on a real submission.
 
-### 按需查操作：{{tool:edits_ops}}
+### Looking up operations on demand: {{tool:edits_ops}}
 
-不要背操作清单，也不要一次拉全部。要用哪个操作就只查那一个：{{tool:edits_ops}} 给 {{arg:op}}（如 `removeRange`），返回它的说明、参数的 JSON Schema 与一个示例。
+Do not memorize the list of operations, and do not pull all of them at once. Look up only the operation you are going to use: pass {{arg:op}} to {{tool:edits_ops}} (e.g. `removeRange`), which returns its description, the JSON Schema of its parameters and an example.
 <!-- surface: cli -->
-同样的内容也可以 `cuccut spec edits.<操作>` 取。
+The same content is also available via `cuccut spec edits.<operation>`.
 <!-- /surface -->
 
-操作族一览（字段一律按需查）：
+Operation families at a glance (always look up the fields on demand):
 
-| 族 | 操作 | 做什么 |
+| Family | Operations | What they do |
 | --- | --- | --- |
-| 素材 | `importAsset`、`collectAssets` | 登记素材（链接或复制进视频）；把链接的素材收进视频 |
-| 片段 | `addItem`、`moveItem`、`moveItems`、`trimItem`、`splitItem`、`joinItems`、`deleteItems`、`updateItem` | 放上时间线、挪、裁、拆、合、删（留空隙）、改名与启用、跟随策略 |
-| 波纹 | `removeRange` | 删掉一段时间并让后面的前移；要一起动的配音、字幕轨都要列上 |
-| 画面 | `setTransform`、`setStyle`、`setEffects`、`setSpeed` | 位置与大小、铺满或画中画、裁切与外观、调色与效果、恒定变速 |
-| 文字 | `setText` | 改文字片段的文字或改成计时读数 |
-| 声音 | `setAudioMix`、`setDucking`、`removeDucking` | 音量、静音、淡入淡出；人声响起时压低配乐 |
-| 转场 | `setTransition`、`removeTransition` | 片段之间或单侧的转场 |
-| 章节 | `setChapters`、`upsertChapter`、`removeChapter` | 整个替换或逐章修改章节 |
-| 剪口 | `proposeCuts`、`acceptCutSuggestions`、`addCuts`、`restoreCut` | 生成口癖与停顿的剪辑提案、接受建议、直接剪、恢复 |
-| 轨道与画布 | `addTrack`、`updateTrack`、`updateSequence` | 加轨道、锁定与隐藏、画布尺寸与底色 |
-| 文档与历史 | `putDocument`、`createCheckpoint`、`renameVideo` | 写文档、留检查点、改视频名 |
+| Assets | `importAsset`, `collectAssets` | Register assets (linked, or copied into the video); pull linked assets into the video |
+| Items | `addItem`, `moveItem`, `moveItems`, `trimItem`, `splitItem`, `joinItems`, `deleteItems`, `updateItem` | Place on the timeline, move, trim, split, join, delete (leaving a gap), rename and enable, follow policy |
+| Ripple | `removeRange` | Delete a span of time and shift what follows earlier; list the dubbing and caption tracks that must move with it |
+| Picture | `setTransform`, `setStyle`, `setEffects`, `setSpeed` | Position and size, fill or picture-in-picture, crop and appearance, color and effects, constant speed change |
+| Text | `setText` | Change a text item's text or turn it into a timer readout |
+| Sound | `setAudioMix`, `setDucking`, `removeDucking` | Volume, mute, fade in and out; lower the music when voices come in |
+| Transitions | `setTransition`, `removeTransition` | Transitions between items or on one side |
+| Chapters | `setChapters`, `upsertChapter`, `removeChapter` | Replace chapters wholesale or change them one by one |
+| Cuts | `proposeCuts`, `acceptCutSuggestions`, `addCuts`, `restoreCut` | Generate a cut proposal for filler words and pauses, accept suggestions, cut directly, restore |
+| Tracks and canvas | `addTrack`, `updateTrack`, `updateSequence` | Add tracks, lock and hide, canvas size and background color |
+| Documents and history | `putDocument`, `createCheckpoint`, `renameVideo` | Write documents, leave checkpoints, rename the video |
 
-常用操作（由目录生成）：
+Common operations (generated from the catalog):
 
 <!-- generated: common-ops -->
-**导入素材**（`importAsset`）：把媒体文件登记为视频的素材。
+**Import an asset** (`importAsset`): registers a media file as an asset of the video.
 
 ```json
 {"type":"importAsset","path":"demo.mp4","ref":"clip"}
 ```
 
-**放素材**（`addItem`）：把素材放到时间线上；省略 at 时接在轨道末尾，省略 trackId 时用第一条未锁定的同类轨道（视频、图片放视觉轨，音频放音频轨）。
+**Place an asset** (`addItem`): places an asset on the timeline; without at it is appended to the end of the track, and without trackId it goes on the first unlocked track of the matching kind (video and images on a visual track, audio on an audio track).
 
 ```json
 {"type":"addItem","asset":{"ref":"clip"},"at":1}
 ```
 
-**裁剪**（`trimItem`）：裁切片段的开头或结尾，at 是这条边在时间线上的新位置。
+**Trim** (`trimItem`): trims the start or end of an item; at is the new timeline position of that edge.
 
 ```json
 {"type":"trimItem","itemId":"item_1","edge":"end","at":8}
 ```
 
-**挪动**（`moveItem`）：移动片段；at 是新的开始时间，offset 是相对移动（可为负），二选一。
+**Move** (`moveItem`): moves an item; at is the new start time, offset a relative move (may be negative); give one or the other.
 
 ```json
 {"type":"moveItem","itemId":"item_1","at":5}
 ```
 
-**删除**（`deleteItems`）：删除片段（不移动其他片段，留下空隙）。
+**Delete** (`deleteItems`): deletes items (other items do not move; a gap is left).
 
 ```json
 {"type":"deleteItems","itemIds":["item_1"]}
 ```
 
-**分割**（`splitItem`）：在时间线上的这个位置把片段一分为二；关键帧按两半各自的窗口分开，裁切时关键帧跟着内容走。
+**Split** (`splitItem`): splits an item in two at this timeline position; keyframes are divided by the window of each half, and when trimming, keyframes stay with the content.
 
 ```json
 {"type":"splitItem","itemId":"item_1","at":3.5}
 ```
 
-**调音量**（`setAudioMix`）：改音频、视频或有声合成的声音；volume 是线性倍数，在 0 到 4，1 为原音量（0.5 约 -6 dB，2 约 +6 dB）；淡变 0 表示去掉。
+**Change volume** (`setAudioMix`): changes the sound of an audio, video or audible composition item; volume is a linear multiplier from 0 to 4, 1 being the original volume (0.5 is about -6 dB, 2 about +6 dB); a fade of 0 removes it.
 
 ```json
 {"type":"setAudioMix","itemId":"item_1","volume":0.5,"fadeOut":1}
 ```
 
-**改文字**（`setText`）：改文字片段的文字，或改成计时读数；两者只给一个。
+**Change text** (`setText`): changes the text of a text item, or turns it into a timer readout; give exactly one of the two.
 
 ```json
-{"type":"setText","itemId":"item_1","text":"第一章"}
+{"type":"setText","itemId":"item_1","text":"Chapter 1"}
 ```
 
-字幕层用 {{tool:captions_create}} 建，不是这里的操作；剪掉一段并让后面前移用 `removeRange`，口播的剪口用 `addCuts`。其余操作与每个字段的写法用 {{tool:edits_ops}} 取。
+Caption layers are created with {{tool:captions_create}}, not with an operation here; to cut a span and close the gap, use `removeRange`, and for cuts in a talking head use `addCuts`. Get the other operations and how to write each field from {{tool:edits_ops}}.
 <!-- /generated -->
 
-### 剪口播的机制
+### How talking-head cuts work
 
-1. `proposeCuts`（给素材 ID，`detect` 里选口癖、停顿与目标停顿长度）生成剪辑提案：一份 kind 为 `editorial-proposal` 的文档，不改时间线。
-2. {{tool:documents_read}} 读提案：`suggestions` 每条有 `id`、`kind`（filler 或 pause）、源区间、`text`、`reason`。
-3. `acceptCutSuggestions` 只接受该删的那些；要改区间就直接 `addCuts`（素材自己的秒）并把建议 ID 写进 `ref`。
-4. 提案不检测说了两遍的句子：录废重来的自己按转写的词时间用 `addCuts` 剪。
-5. 剪口可以 `restoreCut` 恢复；剪口集合是 kind 为 `cut-set` 的文档。
+1. `proposeCuts` (with an asset ID, choosing filler words, pauses and the target pause length in `detect`) generates a cut proposal: a document of kind `editorial-proposal`, which does not change the timeline.
+2. Read the proposal with {{tool:documents_read}}: each entry of `suggestions` has `id`, `kind` (filler or pause), a source range, `text` and `reason`.
+3. `acceptCutSuggestions` accepts only those that should go; to change a range, use `addCuts` directly (in the asset's own seconds) and put the suggestion ID in `ref`.
+4. The proposal does not detect sentences said twice: cut flubbed retakes yourself with `addCuts`, using the transcript's word timings.
+5. Cuts can be restored with `restoreCut`; the cut set is a document of kind `cut-set`.
 
-转写在提出提案之后改过时，接受会失败（`details.rule` 为 `proposal-stale`）：重新 `proposeCuts`。
+If the transcript changed after the proposal was made, accepting fails (`details.rule` is `proposal-stale`): run `proposeCuts` again.
 
-### 章节
+### Chapters
 
-- **自己分的章节**：`setChapters` 整个替换章节列表（按时间严格递增，第一章通常在 0）；只改一章用 `upsertChapter`。怎么分见 {{skill:video-chapters}}。
-- **作者的章节或用户贴的大纲**：{{tool:chapters_adopt}}，不手工对时间。给 {{arg:video}}（可给 {{arg:asset}}、{{arg:document}}）时取素材的作者章节（`assets[].source.chapters`）；给 {{arg:outline}}（`[{ at, title }]` 或大纲原文）时用用户的大纲。它把每条吸到文稿最近的段落或句子起点（段落、句子、字幕条、词依次退），清洗标题后以 `setChapters` 写入；{{arg:dryRun}} 只看结果不写。回执的 `sourceChapters` 给出 `entries`、`matched`、`ambiguous`（附近几个起点，取了离作者时间最近的）、`snapped`、`unanchored`（对不上，保留原时间）与逐条的 `rows`，没对上的告诉用户。`NO_SOURCE_CHAPTERS`：没有作者章节，改按 {{skill:video-chapters}} 自己分；`ASSET_NOT_PLACED`：素材不在时间线上。
+- **Chapters you split yourself**: `setChapters` replaces the whole chapter list (strictly increasing in time; the first chapter is usually at 0); to change just one chapter, use `upsertChapter`. How to split them is in {{skill:video-chapters}}.
+- **The author's chapters or an outline the user pasted**: {{tool:chapters_adopt}}; do not align times by hand. With {{arg:video}} (optionally {{arg:asset}}, {{arg:document}}) it takes the asset's author chapters (`assets[].source.chapters`); with {{arg:outline}} (`[{ at, title }]` or the raw outline text) it uses the user's outline. It snaps each entry to the nearest paragraph or sentence start in the transcript (falling back in turn to paragraph, sentence, caption, word), cleans up titles and writes them with `setChapters`; {{arg:dryRun}} only shows the result without writing. The receipt's `sourceChapters` gives `entries`, `matched`, `ambiguous` (several starts nearby; the one closest to the author's time was taken), `snapped`, `unanchored` (no match; original time kept) and per-entry `rows`; tell the user about those that did not match. `NO_SOURCE_CHAPTERS`: there are no author chapters, so split them yourself following {{skill:video-chapters}}; `ASSET_NOT_PLACED`: the asset is not on the timeline.
 
-章节固定在时间线的时刻上，不跟着片段移动：移动、删除片段或波纹删除之后要重新核对。剪口播例外：`addCuts`、`acceptCutSuggestions` 与 `restoreCut` 让章节跟着内容走（剪掉的段后面的章前移，整章都剪掉的删掉；恢复时接缝之后的后移）。
+Chapters are pinned to moments on the timeline and do not move with items: after moving or deleting items or ripple deleting, check them again. Talking-head cuts are the exception: `addCuts`, `acceptCutSuggestions` and `restoreCut` make chapters follow the content (chapters after a cut span shift earlier, chapters cut entirely are removed; on restore, those after the seam shift later).
 
-### 派生子视频
+### Deriving child videos
 
-{{tool:videos_derive}} 把父视频的一段建成旁边的一个可编辑子视频（做法见 {{skill:shorts-segments}}）。{{arg:hook}}、{{arg:reason}}、{{arg:notes}} 写进子视频的派生来源文档（notes 每条至多 80 字、至多 8 条）；结果原样回显文档里记下的 `hook`、`reason`、`notes`，没有的不带。认回已有的子视频（`reused` 为 true）时文档不改写，回显的是原来那份，不是这次传的。要再读一次就用 {{tool:documents_read}} 读结果的 `derivationDocumentId`。
+{{tool:videos_derive}} builds a span of the parent video into an editable child video next to it (method in {{skill:shorts-segments}}). {{arg:hook}}, {{arg:reason}} and {{arg:notes}} are written into the child video's derivation document (notes: at most 80 characters each, at most 8 entries); the result echoes back the `hook`, `reason` and `notes` recorded in the document, omitting any that are absent. When an existing child video is claimed again (`reused` true), the document is not rewritten, and the echo is the original one, not what you passed this time. To read it again, read the result's `derivationDocumentId` with {{tool:documents_read}}.
 
-按镜头分别取景时给 {{arg:crops}}：每段 `from`、`to` 是父视频剪辑后时间线上的秒（直接用 {{tool:videos_shots}} 的 `shots`），加这段的四边裁剪。主素材的片段在取景变化处拆开，各带自己的裁剪；结果的 `framing` 是对到帧、截到区间后实际采用的各段，`crops-adjusted` 说明有段被截过或丢掉，`animation-split` 说明拆开的片段有循环动画或音量包络、每段从头算。区间之前、之后的部分沿用第一段、最后一段的取景：恢复首尾的话时放回来的画面跟着那一段，那截若是另一个镜头取景就不对，要在提示牌里说。
+To frame shot by shot, pass {{arg:crops}}: each span's `from` and `to` are seconds on the parent's edited timeline (use the `shots` from {{tool:videos_shots}} directly), plus that span's crop on all four sides. The main asset's items are split where the framing changes, each carrying its own crop; the result's `framing` is the spans actually used after snapping to frames and clipping to the range, `crops-adjusted` means some spans were clipped or dropped, and `animation-split` means a split item had a looping animation or volume envelope, now counted from the start in each span. Parts before and after the range keep the framing of the first and last span: when restoring the words at the start or end, the restored picture follows that span, which is wrong if that stretch belongs to another shot; mention this in the note.
 
-### 撤销与历史
+### Undo and history
 
-- {{tool:edits_undo}}：撤销你自己最近的一笔；也可以给 {{arg:transactionId}} 指定一笔。撤销本身也是一笔新修改，返回同样的回执。
-- {{tool:videos_history}}：列出历史（谁改的、改完的版本、能不能撤销）与检查点。
-- 改错了就撤销自己那一步，不手工反向修改；用户改的那几笔不要替他撤。
+- {{tool:edits_undo}}: undoes your own most recent edit; you can also pass {{arg:transactionId}} to pick one. An undo is itself a new edit and returns the same kind of receipt.
+- {{tool:videos_history}}: lists history (who changed it, the resulting revision, whether it can be undone) and checkpoints.
+- If you got it wrong, undo your own step; do not reverse it by hand, and do not undo the user's edits for them.
 
-## 结果怎么读
+## Reading the results
 
-回执是唯一的事实：只有回执里的才是真正改了的。
+The receipt is the only truth: only what is in the receipt was actually changed.
 
-- `revision`：新的版本，下一笔修改带它。
-- `transactionId`：这一笔，撤销时用。
-- 创建、修改、删除的对象 ID：新片段的 `itemId` 从这里取。
-- 时长变化：剪口播后报告给用户。
-- `timeResolution`：时间实际对齐到哪一帧。
-- 附带的说明：`removedTransitions`（转场不再成立被删）、`removedByCuts`（整个落在剪掉范围里的片段）、`shortenedTransitions`、`orphanedAnchors` 等，出现了就向用户说明。
+- `revision`: the new revision; pass it with the next edit.
+- `transactionId`: this edit; used for undo.
+- IDs of created, changed and deleted objects: take new items' `itemId` from here.
+- Change in duration: report it to the user after a talking-head cut.
+- `timeResolution`: which frame times actually snapped to.
+- Attached notes: `removedTransitions` (transitions removed because they no longer hold), `removedByCuts` (items lying entirely within cut ranges), `shortenedTransitions`, `orphanedAnchors` and so on; when they appear, explain them to the user.
 
-## 常见错误码
+## Common error codes
 
-| 错误码 | 下一步 |
+| Error code | Next step |
 | --- | --- |
-| `PROJECT_REVISION_CONFLICT` | 视频刚被改过：重新 {{tool:videos_inspect}}，按新状态决定 |
-| `TARGET_LOCKED` | 片段或轨道锁着：问用户要不要解锁，不要自己解 |
-| `TRANSITION_HANDLES_INSUFFICIENT` | 剪切点两侧素材余量不够：`details` 给出缺几帧；裁短片段或缩短转场 |
-| `INVALID_ARGUMENTS` | 操作写错：用 {{tool:edits_ops}} 查这个操作的 schema 后改 |
-| `ASSET_MISSING` | 链接的素材文件不在了：请用户放回或给新位置 |
+| `PROJECT_REVISION_CONFLICT` | The video was just changed: run {{tool:videos_inspect}} again and decide from the new state |
+| `TARGET_LOCKED` | The item or track is locked: ask the user whether to unlock it; do not unlock it yourself |
+| `TRANSITION_HANDLES_INSUFFICIENT` | Not enough media on either side of the cut point: `details` gives how many frames are missing; shorten the item or the transition |
+| `INVALID_ARGUMENTS` | The operation is written wrong: look up this operation's schema with {{tool:edits_ops}} and fix it |
+| `ASSET_MISSING` | The linked asset file is gone: ask the user to put it back or give its new location |
 
-## 下一步
+## Next steps
 
-- 剪过之后转写的时间线视图变了，译文会过期：去 [subtitles](subtitles.md) 只重译变了的句子。
-- 要看画面：去 [media](media.md) 取帧。
-- 要文件：去 [export](export.md)。
+- After cutting, the transcript's timeline view changes and translations go stale: go to [subtitles](subtitles.md) and retranslate only the changed sentences.
+- To see the picture: go to [media](media.md) to grab frames.
+- Files are wanted: go to [export](export.md).
 
-## 验收
+## Acceptance
 
-- 读回：{{tool:videos_inspect}} 看片段与时长，{{tool:documents_read}} 看剪口集合或章节，对照计划逐项核对：该删的删了，该留的还在。
-- 剪点落在词与词之间，换气留着；停顿顺不顺要人听，导出一小段给用户听，并在报告里写明哪些只是量出来的。
-- 挪过片段之后，别的轨道上的文字、放大、B-roll 要重新读一遍核对位置。
+- Read back: {{tool:videos_inspect}} for items and duration, {{tool:documents_read}} for the cut set or chapters, and check item by item against the plan: what should go is gone, what should stay is still there.
+- Cut points fall between words and breaths are kept; whether pauses flow needs a human to listen: export a short segment for the user to hear, and state in the report which things were only measured.
+- After moving items, re-read text, zoom-ins and B-roll on other tracks to check their positions.

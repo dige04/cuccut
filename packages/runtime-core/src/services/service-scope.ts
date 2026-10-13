@@ -80,11 +80,9 @@ export class ServiceScope implements ToolScope<ServiceAccess> {
   }
 
   authorize(principal: ToolPrincipal, write: boolean): ServiceAccess {
-    // i18n-ignore: ToolError 的消息只给外部智能体（模型）看
-    if (principal.kind !== 'service') throw new ToolError('FORBIDDEN', '这个端点只服务对外服务的客户端');
+    if (principal.kind !== 'service') throw new ToolError('FORBIDDEN', 'This endpoint serves only external service clients');
     const policy = this.#deps.policy(principal.serviceId);
-    // i18n-ignore: ToolError 的消息只给外部智能体（模型）看
-    if (write && policy.level === 'read') throw new ToolError('UNKNOWN_TOOL', '这个服务只开放查询');
+    if (write && policy.level === 'read') throw new ToolError('UNKNOWN_TOOL', 'This service is open for queries only');
     const submitter: JobSubmitter = { kind: 'service', id: principal.serviceId, clientId: principal.clientId };
     return { principal, policy, submitter };
   }
@@ -104,8 +102,7 @@ export class ServiceScope implements ToolScope<ServiceAccess> {
       throw new ToolError(code, message.text, { ...extra, next: GRANT_NEXT[code] });
     }
     if (policy.level === 'auto') return;
-    // i18n-ignore: ToolError 的消息只给外部智能体（模型）看
-    if (policy.level === 'read') throw new ToolError('UNKNOWN_TOOL', '这个服务只开放查询');
+    if (policy.level === 'read') throw new ToolError('UNKNOWN_TOOL', 'This service is open for queries only');
     const { principal } = access;
     const risk = toolRisk(request);
     const { outcome, grant } = await this.#deps.approvals.resolve(
@@ -121,14 +118,12 @@ export class ServiceScope implements ToolScope<ServiceAccess> {
       { risk, level: policy.level, ...(outbound ? { grants: outbound } : {}) },
     );
     if (outcome === 'allowed') return outbound ? { mode: null, risk, decidedBy: 'user', grant: grant ?? { persist: false } } : undefined;
-    // i18n-ignore-start: ToolError 的消息只给外部智能体（模型）看
     const message =
       outcome === 'denied'
-        ? '用户在 CucCut 里拒绝了这次请求：不要重试同样的请求，先问问用户'
+        ? 'The user declined this request in CucCut: do not retry the same request; ask the user first'
         : outcome === 'timeout'
-          ? '用户没有在时限内确认这次请求，按拒绝处理：请用户在 CucCut 里留意确认后再试'
-          : '这次请求在确认之前被取消了（服务停止或连接断开）';
-    // i18n-ignore-end
+          ? 'The user did not confirm this request in time, so it counts as declined: ask the user to watch for the confirmation in CucCut, then try again'
+          : 'This request was cancelled before it was confirmed (the service stopped or the connection dropped)';
     throw new ToolError('SERVICE_APPROVAL_DENIED', message, { serviceId: principal.serviceId, reason: outcome });
   }
 
@@ -156,30 +151,25 @@ export class ServiceScope implements ToolScope<ServiceAccess> {
         });
       }
     }
-    // i18n-ignore-start: 工具结果（issue、next）只给外部智能体（模型）看
     return {
       videos,
-      ...(skipped > 0 ? { issue: `有 ${skipped} 个目录没能读取，没有列出` } : {}),
-      next: '用 videoId 调用 videos_inspect 读取视频；修改之前先读，拿到 revision 与对象 ID。',
+      ...(skipped > 0 ? { issue: `${skipped} director${skipped === 1 ? 'y' : 'ies'} could not be read and ${skipped === 1 ? 'is' : 'are'} not listed` } : {}),
+      next: 'Call videos_inspect with a videoId to read a video; read before changing it, to get the revision and object IDs.',
     };
-    // i18n-ignore-end
   }
 
   /** 新建视频的位置：调用方给的已登记项目（id，或项目目录的路径）。不给时 `INVALID_ARGUMENTS`，没有这个项目时 `PROJECT_NOT_FOUND`。 */
   createRoot(_access: ServiceAccess, project?: string): { root: string; scope: { projectId: Id } } {
     const projects = this.#deps.harness.listProjects();
     if (project === undefined) {
-      // i18n-ignore-start: ToolError 的消息只给外部智能体（模型）看
-      throw new ToolError('INVALID_ARGUMENTS', '对外服务新建视频要给 project：建在哪个已登记的项目里', {
-        next: '给 project：项目 id（videos_list 结果里的 projectId），视频建在那个项目里',
+      throw new ToolError('INVALID_ARGUMENTS', 'An external service must give project to create a video: the registered project to create it in', {
+        next: 'Give project: a project id (projectId in the videos_list result); the video is created in that project',
       });
-      // i18n-ignore-end
     }
     const found =
       projects.find((p) => p.id === project) ??
       (path.isAbsolute(project) ? projects.find((p) => path.resolve(p.path) === path.resolve(project)) : undefined);
-    // i18n-ignore: ToolError 的消息只给外部智能体（模型）看
-    if (!found) throw new ToolError('PROJECT_NOT_FOUND', `找不到项目「${project}」：用 videos_list 结果里的 projectId`);
+    if (!found) throw new ToolError('PROJECT_NOT_FOUND', `Project "${project}" not found: use a projectId from the videos_list result`);
     return { root: found.path, scope: { projectId: found.id } };
   }
 
@@ -224,11 +214,9 @@ export class ServiceScope implements ToolScope<ServiceAccess> {
 
   /** 对外服务没有本机路径的入口（§4.8）：文件只能经范围之内的视频或链接进来。 */
   fileBase(): never {
-    // i18n-ignore-start: ToolError 的消息只给外部智能体（模型）看
-    throw new ToolError('INVALID_ARGUMENTS', '对外服务不能给本机文件路径（file、files、outDir）', {
-      next: '给 video（范围之内的视频，videos_list 列出的 videoId）或 url（链接，落点是 video 或 project）；文件只能写进视频所属项目的 exports/（export）。',
+    throw new ToolError('INVALID_ARGUMENTS', 'An external service cannot give local file paths (file, files, outDir)', {
+      next: 'Give video (a video within your scope, a videoId listed by videos_list) or url (a link, landing in video or project); files can only be written into the exports/ of the video\'s project (export).',
     });
-    // i18n-ignore-end
   }
 
   commandId(access: ServiceAccess, given: string | undefined): string {
@@ -275,14 +263,12 @@ export class ServiceScope implements ToolScope<ServiceAccess> {
     if (record) {
       const output = record.result?.outputs?.find((o) => o.artifactId === artifactId) ?? null;
       const file = await locateArtifact(this.#deps.jobs.artifacts, artifactId, output);
-      // i18n-ignore: ToolError 的消息只给外部智能体（模型）看
-      if (!file) throw new ToolError('ARTIFACT_NOT_FOUND', `产物 ${artifactId} 的文件已经不在了`);
+      if (!file) throw new ToolError('ARTIFACT_NOT_FOUND', `The file of artifact ${artifactId} no longer exists`);
       return { record, output, file };
     }
     throw new ToolError(
       'ARTIFACT_NOT_FOUND',
-      // i18n-ignore: ToolError 的消息只给外部智能体（模型）看
-      `找不到产物 ${artifactId}，或它不属于你提交的任务（jobs_inspect 的 outputs 里的 artifactId）`,
+      `Artifact ${artifactId} not found, or it does not belong to a job you submitted (use an artifactId from the outputs of jobs_inspect)`,
     );
   }
 
@@ -296,8 +282,7 @@ export class ServiceScope implements ToolScope<ServiceAccess> {
 
   /** 只为范围里的视频写文件（`videos_frames`）：视频所属项目的 `exports/`。不针对视频的（把产物写成文件）不提供。 */
   saveRoot(_access: ServiceAccess, opened?: VideoOpenResult): string {
-    // i18n-ignore: ToolError 的消息只给外部智能体（模型）看
-    if (!opened) throw new ToolError('UNKNOWN_TOOL', '这个服务不能把产物写成文件');
+    if (!opened) throw new ToolError('UNKNOWN_TOOL', 'This service cannot write artifacts out as files');
     const project = this.#deps.harness.listProjects().find((p) => p.id === opened.ref.source.projectId);
     if (!project) throw videoNotFound(opened.ref.videoId);
     return path.join(project.path, 'exports');
@@ -398,11 +383,9 @@ function inside(candidate: string, root: string): boolean {
 }
 
 function videoNotFound(video: string): ToolError {
-  // i18n-ignore: ToolError 的消息只给外部智能体（模型）看
-  return new ToolError('VIDEO_NOT_FOUND', `找不到视频「${video}」：用 videos_list 给出的 videoId`);
+  return new ToolError('VIDEO_NOT_FOUND', `Video "${video}" not found: use a videoId given by videos_list`);
 }
 
 function jobNotFound(jobId: Id): ToolError {
-  // i18n-ignore: ToolError 的消息只给外部智能体（模型）看
-  return new ToolError('JOB_NOT_FOUND', `找不到任务 ${jobId}，或它不是你提交的`);
+  return new ToolError('JOB_NOT_FOUND', `Job ${jobId} not found, or you did not submit it`);
 }

@@ -230,7 +230,7 @@ describe('登记类工具', () => {
       const { session: loose } = await agent(null);
       const none = (await tool(loose, 'projects_list', {})).body;
       expect(none.projects).toEqual([]);
-      expect(none.next).toContain('不属于任何项目');
+      expect(none.next).toContain('does not belong to any project');
 
       const { url, token } = await openMcp();
       const viaService = await mcpCall(url, token, 'projects_list', {});
@@ -246,7 +246,7 @@ describe('登记类工具', () => {
       expect(emptyService.body.projects).toEqual([]);
       expect(emptyService.body.next).toContain('cuccut projects create');
       expect(emptyService.body.next).toContain('cuccut mcp install');
-      expect(emptyService.body.next).not.toContain('把 projectId 作为');
+      expect(emptyService.body.next).not.toContain('pass the projectId as');
 
       const all = await localOk('projects_list', {});
       expect(all.projects).toEqual(

@@ -1,11 +1,11 @@
 ---
-name: 示例分章
-description: 测试用的 craft：分章节。
+name: Demo chapters
+description: A craft for tests - chapters.
 version: 1.0.0
 ---
 
-# 分章节
+# Chapters
 
-按话题转折分章，用 edits_apply 的 setChapters 一次写进视频。
+Split into chapters at topic turns and write them into the video in one go with setChapters of edits_apply.
 
-转写还没润色时先用 `skills_read` 读 `demo-polish`。
+When the transcript is not polished yet, first use `skills_read` to read `demo-polish`.

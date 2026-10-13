@@ -1,5 +1,5 @@
 // i18n-ignore-file: Historical import report vocabulary is retained for compatibility with archived reports.
-// 把一份计划写成视频目录。每一步是一笔带固定 commandId 的事务：已经提交过的步骤重跑时直接取回执，不重复写。
+// Writes a plan into a video directory. Each step is a transaction with a fixed commandId: steps already committed return their receipt on rerun instead of writing again.
 
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -61,12 +61,15 @@ class VideoSession {
   }
 
   /**
-   * 提交一步；这一步以前提交过就取回原来的回执。内容与上次不同说明计划变了，不能悄悄叠加。
-   * `operations` 可以是一个函数：操作要看视频当前状态才能定的步骤（建轨道），重跑时不再重新推导，用 `fingerprint` 认出同一份计划。
+   * Commits one step; if it was committed before, returns the original receipt. Different content from last time means the plan changed, which must not be silently stacked on top.
+   * `operations` may be a function: for steps whose operations depend on the video's current state (creating tracks), a rerun does not derive them again but recognizes the same plan by `fingerprint`.
+   * The step labels passed by this file stay in Chinese on purpose: together with the content digest they are the receipt
+   * identity checked below, so translating them would make a rerun of an earlier import fail as "imported with different
+   * content" instead of resuming.
    */
   async step(command: string, label: string, operations: unknown[] | (() => unknown[]), fingerprint?: unknown): Promise<Receipt> {
     const commandId = `legacy-import:${command}`;
-    // 引擎只保存标签的前 200 个 Unicode 字符；先截短说明，保证内容摘要不会被截掉。
+    // The engine keeps only the first 200 Unicode characters of a label; shorten the description first so the content digest is never cut off.
     const suffix = ` #${digest(fingerprint ?? operations)}`;
     const marked = `${[...label].slice(0, 200 - suffix.length).join('')}${suffix}`;
     const { receipt } = await this.host.request<{ receipt: (Receipt & { label: string }) | null }>('receipts.byCommand', {
@@ -74,13 +77,13 @@ class VideoSession {
       commandId,
     });
     if (receipt) {
-      if (receipt.label !== marked) throw new Error(`「${label}」上次导入的内容与这次不同：用 --replace 重建这个视频`);
+      if (receipt.label !== marked) throw new Error(`"${label}" was imported with different content last time: rebuild this video with --replace`);
       return receipt;
     }
     return this.host.apply(this.videoId, commandId, marked, typeof operations === 'function' ? operations() : operations);
   }
 
-  /** 这一步以前提交过没有。 */
+  /** Whether this step was committed before. */
   async committed(command: string): Promise<boolean> {
     const { receipt } = await this.host.request<{ receipt: unknown }>('receipts.byCommand', {
       videoId: this.videoId,
@@ -110,7 +113,7 @@ function assetInfo(record: AssetRecord): AssetInfo {
   };
 }
 
-/** 预演：不碰引擎，用旧格式自己记下的信息代替探测结果。 */
+/** Dry run: does not touch the engine; uses the information recorded by the old format in place of probe results. */
 export function dryAssets(plan: ProjectPlan): Map<string, AssetInfo> {
   const assets = new Map<string, AssetInfo>();
   for (const asset of plan.assets) {
@@ -176,7 +179,7 @@ export async function writeVideo(host: EngineHost, plan: ProjectPlan, root: stri
   host.remember(opened.videoId, opened.path);
   const session = new VideoSession(host, opened.videoId);
   try {
-    // 1. 素材：一个素材一笔事务，文件不在或探测不了只影响它自己。
+    // 1. Assets: one transaction per asset; a missing or unprobeable file affects only itself.
     const ids = new Map<string, string>();
     for (const asset of plan.assets) {
       if (!existsSync(asset.path)) {
@@ -186,7 +189,7 @@ export async function writeVideo(host: EngineHost, plan: ProjectPlan, root: stri
       try {
         const receipt = await session.step(`asset:${asset.ref}`, `导入素材 ${path.basename(asset.path)}`, [importOperation(asset)]);
         const id = receipt.refs?.[asset.ref];
-        if (!id) throw new Error('回执里没有素材 ID');
+        if (!id) throw new Error('The receipt has no asset ID');
         ids.set(asset.ref, id);
         if (receipt.createdIds.includes(id)) report.assets.linked++;
         else report.assets.reused++;
@@ -209,7 +212,7 @@ export async function writeVideo(host: EngineHost, plan: ProjectPlan, root: stri
 
     const content = planContent(plan, assets);
 
-    // 2. 文档：一份一笔事务（转写正文可以有几 MB）。
+    // 2. Documents: one transaction each (a transcript body can be several MB).
     const documents = new Map<string, string>();
     const putDocument = async (doc: VideoContent['documents'][number]): Promise<void> => {
       const sourceAsset = doc.sourceAsset ? assets.get(doc.sourceAsset)?.id : undefined;
@@ -228,12 +231,12 @@ export async function writeVideo(host: EngineHost, plan: ProjectPlan, root: stri
         },
       ]);
       const id = receipt.refs?.[doc.ref];
-      if (!id) throw new Error(`回执里没有文档 ${doc.ref} 的 ID`);
+      if (!id) throw new Error(`The receipt has no ID for document ${doc.ref}`);
       documents.set(doc.ref, id);
     };
     for (const doc of content.documents) await putDocument(doc);
 
-    // 3. 轨道：新视频自带 V1 与 A1，计划里第一条画面轨与第一条音频轨用它们，其余按顺序新建（越靠后越在上层）。
+    // 3. Tracks: a new video comes with V1 and A1; the plan's first picture track and first audio track use them, the rest are created in order (later ones sit higher).
     const existingTracks = snapshot.sequences[snapshot.rootSequenceId]!.tracks;
     const trackOps = (): unknown[] => {
       const builtin: Record<string, string | undefined> = {};
@@ -251,13 +254,13 @@ export async function writeVideo(host: EngineHost, plan: ProjectPlan, root: stri
     const trackIds = new Map<string, string>();
     for (const track of content.tracks) {
       const found = snapshot.sequences[snapshot.rootSequenceId]!.tracks.find((t) => t.name === track.name && t.kind === track.kind);
-      if (!found) throw new Error(`轨道 ${track.name} 没有建成`);
+      if (!found) throw new Error(`Track ${track.name} was not created`);
       trackIds.set(track.key, found.id);
     }
 
-    // 4. 实例：先写画面与声音，再写要引用它们的字幕实例。
+    // 4. Items: write picture and sound first, then the caption items that reference them.
     const sequenceId = snapshot.rootSequenceId;
-    // 词锚点指向转写文档的当前版本。
+    // Word anchors point to the current revision of the transcript document.
     const speechId = documents.get('speech');
     const speechRef = speechId ? { id: speechId, revision: snapshot.documents[speechId]?.currentRevision } : null;
     const withSpeechRef = (fields: { [key: string]: Json }, sourceId: string): { [key: string]: Json } => {
@@ -281,7 +284,7 @@ export async function writeVideo(host: EngineHost, plan: ProjectPlan, root: stri
       if (!(error instanceof EngineFailure)) throw error;
       report.failed.push(`${what}：${error.body.code} ${error.body.message}`);
     };
-    /** 引擎拒绝了一个实例：逐个去掉可选的字段组再试，找出是哪一组；都不行就只留必需的字段。 */
+    /** The engine rejected an item: strip the optional field groups one at a time and retry to find which group it is; if none works, keep only the required fields. */
     const OPTIONAL: [string, (body: Record<string, any>) => Record<string, any> | null][] = [
       ...['fx', 'mask', 'tile', 'animate', 'crop', 'style', 'stylePresetId', 'verticalAlign', 'role', 'ai', 'bg', 'source', 'html'].map(
         (key): [string, (b: Record<string, any>) => Record<string, any> | null] => [
@@ -349,7 +352,7 @@ export async function writeVideo(host: EngineHost, plan: ProjectPlan, root: stri
     };
     const insert = async (command: string, label: string, items: { plan: ItemPlan; body: Record<string, unknown> }[]): Promise<void> => {
       if (items.length === 0) return;
-      // 上次已经逐个写过（整批被拒）：这次也逐个写，免得整批再写一遍。
+      // Last time these were written one by one (the batch was rejected): write them one by one again rather than retrying the whole batch.
       const split = await session.committed(`${command}:0`);
       if (!split) {
         try {
@@ -359,7 +362,7 @@ export async function writeVideo(host: EngineHost, plan: ProjectPlan, root: stri
           if (!(error instanceof EngineFailure)) throw error;
         }
       }
-      // 整批被拒：逐个写，找出是哪一个，其余照常导入。
+      // The batch was rejected: write one by one to find the culprit; the rest import as usual.
       for (const [n, item] of items.entries()) await insertOne(`${command}:${n}`, `${label} ${item.plan.sourceId}`, item);
     };
     const plain = content.items.filter((item) => item.item.type !== 'caption');
@@ -393,7 +396,7 @@ export async function writeVideo(host: EngineHost, plan: ProjectPlan, root: stri
       });
     await insert('captions', '写入字幕实例', captions);
 
-    /** 序列上的对象：先整批写，被拒时逐个写，拒掉的记进报告。返回写进去的个数。 */
+    /** Objects on the sequence: write the whole batch first, one by one if rejected, recording rejections in the report. Returns how many were written. */
     const batch = async (
       command: string,
       label: string,
@@ -429,7 +432,7 @@ export async function writeVideo(host: EngineHost, plan: ProjectPlan, root: stri
       if (n > 0) count(report.written, label, n);
     };
 
-    // 5. 关键帧：每个实例的每个属性一条绑定。
+    // 5. Keyframes: one binding per property of each item.
     const keyframeOps = plain.flatMap((plan) => {
       const itemId = itemIds.get(plan.sourceId);
       if (!itemId) return [];
@@ -442,7 +445,7 @@ export async function writeVideo(host: EngineHost, plan: ProjectPlan, root: stri
     });
     written('关键帧绑定', await batch('keyframes', '写入关键帧', keyframeOps));
 
-    // 6. 单侧转场：`in` 落在实例开头，`out` 落在结尾；一条一笔事务，好从回执里认出被缩短的那条。
+    // 6. Single-sided transitions: `in` lands at the item's start, `out` at its end; one transaction each, so the shortened one can be identified from the receipt.
     for (const plan of plain) {
       const itemId = itemIds.get(plan.sourceId);
       if (!itemId) continue;
@@ -475,7 +478,7 @@ export async function writeVideo(host: EngineHost, plan: ProjectPlan, root: stri
       }
     }
 
-    // 7. 闪避：按文稿，或按旧轨道拆出来的新轨道。
+    // 7. Ducking: by transcript, or by the new tracks split from an old track.
     const duckOps = (content.ducking ?? []).flatMap((rule, n) => {
       const itemIdsOf = mapIds(rule.targetSourceIds);
       if (itemIdsOf.length === 0) return [];
@@ -511,7 +514,7 @@ export async function writeVideo(host: EngineHost, plan: ProjectPlan, root: stri
     });
     written('闪避规则', await batch('ducking', '写入闪避', duckOps));
 
-    // 8. 剪口集合：作用实例写好之后才知道 ID。
+    // 8. Cut sets: the IDs of the items they apply to are known only after those items are written.
     for (const set of content.cutSets ?? []) {
       try {
         await putDocument({
@@ -529,7 +532,7 @@ export async function writeVideo(host: EngineHost, plan: ProjectPlan, root: stri
       }
     }
 
-    // 9. 模板层与画布底色。
+    // 9. Template layers and canvas background color.
     if (content.template) {
       const op = { type: 'setTemplate', sequenceId, template: content.template };
       written('模板层', await batch('template', '写入模板层', [{ key: 'layers', what: '模板层', drop: '模板层', op }]));
@@ -542,7 +545,7 @@ export async function writeVideo(host: EngineHost, plan: ProjectPlan, root: stri
       );
     }
 
-    // 10. 轨道的隐藏、静音与锁定：锁定挡住之后的写入，放在最后。
+    // 10. Track hidden, muted and locked state: locking blocks later writes, so it goes last.
     const flagOps = content.tracks.flatMap((track) => {
       const trackId = trackIds.get(track.key);
       if (!trackId || (!track.hidden && !track.muted)) return [];
@@ -554,7 +557,7 @@ export async function writeVideo(host: EngineHost, plan: ProjectPlan, root: stri
       return trackId && track.locked ? [{ type: 'updateTrack', trackId, locked: true }] : [];
     });
 
-    // 11. 导入记录：这个视频从哪里来、哪些没有带过来。
+    // 11. Import record: where this video came from and what was not carried over.
     const inspected = await host.request<{ durationFrames: number }>('videos.inspect', { path: opened.path });
     report.durationFrames = inspected.durationFrames;
     await putDocument({ ref: 'import-record', kind: 'import-record', name: '导入记录', body: importRecord(plan) });

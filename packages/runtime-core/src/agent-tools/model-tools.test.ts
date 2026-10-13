@@ -148,8 +148,8 @@ describe('模型工具：能力视图与提交时的拒绝（不需要 ffprobe�
     const { session } = await send(side);
     const refused = await call(side, session, 'translate', { file: srt, to: 'zh-CN' });
     expect(refused.body.error).toMatchObject({ code: 'CAPABILITY_NOT_CONFIGURED', capability: 'generateText' });
-    expect(refused.body.error.next).toContain('自己翻译');
-    expect(refused.body.error.next).not.toContain('设置里');
+    expect(refused.body.error.next).toContain('yourself');
+    expect(refused.body.error.next).not.toContain('Settings');
     expect((await call(side, session, 'translate', { file: srt, video: 'x', to: 'zh-CN' })).body.error.code).toBe('INVALID_ARGUMENTS');
     expect(side.runtime.models.jobs.list()).toEqual([]);
   });
@@ -181,7 +181,7 @@ describe('模型工具：能力视图与提交时的拒绝（不需要 ffprobe�
       '/settings/models/sep',
       '/settings/models/music',
     ]);
-    expect(before.body.capabilities[0].next).toContain('Markdown 设置链接');
+    expect(before.body.capabilities[0].next).toContain('Markdown settings link');
     // 文本生成也列出（带能力参数），但没有提交它的工具。
     expect(before.body.capabilities[3]).toMatchObject({ parameters: { effort: null, concurrency: 4 } });
     // 目录里所有提供文本生成的服务商（§6.4），都没有配置。
@@ -196,7 +196,7 @@ describe('模型工具：能力视图与提交时的拒绝（不需要 ffprobe�
     expect(speech.providers.map((p: Loose) => p.providerId)).toEqual(['local', 'openai', 'elevenlabs']);
     expect(speech.providers[0]).toMatchObject({ kind: 'local', available: false, unavailableReason: 'not-installed' });
     expect(speech.providers[1]).toMatchObject({ kind: 'online', available: false, unavailableReason: 'not-configured', enabled: false });
-    expect(speech.next).toContain('设置');
+    expect(speech.next).toContain('Settings');
 
     // 用户在设置里启用 OpenAI（这是用户的操作，工具做不到）。
     await side.client.request('models.configure', { providerId: 'openai', enabled: true, credential: OPENAI_KEY });
@@ -236,9 +236,9 @@ describe('模型工具：能力视图与提交时的拒绝（不需要 ffprobe�
       remedy: { action: 'configure-provider', hint: expect.stringContaining('设置') },
     });
     expect(image.body.error.remedy.commands).toEqual([expect.stringMatching(/^cuccut models configure </)]);
-    expect(image.body.error.next).toContain('别的服务商');
+    expect(image.body.error.next).toContain('other providers');
     expect(image.body.error.remedy.settingsHref).toBe('/settings/models/image');
-    expect(image.body.error.next).toContain('Markdown 设置链接');
+    expect(image.body.error.next).toContain('Markdown settings link');
     // 点名还没配置的在线服务：补救是去设置里配置它。
     const online = await call(side, session, 'image', { prompt: 'a cat', provider: 'openai' });
     expect(online.isError).toBe(true);
@@ -248,8 +248,8 @@ describe('模型工具：能力视图与提交时的拒绝（不需要 ffprobe�
       remedy: { action: 'configure-provider', hint: expect.stringContaining('设置') },
     });
     expect(online.body.error.remedy.commands).toEqual([expect.stringMatching(/^cuccut models configure openai /)]);
-    expect(online.body.error.next).toContain('不要用 shell 命令、脚本');
-    expect(online.body.error.next).toContain('别的服务商');
+    expect(online.body.error.next).toContain('shell commands, scripts');
+    expect(online.body.error.next).toContain('other providers');
 
     // 语音合成有本机模型包可装：补救是安装模型包（或配置在线服务）。
     const speech = await call(side, session, 'speak', { text: '你好' });
@@ -265,7 +265,7 @@ describe('模型工具：能力视图与提交时的拒绝（不需要 ffprobe�
       'cuccut models install <bundleId>',
       expect.stringMatching(/^cuccut models configure </),
     ]);
-    expect(speech.body.error.next).toContain('不要用 shell 命令、脚本');
+    expect(speech.body.error.next).toContain('shell commands, scripts');
 
     // 启用了但没有默认值：提示设默认值。
     await side.client.request('models.configure', { providerId: 'openai', enabled: true, credential: OPENAI_KEY });
@@ -284,7 +284,7 @@ describe('模型工具：能力视图与提交时的拒绝（不需要 ffprobe�
       details: { providerId: 'openai', modelId: 'gpt-4o-mini-tts', length: 4097, limit: 4096 },
     });
     expect(tooLong.body.error.message).toContain('4096');
-    expect(tooLong.body.error.next).toContain('不超过 4096 个字符，逐段提交');
+    expect(tooLong.body.error.next).toContain('pieces of at most 4096 characters and submit them one by one');
 
     // 模型没有的音色：invalid-request，带模型的音色清单。
     const badVoice = await call(side, session, 'speak', {
@@ -419,7 +419,7 @@ describe.skipIf(!ffprobe)('模型工具：生成任务（假供应商，不带�
     });
     expect(job.parameters.text).toBeUndefined();
     expect(job.outputs[0].media).toMatchObject({ kind: 'audio', sampleRate: 44100, channels: 1 });
-    expect(job.next).toContain('产物');
+    expect(job.next).toContain('artifact');
     // 账本里留下同样的提交者（重启之后仍可归属）。
     const ledger = { jobs: await new JobLedger(side.home.jobsFile).load() };
     expect(ledger.jobs[0]!.record.submitter).toEqual({ kind: 'agent', id: side.conversationId, taskId });

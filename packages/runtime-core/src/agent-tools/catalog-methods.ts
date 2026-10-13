@@ -9,14 +9,18 @@ import { errorBody, type ToolCatalog, type ToolOutcome } from './tool-catalog.ts
 import { defaultToolRisk } from './tool-scope.ts';
 
 /**
- * `catalog.*` 的处理函数（架构设计 §3.5、§4.1；命令与协议规范 §4.1）：把 Agent 面的工具目录经网关交给 CLI。目录是 Runtime 里
- * 那一份 `ToolCatalog`（工具组经 `ScopeRouter` 按主体转给 `LocalScope`），这里拿的是它对终端的视图。
+ * Handlers for `catalog.*` (architecture design §3.5, §4.1; command and protocol spec §4.1): hands the agent surface's
+ * tool catalog to the CLI through the gateway. The catalog is the Runtime's single `ToolCatalog` (tool groups are routed
+ * by principal to `LocalScope` via `ScopeRouter`); this takes its terminal view.
  *
- * 只给 `cli` 与 `desktop` 连接：浏览器（`web`）、对外服务与 `agent` 连接一律 `forbidden`；Web 服务的白名单里也没有 `catalog.*`。
- * 工具层的结果与拒绝都放在返回值里（`{ ok }`），拒绝与 MCP 工具结果的 `error` 是同一个对象（`errorBody`）。
+ * Only for `cli` and `desktop` connections: browser (`web`), external-service and `agent` connections are always
+ * `forbidden`; the web service's allowlist does not include `catalog.*` either.
+ * Tool-level results and rejections are both in the return value (`{ ok }`); a rejection is the same object as the
+ * `error` of an MCP tool result (`errorBody`).
  *
- * `catalog.agentSkill` 把说明书（`skills/cuccut/`）按 CLI 面渲染给 `cuccut skill install`：渲染器在 Runtime 这边，CLI 仍只经
- * Client 与协议（架构设计 §13.1）；`{{tool:…}}` 按这份目录对终端的视图核对。每次调用都重新读目录。
+ * `catalog.agentSkill` renders the agent guide (`skills/cuccut/`) for the CLI surface, for `cuccut skill install`: the
+ * renderer lives in the Runtime, and the CLI still goes only through the Client and the protocol (architecture design
+ * §13.1); `{{tool:…}}` is checked against this catalog's terminal view. The directory is re-read on every call.
  */
 export function catalogMethods(
   tools: ToolCatalog,
@@ -38,7 +42,7 @@ export function catalogMethods(
         tools: tools.list().map((tool) => ({ ...tool, risk: defaultToolRisk(tool.name) })),
       };
     },
-    // `cwd` 与 `project` 都是绝对路径（schema 检查）；`--project` 的相对路径由 CLI 按 cwd 解析好再发。
+    // `cwd` and `project` are both absolute paths (schema-checked); the CLI resolves a relative `--project` against cwd before sending.
     'catalog.call': async (p, principal) => {
       own(principal);
       let local;
@@ -88,9 +92,11 @@ function agentSkill(root: string | null, tools: ToolCatalog): CatalogAgentSkill 
 }
 
 /**
- * `next` 按主体渲染（Agent 面设计 §5.1；命令与协议规范 §11.7）：工具写的 `next` 用工具名（MCP 的写法），给 CLI 时把其中的
- * `<名词>_<动词>` 换成 `cuccut <名词> <动词>`（多词动词 `_` → `-`）。只换目录里的名字；一级动词（`export`、`transcribe`）
- * 两边同名、又常是普通词，不动。只看结果与错误顶层的 `next`。
+ * `next` rendered per principal (agent surface design §5.1; command and protocol spec §11.7): tools write `next` with
+ * tool names (the MCP spelling); for the CLI, each `<noun>_<verb>` in it becomes `cuccut <noun> <verb>` (multi-word verbs
+ * `_` -> `-`). Only names in the catalog are replaced; top-level verbs (`export`, `transcribe`) have the same name on
+ * both sides and are often ordinary words, so they are left alone. Only the top-level `next` of a result or error is
+ * looked at.
  */
 export function renderForCli(outcome: ToolOutcome, names: readonly string[]): ToolOutcome {
   if (outcome.ok) {
@@ -102,12 +108,12 @@ export function renderForCli(outcome: ToolOutcome, names: readonly string[]): To
   return { ok: false, error: { ...outcome.error, next: cliNext(outcome.error.next, names) } };
 }
 
-/** 一段 `next` 文字里的工具名换成 CLI 命令。 */
+/** Replaces tool names in a `next` text with CLI commands. */
 export function cliNext(text: string, names: readonly string[]): string {
   return renderCliToolNames(text, names);
 }
 
-/** 工具名 → CLI 命令（不含 `cuccut`）：`videos_import_package` → `videos import-package`，`export` → `export`。 */
+/** Tool name -> CLI command (without `cuccut`): `videos_import_package` -> `videos import-package`, `export` -> `export`. */
 export function cliCommand(name: string): string {
   return toolCommandName(name).display;
 }

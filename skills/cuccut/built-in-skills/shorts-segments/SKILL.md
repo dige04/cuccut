@@ -1,164 +1,164 @@
 ---
 name: shorts-segments
-description: 用户有一个长视频（访谈、讲座、直播回放、口播），想从中切出几支能单独发布的短视频时用：读转写找出最值得发的话题，每个话题从开头的钩子剪到讲完，建成可编辑的子视频，用户在编辑器里接着调；几支、每支多长可以交给你按话题定。需要视频的转写。不用于按主题从零做一个新的短视频，也不用于把整段口播剪干净（用剪口播）。
+description: Use when the user wants standalone shorts cut from a long video (interview, lecture, stream replay, talking head) - find the topics most worth posting, cut each from hook to end as editable child videos. Needs a transcript. Not for new shorts from scratch or cleaning up a whole talking head.
 version: 3.5.1
 ---
 
-# 从长视频里切短视频
+# Cutting shorts from a long video
 
-刷到这条短视频的人没看过长视频，也不知道前面讲了什么。头三秒没抓住他，他就划走了；中间出现「刚才说的那个」，他就不知道在说什么。所以一段短视频要自己站得住：开头就是钩子，只讲一件事，停在结论上。
+The person who scrolls onto this short has not seen the long video and does not know what was said before. If the first three seconds do not grab them, they swipe away; if "the thing I just mentioned" comes up in the middle, they do not know what it refers to. So a short has to stand on its own: the opening is the hook, it covers one thing, and it stops on the conclusion.
 
-挑的单位是**话题**：一件事从提出到讲完。一个观点和它的理由，一个问题和它的回答，一个故事和它的落点。一支短视频就是一个话题完整的一段，不多也不少。
+The unit you pick is a **topic**: one thing from when it is raised to when it is fully told. A point and its reasons, a question and its answer, a story and its payoff. A short is one complete topic, no more and no less.
 
-最容易挑坏的两种样子：
+The two easiest ways to pick badly:
 
-- 按长视频的章节切。一章十分钟，开头铺垫三句才说到点子上，结尾停在「接下来我们看」，里面还夹着两个话题。那是长视频的一段，不是一条短视频。
-- 只找金句。一句很响的话，前后各凑几秒到要的时长：话题刚开头或还没落地就断了，观众听到一个结论却不知道为什么，或者只听到一半。
+- Cutting by the long video's chapters. A ten-minute chapter takes three sentences of setup to get to the point, ends on "next, let's look at", and contains two topics. That is a slice of the long video, not a short.
+- Hunting only for soundbites. One punchy line, padded with a few seconds on either side to reach the length wanted: the topic is cut off just as it begins or before it lands, and viewers hear a conclusion without knowing why, or only hear half of it.
 
-交付的是**可编辑的子视频**，不是 mp4：每一段用 videos_derive 建成父视频旁边的一个独立视频，用户在编辑器里继续调入出点、画面和字幕，要文件时再导出。
+The deliverable is **editable sub-videos**, not mp4s: each segment is created with videos_derive as a separate video next to the parent video, where the user keeps adjusting the in and out points, picture and subtitles in the editor, and exports when they want a file.
 
-## 1. 先有转写
+## 1. A transcript first
 
-没有转写（kind 为 speech 的文档）时先转写，告诉用户转写在进行。挑片段只需要原文的词时间；润色和翻译只在用户要时才做。视频已经有章节时，章节有助于定位话题，但章节的边界不是短视频的边界。
+If there is no transcript (a document of kind speech), transcribe first and tell the user the transcription is running. Picking segments only needs the source words' timings; polish and translate only when the user asks. When the video already has chapters, they help locate topics, but chapter boundaries are not short boundaries.
 
-## 2. 读文稿，找话题
+## 2. Read the transcript, find the topics
 
-读带时间的文稿：export 导出字幕（kind `subtitles`、format `srt`）或带时间码的文稿（kind `transcript`、format `md`、timestamps `true`），给 purpose `preview`（只是你自己读，不是交给用户的），jobs_inspect 等到 completed，读 outputs 里的文件。这些时间是剪辑后时间线上的时间，和 videos_derive 的 start、end、取帧用的是同一个时钟。
+Read a timed transcript: export subtitles (kind `subtitles`, format `srt`) or a transcript with timecodes (kind `transcript`, format `md`, timestamps `true`), with purpose `preview` (it is only for your own reading, not for the user), wait with jobs_inspect until completed, and read the file in outputs. These times are on the edited timeline, the same clock as videos_derive's start and end and as frame grabbing.
 
-**句界怎么取**：找句子的起止不用 dump 整份 speech 文档。documents_read 读转写时，返回的 translationBasis.sentences 每一句带 start、end（秒），但那是**素材时钟**；videos_derive 的 start、end 是**时间线时钟**。父视频从 0 秒开始、原速、没有剪口地播放这条素材时，两者相同，可以直接用句子的 start、end 定区间。先确认这一点：用 videos_inspect（或 facts）看视频项的 sourceIn 是否为 0、速度是否为 1、有没有剪口。任一条不满足，就用上面导出的 SRT 或文稿里的时间线时间，或者把素材时间换算成时间线时间再传，不要把素材时间直接当时间线时间用。
+**Getting sentence boundaries**: you do not need to dump the whole speech document to find sentence starts and ends. When documents_read reads the transcript, each sentence in the returned translationBasis.sentences has start and end (seconds), but those are on the **asset clock**; videos_derive's start and end are on the **timeline clock**. When the parent video plays this asset from 0 seconds, at normal speed and with no cuts, the two are the same, and sentence start and end can define the range directly. Confirm this first: use videos_inspect (or facts) to check that the video item's sourceIn is 0, its speed is 1, and there are no cuts. If any condition fails, use the timeline times in the SRT or transcript exported above, or convert asset times to timeline times before passing them; never pass asset times directly as timeline times.
 
-### 先画话题地图
+### Draw a topic map first
 
-通读整份文稿（用户给了范围就读那一段），按话题切开：换了一个问题、一个观点、一个故事，就是新话题的开始。每个话题记下大致的起止、一句话说它讲什么、落点（结论、答案或包袱）在哪一句。一章里常有几个话题，一个话题也可能跨过章节边界。
+Read the whole transcript (or the range the user gave) and divide it by topic: a new question, a new point, a new story starts a new topic. For each topic, note its rough start and end, one sentence on what it is about, and which sentence holds the payoff (conclusion, answer or punchline). A chapter often holds several topics, and a topic can also cross a chapter boundary.
 
-### 挑最好的话题
+### Pick the best topics
 
-够格的话题三条都满足，缺一条就不要：
+A qualifying topic meets all three conditions; if one is missing, drop it:
 
-- **有看点**：至少是这四种之一：反常识的说法、情绪的高点、密集的干货、带转折的小故事。
-- **单独成立**：不看长视频也听得懂，没有「刚才说的那个」「第二点」这类要看前面才懂的指代。
-- **有头有尾**：话题里有一句能直接开场的话（见下面「开头那句就是钩子」），也讲到了落点。
+- **Has a draw**: at least one of these four: a counterintuitive claim, an emotional high point, dense practical value, a short story with a twist.
+- **Stands alone**: understandable without the long video, with no references like "the thing I just mentioned" or "the second point" that need what came before.
+- **Has a beginning and an end**: the topic contains a line that can open directly (see "The opening line is the hook" below), and it gets to the payoff.
 
-文稿只是线索：对够格的话题，用 videos_frames 在那几秒取几帧看画面（有没有可看的、说话人在不在画面里），再结合上下文判断是认真说的还是玩笑。帧是素材画面，不含字幕与叠加的元素。然后按看点强弱、成立得稳不稳排序，最强的在前。
+The transcript is only a lead: for qualifying topics, use videos_frames to grab a few frames in those seconds and look at the picture (whether there is anything worth watching, whether the speaker is in the frame), and judge from context whether it was said seriously or as a joke. Frames are source-asset pictures and contain no captions or overlaid elements. Then rank by strength of draw and how firmly it stands alone, strongest first.
 
-### 几支
+### How many
 
-- **用户给了数**（参数页预填的话写明了支数，例如「要 N 支」）：取最强的 N 个话题。够格的不足 N 个时只建够格的，不拿弱话题凑，并告诉用户为什么少了。
-- **自动**（预填的话让你按话题定几支，例如「几支由你按话题定」，或用户没说）：够格的话题有几个就建几支，不凑数，也不因为话题多就降低门槛。超过 10 个时先建最强的 10 支，其余在回复里列成候选（入点、出点、一句话讲什么），用户要再建。
-- 两支不共用同一段话：两个候选重叠时只留更强的那个。
+- **The user gave a number** (the prefilled prompt from the settings page states a count, for example "Make N shorts"): take the N strongest topics. When fewer than N qualify, create only the qualifying ones, do not pad with weak topics, and tell the user why there are fewer.
+- **Auto** (the prefilled prompt leaves the count to you by topic, for example "Decide how many shorts from the topics you find", or the user did not say): create as many shorts as there are qualifying topics, with no padding, and do not lower the bar because there are many topics. When there are more than 10, create the strongest 10 first and list the rest in the reply as candidates (in point, out point, one sentence on what it covers) for the user to create later.
+- No two shorts share the same stretch of speech: when two candidates overlap, keep only the stronger.
 
-### 每支多长
+### How long each
 
-- **自动**（预填的话让你按话题定长短，例如「每支多长按话题定」，或用户没说）：长度就是这个话题的长度。起点是话题里第一句能直接开场的话，终点是落点那句说完。不为凑时长带上铺垫或下一个话题的开头，也不为压时长砍掉中间的理由或例子。话题中间夹着一大段离题的话、拖得太长时，取话题里能单独成立、也有落点的那一半，或换一个更紧的话题。
-- **用户给了范围**（可能是 15–30、30–60、60–90 秒，1–3 分钟或自定义）：在范围里找能讲完的话题；话题比范围长时，取它里面一个能单独成立、有落点的小点。装不下也拆不出的话题宁可不要，不切成半截；为了停在句尾超出范围几秒可以，在 reason 里写明。
-- **不设平台上限**：超过 3 分钟只提一句，YouTube 不按 Shorts 收，其余照做。自动定的长度超过 3 分钟时，先看是不是包了两个话题，能拆就拆成两支。
+- **Auto** (the prefilled prompt leaves the length to you by topic, for example "each as long as its topic needs", or the user did not say): the length is the topic's length. It starts at the first line in the topic that can open directly and ends when the payoff line finishes. Do not include setup or the start of the next topic to pad the length, nor cut the reasons or examples in the middle to shorten it. When a topic has a long digression in the middle and drags on, take the half of the topic that stands alone and has a payoff, or pick a tighter topic.
+- **The user gave a range** (could be 15-30, 30-60, 60-90 seconds, 1-3 minutes or custom): find topics that can be fully told within the range; when a topic is longer than the range, take one point inside it that stands alone and has a payoff. A topic that neither fits nor splits is better dropped than cut in half; running a few seconds over the range to stop at the end of a sentence is fine - say so in reason.
+- **No platform cap**: when it is over 3 minutes, just mention that YouTube will not treat it as a Short, and go ahead. When an auto length exceeds 3 minutes, first check whether it covers two topics, and split it into two shorts if it can.
 
-### 边界
+### Boundaries
 
-- **一个短视频只讲一件事**：一段里有两个话题时，拆成两支，或只留一个。
-- **开头那句就是钩子**：话题开头常有铺垫（「那我们聊聊……」「其实这个问题……」），把起点挪到话题里第一句能直接抓人的话：一个反直觉的结论、一个具体的数字、一个问题。挪过之后后面的话仍要听得懂；听不懂就是挪过了头，或者这个话题没有好开头，换一个。
-- **结尾停在落点上**：停在结论或包袱说完的那一句，不停在「接下来我们看……」这种半句话上；结尾是「关注、订阅」一类的话时，把终点提前到上一句。
-- **开头 3 秒要有人说话**：没有时把起点挪到第一句话；不在前面加标题卡。
-- **入点与出点落在句子边界**：入点取开头那句第一个词与它前一个词之间停顿的中点；出点取最后一个词与下一个词之间停顿的中点。不切进词里。边界拿不准时，略放宽一点：用户在编辑器里收比补回来容易。
-- **停顿短于一帧（约 40 毫秒）时，「取停顿中点」不成立**：中点落不到一个整帧上，取整会吃进下一个词或吞掉上一个词。运行时现在会把边界收进停顿里（终点不吃下一个词的起点，起点不吞上一个词的结尾），返回的 range 是实际采用的值，可能和你传的差几帧。创建后核对返回的 range 与你要的差值：差得多、或开头结尾的词因此被截，就换一个边界重新创建，不要放着不管。
-- **访谈：优先一个人不被打断的整段**。允许从回答的第一句完整句开始。开头依赖上文的句子（「另一种说法是」「这就像刚才说的」）不要当开头，往后挪到能自己成立的那一句。采访者夹一两句短插话可以接受，但要在理由里写明在哪几秒、说了什么。
-- **台标、边框、水印是 go/no-go 检查**：取了帧之后看角落与边缘有没有台标、赞助条、烧进去的字幕、边框。要用的裁框会把它们切掉一半或留下半个字时，按第 4 步取景里让开台标的规则让开（裁框整个躲开台标，上下的边框裁掉），让不开就换片段，并告诉用户做了什么选择；不要留着半个台标交付。
-- **已经切过的不再找**：用户提到（预填的话里有「已经切过的不再找」）或你怀疑切过时，space_list（videoId 填父视频）看已派生的子视频（origin.source 为 `derived`）和它们的区间，新的候选避开这些区间。
-- 视频剪辑过时，文稿里的时间已经是剪辑后的；用户想按剪辑前的原素材切时，先和用户确认用哪个版本。
+- **One short covers one thing**: when a segment has two topics, split it into two shorts or keep only one.
+- **The opening line is the hook**: topics often open with setup ("so let's talk about...", "actually this question..."); move the start to the first line in the topic that grabs directly: a counterintuitive conclusion, a concrete number, a question. After moving it, what follows must still be understandable; if it is not, you moved too far, or this topic has no good opening - pick another.
+- **End on the payoff**: stop on the line where the conclusion or punchline finishes, not on a half sentence like "next, let's look at..."; when the ending is "follow and subscribe" talk, move the end up to the previous sentence.
+- **Someone speaks in the first 3 seconds**: if not, move the start to the first line; do not add a title card in front.
+- **In and out points fall on sentence boundaries**: the in point is the midpoint of the pause between the opening line's first word and the word before it; the out point is the midpoint of the pause between the last word and the next word. Never cut into a word. When a boundary is uncertain, leave it slightly wide: it is easier for the user to tighten in the editor than to add back.
+- **When a pause is shorter than one frame (about 40 milliseconds), "the midpoint of the pause" does not hold**: the midpoint does not land on a whole frame, and rounding eats into the next word or swallows the previous one. The runtime now pulls boundaries inside the pause (the end does not eat the next word's start, the start does not swallow the previous word's end), and the returned range is the value actually used, which may differ from what you passed by a few frames. After creating, check the difference between the returned range and what you wanted: if it differs a lot, or the opening or closing word gets clipped as a result, recreate it with a different boundary rather than leaving it.
+- **Interviews: prefer one person's uninterrupted stretch.** Starting from the first complete sentence of an answer is allowed. Do not open with sentences that depend on what came before ("another way to put it is", "this is like what I just said"); move on to the sentence that stands on its own. One or two short interjections from the interviewer are acceptable, but state in the reason at which seconds and what was said.
+- **Channel logos, borders and watermarks are a go/no-go check**: after grabbing frames, look at the corners and edges for channel logos, sponsor bars, burned-in subtitles and borders. When the crop you will use would cut them in half or leave half a word, follow the logo-avoidance rule in step 4's framing (the crop avoids the logo entirely, borders at top and bottom are cropped off); if it cannot be avoided, switch segments and tell the user what you chose; never deliver half a logo.
+- **Do not look again at what was already cut**: when the user mentions it (the prefilled prompt includes "Skip the parts already cut into shorts") or you suspect it was cut before, use space_list (videoId set to the parent video) to see the derived sub-videos (origin.source is `derived`) and their ranges, and keep new candidates clear of those ranges.
+- When the video has been edited, the transcript's times are already post-edit; when the user wants to cut by the original pre-edit asset, first confirm with the user which version to use.
 
-对比一下（只是示意）：
+A comparison (illustrative only):
 
-不好：`12:00–14:30`，从「好，那我们接下来聊聊成本这块」开始，到「这个我们待会儿再展开」结束。
+Bad: `12:00-14:30`, starting at "OK, so next let's talk about cost" and ending at "we'll get into this later".
 
-好：`12:41–13:22`，从「我们算过，一条视频的成本其实只有三块钱」开始，到「所以贵的从来不是生成，是返工」结束。
+Good: `12:41-13:22`, starting at "We ran the numbers - one video actually costs only three yuan" and ending at "so the expensive part was never generation, it's the rework".
 
-后一段是一个完整的话题：头一句就是数字，中间是理由，停在结论上，没有指代前文的话。
+The second is a complete topic: the first line is a number, the middle is the reasoning, it stops on the conclusion, and nothing refers back to earlier.
 
-## 3. 先创建还是先给用户看
+## 3. Create first, or show the user first
 
-- 用户的话里有「找好就直接创建成视频，不用先问我」这类意思（参数页预填的话默认带这一句）：找好直接进第 4 步，不在会话里一段段确认。
-- 没有这句，或用户说「先给我看」：先列候选等用户挑。每段写入点与出点、讲的是哪个话题（一句话）、开头那句原话、亮点、为什么能单独成立、发现的问题（例如画面上有烧进去的字幕、分屏或并排的双机位、角落的台标或赞助条，竖屏裁切时会被切掉一半；访谈里另一人说话时画面里没有说话人）。取了帧的说看了哪几处；没看过画面的就说没看过。按把握从大到小排，用户挑定后再创建；用户说「你定」时自己定，并说明理由。
+- When the user's words mean something like "Create the videos as soon as they're found; no need to ask me first" (the prompt prefilled by the settings page carries this line by default): once found, go straight to step 4 without confirming each segment in the conversation.
+- Without that line, or when the user says "show me first": list the candidates first and wait for the user to pick. For each segment, write the in and out points, which topic it covers (one sentence), the original opening line, the highlight, why it stands alone, and problems found (for example burned-in subtitles in the picture, split-screen or side-by-side two-camera shots, a channel logo or sponsor bar in a corner that a vertical crop would cut in half; in an interview, the speaker not in frame while the other person talks). Say which spots you looked at if you grabbed frames; if you did not look at the picture, say so. Rank by confidence, highest first, and create once the user has picked; when the user says "you decide", decide yourself and give your reasons.
 
-不需要在会话里反复问边界：子视频保留着整份时间线与文稿，用户在编辑器里点划掉的句子就能把它放回来。标题和理由用用户说话的语言写。
+There is no need to keep asking about boundaries in the conversation: a sub-video keeps the whole timeline and transcript, and the user can bring back a struck-out sentence by clicking it in the editor. Write titles and reasons in the language the user speaks.
 
-## 4. 创建子视频
+## 4. Create the sub-videos
 
-对每一段调用 videos_derive：
+Call videos_derive for each segment:
 
-- `video` 是父视频，`start`、`end` 是剪辑后时间线上的秒，`name` 用片段标题。
-- **画幅**：用户要 9:16 时 `width` 1080、`height` 1920；1:1 时 1080×1080；保留原画幅（或没提）时不传 width、height 和 fit。不要为了「高清」把小尺寸放大。
-- **取景**：传了画幅就给 `fit: "cover"`（铺满、裁掉多余）。用户说「居中」：不传 `crop` 和 `crops`，居中建好；说「我自己定」：同样居中建好，并告诉用户可以在画布上拖动画面调取景。用户没说或说「自动」（默认）：走下面按镜头取景的流程。取景是按镜头切换的静态裁框，不是跟随人物的运动镜头：用户要「画面一直跟着说话的人移动」时如实说做不到，镜头内的位置请用户在编辑器里自己调。
-- **取景「自动」怎么做**（提示词写的是：看说话的人在画面哪里，把裁框放到他身上；找不到人就居中）：先按镜头切开，每个镜头各自按人脸检测的结果定裁框，不靠看图估位置。
-  1. **先分镜头，再取帧**：先用 videos_shots 的 `range`（`起:止`，这一段的时间线秒）取这一段的 `shots`（每个镜头有 `start`、`end` 和三个 `sampleAt`）与 `cuts`。它只检测画面切换，不认人。再用 videos_frames 的 `at` 传所有镜头的 `sampleAt`，每次 8 个镜头（24 帧，是单次上限）。每帧的 `faces` 是检测到的人脸框，`x`、`y`、`w`、`h` 按帧的宽高归一化到 0–1，对应素材画面，正好是 `crop` 的坐标。
-  2. **先分机位**：每帧看最大那张脸的面积（`w × h`）。不小于 0.01 的是**近景帧**；只有更小的脸的是**全景帧**（几个人同框的远景）；没有脸的另记。一个镜头里的三帧一般是同一种机位。
-  3. **认出主讲人**：整段所有镜头合在一起，只看近景帧，把脸按中心横坐标（`x + w/2`）归成人，相差不到 0.1 的算同一个人。出现的帧数最多的是主讲人；帧数相近时取平均面积大的那个。另一个人的近景就是采访者（或对方）的镜头。
-  4. **先看边缘再定裁框**：打开几张帧图，看台标、水印、字幕条、赞助条在哪儿，估出它们的边缘（0–1，和 `crop` 同一套坐标）；再看上下有没有烧进画面的边框（色条、黑边）。
-  5. **逐镜头定裁框**：用这个镜头自己的三帧，不拿别的镜头的位置代替。裁出的宽度比例 `cw = (画布宽 ÷ 画布高) × (原画高 × (1 − top − bottom) ÷ 原画宽)`；`left = 中心 − cw/2`，限制在 0 到 `1 − cw` 之间，`right = 1 − cw − left`。实例：16:9 的原画出 9:16、上下不裁，`cw` = 0.316；脸中心在 0.30 时给 left 0.142、right 0.542。上下有烧进去的边框时，`top`、`bottom` 给边框的高度比例把它裁掉（多给一点，不留细边），没有就给 0。
-     - 主讲人近景：中心取这个镜头里主讲人脸中心横坐标（`x + w/2`）的中位数。
-     - 采访者近景：中心取采访者的脸，让正在说话的人在画面里，这正是按镜头取景的意义。
-     - 全景（几张小脸、画面多半是房间）：用能装下所有人的最小裁框。所有脸的外缘（最左的 `x` 到最右的 `x + w`）能放进一个宽 `cw` 的窗口时，中心取这一群人的中点；放不下时，在 notes 里写明，中心取主讲人。
-     - 远景里脸很小时，上下各至多裁 15%（`top`、`bottom` 都不超过 0.15）让脸大一些，不超过；有烧进去的边框时，边框高度也算在这 15% 里，边框更高就以边框为准，并在 notes 里说明。
-     - 相邻的镜头裁框相差不到 0.02（`left` 的差，且 `top`、`bottom` 相同）时合并成 `crops` 的一项，`from` 取前一个镜头的起点，`to` 取后一个镜头的终点。
-  6. **让开台标**：逐镜头检查，门槛和以前一样。台标在左边时，`left` 至少是台标右缘 + 0.01；在右边时，`left + cw` 至多是台标左缘 − 0.01（`right` 至少是 1 − 台标左缘 + 0.01）。挪了之后这个镜头的脸被裁出画面、或者两边都让不开时，这个镜头换裁框也不行，就换片段；不要交付压着半个台标的裁框。
-  7. **多机位**：全景镜头和采访者镜头现在有对应的裁框，不再因为它们本身换片段。只剩两条：片段**不要以对方的反应镜头开头**；全景或空镜头合起来超过这一段约 40% 时，优先换一段，并说明原因；换不了就照做，并在 notes 里写明。
-  8. **切换点从 videos_shots 来**：`crops` 的 `from`、`to` 直接用 `shots` 的 `start`、`end`，是逐帧准确的，不再在估出的切换点前后各 1 秒试探。只有看到某个镜头的三帧明显是两种机位（说明漏了一个切换）时，把 `threshold` 降到 0.2，对那一小段重跑 videos_shots；或在怀疑的时间点前后用 `at` 补取几帧。创建时：`crops` 传全部合并后的项（`{from, to, left, top, right, bottom}`，最多 64 项、互不重叠，都是父视频时间线的秒），同时把第一个镜头的裁框作为普通的 `crop` 传上，当作没覆盖到的帧的兜底。
-  9. **没有脸**：所有帧的 `faces` 都是空的，居中（不传 `crop` 和 `crops`），并如实说没找到人脸。结果的 `detector` 为 null 时是检测器不可用，不是没人：这时退回看帧图片，逐镜头估主讲人在画面哪一侧，照第 5、6 步的算法给 `crops` 和 `crop`，并说明这次是看图估的。
-- **hook、reason、notes**：每一支都传。`hook` 是保留段的第一句原话，原样照抄，不改写（至多 300 字）；`reason` 一句话说为什么挑它，写给用户看（至多 500 字）；`notes` 是提示牌字符串数组，写取景、机位、台标检查里发现并需要用户知道的事，没有就不传。
-  - notes **每条至多 80 字**、至多 8 条，超了整次创建会被拒。一件事一条，拆开写，不把几件事塞进一条。
-  - 说到时间时写成「子视频第 X 秒（原片 Y 秒）」，两个时钟都给。一个镜头组一条，只写用户需要知道的，例如「子视频第 9–24 秒（原片 24:54–25:09）是全景，裁到两人中间」「子视频第 40–43 秒（原片 25:25–25:28）是采访者，裁到采访者」「上下紫色边框已裁掉」。开头是对方反应镜头时也写上，写成「子视频第 0–3 秒（原片 24:45–24:48）是对方的反应镜头」。
-  - 结果页的卡片会显示这三项，回复里不必再重复。创建后核对写进去的是不是你要的：返回结果里回显的 `hook`、`reason`、`notes` 就是派生来源文档里的那份（认回已有的子视频时是原来那份，这次传的不会改写它）；也可以用 documents_read 读返回的 `derivationDocumentId`。
-- `chapters: false`：30 秒的子视频不该带着父视频的整份章节。
-- `captions` 按用户的字幕要求：要字幕给 `true`（默认），不要给 `false`。用户只要原文或只要译文时，字幕层的选择按他的话，做不到的（例如没有译文）如实说。
-- **译文**：videos_derive 默认把父视频的译文与译文字幕层一并带到子视频；旧格式的译文会自动升级后再带。返回里出现 `translations-skipped` 警告时，告诉用户哪种语言没带上。
-- **核对返回值**：`range` 是实际采用的边界，对一下和你要的差多少（见上面的短停顿）；`captions[].cueCount` 只数落在区间内的 cue，不是整份字幕的条数，用它判断字幕有没有建出来、数量是否合理。
-- 每一支创建后，会话里会自动出一张视频卡，不需要再贴路径。同一区间与设置重复调用会认回已有的子视频（`reused` 为 true），不会多建。
+- `video` is the parent video, `start` and `end` are seconds on the edited timeline, and `name` is the segment title.
+- **Aspect ratio**: when the user wants 9:16, `width` 1080 and `height` 1920; for 1:1, 1080x1080; when keeping the original aspect ratio (or not mentioned), do not pass width, height or fit. Do not upscale small sizes for "HD".
+- **Framing**: when an aspect ratio is passed, give `fit: "cover"` (fill, cropping the excess). When the user says "centered": pass neither `crop` nor `crops`, and it is created centered; when they say "I'll adjust it myself": likewise create it centered, and tell the user they can drag the picture on the canvas to adjust the framing. When the user did not say, or says "auto" (the default): follow the per-shot framing flow below. Framing is a static crop that changes at shot changes, not a camera that follows the person: when the user wants "the picture to keep following whoever is speaking", say truthfully that this cannot be done, and ask the user to adjust the position within a shot themselves in the editor.
+- **How "auto" framing works** (the prompt says: see where the speaker is in the frame and place the crop on them; if no one is found, center it): split by shot first, and set each shot's crop from face detection results, not by eyeballing images.
+  1. **Shots first, then frames**: first use videos_shots with `range` (`start:end`, this segment's timeline seconds) to get this segment's `shots` (each with `start`, `end` and three `sampleAt`) and `cuts`. It only detects picture changes and does not recognize people. Then use videos_frames with `at` set to all the shots' `sampleAt`, 8 shots at a time (24 frames, the per-call limit). Each frame's `faces` are the detected face boxes, with `x`, `y`, `w`, `h` normalized to 0-1 by the frame's width and height, corresponding to the asset picture - exactly the coordinates of `crop`.
+  2. **Sort camera angles first**: for each frame, look at the area of the largest face (`w × h`). At least 0.01 means a **close frame**; only smaller faces means a **wide frame** (a long shot with several people); no faces is noted separately. The three frames in one shot are generally the same angle.
+  3. **Identify the main speaker**: across all the segment's shots, look only at close frames and group faces into people by the horizontal center (`x + w/2`), treating a difference under 0.1 as the same person. The one in the most frames is the main speaker; when the counts are close, take the one with the larger average area. The other person's close-ups are the interviewer's (or the other party's) shots.
+  4. **Check the edges before setting crops**: open a few frame images and see where channel logos, watermarks, subtitle bars and sponsor bars are, and estimate their edges (0-1, the same coordinates as `crop`); then check for borders burned into the picture at the top and bottom (color bars, black bars).
+  5. **Set the crop shot by shot**: use this shot's own three frames, never another shot's position in its place. The crop width ratio `cw = (canvas width / canvas height) × (source height × (1 - top - bottom) / source width)`; `left = center - cw/2`, clamped between 0 and `1 - cw`, and `right = 1 - cw - left`. Example: a 16:9 source to 9:16 with nothing cropped top or bottom gives `cw` = 0.316; with the face center at 0.30, left 0.142 and right 0.542. When there are burned-in borders at the top and bottom, set `top` and `bottom` to the borders' height ratios to crop them off (give a little extra, leaving no thin edge); otherwise 0.
+     - Main speaker close-up: the center is the median of the main speaker's face center (`x + w/2`) in this shot.
+     - Interviewer close-up: center on the interviewer's face, so whoever is speaking is in the picture - that is the point of framing per shot.
+     - Wide shot (a few small faces, the picture mostly the room): use the smallest crop that holds everyone. When the outer edges of all faces (from the leftmost `x` to the rightmost `x + w`) fit in a window of width `cw`, center on the middle of the group; when they do not, note it in notes and center on the main speaker.
+     - When faces in a long shot are small, crop at most 15% at the top and bottom each (neither `top` nor `bottom` above 0.15) to make the faces bigger, and no more; when there are burned-in borders, their height counts toward this 15%; if a border is taller, the border wins, and explain in notes.
+     - When adjacent shots' crops differ by less than 0.02 (difference in `left`, with the same `top` and `bottom`), merge them into one `crops` entry, with `from` the earlier shot's start and `to` the later shot's end.
+  6. **Avoid channel logos**: check shot by shot, with the same thresholds as before. When the logo is on the left, `left` is at least the logo's right edge + 0.01; on the right, `left + cw` is at most the logo's left edge - 0.01 (`right` at least 1 - the logo's left edge + 0.01). When after shifting the face in this shot is cropped out of the picture, or the logos on both sides cannot be avoided, changing this shot's crop will not work, so switch segments; never deliver a crop that sits on half a logo.
+  7. **Multi-camera**: wide shots and interviewer shots now have their own crops and are no longer a reason by themselves to switch segments. Only two rules remain: a segment **must not open with the other person's reaction shot**; when wide or empty shots together exceed about 40% of the segment, prefer another segment and explain why; if it cannot be switched, go ahead and note it in notes.
+  8. **Switch points come from videos_shots**: `crops`' `from` and `to` take `shots`' `start` and `end` directly, which are frame-accurate; no more probing 1 second either side of an estimated switch point. Only when a shot's three frames are clearly two different angles (meaning a switch was missed), lower `threshold` to 0.2 and rerun videos_shots on that short stretch, or grab a few extra frames with `at` around the suspected moment. When creating: pass all the merged entries in `crops` (`{from, to, left, top, right, bottom}`, at most 64 entries, non-overlapping, all in parent-timeline seconds), and also pass the first shot's crop as the plain `crop`, as the fallback for frames not covered.
+  9. **No faces**: when every frame's `faces` is empty, center it (pass neither `crop` nor `crops`) and say truthfully that no faces were found. When the result's `detector` is null, the detector is unavailable, which does not mean nobody is there: in that case fall back to looking at the frame images, estimate shot by shot which side of the picture the main speaker is on, give `crops` and `crop` by the algorithm of steps 5 and 6, and say that this time it was estimated by eye.
+- **hook, reason, notes**: pass them for every short. `hook` is the first original line of the kept segment, copied verbatim, not rewritten (at most 300 characters); `reason` is one sentence on why it was picked, written for the user (at most 500 characters); `notes` is an array of hint strings with things found in the framing, camera angle and logo checks that the user needs to know; omit it if there are none.
+  - Each note is **at most 80 characters**, at most 8 notes; going over rejects the whole creation. One thing per note; split them up rather than packing several things into one.
+  - When mentioning time, write "sub-video second X (original Y)", giving both clocks. One note per group of shots, only what the user needs to know, for example "Sub-video 9-24s (original 24:54-25:09) is a wide shot, cropped between the two", "Sub-video 40-43s (original 25:25-25:28) is the interviewer, cropped to them", "Purple borders at top and bottom cropped off". When the opening is the other person's reaction shot, note that too, as "Sub-video 0-3s (original 24:45-24:48) is the other person's reaction shot".
+  - The cards on the results page show these three, so there is no need to repeat them in the reply. After creating, check that what was written is what you meant: the `hook`, `reason` and `notes` echoed in the result are the ones in the derivation source document (when an existing sub-video is reused, it is the original one, and what you passed this time does not overwrite it); you can also read the returned `derivationDocumentId` with documents_read.
+- `chapters: false`: a 30-second sub-video should not carry the parent video's full chapters.
+- `captions` follows the user's subtitle request: `true` when subtitles are wanted (the default), `false` when not. When the user wants only the source or only the translation, choose the caption layers by what they said, and say truthfully what cannot be done (for example, there is no translation).
+- **Translations**: by default videos_derive carries the parent video's translations and translation caption layers over to the sub-video; translations in an old format are upgraded automatically before being carried over. When a `translations-skipped` warning appears in the return, tell the user which language was not carried over.
+- **Check the return values**: `range` is the boundary actually used; compare it with what you wanted (see the short pauses above); `captions[].cueCount` counts only the cues within the range, not the whole subtitle track; use it to judge whether subtitles were built and whether the count is reasonable.
+- After each short is created, a video card appears in the conversation automatically; there is no need to paste paths. Repeating a call with the same range and settings reuses the existing sub-video (`reused` is true) rather than creating another.
 
-子视频是什么：整份复制父视频的时间线与文稿，区间之外的部分被剪掉，用户在编辑器里点划掉的句子就能把它放回来；原视频不动。所以不要把哪一支移入回收站，也不要为了「改边界」重建一支，让用户在编辑器里拖。
+What a sub-video is: a full copy of the parent video's timeline and transcript with everything outside the range cut away; the user can bring back a struck-out sentence by clicking it in the editor; the original video is untouched. So do not move any of them to the trash, and do not recreate one to "change the boundaries"; let the user drag in the editor.
 
-去口癖、收紧停顿会改动整个视频，不在这里做；用户要时先说明影响，按剪口播的做法在子视频上处理。
+Removing verbal tics and tightening pauses changes the whole video and is not done here; when the user wants it, first explain the effect, then handle it on the sub-video following the talking-head cut approach.
 
-### 要如实转述的 warnings
+### Warnings to pass on truthfully
 
-创建结果里的 warnings 逐条告诉用户，用大白话：
+Tell the user every warning in the creation result, in plain words:
 
-- `multiple-assets`：父视频不止一份主素材，这一版只按主素材剪，别的素材跟着移动，请用户在编辑器里检查。
-- `items-not-restorable`：整段落在剪掉区域里的其他轨片段不会随「恢复」回来。
-- `range-not-exact`：区间之外有一部分没能剪掉（主素材盖不到），入出点会比要求的略宽。
-- `captions-skipped`：字幕层没建成，说明原因，告诉用户可以在字幕面板里再建。
-- `crops-adjusted`：有一段取景范围被裁短或丢掉了（超出子视频范围，或截完一帧不剩），截掉的那几帧按相邻镜头或兜底的裁框取景；告诉用户是哪几秒，请他在画布上拖一下。
-- `animation-split`：画面被按取景切成了几段，循环动画或音量包络在每段的交界处会重新开始；告诉用户在哪几秒，有影响时请他在编辑器里检查。
-- `translations-skipped`：父视频的这份译文没能带进子视频（旧格式换不过来），子视频里没有这门语言；告诉用户是哪种语言，可以在子视频上重新翻译。
+- `multiple-assets`: the parent video has more than one main asset; this version cuts only by the main asset and the other assets move along; ask the user to check in the editor.
+- `items-not-restorable`: items on other tracks that fall entirely in a cut-away area will not come back with "restore".
+- `range-not-exact`: part outside the range could not be cut away (the main asset does not cover it), so the in and out points will be slightly wider than requested.
+- `captions-skipped`: the caption layer was not built; explain why and tell the user they can build it again in the captions panel.
+- `crops-adjusted`: a framing range was shortened or dropped (it went beyond the sub-video's range, or nothing was left after trimming to frames); the trimmed frames are framed by the adjacent shot's or the fallback crop; tell the user which seconds and ask them to drag it on the canvas.
+- `animation-split`: the picture was split into several items by framing, and looping animations or volume envelopes restart at each boundary; tell the user at which seconds, and ask them to check in the editor if it matters.
+- `translations-skipped`: this translation of the parent video could not be carried into the sub-video (the old format could not be converted), so the sub-video has no translation in this language; tell the user which language, and that they can translate again on the sub-video.
 
-拒绝的错误（父视频有代码画面、区间为空等）如实说，不绕开。
+State rejection errors truthfully (the parent video has code visuals, the range is empty and so on), and do not work around them.
 
-## 5. 成片文件
+## 5. Finished files
 
-默认交付是子视频，不是 mp4。用户明确要文件时，再对子视频调用 export：kind `video`、format `mp4`，jobs_inspect 等到 completed，把 outputs 里的 path 告诉用户。时间线上的字幕默认烧进成片（burnCaptions），不要字幕时给 `false`。用户想直接导出、不建子视频时，也可以沿用在父视频上按 ranges 导出的老办法，每段一个 `{start, end}`。
+The default deliverable is sub-videos, not mp4s. When the user explicitly wants files, call export on the sub-video: kind `video`, format `mp4`, wait with jobs_inspect until completed, and tell the user the path in outputs. Captions on the timeline are burned into the finished video by default (burnCaptions); give `false` when subtitles are not wanted. When the user wants to export directly without creating sub-videos, the old way of exporting from the parent video by ranges still works, one `{start, end}` per segment.
 
-## 6. 要避免的
+## 6. What to avoid
 
-- 不要按章节切，不要让一段里有两个话题。
-- 不要只围着一句金句凑时长，话题没讲完就断；不要为了凑够支数或时长降低门槛、带上铺垫。
-- 不要从铺垫开始，不要停在半句话或「关注订阅」上。
-- 不要留着「刚才说的」「第二点」这类指代。
-- 不要切进词里；不要在前面加标题卡。
-- 没说「先给我看」的，不要一段段停下来问边界；说了的，不要替用户定，除非他说「你定」。
-- 不要把没看过的画面说成没问题；不要吞掉 warnings。
-- 不要承诺画面一直跟着人移动，按镜头分别取景才是做得到的，用户可以在画布上拖任意一个镜头的画面；不要整段只用一个裁框；不要拿别的镜头的脸位置定这个镜头的裁框；不要凭几帧估切换的秒数，用 videos_shots 返回的。
-- 不要把素材时钟的句子时间当时间线时间直接传；不要放着返回的 range 与要的差很多而不核对。
-- 不要让片段以对方的反应镜头或依赖上文的句子开头；不要交付被切了半个台标或留着烧进去的边框的裁框。
-- 不要把几件事塞进一条 note，不要只写一个时钟的秒数。
-- 不要导出了 mp4 却说成交付，除非用户要的就是文件；不要把子视频移入回收站。
-- 不要把检查用的东西留在用户的文件里：看画面用 videos_frames，不用 ffmpeg 往 exports/ 里截图；为读文稿、试听或看效果而导出的都给 purpose `preview`，不按 ranges 把片段导出成 mp4 来检查。
+- Do not cut by chapters, and do not let a segment hold two topics.
+- Do not pad a single soundbite to a length and cut the topic off before it is told; do not lower the bar or include setup to reach a count or length.
+- Do not start from setup, and do not stop on a half sentence or on "follow and subscribe".
+- Do not leave references like "what I just said" or "the second point".
+- Do not cut into words; do not add a title card in front.
+- When the user did not say "show me first", do not stop at each segment to ask about boundaries; when they did, do not decide for them unless they say "you decide".
+- Do not call a picture you have not looked at fine; do not swallow warnings.
+- Do not promise the picture will keep following the person - per-shot framing is what can be done, and the user can drag any shot's picture on the canvas; do not use one crop for the whole segment; do not set this shot's crop from another shot's face positions; do not estimate switch seconds from a few frames - use what videos_shots returns.
+- Do not pass sentence times on the asset clock directly as timeline times; do not leave a returned range that differs a lot from what you wanted unchecked.
+- Do not let a segment open with the other person's reaction shot or a sentence that depends on what came before; do not deliver a crop that cuts a logo in half or keeps burned-in borders.
+- Do not pack several things into one note, and do not give seconds on only one clock.
+- Do not export mp4s and present them as the deliverable, unless a file is what the user wants; do not move sub-videos to the trash.
+- Do not leave checking artifacts in the user's files: use videos_frames to look at the picture, not ffmpeg screenshots into exports/; give purpose `preview` to anything exported to read the transcript, listen or check results, and do not export segments as mp4 by ranges to check them.
 
-## 7. 交付
+## 7. Delivery
 
-收尾时逐支列出，写给用户看：
+When wrapping up, list each short, written for the user:
 
-- 标题、在父视频里的入点与出点、时长、画幅与分辨率。
-- 几支或每支多长是你按话题定的：说一句为什么是这几支（例如另外两个话题要靠前文才懂、没有落点），超过 10 个够格话题时列出没建的候选。
-- 开头那句原话与为什么挑它已经通过 hook / reason 传给了结果卡片，回复里不再逐支重复；用户在没有结果页的地方（网页端、命令行）看时才逐支写一句。
-- 做了什么、没做什么：画幅与取景（原画幅 / 自动按镜头分别取景 / 用户自定；任意一个镜头的画面都可以在画布上拖）、字幕（有 / 没建）各一句。
-- 创建时的 warnings，没有就写没有。
-- 发现的画面问题（烧进去的字幕、台标或赞助条、分屏或相邻画面、插话时说话人不在画面里）：有就写；看过而没有写「没看到」；没看画面就写没看。
-- 最后一句：子视频在编辑器里可以继续调，想把划掉的话放回来点那句就行；要 mp4 再说。
+- Title, in and out points in the parent video, duration, aspect ratio and resolution.
+- When you decided the count or the length by topic: one sentence on why these shorts (for example, two other topics needed earlier context to make sense, or had no payoff); when there were more than 10 qualifying topics, list the candidates not created.
+- The original opening line and why it was picked have already gone to the result cards through hook / reason, so do not repeat them per short in the reply; write one sentence per short only when the user is viewing somewhere without a results page (the web client, the command line).
+- What was and was not done: one sentence each for aspect ratio and framing (original aspect ratio / auto per-shot framing / user's own; any shot's picture can be dragged on the canvas) and subtitles (present / not built).
+- Warnings from creation; if none, say none.
+- Picture problems found (burned-in subtitles, channel logos or sponsor bars, split screens or adjacent pictures, the speaker out of frame during interjections): write them if any; if you looked and found none, write "none seen"; if you did not look at the picture, say you did not look.
+- Last line: the sub-videos can be adjusted further in the editor; to bring back a struck-out line, just click it; ask if you want mp4s.

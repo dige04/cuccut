@@ -60,9 +60,10 @@ describe('工具目录项', () => {
 
       it('description 第一句是一行摘要', () => {
         const first = info.description.split('\n')[0]!;
-        const end = first.indexOf('。');
-        expect(end, `「${first}」没有以句号结束的第一句`).toBeGreaterThan(0);
-        expect([...first.slice(0, end + 1)].length).toBeLessThanOrEqual(80);
+        // Same rule as the CLI's `summaryOf`: a full stop followed by a letter (`video.db`) does not end the sentence.
+        const sentence = /^.*?[.!?](?=\s|$)/.exec(first)?.[0];
+        expect(sentence, `"${first}" has no first sentence ending with a full stop`).toBeTruthy();
+        expect([...sentence!].length, `"${sentence}" is longer than 80 characters`).toBeLessThanOrEqual(80);
         expect(info.title.trim()).not.toBe('');
       });
 

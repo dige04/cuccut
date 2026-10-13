@@ -1,4 +1,3 @@
-// i18n-ignore-file: ToolError 的消息与下一步给模型看；界面经 RPC 显示的是 rcVideo 目录里的文案，原话只放在 details 里
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -44,18 +43,18 @@ import { digestReceipt, resolveUserPath } from '../agent-tools/video-digest.ts';
 import { frameTimes } from '../agent-tools/video-frames.ts';
 
 /**
- * 代码画面服务（架构设计 §8，代码包规范 §2、§6、§7）：浏览器合成（代码包）的导入与预览。界面经 RPC（`compositions.*`）、
- * 智能体与对外服务经工具（`compositions_import` / `compositions_preview`）走的都是这里，区别只在调用方传进来的上下文：
- * 怎么打开视频、相对路径按哪里解析、确认与提交（谁是操作者、变更卡放在哪里）、帧写到哪里。
+ * Code visual service (architecture design §8, code bundle spec §2, §6, §7): import and preview of browser compositions (code bundles). The UI via RPC (`compositions.*`)
+ * and agents and external services via tools (`compositions_import` / `compositions_preview`) all go through here; they differ only in the context the caller passes in:
+ * how to open the video, where relative paths resolve, confirmation and commit (who the actor is, where the change card goes), and where frames are written.
  *
- * 浏览器合成在 Electron 离屏宿主里执行（`@cuccut/code-runtime`）。宿主按需拉起、各次调用共用、串行使用，Runtime 停止时关掉。
- * 写入视频走与界面相同的 `VideoService.apply`：第一笔导入代码包与预渲染两个素材，第二笔放一个合成实例（合成的 `source.assetRef`
- * 与 `prerender` 只收已有素材的版本，不能引用同一笔里 `importAsset` 的 ref，所以分两笔）。
+ * Browser compositions run in an Electron offscreen host (`@cuccut/code-runtime`). The host starts on demand, is shared by all calls and used serially, and is closed when the Runtime stops.
+ * Writes to the video go through the same `VideoService.apply` as the UI: the first commit imports two assets, the code bundle and the prerender; the second places a composition instance (the composition's `source.assetRef`
+ * and `prerender` only accept revisions of existing assets and cannot reference an `importAsset` ref from the same commit, hence two commits).
  *
- * 错误照工具的写法抛 `ToolError`（错误码、给模型的原话与 `next`）；RPC 的处理函数再换成 `RpcError`。
+ * Errors are thrown as `ToolError` the way tools do (error code, message for the model, and `next`); RPC handlers convert them to `RpcError`.
  */
 
-/** 宿主的共享句柄：同一个 Runtime 里的各个入口（会话、终端、对外服务、界面）共用一个 Electron 进程，串行使用；死了就重启。 */
+/** Shared host handle: all entry points in one Runtime (sessions, terminal, external services, UI) share one Electron process, used serially; restarted if it dies. */
 export class SharedCompositionHost {
   readonly #options: CompositionHostOptions;
   #host: CompositionHost | null = null;
@@ -66,7 +65,7 @@ export class SharedCompositionHost {
     this.#options = options;
   }
 
-  /** 排队用宿主：前一次用完才轮到下一次（烘焙与取帧不并发抢同一个宿主）。 */
+  /** Queues use of the host: the next call waits until the previous one is done (baking and frame capture never compete for the same host). */
   use<T>(fn: (host: CompositionHost) => Promise<T>): Promise<T> {
     const run = this.#chain.then(async () => fn(await this.#acquire()));
     this.#chain = run.catch(() => {});
@@ -82,7 +81,7 @@ export class SharedCompositionHost {
     return this.#host;
   }
 
-  /** Runtime 停止：关掉宿主（正在进行的取帧随之失败），之后的调用回答 `COMPOSITION_HOST_UNAVAILABLE`。 */
+  /** Runtime stops: close the host (frame captures in progress fail with it); later calls answer `COMPOSITION_HOST_UNAVAILABLE`. */
   async close(): Promise<void> {
     this.#closed = true;
     const host = this.#host;
@@ -93,13 +92,13 @@ export class SharedCompositionHost {
 
 export interface CompositionServiceDeps {
   videos: VideoService;
-  /** 烘焙用的 ffmpeg（绝对路径或命令名）。 */
+  /** ffmpeg used for baking (absolute path or command name). */
   ffmpeg: () => string | Promise<string>;
   host: SharedCompositionHost;
   log?: Logger;
 }
 
-/** 清单覆盖（包里没有 `bundle.manifest.json` 时用）。字段可以显式为 undefined：工具的参数经 zod 解析后就是这样。 */
+/** Manifest overrides (used when the bundle has no `bundle.manifest.json`). Fields may be explicitly undefined: that is what tool arguments look like after zod parsing. */
 export interface CompositionManifestInput {
   width?: number | undefined;
   height?: number | undefined;
@@ -122,7 +121,7 @@ interface BundleSourceInput {
 export interface CompositionImportRequest extends BundleSourceInput {
   name?: string | undefined;
   place?: { track?: string | undefined; at?: string | undefined } | undefined;
-  /** 原地替换时间线上已有的合成片段（代码包规范 §3.3）；与 `place`、`register` 互斥。 */
+  /** Replace a composition clip already on the timeline in place (code bundle spec §3.3); mutually exclusive with `place` and `register`. */
   replace?: { itemId: string } | undefined;
   register?: boolean | undefined;
   revision?: string | undefined;
@@ -134,37 +133,37 @@ export interface CompositionPreviewRequest extends BundleSourceInput {
   at: string[];
 }
 
-/** 一笔修改：由调用方提交（操作者、幂等键、保护范围与变更卡都在调用方那边）。 */
+/** One edit, committed by the caller (actor, idempotency key, protected scope and change card are all on the caller's side). */
 export interface CompositionEdit {
   expectedRevision: string;
   label: string;
   operations: Record<string, unknown>[];
-  /** 调用方给的幂等键（第二笔是 `<commandId>-place`）；没给时由调用方新生成。 */
+  /** Idempotency key from the caller (the second commit uses `<commandId>-place`); when absent the caller generates a new one. */
   commandId: string | undefined;
 }
 
-/** 调用方的上下文：打开视频，以及 `path` 按哪里解析、能不能出这个目录。 */
+/** The caller's context: opening the video, and where `path` resolves and whether it may leave that directory. */
 export interface CompositionCaller {
   open(): Promise<VideoOpenResult>;
-  /** `path` 相对的目录；`confine` 不为空时目录（按真实路径）必须在它里面。 */
+  /** Directory `path` is relative to; when `confine` is set, the directory (by real path) must be inside it. */
   importBase(opened: VideoOpenResult): { cwd: string; confine: string | null };
 }
 
 export interface CompositionImportCaller extends CompositionCaller {
   /**
-   * 有副作用之前的确认（会话里按访问模式问用户）；拒绝时抛出。界面发起的调用直接通过。`replace` 是要原地替换的片段
-   * （`clip` 是它的名字，没有名字时是 ID）。
+   * Confirmation before side effects (in a session, asks the user according to the access mode); throws on refusal. Calls from the UI pass directly. `replace` is the clip to replace in place
+   * (`clip` is its name, or its ID when it has no name).
    */
   confirm(request: { name: string; place: boolean; replace: { itemId: Id; clip: string } | null }): Promise<void>;
   apply(opened: VideoOpenResult, edit: CompositionEdit): Promise<EditResult>;
 }
 
 export interface CompositionPreviewCaller extends CompositionCaller {
-  /** 帧写到的目录（建好的真实路径）。 */
+  /** Directory frames are written to (an existing real path). */
   framesDir(opened: VideoOpenResult): Promise<string>;
 }
 
-/** 预览的结果：帧写成了文件（`file` 是绝对路径），调用方决定怎么交出去（工具给路径，RPC 给媒体句柄）。 */
+/** Preview result: frames written as files (`file` is an absolute path); the caller decides how to hand them over (tools give paths, RPC gives media handles). */
 export interface CompositionPreview {
   videoId: Id;
   bundleId: string;
@@ -176,37 +175,37 @@ export interface CompositionPreview {
   frames: Array<{ at: string; file: string; sampledSeconds: number; clamped: boolean; sha256: string }>;
 }
 
-/** 每个错误码的下一步：智能体据此改包再试（RPC 放进 `details.next`）。 */
+/** Next step for each error code: the agent fixes the bundle accordingly and retries (RPC puts it in `details.next`). */
 export const BUNDLE_NEXT: Record<CodeBundleErrorCode, string> = {
   BUNDLE_MANIFEST_INVALID:
-    '清单不对，或包里没有清单而尺寸、帧率、时长读不出来：在根元素上写 data-width、data-height、data-fps、data-duration（或用 manifest 覆盖）；有 bundle.manifest.json 时按 details 改正，也可以删掉它让导入时重新生成',
+    'The manifest is invalid, or the bundle has no manifest and its size, frame rate or duration cannot be read: put data-width, data-height, data-fps and data-duration on the root element (or use the manifest override); if there is a bundle.manifest.json, fix it according to details, or delete it so the import regenerates it',
   BUNDLE_FILE_NOT_ALLOWED:
-    '包里只能有网页、脚本、样式、图片、字体与音视频等白名单内的文件，不能有点文件与 node_modules：删掉 details 里列出的文件再试',
-  BUNDLE_SYMLINK: '包里不能有符号链接：换成真实的文件再试',
-  BUNDLE_TOO_LARGE: '包太大（最多 4096 个文件、单个 64 MiB、合计 256 MiB）：删掉用不到的资源或压缩后再试',
-  BUNDLE_NETWORK_REFERENCE: '代码包必须离线：把依赖的库与字体放进包内、用相对路径引用，再导入；不要用 CDN、在线字体或网络请求',
+    'The bundle may only contain allowlisted files such as web pages, scripts, styles, images, fonts and audio/video, and no dotfiles or node_modules: delete the files listed in details and retry',
+  BUNDLE_SYMLINK: 'The bundle must not contain symlinks: replace them with real files and retry',
+  BUNDLE_TOO_LARGE: 'The bundle is too large (at most 4096 files, 64 MiB per file, 256 MiB in total): delete unused resources or compress them and retry',
+  BUNDLE_NETWORK_REFERENCE: 'The code bundle must work offline: put the libraries and fonts it depends on inside the bundle, reference them by relative path, then import; do not use CDNs, web fonts or network requests',
   BUNDLE_HASH_MISMATCH:
-    'bundle.manifest.json 的 contentHash 与文件对不上：重新打包，或删掉 bundle.manifest.json 与 files.manifest.json 让导入时重新生成',
-  BUNDLE_ENTRY_MISSING: '找不到入口 HTML：在包里放 index.html，或用 manifest.entry 指定入口',
-  BUNDLE_CONTRACT_UNSUPPORTED: `只支持 ${CODE_BUNDLE_CONTRACTS.join('、')} 两种浏览器合同：按其中一种改写页面`,
+    'The contentHash in bundle.manifest.json does not match the files: repackage, or delete bundle.manifest.json and files.manifest.json so the import regenerates them',
+  BUNDLE_ENTRY_MISSING: 'No entry HTML found: put an index.html in the bundle, or set the entry with manifest.entry',
+  BUNDLE_CONTRACT_UNSUPPORTED: `Only the browser contracts ${CODE_BUNDLE_CONTRACTS.join(', ')} are supported: rewrite the page for one of them`,
   COMPOSITION_ROOT_MISSING:
-    '入口页面里没有带 data-composition-id 的根元素：加上它（值与 compositionId 一致），并写 data-width、data-height、data-fps、data-duration',
+    'The entry page has no root element with data-composition-id: add it (its value equal to compositionId), and set data-width, data-height, data-fps and data-duration',
   COMPOSITION_TIMELINE_MISSING:
-    'hyperframes/1 要在 window.__timelines[<compositionId>] 上注册暂停的、可以 seek(秒) 的时间线；cuccut/1 要在 window.__cuccutCompositions[<compositionId>] 上暴露 renderAt。改好再试',
+    'hyperframes/1 must register a paused, seekable (seek(seconds)) timeline on window.__timelines[<compositionId>]; cuccut/1 must expose renderAt on window.__cuccutCompositions[<compositionId>]. Fix it and retry',
   COMPOSITION_SEEK_MISMATCH:
-    'seek 之后回读的时间对不上，或越过末尾的请求没有夹到时长：让 time() 返回 seek 到的时间，时长与 data-duration 一致',
-  COMPOSITION_INTRINSIC_MISMATCH: '页面报告的尺寸、帧率或时长与清单不一致：让根元素的 data-* 与清单（或 manifest 覆盖）一致',
+    'The time read back after seek does not match, or a request past the end was not clamped to the duration: make time() return the time seeked to, with a duration equal to data-duration',
+  COMPOSITION_INTRINSIC_MISMATCH: 'The size, frame rate or duration reported by the page differs from the manifest: make the root element\'s data-* match the manifest (or the manifest override)',
   COMPOSITION_NONDETERMINISTIC:
-    '同一时刻两次取帧不一样：画面只能由 seek 到的时间决定，不要用 Date.now()、performance.now()、Math.random()（要随机就用固定种子）、CSS 动画或 requestAnimationFrame 自己推进',
-  COMPOSITION_NETWORK_BLOCKED: '页面运行时发起了网络请求并被拦截：把用到的资源放进包内，用相对路径引用',
-  COMPOSITION_SCRIPT_ERROR: '页面脚本出错：按 message 改正脚本再试',
-  COMPOSITION_RENDER_TIMEOUT: '页面没有及时就绪或取帧超时：减少每帧的计算量，确认时间线注册了、页面没有卡住',
-  COMPOSITION_HOST_UNAVAILABLE: '需要 Electron 才能渲染代码画面；安装桌面端或设置 CUCCUT_ELECTRON',
+    'Two captures at the same time differ: the frame must depend only on the time seeked to; do not advance it yourself with Date.now(), performance.now(), Math.random() (use a fixed seed if you need randomness), CSS animations or requestAnimationFrame',
+  COMPOSITION_NETWORK_BLOCKED: 'The page made a network request at run time and it was blocked: put the resources it uses inside the bundle and reference them by relative path',
+  COMPOSITION_SCRIPT_ERROR: 'A page script failed: fix the script according to message and retry',
+  COMPOSITION_RENDER_TIMEOUT: 'The page was not ready in time or a frame capture timed out: reduce the work per frame, and make sure the timeline is registered and the page is not stuck',
+  COMPOSITION_HOST_UNAVAILABLE: 'Rendering code visuals needs Electron: install the desktop app or set CUCCUT_ELECTRON',
 };
 
-const ALPHA_NEXT = '画面全不透明：传 manifest.alpha=false（或根元素写 data-alpha="false"），或让背景透明';
+const ALPHA_NEXT = 'The frame is fully opaque: pass manifest.alpha=false (or write data-alpha="false" on the root element), or make the background transparent';
 
-/** `importAsset` 的 ref：从回执的 `refs` 取新素材的 ID。 */
+/** The `importAsset` ref: the new asset's ID is taken from the receipt's `refs`. */
 const BUNDLE_REF = 'bundle';
 const PRERENDER_REF = 'prerender';
 const TRACK_REF = 'track';
@@ -218,21 +217,21 @@ export class CompositionService {
     this.#deps = deps;
   }
 
-  /** 导入：验证、烘焙、两笔修改（素材，再放置）。返回的对象就是工具结果（工具另加确认的说明）。 */
+  /** Import: verify, bake, two edits (assets, then placement). The returned object is the tool result (the tool adds a note about confirmation). */
   async import(args: CompositionImportRequest, caller: CompositionImportCaller): Promise<CompositionImportResult> {
     const { videos } = this.#deps;
     if ((args.path === undefined) === (args.files === undefined)) {
-      throw new ToolError('INVALID_ARGUMENTS', 'path 与 files 给且只给一个：path 是代码包的目录，files 是内联的包文件');
+      throw new ToolError('INVALID_ARGUMENTS', 'Give exactly one of path and files: path is the code bundle directory, files are inline bundle files');
     }
     if (args.replace && (args.place !== undefined || args.register)) {
       throw new ToolError(
         'INVALID_ARGUMENTS',
-        'replace 与 place、register 不能同时给：replace 原地替换已有的合成片段，轨道与起点沿用它原来的',
+        'replace cannot be combined with place or register: replace swaps an existing composition clip in place, keeping its track and start',
       );
     }
     const opened = await caller.open();
     const videoId = opened.ref.videoId;
-    // 要替换的片段先查：不存在或不是合成片段时不必验证与烘焙。
+    // Look up the clip to replace first: if it is missing or not a composition clip, there is no need to verify and bake.
     const target = args.replace ? replaceTarget(current(videos, opened), args.replace.itemId) : null;
     const work = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-composition-'));
     try {
@@ -247,7 +246,7 @@ export class CompositionService {
       const capabilities = report.capabilities!;
 
       const before = current(videos, opened);
-      // 烘焙帧率与秒→帧的换算都按片段所在的序列（代码包规范 §3.3、§7）：替换取原片段所在的序列，放置放在根序列上。
+      // Bake frame rate and seconds-to-frames conversion follow the sequence the clip sits in (code bundle spec §3.3, §7): replacing uses the original clip's sequence, placing uses the root sequence.
       const sequence = before.sequences[target?.sequenceId ?? before.rootSequenceId]!;
       const fps = sequence.fps;
       let bake: BakeResult | null = null;
@@ -258,13 +257,13 @@ export class CompositionService {
           bakeComposition(host, bundle, { fps, outputFile, ffmpeg, alpha: bundle.manifest.output.alpha }),
         ).catch((error: unknown) => {
           if (error instanceof CodeBundleError || error instanceof ToolError) throw error;
-          throw new ToolError('COMPOSITION_BAKE_FAILED', `烘焙预渲染失败：${error instanceof Error ? error.message : String(error)}`, {
-            next: '检查 ffmpeg 是否可用（CUCCUT_FFMPEG 或 PATH 里的 ffmpeg）；也可以先用 register: true 只登记代码包',
+          throw new ToolError('COMPOSITION_BAKE_FAILED', `Baking the prerender failed: ${error instanceof Error ? error.message : String(error)}`, {
+            next: 'Check that ffmpeg is available (CUCCUT_FFMPEG or ffmpeg on PATH); or register the code bundle only with register: true first',
           });
         });
       }
 
-      // 第一笔：代码包与预渲染两个素材。
+      // First commit: two assets, the code bundle and the prerender.
       const identity = { id: bundle.manifest.bundleId, revision: bundle.manifest.revision };
       const operations: Record<string, unknown>[] = [
         {
@@ -278,8 +277,8 @@ export class CompositionService {
         },
       ];
       if (bake) {
-        // 预渲染与代码包的素材 ID 要等回执才知道：烘焙记录里先写代码包清单的身份（代码包规范 §2.3 的缓存身份），
-        // 真正的素材引用在合成片段的 `source.assetRef` 与 `prerender` 上，也在结果里返回。
+        // The prerender's and code bundle's asset IDs are only known from the receipt: the bake record first stores the identity of the code bundle manifest (the cache identity of code bundle spec §2.3);
+        // the actual asset references live on the composition clip's `source.assetRef` and `prerender`, and are also returned in the result.
         const record: BakeRecord = {
           bakedAssetRef: identity,
           sourceBundleRef: identity,
@@ -316,7 +315,7 @@ export class CompositionService {
         ...(prerenderAssetId ? { prerender: { assetId: prerenderAssetId, revision: prerenderRevision } } : {}),
       };
 
-      // 第二笔：放一个合成片段，源是代码包素材，替身是预渲染；给了 replace 时原地换掉那个片段的代码包与替身。
+      // Second commit: place a composition clip whose source is the code bundle asset and whose proxy is the prerender; with replace, swap that clip's code bundle and proxy in place.
       let itemId: Id | null = null;
       let trackId: Id | null = null;
       let replaced: CodeEdit | undefined;
@@ -339,16 +338,16 @@ export class CompositionService {
             commandId: args.commandId !== undefined ? `${args.commandId}-place` : undefined,
           });
         } catch (error) {
-          // 引擎的 message 并进上面这句话里：留在 extra 里会盖掉它，模型就看不到第一笔已经提交。
+          // Fold the engine's message into the sentence above: left in extra it would override it, and the model would not see that the first commit already went through.
           const { message: engineMessage, ...body } = errorBody(error);
-          throw new ToolError(body.code, `代码包与预渲染已经导入（第一笔已提交），替换片段 ${target.itemId} 失败：${engineMessage}`, {
+          throw new ToolError(body.code, `The code bundle and prerender were imported (first commit done), but replacing clip ${target.itemId} failed: ${engineMessage}`, {
             ...body,
             imported: assets,
             revision: after,
             next:
               body.code === 'TIMELINE_OVERLAP'
-                ? '新版本比原片段长，撞上了同一轨道上后面的片段：先用 edits_apply 的 moveItem 把后面的片段往后挪（或 deleteItems 删掉），再用 edits_apply 的 replaceCodeBundle 完成替换（assetRef 与 prerender 取 imported 里的 bundle 与 prerender，写成 { id: assetId, revision }）；不要重新导入'
-                : '素材已导入：按错误改正后用 edits_apply 的 replaceCodeBundle 完成替换（assetRef 与 prerender 取 imported 里的 bundle 与 prerender，写成 { id: assetId, revision }）；不要重新导入',
+                ? 'The new version is longer than the original clip and collides with the next clip on the same track: first move the later clip back with edits_apply moveItem (or delete it with deleteItems), then finish the replacement with edits_apply replaceCodeBundle (assetRef and prerender come from bundle and prerender in imported, written as { id: assetId, revision }); do not import again'
+                : 'The assets are imported: fix the error, then finish the replacement with edits_apply replaceCodeBundle (assetRef and prerender come from bundle and prerender in imported, written as { id: assetId, revision }); do not import again',
           });
         }
         after = swapped.receipt.videoRevision;
@@ -378,19 +377,19 @@ export class CompositionService {
         try {
           placed = await caller.apply(opened, {
             expectedRevision: after,
-            // 第一期沿用导入素材的文案（「导入 … 并放到时间线上」），不另加文案键。
+            // For now reuse the import-asset copy ("Import … and place on the timeline") rather than adding a new copy key.
             label: RcAgentTools.importAssetLabel({ name, place: true }).text,
             operations: placeOps,
             commandId: args.commandId !== undefined ? `${args.commandId}-place` : undefined,
           });
         } catch (error) {
-          // 引擎的 message 并进上面这句话里：留在 extra 里会盖掉它，模型就看不到第一笔已经提交。
+          // Fold the engine's message into the sentence above: left in extra it would override it, and the model would not see that the first commit already went through.
           const { message: engineMessage, ...body } = errorBody(error);
-          throw new ToolError(body.code, `代码包与预渲染已经导入（第一笔已提交），放到时间线上失败：${engineMessage}`, {
+          throw new ToolError(body.code, `The code bundle and prerender were imported (first commit done), but placing on the timeline failed: ${engineMessage}`, {
             ...body,
             imported: assets,
             revision: after,
-            next: '素材已导入：换一个 place（另一条轨道或开始时间）再调用一次 compositions_import 即可；同一个代码包按内容复用已导入的素材；预渲染会重新烘焙，与上一份逐字节相同才复用，否则多出一份素材（上一份不再被引用）',
+            next: 'The assets are imported: call compositions_import again with a different place (another track or start time); the same code bundle reuses the imported asset by content; the prerender is baked again and reused only if byte-identical to the previous one, otherwise an extra asset is added (the previous one is no longer referenced)',
           });
         }
         after = placed.receipt.videoRevision;
@@ -453,11 +452,11 @@ export class CompositionService {
     }
   }
 
-  /** 预览：按合成内部的时刻取帧，写成 PNG（同一时刻再取时覆盖）。不改视频、不验证、不烘焙。 */
+  /** Preview: capture frames at times inside the composition and write them as PNG (capturing the same time again overwrites). Does not change the video, verify or bake. */
   async preview(args: CompositionPreviewRequest, caller: CompositionPreviewCaller): Promise<CompositionPreview> {
     const { videos } = this.#deps;
     const given = [args.path, args.files, args.assetId].filter((v) => v !== undefined).length;
-    if (given !== 1) throw new ToolError('INVALID_ARGUMENTS', 'path、files 与 assetId 给且只给一个');
+    if (given !== 1) throw new ToolError('INVALID_ARGUMENTS', 'Give exactly one of path, files and assetId');
     const times = frameTimes({ at: args.at });
     const opened = await caller.open();
     const videoId = opened.ref.videoId;
@@ -468,7 +467,7 @@ export class CompositionService {
       if (args.assetId !== undefined) {
         const asset = current(videos, opened).assets[args.assetId];
         if (!asset || asset.kind !== 'bundle') {
-          throw new ToolError('ASSET_NOT_FOUND', `这个视频里没有代码包素材 ${args.assetId}：用 compositions_import 返回的 bundle.assetId`);
+          throw new ToolError('ASSET_NOT_FOUND', `This video has no code bundle asset ${args.assetId}: use bundle.assetId returned by compositions_import`);
         }
         const located = await videos.assetFile(videoId, args.assetId, asset.currentRevision);
         source = path.resolve(located.root, located.file);
@@ -522,12 +521,12 @@ export class CompositionService {
   }
 }
 
-/** 一笔修改的回执 → 会话里的变更卡（与 `edits_apply` 相同）。不属于项目的视频 `conversationId` 留空，由放卡的一方补上。 */
+/** Receipt of one edit -> change card in the session (same as `edits_apply`). For a video not belonging to a project, `conversationId` is left empty for whoever places the card to fill in. */
 export function videoChangeOf(videos: VideoService, opened: VideoOpenResult, result: EditResult): VideoChange {
   const videoId = opened.ref.videoId;
   const video = opened.snapshot.video;
-  // 回执的 `impact.oldDurationFrames` / `newDurationFrames` 是根序列的长度（引擎 `Video::commit` 按根序列算），
-  // 所以换成秒用根序列的帧率，不跟被修改的片段所在的序列走。
+  // The receipt's `impact.oldDurationFrames` / `newDurationFrames` are root sequence lengths (the engine's `Video::commit` counts on the root sequence),
+  // so convert to seconds with the root sequence's frame rate, not the sequence of the edited clip.
   const digest = digestReceipt(result.receipt, video.sequences[video.rootSequenceId]!.fps, result.replayed);
   const { ref } = opened;
   return {
@@ -549,7 +548,7 @@ export function videoChangeOf(videos: VideoService, opened: VideoOpenResult, res
   };
 }
 
-/** 调用方给的代码包：目录（按 `base` 解析，`confine` 不为空时不能出它）或内联文件（写进临时目录）。 */
+/** The caller's code bundle: a directory (resolved against `base`, must not leave `confine` when set) or inline files (written to a temp directory). */
 async function sourceDirectory(
   args: { path?: string | undefined; files?: CompositionInlineFile[] | undefined },
   base: { cwd: string; confine: string | null },
@@ -559,23 +558,23 @@ async function sourceDirectory(
   const resolved = resolveUserPath(args.path!, base.cwd);
   const real = await fs.realpath(resolved).catch(() => null);
   if (!real)
-    throw new ToolError('BUNDLE_ENTRY_MISSING', `读不到代码包目录 ${args.path}`, {
-      next: 'path 要是代码包的目录（相对工作目录或绝对路径）',
+    throw new ToolError('BUNDLE_ENTRY_MISSING', `Cannot read the code bundle directory ${args.path}`, {
+      next: 'path must be the code bundle directory (relative to the working directory, or absolute)',
     });
   if (base.confine !== null && !inside(real, await fs.realpath(base.confine))) {
-    throw new ToolError('PATH_OUTSIDE_PROJECT', '代码包目录要在视频所在的项目目录里（相对项目目录的路径）');
+    throw new ToolError('PATH_OUTSIDE_PROJECT', 'The code bundle directory must be inside the project directory of the video (a path relative to the project directory)');
   }
   const stat = await fs.stat(real);
   if (!stat.isDirectory()) {
     throw new ToolError(
       'INVALID_ARGUMENTS',
-      `${args.path} 不是目录：代码包是一个目录（入口 HTML 与它用到的文件）；单个 HTML 用 files 内联`,
+      `${args.path} is not a directory: a code bundle is a directory (the entry HTML and the files it uses); inline a single HTML with files`,
     );
   }
   return real;
 }
 
-/** 检查代码包；清单覆盖换成 `inspectBundle` 的写法（时长按帧率换成帧数）。合成清单时暂存在 `work` 里，随它删掉。 */
+/** Inspects the code bundle; manifest overrides are converted to `inspectBundle`'s form (duration converted to frames by frame rate). A synthesized manifest is staged in `work` and deleted with it. */
 async function inspect(
   dir: string,
   args: { compositionId?: string | undefined; manifest?: CompositionManifestInput | undefined },
@@ -585,7 +584,7 @@ async function inspect(
   const overrides: SynthesizeOverrides = {};
   if (m) {
     if (m.durationSeconds !== undefined && m.fps === undefined) {
-      throw new ToolError('INVALID_ARGUMENTS', 'manifest.durationSeconds 要和 manifest.fps 一起给（时长按帧率换成帧数）');
+      throw new ToolError('INVALID_ARGUMENTS', 'manifest.durationSeconds must be given together with manifest.fps (the duration is converted to frames by frame rate)');
     }
     if (m.width !== undefined) overrides.width = m.width;
     if (m.height !== undefined) overrides.height = m.height;
@@ -597,13 +596,13 @@ async function inspect(
     if (m.entry !== undefined) overrides.entry = m.entry;
     if (m.contract !== undefined) overrides.contract = m.contract;
   }
-  // NTSC 帧率的时长：fps 按 n*1000/1001 处理，帧数用整数比算才准。
+  // Durations at NTSC frame rates: fps is treated as n*1000/1001; frame counts are exact only with integer ratios.
   if (m?.durationSeconds !== undefined && m.fps !== undefined && !Number.isInteger(m.fps)) {
     const ntsc = Math.round(m.fps * 1.001);
     if (Math.abs((ntsc * 1000) / 1001 - m.fps) < 0.005)
       overrides.durationFrames = Math.max(1, Math.round((m.durationSeconds * ntsc * 1000) / 1001));
   }
-  // 没有清单时默认按透明叠加层合成：调用方与根元素的 data-alpha 都没说时为 true（全幅不透明的画面传 manifest.alpha=false）。
+  // Without a manifest, default to compositing as a transparent overlay: true when neither the caller nor the root element's data-alpha says otherwise (pass manifest.alpha=false for full-frame opaque visuals).
   overrides.alpha = m?.alpha ?? (await rootAlpha(dir, m?.entry)) ?? true;
   return inspectBundle(dir, {
     manifest: overrides,
@@ -612,13 +611,13 @@ async function inspect(
   });
 }
 
-/** 入口 HTML 根元素的 `data-alpha`；读不到或没写时 undefined（有清单时覆盖不生效，这里读错也无妨）。 */
+/** The entry HTML root element's `data-alpha`; undefined when unreadable or absent (with a manifest the override has no effect, so a misread here is harmless). */
 async function rootAlpha(dir: string, entry: string | undefined): Promise<boolean | undefined> {
   const html = await fs.readFile(path.join(dir, ...(entry ?? 'index.html').split('/')), 'utf8').catch(() => null);
   return html === null ? undefined : readRootAttributes(html).alpha;
 }
 
-/** 内联文件写进 `dir`：路径必须是包内的相对路径（不含 `..`、绝对路径与反斜杠），内容二选一。 */
+/** Writes inline files into `dir`: paths must be relative paths inside the bundle (no `..`, absolute paths or backslashes), with exactly one of the two content forms. */
 async function writeInlineFiles(files: CompositionInlineFile[], dir: string): Promise<string> {
   await fs.mkdir(dir, { recursive: true });
   const seen = new Set<string>();
@@ -630,12 +629,12 @@ async function writeInlineFiles(files: CompositionInlineFile[], dir: string): Pr
       /^[A-Za-z]:/.test(file.path) ||
       segments.some((s) => s === '' || s === '.' || s === '..')
     ) {
-      throw new ToolError('INVALID_ARGUMENTS', `files[${index}].path 要是包内的相对路径（/ 分隔，不含 . 与 ..）：${file.path}`);
+      throw new ToolError('INVALID_ARGUMENTS', `files[${index}].path must be a relative path inside the bundle ('/'-separated, without . or ..): ${file.path}`);
     }
-    if (seen.has(file.path)) throw new ToolError('INVALID_ARGUMENTS', `files 里 ${file.path} 出现了两次`);
+    if (seen.has(file.path)) throw new ToolError('INVALID_ARGUMENTS', `${file.path} appears twice in files`);
     seen.add(file.path);
     if ((file.content === undefined) === (file.contentBase64 === undefined)) {
-      throw new ToolError('INVALID_ARGUMENTS', `files[${index}]（${file.path}）的 content 与 contentBase64 给且只给一个`);
+      throw new ToolError('INVALID_ARGUMENTS', `files[${index}] (${file.path}): give exactly one of content and contentBase64`);
     }
     const data = file.content !== undefined ? Buffer.from(file.content, 'utf8') : Buffer.from(file.contentBase64!, 'base64');
     const target = path.join(dir, ...segments);
@@ -646,8 +645,8 @@ async function writeInlineFiles(files: CompositionInlineFile[], dir: string): Pr
 }
 
 /**
- * 合成片段放在哪条轨：给了轨道 ID 就是它；不给时用最上面那条视觉轨（没锁定、这段时间里空着），否则在最上面新建一条
- * （叠加层要盖在已有画面上面）。
+ * Which track a composition clip goes on: the given track ID if any; otherwise the topmost visual track (unlocked and empty over this span), else a new track created on top
+ * (an overlay must sit above the existing picture).
  */
 function placementTrack(
   sequence: Sequence,
@@ -666,24 +665,24 @@ function placementTrack(
   return busy ? { trackRef: TRACK_REF } : { trackId: top.id };
 }
 
-/** `replace` 指向的片段：必须在时间线上，而且是合成片段。 */
+/** The clip `replace` points to: it must be on the timeline and be a composition clip. */
 function replaceTarget(video: VideoSnapshot, itemId: string): { sequenceId: Id; itemId: Id; trackId: Id; clip: string } {
   for (const sequence of Object.values(video.sequences)) {
     const item = sequence.items.find((it) => it.id === itemId);
     if (!item) continue;
     if (item.type !== 'composition') {
-      throw new ToolError('INVALID_ARGUMENTS', `片段 ${itemId} 是 ${item.type}，不是合成片段：replace 只能替换代码画面`, {
-        next: '用 videos_inspect 找 type 为 composition 的片段 itemId，或去掉 replace 新放一个',
+      throw new ToolError('INVALID_ARGUMENTS', `Clip ${itemId} is ${item.type}, not a composition clip: replace can only replace code visuals`, {
+        next: 'Use videos_inspect to find the itemId of a clip whose type is composition, or drop replace and place a new one',
       });
     }
     return { sequenceId: sequence.id, itemId, trackId: item.trackId, clip: item.name?.trim() || itemId };
   }
-  throw new ToolError('INVALID_ARGUMENTS', `时间线上没有片段 ${itemId}`, {
-    next: 'replace.itemId 用上一次 compositions_import 返回的 itemId，或 videos_inspect 里 type 为 composition 的片段',
+  throw new ToolError('INVALID_ARGUMENTS', `There is no clip ${itemId} on the timeline`, {
+    next: 'For replace.itemId use the itemId returned by the last compositions_import, or a clip whose type is composition in videos_inspect',
   });
 }
 
-/** 片段在时间线上的位置：所在序列的帧与秒。 */
+/** A clip's position on the timeline: frames and seconds in its sequence. */
 function placementOf(video: VideoSnapshot, itemId: Id): CompositionPlacement | null {
   for (const sequence of Object.values(video.sequences)) {
     const item = sequence.items.find((it) => it.id === itemId);
@@ -702,19 +701,19 @@ function placementOf(video: VideoSnapshot, itemId: Id): CompositionPlacement | n
   return null;
 }
 
-/** 验证没通过：第一项失败的检查给出错误码与下一步，全部检查放进错误。 */
+/** Verification failed: the first failing check supplies the error code and next step; all checks go into the error. */
 function verificationError(report: CodeBundleVerificationReport): ToolError {
   const failed = report.checks.filter((c): c is CodeBundleCheck & { status: 'failed' } => c.status === 'failed');
   const first = failed[0];
   const code = first?.code ?? (first?.id === 'alpha' ? 'COMPOSITION_ALPHA_MISMATCH' : 'COMPOSITION_VERIFICATION_FAILED');
-  const next = first?.code ? BUNDLE_NEXT[first.code] : first?.id === 'alpha' ? ALPHA_NEXT : '按 checks 里失败的项改正代码包再试';
-  return new ToolError(code, `代码包没有通过验证：${failed.map((c) => `${c.id}${c.detail ? `（${c.detail}）` : ''}`).join('；')}`, {
+  const next = first?.code ? BUNDLE_NEXT[first.code] : first?.id === 'alpha' ? ALPHA_NEXT : 'Fix the code bundle according to the failed items in checks and retry';
+  return new ToolError(code, `The code bundle failed verification: ${failed.map((c) => `${c.id}${c.detail ? ` (${c.detail})` : ''}`).join('; ')}`, {
     checks: report.checks,
     next,
   });
 }
 
-/** 代码包运行时的错误换成工具错误：错误码原样，带 details 与下一步。 */
+/** Converts code bundle runtime errors to tool errors: the error code unchanged, with details and next step. */
 function toolError(error: unknown): unknown {
   if (!(error instanceof CodeBundleError)) return error;
   return new ToolError(error.code, error.message, {
@@ -723,7 +722,7 @@ function toolError(error: unknown): unknown {
   });
 }
 
-/** 当前的视频：镜像里的最新状态，镜像不在时用打开时的快照。 */
+/** The current video: the latest state in the mirror, or the snapshot from opening when the mirror is absent. */
 function current(videos: VideoService, opened: VideoOpenResult): VideoSnapshot {
   return videos.mirror(opened.ref.videoId)?.video ?? opened.snapshot.video;
 }
@@ -737,7 +736,7 @@ async function writeAtomically(file: string, data: Buffer): Promise<void> {
   });
 }
 
-/** 文件名里用的 ID：只留字母、数字与 . _ -。 */
+/** ID used in file names: keep only letters, digits and . _ -. */
 function safeName(text: string): string {
   return text.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 100) || 'bundle';
 }

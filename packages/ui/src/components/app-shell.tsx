@@ -18,6 +18,7 @@ import { SettingsPage } from './settings-page.tsx';
 import { SpacePage } from './space/space-page.tsx';
 import { TasksPage } from './tasks-page.tsx';
 import { ToolsPage } from './tools-page.tsx';
+import { WelcomePage } from './profile/welcome-page.tsx';
 import { Ambient } from '../cc/components/ambient.tsx';
 import { WindowStrip } from '../cc/components/page-chrome.tsx';
 
@@ -94,6 +95,8 @@ export function AppShell({ platform }: { platform: string }) {
             <SettingsPage section={route.section} platform={platform} />
           ) : route.tab === 'models' ? (
             <SettingsPage model={route} platform={platform} />
+          ) : route.tab === 'welcome' ? (
+            <WelcomePage />
           ) : (
             <ToolsPage tool={route.tool} />
           )}

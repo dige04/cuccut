@@ -15,6 +15,7 @@ export const zhHans: ShellMessages = {
     unpin: '取消置顶',
     newSession: '新建会话',
     newSessionInProject: '在这个项目里新建会话',
+    rulesAndPreferences: '规则与偏好…',
     working: '进行中',
     loading: '正在加载',
     loadingEllipsis: '正在加载…',

@@ -15,6 +15,7 @@ export const de: ShellMessages = {
     unpin: "Lösen",
     newSession: "Neue Sitzung",
     newSessionInProject: "Neue Sitzung in diesem Projekt",
+    rulesAndPreferences: 'Regeln und Einstellungen…',
     working: "Verarbeitung",
     loading: "Wird geladen",
     loadingEllipsis: "Wird geladen…",

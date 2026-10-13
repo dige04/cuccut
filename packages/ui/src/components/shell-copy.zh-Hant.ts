@@ -15,6 +15,7 @@ export const zhHant: ShellMessages = {
     unpin: '取消釘選',
     newSession: '新對話',
     newSessionInProject: '在這個專案中新增對話',
+    rulesAndPreferences: '規則與偏好設定…',
     working: '處理中',
     loading: '正在載入',
     loadingEllipsis: '正在載入…',

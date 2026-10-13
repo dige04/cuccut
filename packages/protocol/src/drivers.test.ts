@@ -41,4 +41,13 @@ describe('DriverId', () => {
       expect(WEB_READ_METHODS).not.toContain(method);
     }
   });
+
+  it('the profile is readable from the browser; its writes are desktop only, like settings', () => {
+    expect(WEB_DEFAULT_METHODS).toContain('profile.get');
+    expect(WEB_READ_METHODS).toContain('profile.get');
+    for (const method of ['profile.saveAnswers', 'profile.writeFromAnswers', 'profile.setPreferences', 'profile.putRule', 'profile.removeRule', 'profile.reorderRules']) {
+      expect(WEB_DEFAULT_METHODS).not.toContain(method);
+      expect(WEB_READ_METHODS).not.toContain(method);
+    }
+  });
 });

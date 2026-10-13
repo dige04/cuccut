@@ -24,4 +24,17 @@ export const nl: WorkspaceMessages = {
   notYet: 'Nog niet beschikbaar',
   loadFailed: 'Kon niet laden',
   fontsSummary: 'Voor ondertitels en titels',
+  preferencesSummary: (written, answers) =>
+    written
+      ? answers === 0
+        ? 'Voorkeuren geschreven'
+        : answers === 1
+          ? 'Voorkeuren geschreven, 1 antwoord'
+          : `Voorkeuren geschreven, ${answers} antwoorden`
+      : answers === 0
+        ? 'Nog geen voorkeuren'
+        : answers === 1
+          ? '1 antwoord'
+          : `${answers} antwoorden`,
+  ruleCount: (n, off) => (n === 0 ? 'Nog geen' : `${n === 1 ? '1 regel' : `${n} regels`}${off ? `, ${off} uit` : ''}`),
 };

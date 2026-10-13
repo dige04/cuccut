@@ -6,6 +6,7 @@ import type { LegacyImportEvent, LegacyImportSnapshot } from './legacy-import.ts
 import type { LibraryEvent, LibrarySnapshot } from './library.ts';
 import type { AgentsView } from './methods.ts';
 import type { ModelsEvent, ModelsSnapshot } from './models.ts';
+import type { ProfileEvent, ProfileSnapshot } from './profile.ts';
 import type { SettingsEvent, SettingsSnapshot } from './settings.ts';
 import type { ServicesEvent, ServicesSnapshot } from './services.ts';
 import type { VideoTopicEvent, VideoTopicSnapshot } from './video.ts';
@@ -25,6 +26,7 @@ import type { VideoTopicEvent, VideoTopicSnapshot } from './video.ts';
  * - `agent-setup`: state and output of the install and upgrade commands for in-app Agents (`agents.runSetup`, architecture design §12.9).
  * - `agents`: probe results and preferences of Agents (Drivers) (the view of `agents.list`, architecture design §3.11); the snapshot is the last result (loaded from the disk cache at startup), and each Driver's background probe completion or preference change sends `agents.updated`.
  * - `legacy-import`: import prompts for legacy projects and the imports running in this launch (architecture design §2.7, `legacy-import.ts`); the snapshot is the prompt awaiting an answer and the import progress; `prompt.updated` is sent when a prompt appears or disappears, and `run.updated` is sent on each import progress.
+ * - `profile`: the user's profile at the workspace level (docs/cuccut/m2-profile-rules.md §4); the snapshot is `profile.get`, each change sends the whole snapshot again (`profile.updated`), a write from the answers sends its progress (`profile.writing`), and a project's change sends `profile.projectUpdated` for subscribers to refetch.
  * - `conversation:<id>`: content of one session (card projection).
  * - `video:<id>`: projection of one opened video (command and protocol spec §10).
  *
@@ -43,6 +45,7 @@ export type Topic =
   | 'agent-setup'
   | 'agents'
   | 'legacy-import'
+  | 'profile'
   | `conversation:${Id}`
   | `video:${Id}`;
 
@@ -150,6 +153,7 @@ export interface TopicMap {
   'agent-setup': { snapshot: AgentSetupSnapshot; event: AgentSetupEvent };
   agents: { snapshot: AgentsSnapshot; event: AgentsEvent };
   'legacy-import': { snapshot: LegacyImportSnapshot; event: LegacyImportEvent };
+  profile: { snapshot: ProfileSnapshot; event: ProfileEvent };
   conversation: { snapshot: ConversationSnapshot; event: ConversationEvent };
   video: { snapshot: VideoTopicSnapshot; event: VideoTopicEvent };
 }
@@ -178,6 +182,8 @@ export type SnapshotOf<T extends Topic> = T extends 'directory'
                       ? AgentsSnapshot
                       : T extends 'legacy-import'
                         ? LegacyImportSnapshot
+                        : T extends 'profile'
+                        ? ProfileSnapshot
                         : T extends `video:${string}`
                         ? VideoTopicSnapshot
                         : ConversationSnapshot;
@@ -205,6 +211,8 @@ export type EventOf<T extends Topic> = T extends 'directory'
                       ? AgentsEvent
                       : T extends 'legacy-import'
                         ? LegacyImportEvent
+                        : T extends 'profile'
+                        ? ProfileEvent
                         : T extends `video:${string}`
                         ? VideoTopicEvent
                         : ConversationEvent;

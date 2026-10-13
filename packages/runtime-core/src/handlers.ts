@@ -58,6 +58,8 @@ import { templateMethods } from './templates/template-methods.ts';
 import { skillMethods } from './skills/skill-methods.ts';
 import type { SkillCatalog } from './skills/skill-catalog.ts';
 import type { SkillInstaller } from './skills/skill-installer.ts';
+import { profileMethods } from './profile/profile-methods.ts';
+import type { ProfileService } from './profile/profile-service.ts';
 import type { FontService } from './fonts/font-service.ts';
 import { fontMethods } from './fonts/font-methods.ts';
 import type { CompositionService } from './compositions/composition-service.ts';
@@ -118,6 +120,8 @@ export interface HandlerDeps {
   /** Agent skill directory and install action (§3.8, §12.9). */
   skills: SkillCatalog;
   skillInstaller: SkillInstaller;
+  /** The user's profile: interview, preferences and rules (docs/cuccut/m2-profile-rules.md §4), and the `profile` topic. */
+  profile: ProfileService;
   /** Fonts downloaded on demand (§9.1). */
   fonts: FontService;
   /** Import and preview of code compositions (§8, `compositions.*`). A service shared with the tools. */
@@ -199,6 +203,7 @@ export function createHandlers({
   templates,
   skills,
   skillInstaller,
+  profile,
   fonts,
   compositions,
   catalog: toolCatalog,
@@ -548,6 +553,7 @@ export function createHandlers({
       ...externalToolMethods(() => externalTools),
       ...templateMethods({ templates, media, harness, skills, slideAnnotationsOf, designAnnotationsOf, designSystemAnnotationsOf }),
       ...skillMethods({ skills, installer: skillInstaller }),
+      ...profileMethods({ profile }),
       ...catalogMethods(toolCatalog, agentSkillsDir === undefined ? {} : { agentSkillsDir: () => agentSkillsDir }),
       ...toolCatalogueMethods({
         space,
@@ -642,6 +648,7 @@ export function createHandlers({
       if (topic === 'grants') return models.grants.topic.subscribe(afterSeq, listener) as TopicSubscription<unknown, unknown>;
       if (topic === 'agent-setup') return setup.subscribe(afterSeq, listener) as TopicSubscription<unknown, unknown>;
       if (topic === 'legacy-import') return legacyUpgrade.topic.subscribe(afterSeq, listener) as TopicSubscription<unknown, unknown>;
+      if (topic === 'profile') return profile.topic.subscribe(afterSeq, listener) as TopicSubscription<unknown, unknown>;
       const videoId = parseVideoTopic(topic);
       if (videoId) return videos.subscribe(videoId, afterSeq, listener);
       return harness.subscribe(topic, afterSeq, listener);

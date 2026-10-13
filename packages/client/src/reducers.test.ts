@@ -10,6 +10,7 @@ import {
   type ModelBundleStatus,
   type ModelsSnapshot,
   type PendingApproval,
+  type ProfileSnapshot,
   type TasksSnapshot,
   type TimelineItem,
 } from '@cuccut/protocol';
@@ -18,6 +19,7 @@ import {
   applyConversationEvent,
   applyDirectoryEvent,
   applyJobsEvent,
+  applyProfileEvent,
   applyModelsEvent,
   applySettingsEvent,
   applyTasksEvent,
@@ -211,6 +213,33 @@ describe('applySettingsEvent', () => {
     expect(next.settings['agent.defaultAccessMode']).toBe('auto');
     expect(next.defaults['offline.strict']).toBe(false);
     expect(state.settings['offline.strict']).toBe(false);
+  });
+});
+
+describe('applyProfileEvent', () => {
+  const snapshot = (own: string): ProfileSnapshot => ({
+    interview: { status: 'pending', reminder: true, answers: {}, remaining: ['who', 'record', 'platforms', 'annoys', 'names'], writtenAt: null, usedAgent: null, namesGlossaryId: null },
+    preferences: { own, interview: '' },
+    hasPreferences: own !== '',
+    rules: [],
+    writing: null,
+    readOnly: false,
+  });
+
+  it('profile.updated replaces the snapshot; profile.writing only the progress; projectUpdated leaves it alone', () => {
+    const state = snapshot('');
+    const updated = applyProfileEvent(state, { type: 'profile.updated', snapshot: snapshot('- short hooks') });
+    expect(updated.preferences.own).toBe('- short hooks');
+    expect(updated.hasPreferences).toBe(true);
+    expect(state.preferences.own).toBe('');
+
+    const writing = { startedAt: '2026-10-13T00:00:00.000Z', lines: ['Reading answers.json'] };
+    const progress = applyProfileEvent(updated, { type: 'profile.writing', writing });
+    expect(progress.writing).toEqual(writing);
+    expect(progress.preferences).toBe(updated.preferences);
+    expect(applyProfileEvent(progress, { type: 'profile.writing', writing: null }).writing).toBeNull();
+
+    expect(applyProfileEvent(progress, { type: 'profile.projectUpdated', projectId: 'p1' })).toBe(progress);
   });
 });
 

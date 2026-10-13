@@ -197,6 +197,15 @@ export const TOOL_RISK: Readonly<Record<string, RiskLevel>> = {
   // Design systems (docs/design/canvas §10.5): as for designs. Checking only reads files; importing an asset writes to the design system directory's _blobs/.
   design_system_check: 'read',
   design_system_import_asset: 'edit',
+  // The user's profile (docs/cuccut/m2-profile-rules.md §6): interview answers are the user's own words from the conversation (`edit`); preferences and
+  // rules land outside the project directory and change every later session, so the user sees each one (`high`, never "always allowed").
+  profile_show: 'read',
+  profile_answer: 'edit',
+  profile_skip: 'edit',
+  profile_write: 'high',
+  profile_preferences_set: 'high',
+  profile_rules_save: 'high',
+  profile_rules_remove: 'high',
 };
 
 export function toolRisk(request: ToolConfirmation): RiskLevel {

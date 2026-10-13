@@ -16,6 +16,8 @@ export const fr: SettingsNavMessages = {
     cloud: "Texte : modèles cloud seulement. Agents de code configurés sous « Agent ».",
   },
   section: {
+    you: 'Toi',
+    rules: 'Règles',
     general: "Général",
     shortcuts: "Raccourcis",
     fonts: "Polices",

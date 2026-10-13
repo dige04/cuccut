@@ -16,6 +16,7 @@ export const pl: ShellMessages = {
     unpin: "Odepnij",
     newSession: "Nowa sesja",
     newSessionInProject: "Nowa sesja w tym projekcie",
+    rulesAndPreferences: 'Reguły i preferencje…',
     working: "Przetwarzanie",
     loading: "Wczytywanie",
     loadingEllipsis: "Wczytywanie…",

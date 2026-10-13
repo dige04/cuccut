@@ -332,6 +332,96 @@ describe('登记类工具', () => {
     expect((await mcpCall(url, token, 'library_list', {})).body.entries).toHaveLength(1);
   });
 
+  it('profile_show / profile_answer: the same view for sessions, external services and the terminal; preference and rule saves ask at risk high; project level needs a project', async () => {
+    await client.request('profile.setPreferences', { own: '- Hooks under three seconds' });
+    await client.request('profile.putRule', { rule: { name: 'Gameplay stays clear', when: 'the clip is gameplay', instruction: 'Never cover the game.', note: 'private' } });
+    await client.request('profile.setPreferences', { projectId: project.id, own: '- Vertical 9:16' });
+
+    // A session in the project sees the general and the project level; the note to self is never shown.
+    const { conversation } = await client.request('conversations.create', { projectId: project.id });
+    await client.request('conversations.send', { conversationId: conversation.id, text: 'hi', commandId: newId('cmd'), accessMode: 'autoAcceptEdits' });
+    const session = await until(() => driver.sessions.find((s) => s.options.mcpServers && s.inputs.includes('hi')));
+    const shown = (await tool(session, 'profile_show', {})).body;
+    expect(shown.interview).toMatchObject({ status: 'pending', answers: {} });
+    expect(shown.interview.questions.map((q: Loose) => q.id)).toEqual(['who', 'record', 'platforms', 'annoys', 'names']);
+    expect(shown.preferences).toEqual({ general: '- Hooks under three seconds', interviewSection: '', project: '- Vertical 9:16' });
+    expect(shown.rules.workspace).toEqual([expect.objectContaining({ name: 'Gameplay stays clear', when: 'the clip is gameplay', enabled: true })]);
+    expect(shown.rules.workspace[0].note).toBeUndefined();
+    expect(shown.rules.project).toEqual([]);
+    expect(shown.project).toEqual({ projectId: project.id, name: '登记' });
+
+    // Answers are `edit`: accepted automatically in autoAcceptEdits, and the status does not change.
+    const answered = await tool(session, 'profile_answer', { answers: { who: 'Coding tutorials' } });
+    expect(answered.isError).toBe(false);
+    expect(answered.body).toMatchObject({ status: 'pending', answers: { who: 'Coding tutorials' }, approval: { risk: 'edit', decidedBy: 'auto' } });
+    expect((await client.request('profile.get', {})).interview.answers).toEqual({ who: 'Coding tutorials' });
+
+    // Preferences and rules are `high`: asked even in autoAcceptEdits; a denial changes nothing.
+    const asked = async (name: string) => {
+      const pending = await until(() => runtime.harness.approvals.pending()[0]);
+      expect(pending).toMatchObject({ action: { kind: 'tool', name }, risk: 'high' });
+      return pending;
+    };
+    const denied = tool(session, 'profile_preferences_set', { level: 'workspace', text: '- Captions always', mode: 'append' });
+    const pending = await asked('profile_preferences_set');
+    expect(pending.action.summary).toContain('- Captions always');
+    await client.request('approvals.respond', { approvalId: pending.approvalId, decision: 'deny' });
+    expect((await denied).body.error).toMatchObject({ code: 'APPROVAL_DENIED', risk: 'high' });
+    expect((await client.request('profile.get', {})).preferences.own).toBe('- Hooks under three seconds');
+
+    const appended = tool(session, 'profile_preferences_set', { level: 'workspace', text: '- Captions always', mode: 'append' });
+    const appendAsked = await asked('profile_preferences_set');
+    // A save made while the approval is open is kept: the append is built from the text as it is when it is written.
+    await client.request('profile.setPreferences', { own: '- Hooks under three seconds\n- Music low' });
+    await client.request('approvals.respond', { approvalId: appendAsked.approvalId, decision: 'allow' });
+    expect((await appended).body).toMatchObject({
+      level: 'workspace',
+      text: '- Hooks under three seconds\n- Music low\n- Captions always',
+      approval: { risk: 'high', decidedBy: 'user' },
+    });
+
+    const saved = tool(session, 'profile_rules_save', { level: 'project', rule: { name: 'Outro', when: 'the video ends', instruction: 'Add the subscribe card.' } });
+    await client.request('approvals.respond', { approvalId: (await asked('profile_rules_save')).approvalId, decision: 'allow' });
+    const savedRule = (await saved).body.rule;
+    expect(savedRule).toMatchObject({ name: 'Outro', when: 'the video ends', stage: 'any', enabled: true });
+    expect((await client.request('profile.getProject', { projectId: project.id })).rules.map((r) => r.id)).toEqual([savedRule.id]);
+
+    // An incomplete rule is refused before anyone is asked.
+    const invalid = await tool(session, 'profile_rules_save', { level: 'workspace', rule: { name: 'Nothing to do', when: 'always' } });
+    expect(invalid.body.error.code).toBe('PROFILE_RULE_INVALID');
+    expect(runtime.harness.approvals.pending()).toEqual([]);
+
+    const removed = tool(session, 'profile_rules_remove', { level: 'project', id: savedRule.id });
+    await client.request('approvals.respond', { approvalId: (await asked('profile_rules_remove')).approvalId, decision: 'allow' });
+    expect((await removed).body.removed).toMatchObject({ id: savedRule.id, name: 'Outro' });
+    expect((await client.request('profile.getProject', { projectId: project.id })).rules).toEqual([]);
+
+    // A session outside a project has no project level.
+    const { session: loose } = await agent(null);
+    const looseShown = (await tool(loose, 'profile_show', {})).body;
+    expect(looseShown.preferences.project).toBeNull();
+    expect(looseShown.project).toBeNull();
+    const noProject = await tool(loose, 'profile_rules_save', { level: 'project', rule: { name: 'x', when: 'y', instruction: 'z' } });
+    expect(noProject.body.error.code).toBe('PROFILE_NO_PROJECT');
+
+    // External services read the general level only, and have none of the writes.
+    const { url, token } = await openMcp();
+    const viaService = await mcpCall(url, token, 'profile_show', {});
+    expect(viaService.isError).toBe(false);
+    expect(viaService.body.preferences).toEqual({ general: '- Hooks under three seconds\n- Music low\n- Captions always', interviewSection: '', project: null });
+    expect((await mcpCall(url, token, 'profile_answer', { answers: { who: 'x' } })).isError).toBe(true);
+    expect((await client.request('profile.get', {})).interview.answers).toEqual({ who: 'Coding tutorials' });
+
+    // The terminal: the project of the current directory, and writes without CucCut approvals.
+    const viaCli = await localOk('profile_show', {}, project.path);
+    expect(viaCli.project).toEqual({ projectId: project.id, name: '登记' });
+    expect(viaCli.preferences.project).toBe('- Vertical 9:16');
+    expect((await localOk('profile_answer', { answers: { record: 'Screen and webcam' } })).answers).toEqual({ who: 'Coding tutorials', record: 'Screen and webcam' });
+    const cliNoProject = await local('profile_preferences_set', { level: 'project', text: 'x', mode: 'replace' });
+    expect(cliNoProject.ok).toBe(false);
+    if (!cliNoProject.ok) expect(cliNoProject.error.code).toBe('PROFILE_NO_PROJECT');
+  });
+
   it('models_list：经对外服务列出模型包，不带本机路径；models_test 不在对外服务里', async () => {
     const { url, token } = await openMcp();
     const listed = await mcpCall(url, token, 'models_list', {});

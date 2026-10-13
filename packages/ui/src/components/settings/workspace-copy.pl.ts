@@ -26,4 +26,17 @@ export const pl: WorkspaceMessages = {
   notYet: 'Jeszcze niedostępne',
   loadFailed: 'Nie udało się wczytać',
   fontsSummary: 'Do napisów i tytułów',
+  preferencesSummary: (written, answers) =>
+    written
+      ? answers === 0
+        ? 'Preferencje zapisane'
+        : answers === 1
+          ? 'Preferencje zapisane, 1 odpowiedź'
+          : `Preferencje zapisane, ${answers} odpowiedzi`
+      : answers === 0
+        ? 'Brak preferencji'
+        : answers === 1
+          ? '1 odpowiedź'
+          : `${answers} odpowiedzi`,
+  ruleCount: (n, off) => (n === 0 ? 'Brak' : `${n === 1 ? '1 reguła' : `${n} reguł`}${off ? `, wyłączone: ${off}` : ''}`),
 };

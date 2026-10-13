@@ -14,6 +14,7 @@ export {
   applyModelsEvent,
   applyVideoTopicEvent,
   applySettingsEvent,
+  applyProfileEvent,
   applyServicesEvent,
   applySpaceEvent,
   applyTasksEvent,

@@ -17,6 +17,7 @@ import { SPACE_PARAM_SCHEMAS } from './space-schemas.ts';
 import { EXTERNAL_TOOL_PARAM_SCHEMAS } from './external-tools-schemas.ts';
 import { TEMPLATE_PARAM_SCHEMAS, templateSendRefSchema } from './template-schemas.ts';
 import { SKILL_PARAM_SCHEMAS, skillSendListSchema, skillSendRefSchema } from './skill-schemas.ts';
+import { PROFILE_PARAM_SCHEMAS } from './profile-schemas.ts';
 import { FONT_PARAM_SCHEMAS } from './fonts-schemas.ts';
 import { COMPOSITION_PARAM_SCHEMAS } from './code-bundle-schemas.ts';
 import { TOOL_CATALOGUE_PARAM_SCHEMAS } from './tool-catalogue-schemas.ts';
@@ -43,6 +44,7 @@ const topic = z.union([
   z.literal('agent-setup'),
   z.literal('agents'),
   z.literal('legacy-import'),
+  z.literal('profile'),
   z.string().regex(/^conversation:[A-Za-z0-9_-]+$/),
   z.string().regex(/^video:[A-Za-z0-9_-]+$/),
 ]);
@@ -866,6 +868,7 @@ export const methodParamSchemas = {
   ...TOOL_CATALOGUE_PARAM_SCHEMAS,
   ...TEMPLATE_PARAM_SCHEMAS,
   ...SKILL_PARAM_SCHEMAS,
+  ...PROFILE_PARAM_SCHEMAS,
   'media.resolve': mediaTarget,
   'media.playback': z
     .object({ url: z.string().min(1).max(8192), playable: z.array(z.enum(PLAYBACK_CODECS)).max(PLAYBACK_CODECS.length).optional() })
@@ -1379,4 +1382,5 @@ export {
   type TemplateTranslationResult,
 } from './template-schemas.ts';
 export { skillSendListSchema, skillSendRefSchema } from './skill-schemas.ts';
+export { interviewAnswersSchema, profileRuleInputSchema } from './profile-schemas.ts';
 export { aiToolParamsSchema } from './ai-tool-schemas.ts';

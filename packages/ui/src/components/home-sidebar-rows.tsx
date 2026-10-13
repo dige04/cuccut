@@ -25,6 +25,7 @@ import FolderOpen from '@react-spectrum/s2/icons/FolderOpen';
 import OpenIn from '@react-spectrum/s2/icons/OpenIn';
 import PinOff from '@react-spectrum/s2/icons/PinOff';
 import PinOn from '@react-spectrum/s2/icons/PinOn';
+import Properties from '@react-spectrum/s2/icons/Properties';
 import { iconStyle, style } from '@react-spectrum/s2/style' with { type: 'macro' };
 import { revealLabel, untitled } from '../copy.ts';
 import { S } from './shell-copy.ts';
@@ -165,6 +166,10 @@ export function ProjectItem({
           <MenuItem id="rename" textValue={S.common.rename}>
             <Edit />
             <Text>{S.common.renameEllipsis}</Text>
+          </MenuItem>
+          <MenuItem id="profile" textValue={S.common.rulesAndPreferences}>
+            <Properties />
+            <Text>{S.common.rulesAndPreferences}</Text>
           </MenuItem>
           <MenuItem id="space" textValue={S.sidebarRows.showInSpace}>
             <Asset />

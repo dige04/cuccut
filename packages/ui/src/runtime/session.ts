@@ -36,11 +36,13 @@ import { useGrants } from '../state/grants-store.ts';
 import { useJobs } from '../state/jobs-store.ts';
 import { libraryFeed } from '../state/library-feed.ts';
 import { useModels } from '../state/models-store.ts';
+import { useProfile } from '../state/profile-store.ts';
 import { useSettings } from '../state/settings-store.ts';
 import { useSpace } from '../state/space-store.ts';
 import { useTasks } from '../state/tasks-store.ts';
 import { useTimeline } from '../state/timeline-store.ts';
 import { putAttachment } from './attachment-upload.ts';
+import { refreshProjectProfile } from './profile-commands.ts';
 import { RT } from './runtime-copy.ts';
 import { SpaceThumbnailCache } from './space-thumbnails.ts';
 import { VideoController, targetOf, transactionLabel } from './video-controller.ts';
@@ -110,6 +112,15 @@ export class RuntimeSession {
       this.client.subscribeSettings({
         snapshot: (snapshot) => useSettings.getState().replace(snapshot),
         event: (event) => useSettings.getState().apply(event),
+      }),
+      // The user's profile (docs/cuccut/m2-profile-rules.md §4): the workspace level comes whole; a project's level is only announced, and the
+      // projects a screen asked for are fetched again.
+      this.client.subscribeProfile({
+        snapshot: (snapshot) => useProfile.getState().replace(snapshot),
+        event: (event) => {
+          useProfile.getState().apply(event);
+          if (event.type === 'profile.projectUpdated') refreshProjectProfile(this, event.projectId);
+        },
       }),
       // The user library subscribes just once: each library's mirror is registered in library-feed (subscribing to the same topic again would replace this one subscription).
       this.client.subscribe<import('@cuccut/protocol').LibrarySnapshot, import('@cuccut/protocol').LibraryEvent>('library', libraryFeed),

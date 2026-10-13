@@ -24,4 +24,17 @@ export const ja: WorkspaceMessages = {
   notYet: 'まだ利用できません',
   loadFailed: '読み込めませんでした',
   fontsSummary: '字幕とタイトル用',
+  preferencesSummary: (written, answers) =>
+    written
+      ? answers === 0
+        ? '設定を書き込み済み'
+        : answers === 1
+          ? '設定を書き込み済み、回答 1 件'
+          : `設定を書き込み済み、回答 ${answers} 件`
+      : answers === 0
+        ? '設定はまだありません'
+        : answers === 1
+          ? '回答 1 件'
+          : `回答 ${answers} 件`,
+  ruleCount: (n, off) => (n === 0 ? 'まだありません' : `${n === 1 ? 'ルール 1 件' : `ルール ${n} 件`}${off ? `、オフ ${off} 件` : ''}`),
 };

@@ -24,4 +24,17 @@ export const de: WorkspaceMessages = {
   notYet: 'Noch nicht verfügbar',
   loadFailed: 'Konnte nicht geladen werden',
   fontsSummary: 'Für Untertitel und Titel',
+  preferencesSummary: (written, answers) =>
+    written
+      ? answers === 0
+        ? 'Einstellungen geschrieben'
+        : answers === 1
+          ? 'Einstellungen geschrieben, 1 Antwort'
+          : `Einstellungen geschrieben, ${answers} Antworten`
+      : answers === 0
+        ? 'Noch keine Einstellungen'
+        : answers === 1
+          ? '1 Antwort'
+          : `${answers} Antworten`,
+  ruleCount: (n, off) => (n === 0 ? 'Noch keine' : `${n === 1 ? '1 Regel' : `${n} Regeln`}${off ? `, ${off} aus` : ''}`),
 };

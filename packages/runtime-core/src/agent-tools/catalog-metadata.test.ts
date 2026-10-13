@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { MCP_SERVICE_TOOL_NAMES, TOOL_EFFECTS, TOOL_SURFACES } from '@cuccut/protocol';
 import { serviceToolExposed } from '../services/mcp-tools.ts';
+import { defaultToolRisk } from './tool-scope.ts';
 import type { ToolInfo } from './tool-catalog.ts';
 import { allToolSets } from './all-tool-sets.ts';
 
@@ -116,5 +117,14 @@ describe('MCP 服务的开放清单', () => {
         .sort(),
     );
     expect(exposed('ask')).toEqual(exposed('auto'));
+  });
+});
+
+describe('profile tool risks', () => {
+  it("reading is read, the user's own answers are edit, and preference and rule writes are high (never always-allowed)", () => {
+    expect(defaultToolRisk('profile_show')).toBe('read');
+    expect(defaultToolRisk('profile_answer')).toBe('edit');
+    expect(defaultToolRisk('profile_skip')).toBe('edit');
+    for (const name of ['profile_write', 'profile_preferences_set', 'profile_rules_save', 'profile_rules_remove']) expect(defaultToolRisk(name), name).toBe('high');
   });
 });

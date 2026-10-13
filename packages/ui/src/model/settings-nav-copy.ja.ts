@@ -16,6 +16,8 @@ export const ja: SettingsNavMessages = {
     cloud: 'テキスト生成にはクラウドモデルしかありません。コーディング用の Agent は「Agent」で設定します。',
   },
   section: {
+    you: 'あなた',
+    rules: 'ルール',
     general: '一般',
     shortcuts: 'ショートカット',
     fonts: 'フォント',

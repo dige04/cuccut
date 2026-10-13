@@ -24,4 +24,17 @@ export const ptBR: WorkspaceMessages = {
   notYet: 'Ainda não disponível',
   loadFailed: 'Não foi possível carregar',
   fontsSummary: 'Para legendas e títulos',
+  preferencesSummary: (written, answers) =>
+    written
+      ? answers === 0
+        ? 'Preferências escritas'
+        : answers === 1
+          ? 'Preferências escritas, 1 resposta'
+          : `Preferências escritas, ${answers} respostas`
+      : answers === 0
+        ? 'Nenhuma preferência ainda'
+        : answers === 1
+          ? '1 resposta'
+          : `${answers} respostas`,
+  ruleCount: (n, off) => (n === 0 ? 'Nenhuma ainda' : `${n === 1 ? '1 regra' : `${n} regras`}${off ? `, ${off} desligadas` : ''}`),
 };

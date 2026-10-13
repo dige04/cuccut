@@ -24,4 +24,17 @@ export const ko: WorkspaceMessages = {
   notYet: '아직 사용할 수 없음',
   loadFailed: '불러오지 못함',
   fontsSummary: '자막과 제목용',
+  preferencesSummary: (written, answers) =>
+    written
+      ? answers === 0
+        ? '환경설정 작성됨'
+        : answers === 1
+          ? '환경설정 작성됨, 답변 1개'
+          : `환경설정 작성됨, 답변 ${answers}개`
+      : answers === 0
+        ? '아직 환경설정 없음'
+        : answers === 1
+          ? '답변 1개'
+          : `답변 ${answers}개`,
+  ruleCount: (n, off) => (n === 0 ? '아직 없음' : `${n === 1 ? '규칙 1개' : `규칙 ${n}개`}${off ? `, 꺼짐 ${off}개` : ''}`),
 };

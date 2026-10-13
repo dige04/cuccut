@@ -23,6 +23,7 @@ import MovieCamera from '@react-spectrum/s2/icons/MovieCamera';
 import OpenIn from '@react-spectrum/s2/icons/OpenIn';
 import PinOff from '@react-spectrum/s2/icons/PinOff';
 import PinOn from '@react-spectrum/s2/icons/PinOn';
+import Properties from '@react-spectrum/s2/icons/Properties';
 import Play from '@react-spectrum/s2/icons/Play';
 import { S } from './shell-copy.ts';
 import { untitled } from '../copy.ts';
@@ -33,6 +34,7 @@ import { useProject } from '../state/directory-store.ts';
 import { useShell } from '../state/shell-store.ts';
 import { useSpace } from '../state/space-store.ts';
 import { NameDialog } from './name-dialog.tsx';
+import { ProjectProfileDialog } from './profile/project-profile-dialog.tsx';
 
 /** The working / waiting-for-approval word (UI language), shared by the session header and the session tab's hint. */
 export const STATUS_WORD: { readonly running: string; readonly waiting: string } = live(() => ({
@@ -49,7 +51,7 @@ export function SessionMenu({ conversation }: { conversation: Conversation }) {
   const runtime = useRuntime();
   const project = useProject(conversation.projectId);
   const go = useShell((s) => s.go);
-  const [dialog, setDialog] = useState<'rename' | 'delete' | null>(null);
+  const [dialog, setDialog] = useState<'rename' | 'delete' | 'profile' | null>(null);
   const title = conversation.title || untitled();
 
   const onAction = (key: Key) => {
@@ -61,6 +63,7 @@ export function SessionMenu({ conversation }: { conversation: Conversation }) {
         .updateConversation(conversation.id, { pinned: !conversation.pinned })
         .catch((error: Error) => ToastQueue.negative(error.message, { timeout: 5000 }));
     else if (key === 'space' && project) go({ tab: 'space', category: 'all', projectId: project.id });
+    else if (key === 'profile' && project) setDialog('profile');
     else if (key === 'reveal') void runtime.host.revealPath(project?.path ?? conversation.cwd);
   };
 
@@ -88,6 +91,12 @@ export function SessionMenu({ conversation }: { conversation: Conversation }) {
               <Edit />
               <Text slot="label">{S.common.renameEllipsis}</Text>
             </MenuItem>
+            {project ? (
+              <MenuItem id="profile" textValue={S.common.rulesAndPreferences}>
+                <Properties />
+                <Text slot="label">{S.common.rulesAndPreferences}</Text>
+              </MenuItem>
+            ) : null}
             {project ? (
               <MenuItem id="space" textValue={S.conversationHeader.viewInSpace(project.name)}>
                 <Asset />
@@ -139,6 +148,7 @@ export function SessionMenu({ conversation }: { conversation: Conversation }) {
           }}
         />
       ) : null}
+      {dialog === 'profile' && project ? <ProjectProfileDialog project={project} onClose={() => setDialog(null)} /> : null}
     </span>
   );
 }

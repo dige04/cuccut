@@ -27,6 +27,7 @@ import { useShell } from '../state/shell-store.ts';
 import { Composer } from './composer.tsx';
 import { QueuedMessages } from './queued-messages.tsx';
 import { useEditorReference } from './use-editor-reference.ts';
+import { InterviewCard } from './thread/interview-card.tsx';
 import { Thread } from './thread/thread.tsx';
 import { ThreadEmpty } from './thread/thread-empty.tsx';
 
@@ -139,6 +140,8 @@ export function ConversationView({
 
   return (
     <div className={view}>
+      {/* While the agent knows nothing about the user: one interview question at a time, above the thread, never in the composer's way. */}
+      <InterviewCard />
       {loaded ? (
         <Thread
           items={items}

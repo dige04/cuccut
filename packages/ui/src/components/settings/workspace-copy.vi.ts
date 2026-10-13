@@ -24,4 +24,17 @@ export const vi: WorkspaceMessages = {
   notYet: 'Chưa hỗ trợ',
   loadFailed: 'Không tải được',
   fontsSummary: 'Dành cho phụ đề và tiêu đề',
+  preferencesSummary: (written, answers) =>
+    written
+      ? answers === 0
+        ? 'Đã viết tùy chọn'
+        : answers === 1
+          ? 'Đã viết tùy chọn, 1 câu trả lời'
+          : `Đã viết tùy chọn, ${answers} câu trả lời`
+      : answers === 0
+        ? 'Chưa có tùy chọn'
+        : answers === 1
+          ? '1 câu trả lời'
+          : `${answers} câu trả lời`,
+  ruleCount: (n, off) => (n === 0 ? 'Chưa có' : `${n === 1 ? '1 quy tắc' : `${n} quy tắc`}${off ? `, ${off} đang tắt` : ''}`),
 };

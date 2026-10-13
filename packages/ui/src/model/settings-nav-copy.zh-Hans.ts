@@ -16,6 +16,8 @@ export const zhHans: SettingsNavMessages = {
     cloud: '文本生成只有云端模型；编码 Agent 在「Agent」里设置。',
   },
   section: {
+    you: '你',
+    rules: '规则',
     general: '通用',
     shortcuts: '快捷键',
     fonts: '字体',

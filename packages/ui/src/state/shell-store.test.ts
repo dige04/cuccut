@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { webVideoHref, type FileTarget } from '@cuccut/protocol';
-import { HOME, hasSidebar, hrefFor, migrateShell, parseHref, useShell, type Route } from './shell-store.ts';
+import { HOME, WELCOME, defaultRoute, hasSidebar, hrefFor, migrateShell, parseHref, railTabOf, useShell, type Route } from './shell-store.ts';
 import { itemKey } from '../model/workspace.ts';
 
 // Node has no usable localStorage: give persistence an in-memory version, loaded before the store module.
@@ -46,6 +46,7 @@ const routes: Route[] = [
   { tab: 'tools', tool: 'translate-subtitles' },
   { tab: 'services' },
   { tab: 'services', service: 'runtime' },
+  { tab: 'welcome' },
 ];
 
 describe('界面内链接', () => {
@@ -101,6 +102,15 @@ describe('界面内链接', () => {
     expect(hasSidebar({ tab: 'tasks', taskId: 't1' })).toBe(true);
     expect(hasSidebar({ tab: 'settings', section: 'about' })).toBe(false);
     expect(hasSidebar({ tab: 'models', category: 'llm' })).toBe(false);
+    expect(hasSidebar({ tab: 'welcome' })).toBe(false);
+  });
+
+  it('/welcome is the full-screen interview, and it belongs to Home', () => {
+    expect(parseHref('/welcome')).toEqual({ tab: 'welcome' });
+    expect(parseHref('/welcome/extra')).toEqual({ tab: 'welcome' });
+    expect(hrefFor({ tab: 'welcome' })).toBe('/welcome');
+    expect(railTabOf({ tab: 'welcome' })).toBe('home');
+    expect(defaultRoute('welcome')).toEqual(WELCOME);
   });
 });
 
@@ -123,6 +133,26 @@ describe('前进后退与入口', () => {
     expect(useShell.getState().lastRoute.settings).toEqual(model);
     goForward();
     expect(useShell.getState().route).toEqual({ tab: 'tools' });
+  });
+
+  it('the interview is a detour: leaving it, Home goes back to where it was, not to /welcome', () => {
+    const { go, goTab, goBack, goForward } = useShell.getState();
+    const conversation: Route = { tab: 'home', conversationId: 'c1', projectId: null };
+    go(conversation);
+    go({ tab: 'settings', section: 'you' });
+    go(WELCOME);
+    expect(useShell.getState().route).toEqual(WELCOME);
+    expect(useShell.getState().lastRoute.home).toEqual(conversation);
+    goBack();
+    goForward();
+    expect(useShell.getState().lastRoute.home).toEqual(conversation);
+    goTab('tools');
+    goTab('home');
+    expect(useShell.getState().route).toEqual(conversation);
+    // On /welcome itself, Home is the landing page (the same entry clicked again).
+    go(WELCOME);
+    goTab('home');
+    expect(useShell.getState().route).toEqual(HOME);
   });
 
   it('go 进历史，goBack / goForward 来回走，新的 go 清掉前进', () => {

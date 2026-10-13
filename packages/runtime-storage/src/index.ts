@@ -19,3 +19,5 @@ export * from './agent-prefs.ts';
 export * from './agent-probes.ts';
 export * from './agent-providers.ts';
 export * from './skill-prefs.ts';
+export * from './profile-store.ts';
+export * from './project-profile-file.ts';

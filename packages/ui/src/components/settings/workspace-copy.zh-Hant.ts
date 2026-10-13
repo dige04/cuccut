@@ -24,4 +24,17 @@ export const zhHant: WorkspaceMessages = {
   notYet: '暫不可用',
   loadFailed: '載入失敗',
   fontsSummary: '用於字幕與標題',
+  preferencesSummary: (written, answers) =>
+    written
+      ? answers === 0
+        ? '已撰寫偏好設定'
+        : answers === 1
+          ? '已撰寫偏好設定，1 則回答'
+          : `已撰寫偏好設定，${answers} 則回答`
+      : answers === 0
+        ? '尚無偏好設定'
+        : answers === 1
+          ? '1 則回答'
+          : `${answers} 則回答`,
+  ruleCount: (n, off) => (n === 0 ? '尚無' : `${n === 1 ? '1 則規則' : `${n} 則規則`}${off ? `，${off} 則已關閉` : ''}`),
 };

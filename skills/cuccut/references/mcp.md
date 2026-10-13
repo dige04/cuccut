@@ -58,6 +58,7 @@ Tool name mapping (generated from the catalog):
 | `models_capabilities` | `cuccut models capabilities` | query |
 | `models_list` | `cuccut models list` | query |
 | `music` | `cuccut music` | job |
+| `profile_show` | `cuccut profile show` | query |
 | `projects_list` | `cuccut projects list` | query |
 | `skills_list` | `cuccut skills list` | query |
 | `skills_read` | `cuccut skills read` | query |
@@ -74,7 +75,7 @@ Tool name mapping (generated from the catalog):
 | `videos_list` | `cuccut videos list` | query |
 | `videos_shots` | `cuccut videos shots` | query |
 
-Only in the CLI, not on MCP: `cuccut artifacts save`, `cuccut models install`, `cuccut models test`, `cuccut projects create`, `cuccut transcode`, `cuccut videos delete`, `cuccut videos import-package`.
+Only in the CLI, not on MCP: `cuccut artifacts save`, `cuccut models install`, `cuccut models test`, `cuccut profile answer`, `cuccut profile preferences-set`, `cuccut profile rules-remove`, `cuccut profile rules-save`, `cuccut profile skip`, `cuccut profile write`, `cuccut projects create`, `cuccut transcode`, `cuccut videos delete`, `cuccut videos import-package`.
 <!-- /generated -->
 
 ## 3. Waiting for jobs: loop on `jobs_wait`

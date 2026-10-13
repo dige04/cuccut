@@ -28,6 +28,7 @@ import { useDirectory } from '../state/directory-store.ts';
 import { hrefFor, useShell } from '../state/shell-store.ts';
 import { conversationItem, ProjectItem } from './home-sidebar-rows.tsx';
 import { NameDialog } from './name-dialog.tsx';
+import { ProjectProfileDialog } from './profile/project-profile-dialog.tsx';
 import { Plus } from 'lucide-react';
 import { cn } from 'cn';
 import { Button } from '../cc/ui/button.tsx';
@@ -47,7 +48,7 @@ const drawer =
 /** S2's SideNav fills its parent's height by default; there is an empty-list hint below it too, so size it to the content and leave scrolling to the outer container. */
 const nav = style({ height: 'auto' });
 
-type DialogState = { kind: 'new-project' } | { kind: 'rename-project'; project: Project } | null;
+type DialogState = { kind: 'new-project' } | { kind: 'rename-project'; project: Project } | { kind: 'profile'; project: Project } | null;
 type SectionKey = 'pinned' | 'projects' | 'recent';
 
 /**
@@ -113,6 +114,7 @@ export function HomeSidebar({ className }: { className?: string }) {
     if (key === 'new') go({ tab: 'home', conversationId: null, projectId: project.id });
     else if (key === 'pin') actions.toggleProjectPin(project);
     else if (key === 'rename') setDialog({ kind: 'rename-project', project });
+    else if (key === 'profile') setDialog({ kind: 'profile', project });
     else if (key === 'space') go({ tab: 'space', category: 'all', projectId: project.id });
     else if (key === 'reveal') void runtime.host.revealPath(project.path);
   };
@@ -240,6 +242,8 @@ export function HomeSidebar({ className }: { className?: string }) {
             setDialog(null);
           }}
         />
+      ) : dialog?.kind === 'profile' ? (
+        <ProjectProfileDialog project={dialog.project} onClose={() => setDialog(null)} />
       ) : null}
     </aside>
   );

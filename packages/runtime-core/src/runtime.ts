@@ -112,6 +112,10 @@ import { TemplateCatalog, resolveBuiltinTemplatesDir } from './templates/templat
 import { SkillCatalog, resolveBuiltinSkillsDir } from './skills/skill-catalog.ts';
 import { SkillInstaller } from './skills/skill-installer.ts';
 import { skillIndexBlock } from './skills/skill-brief.ts';
+import { ProfileService } from './profile/profile-service.ts';
+import { joinBlocks } from './profile/profile-brief.ts';
+import { pickWriterAgent } from './profile/profile-writer.ts';
+import { ProfileTools, profileProjectOf } from './agent-tools/profile-tools.ts';
 import { aiToolDefinition } from './ai-tools/ai-tool-wiring.ts';
 import { resolveBuiltinAgentSkillsDir } from './skills/agent-skill-renderer.ts';
 import { SkillTools } from './agent-tools/skill-tools.ts';
@@ -156,6 +160,8 @@ export interface StartRuntimeOptions {
   online?: Omit<OnlineSourceOptions, 'store' | 'ffmpeg'>;
   /** Tuning for agent providers (§6.9). Tests shorten the probe cache and the deadline for one generation. */
   agentProviders?: Omit<AgentSourceOptions, 'store' | 'drivers'>;
+  /** Deadline of the profile writer's agent turn (default 3 minutes; docs/cuccut/m2-profile-rules.md §4). Tests shorten it. */
+  profileWriterTimeoutMs?: number;
   /**
    * Credential store (§6.8): decided by the build type, not by a user setting. Development builds use `file` (the default), release builds use `keychain`. Tests can pass an instance directly, or give the keychain backend a fake helper (`credentialHelper`).
    */
@@ -241,6 +247,8 @@ export interface RunningRuntime {
   externalTools: ExternalToolService;
   /** Fonts downloaded on demand (architecture design §9.1). */
   fonts: FontService;
+  /** The user's profile: interview, preferences and rules (docs/cuccut/m2-profile-rules.md). */
+  profile: ProfileService;
   log: Logger;
   close(): Promise<void>;
 }
@@ -284,6 +292,7 @@ const STOP_ORDER = [
   'videos',
   'setup',
   'harness',
+  'profile',
   'attachments',
   'gateway',
 ] as const;
@@ -634,9 +643,46 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       offlineStrict: () => settings.store.get('offline.strict'),
       ...(options.skillsGithub ? { github: options.skillsGithub } : {}),
     });
+    // The creation template catalog (template package spec §6): the directory is read again on every use.
+    const templates = new TemplateCatalog({
+      builtinDir: options.templatesDir === undefined ? resolveBuiltinTemplatesDir() : options.templatesDir,
+      userDir: path.join(home.root, 'templates'),
+    });
+    // The user's profile (docs/cuccut/m2-profile-rules.md): built before the grants, whose session callback reads it at each session start. Projects are
+    // looked up through the Harness, which opens later, so only when needed.
+    const profile = await ProfileService.open({
+      home,
+      library: library.store,
+      projects: () => requireHarness().listProjects(),
+      installedTemplates: async () => new Set((await templates.scan()).templates.map((t) => t.manifest.id)),
+      // Writing preferences from the answers: one confined turn of the default agent, or else the first one installed and signed in.
+      writer: {
+        agent: async () => {
+          const chosen = pickWriterAgent((await requireHarness().agents()).drivers);
+          return chosen ? { id: chosen.id, driver: drivers.get(chosen.id), executable: drivers.executable(chosen.id) } : null;
+        },
+        stagingDir: path.join(home.stagingDir, 'profile-runs'),
+        ...(options.profileWriterTimeoutMs !== undefined ? { timeoutMs: options.profileWriterTimeoutMs } : {}),
+      },
+      log,
+    });
+    stops.add('profile', () => profile.close(), 'Saving the profile failed');
+    /** The project directory of a session's project; null for a session outside a project (or before the Harness is up). */
+    const projectPathOf = (conversationId: Id): string | null => {
+      const projectId = harnessRef?.conversationOf(conversationId)?.projectId;
+      return (projectId && harnessRef?.listProjects().find((p) => p.id === projectId)?.path) || null;
+    };
+    // Each native session starts with the index of enabled skills and the user's profile. A profile that can't be read leaves only its block out.
     const grants = new AgentGrants(
       (principal) => videos.connectionClosed(principal.connectionId),
-      async () => skillIndexBlock(await skills.enabled()),
+      async (conversationId) =>
+        joinBlocks([
+          skillIndexBlock(await skills.enabled()),
+          await profile.sessionBlock(projectPathOf(conversationId)).catch((error: unknown) => {
+            log.warn('Failed to read the profile for a session', { conversationId, error: String(error) });
+            return '';
+          }),
+        ]),
     );
     // Images in messages: uploaded through the same gateway port, and handed to the Driver on send (product design §3.2.4).
     const attachments = new AttachmentStore({
@@ -729,6 +775,8 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
         // The Space directory is built later, so it is fetched at tool call time.
         new SpaceTools({ space: () => space, scope: toolScope, jobs: models.jobs }),
         new SkillTools({ skills, scope: toolScope }),
+        // The user's profile (docs/cuccut/m2-profile-rules.md §6): the project level is the session's project, or the terminal's.
+        new ProfileTools({ profile, scope: toolScope, projectOf: (principal) => profileProjectOf(harness, principal) }),
         new GrantTools({ models, scope: toolScope }),
         new TaskTools({ harness, scope: toolScope }),
         new LinkImportTools(linkImport),
@@ -908,12 +956,10 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       services,
       runtime: info,
       externalTools,
-      templates: new TemplateCatalog({
-        builtinDir: options.templatesDir === undefined ? resolveBuiltinTemplatesDir() : options.templatesDir,
-        userDir: path.join(home.root, 'templates'),
-      }),
+      templates,
       skills,
       skillInstaller,
+      profile,
       fonts,
       // The code view (§8): the UI's `compositions.*` and the tools share the same service and host.
       compositions,
@@ -1021,6 +1067,7 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       services,
       externalTools,
       fonts,
+      profile,
       log,
       close,
     };

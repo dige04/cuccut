@@ -14,6 +14,7 @@ import { library } from './library.ts';
 import { mcp } from './mcp.ts';
 import { models } from './models.ts';
 import { nodes } from './nodes.ts';
+import { profile } from './profile.ts';
 import { services } from './services.ts';
 import { settings } from './settings.ts';
 import { share } from './share.ts';
@@ -35,6 +36,7 @@ const NOUNS: readonly AdminNoun<ParseArgsOptionsConfig>[] = [
   space,
   library,
   skills,
+  profile,
   externalTools,
   services,
   mcp,

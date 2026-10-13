@@ -16,6 +16,8 @@ export const zhHant: SettingsNavMessages = {
     cloud: '文字生成只有雲端模型。程式設計 Agent 在「Agent」中設定。',
   },
   section: {
+    you: '你',
+    rules: '規則',
     general: '一般',
     shortcuts: '快速鍵',
     fonts: '字型',

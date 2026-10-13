@@ -31,6 +31,8 @@ const en = {
     cloud: 'Text generation only has cloud models. Coding Agents are set up under “Agent”.',
   },
   section: {
+    you: 'You',
+    rules: 'Rules',
     general: 'General',
     shortcuts: 'Shortcuts',
     fonts: 'Fonts',

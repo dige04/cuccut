@@ -29,4 +29,13 @@ describe('MCP tool descriptions', () => {
       expect(sessionOnly, name).toEqual([]);
     }
   });
+
+  it("exposes the user's profile read-only: profile_show, none of the profile writes", () => {
+    const names = exposed.map((e) => e.name).filter((name) => name.startsWith('profile_'));
+    expect(names).toEqual(['profile_show']);
+    const all = allToolSets().flatMap((set) => Object.keys(set.schemas));
+    expect(all.filter((name) => name.startsWith('profile_')).sort()).toEqual(
+      ['profile_answer', 'profile_preferences_set', 'profile_rules_remove', 'profile_rules_save', 'profile_show', 'profile_skip', 'profile_write'],
+    );
+  });
 });

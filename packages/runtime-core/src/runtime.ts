@@ -114,6 +114,8 @@ import { SkillInstaller } from './skills/skill-installer.ts';
 import { skillIndexBlock } from './skills/skill-brief.ts';
 import { ProfileService } from './profile/profile-service.ts';
 import { joinBlocks } from './profile/profile-brief.ts';
+import { pickWriterAgent } from './profile/profile-writer.ts';
+import { ProfileTools, profileProjectOf } from './agent-tools/profile-tools.ts';
 import { aiToolDefinition } from './ai-tools/ai-tool-wiring.ts';
 import { resolveBuiltinAgentSkillsDir } from './skills/agent-skill-renderer.ts';
 import { SkillTools } from './agent-tools/skill-tools.ts';
@@ -158,6 +160,8 @@ export interface StartRuntimeOptions {
   online?: Omit<OnlineSourceOptions, 'store' | 'ffmpeg'>;
   /** Tuning for agent providers (§6.9). Tests shorten the probe cache and the deadline for one generation. */
   agentProviders?: Omit<AgentSourceOptions, 'store' | 'drivers'>;
+  /** Deadline of the profile writer's agent turn (default 3 minutes; docs/cuccut/m2-profile-rules.md §4). Tests shorten it. */
+  profileWriterTimeoutMs?: number;
   /**
    * Credential store (§6.8): decided by the build type, not by a user setting. Development builds use `file` (the default), release builds use `keychain`. Tests can pass an instance directly, or give the keychain backend a fake helper (`credentialHelper`).
    */
@@ -651,9 +655,18 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       library: library.store,
       projects: () => requireHarness().listProjects(),
       installedTemplates: async () => new Set((await templates.scan()).templates.map((t) => t.manifest.id)),
+      // Writing preferences from the answers: one confined turn of the default agent, or else the first one installed and signed in.
+      writer: {
+        agent: async () => {
+          const chosen = pickWriterAgent((await requireHarness().agents()).drivers);
+          return chosen ? { id: chosen.id, driver: drivers.get(chosen.id), executable: drivers.executable(chosen.id) } : null;
+        },
+        stagingDir: path.join(home.stagingDir, 'profile-runs'),
+        ...(options.profileWriterTimeoutMs !== undefined ? { timeoutMs: options.profileWriterTimeoutMs } : {}),
+      },
       log,
     });
-    stops.add('profile', () => profile.flush(), 'Saving the profile failed');
+    stops.add('profile', () => profile.close(), 'Saving the profile failed');
     /** The project directory of a session's project; null for a session outside a project (or before the Harness is up). */
     const projectPathOf = (conversationId: Id): string | null => {
       const projectId = harnessRef?.conversationOf(conversationId)?.projectId;
@@ -762,6 +775,8 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
         // The Space directory is built later, so it is fetched at tool call time.
         new SpaceTools({ space: () => space, scope: toolScope, jobs: models.jobs }),
         new SkillTools({ skills, scope: toolScope }),
+        // The user's profile (docs/cuccut/m2-profile-rules.md §6): the project level is the session's project, or the terminal's.
+        new ProfileTools({ profile, scope: toolScope, projectOf: (principal) => profileProjectOf(harness, principal) }),
         new GrantTools({ models, scope: toolScope }),
         new TaskTools({ harness, scope: toolScope }),
         new LinkImportTools(linkImport),

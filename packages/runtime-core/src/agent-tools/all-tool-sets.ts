@@ -9,6 +9,7 @@ import { LibraryTools } from './library-tools.ts';
 import { LinkImportTools } from './link-import-tools.ts';
 import { ModelInstallTools } from './model-install-tools.ts';
 import { ModelTools } from './model-tools.ts';
+import { ProfileTools } from './profile-tools.ts';
 import { ProjectTools } from './project-tools.ts';
 import { SkillTools } from './skill-tools.ts';
 import { SlidesTools } from './slides-tools.ts';
@@ -39,6 +40,7 @@ export function allToolSets(): ToolSet[] {
     new LibraryTools(none),
     new SpaceTools(none),
     new SkillTools(none),
+    new ProfileTools(none),
     new GrantTools(none),
     new TaskTools(none),
     new LinkImportTools(none),

@@ -100,6 +100,7 @@ export const MCP_SERVICE_TOOL_NAMES: readonly McpServiceTool[] = [
   { name: 'skills_read', title: 'Read a skill', effect: 'query' },
   { name: 'library_list', title: 'List the user library', effect: 'query' },
   { name: 'library_show', title: 'Show a user library entry', effect: 'query' },
+  { name: 'profile_show', title: "Show the user's profile", effect: 'query' },
   { name: 'download', title: 'Download from link', effect: 'job' },
 ];
 /** Default port (loopback) of the model API service, next to the MCP service. */

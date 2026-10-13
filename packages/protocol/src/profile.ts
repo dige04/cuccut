@@ -103,6 +103,22 @@ export interface ProfileWriteState {
   lines: string[];
 }
 
+/** Why a write from the answers kept them as typed: no agent is installed and signed in, the agent's run failed (or timed out), or its output was not usable. */
+export const PROFILE_WRITE_FALLBACK_REASONS = ['no-agent', 'agent-failed', 'bad-output'] as const;
+export type ProfileWriteFallbackReason = (typeof PROFILE_WRITE_FALLBACK_REASONS)[number];
+
+/** The result of `profile.writeFromAnswers`: the interview's new section of the preferences and the names it added to the glossary. */
+export interface ProfileWriteResult {
+  /** The section the interview wrote (also saved as `preferences.interview`). */
+  preferences: string;
+  /** Canonical spellings added to the interview's glossary by this write. */
+  names: string[];
+  /** An agent wrote the section; false when the answers were kept as typed. */
+  usedAgent: boolean;
+  /** Set when the answers were kept as typed. */
+  fallbackReason?: ProfileWriteFallbackReason;
+}
+
 /** The `profile` topic's snapshot and the result of `profile.get`: the workspace level. */
 export interface ProfileSnapshot {
   interview: InterviewState;

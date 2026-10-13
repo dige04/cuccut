@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import type { AgentDriver, AgentSession } from '@cuccut/harness';
+import type { AgentDriver } from '@cuccut/harness';
 import {
   ProviderFailure,
   type GenerationAttempt,
@@ -12,6 +12,7 @@ import {
 } from '@cuccut/models';
 import type { ProviderUnavailableReason } from '@cuccut/protocol';
 import { IMAGE_MEDIA } from '../adapter.ts';
+import { runConfinedTurn } from './confined-turn.ts';
 import type { CallReporter } from '../usage-reporter.ts';
 import { ProvidersAgent as PA } from '@cuccut/protocol/messages/providers';
 
@@ -48,14 +49,6 @@ const REPLY_EXCERPT = 300;
 /** When looking for images in the working directory, the maximum number of levels to descend. */
 const MAX_DEPTH = 3;
 const IMAGE_EXTENSION = /\.(png|jpe?g|webp|gif)$/i;
-
-type TurnResult =
-  | { kind: 'completed' }
-  | { kind: 'failed'; message: string }
-  | { kind: 'interrupted' }
-  | { kind: 'exited'; message: string }
-  | { kind: 'timeout' }
-  | { kind: 'cancelled' };
 
 /**
  * The agent as the executor of an image provider (architecture design §6.9). One `generate` is a dedicated native session:
@@ -142,32 +135,20 @@ export class AgentImageGenerator implements GenerationProvider {
     if (signal.aborted) return { outcome: 'cancelled' };
 
     sink.generating();
-    let session: AgentSession;
-    try {
-      session = await ready.driver.createSession({
-        cwd: run.staging,
-        // The policy of a confined session is fixed, so the access mode has no effect. The model and effort use the Agent's own defaults.
-        accessMode: 'fullAccess',
-        model: null,
-        effort: null,
-        executable: ready.executable ?? null,
-        resume: null,
-        developerInstructions: this.#options.instructions,
-        confinement: 'cwd-write-only',
-      });
-    } catch (error) {
+    const outcome = await runConfinedTurn({
+      driver: ready.driver,
+      executable: ready.executable ?? null,
+      cwd: run.staging,
+      instructions: this.#options.instructions,
+      text: this.#options.turnText(parameters.prompt),
+      timeoutMs: this.#options.turnTimeoutMs,
+      signal,
+    });
+    if (!outcome.started) {
       if (signal.aborted) return { outcome: 'cancelled' };
-      throw new ProviderFailure('unavailable-remote', PA.sessionNotStarted({ label, error: messageOf(error) }).text, { providerId });
+      throw new ProviderFailure('unavailable-remote', PA.sessionNotStarted({ label, error: messageOf(outcome.error) }).text, { providerId });
     }
-
-    let replies: string[] = [];
-    let declined = 0;
-    let result: TurnResult;
-    try {
-      ({ result, replies, declined } = await this.#turn(session, this.#options.turnText(parameters.prompt), signal));
-    } finally {
-      await session.close().catch(() => {});
-    }
+    const { result, replies, declined } = outcome;
 
     const facts = { providerId, ...(declined > 0 ? { declinedApprovals: declined } : {}) };
     switch (result.kind) {
@@ -207,63 +188,6 @@ export class AgentImageGenerator implements GenerationProvider {
     for (const relative of chosen) outputs.push(await describeOutput(run.staging, relative, IMAGE_MEDIA.png.mediaType));
     sink.progress(outputs.length, parameters.count);
     return { outcome: 'completed', outputs, workerVersion: `${providerId} ${ready.version}` };
-  }
-
-  /** Sends one turn and waits for it to end, fail, the session to exit, time out, or be cancelled. On cancel or timeout, the request is interrupted (the session is closed afterwards). */
-  async #turn(
-    session: AgentSession,
-    text: string,
-    signal: AbortSignal,
-  ): Promise<{ result: TurnResult; replies: string[]; declined: number }> {
-    const replies: string[] = [];
-    const errors: string[] = [];
-    let declined = 0;
-    let settle!: (result: TurnResult) => void;
-    const done = new Promise<TurnResult>((resolve) => (settle = resolve));
-    const unsubscribe = session.subscribe((event) => {
-      switch (event.type) {
-        case 'item.completed':
-          if (event.item.kind === 'agent-message' && event.item.text.trim()) replies.push(event.item.text.trim());
-          return;
-        case 'approval.requested':
-          // There is no one to approve, so out-of-bounds actions are all rejected.
-          declined++;
-          void session.respondToApproval(event.approvalId, { decision: 'decline' }).catch(() => {});
-          return;
-        case 'session.error':
-          if (!event.willRetry) errors.push(event.message);
-          return;
-        case 'turn.completed':
-          if (event.outcome === 'completed') settle({ kind: 'completed' });
-          else if (event.outcome === 'interrupted') settle({ kind: 'interrupted' });
-          else settle({ kind: 'failed', message: event.error ?? errors.at(-1) ?? PA.unknownError().text });
-          return;
-        case 'session.exited':
-          settle({ kind: 'exited', message: event.error ?? errors.at(-1) ?? PA.processExited().text });
-          return;
-        default:
-          return;
-      }
-    });
-    const onAbort = () => settle({ kind: 'cancelled' });
-    signal.addEventListener('abort', onAbort, { once: true });
-    const timer = setTimeout(() => settle({ kind: 'timeout' }), this.#options.turnTimeoutMs);
-    let turnId: string | null = null;
-    try {
-      if (signal.aborted) return { result: { kind: 'cancelled' }, replies, declined };
-      try {
-        turnId = (await session.startTurn({ text }, { accessMode: 'fullAccess', model: null, effort: null })).turnId;
-      } catch (error) {
-        settle({ kind: 'exited', message: PA.turnNotStarted({ error: messageOf(error) }).text });
-      }
-      const result = await done;
-      if ((result.kind === 'cancelled' || result.kind === 'timeout') && turnId) await session.interrupt(turnId).catch(() => {});
-      return { result, replies, declined };
-    } finally {
-      clearTimeout(timer);
-      signal.removeEventListener('abort', onAbort);
-      unsubscribe();
-    }
   }
 }
 

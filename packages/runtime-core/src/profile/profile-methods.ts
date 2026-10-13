@@ -10,6 +10,7 @@ type ProfileMethod =
   | 'profile.skipInterview'
   | 'profile.reopenInterview'
   | 'profile.dismissReminder'
+  | 'profile.writeFromAnswers'
   | 'profile.setPreferences'
   | 'profile.putRule'
   | 'profile.removeRule'
@@ -28,6 +29,7 @@ export function profileMethods(deps: { profile: ProfileService }): Pick<RpcHandl
     'profile.skipInterview': () => profile.skip(),
     'profile.reopenInterview': () => profile.reopen(),
     'profile.dismissReminder': () => profile.dismissReminder(),
+    'profile.writeFromAnswers': (p) => profile.writeFromAnswers(p.answers ?? {}),
     'profile.setPreferences': (p) => {
       if (p.projectId === undefined) {
         return profile.setPreferences({ ...(p.own !== undefined ? { own: p.own } : {}), ...(p.interview !== undefined ? { interview: p.interview } : {}) });

@@ -22,6 +22,9 @@ describe('profile.* parameters', () => {
     expect(methodParamSchemas['profile.skipInterview'].safeParse({}).success).toBe(true);
     expect(methodParamSchemas['profile.reopenInterview'].safeParse({}).success).toBe(true);
     expect(methodParamSchemas['profile.dismissReminder'].safeParse({}).success).toBe(true);
+    expect(methodParamSchemas['profile.writeFromAnswers'].safeParse({}).success).toBe(true);
+    expect(methodParamSchemas['profile.writeFromAnswers'].safeParse({ answers: { who: 'Tutorials for junior devs' } }).success).toBe(true);
+    expect(methodParamSchemas['profile.writeFromAnswers'].safeParse({ answers: { mood: 'x' } }).success).toBe(false);
     expect(methodParamSchemas['profile.setPreferences'].safeParse({ own: '- Hooks under 3 seconds' }).success).toBe(true);
     expect(methodParamSchemas['profile.setPreferences'].safeParse({ projectId: 'prj_1', own: '' }).success).toBe(true);
     const rule = { name: 'Gameplay stays clear', when: 'the clip is gameplay', instruction: 'Never cover the game with pictures.' };
@@ -81,6 +84,7 @@ describe('web access to the profile', () => {
       'profile.skipInterview',
       'profile.reopenInterview',
       'profile.dismissReminder',
+      'profile.writeFromAnswers',
       'profile.setPreferences',
       'profile.putRule',
       'profile.removeRule',

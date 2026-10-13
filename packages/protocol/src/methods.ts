@@ -116,6 +116,7 @@ import type {
   ProfileRuleInput,
   ProfileRulePutResult,
   ProfileSnapshot,
+  ProfileWriteResult,
   ProjectProfile,
 } from './profile.ts';
 import type {
@@ -1023,6 +1024,13 @@ export interface RpcMethods {
   'profile.reopenInterview': { params: Record<string, never>; result: InterviewState };
   /** "Not now" on the home reminder: hides it. The settings page and the agent still offer the interview. */
   'profile.dismissReminder': { params: Record<string, never>; result: InterviewState };
+  /**
+   * Writes preferences from the interview answers (the saved ones, with `answers` merged over them): a one-shot, confined run of the default agent (or else the first
+   * one installed and signed in) turns them into the interview's section and a list of names, which go into one transcription glossary in the user library. With
+   * no agent, a failed run or unusable output, the answers are kept as typed (`fallbackReason`). The interview becomes `done`. Progress is sent as `profile.writing`.
+   * No answers: `invalid-request` (`PROFILE_NO_ANSWERS`). A write already running: `conflict` (`PROFILE_WRITE_BUSY`). Clients call it with a long timeout (240 s).
+   */
+  'profile.writeFromAnswers': { params: { answers?: InterviewAnswers }; result: ProfileWriteResult };
   /**
    * Sets preference text. Without `projectId`: the workspace level, `own` (the user's words) and/or `interview` (the section the interview wrote); returns the snapshot.
    * With `projectId`: only `own`, which is the project's text (`interview` gives `invalid-request`, `PROFILE_PROJECT_TEXT_ONLY`); returns the project's level.

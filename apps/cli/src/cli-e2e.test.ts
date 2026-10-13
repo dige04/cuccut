@@ -257,6 +257,57 @@ describe.skipIf(!engine || !ffmpeg)('CLI 子进程（真实 Runtime）', () => {
     expect(usage.code).toBe(0);
     expect(usage.stdout).toContain('cuccut settings');
   }, 60_000);
+
+  it('profile: answers, interview write (no agent: kept as typed), preferences from a file, rules list / disable / move / remove, show', async () => {
+    const answered = await run(['profile', 'answers', 'set', 'who', 'Coding', 'tutorials']);
+    expect(answered.code, answered.stdout + answered.stderr).toBe(0);
+    expect(answered.json.result.answers).toEqual({ who: 'Coding tutorials' });
+    expect((await run(['profile', 'answers', 'set', 'mood', 'x'])).code).toBe(4);
+
+    const written = await run(['profile', 'interview', 'write']);
+    expect(written.code, written.stdout + written.stderr).toBe(0);
+    expect(written.json.result).toMatchObject({ usedAgent: false, fallbackReason: 'no-agent', names: [] });
+    expect(written.json.result.preferences).toContain('Coding tutorials');
+
+    const file = path.join(dir, 'prefs.md');
+    await fs.writeFile(file, '- Hooks under three seconds\n');
+    const prefs = await run(['profile', 'preferences', '--file', file]);
+    expect(prefs.code, prefs.stdout + prefs.stderr).toBe(0);
+    expect(prefs.json.result.preferences.own).toBe('- Hooks under three seconds\n');
+    expect((await run(['profile', 'preferences'])).code).toBe(4);
+    const projectPrefs = await run(['profile', 'preferences', '--project', project.id, '--file', '-'], '- Vertical 9:16');
+    expect(projectPrefs.code, projectPrefs.stdout + projectPrefs.stderr).toBe(0);
+    expect(projectPrefs.json.result.preferences).toBe('- Vertical 9:16');
+
+    // Rules are made in the desktop UI or by the agent; the CLI lists and manages them.
+    const { endpoint, token } = runtime.discovery;
+    const client = new CucCutClient({ resolve: async () => ({ endpoint, token }), client: { kind: 'cli', name: 'test', version: '0' }, reconnect: false });
+    await client.connect();
+    const a = (await client.request('profile.putRule', { rule: { name: 'A', when: 'always', instruction: 'Do A.' } })).rule;
+    const b = (await client.request('profile.putRule', { rule: { name: 'B', when: 'always', instruction: 'Do B.' } })).rule;
+    client.close();
+
+    const listed = await run(['profile', 'rules', 'list']);
+    expect(listed.json.result.rules.map((r: { id: string }) => r.id)).toEqual([a.id, b.id]);
+    const disabled = await run(['profile', 'rules', 'disable', a.id]);
+    expect(disabled.code, disabled.stdout + disabled.stderr).toBe(0);
+    expect(disabled.json.result.rule).toMatchObject({ id: a.id, enabled: false, name: 'A' });
+    const moved = await run(['profile', 'rules', 'move', b.id, 'up']);
+    expect(moved.json.result.rules.map((r: { id: string }) => r.id)).toEqual([b.id, a.id]);
+    const removed = await run(['profile', 'rules', 'remove', a.id]);
+    expect(removed.json.result.removed.id).toBe(a.id);
+    expect((await run(['profile', 'rules', 'enable', a.id])).code).toBe(4);
+
+    // show is the profile_show view, with the project of the current folder.
+    const shown = await run(['profile', 'show']);
+    expect(shown.code, shown.stdout + shown.stderr).toBe(0);
+    expect(shown.json.result.interview.status).toBe('done');
+    expect(shown.json.result.preferences).toMatchObject({ general: '- Hooks under three seconds\n', project: '- Vertical 9:16' });
+    expect(shown.json.result.rules.workspace.map((r: { id: string }) => r.id)).toEqual([b.id]);
+    expect(shown.json.result.project).toEqual({ projectId: project.id, name: 'CLI e2e' });
+    const human = await run(['profile', 'show', '--no-json']);
+    expect(human.stdout).toContain('Hooks under three seconds');
+  }, 60_000);
 });
 
 describe('runtime ensure / stop（隔离 CUCCUT_HOME，从仓库入口拉起）', () => {

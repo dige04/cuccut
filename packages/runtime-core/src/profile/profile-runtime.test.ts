@@ -174,4 +174,39 @@ describe('profile end to end', () => {
     expect((await client.request('profile.get', {})).interview).toMatchObject({ reminder: false, answers: { who: 'me' } });
     expect(JSON.parse(await fs.readFile(home.profileFile, 'utf8'))).toMatchObject({ schemaVersion: 1 });
   });
+
+  it('writes preferences from the answers with the default agent in a confined run; a new session reads them', async () => {
+    await boot();
+    const writing: unknown[] = [];
+    client.subscribeProfile({ snapshot: () => {}, event: (event) => event.type === 'profile.writing' && writing.push(event.writing) });
+    await client.request('profile.saveAnswers', { answers: { who: 'Coding streams for junior devs', names: 'Deska' } });
+
+    const result = client.request('profile.writeFromAnswers', {}, { timeoutMs: 60_000 });
+    // The fake driver is the default agent and ready: the writer opens a confined session of its own.
+    const confined = await until(() => driver.sessions.find((s) => s.options.confinement === 'cwd-write-only'));
+    expect(confined.options.mcpServers).toBeUndefined();
+    expect(path.dirname(confined.options.cwd)).toBe(path.join(home.stagingDir, 'profile-runs'));
+    await until(() => confined.inputs.length > 0);
+    const answers = JSON.parse(await fs.readFile(path.join(confined.options.cwd, 'answers.json'), 'utf8'));
+    expect(answers.map((a: { id: string }) => a.id)).toEqual(['who', 'names']);
+    confined.emit({ type: 'item.completed', turnId: confined.turnId!, item: { kind: 'agent-message', id: 'm1', text: 'Writing the preferences' } });
+    await fs.writeFile(
+      path.join(confined.options.cwd, 'profile.json'),
+      JSON.stringify({ preferences: '- Short hooks for junior devs', names: [{ term: 'Deska', misheard: ['desk a'] }] }),
+    );
+    confined.finish();
+    expect(await result).toEqual({ preferences: '- Short hooks for junior devs', names: ['Deska'], usedAgent: true });
+    await until(() => writing.at(-1) === null);
+    expect(writing).toContainEqual(expect.objectContaining({ lines: ['Writing the preferences'] }));
+    await expect(fs.access(confined.options.cwd)).rejects.toThrow();
+
+    const snapshot = await client.request('profile.get', {});
+    expect(snapshot).toMatchObject({ interview: { status: 'done', usedAgent: true }, preferences: { interview: '- Short hooks for junior devs' }, writing: null });
+
+    const { session } = await send('cut me a clip');
+    const text = instructionsOf(session);
+    expect(text).toContain('## In general\n- Short hooks for junior devs');
+    expect(text).toContain('## Names to spell exactly\nDeska');
+    expect(text).not.toContain('<cuccut-interview>');
+  });
 });

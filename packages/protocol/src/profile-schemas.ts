@@ -43,6 +43,7 @@ export const PROFILE_PARAM_SCHEMAS = {
   'profile.skipInterview': z.object({}).strict(),
   'profile.reopenInterview': z.object({}).strict(),
   'profile.dismissReminder': z.object({}).strict(),
+  'profile.writeFromAnswers': z.object({ answers: interviewAnswersSchema.optional() }).strict(),
   'profile.setPreferences': z.object({ projectId: projectId.optional(), own: preferencesText.optional(), interview: preferencesText.optional() }).strict(),
   'profile.putRule': z.object({ rule: profileRuleInputSchema, projectId: projectId.optional() }).strict(),
   'profile.removeRule': z.object({ id: ruleId, projectId: projectId.optional() }).strict(),

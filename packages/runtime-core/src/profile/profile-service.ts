@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs/promises';
 import { TopicLog, type Logger } from '@cuccut/harness';
 import {
   INTERVIEW_QUESTIONS,
@@ -14,6 +15,7 @@ import {
   type ProfileRuleInput,
   type ProfileRulePutResult,
   type ProfileSnapshot,
+  type ProfileWriteResult,
   type ProfileWriteState,
   type Project,
   type ProjectProfile,
@@ -31,6 +33,7 @@ import { RcProfile } from '@cuccut/protocol/messages/runtime-core';
 import { PROFILE_BLOCK_NAMES, interviewNudge, joinBlocks, profileBlock } from './profile-brief.ts';
 import { namesToSpell, syncInterviewNames, type InterviewName, type NamesLibrary } from './profile-names.ts';
 import { effectiveRules, ruleInvalidError, rulesForStage, validateRule } from './profile-rules.ts';
+import { ProfileWriter, type ProfileWriterOptions } from './profile-writer.ts';
 
 /**
  * The user's profile on the Runtime side (docs/cuccut/m2-profile-rules.md §4): the interview, preferences and rules at the workspace level
@@ -54,6 +57,11 @@ export interface ProfileServiceOptions {
   log?: Logger;
   /** 8 hex characters for new rule ids (tests fix it). */
   randomHex?: () => string;
+  /**
+   * Writing preferences from the answers (`writeFromAnswers`): the agent to run and its scratch directory. Without it every write keeps the answers as
+   * typed (`fallbackReason: 'no-agent'`).
+   */
+  writer?: Omit<ProfileWriterOptions, 'log'>;
 }
 
 /** What a write from the answers produced, applied by `completeWrite`. */
@@ -70,20 +78,29 @@ export class ProfileService {
   readonly #store: ProfileStore;
   readonly #projectFiles: ProjectProfileFiles;
   readonly #options: ProfileServiceOptions;
+  readonly #writer: ProfileWriter;
   #writing: ProfileWriteState | null = null;
 
-  private constructor(options: ProfileServiceOptions, store: ProfileStore, projectFiles: ProjectProfileFiles) {
+  private constructor(options: ProfileServiceOptions, store: ProfileStore, projectFiles: ProjectProfileFiles, log: Logger | undefined) {
     this.#options = options;
     this.#store = store;
     this.#projectFiles = projectFiles;
     this.topic = new TopicLog<ProfileSnapshot, ProfileEvent>(() => this.snapshot(), '0');
+    this.#writer = new ProfileWriter(this, {
+      agent: options.writer?.agent ?? (async () => null),
+      stagingDir: options.writer?.stagingDir ?? '',
+      ...(options.writer?.timeoutMs !== undefined ? { timeoutMs: options.writer.timeoutMs } : {}),
+      ...(log ? { log } : {}),
+    });
   }
 
   static async open(options: ProfileServiceOptions): Promise<ProfileService> {
     const log = options.log?.child('profile');
     const store = new ProfileStore(options.home.profileFile, log ? { log } : {});
     await store.load();
-    return new ProfileService(options, store, new ProjectProfileFiles(log ? { log } : {}));
+    // Scratch directories left by a run that did not finish (the Runtime was killed) are of no use.
+    if (options.writer) await fs.rm(options.writer.stagingDir, { recursive: true, force: true }).catch(() => {});
+    return new ProfileService(options, store, new ProjectProfileFiles(log ? { log } : {}), log);
   }
 
   snapshot(): ProfileSnapshot {
@@ -159,7 +176,7 @@ export class ProfileService {
    * `done`, and the names are merged into the interview's glossary (created when there is none, or when the user removed it).
    */
   async completeWrite(answers: InterviewAnswers, outcome: ProfileWriteOutcome): Promise<{ snapshot: ProfileSnapshot; namesAdded: string[] }> {
-    this.#assertWritable();
+    this.assertWritable();
     const names = await syncInterviewNames(this.#options.library, {
       glossaryId: this.#store.get().interview.namesGlossaryId,
       names: outcome.names,
@@ -174,6 +191,19 @@ export class ProfileService {
       profile.interview.namesGlossaryId = names.glossaryId;
     });
     return { snapshot: snapshotOf(next, this.#writing, this.#store.readOnly), namesAdded: names.added };
+  }
+
+  /**
+   * Writes preferences from the answers (`profile.writeFromAnswers`, the `profile_write` tool): the saved answers with `given` merged over them go to a
+   * confined agent run, or are kept as typed, and the interview becomes `done` (see `ProfileWriter`).
+   */
+  writeFromAnswers(given: InterviewAnswers = {}): Promise<ProfileWriteResult> {
+    return this.#writer.write(given);
+  }
+
+  /** A profile file from a newer version can't be changed: `conflict` (`PROFILE_READ_ONLY`). */
+  assertWritable(): void {
+    if (this.#store.readOnly) throw readOnlyError();
   }
 
   /** Progress of a write from the answers (null when it ends), sent as `profile.writing`. */
@@ -203,7 +233,7 @@ export class ProfileService {
   // ---- Rules ----
 
   async putRule(input: ProfileRuleInput, projectId?: Id): Promise<ProfileRulePutResult> {
-    if (projectId === undefined) this.#assertWritable();
+    if (projectId === undefined) this.assertWritable();
     const installed = this.#options.installedTemplates ? await this.#options.installedTemplates() : null;
     let result: ProfileRulePutResult | null = null;
     const apply = (rules: ProfileRule[]): ProfileRule[] => {
@@ -222,6 +252,17 @@ export class ProfileService {
       });
     }
     return result!;
+  }
+
+  /**
+   * Checks a rule as `putRule` would, without saving it: the rule as it would be saved, or `PROFILE_RULE_INVALID`. The agent tools check before they ask
+   * the user, so nobody approves a rule that can't be saved.
+   */
+  async checkRule(input: ProfileRuleInput, projectId?: Id): Promise<{ rule: ProfileRule; created: boolean }> {
+    const existing = projectId === undefined ? this.#store.get().rules : (await this.project(projectId)).rules;
+    const check = validateRule(input, { existing, installedTemplates: null, randomHex: this.#randomHex });
+    if (!check.ok) throw ruleInvalidError(check.problems);
+    return { rule: check.rule, created: check.created };
   }
 
   async removeRule(id: string, projectId?: Id): Promise<{ removed: ProfileRule }> {
@@ -300,18 +341,25 @@ export class ProfileService {
     return rulesForStage(effectiveRules(this.#store.get().rules, project?.rules ?? []), stage);
   }
 
+  /** The canonical names agents must spell (default-enabled transcription glossaries), at most `limit`. */
+  names(limit: number = PROFILE_BLOCK_NAMES): string[] {
+    return namesToSpell(this.#options.library, limit);
+  }
+
   /** Waits for the writes in flight (Runtime stop). */
   flush(): Promise<void> {
     return this.#store.flush();
   }
 
+  /** Runtime stop: cancels a write from the answers in flight, then waits for the store's writes. */
+  async close(): Promise<void> {
+    await this.#writer.close();
+    await this.flush();
+  }
+
   // ---- Internals ----
 
   readonly #randomHex = (): string => (this.#options.randomHex ? this.#options.randomHex() : crypto.randomBytes(4).toString('hex'));
-
-  #assertWritable(): void {
-    if (this.#store.readOnly) throw readOnlyError();
-  }
 
   async #update(update: (profile: StoredProfile) => void): Promise<StoredProfile> {
     let next: StoredProfile;

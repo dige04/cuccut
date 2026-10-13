@@ -43,6 +43,28 @@ export const ptBR: ReviewSettingsMessages = {
     quote: 'A quote',
   },
   addQuestion: 'Add this question',
+  on: 'On',
+  off: 'Off',
+  waiting: 'Waiting for the Runtime…',
+  gateDesktopOnly: 'This switch can be changed in the desktop app.',
+  loading: 'Reading the standard…',
+  loadFailed: (message: string) => `Couldn’t read the standard: ${message}`,
+  checkLine: (measurement: string, limit: string, aspect: string | null) =>
+    aspect ? `${measurement} ${limit} · ${aspect}` : `${measurement} ${limit}`,
+  checkIs: (measurement: string, answer: string, aspect: string | null) =>
+    aspect ? `${measurement}: ${answer} · ${aspect}` : `${measurement}: ${answer}`,
+  questionMeta: (worth: string, evidence: string) => `${worth} · answered with: ${evidence}`,
+  builtinHint: 'Changing what it is worth makes it a check of your own.',
+  worthOf: (name: string) => `What ${name} is worth`,
+  metricPlaceholder: 'Pick what to measure',
+  fixPlaceholder: 'Say what to do when it fails.',
+  questionPlaceholder: 'Does the video open on the point it makes?',
+  needMetric: 'Pick a measurement first.',
+  needLimit: 'Write the limit first.',
+  needQuestion: 'Write the question first.',
+  tooLong: (limit: number) => `Keep it to ${limit} characters.`,
+  lintTitle: 'Worth a look in this standard',
+  limitPlaceholder: '≤ 60',
   lint: {
     unknownMetric: (id: string, metric: string, suggestions: string) =>
       suggestions ? `${id}: ${metric} isn’t a measurement CucCut takes. Did you mean ${suggestions}?` : `${id}: ${metric} isn’t a measurement CucCut takes.`,

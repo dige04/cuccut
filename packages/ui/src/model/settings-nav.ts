@@ -5,7 +5,7 @@ import { M } from './settings-nav-copy.ts';
  * Settings section table (product design §2.1, §7.6): model configuration is merged into Settings and grouped into four sections: “Preferences / Agent / Models / App”. Models keep their own type and content routing; the URLs all live under /settings/models.
  */
 
-export const SETTINGS_SECTIONS = ['general', 'shortcuts', 'fonts', 'agent', 'skills', 'glossary', 'privacy', 'diagnostics', 'about'] as const;
+export const SETTINGS_SECTIONS = ['general', 'shortcuts', 'fonts', 'agent', 'skills', 'glossary', 'review', 'privacy', 'diagnostics', 'about'] as const;
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 
 export const MODEL_CATEGORIES = ['asr', 'tts', 'llm', 'image', 'music', 'sep', 'vision'] as const;
@@ -74,7 +74,7 @@ const group = (id: SettingsGroupId, keys: readonly SettingsSection[]) => ({
 export const SETTINGS_GROUPS: readonly { id: SettingsGroupId; label: string; keys: readonly SettingsSection[] }[] = [
   group('preferences', ['general', 'shortcuts', 'fonts']),
   group('agents', ['agent', 'skills']),
-  group('app', ['glossary', 'privacy', 'diagnostics', 'about']),
+  group('app', ['glossary', 'review', 'privacy', 'diagnostics', 'about']),
 ];
 
 /** The old link `/settings/agent/<page>` (from when Agent & Skills still had tabs) now goes to its new place; pages that are not recognized fall back to the Agent provider. */

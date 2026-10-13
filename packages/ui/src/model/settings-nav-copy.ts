@@ -36,7 +36,7 @@ const en = {
     fonts: 'Fonts',
     agent: 'Agent providers',
     skills: 'Skills',
-    glossary: 'Glossary',
+    glossary: 'Glossary', review: 'Review',
     privacy: 'Privacy and permissions',
     diagnostics: 'Diagnostics',
     about: 'About',

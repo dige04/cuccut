@@ -83,3 +83,8 @@ export function wantsFull(state: Pick<ReviewStore, 'full'>, videoId: Id, summary
   const held = state.full[videoId];
   return !held || held.at !== summary.at || held.revision !== summary.revision;
 }
+
+/** The videos of a list (the shorts page's cards) the store has no summary for yet, each once: what is worth reading. */
+export function unreadSummaries(state: Pick<ReviewStore, 'results'>, videoIds: readonly Id[]): Id[] {
+  return [...new Set(videoIds)].filter((videoId) => !(videoId in state.results));
+}

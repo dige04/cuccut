@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { emptyReviewStandard, type ReviewResult, type ReviewSummary } from '@cuccut/protocol';
-import { useReview, wantsFull } from './review-store.ts';
+import { unreadSummaries, useReview, wantsFull } from './review-store.ts';
 
 const summary = (over: Partial<ReviewSummary> = {}): ReviewSummary => ({ verdict: 'passed', revision: '3', at: '2026-10-13T10:00:00Z', open: 0, stale: false, ...over });
 
@@ -62,5 +62,11 @@ describe('review store', () => {
     expect(useReview.getState().busy.vid_1).toBe('waive:blank');
     state.setBusy('vid_1', null);
     expect(useReview.getState().busy).toEqual({});
+  });
+
+  it('reads only the summaries it does not hold, each once (the shorts page’s badges)', () => {
+    useReview.getState().apply({ type: 'result', videoId: 'vid_1', summary: summary() });
+    expect(unreadSummaries(useReview.getState(), ['vid_1', 'vid_2', 'vid_3', 'vid_2'])).toEqual(['vid_2', 'vid_3']);
+    expect(unreadSummaries(useReview.getState(), [])).toEqual([]);
   });
 });

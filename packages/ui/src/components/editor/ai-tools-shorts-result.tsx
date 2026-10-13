@@ -20,6 +20,8 @@ import { useSpace } from '../../state/space-store.ts';
 import { useTimeline } from '../../state/timeline-store.ts';
 import { useVideo } from '../../state/video-store.ts';
 import { requestExport } from '../export/export-request.ts';
+import { ReviewBadge } from '../review/review-badge.tsx';
+import { openReview } from '../review/review-dialog.tsx';
 import { AI_TOOLS_COPY as C } from './ai-tools-copy.ts';
 import { setAiToolPage, setPanelLanding, type AiToolPage } from './ai-tools-nav.ts';
 import { PanelHead } from './panel-head.tsx';
@@ -176,6 +178,12 @@ export function ShortsResultPage({ videoId, host }: { videoId: Id; host: Id }) {
 
   const ids = live.map((e) => entryVideoId(e)!);
   const at = pagerIndex(ids, videoId, run?.focus ?? null);
+  // The verdict badges (docs/cuccut/m2-review-gate.md §2.4) read the `review` topic's summaries; a short checked in an
+  // earlier run of the Runtime is read once here, so its badge does not say "Not checked" for a stored result.
+  const idsKey = ids.join(',');
+  useEffect(() => {
+    if (idsKey) void runtime.reviewPeek(idsKey.split(','));
+  }, [runtime, idsKey]);
 
   const resultPage: AiToolPage = { tool: 'shortscut', preset: null, phase: 'result', host };
   const open = (entry: SpaceEntry) => {
@@ -212,6 +220,13 @@ export function ShortsResultPage({ videoId, host }: { videoId: Id; host: Id }) {
       })
       .catch(fail)
       .finally(() => setExporting(false));
+  };
+  // The badge opens that short (when it is not the one open) and its review dialog.
+  const review = (entry: SpaceEntry) => {
+    const id = entryVideoId(entry);
+    if (!id) return;
+    open(entry);
+    openReview(id);
   };
   const discard = (entry: SpaceEntry) => {
     const id = entryVideoId(entry);
@@ -274,6 +289,7 @@ export function ShortsResultPage({ videoId, host }: { videoId: Id; host: Id }) {
               n={i + 1}
               current={entryVideoId(entry) === videoId}
               onOpen={() => open(entry)}
+              onReview={() => review(entry)}
               onTrim={() => openCutEntry(videoId, runtime.host.platform === 'web')}
               onDiscard={() => discard(entry)}
             />
@@ -322,6 +338,7 @@ function ShortCard({
   n,
   current,
   onOpen,
+  onReview,
   onTrim,
   onDiscard,
 }: {
@@ -329,12 +346,15 @@ function ShortCard({
   n: number;
   current: boolean;
   onOpen(): void;
+  /** Opens this short's review dialog (opening the short first when it is not the one being watched). */
+  onReview(): void;
   /** The “now watching” sub-video goes to the transcript to adjust its start and end (same as the sub-video banner's “Adjust in transcript”, shorts-entry.ts). */
   onTrim(): void;
   onDiscard(): void;
 }) {
   const runtime = useRuntime();
   const facts = useShortFacts(entry);
+  const id = entryVideoId(entry);
   const reason = facts.derivation?.reason ?? null;
   const notes = facts.derivation?.notes ?? [];
   const shots = framingShots(facts.derivation);
@@ -343,7 +363,6 @@ function ShortCard({
   const commit = () => {
     const name = draft?.trim() ?? '';
     setDraft(null);
-    const id = entryVideoId(entry);
     if (!id || !name || name === entry.name) return;
     renameShort(runtime, videoTargetOf(entry), id, name).catch(fail);
   };
@@ -377,6 +396,7 @@ function ShortCard({
             {S.watching}
           </Badge>
         ) : null}
+        {id ? <ReviewBadge videoId={id} onOpen={onReview} /> : null}
       </div>
       {span ? (
         <span className={cardSpan} style={tabular}>

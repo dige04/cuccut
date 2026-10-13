@@ -21,7 +21,7 @@ export const ptBR: SettingsNavMessages = {
     fonts: "Fontes",
     agent: "Provedores de agentes",
     skills: "Skills",
-    glossary: "Glossário",
+    glossary: "Glossário", review: 'Review',
     privacy: "Privacidade e permissões",
     diagnostics: "Diagnóstico",
     about: "Sobre",

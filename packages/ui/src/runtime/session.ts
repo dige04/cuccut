@@ -44,7 +44,7 @@ import { useGrants } from '../state/grants-store.ts';
 import { useJobs } from '../state/jobs-store.ts';
 import { libraryFeed } from '../state/library-feed.ts';
 import { useModels } from '../state/models-store.ts';
-import { useReview, wantsFull } from '../state/review-store.ts';
+import { unreadSummaries, useReview, wantsFull } from '../state/review-store.ts';
 import { useSettings } from '../state/settings-store.ts';
 import { useSpace } from '../state/space-store.ts';
 import { useTasks } from '../state/tasks-store.ts';
@@ -841,6 +841,17 @@ export class RuntimeSession {
     const { result } = await this.client.request('review.get', { videoId });
     useReview.getState().setFull(videoId, result);
     return result;
+  }
+
+  /**
+   * Asks for the stored results of videos the review store has no summary for (the shorts page's badges). Only the
+   * summaries are wanted: reading a result makes the Runtime publish its summary on the `review` topic, so nothing is
+   * held here. A video the Runtime does not have open cannot be read and keeps "Not checked".
+   */
+  async reviewPeek(videoIds: readonly Id[]): Promise<void> {
+    await Promise.all(
+      unreadSummaries(useReview.getState(), videoIds).map((videoId) => this.client.request('review.get', { videoId }).catch(() => null)),
+    );
   }
 
   /** Lets a finding stand with a reason: an ordinary, undoable edit of the video, queued with the editor's edits. */

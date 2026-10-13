@@ -21,7 +21,7 @@ export const ru: SettingsNavMessages = {
     fonts: "Шрифты",
     agent: "Поставщики агентов",
     skills: "Skills",
-    glossary: "Глоссарий",
+    glossary: "Глоссарий", review: 'Review',
     privacy: "Конфиденциальность и разрешения",
     diagnostics: "Диагностика",
     about: "О программе",

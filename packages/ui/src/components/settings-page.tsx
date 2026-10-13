@@ -19,6 +19,7 @@ import {
   Music,
   Puzzle,
   Server,
+  ShieldCheck,
   SlidersHorizontal,
   Split,
   Type,
@@ -30,6 +31,7 @@ import { Button as CcButton } from '../cc/ui/button.tsx';
 import { HELP_COPY, revealLabel } from '../copy.ts';
 import { shortenPath } from '../model/format.ts';
 import { bundleCategory, isBundleInstalled } from '../model/models-local.ts';
+import { standardStatus } from '../model/review-settings.ts';
 import {
   MODEL_CATEGORY_INFO,
   SETTINGS_GROUPS,
@@ -46,6 +48,7 @@ import { useGrants } from '../state/grants-store.ts';
 import { useHelp } from '../state/help-store.ts';
 import { useLibrary } from '../state/library-store.ts';
 import { useModels } from '../state/models-store.ts';
+import { useReview } from '../state/review-store.ts';
 import { useShell, type SettingsSection } from '../state/shell-store.ts';
 import { useSkills } from '../state/skills-store.ts';
 import { ModelSettings } from './models-page.tsx';
@@ -63,6 +66,8 @@ import { M as GENERAL } from './settings/general-settings-copy.ts';
 import { GLOSSARY_COPY } from './settings/glossary-copy.ts';
 import { GlossarySettings } from './settings/glossary-settings.tsx';
 import { ResourceCapacity } from './settings/resource-capacity.tsx';
+import { REVIEW_SETTINGS_COPY } from './settings/review-settings-copy.ts';
+import { ReviewSettings } from './settings/review-settings.tsx';
 import { KeyCombo, Panel, PanelHeading, RowList, SettingsGroup, SettingsRow } from './settings/settings-ui.tsx';
 import { W } from './settings/workspace-copy.ts';
 
@@ -74,6 +79,7 @@ const SECTION_ICON: Record<SettingsSection, LucideIcon> = {
   agent: Bot,
   skills: Puzzle,
   glossary: BookA,
+  review: ShieldCheck,
   privacy: Lock,
   diagnostics: Activity,
   about: Info,
@@ -153,6 +159,10 @@ export function SettingsPage({ section = 'general', model, platform }: {
         ) : section === 'glossary' ? (
           <Section title={labelOf('glossary')} blurb={GLOSSARY_COPY.list.lede}>
             <GlossarySettings />
+          </Section>
+        ) : section === 'review' ? (
+          <Section title={labelOf('review')} blurb={REVIEW_SETTINGS_COPY.intro}>
+            <ReviewSettings />
           </Section>
         ) : section === 'privacy' ? (
           <Section title={labelOf('privacy')} blurb={W.privacyBlurb}>
@@ -283,6 +293,7 @@ function useRailSummaries(web: boolean): RailSummaries {
   const connected = useConnection((s) => s.state.status === 'connected');
   const skills = useSkills((s) => (s.loaded ? s.skills.length : s.status === 'failed' ? -1 : null));
   const glossaries = useLibrary((s) => (s.ready ? s.glossaries.length : null));
+  const review = useReview((s) => standardStatus(s.criteria?.standard));
   const grants = useGrants((s) => (s.ready ? s.grants.filter((g) => g.state === 'active').length : null));
   const app = useAppUpdate((s) => s.snapshot?.current?.version ?? null);
   const installed = useModels(useShallow(installedCounts));
@@ -302,6 +313,8 @@ function useRailSummaries(web: boolean): RailSummaries {
     agent: agent ? agent.name : drivers === null || checking.length ? W.checking : W.noAgent,
     skills: skills === null ? W.checking : skills < 0 ? W.loadFailed : W.skillCount(skills),
     glossary: web ? W.desktopOnly : glossaries === null ? W.checking : W.glossaryCount(glossaries),
+    // The standard is changed only in the desktop app (`review.criteria.set` is not in the browser's allowlist).
+    review: web ? W.desktopOnly : (review ?? W.checking),
     // Grants and agent permissions are changed only in the desktop app (a browser has no `grants` topic).
     privacy: web ? W.desktopOnly : grants === null ? W.checking : W.grantCount(grants),
     diagnostics: connected ? W.runtimeOn : W.runtimeOff,

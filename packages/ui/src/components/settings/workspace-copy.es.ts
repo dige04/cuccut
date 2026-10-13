@@ -37,4 +37,7 @@ export const es: WorkspaceMessages = {
           ? '1 respuesta'
           : `${answers} respuestas`,
   ruleCount: (n, off) => (n === 0 ? 'Ninguna todavía' : `${n === 1 ? '1 regla' : `${n} reglas`}${off ? `, ${off} desactivadas` : ''}`),
+  packsBlurb:
+    'Una forma de hacer vídeos que viaja: plantillas, habilidades, elementos de biblioteca y una guía de estilo en una sola carpeta. Impórtala desde una carpeta, GitHub o una dirección web, o exporta la tuya para enviarla.',
+  packCount: (n: number) => (n === 0 ? 'Ninguno instalado' : n === 1 ? '1 pack' : `${n} packs`),
 };

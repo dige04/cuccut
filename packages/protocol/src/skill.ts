@@ -17,16 +17,21 @@ export const SKILL_SOURCE_FILE = '.cuccut-skill.json';
  * Where a skill comes from:
  * - `builtin`: shipped with the app; it can be turned off, but not removed;
  * - `personal`: added by the user from a local folder, or placed by them in `<Runtime Home>/skills/`;
- * - `third-party`: imported from GitHub.
+ * - `third-party`: imported from GitHub;
+ * - `pack`: installed by a pack (pack spec §6), after the person read its full `SKILL.md` in the preview.
  */
-export const SKILL_ORIGINS = ['builtin', 'personal', 'third-party'] as const;
+export const SKILL_ORIGINS = ['builtin', 'personal', 'third-party', 'pack'] as const;
 export type SkillOrigin = (typeof SKILL_ORIGINS)[number];
 
-/** The default switch state for each source: built-in and self-added skills default to on; third-party skills default to off (used only when picked). Only changes the user has made are stored, as a delta. */
+/**
+ * The default switch state for each source: built-in and self-added skills default to on; third-party skills default to off (used only when picked); pack skills default to on,
+ * because the person read the full `SKILL.md` before installing the pack. Only changes the user has made are stored, as a delta.
+ */
 export const SKILL_DEFAULT_ENABLED: Readonly<Record<SkillOrigin, boolean>> = {
   builtin: true,
   personal: true,
   'third-party': false,
+  pack: true,
 };
 
 /** Limits. Character counts are in UTF-16 code units. */
@@ -89,6 +94,14 @@ export type SkillSource =
       /** The subdirectory in the repository; an empty string for the repository root. */
       path: string;
       importedAt: string;
+    }
+  | {
+      /** Installed by a pack (pack spec §6): the pack's id, name and version at install. Removing the pack takes the skill with it unless it changed since. */
+      kind: 'pack';
+      packId: string;
+      packName: string;
+      packVersion: string;
+      installedAt: string;
     };
 
 /** One skill in a list. */

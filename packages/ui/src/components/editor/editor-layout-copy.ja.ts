@@ -27,6 +27,7 @@ export const ja: EditorLayoutMessages = {
   nothingPicked: 'まだ何も選ばれていません。クリップのプロパティはここに、よく使う操作は画面の下のバーに表示されます。',
   videoWhole: '動画全体の設定（キャンバス、背景、形式）は「動画の設定」にあります。',
   videoSettings: '動画の設定',
+  styleGuide: 'スタイルガイド…',
   videoMenu: '動画',
   shortcuts: 'キーボードショートカット',
   more: 'その他の操作',

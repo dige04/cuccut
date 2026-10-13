@@ -18,6 +18,7 @@ import { EXTERNAL_TOOL_PARAM_SCHEMAS } from './external-tools-schemas.ts';
 import { TEMPLATE_PARAM_SCHEMAS, templateSendRefSchema } from './template-schemas.ts';
 import { SKILL_PARAM_SCHEMAS, skillSendListSchema, skillSendRefSchema } from './skill-schemas.ts';
 import { PROFILE_PARAM_SCHEMAS } from './profile-schemas.ts';
+import { PACK_PARAM_SCHEMAS } from './pack-schemas.ts';
 import { FONT_PARAM_SCHEMAS } from './fonts-schemas.ts';
 import { REVIEW_PARAM_SCHEMAS } from './review-schemas.ts';
 import { COMPOSITION_PARAM_SCHEMAS } from './code-bundle-schemas.ts';
@@ -872,6 +873,22 @@ export const methodParamSchemas = {
   ...TEMPLATE_PARAM_SCHEMAS,
   ...SKILL_PARAM_SCHEMAS,
   ...PROFILE_PARAM_SCHEMAS,
+  // Packs (pack spec §8): the methods with handlers (`PackRpcMethodsHandled`).
+  'packs.list': PACK_PARAM_SCHEMAS['packs.list'],
+  'packs.get': PACK_PARAM_SCHEMAS['packs.get'],
+  'packs.inspect': PACK_PARAM_SCHEMAS['packs.inspect'],
+  'packs.install': PACK_PARAM_SCHEMAS['packs.install'],
+  'packs.remove': PACK_PARAM_SCHEMAS['packs.remove'],
+  'packs.restore': PACK_PARAM_SCHEMAS['packs.restore'],
+  'packs.active': PACK_PARAM_SCHEMAS['packs.active'],
+  'packs.choose': PACK_PARAM_SCHEMAS['packs.choose'],
+  'packs.setStyle': PACK_PARAM_SCHEMAS['packs.setStyle'],
+  'packs.export': PACK_PARAM_SCHEMAS['packs.export'],
+  'packs.openHandle': PACK_PARAM_SCHEMAS['packs.openHandle'],
+  'packs.addExample': PACK_PARAM_SCHEMAS['packs.addExample'],
+  'packs.updateExample': PACK_PARAM_SCHEMAS['packs.updateExample'],
+  'packs.removeExample': PACK_PARAM_SCHEMAS['packs.removeExample'],
+  'packs.restoreExample': PACK_PARAM_SCHEMAS['packs.restoreExample'],
   'media.resolve': mediaTarget,
   'media.playback': z
     .object({ url: z.string().min(1).max(8192), playable: z.array(z.enum(PLAYBACK_CODECS)).max(PLAYBACK_CODECS.length).optional() })
@@ -1387,6 +1404,14 @@ export {
 } from './template-schemas.ts';
 export { skillSendListSchema, skillSendRefSchema } from './skill-schemas.ts';
 export { interviewAnswersSchema, profileRuleInputSchema } from './profile-schemas.ts';
+// `packs.*` join `methodParamSchemas` together with their handlers (`PackRpcMethodsHandled`); the gateway answers the others `unknown-method`.
+export {
+  PACK_PARAM_SCHEMAS,
+  packManifestSchema,
+  parsePackManifest,
+  type PackManifestProblem,
+  type PackManifestResult,
+} from './pack-schemas.ts';
 export { aiToolParamsSchema } from './ai-tool-schemas.ts';
 export {
   reviewAnswersSchema,

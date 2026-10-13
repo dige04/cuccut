@@ -55,6 +55,8 @@ export const de: ServicesMcpMessages = {
     projects_list: "Projekte auflisten",
     skills_list: "Skills auflisten",
     skills_read: "Skill lesen",
+    packs_list: 'Packs auflisten',
+    packs_read: 'Ein Pack lesen',
     library_list: "Bibliothek auflisten",
     library_show: "Bibliothekseintrag anzeigen",
     download: "Über Link herunterladen",

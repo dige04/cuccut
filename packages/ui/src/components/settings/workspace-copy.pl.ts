@@ -39,4 +39,7 @@ export const pl: WorkspaceMessages = {
           ? '1 odpowiedź'
           : `${answers} odpowiedzi`,
   ruleCount: (n, off) => (n === 0 ? 'Brak' : `${n === 1 ? '1 reguła' : `${n} reguł`}${off ? `, wyłączone: ${off}` : ''}`),
+  packsBlurb:
+    'Sposób tworzenia wideo, który można przenosić: szablony, umiejętności, elementy biblioteki i przewodnik stylu w jednym folderze. Zaimportuj pakiet z folderu, GitHub lub adresu internetowego albo wyeksportuj własny, aby go wysłać.',
+  packCount: (n: number) => (n === 0 ? 'Nic nie zainstalowano' : n === 1 ? '1 pakiet' : `${n} pakietów`),
 };

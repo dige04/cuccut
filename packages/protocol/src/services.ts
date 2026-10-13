@@ -98,6 +98,8 @@ export const MCP_SERVICE_TOOL_NAMES: readonly McpServiceTool[] = [
   { name: 'projects_list', title: 'List projects', effect: 'query' },
   { name: 'skills_list', title: 'List skills', effect: 'query' },
   { name: 'skills_read', title: 'Read a skill', effect: 'query' },
+  { name: 'packs_list', title: 'List packs', effect: 'query' },
+  { name: 'packs_read', title: 'Read a pack', effect: 'query' },
   { name: 'library_list', title: 'List the user library', effect: 'query' },
   { name: 'library_show', title: 'Show a user library entry', effect: 'query' },
   { name: 'profile_show', title: "Show the user's profile", effect: 'query' },

@@ -375,7 +375,7 @@ export async function loadSkill(dir: string, scope: 'builtin' | 'user'): Promise
 
   let source: SkillSource | null = null;
   if (scope === 'user') source = await readSkillSource(dir);
-  const origin: SkillOrigin = scope === 'builtin' ? 'builtin' : source?.kind === 'github' ? 'third-party' : 'personal';
+  const origin: SkillOrigin = scope === 'builtin' ? 'builtin' : source?.kind === 'github' ? 'third-party' : source?.kind === 'pack' ? 'pack' : 'personal';
   const stat = await fsp.stat(path.join(dir, SKILL_FILE));
   return { id, ...parsed.meta, scope, origin, dir, source, files, updatedAt: stat.mtime.toISOString() };
 }
@@ -410,7 +410,7 @@ export async function readSkillFileMeta(
 }
 
 /** The source CucCut recorded. null when absent or unreadable (treated as placed by the user). */
-async function readSkillSource(dir: string): Promise<SkillSource | null> {
+export async function readSkillSource(dir: string): Promise<SkillSource | null> {
   try {
     const stat = await fsp.lstat(path.join(dir, SKILL_SOURCE_FILE));
     if (!stat.isFile() || stat.size > 16 * 1024) return null;
@@ -422,6 +422,10 @@ async function readSkillSource(dir: string): Promise<SkillSource | null> {
       const sub = typeof raw.path === 'string' ? raw.path : '';
       if (url && owner && repo && ref && commit && importedAt)
         return { kind: 'github', url, owner, repo, ref, commit, path: sub, importedAt };
+    }
+    if (raw.kind === 'pack') {
+      const [packId, packName, packVersion, installedAt] = ['packId', 'packName', 'packVersion', 'installedAt'].map(s);
+      if (packId && packName && packVersion && installedAt) return { kind: 'pack', packId, packName, packVersion, installedAt };
     }
   } catch {
     // No source record, or it is corrupted: treat it as placed by the user.

@@ -54,6 +54,8 @@ export const zhHans: ServicesMcpMessages = {
     projects_list: '列出项目',
     skills_list: '列出 skill',
     skills_read: '读取 skill',
+    packs_list: '列出包',
+    packs_read: '读取一个包',
     library_list: '列出用户库',
     library_show: '查看用户库条目',
     download: '从链接下载',

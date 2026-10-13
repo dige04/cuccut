@@ -37,4 +37,7 @@ export const vi: WorkspaceMessages = {
           ? '1 câu trả lời'
           : `${answers} câu trả lời`,
   ruleCount: (n, off) => (n === 0 ? 'Chưa có' : `${n === 1 ? '1 quy tắc' : `${n} quy tắc`}${off ? `, ${off} đang tắt` : ''}`),
+  packsBlurb:
+    'Một cách làm video có thể mang đi: mẫu, kỹ năng, mục thư viện và hướng dẫn phong cách gom trong một thư mục. Nhập một gói từ thư mục, GitHub hoặc địa chỉ web, hoặc xuất gói của bạn để gửi.',
+  packCount: (n: number) => (n === 0 ? 'Chưa cài gói nào' : n === 1 ? '1 gói' : `${n} gói`),
 };

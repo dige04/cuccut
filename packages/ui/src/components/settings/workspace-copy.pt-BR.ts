@@ -37,4 +37,7 @@ export const ptBR: WorkspaceMessages = {
           ? '1 resposta'
           : `${answers} respostas`,
   ruleCount: (n, off) => (n === 0 ? 'Nenhuma ainda' : `${n === 1 ? '1 regra' : `${n} regras`}${off ? `, ${off} desligadas` : ''}`),
+  packsBlurb:
+    'Um jeito de fazer vídeos que viaja: modelos, habilidades, itens da biblioteca e um guia de estilo em uma pasta. Importe um de uma pasta, do GitHub ou de um endereço web, ou exporte o seu para enviar.',
+  packCount: (n: number) => (n === 0 ? 'Nenhum instalado' : n === 1 ? '1 pacote' : `${n} pacotes`),
 };

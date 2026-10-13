@@ -1,4 +1,4 @@
-import { live } from '@cuccut/protocol';
+import { isPackId, live, PACK_RESERVED_IDS, SKILL_ID_PATTERN, SKILL_LIMITS } from '@cuccut/protocol';
 import { M } from './settings-nav-copy.ts';
 
 /**
@@ -6,7 +6,7 @@ import { M } from './settings-nav-copy.ts';
  * The preferences group opens with the user's profile (docs/cuccut/m2-profile-rules.md §2.1–2.2): You and Rules.
  */
 
-export const SETTINGS_SECTIONS = ['you', 'rules', 'general', 'shortcuts', 'fonts', 'agent', 'skills', 'glossary', 'review', 'privacy', 'diagnostics', 'about'] as const;
+export const SETTINGS_SECTIONS = ['you', 'rules', 'general', 'shortcuts', 'fonts', 'agent', 'skills', 'packs', 'glossary', 'review', 'privacy', 'diagnostics', 'about'] as const;
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 
 export const MODEL_CATEGORIES = ['asr', 'tts', 'llm', 'image', 'music', 'sep', 'vision'] as const;
@@ -74,7 +74,7 @@ const group = (id: SettingsGroupId, keys: readonly SettingsSection[]) => ({
 });
 export const SETTINGS_GROUPS: readonly { id: SettingsGroupId; label: string; keys: readonly SettingsSection[] }[] = [
   group('preferences', ['you', 'rules', 'general', 'shortcuts', 'fonts']),
-  group('agents', ['agent', 'skills']),
+  group('agents', ['agent', 'skills', 'packs']),
   group('app', ['glossary', 'review', 'privacy', 'diagnostics', 'about']),
 ];
 
@@ -93,6 +93,18 @@ export function modelCategory(key: ModelCategory): ModelCategoryInfo {
 export function modelPageFor(category: ModelCategory, page?: ModelPage | null, last?: ModelPage | null): ModelPage {
   const { pages } = modelCategory(category);
   return [page, last].find((p): p is ModelPage => !!p && pages.includes(p)) ?? pages[0]!;
+}
+
+/**
+ * The page inside a section, for the sections that have pages (`/settings/<section>/<sub>`, pack design §2.1): Packs takes
+ * `import`, `export` or a pack id; Skills takes a skill id, whose details it opens (the pack page links there). Anything
+ * else, and every other section, has none (undefined).
+ */
+export function settingsSub(section: SettingsSection, sub: string | undefined): string | undefined {
+  if (!sub) return undefined;
+  if (section === 'packs') return (PACK_RESERVED_IDS as readonly string[]).includes(sub) || isPackId(sub) ? sub : undefined;
+  if (section === 'skills') return sub.length <= SKILL_LIMITS.id && SKILL_ID_PATTERN.test(sub) ? sub : undefined;
+  return undefined;
 }
 
 export function isSettingsSection(value: string | undefined): value is SettingsSection {

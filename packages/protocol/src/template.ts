@@ -6,6 +6,7 @@
 
 import { DEFAULT_LOCALE, LOCALES, localeOfTag, type Locale } from './i18n.ts';
 import { ProtocolValidation as V } from './messages/protocol/protocol-validation.ts';
+import type { PackRef } from './pack.ts';
 
 /** Manifest format version (the `schema` field). A version not recognized causes the whole file to be skipped (spec §2.3). */
 export const TEMPLATE_SCHEMA_VERSION = 1;
@@ -429,6 +430,8 @@ export interface TemplateSummary {
   languages: string[];
   /** Whether it has a cover image and a preview video, and how many material items it has. The files are all obtained through `templates.openHandle`. */
   files: { cover: boolean; preview: boolean; assets: number };
+  /** The installed pack this template came from (pack spec §6), for the label "From the pack X"; null for built-in templates and the user's own. */
+  pack: PackRef | null;
 }
 
 export interface TemplateListResult {
@@ -462,4 +465,6 @@ export interface TemplateMessageRef {
   title: string;
   kind: TemplateKind;
   origin: TemplateOrigin;
+  /** The pack that owns this template (pack spec §7): its style guide applies to the conversation. Absent when no installed pack owns it. */
+  packId?: string;
 }

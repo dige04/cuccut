@@ -25,6 +25,7 @@ import { useTimelineItems, useTimelineLoaded } from '../state/timeline-store.ts'
 import { useSetting } from '../state/settings-store.ts';
 import { useShell } from '../state/shell-store.ts';
 import { Composer } from './composer.tsx';
+import { PackQuickActions } from './pack-quick-actions.tsx';
 import { QueuedMessages } from './queued-messages.tsx';
 import { useEditorReference } from './use-editor-reference.ts';
 import { InterviewCard } from './thread/interview-card.tsx';
@@ -124,6 +125,30 @@ export function ConversationView({
   };
   const reportQueueFailure = (message: string) => ToastQueue.negative(QUEUE_COPY.failed(message), { timeout: 5000 });
 
+  /** A pack's quick action (pack design §2.6): sent like a typed message, queued behind a running task or earlier queued messages. */
+  const sendQuick = async (text: string): Promise<boolean> => {
+    if (busy || useShell.getState().queues[conversationId]?.length) {
+      await enqueue(text, [], [], [], [], []);
+      if (!busy)
+        void drainQueue(runtime, conversationId).then((result) => {
+          if (result.status === 'failed') reportQueueFailure(result.error);
+        });
+      return true;
+    }
+    try {
+      await runtime.send(conversationId, text, await editor.capture());
+      editor.reset();
+      return true;
+    } catch (error) {
+      if (error instanceof RpcError && error.code === 'busy') {
+        await enqueue(text, [], [], [], [], []);
+        return true;
+      }
+      ToastQueue.negative(sendFailureMessage(error), { timeout: 5000 });
+      return false;
+    }
+  };
+
   const sendNow = async (messageId: Id) => {
     setSendingNow(messageId);
     // A message with a skill does not interrupt (the protocol's steer does not accept skills); it stays queued until this turn ends. The hint gives this reason, not that the Agent does not support interrupting.
@@ -207,6 +232,13 @@ export function ConversationView({
         }}
         mentionScope={{ projectId: meta.projectId, conversationId }}
         queue={<QueuedMessages conversationId={conversationId} sending={sendingNow} onSendNow={(id) => void sendNow(id)} />}
+        offers={
+          <PackQuickActions
+            draftKey={conversationId}
+            scope={{ conversationId: meta.folderOf ?? conversationId, projectId: meta.projectId ?? null }}
+            onSend={sendQuick}
+          />
+        }
         beforeSend={async () => {
           // When carrying slides, design drafts or design-system annotations, first let the open editor save its changes (docs/design/slides §8.2, docs/design/canvas §8.2, §10.6):
           // the agent reads the version the user sees. While waiting, the text stays in the input box; if the save did not succeed, do not send, and say which ones (product design §3.2.4); input and annotations are kept.

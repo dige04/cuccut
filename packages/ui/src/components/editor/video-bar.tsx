@@ -24,6 +24,7 @@ import {
   TooltipTrigger,
 } from "@react-spectrum/s2";
 import Asset from "@react-spectrum/s2/icons/Asset";
+import Brush from "@react-spectrum/s2/icons/Brush";
 import Close from "@react-spectrum/s2/icons/Close";
 import History from "@react-spectrum/s2/icons/History";
 import InfoCircle from "@react-spectrum/s2/icons/InfoCircle";
@@ -57,6 +58,7 @@ import { openVideoSettings } from "./video-settings.tsx";
 import { openReview } from "../review/review-dialog.tsx";
 import { ShieldCheckIcon } from "../review/review-icon.tsx";
 import { REVIEW_COPY } from "../review/review-copy.ts";
+import { StyleChoiceDialog } from "./style-choice-dialog.tsx";
 import { EditorVideoInfo } from "./video-info.tsx";
 import { EDITOR_COPY as E } from "./editor-copy.ts";
 import { EDITOR_LAYOUT_COPY as L } from "./editor-layout-copy.ts";
@@ -129,6 +131,7 @@ export function VideoBar({
   const slotted = useSessionSlotFilled("header-actions");
   const [renaming, setRenaming] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
+  const [choosingStyle, setChoosingStyle] = useState(false);
   const name = video.state?.video.name ?? video.ref?.name ?? VB.untitled;
   const editable = canEdit(video);
 
@@ -162,6 +165,7 @@ export function VideoBar({
       editable={editable}
       onRename={() => setRenaming(true)}
       onInfo={() => setShowInfo(true)}
+      onStyle={() => setChoosingStyle(true)}
       closeLabel={closeLabel}
     />
   );
@@ -213,6 +217,12 @@ export function VideoBar({
           }}
         />
       ) : null}
+      {choosingStyle && video.ref ? (
+        <StyleChoiceDialog
+          source={video.ref.source}
+          onClose={() => setChoosingStyle(false)}
+        />
+      ) : null}
       {showInfo ? (
         <EditorVideoInfo
           video={video}
@@ -260,6 +270,7 @@ function HeaderActions({
   editable,
   onRename,
   onInfo,
+  onStyle,
   closeLabel,
 }: {
   video: OpenVideo;
@@ -267,6 +278,7 @@ function HeaderActions({
   editable: boolean;
   onRename(): void;
   onInfo(): void;
+  onStyle(): void;
   closeLabel: string;
 }) {
   const runtime = useRuntime();
@@ -280,6 +292,7 @@ function HeaderActions({
     else if (key === "rename") onRename();
     else if (key === "details") onInfo();
     else if (key === "review" && video.videoId) openReview(video.videoId);
+    else if (key === "style") onStyle();
     else if (key === "shortcuts") useEditor.getState().setShortcutsOpen(true);
   };
   const onMore = (key: string, ref: VideoRef | null) => {
@@ -305,13 +318,14 @@ function HeaderActions({
           <Settings />
           <Text>{L.videoMenu}</Text>
         </ActionButton>
-        {/* Settings and the review need the video's sequence and renaming an editable video; shortcuts and details are always there. */}
+        {/* Settings and the review need the video's sequence and renaming an editable video; the style guide needs to know where the video lives; shortcuts and details are always there. */}
         <Menu
           aria-label={L.videoMenu}
           onAction={(key) => onVideoMenu(String(key))}
           disabledKeys={[
             ...(sequence ? [] : ["settings", "review"]),
             ...(editable ? [] : ["rename"]),
+            ...(video.ref ? [] : ["style"]),
           ]}
         >
           <MenuSection>
@@ -330,6 +344,10 @@ function HeaderActions({
             <MenuItem id="review" textValue={REVIEW_COPY.menuItem}>
               <ShieldCheckIcon />
               <Text slot="label">{REVIEW_COPY.menuItem}</Text>
+            </MenuItem>
+            <MenuItem id="style" textValue={L.styleGuide}>
+              <Brush />
+              <Text slot="label">{L.styleGuide}</Text>
             </MenuItem>
           </MenuSection>
           <MenuSection>

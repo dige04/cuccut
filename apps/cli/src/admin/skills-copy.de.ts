@@ -21,7 +21,7 @@ export const de: SkillsMessages = {
   takesEffectNextSession: "Wirksam ab der nächsten neuen Agent-Sitzung; laufende Sitzungen sind nicht betroffen",
   removed: (id: string, path: string) => `Gelöscht: ${id} (${path})`,
   localSource: (path: string, addedAt: string) => `lokaler Ordner ${path} (${addedAt})`,
-  remoteSource: (url: string, ref: string, commit: string, importedAt: string) => `${url} (${ref}@${commit}, ${importedAt})`,
+  packSource: (name, version, installedAt) => `Aus dem Pack ${name} v${version} (${installedAt})`, remoteSource: (url: string, ref: string, commit: string, importedAt: string) => `${url} (${ref}@${commit}, ${importedAt})`,
   changed: (verb: string, id: string, name: string, enabled: boolean, path: string, source: string | null) =>
     `${verb} ${id} (${name}, ${enabled ? "ein" : "aus"}) → ${path}${source ? `\nQuelle: ${source}` : ""}`,
   idFormat: (flag: string, value: string) => `${flag} erwartet eine Skill-ID (Kleinbuchstaben mit Bindestrichen, siehe cuccut skills): ${value}`,

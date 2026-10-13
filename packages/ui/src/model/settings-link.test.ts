@@ -14,6 +14,19 @@ describe('回复里的设置链接', () => {
     expect(settingsLink('/settings/agent/')?.route).toEqual({ tab: 'settings', section: 'agent' });
   });
 
+  it('packs pages: the list, import, export and a pack', () => {
+    expect(settingsLink('/settings/packs')?.route).toEqual({ tab: 'settings', section: 'packs' });
+    expect(settingsLink('/settings/packs/import')?.route).toEqual({ tab: 'settings', section: 'packs', sub: 'import' });
+    expect(settingsLink('/settings/packs/export')?.route).toEqual({ tab: 'settings', section: 'packs', sub: 'export' });
+    expect(settingsLink('/settings/packs/news-desk')?.route).toEqual({ tab: 'settings', section: 'packs', sub: 'news-desk' });
+    expect(settingsLink('/settings/packs/news-desk')?.trail.endsWith(' › news-desk')).toBe(true);
+    expect(settingsLink('/settings/packs/-bad')).toBeNull();
+    expect(settingsLink('/settings/packs/news-desk/extra')).toBeNull();
+    // A skill's details have a link of their own too (the pack page uses it).
+    expect(settingsLink('/settings/skills/news-desk')?.route).toEqual({ tab: 'settings', section: 'skills', sub: 'news-desk' });
+    expect(settingsLink('/settings/skills/Not_an_id')).toBeNull();
+  });
+
   it.each(['/settings', '/settings/model', '/settings/models', '/settings/models/asr/voices',
     '/settings/models/sep/cloud', '/settings/models/llm/local', '/settings/agent/skills', '/settings/general/extra',
     '/settings/models/asr/cloud/extra', '/settings/models/asr?tab=cloud', 'https://example.com/settings/agent', '//example.com/settings/agent',

@@ -46,6 +46,7 @@ function summary(id: string): TemplateSummary {
     origin: 'builtin',
     languages: ['zh-CN'],
     files: { cover: false, preview: false, assets: 0 },
+    pack: null,
   };
 }
 

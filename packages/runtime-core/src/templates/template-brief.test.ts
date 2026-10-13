@@ -117,6 +117,27 @@ describe('发送时解析场景模板', () => {
     expect(original.ref.title).toBe('发布短片');
   });
 
+  it('a user template from an installed pack: the marker names the pack and the block points at its style guide', async () => {
+    const userDir = path.join(root, 'user');
+    await fs.mkdir(path.join(userDir, 'launch-pack'), { recursive: true });
+    await fs.writeFile(path.join(userDir, 'launch-pack', 'template.json'), JSON.stringify({ ...scene, id: 'launch-pack', assets: [] }));
+    await fs.writeFile(path.join(userDir, 'launch-pack', 'prompt.md'), 'Body.\n');
+    const withPacks = new TemplateCatalog({
+      builtinDir: root,
+      userDir,
+      packOwner: async () => (kind, id) => (kind === 'template' && (id === 'launch-pack' || id === 'launch-scene') ? { id: 'news-desk', name: 'News desk' } : null),
+    });
+    const resolved = await resolveSceneTemplate(withPacks, { id: 'launch-pack' });
+    expect(resolved.ref).toMatchObject({ id: 'launch-pack', origin: 'user', packId: 'news-desk' });
+    expect(resolved.instructions).toContain(
+      'The user chose the scene template "发布短片".\nThis template comes from the pack "News desk"; its style guide applies (packs_read id=news-desk).',
+    );
+    // A built-in template never belongs to a pack.
+    const builtin = await resolveSceneTemplate(withPacks, { id: 'launch-scene' });
+    expect(builtin.ref.packId).toBeUndefined();
+    expect(builtin.instructions).not.toContain('comes from the pack');
+  });
+
   it('模板没给 skills 时不列做法', async () => {
     const { skills: _s, ...noSkills } = scene;
     await fs.writeFile(path.join(root, scene.id, 'template.json'), JSON.stringify(noSkills));

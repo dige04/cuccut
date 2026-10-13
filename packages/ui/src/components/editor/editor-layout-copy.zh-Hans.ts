@@ -27,6 +27,7 @@ export const zhHans: EditorLayoutMessages = {
   nothingPicked: '还没有选中任何内容。片段的属性会显示在这里，常用操作在画面下方的工具条上。',
   videoWhole: '整部视频的设置——画布、背景、格式——在「视频设置」里。',
   videoSettings: '视频设置',
+  styleGuide: '风格指南…',
   videoMenu: '视频',
   shortcuts: '键盘快捷键',
   more: '更多操作',

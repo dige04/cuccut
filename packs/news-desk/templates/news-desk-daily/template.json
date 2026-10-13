@@ -1,0 +1,49 @@
+{
+  "schema": 1,
+  "id": "news-desk-daily",
+  "version": "1.0.0",
+  "kind": "scene",
+  "title": "News desk daily",
+  "summary": "Tighten one take on one story into a short news video.",
+  "description": "Start from a recording of yourself telling one story. The agent cuts the stalls and retakes, keeps the facts in order, puts each source on screen as a lower third and captions every word.",
+  "language": "en",
+  "category": "news-data",
+  "ratio": "9:16",
+  "durationSeconds": 60,
+  "brief": "This is my take on {{story}}. Tighten it into a short news video for {{audience}}. The sources I used: {{sources}}.",
+  "fields": [
+    {
+      "label": "story",
+      "hint": "The one story the take is about",
+      "example": "the new city budget"
+    },
+    {
+      "label": "audience",
+      "hint": "Who watches it and where",
+      "example": "people following the city council"
+    },
+    {
+      "label": "sources",
+      "hint": "Where the facts came from; write \"none\" if you didn't use any",
+      "example": "the council's press release and the budget document"
+    }
+  ],
+  "skills": ["video-production", "subtitle-workflow", "news-desk-headlines"],
+  "author": "CucCut",
+  "source": "community",
+  "license": "CC-BY-4.0",
+  "tags": ["news", "take", "sources"],
+  "cover": {
+    "tone": "magenta",
+    "figure": "bars",
+    "kicker": "NEWS"
+  },
+  "preview": {
+    "beats": [
+      "What happened, in one line",
+      "The facts in order",
+      "Each source on screen",
+      "End on the last fact"
+    ]
+  }
+}

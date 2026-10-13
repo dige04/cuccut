@@ -21,6 +21,7 @@ import { useSetting } from '../../state/settings-store.ts';
 import { routeVideo, useShell } from '../../state/shell-store.ts';
 import { useVideo } from '../../state/video-store.ts';
 import { Composer } from '../composer.tsx';
+import { PackQuickActions } from '../pack-quick-actions.tsx';
 import { useEditorReference } from '../use-editor-reference.ts';
 import { AgentGateLine } from './agent-gate-line.tsx';
 import { QUICK_CHAT_COPY as COPY } from './quick-chat-copy.ts';
@@ -243,6 +244,17 @@ export function VideoQuickChat() {
           autoFocus={opened}
           reference={editor.reference}
           mentionScope={{ projectId, conversationId: null }}
+          offers={
+            <PackQuickActions
+              draftKey={draftKey}
+              scope={{ conversationId: owner, projectId }}
+              onSend={async (text) => {
+                // A pack's quick action starts the session the same way a typed first message does (pack design §2.6).
+                if (!source || !key) return false;
+                return startConversation(text, [], [], key);
+              }}
+            />
+          }
           onSend={async (text, attachments, skills) => {
             // If the video is not loaded yet (so its project is unknown), do not send. The text stays in the input.
             if (!source || !key) return false;

@@ -1,0 +1,30 @@
+{
+  "format": "cuccut.pack",
+  "schema": 1,
+  "id": "news-desk",
+  "name": "News desk",
+  "version": "1.0.0",
+  "description": "One take on one story, tightened into a short news video: a hook in the first line, the facts in order, sources on screen, and a red lower third.",
+  "author": "CucCut",
+  "license": "CC-BY-4.0",
+  "templates": ["news-desk-daily"],
+  "skills": ["news-desk-headlines"],
+  "library": [
+    { "file": "library/news-desk-terms.md", "name": "News desk terms" },
+    { "file": "library/news-desk-red.json", "name": "News desk red" }
+  ],
+  "style": "STYLE.md",
+  "examples": [
+    {
+      "file": "examples/lower-third.png",
+      "kind": "image",
+      "title": "Lower third",
+      "note": "The source sits in a red bar at the bottom left, in capitals, for the whole quote; nothing else shares the bar."
+    }
+  ],
+  "quickActions": [
+    { "label": "Tighten the take", "text": "Tighten {selection}: cut the stalls, retakes and filler words, and keep every fact and its source." },
+    { "label": "Add sources", "text": "Put the source of each fact in {selection} on screen as a red lower third while that fact is said." },
+    { "label": "Headline options", "text": "Write five headline options for {selection} in the news desk style, then use the one I pick as the opening title." }
+  ]
+}

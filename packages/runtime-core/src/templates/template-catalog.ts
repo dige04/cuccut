@@ -18,6 +18,7 @@ import {
   templateTranslationFile,
   templateTranslationFiles,
   type Locale,
+  type PackRef,
   type TemplateDetail,
   type TemplateDiagnostic,
   type TemplateListResult,
@@ -88,7 +89,17 @@ export interface TemplateCatalogOptions {
   builtinDir: string | null;
   /** User template directory `<CUCCUT_HOME>/templates`. If it does not exist it is treated as empty, and it is not created on the user's behalf. */
   userDir: string;
+  /**
+   * Which installed pack a user template came from (pack spec §6), backed by the pack registry. Read once per `list` / `get`, so a list reads the pack records once.
+   * Absent: no template has a pack.
+   */
+  packOwner?: () => Promise<PackOwnerLookup>;
 }
+
+/** A pack registry snapshot as a lookup: the pack a template or skill id came from, or null. */
+export type PackOwnerLookup = (kind: 'template' | 'skill', id: string) => PackRef | null;
+
+const NO_PACKS: PackOwnerLookup = () => null;
 
 /**
  * Finds the built-in template directory. Checks the `CUCCUT_TEMPLATES_DIR` environment variable. In a packaged app it is `<resources>/templates`. In development, it walks up from this module to find a directory that has both a `package.json` and a `templates/` (the repository root). `null` if none.
@@ -160,7 +171,17 @@ export class TemplateCatalog {
   /** Directory. Each template is replaced with the language version picked by `language` (default: the Runtime's UI language). */
   async list(language?: string | null): Promise<TemplateListResult> {
     const { templates, diagnostics } = await this.scan();
-    return { templates: templates.map((t) => summaryOf(t, language)), diagnostics };
+    const owner = await this.#packOwner();
+    return { templates: templates.map((t) => summaryOf(t, language, packOfTemplate(t, owner))), diagnostics };
+  }
+
+  /** The installed pack a template came from (pack spec §6); null for built-in templates (built-in wins on an id clash) and the user's own. */
+  async packOf(id: string, origin: TemplateOrigin): Promise<PackRef | null> {
+    return origin === 'user' ? (await this.#packOwner())('template', id) : null;
+  }
+
+  async #packOwner(): Promise<PackOwnerLookup> {
+    return this.#options.packOwner ? this.#options.packOwner() : NO_PACKS;
   }
 
   /** Gets an available template by id. `not-found` if there is none (or it could not be loaded). */
@@ -172,7 +193,7 @@ export class TemplateCatalog {
 
   async get(id: string, language?: string | null): Promise<TemplateDetail> {
     const template = await this.require(id);
-    return { template: summaryOf(template, language), prompt: localizeTemplate(template, language).prompt };
+    return { template: summaryOf(template, language, await this.packOf(template.manifest.id, template.origin)), prompt: localizeTemplate(template, language).prompt };
   }
 
   /**
@@ -193,7 +214,7 @@ export class TemplateCatalog {
 
 const EMPTY_SCAN: TemplateScan = { templates: [], diagnostics: [] };
 
-export function summaryOf(template: LoadedTemplate, language?: string | null): TemplateSummary {
+export function summaryOf(template: LoadedTemplate, language?: string | null, pack: PackRef | null = null): TemplateSummary {
   const { manifest, origin } = template;
   const localized = localizeTemplate(template, language);
   return {
@@ -201,7 +222,12 @@ export function summaryOf(template: LoadedTemplate, language?: string | null): T
     origin,
     languages: localized.languages,
     files: { cover: manifest.cover.file != null, preview: manifest.preview.file != null, assets: manifest.assets?.length ?? 0 },
+    pack,
   };
+}
+
+function packOfTemplate(template: Pick<LoadedTemplate, 'manifest' | 'origin'>, owner: PackOwnerLookup): PackRef | null {
+  return template.origin === 'user' ? owner('template', template.manifest.id) : null;
 }
 
 /** Accompanying files registered in the manifest (excluding the manifest and `prompt.md`). */

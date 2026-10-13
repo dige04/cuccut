@@ -27,6 +27,7 @@ export const zhHant: EditorLayoutMessages = {
   nothingPicked: '尚未選取任何內容。片段的屬性會顯示在這裡，常用操作在畫面下方的工具列上。',
   videoWhole: '整部影片的設定——畫布、背景、格式——在「影片設定」裡。',
   videoSettings: '影片設定',
+  styleGuide: '風格指南…',
   videoMenu: '影片',
   shortcuts: '鍵盤快速鍵',
   more: '更多動作',

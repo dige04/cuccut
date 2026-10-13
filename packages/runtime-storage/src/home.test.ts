@@ -32,3 +32,13 @@ describe('无项目会话的工作目录（架构设计 §3.10）', () => {
     expect(defaultSessionsDir({ XDG_DATA_HOME: '/data' }, 'linux', '/home/me')).toBe('/data/CucCut/Sessions');
   });
 });
+
+describe('pack paths (pack spec §6)', () => {
+  it('keeps templates where they were and puts packs and choices beside them', () => {
+    const home = resolveRuntimeHome({ CUCCUT_HOME: path.join(user, 'home') }, 'darwin', user);
+    expect(home.templatesDir).toBe(path.join(user, 'home', 'templates'));
+    expect(home.packsDir).toBe(path.join(user, 'home', 'packs'));
+    expect(home.packChoicesFile).toBe(path.join(user, 'home', 'store', 'pack-choices.json'));
+    expect(home.skillsDir).toBe(path.join(user, 'home', 'skills'));
+  });
+});

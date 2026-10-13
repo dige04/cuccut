@@ -107,6 +107,20 @@ describe('skill 目录', () => {
     expect(diagnostics.find((d) => d.dir === 'no-description')!.issues[0]).toMatch(/description/);
   });
 
+  it('a skill a pack installed has the origin pack, on by default, and keeps its pack in the source', async () => {
+    const fromPack = await writeSkill(user, 'news-desk-headlines');
+    const source = { kind: 'pack', packId: 'news-desk', packName: 'News desk', packVersion: '1.0.0', installedAt: '2026-10-13T08:00:00.000Z' };
+    await fs.writeFile(path.join(fromPack, SKILL_SOURCE_FILE), JSON.stringify({ schemaVersion: 1, ...source }));
+    const broken = await writeSkill(user, 'half-pack');
+    await fs.writeFile(path.join(broken, SKILL_SOURCE_FILE), JSON.stringify({ kind: 'pack', packId: 'news-desk' }));
+    const { skills } = await catalog.list();
+    expect(skills.map((s) => [s.id, s.origin, s.enabled, s.defaultEnabled, s.removable])).toEqual([
+      ['half-pack', 'personal', true, true, true],
+      ['news-desk-headlines', 'pack', true, true, true],
+    ]);
+    expect(skills[1]!.source).toEqual(source);
+  });
+
   it('同一来源里规范化后 id 相同的两个都跳过', async () => {
     await writeSkill(user, 'Foo Bar');
     await writeSkill(user, 'foo_bar');

@@ -37,4 +37,7 @@ export const de: WorkspaceMessages = {
           ? '1 Antwort'
           : `${answers} Antworten`,
   ruleCount: (n, off) => (n === 0 ? 'Noch keine' : `${n === 1 ? '1 Regel' : `${n} Regeln`}${off ? `, ${off} aus` : ''}`),
+  packsBlurb:
+    'Eine Art, Videos zu machen, die sich weitergeben lässt: Vorlagen, Skills, Bibliothekseinträge und ein Stilleitfaden in einem Ordner. Importiere eins aus einem Ordner, von GitHub oder einer Webadresse, oder exportiere deins zum Versenden.',
+  packCount: (n: number) => (n === 0 ? 'Keins installiert' : n === 1 ? '1 Pack' : `${n} Packs`),
 };

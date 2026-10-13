@@ -39,6 +39,12 @@ import path from 'node:path';
  *   cache/content-index/index.db content index for cross-video search: SQLite + FTS5 (architecture design §5.11). If deleted, it is re-read. Not deleted while running
  *   cache/cuccut-composition-host/ scripts for the code-picture host
  *   library/<glossaries|voices|brand>/<id>/ user library entries (architecture design §5.9): the entry header, each version's content, and files named by digest
+ *   templates/<id>/       the user's own templates and those installed from packs (template spec §6)
+ *   skills/<id>/          skills added, imported or installed from packs (architecture design §3.8)
+ *   packs/<id>/           installed packs (pack spec §6): the record `.cuccut-pack.json`, pack.json, the style guide, references and reserved files
+ *   packs/.staging/<token>/ packs being previewed or installed; previews expire after 30 minutes
+ *   packs/.trash/<trashId>/ removed packs kept 24 hours for Undo, purged at startup
+ *   store/pack-choices.json each project's style guide choice (pack spec §7)
  *   logs/runtime.log
  * ```
  *
@@ -102,6 +108,12 @@ export interface RuntimeHome {
   modelsDir: string;
   /** The user library (architecture design §5.9). It is not a Space source directory. */
   libraryDir: string;
+  /** The user's own templates and those installed from packs, one directory each (template spec §6). */
+  templatesDir: string;
+  /** Installed packs, one directory each, plus `.staging/` and `.trash/` (pack spec §6). */
+  packsDir: string;
+  /** Each project's style guide choice (pack spec §7). */
+  packChoicesFile: string;
 }
 
 export function resolveRuntimeHome(
@@ -158,6 +170,9 @@ export function resolveRuntimeHome(
     artifactsDir: path.join(root, 'artifacts'),
     modelsDir: env.CUCCUT_MODELS_DIR ? path.resolve(env.CUCCUT_MODELS_DIR) : path.join(root, 'models'),
     libraryDir: path.join(root, 'library'),
+    templatesDir: path.join(root, 'templates'),
+    packsDir: path.join(root, 'packs'),
+    packChoicesFile: path.join(root, 'store', 'pack-choices.json'),
   };
 }
 

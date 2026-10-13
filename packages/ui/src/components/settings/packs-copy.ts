@@ -1,0 +1,348 @@
+import { defineMessages, type PackStyleReason } from '@cuccut/protocol';
+import { zhHans } from './packs-copy.zh-Hans.ts';
+import { zhHant } from './packs-copy.zh-Hant.ts';
+import { ja } from './packs-copy.ja.ts';
+import { ko } from './packs-copy.ko.ts';
+import { es } from './packs-copy.es.ts';
+import { fr } from './packs-copy.fr.ts';
+import { de } from './packs-copy.de.ts';
+import { nl } from './packs-copy.nl.ts';
+import { ptBR } from './packs-copy.pt-BR.ts';
+import { it } from './packs-copy.it.ts';
+import { ru } from './packs-copy.ru.ts';
+import { pl } from './packs-copy.pl.ts';
+import { tr } from './packs-copy.tr.ts';
+import { vi } from './packs-copy.vi.ts';
+
+/**
+ * Copy for Settings › Packs and the pack hooks elsewhere (pack design §2): the list, the item states of the pack page, the
+ * style guide's reasons, quick actions, and one sentence per `details.code`. English is the source of keys and types;
+ * translations are in `packs-copy.<language>.ts`.
+ */
+const en = {
+  list: {
+    /** For screen readers while the skeleton rows show. */
+    loading: 'Loading your packs',
+    loadFailed: (raw: string) => `Couldn’t load the packs: ${raw}`,
+    retry: 'Try again',
+    disconnected: 'The Runtime isn’t connected, so the installed packs can’t be listed.',
+    emptyTitle: 'No packs installed',
+    emptyBody:
+      'A pack is how a way of making videos moves to another computer, or how somebody else’s reaches yours. Import one to try it; export yours once your templates and skills are worth sharing.',
+    webNote: 'Packs are installed and removed in the desktop app, or on the command line with cuccut packs.',
+    /** `v1.0.0 · author` under a pack's name. */
+    versionLine: (version: string, author: string) => (author ? `v${version} · ${author}` : `v${version}`),
+    /** The contents line: the parts that are there, joined with " · ". */
+    templates: (n: number) => (n === 1 ? '1 template' : `${n} templates`),
+    skills: (n: number) => (n === 1 ? '1 skill' : `${n} skills`),
+    library: (n: number) => (n === 1 ? '1 library item' : `${n} library items`),
+    styleGuide: 'a style guide',
+    quickActions: (n: number) => (n === 1 ? '1 quick action' : `${n} quick actions`),
+    nothing: 'Nothing of its own',
+    /** What the origin icon stands for (screen readers). */
+    origin: { local: 'From a folder', github: 'From GitHub', url: 'From a web address' },
+    diagnostics: 'Packs that can’t be read',
+    diagnosticsHint: 'These folders in the packs folder have no readable record. Import the pack again from where it came from.',
+    /** Notice line after install or export. */
+    installed: (name: string) => `Installed ${name}.`,
+    exported: (dir: string) => `Written to ${dir}. Send the folder as it is, push it to GitHub, or serve it from any static host.`,
+  },
+  /** The "← Packs" link above the pages inside the section. */
+  back: 'Packs',
+  /** Desktop-only pages opened in a browser. */
+  webOnly: 'Packs are imported, exported and changed in the desktop app, or on the command line with cuccut packs.',
+  import: {
+    title: 'Import a pack',
+    lede: 'From a folder on this computer, a GitHub address, or a web address that serves a pack. Nothing is installed until you have seen what it carries.',
+    sourceLabel: 'Folder, GitHub or web address',
+    sourcePlaceholder: '~/Packs/news-desk · owner/repo · https://example.com/packs/news-desk/',
+    chooseFolder: 'Choose folder…',
+    pickTitle: 'Choose a pack folder',
+    read: 'Read it',
+    reading: 'Reading…',
+    /** Why "Read it" is off. */
+    needSource: 'Type or choose where the pack is first.',
+    badge: 'Not installed: read it first',
+    installedVersion: (version: string) =>
+      `Version ${version} is installed. Installing again updates what the pack owns and keeps what you changed.`,
+    examples: (n: number) => (n === 1 ? '1 reference file' : `${n} reference files`),
+    filesLine: (files: number, size: string) => `${files} ${files === 1 ? 'file' : 'files'}, ${size}`,
+    agentReads: 'Text an agent will follow. Read it.',
+    templates: 'Templates',
+    skills: 'Skills',
+    skillFiles: (n: number) => (n === 1 ? '1 file' : `${n} files`),
+    /** What happens to an item with the same id (`PackPreviewItemState`); a new item says nothing. */
+    state: {
+      update: 'This pack installed it before; it will be updated.',
+      changed: 'You changed the copy this pack installed; yours is kept unless you replace it.',
+      exists: (kind: 'template' | 'skill') =>
+        `You already have a ${kind} with this id; yours is kept unless you replace it.`,
+      builtin: (kind: 'template' | 'skill') => `A built-in ${kind} has this id, so this one is not installed.`,
+    },
+    missingSkill: (id: string) => `It recommends the skill “${id}”, which is neither on this computer nor in the pack.`,
+    style: 'Style guide',
+    styleLede: 'Agents read this before choosing and editing.',
+    styleRegion: 'The pack’s style guide',
+    references: 'Reference files',
+    quick: 'Quick actions',
+    quickLede: 'Messages sent to the agent with one click.',
+    library: 'Library',
+    duplicate: 'Already in your library; not added again.',
+    reserved: 'Rules and review standard',
+    reservedLede: 'Kept with the pack. CucCut does not use them yet.',
+    warnings: 'Warnings',
+    warningScan: (file: string, line: number, why: string) => (line > 0 ? `${file}, line ${line}: ${why}` : `${file}: ${why}`),
+    /** A flagged line under the text it is in: "Line 4 tells the agent to ignore its instructions". Line 0 is the whole text (too long), whose reason is a sentence. */
+    hitLine: (line: number, why: string) => (line > 0 ? `Line ${line} ${why}` : why),
+    install: 'Install',
+    installing: 'Installing…',
+    replace: 'Install and replace mine',
+    replaceHint: 'Your own templates and skills with the same ids go to the trash first.',
+    /** Toast after "Install and replace mine" moved the person's own items to the trash, with Undo. */
+    replacedToast: (name: string, n: number) =>
+      `Installed ${name}. ${n === 1 ? '1 template or skill of yours' : `${n} templates and skills of yours`} went to the trash.`,
+    replacedRestored: 'Yours are back, and the pack’s copies are gone.',
+    cancel: 'Cancel',
+  },
+  /** Library item kinds, in the preview and the export page. */
+  libraryKind: {
+    transcription: 'Glossary',
+    translation: 'Translation glossary',
+    color: 'Colour',
+    captionStyle: 'Caption style',
+    image: 'Image',
+    video: 'Video',
+    sticker: 'Sticker',
+    font: 'Font',
+  } as Record<string, string>,
+  export: {
+    title: 'Export a pack',
+    lede: 'Choose what travels. The folder can be sent as it is, pushed to GitHub, or served from any static host.',
+    about: 'What the pack is called',
+    name: 'Name',
+    namePlaceholder: 'News desk',
+    id: 'ID',
+    idHint: 'Lowercase letters, digits and dashes.',
+    version: 'Version',
+    author: 'Author',
+    description: 'What it is for',
+    optional: '(optional)',
+    folder: 'Folder',
+    folderHint: 'An empty folder, or the folder of an earlier export of this pack.',
+    chooseFolder: 'Choose folder…',
+    pickTitle: 'Choose where to write the pack',
+    templates: 'Templates',
+    templatesHint: 'Yours. Built-in templates are on every computer already.',
+    noTemplates: 'No templates of your own yet.',
+    skills: 'Skills',
+    skillsHint: 'Your own skills and those packs brought. Built-in skills are on every computer already.',
+    thirdParty: 'Imported from GitHub',
+    noSkills: 'No skills of your own yet.',
+    library: 'Library',
+    libraryHint: 'Voices stay: a voice needs its owner’s consent.',
+    glossaries: 'Glossaries',
+    colours: 'Colours and caption styles',
+    media: 'Images, video, stickers, fonts',
+    noLibrary: 'The library has nothing that can travel.',
+    quick: 'Quick actions',
+    quickHint: 'From the packs you installed.',
+    fromPack: (name: string) => `· from ${name}`,
+    noQuick: 'No installed pack has quick actions.',
+    style: 'Style guide',
+    styleHint: 'Copied from an installed pack: its guide and its reference videos.',
+    styleNone: 'None',
+    styleLabel: 'Style guide to include',
+    write: 'Write the pack',
+    writing: 'Writing…',
+    /** Why "Write the pack" is off. */
+    needName: 'Give the pack a name first.',
+    needId: 'Give the pack an ID: lowercase letters, digits and dashes, starting with a letter.',
+    reservedId: 'A pack can’t be called “import” or “export”.',
+    needFolder: 'Choose the folder to write it to.',
+    cancel: 'Cancel',
+  },
+  pack: {
+    loading: 'Loading the pack',
+    notFoundTitle: 'No such pack',
+    backToPacks: 'Back to packs',
+    noDescription: 'A pack with no description.',
+    delete: 'Delete pack',
+    deleting: 'Deleting…',
+    /** Toast after the delete, with Undo. */
+    deletedToast: (name: string, templates: number, skills: number) =>
+      `Deleted ${name}: ${templates === 1 ? '1 template' : `${templates} templates`} and ${skills === 1 ? '1 skill' : `${skills} skills`} went with it. Library items stay.`,
+    deletedKept: (n: number) => (n === 1 ? '1 you changed stays.' : `${n} you changed stay.`),
+    undo: 'Undo',
+    restored: (name: string) => `${name} is back.`,
+    origin: 'Where it came from',
+    originLine: (version: string, author: string, installed: string) =>
+      `Version ${version}${author ? `, by ${author}` : ''}. Installed ${installed}. Updates are manual: import it again from the same place.`,
+    installedDate: (date: Date) => new Intl.DateTimeFormat('en', { day: 'numeric', month: 'long', year: 'numeric' }).format(date),
+    reveal: 'Show in folder',
+    brought: 'What it brought',
+    broughtHint:
+      'Copied into CucCut when it was installed. Each is edited where it lives now; deleting the pack takes its unchanged templates and skills and leaves the library items.',
+    templates: 'Templates',
+    skills: 'Skills',
+    library: 'Library',
+    nothing: 'Nothing but its guide.',
+    quick: 'Quick actions',
+    quickHint: 'Offered above the chat in every project. They belong to the pack; change them in its folder and import it again.',
+    reserved: 'Rules and review standard',
+    reservedHint: 'Kept with the pack. CucCut does not use them yet.',
+    /** Item states on the pack page; a present item says nothing. */
+    changed: '(changed since)',
+    deleted: '(deleted since)',
+  },
+  style: {
+    /** The style editor on the pack page. */
+    title: 'Style guide',
+    lede: 'Who these videos are for, what a good one is, and the videos that show it. Agents read it before your own instructions, which win.',
+    textLabel: 'Style guide text',
+    placeholder: 'Who the videos are for, how they open, how long they run, what they never do…',
+    counter: (n: number, limit: number) => `${n} / ${limit}`,
+    save: 'Save guide',
+    saving: 'Saving…',
+    saved: 'Saved. Agents read it from their next session.',
+    removed: 'The guide is removed. Agents get none from this pack from their next session.',
+    unchanged: 'Change the text to save it.',
+    tooLong: (n: number, limit: number) => `The guide is ${n} characters long; it holds at most ${limit}.`,
+    emptyRemoves: 'Saving an empty guide removes it.',
+    webReadOnly: 'The guide is edited in the desktop app, or with cuccut packs style.',
+    references: 'Reference videos',
+    referencesHint: 'What a finished video in this style looks like, and what to take from it. Agents open the stills.',
+    noReferences: 'No reference videos yet.',
+    /** One reference file on the pack page. */
+    kind: { image: 'Image', video: 'Video' } as Record<'image' | 'video', string>,
+    exampleTitle: 'Title',
+    exampleNote: 'What to take from it',
+    exampleSave: 'Save',
+    exampleSaving: 'Saving…',
+    exampleSaved: 'Saved. Agents read it from their next session.',
+    exampleUnchanged: 'Change the title or the note to save it.',
+    exampleRemove: 'Remove',
+    exampleRemoved: (title: string) => `Removed ${title}.`,
+    exampleRestored: (title: string) => `${title} is back.`,
+    titleTooLong: (n: number, limit: number) => `The title is ${n} characters long; it holds at most ${limit}.`,
+    noteTooLong: (n: number, limit: number) => `The note is ${n} characters long; it holds at most ${limit}.`,
+    noStill: 'No still: CucCut takes one with ffmpeg, which wasn’t found or couldn’t read this video. Agents read its title and note.',
+    stillAlt: (title: string) => `Still from ${title}`,
+    stillMissing: 'The still couldn’t be shown.',
+    /** The form under the list. */
+    addTitle: 'Add a reference',
+    addFile: 'Image or video',
+    addFilePlaceholder: '/path/to/reference.mp4',
+    chooseFile: 'Choose file…',
+    pickTitle: 'Choose a reference image or video',
+    pickButton: 'Choose',
+    pickFilter: 'Images and videos',
+    add: 'Add reference',
+    adding: 'Adding…',
+    added: (title: string) => `Added ${title}.`,
+    needFile: 'Choose an image or a video first.',
+    exampleLimit: (n: number) => `A pack holds at most ${n} reference files. Remove one to add another.`,
+    webExamples: 'Reference videos are added and changed in the desktop app.',
+    /** The Video menu's Style guide dialog (editor). */
+    dialogTitle: 'Style guide',
+    dialogLede: 'Which pack’s style guide agents follow for the videos in this project.',
+    dialogLedeNoProject: 'Which pack’s style guide agents follow for this video.',
+    choiceLabel: 'Style guide',
+    checking: 'Checking which guide applies…',
+    noProject: 'This video is not in a project, so the style is decided on its own.',
+    nextSession: 'Takes effect from the next session.',
+    noGuides: 'No installed pack has a style guide. Import one in Settings › Packs.',
+    /** The choice when the project chose a pack that has since been deleted. */
+    missingChoice: 'A pack that is no longer installed',
+    done: 'Done',
+    auto: 'Decide on its own',
+    none: 'None',
+    using: (name: string, reason: string) => `Using ${name}. ${reason}`,
+    noneUsed: (reason: string) => `No style guide. ${reason}`,
+    reason: {
+      chosen: 'This project chose it.',
+      'chosen-none': 'This project chose to use none.',
+      'chosen-missing': 'The pack this project chose is no longer installed.',
+      template: 'This conversation used one of its templates.',
+      only: 'It is the only installed pack with a style guide.',
+      ambiguous: 'Several installed packs have a style guide, so choose one.',
+      'no-guide': 'No installed pack has a style guide.',
+    } as Record<PackStyleReason, string>,
+  },
+  quick: {
+    /** What `{selection}` becomes when nothing on the timeline is selected. */
+    thisVideo: 'this video',
+    /** What `{selection}` becomes for a selected timeline item. */
+    selection: (name: string) => `“${name}”`,
+    from: (name: string) => `From the pack ${name}`,
+    /** The row of chips above the composer, for screen readers. */
+    label: 'Quick actions from your packs',
+  },
+  errors: {
+    action: {
+      load: 'load the packs',
+      read: 'read the pack',
+      install: 'install the pack',
+      remove: 'delete the pack',
+      restore: 'bring the pack back',
+      choose: 'choose the style guide',
+      saveStyle: 'save the guide',
+      export: 'write the pack',
+      addExample: 'add the reference',
+      saveExample: 'save the reference',
+      removeExample: 'remove the reference',
+      restoreExample: 'bring the reference back',
+    } as Record<PackAction, string>,
+    failed: (action: string, raw: string) => `Couldn’t ${action}: ${raw}`,
+    notFound: (id: string) => `Nothing installed is called “${id}”. The list has what is here now.`,
+    sourceNotFound: 'There’s no pack there: no pack.json in that folder or at that address.',
+    urlInvalid: 'That address wasn’t recognized. Use a folder, owner/repo, a GitHub address, or an https:// address that serves pack.json.',
+    invalid: (issue: string) => `This isn’t a pack that can be installed: ${issue}`,
+    unsupportedSchema: 'This pack was written for a newer version of CucCut. Update CucCut, then read it again.',
+    foreignFormat: 'This isn’t a CucCut pack. Packs made for other editors can’t be installed here.',
+    unsupportedField: (issue: string) => `This pack carries something CucCut doesn’t install: ${issue}`,
+    tooLarge: (files: number, size: string) => `This pack is too large: a pack holds at most ${files} files and ${size} in all.`,
+    idReserved: 'A pack can’t be called “import” or “export”: those are pages in Settings. Give the pack another id.',
+    blocked: (line: number, why: string, text: string) => `This pack will not install: line ${line} ${why} (“${text}”).`,
+    blockedWhole: (why: string) => `This pack will not install: ${why}.`,
+    /** A save on the pack page (the guide, a reference's title or note) that the scan refuses. */
+    blockedSave: (line: number, why: string, text: string) => `This can’t be saved: line ${line} ${why} (“${text}”).`,
+    blockedSaveWhole: (why: string) => `This can’t be saved: ${why}.`,
+    exampleNotFound: 'That reference file is gone. Reload the page to see what is there now.',
+    exampleFileNotFound: 'There’s no file there. Choose the image or video again.',
+    exampleUnsupported: (extensions: string) => `A reference file is an image or a video (${extensions}).`,
+    exampleLimit: (n: number) => `A pack holds at most ${n} reference files. Remove one to add another.`,
+    exampleTooLarge: (size: string) => `With this file the pack would be larger than ${size}. Choose a smaller file.`,
+    exampleTrashExpired: 'It was removed more than 24 hours ago, so it can’t come back. Add the file again.',
+    exampleNameTaken: 'A reference with that name was added in the meantime, so the removed one can’t come back.',
+    styleTooLong: (length: number, limit: number) => `The guide is ${length} characters long; it holds at most ${limit}.`,
+    previewExpired: 'This preview is more than 30 minutes old. Read it again.',
+    restoreConflict: (id: string) => `“${id}” was installed again in the meantime, so the deleted copy can’t come back.`,
+    trashExpired: 'It was deleted more than 24 hours ago, so it can’t come back. Import it again.',
+    exportTargetNotEmpty: 'That folder has other files in it. Choose an empty folder.',
+    styleChanged: 'The guide was changed somewhere else after you opened it. Reload the page to see the newer text, then save again.',
+    network: 'Can’t reach the pack’s address. Check your network and try again.',
+    offline: 'Strict offline mode is on, so packs can only be read from a folder on this computer.',
+    projectNotFound: 'This project is gone; it may have just been deleted.',
+    webNotAllowed: 'This can’t be done in the browser. Use the CucCut desktop app, or cuccut packs on the command line.',
+    webReadOnly: 'This browser session is read-only, so nothing can be changed.',
+  },
+};
+
+/** What the person was doing when a `packs.*` call failed (the fallback sentence names it). */
+export type PackAction =
+  | 'load'
+  | 'read'
+  | 'install'
+  | 'remove'
+  | 'restore'
+  | 'choose'
+  | 'saveStyle'
+  | 'export'
+  | 'addExample'
+  | 'saveExample'
+  | 'removeExample'
+  | 'restoreExample';
+
+export type PacksMessages = typeof en;
+
+export const PACKS_COPY = defineMessages(en, { 'zh-Hans': zhHans, 'zh-Hant': zhHant, ja, ko, es, fr, de, nl, 'pt-BR': ptBR, it, ru, pl, tr, vi });

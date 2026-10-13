@@ -37,4 +37,7 @@ export const nl: WorkspaceMessages = {
           ? '1 antwoord'
           : `${answers} antwoorden`,
   ruleCount: (n, off) => (n === 0 ? 'Nog geen' : `${n === 1 ? '1 regel' : `${n} regels`}${off ? `, ${off} uit` : ''}`),
+  packsBlurb:
+    'Een manier van video’s maken die meereist: sjablonen, vaardigheden, bibliotheekitems en een stijlgids in één map. Importeer er een uit een map, GitHub of een webadres, of exporteer de jouwe om te versturen.',
+  packCount: (n: number) => (n === 0 ? 'Geen geïnstalleerd' : n === 1 ? '1 pack' : `${n} packs`),
 };

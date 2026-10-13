@@ -54,6 +54,8 @@ export const ru: ServicesMcpMessages = {
     projects_list: "Список проектов",
     skills_list: "Показать Skills",
     skills_read: "Прочитать Skill",
+    packs_list: 'Список паков',
+    packs_read: 'Прочитать пак',
     library_list: "Показать библиотеку",
     library_show: "Показать элемент библиотеки",
     download: "Скачать по ссылке",

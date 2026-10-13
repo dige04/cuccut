@@ -1,7 +1,7 @@
 import type { AgentSkillsMessages } from './agent-skills.ts';
 
 export const ja: AgentSkillsMessages = {
-  origin: { builtin: '内蔵', personal: 'マイ', 'third-party': 'サードパーティ' },
+  origin: { builtin: '内蔵', personal: 'マイ', 'third-party': 'サードパーティ', pack: 'Packs' }, fromPack: (name: string) => `From the pack ${name}`,
   all: 'すべて',
   commit: (sha: string) => `（${sha}）`,
   bytes: (n: number) => `${n} バイト`,

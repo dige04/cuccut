@@ -9,6 +9,7 @@ function sourceText(skill: SkillSummary): string | null {
   const source = skill.source;
   if (!source) return null;
   if (source.kind === 'local') return M.localSource(source.path, source.addedAt);
+  if (source.kind === 'pack') return M.packSource(source.packName, source.packVersion, source.installedAt);
   return M.remoteSource(source.url, source.ref, source.commit.slice(0, 12), source.importedAt);
 }
 

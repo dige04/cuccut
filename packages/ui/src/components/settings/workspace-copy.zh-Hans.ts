@@ -37,4 +37,7 @@ export const zhHans: WorkspaceMessages = {
           ? '1 条回答'
           : `${answers} 条回答`,
   ruleCount: (n, off) => (n === 0 ? '暂无' : `${n === 1 ? '1 条规则' : `${n} 条规则`}${off ? `，${off} 条已关闭` : ''}`),
+  packsBlurb:
+    '一种可以带走的视频制作方式：模板、技能、素材库条目和风格指南集中在一个文件夹中。可从文件夹、GitHub 或网址导入，也可导出你的包发送给他人。',
+  packCount: (n: number) => (n === 0 ? '尚未安装' : `${n} 个包`),
 };

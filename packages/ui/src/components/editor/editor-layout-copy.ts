@@ -42,6 +42,7 @@ const en = {
   nothingPicked: 'Nothing picked. A clip’s properties appear here, and its everyday controls in the bar under the frame.',
   videoWhole: 'The video as a whole — canvas, background, format — is in Video settings.',
   videoSettings: 'Video settings',
+  styleGuide: 'Style guide…',
   videoMenu: 'Video',
   shortcuts: 'Keyboard shortcuts',
   more: 'More actions',

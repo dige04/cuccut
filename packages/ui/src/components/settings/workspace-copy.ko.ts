@@ -37,4 +37,7 @@ export const ko: WorkspaceMessages = {
           ? '답변 1개'
           : `답변 ${answers}개`,
   ruleCount: (n, off) => (n === 0 ? '아직 없음' : `${n === 1 ? '규칙 1개' : `규칙 ${n}개`}${off ? `, 꺼짐 ${off}개` : ''}`),
+  packsBlurb:
+    '영상을 만드는 방식을 옮겨 갈 수 있는 묶음입니다. 템플릿, 스킬, 라이브러리 항목, 스타일 가이드를 한 폴더에 담습니다. 폴더, GitHub, 웹 주소에서 가져오거나 내 팩을 내보내 보낼 수 있습니다.',
+  packCount: (n: number) => (n === 0 ? '설치된 팩 없음' : `팩 ${n}개`),
 };

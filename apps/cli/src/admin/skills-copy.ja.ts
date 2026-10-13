@@ -19,7 +19,7 @@ export const ja: SkillsMessages = {
   takesEffectNextSession: '次に新しく始める Agent セッションから反映されます。進行中のセッションには影響しません',
   removed: (id, path) => `${id} を削除しました（${path}）`,
   localSource: (path, addedAt) => `ローカルフォルダ ${path}（${addedAt}）`,
-  remoteSource: (url, ref, commit, importedAt) => `${url}（${ref}@${commit}、${importedAt}）`,
+  packSource: (name, version, installedAt) => `${name} パック v${version}（${installedAt}）から`, remoteSource: (url, ref, commit, importedAt) => `${url}（${ref}@${commit}、${importedAt}）`,
   changed: (verb, id, name, enabled, path, source) =>
     `${verb}：${id}（${name}、${enabled ? 'オン' : 'オフ'}）→ ${path}${source ? `\n入手元：${source}` : ''}`,
   idFormat: (flag, value) => `${flag} には Skill の id（小文字、ハイフン区切り。cuccut skills を参照）を指定してください：${value}`,

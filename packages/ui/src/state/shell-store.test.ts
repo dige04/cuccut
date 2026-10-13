@@ -38,6 +38,10 @@ const routes: Route[] = [
   { tab: 'settings', section: 'agent' },
   { tab: 'settings', section: 'skills' },
   { tab: 'settings', section: 'privacy' },
+  { tab: 'settings', section: 'packs' },
+  { tab: 'settings', section: 'packs', sub: 'import' },
+  { tab: 'settings', section: 'packs', sub: 'export' },
+  { tab: 'settings', section: 'packs', sub: 'news-desk' },
   { tab: 'models', category: 'asr' },
   { tab: 'models', category: 'tts', page: 'voices' },
   { tab: 'tasks' },
@@ -72,7 +76,22 @@ describe('界面内链接', () => {
     expect(parseHref('/nope')).toEqual(HOME);
     expect(parseHref('/space/bogus')).toEqual({ tab: 'space', category: 'all', projectId: null });
     expect(parseHref('/settings/bogus')).toEqual({ tab: 'settings', section: 'general' });
+    expect(parseHref('/settings/packs/Not%20an%20id')).toEqual({ tab: 'settings', section: 'packs' });
+    expect(parseHref('/settings/skills/Not%20an%20id')).toEqual({ tab: 'settings', section: 'skills' });
+    expect(parseHref('/settings/general/news-desk')).toEqual({ tab: 'settings', section: 'general' });
+    expect(hrefFor({ tab: 'settings', section: 'packs', sub: 'news-desk' })).toBe('/settings/packs/news-desk');
+    expect(parseHref('/home?template=Bad_Id')).toEqual(HOME);
     expect(parseHref('/tools/bogus')).toEqual({ tab: 'tools' });
+  });
+
+  it('the pack page’s item links: a template opens in Home’s template gallery, a skill in its Skills details', () => {
+    const template = { tab: 'home', conversationId: null, projectId: null, template: 'news-desk-daily' } as const;
+    expect(hrefFor(template)).toBe('/home?template=news-desk-daily');
+    expect(parseHref('/home?template=news-desk-daily')).toEqual(template);
+    const skill = { tab: 'settings', section: 'skills', sub: 'tiêu-đề' } as const;
+    expect(hrefFor(skill)).toBe('/settings/skills/ti%C3%AAu-%C4%91%E1%BB%81');
+    expect(parseHref(hrefFor(skill))).toEqual(skill);
+    expect(parseHref('/settings/skills/news-desk-headlines')).toEqual({ tab: 'settings', section: 'skills', sub: 'news-desk-headlines' });
   });
 
   it('旧链接迁移：设置里的模型页去模型页签，工具里的远端算力去服务', () => {

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import {
   AGENT_MODES,
+  TEMPLATE_ID_PATTERN,
   fileTargetQuery,
   isLanguagePreference,
   newId,
@@ -18,6 +19,7 @@ import {
   isModelPage,
   isSettingsSection,
   legacyAgentSection,
+  settingsSub,
   type ModelCategory,
   type ModelPage,
   type SettingsSection,
@@ -61,10 +63,12 @@ export type Tab = 'home' | 'space' | 'tasks' | 'models' | 'services' | 'tools' |
  * Space's `video`: the video opened in Space (product design §5.1), with the editor plus a floating conversation; closing returns to the list.
  */
 export type Route =
-  | { tab: 'home'; conversationId: Id | null; projectId: Id | null; pane?: WorkspaceItem }
+  /** `template`: the start page with "All templates" open on this template (`/home?template=<id>`; the pack page links there). */
+  | { tab: 'home'; conversationId: Id | null; projectId: Id | null; pane?: WorkspaceItem; template?: string }
   /** `from`: show only videos derived from this video ("Watch these in Space" on the short-video result page, and "View cut short videos" in the viewer). */
   | { tab: 'space'; category: SpaceCategory; projectId: Id | null; video?: FileTarget; from?: Id }
-  | { tab: 'settings'; section: SettingsSection }
+  /** `sub`: a page inside the section (`/settings/packs/<sub>`: `import`, `export` or a pack id; `/settings/skills/<skill id>`; see `settingsSub`). */
+  | { tab: 'settings'; section: SettingsSection; sub?: string }
   | { tab: 'models'; category: ModelCategory; page?: ModelPage }
   | { tab: 'tasks'; taskId?: Id }
   | { tab: 'services'; service?: string }
@@ -685,7 +689,7 @@ export function hasSidebar(route: Route): boolean {
 /**
  * In-app links: `/home`, `/c/<conversation>`, `/p/<project>` (starts a new conversation in this project); the Home side panel tabs go in the query string
  * (`?video=` / `?file=` take a JSON FileTarget, `?files=1`, `?web=<id>&url=<address>`);
- * `/space/<category>[/<project>][?video=]`, `/settings/<section>`, `/settings/models/<category>[/<page>]`, `/tasks[/<task>]`,
+ * `/space/<category>[/<project>][?video=]`, `/settings/<section>[/<sub>]`, `/settings/models/<category>[/<page>]`, `/tasks[/<task>]`,
  * `/services[/<service>]`, `/tools[/<tool>]`, `/welcome`.
  */
 export function hrefFor(route: Route): string {
@@ -694,6 +698,7 @@ export function hrefFor(route: Route): string {
       const query = route.pane ? `?${paneQuery(route.pane)}` : '';
       if (route.conversationId) return `/c/${route.conversationId}${query}`;
       if (route.projectId) return `/p/${route.projectId}${query}`;
+      if (route.template) return `/home${query ? `${query}&` : '?'}template=${encodeURIComponent(route.template)}`;
       return `/home${query}`;
     }
     case 'space': {
@@ -704,7 +709,7 @@ export function hrefFor(route: Route): string {
       return (route.projectId ? `/space/${route.category}/${route.projectId}` : `/space/${route.category}`) + (params.length ? `?${params.join('&')}` : '');
     }
     case 'settings':
-      return `/settings/${route.section}`;
+      return route.sub ? `/settings/${route.section}/${encodeURIComponent(route.sub)}` : `/settings/${route.section}`;
     case 'models':
       return route.page ? `/settings/models/${route.category}/${route.page}` : `/settings/models/${route.category}`;
     case 'tasks':
@@ -742,7 +747,11 @@ export function parseHref(href: string): Route {
   const withPane = (route: Extract<Route, { tab: 'home' }>): Route => (pane ? { ...route, pane } : route);
   if (head === 'c' && a) return withPane({ tab: 'home', conversationId: a, projectId: null });
   if (head === 'p' && a) return withPane({ tab: 'home', conversationId: null, projectId: a });
-  if (head === 'home' && pane) return withPane({ tab: 'home', conversationId: null, projectId: null });
+  if (head === 'home') {
+    const template = query.get('template');
+    const start: Extract<Route, { tab: 'home' }> = { tab: 'home', conversationId: null, projectId: null, ...(template && TEMPLATE_ID_PATTERN.test(template) ? { template } : {}) };
+    if (pane || start.template) return withPane(start);
+  }
   if (head === 'space') {
     const category = SPACE_CATEGORIES.some((c) => c.key === a) ? (a as SpaceCategory) : 'all';
     const from = query.get('from');
@@ -758,7 +767,9 @@ export function parseHref(href: string): Route {
     if (a === 'local' || a === 'cloud' || a === 'voices') return { tab: 'models', category: a === 'voices' ? 'tts' : 'asr', page: a };
     // Old `/settings/agent/<tab>`: skills and permissions each go to their new locations; the rest stay in the Agent provider.
     if (a === 'agent') return { tab: 'settings', section: legacyAgentSection(b) };
-    return { tab: 'settings', section: isSettingsSection(a) ? a : 'general' };
+    const section = isSettingsSection(a) ? a : 'general';
+    const sub = settingsSub(section, b === undefined ? undefined : safeDecode(b));
+    return sub ? { tab: 'settings', section, sub } : { tab: 'settings', section };
   }
   if (head === 'models') {
     const category = isModelCategory(a) ? a : 'asr';
@@ -775,6 +786,15 @@ export function parseHref(href: string): Route {
     return tool ? { tab: 'tools', tool } : { tab: 'tools' };
   }
   return HOME;
+}
+
+/** A path segment decoded (`%E1%BA%A1` → `ạ`); a malformed one is kept as it is, and then fails the check it is given to. */
+function safeDecode(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
 }
 
 function parsePane(query: URLSearchParams): WorkspaceItem | undefined {

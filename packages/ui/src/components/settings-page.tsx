@@ -17,6 +17,7 @@ import {
   Lock,
   MessageSquareText,
   Music,
+  Package,
   Puzzle,
   Scale,
   Server,
@@ -44,6 +45,7 @@ import {
 } from '../model/settings-nav.ts';
 import { railSummary } from '../model/profile.ts';
 import { useRuntime } from '../runtime/context.tsx';
+import { loadPacks } from '../runtime/pack-commands.ts';
 import { loadSkills } from '../runtime/skill-commands.ts';
 import { useAppUpdate } from '../state/app-update-store.ts';
 import { defaultDriver, useConnection } from '../state/connection-store.ts';
@@ -53,6 +55,7 @@ import { useLibrary } from '../state/library-store.ts';
 import { useModels } from '../state/models-store.ts';
 import { useProfile } from '../state/profile-store.ts';
 import { useReview } from '../state/review-store.ts';
+import { usePacks } from '../state/packs-store.ts';
 import { useShell, type SettingsSection } from '../state/shell-store.ts';
 import { useSkills } from '../state/skills-store.ts';
 import { ModelSettings } from './models-page.tsx';
@@ -70,6 +73,10 @@ import { M as GENERAL } from './settings/general-settings-copy.ts';
 import { PROFILE_COPY } from './profile/profile-copy.ts';
 import { GLOSSARY_COPY } from './settings/glossary-copy.ts';
 import { GlossarySettings } from './settings/glossary-settings.tsx';
+import { PacksList } from './settings/packs/packs-list.tsx';
+import { PackExport } from './settings/packs/pack-export.tsx';
+import { PackImport } from './settings/packs/pack-import.tsx';
+import { PackPage } from './settings/packs/pack-page.tsx';
 import { ResourceCapacity } from './settings/resource-capacity.tsx';
 import { ProfileSettings } from './settings/profile-settings.tsx';
 import { RulesSettings } from './settings/rules-settings.tsx';
@@ -77,6 +84,7 @@ import { REVIEW_SETTINGS_COPY } from './settings/review-settings-copy.ts';
 import { ReviewSettings } from './settings/review-settings.tsx';
 import { KeyCombo, Panel, PanelHeading, RowList, SettingsGroup, SettingsRow } from './settings/settings-ui.tsx';
 import { W } from './settings/workspace-copy.ts';
+import { packsView } from '../model/packs.ts';
 
 /** Rail icons per section (lucide, like the rest of the page chrome). */
 const SECTION_ICON: Record<SettingsSection, LucideIcon> = {
@@ -87,6 +95,7 @@ const SECTION_ICON: Record<SettingsSection, LucideIcon> = {
   fonts: Type,
   agent: Bot,
   skills: Puzzle,
+  packs: Package,
   glossary: BookA,
   review: ShieldCheck,
   privacy: Lock,
@@ -115,8 +124,10 @@ const labelOf = (key: SettingsSection) => SETTINGS_SECTION_INFO.find((s) => s.ke
  * Every section is a URL (`/settings/<section>`, `/settings/models/<category>/<page>`); switching sections replaces
  * nothing else on the page. On narrow windows the rail wraps into chips above the section. Help sits in the header.
  */
-export function SettingsPage({ section = 'general', model, platform }: {
+export function SettingsPage({ section = 'general', sub, model, platform }: {
   section?: SettingsSection;
+  /** A page inside the section (`/settings/packs/<sub>`). */
+  sub?: string;
   model?: { category: ModelCategory; page?: ModelPage };
   platform: string;
 }) {
@@ -142,7 +153,7 @@ export function SettingsPage({ section = 'general', model, platform }: {
 
   return (
     <RailPage header={header} rail={<SettingsRail section={section} model={model} web={web} />}>
-      <SectionBody key={model?.category ?? section}>
+      <SectionBody key={model?.category ?? (sub ? `${section}/${sub}` : section)}>
         {model ? (
           <ModelSettings category={model.category} page={model.page} />
         ) : section === 'you' ? (
@@ -171,6 +182,10 @@ export function SettingsPage({ section = 'general', model, platform }: {
           <Section title={labelOf('skills')} blurb={SKILLS_COPY.lede}>
             <AgentSkills />
           </Section>
+        ) : section === 'packs' ? (
+          // Each page draws its own heading: the list's actions depend on what is installed, and the pages under it
+          // (`/settings/packs/<sub>`: import, export, a pack) carry "← Packs" above theirs.
+          <PacksSection sub={sub} title={labelOf('packs')} />
         ) : section === 'glossary' ? (
           <Section title={labelOf('glossary')} blurb={GLOSSARY_COPY.list.lede}>
             <GlossarySettings />
@@ -195,6 +210,15 @@ export function SettingsPage({ section = 'general', model, platform }: {
       </SectionBody>
     </RailPage>
   );
+}
+
+/** Settings › Packs and the pages under it (`/settings/packs/<sub>`, pack design §2.1). */
+function PacksSection({ sub, title }: { sub: string | undefined; title: string }) {
+  const view = packsView(sub);
+  if (view.kind === 'import') return <PackImport />;
+  if (view.kind === 'export') return <PackExport />;
+  if (view.kind === 'pack') return <PackPage id={view.id} />;
+  return <PacksList title={title} blurb={W.packsBlurb} />;
 }
 
 /**
@@ -307,6 +331,7 @@ function useRailSummaries(web: boolean): RailSummaries {
   const checking = useConnection((s) => s.checking);
   const connected = useConnection((s) => s.state.status === 'connected');
   const skills = useSkills((s) => (s.loaded ? s.skills.length : s.status === 'failed' ? -1 : null));
+  const packs = usePacks((s) => (s.loaded ? s.packs.length : s.status === 'failed' ? -1 : null));
   const glossaries = useLibrary((s) => (s.ready ? s.glossaries.length : null));
   const review = useReview((s) => standardStatus(s.criteria?.standard));
   const grants = useGrants((s) => (s.ready ? s.grants.filter((g) => g.state === 'active').length : null));
@@ -316,7 +341,9 @@ function useRailSummaries(web: boolean): RailSummaries {
   const profile = useProfile(useShallow((s) => railSummary(s.snapshot)));
 
   useEffect(() => {
-    if (connected) void loadSkills(runtime);
+    if (!connected) return;
+    void loadSkills(runtime);
+    void loadPacks(runtime);
   }, [runtime, connected]);
 
   const languages = typeof navigator === 'undefined' ? [] : (navigator.languages ?? [navigator.language]);
@@ -330,6 +357,7 @@ function useRailSummaries(web: boolean): RailSummaries {
     fonts: W.fontsSummary,
     agent: agent ? agent.name : drivers === null || checking.length ? W.checking : W.noAgent,
     skills: skills === null ? W.checking : skills < 0 ? W.loadFailed : W.skillCount(skills),
+    packs: packs === null ? W.checking : packs < 0 ? W.loadFailed : W.packCount(packs),
     glossary: web ? W.desktopOnly : glossaries === null ? W.checking : W.glossaryCount(glossaries),
     // The standard is changed only in the desktop app (`review.criteria.set` is not in the browser's allowlist).
     review: web ? W.desktopOnly : (review ?? W.checking),

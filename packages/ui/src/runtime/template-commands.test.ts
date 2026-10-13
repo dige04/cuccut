@@ -29,6 +29,7 @@ function summary(id: string, version = '1.0.0'): TemplateSummary {
     origin: 'user',
     languages: ['zh-CN'],
     files: { cover: true, preview: false, assets: 0 },
+    pack: null,
   };
 }
 

@@ -53,6 +53,9 @@ const en = {
   /** Settings › Rules in the rail: how many workspace rules, and how many of them are off. */
   ruleCount: (n: number, off: number) =>
     n === 0 ? 'None yet' : `${n === 1 ? '1 rule' : `${n} rules`}${off ? `, ${off} off` : ''}`,
+  packsBlurb:
+    'A way of making videos that travels: templates, skills, library items and a style guide in one folder. Import one from a folder, GitHub or a web address, or export yours to send.',
+  packCount: (n: number) => (n === 0 ? 'None installed' : n === 1 ? '1 pack' : `${n} packs`),
 };
 
 export type WorkspaceMessages = typeof en;

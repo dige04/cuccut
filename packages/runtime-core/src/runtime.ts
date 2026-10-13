@@ -31,6 +31,7 @@ import {
   AgentProbeStore,
   AgentProviderStore,
   SkillPrefsStore,
+  PackChoicesStore,
   ConversationStore,
   ProjectStore,
   SpaceArtifactStore,
@@ -114,6 +115,12 @@ import { DownloadTools } from './agent-tools/download-tools.ts';
 import { TemplateCatalog, resolveBuiltinTemplatesDir } from './templates/template-catalog.ts';
 import { SkillCatalog, resolveBuiltinSkillsDir } from './skills/skill-catalog.ts';
 import { SkillInstaller } from './skills/skill-installer.ts';
+import { PackRegistry } from './packs/pack-registry.ts';
+import { PackPreviews } from './packs/pack-previews.ts';
+import { PackInstaller, type PackLibrary } from './packs/pack-installer.ts';
+import { PackStyle } from './packs/pack-style.ts';
+import { ffmpegStillMaker, PackExamples } from './packs/pack-examples.ts';
+import { PackExporter } from './packs/pack-export.ts';
 import { skillIndexBlock } from './skills/skill-brief.ts';
 import { ProfileService } from './profile/profile-service.ts';
 import { joinBlocks } from './profile/profile-brief.ts';
@@ -122,6 +129,7 @@ import { ProfileTools, profileProjectOf } from './agent-tools/profile-tools.ts';
 import { aiToolDefinition } from './ai-tools/ai-tool-wiring.ts';
 import { resolveBuiltinAgentSkillsDir } from './skills/agent-skill-renderer.ts';
 import { SkillTools } from './agent-tools/skill-tools.ts';
+import { PackTools } from './agent-tools/pack-tools.ts';
 import { JobTools } from './agent-tools/job-tools.ts';
 import { ProjectTools } from './agent-tools/project-tools.ts';
 import { LibraryTools } from './agent-tools/library-tools.ts';
@@ -217,6 +225,8 @@ export interface StartRuntimeOptions {
   designSystemEditorDist?: string | null;
   /** Importing skills from GitHub (§12.9). Tests inject a fake fetch and make no real network access. */
   skillsGithub?: GithubFetchOptions;
+  /** Reading packs from GitHub and `https://` addresses (pack spec §4). Tests inject fakes and make no real network access. */
+  packsSource?: { github?: GithubFetchOptions; fetch?: typeof fetch };
   /** Fonts downloaded on demand (§9.1). Tests inject a font directory holding only a few families, and point downloads at a local fake service. No real network access. */
   fonts?: { catalogue?: FontCatalogue; download?: FontDownloadOptions };
   /** Who launched this Runtime (§2.2). It is written into `RuntimeInfo` and the discovery file, and `cuccut runtime stop` uses it to stop only the ones the CLI launched. */
@@ -664,10 +674,78 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       offlineStrict: () => settings.store.get('offline.strict'),
       ...(options.skillsGithub ? { github: options.skillsGithub } : {}),
     });
-    // The creation template catalog (template package spec §6): the directory is read again on every use.
+    // Packs (pack spec §6): installed packs live in `<home>/packs`, what they brought in the template and skill folders and the library. Previews do not survive a
+    // restart and trash older than 24 hours is purged, here at startup.
+    const packLibrary: PackLibrary = {
+      import: async (file) => {
+        const { entry } = await library.import({ path: file });
+        return { library: entry.library, id: entry.id };
+      },
+      remove: (name, id) => library.store.remove(name, id),
+      entry: (name, id) => {
+        try {
+          return { name: library.store.get({ library: name, id }).content.name };
+        } catch {
+          return null;
+        }
+      },
+    };
+    const packRegistry = new PackRegistry({ dir: home.packsDir, templatesDir: home.templatesDir, skillsDir: home.skillsDir, library: packLibrary });
     const templates = new TemplateCatalog({
       builtinDir: options.templatesDir === undefined ? resolveBuiltinTemplatesDir() : options.templatesDir,
-      userDir: path.join(home.root, 'templates'),
+      userDir: home.templatesDir,
+      packOwner: () => packRegistry.owners(),
+    });
+    const packInstaller = new PackInstaller({
+      registry: packRegistry,
+      previews: new PackPreviews({ dir: path.join(home.packsDir, '.staging') }),
+      templates,
+      skills,
+      library: packLibrary,
+      source: {
+        offlineStrict: () => settings.store.get('offline.strict'),
+        ...(options.packsSource?.github ? { github: options.packsSource.github } : {}),
+        ...(options.packsSource?.fetch ? { fetch: options.packsSource.fetch } : {}),
+      },
+    });
+    await packInstaller.startup();
+    // Each project's style choice (pack spec §7); a choice naming a removed pack stays and resolves to none.
+    const packChoices = new PackChoicesStore(home.packChoicesFile, { log: log.child('pack-choices') });
+    await packChoices.load();
+    // The active style guide (pack spec §7) reads conversations and projects from the Harness, which opens later; it is only asked once sessions run.
+    const packStyle = new PackStyle({
+      registry: packRegistry,
+      choices: packChoices,
+      sessions: {
+        conversation: (conversationId) => requireHarness().getConversation(conversationId),
+        projects: () => requireHarness().listProjects(),
+      },
+      exclusive: (run) => packInstaller.exclusive(run),
+    });
+    // Export (pack spec §6.4): the user's own templates and skills, library entries as exchange files, and an installed pack's guide, into a folder anyone can read.
+    const packExporter = new PackExporter({
+      registry: packRegistry,
+      templates,
+      skills,
+      library: {
+        exportInfo: (name, id) => {
+          const { content } = library.store.get({ library: name, id });
+          const extension =
+            name === 'glossaries' ? 'md' : 'file' in content ? path.extname(content.file.fileName).slice(1).toLowerCase() || 'bin' : 'json';
+          return { name: content.name, extension };
+        },
+        exportTo: async (name, id, target) => {
+          await library.export({ entry: { library: name, id }, path: target });
+        },
+      },
+      exclusive: (run) => packInstaller.exclusive(run),
+    });
+    // Reference files on the pack page (pack spec §7.3): a video's still is taken with the ffmpeg found through the login shell's PATH (or CUCCUT_FFMPEG); without one
+    // the reference is added without a still.
+    const packExamples = new PackExamples({
+      registry: packRegistry,
+      still: ffmpegStillMaker(async () => process.env.CUCCUT_FFMPEG || (await findOnPath('ffmpeg', (await toolEnv()).PATH ?? ''))),
+      exclusive: (run) => packInstaller.exclusive(run),
     });
     // The user's profile (docs/cuccut/m2-profile-rules.md): built before the grants, whose session callback reads it at each session start. Projects are
     // looked up through the Harness, which opens later, so only when needed.
@@ -693,17 +771,21 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       const projectId = harnessRef?.conversationOf(conversationId)?.projectId;
       return (projectId && harnessRef?.listProjects().find((p) => p.id === projectId)?.path) || null;
     };
-    // Each native session starts with the index of enabled skills and the user's profile. A profile that can't be read leaves only its block out.
+    // At the start of each native session, the guidance gets the index of enabled skills, the user's profile, then the active pack's style guide (pack spec §7).
+    // A profile or guide that can't be read is left out rather than holding up the session.
     const grants = new AgentGrants(
       (principal) => videos.connectionClosed(principal.connectionId),
-      async (conversationId) =>
-        joinBlocks([
-          skillIndexBlock(await skills.enabled()),
-          await profile.sessionBlock(projectPathOf(conversationId)).catch((error: unknown) => {
-            log.warn('Failed to read the profile for a session', { conversationId, error: String(error) });
-            return '';
-          }),
-        ]),
+      async (conversationId) => {
+        const profileBlock = await profile.sessionBlock(projectPathOf(conversationId)).catch((error: unknown) => {
+          log.warn('Failed to read the profile for a session', { conversationId, error: String(error) });
+          return '';
+        });
+        const style = await packStyle.sessionBlock(conversationId).catch((error: unknown) => {
+          log.warn('Building the style guide block failed', { conversationId, error: String(error) });
+          return '';
+        });
+        return joinBlocks([skillIndexBlock(await skills.enabled()), profileBlock, style]);
+      },
     );
     // Images in messages: uploaded through the same gateway port, and handed to the Driver on send (product design §3.2.4).
     const attachments = new AttachmentStore({
@@ -800,6 +882,8 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
         new SkillTools({ skills, scope: toolScope }),
         // The user's profile (docs/cuccut/m2-profile-rules.md §6): the project level is the session's project, or the terminal's.
         new ProfileTools({ profile, scope: toolScope, projectOf: (principal) => profileProjectOf(harness, principal) }),
+        // Packs (pack spec §7): reading installed packs and a project's style choice; installing stays with the person.
+        new PackTools({ registry: packRegistry, style: packStyle, harness, scope: toolScope }),
         new GrantTools({ models, scope: toolScope }),
         new TaskTools({ harness, scope: toolScope }),
         new LinkImportTools(linkImport),
@@ -983,6 +1067,7 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       skills,
       skillInstaller,
       profile,
+      packs: { registry: packRegistry, installer: packInstaller, style: packStyle, exporter: packExporter, examples: packExamples },
       fonts,
       // The code view (§8): the UI's `compositions.*` and the tools share the same service and host.
       compositions,

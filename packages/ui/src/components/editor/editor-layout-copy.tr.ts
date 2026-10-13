@@ -27,6 +27,7 @@ export const tr: EditorLayoutMessages = {
   nothingPicked: 'Hiçbir şey seçilmedi. Bir klibin özellikleri burada, sık kullanılan denetimleri karenin altındaki çubukta görünür.',
   videoWhole: 'Videonun bütününe ait olanlar — tuval, arka plan, biçim — Video ayarları içinde.',
   videoSettings: 'Video ayarları',
+  styleGuide: 'Stil rehberi…',
   videoMenu: 'Video',
   shortcuts: 'Klavye kısayolları',
   more: 'Diğer işlemler',

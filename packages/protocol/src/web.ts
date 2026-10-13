@@ -96,6 +96,16 @@ export const WEB_DEFAULT_METHODS: readonly string[] = [
   'review.waive',
   'review.unwaive',
   'review.severity',
+  // Packs (pack spec §8): the list, the pack page (with handles for its reference stills and videos), the active style guide and a project's style choice, listed one by
+  // one. Inspect, install, remove, restore, export and editing the guide or its reference files (`packs.inspect`, `packs.install`, `packs.remove`, `packs.restore`,
+  // `packs.export`, `packs.setStyle`, `packs.addExample`, `packs.updateExample`, `packs.removeExample`, `packs.restoreExample`) are not exposed: like adding a skill, they
+  // write to the Runtime Home or to an arbitrary folder, read from the network or the disk, and decide what text every later agent follows. They are done only in the
+  // desktop UI and CLI.
+  'packs.list',
+  'packs.get',
+  'packs.openHandle',
+  'packs.active',
+  'packs.choose',
 ];
 
 /** Methods still available under read-only configuration (listed one by one: methods added later are not exposed under read-only by default). */
@@ -155,6 +165,10 @@ export const WEB_READ_METHODS: readonly RpcMethod[] = [
   'review.criteria.get',
   'review.get',
   'review.check',
+  'packs.list',
+  'packs.get',
+  'packs.openHandle',
+  'packs.active',
 ];
 
 /** Subscribing to these topics requires the matching read method in the allowlist. Other topics (directories, sessions, tasks, Space, videos) are open with the session. */

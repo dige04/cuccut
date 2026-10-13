@@ -24,6 +24,7 @@ import { style } from '@react-spectrum/s2/style' with { type: 'macro' };
 import type { TemplateDiagnostic, TemplateKind } from '@cuccut/protocol';
 import { HOME_COPY } from '../../copy.ts';
 import {
+  TEMPLATES_PER_PAGE,
   TEMPLATE_KINDS_FILTER,
   findTemplates,
   isExample,
@@ -402,15 +403,20 @@ function Skipped({ diagnostics }: { diagnostics: readonly TemplateDiagnostic[] }
  * The right column is never empty: if nothing has been clicked, it shows the selected one; if that isn't on the page, it shows the first one on this page.
  * The catalog is fetched once on mount (the dialog remounts each time it opens). Until it has been fetched, loading or failure is shown (with retry); if the catalog is empty, that is stated plainly.
  */
-function Library({ picked, onUse }: { picked: string | null; onUse(template: HomeTemplate): void }) {
+function Library({ picked, focus, onUse }: { picked: string | null; focus: string | null; onUse(template: HomeTemplate): void }) {
   const catalog = useTemplateCatalogLoader();
   const [query, setQuery] = useState('');
   const [kind, setKind] = useState<TemplateKind | 'all'>('all');
   const [source, setSource] = useState<TemplateSourceKey | 'all'>('all');
   const [category, setCategory] = useState('all');
   const [page, setPage] = useState(1);
-  const [open, setOpen] = useState<string | null>(picked);
+  const [open, setOpen] = useState<string | null>(focus ?? picked);
   const templates = catalog.templates;
+  // Opened on one template (a link from a pack page): its details show, on the page that holds its card.
+  const focusIndex = focus ? templates.findIndex((t) => t.id === focus) : -1;
+  useEffect(() => {
+    if (focusIndex >= 0) setPage(Math.floor(focusIndex / TEMPLATES_PER_PAGE) + 1);
+  }, [focusIndex]);
   const sources = templateSources(templates);
   // When the source control is gone (the catalog has only one source left), a previously chosen source no longer takes effect.
   const sourceFilter = sources.some((s) => s.key === source) ? source : 'all';
@@ -531,11 +537,14 @@ function Library({ picked, onUse }: { picked: string | null; onUse(template: Hom
 export function TemplateLibrary({
   open,
   picked,
+  focus = null,
   onUse,
   onClose,
 }: {
   open: boolean;
   picked: string | null;
+  /** The template whose details show first (`/home?template=<id>`); otherwise the picked one. */
+  focus?: string | null;
   onUse(template: HomeTemplate): void;
   onClose(): void;
 }) {
@@ -545,7 +554,7 @@ export function TemplateLibrary({
         <Dialog size="XL">
           <Heading slot="title">{HOME_COPY.allTemplates}</Heading>
           <Content>
-            <Library picked={picked} onUse={onUse} />
+            <Library picked={picked} focus={focus} onUse={onUse} />
           </Content>
         </Dialog>
       ) : null}

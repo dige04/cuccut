@@ -37,4 +37,7 @@ export const zhHant: WorkspaceMessages = {
           ? '1 則回答'
           : `${answers} 則回答`,
   ruleCount: (n, off) => (n === 0 ? '尚無' : `${n === 1 ? '1 則規則' : `${n} 則規則`}${off ? `，${off} 則已關閉` : ''}`),
+  packsBlurb:
+    '一種可以帶走的影片製作方式：範本、技能、素材庫項目和風格指南集中在一個資料夾中。可從資料夾、GitHub 或網址匯入，也可匯出你的套件傳送給他人。',
+  packCount: (n: number) => (n === 0 ? '尚未安裝' : `${n} 個套件`),
 };

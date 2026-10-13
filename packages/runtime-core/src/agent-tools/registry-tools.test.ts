@@ -8,6 +8,7 @@ import { resolveRuntimeHome, type RuntimeHome } from '@cuccut/runtime-storage';
 import type { HostedJob } from '@cuccut/jobs';
 import { startRuntime, type RunningRuntime } from '../runtime.ts';
 import { writeSkill } from '../skills/testing/skill-fixtures.ts';
+import { SAMPLE_PACK_DIR } from '../packs/testing/pack-fixtures.ts';
 import { call as mcpCall, type Loose } from '../services/testing/mcp-client.ts';
 import { ToolDriver, tool, until, type ToolSession } from './testing/fake-agent.ts';
 
@@ -289,6 +290,76 @@ describe('登记类工具', () => {
 
     const viaCli = await localOk('skills_list', {});
     expect(viaCli.skills.map((s: Loose) => s.id)).toEqual(['b-roll', 'caption-layout']);
+  });
+
+  it('packs_list / packs_read / packs_choose_style: the packs, the active guide and why, files and a copied image, the choice through every principal', async () => {
+    const empty = await localOk('packs_list', {});
+    expect(empty).toMatchObject({ packs: [], active: null });
+    await client.request('packs.install', { source: SAMPLE_PACK_DIR, commandId: newId('cmd') });
+
+    // The session sees its own project's resolution.
+    const { conversation } = await client.request('conversations.create', { projectId: project.id, accessMode: 'autoAcceptEdits' });
+    const before = driver.sessions.length;
+    await client.request('conversations.send', { conversationId: conversation.id, text: 'hi', commandId: newId('cmd') });
+    const session = await until(() => driver.sessions[before]);
+    const listed = (await tool(session, 'packs_list', {})).body;
+    expect(listed.packs).toEqual([
+      expect.objectContaining({
+        id: 'news-desk',
+        name: 'News desk',
+        hasStyle: true,
+        counts: { templates: 1, skills: 1, library: 2, examples: 1, quickActions: 3 },
+        provides: { templates: ['news-desk-daily'], skills: ['news-desk-headlines'] },
+      }),
+    ]);
+    expect(listed.active).toEqual({ packId: 'news-desk', reason: 'only', why: 'It is the only installed pack with a style guide.' });
+    expect(JSON.stringify(listed)).not.toContain(home.root);
+
+    const read = (await tool(session, 'packs_read', { id: 'news-desk' })).body;
+    expect(read.style).toBe(await fs.readFile(path.join(SAMPLE_PACK_DIR, 'STYLE.md'), 'utf8'));
+    expect(read.examples).toEqual([
+      expect.objectContaining({ file: 'examples/lower-third.png', kind: 'image', title: 'Lower third', still: 'examples/lower-third.png' }),
+    ]);
+    // An image is copied into the session's working directory, where a restricted session can open it.
+    const image = (await tool(session, 'packs_read', { id: 'news-desk', path: 'examples/lower-third.png' })).body;
+    expect(image).toMatchObject({ kind: 'image', mediaType: 'image/png', file: '.ccut/style/news-desk/lower-third.png' });
+    expect((await fs.stat(path.join(project.path, '.ccut', 'style', 'news-desk', 'lower-third.png'))).isFile()).toBe(true);
+    const manifest = (await tool(session, 'packs_read', { id: 'news-desk', path: 'pack.json' })).body;
+    expect(JSON.parse(manifest.content).id).toBe('news-desk');
+    for (const hidden of ['.cuccut-pack.json', '../news-desk/pack.json', 'nope.md']) {
+      const refused = await tool(session, 'packs_read', { id: 'news-desk', path: hidden });
+      expect(refused.isError, hidden).toBe(true);
+      expect(refused.body.error.code).toBe('PACK_FILE_NOT_FOUND');
+    }
+    expect((await tool(session, 'packs_read', { id: 'no-such-pack' })).body.error.code).toBe('PACK_NOT_FOUND');
+
+    const chosen = (await tool(session, 'packs_choose_style', { pack: 'none' })).body;
+    expect(chosen).toMatchObject({ projectId: project.id, choice: 'none', active: { packId: null, reason: 'chosen-none' } });
+    expect(await client.request('packs.active', { projectId: project.id })).toEqual({ pack: null, reason: 'chosen-none' });
+    expect((await tool(session, 'packs_choose_style', { pack: 'no-such-pack' })).body.error.code).toBe('PACK_NOT_FOUND');
+    expect((await tool(session, 'packs_choose_style', { pack: null, projectId: 'prj_other' })).body.error.code).toBe('PROJECT_NOT_FOUND');
+
+    // A session outside any project has nothing to choose for.
+    const { session: loose } = await agent(null);
+    expect((await tool(loose, 'packs_choose_style', { pack: 'news-desk' })).body.error.code).toBe('NO_PROJECT');
+
+    // The terminal: the project of the directory.
+    const viaCli = await localOk('packs_list', {}, project.path);
+    expect(viaCli.active).toMatchObject({ packId: null, reason: 'chosen-none' });
+    expect((await localOk('packs_list', {})).active).toBeNull();
+    expect(await localOk('packs_choose_style', { pack: null }, project.path)).toMatchObject({ choice: null, active: { packId: 'news-desk', reason: 'only' } });
+    expect((await local('packs_choose_style', { pack: 'none' })).ok).toBe(false);
+    const cliImage = await localOk('packs_read', { id: 'news-desk', path: 'examples/lower-third.png' });
+    expect(cliImage.file).toBe(path.join(home.packsDir, 'news-desk', 'examples', 'lower-third.png'));
+
+    // An external service lists and reads, gets no paths, and can't choose.
+    const { url, token } = await openMcp();
+    const viaService = await mcpCall(url, token, 'packs_list', {});
+    expect(viaService.body).toMatchObject({ active: null, packs: [expect.objectContaining({ id: 'news-desk' })] });
+    const serviceImage = await mcpCall(url, token, 'packs_read', { id: 'news-desk', path: 'examples/lower-third.png' });
+    expect(serviceImage.body.file).toBeNull();
+    expect(JSON.stringify(serviceImage.body)).not.toContain(home.root);
+    expect((await mcpCall(url, token, 'packs_choose_style', { pack: 'none' })).isError).toBe(true);
   });
 
   it('library_list / library_show：条目摘要与内容；没有的条目报 LIBRARY_ENTRY_NOT_FOUND', async () => {

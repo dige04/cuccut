@@ -37,4 +37,7 @@ export const tr: WorkspaceMessages = {
           ? '1 yanıt'
           : `${answers} yanıt`,
   ruleCount: (n, off) => (n === 0 ? 'Henüz yok' : `${n === 1 ? '1 kural' : `${n} kural`}${off ? `, ${off} kapalı` : ''}`),
+  packsBlurb:
+    'Taşınabilir bir video yapma yöntemi: şablonlar, beceriler, kütüphane öğeleri ve bir stil rehberi tek bir klasörde. Bir klasörden, GitHub’dan ya da bir web adresinden içe aktarın, ya da kendinizinkini gönderilmek üzere dışa aktarın.',
+  packCount: (n: number) => (n === 0 ? 'Kurulu paket yok' : n === 1 ? '1 paket' : `${n} paket`),
 };

@@ -10,15 +10,13 @@ import { useRuntime } from '../../../runtime/context.tsx';
 import { loadPacks } from '../../../runtime/pack-commands.ts';
 import { useConnection } from '../../../state/connection-store.ts';
 import { usePacks } from '../../../state/packs-store.ts';
-import type { Route } from '../../../state/shell-store.ts';
 import { PACKS_COPY } from '../packs-copy.ts';
 import { PANEL, PANEL_HOVER } from '../settings-ui.tsx';
+import { packsRoute } from './packs-ui.tsx';
 
 const L = () => PACKS_COPY.list;
 
 const ORIGIN_ICON: Record<PackOrigin['kind'], LucideIcon> = { local: FolderOpen, github: GitBranch, url: Globe };
-
-const packsRoute = (sub?: string): Route => (sub ? { tab: 'settings', section: 'packs', sub } : { tab: 'settings', section: 'packs' });
 
 /**
  * Settings › Packs (pack design §2.2, agentcut `PacksSettings`): what is installed and where each came from. Each row

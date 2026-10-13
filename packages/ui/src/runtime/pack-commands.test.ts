@@ -7,6 +7,7 @@ import {
   activePackStyle,
   choosePackStyle,
   clearPackPreview,
+  exportPack,
   getPack,
   inspectPack,
   installPack,
@@ -209,5 +210,26 @@ describe('the pack page and the style guide', () => {
     expect(calls[1]!.params).toEqual({ id: 'a', text: 'Keep it short.' });
     expect(usePacks.getState().packs.find((p) => p.id === 'a')?.hasStyle).toBe(true);
     expect(usePacks.getState().packs.find((p) => p.id === 'b')?.hasStyle).toBe(false);
+  });
+});
+
+describe('export', () => {
+  it('passes the request through and leaves the list a notice saying where the folder went', async () => {
+    usePacks.getState().succeed(list(summary('a')));
+    const params = {
+      dir: '/Users/me/Packs/kit',
+      manifest: { id: 'kit', name: 'Kit' },
+      templates: ['t1'],
+      skills: [],
+      library: [{ library: 'glossaries' as const, id: 'g1' }],
+      quickActions: [],
+    };
+    const { session, calls } = fakeSession(() => ({ dir: '/Users/me/Packs/kit', files: 3, bytes: 120 }));
+    const result = await exportPack(session, params);
+    expect(result.files).toBe(3);
+    expect(calls.map((c) => [c.method, c.params])).toEqual([['packs.export', params]]);
+    expect(usePacks.getState().notice).toEqual({ kind: 'exported', dir: '/Users/me/Packs/kit' });
+    // Nothing installed changed, so the list is not fetched again.
+    expect(usePacks.getState().packs.map((p) => p.id)).toEqual(['a']);
   });
 });

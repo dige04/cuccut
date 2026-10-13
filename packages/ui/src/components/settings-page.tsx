@@ -66,9 +66,13 @@ import { M as GENERAL } from './settings/general-settings-copy.ts';
 import { GLOSSARY_COPY } from './settings/glossary-copy.ts';
 import { GlossarySettings } from './settings/glossary-settings.tsx';
 import { PacksList } from './settings/packs/packs-list.tsx';
+import { PackExport } from './settings/packs/pack-export.tsx';
+import { PackImport } from './settings/packs/pack-import.tsx';
+import { PackPage } from './settings/packs/pack-page.tsx';
 import { ResourceCapacity } from './settings/resource-capacity.tsx';
 import { KeyCombo, Panel, PanelHeading, RowList, SettingsGroup, SettingsRow } from './settings/settings-ui.tsx';
 import { W } from './settings/workspace-copy.ts';
+import { packsView } from '../model/packs.ts';
 
 /** Rail icons per section (lucide, like the rest of the page chrome). */
 const SECTION_ICON: Record<SettingsSection, LucideIcon> = {
@@ -158,9 +162,9 @@ export function SettingsPage({ section = 'general', sub, model, platform }: {
             <AgentSkills />
           </Section>
         ) : section === 'packs' ? (
-          // The list draws its own heading: its actions depend on what is installed. The pages under it
-          // (`/settings/packs/<sub>`: import, export, a pack) are switched on `packsView(sub)` as they are built.
-          <PacksList title={labelOf('packs')} blurb={W.packsBlurb} />
+          // Each page draws its own heading: the list's actions depend on what is installed, and the pages under it
+          // (`/settings/packs/<sub>`: import, export, a pack) carry "← Packs" above theirs.
+          <PacksSection sub={sub} title={labelOf('packs')} />
         ) : section === 'glossary' ? (
           <Section title={labelOf('glossary')} blurb={GLOSSARY_COPY.list.lede}>
             <GlossarySettings />
@@ -181,6 +185,15 @@ export function SettingsPage({ section = 'general', sub, model, platform }: {
       </SectionBody>
     </RailPage>
   );
+}
+
+/** Settings › Packs and the pages under it (`/settings/packs/<sub>`, pack design §2.1). */
+function PacksSection({ sub, title }: { sub: string | undefined; title: string }) {
+  const view = packsView(sub);
+  if (view.kind === 'import') return <PackImport />;
+  if (view.kind === 'export') return <PackExport />;
+  if (view.kind === 'pack') return <PackPage id={view.id} />;
+  return <PacksList title={title} blurb={W.packsBlurb} />;
 }
 
 /**

@@ -5,6 +5,8 @@ import {
   type PackChangeResult,
   type PackChooseResult,
   type PackDetail,
+  type PackExportParams,
+  type PackExportResult,
   type PackPreview,
   type PackRemoveResult,
 } from '@cuccut/protocol';
@@ -15,7 +17,7 @@ import { loadTemplates } from './template-commands.ts';
 
 /**
  * Packs (`packs.*`, pack design §4.3, §6): one path for the list, the pack page, inspect, install, remove and restore,
- * the project's style choice and the guide. The list goes into state/packs-store; install, remove and restore return the
+ * the project's style choice, the guide and export. The list goes into state/packs-store; install, remove and restore return the
  * whole list, which is written back, and then the template and skill catalogs are fetched again, since a pack brings
  * and takes both (there is no topic). Kept in its own file so the session channel does not grow.
  */
@@ -107,6 +109,13 @@ export async function setPackStyle(session: Session, id: string, text: string, e
   const detail = await session.client.request('packs.setStyle', { id, text, ...(expectedHash !== undefined ? { expectedHash } : {}) });
   usePacks.getState().patch(detail.pack);
   return detail;
+}
+
+/** Write a pack folder (`packs.export`); the list then says where it went, once. Nothing installed changes. */
+export async function exportPack(session: Session, params: PackExportParams): Promise<PackExportResult> {
+  const result = await session.client.request('packs.export', params);
+  usePacks.getState().setNotice({ kind: 'exported', dir: result.dir });
+  return result;
 }
 
 /** For tests: clear in-progress requests. */

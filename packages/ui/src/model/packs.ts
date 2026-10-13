@@ -1,19 +1,33 @@
 import {
   expandQuickAction,
   isPackId,
+  PACK_DEFAULT_VERSION,
+  PACK_ID_PATTERN,
   PACK_LIMITS,
+  PACK_RESERVED_IDS,
+  PACK_STYLE_MAX_CHARS,
   packScanReasonText,
   RpcError,
+  slugPackId,
+  type LibraryEntrySummary,
   type PackActiveStyle,
+  type PackExportParams,
+  type PackFileHit,
   type PackItemState,
+  type PackPreview,
+  type PackPreviewItemState,
   type PackQuickAction,
   type PackRef,
+  type PackRemoveResult,
   type PackScanReason,
   type PackSource,
   type PackSummary,
+  type PackWarning,
+  type SkillSummary,
 } from '@cuccut/protocol';
 import { PACKS_COPY as P, type PackAction } from '../components/settings/packs-copy.ts';
 import { fileSizeLabel } from './agent-skills.ts';
+import type { HomeTemplate } from './home-templates.ts';
 import { shortenPath } from './format.ts';
 
 /**
@@ -222,9 +236,13 @@ function blockedMessage(details: Record<string, unknown>): string | null {
   const first = (hits[0] ?? details) as Record<string, unknown>;
   const why = str(first.why);
   if (!why || !SCAN_REASONS.has(why)) return null;
-  const line = num(first.line) ?? 0;
-  const text = packScanReasonText(why as PackScanReason, num(details.length) ?? 0).text;
-  return line > 0 ? P.errors.blocked(line, text, str(first.text) ?? '') : P.errors.blockedWhole(text);
+  return blockedSentence({ line: num(first.line) ?? 0, why: why as PackScanReason, text: str(first.text) ?? '' }, num(details.length) ?? 0);
+}
+
+/** "This pack will not install: line N tells the agent to … (“…”)." for one flagged line; `length` is the text's length, for `too-long`. */
+export function blockedSentence(hit: Pick<PackFileHit, 'line' | 'why' | 'text'>, length = 0): string {
+  const why = packScanReasonText(hit.why, length).text;
+  return hit.line > 0 ? P.errors.blocked(hit.line, why, hit.text) : P.errors.blockedWhole(why);
 }
 
 // ---- Routes ----
@@ -242,4 +260,204 @@ export function packsView(sub: string | undefined): PacksView {
 /** The notice line after a flow returns to the list. */
 export function packNoticeText(notice: { kind: 'installed'; name: string } | { kind: 'exported'; dir: string }): string {
   return notice.kind === 'installed' ? P.list.installed(notice.name) : P.list.exported(shortenPath(notice.dir));
+}
+
+// ---- Import (the preview) ----
+
+/** "1 template · 2 skills · 3 library items · a style guide · 1 reference file · 3 quick actions" for a pack not installed yet. */
+export function previewContents(preview: Pick<PackPreview, 'templates' | 'skills' | 'library' | 'style' | 'examples' | 'quickActions'>): string {
+  const L = P.list;
+  const parts = [
+    preview.templates.length ? L.templates(preview.templates.length) : '',
+    preview.skills.length ? L.skills(preview.skills.length) : '',
+    preview.library.length ? L.library(preview.library.length) : '',
+    preview.style ? L.styleGuide : '',
+    preview.examples.length ? P.import.examples(preview.examples.length) : '',
+    preview.quickActions.length ? L.quickActions(preview.quickActions.length) : '',
+  ].filter(Boolean);
+  return parts.length ? parts.join(' · ') : L.nothing;
+}
+
+/** What happens to a previewed template or skill whose id is taken; nothing for a new one. */
+export function previewStateNote(kind: 'template' | 'skill', state: PackPreviewItemState): string {
+  const S = P.import.state;
+  switch (state) {
+    case 'update':
+      return S.update;
+    case 'changed':
+      return S.changed;
+    case 'exists':
+      return S.exists(kind);
+    case 'builtin':
+      return S.builtin(kind);
+    default:
+      return '';
+  }
+}
+
+/** A warning that does not stop the install: a flagged line in a template prompt or a `SKILL.md`, or a recommended skill that is missing. */
+export function previewWarningText(warning: PackWarning): string {
+  if (warning.kind === 'missing-skill') return `${warning.template}: ${P.import.missingSkill(warning.skill)}`;
+  return P.import.warningScan(warning.file, warning.line, packScanReasonText(warning.why, 0).text);
+}
+
+/** Why Install is off: the first line that blocks the pack, or null when it can be installed. */
+export function previewBlockedReason(preview: Pick<PackPreview, 'blocked' | 'style'>): string | null {
+  const first = preview.blocked[0];
+  return first ? blockedSentence(first, preview.style?.text.length ?? 0) : null;
+}
+
+/** A library item's kind in words ("Glossary", "Colour", …); an unknown kind as it is. */
+export function libraryKindLabel(kind: string): string {
+  return P.libraryKind[kind] ?? kind;
+}
+
+// ---- The pack page ----
+
+/** "Version 1.0.0, by X. Installed 13 October 2026. Updates are manual: …". */
+export function packOriginLine(pack: Pick<PackSummary, 'version' | 'author' | 'installedAt'>): string {
+  const at = new Date(pack.installedAt);
+  const installed = Number.isNaN(at.getTime()) ? pack.installedAt : P.pack.installedDate(at);
+  return P.pack.originLine(pack.version, pack.author, installed);
+}
+
+/** The toast after a delete: what went with the pack, and how many changed items stayed. */
+export function packDeletedText(result: Pick<PackRemoveResult, 'removed' | 'moved' | 'kept'>): string {
+  const text = P.pack.deletedToast(result.removed.name, result.moved.templates, result.moved.skills);
+  return result.kept.length ? `${text} ${P.pack.deletedKept(result.kept.length)}` : text;
+}
+
+/** The style editor's state: characters against the limit, and whether there is anything to save. */
+export function styleEditorState(text: string, saved: string): { count: string; over: boolean; changed: boolean; reason: string | null } {
+  const over = text.length > PACK_STYLE_MAX_CHARS;
+  const changed = text !== saved;
+  return {
+    count: P.style.counter(text.length, PACK_STYLE_MAX_CHARS),
+    over,
+    changed,
+    reason: !changed ? P.style.unchanged : over ? P.style.tooLong(text.length, PACK_STYLE_MAX_CHARS) : null,
+  };
+}
+
+// ---- Export ----
+
+/** What the export page holds while it is filled in. Ids of the chosen items; quick actions by `packQuickActions` key; `stylePack` '' for none. */
+export interface PackExportDraft {
+  name: string;
+  id: string;
+  /** The ID was typed: it no longer follows the name. */
+  idEdited: boolean;
+  version: string;
+  author: string;
+  description: string;
+  dir: string;
+  /** The folder was typed or chosen: it no longer follows the ID. */
+  dirEdited: boolean;
+  templates: string[];
+  skills: string[];
+  /** `glossaries:<id>` / `brand:<id>`. */
+  library: string[];
+  quickActions: string[];
+  stylePack: string;
+}
+
+export function emptyExportDraft(): PackExportDraft {
+  return {
+    name: '',
+    id: '',
+    idEdited: false,
+    version: PACK_DEFAULT_VERSION,
+    author: '',
+    description: '',
+    dir: '',
+    dirEdited: false,
+    templates: [],
+    skills: [],
+    library: [],
+    quickActions: [],
+    stylePack: '',
+  };
+}
+
+/** `<projectsDir>/Packs/<id>`, with the separator the folder already uses. Empty without both. */
+export function defaultExportDir(projectsDir: string | null, id: string): string {
+  if (!projectsDir || !id) return '';
+  const sep = projectsDir.includes('\\') && !projectsDir.includes('/') ? '\\' : '/';
+  return `${projectsDir.replace(/[\\/]+$/, '')}${sep}Packs${sep}${id}`;
+}
+
+/** A change to the draft: the ID follows the name and the folder follows the ID until either is typed. */
+export function updateExportDraft(draft: PackExportDraft, patch: Partial<PackExportDraft>, projectsDir: string | null): PackExportDraft {
+  const next = { ...draft, ...patch };
+  if (patch.name !== undefined && !next.idEdited) next.id = slugPackId(next.name) ?? '';
+  if ((patch.name !== undefined || patch.id !== undefined) && !next.dirEdited) next.dir = defaultExportDir(projectsDir, next.id);
+  return next;
+}
+
+/** Why "Write the pack" is off, or null when it can be written. */
+export function exportProblem(draft: Pick<PackExportDraft, 'name' | 'id' | 'dir'>): string | null {
+  const E = P.export;
+  if (!draft.name.trim()) return E.needName;
+  if ((PACK_RESERVED_IDS as readonly string[]).includes(draft.id)) return E.reservedId;
+  if (!draft.id || draft.id.length > PACK_LIMITS.id || !PACK_ID_PATTERN.test(draft.id)) return E.needId;
+  if (!draft.dir.trim()) return E.needFolder;
+  return null;
+}
+
+/** The draft as `packs.export` takes it. Unknown quick-action keys (a pack removed meanwhile) are dropped. */
+export function exportRequest(draft: PackExportDraft, packs: readonly PackSummary[]): PackExportParams {
+  const actions = new Map(packQuickActions(packs).map((a) => [a.key, a]));
+  return {
+    dir: draft.dir.trim(),
+    manifest: {
+      id: draft.id,
+      name: draft.name.trim(),
+      ...(draft.version.trim() ? { version: draft.version.trim() } : {}),
+      ...(draft.author.trim() ? { author: draft.author.trim() } : {}),
+      ...(draft.description.trim() ? { description: draft.description.trim() } : {}),
+    },
+    templates: draft.templates,
+    skills: draft.skills,
+    library: draft.library.flatMap((key) => {
+      const [library, id] = key.split(/:(.*)/s) as [string, string];
+      return (library === 'glossaries' || library === 'brand') && id ? [{ library, id }] : [];
+    }),
+    quickActions: draft.quickActions.flatMap((key) => {
+      const action = actions.get(key);
+      return action ? [{ label: action.label, text: action.text }] : [];
+    }),
+    ...(draft.stylePack ? { stylePack: draft.stylePack } : {}),
+  };
+}
+
+/** The templates that can travel: the user's own (built-in ones are everywhere already), by title. */
+export function exportableTemplates(templates: readonly HomeTemplate[]): HomeTemplate[] {
+  return templates.filter((t) => t.source !== 'builtin').sort((a, b) => a.title.localeCompare(b.title) || a.id.localeCompare(b.id));
+}
+
+/** The skills that can travel: personal and pack skills, and apart those imported from GitHub (third-party); never built-in ones. */
+export function exportableSkills(skills: readonly SkillSummary[]): { own: SkillSummary[]; thirdParty: SkillSummary[] } {
+  const byName = (a: SkillSummary, b: SkillSummary) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id);
+  return {
+    own: skills.filter((s) => s.origin === 'personal' || s.origin === 'pack').sort(byName),
+    thirdParty: skills.filter((s) => s.origin === 'third-party').sort(byName),
+  };
+}
+
+/** Library entries that can travel, grouped: glossaries, colours and caption styles, then files (images, video, stickers, fonts). Voices never do. */
+export function exportLibraryGroups(
+  glossaries: readonly LibraryEntrySummary[],
+  brand: readonly LibraryEntrySummary[],
+): { key: 'glossaries' | 'colours' | 'media'; label: string; entries: LibraryEntrySummary[] }[] {
+  const styled = new Set(['color', 'captionStyle']);
+  return [
+    { key: 'glossaries' as const, label: P.export.glossaries, entries: [...glossaries] },
+    { key: 'colours' as const, label: P.export.colours, entries: brand.filter((e) => styled.has(e.kind)) },
+    { key: 'media' as const, label: P.export.media, entries: brand.filter((e) => !styled.has(e.kind)) },
+  ].filter((g) => g.entries.length);
+}
+
+/** The key of a library entry in `PackExportDraft.library`. */
+export function libraryKey(entry: Pick<LibraryEntrySummary, 'library' | 'id'>): string {
+  return `${entry.library}:${entry.id}`;
 }

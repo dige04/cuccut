@@ -13,8 +13,8 @@ a workspace settings shell.
 |---|---|---|
 | M0 | Foundation: theme pipeline (palette remap, dark only, Figtree, S2 shim), Tailwind + agentcut-style primitives in `packages/ui/src/cc`, product identity (`@cuccut/*` packages, `CUCCUT_*` env, `~/.cuccut`, `com.cuccut.app`), QC screenshot tool | done |
 | M1 | Shell and screens in agentcut's layout: page chrome (glass nav bar, back headers, ambient background), home landing, session/editor layout, settings shell, library/tasks/tools pages, S2 control styling, chat thread | done (follow-ups done: one yellow action per view, "Library" wording in all locales, Recent-row actions, inspector placement) |
-| M2 | Modules: profile + onboarding interview + rules in agent instructions, clip a long video (scored candidates), packs, review gate before delivery, publishing calendar | planned |
-| M3 | Vietnamese: filler words and pauses for `vi` (done), agent-facing text in English (done), code comments in English (done), third-party notices in English (done); left: Vietnamese copy QA, Chinese string literals in ~830 source files (build/tool output, errors; Chinese data such as filler words stays), Chinese test names in ~730 test files, ~220 Chinese docs | in progress |
+| M2 | Modules: profile + onboarding interview + rules in agent instructions (`m2-profile-rules.md`), packs (`m2-packs.md`), review gate before delivery (`m2-review-gate.md`), publishing calendar and connections (`m2-publishing.md`); each built in its own branch, QC'd in the browser client, reviewed and fixed, then merged. Clip a long video (scored candidates) shipped with M1 | done |
+| M3 | Vietnamese: filler words and pauses for `vi`, Vietnamese copy QA, agent-facing text, code comments, engine messages, docs and third-party notices in English (all done; `tools/i18n-scan.mjs` finds no untranslated user-facing Chinese). Left: Chinese test names (~690 test files) and Chinese READMEs of test/bench fixtures under `crates/`. Chinese data (filler words, examples of Chinese captions) stays | in progress |
 | M4 | QC: typecheck, tests, packaged app (`npm run package:mac -- --local`) installed and exercised in a clean macOS VM (tart on the SSD) | first pass done (see below) |
 
 ## QC record
@@ -24,7 +24,13 @@ a workspace settings shell.
   CDP: landing, Settings, Library, Tools, Background tasks, Services and "Clip a long video" render with no console
   errors. The runtime starts from the bundle. A fresh install asks to connect a coding agent before clipping. Switching to
   Vietnamese works without a restart.
-- Not covered yet: native window chrome in pixels (macOS blocks screen capture over SSH without Screen Recording
+- 2026-10-14, M2 modules, each on its branch with `npm run build:web` + `tools/qc-shot.mjs` and a seeded Runtime Home
+  (`tools/qc-seed-publishing.mjs` for the calendar): Settings › You/Rules/Packs/Review/Publishing, the welcome
+  interview, the pack page and import/export, the review dialog, the publication calendar and its dialogs, in English
+  and Vietnamese. Then a code review per module (profile 3, review gate 11, packs 9, publishing 10 findings, all
+  fixed). After the merges: `tsc` clean, full `vitest` 636 files passing.
+- Not covered yet: the editor-side M2 surfaces in pixels (no `engine-host` binary was built for the QC runs),
+  native window chrome in pixels (macOS blocks screen capture over SSH without Screen Recording
   permission), agent sessions (no signed-in agent in the VM), exporting a real video in the packaged app.
 
 ## Decisions

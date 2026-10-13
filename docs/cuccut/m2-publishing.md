@@ -260,12 +260,14 @@ Unchanged: `Network`, `Format` (and default-format rule), `DeliveryState`, `Publ
 (`baseUrl`, `configured`, `checkedAt`, `error`; never a key), `Destination` (`payload`, `payloadHash`, remote fields,
 `evidence: string[]` kept for phase 3), `ResolvedPayload` (`exportId` instead of `artifactId`), `Publication`
 (label, copy, scheduledAt, timezone, priority, expiresAt, destinations, revision, createdAt, updatedAt, origin,
-archived) + `proposal: {revision, copy, reason, jobId, at} | null`.
+archived) + `proposal: {revision, copy, reason, jobId, at} | null` + `proposalError: {jobId, error, errorRef, at} | null`
+(the last "Propose text" answer that could not be used; cleared by the next proposal; like `proposal`, it keeps the revision).
 
 `PublicationDetail = Publication & {status, approved, videoAvailable, currentVideoRevision: string | null, newerEdit,
 export: PinnedExport | null, issues: ValidationIssue[]}`. `PublicationRow` (topic index) = `{id, videoId, projectId,
 label, status, archived, revision, scheduledAt, timezone, priority, expiresAt, exportPosterId?, destinations: [{id,
-accountId, format, state, at (calendarInstant)}]}`.
+accountId, format, state, at (calendarInstant)}], proposalAt?}`; `proposalAt` is when the latest proposal or proposal
+failure was stored, so an open dialog refetches on it although the revision did not change.
 
 Pure logic in `packages/protocol/src/publishing/` (ported nearly verbatim, browser-safe, no Node APIs):
 `resolve.ts` (status derivation in agentcut order, `caption()`, `calendarInstant`), `schedule.ts` (`localInstant`
@@ -391,6 +393,7 @@ missing ones (`PUBLICATION_NOT_FOUND`).
 | `publishing.connections.save` / `.remove` | `{id?, provider, name}` / `{connectionId}` |
 | `publishing.accounts.save` / `.remove` / `.link` | `{id?, connectionId, network, name, remoteId, disabled?}` / `{accountId}` / `{accountId, equivalentTo\|null}` |
 | `publishing.transfer.export` / `.preview` / `.apply` | `{}` → `{archive, fileName}`; `{archive}` → `CalendarImportPreview`; `{archive}` → `{added}` |
+| `publishing.cleanup` | `{dryRun?}` → `{publications, files, bytes}`: deletes archived publications older than `archivedRetentionDays` and pinned export files no publication uses (files pinned in the last few minutes are kept); `dryRun` only counts (human desktop only) |
 
 Errors (`RpcError` code + `details.code`): `conflict`/`PUBLICATION_CONFLICT` (`details.current`), `not-found`/
 `PUBLICATION_NOT_FOUND`, `invalid-request`/`PUBLICATION_INVALID` (`details.issues`), `conflict`/`PUBLICATION_LOCKED`

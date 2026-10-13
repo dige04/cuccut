@@ -13,7 +13,7 @@ describe('设置分组', () => {
   it('Agent 自成一组，在偏好设置之后、应用之前：提供方、skills，然后是 packs', () => {
     expect(SETTINGS_GROUPS.map((g) => g.id)).toEqual(['preferences', 'agents', 'app']);
     expect(SETTINGS_GROUPS.find((g) => g.id === 'agents')).toMatchObject({ label: 'Agent', keys: ['agent', 'skills', 'packs'] });
-    expect(SETTINGS_GROUPS.find((g) => g.id === 'app')?.keys).toEqual(['glossary', 'review', 'privacy', 'diagnostics', 'about']);
+    expect(SETTINGS_GROUPS.find((g) => g.id === 'app')?.keys).toEqual(['publishing', 'glossary', 'review', 'privacy', 'diagnostics', 'about']);
   });
 
   it('the preferences group opens with the profile (You, Rules), then General, Shortcuts and Fonts', () => {
@@ -24,7 +24,7 @@ describe('设置分组', () => {
     expect(label('you')).toBeTruthy();
     expect(label('rules')).toBeTruthy();
     expect(SETTINGS_GROUPS.find((g) => g.id === 'agents')).toMatchObject({ label: 'Agent', keys: ['agent', 'skills', 'packs'] });
-    expect(SETTINGS_GROUPS.find((g) => g.id === 'app')?.keys).toEqual(['glossary', 'review', 'privacy', 'diagnostics', 'about']);
+    expect(SETTINGS_GROUPS.find((g) => g.id === 'app')?.keys).toEqual(['publishing', 'glossary', 'review', 'privacy', 'diagnostics', 'about']);
   });
 
   it('每个分节恰好属于一组，且都有标签', () => {
@@ -55,6 +55,12 @@ describe('设置分组', () => {
   it('packs is a section of its own, with a label', () => {
     expect(isSettingsSection('packs')).toBe(true);
     expect(SETTINGS_SECTION_INFO.find((s) => s.key === 'packs')?.label).toBeTruthy();
+  });
+
+  it('publishing opens the app group, ahead of the glossary', () => {
+    expect(isSettingsSection('publishing')).toBe(true);
+    expect(SETTINGS_GROUPS.find((g) => g.id === 'app')?.keys[0]).toBe('publishing');
+    expect(SETTINGS_SECTION_INFO.find((s) => s.key === 'publishing')?.label).toBeTruthy();
   });
 });
 

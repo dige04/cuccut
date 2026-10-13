@@ -6,3 +6,4 @@ export * from './runtime-storage-credentials.ts';
 export * from './runtime-storage-files.ts';
 export * from './runtime-storage-grants.ts';
 export * from './runtime-storage-library.ts';
+export * from './runtime-storage-publishing.ts';

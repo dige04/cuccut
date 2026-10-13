@@ -41,6 +41,7 @@ import { insertVisual, type VisualLayer } from '../model/new-items.ts';
 import { useConnection } from '../state/connection-store.ts';
 import { useDirectory } from '../state/directory-store.ts';
 import { useGrants } from '../state/grants-store.ts';
+import { usePublishing } from '../state/publishing-store.ts';
 import { useJobs } from '../state/jobs-store.ts';
 import { libraryFeed } from '../state/library-feed.ts';
 import { useModels } from '../state/models-store.ts';
@@ -147,6 +148,10 @@ export class RuntimeSession {
             void this.reviewGet(event.videoId).catch(() => {});
           }
         },
+      }),
+      this.client.subscribe<import('@cuccut/protocol').PublishingSnapshot, import('@cuccut/protocol').PublishingEvent>('publishing', {
+        snapshot: (snapshot) => usePublishing.getState().replace(snapshot),
+        event: (event) => usePublishing.getState().apply(event),
       }),
     );
     void this.client.connect().catch(() => {});

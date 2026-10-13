@@ -24,6 +24,7 @@ export const zhHans: SettingsNavMessages = {
     agent: 'Agent 提供方',
     skills: 'Skills',
     packs: '包',
+    publishing: '发布',
     glossary: '术语库',
     review: '审核',
     privacy: '隐私与权限',

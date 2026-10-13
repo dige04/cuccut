@@ -18,6 +18,8 @@ import { vi } from './chrome-copy.vi.ts';
 const en = {
   workspace: 'Local workspace',
   library: 'Library',
+  /** The publication calendar in the navigation. */
+  calendar: 'Calendar',
   backHome: 'Back to home',
   stayLocal: 'Projects and media stay on this computer.',
 };

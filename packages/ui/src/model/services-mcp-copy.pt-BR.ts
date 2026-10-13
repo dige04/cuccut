@@ -59,7 +59,7 @@ export const ptBR: ServicesMcpMessages = {
     packs_read: 'Ler um pacote',
     library_list: "Listar biblioteca",
     library_show: "Ver item de biblioteca",
-    download: "Baixar de link",
+    download: "Baixar de link", publications_list: 'Listar publicações', publications_inspect: 'Ver publicação', publications_prepare: 'Preparar publicações', publications_update: 'Editar publicação', publications_reschedule: 'Mover publicação', publications_slots: 'Planejar horários de publicação', publications_reserve: 'Reservar horários de publicação', publications_propose_copy: 'Sugerir texto de publicação',
   },
   gates: {
     answer: "Respondido diretamente",

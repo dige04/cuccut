@@ -3,10 +3,13 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import {
   AGENT_MODES,
   TEMPLATE_ID_PATTERN,
+  CALENDAR_VIEWS,
   fileTargetQuery,
+  isCivilDate,
   isLanguagePreference,
   newId,
   type AgentMode,
+  type CalendarView,
   type FileTarget,
   type MediaTarget,
   type Id,
@@ -56,7 +59,7 @@ export { SETTINGS_SECTIONS } from '../model/settings-nav.ts';
 
 /** Top-level entry (App rail, product design §2.1, revised by user). */
 /** `welcome` is the full-screen interview (docs/cuccut/m2-profile-rules.md §2.3): its own route, with no rail entry of its own (it belongs to Home). */
-export type Tab = 'home' | 'space' | 'tasks' | 'models' | 'services' | 'tools' | 'settings' | 'welcome';
+export type Tab = 'home' | 'space' | 'calendar' | 'tasks' | 'models' | 'services' | 'tools' | 'settings' | 'welcome';
 
 /**
  * Home's `pane`: the current tab of the conversation's right-side panel (video, files, project files, web page); the other tabs of the same conversation are recorded in `workspaces`.
@@ -69,6 +72,11 @@ export type Route =
   | { tab: 'space'; category: SpaceCategory; projectId: Id | null; video?: FileTarget; from?: Id }
   /** `sub`: a page inside the section (`/settings/packs/<sub>`: `import`, `export` or a pack id; `/settings/skills/<skill id>`; see `settingsSub`). */
   | { tab: 'settings'; section: SettingsSection; sub?: string }
+  /**
+   * The publication calendar (design `docs/cuccut/m2-publishing.md` §2.2): `projectId` scopes it to one project, `view` and `day` (a civil date in the
+   * workspace timezone) say what it shows, and `publicationId` opens that publication's dialog (a deep link).
+   */
+  | { tab: 'calendar'; projectId?: Id; view?: CalendarView; day?: string; publicationId?: Id }
   | { tab: 'models'; category: ModelCategory; page?: ModelPage }
   | { tab: 'tasks'; taskId?: Id }
   | { tab: 'services'; service?: string }
@@ -683,14 +691,14 @@ function sameRoute(a: Route, b: Route): boolean {
  * Settings (including model configuration) has its own sectioned navigation and no page sidebar.
  */
 export function hasSidebar(route: Route): boolean {
-  return route.tab !== 'settings' && route.tab !== 'models' && route.tab !== 'welcome';
+  return route.tab !== 'settings' && route.tab !== 'models' && route.tab !== 'calendar' && route.tab !== 'welcome';
 }
 
 /**
  * In-app links: `/home`, `/c/<conversation>`, `/p/<project>` (starts a new conversation in this project); the Home side panel tabs go in the query string
  * (`?video=` / `?file=` take a JSON FileTarget, `?files=1`, `?web=<id>&url=<address>`);
  * `/space/<category>[/<project>][?video=]`, `/settings/<section>[/<sub>]`, `/settings/models/<category>[/<page>]`, `/tasks[/<task>]`,
- * `/services[/<service>]`, `/tools[/<tool>]`, `/welcome`.
+ * `/services[/<service>]`, `/tools[/<tool>]`, `/welcome`, `/calendar?projectId=&view=&day=&publication=`.
  */
 export function hrefFor(route: Route): string {
   switch (route.tab) {
@@ -707,6 +715,15 @@ export function hrefFor(route: Route): string {
         ...(route.video ? [`video=${encodeURIComponent(JSON.stringify(route.video))}`] : []),
       ];
       return (route.projectId ? `/space/${route.category}/${route.projectId}` : `/space/${route.category}`) + (params.length ? `?${params.join('&')}` : '');
+    }
+    case 'calendar': {
+      const query = new URLSearchParams();
+      if (route.projectId) query.set('projectId', route.projectId);
+      if (route.view) query.set('view', route.view);
+      if (route.day) query.set('day', route.day);
+      if (route.publicationId) query.set('publication', route.publicationId);
+      const text = query.toString();
+      return text ? `/calendar?${text}` : '/calendar';
     }
     case 'settings':
       return route.sub ? `/settings/${route.section}/${encodeURIComponent(route.sub)}` : `/settings/${route.section}`;
@@ -758,6 +775,7 @@ export function parseHref(href: string): Route {
     const route: Route = { tab: 'space', category, projectId: b || null, ...(from ? { from } : {}) };
     return video ? { ...route, video } : route;
   }
+  if (head === 'calendar') return parseCalendar(query);
   if (head === 'settings' && a === 'models') {
     const category = isModelCategory(b) ? b : 'asr';
     return isModelPage(c) ? { tab: 'models', category, page: c } : { tab: 'models', category };
@@ -795,6 +813,21 @@ function safeDecode(segment: string): string {
   } catch {
     return segment;
   }
+}
+
+/** `/calendar?projectId=&view=&day=&publication=`: values that cannot be read are left out (the calendar then shows its defaults). */
+function parseCalendar(query: URLSearchParams): Route {
+  const projectId = query.get('projectId');
+  const view = query.get('view');
+  const day = query.get('day');
+  const publicationId = query.get('publication');
+  return {
+    tab: 'calendar',
+    ...(projectId ? { projectId } : {}),
+    ...(view && (CALENDAR_VIEWS as readonly string[]).includes(view) ? { view: view as CalendarView } : {}),
+    ...(day && isCivilDate(day) ? { day } : {}),
+    ...(publicationId ? { publicationId } : {}),
+  };
 }
 
 function parsePane(query: URLSearchParams): WorkspaceItem | undefined {

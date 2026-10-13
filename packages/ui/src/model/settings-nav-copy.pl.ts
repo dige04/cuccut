@@ -24,6 +24,7 @@ export const pl: SettingsNavMessages = {
     agent: "Dostawcy agentów",
     skills: "Skills",
     packs: 'Pakiety',
+    publishing: 'Publikacja',
     glossary: "Słownik",
     review: 'Recenzja',
     privacy: "Prywatność i uprawnienia",

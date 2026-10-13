@@ -76,6 +76,9 @@ import { VoiceCloneService } from './library/voice-clone-service.ts';
 import { openModelJobs, type ModelJobs, type ModelJobsOptions } from './models/model-jobs.ts';
 import { ModelInstallTools } from './agent-tools/model-install-tools.ts';
 import { ExportService } from './exports/export-service.ts';
+import { PublishingService } from './publishing/publishing-service.ts';
+import { runtimePublishingVideos } from './publishing/publishing-videos.ts';
+import { PublishingTools } from './agent-tools/publishing-tools.ts';
 import { FontService } from './fonts/font-service.ts';
 import type { FontCatalogue } from './fonts/font-catalogue.ts';
 import type { FontDownloadOptions } from './fonts/font-download.ts';
@@ -264,6 +267,8 @@ export interface RunningRuntime {
   profile: ProfileService;
   /** The review gate before delivery (docs/cuccut/m2-review-gate.md): the standard, reviews, per-video decisions and the export gate. */
   review: ReviewService;
+  /** Publishing calendar and connections (design m2-publishing §4.1). */
+  publishing: PublishingService;
   log: Logger;
   close(): Promise<void>;
 }
@@ -295,6 +300,7 @@ const STOP_ORDER = [
   'storage-gc',
   'services',
   'nodes',
+  'publishing',
   'jobs',
   'grants',
   'usage',
@@ -656,6 +662,18 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       review,
       log: log.child('exports'),
     });
+    // Publishing calendar (design m2-publishing §4.1): its own store under the Runtime Home. The Space catalog is built later, so it is fetched at call
+    // time. An unreadable store leaves publishing unavailable (the snapshot says why) without stopping the Runtime.
+    const publishing = await PublishingService.open({
+      file: home.publishingFile,
+      dir: home.publishingDir,
+      jobs: models.jobs,
+      exports,
+      videos: runtimePublishingVideos({ videos, space: () => spaceRef }),
+      log: log.child('publishing'),
+    });
+    stops.add('publishing', () => publishing.close(), 'Stopping publishing failed');
+    publishing.start();
     // If sharing is on, the node service starts listening here (the pairing code is not reissued). A port that is already taken does not stop the Runtime from starting.
     const nodes = await openNodeShare(home, models, log, options.nodes);
     // Stopping the node service cancels remote jobs, closes the listener, and withdraws the mDNS registration. It may listen on all interfaces, so even when startup fails this externally reachable port must not be left open.
@@ -868,6 +886,8 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
           packages,
           // The Space directory is built later, so it is fetched at derivation time.
           findDerived: (parentVideoId, key) => spaceDerivedFinder(space)(parentVideoId, key),
+          // "Start new clips ready to publish" (design m2-publishing §2.5): a newly cut clip may get a publication, text and a time.
+          onDerived: (videoId, by) => void publishing.prepareGenerated([videoId], { kind: 'agent', ...by }),
         }),
         new ModelTools({ models, scope: toolScope }),
         new JobTools({ jobs: models.jobs, pipelines: models.pipelines, scope: toolScope }),
@@ -910,6 +930,8 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
         new DesignTools({ scope: toolScope, design: slides }),
         // Design systems in a session (docs/design/canvas §10.5): structure validation and material import. Storage comes from the same editor service.
         new DesignSystemTools({ scope: toolScope, designSystem: slides }),
+        // Publishing (design m2-publishing §5): the same service as the UI's `publishing.*` methods; visibility follows the scope's videos.
+        new PublishingTools({ publishing, scope: toolScope }),
       ];
     };
     // The session's tool bridge and the gateway's `catalog.call` (terminal) share the same tool instances. `ScopeRouter` routes by the subject's kind to the session's scope or the terminal's scope (the user themselves, with relative paths resolved against cwd). Each of the two surfaces is a view of this tool set (`surface`).
@@ -1078,6 +1100,7 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       requestStop: options.requestStop ?? null,
       legacyUpgrade,
       review,
+      publishing,
     };
     // The web service (§4.8) uses the same handler functions, swapping in only its own media handle (a same-origin address, requiring a session). The allowlist is at its gateway entry.
     services.web.bind({
@@ -1178,6 +1201,7 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
       fonts,
       profile,
       review,
+      publishing,
       log,
       close,
     };

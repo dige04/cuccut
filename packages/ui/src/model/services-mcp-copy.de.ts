@@ -59,7 +59,7 @@ export const de: ServicesMcpMessages = {
     packs_read: 'Ein Pack lesen',
     library_list: "Bibliothek auflisten",
     library_show: "Bibliothekseintrag anzeigen",
-    download: "Über Link herunterladen",
+    download: "Über Link herunterladen", publications_list: 'Veröffentlichungen auflisten', publications_inspect: 'Veröffentlichung anzeigen', publications_prepare: 'Veröffentlichungen vorbereiten', publications_update: 'Veröffentlichung bearbeiten', publications_reschedule: 'Veröffentlichung verschieben', publications_slots: 'Veröffentlichungszeiten planen', publications_reserve: 'Veröffentlichungszeiten reservieren', publications_propose_copy: 'Veröffentlichungstext vorschlagen',
   },
   gates: {
     answer: "Antwortet direkt",

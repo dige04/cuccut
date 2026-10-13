@@ -6,7 +6,7 @@ import { M } from './settings-nav-copy.ts';
  * The preferences group opens with the user's profile (docs/cuccut/m2-profile-rules.md §2.1–2.2): You and Rules.
  */
 
-export const SETTINGS_SECTIONS = ['you', 'rules', 'general', 'shortcuts', 'fonts', 'agent', 'skills', 'packs', 'glossary', 'review', 'privacy', 'diagnostics', 'about'] as const;
+export const SETTINGS_SECTIONS = ['you', 'rules', 'general', 'shortcuts', 'fonts', 'agent', 'skills', 'packs', 'publishing', 'glossary', 'review', 'privacy', 'diagnostics', 'about'] as const;
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 
 export const MODEL_CATEGORIES = ['asr', 'tts', 'llm', 'image', 'music', 'sep', 'vision'] as const;
@@ -61,6 +61,9 @@ export const SETTINGS_SECTION_INFO: readonly SettingsSectionInfo[] = SETTINGS_SE
 }));
 
 /**
+ * Publishing (accounts, schedule, archive; design `docs/cuccut/m2-publishing.md` §2.5) opens the App group: it is a workspace preference like the
+ * glossary, not a model or an agent setting.
+ *
  * A group id must not be the same as an item key (S2 SideNav shares one id space between sections and items, and a name clash throws a RangeError), so the Agent group is named `agents`.
  * The model group's items are MODEL_CATEGORIES, which the settings page inserts itself between `agents` and `app`.
  */
@@ -75,7 +78,7 @@ const group = (id: SettingsGroupId, keys: readonly SettingsSection[]) => ({
 export const SETTINGS_GROUPS: readonly { id: SettingsGroupId; label: string; keys: readonly SettingsSection[] }[] = [
   group('preferences', ['you', 'rules', 'general', 'shortcuts', 'fonts']),
   group('agents', ['agent', 'skills', 'packs']),
-  group('app', ['glossary', 'review', 'privacy', 'diagnostics', 'about']),
+  group('app', ['publishing', 'glossary', 'review', 'privacy', 'diagnostics', 'about']),
 ];
 
 /** The old link `/settings/agent/<page>` (from when Agent & Skills still had tabs) now goes to its new place; pages that are not recognized fall back to the Agent provider. */

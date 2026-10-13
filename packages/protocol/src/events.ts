@@ -8,6 +8,7 @@ import type { ReviewTopicEvent, ReviewTopicSnapshot } from './review.ts';
 import type { AgentsView } from './methods.ts';
 import type { ModelsEvent, ModelsSnapshot } from './models.ts';
 import type { ProfileEvent, ProfileSnapshot } from './profile.ts';
+import type { PublishingEvent, PublishingSnapshot } from './publishing.ts';
 import type { SettingsEvent, SettingsSnapshot } from './settings.ts';
 import type { ServicesEvent, ServicesSnapshot } from './services.ts';
 import type { VideoTopicEvent, VideoTopicSnapshot } from './video.ts';
@@ -29,6 +30,7 @@ import type { VideoTopicEvent, VideoTopicSnapshot } from './video.ts';
  * - `legacy-import`: import prompts for legacy projects and the imports running in this launch (architecture design §2.7, `legacy-import.ts`); the snapshot is the prompt awaiting an answer and the import progress; `prompt.updated` is sent when a prompt appears or disappears, and `run.updated` is sent on each import progress.
  * - `profile`: the user's profile at the workspace level (docs/cuccut/m2-profile-rules.md §4); the snapshot is `profile.get`, each change sends the whole snapshot again (`profile.updated`), a write from the answers sends its progress (`profile.writing`), and a project's change sends `profile.projectUpdated` for subscribers to refetch.
  * - `review`: the review gate (docs/cuccut/m2-review-gate.md §4.5): the user's standard and one summary per reviewed video (those written since start, plus those read through `review.get`); `criteria` is sent when the standard changes, `result` when a result is written. Waivers are document edits, so they also arrive through `video:<id>`.
+ * - `publishing`: the publishing calendar (design `docs/cuccut/m2-publishing.md` §4.4): settings, connections, accounts and calendar rows; `due` when a by-hand post is due.
  * - `conversation:<id>`: content of one session (card projection).
  * - `video:<id>`: projection of one opened video (command and protocol spec §10).
  *
@@ -49,6 +51,7 @@ export type Topic =
   | 'legacy-import'
   | 'profile'
   | 'review'
+  | 'publishing'
   | `conversation:${Id}`
   | `video:${Id}`;
 
@@ -158,6 +161,7 @@ export interface TopicMap {
   'legacy-import': { snapshot: LegacyImportSnapshot; event: LegacyImportEvent };
   profile: { snapshot: ProfileSnapshot; event: ProfileEvent };
   review: { snapshot: ReviewTopicSnapshot; event: ReviewTopicEvent };
+  publishing: { snapshot: PublishingSnapshot; event: PublishingEvent };
   conversation: { snapshot: ConversationSnapshot; event: ConversationEvent };
   video: { snapshot: VideoTopicSnapshot; event: VideoTopicEvent };
 }
@@ -190,6 +194,8 @@ export type SnapshotOf<T extends Topic> = T extends 'directory'
                         ? ProfileSnapshot
                         : T extends 'review'
                         ? ReviewTopicSnapshot
+                        : T extends 'publishing'
+                        ? PublishingSnapshot
                         : T extends `video:${string}`
                         ? VideoTopicSnapshot
                         : ConversationSnapshot;
@@ -221,6 +227,8 @@ export type EventOf<T extends Topic> = T extends 'directory'
                         ? ProfileEvent
                         : T extends 'review'
                         ? ReviewTopicEvent
+                        : T extends 'publishing'
+                        ? PublishingEvent
                         : T extends `video:${string}`
                         ? VideoTopicEvent
                         : ConversationEvent;

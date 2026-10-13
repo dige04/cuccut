@@ -24,6 +24,7 @@ export const de: SettingsNavMessages = {
     agent: "Agentenanbieter",
     skills: "Skills",
     packs: 'Packs',
+    publishing: 'Veröffentlichung',
     glossary: "Glossar",
     review: 'Prüfung',
     privacy: "Datenschutz und Berechtigungen",

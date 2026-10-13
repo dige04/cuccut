@@ -24,6 +24,7 @@ export const ja: SettingsNavMessages = {
     agent: 'Agent プロバイダ',
     skills: 'Skills',
     packs: 'パック',
+    publishing: '公開',
     glossary: '用語集',
     review: 'レビュー',
     privacy: 'プライバシーと権限',

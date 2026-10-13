@@ -78,6 +78,8 @@ import type { LegacyUpgrade } from './legacy-upgrade.ts';
 import { catalogMethods } from './agent-tools/catalog-methods.ts';
 import type { ReviewService } from './review/review-service.ts';
 import { reviewMethods } from './review/review-methods.ts';
+import type { PublishingService } from './publishing/publishing-service.ts';
+import { publishingActor, publishingMethods } from './publishing/publishing-methods.ts';
 
 type MethodHandler<M extends RpcMethod> = (params: RpcParams<M>, principal: TrustedPrincipal) => RpcResult<M> | Promise<RpcResult<M>>;
 
@@ -148,6 +150,8 @@ export interface HandlerDeps {
   legacyUpgrade: LegacyUpgrade;
   /** The review gate before delivery (docs/cuccut/m2-review-gate.md §4.5): `review.*` and the `review` topic. The same service as the review tools and the export gate. */
   review: ReviewService;
+  /** Publishing calendar and connections (`publishing.*` and the `publishing` topic; design m2-publishing §4). */
+  publishing: PublishingService;
 }
 
 /** Resolves a file target to its source directory and file (a path in a Space entry, a session working directory or a project directory). Checks inside the directory are done in the media channel (or the video service). */
@@ -225,6 +229,7 @@ export function createHandlers({
   requestStop,
   legacyUpgrade,
   review,
+  publishing,
 }: HandlerDeps): RpcHandlers {
   const { catalog, jobs, services, pipelines } = models;
   const packages = new PackageImporter(videos);
@@ -461,8 +466,12 @@ export function createHandlers({
         return videos.create(p, root, scope, principal);
       },
       // Derive child videos (§3.5). Same service as the videos_derive tool.
-      'videos.derive': async (p, principal) =>
-        (await deriveVideo({ videos, findDerived: spaceDerivedFinder(space) }, p, principal)).result,
+      'videos.derive': async (p, principal) => {
+        const { result } = await deriveVideo({ videos, findDerived: spaceDerivedFinder(space) }, p, principal);
+        // "Start new clips ready to publish" (design m2-publishing §2.5): runs in the background and never fails the derivation.
+        if (!result.reused) void publishing.prepareGenerated([result.video.videoId], publishingActor(principal));
+        return result;
+      },
       // Shot cuts (§3.5). Same implementation as the videos_shots tool.
       'videos.shots': (p) => videoShots({ analysis, videos }, p),
       // Portable package (video format spec §8). Built as a new video in the source directory. Not offered to agents or external services, since they have no entry point for this method.
@@ -571,6 +580,8 @@ export function createHandlers({
       ...skillMethods({ skills, installer: skillInstaller }),
       ...profileMethods({ profile }),
       ...packMethods({ ...packs, media }),
+      // Publishing (design m2-publishing §4.3): the same service as the agent tools; read handles go through this gateway's media channel.
+      ...publishingMethods({ publishing, media }),
       ...catalogMethods(toolCatalog, agentSkillsDir === undefined ? {} : { agentSkillsDir: () => agentSkillsDir }),
       ...toolCatalogueMethods({
         space,
@@ -667,6 +678,7 @@ export function createHandlers({
       if (topic === 'legacy-import') return legacyUpgrade.topic.subscribe(afterSeq, listener) as TopicSubscription<unknown, unknown>;
       if (topic === 'profile') return profile.topic.subscribe(afterSeq, listener) as TopicSubscription<unknown, unknown>;
       if (topic === 'review') return review.topic.log.subscribe(afterSeq, listener) as TopicSubscription<unknown, unknown>;
+      if (topic === 'publishing') return publishing.topic.subscribe(afterSeq, listener) as TopicSubscription<unknown, unknown>;
       const videoId = parseVideoTopic(topic);
       if (videoId) return videos.subscribe(videoId, afterSeq, listener);
       return harness.subscribe(topic, afterSeq, listener);

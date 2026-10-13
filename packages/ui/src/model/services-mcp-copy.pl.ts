@@ -58,7 +58,7 @@ export const pl: ServicesMcpMessages = {
     packs_read: 'Odczytaj pakiet',
     library_list: "Wyświetl bibliotekę",
     library_show: "Zobacz element biblioteki",
-    download: "Pobierz z linku",
+    download: "Pobierz z linku", publications_list: 'Wyświetl publikacje', publications_inspect: 'Wyświetl publikację', publications_prepare: 'Przygotuj publikacje', publications_update: 'Edytuj publikację', publications_reschedule: 'Przenieś publikację', publications_slots: 'Zaplanuj godziny publikacji', publications_reserve: 'Zarezerwuj godziny publikacji', publications_propose_copy: 'Zaproponuj tekst publikacji',
   },
   gates: {
     answer: "Odpowiada bezpośrednio",

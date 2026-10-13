@@ -58,7 +58,7 @@ export const zhHans: ServicesMcpMessages = {
     packs_read: '读取一个包',
     library_list: '列出用户库',
     library_show: '查看用户库条目',
-    download: '从链接下载',
+    download: '从链接下载', publications_list: '列出发布', publications_inspect: '查看发布', publications_prepare: '准备发布', publications_update: '编辑发布', publications_reschedule: '移动发布', publications_slots: '规划发布时间', publications_reserve: '预留发布时间', publications_propose_copy: '建议发布文案',
   },
   gates: {
     answer: '直接应答',

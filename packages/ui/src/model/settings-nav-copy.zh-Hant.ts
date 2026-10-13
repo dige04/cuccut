@@ -24,6 +24,7 @@ export const zhHant: SettingsNavMessages = {
     agent: 'Agent 供應商',
     skills: 'Skills',
     packs: '套件',
+    publishing: '發布',
     glossary: '術語表',
     review: '審核',
     privacy: '隱私與權限',

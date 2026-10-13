@@ -42,6 +42,7 @@ const routes: Route[] = [
   { tab: 'settings', section: 'packs', sub: 'import' },
   { tab: 'settings', section: 'packs', sub: 'export' },
   { tab: 'settings', section: 'packs', sub: 'news-desk' },
+  { tab: 'settings', section: 'publishing' },
   { tab: 'models', category: 'asr' },
   { tab: 'models', category: 'tts', page: 'voices' },
   { tab: 'tasks' },
@@ -51,6 +52,10 @@ const routes: Route[] = [
   { tab: 'services' },
   { tab: 'services', service: 'runtime' },
   { tab: 'welcome' },
+  { tab: 'calendar' },
+  { tab: 'calendar', projectId: 'p1', view: 'week', day: '2026-10-14', publicationId: 'pub 1' },
+  { tab: 'calendar', view: 'agenda' },
+  { tab: 'calendar', publicationId: 'pub_2' },
 ];
 
 describe('界面内链接', () => {
@@ -92,6 +97,16 @@ describe('界面内链接', () => {
     expect(hrefFor(skill)).toBe('/settings/skills/ti%C3%AAu-%C4%91%E1%BB%81');
     expect(parseHref(hrefFor(skill))).toEqual(skill);
     expect(parseHref('/settings/skills/news-desk-headlines')).toEqual({ tab: 'settings', section: 'skills', sub: 'news-desk-headlines' });
+  });
+
+  it('publication calendar links: query values are kept, unreadable ones are left out', () => {
+    expect(hrefFor({ tab: 'calendar' })).toBe('/calendar');
+    expect(hrefFor({ tab: 'calendar', projectId: 'p1', view: 'month', day: '2026-10-01', publicationId: 'x' })).toBe(
+      '/calendar?projectId=p1&view=month&day=2026-10-01&publication=x',
+    );
+    expect(parseHref('/calendar?view=year&day=2026-02-30&projectId=p1')).toEqual({ tab: 'calendar', projectId: 'p1' });
+    expect(parseHref('/calendar?publication=pub_1')).toEqual({ tab: 'calendar', publicationId: 'pub_1' });
+    expect(hasSidebar({ tab: 'calendar' })).toBe(false);
   });
 
   it('旧链接迁移：设置里的模型页去模型页签，工具里的远端算力去服务', () => {

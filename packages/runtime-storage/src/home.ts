@@ -24,6 +24,10 @@ import path from 'node:path';
  *   store/services.json   external service config: started with the Runtime, port, access policy, hashes of client tokens (architecture design §4.8) (0600)
  *   store/profile.json    the user's profile: interview answers and status, preferences (their own text and the interview's section kept apart), and workspace rules
  *   store/review-criteria.json the user's review standard: measured checks and judged questions a finished video is held to (docs/cuccut/m2-review-gate.md)
+ *   store/publishing.json publishing store: settings, connections, accounts, publications, pinned export records, payload history (0600)
+ *   publishing/exports/<sha256>.mp4  pinned exports for publications: immutable copies outside `artifacts/`, so the artifact sweep never removes them;
+ *                         the publishing service removes one only when no kept publication references it
+ *   publishing/backups/<time>.json  copies of the publishing store written before a calendar import
  *   store/agent-probes.json Agent probe cache: each Driver's machine facts from its most recent probe, used first at startup (architecture design §3.11)
  *   staging/jobs/<id>/    Worker output for a task in progress, deleted when it ends
  *   staging/node-jobs/<id>/ remote tasks submitted by other machines: uploaded media and results, deleted with the task
@@ -86,6 +90,10 @@ export interface RuntimeHome {
   grantsFile: string;
   /** The usage ledger for online calls (architecture design §6.10). */
   usageFile: string;
+  /** The publishing store (`docs/cuccut/m2-publishing.md` §3.2). */
+  publishingFile: string;
+  /** Pinned exports (`exports/`) and calendar-import backups (`backups/`) of publishing. */
+  publishingDir: string;
   /** Agent preferences: each Driver's default model, permission policy, and “always allow” rules (the default Driver and mode are in Settings). */
   agentPrefsFile: string;
   /** Agent probe cache: each Driver's machine facts from its most recent probe (architecture design §3.11). Deleting it only means the next startup has to probe from scratch. */
@@ -157,6 +165,8 @@ export function resolveRuntimeHome(
     servicesFile: path.join(root, 'store', 'services.json'),
     grantsFile: path.join(root, 'store', 'grants.json'),
     usageFile: path.join(root, 'store', 'usage.jsonl'),
+    publishingFile: path.join(root, 'store', 'publishing.json'),
+    publishingDir: path.join(root, 'publishing'),
     agentPrefsFile: path.join(root, 'store', 'agent-prefs.json'),
     agentProbesFile: path.join(root, 'store', 'agent-probes.json'),
     agentProvidersFile: path.join(root, 'store', 'agent-providers.json'),

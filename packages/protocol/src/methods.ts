@@ -161,6 +161,31 @@ import type { DesignAnnotation, DesignOpenResult } from './design.ts';
 import type { DesignSystemAnnotation, DesignSystemOpenResult } from './design-system.ts';
 import type { LegacyImportAnswer, LegacyImportRetry, LegacyImportSetSkipped, LegacyImportSnapshot } from './legacy-import.ts';
 import type { Seq } from './domain.ts';
+import type {
+  CalendarArchive,
+  CalendarImportPreview,
+  CalendarPlacement,
+  PinnableExport,
+  PublicationCopy,
+  PublicationDetail,
+  PublicationIssue,
+  PublishingAccount,
+  PublishingBatchItemResult,
+  PublishingCalendarParams,
+  PublishingCalendarResult,
+  PublishingCleanupResult,
+  PublishingRemovedRefs,
+  PublishingConnection,
+  PublishingNetwork,
+  PublishingPinSource,
+  PublishingPrepareParams,
+  PublishingProvider,
+  PublishingReconcileParams,
+  PublishingSettings,
+  PublishingSlotsParams,
+  PublishingSlotsResult,
+  PublishingUpdateParams,
+} from './publishing.ts';
 import type { PlaybackCodec } from './limits.ts';
 import type {
   ReviewCheckOutcome,
@@ -979,6 +1004,71 @@ export interface RpcMethods extends PackRpcMethodsHandled {
    * A clone left behind by a deleted voice can also be deleted this way.
    */
   'library.removeVoiceClone': { params: VoiceCloneRemoveParams; result: VoiceCloneRemoveResult };
+
+  /**
+   * Publishing calendar (design `docs/cuccut/m2-publishing.md` §4.3). Every write names the publication revision it read; a stale revision is refused
+   * with `conflict` / `PUBLICATION_CONFLICT` and `details.current`. Changes are delivered through the `publishing` topic. Who may call what follows the
+   * actor rules (§4.2): the desktop app is the owner; the browser may read and edit but not authorize, send, record results, manage connections or
+   * transfer the calendar; agents and the command line send only what the owner authorized.
+   */
+  'publishing.get': { params: { publicationId: Id }; result: PublicationDetail };
+  /** Calendar rows of civil days `from`..`to` (at most 93 days, workspace timezone), filtered before pagination. */
+  'publishing.calendar': { params: PublishingCalendarParams; result: PublishingCalendarResult };
+  /** Prepares one publication per video, or returns the latest one that is not archived (unless `repeat`). */
+  'publishing.prepare': { params: PublishingPrepareParams; result: { publications: PublicationDetail[] } };
+  /** Changes text, times and destinations. Submitted destinations keep their content (`PUBLICATION_LOCKED`). */
+  'publishing.update': { params: PublishingUpdateParams; result: PublicationDetail };
+  /** Moves destinations (atomic; only destinations not yet sent). `null` falls back to the default time. */
+  'publishing.reschedule': { params: { publicationId: Id; revision: number; placements: CalendarPlacement[] }; result: PublicationDetail };
+  /** Plans (and with `reserve`, writes) free weekly slots for publications. */
+  'publishing.slots': { params: PublishingSlotsParams; result: PublishingSlotsResult };
+  /** Pins a finished MP4 export of the video, or renders one and pins it when it finishes (`jobId` of the export). */
+  'publishing.pin': { params: { publicationId: Id; revision: number; source: PublishingPinSource }; result: { publication: PublicationDetail; jobId?: Id } };
+  /** Finished MP4 exports of a video that can be pinned, newest first. */
+  'publishing.exports': { params: { videoId: Id }; result: { exports: PinnableExport[] } };
+  /** Approves the pinned export. */
+  'publishing.approve': { params: { publicationId: Id; revision: number }; result: PublicationDetail };
+  'publishing.validate': { params: { publicationId: Id }; result: { issues: PublicationIssue[] } };
+  /** The owner authorizes this exact revision for an agent to send (desktop app only). */
+  'publishing.authorize': { params: { publicationId: Id; revision: number }; result: PublicationDetail };
+  /** Freezes each unsent destination's content and hands it over (by hand: it waits for the owner). */
+  'publishing.send': { params: { publicationId: Id; revision: number; confirmed: true }; result: PublicationDetail };
+  'publishing.batch': {
+    params: { action: 'authorize' | 'send'; items: { publicationId: Id; revision: number }[]; confirmed: true };
+    result: { results: PublishingBatchItemResult[] };
+  };
+  /** Takes a destination waiting for the owner back to unsent. */
+  'publishing.withdraw': { params: { publicationId: Id; revision: number; destinationId: Id }; result: PublicationDetail };
+  /** Cancels a destination that was not sent. */
+  'publishing.cancel': { params: { publicationId: Id; revision: number; destinationId: Id }; result: PublicationDetail };
+  /** Records what the owner checked in the network's app (desktop app only). */
+  'publishing.reconcile': { params: PublishingReconcileParams; result: PublicationDetail };
+  'publishing.archive': { params: { publicationId: Id; revision: number }; result: PublicationDetail };
+  'publishing.unarchive': { params: { publicationId: Id; revision: number }; result: PublicationDetail };
+  /** Deletes archived publications past the retention setting and the pinned export files nothing uses (desktop app only). */
+  'publishing.cleanup': { params: { dryRun?: boolean }; result: PublishingCleanupResult };
+  /** Asks the text model for title, description and hashtags; the proposal is stored on the publication when the job finishes. */
+  'publishing.copy.propose': { params: { publicationId: Id; instruction?: string }; result: { jobId: Id } };
+  /** Applies text (usually a proposal) and clears the proposal. */
+  'publishing.copy.apply': { params: { publicationId: Id; revision: number; copy: PublicationCopy }; result: PublicationDetail };
+  /** A short-lived read handle of the pinned export. */
+  'publishing.openHandle': { params: { publicationId: Id }; result: MediaHandle };
+  'publishing.settings.save': { params: { settings: PublishingSettings }; result: PublishingSettings };
+  'publishing.connections.save': { params: { id?: Id; provider: PublishingProvider; name: string }; result: { connection: PublishingConnection } };
+  /** Removes a connection and its accounts; the result carries them so the UI can offer Undo (saving them again with their IDs). */
+  'publishing.connections.remove': {
+    params: { connectionId: Id };
+    result: { connection: PublishingConnection; accounts: PublishingAccount[]; refs: PublishingRemovedRefs };
+  };
+  'publishing.accounts.save': {
+    params: { id?: Id; connectionId: Id; network: PublishingNetwork; name: string; remoteId: string; disabled?: boolean };
+    result: { account: PublishingAccount };
+  };
+  'publishing.accounts.remove': { params: { accountId: Id }; result: { account: PublishingAccount; refs: PublishingRemovedRefs } };
+  'publishing.accounts.link': { params: { accountId: Id; equivalentTo: Id | null }; result: { account: PublishingAccount } };
+  'publishing.transfer.export': { params: Record<string, never>; result: { archive: CalendarArchive; fileName: string } };
+  'publishing.transfer.preview': { params: { archive: unknown }; result: CalendarImportPreview };
+  'publishing.transfer.apply': { params: { archive: unknown }; result: { added: Id[]; preview: CalendarImportPreview } };
 
   /**
    * Catalog of creative templates (template package spec §6): all the available templates in the built-in catalog and under `templates/` in the Runtime Home, plus the skipped template directories and the reasons.

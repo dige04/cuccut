@@ -5,3 +5,4 @@
 export * from './protocol-labels.ts';
 export * from './protocol-validation.ts';
 export * from './protocol-packs.ts';
+export * from './publishing-issues.ts';

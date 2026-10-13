@@ -20,6 +20,7 @@ import {
   Package,
   Puzzle,
   Scale,
+  Send,
   Server,
   ShieldCheck,
   SlidersHorizontal,
@@ -35,6 +36,7 @@ import { HELP_COPY, revealLabel } from '../copy.ts';
 import { shortenPath } from '../model/format.ts';
 import { bundleCategory, isBundleInstalled } from '../model/models-local.ts';
 import { standardStatus } from '../model/review-settings.ts';
+import { publishingRailSummary } from '../model/publishing-settings.ts';
 import {
   MODEL_CATEGORY_INFO,
   SETTINGS_GROUPS,
@@ -56,9 +58,11 @@ import { useModels } from '../state/models-store.ts';
 import { useProfile } from '../state/profile-store.ts';
 import { useReview } from '../state/review-store.ts';
 import { usePacks } from '../state/packs-store.ts';
+import { usePublishing } from '../state/publishing-store.ts';
 import { useShell, type SettingsSection } from '../state/shell-store.ts';
 import { useSkills } from '../state/skills-store.ts';
 import { ModelSettings } from './models-page.tsx';
+import { PC } from './publishing/publishing-copy.ts';
 import { UpdateStatus } from './app-update/update-status.tsx';
 import { RuntimeCard } from './services/runtime-card.tsx';
 import { S } from './shell-copy.ts';
@@ -77,6 +81,7 @@ import { PacksList } from './settings/packs/packs-list.tsx';
 import { PackExport } from './settings/packs/pack-export.tsx';
 import { PackImport } from './settings/packs/pack-import.tsx';
 import { PackPage } from './settings/packs/pack-page.tsx';
+import { OpenCalendarLink, PublishingSettings } from './settings/publishing-settings.tsx';
 import { ResourceCapacity } from './settings/resource-capacity.tsx';
 import { ProfileSettings } from './settings/profile-settings.tsx';
 import { RulesSettings } from './settings/rules-settings.tsx';
@@ -96,6 +101,7 @@ const SECTION_ICON: Record<SettingsSection, LucideIcon> = {
   agent: Bot,
   skills: Puzzle,
   packs: Package,
+  publishing: Send,
   glossary: BookA,
   review: ShieldCheck,
   privacy: Lock,
@@ -186,6 +192,10 @@ export function SettingsPage({ section = 'general', sub, model, platform }: {
           // Each page draws its own heading: the list's actions depend on what is installed, and the pages under it
           // (`/settings/packs/<sub>`: import, export, a pack) carry "← Packs" above theirs.
           <PacksSection sub={sub} title={labelOf('packs')} />
+        ) : section === 'publishing' ? (
+          <Section title={labelOf('publishing')} blurb={PC.settings.blurb} actions={<OpenCalendarLink />}>
+            <PublishingSettings />
+          </Section>
         ) : section === 'glossary' ? (
           <Section title={labelOf('glossary')} blurb={GLOSSARY_COPY.list.lede}>
             <GlossarySettings />
@@ -337,6 +347,7 @@ function useRailSummaries(web: boolean): RailSummaries {
   const grants = useGrants((s) => (s.ready ? s.grants.filter((g) => g.state === 'active').length : null));
   const app = useAppUpdate((s) => s.snapshot?.current?.version ?? null);
   const installed = useModels(useShallow(installedCounts));
+  const publishing = usePublishing((s) => publishingRailSummary(s.ready, s.accounts));
   const provider = useModels(textProvider);
   const profile = useProfile(useShallow((s) => railSummary(s.snapshot)));
 
@@ -358,6 +369,7 @@ function useRailSummaries(web: boolean): RailSummaries {
     agent: agent ? agent.name : drivers === null || checking.length ? W.checking : W.noAgent,
     skills: skills === null ? W.checking : skills < 0 ? W.loadFailed : W.skillCount(skills),
     packs: packs === null ? W.checking : packs < 0 ? W.loadFailed : W.packCount(packs),
+    publishing: publishing ?? W.checking,
     glossary: web ? W.desktopOnly : glossaries === null ? W.checking : W.glossaryCount(glossaries),
     // The standard is changed only in the desktop app (`review.criteria.set` is not in the browser's allowlist).
     review: web ? W.desktopOnly : (review ?? W.checking),

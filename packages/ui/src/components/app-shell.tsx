@@ -9,6 +9,8 @@ import { useHelp } from '../state/help-store.ts';
 import { HOME, hasSidebar, routeVideo, useShell } from '../state/shell-store.ts';
 import { useVideo } from '../state/video-store.ts';
 import { AppUpdateHost } from './app-update/app-update-host.tsx';
+import { CalendarPage } from './publishing/calendar-page.tsx';
+import { PublishingDialogsHost, PublishingDueHost } from './publishing/publishing-hosts.tsx';
 import { LegacyImportHost } from './legacy-import/legacy-import-host.tsx';
 import { ConnectionBanner } from './connection-banner.tsx';
 import { HelpCenter } from './help/help-center.tsx';
@@ -87,6 +89,8 @@ export function AppShell({ platform }: { platform: string }) {
             <HomePage conversationId={route.conversationId} projectId={route.projectId} pane={route.pane ?? null} platform={platform} />
           ) : route.tab === 'space' ? (
             <SpacePage category={route.category} projectId={route.projectId} video={route.video ?? null} from={route.from ?? null} />
+          ) : route.tab === 'calendar' ? (
+            <CalendarPage route={route} />
           ) : route.tab === 'tasks' ? (
             <TasksPage taskId={route.taskId} />
           ) : route.tab === 'services' ? (
@@ -104,6 +108,9 @@ export function AppShell({ platform }: { platform: string }) {
         <HelpCenter platform={platform} />
         {/* App updates: the main process's status is still received and toasts still appear after leaving the settings page; the update window and stop barrier are also mounted here. */}
         <AppUpdateHost />
+        {/* Publishing: reminders for by-hand posts (toasts with Open) and the publication and batch dialogs opened from the editor, the library and the shorts result page. */}
+        <PublishingDueHost />
+        <PublishingDialogsHost />
         {/* Startup prompt to import legacy projects: asked once when the Runtime finds legacy projects that have not been imported and no decision has been recorded (the web does not ask). */}
         <LegacyImportHost />
       </div>

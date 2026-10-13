@@ -39,6 +39,7 @@ const en = {
     agent: 'Agent providers',
     skills: 'Skills',
     packs: 'Packs',
+    publishing: 'Publishing',
     glossary: 'Glossary',
     review: 'Review',
     privacy: 'Privacy and permissions',

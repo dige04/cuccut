@@ -6,6 +6,7 @@ import ChevronRight from '@react-spectrum/s2/icons/ChevronRight';
 import Cut from '@react-spectrum/s2/icons/Cut';
 import Export from '@react-spectrum/s2/icons/Export';
 import Folder from '@react-spectrum/s2/icons/Folder';
+import Send from '@react-spectrum/s2/icons/Send';
 import { style } from '@react-spectrum/s2/style' with { type: 'macro' };
 import { Button as RACButton } from 'react-aria-components';
 import { untitled } from '../../copy.ts';
@@ -22,6 +23,8 @@ import { useVideo } from '../../state/video-store.ts';
 import { requestExport } from '../export/export-request.ts';
 import { ReviewBadge } from '../review/review-badge.tsx';
 import { openReview } from '../review/review-dialog.tsx';
+import { PC } from '../publishing/publishing-copy.ts';
+import { openBatchDialog } from '../publishing/publishing-launch.ts';
 import { AI_TOOLS_COPY as C } from './ai-tools-copy.ts';
 import { setAiToolPage, setPanelLanding, type AiToolPage } from './ai-tools-nav.ts';
 import { PanelHead } from './panel-head.tsx';
@@ -303,6 +306,14 @@ export function ShortsResultPage({ videoId, host }: { videoId: Id; host: Id }) {
         <NextRow icon={Folder} title={S.inSpace} sub={S.inSpaceSub(hostName)} onPress={inSpace} />
         {live.length ? (
           <NextRow icon={Export} title={S.exportAll} sub={exporting ? S.exporting : S.exportAllSub(live.length)} onPress={exportAll} isDisabled={exporting} />
+        ) : null}
+        {live.length ? (
+          <NextRow
+            icon={Send}
+            title={PC.entry.prepareMany}
+            sub={PC.entry.prepareManySub(live.length)}
+            onPress={() => openBatchDialog({ kind: 'videos', videoIds: ids, origin: 'shorts' })}
+          />
         ) : null}
         <p className={hint}>{S.hint}</p>
       </div>

@@ -24,6 +24,7 @@ export const ko: SettingsNavMessages = {
     agent: 'Agent 공급자',
     skills: 'Skills',
     packs: '팩',
+    publishing: '게시',
     glossary: '용어집',
     review: '검토',
     privacy: '개인 정보 보호 및 권한',

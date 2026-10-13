@@ -360,6 +360,58 @@ export class AgentScope implements ToolScope<AgentAccess> {
   }
 
   /**
+   * The videoId of a video in the source directory, named by a path relative to it or by a videoId, without opening it (publishing tools).
+   * Videos outside the source directory are answered like missing ones.
+   */
+  async videoIdOf(video: string, access: AgentAccess): Promise<Id> {
+    const { root } = this.source(access.conversation);
+    const rootReal = await fs.realpath(root).catch(() => null);
+    const notFound = () =>
+      new ToolError('VIDEO_NOT_FOUND', `Video "${video}" not found: use a path from videos_list, or the videoId of a video in this session's working directory`);
+    if (!rootReal) throw notFound();
+    const ref = this.#videos.ref(video);
+    if (ref) {
+      if (insideDir(ref.path, rootReal)) return ref.videoId;
+      throw notFound();
+    }
+    if (VIDEO_ID.test(video)) {
+      if (await this.#locate(video, root)) return video;
+      throw notFound();
+    }
+    const dir = await fs.realpath(path.resolve(rootReal, video)).catch(() => null);
+    if (!dir || dir === rootReal || !insideDir(dir, rootReal)) throw notFound();
+    const seen = this.#videos.openRefs().find((item) => item.path === dir) ?? (await this.#videos.peek(dir).catch(() => null));
+    if (!seen) throw notFound();
+    this.#located.set(seen.videoId, dir);
+    return seen.videoId;
+  }
+
+  /** The videoIds among `videoIds` that are in the source directory: open ones by their path, the others by one read-only scan of the directory. */
+  async visibleVideoIds(access: AgentAccess, videoIds: readonly Id[]): Promise<Set<Id>> {
+    const visible = new Set<Id>();
+    const { root } = this.source(access.conversation);
+    const rootReal = await fs.realpath(root).catch(() => null);
+    if (!rootReal) return visible;
+    const wanted = new Set(videoIds);
+    for (const ref of this.#videos.openRefs()) {
+      if (wanted.has(ref.videoId) && insideDir(ref.path, rootReal)) visible.add(ref.videoId);
+    }
+    if ([...wanted].every((id) => visible.has(id))) return visible;
+    const open = new Set(this.#videos.openRefs().map((ref) => ref.path));
+    const scan = await scanDirectory(rootReal);
+    for (const file of scan.files) {
+      if (file.kind !== 'video') continue;
+      const dir = path.join(rootReal, ...file.relPath.split('/'));
+      if (open.has(dir)) continue;
+      const seen = await this.#videos.peek(dir).catch(() => null);
+      if (!seen) continue;
+      this.#located.set(seen.videoId, dir);
+      if (wanted.has(seen.videoId)) visible.add(seen.videoId);
+    }
+    return visible;
+  }
+
+  /**
    * The video directory (not open) for a videoId in the source directory: checks the last known location first, otherwise
    * rescans the source directory and reads each identity read-only (`peek`). Directories locked by another process or unreadable
    * are skipped. null when not found.
@@ -487,4 +539,9 @@ function translationKey(conversationId: Id, scope: TranslationScope): string {
 
 function jobNotFound(jobId: Id): ToolError {
   return new ToolError('JOB_NOT_FOUND', `Job ${jobId} not found, or it does not belong to this session's working directory`);
+}
+
+/** Whether `candidate` is `root` or inside it (both real paths). */
+function insideDir(candidate: string, root: string): boolean {
+  return candidate === root || candidate.startsWith(root.endsWith(path.sep) ? root : root + path.sep);
 }

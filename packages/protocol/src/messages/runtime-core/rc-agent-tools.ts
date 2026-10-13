@@ -198,6 +198,24 @@ const en = {
   reviewWaive: (p: { id: string; reason: string }) => `Let the finding “${p.id}” stand: ${p.reason}`,
   reviewSeverity: (p: { id: string; from: string; to: string }) => `Change what “${p.id}” is worth: ${p.from} → ${p.to}`,
   reviewCriteriaSet: 'Replace your review standard',
+  // Publishing (publications_* tools, design m2-publishing §5): approval summaries.
+  publicationsPrepareSummary: (p: { videos: string; repeat: boolean }) =>
+    p.repeat ? `Prepare a new release of ${p.videos} for publishing` : `Prepare ${p.videos} for publishing`,
+  publicationsUpdateSummary: (p: { label: string }) => `Change the publication “${p.label}”`,
+  publicationsRestoreSummary: (p: { label: string }) => `Restore the archived publication “${p.label}”`,
+  publicationsRescheduleSummary: (p: { label: string; count: number }) =>
+    `Move ${p.count === 1 ? 'one account' : `${p.count} accounts`} of “${p.label}” to new times`,
+  publicationsReserveSummary: (p: { count: number }) =>
+    `Reserve publishing times for ${p.count === 1 ? 'one publication' : `${p.count} publications`}`,
+  publicationsPinSummary: (p: { label: string; render: boolean }) =>
+    p.render ? `Render the video and pin the export to “${p.label}”` : `Pin a finished export to “${p.label}”`,
+  publicationsProposeCopySummary: (p: { label: string }) => `Suggest text for “${p.label}” (you choose whether to use it)`,
+  publicationsApproveSummary: (p: { label: string }) => `Approve the pinned export of “${p.label}” for publishing`,
+  publicationsSendSummary: (p: { label: string; accounts: string }) => `Send “${p.label}” to ${p.accounts}`,
+  publicationsWithdrawSummary: (p: { label: string; account: string }) => `Withdraw “${p.label}” from ${p.account}`,
+  publicationsArchiveSummary: (p: { label: string }) => `Archive the publication “${p.label}”`,
+  publicationsImportSummary: (p: { file: string; count: number }) =>
+    `Import ${p.count === 1 ? 'one publication' : `${p.count} publications`} from ${p.file}`,
 };
 
 export type RcAgentToolsMessages = typeof en;

@@ -42,3 +42,12 @@ describe('pack paths (pack spec §6)', () => {
     expect(home.skillsDir).toBe(path.join(user, 'home', 'skills'));
   });
 });
+
+describe('publishing paths', () => {
+  it('the publishing store is under store/ and pinned exports are outside artifacts/', () => {
+    const home = resolveRuntimeHome({ CUCCUT_HOME: path.join(user, '.cuccut') }, 'darwin', user);
+    expect(home.publishingFile).toBe(path.join(user, '.cuccut', 'store', 'publishing.json'));
+    expect(home.publishingDir).toBe(path.join(user, '.cuccut', 'publishing'));
+    expect(path.relative(home.artifactsDir, home.publishingDir).startsWith('..')).toBe(true);
+  });
+});

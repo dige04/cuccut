@@ -58,7 +58,7 @@ export const ru: ServicesMcpMessages = {
     packs_read: 'Прочитать пак',
     library_list: "Показать библиотеку",
     library_show: "Показать элемент библиотеки",
-    download: "Скачать по ссылке",
+    download: "Скачать по ссылке", publications_list: 'Показать публикации', publications_inspect: 'Открыть публикацию', publications_prepare: 'Подготовить публикации', publications_update: 'Редактировать публикацию', publications_reschedule: 'Перенести публикацию', publications_slots: 'Спланировать время публикаций', publications_reserve: 'Зарезервировать время публикаций', publications_propose_copy: 'Предложить текст публикации',
   },
   gates: {
     answer: "Отвечает напрямую",

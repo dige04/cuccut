@@ -58,7 +58,7 @@ export const ko: ServicesMcpMessages = {
     packs_read: '팩 읽기',
     library_list: '라이브러리 목록',
     library_show: '라이브러리 항목 보기',
-    download: '링크에서 다운로드',
+    download: '링크에서 다운로드', publications_list: '게시물 목록 보기', publications_inspect: '게시물 보기', publications_prepare: '게시물 준비', publications_update: '게시물 편집', publications_reschedule: '게시물 이동', publications_slots: '게시 시간 계획', publications_reserve: '게시 시간 예약', publications_propose_copy: '게시 문구 제안',
   },
   gates: {
     answer: '바로 응답',

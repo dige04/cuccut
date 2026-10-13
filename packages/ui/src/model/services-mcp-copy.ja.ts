@@ -58,7 +58,7 @@ export const ja: ServicesMcpMessages = {
     packs_read: 'パックを読み込む',
     library_list: 'ライブラリを一覧表示',
     library_show: 'ライブラリの項目を表示',
-    download: 'リンクからダウンロード',
+    download: 'リンクからダウンロード', publications_list: '公開内容を一覧表示', publications_inspect: '公開内容を表示', publications_prepare: '公開内容を準備', publications_update: '公開内容を編集', publications_reschedule: '公開内容を移動', publications_slots: '公開時間を計画', publications_reserve: '公開時間を予約', publications_propose_copy: '公開テキストを提案',
   },
   gates: {
     answer: 'そのまま応答',

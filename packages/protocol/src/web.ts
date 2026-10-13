@@ -106,6 +106,24 @@ export const WEB_DEFAULT_METHODS: readonly string[] = [
   'packs.openHandle',
   'packs.active',
   'packs.choose',
+  // Publishing calendar (design m2-publishing §4.5): reading and editing, listed one by one. Authorizing, sending, batch sends, recording results,
+  // cancelling, connections and accounts, calendar transfer and cleanup stay in the desktop app (the handlers check the principal kind too).
+  'publishing.get',
+  'publishing.calendar',
+  'publishing.prepare',
+  'publishing.update',
+  'publishing.reschedule',
+  'publishing.slots',
+  'publishing.pin',
+  'publishing.exports',
+  'publishing.approve',
+  'publishing.validate',
+  'publishing.withdraw',
+  'publishing.archive',
+  'publishing.unarchive',
+  'publishing.copy.*',
+  'publishing.openHandle',
+  'publishing.settings.save',
 ];
 
 /** Methods still available under read-only configuration (listed one by one: methods added later are not exposed under read-only by default). */
@@ -169,6 +187,11 @@ export const WEB_READ_METHODS: readonly RpcMethod[] = [
   'packs.get',
   'packs.openHandle',
   'packs.active',
+  'publishing.get',
+  'publishing.calendar',
+  'publishing.exports',
+  'publishing.validate',
+  'publishing.openHandle',
 ];
 
 /** Subscribing to these topics requires the matching read method in the allowlist. Other topics (directories, sessions, tasks, Space, videos) are open with the session. */
@@ -189,6 +212,8 @@ export const WEB_TOPIC_METHODS: Readonly<Record<string, RpcMethod>> = {
   profile: 'profile.get',
   // The review gate (§4.5): the user's standard and the summaries of reviewed videos, the same data as `review.get`.
   review: 'review.get',
+  // The publishing calendar (design m2-publishing §4.5): the same rows as `publishing.calendar`.
+  publishing: 'publishing.calendar',
 };
 
 /** One item in the allowlist: a method name, or `<namespace>.*` (including deeper sub-namespaces). */

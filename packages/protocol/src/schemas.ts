@@ -14,6 +14,7 @@ import { SLIDE_ANNOTATION_LIMITS } from './slides.ts';
 import { DESIGN_ANNOTATION_LIMITS } from './design.ts';
 import { DESIGN_SYSTEM_ANNOTATION_LIMITS } from './design-system.ts';
 import { SPACE_PARAM_SCHEMAS } from './space-schemas.ts';
+import { PUBLISHING_PARAM_SCHEMAS } from './publishing-schemas.ts';
 import { EXTERNAL_TOOL_PARAM_SCHEMAS } from './external-tools-schemas.ts';
 import { TEMPLATE_PARAM_SCHEMAS, templateSendRefSchema } from './template-schemas.ts';
 import { SKILL_PARAM_SCHEMAS, skillSendListSchema, skillSendRefSchema } from './skill-schemas.ts';
@@ -48,6 +49,7 @@ const topic = z.union([
   z.literal('legacy-import'),
   z.literal('profile'),
   z.literal('review'),
+  z.literal('publishing'),
   z.string().regex(/^conversation:[A-Za-z0-9_-]+$/),
   z.string().regex(/^video:[A-Za-z0-9_-]+$/),
 ]);
@@ -868,6 +870,7 @@ export const methodParamSchemas = {
   }),
   'space.rescan': empty,
   ...SPACE_PARAM_SCHEMAS,
+  ...PUBLISHING_PARAM_SCHEMAS,
   ...EXTERNAL_TOOL_PARAM_SCHEMAS,
   ...TOOL_CATALOGUE_PARAM_SCHEMAS,
   ...TEMPLATE_PARAM_SCHEMAS,
@@ -1423,3 +1426,5 @@ export {
   salvageReviewPlan,
   salvageReviewStandard,
 } from './review-schemas.ts';
+export * from './publishing-schemas.ts';
+export * from './publishing/transfer.ts';

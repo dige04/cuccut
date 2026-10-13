@@ -221,6 +221,24 @@ export const TOOL_RISK: Readonly<Record<string, RiskLevel>> = {
   review_unwaive: 'edit',
   review_severity: 'edit',
   review_criteria_set: 'high',
+  // Publishing (design m2-publishing §5): reads and plans are read-only; preparing, editing, reserving, pinning, proposing text, withdrawing and
+  // archiving change only the publishing calendar (each undoable or restorable); approving an export and sending are the owner's trust decisions,
+  // asked every time. Exporting the calendar writes a new file and changes nothing in CucCut; importing appends records from a file.
+  publications_list: 'read',
+  publications_inspect: 'read',
+  publications_slots: 'read',
+  publications_prepare: 'edit',
+  publications_update: 'edit',
+  publications_reschedule: 'edit',
+  publications_reserve: 'edit',
+  publications_pin: 'edit',
+  publications_propose_copy: 'edit',
+  publications_withdraw: 'edit',
+  publications_archive: 'edit',
+  publications_approve: 'high',
+  publications_send: 'high',
+  publications_export_calendar: 'read',
+  publications_import_calendar: 'high',
 };
 
 export function toolRisk(request: ToolConfirmation): RiskLevel {
@@ -304,6 +322,16 @@ export interface ToolScope<A extends ToolAccess = ToolAccess> {
   createRoot(access: A, project?: string, options?: { locate?: boolean }): VideoRoot | Promise<VideoRoot>;
   /** Opens (or attaches to an already open) video in scope. Out-of-scope videos are answered like missing ones with `VIDEO_NOT_FOUND`. */
   open(video: string, access: A): Promise<VideoOpenResult>;
+  /**
+   * The videoId of a video in scope, named as `open` takes it (a path or a videoId), without opening it (publishing tools, design
+   * m2-publishing §4.2). Out-of-scope and missing videos are answered with `VIDEO_NOT_FOUND`.
+   */
+  videoIdOf?(video: string, access: A): Promise<Id>;
+  /**
+   * Which of `videoIds` are in scope, without opening any video (publishing tools, design m2-publishing §4.2: a publication is visible only
+   * when its video is). A scope that does not implement it sees none.
+   */
+  visibleVideoIds?(access: A, videoIds: readonly Id[]): Promise<Set<Id>>;
   /** The directory `importAsset.path` is relative to; when `confine` is non-null the path (by real path) must be inside it. */
   importBase(access: A, opened: VideoOpenResult): { cwd: string; confine: string | null };
   /**
@@ -404,6 +432,14 @@ export class ScopeRouter implements ToolScope<ToolAccess> {
   }
   open(video: string, access: ToolAccess): Promise<VideoOpenResult> {
     return this.#of(access.principal).open(video, access);
+  }
+  async videoIdOf(video: string, access: ToolAccess): Promise<Id> {
+    const scope = this.#of(access.principal);
+    if (!scope.videoIdOf) throw new ToolError('VIDEO_NOT_FOUND', `Video "${video}" not found`);
+    return scope.videoIdOf(video, access);
+  }
+  async visibleVideoIds(access: ToolAccess, videoIds: readonly Id[]): Promise<Set<Id>> {
+    return (await this.#of(access.principal).visibleVideoIds?.(access, videoIds)) ?? new Set();
   }
   importBase(access: ToolAccess, opened: VideoOpenResult): { cwd: string; confine: string | null } {
     return this.#of(access.principal).importBase(access, opened);

@@ -9,6 +9,7 @@ import {
   type EditOperation,
   type EditResult,
   type Id,
+  type JobSubmitter,
   type VideoChange,
   type VideoCreated,
   type VideoOpenResult,
@@ -96,6 +97,8 @@ export interface VideoToolsDeps {
   packages: PackageImporter;
   /** When deriving a child video (`videos_derive`), finds an existing child via the Space index; when absent, only the folders next to the parent video are checked. */
   findDerived?: DeriveDeps['findDerived'];
+  /** Told about each newly derived child video (not a reused one), with who derived it; publishing prepares generated clips from it. Must not throw. */
+  onDerived?: (videoId: Id, by: { name: string; submitter: JobSubmitter }) => void;
 }
 
 export const videoArg = z.string().min(1).max(1000).describe('Video: a path or videoId from videos_list');
@@ -884,7 +887,10 @@ export class VideoTools implements ToolSet {
     }
     const { result } = derived;
     if (result.reused) await this.#scope.adoptCreatedVideo?.(access, result.video.videoId);
-    else await this.#scope.recordCreated?.(access, result.video);
+    else {
+      await this.#scope.recordCreated?.(access, result.video);
+      this.#deps.onDerived?.(result.video.videoId, { name: access.principal.name, submitter: access.submitter });
+    }
     return { ...result, ...approvalField(approval) };
   }
 

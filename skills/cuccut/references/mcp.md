@@ -62,6 +62,14 @@ Tool name mapping (generated from the catalog):
 | `packs_read` | `cuccut packs read` | query |
 | `profile_show` | `cuccut profile show` | query |
 | `projects_list` | `cuccut projects list` | query |
+| `publications_inspect` | `cuccut publications inspect` | query |
+| `publications_list` | `cuccut publications list` | query |
+| `publications_prepare` | `cuccut publications prepare` | mutation |
+| `publications_propose_copy` | `cuccut publications propose-copy` | mutation |
+| `publications_reschedule` | `cuccut publications reschedule` | mutation |
+| `publications_reserve` | `cuccut publications reserve` | mutation |
+| `publications_slots` | `cuccut publications slots` | query |
+| `publications_update` | `cuccut publications update` | mutation |
 | `review_answer` | `cuccut review answer` | mutation |
 | `review_criteria` | `cuccut review criteria` | query |
 | `review_run` | `cuccut review run` | mutation |
@@ -80,7 +88,7 @@ Tool name mapping (generated from the catalog):
 | `videos_list` | `cuccut videos list` | query |
 | `videos_shots` | `cuccut videos shots` | query |
 
-Only in the CLI, not on MCP: `cuccut artifacts save`, `cuccut models install`, `cuccut models test`, `cuccut packs choose-style`, `cuccut profile answer`, `cuccut profile preferences-set`, `cuccut profile rules-remove`, `cuccut profile rules-save`, `cuccut profile skip`, `cuccut profile write`, `cuccut projects create`, `cuccut review criteria-set`, `cuccut review severity`, `cuccut review unwaive`, `cuccut review waive`, `cuccut transcode`, `cuccut videos delete`, `cuccut videos import-package`.
+Only in the CLI, not on MCP: `cuccut artifacts save`, `cuccut models install`, `cuccut models test`, `cuccut packs choose-style`, `cuccut profile answer`, `cuccut profile preferences-set`, `cuccut profile rules-remove`, `cuccut profile rules-save`, `cuccut profile skip`, `cuccut profile write`, `cuccut projects create`, `cuccut publications approve`, `cuccut publications archive`, `cuccut publications export-calendar`, `cuccut publications import-calendar`, `cuccut publications pin`, `cuccut publications send`, `cuccut publications withdraw`, `cuccut review criteria-set`, `cuccut review severity`, `cuccut review unwaive`, `cuccut review waive`, `cuccut transcode`, `cuccut videos delete`, `cuccut videos import-package`.
 <!-- /generated -->
 
 ## 3. Waiting for jobs: loop on `jobs_wait`

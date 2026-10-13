@@ -117,4 +117,7 @@ export const ko: RcAgentToolsMessages = {
   deriveParentUnplaced: '이 영상은 프로젝트나 세션 폴더에 있지 않아 옆에 하위 영상을 만들 수 없습니다',
   shotsRangeEmpty: '프레임에 맞추면 구간이 비어 있습니다',
   shotsRangeTooLong: (p) => `구간이 ${p.minutes}분을 넘습니다. 더 짧게 나눠서 샷을 감지하세요`,
+  reviewWaive: (p) => `Let the finding “${p.id}” stand: ${p.reason}`,
+  reviewSeverity: (p) => `Change what “${p.id}” is worth: ${p.from} → ${p.to}`,
+  reviewCriteriaSet: 'Replace your review standard',
 };

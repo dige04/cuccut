@@ -25,3 +25,4 @@ export * from './rc-design.ts';
 export * from './rc-design-system.ts';
 export * from './rc-runtime.ts';
 export * from './rc-ai-tools.ts';
+export * from './rc-review.ts';

@@ -19,4 +19,7 @@ instructionsNotSet: 'Oturum yönergeleri ayarlanmadı: Runtime birleştirme sır
   deriveParentUnplaced: 'Bu video bir proje ya da oturum klasöründe değil; yanında türetilmiş video oluşturulamaz',
   shotsRangeEmpty: 'Karelere hizalandıktan sonra aralık boş kalıyor',
   shotsRangeTooLong: (p) => `Aralık ${p.minutes} dakikadan uzun; çekimleri daha kısa parçalarda algılayın`,
+  reviewWaive: (p) => `Let the finding “${p.id}” stand: ${p.reason}`,
+  reviewSeverity: (p) => `Change what “${p.id}” is worth: ${p.from} → ${p.to}`,
+  reviewCriteriaSet: 'Replace your review standard',
 };

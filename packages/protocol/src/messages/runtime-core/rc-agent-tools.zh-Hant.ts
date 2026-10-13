@@ -117,4 +117,7 @@ export const zhHant: RcAgentToolsMessages = {
   deriveParentUnplaced: '這部影片不在專案或工作階段的資料夾裡，無法在它旁邊建立子影片',
   shotsRangeEmpty: '對齊到影格之後區間是空的',
   shotsRangeTooLong: (p) => `區間超過 ${p.minutes} 分鐘，請分段偵測鏡頭`,
+  reviewWaive: (p) => `Let the finding “${p.id}” stand: ${p.reason}`,
+  reviewSeverity: (p) => `Change what “${p.id}” is worth: ${p.from} → ${p.to}`,
+  reviewCriteriaSet: 'Replace your review standard',
 };

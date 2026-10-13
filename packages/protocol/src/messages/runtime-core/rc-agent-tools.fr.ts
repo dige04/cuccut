@@ -60,4 +60,7 @@ export const fr: RcAgentToolsMessages = {
   deriveParentUnplaced: 'Cette vidéo n’est pas dans un dossier de projet ou de session : impossible de créer une vidéo dérivée à côté',
   shotsRangeEmpty: 'La plage est vide une fois alignée sur les images',
   shotsRangeTooLong: (p) => `La plage dépasse ${p.minutes} minutes : détectez les plans par morceaux plus courts`,
+  reviewWaive: (p) => `Let the finding “${p.id}” stand: ${p.reason}`,
+  reviewSeverity: (p) => `Change what “${p.id}” is worth: ${p.from} → ${p.to}`,
+  reviewCriteriaSet: 'Replace your review standard',
 };

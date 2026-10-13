@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RpcError, localizeText, refOf, setLocale, type GrantRequestItem } from '@cuccut/protocol';
-import { RcCommon, RcExport, RcPackage, RcSpace } from '@cuccut/protocol/messages/runtime-core';
+import { RcAgentTools, RcCommon, RcExport, RcPackage, RcReview, RcSpace } from '@cuccut/protocol/messages/runtime-core';
 import { FONT_DOWNLOAD_REMEDIES, fontDownloadRemedy } from './fonts/font-download.ts';
 import { grantRequiredDetails } from './grants/grant-errors.ts';
 import { taskFailure } from './localized.ts';
@@ -46,6 +46,19 @@ describe('runtime-core 的文案目录', () => {
       "The video folder has files the video doesn't manage (a.mp4, b.txt, and c.png, 5 in total). Restore the video and move them out before deleting",
     );
     expect(videoDirName('...')).toBe('Video');
+  });
+
+  it('review gate: the refusal, its finding lines and the confirmation summaries are English with references', () => {
+    const blocked = RcReview.blocked({ count: 2 });
+    expect(blocked.text).toBe('This video doesn’t meet your standard yet: 2 findings stop this export');
+    expect(refOf(blocked)).toEqual({ key: 'rcReview.blocked', params: { count: 2 } });
+    expect(RcReview.blocked({ count: 1 }).text).toMatch(/1 finding stops/);
+    expect(
+      RcReview.findingLine({ metric: 'items.placeholders', value: '2', limit: RcReview.limitAtMost({ max: 0 }), fix: 'Fill them.' }).text,
+    ).toBe('items.placeholders is 2, and the standard asks for at most 0. Fill them.');
+    expect(RcReview.evidenceInvalid({ kind: 'quote' }).text).toMatch(/quote/);
+    expect(RcAgentTools.reviewWaive({ id: 'placeholders', reason: 'by design' }).text).toBe('Let the finding “placeholders” stand: by design');
+    expect(RcAgentTools.reviewSeverity({ id: 'blank', from: 'critical', to: 'nitpick' }).text).toBe('Change what “blank” is worth: critical → nitpick');
   });
 
   it('导出与便携包：复数与嵌套的引用', () => {

@@ -168,4 +168,7 @@ export const it: RcAgentToolsMessages = {
   deriveParentUnplaced: 'Questo video non si trova in una cartella di progetto o di sessione, quindi non si può creare un video derivato accanto',
   shotsRangeEmpty: 'L’intervallo è vuoto dopo l’allineamento ai fotogrammi',
   shotsRangeTooLong: (p) => `L’intervallo supera i ${p.minutes} minuti: rileva le inquadrature in parti più brevi`,
+  reviewWaive: (p) => `Let the finding “${p.id}” stand: ${p.reason}`,
+  reviewSeverity: (p) => `Change what “${p.id}” is worth: ${p.from} → ${p.to}`,
+  reviewCriteriaSet: 'Replace your review standard',
 };

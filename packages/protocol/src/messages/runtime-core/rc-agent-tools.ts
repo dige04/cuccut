@@ -194,6 +194,10 @@ const en = {
   /** Errors from `videos.shots` (error codes SHOTS_RANGE_EMPTY, SHOTS_RANGE_TOO_LONG); minutes is the upper limit of the range length. */
   shotsRangeEmpty: 'The range is empty after snapping to frames',
   shotsRangeTooLong: (p: { minutes: number }) => `The range is longer than ${p.minutes} minutes; detect shots in shorter pieces`,
+  /** Review gate (`review_waive`, `review_severity`, `review_criteria_set`): confirmation summaries. `from`/`to` are severities (critical, suggestion, nitpick, or default). */
+  reviewWaive: (p: { id: string; reason: string }) => `Let the finding “${p.id}” stand: ${p.reason}`,
+  reviewSeverity: (p: { id: string; from: string; to: string }) => `Change what “${p.id}” is worth: ${p.from} → ${p.to}`,
+  reviewCriteriaSet: 'Replace your review standard',
 };
 
 export type RcAgentToolsMessages = typeof en;

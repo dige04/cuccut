@@ -146,4 +146,7 @@ export const de: RcAgentToolsMessages = {
   deriveParentUnplaced: 'Dieses Video liegt in keinem Projekt- oder Sitzungsordner, daher kann daneben kein abgeleitetes Video erstellt werden',
   shotsRangeEmpty: 'Nach dem Einrasten auf Frames ist der Bereich leer',
   shotsRangeTooLong: (p) => `Der Bereich ist länger als ${p.minutes} Minuten; erkenne Einstellungen in kürzeren Abschnitten`,
+  reviewWaive: (p) => `Let the finding “${p.id}” stand: ${p.reason}`,
+  reviewSeverity: (p) => `Change what “${p.id}” is worth: ${p.from} → ${p.to}`,
+  reviewCriteriaSet: 'Replace your review standard',
 };

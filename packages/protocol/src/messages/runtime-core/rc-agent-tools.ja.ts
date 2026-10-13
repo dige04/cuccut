@@ -122,4 +122,7 @@ export const ja: RcAgentToolsMessages = {
   deriveParentUnplaced: 'この動画はプロジェクトやセッションのフォルダーにないため、隣に子動画を作成できません',
   shotsRangeEmpty: 'フレームに合わせると範囲が空になります',
   shotsRangeTooLong: (p) => `範囲が ${p.minutes} 分を超えています。短く分けてショットを検出してください`,
+  reviewWaive: (p) => `Let the finding “${p.id}” stand: ${p.reason}`,
+  reviewSeverity: (p) => `Change what “${p.id}” is worth: ${p.from} → ${p.to}`,
+  reviewCriteriaSet: 'Replace your review standard',
 };

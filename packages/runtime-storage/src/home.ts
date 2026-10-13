@@ -22,6 +22,7 @@ import path from 'node:path';
  *   store/usage.jsonl     usage ledger for online calls: one line per call, append-only (0600, architecture design §6.10)
  *   store/settings.json   preferences held by the Runtime: stores only values that differ from the defaults (architecture design §5.10)
  *   store/services.json   external service config: started with the Runtime, port, access policy, hashes of client tokens (architecture design §4.8) (0600)
+ *   store/review-criteria.json the user's review standard: measured checks and judged questions a finished video is held to (docs/cuccut/m2-review-gate.md)
  *   store/agent-probes.json Agent probe cache: each Driver's machine facts from its most recent probe, used first at startup (architecture design §3.11)
  *   staging/jobs/<id>/    Worker output for a task in progress, deleted when it ends
  *   staging/node-jobs/<id>/ remote tasks submitted by other machines: uploaded media and results, deleted with the task
@@ -86,6 +87,8 @@ export interface RuntimeHome {
   agentProvidersFile: string;
   /** Agent skill toggles. Stores only the differences from the source's defaults (architecture design §3.8). */
   skillPrefsFile: string;
+  /** The user's review standard (docs/cuccut/m2-review-gate.md §3.3). Missing means the built-in checks only. */
+  reviewCriteriaFile: string;
   /** Agent skills added and imported by the user, one subdirectory each (architecture design §3.8, §12.9). */
   skillsDir: string;
   /** Bytes of message attachments (images), in directories by attachment id. */
@@ -143,6 +146,7 @@ export function resolveRuntimeHome(
     agentProbesFile: path.join(root, 'store', 'agent-probes.json'),
     agentProvidersFile: path.join(root, 'store', 'agent-providers.json'),
     skillPrefsFile: path.join(root, 'store', 'skill-prefs.json'),
+    reviewCriteriaFile: path.join(root, 'store', 'review-criteria.json'),
     skillsDir: path.join(root, 'skills'),
     attachmentsDir: path.join(root, 'attachments'),
     stagingDir: path.join(root, 'staging'),

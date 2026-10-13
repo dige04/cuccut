@@ -39,6 +39,20 @@ const en = {
   notYet: 'Not available yet',
   loadFailed: "Couldn't load",
   fontsSummary: 'For captions and titles',
+  /** Settings › You in the rail: whether preferences are written, and how many interview answers there are. */
+  preferencesSummary: (written: boolean, answers: number) =>
+    written
+      ? answers === 0
+        ? 'Preferences written'
+        : `Preferences written, ${answers === 1 ? '1 answer' : `${answers} answers`}`
+      : answers === 0
+        ? 'No preferences yet'
+        : answers === 1
+          ? '1 answer'
+          : `${answers} answers`,
+  /** Settings › Rules in the rail: how many workspace rules, and how many of them are off. */
+  ruleCount: (n: number, off: number) =>
+    n === 0 ? 'None yet' : `${n === 1 ? '1 rule' : `${n} rules`}${off ? `, ${off} off` : ''}`,
 };
 
 export type WorkspaceMessages = typeof en;

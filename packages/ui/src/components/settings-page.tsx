@@ -18,10 +18,12 @@ import {
   MessageSquareText,
   Music,
   Puzzle,
+  Scale,
   Server,
   SlidersHorizontal,
   Split,
   Type,
+  UserRound,
   type LucideIcon,
 } from 'lucide-react';
 import { BackHeader, PageRail, RailPage, SectionHeader, type RailGroup } from '../cc/components/page-chrome.tsx';
@@ -38,6 +40,7 @@ import {
   type ModelCategory,
   type ModelPage,
 } from '../model/settings-nav.ts';
+import { railSummary } from '../model/profile.ts';
 import { useRuntime } from '../runtime/context.tsx';
 import { loadSkills } from '../runtime/skill-commands.ts';
 import { useAppUpdate } from '../state/app-update-store.ts';
@@ -46,6 +49,7 @@ import { useGrants } from '../state/grants-store.ts';
 import { useHelp } from '../state/help-store.ts';
 import { useLibrary } from '../state/library-store.ts';
 import { useModels } from '../state/models-store.ts';
+import { useProfile } from '../state/profile-store.ts';
 import { useShell, type SettingsSection } from '../state/shell-store.ts';
 import { useSkills } from '../state/skills-store.ts';
 import { ModelSettings } from './models-page.tsx';
@@ -60,14 +64,19 @@ import { DataGrants } from './settings/data-grants.tsx';
 import { FontSettings } from './settings/font-settings.tsx';
 import { GeneralSettings } from './settings/general-settings.tsx';
 import { M as GENERAL } from './settings/general-settings-copy.ts';
+import { PROFILE_COPY } from './profile/profile-copy.ts';
 import { GLOSSARY_COPY } from './settings/glossary-copy.ts';
 import { GlossarySettings } from './settings/glossary-settings.tsx';
 import { ResourceCapacity } from './settings/resource-capacity.tsx';
+import { ProfileSettings } from './settings/profile-settings.tsx';
+import { RulesSettings } from './settings/rules-settings.tsx';
 import { KeyCombo, Panel, PanelHeading, RowList, SettingsGroup, SettingsRow } from './settings/settings-ui.tsx';
 import { W } from './settings/workspace-copy.ts';
 
 /** Rail icons per section (lucide, like the rest of the page chrome). */
 const SECTION_ICON: Record<SettingsSection, LucideIcon> = {
+  you: UserRound,
+  rules: Scale,
   general: SlidersHorizontal,
   shortcuts: Keyboard,
   fonts: Type,
@@ -130,6 +139,12 @@ export function SettingsPage({ section = 'general', model, platform }: {
       <SectionBody key={model?.category ?? section}>
         {model ? (
           <ModelSettings category={model.category} page={model.page} />
+        ) : section === 'you' ? (
+          <Section title={labelOf('you')} blurb={PROFILE_COPY.blurb}>
+            <ProfileSettings />
+          </Section>
+        ) : section === 'rules' ? (
+          <RulesSettings title={labelOf('rules')} />
         ) : section === 'general' ? (
           <Section title={labelOf('general')} blurb={W.generalBlurb}>
             <GeneralSettings />
@@ -287,6 +302,7 @@ function useRailSummaries(web: boolean): RailSummaries {
   const app = useAppUpdate((s) => s.snapshot?.current?.version ?? null);
   const installed = useModels(useShallow(installedCounts));
   const provider = useModels(textProvider);
+  const profile = useProfile(useShallow((s) => railSummary(s.snapshot)));
 
   useEffect(() => {
     if (connected) void loadSkills(runtime);
@@ -296,6 +312,8 @@ function useRailSummaries(web: boolean): RailSummaries {
   const agent = defaultDriver(drivers, checking);
   const models = (category: ModelCategory) => (installed ? W.installed(installed[category] ?? 0) : W.checking);
   return {
+    you: profile ? profile.you : W.checking,
+    rules: profile ? profile.rules : W.checking,
     general: language === 'system' ? GENERAL.languageSystem(LOCALE_NATIVE_NAMES[resolveLanguage('system', languages)]) : LOCALE_NATIVE_NAMES[language],
     shortcuts: W.shortcutCount(SHELL_KEYS.length),
     fonts: W.fontsSummary,

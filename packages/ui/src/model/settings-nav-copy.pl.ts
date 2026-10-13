@@ -16,6 +16,8 @@ export const pl: SettingsNavMessages = {
     cloud: "Generowanie tekstu ma tylko modele w chmurze. Agentów kodujących ustawia się w sekcji „Agent”.",
   },
   section: {
+    you: 'You',
+    rules: 'Rules',
     general: "Ogólne",
     shortcuts: "Skróty",
     fonts: "Czcionki",

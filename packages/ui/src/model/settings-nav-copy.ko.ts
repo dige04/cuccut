@@ -16,6 +16,8 @@ export const ko: SettingsNavMessages = {
     cloud: '텍스트 생성에는 클라우드 모델만 있습니다. 코딩 Agent는 “Agent”에서 설정합니다.',
   },
   section: {
+    you: 'You',
+    rules: 'Rules',
     general: '일반',
     shortcuts: '단축키',
     fonts: '글꼴',

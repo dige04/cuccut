@@ -26,4 +26,15 @@ export const ru: WorkspaceMessages = {
   notYet: 'Пока недоступно',
   loadFailed: 'Не удалось загрузить',
   fontsSummary: 'Для субтитров и заголовков',
+  preferencesSummary: (written, answers) =>
+    written
+      ? answers === 0
+        ? 'Preferences written'
+        : `Preferences written, ${answers === 1 ? '1 answer' : `${answers} answers`}`
+      : answers === 0
+        ? 'No preferences yet'
+        : answers === 1
+          ? '1 answer'
+          : `${answers} answers`,
+  ruleCount: (n, off) => (n === 0 ? 'None yet' : `${n === 1 ? '1 rule' : `${n} rules`}${off ? `, ${off} off` : ''}`),
 };

@@ -16,6 +16,8 @@ export const it: SettingsNavMessages = {
     cloud: "La generazione di testo ha solo modelli cloud. Gli agenti di codice vengono configurati in «Provider degli agenti».",
   },
   section: {
+    you: 'You',
+    rules: 'Rules',
     general: "Generali",
     shortcuts: "Scorciatoie",
     fonts: "Font",

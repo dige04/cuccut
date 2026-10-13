@@ -24,4 +24,15 @@ export const zhHant: WorkspaceMessages = {
   notYet: '暫不可用',
   loadFailed: '載入失敗',
   fontsSummary: '用於字幕與標題',
+  preferencesSummary: (written, answers) =>
+    written
+      ? answers === 0
+        ? 'Preferences written'
+        : `Preferences written, ${answers === 1 ? '1 answer' : `${answers} answers`}`
+      : answers === 0
+        ? 'No preferences yet'
+        : answers === 1
+          ? '1 answer'
+          : `${answers} answers`,
+  ruleCount: (n, off) => (n === 0 ? 'None yet' : `${n === 1 ? '1 rule' : `${n} rules`}${off ? `, ${off} off` : ''}`),
 };

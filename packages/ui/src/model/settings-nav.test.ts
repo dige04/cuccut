@@ -15,6 +15,15 @@ describe('设置分组', () => {
     expect(SETTINGS_GROUPS.find((g) => g.id === 'app')?.keys).toEqual(['glossary', 'privacy', 'diagnostics', 'about']);
   });
 
+  it('the preferences group opens with the profile (You, Rules), then General, Shortcuts and Fonts', () => {
+    expect(SETTINGS_GROUPS.find((g) => g.id === 'preferences')?.keys).toEqual(['you', 'rules', 'general', 'shortcuts', 'fonts']);
+    expect(isSettingsSection('you')).toBe(true);
+    expect(isSettingsSection('rules')).toBe(true);
+    const label = (key: string) => SETTINGS_SECTION_INFO.find((s) => s.key === key)?.label;
+    expect(label('you')).toBeTruthy();
+    expect(label('rules')).toBeTruthy();
+  });
+
   it('每个分节恰好属于一组，且都有标签', () => {
     expect(SETTINGS_GROUPS.flatMap((g) => g.keys).sort()).toEqual([...SETTINGS_SECTIONS].sort());
     expect(SETTINGS_SECTION_INFO.map((s) => s.key)).toEqual([...SETTINGS_SECTIONS]);

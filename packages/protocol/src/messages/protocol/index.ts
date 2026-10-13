@@ -4,3 +4,4 @@
  */
 export * from './protocol-labels.ts';
 export * from './protocol-validation.ts';
+export * from './publishing-issues.ts';

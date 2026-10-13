@@ -32,3 +32,12 @@ describe('无项目会话的工作目录（架构设计 §3.10）', () => {
     expect(defaultSessionsDir({ XDG_DATA_HOME: '/data' }, 'linux', '/home/me')).toBe('/data/CucCut/Sessions');
   });
 });
+
+describe('publishing paths', () => {
+  it('the publishing store is under store/ and pinned exports are outside artifacts/', () => {
+    const home = resolveRuntimeHome({ CUCCUT_HOME: path.join(user, '.cuccut') }, 'darwin', user);
+    expect(home.publishingFile).toBe(path.join(user, '.cuccut', 'store', 'publishing.json'));
+    expect(home.publishingDir).toBe(path.join(user, '.cuccut', 'publishing'));
+    expect(path.relative(home.artifactsDir, home.publishingDir).startsWith('..')).toBe(true);
+  });
+});

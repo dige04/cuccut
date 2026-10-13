@@ -19,3 +19,4 @@ export * from './agent-prefs.ts';
 export * from './agent-probes.ts';
 export * from './agent-providers.ts';
 export * from './skill-prefs.ts';
+export * from './publishing-store.ts';

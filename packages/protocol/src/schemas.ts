@@ -1380,3 +1380,5 @@ export {
 } from './template-schemas.ts';
 export { skillSendListSchema, skillSendRefSchema } from './skill-schemas.ts';
 export { aiToolParamsSchema } from './ai-tool-schemas.ts';
+export * from './publishing-schemas.ts';
+export * from './publishing/transfer.ts';

@@ -149,7 +149,14 @@ export function AgentPicker({ drivers, driverId, model, effort, lockedTo, compac
             return (
               <SubmenuTrigger key={row.id}>
                 {item(`driver:${row.id}`)}
-                <ModelMenu driver={driver} model={own.model} effort={own.effort} cap={menuCap} onChange={onChange} />
+                <ModelMenu
+                  driver={driver}
+                  current={row.selected}
+                  model={own.model}
+                  effort={own.effort}
+                  cap={menuCap}
+                  onChange={onChange}
+                />
               </SubmenuTrigger>
             );
           })}
@@ -169,12 +176,14 @@ export function AgentPicker({ drivers, driverId, model, effort, lockedTo, compac
 /** Second level: the first item is labelled “Model”, meaning the Agent's default model, followed by its model list; below that are the reasoning effort options for this model (omitted if there are none). */
 function ModelMenu({
   driver,
+  current,
   model,
   effort,
   cap,
   onChange,
 }: {
   driver: DriverInfo;
+  current: boolean;
   model: string | null;
   effort: string | null;
   cap: CSSProperties | undefined;
@@ -184,6 +193,9 @@ function ModelMenu({
   const efforts = effortRows(active);
   const currentId = currentEffort(active, effort);
   const currentLabel = currentId ? effortLabel(currentId, active?.efforts.find((e) => e.id === currentId)?.label) : null;
+  // Another Agent's menu checks what it would use if switched to. Choosing that checked row changes no selection, so for
+  // those menus every row switches through its action instead (an action runs whether or not the row is selected).
+  const pick = (change: AgentChange) => (current ? undefined : () => onChange(change));
   return (
     <Menu aria-label={S.agentPicker.models(driver.name)} size="M" styles={menu} UNSAFE_style={cap}>
       <MenuSection
@@ -192,7 +204,7 @@ function ModelMenu({
         selectedKeys={[`model:${model ?? ''}`]}
         onSelectionChange={(keys) => {
           const key = keys === 'all' ? undefined : String([...keys][0] ?? '');
-          if (!key?.startsWith('model:')) return;
+          if (!current || !key?.startsWith('model:')) return;
           const next = key.slice('model:'.length) || null;
           onChange(modelChange(driver, next, effort));
         }}>
@@ -200,7 +212,11 @@ function ModelMenu({
           <Heading>{AGENT_PICKER.models}</Heading>
         </Header>
         {modelRows(driver, model).map((row) => (
-          <MenuItem key={row.model ?? ''} id={`model:${row.model ?? ''}`} textValue={row.label}>
+          <MenuItem
+            key={row.model ?? ''}
+            id={`model:${row.model ?? ''}`}
+            textValue={row.label}
+            onAction={pick(modelChange(driver, row.model, effort))}>
             <Text slot="label">{row.label}</Text>
             {row.sub ? <Text slot="description">{row.sub}</Text> : null}
           </MenuItem>
@@ -213,14 +229,18 @@ function ModelMenu({
           selectedKeys={currentId ? [`effort:${currentId}`] : []}
           onSelectionChange={(keys) => {
             const key = keys === 'all' ? undefined : String([...keys][0] ?? '');
-            if (!key?.startsWith('effort:')) return;
+            if (!current || !key?.startsWith('effort:')) return;
             onChange({ driverId: driver.id, model, effort: key.slice('effort:'.length) });
           }}>
           <Header>
             <Heading>{AGENT_PICKER.effort(currentLabel ?? AGENT_PICKER.defaultMark)}</Heading>
           </Header>
           {efforts.map((row) => (
-            <MenuItem key={row.id} id={`effort:${row.id}`} textValue={row.label}>
+            <MenuItem
+              key={row.id}
+              id={`effort:${row.id}`}
+              textValue={row.label}
+              onAction={pick({ driverId: driver.id, model, effort: row.id })}>
               <Text slot="label">{row.label}</Text>
               {row.sub ? <Text slot="description">{row.sub}</Text> : null}
             </MenuItem>

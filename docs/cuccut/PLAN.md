@@ -44,3 +44,5 @@ a workspace settings shell.
   server `cuccut`, package scope `@cuccut/*`.
 - Licensing and attributions: `LICENSE` and `NOTICE` (kept verbatim; CucCut is a personal/internal build, not for
   commercial distribution).
+- **No clean-room rewrite** (decided 2026-10-14): the code stays; CucCut's own identity is used everywhere, and the
+  original attribution lives only in `LICENSE` and `NOTICE`.
